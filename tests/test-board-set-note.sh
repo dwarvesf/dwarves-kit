@@ -142,4 +142,44 @@ else
   fail "dedupe on a unique id should be a no-op, got: $out"
 fi
 
+# ---- 12-14. the default-branch warning: the row is still flipped, the caller is told not
+# to commit it here. Cases 1-11 above already prove the silent path, since $TMP is no repo.
+GR="$TMP/boardrepo"
+git init -q -b main "$GR" 2>/dev/null
+git -C "$GR" -c user.name=t -c user.email=t@t commit -q --allow-empty -m init
+B="$GR/BACKLOG.md"; mk_board "$B"
+
+out="$(BACKLOG_FILE="$B" bash "$BL" set ID-001 shipped "on main" 2>&1)"
+if printf '%s' "$out" | grep -q 'on the default branch (main)' && [ "$(cell "$B")" = 'shipped [on main]' ]; then
+  pass "set on the default branch warns and still flips the row"
+else
+  fail "set on the default branch should warn and flip, got: $out / $(cell "$B")"
+fi
+
+out="$(BACKLOG_FILE="$B" bash "$BL" dedupe ID-001 2>&1)"
+if printf '%s' "$out" | grep -q 'nothing to dedupe'; then
+  pass "dedupe with nothing to do stays silent about the branch"
+else
+  fail "dedupe no-op should not warn, got: $out"
+fi
+
+mk_board "$B"
+printf '| ID-001 | a row | src | queued |\n' >> "$B"
+out="$(BACKLOG_FILE="$B" bash "$BL" dedupe-all 2>&1)"
+if printf '%s' "$out" | grep -q 'on the default branch (main)' \
+   && [ "$(grep -c '^| ID-001 ' "$B")" = 1 ]; then
+  pass "dedupe-all on the default branch warns and still collapsed the duplicate"
+else
+  fail "dedupe-all on the default branch should warn and collapse, got: $out"
+fi
+
+git -C "$GR" checkout -q -b feat/board-guard
+mk_board "$B"
+out="$(BACKLOG_FILE="$B" bash "$BL" set ID-001 shipped "on a branch" 2>&1)"
+if printf '%s' "$out" | grep -q 'default branch'; then
+  fail "set on a feature branch should not warn, got: $out"
+else
+  pass "set on a feature branch does not warn"
+fi
+
 if [ "$FAILED" = 0 ]; then echo "ALL PASS"; else echo "$FAILED FAILED"; exit 1; fi

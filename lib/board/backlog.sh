@@ -41,6 +41,9 @@ set -euo pipefail
 
 BACKLOG_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BACKLOG_FILE="${BACKLOG_FILE:-$BACKLOG_DIR/../../_meta/BACKLOG.md}"  # _meta/ is at repo root (above lib/)
+# shellcheck source=lib/gate/default-branch-warn.sh
+source "$BACKLOG_DIR/../gate/default-branch-warn.sh" \
+  || { echo "FATAL: lib/gate/default-branch-warn.sh missing or unreadable" >&2; exit 1; }
 
 STATES="queued claimed speccing validated executing shipped parked dropped"
 BACKLOG_ID_RE="${BACKLOG_ID_RE:-[A-Z]+-[0-9]+}"
@@ -117,6 +120,7 @@ set_state() {
       $(NF-1) = " " st rest " "
     } { print }' "$BACKLOG_FILE" > "$BACKLOG_FILE.tmp" && mv -f "$BACKLOG_FILE.tmp" "$BACKLOG_FILE"
   echo "$id -> $state"
+  kit_warn_default_branch "$BACKLOG_FILE" "board set"
 }
 
 dedupe() {
@@ -147,6 +151,7 @@ dedupe() {
     BEGIN { n = split(dropset, d, ","); for (i = 1; i <= n; i++) if (d[i] != "") skip[d[i]] = 1 }
     !(NR in skip) { print }' "$BACKLOG_FILE" > "$BACKLOG_FILE.tmp" && mv -f "$BACKLOG_FILE.tmp" "$BACKLOG_FILE"
   echo "board dedupe: ${id} kept line ${keep}, dropped lines ${dropped}"
+  kit_warn_default_branch "$BACKLOG_FILE" "board dedupe"
 }
 
 # dedupe_all [file] -- sweep every duplicated id in one pass (default $BACKLOG_FILE). Unlike
@@ -175,6 +180,7 @@ dedupe_all() {
   awk -v dropset="$skip_csv" '
     BEGIN { n = split(dropset, d, ","); for (i = 1; i <= n; i++) if (d[i] != "") skip[d[i]] = 1 }
     !(NR in skip) { print }' "$file" > "$file.tmp" && mv -f "$file.tmp" "$file"
+  kit_warn_default_branch "$file" "board dedupe-all"
   echo "$done_ids"
 }
 

@@ -1358,6 +1358,56 @@ chk "log from outside the repo prepends to the configured file itself" \
   "$([ "$(head -1 "$LOGREPO/_meta/LOG.md")" = "$(date +%F) · wrap: from outside" ]; echo $?)"
 
 # ===========================================================================
+echo "=== log/stage: the default-branch warning, written but not to be committed here ==="
+# ===========================================================================
+# A commit on the default branch cannot be pushed through a PR, so the verb writes the file
+# and says the line belongs to the next feature PR. The write itself is never refused.
+DBREPO="$LOGHOME/dbrepo"
+git init -q "$DBREPO"
+git -C "$DBREPO" symbolic-ref HEAD refs/heads/main
+git -C "$DBREPO" -c user.name=t -c user.email=t@t commit -q --allow-empty -m init
+mkdir -p "$DBREPO/_meta" && printf 'seed\n' > "$DBREPO/_meta/LOG.md"
+git -C "$DBREPO" add _meta/LOG.md && git -C "$DBREPO" -c user.name=t -c user.email=t@t commit -q -m log
+set_log_key "$DBREPO/_meta/LOG.md"
+
+out="$(cd "$DBREPO" && HOME="$LOGHOME" KIT_CONFIG_ROOT="$KITROOT" "$WRAP" log "wrap: on main" 2>&1)"
+chk_has "log on the default branch warns" "$out" "on the default branch (main)"
+chk_has "log names the next feature PR as the carrier" "$out" "next feature PR"
+chk "log on the default branch still wrote the line" \
+  "$([ "$(head -1 "$DBREPO/_meta/LOG.md")" = "$(date +%F) · wrap: on main" ]; echo $?)"
+
+git -C "$DBREPO" checkout -q -b feat/log-guard
+out="$(cd "$DBREPO" && HOME="$LOGHOME" KIT_CONFIG_ROOT="$KITROOT" "$WRAP" log "wrap: on a branch" 2>&1)"
+chk_no "log on a feature branch does not warn" "$out" "default branch"
+chk "log on a feature branch still wrote the line" \
+  "$([ "$(head -1 "$DBREPO/_meta/LOG.md")" = "$(date +%F) · wrap: on a branch" ]; echo $?)"
+
+# origin/HEAD, not the local branch name, decides which branch is the default one: a repo whose
+# remote default is `master` gets no warning for a session sitting on a local `main`.
+git init -q --bare "$LOGHOME/dbremote.git"
+git -C "$DBREPO" remote add origin "$LOGHOME/dbremote.git"
+git -C "$DBREPO" push -q origin "HEAD:refs/heads/master"
+git -C "$DBREPO" fetch -q origin
+git -C "$DBREPO" checkout -q main
+out="$(cd "$DBREPO" && HOME="$LOGHOME" KIT_CONFIG_ROOT="$KITROOT" "$WRAP" log "wrap: local main, remote master" 2>&1)"
+chk_no "log: a local main is not the default when origin says master" "$out" "default branch"
+git -C "$DBREPO" checkout -q -B master
+out="$(cd "$DBREPO" && HOME="$LOGHOME" KIT_CONFIG_ROOT="$KITROOT" "$WRAP" log "wrap: on remote master" 2>&1)"
+chk_has "log: the remote's own default branch warns" "$out" "on the default branch (master)"
+
+STAGEDB="$TMPD/stage-defaultbranch"
+git init -q "$STAGEDB"
+git -C "$STAGEDB" symbolic-ref HEAD refs/heads/main
+git -C "$STAGEDB" -c user.name=t -c user.email=t@t commit -q --allow-empty -m init
+out="$(cd "$STAGEDB" && "$WRAP" stage "Guarded Title" "the intent" "the home" 2>&1)"
+chk_has "stage on the default branch warns" "$out" "on the default branch (main)"
+chk "stage on the default branch still wrote the block" \
+  "$(grep -q '## \[staged\] Guarded Title' "$STAGEDB/_meta/backlog-staging.md"; echo $?)"
+git -C "$STAGEDB" checkout -q -b feat/stage-guard
+out="$(cd "$STAGEDB" && "$WRAP" stage "Branch Title" "i" "h" 2>&1)"
+chk_no "stage on a feature branch does not warn" "$out" "default branch"
+
+# ===========================================================================
 echo "=== log: the --- anchor lands the entry below the header, not above it ==="
 # ===========================================================================
 ANCHFILE="$LOGHOME/ANCHOR.md"

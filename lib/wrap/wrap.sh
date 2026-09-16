@@ -45,6 +45,8 @@ STAGING_FORMAT_PY="$LIB_ROOT/reflect/staging-format.py"
 BACKLOG_SH="$LIB_ROOT/board/backlog.sh"
 # shellcheck source=lib/config/kit-config.sh
 source "$LIB_ROOT/config/kit-config.sh" || { echo "FATAL: lib/config/kit-config.sh missing or unreadable" >&2; exit 1; }
+# shellcheck source=lib/gate/default-branch-warn.sh
+source "$LIB_ROOT/gate/default-branch-warn.sh" || { echo "FATAL: lib/gate/default-branch-warn.sh missing or unreadable" >&2; exit 1; }
 
 _usage() { sed -n '2,25p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
 
@@ -1142,6 +1144,7 @@ cmd_log() {
   [ -n "$mode" ] && chmod "$mode" "$tmp"   # mktemp opens 0600; carry the target's mode over
   mv -f "$tmp" "$resolved"
   printf '%s\n' "$line"
+  kit_warn_default_branch "$resolved" "wrap log"
   return 0
 }
 
@@ -1352,7 +1355,9 @@ json.dump(
 )
 ' "$title" "$intent" "$home" "$resolved" "$backlog" \
     | python3 "$STAGING_FORMAT_PY" stage
-  return $?
+  local rc=$?
+  if [ "$rc" -eq 0 ]; then kit_warn_default_branch "$resolved" "wrap stage"; fi
+  return "$rc"
 }
 
 # --------------------------------------------------------------------------- default-branch

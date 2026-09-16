@@ -38,7 +38,7 @@ kit_config_get_root wrap.after ""
 
 An empty value means no skill runs on that side, which is the default for both. A named skill runs at its side's position and its report lines fold into step 9's report after the `FYI` line. Both keys resolve with `kit_config_get_root`, so each comes from the operator `kit.toml` or the kit-root `kit.toml` and never from a project `.kit.toml`: they name code this command runs, and a project toml rides inside an untrusted PR.
 
-**Pick the side by what the skill needs.** `wrap.before` runs ahead of step 0, so it sees the session's uncommitted state; a skill that must read a working tree before wrap commits or tidies it belongs there. `wrap.after` runs after step 8 and before the step 9 report, so the landing is already done; a skill that only reads what the session produced belongs there. **`after` is the right side for a knowledge flush**, and the reason is the operator's time: a flush on the `before` side greps every note store while the git work waits behind it, so the landing an operator asked for arrives last. Nothing in a flush informs a board flip or a merge, so nothing is gained by paying for it first.
+**Pick the side by what the skill needs.** `wrap.before` runs ahead of step 0, so it sees the session's uncommitted state; a skill that must read a working tree before wrap commits or tidies it belongs there. `wrap.after` runs after step 8 and before the step 9 report, so the landing is already done; a skill that only reads what the session produced belongs there. **`after` is the right side for a knowledge flush**, and the reason is the operator's time: a flush on the `before` side greps every note store while the git work waits behind it, so the landing an operator asked for arrives last. Nothing in a flush informs a board flip or a merge, so nothing is gained by paying for it first. A seam skill that writes a file into a repo obeys step 2's rule: no commit on a checkout sitting on the default branch, leave the write for the next feature PR.
 
 **Report the outcome, whichever side ran.** Step 9 owes a `**Seam:**` line and the lint fails without it. A seam that never ran because no key was set, and a seam that was silently skipped, are different facts; the `**Built:**` line exists for exactly this reason at step 7b, and the same hole is here. A named skill that fails to run is `SKIPPED: <why>`, never silence.
 
@@ -72,6 +72,8 @@ For every backlog row whose source of truth this session closed, flip it through
 
 Commit any of the operator's own outstanding work under its own name and message. This step is a command-layer judgment call, not a verb: `wrap` owns no commit write. Skip it when nothing of the operator's own is outstanding.
 
+**Never commit on a checkout that has the repo's default branch checked out.** Nobody can push that commit through a PR, so it sits on a local main until someone drains it by hand; one measured machine had accumulated 29 such commits. Leave the file uncommitted for the next feature PR to carry, or move the change onto a branch and commit it there. The same rule binds every file the pass writes: a board row at step 1, an activity line at step 6, anything a seam skill flushes. `board set`, `wrap log` and `wrap stage` each print one warning line when they write into such a checkout; that line is this rule firing, not an error, and the file they wrote is correct.
+
 ### Step 3: merge the operator's own PRs
 
 `wrap.merge_own_prs` false: merge nothing, report every own open PR as `OPEN` under `Shipped`, and say in `FYI` that the knob is off. Steps 4 onward still run.
@@ -104,7 +106,7 @@ Re-run the step 0 check first. Then, in this order: remove the session's own wor
 
 ### Step 6: activity line
 
-Re-run the step 0 check first. Then: `bin/wrap log "<slug>: <one sentence>"`. When the current directory is a git worktree of the repo that holds the configured file, the same repo-relative file inside that worktree is written instead, so the line is committable on the session's branch; the main checkout's copy is left alone. With no `wrap.activity_log` key in the kit-root `kit.toml`, it prints the line and says where it did not land; that is a clean result, not a failure.
+Re-run the step 0 check first. Then: `bin/wrap log "<slug>: <one sentence>"`. When the current directory is a git worktree of the repo that holds the configured file, the same repo-relative file inside that worktree is written instead, so the line is committable on the session's branch; the main checkout's copy is left alone. With no `wrap.activity_log` key in the kit-root `kit.toml`, it prints the line and says where it did not land; that is a clean result, not a failure. When the written file lands in a checkout sitting on the repo's default branch, the verb says so on stderr: leave the line uncommitted for the next feature PR, per step 2.
 
 ### Step 7: understand
 
