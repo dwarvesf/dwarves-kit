@@ -326,6 +326,21 @@ if verdict still != "PASS":
        The remaining issues require your judgment."
 ```
 
+**Check the attempt state before you re-dispatch anything.** The loop above handles a worker that
+REPORTED a fixable failure. A worker that went SILENT reported nothing, so its outcome is unknown,
+and a re-dispatch there races the original agent on the same files. Consult the attempt
+state first:
+
+```bash
+bash lib/goal/attempt-state.sh status <task-slug>
+```
+
+An attempt in `disconnected` with grace remaining means **resume it with `SendMessage`**, and spend
+no retry on it: an unknown outcome is not a failure, and the retry budget exists for real failures.
+Only once `lose-attempt` succeeds (the window expired, the worker is excluded, the task is back to
+`queued`) may a fresh worker take the task, and that fresh worker starts a new attempt rather than
+consuming a fix cycle.
+
 **Why max 2 retries**: Most fixable issues (missing import, wrong assertion, off-by-one) resolve in 1-2 fix cycles. If it takes 3+, the issue is likely a design problem, not a code bug. Further retries burn tokens without progress.
 
 **Naming the exit (`docs/patterns/failure-policy.md`)**: an exhausted retry loop is
