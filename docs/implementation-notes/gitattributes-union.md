@@ -39,13 +39,23 @@ reachable for it. That path inserts carried lines below the first `---` line. Th
 such line, so `_log_anchor_head_lines` returns 0 and the carried row prepended to line 1, above
 the document title and outside the table.
 
-Decision: `_carry_after_neighbour` places the carried block after the line that sat directly
-above it in the local copy, used only when the anchor rule finds nothing.
+Decision: `_union_carry_back` keeps the anchor rule for a file that has an anchor, and runs
+`git merge-file --union` over pulled/base/local for a file that has none. `_pull_default` saves
+the pre-pull content beside the local copy, because after the pull the base exists nowhere in
+the worktree.
 
-Why: a row that `board capture` appended to a table belongs next to the row it followed. The
-anchor rule keeps priority for every file that has an anchor, so `LAB_LOG`-shaped files are
-untouched. ops-toolkit's board has a `---` at line 112 and never hit this.
+Why: git's driver is the same one the declaration names, so a carried row lands where a merge
+or a stash pop would put it, at the table tail. A first attempt placed the block after the line
+it followed locally; review broke that in four ways (a blank neighbour fell back to line 1, a
+repeated neighbour picked the wrong table, non-contiguous added lines moved as one block, an
+empty first line matched any blank). The driver answers all four and is less code.
 
-Open questions: the carried row lands after its local neighbour, which for the fixture means
-above the upstream row rather than below it. Git's own union driver would order it the other
-way. Both are inside the table and neither loses a row, so the difference is cosmetic.
+The anchor branch survives because the driver orders the incoming entry above the local one.
+For a newest-first `LAB_LOG` that is backwards, and `tests/test-wrap.sh` asserts the carried
+line sits above the older entries. Narrowing the new path to anchorless files leaves every
+asserted contract untouched rather than weakening one. ops-toolkit's board has a `---` at line
+112 and so never hit the placement bug at all.
+
+Open questions: a file declared union that `git merge-file` refuses (a binary one) now restores
+its pre-pull content and reports `FAILED carry` rather than merging. Declaring a binary file
+union is a configuration error; this makes it a loud one.

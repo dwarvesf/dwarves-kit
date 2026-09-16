@@ -28,6 +28,12 @@ Output: `27/27 passed`
 Verdict: PASS. Four cases against real git repos built on disk, two of them the
 no-declaration controls that reproduce the hand-resolved conflict and the refused merge.
 
+Command: `bash tests/test-wrap.sh`
+Exit: 0
+Output: `test-wrap: all 508 passed`
+Verdict: PASS. The carry-across-pull contract is unchanged for anchored files; the new
+union-driver path is reached only by a file with no `---` anchor.
+
 ## Negative control
 
 Command: `bash lib/gate/negctl.sh . "bash tests/test-gitattributes-union.sh" "git rm -q --cached .gitattributes >/dev/null 2>&1; rm -f .gitattributes"`

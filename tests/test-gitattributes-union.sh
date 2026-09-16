@@ -93,10 +93,10 @@ chk "carry: the sibling's row survived" \
   "$(grep -qF '| ID-003 | sibling |' "$C/_meta/BACKLOG.md"; echo $?)"
 chk "carry: line 1 is still the title, not a carried row" \
   "$([ "$(sed -n 1p "$C/_meta/BACKLOG.md")" = "# Task Backlog" ]; echo $?)"
-# Placement, not just survival: the row lands inside the table, directly under the row it
-# followed locally. Every `| ID-` line staying contiguous is what says it is still a table.
-chk "carry: the carried row follows the row it followed locally" \
-  "$([ "$(grep -n '^| ID-' "$C/_meta/BACKLOG.md" | sed -n 2p | cut -d: -f2-)" = "| ID-003 | sibling | src | queued |" ]; echo $?)"
+# Placement, not just survival: the carried row lands at the table tail, where the union
+# driver puts it and where `board capture` had it. Contiguity is what says it is still a table.
+chk "carry: the carried row is last, as a union merge orders it" \
+  "$([ "$(grep '^| ID-' "$C/_meta/BACKLOG.md" | tail -1)" = "| ID-003 | sibling | src | queued |" ]; echo $?)"
 chk "carry: the three rows are contiguous" \
   "$([ "$(grep -n '^| ID-' "$C/_meta/BACKLOG.md" | cut -d: -f1 | tr '\n' ' ')" = "7 8 9 " ]; echo $?)"
 chk_has "carry: the row is still uncommitted" "$(git -C "$C" diff --name-only)" "_meta/BACKLOG.md"
