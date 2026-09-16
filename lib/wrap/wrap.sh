@@ -401,9 +401,26 @@ _union_marked() {
   return 1
 }
 
+# _carry_after_neighbour <saved-copy> <target> <first-added-line> -- prints how many lines of
+# <target> stay ABOVE the carried block when the file has no `---` anchor, or 0 when the
+# neighbour cannot be found. A board table has no anchor line, so the anchor rule would put a
+# carried ROW at line 1, above the document title and outside the table it belongs to. The
+# line that sat directly above the carried line locally is where it belongs: a row that
+# `board capture` appended to the table tail lands back at that tail.
+_carry_after_neighbour() {
+  local saved="$1" target="$2" line="$3" at prev
+  at="$(grep -Fxn -- "$line" "$saved" 2>/dev/null | head -1)"; at="${at%%:*}"
+  [ -n "$at" ] && [ "$at" -gt 1 ] 2>/dev/null || { printf '0'; return 0; }
+  prev="$(sed -n "$((at - 1))p" "$saved")"
+  [ -n "$prev" ] || { printf '0'; return 0; }
+  at="$(grep -Fxn -- "$prev" "$target" 2>/dev/null | head -1)"; at="${at%%:*}"
+  printf '%s' "${at:-0}"
+}
+
 # _union_carry_back <saved-copy> <target> -- put back every line the saved copy holds and the
 # pulled file lacks. Prints the count. The insert point comes from _log_anchor_head_lines, so
-# a carried line lands below the header exactly where `wrap log` puts a new entry.
+# a carried line lands below the header exactly where `wrap log` puts a new entry; a file with
+# no anchor falls back to the local neighbour, and only then to a prepend.
 _union_carry_back() {
   local saved="$1" target="$2" add tmp head_n mode n
   add="$(mktemp)"
@@ -411,6 +428,8 @@ _union_carry_back() {
   n="$(grep -c '' "$add" 2>/dev/null)"; n="${n:-0}"
   if [ "$n" -gt 0 ] 2>/dev/null; then
     head_n="$(_log_anchor_head_lines "$target")"
+    [ "$head_n" -gt 0 ] 2>/dev/null \
+      || head_n="$(_carry_after_neighbour "$saved" "$target" "$(sed -n 1p "$add")")"
     tmp="$(mktemp)"
     if [ "$head_n" -gt 0 ] 2>/dev/null; then
       sed -n "1,${head_n}p" "$target" > "$tmp"

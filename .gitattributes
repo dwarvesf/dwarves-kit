@@ -1,0 +1,12 @@
+# Append-only board rows and notes. Every feature branch adds a row to the same table tail
+# or the same prepend point, so two parallel branches collide on lines neither one got
+# wrong. Union keeps both sides. Without this file the collision surfaced as a stash-pop
+# conflict on _meta/BACKLOG.md that a session hand-resolved four times in one sitting.
+#
+# Caveat: union never drops a line, so a single row both sides EDITED comes out duplicated
+# rather than merged. `bash lib/board/backlog.sh dedupe-all <file>` clears that, and
+# lib/wrap/wrap.sh runs it after a union re-merge. Do not add a whole-document table whose
+# rows get rewritten in place.
+_meta/BACKLOG.md merge=union
+_meta/backlog-staging.md merge=union
+docs/implementation-notes/*.md merge=union
