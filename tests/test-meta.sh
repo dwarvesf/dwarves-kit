@@ -3090,13 +3090,17 @@ echo ""
 echo "=== Feature-registry freshness pin (SPEC-219) ==="
 # ============================================================
 # docs/FEATURES.md is a generated projection (lib/registry/feature-registry.sh).
-# Same class as the derived-count pins above: regenerate to a temp file and diff
-# against the committed copy; ANY drift (a feature added/removed/renamed, a
-# description or wiring change) fails here until the registry is regenerated.
+# Same class as the derived-count pins above: regenerate and diff against the
+# committed copy; ANY drift (a feature added/removed/renamed, a description or
+# wiring change) fails here until the registry is regenerated.
+#
+# The regenerate-and-diff is the registry's own `check` verb, not a hand-rolled
+# copy of it: hooks/ship-gate.sh refuses a push on the same verb, and two
+# definitions of "fresh" would eventually disagree.
+bash "$KIT_DIR/lib/registry/feature-registry.sh" check "$KIT_DIR/docs/FEATURES.md" >/dev/null 2>&1
+assert_true "docs/FEATURES.md is fresh (check verb, SPEC-219)" $?
 REG_TMP=$(mktemp)
 bash "$KIT_DIR/lib/registry/feature-registry.sh" generate "$REG_TMP" 2>/dev/null
-diff -q "$REG_TMP" "$KIT_DIR/docs/FEATURES.md" >/dev/null 2>&1
-assert_true "docs/FEATURES.md is fresh (regenerate == committed, SPEC-219)" $?
 # AC-1 determinism pin (review finding): a second run must be byte-identical, so a
 # future edit that reintroduces nondeterminism (locale, glob order, a timestamp)
 # fails HERE even when the committed file was regenerated in the same PR.

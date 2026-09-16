@@ -123,6 +123,7 @@ real reader consumes it today (all rows below are, except where noted).
 | PANE_TAIL_JQ | env-only | `$ORCH_DIR/pane-tail.jq` | [impl] | mega | The jq formatter the multiplexer pane tail reads through; read-only by construction. |
 | QUEUE_PUSH_ONLY | env-only | `0` | [impl] | queue | `1` pushes the branch and stops without opening the PR (draft or ready per the run's own rule). |
 | DWARVES_KIT_SKIP_DOC_PROJECTION | env-only | `0` | [impl] | gate | `1` skips the ship-gate's doc-projection check for a repo that has neither projection file; an escape hatch, never a default. |
+| DWARVES_KIT_SKIP_REGISTRY_FRESHNESS | env-only | `0` | [impl] | gate | `1` skips the ship-gate's `docs/FEATURES.md` freshness arm, which regenerates the projection when a push edits one of its inputs; an escape hatch, never a default. |
 | MEGA_MERGE_GH | env-only | `gh` | [impl] | mega | Override the `gh` binary/wrapper used for PR ops at merge. |
 | BACKLOG_LIB | env-only | `$LIB_ROOT/board/backlog.sh` | [impl] | mega | Which `backlog.sh` `orchestrate.sh` shells out to for wave admission reads. |
 | PANE_VIEWER | env-only | `auto` | [impl] | mega | Which terminal-viewer surface to push-open on wave spawn. |

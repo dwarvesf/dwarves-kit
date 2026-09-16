@@ -143,6 +143,40 @@ if [ -f "$ROOT/lib/gate/doc-projection-check.sh" ] && [ -f "$ROOT/tests/test-met
   fi
 fi
 
+# Feature-registry freshness gate (kit repo only): docs/FEATURES.md is a
+# generated projection whose inputs are the whole feature surface, including
+# tests/test-*.sh and docs/specs/SPEC-*.md (the Tests and Specs columns are
+# token greps). An author adding a test file has no reason to think about a docs
+# projection, so the drift lands, the suite's pin goes red on master, and every
+# later merge commit inherits it (2026-09, fixed by hand a PR later). Regenerate
+# and byte-diff via the registry's own check verb, so the gate and the pin can
+# never disagree about what fresh means.
+#
+# The regen costs ~20s, so it runs only on the shape of that incident: an input
+# moved and docs/FEATURES.md did NOT. A push that carries the regenerated file
+# skips it; whether that regeneration was CORRECT is what tests/test-meta.sh
+# pins in CI. Escape hatch: DWARVES_KIT_SKIP_REGISTRY_FRESHNESS=1.
+if [ -f "$ROOT/lib/registry/feature-registry.sh" ] && [ -f "$ROOT/docs/FEATURES.md" ] \
+   && [ "${DWARVES_KIT_SKIP_REGISTRY_FRESHNESS:-0}" != "1" ]; then
+  FRBASE=$(git -C "$ROOT" merge-base HEAD "$(_resolve_base)" 2>/dev/null || true)
+  FRDIFF=""
+  [ -n "$FRBASE" ] && FRDIFF=$(git -C "$ROOT" diff --name-only "$FRBASE" HEAD 2>/dev/null || true)
+  if [ -n "$FRDIFF" ] && ! printf '%s\n' "$FRDIFF" | grep -qx 'docs/FEATURES\.md' \
+     && printf '%s\n' "$FRDIFF" | grep -qE '^(commands/[^/]+\.md|agents/[^/]+\.md|skills/[^/]+/SKILL\.md|hooks/[^/]+\.sh|hooks/hooks\.json|settings\.json|tests/test-[^/]+\.sh|docs/specs/SPEC-[^/]+\.md)$'; then
+    if ! FRMSG=$(bash "$ROOT/lib/registry/feature-registry.sh" check "$ROOT/docs/FEATURES.md" 2>&1); then
+      echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) | BLOCKED | registry-freshness | $SLUG" >> "${DWARVES_KIT_LOG_DIR:-$HOME/.claude/dwarves-kit/logs}/ship-gate.log" 2>/dev/null || true
+      {
+        echo "BLOCKED: registry freshness. This push edits an input of docs/FEATURES.md and the generated projection has drifted:"
+        printf '%s\n' "$FRMSG" | head -40
+        echo "Regenerate and commit it:"
+        echo "  bash lib/registry/feature-registry.sh generate docs/FEATURES.md"
+        echo "Escape: DWARVES_KIT_SKIP_REGISTRY_FRESHNESS=1."
+      } >&2
+      exit 2
+    fi
+  fi
+fi
+
 # Build-ran advisory (never blocks): a run that recorded real build work but
 # ships no committable verification record dies with the session (the run ledger is
 # gitignored by design). The proof-gate BLOCKS behavioral diffs in adopted repos; this
