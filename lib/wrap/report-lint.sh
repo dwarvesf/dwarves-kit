@@ -216,6 +216,21 @@ else
   # `lane=full` closed as `staged` is its own finding. Staging was a dead end: one estate board
   # accumulated 248 staged rows since May and drained none, so a full-lane candidate now files a
   # queued row on a board an operator actually reads.
+  # Verdict first. A candidate line that reads "<label> ENHANCE <home> ... memory note written"
+  # passed for shipped work on 2026-09-16 because nothing on it said whether anything landed.
+  # Each item now opens with what happened, in caps, before what it was.
+  _v_idx=0
+  for _v_item in "${built_items[@]}"; do
+    _v_idx=$((_v_idx + 1))
+    case "$_v_item" in
+      BUILT\ *|STAGED\ *|FILED\ *|NOTE\ *) : ;;
+      *)
+        echo "line 0: '**Built:**' item ${_v_idx} has no verdict; start it with BUILT, STAGED, FILED, or NOTE so the reader sees what happened before what it was" >&2
+        echo "  - ${_v_item}" >&2
+        findings=$((findings + 1)) ;;
+    esac
+  done
+
   if [ "${#built_items[@]}" -gt 0 ]; then
     _l_idx=0
     for _l_item in "${built_items[@]}"; do

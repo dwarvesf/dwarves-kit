@@ -10,9 +10,10 @@
 # is sub-second, and the wall clock was the sum of 146 of them. Output stays deterministic
 # because results are collated in glob order after the run, not as each suite finishes.
 #
-# Usage: bash tests/run-all.sh [--only <pattern> | --changed [<base>]]
-#        --changed runs only the suites the diff against <base> touches (default base: the
-#        merge-base with origin/master). The local pre-push check; CI keeps the full glob.
+# Usage: bash tests/run-all.sh [--all | --only <pattern> | --changed [<base>]]
+#        Bare (no argument) is --changed: only the suites the diff against <base> touches
+#        (default base: the merge-base with origin/master), plus the always-on lints. The
+#        local check. --all is the full glob, what CI runs.
 # Env:   RUN_ALL_JOBS=<n>          parallel suites (default: auto on macOS, 1 elsewhere)
 #        RUN_ALL_TIMEOUT_SECS=<n>  per-suite ceiling (default: 300)
 # Exit:  0 all green, 1 one or more failed (every failure is listed at the end).
@@ -49,6 +50,10 @@ fi
 
 ONLY=""
 [ "${1:-}" = "--only" ] && ONLY="${2:-}"
+# Bare invocation is --changed. The full glob is what CI runs and takes 13-15 minutes
+# sequential on a Mac; nobody types that by accident, so it is spelled --all.
+MODE="${1:-}"
+[ -z "$MODE" ] && MODE="--changed"
 
 _cores() {
   if command -v nproc >/dev/null 2>&1; then nproc
@@ -110,7 +115,7 @@ trap 'rm -rf "$OUTDIR"' EXIT
 # Over-picking is fine; a suite this misses is one the changed file never appears in.
 # ponytail: basename grep, no dependency graph; add one if over-picking starts to cost.
 PICKED=""
-if [ "${1:-}" = "--changed" ]; then
+if [ "$MODE" = "--changed" ]; then
   base="${2:-}"
   if [ -z "$base" ]; then
     base="$(git merge-base HEAD origin/master 2>/dev/null \

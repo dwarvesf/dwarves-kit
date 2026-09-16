@@ -13,9 +13,7 @@ name: test
 on:
   workflow_dispatch:
   push:
-    branches: [master]
-  pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
+    tags: ['v*']
 
 # Least-privilege token: workflow only reads code and runs tests; no writes,
 # no PR comments, no release operations.
@@ -84,4 +82,4 @@ jobs:
           [ "$major" -ge 4 ] || { echo "bash $major is too old; the kit needs 4+"; exit 1; }
 
       - name: Run every test suite (tests/run-all.sh)
-        run: bash tests/run-all.sh
+        run: bash tests/run-all.sh --all

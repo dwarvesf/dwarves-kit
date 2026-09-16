@@ -1843,10 +1843,10 @@ out="$(_report '✅ **Needs you:** NOTHING' | sed 's|^\*\*Built:\*\* .*|**Built:
 chk "SKIPPED: nothing to build fails (an empty scan is NOTHING)" "$([ "$rc" -eq 1 ]; echo $?)"
 chk_has "the finding names the two-states-in-one shape" "$out" "an empty scan is 'NOTHING: no candidates', not a skip"
 
-out="$(_report '✅ **Needs you:** NOTHING' | sed 's|^\*\*Built:\*\* .*|**Built:** wake-probe ENHANCE tools/alert-triage: tests/live/wake-probe after the touch probe (a1b2c3d)|' | bash "$LINT" 2>&1)"; rc=$?
+out="$(_report '✅ **Needs you:** NOTHING' | sed 's|^\*\*Built:\*\* .*|**Built:** BUILT wake-probe ENHANCE tools/alert-triage: tests/live/wake-probe after the touch probe (a1b2c3d)|' | bash "$LINT" 2>&1)"; rc=$?
 chk "an ENHANCE line naming the home and insertion point passes" "$([ "$rc" -eq 0 ]; echo $?)"
 
-out="$(_report '✅ **Needs you:** NOTHING' | sed 's|^\*\*Built:\*\* .*|**Built:** cron-fire NEW (precedent: nothing matched): tools/cron-fire (staged)|' | bash "$LINT" 2>&1)"; rc=$?
+out="$(_report '✅ **Needs you:** NOTHING' | sed 's|^\*\*Built:\*\* .*|**Built:** STAGED cron-fire NEW (precedent: nothing matched): tools/cron-fire (staged)|' | bash "$LINT" 2>&1)"; rc=$?
 chk "a NEW line carrying the precedent miss passes" "$([ "$rc" -eq 0 ]; echo $?)"
 
 out="$(_report '✅ **Needs you:** NOTHING' | sed 's|^\*\*Built:\*\* .*|**Built:** SKIPPED: build_candidates knob is false|' | bash "$LINT" 2>&1)"; rc=$?
@@ -1857,18 +1857,27 @@ chk "a real SKIPPED reason passes" "$([ "$rc" -eq 0 ]; echo $?)"
 # that proved it, anything heavier is staged with its goal drafted. Both shapes append to the
 # same line, so the ENHANCE/NEW token must survive the suffix, and the suffix alone must never
 # stand in for the token.
-out="$(_report '✅ **Needs you:** NOTHING' | sed 's|^\*\*Built:\*\* .*|**Built:** wake-probe ENHANCE tools/alert-triage: tests/live/wake-probe after the touch probe (lane=tiny, verified: bash tests/test-alert.sh, a1b2c3d)|' | bash "$LINT" 2>&1)"; rc=$?
+out="$(_report '✅ **Needs you:** NOTHING' | sed 's|^\*\*Built:\*\* .*|**Built:** BUILT wake-probe ENHANCE tools/alert-triage: tests/live/wake-probe after the touch probe (lane=tiny, verified: bash tests/test-alert.sh, a1b2c3d)|' | bash "$LINT" 2>&1)"; rc=$?
 chk "an ENHANCE line carrying lane=tiny and its check passes" "$([ "$rc" -eq 0 ]; echo $?)"
 
-out="$(_report '✅ **Needs you:** NOTHING' | sed 's|^\*\*Built:\*\* .*|**Built:** cron-fire NEW (precedent: nothing matched): tools/cron-fire (lane=normal, staged + goal drafted: .claude/goals/cron-fire.md)|' | bash "$LINT" 2>&1)"; rc=$?
+out="$(_report '✅ **Needs you:** NOTHING' | sed 's|^\*\*Built:\*\* .*|**Built:** STAGED cron-fire NEW (precedent: nothing matched): tools/cron-fire (lane=normal, staged + goal drafted: .claude/goals/cron-fire.md)|' | bash "$LINT" 2>&1)"; rc=$?
 chk "a NEW line carrying lane=normal and its goal draft passes" "$([ "$rc" -eq 0 ]; echo $?)"
 
-out="$(_report '✅ **Needs you:** NOTHING' | sed 's|^\*\*Built:\*\* .*|**Built:** cron-fire NEW (precedent: nothing matched): tools/cron-fire (lane=normal, staged: build_candidates off)|' | bash "$LINT" 2>&1)"; rc=$?
+out="$(_report '✅ **Needs you:** NOTHING' | sed 's|^\*\*Built:\*\* .*|**Built:** STAGED cron-fire NEW (precedent: nothing matched): tools/cron-fire (lane=normal, staged: build_candidates off)|' | bash "$LINT" 2>&1)"; rc=$?
 chk "the knob-false shape, a lane with no goal draft, passes" "$([ "$rc" -eq 0 ]; echo $?)"
 
 out="$(_report '✅ **Needs you:** NOTHING' | sed 's|^\*\*Built:\*\* .*|**Built:** lib/wrap/report-lint.sh (lane=tiny, verified: bash tests/test-wrap.sh, abc1234)|' | bash "$LINT" 2>&1)"; rc=$?
 chk "a lane suffix with no ENHANCE or NEW still fails" "$([ "$rc" -eq 1 ]; echo $?)"
 chk_has "the finding still asks for the ENHANCE or NEW token" "$out" "no ENHANCE <home> or NEW (precedent: ...) token"
+
+# The verdict. Every candidate opens with BUILT, STAGED, FILED, or NOTE; a line without one
+# reads as built when it may only have been staged or noted.
+out="$(_report '✅ **Needs you:** NOTHING' | sed 's|^\*\*Built:\*\* .*|**Built:** wake-probe ENHANCE tools/alert-triage: tests/live/wake-probe after the touch probe (lane=tiny, verified: bash tests/test-alert.sh, a1b2c3d)|' | bash "$LINT" 2>&1)"; rc=$?
+chk "a candidate with no leading verdict fails" "$([ "$rc" -eq 1 ]; echo $?)"
+chk_has "the finding names the four verdicts" "$out" "BUILT, STAGED, FILED, or NOTE"
+
+out="$(_report '✅ **Needs you:** NOTHING' | sed 's|^\*\*Built:\*\* .*|**Built:** NOTE remerge ENHANCE dwarves-kit bin/wrap merge: PROSE-ONLY: the verb already re-merges under the union driver, nothing was missing, memory note written|' | bash "$LINT" 2>&1)"; rc=$?
+chk "a NOTE verdict on a prose-only candidate passes" "$([ "$rc" -eq 0 ]; echo $?)"
 
 # The lane closure rule. `wrap.build_lanes` lets an operator list heavier lanes for step 7b to
 # build inline, so `lane=normal`, `lane=bug` and `lane=backfill` are legal on a verified item
@@ -1876,33 +1885,33 @@ chk_has "the finding still asks for the ENHANCE or NEW token" "$out" "no ENHANCE
 # the pairing: a lane token says the candidate was sized and nothing about what became of it,
 # so every item naming a lane owes `verified:`, `filed:`, or a `staged` form. `lane=full` is
 # narrower still: it owes `filed:` and the lint rejects it closed as `staged`.
-out="$(_report '✅ **Needs you:** NOTHING' | sed 's|^\*\*Built:\*\* .*|**Built:** wake-probe ENHANCE tools/alert-triage: tests/live/wake-probe after the touch probe (lane=normal, verified: bash tests/test-alert.sh, #418)|' | bash "$LINT" 2>&1)"; rc=$?
+out="$(_report '✅ **Needs you:** NOTHING' | sed 's|^\*\*Built:\*\* .*|**Built:** BUILT wake-probe ENHANCE tools/alert-triage: tests/live/wake-probe after the touch probe (lane=normal, verified: bash tests/test-alert.sh, #418)|' | bash "$LINT" 2>&1)"; rc=$?
 chk "an ENHANCE line carrying lane=normal and its check passes" "$([ "$rc" -eq 0 ]; echo $?)"
 
-out="$(_report '✅ **Needs you:** NOTHING' | sed 's|^\*\*Built:\*\* .*|**Built:** cron-fire NEW (precedent: nothing matched): tools/cron-fire (lane=bug, verified: bash tests/test-cron.sh, a1b2c3d)|' | bash "$LINT" 2>&1)"; rc=$?
+out="$(_report '✅ **Needs you:** NOTHING' | sed 's|^\*\*Built:\*\* .*|**Built:** STAGED cron-fire NEW (precedent: nothing matched): tools/cron-fire (lane=bug, verified: bash tests/test-cron.sh, a1b2c3d)|' | bash "$LINT" 2>&1)"; rc=$?
 chk "a NEW line carrying lane=bug and its check passes" "$([ "$rc" -eq 0 ]; echo $?)"
 
-out="$(_report '✅ **Needs you:** NOTHING' | sed 's|^\*\*Built:\*\* .*|**Built:** cron-fire NEW (precedent: nothing matched): tools/cron-fire (lane=backfill, verified: bash tests/test-cron.sh, b2c3d4e)|' | bash "$LINT" 2>&1)"; rc=$?
+out="$(_report '✅ **Needs you:** NOTHING' | sed 's|^\*\*Built:\*\* .*|**Built:** STAGED cron-fire NEW (precedent: nothing matched): tools/cron-fire (lane=backfill, verified: bash tests/test-cron.sh, b2c3d4e)|' | bash "$LINT" 2>&1)"; rc=$?
 chk "a NEW line carrying lane=backfill and its check passes" "$([ "$rc" -eq 0 ]; echo $?)"
 
-out="$(_report '✅ **Needs you:** NOTHING' | sed 's|^\*\*Built:\*\* .*|**Built:** cron-fire NEW (precedent: nothing matched): tools/cron-fire (lane=full, filed: ops-toolkit ID-901, goal drafted: .claude/goals/cron-fire.md)|' | bash "$LINT" 2>&1)"; rc=$?
+out="$(_report '✅ **Needs you:** NOTHING' | sed 's|^\*\*Built:\*\* .*|**Built:** STAGED cron-fire NEW (precedent: nothing matched): tools/cron-fire (lane=full, filed: ops-toolkit ID-901, goal drafted: .claude/goals/cron-fire.md)|' | bash "$LINT" 2>&1)"; rc=$?
 chk "the full-lane filed shape passes" "$([ "$rc" -eq 0 ]; echo $?)"
 
-out="$(_report '✅ **Needs you:** NOTHING' | sed 's|^\*\*Built:\*\* .*|**Built:** cron-fire NEW (precedent: nothing matched): tools/cron-fire (lane=full, capture failed: no board at _meta/BACKLOG.md)|' | bash "$LINT" 2>&1)"; rc=$?
+out="$(_report '✅ **Needs you:** NOTHING' | sed 's|^\*\*Built:\*\* .*|**Built:** STAGED cron-fire NEW (precedent: nothing matched): tools/cron-fire (lane=full, capture failed: no board at _meta/BACKLOG.md)|' | bash "$LINT" 2>&1)"; rc=$?
 chk "the full-lane capture-failed shape passes" "$([ "$rc" -eq 0 ]; echo $?)"
 
-out="$(_report '✅ **Needs you:** NOTHING' | sed 's|^\*\*Built:\*\* .*|**Built:** cron-fire NEW (precedent: nothing matched): tools/cron-fire (lane=full, staged: build_lanes excludes full)|' | bash "$LINT" 2>&1)"; rc=$?
+out="$(_report '✅ **Needs you:** NOTHING' | sed 's|^\*\*Built:\*\* .*|**Built:** STAGED cron-fire NEW (precedent: nothing matched): tools/cron-fire (lane=full, staged: build_lanes excludes full)|' | bash "$LINT" 2>&1)"; rc=$?
 chk "a full lane closed as staged fails" "$([ "$rc" -eq 1 ]; echo $?)"
 chk_has "the finding names the board row a full lane owes" "$out" "closes a full-lane candidate as 'staged'"
 
-out="$(_report '✅ **Needs you:** NOTHING' | sed 's|^\*\*Built:\*\* .*|**Built:** cron-fire NEW (precedent: nothing matched): tools/cron-fire (lane=full, staged + goal drafted: .claude/goals/cron-fire.md)|' | bash "$LINT" 2>&1)"; rc=$?
+out="$(_report '✅ **Needs you:** NOTHING' | sed 's|^\*\*Built:\*\* .*|**Built:** STAGED cron-fire NEW (precedent: nothing matched): tools/cron-fire (lane=full, staged + goal drafted: .claude/goals/cron-fire.md)|' | bash "$LINT" 2>&1)"; rc=$?
 chk "a full lane staged with a goal draft still fails" "$([ "$rc" -eq 1 ]; echo $?)"
 
-out="$(_report '✅ **Needs you:** NOTHING' | sed 's|^\*\*Built:\*\* .*|**Built:** cron-fire NEW (precedent: nothing matched): tools/cron-fire (lane=normal)|' | bash "$LINT" 2>&1)"; rc=$?
+out="$(_report '✅ **Needs you:** NOTHING' | sed 's|^\*\*Built:\*\* .*|**Built:** STAGED cron-fire NEW (precedent: nothing matched): tools/cron-fire (lane=normal)|' | bash "$LINT" 2>&1)"; rc=$?
 chk "a lane with neither a check nor a staged form fails" "$([ "$rc" -eq 1 ]; echo $?)"
 chk_has "the finding names the missing closure" "$out" "names a lane with no closure"
 
-out="$(printf '✅ **Needs you:** NOTHING\n\n**Built:**\n- alpha ENHANCE tools/x: file.sh (lane=normal, verified: bash tests/test-x.sh, #12)\n- beta NEW (precedent: nothing matched): tools/beta (lane=bug)\n\n**Seam:** NOTHING: no seam configured\n\n**What happened**\n- body\n' | bash "$LINT" 2>&1)"; rc=$?
+out="$(printf '✅ **Needs you:** NOTHING\n\n**Built:**\n- BUILT alpha ENHANCE tools/x: file.sh (lane=normal, verified: bash tests/test-x.sh, #12)\n- STAGED beta NEW (precedent: nothing matched): tools/beta (lane=bug)\n\n**Seam:** NOTHING: no seam configured\n\n**What happened**\n- body\n' | bash "$LINT" 2>&1)"; rc=$?
 chk "one unclosed lane among good bullets fails" "$([ "$rc" -eq 1 ]; echo $?)"
 chk_has "the finding names the offending bullet by index" "$out" "item 2"
 
@@ -1917,10 +1926,10 @@ chk_no "kit.toml dropped the staged-exclusion form" "$(cat "$KIT_DIR/kit.toml")"
 # line. Added after a real report crammed three candidates onto one unreadable line. Each
 # bullet owes the same ENHANCE/NEW token as the inline form, checked per bullet, so one bare
 # item among several good ones cannot hide the way it did when the whole line was one string.
-out="$(printf '✅ **Needs you:** NOTHING\n\n**Built:**\n- untracked-blocks-ff-pull NEW (precedent: nothing matched): dwarvesf/dwarves-kit lib/wrap, the pull path in wrap apply (staged)\n- mini-script-run-loop ENHANCE ops-toolkit tools/mac-mini-substrate/mini-run (no change needed, precedent hit is the helper itself)\n- sandbox-overlap-probe ENHANCE dwarvesf/foundation-ops fleet/knowledge-guard (already homed as OPS-16)\n\n**Seam:** NOTHING: no seam configured\n\n**What happened**\n- body\n' | bash "$LINT" 2>&1)"; rc=$?
+out="$(printf '✅ **Needs you:** NOTHING\n\n**Built:**\n- STAGED untracked-blocks-ff-pull NEW (precedent: nothing matched): dwarvesf/dwarves-kit lib/wrap, the pull path in wrap apply (staged)\n- BUILT mini-script-run-loop ENHANCE ops-toolkit tools/mac-mini-substrate/mini-run (no change needed, precedent hit is the helper itself)\n- BUILT sandbox-overlap-probe ENHANCE dwarvesf/foundation-ops fleet/knowledge-guard (already homed as OPS-16)\n\n**Seam:** NOTHING: no seam configured\n\n**What happened**\n- body\n' | bash "$LINT" 2>&1)"; rc=$?
 chk "a three-bullet Built list passes" "$([ "$rc" -eq 0 ]; echo $?)"
 
-out="$(printf '✅ **Needs you:** NOTHING\n\n**Built:**\n- alpha ENHANCE tools/x: file.sh (abc1234)\n- lib/wrap/report-lint.sh @ def5678\n- gamma NEW (precedent: nothing matched): tools/gamma (staged)\n\n**Seam:** NOTHING: no seam configured\n\n**What happened**\n- body\n' | bash "$LINT" 2>&1)"; rc=$?
+out="$(printf '✅ **Needs you:** NOTHING\n\n**Built:**\n- BUILT alpha ENHANCE tools/x: file.sh (abc1234)\n- lib/wrap/report-lint.sh @ def5678\n- STAGED gamma NEW (precedent: nothing matched): tools/gamma (staged)\n\n**Seam:** NOTHING: no seam configured\n\n**What happened**\n- body\n' | bash "$LINT" 2>&1)"; rc=$?
 chk "a list with one bare path-and-commit bullet fails" "$([ "$rc" -eq 1 ]; echo $?)"
 chk_has "the finding names the offending bullet by index" "$out" "bullet 2"
 chk_has "the finding quotes the bare bullet" "$out" "lib/wrap/report-lint.sh @ def5678"
@@ -1929,7 +1938,7 @@ out="$(printf '✅ **Needs you:** NOTHING\n\n**Built:**\n\n**Seam:** NOTHING: no
 chk "a bare Built header with no bullets and no inline content fails" "$([ "$rc" -eq 1 ]; echo $?)"
 chk_has "the finding says it is empty" "$out" "is empty"
 
-out="$(printf '✅ **Needs you:** NOTHING\n\n**Built:** NOTHING: no candidates\n- stray ENHANCE tools/x: file.sh (abc1234)\n\n**Seam:** NOTHING: no seam configured\n\n**What happened**\n- body\n' | bash "$LINT" 2>&1)"; rc=$?
+out="$(printf '✅ **Needs you:** NOTHING\n\n**Built:** NOTHING: no candidates\n- BUILT stray ENHANCE tools/x: file.sh (abc1234)\n\n**Seam:** NOTHING: no seam configured\n\n**What happened**\n- body\n' | bash "$LINT" 2>&1)"; rc=$?
 chk "NOTHING inline mixed with bullets fails, the two grammars never combine" "$([ "$rc" -eq 1 ]; echo $?)"
 chk_has "the finding names the mixed-grammar shape" "$out" "both inline content and bullets"
 
@@ -1942,29 +1951,29 @@ chk "NOTHING inline alone still passes" "$([ "$rc" -eq 0 ]; echo $?)"
 # production deploy, produced two memory notes and one research note and zero mechanism, and
 # the report linted clean. The same precedent output named `lib/wrap/wrap.sh` one line below
 # the note, and the real fix landed there later: a code home beats a prose home.
-out="$(printf '✅ **Needs you:** NOTHING\n\n**Built:**\n- pull-lesson ENHANCE ops-toolkit .claude/memory/ff-pull-trap.md (abc1234)\n- pull-context ENHANCE ops-toolkit research/2026-09-10-ff-pull.md (def5678)\n\n**Seam:** NOTHING: no seam configured\n\n**What happened**\n- body\n' | bash "$LINT" 2>&1)"; rc=$?
+out="$(printf '✅ **Needs you:** NOTHING\n\n**Built:**\n- BUILT pull-lesson ENHANCE ops-toolkit .claude/memory/ff-pull-trap.md (abc1234)\n- BUILT pull-context ENHANCE ops-toolkit research/2026-09-10-ff-pull.md (def5678)\n\n**Seam:** NOTHING: no seam configured\n\n**What happened**\n- body\n' | bash "$LINT" 2>&1)"; rc=$?
 chk "an all-prose Built list fails" "$([ "$rc" -eq 1 ]; echo $?)"
 chk_has "the finding names the prose rule" "$out" "a precedent hit on a note is not a build"
 chk_has "the finding says the code home wins" "$out" "the code home wins"
 
-out="$(printf '✅ **Needs you:** NOTHING\n\n**Built:**\n- pull-lesson ENHANCE ops-toolkit .claude/memory/ff-pull-trap.md (abc1234)\n- pull-context ENHANCE ops-toolkit research/2026-09-10-ff-pull.md (def5678)\n- PROSE-ONLY: the call is one human judgment per run, no mechanism fits it\n\n**Seam:** NOTHING: no seam configured\n\n**What happened**\n- body\n' | bash "$LINT" 2>&1)"; rc=$?
+out="$(printf '✅ **Needs you:** NOTHING\n\n**Built:**\n- BUILT pull-lesson ENHANCE ops-toolkit .claude/memory/ff-pull-trap.md (abc1234)\n- BUILT pull-context ENHANCE ops-toolkit research/2026-09-10-ff-pull.md (def5678)\n- PROSE-ONLY: the call is one human judgment per run, no mechanism fits it\n\n**Seam:** NOTHING: no seam configured\n\n**What happened**\n- body\n' | bash "$LINT" 2>&1)"; rc=$?
 chk "the same all-prose Built passes with a real PROSE-ONLY reason" "$([ "$rc" -eq 0 ]; echo $?)"
 
-out="$(printf '✅ **Needs you:** NOTHING\n\n**Built:**\n- pull-lesson ENHANCE ops-toolkit .claude/memory/ff-pull-trap.md (abc1234)\n- PROSE-ONLY: none\n\n**Seam:** NOTHING: no seam configured\n\n**What happened**\n- body\n' | bash "$LINT" 2>&1)"; rc=$?
+out="$(printf '✅ **Needs you:** NOTHING\n\n**Built:**\n- BUILT pull-lesson ENHANCE ops-toolkit .claude/memory/ff-pull-trap.md (abc1234)\n- PROSE-ONLY: none\n\n**Seam:** NOTHING: no seam configured\n\n**What happened**\n- body\n' | bash "$LINT" 2>&1)"; rc=$?
 chk "a too-short PROSE-ONLY reason cannot silence the rule" "$([ "$rc" -eq 1 ]; echo $?)"
 chk_has "the finding still names the prose rule" "$out" "a precedent hit on a note is not a build"
 
-out="$(printf '✅ **Needs you:** NOTHING\n\n**Built:**\n- pull-guard ENHANCE dwarvesf/dwarves-kit lib/wrap/wrap.sh (abc1234)\n- pull-lesson ENHANCE ops-toolkit .claude/memory/ff-pull-trap.md (def5678)\n\n**Seam:** NOTHING: no seam configured\n\n**What happened**\n- body\n' | bash "$LINT" 2>&1)"; rc=$?
+out="$(printf '✅ **Needs you:** NOTHING\n\n**Built:**\n- BUILT pull-guard ENHANCE dwarvesf/dwarves-kit lib/wrap/wrap.sh (abc1234)\n- BUILT pull-lesson ENHANCE ops-toolkit .claude/memory/ff-pull-trap.md (def5678)\n\n**Seam:** NOTHING: no seam configured\n\n**What happened**\n- body\n' | bash "$LINT" 2>&1)"; rc=$?
 chk "a mixed Built passes, because something was built" "$([ "$rc" -eq 0 ]; echo $?)"
 
-out="$(_report '✅ **Needs you:** NOTHING' | sed 's|^\*\*Built:\*\* .*|**Built:** pull-lesson ENHANCE ops-toolkit .claude/memory/ff-pull-trap.md (abc1234)|' | bash "$LINT" 2>&1)"; rc=$?
+out="$(_report '✅ **Needs you:** NOTHING' | sed 's|^\*\*Built:\*\* .*|**Built:** BUILT pull-lesson ENHANCE ops-toolkit .claude/memory/ff-pull-trap.md (abc1234)|' | bash "$LINT" 2>&1)"; rc=$?
 chk "an inline Built naming a single memory note fails" "$([ "$rc" -eq 1 ]; echo $?)"
 chk_has "the inline finding names the prose rule" "$out" "a precedent hit on a note is not a build"
 
-out="$(_report '✅ **Needs you:** NOTHING' | sed 's|^\*\*Built:\*\* .*|**Built:** pull-lesson ENHANCE ops-toolkit .claude/memory/ff-pull-trap.md (abc1234) PROSE-ONLY: the pull path already guards itself, only the trap was new|' | bash "$LINT" 2>&1)"; rc=$?
+out="$(_report '✅ **Needs you:** NOTHING' | sed 's|^\*\*Built:\*\* .*|**Built:** BUILT pull-lesson ENHANCE ops-toolkit .claude/memory/ff-pull-trap.md (abc1234) PROSE-ONLY: the pull path already guards itself, only the trap was new|' | bash "$LINT" 2>&1)"; rc=$?
 chk "an inline PROSE-ONLY token with a real reason passes" "$([ "$rc" -eq 0 ]; echo $?)"
 
-out="$(_report '✅ **Needs you:** NOTHING' | sed 's|^\*\*Built:\*\* .*|**Built:** pull-guard ENHANCE dwarvesf/dwarves-kit lib/wrap/wrap.sh (abc1234)|' | bash "$LINT" 2>&1)"; rc=$?
+out="$(_report '✅ **Needs you:** NOTHING' | sed 's|^\*\*Built:\*\* .*|**Built:** BUILT pull-guard ENHANCE dwarvesf/dwarves-kit lib/wrap/wrap.sh (abc1234)|' | bash "$LINT" 2>&1)"; rc=$?
 chk "an inline Built naming a code path still passes" "$([ "$rc" -eq 0 ]; echo $?)"
 
 # The harness-shape check: a `NEW (precedent: nothing matched)` candidate that turns out to
@@ -1973,23 +1982,23 @@ chk "an inline Built naming a code path still passes" "$([ "$rc" -eq 0 ]; echo $
 HARNESS_FIX="$TMPD/harness-fixture"; mkdir -p "$HARNESS_FIX"
 printf "await session.Runtime.evaluate({ expression: '1+1' });\n" > "$HARNESS_FIX/probe.js"
 
-out="$(_report '✅ **Needs you:** NOTHING' | sed "s|^\*\*Built:\*\* .*|**Built:** site-probe NEW (precedent: nothing matched): ${HARNESS_FIX} (staged)|" | bash "$LINT" 2>&1)"; rc=$?
+out="$(_report '✅ **Needs you:** NOTHING' | sed "s|^\*\*Built:\*\* .*|**Built:** STAGED site-probe NEW (precedent: nothing matched): ${HARNESS_FIX} (staged)|" | bash "$LINT" 2>&1)"; rc=$?
 chk "a NEW item whose files call the CDP harness warns, not fails" "$([ "$rc" -eq 0 ]; echo $?)"
 chk_has "the warn names the harness home" "$out" "browser-harness-js skills/cdp/learnings"
 
-out="$(_report '✅ **Needs you:** NOTHING' | sed "s|^\*\*Built:\*\* .*|**Built:** wake-probe ENHANCE tools/alert-triage: ${HARNESS_FIX} (a1b2c3d)|" | bash "$LINT" 2>&1)"; rc=$?
+out="$(_report '✅ **Needs you:** NOTHING' | sed "s|^\*\*Built:\*\* .*|**Built:** BUILT wake-probe ENHANCE tools/alert-triage: ${HARNESS_FIX} (a1b2c3d)|" | bash "$LINT" 2>&1)"; rc=$?
 chk "an ENHANCE item is never checked for harness shape, even over the same CDP content" "$([ "$rc" -eq 0 ]; echo $?)"
 chk_no "no harness warn on an ENHANCE line" "$out" "browser-harness-js skills/cdp/learnings"
 
 # The harness-shape check on a LIST-form bullet: the same token match, on a `- ` line.
 LIST_HARNESS_FIX="$TMPD/harness-fixture-list"; mkdir -p "$LIST_HARNESS_FIX"
 printf "await session.Runtime.evaluate({ expression: '1+1' });\n" > "$LIST_HARNESS_FIX/probe.js"
-out="$(printf '✅ **Needs you:** NOTHING\n\n**Built:**\n- site-probe NEW (precedent: nothing matched): %s (staged)\n\n**Seam:** NOTHING: no seam configured\n\n**What happened**\n- body\n' "$LIST_HARNESS_FIX" | bash "$LINT" 2>&1)"; rc=$?
+out="$(printf '✅ **Needs you:** NOTHING\n\n**Built:**\n- STAGED site-probe NEW (precedent: nothing matched): %s (staged)\n\n**Seam:** NOTHING: no seam configured\n\n**What happened**\n- body\n' "$LIST_HARNESS_FIX" | bash "$LINT" 2>&1)"; rc=$?
 chk "a NEW bullet whose files call the CDP harness warns, not fails" "$([ "$rc" -eq 0 ]; echo $?)"
 chk_has "the warn names the harness home for a bullet item" "$out" "browser-harness-js skills/cdp/learnings"
 
 printf 'echo "plain shell content, no CDP calls here"\n' > "$HARNESS_FIX/probe.js"
-out="$(_report '✅ **Needs you:** NOTHING' | sed "s|^\*\*Built:\*\* .*|**Built:** site-probe NEW (precedent: nothing matched): ${HARNESS_FIX} (staged)|" | bash "$LINT" 2>&1)"; rc=$?
+out="$(_report '✅ **Needs you:** NOTHING' | sed "s|^\*\*Built:\*\* .*|**Built:** STAGED site-probe NEW (precedent: nothing matched): ${HARNESS_FIX} (staged)|" | bash "$LINT" 2>&1)"; rc=$?
 chk "the same NEW path with plain content does not warn" "$([ "$rc" -eq 0 ]; echo $?)"
 chk_no "no harness warn printed" "$out" "browser-harness-js skills/cdp/learnings"
 
