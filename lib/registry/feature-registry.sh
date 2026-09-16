@@ -191,7 +191,7 @@ generate() {
     echo ""
     echo "# Feature registry"
     echo ""
-    echo "GENERATED , do not hand-edit. Regenerate: \`bash lib/registry/feature-registry.sh generate\`. One row per live feature; freshness pinned by \`tests/test-meta.sh\` (regenerate-and-diff). Trigger classes per \`docs/workflow-paths.md\` section 1: \`[H]\` human-typed, \`[H/I]\` human-or-intent, \`[I]\` intent-read, \`[E]\` event-fired, \`[D]\` dispatched. Refs are exact-token greps: Specs over \`docs/specs/\`, Tests over \`tests/*.sh\`, Dispatched-by over \`commands/*.md\` + \`skills/*/SKILL.md\` (skill dispatchers marked \`(skill)\`); \`-\` means no reference found (a coverage gap, not always a defect: read-only agents may be deliberately untested)."
+    echo "GENERATED , do not hand-edit. Regenerate: \`bash lib/registry/feature-registry.sh generate\`. One row per live feature; freshness pinned by \`tests/test-meta.sh\` and refused pre-push by \`hooks/ship-gate.sh\`, both through \`feature-registry.sh check\`. Trigger classes per \`docs/workflow-paths.md\` section 1: \`[H]\` human-typed, \`[H/I]\` human-or-intent, \`[I]\` intent-read, \`[E]\` event-fired, \`[D]\` dispatched. Refs are exact-token greps: Specs over \`docs/specs/\`, Tests over \`tests/*.sh\`, Dispatched-by over \`commands/*.md\` + \`skills/*/SKILL.md\` (skill dispatchers marked \`(skill)\`); \`-\` means no reference found (a coverage gap, not always a defect: read-only agents may be deliberately untested)."
     echo ""
     commands_table
     agents_table
