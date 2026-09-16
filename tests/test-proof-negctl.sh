@@ -8,6 +8,7 @@
 #
 # Run: bash tests/test-proof-negctl.sh   Pass: "test-proof-negctl: all N passed", exit 0.
 set -uo pipefail
+export KIT_CONFIG_OPERATOR="$(cd "$(dirname "$0")/.." && pwd)/tests/fixtures/gates-on"   # quality gates are opt-in; this suite exercises them ON
 DIR="$(cd "$(dirname "$0")/.." && pwd)"
 NC="$DIR/lib/gate/negctl.sh"
 PL="$DIR/lib/gate/proof-ledger.sh"

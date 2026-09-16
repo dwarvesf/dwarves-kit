@@ -10,6 +10,7 @@
 # a live version drift bug (plugin.json said 1.4.0 while VERSION said 1.5.0).
 
 KIT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+export KIT_CONFIG_OPERATOR="$KIT_DIR/tests/fixtures/gates-on"   # quality gates are opt-in; this suite exercises them ON
 PASS=0
 FAIL=0
 TOTAL=0

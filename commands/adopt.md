@@ -30,10 +30,11 @@ coding, and the ship-gate engages on push.
 - `.kit.toml` -- an OPT-IN starter override of the kit-root defaults. Created
   only on a fresh adopt (never overwritten afterward); `--with` seeds the named modules
   `true` instead of inheriting the kit-root default. Edit `[modules]` any time and re-run
-  `/kit:adopt` (or `--refresh`) to re-wire. Its `[gate]` block is the opt-out for the blocking
-  quality gates: set `proof_of_done`, `lane_gates`, `understanding_gate`, or `commit_format` to
-  `false` and that gate is off for this repo from the next hook fire (no re-adopt). Safety gates
-  have no key. Detail: `lib/gate/README.md` "Switching a gate off".
+  `/kit:adopt` (or `--refresh`) to re-wire. Its `[gate]` block is where the blocking quality
+  gates are turned on for this repo (they are OFF by default): adopt seeds `proof_of_done`,
+  `lane_gates`, `understanding_gate`, and `commit_format` with the values that resolved at adopt
+  time and a comment explaining each; set one to `true`, commit, and it applies from the next
+  hook fire (no re-adopt). Safety gates have no key. Detail: `lib/gate/README.md` "Turning a gate on".
 - `.claude/settings.json` hook entries for this project's currently-enabled hook-bearing
   modules (`board`, `session`, `advisor`, `cosmetic`) -- a targeted jq MERGE, re-wired on
   every adopt run from the project's CURRENT `.kit.toml`, never a wholesale file rewrite.
