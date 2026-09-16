@@ -81,6 +81,9 @@ atomically at dispatch so no sibling wave worker can take it.
 # Spec: [feature name]
 Generated: [date]
 Status: DRAFT | APPROVED
+Lane: [tiny | normal | full | bug | backfill , from lib/classify/lane-classify.sh. Write the
+plain `Lane: <lane>` form on its own line; `hooks/ship-gate.sh` reads this header to pick the
+required gate set.]
 References: [optional , one or more pointers to source code or docs that already implement the
 wanted semantics, each with one line on what to imitate (the specific behavior, interface
 shape, or algorithm , not "do it like this project" in general). Source beats a from-scratch

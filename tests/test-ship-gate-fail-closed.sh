@@ -30,15 +30,24 @@ printf '# Spec: x\nStatus: DRAFT\n' > "$T1/docs/specs/SPEC-001-sgone.md"
 git -C "$T1" add -A; git -C "$T1" commit -qm spec
 [ "$(gate "$T1" 'git push -u origin HEAD')" = 2 ] && ok "spec + no-lane + adopted -> blocked (exit 2)" || no "spec-no-lane-adopted should block"
 
-# 2. spec WITH lane + all gates recorded -> PASS (exit 0)
-T2="$(mktemp -d)"; mkrepo "$T2" yes
-git -C "$T2" switch -qc feat/sgtwo
-printf '# Spec: x\nStatus: DRAFT\nLane: full\n' > "$T2/docs/specs/SPEC-001-sgtwo.md"
-git -C "$T2" add -A; git -C "$T2" commit -qm spec
-while read -r g; do
-  DWARVES_KIT_LOG_DIR="$LOGDIR" bash "$KIT/lib/gate/gate-ledger.sh" record sgtwo "$g" ran "test" >/dev/null 2>&1
-done < <(DWARVES_KIT_LOG_DIR="$LOGDIR" bash "$KIT/lib/gate/gate-ledger.sh" required full)
-[ "$(gate "$T2" 'git push -u origin HEAD')" = 0 ] && ok "spec + lane + gates recorded -> pass (exit 0)" || no "spec+lane+gates should pass"
+# 2. spec WITH lane + all gates recorded -> PASS (exit 0), for every accepted header shape.
+# The canonical form is plain `Lane: full`; the two markdown-bold variants must parse the
+# same, because a bold header used to BLOCK the push with "Spec has no 'Lane:' header".
+lane_header_case() { # $1=slug  $2=header line
+  local d; d="$(mktemp -d)"; mkrepo "$d" yes
+  git -C "$d" switch -qc "feat/$1"
+  printf '# Spec: x\nStatus: DRAFT\n%s\n' "$2" > "$d/docs/specs/SPEC-001-$1.md"
+  git -C "$d" add -A; git -C "$d" commit -qm spec
+  while read -r g; do
+    DWARVES_KIT_LOG_DIR="$LOGDIR" bash "$KIT/lib/gate/gate-ledger.sh" record "$1" "$g" ran "test" >/dev/null 2>&1
+  done < <(DWARVES_KIT_LOG_DIR="$LOGDIR" bash "$KIT/lib/gate/gate-ledger.sh" required full)
+  [ "$(gate "$d" 'git push -u origin HEAD')" = 0 ] \
+    && ok "header '$2' parsed as lane full -> pass (exit 0)" \
+    || no "header '$2' should parse as lane full and pass"
+}
+lane_header_case sgtwo   'Lane: full'
+lane_header_case sgtwob  '**Lane**: full'
+lane_header_case sgtwoc  '**Lane:** full'
 
 # 3. spec, no lane, NOT adopted (no marker) -> fail open (exit 0)
 T3="$(mktemp -d)"; mkrepo "$T3" no

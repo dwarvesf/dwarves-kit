@@ -202,7 +202,12 @@ if [ -f "$PGATE" ] && grep -qE '^## Test plan[[:space:]]*$' "$SPEC" 2>/dev/null;
   esac
 fi
 
-LANE=$(grep -m1 -iE '^Lane:' "$SPEC" 2>/dev/null | sed -E 's/^[Ll]ane:[[:space:]]*//; s/[[:space:]].*$//' || true)
+# `Lane: full` is the canonical header. Markdown-bold variants (`**Lane**: full`,
+# `**Lane:** full`) parse the same, because a spec author reaching for the bold form
+# used elsewhere in the header block should not get a BLOCKED push. A leading `- `
+# list marker is deliberately NOT accepted: specs use `- **Lane:** ...` for prose
+# bullets, and accepting it would parse a sentence as the lane.
+LANE=$(grep -m1 -iE '^(\*\*)?Lane(\*\*)?:' "$SPEC" 2>/dev/null | sed -E 's/^(\*\*)?[Ll]ane(\*\*)?:(\*\*)?[[:space:]]*//; s/[[:space:]].*$//' || true)
 if [ -z "$LANE" ]; then
   # Spec exists but declares no lane. In an ADOPTED repo (proof marker present) this is a gap,
   # not a pass: fail CLOSED so a spec-driven change cannot ship lane-less (the growatt-tui hole).

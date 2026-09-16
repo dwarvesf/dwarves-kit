@@ -1755,6 +1755,16 @@ else
   FAIL=$((FAIL + 1))
 fi
 
+# (e2) dispatch.md Step 6 releases each settled task's attempt record, or kit-attempts/ grows forever.
+TOTAL=$((TOTAL + 1))
+if grep -q 'attempt-state.sh release' "$KIT_DIR/commands/dispatch.md" 2>/dev/null; then
+  echo -e "  ${GREEN}PASS${NC} dispatch.md convergence releases the attempt record"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}FAIL${NC} dispatch.md Step 6 must call lib/goal/attempt-state.sh release for a settled task"
+  FAIL=$((FAIL + 1))
+fi
+
 # (f) dispatch.md is registered in the human-facing inventories (README + MANUAL).
 TOTAL=$((TOTAL + 1))
 if grep -q 'kit:dispatch' "$KIT_DIR/README.md" 2>/dev/null \

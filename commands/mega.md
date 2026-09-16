@@ -227,8 +227,8 @@ its PR's CI green:
 
 ```bash
 RID=$(bash lib/gate/gate-ledger.sh rid)                                # or the sub-goal's own branch slug
-LANE=$(grep -m1 -iE '^Lane:' docs/specs/SPEC-NNN-<slug>.md \
-         | sed -E 's/^[Ll]ane:[[:space:]]*//; s/[[:space:]].*$//')  # per sub-goal
+LANE=$(grep -m1 -iE '^(\*\*)?Lane(\*\*)?:' docs/specs/SPEC-NNN-<slug>.md \
+         | sed -E 's/^(\*\*)?[Ll]ane(\*\*)?:(\*\*)?[[:space:]]*//; s/[[:space:]].*$//')  # per sub-goal
 bash lib/goal/mega-merge.sh gate  "$RID" "$LANE"                        # decision only, no side effects
 bash lib/goal/mega-merge.sh merge <pr> "$RID" "$LANE" [--execute]       # action; refuses on a failing gate
 bash lib/classify/lane-classify.sh deescalate "$LANE" --rid "$RID"          # advisory nudge, mirrors ship.md Step 8
