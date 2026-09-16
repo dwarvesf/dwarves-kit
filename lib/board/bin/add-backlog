@@ -238,6 +238,23 @@ def insert_row(backlog_text, row):
 
 
 def main(argv):
+    global BACKLOG, STAGING
+    # Consumer shims (`<repo>/_meta/board`) append `--backlog-file <path>` to
+    # every subcommand; honour it here so `promote <n>` through a shim resolves
+    # the same board the shim named, with the staging file beside it. Env
+    # overrides still win (tests pin them).
+    argv = list(argv)
+    if "--backlog-file" in argv:
+        i = argv.index("--backlog-file")
+        if i + 1 >= len(argv):
+            print("usage: board promote [list | <n>... | all | reject <n>...] [--backlog-file <path>]", file=sys.stderr)
+            return 2
+        path = os.path.abspath(argv[i + 1])
+        del argv[i:i + 2]
+        if "BACKLOG_STAGE_BACKLOG" not in os.environ:
+            BACKLOG = path
+        if "BACKLOG_STAGE_STAGING" not in os.environ:
+            STAGING = os.path.join(os.path.dirname(path), "backlog-staging.md")
     if not os.path.isfile(STAGING):
         print(f"no staging file ({STAGING}); nothing staged.")
         return 0
