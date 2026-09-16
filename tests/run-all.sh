@@ -10,10 +10,13 @@
 # is sub-second, and the wall clock was the sum of 146 of them. Output stays deterministic
 # because results are collated in glob order after the run, not as each suite finishes.
 #
-# Usage: bash tests/run-all.sh [--all | --only <pattern> | --changed [<base>]]
+# Usage: bash tests/run-all.sh [--all | --only <pattern> | --changed [<base>]] [--time]
 #        Bare (no argument) is --changed: only the suites the diff against <base> touches
 #        (default base: the merge-base with origin/master), plus the always-on lints. The
 #        local check. --all is the full glob, what CI runs.
+#        --time appends each suite's elapsed seconds to its report line and prints a
+#        slowest-10 block after the report. It may appear before or after the mode
+#        argument, and combines with --all, --only and --changed.
 # Env:   RUN_ALL_JOBS=<n>          parallel suites (default: auto on macOS, 1 elsewhere)
 #        RUN_ALL_TIMEOUT_SECS=<n>  per-suite ceiling (default: 300)
 # Exit:  0 all green, 1 one or more failed (every failure is listed at the end).
@@ -21,6 +24,16 @@
 set -uo pipefail
 KIT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$KIT_DIR" || exit 1
+
+# --time is order-free, so it is pulled out of the argument list before the positional
+# parsing below ($1 is the mode, $2 is --only's pattern or --changed's base) rather than
+# being threaded through it.
+TIME=0
+_args=()
+for _a in "$@"; do
+  if [ "$_a" = "--time" ]; then TIME=1; else _args+=("$_a"); fi
+done
+set -- ${_args[@]+"${_args[@]}"}
 
 # Per-suite ceiling. One hung suite must not burn the whole CI job's budget.
 TIMEOUT_SECS="${RUN_ALL_TIMEOUT_SECS:-300}"
@@ -34,6 +47,10 @@ _timeout() { if command -v timeout >/dev/null 2>&1; then timeout "$@"; else shif
 if [ "${1:-}" = "--run-one" ]; then
   suite="$2"; outdir="$3"
   name="$(basename "$suite" .sh)"
+  # Whole seconds via date, not EPOCHREALTIME: Apple ships bash 3.2, which has neither
+  # that variable nor the arithmetic to make sub-second numbers worth the trouble. The
+  # stamp is written unconditionally; only the collate loop cares whether --time was given.
+  _t0="$(date +%s)"
   if _timeout "$TIMEOUT_SECS" bash "$suite" >"$outdir/$name.log" 2>&1; then
     echo "ok" >"$outdir/$name.status"
     mark="."
@@ -41,6 +58,7 @@ if [ "${1:-}" = "--run-one" ]; then
     echo "$?" >"$outdir/$name.status"
     mark="F"
   fi
+  echo "$(( $(date +%s) - _t0 ))" >"$outdir/$name.time"
   # Per-suite lines cannot stream: they are printed in glob order after the run.
   # Without this the terminal sits silent for the whole run. One character per
   # finished suite, on stderr so it never pollutes the parsable stdout report.
@@ -223,13 +241,15 @@ while IFS= read -r t; do
   name="$(basename "$t" .sh)"
   log="$OUTDIR/$name.log"
   rc="$(cat "$OUTDIR/$name.status" 2>/dev/null || echo "missing")"
+  secs=""
+  [ "$TIME" = 1 ] && secs=" ($(cat "$OUTDIR/$name.time" 2>/dev/null || echo 0)s)"
   printf '%-46s ' "$name"
   case "$rc" in
     ok)
-      echo "ok"
+      echo "ok$secs"
       ;;
     124)
-      echo "TIMEOUT (${TIMEOUT_SECS}s)"
+      echo "TIMEOUT (${TIMEOUT_SECS}s)$secs"
       timedout="$timedout $name"
       # A killed suite printed no assertion, so the FAIL grep below would show nothing and
       # read as "failed for no reason". Say what actually happened and skip it.
@@ -237,11 +257,11 @@ while IFS= read -r t; do
       sed 's/^/      | /' "$log" | tail -8
       ;;
     missing)
-      echo "FAIL (no status written; the worker died)"
+      echo "FAIL (no status written; the worker died)$secs"
       failed="$failed $name"
       ;;
     *)
-      echo "FAIL (rc=$rc)"
+      echo "FAIL (rc=$rc)$secs"
       failed="$failed $name"
       # Show the FAILING lines, then a short tail for context. A plain tail hid the real
       # assertion in a suite with 840 of them: the failure was 700 lines above the summary.
@@ -257,6 +277,17 @@ while IFS= read -r t; do
       ;;
   esac
 done <"$runlist"
+
+# The ten worst offenders, so a slow run says where the time went without reading the
+# whole report. Ten, not all of them: the tail is a long list of sub-second suites.
+if [ "$TIME" = 1 ]; then
+  echo ""
+  echo "run-all: slowest:"
+  while IFS= read -r t; do
+    name="$(basename "$t" .sh)"
+    printf '%s %s\n' "$(cat "$OUTDIR/$name.time" 2>/dev/null || echo 0)" "$name"
+  done <"$runlist" | sort -rn | head -10 | while read -r s n; do printf '  %ss %s\n' "$s" "$n"; done
+fi
 
 echo ""
 if [ -n "$failed" ] || [ -n "$timedout" ]; then
