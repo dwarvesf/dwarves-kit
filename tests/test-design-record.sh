@@ -1,5 +1,7 @@
 #!/bin/bash
 # test-design-record.sh -- Proves the ADR-0031 §1 design record (BEFORE gate).
+# Also carries the SPEC-137 optional-References cases, folded in from the retired
+# tests/test-references-field.sh (it re-derived the Reviewer 6 function this file owns).
 #
 # /kit:spec-validate's Reviewer 6 is prompt text, not code, so this harness cannot drive the
 # live LLM judgment. What it CAN prove, honestly, is the STRUCTURAL contract Reviewer 6 is
@@ -183,6 +185,65 @@ assert_eq "WORKFLOW.md depth matrix has a Design record row" 0 $RC
 RC=0; grep -qF '| Design (opt-in) |' "$WORKFLOW_MD" || RC=1
 assert_eq "WORKFLOW.md's new row is distinct from the existing 'Design (opt-in)' row" 0 $RC
 
+
+# ============================================================
+echo ""
+echo "=== SPEC-137: optional References field adds no new gate ==="
+# ============================================================
+# Folded in from the retired tests/test-references-field.sh, which re-derived the same
+# Reviewer 6 pure function this file already owns. /kit:spec-validate's 6 reviewers are prompt
+# text, not code (same honest limitation as this file's header), so the harness cannot drive the
+# live LLM judgment. What it CAN prove structurally: none of the 6 reviewers' criteria mention
+# `References`, and Reviewer 6 (the ONE reviewer that can block VALIDATED) returns the same
+# verdict for a fixture WITH a `References:` field and the byte-identical fixture WITHOUT one,
+# so the field is structurally inert to the blocking gate.
+
+REF_FIXTURES="$KIT_DIR/tests/fixtures/references-field"
+WITH_FIX="$REF_FIXTURES/with-references.md"
+WITHOUT_FIX="$REF_FIXTURES/without-references.md"
+
+for f in "$WITH_FIX" "$WITHOUT_FIX"; do
+  [ -f "$f" ] || { echo "FIXTURE MISSING: $f"; exit 1; }
+done
+
+echo ""
+echo "--- WITH a References: field ---"
+HAS_REFS_WITH="$(grep -qE '^References:' "$WITH_FIX" && echo yes || echo no)"
+VERDICT_WITH="$(reviewer6_verdict "$WITH_FIX")"
+assert_eq "fixture carries a 'References:' field" "yes" "$HAS_REFS_WITH"
+assert_eq "Reviewer 6 verdict WITH References: GREEN" "PASS" "$VERDICT_WITH"
+
+echo ""
+echo "--- WITHOUT a References: field (byte-identical otherwise) ---"
+HAS_REFS_WITHOUT="$(grep -qE '^References:' "$WITHOUT_FIX" && echo yes || echo no)"
+VERDICT_WITHOUT="$(reviewer6_verdict "$WITHOUT_FIX")"
+assert_eq "fixture carries NO 'References:' field" "no" "$HAS_REFS_WITHOUT"
+assert_eq "Reviewer 6 verdict WITHOUT References: GREEN" "PASS" "$VERDICT_WITHOUT"
+
+echo ""
+echo "--- No-new-gate proof: both verdicts equal (presence of References is inert) ---"
+assert_eq "verdict is identical with and without the field" "$VERDICT_WITH" "$VERDICT_WITHOUT"
+
+echo ""
+echo "--- Structural wiring: References is OPTIONAL, not a new required field ---"
+
+RC=0; grep -qE '^References:' "$SPEC_MD" || RC=1
+assert_eq "commands/spec.md template has a 'References:' field" 0 $RC
+
+RC=0; grep -qiF 'optional' "$SPEC_MD" && grep -qiF 'References:' "$SPEC_MD" || RC=1
+assert_eq "commands/spec.md marks References as optional" 0 $RC
+
+RC=0; grep -qiF 'Source beats a from-scratch' "$SPEC_MD" || RC=1
+assert_eq "commands/spec.md states source-beats-description" 0 $RC
+
+# NEGATIVE CONTROL: spec-validate.md's reviewers are UNCHANGED by this field -- no reviewer
+# heading mentions References, so no reviewer gained a new check for it.
+RC=0; grep -qiE '\breferences\b' "$VALIDATE_MD" && RC=1
+assert_eq "negative control: no reviewer in spec-validate.md was taught about References (no new gate)" 0 $RC
+
+# Reviewer 6 (the one blocking reviewer) still only reads Design-bearing status; unchanged.
+RC=0; grep -qF "Reviewer 6: Design Record Auditor" "$VALIDATE_MD" || RC=1
+assert_eq "commands/spec-validate.md: 'Reviewer 6: Design Record Auditor' present unchanged" 0 $RC
 # ============================================================
 echo ""
 echo "=== Results ==="

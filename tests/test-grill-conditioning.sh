@@ -10,7 +10,7 @@
 #
 #  B) The 3-signal precheck itself (`commands/grill.md` Step 0/0b) is PROSE, not code -- an
 #     agent runs `git log`/`rg` itself and applies the fire rule by judgment, the same honest
-#     limitation `tests/test-design-record.sh` and `tests/test-references-field.sh` already
+#     limitation `tests/test-design-record.sh` already
 #     document for other prompt-text logic in this kit. What this file CAN do, and does, is
 #     reproduce the rule's two purely-mechanical legs (S1's git-history check, and the fire
 #     rule's arithmetic) as harness-only functions and prove them unambiguous at the exact
