@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 # wrap.sh -- the landing step after ship. One pass over every repo a session
-# touched, with seven verbs:
+# touched, with eight verbs:
 #
 #   wrap.sh scan  <repo> [<repo>...]                        report only, exit 0
 #   wrap.sh apply [--apply] [--worktrees] <repo> [...]      dry-run by default
 #   wrap.sh merge [--apply] <repo>                          merges ONE own green PR
+#   wrap.sh land  <worktree> [--title T] [--body-file F]    one hand-made worktree, landed
 #   wrap.sh log   "<slug>: <one sentence>" [--date YYYY-MM-DD]
 #   wrap.sh default-branch <repo>                           prints the detected name
 #   wrap.sh knowledge-root <repo>                           the fenced knowledge dir
@@ -16,8 +17,9 @@
 # The write set is closed: branch delete under two proofs, worktree remove under
 # --worktrees, pull --ff-only on the default branch and its pull-past-dirty stash, the
 # activity-log prepend, the knowledge-root project directory, the staging-file append, one
-# gh pr merge, and one bounded union re-merge push (with its own follow-up commit when the
-# re-merge duplicates a kanban row). Every other action is a report line. The
+# gh pr merge, one bounded union re-merge push (with its own follow-up commit when the
+# re-merge duplicates a kanban row), and `land`'s own named push, PR create, squash merge,
+# worktree remove and branch delete. Every other action is a report line. The
 # verbs never switch a branch and never force a push or a pull. The one force is
 # `worktree remove -f -f`: it overrides a LOCK, never a dirty, detached, checked-out or
 # unproven worktree, and the removal counts only once a postcondition finds the path gone.
@@ -48,7 +50,7 @@ source "$LIB_ROOT/config/kit-config.sh" || { echo "FATAL: lib/config/kit-config.
 # shellcheck source=lib/gate/default-branch-warn.sh
 source "$LIB_ROOT/gate/default-branch-warn.sh" || { echo "FATAL: lib/gate/default-branch-warn.sh missing or unreadable" >&2; exit 1; }
 
-_usage() { sed -n '2,25p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
+_usage() { sed -n '2,26p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
 
 # --------------------------------------------------------------------------- helpers
 
@@ -1003,6 +1005,157 @@ _tree_verify() {
   fi
 }
 
+# --------------------------------------------------------------------------- land
+
+# cmd_land <worktree> [--title T] [--body-file F] -- the landing loop for ONE committed
+# branch in a hand-made worktree: push, open the PR, squash-merge, verify the tree, fast
+# forward the main checkout, remove the worktree, delete the branch. Each step prints one
+# line with its sha or its refusal.
+#
+# The composition is deliberate. The push names its branch, because a bare push takes
+# whatever the upstream config points at. The merge is its own command, because chaining a
+# branch delete behind a failed merge closes the PR and drops its commits. The tree check
+# is `merge`'s own `_tree_verify`, never a second copy. Nothing here logs a proof-ledger
+# override: a ship-gate refusal on the push surfaces with the gate's own stderr and exit
+# code, and the run stops there.
+cmd_land() {
+  local wt="" title="" body_file="" arg count=0 want=""
+  for arg in "$@"; do
+    if [ -n "$want" ]; then
+      case "$want" in title) title="$arg" ;; body) body_file="$arg" ;; esac
+      want=""; continue
+    fi
+    case "$arg" in
+      --title) want=title ;;
+      --title=*) title="${arg#--title=}" ;;
+      --body-file) want=body ;;
+      --body-file=*) body_file="${arg#--body-file=}" ;;
+      -*) echo "wrap.sh land: unknown flag '$arg'" >&2; return 64 ;;
+      *) count=$(( count + 1 )); wt="$arg" ;;
+    esac
+  done
+  [ -z "$want" ] || { echo "wrap.sh land: --${want} needs a value" >&2; return 64; }
+  [ "$count" -eq 1 ] || { echo "usage: wrap.sh land <worktree> [--title T] [--body-file F]" >&2; return 64; }
+  _is_repo "$wt" || { echo "wrap.sh land: ${wt} is not a git worktree" >&2; return 64; }
+  if [ -n "$body_file" ] && [ ! -f "$body_file" ]; then
+    echo "wrap.sh land: --body-file '${body_file}' is not an existing file" >&2; return 64
+  fi
+  # git records a worktree fully resolved, so the postcondition below can only match a
+  # path resolved the same way.
+  wt="$(cd "$wt" 2>/dev/null && pwd -P)" || { echo "wrap.sh land: the worktree path does not resolve" >&2; return 64; }
+
+  local repo; repo="$(git -C "$wt" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)"
+  repo="${repo%/.git}"; repo="${repo%/}"
+  repo="$(cd "$repo" 2>/dev/null && pwd -P)" || { echo "wrap.sh land: the main checkout does not resolve" >&2; return 64; }
+  if [ "$repo" = "$wt" ]; then
+    echo "wrap.sh land: ${wt} is the main checkout, not a worktree" >&2; return 1
+  fi
+
+  if [ -n "$(git -C "$wt" status --porcelain 2>/dev/null)" ]; then
+    echo "wrap.sh land: ${wt} is dirty, so the branch is not what a PR would carry" >&2; return 1
+  fi
+  local branch; branch="$(git -C "$wt" branch --show-current 2>/dev/null)"
+  [ -n "$branch" ] || { echo "wrap.sh land: ${wt} is on a detached HEAD, so there is no branch to land" >&2; return 1; }
+  local def; def="$(_default_branch "$wt")" || { echo "wrap.sh land: no default branch resolved for ${wt}" >&2; return 1; }
+  case "$branch" in
+    "$def"|main|master)
+      echo "wrap.sh land: HEAD is ${branch}, the default or a protected branch name" >&2; return 1 ;;
+  esac
+  local ghs; ghs="$(_gh_state)"
+  [ "$ghs" = "ok" ] || { echo "wrap.sh land: gh is ${ghs}" >&2; return 1; }
+
+  git -C "$wt" fetch -q origin "$def" 2>/dev/null
+  local ahead; ahead="$(git -C "$wt" rev-list --count "origin/${def}..${branch}" 2>/dev/null)"
+  case "$ahead" in ''|*[!0-9]*) ahead=0 ;; esac
+  [ "$ahead" -gt 0 ] || {
+    echo "wrap.sh land: ${branch} has no commits ahead of origin/${def}" >&2; return 1; }
+
+  local tip url rc
+  tip="$(git -C "$wt" rev-parse HEAD 2>/dev/null)"
+  url="$(_origin_url "$wt")"
+  [ -n "$title" ] || title="$(git -C "$wt" log -1 --format=%s 2>/dev/null)"
+
+  echo "land ${branch} -> ${def} (${wt})"
+
+  git -C "$wt" push origin "$branch"; rc=$?
+  if [ "$rc" -ne 0 ]; then
+    echo "     PUSH REFUSED: git push origin ${branch} exited ${rc}" >&2
+    return "$rc"
+  fi
+  echo "     pushed ${branch} ($(_short "$tip"))"
+
+  # `--head`, never `--base`: a base the caller names is the way a PR ends up targeting
+  # another feature branch. With --repo, gh targets the repository's own default branch.
+  local created n
+  if [ -n "$body_file" ]; then
+    created="$(gh pr create --repo "$url" --head "$branch" --title "$title" --body-file "$body_file" 2>&1)"; rc=$?
+  else
+    created="$(gh pr create --repo "$url" --head "$branch" --title "$title" --body "$title" 2>&1)"; rc=$?
+  fi
+  if [ "$rc" -ne 0 ]; then
+    echo "     PR REFUSED: gh pr create exited ${rc}: ${created}" >&2; return 2
+  fi
+  n="$(printf '%s\n' "$created" | tail -1)"; n="${n##*/}"
+  case "$n" in
+    ''|*[!0-9]*) echo "     PR REFUSED: gh pr create named no PR number: ${created}" >&2; return 2 ;;
+  esac
+  echo "     opened PR #${n}"
+
+  gh pr merge "$n" --repo "$url" --squash --match-head-commit "$tip"; rc=$?
+  if [ "$rc" -ne 0 ]; then echo "     MERGE FAILED #${n}: exit ${rc}" >&2; return 2; fi
+
+  local after state sha
+  after="$(gh pr view "$n" --repo "$url" --json state,mergeCommit 2>/dev/null)"
+  state="$(printf '%s' "$after" | jq -r '.state // ""' 2>/dev/null)"
+  sha="$(printf '%s' "$after" | jq -r '.mergeCommit.oid // ""' 2>/dev/null)"
+  if [ "$state" != "MERGED" ]; then
+    echo "     MERGE FAILED #${n}: state is '${state:-unknown}', not MERGED" >&2; return 2
+  fi
+  local tv; tv="$(_tree_verify "$wt" "$def" "$tip")"
+  case "$tv" in
+    OK) echo "     merged #${n} (${sha}): tree verified" ;;
+    MISMATCH*)
+      echo "     merged #${n} (${sha}): TREE MISMATCH, ${tv#MISMATCH } paths differ; ${def} does not hold the PR head" >&2
+      return 3 ;;
+    *)
+      echo "     merged #${n} (${sha}): tree ${tv}" >&2
+      return 3 ;;
+  esac
+
+  # The fast-forward is advisory: a checkout this call does not own may be dirty or on
+  # another branch, and neither is a reason to strand a merged worktree. It is never
+  # stashed past and never reset; the refusal is reported and the tidy continues.
+  local blocked=0 cur
+  cur="$(git -C "$repo" branch --show-current 2>/dev/null)"
+  if [ "$cur" != "$def" ]; then
+    echo "     PULL BLOCKED: ${repo} is on '${cur:-<detached>}', not ${def}"
+    blocked=1
+  elif git -C "$repo" pull --ff-only; then
+    echo "     pulled ${repo}: $(git -C "$repo" log --oneline -1 2>/dev/null)"
+  else
+    echo "     PULL BLOCKED: pull --ff-only refused in ${repo}, nothing was stashed or reset"
+    blocked=1
+  fi
+
+  # `-f -f` overrides the lock the Agent tool puts on every worktree it creates; the merge
+  # proof above is what earns the removal. The removal counts only once the path is gone.
+  git -C "$repo" worktree remove -f -f "$wt" >/dev/null 2>&1
+  if ! _wt_cleared "$repo" "$wt"; then
+    echo "     FAILED remove worktree ${wt}: it survived, so ${branch} stays" >&2
+    return 2
+  fi
+  echo "     removed worktree ${wt}"
+  if git -C "$repo" branch -D "$branch" >/dev/null 2>&1; then
+    echo "     deleted ${branch}"
+  else
+    echo "     FAILED delete ${branch}" >&2
+    return 2
+  fi
+
+  [ "$blocked" = 0 ] || return 2
+  return 0
+}
+
 # --------------------------------------------------------------------------- log
 
 # _realpath_f <path> -- absolute path with every symlink on it resolved. The directory must
@@ -1407,6 +1560,7 @@ main() {
     scan)           cmd_scan "$@" ;;
     apply)          cmd_apply "$@" ;;
     merge)          cmd_merge "$@" ;;
+    land)           cmd_land "$@" ;;
     log)            cmd_log "$@" ;;
     default-branch) cmd_default_branch "$@" ;;
     knowledge-root) cmd_knowledge_root "$@" ;;
