@@ -68,7 +68,7 @@ negctl output:
 Exit: 0 (green before mutation)
 Mutation: neuter the grace-window guard in lose-attempt
 Changed: lib/goal/attempt-state.sh
-Exit: 1 (under mutation, RED expected)
+Exit: 2 (under mutation, RED expected)
 Restore: git checkout HEAD -- lib/goal/attempt-state.sh
 Exit: 0 (green after restore)
 Verdict: PASS
