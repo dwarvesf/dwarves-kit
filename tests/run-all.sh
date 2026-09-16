@@ -97,11 +97,16 @@ trap 'rm -rf "$OUTDIR"' EXIT
 # --- --changed: pick suites by the diff ---------------------------------------
 # The full glob is 13-15 minutes sequential on a Mac, and a branch that touches one lib
 # file needs a handful of those suites. Selection is a text match, on purpose: a suite is
-# picked when it names the basename of a changed file (so a change to lib/mega/mega.sh
-# picks every suite that mentions `mega.sh`, comments included), when it is itself
-# changed, or when it is tests/test-<mod>*.sh for a changed lib/<mod>/ file. test-meta
-# rides along whenever anything outside lib/ changed, because it is the registry and
-# lint suite over commands, skills, hooks, agents, docs, and the tests themselves.
+# picked when a CODE line of it names the basename of a changed file (a comment naming a
+# file is documentation, not a dependency: the wavefront suite's header mentions this
+# runner and cost a 300s timeout on the first dogfood run), when it is itself changed,
+# or when it is tests/test-<mod>*.sh for a changed lib/<mod>/ file.
+#
+# A suite may declare that it must run on every diff:
+#   # always: lints every KIT_* env read in the tree against the module registry
+# Those are the tree-wide lints (naming contract, config registry, personal paths,
+# scattered ids, engine boundary, the registry pin). They fail on a file you ADDED while
+# naming no file you touched, so no diff-derived pick can reach them.
 # Over-picking is fine; a suite this misses is one the changed file never appears in.
 # ponytail: basename grep, no dependency graph; add one if over-picking starts to cost.
 PICKED=""
@@ -124,17 +129,21 @@ if [ "${1:-}" = "--changed" ]; then
         tests/test-*.sh) [ -f "$f" ] && printf '%s\n' "$f" >>"$PICKED" ;;
         lib/*/*) mod="${f#lib/}"; mod="${mod%%/*}"; ls tests/test-"$mod"*.sh >>"$PICKED" 2>/dev/null ;;
       esac
-      case "$f" in lib/*) : ;; *) [ -f tests/test-meta.sh ] && printf 'tests/test-meta.sh\n' >>"$PICKED" ;; esac
-      grep -lF -- "$(basename "$f")" tests/test-*.sh >>"$PICKED" 2>/dev/null
+      b="$(basename "$f")"
+      for s in tests/test-*.sh; do
+        grep -v '^[[:space:]]*#' "$s" | grep -qF -- "$b" && printf '%s\n' "$s" >>"$PICKED"
+      done
     done <"$changedlist"
+    named=$(sort -u "$PICKED" | wc -l | tr -d ' ')
+    grep -l '^# always:' tests/test-*.sh >>"$PICKED" 2>/dev/null
     sort -u -o "$PICKED" "$PICKED"
-    echo "run-all: --changed against $(git rev-parse --short "$base"): $(wc -l <"$changedlist" | tr -d ' ') changed files -> $(wc -l <"$PICKED" | tr -d ' ') suites"
+    echo "run-all: --changed against $(git rev-parse --short "$base"): $(wc -l <"$changedlist" | tr -d ' ') changed files -> $(wc -l <"$PICKED" | tr -d ' ') suites ($named named, the rest always-on)"
     sed 's/^/  /' "$PICKED"
-    if [ ! -s "$PICKED" ]; then
-      echo "run-all: no suite names any of the changed files; nothing to run"
+    if [ "$named" -eq 0 ]; then
+      echo "run-all: no suite names any of the changed files; only the always-on lints run"
       sed 's/^/  /' "$changedlist"
-      exit 0
     fi
+    [ -s "$PICKED" ] || exit 0
   fi
 fi
 

@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# always: lints every KIT_* env read in the tree against the module registry
 # test-config-registry.sh -- SPEC-198, harness-loop sub-goal 08.
 #
 # Two standing lints plus a functional smoke of bin/config:
