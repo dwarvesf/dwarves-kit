@@ -230,6 +230,30 @@ OUT8="$(cd "$REPO7" && BACKLOG_PROMOTE_HOMES="$HOMES" BACKLOG_STAGE_BACKLOG="$RE
   BACKLOG_STAGE_STAGING="$REPO7/_meta/backlog-staging.md" python3 "$ADD_BACKLOG" all 2>&1)"
 chk_has "home NC: an unresolvable Home promotes (unknown is not wrong)" "$OUT8" "promoted ID-"
 
+# ============================================================
+echo "== shim path: --backlog-file <path> (appended by <repo>/_meta/board) names the board =="
+# ============================================================
+BOARD9="$TMPD/board9/BACKLOG.md"; mkdir -p "$(dirname "$BOARD9")"; new_board "$BOARD9"
+STAGE9="$TMPD/board9/backlog-staging.md"
+cat > "$STAGE9" <<EOF
+# Backlog staging (auto)
+
+## [staged] Honour the shim flag
+- Intent: promote through the consumer shim without env vars
+- Approach: parse the flag, resolve staging beside the board
+- Tags: #u-lo #f-hi
+- Home: dwarves-kit
+- Source: session $TODAY
+EOF
+OUT9L="$(cd "$TMPD" && env -u BACKLOG_STAGE_BACKLOG -u BACKLOG_STAGE_STAGING python3 "$ADD_BACKLOG" list --backlog-file "$BOARD9" 2>&1)"
+chk_has "shim list: shows the staged block" "$OUT9L" "1. Honour the shim flag"
+OUT9="$(cd "$TMPD" && env -u BACKLOG_STAGE_BACKLOG -u BACKLOG_STAGE_STAGING python3 "$ADD_BACKLOG" 1 --backlog-file "$BOARD9" 2>&1)"; RC9=$?
+chk "shim promote: exit 0" "$([ "$RC9" -eq 0 ]; echo $?)"
+chk_not_has "shim promote: no usage error" "$OUT9" "usage:"
+chk_has "shim promote: board named by the flag gained the row" "$(cat "$BOARD9")" "Honour the shim flag"
+OUT9E="$(cd "$TMPD" && python3 "$ADD_BACKLOG" 1 --backlog-file 2>&1)"; RC9E=$?
+chk "shim promote: dangling flag is a usage error" "$([ "$RC9E" -eq 2 ]; echo $?)"
+
 echo ""
 echo "== $TOTAL run, $PASS passed, $FAIL failed =="
 [ "$FAIL" -eq 0 ]
