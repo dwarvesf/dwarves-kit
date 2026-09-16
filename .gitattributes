@@ -1,0 +1,14 @@
+# Append-only board rows and notes. Every feature branch adds a row to the same table tail
+# or the same prepend point, so two parallel branches collide on lines neither one got
+# wrong. Union keeps both sides. Without this file the collision surfaced as a stash-pop
+# conflict on _meta/BACKLOG.md that a session hand-resolved four times in one sitting.
+#
+# Caveat, deliberate: union never drops a line, so a row both sides EDITED (two branches
+# flipping the same ID's Status) comes out TWICE rather than merged, and only a union re-merge
+# runs `lib/board/backlog.sh dedupe-all` on its own. After a plain merge or rebase the next
+# `board set <ID> ...` refuses with "matches N rows; dedupe first", which is the loud failure
+# this trades the conflict for. Run `dedupe-all` then, and check which side's Status it kept.
+# A table whose rows are REWRITTEN in place rather than appended does not belong on this list.
+_meta/BACKLOG.md merge=union
+_meta/backlog-staging.md merge=union
+docs/implementation-notes/*.md merge=union

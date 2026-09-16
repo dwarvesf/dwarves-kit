@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# always: the naming contract scans every module in the tree
 # test-kit-contract.sh -- SPEC-200: the standing contract EVERY kit module must satisfy.
 #
 # The rules in docs/kit-contract.md, executable. Not style policing: each rule below exists

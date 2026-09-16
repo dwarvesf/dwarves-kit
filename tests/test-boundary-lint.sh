@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# always: the engine-names-no-consumer lint scans the whole tree
 # test-boundary-lint.sh -- SG-01 (learning-boundary, SPEC-285): the engine names no
 # consumer, by path or by skill.
 #

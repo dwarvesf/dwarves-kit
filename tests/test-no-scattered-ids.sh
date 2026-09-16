@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# always: scans the whole tree for scattered spec and task ids
 # test-no-scattered-ids.sh -- the provenance rule, enforced where the repo is already clean.
 #
 # THE RULE (CONTRIBUTING.md "Where an ID may appear"): a spec, task, ADR or ticket id belongs

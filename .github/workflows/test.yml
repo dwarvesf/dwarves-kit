@@ -5,8 +5,8 @@ name: test
 # hosted minutes are free, so master pushes and ready PRs run the suites again.
 #
 # A DRAFT pull request skips the suites (see the job-level `if` below): iterate
-# locally with `bash tests/run-all.sh`, which is the same entry CI runs, and mark
-# the PR ready when it is done. `ready_for_review` is listed because it is not one
+# locally with `bash tests/run-all.sh --changed` (only the suites the diff touches; the
+# full glob is the entry CI runs), and mark the PR ready when it is done. `ready_for_review` is listed because it is not one
 # of the default pull_request types, so without it a draft marked ready would never
 # trigger a first run. Master push still runs unconditionally, so the 2026-08-10
 # silent-drift failure mode stays closed.
