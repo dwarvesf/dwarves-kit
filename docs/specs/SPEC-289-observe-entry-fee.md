@@ -1,7 +1,7 @@
 # SPEC-289: session observe entry-fee
 
 **Status**: ready
-**Lane**: full
+Lane: full
 **Owner module**: `lib/session/observe`
 **Source**: backlog row ID-878; measurement `ops-toolkit/research/2026-09-13-token-burn-optimization.md`
 
