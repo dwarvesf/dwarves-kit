@@ -12,6 +12,7 @@ All notable changes to dwarves-kit are documented here.
 - Config surface (new section, additive, MINOR): `[intake]` with `url_ledger`, `verdicts`, `boards`, `notes`, all defaulting `""`. Every key resolves root-only, so a project `.kit.toml` cannot set them. An install that sets none of them keeps `intake gate` answering from this kit's own inventory and open pull requests alone.
 
 ### Added
+- `tests/run-all.sh --changed [<base>]` runs only the suites the diff against `<base>` (default: the merge-base with `origin/master`) touches: suites whose code lines name a changed file's basename, changed suites themselves, `tests/test-<mod>*.sh` for `lib/<mod>/`, plus every suite with an `# always:` header (the tree-wide lints: kit-contract, config-registry, no-personal-paths, no-scattered-ids, boundary-lint, meta). The local pre-push check; CI keeps the full glob. `RUN_ALL_JOBS` now defaults to `auto` on macOS, where every parallel run has been green, and stays `1` on Linux until the ubuntu flake is understood.
 - `session observe entry-fee [--days N] [--project SLUG-OR-NAME] [--top N] [--trend] [--json]`
   sizes the fixed preamble every agent turn re-reads before any work. The per-session
   total is measured (the first main-chain assistant turn's input + cache-creation +

@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# always: scans the whole tree for operator paths and hostnames
 # test-no-personal-paths.sh -- the kit ships no operator-specific path or hostname,
 # and adopt renders none into a consumer repo.
 #

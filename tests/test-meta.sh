@@ -1,4 +1,5 @@
 #!/bin/bash
+# always: the registry pin and structural lints cover every kit artifact
 # test-meta.sh -- Structural integrity tests for kit artifacts.
 # Catches drift the unit tests can't see: version mismatches, missing
 # frontmatter, stale references between files, schema violations.
