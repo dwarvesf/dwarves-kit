@@ -226,7 +226,8 @@ if [ -n "$kit_root_toml" ] && [ "$RESOLVER_OK" -eq 1 ]; then
         echo "# default at $KIT_REF/kit.toml (lib/config/kit-config.sh: project keys WIN)."
         echo "# Re-run \`bash $KIT_REF/lib/adopt.sh --refresh <this repo>\` (or /kit:adopt) after"
         echo "# editing [modules] to re-wire this project's .claude/settings.json to match --"
-        echo "# adopt reads this file at adopt time; no hook reads it at hook-fire time."
+        echo "# adopt reads [modules] at adopt time. [gate] is read when a hook fires: uncomment a"
+        echo "# key, set it to false, commit, and that quality gate is off for this project."
         echo ""
         echo "[modules]"
         for m in $KIT_KNOWN_MODULES; do
@@ -237,6 +238,14 @@ if [ -n "$kit_root_toml" ] && [ "$RESOLVER_OK" -eq 1 ]; then
               v="$(kit_config_get "modules.$m" "false")"
           fi
           echo "$m = $v"
+        done
+        echo ""
+        echo "[gate]   # quality gates; uncomment a key and set it false to switch that gate off here"
+        echo "         # (left commented so the operator overlay still reaches this repo; safety gates have no key)"
+        for g in $(bash "$SELF_DIR/gate/gate-policy.sh" keys 2>/dev/null); do
+          KIT_CONFIG_ROOT="$(dirname "$kit_root_toml")" KIT_PROJECT_ROOT="$TARGET" \
+            v="$(kit_config_get "gate.$g" "true")"
+          echo "# $g = $v"
         done
       } > "$tmp"
       mv "$tmp" "$dotkit"

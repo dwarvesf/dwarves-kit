@@ -77,7 +77,11 @@ classify() {
   # inert FIRST: a markdown/txt-only diff is docs, never load-bearing, regardless of what the
   # commit subject says. Checking stateful keywords against the subject before this misread a
   # markdown-only "migrate" doc change as stateful (see , the classify-md-inert dogfood).
-  if [ -z "$(printf '%s\n' "$changed" | grep -vE '\.(md|txt|markdown)$')" ]; then
+  # The project's own .kit.toml is harness config (which gates run, which modules are wired,
+  # where the ledger lives), never project behavior: a .kit.toml-only diff owes no proof-of-done,
+  # whatever key it touches; otherwise flipping a [gate] key would itself be gated. A diff that
+  # also touches code is classified by the code.
+  if [ -z "$(printf '%s\n' "$changed" | grep -vE '\.(md|txt|markdown)$|(^|/)\.kit\.toml$')" ]; then
     echo inert; return 0
   fi
 
@@ -377,6 +381,7 @@ check() {
     echo "  Type-specific shape: run 'bash lib/gate/proof-gate.sh contract \"<your task>\"' for the exact artifact this work-type owes + the skill that owns it (e.g. a data/CLI tool owes a recorded live run; an eval owes a TEST-REPORT)."
     echo "  Produce it via /kit:verify (or record it), or log an explicit override (audited):"
     echo "    bash lib/gate/proof-ledger.sh override '${slug:-<branch-slug>}' \"<reason>\""
+    echo "  Or switch this gate off for the repo: [gate] proof_of_done = false in a committed .kit.toml (lib/gate/README.md, 'Switching a gate off')."
     # Operator hint: an override for THIS slug exists in the log but is scoped to a
     # different repo (legacy unqualified, a sibling repo, or a non-root/wrong-worktree cwd),
     # so it does not apply here. Say so, or the operator re-logs and it still "does nothing".
