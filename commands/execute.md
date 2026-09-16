@@ -194,6 +194,7 @@ TASK-[ID]: [description]
 - Write tests alongside implementation (not after).
 - Create a git commit when the task is complete: `type(scope): description` (e.g. `feat(start): add tiered output`). Do NOT put the task or spec ID in the subject line; the SPEC.md checklist already maps each task to its commit hash.
 - Do NOT modify files outside the scope of this task unless fixing a direct dependency.
+- Never call `EnterWorktree` or `ExitWorktree`: both refuse a subagent with a cwd override. Work in the cwd you were given; the lead owns worktree lifecycle.
 - If you encounter a blocker, stop and report it. Do not work around it silently.
 - **Maintain `docs/implementation-notes/<spec-slug>.md` as you work.** Append an entry whenever you (a) decide something the spec did not pin down, (b) deviate from the spec, (c) hit a tradeoff worth surfacing, (d) discover a constraint the spec missed, or (e) hit an open question the operator should confirm or revise. Entry shape: `## YYYY-MM-DD HH:MM <short title>` with bullet lines for Context, Decision/Change, Why, Alternatives considered, Impact, Open questions. If your task runs with zero deviations, append a single line: `No deviations; matches the spec verbatim`. Create the file (header only) if it does not exist. This is for the human reviewer, not the verifier; do not let it block your commit.
 
