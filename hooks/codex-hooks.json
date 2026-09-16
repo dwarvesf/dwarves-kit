@@ -12,7 +12,7 @@
           },
           {
             "type": "command",
-            "command": "hash_file() { if command -v shasum >/dev/null 2>&1; then shasum -a 256 \"$1\"; elif command -v sha256sum >/dev/null 2>&1; then sha256sum \"$1\"; else return 2; fi; }; hash_file \"${PLUGIN_ROOT}/hooks/codex-hook-adapter.sh\" | /usr/bin/grep -q '^fefc20ca95217d304af2bbf4c14aef73ff0928472cde59f67f2cd6b3656e15af ' && hash_file \"${PLUGIN_ROOT}/hooks/ship-gate.sh\" | /usr/bin/grep -q '^19c7e453752c1245db330c6fd31697e622ae570ff04a92efc1eaa490a90faa73 ' || { echo 'dwarves-kit: trusted hook content changed' >&2; exit 2; }; exec \"${PLUGIN_ROOT}/hooks/codex-hook-adapter.sh\" PreToolUse ship-gate.sh",
+            "command": "hash_file() { if command -v shasum >/dev/null 2>&1; then shasum -a 256 \"$1\"; elif command -v sha256sum >/dev/null 2>&1; then sha256sum \"$1\"; else return 2; fi; }; hash_file \"${PLUGIN_ROOT}/hooks/codex-hook-adapter.sh\" | /usr/bin/grep -q '^fefc20ca95217d304af2bbf4c14aef73ff0928472cde59f67f2cd6b3656e15af ' && hash_file \"${PLUGIN_ROOT}/hooks/ship-gate.sh\" | /usr/bin/grep -q '^58d082f5a53a0c6956982b71e7a55f46b324ca920e93402f9aa43b6054cd1293 ' || { echo 'dwarves-kit: trusted hook content changed' >&2; exit 2; }; exec \"${PLUGIN_ROOT}/hooks/codex-hook-adapter.sh\" PreToolUse ship-gate.sh",
             "timeout": 30
           },
           {
