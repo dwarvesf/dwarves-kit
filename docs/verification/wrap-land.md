@@ -14,7 +14,7 @@
 | AC6 | a dirty worktree refuses before any write | exit 1, no gh call recorded, nothing pushed, worktree still present |
 | AC7 | a HEAD on the default branch refuses | exit 1, message names `main`, no gh call recorded |
 | AC8 | a blocked pull reports and still tidies | exit 2, `PULL BLOCKED` line, main checkout HEAD and the sibling's dirty line unchanged, worktree and branch still removed |
-| AC9 | no regression to the rest of wrap | full `test-wrap.sh` green, changed-suite `run-all.sh` green |
+| AC9 | no regression to the rest of wrap | full `test-wrap.sh` green, changed-suite `run-all.sh` green (15 suites after the rebase onto master) |
 
 ## Green run
 
@@ -28,7 +28,7 @@ Verdict: PASS
 ```
 Command: bash tests/run-all.sh
 Exit: 0
-run-all: all 14 suites passed, 0 skipped for missing tooling
+run-all: all 15 suites passed, 0 skipped for missing tooling
 Verdict: PASS
 ```
 
