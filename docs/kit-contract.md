@@ -106,13 +106,13 @@ Work the list, in this order. Every step has a check you can run.
 5. **If it proposes anything, use the currency.** `## [staged]` blocks via `staging-format.py`, deduped against staging + board, promoted by a human. Never write a board. Check: C5.
 6. **If it persists anything, use the root.** `kit_resolve_log_dir`. Check: C6.
 7. **Docs + proof + tests ride in the same PR.** README, spec, `docs/proof-of-done.md` with a run-table and at least one negative control, `tests/*.sh`. Check: C3, C4.
-8. **Run the contract before the PR.** `bash tests/test-kit-contract.sh`. It is the same lint CI runs; failing it locally costs a minute, failing it on CI costs a round trip.
+8. **Run the contract before the PR.** `bash tests/test-kit-contract.sh`. A bare `bash tests/run-all.sh` runs it too: it is one of the six always-on lints, on every diff. Nothing in CI runs on a push or a pull request, so this local run is the only thing standing between a broken shape and master.
 
 ## Where this sits in the harness loop
 
 The contract is a **Check**-stage gate, and it fires at two boundaries:
 
-- **Build -> Check**: `tests/test-kit-contract.sh` runs in CI on every PR. Mechanical rules only (naming, wiring, docs presence, currency, root, portability). It cannot judge whether the docs are any *good*.
+- **Build -> Check**: `tests/test-kit-contract.sh` runs locally on every diff, as an always-on suite of `tests/run-all.sh`, and again in the release-tag CI run. Mechanical rules only (naming, wiring, docs presence, currency, root, portability). It cannot judge whether the docs are any *good*.
 - **Check (judgment)**: for that, dispatch the review lenses. `kit:advisor` (the cross-cutting lens) plus a domain reviewer, and for a new module `kit:agent-effectiveness` if it ships an agent. A lint proves the shape; a reviewer proves the substance. Run both; the lint is cheap and the reviewer is not fooled by a technically-compliant README.
 
 Neither replaces the other. The 2026-07-14 sweep found 19 pipelines that all passed CI and

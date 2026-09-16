@@ -78,6 +78,39 @@ ledger and the ship-gate, so route past them.
 4. **Verify.** Run the spec's `## Verification` command (or the lane's check). Do not claim a result you did not run.
 5. **Commit.** Conventional commit, one logical change. No spec/ticket IDs in the subject line.
 
+One unit of work, with what enforces each step:
+
+```
+  board row or operator ask
+        |
+        v
+  classify type + size lane ----> grill ----> Done = <scenario>   [phase 0]
+        |                                          |
+        |                                          v
+        |                                   the check that will
+        |                                   prove it, named now
+        v
+  implement the smallest verifiable increment
+        |
+        v
+  run the check yourself ......... a local run, not a remote one; a claim
+        |                          you did not run is not a result
+        v
+  commit ......................... commit-format hook  [HARD]
+        |
+        v
+  record the gate you ran ........ gate-ledger
+        |
+        v
+  push / open the PR ............. ship-gate + push-to-main blocker  [HARD]
+                                   (a lane gate with no `ran` or `override`
+                                    entry refuses the push)
+```
+
+The check is local by contract. A repo may or may not run anything of its own after the
+push, so treat a remote pipeline as a second opinion and never as the verification a task
+loop owes. Read the repo's own README or CONTRIBUTING for what it runs and when.
+
 If you cannot make progress, see zone 4 (Pause if) and stop with a named blocker note. Do not churn.
 
 **One rid per run, derived from the branch.** `<rid>` everywhere below is `$(bash "${DWARVES_KIT:-$HOME/.claude/dwarves-kit}/lib/gate/gate-ledger.sh" rid)`: the branch slug (`type/` prefix stripped), the same key `hooks/ship-gate.sh` checks at push, so assign-time records and ship-time enforcement meet with no mirror re-records. Derive it AFTER the work branch exists; the verb refuses master/main/detached.

@@ -150,6 +150,43 @@ migration (same dry-run + rollback shape); agent-org config rides spec-feature l
 | Reflect  | /kit:retro | docs/retro/v<version>.md written | advisory |
 | Debug (off-cycle) | /kit:debug | root cause recorded, fix verified (human-confirmed only when `debug.confirm_fix=true`) | iron law + guess-fix guard (anti-rationalization) |
 
+The backbone of that table as a chain, each phase with the exit that leaves it and the
+thing that enforces the exit:
+
+```
+  phase          exit criterion                       enforcer
+  ---------------------------------------------------------------------------
+  Think  ----->  decision brief written  ---------->  advisory
+    |
+    v
+  Spec  ------>  spec exists, Status: DRAFT  ------>  spec-drift-guard   [HARD]
+    |
+    v
+  Validate --->  Status: VALIDATED  --------------->  advisory (full lane)
+    |
+    v
+  Build  ----->  tasks checked, verifier PASS  ---->  verification pipeline [HARD]
+    |                                                 worker -> verifier -> fix
+    v
+  Review  ---->  verdict recorded  ---------------->  advisory
+    |
+    v
+  Docs  ------>  docs match code  ----------------->  advisory
+    |
+    v
+  Ship  ------>  tagged + PR  --------------------->  ship-gate +        [HARD]
+    |                                                 push-to-main blocker
+    v
+  Reflect ---->  docs/retro/v<version>.md written ->  advisory
+
+  off-cycle
+  Debug  ----->  root cause recorded, fix verified ->  iron law +         [HARD]
+                                                       guess-fix guard
+```
+
+The opt-in phases (Design, Design critique, Prototype, UI design, Test plan) hang off the
+same chain at the point the table gives them; every one is advisory.
+
 Throughout: safety-gate blocks destructive Bash; anti-rationalization blocks
 premature "done"; auto-format runs on edit; session-state-save and
 post-compact-reinject protect long sessions. The Debug row is an off-cycle

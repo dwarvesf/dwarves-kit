@@ -23,6 +23,7 @@
 | 11 | 11 opt-in side-flows | trigger -> writes-to -> stop for each advisory flow |
 | 12 | 7 alternate flows | the edges that fire when the happy path does not hold |
 | 13 | 4 hard stops | the only blockers; everything else advises or warns |
+| 14 | The day loop | what an ordinary change runs between edit and landed: local check, commit, push, merge, wrap |
 
 ## 0 · Inventory
 
@@ -306,3 +307,43 @@ The ONLY blockers; everything else advises or warns.
   | PreToolUse, exit 2  |  |                     |  | Stop hook            |  | (worker->verifier)  |
   +---------------------+  +---------------------+  +----------------------+  +---------------------+
 ```
+
+## 14 · The day loop
+
+What an ordinary change in this repo runs, from edit to landed.
+
+```
+  edit
+    |
+    v
+  bash tests/run-all.sh ...... the suites the diff touches, plus the six
+    |                          always-on tree-wide lints (kit-contract,
+    |                          config-registry, no-personal-paths,
+    |                          no-scattered-ids, boundary-lint, meta).
+    |                          About 1-2 minutes on a Mac.
+    v
+  commit ..................... commit-format hook [HARD]
+    |
+    v
+  push / gh pr create ........ ship-gate + push-to-main blocker [HARD]
+    |
+    v
+  merge ...................... no CI check gates this; nothing runs on
+    |                          push or pull_request
+    v
+  /kit:wrap .................. board flip, own PRs merged, deploy check,
+                               tidy, activity line, retro
+
+  before a release tag only:
+    bash tests/run-all.sh --all ... the full glob, 13-15 minutes
+    gh workflow run test .......... the macOS + Ubuntu matrix in CI
+    git push origin v<x.y.z> ...... the same workflow, fired by the tag
+```
+
+`/kit:wrap` is a git landing step here, nothing more: board flips, commit, merge own PRs,
+deploy check, worktree tidy, activity line, report. Its heavier half is config. `[wrap]
+distill` turns the distill pass on at all; `build_candidates` lets step 7b wire a distilled
+candidate into its home repo; `drain_staged` lets the staged rows run; `before` and `after`
+hang a skill on each side of the landing. Each item the report lists under `**Built:**`
+opens with a verdict word, BUILT, STAGED, FILED, or NOTE, and `lib/wrap/report-lint.sh`
+fails an item without one.
