@@ -98,6 +98,10 @@ case "$sub" in
             printf '%s\n' "$val" ;;
         esac
         exit 0 ;;
+      create)
+        # `land` reads the number off the printed URL, so the stub answers with one.
+        printf '%s\n' "https://github.com/o/r/pull/${GH_STUB_CREATE_NUM:-42}"
+        exit "${GH_STUB_CREATE_RC:-0}" ;;
       merge)
         # Stands in for GitHub's own squash landing on the default branch, so the
         # tree-verify step downstream has a real tree to compare against.
@@ -1226,6 +1230,111 @@ out="$(GH_STUB_OPEN_PRS="$(tv_open_one 23 feat/tv)" GH_STUB_PR_23="$(tv_pr_json 
   "$WRAP" merge --apply "$TVS" 2>&1)"; rc=$?
 chk "tree-verify: a scoped match (another PR landed meanwhile) exits 0" "$rc"
 chk_has "tree-verify: scoped match reports verified" "$out" "tree verified"
+
+# ===========================================================================
+echo "=== land: one hand-made worktree, from a committed branch to landed ==="
+# ===========================================================================
+# Real git throughout, `gh` stubbed: the push, the fast-forward, the worktree removal and
+# the branch delete are the subject, so nothing about the tree state is faked.
+build_land() { # build_land <name> [--modify-base]
+  local name="$1" mode="${2:-}" work="$TMPD/ld-work-$1" repo="$TMPD/ld-repo-$1"
+  mkdir -p "$work"; git -C "$work" init -q; gitc "$work"
+  git -C "$work" symbolic-ref HEAD refs/heads/main
+  echo base > "$work/base.txt"; git -C "$work" add -A; git -C "$work" commit -qm base
+  git clone -q --bare "$work" "$TMPD/ld-bare-$name"
+  git clone -q "$TMPD/ld-bare-$name" "$repo"; gitc "$repo"
+  git -C "$repo" remote set-head origin main >/dev/null 2>&1
+  git -C "$repo" worktree add -q -b feat/land "$repo/wt" main >/dev/null 2>&1
+  if [ "$mode" = "--modify-base" ]; then
+    echo "branch edit" > "$repo/wt/base.txt"
+  else
+    echo "pr change" > "$repo/wt/pr-file.txt"
+  fi
+  git -C "$repo/wt" add -A; git -C "$repo/wt" commit -qm "feat: the landed change"
+}
+echo "--- happy path: pushed, PR opened with --head, merged alone, pulled, tidied"
+build_land ok
+LREPO="$TMPD/ld-repo-ok"; LREPO_P="$(cd "$LREPO" && pwd -P)"; LWT="$(cd "$LREPO/wt" && pwd -P)"
+LTIP="$(git -C "$LWT" rev-parse HEAD)"
+: > "$GH_STUB_CALLS"
+out="$(GH_STUB_CREATE_NUM=42 GH_STUB_LAND_REPO="$LWT" GH_STUB_LAND_REMOTE="$TMPD/ld-bare-ok" \
+  GH_STUB_LAND_BRANCH=feat/land GH_STUB_LAND_DEF=main "$WRAP" land "$LWT" 2>&1)"; rc=$?
+LAND_CALLS="$(cat "$GH_STUB_CALLS")"
+chk "land exits 0 on the happy path" "$rc"
+chk_has "land reports the push with the tip" "$out" "pushed feat/land (${LTIP:0:7})"
+chk "land pushed the named branch to the remote" \
+  "$([ "$(git -C "$TMPD/ld-bare-ok" rev-parse feat/land)" = "$LTIP" ]; echo $?)"
+chk_has "land opened the PR with --head" "$LAND_CALLS" "pr create --repo"
+chk_has "the create call names the branch as head" "$LAND_CALLS" "--head feat/land"
+chk_no "the create call never names a base" "$LAND_CALLS" "--base"
+chk_has "land reports the PR number" "$out" "opened PR #42"
+chk "land ran the squash merge as its own call" \
+  "$([ "$(grep -c '^pr merge 42 ' "$GH_STUB_CALLS")" -eq 1 ]; echo $?)"
+chk_has "the merge call is a squash" "$LAND_CALLS" "pr merge 42 --repo"
+chk_has "the merge call pins the pushed head" "$LAND_CALLS" "--squash --match-head-commit ${LTIP}"
+chk_has "land verifies the default branch holds the PR head" "$out" "merged #42 (1a2b3c4d5e6f): tree verified"
+chk "land fast-forwarded the main checkout onto the landed tree" \
+  "$([ "$(git -C "$LREPO" rev-parse HEAD)" = "$LTIP" ]; echo $?)"
+chk_has "land reports the pull" "$out" "pulled ${LREPO_P}"
+chk "land removed the worktree" "$([ ! -e "$LWT" ]; echo $?)"
+chk "land dropped the worktree from the list" \
+  "$(git -C "$LREPO" worktree list --porcelain | grep -qxF "worktree $LWT" && echo 1 || echo 0)"
+chk "land deleted the local branch" \
+  "$(git -C "$LREPO" rev-parse --verify feat/land >/dev/null 2>&1 && echo 1 || echo 0)"
+chk_has "land reports the delete" "$out" "deleted feat/land"
+
+echo "--- a dirty worktree refuses before any write"
+build_land dirty
+LWT_D="$(cd "$TMPD/ld-repo-dirty/wt" && pwd -P)"
+echo dirt > "$LWT_D/dirt.txt"
+: > "$GH_STUB_CALLS"
+out="$("$WRAP" land "$LWT_D" 2>&1)"; rc=$?
+chk "land refuses a dirty worktree with exit 1" "$([ "$rc" -eq 1 ]; echo $?)"
+chk_has "the refusal names the dirt" "$out" "is dirty, so the branch is not what a PR would carry"
+chk "a dirty refusal called no gh" "$([ ! -s "$GH_STUB_CALLS" ]; echo $?)"
+chk "a dirty refusal pushed nothing" \
+  "$(git -C "$TMPD/ld-bare-dirty" rev-parse --verify feat/land >/dev/null 2>&1 && echo 1 || echo 0)"
+chk "a dirty refusal left the worktree in place" "$([ -e "$LWT_D" ]; echo $?)"
+
+echo "--- HEAD on the default branch refuses"
+build_land ondef
+git -C "$TMPD/ld-repo-ondef" checkout -q -b side
+git -C "$TMPD/ld-repo-ondef" worktree add -q "$TMPD/ld-repo-ondef/wt-def" main >/dev/null 2>&1
+LWT_M="$(cd "$TMPD/ld-repo-ondef/wt-def" && pwd -P)"
+: > "$GH_STUB_CALLS"
+out="$("$WRAP" land "$LWT_M" 2>&1)"; rc=$?
+chk "land refuses a worktree on the default branch with exit 1" "$([ "$rc" -eq 1 ]; echo $?)"
+chk_has "the refusal names the branch" "$out" "HEAD is main, the default or a protected branch name"
+chk "a default-branch refusal called no gh" "$([ ! -s "$GH_STUB_CALLS" ]; echo $?)"
+chk "a default-branch refusal left the worktree in place" "$([ -e "$LWT_M" ]; echo $?)"
+
+echo "--- PULL BLOCKED: a dirty tracked file in the main checkout never stops the tidy"
+build_land blocked --modify-base
+LREPO_B="$TMPD/ld-repo-blocked"; LREPO_BP="$(cd "$LREPO_B" && pwd -P)"; LWT_B="$(cd "$LREPO_B/wt" && pwd -P)"
+LTIP_B="$(git -C "$LWT_B" rev-parse HEAD)"
+LHEAD_B="$(git -C "$LREPO_B" rev-parse HEAD)"
+echo "a sibling session's line" >> "$LREPO_B/base.txt"
+: > "$GH_STUB_CALLS"
+out="$(GH_STUB_CREATE_NUM=43 GH_STUB_LAND_REPO="$LWT_B" GH_STUB_LAND_REMOTE="$TMPD/ld-bare-blocked" \
+  GH_STUB_LAND_BRANCH=feat/land GH_STUB_LAND_DEF=main "$WRAP" land "$LWT_B" 2>&1)"; rc=$?
+chk "a blocked pull exits 2" "$([ "$rc" -eq 2 ]; echo $?)"
+chk_has "the blocked pull says PULL BLOCKED" "$out" "PULL BLOCKED: pull --ff-only refused in ${LREPO_BP}"
+chk_has "the blocked pull says nothing was stashed or reset" "$out" "nothing was stashed or reset"
+chk "the blocked pull left the main checkout where it was" \
+  "$([ "$(git -C "$LREPO_B" rev-parse HEAD)" = "$LHEAD_B" ]; echo $?)"
+chk "the blocked pull left the sibling's dirty file alone" \
+  "$(grep -qx "a sibling session's line" "$LREPO_B/base.txt"; echo $?)"
+chk "the merge still landed" \
+  "$([ "$(git -C "$TMPD/ld-bare-blocked" rev-parse main)" = "$LTIP_B" ]; echo $?)"
+chk "the worktree was still removed" "$([ ! -e "$LWT_B" ]; echo $?)"
+chk_has "the removal is still reported" "$out" "removed worktree ${LWT_B}"
+chk "the branch was still deleted" \
+  "$(git -C "$LREPO_B" rev-parse --verify feat/land >/dev/null 2>&1 && echo 1 || echo 0)"
+
+echo "--- the usage text and the command doc name the verb"
+chk_has "wrap --help names land" "$("$WRAP" --help 2>&1)" "wrap.sh land  <worktree>"
+chk_has "commands/wrap.md names land for a hand-made worktree" "$(cat "$KIT_DIR/commands/wrap.md")" \
+  "bin/wrap land <worktree>"
 
 # ===========================================================================
 echo "=== default-branch: detection, fall-through, and the no-remote refusal ==="
