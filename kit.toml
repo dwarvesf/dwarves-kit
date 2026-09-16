@@ -82,9 +82,20 @@ enabled_agent_clis = ""         # [impl] opt-in NON-claude dispatch. Space-separ
                                 #        could self-enable a vendor). See commands/mega.md
                                 #        "Harness routing (multi-vendor dispatch)".
 
-[gate]
-understanding_gate = true       # [impl] hooks/anti-rationalization.sh (ADR-0031). Always-on
-                                #        today; exposing an on/off toggle is NEW work.
+[gate]                          # quality gates. Read when a hook fires, through
+                                #        lib/gate/gate-policy.sh (project .kit.toml wins, then the
+                                #        operator kit.toml, then this file). `false` switches that
+                                #        gate off for the project (a project-level false applies once
+                                #        .kit.toml is committed and clean); the hook logs OFF-BY-CONFIG
+                                #        and passes. Safety gates (safety-gate, secrets-guard) have no
+                                #        key here and cannot be switched off.
+proof_of_done      = true       # [impl] hooks/ship-gate.sh proof-of-done check (ADR-0025). Engages
+                                #        only where docs/verification/README.md exists; this key is
+                                #        the opt-out for a repo that adopted the marker.
+lane_gates         = true       # [impl] hooks/ship-gate.sh lane x phase required-gate check plus
+                                #        the no-Lane refusal in adopted repos (ADR-0024)
+understanding_gate = true       # [impl] hooks/anti-rationalization.sh (ADR-0031)
+commit_format      = true       # [impl] hooks/commit-format.sh commit-subject lint
 
 [output]                        # [impl] lib/adopt.sh step 6b (SPEC-252); read at adopt time, never by a hook
 style = ""                      #        Claude Code output style for adopted projects. A name under

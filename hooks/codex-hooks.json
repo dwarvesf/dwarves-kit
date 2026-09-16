@@ -12,12 +12,12 @@
           },
           {
             "type": "command",
-            "command": "hash_file() { if command -v shasum >/dev/null 2>&1; then shasum -a 256 \"$1\"; elif command -v sha256sum >/dev/null 2>&1; then sha256sum \"$1\"; else return 2; fi; }; hash_file \"${PLUGIN_ROOT}/hooks/codex-hook-adapter.sh\" | /usr/bin/grep -q '^fefc20ca95217d304af2bbf4c14aef73ff0928472cde59f67f2cd6b3656e15af ' && hash_file \"${PLUGIN_ROOT}/hooks/ship-gate.sh\" | /usr/bin/grep -q '^fa2c65c1e06fc027dfec222f58d2513d1068982440e0ef709abc3583c0a69767 ' || { echo 'dwarves-kit: trusted hook content changed' >&2; exit 2; }; exec \"${PLUGIN_ROOT}/hooks/codex-hook-adapter.sh\" PreToolUse ship-gate.sh",
+            "command": "hash_file() { if command -v shasum >/dev/null 2>&1; then shasum -a 256 \"$1\"; elif command -v sha256sum >/dev/null 2>&1; then sha256sum \"$1\"; else return 2; fi; }; hash_file \"${PLUGIN_ROOT}/hooks/codex-hook-adapter.sh\" | /usr/bin/grep -q '^fefc20ca95217d304af2bbf4c14aef73ff0928472cde59f67f2cd6b3656e15af ' && hash_file \"${PLUGIN_ROOT}/hooks/ship-gate.sh\" | /usr/bin/grep -q '^19c7e453752c1245db330c6fd31697e622ae570ff04a92efc1eaa490a90faa73 ' || { echo 'dwarves-kit: trusted hook content changed' >&2; exit 2; }; exec \"${PLUGIN_ROOT}/hooks/codex-hook-adapter.sh\" PreToolUse ship-gate.sh",
             "timeout": 30
           },
           {
             "type": "command",
-            "command": "hash_file() { if command -v shasum >/dev/null 2>&1; then shasum -a 256 \"$1\"; elif command -v sha256sum >/dev/null 2>&1; then sha256sum \"$1\"; else return 2; fi; }; hash_file \"${PLUGIN_ROOT}/hooks/codex-hook-adapter.sh\" | /usr/bin/grep -q '^fefc20ca95217d304af2bbf4c14aef73ff0928472cde59f67f2cd6b3656e15af ' && hash_file \"${PLUGIN_ROOT}/hooks/commit-format.sh\" | /usr/bin/grep -q '^d3ddc5730611bead44f86e3230f7e15a86290e186c32e9a200e898079280cee9 ' || { echo 'dwarves-kit: trusted hook content changed' >&2; exit 2; }; exec \"${PLUGIN_ROOT}/hooks/codex-hook-adapter.sh\" PreToolUse commit-format.sh",
+            "command": "hash_file() { if command -v shasum >/dev/null 2>&1; then shasum -a 256 \"$1\"; elif command -v sha256sum >/dev/null 2>&1; then sha256sum \"$1\"; else return 2; fi; }; hash_file \"${PLUGIN_ROOT}/hooks/codex-hook-adapter.sh\" | /usr/bin/grep -q '^fefc20ca95217d304af2bbf4c14aef73ff0928472cde59f67f2cd6b3656e15af ' && hash_file \"${PLUGIN_ROOT}/hooks/commit-format.sh\" | /usr/bin/grep -q '^a4b785a74449e4bd8fa82679f42c4dd1e0299ea158a152ced2c695489f7c959c ' || { echo 'dwarves-kit: trusted hook content changed' >&2; exit 2; }; exec \"${PLUGIN_ROOT}/hooks/codex-hook-adapter.sh\" PreToolUse commit-format.sh",
             "timeout": 30
           }
         ]
@@ -38,7 +38,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "hash_file() { if command -v shasum >/dev/null 2>&1; then shasum -a 256 \"$1\"; elif command -v sha256sum >/dev/null 2>&1; then sha256sum \"$1\"; else return 2; fi; }; hash_file \"${PLUGIN_ROOT}/hooks/codex-hook-adapter.sh\" | /usr/bin/grep -q '^fefc20ca95217d304af2bbf4c14aef73ff0928472cde59f67f2cd6b3656e15af ' && hash_file \"${PLUGIN_ROOT}/hooks/anti-rationalization.sh\" | /usr/bin/grep -q '^95a202e7f8f7b8c24f414e6dcfff32fda7072de8f0aa86572023414a62858e46 ' || { echo 'dwarves-kit: trusted hook content changed' >&2; exit 2; }; exec \"${PLUGIN_ROOT}/hooks/codex-hook-adapter.sh\" Stop anti-rationalization.sh",
+            "command": "hash_file() { if command -v shasum >/dev/null 2>&1; then shasum -a 256 \"$1\"; elif command -v sha256sum >/dev/null 2>&1; then sha256sum \"$1\"; else return 2; fi; }; hash_file \"${PLUGIN_ROOT}/hooks/codex-hook-adapter.sh\" | /usr/bin/grep -q '^fefc20ca95217d304af2bbf4c14aef73ff0928472cde59f67f2cd6b3656e15af ' && hash_file \"${PLUGIN_ROOT}/hooks/anti-rationalization.sh\" | /usr/bin/grep -q '^d6a7982dfa7548fce97270f72653fcde141569cf8b65a4c5e4dd288ae17e6117 ' || { echo 'dwarves-kit: trusted hook content changed' >&2; exit 2; }; exec \"${PLUGIN_ROOT}/hooks/codex-hook-adapter.sh\" Stop anti-rationalization.sh",
             "timeout": 30
           }
         ]
