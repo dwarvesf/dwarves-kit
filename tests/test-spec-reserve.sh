@@ -231,6 +231,62 @@ eq "T15 the fresh foreign lock is still held" "$([ -d "$RES.lock" ] && echo held
 eq "T15 the foreign owner token is untouched" "$(cat "$RES.lock/owner" 2>/dev/null)" "foreign.owner.token"
 
 # ============================================================
+echo "=== T16: a lock held by a DEAD pid is reclaimed at once (no 24h TTL wait) ==="
+# ============================================================
+R="$(mk_repo)"; RES="$R/res.log"
+sleep 0.1 & DEADPID=$!; wait "$DEADPID" 2>/dev/null   # a pid that is now certainly gone
+mkdir -p "$(dirname "$RES")"; mkdir "$RES.lock"
+printf '%s.1.%s' "$DEADPID" "$(date -u +%s)" > "$RES.lock/owner"   # fresh mtime, dead owner
+T16_START="$(date -u +%s)"
+N16="$(cd "$R" && SPEC_RESERVE_FILE="$RES" bash "$SN" reserve 2>/dev/null)"
+T16_ELAPSED=$(( $(date -u +%s) - T16_START ))
+eq "T16 reserve reclaims a dead holder's lock and claims (006)" "$N16" "006"
+if [ "$T16_ELAPSED" -lt 3 ]; then ok "T16 reclaim was immediate (${T16_ELAPSED}s < 3s)"; else bad "T16 reclaim spun (${T16_ELAPSED}s >= 3s)"; fi
+eq "T16 the ledger gained exactly one RESERVE line" "$(count '| RESERVE |' "$RES")" "1"
+eq "T16 lock released after reserve" "$([ -d "$RES.lock" ] && echo held || echo free)" "free"
+
+# ============================================================
+echo "=== T17: a lock held by a LIVE pid is NOT stolen ==="
+# ============================================================
+R="$(mk_repo)"; RES="$R/res.log"
+sleep 30 & LIVEPID=$!
+mkdir -p "$(dirname "$RES")"; mkdir "$RES.lock"
+STAMP17="$LIVEPID.1.$(date -u +%s)"
+printf '%s' "$STAMP17" > "$RES.lock/owner"
+OUT17="$(cd "$R" && SPEC_RESERVE_MAX_TRIES=5 SPEC_RESERVE_FILE="$RES" bash "$SN" reserve 2>&1; echo "rc=$?")"
+expect "T17 reserve fails loudly rather than stealing a live holder's lock" "could not acquire lock" "$OUT17"
+expect "T17 reserve exits nonzero" "rc=1" "$OUT17"
+eq "T17 the live holder's lock is still held" "$([ -d "$RES.lock" ] && echo held || echo free)" "held"
+eq "T17 the live owner stamp is untouched" "$(cat "$RES.lock/owner" 2>/dev/null)" "$STAMP17"
+eq "T17 no ledger written while the lock was held" "$([ -f "$RES" ] && echo wrote || echo none)" "none"
+kill "$LIVEPID" 2>/dev/null || true; wait "$LIVEPID" 2>/dev/null || true
+
+# ============================================================
+echo "=== T18: an UNREADABLE owner + fresh mtime still falls back to the TTL wait ==="
+# ============================================================
+R="$(mk_repo)"; RES="$R/res.log"
+mkdir -p "$(dirname "$RES")"; mkdir "$RES.lock"; : > "$RES.lock/owner"   # empty owner, current mtime
+OUT18="$(cd "$R" && SPEC_RESERVE_MAX_TRIES=5 SPEC_RESERVE_FILE="$RES" bash "$SN" reserve 2>&1; echo "rc=$?")"
+expect "T18 an unparseable owner keeps the TTL path (waits, then fails)" "could not acquire lock" "$OUT18"
+expect "T18 reserve exits nonzero" "rc=1" "$OUT18"
+eq "T18 the lock is still held" "$([ -d "$RES.lock" ] && echo held || echo free)" "held"
+
+# ============================================================
+echo "=== T19: reserve takes NO arguments (--help must not mint a number) ==="
+# ============================================================
+R="$(mk_repo)"; RES="$R/res.log"
+(cd "$R" && SPEC_RESERVE_FILE="$RES" bash "$SN" reserve >/dev/null)   # a real ledger to compare against
+BEFORE19="$(cksum < "$RES")"
+for ARG in --help foo; do
+  O="$(cd "$R" && SPEC_RESERVE_FILE="$RES" bash "$SN" reserve "$ARG" 2>&1 >/dev/null; echo "rc=$?")"
+  expect "T19 reserve $ARG exits 64" "rc=64" "$O"
+  expect "T19 reserve $ARG prints usage on stderr" "usage: spec-next.sh reserve" "$O"
+done
+eq "T19 the ledger is byte-identical after both rejected calls" "$(cksum < "$RES")" "$BEFORE19"
+N19="$(cd "$R" && SPEC_RESERVE_FILE="$RES" bash "$SN" next foo 2>&1 >/dev/null; echo "rc=$?")"
+expect "T19 next also rejects an argument" "rc=64" "$N19"
+
+# ============================================================
 echo ""
 echo "=== Results ==="
 echo -e "Passed: ${GREEN}$PASS${NC} / $TOTAL"
