@@ -401,31 +401,51 @@ _union_marked() {
   return 1
 }
 
-# _union_carry_back <saved-copy> <target> -- put back every line the saved copy holds and the
-# pulled file lacks. Prints the count. The insert point comes from _log_anchor_head_lines, so
-# a carried line lands below the header exactly where `wrap log` puts a new entry.
+# _union_carry_back <saved-local> <saved-base> <target> -- put the local lines back into the
+# pulled file. Prints how many lines the local copy holds and the pulled file lacks; returns 1
+# when the merge refused, having restored the local copy so the operator's work is never the
+# thing that goes missing.
+#
+# A file with a `---` anchor keeps the anchor rule: a carried line lands directly below the
+# header, as the newest entry, which is where `wrap log` writes one and what a newest-first log
+# means. A file with NO anchor gets git's own union driver instead, over the three sides any
+# merge of this file would use: the pulled content, the pre-pull content as base, and the local
+# copy. The prepend has no right answer there. A board table has no anchor, so a carried ROW
+# landed at line 1, above the title and outside the table it belongs to, and a file with two
+# tables offers the anchor rule two equally wrong places.
 _union_carry_back() {
-  local saved="$1" target="$2" add tmp head_n mode n
+  local local_copy="$1" base="$2" target="$3" add tmp head_n mode n
   add="$(mktemp)"
-  grep -Fxv -f "$target" "$saved" > "$add" 2>/dev/null
+  grep -Fxv -f "$target" "$local_copy" > "$add" 2>/dev/null
   n="$(grep -c '' "$add" 2>/dev/null)"; n="${n:-0}"
-  if [ "$n" -gt 0 ] 2>/dev/null; then
-    head_n="$(_log_anchor_head_lines "$target")"
-    tmp="$(mktemp)"
-    if [ "$head_n" -gt 0 ] 2>/dev/null; then
-      sed -n "1,${head_n}p" "$target" > "$tmp"
-      cat "$add" >> "$tmp"
-      tail -n "+$((head_n + 1))" "$target" >> "$tmp"
-    else
-      cat "$add" "$target" > "$tmp"
-    fi
-    mode="$(_fmode "$target")"
-    case "$mode" in ''|*[!0-7]*) mode="" ;; esac
-    [ -n "$mode" ] && chmod "$mode" "$tmp"   # mktemp opens 0600; carry the target's mode over
+  if [ "$n" -le 0 ] 2>/dev/null; then rm -f "$add"; printf '0'; return 0; fi
+
+  tmp="$(mktemp)"
+  mode="$(_fmode "$target")"
+  case "$mode" in ''|*[!0-7]*) mode="" ;; esac
+  [ -n "$mode" ] && chmod "$mode" "$tmp"   # mktemp opens 0600; carry the target's mode over
+
+  head_n="$(_log_anchor_head_lines "$target")"
+  if [ "$head_n" -gt 0 ] 2>/dev/null; then
+    sed -n "1,${head_n}p" "$target" > "$tmp"
+    cat "$add" >> "$tmp"
+    tail -n "+$((head_n + 1))" "$target" >> "$tmp"
+    rm -f "$add"
     mv -f "$tmp" "$target"
+    printf '%s'  "$n"
+    return 0
   fi
   rm -f "$add"
-  printf '%s' "$n"
+  cp "$target" "$tmp"
+  if git merge-file --union -q "$tmp" "$base" "$local_copy" >/dev/null 2>&1; then
+    mv -f "$tmp" "$target"
+    printf '%s' "$n"
+    return 0
+  fi
+  rm -f "$tmp"
+  cp "$local_copy" "$target"   # the operator's lines are never the thing that goes missing
+  printf '0'
+  return 1
 }
 
 # _pull_past_dirty_on -- 0 when the operator authorized stashing a sibling session's dirty
@@ -558,6 +578,9 @@ _pull_default() {
         cp "$repo/$f" "${saved_dir}/${n}"
         printf '%s\0' "$f" >> "${saved_dir}/list"
         git -C "$repo" checkout -- "$f"
+        # The restored file IS the merge base the carry-back needs, captured here because
+        # after the pull the pre-pull content is no longer anywhere in the worktree.
+        cp "$repo/$f" "${saved_dir}/${n}.base"
       done < <(git -C "$repo" diff --name-only -z 2>/dev/null)
       echo "     saved ${n} union-marked file(s) aside so the pull can fast-forward"
     fi
@@ -602,8 +625,12 @@ _pull_default() {
     while IFS= read -r -d '' f; do
       n=$(( n + 1 ))
       if [ "$FAILURES" = "$before" ]; then
-        carried="$(_union_carry_back "${saved_dir}/${n}" "$repo/$f")"
-        echo "     carried ${carried} local line(s) back into ${f}"
+        if carried="$(_union_carry_back "${saved_dir}/${n}" "${saved_dir}/${n}.base" "$repo/$f")"; then
+          echo "     carried ${carried} local line(s) back into ${f}"
+        else
+          echo "     FAILED carry: ${f} would not union-merge, so its pre-pull content is back"
+          FAILURES=1
+        fi
       else
         # The operator's lines never stay only in a temp file, whatever failed the pull.
         cp "${saved_dir}/${n}" "$repo/$f"
