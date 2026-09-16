@@ -18,6 +18,14 @@
 # portable mkdir-mutex and records it in a reservations ledger that `_numbers()` folds in, so
 # a reserved number reads as TAKEN by the very next caller. `next`/`check` are unchanged in
 # contract: with an empty ledger they behave byte-identically to before.
+#
+# A second concurrency gap: three workers each opened a PR before any of them merged, so none
+# of their local scans (docs/specs/, local branches, commit subjects) saw the others' numbers,
+# and none of them called `reserve`. `_numbers()` also folds in every OPEN PR's `docs/specs/`
+# listing (fetched via `gh api .../contents/docs/specs?ref=<head>`, no clone, no fetch) when
+# `gh` is on PATH and authenticated. Set SPEC_NEXT_NO_PR_SCAN=1 to skip this source (tests use
+# it to keep runs hermetic); without `gh`, or if any bootstrap call fails, the scan falls back
+# to the original local-only behavior and prints one stderr note.
 set -euo pipefail
 
 ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
@@ -63,6 +71,37 @@ _scan_numbers() {
   } | grep -oE '[0-9]+' | sort -n | uniq
 }
 
+# Open-PR SPEC numbers: for each open PR's head ref, list docs/specs/ via the GitHub contents
+# API (no clone, no fetch) and pull out SPEC-NNN filenames. Fails soft everywhere: any missing
+# tool, failed auth, or failed bootstrap call prints one stderr note and returns empty so
+# `_numbers()` degrades to the original local-only scan.
+_scan_pr_numbers() {
+  if [ "${SPEC_NEXT_NO_PR_SCAN:-0}" = "1" ]; then
+    echo "spec-next: open PR heads not scanned (SPEC_NEXT_NO_PR_SCAN=1)" >&2
+    return 0
+  fi
+  command -v gh >/dev/null 2>&1 || { echo "spec-next: open PR heads not scanned (gh not on PATH)" >&2; return 0; }
+  gh auth status >/dev/null 2>&1 || { echo "spec-next: open PR heads not scanned (gh not authenticated)" >&2; return 0; }
+  local owner_repo heads
+  owner_repo="$(gh repo view --json nameWithOwner --jq '.nameWithOwner' 2>/dev/null)" || owner_repo=""
+  [ -n "$owner_repo" ] || { echo "spec-next: open PR heads not scanned (gh repo view failed)" >&2; return 0; }
+  heads="$(gh pr list --state open --json headRefName --limit 100 --jq '.[].headRefName' 2>/dev/null)"
+  local status=$?
+  if [ "$status" -ne 0 ]; then
+    echo "spec-next: open PR heads not scanned (gh pr list failed)" >&2
+    return 0
+  fi
+  [ -n "$heads" ] || return 0
+  local ref
+  while IFS= read -r ref; do
+    [ -n "$ref" ] || continue
+    # A PR with no docs/specs/ dir 404s here; that is normal (not every PR touches specs), so
+    # it is skipped silently rather than treated as a bootstrap failure.
+    gh api "repos/$owner_repo/contents/docs/specs?ref=$ref" --jq '.[].name' 2>/dev/null \
+      | grep -oE 'SPEC-[0-9]+' || true
+  done <<< "$heads"
+}
+
 # LIVE reservation numbers for THIS repo: repo-scoped AND within TTL (an expired line stops
 # counting even before it is physically pruned). Empty when no ledger exists (the common case,
 # which keeps `next`/`check` byte-identical to the original scan-only behavior).
@@ -89,7 +128,7 @@ _reservations() {
 # The full union readers see: the real scan PLUS live reservations. `_scan_numbers` is the
 # original scan-only body verbatim; folding reservations in is purely additive.
 _numbers() {
-  { _scan_numbers; _reservations; } | sort -n | uniq
+  { _scan_numbers; _scan_pr_numbers | grep -oE '[0-9]+'; _reservations; } | sort -n | uniq
 }
 
 next() {
