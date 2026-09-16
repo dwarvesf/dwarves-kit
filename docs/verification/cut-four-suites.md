@@ -81,3 +81,7 @@ Where the time went: a `set -x` trace with `PS4='+[$SECONDS] ...'` inside `_wave
 - The mock makes `_wave_run` take the reservation-SUCCESS branch, where the unmocked run took the failure branch. No assertion in the suite reads either branch, so the change is invisible to the verdict, but the failure branch is no longer exercised here.
 - The full `tests/run-all.sh --all` glob was not run; the recorded run is the bare diff-scoped selection plus the six always-on lints, which is what the push gate runs.
 - The audit's seconds for the other suites were not re-measured.
+
+## Rollback
+
+`git revert` of this branch's commits puts all four suites back exactly as they were: three deleted files return, the two host suites lose their folded sections, and `tests/test-multiplexer.sh` drops the `$SPEC_NEXT_CMD` mock and goes back to paying the reservation cost. Nothing outside the repo changed, so there is no host state, deploy, or data to undo. The gate classified this branch stateful only because a commit subject carries the word restore; the substantive rigor here is the negative control above.
