@@ -24,9 +24,9 @@ Verdict: PASS. 498 assertions before the change, 508 after; the 10 new ones cove
 
 Command: `bash tests/test-board-set-note.sh`
 Exit: 0
-Output: `ALL PASS`, with the three new lines `set on the default branch warns and still flips the
-row`, `dedupe with nothing to do stays silent about the branch`, `set on a feature branch does not
-warn`.
+Output: `ALL PASS`, with the four new lines `set on the default branch warns and still flips the
+row`, `dedupe with nothing to do stays silent about the branch`, `dedupe-all on the default branch
+warns and still collapsed the duplicate`, `set on a feature branch does not warn`.
 Verdict: PASS.
 
 Command: `bash tests/test-meta.sh`
@@ -39,9 +39,10 @@ four-line diff, all of them counts, and the suite went green.
 
 Command: `bash tests/run-all.sh`
 Exit: 0
-Output: `run-all: FAILED -> test-meta` / `run-all: 147 suites run, 1 skipped for missing tooling`
-Verdict: PASS after the regeneration above. That was the only failing suite in the whole sweep,
-and its cause and fix are recorded in the previous block.
+Output: `run-all: all 148 suites passed, 1 skipped for missing tooling`
+Verdict: PASS. The first sweep, before the regeneration above, reported `run-all: FAILED ->
+test-meta` and nothing else; `test-meta` was the only failing suite and its cause and fix are in
+the previous block. This line is the sweep after the review fixes, on `origin/master` merged in.
 
 ## Negative control
 
