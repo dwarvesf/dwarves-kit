@@ -10,8 +10,10 @@
 # is sub-second, and the wall clock was the sum of 146 of them. Output stays deterministic
 # because results are collated in glob order after the run, not as each suite finishes.
 #
-# Usage: bash tests/run-all.sh [--only <pattern>]
-# Env:   RUN_ALL_JOBS=<n>          parallel suites (default: core count; 1 = sequential)
+# Usage: bash tests/run-all.sh [--only <pattern> | --changed [<base>]]
+#        --changed runs only the suites the diff against <base> touches (default base: the
+#        merge-base with origin/master). The local pre-push check; CI keeps the full glob.
+# Env:   RUN_ALL_JOBS=<n>          parallel suites (default: auto on macOS, 1 elsewhere)
 #        RUN_ALL_TIMEOUT_SECS=<n>  per-suite ceiling (default: 300)
 # Exit:  0 all green, 1 one or more failed (every failure is listed at the end).
 
@@ -54,8 +56,10 @@ _cores() {
   else echo 2
   fi
 }
-# DEFAULT IS 1: parallel execution is opt-in via RUN_ALL_JOBS until the ubuntu
-# flake below is understood.
+# DEFAULT IS 1 ON LINUX: parallel execution is opt-in via RUN_ALL_JOBS there until
+# the ubuntu flake below is understood. macOS defaults to auto: every macOS run of
+# the parallel batch, CI and local, has been green, and the flake has never shown
+# on a Mac, so the platform where the evidence holds gets the 2.3x.
 #
 # Parallel runs are 2.3x faster and were green on a full dispatched matrix, on
 # every macOS run, and on the PR runs. They then failed twice on master, on
@@ -78,7 +82,10 @@ _cores() {
 # cap is 4, not the core count: the heaviest suites spawn 100-800 subprocesses
 # each, so one worker per core oversubscribes the box several times over. At -P
 # 10 on a 10-core M4, three suites blew past the 300s ceiling.
-JOBS="${RUN_ALL_JOBS:-1}"
+JOBS="${RUN_ALL_JOBS:-}"
+if [ -z "$JOBS" ]; then
+  case "$(uname -s)" in Darwin) JOBS=auto ;; *) JOBS=1 ;; esac
+fi
 if [ "$JOBS" = "auto" ]; then
   JOBS="$(_cores)"
   [ "$JOBS" -gt 4 ] && JOBS=4
@@ -86,6 +93,50 @@ fi
 
 OUTDIR="$(mktemp -d)"
 trap 'rm -rf "$OUTDIR"' EXIT
+
+# --- --changed: pick suites by the diff ---------------------------------------
+# The full glob is 13-15 minutes sequential on a Mac, and a branch that touches one lib
+# file needs a handful of those suites. Selection is a text match, on purpose: a suite is
+# picked when it names the basename of a changed file (so a change to lib/mega/mega.sh
+# picks every suite that mentions `mega.sh`, comments included), when it is itself
+# changed, or when it is tests/test-<mod>*.sh for a changed lib/<mod>/ file. test-meta
+# rides along whenever anything outside lib/ changed, because it is the registry and
+# lint suite over commands, skills, hooks, agents, docs, and the tests themselves.
+# Over-picking is fine; a suite this misses is one the changed file never appears in.
+# ponytail: basename grep, no dependency graph; add one if over-picking starts to cost.
+PICKED=""
+if [ "${1:-}" = "--changed" ]; then
+  base="${2:-}"
+  if [ -z "$base" ]; then
+    base="$(git merge-base HEAD origin/master 2>/dev/null \
+         || git merge-base HEAD master 2>/dev/null \
+         || echo HEAD)"
+  fi
+  changedlist="$OUTDIR/changed"
+  { git diff --name-only "$base" -- . 2>/dev/null; git ls-files --others --exclude-standard; } \
+    | grep -v '^$' | sort -u >"$changedlist"
+  if [ ! -s "$changedlist" ]; then
+    echo "run-all: --changed found no diff against $(git rev-parse --short "$base"); running everything"
+  else
+    PICKED="$OUTDIR/picked"; : >"$PICKED"
+    while IFS= read -r f; do
+      case "$f" in
+        tests/test-*.sh) [ -f "$f" ] && printf '%s\n' "$f" >>"$PICKED" ;;
+        lib/*/*) mod="${f#lib/}"; mod="${mod%%/*}"; ls tests/test-"$mod"*.sh >>"$PICKED" 2>/dev/null ;;
+      esac
+      case "$f" in lib/*) : ;; *) [ -f tests/test-meta.sh ] && printf 'tests/test-meta.sh\n' >>"$PICKED" ;; esac
+      grep -lF -- "$(basename "$f")" tests/test-*.sh >>"$PICKED" 2>/dev/null
+    done <"$changedlist"
+    sort -u -o "$PICKED" "$PICKED"
+    echo "run-all: --changed against $(git rev-parse --short "$base"): $(wc -l <"$changedlist" | tr -d ' ') changed files -> $(wc -l <"$PICKED" | tr -d ' ') suites"
+    sed 's/^/  /' "$PICKED"
+    if [ ! -s "$PICKED" ]; then
+      echo "run-all: no suite names any of the changed files; nothing to run"
+      sed 's/^/  /' "$changedlist"
+      exit 0
+    fi
+  fi
+fi
 
 # --- phase 1: decide what runs, sequentially and cheaply ---------------------
 # A suite may declare external tooling it cannot run without:
@@ -103,6 +154,7 @@ for t in tests/test-*.sh; do
   [ -f "$t" ] || continue
   name="$(basename "$t" .sh)"
   [ -n "$ONLY" ] && case "$name" in *"$ONLY"*) : ;; *) continue ;; esac
+  [ -n "$PICKED" ] && ! grep -qxF -- "$t" "$PICKED" && continue
   reqs="$(sed -n 's/^# requires:[[:space:]]*//p' "$t" | head -1)"
   missing=""
   for r in $reqs; do command -v "$r" >/dev/null 2>&1 || missing="$missing $r"; done
