@@ -328,7 +328,7 @@ if verdict still != "PASS":
 
 **Check the attempt state before you re-dispatch anything.** The loop above handles a worker that
 REPORTED a fixable failure. A worker that went SILENT reported nothing, so its outcome is unknown,
-and a re-dispatch there races the original agent on the same files (SPEC-290). Consult the attempt
+and a re-dispatch there races the original agent on the same files. Consult the attempt
 state first:
 
 ```bash

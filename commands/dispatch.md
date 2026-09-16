@@ -106,7 +106,7 @@ STATUS: BLOCKED -- <one line> (a Pause-if blocker you committed WIP for)
 
 A worker that returns `STATUS: BLOCKED` is BLOCKED. A worker that ERRORS OUT with a reported failure is **FAILED**: never read silence as READY.
 
-**Silence is neither.** A worker that stops reporting, drops its stream, or exceeds its timeout without a `STATUS:` line is **DISCONNECTED**: an unknown outcome, not a failure. An API drop kills the stream, not the agent, and the agent usually still holds its branch. Treating that as FAILED and re-dispatching is how a resumed agent and its replacement both land on one branch (SPEC-290; memory note `resume-a-dead-subagent-never-respawn-on-its-branch`).
+**Silence is neither.** A worker that stops reporting, drops its stream, or exceeds its timeout without a `STATUS:` line is **DISCONNECTED**: an unknown outcome, not a failure. An API drop kills the stream, not the agent, and the agent usually still holds its branch. Treating that as FAILED and re-dispatching is how a resumed agent and its replacement both land on one branch: the incident the memory note `resume-a-dead-subagent-never-respawn-on-its-branch` records.
 
 Track it instead of guessing:
 
