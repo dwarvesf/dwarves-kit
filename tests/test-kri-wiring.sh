@@ -76,7 +76,7 @@ _wired "$SHIP_GATE" 'outcome "$SLUG" ship end caught=false'; assert "01: OUTCOME
 # and spec-next.sh actually implements the reserve subcommand it calls into.
 _wired "$ORCH" '_wave_reserve_spec'; assert "02: orchestrate.sh's wave dispatch calls _wave_reserve_spec (live call site)" $?
 _wired "$ORCH" 'reserved_spec="$(_wave_reserve_spec)"'; assert "02: the reservation result is captured + injected into the worker prompt (live call site)" $?
-_wired "$SPEC_NEXT" 'reserve) reserve ;;'; assert "02: spec-next.sh implements the reserve subcommand _wave_reserve_spec calls into" $?
+_wired "$SPEC_NEXT" '; reserve ;;'; assert "02: spec-next.sh implements the reserve subcommand _wave_reserve_spec calls into" $?
 
 # 03: coverage-delta -- review-team.md actually invokes it
 _wired "$REVIEW_TEAM" 'bash lib/gate/coverage-delta.sh check'; assert "03: /kit:review-team invokes coverage-delta.sh (live call site, commands/review-team.md)" $?

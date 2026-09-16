@@ -228,8 +228,27 @@ _reserve_lock() {
   # Bounded spin so a live contender never wedges forever; env-overridable for tests.
   local tries=0 max="${SPEC_RESERVE_MAX_TRIES:-600}"   # ~ up to 30s; ample for a wave of a few workers
   while ! mkdir "$RES_LOCK" 2>/dev/null; do
-    # stale-lock reclaim: if the lock dir is older than TTL, a prior holder died with it held.
     if [ -d "$RES_LOCK" ]; then
+      # DEAD-HOLDER reclaim, tried FIRST: a holder that died with the lock held is the common
+      # case, and its owner stamp names the pid. The TTL path below is the fallback for a lock
+      # whose owner file is missing or unparseable, which takes 24h to clear. `kill -0` on a pid
+      # this user cannot signal (EPERM, another user's process) SUCCEEDS, so such a holder reads
+      # as alive and its lock is left alone.
+      local owner_pid
+      owner_pid="$(cat "$RES_LOCK/owner" 2>/dev/null)"
+      owner_pid="${owner_pid%%.*}"
+      case "$owner_pid" in
+        ''|*[!0-9]*) ;;
+        *)
+          if ! kill -0 "$owner_pid" 2>/dev/null; then
+            # Owner file first: rmdir refuses a non-empty dir. Never a recursive rm.
+            rm -f "$RES_LOCK/owner" 2>/dev/null || true
+            rmdir "$RES_LOCK" 2>/dev/null || true
+            continue
+          fi
+          ;;
+      esac
+      # stale-lock reclaim: if the lock dir is older than TTL, a prior holder died with it held.
       local lockage e
       e="$(_lock_mtime_epoch "$RES_LOCK")"
       if [ -n "$e" ]; then
@@ -291,9 +310,11 @@ reserve() {
 main() {
   local sub="${1:-next}"; shift || true
   case "$sub" in
-    next)    next ;;
+    # `next` and `reserve` take no arguments. Silently ignoring them minted a real reservation
+    # for `reserve --help`, so an argument is a usage error, refused before the ledger is touched.
+    next)    [ "$#" -eq 0 ] || { echo "usage: spec-next.sh next" >&2; return 64; }; next ;;
     check)   check "$@" ;;
-    reserve) reserve ;;
+    reserve) [ "$#" -eq 0 ] || { echo "usage: spec-next.sh reserve" >&2; return 64; }; reserve ;;
     *) echo "usage: spec-next.sh {next|check <NNN>|reserve}" >&2; return 64 ;;
   esac
 }
