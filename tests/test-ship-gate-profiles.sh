@@ -10,6 +10,7 @@
 # real `git push` hits (the marketplace's source directory IS this repo).
 set -uo pipefail
 KIT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+export KIT_CONFIG_OPERATOR="$KIT_DIR/tests/fixtures/gates-on"   # quality gates are opt-in; this suite exercises them ON
 HOOK="$KIT_DIR/hooks/ship-gate.sh"
 LOGDIR="$(mktemp -d)"; trap 'rm -rf "$LOGDIR"' EXIT
 fails=0

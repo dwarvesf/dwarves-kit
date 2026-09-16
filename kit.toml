@@ -82,20 +82,22 @@ enabled_agent_clis = ""         # [impl] opt-in NON-claude dispatch. Space-separ
                                 #        could self-enable a vendor). See commands/mega.md
                                 #        "Harness routing (multi-vendor dispatch)".
 
-[gate]                          # quality gates. Read when a hook fires, through
-                                #        lib/gate/gate-policy.sh (project .kit.toml wins, then the
-                                #        operator kit.toml, then this file). `false` switches that
-                                #        gate off for the project (a project-level false applies once
-                                #        .kit.toml is committed and clean); the hook logs OFF-BY-CONFIG
-                                #        and passes. Safety gates (safety-gate, secrets-guard) have no
-                                #        key here and cannot be switched off.
-proof_of_done      = true       # [impl] hooks/ship-gate.sh proof-of-done check (ADR-0025). Engages
-                                #        only where docs/verification/README.md exists; this key is
-                                #        the opt-out for a repo that adopted the marker.
-lane_gates         = true       # [impl] hooks/ship-gate.sh lane x phase required-gate check plus
+[gate]                          # quality gates, OPT-IN: every key defaults to false here. Read when
+                                #        a hook fires, through lib/gate/gate-policy.sh (project
+                                #        .kit.toml wins, then the operator kit.toml at
+                                #        ~/.config/dwarves-kit/kit.toml, then this file). Turn one on
+                                #        per repo with `<key> = true` in the repo's .kit.toml (adopt
+                                #        seeds the block), or machine-wide in the operator file. A
+                                #        project-level false over an operator true applies once
+                                #        .kit.toml is committed and clean. A gate that is off logs
+                                #        OFF-BY-CONFIG and passes. Safety gates (safety-gate,
+                                #        secrets-guard) have no key here and are always on.
+proof_of_done      = false      # [impl] hooks/ship-gate.sh proof-of-done check (ADR-0025). Also needs
+                                #        the docs/verification/README.md marker (adopt writes it).
+lane_gates         = false      # [impl] hooks/ship-gate.sh lane x phase required-gate check plus
                                 #        the no-Lane refusal in adopted repos (ADR-0024)
-understanding_gate = true       # [impl] hooks/anti-rationalization.sh (ADR-0031)
-commit_format      = true       # [impl] hooks/commit-format.sh commit-subject lint
+understanding_gate = false      # [impl] hooks/anti-rationalization.sh (ADR-0031)
+commit_format      = false      # [impl] hooks/commit-format.sh commit-subject lint
 
 [output]                        # [impl] lib/adopt.sh step 6b (SPEC-252); read at adopt time, never by a hook
 style = ""                      #        Claude Code output style for adopted projects. A name under

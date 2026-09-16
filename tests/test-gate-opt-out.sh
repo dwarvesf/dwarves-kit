@@ -11,7 +11,7 @@
 set -uo pipefail
 KIT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
-export CLAUDE_PLUGIN_ROOT="$KIT_DIR" KIT_CONFIG_ROOT="$KIT_DIR" KIT_CONFIG_OPERATOR="$TMP/no-operator"
+export CLAUDE_PLUGIN_ROOT="$KIT_DIR" KIT_CONFIG_ROOT="$KIT_DIR" KIT_CONFIG_OPERATOR="$KIT_DIR/tests/fixtures/gates-on"
 export DWARVES_KIT_LOG_DIR="$TMP/logs" KIT_LEDGER_DIR="$TMP/ledger"
 mkdir -p "$DWARVES_KIT_LOG_DIR" "$KIT_LEDGER_DIR"
 fails=0
@@ -105,10 +105,10 @@ printf '[gate]\nproof_of_done = true\n' > "$R/.kit.toml"
 bash "$P" enabled proof_of_done "$R" && pass "explicit true -> on" || fail "explicit true read as off"
 bash "$P" >/dev/null 2>&1; rc=$?; [ $rc -eq 64 ] && pass "no verb -> usage, exit 64" || fail "usage exit code $rc"
 
-echo "== adopt seeds the block commented out =="
+echo "== adopt seeds the block with the resolved values =="
 A="$TMP/adopt"; bare "$A"
 bash "$KIT_DIR/lib/adopt.sh" "$A" >/dev/null 2>&1
-{ grep -q '^\[gate\]' "$A/.kit.toml" && grep -q '^# proof_of_done = true' "$A/.kit.toml" && ! grep -q '^proof_of_done' "$A/.kit.toml"; } && pass "fresh adopt seeds [gate] with every key commented (operator overlay still reaches the repo)" || fail "adopt seed shape wrong: $(grep -n 'gate\|proof_of_done' "$A/.kit.toml" 2>&1 | head -3)"
+{ grep -q '^\[gate\]' "$A/.kit.toml" && grep -q '^proof_of_done = true$' "$A/.kit.toml"; } && pass "fresh adopt under a gates-on overlay seeds [gate] proof_of_done = true (the preset follows the operator)" || fail "adopt seed shape wrong: $(grep -n 'gate\|proof_of_done' "$A/.kit.toml" 2>&1 | head -3)"
 
 echo "== safety gate has no key =="
 S="$TMP/safety"; bare "$S"
