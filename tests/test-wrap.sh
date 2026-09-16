@@ -1747,10 +1747,24 @@ for knob in merge_own_prs tidy_worktrees build_candidates; do
   v="$(KIT_PROJECT_ROOT="$KNOB_PROJ" kit_config_get_root "wrap.$knob" true)"
   chk "wrap.$knob ignores a project .kit.toml" "$([ "$v" = "true" ]; echo $?)"
 done
-for knob in merge_own_prs tidy_worktrees build_candidates pull_past_dirty; do
+for knob in merge_own_prs tidy_worktrees build_candidates pull_past_dirty distill; do
   chk_has "commands/wrap.md reads wrap.$knob" "$(cat "$KIT_DIR/commands/wrap.md")" "wrap.$knob"
   chk_has "kit.toml declares $knob" "$(cat "$KIT_DIR/kit.toml")" "$knob"
 done
+# distill is the switch for the whole distill half (the pre-0 scan, the seams, step 7). It ships
+# OFF: "wrap up" lands the session, and the distill half runs on `/kit:wrap distill` or the knob.
+# It authorizes writes to home repos, so the project fence holds like every other [wrap] knob.
+DS_ON="$TMPD/distill-operator"; DS_PROJ="$TMPD/distill-project"
+mkdir -p "$DS_ON" "$DS_PROJ"
+printf '[wrap]\ndistill = true\n' > "$DS_ON/kit.toml"
+printf '[wrap]\ndistill = true\n' > "$DS_PROJ/.kit.toml"
+v="$(KIT_CONFIG_ROOT="$KIT_DIR" kit_config_get_root wrap.distill true)"
+chk "wrap.distill ships as false" "$([ "$v" = "false" ]; echo $?)"
+v="$(KIT_CONFIG_OPERATOR="$DS_ON" kit_config_get_root wrap.distill false)"
+chk "wrap.distill honours the operator kit.toml" "$([ "$v" = "true" ]; echo $?)"
+v="$(KIT_PROJECT_ROOT="$DS_PROJ" kit_config_get_root wrap.distill false)"
+chk "wrap.distill ignores a project .kit.toml" "$([ "$v" = "false" ]; echo $?)"
+chk_has "commands/wrap.md takes the distill argument" "$(cat "$KIT_DIR/commands/wrap.md")" "/kit:wrap distill"
 # pull_past_dirty is the one knob whose shipped default does NOT act: it authorizes a write to
 # a dirty file in a checkout other sessions share, so it opts in, and the project fence holds.
 v="$(KIT_CONFIG_ROOT="$KIT_DIR" kit_config_get_root wrap.pull_past_dirty true)"
@@ -1851,6 +1865,11 @@ chk "a NEW line carrying the precedent miss passes" "$([ "$rc" -eq 0 ]; echo $?)
 
 out="$(_report '✅ **Needs you:** NOTHING' | sed 's|^\*\*Built:\*\* .*|**Built:** SKIPPED: build_candidates knob is false|' | bash "$LINT" 2>&1)"; rc=$?
 chk "a real SKIPPED reason passes" "$([ "$rc" -eq 0 ]; echo $?)"
+
+# The distill switch off is the shipped default, so its report shape is the common one: both
+# lines SKIPPED with the switch as the reason, and the lint must take it as a real skip.
+out="$(_report '✅ **Needs you:** NOTHING' | sed 's|^\*\*Built:\*\* .*|**Built:** SKIPPED: distill off|; s|^\*\*Seam:\*\* .*|**Seam:** SKIPPED: distill off|' | bash "$LINT" 2>&1)"; rc=$?
+chk "Built and Seam both SKIPPED: distill off passes" "$([ "$rc" -eq 0 ]; echo $?)"
 
 # The lane suffix. commands/wrap.md step 7b routes every candidate through
 # lib/classify/lane-classify.sh: a tiny-lane candidate is built here and carries the check

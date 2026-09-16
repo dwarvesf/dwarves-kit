@@ -1,5 +1,5 @@
 ---
-description: "The session-scoped landing step after ship: flips board rows, merges the operator's own green PRs one at a time, checks deploys, tidies branches and worktrees, writes the activity line, calls /kit:retro when a shipped PR merged, and prints the skim-first report. Use when the operator says to wrap up or close out the session, land the work, or run the end-of-session routine: 'wrap up', 'wrap this up', 'close out', 'let's wrap', 'session wrap', 'land it', 'pack this up for the day', 'wrap up, update items status, commit, merge PRs and clean up worktrees and stale branches, then pull the latest', 'tổng kết session', 'wrap lại đi'. Also the door for the distill half when an operator has wired the seams: 'distill this session', 'check if you can learn from this session and distill anything into scripts, tools or skills for future replay'."
+description: "The session-scoped landing step after ship: flips board rows, merges the operator's own green PRs one at a time, checks deploys, tidies branches and worktrees, writes the activity line, calls /kit:retro when a shipped PR merged, and prints the skim-first report. Use when the operator says to wrap up or close out the session, land the work, or run the end-of-session routine: 'wrap up', 'wrap this up', 'close out', 'let's wrap', 'session wrap', 'land it', 'pack this up for the day', 'wrap up, update items status, commit, merge PRs and clean up worktrees and stale branches, then pull the latest', 'tổng kết session', 'wrap lại đi'. Also the door for the distill half, which is OFF by default (`wrap.distill = false`) and runs when the invocation carries the word `distill` or the operator asks for it: '/kit:wrap distill', 'wrap up and distill', 'distill this session', 'check if you can learn from this session and distill anything into scripts, tools or skills for future replay'."
 ---
 
 Self-intro (AGENTS.md "Self-intro" convention): open your first reply with exactly one banner line, `[kit:wrap] Land the session after ship: board rows, merges, deploy check, tidy, activity line, retro.`, then proceed.
@@ -22,13 +22,22 @@ You are the session's landing step. The operator just shipped, or is ending the 
 
 Bracket the phase for timing before starting: `bash lib/gate/gate-ledger.sh outcome <rid> wrap start`.
 
-Run the steps below once per repo the session touched (the current repo when the operator names none). Positional repo arguments; wrap never discovers touched repos on its own (Out of Scope).
+Run the steps below once per repo the session touched (the current repo when the operator names none). Positional repo arguments; wrap never discovers touched repos on its own (Out of Scope). One argument is not a repo: the word `distill` (or `--distill`), anywhere in the arguments, is the distill switch below and is consumed before the repo list is read.
 
-**Scan for candidates before step 0, act on them at step 7b.** Step 7b's scan reads the session and nothing else, and it is the one step whose input degrades with every step that runs before it: six steps of scan, merge, and pull output later, the model is reasoning about branches and has lost what it did four times by hand at 14:00. So the scan runs FIRST, ahead of even the seams: write the candidate list (label, what was repeated or written, how many times) to the scratch file the step 9 report will use. Step 7b then runs precedent and acts on that list, never on a fresh recollection. The old standalone closeout ran this scan as its first move, before any landing, and produced an enhancement to an existing tool most sessions; the same scan at step 7 produced none across its first two weeks, because by then there was nothing left in context to scan.
+**The distill switch.** This command has two halves. The LANDING half is steps 0 through 6, 8, and 9: board rows, commit, merge, deploy check, tidy, pull, activity line, retro, report. The DISTILL half is the pre-step-0 candidate scan, both seams of step -1, and all of step 7 (DEBT marker, candidates, memory notes, and the drain). Resolve the switch once, first:
+
+```bash
+. lib/config/kit-config.sh
+kit_config_get_root wrap.distill false
+```
+
+The distill half runs when that value is `true`, or when the invocation carries `distill`, or when the operator's ask says to distill. Otherwise it does not run at all: skip the scan, skip both seams, skip step 7, report `**Built:** SKIPPED: distill off` and `**Seam:** SKIPPED: distill off`, and put one `FYI` bullet of the STATE kind naming the knob and the argument that turns it on (the operator meets the same skip next wrap, which is what that lane is for). The default is off because the distill half is the expensive half (a precedent pass, a lane classifier, builds in home repos, a note-store grep) and the operator who says "wrap up" wants the landing; the operator who wants the rest says so. The retro at step 8 is landing, not distill: it fires only when a spec cycle shipped, and it reads the run ledger rather than the session. The knob resolves root-only, same as the autonomy knobs below, because the distill half writes to home repos.
+
+**Scan for candidates before step 0, act on them at step 7b.** (Distill half; skip when the switch is off.) Step 7b's scan reads the session and nothing else, and it is the one step whose input degrades with every step that runs before it: six steps of scan, merge, and pull output later, the model is reasoning about branches and has lost what it did four times by hand at 14:00. So the scan runs FIRST, ahead of even the seams: write the candidate list (label, what was repeated or written, how many times) to the scratch file the step 9 report will use. Step 7b then runs precedent and acts on that list, never on a fresh recollection. The old standalone closeout ran this scan as its first move, before any landing, and produced an enhancement to an existing tool most sessions; the same scan at step 7 produced none across its first two weeks, because by then there was nothing left in context to scan.
 
 ### Step -1: the seams
 
-An operator can hang one skill on each side of this command. Read both keys first:
+(Distill half. With the switch off, read no seam key, run no seam, and report `**Seam:** SKIPPED: distill off`; the autonomy knobs below are still read.) An operator can hang one skill on each side of this command. Read both keys first:
 
 ```bash
 . lib/config/kit-config.sh
@@ -52,7 +61,7 @@ kit_config_get_root wrap.build_candidates true
 kit_config_get_root wrap.build_lanes "tiny"
 ```
 
-Each governs exactly one step: `merge_own_prs` step 3, `tidy_worktrees` step 5, `build_candidates` step 7b. The shipped defaults are all `true`, so wrap acts. Every one of the three authorizes a write, which is why all three resolve with `kit_config_get_root` and never from a project `.kit.toml`. A `false` turns that step's action into a report line; it never turns the step off, and it never relaxes a refusal the tools make on their own. Name every knob read as `false` in the report's `FYI`, so a step that stayed its hand says why.
+Each governs exactly one step: `merge_own_prs` step 3, `tidy_worktrees` step 5, `build_candidates` step 7b. `build_candidates`, `build_lanes`, and `drain_staged` size a step inside the distill half, so they govern nothing while the distill switch is off. The shipped defaults are all `true`, so wherever a step runs, wrap acts. Every one of the three authorizes a write, which is why all three resolve with `kit_config_get_root` and never from a project `.kit.toml`. A `false` turns that step's action into a report line; it never turns the step off, and it never relaxes a refusal the tools make on their own. Name every knob read as `false` in the report's `FYI`, so a step that stayed its hand says why.
 
 `wrap.build_lanes` sizes step 7b rather than authorizing it: a space-separated list of the lanes step 7b builds inline. The default `"tiny"` is today's behavior. `full` is the one lane the list cannot buy an inline build for; it files a queued board row instead. It resolves root-only for the same reason as the three above, because widening it widens what wrap writes.
 
@@ -110,7 +119,7 @@ Re-run the step 0 check first. Then: `bin/wrap log "<slug>: <one sentence>"`. Wh
 
 ### Step 7: understand
 
-The process half of distill: a DEBT marker for the run, new-tool candidates checked against precedent, and one memory note per incident this session caused. Three lettered sub-steps, each prints one line when idle.
+(Distill half. With the switch off, none of `a`, `b`, `c`, or the drain runs; report `**Built:** SKIPPED: distill off` and go to step 8.) The process half of distill: a DEBT marker for the run, new-tool candidates checked against precedent, and one memory note per incident this session caused. Three lettered sub-steps, each prints one line when idle.
 
 Sub-step `b` BUILDS what it can rather than proposing it, and it builds through the lane, never around it. `wrap.build_lanes` names which lanes build and verify here, and it defaults to `tiny`: a wrong call in a listed lane costs one revert, and a staged row that waits for a yes costs a round trip on work the operator already asked for. Every unlisted lane is staged with its goal drafted, because a spec or a review does not fit in the minutes an operator gave you to close the session, and a change that skips them is unreviewed and undocumented wherever it lands. A `full` candidate is the one lane that never builds inline and never stages either: it files a queued row on the home repo's board, because a board is a queue an operator reads and a staging file is not. A row is staged on its own merits too, whatever its lane, when the candidate fails the `Needs you` admission test, meaning its scope is a judgment whose options carry different irreversible outcomes. Sub-step `c` writes one memory note and never a board row.
 
@@ -214,6 +223,7 @@ b. ...
 
 **Built:** BUILT <label> ENHANCE <home>: <file, insertion point> (lane=tiny, verified: <check>, <commit>)
    -- or -- NOTHING: no candidates
+   -- or -- SKIPPED: distill off
    -- or -- SKIPPED: <why the step did not run>
    -- or, for two or more candidates --
 **Built:**
@@ -226,6 +236,7 @@ b. ...
 
 **Seam:** <side> <skill name> ran: <its one-line outcome>
    -- or -- NOTHING: no seam configured
+   -- or -- SKIPPED: distill off
    -- or -- SKIPPED: <why>
 
 **FYI:**
