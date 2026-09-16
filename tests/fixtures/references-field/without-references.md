@@ -49,7 +49,7 @@ format stays the default.
 1. `--json` combined with `-t`/`--verbose`: the tool errors, naming the conflict.
 
 ## Out of Scope
-- Nothing; this is a test fixture for `tests/test-references-field.sh`, not a real spec.
+- Nothing; this is a test fixture for `tests/test-design-record.sh`, not a real spec.
 
 ## Decision Log
 - DEC-001: fixture only.

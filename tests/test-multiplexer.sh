@@ -148,6 +148,21 @@ exit 0
 MOCK
 chmod +x "$TMP/claude-mux"
 
+# Spec-reservation mock. `_wave_run` reserves a SPEC number per dispatched sub-goal through the
+# `$SPEC_NEXT_CMD` seam, which by default runs the REAL lib/spec/spec-next.sh against the operator's
+# own reservation ledger under ~/.local/state: a network-free but lock-contended scan that took ~42
+# seconds per sub-goal here (~210 of this suite's 220), and that would mint real SPEC numbers in the
+# operator's ledger as a side effect of running the tests. Nothing in this file asserts on spec
+# reservation (tests/test-spec-reserve.sh owns that contract), so the seam is mocked: a fixed number,
+# instantly, no shared state touched.
+cat > "$TMP/spec-next-mock" <<'MOCK'
+#!/usr/bin/env bash
+[ "${1:-}" = reserve ] || exit 1
+echo 900
+MOCK
+chmod +x "$TMP/spec-next-mock"
+export SPEC_NEXT_CMD="$TMP/spec-next-mock"
+
 # ============================ (A) MULTIPLEXER=1: spawn + capture-pane visibility ============================
 A="$TMP/mux-on-repo"
 mk_git_mega "$A"
