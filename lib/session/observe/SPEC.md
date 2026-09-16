@@ -24,14 +24,15 @@ This is sub-goal 01 of the `cc-elevation` mega-goal (self-observability axis). S
 ## CLI contract
 
 ```
-cc-observe <skills|tools|hooks|subagents|friction|sessions|cost|report> [--file F | --project=SLUG] [--root DIR] [--days N] [--top N] [--json]
+cc-observe <skills|tools|hooks|subagents|friction|sessions|cost|burn|entry-fee|report> [--file F | --project=SLUG] [--root DIR] [--days N] [--top N] [--trend] [--json]
 ```
 
 | Arg | Default | Meaning |
 |---|---|---|
-| `<cmd>` | required | `skills`, `tools`, `hooks`, `subagents`, `friction`, `sessions`, `cost`, or `report` (all of them) |
+| `<cmd>` | required | `skills`, `tools`, `hooks`, `subagents`, `friction`, `sessions`, `cost`, `burn`, `entry-fee`, or `report` (every view except `burn` and `entry-fee`) |
 | `--file F` | none | parse a single transcript (used by tests) |
-| `--project=SLUG` | none | one project dir under the root. Slugs start with `-` (cwd-derived), so the **equals form is required**. |
+| `--project=SLUG` | none | one project dir under the root. Slugs start with `-` (cwd-derived), so the **equals form is required**. A bare repo name that is not itself a slug matches every slug containing it, so a repo's worktrees aggregate. |
+| `--trend` | false | (`entry-fee`) add a weekly median table, newest week first |
 | `--root DIR` | `~/.claude/projects` | transcripts root (all projects) |
 | `--days N` | 0 (all) | only files modified within N days (coarse mtime window) |
 | `--top N` | 0 (all) | limit to top N rows |
@@ -52,6 +53,7 @@ The intended recurring use is `cc-observe report --days 7 --json` (the weekly di
    - friction: `Edit`/`Write`/`MultiEdit` -> per-session edit count by `file_path`, folded into `thrash` at end of each transcript (`>= THRASH_MIN`); `tool_result` content matching a `PERM_MARKERS` string -> a permission-friction event attributed to the tool via `tool_use_id` (Bash labeled by command); `isCompactSummary` entry -> a compaction for that day; a Skill's errored `tool_result` -> a skill mis-fire (skill-precision).
    - sessions: per transcript, track first/last `timestamp` (wall-clock), tool-use count, prompt-turn count -> `classify_session` buckets it (quick/standard/deep/marathon/automation, thresholds in `ARCH`); sidechain transcripts are skipped (not Han's sessions). Prompt-turns + tool-uses are bucketed by UTC hour (`circadian`). A prompt turn whose text holds `INTERRUPT_MARK` is an interruption.
    - cost: `message.usage` (input/output/cache-read/cache-create) summed per `message.model`; `model_cost` applies the dated `PRICING` table by family substring (unknown family -> tokens counted, `$` shown as `?`). Cache-hit = cache-read / (read + create). cost-per-merged-PR is out of scope (see Non-goals).
+   - entry-fee: per transcript, the FIRST main-chain assistant turn's `input + cache_creation + cache_read` is the session's MEASURED entry fee (the fixed preamble every turn re-reads). Preamble `attachment` entries are sized from their `rendered` text at 4 chars per token and keyed by `attachment.type`, an ESTIMATE labelled as one; the remainder against the measured fee is `(unattributed)` (system prompt + tool schemas, absent from the transcript). Transcripts with no main-chain assistant turn (a subagent's own run, a session with no reply) and transcripts under a `subagents/` dir contribute no row. Per-repo and weekly (`--trend`) tables carry the median measured fee. Full contract: `docs/specs/SPEC-289-observe-entry-fee.md`.
 3. Emit the requested view(s) as aligned tables, or one JSON object with `--json`.
 
 **Hook labels**: script hooks collapse to their basename (`slop-cleaner.sh`); inline `echo` guard hooks key on a short command hash (`inline-echo:ab12cd34`); other commands use their first token. Known limitation: long-text inline/condition hooks (e.g. the `/goal` Stop-hook, whose command is the goal text) fragment by first word. Script hooks, the ones with actionable latency, label cleanly.
@@ -61,6 +63,8 @@ The intended recurring use is `cc-observe report --days 7 --json` (the weekly di
 - No instrumentation / wrapper / daemon. Read-only over existing transcripts.
 - The `cost` view's `$` is an **attribution estimate** from a static dated `PRICING` table, NOT a bill (Max plan is flat-rate). No live pricing fetch.
 - **No cost-per-merged-PR.** It was in SG-03's outcome but has no clean data path: transcripts span all repos while merges are per-repo, and ops-toolkit squash-merges (so `git log --merges` finds ~0). Deferred to NOTES proposed-additions; needs PR data (gh), not transcript data.
+- The `entry-fee` view's component split is an **estimate** (4 chars per token over the rendered preamble text). The API reports one usage block per turn, so a per-component token count does not exist in the data. Only the per-session total is measured.
+- Neither `burn` nor `entry-fee` is part of `report`. `report` is the weekly digest of behaviour; `burn` is a live check and `entry-fee` is a standing cost measurement.
 - No live dashboard. `--json` feeds vps-mon; rendering lives there.
 - No writes anywhere. This tool only reads.
 

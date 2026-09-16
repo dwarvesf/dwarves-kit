@@ -1,0 +1,5 @@
+{"type": "attachment", "timestamp": 1757318400, "attachment": {"type": "skill_listing"}, "rendered": [{"content": 12345}]}
+{"type": "attachment", "timestamp": "2026-09-08T08:00:00Z", "attachment": {"type": {"nested": "dict"}}, "rendered": [{"content": "yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy"}]}
+{"type": "attachment", "timestamp": "2026-09-08T08:00:00Z", "attachment": {"type": "instructions"}, "rendered": "not-a-list"}
+{"type": "assistant", "timestamp": "2026-09-08T08:00:00Z", "message": "oops"}
+{"type": "assistant", "isSidechain": false, "timestamp": "2026-09-08T08:00:00Z", "message": {"id": "m1", "model": "claude-opus-5", "content": [], "usage": {"input_tokens": 0, "cache_creation_input_tokens": 350, "cache_read_input_tokens": 350, "output_tokens": 1}}}

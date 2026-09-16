@@ -617,3 +617,109 @@ bash lib/session/observe/tests/smoke.sh      # -> smoke: all 56 passed
 bash bin/session observe burn --since 60     # live ranked table
 bash bin/session observe burn --json         # {window_min, sessions[]}
 ```
+
+## SPEC-289 `entry-fee`: the fixed context entry fee per turn
+
+**Feature:** `session observe entry-fee` sizes the preamble every agent turn re-reads before any work. The per-session total is measured (the first main-chain assistant turn's input + cache-creation + cache-read); the per-component split is estimated at four characters per token over the rendered preamble text and is labelled an estimate everywhere. Adds a per-repo median and, with `--trend`, ISO-week medians. Spec: `docs/specs/SPEC-289-observe-entry-fee.md`. Row: ID-878.
+**Date:** 2026-09-16 · **Lane:** full · **Host:** dev laptop (macOS 27.0)
+
+### Acceptance criteria
+
+| # | Criterion | Source |
+|---|---|---|
+| E1 | Per-component breakdown of the preamble | ID-878 "per-component breakdown" |
+| E2 | Per-repo figure, since the memory index and CLAUDE.md stack differ per checkout | ID-878 "a per-repo figure" |
+| E3 | A trend, so a preamble cleanup is visible | ID-878 "a trend so progress is visible" |
+| E4 | The measured half is never presented as an estimate, nor the estimate as a measurement | SPEC-289 Behaviour |
+| E5 | Lives inside the existing CLI beside `cost` and `burn`, not as a sibling script | ID-878 "belongs beside them" |
+| E6 | Read-only, stdlib only, no new dependency | module contract |
+
+### Run table
+
+| Check | Command | Expected | Result |
+|---|---|---|---|
+| Module suite green | `bash lib/session/observe/tests/smoke.sh \| tail -1` | all cases pass | PASS, `smoke: all 79 passed` |
+| Kit suite green | `bash tests/run-all.sh \| tail -1` | every suite passes | PASS, `all 147 suites passed, 1 skipped for missing tooling` |
+| Header + median (E1) | smoke 62 | 4 sessions, 2 projects, median 2000 | PASS |
+| Split sized at 4 chars/token (E1) | smoke 63 | instructions 200, skill_listing 100 | PASS |
+| Remainder reconciles (E4) | smoke 64 | `(unattributed)` 1650 = 2000 - 350 | PASS |
+| Subagent transcript excluded | smoke 65 | its 99999 fee absent | PASS |
+| Sidechain-only transcript excluded | smoke 66 | 4 sessions, not 5 | PASS |
+| First turn wins, not a later one | smoke 67 | 18000 second turn ignored | PASS |
+| Per repo (E2) | smoke 68 | proj-beta 1 session, median 500 | PASS |
+| Trend, newest first (E3) | smoke 69 | W37 3/2000 above W36 1/1000 | PASS |
+| No trend without `--trend` | smoke 70 | weekly table absent | PASS |
+| Bare repo name resolves | smoke 71 | `alpha` -> proj-alpha only | PASS |
+| JSON carries the estimate flag (E4) | smoke 72 | `components_estimated` true, median_fee 2000 | PASS |
+| `report` unchanged (E5) | smoke 73 | no entry-fee section | PASS |
+| Overshoot is not a negative measurement (E4) | smoke 74 + 75 | `(estimate over measured)` 1000, share 200% | PASS |
+| Untrusted fields do not abort the scan | smoke 76 + 77 | exit 0, fee 700 still measured | PASS |
+| Worktree slugs fold into their repo (E2) | smoke 78 | one proj-alpha row, 2 sessions | PASS |
+| Multi-slug `--project` announced | smoke 79 | stderr names both slugs | PASS |
+| Live, real data (E1 E2 E3 E6) | `bash bin/session observe entry-fee --days 14 --top 8 --trend` | tables under 5s | PASS, 1.03s wall, 435 sessions, 8 repos |
+
+### Live run (2026-09-16, 14-day window)
+
+```
+# entry-fee  (435 sessions, 8 projects; median 52951 tokens re-read per turn, measured)
+  component split of one 94938-token session (108 sessions record the rendered preamble;
+  the split is ESTIMATED at 4 chars/token, only the totals are measured):
+  component                  est-tokens  share
+  -------------------------  ----------  -----
+  skill_listing                   22523    24%
+  instructions                    12653    13%
+  agent_listing_delta              6795     7%
+  hook_success                     1579     2%
+  hook_additional_context          1114     1%
+  output_style_instructions         882     1%
+  deferred_tools_delta              411     0%
+  session_context                   308     0%
+  environment                       189     0%
+  model                              39     0%
+  output_style                       31     0%
+  total_tokens_reminder              21     0%
+  date                               16     0%
+  (unattributed)                  48377    51%
+  per repo (median measured fee):
+  project                                         sessions  median-fee
+  ----------------------------------------------  --------  ----------
+  -Users-tieubao-workspace-tieubao-family-office         1      112659
+  -Users-tieubao-workspace-tieubao-dfoundation           1      107022
+  -Users-tieubao-workspace-tieubao-dotfiles              1      104169
+  ...ieubao-workspace-dwarvesf-dwarves-kit-queue         1       94938
+  -Users-tieubao                                         3       88987
+  -Users-tieubao-workspace-tieubao-ops-toolkit         396       54957
+  ...ce-tieubao-ops-toolkit-tools-vps-mon-worker         4       53352
+  ...tieubao-ops-toolkit-experiments-webnovel-dl         6       47507
+  weekly trend (median measured fee):
+  week      sessions  median-fee
+  --------  --------  ----------
+  2026-W38        42       54957
+  2026-W37       169      105299
+  2026-W36       221       51050
+  2026-W35         2      112171
+  2026-W34         1      113926
+```
+
+The two largest sized components, `skill_listing` at 22,523 and `instructions` at 12,653, sit in the same band as the 2026-09-13 hand measurement (26,813 and 18,893) taken on a different repo. The tool now produces that split on demand, per repo and per week, instead of once by hand.
+
+### Negative control
+
+`bash lib/gate/negctl.sh` dropped `cache_read_input_tokens` from the fee sum, the one term that carries most of a real preamble.
+
+```
+Exit: 0 (green before mutation)
+Changed: lib/session/observe/bin/session-observe
+Exit: 1 (under mutation, RED expected)
+Restore: git checkout HEAD -- lib/session/observe/bin/session-observe
+Exit: 0 (green after restore)
+Verdict: PASS
+```
+
+### Reproduce
+
+```bash
+bash lib/session/observe/tests/smoke.sh                        # -> smoke: all 79 passed
+bash bin/session observe entry-fee --days 14 --top 8 --trend   # live tables
+bash bin/session observe entry-fee --days 14 --json            # machine-readable
+```
