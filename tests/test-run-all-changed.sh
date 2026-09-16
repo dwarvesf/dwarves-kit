@@ -73,6 +73,15 @@ if [ "$RC" -eq 0 ] && grep -q 'found no diff.*running everything' <<<"$OUT" \
   ok "full glob on an empty diff"
 else no "rc=$RC out=$OUT"; fi
 
+echo "[5b] a bare invocation is --changed, and --all is the full glob"
+K="$TMP/k5b"; mkkit "$K"; echo 'x=2' > "$K/lib/foo/foo.sh"
+OUT="$(bash "$K/tests/run-all.sh" 2>&1)"; RC=$?
+OUT2="$(bash "$K/tests/run-all.sh" --all 2>&1)"; RC2=$?
+if [ "$RC" -eq 0 ] && grep -q -- '--changed against' <<<"$OUT" && ! ran test-bar "$OUT" \
+   && [ "$RC2" -eq 0 ] && grep -q '^run-all: all 4 suites passed' <<<"$OUT2"; then
+  ok "bare picks, --all runs everything"
+else no "rc=$RC rc2=$RC2 out=$OUT out2=$OUT2"; fi
+
 echo "[6] an explicit base scopes the diff to the commits after it"
 K="$TMP/k6"; mkkit "$K"; echo 'x=3' > "$K/lib/foo/foo.sh"; ( cd "$K" && g commit -qam foo )
 OUT="$(bash "$K/tests/run-all.sh" --changed HEAD~1 2>&1)"; RC=$?
