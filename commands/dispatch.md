@@ -104,7 +104,29 @@ STATUS: READY                 (all tasks verified, branch clean, no cross-task b
 STATUS: BLOCKED -- <one line> (a Pause-if blocker you committed WIP for)
 ```
 
-A worker that returns no `STATUS:` line, errors, or exceeds a per-worker timeout is **FAILED** (distinct from BLOCKED): never read silence as READY.
+A worker that returns `STATUS: BLOCKED` is BLOCKED. A worker that ERRORS OUT with a reported failure is **FAILED**: never read silence as READY.
+
+**Silence is neither.** A worker that stops reporting, drops its stream, or exceeds its timeout without a `STATUS:` line is **DISCONNECTED**: an unknown outcome, not a failure. An API drop kills the stream, not the agent, and the agent usually still holds its branch. Treating that as FAILED and re-dispatching is how a resumed agent and its replacement both land on one branch: the incident the memory note `resume-a-dead-subagent-never-respawn-on-its-branch` records.
+
+Track it instead of guessing:
+
+```bash
+AS=lib/goal/attempt-state.sh
+bash $AS dispatch <slug> <worker-id>            # when you fan the worker out
+bash $AS mark-disconnected <slug> --grace 120   # the worker went quiet: start the window
+```
+
+Inside the window: **`SendMessage` to resume that agent, never a second `Agent` dispatch.** The task stays `dispatched` and `dispatch` refuses a replacement, which is the guard, not the reminder. On a reply, `bash $AS resume <slug>`. When the worker lands its branch, `bash $AS commit-result <slug> <attempt> <branch-or-sha>`; a second commit for the same slug is a no-op that names the winner, so a late duplicate cannot land twice.
+
+Only after the window expires may you write the attempt off:
+
+```bash
+bash $AS lose-attempt <slug>    # refuses while the window has time left
+```
+
+That marks the attempt `lost`, excludes that worker from the slug, and frees the task back to `queued` for a genuinely different worker. `bash $AS status <slug>` prints the state, the attempts, and the grace remaining.
+
+When every eligible worker is excluded and nobody is left to try, stop rather than loop: `bash $AS abandon <slug> "<reason>"` takes the task to `lost` and resolves any attempt still on it. Surface that to the user with the BLOCKED and FAILED set in Step 6.
 
 ### Step 4: Wait-queue
 
