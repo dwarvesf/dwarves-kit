@@ -1,4 +1,4 @@
-# SPEC-288: `ui-acceptance-verifier`, the battery leg that drives the PR's preview
+# SPEC-292: `ui-acceptance-verifier`, the battery leg that drives the PR's preview
 
 **Status:** DRAFT (contract only; no code in this PR)
 Lane: full
