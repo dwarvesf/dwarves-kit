@@ -80,25 +80,22 @@ expect "T3 stderr names the opt-out reason" "SPEC_NEXT_NO_PR_SCAN=1" "$ERR3"
 echo "=== T4: no gh on PATH at all -> local-only fallback + stderr note ==="
 # ============================================================
 R="$(mk_repo)"
-# Strip PATH down to no `gh`: symlink only `git` (whatever binary it really resolves to,
-# alias or not) into an isolated bin dir, then keep every OTHER dir from the real PATH
-# EXCEPT any dir that itself holds a `gh` executable. A hardcoded /usr/bin:/bin fallback
-# is not portable: on a GitHub-hosted ubuntu runner `gh` lives in /usr/bin right next to
-# coreutils, so that fallback silently let `gh` back onto PATH and T4 ran the WRONG branch
-# (mistaken for "not authenticated" instead of "not on PATH") on CI while passing locally,
-# where gh happens to live in a Homebrew dir already excluded. Filtering by dir CONTENT
-# (does this dir have a `gh` in it), not by a fixed dir LIST, is correct on both.
-NOGH_BIN="$(mktemp -d "${TMPDIR:-/tmp}/kit-no-gh.XXXXXX")"
-REAL_GIT="$(bash -c 'command -v git' 2>/dev/null)"
-[ -n "$REAL_GIT" ] && ln -sf "$REAL_GIT" "$NOGH_BIN/git"
-FILTERED=""
-IFS=':' read -ra _path_dirs <<< "$PATH"
-for _d in "${_path_dirs[@]}"; do
-  [ -n "$_d" ] || continue
-  [ -x "$_d/gh" ] && continue
-  FILTERED="${FILTERED:+$FILTERED:}$_d"
+# Strip PATH down to no `gh`: a per-host directory-CONTENT filter (does this dir have a
+# `gh` in it) is still wrong on Linux, because ubuntu runners ship `gh` in /usr/bin right
+# beside `bash` itself, so dropping that whole directory left the fenced PATH with no
+# `bash` to exec ("bash: command not found", CI-only, since /usr/bin/gh and /usr/bin/bash
+# do not coexist that way on a Mac). Build the fence as a plain directory of symlinks
+# instead: resolve each needed command via the RUNNING host's own `command -v` (so it is
+# /bin/bash on macOS and /usr/bin/bash on Linux, whichever this box actually has) and
+# symlink it in; `gh` is deliberately never one of the resolved names, so it cannot leak
+# in by any path.
+FENCE="$(mktemp -d "${TMPDIR:-/tmp}/kit-no-gh.XXXXXX")"
+for _name in bash sh git sed grep sort uniq awk head tail cat mktemp ls dirname basename \
+             tr cut wc env printf date mkdir mv rm rmdir sleep stat ln chmod; do
+  _resolved="$(command -v "$_name" 2>/dev/null)"
+  [ -n "$_resolved" ] && ln -sf "$_resolved" "$FENCE/$_name"
 done
-NOGH_PATH="$NOGH_BIN:$FILTERED"
+NOGH_PATH="$FENCE"
 if PATH="$NOGH_PATH" command -v gh >/dev/null 2>&1; then
   bad "T4 setup: gh is still reachable on the built PATH (test would run the wrong branch)"
 else
