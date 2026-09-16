@@ -320,6 +320,92 @@ echo "[61] burn F8: one unknown family (fable) drops the whole row to the token 
 out="$(SESSION_OBSERVE_NOW="$BURNNOW" "$CC" burn --file "$BEDGE/f8-unpriced.jsonl" --since 60 2>&1)"
 if grep -q 'opus 50% fable 50% ~' <<<"$out"; then ok "F8 unpriced row falls back to token weight, tilde present"; else no "F8 fallback wrong: $out"; fi
 
+EFIX="${DIR}/tests/fixtures/entryfee"   # fake projects root for entry-fee:
+# proj-alpha fees 1000 (2026-09-01) / 2000 / 3000, proj-beta fee 500, plus two
+# negative controls (a subagents/ transcript at 99999, a sidechain-only transcript).
+
+echo "[62] entry-fee: 4 sessions across 2 projects, median measured fee 2000"
+out="$("$CC" entry-fee --root "$EFIX")"
+if grep -q '4 sessions, 2 projects' <<<"$out" && grep -q 'median 2000 tokens' <<<"$out"; then ok "4 sessions / 2 projects / median 2000"; else no "entry-fee header wrong: $out"; fi
+
+echo "[63] entry-fee: component split sized at 4 chars/token (instructions 800 chars -> 200, skill_listing 400 -> 100)"
+if grep -Eq 'instructions[[:space:]]+200[[:space:]]+10%' <<<"$out" && grep -Eq 'skill_listing[[:space:]]+100[[:space:]]+5%' <<<"$out"; then ok "instructions 200 (10%), skill_listing 100 (5%)"; else no "component split wrong: $out"; fi
+
+echo "[64] entry-fee: unattributed = measured fee minus the sized components (2000 - 350 = 1650)"
+if grep -Eq '\(unattributed\)[[:space:]]+1650[[:space:]]+82%' <<<"$out"; then ok "unattributed 1650 (82%)"; else no "unattributed wrong: $out"; fi
+
+echo "[65] entry-fee negative control: a subagents/ transcript is excluded (its 99999 fee absent, proj-alpha stays 3 sessions)"
+if ! grep -q '99999' <<<"$out" && grep -Eq 'proj-alpha[[:space:]]+3[[:space:]]+2000' <<<"$out"; then ok "subagent transcript excluded"; else no "subagent transcript counted: $out"; fi
+
+echo "[66] entry-fee negative control: a sidechain-only transcript contributes no session (4, not 5)"
+if ! grep -q '5 sessions' <<<"$out" && ! grep -q '88888' <<<"$out"; then ok "sidechain-only transcript excluded"; else no "sidechain transcript counted: $out"; fi
+
+echo "[67] entry-fee negative control: a later, larger turn does not replace the FIRST-turn fee (2000, not 18000)"
+if ! grep -q '18000' <<<"$out"; then ok "first-turn usage wins (18000 second turn ignored)"; else no "later turn overwrote the fee: $out"; fi
+
+echo "[68] entry-fee per repo: proj-beta's smaller preamble is its own row (1 session, median 500)"
+if grep -Eq 'proj-beta[[:space:]]+1[[:space:]]+500' <<<"$out"; then ok "proj-beta 1 session / median 500"; else no "per-repo rows wrong: $out"; fi
+
+echo "[69] entry-fee --trend: weekly medians, newest first (2026-W37 3/2000 above 2026-W36 1/1000)"
+tout="$("$CC" entry-fee --root "$EFIX" --trend)"
+w37="$(awk '/^  2026-W37/{print NR; exit}' <<<"$tout")"
+w36="$(awk '/^  2026-W36/{print NR; exit}' <<<"$tout")"
+if grep -Eq '2026-W37[[:space:]]+3[[:space:]]+2000' <<<"$tout" && grep -Eq '2026-W36[[:space:]]+1[[:space:]]+1000' <<<"$tout" && [[ -n "$w37" && -n "$w36" && "$w37" -lt "$w36" ]]; then ok "W37 3/2000 (line $w37) above W36 1/1000 (line $w36)"; else no "trend wrong: $tout"; fi
+
+echo "[70] entry-fee negative control: without --trend the weekly table is absent"
+if ! grep -q 'weekly trend' <<<"$out"; then ok "weekly table absent without --trend"; else no "trend leaked into the default view: $out"; fi
+
+echo "[71] entry-fee --project resolves a bare repo name to its slug (alpha -> proj-alpha only)"
+pout="$("$CC" entry-fee --root "$EFIX" --project alpha)"
+if grep -q '3 sessions, 1 projects' <<<"$pout" && ! grep -q 'proj-beta' <<<"$pout"; then ok "bare name alpha resolved to proj-alpha (3 sessions, beta absent)"; else no "project resolution wrong: $pout"; fi
+
+echo "[72] entry-fee --json: valid JSON, median_fee 2000, split flagged as an estimate"
+jout="$("$CC" entry-fee --root "$EFIX" --trend --json)"
+if echo "$jout" | python3 -c '
+import json, sys
+d = json.load(sys.stdin)
+assert d["sessions"] == 4, d["sessions"]
+assert d["median_fee"] == 2000, d["median_fee"]
+assert d["components_estimated"] is True and d["chars_per_token"] == 4, d
+comps = {c["component"]: c["est_tokens"] for c in d["split_components"]}
+assert comps["instructions"] == 200 and comps["skill_listing"] == 100, comps
+assert comps["(unattributed)"] == 1650, comps
+assert [w["week"] for w in d["by_week"]] == ["2026-W37", "2026-W36"], d["by_week"]
+'; then ok "json median_fee 2000, estimated split, weeks newest-first"; else no "entry-fee json wrong: $jout"; fi
+
+echo "[73] report negative control: no entry-fee section (existing views unchanged)"
+out="$("$CC" report --file "$FIX")"
+if ! grep -q '# entry-fee' <<<"$out"; then ok "report has no entry-fee section"; else no "entry-fee leaked into report: $out"; fi
+
+EEDGE="${DIR}/tests/entryfee-edge"   # entry-fee edge roots, deliberately OUTSIDE tests/fixtures/
+# (the untrusted root's numeric-timestamp and non-dict-message lines would otherwise
+# also break session-semantic's own --root tests/fixtures walk)
+
+echo "[74] entry-fee: an estimate ABOVE the measured fee prints as an overshoot, never a negative measurement"
+out="$("$CC" entry-fee --root "$EEDGE/overshoot")"
+if grep -Eq '\(estimate over measured\)[[:space:]]+1000[[:space:]]+-' <<<"$out" && ! grep -q -- '-1000' <<<"$out"; then ok "overshoot row 1000, no negative token count"; else no "overshoot row wrong: $out"; fi
+
+echo "[75] entry-fee: the overshooting component's share reads above 100% (the estimate saying it broke)"
+if grep -Eq 'instructions[[:space:]]+2000[[:space:]]+200%' <<<"$out"; then ok "instructions 2000 (200%)"; else no "overshoot share wrong: $out"; fi
+
+echo "[76] entry-fee: untrusted fields (numeric timestamp, dict attachment type, numeric content, non-dict message) do not crash"
+set +e
+out="$("$CC" entry-fee --root "$EEDGE/untrusted" 2>&1)"
+rc=$?
+set -e
+if [[ $rc -eq 0 ]] && grep -q 'median 700 tokens' <<<"$out"; then ok "exit 0, the valid turn's fee 700 still measured"; else no "untrusted input crashed or row missing (rc=$rc): $out"; fi
+
+echo "[77] entry-fee negative control: the dict-typed attachment contributes no component row"
+if ! grep -q 'nested' <<<"$out"; then ok "unhashable attachment type skipped, not keyed"; else no "dict attachment type leaked into the split: $out"; fi
+
+echo "[78] entry-fee: a worktree slug folds into its repo row (2 sessions under one proj-alpha, not two rows)"
+out="$("$CC" entry-fee --root "$EEDGE/worktrees")"
+if grep -Eq 'proj-alpha[[:space:]]+2[[:space:]]+2000' <<<"$out" && ! grep -q 'wt-one' <<<"$out"; then ok "proj-alpha 2 sessions, worktree slug folded in"; else no "worktree grouping wrong: $out"; fi
+
+echo "[79] entry-fee: a multi-slug --project match is announced on stderr (never a silent merge)"
+err="$("$CC" entry-fee --root "$EEDGE/worktrees" --project alpha 2>&1 >/dev/null)"
+if grep -q "matched 2 slugs" <<<"$err" && grep -q 'proj-alpha--claude-worktrees-wt-one' <<<"$err"; then ok "multi-match announced with the resolved slugs"; else no "multi-match not announced: $err"; fi
+
 echo
 if [[ $fail -gt 0 ]]; then echo "smoke: $pass passed, $fail FAILED" >&2; exit 1; fi
 echo "smoke: all $pass passed"
