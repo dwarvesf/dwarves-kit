@@ -1,4 +1,4 @@
-# SPEC-289: the kit's in-checkout write verbs warn instead of letting a session commit on the default branch
+# SPEC-291: the kit's in-checkout write verbs warn instead of letting a session commit on the default branch
 
 **Status:** BUILT (the code and wiring land in this PR; this spec records the contract they implement)
 Lane: full

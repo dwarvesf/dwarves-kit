@@ -1,6 +1,6 @@
 # Implementation notes: no-default-branch-commit
 
-Delta from `docs/specs/SPEC-289-no-default-branch-commit.md`. The spec was written from the
+Delta from `docs/specs/SPEC-291-no-default-branch-commit.md`. The spec was written from the
 built code, so there is no deviation to record; these are the open decisions the board row left
 and the follow-ups the change does not close.
 

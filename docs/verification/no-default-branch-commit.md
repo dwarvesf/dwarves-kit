@@ -3,7 +3,7 @@
 2026-09-16. Acceptance: `wrap log`, `wrap stage` and `board set` still write their file in every
 case, and print one stderr line naming the branch when the written file lands in a checkout that
 has the repo's default branch checked out. On a feature branch, outside a git repo, and on a
-detached HEAD they stay silent. Lane: full. Spec: `docs/specs/SPEC-289-no-default-branch-commit.md`.
+detached HEAD they stay silent. Lane: full. Spec: `docs/specs/SPEC-291-no-default-branch-commit.md`.
 Board: ID-879. Files: `lib/gate/default-branch-warn.sh`, `lib/wrap/wrap.sh`,
 `lib/board/backlog.sh`, `commands/wrap.md`, `tests/test-wrap.sh`, `tests/test-board-set-note.sh`.
 
