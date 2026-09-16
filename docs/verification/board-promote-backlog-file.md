@@ -19,8 +19,9 @@ Output: `no matching staged candidates.`
 Verdict: PASS. The index reached the selector. The installed kit on the same command prints `usage: board promote [list | <n>... | all | reject <n>...]`.
 
 Command: `bash tests/run-all.sh`
-Exit: see the table
-Verdict: RUN-ALL-PENDING
+Exit: 0
+Output: `run-all: all 151 suites passed, 0 skipped for missing tooling`
+Verdict: PASS, no regression.
 
 ## Negative control
 
