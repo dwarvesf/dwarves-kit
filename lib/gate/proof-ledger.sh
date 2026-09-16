@@ -77,7 +77,9 @@ classify() {
   # inert FIRST: a markdown/txt-only diff is docs, never load-bearing, regardless of what the
   # commit subject says. Checking stateful keywords against the subject before this misread a
   # markdown-only "migrate" doc change as stateful (see , the classify-md-inert dogfood).
-  if [ -z "$(printf '%s\n' "$changed" | grep -vE '\.(md|txt|markdown)$')" ]; then
+  # The project's own .kit.toml is harness config, not project behavior: flipping a [gate]
+  # key must not itself owe a proof-of-done (it would gate the opt-out).
+  if [ -z "$(printf '%s\n' "$changed" | grep -vE '\.(md|txt|markdown)$|(^|/)\.kit\.toml$')" ]; then
     echo inert; return 0
   fi
 

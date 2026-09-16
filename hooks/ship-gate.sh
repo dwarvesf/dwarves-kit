@@ -72,10 +72,21 @@ _resolve_base() {
 # $ROOT fallback fails open in every consumer. The stable install path fixes that; plugin
 # mode (CLAUDE_PLUGIN_ROOT set) is unchanged.
 PROOF="${CLAUDE_PLUGIN_ROOT:-$HOME/.claude/dwarves-kit}/lib/gate/proof-ledger.sh"
+# [gate] toggles. lib/gate/gate-policy.sh resolves them (project config wins, then the
+# operator overlay, then the kit root); this hook never reads the config files itself.
+# A missing resolver means ON: switching a gate off has to be explicit. A skip logs one line.
+POLICY="${CLAUDE_PLUGIN_ROOT:-$HOME/.claude/dwarves-kit}/lib/gate/gate-policy.sh"
+_gate_on() {  # $1 = [gate] key, $2 = log label
+  { [ ! -f "$POLICY" ] || bash "$POLICY" enabled "$1" "$ROOT"; } && return 0
+  local LOG_DIR="${DWARVES_KIT_LOG_DIR:-$HOME/.claude/dwarves-kit/logs}"
+  mkdir -p "$LOG_DIR" 2>/dev/null || true
+  echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) | OFF-BY-CONFIG | $2 | $SLUG" >> "$LOG_DIR/ship-gate.log" 2>/dev/null || true
+  return 1
+}
 # OPT-IN: engage only in a repo that adopted the proof-of-done convention. A repo with
 # no docs/verification/README.md never gets gated (the gate is for kit-adopting repos,
 # not every repo the user touches).
-if [ -f "$PROOF" ] && [ -f "$ROOT/docs/verification/README.md" ]; then
+if [ -f "$PROOF" ] && [ -f "$ROOT/docs/verification/README.md" ] && _gate_on proof_of_done proof-gate; then
   DEFAULT=$(_resolve_base)
   BASE=$(git -C "$ROOT" merge-base HEAD "$DEFAULT" 2>/dev/null || true)
   HEADSHA=$(git -C "$ROOT" rev-parse HEAD 2>/dev/null || true)
@@ -193,7 +204,7 @@ if [ -z "$LANE" ]; then
   # Spec exists but declares no lane. In an ADOPTED repo (proof marker present) this is a gap,
   # not a pass: fail CLOSED so a spec-driven change cannot ship lane-less (the growatt-tui hole).
   # Everywhere else (no marker) stay fail-open: the gate never blocks unrelated work.
-  if [ -f "$ROOT/docs/verification/README.md" ]; then
+  if [ -f "$ROOT/docs/verification/README.md" ] && _gate_on lane_gates lane-gate; then
     LOG_DIR="${DWARVES_KIT_LOG_DIR:-$HOME/.claude/dwarves-kit/logs}"
     mkdir -p "$LOG_DIR" 2>/dev/null || true
     echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) | BLOCKED | ship-gate | $SLUG (no-lane)" >> "$LOG_DIR/ship-gate.log" 2>/dev/null || true
@@ -216,6 +227,7 @@ LEDGER="${CLAUDE_PLUGIN_ROOT:-$HOME/.claude/dwarves-kit}/lib/gate/gate-ledger.sh
 # operator output. caught=true when the check BLOCKS (it caught a missing-gate defect),
 # caught=false on a clean pass. The `outcome` marker keys on $2=="OUTCOME"; check()/_rows()/
 # the ship-gate's own read all ignore it (they key on $2=="GATE").
+_gate_on lane_gates lane-gate || exit 0
 bash "$LEDGER" outcome "$SLUG" ship start >/dev/null 2>&1 || true
 
 if ! GAPS=$(bash "$LEDGER" check "$LANE" "$SLUG" 2>&1); then

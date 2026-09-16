@@ -9,6 +9,7 @@
 #   gate.sh dispatch <args...>        -> dispatch-gate.sh (touches|disjoint|plan|drift)
 #   gate.sh proof <args...>           -> proof-gate.sh (class|requirement|classes)
 #   gate.sh proof-ledger <args...>    -> proof-ledger.sh
+#   gate.sh policy <args...>          -> gate-policy.sh (enabled|keys) -- [gate] on/off per project
 #   gate.sh proof-table <args...>     -> proof-table-gen.sh
 #   gate.sh quiz <args...>            -> quiz-gate.sh (questions|tap|respond|route)
 #   gate.sh coverage-delta <args...>  -> coverage-delta.sh (check|class|classes)
@@ -19,7 +20,7 @@
 set -euo pipefail
 
 GATE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-usage() { sed -n '2,18p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
+usage() { sed -n '2,19p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
 
 main() {
   local verb="${1:-}"; [ $# -gt 0 ] && shift || true
@@ -28,6 +29,7 @@ main() {
     dispatch)        exec bash "$GATE_DIR/dispatch-gate.sh" "$@" ;;
     proof)           exec bash "$GATE_DIR/proof-gate.sh" "$@" ;;
     proof-ledger)    exec bash "$GATE_DIR/proof-ledger.sh" "$@" ;;
+    policy)          exec bash "$GATE_DIR/gate-policy.sh" "$@" ;;
     proof-table)     exec bash "$GATE_DIR/proof-table-gen.sh" "$@" ;;
     quiz)            exec bash "$GATE_DIR/quiz-gate.sh" "$@" ;;
     coverage-delta)  exec bash "$GATE_DIR/coverage-delta.sh" "$@" ;;

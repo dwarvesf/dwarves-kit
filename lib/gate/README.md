@@ -31,6 +31,7 @@ verb grammar and adds no logic. Call any script directly by path too; both work.
 | `gate ledger` | `gate-ledger.sh` | The lane gate + the run ledger. Records every gate decision, checks a run for completeness. | **yes** (`check` exit 1) |
 | `gate proof-ledger` | `proof-ledger.sh` | The proof-of-done gate. Classifies the branch diff, demands a matching fresh proof. | **yes** (`check` exit 1) |
 | `gate dispatch` | `dispatch-gate.sh` | Disjointness gate for `/kit:dispatch`. Two goals run in parallel only if their `## Touches` globs are provably disjoint. Also the drift guard. | **yes** (serializes / exit 1 on drift) |
+| `gate policy` | `gate-policy.sh` | The `[gate]` on/off reader. `enabled <key> [root]` exits 0 when a gate is on for that project. Hooks call it instead of reading config. | no |
 | `gate proof` | `proof-gate.sh` | Classifier, not a gate. Task description to proof class + the artifact that work-type owes. | no |
 | `gate quiz` | `quiz-gate.sh` | The star-tap NUDGE. Builds 5 diff-grounded questions, routes through the `understand.teach` seam. | no (nudge only) |
 | `gate coverage-delta` | `coverage-delta.sh` | Advisory. Source lines moved but test lines did not? Warn. | no (always exit 0) |
@@ -73,6 +74,29 @@ TS | MUTATION| verdict=flag|clean|skip [k=v ...]
 the ship-gate all ignore it (they key on `$2=="GATE"`). A TOKENS, DEBT, OUTCOME or MUTATION line
 can never fake, satisfy, or mask a gate. Keep that property when adding a marker verb.
 
+## Switching a gate off
+
+The blocking quality gates are opt-out per project. Set a key to `false` in the project's
+`.kit.toml` (or in the operator overlay at `~/.config/dwarves-kit/kit.toml` to switch it off
+for every repo on that machine). It applies on the next hook fire; no re-adopt, no restart.
+
+```toml
+[gate]
+proof_of_done      = false   # ship-gate: proof-of-done check (ADR-0025)
+lane_gates         = false   # ship-gate: lane x phase required-gate check + no-Lane refusal (ADR-0024)
+understanding_gate = false   # anti-rationalization Stop hook (ADR-0031)
+commit_format      = false   # commit-subject lint
+```
+
+`lib/gate/gate-policy.sh enabled <key> [root]` is the one reader; hooks call it and never
+touch the config themselves (the "no hook reads kit.toml" lint in `tests/test-install-modules.sh`
+stays load-bearing). Anything but a literal `false` means on, an unknown key is on, a missing
+resolver is on. A skipped ship-gate check writes `OFF-BY-CONFIG | <gate> | <slug>` to
+`logs/ship-gate.log` so the skip is visible after the fact. Advisories are not gates and keep
+printing. `safety-gate.sh` and `secrets-guard.sh` have no key: they guard destructive git and
+credential leaks, not quality, and stay on. A committed `.kit.toml` rides inside a PR like the
+proof marker does; a review sees the flip. Proof: `tests/test-gate-opt-out.sh`.
+
 ## Specs and decisions
 
 | Where | What |
@@ -96,6 +120,7 @@ bash tests/test-ledger-durability.sh     # 37, SPEC-097 durable root, override g
 bash tests/test-ledger-substrate.sh      #  9, the one append substrate
 bash tests/test-quiz-gate.sh             # 29, SPEC-125 grounded questions + anti-fatigue
 bash tests/test-ship-gate-fail-closed.sh #  5, SPEC-048
+bash tests/test-gate-opt-out.sh          # [gate] false switches each quality gate off; safety gate immune
 bash tests/test-ship-gate-profiles.sh    # install-dependent, see below
 ```
 
