@@ -3,6 +3,7 @@
 # repo, and stays fail-open everywhere else. Drives hooks/ship-gate.sh with crafted stdin.
 set -uo pipefail
 KIT="$(cd "$(dirname "$0")/.." && pwd)"
+export KIT_CONFIG_OPERATOR="$KIT/tests/fixtures/gates-on"   # quality gates are opt-in; this suite exercises them ON
 PASS=0; FAIL=0
 ok() { PASS=$((PASS + 1)); echo "ok - $1"; }
 no() { FAIL=$((FAIL + 1)); echo "NOT ok - $1"; }

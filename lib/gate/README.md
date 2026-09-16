@@ -31,7 +31,7 @@ verb grammar and adds no logic. Call any script directly by path too; both work.
 | `gate ledger` | `gate-ledger.sh` | The lane gate + the run ledger. Records every gate decision, checks a run for completeness. | **yes** (`check` exit 1) |
 | `gate proof-ledger` | `proof-ledger.sh` | The proof-of-done gate. Classifies the branch diff, demands a matching fresh proof. | **yes** (`check` exit 1) |
 | `gate dispatch` | `dispatch-gate.sh` | Disjointness gate for `/kit:dispatch`. Two goals run in parallel only if their `## Touches` globs are provably disjoint. Also the drift guard. | **yes** (serializes / exit 1 on drift) |
-| `gate policy` | `gate-policy.sh` | The `[gate]` on/off reader. `enabled <key> [root]` exits 0 when a gate is on for that project. Hooks call it instead of reading config. | no |
+| `gate policy` | `gate-policy.sh` | The `[gate]` on/off reader (opt-in: on only when the key resolves to `true`). `enabled <key> [root]` exits 0 when a gate is on for that project. Hooks call it instead of reading config. | no |
 | `gate proof` | `proof-gate.sh` | Classifier, not a gate. Task description to proof class + the artifact that work-type owes. | no |
 | `gate quiz` | `quiz-gate.sh` | The star-tap NUDGE. Builds 5 diff-grounded questions, routes through the `understand.teach` seam. | no (nudge only) |
 | `gate coverage-delta` | `coverage-delta.sh` | Advisory. Source lines moved but test lines did not? Warn. | no (always exit 0) |
@@ -74,39 +74,44 @@ TS | MUTATION| verdict=flag|clean|skip [k=v ...]
 the ship-gate all ignore it (they key on `$2=="GATE"`). A TOKENS, DEBT, OUTCOME or MUTATION line
 can never fake, satisfy, or mask a gate. Keep that property when adding a marker verb.
 
-## Switching a gate off
+## Turning a gate on
 
-The blocking quality gates are opt-out per project. Set a key to `false` in the project's
-`.kit.toml` (or in the operator overlay at `~/.config/dwarves-kit/kit.toml` to switch it off
-for every repo on that machine). It applies on the next hook fire; no re-adopt, no restart.
+The blocking quality gates are OPT-IN. The kit root says `false` for every key, so a fresh
+install blocks nothing until someone turns a gate on. Two places do that, and both apply on
+the next hook fire, no re-adopt, no restart:
 
 ```toml
+# machine-wide, every repo: ~/.config/dwarves-kit/kit.toml (the operator overlay)
+# per repo: <repo>/.kit.toml, committed (adopt seeds this block with each key explained)
 [gate]
-proof_of_done      = false   # ship-gate: proof-of-done check (ADR-0025)
-lane_gates         = false   # ship-gate: lane x phase required-gate check + no-Lane refusal (ADR-0024)
-understanding_gate = false   # anti-rationalization Stop hook (ADR-0031)
-commit_format      = false   # commit-subject lint
+proof_of_done      = true    # ship-gate: proof-of-done check (ADR-0025)
+lane_gates         = true    # ship-gate: lane x phase required-gate check + no-Lane refusal (ADR-0024)
+understanding_gate = true    # anti-rationalization Stop hook (ADR-0031)
+commit_format      = true    # commit-subject lint
 ```
 
 `lib/gate/gate-policy.sh enabled <key> [root]` is the one reader; hooks call it and never
 touch the config themselves (the "no hook reads kit.toml" lint in `tests/test-install-modules.sh`
-stays load-bearing). Anything but a literal `false` means on, an unknown key is on, and only
-exit 1 from the reader means off: a missing, truncated, or unreadable reader means on. Every
-skip leaves a line: `OFF-BY-CONFIG | <gate> | <slug>` in `logs/ship-gate.log`, and an
-`OFF-BY-CONFIG` row in `anti-rationalization.log` / `commit-format.log`. Advisories are not
-gates and keep printing. `safety-gate.sh` and `secrets-guard.sh` have no key: they guard
-destructive git and credential leaks, not quality, and stay on.
+stays load-bearing). A gate is on only when its key resolves to a literal `true` (project
+`.kit.toml` > operator overlay > kit root). An unknown key is on, and only exit 1 from the
+reader means off: a missing, truncated, or unreadable reader means on, so a broken kit never
+drops a gate an operator turned on. Every skip leaves a line: `OFF-BY-CONFIG | <gate> | <slug>`
+in `logs/ship-gate.log`, and an `OFF-BY-CONFIG` row in `anti-rationalization.log` /
+`commit-format.log`. Advisories are not gates and keep printing. `safety-gate.sh` and
+`secrets-guard.sh` have no key: they guard destructive git and credential leaks, not quality,
+and are always on.
 
 The trust model, stated plainly. The project file wins over the operator overlay on purpose:
-per-project opt-out is the feature, so the overlay can switch a gate off machine-wide but
-cannot pin one on against a repo that opted out (this is the one `[gate]` exception to the
-`kit_config_get_root` rule for PR-borne keys). A project-level `false` applies only once
-`.kit.toml` is tracked and clean; an uncommitted or edited copy leaves the gate on and prints
-a one-line hint, so the opt-out always rides inside a PR where a review sees it. Pulling a
-branch that flips a key flips it for your own pushes on that branch too. `adopt` seeds the
-block commented out so a fresh repo still inherits the overlay. The proof classifier treats
-a `.kit.toml`-only diff as inert, whatever key it touches: harness config owes no
-proof-of-done. Proof: `tests/test-gate-opt-out.sh`.
+a repo decides its own gates, so the overlay sets the machine default and a repo can go either
+way (this is the one `[gate]` exception to the `kit_config_get_root` rule for PR-borne keys).
+Turning a gate ON from the project file is never commit-gated. A project-level `false` over an
+operator `true` applies only once `.kit.toml` is tracked and clean; an uncommitted or edited
+copy leaves the gate on and prints a one-line hint, so an opt-out always rides inside a PR
+where a review sees it. Pulling a branch that flips a key flips it for your own pushes on that
+branch too. `adopt` seeds the block with the values that resolved at adopt time (operator, else
+the kit default), each key explained in a comment; delete a line to follow the operator setting
+again. The proof classifier treats a `.kit.toml`-only diff as inert, whatever key it touches:
+harness config owes no proof-of-done. Proof: `tests/test-gate-opt-out.sh`, `tests/test-gate-opt-in.sh`.
 
 ## Specs and decisions
 
@@ -131,7 +136,8 @@ bash tests/test-ledger-durability.sh     # 37, SPEC-097 durable root, override g
 bash tests/test-ledger-substrate.sh      #  9, the one append substrate
 bash tests/test-quiz-gate.sh             # 29, SPEC-125 grounded questions + anti-fatigue
 bash tests/test-ship-gate-fail-closed.sh #  5, SPEC-048
-bash tests/test-gate-opt-out.sh          # [gate] false switches each quality gate off; safety gate immune
+bash tests/test-gate-opt-out.sh          # [gate] false switches each quality gate off (machine has them on); safety gate immune
+bash tests/test-gate-opt-in.sh           # kit defaults: every quality gate off; a project true turns one on
 bash tests/test-ship-gate-profiles.sh    # install-dependent, see below
 ```
 

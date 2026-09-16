@@ -12,6 +12,7 @@
 
 set -uo pipefail
 KIT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+export KIT_CONFIG_OPERATOR="$KIT_DIR/tests/fixtures/gates-on"   # quality gates are opt-in; this suite exercises them ON
 GL="$KIT_DIR/lib/gate/gate-ledger.sh"
 LT="$KIT_DIR/lib/telemetry/lane-telemetry.sh"
 SHIP="$KIT_DIR/hooks/ship-gate.sh"

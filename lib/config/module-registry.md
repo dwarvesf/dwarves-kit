@@ -244,10 +244,10 @@ single-reader fence). No env vars; per-repo values live in `.kit.toml [sync]`.
 
 | Env var | kit.toml key | Default | Status | Module | Doc |
 |---|---|---|---|---|---|
-| - | gate.proof_of_done | `true` | [impl] | gate | `hooks/ship-gate.sh` proof-of-done check (ADR-0025), read through `lib/gate/gate-policy.sh`. `false` in a project `.kit.toml` (or the operator overlay) switches it off for that project; the hook logs `OFF-BY-CONFIG` and passes. The `docs/verification/README.md` marker still has to exist for the gate to engage at all. |
-| - | gate.lane_gates | `true` | [impl] | gate | `hooks/ship-gate.sh` lane x phase required-gate check and the no-`Lane:` refusal in adopted repos (ADR-0024), same resolver and off-switch as `gate.proof_of_done`. Advisories keep printing. |
-| - | gate.understanding_gate | `true` | [impl] | gate | `hooks/anti-rationalization.sh` (ADR-0031). `false` makes the Stop hook exit 0 before matching; resolved through `lib/gate/gate-policy.sh` against the session repo root. |
-| - | gate.commit_format | `true` | [impl] | gate | `hooks/commit-format.sh` commit-subject lint. `false` makes the hook exit 0 before linting; resolved through `lib/gate/gate-policy.sh` against the session repo root. |
+| - | gate.proof_of_done | `false` | [impl] | gate | `hooks/ship-gate.sh` proof-of-done check (ADR-0025), read through `lib/gate/gate-policy.sh`. Opt-in: on only when the key resolves to `true` (project `.kit.toml` > operator overlay > kit root). Off, the hook logs `OFF-BY-CONFIG` and passes. The `docs/verification/README.md` marker still has to exist for the gate to engage at all. A project `false` over an operator `true` applies once `.kit.toml` is committed and clean. |
+| - | gate.lane_gates | `false` | [impl] | gate | `hooks/ship-gate.sh` lane x phase required-gate check and the no-`Lane:` refusal in adopted repos (ADR-0024), same resolver and opt-in rule as `gate.proof_of_done`. Advisories keep printing. |
+| - | gate.understanding_gate | `false` | [impl] | gate | `hooks/anti-rationalization.sh` (ADR-0031). Off, the Stop hook logs `OFF-BY-CONFIG` and exits 0 before matching; resolved through `lib/gate/gate-policy.sh` against the session repo root. |
+| - | gate.commit_format | `false` | [impl] | gate | `hooks/commit-format.sh` commit-subject lint. Off, the hook logs `OFF-BY-CONFIG` and exits 0 before linting; resolved through `lib/gate/gate-policy.sh` against the session repo root. |
 | DWARVES_KIT_PRINT_CDDIR | env-only | `0` | [impl] | gate | Debug: print the resolved cwd/repo-root and exit. |
 | KIT_ROOT | env-only | `$SCRIPT_ROOT` | [impl] | gate | Mixed usage: most files compute this internally from `BASH_SOURCE`, not the environment; `lib/gate/proof-table-gen.sh` alone treats it as an operator-settable override, defaulting to `$SCRIPT_ROOT`. |
 
