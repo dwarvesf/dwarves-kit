@@ -326,6 +326,60 @@ elif ! printf '%s' "$input" | grep -qE '\*\*Seam:\*\*[[:space:]]*(NOTHING|SKIPPE
   findings=$((findings + 1))
 fi
 
+# FYI tags. The block used to mix four kinds of line under one header: a step that did not
+# run, a state the operator meets next session, something that went wrong during the pass,
+# and an ask wearing prose ("turning the knob on now works cleanly"). An operator told to
+# "follow the FYI" then got nine ambiguous states and picked a reading. Each bullet now opens
+# with its kind, the same way each `**Built:**` item opens with its verdict.
+#
+# SKIPPED  a step that did not run, and where its output went instead.
+# STATE    a fact the operator meets next time: a knob value, a dirty checkout, a local file.
+# INCIDENT something that went wrong during this pass and how it was resolved.
+#
+# The block is optional: no `**FYI:**` header, or a header with no bullets, is not a finding.
+# `- NOTHING` is the sentinel the template already prints and carries no tag.
+
+# Ask shapes. An FYI line carries no ask: a line telling the operator to do, decide, or
+# consider something is a `Needs you` item with its own DECIDE/RUN/REVIEW/UNBLOCK tag. The
+# words: should, consider, recommend, you can, turn(ing) <knob> on, works cleanly,
+# worth a/an/the/doing/turning, next time run, please.
+FYI_ASK_RE='\bshould\b|\bconsider\b|\brecommend|\byou can\b|\bturn(ing)? [a-z._]+ on\b|\bworks cleanly\b|\bworth (a|an|the|doing|turning)\b|\bnext time,? run\b|\bplease\b'
+
+_f_state=0
+_f_lineno=0
+while IFS= read -r _f_line; do
+  _f_lineno=$((_f_lineno + 1))
+  if [ "$_f_state" = 0 ]; then
+    case "$_f_line" in *'**FYI:**'*) _f_state=1 ;; esac
+    continue
+  fi
+  # A blank line or the next bold header closes the block, same bound as the Built parser.
+  case "$_f_line" in
+    '- '*) : ;;
+    *) break ;;
+  esac
+  _f_item="${_f_line#- }"
+  case "$_f_item" in
+    NOTHING*) continue ;;
+  esac
+
+  case "$_f_item" in
+    'SKIPPED '*|'STATE '*|'INCIDENT '*) : ;;
+    *)
+      echo "line ${_f_lineno}: FYI bullet has no tag; open it with SKIPPED (a step that did not run), STATE (a fact the operator meets next time), or INCIDENT (something that went wrong this pass)" >&2
+      echo "  - ${_f_item}" >&2
+      findings=$((findings + 1))
+      continue ;;
+  esac
+
+  _f_lower="$(printf '%s' "$_f_item" | tr '[:upper:]' '[:lower:]')"
+  if printf '%s' "$_f_lower" | grep -qiE "$FYI_ASK_RE"; then
+    echo "line ${_f_lineno}: that is an ask; move it to Needs you as DECIDE or RUN" >&2
+    echo "  - ${_f_item}" >&2
+    findings=$((findings + 1))
+  fi
+done <<< "$input"
+
 if [ "$findings" -gt 0 ]; then
   echo "report-lint: ${findings} finding(s), ${warns} warn(s)" >&2
   exit 1

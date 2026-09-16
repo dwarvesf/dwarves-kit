@@ -2038,6 +2038,36 @@ chk "a Seam line naming the side and skill passes" "$([ "$rc" -eq 0 ]; echo $?)"
 rc=0; bash "$LINT" /nonexistent-report-file >/dev/null 2>&1 || rc=$?
 chk "a missing file exits 2" "$([ "$rc" -eq 2 ]; echo $?)"
 
+# The FYI rule. The block used to mix a skipped step, a state, an incident, and an ask under
+# one header, so an operator told to "follow the FYI" read nine ambiguous lines. Each bullet
+# now opens with SKIPPED, STATE, or INCIDENT, and an ask belongs in `Needs you` instead.
+_fyi() { printf '✅ **Needs you:** NOTHING\n\n**FYI:**\n%s\n\n**Built:** NOTHING: no candidates\n\n**Seam:** NOTHING: no seam configured\n\n**What happened**\n- body\n' "$1"; }
+
+out="$(_fyi '- SKIPPED step 7b, its scan output went to the scratch file
+- STATE wrap.pull_past_dirty is false, the ops-toolkit checkout stayed behind
+- INCIDENT the first merge raced CI, the retry landed it' | bash "$LINT" 2>&1)"; rc=$?
+chk "an FYI block whose bullets are all tagged passes" "$([ "$rc" -eq 0 ]; echo $?)"
+
+out="$(_fyi '- the ops-toolkit checkout stayed behind' | bash "$LINT" 2>&1)"; rc=$?
+chk "an untagged FYI bullet fails" "$([ "$rc" -eq 1 ]; echo $?)"
+chk_has "the finding names the three tags" "$out" "SKIPPED (a step that did not run), STATE"
+
+out="$(_fyi '- STATE wrap.pull_past_dirty is false, turning the knob on now works cleanly' | bash "$LINT" 2>&1)"; rc=$?
+chk "a tagged FYI bullet carrying an ask fails" "$([ "$rc" -eq 1 ]; echo $?)"
+chk_has "the finding sends the ask to Needs you" "$out" "that is an ask; move it to Needs you as DECIDE or RUN"
+
+out="$(_fyi '- NOTHING' | bash "$LINT" 2>&1)"; rc=$?
+chk "the NOTHING sentinel needs no tag" "$([ "$rc" -eq 0 ]; echo $?)"
+
+out="$(_report '✅ **Needs you:** NOTHING' | bash "$LINT" 2>&1)"; rc=$?
+chk "a report with no FYI block still passes, the block is optional" "$([ "$rc" -eq 0 ]; echo $?)"
+
+out="$(printf '✅ **Needs you:** NOTHING\n\n**FYI:**\n\n**Built:** NOTHING: no candidates\n\n**Seam:** NOTHING: no seam configured\n' | bash "$LINT" 2>&1)"; rc=$?
+chk "an FYI header with no bullets is not a finding" "$([ "$rc" -eq 0 ]; echo $?)"
+
+chk_has "commands/wrap.md names the three FYI tags" "$(cat "$KIT_DIR/commands/wrap.md")" "OPENS WITH ITS TAG"
+chk_has "commands/wrap.md says FYI carries no ask" "$(cat "$KIT_DIR/commands/wrap.md")" '**`FYI` carries no ask.**'
+
 chk_has "commands/wrap.md wires the lint into step 9" "$(cat "$KIT_DIR/commands/wrap.md")" "lib/wrap/report-lint.sh"
 chk_has "the FYI contract requires each follow-up to name its home" "$(cat "$KIT_DIR/commands/wrap.md")" "NAMES ITS HOME"
 chk_no "FYI is not described as never a task" "$(cat "$KIT_DIR/commands/wrap.md")" "never a task"
