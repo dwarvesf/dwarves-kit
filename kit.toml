@@ -85,8 +85,9 @@ enabled_agent_clis = ""         # [impl] opt-in NON-claude dispatch. Space-separ
 [gate]                          # quality gates. Read when a hook fires, through
                                 #        lib/gate/gate-policy.sh (project .kit.toml wins, then the
                                 #        operator kit.toml, then this file). `false` switches that
-                                #        gate off for the project; the hook logs OFF-BY-CONFIG and
-                                #        passes. Safety gates (safety-gate, secrets-guard) have no
+                                #        gate off for the project (a project-level false applies once
+                                #        .kit.toml is committed and clean); the hook logs OFF-BY-CONFIG
+                                #        and passes. Safety gates (safety-gate, secrets-guard) have no
                                 #        key here and cannot be switched off.
 proof_of_done      = true       # [impl] hooks/ship-gate.sh proof-of-done check (ADR-0025). Engages
                                 #        only where docs/verification/README.md exists; this key is

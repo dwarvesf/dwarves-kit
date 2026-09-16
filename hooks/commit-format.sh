@@ -18,9 +18,16 @@ printf '%s' "$CMD" | grep -qE '\bgit\b.*\bcommit\b' || exit 0
 
 # Off by config? `[gate] commit_format = false` in the project's gate config (or the operator
 # overlay), resolved by lib/gate/gate-policy.sh; this hook reads no config itself.
+# Only exit 1 from the reader means off; a broken reader means on.
 POLICY="${CLAUDE_PLUGIN_ROOT:-$HOME/.claude/dwarves-kit}/lib/gate/gate-policy.sh"
-if [ -f "$POLICY" ] && ! bash "$POLICY" enabled commit_format "$(git rev-parse --show-toplevel 2>/dev/null || pwd)"; then
-  exit 0
+if [ -f "$POLICY" ]; then
+  PRC=0; bash "$POLICY" enabled commit_format "$(git rev-parse --show-toplevel 2>/dev/null || pwd)" || PRC=$?
+  if [ "$PRC" -eq 1 ]; then
+    LOG_DIR="${DWARVES_KIT_LOG_DIR:-$HOME/.claude/dwarves-kit/logs}"
+    mkdir -p "$LOG_DIR" 2>/dev/null || true
+    printf '%s | OFF-BY-CONFIG | commit_format | %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$(pwd)" >> "$LOG_DIR/commit-format.log" 2>/dev/null || true
+    exit 0
+  fi
 fi
 
 # Extract the FIRST -m / --message subject. No subject -> editor/--no-edit/-F: skip.

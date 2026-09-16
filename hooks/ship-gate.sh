@@ -74,10 +74,13 @@ _resolve_base() {
 PROOF="${CLAUDE_PLUGIN_ROOT:-$HOME/.claude/dwarves-kit}/lib/gate/proof-ledger.sh"
 # [gate] toggles. lib/gate/gate-policy.sh resolves them (project config wins, then the
 # operator overlay, then the kit root); this hook never reads the config files itself.
-# A missing resolver means ON: switching a gate off has to be explicit. A skip logs one line.
+# Only exit 1 from the reader means off. A missing or broken reader (any other exit) means
+# ON: switching a gate off has to be explicit. A skip logs one line.
 POLICY="${CLAUDE_PLUGIN_ROOT:-$HOME/.claude/dwarves-kit}/lib/gate/gate-policy.sh"
 _gate_on() {  # $1 = [gate] key, $2 = log label
-  { [ ! -f "$POLICY" ] || bash "$POLICY" enabled "$1" "$ROOT"; } && return 0
+  [ -f "$POLICY" ] || return 0
+  local rc=0; bash "$POLICY" enabled "$1" "$ROOT" || rc=$?
+  [ "$rc" -eq 1 ] || return 0
   local LOG_DIR="${DWARVES_KIT_LOG_DIR:-$HOME/.claude/dwarves-kit/logs}"
   mkdir -p "$LOG_DIR" 2>/dev/null || true
   echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) | OFF-BY-CONFIG | $2 | $SLUG" >> "$LOG_DIR/ship-gate.log" 2>/dev/null || true
@@ -212,6 +215,7 @@ if [ -z "$LANE" ]; then
       echo "BLOCKED: ship-gate. Spec '$SLUG' has no 'Lane:' header, so its required gates cannot be checked."
       echo "Add a lane to $SPEC (e.g. 'Lane: full'). Classify with:"
       echo "  bash \"${CLAUDE_PLUGIN_ROOT:-\$HOME/.claude/dwarves-kit}/lib/classify/lane-classify.sh\" classify \"<task>\""
+      echo "Or switch the lane gates off for this repo: [gate] lane_gates = false in the committed project kit config (lib/gate/README.md, 'Switching a gate off')."
     } >&2
     exit 2
   fi
@@ -240,6 +244,7 @@ if ! GAPS=$(bash "$LEDGER" check "$LANE" "$SLUG" 2>&1); then
     printf '%s\n' "$GAPS" | sed 's/^/  /'
     echo "Run the missing gate(s), or log an explicit override (recorded for audit):"
     echo "  bash \"$LEDGER\" override $SLUG <phase> \"<reason>\""
+    echo "Or switch the lane gates off for this repo: [gate] lane_gates = false in the committed project kit config (lib/gate/README.md, 'Switching a gate off')."
   } >&2
   exit 2
 fi

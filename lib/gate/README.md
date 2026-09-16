@@ -90,12 +90,23 @@ commit_format      = false   # commit-subject lint
 
 `lib/gate/gate-policy.sh enabled <key> [root]` is the one reader; hooks call it and never
 touch the config themselves (the "no hook reads kit.toml" lint in `tests/test-install-modules.sh`
-stays load-bearing). Anything but a literal `false` means on, an unknown key is on, a missing
-resolver is on. A skipped ship-gate check writes `OFF-BY-CONFIG | <gate> | <slug>` to
-`logs/ship-gate.log` so the skip is visible after the fact. Advisories are not gates and keep
-printing. `safety-gate.sh` and `secrets-guard.sh` have no key: they guard destructive git and
-credential leaks, not quality, and stay on. A committed `.kit.toml` rides inside a PR like the
-proof marker does; a review sees the flip. Proof: `tests/test-gate-opt-out.sh`.
+stays load-bearing). Anything but a literal `false` means on, an unknown key is on, and only
+exit 1 from the reader means off: a missing, truncated, or unreadable reader means on. Every
+skip leaves a line: `OFF-BY-CONFIG | <gate> | <slug>` in `logs/ship-gate.log`, and an
+`OFF-BY-CONFIG` row in `anti-rationalization.log` / `commit-format.log`. Advisories are not
+gates and keep printing. `safety-gate.sh` and `secrets-guard.sh` have no key: they guard
+destructive git and credential leaks, not quality, and stay on.
+
+The trust model, stated plainly. The project file wins over the operator overlay on purpose:
+per-project opt-out is the feature, so the overlay can switch a gate off machine-wide but
+cannot pin one on against a repo that opted out (this is the one `[gate]` exception to the
+`kit_config_get_root` rule for PR-borne keys). A project-level `false` applies only once
+`.kit.toml` is tracked and clean; an uncommitted or edited copy leaves the gate on and prints
+a one-line hint, so the opt-out always rides inside a PR where a review sees it. Pulling a
+branch that flips a key flips it for your own pushes on that branch too. `adopt` seeds the
+block commented out so a fresh repo still inherits the overlay. The proof classifier treats
+a `.kit.toml`-only diff as inert, whatever key it touches: harness config owes no
+proof-of-done. Proof: `tests/test-gate-opt-out.sh`.
 
 ## Specs and decisions
 

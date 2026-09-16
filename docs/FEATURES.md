@@ -13,7 +13,7 @@ GENERATED , do not hand-edit. Regenerate: `bash lib/registry/feature-registry.sh
 | Command | Trigger | Description | Specs | Tests |
 |---|---|---|---|---|
 | `/kit:absorb` | `[H/I]` | Maintainer-only: audit the kit's upstream sources (Credits drift + seed-rescan) and draft a dated, proposal-only absorption report. Does no… | SPEC-004, SPEC-007, SPEC-009 +7 | test-command-emit-sweep.sh, test-hooks.sh, test-meta.sh |
-| `/kit:adopt` | `[H/I]` | Adopt the current (or a target) repo into the dwarves-kit operate-contract: inject AGENTS.md + a CLAUDE.md loader + a WORKFLOW pointer + th… | SPEC-004, SPEC-013, SPEC-014 +21 | proof-loop-09-scenario-b.sh, test-adopt.sh, test-command-emit-sweep.sh +5 |
+| `/kit:adopt` | `[H/I]` | Adopt the current (or a target) repo into the dwarves-kit operate-contract: inject AGENTS.md + a CLAUDE.md loader + a WORKFLOW pointer + th… | SPEC-004, SPEC-013, SPEC-014 +21 | proof-loop-09-scenario-b.sh, test-adopt.sh, test-command-emit-sweep.sh +6 |
 | `/kit:assign` | `[H/I]` | Turn a backlog item (ID-NNN) into a scoped goal draft and route it into the right WORKFLOW lane. Writes .claude/goals/, never executes. | SPEC-006, SPEC-007, SPEC-024 +32 | test-hooks.sh, test-meta.sh |
 | `/kit:battery` | `[H/I]` | The full independent-verification battery for a finished branch: a fresh-context acceptance verifier that RE-EXECUTES the verification comm… | SPEC-239, SPEC-244, SPEC-245 +2 | run-workflow.sh, test-boundary-lint.sh, test-break-it.sh +4 |
 | `/kit:debug` | `[H/I]` | Systematic debug loop: root cause before any fix. Four phases, an evidence ledger, the 3-fix architecture wall. Use for any bug, defect, re… | SPEC-006, SPEC-013, SPEC-014 +11 | test-command-triggers.sh, test-config-registry.sh, test-hooks.sh +2 |
