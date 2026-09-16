@@ -81,12 +81,29 @@ echo "=== T4: no gh on PATH at all -> local-only fallback + stderr note ==="
 # ============================================================
 R="$(mk_repo)"
 # Strip PATH down to no `gh`: symlink only `git` (whatever binary it really resolves to,
-# alias or not) into an isolated bin dir rather than trusting its parent dir to be gh-free
-# (Homebrew installs git and gh side by side under the same prefix).
+# alias or not) into an isolated bin dir, then keep every OTHER dir from the real PATH
+# EXCEPT any dir that itself holds a `gh` executable. A hardcoded /usr/bin:/bin fallback
+# is not portable: on a GitHub-hosted ubuntu runner `gh` lives in /usr/bin right next to
+# coreutils, so that fallback silently let `gh` back onto PATH and T4 ran the WRONG branch
+# (mistaken for "not authenticated" instead of "not on PATH") on CI while passing locally,
+# where gh happens to live in a Homebrew dir already excluded. Filtering by dir CONTENT
+# (does this dir have a `gh` in it), not by a fixed dir LIST, is correct on both.
 NOGH_BIN="$(mktemp -d "${TMPDIR:-/tmp}/kit-no-gh.XXXXXX")"
 REAL_GIT="$(bash -c 'command -v git' 2>/dev/null)"
 [ -n "$REAL_GIT" ] && ln -sf "$REAL_GIT" "$NOGH_BIN/git"
-NOGH_PATH="$NOGH_BIN:/usr/bin:/bin:/usr/sbin:/sbin"
+FILTERED=""
+IFS=':' read -ra _path_dirs <<< "$PATH"
+for _d in "${_path_dirs[@]}"; do
+  [ -n "$_d" ] || continue
+  [ -x "$_d/gh" ] && continue
+  FILTERED="${FILTERED:+$FILTERED:}$_d"
+done
+NOGH_PATH="$NOGH_BIN:$FILTERED"
+if PATH="$NOGH_PATH" command -v gh >/dev/null 2>&1; then
+  bad "T4 setup: gh is still reachable on the built PATH (test would run the wrong branch)"
+else
+  ok "T4 setup: gh is provably absent from the built PATH"
+fi
 OUT4="$(cd "$R" && PATH="$NOGH_PATH" bash "$SN" next 2>/dev/null)"
 ERR4="$(cd "$R" && PATH="$NOGH_PATH" bash "$SN" next 2>&1 >/dev/null)"
 eq "T4 next falls back to local max+1 (450) with no gh" "$OUT4" "450"
