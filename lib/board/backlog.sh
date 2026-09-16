@@ -180,6 +180,7 @@ dedupe_all() {
   awk -v dropset="$skip_csv" '
     BEGIN { n = split(dropset, d, ","); for (i = 1; i <= n; i++) if (d[i] != "") skip[d[i]] = 1 }
     !(NR in skip) { print }' "$file" > "$file.tmp" && mv -f "$file.tmp" "$file"
+  kit_warn_default_branch "$file" "board dedupe-all"
   echo "$done_ids"
 }
 

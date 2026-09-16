@@ -163,6 +163,16 @@ else
   fail "dedupe no-op should not warn, got: $out"
 fi
 
+mk_board "$B"
+printf '| ID-001 | a row | src | queued |\n' >> "$B"
+out="$(BACKLOG_FILE="$B" bash "$BL" dedupe-all 2>&1)"
+if printf '%s' "$out" | grep -q 'on the default branch (main)' \
+   && [ "$(grep -c '^| ID-001 ' "$B")" = 1 ]; then
+  pass "dedupe-all on the default branch warns and still collapsed the duplicate"
+else
+  fail "dedupe-all on the default branch should warn and collapse, got: $out"
+fi
+
 git -C "$GR" checkout -q -b feat/board-guard
 mk_board "$B"
 out="$(BACKLOG_FILE="$B" bash "$BL" set ID-001 shipped "on a branch" 2>&1)"

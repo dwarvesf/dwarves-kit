@@ -43,9 +43,13 @@ telling the caller the one fact it lacks.
 | `wrap stage` | `_meta/backlog-staging.md` or its env override | `wrap stage` |
 | `board set` | the `BACKLOG.md` named by `BACKLOG_FILE` | `board set` |
 | `board dedupe` | the same file, when it actually collapsed rows | `board dedupe` |
+| `board dedupe-all` | the same file, when the sweep collapsed anything | `board dedupe-all` |
 
-`board dedupe-all` is deliberately silent. Only `wrap apply`'s union re-merge drives it, inside
-a flow that is already committing the merge it just resolved, so a warning there is noise.
+`dedupe-all` was left silent in the first draft because `wrap apply`'s union re-merge is its
+main caller, inside a flow that is already committing the merge it just resolved. Review found
+it is also a hand-runnable CLI verb, so a sweep on the default branch produced exactly the
+uncommittable write this guard exists to flag. One extra stderr line during a re-merge is the
+smaller cost.
 
 ### When the guard stays silent
 
@@ -55,6 +59,9 @@ a flow that is already committing the merge it just resolved, so a warning there
 | HEAD is detached | no branch name to compare |
 | The checked-out branch is not the default one | this is the shape the rule asks for |
 | No default branch resolves | the guard never guesses |
+
+An inherited `GIT_DIR` or `GIT_WORK_TREE` would make `git -C` read a different repo than the
+written file's, so every git read drops both names through `env -u`.
 
 ### Resolving the default branch
 

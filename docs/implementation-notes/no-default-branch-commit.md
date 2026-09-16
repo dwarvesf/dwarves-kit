@@ -37,15 +37,30 @@ warning does not justify. The duplicate body is eight lines.
 Impact: two resolvers with different contracts in one repo. The guard's own comment says which
 is which and why.
 
-## 2026-09-16 10:10 `board dedupe-all` is not guarded
+## 2026-09-16 10:10 `board dedupe-all` is guarded after all
 
-Context: `backlog.sh` has three write paths.
+Context: `backlog.sh` has three write paths. The first draft guarded `set_state` and `dedupe`
+only, on the reasoning that `wrap apply`'s union re-merge is `dedupe_all`'s caller and is
+already committing the merge it just resolved.
 
-Decision: `set_state` and `dedupe` warn; `dedupe_all` does not.
+Decision: reversed after review. All three warn.
 
-Why: only `wrap apply`'s union re-merge calls `dedupe_all`, inside a flow that is already
-committing the merge conflict it just resolved. A warning there fires on every union re-merge
-and means nothing.
+Why: `main` dispatches `dedupe-all`, so it is a hand-runnable CLI verb too, and a sweep run on
+the default branch produced exactly the write this guard exists to flag. One extra stderr line
+during a re-merge costs less than a silent hole in a three-verb surface.
+
+## 2026-09-16 10:12 Every git read drops GIT_DIR and GIT_WORK_TREE
+
+Context: review found that `git -C <dir>` changes directory without clearing an inherited
+`GIT_DIR` or `GIT_WORK_TREE`.
+
+Decision: route every git read in the guard through `_kdbw_git`, which runs `env -u GIT_DIR
+-u GIT_WORK_TREE git -C "$dir"`.
+
+Why: a verb invoked from inside a git hook would otherwise resolve HEAD and the remote refs
+against the hook's repo, not the written file's, and the warning would be silently wrong in
+either direction. No test binds this: constructing a git-hook invocation for a warning-only
+path costs more than the three-line fix.
 
 ## 2026-09-16 10:15 Follow-ups this change does not close
 

@@ -92,6 +92,7 @@ current branch and as `origin/HEAD` is the whole subject.
 | `stage` on a feature branch | same repo, `feat/stage-guard` | no warning |
 | `board set` on the default branch | repo on `main`, board file inside it | the warning names `main`, the row reads `shipped [on main]` |
 | `board dedupe` with nothing to collapse | same repo | no warning, because nothing was written |
+| `board dedupe-all` on the default branch | same repo, a duplicated row | the warning names `main`, the duplicate is still collapsed |
 | `board set` on a feature branch | same repo, `feat/board-guard` | no warning |
 | outside a git repo | the eleven pre-existing cases, whose boards live in a plain temp dir | no warning, unchanged output |
 
