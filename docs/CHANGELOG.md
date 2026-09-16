@@ -12,6 +12,15 @@ All notable changes to dwarves-kit are documented here.
 - Config surface (new section, additive, MINOR): `[intake]` with `url_ledger`, `verdicts`, `boards`, `notes`, all defaulting `""`. Every key resolves root-only, so a project `.kit.toml` cannot set them. An install that sets none of them keeps `intake gate` answering from this kit's own inventory and open pull requests alone.
 
 ### Added
+- `session observe entry-fee [--days N] [--project SLUG-OR-NAME] [--top N] [--trend] [--json]`
+  sizes the fixed preamble every agent turn re-reads before any work. The per-session
+  total is measured (the first main-chain assistant turn's input + cache-creation +
+  cache-read); the per-component split is estimated at four characters per token over
+  the rendered preamble text and is labelled an estimate everywhere, with the remainder
+  shown as one `(unattributed)` row. Adds a per-repo median and, with `--trend`, ISO-week
+  medians so a preamble cleanup shows as a drop. Not part of `report`. `--project` now
+  also accepts a bare repo name, which matches every slug containing it, for `cost` and
+  `burn` too. Spec: `docs/specs/SPEC-289-observe-entry-fee.md`.
 - Added a Codex plugin manifest and a Codex lifecycle adapter for the five hard guardrails: destructive-command safety, secret-file protection, ship completeness, commit format, and premature-completion protection. Claude Code keeps its existing manifest and settings. The shared secret policy now also denies Codex and Cloudflare credential files, and hard-hook logs omit command or subject text that could contain tokens. Codex requires explicit trust for each exact hook hash. This is not prompt/output DLP, and tool-hook coverage is limited to verified paths.
 - `gate-ledger.sh plan-record <rid> <lane> [--ran|--skipped|--override <phase>[:<reason>]]...`
   disposes every phase of a lane's plan in one call, instead of one `record`/`override` call per

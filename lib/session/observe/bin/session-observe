@@ -11,6 +11,11 @@ Three views, all derived from the JSONL transcripts under ~/.claude/projects/:
               pressure (compactions), skill mis-fires
   sessions  - session shape: archetype mix, circadian (by hour), interruption rate
   cost      - tokens by model + cache economics + $ estimate (attribution, not a bill)
+  entry-fee - the fixed preamble every turn re-reads before any work: a measured
+              per-session total, an estimated per-component split, a per-repo
+              figure, and with --trend a weekly median so a reduction is visible;
+              not part of `report` (report is the weekly digest of behaviour,
+              entry-fee is a standing cost measurement)
   burn      - live per-session token burn in the last --since minutes (default 60),
               ranked by burn rate; subagent transcripts roll into their parent session;
               `model share` splits each row by model (priced, so an Opus fan-out is
@@ -39,7 +44,7 @@ import re
 import sys
 import time
 from collections import Counter, defaultdict
-from datetime import datetime
+from datetime import date, datetime
 
 
 def _repo_root():
@@ -115,28 +120,54 @@ def classify_session(dur_min, tools, turns):
     return "standard"
 
 
+def project_roots(root, project):
+    """Directories to walk for --project.
+
+    The exact slug dir when it exists (the historical contract). Otherwise every
+    slug whose name contains the given string, so a bare repo name resolves
+    without the full cwd-derived slug. One repo's worktrees each get their own
+    slug, and a per-repo figure wants them together, so this returns all matches
+    rather than picking one. No match -> the literal join, which walks nothing.
+    """
+    exact = os.path.join(root, project)
+    if os.path.isdir(exact):
+        return [exact]
+    try:
+        hits = sorted(
+            os.path.join(root, n) for n in os.listdir(root)
+            if project in n and os.path.isdir(os.path.join(root, n))
+        )
+    except OSError:
+        hits = []
+    return hits or [exact]
+
+
+def _walk_transcripts(args):
+    """Every *.jsonl under the resolved roots, in a stable order."""
+    root = args.root or DEFAULT_ROOT
+    roots = project_roots(root, args.project) if args.project else [root]
+    for r in roots:
+        for dirpath, _dirs, files in os.walk(r):
+            for fn in sorted(files):
+                if fn.endswith(".jsonl"):
+                    yield os.path.join(dirpath, fn)
+
+
 def iter_files(args):
     """Resolve the set of transcript files to read from the CLI args."""
     if args.file:
         yield args.file
         return
-    root = args.root or DEFAULT_ROOT
-    if args.project:
-        root = os.path.join(root, args.project)
     cutoff = time.time() - args.days * 86400 if args.days else None
-    for dirpath, _dirs, files in os.walk(root):
-        for fn in files:
-            if not fn.endswith(".jsonl"):
-                continue
-            path = os.path.join(dirpath, fn)
-            # Coarse window: skip files whose last write predates the cutoff.
-            if cutoff is not None:
-                try:
-                    if os.path.getmtime(path) < cutoff:
-                        continue
-                except OSError:
+    for path in _walk_transcripts(args):
+        # Coarse window: skip files whose last write predates the cutoff.
+        if cutoff is not None:
+            try:
+                if os.path.getmtime(path) < cutoff:
                     continue
-            yield path
+            except OSError:
+                continue
+        yield path
 
 
 def iter_entries(path):
@@ -546,20 +577,13 @@ def _burn_files(args, cutoff_epoch):
     if args.file:
         yield args.file
         return
-    root = args.root or DEFAULT_ROOT
-    if args.project:
-        root = os.path.join(root, args.project)
-    for dirpath, _dirs, files in os.walk(root):
-        for fn in files:
-            if not fn.endswith(".jsonl"):
+    for path in _walk_transcripts(args):
+        try:
+            if os.path.getmtime(path) < cutoff_epoch:
                 continue
-            path = os.path.join(dirpath, fn)
-            try:
-                if os.path.getmtime(path) < cutoff_epoch:
-                    continue
-            except OSError:
-                continue
-            yield path
+        except OSError:
+            continue
+        yield path
 
 
 # type -> field name, for the three known title-carrying entry shapes.
@@ -799,6 +823,193 @@ def run_burn(args):
     )
 
 
+# --- entry fee -------------------------------------------------------------
+# The fixed preamble every turn re-reads before the agent does any work: the
+# skill listing, the CLAUDE.md stack, the repo memory index, the agent roster,
+# the output style, the tool schemas.
+#
+# The TOTAL is measured. It is the first main-chain assistant turn's
+# input + cache-creation + cache-read, which is exactly what the model read
+# before it acted. The SPLIT is estimated: the transcript carries no per-component
+# token count, so each preamble attachment is sized from its rendered text at
+# ENTRY_FEE_CHARS_PER_TOKEN characters per token, the same rule of thumb the
+# 2026-09-13 hand measurement used. Every output labels the split an estimate.
+ENTRY_FEE_CHARS_PER_TOKEN = 4
+# Fee minus the sized components: the system prompt and the built-in tool
+# schemas reach the model but never appear in the transcript.
+ENTRY_FEE_UNATTRIBUTED = "(unattributed)"
+
+
+def _rendered_chars(entry):
+    """Characters of rendered preamble text one attachment entry contributes."""
+    r = entry.get("rendered")
+    if isinstance(r, str):
+        return len(r)
+    if not isinstance(r, list):
+        return 0
+    return sum(len(b.get("content") or "") for b in r if isinstance(b, dict))
+
+
+def entry_fee_session(path):
+    """One transcript -> its entry fee + component estimate, or None.
+
+    None means the file has no main-chain assistant turn: a subagent's own
+    transcript, or a session that never got a reply. Both are excluded rather
+    than counted as a zero fee.
+    """
+    comps = Counter()
+    first_ts = None
+    for entry in iter_entries(path):
+        if not isinstance(entry, dict):
+            continue  # malformed transcript line (untrusted input)
+        ts = entry.get("timestamp")
+        if first_ts is None and isinstance(ts, str):
+            first_ts = ts
+        if entry.get("type") == "attachment":
+            att = entry.get("attachment")
+            label = att.get("type") if isinstance(att, dict) else None
+            tokens = _rendered_chars(entry) // ENTRY_FEE_CHARS_PER_TOKEN
+            if label and tokens:
+                comps[label] += tokens
+            continue
+        if entry.get("type") != "assistant" or entry.get("isSidechain"):
+            continue
+        msg = entry.get("message")
+        u = msg.get("usage") if isinstance(msg, dict) else None
+        if not isinstance(u, dict):
+            continue
+        fee = ((u.get("input_tokens") or 0)
+               + (u.get("cache_creation_input_tokens") or 0)
+               + (u.get("cache_read_input_tokens") or 0))
+        day = (first_ts or ts or "")[:10]
+        return {"fee": fee, "components": comps, "day": day, "model": msg.get("model") or "?"}
+    return None
+
+
+def entry_fee_collect(args):
+    """One row per main session, newest-first file order irrelevant."""
+    rows = []
+    for path in iter_files(args):
+        if os.sep + "subagents" + os.sep in path:
+            continue  # a subagent's own transcript, not a session someone started
+        s = entry_fee_session(path)
+        if s:
+            s["project"] = os.path.basename(os.path.dirname(path))
+            rows.append(s)
+    return rows
+
+
+def entry_fee_median(sessions):
+    """The session at the median fee, or None for an empty set."""
+    if not sessions:
+        return None
+    ranked = sorted(sessions, key=lambda s: s["fee"])
+    i = min(len(ranked) - 1, int(round(0.5 * (len(ranked) - 1))))
+    return ranked[i]
+
+
+def entry_fee_split_session(sessions):
+    """The session whose component split represents the set.
+
+    Only transcripts that record the rendered preamble can be split at all, so
+    the split comes from the median of THOSE sessions rather than the median of
+    every session, which would often be one that records nothing and read as a
+    100% unattributed fee. Returns (session, how many sessions can be split).
+
+    The breakdown is one real session's, not a per-component median: medians of
+    separate components do not add up to the median fee, so a median-of-medians
+    table would not reconcile against the measured total.
+    """
+    splittable = [s for s in sessions if s["components"]]
+    return entry_fee_median(splittable), len(splittable)
+
+
+def entry_fee_component_rows(sess):
+    """Component split of one session, biggest first, with the remainder last."""
+    if not sess:
+        return []
+    fee = sess["fee"]
+    def share(n):
+        return f"{100 * n / fee:.0f}%" if fee else "-"
+    rows = [[name, n, share(n)] for name, n in sess["components"].most_common()]
+    rest = fee - sum(sess["components"].values())
+    rows.append([ENTRY_FEE_UNATTRIBUTED, rest, share(rest)])
+    return rows
+
+
+def short_project(slug, n=46):
+    """Trim a long project slug from the LEFT: the slug is a cwd path with the
+    repo name at the end, so the tail is the part worth keeping."""
+    return ("..." + slug[-(n - 3):]) if len(slug) > n else slug
+
+
+def entry_fee_project_rows(sessions, top):
+    """Per-repo median fee, every project (the caller slices for display).
+    The memory index and CLAUDE.md stack differ per checkout, so the per-repo
+    figure is the actionable one."""
+    by = defaultdict(list)
+    for s in sessions:
+        by[s["project"]].append(s["fee"])
+    rows = [[short_project(p), len(v), pctl(v, 50)] for p, v in by.items()]
+    rows.sort(key=lambda r: -r[2])
+    return rows
+
+
+def iso_week(day):
+    """`2026-09-08` -> `2026-W37`. Unparseable -> `?`."""
+    try:
+        y, w, _ = date.fromisoformat(day).isocalendar()
+    except ValueError:
+        return "?"
+    return f"{y}-W{w:02d}"
+
+
+def entry_fee_week_rows(sessions):
+    """Weekly median fee, newest week first, so a reduction shows as a drop."""
+    by = defaultdict(list)
+    for s in sessions:
+        by[iso_week(s["day"])].append(s["fee"])
+    return [[w, len(by[w]), pctl(by[w], 50)] for w in sorted(by, reverse=True)]
+
+
+def run_entry_fee(args):
+    """The `entry-fee` view. A separate I/O path from emit(): one row per
+    session rather than a model+day aggregation, and never part of `report`."""
+    sessions = entry_fee_collect(args)
+    med_sess = entry_fee_median(sessions)
+    split_sess, splittable = entry_fee_split_session(sessions)
+    comp = entry_fee_component_rows(split_sess)
+    projects = entry_fee_project_rows(sessions, args.top)
+    weeks = entry_fee_week_rows(sessions) if args.trend else []
+    med = med_sess["fee"] if med_sess else 0
+
+    if args.json:
+        print(json.dumps({
+            "sessions": len(sessions),
+            "median_fee": med,
+            "chars_per_token": ENTRY_FEE_CHARS_PER_TOKEN,
+            "components_estimated": True,
+            "split_sessions": splittable,
+            "split_session_fee": split_sess["fee"] if split_sess else 0,
+            "split_components": [{"component": r[0], "est_tokens": r[1]} for r in comp],
+            "by_project": [{"project": r[0], "sessions": r[1], "median_fee": r[2]} for r in projects],
+            "by_week": [{"week": r[0], "sessions": r[1], "median_fee": r[2]} for r in weeks],
+        }, indent=2))
+        return
+
+    split_fee = split_sess["fee"] if split_sess else 0
+    print(f"# entry-fee  ({len(sessions)} sessions, {len(projects)} projects; median {med} tokens re-read per turn, measured)")
+    print(f"  component split of one {split_fee}-token session ({splittable} sessions record the rendered preamble;")
+    print(f"  the split is ESTIMATED at {ENTRY_FEE_CHARS_PER_TOKEN} chars/token, only the totals are measured):")
+    print_table(["component", "est-tokens", "share"], comp)
+    print("  per repo (median measured fee):")
+    print_table(["project", "sessions", "median-fee"], projects[: args.top] if args.top else projects)
+    if args.trend:
+        print("  weekly trend (median measured fee):")
+        print_table(["week", "sessions", "median-fee"], weeks[: args.top] if args.top else weeks)
+    print()
+
+
 def emit(args, data):
     if args.json:
         out = {
@@ -892,7 +1103,7 @@ def emit(args, data):
 
 def main(argv=None):
     p = argparse.ArgumentParser(prog="session-observe", description="Report Claude Code skill/tool/hook usage from session transcripts.")
-    p.add_argument("cmd", choices=["skills", "tools", "hooks", "subagents", "friction", "sessions", "cost", "burn", "report"], help="which view")
+    p.add_argument("cmd", choices=["skills", "tools", "hooks", "subagents", "friction", "sessions", "cost", "burn", "entry-fee", "report"], help="which view")
     src = p.add_mutually_exclusive_group()
     src.add_argument("--file", help="parse a single transcript file (used by tests)")
     src.add_argument("--project", help="project slug under ~/.claude/projects/")
@@ -901,6 +1112,7 @@ def main(argv=None):
     p.add_argument("--top", type=int, default=0, help="limit to top N rows (0 = all)")
     p.add_argument("--latency", action="store_true", help="(skills) add a per-skill total wall-time table, ranked by summed ms")
     p.add_argument("--since", type=int, default=60, help="(burn only) window in minutes (default 60)")
+    p.add_argument("--trend", action="store_true", help="(entry-fee) add a weekly median table, newest week first")
     p.add_argument("--json", action="store_true", help="machine-readable output (for vps-mon ingest)")
     args = p.parse_args(argv)
 
@@ -910,6 +1122,10 @@ def main(argv=None):
 
     if args.cmd == "burn":
         run_burn(args)
+        return 0
+
+    if args.cmd == "entry-fee":
+        run_entry_fee(args)
         return 0
 
     data = collect(args)
