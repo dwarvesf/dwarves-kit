@@ -76,6 +76,32 @@ Open PR #649 adds `docs/specs/SPEC-288-ui-acceptance-verifier.md`, which already
 
 **Why** A number hole costs nothing; a second collision costs a rename after review.
 
+**Decision: a repeat `mark-disconnected` does not refresh the window**
+
+Found by the test-coverage review. `mark-disconnected` used to overwrite the deadline on every
+call, so a lead (or a loop) signalling the same silence twice could hold a task indefinitely.
+
+**Why** The window measures how long since the worker was last heard from. A second disconnect
+signal carries no word from the worker, so it is not evidence of anything. Only `resume` clears
+the window.
+
+**Decision: `abandon` supersedes any live attempt**
+
+Found by the architecture review. `abandon` moved the task to `lost` while leaving a `running` or
+`disconnected` attempt untouched, a record no verb could resolve afterwards.
+
+**Why** One invariant matters here: the task state reflects its live attempt. A verb that can break
+it in one call is worse than no verb.
+
+**Not taken: factoring `registry_dir` and the id guard into a shared store helper**
+
+The architecture review flagged that `registry_dir` and `_check_id` near-duplicate the equivalents
+in `goal-registry.sh`. Two call sites, about fifteen lines, and the two modules have different
+lifecycles.
+
+**Why not** A shared helper couples two modules that are independent today and buys nothing until
+a third store exists. Revisit at the third.
+
 **Open questions**
 
 - The `megagoal-agent-drive` skill lives in `~/.claude/skills` (dotfiles-managed) and was not

@@ -23,6 +23,11 @@
 # attempt to commit wins, every later one reports the winner and is recorded
 # `superseded`. That is what makes a resume and a replacement safe to race.
 #
+# Concurrency: ONLY the lead session calls this script, and it calls sequentially.
+# A dispatched worker never touches the store. That is what makes the plain
+# load-check-save safe with no lock; a worker writing its own result directly
+# would race two interleaved saves and defeat the whole point.
+#
 # Store: $(git rev-parse --git-common-dir)/kit-attempts/<task>.task -- the same
 # .git-backed convention goal-registry.sh uses, so a lead reads both in one
 # place. Override with ATTEMPT_REGISTRY_DIR for tests.
@@ -241,11 +246,17 @@ as_mark_disconnected() {  # <task> [attempt] [--grace N]
   case "$grace" in ''|*[!0-9]*) echo "attempt-state: --grace wants whole seconds, got '$grace'" >&2; return 64;; esac
   _load "$task" || { echo "attempt-state: unknown task '$task'" >&2; return 1; }
   _target "$task" "$aid" || return 1
+  local until; until="$(_field "${ATTEMPTS[$IDX]}" 4)"
   _attempt_goto "$IDX" disconnected || return 1
-  local until; until=$(( $(_now) + grace ))
+  # A second disconnect signal is not word FROM the worker, so it must not push
+  # the deadline out. Only `resume` clears the window, because only a reply proves
+  # the worker is alive. Without this an idle repeat could hold a task forever.
+  if [ -z "$until" ]; then
+    until=$(( $(_now) + grace ))
+  fi
   ATTEMPTS[$IDX]="$(_field "${ATTEMPTS[$IDX]}" 1)|$(_field "${ATTEMPTS[$IDX]}" 2)|disconnected|$until"
   _save
-  echo "DISCONNECTED $task attempt=$(_field "${ATTEMPTS[$IDX]}" 1) grace=${grace}s until=$until (task stays $T_STATE; do NOT dispatch a replacement)"
+  echo "DISCONNECTED $task attempt=$(_field "${ATTEMPTS[$IDX]}" 1) until=$until (task stays $T_STATE; do NOT dispatch a replacement)"
 }
 
 as_resume() {  # <task> [attempt]
@@ -324,6 +335,13 @@ as_abandon() {  # <task> <reason>
   [ -n "$task" ] && [ -n "$reason" ] || { echo "usage: attempt-state abandon <task> <reason>" >&2; return 64; }
   _load "$task" || { echo "attempt-state: unknown task '$task'" >&2; return 1; }
   _task_goto lost || return 1
+  # Resolve any live attempt in the same write, or the record reads task=lost
+  # beside attempt=running and no verb can move that attempt again.
+  local i s
+  for i in "${!ATTEMPTS[@]}"; do
+    s="$(_field "${ATTEMPTS[$i]}" 3)"
+    if [ "$s" = running ] || [ "$s" = disconnected ]; then _attempt_goto "$i" superseded || return 1; fi
+  done
   _save
   echo "ABANDONED $task ($reason)"
 }

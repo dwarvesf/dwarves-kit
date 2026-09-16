@@ -58,7 +58,7 @@ must be able to acknowledge a duplicate result without treating it as an error.
 | `resume <task> [attempt]` | `disconnected` back to `running`, window cleared |
 | `lose-attempt <task> [attempt]` | refuses while the window has time left; on expiry: attempt `lost`, worker excluded, task `queued` |
 | `commit-result <task> <attempt> <ref>` | idempotent on the task; a second call is a no-op naming the winner |
-| `abandon <task> <reason>` | task to `lost` when no worker remains |
+| `abandon <task> <reason>` | task to `lost` when no worker remains; supersedes any attempt still live |
 | `status <task>` | task state, winner, excluded workers, and each attempt with its grace remaining |
 | `list` / `release <task>` / `dir` | the store surface |
 
@@ -71,12 +71,20 @@ One default, `ATTEMPT_GRACE_DEFAULT_SECONDS=120`, and one flag, `--grace N`. No 
 a literal. 120 seconds covers a Claude API drop and a `SendMessage` round trip without holding a
 genuinely dead worker's task hostage for long.
 
+The window is measured from the FIRST disconnect and a repeat `mark-disconnected` does not push it
+out. A second disconnect signal is not word from the worker, so refreshing on it would let a quiet
+worker hold its task forever. Only `resume` clears the window, because only a reply proves life.
+
 ### Store
 
 `$(git rev-parse --git-common-dir)/kit-attempts/<task>.task`, the convention `goal-registry.sh`
 already uses, so the lead reads both in one place and a different machine structurally cannot
 share the state. `ATTEMPT_REGISTRY_DIR` overrides it for tests, mirroring `GOAL_REGISTRY_DIR`.
 `ATTEMPT_NOW` pins the clock, so grace expiry is tested without sleeping.
+
+Only the lead session calls the script, and it calls sequentially. A dispatched worker never
+touches the store. That is what makes the plain load-check-save safe without a lock; a worker
+writing its own result directly would race two interleaved saves.
 
 ## Consumers
 
@@ -101,6 +109,7 @@ bash tests/run-all.sh
 ## After state
 
 `lib/goal/attempt-state.sh` exists with the verbs above. `tests/test-attempt-state.sh` covers the
-legal walk, three refused illegal transitions, the refused and then allowed `lose-attempt` around
-the window, a double `commit-result`, and the resume-then-late-replacement race. Both consumer
-commands name the attempt-state verbs where they used to name silence as failure.
+legal walk, refused illegal transitions, the refused and then allowed `lose-attempt` around the
+window and at its exact boundary, a double `commit-result`, the co-live sibling supersede, and the
+resume-then-late-replacement race. Both consumer commands name the attempt-state verbs where they
+used to name silence as failure.

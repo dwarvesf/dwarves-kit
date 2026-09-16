@@ -216,6 +216,136 @@ else
   fail "--grace 5 should have expired by +6s"
 fi
 
+# ---- 11. a result arriving INSIDE the window commits with no resume first ----
+# The row's headline case: disconnected -> committed is a legal edge, and a flaky
+# stream can deliver the result before any explicit resume.
+at 10000 dispatch t-inwindow w1 a1 >/dev/null 2>&1
+at 10000 mark-disconnected t-inwindow --grace 120 >/dev/null 2>&1
+if at 10030 commit-result t-inwindow a1 sha-inwindow >/dev/null 2>&1 \
+   && [ "$(state_of t-inwindow)" = done ] \
+   && [ "$(attempt_state t-inwindow a1)" = committed ]; then
+  pass "a result arriving inside the window commits straight from disconnected"
+else
+  fail "disconnected -> committed should work without a resume: $(status_of 10030 t-inwindow | tr '\n' ' ')"
+fi
+
+# ---- 12. a FRESH commit supersedes a co-live sibling ----
+# Two attempts live at once (the state a careless lead produces). The first to
+# commit must flip the other to superseded, not leave it running.
+at 11000 dispatch t-colive w1 a1 >/dev/null 2>&1
+printf 'attempt|a2|w2|running|\n' >> "$ATTEMPT_REGISTRY_DIR/t-colive.task"
+at 11010 commit-result t-colive a1 sha-colive >/dev/null 2>&1
+if [ "$(attempt_state t-colive a1)" = committed ] && [ "$(attempt_state t-colive a2)" = superseded ]; then
+  pass "a fresh commit supersedes a co-live sibling"
+else
+  fail "co-live sibling should be superseded: $(status_of 11010 t-colive | tr '\n' ' ')"
+fi
+
+# ---- 13. the grace window is measured from the FIRST disconnect, not refreshed ----
+# A repeat disconnect signal is not word from the worker. If it pushed the deadline
+# out, a quiet worker could hold its task forever.
+at 12000 dispatch t-refresh w1 a1 >/dev/null 2>&1
+at 12000 mark-disconnected t-refresh --grace 60 >/dev/null 2>&1
+at 12050 mark-disconnected t-refresh --grace 60 >/dev/null 2>&1
+if at 12061 lose-attempt t-refresh >/dev/null 2>&1; then
+  pass "a repeated disconnect does not extend the window"
+else
+  fail "the window should still expire at +60s: $(status_of 12061 t-refresh | tr '\n' ' ')"
+fi
+
+# ---- 14. the grace boundary itself: refused AT expiry, allowed one second past ----
+at 13000 dispatch t-bound w1 a1 >/dev/null 2>&1
+at 13000 mark-disconnected t-bound --grace 30 >/dev/null 2>&1
+ok=1
+at 13030 lose-attempt t-bound >/dev/null 2>&1 && ok=0     # exactly at expiry: still refused
+at 13031 lose-attempt t-bound >/dev/null 2>&1 || ok=0     # one second past: allowed
+if [ "$ok" = 1 ]; then
+  pass "the grace boundary holds: refused at expiry, allowed one second past"
+else
+  fail "boundary wrong: $(status_of 13031 t-bound | tr '\n' ' ')"
+fi
+
+# ---- 15. abandon resolves a live attempt instead of orphaning it ----
+at 14000 dispatch t-orphan w1 a1 >/dev/null 2>&1
+at 14000 mark-disconnected t-orphan --grace 60 >/dev/null 2>&1
+at 14010 abandon t-orphan "no worker left" >/dev/null 2>&1
+if [ "$(state_of t-orphan)" = lost ] && [ "$(attempt_state t-orphan a1)" = superseded ]; then
+  pass "abandon supersedes the live attempt rather than orphaning it"
+else
+  fail "abandon left an orphan: $(status_of 14010 t-orphan | tr '\n' ' ')"
+fi
+
+# ---- 16. abandon from queued (the other legal task edge) ----
+at 15000 dispatch t-q w1 a1 >/dev/null 2>&1
+at 15000 mark-disconnected t-q --grace 10 >/dev/null 2>&1
+at 15020 lose-attempt t-q >/dev/null 2>&1                  # task back to queued
+if [ "$(state_of t-q)" = queued ] && at 15030 abandon t-q "nobody left" >/dev/null 2>&1 \
+   && [ "$(state_of t-q)" = lost ]; then
+  pass "abandon works from queued as well as dispatched"
+else
+  fail "queued -> lost should be legal: $(status_of 15030 t-q | tr '\n' ' ')"
+fi
+
+# ---- 17. a terminal task cannot be dispatched again ----
+at 16000 dispatch t-term w1 a1 >/dev/null 2>&1
+at 16000 commit-result t-term a1 sha-x >/dev/null 2>&1
+out=$(at 16010 dispatch t-term w2 a2 2>&1)
+case "$out" in
+  *"illegal task transition done -> dispatched"*) pass "a done task cannot be dispatched again" ;;
+  *) fail "dispatching a done task should be refused, got: $out" ;;
+esac
+
+# ---- 18. id validation guards the path the store writes ----
+ok=1
+for bad in "a/b" "a..b" "a|b" "a b"; do
+  out=$(at 17000 dispatch "$bad" w1 2>&1)
+  case "$out" in *"invalid task id"*) : ;; *) ok=0; fail "task id '$bad' should be rejected, got: $out" ;; esac
+done
+out=$(at 17000 dispatch t-ok "w/1" 2>&1)
+case "$out" in *"invalid worker id"*) : ;; *) ok=0 ;; esac
+at 17000 dispatch t-ok-control w1 >/dev/null 2>&1 || ok=0   # the guard is not over-broad
+if [ "$ok" = 1 ]; then pass "id validation rejects path, traversal, pipe and space shapes and accepts a clean id"; fi
+
+# ---- 19. naming an attempt that does not exist ----
+at 18000 dispatch t-nosuch w1 a1 >/dev/null 2>&1
+out=$(at 18000 resume t-nosuch bogus 2>&1)
+case "$out" in
+  *"unknown attempt 'bogus'"*) pass "a verb naming a non-existent attempt is refused" ;;
+  *) fail "unknown attempt should be refused, got: $out" ;;
+esac
+
+# ---- 20. exclusions accumulate across workers ----
+at 19000 dispatch t-multi w1 a1 >/dev/null 2>&1
+at 19000 mark-disconnected t-multi --grace 10 >/dev/null 2>&1
+at 19020 lose-attempt t-multi >/dev/null 2>&1
+at 19030 dispatch t-multi w2 a2 >/dev/null 2>&1
+at 19030 mark-disconnected t-multi --grace 10 >/dev/null 2>&1
+at 19050 lose-attempt t-multi >/dev/null 2>&1
+ok=1
+has "$(status_of 19060 t-multi)" 'excluded=w1 w2' || ok=0
+at 19060 dispatch t-multi w1 a3 >/dev/null 2>&1 && ok=0
+at 19060 dispatch t-multi w2 a3 >/dev/null 2>&1 && ok=0
+at 19060 dispatch t-multi w3 a3 >/dev/null 2>&1 || ok=0
+if [ "$ok" = 1 ]; then
+  pass "both lost workers stay excluded and a third is accepted"
+else
+  fail "exclusion accumulation wrong: $(status_of 19060 t-multi | tr '\n' ' ')"
+fi
+
+# ---- 21. release clears the record; list counts what is tracked ----
+at 20000 dispatch t-rel w1 a1 >/dev/null 2>&1
+at 20000 release t-rel >/dev/null 2>&1
+out=$(at 20000 status t-rel 2>&1)
+case "$out" in
+  *"unknown task 't-rel'"*) pass "release clears the record" ;;
+  *) fail "status after release should report unknown, got: $out" ;;
+esac
+if has "$(at 20000 list 2>&1)" 't-colive'; then
+  pass "list names a tracked task"
+else
+  fail "list should name t-colive: $(at 20000 list 2>&1 | tr '\n' ' ')"
+fi
+
 if [ "$FAILED" -eq 0 ]; then
   echo "test-attempt-state: all cases passed"
 else

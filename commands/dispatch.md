@@ -126,6 +126,8 @@ bash $AS lose-attempt <slug>    # refuses while the window has time left
 
 That marks the attempt `lost`, excludes that worker from the slug, and frees the task back to `queued` for a genuinely different worker. `bash $AS status <slug>` prints the state, the attempts, and the grace remaining.
 
+When every eligible worker is excluded and nobody is left to try, stop rather than loop: `bash $AS abandon <slug> "<reason>"` takes the task to `lost` and resolves any attempt still on it. Surface that to the user with the BLOCKED and FAILED set in Step 6.
+
 ### Step 4: Wait-queue
 
 A spec in the wait-queue starts only after the conflicting peer it overlaps has completed (READY or terminal). With more than `max` eligible specs, at most `max` run at once and the rest queue. An all-overlapping set degenerates to fully sequential; that is correct (safety over speed), and you tell the user why.
