@@ -12,6 +12,7 @@
 # Exit 0 = all tests pass. Exit 1 = failures found.
 
 KIT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+export KIT_CONFIG_OPERATOR="$KIT_DIR/tests/fixtures/gates-on"   # quality gates are opt-in; this suite exercises them ON
 FIXTURES="$KIT_DIR/tests/fixtures/picture-section"
 PASS=0
 FAIL=0

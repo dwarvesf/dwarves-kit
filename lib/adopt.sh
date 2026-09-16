@@ -226,8 +226,8 @@ if [ -n "$kit_root_toml" ] && [ "$RESOLVER_OK" -eq 1 ]; then
         echo "# default at $KIT_REF/kit.toml (lib/config/kit-config.sh: project keys WIN)."
         echo "# Re-run \`bash $KIT_REF/lib/adopt.sh --refresh <this repo>\` (or /kit:adopt) after"
         echo "# editing [modules] to re-wire this project's .claude/settings.json to match --"
-        echo "# adopt reads [modules] at adopt time. [gate] is read when a hook fires: uncomment a"
-        echo "# key, set it to false, commit, and that quality gate is off for this project."
+        echo "# adopt reads [modules] at adopt time. [gate] is read when a hook fires: set a key to"
+        echo "# true, commit, and that quality gate is on for this project (false keeps it off)."
         echo ""
         echo "[modules]"
         for m in $KIT_KNOWN_MODULES; do
@@ -240,12 +240,18 @@ if [ -n "$kit_root_toml" ] && [ "$RESOLVER_OK" -eq 1 ]; then
           echo "$m = $v"
         done
         echo ""
-        echo "[gate]   # quality gates; uncomment a key and set it false to switch that gate off here"
-        echo "         # (left commented so the operator overlay still reaches this repo; safety gates have no key)"
+        echo "[gate]   # quality gates, OPT-IN. true turns one on for this repo, false keeps it off. The values"
+        echo "         # below are what resolved at adopt time (operator ~/.config/dwarves-kit/kit.toml, else the"
+        echo "         # kit default false); delete a line to follow the operator setting again. Detail: the"
+        echo "         # installed kit's lib/gate/README.md, 'Turning a gate on'. Safety gates have no key."
+        echo "         #   proof_of_done      ship-gate: a load-bearing diff needs a proof-of-done record"
+        echo "         #   lane_gates         ship-gate: the lane x phase required gates + the no-Lane refusal"
+        echo "         #   understanding_gate Stop hook: blocks a stop that rationalizes unfinished work"
+        echo "         #   commit_format      commit-subject lint (conventional type, <=72 chars)"
         for g in $(bash "$SELF_DIR/gate/gate-policy.sh" keys 2>/dev/null); do
           KIT_CONFIG_ROOT="$(dirname "$kit_root_toml")" KIT_PROJECT_ROOT="$TARGET" \
-            v="$(kit_config_get "gate.$g" "true")"
-          echo "# $g = $v"
+            v="$(kit_config_get "gate.$g" "false")"
+          echo "$g = $v"
         done
       } > "$tmp"
       mv "$tmp" "$dotkit"

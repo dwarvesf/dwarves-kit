@@ -1,0 +1,8 @@
+# Test fixture: an operator overlay that turns every quality gate ON. The kit root defaults
+# them to false (opt-in), so a suite that exercises a gate's BLOCK path points
+# KIT_CONFIG_OPERATOR here instead of depending on the developer's own overlay.
+[gate]
+proof_of_done      = true
+lane_gates         = true
+understanding_gate = true
+commit_format      = true

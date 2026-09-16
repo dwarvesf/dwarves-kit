@@ -6,6 +6,7 @@
 # Exit 0 = all tests pass. Exit 1 = failures found.
 
 KIT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+export KIT_CONFIG_OPERATOR="$KIT_DIR/tests/fixtures/gates-on"   # quality gates are opt-in; this suite exercises them ON
 
 # Isolate hook logs to a temp dir so the suite never writes into the real
 # ~/.claude/dwarves-kit/logs. The log-writing hooks honor DWARVES_KIT_LOG_DIR
