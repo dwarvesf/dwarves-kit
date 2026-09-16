@@ -38,6 +38,32 @@ flowchart LR
   RE -.->|feeds the next cycle| T
 ```
 
+That lifecycle is the middle of a longer arc. A board row becomes a landed PR like this:
+
+```
+  _meta/BACKLOG.md          /kit:assign                lane-classify.sh
+  +----------------+  pull  +----------------+  size   +--------------------+
+  | ID-NNN, queued | -----> | goal draft,    | ------> | tiny | normal |    |
+  |                |        | scope fence    |         | full | bug |       |
+  +----------------+        +----------------+         | backfill           |
+                                                       +--------------------+
+                                                                 |
+      +----------------------------------------------------------+
+      v
+  think --> spec --> execute --> review --> docs --> ship
+    |         |          |          |         |        |
+  advisory  spec-    verification advisory advisory  ship-gate +
+            drift    pipeline                        push-to-main
+            guard                                      |
+                                                       v
+                                              PR open --> /kit:wrap
+                                              board flip, merge own PR,
+                                              deploy check, tidy, activity line
+                                                       |
+                                                       v
+                                              ID-NNN row --> shipped
+```
+
 Two gate classes sit on those boundaries: **blocking** (the verification pipeline, the ship-gate, the push-to-main blocker, mechanical, they stop a bad outcome) and **advisory** (think, review, they surface findings, never block). The autonomous-loop hardening adds a fresh-context re-audit of every done-claim, a kit-default cross-cutting advisor lens on top of the specialized reviewers, and a deployable-done proof gate, so a closed loop can run long without drifting into self-graded slop.
 
 Every build task runs a verification pipeline (worker → verifier → fix-agent retry), and hooks enforce safety automatically (`rm -rf`, push-to-main, force-push, and secret-file reads are blocked). The worker is also **specialized per task**: when a task needs a role no built-in agent covers (security, migration, a doc writer, ...), the kit synthesizes one on the fly and dispatches it, or `/kit:draft-agent` installs a reusable named agent ([SPEC-089](docs/specs/SPEC-089-dynamic-agent-synthesis.md)).
@@ -418,7 +444,7 @@ dwarves-kit/
   CLAUDE.md                     Project template; the Claude-Code layer on top of AGENTS.md
   install.sh / settings.json    Bash install path
   .claude-plugin/               Plugin install path (plugin.json, marketplace.json)
-  .github/workflows/test.yml    CI: macOS + Ubuntu test matrix
+  .github/workflows/test.yml    CI: macOS + Ubuntu test matrix, on workflow_dispatch and v* tags only
   bin/                          STABLE consumer entrypoints (SPEC-184, one `<subsystem> <verb>` grammar per ADR-0034): `board`/`classify`/`gate`/`goal`/`reflect`/`mega`/`precedent`/`intake`/`queue`/`session`/`spec`/`stats`/`config`/`plugin-check` thin forwarders to `lib/<subsystem>/`, plus the module CLIs (`prose-rag`, `worktree-provision`, `skill-improve`, `skill-review`) that keep their own names, and two standalone maintainer tools outside the forwarder pattern (`activate`, `release`, licensing and release cutting). `learn` stays for one release as a deprecation forwarder to `reflect` (ADR-0036). A consumer (an adopted repo's board shim, the adopt-injected CLAUDE.md block) references `$DWARVES_KIT/bin/<name>`, NEVER a deep lib path, so an internal lib reorg cannot silently break it (the board-shim class of bug). Deployed by install.sh next to lib/.
   agents/                       Subagents dispatched by commands
   commands/                     Markdown command prompts
@@ -465,7 +491,29 @@ For the full file listing including individual agent/hook/command names, run `gi
 
 **Weekly scheduler.** The kit ships ONE weekly LaunchAgent: a dispatcher over a declarative jobs list (session-intel digest, `reflect propose` staging; adding a job = one line, never a new plist). Consumer instantiates it: `bash deploy/macos/install`; runbook at [`deploy/macos/README.md`](deploy/macos/README.md).
 
-**Testing.** `bash tests/run-workflow.sh` runs every step of the CI workflow locally in order and prints only the red ones (side-effect files restored); `bash tests/test-hooks.sh` covers hook behavior (safety-gate blocking, anti-rationalization patterns, permission-auto-approve pipe-injection protection); `bash tests/test-meta.sh` covers structural integrity (manifests, frontmatter, cross-links).
+**Testing.** `bash tests/run-all.sh` with no argument runs only the suites the diff touches, plus six always-on tree-wide lints (kit-contract, config-registry, no-personal-paths, no-scattered-ids, boundary-lint, meta), about 1 to 2 minutes on a Mac. `--all` is the full glob, 13 to 15 minutes. `RUN_ALL_JOBS` defaults to `auto` on macOS and `1` on Linux. Single suites still run on their own: `bash tests/test-hooks.sh` covers hook behavior, `bash tests/test-meta.sh` covers structural integrity (manifests, frontmatter, cross-links), `bash tests/run-workflow.sh` walks the CI workflow's steps locally and prints only the red ones.
+
+**CI.** `.github/workflows/test.yml` runs on `workflow_dispatch` and on a `v*` tag push, nothing else. A push or a pull request starts no run, and merging a PR waits on no check. Run `gh workflow run test` before cutting a release tag. The local check is what catches a regression:
+
+```
+  edit on a branch
+       |
+       v
+  bash tests/run-all.sh ....... diff-scoped suites + the six always-on lints
+       |                        (about 1-2 min on a Mac)
+       v
+  commit --> push --> PR --> merge      no CI run fires anywhere on this line
+       |
+       v
+  cutting a release
+       |
+       +--> gh workflow run test ........ the macOS + Ubuntu matrix, on demand
+       +--> git push origin v<x.y.z> .... the same workflow, on the tag
+       |
+       v
+  bash tests/run-all.sh --all ... the full glob (13-15 min); run it before the
+                                  tag, not on every commit
+```
 
 **External dependencies** (install alongside, not bundled):
 
