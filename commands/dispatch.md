@@ -55,6 +55,8 @@ rules in the prompt itself instead:
   before you change it.
 - Worktree, not branch-switch: `isolation: "worktree"` already isolated you; never
   `git checkout` / `git switch` in a shared checkout.
+- Never call `EnterWorktree` or `ExitWorktree`: both refuse a subagent with a cwd override,
+  and your worktree already exists. Work in your cwd; the lead owns worktree lifecycle.
 - Never merge your own PR. The lead merges.
 - Commit before any negative control you run.
 - No em dash or en dash characters anywhere you write, code or prose; use a comma, colon,
