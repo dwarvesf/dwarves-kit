@@ -99,6 +99,22 @@ _fmode() { stat -c %a "$1" 2>/dev/null || stat -f %Lp "$1" 2>/dev/null; }
 
 _short() { printf '%s' "${1:0:7}"; }
 
+# _open_own_prs <repo-url> -- the open PRs the operator authored, as a JSON array.
+#
+# The author filter runs HERE, not on the server: `gh pr list --author` sends gh to the
+# GraphQL search index (query PullRequestSearch), which is eventually consistent and omits
+# a PR opened seconds ago, so an own green PR silently vanished from `merge` three times on
+# one day. The plain list reads repository.pullRequests, which holds the PR the moment it
+# exists. Empty when the login does not resolve, so a failed identity read can never widen
+# the set to someone else's PR.
+_open_own_prs() {
+  local me; me="$(gh api user --jq .login 2>/dev/null)"
+  [ -n "$me" ] || { printf '[]'; return 0; }
+  gh pr list --repo "$1" --state open --limit 100 \
+    --json number,title,headRefName,author 2>/dev/null \
+    | jq -c --arg me "$me" '[.[] | select(.author.login == $me)]' 2>/dev/null
+}
+
 # _squash_json <repo-url> <branch> -- the merged-PR list gh reports for that head.
 _squash_json() {
   gh pr list --repo "$1" --head "$2" --state merged --json headRefOid,baseRefName,mergedAt 2>/dev/null
@@ -179,8 +195,7 @@ _scan_repo() {
   echo "-- open PRs authored by me:"
   case "$ghs" in
     ok)
-      gh pr list --repo "$(_origin_url "$repo")" --author "@me" --state open \
-        --json number,title,headRefName 2>/dev/null \
+      _open_own_prs "$(_origin_url "$repo")" \
         | jq -r '.[] | "     #\(.number) \(.title) [\(.headRefName)]"' 2>/dev/null \
         || echo "     (gh query failed)"
       ;;
@@ -861,8 +876,7 @@ cmd_merge() {
   local def; def="$(_default_branch "$repo")" || { echo "no default branch resolved for ${repo}" >&2; return 1; }
   local url; url="$(_origin_url "$repo")"
 
-  local numbers; numbers="$(gh pr list --repo "$url" --author "@me" --state open \
-    --json number,title,headRefName 2>/dev/null | jq -r '.[].number' 2>/dev/null)"
+  local numbers; numbers="$(_open_own_prs "$url" | jq -r '.[].number' 2>/dev/null)"
   [ -n "$numbers" ] || { echo "no open PRs authored by the operator on ${url}"; return 0; }
 
   # Exactly one detail read per PR. The full JSON goes to its own temp file and the
