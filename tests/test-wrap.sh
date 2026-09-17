@@ -48,14 +48,21 @@ case "$sub" in
   auth)
     [ "${GH_STUB_UNAUTH:-0}" = "1" ] && exit 1
     exit 0 ;;
+  api)
+    # Only `user --jq .login` is asked for, so the login is the whole answer. A failing
+    # call prints nothing, the way gh answers when the identity read fails.
+    [ "${GH_STUB_API_RC:-0}" = "0" ] || exit "${GH_STUB_API_RC}"
+    printf '%s\n' "${GH_STUB_LOGIN:-me}"
+    exit 0 ;;
   pr)
     verb="${1:-}"; [ $# -gt 0 ] && shift
     case "$verb" in
       list)
-        head=""
+        head=""; author=""
         while [ $# -gt 0 ]; do
           case "$1" in
             --head) head="${2:-}"; shift 2 ;;
+            --author) author="${2:-}"; shift 2 ;;
             *) shift ;;
           esac
         done
@@ -65,7 +72,16 @@ case "$sub" in
           [ -n "$val" ] || val="[]"
           printf '%s\n' "$val"
         else
-          printf '%s\n' "${GH_STUB_OPEN_PRS:-[]}"
+          # --author sends real gh to the GraphQL search index, which lags a PR opened
+          # seconds ago; the plain list reads the repository itself and never lags.
+          if [ -n "$author" ]; then
+            val="${GH_STUB_OPEN_PRS_SEARCH-${GH_STUB_OPEN_PRS:-[]}}"
+          else
+            val="${GH_STUB_OPEN_PRS:-[]}"
+          fi
+          # Real gh always answers with an author; default the fixtures that omit one.
+          printf '%s\n' "$val" | jq -c --arg me "${GH_STUB_LOGIN:-me}" \
+            '[.[] | if .author then . else . + {author: {login: $me}} end]'
         fi
         exit 0 ;;
       view)
@@ -202,7 +218,7 @@ SCAN_URL="$(git -C "$TMPD/clone-scan-main" remote get-url origin)"
 SCAN_CALLS="$(cat "$GH_STUB_CALLS")"
 chk_has "scan: pr list names --repo and --head" "$SCAN_CALLS" \
   "pr list --repo ${SCAN_URL} --head squash-ok"
-chk_has "scan: the open-PR query names --repo" "$SCAN_CALLS" "pr list --repo ${SCAN_URL} --author"
+chk_has "scan: the open-PR query names --repo" "$SCAN_CALLS" "pr list --repo ${SCAN_URL} --state open"
 
 echo "=== scan: a non-repo argument is skipped, the repo after it still reports ==="
 out="$("$WRAP" scan "$TMPD/not-a-repo" "$TMPD/clone-scan-main" 2>&1)"
@@ -997,6 +1013,41 @@ DRAFT_PR_18='{"number":18,"title":"ready","headRefName":"feat/ready","headRefOid
 out="$(GH_STUB_OPEN_PRS="$DRAFT_OPEN" GH_STUB_PR_19="$DRAFT_PR_19" GH_STUB_PR_18="$DRAFT_PR_18" "$WRAP" merge "$TMPD/clone-scan-main" 2>&1)"
 chk_has "merge: the newer draft is skipped" "$out" "SKIP #19 wip: draft"
 chk_has "merge: the older ready PR is picked" "$out" "eligible #18 ready [feat/ready]"
+
+echo "=== merge: a PR the search index has not indexed yet is still found ==="
+# The reported shape: an own green PR opened minutes earlier is absent from the
+# author-filtered answer and present in the repository's own open-PR list.
+LAG_OPEN='[{"number":31,"title":"fresh work","headRefName":"chore/fresh","author":{"login":"me"}}]'
+LAG_PR_31='{"number":31,"title":"fresh work","headRefName":"chore/fresh","headRefOid":"ff","baseRefName":"main","mergeable":"MERGEABLE","mergeStateStatus":"CLEAN","reviewDecision":"APPROVED","statusCheckRollup":[{"conclusion":"SUCCESS"}],"isDraft":false}'
+: > "$GH_STUB_CALLS"
+out="$(GH_STUB_OPEN_PRS="$LAG_OPEN" GH_STUB_OPEN_PRS_SEARCH='[]' GH_STUB_PR_31="$LAG_PR_31" \
+  "$WRAP" merge "$TMPD/clone-scan-main" 2>&1)"
+chk_has "merge: a PR missing from the search index is still eligible" "$out" "eligible #31 fresh work [chore/fresh]"
+chk "merge: the open-PR list carries no --author filter" \
+  "$(grep -q '^pr list .*--author' "$GH_STUB_CALLS" && echo 1 || echo 0)"
+
+echo "=== merge: a PR someone else authored is never listed ==="
+FOREIGN_OPEN='[{"number":32,"title":"not mine","headRefName":"chore/theirs","author":{"login":"someone-else"}}]'
+FOREIGN_PR_32='{"number":32,"title":"not mine","headRefName":"chore/theirs","headRefOid":"ff","baseRefName":"main","mergeable":"MERGEABLE","mergeStateStatus":"CLEAN","reviewDecision":"APPROVED","statusCheckRollup":[{"conclusion":"SUCCESS"}],"isDraft":false}'
+out="$(GH_STUB_OPEN_PRS="$FOREIGN_OPEN" GH_STUB_PR_32="$FOREIGN_PR_32" \
+  "$WRAP" merge "$TMPD/clone-scan-main" 2>&1)"
+chk_no "merge: a PR authored by someone else is not eligible" "$out" "eligible #32"
+chk_has "merge: a foreign-only list reports no own PRs" "$out" "no open PRs authored by the operator"
+
+echo "=== merge: a repo with no open PRs is not a failed query ==="
+out="$(GH_STUB_OPEN_PRS='[]' "$WRAP" merge "$TMPD/clone-scan-main" 2>&1)"; rc=$?
+chk "merge: an empty board exits 0" "$rc"
+chk_has "merge: an empty board says so" "$out" "no open PRs authored by the operator"
+chk_no "merge: an empty board is not reported as a failed query" "$out" "the open-PR query on"
+
+echo "=== merge: a failed identity read is reported, never read as an empty board ==="
+: > "$GH_STUB_CALLS"
+out="$(GH_STUB_OPEN_PRS="$LAG_OPEN" GH_STUB_API_RC=1 GH_STUB_PR_31="$LAG_PR_31" \
+  "$WRAP" merge --apply "$TMPD/clone-scan-main" 2>&1)"; rc=$?
+chk "merge: a failed identity read exits non-zero" "$([ "$rc" -ne 0 ]; echo $?)"
+chk_has "merge: a failed identity read names the query" "$out" "the open-PR query on"
+chk_no "merge: a failed identity read is not reported as no own PRs" "$out" "no open PRs authored by the operator"
+chk "merge: a failed identity read calls no pr merge" "$(grep -q '^pr merge' "$GH_STUB_CALLS" && echo 1 || echo 0)"
 
 echo "=== merge: unparseable PR JSON skips instead of passing the gate ==="
 out="$(gate_verdict 'not json at all')"
