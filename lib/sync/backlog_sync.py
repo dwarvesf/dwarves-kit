@@ -59,20 +59,30 @@ def atomic_write(path: Path, text: str) -> None:
         raise
 
 
-def warn_duplicate_ids(text: str, strict_id: bool = True) -> None:
+def warn_duplicate_ids(text: str, strict_id: bool = True) -> bool:
+    """Print row-hygiene warnings; return False when the board must be
+    refused outright (duplicate ids), True when it is safe to sync.
+
+    A duplicate id means two rows are fighting over the same identity: which
+    one is "first" depends on line order, not intent, so silently picking one
+    (the old "first occurrence wins" behavior) can flip or create the wrong
+    row underneath the operator. Refuse the whole board instead."""
     token = (re.escape(detect_prefix(text)) + r"-\d+") if strict_id \
         else ID_TOKEN
     ids = re.findall(r"^\| (" + token + r") \|", text, flags=re.M)
     dups = sorted({i for i in ids if ids.count(i) > 1})
+    ok = True
     if dups:
-        print(f"WARNING: duplicate board rows for {', '.join(dups)}; "
-              "first occurrence wins, fix the board")
+        print(f"ERROR: duplicate board rows for {', '.join(dups)}; "
+              "refusing to sync, run: board dedupe <ID> for each")
+        ok = False
     parsed = set(parse_board(text, strict_id=strict_id,
                              prefix=detect_prefix(text)))
     broken = sorted(set(ids) - parsed - set(dups))
     if broken:
         print(f"WARNING: malformed board rows (not 4 cells, invisible to "
               f"sync) for {', '.join(broken)}; fix the board")
+    return ok
 
 
 def sync_create_only(src, backlog: Path, state_path: Path, dry_run: bool,
@@ -196,11 +206,15 @@ def check_pull_isolation(names: list, args,
 
 def sync_source(src, backlog: Path, state_path: Path, dry_run: bool,
                 filt: dict | None = None, cap: int = 20,
-                allow: int = 0) -> None:
+                allow: int = 0, allow_flips: int = 0) -> bool:
+    """Returns True when the run is clean, False when it hit a refusal the
+    caller should reflect in the process exit code (the bulk-flip breaker)."""
     if getattr(src, "pull_only", False):
-        return sync_pull_only(src, backlog, dry_run)
+        sync_pull_only(src, backlog, dry_run)
+        return True
     if getattr(src, "create_only", False):
-        return sync_create_only(src, backlog, state_path, dry_run, filt)
+        sync_create_only(src, backlog, state_path, dry_run, filt)
+        return True
     text = backlog.read_text()
     prefix = detect_prefix(text)
     rows = parse_board(text, prefix=prefix)
@@ -209,7 +223,7 @@ def sync_source(src, backlog: Path, state_path: Path, dry_run: bool,
         src.binding = state["binding"]
     items = src.read()
     plan = plan_sync(rows, items, state, sync_fields=src.sync_fields,
-                     filt=filt)
+                     filt=filt, app_name=src.name, allow_flips=allow_flips)
     header = (f"{src.name}: {len(items)} spoke items, {len(rows)} board rows")
     preview = getattr(src, "preview", None)
     if preview:
@@ -217,13 +231,16 @@ def sync_source(src, backlog: Path, state_path: Path, dry_run: bool,
     if dry_run:
         print(f"dry-run {header}")
         print(describe(plan))
-        return
+        return not plan.flips_refused
     exits = len(plan.src_scope_exit)
     if exits > max(cap, allow):
         print(f"{src.name}: ABORTED, {exits} items would leave this app's "
               f"scope (cap {max(cap, allow)}). Review with --dry-run, then "
               f"re-run with --allow-scope-exit {exits}.")
-        return
+        # A tick can trip both guards at once: the scope-exit abort must
+        # still surface a flip refusal, or the alarm is lost silently (this
+        # path used to always return True regardless of plan.flips_refused).
+        return not plan.flips_refused
     new_text, assigned = apply_board(text, plan, prefix=prefix, path=backlog)
     if new_text != text:
         atomic_write(backlog, new_text)
@@ -236,6 +253,7 @@ def sync_source(src, backlog: Path, state_path: Path, dry_run: bool,
     atomic_write(state_path, json.dumps(new_state, indent=1))
     print(f"synced {header}")
     print(describe(plan, assigned))
+    return not plan.flips_refused
 
 
 def board_state_dir(root: Path, backlog: Path) -> Path:
@@ -385,6 +403,9 @@ def main(argv=None):
     ap.add_argument("--allow-scope-exit", type=int, default=0,
                     help="one-run override when a legitimate bulk exit "
                          "exceeds the cap")
+    ap.add_argument("--allow-flips", type=int, default=0,
+                    help="one-run override when a legitimate bulk status "
+                         "flip exceeds the cap")
     args = ap.parse_args(argv)
 
     filters: dict[str, dict] = {}
@@ -438,7 +459,8 @@ def main(argv=None):
     except BlockingIOError:
         sys.exit("another backlog-sync run holds the lock; try again")
     strict_id = not (set(names) & CREATE_ONLY_APPS)
-    warn_duplicate_ids(args.backlog.read_text(), strict_id=strict_id)
+    if not warn_duplicate_ids(args.backlog.read_text(), strict_id=strict_id):
+        sys.exit(1)
 
     # one-time migration from the pre-kit single-source tool's state path
     rem_state = state_dir / "reminders.state.json"
@@ -446,6 +468,7 @@ def main(argv=None):
         shutil.copy(LEGACY_REMINDERS_STATE, rem_state)
         print(f"migrated legacy reminders state -> {rem_state}")
 
+    ok = True
     for name in names:
         state_path = state_dir / f"{name}.state.json"
         if name == "notion":
@@ -456,9 +479,13 @@ def main(argv=None):
                       " in [sync] (.kit.toml) or pass --notion-db)")
                 continue
         src = build_source(name, args)
-        sync_source(src, args.backlog, state_path, args.dry_run,
-                    filt=filters.get(name), cap=args.scope_exit_cap,
-                    allow=args.allow_scope_exit)
+        if not sync_source(src, args.backlog, state_path, args.dry_run,
+                           filt=filters.get(name), cap=args.scope_exit_cap,
+                           allow=args.allow_scope_exit,
+                           allow_flips=args.allow_flips):
+            ok = False
+    if not ok:
+        sys.exit(1)
 
 
 if __name__ == "__main__":

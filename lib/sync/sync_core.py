@@ -15,6 +15,11 @@ from datetime import date
 from pathlib import Path
 
 ACTIVE_STATUSES = {"queued", "claimed", "speccing", "validated", "executing"}
+# Ceiling on spoke-to-board status writes (board_set_status) one plan_sync
+# call may apply per app per tick. A legitimate bulk close of more than 10
+# rows on a spoke in one tick is refused; re-run with --allow-flips N once a
+# human has confirmed the bulk change is real.
+MAX_BOARD_STATUS_FLIPS = 10
 BOARD_STATES = ["queued", "claimed", "speccing", "validated", "executing",
                 "shipped", "parked", "dropped"]
 INBOX_HEADING = "### Reminders inbox"
@@ -239,6 +244,8 @@ class Plan:
     scope_reenter: list = field(default_factory=list)   # [(bid, rid)] back in scope
     conflicts: list = field(default_factory=list)      # [str] report lines
     notes: list = field(default_factory=list)          # [str] report lines
+    flips_refused: int = 0  # count of board_set_status entries the bulk-flip
+                            # breaker dropped this tick; 0 means none refused
 
     def empty(self) -> bool:
         return not any((self.src_create, self.src_set_title, self.src_set_body,
@@ -285,13 +292,20 @@ def intake_ok(body: str, filt: dict | None) -> bool:
 
 
 def plan_sync(rows: dict, items: list, state: dict,
-              sync_fields: bool = True, filt: dict | None = None) -> Plan:
+              sync_fields: bool = True, filt: dict | None = None,
+              app_name: str = "spoke", allow_flips: int = 0) -> Plan:
     """Three-way merge between board rows, spoke items, and the snapshot.
 
     `filt` is this app's audience filter (P1): {only_tags, skip_tags,
     intake}. Out-of-scope linked pairs are FROZEN (no status/field flow either
     way); the transition out emits a scope-exit (close on the app), the
     transition back re-syncs from the board.
+
+    `app_name` names the spoke in the bulk-flip refusal note below; it has no
+    effect on the merge itself. `allow_flips` is the one-run override for the
+    bulk-flip breaker (mirrors `plan_sync`'s scope-exit `cap`/`allow` pair):
+    the breaker refuses only past `max(MAX_BOARD_STATUS_FLIPS, allow_flips)`,
+    so the default (0) leaves the constant in charge.
     """
     p = Plan()
     smap = state.get("map", {})
@@ -473,6 +487,22 @@ def plan_sync(rows: dict, items: list, state: dict,
         kw = it.get("status") if it.get("status") in ACTIVE_STATUSES else "queued"
         p.board_add.append((it["rid"], it["title"].strip(),
                             (it.get("body") or "").strip(), kw))
+
+    # Bulk-flip circuit breaker: a spoke reporting more than the cap's worth
+    # of status writes in one tick is not evidence of real work, it is a spoke
+    # side-effect (a bulk close script, a status-mapping bug) masquerading as
+    # 66-71 individually-earned closes (measured live: a bulk `hermes kanban
+    # complete` closed 71 sync-owned cards in one tick). Drop the whole batch,
+    # never a partial subset, so a mis-mapped run cannot half-apply either.
+    flip_cap = max(MAX_BOARD_STATUS_FLIPS, allow_flips)
+    if len(p.board_set_status) > flip_cap:
+        n = len(p.board_set_status)
+        p.board_set_status = []
+        p.flips_refused = n
+        p.notes.append(
+            f"refused {n} board status flips from {app_name} "
+            f"(cap {flip_cap}): a bulk change on the spoke is not evidence; "
+            f"if it is real, re-run with --allow-flips {n}")
     return p
 
 

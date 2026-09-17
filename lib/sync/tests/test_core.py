@@ -2,16 +2,21 @@
 adapter with fake transports; live runs are recorded in docs/proof-of-done.md.
 """
 
+import json
 import subprocess
 import sys
 import tempfile
 from pathlib import Path
 
+import pytest
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import sync_core  # noqa: E402
 from sync_core import (  # noqa: E402
+    MAX_BOARD_STATUS_FLIPS,
     Plan,
+    Row,
     apply_board,
     build_state,
     describe,
@@ -277,6 +282,191 @@ def test_definitive_spoke_status_flips_board():
     assert not p.src_set_status
 
 
+def _bulk_flip_case(n: int):
+    """n linked rows, each with a definitive spoke status ("shipped") that
+    disagrees with the snapshot ("queued") while the board itself is
+    unchanged: the shape that drives board_set_status entries."""
+    rows, items, smap = {}, [], {}
+    for i in range(n):
+        bid = f"ID-{100 + i}"
+        rid = f"r{i}"
+        rows[bid] = Row(bid, f"row {i}", "queued", i)
+        items.append(item(rid, f"{bid} · row {i}", status="shipped"))
+        smap[bid] = {"rid": rid, "title": f"row {i}", "notes": "",
+                     "status": "queued"}
+    return rows, items, {"map": smap}
+
+
+def test_bulk_flip_breaker_drops_the_whole_batch_over_cap():
+    rows, items, state = _bulk_flip_case(MAX_BOARD_STATUS_FLIPS + 1)
+    p = plan_sync(rows, items, state, app_name="hermes")
+    assert p.board_set_status == []
+    assert p.flips_refused == MAX_BOARD_STATUS_FLIPS + 1
+    assert any("hermes" in n and str(MAX_BOARD_STATUS_FLIPS + 1) in n
+              for n in p.notes)
+
+
+def test_bulk_flip_breaker_allows_exactly_the_cap():
+    rows, items, state = _bulk_flip_case(MAX_BOARD_STATUS_FLIPS)
+    p = plan_sync(rows, items, state, app_name="hermes")
+    assert len(p.board_set_status) == MAX_BOARD_STATUS_FLIPS
+    assert p.flips_refused == 0
+
+
+def test_bulk_flip_breaker_is_scoped_to_its_own_call():
+    """A refusal on one app's plan must not bleed into another app's plan;
+    plan_sync is a pure per-call function, so a second call with its own
+    (small) batch is unaffected by the first call's refusal."""
+    rows_a, items_a, state_a = _bulk_flip_case(MAX_BOARD_STATUS_FLIPS + 1)
+    p_a = plan_sync(rows_a, items_a, state_a, app_name="app-a")
+    assert p_a.flips_refused == MAX_BOARD_STATUS_FLIPS + 1
+
+    rows_b, items_b, state_b = _bulk_flip_case(3)
+    p_b = plan_sync(rows_b, items_b, state_b, app_name="app-b")
+    assert p_b.flips_refused == 0
+    assert len(p_b.board_set_status) == 3
+
+
+# --- CLI wiring: the exit code the breaker/duplicate refusal must actually
+# produce, not just the plan they build (nothing today failed if the
+# sys.exit(1) calls were deleted).
+
+
+class FakeTwoWaySource:
+    """Minimal two-way spoke: no adapter needed for these wiring checks, so
+    build one in-process rather than reaching for one adapter's real fake
+    transport (FakeSsh/FakeHttp/FakeGh) that has nothing to do with this."""
+
+    def __init__(self, name, items):
+        self.name = name
+        self.sync_fields = True
+        self._items = items
+
+    def read(self):
+        return self._items
+
+    def apply(self, plan, assigned, rows_after):
+        return {}
+
+
+def _flip_fixture(n: int, start: int = 100):
+    """n linked board rows + spoke items in the same over-cap shape as
+    _bulk_flip_case, but as on-disk board text + a state dict, for driving
+    sync_source()/main() rather than plan_sync() directly."""
+    lines = [HEADER]
+    smap: dict = {}
+    items = []
+    for i in range(n):
+        bid = f"ID-{start + i}"
+        rid = f"r{start + i}"
+        lines.append(f"| {bid} | row {start + i} | notes | queued |\n")
+        smap[bid] = {"rid": rid, "title": f"row {start + i}", "notes": "",
+                     "status": "queued"}
+        items.append(item(rid, f"{bid} · row {start + i}", status="shipped"))
+    return "".join(lines), items, {"map": smap}
+
+
+def test_wiring_over_cap_flips_exit_nonzero_board_unchanged(tmp_path):
+    """(a) a spoke proposing 11 flips: sync_source returns False (main()
+    turns that into exit 1) and the board file is left byte-for-byte."""
+    import backlog_sync
+    text, items, state = _flip_fixture(MAX_BOARD_STATUS_FLIPS + 1)
+    board = tmp_path / "BACKLOG.md"
+    board.write_text(text)
+    state_path = tmp_path / "hermes.state.json"
+    state_path.write_text(json.dumps(state))
+    ok = backlog_sync.sync_source(FakeTwoWaySource("hermes", items), board,
+                                  state_path, dry_run=False)
+    assert ok is False
+    assert board.read_text() == text
+
+
+def test_wiring_allow_flips_override_applies_all(tmp_path):
+    """(b) the same 11-flip run with --allow-flips 11 (threaded as
+    allow_flips): exits clean and the 11 rows ARE rewritten."""
+    import backlog_sync
+    n = MAX_BOARD_STATUS_FLIPS + 1
+    text, items, state = _flip_fixture(n)
+    board = tmp_path / "BACKLOG.md"
+    board.write_text(text)
+    state_path = tmp_path / "hermes.state.json"
+    state_path.write_text(json.dumps(state))
+    ok = backlog_sync.sync_source(FakeTwoWaySource("hermes", items), board,
+                                  state_path, dry_run=False, allow_flips=n)
+    assert ok is True
+    rows = parse_board(board.read_text())
+    assert all(rows[f"ID-{100 + i}"].status_kw == "shipped"
+              for i in range(n))
+
+
+def test_wiring_clean_run_at_cap_exits_zero(tmp_path):
+    """(c) flips at the cap (not over it) exit clean."""
+    import backlog_sync
+    n = MAX_BOARD_STATUS_FLIPS
+    text, items, state = _flip_fixture(n)
+    board = tmp_path / "BACKLOG.md"
+    board.write_text(text)
+    state_path = tmp_path / "hermes.state.json"
+    state_path.write_text(json.dumps(state))
+    ok = backlog_sync.sync_source(FakeTwoWaySource("hermes", items), board,
+                                  state_path, dry_run=False)
+    assert ok is True
+
+
+def test_wiring_duplicate_ids_refuse_before_any_source_runs(tmp_path,
+                                                            monkeypatch):
+    """(d) a board with duplicate row ids: main() exits non-zero, the board
+    is untouched, and no source is ever built (the duplicate check runs
+    before build_source, so a source stub that raises if called proves it
+    never fires)."""
+    import backlog_sync
+    text = (HEADER
+            + "| ID-10 | Fix the frobnicator | notes | queued |\n"
+            + "| ID-10 | dup row | notes | queued |\n")
+    board = tmp_path / "BACKLOG.md"
+    board.write_text(text)
+
+    def _must_not_be_called(name, args):
+        raise AssertionError("build_source ran after a duplicate-id refusal")
+    monkeypatch.setattr(backlog_sync, "build_source", _must_not_be_called)
+
+    with pytest.raises(SystemExit) as exc:
+        backlog_sync.main(["--apps", "hermes", "--backlog", str(board),
+                          "--state-root", str(tmp_path / "state")])
+    assert exc.value.code != 0 and exc.value.code is not None
+    assert board.read_text() == text
+
+
+def test_wiring_scope_exit_abort_still_reports_a_flip_refusal(tmp_path):
+    """(e) a plan that trips BOTH guards in one tick: the scope-exit cap
+    (>20 items leaving scope) and the bulk-flip breaker (11 flips). The
+    scope-exit abort path must not swallow the flip refusal (fix 2)."""
+    import backlog_sync
+    flip_text, flip_items, flip_state = _flip_fixture(
+        MAX_BOARD_STATUS_FLIPS + 1, start=200)
+    lines = [flip_text.rstrip("\n") + "\n"]
+    smap = dict(flip_state["map"])
+    items = list(flip_items)
+    n_exit = 21  # > the default --scope-exit-cap of 20
+    for i in range(n_exit):
+        bid = f"ID-{300 + i}"
+        rid = f"r{300 + i}"
+        lines.append(f"| {bid} | family row {i} | #family | queued |\n")
+        smap[bid] = {"rid": rid, "title": f"family row {i}", "notes":
+                     "#family", "status": "queued"}
+        items.append(item(rid, f"{bid} · family row {i}"))
+    text = "".join(lines)
+    board = tmp_path / "BACKLOG.md"
+    board.write_text(text)
+    state_path = tmp_path / "hermes.state.json"
+    state_path.write_text(json.dumps({"map": smap}))
+
+    ok = backlog_sync.sync_source(
+        FakeTwoWaySource("hermes", items), board, state_path, dry_run=False,
+        filt={"skip_tags": {"family"}})
+    assert ok is False
+
+
 def test_board_status_change_pushes_to_spoke():
     items = [item("r1", "ID-10 · Fix the frobnicator", status="claimed")]
     p = plan_sync(parse_board(BOARD), items,
@@ -493,15 +683,25 @@ def test_board_add_flattens_newline_titles():
 
 def test_cli_warns_on_duplicate_and_malformed_rows(capsys):
     import backlog_sync
-    backlog_sync.warn_duplicate_ids(
+    ok = backlog_sync.warn_duplicate_ids(
         BOARD
         + "| ID-10 | dup row | n | queued |\n"
         + "| ID-99 | missing status cell | notes only\n"
         + "| ID-98 | raw pipe | head -c 4 | wc | queued |\n")
     out = capsys.readouterr().out
-    assert "duplicate board rows for ID-10" in out
+    assert ok is False  # duplicates are a refusal, not just a warning
+    assert "ERROR: duplicate board rows for ID-10" in out
+    assert "refusing to sync, run: board dedupe <ID> for each" in out
     assert "malformed board rows" in out
     assert "ID-98" in out and "ID-99" in out
+
+
+def test_cli_warns_but_does_not_refuse_on_malformed_only(capsys):
+    import backlog_sync
+    ok = backlog_sync.warn_duplicate_ids(
+        BOARD + "| ID-99 | missing status cell | notes only\n")
+    capsys.readouterr()
+    assert ok is True  # a malformed row alone is not a refusal
 
 
 FAMILY_FILTER = {"skip_tags": {"family"}}
