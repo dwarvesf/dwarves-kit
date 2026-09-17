@@ -63,7 +63,13 @@
 #   ready   -> claimed  (the honest nearest-available "picked up" state -- NOT speccing/validated/
 #                        executing; a writeback cannot know which of those four the operator
 #                        "meant", and `claimed` is the least presumptuous of the four)
-#   blocked -> parked   (the exact inverse; parked is 1:1 with blocked on the forward map too)
+#   blocked -> NO-OP    (BLOCKED RULE: a card a human moved to `blocked` has no git counterpart,
+#                        so writeback SKIPS it and never writes a git row. `blocked` means someone
+#                        cannot proceed right now; `parked` means deferred until a trigger, and it
+#                        drops the row out of `board next` with no record of the blocker. The
+#                        forward map still sends `parked` to `blocked`, which is why
+#                        `_reverse_native blocked` keeps returning `parked` as the declared inverse;
+#                        the diff loop refuses to act on it before the map is consulted.)
 #   done    -> shipped  (the safe default over `dropped`: a card marked done in Hermes is read as
 #                        "finished", not "abandoned"; `dropped` has no writeback path in v1)
 #   (todo, running, or any other value hermes reports) -> UNMAPPED (empty), rejected as an illegal
@@ -271,6 +277,15 @@ cmd_diff() {
       created_status="$(_created_native "$board" "$hermes_id")"
       if [ -n "$created_status" ] && [ "$live_status" = "$created_status" ]; then
         _wb_skip "$origin" "card still sits in its mirror-created column '$created_status' (never moved; snapshot recorded intent '$hermes_status_snap')"
+        n_skipped=$((n_skipped + 1)); continue
+      fi
+
+      # --- THE blocked rule: a card a human moved to `blocked` has NO git counterpart. `blocked`
+      # says someone cannot proceed right now; `parked` says deferred until a trigger, and a parked
+      # row leaves `board next` with no record of the blocker. Writing one onto the other loses the
+      # reason and silently shrinks the cross-repo queue. Skip the row and leave git alone. ---
+      if [ "$live_status" = "blocked" ]; then
+        _wb_skip "$origin" "card moved to 'blocked', which has no git counterpart (blocked is not parked; writeback leaves the row alone)"
         n_skipped=$((n_skipped + 1)); continue
       fi
 
