@@ -197,6 +197,7 @@ single-reader fence). No env vars; per-repo values live in `.kit.toml [sync]`.
 | - | sync.hermes_assignee | `""` | [impl] | sync | Profile every relayed task is assigned to. Empty leaves tasks unassigned, so no worker picks them up. |
 | - | sync.hermes_workspace | `""` | [impl] | sync | Workspace for every relayed task, e.g. `dir:/path/outbox/{id}`. `{id}` is the board id, so each task gets its own directory. Empty means the CLI default, `scratch`, which is deleted on completion. |
 | - | sync.scope_exit_cap | `20` | [impl] | sync | Max rows one run may close on an app when a filter changes; `--allow-scope-exit N` is the one-run override. |
+| - | sync.archive_file | `""` | [impl] | sync | Board archive a closed row moves to; empty means `BACKLOG-archive.md` beside the board, and a relative path resolves against the board's directory. A linked spoke card closes only when its id sits there with a closed status, capped at 20 closes a tick (`--allow-archived-closes N` overrides one run). |
 | - | sync.reminders_only_tags | `""` | [impl] | sync | Down-filter: a row must carry one of these tags to appear on reminders. |
 | - | sync.reminders_skip_tags | `""` | [impl] | sync | Down-filter: a row carrying any of these tags never appears on reminders. |
 | - | sync.reminders_intake | `""` (all) | [impl] | sync | Up-filter for foreign reminders items: `all`, `tagged:<tag>`, or `none`. |

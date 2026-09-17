@@ -950,6 +950,8 @@ cmd_sync() {
     done
   done
   v="$(kit_config_get sync.scope_exit_cap "")"; [ -n "$v" ] && args+=(--scope-exit-cap "$v")
+  # only for a repo whose archive is not BACKLOG-archive.md beside the board
+  v="$(kit_config_get sync.archive_file "")"; [ -n "$v" ] && args+=(--archive-file "$v")
   v="$(kit_config_get sync.reminders_list "")";  [ -n "$v" ] && args+=(--list "$v")
   v="$(kit_config_get sync.notion_db "")";       [ -n "$v" ] && args+=(--notion-db "$v")
   v="$(kit_config_get sync.notion_parent "")";   [ -n "$v" ] && args+=(--notion-parent "$v")

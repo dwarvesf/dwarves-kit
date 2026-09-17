@@ -14,6 +14,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import sync_core  # noqa: E402
 from sync_core import (  # noqa: E402
+    MAX_ARCHIVED_CLOSES,
     MAX_BOARD_STATUS_FLIPS,
     Plan,
     Row,
@@ -911,3 +912,221 @@ def test_renumber_relink_needs_an_unambiguous_match():
     it = item("r1", "[vps-mon] CRIT heartbeat-silent on air.upgrade-check")
     p = plan_sync(rows, [it], dead)
     assert "ID-10" in creates(p) and "ID-11" in creates(p)
+
+
+# --- archived rows close their spoke card -------------------------------------
+
+ARCHIVE = """# Backlog archive
+
+## Archived 2026-09-17
+
+### Section A
+
+| ID | Item | Notes & source | Status |
+|---|---|---|---|
+| ID-40 | Shipped thing | proof in PR #1 | shipped |
+| ID-41 | Dropped thing | not worth it | dropped |
+| ID-42 | Half-written row | someone edited by hand | queued |
+"""
+
+
+def _archived_case(bid, rid="r1", done=False, state_extra=None):
+    """A card linked to `bid` whose row has left the active board."""
+    rows = parse_board(BOARD)
+    state = {"map": {bid: {"rid": rid, "title": f"{bid} work", "notes": "",
+                           "status": "executing"}}}
+    if state_extra:
+        state["map"][bid].update(state_extra)
+    it = item(rid, f"{bid} · {bid} work", done=done)
+    return rows, [it], state
+
+
+def test_archived_shipped_row_closes_its_card():
+    rows, items, state = _archived_case("ID-40")
+    p = plan_sync(rows, items, state, archived=parse_board(ARCHIVE))
+    assert p.src_set_status == [("r1", "shipped")]
+    assert not p.board_set_status and not p.tombstone
+
+
+def test_archived_dropped_row_closes_its_card():
+    rows, items, state = _archived_case("ID-41")
+    p = plan_sync(rows, items, state, archived=parse_board(ARCHIVE))
+    assert p.src_set_status == [("r1", "dropped")]
+
+
+def test_absent_from_board_and_archive_never_closes():
+    """Absence is not evidence. A truncated, mis-parsed, or half-merged board
+    read would otherwise mass-complete every linked card on every spoke."""
+    rows, items, state = _archived_case("ID-77")
+    p = plan_sync(rows, items, state, archived=parse_board(ARCHIVE))
+    assert not p.src_set_status
+    assert any("orphan item" in n for n in p.notes)
+
+
+def test_archived_row_with_an_open_status_never_closes():
+    rows, items, state = _archived_case("ID-42")
+    p = plan_sync(rows, items, state, archived=parse_board(ARCHIVE))
+    assert not p.src_set_status
+
+
+def test_missing_archive_file_closes_nothing_and_does_not_crash():
+    rows, items, state = _archived_case("ID-40")
+    assert not plan_sync(rows, items, state).src_set_status
+    assert not plan_sync(rows, items, state, archived={}).src_set_status
+
+
+def test_empty_board_with_a_full_state_map_plans_zero_closes():
+    """The mass-complete guard. Every linked row vanishes at once (a truncated
+    or half-merged BACKLOG.md); none of them reaches the archive, so not one
+    card closes."""
+    state = {"map": {}}
+    items = []
+    for i in range(50):
+        bid, rid = f"ID-{200 + i}", f"r{i}"
+        state["map"][bid] = {"rid": rid, "title": f"row {i}", "notes": "",
+                             "status": "executing"}
+        items.append(item(rid, f"{bid} · row {i}"))
+    p = plan_sync({}, items, state, archived=parse_board(ARCHIVE))
+    assert p.src_set_status == []
+    assert p.board_set_status == [] and p.tombstone == []
+
+
+def test_archived_close_respects_tombstones_scope_and_done_cards():
+    rows, items, state = _archived_case("ID-40")
+    tombstoned = dict(state, tombstones=["ID-40"])
+    assert not plan_sync(rows, items, tombstoned,
+                         archived=parse_board(ARCHIVE)).src_set_status
+
+    _r, scoped_items, scoped = _archived_case(
+        "ID-40", state_extra={"scoped_out": True})
+    assert not plan_sync(rows, scoped_items, scoped,
+                         archived=parse_board(ARCHIVE)).src_set_status
+
+    _r, done_items, done_state = _archived_case("ID-40", done=True)
+    assert not plan_sync(rows, done_items, done_state,
+                         archived=parse_board(ARCHIVE)).src_set_status
+
+
+def test_active_row_behavior_is_unchanged_by_an_archive():
+    """An id with a live row is planned from the row, never from the archive,
+    even when the archive still carries a stale copy of it."""
+    archive = ARCHIVE.replace("| ID-40 |", "| ID-10 |")
+    items = [item("r1", "ID-10 · Fix the frobnicator", done=True)]
+    state = {"map": snap("ID-10", "r1", "Fix the frobnicator")}
+    p = plan_sync(parse_board(BOARD), items, state,
+                  archived=parse_board(archive))
+    assert p.board_set_status == [("ID-10", "shipped")]
+    assert not p.src_set_status
+
+
+def test_read_archive_tolerates_a_missing_file():
+    """Most repos have no archive file until their first archive pass."""
+    import backlog_sync
+    with tempfile.TemporaryDirectory() as tmp:
+        missing = Path(tmp) / "BACKLOG-archive.md"
+        assert backlog_sync.read_archive(missing, "ID") == {}
+        assert backlog_sync.read_archive(None, "ID") == {}
+        missing.write_text(ARCHIVE)
+        assert set(backlog_sync.read_archive(missing, "ID")) == {
+            "ID-40", "ID-41", "ID-42"}
+
+
+def test_archive_lookup_matches_the_archivers_status_extraction():
+    """The consumer archiver moves a row on the LEADING ALPHA RUN of its
+    status cell, so `shipped:` and `shipped/dropped` reach the archive. A
+    lookup splitting on whitespace read those as not closed and left the card
+    open forever, which is the very bug this branch fixes."""
+    archive = ARCHIVE.replace("| ID-40 | Shipped thing | proof in PR #1 | shipped |",
+                              "| ID-40 | Shipped thing | proof | shipped: |\n"
+                              "| ID-43 | Slashed | proof | shipped/dropped |\n"
+                              "| ID-44 | Noted | proof | shipped [#12] |")
+    parsed = parse_board(archive)
+    for bid in ("ID-40", "ID-43", "ID-44"):
+        rows, items, state = _archived_case(bid)
+        p = plan_sync(rows, items, state, archived=parsed)
+        assert p.src_set_status == [("r1", "shipped")], bid
+
+
+def _close_case(n: int):
+    """n linked cards whose rows all sit in the archive as shipped."""
+    state, items, archive = {"map": {}}, [], [HEADER]
+    for i in range(n):
+        bid, rid = f"ID-{300 + i}", f"r{i}"
+        state["map"][bid] = {"rid": rid, "title": f"row {i}", "notes": "",
+                             "status": "executing"}
+        items.append(item(rid, f"{bid} · row {i}"))
+        archive.append(f"| {bid} | row {i} | proof | shipped |\n")
+    return items, state, parse_board("".join(archive))
+
+
+def test_archived_closes_at_the_cap_still_plan():
+    items, state, archive = _close_case(MAX_ARCHIVED_CLOSES)
+    p = plan_sync({}, items, state, archived=archive)
+    assert len(p.src_set_status) == MAX_ARCHIVED_CLOSES
+    assert p.closes_refused == 0
+
+
+def test_archived_closes_one_over_the_cap_plan_none():
+    """Drop the whole batch, never a subset: a bulk archive pass is a change
+    to review, and a half-applied one cannot be read back."""
+    n = MAX_ARCHIVED_CLOSES + 1
+    items, state, archive = _close_case(n)
+    p = plan_sync({}, items, state, archived=archive, app_name="reminders")
+    assert p.src_set_status == []
+    assert p.closes_refused == n
+    assert any(f"refused {n} archive-driven closes on reminders" in note
+               for note in p.notes)
+    assert any("--allow-archived-closes" in note for note in p.notes)
+
+
+def test_allow_closes_override_plans_the_whole_batch():
+    n = MAX_ARCHIVED_CLOSES + 1
+    items, state, archive = _close_case(n)
+    p = plan_sync({}, items, state, archived=archive, allow_closes=n)
+    assert len(p.src_set_status) == n and p.closes_refused == 0
+
+
+def test_an_id_in_both_the_archive_and_the_active_board_never_closes():
+    """The union-merge duplicate: an archive pass lands the row in the archive
+    while a merge keeps it on the active board too. The active row wins, so
+    the card follows the row and no archive close is planned."""
+    archive = ARCHIVE.replace("| ID-40 |", "| ID-10 |")
+    items = [item("r1", "ID-10 · Fix the frobnicator")]
+    state = {"map": snap("ID-10", "r1", "Fix the frobnicator")}
+    p = plan_sync(parse_board(BOARD), items, state,
+                  archived=parse_board(archive))
+    assert not p.src_set_status and p.closes_refused == 0
+
+
+def test_a_duplicate_id_inside_the_archive_takes_the_first_occurrence():
+    archive = ARCHIVE + "| ID-40 | Shipped thing | later copy | queued |\n"
+    rows, items, state = _archived_case("ID-40")
+    p = plan_sync(rows, items, state, archived=parse_board(archive))
+    assert p.src_set_status == [("r1", "shipped")]
+
+
+def test_resolve_archive_takes_a_relative_path_from_the_board_directory():
+    """A launchd tick runs from an arbitrary cwd, so a cwd-relative archive
+    reads empty, or reads another repo's archive that shares the prefix."""
+    import backlog_sync
+    board = Path("/repo/_meta/BACKLOG.md")
+    assert backlog_sync.resolve_archive(board, None) == \
+        Path("/repo/_meta/BACKLOG-archive.md")
+    assert backlog_sync.resolve_archive(board, Path("archive/closed.md")) == \
+        Path("/repo/_meta/archive/closed.md")
+    absolute = Path("/elsewhere/closed.md")
+    assert backlog_sync.resolve_archive(board, absolute) == absolute
+
+
+def test_read_archive_degrades_on_an_unreadable_path(capsys):
+    """A directory or a binary file must cost the archive evidence, never the
+    whole sync run."""
+    import backlog_sync
+    with tempfile.TemporaryDirectory() as tmp:
+        a_dir = Path(tmp) / "BACKLOG-archive.md"
+        a_dir.mkdir()
+        assert backlog_sync.read_archive(a_dir, "ID") == {}
+        binary = Path(tmp) / "binary.md"
+        binary.write_bytes(b"| ID-40 | x | y | shipped |\n\xff\xfe\x00")
+        assert backlog_sync.read_archive(binary, "ID") == {}
+    assert capsys.readouterr().out.count("archive: cannot read") == 2
