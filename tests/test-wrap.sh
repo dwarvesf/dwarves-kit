@@ -49,9 +49,11 @@ case "$sub" in
     [ "${GH_STUB_UNAUTH:-0}" = "1" ] && exit 1
     exit 0 ;;
   api)
-    # Only `user --jq .login` is asked for, so the login is the whole answer.
+    # Only `user --jq .login` is asked for, so the login is the whole answer. A failing
+    # call prints nothing, the way gh answers when the identity read fails.
+    [ "${GH_STUB_API_RC:-0}" = "0" ] || exit "${GH_STUB_API_RC}"
     printf '%s\n' "${GH_STUB_LOGIN:-me}"
-    exit "${GH_STUB_API_RC:-0}" ;;
+    exit 0 ;;
   pr)
     verb="${1:-}"; [ $# -gt 0 ] && shift
     case "$verb" in
@@ -1031,6 +1033,15 @@ out="$(GH_STUB_OPEN_PRS="$FOREIGN_OPEN" GH_STUB_PR_32="$FOREIGN_PR_32" \
   "$WRAP" merge "$TMPD/clone-scan-main" 2>&1)"
 chk_no "merge: a PR authored by someone else is not eligible" "$out" "eligible #32"
 chk_has "merge: a foreign-only list reports no own PRs" "$out" "no open PRs authored by the operator"
+
+echo "=== merge: a failed identity read is reported, never read as an empty board ==="
+: > "$GH_STUB_CALLS"
+out="$(GH_STUB_OPEN_PRS="$LAG_OPEN" GH_STUB_API_RC=1 GH_STUB_PR_31="$LAG_PR_31" \
+  "$WRAP" merge --apply "$TMPD/clone-scan-main" 2>&1)"; rc=$?
+chk "merge: a failed identity read exits non-zero" "$([ "$rc" -ne 0 ]; echo $?)"
+chk_has "merge: a failed identity read names the query" "$out" "the open-PR query on"
+chk_no "merge: a failed identity read is not reported as no own PRs" "$out" "no open PRs authored by the operator"
+chk "merge: a failed identity read calls no pr merge" "$(grep -q '^pr merge' "$GH_STUB_CALLS" && echo 1 || echo 0)"
 
 echo "=== merge: unparseable PR JSON skips instead of passing the gate ==="
 out="$(gate_verdict 'not json at all')"

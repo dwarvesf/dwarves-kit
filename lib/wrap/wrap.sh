@@ -105,14 +105,23 @@ _short() { printf '%s' "${1:0:7}"; }
 # GraphQL search index (query PullRequestSearch), which is eventually consistent and omits
 # a PR opened seconds ago, so an own green PR silently vanished from `merge` three times on
 # one day. The plain list reads repository.pullRequests, which holds the PR the moment it
-# exists. Empty when the login does not resolve, so a failed identity read can never widen
-# the set to someone else's PR.
+# exists. Exit 1 when the login or the list does not resolve: a failed read reported as an
+# empty set is the same silent miss one hop earlier, so the caller says so instead.
+_OWN_PR_LIMIT=100
 _open_own_prs() {
-  local me; me="$(gh api user --jq .login 2>/dev/null)"
-  [ -n "$me" ] || { printf '[]'; return 0; }
-  gh pr list --repo "$1" --state open --limit 100 \
-    --json number,title,headRefName,author 2>/dev/null \
-    | jq -c --arg me "$me" '[.[] | select(.author.login == $me)]' 2>/dev/null
+  local me list
+  me="$(gh api user --jq .login 2>/dev/null)"
+  [ -n "$me" ] || return 1
+  list="$(gh pr list --repo "$1" --state open --limit "$_OWN_PR_LIMIT" \
+    --json number,title,headRefName,author 2>/dev/null)" || return 1
+  [ -n "$list" ] || return 1
+  # A full page is the one case where an own PR can sit past the cap, so it is named.
+  if [ "$(printf '%s' "$list" | jq -r 'length' 2>/dev/null)" = "$_OWN_PR_LIMIT" ]; then
+    echo "note: ${1} has at least ${_OWN_PR_LIMIT} open PRs; only the first ${_OWN_PR_LIMIT} were read" >&2
+  fi
+  printf '%s' "$list" \
+    | jq -c --arg me "$me" '[.[] | select((.author.login // "") | ascii_downcase
+                                          == ($me | ascii_downcase))]' 2>/dev/null
 }
 
 # _squash_json <repo-url> <branch> -- the merged-PR list gh reports for that head.
@@ -195,9 +204,13 @@ _scan_repo() {
   echo "-- open PRs authored by me:"
   case "$ghs" in
     ok)
-      _open_own_prs "$(_origin_url "$repo")" \
-        | jq -r '.[] | "     #\(.number) \(.title) [\(.headRefName)]"' 2>/dev/null \
-        || echo "     (gh query failed)"
+      local own
+      if own="$(_open_own_prs "$(_origin_url "$repo")")"; then
+        printf '%s' "$own" \
+          | jq -r '.[] | "     #\(.number) \(.title) [\(.headRefName)]"' 2>/dev/null
+      else
+        echo "     (gh query failed)"
+      fi
       ;;
     *) echo "     $(_gh_note "$ghs")" ;;
   esac
@@ -876,7 +889,10 @@ cmd_merge() {
   local def; def="$(_default_branch "$repo")" || { echo "no default branch resolved for ${repo}" >&2; return 1; }
   local url; url="$(_origin_url "$repo")"
 
-  local numbers; numbers="$(_open_own_prs "$url" | jq -r '.[].number' 2>/dev/null)"
+  local own
+  own="$(_open_own_prs "$url")" || {
+    echo "the open-PR query on ${url} failed; nothing merged" >&2; return 1; }
+  local numbers; numbers="$(printf '%s' "$own" | jq -r '.[].number' 2>/dev/null)"
   [ -n "$numbers" ] || { echo "no open PRs authored by the operator on ${url}"; return 0; }
 
   # Exactly one detail read per PR. The full JSON goes to its own temp file and the
