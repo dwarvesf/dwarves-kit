@@ -30,7 +30,7 @@ the ask is "my disk is full", it is the wrong loop.
 
 | Slot | This instance |
 |---|---|
-| Item set | five detector classes over ONE git repo, enumerated by `bash lib/repohygiene/repohygiene.sh scan --repo <dir>`: an unreferenced non-code file past its age threshold, a staging drop past its age threshold, a record parked in a central control directory whose owner is one tool or experiment, an append-only log past the budget the repo itself documents, and a gitignored directory that is large and cold |
+| Item set | six item classes over ONE git repo, enumerated by `bash lib/repohygiene/repohygiene.sh scan --repo <dir>`: an unreferenced non-code file past its age threshold, a staging drop past its age threshold, a record parked in a central control directory whose owner is one tool or experiment, an append-only log past the budget the repo itself documents, a gitignored directory that is large and cold, and a session handoff file whose cited board rows are no longer open |
 | Contract | a file earns its place: something references it, or it is young, or it sits with its owner, or it is inside its own stated budget. A gitignored directory has no contract at all here, only a size and a date |
 | Evidence class | Tier 1: the scanner's own output, one line per finding, each carrying the proof inline (the exact path-boundary grep and its zero-hit result, an age in days against its threshold, a duplicate's path plus its sha256, an owner plus the commits that name it, a line count plus the `file:line` where the repo states the threshold, a size plus a newest-mtime). Tier 2: `agents/audit-scanner.md`, dispatched only on the FIX and REMOVE rows, never on the whole set |
 | Apply mechanics | `git mv` for a detector-3 FIX, and nothing else. Detectors 1, 2, 4, and 5 are report-only in every case. No deletion is ever applied, proposed as a command, or staged |
@@ -104,6 +104,26 @@ nothing while that folder's ROADMAP still carried four open sub-goals and a sect
 a human. The cost is deliberate and asymmetric: a stale unchecked box on a genuinely finished
 goal suppresses one finding, while a wrong FIX moves a live engine. Measured before and after:
 `lib/repohygiene/docs/proof-of-done.md`.
+
+### Session handoff files
+
+A sixth item class, not a path-boundary detector: `_meta/handoffs/*.md`, `.claude/handoffs/*.md`,
+`**/docs/handoffs/*.md`. Contract: a handoff stays only while it cites at least one OPEN board
+row, or names open work that no row carries.
+
+Evidence, Tier 1 mechanical: extract every board ID the file cites (`[A-Z]+-[0-9]+`), read each
+row's `Status` from the owning repo's board AS IT STANDS ON ORIGIN, `git fetch` then
+`git show origin/<default>:_meta/BACKLOG.md` (and `_meta/BACKLOG-archive.md` when the row is not
+on the live board). Never a local clone that may be behind: on 2026-09-17 five checkers read
+stale local clones and produced three false findings.
+
+| Verdict | Condition |
+|---|---|
+| REMOVE | every cited row closed (shipped, dropped, done, resolved) and no uncited open item; git history keeps the file. Proposed only, never applied, same as every other REMOVE this loop issues |
+| FIX | an open item with no row; file the row first, the board owns the work and the handoff owns the context. Never applied by this loop, which touches no board |
+| OK | any cited row is still open |
+
+Origin of the rule: the handoff skill's hard rule, "a handoff dies with its rows."
 
 ## Verdict mapping
 
