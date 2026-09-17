@@ -14,6 +14,9 @@
 #   AC6  a card still sitting in the column the mirror created it in produces ZERO changes (the
 #        snapshot's recorded `hermes_status` is an INTENT, not an observation); a card that really
 #        moved still produces exactly one
+#   AC7  a card a human moved to `blocked` produces ZERO changes and one named skip (blocked has no
+#        git counterpart and is never written back as `parked`); a card moved to a mapped column
+#        still produces exactly one
 #
 #   NC1  hash mismatch (git row changed since mirror) -> edit SKIPPED + reported; file untouched
 #   NC2  illegal target status (not a backlog.sh state) -> rejected with reason; file untouched
@@ -221,6 +224,33 @@ assert "AC6: the summary counts the create-state row as skipped, not as a change
   "$(grep -q 'writeback: 1 change(s), 1 skipped' "$TMPDIR_T/diff-cs.err" && echo 0 || echo 1)"
 
 echo ""
+echo "=== AC7: a card moved to 'blocked' writes back NOTHING; a card moved to a mapped column still does ==="
+# `blocked` has no git counterpart: it says someone cannot proceed, while `parked` says deferred
+# until a trigger and drops the row out of `board next`. ID-001 was created in 'triage' and a human
+# moved it to 'blocked', so it is a REAL move that must still be refused. ID-003 moved to 'done'
+# and must still write back.
+LIST_BLK="$TMPDIR_T/list-blocked.json"
+jq -nc --arg i1 "$ID001" --arg i2 "$ID002" --arg i3 "$ID003" \
+  '[{id:$i1,status:"blocked",title:"Do the thing"},{id:$i2,status:"ready",title:"Claimed thing"},{id:$i3,status:"done",title:"Parked thing"}]' > "$LIST_BLK"
+SHOWMAP_BLK="$TMPDIR_T/showmap-blocked.tsv"
+printf '%s\ttriage\n%s\tblocked\n' "$ID001" "$ID003" > "$SHOWMAP_BLK"
+: > "$CALLS"
+DIFF_BLK="$(STUB_CALL_LOG="$CALLS" STUB_LIST_JSON="$LIST_BLK" STUB_SHOW_MAP="$SHOWMAP_BLK" HERMES_BIN="$STUB" \
+  bash "$BOARD_WRITEBACK" diff --registry "$REGISTRY" --snapshot "$SNAP" 2>"$TMPDIR_T/diff-blk.err")"
+assert "AC7: exactly ONE changeset entry (the card moved to a mapped column only)" \
+  "$([ "$(printf '%s\n' "$DIFF_BLK" | grep -c .)" -eq 1 ] && echo 0 || echo 1)"
+assert "AC7: the blocked card (ID-001) produces ZERO changeset entries" \
+  "$({ trap '' PIPE; printf '%s\n' "$DIFF_BLK" 2>/dev/null || :; } | grep -q 'ID-001' && echo 1 || echo 0)"
+assert "AC7: no row is ever written back to 'parked' from a blocked card" \
+  "$({ trap '' PIPE; printf '%s\n' "$DIFF_BLK" 2>/dev/null || :; } | grep -q '"target_status":"parked"' && echo 1 || echo 0)"
+assert "AC7: the blocked skip is reported by name" \
+  "$(grep -q "fixR:ID-001.*'blocked'.*no git counterpart" "$TMPDIR_T/diff-blk.err" && echo 0 || echo 1)"
+assert "AC7: the card moved to a mapped column (ID-003) still writes back parked -> shipped" \
+  "$(printf '%s\n' "$DIFF_BLK" | jq -e 'select(.origin=="fixR:ID-003") | .current_status=="parked" and .target_status=="shipped"' >/dev/null 2>&1 && echo 0 || echo 1)"
+assert "AC7: the summary counts the blocked row as skipped, not as a change" \
+  "$(grep -q 'writeback: 1 change(s), 1 skipped' "$TMPDIR_T/diff-blk.err" && echo 0 || echo 1)"
+
+echo ""
 echo "=== AC3/AC4/RT: apply builds an isolated worktree; caller checkout untouched; actor=hermes ==="
 HEAD_BEFORE_APPLY="$(git -C "$FIXR" rev-parse HEAD)"
 : > "$CALLS"; : > "$GHCALLS"
@@ -279,14 +309,16 @@ echo ""
 echo "=== NC1: hash mismatch (git row changed since mirror) -> SKIPPED + reported; file untouched ==="
 # ID-002's item text changes on git (a real, independent edit) WITHOUT re-mirroring; its snapshot
 # row_hash now stales relative to the current extraction. Also craft a Hermes-side move for it so
-# there IS something writeback would otherwise apply.
+# there IS something writeback would otherwise apply. The move must land on a MAPPED column
+# ('done'), not 'blocked': the blocked rule skips earlier than the hash check, so a blocked mover
+# would prove nothing about row_hash here.
 sed -i.bak 's/| Claimed thing | notes2 | claimed |/| Claimed thing EDITED | notes2 | claimed |/' "$FIXR/_meta/BACKLOG.md"
 rm -f "$FIXR/_meta/BACKLOG.md.bak"
 git -C "$FIXR" add -A && git -C "$FIXR" commit -q -m "test(fixture): edit ID-002 item text without re-mirroring"
 NC1_CONTENT_BEFORE="$(git -C "$FIXR" show "$DEFAULT_BRANCH":_meta/BACKLOG.md)"
 LIST_NC1="$TMPDIR_T/list-nc1.json"
 jq -nc --arg i1 "$ID001" --arg i2 "$ID002" --arg i3 "$ID003" \
-  '[{id:$i1,status:"ready",title:"x"},{id:$i2,status:"blocked",title:"x"},{id:$i3,status:"done",title:"x"}]' > "$LIST_NC1"
+  '[{id:$i1,status:"ready",title:"x"},{id:$i2,status:"done",title:"x"},{id:$i3,status:"done",title:"x"}]' > "$LIST_NC1"
 : > "$CALLS"
 NC1_ERR="$(STUB_CALL_LOG="$CALLS" STUB_LIST_JSON="$LIST_NC1" HERMES_BIN="$STUB" bash "$BOARD_WRITEBACK" diff --registry "$REGISTRY" --snapshot "$SNAP" 2>&1 >/dev/null)"
 assert "NC1: ID-002's hash-mismatch skip is reported" "$({ trap '' PIPE; printf '%s\n' "$NC1_ERR" 2>/dev/null || :; } | grep -q 'fixR:ID-002.*row_hash mismatch' && echo 0 || echo 1)"
