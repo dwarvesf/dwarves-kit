@@ -88,6 +88,7 @@ These are instructions in a prompt file. A test can assert the token is present 
 which proves the text shipped, not that a run obeys it. Recording them as proven would be false.
 
 - #523: `Left alone` is derived from the closing `wrap scan` rather than narrated from intent.
+- #676: `Left alone` lists only the pass's own residue plus a per-repo count of the rest; `wide` restores the full listing.
 - #524: an item reaches `Needs you` only through the admission test, and everything failing it is run
   first and reported past tense.
 - #525: a precedent hit is wired into the tool it named, a clear-shaped miss is built, and only a
