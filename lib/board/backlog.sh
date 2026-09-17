@@ -89,6 +89,19 @@ _match_lines() {
 
 set_state() {
   local id="${1:-}" state="${2:-}"; shift 2 2>/dev/null || { echo "usage: backlog.sh set <ID-NNN> <state> [note]" >&2; return 64; }
+  # The note is everything left in argv joined by spaces (a legitimate multi-word note is
+  # quoted by the caller and arrives as one $1). A caller that appends a flag this script
+  # does not parse (e.g. a wrapper forwarding --backlog-file straight through) used to have
+  # it silently folded into the note text, corrupting the row; refuse instead.
+  for arg in "$@"; do
+    case "$arg" in
+      --*) echo "backlog.sh set: stray argument after the note: '$arg' (set takes <ID-NNN> <state> [note] only)" >&2; return 64 ;;
+    esac
+  done
+  if [ "$#" -gt 1 ]; then
+    echo "backlog.sh set: stray argument after the note: '$2' (set takes <ID-NNN> <state> [note] only)" >&2
+    return 64
+  fi
   local note="${*:-}"
   echo "$STATES" | tr ' ' '\n' | grep -qx "$state" || { echo "unknown state '$state' (states: $STATES)" >&2; return 64; }
   grep -qE "^\| *${id} *\|" "$BACKLOG_FILE" || { echo "no Active-queue row for $id" >&2; return 1; }

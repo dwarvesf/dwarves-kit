@@ -182,4 +182,29 @@ else
   pass "set on a feature branch does not warn"
 fi
 
+# ---- 15. set REFUSES a stray flag after the note, writing nothing ----
+# The 2026-09-17 CL-056 incident: a consumer's root `board` wrapper forwards straight to
+# backlog.sh (it does not accept --backlog-file), and `set` used to fold the literal flag
+# text into the note instead of rejecting it.
+B="$TMP/stray-flag.md"; mk_board "$B"
+before="$(cat "$B")"
+if err="$(BACKLOG_FILE="$B" bash "$BL" set ID-001 shipped "done" --backlog-file /some/path.md 2>&1)"; then
+  fail "set with a trailing --backlog-file should exit nonzero, got 0"
+else
+  case "$err" in
+    *"stray argument"*"--backlog-file"*) pass "set refuses the stray flag: $err" ;;
+    *) fail "set's stray-flag refusal message is wrong: $err" ;;
+  esac
+fi
+after="$(cat "$B")"
+[ "$before" = "$after" ] && pass "set with a stray flag wrote nothing" \
+  || fail "set with a stray flag should not touch the file"
+
+# ---- 16. a legitimately multi-word QUOTED note still works ----
+B="$TMP/quoted-note.md"; mk_board "$B"
+BACKLOG_FILE="$B" bash "$BL" set ID-001 shipped "fixed in console-labs #233" >/dev/null
+c=$(cell "$B")
+[ "$c" = "shipped [fixed in console-labs #233]" ] && pass "quoted multi-word note still works: $c" \
+  || fail "quoted multi-word note regressed, got: $c"
+
 if [ "$FAILED" = 0 ]; then echo "ALL PASS"; else echo "$FAILED FAILED"; exit 1; fi
