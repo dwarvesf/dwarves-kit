@@ -22,7 +22,8 @@ One helper, `_open_own_prs <repo-url>`, is the single open-PR reader for the sub
 
 - It calls `gh pr list --repo <url> --state open --limit 100 --json number,title,headRefName,author`.
 - It filters `.author.login` against `gh api user --jq .login`, case-insensitively.
-- It exits 1 when the login or the list does not resolve, and prints nothing.
+- It exits 1 when the login or the list does not resolve, and prints nothing. A repo whose
+  open-PR list is `[]` resolves: that is a clean board, reported as no own PRs, exit 0.
 - It names a full page on stderr, because that is the one case where an own PR can sit past the cap.
 - `cmd_merge` and `_scan_repo` both route through it. `cmd_merge` reports the failed query and
   returns 1; `_scan_repo` prints its existing `(gh query failed)` line.

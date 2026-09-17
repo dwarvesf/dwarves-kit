@@ -1034,6 +1034,12 @@ out="$(GH_STUB_OPEN_PRS="$FOREIGN_OPEN" GH_STUB_PR_32="$FOREIGN_PR_32" \
 chk_no "merge: a PR authored by someone else is not eligible" "$out" "eligible #32"
 chk_has "merge: a foreign-only list reports no own PRs" "$out" "no open PRs authored by the operator"
 
+echo "=== merge: a repo with no open PRs is not a failed query ==="
+out="$(GH_STUB_OPEN_PRS='[]' "$WRAP" merge "$TMPD/clone-scan-main" 2>&1)"; rc=$?
+chk "merge: an empty board exits 0" "$rc"
+chk_has "merge: an empty board says so" "$out" "no open PRs authored by the operator"
+chk_no "merge: an empty board is not reported as a failed query" "$out" "the open-PR query on"
+
 echo "=== merge: a failed identity read is reported, never read as an empty board ==="
 : > "$GH_STUB_CALLS"
 out="$(GH_STUB_OPEN_PRS="$LAG_OPEN" GH_STUB_API_RC=1 GH_STUB_PR_31="$LAG_PR_31" \
