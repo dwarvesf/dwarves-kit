@@ -982,6 +982,22 @@ chk_has "merge: an empty rollup on a CLEAN state stays eligible" "$out" "eligibl
 out="$(gate_verdict '{"number":9,"title":"gate case","headRefName":"feat/gate","headRefOid":"aa","baseRefName":"main","mergeable":"MERGEABLE","mergeStateStatus":"CLEAN","reviewDecision":"CHANGES_REQUESTED","statusCheckRollup":[{"conclusion":"SUCCESS"}]}')"
 chk_has "merge: changes requested skips" "$out" "SKIP #9 gate case: changes requested"
 
+echo "=== merge: a draft PR skips even when GitHub reports it mergeable and clean ==="
+out="$(gate_verdict '{"number":9,"title":"gate case","headRefName":"feat/gate","headRefOid":"aa","baseRefName":"main","mergeable":"MERGEABLE","mergeStateStatus":"CLEAN","reviewDecision":"APPROVED","statusCheckRollup":[{"conclusion":"SUCCESS"}],"isDraft":true}')"
+chk_has "merge: a draft skips" "$out" "SKIP #9 gate case: draft"
+out="$(gate_verdict '{"number":9,"title":"gate case","headRefName":"feat/gate","headRefOid":"aa","baseRefName":"main","mergeable":"MERGEABLE","mergeStateStatus":"CLEAN","reviewDecision":"APPROVED","statusCheckRollup":[{"conclusion":"SUCCESS"}],"isDraft":false}')"
+chk_has "merge: isDraft=false stays eligible" "$out" "eligible #9 gate case [feat/gate]"
+out="$(gate_verdict '{"number":9,"title":"gate case","headRefName":"feat/gate","headRefOid":"aa","baseRefName":"main","mergeable":"MERGEABLE","mergeStateStatus":"CLEAN","reviewDecision":"APPROVED","statusCheckRollup":[{"conclusion":"SUCCESS"}]}')"
+chk_has "merge: a missing isDraft field (older fixture) stays eligible" "$out" "eligible #9 gate case [feat/gate]"
+
+echo "=== merge: a newer draft does not block an older ready PR ==="
+DRAFT_OPEN='[{"number":19,"title":"wip","headRefName":"feat/wip"},{"number":18,"title":"ready","headRefName":"feat/ready"}]'
+DRAFT_PR_19='{"number":19,"title":"wip","headRefName":"feat/wip","headRefOid":"dd","baseRefName":"main","mergeable":"MERGEABLE","mergeStateStatus":"CLEAN","reviewDecision":"APPROVED","statusCheckRollup":[],"isDraft":true}'
+DRAFT_PR_18='{"number":18,"title":"ready","headRefName":"feat/ready","headRefOid":"ee","baseRefName":"main","mergeable":"MERGEABLE","mergeStateStatus":"CLEAN","reviewDecision":"APPROVED","statusCheckRollup":[],"isDraft":false}'
+out="$(GH_STUB_OPEN_PRS="$DRAFT_OPEN" GH_STUB_PR_19="$DRAFT_PR_19" GH_STUB_PR_18="$DRAFT_PR_18" "$WRAP" merge "$TMPD/clone-scan-main" 2>&1)"
+chk_has "merge: the newer draft is skipped" "$out" "SKIP #19 wip: draft"
+chk_has "merge: the older ready PR is picked" "$out" "eligible #18 ready [feat/ready]"
+
 echo "=== merge: unparseable PR JSON skips instead of passing the gate ==="
 out="$(gate_verdict 'not json at all')"
 chk_has "merge: unreadable JSON skips" "$out" "SKIP #9: unreadable PR JSON"
