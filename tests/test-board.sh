@@ -218,6 +218,11 @@ NEXT_OUT="$(bash "$BOARD" next --backlog-file "$FIXB/_meta/BACKLOG.md")"
 assert "single next picks DF-001" "$([ "$NEXT_OUT" = "DF-001" ] && echo 0 || echo 1)"
 bash "$BOARD" set --backlog-file "$FIXB/_meta/BACKLOG.md" DF-001 claimed "test claim" >/dev/null
 assert "single set flips DF-001 to claimed" "$(grep 'DF-001' "$FIXB/_meta/BACKLOG.md" | grep -q 'claimed' && echo 0 || echo 1)"
+# --backlog-file trailing the note (the actual CL-056 incident shape): board.sh strips it
+# before backlog.sh ever sees argv, so this must still work and land no literal flag text.
+bash "$BOARD" set DF-001 shipped "test note" --backlog-file "$FIXB/_meta/BACKLOG.md" >/dev/null
+assert "trailing --backlog-file flips DF-001 to shipped" "$(grep 'DF-001' "$FIXB/_meta/BACKLOG.md" | grep -q 'shipped \[test note\]' && echo 0 || echo 1)"
+assert "trailing --backlog-file leaves no stray flag text in the row" "$(grep 'DF-001' "$FIXB/_meta/BACKLOG.md" | grep -q -- '--backlog-file' && echo 1 || echo 0)"
 STATES_OUT="$(bash "$BOARD" states --backlog-file "$FIXB/_meta/BACKLOG.md")"
 assert "single states lists queued and shipped" "$({ trap '' PIPE; printf '%s\n' "$STATES_OUT" 2>/dev/null || :; } | grep -q 'queued' && { trap '' PIPE; printf '%s\n' "$STATES_OUT" 2>/dev/null || :; } | grep -q 'shipped' && echo 0 || echo 1)"
 PRIO_OUT="$(bash "$BOARD" priority overview --backlog-file "$FIXA/_meta/BACKLOG.md")"
