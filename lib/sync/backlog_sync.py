@@ -204,22 +204,41 @@ def check_pull_isolation(names: list, args,
                  "board, then run the other apps (design question 1).")
 
 
+def resolve_archive(backlog: Path, configured: Path | None) -> Path:
+    """Where this board's archive lives.
+
+    A relative configured path resolves against the BOARD's directory, never
+    the process cwd. `board sync` runs from launchd and from any cwd, so a
+    cwd-relative path reads an empty archive (closing nothing) or, worse,
+    another repo's archive that shares the `ID-` prefix.
+    """
+    if configured is None:
+        return backlog.parent / "BACKLOG-archive.md"
+    return configured if configured.is_absolute() else backlog.parent / configured
+
+
 def read_archive(path: Path | None, prefix: str) -> dict:
     """Rows an archive pass moved out of the board, keyed by board id.
 
-    No archive file means no evidence, which reads as an empty archive: the
-    planner then closes nothing, exactly as it behaved before archives were
-    consulted at all.
+    No readable archive means no evidence, which reads as an empty archive:
+    the planner then closes nothing, exactly as it behaved before archives
+    were consulted at all. A directory, a binary file, or an unreadable one
+    must degrade the same way rather than kill a whole sync run.
     """
     if path is None or not path.exists():
         return {}
-    return parse_board(path.read_text(), prefix=prefix)
+    try:
+        return parse_board(path.read_text(), prefix=prefix)
+    except (OSError, ValueError) as exc:
+        print(f"archive: cannot read {path} ({exc}); no card closes on "
+              "archive evidence this run")
+        return {}
 
 
 def sync_source(src, backlog: Path, state_path: Path, dry_run: bool,
                 filt: dict | None = None, cap: int = 20,
                 allow: int = 0, allow_flips: int = 0,
-                archive: Path | None = None) -> bool:
+                archive: Path | None = None, allow_closes: int = 0) -> bool:
     """Returns True when the run is clean, False when it hit a refusal the
     caller should reflect in the process exit code (the bulk-flip breaker)."""
     if getattr(src, "pull_only", False):
@@ -237,7 +256,8 @@ def sync_source(src, backlog: Path, state_path: Path, dry_run: bool,
     items = src.read()
     plan = plan_sync(rows, items, state, sync_fields=src.sync_fields,
                      filt=filt, app_name=src.name, allow_flips=allow_flips,
-                     archived=read_archive(archive, prefix))
+                     archived=read_archive(archive, prefix),
+                     allow_closes=allow_closes)
     header = (f"{src.name}: {len(items)} spoke items, {len(rows)} board rows")
     preview = getattr(src, "preview", None)
     if preview:
@@ -425,6 +445,9 @@ def main(argv=None):
     ap.add_argument("--allow-flips", type=int, default=0,
                     help="one-run override when a legitimate bulk status "
                          "flip exceeds the cap")
+    ap.add_argument("--allow-archived-closes", type=int, default=0,
+                    help="one-run override when a legitimate bulk archive "
+                         "pass closes more cards than the cap")
     args = ap.parse_args(argv)
 
     filters: dict[str, dict] = {}
@@ -469,7 +492,10 @@ def main(argv=None):
                  "Run from the canonical checkout, or set "
                  "KIT_SYNC_ALLOW_WORKTREE=1 if you truly know better.")
 
-    archive = args.archive_file or (args.backlog.parent / "BACKLOG-archive.md")
+    archive = resolve_archive(args.backlog, args.archive_file)
+    if args.archive_file and not archive.exists():
+        print(f"archive: no file at {archive}; no card closes on archive "
+              "evidence. Check sync.archive_file.")
 
     state_dir = board_state_dir(args.state_root, args.backlog)
     # single-writer lock: overlapping runs would hand out colliding IDs and
@@ -504,7 +530,8 @@ def main(argv=None):
                            filt=filters.get(name), cap=args.scope_exit_cap,
                            allow=args.allow_scope_exit,
                            allow_flips=args.allow_flips,
-                           archive=archive):
+                           archive=archive,
+                           allow_closes=args.allow_archived_closes):
             ok = False
     if not ok:
         sys.exit(1)

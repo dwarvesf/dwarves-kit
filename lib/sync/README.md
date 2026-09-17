@@ -31,7 +31,11 @@ when its id sits in the board archive with a closed status (`shipped`,
 the board, or `sync.archive_file` in `[sync]` for a repo that keeps it
 elsewhere. Evidence must be positive: an id missing from both files keeps its
 card open and logs the orphan note, because a truncated or half-merged board
-read would otherwise close every linked card on every spoke.
+read would otherwise close every linked card on every spoke. A relative
+`sync.archive_file` resolves against the board's own directory, never the
+process cwd. More than 20 archive-driven closes in one tick means a bulk
+archive pass, so the whole batch is refused with a note;
+`--allow-archived-closes N` is the one-run override.
 
 ## What each app can hold
 

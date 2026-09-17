@@ -15,11 +15,19 @@ from datetime import date
 from pathlib import Path
 
 ACTIVE_STATUSES = {"queued", "claimed", "speccing", "validated", "executing"}
-# Status keywords an archive row may carry for its spoke card to be closed.
-# Same set the archive tooling moves out of a board (`_meta/board-archive`),
-# so a row that reached the archive by any other means, or a row whose status
-# cell is malformed, is NOT evidence of a close.
+# Status keywords an archive row may carry for its spoke card to be closed,
+# and the extraction that reads one. Both match the archive tooling
+# (`_meta/board-archive`), which moves a row on the LEADING ALPHA RUN of its
+# status cell, so `shipped:` and `shipped/dropped` archive like `shipped`. A
+# keyword outside this set, malformed or simply still open, is NOT evidence.
 ARCHIVED_CLOSED = {"shipped", "dropped", "done", "resolved"}
+ARCHIVED_KW_RE = re.compile(r"[A-Za-z-]*")
+# Ceiling on archive-driven card closes one plan_sync call may plan per app
+# per tick, in the same shape as the scope-exit cap and for the same reason:
+# an archive pass that retires a whole programme at once is a bulk change a
+# human should look at before every card goes with it. Past the cap NONE are
+# planned; `--allow-archived-closes N` is the one-run override.
+MAX_ARCHIVED_CLOSES = 20
 # Ceiling on spoke-to-board status writes (board_set_status) one plan_sync
 # call may apply per app per tick. A legitimate bulk close of more than 10
 # rows on a spoke in one tick is refused; re-run with --allow-flips N once a
@@ -251,6 +259,7 @@ class Plan:
     notes: list = field(default_factory=list)          # [str] report lines
     flips_refused: int = 0  # count of board_set_status entries the bulk-flip
                             # breaker dropped this tick; 0 means none refused
+    closes_refused: int = 0  # same, for archive-driven spoke closes
 
     def empty(self) -> bool:
         return not any((self.src_create, self.src_set_title, self.src_set_body,
@@ -299,7 +308,7 @@ def intake_ok(body: str, filt: dict | None) -> bool:
 def plan_sync(rows: dict, items: list, state: dict,
               sync_fields: bool = True, filt: dict | None = None,
               app_name: str = "spoke", allow_flips: int = 0,
-              archived: dict | None = None) -> Plan:
+              archived: dict | None = None, allow_closes: int = 0) -> Plan:
     """Three-way merge between board rows, spoke items, and the snapshot.
 
     `filt` is this app's audience filter (P1): {only_tags, skip_tags,
@@ -317,7 +326,8 @@ def plan_sync(rows: dict, items: list, state: dict,
     board id. A linked id with no active row closes on the spoke only when
     that id appears there with a closed status. Absence is never evidence: a
     truncated or half-merged board file would otherwise read as "every linked
-    row is gone" and close every card on every spoke.
+    row is gone" and close every card on every spoke. `allow_closes` is the
+    one-run override for the archive-close cap, mirroring `allow_flips`.
     """
     p = Plan()
     smap = state.get("map", {})
@@ -487,17 +497,29 @@ def plan_sync(rows: dict, items: list, state: dict,
     # went 23 -> 69 in four days after one archive pass). Close the card, but
     # only against a row found in the archive carrying a closed status. An id
     # missing from both files stays open and keeps its orphan note.
+    closes = []
     for bid, it, entry in unrowed:
         if bid in tombstones or entry.get("scoped_out") or it["done"]:
             continue
         arch = (archived or {}).get(bid)
-        if arch is None or arch.status_kw not in ARCHIVED_CLOSED:
+        if arch is None:
             continue
-        if not in_scope(arch, filt):
+        kw = ARCHIVED_KW_RE.match(arch.status_kw).group(0).lower()
+        if kw not in ARCHIVED_CLOSED or not in_scope(arch, filt):
             continue
-        p.src_set_status.append((it["rid"], arch.status_kw))
-        p.notes.append(f"{bid}: archived {arch.status_kw}; closing on "
-                       f"{app_name}")
+        closes.append((bid, it["rid"], kw))
+    close_cap = max(MAX_ARCHIVED_CLOSES, allow_closes)
+    if len(closes) > close_cap:
+        p.closes_refused = len(closes)
+        p.notes.append(
+            f"refused {len(closes)} archive-driven closes on {app_name} "
+            f"(cap {close_cap}): a bulk archive pass is a change to review, "
+            f"not evidence per card; re-run with --allow-archived-closes "
+            f"{len(closes)} once it is confirmed")
+    else:
+        for bid, rid, kw in closes:
+            p.src_set_status.append((rid, kw))
+            p.notes.append(f"{bid}: archived {kw}; closing on {app_name}")
 
     # brand-new spoke items (no ID prefix, not done) -> new board rows
     existing_items = {r.item for r in rows.values()}

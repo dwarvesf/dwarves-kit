@@ -14,6 +14,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import sync_core  # noqa: E402
 from sync_core import (  # noqa: E402
+    MAX_ARCHIVED_CLOSES,
     MAX_BOARD_STATUS_FLIPS,
     Plan,
     Row,
@@ -1028,3 +1029,104 @@ def test_read_archive_tolerates_a_missing_file():
         missing.write_text(ARCHIVE)
         assert set(backlog_sync.read_archive(missing, "ID")) == {
             "ID-40", "ID-41", "ID-42"}
+
+
+def test_archive_lookup_matches_the_archivers_status_extraction():
+    """The consumer archiver moves a row on the LEADING ALPHA RUN of its
+    status cell, so `shipped:` and `shipped/dropped` reach the archive. A
+    lookup splitting on whitespace read those as not closed and left the card
+    open forever, which is the very bug this branch fixes."""
+    archive = ARCHIVE.replace("| ID-40 | Shipped thing | proof in PR #1 | shipped |",
+                              "| ID-40 | Shipped thing | proof | shipped: |\n"
+                              "| ID-43 | Slashed | proof | shipped/dropped |\n"
+                              "| ID-44 | Noted | proof | shipped [#12] |")
+    parsed = parse_board(archive)
+    for bid in ("ID-40", "ID-43", "ID-44"):
+        rows, items, state = _archived_case(bid)
+        p = plan_sync(rows, items, state, archived=parsed)
+        assert p.src_set_status == [("r1", "shipped")], bid
+
+
+def _close_case(n: int):
+    """n linked cards whose rows all sit in the archive as shipped."""
+    state, items, archive = {"map": {}}, [], [HEADER]
+    for i in range(n):
+        bid, rid = f"ID-{300 + i}", f"r{i}"
+        state["map"][bid] = {"rid": rid, "title": f"row {i}", "notes": "",
+                             "status": "executing"}
+        items.append(item(rid, f"{bid} · row {i}"))
+        archive.append(f"| {bid} | row {i} | proof | shipped |\n")
+    return items, state, parse_board("".join(archive))
+
+
+def test_archived_closes_at_the_cap_still_plan():
+    items, state, archive = _close_case(MAX_ARCHIVED_CLOSES)
+    p = plan_sync({}, items, state, archived=archive)
+    assert len(p.src_set_status) == MAX_ARCHIVED_CLOSES
+    assert p.closes_refused == 0
+
+
+def test_archived_closes_one_over_the_cap_plan_none():
+    """Drop the whole batch, never a subset: a bulk archive pass is a change
+    to review, and a half-applied one cannot be read back."""
+    n = MAX_ARCHIVED_CLOSES + 1
+    items, state, archive = _close_case(n)
+    p = plan_sync({}, items, state, archived=archive, app_name="reminders")
+    assert p.src_set_status == []
+    assert p.closes_refused == n
+    assert any(f"refused {n} archive-driven closes on reminders" in note
+               for note in p.notes)
+    assert any("--allow-archived-closes" in note for note in p.notes)
+
+
+def test_allow_closes_override_plans_the_whole_batch():
+    n = MAX_ARCHIVED_CLOSES + 1
+    items, state, archive = _close_case(n)
+    p = plan_sync({}, items, state, archived=archive, allow_closes=n)
+    assert len(p.src_set_status) == n and p.closes_refused == 0
+
+
+def test_an_id_in_both_the_archive_and_the_active_board_never_closes():
+    """The union-merge duplicate: an archive pass lands the row in the archive
+    while a merge keeps it on the active board too. The active row wins, so
+    the card follows the row and no archive close is planned."""
+    archive = ARCHIVE.replace("| ID-40 |", "| ID-10 |")
+    items = [item("r1", "ID-10 · Fix the frobnicator")]
+    state = {"map": snap("ID-10", "r1", "Fix the frobnicator")}
+    p = plan_sync(parse_board(BOARD), items, state,
+                  archived=parse_board(archive))
+    assert not p.src_set_status and p.closes_refused == 0
+
+
+def test_a_duplicate_id_inside_the_archive_takes_the_first_occurrence():
+    archive = ARCHIVE + "| ID-40 | Shipped thing | later copy | queued |\n"
+    rows, items, state = _archived_case("ID-40")
+    p = plan_sync(rows, items, state, archived=parse_board(archive))
+    assert p.src_set_status == [("r1", "shipped")]
+
+
+def test_resolve_archive_takes_a_relative_path_from_the_board_directory():
+    """A launchd tick runs from an arbitrary cwd, so a cwd-relative archive
+    reads empty, or reads another repo's archive that shares the prefix."""
+    import backlog_sync
+    board = Path("/repo/_meta/BACKLOG.md")
+    assert backlog_sync.resolve_archive(board, None) == \
+        Path("/repo/_meta/BACKLOG-archive.md")
+    assert backlog_sync.resolve_archive(board, Path("archive/closed.md")) == \
+        Path("/repo/_meta/archive/closed.md")
+    absolute = Path("/elsewhere/closed.md")
+    assert backlog_sync.resolve_archive(board, absolute) == absolute
+
+
+def test_read_archive_degrades_on_an_unreadable_path(capsys):
+    """A directory or a binary file must cost the archive evidence, never the
+    whole sync run."""
+    import backlog_sync
+    with tempfile.TemporaryDirectory() as tmp:
+        a_dir = Path(tmp) / "BACKLOG-archive.md"
+        a_dir.mkdir()
+        assert backlog_sync.read_archive(a_dir, "ID") == {}
+        binary = Path(tmp) / "binary.md"
+        binary.write_bytes(b"| ID-40 | x | y | shipped |\n\xff\xfe\x00")
+        assert backlog_sync.read_archive(binary, "ID") == {}
+    assert capsys.readouterr().out.count("archive: cannot read") == 2
