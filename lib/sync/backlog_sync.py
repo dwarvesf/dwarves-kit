@@ -74,7 +74,7 @@ def warn_duplicate_ids(text: str, strict_id: bool = True) -> bool:
     ok = True
     if dups:
         print(f"ERROR: duplicate board rows for {', '.join(dups)}; "
-              "refusing to sync, fix the board")
+              "refusing to sync, run: board dedupe <ID> for each")
         ok = False
     parsed = set(parse_board(text, strict_id=strict_id,
                              prefix=detect_prefix(text)))
@@ -206,7 +206,7 @@ def check_pull_isolation(names: list, args,
 
 def sync_source(src, backlog: Path, state_path: Path, dry_run: bool,
                 filt: dict | None = None, cap: int = 20,
-                allow: int = 0) -> bool:
+                allow: int = 0, allow_flips: int = 0) -> bool:
     """Returns True when the run is clean, False when it hit a refusal the
     caller should reflect in the process exit code (the bulk-flip breaker)."""
     if getattr(src, "pull_only", False):
@@ -223,7 +223,7 @@ def sync_source(src, backlog: Path, state_path: Path, dry_run: bool,
         src.binding = state["binding"]
     items = src.read()
     plan = plan_sync(rows, items, state, sync_fields=src.sync_fields,
-                     filt=filt, app_name=src.name)
+                     filt=filt, app_name=src.name, allow_flips=allow_flips)
     header = (f"{src.name}: {len(items)} spoke items, {len(rows)} board rows")
     preview = getattr(src, "preview", None)
     if preview:
@@ -237,7 +237,10 @@ def sync_source(src, backlog: Path, state_path: Path, dry_run: bool,
         print(f"{src.name}: ABORTED, {exits} items would leave this app's "
               f"scope (cap {max(cap, allow)}). Review with --dry-run, then "
               f"re-run with --allow-scope-exit {exits}.")
-        return True
+        # A tick can trip both guards at once: the scope-exit abort must
+        # still surface a flip refusal, or the alarm is lost silently (this
+        # path used to always return True regardless of plan.flips_refused).
+        return not plan.flips_refused
     new_text, assigned = apply_board(text, plan, prefix=prefix, path=backlog)
     if new_text != text:
         atomic_write(backlog, new_text)
@@ -400,6 +403,9 @@ def main(argv=None):
     ap.add_argument("--allow-scope-exit", type=int, default=0,
                     help="one-run override when a legitimate bulk exit "
                          "exceeds the cap")
+    ap.add_argument("--allow-flips", type=int, default=0,
+                    help="one-run override when a legitimate bulk status "
+                         "flip exceeds the cap")
     args = ap.parse_args(argv)
 
     filters: dict[str, dict] = {}
@@ -475,7 +481,8 @@ def main(argv=None):
         src = build_source(name, args)
         if not sync_source(src, args.backlog, state_path, args.dry_run,
                            filt=filters.get(name), cap=args.scope_exit_cap,
-                           allow=args.allow_scope_exit):
+                           allow=args.allow_scope_exit,
+                           allow_flips=args.allow_flips):
             ok = False
     if not ok:
         sys.exit(1)
