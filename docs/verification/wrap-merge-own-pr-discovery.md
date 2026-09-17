@@ -51,6 +51,7 @@ Verdict: PASS. Green before the mutation, exit 1 under it, green again after
 ## Not proven
 - The index lag itself is GitHub-side and not reproducible on demand; the test models it
   through the stub, and the endpoint split above is the evidence that the old query depended
-  on the lagging index.
+  on the lagging index. Both queries were run against this PR seconds after it opened and
+  both returned it, so that run did not reproduce the lag and did not try to.
 - A repo with more than 100 open PRs reads only the first page. The run says so on stderr
   rather than paginating.
