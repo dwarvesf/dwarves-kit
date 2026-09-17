@@ -13,6 +13,7 @@ ships with it.
 | `bash tests/test-audit-cadence.sh` | 0 | 13 assertions: the instance census, the parse, DUE before and after a run, an aged marker, and the two refusals |
 | `bash tests/test-bin-forwarders.sh` | 0 | 48/48, including the extended `bin/` census and the new `audit` dispatch block |
 | `bash tests/run-all.sh --changed` | 0 | 50 suites, 0 failed |
+| `bash tests/test-meta.sh` | 0 | 853/853, including the FEATURES.md freshness pin |
 
 ```
 == census: the Cadence table is exactly the in-kit instance set ==
@@ -112,5 +113,5 @@ bash lib/gate/negctl.sh "$PWD" \
 - **Any scheduled caller.** None ships. `due` was never run from cron, launchd, or a workflow.
 - **`run-all --changed` in full.** Three slow suites (`test-config-seams`, `test-hooks`,
   `test-meta`) hit the runner's own 300s ceiling in the parallel run, which is a timeout, not a
-  failure. `test-meta` was re-run alone and reported its own result; the other two are untouched by
-  this diff.
+  failure. `test-meta` was re-run alone and came back 853/853; `test-config-seams` and `test-hooks`
+  were not re-run, and this diff touches neither config seams nor hooks.
