@@ -65,6 +65,33 @@ Verdict: PASS
 The mutation deletes the four-line `if [ "$live_status" = "blocked" ]` guard, so the diff loop falls
 through to the reverse map again.
 
-## Live run
+## Live run (read-only, on the Mini, against the real Hermes and the scheduled mirror snapshot)
 
-PENDING
+Same registry, same snapshot, same live board, two libs. The apply was NOT run.
+
+```
+Command: bash <kit>/lib/board/board-writeback.sh diff --registry <ops-toolkit>/_meta/boards.txt \
+           --snapshot <ops-toolkit>/_meta/.board-mirror-snapshot-personal.jsonl
+Baseline (origin/master):            writeback: 0 change(s), 242 skipped
+Treatment (fix/writeback-skip-blocked): writeback: 0 change(s), 242 skipped
+Exit: 0 both
+```
+
+The count matches the expected 0 for the WRONG reason, and the proof says so rather than claiming
+the delta. Between #680's run this morning and this one, the Hermes kanban was rebuilt with fresh
+card ids: of the 125 `ops-toolkit` cards the 10:45 snapshot records, ZERO are still present on the
+live board, and the same holds for `console-labs`, which is where the 5 blocked survivors lived.
+
+```
+snapshot rows: 264 (125 ops-toolkit, 53 dwarves-kit, 23 console-labs, ...)
+snapshot ops-toolkit hermes_ids: 125   live: 90   in common: 0
+every one of the 242 skips reads: hermes card <id> not found on board '<b>' (deleted/renamed out of band)
+```
+
+So the snapshot is orphaned and writeback refuses everything before any rule in this change is
+reached. The blocked rule is neither exercised nor contradicted by this run. The population it
+guards is real and larger than it was this morning: the live boards now carry 70 cards in
+`blocked` (ops-toolkit 50, danny-studio 9, dwarves-kit 8, context-kit 3, console-labs 0).
+
+Re-measuring the delta needs a fresh `board mirror` run to re-seed the snapshot against the current
+card ids. That is a WRITE against Hermes and was deliberately not run here.
