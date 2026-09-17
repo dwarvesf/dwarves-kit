@@ -89,6 +89,7 @@ which proves the text shipped, not that a run obeys it. Recording them as proven
 
 - #523: `Left alone` is derived from the closing `wrap scan` rather than narrated from intent.
 - #676: `Left alone` lists only the pass's own residue plus a per-repo count of the rest; `wide` restores the full listing.
+- #677: `Shipped`, `Left alone`, and `FYI` are rendered as tables with the fixed header rows; `Built` keeps the lint-parsed shape.
 - #524: an item reaches `Needs you` only through the admission test, and everything failing it is run
   first and reported past tense.
 - #525: a precedent hit is wired into the tool it named, a clear-shaped miss is built, and only a
