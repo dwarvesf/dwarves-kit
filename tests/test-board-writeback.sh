@@ -11,6 +11,9 @@
 #        on its original branch, working tree clean, untouched
 #   AC4  the commit body carries `actor=hermes`
 #   AC5  snapshot refresh updates ONLY `hermes_status`; `row_hash` passes through UNCHANGED
+#   AC6  a card still sitting in the column the mirror created it in produces ZERO changes (the
+#        snapshot's recorded `hermes_status` is an INTENT, not an observation); a card that really
+#        moved still produces exactly one
 #
 #   NC1  hash mismatch (git row changed since mirror) -> edit SKIPPED + reported; file untouched
 #   NC2  illegal target status (not a backlog.sh state) -> rejected with reason; file untouched
@@ -93,6 +96,14 @@ echo "$*" >> "${STUB_CALL_LOG:?STUB_CALL_LOG unset}"
 if [ "$1" = "kanban" ] && [ "$3" = "fixTrading" ]; then
   echo "FATAL TEST INVARIANT VIOLATION: fixTrading board queried" >&2
   exit 9
+fi
+if [ "$1" = "kanban" ] && [ "$4" = "show" ]; then
+  # `show <id> --json`: the created-event column comes from STUB_SHOW_MAP ("<id><TAB><status>"
+  # lines). An id absent from the map (or no map at all) answers `{}` -- the real-world "hermes
+  # cannot tell us where this card was created" case the writeback must degrade gracefully on.
+  cs="$(awk -v i="$5" '$1==i{print $2; exit}' "${STUB_SHOW_MAP:-/dev/null}" 2>/dev/null)"
+  if [ -n "$cs" ]; then printf '{"events":[{"kind":"created","payload":{"status":"%s"}}]}\n' "$cs"; else echo '{}'; fi
+  exit 0
 fi
 if [ "$1" = "kanban" ] && [ "$4" = "list" ]; then
   cat "${STUB_LIST_JSON:?STUB_LIST_JSON unset}"
@@ -183,8 +194,31 @@ assert "ID-003's changeset entry: parked -> shipped" \
   "$(printf '%s\n' "$DIFF1" | jq -e 'select(.origin=="fixR:ID-003") | .current_status=="parked" and .target_status=="shipped"' >/dev/null 2>&1 && echo 0 || echo 1)"
 assert "ID-002 (no Hermes-side move) never appears in the changeset" \
   "$({ trap '' PIPE; printf '%s\n' "$DIFF1" 2>/dev/null || :; } | grep -q 'ID-002' && echo 1 || echo 0)"
-assert "only ONE hermes call made (batched list, not per-row)" \
-  "$([ "$(wc -l < "$CALLS" | tr -d ' ')" -eq 1 ] && echo 0 || echo 1)"
+assert "the board list is ONE batched call, and the only per-row calls are the create-state 'show' probes on the 2 candidates" \
+  "$([ "$(grep -c ' list ' "$CALLS")" -eq 1 ] && [ "$(grep -c ' show ' "$CALLS")" -eq 2 ] && echo 0 || echo 1)"
+
+echo ""
+echo "=== AC6: a card still in its mirror-created column writes back NOTHING; a moved card still does ==="
+# The regression the first live dry-run produced: the mirror's CHANGE op only posts a comment, so
+# the snapshot records an INTENDED column the card never reached. ID-001 is such a row here: its
+# snapshot says 'triage', it sits in 'ready', and 'ready' is exactly where the mirror created it,
+# so nobody moved it and git must not be walked backwards. ID-003 really did move (created
+# 'blocked', now 'done') and must still produce its one change.
+SHOWMAP="$TMPDIR_T/showmap.tsv"
+printf '%s\tready\n%s\tblocked\n' "$ID001" "$ID003" > "$SHOWMAP"
+: > "$CALLS"
+DIFF_CS="$(STUB_CALL_LOG="$CALLS" STUB_LIST_JSON="$LIST1" STUB_SHOW_MAP="$SHOWMAP" HERMES_BIN="$STUB" \
+  bash "$BOARD_WRITEBACK" diff --registry "$REGISTRY" --snapshot "$SNAP" 2>"$TMPDIR_T/diff-cs.err")"
+assert "AC6: exactly ONE changeset entry (the moved card only)" \
+  "$([ "$(printf '%s\n' "$DIFF_CS" | grep -c .)" -eq 1 ] && echo 0 || echo 1)"
+assert "AC6: the card in its create column (ID-001) produces ZERO changeset entries" \
+  "$({ trap '' PIPE; printf '%s\n' "$DIFF_CS" 2>/dev/null || :; } | grep -q 'ID-001' && echo 1 || echo 0)"
+assert "AC6: the create-state skip is reported by name, with the column" \
+  "$(grep -q "fixR:ID-001.*mirror-created column 'ready'" "$TMPDIR_T/diff-cs.err" && echo 0 || echo 1)"
+assert "AC6: the MOVED card (ID-003, created 'blocked', now 'done') still writes back parked -> shipped" \
+  "$(printf '%s\n' "$DIFF_CS" | jq -e 'select(.origin=="fixR:ID-003") | .current_status=="parked" and .target_status=="shipped"' >/dev/null 2>&1 && echo 0 || echo 1)"
+assert "AC6: the summary counts the create-state row as skipped, not as a change" \
+  "$(grep -q 'writeback: 1 change(s), 1 skipped' "$TMPDIR_T/diff-cs.err" && echo 0 || echo 1)"
 
 echo ""
 echo "=== AC3/AC4/RT: apply builds an isolated worktree; caller checkout untouched; actor=hermes ==="

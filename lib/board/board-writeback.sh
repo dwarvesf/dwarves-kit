@@ -6,7 +6,9 @@
 #
 # v1 scope (per the sub-goal contract): STATUS MOVES ONLY, BACKLOG.md rows only (no mega-goal
 # cards, no new-card writeback, no note edits). A Hermes-side card move applies to git ONLY if the
-# row's row_hash still equals the value recorded at mirror time -- otherwise the edit is SKIPPED,
+# row's row_hash still equals the value recorded at mirror time, AND the card has actually moved
+# off the column the mirror created it in (CREATE-STATE RULE, see `_created_native`) -- otherwise
+# the edit is SKIPPED,
 # reported, and the row is left for the next `board mirror` run to refresh from git (CONFLICT
 # RULE, load-bearing: git wins, always). Every apply lands on a fresh `chore/board-sync` branch
 # (built in an ISOLATED `git worktree`, never the caller's own checkout -- see "Why a worktree"
@@ -131,6 +133,16 @@ _reverse_native() {
   esac
 }
 
+# _created_native <board> <hermes-id> -- the column the mirror's own `create` landed this card
+# in, read from the card's own `created` event (`hermes kanban show --json`). Empty when hermes
+# cannot answer (card gone, older card with no event, a CLI change): the caller then falls back to
+# the snapshot comparison alone, which is the pre-existing behavior.
+_created_native() {
+  local out
+  out="$("$HERMES_BIN" kanban --board "$1" show "$2" --json 2>/dev/null)" || return 0
+  printf '%s' "$out" | jq -r 'first((.events // [])[] | select(.kind=="created") | .payload.status) // empty' 2>/dev/null || true
+}
+
 # _wb_skip <origin> <reason> -- uniform skip-log line to stderr (mirrors parse-board.sh's
 # `_pb_skip` convention: reasons go to stderr only, never mixed into the stdout NDJSON stream).
 _wb_skip() { echo "writeback: skip $1: $2" >&2; }
@@ -245,6 +257,21 @@ cmd_diff() {
       fi
       if [ "$live_status" = "$hermes_status_snap" ]; then
         continue   # no Hermes-side move at all; not noteworthy, not a skip
+      fi
+
+      # --- THE create-state rule: the snapshot's `hermes_status` records the column the mirror
+      # INTENDED, which is not always the column the card is in. A mirror CHANGE op only posts a
+      # comment (board-mirror.sh builds its CHANGE argv as `kanban comment`), so it never moves
+      # the card, yet it records the new target as if it had. A disagreement here is therefore not
+      # yet evidence that anyone moved anything. Ask the card where the mirror created it: a card
+      # still sitting in its create column was never moved, and writing it back would walk the git
+      # row backwards to a state no human chose (8 such rows across 4 repos on the first live
+      # dry-run). ---
+      local created_status
+      created_status="$(_created_native "$board" "$hermes_id")"
+      if [ -n "$created_status" ] && [ "$live_status" = "$created_status" ]; then
+        _wb_skip "$origin" "card still sits in its mirror-created column '$created_status' (never moved; snapshot recorded intent '$hermes_status_snap')"
+        n_skipped=$((n_skipped + 1)); continue
       fi
 
       local target_status
