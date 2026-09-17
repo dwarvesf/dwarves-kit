@@ -45,7 +45,7 @@ edit, and the suite went back to 282 passed.
 
 ```
 Command: python3 lib/sync/backlog_sync.py \
-           --backlog ~/workspace/tieubao/ops-toolkit/_meta/BACKLOG.md \
+           --backlog <a consumer repo>/_meta/BACKLOG.md \
            --apps reminders --dry-run
 Exit: 0
 Verdict: dry-run reminders: 56 spoke items, 128 board rows; 0 archive-driven closes
