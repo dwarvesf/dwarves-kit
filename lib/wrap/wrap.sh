@@ -720,18 +720,21 @@ cmd_apply() {
 # _pr_detail <url> <number> -- the fields every merge gate reads.
 _pr_detail() {
   gh pr view "$2" --repo "$1" \
-    --json number,title,headRefName,headRefOid,baseRefName,mergeable,mergeStateStatus,reviewDecision,statusCheckRollup 2>/dev/null
+    --json number,title,headRefName,headRefOid,baseRefName,mergeable,mergeStateStatus,reviewDecision,statusCheckRollup,isDraft 2>/dev/null
 }
 
 # _pr_gate <json> <default branch> -- "OK" or "SKIP <reason>". mergeStateStatus carries the
 # unresolved-conversation signal: gh pr view has no reviewThreads field, and BLOCKED is the
 # state GitHub reports for an unresolved thread or an unmet review requirement. Anything but
 # a clean state fails closed here. An empty or null rollup proves nothing on its own, so it
-# passes only when GitHub itself reports the merge state as CLEAN.
+# passes only when GitHub itself reports the merge state as CLEAN. A draft reports
+# mergeable=MERGEABLE and mergeStateStatus=CLEAN on a free private repo, so the draft check
+# runs first: a draft is never eligible no matter what the rest of the state says.
 _pr_gate() {
   printf '%s' "$1" | jq -r --arg def "$2" '
     def checks: (.statusCheckRollup // []);
-    if (.baseRefName != $def) then "SKIP base is \(.baseRefName), not the default branch \($def)"
+    if (.isDraft == true) then "SKIP draft"
+    elif (.baseRefName != $def) then "SKIP base is \(.baseRefName), not the default branch \($def)"
     elif (.mergeable != "MERGEABLE") then "SKIP not mergeable (\(.mergeable // "unknown"))"
     elif ((checks | length) == 0 and ((.mergeStateStatus // "") != "CLEAN"))
       then "SKIP checks are pending or failing"
