@@ -1,8 +1,8 @@
-# SPEC-295: the auth hard-gate regex stops matching the bare word "session"
+# SPEC-296: the auth hard-gate regex stops matching the bare word "session"
 
 **Status:** BUILT (the regex and its fixtures land in this PR; this spec records the contract)
 Lane: full
-**Board:** ID-906. **Proof:** `tests/test-lane-classify.sh`, the SPEC-295 block.
+**Board:** ID-906. **Proof:** `tests/test-lane-classify.sh`, the SPEC-296 block.
 
 ## Problem
 
@@ -17,7 +17,7 @@ Lane: full
 
 ## Verification
 
-`bash tests/test-lane-classify.sh` runs the SPEC-295 block: the two recorded misfire strings and their `--files commands/wrap.md` form classify `normal`; `rotate the session token on login`, `fix session hijacking in the cookie store`, and `expire login sessions after an hour` classify `full`. Negative control: restore the old alternative and the first three fixtures fail with `full`.
+`bash tests/test-lane-classify.sh` runs the SPEC-296 block: the two recorded misfire strings and their `--files commands/wrap.md` form classify `normal`; `rotate the session token on login`, `fix session hijacking in the cookie store`, and `expire login sessions after an hour` classify `full`. Negative control: restore the old alternative and the first three fixtures fail with `full`.
 
 ## Out of scope
 
