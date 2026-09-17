@@ -11,7 +11,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import sync_core  # noqa: E402
 from sync_core import (  # noqa: E402
+    MAX_BOARD_STATUS_FLIPS,
     Plan,
+    Row,
     apply_board,
     build_state,
     describe,
@@ -277,6 +279,51 @@ def test_definitive_spoke_status_flips_board():
     assert not p.src_set_status
 
 
+def _bulk_flip_case(n: int):
+    """n linked rows, each with a definitive spoke status ("shipped") that
+    disagrees with the snapshot ("queued") while the board itself is
+    unchanged: the shape that drives board_set_status entries."""
+    rows, items, smap = {}, [], {}
+    for i in range(n):
+        bid = f"ID-{100 + i}"
+        rid = f"r{i}"
+        rows[bid] = Row(bid, f"row {i}", "queued", i)
+        items.append(item(rid, f"{bid} · row {i}", status="shipped"))
+        smap[bid] = {"rid": rid, "title": f"row {i}", "notes": "",
+                     "status": "queued"}
+    return rows, items, {"map": smap}
+
+
+def test_bulk_flip_breaker_drops_the_whole_batch_over_cap():
+    rows, items, state = _bulk_flip_case(MAX_BOARD_STATUS_FLIPS + 1)
+    p = plan_sync(rows, items, state, app_name="hermes")
+    assert p.board_set_status == []
+    assert p.flips_refused == MAX_BOARD_STATUS_FLIPS + 1
+    assert any("hermes" in n and str(MAX_BOARD_STATUS_FLIPS + 1) in n
+              for n in p.notes)
+
+
+def test_bulk_flip_breaker_allows_exactly_the_cap():
+    rows, items, state = _bulk_flip_case(MAX_BOARD_STATUS_FLIPS)
+    p = plan_sync(rows, items, state, app_name="hermes")
+    assert len(p.board_set_status) == MAX_BOARD_STATUS_FLIPS
+    assert p.flips_refused == 0
+
+
+def test_bulk_flip_breaker_is_scoped_to_its_own_call():
+    """A refusal on one app's plan must not bleed into another app's plan;
+    plan_sync is a pure per-call function, so a second call with its own
+    (small) batch is unaffected by the first call's refusal."""
+    rows_a, items_a, state_a = _bulk_flip_case(MAX_BOARD_STATUS_FLIPS + 1)
+    p_a = plan_sync(rows_a, items_a, state_a, app_name="app-a")
+    assert p_a.flips_refused == MAX_BOARD_STATUS_FLIPS + 1
+
+    rows_b, items_b, state_b = _bulk_flip_case(3)
+    p_b = plan_sync(rows_b, items_b, state_b, app_name="app-b")
+    assert p_b.flips_refused == 0
+    assert len(p_b.board_set_status) == 3
+
+
 def test_board_status_change_pushes_to_spoke():
     items = [item("r1", "ID-10 · Fix the frobnicator", status="claimed")]
     p = plan_sync(parse_board(BOARD), items,
@@ -493,15 +540,25 @@ def test_board_add_flattens_newline_titles():
 
 def test_cli_warns_on_duplicate_and_malformed_rows(capsys):
     import backlog_sync
-    backlog_sync.warn_duplicate_ids(
+    ok = backlog_sync.warn_duplicate_ids(
         BOARD
         + "| ID-10 | dup row | n | queued |\n"
         + "| ID-99 | missing status cell | notes only\n"
         + "| ID-98 | raw pipe | head -c 4 | wc | queued |\n")
     out = capsys.readouterr().out
-    assert "duplicate board rows for ID-10" in out
+    assert ok is False  # duplicates are a refusal, not just a warning
+    assert "ERROR: duplicate board rows for ID-10" in out
+    assert "refusing to sync, fix the board" in out
     assert "malformed board rows" in out
     assert "ID-98" in out and "ID-99" in out
+
+
+def test_cli_warns_but_does_not_refuse_on_malformed_only(capsys):
+    import backlog_sync
+    ok = backlog_sync.warn_duplicate_ids(
+        BOARD + "| ID-99 | missing status cell | notes only\n")
+    capsys.readouterr()
+    assert ok is True  # a malformed row alone is not a refusal
 
 
 FAMILY_FILTER = {"skip_tags": {"family"}}
