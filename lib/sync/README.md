@@ -24,6 +24,15 @@ A spoke-side deletion tombstones the row (mirroring stops; the board is never
 touched). New spoke items without an `ID-` prefix become queued rows in a
 `### Reminders inbox` section and get retitled/keyed with their assigned ID.
 
+An archive pass moves a closed row out of `BACKLOG.md`, so the planner stops
+seeing it and its card used to stay open forever. A linked card now closes
+when its id sits in the board archive with a closed status (`shipped`,
+`dropped`, `done`, `resolved`). The archive is `BACKLOG-archive.md` beside
+the board, or `sync.archive_file` in `[sync]` for a repo that keeps it
+elsewhere. Evidence must be positive: an id missing from both files keeps its
+card open and logs the orphan note, because a truncated or half-merged board
+read would otherwise close every linked card on every spoke.
+
 ## What each app can hold
 
 | Field | Reminders | Notion | Hermes | Multica |

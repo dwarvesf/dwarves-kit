@@ -15,6 +15,11 @@ from datetime import date
 from pathlib import Path
 
 ACTIVE_STATUSES = {"queued", "claimed", "speccing", "validated", "executing"}
+# Status keywords an archive row may carry for its spoke card to be closed.
+# Same set the archive tooling moves out of a board (`_meta/board-archive`),
+# so a row that reached the archive by any other means, or a row whose status
+# cell is malformed, is NOT evidence of a close.
+ARCHIVED_CLOSED = {"shipped", "dropped", "done", "resolved"}
 # Ceiling on spoke-to-board status writes (board_set_status) one plan_sync
 # call may apply per app per tick. A legitimate bulk close of more than 10
 # rows on a spoke in one tick is refused; re-run with --allow-flips N once a
@@ -293,7 +298,8 @@ def intake_ok(body: str, filt: dict | None) -> bool:
 
 def plan_sync(rows: dict, items: list, state: dict,
               sync_fields: bool = True, filt: dict | None = None,
-              app_name: str = "spoke", allow_flips: int = 0) -> Plan:
+              app_name: str = "spoke", allow_flips: int = 0,
+              archived: dict | None = None) -> Plan:
     """Three-way merge between board rows, spoke items, and the snapshot.
 
     `filt` is this app's audience filter (P1): {only_tags, skip_tags,
@@ -306,6 +312,12 @@ def plan_sync(rows: dict, items: list, state: dict,
     bulk-flip breaker (mirrors `plan_sync`'s scope-exit `cap`/`allow` pair):
     the breaker refuses only past `max(MAX_BOARD_STATUS_FLIPS, allow_flips)`,
     so the default (0) leaves the constant in charge.
+
+    `archived` is the archive board parsed the same way `rows` is, keyed by
+    board id. A linked id with no active row closes on the spoke only when
+    that id appears there with a closed status. Absence is never evidence: a
+    truncated or half-merged board file would otherwise read as "every linked
+    row is gone" and close every card on every spoke.
     """
     p = Plan()
     smap = state.get("map", {})
@@ -315,6 +327,7 @@ def plan_sync(rows: dict, items: list, state: dict,
     # link spoke items to board ids: snapshot map first, then title prefix
     linked: dict[str, dict] = {}
     collided: set[str] = set()  # bids with a title-mismatched spoke item
+    unrowed: list[tuple] = []   # (bid, item, entry) linked, row left the board
     for bid, entry in smap.items():
         it = by_rid.get(entry.get("rid", ""))
         if it is None:
@@ -332,6 +345,7 @@ def plan_sync(rows: dict, items: list, state: dict,
                      if b not in smap
                      and titles_agree(entry.get("title", ""), r.item)]
             if len(cands) != 1:
+                unrowed.append((bid, it, entry))
                 continue
             bid = cands[0]
         if bid in linked:
@@ -467,6 +481,23 @@ def plan_sync(rows: dict, items: list, state: dict,
             p.src_set_title.append((it["rid"], want_title))
         if snapd.get("notes") != row.notes:
             p.src_set_body.append((it["rid"], row.notes))
+
+    # Archived rows: the row left the board, so the loop above never visits it
+    # and its card stays open forever (measured live: orphan Reminders cards
+    # went 23 -> 69 in four days after one archive pass). Close the card, but
+    # only against a row found in the archive carrying a closed status. An id
+    # missing from both files stays open and keeps its orphan note.
+    for bid, it, entry in unrowed:
+        if bid in tombstones or entry.get("scoped_out") or it["done"]:
+            continue
+        arch = (archived or {}).get(bid)
+        if arch is None or arch.status_kw not in ARCHIVED_CLOSED:
+            continue
+        if not in_scope(arch, filt):
+            continue
+        p.src_set_status.append((it["rid"], arch.status_kw))
+        p.notes.append(f"{bid}: archived {arch.status_kw}; closing on "
+                       f"{app_name}")
 
     # brand-new spoke items (no ID prefix, not done) -> new board rows
     existing_items = {r.item for r in rows.values()}

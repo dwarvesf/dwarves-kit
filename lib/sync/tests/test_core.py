@@ -911,3 +911,120 @@ def test_renumber_relink_needs_an_unambiguous_match():
     it = item("r1", "[vps-mon] CRIT heartbeat-silent on air.upgrade-check")
     p = plan_sync(rows, [it], dead)
     assert "ID-10" in creates(p) and "ID-11" in creates(p)
+
+
+# --- archived rows close their spoke card -------------------------------------
+
+ARCHIVE = """# Backlog archive
+
+## Archived 2026-09-17
+
+### Section A
+
+| ID | Item | Notes & source | Status |
+|---|---|---|---|
+| ID-40 | Shipped thing | proof in PR #1 | shipped |
+| ID-41 | Dropped thing | not worth it | dropped |
+| ID-42 | Half-written row | someone edited by hand | queued |
+"""
+
+
+def _archived_case(bid, rid="r1", done=False, state_extra=None):
+    """A card linked to `bid` whose row has left the active board."""
+    rows = parse_board(BOARD)
+    state = {"map": {bid: {"rid": rid, "title": f"{bid} work", "notes": "",
+                           "status": "executing"}}}
+    if state_extra:
+        state["map"][bid].update(state_extra)
+    it = item(rid, f"{bid} · {bid} work", done=done)
+    return rows, [it], state
+
+
+def test_archived_shipped_row_closes_its_card():
+    rows, items, state = _archived_case("ID-40")
+    p = plan_sync(rows, items, state, archived=parse_board(ARCHIVE))
+    assert p.src_set_status == [("r1", "shipped")]
+    assert not p.board_set_status and not p.tombstone
+
+
+def test_archived_dropped_row_closes_its_card():
+    rows, items, state = _archived_case("ID-41")
+    p = plan_sync(rows, items, state, archived=parse_board(ARCHIVE))
+    assert p.src_set_status == [("r1", "dropped")]
+
+
+def test_absent_from_board_and_archive_never_closes():
+    """Absence is not evidence. A truncated, mis-parsed, or half-merged board
+    read would otherwise mass-complete every linked card on every spoke."""
+    rows, items, state = _archived_case("ID-77")
+    p = plan_sync(rows, items, state, archived=parse_board(ARCHIVE))
+    assert not p.src_set_status
+    assert any("orphan item" in n for n in p.notes)
+
+
+def test_archived_row_with_an_open_status_never_closes():
+    rows, items, state = _archived_case("ID-42")
+    p = plan_sync(rows, items, state, archived=parse_board(ARCHIVE))
+    assert not p.src_set_status
+
+
+def test_missing_archive_file_closes_nothing_and_does_not_crash():
+    rows, items, state = _archived_case("ID-40")
+    assert not plan_sync(rows, items, state).src_set_status
+    assert not plan_sync(rows, items, state, archived={}).src_set_status
+
+
+def test_empty_board_with_a_full_state_map_plans_zero_closes():
+    """The mass-complete guard. Every linked row vanishes at once (a truncated
+    or half-merged BACKLOG.md); none of them reaches the archive, so not one
+    card closes."""
+    state = {"map": {}}
+    items = []
+    for i in range(50):
+        bid, rid = f"ID-{200 + i}", f"r{i}"
+        state["map"][bid] = {"rid": rid, "title": f"row {i}", "notes": "",
+                             "status": "executing"}
+        items.append(item(rid, f"{bid} · row {i}"))
+    p = plan_sync({}, items, state, archived=parse_board(ARCHIVE))
+    assert p.src_set_status == []
+    assert p.board_set_status == [] and p.tombstone == []
+
+
+def test_archived_close_respects_tombstones_scope_and_done_cards():
+    rows, items, state = _archived_case("ID-40")
+    tombstoned = dict(state, tombstones=["ID-40"])
+    assert not plan_sync(rows, items, tombstoned,
+                         archived=parse_board(ARCHIVE)).src_set_status
+
+    _r, scoped_items, scoped = _archived_case(
+        "ID-40", state_extra={"scoped_out": True})
+    assert not plan_sync(rows, scoped_items, scoped,
+                         archived=parse_board(ARCHIVE)).src_set_status
+
+    _r, done_items, done_state = _archived_case("ID-40", done=True)
+    assert not plan_sync(rows, done_items, done_state,
+                         archived=parse_board(ARCHIVE)).src_set_status
+
+
+def test_active_row_behavior_is_unchanged_by_an_archive():
+    """An id with a live row is planned from the row, never from the archive,
+    even when the archive still carries a stale copy of it."""
+    archive = ARCHIVE.replace("| ID-40 |", "| ID-10 |")
+    items = [item("r1", "ID-10 · Fix the frobnicator", done=True)]
+    state = {"map": snap("ID-10", "r1", "Fix the frobnicator")}
+    p = plan_sync(parse_board(BOARD), items, state,
+                  archived=parse_board(archive))
+    assert p.board_set_status == [("ID-10", "shipped")]
+    assert not p.src_set_status
+
+
+def test_read_archive_tolerates_a_missing_file():
+    """Most repos have no archive file until their first archive pass."""
+    import backlog_sync
+    with tempfile.TemporaryDirectory() as tmp:
+        missing = Path(tmp) / "BACKLOG-archive.md"
+        assert backlog_sync.read_archive(missing, "ID") == {}
+        assert backlog_sync.read_archive(None, "ID") == {}
+        missing.write_text(ARCHIVE)
+        assert set(backlog_sync.read_archive(missing, "ID")) == {
+            "ID-40", "ID-41", "ID-42"}
