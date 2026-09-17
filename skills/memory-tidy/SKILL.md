@@ -43,3 +43,9 @@ This is the judgment half of the kit's memory plane. The mechanical half is `sta
 - "Obviously stale" with no tested referent.
 - Keeping a doubtful note because deleting feels safer: the honest form is UNSURE + operator list.
 - Hand-editing index lines instead of deriving them from frontmatter.
+
+## Cadence
+
+This instance has a declared cadence in the `## Cadence` table of `docs/patterns/audit-loop.md`.
+Record a finished pass with `bin/audit ran memory-tidy "<one line>"`, including a CLEAN one, so
+`bin/audit due` stops naming it. The kit ships no scheduler: `due` is what a human or a job reads.

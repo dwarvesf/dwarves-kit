@@ -83,3 +83,9 @@ choice with no caller, a release check trusting a sha alone, and no retention st
 - "Obviously stale" with no quoted `gh api` evidence.
 - Dispatching Tier 2 for every workflow when Tier 1 cleared most of them.
 - Auto-deleting a release or a runner: always proposed in the PR body, never auto-applied.
+
+## Cadence
+
+This instance has a declared cadence in the `## Cadence` table of `docs/patterns/audit-loop.md`.
+Record a finished pass with `bin/audit ran ci-drift "<one line>"`, including a CLEAN one, so
+`bin/audit due` stops naming it. The kit ships no scheduler: `due` is what a human or a job reads.

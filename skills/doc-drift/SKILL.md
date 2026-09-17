@@ -94,3 +94,9 @@ enumeration list.
   split exists to prevent exactly this spend.
 - Writing a fresh hardcoded count while fixing a stale one.
 - Auditing dated records: out of scope, always.
+
+## Cadence
+
+This instance has a declared cadence in the `## Cadence` table of `docs/patterns/audit-loop.md`.
+Record a finished pass with `bin/audit ran doc-drift "<one line>"`, including a CLEAN one, so
+`bin/audit due` stops naming it. The kit ships no scheduler: `due` is what a human or a job reads.
