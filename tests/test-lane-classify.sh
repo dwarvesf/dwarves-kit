@@ -105,5 +105,16 @@ classify_files_is "docs/x.md" "add user authentication with jwt sessions" full "
 classify_is "explain mega-merge.sh in the architecture doc" full "no --files: legacy text-only mention still escalates (regression guard)"
 
 echo ""
+echo "=== auth hard-gate: the bare word session is not a trigger (SPEC-295) ==="
+# Two real misfires: report-prose edits that only mention the session classified full.
+classify_is "docs(wrap): scope the Left alone report section to the session by default" normal "SPEC-295 bare 'session' in report prose -> not full"
+classify_is "wrap report: Left alone lists only the session's own residue by default" normal "SPEC-295 bare 'session's' in report prose -> not full"
+classify_files_is "commands/wrap.md" "docs(wrap): scope the Left alone report section to the session by default" normal "SPEC-295 same with --files commands/wrap.md -> not full"
+# The auth meanings still escalate.
+classify_is "rotate the session token on login" full "SPEC-295 session token -> full"
+classify_is "fix session hijacking in the cookie store" full "SPEC-295 session hijacking -> full"
+classify_is "expire login sessions after an hour" full "SPEC-295 login sessions -> full"
+
+echo ""
 echo "=== $PASS/$TOTAL passed, $FAIL failed ==="
 [ "$FAIL" -eq 0 ]
