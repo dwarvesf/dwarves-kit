@@ -74,3 +74,9 @@ Run after any merge batch that touched `commands/`, `agents/`, `skills/`, or `ho
 - Dispatching Tier 2 with an empty delta: pure spend, the cheap-first split exists to prevent it.
 - Auto-flipping a trigger-class disagreement: either side may be wrong; it is the operator's call.
 - Rewriting whole topology diagrams for one delta feature: place the delta, leave the rest.
+
+## Cadence
+
+This instance has a declared cadence in the `## Cadence` table of `docs/patterns/audit-loop.md`.
+Record a finished pass with `bin/audit ran topology-drift "<one line>"`, including a CLEAN one, so
+`bin/audit due` stops naming it. The kit ships no scheduler: `due` is what a human or a job reads.

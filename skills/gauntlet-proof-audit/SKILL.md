@@ -97,3 +97,9 @@ never rewrites a historical record; it reports discrepancies for the operator.
 On-demand first: run after a gauntlet campaign lands, before citing corpus numbers in a report,
 or when a record's honesty is in question. For a recurring pass, wire `/loop` or a schedule the
 same way `doc-drift` does; there is no default cron, cadence is the operator's to wire.
+
+## Cadence
+
+This instance has a declared cadence in the `## Cadence` table of `docs/patterns/audit-loop.md`.
+Record a finished pass with `bin/audit ran gauntlet-proof-audit "<one line>"`, including a CLEAN one, so
+`bin/audit due` stops naming it. The kit ships no scheduler: `due` is what a human or a job reads.

@@ -213,3 +213,9 @@ checkout, and a multi-repo sweep is that command in a loop, not a mode inside it
   not what the goal's own roadmap still has open, and this loop's one applied verdict rides on
   the difference.
 - Auditing a directory that is not a git repo. That is `disk-reclaim`'s surface.
+
+## Cadence
+
+This instance has a declared cadence in the `## Cadence` table of `docs/patterns/audit-loop.md`.
+Record a finished pass with `bin/audit ran repo-hygiene "<one line>"`, including a CLEAN one, so
+`bin/audit due` stops naming it. The kit ships no scheduler: `due` is what a human or a job reads.

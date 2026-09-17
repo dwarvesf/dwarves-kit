@@ -161,3 +161,9 @@ enumeration list.
 - Re-running the checks by hand in a browser when the tool already quoted the response.
 - Believing a finding measured before the fix deployed.
 - Hardcoding a site list anywhere in this repo. The list is the consumer's, and it has no default.
+
+## Cadence
+
+This instance has a declared cadence in the `## Cadence` table of `docs/patterns/audit-loop.md`.
+Record a finished pass with `bin/audit ran web-drift "<one line>"`, including a CLEAN one, so
+`bin/audit due` stops naming it. The kit ships no scheduler: `due` is what a human or a job reads.

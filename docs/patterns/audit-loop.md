@@ -60,6 +60,29 @@ Hard rules: a verdict with no checkable evidence downgrades to UNSURE. Evidence 
 
 Write the item enumeration as a discrete, reproducible list (a command or a script, not "look around"). That single discipline makes any instance adoptable by a loop runtime with zero rework: the runtime turns the list into a queue, tracks per-item state, and resumes mid-set. Drivers, smallest first: one interactive pass (default), `/loop` or a schedule for cadence, the loop-engineering runtime for large sets that need resume. See the loop-engineering skill for the driver side.
 
+## Cadence
+
+Every instance declares how often it should run. The table below is the single source of
+truth for that field: `lib/audit/audit.sh` parses it, so a new instance becomes schedulable
+by adding one row here. Legal values are `weekly` (7 days), `biweekly` (14), `monthly` (30),
+and `quarterly` (90).
+
+| Instance | Cadence | Why |
+|---|---|---|
+| backlog-reconcile | weekly | rows go stale the moment a dependency ships; two hand passes found 6 stale rows in 96 |
+| web-drift | weekly | a public surface changes without anyone in this repo touching a file |
+| memory-tidy | biweekly | notes accumulate slowly, and a wrong note misleads until someone reads it |
+| ci-drift | monthly | workflow and runner state moves on a release rhythm, not a daily one |
+| doc-drift | monthly | doc claims drift with the code, and `/kit:docs` already catches the diff-scoped half |
+| repo-hygiene | monthly | the decay detectors are age-based, so a shorter period reports the same files |
+| topology-drift | monthly | the registry is generated, so drift is rare and shows up at the pre-push guard first |
+| gauntlet-proof-audit | monthly | records are append-only; a discrepancy does not get worse with age |
+
+Cadence says when a pass is DUE, never that one fired. `audit due` reads the last-run marker
+per instance and prints which ones the cadence has come around for; a human or a scheduled
+job decides what to do with that list. Running a pass records its own marker with
+`audit ran <instance>`. The kit ships no cron and no daemon for this.
+
 ## Known instances
 
 `memory-tidy` and `stale-sweep` (personal skills, ops-toolkit/dotfiles) are the first two instances; the 2026-07-31 memory-store run (140 notes -> 127, three DANGER items caught) is the worked example. Derivation record: ops-toolkit `research/2026-07-31-claude-md-stack-architecture.md` §4.

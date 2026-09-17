@@ -144,3 +144,9 @@ cadence, per the audit-loop pattern's own driver ladder; the pass itself stays o
   `-F` closes regex injection, not shell-quoting injection; pass titles as separate arguments.
 - Shipping without the re-verify step: an applied fix that didn't actually resolve what it
   targeted must never reach a PR silently.
+
+## Cadence
+
+This instance has a declared cadence in the `## Cadence` table of `docs/patterns/audit-loop.md`.
+Record a finished pass with `bin/audit ran backlog-reconcile "<one line>"`, including a CLEAN one, so
+`bin/audit due` stops naming it. The kit ships no scheduler: `due` is what a human or a job reads.
