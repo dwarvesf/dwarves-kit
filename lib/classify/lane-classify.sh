@@ -51,7 +51,7 @@ GATE_LEDGER="$LIB_ROOT/gate/gate-ledger.sh"
 # Hard-gate flags (any hit -> full). name <-> regex, index-aligned.
 _hard_name=(auth data-model audit-security external-provider public-contract weaken-validation kit-machinery)
 _hard_re=(
-  'auth[a-z]*|login|logout|password|jwt|\bsession(s)?\b|refresh token|permission|\brole(s)?\b|tenant'
+  'auth[a-z]*|login|logout|password|jwt|\bsessions? (token|cookie|id|hijack|fixation|store|management|expiry)|(login|auth|user) sessions?\b|refresh token|permission|\brole(s)?\b|tenant'
   'migrat|schema|data[ -]model|uniqueness|retention|data loss|delete[s]? .*data|drop (table|column)'
   'audit|privacy|sensitive data|access log|secret|token|crypto|encrypt|\bsecurity\b|harden|vulnerab|exploit|injection|\bxss\b|\bcsrf\b|rate.?limit'
   'external (api|provider|service)|payment|billing|webhook|provider sdk|\bqueue(s)?\b|email send'
