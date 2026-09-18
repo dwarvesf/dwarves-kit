@@ -390,6 +390,29 @@ if [ -n "${PLUGIN_LIB:-}" ] && [ -z "${KIT_FORCE_FULL:-}" ]; then
   echo "[plugin detected] kit@dwarves-marketplace is installed; runtime comes from the plugin."
   echo "Doing a COMPAT-ONLY install (legacy path shims), not the full bash install,"
   echo "to avoid double-registering hooks."
+  # Self-heal stale bare agent copies from a full install that predates this
+  # compat-mode branch (or ran with KIT_FORCE_FULL=1): the plugin already
+  # serves these under the kit: namespace, so a leftover bare copy is a
+  # duplicate, not a second install path. Same removal a full --uninstall
+  # does, run here so a plain re-install cleans it up too.
+  # The bare copy is unowned user data (it may have been edited), so it is
+  # moved aside, never rm'd, and only when the cached plugin really ships
+  # that agent; a checkout ahead of the plugin release leaves the copy alone.
+  PLUGIN_AGENTS="$(dirname "$PLUGIN_LIB")/agents"
+  RETIRED_AGENTS="$CLAUDE_DIR/agents.retired-$(date +%Y%m%d)"
+  if [ -d "$KIT_DIR/agents" ] && [ -d "$CLAUDE_DIR/agents" ] && [ ! -L "$CLAUDE_DIR/agents" ]; then
+    for AGENT_FILE in "$KIT_DIR/agents/"*.md; do
+      AGENT_NAME=$(basename "$AGENT_FILE")
+      [ -f "$CLAUDE_DIR/agents/$AGENT_NAME" ] || continue
+      [ -f "$PLUGIN_AGENTS/$AGENT_NAME" ] || continue
+      mkdir -p "$RETIRED_AGENTS"
+      if mv "$CLAUDE_DIR/agents/$AGENT_NAME" "$RETIRED_AGENTS/$AGENT_NAME"; then
+        echo "[ok] Retired stale bare agent copy to $RETIRED_AGENTS (plugin provides kit:${AGENT_NAME%.md}): $AGENT_NAME"
+      else
+        echo "[warn] Could not retire $CLAUDE_DIR/agents/$AGENT_NAME; left in place"
+      fi
+    done
+  fi
   mkdir -p "$CLAUDE_DIR/dwarves-kit/docs"
   for f in bin lib hooks WORKFLOW.md AGENTS.md docs/WORKFLOW.md docs/impl-playbook; do
     kit_symlink_hardened "$KIT_DIR/$f" "$CLAUDE_DIR/dwarves-kit/$f"
