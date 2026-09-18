@@ -90,7 +90,7 @@ Commit any of the operator's own outstanding work under its own name and message
 Otherwise re-run the step 0 check first. Then, once per PR: `bin/wrap merge --apply <repo>`. It merges exactly one own, green PR whose base is the default branch and reports every skip reason for the rest.
 
 - `wrap merge` never runs twice for the same PR in one call; call it again for the next PR.
-- A branch committed in a HAND-MADE worktree (one the `EnterWorktree` tool did not create, typically a foreign repo) lands through `bin/wrap land <worktree>` instead: it pushes the named branch, opens the PR with `--head`, squash-merges it as its own call, verifies the tree the same way, fast-forwards the main checkout, then removes the worktree and deletes the branch. A refusal names its reason and writes nothing; a `PULL BLOCKED` line means the main checkout stayed behind and the tidy still ran.
+- A branch committed in a HAND-MADE worktree (one the `EnterWorktree` tool did not create, typically a foreign repo) lands through `bin/wrap land <worktree>` instead: it pushes the named branch, then opens the PR with `--head`, or adopts the operator's own already-open PR for that branch, squash-merges it as its own call, verifies the tree the same way, fast-forwards the main checkout, then removes the worktree and deletes the branch. A refusal names its reason and writes nothing; a `PULL BLOCKED` line means the main checkout stayed behind and the tidy still ran.
 - When the session's open PRs form a chain, retarget every dependent onto its grandparent's target first, then merge parent-first, oldest ancestor first.
 - Never merge a PR the operator did not open.
 - After `gh` reports the PR MERGED, `wrap merge` fetches the default branch and verifies it actually holds the PR head's tree before reporting success; a `TREE MISMATCH` means gh's word and the tree disagree (a stale head SHA or a late push outran the gate) and the merge exits 3 without deleting the branch, so treat it as a merge that did not really land and re-check the PR by hand.
@@ -268,7 +268,7 @@ Record the run, one line: `bash lib/gate/gate-ledger.sh record <rid> wrap ran "<
 
 - Never force-pushes.
 - Never rewrites history.
-- Never merges a PR it did not open.
+- Never merges a PR the operator did not open.
 - Never touches a dirty file.
 - Never removes a dirty or foreign worktree.
 - Never dispatches a deploy on its own initiative; it checks one the operator already dispatched or asked it to dispatch as part of this pass.
