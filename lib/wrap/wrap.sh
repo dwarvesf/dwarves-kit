@@ -300,6 +300,23 @@ _wt_locked() {
   [ -n "$gd" ] && [ -f "${gd}/locked" ]
 }
 
+# _wt_lock_pid <worktree path> -- echoes the pid named in the worktree's lock reason, empty when
+# unlocked or the reason names none. The Agent tool writes a reason shaped like
+# "claude agent <id> (pid 47291 start ...)".
+_wt_lock_pid() {
+  local gd
+  gd="$(git -C "$1" rev-parse --absolute-git-dir 2>/dev/null)" || return
+  [ -f "${gd}/locked" ] || return
+  grep -oE 'pid [0-9]+' "${gd}/locked" 2>/dev/null | grep -oE '[0-9]+' | head -1
+}
+
+# _wt_lock_live <worktree path> -- 0 when the lock names a pid that is still alive.
+_wt_lock_live() {
+  local pid
+  pid="$(_wt_lock_pid "$1")"
+  [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null
+}
+
 # _wt_cleared <repo> <worktree path> -- 0 when the path is gone AND the list no longer names it.
 # A removal that cannot delete the directory (a read-only parent) still prunes the admin entry,
 # so neither half alone proves the worktree went. The removal is believed only after both.
@@ -358,6 +375,9 @@ _apply_worktrees() {
       echo "     SKIP ${wt}: ${wtb} tip moved during this run ($(_short "$scanned") -> $(_short "$tip"))"; continue
     fi
     lock="unlocked"; _wt_locked "$wt" && lock="locked"
+    if [ "$lock" = "locked" ] && _wt_lock_live "$wt"; then
+      echo "     SKIP ${wt}: locked by live pid $(_wt_lock_pid "$wt") (an agent is still running)"; continue
+    fi
     verdict="remove worktree ${wt} [${wtb}, ${lock}] and delete ${wtb} (${proof})"
     if [ "$APPLY" != 1 ]; then
       echo "     WOULD ${verdict}"; continue
@@ -365,10 +385,13 @@ _apply_worktrees() {
     if ! _write_guard "$repo"; then
       echo "     SKIP ${wt}: index.lock held by another writer"; continue
     fi
-    # A lock is not a reason to keep a proven worktree: the Agent tool locks every worktree it
-    # creates, so the locked ones are exactly the finished agent runs. `-f -f`, not `--force`:
-    # one --force refuses a locked worktree outright (`cannot remove a locked working tree`),
-    # measured on git 2.55; two overrides the lock once every guard above has passed.
+    # A lock alone is not proof the run finished: the Agent tool locks every worktree it creates,
+    # including one made seconds ago for a subagent still running, so a fresh branch can be a
+    # trivial ancestor of origin/<def> while the lock's pid is still alive (checked above, which
+    # skips before this point). What remains here is a lock whose pid is dead or absent, safe to
+    # override. `-f -f`, not `--force`: one --force refuses a locked worktree outright (`cannot
+    # remove a locked working tree`), measured on git 2.55; two overrides the lock once every
+    # guard above has passed.
     run "$repo" "$verdict" git -C "$repo" worktree remove -f -f "$wt"
     if _wt_cleared "$repo" "$wt"; then
       run "$repo" "delete ${wtb} (${proof}, its ${lock} worktree is gone)" \
