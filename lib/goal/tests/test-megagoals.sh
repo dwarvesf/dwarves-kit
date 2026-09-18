@@ -179,6 +179,91 @@ eout="$(bash "$MG" list --repo "$EMPTY")"
 erc=$?
 if [[ "$eout" == "no mega-goals" && $erc -eq 0 ]]; then ok "no mega-goals, exit 0"; else no "expected 'no mega-goals'/exit 0, got: $eout (rc=$erc)"; fi
 
+# --- "## Status" shape: real-world ROADMAPs (ops-toolkit herdr-quicklook) --
+# track completion under "## Status (source of truth; ...)" instead of, or
+# alongside, "## Sub-goals". status-only has no "## Sub-goals" header at
+# all; status-and-table has a "## Sub-goals" table with zero checkboxes
+# (wave/dependency listing, not a tracker) plus the real tally in "## Status".
+
+STATUSREPO="$(mktemp -d)"
+mkdir -p "$STATUSREPO/_meta/megagoals/status-only" \
+         "$STATUSREPO/_meta/megagoals/status-and-table"
+
+cat > "$STATUSREPO/_meta/megagoals/status-only/ROADMAP.md" <<'EOF'
+# Mega-goal: status-only
+
+## Wave / DAG
+
+  [ ] 01 thing-one   auto
+  [ ] 02 thing-two   auto
+
+## Status (source of truth; PR # recorded on open, SHA on merge)
+
+- [x] 01 thing-one, PR #1, merged
+- [ ] 02 thing-two, PR #
+EOF
+
+cat > "$STATUSREPO/_meta/megagoals/status-and-table/ROADMAP.md" <<'EOF'
+# Mega-goal: status-and-table
+
+## Sub-goals
+
+| # | ID | Title |
+|---|---|---|
+| 01 | 100 | thing-one |
+| 02 | 101 | thing-two |
+| 03 | 102 | thing-three |
+
+## Status
+
+- [x] SG-01 thing-one, shipped
+- [x] SG-02 thing-two, shipped
+- [ ] SG-03 thing-three, open
+EOF
+
+echo "[13] status-only: tallied from '## Status' when there is no '## Sub-goals'"
+stout="$(bash "$MG" list --repo "$STATUSREPO" --all)"
+line="$(printf '%s\n' "$stout" | grep '^status-only ')"
+if [[ "$line" == "status-only  1/2  HANDOFF:no  POINTER:-" ]]; then
+  ok "status-only line: $line"
+else
+  no "expected 1/2, got: $line"
+fi
+
+echo "[14] status-and-table: checkbox-free Sub-goals table contributes 0, Status carries 2/3"
+line="$(printf '%s\n' "$stout" | grep '^status-and-table ')"
+if [[ "$line" == "status-and-table  2/3  HANDOFF:no  POINTER:-" ]]; then
+  ok "status-and-table line: $line"
+else
+  no "expected 2/3 (no double-count from the empty Sub-goals table), got: $line"
+fi
+
+# --- worktree dedup: a .claude/worktrees copy of the same repo must not ---
+# double-count a mega-goal (each worktree under the repo is a full checkout,
+# so an unpruned find sees the same ROADMAP.md once per worktree).
+
+WTREPO="$(mktemp -d)"
+mkdir -p "$WTREPO/_meta/megagoals/a" \
+         "$WTREPO/.claude/worktrees/wt1/_meta/megagoals/a"
+cat > "$WTREPO/_meta/megagoals/a/ROADMAP.md" <<'EOF'
+# Mega-goal: a
+
+## Sub-goals
+
+- [ ] 01-only, still open
+EOF
+cp "$WTREPO/_meta/megagoals/a/ROADMAP.md" \
+   "$WTREPO/.claude/worktrees/wt1/_meta/megagoals/a/ROADMAP.md"
+
+echo "[12] a .claude/worktrees copy of the same mega-goal is pruned, one line only"
+wout="$(bash "$MG" list --repo "$WTREPO")"
+wcount=$(printf '%s\n' "$wout" | grep -c '^a  ')
+if [[ "$wcount" -eq 1 && "$wout" == *$'\n'"1 mega-goals" ]]; then
+  ok "one line for a, worktree copy pruned"
+else
+  no "expected 1 line + '1 mega-goals', got: $wout"
+fi
+
 echo "[11] NC unknown subcommand: usage error, exit 64"
 set +e
 uerr="$(bash "$MG" bogus 2>&1)"
