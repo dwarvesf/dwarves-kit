@@ -1181,15 +1181,22 @@ cmd_land() {
   if [ "$openrc" -ne 0 ]; then
     echo "     PR REFUSED: open-PR lookup for ${branch} failed" >&2; return 2
   fi
-  open_json="$(printf '%s' "$open_json" | jq -c '[.[] | select((.isCrossRepository // false) | not)]' 2>/dev/null)"
+  # A lookup gh answered with unparseable JSON is a failed lookup, never "no open PR".
+  open_json="$(printf '%s' "$open_json" | jq -c '[.[] | select((.isCrossRepository // false) | not)]' 2>/dev/null)" || {
+    echo "     PR REFUSED: open-PR lookup for ${branch} failed" >&2; return 2; }
   local open_count; open_count="$(printf '%s' "$open_json" | jq -r 'length' 2>/dev/null)"
-  case "$open_count" in ''|*[!0-9]*) open_count=0 ;; esac
+  case "$open_count" in ''|*[!0-9]*)
+    echo "     PR REFUSED: open-PR lookup for ${branch} failed" >&2; return 2 ;;
+  esac
 
   local created n
   if [ "$open_count" -gt 1 ]; then
     echo "     PR REFUSED: ${open_count} open PRs for ${branch}" >&2; return 2
   elif [ "$open_count" -eq 1 ]; then
     n="$(printf '%s' "$open_json" | jq -r '.[0].number' 2>/dev/null)"
+    case "$n" in
+      ''|*[!0-9]*) echo "     PR REFUSED: open-PR lookup for ${branch} named no PR number" >&2; return 2 ;;
+    esac
     local open_base; open_base="$(printf '%s' "$open_json" | jq -r '.[0].baseRefName' 2>/dev/null)"
     if [ "$open_base" != "$def" ]; then
       echo "     PR REFUSED: open PR #${n} targets ${open_base}, not ${def}" >&2; return 2
@@ -1209,7 +1216,7 @@ cmd_land() {
         echo "     PR REFUSED: open PR #${n} is a draft and gh pr ready failed" >&2; return 2; }
     fi
     echo "     adopted PR #${n}"
-    [ "$flags_given" -eq 1 ] && echo "     note: adopted PR #${n} keeps its own title and body"
+    [ "$flags_given" -eq 1 ] && echo "     note: adopted PR #${n} keeps its own title and body" >&2
   else
     # `--head`, never `--base`: a base the caller names is the way a PR ends up targeting
     # another feature branch. With --repo, gh targets the repository's own default branch.

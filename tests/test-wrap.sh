@@ -1653,11 +1653,23 @@ LWT_FL="$(cd "$TMPD/ld-repo-adopt-flags/wt" && pwd -P)"
 : > "$GH_STUB_CALLS"
 out="$(GH_STUB_OPEN_HEAD_feat_land="$(open_pr_json 17 main me)" GH_STUB_LAND_REPO="$LWT_FL" \
   GH_STUB_LAND_REMOTE="$TMPD/ld-bare-adopt-flags" GH_STUB_LAND_BRANCH=feat/land GH_STUB_LAND_DEF=main \
-  "$WRAP" land "$LWT_FL" --title "custom title" 2>&1)"; rc=$?
+  "$WRAP" land "$LWT_FL" --title "custom title" 2>"$TMPD/adopt-flags.err")"; rc=$?
 chk "adopt: flags-ignored case exits 0" "$rc"
 chk_has "adopt: flags-ignored case is adopted" "$out" "adopted PR #17"
-chk_has "adopt: flags-ignored case notes the flags are kept" "$out" \
+chk_has "adopt: the kept-flags note goes to stderr" "$(cat "$TMPD/adopt-flags.err")" \
   "note: adopted PR #17 keeps its own title and body"
+chk_no "adopt: the kept-flags note stays off stdout" "$out" "keeps its own title and body"
+
+echo "--- a lookup that answers unparseable JSON refuses instead of creating a PR"
+build_land adopt-badjson
+LWT_BJ="$(cd "$TMPD/ld-repo-adopt-badjson/wt" && pwd -P)"
+: > "$GH_STUB_CALLS"
+out="$(GH_STUB_OPEN_HEAD_feat_land='not json' GH_STUB_LAND_REPO="$LWT_BJ" \
+  GH_STUB_LAND_REMOTE="$TMPD/ld-bare-adopt-badjson" GH_STUB_LAND_BRANCH=feat/land GH_STUB_LAND_DEF=main \
+  "$WRAP" land "$LWT_BJ" 2>&1)"; rc=$?
+chk "adopt: bad lookup JSON exits 2" "$([ "$rc" -eq 2 ]; echo $?)"
+chk_has "adopt: bad lookup JSON names the failed lookup" "$out" "open-PR lookup for feat/land failed"
+chk_no "adopt: bad lookup JSON never creates a PR" "$(cat "$GH_STUB_CALLS")" "pr create"
 
 # ===========================================================================
 echo "=== default-branch: detection, fall-through, and the no-remote refusal ==="
