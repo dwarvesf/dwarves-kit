@@ -52,6 +52,17 @@ TMP2="$(mktemp -d)"
 mkdir -p "$TMP2/plugins/cache/dwarves-marketplace/kit/1.0.0/lib"
 out2="$(HOME="$HOME_SB2" CLAUDE_DIR="$TMP2" KIT_FORCE_FULL=1 bash "$KIT_DIR/install.sh" 2>&1 || true)"
 if { trap '' PIPE; printf '%s' "$out2" 2>/dev/null || :; } | grep -q 'COMPAT-ONLY'; then echo "FAIL KIT_FORCE_FULL still compat"; fail=1; else echo "ok   KIT_FORCE_FULL bypasses compat"; fi
+# ... but never reopens the bare-agent duplicate: the plugin serves agents under
+# kit:, so the full install with a plugin cached must not copy agents/ again.
+[ -z "$(ls -A "$TMP2/agents" 2>/dev/null)" ]; chk "KIT_FORCE_FULL with plugin cached copies no bare agents" $?
+{ trap '' PIPE; printf '%s' "$out2" 2>/dev/null || :; } | grep -q 'Agents served by the cached plugin'; chk "install log says agents come from the plugin" $?
+
+# --- no plugin cached -> the full install still copies agents (negative control) ---
+TMP4="$(mktemp -d)"; HOME_SB4="$(mktemp -d)"
+trap 'rm -rf "$TMP" "${TMP2:-}" "${TMP3:-}" "$TMP4" "$HOME_SB1" "$HOME_SB2" "${HOME_SB3:-}" "$HOME_SB4"' EXIT
+out4="$(HOME="$HOME_SB4" CLAUDE_DIR="$TMP4" bash "$KIT_DIR/install.sh" 2>&1 || true)"
+KIT_AGENT_ANY="$(ls "$KIT_DIR/agents/"*.md | head -1 | xargs basename)"
+[ -f "$TMP4/agents/$KIT_AGENT_ANY" ]; chk "no plugin cached: full install still copies agents" $?
 
 # --- Tripwire (ID-463): the compat branch's CLI-shim write must never escape
 # into the REAL $HOME, no matter what changes upstream in install.sh. $HOME is
