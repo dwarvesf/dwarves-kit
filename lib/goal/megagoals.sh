@@ -11,12 +11,22 @@
 #   _meta/megagoals/*/        experiments/*/megagoals/*/
 #   tools/*/docs/megagoals/*/ docs/megagoals/*/
 #
-# Sub-goal progress is counted from the "## Sub-goals" section only: every
-# line carrying a `- [ ]` or `- [x]` token counts, whether it is a top-level
-# checklist bullet or embedded inside a markdown table's Status cell (both
-# real-world ROADMAP shapes use the same checkbox literal, so one grep
-# handles both without a table parser). A `- [x]` outside that section (e.g.
-# an "## Imported history" bullet) is not counted.
+# Sub-goal progress is counted from the "## Sub-goals" and "## Status"
+# sections only: every line carrying a `- [ ]` or `- [x]` token counts,
+# whether it is a top-level checklist bullet or embedded inside a markdown
+# table's Status cell (both real-world ROADMAP shapes use the same checkbox
+# literal, so one grep handles both without a table parser). A `- [x]`
+# outside those two sections (e.g. an "## Imported history" bullet) is not
+# counted.
+#
+# Why both sections: some real ROADMAPs (e.g. ops-toolkit's
+# herdr-quicklook/megagoals/*) track completion under a
+# "## Status (source of truth; ...)" header instead of "## Sub-goals" --
+# sometimes as the ONLY checklist section, sometimes alongside a
+# "## Sub-goals" table that lists sub-goals with no checkboxes at all (a
+# wave/dependency declaration, not a status tracker). Observed real files
+# never carry live checkboxes in both sections at once, so summing them is
+# safe.
 #
 # Read-only. Pure bash + find/awk, no python. Zero network calls. bash 3.2
 # compatible (no associative arrays, no mapfile/readarray).
@@ -46,13 +56,21 @@ repo_root() {
 }
 
 # Every ROADMAP.md under one of the four known mega-goal shapes, sorted.
+# Prunes .claude/worktrees, node_modules, and .git: each worktree under a
+# repo is a full checkout, so an unpruned find double-counts every
+# mega-goal once per worktree (610-line real-world blowup on ops-toolkit,
+# 547 of them worktree copies -- the true count was 63).
 find_roadmaps() { # <repo>
-  find "$1" -type f -name ROADMAP.md \( \
+  find "$1" \( \
+      -path '*/.claude/worktrees' -o \
+      -path '*/node_modules' -o \
+      -path '*/.git' \
+    \) -prune -o -type f -name ROADMAP.md \( \
       -path '*/_meta/megagoals/*/ROADMAP.md' -o \
       -path '*/experiments/*/megagoals/*/ROADMAP.md' -o \
       -path '*/tools/*/docs/megagoals/*/ROADMAP.md' -o \
       -path '*/docs/megagoals/*/ROADMAP.md' \
-    \) 2>/dev/null | sort
+    \) -print 2>/dev/null | sort
 }
 
 # done/total sub-goals, counted from the "## Sub-goals" section only.
@@ -60,6 +78,7 @@ find_roadmaps() { # <repo>
 count_subgoals() { # <roadmap-file>
   awk '
     /^## Sub-goals/ { insec=1; next }
+    /^## Status/    { insec=1; next }
     insec && /^## / { insec=0 }
     insec && /- \[x\]/ { done++; total++; next }
     insec && /- \[ \]/ { total++; next }
