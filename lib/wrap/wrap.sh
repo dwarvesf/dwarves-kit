@@ -1106,17 +1106,17 @@ _tree_verify() {
 # override: a ship-gate refusal on the push surfaces with the gate's own stderr and exit
 # code, and the run stops there.
 cmd_land() {
-  local wt="" title="" body_file="" arg count=0 want=""
+  local wt="" title="" body_file="" arg count=0 want="" flags_given=0
   for arg in "$@"; do
     if [ -n "$want" ]; then
       case "$want" in title) title="$arg" ;; body) body_file="$arg" ;; esac
       want=""; continue
     fi
     case "$arg" in
-      --title) want=title ;;
-      --title=*) title="${arg#--title=}" ;;
-      --body-file) want=body ;;
-      --body-file=*) body_file="${arg#--body-file=}" ;;
+      --title) want=title; flags_given=1 ;;
+      --title=*) title="${arg#--title=}"; flags_given=1 ;;
+      --body-file) want=body; flags_given=1 ;;
+      --body-file=*) body_file="${arg#--body-file=}"; flags_given=1 ;;
       -*) echo "wrap.sh land: unknown flag '$arg'" >&2; return 64 ;;
       *) count=$(( count + 1 )); wt="$arg" ;;
     esac
@@ -1171,22 +1171,69 @@ cmd_land() {
   fi
   echo "     pushed ${branch} ($(_short "$tip"))"
 
-  # `--head`, never `--base`: a base the caller names is the way a PR ends up targeting
-  # another feature branch. With --repo, gh targets the repository's own default branch.
-  local created n
-  if [ -n "$body_file" ]; then
-    created="$(gh pr create --repo "$url" --head "$branch" --title "$title" --body-file "$body_file" 2>&1)"; rc=$?
-  else
-    created="$(gh pr create --repo "$url" --head "$branch" --title "$title" --body "$title" 2>&1)"; rc=$?
+  # A full-lane run opens the PR before land runs (evidence, review), so land checks for
+  # that PR first: `gh pr create` on an already-open branch just refuses. Fork entries
+  # (isCrossRepository) are dropped before counting, so a fork's same-named branch never
+  # counts as the operator's own open PR.
+  local open_json openrc
+  open_json="$(gh pr list --repo "$url" --head "$branch" --state open \
+    --json number,baseRefName,author,isDraft,isCrossRepository 2>/dev/null)"; openrc=$?
+  if [ "$openrc" -ne 0 ]; then
+    echo "     PR REFUSED: open-PR lookup for ${branch} failed" >&2; return 2
   fi
-  if [ "$rc" -ne 0 ]; then
-    echo "     PR REFUSED: gh pr create exited ${rc}: ${created}" >&2; return 2
-  fi
-  n="$(printf '%s\n' "$created" | tail -1)"; n="${n##*/}"
-  case "$n" in
-    ''|*[!0-9]*) echo "     PR REFUSED: gh pr create named no PR number: ${created}" >&2; return 2 ;;
+  # A lookup gh answered with unparseable JSON is a failed lookup, never "no open PR".
+  open_json="$(printf '%s' "$open_json" | jq -c '[.[] | select((.isCrossRepository // false) | not)]' 2>/dev/null)" || {
+    echo "     PR REFUSED: open-PR lookup for ${branch} failed" >&2; return 2; }
+  local open_count; open_count="$(printf '%s' "$open_json" | jq -r 'length' 2>/dev/null)"
+  case "$open_count" in ''|*[!0-9]*)
+    echo "     PR REFUSED: open-PR lookup for ${branch} failed" >&2; return 2 ;;
   esac
-  echo "     opened PR #${n}"
+
+  local created n
+  if [ "$open_count" -gt 1 ]; then
+    echo "     PR REFUSED: ${open_count} open PRs for ${branch}" >&2; return 2
+  elif [ "$open_count" -eq 1 ]; then
+    n="$(printf '%s' "$open_json" | jq -r '.[0].number' 2>/dev/null)"
+    case "$n" in
+      ''|*[!0-9]*) echo "     PR REFUSED: open-PR lookup for ${branch} named no PR number" >&2; return 2 ;;
+    esac
+    local open_base; open_base="$(printf '%s' "$open_json" | jq -r '.[0].baseRefName' 2>/dev/null)"
+    if [ "$open_base" != "$def" ]; then
+      echo "     PR REFUSED: open PR #${n} targets ${open_base}, not ${def}" >&2; return 2
+    fi
+    # The same login read and case-insensitive compare _open_own_prs uses for `merge`.
+    local me; me="$(gh api user --jq .login 2>/dev/null)"
+    if [ -z "$me" ]; then
+      echo "     PR REFUSED: open PR #${n}: operator login did not resolve" >&2; return 2
+    fi
+    local open_author; open_author="$(printf '%s' "$open_json" | jq -r '.[0].author.login // ""' 2>/dev/null)"
+    if [ "$(printf '%s' "$open_author" | tr 'A-Z' 'a-z')" != "$(printf '%s' "$me" | tr 'A-Z' 'a-z')" ]; then
+      echo "     PR REFUSED: open PR #${n} is authored by ${open_author}" >&2; return 2
+    fi
+    local open_draft; open_draft="$(printf '%s' "$open_json" | jq -r '.[0].isDraft // false' 2>/dev/null)"
+    if [ "$open_draft" = "true" ]; then
+      gh pr ready "$n" --repo "$url" >/dev/null 2>&1 || {
+        echo "     PR REFUSED: open PR #${n} is a draft and gh pr ready failed" >&2; return 2; }
+    fi
+    echo "     adopted PR #${n}"
+    [ "$flags_given" -eq 1 ] && echo "     note: adopted PR #${n} keeps its own title and body" >&2
+  else
+    # `--head`, never `--base`: a base the caller names is the way a PR ends up targeting
+    # another feature branch. With --repo, gh targets the repository's own default branch.
+    if [ -n "$body_file" ]; then
+      created="$(gh pr create --repo "$url" --head "$branch" --title "$title" --body-file "$body_file" 2>&1)"; rc=$?
+    else
+      created="$(gh pr create --repo "$url" --head "$branch" --title "$title" --body "$title" 2>&1)"; rc=$?
+    fi
+    if [ "$rc" -ne 0 ]; then
+      echo "     PR REFUSED: gh pr create exited ${rc}: ${created}" >&2; return 2
+    fi
+    n="$(printf '%s\n' "$created" | tail -1)"; n="${n##*/}"
+    case "$n" in
+      ''|*[!0-9]*) echo "     PR REFUSED: gh pr create named no PR number: ${created}" >&2; return 2 ;;
+    esac
+    echo "     opened PR #${n}"
+  fi
 
   gh pr merge "$n" --repo "$url" --squash --match-head-commit "$tip"; rc=$?
   if [ "$rc" -ne 0 ]; then echo "     MERGE FAILED #${n}: exit ${rc}" >&2; return 2; fi
