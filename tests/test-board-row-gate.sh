@@ -4,6 +4,7 @@
 # (command + cwd), and asserts the verdict: allow (exit 0) or block (exit 2).
 #
 # Hermetic: HOME, the log dir, and every repo live under one temp dir.
+# HOOK_BASH=/bin/bash runs the hook under macOS bash 3.2 instead of the PATH bash.
 set -u
 
 KIT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
@@ -27,7 +28,7 @@ LAST_ERR=""
 check() {
   local label="$1" expect="$2" cwd="$3" cmd="$4" rc actual
   LAST_ERR=$(jq -cn --arg c "$cmd" --arg d "$cwd" \
-      '{tool_name:"Bash", cwd:$d, tool_input:{command:$c}}' | bash "$HOOK" 2>&1 >/dev/null)
+      '{tool_name:"Bash", cwd:$d, tool_input:{command:$c}}' | "${HOOK_BASH:-bash}" "$HOOK" 2>&1 >/dev/null)
   rc=$?
   case "$rc" in 0) actual=allow ;; 2) actual=block ;; *) actual="exit=$rc" ;; esac
   if [ "$actual" = "$expect" ]; then
@@ -151,6 +152,32 @@ check "9.4 same staged row, no special state, BLOCKS"                block "$R" 
 DWARVES_KIT_SKIP_BOARD_ROW_GATE=1 check "9.5 kill switch"            allow "$R" "git commit -m 'x'"
 NH="$T/repo-nohead"; mkdir -p "$NH/_meta"; git init -q "$NH"; row ID-001 > "$NH/$B"; git -C "$NH" add -A
 check "9.6 first commit (no HEAD) skips"                             allow "$NH" "git commit -m 'x'"
+
+echo "== Review regressions: same-call staging, pathspecs, command position, segment scope =="
+reset_repo "$R"; row ID-007 >> "$R/$B"; echo y > "$R/other"
+check "11.1 git add -A && git commit (row unstaged) BLOCKS"      block "$R" "git add -A && git commit -m 'docs: x'"
+check "11.2 git add <board> && git commit BLOCKS"                block "$R" "git add _meta/BACKLOG.md && git commit -m 'docs: x'"
+check "11.3 git add <other> && git commit, row unstaged"         allow "$R" "git add other && git commit -m 'feat: other'"
+check "11.4 pathspec . covers the board BLOCKS"                  block "$R" "git commit -m 'docs: x' ."
+check "11.5 pathspec _meta covers the board BLOCKS"              block "$R" "git commit -m 'docs: x' _meta"
+git -C "$R" add "$B" other
+check "11.6 pathspec -- <other> leaves the staged board out"     allow "$R" "git commit -m 'feat: o' -- other"
+check "11.7 commit text inside an echo string"                   allow "$R" "echo 'remember to git commit later'"
+check "11.8 /usr/bin/git commit BLOCKS"                          block "$R" "/usr/bin/git commit -m 'docs: x'"
+check "11.9 GIT_EDITOR=true git commit BLOCKS"                   block "$R" "GIT_EDITOR=true git commit -m 'docs: x'"
+check "11.10 marker in a later echo -m BLOCKS"                   block "$R" "git commit -m 'docs: x' && echo -m 'board-row-ok: y'"
+check "11.11 marker in a later heredoc BLOCKS"                   block "$R" "$(printf '%s\n' "git commit -m 'docs: x' && cat <<EOF" 'board-row-ok: y' 'EOF')"
+check "11.12 here-string is not a heredoc BLOCKS"                block "$R" "$(printf '%s\n' "git commit -m 'docs: x' <<<\"EOF\"" 'board-row-ok: y' 'EOF')"
+# shellcheck disable=SC2016
+check "11.13 nested quotes in -m never read as a pathspec"       block "$R" 'git commit -m "$(printf "%s" "docs: x")"'
+check "11.14 redirect target is not a pathspec BLOCKS"           block "$R" "git commit -m 'docs: x' > $T/commit.log"
+check "11.15 -F /dev/zero with a new row blocks, no hang"        block "$R" "git commit -F /dev/zero"
+reset_repo "$R"
+check "11.16 -F /dev/zero with no board change, no hang"         allow "$R" "git commit -F /dev/zero"
+row ID-008 >> "$R/$B"; git -C "$R" add "$B"; git -C "$R" commit -qm 'docs: row' -m 'board-row-ok: fixture'
+check "11.17 --amend --no-edit over a row HEAD added BLOCKS"     block "$R" "git commit --amend --no-edit"
+check "11.18 --amend with the marker"                            allow "$R" "git commit --amend -m 'docs: row' -m 'board-row-ok: asked'"
+git -C "$R" reset -q --hard HEAD^
 
 echo "== Log =="
 if grep -q '| BLOCKED |' "$DWARVES_KIT_LOG_DIR/board-row-gate.log" 2>/dev/null \
