@@ -13,12 +13,13 @@ A session no longer creates board rows or staging candidates as a side effect. W
 | report-lint, REPORTED item | `bash lib/wrap/report-lint.sh r.md` | 0 | clean |
 | report-lint, STAGED item | same | 1 | `uses a retired verdict` |
 | report-lint, FILED item | same | 1 | `uses a retired verdict` |
+| report-lint, verdict and closure mismatch | `BUILT ... (lane=tiny, reported: x)`, `REPORTED ... (lane=normal, verified: ...)`, `BUILT ... (lane=full, verified: ...)` | 1 each | pinned in `tests/test-wrap.sh` (591 pass) after the review round |
 
 ## Green run
 ```
 Command: bash tests/run-all.sh --changed origin/master
 Exit: 0
-Verdict: PASS (55 suites; test-wrap, test-kit-foldin-hooks, test-intake-sweep, test-reflect-propose, test-config-registry, test-meta all ok)
+Verdict: PASS (54 to 55 suites across the three runs; test-wrap, test-kit-foldin-hooks, test-intake-sweep, test-reflect-propose, test-config-registry, test-meta all ok)
 ```
 
 ## Negative control
@@ -35,6 +36,10 @@ Exit: 1 (under mutation, RED expected)
 Verdict: PASS
 ```
 Re-admitting the retired verdicts turns the `STAGED`/`FILED` lint cases red. Restored and green again.
+
+## Review
+
+One correctness-lens review (Opus). Its six findings were all fixed in the last commit: the verdict and closure pairing, the anchored closure token, the leftover `workflow-map.md` and README prose, and the retro summary counts in print-only mode.
 
 ## Not proven
 - `test-kit-foldin-hooks` row 4i (harvest section, untouched here) failed once under `run-all`'s parallel load and passed serially and on the rerun. It is a timing flake in the harvest detach check.
