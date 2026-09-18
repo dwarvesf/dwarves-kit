@@ -1,6 +1,6 @@
 # SPEC-298: webcheck flags a share card that social crawlers drop
 
-**Status:** BUILT (the check and its fixtures land in this PR; this spec records the contract)
+**Status:** VALIDATED (revised after one validation lens; the check lands in the same PR)
 Lane: full
 **Proof:** `lib/webcheck/tests/test_webcheck.py`, the SPEC-298 block.
 
@@ -11,23 +11,32 @@ The page tier checks that `og:title`, `og:description` and `og:image` exist. It 
 ## Contract
 
 - `og:url` joins the required OG tags. A page without it reports `missing OG tags: og:url` in the existing warning.
-- A page whose `og:image` path ends in `.svg`, case-insensitive, ignoring any query or fragment, gets one warning: `og:image is an SVG, which Facebook, LinkedIn and X drop from share cards`.
+- A page's `og:image` counts as an SVG when any of three holds:
+  - `urlsplit(value.strip()).path.lower().endswith(".svg")`. This covers absolute and relative URLs, any case, and ignores a query or fragment.
+  - `value.strip().lower().startswith("data:image/svg+xml")`.
+  - the page's `og:image:type` meta, stripped and lowercased, equals `image/svg+xml`.
+- An SVG `og:image` adds exactly one warning with this fixed text and no page-derived value: `og:image is an SVG, which Facebook, LinkedIn and X drop from share cards`.
 - Both findings are warnings. Neither is a hard fail, which matches how missing OG tags already report.
-- The warning strings print the page-derived value through `!r` where they carry one, per the no-forged-lines rule in `lib/webcheck/SPEC.md`.
-- No new HTTP request. The check reads the tag value only and never fetches the image.
+- No new HTTP request. The check reads tag values only and never fetches the image.
+- `skills/web-drift/SKILL.md` maps the SVG warning to FIX, beside "missing OG tag".
 
 ## Design record
 
-Checking the tag value alone keeps the page tier at its fixed request budget (`lib/webcheck/SPEC.md`, budget section). Fetching the image to read its content type would catch an SVG served from a `.png` path. That case was not seen in the wild, and it costs one request per page, so it stays out. A warning, not a hard fail, keeps the verdict grammar consistent with the other OG findings.
+Checking tag values alone keeps the page tier at its fixed request budget (`lib/webcheck/SPEC.md`, budget section). Reading `og:image:type` is free and catches an SVG served from a non-`.svg` path when the page declares it. Sniffing the served content type would catch an undeclared one too, but it costs one request per page and that case was not seen in the wild. A warning, not a hard fail, keeps the verdict grammar consistent with the other OG findings. The warning carries no page value, so it cannot forge a report line.
 
 ## Test plan
 
-| Case | Input | Expected |
+| Case | `og:image` input | Expected |
 |---|---|---|
-| raster image, all tags | GOOD_HTML plus `og:url` | no OG warning |
-| SVG image | `og:image` = `https://x/a/fig.svg` | the SVG warning, no hard fail |
-| SVG with query | `https://x/fig.SVG?v=2` | the SVG warning |
-| `.svg` only mid-path | `https://x/svg/fig.png` | no SVG warning |
+| raster, all tags | `https://docs.example.com/img.png` (GOOD_HTML, which now carries `og:url`) | no OG warning at all |
+| absolute SVG | `https://x/a/fig.svg` | the SVG warning, no hard fail |
+| uppercase with query | `https://x/fig.SVG?v=2` | the SVG warning |
+| fragment | `https://x/fig.svg#x` | the SVG warning |
+| relative | `/img/fig.svg` | the SVG warning |
+| padded | `  https://x/fig.svg  ` | the SVG warning |
+| data URI | `data:image/svg+xml,<svg/>` | the SVG warning |
+| declared type | `https://x/card.png` plus `og:image:type` = `image/svg+xml` | the SVG warning |
+| `svg` mid-path only | `https://x/svg/fig.png` | no SVG warning |
 | missing og:url | GOOD_HTML without `og:url` | `missing OG tags: og:url` |
 
 ## Verification
@@ -36,4 +45,4 @@ Checking the tag value alone keeps the page tier at its fixed request budget (`l
 
 ## Out of scope
 
-No image fetch, no content-type sniff, no `fb:app_id` check. `fb:app_id` only enables Facebook Insights and is not a share-card defect.
+No image fetch, no content-type sniff of the served image, no `fb:app_id` check. `fb:app_id` only enables Facebook Insights and is not a share-card defect.
