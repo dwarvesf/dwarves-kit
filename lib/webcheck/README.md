@@ -36,7 +36,7 @@ one URL per line parses the same as a comma list.
 | Tier | Checks |
 |---|---|
 | groundwork | robots.txt answers and names a Sitemap; sitemap.xml answers; llms.txt answers and carries an orientation section rather than a bare link index; an unknown path answers 404 or 410 and its body routes an agent somewhere; markdown negotiated for `Accept: text/markdown` carries `Vary: Accept` |
-| page | title present; meta description present, 150 to 160 characters, not the site default; exactly one h1; 500 or more visible characters without JavaScript; canonical link; OG and Twitter card tags; Article-shaped JSON-LD with datePublished; a complete Organization block; two or more internal links |
+| page | title present; meta description present, 150 to 160 characters, not the site default; exactly one h1; 500 or more visible characters without JavaScript; canonical link; OG and Twitter card tags, including og:url; og:image not an SVG; Article-shaped JSON-LD with datePublished; a complete Organization block; two or more internal links |
 | api | activates only on evidence (`/openapi.json` serves JSON, or llms.txt names an API base). Then: OpenAPI 3.x with a title, paths, and a servers list; the canonical server answers; an unrouted path returns JSON carrying an error field; RateLimit headers on a documented GET; a versioned base or a stated deprecation policy; an llms.txt developer section |
 
 A tier that does not apply reports so and drops out of the denominator. It is never a failure.

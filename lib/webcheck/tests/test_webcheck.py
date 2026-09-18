@@ -24,6 +24,7 @@ GOOD_HTML = """
 <meta property="og:title" content="How We Cut Token Cost">
 <meta property="og:description" content="desc">
 <meta property="og:image" content="https://docs.example.com/img.png">
+<meta property="og:url" content="https://docs.example.com/posts/token-cost/">
 <meta name="twitter:card" content="summary_large_image">
 <script type="application/ld+json">
 {"@type": "TechArticle", "datePublished": "2026-07-01", "dateModified": "2026-07-15"}
@@ -1063,6 +1064,96 @@ class _Capsys:
 
     def close(self):
         sys.stdout = self._saved
+
+
+# SPEC-298: the og:image SVG check and the og:url required tag.
+
+def _html_with_og_image(image_content, image_type=None):
+    extra = f'\n<meta property="og:image:type" content="{image_type}">' if image_type else ""
+    old_line = '<meta property="og:image" content="https://docs.example.com/img.png">'
+    new_line = f'<meta property="og:image" content="{image_content}">{extra}'
+    return GOOD_HTML.replace(old_line, new_line)
+
+
+def _audit(monkeypatch, html):
+    monkeypatch.setattr(core, "fetch", lambda url, timeout=core.TIMEOUT: (200, html.encode()))
+    return core.audit_page("https://docs.example.com/posts/token-cost/", homepage_meta_desc=None)
+
+
+SVG_WARNING = "og:image is an SVG, which Facebook, LinkedIn and X drop from share cards"
+
+
+def test_og_raster_image_with_og_url_has_no_og_warning(monkeypatch):
+    result = _audit(monkeypatch, GOOD_HTML)
+    assert not any("missing OG tags" in w for w in result.warnings)
+    assert SVG_WARNING not in result.warnings
+    assert result.hard_fails == []
+
+
+def test_og_image_absolute_svg_warns(monkeypatch):
+    result = _audit(monkeypatch, _html_with_og_image("https://x/a/fig.svg"))
+    assert SVG_WARNING in result.warnings
+    assert result.hard_fails == []
+
+
+def test_og_image_uppercase_svg_with_query_warns(monkeypatch):
+    result = _audit(monkeypatch, _html_with_og_image("https://x/fig.SVG?v=2"))
+    assert SVG_WARNING in result.warnings
+
+
+def test_og_image_svg_with_fragment_warns(monkeypatch):
+    result = _audit(monkeypatch, _html_with_og_image("https://x/fig.svg#x"))
+    assert SVG_WARNING in result.warnings
+
+
+def test_og_image_relative_svg_warns(monkeypatch):
+    result = _audit(monkeypatch, _html_with_og_image("/img/fig.svg"))
+    assert SVG_WARNING in result.warnings
+
+
+def test_og_image_padded_svg_warns(monkeypatch):
+    result = _audit(monkeypatch, _html_with_og_image("  https://x/fig.svg  "))
+    assert SVG_WARNING in result.warnings
+
+
+def test_og_image_data_uri_svg_warns(monkeypatch):
+    result = _audit(monkeypatch, _html_with_og_image("data:image/svg+xml,<svg/>"))
+    assert SVG_WARNING in result.warnings
+
+
+def test_og_image_declared_svg_type_warns(monkeypatch):
+    result = _audit(
+        monkeypatch,
+        _html_with_og_image("https://x/card.png", image_type="image/svg+xml"),
+    )
+    assert SVG_WARNING in result.warnings
+
+
+def test_og_image_two_svg_triggers_warn_once(monkeypatch):
+    result = _audit(
+        monkeypatch,
+        _html_with_og_image("https://x/fig.svg", image_type="image/svg+xml"),
+    )
+    assert result.warnings.count(SVG_WARNING) == 1
+
+
+def test_og_image_malformed_url_does_not_abort_the_audit(monkeypatch):
+    result = _audit(monkeypatch, _html_with_og_image("https://[x/fig.png"))
+    assert SVG_WARNING not in result.warnings
+    assert result.hard_fails == []
+
+
+def test_og_image_svg_in_mid_path_only_does_not_warn(monkeypatch):
+    result = _audit(monkeypatch, _html_with_og_image("https://x/svg/fig.png"))
+    assert SVG_WARNING not in result.warnings
+
+
+def test_missing_og_url_is_flagged(monkeypatch):
+    html = GOOD_HTML.replace(
+        '<meta property="og:url" content="https://docs.example.com/posts/token-cost/">\n', ""
+    )
+    result = _audit(monkeypatch, html)
+    assert any("missing OG tags: og:url" in w for w in result.warnings)
 
 
 if __name__ == "__main__":

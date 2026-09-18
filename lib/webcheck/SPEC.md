@@ -23,10 +23,10 @@ without a `Vary` that includes `Accept`; a declared API surface serves a broken 
 unreachable canonical server, or a non-JSON error body.
 
 A warning means an agent can proceed but reads less: metadata length, a duplicated site-default
-meta description, more than one h1, a missing canonical, missing OG or Twitter tags, missing or
-non-Article JSON-LD, a missing or incomplete Organization block, too few internal links, an
-llms.txt that carries no orientation section, a missing rate-limit header, an unversioned API
-base with no stated deprecation policy.
+meta description, more than one h1, a missing canonical, missing OG or Twitter tags, an og:image
+that is an SVG, missing or non-Article JSON-LD, a missing or incomplete Organization block, too
+few internal links, an llms.txt that carries no orientation section, a missing rate-limit header,
+an unversioned API base with no stated deprecation policy.
 
 ## The three tiers
 
