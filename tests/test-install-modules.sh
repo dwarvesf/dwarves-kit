@@ -66,8 +66,8 @@ echo "== NC --with board,stats: wires exactly those + records in kit.toml; re-ru
 H2="$(mktemp -d)"
 HOME="$H2" bash "$KIT_DIR/install.sh" --with board,stats >/tmp/kitmod-h2.log 2>&1
 WIRED2="$(wired_hooks "$H2/.claude/settings.json")"
-EXPECT_BOARD="$(printf '%s\nbacklog-stage.sh' "$EXPECT_SPINE" | sort -u)"
-assert_true "--with board,stats wires spine + backlog-stage.sh (board's hook) only" "$([ "$WIRED2" = "$EXPECT_BOARD" ]; echo $?)"
+EXPECT_BOARD="$(printf '%s\nbacklog-stage.sh\nboard-row-gate.sh' "$EXPECT_SPINE" | sort -u)"
+assert_true "--with board,stats wires spine + backlog-stage.sh + board-row-gate.sh (board's hooks) only" "$([ "$WIRED2" = "$EXPECT_BOARD" ]; echo $?)"
 assert_true "kit.toml records board = true" "$(grep -qx 'board = true' "$H2/.claude/dwarves-kit/kit.toml"; echo $?)"
 assert_true "kit.toml records stats = true (hookless module, still recorded)" "$(grep -qx 'stats = true' "$H2/.claude/dwarves-kit/kit.toml"; echo $?)"
 assert_true "kit.toml records session = false (not requested)" "$(grep -qx 'session = false' "$H2/.claude/dwarves-kit/kit.toml"; echo $?)"
@@ -127,7 +127,7 @@ mkdir -p "$H6/.claude"
 cp "$KIT_DIR/settings.json" "$H6/.claude/settings.json"
 HOME="$H6" bash "$KIT_DIR/install.sh" --prune --with board >/tmp/kitmod-h6.log 2>&1
 WIRED6="$(wired_hooks "$H6/.claude/settings.json")"
-EXPECT_PRUNE="$(printf '%s\nbacklog-stage.sh' "$EXPECT_SPINE" | sort -u)"
+EXPECT_PRUNE="$(printf '%s\nbacklog-stage.sh\nboard-row-gate.sh' "$EXPECT_SPINE" | sort -u)"
 assert_true "--prune --with board trims to exactly spine + board (drops the old all-hooks set)" "$([ "$WIRED6" = "$EXPECT_PRUNE" ]; echo $?)"
 
 # ============================================================
@@ -214,7 +214,7 @@ declare -a HOOKLESS_MODULES=(queue stats quiz_gate weekend_batch sync)
 COV_FAIL=""
 for m in "${HOOKED_MODULES[@]}"; do
   case "$m" in
-    board) HOOKS="backlog-stage.sh" ;;
+    board) HOOKS="backlog-stage.sh board-row-gate.sh" ;;
     session) HOOKS="context-readiness.sh output-offload.sh pre-compact-backup.sh post-compact-reinject.sh session-state-save.sh harvest.sh citation-guard.sh context-budget.sh batch-debt-warn.sh" ;;
     advisor) HOOKS="context-hints.sh tool-policy-guard.sh" ;;
     cosmetic) HOOKS="auto-format.sh notification.sh slop-cleaner.sh statusline.sh codebase-index.sh permission-auto-approve.sh" ;;

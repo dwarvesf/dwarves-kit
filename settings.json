@@ -72,6 +72,16 @@
         "hooks": [
           {
             "type": "command",
+            "command": "bash $HOME/.claude/dwarves-kit/hooks/board-row-gate.sh",
+            "timeout": 5
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
             "command": "bash $HOME/.claude/dwarves-kit/hooks/batch-debt-warn.sh",
             "timeout": 5
           }
