@@ -514,11 +514,6 @@ def _auto_stage():
     return os.environ.get("BACKLOG_STAGE_AUTO", "").strip().lower() in ("1", "true", "yes", "on")
 
 
-def _print_unstaged(blocks, who):
-    sys.stdout.write("".join(blocks))
-    print(f"{who}: printed, not staged (BACKLOG_STAGE_AUTO is off)")
-
-
 def run_retro(retro_path, staging, backlog, dry_run):
     """Stage a retro's action items. Deterministic: no LLM, no grounding pass, no refute.
     The items were written by a human in a retro; the evidence IS the retro."""
@@ -537,10 +532,10 @@ def run_retro(retro_path, staging, backlog, dry_run):
         blocks.append(block)
         staged.append(c["title"])
 
-    if blocks and not dry_run and not _auto_stage():
-        _print_unstaged(blocks, "reflect propose --retro")
-        return 0
-    if blocks and not dry_run:
+    stage = _auto_stage()
+    if blocks and not dry_run and not stage:
+        sys.stdout.write("".join(blocks))
+    if blocks and not dry_run and stage:
         header = "" if os.path.isfile(staging) else (
             "# Backlog staging (auto, via reflect propose)\n\n"
             "Candidates auto-extracted from the ledger. Review + promote by hand "
@@ -553,10 +548,15 @@ def run_retro(retro_path, staging, backlog, dry_run):
     if dry_run:
         sys.stdout.write("".join(blocks) or "reflect propose --retro: nothing new to stage\n")
         return 0
+    if not stage:
+        print(f"reflect propose --retro: {len(cands)} action item{'s' if len(cands) != 1 else ''} read, "
+              f"{len(staged)} printed, {len(skipped)} duplicate; "
+              f"printed, not staged (BACKLOG_STAGE_AUTO is off)")
+        return 0
     print(f"reflect propose --retro: {len(cands)} action item{'s' if len(cands) != 1 else ''} read, "
           f"{len(staged)} staged, {len(skipped)} duplicate -> "
-          f"{staging if blocks else '(nothing new)'}\n"
-          f"  review with: reflect drain   promote with: board promote <n>")
+          f"{staging if blocks else '(nothing new)'}"
+          + ("\n  review with: reflect drain   promote with: board promote <n>" if blocks else ""))
     return 0
 
 

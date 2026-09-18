@@ -127,7 +127,7 @@ Layered by design: the SPINE installs unconditionally (six hooks guarding push, 
 
 | Module | What it wires | Kind |
 |---|---|---|
-| `board` | `backlog-stage` (SessionEnd: stage session work-items to the board); its `--surface` pass also runs `intake-sweep` (consumer-declared deferred-link sources, config-gated) | 1 hook |
+| `board` | `backlog-stage` (SessionEnd: stage session work-items to a staging file, opt-in via `BACKLOG_STAGE_AUTO=1`, default off); its `--surface` pass also runs `intake-sweep` (consumer-declared deferred-link sources, config-gated) | 1 hook |
 | `session` | `context-readiness`, `output-offload`, `pre-compact-backup`, `post-compact-reinject`, `session-state-save`, `harvest`, `citation-guard`, `context-budget` (warns once per 100k-token band once live context passes 200k, `KIT_CTX_WARN`/`KIT_CTX_STEP`); plus a PATH shim for the `session` CLI (`session <intel\|observe\|recall\|report\|semantic>`, ADR-0034: the five prefixed CLIs collapsed into one entry) | 8 hooks + 1 CLI |
 | `advisor` | `context-hints` (session-elapsed + keyword skill hints) + `tool-policy-guard` (PreToolUse allow/ask/deny per tool domain; inert until a `tool-policy.json` exists) | 2 hooks |
 | `cosmetic` | `auto-format`, `notification`, `slop-cleaner`, `statusline`, `codebase-index`, `permission-auto-approve` | 6 hooks |
@@ -489,7 +489,7 @@ For the full file listing including individual agent/hook/command names, run `gi
 
 **Hook logs.** Hooks that make enforcement decisions append to `~/.claude/dwarves-kit/logs/` (`anti-rationalization.log`, `safety-gate.log`, `spec-drift-guard.log`, `slop-cleaner.log`). These build the eval corpus for future optimization.
 
-**Weekly scheduler.** The kit ships ONE weekly LaunchAgent: a dispatcher over a declarative jobs list (session-intel digest, `reflect propose` staging; adding a job = one line, never a new plist). Consumer instantiates it: `bash deploy/macos/install`; runbook at [`deploy/macos/README.md`](deploy/macos/README.md).
+**Weekly scheduler.** The kit ships ONE weekly LaunchAgent: a dispatcher over a declarative jobs list (session-intel digest, `reflect propose`, print-only unless `BACKLOG_STAGE_AUTO=1` is set in `~/.config/kit-weekly/env`; adding a job = one line, never a new plist). Consumer instantiates it: `bash deploy/macos/install`; runbook at [`deploy/macos/README.md`](deploy/macos/README.md).
 
 **Testing.** `bash tests/run-all.sh` with no argument runs only the suites the diff touches, plus six always-on tree-wide lints (kit-contract, config-registry, no-personal-paths, no-scattered-ids, boundary-lint, meta), about 1 to 2 minutes on a Mac. `--all` is the full glob, 13 to 15 minutes. `RUN_ALL_JOBS` defaults to `auto` on macOS and `1` on Linux. Single suites still run on their own: `bash tests/test-hooks.sh` covers hook behavior, `bash tests/test-meta.sh` covers structural integrity (manifests, frontmatter, cross-links), `bash tests/run-workflow.sh` walks the CI workflow's steps locally and prints only the red ones.
 

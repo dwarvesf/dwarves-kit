@@ -343,7 +343,8 @@ What an ordinary change in this repo runs, from edit to landed.
 `/kit:wrap` is a git landing step here, nothing more: board flips, commit, merge own PRs,
 deploy check, worktree tidy, activity line, report. Its heavier half is config. `[wrap]
 distill` turns the distill pass on at all; `build_candidates` lets step 7b wire a distilled
-candidate into its home repo; `drain_staged` lets the staged rows run; `before` and `after`
-hang a skill on each side of the landing. Each item the report lists under `**Built:**`
-opens with a verdict word, BUILT, STAGED, FILED, or NOTE, and `lib/wrap/report-lint.sh`
-fails an item without one.
+candidate into its home repo; `drain_staged` runs only rows the operator staged by hand,
+since step 7b stages nothing; `before` and `after` hang a skill on each side of the landing.
+Each item the report lists under `**Built:**` opens with a verdict word, BUILT, REPORTED, or
+NOTE, and `lib/wrap/report-lint.sh` fails an item without one. A candidate not built is
+REPORTED, never filed as a board row or staged.

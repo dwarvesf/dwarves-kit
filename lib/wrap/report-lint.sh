@@ -232,14 +232,29 @@ else
   # `reported:` with a one-line why for one left in the report. An item carrying a lane and
   # neither reports a classification and no outcome, which is the same hole the `**Built:**`
   # line itself exists to close, one level down. The retired closures (`staged`, `filed:`,
-  # `capture failed:`) no longer count.
+  # `capture failed:`) no longer count. The closure must also match the verdict: BUILT owes
+  # `verified:`, REPORTED owes `reported:`, and `lane=full` is never BUILT here, because that
+  # lane owes a spec and a review. The token is anchored to the suffix's own `(` or `,` so
+  # `reported:` inside free text or `unreported:` never counts.
   if [ "${#built_items[@]}" -gt 0 ]; then
     _l_idx=0
     for _l_item in "${built_items[@]}"; do
       _l_idx=$((_l_idx + 1))
       printf '%s' "$_l_item" | grep -qE 'lane=[a-z]+' || continue
-      printf '%s' "$_l_item" | grep -qE 'verified:|reported:' && continue
-      echo "line 0: '**Built:**' item ${_l_idx} names a lane with no closure; add 'verified: <check>, <commit or PR>' for a build, or 'reported: <one-line why>' for one left in the report" >&2
+      _l_close=""
+      printf '%s' "$_l_item" | grep -qE '[(,][[:space:]]*verified:' && _l_close="verified"
+      printf '%s' "$_l_item" | grep -qE '[(,][[:space:]]*reported:' && _l_close="${_l_close:+$_l_close+}reported"
+      _l_want=""
+      case "$_l_item" in BUILT\ *) _l_want="verified" ;; REPORTED\ *) _l_want="reported" ;; esac
+      if [ -z "$_l_close" ]; then
+        echo "line 0: '**Built:**' item ${_l_idx} names a lane with no closure; add 'verified: <check>, <commit or PR>' for a build, or 'reported: <one-line why>' for one left in the report" >&2
+      elif printf '%s' "$_l_item" | grep -qE 'lane=full' && [ "$_l_close" != "reported" ]; then
+        echo "line 0: '**Built:**' item ${_l_idx} closes a full-lane candidate as built; a full lane is never built at session close, report it with 'reported: <why>'" >&2
+      elif [ -n "$_l_want" ] && [ "$_l_close" != "$_l_want" ]; then
+        echo "line 0: '**Built:**' item ${_l_idx} pairs its verdict with the wrong closure; BUILT owes 'verified:', REPORTED owes 'reported:'" >&2
+      else
+        continue
+      fi
       echo "  ${_l_item}" >&2
       findings=$((findings + 1))
     done

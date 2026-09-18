@@ -2108,6 +2108,20 @@ chk_has "the retired closure reads as no closure" "$out" "names a lane with no c
 out="$(_report '✅ **Needs you:** NOTHING' | sed 's|^\*\*Built:\*\* .*|**Built:** REPORTED cron-fire NEW (precedent: nothing matched): tools/cron-fire (lane=normal, staged: build_candidates off)|' | bash "$LINT" 2>&1)"; rc=$?
 chk "a retired staged closure no longer closes a lane" "$([ "$rc" -eq 1 ]; echo $?)"
 
+out="$(_report '✅ **Needs you:** NOTHING' | sed 's|^\*\*Built:\*\* .*|**Built:** BUILT cron-fire NEW (precedent: nothing matched): tools/cron-fire (lane=full, verified: bash tests/test-cron.sh, a1b2c3d)|' | bash "$LINT" 2>&1)"; rc=$?
+chk "a full lane closed as built fails, full is never built at session close" "$([ "$rc" -eq 1 ]; echo $?)"
+chk_has "the finding names the full-lane rule" "$out" "closes a full-lane candidate as built"
+
+out="$(_report '✅ **Needs you:** NOTHING' | sed 's|^\*\*Built:\*\* .*|**Built:** BUILT cron-fire NEW (precedent: nothing matched): tools/cron-fire (lane=tiny, reported: nope)|' | bash "$LINT" 2>&1)"; rc=$?
+chk "BUILT closed as reported fails" "$([ "$rc" -eq 1 ]; echo $?)"
+chk_has "the finding names the verdict and closure mismatch" "$out" "pairs its verdict with the wrong closure"
+
+out="$(_report '✅ **Needs you:** NOTHING' | sed 's|^\*\*Built:\*\* .*|**Built:** REPORTED cron-fire NEW (precedent: nothing matched): tools/cron-fire (lane=normal, verified: bash tests/test-cron.sh, a1b2c3d)|' | bash "$LINT" 2>&1)"; rc=$?
+chk "REPORTED closed as verified fails" "$([ "$rc" -eq 1 ]; echo $?)"
+
+out="$(_report '✅ **Needs you:** NOTHING' | sed 's|^\*\*Built:\*\* .*|**Built:** REPORTED cron-fire NEW (precedent: nothing matched): tools/cron-fire (lane=normal, unreported: x)|' | bash "$LINT" 2>&1)"; rc=$?
+chk "an unanchored closure token (unreported:) does not close a lane" "$([ "$rc" -eq 1 ]; echo $?)"
+
 out="$(_report '✅ **Needs you:** NOTHING' | sed 's|^\*\*Built:\*\* .*|**Built:** REPORTED cron-fire NEW (precedent: nothing matched): tools/cron-fire (lane=normal)|' | bash "$LINT" 2>&1)"; rc=$?
 chk "a lane with neither a check nor a reported why fails" "$([ "$rc" -eq 1 ]; echo $?)"
 chk_has "the finding names the missing closure" "$out" "names a lane with no closure"

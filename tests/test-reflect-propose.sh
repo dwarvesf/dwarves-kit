@@ -373,6 +373,8 @@ OUT="$(env -u BACKLOG_STAGE_AUTO python3 "$PROPOSE" --retro "$RT/RETRO-2026-09-1
 assert_true "off --retro: exit 0" "$([ $RC -eq 0 ]; echo $?)"
 assert_true "off --retro: no staging file written" "$([ ! -f "$RT/staging.md" ]; echo $?)"
 assert_true "off --retro: the action item is printed" "$({ trap '' PIPE; echo "$OUT" 2>/dev/null || :; } | grep -q 'Print this retro item'; echo $?)"
+assert_true "off --retro: the summary keeps its counts" "$({ trap '' PIPE; echo "$OUT" 2>/dev/null || :; } | grep -q '1 action item read, 1 printed, 0 duplicate'; echo $?)"
+assert_true "off --retro: no drain or promote hint for a file it never wrote" "$({ trap '' PIPE; echo "$OUT" 2>/dev/null || :; } | grep -q 'board promote'; [ $? -ne 0 ]; echo $?)"
 
 echo ""
 echo "== $((PASS+FAIL)) run, $PASS passed, $FAIL failed =="
