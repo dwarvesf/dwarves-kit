@@ -91,6 +91,28 @@ T6="$HOME/.claude/projects/p/s6.jsonl"
 transcript "$T6" 120000
 KIT_CTX_WARN=100000 step "6.1 120k with KIT_CTX_WARN=100000" speak s6 "$T6"
 
+echo "== Case 7: band 1 and above is a directive, band 0 stays advisory =="
+# tone <label> <expect-substring> <session> <transcript>: assert the model-facing text.
+tone() {
+    local label="$1" want="$2" session="$3" tr="$4" ctx
+    ctx=$(jq -cn --arg s "$session" --arg t "$tr" '{session_id:$s, transcript_path:$t, prompt:"continue"}' \
+        | bash "$HOOK" 2>/dev/null | jq -r '.hookSpecificOutput.additionalContext // ""')
+    if printf '%s' "$ctx" | grep -q "$want"; then
+        PASS=$((PASS + 1)); printf '  PASS %-50s has %s\n' "$label" "$want"
+    else
+        FAIL=$((FAIL + 1)); printf '  FAIL %-50s missing %s\n' "$label" "$want"; printf '       ctx: %s\n' "$ctx"
+    fi
+}
+T7="$HOME/.claude/projects/p/s7.jsonl"
+transcript "$T7" 250000
+tone "7.1 250k, band 0, advisory" "CONTEXT BUDGET" s7 "$T7"
+transcript "$T7" 310000
+tone "7.2 310k, band 1, directive" "CONTEXT CEILING" s7 "$T7"
+transcript "$T7" 250000
+KIT_CTX_WARN=450000 step "7.3 250k with KIT_CTX_WARN=450000" silent s7b "$T7"
+transcript "$T7" 560000
+KIT_CTX_WARN=450000 tone "7.4 560k with WARN=450000, band 1" "CONTEXT CEILING" s7c "$T7"
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]

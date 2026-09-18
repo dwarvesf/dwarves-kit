@@ -14,6 +14,11 @@
 # (default 100000). A drop below KIT_CTX_WARN (e.g. after /compact) clears the state so
 # the next crossing warns again.
 #
+# Band 0 is advisory (hand off at the next boundary). Band 1 and above is a directive:
+# finish the step in flight, write the handoff, stop starting new work. The advisory
+# alone was ignored 227 times across 89 sessions in one 14-day window while sessions
+# ran on to 600k-996k; a nudge that never changes tone reads as noise.
+#
 # State: ~/.cache/claude-context-budget/<session_id>, one line: last warned band.
 #
 # Source: ported from the operator's personal dotfiles context-budget hook (tested,
@@ -64,8 +69,13 @@ OTHERS=$(find "${HOME}/.claude/projects" -maxdepth 2 -name '*.jsonl' -mmin -5 2>
 FLEET=""
 [ "${OTHERS:-0}" -gt 0 ] && FLEET=" ${OTHERS} other sessions are active too."
 
-USER_MSG="Context budget: this session is at ${K}k tokens, and every turn re-reads all of it.${FLEET} At the next boundary: handoff, then /clear."
-MODEL_MSG="CONTEXT BUDGET: this session's live context is ${K}k tokens; each turn re-reads it from cache. Do not stop the current step. At the next natural boundary (a commit, a merged PR, a finished sub-task), recommend a handoff plus /clear to the operator in one line. Until then: read file slices instead of whole files, dispatch fresh-context subagents for fan-out, and do not re-read what is already in context."
+if [ "$BAND" -ge 1 ]; then
+    USER_MSG="Context ceiling: this session is at ${K}k tokens, past the budget by a full band.${FLEET} Finish the step in flight, write the handoff, then /clear."
+    MODEL_MSG="CONTEXT CEILING: this session's live context is ${K}k tokens, a full band past the budget, and each turn re-reads it from cache. Finish the step in flight, then stop starting new work: do not open a new sub-task and do not dispatch new subagents from this context. Write the handoff (the handoff skill) and tell the operator in one line to /clear."
+else
+    USER_MSG="Context budget: this session is at ${K}k tokens, and every turn re-reads all of it.${FLEET} At the next boundary: handoff, then /clear."
+    MODEL_MSG="CONTEXT BUDGET: this session's live context is ${K}k tokens; each turn re-reads it from cache. Do not stop the current step. At the next natural boundary (a commit, a merged PR, a finished sub-task), recommend a handoff plus /clear to the operator in one line. Until then: read file slices instead of whole files, dispatch fresh-context subagents for fan-out, and do not re-read what is already in context."
+fi
 
 jq -cn --arg u "$USER_MSG" --arg m "$MODEL_MSG" \
     '{systemMessage: $u, hookSpecificOutput: {hookEventName: "UserPromptSubmit", additionalContext: $m}}'
