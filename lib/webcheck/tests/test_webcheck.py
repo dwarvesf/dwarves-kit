@@ -1129,6 +1129,20 @@ def test_og_image_declared_svg_type_warns(monkeypatch):
     assert SVG_WARNING in result.warnings
 
 
+def test_og_image_two_svg_triggers_warn_once(monkeypatch):
+    result = _audit(
+        monkeypatch,
+        _html_with_og_image("https://x/fig.svg", image_type="image/svg+xml"),
+    )
+    assert result.warnings.count(SVG_WARNING) == 1
+
+
+def test_og_image_malformed_url_does_not_abort_the_audit(monkeypatch):
+    result = _audit(monkeypatch, _html_with_og_image("https://[x/fig.png"))
+    assert SVG_WARNING not in result.warnings
+    assert result.hard_fails == []
+
+
 def test_og_image_svg_in_mid_path_only_does_not_warn(monkeypatch):
     result = _audit(monkeypatch, _html_with_og_image("https://x/svg/fig.png"))
     assert SVG_WARNING not in result.warnings

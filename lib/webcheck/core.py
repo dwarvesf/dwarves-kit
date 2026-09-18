@@ -344,8 +344,12 @@ GOOD_JSONLD_TYPES = {"Article", "TechArticle", "BlogPosting", "NewsArticle"}
 
 def _og_image_is_svg(image_value: str, image_type: str | None) -> bool:
     value = image_value.strip()
-    if urlsplit(value).path.lower().endswith(".svg"):
-        return True
+    try:
+        # The value is page-controlled: a malformed one ("https://[x") must not abort the audit.
+        if urlsplit(value).path.lower().endswith(".svg"):
+            return True
+    except ValueError:
+        pass
     if value.lower().startswith("data:image/svg+xml"):
         return True
     if image_type and image_type.strip().lower() == "image/svg+xml":
