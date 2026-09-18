@@ -127,7 +127,7 @@ Layered by design: the SPINE installs unconditionally (six hooks guarding push, 
 
 | Module | What it wires | Kind |
 |---|---|---|
-| `board` | `backlog-stage` (SessionEnd: stage session work-items to a staging file, opt-in via `BACKLOG_STAGE_AUTO=1`, default off); its `--surface` pass also runs `intake-sweep` (consumer-declared deferred-link sources, config-gated) | 1 hook |
+| `board` | `backlog-stage` (SessionEnd: stage session work-items to a staging file, opt-in via `BACKLOG_STAGE_AUTO=1`, default off); its `--surface` pass also runs `intake-sweep` (consumer-declared deferred-link sources, config-gated); `board-row-gate` (PreToolUse Bash: blocks a commit that adds a new board row without a `board-row-ok: <reason>` line) | 2 hooks |
 | `session` | `context-readiness`, `output-offload`, `pre-compact-backup`, `post-compact-reinject`, `session-state-save`, `harvest`, `citation-guard`, `context-budget` (warns once per 100k-token band once live context passes 200k, `KIT_CTX_WARN`/`KIT_CTX_STEP`); plus a PATH shim for the `session` CLI (`session <intel\|observe\|recall\|report\|semantic>`, ADR-0034: the five prefixed CLIs collapsed into one entry) | 8 hooks + 1 CLI |
 | `advisor` | `context-hints` (session-elapsed + keyword skill hints) + `tool-policy-guard` (PreToolUse allow/ask/deny per tool domain; inert until a `tool-policy.json` exists) | 2 hooks |
 | `cosmetic` | `auto-format`, `notification`, `slop-cleaner`, `statusline`, `codebase-index`, `permission-auto-approve` | 6 hooks |
@@ -295,6 +295,7 @@ Within one spec, tasks run sequentially. Across specs, `/kit:dispatch` fans out 
 | citation-guard | Stop | Flags (or blocks, CITATION_GUARD_STRICT=1) hallucinated file:line citations in the final message |
 | money-gate | PreToolUse(Edit\|Write\|MultiEdit) | Asks before a money-touching edit lands in a repo named in MONEY_GATE_REPOS (inert unset) |
 | prose-rag | UserPromptSubmit | Injects relevant prior notes on recall-shaped prompts (dormant unless PROSE_RAG_INJECT=1) |
+| board-row-gate | PreToolUse(Bash) | Blocks a `git commit` that adds a new board row (a first-cell ID absent from HEAD's `_meta/BACKLOG.md` or `BACKLOG.md`, any prefix) unless the message carries a `board-row-ok: <reason>` line; kill switch `DWARVES_KIT_SKIP_BOARD_ROW_GATE=1` |
 | batch-debt-warn | PreToolUse(Bash) | Warns once when a session merges a 2nd PR with no lane START in the gate ledger since the first merge |
 | context-budget | UserPromptSubmit | Warns once per 100k-token band once live session context passes 200k (KIT_CTX_WARN/KIT_CTX_STEP); clears on a drop below budget (e.g. after /compact) |
 | auto-format | PostToolUse(Write\|Edit) | Runs formatter on every file change |

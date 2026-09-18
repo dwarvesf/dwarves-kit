@@ -251,6 +251,7 @@ single-reader fence). No env vars; per-repo values live in `.kit.toml [sync]`.
 | - | gate.lane_gates | `false` | [impl] | gate | `hooks/ship-gate.sh` lane x phase required-gate check and the no-`Lane:` refusal in adopted repos (ADR-0024), same resolver and opt-in rule as `gate.proof_of_done`. Advisories keep printing. |
 | - | gate.understanding_gate | `false` | [impl] | gate | `hooks/anti-rationalization.sh` (ADR-0031). Off, the Stop hook logs `OFF-BY-CONFIG` and exits 0 before matching; resolved through `lib/gate/gate-policy.sh` against the session repo root. |
 | - | gate.commit_format | `false` | [impl] | gate | `hooks/commit-format.sh` commit-subject lint. Off, the hook logs `OFF-BY-CONFIG` and exits 0 before linting; resolved through `lib/gate/gate-policy.sh` against the session repo root. |
+| DWARVES_KIT_SKIP_BOARD_ROW_GATE | env-only | `0` | [impl] | gate | `1` switches off `hooks/board-row-gate.sh`, the PreToolUse check that blocks a commit adding a new board row without a `board-row-ok: <reason>` line. Read from the session environment, so an inline command prefix cannot set it; an operator escape hatch, never a default. |
 | DWARVES_KIT_PRINT_CDDIR | env-only | `0` | [impl] | gate | Debug: print the resolved cwd/repo-root and exit. |
 | KIT_ROOT | env-only | `$SCRIPT_ROOT` | [impl] | gate | Mixed usage: most files compute this internally from `BASH_SOURCE`, not the environment; `lib/gate/proof-table-gen.sh` alone treats it as an operator-settable override, defaulting to `$SCRIPT_ROOT`. |
 
