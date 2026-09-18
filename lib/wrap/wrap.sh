@@ -917,7 +917,7 @@ cmd_merge() {
       if [ "$do_apply" != 1 ]; then
         echo "note: #${pr_only} is a draft; --apply would run \`gh pr ready\` before merging"
       else
-        echo "marking #${pr_only} ready for review"
+        echo "marking #${pr_only} ready (was draft)"
         gh pr ready "$pr_only" --repo "$url" >/dev/null 2>&1 || {
           echo "FAILED merge #${pr_only}: gh pr ready failed" >&2; return 2; }
       fi

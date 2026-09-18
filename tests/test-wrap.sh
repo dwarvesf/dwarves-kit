@@ -1101,7 +1101,7 @@ PRFLAG_PR_40_2="{\"number\":40,\"title\":\"draft flag pr\",\"headRefName\":\"fea
 out="$(GH_STUB_OPEN_PRS="$PRFLAG_OPEN" GH_STUB_PR_40="$PRFLAG_PR_40" GH_STUB_PR_40_2="$PRFLAG_PR_40_2" \
   "$WRAP" merge --apply --pr 40 "$TMPD/clone-scan-main" 2>&1)"; rc=$?
 chk "merge --pr on a draft exits 0" "$rc"
-chk_has "merge --pr marks the draft ready" "$out" "marking #40 ready for review"
+chk_has "merge --pr marks the draft ready" "$out" "marking #40 ready (was draft)"
 chk_has "merge --pr re-gates the PR after readying it" "$out" "eligible #40 draft flag pr [feat/draft-flag]"
 chk_has "merge --pr reports the merge, tree verified" "$out" "merged #40"
 PRFLAG_CALLS="$(cat "$GH_STUB_CALLS")"
