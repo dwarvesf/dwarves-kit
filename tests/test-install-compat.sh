@@ -53,6 +53,28 @@ mkdir -p "$TMP2/plugins/cache/dwarves-marketplace/kit/1.0.0/lib"
 out2="$(HOME="$HOME_SB2" CLAUDE_DIR="$TMP2" KIT_FORCE_FULL=1 bash "$KIT_DIR/install.sh" 2>&1 || true)"
 if { trap '' PIPE; printf '%s' "$out2" 2>/dev/null || :; } | grep -q 'COMPAT-ONLY'; then echo "FAIL KIT_FORCE_FULL still compat"; fail=1; else echo "ok   KIT_FORCE_FULL bypasses compat"; fi
 
+# --- forced full install with the plugin present must NOT copy bare agents ---
+# KIT_FORCE_FULL forces the full bash install, but the plugin still serves the
+# kit agents under kit:*, so copying them bare would reopen the duplicate the
+# compat branch exists to retire.
+TMP4="$(mktemp -d)"; HOME_SB4="$(mktemp -d)"
+trap 'rm -rf "$TMP" "${TMP2:-}" "$TMP3" "$TMP4" "$HOME_SB1" "$HOME_SB2" "$HOME_SB3" "$HOME_SB4"' EXIT
+mkdir -p "$TMP4/plugins/cache/dwarves-marketplace/kit/1.0.0/lib"
+out4="$(HOME="$HOME_SB4" CLAUDE_DIR="$TMP4" KIT_FORCE_FULL=1 bash "$KIT_DIR/install.sh" 2>&1 || true)"
+if { trap '' PIPE; printf '%s' "$out4" 2>/dev/null || :; } | grep -q 'COMPAT-ONLY'; then echo "FAIL KIT_FORCE_FULL still compat (plugin present)"; fail=1; else echo "ok   KIT_FORCE_FULL bypasses compat (plugin present)"; fi
+COPIED4=0
+for f in "$TMP4/agents/"*.md; do [ -e "$f" ] && COPIED4=1; done
+[ "$COPIED4" -eq 0 ]; chk "forced full install with plugin copies no bare agents" $?
+{ trap '' PIPE; printf '%s' "$out4" 2>/dev/null || :; } | grep -q 'not copying bare duplicates'; chk "install log announces the agent-copy skip" $?
+
+# --- negative: forced full install with NO plugin still copies agents ---
+TMP5="$(mktemp -d)"; HOME_SB5="$(mktemp -d)"
+trap 'rm -rf "$TMP" "${TMP2:-}" "$TMP3" "$TMP4" "$TMP5" "$HOME_SB1" "$HOME_SB2" "$HOME_SB3" "$HOME_SB4" "$HOME_SB5"' EXIT
+out5="$(HOME="$HOME_SB5" CLAUDE_DIR="$TMP5" KIT_FORCE_FULL=1 bash "$KIT_DIR/install.sh" 2>&1 || true)"
+COPIED5=0
+for f in "$TMP5/agents/"*.md; do [ -e "$f" ] && COPIED5=1; done
+[ "$COPIED5" -eq 1 ]; chk "forced full install without plugin still copies agents" $?
+
 # --- Tripwire (ID-463): the compat branch's CLI-shim write must never escape
 # into the REAL $HOME, no matter what changes upstream in install.sh. $HOME is
 # never reassigned in THIS script (only the install.sh subshells above got a
@@ -63,7 +85,7 @@ if [ -d "$REAL_BIN" ]; then
   for f in "$REAL_BIN"/*; do
     [ -f "$f" ] || continue
     grep -q "dwarves-kit CLI shim" "$f" 2>/dev/null || continue
-    grep -qE "exec \"($TMP|$TMP2)/" "$f" 2>/dev/null && LEAKED="$LEAKED $(basename "$f")"
+    grep -qE "exec \"($TMP|$TMP2|$TMP4|$TMP5)/" "$f" 2>/dev/null && LEAKED="$LEAKED $(basename "$f")"
   done
 fi
 [ -z "$LEAKED" ]; chk "tripwire: real ~/.local/bin shims never point into this test's \$TMPDIR (leaked:${LEAKED:- none})" $?

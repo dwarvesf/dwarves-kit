@@ -824,14 +824,22 @@ if [ -d "$KIT_DIR/output-styles" ]; then
   done
 fi
 
-# 4b. Install subagent definitions
+# 4b. Install subagent definitions. When the cached plugin is present the
+# plugin already serves these agents under the kit: namespace, so a bare copy
+# is a duplicate the compat branch would retire on the next plain install.
+# Skip the copy even under KIT_FORCE_FULL; forcing the full bash install must
+# not reopen the bare-copy duplicate.
 if [ -d "$KIT_DIR/agents" ]; then
-  mkdir -p "$CLAUDE_DIR/agents"
-  for AGENT_FILE in "$KIT_DIR/agents/"*.md; do
-    AGENT_NAME=$(basename "$AGENT_FILE")
-    cp "$AGENT_FILE" "$CLAUDE_DIR/agents/$AGENT_NAME"
-    echo "[ok] Installed agent: ${AGENT_NAME%.md}"
-  done
+  if [ -n "${PLUGIN_LIB:-}" ]; then
+    echo "[skip] plugin provides kit:* agents; not copying bare duplicates to $CLAUDE_DIR/agents"
+  else
+    mkdir -p "$CLAUDE_DIR/agents"
+    for AGENT_FILE in "$KIT_DIR/agents/"*.md; do
+      AGENT_NAME=$(basename "$AGENT_FILE")
+      cp "$AGENT_FILE" "$CLAUDE_DIR/agents/$AGENT_NAME"
+      echo "[ok] Installed agent: ${AGENT_NAME%.md}"
+    done
+  fi
 fi
 
 # 5. Create log directory
