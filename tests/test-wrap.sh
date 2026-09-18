@@ -58,15 +58,22 @@ case "$sub" in
     verb="${1:-}"; [ $# -gt 0 ] && shift
     case "$verb" in
       list)
-        head=""; author=""
+        head=""; author=""; state=""
         while [ $# -gt 0 ]; do
           case "$1" in
             --head) head="${2:-}"; shift 2 ;;
             --author) author="${2:-}"; shift 2 ;;
+            --state) state="${2:-}"; shift 2 ;;
             *) shift ;;
           esac
         done
-        if [ -n "$head" ]; then
+        if [ -n "$head" ] && [ "$state" = "open" ]; then
+          key="GH_STUB_OPEN_HEAD_$(printf '%s' "$head" | tr -c 'A-Za-z0-9' '_')"
+          eval "val=\"\${$key:-}\""
+          [ -n "$val" ] || val="[]"
+          printf '%s\n' "$val"
+          exit "${GH_STUB_LIST_RC:-0}"
+        elif [ -n "$head" ]; then
           key="GH_STUB_MERGED_$(printf '%s' "$head" | tr -c 'A-Za-z0-9' '_')"
           eval "val=\"\${$key:-}\""
           [ -n "$val" ] || val="[]"
@@ -1509,6 +1516,148 @@ echo "--- the usage text and the command doc name the verb"
 chk_has "wrap --help names land" "$("$WRAP" --help 2>&1)" "wrap.sh land  <worktree>"
 chk_has "commands/wrap.md names land for a hand-made worktree" "$(cat "$KIT_DIR/commands/wrap.md")" \
   "bin/wrap land <worktree>"
+
+# ===========================================================================
+echo "=== land: adopting an operator-owned open PR for the branch (SPEC-299) ==="
+# ===========================================================================
+open_pr_json() { # open_pr_json <number> <base> <author> [isDraft] [isCrossRepo]
+  printf '[{"number":%s,"baseRefName":"%s","author":{"login":"%s"},"isDraft":%s,"isCrossRepository":%s}]' \
+    "$1" "$2" "$3" "${4:-false}" "${5:-false}"
+}
+two_open_pr_json() {
+  printf '[{"number":%s,"baseRefName":"main","author":{"login":"me"},"isDraft":false,"isCrossRepository":false},{"number":%s,"baseRefName":"main","author":{"login":"me"},"isDraft":false,"isCrossRepository":false}]' "$1" "$2"
+}
+
+echo "--- own PR on the default branch is adopted, no create, merge runs on it"
+build_land adopt-own
+LREPO_AO="$TMPD/ld-repo-adopt-own"; LWT_AO="$(cd "$LREPO_AO/wt" && pwd -P)"
+LTIP_AO="$(git -C "$LWT_AO" rev-parse HEAD)"
+: > "$GH_STUB_CALLS"
+out="$(GH_STUB_OPEN_HEAD_feat_land="$(open_pr_json 7 main me)" GH_STUB_LAND_REPO="$LWT_AO" \
+  GH_STUB_LAND_REMOTE="$TMPD/ld-bare-adopt-own" GH_STUB_LAND_BRANCH=feat/land GH_STUB_LAND_DEF=main \
+  "$WRAP" land "$LWT_AO" 2>&1)"; rc=$?
+CALLS_AO="$(cat "$GH_STUB_CALLS")"
+chk "adopt: own open PR on the default branch exits 0" "$rc"
+chk_has "adopt: reports adopted, not opened" "$out" "adopted PR #7"
+chk_no "adopt: never calls pr create" "$CALLS_AO" "pr create"
+chk_has "adopt: merge runs on the adopted PR" "$CALLS_AO" "pr merge 7 --repo"
+chk_has "adopt: merge still pins the pushed head" "$CALLS_AO" "--squash --match-head-commit ${LTIP_AO}"
+
+echo "--- an uppercase author login still matches the operator (case-insensitive)"
+build_land adopt-case
+LWT_AC="$(cd "$TMPD/ld-repo-adopt-case/wt" && pwd -P)"
+: > "$GH_STUB_CALLS"
+out="$(GH_STUB_OPEN_HEAD_feat_land="$(open_pr_json 8 main Me)" GH_STUB_LAND_REPO="$LWT_AC" \
+  GH_STUB_LAND_REMOTE="$TMPD/ld-bare-adopt-case" GH_STUB_LAND_BRANCH=feat/land GH_STUB_LAND_DEF=main \
+  "$WRAP" land "$LWT_AC" 2>&1)"; rc=$?
+chk "adopt: uppercase-login PR exits 0" "$rc"
+chk_has "adopt: uppercase-login PR is adopted" "$out" "adopted PR #8"
+
+echo "--- a draft PR is marked ready, then adopted and merged"
+build_land adopt-draft
+LWT_AD="$(cd "$TMPD/ld-repo-adopt-draft/wt" && pwd -P)"
+: > "$GH_STUB_CALLS"
+out="$(GH_STUB_OPEN_HEAD_feat_land="$(open_pr_json 9 main me true)" GH_STUB_LAND_REPO="$LWT_AD" \
+  GH_STUB_LAND_REMOTE="$TMPD/ld-bare-adopt-draft" GH_STUB_LAND_BRANCH=feat/land GH_STUB_LAND_DEF=main \
+  "$WRAP" land "$LWT_AD" 2>&1)"; rc=$?
+CALLS_AD="$(cat "$GH_STUB_CALLS")"
+chk "adopt: draft PR exits 0" "$rc"
+chk_has "adopt: draft PR is marked ready" "$CALLS_AD" "pr ready 9 --repo"
+chk_has "adopt: draft PR is then adopted" "$out" "adopted PR #9"
+chk_has "adopt: draft PR is merged" "$CALLS_AD" "pr merge 9 --repo"
+
+echo "--- a draft PR whose ready call fails refuses before any merge"
+build_land adopt-draft-fail
+LWT_ADF="$(cd "$TMPD/ld-repo-adopt-draft-fail/wt" && pwd -P)"
+: > "$GH_STUB_CALLS"
+out="$(GH_STUB_OPEN_HEAD_feat_land="$(open_pr_json 10 main me true)" GH_STUB_READY_RC=1 \
+  GH_STUB_LAND_REPO="$LWT_ADF" GH_STUB_LAND_REMOTE="$TMPD/ld-bare-adopt-draft-fail" \
+  GH_STUB_LAND_BRANCH=feat/land GH_STUB_LAND_DEF=main "$WRAP" land "$LWT_ADF" 2>&1)"; rc=$?
+chk "adopt: failed ready exits 2" "$([ "$rc" -eq 2 ]; echo $?)"
+chk_has "adopt: failed ready names the refusal" "$out" \
+  "PR REFUSED: open PR #10 is a draft and gh pr ready failed"
+chk_no "adopt: failed ready never merges" "$(cat "$GH_STUB_CALLS")" "pr merge"
+
+echo "--- an open PR targeting another base refuses"
+build_land adopt-offbase
+LWT_OB="$(cd "$TMPD/ld-repo-adopt-offbase/wt" && pwd -P)"
+: > "$GH_STUB_CALLS"
+out="$(GH_STUB_OPEN_HEAD_feat_land="$(open_pr_json 11 feat/other me)" GH_STUB_LAND_REPO="$LWT_OB" \
+  GH_STUB_LAND_REMOTE="$TMPD/ld-bare-adopt-offbase" GH_STUB_LAND_BRANCH=feat/land GH_STUB_LAND_DEF=main \
+  "$WRAP" land "$LWT_OB" 2>&1)"; rc=$?
+chk "adopt: off-base PR exits 2" "$([ "$rc" -eq 2 ]; echo $?)"
+chk_has "adopt: off-base PR names the base" "$out" \
+  "PR REFUSED: open PR #11 targets feat/other, not main"
+chk_no "adopt: off-base PR never merges" "$(cat "$GH_STUB_CALLS")" "pr merge"
+
+echo "--- an open PR authored by someone else refuses"
+build_land adopt-foreign
+LWT_FO="$(cd "$TMPD/ld-repo-adopt-foreign/wt" && pwd -P)"
+: > "$GH_STUB_CALLS"
+out="$(GH_STUB_OPEN_HEAD_feat_land="$(open_pr_json 12 main other)" GH_STUB_LAND_REPO="$LWT_FO" \
+  GH_STUB_LAND_REMOTE="$TMPD/ld-bare-adopt-foreign" GH_STUB_LAND_BRANCH=feat/land GH_STUB_LAND_DEF=main \
+  "$WRAP" land "$LWT_FO" 2>&1)"; rc=$?
+chk "adopt: foreign-author PR exits 2" "$([ "$rc" -eq 2 ]; echo $?)"
+chk_has "adopt: foreign-author PR names the author" "$out" \
+  "PR REFUSED: open PR #12 is authored by other"
+chk_no "adopt: foreign-author PR never merges" "$(cat "$GH_STUB_CALLS")" "pr merge"
+
+echo "--- two open PRs for the branch refuses"
+build_land adopt-two
+LWT_TWO="$(cd "$TMPD/ld-repo-adopt-two/wt" && pwd -P)"
+: > "$GH_STUB_CALLS"
+out="$(GH_STUB_OPEN_HEAD_feat_land="$(two_open_pr_json 13 14)" GH_STUB_LAND_REPO="$LWT_TWO" \
+  GH_STUB_LAND_REMOTE="$TMPD/ld-bare-adopt-two" GH_STUB_LAND_BRANCH=feat/land GH_STUB_LAND_DEF=main \
+  "$WRAP" land "$LWT_TWO" 2>&1)"; rc=$?
+chk "adopt: two open PRs exits 2" "$([ "$rc" -eq 2 ]; echo $?)"
+chk_has "adopt: two open PRs names the count" "$out" "PR REFUSED: 2 open PRs for feat/land"
+chk_no "adopt: two open PRs never merges" "$(cat "$GH_STUB_CALLS")" "pr merge"
+
+echo "--- a fork's same-named-branch PR is dropped, land creates as today"
+build_land adopt-fork
+LWT_FK="$(cd "$TMPD/ld-repo-adopt-fork/wt" && pwd -P)"
+: > "$GH_STUB_CALLS"
+out="$(GH_STUB_OPEN_HEAD_feat_land="$(open_pr_json 15 main other false true)" \
+  GH_STUB_CREATE_NUM=44 GH_STUB_LAND_REPO="$LWT_FK" GH_STUB_LAND_REMOTE="$TMPD/ld-bare-adopt-fork" \
+  GH_STUB_LAND_BRANCH=feat/land GH_STUB_LAND_DEF=main "$WRAP" land "$LWT_FK" 2>&1)"; rc=$?
+chk "adopt: fork-only entry exits 0" "$rc"
+chk_has "adopt: fork-only entry still creates a PR" "$out" "opened PR #44"
+chk_has "adopt: fork-only entry called pr create" "$(cat "$GH_STUB_CALLS")" "pr create"
+
+echo "--- the operator login not resolving refuses"
+build_land adopt-noid
+LWT_NOID="$(cd "$TMPD/ld-repo-adopt-noid/wt" && pwd -P)"
+: > "$GH_STUB_CALLS"
+out="$(GH_STUB_OPEN_HEAD_feat_land="$(open_pr_json 16 main me)" GH_STUB_API_RC=1 \
+  GH_STUB_LAND_REPO="$LWT_NOID" GH_STUB_LAND_REMOTE="$TMPD/ld-bare-adopt-noid" \
+  GH_STUB_LAND_BRANCH=feat/land GH_STUB_LAND_DEF=main "$WRAP" land "$LWT_NOID" 2>&1)"; rc=$?
+chk "adopt: identity read failure exits 2" "$([ "$rc" -eq 2 ]; echo $?)"
+chk_has "adopt: identity read failure names it" "$out" \
+  "PR REFUSED: open PR #16: operator login did not resolve"
+chk_no "adopt: identity read failure never merges" "$(cat "$GH_STUB_CALLS")" "pr merge"
+
+echo "--- the open-PR lookup itself failing refuses"
+build_land adopt-listfail
+LWT_LF="$(cd "$TMPD/ld-repo-adopt-listfail/wt" && pwd -P)"
+: > "$GH_STUB_CALLS"
+out="$(GH_STUB_LIST_RC=1 GH_STUB_LAND_REPO="$LWT_LF" GH_STUB_LAND_REMOTE="$TMPD/ld-bare-adopt-listfail" \
+  GH_STUB_LAND_BRANCH=feat/land GH_STUB_LAND_DEF=main "$WRAP" land "$LWT_LF" 2>&1)"; rc=$?
+chk "adopt: list failure exits 2" "$([ "$rc" -eq 2 ]; echo $?)"
+chk_has "adopt: list failure names the branch" "$out" \
+  "PR REFUSED: open-PR lookup for feat/land failed"
+chk_no "adopt: list failure never merges" "$(cat "$GH_STUB_CALLS")" "pr merge"
+
+echo "--- --title/--body-file on an adopted PR are ignored, with a note"
+build_land adopt-flags
+LWT_FL="$(cd "$TMPD/ld-repo-adopt-flags/wt" && pwd -P)"
+: > "$GH_STUB_CALLS"
+out="$(GH_STUB_OPEN_HEAD_feat_land="$(open_pr_json 17 main me)" GH_STUB_LAND_REPO="$LWT_FL" \
+  GH_STUB_LAND_REMOTE="$TMPD/ld-bare-adopt-flags" GH_STUB_LAND_BRANCH=feat/land GH_STUB_LAND_DEF=main \
+  "$WRAP" land "$LWT_FL" --title "custom title" 2>&1)"; rc=$?
+chk "adopt: flags-ignored case exits 0" "$rc"
+chk_has "adopt: flags-ignored case is adopted" "$out" "adopted PR #17"
+chk_has "adopt: flags-ignored case notes the flags are kept" "$out" \
+  "note: adopted PR #17 keeps its own title and body"
 
 # ===========================================================================
 echo "=== default-branch: detection, fall-through, and the no-remote refusal ==="
