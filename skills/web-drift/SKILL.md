@@ -37,7 +37,7 @@ Tier 1 is the tool. Its hard fails and warnings map to the audit-loop grammar:
 | Tool output | Verdict | Note |
 |---|---|---|
 | hard fail | FIX | the tool's own message carries the "say how"; add the recipe from the reference table below |
-| warning with one obvious fix (missing canonical, missing OG tag, no Organization block, no llms.txt guidance section) | FIX | |
+| warning with one obvious fix (missing canonical, missing OG tag, og:image is an SVG, no Organization block, no llms.txt guidance section) | FIX | |
 | warning whose fix depends on intent (meta description length, h1 count, internal-link count, unversioned API base) | UNSURE | someone decided that on purpose or did not; you cannot tell from outside |
 | site unreachable, network error, groundwork fetch that did not answer | UNTESTABLE | the evidence exists but not from where you ran: a WAF block, a transient 503, a DNS hiccup. Re-run from another vantage or at the next cadence. Never REMOVE, never FIX, and NOT UNSURE, which means only the operator can answer and would escalate every flaky 503 to a human forever. |
 | tier reports not applicable | not a finding | it drops out of the denominator, the way the rubric excludes a check rather than failing a site it cannot apply to |

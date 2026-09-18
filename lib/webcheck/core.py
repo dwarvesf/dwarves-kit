@@ -24,7 +24,7 @@ import urllib.request
 import uuid
 from dataclasses import dataclass, field
 from html.parser import HTMLParser
-from urllib.parse import urljoin, urlparse
+from urllib.parse import urljoin, urlparse, urlsplit
 from xml.etree import ElementTree
 
 USER_AGENT = "dwarves-kit-webcheck/1.0 (+https://github.com/dwarvesf/dwarves-kit)"
@@ -336,9 +336,21 @@ class PageAudit:
     warnings: list[str] = field(default_factory=list)
 
 
-OG_REQUIRED = ["og:title", "og:description", "og:image"]
+OG_REQUIRED = ["og:title", "og:description", "og:image", "og:url"]
+OG_IMAGE_SVG_WARNING = "og:image is an SVG, which Facebook, LinkedIn and X drop from share cards"
 TWITTER_REQUIRED = ["twitter:card"]
 GOOD_JSONLD_TYPES = {"Article", "TechArticle", "BlogPosting", "NewsArticle"}
+
+
+def _og_image_is_svg(image_value: str, image_type: str | None) -> bool:
+    value = image_value.strip()
+    if urlsplit(value).path.lower().endswith(".svg"):
+        return True
+    if value.lower().startswith("data:image/svg+xml"):
+        return True
+    if image_type and image_type.strip().lower() == "image/svg+xml":
+        return True
+    return False
 
 
 def audit_page(url: str, homepage_meta_desc: str | None) -> PageAudit:
@@ -394,6 +406,9 @@ def audit_page(url: str, homepage_meta_desc: str | None) -> PageAudit:
             result.og_missing.append(tag)
     if result.og_missing:
         result.warnings.append(f"missing OG tags: {', '.join(result.og_missing)}")
+    og_image = parser.meta_content("property", "og:image")
+    if og_image and _og_image_is_svg(og_image, parser.meta_content("property", "og:image:type")):
+        result.warnings.append(OG_IMAGE_SVG_WARNING)
 
     for tag in TWITTER_REQUIRED:
         if not parser.meta_content("name", tag):
