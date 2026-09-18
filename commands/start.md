@@ -125,6 +125,17 @@ When `$ARGUMENTS` is `--full`, append these blocks after the standard output:
 1. **Backlog queue (what's left?)** -- render the `_meta/BACKLOG.md` Active queue (the Schema there defines the columns) as `ID | Title | Lane | Status`, skipping shipped/parked rows. Read-only. If the queue is malformed, render what parses, note unparseable rows, and never error out of session start.
 2. **Goal drafts** -- list `.claude/goals/*.md` as `slug -> target_spec (status)` (or run `bash lib/goal/goal-drafts.sh list`). If none, print "Goal drafts: none". Read-only; the filesystem is the source of truth (no derived cache). Archived drafts under `.claude/goals/done/` are skipped: the `*.md` glob is non-recursive, so a draft moved to `done/` on ship drops out automatically.
 2b. **Running goals (cross-session)** -- render `bash lib/goal/goal-registry.sh list`: every goal currently claimed across sessions, with its lane / status / branch / start time. If none, it prints "(no running goals)". This is the cross-session monitor: it shows goals other Claude sessions are running on this machine, which the native agent view cannot. A `running` entry with no live work is a stale claim from a crashed session; clear it with `bash lib/goal/goal-registry.sh release <slug>`.
+2c. **Pick up (what should this session do?)** -- synthesize the board and the open handoffs into one line per bucket, so a new session can start without a hand-written start prompt:
+   - **Executing** -- board rows with `executing` status, from `bash lib/board/backlog.sh board`: `<ID> <title> -- <note's first clause>`.
+   - **Top queued** -- the first five `queued` rows in `backlog.sh board` file order (file order is priority).
+   - **Waits on Han** -- rows whose Status or Notes cell carries a waits-on-human marker. The marker vocabulary (same one `_meta/board-decisions.py` reads in ops-toolkit, named here rather than tied to one person): `Han's call`, `HELD on Han`, `waits on Han`.
+   - **LIVE handoffs** -- `bash lib/session/handoffs.sh list` rows tagged `LIVE`, with their open row IDs.
+   - **DEAD handoffs** -- rows tagged `DEAD`: name the file and recommend deleting it (git history keeps the content).
+   - **Goal drafts** -- same list as block 2 above.
+
+   The rule behind this block: the board owns the work, a handoff owns only the context. A DEAD handoff is deleted by the session that finds it. Before minting any new board ID, check both origin (`git fetch origin` then the pushed `_meta/BACKLOG.md`) and every open PR (`gh pr list --state open`) -- three ID collisions on 2026-09-17 came from rows a checkout had not committed yet.
+
+   End the block with ONE recommended next action, picked in this order: (a) a LIVE handoff's own `## Next` excerpt, (b) else the oldest active goal draft, (c) else the top queued board row. State it as one command to run or one `file:line` to open, the same concrete form the default "Suggested" line uses.
 3. **SPEC task checklist** -- parse the active spec (resolved per the dual-mode rule above) for `- [ ]` and `- [x]` lines and list each with its state. If no spec exists, print "SPEC: none".
 4. **Hook activity (last 7 days)** -- for each hook log file in the kit's log dir modified in the last 7 days, print `<name>: <N> lines`. Counts ONLY; never echo raw log lines (they can contain command fragments or secret-bearing paths). If no logs, print "Hook logs: none".
 5. **Recent commits** -- the output of `git log -5 --oneline`.
