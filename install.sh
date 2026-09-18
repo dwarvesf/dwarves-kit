@@ -395,12 +395,21 @@ if [ -n "${PLUGIN_LIB:-}" ] && [ -z "${KIT_FORCE_FULL:-}" ]; then
   # serves these under the kit: namespace, so a leftover bare copy is a
   # duplicate, not a second install path. Same removal a full --uninstall
   # does, run here so a plain re-install cleans it up too.
-  if [ -d "$KIT_DIR/agents" ] && [ -d "$CLAUDE_DIR/agents" ]; then
+  # The bare copy is unowned user data (it may have been edited), so it is
+  # moved aside, never rm'd, and only when the cached plugin really ships
+  # that agent; a checkout ahead of the plugin release leaves the copy alone.
+  PLUGIN_AGENTS="$(dirname "$PLUGIN_LIB")/agents"
+  RETIRED_AGENTS="$CLAUDE_DIR/agents.retired-$(date +%Y%m%d)"
+  if [ -d "$KIT_DIR/agents" ] && [ -d "$CLAUDE_DIR/agents" ] && [ ! -L "$CLAUDE_DIR/agents" ]; then
     for AGENT_FILE in "$KIT_DIR/agents/"*.md; do
       AGENT_NAME=$(basename "$AGENT_FILE")
-      if [ -f "$CLAUDE_DIR/agents/$AGENT_NAME" ]; then
-        rm "$CLAUDE_DIR/agents/$AGENT_NAME"
-        echo "[ok] Removed stale bare agent copy (plugin already provides kit:${AGENT_NAME%.md}): $AGENT_NAME"
+      [ -f "$CLAUDE_DIR/agents/$AGENT_NAME" ] || continue
+      [ -f "$PLUGIN_AGENTS/$AGENT_NAME" ] || continue
+      mkdir -p "$RETIRED_AGENTS"
+      if mv "$CLAUDE_DIR/agents/$AGENT_NAME" "$RETIRED_AGENTS/$AGENT_NAME"; then
+        echo "[ok] Retired stale bare agent copy to $RETIRED_AGENTS (plugin provides kit:${AGENT_NAME%.md}): $AGENT_NAME"
+      else
+        echo "[warn] Could not retire $CLAUDE_DIR/agents/$AGENT_NAME; left in place"
       fi
     done
   fi

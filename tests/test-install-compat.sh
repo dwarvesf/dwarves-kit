@@ -27,6 +27,26 @@ out="$(HOME="$HOME_SB1" CLAUDE_DIR="$TMP" bash "$KIT_DIR/install.sh" 2>&1)"
 [ ! -e "$TMP/settings.json" ];         chk "settings.json NOT written (no double hooks)" $?
 [ -e "$TMP/dwarves-kit/lib/classify/lane-classify.sh" ]; chk "compat lib resolves to a real script" $?
 
+# --- compat branch retires a stale bare agent copy, keeps unowned ones ---
+# A bare ~/.claude/agents/<name>.md that the cached plugin also ships is moved
+# to agents.retired-<date>/, never rm'd; a user agent with a non-kit name and
+# a kit-named copy the plugin does not ship yet both survive.
+TMP3="$(mktemp -d)"; HOME_SB3="$(mktemp -d)"
+trap 'rm -rf "$TMP" "${TMP2:-}" "$TMP3" "$HOME_SB1" "$HOME_SB2" "$HOME_SB3"' EXIT
+mkdir -p "$TMP3/plugins/cache/dwarves-marketplace/kit/1.0.0/lib" "$TMP3/plugins/cache/dwarves-marketplace/kit/1.0.0/agents" "$TMP3/agents"
+KIT_AGENT="$(ls "$KIT_DIR/agents/"*.md | head -1 | xargs basename)"
+NOT_SHIPPED="$(ls "$KIT_DIR/agents/"*.md | sed -n 2p | xargs basename)"
+cp "$KIT_DIR/agents/$KIT_AGENT" "$TMP3/plugins/cache/dwarves-marketplace/kit/1.0.0/agents/$KIT_AGENT"
+echo "edited by the user" > "$TMP3/agents/$KIT_AGENT"
+echo "kit name, not in the cached plugin yet" > "$TMP3/agents/$NOT_SHIPPED"
+echo "user agent" > "$TMP3/agents/my-own-agent.md"
+out3="$(HOME="$HOME_SB3" CLAUDE_DIR="$TMP3" bash "$KIT_DIR/install.sh" 2>&1)"
+[ ! -e "$TMP3/agents/$KIT_AGENT" ];                       chk "stale bare agent copy removed from agents/" $?
+[ "$(cat "$TMP3"/agents.retired-*/"$KIT_AGENT" 2>/dev/null)" = "edited by the user" ]; chk "stale copy retired with its content intact, not rm'd" $?
+[ -f "$TMP3/agents/$NOT_SHIPPED" ];                       chk "kit-named copy the plugin does not ship survives" $?
+[ -f "$TMP3/agents/my-own-agent.md" ];                    chk "user agent with a non-kit name survives" $?
+{ trap '' PIPE; printf '%s' "$out3" 2>/dev/null || :; } | grep -q "Retired stale bare agent copy"; chk "install log announces the retire" $?
+
 # --- KIT_FORCE_FULL bypasses compat even with the plugin present ---
 TMP2="$(mktemp -d)"
 mkdir -p "$TMP2/plugins/cache/dwarves-marketplace/kit/1.0.0/lib"

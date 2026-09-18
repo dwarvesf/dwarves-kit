@@ -3,8 +3,12 @@
 ## Claim
 
 On a machine where the kit is registered as a Claude Code plugin, running
-`install.sh` now removes any bare `~/.claude/agents/<name>.md` whose name
-matches a kit agent, before it does the compat-only shim install.
+`install.sh` now retires any bare `~/.claude/agents/<name>.md` whose name
+matches a kit agent the cached plugin ships, moving it to
+`~/.claude/agents.retired-<date>/` (never `rm`), before it does the
+compat-only shim install. A kit-named copy the cached plugin does not ship
+yet, and any agent with a non-kit name, stay in place. Pinned by
+`tests/test-install-compat.sh` (retire, content intact, two survivors).
 
 ## Green run
 
@@ -14,8 +18,8 @@ copy, then ran the fixed `install.sh`.
 ```
 Command: bash install.sh   (CLAUDE_DIR=<tmp>, plugin cache present)
 Output:  [plugin detected] kit@dwarves-marketplace is installed; runtime comes from the plugin.
-         [ok] Removed stale bare agent copy (plugin already provides kit:task-verifier): task-verifier.md
-Check:   ls $CLAUDE_DIR/agents/  -> empty
+         [ok] Retired stale bare agent copy to $CLAUDE_DIR/agents.retired-<date> (plugin provides kit:task-verifier): task-verifier.md
+Check:   ls $CLAUDE_DIR/agents/  -> empty; ls $CLAUDE_DIR/agents.retired-*/ -> task-verifier.md
 Exit:    0
 Verdict: PASS
 ```
