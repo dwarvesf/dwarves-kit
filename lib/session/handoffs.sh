@@ -9,11 +9,13 @@
 # lib/session/parse-transcript.sh's sibling test, lib/session/tests/).
 #
 # Usage:
-#   handoffs.sh list [--repo DIR] [--days N]
+#   handoffs.sh list [--repo DIR] [--days N] [--limit N]
 #     --repo DIR   repo to scan (default: git rev-parse --show-toplevel of
 #                  cwd, else cwd itself)
 #     --days N     only include handoffs at least N days old (staleness
 #                  filter; default: no filter, show every open handoff)
+#     --limit N    max handoff lines to print before collapsing the rest to
+#                  "+N more" (default: 5; 0 means unlimited)
 #
 #   Scans <repo>/_meta/handoffs/ and <repo>/.claude/handoffs/ for *.md files,
 #   skipping anything under a done/ or _archive/ subdirectory. One line per
@@ -21,8 +23,9 @@
 #     <age>d  <repo-relative path>  next: <excerpt>  <liveness>
 #   <excerpt> is the first non-empty line under a heading matching
 #   /^## (Next|Next step|Open)/, truncated to 80 chars, or
-#   "(no Next section)" when no such heading exists. Last line is
-#   "<n> open handoffs", or "no handoffs" when the scan found none.
+#   "(no Next section)" when no such heading exists. Past --limit lines, the
+#   rest collapse to one "+N more" line. Last line is "<n> open handoffs"
+#   (the true total, uncapped), or "no handoffs" when the scan found none.
 #
 #   <liveness> checks every board ID (`[A-Z]+-[0-9]+`) the file cites
 #   against the repo's board AS IT STANDS ON ORIGIN (`git fetch origin`,
@@ -40,7 +43,7 @@
 set -euo pipefail
 shopt -s nullglob
 
-usage() { sed -n '2,36p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
+usage() { sed -n '2,38p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
 
 repo_root() {
   git rev-parse --show-toplevel 2>/dev/null || pwd
@@ -140,14 +143,18 @@ handoff_liveness() { # <file>
 }
 
 cmd_list() {
-  local repo="" days=""
+  local repo="" days="" limit=5
   while [ $# -gt 0 ]; do
     case "$1" in
       --repo) [ $# -ge 2 ] || { echo "handoffs list: --repo needs a value" >&2; return 64; }; repo="$2"; shift 2 ;;
       --days) [ $# -ge 2 ] || { echo "handoffs list: --days needs a value" >&2; return 64; }; days="$2"; shift 2 ;;
+      --limit) [ $# -ge 2 ] || { echo "handoffs list: --limit needs a value" >&2; return 64; }; limit="$2"; shift 2 ;;
       *) echo "handoffs list: unknown arg '$1'" >&2; return 64 ;;
     esac
   done
+  case "$limit" in
+    ''|*[!0-9]*) echo "handoffs list: --limit must be a non-negative integer (got '$limit')" >&2; return 64 ;;
+  esac
   [ -n "$repo" ] || repo="$(repo_root)"
   repo="$(cd "$repo" 2>/dev/null && pwd || true)"
   [ -n "$repo" ] || { echo "handoffs list: repo not found" >&2; return 1; }
@@ -190,8 +197,15 @@ cmd_list() {
 
   # Sort oldest first (largest age first) by the zero-padded sort key, then
   # strip the key before printing.
-  printf '%s\n' "${rows[@]}" | sort -rn -t"$(printf '\t')" -k1,1 | cut -f2-
-  echo "${#rows[@]} open handoffs"
+  local sorted; sorted="$(printf '%s\n' "${rows[@]}" | sort -rn -t"$(printf '\t')" -k1,1 | cut -f2-)"
+  local total_n="${#rows[@]}"
+  if [ "$limit" -gt 0 ] && [ "$total_n" -gt "$limit" ]; then
+    printf '%s\n' "$sorted" | head -n "$limit"
+    echo "+$((total_n - limit)) more"
+  else
+    printf '%s\n' "$sorted"
+  fi
+  echo "$total_n open handoffs"
 }
 
 main() {
