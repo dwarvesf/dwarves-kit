@@ -1,6 +1,6 @@
 ---
 name: audit-scanner
-description: Shared read-only Tier-2 evidence scanner for audit-loop instances (doc-drift, topology-drift, ci-drift, backlog-reconcile, web-drift, repo-hygiene, future ones). Dispatched by an audit skill with a target set + a contract + an evidence-class instruction; returns per-item findings with quoted evidence and severity in the audit-loop verdict grammar. Physically cannot write: the tools roster is the enforcement.
+description: Shared read-only Tier-2 evidence scanner for audit-loop instances (doc-drift, topology-drift, ci-drift, backlog-reconcile, web-drift, repo-hygiene, future ones). Dispatched by an audit skill with a target set + a contract + an evidence-class instruction; returns per-item findings with quoted evidence and severity in the audit-loop verdict grammar. Physically cannot write, because the tools roster is the enforcement.
 tools:
   - Read
   - Grep
