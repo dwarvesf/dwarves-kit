@@ -236,6 +236,13 @@ kit_module_clis() {
 # (e.g. a stale cc-elevation link, the exact thing this replaces), or a prior shim.
 kit_write_cli_shim() {
   local name="$1" target="$2" dst="$HOME/.local/bin/$1"
+  # A target outside $HOME means a fixture install (CLAUDE_DIR=<tmp>, HOME left
+  # real): the shim would point into a dir the fixture deletes, leaving a dangling
+  # CLI on the operator's PATH.
+  case "$target" in
+    "$HOME"/*) ;;
+    *) echo "[skip] $name shim: target $target is outside \$HOME (fixture install)"; return 0 ;;
+  esac
   if [ -e "$dst" ] && [ ! -L "$dst" ] && ! grep -q "dwarves-kit CLI shim" "$dst" 2>/dev/null; then
     echo "[warn] $dst exists and is not kit-managed; left untouched"
     return 0
