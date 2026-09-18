@@ -326,6 +326,33 @@ chk "matrix apply kept the unproven worktree's branch" \
   "$(git -C "$MTX" show-ref --verify --quiet refs/heads/squash-stale; echo $?)"
 
 # ===========================================================================
+echo "=== apply --worktrees: a lock naming a live pid is skipped, a dead pid is removed ==="
+# ===========================================================================
+# A worktree the Agent tool just created for a still-running subagent is also locked and its
+# fresh branch can be a trivial ancestor of origin/main: the lock alone must not authorize
+# removal when the pid it names is still alive.
+git -C "$MTX" branch mtx-live-branch origin/merged-ancestor >/dev/null 2>&1
+git -C "$MTX" branch mtx-dead-branch origin/merged-ancestor >/dev/null 2>&1
+git -C "$MTX" worktree add "$TMPD/mtx-livepid" mtx-live-branch >/dev/null 2>&1
+git -C "$MTX" worktree lock "$TMPD/mtx-livepid" --reason "claude agent test (pid $$ started now)" >/dev/null 2>&1
+git -C "$MTX" worktree add "$TMPD/mtx-deadpid" mtx-dead-branch >/dev/null 2>&1
+( sleep 0 ) & DEAD_PID=$!; wait "$DEAD_PID" 2>/dev/null
+git -C "$MTX" worktree lock "$TMPD/mtx-deadpid" --reason "claude agent test (pid $DEAD_PID started now)" >/dev/null 2>&1
+
+out="$("$WRAP" apply --worktrees "$MTX" 2>&1)"
+chk_has "livepid dry-run: the live-pid worktree is skipped, not removed" "$out" \
+  "SKIP $TMPD_P/mtx-livepid: locked by live pid $$ (an agent is still running)"
+chk_has "livepid dry-run: the dead-pid worktree still reads as a WOULD remove" "$out" \
+  "WOULD remove worktree $TMPD_P/mtx-deadpid [mtx-dead-branch, locked] and delete mtx-dead-branch (ancestor of origin/main)"
+
+out="$("$WRAP" apply --apply --worktrees "$MTX" 2>&1)"; rc=$?
+chk "livepid apply exits 0" "$rc"
+chk "livepid apply removed the dead-pid worktree" "$([ ! -e "$TMPD/mtx-deadpid" ]; echo $?)"
+chk "livepid apply kept the live-pid worktree" "$([ -d "$TMPD/mtx-livepid" ]; echo $?)"
+chk "livepid apply kept the live-pid worktree's branch" \
+  "$(git -C "$MTX" show-ref --verify --quiet refs/heads/mtx-live-branch; echo $?)"
+
+# ===========================================================================
 echo "=== apply --worktrees: the default branch and the main checkout's branch are off limits ==="
 # ===========================================================================
 # git allows a second worktree on an already-checked-out branch under --force, which is the only
