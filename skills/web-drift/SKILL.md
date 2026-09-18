@@ -1,10 +1,14 @@
 ---
 name: web-drift
-description: Use for the live-website agent-readiness audit, "run the web-drift loop", "audit our websites", "are our sites still readable by an agent", "web drift sweep", "check the public sites", or a scheduled site-audit cadence run. Enumerates every site the consumer declared in WEB_DRIFT_SITES, probes each over read-only HTTP with lib/webcheck (groundwork, page, and API tiers), verdicts each check with evidence, and files the fixes as board rows in the repo that owns the site's source plus a report. NOT for auditing docs or code inside a checkout (that is kit:doc-drift), NOT for CI and release state (that is kit:ci-drift), NOT for the kit's own feature registry (that is kit:topology-drift), NOT for page-speed, Lighthouse, or Core Web Vitals (a different tool and a different question), NOT for measuring whether answer engines cite the site (no engine probe ships here), NOT for fixing a site (this repo holds no website source; the loop files rows, it never edits a site).
+description: Use for the live-website agent-readiness audit, "run the web-drift loop", "web drift sweep", "check the public sites", or a scheduled cadence run. NOT for docs/code in a checkout (doc-drift), NOT for CI/release state (ci-drift), NOT for the kit's feature registry (topology-drift), NOT for page-speed/Core Web Vitals, NOT for answer-engine citation, NOT for fixing a site (files rows only).
 disable-model-invocation: false
 ---
 
 # Web drift
+
+## Scope and triggers
+
+Also fires on "audit our websites", "are our sites still readable by an agent". Enumerates every site the consumer declared in `WEB_DRIFT_SITES`, probes each over read-only HTTP with `lib/webcheck` (groundwork, page, and API tiers), verdicts each check with evidence, and files the fixes as board rows in the repo that owns the site's source, plus a report. Page-speed/Lighthouse/Core Web Vitals is a different tool and a different question. No answer-engine-citation probe ships here. This repo holds no website source: the loop files rows, it never edits a site.
 
 ## Overview
 

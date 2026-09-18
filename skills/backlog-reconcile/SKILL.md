@@ -1,10 +1,14 @@
 ---
 name: backlog-reconcile
-description: Use when auditing, reconciling, or verifying a repo's `_meta/BACKLOG.md` Active queue against reality, "audit the backlog", "reconcile the board", "is the board still true", "dọn backlog", "rà soát backlog", "check board rows against their specs", or when a scheduled run asks for the backlog-reconcile audit of a repo. NOT for filing new items onto the board (board-registration tooling, e.g. an adopter's own intake skill), NOT for a single known-stale row (just fix it), NOT for this kit's own `docs/FEATURES.md`/`docs/workflow-paths.md` pair (that is `topology-drift`, maintainer-only).
+description: Use to audit a repo's `_meta/BACKLOG.md` Active queue against reality, "audit the backlog", "reconcile the board", "is the board still true", "dọn backlog", "rà soát backlog", or a scheduled backlog-reconcile run. NOT for filing new items onto the board, NOT for a single known-stale row (just fix it), NOT for the kit's own FEATURES/workflow-paths pair (topology-drift).
 disable-model-invocation: false
 ---
 
 # Backlog reconcile
+
+## Scope and triggers
+
+Also fires on "check board rows against their specs", or when a scheduled run asks for the backlog-reconcile audit of a repo. NOT for filing new items onto the board means board-registration tooling, e.g. an adopter's own intake skill. This kit's own `docs/FEATURES.md`/`docs/workflow-paths.md` pair is `topology-drift`'s territory, maintainer-only, never this skill's.
 
 ## Overview
 

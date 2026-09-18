@@ -1,10 +1,14 @@
 ---
 name: ci-drift
-description: Use for the whole-estate CI audit, "audit the CI", "are the runners clean", "check the release pipeline", "ci drift", "stale workflows / secrets / runners", or a scheduled CI-audit cadence run. Enumerates every workflow + GitHub-side CI state (enabled/disabled, secrets, vars, runners, releases, environment policy), verdicts each against the live repo with evidence, fixes drift on a branch, gates through a PR. An audit-loop instance (docs/patterns/audit-loop.md). NOT for one failing run (that is /kit:debug), NOT for doc prose (doc-drift).
+description: Use for the whole-estate CI audit, "audit the CI", "are the runners clean", "check the release pipeline", "ci drift", "stale workflows / secrets / runners", or a scheduled CI-audit cadence run. NOT for one failing run (/kit:debug), NOT for doc prose (doc-drift).
 disable-model-invocation: false
 ---
 
 # CI drift
+
+## Scope and triggers
+
+Enumerates every workflow + GitHub-side CI state (enabled/disabled, secrets, vars, runners, releases, environment policy), verdicts each against the live repo with evidence, fixes drift on a branch, gates through a PR. An audit-loop instance (docs/patterns/audit-loop.md).
 
 ## Overview
 

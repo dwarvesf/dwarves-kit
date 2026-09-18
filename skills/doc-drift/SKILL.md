@@ -1,10 +1,14 @@
 ---
 name: doc-drift
-description: Use for the whole-estate doc audit, "run the doc-drift loop", "audit the docs against the code", "are the docs still true", "doc drift sweep", "check every doc claim", or a scheduled doc-audit cadence run. Enumerates every LIVING doc (README, MANUAL, AGENTS, WORKFLOW, architecture, patterns), verdicts each against the live repo with evidence, fixes drift on a branch, gates through a PR. An audit-loop instance (docs/patterns/audit-loop.md). NOT for diff-scoped doc sync inside a build cycle (that is /kit:docs), NOT for dated records like specs, research, retros (they describe their moment and never drift), NOT for one known-wrong doc (just fix it).
+description: Use for the whole-estate doc audit, "run the doc-drift loop", "audit the docs against the code", "are the docs still true", "doc drift sweep", "check every doc claim", or a scheduled doc-audit cadence run. NOT for diff-scoped doc sync inside a build cycle (/kit:docs), NOT for dated records like specs, research, retros, NOT for one known-wrong doc (just fix it).
 disable-model-invocation: false
 ---
 
 # Doc drift
+
+## Scope and triggers
+
+Enumerates every LIVING doc (README, MANUAL, AGENTS, WORKFLOW, architecture, patterns), verdicts each against the live repo with evidence, fixes drift on a branch, gates through a PR. An audit-loop instance (docs/patterns/audit-loop.md). Dated records like specs, research, retros describe their moment and never drift.
 
 ## Overview
 

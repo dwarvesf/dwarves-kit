@@ -1,13 +1,15 @@
 ---
 name: observe
-description: Query and render the kit's control plane from an agent session. Use when asked about the fleet's runs, gate verdicts, conformance, spend/tokens/cache economics, the cognitive-debt score, replaying a recorded run, benchmark results, or building/refreshing the observability dashboard. Trigger phrases include "dashboard", "control plane", "how much did we spend", "token usage", "cache hit rate", "cognitive debt", "debt score", "replay run <rid>", "gate log for <rid>", "conformance", "fleet stats", "observability numbers". All surfaces are CLIs under lib/bench; agents should prefer the JSON verbs over parsing HTML.
+description: Query and render the kit's control plane from an agent session. Use when asked about the fleet's runs, gate verdicts, conformance, spend/tokens/cache economics, the cognitive-debt score, replaying a recorded run, or building/refreshing the observability dashboard. Trigger phrases include "dashboard", "control plane", "how much did we spend", "token usage", "cognitive debt", "fleet stats".
 ---
 
 # observe , the control plane from an agent session
 
-Every observability surface is a stdlib-only CLI in `lib/bench/` (resolve the kit root via
-`$DWARVES_KIT` or this skill's own location). Prefer JSON verbs; render HTML only when a
-human will look at it.
+## Scope and triggers
+
+More trigger phrases: "cache hit rate", "debt score", "replay run <rid>", "gate log for <rid>", "conformance", "observability numbers". All surfaces are CLIs under `lib/bench`; agents should prefer the JSON verbs over parsing HTML.
+
+Every observability surface is a stdlib-only CLI in `lib/bench/` (resolve the kit root via `$DWARVES_KIT` or this skill's own location). Prefer JSON verbs; render HTML only when a human will look at it.
 
 ## Query numbers (agent surface, JSON)
 

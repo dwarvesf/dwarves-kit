@@ -1,10 +1,14 @@
 ---
 name: repo-hygiene
-description: Use for the whole-repo decay audit, "run the repo-hygiene loop", "what has rotted in this repo", "audit repo hygiene", "find the stale files", "is anything mis-shelved", "dọn repo", or a scheduled repo-hygiene cadence run. Enumerates files inside a git repo that have decayed (unreferenced docs, stale staging drops, records parked in a control surface, logs past their documented budget, large cold gitignored dirs), verdicts each with evidence inline, co-locates mis-shelved records on a branch, and gates through a PR. An audit-loop instance (docs/patterns/audit-loop.md). NOT for the machine surface outside a git repo (abandoned home-folder tool dirs, package caches: that is ops-toolkit tools/disk-reclaim, which owns read-first machine cleanup), NOT for doc claims drifting from code (that is kit:doc-drift), NOT for board rows (kit:backlog-reconcile), NOT for one file you already know is stale (just move it).
+description: Use for the whole-repo decay audit, "run the repo-hygiene loop", "what has rotted in this repo", "is anything mis-shelved", "dọn repo", or a scheduled cadence run. NOT for the machine surface outside a git repo (disk-reclaim), NOT for doc claims drifting from code (doc-drift), NOT for board rows (backlog-reconcile), NOT for one file you already know is stale (just move it).
 disable-model-invocation: false
 ---
 
 # Repo hygiene
+
+## Scope and triggers
+
+Also fires on "audit repo hygiene", "find the stale files". An audit-loop instance (docs/patterns/audit-loop.md). Enumerates files inside a git repo that have decayed (unreferenced docs, stale staging drops, records parked in a control surface, logs past their documented budget, large cold gitignored dirs), verdicts each with evidence inline, co-locates mis-shelved records on a branch, and gates through a PR. The machine surface outside a git repo (abandoned home-folder tool dirs, package caches) belongs to ops-toolkit tools/disk-reclaim, which owns read-first machine cleanup.
 
 ## Overview
 

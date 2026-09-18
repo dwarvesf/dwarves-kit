@@ -1,10 +1,16 @@
 ---
 name: loop-engineering
-description: Use when the user wants to design or add a new bounded loop to the kit's own SDLC orchestration ("let's build a loop", "design a new loop for the orchestrator", "loop engineering", "make this a bounded loop", "is this worth a loop"), or mentions the Karpathy loop / autoresearch / hill-climb / search-and-select prompt or parameter tuning. Walks the gate (should this even be a loop) then the anatomy (artifact / scanner / reviser / stop condition), routing to one of three shapes: bounded-revise engine, campaign/worklist, or bounded search-select. NOT for a one-off in-session Stop-hook goal (use goal-craft), NOT for the debug loop (already exists, use /kit:debug), NOT for building the loop's actual code once the shape is agreed (just build it).
+description: Use to design or add a new bounded loop to the kit's SDLC orchestration ("let's build a loop", "design a new loop for the orchestrator", "loop engineering", "make this a bounded loop", "is this worth a loop"), or mentions of the Karpathy autoresearch or hill-climb loop. NOT for a one-off Stop-hook goal (goal-craft), NOT for the debug loop (/kit:debug), NOT for building the loop's code once agreed.
 disable-model-invocation: false
 ---
 
 # Loop engineering
+
+## Scope and triggers
+
+Also fires on mentions of the search-and-select loop or a prompt/parameter tuning loop.
+
+Walks the gate (should this even be a loop) then the anatomy (artifact / scanner / reviser / stop condition), routing to one of three shapes: bounded-revise engine, campaign/worklist, or bounded search-select.
 
 ## Overview
 
