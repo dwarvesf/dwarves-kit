@@ -65,6 +65,12 @@ HOME="$H4" bash "$KIT_DIR/install.sh" --with session >/tmp/kitcli-h4.log 2>&1
 assert_true "stale symlink replaced by a kit shim" \
   "$([ ! -L "$H4/.local/bin/session" ] && grep -q 'dwarves-kit CLI shim' "$H4/.local/bin/session"; echo $?)"
 
+echo "== a fixture CLAUDE_DIR outside HOME never writes a shim into HOME =="
+H7="$(mktemp -d)"; CD7="$(mktemp -d)"
+HOME="$H7" CLAUDE_DIR="$CD7" bash "$KIT_DIR/install.sh" --with session,prose_rag >/tmp/kitcli-h7.log 2>&1
+assert_true "no shim dir written into HOME" "$([ ! -e "$H7/.local/bin/session" ] && [ ! -e "$H7/.local/bin/prose-rag" ]; echo $?)"
+assert_true "install logged the fixture skip" "$(grep -q 'outside \$HOME (fixture install)' /tmp/kitcli-h7.log; echo $?)"
+
 echo
 if [ $fail -gt 0 ]; then echo "test-install-clis: $pass passed, $fail FAILED" >&2; exit 1; fi
 echo "test-install-clis: all $pass passed"
