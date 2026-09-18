@@ -302,8 +302,8 @@ Within one spec, tasks run sequentially. Across specs, `/kit:dispatch` fans out 
 | spec-drift-guard | PreToolUse(Write) | Warns when creating files not in the spec |
 | pre-compact-backup | PreCompact | Saves structured session snapshot before compaction |
 | harvest | PreCompact, SessionEnd | Stages durable session learnings to a repo-relative ledger (PreCompact); drafts a LAB_LOG entry (SessionEnd --lab-log). Never writes a durable home; a human flushes |
-| backlog-stage | SessionEnd | Stages forward-looking work-items from the session to a repo-relative staging file. Never writes the board directly |
-| intake-sweep | SessionStart (via backlog-stage --surface) | Sweeps consumer-declared deferred-link sources (`_meta/intake-sources.json`: jsonl / command adapters) into the same staging file. Config-gated no-op; never writes the board directly |
+| backlog-stage | SessionEnd | Opt-in (`BACKLOG_STAGE_AUTO=1`, default off): stages forward-looking work-items from the session to a repo-relative staging file. Never writes the board directly |
+| intake-sweep | SessionStart (via backlog-stage --surface, same opt-in) | Sweeps consumer-declared deferred-link sources (`_meta/intake-sources.json`: jsonl / command adapters) into the same staging file. Config-gated no-op; never writes the board directly |
 | post-compact-reinject | PostToolUse(compact) | Re-injects critical rules after compaction |
 | notification | Notification | Desktop alert when Claude needs input |
 | permission-auto-approve | PermissionRequest | Auto-approves read-only operations (pipe-safe) |

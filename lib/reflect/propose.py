@@ -7,7 +7,9 @@ human triages. It is `propose`-only (decision 5): its ONLY legal sink is the
 staging file. It never writes a board, never rewrites a ledger, never edits kit/skill/
 CLAUDE.md. The three disciplines ARE the feature:
 
-  - propose-only     : writes `## [staged]` blocks; a human promotes via `board promote`.
+  - propose-only     : renders `## [staged]` blocks. By default it PRINTS them for the
+                       report and writes nothing; BACKLOG_STAGE_AUTO=1 appends them to the
+                       staging file, where a human promotes via `board promote`.
   - cite-the-number  : every block names the lens + figure + rids it rests on, and the
                        citation is REBUILT from the deterministic aggregate, NEVER taken
                        from the model (a model cannot inject a fabricated figure).
@@ -40,6 +42,7 @@ Env / seams:
   LEARN_PROPOSE_VERIFIER=CMD    adversarial pass (default claude -p sonnet). Reads the prompt
                                 on stdin, writes a verdict (`VERDICT: HOLDS|REFUTED`) on stdout.
   REFLECT_PROPOSE_RID=STR         rid for the TOKENS markers (default: gate rid / date slug).
+  BACKLOG_STAGE_AUTO=1          opt in to the staging write (default off: print only).
   BACKLOG_STAGE_STAGING / BACKLOG_STAGE_BACKLOG   staging + board defaults (shared with the
                                 hook + add-backlog, so propose writes where board promote reads).
   LEARN_PROPOSE_COCKPIT         cross-repo board registry read for dedup (default
@@ -505,6 +508,17 @@ def parse_retro_actions(path):
     return out
 
 
+def _auto_stage():
+    """The staging write is opt-in. Unset, a proposer prints its blocks so they land in the
+    session's report; a staging file nobody drains is where they used to die."""
+    return os.environ.get("BACKLOG_STAGE_AUTO", "").strip().lower() in ("1", "true", "yes", "on")
+
+
+def _print_unstaged(blocks, who):
+    sys.stdout.write("".join(blocks))
+    print(f"{who}: printed, not staged (BACKLOG_STAGE_AUTO is off)")
+
+
 def run_retro(retro_path, staging, backlog, dry_run):
     """Stage a retro's action items. Deterministic: no LLM, no grounding pass, no refute.
     The items were written by a human in a retro; the evidence IS the retro."""
@@ -523,6 +537,9 @@ def run_retro(retro_path, staging, backlog, dry_run):
         blocks.append(block)
         staged.append(c["title"])
 
+    if blocks and not dry_run and not _auto_stage():
+        _print_unstaged(blocks, "reflect propose --retro")
+        return 0
     if blocks and not dry_run:
         header = "" if os.path.isfile(staging) else (
             "# Backlog staging (auto, via reflect propose)\n\n"
@@ -588,7 +605,10 @@ def run(days, megas, staging, backlog, dry_run, aggregate_file):
             dedup.add(key)  # dedup within this batch too
 
     n = len(staged_blocks)
-    if staged_blocks and not dry_run:                     # (3d) staged write
+    stage = _auto_stage()
+    if staged_blocks and not dry_run and not stage:
+        sys.stdout.write("".join(staged_blocks))
+    if staged_blocks and not dry_run and stage:           # (3d) staged write
         header = "" if os.path.isfile(staging) else (
             "# Backlog staging (auto, via reflect propose)\n\n"
             "Candidates auto-extracted from the ledger. Review + promote by hand "
@@ -600,10 +620,10 @@ def run(days, megas, staging, backlog, dry_run, aggregate_file):
 
     print(f"reflect propose: {len(aggregate['signals'])} signals over "
           f"{aggregate['window']['n_rids']} rids -> {len(hypotheses)} hypotheses -> "
-          f"{n} candidate{'s' if n != 1 else ''} staged "
+          f"{n} candidate{'s' if n != 1 else ''} {'staged' if stage else 'printed'} "
           f"(dropped: {dropped['ungrounded']} ungrounded, {dropped['refuted']} refuted, "
           f"{dropped['duplicate']} duplicate)"
-          + (" [dry-run]" if dry_run else ""))
+          + (" [dry-run]" if dry_run else "" if stage else " [not staged: BACKLOG_STAGE_AUTO is off]"))
     if n == 0:
         print("reflect propose: 0 candidates" + (" (empty window)" if not aggregate["signals"] else ""))
     return 0

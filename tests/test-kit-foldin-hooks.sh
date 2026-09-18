@@ -187,6 +187,37 @@ JSON
 EOF
 chmod +x "$TD/bs-extractor.sh"
 
+# row 3-off: staging is opt-in. With BACKLOG_STAGE_AUTO unset the hook exits 0 and writes no
+# staging file, even for a transcript with explicit forward intent and a live extractor.
+mkdir -p "$TD/bs-repo-off/_meta"
+git -C "$TD/bs-repo-off" init -q
+RC=0
+env -u BACKLOG_STAGE_AUTO REPO_ROOT="$TD/bs-repo-off" BACKLOG_STAGE_EXTRACTOR="$TD/bs-extractor.sh" \
+  BACKLOG_STAGE_STATE_DIR="$TD/bs-state-off" BACKLOG_STAGE_SYNC=1 \
+  bash -c "echo '{\"transcript_path\":\"$BS_TRANS\"}' | bash '$KIT_DIR/hooks/backlog-stage.sh'" >/dev/null 2>&1 || RC=$?
+assert_exit "row 3-off: knob unset, hook exits 0" 0 $RC
+TOTAL=$((TOTAL + 1))
+if [ ! -e "$TD/bs-repo-off/_meta/backlog-staging.md" ]; then
+  echo -e "  ${GREEN}PASS${NC} row 3-off: knob unset, no staging file written"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}FAIL${NC} row 3-off: knob unset, but the hook still staged a candidate"
+  FAIL=$((FAIL + 1))
+fi
+SURF_OUT=$(printf '## [staged] x\n' > "$TD/bs-repo-off/_meta/backlog-staging.md"; \
+  env -u BACKLOG_STAGE_AUTO REPO_ROOT="$TD/bs-repo-off" bash "$KIT_DIR/hooks/backlog-stage.sh" --surface 2>&1)
+TOTAL=$((TOTAL + 1))
+if [ -z "$SURF_OUT" ]; then
+  echo -e "  ${GREEN}PASS${NC} row 3-off: knob unset, the SessionStart surface prints no staged-count line"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}FAIL${NC} row 3-off: knob unset, surface still printed: $SURF_OUT"
+  FAIL=$((FAIL + 1))
+fi
+
+# Every row below exercises the opt-in path.
+export BACKLOG_STAGE_AUTO=1
+
 RC=0
 REPO_ROOT="$TD/bs-repo" BACKLOG_STAGE_EXTRACTOR="$TD/bs-extractor.sh" BACKLOG_STAGE_STATE_DIR="$TD/bs-state" \
   BACKLOG_STAGE_SYNC=1 \
@@ -372,6 +403,7 @@ assert_exit "NC: empty stdin exits 0" 0 $RC
 # NC: malformed JSON never blocks a session end.
 RC=0; echo 'not json' | bash "$KIT_DIR/hooks/backlog-stage.sh" >/dev/null 2>&1 || RC=$?
 assert_exit "NC: malformed JSON exits 0" 0 $RC
+unset BACKLOG_STAGE_AUTO
 
 # ============================================================
 echo ""

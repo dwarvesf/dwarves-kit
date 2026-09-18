@@ -5,6 +5,11 @@
 # harvest never blocks a session end.
 set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Opt-in, default off. A session ends with its follow-ups done or listed in its own report;
+# staging candidates as a side effect filled a staging file nobody drained and fed a board
+# that grew 13 to 25 rows a day. BACKLOG_STAGE_AUTO=1 restores all three passes below: the
+# SessionEnd harvest, the SessionStart intake sweep, and the SessionStart count line.
+case "${BACKLOG_STAGE_AUTO:-}" in 1|true|yes|on) ;; *) exit 0 ;; esac
 # On the SessionStart surface pass, first sweep the consumer's declared deferred-link
 # sources into the same staging funnel (intake-sweep is config-gated: no
 # _meta/intake-sources.json means it is a silent no-op, and it self-throttles to daily),

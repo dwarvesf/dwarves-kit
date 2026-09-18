@@ -46,10 +46,11 @@ repos the kit has not adopted; here they would run a parallel pipeline outside t
 ledger and the ship-gate, so route past them.
 
 0. **Take work.** Handed a task: use it. **Handed a WAVE (2+ items approved in one
-   conversation): enqueue every item as a board row FIRST (queued; the in-flight one
-   executing), then pull them one at a time.** Work that never touches the board is
-   invisible to the board's state machine even when its runs are ledgered, the gap an
-   operator caught live on 2026-06-10. Not handed one: pull the board's top queued item,
+   conversation): work it from the conversation, one item at a time, and never mint board
+   rows for it.** A follow-up the session does not finish goes in its final report. A board
+   row happens only when the operator asks for one or the work is blocked outside the
+   session; sessions that filed rows as a side effect grew one board by 13 to 25 rows a
+   day. Not handed one: pull the board's top queued item,
    `bash "${DWARVES_KIT:-$HOME/.claude/dwarves-kit}/lib/board/backlog.sh" next`, claim it (goal-registry) and flip it to `claimed` (the
    `/kit:assign --next` flow). The BACKLOG is the board; its Status column is the state
    machine (`queued -> claimed -> speccing -> validated -> executing -> shipped`, + parked/
