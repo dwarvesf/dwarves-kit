@@ -353,6 +353,25 @@ OUT="$(scan "$MH" --detectors 3)"
 has "$OUT" "safari-net-complete" && R=1 || R=0
 assert "a slug containing a closure keyword does not declare the goal closed" $R "-- got: $OUT"
 
+# A completed predecessor mega-goal that a projects/<slug>/ record cites as its audit trail
+# is pinned in place by the promote-to-project rule, so it is not a finding. The same folder
+# with no citation still earns FIX, or the pin would be hiding real decay.
+MP="$(mkmega audit-goal)"
+printf '%s\n' \
+  '# Mega-goal: audit-goal' '' \
+  '## Status 2026-09-01: all sub-goals SHIPPED' '' \
+  '- [x] 01 first, PR #1' > "$MP/_meta/megagoals/audit-goal/ROADMAP.md"
+mkdir -p "$MP/projects/nft-migration"
+printf '%s\n' '# nft-migration' '' 'Predecessor audit: `_meta/megagoals/audit-goal/` (stays in place per the lifecycle rule).' \
+  > "$MP/projects/nft-migration/README.md"
+seal "$MP" "feat(icy-ops): land the last audit-goal sub-goal"
+OUT="$(scan "$MP" --detectors 3)"
+has "$OUT" "audit-goal" && R=1 || R=0
+assert "a closed mega-goal cited by a projects/ record is pinned, not a finding" $R "-- got: $OUT"
+rm -rf "$MP/projects"; seal "$MP" "chore: drop the project record"
+OUT="$(scan "$MP" --detectors 3)"
+printf '%s\n' "$OUT" | grep -q '^3	FIX	_meta/megagoals/audit-goal'; assert "the same folder with no projects/ citation still earns FIX" $? "-- got: $OUT"
+
 # ------------------- detector 3: the mega-goal FIX row is the acted-on verdict
 # Every case below is a defect a review reproduced against a live fixture. A mega-goal FIX is
 # applied as `git mv`, so each of these moved, or could move, a LIVE open mega-goal out of the
