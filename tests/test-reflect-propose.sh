@@ -13,6 +13,9 @@ set -uo pipefail
 KIT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PROPOSE="$KIT_DIR/lib/reflect/propose.py"
 SF="$KIT_DIR/lib/reflect/staging-format.py"
+# Staging is opt-in (default: print only). Every case below exercises the staging write; the
+# default-off path has its own negative controls at the end.
+export BACKLOG_STAGE_AUTO=1
 
 PASS=0; FAIL=0
 ok()  { PASS=$((PASS+1)); printf '  PASS  %s\n' "$1"; }
@@ -352,6 +355,26 @@ mock_interp '[
  {"title":"Genuinely new proposal","intent":"x","approach":"y","u":"mid","f":"mid","home":"","signal":"S1"}]'
 python3 "$PROPOSE" --aggregate-file "$AGG" >/dev/null 2>&1
 assert_true "widened NC: no cockpit + no megagoal stages all 4" "$([ "$(grep -c '## \[staged\]' "$STAGING")" -eq 4 ]; echo $?)"
+
+# ============================================================
+echo "== default off: with BACKLOG_STAGE_AUTO unset, propose prints and writes nothing =="
+# ============================================================
+setup
+mock_interp '[{"title":"Printed not staged","intent":"i","approach":"a","u":"mid","f":"hi","home":"","signal":"S1"}]'
+OUT="$(env -u BACKLOG_STAGE_AUTO python3 "$PROPOSE" --aggregate-file "$AGG" 2>&1)"; RC=$?
+assert_true "off: exit 0" "$([ $RC -eq 0 ]; echo $?)"
+assert_true "off: no staging file written" "$([ ! -f "$STAGING" ]; echo $?)"
+assert_true "off: the block is printed on stdout" "$({ trap '' PIPE; echo "$OUT" 2>/dev/null || :; } | grep -q '## \[staged\] Printed not staged'; echo $?)"
+assert_true "off: the summary says it did not stage" "$({ trap '' PIPE; echo "$OUT" 2>/dev/null || :; } | grep -q 'BACKLOG_STAGE_AUTO is off'; echo $?)"
+RT="$(mktemp -d)"; SANDBOXES+=("$RT")
+printf '# Retro\n## Action items\n- [ ] Print this retro item -- owner: @tieubao\n' > "$RT/RETRO-2026-09-18.md"
+printf '| ID | Item | Notes | Status |\n|---|---|---|---|\n' > "$RT/BACKLOG.md"
+OUT="$(env -u BACKLOG_STAGE_AUTO python3 "$PROPOSE" --retro "$RT/RETRO-2026-09-18.md" --staging "$RT/staging.md" --backlog "$RT/BACKLOG.md" 2>&1)"; RC=$?
+assert_true "off --retro: exit 0" "$([ $RC -eq 0 ]; echo $?)"
+assert_true "off --retro: no staging file written" "$([ ! -f "$RT/staging.md" ]; echo $?)"
+assert_true "off --retro: the action item is printed" "$({ trap '' PIPE; echo "$OUT" 2>/dev/null || :; } | grep -q 'Print this retro item'; echo $?)"
+assert_true "off --retro: the summary keeps its counts" "$({ trap '' PIPE; echo "$OUT" 2>/dev/null || :; } | grep -q '1 action item read, 1 printed, 0 duplicate'; echo $?)"
+assert_true "off --retro: no drain or promote hint for a file it never wrote" "$({ trap '' PIPE; echo "$OUT" 2>/dev/null || :; } | grep -q 'board promote'; [ $? -ne 0 ]; echo $?)"
 
 echo ""
 echo "== $((PASS+FAIL)) run, $PASS passed, $FAIL failed =="

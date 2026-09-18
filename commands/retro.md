@@ -108,24 +108,17 @@ Sprint: [date range]
 [note any dwarves-kit friction: hooks that false-positived, commands that were awkward, missing workflows]
 ```
 
-### Step 3b: Stage the action items
+### Step 3b: Report the action items
 
-The checkbox list above is the READING surface. `board promote` reads ONLY the staging buffer,
-so an action item that lives just as a checkbox can never be promoted: a human has to retype it
-to act on it, and so nobody does. Every retro before 2026-07-15 leaked its action items exactly
-this way.
+List every UNCHECKED action item in your reply, one line each, with its owner. That list and the retro doc are where they live. Do not stage them and do not file board rows: a row minted as a side effect is a queue entry nobody decided on. A `[x]` item is already done and is left out.
 
-Run the deterministic proposer (no LLM, no grounding pass: the retro IS the evidence):
+When the operator asks for the items on the board, render them through the one staging renderer and file from there:
 
 ```bash
-bash lib/reflect/reflect.sh propose --retro docs/retro/RETRO-[date].md
+BACKLOG_STAGE_AUTO=1 bash lib/reflect/reflect.sh propose --retro docs/retro/RETRO-[date].md
 ```
 
-It stages every UNCHECKED item as a `## [staged]` block through the one renderer, deduped
-against staging + the board, with `Source: retro <date> | <file> owner=<x>` as the citation.
-A `[x]` item is already done and is deliberately skipped. Then tell the operator: review with
-`reflect drain`, accept with `board promote <n>`. The retro doc keeps its checkboxes untouched;
-it is a historical record, not a tracker.
+Without `BACKLOG_STAGE_AUTO=1` the same command only prints the blocks, which is the right way to preview them. The retro doc keeps its checkboxes untouched; it is a historical record, not a tracker.
 
 ### Step 4: Update kit if needed
 

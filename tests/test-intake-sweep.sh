@@ -142,7 +142,14 @@ cat > "$R4/_meta/intake-sources.json" <<'EOF'
   "include": {"field": "verdict", "equals": "keep"},
   "map": {"title": "title", "url": "url"}}]}
 EOF
-out="$(REPO_ROOT="$R4" INTAKE_SWEEP_STATE_DIR="$R4/state" \
+# NC: the surface pass is opt-in; with BACKLOG_STAGE_AUTO unset it neither sweeps nor prints.
+out="$(env -u BACKLOG_STAGE_AUTO REPO_ROOT="$R4" INTAKE_SWEEP_STATE_DIR="$R4/state" \
+      BACKLOG_STAGE_STAGING="$R4/_meta/backlog-staging.md" \
+      bash "$KIT_DIR/hooks/backlog-stage.sh" --surface 2>&1)"; rc=$?
+assert_true "NC: knob unset, --surface exits 0" "$rc"
+assert_true "NC: knob unset, the sweep does not run" "$([ ! -e "$R4/_meta/backlog-staging.md" ]; echo $?)"
+assert_true "NC: knob unset, no staged-count line" "$([ -z "$out" ]; echo $?)"
+out="$(BACKLOG_STAGE_AUTO=1 REPO_ROOT="$R4" INTAKE_SWEEP_STATE_DIR="$R4/state" \
       BACKLOG_STAGE_STAGING="$R4/_meta/backlog-staging.md" \
       bash "$KIT_DIR/hooks/backlog-stage.sh" --surface 2>&1)"; rc=$?
 assert_true "backlog-stage.sh --surface exits 0" "$rc"

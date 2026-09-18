@@ -101,7 +101,7 @@ while IFS= read -r line; do
 done <<< "$input"
 
 # Step 7b coverage. The line must be present AND carry one of the three outcomes, so an
-# empty `**Built:**` header cannot satisfy it. BUILT names what was built or staged;
+# empty `**Built:**` header cannot satisfy it. A named item says what was built or reported;
 # NOTHING says the precedent check ran and produced no candidate; SKIPPED says the step did
 # not run and why. A report with no such line means nobody can tell which happened.
 #
@@ -202,48 +202,59 @@ else
     esac
   fi
 
-  # Lane closure. `wrap.build_lanes` widened step 7b: `tiny` is no longer the only lane that
-  # can build inline, so `lane=normal`, `lane=bug` and `lane=backfill` are legal on a
-  # `verified:` item. The lane token on its own says only that the candidate was SIZED. What
-  # became of it is the other half, and it is one of four words: `verified:` for a build that
-  # happened here, `filed:` for a full-lane candidate put on the home repo's board, `staged`
-  # for one routed on (`staged + goal drafted:`, `staged: build_candidates off`), or
-  # `capture failed:` when a full-lane `board capture` errored for a reason other than a
-  # missing board (that case reruns `board init` then `capture` itself, per commands/wrap.md).
-  # An item carrying a lane and none of them reports a classification and no outcome, which is
-  # the same hole the `**Built:**` line itself exists to close, one level down.
-  #
-  # `lane=full` closed as `staged` is its own finding. Staging was a dead end: one estate board
-  # accumulated 248 staged rows since May and drained none, so a full-lane candidate now files a
-  # queued row on a board an operator actually reads.
   # Verdict first. A candidate line that reads "<label> ENHANCE <home> ... memory note written"
   # passed for shipped work on 2026-09-16 because nothing on it said whether anything landed.
   # Each item now opens with what happened, in caps, before what it was.
+  #
+  # STAGED and FILED are retired verdicts. Step 7b used to close an unbuilt candidate by
+  # writing a staging block or minting a board row, and one estate board grew 13 to 25 rows a
+  # day that way while its staging file held dozens of undrained blocks. A candidate the
+  # session does not build is REPORTED here and nowhere else; a board row is the operator's
+  # call, never a side effect of the wrap.
   _v_idx=0
   for _v_item in "${built_items[@]}"; do
     _v_idx=$((_v_idx + 1))
     case "$_v_item" in
-      BUILT\ *|STAGED\ *|FILED\ *|NOTE\ *) : ;;
+      BUILT\ *|REPORTED\ *|NOTE\ *) : ;;
+      STAGED\ *|FILED\ *)
+        echo "line 0: '**Built:**' item ${_v_idx} uses a retired verdict; step 7b never stages or files a row, so a candidate not built here is REPORTED" >&2
+        echo "  - ${_v_item}" >&2
+        findings=$((findings + 1)) ;;
       *)
-        echo "line 0: '**Built:**' item ${_v_idx} has no verdict; start it with BUILT, STAGED, FILED, or NOTE so the reader sees what happened before what it was" >&2
+        echo "line 0: '**Built:**' item ${_v_idx} has no verdict; start it with BUILT, REPORTED, or NOTE so the reader sees what happened before what it was" >&2
         echo "  - ${_v_item}" >&2
         findings=$((findings + 1)) ;;
     esac
   done
 
+  # Lane closure. The lane token says only that the candidate was SIZED. What became of it is
+  # the other half, one of two words: `verified:` for a build that happened here, or
+  # `reported:` with a one-line why for one left in the report. An item carrying a lane and
+  # neither reports a classification and no outcome, which is the same hole the `**Built:**`
+  # line itself exists to close, one level down. The retired closures (`staged`, `filed:`,
+  # `capture failed:`) no longer count. The closure must also match the verdict: BUILT owes
+  # `verified:`, REPORTED owes `reported:`, and `lane=full` is never BUILT here, because that
+  # lane owes a spec and a review. The token is anchored to the suffix's own `(` or `,` so
+  # `reported:` inside free text or `unreported:` never counts.
   if [ "${#built_items[@]}" -gt 0 ]; then
     _l_idx=0
     for _l_item in "${built_items[@]}"; do
       _l_idx=$((_l_idx + 1))
       printf '%s' "$_l_item" | grep -qE 'lane=[a-z]+' || continue
-      if printf '%s' "$_l_item" | grep -qE 'lane=full' && printf '%s' "$_l_item" | grep -qE 'staged'; then
-        echo "line 0: '**Built:**' item ${_l_idx} closes a full-lane candidate as 'staged'; a full lane files a queued board row instead, 'filed: <repo> <ID-NNN>, goal drafted: <path>'" >&2
-        echo "  ${_l_item}" >&2
-        findings=$((findings + 1))
+      _l_close=""
+      printf '%s' "$_l_item" | grep -qE '[(,][[:space:]]*verified:' && _l_close="verified"
+      printf '%s' "$_l_item" | grep -qE '[(,][[:space:]]*reported:' && _l_close="${_l_close:+$_l_close+}reported"
+      _l_want=""
+      case "$_l_item" in BUILT\ *) _l_want="verified" ;; REPORTED\ *) _l_want="reported" ;; esac
+      if [ -z "$_l_close" ]; then
+        echo "line 0: '**Built:**' item ${_l_idx} names a lane with no closure; add 'verified: <check>, <commit or PR>' for a build, or 'reported: <one-line why>' for one left in the report" >&2
+      elif printf '%s' "$_l_item" | grep -qE 'lane=full' && [ "$_l_close" != "reported" ]; then
+        echo "line 0: '**Built:**' item ${_l_idx} closes a full-lane candidate as built; a full lane is never built at session close, report it with 'reported: <why>'" >&2
+      elif [ -n "$_l_want" ] && [ "$_l_close" != "$_l_want" ]; then
+        echo "line 0: '**Built:**' item ${_l_idx} pairs its verdict with the wrong closure; BUILT owes 'verified:', REPORTED owes 'reported:'" >&2
+      else
         continue
       fi
-      printf '%s' "$_l_item" | grep -qE 'verified:|filed:|staged|capture failed:' && continue
-      echo "line 0: '**Built:**' item ${_l_idx} names a lane with no closure; add 'verified: <check>, <commit or PR>' for a build, 'filed: <repo> <ID-NNN>' for a full lane on the board, 'capture failed: <reason>' when board capture errored, or a 'staged' form for one routed on" >&2
       echo "  ${_l_item}" >&2
       findings=$((findings + 1))
     done
