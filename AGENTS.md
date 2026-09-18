@@ -51,7 +51,8 @@ ledger and the ship-gate, so route past them.
    row happens only when the operator asks for one or the work is blocked outside the
    session; sessions that filed rows as a side effect grew one board by 13 to 25 rows a
    day. The `board-row-gate` hook enforces this under Claude Code: a commit that adds a new
-   row needs a `board-row-ok: <reason>` line in its message. Not handed one: pull the board's top queued item,
+   row needs a `board-row-ok: <reason>` line in its message (a repo opts out with
+   `[gate] board_row_gate = false` in its committed `.kit.toml`). Not handed one: pull the board's top queued item,
    `bash "${DWARVES_KIT:-$HOME/.claude/dwarves-kit}/lib/board/backlog.sh" next`, claim it (goal-registry) and flip it to `claimed` (the
    `/kit:assign --next` flow). The BACKLOG is the board; its Status column is the state
    machine (`queued -> claimed -> speccing -> validated -> executing -> shipped`, + parked/

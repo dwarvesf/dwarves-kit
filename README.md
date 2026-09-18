@@ -295,7 +295,7 @@ Within one spec, tasks run sequentially. Across specs, `/kit:dispatch` fans out 
 | citation-guard | Stop | Flags (or blocks, CITATION_GUARD_STRICT=1) hallucinated file:line citations in the final message |
 | money-gate | PreToolUse(Edit\|Write\|MultiEdit) | Asks before a money-touching edit lands in a repo named in MONEY_GATE_REPOS (inert unset) |
 | prose-rag | UserPromptSubmit | Injects relevant prior notes on recall-shaped prompts (dormant unless PROSE_RAG_INJECT=1) |
-| board-row-gate | PreToolUse(Bash) | Blocks a `git commit` that adds a new board row (a first-cell ID absent from HEAD's `_meta/BACKLOG.md` or `BACKLOG.md`, any prefix) unless the message carries a `board-row-ok: <reason>` line; kill switch `DWARVES_KIT_SKIP_BOARD_ROW_GATE=1` |
+| board-row-gate | PreToolUse(Bash) | Blocks a `git commit` that adds a new board row (a first-cell ID absent from HEAD's `_meta/BACKLOG.md` or `BACKLOG.md`, any prefix) unless the message carries a `board-row-ok: <reason>` line. On by default; a repo opts out with `[gate] board_row_gate = false` in its committed `.kit.toml`; session kill switch `DWARVES_KIT_SKIP_BOARD_ROW_GATE=1` |
 | batch-debt-warn | PreToolUse(Bash) | Warns once when a session merges a 2nd PR with no lane START in the gate ledger since the first merge |
 | context-budget | UserPromptSubmit | Warns once per 100k-token band once live session context passes 200k (KIT_CTX_WARN/KIT_CTX_STEP); clears on a drop below budget (e.g. after /compact) |
 | auto-format | PostToolUse(Write\|Edit) | Runs formatter on every file change |

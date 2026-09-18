@@ -76,8 +76,10 @@ can never fake, satisfy, or mask a gate. Keep that property when adding a marker
 
 ## Turning a gate on
 
-The blocking quality gates are OPT-IN. The kit root says `false` for every key, so a fresh
-install blocks nothing until someone turns a gate on. Two places do that, and both apply on
+The blocking quality gates are OPT-IN. The kit root says `false` for every key except
+`board_row_gate`, so a fresh install blocks nothing else until someone turns a gate on.
+`board_row_gate` defaults on; a repo opts out with `board_row_gate = false` in a committed
+`.kit.toml`, under the same committed-and-clean rule as any project `false`. Two places do that, and both apply on
 the next hook fire, no re-adopt, no restart:
 
 ```toml
@@ -88,6 +90,7 @@ proof_of_done      = true    # ship-gate: proof-of-done check (ADR-0025)
 lane_gates         = true    # ship-gate: lane x phase required-gate check + no-Lane refusal (ADR-0024)
 understanding_gate = true    # anti-rationalization Stop hook (ADR-0031)
 commit_format      = true    # commit-subject lint
+board_row_gate     = false   # board-row-gate hook: default ON, so the useful setting is false
 ```
 
 `lib/gate/gate-policy.sh enabled <key> [root]` is the one reader; hooks call it and never

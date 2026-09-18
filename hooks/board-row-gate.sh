@@ -17,7 +17,9 @@
 # Merge, rebase, cherry-pick, and revert states skip. No HEAD yet skips.
 # Message: -m/--message values, heredoc bodies, and -F/--file files of THAT commit only.
 # A message that cannot be read blocks, but only when new IDs exist.
-# Kill switch: DWARVES_KIT_SKIP_BOARD_ROW_GATE=1 in the session env. Exit 2 = block.
+# Per-repo opt-out: `[gate] board_row_gate = false` in the committed project kit config, read via
+# lib/gate/gate-policy.sh (default ON). Session kill switch: DWARVES_KIT_SKIP_BOARD_ROW_GATE=1.
+# Exit 2 = block.
 # Never evaluates command text; everything below reads it as a string.
 
 set -uo pipefail
@@ -218,6 +220,18 @@ NEW=$(comm -23 <(printf '%s\n' "$TAKEN") <(printf '%s\n' "$BASEIDS") | tr '\n' '
 NEW="${NEW% }"
 [ -n "$NEW" ] || exit 0
 
+LOG_DIR="${DWARVES_KIT_LOG_DIR:-$HOME/.claude/dwarves-kit/logs}"
+_log() { mkdir -p "$LOG_DIR" 2>/dev/null && printf '%s | %s | %s | %s\n' \
+  "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$1" "$ROOT" "$NEW" >> "$LOG_DIR/board-row-gate.log" 2>/dev/null || true; }
+
+# Per-repo opt-out: `[gate] board_row_gate = false` in the committed, clean project config (default
+# ON). Asked only now, so a commit with no new row never pays for it. Only exit 1 means off.
+POLICY="${CLAUDE_PLUGIN_ROOT:-$HOME/.claude/dwarves-kit}/lib/gate/gate-policy.sh"
+if [ -f "$POLICY" ]; then
+  PRC=0; bash "$POLICY" enabled board_row_gate "$ROOT" || PRC=$?
+  [ "$PRC" -eq 1 ] && { _log OFF-BY-CONFIG; exit 0; }
+fi
+
 # Only now read message sources that cost I/O: this commit's heredoc bodies and -F files.
 A=$(printf '%s\n' "$PRE" | heredoc count)
 K=$(printf '%s\n' "$SEG" | heredoc count)
@@ -231,9 +245,6 @@ while IFS= read -r p; do
   [ -f "$p" ] && [ -r "$p" ] && { FOUND=1; MSG="$MSG$NL$(cat "$p")"; }
 done <<< "$FFILES"
 
-LOG_DIR="${DWARVES_KIT_LOG_DIR:-$HOME/.claude/dwarves-kit/logs}"
-_log() { mkdir -p "$LOG_DIR" 2>/dev/null && printf '%s | %s | %s | %s\n' \
-  "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$1" "$ROOT" "$NEW" >> "$LOG_DIR/board-row-gate.log" 2>/dev/null || true; }
 if printf '%s\n' "$MSG" | grep -qE '^board-row-ok: .+'; then _log MARKER; exit 0; fi
 _log BLOCKED
 
@@ -249,6 +260,7 @@ If this row meets that bar, pass the marker as its own message line, then retry:
   git commit -m "<subject>" -m "board-row-ok: <reason>"
 or as a line of the heredoc body:  board-row-ok: <reason>
 Otherwise unstage the row and put the follow-up in your final report instead.
+Repo opt-out: [gate] board_row_gate = false in the committed project kit config (lib/gate/README.md).
 Operator kill switch: DWARVES_KIT_SKIP_BOARD_ROW_GATE=1 in the session environment.
 BANNER
 exit 2

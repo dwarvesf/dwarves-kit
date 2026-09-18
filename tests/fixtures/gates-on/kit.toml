@@ -6,3 +6,4 @@ proof_of_done      = true
 lane_gates         = true
 understanding_gate = true
 commit_format      = true
+board_row_gate     = true

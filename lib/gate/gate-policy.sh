@@ -7,7 +7,8 @@
 # true and there is one place the default lives.
 #
 # Quality gates are OPT-IN: a gate is on only when its key resolves to a literal `true`.
-# The kit root says false for every key; an operator turns them on machine-wide in
+# The kit root says false for every key but one: board_row_gate defaults ON (DEFAULT_ON),
+# because a board-row check nobody switched on would cover no board. For the rest, an operator turns them on machine-wide in
 # ~/.config/dwarves-kit/kit.toml, a repo turns one on with `<key> = true` in its .kit.toml
 # (never commit-gated: turning a gate on is not a bypass). A project-level `false` over an
 # operator `true` counts only once .kit.toml is committed and clean: the hooks read the
@@ -25,10 +26,11 @@
 #   gate-policy.sh enabled <key> [project-root]   exit 0 = on, exit 1 = off by config (only 1)
 #   gate-policy.sh keys                            the known keys, one per line
 #
-# <key>: proof_of_done | lane_gates | understanding_gate | commit_format
+# <key>: proof_of_done | lane_gates | understanding_gate | commit_format | board_row_gate
 set -uo pipefail
 GATE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-KEYS="proof_of_done lane_gates understanding_gate commit_format"
+KEYS="proof_of_done lane_gates understanding_gate commit_format board_row_gate"
+DEFAULT_ON="board_row_gate"   # the code default when no config file names the key
 
 enabled() {
   local key="${1:-}" root="${2:-$PWD}" v
@@ -36,7 +38,8 @@ enabled() {
   # shellcheck source=lib/config/kit-config.sh
   source "$GATE_DIR/../config/kit-config.sh" 2>/dev/null || return 0
   # What the operator overlay and the kit root say, with the project file out of the picture.
-  local rest; rest="$(KIT_PROJECT_ROOT=/nonexistent kit_config_get "gate.$key" false 2>/dev/null)" || return 0
+  local def=false; case " $DEFAULT_ON " in *" $key "*) def=true ;; esac
+  local rest; rest="$(KIT_PROJECT_ROOT=/nonexistent kit_config_get "gate.$key" "$def" 2>/dev/null)" || return 0
   case "$(_kit_toml_get "$root/.kit.toml" gate "$key")" in
     true) return 0 ;;
     false)

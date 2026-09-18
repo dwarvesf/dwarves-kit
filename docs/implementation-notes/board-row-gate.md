@@ -20,12 +20,12 @@ Context: the kit forbids Python and Node in hooks (PHILOSOPHY). The common agent
 Decision: heredoc bodies are split out with awk first, then `-m`/`--message` values (double, single, `$'...'`, bare) and `-F`/`--file` paths are read by bash regex. A literal `\n` inside one double-quoted `-m` stays literal, as in bash, so it yields no marker line.
 Impact: an unusual shape the regex misses counts as "no marker", which blocks only when new IDs exist. That is the fail-closed direction the brief asked for.
 
-## Always on, env kill switch only
+## On by default, per-repo opt-out through [gate]
 
-Context: the kit's quality gates are opt-in through `[gate]` keys in `lib/gate/gate-policy.sh`.
-Decision: this hook has no `[gate]` key. It is on wherever a board exists, with `DWARVES_KIT_SKIP_BOARD_ROW_GATE=1` as the operator escape hatch.
-Why: the brief asked for coverage with no per-repo step, and AGENTS.md zone 2 step 0 already states the rule as the kit's contract. An opt-in key would leave every board uncovered until someone flips it.
-Open question: whether downstream adopters outside this operator's machine want a `[gate] board_rows` key to turn it off per repo.
+Context: the kit's quality gates are opt-in through `[gate]` keys in `lib/gate/gate-policy.sh`. A first cut had no key, only the env kill switch. The lead asked for default ON plus a per-repo opt-out, so other engineers adopting the kit can switch it off.
+Decision: a new `[gate] board_row_gate` key, the one gate key that defaults to `true`. The default lives in two places: `DEFAULT_ON` in `gate-policy.sh` (the code default when no file names the key) and the kit-root `kit.toml`. A repo opts out with `false` in its `.kit.toml`; the operator overlay can switch it off machine-wide.
+Why `[gate]` and not a `[board]` section: `gate-policy.sh` is the one reader hooks may call, and it already carries the rule that a project `false` applies only once `.kit.toml` is committed and clean. So an agent cannot switch the gate off with an uncommitted edit in the same session. A new section would need a second reader to repeat that rule.
+Impact: the hook asks the policy only after it finds a new ID, so a commit with no new row pays nothing. The session kill switch `DWARVES_KIT_SKIP_BOARD_ROW_GATE=1` stays for the operator.
 
 ## Read what the commit takes, not only the index
 

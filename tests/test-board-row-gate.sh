@@ -16,6 +16,8 @@ trap 'rm -rf "$T"' EXIT
 export HOME="$T/home"; mkdir -p "$HOME"
 export DWARVES_KIT_LOG_DIR="$T/logs"
 unset DWARVES_KIT_SKIP_BOARD_ROW_GATE
+# Config layers: this checkout's kit root, no operator overlay, so the default is the kit's.
+export CLAUDE_PLUGIN_ROOT="$KIT_DIR" KIT_CONFIG_ROOT="$KIT_DIR" KIT_CONFIG_OPERATOR="$T/no-operator"
 export GIT_CONFIG_GLOBAL="$T/gitconfig" GIT_CONFIG_NOSYSTEM=1
 git config --global user.email t@t.t; git config --global user.name t
 git config --global init.defaultBranch main
@@ -178,6 +180,28 @@ row ID-008 >> "$R/$B"; git -C "$R" add "$B"; git -C "$R" commit -qm 'docs: row' 
 check "11.17 --amend --no-edit over a row HEAD added BLOCKS"     block "$R" "git commit --amend --no-edit"
 check "11.18 --amend with the marker"                            allow "$R" "git commit --amend -m 'docs: row' -m 'board-row-ok: asked'"
 git -C "$R" reset -q --hard HEAD^
+
+echo "== Per-repo opt-out: [gate] board_row_gate in .kit.toml =="
+bash "$KIT_DIR/lib/gate/gate-policy.sh" enabled board_row_gate "$NOWHERE"; rc=$?
+if [ "$rc" -eq 0 ]; then PASS=$((PASS+1)); echo "  PASS 12.1 kit default: board_row_gate resolves ON"
+else FAIL=$((FAIL+1)); echo "  FAIL 12.1 board_row_gate defaulted off (rc=$rc)"; fi
+OPT="$T/repo-optout"; mkrepo "$OPT" _meta/BACKLOG.md CL
+printf '[gate]\nboard_row_gate = false\n' > "$OPT/.kit.toml"
+add_row "$OPT" "$B" CL-003
+check "12.2 uncommitted opt-out does not apply, BLOCKS"   block "$OPT" "git commit -m 'docs: x'"
+git -C "$OPT" add .kit.toml; git -C "$OPT" commit -qm "chore: gate config"
+add_row "$OPT" "$B" CL-004
+check "12.3 committed opt-out passes a new row, no marker" allow "$OPT" "git commit -m 'docs: x'"
+if grep -q "OFF-BY-CONFIG | .*repo-optout | CL-004" "$DWARVES_KIT_LOG_DIR/board-row-gate.log"; then
+  PASS=$((PASS+1)); echo "  PASS 12.4 the opt-out skip is logged OFF-BY-CONFIG"
+else FAIL=$((FAIL+1)); echo "  FAIL 12.4 no OFF-BY-CONFIG line for the opt-out repo"; fi
+echo "# edited" >> "$OPT/.kit.toml"
+check "12.5 dirty edit on the committed opt-out, BLOCKS"   block "$OPT" "git commit -m 'docs: x'"
+git -C "$OPT" checkout -q -- .kit.toml
+add_row "$DF" "$B" DF-004
+check "12.6 default repo (no .kit.toml) still BLOCKS"      block "$DF" "git commit -m 'docs: x'"
+mkdir -p "$T/op-off"; printf '[gate]\nboard_row_gate = false\n' > "$T/op-off/kit.toml"
+KIT_CONFIG_OPERATOR="$T/op-off" check "12.7 operator overlay false turns it off machine-wide" allow "$DF" "git commit -m 'docs: x'"
 
 echo "== Log =="
 if grep -q '| BLOCKED |' "$DWARVES_KIT_LOG_DIR/board-row-gate.log" 2>/dev/null \

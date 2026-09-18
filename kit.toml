@@ -82,7 +82,8 @@ enabled_agent_clis = ""         # [impl] opt-in NON-claude dispatch. Space-separ
                                 #        could self-enable a vendor). See commands/mega.md
                                 #        "Harness routing (multi-vendor dispatch)".
 
-[gate]                          # quality gates, OPT-IN: every key defaults to false here. Read when
+[gate]                          # quality gates, OPT-IN: every key defaults to false here except
+                                #        board_row_gate, which defaults to true. Read when
                                 #        a hook fires, through lib/gate/gate-policy.sh (project
                                 #        .kit.toml wins, then the operator kit.toml at
                                 #        ~/.config/dwarves-kit/kit.toml, then this file). Turn one on
@@ -98,6 +99,9 @@ lane_gates         = false      # [impl] hooks/ship-gate.sh lane x phase require
                                 #        the no-Lane refusal in adopted repos (ADR-0024)
 understanding_gate = false      # [impl] hooks/anti-rationalization.sh (ADR-0031)
 commit_format      = false      # [impl] hooks/commit-format.sh commit-subject lint
+board_row_gate     = true       # [impl] hooks/board-row-gate.sh: a commit adding a new board row
+                                #        needs a board-row-ok line. Default ON; a repo opts out
+                                #        with `board_row_gate = false` in a committed .kit.toml.
 
 [output]                        # [impl] lib/adopt.sh step 6b (SPEC-252); read at adopt time, never by a hook
 style = ""                      #        Claude Code output style for adopted projects. A name under

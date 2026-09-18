@@ -264,7 +264,7 @@ file count so this table cannot drift):
 | `secrets-guard` | PreToolUse Read/Edit/Bash | hard | reading secret files "just to check"; transcript is plaintext |
 | `ship-gate` | PreToolUse Bash | hard | shipping without proof of done / recorded gates (ADR-0024 boundary) |
 | `commit-format` | PreToolUse Bash | hard | drifting commit subjects (type, length, ticket-tag leakage) |
-| `board-row-gate` | PreToolUse Bash | hard | a session filing a board row for a follow-up it should do or drop; a new row needs a `board-row-ok: <reason>` line in the commit message |
+| `board-row-gate` | PreToolUse Bash | hard | a session filing a board row for a follow-up it should do or drop; a new row needs a `board-row-ok: <reason>` line in the commit message; the one `[gate]` key that defaults on (`board_row_gate`) |
 | `anti-rationalization` | Stop | hard | declaring work complete while rationalizing known-incomplete work |
 | `spec-drift-guard` | PreToolUse Write | advisory | creating files the active spec never mentions |
 | `batch-debt-warn` | PreToolUse Bash | advisory | a session merging a second PR with no lane START since its first merge |
