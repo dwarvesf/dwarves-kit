@@ -118,6 +118,9 @@ case "$sub" in
         # `land` reads the number off the printed URL, so the stub answers with one.
         printf '%s\n' "https://github.com/o/r/pull/${GH_STUB_CREATE_NUM:-42}"
         exit "${GH_STUB_CREATE_RC:-0}" ;;
+      ready)
+        # `merge --pr N` marks a targeted draft ready. Nothing to print; real gh is silent too.
+        exit "${GH_STUB_READY_RC:-0}" ;;
       merge)
         # Stands in for GitHub's own squash landing on the default branch, so the
         # tree-verify step downstream has a real tree to compare against.
@@ -1092,6 +1095,83 @@ echo "=== merge: the post-merge state check fails closed ==="
 : > "$GH_STUB_CALLS"
 out="$(GH_STUB_VIEW_STATE='{"state":"OPEN","mergeCommit":null}' "$WRAP" merge --apply "$TMPD/clone-scan-main" 2>&1)"; rc=$?
 chk "merge --apply exits 2 when the PR is not MERGED after the call" "$([ "$rc" -eq 2 ]; echo $?)"
+
+# ===========================================================================
+echo "=== merge --pr: a named draft is marked ready, then gated and merged ==="
+# ===========================================================================
+# Same real-commit-plus-push shape as the PR7 fixture above: the branch's tip is pushed
+# straight onto the bare remote's default branch, standing in for the squash GitHub would
+# perform, so tree-verify has something real to match once --apply lands.
+PRFLAG_CUR="$(git -C "$TMPD/clone-scan-main" branch --show-current)"
+git -C "$TMPD/clone-scan-main" fetch -q origin main
+git -C "$TMPD/clone-scan-main" checkout -q -b feat/draft-flag origin/main
+echo "draft flag pr" > "$TMPD/clone-scan-main/draft-flag.txt"
+git -C "$TMPD/clone-scan-main" add -A
+git -C "$TMPD/clone-scan-main" commit -qm "draft flag pr"
+PR40_OID="$(git -C "$TMPD/clone-scan-main" rev-parse feat/draft-flag)"
+git -C "$TMPD/clone-scan-main" checkout -q "$PRFLAG_CUR"
+git -C "$TMPD/clone-scan-main" push -q "$TMPD/bare-rmain" feat/draft-flag:refs/heads/main
+PRFLAG_URL="$(git -C "$TMPD/clone-scan-main" remote get-url origin)"
+
+# PR numbers here (40, 41) are never reused anywhere else in this file: the stub counts
+# `pr view` reads per number in a file the per-test `: > "$GH_STUB_CALLS"` reset never
+# touches, and a --pr run always reads a PR's detail twice (the isDraft precheck, then the
+# eligibility loop), so any number shared with a later fixture would inherit a stale count.
+PRFLAG_OPEN='[{"number":40,"title":"draft flag pr","headRefName":"feat/draft-flag"}]'
+PRFLAG_PR_40="{\"number\":40,\"title\":\"draft flag pr\",\"headRefName\":\"feat/draft-flag\",\"headRefOid\":\"$PR40_OID\",\"baseRefName\":\"main\",\"mergeable\":\"MERGEABLE\",\"mergeStateStatus\":\"CLEAN\",\"reviewDecision\":\"APPROVED\",\"statusCheckRollup\":[{\"conclusion\":\"SUCCESS\"}],\"isDraft\":true}"
+# The second `pr view` read (the eligibility loop's, after `gh pr ready` ran) stands in for
+# what a real ready call flips server-side: isDraft false, everything else unchanged.
+PRFLAG_PR_40_2="{\"number\":40,\"title\":\"draft flag pr\",\"headRefName\":\"feat/draft-flag\",\"headRefOid\":\"$PR40_OID\",\"baseRefName\":\"main\",\"mergeable\":\"MERGEABLE\",\"mergeStateStatus\":\"CLEAN\",\"reviewDecision\":\"APPROVED\",\"statusCheckRollup\":[{\"conclusion\":\"SUCCESS\"}],\"isDraft\":false}"
+
+# (a) --pr N on a draft calls ready then merge, pinned to the full sha.
+: > "$GH_STUB_CALLS"
+out="$(GH_STUB_OPEN_PRS="$PRFLAG_OPEN" GH_STUB_PR_40="$PRFLAG_PR_40" GH_STUB_PR_40_2="$PRFLAG_PR_40_2" \
+  "$WRAP" merge --apply --pr 40 "$TMPD/clone-scan-main" 2>&1)"; rc=$?
+chk "merge --pr on a draft exits 0" "$rc"
+chk_has "merge --pr marks the draft ready" "$out" "marking #40 ready (was draft)"
+chk_has "merge --pr re-gates the PR after readying it" "$out" "eligible #40 draft flag pr [feat/draft-flag]"
+chk_has "merge --pr reports the merge, tree verified" "$out" "merged #40"
+PRFLAG_CALLS="$(cat "$GH_STUB_CALLS")"
+chk_has "merge --pr called gh pr ready" "$PRFLAG_CALLS" "pr ready 40 --repo ${PRFLAG_URL}"
+READY_LINE="$(grep -n '^pr ready 40' "$GH_STUB_CALLS" | head -1 | cut -d: -f1)"
+MERGE_LINE="$(grep -n '^pr merge 40' "$GH_STUB_CALLS" | head -1 | cut -d: -f1)"
+chk "merge --pr calls ready before merge" "$([ -n "$READY_LINE" ] && [ -n "$MERGE_LINE" ] && [ "$READY_LINE" -lt "$MERGE_LINE" ]; echo $?)"
+chk_has "merge --pr pinned the full head sha" "$PRFLAG_CALLS" \
+  "pr merge 40 --repo ${PRFLAG_URL} --squash --match-head-commit ${PR40_OID}"
+
+# (b) no --pr still skips the same draft; behavior for the plain verb is unchanged.
+: > "$GH_STUB_CALLS"
+out="$(GH_STUB_OPEN_PRS="$PRFLAG_OPEN" GH_STUB_PR_40="$PRFLAG_PR_40" \
+  "$WRAP" merge --apply "$TMPD/clone-scan-main" 2>&1)"; rc=$?
+chk "merge without --pr on the same draft exits 0" "$rc"
+chk_has "merge without --pr still skips the draft" "$out" "SKIP #40 draft flag pr: draft"
+chk_no "merge without --pr calls gh pr ready" "$(cat "$GH_STUB_CALLS")" "pr ready"
+chk "merge without --pr calls no pr merge" "$(grep -q '^pr merge' "$GH_STUB_CALLS" && echo 1 || echo 0)"
+
+# (c) --pr N for a PR not authored by the operator refuses and writes nothing. Reuses the
+# FOREIGN_OPEN / FOREIGN_PR_32 fixture from the "authored by someone else" case above.
+: > "$GH_STUB_CALLS"
+out="$(GH_STUB_OPEN_PRS="$FOREIGN_OPEN" GH_STUB_PR_32="$FOREIGN_PR_32" \
+  "$WRAP" merge --apply --pr 32 "$TMPD/clone-scan-main" 2>&1)"; rc=$?
+chk "merge --pr on a foreign PR exits non-zero" "$([ "$rc" -ne 0 ]; echo $?)"
+chk_has "merge --pr on a foreign PR names the refusal" "$out" "PR #32 is not an open PR authored by you"
+chk_no "merge --pr on a foreign PR calls gh pr ready" "$(cat "$GH_STUB_CALLS")" "pr ready"
+chk "merge --pr on a foreign PR calls no pr merge" "$(grep -q '^pr merge' "$GH_STUB_CALLS" && echo 1 || echo 0)"
+
+# (d) dry run (no --apply) reports the draft note and marks nothing ready. A fresh PR
+# number with no `_2` fixture: the eligibility loop's second read serves the SAME (still
+# draft) body, because a real `gh pr ready` never ran to flip it.
+PRFLAG_OPEN_41='[{"number":41,"title":"another draft","headRefName":"feat/draft-dry"}]'
+PRFLAG_PR_41='{"number":41,"title":"another draft","headRefName":"feat/draft-dry","headRefOid":"4141414141414141414141414141414141414141","baseRefName":"main","mergeable":"MERGEABLE","mergeStateStatus":"CLEAN","reviewDecision":"APPROVED","statusCheckRollup":[{"conclusion":"SUCCESS"}],"isDraft":true}'
+: > "$GH_STUB_CALLS"
+out="$(GH_STUB_OPEN_PRS="$PRFLAG_OPEN_41" GH_STUB_PR_41="$PRFLAG_PR_41" \
+  "$WRAP" merge --pr 41 "$TMPD/clone-scan-main" 2>&1)"; rc=$?
+chk "merge --pr dry run exits 0" "$rc"
+chk_has "merge --pr dry run notes the draft without applying" "$out" \
+  "note: #41 is a draft; --apply would run \`gh pr ready\` before merging"
+chk_has "merge --pr dry run still gates the draft as a draft" "$out" "SKIP #41 another draft: draft"
+chk_no "merge --pr dry run calls gh pr ready" "$(cat "$GH_STUB_CALLS")" "pr ready"
+chk "merge --pr dry run calls no pr merge" "$(grep -q '^pr merge' "$GH_STUB_CALLS" && echo 1 || echo 0)"
 
 # ===========================================================================
 echo "=== merge: one bounded re-merge when GitHub conflicts on a union-marked log ==="
