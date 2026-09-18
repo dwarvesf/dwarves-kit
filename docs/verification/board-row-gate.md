@@ -16,24 +16,29 @@ Verdict: PASS
 | AC6 | `git -C` and `cd` chains resolve the target repo; an ambiguous `cd` checks the cwd repo | cases 7.1 to 7.8 | PASS |
 | AC7 | Non-commit commands and board-less repos never engage | cases 1.1 to 1.5, 11.7 | PASS |
 | AC8 | Merge, rebase, cherry-pick states and a first commit skip | cases 9.1, 9.2, 9.3, 9.6 | PASS |
-| AC9 | The kill switch turns the hook off | case 9.5 | PASS |
+| AC9 | The session kill switch turns the hook off | case 9.5 | PASS |
+| AC9b | Default ON; a committed `[gate] board_row_gate = false` passes a new row with no marker; an uncommitted or dirty opt-out does not apply; a default repo still blocks; the operator overlay can switch it off | cases 12.1 to 12.7 | PASS |
 | AC10 | What the commit takes is what is checked: index, `-a`, a `git add` earlier in the same call, covering and non-covering pathspecs, `--amend` | cases 8.1 to 8.4, 11.1 to 11.6, 11.17, 11.18; live CC run 3 | PASS |
 | AC11 | Only the commit's own segment is its message; shell syntax is never a pathspec | cases 2.7, 11.10 to 11.14 | PASS |
 | AC12 | The hook fires in a real Claude Code session | headless `claude -p` runs 1 to 3 below | PASS |
 | AC13 | bash 3.2 compatible, fast on unrelated commands, no hang on `-F /dev/zero` | `HOOK_BASH=/bin/bash` run, timing below, cases 11.15, 11.16 | PASS |
 | NEGATIVE CONTROL | Forcing the new-ID set empty turns every blocking case red | run below | PASS |
+| NEGATIVE CONTROL (opt-out) | Ignoring the policy verdict turns the opt-out cases red | run below | PASS |
 
 ## Green run
 ```
 Command: bash tests/test-board-row-gate.sh
 Exit: 0
-Verdict: PASS=66 FAIL=0
+Verdict: PASS=73 FAIL=0
 ```
 
 | Command | Exit | Result |
 |---------|------|--------|
-| `bash tests/test-board-row-gate.sh` (hook under Homebrew bash 5) | 0 | PASS=66 FAIL=0 |
-| `HOOK_BASH=/bin/bash bash tests/test-board-row-gate.sh` (hook under macOS bash 3.2) | 0 | PASS=66 FAIL=0 |
+| `bash tests/test-board-row-gate.sh` (hook under Homebrew bash 5) | 0 | PASS=73 FAIL=0 |
+| `HOOK_BASH=/bin/bash bash tests/test-board-row-gate.sh` (hook under macOS bash 3.2) | 0 | PASS=73 FAIL=0 |
+| `bash tests/test-gate-opt-out.sh` | 0 | ALL PASS (incl. the no-hook-names-the-config-file lint) |
+| `bash tests/test-gate-opt-in.sh` | 0 | all pass |
+| `bash tests/test-adopt.sh` | 0 | all pass |
 | `bash tests/test-install-modules.sh` | 0 | 42 passed, 0 failed |
 | `bash tests/test-config-registry.sh` | 0 | 50/50 passed |
 | `bash tests/test-meta.sh` | 0 | all meta tests passed |
@@ -46,9 +51,17 @@ Verdict: PASS=66 FAIL=0
 ```
 Command: bash tests/test-board-row-gate.sh   (hook edited: NEW="" before the new-ID check)
 Exit: 1
-Verdict: PASS=30 FAIL=36
+Verdict: PASS=33 FAIL=40
 ```
-Run on top of the committed fix (`74307e9`). Every blocking case flipped to allow, plus the two block-text checks and the log check. The edit was reverted with `git checkout -- hooks/board-row-gate.sh`, and the suite returned to PASS=66 FAIL=0, exit 0. The first cut had the same control: PASS=25 FAIL=23 on `e6f3a20`.
+Run on top of the committed opt-out change (`d1b88f2`). Every blocking case flipped to allow, plus the two block-text checks and the log check. The edit was reverted with `git checkout -- hooks/board-row-gate.sh`, and the suite returned to PASS=73 FAIL=0, exit 0. Earlier rounds ran the same control: PASS=25 FAIL=23 on `e6f3a20`, PASS=30 FAIL=36 on `74307e9`.
+
+Opt-out control, same commit: the hook edited to ignore the policy verdict (`PRC=0`).
+```
+Command: bash tests/test-board-row-gate.sh   (hook edited: policy exit 1 ignored)
+Exit: 1
+Verdict: PASS=70 FAIL=3
+```
+Cases 12.3 (committed opt-out), 12.4 (OFF-BY-CONFIG log), and 12.7 (operator overlay) went red; restored, PASS=73 FAIL=0.
 
 ## Review round
 
