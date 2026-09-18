@@ -4,7 +4,7 @@
 #
 #   wrap.sh scan  <repo> [<repo>...]                        report only, exit 0
 #   wrap.sh apply [--apply] [--worktrees] <repo> [...]      dry-run by default
-#   wrap.sh merge [--apply] <repo>                          merges ONE own green PR
+#   wrap.sh merge [--apply] [--pr N] <repo>                 merges ONE own green PR (--pr: a named draft)
 #   wrap.sh land  <worktree> [--title T] [--body-file F]    one hand-made worktree, landed
 #   wrap.sh log   "<slug>: <one sentence>" [--date YYYY-MM-DD]
 #   wrap.sh default-branch <repo>                           prints the detected name
@@ -18,8 +18,9 @@
 # --worktrees, pull --ff-only on the default branch and its pull-past-dirty stash, the
 # activity-log prepend, the knowledge-root project directory, the staging-file append, one
 # gh pr merge, one bounded union re-merge push (with its own follow-up commit when the
-# re-merge duplicates a kanban row), and `land`'s own named push, PR create, squash merge,
-# worktree remove and branch delete. Every other action is a report line. The
+# re-merge duplicates a kanban row), one `gh pr ready` when `merge --pr N` targets a draft,
+# and `land`'s own named push, PR create, squash merge, worktree remove and branch delete.
+# Every other action is a report line. The
 # verbs never switch a branch and never force a push or a pull. The one force is
 # `worktree remove -f -f`: it overrides a LOCK, never a dirty, detached, checked-out or
 # unproven worktree, and the removal counts only once a postcondition finds the path gone.
@@ -872,15 +873,20 @@ _union_remerge() {
 }
 
 cmd_merge() {
-  local do_apply=0 arg repo="" count=0
-  for arg in "$@"; do
-    case "$arg" in
-      --apply) do_apply=1 ;;
-      -*) echo "wrap.sh merge: unknown flag '$arg'" >&2; return 64 ;;
-      *) count=$(( count + 1 )); repo="$arg" ;;
+  local do_apply=0 repo="" count=0 pr_only=""
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --apply) do_apply=1; shift ;;
+      --pr) pr_only="${2:-}"; shift 2 ;;
+      -*) echo "wrap.sh merge: unknown flag '$1'" >&2; return 64 ;;
+      *) count=$(( count + 1 )); repo="$1"; shift ;;
     esac
   done
-  [ "$count" -eq 1 ] || { echo "usage: wrap.sh merge [--apply] <repo>" >&2; return 64; }
+  [ "$count" -eq 1 ] || { echo "usage: wrap.sh merge [--apply] [--pr N] <repo>" >&2; return 64; }
+  case "$pr_only" in
+    '') ;;
+    *[!0-9]*) echo "wrap.sh merge: --pr wants a PR number" >&2; return 64 ;;
+  esac
   _is_repo "$repo" || { echo "wrap.sh merge: ${repo} is not a git repo" >&2; return 64; }
 
   local ghs; ghs="$(_gh_state)"
@@ -893,7 +899,32 @@ cmd_merge() {
   own="$(_open_own_prs "$url")" || {
     echo "the open-PR query on ${url} failed; nothing merged" >&2; return 1; }
   local numbers; numbers="$(printf '%s' "$own" | jq -r '.[].number' 2>/dev/null)"
-  [ -n "$numbers" ] || { echo "no open PRs authored by the operator on ${url}"; return 0; }
+
+  # --pr N: a lead review targets exactly one PR. It must already be the operator's own
+  # open PR (the _open_own_prs membership check below the operator never bypasses), and
+  # when it is a draft the draft skip in _pr_gate would refuse it forever, so a draft
+  # under --pr is the one case `merge` marks ready itself, an explicit lead decision made
+  # by naming the PR, never a background guess. Checked ahead of the "no open PRs" return
+  # below, so a PR that is not the operator's own refuses by name instead of reading as
+  # an empty board.
+  if [ -n "$pr_only" ]; then
+    if ! printf '%s\n' "$numbers" | grep -qx "$pr_only"; then
+      echo "wrap.sh merge: PR #${pr_only} is not an open PR authored by you on ${url}" >&2
+      return 1
+    fi
+    numbers="$pr_only"
+    if [ "$(printf '%s' "$(_pr_detail "$url" "$pr_only")" | jq -r '.isDraft // false' 2>/dev/null)" = "true" ]; then
+      if [ "$do_apply" != 1 ]; then
+        echo "note: #${pr_only} is a draft; --apply would run \`gh pr ready\` before merging"
+      else
+        echo "marking #${pr_only} ready for review"
+        gh pr ready "$pr_only" --repo "$url" >/dev/null 2>&1 || {
+          echo "FAILED merge #${pr_only}: gh pr ready failed" >&2; return 2; }
+      fi
+    fi
+  else
+    [ -n "$numbers" ] || { echo "no open PRs authored by the operator on ${url}"; return 0; }
+  fi
 
   # Exactly one detail read per PR. The full JSON goes to its own temp file and the
   # eligibility loop reads it back, because the dependents gate needs every base first.
