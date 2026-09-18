@@ -227,6 +227,32 @@ else
   no "expected local LIVE marker, got: $lout"
 fi
 
+echo "[14] cap: 7 handoffs collapse to 5 lines + '+2 more', count line stays uncapped"
+CAPREPO="$(mktemp -d)"
+mkdir -p "$CAPREPO/_meta/handoffs"
+for i in 1 2 3 4 5 6 7; do
+  cat > "$CAPREPO/_meta/handoffs/h$i.md" <<EOF
+# Handoff: $i
+
+## Next
+Item $i.
+EOF
+  touch -t "$(stamp_days_ago "$i")" "$CAPREPO/_meta/handoffs/h$i.md"
+done
+capout="$(bash "$HO" list --repo "$CAPREPO")"
+capshown=$(printf '%s\n' "$capout" | grep -c '^[0-9]\+d ')
+if [[ "$capshown" -eq 5 ]]; then ok "5 shown"; else no "expected 5 shown lines, got $capshown: $capout"; fi
+if [[ "$capout" == *$'\n'"+2 more"$'\n'"7 open handoffs" ]]; then
+  ok "collapse + uncapped count tail correct"
+else
+  no "expected '+2 more' then '7 open handoffs', got: $capout"
+fi
+
+echo "[15] --limit overrides the default"
+limout="$(bash "$HO" list --repo "$CAPREPO" --limit 2)"
+limshown=$(printf '%s\n' "$limout" | grep -c '^[0-9]\+d ')
+if [[ "$limshown" -eq 2 && "$limout" == *"+5 more"* ]]; then ok "--limit 2: $limshown shown, +5 more"; else no "wrong --limit output: $limout"; fi
+
 echo
 if [[ $fail -eq 0 ]]; then
   echo "smoke: all $pass passed"
