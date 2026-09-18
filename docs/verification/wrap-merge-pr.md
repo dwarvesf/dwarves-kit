@@ -32,8 +32,14 @@ Verdict: FAIL as expected -- 7 of the new `merge --pr` assertions failed
   verified / called gh pr ready / calls ready before merge / pinned the full
   head sha / dry run notes the draft), 594/601 passed
 ```
-Restored the block verbatim (`git diff` against the commit showed no diff), re-ran
-`bash tests/test-wrap.sh`: exit 0, all 601 passed again.
+Restored the block verbatim (`git diff` against the commit showed no diff).
+
+## Restore run
+```
+Command: bash tests/test-wrap.sh
+Exit: 0
+Verdict: PASS (601/601, same as the Green run above; confirms the restore was exact)
+```
 
 ## Not proven
 - No live GitHub call: `gh` is a stub throughout, driven by env vars recorded per
