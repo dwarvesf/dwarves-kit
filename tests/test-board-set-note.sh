@@ -207,4 +207,21 @@ c=$(cell "$B")
 [ "$c" = "shipped [fixed in console-labs #233]" ] && pass "quoted multi-word note still works: $c" \
   || fail "quoted multi-word note regressed, got: $c"
 
+# ---- 17. dedupe on an ABSENT id reports instead of dying silently under set -e ----
+# The count used to be `printf '%s\n' "$rows" | grep -c .` evaluated before any row check;
+# grep -c exits 1 on zero matches, so an absent id killed the script with no message at all.
+B="$TMP/absent.md"; mk_board "$B"
+before="$(cat "$B")"
+if err="$(BACKLOG_FILE="$B" bash "$BL" dedupe ID-999 2>&1)"; then
+  fail "dedupe on an absent id should exit nonzero, got 0"
+else
+  case "$err" in
+    *"no Active-queue row for ID-999"*) pass "dedupe on an absent id reports: $err" ;;
+    *) fail "dedupe's absent-id message is wrong (silent death?): '$err'" ;;
+  esac
+fi
+after="$(cat "$B")"
+[ "$before" = "$after" ] && pass "dedupe on an absent id wrote nothing" \
+  || fail "dedupe on an absent id should not touch the file"
+
 if [ "$FAILED" = 0 ]; then echo "ALL PASS"; else echo "$FAILED FAILED"; exit 1; fi
