@@ -442,6 +442,14 @@ detect_misplaced_record() {
         marker="${state#*	}"; state="${state%%	*}"
         [ "$state" = "open" ] && continue
 
+        # Pinned by the promote-to-project rule: a completed predecessor mega-goal STAYS in
+        # the control surface when a projects/<slug>/ record names it as its audit trail; only
+        # the active execution promotes. Moving it would orphan the citation, so a hit is
+        # "pinned", not "decayed", and the folder is not a finding at all.
+        if [ -d projects ] && grep -rqlF --include='*.md' -- "megagoals/$base" projects/ 2>/dev/null; then
+          continue
+        fi
+
         unchecked=$(mg_boxes "$slug" '[:space:]~-')
         n_un=$(printf '%s' "$unchecked" | grep -c .)
         n_ok=$(mg_boxes "$slug" 'xX' | grep -c .)

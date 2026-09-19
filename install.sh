@@ -824,8 +824,13 @@ if [ -d "$KIT_DIR/output-styles" ]; then
   done
 fi
 
-# 4b. Install subagent definitions
-if [ -d "$KIT_DIR/agents" ]; then
+# 4b. Install subagent definitions. Skipped when the plugin is cached: the plugin
+# already serves every agent under the kit: namespace, so a bare copy here is the
+# duplicate the compat branch retires. KIT_FORCE_FULL=1 bypasses compat for hooks
+# and commands, not for agents, or the escape hatch reopens the duplicate.
+if [ -n "${PLUGIN_LIB:-}" ]; then
+  echo "[ok] Agents served by the cached plugin; bare copies not installed"
+elif [ -d "$KIT_DIR/agents" ]; then
   mkdir -p "$CLAUDE_DIR/agents"
   for AGENT_FILE in "$KIT_DIR/agents/"*.md; do
     AGENT_NAME=$(basename "$AGENT_FILE")
