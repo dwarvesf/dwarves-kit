@@ -285,10 +285,10 @@ refuses. Draft plus label is belt-and-suspenders: GitHub itself refuses to merge
 and the code guard reads the label. Do this for every `gate`-tagged sub-goal PR and the
 `gated-final` PR; a normal `auto` PR is left un-marked so the guard clears it.
 
-**Run-time advisor on load-bearing sub-goals (default, mirrors `plan-for-mega-goal`
+**Run-time kit:advisor on load-bearing sub-goals (default, mirrors `plan-for-mega-goal`
 "RUN-TIME ADVISOR" -- never-diverge).** Before MERGING any sub-goal marked `Design: bearing`
 or touching a shared/serializer surface (a registry, a contract other sub-goals plug into),
-dispatch the `advisor` agent (critique) on that sub-goal's FROZEN diff
+dispatch the `kit:advisor` agent (critique) on that sub-goal's FROZEN diff
 (`git diff <base>...HEAD` in its worktree). CRITICAL/MAJOR findings go back to the SAME
 worker via resume (its context survives; never re-dispatch fresh); MINOR + suggestions to
 NOTES. This is the per-sub-goal sibling of the convergence-gate P5 below: the convergence
@@ -304,23 +304,23 @@ RUN_REPORT in chat (header, timeline gantt, worker-minutes bars, gate matrix or 
 `Hardening properties` P1..P6 line, callable stack, incidents). Summarizing instead of
 rendering is a contract miss.
 
-**The convergence gate dispatches advisor P5+P6, explicitly, with an emit.** Once
+**The convergence gate dispatches kit:advisor P5+P6, explicitly, with an emit.** Once
 every sub-goal in the chain is merged (or the run halts at the final `gate!`/`gated-final`
-boundary), dispatch the `advisor` agent TWICE, in-harness, over the assembled stack diff
+boundary), dispatch the `kit:advisor` agent TWICE, in-harness, over the assembled stack diff
 (`base..HEAD` across the whole mega-goal, not any one sub-goal's diff): once as **P5
 (critique)** -- the extra cross-cutting lens over the WHOLE chain, catching a cross-sub-goal
 inconsistency no single sub-goal's own review was scoped to see -- and once as **P6
 (over-suggest)** -- proposals surfaced to the human just before the final review, routed to
 the mega-goal's `NOTES.md` under `## Proposed additions`. This closes ONE gap a 2026-07-04
-audit found: `commands/mega.md` previously named no advisor invocation path at all, so a
+audit found: `commands/mega.md` previously named no kit:advisor invocation path at all, so a
 subagent-delegate run (where each child self-records its OWN `review ran` line per the worker
-contract, never a `/kit:review-team` dispatch) left the advisor completely unreached. It
+contract, never a `/kit:review-team` dispatch) left the kit:advisor completely unreached. It
 mirrors the ADVISOR SLICE of the ops-toolkit `plan-for-mega-goal` skill's own convergence-gate
 beat (`references/GUIDE.md` step 6a, `references/OPERATE.md` "The convergence gate is
 COMPOSED, not improvised"), which already prescribes this exact dispatch + grammar --
 "catching up" (never-diverge) means this ONE beat, not full parity: the skill's
-convergence gate is COMPOSED of `/kit:verify` + `/kit:review-team` + advisor P5/P6 together,
-and this paragraph wires only the advisor third of that composition. `commands/mega.md` still
+convergence gate is COMPOSED of `/kit:verify` + `/kit:review-team` + kit:advisor P5/P6 together,
+and this paragraph wires only the kit:advisor third of that composition. `commands/mega.md` still
 names no `/kit:verify` or `/kit:review-team` dispatch of its own at the assembled-stack close
 (a pre-existing gap, out of this sub-goal's scope, not newly introduced or newly hidden by
 this paragraph).

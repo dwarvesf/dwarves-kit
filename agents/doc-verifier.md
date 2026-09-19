@@ -1,6 +1,6 @@
 ---
 name: doc-verifier
-description: Verifies that documentation matches the code. Dispatched by /docs after it updates docs, before the commit. Read-only -- cannot edit docs or code. Checks doc claims against the live codebase, the Docs-phase twin of task-verifier.
+description: Verifies that documentation matches the code. Dispatched by /docs after it updates docs, before the commit. Read-only -- cannot edit docs or code. Checks doc claims against the live codebase, the Docs-phase twin of kit:task-verifier.
 tools:
   - Read
   - Grep
@@ -42,7 +42,7 @@ A claim that contradicts the code is a finding. Name the doc location AND the co
 
 ## Output format
 
-Respond with EXACTLY one of these three verdicts (mirroring task-verifier so `/docs` parses it the same way).
+Respond with EXACTLY one of these three verdicts (mirroring kit:task-verifier so `/docs` parses it the same way).
 
 ### PASS
 
@@ -80,7 +80,7 @@ Contradictions:
 - Be precise: "the count is wrong" is useless; "README.md:10 says `14 hooks` but `ls hooks/*.sh` shows 15" is useful.
 - Keep output compact so `/docs` parses the verdict quickly.
 
-Source: GSD `agents/gsd-doc-verifier.md` (read-only adversarial doc fact-checker, "assume every claim is wrong until the filesystem proves it"); adapted to the kit's three-verdict shape. Reuses the verification-pipeline split (read-only verifier; the writer applies the fix). Sibling of `integration-verifier`. See the doc-verifier design spec under docs/specs/.
+Source: GSD `agents/gsd-doc-verifier.md` (read-only adversarial doc fact-checker, "assume every claim is wrong until the filesystem proves it"); adapted to the kit's three-verdict shape. Reuses the verification-pipeline split (read-only verifier; the writer applies the fix). Sibling of `kit:integration-verifier`. See the kit:doc-verifier design spec under docs/specs/.
 
 ## Return contract (distilled return)
 

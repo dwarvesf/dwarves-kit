@@ -831,6 +831,11 @@ fi
 if [ -n "${PLUGIN_LIB:-}" ]; then
   echo "[ok] Agents served by the cached plugin; bare copies not installed"
 elif [ -d "$KIT_DIR/agents" ]; then
+  # Note (ID-905): kit-internal dispatch references are plugin-qualified
+  # (`kit:<agent>`), matching the `/kit:<command>` namespace the source docs
+  # already assume. These bare copies keep NON-kit dispatchers working
+  # (Codex/Gemini agents, external tools, a human's Task call); kit-internal
+  # cross-dispatch in this mode needs the plugin, same as /kit: command refs.
   mkdir -p "$CLAUDE_DIR/agents"
   for AGENT_FILE in "$KIT_DIR/agents/"*.md; do
     AGENT_NAME=$(basename "$AGENT_FILE")

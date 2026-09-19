@@ -185,7 +185,7 @@ answers the same five for itself.
 - A new campaign wrapper usually becomes a `/kit:<name>` command. That command invokes the Goal
   loop machinery. It does not become a new engine.
 - An idea with no commitment yet goes into `_meta/BACKLOG.md`'s "v2 candidates" tier. The
-  entries already logged there, feature-list reconciliation, doc-drift, agent-effectiveness,
+  entries already logged there, feature-list reconciliation, doc-drift, kit:agent-effectiveness,
   dependency patch, and the test-plan backfill campaign, show what Step 1 and Step 2 output
   looks like.
 

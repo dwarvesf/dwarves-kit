@@ -1,5 +1,5 @@
 ---
-description: "Post-push CI-green lane: snapshots an open PR's checks via gh, classifies each failure real vs flaky, fixes real ones via the fix-agent shape (verified locally before push), retries flaky checks within a bounded budget, and reports exactly one terminal state. Opt-in, report-only -- it never hard-gates ship or merge."
+description: "Post-push CI-green lane: snapshots an open PR's checks via gh, classifies each failure real vs flaky, fixes real ones via the kit:fix-agent shape (verified locally before push), retries flaky checks within a bounded budget, and reports exactly one terminal state. Opt-in, report-only -- it never hard-gates ship or merge."
 ---
 
 You are driving an already-open PR toward a green, mergeable state. You do not open the PR (`/kit:ship` does that) and you do not do a pre-push code critique (`/kit:review` / `/kit:review-team` do that). You snapshot CI, fix what is really broken, retry what is probably flaky, and stop at an honest terminal state. The human merges.
@@ -41,14 +41,14 @@ Quote failure essence only (the assertion line, the error type, the file:line) w
 
 ### Step 4: Fix real failures
 
-Dispatch the **fix-agent** subagent with:
+Dispatch the **kit:fix-agent** subagent with:
 - The failing check's essence (name, error excerpt, file:line if known) -- not the full log.
 - The diff-touched files as scope.
-- Instruction: targeted fix only, no refactor, no new features (fix-agent's own contract already enforces this).
+- Instruction: targeted fix only, no refactor, no new features (kit:fix-agent's own contract already enforces this).
 
-Do not reimplement fix-agent's fix logic here; this command only feeds it the CI failure and reads its FIX REPORT back.
+Do not reimplement kit:fix-agent's fix logic here; this command only feeds it the CI failure and reads its FIX REPORT back.
 
-**Local verify before push, independent of fix-agent's own internal test run:** after fix-agent reports, run the project's test suite directly -- same runner detection as `/kit:ship` Step 2 (`npm test`/`pnpm test`/`yarn test` for Node, `go test ./...` for Go, `pytest` for Python, `cargo test` for Rust) -- or dispatch **task-verifier** if an active spec's acceptance criteria cover the affected area. A fix that fails this local verify is **not committed or pushed**; treat it as unresolved and loop back into Step 4 (bounded by the max-iterations cap in Step 7), or escalate per Step 8 if fix-agent reports it cannot fix the issue.
+**Local verify before push, independent of kit:fix-agent's own internal test run:** after kit:fix-agent reports, run the project's test suite directly -- same runner detection as `/kit:ship` Step 2 (`npm test`/`pnpm test`/`yarn test` for Node, `go test ./...` for Go, `pytest` for Python, `cargo test` for Rust) -- or dispatch **kit:task-verifier** if an active spec's acceptance criteria cover the affected area. A fix that fails this local verify is **not committed or pushed**; treat it as unresolved and loop back into Step 4 (bounded by the max-iterations cap in Step 7), or escalate per Step 8 if kit:fix-agent reports it cannot fix the issue.
 
 ### Step 5: Retry flaky failures
 
@@ -79,7 +79,7 @@ Any `gh`/API failure or missing auth encountered anywhere in the loop -- not jus
 |---|---|---|
 | `done` | Every check passing (or no checks at all) | merge-ready; human merges |
 | `stop_pr_closed` | PR merged or closed mid-loop | stop |
-| `stop_exhausted_retries` | flaky budget or max-iterations hit, or fix-agent reports it cannot fix a real failure | escalate to the human with the last failure |
+| `stop_exhausted_retries` | flaky budget or max-iterations hit, or kit:fix-agent reports it cannot fix a real failure | escalate to the human with the last failure |
 | `stop_error` | `gh`/API failure, missing auth, or an unrecoverable rejected push | surface the error; do not loop on a broken transport |
 
 `stop_waiting_review` (external bot re-review timeout) is Phase B (comment triage) and is not emitted by this command.
@@ -109,7 +109,7 @@ In a `bypassPermissions` session, the push in Step 6 is auto-approved with no pe
 1. **No PR for the current branch and no PR# argument.** Stop, point to `/kit:ship`. Do not open a PR.
 2. **PR already green, no pending reviews.** Immediately `done`; no commits, no reruns.
 3. **PR closed or merged mid-loop.** `stop_pr_closed`; stop cleanly, no further pushes.
-4. **A real failure fix-agent cannot fix.** Do not loop forever; `stop_exhausted_retries` with the last failure.
+4. **A real failure kit:fix-agent cannot fix.** Do not loop forever; `stop_exhausted_retries` with the last failure.
 5. **A flaky check that is actually real.** Retried to the 3-per-commit budget, still failing -> reclassified real, routed to Step 4 or escalated. The budget bounds the waste.
 6. **`gh` not authenticated, or the GitHub API errors.** `stop_error` immediately.
 7. **The PR head advanced under us.** Push rejected -> re-fetch, re-snapshot, re-evaluate. Never force. Unrecoverable resync -> `stop_error`.
@@ -123,4 +123,4 @@ Record the beat when the lane ends, green or escalated: `bash lib/gate/gate-ledg
 - `/kit:ship` opens the PR. `/kit:greenlight` drives an already-open PR toward green; it does not open one.
 - `/kit:review` / `/kit:review-team` are pre-push, static code critique. `/kit:greenlight` is post-push and only acts on what CI actually reports failing.
 
-Source: the greenlight-ci-lane design spec under docs/specs/ (Phase A). Reuses `agents/fix-agent.md` for fixing; no new agent is introduced (comment-triage's `responding-to-review` reuse is Phase B, not built here). The hard backstop is `hooks/safety-gate.sh`.
+Source: the greenlight-ci-lane design spec under docs/specs/ (Phase A). Reuses `agents/fix-agent.md` for fixing; no new agent is introduced (comment-triage's `kit:responding-to-review` reuse is Phase B, not built here). The hard backstop is `hooks/safety-gate.sh`.

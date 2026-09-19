@@ -20,7 +20,7 @@ Step 6 (Refresh mode) below is an instance of `docs/patterns/audit-loop.md`:
 |---|---|
 | Item set | every module row in the checklist (Step 4's output), enumerated at Step 2 |
 | Contract | the module's spec (`docs/specs/<module>.md`) still matches the live source across every given location |
-| Evidence class | a fresh `research-features` re-read of the source, `file:line` cited, diffed against the existing spec |
+| Evidence class | a fresh `kit:research-features` re-read of the source, `file:line` cited, diffed against the existing spec |
 | Apply mechanics | match = leave status untouched (OK); drift = `NEEDS REVIEW` on the checklist row (FIX proposed, never silent); the operator decides |
 
 The FIRST run against a module isn't an audit (there's nothing to reconcile yet,
@@ -49,7 +49,7 @@ If not already clear from the conversation, ask:
   multiple locations, not one module per repo.)
 - Is there a named port/migration target (a system this is moving to), or is this a
   plain inventory run (understand/document what the project does, no target)? This
-  decides whether `research-features` writes a Parity contract (port) or a Behavior
+  decides whether `kit:research-features` writes a Parity contract (port) or a Behavior
   contract (inventory) -- see `agents/research-features.md` section 5.
 - Output location for specs (default `docs/specs/`) and for the top-level checklist
   (default `docs/CHECKLIST.md`; a migration run may prefer a name like
@@ -62,7 +62,7 @@ top-level packages, cron registrations) -- across ALL locations, not just the fi
 one named. Show it, get confirmation -- don't guess silently on scope this
 consequential, and don't silently assume a module lives in only one repo.
 
-### Step 3: Dispatch `research-features` per module, in parallel
+### Step 3: Dispatch `kit:research-features` per module, in parallel
 
 Each dispatch gets the FULL location set (every tagged repo + named surface from
 Step 1), not just whichever one the module "mostly" lives in -- the agent decides
@@ -79,7 +79,7 @@ what).
 #### Mode B (inline fallback)
 
 If not installed, dispatch a general-purpose read-only subagent per module with the
-`research-features` prompt embedded (same 8-item findings list, same `file:line`
+`kit:research-features` prompt embedded (same 8-item findings list, same `file:line`
 citation rule -- see `agents/research-features.md` for the exact template if present,
 otherwise use the shape below):
 
@@ -130,7 +130,7 @@ questions rolled up. Ask: "Approve, or adjust scope?"
 
 ### Step 6: Refresh mode
 
-Re-running against a module that already has a spec: dispatch `research-features`
+Re-running against a module that already has a spec: dispatch `kit:research-features`
 again, diff the new Scope/section-5 output against the existing file. Match = leave
 status untouched. Drift = flag it in the checklist (`NEEDS REVIEW`) and let the
 operator decide whether the spec (or, if porting, the port itself) needs updating --

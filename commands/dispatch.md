@@ -81,7 +81,7 @@ where <slug> = the spec filename minus the SPEC-NNN- prefix and .md
 Work the spec through its risk lane. The lane is in the spec / goal draft; if absent,
 classify it from the spec title with `bash lib/classify/lane-classify.sh classify "<title>"`
 (tiny | normal | full | bug | backfill). For normal/full:
-/kit:execute the tasks (worker -> task-verifier -> fix-agent, max 2), then
+/kit:execute the tasks (worker -> kit:task-verifier -> kit:fix-agent, max 2), then
 /kit:review. Commit each task with a Conventional Commits subject (type(scope): summary
 -- the commit-format hook blocks workers too). Do NOT bump VERSION, write CHANGELOG, or
 touch any lead-owned hands-off surface; the lead integrates those once at convergence.
@@ -166,7 +166,7 @@ On lead restart, pick up existing `goal/*` branches (no durability state was per
 
 ## Decision mode
 
-Workers run **autonomous** (bypassPermissions); the task-verifier inside each worker's `/kit:execute` catches bad reversible decisions after the fact, and the blocker contract stops the worker on anything irreversible. The **lead** (you) is the only human gate: at drift, at BLOCKED/FAILED, and at merge.
+Workers run **autonomous** (bypassPermissions); the kit:task-verifier inside each worker's `/kit:execute` catches bad reversible decisions after the fact, and the blocker contract stops the worker on anything irreversible. The **lead** (you) is the only human gate: at drift, at BLOCKED/FAILED, and at merge.
 
 ## What this command refuses
 
