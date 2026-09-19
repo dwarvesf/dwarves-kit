@@ -6,7 +6,7 @@
 # goals/), but a single backlog row has no megadir, so it cannot ride that
 # machinery -- a session that wants to dispatch one row ends up hand-writing a
 # brief instead. This verb scaffolds the MINIMAL megadir for one row (one
-# `- [ ] SG-01 <item> , auto` ROADMAP line, a POINTER_PROMPT seeded from the
+# `- [ ] SG-<NN> <item> , auto` ROADMAP line, a POINTER_PROMPT seeded from the
 # row's Item + Notes, and the goals/ plumbing orchestrate expects), then prints
 # the exact `orchestrate.sh run <dir>` command. It NEVER launches a session
 # itself; the operator (or the calling agent) runs the printed command.
@@ -32,7 +32,7 @@
 #
 # Files written (idempotent -- an existing file is reported `kept`, never
 # overwritten; `board init` uses the same created/kept convention):
-#   ROADMAP.md            one `- [ ] SG-01 <item> , auto` line under `## Sub-goals`
+#   ROADMAP.md            one `- [ ] SG-<NN> <item> , auto` line under `## Sub-goals`
 #   POINTER_PROMPT.md     objective + the row's Item + Notes verbatim
 #   goals/01-<slug>.md    minimal goal contract (Model: sonnet cheap-first,
 #                         **Branch:** feat/<id-slug> so orchestrate's rid

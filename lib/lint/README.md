@@ -41,6 +41,12 @@ On top of the census pipeline's own exclusions, a hit is dropped when it is:
 - a `tool.toml` `board = [...]` array
 - anything under a `tests/` or `fixtures/` directory
 - `docs/verification/gauntlet/**`, `docs/FEATURES.md`, `docs/CHANGELOG.md`
+- `lib/board/board-run.sh`'s two heredoc lines that emit the literal `SG-01` sub-goal
+  (it always scaffolds exactly one sub-goal, so `SG-01` there is the real generated
+  value, not a scattered reference; per-file exemption in `is_exempt()`)
+- `lib/lint/scattered-ids.sh` itself: it documents the exemptions above by quoting
+  the ids as data, same reasoning `tests/test-no-personal-paths.sh` uses to skip
+  its own file
 
 Full contract: `SPEC.md`.
 
