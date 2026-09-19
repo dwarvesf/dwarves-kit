@@ -30,6 +30,19 @@
 #   board.sh dedupe <ID> [--backlog-file <path>]               collapse duplicate rows sharing
 #                                                               one id down to one
 #   board.sh states [--backlog-file <path>]                    legal state names
+#   board.sh run <ID> [--backlog-file <path>] [--dir <megadir>] [--exec] [-- <orchestrate-args>]
+#                                                               the single-row dispatch path:
+#                                                               scaffold a minimal mega-goal dir
+#                                                               (one `SG-01 , auto` ROADMAP line,
+#                                                               POINTER_PROMPT seeded from the
+#                                                               row's Item + Notes, the goals/
+#                                                               plumbing) under the repo's
+#                                                               megagoals convention, then print
+#                                                               the exact `orchestrate.sh run
+#                                                               <dir>` command. Never launches a
+#                                                               session itself; --exec composes
+#                                                               the launch. Forwards to
+#                                                               lib/board/board-run.sh verbatim.
 #   board.sh priority [counts|brief|overview|full] [--backlog-file <path>]
 #                                                               single-repo urgency x fit quadrant
 #   board.sh promote [<n>... | all | reject <n>...]             review + flush backlog-stage's
@@ -188,6 +201,7 @@ BACKLOG_SH="$BOARD_DIR/backlog.sh"
 PARSE_BOARD_SH="$BOARD_DIR/parse-board.sh"
 BOARD_MIRROR_SH="$BOARD_DIR/board-mirror.sh"
 BOARD_WRITEBACK_SH="$BOARD_DIR/board-writeback.sh"
+BOARD_RUN_SH="$BOARD_DIR/board-run.sh"
 COCKPIT_PY="$(cd "$BOARD_DIR/.." && pwd)/sync/cockpit.py"  # lib/sync/, the P2 sync-engine port
 MEGA_SH="$(cd "$BOARD_DIR/.." && pwd)/mega/mega.sh"  # lib/mega/mega.sh, one level up from lib/board/
 
@@ -195,6 +209,7 @@ MEGA_SH="$(cd "$BOARD_DIR/.." && pwd)/mega/mega.sh"  # lib/mega/mega.sh, one lev
 [ -f "$PARSE_BOARD_SH" ]     || { echo "board: lib/board/parse-board.sh not found at $PARSE_BOARD_SH" >&2; exit 1; }
 [ -f "$BOARD_MIRROR_SH" ]    || { echo "board: lib/board/board-mirror.sh not found at $BOARD_MIRROR_SH" >&2; exit 1; }
 [ -f "$BOARD_WRITEBACK_SH" ] || { echo "board: lib/board/board-writeback.sh not found at $BOARD_WRITEBACK_SH" >&2; exit 1; }
+[ -f "$BOARD_RUN_SH" ]       || { echo "board: lib/board/board-run.sh not found at $BOARD_RUN_SH" >&2; exit 1; }
 
 # ---------------------------------------------------------------------------
 # Flag parsing (shared): extracts --backlog-file / --repo-root / --registry / --dry-run plus the
@@ -1125,6 +1140,7 @@ main() {
     init) shift; cmd_init "$@" ;;
     capture) shift; cmd_capture "$@" ;;
     promote) shift; exec "$BOARD_DIR/bin/add-backlog" "$@" ;;
+    run) shift; exec "$BOARD_RUN_SH" "$@" ;;
     -h|--help|help) usage ;;
     *) cmd_board_single "$@" ;;
   esac
