@@ -64,7 +64,7 @@ Verdict: PASS
 | turns per segment | `TURN_CAP` | `[mega].turn_cap` | `100` (`0` disables) |
 | max segments per sub-goal | `TURN_CAP_SEGMENTS` | `[mega].turn_cap_segments` | `10` |
 
-`kit_config_get mega.turn_cap` resolves 100 and `mega.turn_cap_segments`
+`kit_config_get mega.turn_cap` resolves 200 and `mega.turn_cap_segments`
 resolves 10 from the shipped kit.toml; env overrides land in the dry-run plan
 line; `TURN_CAP=abc` and `TURN_CAP_SEGMENTS=0` reject rc 64.
 

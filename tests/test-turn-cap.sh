@@ -185,7 +185,7 @@ TIER4_CLOSE=0 TURN_CAP=0 CLAUDE_CMD="$TMP/claude-mock" bash "$ORCH" run "$D6B" >
 # ============================ TEST 7: config resolution + validation ==================
 DEFCAP=$(cd "$KIT" && bash -c 'source lib/config/kit-config.sh; kit_config_get mega.turn_cap')
 DEFSEG=$(cd "$KIT" && bash -c 'source lib/config/kit-config.sh; kit_config_get mega.turn_cap_segments')
-[ "$DEFCAP" = 100 ] && pass "kit.toml ships [mega].turn_cap = 100" || fail "turn_cap resolves '$DEFCAP', want 100"
+[ "$DEFCAP" = 200 ] && pass "kit.toml ships [mega].turn_cap = 200" || fail "turn_cap resolves '$DEFCAP', want 200"
 [ "$DEFSEG" = 10 ] && pass "kit.toml ships [mega].turn_cap_segments = 10" || fail "turn_cap_segments resolves '$DEFSEG', want 10"
 out=$(TURN_CAP=9 TURN_CAP_SEGMENTS=4 bash "$ORCH" run "$D6" --dry-run)
 echo "$out" | grep -q 'turn ceiling: 9 turns/segment, up to 4 segments' \
