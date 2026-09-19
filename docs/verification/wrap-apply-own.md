@@ -41,6 +41,17 @@ The mutation reproduces the reported bug precisely: without the scope check,
 `--own` degenerates into the repo-wide sweep the row calls unsafe on a
 shared repo.
 
+## Test plan coverage
+
+| Spec matrix row | Covered by |
+|---|---|
+| `--own wt-a` on a repo with wt-a + wt-b: wt-a only | dry-run WOULD + apply-removes checks, unnamed-gets-no-line checks |
+| `--own` implies worktree scope | "--own dry-run exits 0 without --worktrees" |
+| named dirty worktree refused | "--own: a named dirty worktree still refuses" + stays |
+| named path not a worktree | "not a registered worktree" SKIP check |
+| no `--own`: sweep unchanged | every pre-existing apply/worktrees case in the suite (byte-identical) |
+| branch sweep under `--own` | "SKIP branch sweep" + merged-ancestor-kept checks |
+
 ## Not proven
 - Two live sessions running `wrap apply --own` concurrently on one repo was
   not exercised; the fixture proves the candidate-set restriction and every
