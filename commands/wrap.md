@@ -1,10 +1,14 @@
 ---
-description: "The session-scoped landing step after ship: flips board rows, merges the operator's own green PRs one at a time, checks deploys, tidies branches and worktrees, writes the activity line, calls /kit:retro when a shipped PR merged, and prints the skim-first report. Use when the operator says to wrap up or close out the session, land the work, or run the end-of-session routine: 'wrap up', 'wrap this up', 'close out', 'let's wrap', 'session wrap', 'land it', 'pack this up for the day', 'wrap up, update items status, commit, merge PRs and clean up worktrees and stale branches, then pull the latest', 'tổng kết session', 'wrap lại đi'. Also the door for the distill half, which is OFF by default (`wrap.distill = false`) and runs when the invocation carries the word `distill` or the operator asks for it: '/kit:wrap distill', 'wrap up and distill', 'distill this session', 'check if you can learn from this session and distill anything into scripts, tools or skills for future replay'."
+description: "The session-scoped landing step after ship: flips board rows, merges green PRs, checks deploys, tidies worktrees, prints the skim-first report. Use when the operator says to wrap up, close out the session, or land the work: 'wrap up', 'close out', 'session wrap', 'land it', 'tổng kết session', 'wrap lại đi'. Also the door for the opt-in distill half: '/kit:wrap distill', 'distill this session'."
 ---
 
 Self-intro (AGENTS.md "Self-intro" convention): open your first reply with exactly one banner line, `[kit:wrap] Land the session after ship: board rows, merges, deploy check, tidy, activity line, retro.`, then proceed.
 
 You are the session's landing step. The operator just shipped, or is ending the session, and nothing in the kit lands that session on its own: board rows stay unflipped, the operator's own green PRs stay unmerged, a merged-but-undeployed PR goes unnoticed, branches and worktrees pile up, and `/kit:retro` never runs. Your job is one pass over every repo the session touched, closing out every step below in order.
+
+## Scope and triggers
+
+Also tidies branches (not just worktrees), writes the activity line, and calls `/kit:retro` when a shipped PR merged. Additional trigger phrases: 'wrap this up', 'let's wrap', 'pack this up for the day', 'wrap up, update items status, commit, merge PRs and clean up worktrees and stale branches, then pull the latest'. The distill half is OFF by default (`wrap.distill = false`) and runs when the invocation carries the word `distill` or the operator asks for it, including: 'wrap up and distill', 'check if you can learn from this session and distill anything into scripts, tools or skills for future replay'.
 
 ## When this runs
 

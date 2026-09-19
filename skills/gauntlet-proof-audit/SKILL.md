@@ -1,6 +1,6 @@
 ---
 name: gauntlet-proof-audit
-description: Use to audit the gauntlet records, "are the ROUNDS.md records honest", "verify the proof corpus", "check each run record against its evidence", "audit the gauntlet corpus", "is the gauntlet proof trustworthy", or a scheduled gauntlet-proof-audit cadence run. Enumerates every committed gauntlet run record (ROUNDS.md/AB-ROUNDS.md), verdicts each claim against its own committed evidence (markers, checker-output.txt, scrub, run-dir grammar), reports discrepancies. An audit-loop instance (docs/patterns/audit-loop.md). NOT for re-running probes or rounds (that is `/kit:gauntlet` itself), NOT for the corpus-level stats projection (that is `lib/gauntlet/stats.sh`), NOT for non-gauntlet verification records.
+description: Use to audit the gauntlet records, "are the ROUNDS.md records honest", "verify the proof corpus", "check each run record against its evidence", "audit the gauntlet corpus", "is the gauntlet proof trustworthy", or a scheduled run. NOT for re-running probes or rounds (`/kit:gauntlet` itself), NOT for the corpus-level stats projection (`lib/gauntlet/stats.sh`), NOT for non-gauntlet records.
 disable-model-invocation: false
 ---
 

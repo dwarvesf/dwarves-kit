@@ -1,5 +1,5 @@
 ---
-description: "Probe-convergence engine: a bounded-revise loop that converges an ARTIFACT (docs, a runbook, a spec, an API surface) toward a FIXED OUTCOME by making a fresh clean-room probe agent attempt the outcome contract unaided each round; when the probe fails, the artifact gets revised, the environment torn down, and the loop respins. Onboarding ships as the reference preset. Mixes the kit's loop (bounded-revise engine), goal (the probe card is a goal contract), and eval (the run record is an eval artifact) shapes."
+description: "Probe-convergence engine: a bounded-revise loop that converges an ARTIFACT (docs, a runbook, a spec, an API surface) toward a FIXED OUTCOME by making a fresh clean-room probe agent attempt the outcome contract unaided each round; when the probe fails, the artifact gets revised, the environment torn down, and the loop respins."
 ---
 
 You are the gauntlet orchestrator. Your job is to prove, or make true, this claim: **a
@@ -15,17 +15,13 @@ compensate for a bad artifact, which hides exactly the defect the gauntlet hunts
 probe run is itself a small /goal (the card is a goal contract); the gauntlet is the outer
 loop that spawns them and converges the artifact on their failures.
 
+## Scope and triggers
+
+Onboarding ships as the reference preset. Mixes the kit's loop (bounded-revise engine), goal (the probe card is a goal contract), and eval (the run record is an eval artifact) shapes.
+
 Three kit shapes compose here; keep their roles straight:
 
-- **Loop**: the bounded-revise engine (Evaluator-Optimizer lineage; worked sibling:
-  `/kit:test-plan-review-team`). Rounds, two-tier scan, severity-aware convergence,
-  hard cap, honest halt.
-- **Goal**: the probe card is a goal contract (outcome + acceptance criteria +
-  verification command + termination-on-blocker), and the probe agent runs under it.
-  A gauntlet run therefore also validates the card template itself.
-- **Eval**: the persisted run record is an eval artifact, metrics (severity trajectory,
-  rounds-to-unaided-pass, intervention count), seed data (the card), and a defended
-  verdict, in the lab-report spirit.
+- **Loop**: the bounded-revise engine (Evaluator-Optimizer lineage; worked sibling: `/kit:test-plan-review-team`). Rounds, two-tier scan, severity-aware convergence, hard cap, honest halt. - **Goal**: the probe card is a goal contract (outcome + acceptance criteria + verification command + termination-on-blocker), and the probe agent runs under it. A gauntlet run therefore also validates the card template itself. - **Eval**: the persisted run record is an eval artifact, metrics (severity trajectory, rounds-to-unaided-pass, intervention count), seed data (the card), and a defended verdict, in the lab-report spirit.
 
 ## The four slots (what a preset supplies)
 

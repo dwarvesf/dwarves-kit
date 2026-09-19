@@ -1,6 +1,6 @@
 ---
 name: stats
-description: Query or render the state of the scattered kit/tide/tg-cleanup/learned ledgers (the dwarves-kit gate/proof/telemetry corpus, tide file-move state, tg-cleanup snapshots, the learning ledger), and detect + propose backlog rows off anomalies in that state. Use when the operator asks to SEE ledger state -- "show me the ledger state", "my debt", "understanding debt", "telemetry", "token cost" / "how much am I spending on tokens", "kit runs" / "kit lane telemetry", "ledger status", "render the ledger", "ledger dashboard", "share this as an artifact" (mid-ledger-conversation) -- or to check/propose off it -- "any ledger anomalies", "is my debt over threshold", "propose a backlog row from the ledger state". Drives the read-only `stats` CLI (dwarves-kit/lib/stats) and renders the result as EITHER an in-terminal reply (bot-reply-formatting , tables + bar-fills) or a shareable web Artifact, both from the same one query; `stats anomalies` is the feedback-loop path, PROPOSE-only (stages a cc-backlog candidate, never files a board row). READ-ONLY by hard contract over every source ledger , the CLI never writes back to a source ledger; the one exception is `stats anomalies --propose`, whose ONLY write is the gitignored cc-backlog staging buffer. NOT for editing/mutating any ledger. NOT for ad-hoc SQL exploration (drive `stats query`/`stats show` directly for that; this skill is the rendered-answer path). NOT a persistent TUI/app -- there is no daemon here, only an on-demand agent-driven query + render + propose.
+description: Query or render the state of the scattered kit/tide/tg-cleanup/learned ledgers, and detect + propose backlog rows off anomalies. Use when the operator asks to SEE ledger state -- "show me the ledger state", "my debt", "token cost" -- or to check/propose off it -- "any ledger anomalies". NOT for editing/mutating any ledger. NOT for ad-hoc SQL exploration. NOT a persistent TUI/app.
 ---
 
 # stats
@@ -10,6 +10,14 @@ neighbors (tide, tg-cleanup, learned-ledger) already write. The tool dir is
 `~/workspace/<owner>/dwarves-kit/lib/stats` (run `uv run stats <cmd>`
 there). **Everything is read-only: the CLI never writes back to a source ledger; there
 is no path through this skill that mutates anything.**
+
+## Scope and triggers
+
+Covers the ledgers `stats` reads: the dwarves-kit gate/proof/telemetry corpus, tide file-move state, tg-cleanup snapshots, the learning ledger. Additional trigger phrases: "understanding debt", "telemetry", "how much am I spending on tokens", "kit runs", "kit lane telemetry", "ledger status", "render the ledger", "ledger dashboard", "share this as an artifact" (mid-ledger-conversation), "is my debt over threshold", "propose a backlog row from the ledger state".
+
+Drives the read-only `stats` CLI (dwarves-kit/lib/stats) and renders the result as EITHER an in-terminal reply (bot-reply-formatting, tables + bar-fills) or a shareable web Artifact, both from the same one query; `stats anomalies` is the feedback-loop path, PROPOSE-only (stages a cc-backlog candidate, never files a board row). READ-ONLY by hard contract over every source ledger, the CLI never writes back to a source ledger; the one exception is `stats anomalies --propose`, whose ONLY write is the gitignored cc-backlog staging buffer.
+
+For ad-hoc SQL exploration, drive `stats query`/`stats show` directly; this skill is the rendered-answer path. There is no persistent TUI/app or daemon here, only an on-demand agent-driven query + render + propose.
 
 ## One data path: always query via the `stats` CLI
 

@@ -1,10 +1,14 @@
 ---
 name: memory-tidy
-description: Use when auditing, consolidating, or cleaning a repo's .claude/memory store, "dọn memory", "memory tidy", the biweekly memory audit, duplicate or stale memory notes, MEMORY.md index drift (notes missing from the index, index entries with no file), or when a scheduled run asks for the memory-tidy audit of a repository. NOT for the built-in machine-local auto-memory under ~/.claude/projects (not git-tracked, no PR gate) and NOT for editing a single note (just edit it).
+description: Use when auditing, consolidating, or cleaning a repo's .claude/memory store, "dọn memory", "memory tidy", the biweekly memory audit, duplicate or stale memory notes, MEMORY.md index drift, or a scheduled memory-tidy audit. NOT for the built-in machine-local auto-memory under ~/.claude/projects, NOT for editing a single note (just edit it).
 disable-model-invocation: false
 ---
 
 # Memory tidy
+
+## Scope and triggers
+
+MEMORY.md index drift covers notes missing from the index and index entries with no file. Also fires when a scheduled run asks for the memory-tidy audit of a repository. The excluded auto-memory under `~/.claude/projects` is machine-local: not git-tracked, no PR gate.
 
 ## Overview
 

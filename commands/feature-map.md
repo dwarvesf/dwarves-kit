@@ -1,5 +1,5 @@
 ---
-description: "Build or refresh a source-cited, agent-checkable feature inventory for ANY target project you point it at: per-module spec + a top-level checklist. Works standalone (what does this codebase do) or as a migration source of truth (what needs porting). Refresh mode is an audit-loop instance, sibling to the maintainer-only kit:topology-drift (which audits this kit's own registry, not a target project)."
+description: "Build or refresh a source-cited, agent-checkable feature inventory for ANY target project you point it at: per-module spec + a top-level checklist. Works standalone (what does this codebase do) or as a migration source of truth (what needs porting). Refresh mode is an audit-loop instance, sibling to kit:topology-drift (maintainer-only, audits this kit's own registry)."
 ---
 
 Formalizes a pattern already run by hand at least 4 times (dfoundation's
@@ -7,6 +7,10 @@ Formalizes a pattern already run by hand at least 4 times (dfoundation's
 7-section template every time, plus `ENDGAME-CHECKLIST.md` as the rollup ledger).
 Same dispatch idiom as `/kit:spec`'s Step 2 research fan-out. Generic: point it at
 ANY project. A named port/migration target is one use case, not a requirement.
+
+## Scope and triggers
+
+`kit:topology-drift` audits this kit's OWN registry, never a target project you point this command at.
 
 ## Relationship to the audit-loop pattern
 

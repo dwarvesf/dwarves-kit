@@ -1,8 +1,12 @@
 ---
-description: "Systematic debug loop: root cause before any fix. Four phases, an evidence ledger, the 3-fix architecture wall. Use for any bug, defect, regression, test failure, or unexpected behavior before proposing a fix: 'fix this bug', 'why does X fail', 'the test is failing', 'it broke after Y', 'debug X', 'bị lỗi', 'sửa bug', 'test fail', 'chạy sai'. In a kit-adopted repo this replaces superpowers:systematic-debugging (a superset of it: Phase 0 feedback loop, on-disk ledger, guess-fix guard)."
+description: "Systematic debug loop: root cause before any fix. Four phases, an evidence ledger, the 3-fix architecture wall. Use for any bug, defect, regression, test failure, or unexpected behavior before proposing a fix: 'fix this bug', 'why does X fail', 'the test is failing', 'it broke after Y', 'debug X', 'bị lỗi', 'sửa bug', 'test fail', 'chạy sai'."
 ---
 
 You are debugging a defect, regression, or test failure. You are not here to guess. Random fixes waste time and create new bugs.
+
+## Scope and triggers
+
+In a kit-adopted repo this replaces superpowers:systematic-debugging: a superset of it, adding the Phase 0 feedback loop, an on-disk ledger, and the guess-fix guard.
 
 ## The Iron Law
 

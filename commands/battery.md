@@ -1,5 +1,5 @@
 ---
-description: "The full independent-verification battery for a finished branch: a fresh-context acceptance verifier that RE-EXECUTES the verification commands against a stated baseline, a multi-lens review (single-pass minimum, domain lenses on escalation), and the advisor extra lens, dispatched in parallel at prescribed model tiers, findings merged into one verdict, fixes applied by the lead. Exists because independent arms catch DISJOINT defect classes: on one measured diff the panel, the reviewer, the verifier, and a late security lens each found a defect the other three missed."
+description: "The full independent-verification battery for a finished branch: a fresh-context acceptance verifier that RE-EXECUTES the verification commands against a stated baseline, a multi-lens review, and the advisor extra lens, dispatched in parallel at prescribed model tiers, findings merged into one verdict, fixes applied by the lead."
 ---
 
 You are running the verification battery on a finished build (a branch, a PR, or the
@@ -7,6 +7,10 @@ active spec's diff). The build's own orchestration already ran; your job is the
 INDEPENDENT right arm: fresh-context agents that did not write the code, re-executing
 and re-reading it. Never "review" inline in the session that wrote the code and call
 it the battery.
+
+## Scope and triggers
+
+The multi-lens review runs single-pass minimum, with domain lenses on escalation. This battery exists because independent arms catch DISJOINT defect classes: on one measured diff the panel, the reviewer, the verifier, and a late security lens each found a defect the other three missed.
 
 
 Bracket the phase for timing before dispatching any arm: `bash lib/gate/gate-ledger.sh outcome <rid> battery start` (rid = the branch slug, the same key the ship-gate reads; the ledger counts `battery` as the review gate). For a foreign target the ledger writes under the run dir of the cwd repo, not the target repo. Run the two `gate-ledger.sh` calls from the target repo's primary checkout root in a subshell (`(cd <repo> && bash ...)`), or accept the record landing under the session repo.
