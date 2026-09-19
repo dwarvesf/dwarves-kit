@@ -3,7 +3,7 @@
 # touched, with eight verbs:
 #
 #   wrap.sh scan  <repo> [<repo>...]                        report only, exit 0
-#   wrap.sh apply [--apply] [--worktrees] <repo> [...]      dry-run by default
+#   wrap.sh apply [--apply] [--worktrees] [--own <path>]... <repo> [...]      dry-run by default
 #   wrap.sh merge [--apply] [--pr N] <repo>                 merges ONE own green PR (--pr: a named draft)
 #   wrap.sh land  <worktree> [--title T] [--body-file F]    one hand-made worktree, landed
 #   wrap.sh log   "<slug>: <one sentence>" [--date YYYY-MM-DD]
@@ -234,6 +234,9 @@ MODE="DRY-RUN"
 FAILURES=0
 TIPS_FILE=""
 TIPS_OVERRIDE=""
+OWN_SET=""   # newline-separated canonical paths from --own; empty = no scope
+OWN_SEEN=""  # canonical paths matched against the worktree list this run
+OWN_N=0      # count of --own flags; OWN_PATHS[1..OWN_N] holds the raw args
 
 # _write_guard <repo> -- 0 when the checkout is free to write, 1 when another writer holds
 # it. An index.lock at least LOCK_STALE_SECS old is foreign; a younger one is normal git
@@ -334,6 +337,7 @@ _apply_worktrees() {
   local repo="$1" def="$2" cur="$3" fetch_ok="$4" ghs="$5"
   local main_wt rec wt wt_c wtb proof lock verdict tip scanned
   echo "-- worktrees:"
+  [ -n "$OWN_SET" ] && echo "     scope --own: only the named worktrees are candidates"
   main_wt="$(git -C "$repo" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)"
   main_wt="${main_wt%/.git}"; main_wt="${main_wt%/}"
   main_wt="$(cd "$main_wt" 2>/dev/null && pwd -P)"
@@ -341,8 +345,18 @@ _apply_worktrees() {
     case "$rec" in "worktree "*) wt="${rec#worktree }" ;; *) continue ;; esac
     wt_c="$(cd "$wt" 2>/dev/null && pwd -P)"
     if [ -z "$wt_c" ]; then echo "     SKIP ${wt}: unresolvable"; continue; fi
+    if [ -n "$OWN_SET" ]; then
+      # --own is the operator's worktree opt-in for the named set only; an unnamed
+      # entry is skipped without a line so a shared repo stays readable. Seen is
+      # marked before the guards so a refused named worktree is never misreported.
+      if printf '%s' "$OWN_SET" | grep -qxF "$wt_c"; then
+        OWN_SEEN="${OWN_SEEN}${wt_c}"$'\n'
+      else
+        continue
+      fi
+    fi
     [ "$wt_c" = "$main_wt" ] && continue
-    if [ "$WORKTREES" != 1 ]; then
+    if [ -z "$OWN_SET" ] && [ "$WORKTREES" != 1 ]; then
       echo "     SKIP ${wt}: --worktrees not given (the operator must ask for worktree cleanup)"; continue
     fi
     if [ -n "$(git -C "$wt" status --short 2>/dev/null)" ]; then
@@ -402,6 +416,16 @@ _apply_worktrees() {
       FAILURES=1
     fi
   done < <(git -C "$repo" worktree list --porcelain -z 2>/dev/null)
+  if [ -n "$OWN_SET" ]; then
+    local k=1 canon
+    while [ "$k" -le "$OWN_N" ]; do
+      canon="$(cd "${OWN_PATHS[$k]}" 2>/dev/null && pwd -P)"
+      canon="${canon:-${OWN_PATHS[$k]}}"
+      printf '%s' "$OWN_SEEN" | grep -qxF "$canon" \
+        || echo "     SKIP ${OWN_PATHS[$k]}: not a registered worktree"
+      k=$(( k + 1 ))
+    done
+  fi
 }
 
 _apply_branches() {
@@ -724,7 +748,14 @@ _apply_repo() {
   fi
 
   _apply_worktrees "$repo" "$def" "$cur" "$fetch_ok" "$ghs"
-  _apply_branches "$repo" "$def" "$cur" "$fetch_ok" "$ghs"
+  if [ -n "$OWN_SET" ]; then
+    # The named worktrees' branches were deleted by the worktree step itself; the
+    # all-branches sweep would reach past the session's scope into other sessions'.
+    echo "-- branches:"
+    echo "     SKIP branch sweep: --own scopes cleanup to the named worktrees"
+  else
+    _apply_branches "$repo" "$def" "$cur" "$fetch_ok" "$ghs"
+  fi
 
   echo "-- pull:"
   if [ "$cur" = "$def" ]; then
@@ -741,26 +772,40 @@ _apply_repo() {
 cmd_apply() {
   # Indexed assignment plus a counter, not `arr+=()` with `${#arr[@]}`: an empty array reads
   # as unbound under `set -u` in bash 3.2, which is what macOS ships.
-  local arg count=0 i=1 want_tips=0
+  local arg count=0 i=1 want_tips=0 want_own=0
   local repos
   for arg in "$@"; do
     case "$arg" in
       --apply) APPLY=1 ;;
       --worktrees) WORKTREES=1 ;;
+      --own=*) OWN_N=$(( OWN_N + 1 )); OWN_PATHS[OWN_N]="${arg#--own=}" ;;
+      --own) want_own=1 ;;
       --tips-file=*) TIPS_OVERRIDE="${arg#--tips-file=}" ;;
       --tips-file) want_tips=1 ;;
       -*) echo "wrap.sh apply: unknown flag '$arg'" >&2; return 64 ;;
-      *) if [ "$want_tips" = 1 ]; then TIPS_OVERRIDE="$arg"; want_tips=0
+      *) if [ "$want_own" = 1 ]; then OWN_N=$(( OWN_N + 1 )); OWN_PATHS[OWN_N]="$arg"; want_own=0
+         elif [ "$want_tips" = 1 ]; then TIPS_OVERRIDE="$arg"; want_tips=0
          else count=$(( count + 1 )); repos[count]="$arg"; fi ;;
     esac
   done
   [ "$want_tips" = 0 ] || { echo "wrap.sh apply: --tips-file needs a path" >&2; return 64; }
+  [ "$want_own" = 0 ] || { echo "wrap.sh apply: --own needs a worktree path" >&2; return 64; }
   if [ -n "$TIPS_OVERRIDE" ] && [ ! -f "$TIPS_OVERRIDE" ]; then
     echo "wrap.sh apply: --tips-file '${TIPS_OVERRIDE}' is not an existing file" >&2; return 64
   fi
-  [ "$count" -ge 1 ] || { echo "usage: wrap.sh apply [--apply] [--worktrees] <repo> [<repo>...]" >&2; return 64; }
+  [ "$count" -ge 1 ] || { echo "usage: wrap.sh apply [--apply] [--worktrees] [--own <path>]... <repo> [<repo>...]" >&2; return 64; }
+  # Canonicalise the own set once: the worktree loop compares against `pwd -P`
+  # paths, so the same normalisation must apply to the names the operator typed.
+  i=1
+  while [ "$i" -le "$OWN_N" ]; do
+    local canon
+    canon="$(cd "${OWN_PATHS[$i]}" 2>/dev/null && pwd -P)"
+    OWN_SET="${OWN_SET}${canon:-${OWN_PATHS[$i]}}"$'\n'
+    i=$(( i + 1 ))
+  done
   [ "$APPLY" = 1 ] && MODE="APPLY"
   local ghs; ghs="$(_gh_state)"
+  i=1
   while [ "$i" -le "$count" ]; do _apply_repo "${repos[$i]}" "$ghs"; i=$(( i + 1 )); done
   echo "== ${MODE} complete. PR merges, deploy dispatch and board rows stay with the command."
   [ "$FAILURES" = 0 ] || return 2
