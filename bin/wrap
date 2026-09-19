@@ -9,6 +9,7 @@
 #   wrap apply [--apply] [--worktrees] [--own <path>]... <repo> [...]     gated writes, dry-run by default
 #   wrap merge [--apply] <repo>                         one own green PR
 #   wrap land <worktree> [--title T] [--body-file F]    one hand-made worktree, landed
+#   wrap start <repo> <branch>                          a worktree off origin/<default> on a fresh branch
 #   wrap log "<slug>: <one sentence>" [--date D]        the activity line
 #   wrap default-branch <repo>                          the detected default branch
 #   wrap knowledge-root <repo>                          fenced knowledge dir
