@@ -92,6 +92,44 @@ _gh_note() {
   esac
 }
 
+# _gh_merge_transient -- reads a captured `gh pr merge` error on stdin; exit 0
+# when the text reads transient (worth a retry), 1 for a real refusal. The
+# whitelist names the failure shapes an outage actually prints; anything else
+# (not mergeable, draft, conflict, a --match-head-commit mismatch, auth) falls
+# through to the caller on the first try.
+_gh_merge_transient() {
+  grep -qiE 'HTTP (500|502|503|504|507|509|429)|bad gateway|gateway timeout'\
+'|service unavailable|executing (your )?query|went wrong|rate.?limit'\
+'|timed? ?out|connection reset|connection refused|TLS handshake|EOF'\
+'|temporar|failed to connect'
+}
+
+# _gh_merge_retry <pr> <repo-url> <head-oid> -- `gh pr merge` behind a bounded
+# transient-error retry: WRAP_MERGE_RETRY_MAX attempts (default 3) with
+# attempt * WRAP_MERGE_RETRY_SLEEP seconds of backoff (default 5). A real
+# refusal returns on the first try with its original exit code and output.
+WRAP_MERGE_RETRY_MAX=${WRAP_MERGE_RETRY_MAX:-3}
+WRAP_MERGE_RETRY_SLEEP=${WRAP_MERGE_RETRY_SLEEP:-5}
+_gh_merge_retry() {
+  local n="$1" url="$2" head_oid="$3"
+  local attempt=1 out rc
+  while :; do
+    out="$(gh pr merge "$n" --repo "$url" --squash --match-head-commit "$head_oid" 2>&1)"; rc=$?
+    if [ "$rc" -eq 0 ]; then printf '%s\n' "$out"; return 0; fi
+    # A merge that landed but whose answer 5xx'd reads "already merged" on the
+    # retry: treat it as the success it is. The caller still verifies MERGED.
+    printf '%s' "$out" | grep -qi 'already merged' && { printf '%s\n' "$out"; return 0; }
+    if [ "$attempt" -ge "$WRAP_MERGE_RETRY_MAX" ] || \
+       ! printf '%s' "$out" | _gh_merge_transient; then
+      printf '%s\n' "$out" >&2; return "$rc"
+    fi
+    echo "merge #${n}: transient GitHub error (attempt ${attempt}/${WRAP_MERGE_RETRY_MAX})," \
+      "retrying in $((attempt * WRAP_MERGE_RETRY_SLEEP))s" >&2
+    sleep "$((attempt * WRAP_MERGE_RETRY_SLEEP))"
+    attempt=$((attempt + 1))
+  done
+}
+
 # GNU stat first: on GNU, `-f` means file-system status and prints a mount point with exit 0,
 # so a BSD-first order parses garbage on Linux. BSD stat rejects `-c` and falls through.
 _mtime() { stat -c %Y "$1" 2>/dev/null || stat -f %m "$1" 2>/dev/null; }
@@ -1077,7 +1115,7 @@ cmd_merge() {
   # and never --auto (an armed auto-merge lands a later push).
   # --match-head-commit pins the merge to the head the gates just read, so a push that
   # lands between the gate and the merge aborts the call instead of shipping unreviewed.
-  gh pr merge "$first_eligible" --repo "$url" --squash --match-head-commit "$head_oid"
+  _gh_merge_retry "$first_eligible" "$url" "$head_oid"
   local rc=$?
   if [ "$rc" -ne 0 ]; then echo "FAILED merge #${first_eligible}: exit ${rc}" >&2; return 2; fi
 
@@ -1280,7 +1318,7 @@ cmd_land() {
     echo "     opened PR #${n}"
   fi
 
-  gh pr merge "$n" --repo "$url" --squash --match-head-commit "$tip"; rc=$?
+  _gh_merge_retry "$n" "$url" "$tip"; rc=$?
   if [ "$rc" -ne 0 ]; then echo "     MERGE FAILED #${n}: exit ${rc}" >&2; return 2; fi
 
   local after state sha

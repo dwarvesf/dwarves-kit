@@ -129,13 +129,29 @@ case "$sub" in
         # `merge --pr N` marks a targeted draft ready. Nothing to print; real gh is silent too.
         exit "${GH_STUB_READY_RC:-0}" ;;
       merge)
+        # GH_STUB_MERGE_FAILS=N fails the first N merge calls with
+        # GH_STUB_MERGE_ERR (default a 502 body) and GH_STUB_MERGE_FAIL_RC
+        # (default 1): a transient GitHub outage that clears mid-retry. A
+        # failure after the budget, or with FAILS unset, exits
+        # GH_STUB_MERGE_RC (default 0) as before; GH_STUB_MERGE_ERR prints on
+        # every failing call either way, so a case can model a refusal text.
+        cnt_f="${GH_STUB_CALLS:-/dev/null}.merge"
+        cnt=$(( $(cat "$cnt_f" 2>/dev/null || echo 0) + 1 )); echo "$cnt" > "$cnt_f" 2>/dev/null
+        if [ "$cnt" -le "${GH_STUB_MERGE_FAILS:-0}" ]; then
+          printf '%s\n' "${GH_STUB_MERGE_ERR:-HTTP 502 Bad Gateway}" >&2
+          exit "${GH_STUB_MERGE_FAIL_RC:-1}"
+        fi
+        rc="${GH_STUB_MERGE_RC:-0}"
+        if [ "$rc" -ne 0 ] && [ -n "${GH_STUB_MERGE_ERR:-}" ]; then
+          printf '%s\n' "$GH_STUB_MERGE_ERR" >&2
+        fi
         # Stands in for GitHub's own squash landing on the default branch, so the
         # tree-verify step downstream has a real tree to compare against.
         if [ -n "${GH_STUB_LAND_REPO:-}" ]; then
           git -C "$GH_STUB_LAND_REPO" push -q "${GH_STUB_LAND_REMOTE:-origin}" \
             "${GH_STUB_LAND_BRANCH:-feat/union}:refs/heads/${GH_STUB_LAND_DEF:-main}" 2>/dev/null
         fi
-        exit "${GH_STUB_MERGE_RC:-0}" ;;
+        exit "$rc" ;;
     esac
     exit 1 ;;
 esac
@@ -1073,6 +1089,58 @@ chk_has "merge --apply pinned the head it gated on" "$MERGE_CALLS" \
 chk_has "merge: the detail read names --repo" "$MERGE_CALLS" "pr view 7 --repo ${MERGE_URL}"
 chk "merge reads each PR detail exactly once" \
   "$([ "$(grep -c "^pr view 7 --repo ${MERGE_URL} --json number,title" "$GH_STUB_CALLS")" -eq 1 ]; echo $?)"
+
+# ===========================================================================
+# SPEC-300: merge retries a transient GitHub failure, never a real refusal
+# ===========================================================================
+# A second branch+PR for the retry cases, landed on the remote's main up front
+# the same way feat/wrap was, so tree-verify has the squash tree to compare.
+git -C "$TMPD/clone-scan-main" fetch -q origin main
+git -C "$TMPD/clone-scan-main" checkout -q -b feat/retry origin/main
+echo "retry the merge" > "$TMPD/clone-scan-main/retry-note.txt"
+git -C "$TMPD/clone-scan-main" add -A
+git -C "$TMPD/clone-scan-main" commit -qm "retry the merge"
+PR8_OID="$(git -C "$TMPD/clone-scan-main" rev-parse feat/retry)"
+git -C "$TMPD/clone-scan-main" checkout -q "$MERGE_CUR"
+export GH_STUB_OPEN_PRS='[{"number":8,"title":"retry the merge","headRefName":"feat/retry"}]'
+export GH_STUB_PR_8="{\"number\":8,\"title\":\"retry the merge\",\"headRefName\":\"feat/retry\",\"headRefOid\":\"$PR8_OID\",\"baseRefName\":\"main\",\"mergeable\":\"MERGEABLE\",\"mergeStateStatus\":\"CLEAN\",\"reviewDecision\":\"APPROVED\",\"statusCheckRollup\":[{\"conclusion\":\"SUCCESS\"}]}"
+git -C "$TMPD/clone-scan-main" push -q "$TMPD/bare-rmain" feat/retry:refs/heads/main
+
+rm -f "$GH_STUB_CALLS.merge"; : > "$GH_STUB_CALLS"
+out="$(GH_STUB_MERGE_FAILS=2 GH_STUB_MERGE_ERR='HTTP 502 Bad Gateway' \
+  WRAP_MERGE_RETRY_SLEEP=0 "$WRAP" merge --apply "$TMPD/clone-scan-main" 2>&1)"; rc=$?
+chk "SPEC-300: a transient 502 retries and merges" "$rc"
+chk "SPEC-300: the retry took three merge calls" \
+  "$([ "$(grep -c '^pr merge' "$GH_STUB_CALLS")" -eq 3 ]; echo $?)"
+chk_has "SPEC-300: the retry says why it waits" "$out" "transient GitHub error (attempt 1/3)"
+chk_has "SPEC-300: the retried merge still verifies" "$out" "merged #8 (1a2b3c4d5e6f): tree verified"
+
+rm -f "$GH_STUB_CALLS.merge"; : > "$GH_STUB_CALLS"
+out="$(GH_STUB_MERGE_FAILS=9 GH_STUB_MERGE_ERR='HTTP 503 Service Unavailable' \
+  WRAP_MERGE_RETRY_SLEEP=0 "$WRAP" merge --apply "$TMPD/clone-scan-main" 2>&1)"; rc=$?
+chk "SPEC-300: a transient that outlasts the bound exits 2" "$([ "$rc" -eq 2 ]; echo $?)"
+chk "SPEC-300: the bound held at three merge calls" \
+  "$([ "$(grep -c '^pr merge' "$GH_STUB_CALLS")" -eq 3 ]; echo $?)"
+chk_has "SPEC-300: the last failure still reports" "$out" "FAILED merge #8: exit 1"
+
+rm -f "$GH_STUB_CALLS.merge"; : > "$GH_STUB_CALLS"
+out="$(GH_STUB_MERGE_RC=1 GH_STUB_MERGE_ERR='405 Method Not Allowed' \
+  WRAP_MERGE_RETRY_SLEEP=0 "$WRAP" merge --apply "$TMPD/clone-scan-main" 2>&1)"; rc=$?
+chk "SPEC-300: a real refusal exits 2" "$([ "$rc" -eq 2 ]; echo $?)"
+chk "SPEC-300: a real refusal is not retried" \
+  "$([ "$(grep -c '^pr merge' "$GH_STUB_CALLS")" -eq 1 ]; echo $?)"
+chk "SPEC-300: no transient retry line on a refusal" \
+  "$(printf '%s' "$out" | grep -q 'transient GitHub error' && echo 1 || echo 0)"
+
+rm -f "$GH_STUB_CALLS.merge"; : > "$GH_STUB_CALLS"
+out="$(GH_STUB_MERGE_RC=1 \
+  GH_STUB_MERGE_ERR='the head commit oid does not match the pull request head' \
+  WRAP_MERGE_RETRY_SLEEP=0 "$WRAP" merge --apply "$TMPD/clone-scan-main" 2>&1)"; rc=$?
+chk "SPEC-300: a match-head mismatch exits 2" "$([ "$rc" -eq 2 ]; echo $?)"
+chk "SPEC-300: a match-head mismatch is not retried" \
+  "$([ "$(grep -c '^pr merge' "$GH_STUB_CALLS")" -eq 1 ]; echo $?)"
+
+export GH_STUB_OPEN_PRS='[{"number":7,"title":"wrap the session","headRefName":"feat/wrap"}]'
 
 echo "=== merge: the checks gate refuses pending, failing, empty-and-unstable, and changes requested ==="
 gate_verdict() { # gate_verdict <pr json>
