@@ -80,6 +80,11 @@ PERM_MARKERS = ("Permission to use ", "doesn't want to proceed", "denied by your
 ARCH = {"marathon": (120, 300), "deep": (30, 80), "quick": (5, 15)}
 # The user-message text a turn carries when interrupted mid-flight.
 INTERRUPT_MARK = "[Request interrupted"
+# skills view: a skill counts toward `14d` when its last Skill tool_use falls within
+# this many days of "now" (SESSION_OBSERVE_NOW-overridable, same knob burn uses), so a
+# rotting skill (fired long ago, still in the count column) is visible without a second scan.
+SKILL_RECENT_DAYS = 14
+
 # $/million tokens, approximate list price as of 2026-06-15, keyed by model-family
 # substring: (input, output, cache_read, cache_write). Max-plan billing is flat-rate,
 # so these are ATTRIBUTION estimates, not a bill. Unknown families (e.g. fable) count
@@ -279,6 +284,8 @@ def collect(args):
     id_tool, id_skill = {}, {}  # tool_use_id -> name (a tool_result references it)
     id_skill_ts = {}            # tool_use_id -> Skill tool_use timestamp (for wall-time)
     skill_durs = defaultdict(list)  # skill -> [wall-time ms], one per fire (ts(result)-ts(use))
+    skill_last = {}             # skill -> latest Skill tool_use timestamp (ISO string, sortable)
+    skill_recent = Counter()    # skill -> fires within SKILL_RECENT_DAYS of now
     hook_durs = defaultdict(list)
     hook_sample = {}
     hook_errors = 0
@@ -296,6 +303,7 @@ def collect(args):
     interruptions = 0        # total interrupted turns
     interrupt_sessions = 0   # sessions with >= 1 interruption
     tok = defaultdict(lambda: [0, 0, 0, 0])  # model -> [input, output, cache_read, cache_create]
+    recent_cutoff = _burn_now() - SKILL_RECENT_DAYS * 86400
 
     for path in iter_files(args):
         files += 1
@@ -386,6 +394,12 @@ def collect(args):
                             id_skill[tid] = sk
                             if ts:
                                 id_skill_ts[tid] = ts
+                        if ts:
+                            if sk not in skill_last or ts > skill_last[sk]:
+                                skill_last[sk] = ts
+                            dt = parse_ts(ts)
+                            if dt and dt.timestamp() >= recent_cutoff:
+                                skill_recent[sk] += 1
                     if name in ("Agent", "Task") and not side and day:
                         st = (b.get("input") or {}).get("subagent_type") or "(default)"
                         sub_day[day] += 1
@@ -446,6 +460,8 @@ def collect(args):
         "skills": skill_n,
         "skill_err": skill_err,
         "skill_durs": skill_durs,
+        "skill_last": skill_last,
+        "skill_recent": skill_recent,
         "hook_durs": hook_durs,
         "hook_sample": hook_sample,
         "hook_errors": hook_errors,
@@ -487,6 +503,18 @@ def usage_rows(counts, errs, top):
         e = errs.get(name, 0)
         rate = f"{100 * e / n:.0f}%" if n else "0%"
         rows.append([name, n, e, rate])
+    return rows
+
+
+def skill_usage_rows(counts, errs, last, recent, top):
+    """Like usage_rows, plus `14d` (fires within SKILL_RECENT_DAYS) and `last`
+    (date of the most recent Skill tool_use), so a rotting skill (still counted,
+    long unfired) shows without a second scan."""
+    rows = []
+    for name, n in counts.most_common(top or None):
+        e = errs.get(name, 0)
+        rate = f"{100 * e / n:.0f}%" if n else "0%"
+        rows.append([name, n, e, rate, recent.get(name, 0), (last.get(name) or "")[:10] or "-"])
     return rows
 
 
@@ -889,6 +917,137 @@ ENTRY_FEE_OVERSHOT = "(estimate over measured)"
 ENTRY_FEE_WORKTREE_MARK = "--claude-worktrees-"
 
 
+# The literal marker that opens the real skill listing sent to the model (inside a
+# system-reminder in a user-message content block). Used to MEASURE the actual listing,
+# a second, transcript-sourced bucket alongside the disk-sized estimate above.
+LISTING_MARKER = "The following skills are available"
+# A description this long or longer is worth flagging in the entry-fee report.
+LISTING_LONG_DESC_CHARS = 400
+
+
+def _walk_strings(obj):
+    """Yield every string value anywhere in a JSON-like structure, depth-first.
+
+    The marker's home shifted across transcript shapes (an `attachment` field vs. a
+    user-message system-reminder block), so this walks every string field rather than
+    a fixed path."""
+    if isinstance(obj, str):
+        yield obj
+    elif isinstance(obj, dict):
+        for v in obj.values():
+            yield from _walk_strings(v)
+    elif isinstance(obj, list):
+        for v in obj:
+            yield from _walk_strings(v)
+
+
+def _listing_block_text(entry):
+    """The first string field of one transcript record that carries LISTING_MARKER,
+    sliced from the marker to the end of that field. None if the record has no such field."""
+    for s in _walk_strings(entry):
+        idx = s.find(LISTING_MARKER)
+        if idx != -1:
+            return s[idx:]
+    return None
+
+
+def _parse_listing_entries(block_text):
+    """Parse `- name: description` lines out of a listing block.
+
+    A line starting with `- ` opens an entry, split on the first `: ` into name and
+    description. An indented following line continues the previous entry's description.
+    The list ends at the first blank line whose next non-blank line is not a `- ` entry
+    (also the end of the block, since the walk stops when lines run out).
+    """
+    lines = block_text.split("\n")[1:]  # drop the marker/header line itself
+    entries = []
+    i, n = 0, len(lines)
+    while i < n:
+        line = lines[i]
+        if line.startswith("- "):
+            rest = line[2:]
+            name, _, desc = rest.partition(": ")
+            entries.append([name.strip(), desc.strip()])
+            i += 1
+        elif line.strip() == "":
+            j = i + 1
+            while j < n and lines[j].strip() == "":
+                j += 1
+            if j >= n or not lines[j].startswith("- "):
+                break
+            i = j
+        elif line[:1] in (" ", "\t") and entries:
+            entries[-1][1] = (entries[-1][1] + " " + line.strip()).strip()
+            i += 1
+        else:
+            break
+    return entries
+
+
+def measured_listing_session(path):
+    """The first record in one transcript that carries the real skill listing -> its
+    measured stats, or None (a subagent transcript, or a session with no listing)."""
+    for entry in iter_entries(path):
+        if not isinstance(entry, dict):
+            continue  # malformed transcript line (untrusted input)
+        block = _listing_block_text(entry)
+        if block is None:
+            continue
+        parsed = _parse_listing_entries(block)
+        chars = len(block)
+        ts = entry.get("timestamp")
+        return {
+            "entries": len(parsed),
+            "chars": chars,
+            "tokens": chars // ENTRY_FEE_CHARS_PER_TOKEN,
+            "over_400": sum(1 for _, d in parsed if len(d) > LISTING_LONG_DESC_CHARS),
+            "empty_desc": sum(1 for _, d in parsed if not d),
+            "top8": sorted(((name, len(d)) for name, d in parsed), key=lambda t: -t[1])[:8],
+            "ts": ts if isinstance(ts, str) else "",
+        }
+    return None
+
+
+def listing_collect(args):
+    """One row per main session that carries the real skill listing."""
+    rows = []
+    for path in iter_files(args):
+        if os.sep + "subagents" + os.sep in path:
+            continue  # a subagent's own transcript, not a session someone started
+        s = measured_listing_session(path)
+        if s:
+            rows.append(s)
+    return rows
+
+
+def listing_median_row(rows):
+    """Per-field median across sessions, or None for an empty set."""
+    if not rows:
+        return None
+    return {
+        "entries": pctl([r["entries"] for r in rows], 50),
+        "chars": pctl([r["chars"] for r in rows], 50),
+        "tokens": pctl([r["tokens"] for r in rows], 50),
+        "over_400": pctl([r["over_400"] for r in rows], 50),
+        "empty_desc": pctl([r["empty_desc"] for r in rows], 50),
+    }
+
+
+def listing_most_recent(rows):
+    """The row with the latest timestamp, or None. Rows with no timestamp lose the tie."""
+    timed = [r for r in rows if r["ts"]]
+    return max(timed, key=lambda r: r["ts"]) if timed else None
+
+
+def listing_stat_rows(median, recent):
+    rows = []
+    if median:
+        rows.append(["median", median["entries"], median["chars"], median["tokens"], median["over_400"], median["empty_desc"]])
+    if recent:
+        rows.append(["most-recent", recent["entries"], recent["chars"], recent["tokens"], recent["over_400"], recent["empty_desc"]])
+    return rows
+
+
 def _rendered_chars(entry):
     """Characters of rendered preamble text one attachment entry contributes.
 
@@ -1059,6 +1218,10 @@ def run_entry_fee(args):
     weeks = entry_fee_week_rows(sessions, args.top) if args.trend else []
     med = med_sess["fee"] if med_sess else 0
 
+    listing_rows = listing_collect(args)
+    listing_med = listing_median_row(listing_rows)
+    listing_recent = listing_most_recent(listing_rows)
+
     if args.json:
         print(json.dumps({
             "sessions": len(sessions),
@@ -1070,19 +1233,32 @@ def run_entry_fee(args):
             "split_components": [{"component": r[0], "est_tokens": r[1]} for r in comp],
             "by_project": [{"project": r[0], "sessions": r[1], "median_fee": r[2]} for r in projects],
             "by_week": [{"week": r[0], "sessions": r[1], "median_fee": r[2]} for r in weeks],
+            "skill_listing_measured": {
+                "sessions": len(listing_rows),
+                "median": listing_med,
+                "most_recent": {k: v for k, v in listing_recent.items() if k != "top8"} if listing_recent else None,
+                "most_recent_top8": [{"skill": n, "chars": c} for n, c in listing_recent["top8"]] if listing_recent else [],
+            },
         }, indent=2))
         return
 
     split_fee = split_sess["fee"] if split_sess else 0
     print(f"# entry-fee  ({len(sessions)} sessions, {len(projects)} projects; median {med} tokens re-read per turn, measured)")
     print(f"  component split of one {split_fee}-token session ({splittable} sessions record the rendered preamble;")
-    print(f"  the split is ESTIMATED at {ENTRY_FEE_CHARS_PER_TOKEN} chars/token, only the totals are measured):")
+    print(f"  the split is ESTIMATED from disk (component size, e.g. SKILL.md text) at {ENTRY_FEE_CHARS_PER_TOKEN} chars/token,")
+    print("  only the totals are measured):")
     print_table(["component", "est-tokens", "share"], comp)
     print("  per repo (median measured fee):")
     print_table(["project", "sessions", "median-fee"], projects)
     if args.trend:
         print("  weekly trend (median measured fee):")
         print_table(["week", "sessions", "median-fee"], weeks)
+    print(f"  skill listing MEASURED-FROM-TRANSCRIPT ({len(listing_rows)} sessions carry the real listing;")
+    print(f"  chars/token still an estimate at {ENTRY_FEE_CHARS_PER_TOKEN}, entries/chars/over400/empty-desc are exact counts):")
+    print_table(["stat", "entries", "chars", "tokens", "over400", "empty-desc"], listing_stat_rows(listing_med, listing_recent))
+    if listing_recent:
+        print("  most-recent session, top 8 descriptions by length:")
+        print_table(["skill", "chars"], [[n, c] for n, c in listing_recent["top8"]])
     print()
 
 
@@ -1090,7 +1266,10 @@ def emit(args, data):
     if args.json:
         out = {
             "files": data["files"],
-            "skills": [{"skill": k, "count": v, "errors": data["skill_err"].get(k, 0)} for k, v in data["skills"].most_common()],
+            "skills": [{"skill": k, "count": v, "errors": data["skill_err"].get(k, 0),
+                        "count_14d": data["skill_recent"].get(k, 0),
+                        "last": (data["skill_last"].get(k) or "")[:10] or None}
+                       for k, v in data["skills"].most_common()],
             "skill_latency": [{"skill": r[0], "fires": r[1], "total_ms": r[2], "p50_ms": r[3], "p95_ms": r[4], "max_ms": r[5]} for r in skill_latency_rows(data["skill_durs"], 0)],
             "tools": [{"tool": k, "count": v, "errors": data["tool_err"].get(k, 0)} for k, v in data["tools"].most_common()],
             "hooks": [{"hook": lab, "count": len(v), "p50_ms": pctl(v, 50), "p95_ms": pctl(v, 95), "max_ms": max(v) if v else 0} for lab, v in data["hook_durs"].items()],
@@ -1134,7 +1313,8 @@ def emit(args, data):
     want = args.cmd
     if want in ("skills", "report"):
         print(f"# skills  ({data['files']} transcripts)")
-        print_table(["skill", "count", "errors", "rate"], usage_rows(data["skills"], data["skill_err"], args.top))
+        print_table(["skill", "count", "errors", "rate", "14d", "last"],
+                     skill_usage_rows(data["skills"], data["skill_err"], data["skill_last"], data["skill_recent"], args.top))
         print()
         if args.latency:
             print(f"# skill wall-time  (total ms summed per skill, ranked by total; {data['files']} transcripts)")
