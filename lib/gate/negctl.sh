@@ -32,7 +32,52 @@
 #   Prints `Verdict: PASS` and exits 0 only when every step held; otherwise the first
 #   failure names itself in `Verdict: FAIL: <reason>` and the exit is 1. A dirty tree is
 #   `REFUSED`, exit 2, before anything runs. Restore runs on every exit path after step 3.
+#
+# Usage: negctl.sh --base-ref <ref> <root> <test-cmd>
+#   Step 1's refusal is correct but permanent on a SHARED checkout: a repo where other
+#   sessions hold uncommitted work is never clean, so the mutate mode can never run there
+#   (real case, 2026-09-18/19: two shared repos stayed dirty all session, five controls had
+#   to be hand-rolled). This mode proves the same thing a different way: the change under
+#   test is proven by the ref that PREDATES it, not by damaging the working tree. It
+#   extracts <root> at <ref> into a throwaway dir via `git archive` (mutates nothing, so a
+#   dirty checkout never trips a refusal) and requires <test-cmd> to come back RED there.
+#   A base ref that passes proves nothing, so that is a FAIL, not a pass, same fail-closed
+#   contract as the mutate mode. It shares the same `Command:`/`Exit:`/`Verdict:` block
+#   proof-ledger.sh check() parses.
 set -uo pipefail
+
+if [ "${1:-}" = "--base-ref" ]; then
+  base_ref="${2:-}"; root="${3:-}"; test_cmd="${4:-}"
+  [ -n "$base_ref" ] && [ -n "$root" ] && [ -n "$test_cmd" ] \
+    || { echo "usage: negctl.sh --base-ref <ref> <root> <test-cmd>" >&2; exit 64; }
+  git -C "$root" rev-parse --git-dir >/dev/null 2>&1 || { echo "negctl: $root is not a git repo" >&2; exit 64; }
+  git -C "$root" rev-parse --verify "${base_ref}^{commit}" >/dev/null 2>&1 \
+    || { echo "negctl: base ref '$base_ref' does not resolve to a commit in $root" >&2; exit 64; }
+
+  extract="$(mktemp -d)"
+  cleanup() { rm -rf "$extract"; }
+  trap cleanup EXIT
+
+  # git archive reads from the object store, never the working tree, so it cannot refuse or
+  # damage a dirty checkout; that is the entire reason this mode exists.
+  if ! git -C "$root" archive "$base_ref" | tar -x -C "$extract" 2>/dev/null; then
+    echo "negctl: failed to extract $base_ref from $root" >&2
+    exit 1
+  fi
+
+  echo "## Negative control (negctl, base-ref mode)"
+  echo "Base ref: $base_ref"
+  echo "Command: $test_cmd"
+  (cd "$extract" && bash -c "$test_cmd") >/dev/null 2>&1
+  rc=$?
+  echo "Exit: $rc (base ref, RED expected)"
+  if [ "$rc" -ne 0 ]; then
+    echo "Verdict: PASS"
+    exit 0
+  fi
+  echo "Verdict: FAIL: the check passed at $base_ref, so it proves nothing about the change"
+  exit 1
+fi
 
 root="${1:-}"; test_cmd="${2:-}"; mutate_cmd="${3:-}"
 [ -n "$root" ] && [ -n "$test_cmd" ] && [ -n "$mutate_cmd" ] \

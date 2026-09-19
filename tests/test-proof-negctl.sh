@@ -153,5 +153,46 @@ if [ "$RC" -eq 64 ] && grep -q 'NEGCTL_RED_ATTEMPTS' <<<"$OUT" && [ "$RC0" -eq 6
   ok "both bad values exit 64 naming the variable"
 else no "rc=$RC rc0=$RC0 out=$OUT out0=$OUT0"; fi
 
+echo
+# --- --base-ref mode: prove the control against a ref, never touch the working tree -----
+# test.sh is IDENTICAL across both commits (the real shape: the assertion doesn't change,
+# only lib.sh does), so running it against the base ref proves the OLD implementation,
+# not a different check.
+BREPO="$TMP/baseref"
+mkdir -p "$BREPO"
+git -C "$BREPO" init -q
+printf 'add() { echo $(( $1 * $2 )); }\n' > "$BREPO/lib.sh"   # BUG: multiplies instead of adds
+printf '#!/usr/bin/env bash\nsource ./lib.sh\n[ "$(add 3 4)" = "7" ]\n' > "$BREPO/test.sh"
+git -C "$BREPO" add -A && git -C "$BREPO" -c user.name=t -c user.email=t@t commit -q -m buggy
+BASE_SHA="$(git -C "$BREPO" rev-parse HEAD)"
+printf 'add() { echo $(( $1 + $2 )); }\n' > "$BREPO/lib.sh"   # the fix
+git -C "$BREPO" -c user.name=t -c user.email=t@t commit -q -am fix
+HEAD_SHA="$(git -C "$BREPO" rev-parse HEAD)"
+
+echo "[16] base-ref mode: RED at the base ref is PASS, tree untouched, dirty checkout not refused"
+echo "# unrelated foreign dirty file" >> "$BREPO/lib.sh"   # simulates another session's uncommitted work
+BEFORE="$(git -C "$BREPO" status --porcelain)"
+OUT="$(bash "$NC" --base-ref "$BASE_SHA" "$BREPO" "bash test.sh" 2>&1)"; RC=$?
+AFTER="$(git -C "$BREPO" status --porcelain)"
+if [ "$RC" -eq 0 ] && grep -q '^Verdict: PASS$' <<<"$OUT" && grep -qi 'Negative control' <<<"$OUT" \
+   && grep -qE '^Exit: [1-9][0-9]* \(base ref, RED expected\)$' <<<"$OUT" && [ "$BEFORE" = "$AFTER" ]; then
+  ok "base ref RED accepted, foreign dirty file untouched and never refused"
+else no "rc=$RC before=[$BEFORE] after=[$AFTER] out=$OUT"; fi
+git -C "$BREPO" checkout -q -- lib.sh   # drop the simulated foreign edit
+
+echo "[17] base-ref mode: GREEN at the given ref is FAIL, proves nothing (a mistaken/no-op base)"
+OUT="$(bash "$NC" --base-ref "$HEAD_SHA" "$BREPO" "bash test.sh" 2>&1)"; RC=$?
+if [ "$RC" -ne 0 ] && grep -q 'Verdict: FAIL: the check passed at' <<<"$OUT"; then
+  ok "green ref rejected as vacuous"
+else no "rc=$RC out=$OUT"; fi
+
+echo "[18] base-ref mode: bad ref exits 64, missing args name the usage"
+OUT="$(bash "$NC" --base-ref no-such-ref "$BREPO" "bash test.sh" 2>&1)"; RC=$?
+OUT2="$(bash "$NC" --base-ref "$BASE_SHA" "$BREPO" 2>&1)"; RC2=$?
+if [ "$RC" -eq 64 ] && grep -q "does not resolve to a commit" <<<"$OUT" \
+   && [ "$RC2" -eq 64 ] && grep -q 'usage: negctl.sh --base-ref' <<<"$OUT2"; then
+  ok "bad ref and missing args both exit 64"
+else no "rc=$RC rc2=$RC2 out=$OUT out2=$OUT2"; fi
+
 if [ "$fail" -gt 0 ]; then echo "test-proof-negctl: $pass passed, $fail FAILED" >&2; exit 1; fi
 echo "test-proof-negctl: all $pass passed"

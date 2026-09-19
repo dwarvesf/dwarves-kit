@@ -29,8 +29,12 @@
 #   override <slug> <reason>          log a human override for this branch (leaves a trace)
 #   is-overridden <slug>              exit 0 if an override is logged
 #   negctl   <root> <test-cmd> <mutate-cmd>
+#   negctl   --base-ref <ref> <root> <test-cmd>
 #                                     forwards to lib/gate/negctl.sh (the mechanised negative
-#                                     control; FAILS CLOSED, prints the block check() reads)
+#                                     control; FAILS CLOSED, prints the block check() reads.
+#                                     --base-ref mode proves the control against a git ref
+#                                     instead of mutating the tree, so it works on a dirty
+#                                     shared checkout)
 set -uo pipefail
 
 PROOF_LEDGER_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
