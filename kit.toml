@@ -81,6 +81,21 @@ enabled_agent_clis = ""         # [impl] opt-in NON-claude dispatch. Space-separ
                                 #        committed .kit.toml rides inside an untrusted PR and
                                 #        could self-enable a vendor). See commands/mega.md
                                 #        "Harness routing (multi-vendor dispatch)".
+turn_cap           = 300        # [impl] TURN_CAP. Per-agent turn CEILING for `claude -p`
+                                #        sub-goal dispatch: a session hitting it stops, a
+                                #        deterministic handoff is generated, and the SAME
+                                #        sub-goal resumes in a fresh segment. ~100 is the
+                                #        measured sweet spot (a 352-turn builder re-read
+                                #        549 tokens per output token; ~100-turn segments
+                                #        cut cache-read ~46%). 0 disables. The stall
+                                #        watchdog (WATCHDOG_STALL_SECS) stays the LEASE:
+                                #        it alerts on a lapsed lease and never kills;
+                                #        only the ceiling stops a segment. Non-claude
+                                #        harnesses have no --max-turns and are exempt.
+turn_cap_segments  = 10         # [impl] TURN_CAP_SEGMENTS. Max segments per sub-goal per
+                                #        `orchestrate.sh run` invocation -- the stuck-loop
+                                #        bound. Exhaustion halts the sub-goal for a human
+                                #        (re-running resumes from the records on disk).
 
 [gate]                          # quality gates, OPT-IN: every key defaults to false here except
                                 #        board_row_gate, which defaults to true. Read when

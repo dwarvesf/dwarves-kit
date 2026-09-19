@@ -103,8 +103,11 @@ else
 fi
 
 # ============ C7: default (no flag/env) NC -- no stream capture, no TOKENS line, usage=? ============
+# TURN_CAP=0 pins the pre-ceiling dispatch: the turn ceiling defaults ON and forces its own
+# stream-json capture, so this negative control must opt out to keep asserting the OLD
+# no-capture default (the ceiling's own forced-capture path is covered in test-turn-cap.sh).
 D7="$TMP/mg7"; mk_mg "$D7" "feat/kit-captok-c7"
-run_cap "$D7" > "$TMP/c7.out" 2>&1
+TURN_CAP=0 run_cap "$D7" > "$TMP/c7.out" 2>&1
 LED7="$(LEDGER_OF kit-captok-c7)"
 if [ ! -f "$D7/.orchestrate/SG-01.stream.jsonl" ] && { [ ! -f "$LED7" ] || ! grep -q '| TOKENS |' "$LED7"; }; then
   pass "C7 default NC: no stream-json child file, NO TOKENS line (honest usage=?, default invocation intact)"

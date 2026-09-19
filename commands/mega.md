@@ -447,10 +447,12 @@ allowlist (`opus|sonnet|haiku|fable`) applies to claude ONLY.
 ### The one caveat
 
 A non-claude sub-goal runs on the plain path only, so it gets **no token accounting, no live
-`--stream` tail, no deterministic-handoff regeneration, and no stall watchdog** (all four
-need the `stream-json` capture the vendor CLIs lack). The driver WARNs and runs it anyway; a
+`--stream` tail, no deterministic-handoff regeneration, no stall watchdog, and no turn
+ceiling** (the first four need the `stream-json` capture the vendor CLIs lack; the ceiling
+needs `--max-turns`, a claude-only flag). The driver WARNs and runs it anyway; a
 mega-goal mixing claude and vendor sub-goals will have a partial token ledger and its vendor
-sub-goals are not stall-monitored. That is the price of routing off-vendor, surfaced, not hidden.
+sub-goals are neither stall-monitored nor turn-capped. That is the price of routing off-vendor,
+surfaced, not hidden.
 
 ## Consolidate mode (remega, mirrors the skill's mode)
 

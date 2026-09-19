@@ -92,8 +92,10 @@ echo "  SG-01 rid=kit-wdtok-c1: $(grep '| TOKENS |' "$LED1" 2>/dev/null | head -
 # Pre-fix-equivalent behavior for the default (no --capture-tokens/no DETERMINISTIC_HANDOFF)
 # posture: the watchdog branch must stay byte-identical -- plain .session.log, no stream.jsonl,
 # NO TOKENS line, even though the session stalls-then-ships exactly as above.
+# TURN_CAP=0 pins the pre-ceiling dispatch: the turn ceiling defaults ON and forces its own
+# stream-json capture, so this NC must opt out to keep asserting the old black-hole posture.
 D2="$TMP/mg2"; mk_mg "$D2" "feat/kit-wdtok-nc"
-WDTOK_RM="$D2/ROADMAP.md" CLAUDE_CMD="$TMP/claude-wdtok" WAVE_CAP=1 \
+TURN_CAP=0 WDTOK_RM="$D2/ROADMAP.md" CLAUDE_CMD="$TMP/claude-wdtok" WAVE_CAP=1 \
   WATCHDOG_STALL_SECS=1 WATCHDOG_POLL_SECS=1 \
   DWARVES_KIT_LOG_DIR="$TMP/logs" bash "$ORCH" run "$D2" > "$TMP/c2.out" 2>&1 < /dev/null
 LED2="$(LEDGER_OF kit-wdtok-nc)"

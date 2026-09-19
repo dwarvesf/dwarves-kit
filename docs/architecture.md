@@ -440,7 +440,12 @@ one-time advisory pointing to `gate!` for a global stop-all. The default flip to
 was gated on an audit that no live mega-goal ROADMAP relies on `gate`=global-stop (clean).
 
 **Env surface:** `WAVE_CAP` (default **2** = waves on; `1` forces serial; integer `>=1`), `FLIP_LOCK_STALE_SECS` (default 120),
-`WAVE_MERGE_CMD` (the convergence merge hook; real `gh`-backed wiring is ID-090). Full design +
+`WAVE_MERGE_CMD` (the convergence merge hook; real `gh`-backed wiring is ID-090),
+`TURN_CAP` (default **100**, `[mega].turn_cap`; per-agent turn CEILING via `--max-turns` +
+a deterministic segment handoff that re-dispatches the SAME sub-goal; `0` disables) and
+`TURN_CAP_SEGMENTS` (default **10**, `[mega].turn_cap_segments`; the stuck-loop bound).
+The ceiling pairs with the stall watchdog, which is the LEASE (`WATCHDOG_STALL_SECS` alerts on
+a lapsed lease and never kills; only the ceiling stops a segment). Full design +
 exit-criteria proof: `docs/specs/SPEC-106-dag-wavefront-scheduling.md` + `docs/verification/orchestrate-wavefront.md`.
 
 ## Verification pipeline (the load-bearing piece)
