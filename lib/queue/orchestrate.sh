@@ -23,6 +23,12 @@
 #   `stalled` after that many seconds with no output (WATCHDOG_POLL_SECS poll interval); never
 #   kills. Default 0 = off (synchronous path unchanged). A dead/incomplete session never advances
 #   its box (`[guardrail]` halt); a sub-goal with no goals/ file warns before launch.
+#   Env (cost ceiling): TURN_CAP=N (default 100; [mega].turn_cap) runs every claude sub-goal
+#   session under `--max-turns N` + a silent stream-json capture; a session that hits the
+#   ceiling is resumed as a fresh-segment `claude -p` via a deterministic handoff-gen
+#   continuation, up to TURN_CAP_SEGMENTS (default 10) per sub-goal per run. TURN_CAP=0
+#   disables (pre-ceiling dispatch, unchanged). The stall watchdog stays the LEASE
+#   (alerts, never kills); the turn cap is the CEILING (stops and hands off).
 #
 # <megagoal-dir> holds: ROADMAP.md (sub-goal lines `- [ ] SG-NN ... , auto|gate , ...`),
 # POINTER_PROMPT.md (static resume prompt), HANDOFF.md (feed-forward, written by each sub-goal).
@@ -152,6 +158,21 @@ _kit_bool01() {
 # daemon, per the pi-swarm thesis).
 WATCHDOG_STALL_SECS="${WATCHDOG_STALL_SECS:-0}"
 WATCHDOG_POLL_SECS="${WATCHDOG_POLL_SECS:-30}"
+
+# Per-agent turn ceiling (the VoiceStudio control-plane split: the turn cap is the
+# CEILING, the stall age above is the LEASE -- the lease alerts, only the ceiling stops).
+# A measured 352-turn builder re-read 549 tokens of accumulated context per output token;
+# ~100-turn segments cut cache-read ~46% for the same work. TURN_CAP>0 appends
+# `--max-turns $TURN_CAP` to every claude dispatch AND forces the silent stream-json capture
+# (the cap is detected off the transcript's result subtype `error_max_turns`, and the segment
+# handoff is regenerated from the same transcript by lib/goal/handoff-gen). On a cap the SAME
+# sub-goal is re-dispatched as a successor segment (a fresh `claude -p`, so context resets)
+# until it flips its box or exhausts TURN_CAP_SEGMENTS, which is the stuck-loop bound: without
+# it an agent that never converges would only burn slower. TURN_CAP=0 restores the pre-feature
+# dispatch byte-identically. Precedence: env > [mega].turn_cap / .turn_cap_segments (project
+# .kit.toml > kit-root kit.toml) > the defaults here.
+TURN_CAP="${TURN_CAP:-$(kit_config_get mega.turn_cap 100)}"
+TURN_CAP_SEGMENTS="${TURN_CAP_SEGMENTS:-$(kit_config_get mega.turn_cap_segments 10)}"
 
 # Flip-lock stale-reclaim threshold. The box-flip mutual-exclusion
 # primitive is a `mkdir` lock (atomic on POSIX; flock is absent on macOS and unused in this repo).
@@ -999,6 +1020,33 @@ _prune_streams() {  # dir
   _say "[orchestrate] [retention] pruned $n stream/session file(s) older than ${STREAM_RETENTION_DAYS}d from $logdir"
 }
 
+# Did a captured stream-json session end AT the turn ceiling? Reads the LAST `type:"result"`
+# event's subtype (`error_max_turns`, verified against the CLI's --max-turns exit: rc 1 +
+# is_error). `jq -R ... fromjson?` tolerates non-JSON lines (a plain-text session log, a mock
+# that emits no stream-json) by yielding nothing, so the cap only fires on the real signal.
+_session_capped() {  # slog -> 0 iff the session hit --max-turns
+  local s="$1" st
+  [ -n "$s" ] && [ -s "$s" ] || return 1
+  st=$(jq -Rr 'fromjson? | select(.type=="result") | .subtype // empty' "$s" 2>/dev/null | tail -1)
+  [ "$st" = "error_max_turns" ]
+}
+
+# Is a sub-goal's ROADMAP box already checked? Read-only mirror of the grounded-completion
+# probe cmd_run runs after a session; the segment loop uses it to stop re-dispatching when a
+# capped session actually finished on its last turn. $dir is the mega-goal dir in BOTH the
+# serial and wave paths (a wave session flips the SHARED roadmap via `orchestrate.sh flip`).
+_box_checked() {  # dir id -> 0 iff checked in dir's ROADMAP or the session cwd's copy
+  # Under wave dispatch the session flips the WORKTREE's ROADMAP copy ($(pwd) inside the
+  # spawned subshell), and the megadir's own copy only updates on reap; check both so a
+  # capped-but-finished segment is not mistaken for unfinished.
+  local id="$2" roadmap
+  for roadmap in "$1/ROADMAP.md" "$(pwd)/ROADMAP.md"; do
+    [ -f "$roadmap" ] || continue
+    [ "$(_subgoals "$roadmap" | awk -F'\t' -v i="$id" '$1==i {print $3}')" = 1 ] && return 0
+  done
+  return 1
+}
+
 # Run a session under the stall-watchdog. Backgrounds claude (output -> a session log),
 # polls liveness (`kill -0`, no daemon) + the log's mtime; after WATCHDOG_STALL_SECS of no new
 # output while the process is still alive, emits a `stalled` event + WARN ONCE (advisory: never
@@ -1088,8 +1136,8 @@ _run_one_session_vendor() {  # dir id pfile harness stream
   # stall watchdog either (it needs the same stream-json capture the vendor CLIs lack), so an
   # operator running with the watchdog on must be told this sub-goal is exempt -- not left to assume
   # every session is monitored. Same advisory-WARN posture as the other lost observability features.
-  if [ "$stream" = 1 ] || [ "$DETERMINISTIC_HANDOFF" = 1 ] || [ "$CAPTURE_TOKENS" = 1 ] || [ "$WATCHDOG_STALL_SECS" -gt 0 ]; then
-    echo "[orchestrate] WARN $id: harness '$harness' has no stream-json equivalent; running the plain path (no live tail, no deterministic handoff, no token capture, no stall watchdog for this sub-goal)." >&2
+  if [ "$stream" = 1 ] || [ "$DETERMINISTIC_HANDOFF" = 1 ] || [ "$CAPTURE_TOKENS" = 1 ] || [ "$WATCHDOG_STALL_SECS" -gt 0 ] || [ "$TURN_CAP" -gt 0 ]; then
+    echo "[orchestrate] WARN $id: harness '$harness' has no stream-json equivalent or --max-turns; running the plain path (no live tail, no deterministic handoff, no token capture, no stall watchdog, no turn ceiling for this sub-goal)." >&2
   fi
 
   while IFS= read -r t; do argv+=("$t"); done < <(harness_argv "$harness" "$model" "$effort")
@@ -1125,7 +1173,8 @@ _run_one_session_vendor() {  # dir id pfile harness stream
 # Returns the session exit code; exposes the stream-log path via the global _ROS_SLOG so the
 # caller can wire post-session logic (grounded completion, deterministic handoff) to it. Extracted
 # from cmd_run so the serial and wave paths share ONE copy and the three run-paths are
-# never forked. Zero behavior change vs the former inline block.
+# never forked. TURN_CAP>0 wraps the run-path in a segment loop (--max-turns + deterministic
+# handoff + re-dispatch, below); TURN_CAP=0 is byte-identical to the former inline block.
 _run_one_session() {  # dir id pfile route_flags stream
   local dir="$1" id="$2" pfile="$3" route_flags="$4" stream="$5"
   # --stream (opt-in observability): emit stream-json and tee it to a per-sub-goal capture so
@@ -1142,48 +1191,110 @@ _run_one_session() {  # dir id pfile route_flags stream
     _run_one_session_vendor "$dir" "$id" "$pfile" "$_h" "$stream"
     return $?
   fi
-  # Everything below is the ORIGINAL claude path, untouched: `$CLAUDE_CMD` stays the mock seam every
-  # pre-existing test drives, so an absent `Harness:` header is byte-for-byte the old behavior.
-  if [ "$WATCHDOG_STALL_SECS" -gt 0 ]; then
-    # Watchdog path (opt-in). Token accounting: mirror the same capture gate the
-    # non-watchdog elif below uses, so a stall no longer silently drops the sub-goal's tokens (the
-    # accounting-black-hole gap `_run_session_watchdog`'s own header comment used to describe).
-    # `_WD_SLOG` (set by `_run_session_watchdog`) feeds `_ROS_SLOG` below exactly like the elif's
-    # local `slog` does, so the CALLER (cmd_run's `_record_tokens "$dir" "$id" "$slog"`, and the
-    # wave reap loop's recomputed `${id}.stream.jsonl` path) needs zero further changes.
-    [ "$stream" = 1 ] || [ "$DETERMINISTIC_HANDOFF" = 1 ] || [ "$CAPTURE_TOKENS" = 1 ] && wd_capture=1
-    _run_session_watchdog "$dir" "$id" "$pfile" "$route_flags" "$wd_capture" || rc=$?
-    slog="$_WD_SLOG"
-  elif [ "$stream" = 1 ] || [ "$DETERMINISTIC_HANDOFF" = 1 ] || [ "$CAPTURE_TOKENS" = 1 ]; then
-    # Capture stream-json when the operator wants a live tail (--stream) OR the deterministic
-    # handoff needs the transcript (DETERMINISTIC_HANDOFF=1) OR lean token capture is on
-    # (CAPTURE_TOKENS=1). The live `tee` to the terminal happens ONLY under --stream;
-    # det-handoff and capture-tokens both take the SILENT `> "$slog"` branch below, so the child
-    # transcript lands in the FILE only and never reaches the conductor's stdout (s3).
-    local logdir="$dir/.orchestrate"; mkdir -p "$logdir"
-    slog="$logdir/${id}.stream.jsonl"
-    # shellcheck disable=SC2086 # CLAUDE_FLAGS + route_flags are operator/goal config; word-splitting is intended.
-    if [ "$stream" = 1 ]; then
-      _say "[orchestrate] streaming $id -> $slog (live tail + captured)"
-      "$CLAUDE_CMD" -p $route_flags --output-format stream-json --verbose $CLAUDE_FLAGS < "$pfile" | tee "$slog" || rc=$?
+  # Everything below is the ORIGINAL claude path shape. Turn ceiling: `--max-turns $TURN_CAP`
+  # rides on the route flags (word-split like the rest) and TURN_CAP>0 forces the same silent
+  # stream-json capture DETERMINISTIC_HANDOFF/CAPTURE_TOKENS already use -- the cap is detected
+  # off the transcript's result subtype and the segment handoff is regenerated from it.
+  local cap_flags=""
+  [ "$TURN_CAP" -gt 0 ] && cap_flags=" --max-turns $TURN_CAP"
+
+  # Segment loop (TURN_CAP>0 only). One iteration runs ONE `claude -p` segment; a segment that
+  # ends at the ceiling hands off deterministically and the SAME sub-goal re-dispatches in a
+  # fresh session. The caller's prompt file is never mutated: a continuation rides on a COPY,
+  # so the serial / wave-flip-contract / gate held-PR prompts all carry forward unchanged.
+  # TURN_CAP=0 -> the loop runs exactly once, byte-identical to before.
+  local seg=1 cur_pfile="$pfile" seg_pfile=""
+  while :; do
+    rc=0; slog=""
+    if [ "$WATCHDOG_STALL_SECS" -gt 0 ]; then
+      # Watchdog path (opt-in). Token accounting: mirror the same capture gate the
+      # non-watchdog elif below uses, so a stall no longer silently drops the sub-goal's tokens (the
+      # accounting-black-hole gap `_run_session_watchdog`'s own header comment used to describe).
+      # `_WD_SLOG` (set by `_run_session_watchdog`) feeds `_ROS_SLOG` below exactly like the elif's
+      # local `slog` does, so the CALLER (cmd_run's `_record_tokens "$dir" "$id" "$slog"`, and the
+      # wave reap loop's recomputed `${id}.stream.jsonl` path) needs zero further changes.
+      # The watchdog stays the LEASE (alerts, never kills); it runs per segment under the cap.
+      [ "$stream" = 1 ] || [ "$DETERMINISTIC_HANDOFF" = 1 ] || [ "$CAPTURE_TOKENS" = 1 ] || [ "$TURN_CAP" -gt 0 ] && wd_capture=1
+      _run_session_watchdog "$dir" "$id" "$cur_pfile" "$route_flags$cap_flags" "$wd_capture" || rc=$?
+      slog="$_WD_SLOG"
+    elif [ "$stream" = 1 ] || [ "$DETERMINISTIC_HANDOFF" = 1 ] || [ "$CAPTURE_TOKENS" = 1 ] || [ "$TURN_CAP" -gt 0 ]; then
+      # Capture stream-json when the operator wants a live tail (--stream) OR the deterministic
+      # handoff needs the transcript (DETERMINISTIC_HANDOFF=1) OR lean token capture is on
+      # (CAPTURE_TOKENS=1) OR the turn ceiling needs it for cap detection + segment handoff
+      # (TURN_CAP>0). The live `tee` to the terminal happens ONLY under --stream;
+      # det-handoff and capture-tokens both take the SILENT `> "$slog"` branch below, so the child
+      # transcript lands in the FILE only and never reaches the conductor's stdout (s3).
+      local logdir="$dir/.orchestrate"; mkdir -p "$logdir"
+      slog="$logdir/${id}.stream.jsonl"
+      # shellcheck disable=SC2086 # CLAUDE_FLAGS + route_flags + cap_flags are operator/goal config; word-splitting is intended.
+      if [ "$stream" = 1 ]; then
+        _say "[orchestrate] streaming $id -> $slog (live tail + captured)"
+        "$CLAUDE_CMD" -p $route_flags$cap_flags --output-format stream-json --verbose $CLAUDE_FLAGS < "$cur_pfile" | tee "$slog" || rc=$?
+      else
+        # ponytail: fd1-only redirect. The transcript (the accumulation trap) is claude's
+        # STDOUT and goes to the file; `--verbose` STDERR (diagnostic, no usage/turn content) is left
+        # on fd2. Redirecting stderr too (`2>...`) is a deferred hardening for a stdout+stderr-merging
+        # conductor invocation -- skipped because it would also silence real error output on this opt-in
+        # path, and the driver is non-LLM bash so stderr is not an accumulation vector.
+        "$CLAUDE_CMD" -p $route_flags$cap_flags --output-format stream-json --verbose $CLAUDE_FLAGS < "$cur_pfile" > "$slog" || rc=$?
+      fi
     else
-      # ponytail: fd1-only redirect. The transcript (the accumulation trap) is claude's
-      # STDOUT and goes to the file; `--verbose` STDERR (diagnostic, no usage/turn content) is left
-      # on fd2. Redirecting stderr too (`2>...`) is a deferred hardening for a stdout+stderr-merging
-      # conductor invocation -- skipped because it would also silence real error output on this opt-in
-      # path, and the driver is non-LLM bash so stderr is not an accumulation vector.
-      "$CLAUDE_CMD" -p $route_flags --output-format stream-json --verbose $CLAUDE_FLAGS < "$pfile" > "$slog" || rc=$?
+      # shellcheck disable=SC2086 # CLAUDE_FLAGS + route_flags are operator/goal config; word-splitting is intended.
+      "$CLAUDE_CMD" -p $route_flags $CLAUDE_FLAGS < "$cur_pfile" || rc=$?
     fi
-  else
-    # shellcheck disable=SC2086 # CLAUDE_FLAGS + route_flags are operator/goal config; word-splitting is intended.
-    "$CLAUDE_CMD" -p $route_flags $CLAUDE_FLAGS < "$pfile" || rc=$?
-  fi
-  # Redact secret-shaped substrings from the captured file before it's handed back (the
-  # live `--stream` terminal tee above already happened by this point -- redacting the FILE closes
-  # the at-rest exposure, the primary risk this fix targets; a live-tee filter would need a
-  # process-substitution rewrite of the stream FORMAT plumbing, out of scope for this sweep).
-  [ -n "$slog" ] && _redact_secrets_file "$slog"
-  _ROS_SLOG="$slog"
+    # Redact secret-shaped substrings from the captured file before it's handed back (the
+    # live `--stream` terminal tee above already happened by this point -- redacting the FILE closes
+    # the at-rest exposure, the primary risk this fix targets; a live-tee filter would need a
+    # process-substitution rewrite of the stream FORMAT plumbing, out of scope for this sweep).
+    [ -n "$slog" ] && _redact_secrets_file "$slog"
+    _ROS_SLOG="$slog"
+
+    # ---- segment gate (TURN_CAP>0) ----
+    [ "$TURN_CAP" -gt 0 ] || break
+    _session_capped "$slog" || break        # finished under the ceiling -> done
+    # Finished exactly at the ceiling: the flipped box is the grounded truth, so translate the
+    # --max-turns exit code into success the same way a clean finish under the cap would read.
+    _box_checked "$dir" "$id" && { rc=0; break; }
+    if [ "$seg" -ge "$TURN_CAP_SEGMENTS" ]; then
+      _emit_event "$dir" "$id" blocked "turn-cap: exhausted $TURN_CAP_SEGMENTS segments at $TURN_CAP turns each"
+      _say "[orchestrate] [turn-cap] $id exhausted $TURN_CAP_SEGMENTS segments ($TURN_CAP turns each) without flipping its box; halting for a human. Re-running resumes from the records on disk."
+      break
+    fi
+    # Deterministic continuation handoff for the SAME sub-goal, written to a per-id file so
+    # concurrent wave siblings that both cap never clobber one shared HANDOFF.md. Failure is
+    # non-fatal (advisory, like the det-handoff regen below): the successor still gets the goal
+    # file plus whatever records the capped segment wrote itself.
+    local sraw stitle
+    sraw=$(_sg_line "$dir/ROADMAP.md" "$id"); stitle=$(_sg_title "$sraw" "$id")
+    if "$LIB_ROOT/goal/handoff-gen" "$slog" --dir "$dir" --next-id "$id" --next-title "$stitle" \
+         --date "$(date -u +%F)" --handoff-name "HANDOFF-$id.seg.md"; then
+      _emit_event "$dir" "$id" handoff "turn-cap segment $seg -> $((seg + 1)) at $TURN_CAP turns"
+      _say "[orchestrate] [turn-cap] $id hit the $TURN_CAP-turn ceiling; handoff regenerated (HANDOFF-$id.seg.md), dispatching segment $((seg + 1))/$TURN_CAP_SEGMENTS."
+    else
+      echo "[orchestrate] WARN: [turn-cap] handoff regeneration failed for $id segment $seg; the successor continues on the goal file + the capped segment's own records." >&2
+    fi
+    # Per-segment token usage BEFORE the transcript is archived (the caller's _record_tokens
+    # covers only the final segment's ${id}.stream.jsonl; without this the earlier segments are
+    # an accounting hole -- the exact quadratic burn this feature exists to bound).
+    _record_tokens "$dir" "$id" "$slog"
+    [ -n "$slog" ] && mv -f "$slog" "$dir/.orchestrate/${id}.seg${seg}.stream.jsonl" 2>/dev/null
+    # Continuation prompt: the caller's original prompt + a segment block that points the
+    # successor at the fresh per-id handoff and the warm ledger, by absolute path (a wave
+    # session's cwd is its own worktree). Rebuilt into the SAME temp file each segment.
+    seg_pfile="${seg_pfile:-$(mktemp)}"
+    cat "$pfile" > "$seg_pfile"
+    {
+      printf '\n\n---\nTURN-CEILING CONTINUATION (segment %s of %s)\n' "$((seg + 1))" "$TURN_CAP_SEGMENTS"
+      printf 'Your previous segment of THIS sub-goal (%s) stopped at the %s-turn ceiling.\n' "$id" "$TURN_CAP"
+      printf 'A deterministic handoff was generated from that segment:\n'
+      printf -- '- Read %s/HANDOFF-%s.seg.md first (next action + read-pointers).\n' "$dir" "$id"
+      printf -- '- %s/DECISIONS.md is the warm ledger (invariants + dead-ends); read on demand.\n' "$dir"
+      printf 'Continue the SAME sub-goal from those records; do not redo completed work. Every earlier instruction (including any flip or held-PR contract) still applies.\n'
+    } >> "$seg_pfile"
+    cur_pfile="$seg_pfile"
+    seg=$((seg + 1))
+  done
+  [ -n "$seg_pfile" ] && rm -f "$seg_pfile"
   return "$rc"
 }
 
@@ -1300,7 +1411,12 @@ _pane_spawn() {  # megadir id wt pfile route_flags donefile
   # the goal file's unsanitized `Model:`/`Effort:` header, so the joined form was a host command
   # injection reachable via a hostile mega-goal PR under MULTIPLEXER=1. It stays ONE argv token so
   # cmd_pane_exec still receives 5 positional args (route_flags splits later, non-mux path parity).
+  # `env` prefix carries the resolved turn-cap knobs into the pane: `tmux new-window` execs under
+  # the tmux SERVER's env, not this process's, so an operator's `TURN_CAP=0` (or a custom value)
+  # would otherwise be silently dropped in a muxed wave while plain-bg siblings honor it. `env`
+  # stays inside the multi-arg exec-direct form (no string join, no re-parse).
   "$TMUX_CMD" new-window -d -t "$mux" -n "$id" -c "$wt" -- \
+    env "TURN_CAP=$TURN_CAP" "TURN_CAP_SEGMENTS=$TURN_CAP_SEGMENTS" \
     "$ORCH_DIR/orchestrate.sh" _pane-exec "$megadir" "$id" "$pfile" "$route_flags" "$donefile"
 }
 
@@ -1943,7 +2059,7 @@ _wave_run() {  # megadir roadmap
         # just this extraction call so a test can prove the causal effect (same wave scenario, same
         # captured child.jsonl, but the pre-fix-equivalent code path records ZERO ledger lines).
         # Unset/0 in every real invocation; never documented as an operator flag.
-        if { [ "$CAPTURE_TOKENS" = 1 ] || [ "$DETERMINISTIC_HANDOFF" = 1 ]; } && [ "${NC_SKIP_WAVE_TOKENS:-0}" != 1 ]; then
+        if { [ "$CAPTURE_TOKENS" = 1 ] || [ "$DETERMINISTIC_HANDOFF" = 1 ] || [ "$TURN_CAP" -gt 0 ]; } && [ "${NC_SKIP_WAVE_TOKENS:-0}" != 1 ]; then
           _record_tokens "$megadir" "$id" "$megadir/.orchestrate/${id}.stream.jsonl"
         fi
         _say "[orchestrate] [wave] $id complete (box checked)."
@@ -2320,6 +2436,17 @@ cmd_run() {
   esac
   [ "$WAVE_CAP" -lt 1 ] && { echo "orchestrate: WAVE_CAP must be >=1 (got: '$WAVE_CAP')" >&2; return 64; }
 
+  # TURN_CAP / TURN_CAP_SEGMENTS parse-time validation (mirrors WAVE_CAP above): a non-numeric
+  # value is REJECTED loudly, never silently coerced. TURN_CAP=0 is legal (the off switch);
+  # TURN_CAP_SEGMENTS must be >=1 or the ceiling could never fire a single segment.
+  case "$TURN_CAP" in
+    ''|*[!0-9]*) echo "orchestrate: TURN_CAP must be a non-negative integer (got: '$TURN_CAP')" >&2; return 64 ;;
+  esac
+  case "$TURN_CAP_SEGMENTS" in
+    ''|*[!0-9]*) echo "orchestrate: TURN_CAP_SEGMENTS must be a positive integer >=1 (got: '$TURN_CAP_SEGMENTS')" >&2; return 64 ;;
+  esac
+  [ "$TURN_CAP_SEGMENTS" -lt 1 ] && { echo "orchestrate: TURN_CAP_SEGMENTS must be >=1 (got: '$TURN_CAP_SEGMENTS')" >&2; return 64; }
+
   # PANE_VIEWER pre-flight allowlist (mirrors the WAVE_CAP rejection above): an unknown
   # value is REJECTED loudly here, never silently coerced to none -- a typo (`PANE_VIEWER=kity`)
   # must not quietly disable the push the operator asked for. EXACT-token enumeration, not a
@@ -2337,6 +2464,7 @@ cmd_run() {
     [ "$step" = 1 ]   && _say "  (--step: pause for the operator after each sub-goal)"
     [ "$stream" = 1 ] && _say "  (--stream: each session streamed live + captured to .orchestrate/<id>.stream.jsonl)"
     [ "$CAPTURE_TOKENS" = 1 ] && _say "  (--capture-tokens: each session streamed to .orchestrate/<id>.stream.jsonl for usage extraction; conductor stays lean)"
+    [ "$TURN_CAP" -gt 0 ] && _say "  (turn ceiling: $TURN_CAP turns/segment, up to $TURN_CAP_SEGMENTS segments per sub-goal; TURN_CAP=0 disables)"
     local any=0
     while IFS=$'\t' read -r sg ppolicy; do
       any=1
@@ -2693,7 +2821,11 @@ cmd_run() {
 # operator directly; deliberately absent from the `usage:` string in `main()` below.
 cmd_pane_exec() {  # megadir id pfile route_flags donefile
   local megadir="$1" id="$2" pfile="$3" route_flags="$4" donefile="$5"
-  _run_one_session "$megadir" "$id" "$pfile" "$route_flags" 0
+  # Under the turn ceiling every segment captures silently to stream-json; tee it back to the
+  # pane so a muxed wave keeps its live tail (the pane is the point of MULTIPLEXER=1).
+  # TURN_CAP=0 keeps the plain pass-through, byte-identical.
+  local pstream=0; [ "$TURN_CAP" -gt 0 ] && pstream=1
+  _run_one_session "$megadir" "$id" "$pfile" "$route_flags" "$pstream"
   local rc=$?
   printf '%s\n' "$rc" > "$donefile"
   return "$rc"

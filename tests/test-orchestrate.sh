@@ -509,7 +509,9 @@ cat > "$DHN/ROADMAP.md" <<'EOF'
 - [ ] SG-01 first thing , auto , PR #__
 - [ ] SG-02 second thing , gate , PR #__
 EOF
-DH_RM="$DHN/ROADMAP.md" CLAUDE_CMD="$TMP/claude-dh" bash "$ORCH" run "$DHN" > "$TMP/dhn.out" 2>&1 < /dev/null
+# TURN_CAP=0 pins the pre-ceiling dispatch: the turn ceiling (default on) also forces a
+# stream-json capture, so without the pin this control would see a capture it predates.
+DH_RM="$DHN/ROADMAP.md" TURN_CAP=0 CLAUDE_CMD="$TMP/claude-dh" bash "$ORCH" run "$DHN" > "$TMP/dhn.out" 2>&1 < /dev/null
 { [ ! -f "$DHN/HANDOFF.md" ] || ! grep -q 'Next sub-goal: SG-02' "$DHN/HANDOFF.md"; } \
   && [ ! -f "$DHN/.orchestrate/SG-01.stream.jsonl" ] \
   && pass "default (flag off): no deterministic regeneration, no forced capture (behavior unchanged)" \
@@ -603,7 +605,9 @@ TOKMGN="$TMP/mgtokn"; mkdir -p "$TOKMGN/goals"
 cp "$TOKMG/ROADMAP.md" "$TOKMGN/ROADMAP.md"; echo "POINTER" > "$TOKMGN/POINTER_PROMPT.md"
 printf '# SG-01\n**Branch:** feat/kit-tok-fxn\n' > "$TOKMGN/goals/01-first.md"
 TOKLOGN="$TMP/tok-logs-n"; mkdir -p "$TOKLOGN"
-DH_RM="$TOKMGN/ROADMAP.md" CLAUDE_CMD="$TMP/claude-dh" \
+# TURN_CAP=0 pins the pre-ceiling no-capture path (the ceiling's forced capture would
+# otherwise write a TOKENS line and void this control's "no capture" premise).
+DH_RM="$TOKMGN/ROADMAP.md" TURN_CAP=0 CLAUDE_CMD="$TMP/claude-dh" \
   DWARVES_KIT_LOG_DIR="$TOKLOGN" bash "$ORCH" run "$TOKMGN" > "$TMP/tokn.out" 2>&1 < /dev/null
 TLN="$TOKLOGN/runs/kit-tok-fxn.log"
 { [ ! -f "$TLN" ] || ! grep -q '| TOKENS |' "$TLN"; } \

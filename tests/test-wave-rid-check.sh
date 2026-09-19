@@ -122,8 +122,11 @@ make_goal "$WM2" SG-02 "lib/ridchk-b/**" "rid-check-nc-sg-02"
 
 LOGDIR_NC="$TMP/logs-nc"; mkdir -p "$LOGDIR_NC"
 ncrc=0
+# TURN_CAP=0 pins the pre-ceiling dispatch: the turn ceiling defaults ON and now records wave
+# TOKENS under its forced capture, which creates the run ledger file this NC expects absent
+# (the START-count helper then prints 0 twice and the equality check misfires).
 ( export ORCH="$ORCH" MEGADIR="$WM2" CLAUDE_FLAGS="" WAVE_CAP=2 CLAUDE_CMD="$TMP/claude-ridchk" \
-    DWARVES_KIT_LOG_DIR="$LOGDIR_NC" NC_SKIP_WAVE_START=1
+    DWARVES_KIT_LOG_DIR="$LOGDIR_NC" NC_SKIP_WAVE_START=1 TURN_CAP=0
   _wave_run "$WM2" "$WM2/ROADMAP.md" ) > "$TMP/nc.out" 2>&1 || ncrc=$?
 
 N1=$(START_LINES_FOR "$LOGDIR_NC" "rid-check-nc-sg-01")
