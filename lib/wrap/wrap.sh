@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
 # wrap.sh -- the landing step after ship. One pass over every repo a session
-# touched, with eight verbs:
+# touched, with nine verbs:
 #
 #   wrap.sh scan  <repo> [<repo>...]                        report only, exit 0
 #   wrap.sh apply [--apply] [--worktrees] [--own <path>]... <repo> [...]      dry-run by default
 #   wrap.sh merge [--apply] [--pr N] <repo>                 merges ONE own green PR (--pr: a named draft)
 #   wrap.sh land  <worktree> [--title T] [--body-file F]    one hand-made worktree, landed
+#   wrap.sh start <repo> <branch>                           one hand-made worktree, started
 #   wrap.sh log   "<slug>: <one sentence>" [--date YYYY-MM-DD]
 #   wrap.sh default-branch <repo>                           prints the detected name
 #   wrap.sh knowledge-root <repo>                           the fenced knowledge dir
@@ -19,7 +20,8 @@
 # activity-log prepend, the knowledge-root project directory, the staging-file append, one
 # gh pr merge, one bounded union re-merge push (with its own follow-up commit when the
 # re-merge duplicates a kanban row), one `gh pr ready` when `merge --pr N` targets a draft,
-# and `land`'s own named push, PR create, squash merge, worktree remove and branch delete.
+# `land`'s own named push, PR create, squash merge, worktree remove and branch delete,
+# and `start`'s one worktree add under `.claude/worktrees` on a new local branch.
 # Every other action is a report line. The
 # verbs never switch a branch and never force a push or a pull. The one force is
 # `worktree remove -f -f`: it overrides a LOCK, never a dirty, detached, checked-out or
@@ -1373,6 +1375,74 @@ cmd_land() {
   return 0
 }
 
+# --------------------------------------------------------------------------- start
+
+# cmd_start <repo> <branch> -- the start half `land` finishes. Sessions repeatedly
+# hand-run "worktree off origin/<default> with a fresh branch" when the main
+# checkout is dirty or foreign; this is that step as a verb. It resolves the
+# repo's default branch through the same `_default_branch` helper every other
+# verb uses, fetches it quietly, and creates <repo>/.claude/worktrees/<slug> at
+# origin/<default> on a NEW local branch <branch>, where <slug> is the branch
+# name with its `type/` prefix stripped (gate-ledger's rid rule). The worktree
+# path is the only stdout line, so a caller captures it directly; every
+# diagnostic goes to stderr.
+#
+# A dirty main checkout is never a refusal: the worktree is isolated, which is
+# the point of the verb. What refuses, each with its reason and before any
+# write: a missing argument or a <repo> that is not a git repo or an invalid
+# <branch> name (usage, 64); <branch> naming the default or a protected branch;
+# <branch> already a local ref, or already pushed to origin; the worktree path
+# already on disk; no default branch resolved; a failed fetch; a held
+# index.lock; and a `worktree add` git itself refuses.
+cmd_start() {
+  [ $# -eq 2 ] || { echo "usage: wrap.sh start <repo> <branch>" >&2; return 64; }
+  local repo="$1" branch="$2"
+  _is_repo "$repo" || { echo "wrap.sh start: ${repo} is not a git repo" >&2; return 64; }
+  # git records a worktree fully resolved, so the printed path resolves the same way.
+  repo="$(cd "$repo" 2>/dev/null && pwd -P)" \
+    || { echo "wrap.sh start: ${repo} does not resolve" >&2; return 64; }
+  git -C "$repo" check-ref-format --branch "$branch" >/dev/null 2>&1 \
+    || { echo "wrap.sh start: '${branch}' is not a valid branch name" >&2; return 64; }
+
+  local def
+  def="$(_default_branch "$repo")" \
+    || { echo "wrap.sh start: no default branch resolved for ${repo}" >&2; return 1; }
+  case "$branch" in
+    "$def"|main|master)
+      echo "wrap.sh start: ${branch} is the default or a protected branch name" >&2
+      return 1 ;;
+  esac
+  if _ref_exists "$repo" "refs/heads/${branch}"; then
+    echo "wrap.sh start: branch ${branch} already exists in ${repo}" >&2; return 1
+  fi
+
+  local slug wt
+  slug="${branch##*/}"
+  wt="${repo}/.claude/worktrees/${slug}"
+  [ -e "$wt" ] && { echo "wrap.sh start: ${wt} already exists" >&2; return 1; }
+
+  git -C "$repo" fetch -q origin "$def" 2>/dev/null \
+    || { echo "wrap.sh start: fetch origin ${def} failed" >&2; return 1; }
+  # `worktree add -b` never sees the remote, so the same-name-on-origin check runs
+  # here, live (ls-remote) plus the tracking ref for an unreachable remote's
+  # already-known state. A local branch created anyway would collide at push.
+  if _ref_exists "$repo" "refs/remotes/origin/${branch}" \
+     || git -C "$repo" ls-remote --exit-code --heads origin "$branch" >/dev/null 2>&1; then
+    echo "wrap.sh start: branch ${branch} already exists on origin" >&2
+    return 1
+  fi
+  _write_guard "$repo" \
+    || { echo "wrap.sh start: index.lock held by another writer" >&2; return 1; }
+  # A stale admin entry for a path deleted out-of-band wedges `worktree add`;
+  # pruning first keeps that state a non-event.
+  git -C "$repo" worktree prune 2>/dev/null
+  mkdir -p "${repo}/.claude/worktrees" 2>/dev/null
+  git -C "$repo" worktree add -b "$branch" "$wt" "origin/${def}" >/dev/null 2>&1 \
+    || { echo "wrap.sh start: git worktree add refused ${wt} (${branch} at origin/${def})" >&2; return 1; }
+  printf '%s\n' "$wt"
+  return 0
+}
+
 # --------------------------------------------------------------------------- log
 
 # _realpath_f <path> -- absolute path with every symlink on it resolved. The directory must
@@ -1778,6 +1848,7 @@ main() {
     apply)          cmd_apply "$@" ;;
     merge)          cmd_merge "$@" ;;
     land)           cmd_land "$@" ;;
+    start)          cmd_start "$@" ;;
     log)            cmd_log "$@" ;;
     default-branch) cmd_default_branch "$@" ;;
     knowledge-root) cmd_knowledge_root "$@" ;;

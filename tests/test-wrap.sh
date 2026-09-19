@@ -1797,6 +1797,114 @@ chk_has "adopt: bad lookup JSON names the failed lookup" "$out" "open-PR lookup 
 chk_no "adopt: bad lookup JSON never creates a PR" "$(cat "$GH_STUB_CALLS")" "pr create"
 
 # ===========================================================================
+echo "=== start: a fresh branch in a new worktree off origin/<default> ==="
+# ===========================================================================
+# Real git throughout, no gh: start never calls gh. The clones ride the same bare
+# remotes the scan/apply cases use; the origin tip is advanced after the clone so
+# the worktree's base proves the fetch ran, not the clone-time snapshot.
+build_start() { # build_start <name> <remote name> <default branch>
+  local name="$1" rname="$2" def="$3" repo="$TMPD/st-repo-$1"
+  git clone -q "$TMPD/bare-$rname" "$repo"; gitc "$repo"
+  git -C "$repo" remote set-head origin "$def" >/dev/null 2>&1
+}
+
+build_start ok rmain main
+SREPO="$TMPD/st-repo-ok"
+# Advance origin/main past the clone's view: the worktree's base is the fetched tip.
+git clone -q "$TMPD/bare-rmain" "$TMPD/st-pusher"; gitc "$TMPD/st-pusher"
+echo newer > "$TMPD/st-pusher/newer.txt"
+git -C "$TMPD/st-pusher" add -A; git -C "$TMPD/st-pusher" commit -qm newer
+git -C "$TMPD/st-pusher" push -q origin main
+STIP="$(git -C "$TMPD/bare-rmain" rev-parse main)"
+SWT_P="$(cd "$SREPO" && pwd -P)/.claude/worktrees/start"
+
+out="$("$WRAP" start "$SREPO" feat/start 2>"$TMPD/st.err")"; rc=$?
+chk "start exits 0 on the happy path" "$rc"
+chk "start prints only the worktree path on stdout" "$([ "$out" = "$SWT_P" ]; echo $?)"
+chk "start created the worktree at the fetched origin tip" \
+  "$([ "$(git -C "$SWT_P" rev-parse HEAD)" = "$STIP" ]; echo $?)"
+chk "start put the worktree on the new branch" \
+  "$([ "$(git -C "$SWT_P" branch --show-current)" = "feat/start" ]; echo $?)"
+chk "start created the local branch" \
+  "$(git -C "$SREPO" show-ref --verify --quiet refs/heads/feat/start && echo 0 || echo 1)"
+chk "start registered the worktree" \
+  "$(git -C "$SREPO" worktree list --porcelain | grep -qxF "worktree $SWT_P" && echo 0 || echo 1)"
+
+echo "--- a master-default repo resolves its own default branch"
+build_start master rmaster master
+out="$("$WRAP" start "$TMPD/st-repo-master" fix/master-side 2>/dev/null)"; rc=$?
+chk "start exits 0 on a master-default repo" "$rc"
+chk "the worktree sits at origin/master" \
+  "$([ "$(git -C "$TMPD/st-repo-master/.claude/worktrees/master-side" rev-parse HEAD)" \
+      = "$(git -C "$TMPD/bare-rmaster" rev-parse master)" ]; echo $?)"
+
+echo "--- the refusals, each before any write"
+out="$("$WRAP" start "$SREPO" feat/start 2>&1)"; rc=$?
+chk "start refuses an existing local branch with exit 1" "$([ "$rc" -eq 1 ]; echo $?)"
+chk_has "the refusal names the branch" "$out" "branch feat/start already exists in"
+
+# A same-named branch on origin only: the local name is free, but the push would
+# collide, so the verb refuses. The clone predates the push and `fetch origin
+# <def>` refreshes no other tracking ref, so this exercises the live check.
+git -C "$TMPD/st-pusher" checkout -qb feat/pushed
+git -C "$TMPD/st-pusher" push -q origin feat/pushed
+out="$("$WRAP" start "$SREPO" feat/pushed 2>&1)"; rc=$?
+chk "start refuses a name already on origin with exit 1" "$([ "$rc" -eq 1 ]; echo $?)"
+chk_has "the refusal names origin" "$out" "branch feat/pushed already exists on origin"
+chk "an origin-collision refusal created no branch" \
+  "$(git -C "$SREPO" show-ref --verify --quiet refs/heads/feat/pushed && echo 1 || echo 0)"
+
+mkdir -p "$SREPO/.claude/worktrees/collide"
+out="$("$WRAP" start "$SREPO" feat/collide 2>&1)"; rc=$?
+chk "start refuses an existing path with exit 1" "$([ "$rc" -eq 1 ]; echo $?)"
+chk_has "the refusal names the path" "$out" ".claude/worktrees/collide already exists"
+chk "a path refusal created no branch" \
+  "$(git -C "$SREPO" show-ref --verify --quiet refs/heads/feat/collide && echo 1 || echo 0)"
+
+out="$("$WRAP" start "$SREPO" main 2>&1)"; rc=$?
+chk "start refuses the default branch name with exit 1" "$([ "$rc" -eq 1 ]; echo $?)"
+chk_has "the refusal names the protected reason" "$out" "main is the default or a protected branch name"
+
+out="$("$WRAP" start "$SREPO" "feat/../x" 2>&1)"; rc=$?
+chk "start refuses an invalid branch name with exit 64" "$([ "$rc" -eq 64 ]; echo $?)"
+chk_has "the refusal says the name is invalid" "$out" "is not a valid branch name"
+
+out="$("$WRAP" start 2>&1)"; rc=$?
+chk "start with no args exits 64" "$([ "$rc" -eq 64 ]; echo $?)"
+out="$("$WRAP" start "$TMPD/not-a-repo" feat/x 2>&1)"; rc=$?
+chk "start exits 64 on a non-repo" "$([ "$rc" -eq 64 ]; echo $?)"
+chk_has "the refusal says not a git repo" "$out" "is not a git repo"
+
+mkdir -p "$TMPD/st-remoteless"
+git -C "$TMPD/st-remoteless" init -q; gitc "$TMPD/st-remoteless"
+echo x > "$TMPD/st-remoteless/x.txt"; git -C "$TMPD/st-remoteless" add -A; git -C "$TMPD/st-remoteless" commit -qm x
+out="$("$WRAP" start "$TMPD/st-remoteless" feat/x 2>&1)"; rc=$?
+chk "start exits 1 on a repo with no remote" "$([ "$rc" -eq 1 ]; echo $?)"
+chk_has "the refusal names the unresolved default" "$out" "no default branch resolved"
+
+build_start broken rmain main
+git -C "$TMPD/st-repo-broken" remote set-url origin /nonexistent
+out="$("$WRAP" start "$TMPD/st-repo-broken" feat/x 2>&1)"; rc=$?
+chk "start exits 1 when the fetch fails" "$([ "$rc" -eq 1 ]; echo $?)"
+chk_has "the refusal names the failed fetch" "$out" "fetch origin main failed"
+chk "a failed fetch left no worktree dir behind" \
+  "$([ ! -e "$TMPD/st-repo-broken/.claude/worktrees/x" ]; echo $?)"
+
+echo "--- a dirty main checkout is not a refusal, it is the point"
+build_start dirty rmain main
+echo sibling-dirt >> "$TMPD/st-repo-dirty/a.txt"
+out="$("$WRAP" start "$TMPD/st-repo-dirty" feat/dirty 2>/dev/null)"; rc=$?
+chk "start exits 0 on a dirty main checkout" "$rc"
+chk "the worktree landed under .claude/worktrees" \
+  "$([ -d "$TMPD/st-repo-dirty/.claude/worktrees/dirty" ]; echo $?)"
+chk "the sibling's dirty line is still there" \
+  "$(grep -qx sibling-dirt "$TMPD/st-repo-dirty/a.txt"; echo $?)"
+
+chk_has "wrap --help names start" "$("$WRAP" --help 2>&1)" "wrap.sh start <repo> <branch>"
+chk_has "commands/wrap.md names start for the hand-made-worktree shape" \
+  "$(cat "$KIT_DIR/commands/wrap.md")" "bin/wrap start <repo> <branch>"
+
+# ===========================================================================
 echo "=== default-branch: detection, fall-through, and the no-remote refusal ==="
 # ===========================================================================
 chk "default-branch prints main" "$([ "$("$WRAP" default-branch "$TMPD/clone-scan-main")" = "main" ]; echo $?)"
@@ -2278,7 +2386,7 @@ echo "=== help and usage ==="
 # ===========================================================================
 out="$("$WRAP" --help 2>&1)"; rc=$?
 chk "--help exits 0" "$rc"
-for verb in scan apply merge log default-branch knowledge-root stage; do
+for verb in scan apply merge start log default-branch knowledge-root stage; do
   chk_has "--help names $verb" "$out" "$verb"
 done
 out="$("$WRAP" scan 2>&1)"; rc=$?
