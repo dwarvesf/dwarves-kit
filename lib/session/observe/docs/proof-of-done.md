@@ -723,3 +723,95 @@ bash lib/session/observe/tests/smoke.sh                        # -> smoke: all 7
 bash bin/session observe entry-fee --days 14 --top 8 --trend   # live tables
 bash bin/session observe entry-fee --days 14 --json            # machine-readable
 ```
+
+## SPEC-301 `tools --errors`: a tool's error results grouped by message prefix
+
+**Feature:** `session observe tools --errors <tool>` replaces the standard table with a prefix-grouped table of that tool's `is_error` tool_result content (first 160 chars, whitespace-collapsed, ranked by count with a share column, honouring `--top`), plus `tool_error_groups` in `--json`. The count table's "why" is one flag away instead of a hand-rolled python one-liner. Spec: `docs/specs/SPEC-301-observe-tool-errors.md`. Row: ID-903.
+**Date:** 2026-09-19 · **Lane:** full · **Host:** dev laptop (macOS 27.0)
+
+### Acceptance criteria
+
+| # | Criterion | Source |
+|---|---|---|
+| G1 | `--errors <tool>` groups that tool's error results by message prefix | ID-903 |
+| G2 | Prefix is the first 160 chars of the error text, whitespace-collapsed | ID-903 precedent (the 30-line python) + SPEC-301 |
+| G3 | Error text extracted from both content shapes (string, list-of-blocks) | SPEC-301 contract |
+| G4 | A tool with zero errors prints an honest empty state | SPEC-301 contract |
+| G5 | `--errors` on a non-tools view refuses at parse (exit 2) | SPEC-301 contract |
+| G6 | The standard tools view and `report` unchanged without the flag | SPEC-301 contract |
+| G7 | `--json` carries `tool_error_groups` when the flag is set | SPEC-301 contract |
+
+### Run table
+
+| Check | Command | Expected | Result |
+|---|---|---|---|
+| Module suite green | `bash lib/session/observe/tests/smoke.sh \| tail -1` | all cases pass | PASS, `smoke: all 87 passed` |
+| Grouped table, ranked by count (G1 G2) | smoke 80 | 127-msg x3 (60%) above exit-1 x2 (40%) | PASS |
+| Whitespace variants merge (G2) | smoke 81 | one `See deploy.log` row, not two | PASS |
+| List-block content (G3) | smoke 82 | `File does not exist.` extracted, no wrapper | PASS |
+| Honest empty state (G4) | smoke 83 | `no error results recorded for Agent` | PASS |
+| Standard view unchanged (G6) | smoke 84 | Bash 6/5, no group table | PASS |
+| JSON groups (G7) | smoke 85 | `tool_error_groups` total 5, 2 groups | PASS |
+| Non-tools refusal (G5) | smoke 86 | `skills --errors` exits 2 | PASS |
+| Report refusal (G5 G6) | smoke 87 | `report --errors` exits 2 | PASS |
+| Live, real data (G1 G6) | `tools --errors EnterWorktree --days 14` | the dominant cause reads as one row | PASS, run below |
+
+### Live run (2026-09-19, 14-day window, real transcripts)
+
+```
+Command: lib/session/observe/bin/session-observe tools --errors EnterWorktree --days 14
+Exit: 0
+# tool errors: EnterWorktree  (37 error results across 2154 transcripts)
+  prefix                                                              count  share
+  <tool_use_error>EnterWorktree cannot create a worktree from a subagent   31    84%
+    with a cwd override (isolation: "worktree" or explicit cwd)...
+  Cannot enter worktree: the current working directory .../ops-toolkit      4    11%
+    is the repository root, not an isolated worktree...
+  <tool_use_error>Already in a worktree session. Pass `path`...              1     3%
+  Cannot create a worktree: not in a git repository and no                  1     3%
+    WorktreeCreate hooks are configured...
+```
+
+84 percent of the tool's errors are the subagent-cwd-override case the row
+predicted (17 of 19 in its sweep week). The count table's "15 percent error
+rate" now has its why in one command. (Prefixes above are line-wrapped for
+the doc; the table prints one row per group.)
+
+### Negative control
+
+`bash lib/gate/negctl.sh` deleted the `tool_err_msg` tally line, so every
+tool's group table comes out empty.
+
+```
+Exit: 0 (green before mutation)
+Changed: lib/session/observe/bin/session-observe
+Exit: 1 (under mutation, RED expected)
+Restore: git checkout HEAD -- lib/session/observe/bin/session-observe
+Exit: 0 (green after restore)
+Verdict: PASS
+```
+
+### Test plan coverage
+
+| Spec row | Run |
+|---|---|
+| two message families ranked by count | smoke 80 |
+| whitespace variants merge | smoke 81 |
+| list-block content shape | smoke 82 |
+| tool with no errors | smoke 83 |
+| no flag: standard table unchanged | smoke 84 |
+| --json tool_error_groups | smoke 85 |
+| --errors on skills / report | smoke 86 + 87 |
+
+### Rollback
+
+`git revert` the feature commit. The flag, the `tool_err_msg` tally and the
+fixture/tests leave together; the standard tools view is untouched either way.
+
+### Reproduce
+
+```bash
+bash lib/session/observe/tests/smoke.sh                          # -> smoke: all 87 passed
+bash bin/session observe tools --errors EnterWorktree --days 14  # live group table
+bash bin/session observe tools --errors Bash --days 7 --json     # tool_error_groups
+```

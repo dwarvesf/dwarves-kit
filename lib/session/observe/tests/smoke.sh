@@ -406,6 +406,48 @@ echo "[79] entry-fee: a multi-slug --project match is announced on stderr (never
 err="$("$CC" entry-fee --root "$EEDGE/worktrees" --project alpha 2>&1 >/dev/null)"
 if grep -q "matched 2 slugs" <<<"$err" && grep -q 'proj-alpha--claude-worktrees-wt-one' <<<"$err"; then ok "multi-match announced with the resolved slugs"; else no "multi-match not announced: $err"; fi
 
+TFIX="${DIR}/tests/fixtures/tool-errors-sample.jsonl"  # 5 Bash errors: 127-msg x3 + exit-1 x2 (whitespace variants), 1 Read error (list-block content)
+
+echo "[80] tools --errors Bash: groups the 5 error results into 2 prefix rows, ranked by count"
+out="$("$CC" tools --errors Bash --file "$TFIX")"
+if grep -q '# tool errors: Bash' <<<"$out" \
+  && grep -Eq 'Exit code 127: command not found: frobnicate[[:space:]]+3[[:space:]]+60%' <<<"$out" \
+  && grep -Eq 'Exit code 1 See deploy.log for details[[:space:]]+2[[:space:]]+40%' <<<"$out"; then ok "Bash errors grouped 3+2 with shares"; else no "tools --errors output wrong: $out"; fi
+
+echo "[81] tools --errors: whitespace variants of the same message merge into one row (newline and multi-space)"
+if [[ "$(grep -c 'See deploy.log' <<<"$out")" -eq 1 ]]; then ok "whitespace-normalised prefix merged"; else no "whitespace variants did not merge: $out"; fi
+
+echo "[82] tools --errors Read: list-block content extracts the text, not the JSON wrapper"
+out="$("$CC" tools --errors Read --file "$TFIX")"
+if grep -Eq 'File does not exist\.[[:space:]]+1[[:space:]]+100%' <<<"$out" && ! grep -q 'type.*text' <<<"$out"; then ok "list-block error text extracted"; else no "Read --errors wrong: $out"; fi
+
+echo "[83] tools --errors on a tool with no errors prints an honest empty state"
+out="$("$CC" tools --errors Agent --file "$TFIX")"
+if grep -q 'no error results recorded for Agent' <<<"$out"; then ok "empty state honest"; else no "empty state wrong: $out"; fi
+
+echo "[84] tools without --errors is unchanged (standard table, no group view leaks)"
+out="$("$CC" tools --file "$TFIX")"
+if grep -Eq 'Bash[[:space:]]+6[[:space:]]+5' <<<"$out" && ! grep -q '# tool errors' <<<"$out"; then ok "standard tools table unchanged"; else no "tools table wrong or group view leaked: $out"; fi
+
+echo "[85] tools --errors --json: tool_error_groups carries the same groups"
+jout="$("$CC" tools --errors Bash --file "$TFIX" --json)"
+if echo "$jout" | python3 -c '
+import json,sys
+d=json.load(sys.stdin)
+g=d["tool_error_groups"]
+assert g["tool"]=="Bash" and g["total"]==5, g
+assert g["groups"][0]["prefix"].startswith("Exit code 127") and g["groups"][0]["count"]==3, g
+assert len(g["groups"])==2, g
+'; then ok "json tool_error_groups correct"; else no "json groups wrong: $jout"; fi
+
+echo "[86] --errors on a non-tools view refuses (exit 2, no silent ignore)"
+set +e; "$CC" skills --errors Bash --file "$TFIX" >/dev/null 2>&1; rc=$?; set -e
+if [[ $rc -eq 2 ]]; then ok "non-tools --errors exits 2"; else no "got rc=$rc"; fi
+
+echo "[87] --errors on report refuses too (the report view stays unchanged)"
+set +e; "$CC" report --errors Bash --file "$TFIX" >/dev/null 2>&1; rc=$?; set -e
+if [[ $rc -eq 2 ]]; then ok "report --errors exits 2"; else no "got rc=$rc"; fi
+
 echo
 if [[ $fail -gt 0 ]]; then echo "smoke: $pass passed, $fail FAILED" >&2; exit 1; fi
 echo "smoke: all $pass passed"

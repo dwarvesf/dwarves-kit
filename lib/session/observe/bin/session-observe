@@ -5,6 +5,7 @@ Three views, all derived from the JSONL transcripts under ~/.claude/projects/:
   skills    - which Skills fired, how often, with what error rate
               (--latency adds a per-skill total wall-time table, ranked by summed ms)
   tools     - which tools (Bash/Read/Edit/Agent/...) fired, with error rate
+              (--errors TOOL groups that tool's error results by message prefix)
   hooks     - per-hook execution latency (count/p50/p95/max) + hook errors
   subagents - subagent (Agent/Task) spawns per day + by type, normalized per prompt
   friction  - deterministic friction: thrash (rework), permission-prompts, context
@@ -201,6 +202,27 @@ def blocks(entry):
     return c if isinstance(c, list) else []
 
 
+def result_text(content):
+    """Text of a tool_result block: the string itself, or the joined text
+    blocks of the list shape."""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        return "\n".join(str(x.get("text", "")) for x in content
+                         if isinstance(x, dict) and x.get("text"))
+    return ""
+
+
+ERR_PREFIX_LEN = 160
+
+
+def err_prefix(text):
+    """Group key for an error message: whitespace-collapsed first
+    ERR_PREFIX_LEN chars, so two reports of the same failure land in one
+    table row and a newline inside the message never breaks the table."""
+    return re.sub(r"\s+", " ", text).strip()[:ERR_PREFIX_LEN]
+
+
 def hook_label(command):
     """Normalize a hook command string to a stable, mostly-readable label.
 
@@ -252,6 +274,7 @@ def pctl(vals, p):
 def collect(args):
     """Single pass over all selected transcripts -> usage + latency tallies."""
     tool_n, tool_err = Counter(), Counter()
+    tool_err_msg = defaultdict(Counter)  # tool -> error-message prefix -> count
     skill_n, skill_err = Counter(), Counter()
     id_tool, id_skill = {}, {}  # tool_use_id -> name (a tool_result references it)
     id_skill_ts = {}            # tool_use_id -> Skill tool_use timestamp (for wall-time)
@@ -379,6 +402,7 @@ def collect(args):
                     if b.get("is_error"):
                         if tid in id_tool:
                             tool_err[id_tool[tid]] += 1
+                            tool_err_msg[id_tool[tid]][err_prefix(result_text(b.get("content")))] += 1
                         if tid in id_skill:
                             skill_err[id_skill[tid]] += 1
                     # per-skill wall-time: ts(tool_result) - ts(tool_use). The transcript
@@ -418,6 +442,7 @@ def collect(args):
         "files": files,
         "tools": tool_n,
         "tool_err": tool_err,
+        "tool_err_msg": tool_err_msg,
         "skills": skill_n,
         "skill_err": skill_err,
         "skill_durs": skill_durs,
@@ -1093,6 +1118,16 @@ def emit(args, data):
                 "cache_create": sum(t[3] for t in data["tok"].values()),
             },
         }
+        if args.errors:
+            msgs = data["tool_err_msg"].get(args.errors, Counter())
+            total = sum(msgs.values())
+            out["tool_error_groups"] = {
+                "tool": args.errors,
+                "total": total,
+                "groups": [{"prefix": pfx, "count": n,
+                            "share": round(100.0 * n / total, 1) if total else 0.0}
+                           for pfx, n in msgs.most_common()],
+            }
         print(json.dumps(out, indent=2))
         return
 
@@ -1106,9 +1141,21 @@ def emit(args, data):
             print_table(["skill", "fires", "total_ms", "p50ms", "p95ms", "maxms"], skill_latency_rows(data["skill_durs"], args.top))
             print()
     if want in ("tools", "report"):
-        print(f"# tools  ({data['files']} transcripts)")
-        print_table(["tool", "count", "errors", "rate"], usage_rows(data["tools"], data["tool_err"], args.top))
-        print()
+        if args.errors:
+            msgs = data["tool_err_msg"].get(args.errors, Counter())
+            total = sum(msgs.values())
+            print(f"# tool errors: {args.errors}  ({total} error results across {data['files']} transcripts)")
+            rows = [[pfx, str(n), f"{100.0 * n / total:.0f}%"]
+                    for pfx, n in msgs.most_common(args.top or None)]
+            if rows:
+                print_table(["prefix", "count", "share"], rows)
+            else:
+                print(f"  no error results recorded for {args.errors}")
+            print()
+        else:
+            print(f"# tools  ({data['files']} transcripts)")
+            print_table(["tool", "count", "errors", "rate"], usage_rows(data["tools"], data["tool_err"], args.top))
+            print()
     if want in ("hooks", "report"):
         print(f"# hooks  ({data['hook_errors']} hook errors across {data['files']} transcripts)")
         print_table(["hook", "runs", "p50ms", "p95ms", "maxms", "sample"], hook_rows(data["hook_durs"], data["hook_sample"], args.top))
@@ -1162,10 +1209,14 @@ def main(argv=None):
     p.add_argument("--days", type=int, default=0, help="only files modified within N days (0 = all)")
     p.add_argument("--top", type=int, default=0, help="limit to top N rows (0 = all)")
     p.add_argument("--latency", action="store_true", help="(skills) add a per-skill total wall-time table, ranked by summed ms")
+    p.add_argument("--errors", metavar="TOOL", help="(tools) group TOOL's error results by message prefix")
     p.add_argument("--since", type=int, default=60, help="(burn only) window in minutes (default 60)")
     p.add_argument("--trend", action="store_true", help="(entry-fee) add a weekly median table, newest week first")
     p.add_argument("--json", action="store_true", help="machine-readable output (for vps-mon ingest)")
     args = p.parse_args(argv)
+
+    if args.errors and args.cmd != "tools":
+        p.error("--errors only applies to the tools view")
 
     if args.file and not os.path.exists(args.file):
         print(f"session-observe: file not found: {args.file}", file=sys.stderr)
