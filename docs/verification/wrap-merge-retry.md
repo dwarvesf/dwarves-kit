@@ -69,6 +69,16 @@ The mutation puts the bare single-shot `gh pr merge` back at the cmd_merge
 call site; five SPEC-300 checks go red (the transient-then-OK case loses its
 merge and its retry line, and the bound case stops at one call).
 
+## Test plan coverage
+
+| Spec row | Run |
+|---|---|
+| merge succeeds first try | existing `merge --apply called pr merge exactly once` check |
+| transient 502 twice then OK | `SPEC-300: a transient 502 retries and merges` + 3-call + retry-line + tree-verify checks |
+| transient exhausts the bound | `SPEC-300: a transient that outlasts the bound exits 2` + bound-held + last-failure checks |
+| real refusal (405) | `SPEC-300: a real refusal exits 2` + not-retried + no-retry-line checks |
+| match-head mismatch | `SPEC-300: a match-head mismatch exits 2` + not-retried check |
+
 ## Rollback
 
 `git revert` the feature commit. Both call sites return to single-shot
