@@ -1,0 +1,16 @@
+{"type": "assistant", "timestamp": "2026-06-15T09:00:00Z", "message": {"role": "assistant", "content": [{"type": "tool_use", "id": "tu_a", "name": "Bash", "input": {"command": "frobnicate"}}]}}
+{"type": "user", "timestamp": "2026-06-15T09:00:01Z", "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "tu_a", "is_error": true, "content": "Exit code 127: command not found: frobnicate"}]}}
+{"type": "assistant", "timestamp": "2026-06-15T09:00:02Z", "message": {"role": "assistant", "content": [{"type": "tool_use", "id": "tu_b", "name": "Bash", "input": {"command": "frobnicate"}}]}}
+{"type": "user", "timestamp": "2026-06-15T09:00:03Z", "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "tu_b", "is_error": true, "content": "Exit code 127: command not found: frobnicate"}]}}
+{"type": "assistant", "timestamp": "2026-06-15T09:00:04Z", "message": {"role": "assistant", "content": [{"type": "tool_use", "id": "tu_g", "name": "Bash", "input": {"command": "frobnicate"}}]}}
+{"type": "user", "timestamp": "2026-06-15T09:00:05Z", "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "tu_g", "is_error": true, "content": "Exit code 127: command not found: frobnicate"}]}}
+{"type": "assistant", "timestamp": "2026-06-15T09:00:06Z", "message": {"role": "assistant", "content": [{"type": "tool_use", "id": "tu_c", "name": "Bash", "input": {"command": "./deploy.sh"}}]}}
+{"type": "user", "timestamp": "2026-06-15T09:00:07Z", "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "tu_c", "is_error": true, "content": "Exit code 1\nSee deploy.log for details"}]}}
+{"type": "assistant", "timestamp": "2026-06-15T09:00:08Z", "message": {"role": "assistant", "content": [{"type": "tool_use", "id": "tu_c2", "name": "Bash", "input": {"command": "./deploy.sh"}}]}}
+{"type": "user", "timestamp": "2026-06-15T09:00:09Z", "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "tu_c2", "is_error": true, "content": "Exit code 1    See deploy.log for details"}]}}
+{"type": "assistant", "timestamp": "2026-06-15T09:00:10Z", "message": {"role": "assistant", "content": [{"type": "tool_use", "id": "tu_d", "name": "Bash", "input": {"command": "ls"}}]}}
+{"type": "user", "timestamp": "2026-06-15T09:00:11Z", "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "tu_d", "is_error": false, "content": "ok"}]}}
+{"type": "assistant", "timestamp": "2026-06-15T09:00:12Z", "message": {"role": "assistant", "content": [{"type": "tool_use", "id": "tu_e", "name": "Read", "input": {"file_path": "/x/missing"}}]}}
+{"type": "user", "timestamp": "2026-06-15T09:00:13Z", "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "tu_e", "is_error": true, "content": [{"type": "text", "text": "File does not exist."}]}]}}
+{"type": "assistant", "timestamp": "2026-06-15T09:00:14Z", "message": {"role": "assistant", "content": [{"type": "tool_use", "id": "tu_f", "name": "Read", "input": {"file_path": "/x/present"}}]}}
+{"type": "user", "timestamp": "2026-06-15T09:00:15Z", "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "tu_f", "is_error": false, "content": "data"}]}}

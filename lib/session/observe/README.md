@@ -20,6 +20,7 @@ session-observe report                   # all views, all projects, all time
 session-observe report --days 7          # the weekly digest (recommended cadence)
 session-observe skills --days 30         # which skills fired in the last 30 days
 session-observe tools  --days 7          # tool usage + error rates
+session-observe tools --errors Bash --days 7   # group Bash's error results by message prefix
 session-observe hooks  --days 7          # per-hook p50/p95/max latency + hook errors
 session-observe subagents --days 7       # subagent spawns per day + by type, per100 prompts
 session-observe friction --days 7        # thrash / permission-friction / context-pressure / skill mis-fires
@@ -49,7 +50,7 @@ session-observe hooks --project=<project-slug> --days 7
 
 Each transcript entry already carries `hookInfos: [{command, durationMs}]`, `hookErrors`, and the `tool_use` / `tool_result` blocks. session-observe tallies them:
 
-- **skills / tools**: count `tool_use` by name (Skill by `input.skill`); attribute `is_error` results back via `tool_use_id`.
+- **skills / tools**: count `tool_use` by name (Skill by `input.skill`); attribute `is_error` results back via `tool_use_id`. `tools --errors <tool>` groups one tool's error results by message prefix (first 160 chars, whitespace-collapsed), so the count table's "why" is one flag away.
 - **hooks**: group `hookInfos[].durationMs` by a normalized hook label; count `hookErrors`.
 - **subagents**: count `tool_use` named `Agent`/`Task` by day and by `input.subagent_type`, normalized by user-prompt turns (`per100` = spawns per 100 prompts). Sidechain entries (`isSidechain`) are the subagents' own runs, so they are excluded to avoid double-counting. Answers "is my subagent mix drifting?" (e.g. Explore -> general-purpose) which a raw tool count hides.
 - **friction**: four deterministic working-pattern signals. **thrash** = a file edited `>= THRASH_MIN` (3) times in one session (rework/debug spiral). **permission-friction** = `tool_result` content matching a real permission marker (capital-P `"Permission to use "`, `"doesn't want to proceed"`, `"denied by your permission"`), attributed to the tool (Bash by command). **context-pressure** = `isCompactSummary` entries per day (the window collapsing). **skill-precision** = skills that mis-fired (errored), ranked by inert-rate, surfaced from the skill-error data the `skills` view buries.
