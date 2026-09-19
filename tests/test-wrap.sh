@@ -336,6 +336,63 @@ chk "matrix apply kept the unproven worktree's branch" \
   "$(git -C "$MTX" show-ref --verify --quiet refs/heads/squash-stale; echo $?)"
 
 # ===========================================================================
+echo "=== apply --own: only the named worktrees are candidates (SPEC-302) ==="
+# ===========================================================================
+# A shared repo cannot use --worktrees without endangering other sessions' worktrees,
+# so --own names the session's own set and everything else is out of scope.
+make_clone own rmain main unmerged
+set_stub rmain main
+OWNREPO="$TMPD/clone-own"
+
+out="$("$WRAP" apply --own "$TMPD/wt-own-clean" "$OWNREPO" 2>&1)"; rc=$?
+chk "--own dry-run exits 0 without --worktrees (own implies the opt-in)" "$rc"
+chk_has "--own dry-run: the scope line" "$out" \
+  "scope --own: only the named worktrees are candidates"
+chk_has "--own dry-run: the named proven worktree is a WOULD line" "$out" \
+  "WOULD remove worktree $TMPD_P/wt-own-clean [wt-clean, locked] and delete wt-clean"
+chk_no "--own dry-run: the unnamed dirty worktree gets no line at all" "$out" "wt-own-dirty"
+chk_no "--own dry-run: the unnamed detached worktree gets no line at all" "$out" "wt-own-det"
+chk_has "--own dry-run: the branch sweep is scoped off" "$out" \
+  "SKIP branch sweep: --own scopes cleanup to the named worktrees"
+chk_no "--own dry-run: the proven merged branch is no delete candidate" "$out" \
+  "delete merged-ancestor"
+chk "--own dry-run removed nothing" \
+  "$([ -d "$TMPD/wt-own-clean" ] && [ -d "$TMPD/wt-own-dirty" ]; echo $?)"
+
+out="$("$WRAP" apply --apply --own "$TMPD/wt-own-clean" "$OWNREPO" 2>&1)"; rc=$?
+chk "--own apply exits 0" "$rc"
+chk "--own apply removed only the named worktree" \
+  "$([ ! -e "$TMPD/wt-own-clean" ] && [ -d "$TMPD/wt-own-dirty" ] && [ -d "$TMPD/wt-own-det" ]; echo $?)"
+chk "--own apply deleted the named worktree's branch" \
+  "$(git -C "$OWNREPO" show-ref --verify --quiet refs/heads/wt-clean && echo 1 || echo 0)"
+chk "--own apply kept the unnamed merged branch (sweep scoped off)" \
+  "$(git -C "$OWNREPO" show-ref --verify --quiet refs/heads/merged-ancestor; echo $?)"
+chk "--own apply kept the unnamed worktrees' branches" \
+  "$(git -C "$OWNREPO" show-ref --verify --quiet refs/heads/wt-dirty; echo $?)"
+
+# A named dirty worktree refuses like any swept one; a bogus path is reported, not silent.
+out="$("$WRAP" apply --own "$TMPD/wt-own-dirty" --own "$TMPD/wt-notthere" "$OWNREPO" 2>&1)"; rc=$?
+chk "--own on a dirty plus a bogus path exits 0" "$rc"
+chk_has "--own: a named dirty worktree still refuses" "$out" \
+  "SKIP $TMPD_P/wt-own-dirty: dirty (another session's work stays)"
+chk_has "--own: a named path that is no worktree says so" "$out" \
+  "SKIP $TMPD/wt-notthere: not a registered worktree"
+chk "--own: the dirty worktree stays" "$([ -d "$TMPD/wt-own-dirty" ]; echo $?)"
+
+# Canonicalisation: a trailing-slash path names the same registered worktree, and
+# --worktrees + --own together still honour the own set.
+out="$("$WRAP" apply --worktrees --own "$TMPD/wt-own-det/" "$OWNREPO" 2>&1)"; rc=$?
+chk "--own canonicalised a trailing-slash path, exits 0" "$rc"
+chk_has "--own: the named detached worktree refuses as detached" "$out" \
+  "SKIP $TMPD_P/wt-own-det: detached HEAD (removal could orphan the commit)"
+chk_no "--own + --worktrees: the unnamed proven worktree stays out of scope" "$out" \
+  "wt-own-clean"
+
+out="$("$WRAP" apply --own 2>&1)"; rc=$?
+chk "--own with no value exits 64" "$([ "$rc" = 64 ]; echo $?)"
+chk_has "--own with no value names the missing arg" "$out" "--own needs a worktree path"
+
+# ===========================================================================
 echo "=== apply --worktrees: a lock naming a live pid is skipped, a dead pid is removed ==="
 # ===========================================================================
 # A worktree the Agent tool just created for a still-running subagent is also locked and its
