@@ -7,7 +7,9 @@
 # v1 scope (per the sub-goal contract): STATUS MOVES ONLY, BACKLOG.md rows only (no mega-goal
 # cards, no new-card writeback, no note edits). A Hermes-side card move applies to git ONLY if the
 # row's row_hash still equals the value recorded at mirror time, AND the card has actually moved
-# off the column the mirror created it in (CREATE-STATE RULE, see `_created_native`) -- otherwise
+# off the column the mirror created it in (CREATE-STATE RULE, see `_created_native`), AND a
+# terminal state the card carries was written by a human, not by the mirror's own COMPLETE op
+# (MIRROR-TERMINAL RULE, see `_mirror_terminal`) -- otherwise
 # the edit is SKIPPED,
 # reported, and the row is left for the next `board mirror` run to refresh from git (CONFLICT
 # RULE, load-bearing: git wins, always). Every apply lands on a fresh `chore/board-sync` branch
@@ -71,7 +73,10 @@
 #                        `_reverse_native blocked` keeps returning `parked` as the declared inverse;
 #                        the diff loop refuses to act on it before the map is consulted.)
 #   done    -> shipped  (the safe default over `dropped`: a card marked done in Hermes is read as
-#                        "finished", not "abandoned"; `dropped` has no writeback path in v1)
+#                        "finished", not "abandoned"; `dropped` has no writeback path in v1 --
+#                        but ONLY when a human completed it: a `done` whose result text is the
+#                        mirror's own is the disappeared-row path reporting back, and the diff
+#                        loop skips it before this map is consulted, see `_mirror_terminal`)
 #   (todo, running, or any other value hermes reports) -> UNMAPPED (empty), rejected as an illegal
 #     target status. These two are never write-targets in the forward direction either (see
 #     board-mirror.sh's Hermes-CLI-reality header note), so seeing one live would mean either a
@@ -139,14 +144,35 @@ _reverse_native() {
   esac
 }
 
-# _created_native <board> <hermes-id> -- the column the mirror's own `create` landed this card
-# in, read from the card's own `created` event (`hermes kanban show --json`). Empty when hermes
-# cannot answer (card gone, older card with no event, a CLI change): the caller then falls back to
-# the snapshot comparison alone, which is the pre-existing behavior.
+# _card_show <board> <hermes-id> -- the card's `hermes kanban show --json` document (task,
+# events, runs), fetched ONCE per candidate row: the card's own record is what answers BOTH
+# provenance checks below (which column the mirror created it in, and who wrote its terminal
+# state). Empty when hermes cannot answer (card gone, a CLI change): each derived check then
+# degrades independently, the same posture the pre-existing `_created_native` already took.
+_card_show() {
+  "$HERMES_BIN" kanban --board "$1" show "$2" --json 2>/dev/null || true
+}
+
+# _created_native <show-json> -- the column the mirror's own `create` landed this card in, read
+# from the card's own `created` event. Empty when the document carries no such event: the caller
+# then falls back to the snapshot comparison alone, which is the pre-existing behavior.
 _created_native() {
-  local out
-  out="$("$HERMES_BIN" kanban --board "$1" show "$2" --json 2>/dev/null)" || return 0
-  printf '%s' "$out" | jq -r 'first((.events // [])[] | select(.kind=="created") | .payload.status) // empty' 2>/dev/null || true
+  printf '%s' "$1" | jq -r 'first((.events // [])[] | select(.kind=="created") | .payload.status) // empty' 2>/dev/null || true
+}
+
+# _mirror_terminal <show-json> -- exit 0 when the card's terminal state was produced by the
+# MIRROR ITSELF, not by a human. The mirror's only path to `done` is its COMPLETE op, which runs
+# `kanban complete <id> --result "board-mirror: origin removed from <repo> board"`
+# (board-mirror.sh's cmd_plan); hermes stores that --result verbatim on the task (.task.result)
+# and stamps its first line on the `completed` event's payload.summary. A `done` card carrying
+# the `board-mirror:` prefix in EITHER place is the disappeared-row path reporting back -- the
+# mirror saw the git row vanish (a stale feed, a transient extract failure) and completed the
+# card -- so writeback must not read it as a human finishing the work and ship the live row.
+_mirror_terminal() {
+  printf '%s' "$1" | jq -e '
+    ((.task.result // "") | startswith("board-mirror:")) or
+    ((.events // []) | map(select(.kind=="completed") | (.payload.summary // "") | startswith("board-mirror:")) | any)
+  ' >/dev/null 2>&1
 }
 
 # _wb_skip <origin> <reason> -- uniform skip-log line to stderr (mirrors parse-board.sh's
@@ -265,6 +291,11 @@ cmd_diff() {
         continue   # no Hermes-side move at all; not noteworthy, not a skip
       fi
 
+      # One `show` per candidate row, fetched here: the card's own record answers BOTH provenance
+      # checks below (the column the mirror created it in, and who wrote its terminal state).
+      local card_json created_status
+      card_json="$(_card_show "$board" "$hermes_id")"
+
       # --- THE create-state rule: the snapshot's `hermes_status` records the column the mirror
       # INTENDED, which is not always the column the card is in. A mirror CHANGE op only posts a
       # comment (board-mirror.sh builds its CHANGE argv as `kanban comment`), so it never moves
@@ -273,8 +304,7 @@ cmd_diff() {
       # still sitting in its create column was never moved, and writing it back would walk the git
       # row backwards to a state no human chose (8 such rows across 4 repos on the first live
       # dry-run). ---
-      local created_status
-      created_status="$(_created_native "$board" "$hermes_id")"
+      created_status="$(_created_native "$card_json")"
       if [ -n "$created_status" ] && [ "$live_status" = "$created_status" ]; then
         _wb_skip "$origin" "card still sits in its mirror-created column '$created_status' (never moved; snapshot recorded intent '$hermes_status_snap')"
         n_skipped=$((n_skipped + 1)); continue
@@ -286,6 +316,19 @@ cmd_diff() {
       # reason and silently shrinks the cross-repo queue. Skip the row and leave git alone. ---
       if [ "$live_status" = "blocked" ]; then
         _wb_skip "$origin" "card moved to 'blocked', which has no git counterpart (blocked is not parked; writeback leaves the row alone)"
+        n_skipped=$((n_skipped + 1)); continue
+      fi
+
+      # --- THE mirror-terminal rule: a `done` card whose completion was written by the MIRROR
+      # ITSELF is the disappeared-row path reporting back, not a human finishing the work. The
+      # mirror's COMPLETE op stamps `kanban complete --result "board-mirror: origin removed from
+      # <repo> board"`, and the marker survives on the card (`.task.result`, plus the `completed`
+      # event's payload.summary) long after the snapshot re-points at the card with an intended
+      # column -- which is exactly what makes live=done vs snapshot=<intent> LOOK like a human
+      # move. Reading it as one writes `shipped` onto a row that is still live in git (the two
+      # phantom `shipped` proposals on the live dry-run). Skip it and leave git alone. ---
+      if [ "$live_status" = "done" ] && _mirror_terminal "$card_json"; then
+        _wb_skip "$origin" "card's 'done' state is mirror-originated (completion result carries the 'board-mirror:' marker; not a human move)"
         n_skipped=$((n_skipped + 1)); continue
       fi
 
