@@ -172,6 +172,12 @@ dedupe() {
       n = split($0, f, "|"); status = f[n-1]; gsub(/^[ \t]+|[ \t]+$/, "", status)
       split(status, a, /[ \[(]/); printf "%d\t%s\n", NR, a[1]
     }' "$BACKLOG_FILE")"
+  # grep -c exits 1 on zero matches, which set -e would turn into a silent death before the
+  # error line, so the absent case is tested on $rows itself, not on the count (same as get).
+  if [ -z "$rows" ]; then
+    echo "no Active-queue row for $id" >&2
+    return 1
+  fi
   local count; count="$(printf '%s\n' "$rows" | grep -c .)"
   if [ "$count" -le 1 ]; then
     echo "nothing to dedupe"
