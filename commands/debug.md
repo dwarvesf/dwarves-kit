@@ -101,7 +101,7 @@ Record findings in `## Evidence` as you go. When you can name the cause and poin
 
 ## Phase 4: Implementation
 
-1. **Write the failing test first** (or promote the Phase-0 loop: if the feedback loop you built is already a failing automated test at the right seam, that IS this test; otherwise convert the loop's signal into one now). The simplest reproduction, automated. This is the concrete pass/fail signal; it feeds the existing verification pipeline (worker -> task-verifier -> fix-agent) the same way `/execute` tasks do. No test, no fix.
+1. **Write the failing test first** (or promote the Phase-0 loop: if the feedback loop you built is already a failing automated test at the right seam, that IS this test; otherwise convert the loop's signal into one now). The simplest reproduction, automated. This is the concrete pass/fail signal; it feeds the existing verification pipeline (worker -> kit:task-verifier -> kit:fix-agent) the same way `/execute` tasks do. No test, no fix.
 2. **One fix, at the root cause.** No "while I'm here" changes, no bundled refactoring.
 3. **Verify.** The new test passes; no other test broke; the original symptom is gone.
 4. **Clean up.** Remove all instrumentation in one pass over the region markers (`sed '/# #region DEBUG/,/# #endregion/d'` or equivalent). Confirm `git bisect reset` ran if you bisected.

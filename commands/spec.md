@@ -28,10 +28,10 @@ Create `docs/research/` directory first.
 
 If the research agents are installed (check: do `.claude/agents/research-stack.md` etc. exist?), dispatch all 4 via the Task tool in parallel, each dispatch prompt carrying `<date>` and `<slug>` from Step 1:
 
-1. **research-stack** agent: "Map the technology stack. Write to `docs/research/<date>-<slug>-stack.md`."
-2. **research-context** agent: "Map existing features related to [user's feature area]. Write to `docs/research/<date>-<slug>-features.md`."
-3. **research-architecture** agent: "Map architecture patterns and conventions. Write to `docs/research/<date>-<slug>-architecture.md`."
-4. **research-pitfalls** agent: "Find landmines in [target area / target files]. Write to `docs/research/<date>-<slug>-pitfalls.md`."
+1. **kit:research-stack** agent: "Map the technology stack. Write to `docs/research/<date>-<slug>-stack.md`."
+2. **kit:research-context** agent: "Map existing features related to [user's feature area]. Write to `docs/research/<date>-<slug>-features.md`."
+3. **kit:research-architecture** agent: "Map architecture patterns and conventions. Write to `docs/research/<date>-<slug>-architecture.md`."
+4. **kit:research-pitfalls** agent: "Find landmines in [target area / target files]. Write to `docs/research/<date>-<slug>-pitfalls.md`."
 
 #### Mode B: Inline fallback
 
@@ -275,7 +275,7 @@ Remind the user they can run `/kit:spec-validate` for adversarial review before 
 
 <!-- review-loop --> On the FULL lane, a design-time pass runs by default before
 validate, not on request: dispatch `/kit:devs-team` for design critique and the
-`advisor` agent in over-suggest mode over the spec. This catches the class a code
+`kit:advisor` agent in over-suggest mode over the spec. This catches the class a code
 review cannot, a missing invariant, an unhandled failure mode, a threat surface,
 what breaks at ten times the load, while a fix is still one spec edit
 (`docs/patterns/review-fix-loop.md`, both-arms rule). It never blocks; findings

@@ -1,5 +1,5 @@
 ---
-description: "Autonomous spec execution with verification. Dispatches worker subagents per task, verifies each with task-verifier, retries fixable failures (max 2), escalates the rest."
+description: "Autonomous spec execution with verification. Dispatches worker subagents per task, verifies each with kit:task-verifier, retries fixable failures (max 2), escalates the rest."
 ---
 
 Self-intro (AGENTS.md "Self-intro" convention): open your first reply with exactly one banner line, `[kit:execute] Execute the approved spec: dispatch workers per task, verify each.`, then proceed.
@@ -61,8 +61,8 @@ Three agent roles work together:
 
 - **You (orchestrator)**: Stay in the main session. Parse spec, dispatch tasks, manage checkpoints, track retries. Your context stays lean.
 - **Worker subagents**: One per task via the Task tool. Fresh context window, only the context they need, isolated from other tasks.
-- **task-verifier subagent**: Runs after each worker completes. Read-only verification against spec acceptance criteria + test suite.
-- **fix-agent subagent**: Dispatched when task-verifier returns FAIL:fixable. Applies targeted fixes, then re-verification runs.
+- **kit:task-verifier subagent**: Runs after each worker completes. Read-only verification against spec acceptance criteria + test suite.
+- **kit:fix-agent subagent**: Dispatched when kit:task-verifier returns FAIL:fixable. Applies targeted fixes, then re-verification runs.
 
 ## Process
 
@@ -92,7 +92,7 @@ Sequential tasks: TASK-C > TASK-D > TASK-E
 
 Ask: "Execute this plan? (A) Start Phase 1 / (B) Adjust task order / (C) Skip to specific task"
 
-Before starting Phase 1, record the pre-build base ref (`git rev-parse HEAD`); the integration-verifier at Step 4 diffs the whole build from it. Also bracket the Build phase for timing: `bash lib/gate/gate-ledger.sh outcome <rid> build start`.
+Before starting Phase 1, record the pre-build base ref (`git rev-parse HEAD`); the kit:integration-verifier at Step 4 diffs the whole build from it. Also bracket the Build phase for timing: `bash lib/gate/gate-ledger.sh outcome <rid> build start`.
 
 ### Step 2: Execute phase by phase
 
@@ -109,7 +109,7 @@ a synthesized role is injected as the worker's prompt PREAMBLE, not installed as
 loads the agent registry at session start, so a file written now is only dispatchable next session).
 
 The role space is OPEN-ENDED: the classifier below is only a cheap fast path for common domains; the
-`meta-agent` (Mode C) can name ANY role for the long tail (technical-doc-writer, typescript-dev, ...).
+`kit:meta-agent` (Mode C) can name ANY role for the long tail (technical-doc-writer, typescript-dev, ...).
 
 1. **Fast-path classify** with the shared primitive (deterministic, no subagent call):
 
@@ -132,12 +132,12 @@ The role space is OPEN-ENDED: the classifier below is only a cheap fast path for
    - Else if `~/.claude/agents/*<role>*.md` cached from a prior run fits the task, use its body as the
      PREAMBLE. No re-synthesis.
 
-3. **Synthesize open-ended (when no reuse hit):** dispatch the `meta-agent` in **Mode C** with the task +
-   acceptance criteria + the classifier hint (even if the hint is `generic`, the meta-agent infers the
+3. **Synthesize open-ended (when no reuse hit):** dispatch the `kit:meta-agent` in **Mode C** with the task +
+   acceptance criteria + the classifier hint (even if the hint is `generic`, the kit:meta-agent infers the
    real role). It returns EITHER `NAME` / `TOOLS (advisory)` / `PREAMBLE`, OR `NO_SPECIALIST: <why>`.
    Only `NO_SPECIALIST` → dispatch today's generic worker (2b, unchanged). Do NOT let it write a file.
    Cost control: a known fast-path domain (step 1) may skip straight to synthesis with that role in hand;
-   the meta-agent hop is mainly for the long tail the classifier does not know.
+   the kit:meta-agent hop is mainly for the long tail the classifier does not know.
 
 4. **Dispatch + cache:** prepend the `PREAMBLE` to the 2b worker prompt (replace the generic
    "You are implementing a single task…" opener) and dispatch the worker NOW. After it returns, cache the
@@ -146,7 +146,7 @@ The role space is OPEN-ENDED: the classifier below is only a cheap fast path for
    cached specialist into the SHARED kit (`agents/` + roster + review) stays the deliberate
    `/kit:draft-agent` path, never automatic.
 
-Keep the orchestrator lean: classification is inline; synthesis is one bounded `meta-agent` call per
+Keep the orchestrator lean: classification is inline; synthesis is one bounded `kit:meta-agent` call per
 non-reused task; the worker itself is the same Task-tool dispatch as always.
 
 #### 2b. Dispatch each task as a worker subagent
@@ -170,7 +170,7 @@ acceptance, system) is one you dispatch with an explicit model override matching
 sonnet judge over an opus worker cannot follow the reasoning it is asked to audit. Absent a
 `Model:` header, verifiers keep their frontmatter default. The same graceful-degrade clause
 applies: if the override is unavailable in the dispatch surface, omit it and note that.
-`doc-verifier` is out of scope; it runs in the docs phase against a doc diff, not against a spec.
+`kit:doc-verifier` is out of scope; it runs in the docs phase against a doc diff, not against a spec.
 
 For each task, use the **Task tool** with this prompt structure (when 2b-0 produced a specialist PREAMBLE, that preamble REPLACES the generic "You are implementing a single task…" opener below):
 
@@ -217,7 +217,7 @@ Before writing any code, expand this task into **bite-sized steps** and present 
 - Use a TDD shape when a unit test fits: write the failing test, run it (expect fail), implement the minimum, run it (expect pass), commit.
 - For doc, config, command-prompt, or other non-code tasks, the verify is a `grep`/`bash` assertion or the project test suite (e.g. `bash tests/test-meta.sh`), not a unit test. For a task with no mechanical verify (subjective prose or design judgment), the step is change, human-review, commit, and you say so.
 - Also state in one or two sentences: Approach, Files to create/modify, and Key decisions (using the collaborative-design protocol above if any were non-obvious).
-- Then work the steps in order, verifying each. If a step's own verify fails, fix it within that step (your inner loop) before moving on; do not defer step-level failures to the verifier. The task-verifier remains the single result-level gate after you commit.
+- Then work the steps in order, verifying each. If a step's own verify fails, fix it within that step (your inner loop) before moving on; do not defer step-level failures to the verifier. The kit:task-verifier remains the single result-level gate after you commit.
 
 ## Decision mode
 [lead: pause for human approval / autonomous: proceed with recommendation and log]
@@ -233,12 +233,12 @@ Your response to the lead is a BOUNDED summary, not a dump. Return only:
 
 Report findings IN this summary, not as a re-paste of full diffs or test logs; the full output
 stays recoverable in your subagent transcript. The lead absorbs the summary and pulls detail on
-demand (and passes it to the task-verifier).
+demand (and passes it to the kit:task-verifier).
 ```
 
 #### 2c. Verify worker output (THE VERIFICATION PIPELINE)
 
-After each worker subagent completes, dispatch the **task-verifier** subagent. Per the parity rule
+After each worker subagent completes, dispatch the **kit:task-verifier** subagent. Per the parity rule
 above, pass `model: opus` when the active spec carries `Model: opus`:
 
 ```
@@ -257,7 +257,7 @@ TASK-[ID]: [description]
 [paste worker's output]
 ```
 
-The task-verifier will return one of three verdicts. Each maps onto one of the kit's named
+The kit:task-verifier will return one of three verdicts. Each maps onto one of the kit's named
 failure policies (`docs/patterns/failure-policy.md`), noted below -- the policy is
 the interpretive layer used when recording this task's outcome (2e) and the phase's outcome
 (Step 4); it never replaces the verdict string itself:
@@ -273,14 +273,14 @@ design decision is **escalate** (the task is correct-shaped, a human must choose
 a reason naming the spec/task itself as wrong, unclear, or not worth building is **close**
 (nothing to hand forward, drop the line of work and let a human reopen it later if warranted).
 
-#### 2c-1. Fresh-context re-audit of a task-verifier PASS (recheck-verifier)
+#### 2c-1. Fresh-context re-audit of a kit:task-verifier PASS (kit:recheck-verifier)
 
 Right-arm PASSes are unreviewed by default (the "Right-arm review parity" decision). When
-task-verifier returns PASS, dispatch the **recheck-verifier** subagent in a FRESH context
-(a new Task-tool call, not a continuation of the task-verifier's own context) with the
-task-verifier's full verdict block (including its `Verification record`). It pins `model: opus` in
+kit:task-verifier returns PASS, dispatch the **kit:recheck-verifier** subagent in a FRESH context
+(a new Task-tool call, not a continuation of the kit:task-verifier's own context) with the
+kit:task-verifier's full verdict block (including its `Verification record`). It pins `model: opus` in
 its own frontmatter, so no override is needed to raise it; pass one only to match a higher spec
-tier. recheck-verifier
+tier. kit:recheck-verifier
 RE-EXECUTES the recorded `Command:` itself and re-judges the outcome from what it observes,
 it never reads back the recorded `Exit:`/`Output (excerpt):` text as evidence -- this is
 what lets it catch a stale or fabricated PASS. Route its verdict:
@@ -292,28 +292,28 @@ what lets it catch a stale or fabricated PASS. Route its verdict:
   in `docs/verification/<spec-slug>.md` and surface it to the user at the next phase
   checkpoint (Step 3).
 
-This step is ADVISORY + RECORDED, never a mid-flight hard block: a recheck-verifier
+This step is ADVISORY + RECORDED, never a mid-flight hard block: a kit:recheck-verifier
 FAIL does not reopen the retry loop and does not block the next task from dispatching; it is
 evidence for the human at the checkpoint. This realizes the right-arm review parity trust metric: "% of
 autonomous done-claims that survive a fresh-context re-audit."
 
 #### 2d. Retry loop (max 2 attempts)
 
-When task-verifier returns FAIL:fixable:
+When kit:task-verifier returns FAIL:fixable:
 
 ```
 retry_count = 0
 MAX_RETRIES = 2
 
 while verdict == "FAIL:fixable" AND retry_count < MAX_RETRIES:
-    1. Dispatch fix-agent with:
+    1. Dispatch kit:fix-agent with:
        - The verifier's issue list (file paths, fix instructions)
        - The original task context (acceptance criteria)
        - The specific files to modify
     
-    2. fix-agent applies targeted fixes and reports changes
+    2. kit:fix-agent applies targeted fixes and reports changes
     
-    3. Re-run task-verifier on the updated code
+    3. Re-run kit:task-verifier on the updated code
     
     4. retry_count += 1
 
@@ -344,7 +344,7 @@ consuming a fix cycle.
 **Why max 2 retries**: Most fixable issues (missing import, wrong assertion, off-by-one) resolve in 1-2 fix cycles. If it takes 3+, the issue is likely a design problem, not a code bug. Further retries burn tokens without progress.
 
 **Naming the exit (`docs/patterns/failure-policy.md`)**: an exhausted retry loop is
-**policy: escalate** by default (a human decides the direction). If the final task-verifier
+**policy: escalate** by default (a human decides the direction). If the final kit:task-verifier
 verdict is itself `FAIL:escalate` with a "the spec/task is wrong" reason rather than a design
 question, name it **policy: close** instead when reporting to the user -- the retry loop
 proved the issue isn't a fixable code bug, so the honest ask is "should this task exist at
@@ -414,14 +414,14 @@ After all phases complete:
    - **inert** (docs / comments / cosmetic): exempt. Record
      `[PROOF OF DONE: exempt -- <reason>]` on the task line; skip the negative control.
    Marking a behavioral or stateful task inert is a finding, not a pass.
-2. **Integration check (multi-task specs only).** If the spec's `## Task Breakdown` had more than one task, dispatch the **integration-verifier** subagent (read-only, `model: opus` when the active spec carries `Model: opus`), passing it the pre-build base ref (record `git rev-parse HEAD` before Step 2 begins, or use the parent of this build's first commit) so it diffs the whole build. It verifies every new component reaches its activation point and that the spec's stated end-to-end chains hold (cross-task wiring, not per-task acceptance). Route the verdict like task-verifier:
+2. **Integration check (multi-task specs only).** If the spec's `## Task Breakdown` had more than one task, dispatch the **kit:integration-verifier** subagent (read-only, `model: opus` when the active spec carries `Model: opus`), passing it the pre-build base ref (record `git rev-parse HEAD` before Step 2 begins, or use the parent of this build's first commit) so it diffs the whole build. It verifies every new component reaches its activation point and that the spec's stated end-to-end chains hold (cross-task wiring, not per-task acceptance). Route the verdict like kit:task-verifier:
    - **PASS**: continue to the summary.
-   - **FAIL:fixable**: dispatch fix-agent on the named wiring gap (reuse the max-2 retry cap), then re-run the integration-verifier.
+   - **FAIL:fixable**: dispatch kit:fix-agent on the named wiring gap (reuse the max-2 retry cap), then re-run the kit:integration-verifier.
    - **FAIL:escalate** (or retry >= 2): stop and report the broken seam to the human; do not declare the build complete.
    A single-task spec skips this step (nothing to wire).
-2b. **Fresh-context re-audit of the integration-verifier PASS (recheck-verifier).** When the
-   integration-verifier above returns PASS, dispatch the **recheck-verifier** subagent in a
-   FRESH context with its full verdict block. recheck-verifier RE-EXECUTES the recorded
+2b. **Fresh-context re-audit of the kit:integration-verifier PASS (kit:recheck-verifier).** When the
+   kit:integration-verifier above returns PASS, dispatch the **kit:recheck-verifier** subagent in a
+   FRESH context with its full verdict block. kit:recheck-verifier RE-EXECUTES the recorded
    verification command itself and re-judges, never reading back the recorded record as
    evidence -- this is what catches a stale or fabricated PASS (the "Right-arm review
    parity" decision, the trust metric "% of autonomous done-claims that survive a fresh-context
@@ -432,7 +432,7 @@ After all phases complete:
      `Re-audit: FAIL -- <finding>` to the same entry and surface it to the user alongside the
      execution summary (Step 4 item 3). ADVISORY + RECORDED, never a mid-flight hard block:
      it does not reopen the integration retry loop.
-   A single-task spec skips this step (nothing was checked by integration-verifier to re-audit).
+   A single-task spec skips this step (nothing was checked by kit:integration-verifier to re-audit).
 3. Show execution summary:
    ```
    ## Execution complete
@@ -474,18 +474,18 @@ After all phases complete:
 
 ## Error handling
 
-- **Worker fails to complete**: Run task-verifier anyway on whatever exists. The verifier determines if partial work is salvageable (FAIL:fixable) or needs human input (FAIL:escalate).
-- **Tests break during execution**: task-verifier catches this. If fixable, fix-agent handles it. If not, escalate.
-- **Spec ambiguity discovered**: If it is a genuine contradiction (the spec disagrees with itself), stop and ask the user to clarify. Do not guess. Do not dispatch fix-agent for spec problems. If instead the work reveals scope that must be ADDED now ("also do Y"), that is the declared mid-flight amend path, not an ambiguity: confirm the added scope with the user first (adding scope is not the loop's call), then amend at a checkpoint (append `- [ ]` tasks, record an `## Amendments` entry) and resume with `/kit:next` (see WORKFLOW.md "## Mid-flight amend").
+- **Worker fails to complete**: Run kit:task-verifier anyway on whatever exists. The verifier determines if partial work is salvageable (FAIL:fixable) or needs human input (FAIL:escalate).
+- **Tests break during execution**: kit:task-verifier catches this. If fixable, kit:fix-agent handles it. If not, escalate.
+- **Spec ambiguity discovered**: If it is a genuine contradiction (the spec disagrees with itself), stop and ask the user to clarify. Do not guess. Do not dispatch kit:fix-agent for spec problems. If instead the work reveals scope that must be ADDED now ("also do Y"), that is the declared mid-flight amend path, not an ambiguity: confirm the added scope with the user first (adding scope is not the loop's call), then amend at a checkpoint (append `- [ ]` tasks, record an `## Amendments` entry) and resume with `/kit:next` (see WORKFLOW.md "## Mid-flight amend").
 - **Task is too large**: Split it into subtasks. If the split stays within the task's declared scope, confirm with user, then dispatch. If splitting means ADDING scope beyond the spec, confirm the added scope with the user, then route it through the mid-flight amend path (amend at a checkpoint, then resume with `/kit:next`; see WORKFLOW.md "## Mid-flight amend").
-- **fix-agent reports it cannot fix an issue**: Escalate immediately. Don't retry with the same fix-agent.
+- **kit:fix-agent reports it cannot fix an issue**: Escalate immediately. Don't retry with the same kit:fix-agent.
 
 ## Anti-patterns to avoid
 
 - Do NOT execute tasks in the main session. Always use the Task tool for workers.
-- Do NOT skip verification. Every task goes through task-verifier, even if the worker says "all criteria met."
+- Do NOT skip verification. Every task goes through kit:task-verifier, even if the worker says "all criteria met."
 - Do NOT skip the phase checkpoint. The user must approve before the next phase.
 - Do NOT auto-fix failing tests without the verification pipeline.
 - Do NOT silently mutate the spec mid-build. An amend is not a silent edit: when the work reveals scope that must be added now, take the declared mid-flight amend path (pause at a task checkpoint, append new `- [ ]` tasks, record an `## Amendments` entry, resume with `/kit:next`). See WORKFLOW.md "## Mid-flight amend". A silent rewrite of done (`- [x]`) tasks is still forbidden.
 - Do NOT retry FAIL:escalate verdicts. They need human judgment by definition.
-- Do NOT dispatch fix-agent for more than 2 issues at once. If the verifier found 5+, the task needs re-implementation, not patching. Escalate.
+- Do NOT dispatch kit:fix-agent for more than 2 issues at once. If the verifier found 5+, the task needs re-implementation, not patching. Escalate.

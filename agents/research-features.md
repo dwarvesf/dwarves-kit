@@ -1,6 +1,6 @@
 ---
 name: research-features
-description: Deep, uncapped, source-cited feature inventory for one module of a target project -- every entry point gets a file:line citation and a behavior contract; adds a MIGRATE table + parity contract when the request names a port/migration target. The definitive deliverable, not throwaway context (see research-context for that). Dispatched by /kit:feature-map.
+description: Deep, uncapped, source-cited feature inventory for one module of a target project -- every entry point gets a file:line citation and a behavior contract; adds a MIGRATE table + parity contract when the request names a port/migration target. The definitive deliverable, not throwaway context (see kit:research-context for that). Dispatched by /kit:feature-map.
 tools:
   - Read
   - Grep
@@ -125,7 +125,7 @@ Unresolved scope calls for the operator. Empty section if there are none -- don'
 invent one.
 ```
 
-No line cap (unlike `research-context`, which is shallow and
+No line cap (unlike `kit:research-context`, which is shallow and
 80-line-capped for `/kit:spec`'s brownfield context): an inventory/port spec is a
 source of truth, not a scratch note -- go as deep as the module needs. Do not pad;
 every line earns its place.

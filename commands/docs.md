@@ -89,12 +89,12 @@ For each file:
 
 ### Step 4.5: Verify the docs against the code
 
-Before committing, dispatch the **doc-verifier** subagent (read-only) to independently fact-check the docs you just updated against the live code. It reads the uncommitted doc diff (your Step 4 edits are not committed yet) and verifies each checkable claim (counts, command/flag/env names, file paths, existence, cross-references). Route the verdict:
+Before committing, dispatch the **kit:doc-verifier** subagent (read-only) to independently fact-check the docs you just updated against the live code. It reads the uncommitted doc diff (your Step 4 edits are not committed yet) and verifies each checkable claim (counts, command/flag/env names, file paths, existence, cross-references). Route the verdict:
 - **PASS**: continue to Step 5.
-- **FAIL:fixable**: re-edit the named doc drift yourself (you are the writer; the doc-verifier is read-only), then re-run the doc-verifier. Cap at 2 rounds.
+- **FAIL:fixable**: re-edit the named doc drift yourself (you are the writer; the kit:doc-verifier is read-only), then re-run the kit:doc-verifier. Cap at 2 rounds.
 - **FAIL:escalate** (or after 2 rounds): stop and report the contradiction to the user; do not commit.
 
-This is the docs-phase analogue of `/execute`'s task-verifier: the context that wrote the docs is not the right judge of them.
+This is the docs-phase analogue of `/execute`'s kit:task-verifier: the context that wrote the docs is not the right judge of them.
 
 ### Step 5: Commit
 

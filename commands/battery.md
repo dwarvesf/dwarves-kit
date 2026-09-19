@@ -1,5 +1,5 @@
 ---
-description: "The full independent-verification battery for a finished branch: a fresh-context acceptance verifier that RE-EXECUTES the verification commands against a stated baseline, a multi-lens review, and the advisor extra lens, dispatched in parallel at prescribed model tiers, findings merged into one verdict, fixes applied by the lead."
+description: "The full independent-verification battery for a finished branch: a fresh-context acceptance verifier that RE-EXECUTES the verification commands against a stated baseline, a multi-lens review, and the kit:advisor extra lens, dispatched in parallel at prescribed model tiers, findings merged into one verdict, fixes applied by the lead."
 ---
 
 You are running the verification battery on a finished build (a branch, a PR, or the
@@ -44,9 +44,9 @@ Print the resolved target as a `## Target` block: path, branch, compare ref, PR 
 
 | Leg | Agent | Model tier | Job |
 |---|---|---|---|
-| 1. Acceptance verify | acceptance-verifier (or task-verifier for a single task) | mid, or the spec's tier when it carries `Model: opus` | re-execute the spec/branch verification commands VERBATIM in fresh context; check every AC against the actual files |
-| 2. Review | code-reviewer single-pass; escalate domain lenses per the table below | high (Opus-class) | static-read judgment: what re-execution cannot see |
-| 3. Advisor | advisor (critique mode) | mid | the uniform extra lens; additive, never replaces leg 2 |
+| 1. Acceptance verify | kit:acceptance-verifier (or kit:task-verifier for a single task) | mid, or the spec's tier when it carries `Model: opus` | re-execute the spec/branch verification commands VERBATIM in fresh context; check every AC against the actual files |
+| 2. Review | kit:code-reviewer single-pass; escalate domain lenses per the table below | high (Opus-class) | static-read judgment: what re-execution cannot see |
+| 3. Advisor | kit:advisor (critique mode) | mid | the uniform extra lens; additive, never replaces leg 2 |
 
 Dispatch legs 1 and 2 IN PARALLEL (one message, multiple Task calls). Leg 3 rides
 leg 2's dispatch unless the diff is large. Every leg is read-only; the LEAD applies
@@ -58,12 +58,12 @@ Add specialized lenses when the diff touches their domain; each is its own agent
 
 | Diff touches | Lens | Tier |
 |---|---|---|
-| secrets, keys, symlinks, subprocess, network, containers, persist paths | security-reviewer | high |
-| a public interface / request-response shape | api-reviewer | mid |
-| UI | frontend-reviewer | mid |
-| deploy, CI, IaC, launchd | infra-reviewer | mid |
-| hot paths, N+1, allocations | performance-reviewer | mid |
-| input handling, a trust boundary, a state machine, or a stated numeric/format contract, WITH tests | break-it | high |
+| secrets, keys, symlinks, subprocess, network, containers, persist paths | kit:security-reviewer | high |
+| a public interface / request-response shape | kit:api-reviewer | mid |
+| UI | kit:frontend-reviewer | mid |
+| deploy, CI, IaC, launchd | kit:infra-reviewer | mid |
+| hot paths, N+1, allocations | kit:performance-reviewer | mid |
+| input handling, a trust boundary, a state machine, or a stated numeric/format contract, WITH tests | kit:break-it | high |
 
 The measured lesson behind the escalation rule: a diff that qualified for the
 security lens shipped without it, and the lens later found a HIGH (a key-persist
@@ -71,9 +71,9 @@ path into a public repo) that the panel, the reviewer, AND the verifier had all
 missed, because each looked from a different frame and none from the threat model.
 Skipping a qualifying lens is a decision; record it, do not default into it.
 
-## Probe rung (break-it), before the mutation rung
+## Probe rung (kit:break-it), before the mutation rung
 
-**break-it is the one escalation lens that does NOT ride leg 2's parallel dispatch.** Every
+**kit:break-it is the one escalation lens that does NOT ride leg 2's parallel dispatch.** Every
 other row in the table above goes out in the same message as legs 1 and 2. This one needs leg
 1's verdict first, because a red suite makes the probe meaningless, so it is a SECOND dispatch
 after leg 1 returns green. Leg 1 green is the trigger; the table row is the domain filter.
@@ -82,7 +82,7 @@ A green suite proves the tests ran, never that they constrain the code. Three ru
 that in order:
 
 1. **Coverage** -- leg 1 above returns green.
-2. **Probe** -- `break-it`, the escalation lens in the table above, dispatched only after leg 1
+2. **Probe** -- `kit:break-it`, the escalation lens in the table above, dispatched only after leg 1
    returns green. It hunts one concrete input or call sequence the suite does not constrain,
    and returns `PROBE: <N>` or `NO-PROBE`.
 3. **Mutation** -- `lib/gate/mutation-smoke.sh`, owned by `/kit:verify` Step 6b. Battery never
@@ -119,7 +119,7 @@ probe and mutation; report that inversion in one line and re-run nothing.
    not the whole battery.
 3. A verifier-caught gap means an AC or test was too weak: strengthen the check in
    the same pass, not only the code.
-   - Decide per break-it finding: add the test that pins the probe, or accept the
+   - Decide per kit:break-it finding: add the test that pins the probe, or accept the
      finding and record WHY in the report. A `NO-PROBE` verdict is a result, not
      silence; say so in the report so the lead does not read it as laziness.
 4. Write the spec's `## Review` section (replace-not-stack) and record the legs in

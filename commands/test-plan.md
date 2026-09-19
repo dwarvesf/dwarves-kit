@@ -40,7 +40,7 @@ bash lib/classify/task-type-classify.sh classify "<the spec's objective / title>
 own dialect per `docs/verification/test-design-standard.md` §5b (eval -> metrics + hand-verified
 seeds + falsifiability controls; research -> claim-verification matrix; migration/cleanup ->
 inventory + rollback rehearsal; data-tool -> recorded live run + negative control; doc ->
-doc-verifier match). The section written into the spec is still `## Test plan`; the dialect
+kit:doc-verifier match). The section written into the spec is still `## Test plan`; the dialect
 changes the matrix's shape, not the heading, the AC-traceability, or the proof-per-case rule.
 
 ### Step 1c: AI-in-the-loop tiering (when applicable)

@@ -1,5 +1,5 @@
 ---
-description: "Parallel code review with 3 specialist lenses plus the kit-default advisor extra lens. Dispatches the security, architecture, and test-coverage lenses simultaneously, adds the cross-cutting advisor (critique mode), then merges findings."
+description: "Parallel code review with 3 specialist lenses plus the kit-default kit:advisor extra lens. Dispatches the security, architecture, and test-coverage lenses simultaneously, adds the cross-cutting kit:advisor (critique mode), then merges findings."
 ---
 
 You are a review coordinator. Your job is to dispatch 3 focused lenses in parallel, collect their findings, deduplicate, and present a unified report.
@@ -41,11 +41,11 @@ blocker). A `WARNING` is advisory input to the test-coverage lens, never a stop.
 
 Dispatch these 3 subagents via the Task tool. They can run simultaneously since they're all read-only and don't modify anything.
 
-**Domain lens (opt-in).** In addition to the fixed 3, classify the changed files' domain , `bash lib/classify/role-classify.sh classify "<changed paths + diff summary>"` , and if a domain REVIEWER exists for that domain (`performance-reviewer`, `api-reviewer`, `frontend-reviewer`, `infra-reviewer`), dispatch it too, in the same parallel batch, through its domain lens. This is the live dispatch path for the read-only domain reviewers (workers dispatch via `/kit:execute` 2b-0 instead). Skip when no domain reviewer matches; the fixed 3 lenses are unchanged.
+**Domain lens (opt-in).** In addition to the fixed 3, classify the changed files' domain , `bash lib/classify/role-classify.sh classify "<changed paths + diff summary>"` , and if a domain REVIEWER exists for that domain (`kit:performance-reviewer`, `kit:api-reviewer`, `kit:frontend-reviewer`, `kit:infra-reviewer`), dispatch it too, in the same parallel batch, through its domain lens. This is the live dispatch path for the read-only domain reviewers (workers dispatch via `/kit:execute` 2b-0 instead). Skip when no domain reviewer matches; the fixed 3 lenses are unchanged.
 
 **Model tiering (EveryInc Stage 4 pattern):** dispatch the
 security reviewer with an EXPLICIT model override matching the session model ,
-the security-reviewer agent's frontmatter defaults to sonnet, so omitting the
+the kit:security-reviewer agent's frontmatter defaults to sonnet, so omitting the
 override would silently down-tier the high-stakes lens, not inherit; dispatch
 the architecture and test-coverage reviewers with the mid-tier override
 (`model: sonnet`). If the override is unavailable in the dispatch surface, omit
@@ -70,7 +70,7 @@ self-test sentence, suggested fix (when gated_auto).
 **Lens 1: Security (deep)**
 ```
 Review this code diff through the SECURITY lens only.
-Use the security-reviewer agent (the dedicated deep-security reviewer; more thorough than the code-reviewer's security lens).
+Use the kit:security-reviewer agent (the dedicated deep-security reviewer; more thorough than the kit:code-reviewer's security lens).
 
 ## Diff
 [paste diff or list changed files]
@@ -82,7 +82,7 @@ Use the security-reviewer agent (the dedicated deep-security reviewer; more thor
 **Lens 2: Architecture**
 ```
 Review this code diff through the ARCHITECTURE lens only.
-Use the code-reviewer agent with lens: architecture.
+Use the kit:code-reviewer agent with lens: architecture.
 
 **Stale-ADR inversion.** Behavior that matches what a spec/ADR/intent doc claims is BY DESIGN, not a finding, even if it looks surprising at first glance. Code that has DRIFTED from what a spec/ADR/intent doc claims IS itself a finding: report the drift naming the doc's line and the code's line. A doc can never blanket-mute observed behavior. Emit a drift finding with a `stale-adr:` finding-key prefix (e.g. `stale-adr: <doc>:<line> claims X, <code>:<line> does Y`) so it reads as this lens type, distinct from other findings.
 
@@ -110,7 +110,7 @@ problem (spaghetti growth), never a style nit , name the structural cause.
 **Lens 3: Test-coverage**
 ```
 Review this code diff through the TEST-COVERAGE lens only.
-Use the code-reviewer agent with lens: test-coverage.
+Use the kit:code-reviewer agent with lens: test-coverage.
 
 ## Diff
 [paste diff or list changed files]
@@ -119,9 +119,9 @@ Use the code-reviewer agent with lens: test-coverage.
 [test commands from CLAUDE.md or package.json]
 ```
 
-### Step 2b: dispatch the advisor extra lens (KIT DEFAULT, additive)
+### Step 2b: dispatch the kit:advisor extra lens (KIT DEFAULT, additive)
 
-In addition to the 3 specialist lenses, dispatch the `advisor` agent in **critique
+In addition to the 3 specialist lenses, dispatch the `kit:advisor` agent in **critique
 mode**. This is a KIT DEFAULT: it runs on every review-team pass, it
 does NOT replace the 3 specialist lenses (they are the kit's tailored value), it ADDS one
 cross-cutting whole-of-work lens that catches what a per-artifact lens is not scoped
@@ -137,18 +137,18 @@ whole-work pass surfaces. Return ADVISORY: clean | N finding(s) with file:line.
 [paste diff or list changed files]
 ```
 
-The advisor's `model:` (default `sonnet`) is the cheap-first tier knob, so this
+The kit:advisor's `model:` (default `sonnet`) is the cheap-first tier knob, so this
 default lens never silently burns opus on every run.
 
 Bracket the `advisor` phase for timing right before dispatching it:
 `bash lib/gate/gate-ledger.sh outcome "$rid" advisor start`.
 
-**Record the advisor dispatch itself (fail-open, never blocks).** The instant the
-advisor's critique pass returns, emit a first-class ledger row BEFORE folding its findings
-into the Step 3 merge, so the advisor's own contribution is machine-visible even when
+**Record the kit:advisor dispatch itself (fail-open, never blocks).** The instant the
+kit:advisor's critique pass returns, emit a first-class ledger row BEFORE folding its findings
+into the Step 3 merge, so the kit:advisor's own contribution is machine-visible even when
 `kit_gates` (the stats read plane) is asked "did the advisor run on this rid" independent of the
 merged report's combined `findings=<K>` count (Step 3's `review ran` line counts all 3
-specialist lenses + advisor together, so it cannot answer that question alone):
+specialist lenses + kit:advisor together, so it cannot answer that question alone):
 
 ```
 bash lib/gate/gate-ledger.sh record "$rid" advisor ran "mode=P5 findings=<N> actor=$(git config user.name)" \
@@ -156,7 +156,7 @@ bash lib/gate/gate-ledger.sh record "$rid" advisor ran "mode=P5 findings=<N> act
 bash lib/gate/gate-ledger.sh outcome "$rid" advisor end caught=<true if N > 0, else false>
 ```
 
-`<N>` is the advisor's OWN fresh-finding count read off its `ADVISORY: <N findings>` output
+`<N>` is the kit:advisor's OWN fresh-finding count read off its `ADVISORY: <N findings>` output
 line (post rejected-findings-ledger) -- distinct from Step 3's merged `findings=<K>`.
 Fail-open: the `||` fallback means an emit failure (a read-only ledger dir, a full disk) can
 only ever print a warning, never fail the review or the dispatch (NC2). A rid that never
@@ -172,16 +172,16 @@ the FINAL sub-goal's rid instead -- the de-facto convention the older TIER-4 fre
 convergence-gate advisor row under one deterministic close-time key rather than scattered
 across every sub-goal's own rid.
 
-Fold the advisor's `ADVISORY:` findings into the merge below as an additional lens
-(never a blocker; the final human review is the gate). The advisor's **over-suggest
+Fold the kit:advisor's `ADVISORY:` findings into the merge below as an additional lens
+(never a blocker; the final human review is the gate). The kit:advisor's **over-suggest
 mode** (P6) is a SEPARATE pass surfaced to the human just BEFORE the final review
 (the mega-lane / ship final boundary dispatches it); it is not part of this merge.
 
 ### Step 3: Merge findings
 
-After all 3 specialist lenses + the advisor complete:
+After all 3 specialist lenses + the kit:advisor complete:
 
-1. Collect all issues from all 3 lenses (and the advisor's cross-cutting findings)
+1. Collect all issues from all 3 lenses (and the kit:advisor's cross-cutting findings)
 2. Deduplicate by FINGERPRINT: file + line-bucket (+-3 lines) + normalized title (lowercase, punctuation stripped). The same fingerprint across reviewers = ONE finding listing every lens that caught it.
 3. Sort by severity (CRITICAL > HIGH > MEDIUM > LOW). <!-- review-loop --> Within a severity, sort CONVERGENT findings first: a finding whose fingerprint two or more lenses hit independently outranks a single-lens finding, because independent agreement is the cheapest reliable signal of a real defect (docs/patterns/review-fix-loop.md, move 2). The corroboration promotion in item 5 already encodes this as confidence; this sort surfaces it so the operator reads the convergent findings first.
 4. **Classify each finding's Route (EveryInc action-class
@@ -208,7 +208,7 @@ After all 3 specialist lenses + the advisor complete:
 ### Step 3a: Consult the rejected-findings ledger (fail-open)
 
 Before validating or reporting, check every UNSUPPRESSED merged finding (post-dedup, from
-Step 3.2-3.6, including the advisor's cross-cutting findings) against
+Step 3.2-3.6, including the kit:advisor's cross-cutting findings) against
 `docs/verification/rejected-findings.md`. **Fail-open:** missing, unreadable, or malformed
 ledger = "no memory," never an error, never a blocked review.
 
@@ -322,13 +322,13 @@ Close the `review` timing bracket opened at the top of this Process section:
 ### Step 5: Decision gate
 
 If verdict is SHIP: suggest `/kit:docs` then `/kit:ship`.
-If verdict is FIX THEN SHIP: list the specific fixes needed, ask if the user wants to address them now. Unvalidated CRITICAL/HIGH findings are treated as LIVE (the fail-safe); responding-to-review notes the unvalidated status when proposing their fixes. Route by class, UNSUPPRESSED findings only (suppressed items never enter this gate, at any Route or severity): `gated_auto` findings go to the `responding-to-review` agent as input -- it verifies each item, pushes back on incorrect feedback, and proposes fixes in priority order without performative agreement; each `manual` finding becomes a board row in `_meta/BACKLOG.md` (design input owed, not an inline fix); `advisory` findings are recorded in the spec's `## Review` section and nothing else is owed.
+If verdict is FIX THEN SHIP: list the specific fixes needed, ask if the user wants to address them now. Unvalidated CRITICAL/HIGH findings are treated as LIVE (the fail-safe); kit:responding-to-review notes the unvalidated status when proposing their fixes. Route by class, UNSUPPRESSED findings only (suppressed items never enter this gate, at any Route or severity): `gated_auto` findings go to the `kit:responding-to-review` agent as input -- it verifies each item, pushes back on incorrect feedback, and proposes fixes in priority order without performative agreement; each `manual` finding becomes a board row in `_meta/BACKLOG.md` (design input owed, not an inline fix); `advisory` findings are recorded in the spec's `## Review` section and nothing else is owed.
 
-Then read `kit_config_get_root review.apply_findings true`. True, the default: dispatch `fix-agent` on the findings `responding-to-review` VERIFIED, scoped to those files and those issues, and report each fix with its finding. The branch is not the product, the PR is, and a fix sitting in a report costs a round trip to apply by hand. False: leave them proposed for the operator to apply. **The verification is the gate at either setting.** A finding `responding-to-review` pushed back on is never applied, because the agent judged the reviewer wrong; report the pushback and its reasoning instead. `manual` and `advisory` findings never reach this step.
+Then read `kit_config_get_root review.apply_findings true`. True, the default: dispatch `kit:fix-agent` on the findings `kit:responding-to-review` VERIFIED, scoped to those files and those issues, and report each fix with its finding. The branch is not the product, the PR is, and a fix sitting in a report costs a round trip to apply by hand. False: leave them proposed for the operator to apply. **The verification is the gate at either setting.** A finding `kit:responding-to-review` pushed back on is never applied, because the agent judged the reviewer wrong; report the pushback and its reasoning instead. `manual` and `advisory` findings never reach this step.
 If verdict is DO NOT SHIP: explain what's fundamentally wrong.
 
 **Deslop strip (OPT-IN, before ship).** When the operator wants the AI-slop strip
-before merge, dispatch `slop-stripper` (agents/slop-stripper.md) with the base ref
+before merge, dispatch `kit:slop-stripper` (agents/slop-stripper.md) with the base ref
 (`git merge-base <default-branch> HEAD`, or the diff range the lenses reviewed). It
 applies surgical, behavior-preserving edits to the branch diff (redundant comments,
 over-defensive handling, unnecessary casts, flattenable nesting, patterns
@@ -336,7 +336,7 @@ inconsistent with the file) and returns a STRIP REPORT. Never auto-run, and
 `review.apply_findings` does not change that: a strip rewrites the whole diff on
 style grounds rather than fixing a verified finding, so there is no per-item
 judgment to stand behind it. That is the line between the two. A `gated_auto`
-finding is applied only after `responding-to-review` verified that specific item
+finding is applied only after `kit:responding-to-review` verified that specific item
 (never blindly); the strip has no such per-item verification, so it stays
 the operator's call. Run `/kit:verify` after the strip, then `/kit:ship`.
 

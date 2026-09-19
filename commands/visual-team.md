@@ -30,7 +30,7 @@ Each lens returns 2-5 findings (each with a severity CRITICAL / HIGH / MEDIUM / 
 4. **Restraint / simplicity** -- is anything decorative-not-functional? Flag clutter, gratuitous effects, competing focal points.
 5. **Expressiveness / brand-fit** -- does it feel like the product it serves? Flag generic look, off-brand tone, missed personality.
 
-**6th lens , operator persona (dispatched ONLY when a `persona:` archetype is supplied).** In the SAME batch, add one lens: critique the visual through the "<archetype>" lens ONLY (code-reviewer's "through the <X> lens only" shape). It returns the SAME contract as the 5 , 2-5 findings (each CRITICAL/HIGH/MEDIUM/LOW + concrete fix) + a 0-10 score , so the merge stays uniform. Inline dispatch, no agent file. When no `persona:` arg is supplied this lens does NOT fire and exactly 5 lenses run.
+**6th lens , operator persona (dispatched ONLY when a `persona:` archetype is supplied).** In the SAME batch, add one lens: critique the visual through the "<archetype>" lens ONLY (kit:code-reviewer's "through the <X> lens only" shape). It returns the SAME contract as the 5 , 2-5 findings (each CRITICAL/HIGH/MEDIUM/LOW + concrete fix) + a 0-10 score , so the merge stays uniform. Inline dispatch, no agent file. When no `persona:` arg is supplied this lens does NOT fire and exactly 5 lenses run.
 
 ### Step 3: Merge findings
 

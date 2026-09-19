@@ -2,7 +2,7 @@
 description: "Meta-agent agent-builder. From a one-line description, generates a new subagent definition OR a mega-goal sub-goal file and (by default) installs the subagent so it is dispatchable next session. --draft stops at a staged draft for review."
 ---
 
-Dispatch the `meta-agent` to generate a new subagent definition (or a mega-goal sub-goal file) from a description, then INSTALL it by default so it is runnable at runtime. Installing is local: the agent goes live in your `~/.claude/agents/` on the next session and lands in the repo working tree; it only reaches teammates if you commit + merge it (that stays PR-gated). `--draft` keeps the old behavior: stop at a staged draft, install nothing.
+Dispatch the `kit:meta-agent` to generate a new subagent definition (or a mega-goal sub-goal file) from a description, then INSTALL it by default so it is runnable at runtime. Installing is local: the agent goes live in your `~/.claude/agents/` on the next session and lands in the repo working tree; it only reaches teammates if you commit + merge it (that stays PR-gated). `--draft` keeps the old behavior: stop at a staged draft, install nothing.
 
 A sub-goal file (Mode B) is NOT installable (it is project content, not an agent); for Mode B this command always behaves as `--draft` and just writes the file to the goals staging path.
 
@@ -13,13 +13,13 @@ A sub-goal file (Mode B) is NOT installable (it is project content, not an agent
 - `/kit:draft-agent agent: <one-line role>` , generate + INSTALL a subagent (default).
 - `/kit:draft-agent --draft agent: <one-line role>` , generate a staged draft only, no install.
 - `/kit:draft-agent subgoal: <one-line unit of work>` , draft a mega-goal sub-goal file (never installed).
-- `/kit:draft-agent <description>` , no mode prefix: the meta-agent infers the mode and says which it picked.
+- `/kit:draft-agent <description>` , no mode prefix: the kit:meta-agent infers the mode and says which it picked.
 
 ## Steps
 
 1. Parse `--draft` (if present), the mode (or let the agent infer it), and the description from `$ARGUMENTS`.
 
-2. Dispatch ONE `meta-agent` subagent. Give it the mode, the description, and a staging write-path (default `drafts/` at the repo root; create it if missing). It writes the artifact there with the DRAFT marker on line 1 and returns a bounded summary (mode, path, name/tools/model or the sub-goal `Done =`).
+2. Dispatch ONE `kit:meta-agent` subagent. Give it the mode, the description, and a staging write-path (default `drafts/` at the repo root; create it if missing). It writes the artifact there with the DRAFT marker on line 1 and returns a bounded summary (mode, path, name/tools/model or the sub-goal `Done =`).
 
 3. **If `--draft`, or the mode is `subgoal`:** show the summary, open the staged file for review, and STOP. Nothing is installed.
 
@@ -30,7 +30,7 @@ A sub-goal file (Mode B) is NOT installable (it is project content, not an agent
    4. Run `bash tests/test-meta.sh`. It MUST pass (it lints the new agent's frontmatter + the cross-refs). If it fails, fix the roster rows until green; do not leave a half-installed agent.
    5. Activate it for runtime: `cp agents/<name>.md ~/.claude/agents/<name>.md` (the dir Claude Code scans at session start). It is dispatchable on your **next session / reload**, not mid-conversation (CC discovers agents at startup).
    6. **Print, loudly:** the agent `name`, its **granted tools** and `model`, "live next session", and "undo: `rm ~/.claude/agents/<name>.md` (+ revert the repo rows)". The granted tools are the one thing to eyeball, since default-install skips the read-before-live gate.
-   7. **Effectiveness-validate the new/changed agent (diff-keyed).** Dispatch the `agent-effectiveness` validator on the agent def you just wrote (`agents/<name>.md`) -- and ONLY it, this is the diff-keyed trigger: the agent-author phase is the one point a new/changed agent def enters the repo, so validating here keys on the change, not every agent every run. It judges four lenses (tools minimal-yet-sufficient, description fires right, instructions unambiguous, tier fits) and returns `VERDICT: PASS | FLAGGED | UNVALIDATED`. **Advisory + ship-visible, never a mid-flight block:** surface the verdict; a `FLAGGED` or `UNVALIDATED` result is a signal to revise the draft, not an auto-uninstall. This mirrors how `/kit:docs` dispatches `doc-verifier` at its Step 4.5.
+   7. **Effectiveness-validate the new/changed agent (diff-keyed).** Dispatch the `kit:agent-effectiveness` validator on the agent def you just wrote (`agents/<name>.md`) -- and ONLY it, this is the diff-keyed trigger: the agent-author phase is the one point a new/changed agent def enters the repo, so validating here keys on the change, not every agent every run. It judges four lenses (tools minimal-yet-sufficient, description fires right, instructions unambiguous, tier fits) and returns `VERDICT: PASS | FLAGGED | UNVALIDATED`. **Advisory + ship-visible, never a mid-flight block:** surface the verdict; a `FLAGGED` or `UNVALIDATED` result is a signal to revise the draft, not an auto-uninstall. This mirrors how `/kit:docs` dispatches `kit:doc-verifier` at its Step 4.5.
 
 5. **Team propagation is still gated:** the repo changes from step 4 are uncommitted working-tree edits. They only reach teammates when you commit + open a PR, which is reviewed normally. Local immediacy, git-gated sharing.
 

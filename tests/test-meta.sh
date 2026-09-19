@@ -3133,6 +3133,56 @@ for CMD in start assign execute; do
     "$(grep -qF "[kit:$CMD]" "$KIT_DIR/commands/$CMD.md" && echo 0 || echo 1)"
 done
 
+# ============================================================
+echo ""
+echo "=== Plugin-qualified agent dispatch (ID-905) ==="
+# ============================================================
+# The plugin registers every agents/*.md under `kit:<name>` only; a bare
+# `subagent_type`/dispatch name falls through to a stale ~/.claude/agents copy
+# (or fails outright, anthropics/claude-code#33689). Every dispatchable
+# reference in commands/, skills/, agents/, and MANUAL.md must therefore be
+# `kit:`-qualified. Legitimately bare contexts are whitelisted in the scan:
+# file paths (`agents/<name>`, `<name>.md`), `name:`/`generated-by:` frontmatter,
+# and the `advisor` gate-ledger PHASE (record/outcome lines, `advisor`
+# row|entry|bracket|phase|emit|run prose, the kit.toml modules tuple, and the
+# non-agent English "product advisor").
+BARE_AGENT_HITS=$(awk -v NAMES="$(ls "$KIT_DIR/agents/"*.md | xargs -n1 basename | sed 's/\.md$//' | tr '\n' ' ')" '
+BEGIN { n = split(NAMES, A, " ") }
+FILENAME ~ /(^|\/)agents\// && /^name:/ { next }
+/generated-by:/ { next }
+{
+  for (i = 1; i <= n; i++) {
+    name = A[i]; L = length(name); c = 1
+    while ((off = index(substr($0, c), name)) > 0) {
+      s = c + off - 1; e = s + L - 1
+      c = e + 1
+      bc = (s > 1) ? substr($0, s - 1, 1) : " "
+      ac = (e < length($0)) ? substr($0, e + 1, 1) : " "
+      if (bc ~ /[A-Za-z0-9_-]/ || ac ~ /[A-Za-z0-9_-]/) continue
+      if (substr($0, s - 4, 4) == "kit:") continue
+      if (substr($0, s - 7, 7) == "agents/") continue
+      if (substr($0, e + 1, 3) == ".md") continue
+      if (name == "advisor") {
+        if ($0 ~ /gate-ledger|record |outcome /) continue
+        if (substr($0, e + 1) ~ /^`?[[:space:]]+(rows?|entry|entries|brackets?|emit|grammar|phase|start|end|ran|run)([^[:alnum:]_-]|$)/) continue
+        if (substr($0, e + 1) ~ /^[[:space:]]+P[56]=/) continue
+        if (substr($0, s - 8, 8) == "product ") continue
+        if ($0 ~ /modules \(/) continue
+      }
+      print FILENAME ":" FNR ": bare " name
+    }
+  }
+}' "$KIT_DIR"/commands/*.md "$KIT_DIR"/skills/*/*.md "$KIT_DIR"/agents/*.md "$KIT_DIR"/MANUAL.md)
+TOTAL=$((TOTAL + 1))
+if [ -z "$BARE_AGENT_HITS" ]; then
+  echo -e "  ${GREEN}PASS${NC} all agent references outside whitelist contexts are kit:-qualified (ID-905)"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}FAIL${NC} bare agent-name references found (dispatch resolves to stale user copies):"
+  echo "$BARE_AGENT_HITS" | sed 's/^/    /'
+  FAIL=$((FAIL + 1))
+fi
+
 echo ""
 echo "=== Results ==="
 # ============================================================
