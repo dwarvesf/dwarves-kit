@@ -114,9 +114,14 @@ case "$sub" in
             [ -n "$val" ] || val="{}"
             # A %REMERGE_TIP% marker resolves against the real branch tip, because a
             # re-merge test cannot know the recovered commit's SHA before wrap creates it.
+            # %SQUASH_TIP% resolves the <branch>-squash tip the same way, for the
+            # squash-fallback cases whose replacement-PR head exists only once wrap
+            # commit-trees it mid-run.
             if [ -n "${GH_STUB_LAND_REPO:-}" ]; then
               real_oid="$(git -C "$GH_STUB_LAND_REPO" rev-parse "${GH_STUB_LAND_BRANCH:-feat/union}" 2>/dev/null)"
               val="${val//%REMERGE_TIP%/$real_oid}"
+              sq_oid="$(git -C "$GH_STUB_LAND_REPO" rev-parse "${GH_STUB_SQUASH_BRANCH:-feat/union-squash}" 2>/dev/null)"
+              val="${val//%SQUASH_TIP%/$sq_oid}"
             fi
             printf '%s\n' "$val" ;;
         esac
@@ -1346,6 +1351,8 @@ out="$(GH_STUB_OPEN_PRS="$(open_one 11)" GH_STUB_PR_11="$(conflict_json 11 "$RM_
   "$WRAP" merge "$RM_DRY" 2>&1)"
 chk_has "re-merge dry run names the branch it would re-merge" "$out" \
   "note: #11 conflicts; --apply would try one re-merge of main into feat/union"
+chk_has "re-merge dry run also names the squash fallback" "$out" \
+  "--apply falls back to a squash-equivalent feat/union-squash PR"
 chk "re-merge dry run left the branch tip alone" \
   "$([ "$(git -C "$RM_DRY" rev-parse feat/union)" = "$RM_DRY_TIP" ]; echo $?)"
 chk "re-merge dry run called no pr merge" "$(grep -q '^pr merge' "$GH_STUB_CALLS" && echo 1 || echo 0)"
@@ -1478,6 +1485,163 @@ board_subjects="$(git -C "$RB" log --format=%s -3)"
 chk "the dedupe landed as its own commit, the merge commit stays untouched" \
   "$(printf '%s\n' "$board_subjects" | grep -qx 'fix(board): dedupe union-merged rows'; echo $?)"
 chk "the re-merge still pushed and merged" "$(grep -q '^pr merge' "$GH_STUB_CALLS" && echo 0 || echo 1)"
+
+# ===========================================================================
+echo "=== merge: a head already carrying the base falls back to a squash-equivalent PR ==="
+# ===========================================================================
+# The conflict GitHub still reports after the pushed head already contains
+# origin/<default>: git resolved the union-marked files locally and the push landed, so
+# the re-merge has nothing left to merge and only GitHub's attribute-blind merge keeps
+# saying CONFLICTING. The recovery is the squash commit GitHub would have computed: one
+# commit of the merged tree onto origin/<default>, pushed to a <branch>-squash branch and
+# merged through a replacement PR carrying the original title and body. Real git
+# throughout; gh stubbed, with %SQUASH_TIP% resolving the commit wrap makes mid-run.
+build_carried() { # build_carried <name> -- feat/union already holds main, yet conflicts
+  local name="$1" work="$TMPD/cb-work-$1" clone="$TMPD/cb-clone-$1"
+  mkdir -p "$work"; git -C "$work" init -q; gitc "$work"
+  git -C "$work" symbolic-ref HEAD refs/heads/main
+  mkdir -p "$work/_meta"
+  printf '_meta/LAB_LOG.md merge=union\n' > "$work/.gitattributes"
+  printf 'base line\n' > "$work/_meta/LAB_LOG.md"
+  git -C "$work" add -A; git -C "$work" commit -qm base
+  git -C "$work" checkout -q -b feat/union
+  printf 'branch line\nbase line\n' > "$work/_meta/LAB_LOG.md"
+  git -C "$work" commit -qam "branch entry"
+  git -C "$work" checkout -q main
+  printf 'main line\nbase line\n' > "$work/_meta/LAB_LOG.md"
+  git -C "$work" commit -qam "main entry"
+  # The hand-worked recovery the fallback replaces: the union merge lands locally and
+  # pushes, and only GitHub keeps reporting the PR conflicting.
+  git -C "$work" checkout -q feat/union
+  git -C "$work" merge -q --no-edit main
+  git -C "$work" checkout -q main
+  git clone -q --bare "$work" "$TMPD/cb-bare-$name"
+  git clone -q "$TMPD/cb-bare-$name" "$clone"; gitc "$clone"
+  git -C "$clone" remote set-head origin main >/dev/null 2>&1
+  git -C "$clone" checkout -q -b feat/union origin/feat/union
+}
+# The stub's `pr merge` pushes GH_STUB_LAND_BRANCH onto the default branch. For every
+# case below that is feat/union, not feat/union-squash: the squash commit's tree IS the
+# head's tree once the head contains the base, so pushing either ref hands tree-verify
+# the same tree GitHub's squash would have produced.
+
+# --- happy path: commit-tree, push, replacement PR, same merge+verify, superseded report
+build_carried ok
+CB_OK="$TMPD/cb-clone-ok"
+CB_OK_TIP="$(git -C "$CB_OK" rev-parse feat/union)"
+CB_OK_MAIN="$(git -C "$CB_OK" rev-parse origin/main)"
+: > "$GH_STUB_CALLS"
+out="$(GH_STUB_OPEN_PRS="$(open_one 50)" \
+  GH_STUB_PR_50="{\"number\":50,\"title\":\"log entry\",\"body\":\"the carried body\",\"headRefName\":\"feat/union\",\"headRefOid\":\"$CB_OK_TIP\",\"baseRefName\":\"main\",\"mergeable\":\"CONFLICTING\",\"mergeStateStatus\":\"DIRTY\",\"reviewDecision\":\"APPROVED\",\"statusCheckRollup\":[{\"conclusion\":\"SUCCESS\"}]}" \
+  GH_STUB_CREATE_NUM=51 \
+  GH_STUB_PR_51='{"number":51,"title":"log entry","headRefName":"feat/union-squash","headRefOid":"%SQUASH_TIP%","baseRefName":"main","mergeable":"MERGEABLE","mergeStateStatus":"CLEAN","reviewDecision":"APPROVED","statusCheckRollup":[{"conclusion":"SUCCESS"}]}' \
+  GH_STUB_LAND_REPO="$CB_OK" GH_STUB_LAND_REMOTE="$TMPD/cb-bare-ok" GH_STUB_LAND_BRANCH=feat/union \
+  "$WRAP" merge --apply "$CB_OK" 2>&1)"; rc=$?
+SQ_OK="$(git -C "$CB_OK" rev-parse feat/union-squash 2>/dev/null)"
+SQ_CALLS="$(cat "$GH_STUB_CALLS")"
+chk "squash fallback exits 0" "$rc"
+chk_has "squash fallback names why the re-merge could not run" "$out" \
+  "already contains origin/main, so a re-merge cannot clear the conflict"
+chk_has "squash fallback reports the pushed scratch branch" "$out" \
+  "committed the squash-equivalent tree on feat/union-squash, pushed"
+chk_has "squash fallback reports the replacement PR" "$out" \
+  "opened replacement PR #51 on feat/union-squash (supersedes #50)"
+chk_has "squash fallback gates the replacement" "$out" "eligible #51 after the squash fallback"
+chk_has "squash fallback merges the replacement, tree verified" "$out" \
+  "merged #51 (1a2b3c4d5e6f): tree verified"
+chk_has "squash fallback names the superseded PR" "$out" \
+  "superseded #50: its tree landed via #51 on feat/union-squash"
+chk_has "squash fallback created the PR on the -squash branch" "$SQ_CALLS" \
+  "--head feat/union-squash"
+chk_has "squash fallback carried the original title" "$SQ_CALLS" "--title log entry"
+chk_has "squash fallback carried the original body" "$SQ_CALLS" "--body the carried body"
+chk "squash fallback merged #51, never #50" \
+  "$([ "$(grep -c '^pr merge 51 ' "$GH_STUB_CALLS")" -eq 1 ] && ! grep -q '^pr merge 50 ' "$GH_STUB_CALLS"; echo $?)"
+chk_has "squash fallback pinned the squash commit it built" "$SQ_CALLS" \
+  "--squash --match-head-commit ${SQ_OK}"
+chk "the squash commit's tree is the stuck head's tree" \
+  "$([ "$(git -C "$CB_OK" rev-parse 'feat/union-squash^{tree}')" = "$(git -C "$CB_OK" rev-parse 'feat/union^{tree}')" ]; echo $?)"
+chk "the squash commit's parent is the origin/main tip it fetched" \
+  "$([ "$(git -C "$CB_OK" rev-parse 'feat/union-squash^')" = "$CB_OK_MAIN" ]; echo $?)"
+chk "the -squash branch reached the remote" \
+  "$([ "$(git -C "$TMPD/cb-bare-ok" rev-parse feat/union-squash)" = "$SQ_OK" ]; echo $?)"
+chk "the stuck branch was left alone" \
+  "$([ "$(git -C "$CB_OK" rev-parse feat/union)" = "$CB_OK_TIP" ]; echo $?)"
+chk "the checkout stayed clean" \
+  "$([ -z "$(git -C "$CB_OK" status --porcelain)" ]; echo $?)"
+
+# --- a stuck PR that is also red elsewhere refuses before any git write
+build_carried red
+CB_RED="$TMPD/cb-clone-red"; CB_RED_TIP="$(git -C "$CB_RED" rev-parse feat/union)"
+: > "$GH_STUB_CALLS"
+out="$(GH_STUB_OPEN_PRS="$(open_one 52)" \
+  GH_STUB_PR_52="{\"number\":52,\"title\":\"red entry\",\"headRefName\":\"feat/union\",\"headRefOid\":\"$CB_RED_TIP\",\"baseRefName\":\"main\",\"mergeable\":\"CONFLICTING\",\"mergeStateStatus\":\"DIRTY\",\"reviewDecision\":\"CHANGES_REQUESTED\",\"statusCheckRollup\":[{\"conclusion\":\"SUCCESS\"}]}" \
+  "$WRAP" merge --apply "$CB_RED" 2>&1)"; rc=$?
+chk "a red conflict exits 0 without merging" "$rc"
+chk_has "a red conflict names why the fallback refused" "$out" \
+  "#52 is not one squash away from green: changes requested"
+chk "a red conflict wrote no local -squash ref" \
+  "$(git -C "$CB_RED" show-ref --verify --quiet refs/heads/feat/union-squash && echo 1 || echo 0)"
+chk "a red conflict pushed no -squash branch" \
+  "$(git -C "$TMPD/cb-bare-red" rev-parse --verify feat/union-squash >/dev/null 2>&1 && echo 1 || echo 0)"
+chk "a red conflict called no pr create" "$(grep -q '^pr create' "$GH_STUB_CALLS" && echo 1 || echo 0)"
+chk "a red conflict called no pr merge" "$(grep -q '^pr merge' "$GH_STUB_CALLS" && echo 1 || echo 0)"
+
+# --- a head that does NOT carry the base is not the carried-base case, and is left alone
+# The clone deletes its local feat/union so the re-merge cannot run at all; the fallback
+# still must refuse, because the head lacks origin/main.
+build_remerge behind
+CB_BEH="$TMPD/rm-clone-behind"
+git -C "$CB_BEH" checkout -q main
+git -C "$CB_BEH" branch -qD feat/union
+CB_BEH_TIP="$(git -C "$TMPD/rm-bare-behind" rev-parse feat/union)"
+: > "$GH_STUB_CALLS"
+out="$(GH_STUB_OPEN_PRS="$(open_one 55)" GH_STUB_PR_55="$(conflict_json 55 "$CB_BEH_TIP")" \
+  "$WRAP" merge --apply "$CB_BEH" 2>&1)"; rc=$?
+chk "a not-carried conflict exits 0 without merging" "$rc"
+chk_has "a not-carried conflict names the missing ancestor" "$out" \
+  "does not contain origin/main; the conflict is not the carried-base case"
+chk "a not-carried conflict called no pr create" \
+  "$(grep -q '^pr create' "$GH_STUB_CALLS" && echo 1 || echo 0)"
+chk "a not-carried conflict pushed no -squash branch" \
+  "$(git -C "$TMPD/rm-bare-behind" rev-parse --verify feat/union-squash >/dev/null 2>&1 && echo 1 || echo 0)"
+
+# --- the replacement PR's own gate refusing stops the merge, leaving both PRs for a human
+build_carried gated
+CB_G="$TMPD/cb-clone-gated"; CB_G_TIP="$(git -C "$CB_G" rev-parse feat/union)"
+: > "$GH_STUB_CALLS"
+out="$(GH_STUB_OPEN_PRS="$(open_one 56)" GH_STUB_PR_56="$(conflict_json 56 "$CB_G_TIP")" \
+  GH_STUB_CREATE_NUM=57 \
+  GH_STUB_PR_57='{"number":57,"title":"log entry","headRefName":"feat/union-squash","headRefOid":"%SQUASH_TIP%","baseRefName":"main","mergeable":"MERGEABLE","mergeStateStatus":"BLOCKED","reviewDecision":"","statusCheckRollup":[{"conclusion":"SUCCESS"}]}' \
+  GH_STUB_LAND_REPO="$CB_G" GH_STUB_LAND_REMOTE="$TMPD/cb-bare-gated" GH_STUB_LAND_BRANCH=feat/union \
+  "$WRAP" merge --apply "$CB_G" 2>&1)"; rc=$?
+chk "a gated replacement exits 0 without merging" "$rc"
+chk_has "a gated replacement names the merge state" "$out" \
+  "SKIP #57 after the squash fallback: merge state BLOCKED"
+chk "a gated replacement called no pr merge" "$(grep -q '^pr merge' "$GH_STUB_CALLS" && echo 1 || echo 0)"
+chk "a gated replacement leaves the -squash branch on origin for a human" \
+  "$(git -C "$TMPD/cb-bare-gated" rev-parse --verify feat/union-squash >/dev/null 2>&1; echo $?)"
+
+# --- the same anomaly one merge later: the re-merge pushes, GitHub still says CONFLICTING
+build_remerge chain
+RM_CH="$TMPD/rm-clone-chain"; RM_CH_TIP="$(git -C "$RM_CH" rev-parse feat/union)"
+: > "$GH_STUB_CALLS"
+out="$(GH_STUB_OPEN_PRS="$(open_one 58)" GH_STUB_PR_58="$(conflict_json 58 "$RM_CH_TIP")" \
+  GH_STUB_PR_58_2='{"number":58,"title":"log entry","headRefName":"feat/union","headRefOid":"%REMERGE_TIP%","baseRefName":"main","mergeable":"CONFLICTING","mergeStateStatus":"DIRTY","reviewDecision":"APPROVED","statusCheckRollup":[{"conclusion":"SUCCESS"}]}' \
+  GH_STUB_CREATE_NUM=59 \
+  GH_STUB_PR_59='{"number":59,"title":"log entry","headRefName":"feat/union-squash","headRefOid":"%SQUASH_TIP%","baseRefName":"main","mergeable":"MERGEABLE","mergeStateStatus":"CLEAN","reviewDecision":"APPROVED","statusCheckRollup":[{"conclusion":"SUCCESS"}]}' \
+  GH_STUB_LAND_REPO="$RM_CH" GH_STUB_LAND_REMOTE="$TMPD/rm-bare-chain" GH_STUB_LAND_BRANCH=feat/union \
+  "$WRAP" merge --apply "$RM_CH" 2>&1)"; rc=$?
+chk "a still-conflicting re-merge falls back and exits 0" "$rc"
+chk_has "chain: the re-merge push is reported" "$out" "re-merged origin/main into feat/union"
+chk_has "chain: the re-gate's refusal is reported" "$out" \
+  "SKIP #58 after the re-merge: not mergeable (CONFLICTING)"
+chk_has "chain: the fallback opens the replacement" "$out" \
+  "opened replacement PR #59 on feat/union-squash (supersedes #58)"
+chk_has "chain: the replacement merges" "$out" "merged #59 (1a2b3c4d5e6f): tree verified"
+chk_has "chain: the superseded PR is named" "$out" "superseded #58"
+chk "chain: one pr merge call, on #59 never #58" \
+  "$([ "$(grep -c '^pr merge 59 ' "$GH_STUB_CALLS")" -eq 1 ] && ! grep -q '^pr merge 58 ' "$GH_STUB_CALLS"; echo $?)"
 
 # ===========================================================================
 echo "=== merge: gh saying MERGED is not proof the default branch holds the PR head ==="
