@@ -25,6 +25,7 @@
 # Usage:
 #   board.sh board  [--backlog-file <path>]                    single-repo kanban render
 #   board.sh next   [--backlog-file <path>]                    first queued ID
+#   board.sh get <ID> [--backlog-file <path>]                  one row's full status cell
 #   board.sh set <ID> <state> [note] [--backlog-file <path>]   flip a row's state
 #   board.sh dedupe <ID> [--backlog-file <path>]               collapse duplicate rows sharing
 #                                                               one id down to one
