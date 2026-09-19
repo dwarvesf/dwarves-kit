@@ -38,7 +38,7 @@ Direct side-by-side on a 1-row fixture, `dedupe ID-999` (absent):
 
 | Version | Output | Exit |
 |---|---|---|
-| master checkout (`/Users/tieubao/workspace/dwarvesf/dwarves-kit/lib/board/backlog.sh`) | `''` (nothing on stdout or stderr) | 1 |
+| master checkout (`~/workspace/dwarvesf/dwarves-kit/lib/board/backlog.sh`) | `''` (nothing on stdout or stderr) | 1 |
 | branch | `no Active-queue row for ID-999` on stderr | 1 |
 
 Both exit nonzero; master gives the caller nothing to diagnose, the branch names the id.

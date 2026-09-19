@@ -33,7 +33,7 @@
 #   board.sh run <ID> [--backlog-file <path>] [--dir <megadir>] [--exec] [-- <orchestrate-args>]
 #                                                               the single-row dispatch path:
 #                                                               scaffold a minimal mega-goal dir
-#                                                               (one `SG-01 , auto` ROADMAP line,
+#                                                               (one `SG-<NN> , auto` ROADMAP line,
 #                                                               POINTER_PROMPT seeded from the
 #                                                               row's Item + Notes, the goals/
 #                                                               plumbing) under the repo's

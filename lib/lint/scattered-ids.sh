@@ -37,6 +37,9 @@
 #   - docs/verification/gauntlet/** (proof records, never rewritten, per the gauntlet-proof-
 #     audit instance)
 #   - docs/FEATURES.md, docs/CHANGELOG.md (generated projection / release-note ledger)
+#   - lib/board/board-run.sh's two heredoc lines that emit the literal SG-01 sub-goal:
+#     it always scaffolds exactly one sub-goal, so SG-01 there is the real generated
+#     value, not a scattered reference.
 #
 # hooks/commit-format.sh's own guard regex (`SPEC-[0-9]|TASK-[0-9]|...`) is the mechanism
 # that BLOCKS ids from commit subjects, not a scattered id: it needs no special-case here
@@ -84,6 +87,7 @@ is_exempt() {  # is_exempt <path> <line-text> <id>
     */tests/*|*/fixtures/*)             return 0 ;;
     docs/verification/gauntlet/*)       return 0 ;;
     docs/FEATURES.md|docs/CHANGELOG.md) return 0 ;;
+    lib/lint/scattered-ids.sh)          return 0 ;;  # this guard's own doc of its exemptions quotes ids as data, not scattered prose
   esac
   own_number "$path" "$id" && return 0
   case "$text" in
@@ -95,6 +99,17 @@ is_exempt() {  # is_exempt <path> <line-text> <id>
   printf '%s\n' "$text" | grep -qE '^\|[[:space:]]*[A-Z]+-[0-9]+[[:space:]]*\|' && return 0
   printf '%s\n' "$text" | grep -qE '^[[:space:]]*#{0,3}[[:space:]]*\[?[0-9]{4}-[0-9]{2}-[0-9]{2}\]?' && return 0
   printf '%s\n' "$text" | grep -qE 'board[[:space:]]*=[[:space:]]*\[' && return 0
+  # board-run.sh scaffolds a minimal one-sub-goal megadir; SG-01 is always the
+  # first (and only) sub-goal it ever writes, so the heredoc lines that emit
+  # it are the real generated value, not a scattered reference.
+  case "$path" in
+    lib/board/board-run.sh)
+      case "$text" in
+        *'- [ ] SG-01 '*', auto'*) return 0 ;;
+        *'SG-01 box in ROADMAP.md flipped'*) return 0 ;;
+      esac
+      ;;
+  esac
   return 1
 }
 

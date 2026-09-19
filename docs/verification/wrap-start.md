@@ -48,9 +48,9 @@ Verdict: PASS
 `bin/wrap start` ran against the real dwarves-kit checkout while it was dirty (`_meta/backlog-staging.md` modified, foreign untracked dirs present) and nested inside another live worktree:
 
 ```
-Command: ./bin/wrap start /Users/tieubao/workspace/dwarvesf/dwarves-kit test/wrap-start-live
+Command: ./bin/wrap start ~/workspace/dwarvesf/dwarves-kit test/wrap-start-live
 Exit: 0
-STDOUT: /Users/tieubao/workspace/dwarvesf/dwarves-kit/.claude/worktrees/wrap-start-live
+STDOUT: ~/workspace/dwarvesf/dwarves-kit/.claude/worktrees/wrap-start-live
 (STDERR empty)
 worktree branch: test/wrap-start-live
 worktree HEAD:   7238c6c fix(board): dedupe reports an absent id instead of silent set -e death (#716)
@@ -64,7 +64,7 @@ Tidied with `git worktree remove` + `git branch -D test/wrap-start-live`; `git w
 The master checkout's `bin/wrap` has no `start` verb; the same command on the branch does.
 
 ```
-Command: /Users/tieubao/workspace/dwarvesf/dwarves-kit/bin/wrap start <repo> test/wrap-start-live   (master checkout's bin/wrap)
+Command: ~/workspace/dwarvesf/dwarves-kit/bin/wrap start <repo> test/wrap-start-live   (master checkout's bin/wrap)
 Exit: 64
 wrap: unknown verb 'start' (try: wrap --help)
 Verdict: RED as expected -- the verb does not exist on master
