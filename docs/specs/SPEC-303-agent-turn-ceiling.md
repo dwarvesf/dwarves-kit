@@ -159,7 +159,7 @@ bash tests/run-all.sh --changed
 
 ## After state
 
-- `orchestrate.sh run` dispatches every claude sub-goal with `--max-turns 200`
+- `orchestrate.sh run` dispatches every claude sub-goal with `--max-turns 300`
   (default) and a silent stream-json capture; a capped sub-goal resumes in
   ~100-turn segments through deterministic handoffs until it flips its box or
   exhausts `TURN_CAP_SEGMENTS`.

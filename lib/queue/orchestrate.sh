@@ -23,7 +23,7 @@
 #   `stalled` after that many seconds with no output (WATCHDOG_POLL_SECS poll interval); never
 #   kills. Default 0 = off (synchronous path unchanged). A dead/incomplete session never advances
 #   its box (`[guardrail]` halt); a sub-goal with no goals/ file warns before launch.
-#   Env (cost ceiling): TURN_CAP=N (default 200; [mega].turn_cap) runs every claude sub-goal
+#   Env (cost ceiling): TURN_CAP=N (default 300; [mega].turn_cap) runs every claude sub-goal
 #   session under `--max-turns N` + a silent stream-json capture; a session that hits the
 #   ceiling is resumed as a fresh-segment `claude -p` via a deterministic handoff-gen
 #   continuation, up to TURN_CAP_SEGMENTS (default 10) per sub-goal per run. TURN_CAP=0
@@ -171,7 +171,7 @@ WATCHDOG_POLL_SECS="${WATCHDOG_POLL_SECS:-30}"
 # it an agent that never converges would only burn slower. TURN_CAP=0 restores the pre-feature
 # dispatch byte-identically. Precedence: env > [mega].turn_cap / .turn_cap_segments (project
 # .kit.toml > kit-root kit.toml) > the defaults here.
-TURN_CAP="${TURN_CAP:-$(kit_config_get mega.turn_cap 200)}"
+TURN_CAP="${TURN_CAP:-$(kit_config_get mega.turn_cap 300)}"
 TURN_CAP_SEGMENTS="${TURN_CAP_SEGMENTS:-$(kit_config_get mega.turn_cap_segments 10)}"
 
 # Flip-lock stale-reclaim threshold. The box-flip mutual-exclusion

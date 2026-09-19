@@ -81,7 +81,7 @@ enabled_agent_clis = ""         # [impl] opt-in NON-claude dispatch. Space-separ
                                 #        committed .kit.toml rides inside an untrusted PR and
                                 #        could self-enable a vendor). See commands/mega.md
                                 #        "Harness routing (multi-vendor dispatch)".
-turn_cap           = 200        # [impl] TURN_CAP. Per-agent turn CEILING for `claude -p`
+turn_cap           = 300        # [impl] TURN_CAP. Per-agent turn CEILING for `claude -p`
                                 #        sub-goal dispatch: a session hitting it stops, a
                                 #        deterministic handoff is generated, and the SAME
                                 #        sub-goal resumes in a fresh segment. ~100 is the
