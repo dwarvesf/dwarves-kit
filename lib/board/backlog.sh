@@ -20,6 +20,14 @@
 #   backlog.sh next                -> the first queued row's ID (file order = priority), exit 1 if none
 #   backlog.sh get <ID-NNN>        -> the row's full status cell (e.g. "shipped [PR #700]"),
 #                                    one compact line like `next`; exit 1 when no row carries the id
+#   backlog.sh row <ID-NNN>        -> the row's CONTENT cells as
+#                                    "<item>\t<notes>\t<full-status-cell>": item is the cell
+#                                    after the id (board-init schema calls it Item; the 6-col
+#                                    shape calls it Title), notes is every middle cell joined
+#                                    with " | " (empty when the row carries none), status is
+#                                    the last cell verbatim. Same no-row (exit 1) and
+#                                    duplicate-id (exit 1, dedupe first) contract as `get`.
+#                                    `board run` reads a row through this, nothing else does.
 #   backlog.sh set <ID-NNN> <state> [note]  -> flip the row's leading status keyword.
 #                                    Refuses (exit 1, writes nothing) when <ID-NNN> matches more
 #                                    than one row -- a union-merge duplicate would otherwise have
@@ -104,6 +112,40 @@ get() {
   if [ "$count" -gt 1 ]; then
     local joined; joined="$(printf '%s\n' "$rows" | cut -f1 | paste -sd ',' - | sed 's/,/, /g')"
     echo "board get: ${id} matches ${count} rows (lines ${joined}); dedupe first" >&2
+    return 1
+  fi
+  printf '%s\n' "$rows" | cut -f2-
+}
+
+# row <id> -- the row's content cells as "item<TAB>notes<TAB>status-cell". Notes is the
+# join of every cell between item and status, so a 4-col row (Item|Notes|Status) and a
+# 6-col row (Title|Source|Target|Lane|Status) both read cleanly through one shape.
+row() {
+  local id="${1:-}"; [ -n "$id" ] || { echo "usage: backlog.sh row <ID-NNN>" >&2; return 64; }
+  # <line>\t<item>\t<notes>\t<status-cell> per matching row, file order -- the same awk
+  # row-match `get` uses, extended past the last cell.
+  local rows
+  rows="$(awk -v id="$id" -F'|' '
+    $0 ~ ("^\\| *" id " *\\|") {
+      item=$3;    gsub(/^[ \t]+|[ \t]+$/, "", item); gsub(/\*\*/, "", item)
+      notes=""
+      for (i = 4; i <= NF - 2; i++) {
+        c = $i; gsub(/^[ \t]+|[ \t]+$/, "", c)
+        notes = (notes == "") ? c : notes " | " c
+      }
+      s = $(NF-1); gsub(/^[ \t]+|[ \t]+$/, "", s)
+      printf "%d\t%s\t%s\t%s\n", NR, item, notes, s
+    }' "$BACKLOG_FILE")"
+  if [ -z "$rows" ]; then
+    echo "no Active-queue row for $id" >&2
+    return 1
+  fi
+  local count; count="$(printf '%s\n' "$rows" | grep -c .)"
+  # Same ambiguity rule as `get`/`set`: a union-merge duplicate makes the row's content
+  # unknowable.
+  if [ "$count" -gt 1 ]; then
+    local joined; joined="$(printf '%s\n' "$rows" | cut -f1 | paste -sd ',' - | sed 's/,/, /g')"
+    echo "board row: ${id} matches ${count} rows (lines ${joined}); dedupe first" >&2
     return 1
   fi
   printf '%s\n' "$rows" | cut -f2-
@@ -237,11 +279,12 @@ main() {
     board)      board ;;
     next)       next ;;
     get)        get "$@" ;;
+    row)        row "$@" ;;
     set)        set_state "$@" ;;
     dedupe)     dedupe "$@" ;;
     dedupe-all) dedupe_all "$@" ;;
     states)     echo "$STATES" | tr ' ' '\n' ;;
-    *) echo "usage: backlog.sh {board|next|get <ID-NNN>|set <ID-NNN> <state> [note]|dedupe <ID-NNN>|dedupe-all [file]|states}" >&2; return 64 ;;
+    *) echo "usage: backlog.sh {board|next|get <ID-NNN>|row <ID-NNN>|set <ID-NNN> <state> [note]|dedupe <ID-NNN>|dedupe-all [file]|states}" >&2; return 64 ;;
   esac
 }
 
