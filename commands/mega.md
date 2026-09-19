@@ -64,8 +64,11 @@ Draft the sub-goal list from the conversation: **3-8 items**, each with a name, 
 one-line `Done =`, its dependency on the prior sub-goal (single chain only -- no
 fan-in/fan-out), a proposed **`Merge policy: auto | gate`** (default `gate` when
 unsure -- fail safe; `auto` only for a machine-verifiable `Done =` with no
-human-judgment step), and a proof expectation scaled to the sub-goal's complexity (a
-run-table for CLI/data work, a screenshot/GIF for visual work). Show this as plain
+human-judgment step), and a proof expectation scaled to the sub-goal's complexity, stated
+in the gate's literal markers (`Command:`/`Exit:`/`Verdict:` lines under a `## Recorded
+run` section, plus `## Rollback` for stateful work -- the `docs/patterns/worker-brief.md`
+shape; the goal file lands in the worker's prompt verbatim, so a vague "run-table"
+expectation produces a results table the ship-gate greps past). Show this as plain
 text; nothing is written to disk until approved -- the wrong decomposition is the
 most expensive failure mode, catch it here.
 

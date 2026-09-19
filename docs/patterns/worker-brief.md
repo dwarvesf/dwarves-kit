@@ -19,9 +19,12 @@ dispatcher runs through and writes into the prompt in its own words.
 - Run git as `git -C <worktree>`, never a bare `git` that assumes the caller's cwd.
 - Rename the branch to the repo's branch convention before the first commit.
 - Name the files the worker may modify, and the shared modules it may not touch.
-- For any behavioral change: require `docs/verification/<slug>.md` with a run table, a
-  negative control, and a `## Not proven` section. Add a rollback note when the change is
-  stateful.
+- For any behavioral or stateful change: require `docs/verification/<slug>.md` carrying
+  the LITERAL lines the ship-gate greps (`lib/gate/proof-ledger.sh check`), not a prose
+  results table it greps past: a `## Recorded run` section with `Command: <the real
+  command>`, `Exit: <n>`, and `Verdict:` lines per verification command; a `NEGATIVE
+  CONTROL` entry for a behavioral change; a `## Rollback` section (or `[UNAVAILABLE:
+  <reason>]`) for a stateful one; and `## Not proven` throughout.
 - Require an activity-log line (the repo's LAB_LOG or equivalent).
 - Commit, but never push.
 - Report in N lines or fewer.
@@ -44,10 +47,15 @@ dispatcher runs through and writes into the prompt in its own words.
   to a file set by exclusion ("don't touch the shared stuff") still edited a doc it thought
   was in scope and left two stale lines behind, because "the shared stuff" was never named.
   This is the second real failure from the 2026-09-10 session.
-- **`docs/verification/<slug>.md` with a run table, negative control, `## Not proven`**:
-  without this the worker's own claim of "done" is the only evidence, and a claim is not
-  proof. The rollback note is the stateful case's extra: a stateful change without a named
-  undo path is not reversible by anyone reading the record later.
+- **Literal `Command:` / `Exit:` / `Verdict:` lines + `## Rollback`, not a results
+  table**: without this the worker's own claim of "done" is the only evidence, and a claim
+  is not proof. The literals are named because the gate is a grep, not a reader: a
+  markdown results table (`| Command | Exit |`) matches nothing it looks for, so a proof
+  that reads correctly to a human still fails the push (five workers in one batch shipped
+  exactly that; the lead hand-appended `## Recorded run` + `## Rollback` to each). The
+  `## Rollback` section is the stateful case's extra: a stateful change without a named
+  undo path is not reversible by anyone reading the record later. `## Not proven` is the
+  convention's honesty clause, not a gate marker.
 - **Activity-log line**: the log is the index across every worker's output; a change with no
   log line is invisible to anyone scanning what happened this session.
 - **Commit but never push**: a worker's commit is reviewable before it becomes a push the
