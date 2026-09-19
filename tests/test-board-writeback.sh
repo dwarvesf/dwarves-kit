@@ -17,6 +17,10 @@
 #   AC7  a card a human moved to `blocked` produces ZERO changes and one named skip (blocked has no
 #        git counterpart and is never written back as `parked`); a card moved to a mapped column
 #        still produces exactly one
+#   AC8  a card whose `done` state the MIRROR itself produced (its completion result carries the
+#        `board-mirror:` marker) produces ZERO changes and one named skip -- it is the
+#        disappeared-row path reporting back, not a human finishing work; a card a human marked
+#        done still produces exactly one
 #
 #   NC1  hash mismatch (git row changed since mirror) -> edit SKIPPED + reported; file untouched
 #   NC2  illegal target status (not a backlog.sh state) -> rejected with reason; file untouched
@@ -102,10 +106,20 @@ if [ "$1" = "kanban" ] && [ "$3" = "fixTrading" ]; then
 fi
 if [ "$1" = "kanban" ] && [ "$4" = "show" ]; then
   # `show <id> --json`: the created-event column comes from STUB_SHOW_MAP ("<id><TAB><status>"
-  # lines). An id absent from the map (or no map at all) answers `{}` -- the real-world "hermes
-  # cannot tell us where this card was created" case the writeback must degrade gracefully on.
+  # lines); the completion result text comes from STUB_RESULT_MAP ("<id><TAB><result>" lines) and
+  # lands where the real CLI puts it -- `task.result` verbatim, plus the first line on the
+  # `completed` event's payload.summary. An id absent from BOTH maps (or no maps at all) answers
+  # `{}` -- the real-world "hermes cannot tell us where this card was created" case the writeback
+  # must degrade gracefully on.
   cs="$(awk -v i="$5" '$1==i{print $2; exit}' "${STUB_SHOW_MAP:-/dev/null}" 2>/dev/null)"
-  if [ -n "$cs" ]; then printf '{"events":[{"kind":"created","payload":{"status":"%s"}}]}\n' "$cs"; else echo '{}'; fi
+  rs="$(awk -F'\t' -v i="$5" '$1==i{print $2; exit}' "${STUB_RESULT_MAP:-/dev/null}" 2>/dev/null)"
+  if [ -z "$cs" ] && [ -z "$rs" ]; then echo '{}'; exit 0; fi
+  jq -nc --arg cs "$cs" --arg rs "$rs" '{
+    task: {result: (if $rs == "" then null else $rs end)},
+    events: (
+      (if $cs == "" then [] else [{kind:"created", payload:{status:$cs}}] end)
+      + (if $rs == "" then [] else [{kind:"completed", payload:{result_len:($rs|length), summary:$rs}}] end)
+    )}'
   exit 0
 fi
 if [ "$1" = "kanban" ] && [ "$4" = "list" ]; then
@@ -249,6 +263,37 @@ assert "AC7: the card moved to a mapped column (ID-003) still writes back parked
   "$(printf '%s\n' "$DIFF_BLK" | jq -e 'select(.origin=="fixR:ID-003") | .current_status=="parked" and .target_status=="shipped"' >/dev/null 2>&1 && echo 0 || echo 1)"
 assert "AC7: the summary counts the blocked row as skipped, not as a change" \
   "$(grep -q 'writeback: 1 change(s), 1 skipped' "$TMPDIR_T/diff-blk.err" && echo 0 || echo 1)"
+
+echo ""
+echo "=== AC8: a card the MIRROR itself completed writes back NOTHING; a human-completed card still does ==="
+# The third phantom class from the live dry-run: the mirror's own COMPLETE op got there first
+# (`kanban complete --result "board-mirror: origin removed from <repo> board"` -- a stale feed
+# made the git row look gone), and a later re-create upsert left the snapshot pointing at the
+# done card with an intended column. live=done vs snapshot=<intent> LOOKS like a human finishing
+# the work, but the card's own result names the mirror as the actor. ID-001 (snap 'triage') and
+# ID-003 (snap 'blocked') carry the mirror's marker -> SKIPPED. ID-002 (snap 'ready') carries a
+# human result -> its claimed row really does ship.
+LIST_MT="$TMPDIR_T/list-mirror-terminal.json"
+jq -nc --arg i1 "$ID001" --arg i2 "$ID002" --arg i3 "$ID003" \
+  '[{id:$i1,status:"done",title:"Do the thing"},{id:$i2,status:"done",title:"Claimed thing"},{id:$i3,status:"done",title:"Parked thing"}]' > "$LIST_MT"
+SHOWMAP_MT="$TMPDIR_T/showmap-mt.tsv"
+printf '%s\ttriage\n%s\tready\n%s\tblocked\n' "$ID001" "$ID002" "$ID003" > "$SHOWMAP_MT"
+RESULTMAP_MT="$TMPDIR_T/resultmap-mt.tsv"
+printf '%s\tboard-mirror: origin removed from fixR board\n%s\tfinished by the human reviewer\n%s\tboard-mirror: origin removed from fixR board\n' \
+  "$ID001" "$ID002" "$ID003" > "$RESULTMAP_MT"
+: > "$CALLS"
+DIFF_MT="$(STUB_CALL_LOG="$CALLS" STUB_LIST_JSON="$LIST_MT" STUB_SHOW_MAP="$SHOWMAP_MT" STUB_RESULT_MAP="$RESULTMAP_MT" HERMES_BIN="$STUB" \
+  bash "$BOARD_WRITEBACK" diff --registry "$REGISTRY" --snapshot "$SNAP" 2>"$TMPDIR_T/diff-mt.err")"
+assert "AC8: exactly ONE changeset entry (the human-completed card only)" \
+  "$([ "$(printf '%s\n' "$DIFF_MT" | grep -c .)" -eq 1 ] && echo 0 || echo 1)"
+assert "AC8: the mirror-completed cards (ID-001, ID-003) produce ZERO changeset entries" \
+  "$({ trap '' PIPE; printf '%s\n' "$DIFF_MT" 2>/dev/null || :; } | grep -qE 'ID-001|ID-003' && echo 1 || echo 0)"
+assert "AC8: the mirror-terminal skip is reported by name for BOTH mirror-completed cards" \
+  "$(grep -q "fixR:ID-001.*'done' state is mirror-originated" "$TMPDIR_T/diff-mt.err" && grep -q "fixR:ID-003.*'done' state is mirror-originated" "$TMPDIR_T/diff-mt.err" && echo 0 || echo 1)"
+assert "AC8: the human-completed card (ID-002) still writes back claimed -> shipped" \
+  "$(printf '%s\n' "$DIFF_MT" | jq -e 'select(.origin=="fixR:ID-002") | .current_status=="claimed" and .target_status=="shipped"' >/dev/null 2>&1 && echo 0 || echo 1)"
+assert "AC8: the summary counts the two mirror-completed rows as skipped, not as changes" \
+  "$(grep -q 'writeback: 1 change(s), 2 skipped' "$TMPDIR_T/diff-mt.err" && echo 0 || echo 1)"
 
 echo ""
 echo "=== AC3/AC4/RT: apply builds an isolated worktree; caller checkout untouched; actor=hermes ==="
