@@ -43,7 +43,7 @@
 #                                                               session itself; --exec composes
 #                                                               the launch. Forwards to
 #                                                               lib/board/board-run.sh verbatim.
-#   board.sh priority [counts|brief|overview|full] [--backlog-file <path>]
+#   board.sh priority [counts|brief|overview|full] [all|work|learn] [--backlog-file <path>]
 #                                                               single-repo urgency x fit quadrant
 #   board.sh promote [<n>... | all | reject <n>...]             review + flush backlog-stage's
 #                                                               staged candidates onto the board
@@ -55,7 +55,7 @@
 #
 #   board.sh all board|next|states [--repo-root <path>] [--registry <path>]
 #                                                               cross-repo render, grouped by repo
-#   board.sh all priority [counts|brief|overview|full] [--repo-root <path>] [--registry <path>]
+#   board.sh all priority [counts|brief|overview|full] [all|work|learn] [--repo-root <path>] [--registry <path>]
 #                                                               each repo's quadrant, grouped by repo
 #   board.sh all priority matrix [--repo-root <path>] [--registry <path>]
 #                                                               cross-repo urgency x repo pivot table
@@ -353,10 +353,14 @@ _iso_to_utc_z() {
 # `_meta/board` `priority` branch. Byte-identical output is the load-bearing non-regression
 # contract (see this module's proof-of-done); do not "clean up" this awk without re-running that proof.
 # ---------------------------------------------------------------------------
-_priority_render() {  # <backlog-file> <mode>
-  local file="$1" mode="${2:-overview}"
+_priority_render() {  # <backlog-file> <mode> [class]
+  local file="$1" mode="${2:-overview}" class="${3:-all}"
   case "$mode" in counts|brief|overview|full) ;; *) mode="overview" ;; esac
-  awk -F'|' -v mode="$mode" '
+  # class: `all` (default) renders every queued row; `work` hides learn-side rows
+  # (Item cell tagged #eval/#triage/#absorb/#learning); `learn` shows only them.
+  # IN FLIGHT is never filtered -- it reports what is running, not what to pick.
+  case "$class" in all|work|learn) ;; *) class="all" ;; esac
+  awk -F'|' -v mode="$mode" -v cls="$class" '
     function trim(s){ gsub(/^[ \t]+|[ \t]+$/,"",s); return s }
     function shorten(t){ if(length(t)>52) return substr(t,1,49)"..."; return t }
     $0 ~ /^\| *[A-Z]+-[0-9]+ *\|/ {
@@ -365,6 +369,9 @@ _priority_render() {  # <backlog-file> <mode>
       if (lead=="executing"||lead=="claimed"||lead=="speccing"||lead=="validated"){
         inflight[++nf]=sprintf("  %-8s %s  [%s]", id, title, lead); next }
       if (lead!="queued") next
+      lcls=(trim($3) ~ /#(eval|triage|absorb|learning)([^a-z0-9-]|$)/)
+      if(cls=="work"&&lcls){ hidden++; next }
+      if(cls=="learn"&&!lcls){ hidden++; next }
       u=(line~/#u-hi/)?"hi":(line~/#u-mid/)?"mid":(line~/#u-lo/)?"lo":"?"
       f=(line~/#f-hi/)?"hi":(line~/#f-mid/)?"mid":(line~/#f-lo/)?"lo":"?"
       stripped=line; gsub(/#[uf]-(hi|mid|lo)/,"",stripped)
@@ -388,6 +395,7 @@ _priority_render() {  # <backlog-file> <mode>
         for(i=1;i<=lim;i++) print t4[i]
         if(cap>0&&n4>cap) printf "  +%d more  (board priority full)\n", n4-cap }
       if(unclass>0&&!C) printf "\n(%d queued row(s) missing #u/#f -- classify them)\n", unclass
+      if(hidden>0&&!C) printf "\n(%d %s row(s) hidden -- priority %s %s shows them)\n", hidden, (cls=="work"?"learn-class":"work-class"), mode, (cls=="work"?"learn":"all")
     }
   ' "$file"
 }
@@ -458,7 +466,9 @@ cmd_board_single() {
   [ -f "$OPT_BACKLOG_FILE" ] || { echo "board: no BACKLOG.md at $OPT_BACKLOG_FILE" >&2; return 1; }
 
   if [ "${args[0]}" = "priority" ]; then
-    _priority_render "$OPT_BACKLOG_FILE" "${args[1]:-overview}"
+    local pmode="${args[1]:-overview}" pclass="${args[2]:-all}"
+    case "$pmode" in all|work|learn) pclass="$pmode"; pmode="overview" ;; esac
+    _priority_render "$OPT_BACKLOG_FILE" "$pmode" "$pclass"
     return 0
   fi
   local rc
@@ -487,6 +497,8 @@ cmd_all() {
 
   local sub="${args[0]:-board}"
   local mode="${args[1]:-overview}"
+  local class="${args[2]:-all}"
+  case "$mode" in all|work|learn) class="$mode"; mode="overview" ;; esac
   local stale=()   # "<name>(<N> behind)" per lagging checkout, feeds _stale_trailer
 
   if [ "$sub" = "priority" ] && [ "$mode" = "matrix" ]; then
@@ -517,7 +529,7 @@ cmd_all() {
       fi
       local behind; behind="$(_behind_count "$path")"
       [ -n "$behind" ] && stale+=("${name}(${behind} behind)")
-      local out; out="$(_priority_render "$path" "$mode" 2>&1 || true)"
+      local out; out="$(_priority_render "$path" "$mode" "$class" 2>&1 || true)"
       printf '\n=== %s%s ===\n%s\n' "$name" "$(_stale_marker "$behind")" "$out"
     done < "$registry"
     _stale_trailer "${stale[@]:-}"

@@ -93,6 +93,7 @@ cat > "$FIXB/_meta/BACKLOG.md" <<'BOARD_B'
 | ID | Title | Source | Target | Lane | Status |
 |----|-------|--------|--------|------|--------|
 | DF-001 | Something #f-lo | test | TBD | tiny | queued |
+| DF-002 | Eval the thing #eval #u-mid #f-hi | test | TBD | tiny | queued |
 BOARD_B
 
 REGISTRY="$TMPDIR_T/boards.txt"
@@ -240,6 +241,20 @@ ALL_MATRIX="$(bash "$BOARD" all priority matrix --registry "$REGISTRY")"
 assert "all priority matrix renders the pivot header" "$({ trap '' PIPE; printf '%s\n' "$ALL_MATRIX" 2>/dev/null || :; } | grep -q 'Priority matrix' && echo 0 || echo 1)"
 ALL_STATES="$(bash "$BOARD" all states --registry "$REGISTRY")"
 assert "all states renders per repo" "$({ trap '' PIPE; printf '%s\n' "$ALL_STATES" 2>/dev/null || :; } | grep -q '=== fixA ===' && echo 0 || echo 1)"
+
+echo ""
+echo "=== AC6b: priority class filter (work|learn) hides/shows learn-side rows ==="
+ALL_WORK="$(bash "$BOARD" all priority overview work --registry "$REGISTRY")"
+assert "work class hides the #eval row (DF-002)" "$({ trap '' PIPE; printf '%s\n' "$ALL_WORK" 2>/dev/null || :; } | grep -q 'DF-002' && echo 1 || echo 0)"
+assert "work class keeps untagged queued rows (ID-001)" "$({ trap '' PIPE; printf '%s\n' "$ALL_WORK" 2>/dev/null || :; } | grep -q 'ID-001' && echo 0 || echo 1)"
+assert "work class prints the hidden-count trailer" "$({ trap '' PIPE; printf '%s\n' "$ALL_WORK" 2>/dev/null || :; } | grep -qF 'learn-class row(s) hidden' && echo 0 || echo 1)"
+ALL_LEARN="$(bash "$BOARD" all priority overview learn --registry "$REGISTRY")"
+assert "learn class shows the #eval row" "$({ trap '' PIPE; printf '%s\n' "$ALL_LEARN" 2>/dev/null || :; } | grep -q 'DF-002' && echo 0 || echo 1)"
+assert "learn class hides untagged rows" "$({ trap '' PIPE; printf '%s\n' "$ALL_LEARN" 2>/dev/null || :; } | grep -q 'ID-001' && echo 1 || echo 0)"
+SINGLE_WORK="$(bash "$BOARD" priority overview work --backlog-file "$FIXB/_meta/BACKLOG.md")"
+assert "single-repo work class hides DF-002" "$({ trap '' PIPE; printf '%s\n' "$SINGLE_WORK" 2>/dev/null || :; } | grep -q 'DF-002' && echo 1 || echo 0)"
+SINGLE_SHORT="$(bash "$BOARD" priority work --backlog-file "$FIXB/_meta/BACKLOG.md")"
+assert "class word in mode position still filters (priority work)" "$({ trap '' PIPE; printf '%s\n' "$SINGLE_SHORT" 2>/dev/null || :; } | grep -q 'DF-002' && echo 1 || echo 0)"
 
 echo ""
 echo "=== AC7: cross-repo staleness warning (ID-652) ==="
