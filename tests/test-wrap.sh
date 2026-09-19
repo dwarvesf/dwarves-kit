@@ -887,20 +887,33 @@ chk_has "pop conflict: the run's own stash is still listed" "$(git -C "$PC" stas
 chk "pop conflict: the sibling stash survived too" \
   "$([ "$(pd_stash_count "$PC")" = "2" ]; echo $?)"
 
-echo "--- knob on: a union-marked file blocked by the same pull resolves during the pop"
+echo "--- knob on: a dirty union file beside a dirty non-union file is carried, not stashed"
+# The 2026-09-19 incident shape: LAB_LOG.md (merge=union) and a plain dirty file were both
+# changed upstream, the union file went into the pull-past-dirty stash, and its pop left
+# the checkout still dirty with the stash kept. Union files take the carry path now, so
+# only the genuinely non-union blocker is ever stashed.
 build_pd_repo union; advance_pd_repo union also-lab
 PU="$TMPD/pdclone-union"
 printf '%s' "$A_LOCAL_FAR" > "$PU/A.md"
 printf '%s' "$LAB_LOCAL" > "$PU/_meta/LAB_LOG.md"
 out="$(KIT_CONFIG_OPERATOR="$PD_ON" "$WRAP" apply --apply "$PU" 2>&1)"; rc=$?
-chk "union pop: apply exits 0" "$rc"
-chk_has "union pop: both blocking files were stashed" "$out" "stashed 2 dirty tracked file(s)"
-chk_no "union pop: the union file never conflicted" "$out" "POP CONFLICT"
-chk "union pop: the incoming log line landed" \
+chk "union carry+stash: apply exits 0" "$rc"
+chk_no "union carry+stash: the pull did not fail" "$out" "FAILED pull --ff-only"
+chk_has "union carry+stash: the union file was carried, not stashed" "$out" \
+  "saved 1 union-marked file(s) aside"
+chk_has "union carry+stash: the union lines came back" "$out" \
+  "carried 1 local line(s) back into _meta/LAB_LOG.md"
+chk_has "union carry+stash: only the non-union blocker was stashed" "$out" \
+  "stashed 1 dirty tracked file(s)"
+chk_has "union carry+stash: the stash was restored and dropped" "$out" \
+  "restored the stashed file(s) and dropped"
+chk "union carry+stash: the incoming log line landed" \
   "$(grep -qF 'remote: the incoming line' "$PU/_meta/LAB_LOG.md"; echo $?)"
-chk "union pop: the local log line survived" \
+chk "union carry+stash: the local log line survived" \
   "$(grep -qF 'local: the other session line' "$PU/_meta/LAB_LOG.md"; echo $?)"
-chk "union pop: no stash is left behind" "$([ "$(pd_stash_count "$PU")" = "0" ]; echo $?)"
+chk "union carry+stash: the local line in A.md survived" \
+  "$(grep -qx 'a10 local' "$PU/A.md"; echo $?)"
+chk "union carry+stash: no stash is left behind" "$([ "$(pd_stash_count "$PU")" = "0" ]; echo $?)"
 
 echo "--- knob on: an untracked file the incoming commit adds still aborts the pull"
 build_pd_repo untracked

@@ -668,6 +668,7 @@ _pull_default() {
   local repo="$1" cur="$2"
   local verdict="pull --ff-only (checkout on ${cur})"
   local staged modified f nonunion="" saved_dir="" n=0 before carried
+  local union_tmp=""
 
   staged="$(git -C "$repo" diff --cached --name-only 2>/dev/null)"
   modified="$(git -C "$repo" diff --name-only 2>/dev/null)"
@@ -675,11 +676,15 @@ _pull_default() {
   if [ -n "$staged" ]; then
     echo "     NOTE: the index carries staged changes, so no log file is carried across (restoring an index is out of scope)"
   elif [ -n "$modified" ]; then
+    union_tmp="$(mktemp)"
     while IFS= read -r -d '' f; do
       # A path git reports as modified but that is not a regular file cannot be copied back,
       # so it counts as a judgment call and stops the whole carry.
-      if [ -f "$repo/$f" ] && _union_marked "$repo" "$f"; then continue; fi
-      nonunion="${nonunion}${nonunion:+, }${f}"
+      if [ -f "$repo/$f" ] && _union_marked "$repo" "$f"; then
+        printf '%s\0' "$f" >> "$union_tmp"
+      else
+        nonunion="${nonunion}${nonunion:+, }${f}"
+      fi
     done < <(git -C "$repo" diff --name-only -z 2>/dev/null)
     if [ -n "$nonunion" ] && ! _pull_past_dirty_on; then
       echo "     NOTE: uncommitted and not declared merge=union, so the pull aborts on: ${nonunion}"
@@ -687,21 +692,34 @@ _pull_default() {
       echo "     NOTE: uncommitted and not declared merge=union; wrap.pull_past_dirty is on, so the pull stashes whichever of these block it: ${nonunion}"
     elif [ -n "$nonunion" ]; then
       echo "     NOTE: uncommitted and not declared merge=union; --apply would stash whichever of these block the pull: ${nonunion}"
-    elif [ "$APPLY" != 1 ]; then
-      echo "     NOTE: every modified file is merge=union; --apply would carry its local lines across the pull"
-    else
-      saved_dir="$(mktemp -d)"
-      while IFS= read -r -d '' f; do
-        n=$(( n + 1 ))
-        cp "$repo/$f" "${saved_dir}/${n}"
-        printf '%s\0' "$f" >> "${saved_dir}/list"
-        git -C "$repo" checkout -- "$f"
-        # The restored file IS the merge base the carry-back needs, captured here because
-        # after the pull the pre-pull content is no longer anywhere in the worktree.
-        cp "$repo/$f" "${saved_dir}/${n}.base"
-      done < <(git -C "$repo" diff --name-only -z 2>/dev/null)
-      echo "     saved ${n} union-marked file(s) aside so the pull can fast-forward"
     fi
+    # The union carry is independent of the nonunion branch: union files were once
+    # lumped into the pull-past-dirty stash whenever a non-union file was also dirty,
+    # and a pop conflict there left them dirty through the pull and the stash kept.
+    # It still only runs when the pull can actually proceed: the knob is off and a
+    # non-union file is dirty, the pull aborts regardless and the churn buys nothing.
+    if [ -s "$union_tmp" ]; then
+      if [ "$APPLY" != 1 ]; then
+        if [ -z "$nonunion" ]; then
+          echo "     NOTE: every modified file is merge=union; --apply would carry its local lines across the pull"
+        else
+          echo "     NOTE: modified merge=union file(s) alongside; --apply would carry their local lines across the pull"
+        fi
+      elif [ -z "$nonunion" ] || _pull_past_dirty_on; then
+        saved_dir="$(mktemp -d)"
+        while IFS= read -r -d '' f; do
+          n=$(( n + 1 ))
+          cp "$repo/$f" "${saved_dir}/${n}"
+          printf '%s\0' "$f" >> "${saved_dir}/list"
+          git -C "$repo" checkout -- "$f"
+          # The restored file IS the merge base the carry-back needs, captured here because
+          # after the pull the pre-pull content is no longer anywhere in the worktree.
+          cp "$repo/$f" "${saved_dir}/${n}.base"
+        done < "$union_tmp"
+        echo "     saved ${n} union-marked file(s) aside so the pull can fast-forward"
+      fi
+    fi
+    rm -f "$union_tmp"
   fi
 
   # The knob path: the files that block the fast-forward go aside under a name this run can
