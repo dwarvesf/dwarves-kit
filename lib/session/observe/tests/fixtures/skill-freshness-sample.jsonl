@@ -1,0 +1,6 @@
+{"type":"assistant","timestamp":"2026-06-01T10:00:00Z","message":{"role":"assistant","content":[{"type":"tool_use","id":"tu_1","name":"Skill","input":{"skill":"stale-skill","args":""}}]}}
+{"type":"user","timestamp":"2026-06-01T10:00:01Z","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"tu_1","is_error":false,"content":"ok"}]}}
+{"type":"assistant","timestamp":"2026-09-10T10:00:00Z","message":{"role":"assistant","content":[{"type":"tool_use","id":"tu_2","name":"Skill","input":{"skill":"fresh-skill","args":""}}]}}
+{"type":"user","timestamp":"2026-09-10T10:00:01Z","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"tu_2","is_error":false,"content":"ok"}]}}
+{"type":"assistant","timestamp":"2026-09-18T10:00:00Z","message":{"role":"assistant","content":[{"type":"tool_use","id":"tu_3","name":"Skill","input":{"skill":"fresh-skill","args":""}}]}}
+{"type":"user","timestamp":"2026-09-18T10:00:01Z","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"tu_3","is_error":false,"content":"ok"}]}}

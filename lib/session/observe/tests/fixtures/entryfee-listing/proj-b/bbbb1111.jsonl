@@ -1,0 +1,2 @@
+{"type": "user", "isSidechain": false, "timestamp": "2026-09-08T09:00:00Z", "message": {"content": [{"type": "text", "text": "The following skills are available for use with the Skill tool:\n\n- echo: another one\n- foxtrot: last one here\n\nnot an entry, trailing prose\n</system-reminder>"}]}}
+{"type": "assistant", "isSidechain": false, "timestamp": "2026-09-08T09:00:01Z", "message": {"id": "msg_b", "model": "claude-sonnet-5", "usage": {"input_tokens": 5, "cache_creation_input_tokens": 5, "cache_read_input_tokens": 5, "output_tokens": 5}, "content": []}}

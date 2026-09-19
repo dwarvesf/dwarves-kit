@@ -448,6 +448,69 @@ echo "[87] --errors on report refuses too (the report view stays unchanged)"
 set +e; "$CC" report --errors Bash --file "$TFIX" >/dev/null 2>&1; rc=$?; set -e
 if [[ $rc -eq 2 ]]; then ok "report --errors exits 2"; else no "got rc=$rc"; fi
 
+FREXFIX="${DIR}/tests/fixtures/skill-freshness-sample.jsonl"  # fresh-skill fires 09-10 + 09-18, stale-skill fires 06-01 only
+FRNOW="2026-09-19T00:00:00Z"  # so 09-10/09-18 fall inside the 14d window and 06-01 falls outside it
+
+echo "[88] skills: 14d column counts only fires inside the window, last carries the most recent fire date"
+out="$(SESSION_OBSERVE_NOW="$FRNOW" "$CC" skills --file "$FREXFIX")"
+if grep -Eq 'fresh-skill[[:space:]]+2[[:space:]]+0[[:space:]]+0%[[:space:]]+2[[:space:]]+2026-09-18' <<<"$out"; then ok "fresh-skill count 2, 14d 2, last 2026-09-18"; else no "fresh-skill row wrong: $out"; fi
+
+echo "[89] skills negative control: a skill fired only outside the window still shows count 1 but 14d 0 (rotting, not hidden)"
+if grep -Eq 'stale-skill[[:space:]]+1[[:space:]]+0[[:space:]]+0%[[:space:]]+0[[:space:]]+2026-06-01' <<<"$out"; then ok "stale-skill count 1, 14d 0, last 2026-06-01"; else no "stale-skill row wrong: $out"; fi
+
+echo "[90] skills --json: count_14d and last ride alongside count/errors"
+jout="$(SESSION_OBSERVE_NOW="$FRNOW" "$CC" skills --file "$FREXFIX" --json)"
+if echo "$jout" | python3 -c '
+import json, sys
+d = json.load(sys.stdin)
+rows = {r["skill"]: r for r in d["skills"]}
+assert rows["fresh-skill"]["count_14d"] == 2 and rows["fresh-skill"]["last"] == "2026-09-18", rows
+assert rows["stale-skill"]["count_14d"] == 0 and rows["stale-skill"]["last"] == "2026-06-01", rows
+'; then ok "json count_14d + last correct"; else no "json skills wrong: $jout"; fi
+
+LEFIX="${DIR}/tests/fixtures/entryfee-listing"
+# proj-a (2026-09-15, newer): attachment-shaped record; 4 entries (alpha/bravo/charlie/delta),
+# bravo's description is 450 chars (over the 400 flag), charlie's is empty, delta continues
+# onto an indented line, and the block ends immediately at a non-entry line (no blank line).
+# proj-b (2026-09-08, older): user-message-shaped record; a blank line precedes the first
+# entry, 2 entries (echo/foxtrot), and the list ends at a blank-line-then-non-entry.
+
+echo "[91] entry-fee: skill listing measured-from-transcript table is its own section, labelled measured"
+out="$("$CC" entry-fee --root "$LEFIX")"
+if grep -q 'MEASURED-FROM-TRANSCRIPT' <<<"$out" && grep -q '2 sessions carry the real listing' <<<"$out"; then ok "measured-from-transcript section present"; else no "measured section missing: $out"; fi
+
+echo "[92] entry-fee: the disk-sized split is explicitly labelled an estimate (not confused with the measured listing)"
+if grep -q 'ESTIMATED from disk' <<<"$out"; then ok "disk-sized split labelled estimated"; else no "disk-sized split not labelled: $out"; fi
+
+echo "[93] entry-fee: listing median across the 2 sessions (entries 2, chars 158, tokens 39, over400 0, empty-desc 0)"
+if grep -Eq 'median[[:space:]]+2[[:space:]]+158[[:space:]]+39[[:space:]]+0[[:space:]]+0' <<<"$out"; then ok "median row correct"; else no "median row wrong: $out"; fi
+
+echo "[94] entry-fee: most-recent session's own figures (proj-a, entries 4, chars 614, tokens 153, over400 1, empty-desc 1)"
+if grep -Eq 'most-recent[[:space:]]+4[[:space:]]+614[[:space:]]+153[[:space:]]+1[[:space:]]+1' <<<"$out"; then ok "most-recent row correct"; else no "most-recent row wrong: $out"; fi
+
+echo "[95] entry-fee: top 8 descriptions by length, most-recent session, ranked (bravo 450 first, charlie 0 last)"
+b8="$(awk '/^  bravo/{print NR; exit}' <<<"$out")"
+c8="$(awk '/^  charlie/{print NR; exit}' <<<"$out")"
+if grep -Eq 'bravo[[:space:]]+450' <<<"$out" && grep -Eq 'charlie[[:space:]]+0' <<<"$out" && [[ -n "$b8" && -n "$c8" && "$b8" -lt "$c8" ]]; then ok "top8 ranked, bravo 450 above charlie 0"; else no "top8 wrong: $out"; fi
+
+echo "[96] entry-fee: --json carries skill_listing_measured with median + most_recent + top8"
+jout="$("$CC" entry-fee --root "$LEFIX" --json)"
+if echo "$jout" | python3 -c '
+import json, sys
+d = json.load(sys.stdin)
+sl = d["skill_listing_measured"]
+assert sl["sessions"] == 2, sl
+assert sl["median"] == {"entries": 2, "chars": 158, "tokens": 39, "over_400": 0, "empty_desc": 0}, sl["median"]
+mr = sl["most_recent"]
+assert mr["entries"] == 4 and mr["chars"] == 614 and mr["tokens"] == 153 and mr["over_400"] == 1 and mr["empty_desc"] == 1, mr
+top = sl["most_recent_top8"]
+assert top[0] == {"skill": "bravo", "chars": 450} and top[-1] == {"skill": "charlie", "chars": 0}, top
+'; then ok "json skill_listing_measured correct"; else no "json skill_listing_measured wrong: $jout"; fi
+
+echo "[97] entry-fee negative control: report has no skill-listing section (existing views unchanged)"
+out="$("$CC" report --file "$FIX")"
+if ! grep -q 'MEASURED-FROM-TRANSCRIPT' <<<"$out"; then ok "report has no skill-listing section"; else no "skill-listing section leaked into report: $out"; fi
+
 echo
 if [[ $fail -gt 0 ]]; then echo "smoke: $pass passed, $fail FAILED" >&2; exit 1; fi
 echo "smoke: all $pass passed"
