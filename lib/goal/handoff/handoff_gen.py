@@ -126,11 +126,12 @@ def _nn(sg_id: str) -> str:
     return n
 
 
-def write_outputs(transcript: str, out_dir: str, next_id: str, next_title: str, date: str):
+def write_outputs(transcript: str, out_dir: str, next_id: str, next_title: str, date: str,
+                  handoff_name: str = "HANDOFF.md"):
     entries = cc.load(transcript)
 
     handoff = build_handoff(entries, next_id, next_title)
-    with open(os.path.join(out_dir, "HANDOFF.md"), "w", encoding="utf-8") as fh:
+    with open(os.path.join(out_dir, handoff_name), "w", encoding="utf-8") as fh:
         fh.write(handoff)
 
     block = build_decisions_block(entries, next_id, date)
@@ -167,6 +168,9 @@ def main(argv=None) -> int:
     p.add_argument("--next-id", required=True, help="next sub-goal id, e.g. ")
     p.add_argument("--next-title", default="", help="next sub-goal human title")
     p.add_argument("--date", required=True, help="YYYY-MM-DD stamp (passed in; no clock here)")
+    p.add_argument("--handoff-name", default="HANDOFF.md",
+                   help="hot-handoff filename inside --dir (basename only; default HANDOFF.md). "
+                        "A per-sub-goal name lets concurrent siblings hold separate continuations.")
     args = p.parse_args(argv)
 
     if not os.path.isfile(args.transcript):
@@ -175,7 +179,11 @@ def main(argv=None) -> int:
     if not os.path.isdir(args.dir):
         sys.stderr.write(f"handoff-gen: --dir not a directory: {args.dir}\n")
         return 2
-    write_outputs(args.transcript, args.dir, args.next_id, args.next_title, args.date)
+    if os.path.basename(args.handoff_name) != args.handoff_name or args.handoff_name in ("", ".", ".."):
+        sys.stderr.write(f"handoff-gen: --handoff-name must be a basename, got: {args.handoff_name}\n")
+        return 2
+    write_outputs(args.transcript, args.dir, args.next_id, args.next_title, args.date,
+                  handoff_name=args.handoff_name)
     return 0
 
 
