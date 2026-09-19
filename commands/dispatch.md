@@ -64,6 +64,12 @@ rules in the prompt itself instead:
 - Never `git add -A`; add files by name.
 - Mask secret-shaped strings (hex 32+, `ghp_`/`sk-`/`AKIA`-prefixed tokens) in your report;
   a scanner blocks on shape alone.
+- The proof of done is a GATE GREP, not a prose artifact: any `docs/verification/<slug>.md`
+  you write must carry literal `Command: <cmd>` / `Exit: <n>` / `Verdict:` lines (one set
+  per verification command, under a `## Recorded run`-style section), a `NEGATIVE CONTROL`
+  entry for a behavioral change, and a `## Rollback` section for a stateful one.
+  `lib/gate/proof-ledger.sh check` greps those exact strings at push; a markdown results
+  table matches nothing and is rejected.
 - **If a prompt points you at a referenced file (brief, contract, context doc) and you
   cannot read it, say so and STOP.** Do not proceed on assumed defaults; a missing file is
   a blocker, not a gap to fill in silently.

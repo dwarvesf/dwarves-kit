@@ -405,8 +405,10 @@ After all phases complete:
 1c. **Gate by proof class (`lib/gate/proof-gate.sh class "<task>"`).** What "done" needs
    depends on the task's risk class, so the discipline lands where the risk is:
    - **stateful** (deploy / migration / data / persistent state): the recorded run must
-     exercise the REAL flow on a copy or dry-run, and the entry must note rollback /
-     reversibility. No "done" without a recorded run + a rollback path. If the flow
+     exercise the REAL flow on a copy or dry-run, and the entry must carry a `## Rollback`
+     section naming how the change reverses (`hooks/ship-gate.sh` greps the literal
+     `Command:`/`Exit:` lines plus `rollback` -- a results table without them is rejected).
+     No "done" without a recorded run + a rollback path. If the flow
      cannot be exercised here, record `[UNAVAILABLE: <reason>]`, do not fake it.
    - **behavioral** (changes behavior): run the REAL primary flow the change adds (not a
      tangential test that happens to pass), record it, and produce the negative control
