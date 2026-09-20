@@ -20,7 +20,10 @@
 # activity-log prepend, the knowledge-root project directory, the staging-file append, one
 # gh pr merge, one bounded union re-merge push (with its own follow-up commit when the
 # re-merge duplicates a kanban row), one `gh pr ready` when `merge --pr N` targets a draft,
-# `land`'s own named push, PR create, squash merge, worktree remove and branch delete,
+# `merge`'s squash-equivalent fallback for a conflicting own PR whose head already holds
+# the base (one commit-tree, one <branch>-squash push with a single scratch-ref delete and
+# repush, one replacement `gh pr create`), `land`'s own named push, PR create, squash
+# merge, worktree remove and branch delete,
 # and `start`'s one worktree add under `.claude/worktrees` on a new local branch.
 # Every other action is a report line. The
 # verbs never switch a branch and never force a push or a pull. The one force is
@@ -875,7 +878,7 @@ cmd_apply() {
 # _pr_detail <url> <number> -- the fields every merge gate reads.
 _pr_detail() {
   gh pr view "$2" --repo "$1" \
-    --json number,title,headRefName,headRefOid,baseRefName,mergeable,mergeStateStatus,reviewDecision,statusCheckRollup,isDraft 2>/dev/null
+    --json number,title,body,headRefName,headRefOid,baseRefName,mergeable,mergeStateStatus,reviewDecision,statusCheckRollup,isDraft 2>/dev/null
 }
 
 # _pr_gate <json> <default branch> -- "OK" or "SKIP <reason>". mergeStateStatus carries the
@@ -998,6 +1001,141 @@ _union_remerge() {
   return 0
 }
 
+# _squash_fallback <repo> <url> <def> <pr> <branch> <head-oid> <detail-json> -- the second
+# recovery leg for a conflict GitHub invented, for the case `_union_remerge` cannot touch:
+# the pushed head ALREADY carries origin/<def>, the union-marked files resolved locally,
+# and only GitHub's attribute-blind merge still says CONFLICTING, so there is nothing left
+# to merge into the branch. What replaces the stuck PR is the commit a squash merge would
+# have computed: one commit of the merged tree onto origin/<def>, pushed to a
+# <branch>-squash branch and carried to a replacement PR under the original title and
+# body. The replacement gates through `_pr_gate` and merges through the caller's same
+# squash+verify path, so every refusal the first merge owed still applies. Success sets
+# SQ_PR and SQ_OID for that path and returns 0; every failure prints its reason, and
+# whatever was already pushed (the -squash branch, the replacement PR) stays for a human
+# rather than being quietly deleted.
+
+# _fallback_ok <cache> <branch> <pr> -- the dependents gate applied to the fallback
+# leg: a conflicting PR whose verdict is SKIP never reaches the OK-path dependent
+# check, but merging its squash-equivalent strands an open PR still targeting the
+# original branch exactly the same. Same cache shape, same refusal text.
+_fallback_ok() {
+  local cache="$1" c_head="$2" c_n="$3"
+  if awk -F'\t' -v h="$c_head" -v n="$c_n" '$3 == h && $1 != n { found = 1 } END { exit !found }' "$cache"; then
+    echo "     fallback refused for #${c_n}: dependents open on ${c_head}, retarget them first"
+    return 1
+  fi
+  return 0
+}
+
+_squash_fallback() {
+  local repo="$1" url="$2" def="$3" n="$4" head="$5" head_oid="$6" detail="$7"
+  SQ_PR=""; SQ_OID=""
+  [ -n "$head" ] && [ -n "$head_oid" ] || { echo "     no branch or head SHA for the squash fallback"; return 1; }
+
+  # CONFLICTING has to be the whole refusal: a failing check, a requested change or a
+  # blocked merge state beside it means the stuck PR is not one squash away from green.
+  # mergeStateStatus DIRTY is the same refusal restated (the merge commit cannot be
+  # created cleanly), so it is masked together with mergeable; every other state still
+  # decides on its own.
+  local masked verdict
+  masked="$(printf '%s' "$detail" | jq '(.mergeable = "MERGEABLE")
+    | if .mergeStateStatus == "DIRTY" then .mergeStateStatus = "CLEAN" else . end' 2>/dev/null)"
+  verdict="$(_pr_gate "$masked" "$def")"
+  case "$verdict" in
+    OK) ;;
+    SKIP*) echo "     #${n} is not one squash away from green: ${verdict#SKIP }"; return 1 ;;
+    *)     echo "     #${n} is not one squash away from green: unreadable PR JSON"; return 1 ;;
+  esac
+
+  git -C "$repo" fetch -q origin "$def" 2>/dev/null || { echo "     fetch origin ${def} failed"; return 1; }
+  git -C "$repo" fetch -q origin "$head" 2>/dev/null \
+    || { echo "     fetch of the PR branch ${head} failed"; return 1; }
+  [ "$(git -C "$repo" rev-parse FETCH_HEAD 2>/dev/null)" = "$head_oid" ] || {
+    echo "     ${head} moved past the head the gates read ($(_short "$head_oid")); nothing to supersede"; return 1; }
+  # The signature this leg exists for: the pushed head already holds the base, so a merge
+  # has nothing left to resolve and GitHub's CONFLICTING is provably its union blindness,
+  # not a real divergence.
+  git -C "$repo" merge-base --is-ancestor "origin/${def}" "$head_oid" 2>/dev/null || {
+    echo "     ${head} does not contain origin/${def}; the conflict is not the carried-base case"; return 1; }
+
+  # A merge of a descendant into its ancestor yields the descendant's tree; merge-tree
+  # computes it anyway, doubling as the clean-merge proof. Its first output line is the
+  # tree oid.
+  local mtree sq_oid
+  mtree="$(git -C "$repo" merge-tree --write-tree "origin/${def}" "$head_oid" 2>/dev/null)" || {
+    echo "     merging origin/${def} and ${head} does not resolve cleanly"; return 1; }
+  mtree="${mtree%%$'\n'*}"
+
+  local title body sq_branch
+  title="$(printf '%s' "$detail" | jq -r '.title // ""' 2>/dev/null)"
+  [ -n "$title" ] || title="squash-equivalent of ${head}"
+  body="$(printf '%s' "$detail" | jq -r '.body // ""' 2>/dev/null)"
+  [ -n "$body" ] || body="$title"
+  sq_branch="${head}-squash"
+
+  sq_oid="$(git -C "$repo" commit-tree "$mtree" -p "origin/${def}" -m "$title" \
+    -m "Squash-equivalent of #${n} (${head}), whose head already carries origin/${def} while GitHub still reports the PR conflicting." 2>/dev/null)" || {
+    echo "     commit-tree for the squash-equivalent commit failed"; return 1; }
+
+  # update-ref writes over a stale scratch ref of the same name, but never under a
+  # checkout that holds it: a worktree's branch moving under it would strand its index.
+  local held
+  held="$(_branch_worktree "$repo" "$sq_branch")" && {
+    echo "     ${sq_branch} is checked out at ${held}; left for a human"; return 1; }
+  git -C "$repo" update-ref "refs/heads/${sq_branch}" "$sq_oid" \
+    || { echo "     could not write the local ${sq_branch} ref"; return 1; }
+  if ! git -C "$repo" push -q origin "$sq_branch" 2>/dev/null; then
+    # A leftover -squash branch from an earlier attempt is scratch state this run owns:
+    # deleted once, then pushed again -- but only when no open PR rides it. Deleting the
+    # head of a live PR closes it unreported, and an operator branch can share the name.
+    if [ -n "$(gh pr list --repo "$url" --head "$sq_branch" --state open --json number -q '.[].number' 2>/dev/null)" ]; then
+      echo "     ${sq_branch} has an open PR already; refusing to delete it, left for a human"
+      return 1
+    fi
+    git -C "$repo" push -q origin --delete "$sq_branch" >/dev/null 2>&1 \
+      && git -C "$repo" push -q origin "$sq_branch" 2>/dev/null \
+      || { echo "     push of ${sq_branch} failed; the squash commit stays local at $(_short "$sq_oid")"; return 1; }
+  fi
+  echo "     committed the squash-equivalent tree on ${sq_branch}, pushed $(_short "$sq_oid")"
+
+  # `--head`, never `--base`, for the same reason land names only the head: with --repo,
+  # gh targets the repository's own default branch.
+  local created rc new_n
+  created="$(gh pr create --repo "$url" --head "$sq_branch" --title "$title" --body "$body" 2>&1)"; rc=$?
+  if [ "$rc" -ne 0 ]; then
+    echo "     PR REFUSED: gh pr create for ${sq_branch} exited ${rc}: ${created}" >&2
+    return 1
+  fi
+  new_n="$(printf '%s\n' "$created" | tail -1)"; new_n="${new_n##*/}"
+  case "$new_n" in
+    ''|*[!0-9]*) echo "     PR REFUSED: gh pr create named no PR number: ${created}" >&2; return 1 ;;
+  esac
+  echo "     opened replacement PR #${new_n} on ${sq_branch} (supersedes #${n})"
+
+  # The replacement gates through the same `_pr_gate` every other merge passes, and its
+  # head must still be the commit just built: a push landing between create and gate must
+  # not slip past the caller's --match-head-commit.
+  local new_detail new_head
+  new_detail="$(_pr_detail_settled "$url" "$new_n")"
+  new_head="$(printf '%s' "$new_detail" | jq -r '.headRefOid // ""' 2>/dev/null)"
+  if [ "$new_head" != "$sq_oid" ]; then
+    echo "     #${new_n} does not point at the squash commit $(_short "$sq_oid"); ${sq_branch} and #${new_n} stay for a human"
+    return 1
+  fi
+  verdict="$(_pr_gate "$new_detail" "$def")"
+  if [ "$verdict" != "OK" ]; then
+    case "$verdict" in
+      SKIP*) echo "     SKIP #${new_n} after the squash fallback: ${verdict#SKIP }" ;;
+      *)     echo "     SKIP #${new_n} after the squash fallback: unreadable PR JSON" ;;
+    esac
+    echo "     ${sq_branch} and replacement PR #${new_n} stay open; #${n} is unchanged"
+    return 1
+  fi
+  SQ_PR="$new_n"; SQ_OID="$sq_oid"
+  echo "     eligible #${new_n} after the squash fallback"
+  return 0
+}
+
 cmd_merge() {
   local do_apply=0 repo="" count=0 pr_only=""
   while [ $# -gt 0 ]; do
@@ -1066,6 +1204,7 @@ cmd_merge() {
   done
 
   local first_eligible="" verdict title conflict_n="" conflict_count=0
+  local superseded_n="" superseded_branch=""
   for n in $numbers; do
     detail="$(cat "${jsondir}/pr-${n}.json" 2>/dev/null)"
     verdict="$(_pr_gate "$detail" "$def")"
@@ -1103,6 +1242,7 @@ cmd_merge() {
     c_oid="$(jq -r '.headRefOid // ""' "${jsondir}/pr-${conflict_n}.json" 2>/dev/null)"
     if [ "$do_apply" != 1 ]; then
       echo "note: #${conflict_n} conflicts; --apply would try one re-merge of ${def} into ${c_head}"
+      echo "note: when ${c_head} already holds origin/${def}, --apply falls back to a squash-equivalent ${c_head}-squash PR"
     else
       echo "retry #${conflict_n}: one re-merge of ${def} into ${c_head}"
       if _union_remerge "$repo" "$c_head" "$def" "$c_oid"; then
@@ -1120,7 +1260,24 @@ cmd_merge() {
           echo "eligible #${conflict_n} after the re-merge"
         else
           echo "SKIP #${conflict_n} after the re-merge: ${verdict#SKIP }"
+          # The same anomaly one merge later: the re-merge pushed, the head now holds
+          # origin/<def>, and GitHub still reports CONFLICTING. The squash fallback
+          # applies to the pushed head the re-gate just read.
+          if [ "$verdict" = "SKIP not mergeable (CONFLICTING)" ]; then
+            local r_oid
+            r_oid="$(printf '%s' "$detail" | jq -r '.headRefOid // ""' 2>/dev/null)"
+            if _fallback_ok "$cache" "$c_head" "$conflict_n" \
+               && _squash_fallback "$repo" "$url" "$def" "$conflict_n" "$c_head" "$r_oid" "$detail"; then
+              first_eligible="$SQ_PR"; head_oid="$SQ_OID"
+              superseded_n="$conflict_n"; superseded_branch="${c_head}-squash"
+            fi
+          fi
         fi
+      elif _fallback_ok "$cache" "$c_head" "$conflict_n" \
+        && _squash_fallback "$repo" "$url" "$def" "$conflict_n" "$c_head" "$c_oid" \
+             "$(cat "${jsondir}/pr-${conflict_n}.json" 2>/dev/null)"; then
+        first_eligible="$SQ_PR"; head_oid="$SQ_OID"
+        superseded_n="$conflict_n"; superseded_branch="${c_head}-squash"
       fi
     fi
   fi
@@ -1154,7 +1311,10 @@ cmd_merge() {
   # report MERGED while the default branch moves on without it.
   local tv; tv="$(_tree_verify "$repo" "$def" "$head_oid")"
   case "$tv" in
-    OK) echo "merged #${first_eligible} (${sha}): tree verified" ;;
+    OK)
+      echo "merged #${first_eligible} (${sha}): tree verified"
+      [ -z "$superseded_n" ] || echo "superseded #${superseded_n}: its tree landed via #${first_eligible} on ${superseded_branch}; close #${superseded_n} when ready"
+      ;;
     MISMATCH*)
       echo "merged #${first_eligible} (${sha}): TREE MISMATCH, ${tv#MISMATCH } paths differ; ${def} does not hold the PR head" >&2
       return 3 ;;
