@@ -321,6 +321,27 @@ lint() {
     }' "$file"
 }
 
+# _board_locked <target-file> <argv...> -- re-run this invocation under the shared
+# per-board write lock (sync_core.board_lock, the same address capture/promote/sync
+# flock). flock lives on a python-held fd and python marks its fds close-on-exec, so the
+# holder cannot exec the verb itself: it runs the verb as a CHILD process instead, with
+# BACKLOG_LOCK_HELD set so the child's dispatch skips the lock it already has. Exit status
+# is the child's. Used by the stale-read -> tmp -> mv writers (set/dedupe/dedupe-all):
+# without the lock one of them racing a capture or sync write loses a whole row, the
+# clobber half of the duplicate-id incident. python3 absent -> caller falls through to
+# the unlocked path, same as a hand-edit: best-effort hardening, never a new hard dep.
+_board_locked() {
+  local lock_target="$1"; shift
+  BOARD_SYNC_LIB="$BACKLOG_DIR/../sync" BACKLOG_LOCK_HELD=1 \
+    python3 - "$lock_target" "$BACKLOG_DIR/backlog.sh" "$@" <<'PY'
+import os, subprocess, sys
+sys.path.insert(0, os.environ["BOARD_SYNC_LIB"])
+from sync_core import board_lock
+with board_lock(sys.argv[1]):
+    sys.exit(subprocess.call(sys.argv[2:]))
+PY
+}
+
 main() {
   local sub="${1:-}"; shift || true
   # Every verb but `states` reads BACKLOG_FILE; a wrapper pointing it at a moved or
@@ -330,6 +351,17 @@ main() {
     echo "backlog.sh: BACKLOG_FILE names no readable file: $BACKLOG_FILE, check the board wrapper's path" >&2
     return 1
   fi
+  case "$sub" in
+    set|dedupe|dedupe-all)
+      if [ -z "${BACKLOG_LOCK_HELD:-}" ] && command -v python3 >/dev/null 2>&1; then
+        # dedupe-all takes an optional file argument; lock the file actually written.
+        local lock_target="$BACKLOG_FILE"
+        [ "$sub" = "dedupe-all" ] && [ -n "${1:-}" ] && lock_target="$1"
+        _board_locked "$lock_target" "$sub" "$@"
+        return $?
+      fi
+      ;;
+  esac
   case "$sub" in
     board)      board ;;
     next)       next ;;

@@ -8,8 +8,13 @@ done=True reads as a `shipped` proposal). Identity: `ID-NNN` title prefix,
 plus the per-spoke rid recorded in the snapshot.
 """
 
+import contextlib
+import fcntl
+import hashlib
+import os
 import re
 import subprocess
+import tempfile
 from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
@@ -178,6 +183,39 @@ def history_max_id(path, prefix: str = "ID") -> int:
         return 0
     hit = re.compile(r"^[-+ ]?\| " + re.escape(prefix) + r"-(\d+) \|", re.M)
     return max((int(m) for m in hit.findall(r.stdout)), default=0)
+
+
+def board_lock_path(path) -> str:
+    """The one lock-file address every writer of a given board shares.
+
+    `add-backlog` established this address (tmpdir + md5 of the board's
+    realpath); every new minter must reuse it verbatim or the locks do not
+    exclude each other. The file lives OUTSIDE the repo on a stable inode:
+    writers that replace the board atomically (mkstemp + os.replace) could
+    otherwise strand a waiter flock'ed on an inode the winner already
+    unlinked, and a lock file beside the board would dirty the checkout.
+    """
+    return os.path.join(
+        tempfile.gettempdir(),
+        "board-%s.lock" % hashlib.md5(
+            os.path.realpath(path).encode()).hexdigest())
+
+
+@contextlib.contextmanager
+def board_lock(path):
+    """Exclusive cross-process lock over a board's mint+append critical
+    section: read the file, mint the id, write the row, release.
+
+    The id is derived inside the hold, never before it, so a contender can
+    never mint from a stale read. Blocking flock, not LOCK_NB: a minter
+    waits rather than fails, because dropping an item on contention is
+    worse than a second of wait. Two sessions racing read-max/append used
+    to mint the same id, and the union merge then landed both rows on
+    main (the ops-toolkit 960-967 collision, repaired by hand).
+    """
+    with open(board_lock_path(path), "w") as fh:
+        fcntl.flock(fh, fcntl.LOCK_EX)
+        yield
 
 
 def next_id(text: str, prefix: str = "ID", path=None) -> int:

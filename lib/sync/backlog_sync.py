@@ -26,9 +26,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from sync_core import (ID_TOKEN, apply_board, build_state, describe,  # noqa: E402
-                       detect_prefix, parse_board, plan_create_only,
-                       plan_pull_only, plan_sync)
+from sync_core import (ID_TOKEN, apply_board, board_lock, build_state,  # noqa: E402
+                       describe, detect_prefix, parse_board,
+                       plan_create_only, plan_pull_only, plan_sync)
 
 # apps that push one-way and read boards with any repo prefix (not just ID-)
 CREATE_ONLY_APPS = {"notion-taskboard"}
@@ -141,19 +141,24 @@ def sync_pull_only(src, backlog: Path, dry_run: bool) -> None:
     no state file at all. Identity lives in the board row's own notes cell, so
     there is nothing to lose and a re-run recomputes exactly the missing rows.
     """
-    text = backlog.read_text()
-    prefix = detect_prefix(text)
-    plan = plan_pull_only(text, src.read())
-    header = f"{src.name}: {len(plan.board_add)} to intake"
-    if dry_run:
-        print(f"dry-run {header}")
-        print(describe(plan))
-        return
-    new_text, assigned = apply_board(text, plan, prefix=prefix, path=backlog)
-    if new_text != text:
-        atomic_write(backlog, new_text)
-    print(f"synced {header}")
-    print(describe(plan, assigned))
+    items = src.read()
+    # board read -> plan -> apply -> write runs under the shared per-board
+    # lock (intake mints board ids); the spoke read above stays outside, so a
+    # slow source never stalls an interactive `board capture`.
+    with board_lock(backlog):
+        text = backlog.read_text()
+        prefix = detect_prefix(text)
+        plan = plan_pull_only(text, items)
+        header = f"{src.name}: {len(plan.board_add)} to intake"
+        if dry_run:
+            print(f"dry-run {header}")
+            print(describe(plan))
+            return
+        new_text, assigned = apply_board(text, plan, prefix=prefix, path=backlog)
+        if new_text != text:
+            atomic_write(backlog, new_text)
+        print(f"synced {header}")
+        print(describe(plan, assigned))
 
 
 def check_pull_isolation(names: list, args,
@@ -247,38 +252,44 @@ def sync_source(src, backlog: Path, state_path: Path, dry_run: bool,
     if getattr(src, "create_only", False):
         sync_create_only(src, backlog, state_path, dry_run, filt)
         return True
-    text = backlog.read_text()
-    prefix = detect_prefix(text)
-    rows = parse_board(text, prefix=prefix)
     state = json.loads(state_path.read_text()) if state_path.exists() else {}
     if hasattr(src, "binding") and state.get("binding"):
         src.binding = state["binding"]
     items = src.read()
-    plan = plan_sync(rows, items, state, sync_fields=src.sync_fields,
-                     filt=filt, app_name=src.name, allow_flips=allow_flips,
-                     archived=read_archive(archive, prefix),
-                     allow_closes=allow_closes)
-    header = (f"{src.name}: {len(items)} spoke items, {len(rows)} board rows")
-    preview = getattr(src, "preview", None)
-    if preview:
-        plan.notes.extend(preview(plan))
-    if dry_run:
-        print(f"dry-run {header}")
-        print(describe(plan))
-        return not plan.flips_refused
-    exits = len(plan.src_scope_exit)
-    if exits > max(cap, allow):
-        print(f"{src.name}: ABORTED, {exits} items would leave this app's "
-              f"scope (cap {max(cap, allow)}). Review with --dry-run, then "
-              f"re-run with --allow-scope-exit {exits}.")
-        # A tick can trip both guards at once: the scope-exit abort must
-        # still surface a flip refusal, or the alarm is lost silently (this
-        # path used to always return True regardless of plan.flips_refused).
-        return not plan.flips_refused
-    new_text, assigned = apply_board(text, plan, prefix=prefix, path=backlog)
-    if new_text != text:
-        atomic_write(backlog, new_text)
-    rows_after = parse_board(new_text, prefix=prefix)
+    # board read -> plan -> apply -> write runs under the shared per-board
+    # lock: apply_board mints row ids, and a `board capture`/`board promote`
+    # racing this window would otherwise mint the same id or watch its new row
+    # get clobbered by this stale-text rewrite. The spoke read above stays
+    # outside, so a slow source never stalls an interactive mint.
+    with board_lock(backlog):
+        text = backlog.read_text()
+        prefix = detect_prefix(text)
+        rows = parse_board(text, prefix=prefix)
+        plan = plan_sync(rows, items, state, sync_fields=src.sync_fields,
+                         filt=filt, app_name=src.name, allow_flips=allow_flips,
+                         archived=read_archive(archive, prefix),
+                         allow_closes=allow_closes)
+        header = (f"{src.name}: {len(items)} spoke items, {len(rows)} board rows")
+        preview = getattr(src, "preview", None)
+        if preview:
+            plan.notes.extend(preview(plan))
+        if dry_run:
+            print(f"dry-run {header}")
+            print(describe(plan))
+            return not plan.flips_refused
+        exits = len(plan.src_scope_exit)
+        if exits > max(cap, allow):
+            print(f"{src.name}: ABORTED, {exits} items would leave this app's "
+                  f"scope (cap {max(cap, allow)}). Review with --dry-run, then "
+                  f"re-run with --allow-scope-exit {exits}.")
+            # A tick can trip both guards at once: the scope-exit abort must
+            # still surface a flip refusal, or the alarm is lost silently (this
+            # path used to always return True regardless of plan.flips_refused).
+            return not plan.flips_refused
+        new_text, assigned = apply_board(text, plan, prefix=prefix, path=backlog)
+        if new_text != text:
+            atomic_write(backlog, new_text)
+        rows_after = parse_board(new_text, prefix=prefix)
     created = src.apply(plan, assigned, rows_after)
     new_state = build_state(rows_after, items, plan, created, assigned, state)
     if getattr(src, "binding", None):
@@ -499,7 +510,9 @@ def main(argv=None):
 
     state_dir = board_state_dir(args.state_root, args.backlog)
     # single-writer lock: overlapping runs would hand out colliding IDs and
-    # clobber each other's board writes
+    # clobber each other's board writes. This serializes sync-vs-sync only; the
+    # board file itself is additionally covered by sync_core.board_lock inside
+    # sync_source/sync_pull_only, the lock `board capture`/`board promote` share.
     lock = open(state_dir / ".lock", "w")
     try:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
