@@ -130,6 +130,45 @@ RC=$(run_manifest_hook safety-gate.sh '{"hook_event_name":"PreToolUse","tool_nam
 assert_equal "changed hook content is refused before execution" "2" "$RC"
 if grep -q 'trusted hook content changed' "$TEST_DIR/stderr"; then pass "trust refusal names changed content"; else fail "trust refusal names changed content"; fi
 
+echo "Codex trust repin"
+REPIN="$KIT_DIR/lib/codex/repin.sh"
+REPIN_ROOT="$TEST_DIR/repin-plugin"
+mkdir -p "$REPIN_ROOT/hooks"
+cp "$ADAPTER" "$CODEX_HOOKS_FILE" "$REPIN_ROOT/hooks/"
+for policy in safety-gate.sh secrets-guard.sh ship-gate.sh commit-format.sh anti-rationalization.sh; do
+  cp "$KIT_DIR/hooks/$policy" "$REPIN_ROOT/hooks/"
+done
+
+RC=0
+bash "$REPIN" check "$REPIN_ROOT" >/dev/null 2>&1 || RC=$?
+assert_equal "repin check passes on a fresh fixture" "0" "$RC"
+
+printf '\n# disposable repin mutation\n' >> "$REPIN_ROOT/hooks/safety-gate.sh"
+RC=0
+bash "$REPIN" check "$REPIN_ROOT" >"$TEST_DIR/stdout" 2>"$TEST_DIR/stderr" || RC=$?
+assert_equal "repin check detects a stale pin" "1" "$RC"
+if grep -q 'safety-gate.sh' "$TEST_DIR/stderr"; then pass "repin check names the stale file"; else fail "repin check names the stale file"; fi
+
+RC=0
+bash "$REPIN" "$REPIN_ROOT" >"$TEST_DIR/stdout" 2>"$TEST_DIR/stderr" || RC=$?
+assert_equal "repin rewrites the stale pin" "0" "$RC"
+RC=0
+bash "$REPIN" check "$REPIN_ROOT" >/dev/null 2>&1 || RC=$?
+assert_equal "repin check passes after repin" "0" "$RC"
+MUTATED_HASH=$(shasum -a 256 "$REPIN_ROOT/hooks/safety-gate.sh" | awk '{print $1}')
+if grep -q "$MUTATED_HASH" "$REPIN_ROOT/hooks/codex-hooks.json"; then pass "repinned json carries the new content hash"; else fail "repinned json carries the new content hash"; fi
+
+REPINED_COMMAND=$(jq -r '.hooks[][]?.hooks[]? | select(.command | contains("safety-gate.sh")) | .command' "$REPIN_ROOT/hooks/codex-hooks.json")
+RC=0
+printf '%s' '{"hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"git status --short"}}' \
+  | PLUGIN_ROOT="$REPIN_ROOT" /bin/bash -c "$REPINED_COMMAND" >"$TEST_DIR/stdout" 2>"$TEST_DIR/stderr" || RC=$?
+assert_equal "repinned trust command executes the edited hook" "0" "$RC"
+
+FIRST=$(shasum -a 256 "$REPIN_ROOT/hooks/codex-hooks.json" | awk '{print $1}')
+bash "$REPIN" "$REPIN_ROOT" >/dev/null 2>&1
+SECOND=$(shasum -a 256 "$REPIN_ROOT/hooks/codex-hooks.json" | awk '{print $1}')
+assert_equal "repin is idempotent" "$FIRST" "$SECOND"
+
 RC=$(run_adapter PreToolUse commit-format.sh '{"hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"git commit -m \"bad subject\""}}')
 assert_equal "invalid commit subject is blocked" "2" "$RC"
 RC=$(run_adapter PreToolUse commit-format.sh '{"hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"git commit -m \"test(hooks): verify adapter\""}}')
