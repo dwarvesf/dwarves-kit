@@ -7,7 +7,7 @@
 # Usage:
 #   wrap scan <repo> [<repo>...]                        report only
 #   wrap apply [--apply] [--worktrees] [--own <path>]... <repo> [...]     gated writes, dry-run by default
-#   wrap merge [--apply] <repo>                         one own green PR
+#   wrap merge [--apply] [--pr N] <repo>                one own green PR (--pr: a named PR, a draft marked ready)
 #   wrap land <worktree> [--title T] [--body-file F]    one hand-made worktree, landed
 #   wrap start <repo> <branch>                          a worktree off origin/<default> on a fresh branch
 #   wrap log "<slug>: <one sentence>" [--date D]        the activity line
