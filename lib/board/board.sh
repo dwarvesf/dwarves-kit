@@ -29,6 +29,10 @@
 #   board.sh set <ID> <state> [note] [--backlog-file <path>]   flip a row's state
 #   board.sh dedupe <ID> [--backlog-file <path>]               collapse duplicate rows sharing
 #                                                               one id down to one
+#   board.sh lint [--backlog-file <path>]                      enumerate malformed board rows
+#                                                               (cell count, dup ids, `\|`
+#                                                               escapes, bad statuses); an
+#                                                               enumerator, exits 0
 #   board.sh states [--backlog-file <path>]                    legal state names
 #   board.sh run <ID> [--backlog-file <path>] [--dir <megadir>] [--exec] [-- <orchestrate-args>]
 #                                                               the single-row dispatch path:
@@ -889,25 +893,34 @@ cmd_capture() {
   backlog="${backlog:-$PWD/_meta/BACKLOG.md}"
   [ -f "$backlog" ] || { echo "board capture: no board at $backlog (run \`board init\`)" >&2; exit 2; }
   local bid
+  # The read -> mint -> append runs under the shared per-board lock
+  # (sync_core.board_lock, the same file add-backlog/backlog_sync flock), so two
+  # sessions capturing at once serialize instead of minting the same id. The
+  # file is re-read INSIDE the hold: the mint is always derived from the
+  # current board, never from a pre-lock snapshot.
   bid="$(BOARD_SYNC_LIB="$BOARD_DIR/../sync" python3 - "$backlog" "$title" "$notes" <<'PY'
-import os, sys
+import os, sys, tempfile
 from pathlib import Path
 sys.path.insert(0, os.environ["BOARD_SYNC_LIB"])
-from sync_core import detect_prefix, next_id, escape
+from sync_core import board_lock, detect_prefix, next_id, escape
 path = Path(sys.argv[1])
-text = path.read_text()
-prefix = detect_prefix(text)
-bid = f"{prefix}-{next_id(text, prefix, path)}"
 title, notes = sys.argv[2], sys.argv[3] or "filed via board capture"
-row = f"| {bid} | {escape(' '.join(title.split()))} | {escape(notes)} | queued |\n"
-lines = text.splitlines(keepends=True)
-for i, ln in enumerate(lines):
-    if ln.startswith("|---"):
-        lines.insert(i + 1, row)
-        break
-else:
-    sys.exit(f"no table header found in {path}")
-path.write_text("".join(lines))
+with board_lock(path):
+    text = path.read_text()
+    prefix = detect_prefix(text)
+    bid = f"{prefix}-{next_id(text, prefix, path)}"
+    row = f"| {bid} | {escape(' '.join(title.split()))} | {escape(notes)} | queued |\n"
+    lines = text.splitlines(keepends=True)
+    for i, ln in enumerate(lines):
+        if ln.startswith("|---"):
+            lines.insert(i + 1, row)
+            break
+    else:
+        sys.exit(f"no table header found in {path}")
+    fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.")
+    with os.fdopen(fd, "w") as f:
+        f.write("".join(lines))
+    os.replace(tmp, path)
 print(bid)
 PY
 )"

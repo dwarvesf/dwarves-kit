@@ -36,8 +36,6 @@ Promoted rows land in a `### Conversation intake` section (created if missing);
 re-file into the right section by hand later. Stdlib only.
 """
 import datetime
-import fcntl
-import hashlib
 import os
 import re
 import subprocess
@@ -85,7 +83,7 @@ def parse_staging(text):
 sys.path.insert(0, os.path.join(
     os.path.dirname(os.path.dirname(os.path.dirname(
         os.path.realpath(__file__)))), "sync"))
-from sync_core import history_max_id  # noqa: E402
+from sync_core import board_lock, history_max_id  # noqa: E402
 from sync_core import next_id as _core_next_id  # noqa: E402
 
 
@@ -306,33 +304,29 @@ def main(argv):
     if not os.path.isfile(BACKLOG):
         print(f"board not found: {BACKLOG}", file=sys.stderr)
         return 2
-    # single-writer lock (stable inode OUTSIDE the repo, so the atomic replace
-    # below can't strand a waiter on a stale fd): parallel sessions promoting
-    # concurrently is how duplicate IDs got minted (2026-07-16, kit ID-288)
-    lock_path = os.path.join(
-        tempfile.gettempdir(),
-        "board-%s.lock" % hashlib.md5(
-            os.path.realpath(BACKLOG).encode()).hexdigest())
-    lock = open(lock_path, "w")
-    fcntl.flock(lock, fcntl.LOCK_EX)
-    btext = open(BACKLOG, encoding="utf-8").read()  # read AFTER the lock
-    # once, not per row: one git read covers every id this promote run mints
-    floor = history_max_id(BACKLOG)
-    promoted = []
-    for b in chosen:
-        cid = next_id(btext, floor)
-        row = make_row(cid, b)
-        if len(re.split(r"(?<!\\)\|", row.rstrip("\n"))) != 6:
-            print(f"refusing malformed row for {cid}: {row!r}", file=sys.stderr)
-            return 2
-        btext = insert_row(btext, row)
-        text = text.replace(b["raw"], b["raw"].replace("## [staged]", f"## [promoted {cid}]", 1), 1)
-        promoted.append((cid, b["title"]))
-    fd, tmp = tempfile.mkstemp(dir=os.path.dirname(BACKLOG) or ".")
-    with os.fdopen(fd, "w", encoding="utf-8") as f:
-        f.write(btext)
-    os.replace(tmp, BACKLOG)
-    open(STAGING, "w", encoding="utf-8").write(text)
+    # single-writer lock (the shared board lock, sync_core.board_lock: stable
+    # inode OUTSIDE the repo, so the atomic replace below can't strand a waiter
+    # on a stale fd): parallel sessions promoting concurrently is how duplicate
+    # IDs got minted (2026-07-16, kit ID-288)
+    with board_lock(BACKLOG):
+        btext = open(BACKLOG, encoding="utf-8").read()  # read AFTER the lock
+        # once, not per row: one git read covers every id this promote run mints
+        floor = history_max_id(BACKLOG)
+        promoted = []
+        for b in chosen:
+            cid = next_id(btext, floor)
+            row = make_row(cid, b)
+            if len(re.split(r"(?<!\\)\|", row.rstrip("\n"))) != 6:
+                print(f"refusing malformed row for {cid}: {row!r}", file=sys.stderr)
+                return 2
+            btext = insert_row(btext, row)
+            text = text.replace(b["raw"], b["raw"].replace("## [staged]", f"## [promoted {cid}]", 1), 1)
+            promoted.append((cid, b["title"]))
+        fd, tmp = tempfile.mkstemp(dir=os.path.dirname(BACKLOG) or ".")
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(btext)
+        os.replace(tmp, BACKLOG)
+        open(STAGING, "w", encoding="utf-8").write(text)
     for cid, title in promoted:
         print(f"promoted {cid}: {title}")
     return 0
