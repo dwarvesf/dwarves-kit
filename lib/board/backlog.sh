@@ -43,6 +43,11 @@
 #                                    `wrap.sh`'s union re-merge after a GitHub conflict, where the
 #                                    rows to fix are unknown up front and every one wants the same
 #                                    rule; a known single id still goes through plain `dedupe`.
+#   backlog.sh lint [file]         -> enumerate malformed board rows (wrong cell count,
+#                                    duplicate ids, `\|` escapes the bash parser cannot
+#                                    see, non-id first cells, unrecognized statuses).
+#                                    Enumerator, exits 0; the fix verbs are dedupe and
+#                                    a hand edit.
 #   backlog.sh states              -> the legal state names
 #
 # BACKLOG_FILE overrides the file path (tests point it at a fixture copy).
@@ -272,6 +277,50 @@ dedupe_all() {
   echo "$done_ids"
 }
 
+# lint [file] -- enumerate malformed board rows under the bash parser's contract, the
+# failures sync and the renderer trip on: wrong cell count, duplicate ids, a `\|`
+# escape (legal to the sync parser, invisible to these raw-pipe splits; use &#124;),
+# a non-id first cell inside the board table, an unrecognized leading status.
+# Enumerator, not a gate: prints findings, exits 0 like lib/lint/scattered-ids.sh.
+lint() {
+  local file="${1:-$BACKLOG_FILE}"
+  [ -f "$file" ] || { echo "backlog.sh lint: no readable file: $file" >&2; return 1; }
+  awk -F'|' -v idre="$BACKLOG_ID_RE" -v states="$STATES" '
+    BEGIN { split(states, t, " "); for (i in t) ok[t[i]] = 1; n = 0 }
+    function report(rule, line, detail) {
+      printf "line %s: %s: %s\n", line, rule, detail; n++
+    }
+    /^[ \t]*\|[ \t]*ID[ \t]*\|/ { intable = 1; next }
+    intable && /^[ \t]*\|[\-: |]*$/ { next }
+    intable && $0 !~ /^[ \t]*\|/ { intable = 0 }
+    intable && /^[ \t]*\|/ {
+      # divider rows are a layout convention: bold prose in cell 1, the rest empty
+      rest_empty = 1
+      for (i = 3; i < NF; i++) { c = $i; gsub(/^[ \t]+|[ \t]+$/, "", c); if (c != "") rest_empty = 0 }
+      if (rest_empty) next
+      # cell count is judged on UNESCAPED pipes: a mid-row `\|` is legal to the
+      # sync parser and still leaves the status cell readable from the end
+      esc = $0; gsub(/\\\|/, "", esc)
+      pipes = gsub(/\|/, "|", esc)
+      if (pipes != 5) report("cell-count", NR, "expected 4 cells, found " (pipes - 1))
+      id = $2; gsub(/^[ \t]+|[ \t]+$/, "", id)
+      if (id !~ ("^" idre "$")) { report("id-format", NR, "first cell is not an id: " substr(id, 1, 30)); next }
+      seen[id]++; lines[id] = (id in lines) ? lines[id] ", " NR : NR
+      status = $(NF - 1); gsub(/^[ \t]+|[ \t]+$/, "", status)
+      split(status, a, /[ \[(]/)
+      if (!(a[1] in ok)) {
+        report("unknown-status", NR, "leading keyword: " a[1])
+        # a `\|` inside the status cell splits it into fragments the bash parser
+        # misreads; `&#124;` is the workaround (parser-parity fix is staged)
+        if ($0 ~ /\\\|/) report("escaped-pipe", NR, "\\| inside the status cell, use &#124;")
+      }
+    }
+    END {
+      for (id in seen) if (seen[id] > 1) report("duplicate-id", lines[id], id ": " seen[id] " rows; dedupe first")
+      if (n == 0) print "(no lint findings)"
+    }' "$file"
+}
+
 main() {
   local sub="${1:-}"; shift || true
   # Every verb but `states` reads BACKLOG_FILE; a wrapper pointing it at a moved or
@@ -289,8 +338,9 @@ main() {
     set)        set_state "$@" ;;
     dedupe)     dedupe "$@" ;;
     dedupe-all) dedupe_all "$@" ;;
+    lint)       lint "$@" ;;
     states)     echo "$STATES" | tr ' ' '\n' ;;
-    *) echo "usage: backlog.sh {board|next|get <ID-NNN>|row <ID-NNN>|set <ID-NNN> <state> [note]|dedupe <ID-NNN>|dedupe-all [file]|states}" >&2; return 64 ;;
+    *) echo "usage: backlog.sh {board|next|get <ID-NNN>|row <ID-NNN>|set <ID-NNN> <state> [note]|dedupe <ID-NNN>|dedupe-all [file]|lint [file]|states}" >&2; return 64 ;;
   esac
 }
 

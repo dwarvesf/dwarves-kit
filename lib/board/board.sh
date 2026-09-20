@@ -29,6 +29,10 @@
 #   board.sh set <ID> <state> [note] [--backlog-file <path>]   flip a row's state
 #   board.sh dedupe <ID> [--backlog-file <path>]               collapse duplicate rows sharing
 #                                                               one id down to one
+#   board.sh lint [--backlog-file <path>]                      enumerate malformed board rows
+#                                                               (cell count, dup ids, `\|`
+#                                                               escapes, bad statuses); an
+#                                                               enumerator, exits 0
 #   board.sh states [--backlog-file <path>]                    legal state names
 #   board.sh run <ID> [--backlog-file <path>] [--dir <megadir>] [--exec] [-- <orchestrate-args>]
 #                                                               the single-row dispatch path:
