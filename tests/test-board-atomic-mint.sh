@@ -133,6 +133,43 @@ chk "promote + 3 captures minted 4 unique ids" \
     "$([ "$(printf '%s\n' "$all_new" | uniq | grep -c .)" -eq 4 ]; echo $?)"
 chk "board holds all 7 rows" "$([ "$(board_ids "$BOARD3" | grep -c .)" -eq 7 ]; echo $?)"
 
+# ============================================================
+echo "== AC4: board set/dedupe go through the same lock (no clobbered row) =="
+# ============================================================
+# set/dedupe/dedupe-all rewrite the whole file from a read; racing a mint, that
+# rewrite loses the minted row. They now re-dispatch under the same lock.
+BOARD4="$TMPD/four/BACKLOG.md"; mkdir -p "$(dirname "$BOARD4")"; new_board "$BOARD4"
+LOCK4="$(BOARD_SYNC_LIB="$SYNC_LIB" python3 - "$BOARD4" <<'PY'
+import os, sys
+sys.path.insert(0, os.environ["BOARD_SYNC_LIB"])
+from sync_core import board_lock_path
+print(board_lock_path(sys.argv[1]))
+PY
+)"
+python3 - "$LOCK4" "$BOARD4" "$TMPD/four/held" <<'PY' &
+import fcntl, sys, time
+lockf, board, sentinel = sys.argv[1:4]
+fh = open(lockf, "w")
+fcntl.flock(fh, fcntl.LOCK_EX)
+open(sentinel, "w").close()
+time.sleep(1.5)
+with open(board, "a") as b:
+    b.write("| ID-4 | holder row | appended under the held lock | queued |\n")
+PY
+holder=$!
+for i in $(seq 1 60); do [ -f "$TMPD/four/held" ] && break; sleep 0.05; done
+
+start=$(date +%s)
+BACKLOG_FILE="$BOARD4" bash "$KIT_DIR/lib/board/backlog.sh" set ID-1 shipped "raced a holder" >/dev/null
+elapsed=$(( $(date +%s) - start ))
+wait "$holder"
+
+chk "board set waited for the holder (>=1s elapsed)" "$([ "$elapsed" -ge 1 ]; echo $?)"
+chk "holder's appended ID-4 row survives the set rewrite" \
+    "$(board_ids "$BOARD4" | grep -qx 4; echo $?)"
+chk "the set still landed (ID-1 flipped)" \
+    "$(grep -qE '^\| ID-1 \|.*shipped' "$BOARD4"; echo $?)"
+
 echo
 echo "atomic-mint: $PASS/$TOTAL passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]

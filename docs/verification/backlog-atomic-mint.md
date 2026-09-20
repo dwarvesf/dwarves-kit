@@ -20,24 +20,36 @@ write window:
 - `add-backlog`: same inline flock, rewired onto the shared helper; behavior
   unchanged (the lock address is byte-identical).
 - `backlog_sync.py` `sync_source`/`sync_pull_only`: board read -> plan ->
-  apply -> write under `board_lock(backlog)`; the spoke network read stays
+  apply -> write under `board_lock(backlog)`; the spoke source read stays
   outside the hold so a slow source never stalls an interactive mint. The
+  mint's own history floor does `git fetch`/`git log` INSIDE the hold
+  (bounded by their 10s/30s timeouts) -- freshness is the point of the hold,
+  a stalled remote delays a queued writer by that bound, never hangs it. The
   existing `state_dir/.lock` still serializes sync-vs-sync; the new lock is
   what capture/promote share.
+- `backlog.sh` `set`/`dedupe`/`dedupe-all`: the three stale-read -> tmp ->
+  mv writers now re-dispatch under the same lock (`_board_locked`, a python
+  lock-holder running the verb as a child -- flock fds do not survive exec).
+  A `board set` racing a capture can no longer lose the minted row. python3
+  absent falls through to the unlocked path: no new hard dependency.
 
 Not covered, by design: a session that hand-edits BACKLOG.md with no tool
-holds no lock; the publish-side duplicate scan (`cmd_publish` WARN, exit 3)
-remains the backstop for anything that bypasses the writers.
+holds no lock, and the lock address is per-TMPDIR per-user (a writer under a
+different TMPDIR env or uid gets a different lock file); the publish-side
+duplicate scan (`cmd_publish` WARN, exit 3) remains the backstop for
+anything that bypasses the writers.
 
 ## Green run
 
 ```
 Command: bash tests/test-board-atomic-mint.sh
 Exit: 0
-Verdict: PASS -- 11/11 (AC1 six concurrent captures mint six unique ids and
+Verdict: PASS -- 14/14 (AC1 six concurrent captures mint six unique ids and
   all 9 rows land; AC2 a capture queued behind a held lock re-reads the file
   and mints ID-5 past the holder's appended ID-4, waiting >=1s; AC3 a
-  `board promote` racing three captures mints uniquely through the same lock)
+  `board promote` racing three captures mints uniquely through the same lock;
+  AC4 a `board set` behind a held lock waits, then rewrites without losing
+  the holder's appended row)
 ```
 
 ```
