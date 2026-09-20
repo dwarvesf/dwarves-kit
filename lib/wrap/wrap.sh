@@ -995,6 +995,20 @@ _union_remerge() {
 # SQ_PR and SQ_OID for that path and returns 0; every failure prints its reason, and
 # whatever was already pushed (the -squash branch, the replacement PR) stays for a human
 # rather than being quietly deleted.
+
+# _fallback_ok <cache> <branch> <pr> -- the dependents gate applied to the fallback
+# leg: a conflicting PR whose verdict is SKIP never reaches the OK-path dependent
+# check, but merging its squash-equivalent strands an open PR still targeting the
+# original branch exactly the same. Same cache shape, same refusal text.
+_fallback_ok() {
+  local cache="$1" c_head="$2" c_n="$3"
+  if awk -F'\t' -v h="$c_head" -v n="$c_n" '$3 == h && $1 != n { found = 1 } END { exit !found }' "$cache"; then
+    echo "     fallback refused for #${c_n}: dependents open on ${c_head}, retarget them first"
+    return 1
+  fi
+  return 0
+}
+
 _squash_fallback() {
   local repo="$1" url="$2" def="$3" n="$4" head="$5" head_oid="$6" detail="$7"
   SQ_PR=""; SQ_OID=""
@@ -1054,7 +1068,12 @@ _squash_fallback() {
     || { echo "     could not write the local ${sq_branch} ref"; return 1; }
   if ! git -C "$repo" push -q origin "$sq_branch" 2>/dev/null; then
     # A leftover -squash branch from an earlier attempt is scratch state this run owns:
-    # deleted once, then pushed again. A refusal after that is for a human.
+    # deleted once, then pushed again -- but only when no open PR rides it. Deleting the
+    # head of a live PR closes it unreported, and an operator branch can share the name.
+    if [ -n "$(gh pr list --repo "$url" --head "$sq_branch" --state open --json number -q '.[].number' 2>/dev/null)" ]; then
+      echo "     ${sq_branch} has an open PR already; refusing to delete it, left for a human"
+      return 1
+    fi
     git -C "$repo" push -q origin --delete "$sq_branch" >/dev/null 2>&1 \
       && git -C "$repo" push -q origin "$sq_branch" 2>/dev/null \
       || { echo "     push of ${sq_branch} failed; the squash commit stays local at $(_short "$sq_oid")"; return 1; }
@@ -1229,13 +1248,15 @@ cmd_merge() {
           if [ "$verdict" = "SKIP not mergeable (CONFLICTING)" ]; then
             local r_oid
             r_oid="$(printf '%s' "$detail" | jq -r '.headRefOid // ""' 2>/dev/null)"
-            if _squash_fallback "$repo" "$url" "$def" "$conflict_n" "$c_head" "$r_oid" "$detail"; then
+            if _fallback_ok "$cache" "$c_head" "$conflict_n" \
+               && _squash_fallback "$repo" "$url" "$def" "$conflict_n" "$c_head" "$r_oid" "$detail"; then
               first_eligible="$SQ_PR"; head_oid="$SQ_OID"
               superseded_n="$conflict_n"; superseded_branch="${c_head}-squash"
             fi
           fi
         fi
-      elif _squash_fallback "$repo" "$url" "$def" "$conflict_n" "$c_head" "$c_oid" \
+      elif _fallback_ok "$cache" "$c_head" "$conflict_n" \
+        && _squash_fallback "$repo" "$url" "$def" "$conflict_n" "$c_head" "$c_oid" \
              "$(cat "${jsondir}/pr-${conflict_n}.json" 2>/dev/null)"; then
         first_eligible="$SQ_PR"; head_oid="$SQ_OID"
         superseded_n="$conflict_n"; superseded_branch="${c_head}-squash"

@@ -52,8 +52,8 @@ Verdict: PASS.
 
 Command: `bash tests/test-wrap.sh`
 Exit: 0
-Output: `test-wrap: all 763 passed`
-Verdict: PASS. 724 assertions before the change, 763 after; the 39 new ones cover the dry-run note,
+Output: `test-wrap: all 772 passed`
+Verdict: PASS. 724 assertions before the change, 772 after; the 48 new ones cover the dry-run note,
 the carried-base fallback, and three refusal paths plus the re-merge-then-fallback chain. The
 pre-existing tree-mismatch assertion still binds exit 3.
 
@@ -104,7 +104,7 @@ Exit: 0 (green after restore)
 Verdict: PASS
 ```
 
-Eighteen assertions go RED under that mutation, `test-wrap: 745 passed, 18 FAILED of 763`:
+Eighteen assertions go RED under that mutation, `test-wrap: 745 passed, 18 FAILED of 763` (run before the review fixes; the suite now totals 772):
 
 ```
   FAIL squash fallback reports the pushed scratch branch
@@ -152,8 +152,25 @@ closed or merged.
 ```
 git -C <repo> switch feat/wrap-merge-squash-fallback
 bash -n lib/wrap/wrap.sh
-bash tests/test-wrap.sh          # the feature, 763 assertions
+bash tests/test-wrap.sh          # the feature, 772 assertions
 bash tests/test-meta.sh && bash tests/test-hooks.sh
 bash lib/gate/negctl.sh . 'bash tests/test-wrap.sh' \
   'perl -i -pe '\''s/merge-base --is-ancestor "origin\/\$\{def\}" "\$head_oid"/merge-base --is-ancestor "\$head_oid" "origin\/\$\{def\}"/'\'' lib/wrap/wrap.sh'
+```
+
+## Review fixes (post-review pass)
+
+Two MEDIUMs from the safety-of-merge review, both fixed in `a9f62f0`-series commits:
+
+- The dependents gate (`_fallback_ok`) now runs before either fallback call; a
+  conflicting PR with an open PR targeting its branch refuses with the same
+  "retarget them first" text the OK path uses. Test: the `dep` case.
+- The `<branch>-squash` delete+repush now checks `gh pr list --head` for an open
+  PR first; a live PR on that head refuses instead of being silently closed.
+  Test: the `live` case.
+
+```
+Command: bash tests/test-wrap.sh
+Exit: 0
+Verdict: PASS -- 772/772, including the dep and live refusal cases (9 assertions)
 ```

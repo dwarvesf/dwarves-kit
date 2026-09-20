@@ -1643,6 +1643,50 @@ chk_has "chain: the superseded PR is named" "$out" "superseded #58"
 chk "chain: one pr merge call, on #59 never #58" \
   "$([ "$(grep -c '^pr merge 59 ' "$GH_STUB_CALLS")" -eq 1 ] && ! grep -q '^pr merge 58 ' "$GH_STUB_CALLS"; echo $?)"
 
+# --- a dependent PR on the conflicting branch refuses the fallback the same way it
+# refuses the plain merge: merging the squash-equivalent would strand the dependent
+# exactly as merging the original would have.
+build_carried dep
+CB_DEP="$TMPD/cb-clone-dep"; CB_DEP_TIP="$(git -C "$CB_DEP" rev-parse feat/union)"
+: > "$GH_STUB_CALLS"
+out="$(GH_STUB_OPEN_PRS='[{"number":60,"title":"log entry","headRefName":"feat/union"},{"number":61,"title":"stacked on it","headRefName":"feat/child"}]' \
+  GH_STUB_PR_60="$(conflict_json 60 "$CB_DEP_TIP")" \
+  GH_STUB_PR_61='{"number":61,"title":"stacked on it","headRefName":"feat/child","headRefOid":"aa","baseRefName":"feat/union","mergeable":"MERGEABLE","mergeStateStatus":"CLEAN","reviewDecision":"APPROVED","statusCheckRollup":[{"conclusion":"SUCCESS"}]}' \
+  "$WRAP" merge --apply "$CB_DEP" 2>&1)"; rc=$?
+chk "a conflict with a dependent exits 0 without merging" "$rc"
+chk_has "a conflict with a dependent names the stranded dependent" "$out" \
+  "fallback refused for #60: dependents open on feat/union, retarget them first"
+chk "a conflict with a dependent called no pr create" \
+  "$(grep -q '^pr create' "$GH_STUB_CALLS" && echo 1 || echo 0)"
+chk "a conflict with a dependent pushed no -squash branch" \
+  "$(git -C "$TMPD/cb-bare-dep" rev-parse --verify feat/union-squash >/dev/null 2>&1 && echo 1 || echo 0)"
+
+# --- a live PR already riding <branch>-squash is never closed by the delete+repush:
+# the leftover-branch recovery checks for an open PR on that head first.
+build_carried live
+CB_LIVE="$TMPD/cb-clone-live"; CB_LIVE_TIP="$(git -C "$CB_LIVE" rev-parse feat/union)"
+# Seed a divergent feat/union-squash on the remote so wrap's push comes back non-FF.
+git -C "$CB_LIVE" checkout -q -b feat/union-squash
+git -C "$CB_LIVE" commit -qm "stale squash attempt" --allow-empty
+git -C "$CB_LIVE" push -q origin feat/union-squash
+git -C "$CB_LIVE" checkout -q feat/union
+git -C "$CB_LIVE" branch -qD feat/union-squash
+CB_LIVE_SQ="$(git -C "$TMPD/cb-bare-live" rev-parse feat/union-squash)"
+: > "$GH_STUB_CALLS"
+out="$(GH_STUB_OPEN_PRS="$(open_one 62)" \
+  GH_STUB_PR_62="$(conflict_json 62 "$CB_LIVE_TIP")" \
+  GH_STUB_OPEN_HEAD_feat_union_squash='[{"number":70}]' \
+  "$WRAP" merge --apply "$CB_LIVE" 2>&1)"; rc=$?
+chk "a live -squash PR exits 0 without merging" "$rc"
+chk_has "a live -squash PR names the refusal" "$out" \
+  "feat/union-squash has an open PR already; refusing to delete it"
+chk "a live -squash PR kept the remote branch" \
+  "$([ "$(git -C "$TMPD/cb-bare-live" rev-parse feat/union-squash)" = "$CB_LIVE_SQ" ]; echo $?)"
+chk "a live -squash PR called no pr create" \
+  "$(grep -q '^pr create' "$GH_STUB_CALLS" && echo 1 || echo 0)"
+chk "a live -squash PR called no pr merge" \
+  "$(grep -q '^pr merge' "$GH_STUB_CALLS" && echo 1 || echo 0)"
+
 # ===========================================================================
 echo "=== merge: gh saying MERGED is not proof the default branch holds the PR head ==="
 # ===========================================================================
