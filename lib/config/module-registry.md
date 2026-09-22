@@ -388,6 +388,7 @@ against any of these bare tokens as covered without a registry row.
 | BACKLOG_DIR | `lib/board/backlog.sh`: computed via `pwd`, script-local. |
 | KIT_REF | `lib/adopt.sh`: the literal `~/.claude/dwarves-kit` string written into a consumer's AGENTS.md for its own shell to expand; assigned, never env-read. |
 | BACKLOG_SH | `lib/board/board.sh`: computed path, not env-overridable. |
+| BACKLOG_LOCK_HELD | `lib/board/backlog.sh` `_board_locked`: reentrancy marker the parent sets on the child it re-execs under the shared flock, never read from the ambient environment. |
 | CC_BACKLOG_BACKLOG_FIX | `lib/stats/tests/test-deviation-rate.sh`: test-fixture-local, assigned then used in the same file, never read as inherited env. |
 | SKILL_CURATOR_LEDGER | `lib/skill-curator/lib/common.sh`: derived from `SKILL_CURATOR_STATE_DIR`, not independently env-read. |
 | SKILL_CURATOR_LIB | `lib/skill-curator/lib/common.sh`: computed via `BASH_SOURCE`. |
