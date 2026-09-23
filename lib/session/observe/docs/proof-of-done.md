@@ -787,10 +787,34 @@ Verdict: PASS
 ```
 
 Pre-change-binary control (this feature did not exist before): `git show
-origin/master:lib/session/observe/bin/session-observe` into a scratch file and pointed
-smoke's `$CC` at it for tests 98-101 only; all four failed for the expected reason (no
-`--detail` flag, no `files`/`hooks` JSON keys, no sub-row text). Command and captured
-output: `lib/session/observe/docs/verification/entry-fee.md`.
+origin/master:lib/session/observe/bin/session-observe` copied to a scratch path inside
+the repo (so `_repo_root()` still resolves) and run directly against the new
+`tests/fixtures/entryfee-detail/` fixture:
+
+```
+$ OLD=lib/session/observe/bin/session-observe-old   # git show origin/master:... > $OLD
+$ "$OLD" entry-fee --root tests/fixtures/entryfee-detail --detail
+usage: session-observe [-h] [--file FILE | --project PROJECT] [--root ROOT]
+                       [--days DAYS] [--top TOP] [--latency] [--errors TOOL]
+                       [--since SINCE] [--trend] [--json]
+                       {skills,tools,hooks,subagents,friction,sessions,cost,burn,entry-fee,report}
+session-observe: error: unrecognized arguments: --detail
+$ echo $?
+2
+$ "$OLD" entry-fee --root tests/fixtures/entryfee-detail --json | python3 -c "
+import json, sys
+d = json.load(sys.stdin)
+comps = {c['component']: c for c in d['split_components']}
+print(list(comps['instructions'].keys()))
+print(list(comps['hook_success'].keys()))
+"
+['component', 'est_tokens']
+['component', 'est_tokens']
+```
+
+`--detail` does not exist on the pre-change binary (exit 2, argparse refuses it), and
+its JSON carries no `files`/`hooks` sub-row keys, confirming the new assertions
+(smoke 98-101) exercise genuinely new behavior, not an existing path re-asserted.
 
 #### Reproduce
 
