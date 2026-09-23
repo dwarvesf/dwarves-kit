@@ -48,3 +48,5 @@ Negative control: the new cases run against the pre-change `lib/wrap/wrap.sh` an
 ## After state
 
 `wrap merge --apply` merges a union-conflicted PR in one call once GitHub settles, and a branch no checkout holds recovers through the same re-merge.
+
+Not covered: the wait ends on a settled mergeability verdict, not on CI. A repo whose checks restart on the pushed head still gets `SKIP ... checks are pending or failing` from that call, and the next `wrap merge` call merges it once the checks go green.

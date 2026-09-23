@@ -927,7 +927,8 @@ _pr_detail_settled() {
       [ "$m" = "UNKNOWN" ] || break
     else
       h="$(printf '%s' "$detail" | jq -r '.headRefOid // ""' 2>/dev/null)"
-      [ "$h" = "$want" ] || [ "$h" = "$prior" ] || break
+      # An empty head is a failed read, not a moved head: keep waiting.
+      [ -z "$h" ] || [ "$h" = "$want" ] || [ "$h" = "$prior" ] || break
       [ "$h" = "$want" ] && [ "$m" != "UNKNOWN" ] && [ "$m" != "CONFLICTING" ] && break
     fi
     [ "$waited" -lt "$KIT_WRAP_SETTLE_SECS" ] || break
@@ -1007,7 +1008,8 @@ _union_remerge() {
     tip="$(git -C "$repo" rev-parse FETCH_HEAD 2>/dev/null)"
     [ "$tip" = "$head_oid" ] || {
       echo "     origin ${branch} tip $(_short "$tip") is not the PR head $(_short "$head_oid"), left alone"; return 1; }
-    scratch="$(mktemp -d)"; wt="${scratch}/wt"
+    scratch="$(mktemp -d)" || { echo "     no local checkout holds ${branch} and mktemp failed"; return 1; }
+    wt="${scratch}/wt"
     git -C "$repo" worktree add -q --detach "$wt" "$head_oid" >/dev/null 2>&1 || {
       rm -rf "$scratch"; echo "     no local checkout holds ${branch} and a scratch worktree failed"; return 1; }
     echo "     no local checkout holds ${branch}; re-merging in a scratch worktree"
@@ -1015,7 +1017,7 @@ _union_remerge() {
   _remerge_push "$repo" "$wt" "$branch" "$def" "$tip"; rc=$?
   if [ -n "$scratch" ]; then
     git -C "$repo" worktree remove --force "$wt" >/dev/null 2>&1
-    rm -rf "$scratch"; git -C "$repo" worktree prune >/dev/null 2>&1
+    rm -rf "$scratch"
   fi
   return "$rc"
 }
@@ -1033,7 +1035,7 @@ _remerge_push() {
     echo "     merging origin/${def} into ${branch} conflicts beyond the union-marked files, aborted"
     return 1
   fi
-  _union_dedupe_rows "$wt" "$tip"
+  _union_dedupe_rows "$wt" "$tip" || return 1
   if ! git -C "$wt" push -q origin "HEAD:refs/heads/${branch}" 2>/dev/null; then
     echo "     push of the re-merged ${branch} failed; origin still holds the PR head"
     return 1
