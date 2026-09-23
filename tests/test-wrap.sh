@@ -103,14 +103,17 @@ case "$sub" in
             printf '%s\n' "${GH_STUB_VIEW_STATE:-$default_state}" ;;
           *)
             key="GH_STUB_PR_$n"; eval "val=\"\${$key:-}\""
-            # A second detail read may serve a different body, so a case can model the PR
-            # whose mergeability changes once the re-merge push lands.
+            # Read k serves GH_STUB_PR_<n>_<j> for the highest j <= k that is set (j >= 2),
+            # else GH_STUB_PR_<n>, so a case can model a PR whose mergeability changes as
+            # GitHub catches up with the re-merge push.
             cnt_f="${GH_STUB_CALLS:-/dev/null}.view-$n"
             cnt=$(( $(cat "$cnt_f" 2>/dev/null || echo 0) + 1 )); echo "$cnt" > "$cnt_f" 2>/dev/null
-            if [ "$cnt" -gt 1 ]; then
-              key2="GH_STUB_PR_${n}_2"; eval "val2=\"\${$key2:-}\""
-              [ -n "${val2:-}" ] && val="$val2"
-            fi
+            j="$cnt"
+            while [ "$j" -gt 1 ]; do
+              key2="GH_STUB_PR_${n}_${j}"; eval "val2=\"\${$key2:-}\""
+              if [ -n "${val2:-}" ]; then val="$val2"; break; fi
+              j=$(( j - 1 ))
+            done
             [ -n "$val" ] || val="{}"
             # A %REMERGE_TIP% marker resolves against the real branch tip, because a
             # re-merge test cannot know the recovered commit's SHA before wrap creates it.
@@ -165,6 +168,10 @@ STUB
 chmod +x "$TMPD/stub/gh"
 PATH="$TMPD/stub:$PATH"; export PATH
 GH_STUB_CALLS="$TMPD/gh-calls.log"; export GH_STUB_CALLS; : > "$GH_STUB_CALLS"
+# One mergeability read per settle for every case that does not test the settle wait
+# itself; those cases set their own bound and put a no-op `sleep` first on PATH.
+KIT_WRAP_SETTLE_SECS=0; export KIT_WRAP_SETTLE_SECS
+mkdir -p "$TMPD/nosleep"; printf '#!/bin/sh\nexit 0\n' > "$TMPD/nosleep/sleep"; chmod +x "$TMPD/nosleep/sleep"
 
 # --------------------------------------------------------------------------- fixture
 gitc() { git -C "$1" config user.email t@t; git -C "$1" config user.name t; git -C "$1" config commit.gpgsign false; }
@@ -1439,7 +1446,8 @@ build_remerge gate
 RM_GATE="$TMPD/rm-clone-gate"; RM_GATE_TIP="$(git -C "$RM_GATE" rev-parse feat/union)"
 : > "$GH_STUB_CALLS"
 out="$(GH_STUB_OPEN_PRS="$(open_one 17)" GH_STUB_PR_17="$(conflict_json 17 "$RM_GATE_TIP")" \
-  GH_STUB_PR_17_2='{"number":17,"title":"log entry","headRefName":"feat/union","headRefOid":"cc","baseRefName":"main","mergeable":"MERGEABLE","mergeStateStatus":"CLEAN","reviewDecision":"CHANGES_REQUESTED","statusCheckRollup":[{"conclusion":"SUCCESS"}]}' \
+  GH_STUB_PR_17_2='{"number":17,"title":"log entry","headRefName":"feat/union","headRefOid":"%REMERGE_TIP%","baseRefName":"main","mergeable":"MERGEABLE","mergeStateStatus":"CLEAN","reviewDecision":"CHANGES_REQUESTED","statusCheckRollup":[{"conclusion":"SUCCESS"}]}' \
+  GH_STUB_LAND_REPO="$RM_GATE" \
   "$WRAP" merge --apply "$RM_GATE" 2>&1)"
 chk_has "a re-gate that refuses after the push names the reason" "$out" \
   "SKIP #17 after the re-merge: changes requested"
@@ -1601,12 +1609,11 @@ chk "a red conflict called no pr create" "$(grep -q '^pr create' "$GH_STUB_CALLS
 chk "a red conflict called no pr merge" "$(grep -q '^pr merge' "$GH_STUB_CALLS" && echo 1 || echo 0)"
 
 # --- a head that does NOT carry the base is not the carried-base case, and is left alone
-# The clone deletes its local feat/union so the re-merge cannot run at all; the fallback
-# still must refuse, because the head lacks origin/main.
+# An untracked file dirties the checkout holding feat/union, so the re-merge refuses to
+# run; the fallback still must refuse, because the head lacks origin/main.
 build_remerge behind
 CB_BEH="$TMPD/rm-clone-behind"
-git -C "$CB_BEH" checkout -q main
-git -C "$CB_BEH" branch -qD feat/union
+echo scratch > "$CB_BEH/untracked.txt"
 CB_BEH_TIP="$(git -C "$TMPD/rm-bare-behind" rev-parse feat/union)"
 : > "$GH_STUB_CALLS"
 out="$(GH_STUB_OPEN_PRS="$(open_one 55)" GH_STUB_PR_55="$(conflict_json 55 "$CB_BEH_TIP")" \
@@ -1699,6 +1706,124 @@ chk "a live -squash PR called no pr create" \
   "$(grep -q '^pr create' "$GH_STUB_CALLS" && echo 1 || echo 0)"
 chk "a live -squash PR called no pr merge" \
   "$(grep -q '^pr merge' "$GH_STUB_CALLS" && echo 1 || echo 0)"
+
+# ===========================================================================
+echo "=== merge: the re-gate waits for GitHub to settle on the pushed head ==="
+# ===========================================================================
+# GitHub computes mergeability asynchronously after a push: for a while it serves UNKNOWN,
+# or the old head with its old CONFLICTING verdict. The re-gate polls until the head is the
+# one wrap pushed and the verdict left UNKNOWN/CONFLICTING, bounded by KIT_WRAP_SETTLE_SECS.
+# A no-op `sleep` keeps the bounded waits instant.
+mergeable_json() { # mergeable_json <number> <head oid> <mergeable> <mergeStateStatus>
+  printf '{"number":%s,"title":"log entry","headRefName":"feat/union","headRefOid":"%s","baseRefName":"main","mergeable":"%s","mergeStateStatus":"%s","reviewDecision":"APPROVED","statusCheckRollup":[{"conclusion":"SUCCESS"}]}' "$1" "$2" "$3" "$4"
+}
+views() { grep -c "^pr view $1 .*headRefOid" "$GH_STUB_CALLS"; }
+
+# --- the observed race: UNKNOWN on the old head, then CONFLICTING on the pushed head, then MERGEABLE
+build_remerge settle
+ST="$TMPD/rm-clone-settle"; ST_TIP="$(git -C "$ST" rev-parse feat/union)"
+: > "$GH_STUB_CALLS"
+out="$(PATH="$TMPD/nosleep:$PATH" KIT_WRAP_SETTLE_SECS=60 \
+  GH_STUB_OPEN_PRS="$(open_one 80)" GH_STUB_PR_80="$(conflict_json 80 "$ST_TIP")" \
+  GH_STUB_PR_80_2="$(mergeable_json 80 "$ST_TIP" UNKNOWN UNKNOWN)" \
+  GH_STUB_PR_80_3="$(mergeable_json 80 %REMERGE_TIP% CONFLICTING DIRTY)" \
+  GH_STUB_PR_80_4="$(mergeable_json 80 %REMERGE_TIP% MERGEABLE CLEAN)" \
+  GH_STUB_LAND_REPO="$ST" GH_STUB_LAND_REMOTE="$TMPD/rm-bare-settle" GH_STUB_LAND_BRANCH=feat/union \
+  "$WRAP" merge --apply "$ST" 2>&1)"; rc=$?
+ST_PUSHED="$(git -C "$ST" rev-parse feat/union)"
+chk "settle: a late-settling PR exits 0" "$rc"
+chk_has "settle: the PR is eligible once GitHub settles" "$out" "eligible #80 after the re-merge"
+chk_has "settle: the PR merges, tree verified" "$out" "merged #80 (1a2b3c4d5e6f): tree verified"
+chk "settle: polled past UNKNOWN and the stale CONFLICTING (4 detail reads)" \
+  "$([ "$(views 80)" -eq 4 ]; echo $?)"
+chk "settle: pinned the merge to the pushed head" \
+  "$(grep -q -- "^pr merge 80 .*--match-head-commit ${ST_PUSHED}" "$GH_STUB_CALLS"; echo $?)"
+
+# --- a verdict that stays CONFLICTING past the bound still skips with the existing message
+build_remerge stuck
+SK="$TMPD/rm-clone-stuck"; SK_TIP="$(git -C "$SK" rev-parse feat/union)"
+: > "$GH_STUB_CALLS"
+out="$(PATH="$TMPD/nosleep:$PATH" KIT_WRAP_SETTLE_SECS=6 \
+  GH_STUB_OPEN_PRS="$(open_one 82)" GH_STUB_PR_82="$(conflict_json 82 "$SK_TIP")" \
+  GH_STUB_PR_82_2="$(mergeable_json 82 %REMERGE_TIP% CONFLICTING DIRTY)" \
+  GH_STUB_LAND_REPO="$SK" GH_STUB_CREATE_RC=1 \
+  "$WRAP" merge --apply "$SK" 2>&1)"; rc=$?
+chk "settle: a stuck CONFLICTING exits 0 without merging #82" "$rc"
+chk_has "settle: a stuck CONFLICTING skips with the existing message" "$out" \
+  "SKIP #82 after the re-merge: not mergeable (CONFLICTING)"
+chk "settle: the wait is bounded (initial read plus 4 reads over 6s)" \
+  "$([ "$(views 82)" -eq 5 ]; echo $?)"
+chk "settle: a stuck CONFLICTING never merges #82" \
+  "$(grep -q '^pr merge 82 ' "$GH_STUB_CALLS" && echo 1 || echo 0)"
+
+# --- a head someone else pushed during the wait is refused at once, never merged
+build_remerge moved
+MV="$TMPD/rm-clone-moved"; MV_TIP="$(git -C "$MV" rev-parse feat/union)"
+: > "$GH_STUB_CALLS"
+out="$(PATH="$TMPD/nosleep:$PATH" KIT_WRAP_SETTLE_SECS=60 \
+  GH_STUB_OPEN_PRS="$(open_one 84)" GH_STUB_PR_84="$(conflict_json 84 "$MV_TIP")" \
+  GH_STUB_PR_84_2="$(mergeable_json 84 "$MV_TIP" UNKNOWN UNKNOWN)" \
+  GH_STUB_PR_84_3="$(mergeable_json 84 4444444444444444444444444444444444444444 MERGEABLE CLEAN)" \
+  "$WRAP" merge --apply "$MV" 2>&1)"; rc=$?
+chk "settle: a moved head exits 0 without merging" "$rc"
+chk_has "settle: a moved head is named" "$out" "SKIP #84 after the re-merge: head is 4444444, not the pushed"
+chk "settle: a moved head stops the wait at once (3 detail reads)" \
+  "$([ "$(views 84)" -eq 3 ]; echo $?)"
+chk "settle: a moved head is never merged" "$(grep -q '^pr merge' "$GH_STUB_CALLS" && echo 1 || echo 0)"
+
+# --- a push GitHub never registers is refused once the bound runs out
+build_remerge lost
+LS="$TMPD/rm-clone-lost"; LS_TIP="$(git -C "$LS" rev-parse feat/union)"
+: > "$GH_STUB_CALLS"
+out="$(PATH="$TMPD/nosleep:$PATH" KIT_WRAP_SETTLE_SECS=4 \
+  GH_STUB_OPEN_PRS="$(open_one 86)" GH_STUB_PR_86="$(conflict_json 86 "$LS_TIP")" \
+  "$WRAP" merge --apply "$LS" 2>&1)"; rc=$?
+chk "settle: an unregistered push exits 0 without merging" "$rc"
+chk_has "settle: an unregistered push names the stale head" "$out" \
+  "SKIP #86 after the re-merge: head is $(printf '%s' "$LS_TIP" | cut -c1-7), not the pushed"
+chk "settle: an unregistered push is never merged" "$(grep -q '^pr merge' "$GH_STUB_CALLS" && echo 1 || echo 0)"
+
+# --- a first read of UNKNOWN is re-read, never a SKIP on its own
+build_remerge first
+FR="$TMPD/rm-clone-first"; FR_TIP="$(git -C "$FR" rev-parse feat/union)"
+: > "$GH_STUB_CALLS"
+out="$(PATH="$TMPD/nosleep:$PATH" KIT_WRAP_SETTLE_SECS=60 \
+  GH_STUB_OPEN_PRS="$(open_one 88)" GH_STUB_PR_88="$(mergeable_json 88 "$FR_TIP" UNKNOWN UNKNOWN)" \
+  GH_STUB_PR_88_2="$(mergeable_json 88 "$FR_TIP" MERGEABLE CLEAN)" \
+  "$WRAP" merge "$FR" 2>&1)"
+chk_has "settle: a first UNKNOWN read settles to eligible" "$out" "eligible #88 log entry"
+chk_no "settle: a first UNKNOWN read is not skipped" "$out" "not mergeable (UNKNOWN)"
+
+# ===========================================================================
+echo "=== merge: a branch no checkout holds re-merges in a scratch worktree ==="
+# ===========================================================================
+# The worktree that pushed the branch is gone, so no checkout holds it. The re-merge runs
+# in a scratch detached worktree at the PR head, pushes, and removes the scratch worktree.
+build_remerge nockout
+NK="$TMPD/rm-clone-nockout"
+git -C "$NK" checkout -q main
+git -C "$NK" branch -qD feat/union
+NK_TIP="$(git -C "$TMPD/rm-bare-nockout" rev-parse feat/union)"
+NK_WT_BEFORE="$(git -C "$NK" worktree list --porcelain | grep -c '^worktree ')"
+NK_MAIN="$(git -C "$TMPD/rm-bare-nockout" rev-parse main)"
+: > "$GH_STUB_CALLS"
+out="$(GH_STUB_OPEN_PRS="$(open_one 90)" GH_STUB_PR_90="$(conflict_json 90 "$NK_TIP")" \
+  GH_STUB_PR_90_2="$(mergeable_json 90 %REMERGE_TIP% MERGEABLE CLEAN)" \
+  GH_STUB_LAND_REPO="$NK" GH_STUB_LAND_REMOTE="$TMPD/rm-bare-nockout" GH_STUB_LAND_BRANCH=origin/feat/union \
+  "$WRAP" merge --apply "$NK" 2>&1)"; rc=$?
+NK_PUSHED="$(git -C "$TMPD/rm-bare-nockout" rev-parse feat/union)"
+chk "no-checkout: exits 0" "$rc"
+chk_has "no-checkout: names the scratch worktree" "$out" "no local checkout holds feat/union; re-merging in a scratch worktree"
+chk_has "no-checkout: re-merged and pushed" "$out" "re-merged origin/main into feat/union, pushed"
+chk_has "no-checkout: merged, tree verified" "$out" "merged #90 (1a2b3c4d5e6f): tree verified"
+chk "no-checkout: the pushed head carries the old origin/main" \
+  "$(git -C "$NK" merge-base --is-ancestor "$NK_MAIN" "$NK_PUSHED"; echo $?)"
+chk "no-checkout: pinned the merge to the pushed head" \
+  "$(grep -q -- "--match-head-commit ${NK_PUSHED}" "$GH_STUB_CALLS"; echo $?)"
+chk "no-checkout: the scratch worktree is gone" \
+  "$([ "$(git -C "$NK" worktree list --porcelain | grep -c '^worktree ')" -eq "$NK_WT_BEFORE" ]; echo $?)"
+chk "no-checkout: the operator checkout stayed clean on main" \
+  "$([ -z "$(git -C "$NK" status --porcelain)" ] && [ "$(git -C "$NK" symbolic-ref --short HEAD)" = main ]; echo $?)"
 
 # ===========================================================================
 echo "=== merge: gh saying MERGED is not proof the default branch holds the PR head ==="

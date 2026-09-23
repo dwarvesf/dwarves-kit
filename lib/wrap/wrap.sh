@@ -19,7 +19,8 @@
 # --worktrees, pull --ff-only on the default branch and its pull-past-dirty stash, the
 # activity-log prepend, the knowledge-root project directory, the staging-file append, one
 # gh pr merge, one bounded union re-merge push (with its own follow-up commit when the
-# re-merge duplicates a kanban row), one `gh pr ready` when `merge --pr N` targets a draft,
+# re-merge duplicates a kanban row, and a scratch detached worktree added and removed when
+# no checkout holds the branch), one `gh pr ready` when `merge --pr N` targets a draft,
 # `merge`'s squash-equivalent fallback for a conflicting own PR whose head already holds
 # the base (one commit-tree, one <branch>-squash push with a single scratch-ref delete and
 # repush, one replacement `gh pr create`), `land`'s own named push, PR create, squash
@@ -906,17 +907,31 @@ _pr_gate() {
     else "OK" end' 2>/dev/null
 }
 
-# _pr_detail_settled <url> <number> -- the detail read once GitHub has recomputed
-# mergeability. A push flips `mergeable` to UNKNOWN for a second or two, and a gate that
-# reads it inside that window refuses a PR that is fine. Bounded: five tries, then whatever
-# the field says, because a gate that never settles must still fail closed rather than spin.
+# _pr_detail_settled <url> <number> [<pushed-oid> <prior-oid>] -- the detail read once
+# GitHub has recomputed mergeability. GitHub computes it asynchronously after a push: for
+# ten to twenty seconds it can serve UNKNOWN, or the OLD head with its old CONFLICTING
+# verdict, and a gate reading inside that window refuses a PR that is fine. Without a
+# pushed oid the wait lasts while the field reads UNKNOWN. With one (wrap's own push) it
+# also lasts while the head is still the prior one or the verdict is CONFLICTING, and ends
+# at once on a head that is neither: another writer pushed, and the caller refuses that.
+# Bounded by KIT_WRAP_SETTLE_SECS, one read every 2s; the last read is returned either way,
+# so a verdict that never settles still fails closed rather than spinning.
+KIT_WRAP_SETTLE_SECS=${KIT_WRAP_SETTLE_SECS:-60}
+case "$KIT_WRAP_SETTLE_SECS" in ''|*[!0-9]*) KIT_WRAP_SETTLE_SECS=60 ;; esac
 _pr_detail_settled() {
-  local url="$1" n="$2" i=0 detail="" m
-  while [ "$i" -lt 5 ]; do
+  local url="$1" n="$2" want="${3:-}" prior="${4:-}" waited=0 detail="" m h
+  while :; do
     detail="$(_pr_detail "$url" "$n")"
     m="$(printf '%s' "$detail" | jq -r '.mergeable // "UNKNOWN"' 2>/dev/null)"
-    [ "$m" = "UNKNOWN" ] || break
-    i=$(( i + 1 )); sleep 2
+    if [ -z "$want" ]; then
+      [ "$m" = "UNKNOWN" ] || break
+    else
+      h="$(printf '%s' "$detail" | jq -r '.headRefOid // ""' 2>/dev/null)"
+      [ "$h" = "$want" ] || [ "$h" = "$prior" ] || break
+      [ "$h" = "$want" ] && [ "$m" != "UNKNOWN" ] && [ "$m" != "CONFLICTING" ] && break
+    fi
+    [ "$waited" -lt "$KIT_WRAP_SETTLE_SECS" ] || break
+    sleep 2; waited=$(( waited + 2 ))
   done
   printf '%s' "$detail"
 }
@@ -971,20 +986,46 @@ _union_dedupe_rows() {
   fi
 }
 
+# Success sets REMERGE_OID to the pushed head, the only head the caller may merge.
+# A branch no local checkout holds (the worktree that pushed it is gone) re-merges in a
+# scratch detached worktree at the PR head, removed afterwards, so no operator checkout
+# is touched and the same merge, abort and dedupe rules apply.
 _union_remerge() {
-  local repo="$1" branch="$2" def="$3" head_oid="$4" wt tip
+  local repo="$1" branch="$2" def="$3" head_oid="$4" wt tip scratch="" rc
+  REMERGE_OID=""
   [ -n "$branch" ] && [ -n "$head_oid" ] || { echo "     no branch or head SHA to re-merge"; return 1; }
-  wt="$(_branch_worktree "$repo" "$branch")" || {
-    echo "     no local checkout holds ${branch}, so there is nothing to re-merge in"; return 1; }
-  tip="$(git -C "$wt" rev-parse HEAD 2>/dev/null)"
-  [ "$tip" = "$head_oid" ] || {
-    echo "     ${branch} tip $(_short "$tip") is not the PR head $(_short "$head_oid"), left alone"; return 1; }
-  [ -z "$(git -C "$wt" status --porcelain 2>/dev/null)" ] || {
-    echo "     ${wt} is dirty, so a re-merge would sweep uncommitted work into the branch"; return 1; }
-  _write_guard "$wt" || { echo "     index.lock held by another writer in ${wt}"; return 1; }
+  if wt="$(_branch_worktree "$repo" "$branch")"; then
+    tip="$(git -C "$wt" rev-parse HEAD 2>/dev/null)"
+    [ "$tip" = "$head_oid" ] || {
+      echo "     ${branch} tip $(_short "$tip") is not the PR head $(_short "$head_oid"), left alone"; return 1; }
+    [ -z "$(git -C "$wt" status --porcelain 2>/dev/null)" ] || {
+      echo "     ${wt} is dirty, so a re-merge would sweep uncommitted work into the branch"; return 1; }
+    _write_guard "$wt" || { echo "     index.lock held by another writer in ${wt}"; return 1; }
+  else
+    git -C "$repo" fetch -q origin "$branch" 2>/dev/null || {
+      echo "     no local checkout holds ${branch} and fetching it failed"; return 1; }
+    tip="$(git -C "$repo" rev-parse FETCH_HEAD 2>/dev/null)"
+    [ "$tip" = "$head_oid" ] || {
+      echo "     origin ${branch} tip $(_short "$tip") is not the PR head $(_short "$head_oid"), left alone"; return 1; }
+    scratch="$(mktemp -d)"; wt="${scratch}/wt"
+    git -C "$repo" worktree add -q --detach "$wt" "$head_oid" >/dev/null 2>&1 || {
+      rm -rf "$scratch"; echo "     no local checkout holds ${branch} and a scratch worktree failed"; return 1; }
+    echo "     no local checkout holds ${branch}; re-merging in a scratch worktree"
+  fi
+  _remerge_push "$repo" "$wt" "$branch" "$def" "$tip"; rc=$?
+  if [ -n "$scratch" ]; then
+    git -C "$repo" worktree remove --force "$wt" >/dev/null 2>&1
+    rm -rf "$scratch"; git -C "$repo" worktree prune >/dev/null 2>&1
+  fi
+  return "$rc"
+}
 
+# _remerge_push <repo> <wt> <branch> <def> <tip> -- the merge and push half of
+# `_union_remerge`, run in whichever checkout it picked.
+_remerge_push() {
+  local repo="$1" wt="$2" branch="$3" def="$4" tip="$5"
   git -C "$repo" fetch -q origin "$def" 2>/dev/null || { echo "     fetch origin ${def} failed"; return 1; }
-  if git -C "$repo" merge-base --is-ancestor "origin/${def}" "$branch" 2>/dev/null; then
+  if git -C "$repo" merge-base --is-ancestor "origin/${def}" "$tip" 2>/dev/null; then
     echo "     ${branch} already contains origin/${def}, so a re-merge cannot clear the conflict"; return 1
   fi
   if ! git -C "$wt" merge --no-edit "origin/${def}" >/dev/null 2>&1; then
@@ -993,11 +1034,12 @@ _union_remerge() {
     return 1
   fi
   _union_dedupe_rows "$wt" "$tip"
-  if ! git -C "$wt" push -q origin "$branch" 2>/dev/null; then
-    echo "     push of the re-merged ${branch} failed; the merge stays local for a human to inspect"
+  if ! git -C "$wt" push -q origin "HEAD:refs/heads/${branch}" 2>/dev/null; then
+    echo "     push of the re-merged ${branch} failed; origin still holds the PR head"
     return 1
   fi
-  echo "     re-merged origin/${def} into ${branch}, pushed $(_short "$(git -C "$wt" rev-parse HEAD)")"
+  REMERGE_OID="$(git -C "$wt" rev-parse HEAD)"
+  echo "     re-merged origin/${def} into ${branch}, pushed $(_short "$REMERGE_OID")"
   return 0
 }
 
@@ -1196,7 +1238,7 @@ cmd_merge() {
   local cache="${jsondir}/index"
   local n detail base head
   for n in $numbers; do
-    detail="$(_pr_detail "$url" "$n")"
+    detail="$(_pr_detail_settled "$url" "$n")"
     printf '%s' "$detail" > "${jsondir}/pr-${n}.json"
     base="$(printf '%s' "$detail" | jq -r '.baseRefName // ""' 2>/dev/null)"
     head="$(printf '%s' "$detail" | jq -r '.headRefName // ""' 2>/dev/null)"
@@ -1246,9 +1288,14 @@ cmd_merge() {
     else
       echo "retry #${conflict_n}: one re-merge of ${def} into ${c_head}"
       if _union_remerge "$repo" "$c_head" "$def" "$c_oid"; then
-        detail="$(_pr_detail_settled "$url" "$conflict_n")"
+        # Wait for GitHub to see the pushed head and recompute mergeability, then gate only
+        # that head: a head that never arrived or that someone else pushed is refused.
+        detail="$(_pr_detail_settled "$url" "$conflict_n" "$REMERGE_OID" "$c_oid")"
+        local r_head; r_head="$(printf '%s' "$detail" | jq -r '.headRefOid // ""' 2>/dev/null)"
         verdict="$(_pr_gate "$detail" "$def")"
-        if [ -z "$verdict" ]; then
+        if [ "$r_head" != "$REMERGE_OID" ]; then
+          verdict="SKIP head is $(_short "$r_head"), not the pushed $(_short "$REMERGE_OID")"
+        elif [ -z "$verdict" ]; then
           verdict="SKIP unreadable PR JSON"
         elif [ "$verdict" = "OK" ] && awk -F'\t' -v h="$c_head" -v n="$conflict_n" \
              '$3 == h && $1 != n { found = 1 } END { exit !found }' "$cache"; then
