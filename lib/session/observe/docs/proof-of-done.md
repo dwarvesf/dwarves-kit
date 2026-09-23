@@ -749,7 +749,7 @@ attachment text, not "disk"). Spec delta: `docs/specs/SPEC-289-observe-entry-fee
 #### Live run (2026-09-23, one real session)
 
 ```
-$ session-observe entry-fee --file ~/.claude/projects/-Users-tieubao-workspace-tieubao-ops-toolkit/2e1864c1-*.jsonl --detail
+$ session-observe entry-fee --file <a real ~/.claude/projects/<slug>/<session>.jsonl> --detail
   component                  est-tokens  share
   -------------------------  ----------  -----
   skill_listing                   15858    20%
@@ -759,14 +759,18 @@ $ session-observe entry-fee --file ~/.claude/projects/-Users-tieubao-workspace-t
   ...
   (unattributed)                  36277    47%
     instructions detail, per file (est-tokens):
-  /Users/tieubao/.claude/CLAUDE.md                                                                     7209
-  /Users/tieubao/workspace/tieubao/ops-toolkit/CLAUDE.md                                               3535
-  /Users/tieubao/.claude/projects/-Users-tieubao-workspace-tieubao-ops-toolkit/memory/MEMORY.md        1975
-  /Users/tieubao/workspace/tieubao/CLAUDE.md                                                           1508
+  <operator's global CLAUDE.md>                                        7209
+  <repo's own CLAUDE.md>                                                3535
+  <repo's git-shared MEMORY.md>                                         1975
+  <vault-root CLAUDE.md>                                                1508
     hook_success detail, per SessionStart hook (est-tokens; SPILLED = output persisted to a file):
   ~/.claude/hooks/repo-memory/repo-memory.sh        2180
   Loading ponytail mode...                           776
 ```
+
+(Paths genericized here; this repo's `test-no-personal-paths` suite forbids an
+operator's home path in a committed doc. The real run showed four instruction files
+ranked by size, largest first, the actual leaf files a real transcript carried.)
 
 `7209 + 3535 + 1975 + 1508 = 14227` (the instructions row), `2180 + 776 = 2956` (the
 hook_success row). Neither file in this live session spilled.
