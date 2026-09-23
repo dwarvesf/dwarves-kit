@@ -1067,6 +1067,28 @@ def _rendered_chars(entry):
     return total
 
 
+def _split_instruction_files(files, tokens, out):
+    """Allocate one instructions attachment's `tokens` across its `files` by
+    content-length share, largest-remainder method, so the sub-rows sum to
+    exactly `tokens` (never over/under by rounding). `out` is a Counter keyed
+    by file path, accumulated across every instructions attachment the
+    session carries."""
+    sized = [(f.get("path") or "?", f.get("content") if isinstance(f.get("content"), str) else "")
+             for f in files if isinstance(f, dict)]
+    sized = [(p, len(c)) for p, c in sized]
+    total_chars = sum(c for _, c in sized)
+    if not total_chars:
+        return
+    shares = [tokens * c / total_chars for _, c in sized]
+    floors = [int(s) for s in shares]
+    remainder = tokens - sum(floors)
+    order = sorted(range(len(shares)), key=lambda i: shares[i] - floors[i], reverse=True)
+    for i in order[:remainder]:
+        floors[i] += 1
+    for (path, _), n in zip(sized, floors):
+        out[path] += n
+
+
 def entry_fee_session(path):
     """One transcript -> its entry fee + component estimate, or None.
 
@@ -1075,6 +1097,9 @@ def entry_fee_session(path):
     than counted as a zero fee.
     """
     comps = Counter()
+    instr_files = Counter()   # instructions component, sub-split by file path
+    hook_rows = Counter()     # hook_success component, sub-split by hook command
+    hook_spilled = set()      # hook labels whose output was persisted to a file
     first_ts = None
     for entry in iter_entries(path):
         if not isinstance(entry, dict):
@@ -1088,6 +1113,23 @@ def entry_fee_session(path):
             tokens = _rendered_chars(entry) // ENTRY_FEE_CHARS_PER_TOKEN
             if isinstance(label, str) and tokens:
                 comps[label] += tokens
+            if label == "instructions" and isinstance(att, dict) and tokens:
+                files = att.get("files")
+                if isinstance(files, list):
+                    _split_instruction_files(files, tokens, instr_files)
+            elif label == "hook_success" and isinstance(att, dict):
+                cmd = att.get("command")
+                cmd = cmd if isinstance(cmd, str) else "?"
+                hlabel = cmd.strip()[:50]  # the raw command, not hook_label's grouped label
+                content = att.get("content")
+                spilled = isinstance(content, str) and "Output too large" in content
+                # a hook whose output reached the model (tokens) or whose
+                # output spilled to a file (flagged even at zero tokens) is
+                # worth a row; a silent zero-token hook is not.
+                if tokens or spilled:
+                    hook_rows[hlabel] += tokens
+                    if spilled:
+                        hook_spilled.add(hlabel)
             continue
         if entry.get("type") != "assistant" or entry.get("isSidechain"):
             continue
@@ -1101,7 +1143,9 @@ def entry_fee_session(path):
         # first_ts is the only timestamp already proven to be a string; ts is
         # untrusted and slicing it directly would abort the whole scan.
         return {"fee": fee, "components": comps, "day": (first_ts or "")[:10],
-                "model": msg.get("model") or "?"}
+                "model": msg.get("model") or "?",
+                "instruction_files": instr_files, "hook_rows": hook_rows,
+                "hook_spilled": hook_spilled}
     return None
 
 
@@ -1207,6 +1251,21 @@ def entry_fee_week_rows(sessions, top):
     return rows[:top] if top else rows
 
 
+def entry_fee_instruction_detail(sess):
+    """`instructions` sub-rows: [path, est_tokens], biggest first."""
+    if not sess:
+        return []
+    return [[p, n] for p, n in sess.get("instruction_files", Counter()).most_common()]
+
+
+def entry_fee_hook_detail(sess):
+    """`hook_success` sub-rows: [hook label, est_tokens, spilled], biggest first."""
+    if not sess:
+        return []
+    spilled = sess.get("hook_spilled", set())
+    return [[lab, n, lab in spilled] for lab, n in sess.get("hook_rows", Counter()).most_common()]
+
+
 def run_entry_fee(args):
     """The `entry-fee` view. A separate I/O path from emit(): one row per
     session rather than a model+day aggregation, and never part of `report`."""
@@ -1214,6 +1273,8 @@ def run_entry_fee(args):
     med_sess = entry_fee_median(sessions)
     split_sess, splittable = entry_fee_split_session(sessions)
     comp = entry_fee_component_rows(split_sess)
+    instr_detail = entry_fee_instruction_detail(split_sess)
+    hook_detail = entry_fee_hook_detail(split_sess)
     projects = entry_fee_project_rows(sessions, args.top)
     weeks = entry_fee_week_rows(sessions, args.top) if args.trend else []
     med = med_sess["fee"] if med_sess else 0
@@ -1223,6 +1284,13 @@ def run_entry_fee(args):
     listing_recent = listing_most_recent(listing_rows)
 
     if args.json:
+        def comp_json(r):
+            out = {"component": r[0], "est_tokens": r[1]}
+            if r[0] == "instructions" and instr_detail:
+                out["files"] = [{"path": p, "est_tokens": n} for p, n in instr_detail]
+            elif r[0] == "hook_success" and hook_detail:
+                out["hooks"] = [{"hook": lab, "est_tokens": n, "spilled": sp} for lab, n, sp in hook_detail]
+            return out
         print(json.dumps({
             "sessions": len(sessions),
             "median_fee": med,
@@ -1230,7 +1298,7 @@ def run_entry_fee(args):
             "components_estimated": True,
             "split_sessions": splittable,
             "split_session_fee": split_sess["fee"] if split_sess else 0,
-            "split_components": [{"component": r[0], "est_tokens": r[1]} for r in comp],
+            "split_components": [comp_json(r) for r in comp],
             "by_project": [{"project": r[0], "sessions": r[1], "median_fee": r[2]} for r in projects],
             "by_week": [{"week": r[0], "sessions": r[1], "median_fee": r[2]} for r in weeks],
             "skill_listing_measured": {
@@ -1245,9 +1313,15 @@ def run_entry_fee(args):
     split_fee = split_sess["fee"] if split_sess else 0
     print(f"# entry-fee  ({len(sessions)} sessions, {len(projects)} projects; median {med} tokens re-read per turn, measured)")
     print(f"  component split of one {split_fee}-token session ({splittable} sessions record the rendered preamble;")
-    print(f"  the split is ESTIMATED from disk (component size, e.g. SKILL.md text) at {ENTRY_FEE_CHARS_PER_TOKEN} chars/token,")
+    print(f"  the split is ESTIMATED from the transcript's rendered attachment text at {ENTRY_FEE_CHARS_PER_TOKEN} chars/token,")
     print("  only the totals are measured):")
     print_table(["component", "est-tokens", "share"], comp)
+    if args.detail and instr_detail:
+        print("    instructions detail, per file (est-tokens):")
+        print_table(["file", "est-tokens"], instr_detail)
+    if args.detail and hook_detail:
+        print("    hook_success detail, per SessionStart hook (est-tokens; SPILLED = output persisted to a file):")
+        print_table(["hook", "est-tokens", "spilled"], [[lab, n, "SPILLED" if sp else ""] for lab, n, sp in hook_detail])
     print("  per repo (median measured fee):")
     print_table(["project", "sessions", "median-fee"], projects)
     if args.trend:
@@ -1392,6 +1466,7 @@ def main(argv=None):
     p.add_argument("--errors", metavar="TOOL", help="(tools) group TOOL's error results by message prefix")
     p.add_argument("--since", type=int, default=60, help="(burn only) window in minutes (default 60)")
     p.add_argument("--trend", action="store_true", help="(entry-fee) add a weekly median table, newest week first")
+    p.add_argument("--detail", action="store_true", help="(entry-fee) add per-file instructions and per-hook hook_success sub-rows to the text table (--json always carries them)")
     p.add_argument("--json", action="store_true", help="machine-readable output (for vps-mon ingest)")
     args = p.parse_args(argv)
 

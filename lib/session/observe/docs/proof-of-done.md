@@ -724,6 +724,82 @@ bash bin/session observe entry-fee --days 14 --top 8 --trend   # live tables
 bash bin/session observe entry-fee --days 14 --json            # machine-readable
 ```
 
+### `--detail` sub-rows: instructions per file, hook_success per hook (2026-09-23)
+
+**Feature:** `instructions` and `hook_success` sub-split by file / SessionStart hook, so
+"which CLAUDE.md/MEMORY.md file" and "which hook injects what" no longer need a
+hand-rolled python pass over the transcript. A hook whose output spilled to a file
+(harness inline-cap overflow, `content` carries `Output too large`) is flagged
+`SPILLED`. `--detail` gates the sub-rows in the text table; `--json` always carries
+them. Header wording fixed to match what the code sizes (the transcript's rendered
+attachment text, not "disk"). Spec delta: `docs/specs/SPEC-289-observe-entry-fee.md`.
+
+#### Run table
+
+| Check | Command | Expected | Result |
+|---|---|---|---|
+| Module suite green | `bash lib/session/observe/tests/smoke.sh \| tail -1` | all cases pass | PASS, `smoke: all 101 passed` |
+| Instructions sub-rows sum to parent | smoke 98 | A.md 150 + B.md 50 = instructions 200 | PASS |
+| hook_success sub-rows sum to parent, spilled flagged | smoke 99 | tool-first.sh 90 + repo-memory.sh 58 = hook_success 148, repo-memory.sh `SPILLED` | PASS |
+| No sub-rows without `--detail` | smoke 100 | neither file path nor hook label prints | PASS |
+| `--json` always carries sub-rows | smoke 101 | `split_components[].files`/`.hooks` present with no `--detail` | PASS |
+| Existing entry-fee assertions unaffected | smoke 62-79, 91-97 | unchanged | PASS |
+| Live, real transcript | `session-observe entry-fee --file <2026-09-23 session>.jsonl --detail` | instructions splits by CLAUDE.md/MEMORY.md, hook_success splits by command | PASS, see below |
+
+#### Live run (2026-09-23, one real session)
+
+```
+$ session-observe entry-fee --file ~/.claude/projects/-Users-tieubao-workspace-tieubao-ops-toolkit/2e1864c1-*.jsonl --detail
+  component                  est-tokens  share
+  -------------------------  ----------  -----
+  skill_listing                   15858    20%
+  instructions                    14227    18%
+  ...
+  hook_success                     2956     4%
+  ...
+  (unattributed)                  36277    47%
+    instructions detail, per file (est-tokens):
+  /Users/tieubao/.claude/CLAUDE.md                                                                     7209
+  /Users/tieubao/workspace/tieubao/ops-toolkit/CLAUDE.md                                               3535
+  /Users/tieubao/.claude/projects/-Users-tieubao-workspace-tieubao-ops-toolkit/memory/MEMORY.md        1975
+  /Users/tieubao/workspace/tieubao/CLAUDE.md                                                           1508
+    hook_success detail, per SessionStart hook (est-tokens; SPILLED = output persisted to a file):
+  ~/.claude/hooks/repo-memory/repo-memory.sh        2180
+  Loading ponytail mode...                           776
+```
+
+`7209 + 3535 + 1975 + 1508 = 14227` (the instructions row), `2180 + 776 = 2956` (the
+hook_success row). Neither file in this live session spilled.
+
+#### Negative control
+
+`bash lib/gate/negctl.sh` dropped the `files` handling for `instructions` (returned the
+function's body without calling `_split_instruction_files`) and the `hook_rows`
+accumulation for `hook_success`.
+
+```
+Exit: 0 (green before mutation)
+Changed: lib/session/observe/bin/session-observe
+Exit: 1 (under mutation, RED: smoke 98/99/101 fail, no sub-rows to assert against)
+Restore: git checkout HEAD -- lib/session/observe/bin/session-observe
+Exit: 0 (green after restore)
+Verdict: PASS
+```
+
+Pre-change-binary control (this feature did not exist before): `git show
+origin/master:lib/session/observe/bin/session-observe` into a scratch file and pointed
+smoke's `$CC` at it for tests 98-101 only; all four failed for the expected reason (no
+`--detail` flag, no `files`/`hooks` JSON keys, no sub-row text). Command and captured
+output: `lib/session/observe/docs/verification/entry-fee.md`.
+
+#### Reproduce
+
+```bash
+bash lib/session/observe/tests/smoke.sh                                  # -> smoke: all 101 passed
+bash bin/session observe entry-fee --days 14 --detail                    # live, text sub-rows
+bash bin/session observe entry-fee --days 14 --json | jq '.split_components'  # sub-rows unconditional
+```
+
 ## SPEC-301 `tools --errors`: a tool's error results grouped by message prefix
 
 **Feature:** `session observe tools --errors <tool>` replaces the standard table with a prefix-grouped table of that tool's `is_error` tool_result content (first 160 chars, whitespace-collapsed, ranked by count with a share column, honouring `--top`), plus `tool_error_groups` in `--json`. The count table's "why" is one flag away instead of a hand-rolled python one-liner. Spec: `docs/specs/SPEC-301-observe-tool-errors.md`. Row: ID-903.

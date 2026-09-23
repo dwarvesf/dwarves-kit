@@ -84,3 +84,43 @@ covers the first user prompt, not the preamble alone. The `(unattributed)` row a
 it, which matters at the 51 percent unattributed share the live run shows. Stated in the
 spec and the README instead of subtracted, because the transcript gives no way to
 separate the two.
+
+## 2026-09-23 Per-component detail: instructions and hook_success sub-rows
+
+**Context**: a real session had to hand-roll python over transcripts four times to
+answer "which CLAUDE.md/MEMORY.md file costs what" and "which SessionStart hook injects
+what", because `instructions` and `hook_success` were single lumped rows. Separately,
+a hook whose stdout exceeds the harness's inline cap gets persisted to a file with only
+a preview injected (its `hook_success.content` carries the marker text `Output too
+large`), silently dropping content with no flag in the view.
+
+**Decision**: `instructions` sub-splits across the attachment's `files` list
+(`path`/`type`/`content`) by content-length share, largest-remainder rounding so
+sub-rows always sum to exactly the parent row's tokens (never off by a rounding error,
+never requiring a second reconciliation). `hook_success` sub-splits by `command`
+truncated to 50 characters (the literal command string, not the `hooks` view's grouped
+`hook_label()`, since here the ask is "which hook", not "which script basename groups
+several hooks"); each attachment entry contributes its own tokens to exactly one label,
+so parent-equals-sum holds by construction with no split math needed. A hook is flagged
+`SPILLED` when its `content` carries the marker text, shown even at zero tokens since
+the flag itself is the signal.
+
+**Why not filter hook_success to SessionStart explicitly**: `entry_fee_session` already
+returns at the first main-chain assistant turn, so every attachment entry it has seen
+by then is, in practice, a SessionStart-time one. Adding an explicit `hookEvent ==
+"SessionStart"` filter on top would either be redundant or, if a stray non-SessionStart
+attachment ever preceded the first assistant turn, break the sum-to-parent invariant
+(the parent's existing, unchanged accumulation would count it; a filtered sub-row list
+would not). Left the parent computation untouched (no change to measured-fee logic) and
+let the same entries that already feed the parent also feed the sub-rows.
+
+**Impact**: `--detail` gates the sub-rows in the text table (default output stays one
+row per component, per the spec's non-goal against inflating the standard table);
+`--json` carries `split_components[].files` / `.hooks` unconditionally, since a machine
+reader has no readability concern to gate behind a flag.
+
+**Also fixed**: the header claimed the split was "ESTIMATED from disk (component size,
+e.g. SKILL.md text)". The code has never read disk; it sizes the transcript's rendered
+`attachment` text. Reworded to "ESTIMATED from the transcript's rendered attachment
+text", same 4 chars/token, same "estimate" label. `tests/smoke.sh` test 92 updated to
+match (it grepped the old wrong wording).
