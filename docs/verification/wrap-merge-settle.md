@@ -31,6 +31,18 @@ Output: run-all: --changed against 25d4940: 7 changed files -> 15 suites (11 nam
 Verdict: PASS
 ```
 
+## Test plan coverage
+
+| SPEC-306 test-plan row | Run |
+|---|---|
+| Late settle | `settle:` late-settling block, 5 assertions, green run above |
+| Stuck CONFLICTING | `settle:` stuck block, 4 assertions |
+| Moved head | `settle:` moved-head block, 4 assertions |
+| Unregistered push | `settle:` unregistered-push block, 3 assertions |
+| First read UNKNOWN | `settle:` first-read block, 2 assertions |
+| No checkout | `no-checkout:` block, 8 assertions |
+| Fallback refusal kept | existing `a not-carried conflict` block, 4 assertions, now reached through a dirty checkout |
+
 ## Negative control
 
 ```
