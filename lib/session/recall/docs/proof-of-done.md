@@ -84,3 +84,7 @@ python3 -m unittest discover -s tests              # 7/7 OK
   `prose-rag`; this is the exact, lossless, structure-preserving complement.
 - Default project resolution derives the slug from cwd; pass `--project`/`--all`/`--file`
   to widen. No fuzzy ranking , hits are returned in conversation order, capped by `--limit`.
+
+## Tail mode
+
+`--tail <prefix>` proof: `docs/verification/recall-session-tail.md`.

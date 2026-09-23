@@ -17,6 +17,13 @@ session-recall answers "find me this one past thing" (a snippet). One entry
 schema, two different questions asked of it.
 
 Contract:
+  parse_lines(lines) -> Iterator[dict]
+      The inner loop of `iter_entries`, factored out so a caller with lines
+      from somewhere other than a whole open file (session-recall's tail
+      chunk reader: a byte-range read, decoded with errors="replace" before
+      splitting) gets the same blank/decode-error/non-dict skip rules instead
+      of a hand-copied loop.
+
   iter_entries(path) -> Iterator[dict]
       Stream one parsed JSON *object* per valid line, in file order. A blank
       line is skipped. A line that fails `json.loads`, OR that decodes to
@@ -50,6 +57,26 @@ import sys
 from typing import Iterator
 
 
+def parse_lines(lines) -> Iterator[dict]:
+    """The shared inner loop: parse an iterable of text lines into JSON objects.
+    A blank line is skipped. A line that fails `json.loads`, or that decodes to
+    valid JSON that is not an object, is skipped too (untrusted input; every
+    caller reads an entry as a dict). Takes any iterable of str (a file handle,
+    a list from a raw byte chunk) -- callers own how the lines were produced
+    and how decode errors in that step are handled."""
+    for line in lines:
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            entry = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(entry, dict):
+            continue
+        yield entry
+
+
 def iter_entries(path: str) -> Iterator[dict]:
     """Yield each successfully-parsed JSON *object* in `path`, in file order.
 
@@ -62,17 +89,7 @@ def iter_entries(path: str) -> Iterator[dict]:
     per-file skip or a reported error.
     """
     with open(path, "r", encoding="utf-8") as fh:
-        for line in fh:
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                entry = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            if not isinstance(entry, dict):
-                continue
-            yield entry
+        yield from parse_lines(fh)
 
 
 def load(path: str) -> list:
