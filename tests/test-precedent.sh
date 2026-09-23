@@ -625,15 +625,15 @@ fi
 # --quiet collapse, --explain, precedent.log line, exit 64 on a bogus registry kind).
 
 # ---------------------------------------------------------------------------
-# TASK-003 AC1: AND semantics -- a two-term query where one term is absent scores 0
-# everywhere, so nothing_matched is true.
+# TASK-003 AC1: the match floor -- a two-term query must match both terms, so a query
+# where one term is absent scores 0 everywhere and nothing_matched is true.
 # ---------------------------------------------------------------------------
 OUT="$("$PRECEDENT_BIN" find "notion zzzqqq" --surface inventory --json 2>&1)"; RC=$?
 NOTHING="$(printf '%s' "$OUT" | python3 -c 'import json,sys; print(json.load(sys.stdin)["nothing_matched"])' 2>/dev/null)"
 if [ "$RC" -eq 0 ] && [ "$NOTHING" = "True" ]; then
-  assert "AND semantics: an absent term zeroes every inventory hit" 0
+  assert "floor: a two-term query with one absent term zeroes every inventory hit" 0
 else
-  assert "AND semantics: an absent term zeroes every inventory hit" 1
+  assert "floor: a two-term query with one absent term zeroes every inventory hit" 1
   echo "rc=$RC nothing_matched=$NOTHING" | sed 's/^/      /'
 fi
 
@@ -1234,6 +1234,113 @@ if [ "$RC" -eq 0 ] && { trap '' PIPE; printf '%s' "$OUT" 2>/dev/null || :; } | g
 else
   assert "redaction reaches a tool helper script's comment header" 1
   echo "rc=$RC out=$OUT" | sed 's/^/      /'
+fi
+
+# ---------------------------------------------------------------------------
+# Partial match: one extra query word no longer hides a row. A three-term query where one
+# term matches nothing still finds tools/alpha/ (alpha in the name, notion in the
+# description): two of three terms clear the floor. The same row ranks above every
+# partial row when the query matches it fully.
+# ---------------------------------------------------------------------------
+OUT="$("$PRECEDENT_BIN" find "alpha notion zzzqqq" --surface inventory --json 2>&1)"; RC=$?
+GOT="$(printf '%s' "$OUT" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d["nothing_matched"], d["tools"]["hits"][0])' 2>/dev/null)"
+if [ "$RC" -eq 0 ] && { trap '' PIPE; printf '%s' "$GOT" 2>/dev/null || :; } | grep -q '^False tools/alpha/'; then
+  assert "partial match: a three-term query with one absent word still finds tools/alpha/" 0
+else
+  assert "partial match: a three-term query with one absent word still finds tools/alpha/" 1
+  echo "rc=$RC got=$GOT" | sed 's/^/      /'
+fi
+
+# Below the floor: only one of three terms matches, so nothing clears it.
+OUT="$("$PRECEDENT_BIN" find "alpha zzzqqq yyyxxx" --surface inventory --json 2>&1)"; RC=$?
+NOTHING="$(printf '%s' "$OUT" | python3 -c 'import json,sys; print(json.load(sys.stdin)["nothing_matched"])' 2>/dev/null)"
+if [ "$RC" -eq 0 ] && [ "$NOTHING" = "True" ]; then
+  assert "floor: one matching term of three is below the floor, nothing_matched" 0
+else
+  assert "floor: one matching term of three is below the floor, nothing_matched" 1
+  echo "rc=$RC nothing_matched=$NOTHING" | sed 's/^/      /'
+fi
+
+# A query none of whose words the index holds still reports nothing_matched.
+OUT="$("$PRECEDENT_BIN" find "kubernetes pod autoscaler" --surface inventory --json 2>&1)"; RC=$?
+NOTHING="$(printf '%s' "$OUT" | python3 -c 'import json,sys; print(json.load(sys.stdin)["nothing_matched"])' 2>/dev/null)"
+if [ "$RC" -eq 0 ] && [ "$NOTHING" = "True" ]; then
+  assert "none-query: an unrelated three-word query reports nothing_matched" 0
+else
+  assert "none-query: an unrelated three-word query reports nothing_matched" 1
+  echo "rc=$RC nothing_matched=$NOTHING" | sed 's/^/      /'
+fi
+
+# A partial match needs a name hit: gamma.md's body holds "rotation", "sync" and "notion",
+# but a partial match on body words alone is noise, so "notion rotation zzzqqq" must not
+# surface the note (the full query "notion rotation" still does, via its description).
+OUT="$("$PRECEDENT_BIN" find "notion rotation zzzqqq" --surface inventory --json 2>&1)"; RC=$?
+MEM="$(printf '%s' "$OUT" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(len(d.get("memory",{}).get("hits",[])))' 2>/dev/null)"
+OUT2="$("$PRECEDENT_BIN" find "notion rotation" --surface inventory --json 2>&1)"
+MEM2="$(printf '%s' "$OUT2" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(len(d.get("memory",{}).get("hits",[])))' 2>/dev/null)"
+if [ "$RC" -eq 0 ] && [ "$MEM" = "0" ] && [ "${MEM2:-0}" -ge 1 ]; then
+  assert "partial match without a name hit is dropped; the all-terms match still surfaces" 0
+else
+  assert "partial match without a name hit is dropped; the all-terms match still surfaces" 1
+  echo "rc=$RC partial_memory_hits=$MEM full_memory_hits=$MEM2" | sed 's/^/      /'
+fi
+
+# Separators: `_`, `-` and `/` split query terms, so `alpha_run` finds tools/alpha/bin/alpha-run.
+OUT="$("$PRECEDENT_BIN" find "alpha_run" --surface inventory 2>&1)"; RC=$?
+if [ "$RC" -eq 0 ] && { trap '' PIPE; printf '%s' "$OUT" 2>/dev/null || :; } | grep -q 'tools/alpha/bin/alpha-run'; then
+  assert "separators: alpha_run matches tools/alpha/bin/alpha-run" 0
+else
+  assert "separators: alpha_run matches tools/alpha/bin/alpha-run" 1
+  echo "rc=$RC out=$OUT" | sed 's/^/      /'
+fi
+
+# ---------------------------------------------------------------------------
+# YAML block scalars: a skill whose `description:` is `>-` (or `|`) indexes the indented text
+# under the marker, never the marker itself. The unique word lives only in that text.
+# ---------------------------------------------------------------------------
+mkdir -p "$FIX_REPO/.claude/skills/omicron" "$FIX_REPO/.claude/skills/pi"
+cat > "$FIX_REPO/.claude/skills/omicron/SKILL.md" <<'FIX'
+---
+name: omicron
+description: >-
+  Use when an omicronunique ledger needs folding.
+  Second folded line.
+allowed-tools: Read
+---
+Body.
+FIX
+cat > "$FIX_REPO/.claude/skills/pi/SKILL.md" <<'FIX'
+---
+name: pi
+description: |
+  Use when a piunique report is due.
+---
+Body.
+FIX
+OUT="$("$PRECEDENT_BIN" find omicronunique --surface inventory --json 2>&1)"; RC=$?
+HIT="$(printf '%s' "$OUT" | python3 -c 'import json,sys; print(json.load(sys.stdin)["skills"]["hits"][0])' 2>/dev/null)"
+OUT2="$("$PRECEDENT_BIN" find piunique --surface inventory --json 2>&1)"
+HIT2="$(printf '%s' "$OUT2" | python3 -c 'import json,sys; print(json.load(sys.stdin)["skills"]["hits"][0])' 2>/dev/null)"
+if [ "$RC" -eq 0 ] && [ "$HIT" = "skill omicron  , Use when an omicronunique ledger needs folding." ] \
+   && [ "$HIT2" = "skill pi  , Use when a piunique report is due." ]; then
+  assert "block scalar: a >- and a | skill description index the real text" 0
+else
+  assert "block scalar: a >- and a | skill description index the real text" 1
+  echo "rc=$RC hit=$HIT hit2=$HIT2" | sed 's/^/      /'
+fi
+
+# ---------------------------------------------------------------------------
+# lib tool entry points: an extensionless executable under a lib/<x>/bin/ dir is indexed as
+# a kit verb (lib/session/observe/bin/session-observe owns the entry-fee view; *.sh-only
+# indexing never saw it), so "session entry fee breakdown" finds it.
+# ---------------------------------------------------------------------------
+OUT="$("$PRECEDENT_BIN" find "session entry fee breakdown" --surface inventory --json 2>&1)"; RC=$?
+KV="$(printf '%s' "$OUT" | python3 -c 'import json,sys; print(json.load(sys.stdin)["kit verbs"]["hits"][0])' 2>/dev/null)"
+if [ "$RC" -eq 0 ] && { trap '' PIPE; printf '%s' "$KV" 2>/dev/null || :; } | grep -q '^kit lib/session/observe/bin/session-observe'; then
+  assert "lib bin entry point: session-observe is indexed and tops 'session entry fee breakdown'" 0
+else
+  assert "lib bin entry point: session-observe is indexed and tops 'session entry fee breakdown'" 1
+  echo "rc=$RC top=$KV" | sed 's/^/      /'
 fi
 
 echo
