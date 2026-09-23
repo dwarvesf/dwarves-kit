@@ -2,8 +2,8 @@
 # wrap.sh -- the landing step after ship. One pass over every repo a session
 # touched, with nine verbs:
 #
-#   wrap.sh scan  <repo> [<repo>...]                        report only, exit 0
-#   wrap.sh apply [--apply] [--worktrees] [--own <path>]... <repo> [...]      dry-run by default
+#   wrap.sh scan  [--under <root>]... <repo> [<repo>...]    report only, exit 0
+#   wrap.sh apply [--apply] [--worktrees] [--own <path>]... [--under <root>]... <repo> [...]  dry-run by default
 #   wrap.sh merge [--apply] [--pr N] <repo>                 merges ONE own green PR (--pr: a named draft)
 #   wrap.sh land  <worktree> [--title T] [--body-file F]    one hand-made worktree, landed
 #   wrap.sh start <repo> <branch>                           one hand-made worktree, started
@@ -12,6 +12,10 @@
 #   wrap.sh knowledge-root <repo>                           the fenced knowledge dir
 #   wrap.sh stage "<title>" "<intent>" "<home>" [--repo <repo>]  stage a candidate
 #   wrap.sh --help
+#
+#   --under <root> (scan and apply, repeatable) appends every immediate child of <root> that
+#   holds a .git file or directory, in sorted order, to the repo list. Other children are
+#   skipped; a root with no repos prints one line.
 #
 #   internal, a test seam: apply --tips-file <path> replaces the run's own tip snapshot
 #   internal, a test seam: WRAP_ORIGIN_DELETE_CHUNK sets the names per origin delete push
@@ -60,7 +64,7 @@ source "$LIB_ROOT/config/kit-config.sh" || { echo "FATAL: lib/config/kit-config.
 # shellcheck source=lib/gate/default-branch-warn.sh
 source "$LIB_ROOT/gate/default-branch-warn.sh" || { echo "FATAL: lib/gate/default-branch-warn.sh missing or unreadable" >&2; exit 1; }
 
-_usage() { sed -n '2,26p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
+_usage() { sed -n '2,30p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
 
 # --------------------------------------------------------------------------- helpers
 
@@ -264,10 +268,34 @@ _scan_repo() {
   esac
 }
 
+# _add_under <root> -- appends every immediate child of <root> holding a .git file or
+# directory, in sorted order, to the CALLER's `repos` array and `count` (bash dynamic scope;
+# both callers declare them local). A root with none prints one line and appends nothing.
+_add_under() {
+  local found r
+  found="$(for r in "${1%/}"/*/; do [ -e "${r}.git" ] && printf '%s\n' "${r%/}"; done | LC_ALL=C sort)"
+  if [ -z "$found" ]; then echo "== ${1}: --under found no git repos"; return 0; fi
+  while IFS= read -r r; do count=$(( count + 1 )); repos[count]="$r"; done <<< "$found"
+}
+
 cmd_scan() {
-  [ $# -ge 1 ] || { echo "usage: wrap.sh scan <repo> [<repo>...]" >&2; return 64; }
-  local ghs repo; ghs="$(_gh_state)"
-  for repo in "$@"; do _scan_repo "$repo" "$ghs"; done
+  local ghs arg count=0 i=1 want_under=0 nu=0
+  local repos unders
+  for arg in "$@"; do
+    case "$arg" in
+      --under=*) nu=$(( nu + 1 )); unders[nu]="${arg#--under=}" ;;
+      --under) want_under=1 ;;
+      -*) echo "wrap.sh scan: unknown flag '$arg'" >&2; return 64 ;;
+      *) if [ "$want_under" = 1 ]; then nu=$(( nu + 1 )); unders[nu]="$arg"; want_under=0
+         else count=$(( count + 1 )); repos[count]="$arg"; fi ;;
+    esac
+  done
+  [ "$want_under" = 0 ] || { echo "wrap.sh scan: --under needs a directory" >&2; return 64; }
+  [ "$count" -ge 1 ] || [ "$nu" -ge 1 ] || { echo "usage: wrap.sh scan [--under <root>]... <repo> [<repo>...]" >&2; return 64; }
+  while [ "$i" -le "$nu" ]; do _add_under "${unders[$i]}"; i=$(( i + 1 )); done
+  ghs="$(_gh_state)"
+  i=1
+  while [ "$i" -le "$count" ]; do _scan_repo "${repos[$i]}" "$ghs"; i=$(( i + 1 )); done
   echo "===================================================================="
   echo "Report only. Deletion, merging and pulling stay a judgment call."
   return 0
@@ -916,18 +944,21 @@ _apply_repo() {
 cmd_apply() {
   # Indexed assignment plus a counter, not `arr+=()` with `${#arr[@]}`: an empty array reads
   # as unbound under `set -u` in bash 3.2, which is what macOS ships.
-  local arg count=0 i=1 want_tips=0 want_own=0
-  local repos
+  local arg count=0 i=1 want_tips=0 want_own=0 want_under=0 nu=0
+  local repos unders
   for arg in "$@"; do
     case "$arg" in
       --apply) APPLY=1 ;;
       --worktrees) WORKTREES=1 ;;
+      --under=*) nu=$(( nu + 1 )); unders[nu]="${arg#--under=}" ;;
+      --under) want_under=1 ;;
       --own=*) OWN_N=$(( OWN_N + 1 )); OWN_PATHS[OWN_N]="${arg#--own=}" ;;
       --own) want_own=1 ;;
       --tips-file=*) TIPS_OVERRIDE="${arg#--tips-file=}" ;;
       --tips-file) want_tips=1 ;;
       -*) echo "wrap.sh apply: unknown flag '$arg'" >&2; return 64 ;;
       *) if [ "$want_own" = 1 ]; then OWN_N=$(( OWN_N + 1 )); OWN_PATHS[OWN_N]="$arg"; want_own=0
+         elif [ "$want_under" = 1 ]; then nu=$(( nu + 1 )); unders[nu]="$arg"; want_under=0
          elif [ "$want_tips" = 1 ]; then TIPS_OVERRIDE="$arg"; want_tips=0
          else count=$(( count + 1 )); repos[count]="$arg"; fi ;;
     esac
@@ -937,7 +968,9 @@ cmd_apply() {
   if [ -n "$TIPS_OVERRIDE" ] && [ ! -f "$TIPS_OVERRIDE" ]; then
     echo "wrap.sh apply: --tips-file '${TIPS_OVERRIDE}' is not an existing file" >&2; return 64
   fi
-  [ "$count" -ge 1 ] || { echo "usage: wrap.sh apply [--apply] [--worktrees] [--own <path>]... <repo> [<repo>...]" >&2; return 64; }
+  [ "$want_under" = 0 ] || { echo "wrap.sh apply: --under needs a directory" >&2; return 64; }
+  [ "$count" -ge 1 ] || [ "$nu" -ge 1 ] || { echo "usage: wrap.sh apply [--apply] [--worktrees] [--own <path>]... [--under <root>]... <repo> [<repo>...]" >&2; return 64; }
+  while [ "$i" -le "$nu" ]; do _add_under "${unders[$i]}"; i=$(( i + 1 )); done
   # Canonicalise the own set once: the worktree loop compares against `pwd -P`
   # paths, so the same normalisation must apply to the names the operator typed.
   i=1

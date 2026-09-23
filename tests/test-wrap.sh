@@ -269,6 +269,25 @@ out="$("$WRAP" scan "$TMPD/not-a-repo" "$TMPD/clone-scan-main" 2>&1)"
 chk_has "scan: non-repo prints the skip line" "$out" "not a git repo, skipped"
 chk_has "scan: the following repo still reports" "$out" "-- vs origin/main: ahead="
 
+echo "=== scan, apply --under: every child repo of a root, sorted; other children skipped ==="
+UROOT="$TMPD/under-root"; mkdir -p "$UROOT/plain-dir" "$UROOT/zeta" "$UROOT/alpha" "$TMPD/under-empty/plain"
+git -C "$UROOT/zeta" init -q; git -C "$UROOT/alpha" init -q
+out="$("$WRAP" scan --under "$UROOT" --under "$TMPD/under-empty" 2>&1)"; rc=$?
+chk "under: scan exits 0" "$rc"
+chk_has "under: scan reports the first repo" "$out" "== $UROOT/alpha"
+chk_has "under: scan reports the second repo" "$out" "== $UROOT/zeta"
+chk "under: the repos come in sorted order" \
+  "$(printf '%s\n' "$out" | grep -E "^== $UROOT/" | tr '\n' ' ' | grep -qxF "== $UROOT/alpha == $UROOT/zeta "; echo $?)"
+chk_no "under: the plain directory is skipped silently" "$out" "plain-dir"
+chk_has "under: a root with no repos prints one line" "$out" "== $TMPD/under-empty: --under found no git repos"
+chk "under: the empty root prints nothing else" "$(printf '%s\n' "$out" | grep -c "under-empty" | grep -qx 1; echo $?)"
+out="$("$WRAP" apply "$TMPD/clone-scan-main" --under="$UROOT/" 2>&1)"; rc=$?
+chk "under: apply exits 0" "$rc"
+chk "under: apply appends the root's repos after the named one" \
+  "$(printf '%s\n' "$out" | grep -E '^== /' | tr '\n' ' ' | grep -qxF "== $TMPD/clone-scan-main == $UROOT/alpha == $UROOT/zeta "; echo $?)"
+out="$("$WRAP" apply --under 2>&1)"; rc=$?
+chk "under: a missing directory is a usage error" "$([ "$rc" -eq 64 ]; echo $?)"
+
 # ===========================================================================
 echo "=== apply dry-run: every SKIP reason, and no write ==="
 # ===========================================================================
