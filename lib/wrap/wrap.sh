@@ -20,6 +20,10 @@
 #   internal, a test seam: apply --tips-file <path> replaces the run's own tip snapshot
 #   internal, a test seam: WRAP_ORIGIN_DELETE_CHUNK sets the names per origin delete push
 #
+# Verify a change in the shape commands/wrap.md runs it: step 5 passes `--own` on a shared
+# repo, so a test or real-repo run of the bare form alone misses that path. The first origin
+# sweep shipped skipping `--own` and every shared repo kept its merged heads.
+#
 # The write set is closed: branch delete under two proofs, `apply`'s origin delete of
 # merged branches, each leased to the tip it read (knob wrap.delete_merged_remote_branches),
 # worktree remove under
