@@ -269,6 +269,25 @@ out="$("$WRAP" scan "$TMPD/not-a-repo" "$TMPD/clone-scan-main" 2>&1)"
 chk_has "scan: non-repo prints the skip line" "$out" "not a git repo, skipped"
 chk_has "scan: the following repo still reports" "$out" "-- vs origin/main: ahead="
 
+echo "=== scan, apply --under: every child repo of a root, sorted; other children skipped ==="
+UROOT="$TMPD/under-root"; mkdir -p "$UROOT/plain-dir" "$UROOT/zeta" "$UROOT/alpha" "$TMPD/under-empty/plain"
+git -C "$UROOT/zeta" init -q; git -C "$UROOT/alpha" init -q
+out="$("$WRAP" scan --under "$UROOT" --under "$TMPD/under-empty" 2>&1)"; rc=$?
+chk "under: scan exits 0" "$rc"
+chk_has "under: scan reports the first repo" "$out" "== $UROOT/alpha"
+chk_has "under: scan reports the second repo" "$out" "== $UROOT/zeta"
+chk "under: the repos come in sorted order" \
+  "$(printf '%s\n' "$out" | grep -E "^== $UROOT/" | tr '\n' ' ' | grep -qxF "== $UROOT/alpha == $UROOT/zeta "; echo $?)"
+chk_no "under: the plain directory is skipped silently" "$out" "plain-dir"
+chk_has "under: a root with no repos prints one line" "$out" "== $TMPD/under-empty: --under found no git repos"
+chk "under: the empty root prints nothing else" "$(printf '%s\n' "$out" | grep -c "under-empty" | grep -qx 1; echo $?)"
+out="$("$WRAP" apply "$TMPD/clone-scan-main" --under="$UROOT/" 2>&1)"; rc=$?
+chk "under: apply exits 0" "$rc"
+chk "under: apply appends the root's repos after the named one" \
+  "$(printf '%s\n' "$out" | grep -E '^== /' | tr '\n' ' ' | grep -qxF "== $TMPD/clone-scan-main == $UROOT/alpha == $UROOT/zeta "; echo $?)"
+out="$("$WRAP" apply --under 2>&1)"; rc=$?
+chk "under: a missing directory is a usage error" "$([ "$rc" -eq 64 ]; echo $?)"
+
 # ===========================================================================
 echo "=== apply dry-run: every SKIP reason, and no write ==="
 # ===========================================================================
@@ -702,7 +721,7 @@ UM_LAB_BEFORE="$(cksum < "$UM/_meta/LAB_LOG.md")"
 out="$("$WRAP" apply --apply "$UM" 2>&1)"
 chk_has "mixed: the non-union file is named" "$out" "not declared merge=union, so the pull aborts on: README.md"
 chk_no "mixed: the union file was never saved aside" "$out" "union-marked file(s) aside"
-chk_no "mixed: no carry-back happened" "$out" "carried"
+chk_no "mixed: no carry-back happened" "$out" "local line(s) back into"
 chk "mixed: the union file is byte-identical" \
   "$([ "$UM_LAB_BEFORE" = "$(cksum < "$UM/_meta/LAB_LOG.md")" ]; echo $?)"
 
@@ -730,6 +749,117 @@ chk_has "dry-run: the carry is announced only" "$out" "--apply would carry its l
 chk_no "dry-run: nothing was saved aside" "$out" "union-marked file(s) aside"
 chk "dry-run: the union file is byte-identical" \
   "$([ "$UD_BEFORE" = "$(cksum < "$UD/_meta/LAB_LOG.md")" ]; echo $?)"
+
+# ===========================================================================
+echo "=== apply --apply: an ancestor of origin/<default> goes whatever its upstream says ==="
+# ===========================================================================
+# `git branch -d` judges against the branch's own upstream, or HEAD when it has none. Local
+# main sits behind origin/main here, so both branches fail git's check while wrap's proof
+# (ancestor of origin/main) holds: one has no upstream, one tracks a ref that lacks its tip.
+build_union_repo noup; advance_union_repo noup
+NU="$TMPD/uclone-noup"
+git -C "$NU" fetch -q origin
+git -C "$NU" branch --no-track no-upstream origin/main
+git -C "$NU" branch --no-track old-base main
+git -C "$NU" branch --no-track other-upstream origin/main
+git -C "$NU" branch -q -u old-base other-upstream
+out="$("$WRAP" apply --apply "$NU" 2>&1)"; rc=$?
+chk "no upstream: apply exits 0" "$rc"
+chk_has "no upstream: the delete is reported" "$out" "[APPLY] delete no-upstream (ancestor of origin/main)"
+chk_no "no upstream: no delete failed" "$out" "FAILED delete"
+chk "no upstream: the branch with no upstream is gone" \
+  "$(git -C "$NU" show-ref --verify --quiet refs/heads/no-upstream && echo 1 || echo 0)"
+chk "no upstream: the branch tracking another ref is gone" \
+  "$(git -C "$NU" show-ref --verify --quiet refs/heads/other-upstream && echo 1 || echo 0)"
+
+# ===========================================================================
+echo "=== apply: stray lines in a dirty union-marked file are carried onto a branch ==="
+# ===========================================================================
+# A session wrote two lines into the shared main checkout and never committed them. The dry
+# run names them; --apply carries them to a new branch on origin and leaves the checkout alone.
+build_union_repo stray
+SC="$TMPD/uclone-stray"; SB="$TMPD/ubare-stray"
+LAB_STRAY=$'# Lab log\n\n---\n\n2026-09-05 · stray: the second line\n2026-09-04 · stray: the first line\n2026-09-01 · base: the first line\n'
+printf '%s' "$LAB_STRAY" > "$SC/_meta/LAB_LOG.md"
+SC_BEFORE="$(cksum < "$SC/_meta/LAB_LOG.md")"
+stray_branches() { git -C "$SB" for-each-ref --format='%(refname:short)' 'refs/heads/wrap/stray-*'; }
+out="$("$WRAP" apply "$SC" 2>&1)"; rc=$?
+chk "stray dry-run: apply exits 0" "$rc"
+chk_has "stray dry-run: names the two lines" "$out" "WOULD carry 2 stray lines in _meta/LAB_LOG.md onto a branch"
+chk "stray dry-run: no branch reached origin" "$([ -z "$(stray_branches)" ]; echo $?)"
+out="$(KIT_CONFIG_OPERATOR="$TMPD/stray-off" "$WRAP" apply "$SC" 2>&1)" # no kit.toml there: default
+chk_has "stray dry-run: the knob defaults to true" "$out" "WOULD carry 2 stray lines"
+mkdir -p "$TMPD/stray-off"; printf '[wrap]\ncarry_stray_lines = false\n' > "$TMPD/stray-off/kit.toml"
+out="$(KIT_CONFIG_OPERATOR="$TMPD/stray-off" "$WRAP" apply --apply "$SC" 2>&1)"
+chk_has "stray knob off: reports and carries nothing" "$out" \
+  "2 stray lines in _meta/LAB_LOG.md stay in the working copy (wrap.carry_stray_lines=false)"
+chk "stray knob off: no branch reached origin" "$([ -z "$(stray_branches)" ]; echo $?)"
+out="$("$WRAP" apply --apply "$SC" 2>&1)"; rc=$?
+SBR="$(stray_branches)"
+chk "stray --apply: apply exits 0" "$rc"
+chk "stray --apply: exactly one wrap/stray branch on origin" "$([ "$(printf '%s' "$SBR" | grep -c .)" = 1 ]; echo $?)"
+chk "stray --apply: the branch name carries the file slug and a stamp" \
+  "$(printf '%s' "$SBR" | grep -qE '^wrap/stray-meta-lab-log-md-[0-9]{8}-[0-9]{4}$'; echo $?)"
+chk_has "stray --apply: the carry is reported" "$out" "carried 2 stray lines in _meta/LAB_LOG.md to origin/${SBR}"
+chk_has "stray --apply: the PR command is named, not run" "$out" "gh pr create --head ${SBR}"
+SB_FILE="$(git -C "$SB" show "${SBR}:_meta/LAB_LOG.md")"
+chk "stray --apply: the branch file is origin's plus the two lines below the anchor" \
+  "$([ "$SB_FILE" = "${LAB_STRAY%$'\n'}" ]; echo $?)"
+chk "stray --apply: the branch sits one commit on origin/main" \
+  "$([ "$(git -C "$SB" rev-parse "${SBR}^")" = "$(git -C "$SB" rev-parse main)" ]; echo $?)"
+chk "stray --apply: the commit subject names the file" \
+  "$([ "$(git -C "$SB" log -1 --format=%s "$SBR")" = "chore(LAB_LOG): carry 2 stray lines from a shared checkout" ]; echo $?)"
+chk "stray --apply: the checkout's file is byte-identical" \
+  "$([ "$SC_BEFORE" = "$(cksum < "$SC/_meta/LAB_LOG.md")" ]; echo $?)"
+chk "stray --apply: the checkout stays on main" "$([ "$(git -C "$SC" branch --show-current)" = main ]; echo $?)"
+chk "stray --apply: the scratch worktree is gone" "$([ "$(git -C "$SC" worktree list | grep -c .)" = 1 ]; echo $?)"
+out="$("$WRAP" apply --apply "$SC" 2>&1)"
+chk_has "stray rerun: an existing carry branch skips the file" "$out" \
+  "SKIP _meta/LAB_LOG.md: 2 stray lines, but an origin wrap/stray-meta-lab-log-md-* branch already carries this file"
+chk "stray rerun: still one branch on origin" "$([ "$(stray_branches | grep -c .)" = 1 ]; echo $?)"
+
+echo "--- stray lines: a main checkout sitting on a feature branch reports and carries"
+# The incident state. A line the feature branch COMMITTED rides that branch's own PR, so only
+# the two lines no commit holds are stray.
+build_union_repo strayfeat
+SF="$TMPD/uclone-strayfeat"; SFB="$TMPD/ubare-strayfeat"
+git -C "$SF" checkout -q -b feat/other
+LAB_FEAT=$'# Lab log\n\n---\n\n2026-09-06 · feat: committed on the branch\n2026-09-01 · base: the first line\n'
+printf '%s' "$LAB_FEAT" > "$SF/_meta/LAB_LOG.md"; git -C "$SF" commit -qam "feat line"
+printf '%s' $'# Lab log\n\n---\n\n2026-09-08 · stray: board set on the shared checkout\n2026-09-07 · stray: wrap log on the shared checkout\n2026-09-06 · feat: committed on the branch\n2026-09-01 · base: the first line\n' \
+  > "$SF/_meta/LAB_LOG.md"
+out="$("$WRAP" apply "$SF" 2>&1)"
+chk_has "stray on a feature branch: the dry run names the two lines" "$out" \
+  "WOULD carry 2 stray lines in _meta/LAB_LOG.md onto a branch"
+out="$("$WRAP" apply --apply "$SF" 2>&1)"; rc=$?
+SFR="$(git -C "$SFB" for-each-ref --format='%(refname:short)' 'refs/heads/wrap/stray-*')"
+chk "stray on a feature branch: apply exits 0" "$rc"
+chk_has "stray on a feature branch: the carry is reported" "$out" "carried 2 stray lines in _meta/LAB_LOG.md to origin/${SFR}"
+chk "stray on a feature branch: the branch holds origin's file plus the two stray lines" \
+  "$([ "$(git -C "$SFB" show "${SFR}:_meta/LAB_LOG.md")" = $'# Lab log\n\n---\n\n2026-09-08 · stray: board set on the shared checkout\n2026-09-07 · stray: wrap log on the shared checkout\n2026-09-01 · base: the first line' ]; echo $?)"
+chk "stray on a feature branch: the checkout stays on its branch" \
+  "$([ "$(git -C "$SF" branch --show-current)" = feat/other ]; echo $?)"
+
+echo "--- stray lines: a flipped board row lands once, in place, with its new status"
+# claimed -> shipped is the case `dedupe-all` alone gets wrong: both copies are non-queued,
+# and the stale one comes first once the stray row is appended.
+BW="$TMPD/bwork-stray"; BC="$TMPD/bclone-stray"; BB="$TMPD/bbare-stray"
+mkdir -p "$BW/_meta"; git -C "$BW" init -q; gitc "$BW"; git -C "$BW" symbolic-ref HEAD refs/heads/main
+printf '_meta/BACKLOG.md merge=union\n' > "$BW/.gitattributes"
+BOARD_HEAD=$'# Board\n\n| ID | Title | Status |\n|---|---|---|\n'
+printf '%s' "${BOARD_HEAD}"$'| OPS-1 | first | claimed |\n| OPS-2 | second | queued |\n' > "$BW/_meta/BACKLOG.md"
+git -C "$BW" add -A; git -C "$BW" commit -qm base
+git clone -q --bare "$BW" "$BB"; git clone -q "$BB" "$BC"; gitc "$BC"
+git -C "$BC" remote set-head origin main >/dev/null 2>&1
+printf '%s' "${BOARD_HEAD}"$'| OPS-1 | first | shipped (#12) |\n| OPS-2 | second | queued |\n| OPS-3 | third | queued |\n' > "$BC/_meta/BACKLOG.md"
+out="$("$WRAP" apply --apply "$BC" 2>&1)"; rc=$?
+BR="$(git -C "$BB" for-each-ref --format='%(refname:short)' 'refs/heads/wrap/stray-*')"
+BFILE="$(git -C "$BB" show "${BR}:_meta/BACKLOG.md" 2>/dev/null)"
+chk "board stray: apply exits 0" "$rc"
+chk_has "board stray: both stray rows are counted" "$out" "carried 2 stray lines in _meta/BACKLOG.md to origin/${BR}"
+chk "board stray: OPS-1 appears once" "$([ "$(printf '%s\n' "$BFILE" | grep -c '^| OPS-1 |')" = 1 ]; echo $?)"
+chk "board stray: the carry branch holds the flipped row in place, the new row at the end" \
+  "$([ "$BFILE" = "${BOARD_HEAD}"$'| OPS-1 | first | shipped (#12) |\n| OPS-2 | second | queued |\n| OPS-3 | third | queued |' ]; echo $?)"
 
 # ===========================================================================
 echo "=== apply: wrap.pull_past_dirty stashes only the blocking files ==="

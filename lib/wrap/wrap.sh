@@ -2,8 +2,8 @@
 # wrap.sh -- the landing step after ship. One pass over every repo a session
 # touched, with nine verbs:
 #
-#   wrap.sh scan  <repo> [<repo>...]                        report only, exit 0
-#   wrap.sh apply [--apply] [--worktrees] [--own <path>]... <repo> [...]      dry-run by default
+#   wrap.sh scan  [--under <root>]... <repo> [<repo>...]    report only, exit 0
+#   wrap.sh apply [--apply] [--worktrees] [--own <path>]... [--under <root>]... <repo> [...]  dry-run by default
 #   wrap.sh merge [--apply] [--pr N] <repo>                 merges ONE own green PR (--pr: a named draft)
 #   wrap.sh land  <worktree> [--title T] [--body-file F]    one hand-made worktree, landed
 #   wrap.sh start <repo> <branch>                           one hand-made worktree, started
@@ -12,6 +12,10 @@
 #   wrap.sh knowledge-root <repo>                           the fenced knowledge dir
 #   wrap.sh stage "<title>" "<intent>" "<home>" [--repo <repo>]  stage a candidate
 #   wrap.sh --help
+#
+#   --under <root> (scan and apply, repeatable) appends every immediate child of <root> that
+#   holds a .git file or directory, in sorted order, to the repo list. Other children are
+#   skipped; a root with no repos prints one line.
 #
 #   internal, a test seam: apply --tips-file <path> replaces the run's own tip snapshot
 #   internal, a test seam: WRAP_ORIGIN_DELETE_CHUNK sets the names per origin delete push
@@ -27,7 +31,9 @@
 # `merge`'s squash-equivalent fallback for a conflicting own PR whose head already holds
 # the base (one commit-tree, one <branch>-squash push with a single scratch-ref delete and
 # repush, one replacement `gh pr create`), `land`'s own named push, PR create, squash
-# merge, worktree remove and branch delete,
+# merge, worktree remove and branch delete, `apply`'s stray-line carry (per dirty
+# union-marked file, one scratch detached worktree at origin/<default>, one commit, one push
+# of a new wrap/stray-* branch, knob wrap.carry_stray_lines),
 # and `start`'s one worktree add under `.claude/worktrees` on a new local branch.
 # Every other action is a report line. The
 # verbs never switch a branch and never force a push or a pull. The one force is
@@ -60,7 +66,7 @@ source "$LIB_ROOT/config/kit-config.sh" || { echo "FATAL: lib/config/kit-config.
 # shellcheck source=lib/gate/default-branch-warn.sh
 source "$LIB_ROOT/gate/default-branch-warn.sh" || { echo "FATAL: lib/gate/default-branch-warn.sh missing or unreadable" >&2; exit 1; }
 
-_usage() { sed -n '2,26p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
+_usage() { sed -n '2,30p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
 
 # --------------------------------------------------------------------------- helpers
 
@@ -264,10 +270,34 @@ _scan_repo() {
   esac
 }
 
+# _add_under <root> -- appends every immediate child of <root> holding a .git file or
+# directory, in sorted order, to the CALLER's `repos` array and `count` (bash dynamic scope;
+# both callers declare them local). A root with none prints one line and appends nothing.
+_add_under() {
+  local found r
+  found="$(for r in "${1%/}"/*/; do [ -e "${r}.git" ] && printf '%s\n' "${r%/}"; done | LC_ALL=C sort)"
+  if [ -z "$found" ]; then echo "== ${1}: --under found no git repos"; return 0; fi
+  while IFS= read -r r; do count=$(( count + 1 )); repos[count]="$r"; done <<< "$found"
+}
+
 cmd_scan() {
-  [ $# -ge 1 ] || { echo "usage: wrap.sh scan <repo> [<repo>...]" >&2; return 64; }
-  local ghs repo; ghs="$(_gh_state)"
-  for repo in "$@"; do _scan_repo "$repo" "$ghs"; done
+  local ghs arg count=0 i=1 want_under=0 nu=0
+  local repos unders
+  for arg in "$@"; do
+    case "$arg" in
+      --under=*) nu=$(( nu + 1 )); unders[nu]="${arg#--under=}" ;;
+      --under) want_under=1 ;;
+      -*) echo "wrap.sh scan: unknown flag '$arg'" >&2; return 64 ;;
+      *) if [ "$want_under" = 1 ]; then nu=$(( nu + 1 )); unders[nu]="$arg"; want_under=0
+         else count=$(( count + 1 )); repos[count]="$arg"; fi ;;
+    esac
+  done
+  [ "$want_under" = 0 ] || { echo "wrap.sh scan: --under needs a directory" >&2; return 64; }
+  [ "$count" -ge 1 ] || [ "$nu" -ge 1 ] || { echo "usage: wrap.sh scan [--under <root>]... <repo> [<repo>...]" >&2; return 64; }
+  while [ "$i" -le "$nu" ]; do _add_under "${unders[$i]}"; i=$(( i + 1 )); done
+  ghs="$(_gh_state)"
+  i=1
+  while [ "$i" -le "$count" ]; do _scan_repo "${repos[$i]}" "$ghs"; i=$(( i + 1 )); done
   echo "===================================================================="
   echo "Report only. Deletion, merging and pulling stay a judgment call."
   return 0
@@ -493,8 +523,11 @@ _apply_branches() {
     if [ -n "$scanned" ] && [ "$tip" != "$scanned" ]; then
       echo "     SKIP ${b}: tip moved during this run ($(_short "$scanned") -> $(_short "$tip"))"; continue
     fi
+    # -D, not -d: the proof above is wrap's own, against origin/<def>. `branch -d` judges
+    # against the branch's OWN upstream (or HEAD when it has none), so it refused a branch
+    # that tracks another ref or nothing even though origin/<def> already holds its tip.
     if git -C "$repo" merge-base --is-ancestor "$b" "origin/${def}" 2>/dev/null; then
-      run "$repo" "delete ${b} (ancestor of origin/${def})" git -C "$repo" branch -d "$b"
+      run "$repo" "delete ${b} (ancestor of origin/${def})" git -C "$repo" branch -D "$b"
       continue
     fi
     if [ "$ghs" != "ok" ]; then
@@ -860,6 +893,108 @@ _pull_default() {
   echo "     HEAD: $(git -C "$repo" log --oneline -1 2>/dev/null)"
 }
 
+# _stray_lines <repo> <def> <path> -- prints, in working-copy order and once each, every
+# non-blank line of the working copy that neither origin/<def>'s version nor HEAD's version
+# holds: a line written into this checkout that no commit origin can see carries.
+_stray_lines() {
+  awk 'FNR == NR { seen[$0] = 1; next } $0 != "" && !($0 in seen) { seen[$0] = 1; print }' \
+    <(git -C "$1" show "origin/$2:$3" 2>/dev/null; echo; git -C "$1" show "HEAD:$3" 2>/dev/null) "$1/$3"
+}
+
+# _stray_board_rows <base-file> <lines-file> -- on a kanban board (backlog.sh's row shape), a
+# stray row whose id origin's version already holds is a flipped row: it replaces that row
+# in place, and leaves the lines file. Appended instead, it would sit beside origin's old
+# copy, and `dedupe-all` keeps the first non-queued copy, which is the stale one when a
+# claimed row went shipped. Any other file, and any other line, is left as is.
+_stray_board_rows() {
+  local base="$1" add="$2" tmp
+  grep -qE '^\| *[A-Z]+-[0-9]+ *\|' "$base" || return 0
+  tmp="$(mktemp)"
+  awk -F'|' 'function rid() { if ($0 !~ /^\| *[A-Z]+-[0-9]+ *\|/) return ""; id = $2; gsub(/^ +| +$/, "", id); return id }
+    FNR == NR { if ((i = rid()) != "") row[i] = $0; next }
+    { i = rid(); if (i != "" && (i in row)) print row[i]; else print }' "$add" "$base" > "$tmp"
+  awk -F'|' 'function rid() { if ($0 !~ /^\| *[A-Z]+-[0-9]+ *\|/) return ""; id = $2; gsub(/^ +| +$/, "", id); return id }
+    FNR == NR { if ((i = rid()) != "") have[i] = 1; next }
+    { i = rid(); if (i == "" || !(i in have)) print }' "$base" "$add" > "$add.rest"
+  mv -f "$tmp" "$base"
+  mv -f "$add.rest" "$add"
+}
+
+# _carry_stray_file <repo> <def> <path> <lines-file> <n> -- commits origin/<def>'s version of
+# the file plus the stray lines onto a new branch in a scratch worktree and pushes it. The
+# lines land below the `---` anchor when the file has one, the rule the union carry uses,
+# else at the end. The main checkout's working copy is never touched. Opens no PR.
+_carry_stray_file() {
+  local repo="$1" def="$2" f="$3" add="$4" n="$5" slug branch wt base head_n name
+  if [ "$(kit_config_get_root wrap.carry_stray_lines true)" != "true" ]; then
+    echo "     ${n} stray lines in ${f} stay in the working copy (wrap.carry_stray_lines=false)"; return 0
+  fi
+  slug="$(printf '%s' "$f" | tr 'A-Z' 'a-z' | tr -cs 'a-z0-9' '-' | sed 's/^-*//; s/-*$//')"
+  # An open carry branch for this file means an earlier run already carried; a second one
+  # would duplicate the lines. They stay in the working copy until that branch merges.
+  if [ -n "$(git -C "$repo" ls-remote --heads origin "wrap/stray-${slug}-*" 2>/dev/null)" ]; then
+    echo "     SKIP ${f}: ${n} stray lines, but an origin wrap/stray-${slug}-* branch already carries this file; merge it first"
+    return 0
+  fi
+  if [ "$APPLY" != 1 ]; then
+    echo "     WOULD carry ${n} stray lines in ${f} onto a branch"; return 0
+  fi
+  branch="wrap/stray-${slug}-$(date +%Y%m%d-%H%M)"
+  wt="$(_scratch_wt_add "$repo" "origin/${def}")" || {
+    echo "     FAILED carry ${f}: a scratch worktree at origin/${def} failed"; FAILURES=1; return 0; }
+  base="$(mktemp)"
+  git -C "$repo" show "origin/${def}:${f}" > "$base" 2>/dev/null
+  # A last line with no newline would fuse with the first carried line.
+  [ -s "$base" ] && [ -n "$(tail -c 1 "$base")" ] && echo >> "$base"
+  _stray_board_rows "$base" "$add"
+  mkdir -p "$(dirname "$wt/$f")"
+  head_n="$(_log_anchor_head_lines "$base")"
+  if [ "$head_n" -gt 0 ] 2>/dev/null; then
+    { sed -n "1,${head_n}p" "$base"; cat "$add"; tail -n "+$(( head_n + 1 ))" "$base"; } > "$wt/$f"
+  else
+    cat "$base" "$add" > "$wt/$f"
+  fi
+  # The same dedupe the union re-merge runs, as a net for a board the rows above missed.
+  grep -qE '^\| *[A-Z]+-[0-9]+ *\|' "$wt/$f" && bash "$BACKLOG_SH" dedupe-all "$wt/$f" >/dev/null 2>&1
+  name="${f##*/}"; name="${name%.*}"
+  if git -C "$wt" add -- "$f" >/dev/null 2>&1 \
+     && git -C "$wt" commit -q -m "chore(${name}): carry ${n} stray lines from a shared checkout" >/dev/null 2>&1 \
+     && git -C "$wt" push -q origin "HEAD:refs/heads/${branch}" >/dev/null 2>&1; then
+    echo "     carried ${n} stray lines in ${f} to origin/${branch}"
+    echo "     open its PR with: gh pr create --head ${branch}"
+  else
+    echo "     FAILED carry ${n} stray lines in ${f} to ${branch}: the commit or the push refused"
+    FAILURES=1
+  fi
+  _scratch_wt_drop "$repo" "$wt"
+  rm -f "$base"
+}
+
+# _carry_stray <repo> <def> -- the stray-lines report. A session that writes a union-marked
+# file (`board set`, `wrap log`) in the SHARED main checkout leaves its lines in that
+# working tree only; the union carry keeps them across a pull, but nothing ever takes them
+# to origin. For each dirty union-marked tracked file this names the lines origin lacks and,
+# under --apply, carries them to a branch of their own.
+_carry_stray() {
+  local repo="$1" def="$2" f add n found=0 gd cd_
+  echo "-- stray lines:"
+  gd="$(git -C "$repo" rev-parse --path-format=absolute --git-dir 2>/dev/null)"
+  cd_="$(git -C "$repo" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)"
+  if [ -z "$gd" ] || [ "$gd" != "$cd_" ]; then echo "     SKIP stray lines: not the main checkout"; return 0; fi
+  while IFS= read -r -d '' f; do
+    [ -f "$repo/$f" ] && _union_marked "$repo" "$f" || continue
+    add="$(mktemp)"
+    _stray_lines "$repo" "$def" "$f" > "$add"
+    n="$(grep -c '' "$add")"
+    if [ "$n" -gt 0 ] 2>/dev/null; then
+      found=1
+      _carry_stray_file "$repo" "$def" "$f" "$add" "$n"
+    fi
+    rm -f "$add"
+  done < <(git -C "$repo" diff HEAD --name-only -z 2>/dev/null)
+  [ "$found" = 1 ] || echo "     none"
+}
+
 _apply_repo() {
   local repo="$1" ghs="$2"
   _is_repo "$repo" || { echo "== ${repo}: not a git repo, skipped"; return 0; }
@@ -898,6 +1033,15 @@ _apply_repo() {
   # Skipping it under --own left every shared repo's merged heads on origin.
   _apply_origin_branches "$repo" "$def" "$ghs"
 
+  # Any checked-out branch: the incident state is a shared main checkout sitting on a
+  # feature branch while a session writes the board there.
+  if [ "$fetch_ok" = 1 ]; then
+    _carry_stray "$repo" "$def"
+  else
+    echo "-- stray lines:"
+    echo "     SKIP stray lines: fetch failed, origin/${def} may be stale"
+  fi
+
   echo "-- pull:"
   if [ "$cur" = "$def" ]; then
     _pull_default "$repo" "$cur"
@@ -913,18 +1057,21 @@ _apply_repo() {
 cmd_apply() {
   # Indexed assignment plus a counter, not `arr+=()` with `${#arr[@]}`: an empty array reads
   # as unbound under `set -u` in bash 3.2, which is what macOS ships.
-  local arg count=0 i=1 want_tips=0 want_own=0
-  local repos
+  local arg count=0 i=1 want_tips=0 want_own=0 want_under=0 nu=0
+  local repos unders
   for arg in "$@"; do
     case "$arg" in
       --apply) APPLY=1 ;;
       --worktrees) WORKTREES=1 ;;
+      --under=*) nu=$(( nu + 1 )); unders[nu]="${arg#--under=}" ;;
+      --under) want_under=1 ;;
       --own=*) OWN_N=$(( OWN_N + 1 )); OWN_PATHS[OWN_N]="${arg#--own=}" ;;
       --own) want_own=1 ;;
       --tips-file=*) TIPS_OVERRIDE="${arg#--tips-file=}" ;;
       --tips-file) want_tips=1 ;;
       -*) echo "wrap.sh apply: unknown flag '$arg'" >&2; return 64 ;;
       *) if [ "$want_own" = 1 ]; then OWN_N=$(( OWN_N + 1 )); OWN_PATHS[OWN_N]="$arg"; want_own=0
+         elif [ "$want_under" = 1 ]; then nu=$(( nu + 1 )); unders[nu]="$arg"; want_under=0
          elif [ "$want_tips" = 1 ]; then TIPS_OVERRIDE="$arg"; want_tips=0
          else count=$(( count + 1 )); repos[count]="$arg"; fi ;;
     esac
@@ -934,7 +1081,9 @@ cmd_apply() {
   if [ -n "$TIPS_OVERRIDE" ] && [ ! -f "$TIPS_OVERRIDE" ]; then
     echo "wrap.sh apply: --tips-file '${TIPS_OVERRIDE}' is not an existing file" >&2; return 64
   fi
-  [ "$count" -ge 1 ] || { echo "usage: wrap.sh apply [--apply] [--worktrees] [--own <path>]... <repo> [<repo>...]" >&2; return 64; }
+  [ "$want_under" = 0 ] || { echo "wrap.sh apply: --under needs a directory" >&2; return 64; }
+  [ "$count" -ge 1 ] || [ "$nu" -ge 1 ] || { echo "usage: wrap.sh apply [--apply] [--worktrees] [--own <path>]... [--under <root>]... <repo> [<repo>...]" >&2; return 64; }
+  while [ "$i" -le "$nu" ]; do _add_under "${unders[$i]}"; i=$(( i + 1 )); done
   # Canonicalise the own set once: the worktree loop compares against `pwd -P`
   # paths, so the same normalisation must apply to the names the operator typed.
   i=1
@@ -1066,6 +1215,21 @@ _union_dedupe_rows() {
   fi
 }
 
+# _scratch_wt_add <repo> <commit> -- a detached worktree at <commit> in a fresh temp dir;
+# prints its path. No operator checkout is touched. `_scratch_wt_drop` removes it.
+_scratch_wt_add() {
+  local d
+  d="$(mktemp -d)" || return 1
+  git -C "$1" worktree add -q --detach "$d/wt" "$2" >/dev/null 2>&1 || { rm -rf "$d"; return 1; }
+  printf '%s' "$d/wt"
+}
+
+# _scratch_wt_drop <repo> <wt> -- removes a worktree `_scratch_wt_add` made, and its temp dir.
+_scratch_wt_drop() {
+  git -C "$1" worktree remove --force "$2" >/dev/null 2>&1
+  rm -rf "${2%/wt}"
+}
+
 # Success sets REMERGE_OID to the pushed head, the only head the caller may merge.
 # A branch no local checkout holds (the worktree that pushed it is gone) re-merges in a
 # scratch detached worktree at the PR head, removed afterwards, so no operator checkout
@@ -1087,17 +1251,13 @@ _union_remerge() {
     tip="$(git -C "$repo" rev-parse FETCH_HEAD 2>/dev/null)"
     [ "$tip" = "$head_oid" ] || {
       echo "     origin ${branch} tip $(_short "$tip") is not the PR head $(_short "$head_oid"), left alone"; return 1; }
-    scratch="$(mktemp -d)" || { echo "     no local checkout holds ${branch} and mktemp failed"; return 1; }
-    wt="${scratch}/wt"
-    git -C "$repo" worktree add -q --detach "$wt" "$head_oid" >/dev/null 2>&1 || {
-      rm -rf "$scratch"; echo "     no local checkout holds ${branch} and a scratch worktree failed"; return 1; }
+    wt="$(_scratch_wt_add "$repo" "$head_oid")" || {
+      echo "     no local checkout holds ${branch} and a scratch worktree failed"; return 1; }
+    scratch=1
     echo "     no local checkout holds ${branch}; re-merging in a scratch worktree"
   fi
   _remerge_push "$repo" "$wt" "$branch" "$def" "$tip"; rc=$?
-  if [ -n "$scratch" ]; then
-    git -C "$repo" worktree remove --force "$wt" >/dev/null 2>&1
-    rm -rf "$scratch"
-  fi
+  [ -n "$scratch" ] && _scratch_wt_drop "$repo" "$wt"
   return "$rc"
 }
 
