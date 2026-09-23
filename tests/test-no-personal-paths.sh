@@ -21,9 +21,12 @@ no() { FAIL=$((FAIL + 1)); echo "NOT ok - $1"; }
 # Pin KIT_ROOT to a sentinel instead of trusting this machine's own install path:
 # the assertion then holds wherever the suite runs, and a template that interpolates
 # KIT_ROOT shows up as the sentinel rather than as a home that happens to look benign.
+# Also isolate KIT_CONFIG_OPERATOR (empty dir, no kit.toml): without it, adopt.sh picks
+# up this machine's real operator overlay (e.g. adopt.single_source = true), which skips
+# the two-file render this check depends on -- same isolation test-adopt.sh already uses.
 SENTINEL="/opt/kit-root-sentinel"
 T="$(mktemp -d)"; git -C "$T" init -q
-CLAUDE_PLUGIN_ROOT="$SENTINEL" bash lib/adopt.sh "$T" >/dev/null 2>&1
+CLAUDE_PLUGIN_ROOT="$SENTINEL" KIT_CONFIG_OPERATOR="$(mktemp -d)" bash lib/adopt.sh "$T" >/dev/null 2>&1
 RENDERED="$(grep -rl -e "$SENTINEL" -e '/Users/' "$T" --exclude-dir=.git 2>/dev/null)"
 if [ -z "$RENDERED" ]; then
   ok "adopt renders no render-time install path into the consumer repo"
