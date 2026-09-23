@@ -493,8 +493,11 @@ _apply_branches() {
     if [ -n "$scanned" ] && [ "$tip" != "$scanned" ]; then
       echo "     SKIP ${b}: tip moved during this run ($(_short "$scanned") -> $(_short "$tip"))"; continue
     fi
+    # -D, not -d: the proof above is wrap's own, against origin/<def>. `branch -d` judges
+    # against the branch's OWN upstream (or HEAD when it has none), so it refused a branch
+    # that tracks another ref or nothing even though origin/<def> already holds its tip.
     if git -C "$repo" merge-base --is-ancestor "$b" "origin/${def}" 2>/dev/null; then
-      run "$repo" "delete ${b} (ancestor of origin/${def})" git -C "$repo" branch -d "$b"
+      run "$repo" "delete ${b} (ancestor of origin/${def})" git -C "$repo" branch -D "$b"
       continue
     fi
     if [ "$ghs" != "ok" ]; then

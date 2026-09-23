@@ -732,6 +732,28 @@ chk "dry-run: the union file is byte-identical" \
   "$([ "$UD_BEFORE" = "$(cksum < "$UD/_meta/LAB_LOG.md")" ]; echo $?)"
 
 # ===========================================================================
+echo "=== apply --apply: an ancestor of origin/<default> goes whatever its upstream says ==="
+# ===========================================================================
+# `git branch -d` judges against the branch's own upstream, or HEAD when it has none. Local
+# main sits behind origin/main here, so both branches fail git's check while wrap's proof
+# (ancestor of origin/main) holds: one has no upstream, one tracks a ref that lacks its tip.
+build_union_repo noup; advance_union_repo noup
+NU="$TMPD/uclone-noup"
+git -C "$NU" fetch -q origin
+git -C "$NU" branch --no-track no-upstream origin/main
+git -C "$NU" branch --no-track old-base main
+git -C "$NU" branch --no-track other-upstream origin/main
+git -C "$NU" branch -q -u old-base other-upstream
+out="$("$WRAP" apply --apply "$NU" 2>&1)"; rc=$?
+chk "no upstream: apply exits 0" "$rc"
+chk_has "no upstream: the delete is reported" "$out" "[APPLY] delete no-upstream (ancestor of origin/main)"
+chk_no "no upstream: no delete failed" "$out" "FAILED delete"
+chk "no upstream: the branch with no upstream is gone" \
+  "$(git -C "$NU" show-ref --verify --quiet refs/heads/no-upstream && echo 1 || echo 0)"
+chk "no upstream: the branch tracking another ref is gone" \
+  "$(git -C "$NU" show-ref --verify --quiet refs/heads/other-upstream && echo 1 || echo 0)"
+
+# ===========================================================================
 echo "=== apply: wrap.pull_past_dirty stashes only the blocking files ==="
 # ===========================================================================
 # Real repos again, for the same reason: what git refuses to overwrite during a fast-forward
