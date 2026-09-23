@@ -86,6 +86,22 @@ about 961ms against the real endpoint), reviewed by a human maintainer.
 | Fixture-frozen thresholds: a hand-labeled fixture table run against the live endpoint, with the resulting numbers pasted back into the design doc as the literal promote/accept thresholds, re-run before any threshold changes | ABSORB (documented pattern) | Matches the kit's own "hypotheses ship as numbers with an n or they get cut" discipline. Worth stating explicitly as the validation shape required before trusting any classifier's own confidence field, since the PR's own fixtures caught `pick.confidence` alone being an unreliable "is this real" gate (a gibberish query still scored 0.66 on some candidate). |
 | Two-tier privacy escalation: structural metadata (titles, descriptions, cwd) is always eligible; raw content requires a second explicit opt-in flag plus a mandatory redaction pass, and the redaction is documented as "a safety net, not a guarantee" | ABSORB (documented pattern) | Directly reusable shape for this estate's own never-use list below: nothing here currently sends screen- or file-content-shaped data to a third-party classifier, but if that ever changes, this is the required shape, not a single opt-in flag alone. |
 
+## 5. Browser-step decider (added after operator review)
+
+The first audit covered only decision points inside the kit and missed the browser and macOS agent loops. A team discussion placed Jev in the agent layer above CDP, with the accessibility tree kept as the element index. A trial then measured that shape. Record: `ops-toolkit/experiments/jev-eval/` (browser-step suite, TEST-REPORT.md), ops-toolkit PR #3219.
+
+| Item | Result |
+|---|---|
+| Suite | 29 public pages, 150 hand-labeled step tasks, 17 with no valid target |
+| Best shape | numbered element table in state, one Choice over element ids plus "none", goal in the question |
+| Accuracy | 150/150 on the best shape; held-out half: Jev acted alone on 86% with 0 wrong accepted steps |
+| Latency | 0.50s p50, 0.69s p95 |
+| Cost per 20-step flow | Jev first with Sonnet fallback $0.059 vs Sonnet every step $0.483; 16.4s vs 39.1s |
+| Negative control | element text shuffled across ids: 0/133 for every shape |
+| Integration | `experiments/jev-eval/harness/jev_step.py`, `decide()` fails open to escalate, never guesses, never logs the key |
+
+**Verdict: ABSORB, in shadow mode first.** The browser-harness loop calls `decide()` and logs its pick next to the main agent's step; it acts alone only after shadow logs show no accepted-step errors on real flows. Public pages only. Logged-in or client pages never go to the API. Next step: wire shadow logging into the browser harness loop.
+
 ## Where Jev must NOT be used
 
 Verbatim from the coupling audit.
