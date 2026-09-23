@@ -60,12 +60,13 @@ now() { date -u +%Y-%m-%dT%H:%M:%SZ; }
 slugify() { printf '%s' "$1" | tr '/ ' '--' | tr -cd '[:alnum:]._-'; }
 
 # changed files on the branch (base..HEAD), plus working-tree changes so a not-yet-
-# committed proof still counts during an interactive build.
+# committed proof still counts during an interactive build. --no-renames lists both sides of
+# a rename: a `git mv db/migrations/x.sql tests/` must still show the migrations path.
 _changed() {
   local root="$1" base="$2"
-  { git -C "$root" diff --name-only "$base"..HEAD 2>/dev/null
-    git -C "$root" diff --name-only HEAD 2>/dev/null
-    git -C "$root" diff --name-only --cached 2>/dev/null
+  { git -C "$root" diff --name-only --no-renames "$base"..HEAD 2>/dev/null
+    git -C "$root" diff --name-only --no-renames HEAD 2>/dev/null
+    git -C "$root" diff --name-only --no-renames --cached 2>/dev/null
     git -C "$root" ls-files --others --exclude-standard 2>/dev/null
   } | sort -u | sed '/^$/d'
 }
@@ -95,9 +96,13 @@ classify() {
   # commit says "restore". Any path outside the test pattern keeps the subject signal.
   # Capture, never `grep -q`: under pipefail its early exit SIGPIPEs the upstream grep on a
   # large diff and the guard reads "no source path", which fails open.
+  # A test path is a root tests/ or test/ tree, a __tests__/ dir anywhere, or a code file named
+  # test_*, *_test.* or *.test.*. Data and config files (.sql, .yaml, .json) never count as
+  # tests, and a nested test/ dir (k8s/overlays/test/) is not a test tree.
+  local code_ext='(py|go|rs|rb|js|jsx|ts|tsx|sh|bash|swift|kt|java|ex|exs)'
   subjects=""
   if [ -n "$(printf '%s\n' "$changed" | grep -vE '\.(md|txt|markdown)$|(^|/)\.kit\.toml$' \
-       | grep -vE '(^|/)(tests?|__tests__)/|(^|/)test_[^/]*$|[._]test\.[^/]*$')" ]; then
+       | grep -vE "^(tests?|__tests__)/|(^|/)__tests__/|(^|/)test_[^/]*\.${code_ext}\$|[._]test\.${code_ext}\$")" ]; then
     subjects="$(_subjects "$root" "$base")"
   fi
   blob="$(printf '%s\n%s' "$changed" "$subjects" | tr 'A-Z' 'a-z')"
@@ -183,9 +188,9 @@ delivery_ratio() {
 # already-anywhere `/proof-of-done.md` rule did not.
 _fresh_proof_files() {
   local root="$1" base="$2"
-  { git -C "$root" diff --name-only "$base"..HEAD 2>/dev/null
-    git -C "$root" diff --name-only HEAD 2>/dev/null
-    git -C "$root" diff --name-only --cached 2>/dev/null
+  { git -C "$root" diff --name-only --no-renames "$base"..HEAD 2>/dev/null
+    git -C "$root" diff --name-only --no-renames HEAD 2>/dev/null
+    git -C "$root" diff --name-only --no-renames --cached 2>/dev/null
     git -C "$root" ls-files --others --exclude-standard 2>/dev/null
   } | sort -u | grep -E '(^|/)docs/verification/.+\.md$|(^|/)proof-of-done\.md$' | grep -v '/README\.md$' || true
 }
