@@ -8,8 +8,9 @@ coding, and the ship-gate engages on push.
 
 ## Run
 
-`$ARGUMENTS` may name a target dir (default: the repo root), `--check` (status only), or
-`--with <a,b,c>` (seed these modules `true` in a FRESH `.kit.toml`; ignored once one exists).
+`$ARGUMENTS` may name a target dir (default: the repo root), `--check` (status only),
+`--with <a,b,c>` (seed these modules `true` in a FRESH `.kit.toml`; ignored once one exists),
+or `--single-source` (see below).
 
 1. Resolve the target: default `.` (`git rev-parse --show-toplevel`).
 2. Run the driver (idempotent, non-destructive):
@@ -43,6 +44,15 @@ coding, and the ship-gate engages on push.
 
 The classifiers (`lane-classify`, `task-type-classify`, `proof-gate`) run from the installed kit;
 adoption wires the contract to reference them. It never copies the engine.
+
+## `--single-source`
+
+For a repo that wants to keep exactly one agent guide instead of a CLAUDE.md/AGENTS.md pair.
+An existing `CLAUDE.md` (and no `AGENTS.md`) folds into `AGENTS.md` via `git mv`; `CLAUDE.md`
+becomes a one-line `@AGENTS.md` import (still auto-loaded by Claude Code, still importing the
+single source), and the operate-contract block lands in `AGENTS.md` instead of `CLAUDE.md`.
+Already in that shape: a no-op. Both files exist and genuinely differ, or neither exists:
+refuses (exit 1) and writes nothing, so the operator merges by hand.
 
 ## Overlays and seams
 
