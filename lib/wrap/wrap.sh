@@ -14,8 +14,11 @@
 #   wrap.sh --help
 #
 #   internal, a test seam: apply --tips-file <path> replaces the run's own tip snapshot
+#   internal, a test seam: WRAP_ORIGIN_DELETE_CHUNK sets the names per origin delete push
 #
-# The write set is closed: branch delete under two proofs, worktree remove under
+# The write set is closed: branch delete under two proofs, `apply`'s origin delete of
+# merged branches, each leased to the tip it read (knob wrap.delete_merged_remote_branches),
+# worktree remove under
 # --worktrees, pull --ff-only on the default branch and its pull-past-dirty stash, the
 # activity-log prepend, the knowledge-root project directory, the staging-file append, one
 # gh pr merge, one bounded union re-merge push (with its own follow-up commit when the
@@ -513,6 +516,78 @@ _apply_branches() {
   done
 }
 
+# _apply_origin_branches <repo> <default branch> <gh state> -- deletes origin branches
+# whose work already merged. `merge` never passes --delete-branch, so without this pass every
+# merged head lives on origin forever. A branch qualifies only when a same-repo MERGED PR has its
+# exact origin tip, it is not the default branch, and no OPEN PR uses it as head or base
+# (deleting a base closes the dependent PR). Everything else is kept without a line. Tips come
+# from `ls-remote`, not refs/remotes: a checkout whose fetch refspec names only the default
+# branch tracks a handful of origin's branches. Each delete is leased to the tip it read, so a
+# branch pushed to after the read is refused rather than lost.
+# ponytail: a branch whose merged PR sits past the list cap is kept; raise the cap if that bites.
+_ORIGIN_PR_LIMIT=1000
+# Names per `git push`; the env override is a test seam for the chunk loop.
+_ORIGIN_DELETE_CHUNK=${WRAP_ORIGIN_DELETE_CHUNK:-100}
+_apply_origin_branches() {
+  local repo="$1" def="$2" ghs="$3" url merged open elig names n k left heads push_args
+  echo "-- origin branches:"
+  case "$(git -C "$repo" config --get remote.origin.url)" in
+    *github.com[:/]*) ;;
+    *) echo "     SKIP origin sweep: origin is not a GitHub remote"; return 0 ;;
+  esac
+  [ "$ghs" = "ok" ] || { echo "     SKIP origin sweep: $(_gh_note "$ghs")"; return 0; }
+  url="$(_origin_url "$repo")"
+  # A failed read leaves its list empty, which jq refuses as JSON, so the sweep skips.
+  merged="$(gh pr list --repo "$url" --state merged --limit "$_ORIGIN_PR_LIMIT" \
+    --json headRefName,headRefOid,isCrossRepository 2>/dev/null)" || merged=""
+  open="$(gh pr list --repo "$url" --state open --limit "$_ORIGIN_PR_LIMIT" \
+    --json headRefName,baseRefName 2>/dev/null)" || open=""
+  # A full open page may hide the PR that protects a base branch, so the sweep stands down.
+  if [ "$(printf '%s' "$open" | jq -r 'length' 2>/dev/null)" = "$_ORIGIN_PR_LIMIT" ]; then
+    echo "     SKIP origin sweep: ${_ORIGIN_PR_LIMIT}+ open PRs, an unread one could need a branch"; return 0
+  fi
+  # One "<name> <tip>" line per eligible branch.
+  elig="$(git -C "$repo" ls-remote --heads origin 2>/dev/null \
+    | jq -R -r --argjson m "$merged" --argjson o "$open" --arg def "$def" '
+        split("\t") as [$tip, $ref] | ($ref | ltrimstr("refs/heads/")) as $b
+        | select($b != $def)
+        | select(any($m[]; .isCrossRepository == false and .headRefName == $b and .headRefOid == $tip))
+        | select(any($o[]; .headRefName == $b or .baseRefName == $b) | not)
+        | "\($b) \($tip)"' 2>/dev/null)" \
+    || { echo "     SKIP origin sweep: origin's branches or PRs could not be read"; return 0; }
+  names="$(printf '%s' "$elig" | cut -d' ' -f1)"
+  n="$(printf '%s' "$names" | grep -c .)"
+  if [ "$n" -eq 0 ]; then echo "     no merged branches left on origin"; return 0; fi
+  if [ "$(kit_config_get_root wrap.delete_merged_remote_branches true)" != "true" ]; then
+    echo "     ${n} merged branches left on origin (wrap.delete_merged_remote_branches=false)"; return 0
+  fi
+  if [ "$APPLY" != 1 ]; then
+    echo "     WOULD delete ${n} merged branches on origin:"
+    printf '%s\n' "$names" | sed 's/^/       /'
+    return 0
+  fi
+  # Ref names hold no whitespace or glob characters, so word splitting yields exact
+  # name/tip pairs. A full refs/heads/ refspec keeps a same-named tag or a leading dash inert.
+  # shellcheck disable=SC2086
+  set -- $elig
+  while [ $# -gt 0 ]; do
+    k=0
+    while [ $# -gt 0 ] && [ "$k" -lt "$_ORIGIN_DELETE_CHUNK" ]; do
+      push_args[k * 2]="--force-with-lease=refs/heads/$1:$2"
+      push_args[k * 2 + 1]=":refs/heads/$1"
+      k=$(( k + 1 )); shift 2
+    done
+    git -C "$repo" push -q origin "${push_args[@]:0:$(( k * 2 ))}" \
+      || { echo "     FAILED delete ${k} origin branches: exit $? (protected, no permission, or pushed since the read)"; FAILURES=1; }
+  done
+  # A multi-ref push is not atomic, so the count comes from what origin still holds.
+  if ! heads="$(git -C "$repo" ls-remote --heads origin 2>/dev/null)"; then
+    echo "     FAILED re-read origin after the delete, so the deleted count is unknown"; FAILURES=1; return 0
+  fi
+  left="$(printf '%s\n' "$heads" | sed 's|.*refs/heads/||' | grep -cxF -f <(printf '%s\n' "$names"))"
+  echo "     deleted $(( n - left )) of ${n} merged branches on origin"
+}
+
 # _union_marked <repo> <path> -- 0 when .gitattributes declares the path merge=union.
 # The repo declares which files resolve by keeping every line from both sides. That
 # declaration, not a guess, is what makes carrying local lines across a pull correct.
@@ -817,6 +892,7 @@ _apply_repo() {
     echo "     SKIP branch sweep: --own scopes cleanup to the named worktrees"
   else
     _apply_branches "$repo" "$def" "$cur" "$fetch_ok" "$ghs"
+    _apply_origin_branches "$repo" "$def" "$ghs"
   fi
 
   echo "-- pull:"
