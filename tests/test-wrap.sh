@@ -83,6 +83,8 @@ case "$sub" in
           # seconds ago; the plain list reads the repository itself and never lags.
           if [ "$state" = "merged" ]; then
             # `apply`'s origin sweep reads every merged PR of the repo in one list.
+            # GH_STUB_MERGED_ALL_RC models a failed read: gh prints nothing and exits non-zero.
+            [ "${GH_STUB_MERGED_ALL_RC:-0}" = "0" ] || exit "$GH_STUB_MERGED_ALL_RC"
             printf '%s\n' "${GH_STUB_MERGED_ALL:-[]}"; exit 0
           fi
           if [ -n "$author" ]; then
@@ -2813,6 +2815,15 @@ chk "origin --apply kept fork-head, its PR came from a fork" "$(os_has app fork-
 chk "origin --apply kept the default branch" "$(os_has app main; echo $?)"
 chk_no "origin --apply lists no kept branch" "$out" "moved"
 chk_has "origin --apply went on to the pull" "$out" "-- pull:"
+out="$(os_run apply --apply "$TMPD/osclone-app")"
+chk_has "origin second --apply finds nothing left" "$out" "no merged branches left on origin"
+
+echo "--- a failed PR read skips the sweep and deletes nothing"
+build_os_repo nolist
+out="$(GH_STUB_MERGED_ALL_RC=1 os_run apply --apply "$TMPD/osclone-nolist")"; rc=$?
+chk "origin failed PR read exits 0" "$rc"
+chk_has "origin failed PR read names the skip" "$out" "SKIP origin sweep: origin's branches or PRs could not be read"
+chk "origin failed PR read deleted nothing" "$(os_has nolist gone; echo $?)"
 
 echo "--- knob false: a report line, no delete"
 OS_OFF="$TMPD/os-knob-off"; mkdir -p "$OS_OFF"
@@ -2840,6 +2851,24 @@ chk_has "origin refused push is FAILED" "$out" "FAILED delete 3 origin branches"
 chk_has "origin refused push counts zero deleted" "$out" "deleted 0 of 3 merged branches on origin"
 chk_has "origin refused push still ran the pull" "$out" "-- pull:"
 chk "origin refused push left the branch" "$(os_has deny gone; echo $?)"
+
+echo "--- a branch pushed to after the read is refused by the lease, the rest still go"
+# pushInsteadOf sends the delete to a second bare whose gone moved on, which is what origin
+# looks like when someone pushes between the ls-remote read and the delete.
+build_os_repo lease
+git clone -q --bare "$TMPD/osbare-lease" "$TMPD/osbare-lease-push"
+git clone -q "$TMPD/osbare-lease-push" "$TMPD/oslease-pusher"; gitc "$TMPD/oslease-pusher"
+git -C "$TMPD/oslease-pusher" checkout -q gone
+echo late >> "$TMPD/oslease-pusher/gone.txt"; git -C "$TMPD/oslease-pusher" commit -q -a -m late
+git -C "$TMPD/oslease-pusher" push -q origin gone
+git -C "$TMPD/osclone-lease" config "url.$TMPD/osbare-lease-push.pushInsteadOf" "$OS_URL"
+out="$(os_run apply --apply "$TMPD/osclone-lease")"; rc=$?
+chk "origin lease refusal exits 2" "$([ "$rc" -eq 2 ]; echo $?)"
+chk_has "origin lease refusal is FAILED" "$out" "FAILED delete 3 origin branches"
+chk "origin lease kept the branch that moved" \
+  "$(git -C "$TMPD/osbare-lease-push" show-ref --verify --quiet refs/heads/gone; echo $?)"
+chk "origin lease still deleted the unmoved ones" \
+  "$(git -C "$TMPD/osbare-lease-push" show-ref --verify --quiet refs/heads/gone2 && echo 1 || echo 0)"
 
 echo "--- a chunk smaller than the list splits the delete into several pushes"
 build_os_repo chunk

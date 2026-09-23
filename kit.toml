@@ -310,7 +310,7 @@ tidy_worktrees = true           # [impl] step 5. true = pass `--worktrees` to `w
                                  #        `Left alone`. `apply` refuses a dirty, detached, or
                                  #        checked-out worktree at either setting.
 delete_merged_remote_branches = true  # [impl] step 5. true = `wrap apply --apply` deletes, in one
-                                 #        `git push origin --delete`, every GitHub origin branch
+                                 #        leased `git push`, every GitHub origin branch
                                  #        whose same-repo PR merged at that exact tip, never the
                                  #        default branch and never a head or base of an open PR.
                                  #        false = report `N merged branches left on origin` and

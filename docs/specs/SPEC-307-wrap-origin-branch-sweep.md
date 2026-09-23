@@ -25,12 +25,15 @@ PR already merged, foundation-ops 109, foundation-apps 25.
 - Two reads: `gh pr list --state merged --json headRefName,headRefOid,isCrossRepository`
   and `gh pr list --state open --json headRefName,baseRefName`, each capped at
   1000. A failed read (either list or `ls-remote`) skips the sweep by name.
+  A full open page (1000) also skips it: an unread open PR could need a
+  branch as its base.
 - An origin branch is ELIGIBLE only when ALL hold: a merged same-repo PR
   (`isCrossRepository` false) has the branch's current origin tip as its
   `headRefOid`; it is not the default branch; no open PR uses it as head or
   base. Every other branch is kept without a line.
 - Dry run: `WOULD delete N merged branches on origin:` plus one indented name
-  per line. `--apply`: one `git push origin --delete` per 100 names, then
+  per line. `--apply`: one `git push` per 100 names, each name sent as
+  `--force-with-lease=refs/heads/<b>:<tip read>` plus `:refs/heads/<b>`, then
   `deleted K of N merged branches on origin`, where K is counted from a second
   `ls-remote` (a multi-ref push is not atomic). A failed re-read is `FAILED`.
 - A refused push prints `FAILED delete <k> origin branches: exit <rc> ...`,
@@ -56,8 +59,16 @@ deleted. The GitHub test reads the raw config URL, so an `insteadOf` rewrite
 still counts as GitHub, which is also how the tests point a github.com URL at
 a local bare repo.
 
-No `--force-with-lease` on the delete: the window between the fetch and the
-push is seconds, and the file promises never to force a push.
+Each delete carries a lease on the tip `ls-remote` read. The delete is
+conditional, not forced: a branch pushed to after the read is refused and
+reported `FAILED`, and the other names in that push still go. The refspec is
+fully qualified, so a same-named tag or a leading dash never changes what the
+push means.
+
+A long-lived branch merged whole (a `develop -> main` release PR with no
+later commit) qualifies and is deleted, the same as GitHub's own
+`delete_branch_on_merge` would do. A protected branch refuses the delete and
+surfaces as `FAILED`; an operator with such a branch sets the knob false.
 
 ## Test plan
 
@@ -73,4 +84,8 @@ push is seconds, and the file promises never to force a push.
 | operator `kit.toml` knob false | report line, origin unchanged |
 | project `.kit.toml` knob false | ignored, branch deleted |
 | push refused (`receive.denyDeletes`) | `FAILED`, exit 2, pull still runs |
+| branch pushed to after the read | lease refuses it, the rest delete, exit 2 |
+| more names than one chunk | several pushes, all deleted |
+| failed PR read | `SKIP origin sweep: ...could not be read`, nothing deleted |
+| second `--apply` | `no merged branches left on origin` |
 | non-GitHub origin | `SKIP origin sweep: origin is not a GitHub remote` |
