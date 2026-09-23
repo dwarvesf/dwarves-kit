@@ -15,6 +15,7 @@ import json
 import os
 import re
 import sys
+from datetime import datetime, timezone
 
 PROJECTS = os.path.expanduser("~/.claude/projects")
 
@@ -244,16 +245,228 @@ def render_sessions(rows, query: str, limit: int, dirs=None) -> str:
     return "\n".join(lines)
 
 
+# --- tail: what one session is doing now --------------------------------------
+# SPEC-309. A separate mode behind its own functions so the query and --sessions
+# paths above never change shape. Answers "what is that session doing now" for a
+# peer id already found via --sessions.
+
+class TailResolutionError(Exception):
+    """Carries the exit code and the already-formatted stderr message."""
+    def __init__(self, code: int, message: str):
+        super().__init__(message)
+        self.code = code
+        self.message = message
+
+
+def resolve_tail_target(prefix: str, project=None, file=None):
+    """Resolve `--tail <prefix>` to (path, session_id). `--file` bypasses matching
+    entirely. Otherwise: a listdir-only NAME match of `<prefix>*.jsonl` across every
+    dir under PROJECTS (or, with `--project`, across resolve_project_dirs(SLUG)) --
+    never a parse. No match raises exit 1; two or more matches raises exit 2 naming
+    every match, so an ambiguous prefix is never silently the wrong session."""
+    if file:
+        sid = os.path.basename(file)
+        if sid.endswith(".jsonl"):
+            sid = sid[:-len(".jsonl")]
+        return file, sid
+
+    if project:
+        dirs = resolve_project_dirs(project)
+    elif os.path.isdir(PROJECTS):
+        dirs = sorted(os.path.join(PROJECTS, d) for d in os.listdir(PROJECTS))
+    else:
+        dirs = []
+
+    matches = []
+    for d in dirs:
+        if not os.path.isdir(d):
+            continue
+        for name in os.listdir(d):
+            if name.endswith(".jsonl") and name.startswith(prefix):
+                matches.append(os.path.join(d, name))
+    matches.sort()
+
+    if not matches:
+        where = ", ".join(sorted(os.path.basename(d) for d in dirs)) if dirs else PROJECTS
+        raise TailResolutionError(
+            1, f"session-recall: no transcript matching '{prefix}*.jsonl' under {where}\n")
+    if len(matches) > 1:
+        ids = ", ".join(os.path.basename(m)[:-len(".jsonl")] for m in matches)
+        raise TailResolutionError(
+            2, f"session-recall: ambiguous prefix {prefix!r}, matches: {ids}\n")
+
+    path = matches[0]
+    return path, os.path.basename(path)[:-len(".jsonl")]
+
+
+def _tool_result_content(msg: dict) -> bool:
+    content = msg.get("content")
+    return isinstance(content, list) and any(
+        isinstance(b, dict) and b.get("type") == "tool_result" for b in content)
+
+
+def _text_blocks(msg: dict) -> str:
+    """User: string content or its joined text blocks. Assistant: joined text
+    blocks. Tool calls and thinking never contribute (Design record, Kept text)."""
+    content = msg.get("content")
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        return "\n".join(b.get("text") or "" for b in content
+                          if isinstance(b, dict) and b.get("type") == "text")
+    return ""
+
+
+_SLASH_COMMAND_RE = re.compile(
+    r"^<command-name>/(?P<cmd>[^<]+)</command-name>\s*"
+    r"(?:<command-args>(?P<args>[^<]*)</command-args>)?", re.DOTALL)
+
+
+def _render_slash_or_none(text: str):
+    """A `<command-name>/x</command-name>` turn (`<command-args>` optional) renders
+    as `/x <args>`; any other `<...` turn (hook/system noise) is dropped."""
+    m = _SLASH_COMMAND_RE.match(text.lstrip())
+    if not m:
+        return None
+    args = (m.group("args") or "").strip()
+    return f"/{m.group('cmd')} {args}".rstrip()
+
+
+def kept_turn_text(entry):
+    """The tail turn filter (Design record, Kept turns), in the exact drop order:
+    isMeta/isCompactSummary/isSidechain, role, user tool-result/interrupt, the `<`
+    prefix (except a rendered slash command). Returns the kept text, or None when
+    the entry is dropped. A turn whose only content was a tool call (no text block
+    at all) also drops here: there is nothing to show a peer (undocumented by the
+    spec's Design record, see implementation-notes)."""
+    if entry.get("isMeta") or entry.get("isCompactSummary") or entry.get("isSidechain"):
+        return None
+    role = _role(entry)
+    if role not in ("user", "assistant"):
+        return None
+    msg = _msg(entry)
+    if role == "user" and _tool_result_content(msg):
+        return None
+    text = _text_blocks(msg)
+    if role == "user" and text.startswith("[Request interrupted"):
+        return None
+    if text.lstrip().startswith("<"):
+        return _render_slash_or_none(text)
+    if not text.strip():
+        return None
+    return text
+
+
+def tail_turns(entries, limit: int):
+    """Kept turns in conversation order, last `limit`. Each item: (text, ts, role)."""
+    kept = [(text, _ts(e), _role(e)) for e in entries
+            for text in [kept_turn_text(e)] if text is not None]
+    return kept[-limit:] if limit else []
+
+
+_TAIL_CONTROL_RE = re.compile(r"[\x00-\x1f\x7f-\x9f]")  # C0 + C1, ESC included
+
+
+def _clean_tail_text(text: str, width: int = 200) -> str:
+    """Line-shape text processing, in the Design record's exact order: collapse
+    whitespace, replace control chars with `?`, redact secret shapes, THEN cap --
+    so a secret straddling the cap is still fully redacted before truncation."""
+    collapsed = " ".join(text.split())
+    collapsed = _TAIL_CONTROL_RE.sub("?", collapsed)
+    collapsed = SECRET_SHAPE_RE.sub("[redacted]", collapsed)
+    return collapsed if len(collapsed) <= width else collapsed[:width - 1] + "…"
+
+
+def _local_hhmm(ts: str) -> str:
+    """`timestamp` (ISO UTC) in local time, `--:--` when missing or unparseable."""
+    if not ts:
+        return "--:--"
+    s = ts.strip()
+    if s.endswith("Z"):
+        s = s[:-1]
+    s = s.split(".", 1)[0]
+    try:
+        dt = datetime.strptime(s, "%Y-%m-%dT%H:%M:%S").replace(tzinfo=timezone.utc)
+    except ValueError:
+        return "--:--"
+    return dt.astimezone().strftime("%H:%M")
+
+
+def _last_write_mtime(path: str, sid: str) -> float:
+    """Max mtime over `<sid>.jsonl` and `<sid>/subagents/*.jsonl`: a session running
+    subagents writes there too (Design record). A hint, never proof of liveness."""
+    mtimes = [os.path.getmtime(path)]
+    sub_dir = os.path.join(os.path.dirname(path), sid, "subagents")
+    if os.path.isdir(sub_dir):
+        for name in os.listdir(sub_dir):
+            if name.endswith(".jsonl"):
+                try:
+                    mtimes.append(os.path.getmtime(os.path.join(sub_dir, name)))
+                except OSError:
+                    pass
+    return max(mtimes)
+
+
+_TAIL_CHUNK_BYTES = 2 * 1024 * 1024
+
+
+def read_tail_chunk(path: str, limit: int):
+    """Cheap tail read: the last 2 MB, first (likely partial) line dropped, each
+    remaining line parsed (malformed lines skipped, same contract as `load`).
+    Falls back to a full `load()` when fewer than `limit` turns survive the chunk
+    and the file is bigger than it -- a long run of dropped/system turns can eat a
+    whole chunk without reaching `limit` kept ones."""
+    size = os.path.getsize(path)
+    if size <= _TAIL_CHUNK_BYTES:
+        return load(path)
+    with open(path, "rb") as fh:
+        fh.seek(size - _TAIL_CHUNK_BYTES)
+        data = fh.read()
+    entries = []
+    for line in data.split(b"\n")[1:]:
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            entry = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(entry, dict):
+            entries.append(entry)
+    kept_count = sum(1 for e in entries if kept_turn_text(e) is not None)
+    return load(path) if kept_count < limit else entries
+
+
+def render_tail(sid: str, kept, last_write_mtime: float) -> str:
+    """Header, DATA marker, kept turn lines (or the empty-state line), footer.
+    `kept` is [(text, timestamp, role), ...] in conversation order, already capped
+    at the mode's limit."""
+    import time
+    last_turn = _local_hhmm(kept[-1][1]) if kept else "--:--"
+    when = time.strftime("%Y-%m-%d %H:%M", time.localtime(last_write_mtime))
+    age_min = max(0, int((time.time() - last_write_mtime) // 60))
+    lines = [f"# tail of {sid}: last turn {last_turn}, last write {when} ({age_min}m ago)",
+             DATA_MARKER]
+    if kept:
+        for text, ts, role in kept:
+            short_role = "asst" if role == "assistant" else role
+            lines.append(f"{_local_hhmm(ts)}  {short_role}  {_clean_tail_text(text)}")
+    else:
+        lines.append("(no prompts or replies yet)")
+    lines.append("# end of tail data")
+    return "\n".join(lines)
+
+
 # --- CLI ---------------------------------------------------------------------
 
 def main(argv=None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
-    file = project = None
+    file = project = tail = None
     search_all = as_json = sessions = False
-    limit = 50
+    limit = None  # None = mode picks its own default (10 tail, 50 otherwise)
     query_parts = []
     usage = ("usage: session-recall <query> [--file F | --project SLUG-or-repo-name | --all] "
-             "[--sessions] [--limit N] [--json]\n")
+             "[--sessions] [--limit N] [--json] [--tail PREFIX]\n")
     it = iter(argv)
     for a in it:
         if a == "--file":
@@ -266,14 +479,46 @@ def main(argv=None) -> int:
             sessions = True
         elif a == "--json":
             as_json = True
+        elif a == "--tail":
+            tail = next(it, None)
         elif a == "--limit":
-            limit = int(next(it, "50") or 50)
+            raw = next(it, None)
+            try:
+                limit = int(raw)
+                if limit < 1:
+                    raise ValueError
+            except (TypeError, ValueError):
+                sys.stderr.write(usage)
+                return 2
         elif a in ("-h", "--help"):
             sys.stderr.write(usage)
             return 0
         else:
             query_parts.append(a)
     query = " ".join(query_parts).strip()
+
+    if tail is not None:
+        # every mode-conflict rule from the Design record, one exit 2
+        if not tail or tail.startswith("-") or query or sessions or as_json:
+            sys.stderr.write(usage)
+            return 2
+        try:
+            path, sid = resolve_tail_target(tail, project=project, file=file)
+        except TailResolutionError as e:
+            sys.stderr.write(e.message)
+            return e.code
+        try:
+            entries = read_tail_chunk(path, limit if limit is not None else 10)
+        except OSError as e:
+            sys.stderr.write(f"session-recall: {e}\n")
+            return 1
+        kept = tail_turns(entries, limit if limit is not None else 10)
+        sys.stdout.write(render_tail(sid, kept, _last_write_mtime(path, sid)) + "\n")
+        return 0
+
+    if limit is None:
+        limit = 50
+
     if not query:
         sys.stderr.write(usage)
         return 2

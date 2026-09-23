@@ -16,6 +16,8 @@ SEED = os.path.join(ROOT, "fixtures", "seed.jsonl")
 BIN = os.path.join(ROOT, "bin", "session-recall")
 NONDICT = os.path.join(ROOT, "tests", "nondict-edge", "nondict.jsonl")  # OUTSIDE fixtures/: hostile, not a seed
 NONDICT_MSG = os.path.join(ROOT, "tests", "nondict-edge", "nondict-message.jsonl")  # valid objects, hostile `message`
+TAIL_BASIC = os.path.join(ROOT, "fixtures", "tail-basic.jsonl")           # 14 kept turns, no noise
+TAIL_DROPPED = os.path.join(ROOT, "fixtures", "tail-dropped-kinds.jsonl")  # one entry per dropped kind
 
 
 class TestRecall(unittest.TestCase):
@@ -183,6 +185,236 @@ class TestRecall(unittest.TestCase):
         r.search(r.load(SEED), "backoff")
         subprocess.run([sys.executable, BIN, "backoff", "--file", SEED], capture_output=True)
         self.assertEqual(before, self._digest(SEED), "recall must never mutate the transcript")
+
+    # --- --tail (SPEC-309) --------------------------------------------------------
+
+    def _run_main(self, argv):
+        import contextlib
+        import io
+        out, err = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            code = r.main(argv)
+        return code, out.getvalue(), err.getvalue()
+
+    def _fake_tail_tree(self):
+        import shutil
+        import tempfile
+        base = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, base)
+        main_slug = os.path.join(base, "-Users-me-workspace-x")
+        wt_slug = os.path.join(base, "-Users-me-workspace-x--claude-worktrees-y")
+        os.makedirs(main_slug)
+        os.makedirs(wt_slug)
+        wt_file = os.path.join(wt_slug, "abc12345-session.jsonl")
+        shutil.copy(SEED, wt_file)
+        return base, main_slug, wt_slug, wt_file
+
+    def test_tail_default_and_limit_ascending(self):
+        # AC1: 14 kept turns, default prints last 10, --limit 3 prints last 3, ascending
+        entries = r.load(TAIL_BASIC)
+        kept = r.tail_turns(entries, 10)
+        self.assertEqual(len(kept), 10)
+        self.assertEqual(kept[0][0], "prompt 3: keep it minimal")
+        self.assertEqual(kept[-1][0], "reply 7: two commits, feat then docs")
+        kept3 = r.tail_turns(entries, 3)
+        self.assertEqual([t[0] for t in kept3], [
+            "reply 6: done, one sentence in step 7b",
+            "prompt 7: commit it",
+            "reply 7: two commits, feat then docs",
+        ])
+
+    def test_tail_drops_every_kind_and_renders_slash_command(self):
+        # AC2: every dropped kind never prints; a slash-command turn renders /x <args>
+        entries = r.load(TAIL_DROPPED)
+        kept = r.tail_turns(entries, 50)
+        self.assertEqual([t[0] for t in kept], [
+            "real prompt: what is the status",
+            "/status --verbose",
+            "real reply: still running",
+        ])
+
+    def test_tail_text_cleaning_redacts_secret_and_esc_and_caps(self):
+        # AC3: a secret shape redacts (including one straddling char 200); ESC prints as ?
+        esc = "\x1b"
+        fake_token = "ghp_" + "a" * 30  # obviously-fake, built at runtime, never a real shape
+        cleaned = r._clean_tail_text(f"before{esc}after token {fake_token} end")
+        self.assertIn("[redacted]", cleaned)
+        self.assertNotIn(fake_token, cleaned)
+        self.assertIn("?", cleaned)
+
+        # redaction runs BEFORE the cap, so a token straddling char 200 is fully
+        # redacted first; the cap may then truncate into the "[redacted]" marker
+        # itself, but never leaks a byte of the original secret.
+        padding = "x" * 190
+        straddle_token = "ghp_" + "b" * 40
+        cleaned2 = r._clean_tail_text(padding + " " + straddle_token)
+        self.assertNotIn(straddle_token, cleaned2)
+        self.assertNotIn("ghp_", cleaned2)
+        self.assertLessEqual(len(cleaned2), 200)
+
+    def test_tail_mode_conflicts_and_limit_validation_exit_2(self):
+        # AC4: every mode-conflict and --limit validation case exits 2 with usage
+        base, _, _, _ = self._fake_tail_tree()
+        orig = r.PROJECTS
+        r.PROJECTS = base
+        try:
+            cases = [
+                ["--tail"],                                    # missing value
+                ["--tail", "--sessions"],                       # value starts with -
+                ["query", "--tail", "abc12345"],                 # query beside --tail
+                ["--tail", "abc12345", "--sessions"],            # --sessions beside --tail
+                ["--tail", "abc12345", "--json"],                # --json beside --tail
+                ["--tail", "abc12345", "--limit", "0"],
+                ["--tail", "abc12345", "--limit", "-1"],
+                ["--tail", "abc12345", "--limit", "abc"],
+                ["something", "--limit", "0"],                   # limit validation, every mode
+                ["something", "--limit", "-1"],
+                ["something", "--limit", "abc"],
+            ]
+            for argv in cases:
+                code, _, err = self._run_main(argv)
+                self.assertEqual(code, 2, f"{argv} -> exit {code}")
+                self.assertIn("usage:", err)
+        finally:
+            r.PROJECTS = orig
+
+    def test_tail_unknown_prefix_exit_1_ambiguous_exit_2(self):
+        # AC4: unknown prefix exits 1; ambiguous prefix exits 2 naming every match
+        import shutil
+        base, main_slug, _, _ = self._fake_tail_tree()
+        shutil.copy(SEED, os.path.join(main_slug, "dup-one.jsonl"))
+        shutil.copy(SEED, os.path.join(main_slug, "dup-two.jsonl"))
+        orig = r.PROJECTS
+        r.PROJECTS = base
+        try:
+            code, _, err = self._run_main(["--tail", "no-such-prefix-zzz"])
+            self.assertEqual(code, 1)
+            self.assertIn("no transcript matching", err)
+
+            with self.assertRaises(r.TailResolutionError) as cm:
+                r.resolve_tail_target("dup")
+            self.assertEqual(cm.exception.code, 2)
+            self.assertIn("dup-one", cm.exception.message)
+            self.assertIn("dup-two", cm.exception.message)
+        finally:
+            r.PROJECTS = orig
+
+    def test_tail_resolution_default_project_file(self):
+        # AC5: default sweeps a worktree-slug dir; --project narrows past it; --file bypasses
+        base, main_slug, wt_slug, wt_file = self._fake_tail_tree()
+        orig = r.PROJECTS
+        r.PROJECTS = base
+        try:
+            path, sid = r.resolve_tail_target("abc12345")
+            self.assertEqual(path, wt_file)
+            self.assertEqual(sid, "abc12345-session")
+
+            with self.assertRaises(r.TailResolutionError) as cm:
+                r.resolve_tail_target("abc12345", project="x")
+            self.assertEqual(cm.exception.code, 1)
+
+            path2, sid2 = r.resolve_tail_target("ignored-prefix", file=wt_file)
+            self.assertEqual(path2, wt_file)
+            self.assertEqual(sid2, "abc12345-session")
+        finally:
+            r.PROJECTS = orig
+
+    def test_query_and_sessions_output_byte_identical_to_master(self):
+        # AC6: query and --sessions output on fixtures/seed.jsonl unchanged by this branch
+        import shutil
+        import tempfile
+        proc = subprocess.run(["git", "show", "origin/master:lib/session/recall/session_recall.py"],
+                               cwd=ROOT, capture_output=True, text=True)
+        if proc.returncode != 0 or not proc.stdout.strip():
+            self.skipTest("origin/master:lib/session/recall/session_recall.py not available here")
+        tmp_root = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, tmp_root)
+        session_dir = os.path.join(tmp_root, "lib", "session")
+        recall_dir = os.path.join(session_dir, "recall")
+        os.makedirs(recall_dir)
+        shutil.copy(os.path.join(ROOT, "..", "parse_transcript.py"), session_dir)
+        master_path = os.path.join(recall_dir, "session_recall.py")
+        with open(master_path, "w") as fh:
+            fh.write(proc.stdout)
+        cases = [
+            ["backoff", "--file", SEED],
+            ["backoff", "--file", SEED, "--json"],
+            ["backoff", "--file", SEED, "--sessions"],
+            ["backoff", "--file", SEED, "--sessions", "--json"],
+        ]
+        for args in cases:
+            new_out = subprocess.run([sys.executable, BIN] + args, capture_output=True, text=True)
+            old_out = subprocess.run([sys.executable, master_path] + args, capture_output=True, text=True)
+            self.assertEqual(new_out.stdout, old_out.stdout, f"stdout differs for {args}")
+            self.assertEqual(new_out.returncode, old_out.returncode, f"exit code differs for {args}")
+
+    def test_readme_and_wrap_document_tail(self):
+        # AC7
+        with open(os.path.join(ROOT, "README.md")) as fh:
+            readme = fh.read()
+        self.assertIn("--tail", readme)
+        self.assertIn("confirm", readme.lower())
+        kit_root = os.path.dirname(os.path.dirname(os.path.dirname(ROOT)))
+        with open(os.path.join(kit_root, "commands", "wrap.md")) as fh:
+            wrap_md = fh.read()
+        self.assertIn("--tail", wrap_md)
+
+    def test_tail_local_time_and_subagents_mtime(self):
+        # AC8: turn times print in local time; last write counts <sid>/subagents/*.jsonl
+        import time
+        orig_tz = os.environ.get("TZ")
+        os.environ["TZ"] = "America/New_York"
+        time.tzset()
+        try:
+            self.assertEqual(r._local_hhmm("2026-06-29T09:00:00.000Z"), "05:00")  # EDT = UTC-4
+            self.assertEqual(r._local_hhmm(""), "--:--")
+            self.assertEqual(r._local_hhmm("not-a-timestamp"), "--:--")
+        finally:
+            if orig_tz is None:
+                os.environ.pop("TZ", None)
+            else:
+                os.environ["TZ"] = orig_tz
+            time.tzset()
+
+        import shutil
+        import tempfile
+        base = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, base)
+        sid = "subagent-mtime-session"
+        main_file = os.path.join(base, sid + ".jsonl")
+        shutil.copy(SEED, main_file)
+        sub_dir = os.path.join(base, sid, "subagents")
+        os.makedirs(sub_dir)
+        sub_file = os.path.join(sub_dir, "worker.jsonl")
+        shutil.copy(SEED, sub_file)
+        now = time.time()
+        os.utime(main_file, (now - 3600, now - 3600))
+        os.utime(sub_file, (now, now))
+        self.assertAlmostEqual(r._last_write_mtime(main_file, sid), now, delta=2)
+
+    def test_tail_empty_state_and_full_render_shape(self):
+        # Edge case: no kept turns -> header, "(no prompts or replies yet)", footer
+        empty = r.render_tail("no-turns-sid", [], 1758000000.0)
+        self.assertIn("# tail of no-turns-sid:", empty)
+        self.assertIn(r.DATA_MARKER, empty)
+        self.assertIn("(no prompts or replies yet)", empty)
+        self.assertTrue(empty.endswith("# end of tail data"))
+
+        import time
+        orig_tz = os.environ.get("TZ")
+        os.environ["TZ"] = "UTC"
+        time.tzset()
+        try:
+            entries = r.load(TAIL_BASIC)
+            kept = r.tail_turns(entries, 10)
+            rendered = r.render_tail("real-sid", kept, os.path.getmtime(TAIL_BASIC))
+        finally:
+            if orig_tz is None:
+                os.environ.pop("TZ", None)
+            else:
+                os.environ["TZ"] = orig_tz
+            time.tzset()
+        self.assertIn("10:00  asst  reply 7: two commits, feat then docs", rendered)
 
     def test_determinism(self):
         a = subprocess.run([sys.executable, BIN, "backoff", "--file", SEED],

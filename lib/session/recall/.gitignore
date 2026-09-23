@@ -2,4 +2,7 @@
 # Only synthetic fixtures are allowed.
 *.jsonl
 !fixtures/seed.jsonl
+!fixtures/tail-basic.jsonl
+!fixtures/tail-dropped-kinds.jsonl
 !tests/nondict-edge/nondict.jsonl
+!tests/nondict-edge/nondict-message.jsonl
