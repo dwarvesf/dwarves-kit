@@ -7,7 +7,8 @@
 # fires the same whether the work came through /kit:execute or a freeform /goal loop.
 #
 # A change's PROOF CLASS comes from its diff (consistent with lib/gate/proof-gate.sh):
-#   stateful   -- deploy / migration / data / persistent-state paths or commit subjects.
+#   stateful   -- deploy / migration / data / persistent-state paths or commit subjects
+#                 (subjects count only when the diff touches a non-doc, non-test path).
 #                 Pass = a fresh verification entry with a recorded run AND a rollback
 #                 note (or [UNAVAILABLE: reason]).
 #   behavioral -- changes behavior (code/lib/commands/agents/hooks/tests).
@@ -89,7 +90,14 @@ classify() {
     echo inert; return 0
   fi
 
-  subjects="$(_subjects "$root" "$base")"
+  # Subject words count only when a non-doc path is also a non-test path. A tests-only diff
+  # is classified by its paths alone: its subject describes the test, and a negative-control
+  # commit says "restore". Any path outside the test pattern keeps the subject signal.
+  subjects=""
+  if printf '%s\n' "$changed" | grep -vE '\.(md|txt|markdown)$|(^|/)\.kit\.toml$' \
+       | grep -qvE '(^|/)(tests?|__tests__|spec)/|(^|/)test_[^/]*$|[._](test|spec)\.[^/]*$'; then
+    subjects="$(_subjects "$root" "$base")"
+  fi
   blob="$(printf '%s\n%s' "$changed" "$subjects" | tr 'A-Z' 'a-z')"
   # stateful: deploy / migration / data / persistent-state signals (only reached when the diff
   # touches non-doc files, so a docs-only commit can no longer be misclassified by its subject).

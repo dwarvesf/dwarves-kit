@@ -6,7 +6,8 @@
 # md-only "migrate" diff as stateful.
 set -uo pipefail
 KIT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-LIB="$KIT/lib/gate/proof-ledger.sh"
+# PROOF_LEDGER_LIB lets negctl --base-ref point the suite at an older lib.
+LIB="${PROOF_LEDGER_LIB:-$KIT/lib/gate/proof-ledger.sh}"
 fails=0
 pass(){ echo "PASS $*"; }
 fail(){ echo "FAIL $*"; fails=$((fails+1)); }
@@ -14,7 +15,7 @@ fail(){ echo "FAIL $*"; fails=$((fails+1)); }
 # build a fixture: $1 dir, $2 = "md" | "code" | "codemd" content, $3 = commit subject
 build() {
   local d="$1" kind="$2" subj="$3"
-  rm -rf "$d"; mkdir -p "$d/docs" "$d/lib"
+  rm -rf "$d"; mkdir -p "$d/docs" "$d/lib" "$d/tests" "$d/db/migrations"
   git -C "$d" init -q -b main
   git -C "$d" config user.email t@t; git -C "$d" config user.name t
   echo base > "$d/docs/x.md"; git -C "$d" add -A; git -C "$d" commit -qm base
@@ -23,6 +24,10 @@ build() {
     md)     echo more >> "$d/docs/x.md" ;;
     code)   echo 'echo hi' >> "$d/lib/y.sh" ;;
     codemd) echo more >> "$d/docs/x.md"; echo 'echo hi' >> "$d/lib/y.sh" ;;
+    test)   echo 'echo hi' >> "$d/tests/test-helper.sh" ;;
+    mig)    echo 'alter table t add c int;' >> "$d/db/migrations/002.sql"; echo 'echo hi' >> "$d/tests/test-helper.sh" ;;
+    codetest) echo 'echo hi' >> "$d/lib/y.sh"; echo 'echo hi' >> "$d/tests/test-helper.sh" ;;
+    deploy) echo 'echo hi' >> "$d/lib/deploy.sh" ;;
   esac
   git -C "$d" add -A; git -C "$d" commit -qm "$subj"
 }
@@ -50,12 +55,43 @@ F=/tmp/cls-md   # reuse the md-only 'migrate' fixture
 # written, which is why the control silently stopped reproducing the bug.
 OLD="$(dirname "$LIB")/.cls-oldlib.tmp.sh"
 trap 'rm -f "$OLD"' EXIT
-awk '/# inert FIRST/{s=1} /^  subjects=/{s=0} !s' "$LIB" > "$OLD"
+# Strip the tests-only subject guard too: without it an md-only diff never reads its subject,
+# so the inert-FIRST block alone would no longer be the only thing between md and stateful.
+awk '/# inert FIRST/{s=1} /# Subject words count only/{s=0} !s' "$LIB" \
+  | awk '/# Subject words count only/{s=1} s&&/^  fi$/{s=0; print "  subjects=\"$(_subjects \"$root\" \"$base\")\""; next} !s' > "$OLD"
 if [ -s "$OLD" ] && grep -q 'stateful: deploy' "$OLD" && ! grep -q 'inert FIRST' "$OLD"; then
   [ "$(cls "$OLD" "$F")" = stateful ] && pass "inert-FIRST-stripped lib classifies md-only 'migrate' as stateful (the bug; fix is load-bearing)" || fail "stripped lib should reproduce the stateful bug, got $(cls "$OLD" "$F")"
 else
   echo "[NO EXECUTABLE CHECK: could not strip the inert-FIRST block]"; fails=$((fails+1))
 fi
 
+# Subject-word trap: a tests-only diff is classified by its paths, never its subject.
+# (a) tests-only + "restore" subject -> behavioral (the old lib read it stateful)
+FA="$(mktemp -d)"; build "$FA" test "put the probe back: restore the helper"
+[ "$(cls "$LIB" "$FA")" = behavioral ] && pass "tests-only 'restore' diff -> behavioral" || fail "tests-only 'restore' should be behavioral, got $(cls "$LIB" "$FA")"
+
+# (b) migration file + test + "migrate" subject -> stateful (a non-test path keeps the signal)
+F="$(mktemp -d)"; build "$F" mig "migrate the orders table"
+[ "$(cls "$LIB" "$F")" = stateful ] && pass "migration+test 'migrate' diff -> stateful (preserved)" || fail "migration+test should be stateful, got $(cls "$LIB" "$F")"
+
+# (b2) code + test + "backup" subject -> stateful (a mixed diff keeps the subject signal)
+F="$(mktemp -d)"; build "$F" codetest "add the nightly backup"
+[ "$(cls "$LIB" "$F")" = stateful ] && pass "code+test 'backup' diff -> stateful (preserved)" || fail "code+test 'backup' should be stateful, got $(cls "$LIB" "$F")"
+
+# (c) source file on a stateful path, neutral subject -> stateful, same verdict as before
+F="$(mktemp -d)"; build "$F" deploy "tweak the helper"
+[ "$(cls "$LIB" "$F")" = stateful ] && pass "lib/deploy.sh, neutral subject -> stateful (unchanged)" || fail "stateful path should be stateful, got $(cls "$LIB" "$F")"
+
+# (a) negative control: strip the tests-only guard from the current lib; the same fixture
+# must read stateful again, so the guard is load-bearing.
+OLD2="$(dirname "$LIB")/.cls-oldlib2.tmp.sh"
+trap 'rm -f "$OLD" "$OLD2"' EXIT
+awk '/# Subject words count only/{s=1} s&&/^  fi$/{s=0; print "  subjects=\"$(_subjects \"$root\" \"$base\")\""; next} !s' "$LIB" > "$OLD2"
+if grep -q '^  subjects="\$(_subjects' "$OLD2" && ! grep -q 'Subject words count only' "$OLD2"; then
+  [ "$(cls "$OLD2" "$FA")" = stateful ] && pass "guard-stripped lib classifies tests-only 'restore' as stateful (the bug; guard is load-bearing)" || fail "guard-stripped lib should reproduce the bug, got $(cls "$OLD2" "$FA")"
+else
+  echo "[NO EXECUTABLE CHECK: could not strip the tests-only guard]"; fails=$((fails+1))
+fi
+
 echo "---"
-[ "$fails" -eq 0 ] && { echo "ALL PASS (4/4)"; exit 0; } || { echo "FAILS: $fails"; exit 1; }
+[ "$fails" -eq 0 ] && { echo "ALL PASS (9/9)"; exit 0; } || { echo "FAILS: $fails"; exit 1; }
