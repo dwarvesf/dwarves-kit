@@ -738,11 +738,12 @@ attachment text, not "disk"). Spec delta: `docs/specs/SPEC-289-observe-entry-fee
 
 | Check | Command | Expected | Result |
 |---|---|---|---|
-| Module suite green | `bash lib/session/observe/tests/smoke.sh \| tail -1` | all cases pass | PASS, `smoke: all 101 passed` |
+| Module suite green | `bash lib/session/observe/tests/smoke.sh \| tail -1` | all cases pass | PASS, `smoke: all 102 passed` |
 | Instructions sub-rows sum to parent | smoke 98 | A.md 150 + B.md 50 = instructions 200 | PASS |
 | hook_success sub-rows sum to parent, spilled flagged | smoke 99 | tool-first.sh 90 + repo-memory.sh 58 = hook_success 148, repo-memory.sh `SPILLED` | PASS |
+| Zero-token spilled hook still shown, flagged | smoke 99b | huge-dump.sh 0 tokens, `SPILLED` | PASS |
 | No sub-rows without `--detail` | smoke 100 | neither file path nor hook label prints | PASS |
-| `--json` always carries sub-rows | smoke 101 | `split_components[].files`/`.hooks` present with no `--detail` | PASS |
+| `--json` always carries sub-rows | smoke 101 | `split_components[].files`/`.hooks` present with no `--detail`, incl. the zero-token spill | PASS |
 | Existing entry-fee assertions unaffected | smoke 62-79, 91-97 | unchanged | PASS |
 | Live, real transcript | `session-observe entry-fee --file <2026-09-23 session>.jsonl --detail` | instructions splits by CLAUDE.md/MEMORY.md, hook_success splits by command | PASS, see below |
 
@@ -784,7 +785,7 @@ accumulation for `hook_success`.
 ```
 Exit: 0 (green before mutation)
 Changed: lib/session/observe/bin/session-observe
-Exit: 1 (under mutation, RED: smoke 98/99/101 fail, no sub-rows to assert against)
+Exit: 1 (under mutation, RED: smoke 98/99/99b/101 fail, no sub-rows to assert against)
 Restore: git checkout HEAD -- lib/session/observe/bin/session-observe
 Exit: 0 (green after restore)
 Verdict: PASS
@@ -818,12 +819,12 @@ print(list(comps['hook_success'].keys()))
 
 `--detail` does not exist on the pre-change binary (exit 2, argparse refuses it), and
 its JSON carries no `files`/`hooks` sub-row keys, confirming the new assertions
-(smoke 98-101) exercise genuinely new behavior, not an existing path re-asserted.
+(smoke 98-101, incl. 99b) exercise genuinely new behavior, not an existing path re-asserted.
 
 #### Reproduce
 
 ```bash
-bash lib/session/observe/tests/smoke.sh                                  # -> smoke: all 101 passed
+bash lib/session/observe/tests/smoke.sh                                  # -> smoke: all 102 passed
 bash bin/session observe entry-fee --days 14 --detail                    # live, text sub-rows
 bash bin/session observe entry-fee --days 14 --json | jq '.split_components'  # sub-rows unconditional
 ```

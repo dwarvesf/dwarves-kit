@@ -524,6 +524,9 @@ echo "[99] entry-fee --detail: hook_success sub-rows print per SessionStart hook
 if grep -Eq 'tool-first\.sh[[:space:]]+90[[:space:]]*$' <<<"$out" && grep -Eq 'repo-memory\.sh[[:space:]]+58[[:space:]]+SPILLED' <<<"$out" \
     && grep -Eq 'hook_success[[:space:]]+148' <<<"$out"; then ok "hook_success sub-rows 90+58=148, repo-memory.sh SPILLED"; else no "hook_success detail wrong: $out"; fi
 
+echo "[99b] entry-fee --detail: a spilled hook with NO rendered content still prints, at 0 tokens (the flag is the signal, not the size)"
+if grep -Eq 'huge-dump\.sh[[:space:]]+0[[:space:]]+SPILLED' <<<"$out"; then ok "zero-token spilled hook still shown, SPILLED"; else no "zero-token spilled hook missing: $out"; fi
+
 echo "[100] entry-fee negative control: without --detail, no sub-rows print (default text stays readable)"
 out="$("$CC" entry-fee --root "$DEFIX")"
 if ! grep -q '/repo/A.md' <<<"$out" && ! grep -q 'tool-first.sh' <<<"$out"; then ok "no sub-rows without --detail"; else no "sub-rows leaked without --detail: $out"; fi
@@ -540,7 +543,8 @@ hooks = comps["hook_success"]["hooks"]
 byhook = {h["hook"]: (h["est_tokens"], h["spilled"]) for h in hooks}
 assert byhook["~/.claude/hooks/tool-first/tool-first.sh"] == (90, False), byhook
 assert byhook["~/.claude/hooks/repo-memory/repo-memory.sh"] == (58, True), byhook
-' "$jout"; then ok "json sub-rows correct, spilled flagged, no --detail needed"; else no "json sub-rows wrong: $jout"; fi
+assert byhook["~/.claude/hooks/huge-dump/huge-dump.sh"] == (0, True), byhook
+' "$jout"; then ok "json sub-rows correct, spilled flagged (incl. zero-token spill), no --detail needed"; else no "json sub-rows wrong: $jout"; fi
 
 echo
 if [[ $fail -gt 0 ]]; then echo "smoke: $pass passed, $fail FAILED" >&2; exit 1; fi

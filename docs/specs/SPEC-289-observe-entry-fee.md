@@ -175,16 +175,19 @@ session, a repo with one worktree slug):
 79. a multi-slug `--project` match is announced on stderr.
 
 Plus, against `tests/fixtures/entryfee-detail/` (one session: two instruction files,
-two SessionStart hooks, one spilled):
+three SessionStart hooks, two spilled, one of those at zero measured tokens):
 
 98. `--detail`: `instructions` sub-rows print per file (A.md 150, B.md 50), summing to
     the parent row (200).
 99. `--detail`: `hook_success` sub-rows print per SessionStart hook (tool-first.sh 90,
     repo-memory.sh 58), summing to the parent row (148); repo-memory.sh is flagged
     `SPILLED`.
+99b. `--detail`: a hook whose stdout spilled to a file but never reached the model at
+     all (no rendered content) still prints, at 0 tokens, flagged `SPILLED`; the flag
+     is the signal, not the size.
 100. negative control: without `--detail`, no sub-rows print in the text table.
 101. `--json`: `split_components[].files` and `.hooks` carry the same sub-rows
-     unconditionally, `--detail` or not.
+     unconditionally, `--detail` or not, including the zero-token spilled hook.
 
 Plus a real run over the live transcripts, recorded in
 `lib/session/observe/docs/verification/entry-fee.md`.
