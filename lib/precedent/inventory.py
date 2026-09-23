@@ -24,6 +24,7 @@ error (exit 64) raised before any scanning starts.
 from __future__ import annotations
 
 import argparse
+import functools
 import json
 import os
 import re
@@ -61,11 +62,36 @@ def safe_text(text: str) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Scoring -- ported verbatim from repo-sweep `_score` / `_term_pattern` (line 625).
+# Scoring. Ranked partial match: a row scores by how many query terms it matches, so one
+# extra query word no longer hides a row that matches the rest (the AND scorer ported from
+# repo-sweep did). Coverage dominates: a row matching more terms always outranks one
+# matching fewer, so all-term matches stay on top; within equal coverage a name hit counts
+# double a haystack hit, and the adjacent-phrase bonus breaks the rest.
 # ---------------------------------------------------------------------------
+STOPWORDS = frozenset("a an the of to for and or in on with by is it at as from into via".split())
+TERM_SPLIT_RE = re.compile(r"[^a-z0-9]+")
+# Above any weight + phrase bonus sum: a whole task description (/kit:assign passes one)
+# can run to dozens of terms at up to 4 weight each.
+COVERAGE_SCALE = 1000
+
+
+@functools.lru_cache(maxsize=64)
+def query_terms(words: tuple) -> tuple:
+    """Query words -> distinct lowercase terms. `-`, `_`, `/` and every other non-alnum char
+    separate terms, so `lane-classify` is two terms; stopwords drop out."""
+    out = []
+    for w in words:
+        for t in TERM_SPLIT_RE.split(w.lower()):
+            if t and t not in STOPWORDS and t not in out:
+                out.append(t)
+    return tuple(out)
+
+
 def term_pattern(t: str) -> str:
     """Regex for one query term plus its inflections: -s, -es, -ed, -ing, and the doubled
-    final consonant before -ed/-ing. A closed set on purpose, not a prefix match."""
+    final consonant before -ed/-ing. A closed set on purpose, not a prefix match: on the
+    labeled query set, prefix matching and query-side stem stripping each added false hits
+    and found nothing this set missed."""
     base = re.escape(t)
     if t and t[-1].isalpha():
         dbl = re.escape(t[-1])
@@ -73,26 +99,62 @@ def term_pattern(t: str) -> str:
     return base + r"(?:s|es|ed|ing)?"
 
 
-def score(terms, name: str, haystack: str) -> int:
-    """AND across terms (one absent term scores the whole hit 0); a name hit counts 2, a
-    haystack hit 1; an adjacent phrase in query order adds a flat +3 bonus."""
+def min_match(n: int) -> int:
+    """The floor: how many of n query terms a row must match. One- and two-term queries stay
+    all-terms (a single common word must not flood the digest); longer ones may miss one."""
+    return n if n <= 2 else n - 1
+
+
+# One query scores every row of the index against the same term tuple; compile its patterns
+# once per query, not once per row.
+_PATTERN_CACHE = {}
+
+
+def _compiled(terms: tuple):
+    got = _PATTERN_CACHE.get(terms)
+    if got is None:
+        pats = [re.compile(r"\b" + term_pattern(t) + r"\b") for t in terms]
+        phrase = (re.compile(r"\b" + r"\W+".join(term_pattern(t) for t in terms) + r"\b")
+                  if len(terms) > 1 else None)
+        got = _PATTERN_CACHE[terms] = (pats, phrase)
+    return got
+
+
+def score(terms, name: str, haystack: str, name_weight: int = 2, hay_weight: int = 1,
+          require_all: bool = False) -> int:
+    """Terms matched x COVERAGE_SCALE + per-term weight (name hit name_weight, else haystack
+    hit hay_weight) + a flat +3 when every term appears adjacent in query order. 0 below the
+    min_match floor (all terms when require_all), and 0 for a partial match with no name
+    hit: a long description or note body matching some of the words is noise."""
+    terms = query_terms(tuple(terms))
     if not terms:
         return 0
-    name_l = (name or "").lower()
-    hay_l = (haystack or "").lower()
-    total = 0
-    for t in terms:
-        pat = re.compile(r"\b" + term_pattern(t) + r"\b")
-        in_name = bool(pat.search(name_l))
-        in_hay = bool(pat.search(hay_l))
-        if not (in_name or in_hay):
-            return 0
-        total += 2 if in_name else 1
-    if len(terms) > 1:
-        phrase_pat = re.compile(r"\b" + r"\W+".join(term_pattern(t) for t in terms) + r"\b")
-        if phrase_pat.search(name_l) or phrase_pat.search(hay_l):
-            total += 3
-    return total
+    pats, phrase = _compiled(terms)
+    need = len(terms) if require_all else min_match(len(terms))
+    name_l = (name or "").lower().replace("_", " ")
+    hay_l = None  # lowered lazily: most rows miss on the first terms
+    matched = weight = name_hits = 0
+    for i, pat in enumerate(pats):
+        if pat.search(name_l):
+            weight += name_weight
+            name_hits += 1
+        else:
+            if hay_l is None:
+                hay_l = (haystack or "").lower().replace("_", " ")
+            if not pat.search(hay_l):
+                if matched + len(pats) - i - 1 < need:
+                    return 0
+                continue
+            weight += hay_weight
+        matched += 1
+    if matched < need or (matched < len(terms) and not name_hits):
+        return 0
+    if phrase is not None and matched == len(terms):
+        if hay_l is None:
+            hay_l = (haystack or "").lower().replace("_", " ")
+        if phrase.search(name_l) or phrase.search(hay_l):
+            weight += 3
+    return matched * COVERAGE_SCALE + weight
 
 
 # ---------------------------------------------------------------------------
@@ -173,6 +235,25 @@ FRONTMATTER_NAME_RE = re.compile(r'^name:\s*(.+?)\s*$', re.MULTILINE)
 FRONTMATTER_DESC_RE = re.compile(r'^description:\s*(.+?)\s*$', re.MULTILINE)
 FRONTMATTER_TITLE_RE = re.compile(r'^title:\s*(.+?)\s*$', re.MULTILINE)
 FRONTMATTER_PURPOSE_RE = re.compile(r'^purpose:\s*(.+?)\s*$', re.MULTILINE)
+BLOCK_SCALAR_RE = re.compile(r'^[|>][+-]?[0-9]?[+-]?\s*(#.*)?$')
+
+
+def fm_value(fm: str, rx) -> str:
+    """One top-level frontmatter field's text. A YAML block scalar (`|`, `>-`, ...) or an
+    empty value continued on indented lines reads the indented lines joined by spaces, so
+    the marker itself is never indexed as the text."""
+    m = rx.search(fm)
+    if not m:
+        return ""
+    value = m.group(1).strip()
+    if not BLOCK_SCALAR_RE.match(value):
+        return value
+    block = []
+    for line in fm[m.end():].lstrip("\n").splitlines():
+        if line.strip() and not line[:1].isspace():
+            break
+        block.append(line.strip())
+    return " ".join(b for b in block if b)
 
 
 def skill_frontmatter(fp: str):
@@ -185,8 +266,7 @@ def skill_frontmatter(fp: str):
         fm, body = text, ""
     m = FRONTMATTER_NAME_RE.search(fm)
     name = m.group(1).strip() if m else None
-    m = FRONTMATTER_DESC_RE.search(fm)
-    desc = m.group(1).strip() if m else ""
+    desc = fm_value(fm, FRONTMATTER_DESC_RE)
     return name, desc, body
 
 
@@ -204,10 +284,7 @@ def note_frontmatter(fp: str):
     if text is None:
         return None
     fm, body = split_frontmatter(text)
-    desc = None
-    m = FRONTMATTER_DESC_RE.search(fm)
-    if m:
-        desc = m.group(1).strip().strip('"')
+    desc = fm_value(fm, FRONTMATTER_DESC_RE).strip('"')
     if not desc:
         for line in body.splitlines():
             if line.strip():
@@ -470,8 +547,7 @@ def scan_repo_experiments(root: str, label_prefix: str, terms, sections: Section
         if text is None:
             continue
         fm, body = split_frontmatter(text)
-        m = FRONTMATTER_TITLE_RE.search(fm) or FRONTMATTER_DESC_RE.search(fm)
-        title_or_desc = m.group(1).strip().strip('"') if m else ""
+        title_or_desc = (fm_value(fm, FRONTMATTER_TITLE_RE) or fm_value(fm, FRONTMATTER_DESC_RE)).strip('"')
         if not title_or_desc:
             m = re.search(r'^#\s*(.+)$', body, re.MULTILINE)
             title_or_desc = m.group(1).strip() if m else ""
@@ -503,13 +579,19 @@ def scan_repo_research(root: str, label_prefix: str, terms, sections: Sections, 
         fm, _body = split_frontmatter(text)
         fields = []
         for rx in (FRONTMATTER_TITLE_RE, FRONTMATTER_PURPOSE_RE, FRONTMATTER_DESC_RE):
-            m = rx.search(fm)
-            if m:
-                fields.append(m.group(1).strip().strip('"'))
+            v = fm_value(fm, rx).strip('"')
+            if v:
+                fields.append(v)
         head_field = fields[0] if fields else ""
         stem = os.path.splitext(fn)[0]
         s = score(terms, stem, " ".join(fields))
         sections.add(title, s, f"{label_prefix}research/{fn}" + suffix(head_field))
+
+
+def note_score(terms, stem: str, desc: str, body_flat: str) -> int:
+    """A memory note: the slug and description may match partially; the whole body counts
+    only toward an all-terms match (a long body shares some words with almost any query)."""
+    return max(score(terms, stem, desc), score(terms, stem, f"{desc} {body_flat}", require_all=True))
 
 
 def add_memory_entries(sections: Sections, title: str, dirpath: str, label_prefix: str, terms):
@@ -526,7 +608,7 @@ def add_memory_entries(sections: Sections, title: str, dirpath: str, label_prefi
         if got is None:
             continue
         stem, desc, body_flat = got
-        s = score(terms, stem, f"{desc} {body_flat}")
+        s = note_score(terms, stem, desc, body_flat)
         sections.add(title, s, f"{label_prefix}{fn}" + suffix(f"{desc}{suffix(body_flat)}"))
     for sub in sorted(os.listdir(dirpath)):
         subdir = os.path.join(dirpath, sub, "memory")
@@ -540,7 +622,7 @@ def add_memory_entries(sections: Sections, title: str, dirpath: str, label_prefi
             if got is None:
                 continue
             stem, desc, body_flat = got
-            s = score(terms, stem, f"{desc} {body_flat}")
+            s = note_score(terms, stem, desc, body_flat)
             sections.add(title, s, f"{label_prefix}{sub}/memory/{fn}" + suffix(desc))
     return True
 
@@ -618,8 +700,9 @@ def add_skill_entries(sections: Sections, title: str, dirpath: str, terms, label
         skill_name, desc, body = got
         skill_name = skill_name or name
         label = f"skill {label_tag}{skill_name}" if label_tag else f"skill {skill_name}"
-        head_score = score(terms, skill_name, desc)
-        s = 2 * head_score if head_score else (1 if score(terms, "", body) else 0)
+        # a skill's name/description weighs double; coverage (terms matched) still dominates
+        head_score = score(terms, skill_name, desc, name_weight=4, hay_weight=2)
+        s = head_score or (1 if score(terms, "", body, require_all=True) else 0)
         if s:
             sections.add(title, s, label + suffix(first_sentence(desc)))
     return True
@@ -747,10 +830,14 @@ def scan_kit_verbs(sections: Sections, kit_root: str, terms, title: str = "kit v
             sections.add(title, s, label + suffix(summary) + extra)
     if os.path.isdir(lib_dir):
         for dirpath, _dirnames, filenames in os.walk(lib_dir):
+            parts = os.path.relpath(dirpath, lib_dir).split(os.sep)
+            in_bin = parts[-1] == "bin" and not {"tests", "fixtures"} & set(parts)
             for fn in sorted(filenames):
-                if not fn.endswith(".sh"):
-                    continue
                 fp = os.path.join(dirpath, fn)
+                # *.sh anywhere, plus a lib tool's bin/ entry points (lib/session/observe/bin/
+                # session-observe is Python with no extension; *.sh alone never saw it)
+                if not (fn.endswith(".sh") or (in_bin and is_executable_or_shell(fp, fn))):
+                    continue
                 rel = os.path.relpath(fp, kit_root)
                 entry = kit_script_entry(f"kit {rel}", fp)
                 if entry is None:

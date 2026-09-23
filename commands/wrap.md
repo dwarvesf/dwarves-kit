@@ -154,7 +154,7 @@ b. Candidates. Act on the list the pre-step-0 scan wrote. A candidate is one of 
 
 Otherwise, for each candidate run `bin/precedent find --surface inventory --json "<two or three words>"`. The answer decides the HOME and the report token, and it decides nothing else:
 
-- **`nothing_matched` false, a hit came back.** The candidate is an enhancement to something that already exists, which is the whole reason this check runs. Its home is that hit and its token is `ENHANCE`. Do not write a sibling beside it. A single-purpose script written next to an existing tool is the fragment this step exists to prevent, and quoting the tool it should have joined prevents nothing.
+- **`nothing_matched` false, a hit came back.** The candidate is an enhancement to something that already exists, which is the whole reason this check runs. Its home is that hit and its token is `ENHANCE`. Open the hit before you fold work into it: a query of three or more words also returns rows that match all but one word, so a hit can share the words and not the job. Do not write a sibling beside a hit that does the job. A single-purpose script written next to an existing tool is the fragment this step exists to prevent, and quoting the tool it should have joined prevents nothing.
 - **`nothing_matched` true.** The candidate is new. Its home is the repo that would own it and its token is `NEW (precedent: nothing matched)`.
 
 **Then size it, and the size decides where the build happens.** A build that lands from inside wrap is still a change in a real repo, so it owes the same lane discipline as any other change; an inline edit-and-commit at session close is how an unreviewed, undocumented change enters an estate:
