@@ -24,10 +24,11 @@ Verdict: PASS for every suite except test-no-personal-paths, which fails
 ```
 Command: git checkout HEAD~2 -- lib/precedent/inventory.py && bash tests/test-precedent.sh
 Exit: 1
-Verdict: FAIL -- "lib scan: a .venv/bin script is skipped while its bin/
-  sibling is indexed" (rc=0 got="True True": the .venv/bin/python fixture
-  was indexed alongside the real bin/ tool). Restored with
-  git checkout HEAD -- lib/precedent/inventory.py, re-ran, back to 82/82 PASS.
+Outcome: RED as designed -- "lib scan: a .venv/bin script is skipped while
+  its bin/ sibling is indexed" fails (rc=0 got="True True": the .venv/bin/
+  python fixture was indexed alongside the real bin/ tool, confirming the
+  test catches the bug). Restored with
+  git checkout HEAD -- lib/precedent/inventory.py, re-ran: back to PASS, 82/82.
 ```
 
 ## Not proven
