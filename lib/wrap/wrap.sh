@@ -892,8 +892,11 @@ _apply_repo() {
     echo "     SKIP branch sweep: --own scopes cleanup to the named worktrees"
   else
     _apply_branches "$repo" "$def" "$cur" "$fetch_ok" "$ghs"
-    _apply_origin_branches "$repo" "$def" "$ghs"
   fi
+  # Outside the --own scope on purpose: it touches no local ref or worktree, and its own
+  # proof (merged PR at the exact tip, no open PR on it) holds whoever owns the branch.
+  # Skipping it under --own left every shared repo's merged heads on origin.
+  _apply_origin_branches "$repo" "$def" "$ghs"
 
   echo "-- pull:"
   if [ "$cur" = "$def" ]; then

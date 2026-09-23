@@ -2818,6 +2818,14 @@ chk_has "origin --apply went on to the pull" "$out" "-- pull:"
 out="$(os_run apply --apply "$TMPD/osclone-app")"
 chk_has "origin second --apply finds nothing left" "$out" "no merged branches left on origin"
 
+
+echo "--- --own: the origin sweep still runs (it touches no local state)"
+build_os_repo own
+out="$(os_run apply --apply --own "$TMPD/no-such-wt" "$TMPD/osclone-own")"; rc=$?
+chk "origin --own exits 0" "$rc"
+chk_has "origin --own still reports the count" "$out" "deleted 3 of 3 merged branches on origin"
+chk "origin --own deleted gone" "$(os_has own gone && echo 1 || echo 0)"
+chk "origin --own kept moved" "$(os_has own moved; echo $?)"
 echo "--- a failed PR read skips the sweep and deletes nothing"
 build_os_repo nolist
 out="$(GH_STUB_MERGED_ALL_RC=1 os_run apply --apply "$TMPD/osclone-nolist")"; rc=$?

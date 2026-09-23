@@ -4,7 +4,7 @@ Delta from the spec only.
 
 | Decision | Choice | Why |
 |---|---|---|
-| Scope | Every `apply` call, `--worktrees` or not; `--own` skips it | Matches `_apply_branches`: local branch deletes already run on every `apply`, and `--worktrees` gates worktree removal only. `--own` narrows to the named worktrees, so another session's merged origin branch is out of scope. |
+| Scope | Every `apply` call, `--worktrees` or not, `--own` included | `--worktrees` gates worktree removal only. First shipped with `--own` skipping the sweep; revised because shared repos always wrap with `--own`, so their merged heads stayed on origin (seen on foundation-workers the same day). The sweep touches no local state and its proof is owner-independent. |
 | GitHub test | Raw `git config remote.origin.url` matches `github.com[:/]` | `git remote get-url` expands `insteadOf`; the raw key does not, which lets the tests point a github.com URL at a local bare repo. |
 | Tip source | `git ls-remote --heads origin` | The first cut read `refs/remotes/origin/`. The real dry run on foundation-workers found 2 instead of 173, because that checkout fetches `main` only. |
 | Delete count | Counted from a second `ls-remote` after the pushes | A multi-ref `git push --delete` is not atomic; one protected branch fails the push while the rest land. |
