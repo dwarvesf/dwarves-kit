@@ -179,8 +179,12 @@ _is_root_only() {
 }
 
 # _resolve <row> -- sets EFFECTIVE / PROVENANCE / ENV_VAL / ENV_SET / PROJ_VAL / PROJ_SET /
-# ROOT_VAL / ROOT_SET (globals; mirrors the small-bash-script house style of
-# lib/classify/lane-classify.sh's LANE/REASON/FIRED globals, not a subshell-return dance).
+# OP_VAL / OP_SET / ROOT_VAL / ROOT_SET / IS_ROOT_ONLY (globals; mirrors the small-bash-script
+# house style of lib/classify/lane-classify.sh's LANE/REASON/FIRED globals, not a subshell-
+# return dance). Mirrors kit-config.sh's own precedence exactly: env > project .kit.toml >
+# operator kit.toml > kit-root kit.toml > default, with the project layer skipped for a
+# root-only key (kit_config_get_root's own contract) -- this file stays the display surface,
+# kit-config.sh stays the only TOML reader (decision 4's fence).
 _resolve() {
   local row="$1" envvar tomlkey defaultval section key
   envvar="$(_row_get "$row" 1)"; tomlkey="$(_row_get "$row" 2)"
@@ -201,21 +205,29 @@ _resolve() {
     ENV_SET=1; ENV_VAL="$ev"
   fi
 
-  PROJ_VAL=""; PROJ_SET=0; ROOT_VAL=""; ROOT_SET=0
+  PROJ_VAL=""; PROJ_SET=0; OP_VAL=""; OP_SET=0; ROOT_VAL=""; ROOT_SET=0
+  IS_ROOT_ONLY=0
   if [ "$tomlkey" != "env-only" ] && [ "$tomlkey" != "-" ]; then
     section="${tomlkey%%.*}"; key="${tomlkey#*.}"
     # Root-only keys never consult the project layer: a project .kit.toml rides inside an
-    # untrusted PR, and a row like understand.teach names code a command runs.
-    if ! _is_root_only "$row"; then
+    # untrusted PR, and a row like understand.teach names code a command runs. Same fence
+    # kit_config_get_root applies; kit_config_get_root's own layer order (operator, then
+    # kit-root) is what this branch reproduces for a root-only row.
+    if _is_root_only "$row"; then
+      IS_ROOT_ONLY=1
+    else
       PROJ_VAL="$(_kit_toml_get "$(kit_config_project)" "$section" "$key")"
       [ -n "$PROJ_VAL" ] && PROJ_SET=1
     fi
+    OP_VAL="$(_kit_toml_get "$(kit_config_operator)" "$section" "$key")"
+    [ -n "$OP_VAL" ] && OP_SET=1
     ROOT_VAL="$(_kit_toml_get "$(kit_config_root)" "$section" "$key")"
     [ -n "$ROOT_VAL" ] && ROOT_SET=1
   fi
 
   if [ "$ENV_SET" = 1 ]; then EFFECTIVE="$ENV_VAL"; PROVENANCE="env"
   elif [ "$PROJ_SET" = 1 ]; then EFFECTIVE="$PROJ_VAL"; PROVENANCE="project .kit.toml"
+  elif [ "$OP_SET" = 1 ]; then EFFECTIVE="$OP_VAL"; PROVENANCE="operator kit.toml"
   elif [ "$ROOT_SET" = 1 ]; then EFFECTIVE="$ROOT_VAL"; PROVENANCE="kit-root kit.toml"
   else EFFECTIVE="$defaultval"; PROVENANCE="default"
   fi
@@ -429,16 +441,21 @@ cmd_explain() {
   fi
 
   if [ "$tomlkey" != "env-only" ] && [ "$tomlkey" != "-" ]; then
-    if [ "$PROJ_SET" = 1 ]; then printf '  2. project .kit.toml %-19s = %s   [%s]\n' "[$tomlkey]" "$PROJ_VAL" "$(kit_config_project)"
+    if [ "$IS_ROOT_ONLY" = 1 ]; then
+      printf '  2. project .kit.toml %-19s (not read: root-only key)\n' "[$tomlkey]"
+    elif [ "$PROJ_SET" = 1 ]; then printf '  2. project .kit.toml %-19s = %s   [%s]\n' "[$tomlkey]" "$PROJ_VAL" "$(kit_config_project)"
     else printf '  2. project .kit.toml %-19s = (unset)   [%s]\n' "[$tomlkey]" "$(kit_config_project)"; fi
-    if [ "$ROOT_SET" = 1 ]; then printf '  3. kit-root kit.toml %-19s = %s   [%s]\n' "[$tomlkey]" "$ROOT_VAL" "$(kit_config_root)"
-    else printf '  3. kit-root kit.toml %-19s = (unset)   [%s]\n' "[$tomlkey]" "$(kit_config_root)"; fi
+    if [ "$OP_SET" = 1 ]; then printf '  3. operator kit.toml %-19s = %s   [%s]\n' "[$tomlkey]" "$OP_VAL" "$(kit_config_operator)"
+    else printf '  3. operator kit.toml %-19s = (unset)   [%s]\n' "[$tomlkey]" "$(kit_config_operator)"; fi
+    if [ "$ROOT_SET" = 1 ]; then printf '  4. kit-root kit.toml %-19s = %s   [%s]\n' "[$tomlkey]" "$ROOT_VAL" "$(kit_config_root)"
+    else printf '  4. kit-root kit.toml %-19s = (unset)   [%s]\n' "[$tomlkey]" "$(kit_config_root)"; fi
   else
     printf '  2. project .kit.toml n/a (this key has no kit.toml backing: %s)\n' "$tomlkey"
-    printf '  3. kit-root kit.toml n/a (this key has no kit.toml backing: %s)\n' "$tomlkey"
+    printf '  3. operator kit.toml n/a (this key has no kit.toml backing: %s)\n' "$tomlkey"
+    printf '  4. kit-root kit.toml n/a (this key has no kit.toml backing: %s)\n' "$tomlkey"
   fi
 
-  printf '  4. default          = %s\n\n' "$defaultval"
+  printf '  5. default          = %s\n\n' "$defaultval"
   printf 'Effective: %s   (source: %s)\n' "$EFFECTIVE" "$PROVENANCE"
 }
 
