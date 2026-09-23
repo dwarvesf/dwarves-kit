@@ -338,13 +338,15 @@ pull_past_dirty = false         # [impl] step 5 pull. false = a checkout whose f
                                  #        reports `PULLED, POP CONFLICT`. Turn it on for a checkout
                                  #        several sessions share, where the dirty file is somebody
                                  #        else's and the pull is the whole point of the step.
-carry_stray_lines = true        # [impl] step 5, before the pull, main checkout on the default
-                                 #        branch only. true = for each dirty merge=union file, the
+carry_stray_lines = true        # [impl] step 5, before the pull, main checkout only, on any
+                                 #        branch. true = for each dirty merge=union file, the
                                  #        lines neither origin/<default> nor HEAD holds go onto a new
                                  #        wrap/stray-<file>-<stamp> branch cut from origin/<default>
                                  #        in a scratch worktree, pushed, with the `gh pr create`
                                  #        command printed; no PR is opened and the working copy is
-                                 #        never touched. false = report the count and carry nothing.
+                                 #        never touched. On a kanban board a flipped row replaces
+                                 #        origin's row of that id in place, then `dedupe-all` runs.
+                                 #        false = report the count and carry nothing.
 build_candidates = true         # [impl] step 7b. true = a precedent hit wires the enhancement into
                                  #        that tool and a clear-shaped miss builds it, both committed
                                  #        in the home repo. false = every candidate is REPORTED in

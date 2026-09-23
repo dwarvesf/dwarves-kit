@@ -818,6 +818,49 @@ chk_has "stray rerun: an existing carry branch skips the file" "$out" \
   "SKIP _meta/LAB_LOG.md: 2 stray lines, but an origin wrap/stray-meta-lab-log-md-* branch already carries this file"
 chk "stray rerun: still one branch on origin" "$([ "$(stray_branches | grep -c .)" = 1 ]; echo $?)"
 
+echo "--- stray lines: a main checkout sitting on a feature branch reports and carries"
+# The incident state. A line the feature branch COMMITTED rides that branch's own PR, so only
+# the two lines no commit holds are stray.
+build_union_repo strayfeat
+SF="$TMPD/uclone-strayfeat"; SFB="$TMPD/ubare-strayfeat"
+git -C "$SF" checkout -q -b feat/other
+LAB_FEAT=$'# Lab log\n\n---\n\n2026-09-06 · feat: committed on the branch\n2026-09-01 · base: the first line\n'
+printf '%s' "$LAB_FEAT" > "$SF/_meta/LAB_LOG.md"; git -C "$SF" commit -qam "feat line"
+printf '%s' $'# Lab log\n\n---\n\n2026-09-08 · stray: board set on the shared checkout\n2026-09-07 · stray: wrap log on the shared checkout\n2026-09-06 · feat: committed on the branch\n2026-09-01 · base: the first line\n' \
+  > "$SF/_meta/LAB_LOG.md"
+out="$("$WRAP" apply "$SF" 2>&1)"
+chk_has "stray on a feature branch: the dry run names the two lines" "$out" \
+  "WOULD carry 2 stray lines in _meta/LAB_LOG.md onto a branch"
+out="$("$WRAP" apply --apply "$SF" 2>&1)"; rc=$?
+SFR="$(git -C "$SFB" for-each-ref --format='%(refname:short)' 'refs/heads/wrap/stray-*')"
+chk "stray on a feature branch: apply exits 0" "$rc"
+chk_has "stray on a feature branch: the carry is reported" "$out" "carried 2 stray lines in _meta/LAB_LOG.md to origin/${SFR}"
+chk "stray on a feature branch: the branch holds origin's file plus the two stray lines" \
+  "$([ "$(git -C "$SFB" show "${SFR}:_meta/LAB_LOG.md")" = $'# Lab log\n\n---\n\n2026-09-08 · stray: board set on the shared checkout\n2026-09-07 · stray: wrap log on the shared checkout\n2026-09-01 · base: the first line' ]; echo $?)"
+chk "stray on a feature branch: the checkout stays on its branch" \
+  "$([ "$(git -C "$SF" branch --show-current)" = feat/other ]; echo $?)"
+
+echo "--- stray lines: a flipped board row lands once, in place, with its new status"
+# claimed -> shipped is the case `dedupe-all` alone gets wrong: both copies are non-queued,
+# and the stale one comes first once the stray row is appended.
+BW="$TMPD/bwork-stray"; BC="$TMPD/bclone-stray"; BB="$TMPD/bbare-stray"
+mkdir -p "$BW/_meta"; git -C "$BW" init -q; gitc "$BW"; git -C "$BW" symbolic-ref HEAD refs/heads/main
+printf '_meta/BACKLOG.md merge=union\n' > "$BW/.gitattributes"
+BOARD_HEAD=$'# Board\n\n| ID | Title | Status |\n|---|---|---|\n'
+printf '%s' "${BOARD_HEAD}"$'| OPS-1 | first | claimed |\n| OPS-2 | second | queued |\n' > "$BW/_meta/BACKLOG.md"
+git -C "$BW" add -A; git -C "$BW" commit -qm base
+git clone -q --bare "$BW" "$BB"; git clone -q "$BB" "$BC"; gitc "$BC"
+git -C "$BC" remote set-head origin main >/dev/null 2>&1
+printf '%s' "${BOARD_HEAD}"$'| OPS-1 | first | shipped (#12) |\n| OPS-2 | second | queued |\n| OPS-3 | third | queued |\n' > "$BC/_meta/BACKLOG.md"
+out="$("$WRAP" apply --apply "$BC" 2>&1)"; rc=$?
+BR="$(git -C "$BB" for-each-ref --format='%(refname:short)' 'refs/heads/wrap/stray-*')"
+BFILE="$(git -C "$BB" show "${BR}:_meta/BACKLOG.md" 2>/dev/null)"
+chk "board stray: apply exits 0" "$rc"
+chk_has "board stray: both stray rows are counted" "$out" "carried 2 stray lines in _meta/BACKLOG.md to origin/${BR}"
+chk "board stray: OPS-1 appears once" "$([ "$(printf '%s\n' "$BFILE" | grep -c '^| OPS-1 |')" = 1 ]; echo $?)"
+chk "board stray: the carry branch holds the flipped row in place, the new row at the end" \
+  "$([ "$BFILE" = "${BOARD_HEAD}"$'| OPS-1 | first | shipped (#12) |\n| OPS-2 | second | queued |\n| OPS-3 | third | queued |' ]; echo $?)"
+
 # ===========================================================================
 echo "=== apply: wrap.pull_past_dirty stashes only the blocking files ==="
 # ===========================================================================

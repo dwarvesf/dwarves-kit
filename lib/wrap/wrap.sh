@@ -901,6 +901,25 @@ _stray_lines() {
     <(git -C "$1" show "origin/$2:$3" 2>/dev/null; echo; git -C "$1" show "HEAD:$3" 2>/dev/null) "$1/$3"
 }
 
+# _stray_board_rows <base-file> <lines-file> -- on a kanban board (backlog.sh's row shape), a
+# stray row whose id origin's version already holds is a flipped row: it replaces that row
+# in place, and leaves the lines file. Appended instead, it would sit beside origin's old
+# copy, and `dedupe-all` keeps the first non-queued copy, which is the stale one when a
+# claimed row went shipped. Any other file, and any other line, is left as is.
+_stray_board_rows() {
+  local base="$1" add="$2" tmp
+  grep -qE '^\| *[A-Z]+-[0-9]+ *\|' "$base" || return 0
+  tmp="$(mktemp)"
+  awk -F'|' 'function rid() { if ($0 !~ /^\| *[A-Z]+-[0-9]+ *\|/) return ""; id = $2; gsub(/^ +| +$/, "", id); return id }
+    FNR == NR { if ((i = rid()) != "") row[i] = $0; next }
+    { i = rid(); if (i != "" && (i in row)) print row[i]; else print }' "$add" "$base" > "$tmp"
+  awk -F'|' 'function rid() { if ($0 !~ /^\| *[A-Z]+-[0-9]+ *\|/) return ""; id = $2; gsub(/^ +| +$/, "", id); return id }
+    FNR == NR { if ((i = rid()) != "") have[i] = 1; next }
+    { i = rid(); if (i == "" || !(i in have)) print }' "$base" "$add" > "$add.rest"
+  mv -f "$tmp" "$base"
+  mv -f "$add.rest" "$add"
+}
+
 # _carry_stray_file <repo> <def> <path> <lines-file> <n> -- commits origin/<def>'s version of
 # the file plus the stray lines onto a new branch in a scratch worktree and pushes it. The
 # lines land below the `---` anchor when the file has one, the rule the union carry uses,
@@ -927,6 +946,7 @@ _carry_stray_file() {
   git -C "$repo" show "origin/${def}:${f}" > "$base" 2>/dev/null
   # A last line with no newline would fuse with the first carried line.
   [ -s "$base" ] && [ -n "$(tail -c 1 "$base")" ] && echo >> "$base"
+  _stray_board_rows "$base" "$add"
   mkdir -p "$(dirname "$wt/$f")"
   head_n="$(_log_anchor_head_lines "$base")"
   if [ "$head_n" -gt 0 ] 2>/dev/null; then
@@ -934,6 +954,8 @@ _carry_stray_file() {
   else
     cat "$base" "$add" > "$wt/$f"
   fi
+  # The same dedupe the union re-merge runs, as a net for a board the rows above missed.
+  grep -qE '^\| *[A-Z]+-[0-9]+ *\|' "$wt/$f" && bash "$BACKLOG_SH" dedupe-all "$wt/$f" >/dev/null 2>&1
   name="${f##*/}"; name="${name%.*}"
   if git -C "$wt" add -- "$f" >/dev/null 2>&1 \
      && git -C "$wt" commit -q -m "chore(${name}): carry ${n} stray lines from a shared checkout" >/dev/null 2>&1 \
@@ -1011,9 +1033,11 @@ _apply_repo() {
   # Skipping it under --own left every shared repo's merged heads on origin.
   _apply_origin_branches "$repo" "$def" "$ghs"
 
-  if [ "$cur" = "$def" ] && [ "$fetch_ok" = 1 ]; then
+  # Any checked-out branch: the incident state is a shared main checkout sitting on a
+  # feature branch while a session writes the board there.
+  if [ "$fetch_ok" = 1 ]; then
     _carry_stray "$repo" "$def"
-  elif [ "$cur" = "$def" ]; then
+  else
     echo "-- stray lines:"
     echo "     SKIP stray lines: fetch failed, origin/${def} may be stale"
   fi
