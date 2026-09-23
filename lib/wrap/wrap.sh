@@ -15,7 +15,9 @@
 #
 #   --under <root> (scan and apply, repeatable) appends every immediate child of <root> that
 #   holds a .git file or directory, in sorted order, to the repo list. Other children are
-#   skipped; a root with no repos prints one line.
+#   skipped; a root with no repos prints one line. A bare --under (no directory follows it)
+#   expands to every root in the wrap.roots knob instead (tilde-expanded, listed order, each
+#   through the same immediate-child scan); an empty knob exits 64 naming it.
 #
 #   internal, a test seam: apply --tips-file <path> replaces the run's own tip snapshot
 #   internal, a test seam: WRAP_ORIGIN_DELETE_CHUNK sets the names per origin delete push
@@ -284,6 +286,28 @@ _add_under() {
   while IFS= read -r r; do count=$(( count + 1 )); repos[count]="$r"; done <<< "$found"
 }
 
+# _expand_bare_under <verb> -- a trailing `--under` given no directory expands to every root
+# in the wrap.roots knob (tilde-expanded, listed order), appended to the CALLER's `unders`
+# array and `nu` counter (same bash-dynamic-scope convention as `_add_under`'s `repos`/
+# `count`). An empty knob is a hard error naming it, so a bare --under never silently means
+# "nothing" -- `--under <root>` with a path is unaffected either way.
+_expand_bare_under() {
+  local roots r
+  roots="$(kit_config_get_root wrap.roots "")"
+  if [ -z "$roots" ]; then
+    echo "wrap.sh ${1}: --under given no directory and wrap.roots is empty" >&2
+    return 64
+  fi
+  for r in $roots; do
+    case "$r" in
+      "~") r="$HOME" ;;
+      "~/"*) r="$HOME/${r#\~/}" ;;
+    esac
+    nu=$(( nu + 1 )); unders[nu]="$r"
+  done
+  want_under=0
+}
+
 cmd_scan() {
   local ghs arg count=0 i=1 want_under=0 nu=0
   local repos unders
@@ -296,7 +320,7 @@ cmd_scan() {
          else count=$(( count + 1 )); repos[count]="$arg"; fi ;;
     esac
   done
-  [ "$want_under" = 0 ] || { echo "wrap.sh scan: --under needs a directory" >&2; return 64; }
+  if [ "$want_under" = 1 ]; then _expand_bare_under scan || return 64; fi
   [ "$count" -ge 1 ] || [ "$nu" -ge 1 ] || { echo "usage: wrap.sh scan [--under <root>]... <repo> [<repo>...]" >&2; return 64; }
   while [ "$i" -le "$nu" ]; do _add_under "${unders[$i]}"; i=$(( i + 1 )); done
   ghs="$(_gh_state)"
@@ -1085,7 +1109,7 @@ cmd_apply() {
   if [ -n "$TIPS_OVERRIDE" ] && [ ! -f "$TIPS_OVERRIDE" ]; then
     echo "wrap.sh apply: --tips-file '${TIPS_OVERRIDE}' is not an existing file" >&2; return 64
   fi
-  [ "$want_under" = 0 ] || { echo "wrap.sh apply: --under needs a directory" >&2; return 64; }
+  if [ "$want_under" = 1 ]; then _expand_bare_under apply || return 64; fi
   [ "$count" -ge 1 ] || [ "$nu" -ge 1 ] || { echo "usage: wrap.sh apply [--apply] [--worktrees] [--own <path>]... [--under <root>]... <repo> [<repo>...]" >&2; return 64; }
   while [ "$i" -le "$nu" ]; do _add_under "${unders[$i]}"; i=$(( i + 1 )); done
   # Canonicalise the own set once: the worktree loop compares against `pwd -P`
