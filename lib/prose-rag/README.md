@@ -5,11 +5,15 @@ learned-ledger), so a prompt can pull in the relevant notes you have already
 written. Fully local, no cloud embedder.
 
 **This module is an adapter, not an engine.** context-kit owns the
-recall engine and its Rust crate; the kit vendored a second copy of it until
-2026-09-07, and two builds of one engine drift. What ships here is the wiring:
-the dormant UserPromptSubmit recall hook (`hooks/prose-rag.sh`, active only with
-`PROSE_RAG_INJECT=1`) and the stable CLI entrypoint `bin/prose-rag`, which
-resolves the engine binary and execs it. The shim never builds anything.
+recall engine; the kit vendored a second copy of it until 2026-09-07, and two
+builds of one engine drift. The engine has since folded into `ctx`
+(`ctx index|query|hook` are the engine verbs; context-kit's own `bin/prose-rag`
+is an alias over them), and `prose-rag` here is kept INDEFINITELY as the
+consumer-facing name: a hook, a weekly job, and muscle memory all call it. What
+ships here is the wiring: the dormant UserPromptSubmit recall hook
+(`hooks/prose-rag.sh`, active only with `PROSE_RAG_INJECT=1`) and the stable CLI
+entrypoint `bin/prose-rag`, which resolves the engine and execs it. The shim
+never builds anything.
 
 Enable with `bash install.sh --with prose_rag`.
 
@@ -18,18 +22,21 @@ Enable with `bash install.sh --with prose_rag`.
 In a context-kit checkout:
 
 ```bash
-cargo install --path src/prose-rag     # puts `prose-rag` on PATH
-prose-rag index                        # first run downloads the model (~124MB), then ~1s
+cargo install --path src/ctx           # puts `ctx` on PATH, engine verbs included
+prose-rag index                        # via the alias; first run downloads the model (~124MB)
 ```
 
 `bin/prose-rag` resolves, in this order, the same order `bash bin/config seams`
 reports for the `PROSE_RAG_BIN` row:
 
-1. `$PROSE_RAG_BIN`, when it names a regular executable file (context-kit fills this).
-2. `prose-rag` on PATH.
+1. `$PROSE_RAG_BIN`, when it names a regular executable file (context-kit fills
+   this; it may name `ctx`, context-kit's `prose-rag` alias, or a pre-fold
+   binary -- all three speak the same `index|query|hook` argv).
+2. `ctx` on PATH -- the folded engine's primary spelling.
+3. `prose-rag` on PATH -- a pre-fold binary, still valid.
 
-One function answers that question for both readers: `prose_rag_resolve` in
-`resolve.sh`, sourced by `bin/prose-rag` and by `lib/config/config.sh`'s
+One function answers that question for both readers: `prose_rag_engine_resolve`
+in `resolve.sh`, sourced by `bin/prose-rag` and by `lib/config/config.sh`'s
 binary seam, so the shim and `bash bin/config seams` can never disagree about
 whether an engine exists. It walks PATH and skips two impostors: a candidate whose
 first 200 bytes carry install.sh's `dwarves-kit CLI shim` marker (that wrapper only

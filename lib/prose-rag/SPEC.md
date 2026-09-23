@@ -11,8 +11,9 @@ re-embed per index). The canonical engine is now the Rust one in `rust/` (model2
 static embeddings, incremental index, floors 0.32/0.40, ~29ms hook): see `README.md`
 for the current contract and `docs/implementation-notes/rust-port.md` for the port
 story. Both engines have since left the kit: the vendored crate was retired and
-`bin/prose-rag` is an adapter over context-kit's binary (`cargo install --path
-src/prose-rag`). The CLI shape, chunking rules, corpus, recall gate, and opt-in hook design below
+`bin/prose-rag` is an alias over context-kit's `ctx` (`cargo install --path
+src/ctx`; the engine folded into `ctx index|query|hook`, and the `prose-rag` name
+is kept indefinitely). The CLI shape, chunking rules, corpus, recall gate, and opt-in hook design below
 hold for both engines. `tests/smoke.sh` has since grown to 11 checks (was 7); the Rust
 engine's acceptance record is `docs/proof-of-done.md` feature 2.
 **Audience**: implementer + future me

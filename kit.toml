@@ -42,7 +42,7 @@ weekend_batch  = false          # hookless; backs lib/queue/weekend-batch.sh
 worktree       = false          # hookless; exposes the worktree-provision CLI
 money_gate     = false          # money-gate.sh PreToolUse guard; inert without MONEY_GATE_REPOS
 prose_rag      = false          # prose-rag.sh recall inject + CLI adapter; dormant without PROSE_RAG_INJECT=1
-                                # (engine binary comes from context-kit: cargo install --path src/prose-rag)
+                                # (the engine lives in context-kit's ctx: cargo install --path src/ctx)
 sync           = false          # hookless; `board sync` two-way spoke mirror, inert without [sync] sources
 team_mode      = false          # reserved , install.sh hard-rejects it today
 

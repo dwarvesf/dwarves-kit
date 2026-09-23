@@ -234,6 +234,28 @@ OUT9D="$(HOME="$HOME_DIR" KIT_CONFIG_ROOT="$ROOT_DIR" KIT_CONFIG_OPERATOR="$NO_O
 chk_has "an executable PROSE_RAG_BIN wins over PATH -> filled" "$OUT9D" "filled"
 chk_has "an executable PROSE_RAG_BIN wins over PATH: VALUE is the env value" "$OUT9D" "$TMPD/bin/prose-rag"
 
+# ------------------------------------------------------- case 9e: ctx on PATH (the folded engine)
+# Since the CK-8 fold the engine's primary spelling is `ctx`; the seam must report
+# the same engine the alias would exec, not `absent` on a ctx-only install.
+mkdir -p "$TMPD/ctxbin"
+cat > "$TMPD/ctxbin/ctx" <<'EOF'
+#!/usr/bin/env bash
+echo "fixture ctx"
+EOF
+chmod +x "$TMPD/ctxbin/ctx"
+OUT9E="$(HOME="$HOME_DIR" KIT_CONFIG_ROOT="$ROOT_DIR" KIT_CONFIG_OPERATOR="$NO_OPERATOR" \
+  KIT_PROJECT_ROOT="$PROJ_DIR" env -u PROSE_RAG_BIN PATH="$TMPD/ctxbin:/usr/bin:/bin" \
+  bash "$CONFIG_BIN" seams | grep '^PROSE_RAG_BIN')"
+chk_has "a ctx on the temp PATH (no prose-rag) -> filled" "$OUT9E" "filled"
+chk_has "ctx on PATH: VALUE is the ctx binary" "$OUT9E" "$TMPD/ctxbin/ctx"
+
+# ctx is the preferred spelling, but a prose-rag binary later on PATH is the fallback,
+# and the kit wrapper still counts as nothing even with a real ctx beside it.
+OUT9F="$(HOME="$HOME_DIR" KIT_CONFIG_ROOT="$ROOT_DIR" KIT_CONFIG_OPERATOR="$NO_OPERATOR" \
+  KIT_PROJECT_ROOT="$PROJ_DIR" env -u PROSE_RAG_BIN PATH="$TMPD/ctxbin:$TMPD/bin:/usr/bin:/bin" \
+  bash "$CONFIG_BIN" seams | grep '^PROSE_RAG_BIN')"
+chk_has "ctx AND prose-rag on PATH: VALUE is ctx (the folded engine wins)" "$OUT9F" "$TMPD/ctxbin/ctx"
+
 # --------------------------------------------------------------------------- case 10: project .kit.toml ignored
 
 printf '[knowledge]\nroot = "/tmp/never"\n' > "$PROJ_DIR/.kit.toml"
