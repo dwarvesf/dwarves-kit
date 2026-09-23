@@ -829,7 +829,10 @@ def scan_kit_verbs(sections: Sections, kit_root: str, terms, title: str = "kit v
             s = score(terms, label, searchable)
             sections.add(title, s, label + suffix(summary) + extra)
     if os.path.isdir(lib_dir):
-        for dirpath, _dirnames, filenames in os.walk(lib_dir):
+        for dirpath, dirnames, filenames in os.walk(lib_dir):
+            # skip dot-directories (.venv, .git, .cache, ...): virtualenv/tooling
+            # scripts under them are not kit verbs (#745)
+            dirnames[:] = [d for d in dirnames if not d.startswith(".")]
             parts = os.path.relpath(dirpath, lib_dir).split(os.sep)
             in_bin = parts[-1] == "bin" and not {"tests", "fixtures"} & set(parts)
             for fn in sorted(filenames):

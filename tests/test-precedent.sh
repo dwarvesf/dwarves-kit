@@ -1402,6 +1402,33 @@ else
   echo "rc=$RC top=$KV" | sed 's/^/      /'
 fi
 
+# ---------------------------------------------------------------------------
+# lib scan skips dot-directory components: a virtualenv's bin/ under lib/<x>/.venv/bin/
+# must never surface as a kit verb, while a sibling lib/<x>/bin/ entry point still does (#745).
+# ---------------------------------------------------------------------------
+DOTDIR_FIX="$KIT_DIR/lib/zzz-precedent-dotdir-test"
+mkdir -p "$DOTDIR_FIX/bin" "$DOTDIR_FIX/.venv/bin"
+printf '#!/usr/bin/env bash\n# zzzdotdirtool: real kit verb entry point\n' > "$DOTDIR_FIX/bin/zzzdotdirtool"
+chmod +x "$DOTDIR_FIX/bin/zzzdotdirtool"
+printf '#!/usr/bin/env bash\n# venv python shim, must never be indexed\n' > "$DOTDIR_FIX/.venv/bin/python"
+chmod +x "$DOTDIR_FIX/.venv/bin/python"
+trap 'rm -rf "$TMPDIR_T" "$DOTDIR_FIX"' EXIT
+OUT="$("$PRECEDENT_BIN" find "zzzdotdirtool" --surface inventory --json 2>&1)"; RC=$?
+rm -rf "$DOTDIR_FIX"
+GOT="$(printf '%s' "$OUT" | python3 -c '
+import json,sys
+d=json.load(sys.stdin)
+hits=d.get("kit verbs",{}).get("hits",[])
+indexed_tool=any("zzz-precedent-dotdir-test/bin/zzzdotdirtool" in h for h in hits)
+indexed_venv=any(".venv" in h for h in hits)
+print(indexed_tool, indexed_venv)' 2>/dev/null)"
+if [ "$RC" -eq 0 ] && [ "$GOT" = "True False" ]; then
+  assert "lib scan: a .venv/bin script is skipped while its bin/ sibling is indexed" 0
+else
+  assert "lib scan: a .venv/bin script is skipped while its bin/ sibling is indexed" 1
+  echo "rc=$RC got=$GOT" | sed 's/^/      /'
+fi
+
 echo
 echo "== summary =="
 echo "  $PASS/$TOTAL passed"
