@@ -42,15 +42,19 @@ PR already merged, foundation-ops 109, foundation-apps 25.
   `kit_config_get_root` only. `false` prints
   `N merged branches left on origin (wrap.delete_merged_remote_branches=false)`
   and deletes nothing.
-- Scope matches the local branch sweep: it runs on every `apply` call,
-  `--worktrees` or not, and `--own` skips it.
+- Scope: it runs on every `apply` call, `--worktrees` or not, and under
+  `--own` too.
 
 ## Design record
 
 The sweep sits beside `_apply_branches` rather than under `--worktrees`,
 because that flag gates worktree removal, and branch deletion already runs on
-every `apply`. `--own` skips both branch sweeps for the same reason: another
-live session's merged branch is out of the named scope.
+every `apply`. `--own` skips the local branch sweep, since another live
+session's worktree may hold a local branch. The origin sweep still runs under
+`--own`: it touches no local ref or worktree, and its proof (a merged PR at the
+exact tip, no open PR on it) holds whoever owns the branch. Skipping it there
+left every shared repo's merged heads on origin, since shared repos are where
+`--own` is the prescribed scope.
 
 The tip-equals-PR-head rule is the origin twin of the local squash proof: a
 branch that gained a commit after merge carries unmerged work, so it stays.

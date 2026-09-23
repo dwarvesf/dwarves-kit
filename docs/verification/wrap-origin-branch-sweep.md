@@ -85,3 +85,12 @@ to be the default branch (see the implementation notes).
   shipped 100. The first real `--apply` on foundation-workers runs two pushes.
 - The full-open-page skip and the failed re-read after the delete have no
   test; both are one-line guards.
+
+## Revision: the sweep runs under `--own`
+
+| Check | Command | Result |
+|---|---|---|
+| Suite with the fix | `bash tests/test-wrap.sh` | `test-wrap: all 848 passed` |
+| Negative control | `lib/wrap/wrap.sh` reverted to origin/master, same suite | `test-wrap: 846 passed, 2 FAILED of 848` (the two `origin --own` delete checks) |
+| Structure | `bash tests/test-meta.sh` | `Passed: 854 / 854` |
+| Real repos | `wrap apply --apply foundation-workers foundation-apps` after `--own` runs left merged heads | `deleted 4 of 4` and `deleted 1 of 1` merged branches on origin |
