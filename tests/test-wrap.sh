@@ -721,7 +721,7 @@ UM_LAB_BEFORE="$(cksum < "$UM/_meta/LAB_LOG.md")"
 out="$("$WRAP" apply --apply "$UM" 2>&1)"
 chk_has "mixed: the non-union file is named" "$out" "not declared merge=union, so the pull aborts on: README.md"
 chk_no "mixed: the union file was never saved aside" "$out" "union-marked file(s) aside"
-chk_no "mixed: no carry-back happened" "$out" "carried"
+chk_no "mixed: no carry-back happened" "$out" "local line(s) back into"
 chk "mixed: the union file is byte-identical" \
   "$([ "$UM_LAB_BEFORE" = "$(cksum < "$UM/_meta/LAB_LOG.md")" ]; echo $?)"
 
@@ -771,6 +771,52 @@ chk "no upstream: the branch with no upstream is gone" \
   "$(git -C "$NU" show-ref --verify --quiet refs/heads/no-upstream && echo 1 || echo 0)"
 chk "no upstream: the branch tracking another ref is gone" \
   "$(git -C "$NU" show-ref --verify --quiet refs/heads/other-upstream && echo 1 || echo 0)"
+
+# ===========================================================================
+echo "=== apply: stray lines in a dirty union-marked file are carried onto a branch ==="
+# ===========================================================================
+# A session wrote two lines into the shared main checkout and never committed them. The dry
+# run names them; --apply carries them to a new branch on origin and leaves the checkout alone.
+build_union_repo stray
+SC="$TMPD/uclone-stray"; SB="$TMPD/ubare-stray"
+LAB_STRAY=$'# Lab log\n\n---\n\n2026-09-05 · stray: the second line\n2026-09-04 · stray: the first line\n2026-09-01 · base: the first line\n'
+printf '%s' "$LAB_STRAY" > "$SC/_meta/LAB_LOG.md"
+SC_BEFORE="$(cksum < "$SC/_meta/LAB_LOG.md")"
+stray_branches() { git -C "$SB" for-each-ref --format='%(refname:short)' 'refs/heads/wrap/stray-*'; }
+out="$("$WRAP" apply "$SC" 2>&1)"; rc=$?
+chk "stray dry-run: apply exits 0" "$rc"
+chk_has "stray dry-run: names the two lines" "$out" "WOULD carry 2 stray lines in _meta/LAB_LOG.md onto a branch"
+chk "stray dry-run: no branch reached origin" "$([ -z "$(stray_branches)" ]; echo $?)"
+out="$(KIT_CONFIG_OPERATOR="$TMPD/stray-off" "$WRAP" apply "$SC" 2>&1)" # no kit.toml there: default
+chk_has "stray dry-run: the knob defaults to true" "$out" "WOULD carry 2 stray lines"
+mkdir -p "$TMPD/stray-off"; printf '[wrap]\ncarry_stray_lines = false\n' > "$TMPD/stray-off/kit.toml"
+out="$(KIT_CONFIG_OPERATOR="$TMPD/stray-off" "$WRAP" apply --apply "$SC" 2>&1)"
+chk_has "stray knob off: reports and carries nothing" "$out" \
+  "2 stray lines in _meta/LAB_LOG.md stay in the working copy (wrap.carry_stray_lines=false)"
+chk "stray knob off: no branch reached origin" "$([ -z "$(stray_branches)" ]; echo $?)"
+out="$("$WRAP" apply --apply "$SC" 2>&1)"; rc=$?
+SBR="$(stray_branches)"
+chk "stray --apply: apply exits 0" "$rc"
+chk "stray --apply: exactly one wrap/stray branch on origin" "$([ "$(printf '%s' "$SBR" | grep -c .)" = 1 ]; echo $?)"
+chk "stray --apply: the branch name carries the file slug and a stamp" \
+  "$(printf '%s' "$SBR" | grep -qE '^wrap/stray-meta-lab-log-md-[0-9]{8}-[0-9]{4}$'; echo $?)"
+chk_has "stray --apply: the carry is reported" "$out" "carried 2 stray lines in _meta/LAB_LOG.md to origin/${SBR}"
+chk_has "stray --apply: the PR command is named, not run" "$out" "gh pr create --head ${SBR}"
+SB_FILE="$(git -C "$SB" show "${SBR}:_meta/LAB_LOG.md")"
+chk "stray --apply: the branch file is origin's plus the two lines below the anchor" \
+  "$([ "$SB_FILE" = "${LAB_STRAY%$'\n'}" ]; echo $?)"
+chk "stray --apply: the branch sits one commit on origin/main" \
+  "$([ "$(git -C "$SB" rev-parse "${SBR}^")" = "$(git -C "$SB" rev-parse main)" ]; echo $?)"
+chk "stray --apply: the commit subject names the file" \
+  "$([ "$(git -C "$SB" log -1 --format=%s "$SBR")" = "chore(LAB_LOG): carry 2 stray lines from a shared checkout" ]; echo $?)"
+chk "stray --apply: the checkout's file is byte-identical" \
+  "$([ "$SC_BEFORE" = "$(cksum < "$SC/_meta/LAB_LOG.md")" ]; echo $?)"
+chk "stray --apply: the checkout stays on main" "$([ "$(git -C "$SC" branch --show-current)" = main ]; echo $?)"
+chk "stray --apply: the scratch worktree is gone" "$([ "$(git -C "$SC" worktree list | grep -c .)" = 1 ]; echo $?)"
+out="$("$WRAP" apply --apply "$SC" 2>&1)"
+chk_has "stray rerun: an existing carry branch skips the file" "$out" \
+  "SKIP _meta/LAB_LOG.md: 2 stray lines, but an origin wrap/stray-meta-lab-log-md-* branch already carries this file"
+chk "stray rerun: still one branch on origin" "$([ "$(stray_branches | grep -c .)" = 1 ]; echo $?)"
 
 # ===========================================================================
 echo "=== apply: wrap.pull_past_dirty stashes only the blocking files ==="
