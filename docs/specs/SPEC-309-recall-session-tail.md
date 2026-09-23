@@ -33,7 +33,7 @@ Obvious: a flag on an existing CLI reusing `load`, `SECRET_SHAPE_RE` and `DATA_M
 - Default: match `<prefix>*.jsonl` by file NAME across every dir under `~/.claude/projects` (a listdir, no parse). Session ids are UUIDs, and a peer running in a worktree writes under a `--claude-worktrees-<name>` slug that `resolve_project_dirs` excludes on purpose.
 - `--project SLUG` narrows the name match to `resolve_project_dirs(SLUG)`. `--all` is the default and is accepted.
 - `--file F` skips matching: F is the transcript.
-- No match: exit 1, message names the dirs searched. Two or more matches: exit 2, lists every matched id.
+- No match on the default all-projects sweep: exit 1, message says how many project dirs were searched (`under ~/.claude/projects (<N> project dirs)`), never lists every dir name (a full sweep can be hundreds of dirs). No match with `--project` narrowed: exit 1, message names the dirs actually searched. Two or more matches: exit 2, lists every matched id, capped at 10 then `... and <N> more`. A session id or dir/file name reaching a header or an error message goes through the same control-char cleanup as a kept turn's text.
 
 **Mode rules.** `--tail` with a query or with `--sessions` exits 2. A missing `--tail` value, or one starting with `-`, exits 2. `--json` with `--tail` exits 2 (no JSON output in this mode).
 
@@ -47,7 +47,7 @@ Obvious: a flag on an existing CLI reusing `load`, `SECRET_SHAPE_RE` and `DATA_M
 
 Kept text: a `user` turn's string content or its `text` blocks; an `assistant` turn's `text` blocks. Tool calls and thinking never print.
 
-**Line shape.** `HH:MM  user|asst  <text>`. `HH:MM` is the entry `timestamp` (ISO UTC) converted to local time; a missing or unparseable one prints `--:--`. Text processing order: collapse whitespace to single spaces, replace C0 and C1 control characters (ESC included) with `?`, redact `SECRET_SHAPE_RE` to `[redacted]`, then cap at 200 characters with `…`.
+**Line shape.** `HH:MM  user|asst  <text>`. `HH:MM` is the entry `timestamp` (ISO UTC) converted to local time; a missing or unparseable one prints `--:--`. Text processing order: collapse whitespace to single spaces, replace C0 and C1 control characters (ESC included) with `?`, replace any character in unicode categories Cf/Co/Cs (format, private-use, surrogate -- e.g. a right-to-left override or a zero-width space) with `?`, redact `SECRET_SHAPE_RE` to `[redacted]`, redact the tail-only `TAIL_EXTRA_SECRET_RE` to `[redacted]` (GitHub PAT/`gh[ousr]_` tokens, `sk_live_`/`sk_test_`/`rk_live_` keys, JWTs, `Bearer <token>`, a `*_key`/`api_key` assignment case-insensitively, a lowercase `password:`/`password=` assignment, a PEM block from its BEGIN to its END marker), then cap at 200 characters with `…`. `SECRET_SHAPE_RE` itself stays byte-identical to its shared copy in `lib/precedent/inventory.py`; the widening lives entirely in `TAIL_EXTRA_SECRET_RE`, tail-only.
 
 **Header and footer.**
 ```
@@ -98,7 +98,7 @@ confirm with git / gh before skipping work
 - AC1: `--tail <prefix>` on a fixture prints the header, the DATA marker, the last N kept turns in conversation order, and the footer; `--limit N` honored, 10 by default.
 - AC2: every dropped kind in the Design record never prints; a slash-command turn prints as `/x <args>`.
 - AC3: a secret shape in a kept turn prints as `[redacted]`, including a token that straddles character 200; ESC characters never print.
-- AC4: unknown prefix exits 1; ambiguous prefix exits 2 naming every match; missing value, a `-`-prefixed value, a query beside `--tail`, `--sessions` beside `--tail`, `--json` beside `--tail`, and a `--limit` of `0`, `-1` or `abc` each exit 2.
+- AC4: unknown prefix exits 1; ambiguous prefix exits 2 naming every match, capped at 10 ids then `... and <N> more`; missing value, a `-`-prefixed value, a query beside `--tail`, `--sessions` beside `--tail`, `--json` beside `--tail`, and a `--limit` of `0`, `-1` or `abc` each exit 2. The `--project` value guard and the "no project dir" check run before the `--tail` branch, so they apply to `--tail` too.
 - AC5: default resolution finds a transcript that sits in a worktree-slug project dir; `--project` narrows; `--file` bypasses matching.
 - AC6: every existing `test_recall.py` case passes, and the query and `--sessions` output on `fixtures/seed.jsonl` is byte-identical to `origin/master`.
 - AC7: the README documents `--tail` with the hint warning, and `commands/wrap.md` step 7b names it.
@@ -146,7 +146,7 @@ Proof of done: `docs/verification/recall-session-tail.md`.
 
 - Mapping a `ListAgents` session name to a transcript id.
 - Live follow mode, JSON output for `--tail`.
-- Widening `SECRET_SHAPE_RE` (shared with `lib/precedent/inventory.py`).
+- Widening `SECRET_SHAPE_RE` itself (shared with `lib/precedent/inventory.py`); the tail-only widening lives in `TAIL_EXTRA_SECRET_RE` instead (see Line shape).
 - Refactoring `opening_ask` onto the new turn filter (would change `--sessions` output).
 
 ## Decision Log

@@ -224,12 +224,18 @@ class TestRecall(unittest.TestCase):
         ])
 
     def test_tail_drops_every_kind_and_renders_slash_command(self):
-        # AC2: every dropped kind never prints; a slash-command turn renders /x <args>
+        # AC2: every dropped kind never prints (isMeta, isCompactSummary, isSidechain,
+        # tool_result, interrupt marker, <system-reminder>, a non-user/assistant role,
+        # an assistant turn that is only a tool call); a <command-name>-first turn
+        # renders /x <args>, and so does a <command-message>-first turn (review
+        # finding 1: a real slash-command turn opens with <command-message>, not
+        # directly with <command-name>).
         entries = r.load(TAIL_DROPPED)
         kept = r.tail_turns(entries, 50)
         self.assertEqual([t[0] for t in kept], [
             "real prompt: what is the status",
             "/status --verbose",
+            "/commit",
             "real reply: still running",
         ])
 
@@ -251,6 +257,62 @@ class TestRecall(unittest.TestCase):
         self.assertNotIn(straddle_token, cleaned2)
         self.assertNotIn("ghp_", cleaned2)
         self.assertLessEqual(len(cleaned2), 200)
+
+    def test_tail_extra_secret_shapes_redact(self):
+        # AC3 / review finding 7: TAIL_EXTRA_SECRET_RE widens redaction beyond the
+        # shared SECRET_SHAPE_RE. Every token below is built at runtime by string
+        # concatenation, obviously fake, so no credential-shaped literal sits in
+        # this committed file.
+        cases = {
+            "github_pat": "github_pat_" + "a" * 30,
+            "gho": "gh" + "o_" + "b" * 30,
+            "ghu": "gh" + "u_" + "b" * 30,
+            "sk_live": "sk" + "_live_" + "c" * 20,
+            "sk_test": "sk" + "_test_" + "c" * 20,
+            "rk_live": "rk" + "_live_" + "c" * 20,
+            "jwt": "eyJ" + "d" * 10 + "." + "eyJ" + "e" * 10 + "." + "f" * 10,
+            "bearer": "Bearer " + "g" * 20,
+            "key_assign_upper": "STRIPE_KEY" + "=" + "h" * 20,
+            "key_assign_colon": "api_key" + ": " + "i" * 20,
+            "password_colon": "password" + ": " + "j" * 10,
+            "password_eq": "password" + "=" + "k" * 10,
+        }
+        for label, token in cases.items():
+            cleaned = r._clean_tail_text(f"before {token} after")
+            self.assertIn("[redacted]", cleaned, label)
+            self.assertNotIn(token, cleaned, label)
+
+        dashes = "-" * 5
+        pem_begin = dashes + "BEGIN" + " RSA PRIVATE KEY" + dashes
+        pem_end = dashes + "END" + " RSA PRIVATE KEY" + dashes
+        pem_body = pem_begin + "\n" + "m" * 40 + "\n" + "n" * 40 + "\n" + pem_end
+        cleaned_pem = r._clean_tail_text(f"key follows {pem_body} done")
+        self.assertIn("[redacted]", cleaned_pem)
+        self.assertNotIn("m" * 40, cleaned_pem)
+        self.assertNotIn(pem_begin, cleaned_pem)
+
+    def test_tail_secret_shape_re_byte_unchanged(self):
+        # review finding 7: SECRET_SHAPE_RE itself must stay byte-identical (shared
+        # with lib/precedent/inventory.py, pinned by tests/test-precedent.sh); the
+        # widening lives in TAIL_EXTRA_SECRET_RE instead.
+        self.assertTrue(hasattr(r, "TAIL_EXTRA_SECRET_RE"))
+        self.assertIsNot(r.SECRET_SHAPE_RE, r.TAIL_EXTRA_SECRET_RE)
+
+    def test_tail_unicode_control_categories_redact(self):
+        # review finding 8: Cf/Co/Cs unicode categories, not just C0/C1, become `?`
+        rlo = "\u202e"  # RIGHT-TO-LEFT OVERRIDE, category Cf
+        zwsp = "\u200b"  # ZERO WIDTH SPACE, category Cf
+        cleaned = r._clean_tail_text(f"before{rlo}mid{zwsp}after")
+        self.assertNotIn(rlo, cleaned)
+        self.assertNotIn(zwsp, cleaned)
+        self.assertIn("?", cleaned)
+
+    def test_tail_c1_control_char_redacts(self):
+        # review finding 12: a C1 control char (not just ESC) becomes `?`
+        c1 = "\x9b"
+        cleaned = r._clean_tail_text(f"before{c1}after")
+        self.assertNotIn(c1, cleaned)
+        self.assertIn("?", cleaned)
 
     def test_tail_mode_conflicts_and_limit_validation_exit_2(self):
         # AC4: every mode-conflict and --limit validation case exits 2 with usage
@@ -299,6 +361,90 @@ class TestRecall(unittest.TestCase):
         finally:
             r.PROJECTS = orig
 
+    def test_tail_no_match_default_sweep_message_is_a_count_not_a_list(self):
+        # review finding 4: the default all-projects sweep names how many project
+        # dirs were searched, never every dir name (that list can run hundreds of
+        # lines); --project narrowed still names the dirs it searched.
+        base, main_slug, wt_slug, _ = self._fake_tail_tree()
+        orig = r.PROJECTS
+        r.PROJECTS = base
+        try:
+            with self.assertRaises(r.TailResolutionError) as cm:
+                r.resolve_tail_target("no-such-prefix-zzz")
+            self.assertIn("2 project dirs", cm.exception.message)
+            self.assertNotIn(os.path.basename(main_slug), cm.exception.message)
+            self.assertNotIn(os.path.basename(wt_slug), cm.exception.message)
+
+            with self.assertRaises(r.TailResolutionError) as cm2:
+                r.resolve_tail_target("no-such-prefix-zzz", project="x")
+            self.assertIn(os.path.basename(main_slug), cm2.exception.message)
+        finally:
+            r.PROJECTS = orig
+
+    def test_tail_ambiguous_prefix_list_capped_at_ten(self):
+        # review finding 4: an ambiguous prefix lists at most 10 ids, then "... and N more"
+        import shutil
+        base, main_slug, _, _ = self._fake_tail_tree()
+        for i in range(13):
+            shutil.copy(SEED, os.path.join(main_slug, f"dup-{i:02d}.jsonl"))
+        orig = r.PROJECTS
+        r.PROJECTS = base
+        try:
+            with self.assertRaises(r.TailResolutionError) as cm:
+                r.resolve_tail_target("dup")
+            msg = cm.exception.message
+            self.assertEqual(cm.exception.code, 2)
+            self.assertEqual(msg.count("dup-"), 10)
+            self.assertIn("... and 3 more", msg)
+        finally:
+            r.PROJECTS = orig
+
+    def test_tail_error_messages_and_header_control_chars_cleaned(self):
+        # review finding 5: sid (header) and matched ids / dir names (error messages)
+        # go through the same control-char replacement as a kept turn's text.
+        import shutil
+        base, main_slug, _, _ = self._fake_tail_tree()
+        esc = "\x1b"
+        bad_name = f"dup{esc}one.jsonl"
+        shutil.copy(SEED, os.path.join(main_slug, bad_name))
+        shutil.copy(SEED, os.path.join(main_slug, f"dup{esc}two.jsonl"))
+        orig = r.PROJECTS
+        r.PROJECTS = base
+        try:
+            with self.assertRaises(r.TailResolutionError) as cm:
+                r.resolve_tail_target("dup")
+            self.assertNotIn(esc, cm.exception.message)
+            self.assertIn("?", cm.exception.message)
+        finally:
+            r.PROJECTS = orig
+
+        # a --file target whose basename carries a control char: cleaned sid reaches
+        # resolve_tail_target's return value and then the tail header
+        newline_path = os.path.join(main_slug, f"weird{esc}sid.jsonl")
+        shutil.copy(SEED, newline_path)
+        _, sid = r.resolve_tail_target("ignored", file=newline_path)
+        self.assertNotIn(esc, sid)
+        header = r.render_tail(sid, [], 1758000000.0)
+        self.assertNotIn(esc, header)
+
+    def test_tail_project_validation_runs_before_tail_branch(self):
+        # review finding 10: the --project-without-value guard and the "no project
+        # dir" message apply to --tail too, not only the query path.
+        base, main_slug, _, wt_file = self._fake_tail_tree()
+        orig = r.PROJECTS
+        r.PROJECTS = base
+        try:
+            code, _, err = self._run_main(["--tail", "abc12345", "--project"])
+            self.assertEqual(code, 2)
+            self.assertIn("usage:", err)
+
+            code, _, err = self._run_main(["--tail", "abc12345", "--project", "no-such-repo-zzz"])
+            self.assertEqual(code, 1)
+            self.assertIn("no project dir", err)
+            self.assertNotIn("no transcript matching", err)
+        finally:
+            r.PROJECTS = orig
+
     def test_tail_resolution_default_project_file(self):
         # AC5: default sweeps a worktree-slug dir; --project narrows past it; --file bypasses
         base, main_slug, wt_slug, wt_file = self._fake_tail_tree()
@@ -319,14 +465,50 @@ class TestRecall(unittest.TestCase):
         finally:
             r.PROJECTS = orig
 
+    def test_tail_cli_subprocess_on_fixture_with_limit(self):
+        # review finding 2: the CLI, not just the library functions, run end to end:
+        # header, DATA marker, exactly 3 turn lines, footer, exit 0.
+        p = subprocess.run([sys.executable, BIN, "--tail", "ignored-prefix",
+                             "--file", TAIL_BASIC, "--limit", "3"],
+                            capture_output=True, text=True)
+        self.assertEqual(p.returncode, 0, p.stderr)
+        lines = p.stdout.rstrip("\n").splitlines()
+        self.assertTrue(lines[0].startswith("# tail of "))
+        self.assertEqual(lines[1], r.DATA_MARKER)
+        turn_lines = lines[2:-1]
+        self.assertEqual(len(turn_lines), 3)
+        self.assertEqual(lines[-1], "# end of tail data")
+
+    def test_read_tail_chunk_matches_full_load_with_small_chunk_size(self):
+        # review finding 6: patch _TAIL_CHUNK_BYTES small so the byte-range read
+        # path actually runs (tail-basic.jsonl exceeds it). A chunk that still
+        # holds >= `limit` kept turns must derive the same last-`limit` turns as
+        # a full load; a chunk too small to ever hold `limit` kept turns must
+        # fall back to load() and return the identical full entries list.
+        full = r.load(TAIL_BASIC)
+        orig_chunk = r._TAIL_CHUNK_BYTES
+        try:
+            r._TAIL_CHUNK_BYTES = 300
+            chunk_entries = r.read_tail_chunk(TAIL_BASIC, limit=3)
+            self.assertEqual(r.tail_turns(chunk_entries, 3), r.tail_turns(full, 3))
+
+            r._TAIL_CHUNK_BYTES = 50  # too small to ever hold 3 kept turns
+            fallback_entries = r.read_tail_chunk(TAIL_BASIC, limit=3)
+            self.assertEqual(fallback_entries, full)
+        finally:
+            r._TAIL_CHUNK_BYTES = orig_chunk
+
     def test_query_and_sessions_output_byte_identical_to_master(self):
-        # AC6: query and --sessions output on fixtures/seed.jsonl unchanged by this branch
+        # AC6: query and --sessions output on fixtures/seed.jsonl unchanged by this branch.
+        # This must FAIL, not skip, when origin/master is unavailable: a silent skip lets
+        # a real regression through unnoticed (review finding 12).
         import shutil
         import tempfile
         proc = subprocess.run(["git", "show", "origin/master:lib/session/recall/session_recall.py"],
                                cwd=ROOT, capture_output=True, text=True)
         if proc.returncode != 0 or not proc.stdout.strip():
-            self.skipTest("origin/master:lib/session/recall/session_recall.py not available here")
+            self.fail("origin/master:lib/session/recall/session_recall.py not available here; "
+                      "AC6 cannot be verified (fetch origin/master, do not skip this test)")
         tmp_root = tempfile.mkdtemp()
         self.addCleanup(shutil.rmtree, tmp_root)
         session_dir = os.path.join(tmp_root, "lib", "session")

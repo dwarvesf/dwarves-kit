@@ -15,6 +15,7 @@ import json
 import os
 import re
 import sys
+import unicodedata
 from datetime import datetime, timezone
 
 PROJECTS = os.path.expanduser("~/.claude/projects")
@@ -36,7 +37,7 @@ def _repo_root():
 
 
 sys.path.insert(0, os.path.join(_repo_root(), "lib", "session"))
-from parse_transcript import load  # noqa: E402  (re-exported: session-recall's own public `load`)
+from parse_transcript import load, parse_lines  # noqa: E402  (load re-exported: session-recall's own public `load`)
 
 
 # --- parsing --------------------------------------------------------------
@@ -258,17 +259,32 @@ class TailResolutionError(Exception):
         self.message = message
 
 
+_TAIL_CONTROL_RE = re.compile(r"[\x00-\x1f\x7f-\x9f]")  # C0 + C1, ESC included
+
+
+def _clean_ctrl(s: str) -> str:
+    """C0/C1 control chars to `?`. Applied to anything from a transcript that
+    reaches the header or an error message, same as a kept turn's own text
+    (review finding 5): a session id or a matched filename is as untrusted as
+    the prose."""
+    return _TAIL_CONTROL_RE.sub("?", s)
+
+
+_AMBIGUOUS_LIST_CAP = 10
+
+
 def resolve_tail_target(prefix: str, project=None, file=None):
     """Resolve `--tail <prefix>` to (path, session_id). `--file` bypasses matching
     entirely. Otherwise: a listdir-only NAME match of `<prefix>*.jsonl` across every
     dir under PROJECTS (or, with `--project`, across resolve_project_dirs(SLUG)) --
     never a parse. No match raises exit 1; two or more matches raises exit 2 naming
-    every match, so an ambiguous prefix is never silently the wrong session."""
+    every match (capped at 10, then "... and N more"), so an ambiguous prefix is
+    never silently the wrong session."""
     if file:
         sid = os.path.basename(file)
         if sid.endswith(".jsonl"):
             sid = sid[:-len(".jsonl")]
-        return file, sid
+        return file, _clean_ctrl(sid)
 
     if project:
         dirs = resolve_project_dirs(project)
@@ -287,16 +303,24 @@ def resolve_tail_target(prefix: str, project=None, file=None):
     matches.sort()
 
     if not matches:
-        where = ", ".join(sorted(os.path.basename(d) for d in dirs)) if dirs else PROJECTS
+        if project:
+            # narrowed: name the dirs actually searched
+            where = ", ".join(_clean_ctrl(os.path.basename(d)) for d in sorted(dirs)) if dirs else PROJECTS
+        else:
+            # the default all-projects sweep: a name list here can be hundreds of
+            # lines (review finding 4), so say how many dirs, not which ones
+            where = f"{PROJECTS} ({len(dirs)} project dirs)"
         raise TailResolutionError(
             1, f"session-recall: no transcript matching '{prefix}*.jsonl' under {where}\n")
     if len(matches) > 1:
-        ids = ", ".join(os.path.basename(m)[:-len(".jsonl")] for m in matches)
+        ids = [_clean_ctrl(os.path.basename(m)[:-len(".jsonl")]) for m in matches]
+        shown = ", ".join(ids[:_AMBIGUOUS_LIST_CAP])
+        more = f", ... and {len(ids) - _AMBIGUOUS_LIST_CAP} more" if len(ids) > _AMBIGUOUS_LIST_CAP else ""
         raise TailResolutionError(
-            2, f"session-recall: ambiguous prefix {prefix!r}, matches: {ids}\n")
+            2, f"session-recall: ambiguous prefix {prefix!r}, matches: {shown}{more}\n")
 
     path = matches[0]
-    return path, os.path.basename(path)[:-len(".jsonl")]
+    return path, _clean_ctrl(os.path.basename(path)[:-len(".jsonl")])
 
 
 def _tool_result_content(msg: dict) -> bool:
@@ -318,14 +342,19 @@ def _text_blocks(msg: dict) -> str:
 
 
 _SLASH_COMMAND_RE = re.compile(
-    r"^<command-name>/(?P<cmd>[^<]+)</command-name>\s*"
+    r"<command-name>/(?P<cmd>[^<]+)</command-name>\s*"
     r"(?:<command-args>(?P<args>[^<]*)</command-args>)?", re.DOTALL)
 
 
 def _render_slash_or_none(text: str):
-    """A `<command-name>/x</command-name>` turn (`<command-args>` optional) renders
-    as `/x <args>`; any other `<...` turn (hook/system noise) is dropped."""
-    m = _SLASH_COMMAND_RE.match(text.lstrip())
+    """A turn opening with `<command-message>` or `<command-name>` and carrying a
+    `<command-name>/x</command-name>` tag (`<command-args>` optional, real turns
+    put a `<command-message>` block before it) renders as `/x <args>`; any other
+    `<...` turn (hook/system noise) is dropped."""
+    stripped = text.lstrip()
+    if not (stripped.startswith("<command-message>") or stripped.startswith("<command-name>")):
+        return None
+    m = _SLASH_COMMAND_RE.search(text)
     if not m:
         return None
     args = (m.group("args") or "").strip()
@@ -364,16 +393,47 @@ def tail_turns(entries, limit: int):
     return kept[-limit:] if limit else []
 
 
-_TAIL_CONTROL_RE = re.compile(r"[\x00-\x1f\x7f-\x9f]")  # C0 + C1, ESC included
+# Tail-only widening of the shared SECRET_SHAPE_RE (review finding 7). Kept out of
+# SECRET_SHAPE_RE itself because that pattern is byte-shared with
+# lib/precedent/inventory.py (tests/test-precedent.sh pins it); this one applies
+# only in the tail text pipeline, after SECRET_SHAPE_RE has already run. Text is
+# already whitespace-collapsed to one line by the time this runs, so a PEM body
+# (originally multi-line) reads as BEGIN ... END on a single line.
+TAIL_EXTRA_SECRET_RE = re.compile(
+    r"github_pat_[A-Za-z0-9_]{20,}"
+    r"|gh[ousr]_[A-Za-z0-9]{20,}"
+    r"|(?:sk|rk)_(?:live|test)_[A-Za-z0-9]{10,}"
+    r"|eyJ[A-Za-z0-9_-]+\.eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+"
+    r"|(?i:bearer)\s+\S+"
+    r"|(?i:[a-z][a-z0-9]*_key)\s*[:=]\s*\S+"
+    r"|password\s*[:=]\s*\S+"
+    # the BEGIN marker alone can already be gone (SECRET_SHAPE_RE, which runs first,
+    # redacts a "...PRIVATE KEY-----" header on its own): match either the raw
+    # header or its already-redacted marker, through to the END marker, so the
+    # whole block still redacts as one unit.
+    r"|(?:-----BEGIN [A-Z ]*-----|\[redacted\]).*?-----END [A-Z ]*-----"
+)
+
+
+def _strip_unicode_control_categories(text: str) -> str:
+    """After the C0/C1 pass: replace any character in unicode categories Cf
+    (format, e.g. U+202E right-to-left override), Co (private use) or Cs
+    (surrogate) with `?`. These never render as visible text but are not in
+    the C0/C1 ranges `_TAIL_CONTROL_RE` covers (review finding 8)."""
+    return "".join("?" if unicodedata.category(ch) in ("Cf", "Co", "Cs") else ch for ch in text)
 
 
 def _clean_tail_text(text: str, width: int = 200) -> str:
     """Line-shape text processing, in the Design record's exact order: collapse
-    whitespace, replace control chars with `?`, redact secret shapes, THEN cap --
-    so a secret straddling the cap is still fully redacted before truncation."""
+    whitespace, replace control chars (C0/C1, then the Cf/Co/Cs unicode
+    categories) with `?`, redact secret shapes (shared pattern, then the
+    tail-only widening), THEN cap -- so a secret straddling the cap is still
+    fully redacted before truncation."""
     collapsed = " ".join(text.split())
     collapsed = _TAIL_CONTROL_RE.sub("?", collapsed)
+    collapsed = _strip_unicode_control_categories(collapsed)
     collapsed = SECRET_SHAPE_RE.sub("[redacted]", collapsed)
+    collapsed = TAIL_EXTRA_SECRET_RE.sub("[redacted]", collapsed)
     return collapsed if len(collapsed) <= width else collapsed[:width - 1] + "…"
 
 
@@ -411,28 +471,28 @@ _TAIL_CHUNK_BYTES = 2 * 1024 * 1024
 
 
 def read_tail_chunk(path: str, limit: int):
-    """Cheap tail read: the last 2 MB, first (likely partial) line dropped, each
-    remaining line parsed (malformed lines skipped, same contract as `load`).
-    Falls back to a full `load()` when fewer than `limit` turns survive the chunk
-    and the file is bigger than it -- a long run of dropped/system turns can eat a
-    whole chunk without reaching `limit` kept ones."""
+    """Cheap tail read: the last 2 MB, decoded as UTF-8 with invalid bytes
+    replaced (a byte-range read can start mid-codepoint), lines parsed through
+    the shared `parse_lines` helper (same skip rules as `load`, no hand-copied
+    loop). The seek point usually lands mid-line, so the first split element is
+    normally a partial line and is dropped -- except when the byte right before
+    the seek point is itself `\\n`, meaning the chunk happens to start exactly
+    on a line boundary and that first element is already whole (review finding
+    11). Falls back to a full `load()` when fewer than `limit` turns survive the
+    chunk and the file is bigger than it -- a long run of dropped/system turns
+    can eat a whole chunk without reaching `limit` kept ones."""
     size = os.path.getsize(path)
     if size <= _TAIL_CHUNK_BYTES:
         return load(path)
+    seek_pos = size - _TAIL_CHUNK_BYTES
     with open(path, "rb") as fh:
-        fh.seek(size - _TAIL_CHUNK_BYTES)
+        fh.seek(seek_pos - 1)
+        starts_on_boundary = fh.read(1) == b"\n"
         data = fh.read()
-    entries = []
-    for line in data.split(b"\n")[1:]:
-        line = line.strip()
-        if not line:
-            continue
-        try:
-            entry = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-        if isinstance(entry, dict):
-            entries.append(entry)
+    lines = data.decode("utf-8", errors="replace").split("\n")
+    if not starts_on_boundary:
+        lines = lines[1:]
+    entries = list(parse_lines(lines))
     kept_count = sum(1 for e in entries if kept_turn_text(e) is not None)
     return load(path) if kept_count < limit else entries
 
@@ -497,6 +557,22 @@ def main(argv=None) -> int:
             query_parts.append(a)
     query = " ".join(query_parts).strip()
 
+    # `--project` validation runs before any mode branch (review finding 10):
+    # a bad --project used to only be caught on the query path, so `--tail
+    # <valid prefix> --project bogus` fell through to --tail's own "no
+    # transcript matching" message instead of naming the bad project.
+    if "--project" in argv and not project:
+        # `--project` as the last arg, or `--project ""`, used to fall through to the cwd
+        # project silently (battery: security LOW 6, reviewer L10).
+        sys.stderr.write(usage)
+        return 2
+    project_dirs = resolve_project_dirs(project) if project else None
+    if project and not project_dirs:
+        # Distinct from "no matches": the query was never run against anything.
+        sys.stderr.write(f"session-recall: no project dir under {PROJECTS} is '{project}' "
+                         f"or ends in '-{project}'\n")
+        return 1
+
     if tail is not None:
         # every mode-conflict rule from the Design record, one exit 2
         if not tail or tail.startswith("-") or query or sessions or as_json:
@@ -522,18 +598,6 @@ def main(argv=None) -> int:
     if not query:
         sys.stderr.write(usage)
         return 2
-
-    if "--project" in argv and not project:
-        # `--project` as the last arg, or `--project ""`, used to fall through to the cwd
-        # project silently (battery: security LOW 6, reviewer L10).
-        sys.stderr.write(usage)
-        return 2
-    project_dirs = resolve_project_dirs(project) if project else None
-    if project and not project_dirs:
-        # Distinct from "no matches": the query was never run against anything.
-        sys.stderr.write(f"session-recall: no project dir under {PROJECTS} is '{project}' "
-                         f"or ends in '-{project}'\n")
-        return 1
 
     files = resolve_files(file=file, project=project, search_all=search_all)
     if sessions:
