@@ -1410,7 +1410,7 @@ DOTDIR_FIX="$KIT_DIR/lib/zzz-precedent-dotdir-test"
 mkdir -p "$DOTDIR_FIX/bin" "$DOTDIR_FIX/.venv/bin"
 printf '#!/usr/bin/env bash\n# zzzdotdirtool: real kit verb entry point\n' > "$DOTDIR_FIX/bin/zzzdotdirtool"
 chmod +x "$DOTDIR_FIX/bin/zzzdotdirtool"
-printf '#!/usr/bin/env bash\n# venv python shim, must never be indexed\n' > "$DOTDIR_FIX/.venv/bin/python"
+printf '#!/usr/bin/env bash\n# zzzdotdirtool venv shim, must never be indexed\n' > "$DOTDIR_FIX/.venv/bin/python"
 chmod +x "$DOTDIR_FIX/.venv/bin/python"
 trap 'rm -rf "$TMPDIR_T" "$DOTDIR_FIX"' EXIT
 OUT="$("$PRECEDENT_BIN" find "zzzdotdirtool" --surface inventory --json 2>&1)"; RC=$?
