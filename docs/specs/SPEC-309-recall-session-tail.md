@@ -43,7 +43,7 @@ Obvious: a flag on an existing CLI reusing `load`, `SECRET_SHAPE_RE` and `DATA_M
 1. `isMeta`, `isCompactSummary` or `isSidechain` is true.
 2. Role is neither `user` nor `assistant`.
 3. For `user`: content is a tool result, or the text starts with `[Request interrupted`.
-4. The text starts with `<`, except a slash command: `<command-name>/x</command-name>` with optional `<command-args>` renders as `/x <args>`.
+4. The text starts with `<`, except a slash command: a turn opening with `<command-message>` or `<command-name>` that holds `<command-name>/x</command-name>` (optional `<command-args>`) renders as `/x <args>`.
 
 Kept text: a `user` turn's string content or its `text` blocks; an `assistant` turn's `text` blocks. Tool calls and thinking never print.
 
@@ -62,7 +62,7 @@ Kept text: a `user` turn's string content or its `text` blocks; an `assistant` t
 
 ### Extensibility & boundaries
 
-Read-only: opens transcripts, never writes. No daemon, no polling; a watcher re-runs the command. No model call. `SECRET_SHAPE_RE` stays byte-equal to its copy in `lib/precedent/inventory.py`; widening it is a separate change.
+Read-only: opens transcripts, never writes. No daemon, no polling; a watcher re-runs the command. No model call. `SECRET_SHAPE_RE` stays byte-equal to its copy in `lib/precedent/inventory.py`; the tail-only `TAIL_EXTRA_SECRET_RE` carries the wider shapes.
 
 ## Picture
 

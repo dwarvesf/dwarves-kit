@@ -247,7 +247,7 @@ def render_sessions(rows, query: str, limit: int, dirs=None) -> str:
 
 
 # --- tail: what one session is doing now --------------------------------------
-# SPEC-309. A separate mode behind its own functions so the query and --sessions
+# A separate mode behind its own functions so the query and --sessions
 # paths above never change shape. Answers "what is that session doing now" for a
 # peer id already found via --sessions.
 
