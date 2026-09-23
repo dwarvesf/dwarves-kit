@@ -479,8 +479,8 @@ echo "[91] entry-fee: skill listing measured-from-transcript table is its own se
 out="$("$CC" entry-fee --root "$LEFIX")"
 if grep -q 'MEASURED-FROM-TRANSCRIPT' <<<"$out" && grep -q '2 sessions carry the real listing' <<<"$out"; then ok "measured-from-transcript section present"; else no "measured section missing: $out"; fi
 
-echo "[92] entry-fee: the disk-sized split is explicitly labelled an estimate (not confused with the measured listing)"
-if grep -q 'ESTIMATED from disk' <<<"$out"; then ok "disk-sized split labelled estimated"; else no "disk-sized split not labelled: $out"; fi
+echo "[92] entry-fee: the transcript-sized split is explicitly labelled an estimate (not confused with the measured listing)"
+if grep -q 'ESTIMATED from the' <<<"$out"; then ok "transcript-sized split labelled estimated"; else no "transcript-sized split not labelled: $out"; fi
 
 echo "[93] entry-fee: listing median across the 2 sessions (entries 2, chars 158, tokens 39, over400 0, empty-desc 0)"
 if grep -Eq 'median[[:space:]]+2[[:space:]]+158[[:space:]]+39[[:space:]]+0[[:space:]]+0' <<<"$out"; then ok "median row correct"; else no "median row wrong: $out"; fi
@@ -510,6 +510,41 @@ assert top[0] == {"skill": "bravo", "chars": 450} and top[-1] == {"skill": "char
 echo "[97] entry-fee negative control: report has no skill-listing section (existing views unchanged)"
 out="$("$CC" report --file "$FIX")"
 if ! grep -q 'MEASURED-FROM-TRANSCRIPT' <<<"$out"; then ok "report has no skill-listing section"; else no "skill-listing section leaked into report: $out"; fi
+
+DEFIX="${DIR}/tests/fixtures/entryfee-detail"   # one session: 2 instruction files (A.md 600 chars -> 150
+# tokens, B.md 200 chars -> 50 tokens), 2 SessionStart hooks (tool-first.sh 360 chars -> 90 tokens,
+# repo-memory.sh 233 chars -> 58 tokens, spilled: its content carries "Output too large").
+
+echo "[98] entry-fee --detail: instructions sub-rows print per file, summing to the parent row (150 + 50 = 200)"
+out="$("$CC" entry-fee --root "$DEFIX" --detail)"
+if grep -Eq '/repo/A\.md[[:space:]]+150' <<<"$out" && grep -Eq '/repo/B\.md[[:space:]]+50' <<<"$out" \
+    && grep -Eq 'instructions[[:space:]]+200' <<<"$out"; then ok "instructions sub-rows 150+50=200"; else no "instructions detail wrong: $out"; fi
+
+echo "[99] entry-fee --detail: hook_success sub-rows print per SessionStart hook, summing to the parent row (90 + 58 = 148), spilled hook flagged"
+if grep -Eq 'tool-first\.sh[[:space:]]+90[[:space:]]*$' <<<"$out" && grep -Eq 'repo-memory\.sh[[:space:]]+58[[:space:]]+SPILLED' <<<"$out" \
+    && grep -Eq 'hook_success[[:space:]]+148' <<<"$out"; then ok "hook_success sub-rows 90+58=148, repo-memory.sh SPILLED"; else no "hook_success detail wrong: $out"; fi
+
+echo "[99b] entry-fee --detail: a spilled hook with NO rendered content still prints, at 0 tokens (the flag is the signal, not the size)"
+if grep -Eq 'huge-dump\.sh[[:space:]]+0[[:space:]]+SPILLED' <<<"$out"; then ok "zero-token spilled hook still shown, SPILLED"; else no "zero-token spilled hook missing: $out"; fi
+
+echo "[100] entry-fee negative control: without --detail, no sub-rows print (default text stays readable)"
+out="$("$CC" entry-fee --root "$DEFIX")"
+if ! grep -q '/repo/A.md' <<<"$out" && ! grep -q 'tool-first.sh' <<<"$out"; then ok "no sub-rows without --detail"; else no "sub-rows leaked without --detail: $out"; fi
+
+echo "[101] entry-fee --json: split_components always carries files/hooks sub-rows, --detail or not"
+jout="$("$CC" entry-fee --root "$DEFIX" --json)"
+if python3 -c '
+import json, sys
+d = json.loads(sys.argv[1])
+comps = {c["component"]: c for c in d["split_components"]}
+files = comps["instructions"]["files"]
+assert {(f["path"], f["est_tokens"]) for f in files} == {("/repo/A.md", 150), ("/repo/B.md", 50)}, files
+hooks = comps["hook_success"]["hooks"]
+byhook = {h["hook"]: (h["est_tokens"], h["spilled"]) for h in hooks}
+assert byhook["~/.claude/hooks/tool-first/tool-first.sh"] == (90, False), byhook
+assert byhook["~/.claude/hooks/repo-memory/repo-memory.sh"] == (58, True), byhook
+assert byhook["~/.claude/hooks/huge-dump/huge-dump.sh"] == (0, True), byhook
+' "$jout"; then ok "json sub-rows correct, spilled flagged (incl. zero-token spill), no --detail needed"; else no "json sub-rows wrong: $jout"; fi
 
 echo
 if [[ $fail -gt 0 ]]; then echo "smoke: $pass passed, $fail FAILED" >&2; exit 1; fi

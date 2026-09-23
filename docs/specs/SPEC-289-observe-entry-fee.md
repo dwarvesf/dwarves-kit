@@ -22,7 +22,7 @@ entry-fee view belongs beside them.
 One new view in the existing CLI. No new script, no new data source, no writes.
 
 ```
-session observe entry-fee [--days N] [--project SLUG-OR-NAME] [--root DIR] [--top N] [--trend] [--json]
+session observe entry-fee [--days N] [--project SLUG-OR-NAME] [--root DIR] [--top N] [--trend] [--detail] [--json]
 ```
 
 | Arg | Default | Meaning |
@@ -31,6 +31,7 @@ session observe entry-fee [--days N] [--project SLUG-OR-NAME] [--root DIR] [--to
 | `--project` | none | a project slug, or a bare repo name matched against every slug |
 | `--top N` | 0 (all) | limit the per-repo and weekly tables |
 | `--trend` | off | add a weekly median table, newest week first |
+| `--detail` | off | add `instructions` (per file) and `hook_success` (per SessionStart hook) sub-rows to the text table; `--json` always carries them |
 | `--json` | off | machine-readable output |
 
 ## Behaviour
@@ -75,6 +76,34 @@ would not reconcile against a measured total. That session is the median of the
 sessions that record a rendered preamble; older transcripts record none, and the
 median across all sessions would often be one of those, reading as a 100 percent
 unattributed fee.
+
+### The instructions and hook_success sub-rows
+
+`instructions` and `hook_success` are each one lumped row, but the transcript carries
+enough to break them down further: which CLAUDE.md or MEMORY.md file costs what, and
+which SessionStart hook injects what. `--detail` breaks both down.
+
+`instructions`: the attachment carries a `files` list (`path`, `type`, `content`) for
+every instructions file. The component's tokens are split across the files by
+content-length share, largest-remainder rounding, so the sub-rows always sum to
+exactly the parent row's token count, never off by a rounding error. A fixture with no
+`files` list (an older shape) contributes no sub-rows for that entry; the parent row is
+unaffected.
+
+`hook_success`: one sub-row per hook, keyed by the hook's `command` truncated to 50
+characters, sized by the same rendered text the parent row sizes (the content that
+reached the model), so sub-rows sum to the parent row by construction (each attachment
+entry contributes its own tokens to exactly one hook label, no split needed). A hook
+whose `content` field carries the marker text `Output too large` had its stdout exceed
+the harness's inline cap; only a preview was persisted and injected, so the hook's
+sub-row is flagged `SPILLED`, at zero tokens if nothing reached the model at all. A
+spilled hook still appears in the table even at zero tokens, since the flag is the
+signal, not the size.
+
+Sub-rows print in the text table only behind `--detail`, so the default table stays
+one row per component. `--json` carries them unconditionally, under
+`split_components[].files` (instructions) and `split_components[].hooks`
+(hook_success), since a machine reader has no readability concern to gate.
 
 ### The per-repo and weekly figures
 
@@ -144,6 +173,21 @@ session, a repo with one worktree slug):
 77. negative control: the dict-typed attachment contributes no component row.
 78. a worktree slug folds into its repo row (one row, two sessions).
 79. a multi-slug `--project` match is announced on stderr.
+
+Plus, against `tests/fixtures/entryfee-detail/` (one session: two instruction files,
+three SessionStart hooks, two spilled, one of those at zero measured tokens):
+
+98. `--detail`: `instructions` sub-rows print per file (A.md 150, B.md 50), summing to
+    the parent row (200).
+99. `--detail`: `hook_success` sub-rows print per SessionStart hook (tool-first.sh 90,
+    repo-memory.sh 58), summing to the parent row (148); repo-memory.sh is flagged
+    `SPILLED`.
+99b. `--detail`: a hook whose stdout spilled to a file but never reached the model at
+     all (no rendered content) still prints, at 0 tokens, flagged `SPILLED`; the flag
+     is the signal, not the size.
+100. negative control: without `--detail`, no sub-rows print in the text table.
+101. `--json`: `split_components[].files` and `.hooks` carry the same sub-rows
+     unconditionally, `--detail` or not, including the zero-token spilled hook.
 
 Plus a real run over the live transcripts, recorded in
 `lib/session/observe/docs/verification/entry-fee.md`.

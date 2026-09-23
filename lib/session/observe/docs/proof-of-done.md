@@ -724,6 +724,111 @@ bash bin/session observe entry-fee --days 14 --top 8 --trend   # live tables
 bash bin/session observe entry-fee --days 14 --json            # machine-readable
 ```
 
+### `--detail` sub-rows: instructions per file, hook_success per hook (2026-09-23)
+
+**Feature:** `instructions` and `hook_success` sub-split by file / SessionStart hook, so
+"which CLAUDE.md/MEMORY.md file" and "which hook injects what" no longer need a
+hand-rolled python pass over the transcript. A hook whose output spilled to a file
+(harness inline-cap overflow, `content` carries `Output too large`) is flagged
+`SPILLED`. `--detail` gates the sub-rows in the text table; `--json` always carries
+them. Header wording fixed to match what the code sizes (the transcript's rendered
+attachment text, not "disk"). Spec delta: `docs/specs/SPEC-289-observe-entry-fee.md`.
+
+#### Run table
+
+| Check | Command | Expected | Result |
+|---|---|---|---|
+| Module suite green | `bash lib/session/observe/tests/smoke.sh \| tail -1` | all cases pass | PASS, `smoke: all 102 passed` |
+| Instructions sub-rows sum to parent | smoke 98 | A.md 150 + B.md 50 = instructions 200 | PASS |
+| hook_success sub-rows sum to parent, spilled flagged | smoke 99 | tool-first.sh 90 + repo-memory.sh 58 = hook_success 148, repo-memory.sh `SPILLED` | PASS |
+| Zero-token spilled hook still shown, flagged | smoke 99b | huge-dump.sh 0 tokens, `SPILLED` | PASS |
+| No sub-rows without `--detail` | smoke 100 | neither file path nor hook label prints | PASS |
+| `--json` always carries sub-rows | smoke 101 | `split_components[].files`/`.hooks` present with no `--detail`, incl. the zero-token spill | PASS |
+| Existing entry-fee assertions unaffected | smoke 62-79, 91-97 | unchanged | PASS |
+| Live, real transcript | `session-observe entry-fee --file <2026-09-23 session>.jsonl --detail` | instructions splits by CLAUDE.md/MEMORY.md, hook_success splits by command | PASS, see below |
+
+#### Live run (2026-09-23, one real session)
+
+```
+$ session-observe entry-fee --file <a real ~/.claude/projects/<slug>/<session>.jsonl> --detail
+  component                  est-tokens  share
+  -------------------------  ----------  -----
+  skill_listing                   15858    20%
+  instructions                    14227    18%
+  ...
+  hook_success                     2956     4%
+  ...
+  (unattributed)                  36277    47%
+    instructions detail, per file (est-tokens):
+  <operator's global CLAUDE.md>                                        7209
+  <repo's own CLAUDE.md>                                                3535
+  <repo's git-shared MEMORY.md>                                         1975
+  <vault-root CLAUDE.md>                                                1508
+    hook_success detail, per SessionStart hook (est-tokens; SPILLED = output persisted to a file):
+  ~/.claude/hooks/repo-memory/repo-memory.sh        2180
+  Loading ponytail mode...                           776
+```
+
+(Paths genericized here; this repo's `test-no-personal-paths` suite forbids an
+operator's home path in a committed doc. The real run showed four instruction files
+ranked by size, largest first, the actual leaf files a real transcript carried.)
+
+`7209 + 3535 + 1975 + 1508 = 14227` (the instructions row), `2180 + 776 = 2956` (the
+hook_success row). Neither file in this live session spilled.
+
+#### Negative control
+
+`bash lib/gate/negctl.sh` dropped the `files` handling for `instructions` (returned the
+function's body without calling `_split_instruction_files`) and the `hook_rows`
+accumulation for `hook_success`.
+
+```
+Exit: 0 (green before mutation)
+Changed: lib/session/observe/bin/session-observe
+Exit: 1 (under mutation, RED: smoke 98/99/99b/101 fail, no sub-rows to assert against)
+Restore: git checkout HEAD -- lib/session/observe/bin/session-observe
+Exit: 0 (green after restore)
+Verdict: PASS
+```
+
+Pre-change-binary control (this feature did not exist before): `git show
+origin/master:lib/session/observe/bin/session-observe` copied to a scratch path inside
+the repo (so `_repo_root()` still resolves) and run directly against the new
+`tests/fixtures/entryfee-detail/` fixture:
+
+```
+$ OLD=lib/session/observe/bin/session-observe-old   # git show origin/master:... > $OLD
+$ "$OLD" entry-fee --root tests/fixtures/entryfee-detail --detail
+usage: session-observe [-h] [--file FILE | --project PROJECT] [--root ROOT]
+                       [--days DAYS] [--top TOP] [--latency] [--errors TOOL]
+                       [--since SINCE] [--trend] [--json]
+                       {skills,tools,hooks,subagents,friction,sessions,cost,burn,entry-fee,report}
+session-observe: error: unrecognized arguments: --detail
+$ echo $?
+2
+$ "$OLD" entry-fee --root tests/fixtures/entryfee-detail --json | python3 -c "
+import json, sys
+d = json.load(sys.stdin)
+comps = {c['component']: c for c in d['split_components']}
+print(list(comps['instructions'].keys()))
+print(list(comps['hook_success'].keys()))
+"
+['component', 'est_tokens']
+['component', 'est_tokens']
+```
+
+`--detail` does not exist on the pre-change binary (exit 2, argparse refuses it), and
+its JSON carries no `files`/`hooks` sub-row keys, confirming the new assertions
+(smoke 98-101, incl. 99b) exercise genuinely new behavior, not an existing path re-asserted.
+
+#### Reproduce
+
+```bash
+bash lib/session/observe/tests/smoke.sh                                  # -> smoke: all 102 passed
+bash bin/session observe entry-fee --days 14 --detail                    # live, text sub-rows
+bash bin/session observe entry-fee --days 14 --json | jq '.split_components'  # sub-rows unconditional
+```
+
 ## SPEC-301 `tools --errors`: a tool's error results grouped by message prefix
 
 **Feature:** `session observe tools --errors <tool>` replaces the standard table with a prefix-grouped table of that tool's `is_error` tool_result content (first 160 chars, whitespace-collapsed, ranked by count with a share column, honouring `--top`), plus `tool_error_groups` in `--json`. The count table's "why" is one flag away instead of a hand-rolled python one-liner. Spec: `docs/specs/SPEC-301-observe-tool-errors.md`. Row: ID-903.
