@@ -9,11 +9,16 @@
 # The CLAUDE.md loader uses an `@AGENTS.md` import (Claude Code includes the file, not just a
 # "go read it" pointer; absorbed from repository-harness's --claude shim).
 #
-# Usage: adopt.sh [--check | --dry-run | --refresh] [--with <a,b,c>] <target-dir>
+# Usage: adopt.sh [--check | --dry-run | --refresh] [--single-source] [--with <a,b,c>] <target-dir>
 #   --check   : report status only (exit 0 adopted / 1 not), write nothing.
 #   --dry-run : print what would change, write nothing.
 #   --refresh : re-sync the kit-managed pieces (WORKFLOW pointer + the CLAUDE.md loader block)
 #               to their current form. AGENTS.md + the proof marker are still never overwritten.
+#   --single-source : for a repo that wants to keep exactly one agent guide. Folds an existing
+#               CLAUDE.md into AGENTS.md (`git mv`) and leaves CLAUDE.md as a one-line
+#               `@AGENTS.md` import, then targets the operate-contract block at AGENTS.md instead
+#               of CLAUDE.md. Already single-source: no-op. Both files exist and differ, or
+#               neither exists: refuses (exit 1), writes nothing -- merge by hand.
 #   --with <a,b,c> : only meaningful the first time (seeding a fresh <target>/.kit.toml): the
 #               named modules start `true` in the seeded [modules] section instead of the
 #               kit-root defaults. Ignored (with a note) once <target>/.kit.toml exists -- a
@@ -47,14 +52,15 @@ END="<!-- /kit:adopt -->"
 tmp=""                                   # scratch file; the trap cleans it up on any early exit
 trap 'rm -f "$tmp"' EXIT
 
-usage() { echo "usage: adopt.sh [--check | --dry-run | --refresh] [--with <a,b,c>] [--] <target-dir>" >&2; exit 64; }
+usage() { echo "usage: adopt.sh [--check | --dry-run | --refresh] [--single-source] [--with <a,b,c>] [--] <target-dir>" >&2; exit 64; }
 
-CHECK=0 DRY=0 REFRESH=0 WITH_ARG=""
+CHECK=0 DRY=0 REFRESH=0 SINGLE=0 WITH_ARG=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --check) CHECK=1; shift;;
     --dry-run) DRY=1; shift;;
     --refresh) REFRESH=1; shift;;
+    --single-source) SINGLE=1; shift;;
     --with) shift; WITH_ARG="${1:-}"; shift;;
     --with=*) WITH_ARG="${1#--with=}"; shift;;
     --) shift; break;;
@@ -72,11 +78,17 @@ marker="$TARGET/docs/verification/README.md"
 dotkit="$TARGET/.kit.toml"
 project_settings="$TARGET/.claude/settings.json"
 
+# --single-source: the operate-contract block lands in AGENTS.md, never in the one-line
+# CLAUDE.md `@AGENTS.md` pointer. block_target is used everywhere the block used to hardcode
+# $claude; normal mode leaves it pointed at $claude (zero behavior change).
+block_target="$claude"
+[ "$SINGLE" -eq 1 ] && block_target="$agents"
+
 is_adopted() {
   # -qxF: the marker must be its own full line (matches how awk strips the block). A substring
   # grep would mis-detect a marker quoted inside prose and skip the append path (review #6).
   [ -f "$agents" ] && [ -f "$marker" ] && [ -f "$claude" ] \
-    && grep -qxF "$START" "$claude" 2>/dev/null
+    && grep -qxF "$START" "$block_target" 2>/dev/null
 }
 
 if [ "$CHECK" -eq 1 ]; then
@@ -85,6 +97,46 @@ fi
 
 git -C "$TARGET" rev-parse --git-dir >/dev/null 2>&1 \
   || echo "adopt: warning: $TARGET is not a git repo (adopting at filesystem level anyway)" >&2
+
+did=0
+note() { echo "adopt: would $*"; }
+
+# --single-source resolution -- runs before any artifact writes below, and either leaves
+# AGENTS.md + CLAUDE.md in a consistent single-source shape or exits 1 having written nothing.
+if [ "$SINGLE" -eq 1 ]; then
+  claude_exists=0; [ -f "$claude" ] && claude_exists=1
+  agents_exists=0; [ -f "$agents" ] && agents_exists=1
+  if [ "$claude_exists" -eq 1 ] && [ "$agents_exists" -eq 0 ]; then
+    # The common case: fold the existing CLAUDE.md into AGENTS.md, leave a one-line pointer.
+    if [ "$DRY" -eq 1 ]; then
+      note "git mv CLAUDE.md -> AGENTS.md and replace CLAUDE.md with a one-line @AGENTS.md import"
+    else
+      # git mv needs CLAUDE.md tracked; fall back to a plain mv for an untracked file or a
+      # non-git target (the WARNING above already covered the latter).
+      if ! git -C "$TARGET" rev-parse --git-dir >/dev/null 2>&1 \
+        || ! git -C "$TARGET" mv CLAUDE.md AGENTS.md 2>/dev/null; then
+        mv "$claude" "$agents"
+      fi
+      printf '@AGENTS.md\n' > "$claude"
+      did=1
+    fi
+  elif [ "$claude_exists" -eq 1 ] && [ "$agents_exists" -eq 1 ]; then
+    if [ "$(cat "$claude" 2>/dev/null)" = "@AGENTS.md" ]; then
+      echo "adopt: already single-source: $TARGET"
+    else
+      echo "adopt: --single-source refuses: $claude and $agents both exist and differ; merge them by hand" >&2
+      exit 1
+    fi
+  elif [ "$claude_exists" -eq 0 ] && [ "$agents_exists" -eq 1 ]; then
+    # AGENTS.md only: already the single source, just missing the CLAUDE.md pointer.
+    if [ "$DRY" -eq 1 ]; then note "write CLAUDE.md as a one-line @AGENTS.md import"; else
+      printf '@AGENTS.md\n' > "$claude"; did=1
+    fi
+  else
+    echo "adopt: --single-source refuses: neither $claude nor $agents exists in $TARGET" >&2
+    exit 1
+  fi
+fi
 
 # Resolve a source AGENTS.md: the kit repo (dev) first, then the install.
 src_agents=""
@@ -103,17 +155,17 @@ phase boundary. The gate machinery (gate-ledger, ship-gate) parses that copy, no
 EOF
 }
 
+# claude_block $1: pass "self" when block_target IS AGENTS.md (--single-source) to drop the
+# @AGENTS.md import line -- AGENTS.md importing itself would be circular. Any other value (the
+# normal case, writing into CLAUDE.md) keeps the import.
 claude_block() {
   printf '%s\n' "$START"
   printf '## Operating layer (dwarves-kit)\n\n'
-  printf '@AGENTS.md\n\n'
+  [ "${1:-}" = "self" ] || printf '@AGENTS.md\n\n'
   printf 'Before touching code, classify the lane: `bash %s/bin/classify lane classify "<task>"`.\n' "$KIT_REF"
   printf 'A full-lane change records its gates via `%s/bin/gate ledger` or the ship-gate blocks the push.\n' "$KIT_REF"
   printf '%s\n' "$END"
 }
-
-did=0
-note() { echo "adopt: would $*"; }
 
 # 1. AGENTS.md -- the operate-contract. NEVER overwritten (even on --refresh).
 if [ ! -f "$agents" ]; then
@@ -130,31 +182,34 @@ if [ ! -f "$workflow" ] || { [ "$REFRESH" -eq 1 ] && ! cmp -s <(workflow_block) 
   did=1
 fi
 
-# 3. CLAUDE.md loader (@AGENTS.md import) -- append once; --refresh replaces the managed block.
-if [ ! -f "$claude" ] || ! grep -qxF "$START" "$claude" 2>/dev/null; then
-  if [ "$DRY" -eq 1 ]; then note "append the CLAUDE.md @AGENTS.md loader block"; else
-    tmp="$(mktemp)"; { [ -f "$claude" ] && cat "$claude"; printf '\n'; claude_block; } > "$tmp"; mv "$tmp" "$claude"
+# 3. Operate-contract block -- append once; --refresh replaces the managed block. Normal mode
+# writes it into CLAUDE.md as an @AGENTS.md import; --single-source writes it directly into
+# AGENTS.md (block_target), and the one-line CLAUDE.md pointer is left alone.
+block_mode=""; [ "$SINGLE" -eq 1 ] && block_mode="self"
+if [ ! -f "$block_target" ] || ! grep -qxF "$START" "$block_target" 2>/dev/null; then
+  if [ "$DRY" -eq 1 ]; then note "append the operate-contract block to $block_target"; else
+    tmp="$(mktemp)"; { [ -f "$block_target" ] && cat "$block_target"; printf '\n'; claude_block "$block_mode"; } > "$tmp"; mv "$tmp" "$block_target"
   fi
   did=1
 elif [ "$REFRESH" -eq 1 ]; then
   # Refuse to refresh a block with a START but no END: the awk strip would drop everything from
   # START to EOF and mv would install the truncated file (silent data loss; review CRITICAL #1).
   # This is exactly the legacy single-sentinel shape, so the operator migrates it by hand.
-  if ! grep -qxF "$END" "$claude" 2>/dev/null; then
-    echo "adopt: $claude has '$START' but no '$END' line; refusing --refresh (would truncate)." >&2
+  if ! grep -qxF "$END" "$block_target" 2>/dev/null; then
+    echo "adopt: $block_target has '$START' but no '$END' line; refusing --refresh (would truncate)." >&2
     echo "adopt: add an '$END' line after the managed block, or delete the block, then re-run." >&2
     exit 1
   fi
-  if [ "$DRY" -eq 1 ]; then note "refresh the CLAUDE.md loader block"; did=1; else
+  if [ "$DRY" -eq 1 ]; then note "refresh the operate-contract block in $block_target"; did=1; else
     tmp="$(mktemp)"
     # END{if(drop)exit 3}: belt-and-suspenders against an unterminated block slipping past the
     # guard above; the `|| exit` stops us from mv-ing a truncated file when awk bails.
     awk -v s="$START" -v e="$END" '
       $0==s{drop=1; next} drop&&$0==e{drop=0; next} !drop{print}
-      END{if(drop) exit 3}' "$claude" > "$tmp" \
-      || { echo "adopt: failed to strip the managed block from $claude (unterminated?)" >&2; exit 1; }
-    claude_block >> "$tmp"
-    if cmp -s "$tmp" "$claude"; then rm -f "$tmp"; else mv "$tmp" "$claude"; did=1; fi
+      END{if(drop) exit 3}' "$block_target" > "$tmp" \
+      || { echo "adopt: failed to strip the managed block from $block_target (unterminated?)" >&2; exit 1; }
+    claude_block "$block_mode" >> "$tmp"
+    if cmp -s "$tmp" "$block_target"; then rm -f "$tmp"; else mv "$tmp" "$block_target"; did=1; fi
   fi
 fi
 

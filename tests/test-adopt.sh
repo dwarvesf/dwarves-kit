@@ -252,7 +252,68 @@ else
 fi
 rm -rf "$T12" "$KIT_CONFIG_OPERATOR"; unset KIT_CONFIG_OPERATOR
 
-rm -rf "$T1" "$T2" "$T3" "$T4" "$T5" "$T6" "$T7"
+# --- --single-source: one repo, one agent guide (CLAUDE.md folds into AGENTS.md) ---
+
+# 19. CLAUDE.md only -> git mv to AGENTS.md, CLAUDE.md becomes a one-line @AGENTS.md pointer,
+# the operate-contract block lands in AGENTS.md (not the one-liner), original content kept.
+T13="$(newrepo)"
+printf '# Repo\n\nORIGINAL-CLAUDE-CONTENT\n' > "$T13/CLAUDE.md"
+bash lib/adopt.sh --single-source "$T13" >/dev/null
+if [ "$(cat "$T13/CLAUDE.md")" = "@AGENTS.md" ] && grep -q ORIGINAL-CLAUDE-CONTENT "$T13/AGENTS.md" \
+  && grep -qxF '<!-- kit:adopt -->' "$T13/AGENTS.md" && ! grep -q '^@AGENTS.md$' "$T13/AGENTS.md"; then
+  ok "--single-source folds an existing CLAUDE.md into AGENTS.md and leaves a one-line pointer"
+else
+  no "--single-source did not fold CLAUDE.md into AGENTS.md correctly"
+fi
+
+# 20. Idempotent rerun: a second --single-source pass is a clean no-op.
+cp "$T13/AGENTS.md" "$T13/AGENTS.before"
+cp "$T13/CLAUDE.md" "$T13/CLAUDE.before"
+OUT20="$(bash lib/adopt.sh --single-source "$T13" 2>&1)"
+if cmp -s "$T13/AGENTS.md" "$T13/AGENTS.before" && cmp -s "$T13/CLAUDE.md" "$T13/CLAUDE.before" \
+  && echo "$OUT20" | grep -q 'already single-source'; then
+  ok "--single-source rerun is a clean idempotent no-op and reports already single-source"
+else
+  no "--single-source rerun changed files or did not report already single-source"
+fi
+rm -f "$T13/AGENTS.before" "$T13/CLAUDE.before"
+
+# 21. Both exist and differ -> refuse, exit 1, write nothing.
+T14="$(newrepo)"
+printf 'AGENTS-CONTENT\n' > "$T14/AGENTS.md"
+printf 'CLAUDE-CONTENT-NOT-A-POINTER\n' > "$T14/CLAUDE.md"
+if bash lib/adopt.sh --single-source "$T14" >/dev/null 2>/tmp/single-source-t14.err; then
+  no "--single-source should refuse when AGENTS.md and CLAUDE.md both exist and differ"
+elif grep -q AGENTS-CONTENT "$T14/AGENTS.md" && grep -q CLAUDE-CONTENT-NOT-A-POINTER "$T14/CLAUDE.md" \
+  && grep -q 'AGENTS.md' /tmp/single-source-t14.err && grep -q 'CLAUDE.md' /tmp/single-source-t14.err; then
+  ok "--single-source refuses (exit 1, writes nothing) when both files exist and differ, naming both"
+else
+  no "--single-source did not refuse cleanly on a real conflict"
+fi
+rm -f /tmp/single-source-t14.err
+
+# 22. Neither exists -> refuse, exit 1.
+T15="$(newrepo)"
+if bash lib/adopt.sh --single-source "$T15" >/dev/null 2>&1; then
+  no "--single-source should refuse when neither AGENTS.md nor CLAUDE.md exists"
+else
+  ok "--single-source refuses (exit 1) when neither AGENTS.md nor CLAUDE.md exists"
+fi
+
+# 23. --single-source already in single-source shape (both exist, CLAUDE.md is exactly
+# @AGENTS.md) is a no-op even on a repo that never went through case 1.
+T16="$(newrepo)"
+bash lib/adopt.sh "$T16" >/dev/null   # normal adopt: block lands in CLAUDE.md
+printf '@AGENTS.md\n' > "$T16/CLAUDE.md"  # hand-fold it into single-source shape
+OUT23="$(bash lib/adopt.sh --single-source "$T16" 2>&1)"
+if [ "$(cat "$T16/CLAUDE.md")" = "@AGENTS.md" ] && grep -qxF '<!-- kit:adopt -->' "$T16/AGENTS.md" \
+  && echo "$OUT23" | grep -q 'already single-source'; then
+  ok "--single-source recognizes an already-single-source repo and reports it"
+else
+  no "--single-source mishandled an already-single-source repo"
+fi
+
+rm -rf "$T1" "$T2" "$T3" "$T4" "$T5" "$T6" "$T7" "$T13" "$T14" "$T15" "$T16"
 echo "---"
 echo "PASS=$PASS FAIL=$FAIL"
 [ "$FAIL" -eq 0 ]
