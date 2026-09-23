@@ -70,7 +70,9 @@ def safe_text(text: str) -> str:
 # ---------------------------------------------------------------------------
 STOPWORDS = frozenset("a an the of to for and or in on with by is it at as from into via".split())
 TERM_SPLIT_RE = re.compile(r"[^a-z0-9]+")
-COVERAGE_SCALE = 100  # above any weight + phrase bonus sum a real query reaches
+# Above any weight + phrase bonus sum: a whole task description (/kit:assign passes one)
+# can run to dozens of terms at up to 4 weight each.
+COVERAGE_SCALE = 1000
 
 
 @functools.lru_cache(maxsize=64)
@@ -103,6 +105,8 @@ def min_match(n: int) -> int:
     return n if n <= 2 else n - 1
 
 
+# One query scores every row of the index against the same term tuple; compile its patterns
+# once per query, not once per row.
 _PATTERN_CACHE = {}
 
 

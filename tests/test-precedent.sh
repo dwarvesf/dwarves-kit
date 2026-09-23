@@ -1294,6 +1294,27 @@ else
   echo "rc=$RC out=$OUT" | sed 's/^/      /'
 fi
 
+for Q in "alpha-run" "alpha/run"; do
+  OUT="$("$PRECEDENT_BIN" find "$Q" --surface inventory 2>&1)"; RC=$?
+  if [ "$RC" -eq 0 ] && { trap '' PIPE; printf '%s' "$OUT" 2>/dev/null || :; } | grep -q 'tools/alpha/bin/alpha-run'; then
+    assert "separators: $Q matches tools/alpha/bin/alpha-run" 0
+  else
+    assert "separators: $Q matches tools/alpha/bin/alpha-run" 1
+    echo "rc=$RC out=$OUT" | sed 's/^/      /'
+  fi
+done
+
+# A repeated query word counts once: "alpha alpha zzzqqq" is two terms, so the two-term floor
+# (every term) holds and nothing matches. Counted twice, alpha would clear a 2-of-3 floor.
+OUT="$("$PRECEDENT_BIN" find "alpha alpha zzzqqq" --surface inventory --json 2>&1)"; RC=$?
+NOTHING="$(printf '%s' "$OUT" | python3 -c 'import json,sys; print(json.load(sys.stdin)["nothing_matched"])' 2>/dev/null)"
+if [ "$RC" -eq 0 ] && [ "$NOTHING" = "True" ]; then
+  assert "dedupe: a repeated query word counts once toward the floor" 0
+else
+  assert "dedupe: a repeated query word counts once toward the floor" 1
+  echo "rc=$RC nothing_matched=$NOTHING" | sed 's/^/      /'
+fi
+
 # ---------------------------------------------------------------------------
 # YAML block scalars: a skill whose `description:` is `>-` (or `|`) indexes the indented text
 # under the marker, never the marker itself. The unique word lives only in that text.
@@ -1327,6 +1348,44 @@ if [ "$RC" -eq 0 ] && [ "$HIT" = "skill omicron  , Use when an omicronunique led
 else
   assert "block scalar: a >- and a | skill description index the real text" 1
   echo "rc=$RC hit=$HIT hit2=$HIT2" | sed 's/^/      /'
+fi
+
+# An empty block (the marker, then the next key at once) reads as no description: never the
+# marker, never the next key's value.
+mkdir -p "$FIX_REPO/.claude/skills/rho"
+cat > "$FIX_REPO/.claude/skills/rho/SKILL.md" <<'FIX'
+---
+name: rhounique
+description: >-
+allowed-tools: Read
+---
+Body.
+FIX
+HIT="$("$PRECEDENT_BIN" find rhounique --surface inventory --json 2>&1 \
+  | python3 -c 'import json,sys; print(json.load(sys.stdin)["skills"]["hits"][0])' 2>/dev/null)"
+if [ "$HIT" = "skill rhounique" ]; then
+  assert "block scalar: an empty block reads as no description" 0
+else
+  assert "block scalar: an empty block reads as no description" 1
+  echo "hit=$HIT" | sed 's/^/      /'
+fi
+
+# ---------------------------------------------------------------------------
+# Coverage dominates: an all-terms row outranks a partial row even when the partial row has
+# more name hits. scripts/alpha-notion names two of the three terms (a partial, weight 4);
+# tools/alpha/ matches all three (alpha in its name, notion and payroll in its description).
+# ---------------------------------------------------------------------------
+printf '#!/usr/bin/env bash\n# unrelated helper\n' > "$FIX_REPO/scripts/alpha-notion"
+OUT="$("$PRECEDENT_BIN" find "alpha notion payroll" --surface inventory --json 2>&1)"; RC=$?
+GOT="$(printf '%s' "$OUT" | python3 -c '
+import json,sys
+d=json.load(sys.stdin); keys=[k for k,v in d.items() if isinstance(v,dict) and v.get("hits")]
+print(keys.index("tools") < keys.index("scripts"), any("alpha-notion" in h for h in d["scripts"]["hits"]))' 2>/dev/null)"
+if [ "$RC" -eq 0 ] && [ "$GOT" = "True True" ]; then
+  assert "ranking: an all-terms row outranks a partial row with more name hits" 0
+else
+  assert "ranking: an all-terms row outranks a partial row with more name hits" 1
+  echo "rc=$RC got=$GOT" | sed 's/^/      /'
 fi
 
 # ---------------------------------------------------------------------------

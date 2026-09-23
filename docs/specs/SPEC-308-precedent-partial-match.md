@@ -25,7 +25,7 @@ References: `lib/precedent/inventory.py` (`score`, `term_pattern`, `skill_frontm
 
 ### Chosen approach + why
 
-Approach 1: the smallest change that fixes the measured misses. Every iterator keeps calling `score(terms, name, haystack)`; the output format, the `--json` schema, the `--quiet` summary line and the log line do not change.
+Approach 1: the smallest change that fixes the measured misses. The trade is explicit: it spends none recall (12/14 to 9/14) to buy hit@1 and hit@3. The two errors cost differently at `/kit:wrap` step 7b, which reads `nothing_matched`. A false none builds a duplicate tool, visible and caught later. A false hit can steer work into a row that shares the words and not the job, silently. So step 7b now tells the agent to open the hit before folding work into it. Every iterator keeps calling `score(terms, name, haystack)`; the output format, the `--json` schema, the `--quiet` summary line and the log line do not change.
 
 ### Design record
 
@@ -47,7 +47,7 @@ Decisions the table settles:
 - **Floor = all terms for one- or two-term queries, n-1 above.** Half the terms (ceil(n/2)) flooded the negatives: none recall fell to 1/14.
 - **A partial match needs a name hit.** A long description or note body shares two of three words with almost any query. One name hit keeps the recall; two costs hit@1 and hit@3 for one extra negative.
 - **A memory note's body counts only toward an all-term match.** Same metrics, fewer noise rows (P07 went from 38 to 22 rows).
-- **Coverage dominates the score:** `matched x 100 + weight`. A row matching more terms always outranks one matching fewer, so all-term rows stay on top. Within equal coverage a name hit weighs 2, a haystack hit 1, the adjacent phrase +3. A skill's name and description weigh double (4 and 2); the old code doubled the whole score, which would have let a partial skill match outrank a full match elsewhere.
+- **Coverage dominates the score:** `matched x 1000 + weight`. A row matching more terms always outranks one matching fewer, so all-term rows stay on top. Within equal coverage a name hit weighs 2, a haystack hit 1, the adjacent phrase +3. A skill's name and description weigh double (4 and 2); the old code doubled the whole score, which would have let a partial skill match outrank a full match elsewhere.
 
 ### Extensibility & boundaries
 
@@ -66,7 +66,7 @@ row (name, haystack) ──> score()
         matched < min_match(n) ............................ 0
         partial (matched < n) and no name hit ............. 0
         all terms adjacent in order ....................... +3
-        result = matched x 100 + weight
+        result = matched x 1000 + weight
                      │
                      v
 sections.add() drops 0 ──> render(): nothing_matched = no row scored > 0
@@ -101,8 +101,11 @@ sections.add() drops 0 ──> render(): nothing_matched = no row scored > 0
 | T3 | AC2 | floor: one matching term of three is below the floor, nothing_matched | boundary |
 | T4 | AC2 | none-query: an unrelated three-word query reports nothing_matched | negative |
 | T5 | AC3 | partial match without a name hit is dropped; the all-terms match still surfaces | negative + positive |
-| T6 | AC4 | separators: alpha_run matches tools/alpha/bin/alpha-run | positive |
+| T6 | AC4 | separators: alpha_run, alpha-run and alpha/run each match tools/alpha/bin/alpha-run | positive |
+| T6b | AC2 | dedupe: a repeated query word counts once toward the floor | boundary |
+| T6c | AC1 | ranking: an all-terms row outranks a partial row with more name hits | ordering |
 | T7 | AC5 | block scalar: a >- and a \| skill description index the real text | positive |
+| T7b | AC5 | block scalar: an empty block reads as no description | edge |
 | T8 | AC6 | lib bin entry point: session-observe is indexed and tops 'session entry fee breakdown' | positive |
 | T9 | AC7 | the full existing suite (ranking, phrase bonus, redaction, explain, json, quiet, log) | regression |
 | T10 | AC8 | the jev-eval labeled set, before vs after | eval |
