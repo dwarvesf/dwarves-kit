@@ -17,9 +17,16 @@ Tradeoff: a stateful change hidden entirely inside test paths, with no keyword i
 
 ## Test-path pattern
 
-Decision: `(^|/)(tests?|__tests__)/|(^|/)test_[^/]*$|[._]test\.[^/]*$`.
+Decision: a root `tests/`, `test/` or `__tests__/` tree, a `__tests__/` dir anywhere, or a code file (py, go, rs, rb, js, jsx, ts, tsx, sh, bash, swift, kt, java, ex, exs) named `test_*`, `*_test.*` or `*.test.*`.
 Why: covers the kit's `tests/`, Go `_test.go`, JS `.test.ts`, Python `test_*.py`. `latest.json` and `contest.py` do not match because the pattern needs `.` or `_` before `test.`.
+Probe change: the second draft matched `test/` at any depth and `test_*` for any extension. An adversarial probe showed `db/seeds/test_accounts.sql` and `k8s/overlays/test/kustomization.yaml` read as tests, so a "seed ... production database" or "rollout" subject was skipped. Nested test dirs and data/config extensions (.sql, .yaml, .json, .toml, .env) now never count as tests. A monorepo with `pkg/foo/tests/` keeps reading subjects, the fail-closed direction.
 Review change: the first draft also matched `spec/` and `.spec.`. The review lens showed `api/spec/openapi.yaml` or `openapi.spec.yaml` is production contract, not a test. Both were dropped. RSpec and `.spec.ts` repos keep the old subject-reading behaviour, which is the fail-closed direction.
+
+## Renames list both sides
+
+Context: the probe found `_changed` ran `git diff --name-only` with rename detection on. A `git mv db/migrations/0042_legacy.sql tests/fixtures/0042_legacy.sql` listed only the destination. The diff read as tests-only, the subject was skipped, and the verdict dropped from stateful to behavioral.
+Decision: every `git diff --name-only` in `_changed` passes `--no-renames`, so the deleted source path is listed too.
+Why: the source path carries the stateful signal on its own (`migrat`), and it is a non-test path, so the subject is read as well. Before this branch the subject alone caught it; the guard made the path loss visible.
 
 ## Guard must not use grep -q under pipefail
 
