@@ -81,6 +81,10 @@ case "$sub" in
         else
           # --author sends real gh to the GraphQL search index, which lags a PR opened
           # seconds ago; the plain list reads the repository itself and never lags.
+          if [ "$state" = "merged" ]; then
+            # `apply`'s origin sweep reads every merged PR of the repo in one list.
+            printf '%s\n' "${GH_STUB_MERGED_ALL:-[]}"; exit 0
+          fi
           if [ -n "$author" ]; then
             val="${GH_STUB_OPEN_PRS_SEARCH-${GH_STUB_OPEN_PRS:-[]}}"
           else
@@ -2750,6 +2754,107 @@ chk "stage with no args exits 64" "$([ "$rc" -eq 64 ]; echo $?)"
 out="$("$WRAP" bogus 2>&1)"; rc=$?
 chk "an unknown verb exits 64" "$([ "$rc" -eq 64 ]; echo $?)"
 
+# ===========================================================================
+echo "=== apply: the origin sweep deletes only merged branches at their exact tip ==="
+# ===========================================================================
+# A real bare origin behind a github.com URL: `url.<bare>.insteadOf` sends every fetch and
+# push to the bare, while remote.origin.url still reads as GitHub, which is what the sweep keys
+# on. Each case builds a fresh pair, because --apply deletes on the bare.
+OS_URL="https://github.com/o/sweep.git"
+os_pr() { # os_pr <bare> <branch> <isCrossRepository> -- one merged-PR record at the branch tip
+  printf '{"headRefName":"%s","headRefOid":"%s","isCrossRepository":%s}' "$2" "$(git -C "$1" rev-parse "$2")" "$3"
+}
+build_os_repo() { # build_os_repo <name> -- bare origin plus a clone on main, gh stubs exported
+  local name="$1" work="$TMPD/oswork-$1" bare="$TMPD/osbare-$1" clone="$TMPD/osclone-$1" b
+  mkdir -p "$work"
+  git -C "$work" init -q; gitc "$work"
+  git -C "$work" symbolic-ref HEAD refs/heads/main
+  echo base > "$work/a.txt"; git -C "$work" add -A; git -C "$work" commit -q -m base
+  for b in gone gone2 gone3 moved stack-base open-head fork-head; do
+    git -C "$work" checkout -q -b "$b" main
+    echo "$b" > "$work/$b.txt"; git -C "$work" add -A; git -C "$work" commit -q -m "$b"
+  done
+  git -C "$work" checkout -q main
+  git clone -q --bare "$work" "$bare"
+  GH_STUB_MERGED_ALL="[$(os_pr "$bare" gone false),$(os_pr "$bare" gone2 false),$(os_pr "$bare" gone3 false),$(os_pr "$bare" moved false),$(os_pr "$bare" stack-base false),$(os_pr "$bare" open-head false),$(os_pr "$bare" fork-head true),$(os_pr "$bare" main false)]"
+  export GH_STUB_MERGED_ALL
+  # open-head targets develop, a branch origin lacks, so each kept branch has exactly one guard.
+  export GH_STUB_OPEN_PRS='[{"number":9,"title":"child","headRefName":"child","baseRefName":"stack-base"},{"number":10,"title":"open","headRefName":"open-head","baseRefName":"develop"}]'
+  # moved gains a commit after its PR merged, so its origin tip is past the PR head.
+  git -C "$work" checkout -q moved
+  echo more >> "$work/moved.txt"; git -C "$work" commit -q -a -m more
+  git -C "$work" checkout -q main
+  git -C "$work" push -q "$bare" moved
+  git clone -q "$bare" "$clone"; gitc "$clone"
+  git -C "$clone" remote set-url origin "$OS_URL"
+  git -C "$clone" config "url.$bare.insteadOf" "$OS_URL"
+}
+os_has() { git -C "$TMPD/osbare-$1" show-ref --verify --quiet "refs/heads/$2"; }
+os_run() { KIT_CONFIG_ROOT="$KIT_DIR" "$WRAP" "$@" 2>&1; }
+
+echo "--- dry run: names the eligible branches, deletes nothing"
+build_os_repo dry
+out="$(os_run apply "$TMPD/osclone-dry")"; rc=$?
+chk "origin dry run exits 0" "$rc"
+chk_has "origin dry run counts the eligible branches" "$out" "WOULD delete 3 merged branches on origin:"
+chk_has "origin dry run names it" "$out" "       gone"
+chk "origin dry run deleted nothing" "$(os_has dry gone; echo $?)"
+
+echo "--- --apply: only merged branches at their PR head go"
+build_os_repo app
+out="$(os_run apply --apply "$TMPD/osclone-app")"; rc=$?
+chk "origin --apply exits 0" "$rc"
+chk_has "origin --apply reports the count" "$out" "deleted 3 of 3 merged branches on origin"
+chk "origin --apply deleted gone, gone2 and gone3" "$(os_has app gone || os_has app gone2 || os_has app gone3 && echo 1 || echo 0)"
+chk "origin --apply kept moved, its tip is past the PR head" "$(os_has app moved; echo $?)"
+chk "origin --apply kept stack-base, an open PR targets it" "$(os_has app stack-base; echo $?)"
+chk "origin --apply kept open-head, an open PR uses it" "$(os_has app open-head; echo $?)"
+chk "origin --apply kept fork-head, its PR came from a fork" "$(os_has app fork-head; echo $?)"
+chk "origin --apply kept the default branch" "$(os_has app main; echo $?)"
+chk_no "origin --apply lists no kept branch" "$out" "moved"
+chk_has "origin --apply went on to the pull" "$out" "-- pull:"
+
+echo "--- knob false: a report line, no delete"
+OS_OFF="$TMPD/os-knob-off"; mkdir -p "$OS_OFF"
+printf '[wrap]\ndelete_merged_remote_branches = false\n' > "$OS_OFF/kit.toml"
+build_os_repo off
+out="$(KIT_CONFIG_OPERATOR="$OS_OFF" os_run apply --apply "$TMPD/osclone-off")"; rc=$?
+chk "origin knob false exits 0" "$rc"
+chk_has "origin knob false prints the report line" "$out" \
+  "3 merged branches left on origin (wrap.delete_merged_remote_branches=false)"
+chk "origin knob false deleted nothing" "$(os_has off gone; echo $?)"
+
+echo "--- a project .kit.toml cannot turn the knob off"
+build_os_repo proj
+printf '[wrap]\ndelete_merged_remote_branches = false\n' > "$TMPD/osclone-proj/.kit.toml"
+out="$(cd "$TMPD/osclone-proj" && KIT_PROJECT_ROOT="$TMPD/osclone-proj" os_run apply --apply "$TMPD/osclone-proj")"
+chk_no "origin project .kit.toml is ignored" "$out" "delete_merged_remote_branches=false"
+chk "origin project .kit.toml did not stop the delete" "$(os_has proj gone && echo 1 || echo 0)"
+
+echo "--- a refused push is FAILED, exit 2, and apply still finishes"
+build_os_repo deny
+git -C "$TMPD/osbare-deny" config receive.denyDeletes true
+out="$(os_run apply --apply "$TMPD/osclone-deny")"; rc=$?
+chk "origin refused push exits 2" "$([ "$rc" -eq 2 ]; echo $?)"
+chk_has "origin refused push is FAILED" "$out" "FAILED delete 3 origin branches"
+chk_has "origin refused push counts zero deleted" "$out" "deleted 0 of 3 merged branches on origin"
+chk_has "origin refused push still ran the pull" "$out" "-- pull:"
+chk "origin refused push left the branch" "$(os_has deny gone; echo $?)"
+
+echo "--- a chunk smaller than the list splits the delete into several pushes"
+build_os_repo chunk
+out="$(WRAP_ORIGIN_DELETE_CHUNK=2 os_run apply --apply "$TMPD/osclone-chunk")"; rc=$?
+chk "origin chunked delete exits 0" "$rc"
+chk_has "origin chunked delete removed all three" "$out" "deleted 3 of 3 merged branches on origin"
+chk "origin chunked delete left none of them" "$(os_has chunk gone || os_has chunk gone2 || os_has chunk gone3 && echo 1 || echo 0)"
+chk "origin chunked delete kept the default branch" "$(os_has chunk main; echo $?)"
+
+echo "--- a non-GitHub origin is skipped by name"
+out="$(os_run apply "$TMPD/clone-scan-main")"
+chk_has "origin sweep skips a non-GitHub remote" "$out" "SKIP origin sweep: origin is not a GitHub remote"
+unset GH_STUB_MERGED_ALL
+export GH_STUB_OPEN_PRS='[{"number":7,"title":"wrap the session","headRefName":"feat/wrap"}]'
+
 # ------------------------------------------------------- autonomy knobs (wrap.*)
 # The three knobs `commands/wrap.md` reads at step -1. They govern a write each, so the
 # fence that matters is the third block: a project `.kit.toml` rides inside a pull request
@@ -2760,9 +2865,9 @@ echo "=== autonomy knobs ==="
 . "$KIT_DIR/lib/config/kit-config.sh"
 KNOB_OP="$TMPD/knob-operator"; KNOB_PROJ="$TMPD/knob-project"
 mkdir -p "$KNOB_OP" "$KNOB_PROJ"
-printf '[wrap]\nmerge_own_prs = false\ntidy_worktrees = false\nbuild_candidates = false\n' > "$KNOB_OP/kit.toml"
-printf '[wrap]\nmerge_own_prs = false\ntidy_worktrees = false\nbuild_candidates = false\n' > "$KNOB_PROJ/.kit.toml"
-for knob in merge_own_prs tidy_worktrees build_candidates; do
+printf '[wrap]\nmerge_own_prs = false\ntidy_worktrees = false\nbuild_candidates = false\ndelete_merged_remote_branches = false\n' > "$KNOB_OP/kit.toml"
+printf '[wrap]\nmerge_own_prs = false\ntidy_worktrees = false\nbuild_candidates = false\ndelete_merged_remote_branches = false\n' > "$KNOB_PROJ/.kit.toml"
+for knob in merge_own_prs tidy_worktrees build_candidates delete_merged_remote_branches; do
   v="$(KIT_CONFIG_ROOT="$KIT_DIR" kit_config_get_root "wrap.$knob" true)"
   chk "wrap.$knob ships as true" "$([ "$v" = "true" ]; echo $?)"
   v="$(KIT_CONFIG_OPERATOR="$KNOB_OP" kit_config_get_root "wrap.$knob" true)"
@@ -2770,7 +2875,7 @@ for knob in merge_own_prs tidy_worktrees build_candidates; do
   v="$(KIT_PROJECT_ROOT="$KNOB_PROJ" kit_config_get_root "wrap.$knob" true)"
   chk "wrap.$knob ignores a project .kit.toml" "$([ "$v" = "true" ]; echo $?)"
 done
-for knob in merge_own_prs tidy_worktrees build_candidates pull_past_dirty distill; do
+for knob in merge_own_prs tidy_worktrees build_candidates delete_merged_remote_branches pull_past_dirty distill; do
   chk_has "commands/wrap.md reads wrap.$knob" "$(cat "$KIT_DIR/commands/wrap.md")" "wrap.$knob"
   chk_has "kit.toml declares $knob" "$(cat "$KIT_DIR/kit.toml")" "$knob"
 done
