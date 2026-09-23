@@ -9,7 +9,7 @@
 # The CLAUDE.md loader uses an `@AGENTS.md` import (Claude Code includes the file, not just a
 # "go read it" pointer; absorbed from repository-harness's --claude shim).
 #
-# Usage: adopt.sh [--check | --dry-run | --refresh] [--single-source] [--with <a,b,c>] <target-dir>
+# Usage: adopt.sh [--check | --dry-run | --refresh] [--single-source | --no-single-source] [--with <a,b,c>] <target-dir>
 #   --check   : report status only (exit 0 adopted / 1 not), write nothing.
 #   --dry-run : print what would change, write nothing.
 #   --refresh : re-sync the kit-managed pieces (WORKFLOW pointer + the CLAUDE.md loader block)
@@ -18,7 +18,11 @@
 #               CLAUDE.md into AGENTS.md (`git mv`) and leaves CLAUDE.md as a one-line
 #               `@AGENTS.md` import, then targets the operate-contract block at AGENTS.md instead
 #               of CLAUDE.md. Already single-source: no-op. Both files exist and differ, or
-#               neither exists: refuses (exit 1), writes nothing -- merge by hand.
+#               neither exists: refuses (exit 1), writes nothing -- merge by hand. The root-only
+#               knob `adopt.single_source` (default false) turns this mode on without the flag;
+#               `--single-source` always wins, and `--no-single-source` forces it off over a
+#               `true` knob. Whichever of the flag or the knob turned it on, adopt prints one
+#               line naming which.
 #   --with <a,b,c> : only meaningful the first time (seeding a fresh <target>/.kit.toml): the
 #               named modules start `true` in the seeded [modules] section instead of the
 #               kit-root defaults. Ignored (with a note) once <target>/.kit.toml exists -- a
@@ -52,15 +56,16 @@ END="<!-- /kit:adopt -->"
 tmp=""                                   # scratch file; the trap cleans it up on any early exit
 trap 'rm -f "$tmp"' EXIT
 
-usage() { echo "usage: adopt.sh [--check | --dry-run | --refresh] [--single-source] [--with <a,b,c>] [--] <target-dir>" >&2; exit 64; }
+usage() { echo "usage: adopt.sh [--check | --dry-run | --refresh] [--single-source | --no-single-source] [--with <a,b,c>] [--] <target-dir>" >&2; exit 64; }
 
-CHECK=0 DRY=0 REFRESH=0 SINGLE=0 WITH_ARG=""
+CHECK=0 DRY=0 REFRESH=0 SINGLE_FLAG="" WITH_ARG=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --check) CHECK=1; shift;;
     --dry-run) DRY=1; shift;;
     --refresh) REFRESH=1; shift;;
-    --single-source) SINGLE=1; shift;;
+    --single-source) SINGLE_FLAG=1; shift;;
+    --no-single-source) SINGLE_FLAG=0; shift;;
     --with) shift; WITH_ARG="${1:-}"; shift;;
     --with=*) WITH_ARG="${1#--with=}"; shift;;
     --) shift; break;;
@@ -77,6 +82,34 @@ claude="$TARGET/CLAUDE.md"
 marker="$TARGET/docs/verification/README.md"
 dotkit="$TARGET/.kit.toml"
 project_settings="$TARGET/.claude/settings.json"
+
+# Resolve the kit-root kit.toml (dev checkout first, then the install) and load the config
+# resolver up front -- both the single_source knob below and the per-project .kit.toml close-
+# out further down need them. Load in a function scope so the resolver's own `${1:-}` selftest
+# guard never sees adopt.sh's own positional params (TARGET etc).
+kit_root_toml=""
+for c in "$SRC_ROOT/kit.toml" "$KIT_ROOT/kit.toml"; do
+  [ -f "$c" ] && { kit_root_toml="$c"; break; }
+done
+_kit_load_config_resolver() {
+  # shellcheck source=lib/config/kit-config.sh
+  source "$SELF_DIR/config/kit-config.sh"
+}
+RESOLVER_OK=1
+_kit_load_config_resolver 2>/dev/null || RESOLVER_OK=0
+
+# adopt.single_source resolution: an explicit --single-source/--no-single-source flag always
+# wins; otherwise the root-only knob decides (a project .kit.toml never sets it -- it changes
+# what adopt writes into the target).
+SINGLE=0
+if [ -n "$SINGLE_FLAG" ]; then
+  SINGLE="$SINGLE_FLAG"
+  [ "$SINGLE" -eq 1 ] && [ "$CHECK" -eq 0 ] && echo "adopt: single-source mode on (--single-source flag)"
+elif [ -n "$kit_root_toml" ] && [ "$RESOLVER_OK" -eq 1 ] \
+  && [ "$(KIT_CONFIG_ROOT="$(dirname "$kit_root_toml")" kit_config_get_root adopt.single_source false)" = "true" ]; then
+  SINGLE=1
+  [ "$CHECK" -eq 0 ] && echo "adopt: single-source mode on (adopt.single_source knob)"
+fi
 
 # --single-source: the operate-contract block lands in AGENTS.md, never in the one-line
 # CLAUDE.md `@AGENTS.md` pointer. block_target is used everywhere the block used to hardcode
@@ -229,13 +262,8 @@ EOF
 fi
 
 # --- Close the per-project override loop (goal 06) ---------------------------------------
-
-# Resolve the kit-root kit.toml (dev checkout first, then the install) -- same lookup shape
-# as src_agents above.
-kit_root_toml=""
-for c in "$SRC_ROOT/kit.toml" "$KIT_ROOT/kit.toml"; do
-  [ -f "$c" ] && { kit_root_toml="$c"; break; }
-done
+# kit_root_toml and the config resolver are already loaded up front (needed for the
+# single_source knob before this point too).
 
 # module -> its hook script basenames (space-separated; empty = hookless -- queue, stats,
 # quiz_gate, weekend_batch, bridge are commands/skills with no hook to gate). Kept in sync
@@ -252,15 +280,6 @@ kit_module_hooks() {
 }
 
 KIT_KNOWN_MODULES="board session advisor cosmetic queue stats quiz_gate weekend_batch bridge"
-
-# Load the config resolver in a function scope so its own `${1:-}` selftest check (see
-# lib/config/kit-config.sh) never sees adopt.sh's own positional parameters (TARGET etc).
-_kit_load_config_resolver() {
-  # shellcheck source=lib/config/kit-config.sh
-  source "$SELF_DIR/config/kit-config.sh"
-}
-RESOLVER_OK=1
-_kit_load_config_resolver 2>/dev/null || RESOLVER_OK=0
 
 # 5. Per-project .kit.toml -- an OPT-IN starter. Created only if absent; a
 # project's own config is NEVER overwritten by adopt, fresh or --refresh (same invariant as

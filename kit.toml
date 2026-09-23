@@ -118,6 +118,16 @@ board_row_gate     = true       # [impl] hooks/board-row-gate.sh: a commit addin
                                 #        needs a board-row-ok line. Default ON; a repo opts out
                                 #        with `board_row_gate = false` in a committed .kit.toml.
 
+[adopt]                         # [impl] lib/adopt.sh; read at adopt time, never by a hook
+single_source = false           #        Default for `--single-source` when neither that flag nor
+                                 #        `--no-single-source` is passed: folds an existing
+                                 #        CLAUDE.md into AGENTS.md and targets the operate-contract
+                                 #        block at AGENTS.md instead of CLAUDE.md. An explicit flag
+                                 #        always wins over this knob. Root-only (a project
+                                 #        .kit.toml never sets it): it changes what adopt writes
+                                 #        into the target, and a project toml rides inside an
+                                 #        untrusted PR.
+
 [output]                        # [impl] lib/adopt.sh step 6b (SPEC-252); read at adopt time, never by a hook
 style = ""                      #        Claude Code output style for adopted projects. A name under
                                 #        output-styles/ (adhd) is copied into <project>/.claude/output-styles/
