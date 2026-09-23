@@ -44,6 +44,10 @@ PR already merged, foundation-ops 109, foundation-apps 25.
   and deletes nothing.
 - Scope: it runs on every `apply` call, `--worktrees` or not, and under
   `--own` too.
+- `bin/wrap land` carries the same knob and lease shape for the ONE branch it
+  just merged: once the tree is verified it deletes that branch on origin,
+  leased to the SHA `land` itself pushed, skipping (never failing) when an
+  open PR bases off it or the knob is `false`.
 
 ## Design record
 

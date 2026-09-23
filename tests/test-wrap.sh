@@ -1915,13 +1915,11 @@ build_land ok
 LREPO="$TMPD/ld-repo-ok"; LREPO_P="$(cd "$LREPO" && pwd -P)"; LWT="$(cd "$LREPO/wt" && pwd -P)"
 LTIP="$(git -C "$LWT" rev-parse HEAD)"
 : > "$GH_STUB_CALLS"
-out="$(GH_STUB_CREATE_NUM=42 GH_STUB_LAND_REPO="$LWT" GH_STUB_LAND_REMOTE="$TMPD/ld-bare-ok" \
+out="$(GH_STUB_OPEN_PRS='[]' GH_STUB_CREATE_NUM=42 GH_STUB_LAND_REPO="$LWT" GH_STUB_LAND_REMOTE="$TMPD/ld-bare-ok" \
   GH_STUB_LAND_BRANCH=feat/land GH_STUB_LAND_DEF=main "$WRAP" land "$LWT" 2>&1)"; rc=$?
 LAND_CALLS="$(cat "$GH_STUB_CALLS")"
 chk "land exits 0 on the happy path" "$rc"
 chk_has "land reports the push with the tip" "$out" "pushed feat/land (${LTIP:0:7})"
-chk "land pushed the named branch to the remote" \
-  "$([ "$(git -C "$TMPD/ld-bare-ok" rev-parse feat/land)" = "$LTIP" ]; echo $?)"
 chk_has "land opened the PR with --head" "$LAND_CALLS" "pr create --repo"
 chk_has "the create call names the branch as head" "$LAND_CALLS" "--head feat/land"
 chk_no "the create call never names a base" "$LAND_CALLS" "--base"
@@ -1940,6 +1938,36 @@ chk "land dropped the worktree from the list" \
 chk "land deleted the local branch" \
   "$(git -C "$LREPO" rev-parse --verify feat/land >/dev/null 2>&1 && echo 1 || echo 0)"
 chk_has "land reports the delete" "$out" "deleted feat/land"
+chk "land deleted the branch on origin too" \
+  "$(git -C "$TMPD/ld-bare-ok" rev-parse --verify feat/land >/dev/null 2>&1 && echo 1 || echo 0)"
+chk_has "land reports the origin delete" "$out" "deleted feat/land on origin"
+
+echo "--- knob false leaves the merged branch on origin"
+build_land knobkeep
+LWT_KK="$(cd "$TMPD/ld-repo-knobkeep/wt" && pwd -P)"
+KK_OP="$TMPD/ld-knob-op"; mkdir -p "$KK_OP"
+printf '[wrap]\ndelete_merged_remote_branches = false\n' > "$KK_OP/kit.toml"
+: > "$GH_STUB_CALLS"
+out="$(KIT_CONFIG_OPERATOR="$KK_OP" GH_STUB_OPEN_PRS='[]' GH_STUB_CREATE_NUM=45 \
+  GH_STUB_LAND_REPO="$LWT_KK" GH_STUB_LAND_REMOTE="$TMPD/ld-bare-knobkeep" \
+  GH_STUB_LAND_BRANCH=feat/land GH_STUB_LAND_DEF=main "$WRAP" land "$LWT_KK" 2>&1)"; rc=$?
+chk "land with the knob off still exits 0" "$([ "$rc" -eq 0 ]; echo $?)"
+chk_has "land reports the branch left on origin" "$out" \
+  "feat/land left on origin (wrap.delete_merged_remote_branches=false)"
+chk "the origin branch survives the knob-off case" \
+  "$(git -C "$TMPD/ld-bare-knobkeep" rev-parse --verify feat/land >/dev/null 2>&1; echo $?)"
+
+echo "--- an open PR based on the branch keeps it on origin"
+build_land basekeep
+LWT_BK="$(cd "$TMPD/ld-repo-basekeep/wt" && pwd -P)"
+: > "$GH_STUB_CALLS"
+out="$(GH_STUB_OPEN_PRS='[{"number":50,"title":"stacked","headRefName":"feat/stacked","baseRefName":"feat/land"}]' \
+  GH_STUB_CREATE_NUM=46 GH_STUB_LAND_REPO="$LWT_BK" GH_STUB_LAND_REMOTE="$TMPD/ld-bare-basekeep" \
+  GH_STUB_LAND_BRANCH=feat/land GH_STUB_LAND_DEF=main "$WRAP" land "$LWT_BK" 2>&1)"; rc=$?
+chk "land with an open base-PR still exits 0" "$([ "$rc" -eq 0 ]; echo $?)"
+chk_has "land reports the base-PR hold" "$out" "feat/land left on origin: an open PR bases off it"
+chk "the origin branch survives when an open PR bases off it" \
+  "$(git -C "$TMPD/ld-bare-basekeep" rev-parse --verify feat/land >/dev/null 2>&1; echo $?)"
 
 echo "--- a dirty worktree refuses before any write"
 build_land dirty

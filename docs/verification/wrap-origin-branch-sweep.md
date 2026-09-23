@@ -94,3 +94,12 @@ to be the default branch (see the implementation notes).
 | Negative control | `lib/wrap/wrap.sh` reverted to origin/master, same suite | `test-wrap: 846 passed, 2 FAILED of 848` (the two `origin --own` delete checks) |
 | Structure | `bash tests/test-meta.sh` | `Passed: 854 / 854` |
 | Real repos | `wrap apply --apply foundation-workers foundation-apps` after `--own` runs left merged heads | `deleted 4 of 4` and `deleted 1 of 1` merged branches on origin |
+
+## Revision: `wrap land` deletes its own branch on origin
+
+| Check | Command | Result |
+|---|---|---|
+| Suite with the fix | `bash tests/test-wrap.sh` | `test-wrap: all 855 passed` |
+| Negative control | `lib/wrap/wrap.sh` reverted to `origin/master` via `git show origin/master:lib/wrap/wrap.sh >\| lib/wrap/wrap.sh`, same suite | `test-wrap: 851 passed, 4 FAILED of 855` (the origin-delete, knob-false, and open-PR-base `land` checks) |
+| Restore | fix restored, suite re-run | `test-wrap: all 855 passed` |
+| Structure | `bash tests/test-meta.sh` | `Passed: 854 / 854` |
