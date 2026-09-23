@@ -139,8 +139,47 @@ if { trap '' PIPE; printf '%s\n' "$EXPLAIN_OUT" 2>/dev/null || :; } | grep -qE '
 assert "explain mega.wave_cap: the winner line names project .kit.toml + the resolved 5" $RC
 if { trap '' PIPE; printf '%s\n' "$EXPLAIN_OUT" 2>/dev/null || :; } | grep -qE '2\. project \.kit\.toml \[mega\.wave_cap\][[:space:]]+= 5'; then RC=0; else RC=1; fi
 assert "explain mega.wave_cap: level 2 (project) shows the winning value 5" $RC
-if { trap '' PIPE; printf '%s\n' "$EXPLAIN_OUT" 2>/dev/null || :; } | grep -qE '3\. kit-root kit\.toml \[mega\.wave_cap\][[:space:]]+= 2'; then RC=0; else RC=1; fi
-assert "explain mega.wave_cap: level 3 (kit-root) shows the shadowed value 2" $RC
+if { trap '' PIPE; printf '%s\n' "$EXPLAIN_OUT" 2>/dev/null || :; } | grep -qE '4\. kit-root kit\.toml \[mega\.wave_cap\][[:space:]]+= 2'; then RC=0; else RC=1; fi
+assert "explain mega.wave_cap: level 4 (kit-root) shows the shadowed value 2" $RC
+
+# --- operator kit.toml layer (bug regression): kit-config.sh's own resolver honours
+# env > project > operator > kit-root > default, but bin/config's display surface built a
+# SEPARATE (stale) chain that skipped the operator layer entirely, so `get`/`explain`/`list`
+# silently under-reported what the real resolver would return. KIT_CONFIG_OPERATOR points at
+# a per-call fixture dir so this never touches the real operator file on the machine running
+# the test. ---
+mkdir -p "$FIXDIR/op" "$FIXDIR/op-empty"
+cat > "$FIXDIR/op/kit.toml" <<'EOF'
+[mega]
+tier4_close = false
+EOF
+cat > "$FIXDIR/op-empty/kit.toml" <<'EOF'
+[mega]
+wave_cap = 3
+EOF
+
+assert_eq "get: operator kit.toml wins over kit-root when no env/project override" \
+  "$(KIT_CONFIG_ROOT="$FIXDIR/root" KIT_PROJECT_ROOT="$FIXDIR/proj" KIT_CONFIG_OPERATOR="$FIXDIR/op" bash "$CONFIG_BIN" get mega.tier4_close)" \
+  'false'
+
+OP_LIST="$(KIT_CONFIG_ROOT="$FIXDIR/root" KIT_PROJECT_ROOT="$FIXDIR/proj" KIT_CONFIG_OPERATOR="$FIXDIR/op" bash "$CONFIG_BIN" list)"
+if { trap '' PIPE; printf '%s\n' "$OP_LIST" 2>/dev/null || :; } | grep -qE '^TIER4_CLOSE[[:space:]]+\[impl\][[:space:]]+false[[:space:]]+operator kit\.toml'; then RC=0; else RC=1; fi
+assert "list: TIER4_CLOSE shows the operator override, provenance 'operator kit.toml'" $RC
+
+OP_EXPLAIN="$(KIT_CONFIG_ROOT="$FIXDIR/root" KIT_PROJECT_ROOT="$FIXDIR/proj" KIT_CONFIG_OPERATOR="$FIXDIR/op" bash "$CONFIG_BIN" explain mega.tier4_close)"
+if { trap '' PIPE; printf '%s\n' "$OP_EXPLAIN" 2>/dev/null || :; } | grep -qE '^Effective: false   \(source: operator kit\.toml\)$'; then RC=0; else RC=1; fi
+assert "explain mega.tier4_close: the winner line names operator kit.toml + the resolved false" $RC
+if { trap '' PIPE; printf '%s\n' "$OP_EXPLAIN" 2>/dev/null || :; } | grep -qE '3\. operator kit\.toml \[mega\.tier4_close\][[:space:]]+= false'; then RC=0; else RC=1; fi
+assert "explain mega.tier4_close: level 3 (operator) shows the winning value false" $RC
+
+# Negative control: an operator file that EXISTS but lacks this key must fall through to
+# kit-root, not stick at the operator layer or skip past it silently.
+assert_eq "get: operator kit.toml present but missing the key falls through to kit-root" \
+  "$(KIT_CONFIG_ROOT="$FIXDIR/root" KIT_PROJECT_ROOT="$FIXDIR/proj" KIT_CONFIG_OPERATOR="$FIXDIR/op-empty" bash "$CONFIG_BIN" get mega.tier4_close)" \
+  'true'
+OP_MISS_EXPLAIN="$(KIT_CONFIG_ROOT="$FIXDIR/root" KIT_PROJECT_ROOT="$FIXDIR/proj" KIT_CONFIG_OPERATOR="$FIXDIR/op-empty" bash "$CONFIG_BIN" explain mega.tier4_close)"
+if { trap '' PIPE; printf '%s\n' "$OP_MISS_EXPLAIN" 2>/dev/null || :; } | grep -qE '^Effective: true   \(source: kit-root kit\.toml\)$'; then RC=0; else RC=1; fi
+assert "explain mega.tier4_close: operator file present without the key still yields kit-root as source" $RC
 
 # Multi-env-var tie-break: ledger.location is shared by two env rows (KIT_LEDGER_DIR listed
 # before DWARVES_KIT_LOG_DIR); a bare-key lookup must resolve to the FIRST (canonical) row,
