@@ -1647,6 +1647,26 @@ cmd_land() {
       return 3 ;;
   esac
 
+  # Mirrors _apply_origin_branches: leased to the tip land itself pushed, skipped when an
+  # open PR still bases off this branch (deleting it would close that PR), and never fails
+  # land, since the merge is already verified.
+  if [ "$(kit_config_get_root wrap.delete_merged_remote_branches true)" != "true" ]; then
+    echo "     ${branch} left on origin (wrap.delete_merged_remote_branches=false)"
+  else
+    local base_open; base_open="$(gh pr list --repo "$url" --state open --json baseRefName 2>/dev/null \
+      | jq -r --arg b "$branch" '[.[] | select(.baseRefName == $b)] | length' 2>/dev/null)"
+    case "$base_open" in
+      0)
+        if git -C "$wt" push -q origin "--force-with-lease=refs/heads/${branch}:${tip}" ":refs/heads/${branch}" 2>/dev/null; then
+          echo "     deleted ${branch} on origin"
+        else
+          echo "     FAILED delete ${branch} on origin (protected, no permission, or pushed since land read it)"
+        fi ;;
+      ''|*[!0-9]*) echo "     FAILED delete ${branch} on origin (open-PR lookup failed)" ;;
+      *) echo "     ${branch} left on origin: an open PR bases off it" ;;
+    esac
+  fi
+
   # The fast-forward is advisory: a checkout this call does not own may be dirty or on
   # another branch, and neither is a reason to strand a merged worktree. It is never
   # stashed past and never reset; the refusal is reported and the tidy continues.
