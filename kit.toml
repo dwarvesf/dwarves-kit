@@ -118,6 +118,16 @@ board_row_gate     = true       # [impl] hooks/board-row-gate.sh: a commit addin
                                 #        needs a board-row-ok line. Default ON; a repo opts out
                                 #        with `board_row_gate = false` in a committed .kit.toml.
 
+[adopt]                         # [impl] lib/adopt.sh; read at adopt time, never by a hook
+single_source = false           #        Default for `--single-source` when neither that flag nor
+                                 #        `--no-single-source` is passed: folds an existing
+                                 #        CLAUDE.md into AGENTS.md and targets the operate-contract
+                                 #        block at AGENTS.md instead of CLAUDE.md. An explicit flag
+                                 #        always wins over this knob. Root-only (a project
+                                 #        .kit.toml never sets it): it changes what adopt writes
+                                 #        into the target, and a project toml rides inside an
+                                 #        untrusted PR.
+
 [output]                        # [impl] lib/adopt.sh step 6b (SPEC-252); read at adopt time, never by a hook
 style = ""                      #        Claude Code output style for adopted projects. A name under
                                 #        output-styles/ (adhd) is copied into <project>/.claude/output-styles/
@@ -283,6 +293,17 @@ after = ""                      # [consumer] name of a skill `/kit:wrap` invokes
                                  #        the `before` side greps every note store while the git work
                                  #        waits behind it, and nothing in a flush informs a board flip
                                  #        or a merge. Empty = no skill runs, which is the default.
+roots = ""                      # [impl] space-separated list of directories (no TOML array
+                                 #        support in the resolver's parser; same shape as
+                                 #        wrap.build_lanes), tilde ok, a bare `bin/wrap scan|apply
+                                 #        --under` (no directory after it) expands to. Each root is
+                                 #        scanned the same way as an explicit `--under <root>`:
+                                 #        every immediate child holding a .git file or directory, in
+                                 #        sorted order. Empty = a bare --under exits 64 naming this
+                                 #        key; `--under <root>` with a path is unaffected either
+                                 #        way. Resolved with `kit_config_get_root`, same fence and
+                                 #        reason as the knobs below: it decides what a bare flag
+                                 #        sweeps across every project on the machine.
 
 distill = false                 # [impl] the distill half. false = wrap LANDS only: board rows,
                                  #        commit, merge, deploy check, tidy, pull, activity line,

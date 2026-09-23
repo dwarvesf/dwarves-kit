@@ -52,7 +52,9 @@ An existing `CLAUDE.md` (and no `AGENTS.md`) folds into `AGENTS.md` via `git mv`
 becomes a one-line `@AGENTS.md` import (still auto-loaded by Claude Code, still importing the
 single source), and the operate-contract block lands in `AGENTS.md` instead of `CLAUDE.md`.
 Already in that shape: a no-op. Both files exist and genuinely differ, or neither exists:
-refuses (exit 1) and writes nothing, so the operator merges by hand.
+refuses (exit 1) and writes nothing, so the operator merges by hand. The root-only knob
+`adopt.single_source` (default `false`) turns this mode on without the flag; `--no-single-source`
+overrides a `true` knob back off.
 
 ## Overlays and seams
 

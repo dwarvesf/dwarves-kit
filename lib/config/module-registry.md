@@ -304,6 +304,12 @@ never turns the step off.
 | - | debug.confirm_fix | `false` | [impl] | (none) | `commands/debug.md` Phase 4 step 5. `false` declares the fix done once the phase's own three conditions hold (the new test passes, no other test broke, the symptom is gone) and reports the evidence; `true` holds the verdict for a human yes. A fix missing any of the three is never declared fixed at either setting. |
 | - | review.apply_findings | `true` | [impl] | (none) | `commands/review-team.md` step 5. `true` applies the `gated_auto` findings that `responding-to-review` VERIFIED, via `fix-agent`, leaving the PR as the review surface; `false` proposes them for the operator to apply. A finding that agent pushed back on is never applied at either setting; `manual` and `advisory` findings never route here. |
 
+### adopt (`lib/adopt.sh`, no install module)
+
+| Env var | kit.toml key | Default | Status | Module | Doc |
+|---|---|---|---|---|---|
+| - | adopt.single_source | `false` | [impl] | (none) | Default for `--single-source` when neither that flag nor `--no-single-source` is passed on the `adopt.sh` invocation: folds an existing `CLAUDE.md` into `AGENTS.md` and targets the operate-contract block at `AGENTS.md` instead of `CLAUDE.md`. An explicit `--single-source`/`--no-single-source` flag always wins over the knob; whichever turned single-source mode on, `adopt.sh` prints one line naming it. Resolved with `kit_config_get_root` (the operator `kit.toml` or the kit-root `kit.toml` ONLY; a project `.kit.toml` is never read for this key because it changes what adopt writes into the target and a project toml rides inside an untrusted PR, `kit-config.sh:75-90`). |
+
 ### wrap (`/kit:wrap` landing-step config, no install module)
 
 | Env var | kit.toml key | Default | Status | Module | Doc |
@@ -311,6 +317,7 @@ never turns the step off.
 | - | wrap.activity_log | `""` | [consumer] | wrap | Absolute or `~`-prefixed path to the operator's own activity-log file, resolved with `kit_config_get_root` (the operator `kit.toml` or the kit-root `kit.toml` ONLY; a project `.kit.toml` is never read for this key because it names a file the kit writes to, `kit-config.sh:75-90`). Its resolved realpath must sit under `$HOME`'s realpath and name an existing regular file, else `wrap log` exits 1 naming the resolved path. Empty means `wrap log` prints the line and reports that nothing was written, exit 0. |
 | - | wrap.before | `""` | [consumer] | wrap | Name of a skill `/kit:wrap` invokes FIRST, before step 0, resolved with `kit_config_get_root` (the operator `kit.toml` or the kit-root `kit.toml` ONLY; a project `.kit.toml` is never read for this key because it names code the command runs and a project toml rides inside an untrusted PR, `kit-config.sh:75-90`). The skill's report lines fold into the wrap report after its `FYI` line. Empty means no skill runs. Pick this side only when the skill must read the working tree before wrap commits or tidies it. |
 | - | wrap.after | `""` | [consumer] | wrap | Name of a skill `/kit:wrap` invokes LAST, after step 8 and before the step 9 report, resolved with `kit_config_get_root` under the same fence and for the same reason as the row above. The right side for a knowledge flush: a flush on the `before` side greps every note store while the git work waits behind it, and nothing a flush reads informs a board flip or a merge. Empty means no skill runs. Step 9's `**Seam:**` line reports whichever side ran, and `lib/wrap/report-lint.sh` fails a report that omits it. |
+| - | wrap.roots | `""` | [impl] | wrap | Space-separated list of directories (no TOML array support in the resolver's line-oriented parser, same shape as `wrap.build_lanes`) a bare `bin/wrap scan\|apply --under` (no directory follows it) expands to, tilde-expanded, listed order. Each root is scanned exactly like an explicit `--under <root>`: every immediate child holding a `.git` file or directory, in sorted order, via `_add_under`/`_expand_bare_under` in `lib/wrap/wrap.sh`. Empty means a bare `--under` exits 64 naming this key; `--under <root>` with a path is unaffected either way. Resolved with `kit_config_get_root` (the operator `kit.toml` or the kit-root `kit.toml` ONLY; a project `.kit.toml` is never read for this key because it decides what a bare flag sweeps across every project on the machine, `kit-config.sh:75-90`). |
 | - | wrap.distill | `false` | [impl] | wrap | The distill switch. `false` runs the landing half only (steps 0 to 6, 8, 9: board rows, commit, merge, deploy check, tidy, pull, activity line, retro, report) and skips the distill half (the pre-step-0 candidate scan, both step -1 seams, all of step 7 including the drain), reporting `**Built:** SKIPPED: distill off` and `**Seam:** SKIPPED: distill off`. `true` runs both halves on every wrap. The argument `distill` on the invocation (`/kit:wrap distill [repo...]`), or an ask that says to distill, turns the distill half on for that one run at either setting. While the half is off, `wrap.before`, `wrap.after`, `wrap.build_candidates`, `wrap.build_lanes`, and `wrap.drain_staged` have nothing to govern. Resolved with `kit_config_get_root`, same fence as the autonomy knobs below: the distill half writes to home repos. |
 | - | wrap.merge_own_prs | `true` | [impl] | wrap | Step 3 autonomy. `true` merges the operator's own green PRs, one per `wrap merge --apply` call, base default branch only; `false` leaves them open and reports each as `OPEN`. Resolved with `kit_config_get_root` (the operator `kit.toml` or the kit-root `kit.toml` ONLY; a project `.kit.toml` is never read for this key because it authorizes a write to the default branch and a project toml rides inside an untrusted PR, `kit-config.sh:75-90`). Neither setting merges a PR the operator did not open. |
 | - | wrap.tidy_worktrees | `true` | [impl] | wrap | Step 5 autonomy. `true` passes `--worktrees` to `wrap apply`, removing clean secondary worktrees and freeing the branches they hold; `false` leaves them and reports them under `Left alone`. Resolved with `kit_config_get_root`, same fence and reason as the row above. Neither setting touches a dirty, detached, or checked-out worktree; `apply` refuses those on its own. |
@@ -451,6 +458,7 @@ exercise the primitive on fixture keys -- `mega.wave_cap`, `gauntlet.runner_host
 
 | Key |
 |---|
+| adopt.single_source |
 | debug.confirm_fix |
 | intake.boards |
 | intake.notes |
@@ -474,6 +482,7 @@ exercise the primitive on fixture keys -- `mega.wave_cap`, `gauntlet.runner_host
 | wrap.drain_staged |
 | wrap.merge_own_prs |
 | wrap.pull_past_dirty |
+| wrap.roots |
 | wrap.tidy_worktrees |
 
 ## Known gaps (documented, not enforced by this lint , out of this sub-goal's scope)

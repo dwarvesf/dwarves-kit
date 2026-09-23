@@ -313,7 +313,66 @@ else
   no "--single-source mishandled an already-single-source repo"
 fi
 
-rm -rf "$T1" "$T2" "$T3" "$T4" "$T5" "$T6" "$T7" "$T13" "$T14" "$T15" "$T16"
+# --- adopt.single_source knob (root-only): flag beats the knob either direction ---
+#
+# adopt.sh resolves its OWN kit-root kit.toml as "the dev checkout first" (SRC_ROOT/kit.toml,
+# same lookup as src_agents), ahead of KIT_CONFIG_ROOT -- so exercising the knob means
+# editing this checkout's own kit.toml for the duration of the test, restored after (trap
+# covers a mid-test failure too).
+KIT_TOML_LIVE="kit.toml"
+KIT_TOML_BAK="$(mktemp)"
+cp "$KIT_TOML_LIVE" "$KIT_TOML_BAK"
+trap 'cp "$KIT_TOML_BAK" "$KIT_TOML_LIVE"; rm -f "$KIT_TOML_BAK"' EXIT
+
+set_single_source_knob() {
+  awk -v v="$1" '{ if ($0 ~ /^single_source = /) print "single_source = " v; else print }' "$KIT_TOML_BAK" > "$KIT_TOML_LIVE"
+}
+
+# 24. Knob true, no flag: adopt.sh folds CLAUDE.md into AGENTS.md as if --single-source
+# had been passed, and names the knob in its one-line report.
+set_single_source_knob true
+T17="$(newrepo)"
+printf '# Repo\n\nKNOB-TRUE-CONTENT\n' > "$T17/CLAUDE.md"
+OUT24="$(bash lib/adopt.sh "$T17" 2>&1)"
+if [ "$(cat "$T17/CLAUDE.md")" = "@AGENTS.md" ] && grep -q KNOB-TRUE-CONTENT "$T17/AGENTS.md" \
+  && grep -qxF '<!-- kit:adopt -->' "$T17/AGENTS.md" \
+  && echo "$OUT24" | grep -q 'single-source mode on (adopt.single_source knob)'; then
+  ok "adopt.single_source=true with no flag folds CLAUDE.md into AGENTS.md and names the knob"
+else
+  no "adopt.single_source=true with no flag did not fold (or did not name the knob)"
+fi
+
+# 25. Knob true, --no-single-source: the flag overrides the knob back off; normal two-file
+# adopt runs (block lands in CLAUDE.md, CLAUDE.md is not folded, AGENTS.md carries no block).
+T18="$(newrepo)"
+printf '# Repo\n\nKNOB-OVERRIDE-CONTENT\n' > "$T18/CLAUDE.md"
+OUT25="$(bash lib/adopt.sh --no-single-source "$T18" 2>&1)"
+agents_untouched=1
+grep -qxF '<!-- kit:adopt -->' "$T18/AGENTS.md" 2>/dev/null && agents_untouched=0
+if grep -q KNOB-OVERRIDE-CONTENT "$T18/CLAUDE.md" && grep -qxF '<!-- kit:adopt -->' "$T18/CLAUDE.md" \
+  && [ "$agents_untouched" -eq 1 ] && ! echo "$OUT25" | grep -q 'single-source mode on'; then
+  ok "--no-single-source overrides a true knob back off (normal two-file adopt runs)"
+else
+  no "--no-single-source did not override the true knob"
+fi
+
+# 26. Knob false, --single-source: unchanged existing behaviour (the flag still folds).
+set_single_source_knob false
+T19="$(newrepo)"
+printf '# Repo\n\nKNOB-FALSE-FLAG-CONTENT\n' > "$T19/CLAUDE.md"
+OUT26="$(bash lib/adopt.sh --single-source "$T19" 2>&1)"
+if [ "$(cat "$T19/CLAUDE.md")" = "@AGENTS.md" ] && grep -q KNOB-FALSE-FLAG-CONTENT "$T19/AGENTS.md" \
+  && grep -qxF '<!-- kit:adopt -->' "$T19/AGENTS.md" \
+  && echo "$OUT26" | grep -q 'single-source mode on (--single-source flag)'; then
+  ok "adopt.single_source=false plus --single-source still folds (flag beats a false knob)"
+else
+  no "adopt.single_source=false plus --single-source did not fold"
+fi
+
+cp "$KIT_TOML_BAK" "$KIT_TOML_LIVE"; rm -f "$KIT_TOML_BAK"
+trap - EXIT
+
+rm -rf "$T1" "$T2" "$T3" "$T4" "$T5" "$T6" "$T7" "$T13" "$T14" "$T15" "$T16" "$T17" "$T18" "$T19"
 echo "---"
 echo "PASS=$PASS FAIL=$FAIL"
 [ "$FAIL" -eq 0 ]

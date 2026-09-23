@@ -288,6 +288,25 @@ chk "under: apply appends the root's repos after the named one" \
 out="$("$WRAP" apply --under 2>&1)"; rc=$?
 chk "under: a missing directory is a usage error" "$([ "$rc" -eq 64 ]; echo $?)"
 
+echo "=== scan --under with no directory: wrap.roots expansion ==="
+UROOT2="$TMPD/under-root-2"; mkdir -p "$UROOT2/beta"
+git -C "$UROOT2/beta" init -q
+UNDER_KIT="$(mktemp -d "${TMPDIR:-/tmp}/dk-wrap-under-kit.XXXXXX")"
+printf '[wrap]\nroots = "%s %s"\n' "$UROOT" "$UROOT2" > "$UNDER_KIT/kit.toml"
+out="$(KIT_CONFIG_ROOT="$UNDER_KIT" "$WRAP" scan --under 2>&1)"; rc=$?
+chk "under: bare --under with a two-root knob exits 0" "$rc"
+chk_has "under: bare --under scans the first knob root's repos" "$out" "== $UROOT/alpha"
+chk_has "under: bare --under scans the second knob root's repos" "$out" "== $UROOT2/beta"
+
+out="$(KIT_CONFIG_ROOT="$UNDER_KIT" "$WRAP" scan --under 2>&1 >/dev/null)"
+chk_no "under: bare --under with a filled knob names no error" "$out" "wrap.roots"
+
+EMPTY_KIT="$(mktemp -d "${TMPDIR:-/tmp}/dk-wrap-under-empty-kit.XXXXXX")"
+printf '[wrap]\nroots = ""\n' > "$EMPTY_KIT/kit.toml"
+out="$(KIT_CONFIG_ROOT="$EMPTY_KIT" "$WRAP" scan --under 2>&1)"; rc=$?
+chk "under: bare --under with an empty knob is a usage error" "$([ "$rc" -eq 64 ]; echo $?)"
+chk_has "under: the empty-knob error names wrap.roots" "$out" "wrap.roots is empty"
+
 # ===========================================================================
 echo "=== apply dry-run: every SKIP reason, and no write ==="
 # ===========================================================================
