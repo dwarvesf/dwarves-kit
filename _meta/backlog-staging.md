@@ -135,3 +135,11 @@ Gitignored: may name unfiled work. NEVER the source of truth.
 - Home: dwarves-kit lib/wrap/wrap.sh
 - Source: session 2026-09-13
 
+## [promoted ID-886] board promote <n> fails through a consumer shim: the appended --backlog-file flag is parsed as a candidate index
+- Intent: Consumer shims (ops-toolkit _meta/board) exec bin/board with --backlog-file <path> appended; board.sh promote forwards argv verbatim to lib/board/bin/add-backlog, whose parser does int() on every token and prints usage. Reproduced 2026-09-16 on ops-toolkit: promote list works, promote 3 fails; direct call with BACKLOG_STAGE_BACKLOG and BACKLOG_STAGE_STAGING env works. Fix: strip or honour --backlog-file in add-backlog, add a shim-path test.
+- Source: session 2026-09-16
+## [staged] Converge the bash and python board parsers on the `\|` escape contract
+- Intent: A correctly-escaped `\|` inside a row's status cell is legal for `sync_core.CELL_SPLIT` but invisible to bash `board` — five files index `$(NF-1)` on raw pipe splits, so the status keyword reads as a mid-cell fragment and the row lands in UNRECOGNIZED.
+- Approach: Neutralize `\|` before splitting in the bash awk spots (lib/board/backlog.sh `_rows`/`set`/`dedupe`/`dedupe_all`, hooks/context-readiness.sh `_rows` twin, lib/board/parse-board.sh, lib/board/board.sh x2, lib/session/handoffs.sh), keep the sync parser's contract, pin with a row carrying `\|` in each cell position. Until then `&#124;` is the row-side workaround (used by ID-021/420/445).
+- Tags: #board #correctness #u-mid #f-lo
+- Source: session 2026-09-19 | follow-up named in PR #713 (folded 8 six-cell rows + re-escaped 3 status cells); next correctly-escaped status cell hits the same bash-side invisibility
