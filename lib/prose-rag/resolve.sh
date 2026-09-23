@@ -10,6 +10,13 @@
 # Contract: `prose_rag_resolve [name]` prints ONE path and returns 0, or prints nothing
 # and returns 1. Reads only PROSE_RAG_BIN and PATH. It never executes a candidate.
 #
+# The engine folded into context-kit's `ctx` (CK-8): `ctx index|query|hook` are the
+# same verbs the standalone `prose-rag` binary speaks, so `prose_rag_engine_resolve`
+# is the ladder the alias actually execs: $PROSE_RAG_BIN (the consumer's explicit
+# override -- it may name ctx, context-kit's own prose-rag alias, or a pre-fold
+# binary, all argv-compatible), then `ctx` on PATH (the folded engine's primary
+# spelling), then `prose-rag` on PATH (a pre-fold binary, still valid).
+#
 # Idempotent-source guard: sourcing twice is a no-op.
 [ -n "${_KIT_PROSE_RAG_RESOLVE_SOURCED:-}" ] && return 0 2>/dev/null || true
 _KIT_PROSE_RAG_RESOLVE_SOURCED=1
@@ -42,6 +49,19 @@ _prose_rag_is_kit_wrapper() (
   set +o pipefail
   head -c 200 "$1" 2>/dev/null | grep -a -q 'dwarves-kit CLI shim'
 )
+
+# prose_rag_engine_resolve -- the ladder `bin/prose-rag` execs post-fold:
+# $PROSE_RAG_BIN, then `ctx` on PATH, then `prose-rag` on PATH. One hop per
+# prose_rag_resolve call; the env check inside it makes the first hop cover
+# both the override and the ctx lookup.
+prose_rag_engine_resolve() {
+  local bin
+  if bin="$(prose_rag_resolve ctx)" && [ -n "$bin" ]; then
+    printf '%s\n' "$bin"
+    return 0
+  fi
+  prose_rag_resolve prose-rag
+}
 
 # prose_rag_resolve [name] -- print the first real engine binary.
 prose_rag_resolve() {

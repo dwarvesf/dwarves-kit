@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
-# test-prose-rag-adapter.sh -- SPEC-250 TASK-001: `bin/prose-rag` resolves the
-# engine binary ($PROSE_RAG_BIN, then `prose-rag` on PATH) and states the three
-# no-engine exits. See `### Interfaces` and `## Edge Cases` in
-# docs/specs/SPEC-250-prose-rag-adapter.md.
+# test-prose-rag-adapter.sh -- SPEC-250 TASK-001, extended for the CK-8 fold:
+# `bin/prose-rag` resolves the engine ($PROSE_RAG_BIN, then `ctx` on PATH --
+# the folded engine's primary spelling -- then `prose-rag` on PATH) and states
+# the three no-engine exits. See `### Interfaces` and `## Edge Cases` in
+# docs/specs/SPEC-250-prose-rag-adapter.md and context-kit
+# docs/specs/SPEC-003-engine-fold.md.
 #
 # Run: bash tests/test-prose-rag-adapter.sh
 
@@ -27,7 +29,7 @@ trap 'chmod -R u+w "$TMPD" 2>/dev/null; rm -rf "$TMPD"' EXIT
 # The stub echoes its argv and a canary env var, so a test can prove WHICH binary ran
 # and that the arguments reached it intact. /bin/bash, not `env bash`: these cases run on a
 # narrowed PATH, so the interpreter is named outright.
-mkdir -p "$TMPD/envbin" "$TMPD/pathbin" "$TMPD/empty"
+mkdir -p "$TMPD/envbin" "$TMPD/pathbin" "$TMPD/ctxbin" "$TMPD/empty"
 cat > "$TMPD/envbin/stub-engine" <<'STUB'
 #!/bin/bash
 echo "ENVSTUB argv:$*"
@@ -37,7 +39,11 @@ cat > "$TMPD/pathbin/prose-rag" <<'STUB'
 #!/bin/bash
 echo "PATHSTUB argv:$*"
 STUB
-chmod +x "$TMPD/envbin/stub-engine" "$TMPD/pathbin/prose-rag"
+cat > "$TMPD/ctxbin/ctx" <<'STUB'
+#!/bin/bash
+echo "CTXSTUB argv:$*"
+STUB
+chmod +x "$TMPD/envbin/stub-engine" "$TMPD/pathbin/prose-rag" "$TMPD/ctxbin/ctx"
 : > "$TMPD/envbin/not-executable"
 mkdir -p "$TMPD/envbin/a-directory"
 
@@ -80,6 +86,19 @@ chk "PATH stub: exit 0" "$([ "$RC5" -eq 0 ]; echo $?)"
 chk_has "PATH stub: ran with its args" "$OUT5" "PATHSTUB argv:index --full"
 
 # ============================================================
+echo "== ctx on PATH: the folded engine's primary spelling wins over a prose-rag binary =="
+# ============================================================
+OUT5B="$(PATH="$TMPD/ctxbin:$SYSPATH" bash "$SHIM" query "two words" --k 8 2>&1)"; RC5B=$?
+chk "ctx on PATH: exit 0" "$([ "$RC5B" -eq 0 ]; echo $?)"
+chk_has "ctx on PATH: ctx ran with the args unchanged" "$OUT5B" "CTXSTUB argv:query two words --k 8"
+
+OUT5C="$(PATH="$TMPD/ctxbin:$TMPD/pathbin:$SYSPATH" bash "$SHIM" query x 2>&1)"
+chk_has "ctx before prose-rag on PATH: ctx ran" "$OUT5C" "CTXSTUB argv:query x"
+
+OUT5D="$(PATH="$TMPD/ctxbin:$SYSPATH" PROSE_RAG_BIN="$TMPD/envbin/stub-engine" bash "$SHIM" query x 2>&1)"
+chk_has "PROSE_RAG_BIN still beats ctx on PATH: the env stub ran" "$OUT5D" "ENVSTUB argv:query x"
+
+# ============================================================
 echo "== no engine anywhere: the three documented exits =="
 # ============================================================
 OUT6="$(PATH="$NOPATH" bash "$SHIM" hook 2>&1)"; RC6=$?
@@ -93,8 +112,8 @@ chk_has "index without a corpus: says nothing was indexed" "$OUT7" "nothing inde
 
 OUT8="$(PATH="$NOPATH" bash "$SHIM" query x 2>&1)"; RC8=$?
 chk "query without an engine: exit 1" "$([ "$RC8" -eq 1 ]; echo $?)"
-chk_has "query without an engine: the install hint names context-kit's crate" \
-        "$OUT8" "cargo install --path <context-kit>/src/prose-rag"
+chk_has "query without an engine: the install hint names context-kit's ctx" \
+        "$OUT8" "cargo install --path <context-kit>/src/ctx"
 chk_has "query without an engine: the hint offers the env seam" "$OUT8" "PROSE_RAG_BIN"
 
 # an explicit --corpus means someone is driving interactively (edge case 4)

@@ -357,7 +357,17 @@ _seam_resolve() {
     return 0
   fi
   local found
-  found="$(prose_rag_resolve "$defaultval" || true)"
+  # The prose-rag seam resolves the FULL ladder `bin/prose-rag` execs (env, then
+  # `ctx` on PATH, then `prose-rag` on PATH): since the CK-8 fold the engine's
+  # primary spelling is `ctx`, so a ctx-only install would misread `absent`
+  # here while the alias correctly execs it -- the drift this file's single
+  # resolver exists to prevent. Any other binary-kind row keeps the generic
+  # one-name PATH lookup on its registry default.
+  if [ "$key" = "PROSE_RAG_BIN" ]; then
+    found="$(prose_rag_engine_resolve || true)"
+  else
+    found="$(prose_rag_resolve "$defaultval" || true)"
+  fi
   if [ -n "$found" ]; then SEAM_VALUE="$found"; SEAM_STATUS="filled"
   else SEAM_VALUE="(not on PATH)"; SEAM_STATUS="absent"
   fi

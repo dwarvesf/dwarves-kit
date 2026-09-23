@@ -50,10 +50,10 @@ lib/queue/README.md
 lib/queue/SPEC
 lib/queue/docs/proof-of-done.md
 
-# prose-rag: a Rust binary with a SPEC + README; no proof-of-done, and its tests are cargo-side,
-# not a tests/*.sh the contract can see. Both are real gaps, not lint artifacts.
+# prose-rag: an adapter module (ctx alias + shared resolver); the engine's own suite lives in
+# context-kit. Its repo-root test (tests/test-prose-rag-adapter.sh) satisfies C4; the missing
+# piece is a proof-of-done for the adapter itself.
 lib/prose-rag/docs/proof-of-done.md
-lib/prose-rag/tests
 
 # cosmetic: NOT missing tests. The module IS six hooks, so its 13 assertions live in the shared
 # hook suite (tests/test-hooks.sh, section "cosmetic module: the non-blocking contract"), which is
