@@ -8,6 +8,11 @@ no() { FAIL=$((FAIL + 1)); echo "NOT ok - $1"; }
 
 newrepo() { local d; d="$(mktemp -d)"; git -C "$d" init -q; echo "$d"; }
 
+# The operator kit.toml is fenced off for the whole suite: a real operator may have
+# adopt.single_source or output.style turned on, and every case below asserts the kit-root
+# default. Cases that need their own operator file re-export the variable and restore this one.
+NO_OPERATOR="$(mktemp -d)"; export KIT_CONFIG_OPERATOR="$NO_OPERATOR"
+
 # 1. fresh adopt creates the 4 artifacts
 T1="$(newrepo)"
 bash lib/adopt.sh "$T1" >/dev/null
@@ -250,7 +255,7 @@ if jq -e '.hooks | length > 0' "$T12/.claude/settings.json" >/dev/null 2>&1; the
 else
   no "outputStyle write dropped the hooks block"
 fi
-rm -rf "$T12" "$KIT_CONFIG_OPERATOR"; unset KIT_CONFIG_OPERATOR
+rm -rf "$T12" "$KIT_CONFIG_OPERATOR"; export KIT_CONFIG_OPERATOR="$NO_OPERATOR"
 
 # --- --single-source: one repo, one agent guide (CLAUDE.md folds into AGENTS.md) ---
 
