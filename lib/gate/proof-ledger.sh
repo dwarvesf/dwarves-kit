@@ -93,9 +93,11 @@ classify() {
   # Subject words count only when a non-doc path is also a non-test path. A tests-only diff
   # is classified by its paths alone: its subject describes the test, and a negative-control
   # commit says "restore". Any path outside the test pattern keeps the subject signal.
+  # Capture, never `grep -q`: under pipefail its early exit SIGPIPEs the upstream grep on a
+  # large diff and the guard reads "no source path", which fails open.
   subjects=""
-  if printf '%s\n' "$changed" | grep -vE '\.(md|txt|markdown)$|(^|/)\.kit\.toml$' \
-       | grep -qvE '(^|/)(tests?|__tests__|spec)/|(^|/)test_[^/]*$|[._](test|spec)\.[^/]*$'; then
+  if [ -n "$(printf '%s\n' "$changed" | grep -vE '\.(md|txt|markdown)$|(^|/)\.kit\.toml$' \
+       | grep -vE '(^|/)(tests?|__tests__)/|(^|/)test_[^/]*$|[._]test\.[^/]*$')" ]; then
     subjects="$(_subjects "$root" "$base")"
   fi
   blob="$(printf '%s\n%s' "$changed" "$subjects" | tr 'A-Z' 'a-z')"

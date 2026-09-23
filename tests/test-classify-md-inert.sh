@@ -78,6 +78,12 @@ F="$(mktemp -d)"; build "$F" mig "migrate the orders table"
 F="$(mktemp -d)"; build "$F" codetest "add the nightly backup"
 [ "$(cls "$LIB" "$F")" = stateful ] && pass "code+test 'backup' diff -> stateful (preserved)" || fail "code+test 'backup' should be stateful, got $(cls "$LIB" "$F")"
 
+# (b3) same mixed diff, but thousands of test paths sort after the source file: the guard
+# must still see the source path (a `grep -q` early exit under pipefail read it as absent)
+F="$(mktemp -d)"; build "$F" codetest "add the nightly backup"
+for i in $(seq 1 4000); do : > "$F/tests/test-padding-file-with-a-long-name-$i.sh"; done
+[ "$(cls "$LIB" "$F")" = stateful ] && pass "code+4000 tests 'backup' diff -> stateful (large diff)" || fail "large code+test 'backup' should be stateful, got $(cls "$LIB" "$F")"
+
 # (c) source file on a stateful path, neutral subject -> stateful, same verdict as before
 F="$(mktemp -d)"; build "$F" deploy "tweak the helper"
 [ "$(cls "$LIB" "$F")" = stateful ] && pass "lib/deploy.sh, neutral subject -> stateful (unchanged)" || fail "stateful path should be stateful, got $(cls "$LIB" "$F")"
@@ -94,4 +100,4 @@ else
 fi
 
 echo "---"
-[ "$fails" -eq 0 ] && { echo "ALL PASS (9/9)"; exit 0; } || { echo "FAILS: $fails"; exit 1; }
+[ "$fails" -eq 0 ] && { echo "ALL PASS (10/10)"; exit 0; } || { echo "FAILS: $fails"; exit 1; }
