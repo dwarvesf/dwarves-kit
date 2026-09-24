@@ -305,16 +305,18 @@ roots = ""                      # [impl] space-separated list of directories (no
                                  #        reason as the knobs below: it decides what a bare flag
                                  #        sweeps across every project on the machine.
 
-distill = false                 # [impl] the distill half. false = wrap LANDS only: board rows,
+distill = true                  # [impl] the distill half. true = every wrap runs the distill half
+                                 #        (the pre-step-0 candidate scan, both seams (`before`/
+                                 #        `after`), and all of step 7: DEBT marker, candidates,
+                                 #        memory notes, drain). Ships on because operators asked for
+                                 #        it to run every session; a plain `/kit:wrap` with no
+                                 #        `distill` word still lands the session first, the distill
+                                 #        half runs after. false = wrap LANDS only: board rows,
                                  #        commit, merge, deploy check, tidy, pull, activity line,
-                                 #        retro, report. The pre-step-0 candidate scan, both seams
-                                 #        (`before`/`after`), and all of step 7 (DEBT marker,
-                                 #        candidates, memory notes, drain) do not run, and the report
-                                 #        says `SKIPPED: distill off` on `Built:` and `Seam:`. true =
-                                 #        every wrap runs the distill half. Either way the argument
-                                 #        `distill` (`/kit:wrap distill [repo...]`) turns it on for
-                                 #        that one run. Resolves root-only like the knobs below: the
-                                 #        distill half writes to home repos.
+                                 #        retro, report; the report says `SKIPPED: distill off` on
+                                 #        `Built:` and `Seam:`. Set it in the operator `kit.toml` for
+                                 #        landing-only every time. Resolves root-only like the knobs
+                                 #        below: the distill half writes to home repos.
 
 # Autonomy knobs. Each one authorizes a WRITE, so each one reads from the
 # operator `kit.toml` or the KIT-ROOT `kit.toml` ONLY; a project `.kit.toml`
