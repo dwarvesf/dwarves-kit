@@ -955,9 +955,16 @@ chk "stray commits dirty: main did not move" "$([ "$(git -C "$SCD" rev-parse HEA
 chk "stray commits dirty: the dirty file is untouched" \
   "$([ "$(cat "$SCD/README.md")" = "readme local" ]; echo $?)"
 git -C "$SCD" checkout -q -- README.md
+git -C "$SCD" branch -q -D "$SCDR"
+# A branch outside wrap/ whose name ENDS like a carry branch is someone else's, never reused.
+git -C "$SCD" push -q origin "${SCD_STRAY}:refs/heads/foo/wrap/stray-commits-x"
 out="$("$WRAP" apply --apply "$SCD" 2>&1)"
 chk_has "stray commits rerun: the existing origin branch is reused" "$out" \
   "origin/${SCDR} already carries the 1 stray commits on main"
+chk_has "stray commits rerun: the PR command prints on reuse too" "$out" "gh pr create --head ${SCDR}"
+chk "stray commits rerun: the local branch is back" \
+  "$([ "$(git -C "$SCD" rev-parse "refs/heads/${SCDR}" 2>/dev/null)" = "$SCD_STRAY" ]; echo $?)"
+chk_no "stray commits rerun: a suffix-matching foreign branch is not adopted" "$out" "foo/wrap/stray-commits-x"
 chk "stray commits rerun: still one branch on origin" "$([ "$(commit_branches "$SCDB" | grep -c .)" = 1 ]; echo $?)"
 chk "stray commits rerun: main moved once the tree was clean" \
   "$([ "$(git -C "$SCD" rev-parse HEAD)" = "$(git -C "$SCDB" rev-parse main)" ]; echo $?)"
@@ -969,11 +976,48 @@ printf '%s' "$LAB_LOCAL" > "$SCU/_meta/LAB_LOG.md"; git -C "$SCU" commit -qam "c
 SCU_STRAY="$(git -C "$SCU" rev-parse HEAD)"
 printf '%s' $'# Lab log\n\n---\n\n2026-09-04 · local: uncommitted\n2026-09-03 · local: the other session line\n2026-09-01 · base: the first line\n' > "$SCU/_meta/LAB_LOG.md"
 SCU_BEFORE="$(cksum < "$SCU/_meta/LAB_LOG.md")"
+out="$("$WRAP" apply "$SCU" 2>&1)"
+chk_has "stray commits union overlap: the dry run predicts the block" "$out" \
+  "main would stay ahead: dirty files the stray commits change block the move: _meta/LAB_LOG.md"
 out="$("$WRAP" apply --apply "$SCU" 2>&1)"
-chk_has "stray commits union overlap: reset --keep refusal is reported" "$out" "main left ahead: git reset --keep refused:"
+chk_has "stray commits union overlap: the block is reported" "$out" \
+  "main left ahead: dirty files the stray commits change block the move: _meta/LAB_LOG.md"
 chk "stray commits union overlap: main did not move" "$([ "$(git -C "$SCU" rev-parse HEAD)" = "$SCU_STRAY" ]; echo $?)"
 chk "stray commits union overlap: the working copy is byte-identical" \
   "$([ "$SCU_BEFORE" = "$(cksum < "$SCU/_meta/LAB_LOG.md")" ]; echo $?)"
+
+echo "--- stray commits: a staged union file blocks the move (the pull skips its carry then)"
+build_union_repo scstaged
+SCT="$TMPD/uclone-scstaged"
+printf 'a note\n' > "$SCT/notes.md"; git -C "$SCT" add notes.md; git -C "$SCT" commit -qm "docs: a stray note"
+SCT_STRAY="$(git -C "$SCT" rev-parse HEAD)"
+printf '%s' "$LAB_LOCAL" > "$SCT/_meta/LAB_LOG.md"; git -C "$SCT" add _meta/LAB_LOG.md
+out="$("$WRAP" apply --apply "$SCT" 2>&1)"
+chk_has "stray commits staged: the block is reported" "$out" \
+  "main left ahead: dirty tracked files block the move: _meta/LAB_LOG.md"
+chk "stray commits staged: main did not move" "$([ "$(git -C "$SCT" rev-parse HEAD)" = "$SCT_STRAY" ]; echo $?)"
+
+echo "--- stray commits: a carry PR that squash-merged is not pushed again"
+# Run 1 pushed and a dirty file blocked the move. The PR then squash-merged and the sweeps
+# deleted the carry branch, local and origin. Run 2 finds the change on origin by patch id.
+build_union_repo scsquash
+SCQ="$TMPD/uclone-scsquash"; SCQB="$TMPD/ubare-scsquash"
+printf 'a note\n' > "$SCQ/notes.md"; git -C "$SCQ" add notes.md; git -C "$SCQ" commit -qm "docs: a stray note"
+printf 'more\n' >> "$SCQ/notes.md"; git -C "$SCQ" commit -qam "docs: more of the note"
+SQP="$TMPD/upush-scsquash"; git clone -q "$SCQB" "$SQP"; gitc "$SQP"
+git -C "$SCQ" diff HEAD~2 HEAD | git -C "$SQP" apply --index
+git -C "$SQP" commit -qm "docs: a stray note (#9)"
+git -C "$SCQB" fetch -q "$SQP" main:main
+out="$("$WRAP" apply "$SCQ" 2>&1)"
+chk_has "stray commits squashed dry-run: names the landed commit" "$out" \
+  "the 2 stray commits on main already landed on origin/main as $(git -C "$SCQB" rev-parse --short main); nothing to carry"
+out="$("$WRAP" apply --apply "$SCQ" 2>&1)"; rc=$?
+chk "stray commits squashed: apply exits 0" "$rc"
+chk "stray commits squashed: no carry branch was pushed" "$([ -z "$(commit_branches "$SCQB")" ]; echo $?)"
+chk_has "stray commits squashed: the move names where the change lives" "$out" \
+  "the 2 commits live on origin/main as $(git -C "$SCQB" rev-parse --short main)"
+chk "stray commits squashed: main is origin/main" \
+  "$([ "$(git -C "$SCQ" rev-parse HEAD)" = "$(git -C "$SCQB" rev-parse main)" ]; echo $?)"
 
 echo "--- stray commits: the knob false carries nothing"
 build_union_repo scoff

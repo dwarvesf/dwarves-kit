@@ -1035,10 +1035,11 @@ _carry_stray() {
 # origin/<def>; the pull that follows fast-forwards it the rest of the way. The fork point,
 # not origin/<def> itself, is the target: `--keep` refuses a dirty file the target changes,
 # and origin changes the union-marked board and log on every merge. The move needs a tree
-# whose only dirty tracked files are merge=union (the pull carries those) and an origin
-# branch that holds HEAD. Opens no PR.
+# whose only dirty tracked files are unstaged merge=union files the commits do not change
+# (the pull carries those) and origin holding the commits. Opens no PR.
 _carry_stray_commits() {
-  local repo="$1" def="$2" gd cd_ ahead head branch="" tip ref f dirty="" err fork
+  local repo="$1" def="$2" gd cd_ ahead head fork f tip ref branch="" landed="" pid
+  local staged changed dirty="" overlap="" block="" err where
   echo "-- stray commits:"
   gd="$(git -C "$repo" rev-parse --path-format=absolute --git-dir 2>/dev/null)"
   cd_="$(git -C "$repo" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)"
@@ -1048,55 +1049,98 @@ _carry_stray_commits() {
   if [ "$(kit_config_get_root wrap.carry_stray_lines true)" != "true" ]; then
     echo "     ${ahead} stray commits on ${def} stay local (wrap.carry_stray_lines=false)"; return 0
   fi
+  head="$(git -C "$repo" rev-parse HEAD)"
+  fork="$(git -C "$repo" merge-base "$head" "origin/${def}" 2>/dev/null)"
+  [ -n "$fork" ] || { echo "     SKIP stray commits: ${def} shares no history with origin/${def}"; return 0; }
+
+  # A staged union file blocks too: the pull skips its union carry while the index is dirty.
+  # A dirty union file the commits change is one `reset --keep` would refuse.
+  staged="$(git -C "$repo" diff --cached --name-only 2>/dev/null)"
+  changed="$(git -C "$repo" diff --name-only "$fork" "$head" 2>/dev/null)"
   while IFS= read -r -d '' f; do
-    [ -f "$repo/$f" ] && _union_marked "$repo" "$f" && continue
+    if [ -f "$repo/$f" ] && _union_marked "$repo" "$f" && ! printf '%s\n' "$staged" | grep -qxF -- "$f"; then
+      printf '%s\n' "$changed" | grep -qxF -- "$f" && overlap="${overlap}${overlap:+, }${f}"
+      continue
+    fi
     dirty="${dirty}${dirty:+, }${f}"
   done < <(git -C "$repo" diff HEAD --name-only -z 2>/dev/null)
+  if [ -n "$dirty" ]; then block="dirty tracked files block the move: ${dirty}"
+  elif [ -n "$overlap" ]; then block="dirty files the stray commits change block the move: ${overlap}"; fi
+
+  # A carry PR that squash-merged put the commits' whole change on origin as one commit, and
+  # the branch sweeps then deleted the carry branch. Pushing again would open a duplicate.
+  pid="$(git -C "$repo" diff "$fork" "$head" | git patch-id --stable | cut -d' ' -f1)"
+  [ -n "$pid" ] && landed="$(git -C "$repo" log -p --no-merges "${fork}..origin/${def}" \
+    | git patch-id --stable | awk -v p="$pid" '$1 == p { print $2; exit }')"
+
   if [ "$APPLY" != 1 ]; then
-    echo "     WOULD carry ${ahead} stray commits on ${def} onto a branch:"
-    git -C "$repo" log --format='       %h %s' "origin/${def}..HEAD"
-    if [ -n "$dirty" ]; then echo "     ${def} would stay ahead: dirty tracked files block the move: ${dirty}"
+    if [ -n "$landed" ]; then
+      echo "     the ${ahead} stray commits on ${def} already landed on origin/${def} as $(git -C "$repo" rev-parse --short "$landed"); nothing to carry"
+    else
+      echo "     WOULD carry ${ahead} stray commits on ${def} onto a branch:"
+      git -C "$repo" log --format='       %h %s' "origin/${def}..HEAD"
+    fi
+    if [ -n "$block" ]; then echo "     ${def} would stay ahead: ${block}"
     else echo "     WOULD move ${def} back to origin/${def}"; fi
     return 0
   fi
   _write_guard "$repo" || { echo "     SKIP stray commits: index.lock held by another writer"; return 0; }
-  head="$(git -C "$repo" rev-parse HEAD)"
-  # An earlier run that pushed but could not move left its branch on origin; a second
-  # branch with the same commits would open a duplicate PR.
-  while read -r tip ref; do
-    git -C "$repo" merge-base --is-ancestor "$head" "$tip" 2>/dev/null && { branch="${ref#refs/heads/}"; break; }
-  done < <(git -C "$repo" ls-remote --heads origin 'wrap/stray-commits-*' 2>/dev/null)
-  if [ -n "$branch" ]; then
-    echo "     origin/${branch} already carries the ${ahead} stray commits on ${def}"
+
+  if [ -n "$landed" ]; then
+    where="origin/${def} as $(git -C "$repo" rev-parse --short "$landed")"
+    echo "     the ${ahead} stray commits on ${def} already landed on ${where}; nothing to carry"
   else
-    branch="wrap/stray-commits-$(date +%Y%m%d-%H%M)"
-    if git -C "$repo" branch "$branch" "$head" >/dev/null 2>&1 \
-       && git -C "$repo" push -q origin "refs/heads/${branch}:refs/heads/${branch}" >/dev/null 2>&1; then
-      echo "     carried ${ahead} stray commits on ${def} to origin/${branch}"
-      echo "     open its PR with: gh pr create --head ${branch}"
+    # An earlier run that pushed but could not move left its branch on origin. The tip test
+    # comes first: a narrow fetch refspec never downloads that branch's objects.
+    while read -r tip ref; do
+      case "$ref" in refs/heads/wrap/stray-commits-*) ;; *) continue ;; esac
+      if [ "$tip" = "$head" ] || git -C "$repo" merge-base --is-ancestor "$head" "$tip" 2>/dev/null; then
+        branch="${ref#refs/heads/}"; break
+      fi
+    done < <(git -C "$repo" ls-remote --heads origin 'wrap/stray-commits-*' 2>/dev/null)
+    if [ -n "$branch" ]; then
+      git -C "$repo" rev-parse -q --verify "refs/heads/${branch}" >/dev/null \
+        || git -C "$repo" branch "$branch" "$head" >/dev/null 2>&1
+      echo "     origin/${branch} already carries the ${ahead} stray commits on ${def}"
     else
-      echo "     FAILED carry ${ahead} stray commits on ${def} to ${branch}: the branch or the push refused"
-      FAILURES=1; return 0
+      branch="wrap/stray-commits-$(date +%Y%m%d-%H%M)"
+      # A same-minute rerun after a refused push finds its own local branch at HEAD.
+      if { [ "$(git -C "$repo" rev-parse -q --verify "refs/heads/${branch}")" = "$head" ] \
+           || git -C "$repo" branch "$branch" "$head" >/dev/null 2>&1; } \
+         && git -C "$repo" push -q origin "refs/heads/${branch}:refs/heads/${branch}" >/dev/null 2>&1; then
+        echo "     carried ${ahead} stray commits on ${def} to origin/${branch}"
+      else
+        echo "     FAILED carry ${ahead} stray commits on ${def} to ${branch}: the branch or the push refused"
+        FAILURES=1; return 0
+      fi
     fi
+    echo "     open its PR with: gh pr create --head ${branch}"
+    where="$branch"
   fi
-  if [ -n "$dirty" ]; then echo "     ${def} left ahead: dirty tracked files block the move: ${dirty}"; return 0; fi
+  [ -z "$block" ] || { echo "     ${def} left ahead: ${block}"; return 0; }
+
   # The move is safe only once origin itself holds every commit it moves away from.
-  tip="$(git -C "$repo" ls-remote origin "refs/heads/${branch}" 2>/dev/null | cut -f1)"
-  if [ -z "$tip" ] || ! git -C "$repo" merge-base --is-ancestor "$head" "$tip" 2>/dev/null \
-     || [ "$(git -C "$repo" rev-parse HEAD)" != "$head" ]; then
-    echo "     ${def} left ahead: origin/${branch} does not hold HEAD"; return 0
-  fi
-  fork="$(git -C "$repo" merge-base HEAD "origin/${def}" 2>/dev/null)"
-  if [ -z "$fork" ]; then
-    echo "     ${def} left ahead: it shares no history with origin/${def}"
-  elif err="$(git -C "$repo" reset -q --keep "$fork" 2>&1)"; then
-    if [ "$fork" = "$(git -C "$repo" rev-parse "origin/${def}")" ]; then
-      echo "     moved ${def} back to origin/${def}; the ${ahead} commits live on ${branch}"
-    else
-      echo "     moved ${def} back to $(git -C "$repo" rev-parse --short "$fork"), where it left origin/${def}; the ${ahead} commits live on ${branch}"
+  if [ -z "$landed" ]; then
+    tip="$(git -C "$repo" ls-remote origin "refs/heads/${branch}" 2>/dev/null | cut -f1)"
+    if [ -z "$tip" ] || { [ "$tip" != "$head" ] && ! git -C "$repo" merge-base --is-ancestor "$head" "$tip" 2>/dev/null; }; then
+      echo "     ${def} left ahead: origin/${branch} does not hold HEAD"; return 0
     fi
+  fi
+  if [ "$(git -C "$repo" rev-parse HEAD)" != "$head" ]; then
+    echo "     ${def} left ahead: HEAD moved during the step"; return 0
+  fi
+  if ! err="$(git -C "$repo" reset -q --keep "$fork" 2>&1)"; then
+    echo "     ${def} left ahead: git reset --keep refused: $(printf '%s' "$err" | head -n 1)"; return 0
+  fi
+  # A commit that landed between the check above and the reset is on no branch now; put it back.
+  if [ "$(git -C "$repo" rev-parse ORIG_HEAD 2>/dev/null)" != "$head" ]; then
+    git -C "$repo" reset -q --keep ORIG_HEAD 2>/dev/null
+    echo "     ${def} left ahead: HEAD moved during the step, restored"; return 0
+  fi
+  if [ "$fork" = "$(git -C "$repo" rev-parse "origin/${def}")" ]; then
+    echo "     moved ${def} back to origin/${def}; the ${ahead} commits live on ${where}"
   else
-    echo "     ${def} left ahead: git reset --keep refused: $(printf '%s' "$err" | head -n 1)"
+    echo "     moved ${def} back to $(git -C "$repo" rev-parse --short "$fork"), where it left origin/${def}; the ${ahead} commits live on ${where}"
   fi
 }
 
