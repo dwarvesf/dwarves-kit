@@ -101,6 +101,27 @@ matched an unrelated `*) continue ;; esac` at wrap.sh:454; re-anchored, it went
 RED. The overlap control failed "green after restore" with eleven suites
 running in parallel; alone it passed all three steps.
 
+## Test plan coverage
+
+Every row runs in the green run's `tests/test-wrap.sh`, stray-commits block
+(`--- stray commits:` sub-blocks); the negative control names the mutation
+that turns each guarded row RED.
+
+| Row | Run / skip reason |
+|---|---|
+| 1 | green run, "stray commits dry-run" checks |
+| 2 | green run, "stray commits --apply" checks; RED under the fork-point and wiring mutations |
+| 3 | green run, "stray commits rerun: nothing left ahead" |
+| 4 | green run, "stray commits, origin unmoved" checks |
+| 5 | green run, "stray commits dirty" checks; RED under the block mutation |
+| 6 | green run, "stray commits rerun" checks; RED under the reuse mutation |
+| 7 | green run, "stray commits union overlap" checks; RED under the overlap mutation |
+| 8 | green run, "stray commits staged" checks; RED under the staged mutation |
+| 9 | green run, "stray commits rerun" local-branch and suffix checks; RED under the relocal and prefix mutations |
+| 10 | green run, "stray commits squashed" checks; RED under the squash mutation |
+| 11 | green run, "stray commits knob off" checks; RED under the knob mutation |
+| 12 | green run, "stray commits refused push" checks; RED under the push-fail mutation |
+
 ## Review
 
 One correctness lens (Opus) on the first commit. Every finding but one was
