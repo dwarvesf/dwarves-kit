@@ -6,7 +6,7 @@
 #   wrap.sh apply [--apply] [--worktrees] [--own <path>]... [--under <root>]... <repo> [...]  dry-run by default
 #   wrap.sh merge [--apply] [--pr N] <repo>                 merges ONE own green PR (--pr: a named draft)
 #   wrap.sh land  <worktree> [--title T] [--body-file F]    one hand-made worktree, landed
-#   wrap.sh start <repo> <branch>                           one hand-made worktree, started
+#   wrap.sh start <repo> <branch> [--carry [<path>...]]     one hand-made worktree, started
 #   wrap.sh log   "<slug>: <one sentence>" [--date YYYY-MM-DD]
 #   wrap.sh default-branch <repo>                           prints the detected name
 #   wrap.sh knowledge-root <repo>                           the fenced knowledge dir
@@ -22,6 +22,11 @@
 #
 #   internal, a test seam: apply --tips-file <path> replaces the run's own tip snapshot
 #   internal, a test seam: WRAP_ORIGIN_DELETE_CHUNK sets the names per origin delete push
+#
+#   start's --carry (repeatable path, or bare for everything) moves the main checkout's
+#   uncommitted changes, tracked and untracked, into the worktree `start` just created, via a
+#   named `git stash push -u`, applied by identity, never by index. Nothing dirty in scope is
+#   not a refusal; an index.lock held by another writer is, and leaves the worktree in place.
 #
 # Verify a change in the shape commands/wrap.md runs it: step 5 passes `--own` on a shared
 # repo, so a test or real-repo run of the bare form alone misses that path. The first origin
@@ -44,7 +49,9 @@
 # (the main checkout on the default branch and ahead of origin: one local and pushed
 # wrap/stray-commits-* branch at HEAD, then one `reset --keep origin/<default>` when only
 # merge=union files are dirty and origin holds HEAD, same knob),
-# and `start`'s one worktree add under `.claude/worktrees` on a new local branch.
+# `start`'s one worktree add under `.claude/worktrees` on a new local branch, and `start
+# --carry`'s one named `git stash push -u` in the main checkout, one `stash apply` in the
+# new worktree, and, on a clean apply, one `stash drop` of that same named entry.
 # Every other action is a report line. The
 # verbs never switch a branch and never force a push or a pull. The one force is
 # `worktree remove -f -f`: it overrides a LOCK, never a dirty, detached, checked-out or
@@ -2019,15 +2026,14 @@ cmd_land() {
 
 # --------------------------------------------------------------------------- start
 
-# cmd_start <repo> <branch> -- the start half `land` finishes. Sessions repeatedly
-# hand-run "worktree off origin/<default> with a fresh branch" when the main
-# checkout is dirty or foreign; this is that step as a verb. It resolves the
-# repo's default branch through the same `_default_branch` helper every other
-# verb uses, fetches it quietly, and creates <repo>/.claude/worktrees/<slug> at
-# origin/<default> on a NEW local branch <branch>, where <slug> is the branch
-# name with its `type/` prefix stripped (gate-ledger's rid rule). The worktree
-# path is the only stdout line, so a caller captures it directly; every
-# diagnostic goes to stderr.
+# cmd_start <repo> <branch> [--carry [<path>...]] -- the start half `land` finishes.
+# Sessions repeatedly hand-run "worktree off origin/<default> with a fresh branch" when the
+# main checkout is dirty or foreign; this is that step as a verb. It resolves the repo's
+# default branch through the same `_default_branch` helper every other verb uses, fetches it
+# quietly, and creates <repo>/.claude/worktrees/<slug> at origin/<default> on a NEW local
+# branch <branch>, where <slug> is the branch name with its `type/` prefix stripped
+# (gate-ledger's rid rule). The worktree path is the only stdout line, so a caller captures
+# it directly; every diagnostic goes to stderr.
 #
 # A dirty main checkout is never a refusal: the worktree is isolated, which is
 # the point of the verb. What refuses, each with its reason and before any
@@ -2036,9 +2042,32 @@ cmd_land() {
 # <branch> already a local ref, or already pushed to origin; the worktree path
 # already on disk; no default branch resolved; a failed fetch; a held
 # index.lock; and a `worktree add` git itself refuses.
+#
+# --carry moves the main checkout's own uncommitted edits into the freshly created worktree,
+# once the worktree exists exactly as it would without the flag: `_start_carry` (below) owns
+# that half. A carry refusal (a foreign index.lock, or an apply conflict) never undoes the
+# worktree; the worktree is the point that already landed.
 cmd_start() {
-  [ $# -eq 2 ] || { echo "usage: wrap.sh start <repo> <branch>" >&2; return 64; }
-  local repo="$1" branch="$2"
+  local repo="" branch="" carry=0 ncarry=0 seen_repo=0 seen_branch=0 arg
+  local carry_paths
+  while [ $# -gt 0 ]; do
+    arg="$1"
+    case "$arg" in
+      --carry)
+        carry=1; shift
+        while [ $# -gt 0 ]; do ncarry=$(( ncarry + 1 )); carry_paths[ncarry]="$1"; shift; done
+        ;;
+      -*) echo "wrap.sh start: unknown flag '${arg}'" >&2; return 64 ;;
+      *)
+        if [ "$seen_repo" = 0 ]; then repo="$arg"; seen_repo=1
+        elif [ "$seen_branch" = 0 ]; then branch="$arg"; seen_branch=1
+        else echo "wrap.sh start: unexpected argument '${arg}'" >&2; return 64
+        fi
+        shift ;;
+    esac
+  done
+  [ "$seen_repo" = 1 ] && [ "$seen_branch" = 1 ] \
+    || { echo "usage: wrap.sh start <repo> <branch> [--carry [<path>...]]" >&2; return 64; }
   _is_repo "$repo" || { echo "wrap.sh start: ${repo} is not a git repo" >&2; return 64; }
   # git records a worktree fully resolved, so the printed path resolves the same way.
   repo="$(cd "$repo" 2>/dev/null && pwd -P)" \
@@ -2082,7 +2111,57 @@ cmd_start() {
   git -C "$repo" worktree add -b "$branch" "$wt" "origin/${def}" >/dev/null 2>&1 \
     || { echo "wrap.sh start: git worktree add refused ${wt} (${branch} at origin/${def})" >&2; return 1; }
   printf '%s\n' "$wt"
-  return 0
+  [ "$carry" = 1 ] || return 0
+  if [ "$ncarry" -gt 0 ]; then
+    _start_carry "$repo" "$wt" "$branch" "${carry_paths[@]}"
+  else
+    _start_carry "$repo" "$wt" "$branch"
+  fi
+  return $?
+}
+
+# _start_carry <repo> <wt> <branch> [<path>...] -- the --carry half. Stashes the main
+# checkout's own uncommitted edits (tracked and untracked, restricted to the given paths when
+# any are given, else everything) under a name unique to this run, finds that entry by its
+# message (never by index: the stash stack is shared with other sessions), applies it inside
+# the new worktree, and on a clean apply drops that same entry by re-finding it. A conflict
+# keeps the entry and reports its identity instead of guessing which side is right. Never
+# `stash pop`, never a bare `stash`, never an entry this run did not push itself.
+_start_carry() {
+  local repo="$1" wt="$2" branch="$3"; shift 3
+  local name sha ref h s gd out
+
+  _write_guard "$repo" \
+    || { echo "wrap.sh start: index.lock held by another writer; the worktree exists at ${wt}" >&2; return 2; }
+
+  name="wrap-start-carry ${branch} $(date +%s)-$$"
+  if [ $# -gt 0 ]; then
+    git -C "$repo" stash push -u -q -m "$name" -- "$@" >/dev/null 2>&1
+  else
+    git -C "$repo" stash push -u -q -m "$name" >/dev/null 2>&1
+  fi
+
+  sha=""
+  while read -r h s; do
+    case "$s" in *": ${name}") sha="$h"; break ;; esac
+  done < <(git -C "$repo" stash list --format='%H %gs' 2>/dev/null)
+  if [ -z "$sha" ]; then
+    echo "nothing to carry" >&2
+    return 0
+  fi
+  echo "carried: $(git -C "$repo" stash show -u --name-only "$sha" 2>/dev/null | tr '\n' ' ')" >&2
+
+  if out="$(git -C "$wt" stash apply -q "$sha" 2>&1)"; then
+    ref=""
+    while read -r gd h; do
+      [ "$h" = "$sha" ] && { ref="$gd"; break; }
+    done < <(git -C "$repo" stash list --format='%gd %H' 2>/dev/null)
+    [ -z "$ref" ] || git -C "$repo" stash drop -q "$ref" >/dev/null 2>&1
+    return 0
+  fi
+  echo "wrap.sh start: carry apply conflicted, stash $(_short "$sha") (${name}) kept" >&2
+  [ -z "$out" ] || echo "$out" >&2
+  return 2
 }
 
 # --------------------------------------------------------------------------- log
