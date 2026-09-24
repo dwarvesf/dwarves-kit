@@ -57,7 +57,7 @@ GENERATED , do not hand-edit. Regenerate: `bash lib/registry/feature-registry.sh
 | Agent | Trigger | Dispatched by | Description | Specs | Tests |
 |---|---|---|---|---|---|
 | `acceptance-verifier` | `[D]` | battery, verify | Dynamically executes the active spec's acceptance criteria via its `## Verification` section and reports whether the build actually satisfi… | SPEC-035, SPEC-090, SPEC-092 +4 | test-every-step-review.sh, test-kit-contract.sh, test-meta.sh +1 |
-| `advisor` | `[D]` | adopt, battery, mega +3 | The single cross-cutting generic review lens. Runs in TWO modes at the final integration/UAT boundary -- critique (an extra uniform lens ON… | SPEC-090, SPEC-091, SPEC-092 +22 | proof-loop-09-scenario-b.sh, test-adopt.sh, test-advisor.sh +13 |
+| `advisor` | `[D]` | adopt, battery, mega +3 | The single cross-cutting generic review lens. Runs in TWO modes at the final integration/UAT boundary -- critique (an extra uniform lens ON… | SPEC-090, SPEC-091, SPEC-092 +23 | proof-loop-09-scenario-b.sh, test-adopt.sh, test-advisor.sh +13 |
 | `agent-effectiveness` | `[D]` | draft-agent, loop-engineering (skill) | Validates an agent definition's EFFECTIVENESS (not just its structure) across four lenses -- tools minimal-yet-sufficient, description trig… | SPEC-088, SPEC-090, SPEC-091 +4 | test-advisor.sh, test-agent-effectiveness.sh, test-break-it.sh +2 |
 | `api-reviewer` | `[D]` | battery, review-team | Reviews a diff through the API-CONTRACT lens only (breaking changes, versioning, request/response schema, error codes, backward compat, ide… | SPEC-111 | test-meta.sh |
 | `audit-scanner` | `[D]` | backlog-reconcile (skill), ci-drift (skill), doc-drift (skill) +4 | Shared read-only Tier-2 evidence scanner for audit-loop instances (doc-drift, topology-drift, ci-drift, backlog-reconcile, web-drift, repo-… | SPEC-220, SPEC-222, SPEC-225 +3 | test-audit-scanner-contract.sh, test-meta.sh, test-repohygiene.sh |
@@ -134,7 +134,7 @@ GENERATED , do not hand-edit. Regenerate: `bash lib/registry/feature-registry.sh
 | `safety-gate.sh` | `[E]` | PreToolUse | PreToolUse hook, matcher: Bash | SPEC-003, SPEC-014, SPEC-019 +8 | proof-loop-09-scenario-b.sh, test-codex-hooks.sh, test-gate-opt-out.sh +4 |
 | `secrets-guard.sh` | `[E]` | PreToolUse | PreToolUse hook, matcher: Read\|Edit\|Bash | SPEC-014, SPEC-084, SPEC-288 | test-codex-hooks.sh, test-hooks.sh, test-install-modules.sh +1 |
 | `session-state-save.sh` | `[E]` | Stop+SubagentStop | Stop hook (runs alongside anti-rationalization + slop-cleaner) | SPEC-003, SPEC-010, SPEC-030 +5 | test-hooks.sh, test-install-modules.sh, test-meta.sh |
-| `ship-gate.sh` | `[E]` | PreToolUse | each matrix row mapped to the run that exercised it, or an | SPEC-006, SPEC-042, SPEC-044 +51 | test-codex-hooks.sh, test-every-step-review.sh, test-gate-opt-in.sh +17 |
+| `ship-gate.sh` | `[E]` | PreToolUse | each matrix row mapped to the run that exercised it, or an | SPEC-006, SPEC-042, SPEC-044 +52 | test-codex-hooks.sh, test-every-step-review.sh, test-gate-opt-in.sh +18 |
 | `slop-cleaner.sh` | `[E]` | Stop | breaking the "Exit 0 always" contract three lines above. | SPEC-013, SPEC-014, SPEC-084 +3 | test-hooks.sh, test-install-modules.sh |
 | `spec-drift-guard.sh` | `[E]` | PreToolUse | PreToolUse hook, matcher: Write | SPEC-003, SPEC-005, SPEC-006 +4 | test-hooks.sh, test-install-modules.sh |
 | `statusline.sh` | `[E]` | StatusLine | StatusLine script | SPEC-025, SPEC-084, SPEC-219 +1 | test-hooks.sh, test-install-modules.sh, test-meta.sh |

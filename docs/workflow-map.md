@@ -344,7 +344,7 @@ What an ordinary change in this repo runs, from edit to landed.
 deploy check, worktree tidy, activity line, report. Its heavier half is config. `[wrap]
 distill` turns the distill pass on at all; `build_candidates` lets step 7b wire a distilled
 candidate into its home repo; `drain_staged` runs only rows the operator staged by hand,
-since step 7b stages nothing; `before` and `after` hang a skill on each side of the landing. `follow_through` (`off`, `lanes`, `all`, default `off`; `/kit:wrap follow` or `follow all` for one run) adds step 10: after the report, background workers build the in-lane leftovers and finishable FYI follow-ups, land the green own PRs, and print a second `## Follow-through:` report; `all` also runs full-lane candidates through their full lane into a draft PR wrap never merges.
+since step 7b stages nothing; `before` and `after` hang a skill on each side of the landing. `follow_through` (`off`, `lanes`, `all`, default `off`; `/kit:wrap follow` or `follow all` for one run) adds step 10: after the report, background workers build the in-lane leftovers and finishable FYI follow-ups, merge the green own PRs once checks settle, and print a second `## Follow-through:` report; `all` also runs full-lane candidates through their full lane into a draft PR wrap never merges.
 Each item the report lists under `**Built:**` opens with a verdict word, BUILT, REPORTED, or
 NOTE, and `lib/wrap/report-lint.sh` fails an item without one. A candidate not built is
 REPORTED, never filed as a board row or staged.

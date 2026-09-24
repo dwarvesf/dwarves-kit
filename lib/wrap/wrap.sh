@@ -2377,9 +2377,11 @@ cmd_follow_mode() {
     *) echo "usage: wrap.sh follow-mode [lanes|all]" >&2; return 64 ;;
   esac
   if [ "$mode" != off ]; then
+    set -f   # word-split the list, never glob it
     for lane in $(kit_config_get_root wrap.build_lanes "tiny"); do
       [ "$lane" = full ] || lanes="${lanes:+$lanes,}$lane"
     done
+    set +f
     [ "$mode" = all ] && lanes="${lanes:+$lanes,}full"
   fi
   printf '%s %s\n' "$mode" "${lanes:-none}"

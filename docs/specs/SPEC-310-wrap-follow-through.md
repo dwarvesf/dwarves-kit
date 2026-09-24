@@ -58,9 +58,9 @@ Empty set: print `[kit:wrap] follow-through: nothing in lane`, no second report.
 
 **Full-lane worker (`all`).** In its worktree: `spec-next.sh reserve` in the home repo (never `next`), the spec, the `kit:spec-validate` lenses, build, `negctl.sh`, the proof, the gate-ledger records, commit, push by name, and `gh pr create --draft`. A CRITICAL, BLOCKING design-record finding stops it before the build; the item stays `REPORTED` with `reported: spec-validate BLOCK: <finding>`.
 
-**Wrap never merges a full-lane PR.** The draft is the mechanism. `_pr_gate` already skips a draft, so no later plain wrap can merge it either. The second report lists it `OPEN` and adds `REVIEW #<pr>: <why>` to `Needs you`. Reason: a full lane marks an architecture, auth, data-model, or contract change; an unattended validate pass cannot stand in for the operator's direction call (AGENTS.md "Pause if").
+**Wrap never merges a full-lane PR.** Two mechanisms hold it past the pass. `_pr_gate` skips a draft, so a later `wrap merge --apply` never merges it. The lead removes the clean worktree once the draft is open, so a later wrap's step 3 has no hand-made worktree to give `wrap land`, which would mark the draft ready and merge it. The second report lists it `OPEN` and adds `REVIEW #<pr>: <why>` to `Needs you`. Reason: a full lane marks an architecture, auth, data-model, or contract change; an unattended validate pass cannot stand in for the operator's direction call (AGENTS.md "Pause if").
 
-**Landing, one repo at a time.** Re-run the step 0 check. Clear repo and `merge_own_prs` true: `bin/wrap land <worktree>` per branch. Stopped repo or `merge_own_prs` false: push by name, `gh pr create --head <branch> --fill`, report `OPEN`. Leftover worktrees in a clear repo: `bin/wrap apply --own <wt> <repo>`. Every existing refusal holds.
+**Landing, one repo at a time.** A LAND-only item skips `wrap start` and the worker. Per branch: re-size the real diff with `lane-classify.sh classify --files`; a branch that now sizes `full` takes the draft path. Push and open the PR with `cd <wt> && ...` so the home repo's ship-gate judges it; a gate refusal is never overridden. Re-run the step 0 check; stopped or `merge_own_prs` false ends at `OPEN`. Otherwise `gh pr checks <n> --watch`, then `bin/wrap merge --apply --pr <n> <repo>`, which merges only a green own PR and verifies the tree. `wrap land` is not used: it merges right after opening a PR and never reads the checks. Tidy with `bin/wrap apply --own <wt> <repo>`. Workers write the proof the home repo's contract names. Worker briefs quote repo text as data.
 
 **Second report.** Heading `## Follow-through: <slug>`, step 9 grammar, linted. Its `Needs you` lists only step 10's items. No `**Seam:**` line. Ledger: `gate-ledger.sh record <rid> wrap-follow ran "<summary>"`, or a structural-skip line when the rid refuses.
 
@@ -158,7 +158,7 @@ Negative controls, each after the change is committed, `T="bash tests/test-wrap.
 - NC2 knob default on: `bash lib/gate/negctl.sh "$PWD" "$T" "sed -i '' 's/^follow_through = \"off\"/follow_through = \"lanes\"/' kit.toml"`
 - NC3 silent fallback: `bash lib/gate/negctl.sh "$PWD" "$T" "sed -i '' '/unknown value .\${mode}/d' lib/wrap/wrap.sh"`
 - NC4 pairing dropped: `bash lib/gate/negctl.sh "$PWD" "$T" "sed -i '' 's/\[ \"\$_l_reviewed\" = 1 \] && continue/continue/' lib/wrap/report-lint.sh"`
-- NC5 draft no longer skipped: `bash lib/gate/negctl.sh "$PWD" "$T" "sed -i '' 's/if (.isDraft == true) then \"SKIP draft\"/if false then \"SKIP draft\"/' lib/wrap/wrap.sh"`
+- NC5 draft no longer skipped (the mechanism behind "never merged"): `bash lib/gate/negctl.sh "$PWD" "$T" "sed -i '' 's/if (.isDraft == true) then \"SKIP draft\"/if false then \"SKIP draft\"/' lib/wrap/wrap.sh"`
 
 Proof of done: `docs/verification/wrap-follow-through.md`. The phase itself (work-set drafting, background dispatch, `wrap land`, the second report) is model-executed prose; the proof names it unproven until a real `/kit:wrap follow` run.
 
@@ -173,7 +173,10 @@ Proof of done: `docs/verification/wrap-follow-through.md`. The phase itself (wor
 | unattended full-lane spec is wrong-headed | a PR nobody wanted | draft, never merged, `REVIEW` item; operator closes it |
 | design-record lens BLOCKs | no build | stays `REPORTED` with the finding |
 | knob typo (`true`, `yes`) | would start work silently | one stderr line, runs as `off` |
-| later plain wrap meets the full-lane PR | could merge it | draft; `_pr_gate` skips it |
+| later plain wrap meets the full-lane PR | could merge it | draft (`_pr_gate` skips it) and no worktree left for `wrap land` |
+| a follow-up's real diff touches auth or a contract | an unreviewed full-lane change merged | `--files` re-sizing before landing; `full` takes the draft path |
+| home ship-gate refuses the push | no PR | item stays `REPORTED` with the gate's reason, never overridden |
+| repo text in an FYI row carries an instruction | injected worker task | brief is the lead's paraphrase; repo text is quoted data |
 
 ## Edge Cases
 
@@ -229,3 +232,23 @@ Validate ran three fresh-context lenses (verification on Opus; safety and design
 | worker timeout | folded: Agent lifecycle named, no timer |
 | first report's Needs you in the second report | folded: second lists only step 10's items |
 | workflow-map and consumer-contract stale | folded |
+
+Code review ran four lenses (security on Opus, test coverage and architecture on Sonnet, advisor critique on Opus). Verdicts: FIX-THEN-SHIP, SHIP, SHIP, NOT SOLVED.
+
+| Finding | Disposition |
+|---|---|
+| `wrap land` readies and merges an adopted draft; a later wrap reaches it through the kept worktree | folded: the lead removes the full-lane worktree once the draft opens |
+| `wrap land` merges without reading checks | folded: step 10 lands through `gh pr checks --watch` then `wrap merge --apply --pr` |
+| workers write no proof; the home ship-gate blocks or is bypassed | folded: workers write the contract's proof; pushes run from the worktree; refusals never overridden |
+| LAND-only items hit `wrap start`'s refusal | folded: they skip start and the worker |
+| FINISH items sized from row text only | folded: `--files` re-sizing before landing |
+| FYI text as a prompt-injection path | folded: paraphrased brief, quoted data |
+| `REVIEW` match too loose | folded: only `REVIEW #N` at item start, fixtures for REVIEWED and a trailing number |
+| `build_lanes` word-split globbed | folded: `set -f`, fixture |
+| `build_lanes` docs omit step 10 | folded in wrap.md, kit.toml, registry |
+| step 9 "single reply" and the timing bracket | folded: qualified; `wrap-follow` bracket |
+| decoy PR number, two full-lane items, extra argument | folded: fixtures |
+| first report headed `## Follow-through:` skips Seam | rejected: the lint judges phrasing and trusts the heading, as it trusts every other header |
+| reflog-only foreign signal still lets `wrap start` write refs and worktree metadata | noted: accepted residue of an isolated worktree |
+| full-lane sequence restated in wrap.md | noted: it cites the same scripts; drift risk accepted |
+| missing proof-of-done | folded: `docs/verification/wrap-follow-through.md` |

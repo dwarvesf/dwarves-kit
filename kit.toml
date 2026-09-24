@@ -380,13 +380,14 @@ build_lanes = "tiny"            # [impl] step 7b sizing. Space-separated lanes s
                                  #        in the minutes an operator gave you to close the session;
                                  #        wrap reports it as `(lane=full, reported: <why>)`.
                                  #        Ignored entirely when `build_candidates` is false, which
-                                 #        reports everything.
+                                 #        reports everything. Step 10 (`follow_through`) builds
+                                 #        the same lanes, minus `full`, after the report.
 follow_through = "off"          # [impl] step 10, after the step 9 report. One of off, lanes, all.
                                  #        off = the first report ends the pass. lanes = background
                                  #        workers build every REPORTED candidate whose lane is in
                                  #        `build_lanes` (never `full`) and every FYI follow-up the
-                                 #        pass can finish in those lanes, land the green own PRs
-                                 #        through `wrap land`, and print a `## Follow-through:`
+                                 #        pass can finish in those lanes, merge the green own PRs
+                                 #        through `wrap merge`, and print a `## Follow-through:`
                                  #        report. all = lanes, plus each REPORTED full-lane
                                  #        candidate through the home repo's full lane unattended;
                                  #        its PR opens as a DRAFT and wrap never merges it, the

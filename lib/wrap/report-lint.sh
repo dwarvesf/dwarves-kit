@@ -97,12 +97,10 @@ while IFS= read -r line; do
     *) continue ;;
   esac
 
-  case "${line#[a-z]. }" in
-    REVIEW*)
-      for _r_pr in $(printf '%s' "$line" | grep -oE '#[0-9]+' | tr -d '#'); do
-        review_prs="${review_prs}${_r_pr} "
-      done ;;
-  esac
+  # Only the number right after `REVIEW #` counts, so `REVIEWED` and a second `#N` later in
+  # the sentence never whitelist a PR.
+  _r_pr="$(printf '%s' "${line#[a-z]. }" | sed -nE 's/^REVIEW #([0-9]+)([^0-9].*)?$/\1/p')"
+  [ -n "$_r_pr" ] && review_prs="${review_prs}${_r_pr} "
 
   lower="$(printf '%s' "$line" | tr '[:upper:]' '[:lower:]')"
 
