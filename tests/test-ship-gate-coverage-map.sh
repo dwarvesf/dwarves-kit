@@ -97,13 +97,19 @@ gate() { # $1=repo  $2=command  $3=stderr-capture  -> echoes exit code
       | CLAUDE_PLUGIN_ROOT="$KIT" DWARVES_KIT_LOG_DIR="$LOGDIR" bash "$KIT/hooks/ship-gate.sh" >/dev/null 2>"$3"; echo $? )
 }
 
+notes_for() { # $1=spec path -- the full lane's implementation-notes file, named after the spec
+  local d; d="$(dirname "$1")/../implementation-notes"; mkdir -p "$d"
+  printf '# Notes\nNo deviations; matches the spec verbatim\n' > "$d/$(basename "$1")"
+}
+
 record_gates() { # $1=slug -- record every gate the full lane requires, so the lane arm passes
   while read -r g; do
     DWARVES_KIT_LOG_DIR="$LOGDIR" bash "$KIT/lib/gate/gate-ledger.sh" record "$1" "$g" ran "test" >/dev/null 2>&1
   done < <(DWARVES_KIT_LOG_DIR="$LOGDIR" bash "$KIT/lib/gate/gate-ledger.sh" required full)
 }
 
-spec_with_plan() { # $1=path -- a full-lane spec carrying a 2-row ## Test plan
+spec_with_plan() { # $1=path -- a full-lane spec carrying a 2-row ## Test plan, plus its notes file
+  notes_for "$1"
   cat > "$1" <<'EOF'
 # Spec: x
 Status: DRAFT
@@ -148,6 +154,7 @@ RCB="$(gate "$TB" 'git push -u origin HEAD' "$EB")"
 TC="$(mktemp -d)"; mkrepo "$TC"
 git -C "$TC" switch -qc feat/cmapc
 printf '# Spec: x\nStatus: DRAFT\nLane: full\n' > "$TC/docs/specs/SPEC-001-cmapc.md"
+notes_for "$TC/docs/specs/SPEC-001-cmapc.md"
 git -C "$TC" add -A; git -C "$TC" commit -qm work
 record_gates cmapc
 EC="$(mktemp)"
