@@ -128,7 +128,7 @@ Layered by design: the SPINE installs unconditionally (six hooks guarding push, 
 | Module | What it wires | Kind |
 |---|---|---|
 | `board` | `backlog-stage` (SessionEnd: stage session work-items to a staging file, opt-in via `BACKLOG_STAGE_AUTO=1`, default off); its `--surface` pass also runs `intake-sweep` (consumer-declared deferred-link sources, config-gated); `board-row-gate` (PreToolUse Bash: blocks a commit that adds a new board row without a `board-row-ok: <reason>` line) | 2 hooks |
-| `session` | `context-readiness`, `output-offload`, `pre-compact-backup`, `post-compact-reinject`, `session-state-save`, `harvest`, `citation-guard`, `context-budget` (warns once per 100k-token band once live context passes 200k, `KIT_CTX_WARN`/`KIT_CTX_STEP`); plus a PATH shim for the `session` CLI (`session <intel\|observe\|recall\|report\|semantic>`, ADR-0034: the five prefixed CLIs collapsed into one entry) | 8 hooks + 1 CLI |
+| `session` | `context-readiness`, `output-offload`, `pre-compact-backup`, `post-compact-reinject`, `session-state-save`, `harvest`, `citation-guard`, `context-budget` (warns once at 65% of the model's context window, again at 70%, `KIT_CTX_WARN_PCT`/`KIT_CTX_STRONG_PCT`/`KIT_CTX_WINDOW`); plus a PATH shim for the `session` CLI (`session <intel\|observe\|recall\|report\|semantic>`, ADR-0034: the five prefixed CLIs collapsed into one entry) | 8 hooks + 1 CLI |
 | `advisor` | `context-hints` (session-elapsed + keyword skill hints) + `tool-policy-guard` (PreToolUse allow/ask/deny per tool domain; inert until a `tool-policy.json` exists) | 2 hooks |
 | `cosmetic` | `auto-format`, `notification`, `slop-cleaner`, `statusline`, `codebase-index`, `permission-auto-approve` | 6 hooks |
 | `queue` | `/kit:mega` + `/kit:dispatch` machinery (`lib/queue/orchestrate.sh`), the overnight queue launcher (`lib/queue/queue.sh`) | hookless (lib) |
@@ -297,7 +297,7 @@ Within one spec, tasks run sequentially. Across specs, `/kit:dispatch` fans out 
 | prose-rag | UserPromptSubmit | Injects relevant prior notes on recall-shaped prompts (dormant unless PROSE_RAG_INJECT=1) |
 | board-row-gate | PreToolUse(Bash) | Blocks a `git commit` that adds a new board row (a first-cell ID absent from HEAD's `_meta/BACKLOG.md` or `BACKLOG.md`, any prefix) unless the message carries a `board-row-ok: <reason>` line. On by default; a repo opts out with `[gate] board_row_gate = false` in its committed `.kit.toml`; session kill switch `DWARVES_KIT_SKIP_BOARD_ROW_GATE=1` |
 | batch-debt-warn | PreToolUse(Bash) | Warns once when a session merges a 2nd PR with no lane START in the gate ledger since the first merge |
-| context-budget | UserPromptSubmit | Warns once per 100k-token band once live session context passes 200k (KIT_CTX_WARN/KIT_CTX_STEP); clears on a drop below budget (e.g. after /compact) |
+| context-budget | UserPromptSubmit | Warns once at 65% of the model's context window (advisory), again at 70% (directive) (KIT_CTX_WARN_PCT/KIT_CTX_STRONG_PCT/KIT_CTX_WINDOW); clears on a drop below the warn threshold (e.g. after /compact or /clear) |
 | auto-format | PostToolUse(Write\|Edit) | Runs formatter on every file change |
 | output-offload | PostToolUse(*) | Offloads a >2k-token tool output to a file + leaves a terse pointer |
 | spec-drift-guard | PreToolUse(Write) | Warns when creating files not in the spec |

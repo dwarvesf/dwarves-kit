@@ -238,8 +238,9 @@ single-reader fence). No env vars; per-repo values live in `.kit.toml [sync]`.
 | SKILL_CURATOR_CURATOR_CMD | env-only | (real `claude -p`) | [impl] | session | Override the curator's model-invocation command (test injection point). |
 | SKILL_CURATOR_REVIEWER_CMD | env-only | (real `claude -p`) | [impl] | session | Override the async reviewer's model-invocation command. |
 | DWARVES_KIT_SESSION_MARKER | env-only | `/tmp/.dwarves-kit-session-start` | [impl] | session | Path of the session-start marker file. |
-| KIT_CTX_WARN | env-only | `200000` | [impl] | session | Live-context token budget the context-budget hook warns at (SPEC-255). |
-| KIT_CTX_STEP | env-only | `100000` | [impl] | session | Band width above the budget; the context-budget hook warns once per band (SPEC-255). |
+| KIT_CTX_WARN_PCT | env-only | `65` | [impl] | session | Percent of the context window at which the context-budget hook's advisory notice fires (SPEC-255). |
+| KIT_CTX_STRONG_PCT | env-only | `70` | [impl] | session | Percent of the context window at which the context-budget hook escalates to a directive notice (SPEC-255). |
+| KIT_CTX_WINDOW | env-only | auto (`200000`, or `1000000` for a `1m`-marked model) | [impl] | session | Context window size the context-budget hook computes percentages against (SPEC-255). |
 | SESSION_AUDIT_CMD | env-only | `claude -p --model <M> --allowedTools Bash,Read,Grep,Glob --output-format json` | [impl] | session | Agent runtime `session audit run` pipes its rendered prompt to; tests inject fixtures here. |
 | SESSION_AUDIT_DATE | env-only | (today) | [impl] | session | Report-date override (YYYY-MM-DD) for deterministic tests. |
 
