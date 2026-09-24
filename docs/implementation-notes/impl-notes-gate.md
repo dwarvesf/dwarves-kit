@@ -15,3 +15,8 @@ Deltas from SPEC-311. Nothing here repeats what the spec states.
 
 ## 2026-09-24 Pre-existing red suite
 - `tests/test-advisor.sh` AC3 fails on `commands/mega.md` wording ("convergence gate dispatches advisor"). This branch does not touch `mega.md` or that suite; left alone.
+
+## 2026-09-24 Review warning accepted
+- Context: the fresh review noted that the title filter drops only lines starting `# ` with a space.
+- Decision/Change: kept. A `#Notes` title with no space counts as content and passes.
+- Why: the rule targets a missing or empty file, the SPEC-310 incident; policing title spelling adds a false-block risk for no gain.
