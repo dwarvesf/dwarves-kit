@@ -156,6 +156,25 @@ If the chosen modules genuinely have no `[impl]` knob rows at all, say so in one
 Recommended default at each knob: leave it at its current value (skip), since the kit-root defaults
 already give a working baseline.
 
+**The wrap follow-through knob (always offered here, not tied to any module choice).**
+`/kit:wrap`'s follow-through phase (step 10) ships `off`: the first report ends the pass and every
+in-lane candidate stays `REPORTED` for the operator to pick up by hand. Ask, with **`lanes` as the
+recommended default**:
+
+> After `/kit:wrap` reports, should it build and merge the follow-ups itself? [off/lanes/all]
+> - `off` -- report only; you build and merge every follow-up yourself.
+> - `lanes` -- background workers build every in-lane `REPORTED` candidate and FYI follow-up, merge
+>   each green PR through `wrap merge`, and print a second report.
+> - `all` -- everything `lanes` does, plus each full-lane candidate through the home repo's full
+>   lane unattended; its PR opens as a draft you review, wrap never merges it for you.
+
+This key resolves root-only (`kit_config_get_root`, never a project `.kit.toml`): it authorizes a
+write in home repos, so the answer goes into the OPERATOR `kit.toml`
+(`${XDG_CONFIG_HOME:-$HOME/.config}/dwarves-kit/kit.toml`), never `<repo>/.kit.toml`. Preview the
+exact `[wrap]` / `follow_through = "<choice>"` line you would add or change in that file and confirm
+before writing, same contract as every other write in this run. A decline (the question is skipped
+or the operator says no) writes nothing; an explicit answer, `off` included, writes that value.
+
 ## D2. Register the board (offer, never assume)
 
 Adoption wires modules; it does not create the board. If `<repo>/_meta/BACKLOG.md` is missing, offer

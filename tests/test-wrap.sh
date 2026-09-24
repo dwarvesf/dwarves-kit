@@ -3094,19 +3094,28 @@ for knob in merge_own_prs tidy_worktrees build_candidates delete_merged_remote_b
   chk_has "kit.toml declares $knob" "$(cat "$KIT_DIR/kit.toml")" "$knob"
 done
 # distill is the switch for the whole distill half (the pre-0 scan, the seams, step 7). It ships
-# OFF: "wrap up" lands the session, and the distill half runs on `/kit:wrap distill` or the knob.
-# It authorizes writes to home repos, so the project fence holds like every other [wrap] knob.
-DS_ON="$TMPD/distill-operator"; DS_PROJ="$TMPD/distill-project"
-mkdir -p "$DS_ON" "$DS_PROJ"
-printf '[wrap]\ndistill = true\n' > "$DS_ON/kit.toml"
-printf '[wrap]\ndistill = true\n' > "$DS_PROJ/.kit.toml"
-v="$(KIT_CONFIG_ROOT="$KIT_DIR" kit_config_get_root wrap.distill true)"
-chk "wrap.distill ships as false" "$([ "$v" = "false" ]; echo $?)"
-v="$(KIT_CONFIG_OPERATOR="$DS_ON" kit_config_get_root wrap.distill false)"
-chk "wrap.distill honours the operator kit.toml" "$([ "$v" = "true" ]; echo $?)"
-v="$(KIT_PROJECT_ROOT="$DS_PROJ" kit_config_get_root wrap.distill false)"
-chk "wrap.distill ignores a project .kit.toml" "$([ "$v" = "false" ]; echo $?)"
+# ON: operators asked for it every session, and a plain `/kit:wrap` still lands first regardless.
+# `distill = false` in the operator kit.toml restores landing-only. It authorizes writes to home
+# repos, so the project fence holds like every other [wrap] knob.
+DS_OFF="$TMPD/distill-operator"; DS_PROJ="$TMPD/distill-project"; DS_NO_OP="$TMPD/distill-no-operator"
+mkdir -p "$DS_OFF" "$DS_PROJ" "$DS_NO_OP"
+printf '[wrap]\ndistill = false\n' > "$DS_OFF/kit.toml"
+printf '[wrap]\ndistill = false\n' > "$DS_PROJ/.kit.toml"
+v="$(KIT_CONFIG_ROOT="$KIT_DIR" KIT_CONFIG_OPERATOR="$DS_NO_OP" kit_config_get_root wrap.distill false)"
+chk "wrap.distill ships as true" "$([ "$v" = "true" ]; echo $?)"
+v="$(KIT_CONFIG_OPERATOR="$DS_OFF" kit_config_get_root wrap.distill true)"
+chk "wrap.distill honours the operator kit.toml" "$([ "$v" = "false" ]; echo $?)"
+v="$(KIT_CONFIG_ROOT="$KIT_DIR" KIT_CONFIG_OPERATOR="$DS_NO_OP" KIT_PROJECT_ROOT="$DS_PROJ" kit_config_get_root wrap.distill true)"
+chk "wrap.distill ignores a project .kit.toml" "$([ "$v" = "true" ]; echo $?)"
 chk_has "commands/wrap.md takes the distill argument" "$(cat "$KIT_DIR/commands/wrap.md")" "/kit:wrap distill"
+
+# Built-in default resolution with NO operator file at all (KIT_CONFIG_OPERATOR points at an
+# empty temp dir, not one that exists with content): distill=true, follow_through=off.
+DS_EMPTY="$TMPD/distill-empty-operator"; mkdir -p "$DS_EMPTY"
+v="$(KIT_CONFIG_ROOT="$KIT_DIR" KIT_CONFIG_OPERATOR="$DS_EMPTY" kit_config_get_root wrap.distill false)"
+chk "built-in default (no operator file): wrap.distill resolves true" "$([ "$v" = "true" ]; echo $?)"
+v="$(KIT_CONFIG_ROOT="$KIT_DIR" KIT_CONFIG_OPERATOR="$DS_EMPTY" kit_config_get_root wrap.follow_through lanes)"
+chk "built-in default (no operator file): wrap.follow_through resolves off" "$([ "$v" = "off" ]; echo $?)"
 # follow_through gates step 10, which starts new work after the operator has their report, so
 # it ships "off"; it authorizes writes in home repos, so the project fence holds like every
 # other [wrap] knob. `wrap follow-mode` is the one resolver: knob, override, lanes, and the
@@ -3279,8 +3288,9 @@ chk "a NEW line carrying the precedent miss passes" "$([ "$rc" -eq 0 ]; echo $?)
 out="$(_report '✅ **Needs you:** NOTHING' | sed 's|^\*\*Built:\*\* .*|**Built:** SKIPPED: build_candidates knob is false|' | bash "$LINT" 2>&1)"; rc=$?
 chk "a real SKIPPED reason passes" "$([ "$rc" -eq 0 ]; echo $?)"
 
-# The distill switch off is the shipped default, so its report shape is the common one: both
-# lines SKIPPED with the switch as the reason, and the lint must take it as a real skip.
+# An operator's kit.toml can set the distill switch off (landing-only), so this report shape
+# still occurs: both lines SKIPPED with the switch as the reason, and the lint must take it as
+# a real skip.
 out="$(_report '✅ **Needs you:** NOTHING' | sed 's|^\*\*Built:\*\* .*|**Built:** SKIPPED: distill off|; s|^\*\*Seam:\*\* .*|**Seam:** SKIPPED: distill off|' | bash "$LINT" 2>&1)"; rc=$?
 chk "Built and Seam both SKIPPED: distill off passes" "$([ "$rc" -eq 0 ]; echo $?)"
 
