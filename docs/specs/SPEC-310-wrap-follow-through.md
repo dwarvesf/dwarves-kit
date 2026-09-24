@@ -1,7 +1,7 @@
 # Spec: wrap follow-through runs the in-lane leftovers without a second prompt
 
 Generated: 2026-09-24
-Status: VALIDATED (branch `feat/wrap-follow-through`), revised after three review lenses and two operator scope changes
+Status: SHIPPED pending merge (branch `feat/wrap-follow-through`), revised after three review lenses and two operator scope changes
 Lane: full
 Type: spec-feature
 File: `docs/specs/SPEC-310-wrap-follow-through.md`
@@ -156,8 +156,8 @@ Negative controls, each after the change is committed, `T="bash tests/test-wrap.
 
 - NC1 step 0 revert: `bash lib/gate/negctl.sh "$PWD" "$T" "sed -i '' 's/STOP every write to that repo.s MAIN CHECKOUT/STOP, report what was found, and leave that repo alone for the rest of the pass/' commands/wrap.md"`
 - NC2 knob default on: `bash lib/gate/negctl.sh "$PWD" "$T" "sed -i '' 's/^follow_through = \"off\"/follow_through = \"lanes\"/' kit.toml"`
-- NC3 silent fallback: `bash lib/gate/negctl.sh "$PWD" "$T" "sed -i '' '/unknown value .\${mode}/d' lib/wrap/wrap.sh"`
-- NC4 pairing dropped: `bash lib/gate/negctl.sh "$PWD" "$T" "sed -i '' 's/\[ \"\$_l_reviewed\" = 1 \] && continue/continue/' lib/wrap/report-lint.sh"`
+- NC3 silent fallback: `bash lib/gate/negctl.sh "$PWD" "$T" "sed -i '' 's/echo \"wrap.follow_through: unknown value/: \"wrap.follow_through: unknown value/' lib/wrap/wrap.sh"`
+- NC4 pairing dropped: `bash lib/gate/negctl.sh "$PWD" "$T" "sed -i '' 's/\\[ \"\\\$_l_reviewed\" = 1 \\] && continue/continue/' lib/wrap/report-lint.sh"`
 - NC5 draft no longer skipped (the mechanism behind "never merged"): `bash lib/gate/negctl.sh "$PWD" "$T" "sed -i '' 's/if (.isDraft == true) then \"SKIP draft\"/if false then \"SKIP draft\"/' lib/wrap/wrap.sh"`
 
 Proof of done: `docs/verification/wrap-follow-through.md`. The phase itself (work-set drafting, background dispatch, `wrap land`, the second report) is model-executed prose; the proof names it unproven until a real `/kit:wrap follow` run.
