@@ -273,7 +273,32 @@ LEDGER="${CLAUDE_PLUGIN_ROOT:-$HOME/.claude/dwarves-kit}/lib/gate/gate-ledger.sh
 _gate_on lane_gates lane-gate || exit 0
 bash "$LEDGER" outcome "$SLUG" ship start >/dev/null 2>&1 || true
 
-if ! GAPS=$(bash "$LEDGER" check "$LANE" "$SLUG" 2>&1); then
+# Full-lane implementation-notes rule. A subagent-run full lane never sees the
+# notes instruction, so the push checks for the file: <slug>.md or the spec's own basename,
+# committed in HEAD, with at least one non-blank line that is not a "# " title (a one-line
+# "No deviations; matches the spec verbatim" counts). A logged `override <slug> impl-notes`
+# clears it. Blocks only in an adopted repo (proof marker); elsewhere it is an advisory.
+NOTES_GAP=""
+if [ "$LANE" = "full" ] \
+   && ! bash "$LEDGER" show "$SLUG" 2>/dev/null | grep -q '| GATE | impl-notes | override |'; then
+  NOTES_A="docs/implementation-notes/$SLUG.md"
+  NOTES_B="docs/implementation-notes/$(basename "$SPEC")"
+  NOTES_OK=0
+  for NP in "$NOTES_A" "$NOTES_B"; do
+    git -C "$ROOT" show "HEAD:$NP" 2>/dev/null | grep -v '^# ' | grep -q '[^[:space:]]' && { NOTES_OK=1; break; }
+  done
+  if [ "$NOTES_OK" = 0 ]; then
+    if [ -f "$ROOT/docs/verification/README.md" ]; then
+      NOTES_GAP="MISSING-NOTES: $NOTES_A or $NOTES_B (required for lane 'full'; none committed in HEAD with an entry)"
+    else
+      echo "[advisory] full-lane spec '$SLUG' ships no implementation-notes file ($NOTES_A); record deviations, or one line: No deviations; matches the spec verbatim" >&2
+    fi
+  fi
+fi
+
+GAPS=$(bash "$LEDGER" check "$LANE" "$SLUG" 2>&1); GRC=$?
+if [ -n "$NOTES_GAP" ]; then GAPS="${GAPS:+$GAPS$'\n'}$NOTES_GAP"; GRC=1; fi
+if [ "$GRC" -ne 0 ]; then
   bash "$LEDGER" outcome "$SLUG" ship end caught=true >/dev/null 2>&1 || true
   LOG_DIR="${DWARVES_KIT_LOG_DIR:-$HOME/.claude/dwarves-kit/logs}"
   mkdir -p "$LOG_DIR" 2>/dev/null || true
@@ -283,6 +308,11 @@ if ! GAPS=$(bash "$LEDGER" check "$LANE" "$SLUG" 2>&1); then
     printf '%s\n' "$GAPS" | sed 's/^/  /'
     echo "Run the missing gate(s), or log an explicit override (recorded for audit):"
     echo "  bash \"$LEDGER\" override $SLUG <phase> \"<reason>\""
+    if [ -n "$NOTES_GAP" ]; then
+      echo "For MISSING-NOTES: commit the implementation-notes file with its entries; a change with no deviations records one line:"
+      echo "  No deviations; matches the spec verbatim"
+      echo "  (or override the rule for this run: bash \"$LEDGER\" override $SLUG impl-notes \"<reason>\")"
+    fi
     echo "Or switch the lane gates off for this repo: [gate] lane_gates = false in the committed project kit config (lib/gate/README.md, 'Switching a gate off')."
   } >&2
   exit 2

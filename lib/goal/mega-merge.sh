@@ -76,7 +76,9 @@ _log() {  # rid text
 
 # gate <rid> <lane> -- DECISION ONLY. No file writes, no gh calls. Reuses
 # gate-ledger.sh check() byte-for-byte (same lane x phase matrix hooks/ship-gate.sh
-# enforces at push), so this can never drift looser than the ship-gate itself.
+# enforces at push), so its ledger arm never drifts looser than the ship-gate's. The
+# ship-gate's full-lane implementation-notes check reads repo files and is NOT mirrored
+# here: a PR reaching this merge was already pushed through that hook.
 gate() {
   local rid="${1:-}" lane="${2:-}"
   [ -n "$rid" ] && [ -n "$lane" ] || { echo "usage: gate <rid> <lane>" >&2; return 64; }
