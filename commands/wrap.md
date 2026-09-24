@@ -8,7 +8,7 @@ You are the session's landing step. The operator just shipped, or is ending the 
 
 ## Scope and triggers
 
-Also tidies branches (not just worktrees), writes the activity line, and calls `/kit:retro` when a shipped PR merged. Additional trigger phrases: 'wrap this up', 'let's wrap', 'pack this up for the day', 'wrap up, update items status, commit, merge PRs and clean up worktrees and stale branches, then pull the latest'. The distill half is OFF by default (`wrap.distill = false`) and runs when the invocation carries the word `distill` or the operator asks for it, including: 'wrap up and distill', 'check if you can learn from this session and distill anything into scripts, tools or skills for future replay'.
+Also tidies branches (not just worktrees), writes the activity line, and calls `/kit:retro` when a shipped PR merged. Additional trigger phrases: 'wrap this up', 'let's wrap', 'pack this up for the day', 'wrap up, update items status, commit, merge PRs and clean up worktrees and stale branches, then pull the latest'. The distill half is OFF by default (`wrap.distill = false`) and runs when the invocation carries the word `distill` or the operator asks for it, including: 'wrap up and distill', 'check if you can learn from this session and distill anything into scripts, tools or skills for future replay'. The follow-through phase (step 10) is OFF by default (`wrap.follow_through = "off"`) and runs when the invocation carries the word `follow`, including: 'wrap up and follow through', 'wrap and build the rest'.
 
 ## When this runs
 
@@ -26,7 +26,7 @@ Also tidies branches (not just worktrees), writes the activity line, and calls `
 
 Bracket the phase for timing before starting: `bash lib/gate/gate-ledger.sh outcome <rid> wrap start`.
 
-Run the steps below once per repo the session touched (the current repo when the operator names none). Positional repo arguments; wrap never discovers touched repos on its own (Out of Scope). Two arguments are not repos: the word `distill` (or `--distill`) is the distill switch below, and the word `wide` (or `--wide`) widens the report's `Left alone` section from this pass's own residue to the full scan residue (step 9). Both are consumed, wherever they appear, before the repo list is read. `bin/wrap scan`/`apply` also take a repeatable `--under <root>` that appends every immediate git child of `<root>`; a bare `--under` with no directory expands to every root in the `wrap.roots` knob instead, or exits 64 naming the knob when it is empty.
+Run the steps below once per repo the session touched (the current repo when the operator names none). Positional repo arguments; wrap never discovers touched repos on its own (Out of Scope). Three arguments are not repos: the word `distill` (or `--distill`) is the distill switch below; the word `wide` (or `--wide`) widens the report's `Left alone` section from this pass's own residue to the full scan residue (step 9); and the word `follow` (or `--follow-through`) runs step 10 in `lanes` mode for this run, or in `all` mode when the word `all` directly follows it (`/kit:wrap follow all`). `all` is an argument only right after `follow`; anywhere else it is a repo name. All of them are consumed, wherever they appear, before the repo list is read. `bin/wrap scan`/`apply` also take a repeatable `--under <root>` that appends every immediate git child of `<root>`; a bare `--under` with no directory expands to every root in the `wrap.roots` knob instead, or exits 64 naming the knob when it is empty.
 
 **The distill switch.** This command has two halves. The LANDING half is steps 0 through 6, 8, and 9: board rows, commit, merge, deploy check, tidy, pull, activity line, retro, report. The DISTILL half is the pre-step-0 candidate scan, both seams of step -1, and all of step 7 (DEBT marker, candidates, memory notes, and the drain). Resolve the switch once, first:
 
@@ -65,9 +65,10 @@ kit_config_get_root wrap.delete_merged_remote_branches true
 kit_config_get_root wrap.carry_stray_lines true
 kit_config_get_root wrap.build_candidates true
 kit_config_get_root wrap.build_lanes "tiny"
+bin/wrap follow-mode [lanes|all]   # lanes when the invocation says follow, all for follow all
 ```
 
-Each governs exactly one step: `merge_own_prs` step 3, `tidy_worktrees`, `delete_merged_remote_branches` and `carry_stray_lines` step 5, `build_candidates` step 7b. `build_candidates`, `build_lanes`, and `drain_staged` size a step inside the distill half, so they govern nothing while the distill switch is off. The shipped defaults are all `true`, so wherever a step runs, wrap acts. Every one of them authorizes a write, which is why each resolves with `kit_config_get_root` and never from a project `.kit.toml`. A `false` turns that step's action into a report line; it never turns the step off, and it never relaxes a refusal the tools make on their own. Name every knob read as `false` in the report's `FYI`, as a `STATE` row, so a step that stayed its hand says why.
+Each governs exactly one step: `merge_own_prs` step 3, `tidy_worktrees`, `delete_merged_remote_branches` and `carry_stray_lines` step 5, `build_candidates` step 7b, `follow_through` step 10. `build_candidates`, `build_lanes`, and `drain_staged` size a step inside the distill half, so they govern nothing while the distill switch is off. The shipped defaults are `true` for the first five, so wherever those steps run, wrap acts. `follow_through` ships `"off"` because step 10 starts new work after the operator has their report; `bin/wrap follow-mode` resolves it with the invocation override and prints `<mode> <lanes>`, and any value but `off`, `lanes`, or `all` prints one line naming the knob and the allowed values and runs as `off`. Every one of them authorizes a write, which is why each resolves with `kit_config_get_root` and never from a project `.kit.toml`. A `false` turns that step's action into a report line; it never turns the step off, and it never relaxes a refusal the tools make on their own. Name every knob read as `false` in the report's `FYI`, as a `STATE` row, so a step that stayed its hand says why.
 
 `wrap.build_lanes` sizes step 7b rather than authorizing it: a space-separated list of the lanes step 7b builds inline. The default `"tiny"` is today's behavior. `full` is the one lane the list cannot buy an inline build for; it is reported instead. It resolves root-only for the same reason as the three above, because widening it widens what wrap writes.
 
@@ -76,7 +77,8 @@ Each governs exactly one step: `merge_own_prs` step 3, `tidy_worktrees`, `delete
 Foreign activity in a repo's checkout means either signal is present: a worktree reflog entry newer than the session start, or an `index.lock` file that is older than 5 seconds or persists for 5 seconds (a lock that clears within the window is ordinary git traffic). Run `bin/wrap scan <repo>` for the checkout, ahead/behind count, dirty files, worktrees, branch verdicts, and the operator's own open PRs.
 
 - `bin/wrap scan <repo>` is report only; it never writes.
-- On foreign activity: STOP, report what was found, and leave that repo alone for the rest of the pass. Do not touch a dirty file this session did not write.
+- On foreign activity: STOP every write to that repo's MAIN CHECKOUT for the rest of the pass, and report what was found. That covers the board flip (step 1), the commit (step 2), the merge (step 3), the tidy and pull (step 5), the activity line (step 6), and a seam write into that checkout. Do not touch a dirty file this session did not write.
+- The stop does NOT cover a build in an isolated worktree: step 7b and step 10 create theirs with `bin/wrap start <home> <branch>` off `origin/<default>`, and such a build never writes the main checkout's working tree, index, or HEAD, which is all the stop protects. A foreign writer in the main checkout is no reason to leave an in-lane candidate `REPORTED`; two real sessions did exactly that and the operator had to ask for the builds by hand. `wrap start` still refuses by name while an `index.lock` is held, so that signal blocks the build through the verb's own refusal. A PR such a build opens in a stopped repo stays `OPEN`, because its merge is a step 3 write.
 - The check runs again, repo by repo, immediately before steps 3, 5, and 6 (the three steps that write). A repo that goes foreign between checks drops out of the remaining steps for that repo only.
 
 ### Step 1: board rows
@@ -166,7 +168,7 @@ bash lib/classify/lane-classify.sh classify --files "<paths>" "<the candidate in
 
 **`wrap.build_lanes` decides which lanes build inline.** Split the classifier's answer against that list:
 
-- **The lane is in `wrap.build_lanes`.** BUILD IT NOW in the home repo, on its own branch, in a worktree at `<home>/.claude/worktrees/<slug>`, never on that repo's default branch. Dispatch the build to a worker rather than editing inline (Sonnet by default, Opus when the candidate touches security, money, or a data model, per the tier paragraph below). Run one verification command before the commit (the home repo's own test for the file you touched, or the smallest command that fails if the edit is wrong) and QUOTE its output in your report; a `kit:task-verifier` against the candidate's intent stands in where the repo has no such command. Commit under its own name only after the check is green. A `tiny` candidate ends at that commit. Any heavier lane also opens a PR and leaves it for step 3's own-PR merge path, which merges only what is green; the home repo's ship-gate proof still applies to that PR and wrap never overrides it. Report it with `(lane=<lane>, verified: <check>, <PR or commit>)`.
+- **The lane is in `wrap.build_lanes`.** BUILD IT NOW in the home repo, on its own branch, in a worktree at `<home>/.claude/worktrees/<slug>` created with `bin/wrap start <home> <type>/<slug>`, never on that repo's default branch. A step 0 stop on the home repo does not block this build (step 0 says why). Dispatch the build to a worker rather than editing inline (Sonnet by default, Opus when the candidate touches security, money, or a data model, per the tier paragraph below). Run one verification command before the commit (the home repo's own test for the file you touched, or the smallest command that fails if the edit is wrong) and QUOTE its output in your report; a `kit:task-verifier` against the candidate's intent stands in where the repo has no such command. Commit under its own name only after the check is green. A `tiny` candidate ends at that commit; steps 3 and 5 already ran, so its branch stays in `Left alone` unless step 10 lands it. Any heavier lane also opens a PR and leaves it for step 3's own-PR merge path, which merges only what is green; the home repo's ship-gate proof still applies to that PR and wrap never overrides it. Report it with `(lane=<lane>, verified: <check>, <PR or commit>)`.
 - **`full`, whatever the list says, and any other lane not in the list.** Do not build it here and do not write it anywhere: no board row, no staging block, no goal draft. REPORT it in step 9 with one line saying why it did not fit the session, `(lane=<lane>, reported: <one-line why>)`, for example `owes a spec and a review` for a full lane. The operator decides from the report whether it becomes work. When they ask for a row, or when the candidate is blocked on something outside the session, their own intake files it (the board's capture verb or an intake skill), and that is a separate, explicit act.
 
 **Model tier for any worker you dispatch, at either size.** Sonnet is the default worker. Opus takes the verification arm, and takes the build too when the candidate touches security, money, or a data model. Haiku takes mechanical fan-out only (grep, read, a flat transform). Never dispatch a worker on the session's own model by default.
@@ -255,7 +257,7 @@ b. ...
 ```
 
 - `Needs you` leads and is always present, even as `NOTHING`. It is a lettered action list; it sits at the top, ahead of every other section, because this report is read from the top and the items are the whole point.
-- **Admission test, run it on every drafted item before the report prints.** An item earns a place in `Needs you` only when the operator is the ONLY one who can do it. Three classes qualify: it needs a human credential or presence (a root password, a GUI, 2FA, a physical device); it is irreversible and outward-facing (send the email, charge the card, terminate the host, delete in production); or it is a judgment whose options carry different irreversible outcomes. Everything else fails the test. For each failing item, RUN IT NOW, then move it to `What happened` in the past tense. Merging your own green PR, pulling the default branch, installing what you just merged, dispatching an established deploy, and rerunning a check all fail the test: they are work, and the report is written after the work, not instead of it.
+- **Admission test, run it on every drafted item before the report prints.** An item earns a place in `Needs you` only when the operator is the ONLY one who can do it. Three classes qualify: it needs a human credential or presence (a root password, a GUI, 2FA, a physical device); it is irreversible and outward-facing (send the email, charge the card, terminate the host, delete in production); or it is a judgment whose options carry different irreversible outcomes. Step 10's second report adds one more: `REVIEW #<pr>` for a full-lane draft PR step 10 built and never merges. Everything else fails the test. For each failing item, RUN IT NOW, then move it to `What happened` in the past tense. Merging your own green PR, pulling the default branch, installing what you just merged, dispatching an established deploy, and rerunning a check all fail the test: they are work, and the report is written after the work, not instead of it.
 - The failure mode this test exists to stop: a finished build parked behind "say go and I will merge it". That reads as diligence and costs the operator a round trip to type "ok". Landing the change is part of finishing it. When something genuinely blocks, `Needs you` names the blocker, never the permission.
 - **Run the lint before printing.** Write the drafted report to a scratch file and check it: `bash lib/wrap/report-lint.sh <file>`. Exit 1 names a `Needs you` item that asks permission instead of stating a blocker; go do that item, move it to `What happened`, and re-run until the lint is clean. A `warn` line names an item built around a command the kit can run with no blocker stated: read it again, and either state the blocker or do the work. The lint judges phrasing, not reversibility, so it catches the one shape that is always wrong and leaves the judgment calls to the admission test above.
 - Exactly two emoji, no others: `✅` or `🔴` leads `Needs you` (green only when it says `NOTHING`), and `🟡` marks a `MERGED, NOT DEPLOYED` PR, the one `Shipped` state that still needs a hand. Nothing on section headers, lettered items, or in prose.
@@ -276,11 +278,67 @@ b. ...
 
 Record the run, one line: `bash lib/gate/gate-ledger.sh record <rid> wrap ran "<summary>"`. Close the timing bracket: `bash lib/gate/gate-ledger.sh outcome <rid> wrap end caught=<true if a repo hit step 0's foreign-activity STOP, else false>`.
 
+### Step 10: follow-through
+
+Two real sessions ended the same way: the report listed in-lane candidates as `REPORTED` and FYI rows the session could finish, and the operator typed "proceed all the built and also check if we need to do anything re. FYI". That prompt carried no decision, so this step does what it asked without it.
+
+**Switch.** The mode is what `bin/wrap follow-mode` printed at step -1: `off`, `lanes`, or `all`, followed by the lanes this step builds. `off` does nothing here, and step 9 drafts one `FYI` row whenever the work set below would not be empty: `| STATE | wrap.follow_through is off, <n> in-lane items stay REPORTED; /kit:wrap follow builds them | |`, the same shape as the distill-off row. `lanes` and `all` start only after the step 9 report is printed, its lint is clean, and the step 9 ledger line is written; the first report is the operator's landing and never waits on this step.
+
+**The work set**, drafted from the first report, never from a fresh recollection:
+
+- (a) BUILD: every `**Built:**` item with verdict `REPORTED` whose `lane=` is in the printed lanes and is not `full`, including one reported because of a step 0 stop. An item reported with `build_candidates off` stays reported: that knob keeps wrap's hand at every mode. LAND only: every step 7b `BUILT` branch with no merged PR yet.
+- (b) FINISH: every `FYI` row that names work this pass left undone in a repo it touched, sized with `bash lib/classify/lane-classify.sh classify "<the row in one line>"` into one of the printed lanes other than `full`. A `STATE` row that says "the doc test now fails on the line this pass renamed" is work; one that says "wrap.pull_past_dirty is false" is a fact, and a fact, a resolved `INCIDENT`, or a `SKIPPED` step is never in the set. A row that needs a credential, a GUI, 2FA, a physical device, or is irreversible or outward-facing is a `Needs you` item under the admission test and never runs here.
+- (c) FULL, `all` mode only: every `REPORTED` item with `lane=full`. Under `lanes` those stay `REPORTED` exactly as step 7b left them.
+
+An empty set prints `[kit:wrap] follow-through: nothing in lane` and ends the step, with no second report.
+
+**Run it in the background.** Create every worktree first, serially, from the lead: `bin/wrap start <home> <type>/<slug>` once per item, so concurrent `worktree add` calls never race on one `.git`; a refusal leaves that item `REPORTED` with the refusal as its why. Print one line, `[kit:wrap] follow-through: <n> builds, <m> follow-ups, <k> full-lane, running in background`, dispatch one BACKGROUND worker per worktree on step 7b's tier rule, and end the turn; the operator is not held. An (a) or (b) worker builds, runs one verification command, quotes its output, and commits only when it is green. It never pushes, never merges, and never touches a main checkout; a red check means no commit, and the item stays `REPORTED` with the failing check as its why.
+
+**A full-lane worker runs the home repo's full lane unattended**, in its worktree: it claims the number with `bash lib/spec/spec-next.sh reserve` in the home repo (never `next`, which hands concurrent workers the same number), writes `docs/specs/SPEC-<n>-<slug>.md`, runs the `kit:spec-validate` lenses, builds, runs a negative control with `lib/gate/negctl.sh`, writes the proof-of-done, records the gate-ledger entries the home repo's ship-gate expects, commits, pushes its branch by name, and opens the PR as a DRAFT (`gh pr create --draft --head <branch> --fill`). A CRITICAL, BLOCKING design-record finding stops it before the build: nothing is committed and the item stays `REPORTED` with `reported: spec-validate BLOCK: <finding>`.
+
+**Wrap never merges a full-lane PR, green or not.** A full lane marks an architecture, auth, data-model, or contract change, and its design is the one thing the operator must see before it lands: an unattended validate pass checks the spec against itself and cannot stand in for the operator's direction call (AGENTS.md "Pause if"). The draft is what holds that line after this pass ends: `wrap merge --apply` skips a draft, so a later plain wrap cannot merge it either. `wrap land` and `wrap merge` never run on it here; the second report lists it `OPEN` under `Shipped` and adds `REVIEW #<pr>: <why it needs design review>` to `Needs you`. The operator marks it ready after the review.
+
+**Land, one repo at a time, after the last worker reports.** Re-run the step 0 check for the repo first, then per built (a) or (b) branch, one call at a time:
+
+- Repo clear and `wrap.merge_own_prs` true: `bin/wrap land <worktree>`. It pushes, opens or adopts the operator's own PR, merges only a green one, verifies the tree, fast-forwards the main checkout, and removes the worktree. A refusal (checks pending or red, TREE MISMATCH, a dirty worktree) is reported by name and the PR stays `OPEN`.
+- Repo stopped, or `wrap.merge_own_prs` false: push the branch by name and open the PR with `gh pr create --head <branch> --fill`. No merge, no tidy; `Shipped` lists it `OPEN` and `Left alone` lists the worktree.
+- A worktree still present in a clear repo goes through step 5's own-scope path: `bin/wrap apply --own <wt> <repo>`, the dry run, then `--apply`.
+
+No timer runs here: a worker is bounded by the Agent tool's own lifecycle, and the lead lands whatever reported. A worker that never reports (the session closed, the agent died) leaves its worktree; the next wrap's scan lists it under `Left alone`, and `wrap apply` never removes a branch no merge proof covers. Every refusal above step 10 still holds: never merge a PR the operator did not open, never force-push, never remove a dirty or foreign worktree, and a TREE MISMATCH is a merge that did not land.
+
+**The second report.** When the landing ends, print it in step 9's grammar under its own heading, and lint it with `bash lib/wrap/report-lint.sh <file>` before printing:
+
+```
+## Follow-through: <session slug, the same as the first report>
+
+✅ **Needs you:** NOTHING
+   -- or, with a full-lane PR or a new blocker --
+🔴 **Needs you:**
+a. REVIEW #<pr>: <why it needs design review>.
+
+**What happened**
+- <each FYI follow-up finished, past tense>
+
+**Shipped**
+| Repo | PR | Merge | Deploy |
+
+**Built:**
+- BUILT <label> ENHANCE <home>: <file> (lane=normal, verified: <check>, #<pr>)
+- BUILT <label> NEW (precedent: nothing matched): <path> (lane=full, verified: <check>, #<pr> DRAFT)
+- REPORTED <label> ... (lane=<lane>, reported: <why it still did not land>)
+
+**FYI:**
+| Tag | Fact | Home |
+```
+
+Its `Needs you` lists only what step 10 produced (a `REVIEW` item, a new blocker); the first report's items were printed once and are not repeated. The first `## ` line decides which report it is. A follow-through report carries no `**Seam:**` line, because the seams ran in the first report, and the lint exempts it from that one rule; `**Built:**`, `Needs you`, and `FYI` keep every rule. A `lane=full` item closed with `verified:` passes only in a follow-through report, only as `#<pr> DRAFT`, and only when a lettered `Needs you` item opening with `REVIEW` names the same `#<pr>`, so a full-lane build can never read as landed. Record it: `bash lib/gate/gate-ledger.sh record <rid> wrap-follow ran "<n> built, <m> finished, <k> full-lane drafts"`, with the rid from step 7a; a refused rid prints `skipped (structural): wrap-follow record impossible this run (<reason>)` instead, the same as the DEBT marker.
+
 ## What this command does NOT do
 
 - Never force-pushes.
 - Never rewrites history.
 - Never merges a PR the operator did not open.
+- Never merges a full-lane PR that step 10 built; it opens as a draft and goes to `Needs you` as `REVIEW #<pr>`.
 - Never touches a dirty file.
 - Never removes a dirty or foreign worktree.
 - Never dispatches a deploy on its own initiative; it checks one the operator already dispatched or asked it to dispatch as part of this pass.

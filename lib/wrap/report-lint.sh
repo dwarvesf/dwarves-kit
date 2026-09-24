@@ -62,6 +62,19 @@ else
   input="$(cat)"
 fi
 
+# A follow-through report (commands/wrap.md step 10) is the second report of one pass. Its
+# first `## ` heading is `## Follow-through:`. It owes no `**Seam:**` line, because the seams
+# ran in the first report, and it is the one report where a full-lane item may close as built:
+# step 10 builds it as a draft PR and never merges it, so the item closes as `#<pr> DRAFT`
+# and must pair with a lettered `REVIEW #<pr>` item in `Needs you`. Every other rule applies to it unchanged.
+follow_report=0
+first_h2="$(printf '%s\n' "$input" | grep -m1 '^## ' || true)"
+case "$first_h2" in '## Follow-through:'*) follow_report=1 ;; esac
+
+# PR numbers named by `Needs you` items that open with REVIEW, space-separated, filled by the
+# walk below. A full-lane build in a follow-through report must name one of them.
+review_prs=" "
+
 # Walk the report. `in_block` is on between the `Needs you` header and the next bold section
 # header, so only that section is judged; a `What happened` sentence may say anything.
 findings=0
@@ -82,6 +95,13 @@ while IFS= read -r line; do
   case "$line" in
     [a-z].\ *) : ;;
     *) continue ;;
+  esac
+
+  case "${line#[a-z]. }" in
+    REVIEW*)
+      for _r_pr in $(printf '%s' "$line" | grep -oE '#[0-9]+' | tr -d '#'); do
+        review_prs="${review_prs}${_r_pr} "
+      done ;;
   esac
 
   lower="$(printf '%s' "$line" | tr '[:upper:]' '[:lower:]')"
@@ -249,7 +269,17 @@ else
       if [ -z "$_l_close" ]; then
         echo "line 0: '**Built:**' item ${_l_idx} names a lane with no closure; add 'verified: <check>, <commit or PR>' for a build, or 'reported: <one-line why>' for one left in the report" >&2
       elif printf '%s' "$_l_item" | grep -qE 'lane=full' && [ "$_l_close" != "reported" ]; then
-        echo "line 0: '**Built:**' item ${_l_idx} closes a full-lane candidate as built; a full lane is never built at session close, report it with 'reported: <why>'" >&2
+        if [ "$follow_report" = 1 ] && [ "$_l_close" = "verified" ]; then
+          # Step 10 built it; the only valid close is an open PR the operator reviews.
+          _l_reviewed=0
+          for _l_pr in $(printf '%s' "$_l_item" | grep -oE '#[0-9]+ DRAFT' | tr -dc '0-9 \n'); do
+            case "$review_prs" in *" ${_l_pr} "*) _l_reviewed=1 ;; esac
+          done
+          [ "$_l_reviewed" = 1 ] && continue
+          echo "line 0: '**Built:**' item ${_l_idx} is a full-lane build that is not a '#<pr> DRAFT' named by a 'REVIEW #<pr>' item in Needs you; wrap never merges a full-lane PR, the operator reviews its design first" >&2
+        else
+          echo "line 0: '**Built:**' item ${_l_idx} closes a full-lane candidate as built; a full lane is never built at session close, report it with 'reported: <why>'" >&2
+        fi
       elif [ -n "$_l_want" ] && [ "$_l_close" != "$_l_want" ]; then
         echo "line 0: '**Built:**' item ${_l_idx} pairs its verdict with the wrong closure; BUILT owes 'verified:', REPORTED owes 'reported:'" >&2
       else
@@ -328,7 +358,9 @@ done <<< "$input"
 # configured and a seam that was silently dropped read identically without this line, and the
 # seam is where an operator's whole distill half lives: `wrap.before`/`wrap.after` name a
 # skill this command runs, so a dropped step -1 loses that skill with no trace in the report.
-if ! printf '%s' "$input" | grep -q '\*\*Seam:\*\*'; then
+if [ "$follow_report" = 1 ]; then
+  : # the seams ran in the first report; a follow-through report owes no Seam line
+elif ! printf '%s' "$input" | grep -q '\*\*Seam:\*\*'; then
   echo "line 0: no '**Seam:**' line; step -1 (the before/after seams) owes an outcome" >&2
   echo "  add one of: '**Seam:** <side> <skill> ran: <outcome>', '**Seam:** NOTHING: no seam configured', '**Seam:** SKIPPED: <why>'" >&2
   findings=$((findings + 1))
