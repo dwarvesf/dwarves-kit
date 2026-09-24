@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # wrap.sh -- the landing step after ship. One pass over every repo a session
-# touched, with nine verbs:
+# touched, with ten verbs:
 #
 #   wrap.sh scan  [--under <root>]... <repo> [<repo>...]    report only, exit 0
 #   wrap.sh apply [--apply] [--worktrees] [--own <path>]... [--under <root>]... <repo> [...]  dry-run by default
@@ -10,6 +10,7 @@
 #   wrap.sh log   "<slug>: <one sentence>" [--date YYYY-MM-DD]
 #   wrap.sh default-branch <repo>                           prints the detected name
 #   wrap.sh knowledge-root <repo>                           the fenced knowledge dir
+#   wrap.sh follow-mode [lanes|all]                         step 10's mode and lanes, report only
 #   wrap.sh stage "<title>" "<intent>" "<home>" [--repo <repo>]  stage a candidate
 #   wrap.sh --help
 #
@@ -2352,6 +2353,40 @@ cmd_default_branch() {
   return 0
 }
 
+# --------------------------------------------------------------------------- follow-mode
+
+# cmd_follow_mode [lanes|all] -- commands/wrap.md step 10's switch, resolved once. The knob
+# wrap.follow_through is root-only and takes off, lanes, or all. The argument is the
+# invocation override for one run (the word `follow` passes lanes, `follow all` passes all)
+# and wins over the knob. An unknown knob value prints one line naming the knob and the
+# allowed values and resolves as off: a typo must never start work, and never passes
+# silently. Prints `<mode> <lanes>`: <lanes> is the comma list step 10 builds, which is
+# wrap.build_lanes without full, plus full under all, or `none` when the mode is off.
+cmd_follow_mode() {
+  [ $# -le 1 ] || { echo "usage: wrap.sh follow-mode [lanes|all]" >&2; return 64; }
+  local mode lanes="" lane
+  mode="$(kit_config_get_root wrap.follow_through off)"
+  case "$mode" in
+    off|lanes|all) ;;
+    *) echo "wrap.follow_through: unknown value '${mode}' (allowed: off, lanes, all); running as off" >&2
+       mode=off ;;
+  esac
+  case "${1:-}" in
+    "") ;;
+    lanes|all) mode="$1" ;;
+    *) echo "usage: wrap.sh follow-mode [lanes|all]" >&2; return 64 ;;
+  esac
+  if [ "$mode" != off ]; then
+    set -f   # word-split the list, never glob it
+    for lane in $(kit_config_get_root wrap.build_lanes "tiny"); do
+      [ "$lane" = full ] || lanes="${lanes:+$lanes,}$lane"
+    done
+    set +f
+    [ "$mode" = all ] && lanes="${lanes:+$lanes,}full"
+  fi
+  printf '%s %s\n' "$mode" "${lanes:-none}"
+}
+
 # --------------------------------------------------------------------------- entry
 
 main() {
@@ -2366,6 +2401,7 @@ main() {
     log)            cmd_log "$@" ;;
     default-branch) cmd_default_branch "$@" ;;
     knowledge-root) cmd_knowledge_root "$@" ;;
+    follow-mode)    cmd_follow_mode "$@" ;;
     stage)          cmd_stage "$@" ;;
     -h|--help|help|"") _usage; return 0 ;;
     *) echo "wrap: unknown verb '$verb' (try: wrap --help)" >&2; return 64 ;;
