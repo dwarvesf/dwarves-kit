@@ -369,6 +369,11 @@ carry_stray_lines = true        # [impl] step 5, before the pull, main checkout 
                                  #        command printed; no PR is opened and the working copy is
                                  #        never touched. On a kanban board a flipped row replaces
                                  #        origin's row of that id in place, then `dedupe-all` runs.
+                                 #        Also stray COMMITS: the main checkout on the default
+                                 #        branch and ahead of origin gets its commits pushed to
+                                 #        wrap/stray-commits-<stamp> (PR command printed), then
+                                 #        `reset --keep` to the fork point when only merge=union
+                                 #        files are dirty, so the pull fast-forwards.
                                  #        false = report the count and carry nothing.
 build_candidates = true         # [impl] step 7b. true = a precedent hit wires the enhancement into
                                  #        that tool and a clear-shaped miss builds it, both committed

@@ -553,7 +553,10 @@ echo divergent > "$TMPD/rewriter/divergent.txt"
 git -C "$TMPD/rewriter" add -A; git -C "$TMPD/rewriter" commit -qm divergent
 git -C "$TMPD/rewriter" push -q --force origin HEAD:refs/heads/master
 set_stub rmaster master
-out="$("$WRAP" apply --apply "$TMPD/clone-apply-nonff" 2>&1)"; rc=$?
+# The local master now holds a commit origin lost, which the stray-commit carry would take
+# to a branch and move off master. With its knob off the pull meets the divergence as is.
+mkdir -p "$TMPD/nonff-carry-off"; printf '[wrap]\ncarry_stray_lines = false\n' > "$TMPD/nonff-carry-off/kit.toml"
+out="$(KIT_CONFIG_OPERATOR="$TMPD/nonff-carry-off" "$WRAP" apply --apply "$TMPD/clone-apply-nonff" 2>&1)"; rc=$?
 chk "apply --apply exits 2 when a write fails" "$([ "$rc" -eq 2 ]; echo $?)"
 chk_has "apply --apply reports the failed pull" "$out" "FAILED pull --ff-only"
 chk "apply --apply never reset the local default branch" \
@@ -879,6 +882,122 @@ chk_has "board stray: both stray rows are counted" "$out" "carried 2 stray lines
 chk "board stray: OPS-1 appears once" "$([ "$(printf '%s\n' "$BFILE" | grep -c '^| OPS-1 |')" = 1 ]; echo $?)"
 chk "board stray: the carry branch holds the flipped row in place, the new row at the end" \
   "$([ "$BFILE" = "${BOARD_HEAD}"$'| OPS-1 | first | shipped (#12) |\n| OPS-2 | second | queued |\n| OPS-3 | third | queued |' ]; echo $?)"
+
+# ===========================================================================
+echo "=== apply: stray commits on the default branch are carried onto a branch ==="
+# ===========================================================================
+# A session committed on the shared checkout's main and never pushed, so every later
+# `pull --ff-only` refused as diverging. Origin moved the union-marked log too, and the log
+# is dirty here: a move straight to origin/main would trip `reset --keep` on that file.
+build_union_repo scommit; advance_union_repo scommit
+SCC="$TMPD/uclone-scommit"; SCB="$TMPD/ubare-scommit"
+printf 'a note\n' > "$SCC/notes.md"; git -C "$SCC" add notes.md; git -C "$SCC" commit -qm "docs: a stray note"
+SCC_STRAY="$(git -C "$SCC" rev-parse HEAD)"; SCC_SHORT="$(git -C "$SCC" rev-parse --short HEAD)"
+printf '%s' "$LAB_LOCAL" > "$SCC/_meta/LAB_LOG.md"
+commit_branches() { git -C "$1" for-each-ref --format='%(refname:short)' 'refs/heads/wrap/stray-commits-*'; }
+out="$("$WRAP" apply "$SCC" 2>&1)"; rc=$?
+chk "stray commits dry-run: apply exits 0" "$rc"
+chk_has "stray commits dry-run: names the count" "$out" "WOULD carry 1 stray commits on main onto a branch:"
+chk_has "stray commits dry-run: names the sha and subject" "$out" "       ${SCC_SHORT} docs: a stray note"
+chk_has "stray commits dry-run: names the move" "$out" "WOULD move main back to origin/main"
+chk "stray commits dry-run: no branch reached origin" "$([ -z "$(commit_branches "$SCB")" ]; echo $?)"
+chk "stray commits dry-run: main did not move" "$([ "$(git -C "$SCC" rev-parse HEAD)" = "$SCC_STRAY" ]; echo $?)"
+out="$("$WRAP" apply --apply "$SCC" 2>&1)"; rc=$?
+SCR="$(commit_branches "$SCB")"
+chk "stray commits --apply: apply exits 0" "$rc"
+chk "stray commits --apply: the branch name carries a stamp" \
+  "$(printf '%s' "$SCR" | grep -qE '^wrap/stray-commits-[0-9]{8}-[0-9]{4}$'; echo $?)"
+chk "stray commits --apply: the origin branch sits on the stray commit" \
+  "$([ "$(git -C "$SCB" rev-parse "$SCR" 2>/dev/null)" = "$SCC_STRAY" ]; echo $?)"
+chk "stray commits --apply: a local branch of the same name keeps it" \
+  "$([ "$(git -C "$SCC" rev-parse "refs/heads/${SCR}" 2>/dev/null)" = "$SCC_STRAY" ]; echo $?)"
+chk_has "stray commits --apply: the carry is reported" "$out" "carried 1 stray commits on main to origin/${SCR}"
+chk_has "stray commits --apply: the PR command is named, not run" "$out" "gh pr create --head ${SCR}"
+chk_has "stray commits --apply: the move is reported" "$out" "where it left origin/main; the 1 commits live on ${SCR}"
+chk_no "stray commits --apply: the pull did not fail" "$out" "FAILED"
+chk "stray commits --apply: main fast-forwarded onto origin/main" \
+  "$([ "$(git -C "$SCC" rev-parse HEAD)" = "$(git -C "$SCB" rev-parse main)" ]; echo $?)"
+chk "stray commits --apply: the committed file left the working tree with its commit" \
+  "$([ ! -e "$SCC/notes.md" ]; echo $?)"
+chk "stray commits --apply: the dirty union line survived" \
+  "$(grep -qF 'local: the other session line' "$SCC/_meta/LAB_LOG.md"; echo $?)"
+out="$("$WRAP" apply "$SCC" 2>&1)"
+chk_has "stray commits rerun: nothing left ahead" "$(printf '%s' "$out" | grep -A1 -- '-- stray commits:')" "none"
+
+echo "--- stray commits: origin unmoved, the move lands on origin/main itself"
+build_union_repo scsame
+SCS="$TMPD/uclone-scsame"; SCSB="$TMPD/ubare-scsame"
+printf 'a note\n' > "$SCS/notes.md"; git -C "$SCS" add notes.md; git -C "$SCS" commit -qm "docs: a stray note"
+out="$("$WRAP" apply --apply "$SCS" 2>&1)"; rc=$?
+SCSR="$(commit_branches "$SCSB")"
+chk "stray commits, origin unmoved: apply exits 0" "$rc"
+chk_has "stray commits, origin unmoved: the brief's move line" "$out" \
+  "moved main back to origin/main; the 1 commits live on ${SCSR}"
+chk "stray commits, origin unmoved: main is origin/main" \
+  "$([ "$(git -C "$SCS" rev-parse HEAD)" = "$(git -C "$SCSB" rev-parse main)" ]; echo $?)"
+
+echo "--- stray commits: a dirty non-union file keeps main ahead, the branch still goes"
+build_union_repo scdirty
+SCD="$TMPD/uclone-scdirty"; SCDB="$TMPD/ubare-scdirty"
+printf 'a note\n' > "$SCD/notes.md"; git -C "$SCD" add notes.md; git -C "$SCD" commit -qm "docs: a stray note"
+SCD_STRAY="$(git -C "$SCD" rev-parse HEAD)"
+printf 'readme local\n' > "$SCD/README.md"
+out="$("$WRAP" apply "$SCD" 2>&1)"
+chk_has "stray commits dirty dry-run: names the block" "$out" \
+  "main would stay ahead: dirty tracked files block the move: README.md"
+out="$("$WRAP" apply --apply "$SCD" 2>&1)"
+SCDR="$(commit_branches "$SCDB")"
+chk "stray commits dirty: the branch reached origin" \
+  "$([ "$(git -C "$SCDB" rev-parse "$SCDR" 2>/dev/null)" = "$SCD_STRAY" ]; echo $?)"
+chk_has "stray commits dirty: the block is reported" "$out" \
+  "main left ahead: dirty tracked files block the move: README.md"
+chk "stray commits dirty: main did not move" "$([ "$(git -C "$SCD" rev-parse HEAD)" = "$SCD_STRAY" ]; echo $?)"
+chk "stray commits dirty: the dirty file is untouched" \
+  "$([ "$(cat "$SCD/README.md")" = "readme local" ]; echo $?)"
+git -C "$SCD" checkout -q -- README.md
+out="$("$WRAP" apply --apply "$SCD" 2>&1)"
+chk_has "stray commits rerun: the existing origin branch is reused" "$out" \
+  "origin/${SCDR} already carries the 1 stray commits on main"
+chk "stray commits rerun: still one branch on origin" "$([ "$(commit_branches "$SCDB" | grep -c .)" = 1 ]; echo $?)"
+chk "stray commits rerun: main moved once the tree was clean" \
+  "$([ "$(git -C "$SCD" rev-parse HEAD)" = "$(git -C "$SCDB" rev-parse main)" ]; echo $?)"
+
+echo "--- stray commits: a dirty union file the commits change stays for git to refuse"
+build_union_repo scunion
+SCU="$TMPD/uclone-scunion"
+printf '%s' "$LAB_LOCAL" > "$SCU/_meta/LAB_LOG.md"; git -C "$SCU" commit -qam "chore: a stray log line"
+SCU_STRAY="$(git -C "$SCU" rev-parse HEAD)"
+printf '%s' $'# Lab log\n\n---\n\n2026-09-04 · local: uncommitted\n2026-09-03 · local: the other session line\n2026-09-01 · base: the first line\n' > "$SCU/_meta/LAB_LOG.md"
+SCU_BEFORE="$(cksum < "$SCU/_meta/LAB_LOG.md")"
+out="$("$WRAP" apply --apply "$SCU" 2>&1)"
+chk_has "stray commits union overlap: reset --keep refusal is reported" "$out" "main left ahead: git reset --keep refused:"
+chk "stray commits union overlap: main did not move" "$([ "$(git -C "$SCU" rev-parse HEAD)" = "$SCU_STRAY" ]; echo $?)"
+chk "stray commits union overlap: the working copy is byte-identical" \
+  "$([ "$SCU_BEFORE" = "$(cksum < "$SCU/_meta/LAB_LOG.md")" ]; echo $?)"
+
+echo "--- stray commits: the knob false carries nothing"
+build_union_repo scoff
+SCO="$TMPD/uclone-scoff"; SCOB="$TMPD/ubare-scoff"
+printf 'a note\n' > "$SCO/notes.md"; git -C "$SCO" add notes.md; git -C "$SCO" commit -qm "docs: a stray note"
+SCO_STRAY="$(git -C "$SCO" rev-parse HEAD)"
+out="$(KIT_CONFIG_OPERATOR="$TMPD/stray-off" "$WRAP" apply --apply "$SCO" 2>&1)"
+chk_has "stray commits knob off: reports the count" "$out" \
+  "1 stray commits on main stay local (wrap.carry_stray_lines=false)"
+chk "stray commits knob off: no branch reached origin" "$([ -z "$(commit_branches "$SCOB")" ]; echo $?)"
+chk "stray commits knob off: no local carry branch" "$([ -z "$(commit_branches "$SCO")" ]; echo $?)"
+chk "stray commits knob off: main did not move" "$([ "$(git -C "$SCO" rev-parse HEAD)" = "$SCO_STRAY" ]; echo $?)"
+
+echo "--- stray commits: a refused push is FAILED and the pull still runs"
+build_union_repo screfuse
+SCF="$TMPD/uclone-screfuse"; SCFB="$TMPD/ubare-screfuse"
+mkdir -p "$SCFB/hooks"; printf '#!/bin/sh\nexit 1\n' > "$SCFB/hooks/pre-receive"; chmod +x "$SCFB/hooks/pre-receive"
+printf 'a note\n' > "$SCF/notes.md"; git -C "$SCF" add notes.md; git -C "$SCF" commit -qm "docs: a stray note"
+SCF_STRAY="$(git -C "$SCF" rev-parse HEAD)"
+out="$("$WRAP" apply --apply "$SCF" 2>&1)"; rc=$?
+chk "stray commits refused push: apply exits 2" "$([ "$rc" = 2 ]; echo $?)"
+chk_has "stray commits refused push: FAILED names the branch" "$out" "FAILED carry 1 stray commits on main to wrap/stray-commits-"
+chk "stray commits refused push: main did not move" "$([ "$(git -C "$SCF" rev-parse HEAD)" = "$SCF_STRAY" ]; echo $?)"
+chk_has "stray commits refused push: the pull step still ran" "$out" "-- pull:"
 
 # ===========================================================================
 echo "=== apply: wrap.pull_past_dirty stashes only the blocking files ==="
