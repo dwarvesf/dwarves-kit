@@ -1280,9 +1280,15 @@ _pr_detail() {
 # passes only when GitHub itself reports the merge state as CLEAN. A draft reports
 # mergeable=MERGEABLE and mergeStateStatus=CLEAN on a free private repo, so the draft check
 # runs first: a draft is never eligible no matter what the rest of the state says.
+#
+# `gh pr view --json statusCheckRollup` returns one entry per check RUN, not per check name:
+# a re-run of the same job (e.g. a flaky check re-triggered) leaves both the old FAILURE run
+# and the new SUCCESS run in the array. Grouping by name and keeping only the run with the
+# latest completedAt (falling back to startedAt for a still-running check) mirrors what
+# `gh pr checks` already shows and what GitHub's own merge button honors.
 _pr_gate() {
   printf '%s' "$1" | jq -r --arg def "$2" '
-    def checks: (.statusCheckRollup // []);
+    def checks: (.statusCheckRollup // []) | group_by(.name) | map(sort_by(.completedAt // .startedAt // "") | last);
     if (.isDraft == true) then "SKIP draft"
     elif (.baseRefName != $def) then "SKIP base is \(.baseRefName), not the default branch \($def)"
     elif (.mergeable != "MERGEABLE") then "SKIP not mergeable (\(.mergeable // "unknown"))"

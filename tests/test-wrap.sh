@@ -1503,6 +1503,12 @@ chk_has "merge: an empty rollup on a CLEAN state stays eligible" "$out" "eligibl
 out="$(gate_verdict '{"number":9,"title":"gate case","headRefName":"feat/gate","headRefOid":"aa","baseRefName":"main","mergeable":"MERGEABLE","mergeStateStatus":"CLEAN","reviewDecision":"CHANGES_REQUESTED","statusCheckRollup":[{"conclusion":"SUCCESS"}]}')"
 chk_has "merge: changes requested skips" "$out" "SKIP #9 gate case: changes requested"
 
+echo "=== merge: the checks gate reads only the latest run per check name, not every stale run ==="
+out="$(gate_verdict '{"number":9,"title":"gate case","headRefName":"feat/gate","headRefOid":"aa","baseRefName":"main","mergeable":"MERGEABLE","mergeStateStatus":"CLEAN","reviewDecision":"APPROVED","statusCheckRollup":[{"name":"evidence","conclusion":"FAILURE","completedAt":"2026-09-24T17:44:08Z"},{"name":"evidence","conclusion":"SUCCESS","completedAt":"2026-09-24T17:45:49Z"}]}')"
+chk_has "merge: a re-run that later passed is eligible, not blocked by its stale failure" "$out" "eligible #9 gate case [feat/gate]"
+out="$(gate_verdict '{"number":9,"title":"gate case","headRefName":"feat/gate","headRefOid":"aa","baseRefName":"main","mergeable":"MERGEABLE","mergeStateStatus":"CLEAN","reviewDecision":"APPROVED","statusCheckRollup":[{"name":"evidence","conclusion":"SUCCESS","completedAt":"2026-09-24T17:44:08Z"},{"name":"evidence","conclusion":"FAILURE","completedAt":"2026-09-24T17:45:49Z"}]}')"
+chk_has "merge: a re-run whose latest attempt failed after an earlier pass still skips" "$out" "SKIP #9 gate case: checks are pending or failing"
+
 echo "=== merge: a draft PR skips even when GitHub reports it mergeable and clean ==="
 out="$(gate_verdict '{"number":9,"title":"gate case","headRefName":"feat/gate","headRefOid":"aa","baseRefName":"main","mergeable":"MERGEABLE","mergeStateStatus":"CLEAN","reviewDecision":"APPROVED","statusCheckRollup":[{"conclusion":"SUCCESS"}],"isDraft":true}')"
 chk_has "merge: a draft skips" "$out" "SKIP #9 gate case: draft"
