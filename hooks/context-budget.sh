@@ -10,7 +10,8 @@
 # != true) assistant turn in the transcript tail. That is the payload the next turn
 # re-reads from cache. The window is the context window of that same turn's model
 # (KIT_CTX_WINDOW overrides; default 200000; auto-bumped to 1000000 for a model id
-# carrying a "1m" marker, e.g. a Bedrock `[1m]` long-context variant).
+# carrying a "1m" marker, e.g. a Bedrock `[1m]` long-context variant, or a configured
+# model (ANTHROPIC_MODEL or settings `.model`) carrying one, or usage already past 200k).
 #
 # Thresholds: KIT_CTX_WARN_PCT (default 65) is advisory (hand off at the next
 # boundary). KIT_CTX_STRONG_PCT (default 70) is a directive: finish the step in
@@ -53,10 +54,21 @@ case "$CTX" in ''|*[!0-9]*) exit 0 ;; esac
 if [ -n "${KIT_CTX_WINDOW:-}" ]; then
     WINDOW="$KIT_CTX_WINDOW"
 else
+    # The transcript records the API model id, which drops the `[1m]` suffix Claude Code
+    # uses to select the 1M window (`opus[1m]` logs as `claude-opus-5-5`). Also check the
+    # configured model: ANTHROPIC_MODEL, then project-local, project, and user settings.
+    CWD=$(printf '%s' "$INPUT" | jq -r '.cwd // empty' 2>/dev/null)
+    CONFIGURED="${ANTHROPIC_MODEL:-}"
+    for f in ${CWD:+"$CWD/.claude/settings.local.json" "$CWD/.claude/settings.json"} "$HOME/.claude/settings.json"; do
+        [ -n "$CONFIGURED" ] && break
+        [ -r "$f" ] && CONFIGURED=$(jq -r '.model // empty' "$f" 2>/dev/null)
+    done
     WINDOW=200000
-    case "$(printf '%s' "$MODEL" | tr '[:upper:]' '[:lower:]')" in
+    case "$(printf '%s %s' "$MODEL" "$CONFIGURED" | tr '[:upper:]' '[:lower:]')" in
         *1m*) WINDOW=1000000 ;;
     esac
+    # Usage past 200k proves the window is bigger, whatever the model id says.
+    [ "$CTX" -gt 200000 ] && WINDOW=1000000
 fi
 case "$WINDOW" in *[!0-9]*) exit 0 ;; esac
 [ "$WINDOW" -gt 0 ] || exit 0

@@ -106,6 +106,18 @@ T7d="$HOME/.claude/projects/p/s7d.jsonl"
 transcript "$T7d" 65000 "claude-sonnet-5"
 KIT_CTX_WINDOW=100000 step "7.4 KIT_CTX_WINDOW=100000 override: 65k is 65%, speaks" speak s7d "$T7d"
 
+T7e="$HOME/.claude/projects/p/s7e.jsonl"
+transcript "$T7e" 140000 "claude-opus-5-5"
+printf '{"model":"opus[1m]"}' > "$HOME/.claude/settings.json"
+step "7.5 settings model opus[1m], bare transcript id: 140k is 14%, silent" silent s7e "$T7e"
+rm -f "$HOME/.claude/settings.json"
+T7f="$HOME/.claude/projects/p/s7f.jsonl"
+transcript "$T7f" 140000 "claude-opus-5-5"
+ANTHROPIC_MODEL="claude-opus-5-5[1m]" step "7.6 ANTHROPIC_MODEL carries [1m]: 140k is 14%, silent" silent s7f "$T7f"
+T7g="$HOME/.claude/projects/p/s7g.jsonl"
+transcript "$T7g" 250000 "claude-opus-5-5"
+step "7.7 usage past 200k proves a bigger window: 250k is 25% of 1M, silent" silent s7g "$T7g"
+
 echo "== Case 8: threshold 0 (warn) is advisory, threshold 1 (strong) is a directive =="
 tone() {
     local label="$1" want="$2" session="$3" tr="$4" ctx
