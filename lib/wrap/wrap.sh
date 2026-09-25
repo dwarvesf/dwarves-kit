@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # wrap.sh -- the landing step after ship. One pass over every repo a session
-# touched, with ten verbs:
+# touched, with eleven verbs:
 #
 #   wrap.sh scan  [--under <root>]... <repo> [<repo>...]    report only, exit 0
 #   wrap.sh apply [--apply] [--worktrees] [--archive-unmerged] [--own <path>]... [--under <root>]... <repo> [...]  dry-run by default
@@ -11,6 +11,7 @@
 #   wrap.sh default-branch <repo>                           prints the detected name
 #   wrap.sh knowledge-root <repo>                           the fenced knowledge dir
 #   wrap.sh follow-mode [lanes|all]                         step 10's mode and lanes, report only
+#   wrap.sh deploy-wait <owner>/<name> <sha> [--check S]... [--timeout N]  step 4's push-deploy wait
 #   wrap.sh stage "<title>" "<intent>" "<home>" [--repo <repo>]  stage a candidate
 #   wrap.sh --help
 #
@@ -2689,6 +2690,117 @@ cmd_follow_mode() {
   printf '%s %s\n' "$mode" "${lanes:-none}"
 }
 
+# --------------------------------------------------------------------------- deploy-wait
+
+# cmd_deploy_wait <owner>/<name> <sha> [--check <substr>]... [--timeout <secs>] -- step 4's
+# wait for a repo that deploys on push: the deploy is a check run on the merge commit
+# (Cloudflare "Workers Builds: <name>"), not a workflow_dispatch run. Polls the commit's check
+# runs every DEPLOY_POLL_SECS until every --check value matches a run and every matching run is
+# completed. A rerun gets a new, higher id, so only the highest id per name counts (the
+# stale-rerun bug _pr_gate fixed). Only `success` passes: a skipped deploy deployed nothing.
+# Exit 0 all success, 1 a completed run failed, 2 gh missing or a non-transient read error,
+# 124 timeout, 64 usage. Writes nothing but its own temp file.
+DEPLOY_POLL_SECS="${DEPLOY_POLL_SECS:-10}"
+cmd_deploy_wait() {
+  local usage="usage: wrap.sh deploy-wait <owner>/<name> <sha> [--check <name-substring>]... [--timeout <secs>]"
+  local slug="" sha="" checks="" timeout=600 count=0
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --check)   [ $# -ge 2 ] && [ -n "$2" ] || { echo "$usage" >&2; return 64; }; checks="${checks}$2"$'\n'; shift 2 ;;
+      --timeout) [ $# -ge 2 ] || { echo "$usage" >&2; return 64; }; timeout="$2"; shift 2 ;;
+      -*) echo "$usage" >&2; return 64 ;;
+      *) count=$((count + 1)); case "$count" in 1) slug="$1" ;; 2) sha="$1" ;; esac; shift ;;
+    esac
+  done
+  [ "$count" -eq 2 ] || { echo "$usage" >&2; return 64; }
+  # grep matches line by line, so a value carrying a newline is refused before it.
+  case "$slug$sha" in *$'\n'*|*$'\r'*) echo "$usage" >&2; return 64 ;; esac
+  # A `.` or `..` segment would rewrite the API path, so neither half may be one.
+  printf '%s' "$slug" | grep -qE '^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$' || { echo "$usage" >&2; return 64; }
+  case "/$slug/" in */./*|*/../*) echo "$usage" >&2; return 64 ;; esac
+  printf '%s' "$sha" | grep -qE '^[0-9a-fA-F]{7,40}$' || { echo "$usage" >&2; return 64; }
+  case "$timeout" in ''|*[!0-9]*) echo "$usage" >&2; return 64 ;; esac
+
+  local ghs
+  ghs="$(_gh_state)"
+  [ "$ghs" = ok ] || { echo "ERROR ${sha:0:7}: $(_gh_note "$ghs")"; return 2; }
+  # gh writes a partial page set to stdout even when a later page fails, so the JSON and the
+  # error text travel apart: stdout is judged only on exit 0, stderr only on a failure.
+  local errf rc
+  errf="$(mktemp "${TMPDIR:-/tmp}/wrap-deploy-wait.XXXXXX")" || { echo "ERROR ${sha:0:7}: mktemp failed"; return 2; }
+  # A killed wait (a caller's own time limit) must not leave the file behind.
+  trap 'rm -f "$errf"' EXIT INT TERM
+  _deploy_wait_poll "$slug" "$sha" "$checks" "$timeout" "$errf"; rc=$?
+  rm -f "$errf"
+  # The trap names a local; left armed it fires after return under set -u.
+  trap - EXIT INT TERM
+  return "$rc"
+}
+
+# _deploy_wait_poll <slug> <sha> <checks, newline-separated> <timeout> <errfile>
+_deploy_wait_poll() {
+  local slug="$1" sha="$2" checks="$3" timeout="$4" errf="$5" s7="${2:0:7}"
+  local waited=0 good=0 raw rc err runs="[]" state start=$SECONDS
+  # Keep the runs whose name contains any --check value (all runs with none), the highest id
+  # per name. `missing` lists each --check value no run matches yet.
+  local judge='($cs | split("\n") | map(select(. != ""))) as $want
+    | [.[].check_runs[]? | .name as $n
+       | select(($want | length) == 0 or any($want[]; . as $c | $n | contains($c)))]
+    | group_by(.name) | map(max_by(.id)) | sort_by(.name)'
+  while :; do
+    raw="$(gh api --paginate "repos/${slug}/commits/${sha}/check-runs?per_page=100" 2>"$errf")"; rc=$?
+    err="$(head -n 1 "$errf")"
+    if [ "$rc" -eq 0 ]; then
+      runs="$(printf '%s' "$raw" | jq -s -c --arg cs "$checks" "$judge" 2>/dev/null)"
+      [ -n "$runs" ] || { echo "ERROR ${s7}: unreadable check-runs answer"; return 2; }
+      good=$((good + 1))
+      state="$(printf '%s' "$runs" | jq -r --arg cs "$checks" '
+        ($cs | split("\n") | map(select(. != ""))) as $want
+        | . as $runs
+        | [$want[] | . as $c | select(all($runs[]; (.name | contains($c)) | not))] as $missing
+        | if length == 0 or ($missing | length) > 0 then "missing"
+          elif all(.status == "completed") then "completed"
+          else "open" end')"
+      [ "$state" = completed ] && break
+      echo "deploy-wait ${s7}: $(_deploy_wait_pending "$runs" "$checks"), ${waited}s of ${timeout}s" >&2
+    elif _gh_merge_transient < "$errf"; then
+      echo "deploy-wait ${s7}: transient read error, retrying: ${err:-exit $rc}" >&2
+    else
+      echo "ERROR ${s7}: ${err:-gh api exited $rc}"; return 2
+    fi
+    if [ "$waited" -ge "$timeout" ]; then
+      printf '%s' "$runs" | jq -r '.[] | "\(.conclusion // .status) \(.name)"'
+      if [ "$good" -eq 0 ]; then
+        echo "TIMEOUT ${s7} after ${waited}s: no successful read of the check runs"
+      else
+        echo "TIMEOUT ${s7} after ${waited}s: $(_deploy_wait_pending "$runs" "$checks")"
+      fi
+      return 124
+    fi
+    sleep "$DEPLOY_POLL_SECS"; waited=$((waited + DEPLOY_POLL_SECS))
+    # Wall time also counts, so slow gh calls cannot stretch the timeout.
+    [ $((SECONDS - start)) -gt "$waited" ] && waited=$((SECONDS - start))
+  done
+
+  printf '%s' "$runs" | jq -r '.[] | "\(.conclusion // "none") \(.name)"'
+  local failed
+  failed="$(printf '%s' "$runs" | jq -r '[.[] | select(.conclusion != "success") | .name] | join(", ")')"
+  if [ -n "$failed" ]; then echo "FAILED ${s7}: ${failed}"; return 1; fi
+  echo "DEPLOYED ${s7}: $(printf '%s' "$runs" | jq -r 'length') checks succeeded"
+}
+
+# _deploy_wait_pending <runs json> <checks> -- what the wait is still on, one phrase.
+_deploy_wait_pending() {
+  printf '%s' "$1" | jq -r --arg cs "$2" '
+    ($cs | split("\n") | map(select(. != ""))) as $want
+    | . as $runs
+    | [$want[] | . as $c | select(all($runs[]; (.name | contains($c)) | not))] as $missing
+    | [.[] | select(.status != "completed") | .name] as $open
+    | if length == 0 and ($want | length) == 0 then "no matching check run appeared"
+      elif ($missing | length) > 0 then "no matching check run appeared for: \($missing | join(", "))"
+      else "open: \($open | join(", "))" end'
+}
+
 # --------------------------------------------------------------------------- entry
 
 main() {
@@ -2704,6 +2816,7 @@ main() {
     default-branch) cmd_default_branch "$@" ;;
     knowledge-root) cmd_knowledge_root "$@" ;;
     follow-mode)    cmd_follow_mode "$@" ;;
+    deploy-wait)    cmd_deploy_wait "$@" ;;
     stage)          cmd_stage "$@" ;;
     -h|--help|help|"") _usage; return 0 ;;
     *) echo "wrap: unknown verb '$verb' (try: wrap --help)" >&2; return 64 ;;

@@ -3191,7 +3191,7 @@ echo "=== help and usage ==="
 # ===========================================================================
 out="$("$WRAP" --help 2>&1)"; rc=$?
 chk "--help exits 0" "$rc"
-for verb in scan apply merge start log default-branch knowledge-root stage; do
+for verb in scan apply merge start log default-branch knowledge-root stage deploy-wait; do
   chk_has "--help names $verb" "$out" "$verb"
 done
 out="$("$WRAP" scan 2>&1)"; rc=$?
@@ -3451,6 +3451,188 @@ echo "--- the flag off: apply's report carries no archive-unmerged section at al
 build_au_repo off
 out="$(au_run apply "$TMPD/auclone-off")"
 chk_no "archive-unmerged section is absent without the flag" "$out" "archive unmerged"
+
+# ------------------------------------------------------- deploy-wait
+# A push-deploy repo carries its deploy as a check run on the merge commit. The stub serves
+# read k from $DW/read-<k>.json (the last file present once k runs past them), with an
+# optional read-<k>.rc exit code, so a case scripts pending -> completed or a 502 -> success.
+# The no-op sleep first on PATH makes every poll instant while the waited counter still
+# advances by the verb's own 10s step, so a timeout case is deterministic.
+echo
+echo "=== deploy-wait: a SHA's push-deploy check runs, waited on until completed ==="
+mkdir -p "$TMPD/dwstub"
+cat > "$TMPD/dwstub/gh" <<'STUB'
+#!/usr/bin/env bash
+case "${1:-}" in
+  auth) exit 0 ;;
+  api)
+    printf '%s\n' "$*" >> "$DW/calls.log"
+    n=$(( $(cat "$DW/count" 2>/dev/null || echo 0) + 1 )); echo "$n" > "$DW/count"
+    k="$n"; while [ "$k" -gt 1 ] && [ ! -e "$DW/read-$k.json" ]; do k=$((k - 1)); done
+    # A failing read prints its error on stderr, and any partial pages (read-<k>.out) on
+    # stdout, the way real gh does when a later page of --paginate fails.
+    rc="$(cat "$DW/read-$k.rc" 2>/dev/null || echo 0)"
+    if [ "$rc" -eq 0 ]; then cat "$DW/read-$k.json"
+    else cat "$DW/read-$k.out" 2>/dev/null; cat "$DW/read-$k.json" >&2; fi
+    exit "$rc" ;;
+esac
+exit 1
+STUB
+chmod +x "$TMPD/dwstub/gh"
+SHA=0123456789abcdef0123456789abcdef01234567
+dw_case() { DW="$TMPD/dw-$1"; export DW; mkdir -p "$DW"; }
+dw_read() { printf '%s\n' "$2" > "$DW/read-$1.json"; }
+dw_run() { PATH="$TMPD/nosleep:$TMPD/dwstub:$PATH" "$WRAP" deploy-wait "$@" 2>&1; }
+dw_reads() { cat "$DW/count" 2>/dev/null || echo 0; }
+run_json() { # run_json <id> <name> <status> <conclusion|null>
+  local c="null"; [ "$4" = null ] || c="\"$4\""
+  printf '{"id":%s,"name":"%s","status":"%s","conclusion":%s}' "$1" "$2" "$3" "$c"
+}
+WB_OK="$(run_json 11 'Workers Builds: site' completed success)"
+CI_OK="$(run_json 12 'ci / test' completed success)"
+CI_BAD="$(run_json 13 'ci / test' completed failure)"
+WB_OPEN="$(run_json 11 'Workers Builds: site' in_progress null)"
+
+echo "--- all success: exit 0, one line per check, DEPLOYED"
+dw_case ok; dw_read 1 "{\"total_count\":2,\"check_runs\":[$WB_OK,$CI_OK]}"
+out="$(dw_run o/r "$SHA")"; rc=$?
+chk "deploy-wait all success exits 0" "$rc"
+chk_has "deploy-wait prints the deploy check's conclusion" "$out" "success Workers Builds: site"
+chk_has "deploy-wait prints the CI check's conclusion" "$out" "success ci / test"
+chk_has "deploy-wait reports DEPLOYED with the short sha" "$out" "DEPLOYED 0123456: 2 checks succeeded"
+chk_no "deploy-wait exits without an unbound-variable error" "$out" "unbound variable"
+chk_has "deploy-wait reads the commit's check runs, paginated" "$(cat "$DW/calls.log")" \
+  "api --paginate repos/o/r/commits/${SHA}/check-runs?per_page=100"
+
+echo "--- one failure: non-zero, the failed check named"
+dw_case fail; dw_read 1 "{\"check_runs\":[$WB_OK,$CI_BAD]}"
+out="$(dw_run o/r "$SHA")"; rc=$?
+chk "deploy-wait with a failed check exits 1" "$([ "$rc" -eq 1 ]; echo $?)"
+chk_has "deploy-wait names the failed check" "$out" "FAILED 0123456: ci / test"
+chk_has "deploy-wait still prints the failed conclusion line" "$out" "failure ci / test"
+chk_no "deploy-wait never claims DEPLOYED on a failure" "$out" "DEPLOYED"
+
+echo "--- pending then success: waits, then exit 0"
+dw_case pend; dw_read 1 "{\"check_runs\":[$WB_OPEN]}"; dw_read 3 "{\"check_runs\":[$WB_OK]}"
+out="$(dw_run o/r "$SHA" --check "Workers Builds")"; rc=$?
+chk "deploy-wait pending then success exits 0" "$rc"
+chk "deploy-wait polled until the check completed (3 reads)" "$([ "$(dw_reads)" -eq 3 ]; echo $?)"
+chk_has "deploy-wait names the open check while waiting" "$out" "open: Workers Builds: site"
+chk_has "deploy-wait reports DEPLOYED once it completes" "$out" "DEPLOYED 0123456: 1 checks succeeded"
+
+echo "--- timeout: a distinct exit code, the open check named"
+dw_case to; dw_read 1 "{\"check_runs\":[$WB_OPEN]}"
+out="$(dw_run o/r "$SHA" --timeout 20)"; rc=$?
+chk "deploy-wait timeout exits 124" "$([ "$rc" -eq 124 ]; echo $?)"
+chk_has "deploy-wait timeout names the open check" "$out" "TIMEOUT 0123456 after 20s: open: Workers Builds: site"
+chk_has "deploy-wait timeout prints the open status" "$out" "in_progress Workers Builds: site"
+chk "deploy-wait timeout is bounded (reads at 0s, 10s, 20s)" "$([ "$(dw_reads)" -eq 3 ]; echo $?)"
+
+echo "--- timeout: slow gh calls count toward it (wall time, not just the poll sleeps)"
+mkdir -p "$TMPD/dwslow"
+printf '#!/usr/bin/env bash\n[ "${1:-}" = api ] && /bin/sleep 2\nexec "%s/dwstub/gh" "$@"\n' "$TMPD" > "$TMPD/dwslow/gh"
+chmod +x "$TMPD/dwslow/gh"
+dw_case slow; dw_read 1 "{\"check_runs\":[$WB_OPEN]}"
+out="$(DEPLOY_POLL_SECS=1 PATH="$TMPD/nosleep:$TMPD/dwslow:$PATH" "$WRAP" deploy-wait o/r "$SHA" --timeout 3 2>&1)"; rc=$?
+chk "deploy-wait slow-gh timeout exits 124" "$([ "$rc" -eq 124 ]; echo $?)"
+chk "deploy-wait counts gh time: 3 reads of 2s pass a 3s timeout (sleeps alone take 4)" "$([ "$(dw_reads)" -eq 3 ]; echo $?)"
+
+echo "--- no match: the filter keeps waiting, then times out saying so"
+dw_case nomatch; dw_read 1 "{\"check_runs\":[$CI_OK]}"
+out="$(dw_run o/r "$SHA" --check "Workers Builds" --timeout 10)"; rc=$?
+chk "deploy-wait with no matching run exits 124" "$([ "$rc" -eq 124 ]; echo $?)"
+chk_has "deploy-wait says no matching run appeared" "$out" "no matching check run appeared"
+
+echo "--- --check: only the matching runs are judged"
+dw_case filter; dw_read 1 "{\"check_runs\":[$WB_OK,$CI_BAD]}"
+out="$(dw_run o/r "$SHA" --check "Workers Builds")"; rc=$?
+chk "deploy-wait --check ignores a failed CI run" "$rc"
+chk_no "deploy-wait --check never names the filtered-out run" "$out" "ci / test"
+
+echo "--- a rerun supersedes the run it replaced"
+dw_case rerun
+dw_read 1 "{\"check_runs\":[$(run_json 21 'Workers Builds: site' completed success),$(run_json 20 'Workers Builds: site' completed failure)]}"
+out="$(dw_run o/r "$SHA")"; rc=$?
+chk "deploy-wait judges the highest id per name" "$rc"
+chk_no "deploy-wait drops the stale failed run" "$out" "failure"
+
+echo "--- read errors: a transient one retries, any other one stops at once"
+dw_case transient; dw_read 1 "HTTP 502: Bad Gateway"; echo 1 > "$DW/read-1.rc"
+dw_read 2 "{\"check_runs\":[$WB_OK]}"
+out="$(dw_run o/r "$SHA")"; rc=$?
+chk "deploy-wait retries past a 502" "$rc"
+chk_has "deploy-wait names the transient retry" "$out" "transient read error"
+dw_case hard; dw_read 1 "HTTP 422: No commit found for SHA"; echo 1 > "$DW/read-1.rc"
+out="$(dw_run o/r "$SHA")"; rc=$?
+chk "deploy-wait stops on a non-transient error with exit 2" "$([ "$rc" -eq 2 ]; echo $?)"
+chk_has "deploy-wait names the read error" "$out" "ERROR 0123456: HTTP 422"
+chk "deploy-wait read only once on a hard error" "$([ "$(dw_reads)" -eq 1 ]; echo $?)"
+dw_case hard-out; dw_read 1 "gh: HTTP 404: Not Found"; echo 1 > "$DW/read-1.rc"
+printf '%s\n' '{"check_runs":[{"id":1,"name":"x","status":"completed","conclusion":"failure","output":{"summary":"build timed out"}}]}' > "$DW/read-1.out"
+out="$(dw_run o/r "$SHA")"; rc=$?
+chk "deploy-wait classifies the error text only, never the partial stdout" "$([ "$rc" -eq 2 ]; echo $?)"
+
+echo "--- every page is read: a check on page two still counts"
+dw_case pages
+printf '%s\n%s\n' "{\"check_runs\":[$CI_OK]}" "{\"check_runs\":[$(run_json 14 'Workers Builds: site' completed failure)]}" > "$DW/read-1.json"
+out="$(dw_run o/r "$SHA")"; rc=$?
+chk "deploy-wait judges a failure on the second page" "$([ "$rc" -eq 1 ]; echo $?)"
+chk_has "deploy-wait names the second page's failed check" "$out" "FAILED 0123456: Workers Builds: site"
+
+echo "--- a partial page set from a failed read is never judged"
+dw_case partial; dw_read 1 "gh: HTTP 502: Bad Gateway"; echo 1 > "$DW/read-1.rc"
+printf '%s\n' "{\"check_runs\":[$CI_OK]}" > "$DW/read-1.out"
+dw_read 2 "{\"check_runs\":[$CI_OK,$(run_json 15 'Workers Builds: site' completed failure)]}"
+out="$(dw_run o/r "$SHA")"; rc=$?
+chk "deploy-wait rereads after a failed paginated read (exit 1 from the full read)" "$([ "$rc" -eq 1 ]; echo $?)"
+chk "deploy-wait read twice" "$([ "$(dw_reads)" -eq 2 ]; echo $?)"
+
+echo "--- only success passes: a skipped deploy deployed nothing"
+dw_case skipped; dw_read 1 "{\"check_runs\":[$(run_json 16 'Workers Builds: site' completed skipped)]}"
+out="$(dw_run o/r "$SHA")"; rc=$?
+chk "deploy-wait fails a skipped check" "$([ "$rc" -eq 1 ]; echo $?)"
+chk_has "deploy-wait names the skipped check" "$out" "FAILED 0123456: Workers Builds: site"
+
+echo "--- repeated --check: every value must match a run before the wait can end"
+dw_case multi; dw_read 1 "{\"check_runs\":[$WB_OK]}"
+out="$(dw_run o/r "$SHA" --check "Workers Builds: site" --check "Workers Builds: api" --timeout 10)"; rc=$?
+chk "deploy-wait waits on a --check value no run matches yet" "$([ "$rc" -eq 124 ]; echo $?)"
+chk_has "deploy-wait names the unmatched --check value" "$out" "no matching check run appeared for: Workers Builds: api"
+dw_case multi-ok; dw_read 1 "{\"check_runs\":[$WB_OK,$(run_json 17 'Workers Builds: api' completed success)]}"
+out="$(dw_run o/r "$SHA" --check "Workers Builds: site" --check "Workers Builds: api")"; rc=$?
+chk "deploy-wait exits 0 once every --check value succeeded" "$rc"
+chk_has "deploy-wait counts both checks" "$out" "DEPLOYED 0123456: 2 checks succeeded"
+
+echo "--- a transient error on every read times out naming the reads, not the checks"
+dw_case outage; dw_read 1 "gh: HTTP 503: Service Unavailable"; echo 1 > "$DW/read-1.rc"
+out="$(dw_run o/r "$SHA" --timeout 10)"; rc=$?
+chk "deploy-wait outage exits 124" "$([ "$rc" -eq 124 ]; echo $?)"
+chk_has "deploy-wait outage says no read succeeded" "$out" "no successful read of the check runs"
+
+echo "--- gh logged out: exit 2 before any read"
+dw_case unauth; dw_read 1 '{"check_runs":[]}'
+out="$(GH_STUB_UNAUTH=1 PATH="$TMPD/nosleep:$TMPD/stub:$PATH" "$WRAP" deploy-wait o/r "$SHA" 2>&1)"; rc=$?
+chk "deploy-wait with gh logged out exits 2" "$([ "$rc" -eq 2 ]; echo $?)"
+chk_has "deploy-wait names the gh state" "$out" "ERROR 0123456: (gh unauthenticated)"
+
+echo "--- usage: exit 64"
+dw_case usage; dw_read 1 '{"check_runs":[]}'
+for args in "" "o/r" "not-a-slug $SHA" "./r $SHA" "o/.. $SHA" "o/r xyz" "o/r $SHA --timeout abc" "o/r $SHA --bogus"; do
+  # shellcheck disable=SC2086
+  out="$(dw_run $args)"; rc=$?
+  chk "deploy-wait usage error exits 64 (args: ${args:-none})" "$([ "$rc" -eq 64 ]; echo $?)"
+done
+out="$(dw_run $'o/r\nx/y' "$SHA")"; rc=$?
+chk "deploy-wait refuses a newline in the slug" "$([ "$rc" -eq 64 ]; echo $?)"
+out="$(dw_run o/r $'0123456\nzz')"; rc=$?
+chk "deploy-wait refuses a newline in the sha" "$([ "$rc" -eq 64 ]; echo $?)"
+out="$(dw_run o/r "$SHA" --check "")"; rc=$?
+chk "deploy-wait refuses an empty --check" "$([ "$rc" -eq 64 ]; echo $?)"
+out="$(dw_run o/r "$SHA" --timeout)"; rc=$?
+chk "deploy-wait refuses --timeout with no value" "$([ "$rc" -eq 64 ]; echo $?)"
+chk "deploy-wait usage errors never read GitHub" "$([ "$(dw_reads)" -eq 0 ]; echo $?)"
+chk_has "commands/wrap.md step 4 runs deploy-wait for a push deploy" "$(cat "$KIT_DIR/commands/wrap.md")" "bin/wrap deploy-wait <owner>/<name> <merge-sha> --check"
+chk_has "commands/wrap.md step 4 claims DEPLOYED only on exit 0" "$(cat "$KIT_DIR/commands/wrap.md")" "The report claims \`DEPLOYED\` only after it exits 0."
 
 # ------------------------------------------------------- autonomy knobs (wrap.*)
 # The three knobs `commands/wrap.md` reads at step -1. They govern a write each, so the

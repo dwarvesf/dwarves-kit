@@ -108,9 +108,12 @@ Otherwise re-run the step 0 check first. Then, once per PR: `bin/wrap merge --ap
 
 ### Step 4: deploy check
 
-A merged PR is not a deployed one. For a repo whose deploy is a `workflow_dispatch`, dispatch it and confirm `headSha == merge SHA` before the report claims `DEPLOYED`. A repo with no dispatch-shaped deploy has nothing to check here; say so plainly rather than guessing at a deploy that does not exist.
+A merged PR is not a deployed one. A repo deploys in one of two shapes, and each has its own check.
 
-- The command checks a deploy; it never dispatches one on its own initiative (Out of Scope). Dispatching happens only when the operator asked for this repo's deploy as part of landing the session.
+- **Dispatch deploy** (`workflow_dispatch`): dispatch it and confirm `headSha == merge SHA` before the report claims `DEPLOYED`.
+- **Push deploy** (the deploy is a check run GitHub records on the merge commit, for example Cloudflare `Workers Builds: <name>`): run `bin/wrap deploy-wait <owner>/<name> <merge-sha> --check "<deploy check name>"`, one `--check` per deploy check the repo runs. It polls the commit's check runs every 10s until each `--check` value matches a run and every matching run is completed, prints `<conclusion> <name>` per run, and exits 0 only when every one concluded `success`. The report claims `DEPLOYED` only after it exits 0. Exit 1 prints `FAILED <sha7>: <names>`: report the deploy as failed with those names. Exit 124 is the timeout (`--timeout <secs>`, default 600): report it as not yet deployed, naming the open or unmatched checks it printed. Exit 2 is a gh or read error: report the deploy as unverified, quote the `ERROR` line, never `DEPLOYED`. Always pass `--check`: without it, a CI run that finishes before the deploy check registers ends the wait early. Take the deploy check name from the repo's docs, or from one read of `gh api repos/<owner>/<name>/commits/<sha>/check-runs --jq '.check_runs[].name'`; the rule below forbids polling by hand, not that one lookup. Never poll `gh api .../check-runs` in a loop by hand. The wait can outlast a tool call's own time limit (a Bash tool call stops at 120s by default, 600s at most), so run the verb in the background and read its exit code when it finishes, or pass a `--timeout` well under the limit; a call killed by its caller prints no final line and proves nothing.
+- A repo with neither shape has nothing to check here; say so plainly rather than guessing at a deploy that does not exist.
+- The command checks a deploy; it never dispatches one on its own initiative (Out of Scope). Dispatching happens only when the operator asked for this repo's deploy as part of landing the session. `deploy-wait` dispatches nothing; it only reads check runs, so run it for every push-deploy repo whose PR this pass merged.
 
 ### Step 5: branches, worktrees, pull
 
