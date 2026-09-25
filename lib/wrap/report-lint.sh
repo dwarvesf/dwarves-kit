@@ -233,7 +233,18 @@ else
   for _v_item in "${built_items[@]}"; do
     _v_idx=$((_v_idx + 1))
     case "$_v_item" in
-      BUILT\ *|REPORTED\ *|NOTE\ *) : ;;
+      REPORTED\ *)
+        # A tool that already does the whole job leaves nothing to build, so REPORTED hands
+        # step 10 an empty item and the next session hand-rolls the same code. The missing
+        # piece is the path to the tool: NOTE, with the pointer written this session.
+        _v_why="$(printf '%s' "$_v_item" | sed -nE 's/.*[(,][[:space:]]*reported:(.*)$/\1/p' | tr '[:upper:]' '[:lower:]')"
+        case "$_v_why" in
+          *'already covers'*|*'nothing missing'*)
+            echo "line 0: '**Built:**' item ${_v_idx} is REPORTED but its tool already covers it; close it as NOTE with the pointer written (a skill trigger, the tool's README or quick-ref entry, or a memory note) and name that file" >&2
+            echo "  - ${_v_item}" >&2
+            findings=$((findings + 1)) ;;
+        esac ;;
+      BUILT\ *|NOTE\ *) : ;;
       STAGED\ *|FILED\ *)
         echo "line 0: '**Built:**' item ${_v_idx} uses a retired verdict; step 7b never stages or files a row, so a candidate not built here is REPORTED" >&2
         echo "  - ${_v_item}" >&2

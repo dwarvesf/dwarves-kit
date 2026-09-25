@@ -3895,6 +3895,19 @@ chk_has "the FILED finding names the retired verdict" "$out" "uses a retired ver
 out="$(_report '✅ **Needs you:** NOTHING' | sed 's|^\*\*Built:\*\* .*|**Built:** NOTE remerge ENHANCE dwarves-kit bin/wrap merge: PROSE-ONLY: the verb already re-merges under the union driver, nothing was missing, memory note written|' | bash "$LINT" 2>&1)"; rc=$?
 chk "a NOTE verdict on a prose-only candidate passes" "$([ "$rc" -eq 0 ]; echo $?)"
 
+# A precedent hit that already does the whole job. Nothing is missing in the tool; the path
+# to it is. REPORTED gave step 10 nothing to build, so the session after hand-rolled the same
+# curl calls again. The item closes as NOTE with the pointer written in-session.
+out="$(_report '✅ **Needs you:** NOTHING' | sed 's|^\*\*Built:\*\* .*|**Built:** REPORTED discord-readback ENHANCE tools/discord-pull: its --since, --channel and --embeds flags already read a channel latest embeds, nothing missing (lane=tiny, reported: the existing tool already covers it; this session wrote its own curl calls instead)|' | bash "$LINT" 2>&1)"; rc=$?
+chk "a REPORTED item whose tool already covers it fails" "$([ "$rc" -eq 1 ]; echo $?)"
+chk_has "the finding says close it as NOTE with the pointer" "$out" "close it as NOTE"
+
+out="$(_report '✅ **Needs you:** NOTHING' | sed 's|^\*\*Built:\*\* .*|**Built:** REPORTED eb-sign ENHANCE _meta/eb-post: --stream signs and posts (lane=tiny, reported: Nothing Missing in the tool)|' | bash "$LINT" 2>&1)"; rc=$?
+chk "the covered-reason match is case-insensitive" "$([ "$rc" -eq 1 ]; echo $?)"
+
+out="$(_report '✅ **Needs you:** NOTHING' | sed 's|^\*\*Built:\*\* .*|**Built:** NOTE discord-readback ENHANCE tools/discord-pull: covered, pointer added at skills/discord-post/SKILL.md (lane=tiny, verified: grep -q discord-pull skills/discord-post/SKILL.md, a1b2c3d)|' | bash "$LINT" 2>&1)"; rc=$?
+chk "a covered precedent closed as NOTE with its pointer passes" "$([ "$rc" -eq 0 ]; echo $?)"
+
 # The lane closure rule. `wrap.build_lanes` lets an operator list heavier lanes for step 7b to
 # build inline, so `lane=normal`, `lane=bug` and `lane=backfill` are legal on a verified item
 # and the lint can no longer treat `tiny` as the only buildable lane. What it does enforce is
