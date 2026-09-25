@@ -20,44 +20,63 @@
 
 | Check | Command | Expected | Result |
 |---|---|---|---|
-| Hook suite (C1-C6, C9) | `bash tests/test-context-budget.sh` | `Results: 22 passed, 0 failed` | PASS |
+| Hook suite (C1-C6, C9) | `bash tests/test-context-budget.sh` | `Results: 24 passed, 0 failed` | PASS |
 | Hook wiring suite | `bash tests/test-hooks.sh` | all pass | PASS, 498 / 498 |
 | Module wiring (C7) | `bash tests/test-install-modules.sh` | all pass | PASS, 42 / 42 |
 | Lint (C8) | `shellcheck --severity=warning hooks/context-budget.sh` | clean | PASS |
 | Registry + meta | `bash tests/test-meta.sh` | `All meta tests passed.` | PASS, 854 / 854 |
 | Real transcript | hook against a live 2MB+ transcript, temp HOME | one warning, fast | PASS, `at 330k tokens`, 0.36s |
 
-### C9: 1M window detection reads the identity attachment, not just `.message.model`
+### C9: the `1m`-window check needed three inputs, not one, plus one guard
 
-A live 2.8MB session transcript surfaced this: `.message.model` on every assistant
-turn is the bare model id (`claude-opus-5-5`), never the `[1m]` marker. That marker
-sits only on an earlier `{"type":"attachment","attachment":{"type":"model","identity":{"modelId":"...[1m]",...}}}`
-line, which the `tail -c 2000000` window used for the context-size read could miss
-entirely on a transcript bigger than 2MB. The hook fell back silently to a 200k
-window and warned "65%"/"CONTEXT CEILING 85%" on a session that was really at
-13%/17% of its true 1M window.
+`.message.model` alone (the original check) misses the "1m" marker on every path
+Claude Code actually uses to pick a 1M window. Three fixes landed together:
 
-Fix: scan the whole transcript for the latest `modelId` identity marker (case-insensitive
-`1m` check) before falling back to `.message.model`; add a guard that live context
-already past 200000 tokens cannot be a 200k-window model. `KIT_CTX_WINDOW` still
-overrides both. Added cases 9.1-9.3 (bare model + `[1m]` identity at 130k -> silent;
-bare model, no identity, 130k -> speaks; bare model, no identity, 250k -> guard
-treats it as 1M -> silent) to `tests/test-context-budget.sh`; both 9.1 and 9.3
-failed against the pre-fix code (`speak` instead of `silent`).
+- **#761** (`655858a`, merged to master first): the transcript records the bare
+  API model id (`claude-opus-5-5`), which drops the `[1m]` suffix Claude Code
+  used to pick the window. #761 added a second input, the *configured* model
+  (`ANTHROPIC_MODEL`, then `.claude/settings.local.json` / `settings.json` at
+  the request's `cwd`, then `~/.claude/settings.json`), plus the guard: live
+  context already past 200000 tokens cannot be a 200k-window model. Tests
+  7.5-7.7. Live probe on a 173k `opus[1m]` session: old hook 86%, fixed hook
+  silent.
+- **This branch** (pre-merge): a live 2.8MB session transcript surfaced a case
+  #761 doesn't cover: no `ANTHROPIC_MODEL`, no `.model` in any settings file
+  (model picked via `/model` mid-session), so #761 alone still warned "95% of
+  its window (191k tokens)" on a real 1M session (191k is under #761's >200k
+  guard). The real marker sits only on an earlier
+  `{"type":"attachment","attachment":{"type":"model","identity":{"modelId":"...[1m]",...}}}`
+  line -- which the `tail -c 2000000` window used for the context-size read
+  can miss entirely once the transcript passes ~2MB, since that marker is
+  typically written once, early, near session start. Added a third input: scan
+  the whole transcript for the latest `modelId` identity marker. Cases
+  9.1-9.2 (bare model + `[1m]` identity at 130k -> silent; bare model, no
+  identity, 130k -> speaks); both failed against pre-fix code (`speak` instead
+  of `silent`). Case 9.3 (bare model, no identity, 250k, guard forces 1M) was
+  dropped as a duplicate of #761's 7.7.
+- **Merge:** one case-insensitive `1m` match now runs across all three inputs
+  (`.message.model`, the configured model, the transcript identity marker), and
+  there is exactly one `>200000` guard (#761's). `KIT_CTX_WINDOW` still
+  overrides all of it.
+
+Re-verified live: firing the merged hook against the same 2.8MB transcript
+(fresh `HOME`, `cwd` set in the input JSON, `ANTHROPIC_MODEL` unset, no
+`.model` in any settings file) is silent, exit 0 -- the case #761 alone still
+missed.
 
 ## Negative control
 
 **C1-C8 (existing):** the sidechain filter and the band check were removed from the hook in a committed tree. The suite returned `10 passed, 3 failed`: the two same-band cases started nagging and the 900k sidechain case set the number. `git checkout` restored the hook and the suite returned `13 passed, 0 failed`.
 
-**C9 (this fix), via `lib/gate/negctl.sh`:** mutated the identity scan so it never sets `IDENTITY_MODEL` (`IDENTITY_MODEL=$(false && grep ...)`). Suite went RED (`Exit: 1`). Restore via `git checkout HEAD --` returned it GREEN. `Verdict: PASS`.
+**C9 (this fix + #761, merged), via `lib/gate/negctl.sh`:** mutated the identity scan so it never sets `IDENTITY_MODEL` (`IDENTITY_MODEL=$(false && grep ...)`). Suite went RED (`Exit: 1`). Restore via `git checkout HEAD --` returned it GREEN. `Verdict: PASS`. Re-ran after the merge with master to confirm the combined hook still holds the same negative control.
 
 ## Provenance
 
-Ported from a personal dotfiles hook that shipped 2026-09-10 with its own 13-case suite. The kit copy names no operator in its messages. The trigger was measured: several parallel sessions at 300k to 420k context made up most of one hour's token spend, while the statusline showed the number per pane and nobody watched it. The C9 fix traces to a live 1M-context session that warned at the wrong percentage because the `[1m]` marker lives on a transcript attachment, not `.message.model`.
+Ported from a personal dotfiles hook that shipped 2026-09-10 with its own 13-case suite. The kit copy names no operator in its messages. The trigger was measured: several parallel sessions at 300k to 420k context made up most of one hour's token spend, while the statusline showed the number per pane and nobody watched it. The C9 fix is two sessions' work merged together: #761 added the configured-model input and the `>200k` guard; this branch added the transcript identity-attachment input, needed because neither `.message.model` nor a configured model exists when the model was picked with `/model` mid-session and live context stays under #761's guard.
 
 ## Reproduce
 
 ```bash
-bash tests/test-context-budget.sh     # -> Results: 22 passed, 0 failed
+bash tests/test-context-budget.sh     # -> Results: 24 passed, 0 failed
 bash install.sh --with session        # wires the hook on the bash path
 ```
