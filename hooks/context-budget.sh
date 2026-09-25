@@ -9,11 +9,13 @@
 # Context size = input + cache_creation + cache_read of the LAST main-chain (isSidechain
 # != true) assistant turn in the transcript tail. That is the payload the next turn
 # re-reads from cache. The window is the context window of that same turn's model
-# (KIT_CTX_WINDOW overrides everything; default 200000; auto-bumped to 1000000 when
-# the transcript's model-identity attachment carries a "1m" marker, e.g. `[1m]`,
-# falling back to the same check on .message.model, which is usually the bare id;
-# also bumped when live context already exceeds 200000, since it cannot then be a
-# 200k-window model).
+# (KIT_CTX_WINDOW overrides everything; default 200000; auto-bumped to 1000000 for a
+# "1m" marker, case-insensitive, on any of: .message.model (usually the bare model
+# id, e.g. claude-opus-5-5, so rarely a hit), the configured model (ANTHROPIC_MODEL
+# or settings `.model`), or the transcript's model-identity attachment
+# (.attachment.identity.modelId, which can sit far earlier in the file than the
+# tail -c window below reads); also bumped when live context already exceeds
+# 200000, since it cannot then be a 200k-window model).
 #
 # Thresholds: KIT_CTX_WARN_PCT (default 65) is advisory (hand off at the next
 # boundary). KIT_CTX_STRONG_PCT (default 70) is a directive: finish the step in
@@ -56,24 +58,25 @@ case "$CTX" in ''|*[!0-9]*) exit 0 ;; esac
 if [ -n "${KIT_CTX_WINDOW:-}" ]; then
     WINDOW="$KIT_CTX_WINDOW"
 else
-    WINDOW=200000
-    # The [1m] marker lives on the transcript's model-identity attachment
-    # (.attachment.identity.modelId), not on .message.model (always the bare
-    # id, e.g. claude-opus-5-5). Scan the whole file for the latest one --
-    # it can sit far earlier than the tail -c window above reads.
+    # The transcript records the API model id, which drops the `[1m]` suffix Claude Code
+    # uses to select the 1M window (`opus[1m]` logs as `claude-opus-5-5`). Also check the
+    # configured model: ANTHROPIC_MODEL, then project-local, project, and user settings.
+    CWD=$(printf '%s' "$INPUT" | jq -r '.cwd // empty' 2>/dev/null)
+    CONFIGURED="${ANTHROPIC_MODEL:-}"
+    for f in ${CWD:+"$CWD/.claude/settings.local.json" "$CWD/.claude/settings.json"} "$HOME/.claude/settings.json"; do
+        [ -n "$CONFIGURED" ] && break
+        [ -r "$f" ] && CONFIGURED=$(jq -r '.model // empty' "$f" 2>/dev/null)
+    done
+    # The [1m] marker can also live on the transcript's model-identity attachment
+    # (.attachment.identity.modelId), earlier in the file than the tail -c window
+    # above reads -- scan the whole file for the latest one.
     IDENTITY_MODEL=$(grep -o '"modelId"[[:space:]]*:[[:space:]]*"[^"]*"' "$TRANSCRIPT" 2>/dev/null | tail -n 1)
-    case "$(printf '%s' "$IDENTITY_MODEL" | tr '[:upper:]' '[:lower:]')" in
+    WINDOW=200000
+    case "$(printf '%s %s %s' "$MODEL" "$CONFIGURED" "$IDENTITY_MODEL" | tr '[:upper:]' '[:lower:]')" in
         *1m*) WINDOW=1000000 ;;
     esac
-    if [ "$WINDOW" -eq 200000 ]; then
-        case "$(printf '%s' "$MODEL" | tr '[:upper:]' '[:lower:]')" in
-            *1m*) WINDOW=1000000 ;;
-        esac
-    fi
-    # Live context already past 200k: it cannot be a 200k-window model.
-    if [ "$WINDOW" -eq 200000 ] && [ "$CTX" -gt 200000 ]; then
-        WINDOW=1000000
-    fi
+    # Usage past 200k proves the window is bigger, whatever the model id says.
+    [ "$CTX" -gt 200000 ] && WINDOW=1000000
 fi
 case "$WINDOW" in *[!0-9]*) exit 0 ;; esac
 [ "$WINDOW" -gt 0 ] || exit 0

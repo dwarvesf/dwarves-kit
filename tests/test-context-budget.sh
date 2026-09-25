@@ -120,6 +120,18 @@ T7d="$HOME/.claude/projects/p/s7d.jsonl"
 transcript "$T7d" 65000 "claude-sonnet-5"
 KIT_CTX_WINDOW=100000 step "7.4 KIT_CTX_WINDOW=100000 override: 65k is 65%, speaks" speak s7d "$T7d"
 
+T7e="$HOME/.claude/projects/p/s7e.jsonl"
+transcript "$T7e" 140000 "claude-opus-5-5"
+printf '{"model":"opus[1m]"}' > "$HOME/.claude/settings.json"
+step "7.5 settings model opus[1m], bare transcript id: 140k is 14%, silent" silent s7e "$T7e"
+rm -f "$HOME/.claude/settings.json"
+T7f="$HOME/.claude/projects/p/s7f.jsonl"
+transcript "$T7f" 140000 "claude-opus-5-5"
+ANTHROPIC_MODEL="claude-opus-5-5[1m]" step "7.6 ANTHROPIC_MODEL carries [1m]: 140k is 14%, silent" silent s7f "$T7f"
+T7g="$HOME/.claude/projects/p/s7g.jsonl"
+transcript "$T7g" 250000 "claude-opus-5-5"
+step "7.7 usage past 200k proves a bigger window: 250k is 25% of 1M, silent" silent s7g "$T7g"
+
 echo "== Case 8: threshold 0 (warn) is advisory, threshold 1 (strong) is a directive =="
 tone() {
     local label="$1" want="$2" session="$3" tr="$4" ctx
@@ -144,9 +156,8 @@ step "9.1 bare model + [1m] identity at 130k: real 1M window, 13%, silent" silen
 T9b="$HOME/.claude/projects/p/s9b.jsonl"
 transcript "$T9b" 130000 "claude-opus-5-5"
 step "9.2 bare model, no identity, 130k: 200k window, 65%, speaks" speak s9b "$T9b"
-T9c="$HOME/.claude/projects/p/s9c.jsonl"
-transcript "$T9c" 250000 "claude-opus-5-5"
-step "9.3 bare model, no identity, 250k: exceeds 200k, guard forces 1M window, silent" silent s9c "$T9c"
+# 9.3 (bare model, no identity, 250k exceeds 200k) dropped: same guard, same
+# assertion as 7.7 -- #761's ">200k proves a bigger window" case.
 
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
