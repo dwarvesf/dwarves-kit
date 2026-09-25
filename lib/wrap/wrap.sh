@@ -2732,6 +2732,8 @@ cmd_deploy_wait() {
   trap 'rm -f "$errf"' EXIT INT TERM
   _deploy_wait_poll "$slug" "$sha" "$checks" "$timeout" "$errf"; rc=$?
   rm -f "$errf"
+  # The trap names a local; left armed it fires after return under set -u.
+  trap - EXIT INT TERM
   return "$rc"
 }
 

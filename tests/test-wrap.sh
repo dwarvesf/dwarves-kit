@@ -3500,6 +3500,7 @@ chk "deploy-wait all success exits 0" "$rc"
 chk_has "deploy-wait prints the deploy check's conclusion" "$out" "success Workers Builds: site"
 chk_has "deploy-wait prints the CI check's conclusion" "$out" "success ci / test"
 chk_has "deploy-wait reports DEPLOYED with the short sha" "$out" "DEPLOYED 0123456: 2 checks succeeded"
+chk_no "deploy-wait exits without an unbound-variable error" "$out" "unbound variable"
 chk_has "deploy-wait reads the commit's check runs, paginated" "$(cat "$DW/calls.log")" \
   "api --paginate repos/o/r/commits/${SHA}/check-runs?per_page=100"
 
