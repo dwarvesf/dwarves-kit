@@ -9,9 +9,13 @@
 # Context size = input + cache_creation + cache_read of the LAST main-chain (isSidechain
 # != true) assistant turn in the transcript tail. That is the payload the next turn
 # re-reads from cache. The window is the context window of that same turn's model
-# (KIT_CTX_WINDOW overrides; default 200000; auto-bumped to 1000000 for a model id
-# carrying a "1m" marker, e.g. a Bedrock `[1m]` long-context variant, or a configured
-# model (ANTHROPIC_MODEL or settings `.model`) carrying one, or usage already past 200k).
+# (KIT_CTX_WINDOW overrides everything; default 200000; auto-bumped to 1000000 for a
+# "1m" marker, case-insensitive, on any of: .message.model (usually the bare model
+# id, e.g. claude-opus-5-5, so rarely a hit), the configured model (ANTHROPIC_MODEL
+# or settings `.model`), or the transcript's model-identity attachment
+# (.attachment.identity.modelId, which can sit far earlier in the file than the
+# tail -c window below reads); also bumped when live context already exceeds
+# 200000, since it cannot then be a 200k-window model).
 #
 # Thresholds: KIT_CTX_WARN_PCT (default 65) is advisory (hand off at the next
 # boundary). KIT_CTX_STRONG_PCT (default 70) is a directive: finish the step in
@@ -63,8 +67,12 @@ else
         [ -n "$CONFIGURED" ] && break
         [ -r "$f" ] && CONFIGURED=$(jq -r '.model // empty' "$f" 2>/dev/null)
     done
+    # The [1m] marker can also live on the transcript's model-identity attachment
+    # (.attachment.identity.modelId), earlier in the file than the tail -c window
+    # above reads -- scan the whole file for the latest one.
+    IDENTITY_MODEL=$(grep -o '"modelId"[[:space:]]*:[[:space:]]*"[^"]*"' "$TRANSCRIPT" 2>/dev/null | tail -n 1)
     WINDOW=200000
-    case "$(printf '%s %s' "$MODEL" "$CONFIGURED" | tr '[:upper:]' '[:lower:]')" in
+    case "$(printf '%s %s %s' "$MODEL" "$CONFIGURED" "$IDENTITY_MODEL" | tr '[:upper:]' '[:lower:]')" in
         *1m*) WINDOW=1000000 ;;
     esac
     # Usage past 200k proves the window is bigger, whatever the model id says.

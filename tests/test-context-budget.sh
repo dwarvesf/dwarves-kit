@@ -38,6 +38,20 @@ transcript() {
     } > "$f"
 }
 
+# transcript_with_identity <file> <main_ctx> <bare_model> <identity_model_id>: same
+# shape as transcript(), plus an earlier attachment line carrying the real modelId
+# (the identity marker Claude Code actually writes; .message.model stays bare).
+transcript_with_identity() {
+    local f="$1" ctx="$2" model="$3" identity="$4"
+    {
+        echo '{"type":"user","message":{"content":"hi"}}'
+        jq -cn --arg id "$identity" '{type:"attachment", isSidechain:false,
+            attachment:{type:"model", identity:{modelId:$id}}}'
+        jq -cn --argjson c "$ctx" --arg m "$model" '{type:"assistant", isSidechain:false,
+            message:{model:$m, usage:{input_tokens:3, cache_creation_input_tokens:1000, cache_read_input_tokens:($c - 1003), output_tokens:50}}}'
+    } > "$f"
+}
+
 # step <label> <expect: speak|silent> <session> <transcript>
 step() {
     local label="$1" expect="$2" session="$3" tr="$4" out actual rc
@@ -134,6 +148,16 @@ transcript "$T8" 132000
 tone "8.1 66%, warn threshold, advisory" "CONTEXT BUDGET" s8 "$T8"
 transcript "$T8" 142000
 tone "8.2 71%, strong threshold, directive" "CONTEXT CEILING" s8 "$T8"
+
+echo "== Case 9: 1m window detection reads the identity attachment, not just .message.model =="
+T9a="$HOME/.claude/projects/p/s9a.jsonl"
+transcript_with_identity "$T9a" 130000 "claude-opus-5-5" "claude-opus-5-5[1m]"
+step "9.1 bare model + [1m] identity at 130k: real 1M window, 13%, silent" silent s9a "$T9a"
+T9b="$HOME/.claude/projects/p/s9b.jsonl"
+transcript "$T9b" 130000 "claude-opus-5-5"
+step "9.2 bare model, no identity, 130k: 200k window, 65%, speaks" speak s9b "$T9b"
+# 9.3 (bare model, no identity, 250k exceeds 200k) dropped: same guard, same
+# assertion as 7.7 -- #761's ">200k proves a bigger window" case.
 
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
