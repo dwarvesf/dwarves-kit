@@ -3,7 +3,7 @@
 # touched, with ten verbs:
 #
 #   wrap.sh scan  [--under <root>]... <repo> [<repo>...]    report only, exit 0
-#   wrap.sh apply [--apply] [--worktrees] [--own <path>]... [--under <root>]... <repo> [...]  dry-run by default
+#   wrap.sh apply [--apply] [--worktrees] [--archive-unmerged] [--own <path>]... [--under <root>]... <repo> [...]  dry-run by default
 #   wrap.sh merge [--apply] [--pr N] <repo>                 merges ONE own green PR (--pr: a named draft)
 #   wrap.sh land  <worktree> [--title T] [--body-file F]    one hand-made worktree, landed
 #   wrap.sh start <repo> <branch> [--carry [<path>...]]     one hand-made worktree, started
@@ -19,6 +19,12 @@
 #   skipped; a root with no repos prints one line. A bare --under (no directory follows it)
 #   expands to every root in the wrap.roots knob instead (tilde-expanded, listed order, each
 #   through the same immediate-child scan); an empty knob exits 64 naming it.
+#
+#   apply --archive-unmerged (opt-in, never under --own) pushes every local branch that is
+#   not current/default/worktree-held and carries at least one commit patch origin/<default>
+#   lacks (git cherry origin/<default> <branch> shows a `+`) to origin archive/<slug>-<date>,
+#   then deletes the local branch once that push lands. No force; an existing archive ref
+#   refuses the push. A branch with no unique patch is left for the merged-branch sweep above.
 #
 #   internal, a test seam: apply --tips-file <path> replaces the run's own tip snapshot
 #   internal, a test seam: WRAP_ORIGIN_DELETE_CHUNK sets the names per origin delete push
@@ -49,6 +55,9 @@
 # (the main checkout on the default branch and ahead of origin: one local and pushed
 # wrap/stray-commits-* branch at HEAD, then one `reset --keep origin/<default>` when only
 # merge=union files are dirty and origin holds HEAD, same knob),
+# `apply --archive-unmerged`'s one push per qualifying branch to a new origin
+# archive/<slug>-<date> ref, never forced, followed by one local `branch -D` only once that
+# push lands,
 # `start`'s one worktree add under `.claude/worktrees` on a new local branch, and `start
 # --carry`'s one named `git stash push -u` in the main checkout, one `stash apply` in the
 # new worktree, and, on a clean apply, one `stash drop` of that same named entry.
@@ -346,6 +355,7 @@ cmd_scan() {
 
 APPLY=0
 WORKTREES=0
+ARCHIVE_UNMERGED=0
 MODE="DRY-RUN"
 FAILURES=0
 TIPS_FILE=""
@@ -585,6 +595,72 @@ _apply_branches() {
       *)
         echo "     SKIP ${b}: no merged PR found for this head" ;;
     esac
+  done
+}
+
+# _archive_slug <branch> -- an origin-ref-safe slug: lower-case alnum runs joined by `-`,
+# trimmed of leading/trailing dashes. Same shape as `_carry_stray_file`'s file slug, so a
+# branch name carrying a `/` (e.g. feat/foo) collapses to one path segment under archive/.
+_archive_slug() {
+  printf '%s' "$1" | tr 'A-Z' 'a-z' | tr -cs 'a-z0-9' '-' | sed 's/^-*//; s/-*$//'
+}
+
+# _apply_archive_unmerged <repo> <default branch> <current branch> <fetch_ok> -- opt-in
+# (--archive-unmerged, never under --own) sweep: every local branch that is not the current
+# or default branch, is not held by a worktree, and carries at least one commit patch
+# origin/<default> lacks (`git cherry origin/<default> <branch>` shows a `+`) gets pushed to
+# a new origin archive/<slug>-<YYYYMMDD> ref and, only once that push lands, its local ref
+# deleted. No force: an already-existing archive ref refuses the push and the branch stays
+# local, reported FAILED. A branch with zero unique patches is already covered by
+# `_apply_branches` above (an ancestor or a squash-merged proof) or is simply reported here
+# and never deleted under this flag.
+_apply_archive_unmerged() {
+  local repo="$1" def="$2" cur="$3" fetch_ok="$4"
+  echo "-- archive unmerged:"
+  if [ -n "$OWN_SET" ]; then
+    echo "     SKIP archive sweep: --own scopes cleanup to the named worktrees"; return 0
+  fi
+  if [ -z "$(_origin_url "$repo")" ]; then
+    echo "     SKIP archive sweep: no origin remote"; return 0
+  fi
+  if [ "$fetch_ok" != 1 ]; then
+    echo "     SKIP archive sweep: fetch failed, stale data"; return 0
+  fi
+  local b cherry n slug ref err first
+  for b in $(git -C "$repo" for-each-ref --format='%(refname:short)' refs/heads/); do
+    case "$b" in "$def"|main|master) continue ;; esac
+    [ "$b" = "$cur" ] && continue
+    if git -C "$repo" worktree list --porcelain 2>/dev/null | grep -qx "branch refs/heads/${b}"; then
+      echo "     SKIP ${b}: held by a worktree"; continue
+    fi
+    cherry="$(git -C "$repo" cherry "origin/${def}" "$b" 2>/dev/null)"
+    n="$(printf '%s\n' "$cherry" | grep -c '^+')"
+    if [ "$n" -eq 0 ]; then
+      echo "     ${b}: nothing unique, left for the merged sweep"; continue
+    fi
+    slug="$(_archive_slug "$b")"
+    ref="archive/${slug}-$(date +%Y%m%d)"
+    if [ "$APPLY" != 1 ]; then
+      echo "     WOULD archive ${b} -> origin ${ref} (${n} unique commits)"; continue
+    fi
+    if ! _write_guard "$repo"; then
+      echo "     SKIP ${b}: index.lock held by another writer"; continue
+    fi
+    if git -C "$repo" ls-remote --exit-code --heads origin "$ref" >/dev/null 2>&1; then
+      echo "     FAILED archive ${b}: origin ${ref} already exists"; FAILURES=1; continue
+    fi
+    if err="$(git -C "$repo" push origin "${b}:refs/heads/${ref}" 2>&1)"; then
+      if git -C "$repo" branch -D "$b" >/dev/null 2>&1; then
+        echo "     archived ${b} -> ${ref}"
+      else
+        echo "     FAILED archive ${b}: pushed to ${ref} but the local branch delete refused"
+        FAILURES=1
+      fi
+    else
+      first="$(printf '%s\n' "$err" | grep -v '^[[:space:]]*$' | head -1)"
+      echo "     FAILED archive ${b}: ${first:-push refused}"
+      FAILURES=1
+    fi
   done
 }
 
@@ -1184,6 +1260,9 @@ _apply_repo() {
   else
     _apply_branches "$repo" "$def" "$cur" "$fetch_ok" "$ghs"
   fi
+  # Opt-in and never under --own (see the function's own comment); a flag-off run prints
+  # no new section, so the report is byte-identical to before this flag existed.
+  [ "$ARCHIVE_UNMERGED" = 1 ] && _apply_archive_unmerged "$repo" "$def" "$cur" "$fetch_ok"
   # Outside the --own scope on purpose: it touches no local ref or worktree, and its own
   # proof (merged PR at the exact tip, no open PR on it) holds whoever owns the branch.
   # Skipping it under --own left every shared repo's merged heads on origin.
@@ -1226,6 +1305,7 @@ cmd_apply() {
     case "$arg" in
       --apply) APPLY=1 ;;
       --worktrees) WORKTREES=1 ;;
+      --archive-unmerged) ARCHIVE_UNMERGED=1 ;;
       --under=*) nu=$(( nu + 1 )); unders[nu]="${arg#--under=}" ;;
       --under) want_under=1 ;;
       --own=*) OWN_N=$(( OWN_N + 1 )); OWN_PATHS[OWN_N]="${arg#--own=}" ;;
@@ -1245,7 +1325,7 @@ cmd_apply() {
     echo "wrap.sh apply: --tips-file '${TIPS_OVERRIDE}' is not an existing file" >&2; return 64
   fi
   if [ "$want_under" = 1 ]; then _expand_bare_under apply || return 64; fi
-  [ "$count" -ge 1 ] || [ "$nu" -ge 1 ] || { echo "usage: wrap.sh apply [--apply] [--worktrees] [--own <path>]... [--under <root>]... <repo> [<repo>...]" >&2; return 64; }
+  [ "$count" -ge 1 ] || [ "$nu" -ge 1 ] || { echo "usage: wrap.sh apply [--apply] [--worktrees] [--archive-unmerged] [--own <path>]... [--under <root>]... <repo> [<repo>...]" >&2; return 64; }
   while [ "$i" -le "$nu" ]; do _add_under "${unders[$i]}"; i=$(( i + 1 )); done
   # Canonicalise the own set once: the worktree loop compares against `pwd -P`
   # paths, so the same normalisation must apply to the names the operator typed.
