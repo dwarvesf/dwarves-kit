@@ -3345,6 +3345,113 @@ chk_has "origin sweep skips a non-GitHub remote" "$out" "SKIP origin sweep: orig
 unset GH_STUB_MERGED_ALL
 export GH_STUB_OPEN_PRS='[{"number":7,"title":"wrap the session","headRefName":"feat/wrap"}]'
 
+# ===========================================================================
+echo "=== apply --archive-unmerged: opt-in push-to-origin archive of unmerged branches ==="
+# ===========================================================================
+# A fresh bare origin + clone per case (--apply writes on the bare). Three branches:
+# nothing-unique (an ancestor of main, zero unique patches), unique-work and held-work
+# (each one commit origin/main lacks). No gh stub needed: the sweep never calls gh.
+AU_DATE="$(date +%Y%m%d)"
+build_au_repo() { # build_au_repo <name>
+  local name="$1" work="$TMPD/auwork-$1" bare="$TMPD/aubare-$1" clone="$TMPD/auclone-$1" b
+  mkdir -p "$work"
+  git -C "$work" init -q; gitc "$work"
+  git -C "$work" symbolic-ref HEAD refs/heads/main
+  echo base > "$work/a.txt"; git -C "$work" add -A; git -C "$work" commit -q -m "chore: base"
+  git -C "$work" branch nothing-unique
+  for b in unique-work held-work; do
+    git -C "$work" checkout -q -b "$b" main
+    echo "$b" > "$work/$b.txt"; git -C "$work" add -A; git -C "$work" commit -q -m "feat: $b"
+  done
+  git -C "$work" checkout -q main
+  git clone -q --bare "$work" "$bare"
+  git clone -q "$bare" "$clone"; gitc "$clone"
+  git -C "$clone" remote set-head origin main >/dev/null 2>&1
+  for b in nothing-unique unique-work held-work; do
+    git -C "$clone" branch "$b" "origin/$b" >/dev/null 2>&1
+  done
+}
+au_has() { git -C "$TMPD/aubare-$1" show-ref --verify --quiet "refs/heads/$2"; }
+au_local() { git -C "$TMPD/auclone-$1" show-ref --verify --quiet "refs/heads/$2"; }
+au_run() { KIT_CONFIG_ROOT="$KIT_DIR" "$WRAP" "$@" 2>&1; }
+
+echo "--- dry run: previews the eligible branch, writes nothing"
+build_au_repo dry
+out="$(au_run apply --archive-unmerged "$TMPD/auclone-dry")"; rc=$?
+chk "archive dry run exits 0" "$rc"
+chk_has "archive dry run previews unique-work" "$out" \
+  "WOULD archive unique-work -> origin archive/unique-work-${AU_DATE} (1 unique commits)"
+chk_has "archive dry run leaves the ancestor for the merged sweep" "$out" \
+  "nothing-unique: nothing unique, left for the merged sweep"
+chk "archive dry run kept unique-work locally" "$(au_local dry unique-work; echo $?)"
+chk "archive dry run pushed no archive ref" \
+  "$(au_has dry "archive/unique-work-${AU_DATE}" && echo 1 || echo 0)"
+
+echo "--- --apply: the branch lands on origin and disappears locally; the ancestor is untouched"
+build_au_repo app
+out="$(au_run apply --apply --archive-unmerged "$TMPD/auclone-app")"; rc=$?
+chk "archive apply exits 0" "$rc"
+chk_has "archive apply reports the landed ref" "$out" \
+  "archived unique-work -> archive/unique-work-${AU_DATE}"
+chk "archive apply pushed the ref to origin" "$(au_has app "archive/unique-work-${AU_DATE}"; echo $?)"
+chk "archive apply deleted the local branch" "$(au_local app unique-work && echo 1 || echo 0)"
+# nothing-unique is an ancestor of origin/main, so the EXISTING merged-branch sweep already
+# deletes it before archive-unmerged ever looks at it (spec: "already covered by existing
+# logic"); it must never be pushed to an archive ref either way.
+chk "archive apply left nothing-unique for the existing ancestor sweep, not archive-unmerged" \
+  "$(au_local app nothing-unique && echo 1 || echo 0)"
+chk "archive apply never archived nothing-unique" \
+  "$(au_has app "archive/nothing-unique-${AU_DATE}" && echo 1 || echo 0)"
+
+echo "--- a worktree-held branch is skipped, never archived and never deleted"
+build_au_repo wt
+git -C "$TMPD/auclone-wt" worktree add -q "$TMPD/au-wt-held" held-work >/dev/null 2>&1
+out="$(au_run apply --apply --archive-unmerged "$TMPD/auclone-wt")"; rc=$?
+chk_has "archive wt-held is skipped by name" "$out" "SKIP held-work: held by a worktree"
+chk "archive wt-held kept the branch locally" "$(au_local wt held-work; echo $?)"
+chk "archive wt-held pushed no archive ref for it" \
+  "$(au_has wt "archive/held-work-${AU_DATE}" && echo 1 || echo 0)"
+
+echo "--- a push a pre-push hook refuses is FAILED, exit 2, the branch stays local"
+build_au_repo hook
+mkdir -p "$TMPD/auclone-hook/.git/hooks"
+cat > "$TMPD/auclone-hook/.git/hooks/pre-push" <<'HOOK'
+#!/bin/sh
+echo "refusing: attribution check failed" >&2
+exit 1
+HOOK
+chmod +x "$TMPD/auclone-hook/.git/hooks/pre-push"
+out="$(au_run apply --apply --archive-unmerged "$TMPD/auclone-hook")"; rc=$?
+chk "archive hook refusal exits 2" "$([ "$rc" -eq 2 ]; echo $?)"
+chk_has "archive hook refusal is FAILED with the hook's own line" "$out" \
+  "FAILED archive unique-work: refusing: attribution check failed"
+chk "archive hook refusal kept the branch locally" "$(au_local hook unique-work; echo $?)"
+chk "archive hook refusal pushed no archive ref" \
+  "$(au_has hook "archive/unique-work-${AU_DATE}" && echo 1 || echo 0)"
+chk_has "archive hook refusal still ran the rest of apply" "$out" "-- pull:"
+
+echo "--- an existing archive ref refuses the push without force, without deleting the branch"
+build_au_repo dupe
+git -C "$TMPD/auclone-dupe" push -q origin "unique-work:refs/heads/archive/unique-work-${AU_DATE}"
+out="$(au_run apply --apply --archive-unmerged "$TMPD/auclone-dupe")"; rc=$?
+chk "archive dupe-ref exits 2" "$([ "$rc" -eq 2 ]; echo $?)"
+chk_has "archive dupe-ref is FAILED naming the existing ref" "$out" \
+  "FAILED archive unique-work: origin archive/unique-work-${AU_DATE} already exists"
+chk "archive dupe-ref kept the branch locally" "$(au_local dupe unique-work; echo $?)"
+
+echo "--- never under --own: the whole sweep is scoped away, not just narrowed"
+build_au_repo own
+out="$(au_run apply --archive-unmerged --own "$TMPD/no-such-wt" "$TMPD/auclone-own")"; rc=$?
+chk "archive --own exits 0" "$rc"
+chk_has "archive --own is skipped by name" "$out" \
+  "SKIP archive sweep: --own scopes cleanup to the named worktrees"
+chk_no "archive --own never previews a branch" "$out" "WOULD archive"
+
+echo "--- the flag off: apply's report carries no archive-unmerged section at all"
+build_au_repo off
+out="$(au_run apply "$TMPD/auclone-off")"
+chk_no "archive-unmerged section is absent without the flag" "$out" "archive unmerged"
+
 # ------------------------------------------------------- autonomy knobs (wrap.*)
 # The three knobs `commands/wrap.md` reads at step -1. They govern a write each, so the
 # fence that matters is the third block: a project `.kit.toml` rides inside a pull request
