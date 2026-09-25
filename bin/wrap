@@ -12,6 +12,7 @@
 #   wrap start <repo> <branch> [--carry [<path>...]]    a worktree off origin/<default> on a fresh branch, --carry moves the main checkout's own uncommitted edits into it
 #   wrap log "<slug>: <one sentence>" [--date D]        the activity line
 #   wrap default-branch <repo>                          the detected default branch
+#   wrap deploy-wait <owner>/<name> <sha> [--check S]... [--timeout N]  wait on a SHA's push-deploy check runs
 #   wrap knowledge-root <repo>                          fenced knowledge dir
 #   wrap stage "<title>" "<intent>" "<home>" [--repo R] stage a candidate
 set -euo pipefail
