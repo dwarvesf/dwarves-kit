@@ -9,8 +9,11 @@
 # Context size = input + cache_creation + cache_read of the LAST main-chain (isSidechain
 # != true) assistant turn in the transcript tail. That is the payload the next turn
 # re-reads from cache. The window is the context window of that same turn's model
-# (KIT_CTX_WINDOW overrides; default 200000; auto-bumped to 1000000 for a model id
-# carrying a "1m" marker, e.g. a Bedrock `[1m]` long-context variant).
+# (KIT_CTX_WINDOW overrides everything; default 200000; auto-bumped to 1000000 when
+# the transcript's model-identity attachment carries a "1m" marker, e.g. `[1m]`,
+# falling back to the same check on .message.model, which is usually the bare id;
+# also bumped when live context already exceeds 200000, since it cannot then be a
+# 200k-window model).
 #
 # Thresholds: KIT_CTX_WARN_PCT (default 65) is advisory (hand off at the next
 # boundary). KIT_CTX_STRONG_PCT (default 70) is a directive: finish the step in
@@ -54,9 +57,23 @@ if [ -n "${KIT_CTX_WINDOW:-}" ]; then
     WINDOW="$KIT_CTX_WINDOW"
 else
     WINDOW=200000
-    case "$(printf '%s' "$MODEL" | tr '[:upper:]' '[:lower:]')" in
+    # The [1m] marker lives on the transcript's model-identity attachment
+    # (.attachment.identity.modelId), not on .message.model (always the bare
+    # id, e.g. claude-opus-5-5). Scan the whole file for the latest one --
+    # it can sit far earlier than the tail -c window above reads.
+    IDENTITY_MODEL=$(grep -o '"modelId"[[:space:]]*:[[:space:]]*"[^"]*"' "$TRANSCRIPT" 2>/dev/null | tail -n 1)
+    case "$(printf '%s' "$IDENTITY_MODEL" | tr '[:upper:]' '[:lower:]')" in
         *1m*) WINDOW=1000000 ;;
     esac
+    if [ "$WINDOW" -eq 200000 ]; then
+        case "$(printf '%s' "$MODEL" | tr '[:upper:]' '[:lower:]')" in
+            *1m*) WINDOW=1000000 ;;
+        esac
+    fi
+    # Live context already past 200k: it cannot be a 200k-window model.
+    if [ "$WINDOW" -eq 200000 ] && [ "$CTX" -gt 200000 ]; then
+        WINDOW=1000000
+    fi
 fi
 case "$WINDOW" in *[!0-9]*) exit 0 ;; esac
 [ "$WINDOW" -gt 0 ] || exit 0
