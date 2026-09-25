@@ -116,5 +116,5 @@ A fresh-context review ran the security, architecture, test-coverage and advisor
 
 - No live run against a Cloudflare `Workers Builds: <name>` check run. The recorded run read a GitHub Actions `deploy` check run, which the API serves in the same shape.
 - A run that polls across a real in-progress deploy. The pending-then-complete path is proven with a stubbed gh only.
-- The timeout counts poll sleeps, not gh call time, and a hung `gh api` call has no bound of its own.
+- The timeout counts wall time or summed poll sleeps, whichever is larger. A hung `gh api` call has no bound of its own.
 - A repo that reports its deploy as a commit status instead of a check run. The verb does not read statuses (spec, Not covered).

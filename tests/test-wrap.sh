@@ -3528,6 +3528,15 @@ chk_has "deploy-wait timeout names the open check" "$out" "TIMEOUT 0123456 after
 chk_has "deploy-wait timeout prints the open status" "$out" "in_progress Workers Builds: site"
 chk "deploy-wait timeout is bounded (reads at 0s, 10s, 20s)" "$([ "$(dw_reads)" -eq 3 ]; echo $?)"
 
+echo "--- timeout: slow gh calls count toward it (wall time, not just the poll sleeps)"
+mkdir -p "$TMPD/dwslow"
+printf '#!/usr/bin/env bash\n[ "${1:-}" = api ] && /bin/sleep 2\nexec "%s/dwstub/gh" "$@"\n' "$TMPD" > "$TMPD/dwslow/gh"
+chmod +x "$TMPD/dwslow/gh"
+dw_case slow; dw_read 1 "{\"check_runs\":[$WB_OPEN]}"
+out="$(DEPLOY_POLL_SECS=1 PATH="$TMPD/nosleep:$TMPD/dwslow:$PATH" "$WRAP" deploy-wait o/r "$SHA" --timeout 3 2>&1)"; rc=$?
+chk "deploy-wait slow-gh timeout exits 124" "$([ "$rc" -eq 124 ]; echo $?)"
+chk "deploy-wait counts gh time: 3 reads of 2s pass a 3s timeout (sleeps alone take 4)" "$([ "$(dw_reads)" -eq 3 ]; echo $?)"
+
 echo "--- no match: the filter keeps waiting, then times out saying so"
 dw_case nomatch; dw_read 1 "{\"check_runs\":[$CI_OK]}"
 out="$(dw_run o/r "$SHA" --check "Workers Builds" --timeout 10)"; rc=$?

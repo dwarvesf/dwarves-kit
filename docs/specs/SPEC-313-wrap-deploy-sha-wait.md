@@ -147,7 +147,7 @@ Negative control: `lib/gate/negctl.sh` mutates the success test in `cmd_deploy_w
 
 For a push-deploy repo, `/kit:wrap` step 4 runs `bin/wrap deploy-wait <slug> <merge-sha> --check "<deploy check name>"` and claims `DEPLOYED` only on exit 0. Nobody polls check runs by hand.
 
-Not covered: a repo that deploys through a commit status instead of a check run; the verb reads check runs only. The timeout counts poll sleeps, not gh call time, so a real wait runs somewhat past `--timeout` and a value that is not a multiple of 10 rounds up to the next poll; a hung `gh api` call has no bound of its own. Knowing a repo's deploy check name stays with the operator or the repo's own docs.
+Not covered: a repo that deploys through a commit status instead of a check run; the verb reads check runs only. The timeout counts wall time or summed poll sleeps, whichever is larger, so a slow `gh` call cannot stretch it; a value that is not a multiple of the poll rounds up to the next poll, and a hung `gh api` call has no bound of its own. Knowing a repo's deploy check name stays with the operator or the repo's own docs.
 
 ## Decision Log
 
