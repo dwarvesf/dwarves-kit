@@ -147,11 +147,12 @@ Negative control: `lib/gate/negctl.sh` mutates the success test in `cmd_deploy_w
 
 For a push-deploy repo, `/kit:wrap` step 4 runs `bin/wrap deploy-wait <slug> <merge-sha> --check "<deploy check name>"` and claims `DEPLOYED` only on exit 0. Nobody polls check runs by hand.
 
-Not covered: a repo that deploys through a commit status instead of a check run; the verb reads check runs only. Knowing a repo's deploy check name stays with the operator or the repo's own docs.
+Not covered: a repo that deploys through a commit status instead of a check run; the verb reads check runs only. The timeout counts poll sleeps, not gh call time, so a real wait runs somewhat past `--timeout` and a value that is not a multiple of 10 rounds up to the next poll; a hung `gh api` call has no bound of its own. Knowing a repo's deploy check name stays with the operator or the repo's own docs.
 
 ## Decision Log
 
 - Slug argument, not a local checkout path: the hand loop it replaces takes `repos/<o>/<r>`, and a local path adds an origin-URL parse the verb does not need.
 - No env knob for the poll interval: a constant 10s. The tests bypass the wait with a no-op `sleep`.
 - Validation (six lenses, APPROVED, design record PASS) raised six warnings, all folded in: repeatable `--check` for a multi-Worker repo; tests for a second page, `skipped`, and gh logged out; stdout and stderr captured apart; a distinct timeout line when no read succeeded; `.` and `..` slug halves refused; step 4's `nothing to check here` sentence rewritten rather than appended to.
+- Review (security, architecture, test-coverage, advisor lenses) found one MEDIUM: step 4 did not say the wait can outlast a tool call's time limit. Fixed in the step text. Also fixed: the transient check reads gh's stderr only, a newline in the slug or sha is refused, a trap removes the temp file on a kill, step 4 names how to find the deploy check name and how to report exit 2. Kept: the sleep-counted timeout, recorded under Not covered.
 - The endpoint's default `filter=latest` already returns the newest run per name. The highest-id dedupe stays as a second defence for an open rerun. Do not add `filter=all` without a reason.

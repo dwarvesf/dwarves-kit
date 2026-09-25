@@ -2713,6 +2713,8 @@ cmd_deploy_wait() {
     esac
   done
   [ "$count" -eq 2 ] || { echo "$usage" >&2; return 64; }
+  # grep matches line by line, so a value carrying a newline is refused before it.
+  case "$slug$sha" in *$'\n'*|*$'\r'*) echo "$usage" >&2; return 64 ;; esac
   # A `.` or `..` segment would rewrite the API path, so neither half may be one.
   printf '%s' "$slug" | grep -qE '^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$' || { echo "$usage" >&2; return 64; }
   case "/$slug/" in */./*|*/../*) echo "$usage" >&2; return 64 ;; esac
@@ -2726,6 +2728,8 @@ cmd_deploy_wait() {
   # error text travel apart: stdout is judged only on exit 0, stderr only on a failure.
   local errf rc
   errf="$(mktemp "${TMPDIR:-/tmp}/wrap-deploy-wait.XXXXXX")" || { echo "ERROR ${sha:0:7}: mktemp failed"; return 2; }
+  # A killed wait (a caller's own time limit) must not leave the file behind.
+  trap 'rm -f "$errf"' EXIT INT TERM
   _deploy_wait_poll "$slug" "$sha" "$checks" "$timeout" "$errf"; rc=$?
   rm -f "$errf"
   return "$rc"
@@ -2757,7 +2761,7 @@ _deploy_wait_poll() {
           else "open" end')"
       [ "$state" = completed ] && break
       echo "deploy-wait ${s7}: $(_deploy_wait_pending "$runs" "$checks"), ${waited}s of ${timeout}s" >&2
-    elif printf '%s\n%s' "$err" "$raw" | _gh_merge_transient; then
+    elif _gh_merge_transient < "$errf"; then
       echo "deploy-wait ${s7}: transient read error, retrying: ${err:-exit $rc}" >&2
     else
       echo "ERROR ${s7}: ${err:-gh api exited $rc}"; return 2

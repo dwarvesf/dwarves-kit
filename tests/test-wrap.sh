@@ -3557,6 +3557,10 @@ out="$(dw_run o/r "$SHA")"; rc=$?
 chk "deploy-wait stops on a non-transient error with exit 2" "$([ "$rc" -eq 2 ]; echo $?)"
 chk_has "deploy-wait names the read error" "$out" "ERROR 0123456: HTTP 422"
 chk "deploy-wait read only once on a hard error" "$([ "$(dw_reads)" -eq 1 ]; echo $?)"
+dw_case hard-out; dw_read 1 "gh: HTTP 404: Not Found"; echo 1 > "$DW/read-1.rc"
+printf '%s\n' '{"check_runs":[{"id":1,"name":"x","status":"completed","conclusion":"failure","output":{"summary":"build timed out"}}]}' > "$DW/read-1.out"
+out="$(dw_run o/r "$SHA")"; rc=$?
+chk "deploy-wait classifies the error text only, never the partial stdout" "$([ "$rc" -eq 2 ]; echo $?)"
 
 echo "--- every page is read: a check on page two still counts"
 dw_case pages
@@ -3608,6 +3612,14 @@ for args in "" "o/r" "not-a-slug $SHA" "./r $SHA" "o/.. $SHA" "o/r xyz" "o/r $SH
   out="$(dw_run $args)"; rc=$?
   chk "deploy-wait usage error exits 64 (args: ${args:-none})" "$([ "$rc" -eq 64 ]; echo $?)"
 done
+out="$(dw_run $'o/r\nx/y' "$SHA")"; rc=$?
+chk "deploy-wait refuses a newline in the slug" "$([ "$rc" -eq 64 ]; echo $?)"
+out="$(dw_run o/r $'0123456\nzz')"; rc=$?
+chk "deploy-wait refuses a newline in the sha" "$([ "$rc" -eq 64 ]; echo $?)"
+out="$(dw_run o/r "$SHA" --check "")"; rc=$?
+chk "deploy-wait refuses an empty --check" "$([ "$rc" -eq 64 ]; echo $?)"
+out="$(dw_run o/r "$SHA" --timeout)"; rc=$?
+chk "deploy-wait refuses --timeout with no value" "$([ "$rc" -eq 64 ]; echo $?)"
 chk "deploy-wait usage errors never read GitHub" "$([ "$(dw_reads)" -eq 0 ]; echo $?)"
 chk_has "commands/wrap.md step 4 runs deploy-wait for a push deploy" "$(cat "$KIT_DIR/commands/wrap.md")" "bin/wrap deploy-wait <owner>/<name> <merge-sha> --check"
 chk_has "commands/wrap.md step 4 claims DEPLOYED only on exit 0" "$(cat "$KIT_DIR/commands/wrap.md")" "The report claims \`DEPLOYED\` only after it exits 0."
