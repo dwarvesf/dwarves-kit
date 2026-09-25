@@ -421,7 +421,7 @@ if [ -n "${PLUGIN_LIB:-}" ] && [ -z "${KIT_FORCE_FULL:-}" ]; then
     done
   fi
   mkdir -p "$CLAUDE_DIR/dwarves-kit/docs"
-  for f in bin lib hooks WORKFLOW.md AGENTS.md docs/WORKFLOW.md docs/impl-playbook; do
+  for f in bin lib hooks WORKFLOW.md AGENTS.md kit.toml VERSION docs/WORKFLOW.md docs/impl-playbook; do
     kit_symlink_hardened "$KIT_DIR/$f" "$CLAUDE_DIR/dwarves-kit/$f"
     echo "[ok] compat symlink ~/.claude/dwarves-kit/$f -> $KIT_DIR/$f"
   done
