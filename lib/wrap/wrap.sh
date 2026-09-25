@@ -1286,9 +1286,19 @@ _pr_detail() {
 # and the new SUCCESS run in the array. Grouping by name and keeping only the run with the
 # latest completedAt (falling back to startedAt for a still-running check) mirrors what
 # `gh pr checks` already shows and what GitHub's own merge button honors.
+#
+# The rollup also mixes two GitHub types: CheckRun (`.name`, `.completedAt`/`.startedAt`,
+# `.conclusion`) and StatusContext (`.context`, `.createdAt`, `.state`, no `.name` at all).
+# Grouping on `.name` alone puts every StatusContext entry (all `.name == null`) into ONE
+# group, so two distinct commit statuses collapse into a single row and only the last one
+# survives -- a real failing status can be hidden behind a later, unrelated passing one.
+# `.name // .context` keys each type by its own identifier; the sort falls back through
+# `.completedAt // .startedAt // .createdAt` to cover both types' timestamp fields.
 _pr_gate() {
   printf '%s' "$1" | jq -r --arg def "$2" '
-    def checks: (.statusCheckRollup // []) | group_by(.name) | map(sort_by(.completedAt // .startedAt // "") | last);
+    def checks: (.statusCheckRollup // [])
+      | group_by(.name // .context)
+      | map(sort_by(.completedAt // .startedAt // .createdAt // "") | last);
     if (.isDraft == true) then "SKIP draft"
     elif (.baseRefName != $def) then "SKIP base is \(.baseRefName), not the default branch \($def)"
     elif (.mergeable != "MERGEABLE") then "SKIP not mergeable (\(.mergeable // "unknown"))"
