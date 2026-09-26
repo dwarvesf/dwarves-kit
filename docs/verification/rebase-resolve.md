@@ -8,7 +8,7 @@ Acceptance: `bin/wrap rebase <worktree>` rebases the worktree's branch onto `ori
 
 | Command | Exit | Output |
 |---|---|---|
-| `bash tests/test-wrap.sh` | 0 | `test-wrap: all 1350 passed` |
+| `bash tests/test-wrap.sh` | 0 | `test-wrap: all 1369 passed` |
 | `RUN_ALL_TIMEOUT_SECS=1500 bash tests/run-all.sh --changed` | 0 | `run-all: all 18 suites passed, 0 skipped for missing tooling` |
 
 The first `run-all --changed` at the default 300s ceiling killed four long suites on time (`test-config-registry`, `test-config-seams`, `test-meta`, `test-wrap`) with no assertion failed; the rerun above raised the ceiling only.
@@ -36,7 +36,17 @@ The mutation is `perl -i -pe 's/if grep -qE (?=\x27\^\(<\{7\})/if false && grep 
   FAIL rebase: no marker in any reachable commit
 ```
 
-An earlier control on the first feature commit also passed, but only three assertions went red: `no marker in any reachable commit` piped `git log` into `grep -q`, and pipefail hid the match. The test fix landed as its own commit and the control above ran on it.
+The control above ran on `deedde29`, after the review fixes. An earlier control on the first feature commit also passed, but only three assertions went red: `no marker in any reachable commit` piped `git log` into `grep -q`, and pipefail hid the match. The test fix landed as its own commit and the control above ran on it.
+
+## Review mutations
+
+A fresh-context review returned FIX THEN SHIP. The fixes were written tests-first: before the code changed, the new cases failed 9 of 102 in the rebase block. Each pin was then removed on its own, and the rebase block rerun:
+
+| Mutation | Result |
+|---|---|
+| drop `-c rerere.enabled=false` | red: `a recorded resolution is still refused by name` |
+| drop `-c rebase.updateRefs=false` | red: `the stacked branch ref did not move` |
+| swap `git add -- <set>` for `git add -u` | green, 102/102: equivalent while the preflight refuses tracked changes (see the implementation notes) |
 
 ## Test plan coverage
 
@@ -47,6 +57,7 @@ An earlier control on the first feature commit also passed, but only three asser
 | Union handled by git | `a union-declared file`, 4 assertions |
 | CHANGELOG pure additions | `CHANGELOG: both sides only added bullets`, 6 assertions |
 | CHANGELOG reworded | `CHANGELOG: a reworded bullet refuses`, 4 assertions (this case caught a pipefail bug in the pure-addition test) |
+| CHANGELOG line both sides added (review HIGH) | `CHANGELOG: both sides added the same line refuses`, 3 assertions |
 | Generated stop | `generated FEATURES conflict`, 7 assertions |
 | Generator side effect staged | `the generator's side effect`, 3 assertions |
 | Empty pick after regen | `a pick left empty`, 3 assertions |
@@ -64,6 +75,11 @@ An earlier control on the first feature commit also passed, but only three asser
 | Preflight refusals | `preflight refusals`: main checkout, protected name, detached HEAD, dirty tracked file, stale `index.lock`, fetch failure, rebase in progress, HEAD unchanged |
 | Usage | `usage`: no argument, two arguments, unknown flag, not a repo, all 64 |
 | Help | `help and usage` loop names `rebase`; `bin/wrap header names rebase` |
+| rerere pinned off (review) | `a recorded rerere resolution never resolves a stop`, 4 assertions |
+| updateRefs pinned off (review) | `a stacked branch ref never moves`, 2 assertions |
+| Non-ASCII path (review) | `a non-ASCII path the generator changes`, 3 assertions |
+| Final-pass failure prefix (review) | `a failing final regeneration`, 3 assertions; the mid-rebase generator case asserts no `AFTER REBASE` |
+| Step 10 wiring (review) | `/kit:wrap step 10 runs the verb`, 3 assertions on `commands/wrap.md` |
 
 ## Not proven
 
