@@ -1,6 +1,6 @@
 # SPEC-323: wrap step 10 titles PRs from the first commit
 
-**Status:** DRAFT
+**Status:** VALIDATED
 Lane: normal
 Type: spec-feature
 **Proof:** `tests/test-wrap.sh`, the step-10 wording block.
