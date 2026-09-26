@@ -2088,13 +2088,33 @@ cmd_land() {
   # existing `rid` verb (cwd'd into the worktree, still on the landed branch -- removal is
   # several steps below) rather than reimplementing its slug rule, and record only when the
   # rid already started a run (a `show` hit), so a plain hand-made land with no spec cycle
-  # behind it stays silent. A failed derive or record never fails the land: one line instead.
+  # behind it stays silent. The reason carries `via=land` so this line is distinguishable
+  # from one hooks/ship-gate.sh actually gated (it only fires on a literal push/PR-create);
+  # /kit:wrap step 8's `shipping pr=#<n>([^0-9]|$)` grep still matches it (the next char is
+  # a space). A rid whose ledger already carries a `ship` gate line is never recorded a
+  # second time: the same PR number is an idempotent re-land (e.g. /kit:ship already wrote
+  # it), a different PR number means this rid's slug is shared by an unrelated branch (a
+  # reused `type/` prefix, same stripped slug) and overwriting it would misattribute the
+  # line. A failed derive or record never fails the land: one line instead, naming the
+  # command to run by hand.
   local land_rid; land_rid="$(cd "$wt" && bash "$GATE_LEDGER_SH" rid 2>/dev/null)" || land_rid=""
-  if [ -n "$land_rid" ] && bash "$GATE_LEDGER_SH" show "$land_rid" >/dev/null 2>&1; then
-    if bash "$GATE_LEDGER_SH" record "$land_rid" Ship ran "shipping pr=#${n}" >/dev/null 2>&1; then
-      echo "     recorded ship gate for ${land_rid} (pr=#${n})"
-    else
-      echo "     ship-gate record FAILED for ${land_rid} (pr=#${n}); record it by hand" >&2
+  if [ -n "$land_rid" ]; then
+    local land_ledger
+    if land_ledger="$(bash "$GATE_LEDGER_SH" show "$land_rid" 2>/dev/null)"; then
+      local prior_pr
+      prior_pr="$(printf '%s\n' "$land_ledger" | grep -i '| GATE | ship |' | grep -oE 'pr=#[0-9]+' | tail -1)"
+      if [ "$prior_pr" = "pr=#${n}" ]; then
+        echo "     ship gate for ${land_rid} already names pr=#${n}; skipping (already recorded)"
+      elif [ -n "$prior_pr" ]; then
+        echo "     ship gate for ${land_rid} already names ${prior_pr}, not pr=#${n}; skipping (reused slug, different run)"
+      else
+        local record_err
+        if record_err="$(bash "$GATE_LEDGER_SH" record "$land_rid" Ship ran "shipping pr=#${n} via=land" 2>&1 >/dev/null)"; then
+          echo "     recorded ship gate for ${land_rid} (pr=#${n})"
+        else
+          echo "     ship-gate record FAILED for ${land_rid} (pr=#${n}): ${record_err}; record it by hand: bash ${GATE_LEDGER_SH} record ${land_rid} Ship ran \"shipping pr=#${n} via=land\"" >&2
+        fi
+      fi
     fi
   fi
 

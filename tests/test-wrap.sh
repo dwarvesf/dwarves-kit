@@ -2481,10 +2481,88 @@ out="$(GH_STUB_OPEN_PRS='[]' GH_STUB_CREATE_NUM=63 GH_STUB_LAND_REPO="$LWT_SF" G
   GH_STUB_LAND_BRANCH=feat/shipfail GH_STUB_LAND_DEF=main "$WRAP" land "$LWT_SF" 2>&1)"; rc=$?
 chmod 644 "$KIT_LEDGER_DIR/runs/shipfail.log" 2>/dev/null || true
 chk "ship-gate record: a record failure still exits 0" "$([ "$rc" -eq 0 ]; echo $?)"
-chk_has "ship-gate record: a record failure is reported" "$out" \
-  "ship-gate record FAILED for shipfail (pr=#63); record it by hand"
+chk_has "ship-gate record: a record failure names the rid and PR" "$out" \
+  "ship-gate record FAILED for shipfail (pr=#63):"
+chk_has "ship-gate record: a record failure captures the stderr" "$out" "Permission denied"
+chk_has "ship-gate record: a record failure names the manual command" "$out" \
+  "record it by hand: bash ${GATE_LEDGER} record shipfail Ship ran \"shipping pr=#63 via=land\""
 chk "ship-gate record: the land still tidied despite the record failure" \
   "$([ ! -e "$LWT_SF" ]; echo $?)"
+
+echo "--- ship-gate record: the recorded line is tagged via=land (distinguishable from a gated push)"
+chk_has "ship-gate record: the ledger line carries via=land" \
+  "$(cat "$KIT_LEDGER_DIR/runs/shiprec.log")" "| GATE | ship | ran | shipping pr=#61 via=land"
+chk_has "ship-gate record: /kit:wrap step 8's anchored grep still matches it" \
+  "$(cat "$KIT_LEDGER_DIR/runs/shiprec.log")" "shipping pr=#61 "
+
+echo "--- ship-gate record: a nested branch lands under gate-ledger.sh's own rid"
+build_land nested "" feat/a/b
+LWT_NST="$(cd "$TMPD/ld-repo-nested/wt" && pwd -P)"
+NESTED_RID="$(cd "$LWT_NST" && bash "$GATE_LEDGER" rid)"
+chk "ship-gate record: nested branch feat/a/b rids to a-b" "$([ "$NESTED_RID" = "a-b" ]; echo $?)"
+bash "$GATE_LEDGER" record "$NESTED_RID" spec ran "spec cycle for the land test" >/dev/null
+: > "$GH_STUB_CALLS"
+out="$(GH_STUB_OPEN_PRS='[]' GH_STUB_CREATE_NUM=64 GH_STUB_LAND_REPO="$LWT_NST" GH_STUB_LAND_REMOTE="$TMPD/ld-bare-nested" \
+  GH_STUB_LAND_BRANCH=feat/a/b GH_STUB_LAND_DEF=main "$WRAP" land "$LWT_NST" 2>&1)"; rc=$?
+chk "ship-gate record: a nested-branch land still exits 0" "$([ "$rc" -eq 0 ]; echo $?)"
+chk_has "ship-gate record: nested branch reports the rid it actually used" "$out" \
+  "recorded ship gate for ${NESTED_RID} (pr=#64)"
+chk_has "ship-gate record: the nested rid's ledger gained the Ship line" \
+  "$(cat "$KIT_LEDGER_DIR/runs/${NESTED_RID}.log")" "| GATE | ship | ran | shipping pr=#64 via=land"
+
+echo "--- ship-gate record: a TREE MISMATCH never records, even with a prior ledger"
+build_land mismatch "" feat/mismatch
+LWT_MM="$(cd "$TMPD/ld-repo-mismatch/wt" && pwd -P)"
+bash "$GATE_LEDGER" record mismatch spec ran "spec cycle for the land test" >/dev/null
+MMWORK="$TMPD/ld-mismatch-squash"
+git clone -q "$TMPD/ld-bare-mismatch" "$MMWORK"; gitc "$MMWORK"
+echo "stale change" > "$MMWORK/pr-file.txt"
+git -C "$MMWORK" add -A; git -C "$MMWORK" commit -qm "squash: stale head"
+git -C "$MMWORK" push -q origin main
+MM_SHA="$(git -C "$MMWORK" rev-parse HEAD)"
+: > "$GH_STUB_CALLS"
+out="$(GH_STUB_OPEN_PRS='[]' GH_STUB_CREATE_NUM=70 \
+  GH_STUB_VIEW_STATE="{\"state\":\"MERGED\",\"mergeCommit\":{\"oid\":\"${MM_SHA}\"}}" \
+  "$WRAP" land "$LWT_MM" 2>&1)"; rc=$?
+chk "ship-gate record: a MISMATCH land exits 3" "$([ "$rc" -eq 3 ]; echo $?)"
+chk_has "ship-gate record: the mismatch is reported" "$out" "TREE MISMATCH"
+chk_no "ship-gate record: a MISMATCH never reports a record" "$out" "recorded ship gate"
+chk_has "ship-gate record: the mismatch ledger keeps only the seeded line" \
+  "$(cat "$KIT_LEDGER_DIR/runs/mismatch.log")" "spec cycle for the land test"
+chk_no "ship-gate record: the mismatch ledger gained no Ship line" \
+  "$(cat "$KIT_LEDGER_DIR/runs/mismatch.log")" "| GATE | ship |"
+
+echo "--- ship-gate record: a ledger already naming this PR skips as idempotent"
+build_land samepr "" feat/samepr
+LWT_SP="$(cd "$TMPD/ld-repo-samepr/wt" && pwd -P)"
+bash "$GATE_LEDGER" record samepr Ship ran "shipping pr=#71 via=land" >/dev/null
+: > "$GH_STUB_CALLS"
+out="$(GH_STUB_OPEN_PRS='[]' GH_STUB_CREATE_NUM=71 GH_STUB_LAND_REPO="$LWT_SP" GH_STUB_LAND_REMOTE="$TMPD/ld-bare-samepr" \
+  GH_STUB_LAND_BRANCH=feat/samepr GH_STUB_LAND_DEF=main "$WRAP" land "$LWT_SP" 2>&1)"; rc=$?
+chk "ship-gate record: the idempotent same-PR case still exits 0" "$([ "$rc" -eq 0 ]; echo $?)"
+chk_has "ship-gate record: the idempotent case reports why it skipped" "$out" \
+  "ship gate for samepr already names pr=#71; skipping (already recorded)"
+chk_no "ship-gate record: the idempotent case never reports a fresh record" "$out" "recorded ship gate"
+chk "ship-gate record: the idempotent case wrote no second Ship line" \
+  "$([ "$(grep -c '| GATE | ship |' "$KIT_LEDGER_DIR/runs/samepr.log")" -eq 1 ]; echo $?)"
+
+echo "--- ship-gate record: a reused slug naming a different PR skips, never overwrites"
+build_land typo "" feat/typo
+LWT_TY="$(cd "$TMPD/ld-repo-typo/wt" && pwd -P)"
+bash "$GATE_LEDGER" record typo Ship ran "shipping pr=#80 via=land" >/dev/null
+: > "$GH_STUB_CALLS"
+out="$(GH_STUB_OPEN_PRS='[]' GH_STUB_CREATE_NUM=81 GH_STUB_LAND_REPO="$LWT_TY" GH_STUB_LAND_REMOTE="$TMPD/ld-bare-typo" \
+  GH_STUB_LAND_BRANCH=feat/typo GH_STUB_LAND_DEF=main "$WRAP" land "$LWT_TY" 2>&1)"; rc=$?
+chk "ship-gate record: the reused-slug case still exits 0" "$([ "$rc" -eq 0 ]; echo $?)"
+chk_has "ship-gate record: the reused-slug case names the mismatch" "$out" \
+  "ship gate for typo already names pr=#80, not pr=#81; skipping (reused slug, different run)"
+chk_no "ship-gate record: the reused-slug case never reports a fresh record" "$out" "recorded ship gate"
+chk "ship-gate record: the reused-slug ledger kept exactly its original line" \
+  "$([ "$(grep -c '| GATE | ship |' "$KIT_LEDGER_DIR/runs/typo.log")" -eq 1 ]; echo $?)"
+chk_has "ship-gate record: the reused-slug ledger still names the original PR" \
+  "$(cat "$KIT_LEDGER_DIR/runs/typo.log")" "pr=#80"
+chk_no "ship-gate record: the reused-slug ledger never gained the new PR" \
+  "$(cat "$KIT_LEDGER_DIR/runs/typo.log")" "pr=#81"
 
 # ===========================================================================
 echo "=== land: adopting an operator-owned open PR for the branch (SPEC-299) ==="

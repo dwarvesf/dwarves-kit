@@ -174,3 +174,74 @@ before this change shipped -- only landings from this point forward gain the rec
   invokes `gate-ledger.sh`, so every pre-existing `land` test would otherwise touch the real
   machine's ledger corpus. Fixed by exporting `KIT_LEDGER_DIR` at a `$TMPD`-scoped path once,
   suite-wide, alongside the existing `KIT_CONFIG_OPERATOR` pin.
+- Post-review (Design critique below): chose to tag the recorded reason `via=land`, gate the
+  record on the ledger's own prior `ship` line rather than only on the rid having ANY ledger,
+  and capture the `record` call's stderr into the FAILED line alongside the exact manual
+  command, over leaving the original unverified/unconditional/opaque shape.
+
+## Design critique
+Date: 2026-09-26
+Design source: SPEC-317 `## Design`
+Lenses run: Simplicity, Performance, Boundaries, Data-model, Operability; missing: none
+
+### High findings
+1. **The recorded ship line is unverified: indistinguishable from one hooks/ship-gate.sh
+   actually gated.** `land` wrote the identical `shipping pr=#<n>` reason `/kit:ship` Step 8
+   writes after a real push/PR-create the hook checked. A reader trusting a `ship ran` line
+   as proof that check ran cannot tell a `land`-written line from a hook-gated one. -- found
+   by: Boundaries, Data-model -- fix: tag the reason `shipping pr=#<n> via=land`; `/kit:wrap`
+   step 8's anchored `shipping pr=#<n>([^0-9]|$)` grep still matches it, since the
+   character right after `pr=#<n>` is a space.
+
+### Medium findings
+1. **M1: a reused slug collides two unrelated branches on one ledger file.** The rid strips
+   only the branch's `type/` prefix, so `fix/typo` and an older `feat/typo` share the rid
+   `typo`. Recording unconditionally would add (or a later revision would overwrite) a Ship
+   line naming a PR that belongs to the OTHER branch's run. -- found by: Data-model -- fix:
+   read the ledger before recording; a `ship` gate line already naming a *different* PR is a
+   reused-slug collision, skip and say so, never overwrite.
+2. **M2: a duplicate ship line when `/kit:ship` already recorded this exact run.** An operator
+   who runs `land` after `/kit:ship` already pushed and merged the same PR (or a retry of
+   `land` itself) would get a second `ship ran` line naming the same PR, which is confusing to
+   any reader counting gate events and factually wrong (the gate ran once). -- found by:
+   Data-model, Operability -- fix: a ship line already naming this exact `pr=#<n>` is treated
+   as already-recorded; skip idempotently and print why.
+3. **M3: an opaque failure line gave the operator nothing to act on.** `ship-gate record
+   FAILED for <rid> (pr=#<n>); record it by hand` named neither the underlying error
+   (permission, disk full, unresolvable root) nor the exact command to run, pushing the
+   operator to reconstruct the `gate-ledger.sh record` invocation from memory, `via=land` tag
+   included. -- found by: Operability -- fix: capture the `record` call's own stderr into the
+   FAILED line, and print the exact command (rid, phase, state, and the `via=land` reason) to
+   run by hand.
+
+### Low findings (accepted)
+1. **L1: rid parity between `land` and `gate-ledger.sh rid` depends on both resolving the
+   identical branch at the identical moment** (the worktree still on disk, still on the landed
+   branch; removal runs several steps later). A future reorder of `cmd_land`'s tidy steps could
+   silently break this. -- Boundaries -- accepted: the inline comment documents the ordering
+   dependency, and every existing `land` test exercises this code path, so a reorder that broke
+   it would go red immediately; no structural guard added for a one-call-site risk.
+2. **L2: two extra shell-outs (`show` then `record`) per land call.** -- Performance --
+   accepted: negligible beside the `gh` API round-trips already in the same call.
+3. **L3: the skip/record logic lives inside `cmd_land`, not a shared verb.** -- Boundaries --
+   accepted: `wrap.sh` remains the only caller; extracting a shared verb for one call site
+   would be the same over-engineering the spec's own `## Design` table already rejected for a
+   shared `rid.sh` library, for the identical reason (a leaf addition, not a second call site).
+
+### Scores
+- Simplicity: 8/10
+- Performance: 9/10
+- Boundaries/composability: 8/10
+- Data-model & correctness: 6/10
+- Operability/failure-modes: 7/10
+
+### Verdict: REVISE
+
+The core mechanism (shell out to `gate-ledger.sh`'s own `rid`/`show`/`record` verbs, never
+fail the land) is sound and correctly reuses precedent. But the original record call trusted
+the ledger to only ever want one write no matter how many times a rid already carried a ship
+line, wrote a line indistinguishable from a hook-gated one, and left the operator with no
+detail or recovery command on a write failure. All three are data-model/operability gaps
+that resolve locally, no redesign of the chosen shape needed.
+
+Resolved in-branch: H1, M1, M2, M3 and both test gaps.
