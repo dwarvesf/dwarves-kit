@@ -36,18 +36,20 @@ All pre-existing `land` tests (`ok`, `knobkeep`, `basekeep`, `dirty`, `ondef`, `
 
 ## Negative control 1: the `show` prior-ledger guard
 
-`lib/gate/negctl.sh` mutated `cmd_land`'s prior-ledger guard (`if [ -n "$land_rid" ]; then` in place of the `land_ledger="$(... show ...)"` read), so a plain ad-hoc land would start attempting a record unconditionally.
+`lib/gate/negctl.sh` mutated the `land_ledger="$(... show ...)"` read so it always reports success (`|| true`), even when no ledger exists for the rid, so a plain ad-hoc land would start attempting a record unconditionally.
 
 ```
 Command: bash tests/test-wrap.sh
 Exit: 0 (green before mutation)
-Mutation: sed -i.bak "2101s/.*/  if [ -n \"\$land_rid\" ]; then/" lib/wrap/wrap.sh && rm -f lib/wrap/wrap.sh.bak
+Mutation: sed -i.bak "2103s/.*/    if land_ledger=\"\$(bash \\\"\$GATE_LEDGER_SH\\\" show \\\"\$land_rid\\\" 2>\/dev\/null || true)\"; then/" lib/wrap/wrap.sh && rm -f lib/wrap/wrap.sh.bak
 Changed: lib/wrap/wrap.sh
 Exit: 1 (under mutation, RED expected)
 Restore: git checkout HEAD -- lib/wrap/wrap.sh
 Exit: 0 (green after restore)
 Verdict: PASS
 ```
+
+The mutation failed the "no prior ledger writes nothing" case (a rid with no ledger file now gets an unconditional record attempt instead of staying silent), confirming the `show`-read guard is load-bearing.
 
 ## Negative control 2: the same-PR idempotent-skip guard
 
