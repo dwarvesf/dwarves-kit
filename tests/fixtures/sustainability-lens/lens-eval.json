@@ -1,0 +1,25 @@
+{
+  "cases": [
+    {
+      "name": "long-lived",
+      "fixture": "long-lived-gaps.md",
+      "signals": [
+        { "name": "liveness-r7", "reviewer": "Reviewer 7|R7|Sustainab", "pattern": "heartbeat|liveness|silent|health.?check", "treatment": "hit" },
+        { "name": "liveness-any", "pattern": "heartbeat|liveness|dies silently|die silently|stops silently", "control": "miss" },
+        { "name": "retirement-r7", "reviewer": "Reviewer 7|R7|Sustainab", "pattern": "retire|decommission|orphan|teardown|tear down|unload|turn(ed)? off", "treatment": "hit" },
+        { "name": "retirement-any", "pattern": "retire|decommission|orphan|teardown|tear down", "control": "miss" },
+        { "name": "rotation-r7", "reviewer": "Reviewer 7|R7|Sustainab", "pattern": "rotat|expir", "treatment": "hit" },
+        { "name": "rotation-any", "pattern": "rotat|expir", "control": "miss" },
+        { "name": "cost-r7", "reviewer": "Reviewer 7|R7|Sustainab", "pattern": "cost|spend|budget|per.?email|unbounded", "treatment": "hit" }
+      ]
+    },
+    {
+      "name": "short-lived",
+      "fixture": "short-lived.md",
+      "signals": [
+        { "name": "quiet-pass", "reviewer": "Reviewer 7|R7|Sustainab", "pattern": "not long-lived", "treatment": "hit" },
+        { "name": "quiet-no-upkeep", "reviewer": "Reviewer 7|R7|Sustainab", "pattern": "run cost|heartbeat|liveness|retire|handover|rotat", "treatment": "miss" }
+      ]
+    }
+  ]
+}
