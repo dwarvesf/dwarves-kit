@@ -189,8 +189,8 @@ schedules, sequences, or merges. Source: SPEC-036; ADR-0022.
 
 **Phase:** adversarial review of the spec
 **Reads:** `docs/specs/SPEC-NNN-<slug>.md`
-**Writes:** comments in chat; the maintainer flips SPEC Status to VALIDATED manually after addressing findings
-**When to invoke:** before `/execute` on any spec longer than ~5 tasks
+**Writes:** the Spec Validation Report; on APPROVED, Status VALIDATED and `Validate ran`; on NEEDS REVISION, `Validate skipped "NEEDS REVISION: <criticals>"`; on a Reviewer 6 critical, `design-record skipped "critical: <finding>"`. Dispatched READ-ONLY, it writes nothing and the lead records.
+**When to invoke:** rarely by hand. `/kit:spec` step 5 dispatches it in a fresh-context `general-purpose` subagent after `Spec ran` (Sonnet on normal and backfill, Opus on full), and `/kit:execute`'s validation preflight dispatches it on a normal, full, or backfill spec whose rid has no passing validate line; a critical stops execute before task 1. `/kit:wrap` step 10 workers stop with `VALIDATE PENDING` and the lead validates. Never run it on a spec you wrote: a self-run pass is not validation.
 **Common gotcha:** 7 reviewers (security, failure-mode, assumption-destroyer, scope-critic, solution-design & extensibility, design-record, sustainability) run sequentially. Budget ~12-14 minutes. The 5th reviewer flags shallow or non-extensible designs and is calibrated against false positives + legacy specs. The 6th, Reviewer 6 (SPEC-122 / ADR-0031 §1), is the one BLOCKING check in the set: a design-bearing spec with an empty `## Design` block cannot flip to VALIDATED. The 7th (SPEC-314) is advisory: a spec that leaves a long-lived job, service, dependency, credential, or paid call behind must answer run cost, owner and liveness, dependency lifespan, retirement, and handover; a short-lived spec passes in one line.
 
 ### `/kit:execute`
