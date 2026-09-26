@@ -37,7 +37,7 @@ trap 'chmod -R u+w "$TMPD" 2>/dev/null; rm -rf "$TMPD"' EXIT
 # ~/.config/dwarves-kit/kit.toml can never reach a case that does not set it deliberately.
 KIT_CONFIG_OPERATOR="$TMPD/no-operator-config"; export KIT_CONFIG_OPERATOR
 
-# Pin the gate-ledger root at a scratch dir: `land`'s ship-gate record (SPEC-315) is the first
+# Pin the gate-ledger root at a scratch dir: `land`'s ship-gate record is the first
 # thing in this file that calls gate-ledger.sh, so every `$WRAP` call below now shells out to
 # it. Without this, that call would resolve the real machine's ~/.local/state/dwarves-kit/logs
 # corpus instead of a throwaway one.
@@ -2446,7 +2446,7 @@ chk_has "wrap --help names land" "$("$WRAP" --help 2>&1)" "wrap.sh land  <worktr
 chk_has "commands/wrap.md names land for a hand-made worktree" "$(cat "$KIT_DIR/commands/wrap.md")" \
   "bin/wrap land <worktree>"
 
-echo "--- ship-gate record (SPEC-315): a rid with a prior ledger gets the Ship gate recorded"
+echo "--- ship-gate record: a rid with a prior ledger gets the Ship gate recorded"
 build_land shiprec "" feat/shiprec
 LWT_SR="$(cd "$TMPD/ld-repo-shiprec/wt" && pwd -P)"
 bash "$GATE_LEDGER" record shiprec spec ran "spec cycle for the land test" >/dev/null

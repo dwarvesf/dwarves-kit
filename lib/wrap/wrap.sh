@@ -88,7 +88,7 @@ LIB_ROOT="$(cd "$SELF_DIR/.." && pwd)"
 # than growing a second copy of the dedupe/render/append grammar in bash.
 STAGING_FORMAT_PY="$LIB_ROOT/reflect/staging-format.py"
 BACKLOG_SH="$LIB_ROOT/board/backlog.sh"
-# `land`'s ship-gate record (SPEC-315) shells out to this rather than reimplementing the
+# `land`'s ship-gate record shells out to this rather than reimplementing the
 # rid/ledger rules -- see cmd_land's use below.
 GATE_LEDGER_SH="$LIB_ROOT/gate/gate-ledger.sh"
 # shellcheck source=lib/config/kit-config.sh
@@ -2082,7 +2082,7 @@ cmd_land() {
       return 3 ;;
   esac
 
-  # Ship-gate record (SPEC-315): `/kit:ship` records `| GATE | ship | ran | shipping pr=#<n>`
+  # Ship-gate record: `/kit:ship` records `| GATE | ship | ran | shipping pr=#<n>`
   # on its own path (commands/ship.md Step 8); `land` never did, so a spec cycle shipped
   # through `land` instead never trips /kit:wrap step 8's retro-trigger grep. Reuse the
   # existing `rid` verb (cwd'd into the worktree, still on the landed branch -- removal is
