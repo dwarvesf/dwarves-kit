@@ -99,13 +99,16 @@ case "$sub" in
         exit 0 ;;
       view)
         n="${1:-}"; [ $# -gt 0 ] && shift
-        fields=""
+        fields=""; repo=""
         while [ $# -gt 0 ]; do
-          case "$1" in --json) fields="${2:-}"; shift 2 ;; *) shift ;; esac
+          case "$1" in --json) fields="${2:-}"; shift 2 ;; --repo) repo="${2:-}"; shift 2 ;; *) shift ;; esac
         done
         case "$fields" in
           state,mergeCommit)
-            default_state='{"state":"MERGED","mergeCommit":{"oid":"1a2b3c4d5e6f"}}'
+            # The merge commit GitHub names is whatever landed on the default branch, so the
+            # stub answers the --repo remote's HEAD (every fixture remote is a local path).
+            merge_oid="$(git -C "$repo" rev-parse -q --verify HEAD 2>/dev/null)"
+            default_state="{\"state\":\"MERGED\",\"mergeCommit\":{\"oid\":\"${merge_oid:-1a2b3c4d5e6f}\"}}"
             printf '%s\n' "${GH_STUB_VIEW_STATE:-$default_state}" ;;
           *)
             key="GH_STUB_PR_$n"; eval "val=\"\${$key:-}\""
@@ -1419,7 +1422,7 @@ chk "merge dry-run calls no pr merge" "$(grep -q '^pr merge' "$GH_STUB_CALLS" &&
 : > "$GH_STUB_CALLS"
 out="$("$WRAP" merge --apply "$TMPD/clone-scan-main" 2>&1)"; rc=$?
 chk "merge --apply exits 0" "$rc"
-chk_has "merge --apply reports the merge, tree verified" "$out" "merged #7 (1a2b3c4d5e6f): tree verified"
+chk_has "merge --apply reports the merge, tree verified" "$out" "merged #7 ($(git -C "$TMPD/bare-rmain" rev-parse main)): tree verified"
 chk "merge --apply called pr merge exactly once" "$([ "$(grep -c '^pr merge' "$GH_STUB_CALLS")" -eq 1 ]; echo $?)"
 chk "merge --apply passed --squash" "$(grep -q '^pr merge 7 .*--squash' "$GH_STUB_CALLS"; echo $?)"
 chk "merge --apply passed no --delete-branch" "$(grep -q -- '--delete-branch' "$GH_STUB_CALLS" && echo 1 || echo 0)"
@@ -1456,7 +1459,7 @@ chk "SPEC-300: a transient 502 retries and merges" "$rc"
 chk "SPEC-300: the retry took three merge calls" \
   "$([ "$(grep -c '^pr merge' "$GH_STUB_CALLS")" -eq 3 ]; echo $?)"
 chk_has "SPEC-300: the retry says why it waits" "$out" "transient GitHub error (attempt 1/3)"
-chk_has "SPEC-300: the retried merge still verifies" "$out" "merged #8 (1a2b3c4d5e6f): tree verified"
+chk_has "SPEC-300: the retried merge still verifies" "$out" "merged #8 ($(git -C "$TMPD/bare-rmain" rev-parse main)): tree verified"
 
 rm -f "$GH_STUB_CALLS.merge"; : > "$GH_STUB_CALLS"
 out="$(GH_STUB_MERGE_FAILS=9 GH_STUB_MERGE_ERR='HTTP 503 Service Unavailable' \
@@ -1722,7 +1725,7 @@ RM_OK_RECOVERED="$(git -C "$RM_OK" rev-parse feat/union)"
 chk "re-merge --apply exits 0" "$rc"
 chk_has "re-merge --apply reports the push" "$out" "re-merged origin/main into feat/union, pushed"
 chk_has "re-merge --apply re-gates the PR" "$out" "eligible #12 after the re-merge"
-chk_has "re-merge --apply merges the recovered PR" "$out" "merged #12 (1a2b3c4d5e6f): tree verified"
+chk_has "re-merge --apply merges the recovered PR" "$out" "merged #12 ($(git -C "$TMPD/rm-bare-ok" rev-parse main)): tree verified"
 chk "re-merge --apply called pr merge exactly once" \
   "$([ "$(grep -c '^pr merge' "$GH_STUB_CALLS")" -eq 1 ]; echo $?)"
 chk "re-merge --apply pinned the head the re-gate read, not the stale one" \
@@ -1899,7 +1902,7 @@ chk_has "squash fallback reports the replacement PR" "$out" \
   "opened replacement PR #51 on feat/union-squash (supersedes #50)"
 chk_has "squash fallback gates the replacement" "$out" "eligible #51 after the squash fallback"
 chk_has "squash fallback merges the replacement, tree verified" "$out" \
-  "merged #51 (1a2b3c4d5e6f): tree verified"
+  "merged #51 ($(git -C "$TMPD/cb-bare-ok" rev-parse main)): tree verified"
 chk_has "squash fallback names the superseded PR" "$out" \
   "superseded #50: its tree landed via #51 on feat/union-squash"
 chk_has "squash fallback created the PR on the -squash branch" "$SQ_CALLS" \
@@ -1988,7 +1991,7 @@ chk_has "chain: the re-gate's refusal is reported" "$out" \
   "SKIP #58 after the re-merge: not mergeable (CONFLICTING)"
 chk_has "chain: the fallback opens the replacement" "$out" \
   "opened replacement PR #59 on feat/union-squash (supersedes #58)"
-chk_has "chain: the replacement merges" "$out" "merged #59 (1a2b3c4d5e6f): tree verified"
+chk_has "chain: the replacement merges" "$out" "merged #59 ($(git -C "$TMPD/rm-bare-chain" rev-parse main)): tree verified"
 chk_has "chain: the superseded PR is named" "$out" "superseded #58"
 chk "chain: one pr merge call, on #59 never #58" \
   "$([ "$(grep -c '^pr merge 59 ' "$GH_STUB_CALLS")" -eq 1 ] && ! grep -q '^pr merge 58 ' "$GH_STUB_CALLS"; echo $?)"
@@ -2063,7 +2066,7 @@ out="$(PATH="$TMPD/nosleep:$PATH" KIT_WRAP_SETTLE_SECS=60 \
 ST_PUSHED="$(git -C "$ST" rev-parse feat/union)"
 chk "settle: a late-settling PR exits 0" "$rc"
 chk_has "settle: the PR is eligible once GitHub settles" "$out" "eligible #80 after the re-merge"
-chk_has "settle: the PR merges, tree verified" "$out" "merged #80 (1a2b3c4d5e6f): tree verified"
+chk_has "settle: the PR merges, tree verified" "$out" "merged #80 ($(git -C "$TMPD/rm-bare-settle" rev-parse main)): tree verified"
 chk "settle: polled past UNKNOWN and the stale CONFLICTING (4 detail reads)" \
   "$([ "$(views 80)" -eq 4 ]; echo $?)"
 chk "settle: pinned the merge to the pushed head" \
@@ -2145,7 +2148,7 @@ NK_PUSHED="$(git -C "$TMPD/rm-bare-nockout" rev-parse feat/union)"
 chk "no-checkout: exits 0" "$rc"
 chk_has "no-checkout: names the scratch worktree" "$out" "no local checkout holds feat/union; re-merging in a scratch worktree"
 chk_has "no-checkout: re-merged and pushed" "$out" "re-merged origin/main into feat/union, pushed"
-chk_has "no-checkout: merged, tree verified" "$out" "merged #90 (1a2b3c4d5e6f): tree verified"
+chk_has "no-checkout: merged, tree verified" "$out" "merged #90 ($(git -C "$TMPD/rm-bare-nockout" rev-parse main)): tree verified"
 chk "no-checkout: the pushed head carries the old origin/main" \
   "$(git -C "$NK" merge-base --is-ancestor "$NK_MAIN" "$NK_PUSHED"; echo $?)"
 chk "no-checkout: pinned the merge to the pushed head" \
@@ -2179,9 +2182,21 @@ build_tv_repo() { # build_tv_repo <name> -- bare + clone, base.txt on main, feat
   git -C "$clone" add -A; git -C "$clone" commit -qm "pr change"
 }
 
-echo "--- a real mismatch: main never got the PR's content, exits 3, branch untouched"
+# tv_land <name> <message> <cmd...> -- one commit on the bare remote's main, made in a scratch
+# clone: a concurrent PR, or the squash GitHub performs. The stub names the remote's HEAD as
+# the merge commit, so the last tv_land before a merge is the squash under test.
+tv_land() {
+  local name="$1" msg="$2" land="$TMPD/tv-land-$1"; shift 2
+  [ -d "$land" ] || { git clone -q "$TMPD/tv-bare-$name" "$land" >/dev/null 2>&1; gitc "$land"; }
+  git -C "$land" pull -q origin main >/dev/null 2>&1
+  (cd "$land" && "$@")
+  git -C "$land" add -A; git -C "$land" commit -qm "$msg"; git -C "$land" push -q origin main
+}
+
+echo "--- a real mismatch: the squash carried a stale head's content, exits 3, branch untouched"
 build_tv_repo mismatch
 TVM="$TMPD/tv-clone-mismatch"; TVM_OID="$(git -C "$TVM" rev-parse feat/tv)"
+tv_land mismatch "squash: stale head" sh -c 'echo "stale change" > pr-file.txt'
 out="$(GH_STUB_OPEN_PRS="$(tv_open_one 21 feat/tv)" GH_STUB_PR_21="$(tv_pr_json 21 feat/tv "$TVM_OID")" \
   "$WRAP" merge --apply "$TVM" 2>&1)"; rc=$?
 chk "tree-verify: a real mismatch exits 3" "$([ "$rc" -eq 3 ]; echo $?)"
@@ -2189,6 +2204,23 @@ chk_has "tree-verify: mismatch names the count and that main lacks the head" "$o
   "TREE MISMATCH, 1 paths differ; main does not hold the PR head"
 chk "tree-verify: mismatch leaves the branch in place" \
   "$(git -C "$TVM" rev-parse --verify feat/tv >/dev/null 2>&1; echo $?)"
+
+echo "--- main never got the PR's change: the named commit is someone else's, exits 3"
+build_tv_repo missing
+TVX="$TMPD/tv-clone-missing"; TVX_OID="$(git -C "$TVX" rev-parse feat/tv)"
+tv_land missing "someone else's change" sh -c 'echo other > other-file.txt'
+out="$(GH_STUB_OPEN_PRS="$(tv_open_one 24 feat/tv)" GH_STUB_PR_24="$(tv_pr_json 24 feat/tv "$TVX_OID")" \
+  "$WRAP" merge --apply "$TVX" 2>&1)"; rc=$?
+chk "tree-verify: a missing change exits 3" "$([ "$rc" -eq 3 ]; echo $?)"
+chk_has "tree-verify: a missing change counts the extra and the absent path" "$out" \
+  "TREE MISMATCH, 2 paths differ; main does not hold the PR head"
+
+echo "--- gh names a merge commit that is not on main: unverifiable, exits 3"
+out="$(GH_STUB_OPEN_PRS="$(tv_open_one 25 feat/tv)" GH_STUB_PR_25="$(tv_pr_json 25 feat/tv "$TVX_OID")" \
+  GH_STUB_VIEW_STATE="{\"state\":\"MERGED\",\"mergeCommit\":{\"oid\":\"$TVX_OID\"}}" \
+  "$WRAP" merge --apply "$TVX" 2>&1)"; rc=$?
+chk "tree-verify: a merge commit off main exits 3" "$([ "$rc" -eq 3 ]; echo $?)"
+chk_has "tree-verify: names the merge commit off main" "$out" "is not on origin/main"
 
 echo "--- an unreachable head object: never a false pass, exits 3"
 BOGUS_OID="0000000000000000000000000000000000000f"
@@ -2212,6 +2244,67 @@ out="$(GH_STUB_OPEN_PRS="$(tv_open_one 23 feat/tv)" GH_STUB_PR_23="$(tv_pr_json 
   "$WRAP" merge --apply "$TVS" 2>&1)"; rc=$?
 chk "tree-verify: a scoped match (another PR landed meanwhile) exits 0" "$rc"
 chk_has "tree-verify: scoped match reports verified" "$out" "tree verified"
+
+echo "--- a concurrent PR edited the same file: judged on this PR's own change, verified"
+# The ops-toolkit case: both PRs add a line to one log, so main's copy holds both lines and
+# never equals the PR head's copy, yet the squash applied exactly the PR's change.
+build_tv_repo shared
+TVH="$TMPD/tv-clone-shared"
+tv_land shared "log seed" sh -c 'printf "l1\nl2\nl3\nl4\nl5\n" > log.md'
+git -C "$TVH" checkout -q main; git -C "$TVH" pull -q origin main
+git -C "$TVH" checkout -q -b feat/shared main
+printf 'pr line\nl1\nl2\nl3\nl4\nl5\n' > "$TVH/log.md"
+git -C "$TVH" commit -qam "pr: log line"; TVH_OID="$(git -C "$TVH" rev-parse feat/shared)"
+tv_land shared "other PR: log line" sh -c 'echo "other line" >> log.md'
+tv_land shared "squash: pr log line" sh -c '{ echo "pr line"; cat log.md; } > log.tmp && mv log.tmp log.md'
+out="$(GH_STUB_OPEN_PRS="$(tv_open_one 26 feat/shared)" GH_STUB_PR_26="$(tv_pr_json 26 feat/shared "$TVH_OID")" \
+  "$WRAP" merge --apply "$TVH" 2>&1)"; rc=$?
+chk "tree-verify: a concurrent edit to a shared file exits 0" "$rc"
+chk_has "tree-verify: a concurrent edit to a shared file reports verified" "$out" "tree verified"
+
+echo "--- the squash altered the PR's own line in a shared file: still a mismatch"
+build_tv_repo sharedbad
+TVB="$TMPD/tv-clone-sharedbad"
+tv_land sharedbad "log seed" sh -c 'printf "l1\nl2\n" > log.md'
+git -C "$TVB" checkout -q main; git -C "$TVB" pull -q origin main
+git -C "$TVB" checkout -q -b feat/shared main
+printf 'pr line\nl1\nl2\n' > "$TVB/log.md"
+git -C "$TVB" commit -qam "pr: log line"; TVB_OID="$(git -C "$TVB" rev-parse feat/shared)"
+tv_land sharedbad "other PR: log line" sh -c 'echo "other line" >> log.md'
+tv_land sharedbad "squash: a resolution that rewrote the PR line" \
+  sh -c '{ echo "pr line, resolved"; cat log.md; } > log.tmp && mv log.tmp log.md'
+out="$(GH_STUB_OPEN_PRS="$(tv_open_one 27 feat/shared)" GH_STUB_PR_27="$(tv_pr_json 27 feat/shared "$TVB_OID")" \
+  "$WRAP" merge --apply "$TVB" 2>&1)"; rc=$?
+chk "tree-verify: an altered shared-file line exits 3" "$([ "$rc" -eq 3 ]; echo $?)"
+chk_has "tree-verify: an altered shared-file line is a one-path mismatch" "$out" "TREE MISMATCH, 1 paths differ"
+
+echo "--- a PR that deletes and renames files lands after a concurrent PR: verified"
+build_tv_repo delete
+TVD="$TMPD/tv-clone-delete"
+tv_land delete "seed" sh -c 'echo gone > gone.txt; echo moved > old-name.txt'
+git -C "$TVD" checkout -q main; git -C "$TVD" pull -q origin main
+git -C "$TVD" checkout -q -b feat/delete main
+git -C "$TVD" rm -q gone.txt; git -C "$TVD" mv old-name.txt new-name.txt
+git -C "$TVD" commit -qm "pr: delete and rename"; TVD_OID="$(git -C "$TVD" rev-parse feat/delete)"
+tv_land delete "other PR" sh -c 'echo other > other-file.txt'
+tv_land delete "squash: delete and rename" sh -c 'git rm -q gone.txt && git mv old-name.txt new-name.txt'
+out="$(GH_STUB_OPEN_PRS="$(tv_open_one 28 feat/delete)" GH_STUB_PR_28="$(tv_pr_json 28 feat/delete "$TVD_OID")" \
+  "$WRAP" merge --apply "$TVD" 2>&1)"; rc=$?
+chk "tree-verify: a landed deletion and rename exits 0" "$rc"
+chk_has "tree-verify: a landed deletion and rename reports verified" "$out" "tree verified"
+
+echo "--- the deletion never landed: the squash kept the file, a mismatch"
+build_tv_repo delbad
+TVE="$TMPD/tv-clone-delbad"
+tv_land delbad "seed" sh -c 'echo gone > gone.txt'
+git -C "$TVE" checkout -q main; git -C "$TVE" pull -q origin main
+git -C "$TVE" checkout -q -b feat/delete main
+git -C "$TVE" rm -q gone.txt; git -C "$TVE" commit -qm "pr: delete"; TVE_OID="$(git -C "$TVE" rev-parse feat/delete)"
+tv_land delbad "squash: kept the file" sh -c 'echo "pr change" > pr-file.txt'
+out="$(GH_STUB_OPEN_PRS="$(tv_open_one 29 feat/delete)" GH_STUB_PR_29="$(tv_pr_json 29 feat/delete "$TVE_OID")" \
+  "$WRAP" merge --apply "$TVE" 2>&1)"; rc=$?
+chk "tree-verify: an unlanded deletion exits 3" "$([ "$rc" -eq 3 ]; echo $?)"
+chk_has "tree-verify: an unlanded deletion is a mismatch" "$out" "TREE MISMATCH"
 
 # ===========================================================================
 echo "=== land: one hand-made worktree, from a committed branch to landed ==="
@@ -2252,7 +2345,7 @@ chk "land ran the squash merge as its own call" \
   "$([ "$(grep -c '^pr merge 42 ' "$GH_STUB_CALLS")" -eq 1 ]; echo $?)"
 chk_has "the merge call is a squash" "$LAND_CALLS" "pr merge 42 --repo"
 chk_has "the merge call pins the pushed head" "$LAND_CALLS" "--squash --match-head-commit ${LTIP}"
-chk_has "land verifies the default branch holds the PR head" "$out" "merged #42 (1a2b3c4d5e6f): tree verified"
+chk_has "land verifies the default branch holds the PR head" "$out" "merged #42 ($(git -C "$TMPD/ld-bare-ok" rev-parse main)): tree verified"
 chk "land fast-forwarded the main checkout onto the landed tree" \
   "$([ "$(git -C "$LREPO" rev-parse HEAD)" = "$LTIP" ]; echo $?)"
 chk_has "land reports the pull" "$out" "pulled ${LREPO_P}"

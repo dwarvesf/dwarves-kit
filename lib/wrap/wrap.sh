@@ -1857,7 +1857,7 @@ cmd_merge() {
   # squash resolves on GitHub's own side, and a stale headRefOid captured before a late
   # push, or an armed auto-merge overtaken by a push after the gates read, can both
   # report MERGED while the default branch moves on without it.
-  local tv; tv="$(_tree_verify "$repo" "$def" "$head_oid")"
+  local tv; tv="$(_tree_verify "$repo" "$def" "$head_oid" "$sha")"
   case "$tv" in
     OK)
       echo "merged #${first_eligible} (${sha}): tree verified"
@@ -1873,34 +1873,46 @@ cmd_merge() {
   return 0
 }
 
-# _tree_verify <repo> <def> <head_oid> -- "OK", "MISMATCH <n>", or "UNVERIFIABLE <reason>".
-# Checks the WHOLE tree first (the common case: the squash carried nothing else onto the
-# default branch), falling back to only the paths the PR itself touched, because another
-# commit landing on the default branch meanwhile is not the mismatch this guards against.
+# _tree_verify <repo> <def> <head_oid> <merge_oid> -- "OK", "MISMATCH <n>", or
+# "UNVERIFIABLE <reason>". Proves the merge commit gh named sits on the default branch and
+# applied exactly the PR's net change: for every path either side touched, the merge
+# commit's own diff equals the PR's diff from its merge-base. Whole trees are not compared,
+# because a PR that landed on the default branch in between is not the mismatch this guards.
 _tree_verify() {
-  local repo="$1" def="$2" head_oid="$3" tip base paths diff_paths n
+  local repo="$1" def="$2" head_oid="$3" merge_oid="$4" tip parent base p n=0
   git -C "$repo" fetch -q origin "$def" 2>/dev/null || { echo "UNVERIFIABLE fetch of ${def} failed"; return; }
   tip="$(git -C "$repo" rev-parse "origin/${def}" 2>/dev/null)"
   [ -n "$tip" ] || { echo "UNVERIFIABLE origin/${def} did not resolve"; return; }
   git -C "$repo" cat-file -e "${head_oid}^{commit}" 2>/dev/null || {
     echo "UNVERIFIABLE the PR head is not a local object"; return; }
-  if [ "$(git -C "$repo" rev-parse "${tip}^{tree}" 2>/dev/null)" = \
+  [ -n "$merge_oid" ] && git -C "$repo" cat-file -e "${merge_oid}^{commit}" 2>/dev/null || {
+    echo "UNVERIFIABLE the merge commit ${merge_oid:-gh did not name} is not a local object"; return; }
+  git -C "$repo" merge-base --is-ancestor "$merge_oid" "$tip" 2>/dev/null || {
+    echo "UNVERIFIABLE the merge commit $(_short "$merge_oid") is not on origin/${def}"; return; }
+  if [ "$(git -C "$repo" rev-parse "${merge_oid}^{tree}" 2>/dev/null)" = \
        "$(git -C "$repo" rev-parse "${head_oid}^{tree}" 2>/dev/null)" ]; then
     echo "OK"; return
   fi
-  base="$(git -C "$repo" merge-base "$head_oid" "$tip" 2>/dev/null)"
+  parent="$(git -C "$repo" rev-parse -q --verify "${merge_oid}^1" 2>/dev/null)"
+  [ -n "$parent" ] || { echo "UNVERIFIABLE the merge commit has no parent"; return; }
+  base="$(git -C "$repo" merge-base "$head_oid" "$parent" 2>/dev/null)"
   [ -n "$base" ] || { echo "UNVERIFIABLE no common history with ${def}"; return; }
-  paths="$(git -C "$repo" diff --name-only "$base" "$head_oid" 2>/dev/null)"
-  [ -n "$paths" ] || { echo "UNVERIFIABLE the PR touched no path git can name"; return; }
-  # ponytail: word-splits $paths on IFS, so a touched filename containing a space is read as
-  # two paths. Upgrade to NUL-delimited (diff -z + a bash array) if that ever bites.
-  diff_paths="$(git -C "$repo" diff --name-only "$tip" "$head_oid" -- $paths 2>/dev/null)"
-  if [ -z "$diff_paths" ]; then
-    echo "OK"
-  else
-    n="$(printf '%s\n' "$diff_paths" | grep -c .)"
-    echo "MISMATCH ${n}"
-  fi
+  [ -n "$(git -C "$repo" diff-tree -r --name-only "$base" "$head_oid" 2>/dev/null)" ] || {
+    echo "UNVERIFIABLE the PR touched no path git can name"; return; }
+  while IFS= read -r -d '' p; do
+    [ "$(_path_change "$repo" "$base" "$head_oid" "$p")" = \
+      "$(_path_change "$repo" "$parent" "$merge_oid" "$p")" ] || n=$((n + 1))
+  done < <({ git -C "$repo" diff-tree -r -z --no-renames --name-only "$base" "$head_oid"
+             git -C "$repo" diff-tree -r -z --no-renames --name-only "$parent" "$merge_oid"; } 2>/dev/null | sort -zu)
+  if [ "$n" -eq 0 ]; then echo "OK"; else echo "MISMATCH ${n}"; fi
+}
+
+# _path_change <repo> <from> <to> <path> -- one path's change as a zero-context patch with
+# the index and hunk-position lines dropped, so the same edit made on top of a file another
+# PR also changed compares equal, while any difference in the added or removed lines does not.
+_path_change() {
+  git -C "$1" diff-tree -p -U0 --no-renames --binary "$2" "$3" -- ":(literal)$4" 2>/dev/null \
+    | grep -v -e '^index ' -e '^@@ '
 }
 
 # --------------------------------------------------------------------------- land
@@ -2056,7 +2068,7 @@ cmd_land() {
   if [ "$state" != "MERGED" ]; then
     echo "     MERGE FAILED #${n}: state is '${state:-unknown}', not MERGED" >&2; return 2
   fi
-  local tv; tv="$(_tree_verify "$wt" "$def" "$tip")"
+  local tv; tv="$(_tree_verify "$wt" "$def" "$tip" "$sha")"
   case "$tv" in
     OK) echo "     merged #${n} (${sha}): tree verified" ;;
     MISMATCH*)
