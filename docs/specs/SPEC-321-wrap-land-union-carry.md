@@ -1,4 +1,4 @@
-# SPEC-317: wrap land carries a dirty union file across its fast-forward
+# SPEC-321: wrap land carries a dirty union file across its fast-forward
 
 **Status:** VALIDATED (the change lands in the same PR)
 Lane: full

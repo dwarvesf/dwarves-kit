@@ -88,6 +88,9 @@ LIB_ROOT="$(cd "$SELF_DIR/.." && pwd)"
 # than growing a second copy of the dedupe/render/append grammar in bash.
 STAGING_FORMAT_PY="$LIB_ROOT/reflect/staging-format.py"
 BACKLOG_SH="$LIB_ROOT/board/backlog.sh"
+# `land`'s ship-gate record shells out to this rather than reimplementing the
+# rid/ledger rules -- see cmd_land's use below.
+GATE_LEDGER_SH="$LIB_ROOT/gate/gate-ledger.sh"
 # shellcheck source=lib/config/kit-config.sh
 source "$LIB_ROOT/config/kit-config.sh" || { echo "FATAL: lib/config/kit-config.sh missing or unreadable" >&2; exit 1; }
 # shellcheck source=lib/gate/default-branch-warn.sh
@@ -2132,6 +2135,42 @@ cmd_land() {
       return 3 ;;
   esac
 
+  # Ship-gate record: `/kit:ship` records `| GATE | ship | ran | shipping pr=#<n>`
+  # on its own path (commands/ship.md Step 8); `land` never did, so a spec cycle shipped
+  # through `land` instead never trips /kit:wrap step 8's retro-trigger grep. Reuse the
+  # existing `rid` verb (cwd'd into the worktree, still on the landed branch -- removal is
+  # several steps below) rather than reimplementing its slug rule, and record only when the
+  # rid already started a run (a `show` hit), so a plain hand-made land with no spec cycle
+  # behind it stays silent. The reason carries `via=land` so this line is distinguishable
+  # from one hooks/ship-gate.sh actually gated (it only fires on a literal push/PR-create);
+  # /kit:wrap step 8's `shipping pr=#<n>([^0-9]|$)` grep still matches it (the next char is
+  # a space). A rid whose ledger already carries a `ship` gate line is never recorded a
+  # second time: the same PR number is an idempotent re-land (e.g. /kit:ship already wrote
+  # it), a different PR number means this rid's slug is shared by an unrelated branch (a
+  # reused `type/` prefix, same stripped slug) and overwriting it would misattribute the
+  # line. A failed derive or record never fails the land: one line instead, naming the
+  # command to run by hand.
+  local land_rid; land_rid="$(cd "$wt" && bash "$GATE_LEDGER_SH" rid 2>/dev/null)" || land_rid=""
+  if [ -n "$land_rid" ]; then
+    local land_ledger
+    if land_ledger="$(bash "$GATE_LEDGER_SH" show "$land_rid" 2>/dev/null)"; then
+      local prior_pr
+      prior_pr="$(printf '%s\n' "$land_ledger" | grep -i '| GATE | ship |' | grep -oE 'pr=#[0-9]+' | tail -1)"
+      if [ "$prior_pr" = "pr=#${n}" ]; then
+        echo "     ship gate for ${land_rid} already names pr=#${n}; skipping (already recorded)"
+      elif [ -n "$prior_pr" ]; then
+        echo "     ship gate for ${land_rid} already names ${prior_pr}, not pr=#${n}; skipping (reused slug, different run)"
+      else
+        local record_err
+        if record_err="$(bash "$GATE_LEDGER_SH" record "$land_rid" Ship ran "shipping pr=#${n} via=land" 2>&1 >/dev/null)"; then
+          echo "     recorded ship gate for ${land_rid} (pr=#${n})"
+        else
+          echo "     ship-gate record FAILED for ${land_rid} (pr=#${n}): ${record_err}; record it by hand: bash ${GATE_LEDGER_SH} record ${land_rid} Ship ran \"shipping pr=#${n} via=land\"" >&2
+        fi
+      fi
+    fi
+  fi
+
   # Mirrors _apply_origin_branches: leased to the tip land itself pushed, skipped when an
   # open PR still bases off this branch (deleting it would close that PR), and never fails
   # land, since the merge is already verified.
@@ -2154,7 +2193,7 @@ cmd_land() {
 
   # The fast-forward is advisory: a checkout this call does not own may be dirty or on
   # another branch, and neither is a reason to strand a merged worktree. A dirty file the
-  # repo declares merge=union is carried across (_land_ff_pull, SPEC-317); any other dirty
+  # repo declares merge=union is carried across (_land_ff_pull, SPEC-321); any other dirty
   # file is never stashed past and never reset; the refusal is reported and the tidy continues.
   local blocked=0 cur
   cur="$(git -C "$repo" branch --show-current 2>/dev/null)"

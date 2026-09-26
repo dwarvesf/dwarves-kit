@@ -1,6 +1,6 @@
 # Proof of done: `wrap land` carries a dirty union file across its fast-forward
 
-`land`'s post-merge fast-forward now calls `_land_ff_pull` instead of a bare `git pull --ff-only`. `_land_ff_pull` reuses `_union_marked` and `_union_carry_back` (the same building blocks `apply`'s pull already carries a dirty `merge=union` file with): a dirty union-marked file is saved aside, the pull runs, and the local lines are merged back into the pulled file. A staged change or a dirty non-union file is untouched, exactly as before this change; `wrap.pull_past_dirty` is not read here (SPEC-317, design record: union-carry only).
+`land`'s post-merge fast-forward now calls `_land_ff_pull` instead of a bare `git pull --ff-only`. `_land_ff_pull` reuses `_union_marked` and `_union_carry_back` (the same building blocks `apply`'s pull already carries a dirty `merge=union` file with): a dirty union-marked file is saved aside, the pull runs, and the local lines are merged back into the pulled file. A staged change or a dirty non-union file is untouched, exactly as before this change; `wrap.pull_past_dirty` is not read here (SPEC-321, design record: union-carry only).
 
 ## Acceptance criteria
 
@@ -22,9 +22,9 @@ Exit: 0
 test-wrap: all 1175 passed
 ```
 
-New assertions (land block, SPEC-317):
+New assertions (land block, SPEC-321):
 ```
---- a dirty merge=union file in the main checkout is carried across the fast-forward (SPEC-317)
+--- a dirty merge=union file in the main checkout is carried across the fast-forward (SPEC-321)
 PASS a union-carried pull exits 0
 PASS the carry reports the save
 PASS the carry reports the carry-back
