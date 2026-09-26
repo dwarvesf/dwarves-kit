@@ -118,7 +118,7 @@ grep -qiE 'FINAL sub-goal' "$RT"; assert "AC2: review-team.md names the final-su
 # tr collapses hard-wrapped prose to one line first: markdown prose line-wraps at any point
 # mid-phrase, so a single-line grep on a multi-word phrase is fragile; normalize, then match.
 MEGA_FLAT="$(tr '\n' ' ' < "$MEGA")"
-grep -qiE 'convergence gate dispatches advisor' "$MEGA"; assert "AC3: mega.md names an explicit convergence-gate advisor dispatch" $?
+grep -qiE 'convergence gate dispatches (kit:)?advisor' "$MEGA"; assert "AC3: mega.md names an explicit convergence-gate advisor dispatch" $?
 { trap '' PIPE; printf '%s' "$MEGA_FLAT" 2>/dev/null || :; } | grep -qE 'P5[[:space:]]*\(critique\)'; assert "AC3: mega.md names P5 critique explicitly" $?
 { trap '' PIPE; printf '%s' "$MEGA_FLAT" 2>/dev/null || :; } | grep -qE 'P6[[:space:]]*\(over-suggest\)'; assert "AC3: mega.md names P6 over-suggest explicitly" $?
 grep -qE 'mode=P5 findings=<N> actor=' "$MEGA" && grep -qE 'mode=P6 findings=<N> actor=' "$MEGA"
@@ -127,7 +127,7 @@ fail_open_call "$MEGA"; assert "AC3: mega.md's advisor emit is fail-open (|| WAR
 
 # AC4: observability-only, no gate-requirement language
 grep -qiE 'observability only' "$MEGA"; assert "AC4: mega.md's convergence-gate step states observability-only" $?
-if awk '/convergence gate dispatches advisor/{f=1} f&&/^\*\*Close the run visibly/{exit} f' "$MEGA" | grep -qiE 'measure-twice|required gate'; then
+if awk '/convergence gate dispatches (kit:)?advisor/{f=1} f&&/^\*\*Close the run visibly/{exit} f' "$MEGA" | grep -qiE 'measure-twice|required gate'; then
   assert "AC4: convergence-gate paragraph adds NO new required-gate language" 1
 else
   assert "AC4: convergence-gate paragraph adds NO new required-gate language" 0
