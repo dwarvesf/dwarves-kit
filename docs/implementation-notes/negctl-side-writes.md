@@ -38,13 +38,51 @@ Delta from `docs/specs/SPEC-327-negctl-side-writes.md` only.
   from it. The spec's own negative control (mutating `lib/gate/negctl.sh` itself and proving
   `tests/test-proof-negctl.sh` goes red) targeted the retry-loop guard specifically; see
   `docs/verification/negctl-side-writes.md` for the captured run.
-- A pre-existing, out-of-scope gap surfaced while writing the `--no-renames` proof: a brand-new
-  tracked path landing inside MUTATE_SET itself (a `git mv` as the mutation, or a baseline-run
-  write that stages a new file) still hits the same whole-call-abort class on MUTATE_SET's own
-  (deliberately unfiltered) restore call. Confirmed against the pre-fix script too, so it is not
-  a regression this change introduced; widened the spec's Not covered bullet to name it
-  accurately rather than narrow it to only the baseline-run case.
+- A pre-existing gap surfaced while writing the `--no-renames` proof (a brand-new tracked path
+  landing inside MUTATE_SET itself, e.g. a `git mv` as the mutation, hitting the same
+  whole-call-abort class on MUTATE_SET's own restore call) was scoped out in this round as
+  out-of-scope, then closed in round 3 below rather than left that way a second time.
 - `docs/FEATURES.md` needed a regen (`bash lib/registry/feature-registry.sh generate`) purely
   from adding a new spec file -- no `negctl` entry exists in the registry today, confirmed by
   grep, so the diff is unrelated total-count churn across existing rows, not a negctl-specific
   addition.
+
+## Round 3 (post-ship critique+review)
+
+- `restore()` is restructured around one partition loop over MUTATE_SET (`restore_files`) union
+  the beyond-set (`beyond`), each path checked once via `git cat-file -e HEAD:<path>`, feeding
+  three arrays: `to_restore` (one checkout call, everything that resolves at `HEAD`),
+  `side_effect` (the `beyond`-derived subset of `to_restore`, for the `Side effect:` line only),
+  and `unrestorable` (named in the failure, never checked out, never `git rm`/`git clean`d). The
+  old two-call shape (MUTATE_SET restored separately, first) is gone; `side_effect_head`/
+  `side_effect_new` are renamed to `side_effect`/`unrestorable` to match.
+- The unrestorable-file failure message dropped "test-cmd added ... beyond the mutation" (no
+  longer accurate once a HEAD-absent path can originate from MUTATE_SET itself) for a neutral
+  "new tracked file(s) with no HEAD blob cannot be restored: ...". `tests/test-proof-negctl.sh`
+  case [21]'s assertion was loosened from the literal old phrase to `cannot be restored`.
+- `restore()` gained `trap '' INT TERM HUP` as its first line, INT/TERM/HUP with no other
+  disposition, before the `restore_done` guard. This is a process-wide, permanent change (bash
+  traps are not function-scoped), deliberately never undone, since `restore()` runs at or near
+  the very end of the script's life either way.
+- After step 6's confirmatory `run_test`, the script now does `restore_done=0; restore
+  >/dev/null` unconditionally. `>/dev/null` swallows the `Side effect:`/`Side effect
+  (unrestorable):` lines on this second call specifically so a clean second pass adds no noise
+  to the proof block; a genuine failure on this pass still surfaces through `fail()`, which
+  `>/dev/null` cannot suppress.
+- The delta filter (`sed -n '/^[<>] $/!s/^[<>] /Delta: /p'`) needed the address-negation form,
+  not a brace-grouped `!{...}` block: BSD/macOS `sed` rejected `!{s/.../.../p}` with "bad flag in
+  substitute command: '}'" even though the exact same script parses under GNU sed. Verified both
+  forms by hand against real diff output before picking the portable one.
+- `tests/test-proof-negctl.sh`'s four new negative-control line targets (T4a's, restructured
+  around `beyond` instead of the now-gone `side_effect_head`) needed re-deriving after the
+  restore() rewrite; T4b/T4c/T4d's targets were untouched by the rewrite and needed no change
+  (confirmed by re-running the full suite, which caught the two that did break).
+- The SIGINT case ([31]/[32]) is the one genuinely timing-dependent test in the suite. Margined
+  generously (a 2s shim delay against a 1.0s signal delay) and run repeatedly (3x default bash,
+  2x real `/bin/bash`) before being kept permanently; `set -m` inside a subshell scopes job
+  control to that block only, and `kill -INT -$PID` targets the whole process group so the
+  signal reaches the shimmed `git` child the same way a real terminal Ctrl-C would.
+- The `git mv`/`--no-renames` negative control ([28]) leaves `lib.sh` genuinely deleted from the
+  scratch repo's working tree (not merely "dirty") when run against the un-fixed capture, since
+  the un-fixed script never even captures `lib.sh` as changed; the cleanup renames `lib2.sh` back
+  rather than checking out a path negctl itself never restored.

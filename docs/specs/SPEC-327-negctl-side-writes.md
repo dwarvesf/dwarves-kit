@@ -339,21 +339,14 @@ mutation around the write.
 
 Not covered:
 
-- negctl's final confirmatory green run (after the `before`/`after` snapshot comparison already
-  happened) can still leave the tree dirty again as an unreported side effect of that last
-  `run_test()` call -- predates this fix, sits on a different step, out of scope.
-- A brand-new tracked path that ends up **inside MUTATE_SET itself** -- whether `mutate_cmd`
-  directly stages one (confirmed by hand: `git mv lib.sh lib2.sh` as the mutation puts
-  `lib2.sh`, which has no `HEAD` blob, straight into MUTATE_SET) or the baseline run does before
-  any mutation runs -- is restored via MUTATE_SET's unchanged, unfiltered batched call and hits
-  the exact whole-call-abort class this spec fixes for the *beyond-MUTATE_SET* path. This
-  predates this spec entirely (reproduced against the pre-fix script too, independent of
-  `--no-renames`) and is left open here because the task brief and both validator probes are
-  scoped to the red-run side-effect path, not MUTATE_SET's own restore. A future spec would
-  apply the identical `git cat-file -e HEAD:<path>` partition to MUTATE_SET's own capture. The
-  `git mv` case above also confirms `--no-renames` does what it's for: `Changed:` correctly
-  names both `lib.sh` and `lib2.sh` instead of silently dropping the deleted half -- the
-  restore failure that follows is this pre-existing, separately-scoped gap, not a new one.
+- **CLOSED in round 3** (see below): negctl's final confirmatory green run used to leave the
+  tree dirty again as an unreported side effect of that last `run_test()` call. `restore()` now
+  runs a second time, unconditionally, right after that call.
+- **CLOSED in round 3** (see below): a brand-new tracked path that ends up **inside MUTATE_SET
+  itself** (a `git mv` as the mutation, or a baseline-run write that stages a new file) used to
+  hit the whole-call-abort class on MUTATE_SET's own, separately-restored call. The partition
+  now runs over MUTATE_SET and the beyond-set together, in one loop, with one checkout call for
+  everything that resolves at `HEAD`.
 - A concurrent writer to `$root` during the run: out of scope by the stated Assumption; use
   `--base-ref` mode on a shared checkout.
 - The retry-loop safety guard (point 4) compares tracked **paths** only, not content. A red-loop
@@ -365,6 +358,27 @@ Not covered:
   side effect landing there passes both the retry guard and the final restore silently. Neither
   case is addressed here; both are narrower instances of the same path-only, tracked-only
   visibility this whole script has always had.
+
+## Round 3: post-ship critique fixes
+
+A fresh critique+review round, run against the shipped round-2 code, proved two of round 2's own
+stated invariants false with direct probes and found a real test-coverage gap (stripping every
+`--no-renames` and restoring the old early return both left the round-1/2 suite fully green).
+Fixed in the same branch, tests-first, before this spec is considered done:
+
+| # | Class | Finding | Fix |
+|---|---|---|---|
+| P1 | HIGH | Step 6's own confirmatory green run can write a tracked file exactly as the red run can (the header's own motivating case). Nothing swept it up, so a genuine `Verdict: PASS` could still leave the tree dirty -- the next run then `REFUSED` on a repo negctl itself dirtied. | After step 6's `run_test`, `restore_done=0; restore >/dev/null` -- a second, unconditional sweep. A clean run makes it a fast no-op partition (still runs `git cat-file`/`git checkout`, finds nothing to do). |
+| P2 | MEDIUM | `restore_done=1` is set at `restore()`'s entry, before any checkout runs. A SIGINT landing *during* the checkout (confirmed with a slow-git shim + a process-group signal) leaves the mutation applied and no further restore attempt, since the guard now reads "already done." | `trap '' INT TERM HUP` as `restore()`'s first line: once cleanup starts, it finishes. Global and permanent for the process (restore() is the last thing this script ever does), and safe under repeat entry since the body was already idempotent. |
+| P2 | MEDIUM | `restore()` restored MUTATE_SET and the beyond-set in two separate calls, so a HEAD-absent path *inside MUTATE_SET itself* (a `git mv` as the mutation, or a baseline write that stages a new file) still aborted its own checkout call whole -- the exact class this spec already fixed for the *beyond* path, left open as "pre-existing" until this round. | One partition loop over MUTATE_SET union the beyond-set, by `git cat-file -e HEAD:<path>`; one checkout call for everything that resolves at `HEAD`; the rest failed by name, same as before. The separate MUTATE_SET-only checkout is gone. |
+| -- | tests | The existing 27 cases stayed green even with every `--no-renames` stripped or the old early return restored -- real coverage gaps, not just the two probed criticals. | Case [27]/[28]: `git mv` as the mutation, asserting `Changed: lib.sh, lib2.sh` and lib.sh's actual restoration; stripping `--no-renames` reverts to `Changed: lib2.sh` and lib.sh never restored. Case [29]/[30]: an inert mutation with `test-retrywriter.sh` at the default `NEGCTL_RED_ATTEMPTS=1`, empty MUTATE_SET, asserting the side-effect restore still runs and the tree ends clean; restoring the old early return leaves it dirty. Case [31]/[32]: a slow-git shim plus a process-group SIGINT prove the checkout survives the interrupt with the trap in place, and leaves `lib.sh` dirty without it. |
+| P4 | LOW | `diff <(before) <(after)` on an empty snapshot prints a bare `Delta: ` line with no content, noise ahead of the real delta. | The delta filter now excludes an exactly-empty marker line (`/^[<>] $/!s/.../.../p`, portable across GNU and BSD sed -- no brace-block form, which BSD `sed` rejects). |
+
+Verified: `bash tests/test-proof-negctl.sh` and `/bin/bash tests/test-proof-negctl.sh` both report
+`all 33 passed`, stable across repeated runs (the SIGINT cases are the only timing-sensitive
+ones, and use a 1.0s margin against a 2s shim delay). `bash tests/run-all.sh --changed` green.
+`lib/gate/negctl.sh` dogfooded on itself: `Verdict: PASS` -- see
+`docs/verification/negctl-side-writes.md` for the captured runs.
 
 ## Decision Log
 
@@ -405,3 +419,20 @@ Not covered:
   treats a bare empty-array expansion under `set -u` as an unbound-variable abort -- and a crash
   inside `restore()`, which can run from the `EXIT` trap, would skip the restore it exists to
   guarantee.
+- Round 3: chose to unify MUTATE_SET's restore with the beyond-set's restore into one partition
+  and one checkout call, closing the "pre-existing, out of scope" MUTATE_SET-HEAD-absent gap
+  round 2 had deferred, rather than leave it deferred a second time now that a probe proved it
+  reachable from an ordinary mutation (`git mv`), not only a baseline write.
+- Round 3: chose `trap '' INT TERM HUP` (ignore, process-wide, for the rest of the script) over
+  moving `restore_done=1` to the end of the function: the latter only helps if `restore()` gets
+  invoked a second time after an interrupted first attempt, which a hard-killed process may never
+  get to do; ignoring the signal during the checkout itself prevents the interruption outright.
+- Round 3: chose to re-run `restore()` unconditionally after step 6 rather than re-snapshot and
+  conditionally re-run: the cost of a redundant no-op partition on a clean tree is negligible
+  (one `git diff` and, when the mutation's own set is non-empty, one already-idempotent
+  `git checkout`), and unconditional is simpler to reason about than a second before/after
+  comparison.
+- Round 3: added `git mv`-as-mutation and inert-mutation-at-`ATTEMPTS=1` test cases specifically
+  because a mutation pass on the round-2 suite found both stripping `--no-renames` and restoring
+  the old early return left it fully green -- real coverage gaps distinct from the two probed
+  criticals, not merely additional confidence.
