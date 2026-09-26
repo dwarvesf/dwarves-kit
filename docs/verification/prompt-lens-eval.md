@@ -6,22 +6,25 @@ Acceptance: one command reruns the SPEC-314 hand eval. It prints a per-case, per
 
 | Check | Command | Exit | Result |
 |---|---|---|---|
-| Offline suite | `bash tests/test-lens-eval.sh` | 0 | `Passed: 62 / 62`, `All lens-eval tests passed.` |
+| Offline suite | `bash tests/test-lens-eval.sh` | 0 | `Passed: 98 / 98`, `All lens-eval tests passed.` (62 / 62 before the review round) |
 | Red before build | the suite before `lib/bench/lens-eval.sh` existed | 1 | `Passed: 8 / 59`, `Failed: 51` |
 | Block-scoring regression | the suite against the line scorer | 1 | `Passed: 57 / 60`; the multi-line Reviewer 7 finding missed |
 | Negative control | `negctl.sh` with a tie counted as a hit | 0 | `Verdict: PASS`; the tie rows went red |
-| Changed suites | `bash tests/run-all.sh --changed` | 0 | `run-all: all 36 suites passed, 0 skipped for missing tooling` |
+| Changed suites | `bash tests/run-all.sh --changed` | 0 | `run-all: all 36 suites passed, 0 skipped for missing tooling` (same after the review round) |
 | Self-review regressions | the suite against the script before the repeated-name and regex checks | 1 | `Passed: 59 / 62`; an invalid regex case file exited 0 |
 | Dry run | `lens-eval.sh commands/spec-validate.md 118485af~1 tests/fixtures/sustainability-lens/lens-eval.json` | 3 | `plan: 2 cases, 1 samples per arm = 3 model calls (sonnet)` |
 | Live run 1 | the same, `--live` | 1 | FAIL on `rotation-r7`: a scorer bug, fixed |
 | Live run 2 | the same, `--live`, block scorer | 1 | FAIL on the quiet case: a lens finding, recorded below |
+| Review round, red first | the new suite against the pre-review script and case file | 1 | `Passed: 60 / 98`, `Failed: 38` |
+| Review round, negative control | `negctl.sh` deleting the Passed-section drop | 0 | `Verdict: PASS`; 11 checks went red |
+| Live run 3 | `lens-eval.sh commands/spec-validate.md 118485af~1 tests/fixtures/sustainability-lens/lens-eval.json --samples 3 --live` | 0 | `verdict: PASS (8/8 signals)`, $0.464965, 403s, 9 calls |
 
 ## Green run
 
 ```
 Command: bash tests/test-lens-eval.sh
 Exit: 0
-Output: Passed: 62 / 62 / All lens-eval tests passed.
+Output: Passed: 98 / 98 / All lens-eval tests passed.
 Verdict: PASS
 ```
 
@@ -33,6 +36,24 @@ Verdict: PASS
 ```
 
 ## Negative control
+
+Review round (current). With N odd, a tie cannot occur, so the tie mutation below is now vacuous. The current control deletes the line that drops a Passed section.
+
+```
+## Negative control (negctl)
+Command: bash tests/test-lens-eval.sh
+Exit: 0 (green before mutation)
+Mutation: sed -i '' '/skip { next }/d' lib/bench/lens-eval.sh
+Changed: lib/bench/lens-eval.sh
+Exit: 1 (under mutation, RED expected)
+Restore: git checkout HEAD -- lib/bench/lens-eval.sh
+Exit: 0 (green after restore)
+Verdict: PASS
+```
+
+Under the mutation the suite reads `Passed: 87 / 98`. The red checks include `pair row: a Passed bullet naming heartbeat is not a control hit`, `passed: a pass bullet is not a finding`, `passed: a pass bullet naming retry is not a finding`, `control 2/3 under treatment 3/3 passes`, and `hard control miss holds at 1/3`: the stub's Passed bullet names a heartbeat, so every control sample leaks once the drop is gone.
+
+First round (historical, tie mutation):
 
 ```
 ## Negative control (negctl)
@@ -69,6 +90,30 @@ Run 2: Reviewer 7 printed `not long-lived` for the flag-rename fixture, then als
 
 The SPEC-314 hand eval recorded a clean quiet case on one sample. One more sample says the Reviewer 7 calibration can leak on a short-lived spec. Rerun with `--samples 3` before changing the lens.
 
+## Live run 3 (sonnet, N=3, base `118485af~1`, after the review round)
+
+```
+base: 118485af~1 cd9745bf09bf2fdc7708cbe8585a76e125b2c332
+text sha256: treatment 10b245b467cc control 11e7c55e91fc
+cost: $0.464965 over 9 calls, 403s
+verdict: PASS (8/8 signals)
+```
+
+| case | signal | treatment | control | result |
+|---|---|---|---|---|
+| long-lived | liveness-r7 | 3/3 want hit | - | PASS |
+| long-lived | liveness-any | 3/3 want hit | 1/3 want fewer | PASS |
+| long-lived | retirement-r7 | 3/3 want hit | - | PASS |
+| long-lived | retirement-any | 3/3 want hit | 0/3 want fewer | PASS |
+| long-lived | rotation-r7 | 3/3 want hit | - | PASS |
+| long-lived | rotation-any | 3/3 want hit | 0/3 want fewer | PASS |
+| long-lived | cost-r7 | 3/3 want hit | - | PASS |
+| short-lived | quiet-no-findings | 1/3 want miss | - | PASS |
+
+Control 2 raised liveness once, under Reviewer 2: `Suggested fix: add a dead-man signal, such as a failure ping to Discord or a heartbeat check.` This is the case the `fewer` expectation exists for. At N=1 with that sample, the old hard `miss` would have failed the eval on a gap the old lens noticed by chance.
+
+Quiet case: in all three samples Reviewer 7 printed its `not long-lived` pass line under `## Passed`, which the scorer now drops. Sample 3 still raised a numbered finding tagged Reviewer 7, jointly with Reviewer 3: `1. The one-release alias has no removal trigger. ... Reviewer 3, Reviewer 7 (the alias is a deprecation shim that outlives this change, so this is a retirement gap).` Samples 1 and 2 raised no Reviewer 7 finding. So Reviewer 7 raised a numbered finding on the flag-rename fixture in 1 of 3 samples here, and in 1 of 1 in live run 2. That is 2 of 4 live samples so far. The majority rule passes the signal at N=3, but the calibration leak is real and recurs. The lens text, not this eval, is the place to fix it.
+
 ## Limits
 
-N=1 per arm on both live runs. The verdict shows what held on these samples, not a rate. The grep checks that a finding names a thing, not that the finding is right. A hung call has no timeout.
+N=1 per arm on live runs 1 and 2, N=3 on live run 3. The verdict shows what held on these samples, not a rate. One model plays every reviewer inline in a single context, so a PASS is evidence about the prompt text, not a production run of the command. The grep checks that a finding names a thing, not that the finding is right. A hung call has no timeout.
