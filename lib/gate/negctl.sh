@@ -161,36 +161,55 @@ _beyond_mutate_set() {
 restore_files=()
 restore_done=0
 restore() {
+  # Ignore, don't just defer: once cleanup starts it must finish. A second Ctrl-C mid-checkout
+  # used to interrupt the checkout itself (restore_done was already 1, so a second EXIT-trap
+  # invocation was a silent no-op) and leave the tree mutated. The body is idempotent (the
+  # restore_done guard below), so re-entering it is always safe; the disposition is process-wide
+  # and deliberately never restored, since restore() is the last thing this script ever does.
+  trap '' INT TERM HUP
   [ "$restore_done" -eq 1 ] && return 0
   restore_done=1
   # No early return here even when restore_files is empty: the recompute below must always
   # run, including for a Ctrl-C-triggered EXIT-trap call landing before restore_files itself
   # was ever populated (the gap between mutate_cmd running and its capture, right below).
-  if [ "${#restore_files[@]}" -gt 0 ]; then
-    git -C "$root" checkout -q HEAD -- "${restore_files[@]}" 2>/dev/null \
-      || fail "restore failed: git checkout HEAD -- ${restore_files[*]}"
-  fi
 
+  # One partition, over MUTATE_SET (the mutation's own set) UNION whatever else is tracked-
+  # different from HEAD right now (test-cmd's side effects) -- not two separate restores. A
+  # HEAD-absent path anywhere in that union (a `git mv` destination, a newly `git add`ed file,
+  # whether the MUTATION staged it or test-cmd did) is routed around a checkout call instead of
+  # aborting one; a naive single call over an unfiltered set aborts entirely the moment one path
+  # doesn't resolve at HEAD, which a validator probe proved leaves the mutation applied.
   _beyond_mutate_set
-  side_effect_head=(); side_effect_new=()
-  if [ "${#beyond[@]}" -gt 0 ]; then
-    for f in "${beyond[@]}"; do
+  to_restore=(); side_effect=(); unrestorable=()
+  if [ "${#restore_files[@]}" -gt 0 ]; then
+    for f in "${restore_files[@]}"; do
       if git -C "$root" cat-file -e "HEAD:$f" 2>/dev/null; then
-        side_effect_head+=("$f")
+        to_restore+=("$f")
       else
-        side_effect_new+=("$f")
+        unrestorable+=("$f")
       fi
     done
   fi
-  if [ "${#side_effect_head[@]}" -gt 0 ]; then
-    git -C "$root" checkout -q HEAD -- "${side_effect_head[@]}" 2>/dev/null \
-      || fail "restore failed: git checkout HEAD -- ${side_effect_head[*]}"
-    printf 'Side effect: %s\n' "$(printf '%s, ' "${side_effect_head[@]}" | sed 's/, $//')"
+  if [ "${#beyond[@]}" -gt 0 ]; then
+    for f in "${beyond[@]}"; do
+      if git -C "$root" cat-file -e "HEAD:$f" 2>/dev/null; then
+        to_restore+=("$f"); side_effect+=("$f")
+      else
+        unrestorable+=("$f")
+      fi
+    done
   fi
-  if [ "${#side_effect_new[@]}" -gt 0 ]; then
-    new_list="$(printf '%s, ' "${side_effect_new[@]}" | sed 's/, $//')"
+  if [ "${#to_restore[@]}" -gt 0 ]; then
+    git -C "$root" checkout -q HEAD -- "${to_restore[@]}" 2>/dev/null \
+      || fail "restore failed: git checkout HEAD -- ${to_restore[*]}"
+  fi
+  if [ "${#side_effect[@]}" -gt 0 ]; then
+    printf 'Side effect: %s\n' "$(printf '%s, ' "${side_effect[@]}" | sed 's/, $//')"
+  fi
+  if [ "${#unrestorable[@]}" -gt 0 ]; then
+    new_list="$(printf '%s, ' "${unrestorable[@]}" | sed 's/, $//')"
     printf 'Side effect (unrestorable): %s\n' "$new_list"
-    fail "test-cmd added new tracked file(s) beyond the mutation that cannot be restored from HEAD: $new_list; left in place, never auto-removed"
+    fail "new tracked file(s) with no HEAD blob cannot be restored: $new_list; left in place, never auto-removed"
   fi
 }
 trap restore EXIT
@@ -262,12 +281,20 @@ echo "Restore: git checkout HEAD -- ${restore_files[*]:-<nothing>}"
 after="$(snapshot)"
 if [ "$after" != "$before" ]; then
   fail "tree differs from the pre-run snapshot after restore (untracked leftovers or a file git cannot restore)"
-  diff <(printf '%s\n' "$before") <(printf '%s\n' "$after") | sed -n 's/^[<>] /Delta: /p' | head -5
+  diff <(printf '%s\n' "$before") <(printf '%s\n' "$after") | sed -n '/^[<>] $/!s/^[<>] /Delta: /p' | head -5
 fi
 
 run_test; rc_after=$?
 echo "Exit: $rc_after (green after restore)"
 [ "$rc_after" -eq 0 ] || fail "test not green after restore"
+
+# Step 6's own confirmatory run can write a tracked file exactly as the red run can (the
+# header's motivating case: a test harness that renders on every pass, not only the mutated
+# one). Nothing has swept that up yet, so a genuine PASS could still leave the tree dirty for
+# the next run (which would then REFUSE on a repo negctl itself dirtied). Re-run restore()
+# unconditionally to catch it; a second call after a clean run is a fast no-op partition.
+restore_done=0
+restore >/dev/null
 
 echo "Verdict: $verdict"
 [ "$verdict" = "PASS" ]

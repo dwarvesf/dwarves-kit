@@ -246,7 +246,7 @@ else no "rc=$RC tree=$(git -C "$REPO" status --porcelain) out=$OUT"; fi
 
 echo "[20] T4a negative control: disable the side-effect restore -> reverts to tree-differs FAIL"
 NC_T4A="$TMP/negctl-t4a.sh"
-ln=$(grep -Fn '  if [ "${#side_effect_head[@]}" -gt 0 ]; then' "$NC" | head -1 | cut -d: -f1)
+ln=$(grep -Fn '  if [ "${#beyond[@]}" -gt 0 ]; then' "$NC" | head -1 | cut -d: -f1)
 sed "${ln}s/.*/  if false; then/" "$NC" > "$NC_T4A"
 OUT="$(bash "$NC_T4A" "$REPO" "bash test-sidewrite.sh" "sed -i.bak 's/+/-/' lib.sh && rm -f lib.sh.bak" 2>&1)"; RC=$?
 git -C "$REPO" checkout -q -- fixture.md 2>/dev/null   # the mutated copy skipped this restore; clean up by hand
@@ -258,7 +258,7 @@ echo "[21] T4b: a HEAD-absent side effect fails by name; MUTATE_SET's own file s
 OUT="$(bash "$NC" "$REPO" "bash test-newfile.sh" "sed -i.bak 's/+/-/' lib.sh && rm -f lib.sh.bak" 2>&1)"; RC=$?
 LIBCLEAN="$(git -C "$REPO" diff --quiet HEAD -- lib.sh && echo yes || echo no)"
 git -C "$REPO" reset -q HEAD -- new-file.txt 2>/dev/null; rm -f "$REPO/new-file.txt"
-if [ "$RC" -ne 0 ] && grep -q 'cannot be restored from HEAD' <<<"$OUT" && grep -q 'new-file.txt' <<<"$OUT" \
+if [ "$RC" -ne 0 ] && grep -q 'cannot be restored' <<<"$OUT" && grep -q 'new-file.txt' <<<"$OUT" \
    && [ "$LIBCLEAN" = yes ] && ! grep -q '^Verdict: PASS' <<<"$OUT"; then
   ok "new file failed by name, lib.sh (MUTATE_SET) still restored"
 else no "rc=$RC libclean=$LIBCLEAN out=$OUT"; fi
@@ -295,7 +295,6 @@ else no "rc=$RC out=$OUT"; fi
 
 echo "[25] T4d: a baseline side write is excluded from Changed, exact wording pinned"
 OUT="$(bash "$NC" "$REPO" "bash test-basewrite.sh" "true" 2>&1)"; RC=$?
-git -C "$REPO" checkout -q -- fixture.md 2>/dev/null
 if [ "$RC" -ne 0 ] && grep -q '^Changed: <no tracked file>$' <<<"$OUT" && grep -q 'changed no tracked file' <<<"$OUT" \
    && grep -q '^Baseline side write: fixture.md$' <<<"$OUT" && clean "$REPO"; then
   ok "baseline write excluded from Changed, exact wording preserved"
@@ -306,10 +305,93 @@ NC_T4D="$TMP/negctl-t4d.sh"
 ln=$(grep -Fn '    if [ "${#baseline_diff[@]}" -gt 0 ] && _path_in "$f" "${baseline_diff[@]}"; then' "$NC" | head -1 | cut -d: -f1)
 sed "${ln}s/.*/    if false; then/" "$NC" > "$NC_T4D"
 OUT="$(bash "$NC_T4D" "$REPO" "bash test-basewrite.sh" "true" 2>&1)"; RC=$?
-git -C "$REPO" checkout -q -- fixture.md 2>/dev/null
-if grep -q '^Changed: fixture.md$' <<<"$OUT" && ! grep -q 'the mutation changed no tracked file' <<<"$OUT"; then
+if grep -q '^Changed: fixture.md$' <<<"$OUT" && ! grep -q 'the mutation changed no tracked file' <<<"$OUT" && clean "$REPO"; then
   ok "without the subtraction, the baseline write is wrongly reported as the mutation's own change"
 else no "rc=$RC out=$OUT"; fi
+
+echo
+# --- round 2: unified partition (MUTATE_SET can itself be HEAD-absent), signal-safe cleanup,
+# and closing two coverage gaps a mutation pass found (stripping --no-renames and restoring
+# the old early return both left the round-1 suite fully green) --------------------------
+
+echo "[27] a git mv AS the mutation: both halves named, lib.sh restored, lib2.sh failed by name"
+OUT="$(bash "$NC" "$REPO" "bash test.sh" "git mv lib.sh lib2.sh" 2>&1)"; RC=$?
+git -C "$REPO" reset -q HEAD -- lib2.sh 2>/dev/null; rm -f "$REPO/lib2.sh"
+if [ "$RC" -ne 0 ] && grep -q '^Changed: lib.sh, lib2.sh$' <<<"$OUT" && grep -q 'cannot be restored' <<<"$OUT" \
+   && grep -q 'lib2.sh' <<<"$OUT" && [ -f "$REPO/lib.sh" ] && ! grep -q '^Verdict: PASS' <<<"$OUT"; then
+  ok "both halves of a staged rename visible; lib.sh (MUTATE_SET) restored, lib2.sh failed by name"
+else no "rc=$RC out=$OUT"; fi
+
+echo "[28] negative control: without --no-renames, the rename hides lib.sh's deletion entirely"
+NC_NORENAME="$TMP/negctl-norenames.sh"
+sed 's/--no-renames //g' "$NC" > "$NC_NORENAME"
+OUT="$(bash "$NC_NORENAME" "$REPO" "bash test.sh" "git mv lib.sh lib2.sh" 2>&1)"; RC=$?
+git -C "$REPO" mv lib2.sh lib.sh 2>/dev/null   # the un-fixed copy never restores lib.sh at all; recover by hand
+if grep -q '^Changed: lib2.sh$' <<<"$OUT" && ! grep -q 'lib.sh, lib2.sh' <<<"$OUT" && [ -f "$REPO/lib.sh" ]; then
+  ok "without --no-renames, lib.sh's deletion is invisible to Changed (and to the restore set)"
+else no "rc=$RC out=$OUT"; fi
+
+echo "[29] an empty MUTATE_SET must not skip the side-effect restore (retry writer, ATTEMPTS=1)"
+: > "$RETRY_COUNTER"
+OUT="$(bash "$NC" "$REPO" "bash test-retrywriter.sh" "true" 2>&1)"; RC=$?
+if grep -q '^Side effect: fixture.md$' <<<"$OUT" && clean "$REPO"; then
+  ok "the side-effect restore ran even though the mutation's own set was empty"
+else no "rc=$RC out=$OUT"; fi
+
+echo "[30] negative control: restoring the old early return leaves the side effect dirty"
+NC_T2REG="$TMP/negctl-t2reg.sh"
+ln=$(grep -Fn '  restore_done=1' "$NC" | head -1 | cut -d: -f1)
+sed "${ln}s/.*/  restore_done=1; [ \"\${#restore_files[@]}\" -gt 0 ] || return 0/" "$NC" > "$NC_T2REG"
+: > "$RETRY_COUNTER"
+OUT="$(bash "$NC_T2REG" "$REPO" "bash test-retrywriter.sh" "true" 2>&1)"; RC=$?
+DIRTY="$(git -C "$REPO" status --porcelain)"
+git -C "$REPO" checkout -q -- fixture.md 2>/dev/null   # the mutated copy skipped this restore; clean up by hand
+if [ -n "$DIRTY" ] && grep -q 'fixture.md' <<<"$DIRTY"; then
+  ok "with the early return back, an empty MUTATE_SET leaves the side effect dirty"
+else no "rc=$RC dirty=[$DIRTY] out=$OUT"; fi
+
+echo "[31] SIGINT mid-checkout does not leave the tree dirty (restore ignores it while cleaning up)"
+# A slow-git shim, `checkout` only, so the interrupt has a wide, deterministic window to land
+# in without slowing any other git call in the run. Backgrounded under job control (`set -m`)
+# so its PID is also its process group, letting one `kill -INT -$PID` reach the whole tree
+# the way a real terminal Ctrl-C would (negctl.sh itself and the shimmed git child alike).
+GITSHIM="$TMP/gitshim"; mkdir -p "$GITSHIM"
+printf '#!/usr/bin/env bash\ncase " $* " in\n  *" checkout "*) sleep 2 ;;\nesac\nexec /usr/bin/git "$@"\n' > "$GITSHIM/git"
+chmod +x "$GITSHIM/git"
+SIGREPO="$TMP/sigrepo"; mkrepo "$SIGREPO"
+(
+  set -m
+  PATH="$GITSHIM:$PATH" bash "$NC" "$SIGREPO" "bash test.sh" "sed -i.bak 's/+/-/' lib.sh && rm -f lib.sh.bak" \
+    > "$TMP/sigint-out.txt" 2>&1 &
+  PID=$!
+  sleep 1.0
+  kill -INT -$PID 2>/dev/null
+  wait $PID
+)
+OUT="$(cat "$TMP/sigint-out.txt")"
+if grep -q '^Verdict: PASS$' <<<"$OUT" && clean "$SIGREPO"; then
+  ok "checkout survives a SIGINT mid-restore, tree stays clean"
+else no "out=$OUT tree=$(git -C "$SIGREPO" status --porcelain)"; fi
+
+echo "[32] negative control: without the signal block, the same SIGINT leaves lib.sh dirty"
+NC_T2SIG="$TMP/negctl-t2sig.sh"
+ln=$(grep -Fn "  trap '' INT TERM HUP" "$NC" | head -1 | cut -d: -f1)
+sed "${ln}s/.*/  :/" "$NC" > "$NC_T2SIG"
+SIGREPO2="$TMP/sigrepo2"; mkrepo "$SIGREPO2"
+(
+  set -m
+  PATH="$GITSHIM:$PATH" bash "$NC_T2SIG" "$SIGREPO2" "bash test.sh" "sed -i.bak 's/+/-/' lib.sh && rm -f lib.sh.bak" \
+    > "$TMP/sigint-out2.txt" 2>&1 &
+  PID=$!
+  sleep 1.0
+  kill -INT -$PID 2>/dev/null
+  wait $PID
+)
+DIRTY="$(git -C "$SIGREPO2" status --porcelain)"
+git -C "$SIGREPO2" checkout -q -- lib.sh 2>/dev/null   # the mutated copy never finished restoring; clean up by hand
+if [ -n "$DIRTY" ] && grep -q 'lib.sh' <<<"$DIRTY"; then
+  ok "without the trap, the interrupted checkout leaves lib.sh mutated"
+else no "dirty=[$DIRTY]"; fi
 
 if [ "$fail" -gt 0 ]; then echo "test-proof-negctl: $pass passed, $fail FAILED" >&2; exit 1; fi
 echo "test-proof-negctl: all $pass passed"
