@@ -2311,17 +2311,26 @@ echo "=== land: one hand-made worktree, from a committed branch to landed ==="
 # ===========================================================================
 # Real git throughout, `gh` stubbed: the push, the fast-forward, the worktree removal and
 # the branch delete are the subject, so nothing about the tree state is faked.
-build_land() { # build_land <name> [--modify-base]
+build_land() { # build_land <name> [--modify-base|--union-log]
   local name="$1" mode="${2:-}" work="$TMPD/ld-work-$1" repo="$TMPD/ld-repo-$1"
   mkdir -p "$work"; git -C "$work" init -q; gitc "$work"
   git -C "$work" symbolic-ref HEAD refs/heads/main
-  echo base > "$work/base.txt"; git -C "$work" add -A; git -C "$work" commit -qm base
+  echo base > "$work/base.txt"
+  if [ "$mode" = "--union-log" ]; then
+    mkdir -p "$work/_meta"
+    printf '_meta/LAB_LOG.md merge=union\n' > "$work/.gitattributes"
+    printf 'base entry\n' > "$work/_meta/LAB_LOG.md"
+  fi
+  git -C "$work" add -A; git -C "$work" commit -qm base
   git clone -q --bare "$work" "$TMPD/ld-bare-$name"
   git clone -q "$TMPD/ld-bare-$name" "$repo"; gitc "$repo"
   git -C "$repo" remote set-head origin main >/dev/null 2>&1
   git -C "$repo" worktree add -q -b feat/land "$repo/wt" main >/dev/null 2>&1
   if [ "$mode" = "--modify-base" ]; then
     echo "branch edit" > "$repo/wt/base.txt"
+  elif [ "$mode" = "--union-log" ]; then
+    echo "pr change" > "$repo/wt/pr-file.txt"
+    printf 'remote entry\nbase entry\n' > "$repo/wt/_meta/LAB_LOG.md"
   else
     echo "pr change" > "$repo/wt/pr-file.txt"
   fi
@@ -2433,6 +2442,33 @@ chk "the worktree was still removed" "$([ ! -e "$LWT_B" ]; echo $?)"
 chk_has "the removal is still reported" "$out" "removed worktree ${LWT_B}"
 chk "the branch was still deleted" \
   "$(git -C "$LREPO_B" rev-parse --verify feat/land >/dev/null 2>&1 && echo 1 || echo 0)"
+
+echo "--- a dirty merge=union file in the main checkout is carried across the fast-forward (SPEC-317)"
+build_land unionlog --union-log
+LREPO_U="$TMPD/ld-repo-unionlog"; LREPO_UP="$(cd "$LREPO_U" && pwd -P)"; LWT_U="$(cd "$LREPO_U/wt" && pwd -P)"
+LTIP_U="$(git -C "$LWT_U" rev-parse HEAD)"
+printf 'local entry\nbase entry\n' > "$LREPO_U/_meta/LAB_LOG.md"
+: > "$GH_STUB_CALLS"
+out="$(GH_STUB_CREATE_NUM=44 GH_STUB_LAND_REPO="$LWT_U" GH_STUB_LAND_REMOTE="$TMPD/ld-bare-unionlog" \
+  GH_STUB_LAND_BRANCH=feat/land GH_STUB_LAND_DEF=main "$WRAP" land "$LWT_U" 2>&1)"; rc=$?
+chk "a union-carried pull exits 0" "$rc"
+chk_has "the carry reports the save" "$out" "saved 1 union-marked file(s) aside so the pull can fast-forward"
+chk_has "the carry reports the carry-back" "$out" "carried 1 local line(s) back into _meta/LAB_LOG.md"
+chk_has "the fast-forward is still reported as pulled" "$out" "pulled ${LREPO_UP}"
+chk_no "no PULL BLOCKED on a union-only dirty file" "$out" "PULL BLOCKED"
+chk "the main checkout fast-forwarded to the landed tip" \
+  "$([ "$(git -C "$LREPO_U" rev-parse HEAD)" = "$LTIP_U" ]; echo $?)"
+chk "the incoming log line landed" \
+  "$(grep -qxF 'remote entry' "$LREPO_U/_meta/LAB_LOG.md"; echo $?)"
+chk "the sibling's local log line survived" \
+  "$(grep -qxF 'local entry' "$LREPO_U/_meta/LAB_LOG.md"; echo $?)"
+chk "the local log line is still uncommitted" \
+  "$(git -C "$LREPO_U" diff --name-only | grep -qx '_meta/LAB_LOG.md'; echo $?)"
+chk "the pr-file.txt content also landed" \
+  "$([ "$(cat "$LREPO_U/pr-file.txt")" = "pr change" ]; echo $?)"
+chk "the worktree was removed" "$([ ! -e "$LWT_U" ]; echo $?)"
+chk "the branch was deleted" \
+  "$(git -C "$LREPO_U" rev-parse --verify feat/land >/dev/null 2>&1 && echo 1 || echo 0)"
 
 echo "--- the usage text and the command doc name the verb"
 chk_has "wrap --help names land" "$("$WRAP" --help 2>&1)" "wrap.sh land  <worktree>"
