@@ -3183,6 +3183,65 @@ else
   FAIL=$((FAIL + 1))
 fi
 
+# ============================================================
+echo ""
+echo "=== kit-health symlink check (check 12: broken-symlink detection) ==="
+# ============================================================
+# Behavioral, not just textual: extract check 12 from kit-health.md's Step-1
+# bash block (bounded by its own start/end comments) and run it against a
+# synthetic kit root with one good symlink and one dangling one. Regression
+# guard for the WORKFLOW.md-after-repo-move incident: a stale symlink under
+# the installed kit root went unnoticed until the gate ledger needed a manual
+# override.
+SYMLINK_FIXTURE=$(mktemp -d)
+mkdir -p "$SYMLINK_FIXTURE/kit-root/docs" "$SYMLINK_FIXTURE/real-target"
+echo "real" > "$SYMLINK_FIXTURE/real-target/WORKFLOW.md"
+ln -s "$SYMLINK_FIXTURE/real-target/WORKFLOW.md" "$SYMLINK_FIXTURE/kit-root/AGENTS.md"          # good
+ln -s "$SYMLINK_FIXTURE/real-target/missing.md" "$SYMLINK_FIXTURE/kit-root/docs/WORKFLOW.md"    # dangling
+
+CHECK_SCRIPT=$(sed -n '/^# 12\. Symlink health/,/^# --- end check 12 ---$/p' "$KIT_DIR/commands/kit-health.md")
+TOTAL=$((TOTAL + 1))
+if [ -z "$CHECK_SCRIPT" ]; then
+  echo -e "  ${RED}FAIL${NC} could not extract check 12 from kit-health.md (start/end markers missing)"
+  FAIL=$((FAIL + 1))
+else
+  echo -e "  ${GREEN}PASS${NC} check 12 extracted from kit-health.md"
+  PASS=$((PASS + 1))
+fi
+
+CHECK_OUT=$(DWARVES_KIT="$SYMLINK_FIXTURE/kit-root" bash -c "$CHECK_SCRIPT" 2>&1)
+
+TOTAL=$((TOTAL + 1))
+if echo "$CHECK_OUT" | grep -q "\[BROKEN\].*docs/WORKFLOW.md"; then
+  echo -e "  ${GREEN}PASS${NC} kit-health symlink check reports the dangling docs/WORKFLOW.md link"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}FAIL${NC} kit-health symlink check did not report the dangling link"
+  echo "$CHECK_OUT" | sed 's/^/    /'
+  FAIL=$((FAIL + 1))
+fi
+
+TOTAL=$((TOTAL + 1))
+if echo "$CHECK_OUT" | grep -q "\[BROKEN\].*AGENTS.md"; then
+  echo -e "  ${RED}FAIL${NC} kit-health symlink check wrongly flagged the good AGENTS.md link"
+  echo "$CHECK_OUT" | sed 's/^/    /'
+  FAIL=$((FAIL + 1))
+else
+  echo -e "  ${GREEN}PASS${NC} kit-health symlink check leaves the good AGENTS.md link unreported"
+  PASS=$((PASS + 1))
+fi
+
+TOTAL=$((TOTAL + 1))
+if echo "$CHECK_OUT" | grep -qi "re-run install.sh"; then
+  echo -e "  ${GREEN}PASS${NC} kit-health symlink check names the fix (re-run install.sh)"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}FAIL${NC} kit-health symlink check should point at re-running install.sh"
+  FAIL=$((FAIL + 1))
+fi
+
+rm -rf "$SYMLINK_FIXTURE"
+
 echo ""
 echo "=== Results ==="
 # ============================================================

@@ -109,6 +109,25 @@ if [ -f VERSION ] && git rev-parse --git-dir >/dev/null 2>&1; then
 else
   echo "  release hygiene: skipped (not in the kit repo / no VERSION)"
 fi
+
+# 12. Symlink health: broken symlinks under the installed kit root (a symlink
+# whose target no longer exists, e.g. after the repo checkout moved). Every
+# symlink under the kit root is written by install.sh's compat-mode link step
+# (kit_symlink_hardened, `ln -sfn`), so re-running install.sh always repoints
+# it; this check only detects and reports, it never repairs.
+KIT_ROOT="${DWARVES_KIT:-$HOME/.claude/dwarves-kit}"
+BROKEN=0
+if [ -d "$KIT_ROOT" ]; then
+  while IFS= read -r LINK; do
+    [ -e "$LINK" ] && continue
+    echo "  [BROKEN] $LINK -> $(readlink "$LINK") (dangling target; fix: re-run install.sh)"
+    BROKEN=$((BROKEN + 1))
+  done < <(find "$KIT_ROOT" -type l 2>/dev/null)
+  [ "$BROKEN" -eq 0 ] && echo "  [ok] No broken symlinks under $KIT_ROOT"
+else
+  echo "  [skip] $KIT_ROOT not found"
+fi
+# --- end check 12 ---
 ```
 
 ### Step 2: Present health report
@@ -117,7 +136,7 @@ Format the results as a verdict, not a checklist. The kit is opinionated; the re
 
 - **SHIP** -- all critical checks pass, no philosophy violations, no hook over 500ms, no compiled binaries.
 - **FIX-REQUIRED** -- one or more non-critical checks fail OR there are TODOs/FIXMEs in hooks. Kit still works, but the failures must be addressed before the next release.
-- **REJECT** -- one or more critical violations: a compiled binary present, a hook over 500ms, settings.json invalid, a registered hook missing, or any philosophy violation flagged in Step 3.
+- **REJECT** -- one or more critical violations: a compiled binary present, a hook over 500ms, settings.json invalid, a registered hook missing, a broken symlink under the installed kit root, or any philosophy violation flagged in Step 3.
 
 Output:
 
@@ -131,6 +150,7 @@ Kit Health Report (date)
 [PASS/FAIL] Hook performance (all under 500ms)
 [PASS/FAIL] No compiled binaries
 [PASS/FAIL] All commands have descriptions
+[PASS/FAIL] No broken symlinks under the kit root
 [INFO]      Hook log activity
 [INFO]      Source citations: N
 [PASS/WARN] TODOs in hooks: N
