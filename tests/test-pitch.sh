@@ -2,9 +2,11 @@
 # test-pitch.sh -- SPEC-140, kit-run-integrity mega-goal sub-goal 06 (ID-250).
 #
 # Proves /kit:pitch's assembly engine (lib/pitch.sh) is a grounded ASSEMBLER, never a writer:
-#   AC1  real sample: render against a REAL recently-shipped rid (kit-emit-sweep) produces all
-#        5 sections; committed as docs/verification/pitch-command/sample-pitch.md. The two
-#        checks that depend on machine-local ledger state (the PR link, the grill-skip reason)
+#   AC1  real sample: render against a REAL recently-shipped rid (kit-emit-sweep), into a
+#        scratch copy, produces all 5 sections. The committed docs/verification/pitch-command/
+#        sample-pitch.md is the canonical hand-refreshed proof sample (never written by this
+#        test -- see docs/implementation-notes/kit-pitch.md). The two checks that depend on
+#        machine-local ledger state (the PR link, the grill-skip reason)
 #        assert against a FROZEN fixture (tests/fixtures/pitch/real-sample/, a snapshot of the
 #        same real content) instead of the live render, so CI's fresh checkout (no
 #        ~/.local/state/dwarves-kit ledger for kit-emit-sweep) can't fail a check that only
@@ -69,14 +71,23 @@ _render_with_origin() {  # <fixture-name>
 }
 
 echo "=== AC1: real sample -- render against a REAL recently-shipped rid (kit-emit-sweep) ==="
-PROOF_DIR="$KIT_DIR/docs/verification/pitch-command"
-mkdir -p "$PROOF_DIR"
-( cd "$KIT_DIR" && bash "$LIB" render kit-emit-sweep --out "$PROOF_DIR/sample-pitch.md" ) >/dev/null
-assert "AC1 sample-pitch.md was written" "$([ -s "$PROOF_DIR/sample-pitch.md" ] && echo 0 || echo 1)"
-SECTIONS=$(grep -cE '^## [1-5]\. ' "$PROOF_DIR/sample-pitch.md")
+# The tracked docs/verification/pitch-command/sample-pitch.md is the canonical proof sample,
+# refreshed by hand (see docs/implementation-notes/kit-pitch.md), never by this test: render
+# into a scratch copy instead, so a green run never dirties the tracked file.
+SAMPLE_OUT="$(mktemp -d)/sample-pitch.md"
+( cd "$KIT_DIR" && bash "$LIB" render kit-emit-sweep --out "$SAMPLE_OUT" ) >/dev/null
+assert "AC1 sample-pitch.md was written" "$([ -s "$SAMPLE_OUT" ] && echo 0 || echo 1)"
+SECTIONS=$(grep -cE '^## [1-5]\. ' "$SAMPLE_OUT")
 assert "AC1 all 5 numbered sections present (got $SECTIONS)" "$([ "$SECTIONS" -eq 5 ] && echo 0 || echo 1)"
 assert "AC1 outcome section names the real spec (SPEC-139-kit-emit-sweep)" \
-  "$(grep -qi 'command emit sweep' "$PROOF_DIR/sample-pitch.md" && echo 0 || echo 1)"
+  "$(grep -qi 'command emit sweep' "$SAMPLE_OUT" && echo 0 || echo 1)"
+# AC1-SELF-CHECK-BOUNDARY -- guard against a half-done repoint: nothing above this line may
+# read the tracked proof file back in. Sentinel-bounded so this check's own source line never
+# counts as a hit against itself (the self-referential trap AC5 below also guards against).
+AC1_BLOCK=$(sed -n '/=== AC1:/,/AC1-SELF-CHECK-BOUNDARY/p' "$0" | grep -vE '^\s*#')
+TRACKED_HITS=$(printf '%s' "$AC1_BLOCK" | grep -c 'docs/verification/pitch-command/sample-pitch\.md' || true)
+assert "AC1 block never reads the tracked proof file back in (found: $TRACKED_HITS)" \
+  "$([ "$TRACKED_HITS" -eq 0 ] && echo 0 || echo 1)"
 # The PR-link and grill-skip checks below need ledger content that only ever lives in
 # ~/.local/state/dwarves-kit/logs (machine-local, per lib/telemetry/kit-log-dir.sh) -- absent on a fresh
 # CI checkout. Assert against a frozen, committed fixture (a snapshot of the same real
