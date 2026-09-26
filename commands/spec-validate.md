@@ -2,15 +2,17 @@
 description: "Adversarial review of a spec before implementation. 7 specialist lenses attack the spec from different angles (6 advisory, 1 blocking on the design record)."
 ---
 
-You are running an adversarial spec review. Read the spec from `docs/specs/SPEC-NNN-<slug>.md` (the most recent non-shipped spec if several exist). If no spec exists, tell the user to run `/kit:spec` first.
+You are running an adversarial spec review. Read the spec from `docs/specs/SPEC-NNN-<slug>.md`: the path the caller names, else the most recent non-shipped spec if several exist. If no spec exists, tell the user to run `/kit:spec` first.
+
+Dispatched as a READ-ONLY validator (the prompt says so, as `/kit:spec` step 5 and `/kit:execute`'s preflight do): run every reviewer in one pass without pausing, return the report plus the Reviewer 6 line, and skip every edit, Status flip, and record below; the lead records. Never run this command on a spec you wrote: a self-run pass is not validation.
 
 ## The 7 reviewers
 
-Bracket both phases this lane owns for timing, before running Reviewer 1:
+Bracket both phases this lane owns for timing, before running Reviewer 1 (skip when dispatched READ-ONLY; the lead already opened both brackets before the dispatch):
 `bash lib/gate/gate-ledger.sh outcome <rid> Validate start` and
 `bash lib/gate/gate-ledger.sh outcome <rid> design-record start`.
 
-Run each reviewer sequentially. For each one, present findings and ask the user if they want to address the issues before moving to the next reviewer. Reviewers 1-5 and 7 are advisory; Reviewer 6 (below) is the one exception that can block the `VALIDATED` flip.
+Run each reviewer sequentially. For each one, present findings and ask the user if they want to address the issues before moving to the next reviewer (skip when dispatched READ-ONLY). Reviewers 1-5 and 7 are advisory; Reviewer 6 (below) is the one exception that can block the `VALIDATED` flip.
 
 ### Reviewer 1: Security Auditor
 Look for:
@@ -146,13 +148,15 @@ If NEEDS REVISION, update `docs/specs/SPEC-NNN-<slug>.md` with the fixes and mar
 
 If APPROVED, update the Status line in SPEC.md to `VALIDATED`. **Exception:** if Reviewer 6 raised a CRITICAL, BLOCKING finding (a design-bearing spec with an empty/missing `## Design` block), the Verdict is NEEDS REVISION regardless of the advisory reviewers' outcome, and Status does NOT flip to `VALIDATED` until the Design block is filled and this reviewer re-runs clean.
 
-After the verdict, record it for lane telemetry, one line:
-`bash lib/gate/gate-ledger.sh record <rid> Validate ran "<APPROVED|NEEDS REVISION> critical=<N> warnings=<K>"`.
+After the verdict, record it for lane telemetry, one line. On APPROVED only:
+`bash lib/gate/gate-ledger.sh record <rid> Validate ran "APPROVED critical=0 warnings=<K>"`.
+On NEEDS REVISION: `bash lib/gate/gate-ledger.sh record <rid> Validate skipped "NEEDS REVISION: <criticals>"`, which the full lane's ship-gate refuses and `/kit:execute`'s preflight does not count. A direct run's note carries no `fresh agent=`; that marker is the lead's, for a fresh-context validator, so an audit can tell the two apart.
 Close its timing bracket: `bash lib/gate/gate-ledger.sh outcome <rid> Validate end caught=<true if the verdict is NEEDS REVISION, else false>`.
 
 Reviewer 6 is also the `design-record` matrix row's phase owner (it is the one enforcement point
 for that row, per WORKFLOW.md "## The understanding axis"), so record it by its own name too:
-`bash lib/gate/gate-ledger.sh record <rid> design-record ran "design-bearing=<yes|no> <pass|critical>"`.
+`bash lib/gate/gate-ledger.sh record <rid> design-record ran "design-bearing=<yes|no> pass"` on a pass, and
+`bash lib/gate/gate-ledger.sh record <rid> design-record skipped "critical: <finding>"` on a Reviewer 6 critical, so the full lane's ship-gate refuses a blocked design.
 This closes the "no command records design-record ran" gap WORKFLOW.md's "## Command emit
 coverage" section used to flag as a known pre-existing gap. Close its timing bracket:
 `bash lib/gate/gate-ledger.sh outcome <rid> design-record end caught=<true if the row is critical, else false>`.

@@ -2193,7 +2193,7 @@ cmd_land() {
 
   # The fast-forward is advisory: a checkout this call does not own may be dirty or on
   # another branch, and neither is a reason to strand a merged worktree. A dirty file the
-  # repo declares merge=union is carried across (_land_ff_pull, SPEC-321); any other dirty
+  # repo declares merge=union is carried across (_land_ff_pull); any other dirty
   # file is never stashed past and never reset; the refusal is reported and the tidy continues.
   local blocked=0 cur
   cur="$(git -C "$repo" branch --show-current 2>/dev/null)"
