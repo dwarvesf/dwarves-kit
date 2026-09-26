@@ -229,11 +229,56 @@ Failure `item`s carry `fingerprint`: the verbatim failing case, so a red run
 always answers "failed on what, exactly". The case inventory these runs will
 cover lives in `docs/test-catalog.md` (L1 mechanism / L2 stage / L3 E2E).
 
+## lens-eval (prompt-only lenses)
+
+`bench.py` scores generated code. A reviewer lens (`commands/spec-validate.md`,
+`commands/devs-team.md`, an `agents/*.md` reviewer) is prompt text, so its
+structural tests cannot show that a changed lens finds anything new.
+`lens-eval.sh` runs the lens twice per fixture spec: the working-tree text
+(treatment) and the same file at a base ref (control), through headless
+`claude -p --safe-mode --tools ""`. It then greps each saved report for the
+case file's signals. Spec: `docs/specs/SPEC-315-prompt-lens-eval.md`.
+
+```sh
+# dry run: prints the call count, spends nothing, exits 3
+bash lib/bench/lens-eval.sh commands/spec-validate.md 118485af~1 \
+  tests/fixtures/sustainability-lens/lens-eval.json
+# the SPEC-314 sustainability-lens eval, live, one sample per arm
+bash lib/bench/lens-eval.sh commands/spec-validate.md 118485af~1 \
+  tests/fixtures/sustainability-lens/lens-eval.json --live [--samples 3] [--model haiku]
+```
+
+Case file: `{"cases":[{"name","fixture","signals":[{"name","pattern","reviewer"?,"treatment"?,"control"?}]}]}`.
+`fixture` is relative to the case file. `pattern` and `reviewer` are
+case-insensitive extended regexes. `treatment` and `control` are `hit` or
+`miss`, and a signal needs at least one of them. An arm runs only when a
+signal of its case names it.
+
+Scoring: a sample hits when one finding block (a top-level list item, a
+heading, or a paragraph, plus its indented lines) matches `pattern` and
+`reviewer`. An arm hits on a strict majority of its N samples; a tie is a
+miss. Write `reviewer` as `Reviewer 7|R7|Sustainab`, because models name a
+reviewer both ways.
+
+| Exit | Meaning |
+|---|---|
+| 0 | every signal held on a live run |
+| 1 | one or more signals failed; the verdict names them |
+| 2 | a sample failed (claude missing, non-zero exit, `is_error`, empty result); nothing scored |
+| 3 | dry run, no `--live` |
+| 64 | usage |
+
+Every report is kept under the printed `samples:` directory. Read it before
+you trust a FAIL or a PASS: the grep cannot tell a finding from a Passed line
+that names the same word. Cost: about $0.06 per call for `spec-validate.md`
+on sonnet; the SPEC-314 case is 3 calls at N=1.
+
 ## Tests
 
 ```sh
 python3 tests/test_bench.py   # runner: hashing, scoring, summarize/diff, HTML render
 python3 tests/test_tui.py     # frontend: state machine, mid-run frame, reports, roundtrip
+bash ../../tests/test-lens-eval.sh   # lens-eval, stub claude on PATH
 ```
 
 Offline self-checks, no model calls.

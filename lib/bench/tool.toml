@@ -1,7 +1,7 @@
 [tool]
 name = "bench"
 status = "prototype"
-summary = "Standalone comparative benchmark runner: frozen suites x config matrix -> immutable JSONL rows -> scoreboard/diff"
+summary = "Standalone comparative benchmark runner: frozen suites x config matrix -> immutable JSONL rows -> scoreboard/diff; lens-eval.sh runs a prompt lens treatment vs control"
 entry = "bench.py"
 language = "python-stdlib"
 
