@@ -229,11 +229,78 @@ Failure `item`s carry `fingerprint`: the verbatim failing case, so a red run
 always answers "failed on what, exactly". The case inventory these runs will
 cover lives in `docs/test-catalog.md` (L1 mechanism / L2 stage / L3 E2E).
 
+## lens-eval (prompt-only lenses)
+
+`bench.py` scores generated code. A reviewer lens (`commands/spec-validate.md`,
+`commands/devs-team.md`, an `agents/*.md` reviewer) is prompt text, so its
+structural tests cannot show that a changed lens finds anything new.
+`lens-eval.sh` runs the lens twice per fixture spec: the working-tree text
+(treatment) and the same file at a base ref (control), through headless
+`claude -p --safe-mode --tools ""`. It then greps each saved report for the
+case file's signals. Spec: `docs/specs/SPEC-316-prompt-lens-eval.md`.
+
+```sh
+# dry run: prints the call count, spends nothing, exits 3
+bash lib/bench/lens-eval.sh commands/spec-validate.md 118485af~1 \
+  tests/fixtures/sustainability-lens/lens-eval.json
+# the SPEC-314 sustainability-lens eval, live, one sample per arm
+bash lib/bench/lens-eval.sh commands/spec-validate.md 118485af~1 \
+  tests/fixtures/sustainability-lens/lens-eval.json --live [--samples 3] [--model haiku]
+```
+
+Case file: `{"cases":[{"name","fixture","signals":[{"name","pattern","reviewer"?,"treatment"?,"control"?}]}]}`.
+`fixture` is relative to the case file; an absolute path or a `..` segment is
+refused. Case and signal names use `[A-Za-z0-9._-]` and are unique within
+their scope. `pattern` and `reviewer` are case-insensitive extended regexes.
+`treatment` is `hit` or `miss`. `control` is `hit`, `miss`, or `fewer`, and
+`fewer` needs `treatment: hit`. A signal needs at least one arm. An arm runs
+only when a signal of its case names it. `--samples` is 1 or odd.
+
+Scoring: a sample hits when one finding block (a top-level list item, a
+heading, or a paragraph, plus its indented lines) matches `pattern` and
+`reviewer`. A table row is its own block. Everything under a `Passed` heading
+is dropped up to the next heading, so a pass bullet never counts. A block
+under a `### Reviewer N` heading carries that heading, so the `reviewer`
+regex credits it. An arm hits on a majority of its N samples. Write
+`reviewer` as `Reviewer 7|R7|Sustainab`, because models name a reviewer both
+ways.
+
+Two control expectations, picked per signal by the case file:
+
+| `control` | Passes when | Use it for |
+|---|---|---|
+| `fewer` | treatment hits, and control has fewer hits than treatment; the control count is info | a planted gap the old text may also notice now and then |
+| `miss` | control misses on the majority | a hard check that the old text never raises it |
+
+The quiet case uses a hard `treatment: miss`: no numbered finding tagged
+Reviewer 7 on a short-lived spec.
+
+One model plays every reviewer inline, in a single context, from a header
+that says to run no tools. The real command dispatches reviewers as separate
+subagents. A PASS is evidence about the prompt text, not about a production
+run of the command.
+
+| Exit | Meaning |
+|---|---|
+| 0 | every signal held on a live run |
+| 1 | one or more signals failed; the verdict names them |
+| 2 | a sample failed (claude missing, non-zero exit, `is_error`, empty result); the run stops at the first one and scores nothing |
+| 3 | dry run, no `--live` |
+| 64 | usage, including a bad ref, a path missing at the ref, identical control and treatment text, and an even `--samples` |
+
+Every call carries `--max-budget-usd 1`. The summary names the samples
+directory, the base ref and its sha, the first 12 hex of each arm's text
+sha256, and the cost. Read the samples before you trust a FAIL or a PASS:
+the grep checks that a block names a thing, not that the finding is right.
+Cost: about $0.06 per call for `spec-validate.md` on sonnet; the SPEC-314
+case is 3 calls at N=1.
+
 ## Tests
 
 ```sh
 python3 tests/test_bench.py   # runner: hashing, scoring, summarize/diff, HTML render
 python3 tests/test_tui.py     # frontend: state machine, mid-run frame, reports, roundtrip
+bash ../../tests/test-lens-eval.sh   # lens-eval, stub claude on PATH
 ```
 
 Offline self-checks, no model calls.
