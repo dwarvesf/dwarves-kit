@@ -342,12 +342,18 @@ Not covered:
 - negctl's final confirmatory green run (after the `before`/`after` snapshot comparison already
   happened) can still leave the tree dirty again as an unreported side effect of that last
   `run_test()` call -- predates this fix, sits on a different step, out of scope.
-- A `BASELINE_DIFF`-introduced brand-new tracked file (the baseline run itself, before any
-  mutation, stages a file with no `HEAD` blob) is folded into MUTATE_SET and restored via
-  MUTATE_SET's unchanged, unfiltered batched call -- the same whole-call-abort class this spec
-  fixes for the *red-run* side-effect path, left open here because the task brief and both
-  validator probes are scoped to the red run, not the baseline run. A future spec would apply the
-  identical `git cat-file -e HEAD:<path>` partition to MUTATE_SET's own capture.
+- A brand-new tracked path that ends up **inside MUTATE_SET itself** -- whether `mutate_cmd`
+  directly stages one (confirmed by hand: `git mv lib.sh lib2.sh` as the mutation puts
+  `lib2.sh`, which has no `HEAD` blob, straight into MUTATE_SET) or the baseline run does before
+  any mutation runs -- is restored via MUTATE_SET's unchanged, unfiltered batched call and hits
+  the exact whole-call-abort class this spec fixes for the *beyond-MUTATE_SET* path. This
+  predates this spec entirely (reproduced against the pre-fix script too, independent of
+  `--no-renames`) and is left open here because the task brief and both validator probes are
+  scoped to the red-run side-effect path, not MUTATE_SET's own restore. A future spec would
+  apply the identical `git cat-file -e HEAD:<path>` partition to MUTATE_SET's own capture. The
+  `git mv` case above also confirms `--no-renames` does what it's for: `Changed:` correctly
+  names both `lib.sh` and `lib2.sh` instead of silently dropping the deleted half -- the
+  restore failure that follows is this pre-existing, separately-scoped gap, not a new one.
 - A concurrent writer to `$root` during the run: out of scope by the stated Assumption; use
   `--base-ref` mode on a shared checkout.
 - The retry-loop safety guard (point 4) compares tracked **paths** only, not content. A red-loop

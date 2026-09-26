@@ -23,7 +23,43 @@ mkrepo() {  # $1 = dir; a lib with add() and a test that needs add 2 2 = 4
   printf 'add() { echo $(( $1 + $2 )); }\n' > "$1/lib.sh"
   printf 'mul() { echo $(( $1 * $2 )); }\n' > "$1/sub dir/lib file.sh"
   printf '#!/usr/bin/env bash\nsource ./lib.sh\nsource "./sub dir/lib file.sh"\n[ "$(add 2 2)" = "4" ] && [ "$(mul 2 3)" = "6" ]\n' > "$1/test.sh"
+  # fixtures for the restore-set-recompute cases (T4a/T4b/T4c/T4d): a tracked placeholder a
+  # test-cmd can overwrite, and four scripts that each write a tracked file only under the
+  # condition their case needs (never unconditionally, so the other cases stay unaffected).
+  printf 'orig\n' > "$1/fixture.md"
+  printf '#!/usr/bin/env bash\nsource ./lib.sh\n[ "$(add 2 2)" = "4" ] && exit 0\necho "captured under mutation" > fixture.md\nexit 1\n' > "$1/test-sidewrite.sh"
+  printf '#!/usr/bin/env bash\nsource ./lib.sh\n[ "$(add 2 2)" = "4" ] && exit 0\necho "new" > new-file.txt\ngit add new-file.txt\nexit 1\n' > "$1/test-newfile.sh"
+  # Counter-and-fixture driven, deliberately independent of lib.sh/add(): call 1 (the
+  # baseline green run) does nothing; call 2 (red-loop attempt 1, under an INERT mutation)
+  # is green but writes fixture.md; call 3+ (attempt 2+) goes red ONLY because fixture.md
+  # still carries that leftover -- an artifact of attempt 1's own side write, not evidence
+  # the mutation did anything (the shape probe A found).
+  printf '#!/usr/bin/env bash\nn=$(cat "$RETRY_COUNTER" 2>/dev/null || echo 0); n=$(( n + 1 )); printf %%s "$n" > "$RETRY_COUNTER"\n[ "$n" -eq 1 ] && exit 0\nif [ "$n" -eq 2 ]; then echo "leftover from a green retry attempt" > fixture.md; exit 0; fi\ngrep -q leftover fixture.md 2>/dev/null && exit 1\nexit 0\n' > "$1/test-retrywriter.sh"
+  printf '#!/usr/bin/env bash\nsource ./lib.sh\necho "baseline write" > fixture.md\n[ "$(add 2 2)" = "4" ]\n' > "$1/test-basewrite.sh"
   git -C "$1" init -q && git -C "$1" add -A && git -C "$1" -c user.name=t -c user.email=t@t commit -q -m seed
+}
+
+# Reconstructs a NAIVE (pre-fix) restore(): one unfiltered `git checkout HEAD --` over the
+# mutation's own set AND everything beyond it, no HEAD-existence partition. Used only by T4b's
+# negative control, to reproduce the whole-call-abort regression the real fix prevents. Anchors
+# on the stable `restore() {` / `trap restore EXIT` lines, not on interior formatting.
+mk_naive_negctl() {  # $1 = output path
+  open_ln=$(grep -n '^restore() {$' "$NC" | head -1 | cut -d: -f1)
+  trap_ln=$(grep -n '^trap restore EXIT$' "$NC" | head -1 | cut -d: -f1)
+  head -n $((open_ln - 1)) "$NC" > "$1"
+  cat >> "$1" <<'NAIVE'
+restore() {
+  [ "$restore_done" -eq 1 ] && return 0
+  restore_done=1
+  _beyond_mutate_set
+  full=("${restore_files[@]}")
+  if [ "${#beyond[@]}" -gt 0 ]; then full+=("${beyond[@]}"); fi
+  if [ "${#full[@]}" -gt 0 ]; then
+    git -C "$root" checkout -q HEAD -- "${full[@]}" 2>/dev/null || fail "restore failed: git checkout HEAD -- ${full[*]}"
+  fi
+}
+NAIVE
+  tail -n +"$trap_ln" "$NC" >> "$1"
 }
 clean() { [ -z "$(git -C "$1" status --porcelain --untracked-files=all)" ]; }
 REPO="$TMP/r"; mkrepo "$REPO"
@@ -193,6 +229,87 @@ if [ "$RC" -eq 64 ] && grep -q "does not resolve to a commit" <<<"$OUT" \
    && [ "$RC2" -eq 64 ] && grep -q 'usage: negctl.sh --base-ref' <<<"$OUT2"; then
   ok "bad ref and missing args both exit 64"
 else no "rc=$RC rc2=$RC2 out=$OUT out2=$OUT2"; fi
+
+echo
+# --- restore-set recompute: side effects the RED run itself writes (T4a/b/c/d) -----------
+# negctl used to freeze its restore set right after mutate_cmd, before test-cmd's RED run
+# executed, so a tracked fixture write during that run (or a green retry attempt's own
+# leftover) never got restored. #784 (test-pitch.sh) hit this for real. These four cases and
+# their per-mechanism negative controls prove the recompute, the HEAD-existence partition, and
+# the retry-loop guard are each independently load-bearing.
+
+echo "[19] T4a: a tracked fixture overwritten only while RED restores cleanly (side effect)"
+OUT="$(bash "$NC" "$REPO" "bash test-sidewrite.sh" "sed -i.bak 's/+/-/' lib.sh && rm -f lib.sh.bak" 2>&1)"; RC=$?
+if [ "$RC" -eq 0 ] && grep -q '^Verdict: PASS$' <<<"$OUT" && grep -q '^Side effect: fixture.md$' <<<"$OUT" && clean "$REPO"; then
+  ok "side-effect fixture restored, Side effect: line printed, tree clean"
+else no "rc=$RC tree=$(git -C "$REPO" status --porcelain) out=$OUT"; fi
+
+echo "[20] T4a negative control: disable the side-effect restore -> reverts to tree-differs FAIL"
+NC_T4A="$TMP/negctl-t4a.sh"
+ln=$(grep -Fn '  if [ "${#side_effect_head[@]}" -gt 0 ]; then' "$NC" | head -1 | cut -d: -f1)
+sed "${ln}s/.*/  if false; then/" "$NC" > "$NC_T4A"
+OUT="$(bash "$NC_T4A" "$REPO" "bash test-sidewrite.sh" "sed -i.bak 's/+/-/' lib.sh && rm -f lib.sh.bak" 2>&1)"; RC=$?
+git -C "$REPO" checkout -q -- fixture.md 2>/dev/null   # the mutated copy skipped this restore; clean up by hand
+if [ "$RC" -ne 0 ] && grep -q 'tree differs from the pre-run snapshot' <<<"$OUT" && ! grep -q '^Verdict: PASS' <<<"$OUT"; then
+  ok "without the side-effect restore, the same case reverts to FAIL"
+else no "rc=$RC out=$OUT"; fi
+
+echo "[21] T4b: a HEAD-absent side effect fails by name; MUTATE_SET's own file still restores"
+OUT="$(bash "$NC" "$REPO" "bash test-newfile.sh" "sed -i.bak 's/+/-/' lib.sh && rm -f lib.sh.bak" 2>&1)"; RC=$?
+LIBCLEAN="$(git -C "$REPO" diff --quiet HEAD -- lib.sh && echo yes || echo no)"
+git -C "$REPO" reset -q HEAD -- new-file.txt 2>/dev/null; rm -f "$REPO/new-file.txt"
+if [ "$RC" -ne 0 ] && grep -q 'cannot be restored from HEAD' <<<"$OUT" && grep -q 'new-file.txt' <<<"$OUT" \
+   && [ "$LIBCLEAN" = yes ] && ! grep -q '^Verdict: PASS' <<<"$OUT"; then
+  ok "new file failed by name, lib.sh (MUTATE_SET) still restored"
+else no "rc=$RC libclean=$LIBCLEAN out=$OUT"; fi
+
+echo "[22] T4b negative control: the naive single-call restore aborts -- MUTATE_SET's own file NOT restored"
+NC_T4B="$TMP/negctl-t4b.sh"
+mk_naive_negctl "$NC_T4B"
+OUT="$(bash "$NC_T4B" "$REPO" "bash test-newfile.sh" "sed -i.bak 's/+/-/' lib.sh && rm -f lib.sh.bak" 2>&1)"; RC=$?
+LIBCLEAN="$(git -C "$REPO" diff --quiet HEAD -- lib.sh && echo yes || echo no)"
+git -C "$REPO" checkout -q -- lib.sh 2>/dev/null
+git -C "$REPO" reset -q HEAD -- new-file.txt 2>/dev/null; rm -f "$REPO/new-file.txt"
+if [ "$RC" -ne 0 ] && [ "$LIBCLEAN" = no ]; then
+  ok "without the HEAD-existence partition, the whole restore aborts and lib.sh stays mutated"
+else no "rc=$RC libclean=$LIBCLEAN out=$OUT"; fi
+
+export RETRY_COUNTER="$TMP/retry-counter"
+echo "[23] T4c: a green retry attempt's own side write must not mask a vacuous mutation"
+: > "$RETRY_COUNTER"
+OUT="$(NEGCTL_RED_ATTEMPTS=3 bash "$NC" "$FREPO" "bash test-retrywriter.sh" "printf '\n# comment\n' >> lib.sh" 2>&1)"; RC=$?
+if [ "$RC" -ne 0 ] && grep -q 'retries are unsafe against a polluted tree' <<<"$OUT" && grep -q 'attempt 1 of 3' <<<"$OUT" \
+   && ! grep -q '^Verdict: PASS$' <<<"$OUT" && clean "$FREPO"; then
+  ok "a polluted green attempt stops retries instead of masking the vacuous mutation"
+else no "rc=$RC out=$OUT"; fi
+
+echo "[24] T4c negative control: without the retry guard, the vacuous mutation wrongly PASSes"
+NC_T4C="$TMP/negctl-t4c.sh"
+ln=$(grep -Fn '    if [ "${#beyond[@]}" -gt 0 ]; then' "$NC" | head -1 | cut -d: -f1)
+sed "${ln}s/.*/    if false; then/" "$NC" > "$NC_T4C"
+: > "$RETRY_COUNTER"
+OUT="$(NEGCTL_RED_ATTEMPTS=3 bash "$NC_T4C" "$FREPO" "bash test-retrywriter.sh" "printf '\n# comment\n' >> lib.sh" 2>&1)"; RC=$?
+if [ "$RC" -eq 0 ] && grep -q '^Verdict: PASS$' <<<"$OUT" && clean "$FREPO"; then
+  ok "without the guard, the polluted retry sequence wrongly reports PASS for a vacuous mutation"
+else no "rc=$RC out=$OUT"; fi
+
+echo "[25] T4d: a baseline side write is excluded from Changed, exact wording pinned"
+OUT="$(bash "$NC" "$REPO" "bash test-basewrite.sh" "true" 2>&1)"; RC=$?
+git -C "$REPO" checkout -q -- fixture.md 2>/dev/null
+if [ "$RC" -ne 0 ] && grep -q '^Changed: <no tracked file>$' <<<"$OUT" && grep -q 'changed no tracked file' <<<"$OUT" \
+   && grep -q '^Baseline side write: fixture.md$' <<<"$OUT" && clean "$REPO"; then
+  ok "baseline write excluded from Changed, exact wording preserved"
+else no "rc=$RC out=$OUT"; fi
+
+echo "[26] T4d negative control: without the BASELINE_DIFF subtraction, the baseline write is wrongly credited"
+NC_T4D="$TMP/negctl-t4d.sh"
+ln=$(grep -Fn '    if [ "${#baseline_diff[@]}" -gt 0 ] && _path_in "$f" "${baseline_diff[@]}"; then' "$NC" | head -1 | cut -d: -f1)
+sed "${ln}s/.*/    if false; then/" "$NC" > "$NC_T4D"
+OUT="$(bash "$NC_T4D" "$REPO" "bash test-basewrite.sh" "true" 2>&1)"; RC=$?
+git -C "$REPO" checkout -q -- fixture.md 2>/dev/null
+if grep -q '^Changed: fixture.md$' <<<"$OUT" && ! grep -q 'the mutation changed no tracked file' <<<"$OUT"; then
+  ok "without the subtraction, the baseline write is wrongly reported as the mutation's own change"
+else no "rc=$RC out=$OUT"; fi
 
 if [ "$fail" -gt 0 ]; then echo "test-proof-negctl: $pass passed, $fail FAILED" >&2; exit 1; fi
 echo "test-proof-negctl: all $pass passed"
