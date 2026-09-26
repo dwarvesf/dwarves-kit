@@ -54,8 +54,8 @@ Pick a lane before you start. Smaller work skips ceremony.
 | Lane   | When | Path |
 |--------|------|------|
 | tiny   | typo, copy, comment, one obvious edit | edit, verify, done. No spec. |
-| normal | one bounded feature or fix | /spec, /execute, /review, /ship |
-| full   | touches auth, authz, hooks, data model, data loss, audit/security, an external provider, an API contract, a migration, or weakens validation | /think, /spec, /spec-validate, /execute, /review-team, /docs, /ship, /retro |
+| normal | one bounded feature or fix | /spec (+ fresh-context /spec-validate), /execute, /review, /ship |
+| full   | touches auth, authz, hooks, data model, data loss, audit/security, an external provider, an API contract, a migration, or weakens validation | /think, /spec (+ fresh-context /spec-validate), /execute, /review-team, /docs, /ship, /retro |
 | bug    | a defect, regression, or failing test (not a new feature) | /debug (root cause before any fix), then /review |
 | backfill | brownfield: review an existing codebase and write the operating-layer docs (AGENTS.md / CLAUDE.md / specs) | review the code, write the docs. Doc-output only; no app-behavior change, no app-code edits. /spec optional. |
 
@@ -141,7 +141,7 @@ migration (same dry-run + rollback shape); agent-org config rides spec-feature l
 | Prototype (opt-in) | /kit:prototype | validated decision folded into the brief/spec + `prototype/<name>` branch pointer on the owning row | advisory (HITL; SPEC-206) |
 | UI design (opt-in, downstream) | /kit:ui-design | brief -> generate (frontend-design) -> critique -> revise | advisory (downstream only) |
 | Spec     | /kit:spec | spec exists, Status: DRAFT | spec-drift-guard hook |
-| Validate | /kit:spec-validate | Status: VALIDATED | advisory (full lane) |
+| Validate | /kit:spec-validate (a fresh-context validator /kit:spec and /kit:execute dispatch) | Status: VALIDATED | ship gate (full lane); /kit:execute preflight (normal, full, backfill) |
 | Test plan (default for normal/full) | /kit:test-plan | `## Test plan` written into the spec, in the type's dialect (test-design-standard §5b) | advisory default (normal/full); tiny exempt |
 | Build    | /kit:execute or /kit:next | tasks checked, verifier PASS | verification pipeline (worker, verifier, fix; max 2) |
 | Review   | /kit:review or /kit:review-team | review verdict recorded; full lane loops per SPEC-231 | advisory (default-run + bounded loop on full: SPEC-231, docs/patterns/review-fix-loop.md) |
@@ -162,7 +162,7 @@ thing that enforces the exit:
   Spec  ------>  spec exists, Status: DRAFT  ------>  spec-drift-guard   [HARD]
     |
     v
-  Validate --->  Status: VALIDATED  --------------->  advisory (full lane)
+  Validate --->  Status: VALIDATED  --------------->  execute preflight; ship gate (full)
     |
     v
   Build  ----->  tasks checked, verifier PASS  ---->  verification pipeline [HARD]
@@ -424,7 +424,7 @@ the V-model lens above. Every cell is one of:
 | Design critique (default full lane, opt-in normal) | skip | skip | measure-twice | skip | skip |
 | UI design (opt-in) | skip | skip | run-lite | skip | skip |
 | Spec | skip | measure-twice | measure-twice | skip | run-lite |
-| Validate | skip | skip | measure-twice | skip | skip |
+| Validate | skip | run-lite | measure-twice | skip | run-lite |
 | Design record (design-bearing, ADR-0031 §1) | skip | run-lite | measure-twice | skip | skip |
 | Test plan (default) | skip | run-lite | measure-twice | run-lite | skip |
 | Build | run-lite | measure-twice | measure-twice | measure-twice | skip |
@@ -448,6 +448,13 @@ the V-model lens above. Every cell is one of:
 - **Review / bug = measure-twice**: a bug fix is a high-stakes narrow change.
   The full lane uses review-team; the bug lane uses `/kit:review`, but the
   scrutiny level for a regression fix should be full, not advisory.
+- **Validate / normal and backfill = run-lite**, not measure-twice: `/kit:spec` and the
+  `/kit:execute` preflight dispatch a fresh-context validator on every normal, full, and
+  backfill spec, and execute refuses to build a spec whose validation did not pass, so the
+  cell only decides the ship gate. A measure-twice cell would refuse every normal-lane push in
+  every adopted repo on the next kit update and mark every past shipped normal run incomplete,
+  while the measured self-validation failures were all full-lane, which already requires it
+  (SPEC-320 Decision Log). The flip stays one cell once the normal-lane `caught=` rate earns it.
 - **backfill / Spec = run-lite**: `/kit:spec` is optional for backfill (the lane
   table says "Doc-output only; no app-behavior change"). run-lite reflects
   "optional but encouraged for non-trivial backfills."
@@ -1007,8 +1014,8 @@ for the same transcript respawns its window) and always rc 0 (a just-dispatched 
 with no transcript yet is a skip-and-warn, not a failure).
 
 ## What this contract does NOT do
-It does not lock phases. An experienced operator may skip /spec-validate on a
-normal-lane change or go straight to /next. The kit detects state
+It does not lock phases. An experienced operator may go straight to /next on a
+normal-lane change; only /kit:execute runs the validation preflight. The kit detects state
 (context-readiness hook: spec status + the board's queued count) and suggests
 the next step intent-first; it never blocks progression. Hard stops are reserved for irreversible cost: destructive
 commands, push-to-main, premature completion, failed verification.
@@ -1278,7 +1285,7 @@ above; this only draws the loop.
    SPECIFYING (amend, not restart)
         - append new - [ ] TASK rows; delta After-state / AC / Verification
         - record an ## Amendments entry
-        - re-validate the DELTA only (full: /spec-validate; normal: advisory)
+        - re-validate the DELTA only (full: /spec-validate; normal: run-lite)
         │  Status STAYS VALIDATED (no drop to DRAFT)
         ▼
    /kit:next  ──▶  BUILDING (resume; runs only the amended tasks)
@@ -1351,7 +1358,7 @@ mistake is irreversible:
 | `/kit:dispatch <specs>` | disjointness gate -> N background worktree workers -> lead-owned convergence | all workers READY + drift-clean, converged via `/kit:ship` | disjointness gate + drift guard (`lib/gate/dispatch-gate.sh`); no auto-merge; no DAG |
 | `/kit:think` | decision brief | brief written (if BUILD) | advisory |
 | `/kit:spec` | spec scaffold | spec exists, `Status: DRAFT` | spec-drift-guard hook |
-| `/kit:spec-validate` | 7-lens adversarial review (6 advisory, 1 blocking) | `Status: VALIDATED` | advisory (full lane) |
+| `/kit:spec-validate` | 7-lens adversarial review (6 advisory, 1 blocking), dispatched fresh-context by `/kit:spec` and `/kit:execute` | `Status: VALIDATED` | ship gate (full lane); `/kit:execute` preflight (normal, full, backfill) |
 | `/kit:execute` | verification pipeline | all tasks + integration PASS | verification pipeline (hard) |
 | `/kit:debug` | feedback-loop-first debug loop (Phase 0 + 4 phases) | root cause + fix verified (human-confirmed only when `debug.confirm_fix=true`) | iron law + guess-fix guard |
 | `/kit:review[-team]` | review | verdict recorded in the spec's `## Review` | advisory |

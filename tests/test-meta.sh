@@ -1228,6 +1228,50 @@ assert_eq "spec-validate.md Reviewer 7 section carries no BLOCKING marker" "0" "
 RC=0; [ "$R7_LINES" -gt 5 ] || RC=1
 assert_eq "spec-validate.md Reviewer 7 section is non-empty (scope guard can match)" "0" "$RC"
 
+# Fresh-context spec validation: every entry point dispatches the same read-only validator and
+# the lead owns the records; a self-run pass never counts, and spec-validate records ran on
+# APPROVED only.
+SPEC_CMD_F="$KIT_DIR/commands/spec.md"; EXEC_CMD_F="$KIT_DIR/commands/execute.md"; WRAP_CMD_F="$KIT_DIR/commands/wrap.md"
+fhas() { grep -qF -- "$2" "$1"; }
+RC=0; fhas "$SPEC_CMD_F" 'fresh-context `general-purpose` subagent' || RC=1
+assert_eq "spec.md dispatches a fresh general-purpose validator" "0" "$RC"
+RC=0; fhas "$SPEC_CMD_F" 'Invoke `kit:spec-validate` through the Skill tool' && fhas "$SPEC_CMD_F" 'READ-ONLY' || RC=1
+assert_eq "spec.md validator prompt: Skill kit:spec-validate, read-only" "0" "$RC"
+RC=0; fhas "$SPEC_CMD_F" 'Sonnet on the normal and backfill lanes, Opus on the full lane' || RC=1
+assert_eq "spec.md validator tier: Sonnet normal/backfill, Opus full" "0" "$RC"
+RC=0; fhas "$SPEC_CMD_F" 'Validate ran "APPROVED critical=0 warnings=<K> fresh agent=<id>"' && fhas "$SPEC_CMD_F" 'Validate skipped "NEEDS REVISION: <criticals>"' || RC=1
+assert_eq "spec.md: the lead records ran on APPROVED, skipped otherwise" "0" "$RC"
+RC=0; fhas "$SPEC_CMD_F" 'VALIDATE PENDING: <spec path>' || RC=1
+assert_eq "spec.md: no subagent tool stops with VALIDATE PENDING" "0" "$RC"
+RC=0; fhas "$SPEC_CMD_F" 'Remind the user they can run `/kit:spec-validate`' && RC=1
+assert_eq "spec.md: the validate reminder line is gone" "0" "$RC"
+S_SPECRAN=$(grep -n 'record <rid> Spec ran' "$SPEC_CMD_F" | head -1 | cut -d: -f1)
+S_DISPATCH=$(grep -n 'fresh-context `general-purpose` subagent' "$SPEC_CMD_F" | head -1 | cut -d: -f1)
+RC=0; [ -n "$S_SPECRAN" ] && [ -n "$S_DISPATCH" ] && [ "$S_DISPATCH" -gt "$S_SPECRAN" ] || RC=1
+assert_eq "spec.md dispatches the validator after recording Spec ran" "0" "$RC"
+RC=0; fhas "$EXEC_CMD_F" "grep -Eqi '\\| GATE \\| validate \\| (ran|override) \\|'" || RC=1
+assert_eq "execute.md preflight carries the exact passing-validate grep" "0" "$RC"
+E_RECHECK=$(grep -n '^### Spec->build lane re-check' "$EXEC_CMD_F" | cut -d: -f1)
+E_PRE=$(grep -n '^### Validation preflight' "$EXEC_CMD_F" | cut -d: -f1)
+RC=0; [ -n "$E_RECHECK" ] && [ -n "$E_PRE" ] && [ "$E_PRE" -gt "$E_RECHECK" ] || RC=1
+assert_eq "execute.md preflight sits after the lane re-check" "0" "$RC"
+RC=0; fhas "$EXEC_CMD_F" 'stops before task 1 with nothing folded' && fhas "$EXEC_CMD_F" 'Execute never builds a spec whose validation did not pass' || RC=1
+assert_eq "execute.md preflight: a critical stops before task 1" "0" "$RC"
+RC=0; fhas "$EXEC_CMD_F" 'outcome <rid> Validate end caught=true' || RC=1
+assert_eq "execute.md preflight: the stop path records and closes the bracket" "0" "$RC"
+RC=0; fhas "$WRAP_CMD_F" 'stops with `VALIDATE PENDING: <spec path>`' && fhas "$WRAP_CMD_F" 'SendMessage' && fhas "$WRAP_CMD_F" 'fresh builder' || RC=1
+assert_eq "wrap.md step 10 splits write and validate (VALIDATE PENDING, SendMessage, fresh builder)" "0" "$RC"
+RC=0; fhas "$WRAP_CMD_F" 'runs the `kit:spec-validate` lenses' && RC=1
+assert_eq "wrap.md: the self-run validate sentence is gone" "0" "$RC"
+RC=0; fhas "$WRAP_CMD_F" 'nothing is committed and the item stays' && RC=1
+assert_eq "wrap.md: the nothing-is-committed BLOCK sentence is gone" "0" "$RC"
+RC=0; fhas "$VALIDATE_CMD" 'On APPROVED only' && fhas "$VALIDATE_CMD" 'Validate skipped "NEEDS REVISION: <criticals>"' || RC=1
+assert_eq "spec-validate.md records ran on APPROVED only, skipped otherwise" "0" "$RC"
+RC=0; fhas "$VALIDATE_CMD" 'design-record skipped "critical: <finding>"' || RC=1
+assert_eq "spec-validate.md records a Reviewer 6 critical as design-record skipped" "0" "$RC"
+RC=0; fhas "$VALIDATE_CMD" 'Validate ran "<APPROVED|NEEDS REVISION>' && RC=1
+assert_eq "spec-validate.md no longer records ran on NEEDS REVISION" "0" "$RC"
+
 # ============================================================
 echo ""
 echo "=== Demo project (examples/hello-spec) ==="

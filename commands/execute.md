@@ -49,6 +49,21 @@ Advisory + recorded, not a hard block (per PHILOSOPHY): `escalate` always exits
 under-sized lane still surfaces later, the same place every other lane gap does
 (`hooks/ship-gate.sh` at push, `lib/telemetry/lane-telemetry.sh misfires` at `/kit:retro`).
 
+### Validation preflight
+
+Runs after the lane re-check above, so an escalation to `full` picks the Opus tier, and before task 1. This covers hand-written specs and specs from any path that skipped `/kit:spec`. Take the effective lane: the same `CURRENT_LANE` the re-check resolved (the spec's `Lane:` header, else the last START or START-AMEND line), after any escalation. On `normal`, `full`, or `backfill`, look for a passing validation under `$RID`:
+
+```bash
+bash lib/gate/gate-ledger.sh show "$RID" | grep -Eqi '\| GATE \| validate \| (ran|override) \|'
+```
+
+A match means the spec passed validation; go on. No match (no line, or only a `skipped` line from a failed validation) means execute dispatches the validator `/kit:spec` step 5 defines: the same fresh-context, read-only `general-purpose` subagent and prompt, Sonnet on normal and backfill, Opus on full, with the `Validate start` and `design-record start` brackets written before the dispatch. On the report:
+
+- **APPROVED:** the lead records per `/kit:spec` step 5, folds the warnings (warnings only) into the spec, flips Status to `VALIDATED`, and proceeds to task 1.
+- **Any critical, including a Reviewer 6 BLOCK:** execute stops before task 1 with nothing folded and asks the operator, because folding a critical is a scope call the loop must not make alone. On that stop it still records `bash lib/gate/gate-ledger.sh record <rid> Validate skipped "NEEDS REVISION: <criticals>"`, on a Reviewer 6 critical `bash lib/gate/gate-ledger.sh record <rid> design-record skipped "critical: <finding>"`, and closes the bracket with `bash lib/gate/gate-ledger.sh outcome <rid> Validate end caught=true` (and `design-record end caught=true` on a Reviewer 6 critical).
+
+Execute never builds a spec whose validation did not pass. The `tiny` and `bug` lanes carry no Validate step and skip the preflight.
+
 ### Context layer detection
 
 Check once before dispatching any tasks:

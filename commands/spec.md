@@ -271,8 +271,6 @@ Ask: "Approve this spec, or do you want to adjust anything?"
 
 When approved, update the Status line in SPEC.md to `APPROVED`.
 
-Remind the user they can run `/kit:spec-validate` for adversarial review before implementation.
-
 <!-- review-loop --> On the FULL lane, a design-time pass runs by default before
 validate, not on request: dispatch `/kit:devs-team` for design critique and the
 `kit:advisor` agent in over-suggest mode over the spec. This catches the class a code
@@ -286,3 +284,20 @@ After approval, record it for lane telemetry, one line:
 `bash lib/gate/gate-ledger.sh record <rid> Spec ran "SPEC-NNN-<slug> approved, tasks=<N>"`.
 
 Close the timing bracket: `bash lib/gate/gate-ledger.sh outcome <rid> Spec end` (this record only fires post-approval; no reject path lands here, so the verb's own `caught=false` default stands).
+
+### Step 5: fresh-context validation
+
+A spec is never validated by the agent that wrote it; a self-run pass is not validation. After step 4's approval, after the full lane's devs-team and advisor fold, and after `Spec ran` is recorded (so `descent` sees spec before validate), dispatch the validator. Open both timing brackets first, so `dur_s` measures the validation: `bash lib/gate/gate-ledger.sh outcome <rid> Validate start` and `bash lib/gate/gate-ledger.sh outcome <rid> design-record start`.
+
+**The validator** is one fresh-context `general-purpose` subagent (the read-only `kit:*` agent rosters carry no Skill tool), model Sonnet on the normal and backfill lanes, Opus on the full lane. Its prompt:
+
+> Validate `docs/specs/SPEC-NNN-<slug>.md` (this path, not the most recent spec). Invoke `kit:spec-validate` through the Skill tool, or the bare `spec-validate` skill if that is the installed name. Run every reviewer in one pass without pausing for input. READ-ONLY: report only. Do not edit any file, do not flip Status, do not call `gate-ledger.sh`. Return the full Spec Validation Report plus one Reviewer 6 line: `design-bearing=<yes|no> <pass|critical: <finding>>`.
+
+**The lead owns every record**, under the rid of the branch the spec lives on (`bash lib/gate/gate-ledger.sh rid` run inside that worktree, never the lead's own branch):
+
+- APPROVED: `bash lib/gate/gate-ledger.sh record <rid> Validate ran "APPROVED critical=0 warnings=<K> fresh agent=<id>"`, fold the warnings, and flip Status to `VALIDATED` under `/kit:spec-validate`'s own verdict rules.
+- NEEDS REVISION: fold the findings into the spec and dispatch the validator once more. Still not APPROVED: `bash lib/gate/gate-ledger.sh record <rid> Validate skipped "NEEDS REVISION: <criticals>"`, which the full lane's ship-gate refuses; Status stays `APPROVED` and the operator decides.
+- Reviewer 6: `bash lib/gate/gate-ledger.sh record <rid> design-record ran "design-bearing=<yes|no> pass"` on a pass; `bash lib/gate/gate-ledger.sh record <rid> design-record skipped "critical: <finding>"` on a critical, so the full lane's ship-gate refuses a blocked design.
+- Close both brackets: `bash lib/gate/gate-ledger.sh outcome <rid> Validate end caught=<true if any run returned a critical, else false>` and `bash lib/gate/gate-ledger.sh outcome <rid> design-record end caught=<true on a Reviewer 6 critical, else false>`.
+
+A validator that dies or times out records nothing; Status stays pre-`VALIDATED` and `/kit:execute`'s preflight dispatches again. An agent with no subagent tool commits the spec, records `Spec ran`, and stops with `VALIDATE PENDING: <spec path>` to whoever dispatched it.

@@ -1189,19 +1189,46 @@ assert_output_contains "plan: normal carries required spec" "3. spec            
 assert_output_contains "plan: normal prepends grill intake" "1. grill" "$(GL plan normal)"
 PLAN_TINY="$(GL plan tiny)"
 assert_output_not_contains "plan: tiny has no grill row" "grill" "$PLAN_TINY"
+# Validate is run-lite on normal and backfill (listed, advisory), absent on tiny and bug,
+# required on full; `required normal` stays spec/build/ship, so a normal ship never waits on it.
+assert_output_contains "plan: normal lists validate lite" "4. validate           lite" "$(GL plan normal)"
+assert_output_contains "plan: backfill lists validate lite" "4. validate           lite" "$(GL plan backfill)"
+assert_output_not_contains "plan: tiny has no validate" "validate" "$PLAN_TINY"
+assert_output_not_contains "plan: bug has no validate" "validate" "$(GL plan bug)"
+assert_output_contains "plan: full still requires validate" "validate           required" "$(GL plan full)"
+assert_output_not_contains "required: normal unchanged (no validate)" "validate" "$(GL required normal)"
+# a normal ship with spec, build, ship and no Validate line passes check
+GL record val-n spec ran "spec written"; GL record val-n build ran "built"; GL record val-n ship ran "pushed"
+DWARVES_KIT_LOG_DIR="$LT2_DIR" bash "$KIT_DIR/lib/gate/gate-ledger.sh" check normal val-n >/dev/null 2>&1
+assert_exit "check: normal ship without validate exits 0" 0 $?
+# a full run with every gate ran except a failed validation (skipped NEEDS REVISION) is refused
+for PH in think design design-critique spec design-record test-plan build review docs ship reflect; do GL record val-f "$PH" ran "done"; done
+GL record val-f validate skipped "NEEDS REVISION: critical=2"
+VAL_F_OUT="$(DWARVES_KIT_LOG_DIR="$LT2_DIR" bash "$KIT_DIR/lib/gate/gate-ledger.sh" check full val-f 2>&1)"; VAL_F_RC=$?
+assert_exit "check: full with Validate skipped exits 1" 1 "$VAL_F_RC"
+assert_output_contains "check: full names the missing validate gate" "MISSING-GATE: validate" "$VAL_F_OUT"
+# execute's preflight grep: a skipped validation does not count, ran and override do
+PREFLIGHT_RE='\| GATE \| validate \| (ran|override) \|'
+DWARVES_KIT_LOG_DIR="$LT2_DIR" bash "$KIT_DIR/lib/gate/gate-ledger.sh" show val-f | grep -Eqi "$PREFLIGHT_RE"
+assert_exit "preflight grep: a skipped validate line does not match (dispatch)" 1 $?
+GL record val-f validate ran "APPROVED critical=0 warnings=1 fresh agent=a1"
+DWARVES_KIT_LOG_DIR="$LT2_DIR" bash "$KIT_DIR/lib/gate/gate-ledger.sh" show val-f | grep -Eqi "$PREFLIGHT_RE"
+assert_exit "preflight grep: a ran validate line matches (no dispatch)" 0 $?
 # progress: plan x ledger; spec-p has grill+spec(+design-record) recorded -> step points at test-plan
 # (SPEC-122 adds a "Design record" row to the matrix, run-lite for normal lane, sitting
-# between spec and test-plan in plan order -- bumping the normal-lane plan from 8 to 9 steps)
+# between spec and test-plan in plan order -- bumping the normal-lane plan from 8 to 9 steps;
+# Validate run-lite on normal then adds a 10th step between spec and design-record)
 printf '2026-06-10T07:00:00Z | START | lane=normal classified=normal type=spec-feature ctype=spec-feature repo=kitA\n' > "$LT2_DIR/runs/spec-p.log"
 GL record spec-p grill ran "4 branches resolved"
 GL record spec-p think ran "intent confirmed"
 GL record spec-p spec ran "spec written"
+GL record spec-p validate ran "APPROVED critical=0 warnings=0 fresh agent=a0"
 GL record spec-p design-record ran "obvious: <why> collapse noted (SPEC-122)"
-assert_output_contains "progress: step k/n line" "spec-p · normal · step 5/9 (test-plan)" "$(GL progress spec-p normal)"
-assert_output_contains "progress: checklist marks" "✓grill ✓think ✓spec ✓design-record ▶test-plan" "$(GL progress spec-p normal)"
+assert_output_contains "progress: step k/n line" "spec-p · normal · step 6/10 (test-plan)" "$(GL progress spec-p normal)"
+assert_output_contains "progress: checklist marks" "✓grill ✓think ✓spec ✓validate ✓design-record ▶test-plan" "$(GL progress spec-p normal)"
 # a skipped-with-reason phase counts as disposed (not blocking the pointer)
 GL record spec-p test-plan skipped "lite lane, matrix in spec"
-assert_output_contains "progress: skipped-with-reason advances" "step 6/9 (build)" "$(GL progress spec-p normal)"
+assert_output_contains "progress: skipped-with-reason advances" "step 7/10 (build)" "$(GL progress spec-p normal)"
 # trace: header flags + humanized lines
 TRACE_OUT="$(DWARVES_KIT_LOG_DIR="$LT2_DIR" bash "$KIT_DIR/lib/telemetry/lane-telemetry.sh" trace bug-stampede 2>/dev/null)"
 assert_output_contains "trace: escaped-from indictment flagged" "<< indicts a shipped spec test plan" "$TRACE_OUT"
@@ -1209,12 +1236,12 @@ TRACE_MIS="$(DWARVES_KIT_LOG_DIR="$LT2_DIR" bash "$KIT_DIR/lib/telemetry/lane-te
 assert_output_contains "trace: type misfire flag survives ctype strip negative? no: clean run shows no flag" "type: spec-feature (classified: ?)" "$TRACE_MIS"
 # negative control: remove the spec record -> the pointer falls back to spec
 grep -v '| spec |' "$LT2_DIR/runs/spec-p.log" > "$LT2_DIR/runs/spec-p.log.tmp" && mv -f "$LT2_DIR/runs/spec-p.log.tmp" "$LT2_DIR/runs/spec-p.log"
-assert_output_contains "progress: negative control (spec record removed -> pointer moves back)" "step 3/9 (spec)" "$(GL progress spec-p normal)"
+assert_output_contains "progress: negative control (spec record removed -> pointer moves back)" "step 3/10 (spec)" "$(GL progress spec-p normal)"
 # a bare skip (no reason) does NOT dispose: the pointer stays (spec-faithful, review F1)
 GL record spec-p spec skipped
-assert_output_contains "progress: bare skip stays a gap" "step 3/9 (spec)" "$(GL progress spec-p normal)"
+assert_output_contains "progress: bare skip stays a gap" "step 3/10 (spec)" "$(GL progress spec-p normal)"
 GL record spec-p spec skipped "matrix in spec body"
-assert_output_contains "progress: reasoned skip disposes" "step 6/9 (build)" "$(GL progress spec-p normal)"
+assert_output_contains "progress: reasoned skip disposes" "step 7/10 (build)" "$(GL progress spec-p normal)"
 # trace: first START wins + multi-start advisory (review F2)
 printf '2026-06-10T06:00:00Z | START | lane=normal classified=full type=doc repo=kitA\n2026-06-10T06:05:00Z | START | lane=tiny classified=tiny type=doc repo=kitA\n' > "$LT2_DIR/runs/spec-2s.log"
 TRACE_2S="$(DWARVES_KIT_LOG_DIR="$LT2_DIR" bash "$KIT_DIR/lib/telemetry/lane-telemetry.sh" trace spec-2s 2>/dev/null)"

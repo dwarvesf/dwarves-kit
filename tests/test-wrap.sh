@@ -4005,7 +4005,7 @@ chk_has "step 10 keeps Needs-you class rows out" "$WRAP_MD" "is a \`Needs you\` 
 chk_has "step 10 runs full-lane items only in all mode" "$WRAP_MD" "(c) FULL, \`all\` mode only"
 chk_has "step 10 never merges a full-lane PR" "$WRAP_MD" "**Wrap never merges a full-lane PR, green or not.**"
 chk_has "step 10 says why a full-lane PR waits for the operator" "$WRAP_MD" "its design is the one thing the operator must see before it lands"
-chk_has "a design-record BLOCK stops a full-lane candidate" "$WRAP_MD" "reported: spec-validate BLOCK: <finding>"
+chk_has "a spec-validate BLOCK or second NEEDS REVISION stops a full-lane candidate" "$WRAP_MD" "reported: spec-validate BLOCK|NEEDS REVISION: <criticals>"
 chk_has "step 10 keeps the own-PR refusal" "$WRAP_MD" "Every refusal above step 10 still holds: never merge a PR the operator did not open, never force-push"
 # Step 0's stop protects the main checkout. Two real sessions read "leave that repo alone" as
 # "build nothing there" and reported in-lane candidates that a worktree build never touches.
