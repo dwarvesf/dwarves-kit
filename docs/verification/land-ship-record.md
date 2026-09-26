@@ -1,6 +1,6 @@
 # Proof of done: wrap land records the ship gate
 
-2026-09-26. Spec: `docs/specs/SPEC-315-land-ship-record.md`. Lane: full. Files: `lib/wrap/wrap.sh`, `tests/test-wrap.sh`, `commands/wrap.md`, `docs/CHANGELOG.md`, `docs/FEATURES.md` (regenerated), this file.
+2026-09-26. Spec: `docs/specs/SPEC-317-land-ship-record.md`. Lane: full. Files: `lib/wrap/wrap.sh`, `tests/test-wrap.sh`, `commands/wrap.md`, `docs/CHANGELOG.md`, `docs/FEATURES.md` (regenerated), this file.
 
 Acceptance: once `cmd_land`'s tree-verify reads `OK`, `land` derives the landed branch's rid via the existing `gate-ledger.sh rid` verb, records `Ship ran "shipping pr=#<n>"` only when that rid already has a run ledger, and never fails the land when the derive or the record itself fails.
 

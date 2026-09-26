@@ -1,4 +1,4 @@
-# SPEC-315: wrap land records the ship gate
+# SPEC-317: wrap land records the ship gate
 
 **Status:** VALIDATED (the change lands in the same PR)
 Lane: full

@@ -1,11 +1,11 @@
-# Impl notes: land-ship-record (SPEC-315)
+# Impl notes: land-ship-record (SPEC-317)
 
 Delta from the spec. Only off-spec calls live here.
 
 ## Comment wording changed after the run-all `test-no-scattered-ids` lint
 
 The first implementation pass named the spec inline in two `lib/wrap/wrap.sh` comments
-(`ship-gate record (SPEC-315): ...`). `tests/run-all.sh --changed` failed `test-no-scattered-ids`:
+(`ship-gate record (SPEC-317): ...`). `tests/run-all.sh --changed` failed `test-no-scattered-ids`:
 `lib/` is a scanned zone, and a spec id in a `lib/` comment is not one of the sanctioned
 homes (CONTRIBUTING.md "Where an ID may appear"). Reworded both comments to state the
 behavior plainly with no id, matching the estate-wide "state the thing plainly, git tracks
