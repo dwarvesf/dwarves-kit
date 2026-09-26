@@ -56,8 +56,38 @@ Verdict: PASS
 | plan-record refusal | `test-gate-ledger-plan-record.sh` C14 (exit 64 naming validate; exit 0 with a disposition) | plan-record green |
 | Tiny, bug untouched | `test-hooks.sh` `plan: tiny has no validate`, `plan: bug has no validate` | test-hooks green |
 | Commands wired | `test-meta.sh` spec.md dispatch, prompt, tier, records, `VALIDATE PENDING`, order after `Spec ran`, reminder absent; execute.md grep, placement, stop, records; wrap.md split, both old sentences absent | test-meta green; test-wrap green on the new `reported:` literal |
-| Live | `/kit:spec` on a throwaway idea in this worktree | [PENDING: lead runs /kit:spec live] |
+| Live | `/kit:spec` on a throwaway idea in this worktree | recorded below (2026-09-26) |
+
+## Live run (2026-09-26)
+
+The lead ran the fresh-context dispatch against a scratch git repo (not this worktree), branch `feat/live-probe` (rid `live-probe`), holding a short-lived fixture spec at `docs/specs/SPEC-001-flag-rename.md`, with a scratch `KIT_LEDGER_DIR` pointed away from any real ledger. The lead recorded `Spec ran`, opened both timing brackets, and dispatched one fresh `general-purpose` subagent, model Sonnet, with `commands/spec.md` step 5's prompt verbatim (the spec path substituted).
+
+The validator reported `invoked: kit:spec-validate`, verdict APPROVED (0 critical, 3 warnings), `design-bearing=no pass`, and left the scratch tree clean: `git status --porcelain` showed only the lead's own `ledger/`, no edits to the fixture spec, no Status flip. The lead then recorded per step 5. The scratch ledger read:
+
+```
+| GATE | spec | ran | SPEC-001-flag-rename approved, tasks=1
+| OUTCOME | validate | start
+| OUTCOME | design-record | start
+| GATE | validate | ran | APPROVED critical=0 warnings=3 fresh agent=<id>
+| GATE | design-record | ran | design-bearing=no pass
+| OUTCOME | validate | end | caught=false dur_s=74
+| OUTCOME | design-record | end | caught=false dur_s=74
+```
+
+and the (then-current) preflight grep matched: execute would not have re-dispatched.
+
+**Limit:** this ran against the installed plugin's `spec-validate` (master text, unpatched); the dispatch prompt and the ledger records above are this branch's own `commands/spec.md` step 5 text. The reviewer content itself is not proof of this branch's `spec-validate.md` wording, only of the dispatch/record wiring.
+
+**Preflight re-check with the NEW last-line grep (fix 1).** Reproduced the same ledger shape above in a fresh temp `KIT_LEDGER_DIR` (`gate-ledger.sh record`/`outcome` calls matching each line), then ran the exact new grep from `commands/execute.md`:
+
+```
+$ bash lib/gate/gate-ledger.sh show live-probe | grep -Ei '\| GATE \| validate \| ' | tail -1 | grep -Eq '\| (ran|override) \|'
+$ echo $?
+0
+```
+
+Exit 0: the last `validate` GATE line is `ran`, the grep matches, execute would not re-dispatch. Consistent with the recorded run.
 
 ## Limits
 
-The command prose is checked by grep, not by running an agent. The Live row is the only behavioral check of the dispatch and is the lead's to run.
+The command prose is checked by grep, not by running an agent. The Live row above is the only behavioral check of the dispatch, and was the lead's to run; the preflight-regex re-check above is a mechanical replay of that same ledger shape under the fixed grep.

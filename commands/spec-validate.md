@@ -8,11 +8,11 @@ Dispatched as a READ-ONLY validator (the prompt says so, as `/kit:spec` step 5 a
 
 ## The 7 reviewers
 
-Bracket both phases this lane owns for timing, before running Reviewer 1:
+Bracket both phases this lane owns for timing, before running Reviewer 1 (skip when dispatched READ-ONLY; the lead already opened both brackets before the dispatch):
 `bash lib/gate/gate-ledger.sh outcome <rid> Validate start` and
 `bash lib/gate/gate-ledger.sh outcome <rid> design-record start`.
 
-Run each reviewer sequentially. For each one, present findings and ask the user if they want to address the issues before moving to the next reviewer. Reviewers 1-5 and 7 are advisory; Reviewer 6 (below) is the one exception that can block the `VALIDATED` flip.
+Run each reviewer sequentially. For each one, present findings and ask the user if they want to address the issues before moving to the next reviewer (skip when dispatched READ-ONLY). Reviewers 1-5 and 7 are advisory; Reviewer 6 (below) is the one exception that can block the `VALIDATED` flip.
 
 ### Reviewer 1: Security Auditor
 Look for:

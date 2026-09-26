@@ -296,7 +296,7 @@ A spec is never validated by the agent that wrote it; a self-run pass is not val
 **The lead owns every record**, under the rid of the branch the spec lives on (`bash lib/gate/gate-ledger.sh rid` run inside that worktree, never the lead's own branch):
 
 - APPROVED: `bash lib/gate/gate-ledger.sh record <rid> Validate ran "APPROVED critical=0 warnings=<K> fresh agent=<id>"`, fold the warnings, and flip Status to `VALIDATED` under `/kit:spec-validate`'s own verdict rules.
-- NEEDS REVISION: fold the findings into the spec and dispatch the validator once more. Still not APPROVED: `bash lib/gate/gate-ledger.sh record <rid> Validate skipped "NEEDS REVISION: <criticals>"`, which the full lane's ship-gate refuses; Status stays `APPROVED` and the operator decides.
+- NEEDS REVISION: fold the warnings silently; fold the criticals into the spec, then show the folded criticals to the operator (present in `/kit:spec`, unlike execute's preflight or a wrap step-10 worker) for re-approval before dispatching the validator once more. Still not APPROVED: `bash lib/gate/gate-ledger.sh record <rid> Validate skipped "NEEDS REVISION: <criticals>"`, which the full lane's ship-gate refuses; Status stays `APPROVED` and the operator decides.
 - Reviewer 6: `bash lib/gate/gate-ledger.sh record <rid> design-record ran "design-bearing=<yes|no> pass"` on a pass; `bash lib/gate/gate-ledger.sh record <rid> design-record skipped "critical: <finding>"` on a critical, so the full lane's ship-gate refuses a blocked design.
 - Close both brackets: `bash lib/gate/gate-ledger.sh outcome <rid> Validate end caught=<true if any run returned a critical, else false>` and `bash lib/gate/gate-ledger.sh outcome <rid> design-record end caught=<true on a Reviewer 6 critical, else false>`.
 

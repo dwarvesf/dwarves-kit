@@ -1207,13 +1207,28 @@ GL record val-f validate skipped "NEEDS REVISION: critical=2"
 VAL_F_OUT="$(DWARVES_KIT_LOG_DIR="$LT2_DIR" bash "$KIT_DIR/lib/gate/gate-ledger.sh" check full val-f 2>&1)"; VAL_F_RC=$?
 assert_exit "check: full with Validate skipped exits 1" 1 "$VAL_F_RC"
 assert_output_contains "check: full names the missing validate gate" "MISSING-GATE: validate" "$VAL_F_OUT"
-# execute's preflight grep: a skipped validation does not count, ran and override do
-PREFLIGHT_RE='\| GATE \| validate \| (ran|override) \|'
-DWARVES_KIT_LOG_DIR="$LT2_DIR" bash "$KIT_DIR/lib/gate/gate-ledger.sh" show val-f | grep -Eqi "$PREFLIGHT_RE"
+# execute's preflight grep: the LAST validate GATE line wins, so a newer failed
+# validation is never masked by an older pass (code review, 2026-09-26)
+preflight_last() {
+  DWARVES_KIT_LOG_DIR="$LT2_DIR" bash "$KIT_DIR/lib/gate/gate-ledger.sh" show "$1" \
+    | grep -Ei '\| GATE \| validate \| ' | tail -1 | grep -Eq '\| (ran|override) \|'
+}
+preflight_last val-f
 assert_exit "preflight grep: a skipped validate line does not match (dispatch)" 1 $?
 GL record val-f validate ran "APPROVED critical=0 warnings=1 fresh agent=a1"
-DWARVES_KIT_LOG_DIR="$LT2_DIR" bash "$KIT_DIR/lib/gate/gate-ledger.sh" show val-f | grep -Eqi "$PREFLIGHT_RE"
+preflight_last val-f
 assert_exit "preflight grep: a ran validate line matches (no dispatch)" 0 $?
+GL record val-order validate ran "APPROVED critical=0 warnings=0 fresh agent=a2"
+GL record val-order validate skipped "NEEDS REVISION: critical=1"
+preflight_last val-order
+assert_exit "preflight grep: ran then skipped -> last line wins, dispatch" 1 $?
+GL record val-order2 validate skipped "NEEDS REVISION: critical=1"
+GL record val-order2 validate ran "APPROVED critical=0 warnings=0 fresh agent=a3"
+preflight_last val-order2
+assert_exit "preflight grep: skipped then ran -> last line wins, no dispatch" 0 $?
+GL record val-order3 validate ran "APPROVED critical=0 warnings=0 fresh agent=a4"
+preflight_last val-order3
+assert_exit "preflight grep: only ran -> no dispatch" 0 $?
 # progress: plan x ledger; spec-p has grill+spec(+design-record) recorded -> step points at test-plan
 # (SPEC-122 adds a "Design record" row to the matrix, run-lite for normal lane, sitting
 # between spec and test-plan in plan order -- bumping the normal-lane plan from 8 to 9 steps;

@@ -1249,8 +1249,8 @@ S_SPECRAN=$(grep -n 'record <rid> Spec ran' "$SPEC_CMD_F" | head -1 | cut -d: -f
 S_DISPATCH=$(grep -n 'fresh-context `general-purpose` subagent' "$SPEC_CMD_F" | head -1 | cut -d: -f1)
 RC=0; [ -n "$S_SPECRAN" ] && [ -n "$S_DISPATCH" ] && [ "$S_DISPATCH" -gt "$S_SPECRAN" ] || RC=1
 assert_eq "spec.md dispatches the validator after recording Spec ran" "0" "$RC"
-RC=0; fhas "$EXEC_CMD_F" "grep -Eqi '\\| GATE \\| validate \\| (ran|override) \\|'" || RC=1
-assert_eq "execute.md preflight carries the exact passing-validate grep" "0" "$RC"
+RC=0; fhas "$EXEC_CMD_F" "grep -Ei '\\| GATE \\| validate \\| ' | tail -1 | grep -Eq '\\| (ran|override) \\|'" || RC=1
+assert_eq "execute.md preflight carries the exact last-line-wins validate grep" "0" "$RC"
 E_RECHECK=$(grep -n '^### Spec->build lane re-check' "$EXEC_CMD_F" | cut -d: -f1)
 E_PRE=$(grep -n '^### Validation preflight' "$EXEC_CMD_F" | cut -d: -f1)
 RC=0; [ -n "$E_RECHECK" ] && [ -n "$E_PRE" ] && [ "$E_PRE" -gt "$E_RECHECK" ] || RC=1

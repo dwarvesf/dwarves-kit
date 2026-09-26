@@ -51,16 +51,16 @@ under-sized lane still surfaces later, the same place every other lane gap does
 
 ### Validation preflight
 
-Runs after the lane re-check above, so an escalation to `full` picks the Opus tier, and before task 1. This covers hand-written specs and specs from any path that skipped `/kit:spec`. Take the effective lane: the same `CURRENT_LANE` the re-check resolved (the spec's `Lane:` header, else the last START or START-AMEND line), after any escalation. On `normal`, `full`, or `backfill`, look for a passing validation under `$RID`:
+Runs after the lane re-check above, so an escalation to `full` picks the Opus tier, and before task 1. This covers hand-written specs and specs from any path that skipped `/kit:spec`. Take the effective lane: the same `CURRENT_LANE` the re-check resolved (the spec's `Lane:` header, else the last START or START-AMEND line), after any escalation. On `normal`, `full`, or `backfill`, look for a passing validation under `$RID`, the LAST `validate` GATE line, so a newer failed validation is never masked by an older pass:
 
 ```bash
-bash lib/gate/gate-ledger.sh show "$RID" | grep -Eqi '\| GATE \| validate \| (ran|override) \|'
+bash lib/gate/gate-ledger.sh show "$RID" | grep -Ei '\| GATE \| validate \| ' | tail -1 | grep -Eq '\| (ran|override) \|'
 ```
 
-A match means the spec passed validation; go on. No match (no line, or only a `skipped` line from a failed validation) means execute dispatches the validator `/kit:spec` step 5 defines: the same fresh-context, read-only `general-purpose` subagent and prompt, Sonnet on normal and backfill, Opus on full, with the `Validate start` and `design-record start` brackets written before the dispatch. On the report:
+A match means the spec passed validation; go on. No match (no line, or the last validate line is a `skipped` from a failed validation) means execute dispatches the validator `/kit:spec` step 5 defines: the same fresh-context, read-only `general-purpose` subagent and prompt, Sonnet on normal and backfill, Opus on full, with `bash lib/gate/gate-ledger.sh outcome <rid> Validate start` and `bash lib/gate/gate-ledger.sh outcome <rid> design-record start` written before the dispatch. On the report:
 
 - **APPROVED:** the lead records per `/kit:spec` step 5, folds the warnings (warnings only) into the spec, flips Status to `VALIDATED`, and proceeds to task 1.
-- **Any critical, including a Reviewer 6 BLOCK:** execute stops before task 1 with nothing folded and asks the operator, because folding a critical is a scope call the loop must not make alone. On that stop it still records `bash lib/gate/gate-ledger.sh record <rid> Validate skipped "NEEDS REVISION: <criticals>"`, on a Reviewer 6 critical `bash lib/gate/gate-ledger.sh record <rid> design-record skipped "critical: <finding>"`, and closes the bracket with `bash lib/gate/gate-ledger.sh outcome <rid> Validate end caught=true` (and `design-record end caught=true` on a Reviewer 6 critical).
+- **Any critical, including a Reviewer 6 BLOCK:** execute stops before task 1 with nothing folded and asks the operator, because folding a critical is a scope call the loop must not make alone. On that stop it still records `bash lib/gate/gate-ledger.sh record <rid> Validate skipped "NEEDS REVISION: <criticals>"`. On a Reviewer 6 critical, record `bash lib/gate/gate-ledger.sh record <rid> design-record skipped "critical: <finding>"`; otherwise Reviewer 6 passed, so record `bash lib/gate/gate-ledger.sh record <rid> design-record ran "design-bearing=<yes|no> pass"`. Always close both brackets: `bash lib/gate/gate-ledger.sh outcome <rid> Validate end caught=true` and `bash lib/gate/gate-ledger.sh outcome <rid> design-record end caught=<true only on a Reviewer 6 critical, else false>`.
 
 Execute never builds a spec whose validation did not pass. The `tiny` and `bug` lanes carry no Validate step and skip the preflight.
 
