@@ -1,6 +1,6 @@
 # Proof of done: a repeatable treatment-vs-control eval for prompt-only lenses
 
-2026-09-26. Spec: `docs/specs/SPEC-315-prompt-lens-eval.md`. Lane: full. Files: `lib/bench/lens-eval.sh`, `tests/test-lens-eval.sh`, `tests/fixtures/sustainability-lens/lens-eval.json`, `lib/bench/README.md`, `lib/bench/tool.toml`, `docs/CHANGELOG.md`, `docs/FEATURES.md` (regenerated), `docs/implementation-notes/prompt-lens-eval.md`, this file.
+2026-09-26. Spec: `docs/specs/SPEC-316-prompt-lens-eval.md`. Lane: full. Files: `lib/bench/lens-eval.sh`, `tests/test-lens-eval.sh`, `tests/fixtures/sustainability-lens/lens-eval.json`, `lib/bench/README.md`, `lib/bench/tool.toml`, `docs/CHANGELOG.md`, `docs/FEATURES.md` (regenerated), `docs/implementation-notes/prompt-lens-eval.md`, this file.
 
 Acceptance: one command reruns the SPEC-314 hand eval. It prints a per-case, per-signal table and a verdict, keeps every raw report, and spends nothing without `--live`.
 

@@ -1,6 +1,6 @@
 # Implementation notes: prompt-lens-eval
 
-Spec: `docs/specs/SPEC-315-prompt-lens-eval.md`. Delta from the spec only.
+Spec: `docs/specs/SPEC-316-prompt-lens-eval.md`. Delta from the spec only.
 
 | Kind | Note |
 |---|---|

@@ -237,7 +237,7 @@ structural tests cannot show that a changed lens finds anything new.
 `lens-eval.sh` runs the lens twice per fixture spec: the working-tree text
 (treatment) and the same file at a base ref (control), through headless
 `claude -p --safe-mode --tools ""`. It then greps each saved report for the
-case file's signals. Spec: `docs/specs/SPEC-315-prompt-lens-eval.md`.
+case file's signals. Spec: `docs/specs/SPEC-316-prompt-lens-eval.md`.
 
 ```sh
 # dry run: prints the call count, spends nothing, exits 3

@@ -1,6 +1,6 @@
 #!/bin/bash
 # test-lens-eval.sh -- Proves lib/bench/lens-eval.sh, the treatment-vs-control eval for a
-# prompt-only lens (SPEC-315).
+# prompt-only lens (SPEC-316).
 #
 # Fully offline: a stub `claude` first on PATH answers from the prompt it reads on stdin. A
 # prompt carrying `### Reviewer 7` gets a report with Reviewer 7 findings; one without gets a

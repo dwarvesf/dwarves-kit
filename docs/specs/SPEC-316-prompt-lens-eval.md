@@ -1,4 +1,4 @@
-# SPEC-315: a repeatable treatment-vs-control eval for prompt-only lenses
+# SPEC-316: a repeatable treatment-vs-control eval for prompt-only lenses
 
 **Status:** VALIDATED
 Lane: full
