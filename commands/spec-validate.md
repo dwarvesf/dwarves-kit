@@ -98,7 +98,9 @@ Reviewers 1-6 judge the design on the day it ships. This lens asks what it costs
    service, or deploy target; a data store outside the repo; a new external dependency
    (package, vendor API, fork, or local patch); a credential; or per-use paid calls. An edit to
    an in-repo hook, script, or ledger that the repo's own tests already cover is not long-lived.
-2. **If NOT long-lived:** one line, `not long-lived: <why>`, and no findings.
+2. **If NOT long-lived:** one line, `not long-lived: <why>`, filed under `## Passed`, and
+   nothing else from this reviewer anywhere in Critical Issues or Warnings, solo or co-tagged
+   onto another reviewer's finding, even about retirement, rotation, or lifespan.
 3. **If long-lived:** ask five questions. A missing or hand-waved answer is a warning.
    - **Run cost:** what does it cost per month at expected load (infra, API calls, model
      tokens, quota), and is any cost path unbounded, such as a paid call per item with no cap?
