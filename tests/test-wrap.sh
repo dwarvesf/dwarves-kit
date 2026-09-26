@@ -37,6 +37,13 @@ trap 'chmod -R u+w "$TMPD" 2>/dev/null; rm -rf "$TMPD"' EXIT
 # ~/.config/dwarves-kit/kit.toml can never reach a case that does not set it deliberately.
 KIT_CONFIG_OPERATOR="$TMPD/no-operator-config"; export KIT_CONFIG_OPERATOR
 
+# Pin the gate-ledger root at a scratch dir: `land`'s ship-gate record is the first
+# thing in this file that calls gate-ledger.sh, so every `$WRAP` call below now shells out to
+# it. Without this, that call would resolve the real machine's ~/.local/state/dwarves-kit/logs
+# corpus instead of a throwaway one.
+KIT_LEDGER_DIR="$TMPD/ledger"; export KIT_LEDGER_DIR
+GATE_LEDGER="$KIT_DIR/lib/gate/gate-ledger.sh"
+
 # --------------------------------------------------------------------------- gh stub
 mkdir -p "$TMPD/stub"
 cat > "$TMPD/stub/gh" <<'STUB'
@@ -2311,15 +2318,15 @@ echo "=== land: one hand-made worktree, from a committed branch to landed ==="
 # ===========================================================================
 # Real git throughout, `gh` stubbed: the push, the fast-forward, the worktree removal and
 # the branch delete are the subject, so nothing about the tree state is faked.
-build_land() { # build_land <name> [--modify-base]
-  local name="$1" mode="${2:-}" work="$TMPD/ld-work-$1" repo="$TMPD/ld-repo-$1"
+build_land() { # build_land <name> [--modify-base] [branch]
+  local name="$1" mode="${2:-}" branch="${3:-feat/land}" work="$TMPD/ld-work-$1" repo="$TMPD/ld-repo-$1"
   mkdir -p "$work"; git -C "$work" init -q; gitc "$work"
   git -C "$work" symbolic-ref HEAD refs/heads/main
   echo base > "$work/base.txt"; git -C "$work" add -A; git -C "$work" commit -qm base
   git clone -q --bare "$work" "$TMPD/ld-bare-$name"
   git clone -q "$TMPD/ld-bare-$name" "$repo"; gitc "$repo"
   git -C "$repo" remote set-head origin main >/dev/null 2>&1
-  git -C "$repo" worktree add -q -b feat/land "$repo/wt" main >/dev/null 2>&1
+  git -C "$repo" worktree add -q -b "$branch" "$repo/wt" main >/dev/null 2>&1
   if [ "$mode" = "--modify-base" ]; then
     echo "branch edit" > "$repo/wt/base.txt"
   else
@@ -2438,6 +2445,124 @@ echo "--- the usage text and the command doc name the verb"
 chk_has "wrap --help names land" "$("$WRAP" --help 2>&1)" "wrap.sh land  <worktree>"
 chk_has "commands/wrap.md names land for a hand-made worktree" "$(cat "$KIT_DIR/commands/wrap.md")" \
   "bin/wrap land <worktree>"
+
+echo "--- ship-gate record: a rid with a prior ledger gets the Ship gate recorded"
+build_land shiprec "" feat/shiprec
+LWT_SR="$(cd "$TMPD/ld-repo-shiprec/wt" && pwd -P)"
+bash "$GATE_LEDGER" record shiprec spec ran "spec cycle for the land test" >/dev/null
+: > "$GH_STUB_CALLS"
+out="$(GH_STUB_OPEN_PRS='[]' GH_STUB_CREATE_NUM=61 GH_STUB_LAND_REPO="$LWT_SR" GH_STUB_LAND_REMOTE="$TMPD/ld-bare-shiprec" \
+  GH_STUB_LAND_BRANCH=feat/shiprec GH_STUB_LAND_DEF=main "$WRAP" land "$LWT_SR" 2>&1)"; rc=$?
+chk "ship-gate record: land still exits 0" "$([ "$rc" -eq 0 ]; echo $?)"
+chk_has "ship-gate record: land reports the record" "$out" "recorded ship gate for shiprec (pr=#61)"
+chk_has "ship-gate record: the ledger gained the Ship line" \
+  "$(cat "$KIT_LEDGER_DIR/runs/shiprec.log")" "| GATE | ship | ran | shipping pr=#61"
+
+echo "--- ship-gate record: a rid with no prior ledger writes nothing"
+build_land noship "" feat/noship
+LWT_NS="$(cd "$TMPD/ld-repo-noship/wt" && pwd -P)"
+[ ! -f "$KIT_LEDGER_DIR/runs/noship.log" ] || rm -f "$KIT_LEDGER_DIR/runs/noship.log"
+: > "$GH_STUB_CALLS"
+out="$(GH_STUB_OPEN_PRS='[]' GH_STUB_CREATE_NUM=62 GH_STUB_LAND_REPO="$LWT_NS" GH_STUB_LAND_REMOTE="$TMPD/ld-bare-noship" \
+  GH_STUB_LAND_BRANCH=feat/noship GH_STUB_LAND_DEF=main "$WRAP" land "$LWT_NS" 2>&1)"; rc=$?
+chk "ship-gate record: no-prior-ledger land still exits 0" "$([ "$rc" -eq 0 ]; echo $?)"
+chk_no "ship-gate record: no-prior-ledger land reports no record" "$out" "recorded ship gate"
+chk_no "ship-gate record: no-prior-ledger land reports no failure" "$out" "ship-gate record FAILED"
+chk "ship-gate record: no-prior-ledger land created no ledger file" \
+  "$([ ! -f "$KIT_LEDGER_DIR/runs/noship.log" ]; echo $?)"
+
+echo "--- ship-gate record: a record failure never fails the land"
+build_land shipfail "" feat/shipfail
+LWT_SF="$(cd "$TMPD/ld-repo-shipfail/wt" && pwd -P)"
+bash "$GATE_LEDGER" record shipfail spec ran "spec cycle for the land test" >/dev/null
+chmod 444 "$KIT_LEDGER_DIR/runs/shipfail.log"
+: > "$GH_STUB_CALLS"
+out="$(GH_STUB_OPEN_PRS='[]' GH_STUB_CREATE_NUM=63 GH_STUB_LAND_REPO="$LWT_SF" GH_STUB_LAND_REMOTE="$TMPD/ld-bare-shipfail" \
+  GH_STUB_LAND_BRANCH=feat/shipfail GH_STUB_LAND_DEF=main "$WRAP" land "$LWT_SF" 2>&1)"; rc=$?
+chmod 644 "$KIT_LEDGER_DIR/runs/shipfail.log" 2>/dev/null || true
+chk "ship-gate record: a record failure still exits 0" "$([ "$rc" -eq 0 ]; echo $?)"
+chk_has "ship-gate record: a record failure names the rid and PR" "$out" \
+  "ship-gate record FAILED for shipfail (pr=#63):"
+chk_has "ship-gate record: a record failure captures the stderr" "$out" "Permission denied"
+chk_has "ship-gate record: a record failure names the manual command" "$out" \
+  "record it by hand: bash ${GATE_LEDGER} record shipfail Ship ran \"shipping pr=#63 via=land\""
+chk "ship-gate record: the land still tidied despite the record failure" \
+  "$([ ! -e "$LWT_SF" ]; echo $?)"
+
+echo "--- ship-gate record: the recorded line is tagged via=land (distinguishable from a gated push)"
+chk_has "ship-gate record: the ledger line carries via=land" \
+  "$(cat "$KIT_LEDGER_DIR/runs/shiprec.log")" "| GATE | ship | ran | shipping pr=#61 via=land"
+chk_has "ship-gate record: /kit:wrap step 8's anchored grep still matches it" \
+  "$(cat "$KIT_LEDGER_DIR/runs/shiprec.log")" "shipping pr=#61 "
+
+echo "--- ship-gate record: a nested branch lands under gate-ledger.sh's own rid"
+build_land nested "" feat/a/b
+LWT_NST="$(cd "$TMPD/ld-repo-nested/wt" && pwd -P)"
+NESTED_RID="$(cd "$LWT_NST" && bash "$GATE_LEDGER" rid)"
+chk "ship-gate record: nested branch feat/a/b rids to a-b" "$([ "$NESTED_RID" = "a-b" ]; echo $?)"
+bash "$GATE_LEDGER" record "$NESTED_RID" spec ran "spec cycle for the land test" >/dev/null
+: > "$GH_STUB_CALLS"
+out="$(GH_STUB_OPEN_PRS='[]' GH_STUB_CREATE_NUM=64 GH_STUB_LAND_REPO="$LWT_NST" GH_STUB_LAND_REMOTE="$TMPD/ld-bare-nested" \
+  GH_STUB_LAND_BRANCH=feat/a/b GH_STUB_LAND_DEF=main "$WRAP" land "$LWT_NST" 2>&1)"; rc=$?
+chk "ship-gate record: a nested-branch land still exits 0" "$([ "$rc" -eq 0 ]; echo $?)"
+chk_has "ship-gate record: nested branch reports the rid it actually used" "$out" \
+  "recorded ship gate for ${NESTED_RID} (pr=#64)"
+chk_has "ship-gate record: the nested rid's ledger gained the Ship line" \
+  "$(cat "$KIT_LEDGER_DIR/runs/${NESTED_RID}.log")" "| GATE | ship | ran | shipping pr=#64 via=land"
+
+echo "--- ship-gate record: a TREE MISMATCH never records, even with a prior ledger"
+build_land mismatch "" feat/mismatch
+LWT_MM="$(cd "$TMPD/ld-repo-mismatch/wt" && pwd -P)"
+bash "$GATE_LEDGER" record mismatch spec ran "spec cycle for the land test" >/dev/null
+MMWORK="$TMPD/ld-mismatch-squash"
+git clone -q "$TMPD/ld-bare-mismatch" "$MMWORK"; gitc "$MMWORK"
+echo "stale change" > "$MMWORK/pr-file.txt"
+git -C "$MMWORK" add -A; git -C "$MMWORK" commit -qm "squash: stale head"
+git -C "$MMWORK" push -q origin main
+MM_SHA="$(git -C "$MMWORK" rev-parse HEAD)"
+: > "$GH_STUB_CALLS"
+out="$(GH_STUB_OPEN_PRS='[]' GH_STUB_CREATE_NUM=70 \
+  GH_STUB_VIEW_STATE="{\"state\":\"MERGED\",\"mergeCommit\":{\"oid\":\"${MM_SHA}\"}}" \
+  "$WRAP" land "$LWT_MM" 2>&1)"; rc=$?
+chk "ship-gate record: a MISMATCH land exits 3" "$([ "$rc" -eq 3 ]; echo $?)"
+chk_has "ship-gate record: the mismatch is reported" "$out" "TREE MISMATCH"
+chk_no "ship-gate record: a MISMATCH never reports a record" "$out" "recorded ship gate"
+chk_has "ship-gate record: the mismatch ledger keeps only the seeded line" \
+  "$(cat "$KIT_LEDGER_DIR/runs/mismatch.log")" "spec cycle for the land test"
+chk_no "ship-gate record: the mismatch ledger gained no Ship line" \
+  "$(cat "$KIT_LEDGER_DIR/runs/mismatch.log")" "| GATE | ship |"
+
+echo "--- ship-gate record: a ledger already naming this PR skips as idempotent"
+build_land samepr "" feat/samepr
+LWT_SP="$(cd "$TMPD/ld-repo-samepr/wt" && pwd -P)"
+bash "$GATE_LEDGER" record samepr Ship ran "shipping pr=#71 via=land" >/dev/null
+: > "$GH_STUB_CALLS"
+out="$(GH_STUB_OPEN_PRS='[]' GH_STUB_CREATE_NUM=71 GH_STUB_LAND_REPO="$LWT_SP" GH_STUB_LAND_REMOTE="$TMPD/ld-bare-samepr" \
+  GH_STUB_LAND_BRANCH=feat/samepr GH_STUB_LAND_DEF=main "$WRAP" land "$LWT_SP" 2>&1)"; rc=$?
+chk "ship-gate record: the idempotent same-PR case still exits 0" "$([ "$rc" -eq 0 ]; echo $?)"
+chk_has "ship-gate record: the idempotent case reports why it skipped" "$out" \
+  "ship gate for samepr already names pr=#71; skipping (already recorded)"
+chk_no "ship-gate record: the idempotent case never reports a fresh record" "$out" "recorded ship gate"
+chk "ship-gate record: the idempotent case wrote no second Ship line" \
+  "$([ "$(grep -c '| GATE | ship |' "$KIT_LEDGER_DIR/runs/samepr.log")" -eq 1 ]; echo $?)"
+
+echo "--- ship-gate record: a reused slug naming a different PR skips, never overwrites"
+build_land typo "" feat/typo
+LWT_TY="$(cd "$TMPD/ld-repo-typo/wt" && pwd -P)"
+bash "$GATE_LEDGER" record typo Ship ran "shipping pr=#80 via=land" >/dev/null
+: > "$GH_STUB_CALLS"
+out="$(GH_STUB_OPEN_PRS='[]' GH_STUB_CREATE_NUM=81 GH_STUB_LAND_REPO="$LWT_TY" GH_STUB_LAND_REMOTE="$TMPD/ld-bare-typo" \
+  GH_STUB_LAND_BRANCH=feat/typo GH_STUB_LAND_DEF=main "$WRAP" land "$LWT_TY" 2>&1)"; rc=$?
+chk "ship-gate record: the reused-slug case still exits 0" "$([ "$rc" -eq 0 ]; echo $?)"
+chk_has "ship-gate record: the reused-slug case names the mismatch" "$out" \
+  "ship gate for typo already names pr=#80, not pr=#81; skipping (reused slug, different run)"
+chk_no "ship-gate record: the reused-slug case never reports a fresh record" "$out" "recorded ship gate"
+chk "ship-gate record: the reused-slug ledger kept exactly its original line" \
+  "$([ "$(grep -c '| GATE | ship |' "$KIT_LEDGER_DIR/runs/typo.log")" -eq 1 ]; echo $?)"
+chk_has "ship-gate record: the reused-slug ledger still names the original PR" \
+  "$(cat "$KIT_LEDGER_DIR/runs/typo.log")" "pr=#80"
+chk_no "ship-gate record: the reused-slug ledger never gained the new PR" \
+  "$(cat "$KIT_LEDGER_DIR/runs/typo.log")" "pr=#81"
 
 # ===========================================================================
 echo "=== land: adopting an operator-owned open PR for the branch (SPEC-299) ==="
