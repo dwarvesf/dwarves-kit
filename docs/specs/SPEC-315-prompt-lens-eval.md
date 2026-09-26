@@ -17,7 +17,7 @@ In the SPEC-314 session the lead proved a new lens by hand. Fresh subagents ran 
 
 - Treatment is the working-tree text of `<command-file>`. Control is the same path at `<base-ref>`, read with `git show <base-ref>:./<file>` from the file's directory.
 - `<cases.json>` lists cases. Each case carries a `name`, a fixture file (a path relative to the JSON file's directory) and its signals. Each signal carries `name`, `pattern` (an extended regex, matched case-insensitively), an optional `reviewer` regex, and at least one of `treatment` and `control`, each `hit` or `miss`.
-- A sample hits a signal when one line of its output matches `pattern` and, if `reviewer` is set, that same line also matches `reviewer`.
+- A sample hits a signal when one finding block of its output matches `pattern` and, if `reviewer` is set, that same block also matches `reviewer`. A block is a top-level list item, a heading, or a paragraph start, joined with its continuation lines. Models tag a finding on its first line and write the detail on indented lines below, so a single line would split the tag from the detail.
 - An arm hits a signal when a strict majority of its N samples hit. A tie counts as a miss. A signal passes when every arm it names got the expected answer.
 - An arm runs only when some signal of the case names it, so a case with no control expectation costs no control calls.
 - Without `--live` the script makes no model call. It prints the planned call count, the sum over cases of `<arms named> x N`, and exits 3.
@@ -89,7 +89,7 @@ Control flow of one run:
                                  +--any fail--> exit 1
 ```
 
-Chosen approach: one bash script in the bench plane (`lib/bench/`), jq for the case file and the claude envelope, grep for scoring. Scoring is a keyword test on one line. It cannot tell a finding from a Passed line that names the same word; the case author picks the patterns and the `reviewer` scope. The script follows `lib/skill-curator/lib/reviewer-run.sh` for the headless call: stdin prompt, JSON envelope, `.result` and `.total_cost_usd`. It differs in two flags: `--safe-mode` instead of `--bare`, because `--bare` reads only `ANTHROPIC_API_KEY` and the operator authenticates with OAuth, and `--tools ""` in place of `--allowedTools ""`.
+Chosen approach: one bash script in the bench plane (`lib/bench/`), jq for the case file and the claude envelope, grep for scoring. Scoring is a keyword test on one finding block. It cannot tell a finding from a Passed line that names the same word; the case author picks the patterns and the `reviewer` scope. The script follows `lib/skill-curator/lib/reviewer-run.sh` for the headless call: stdin prompt, JSON envelope, `.result` and `.total_cost_usd`. It differs in two flags: `--safe-mode` instead of `--bare`, because `--bare` reads only `ANTHROPIC_API_KEY` and the operator authenticates with OAuth, and `--tools ""` in place of `--allowedTools ""`.
 
 Approaches considered:
 
@@ -154,7 +154,8 @@ Every case runs offline. A temp git repo holds a six-reviewer command at `HEAD` 
 | Control leak | the stub's control answer names a heartbeat | exit 1, the liveness row FAIL, the verdict names `liveness` |
 | Treatment miss | the stub's treatment answer drops the Reviewer 7 findings | exit 1 |
 | Noisy quiet case | the stub raises a Reviewer 7 cost warning on the short-lived fixture | exit 1, the quiet row FAIL |
-| Reviewer scope | a treatment line names liveness under Reviewer 2 only | the Reviewer 7 liveness signal misses |
+| Reviewer scope | a treatment block names liveness under Reviewer 2 only | the Reviewer 7 liveness signal misses |
+| Multi-line finding | the Reviewer 7 tag sits on the item's title line and `rotation` on an indented line below | the rotation signal hits |
 | Majority | N=3, treatment hits on 2 calls | hit passes; hits on 1 call fails |
 | Tie | N=2, control leaks on 1 call | the control `miss` passes |
 | Empty sample | one call returns an empty `.result`; another run where the stub exits 1; another where the envelope says `is_error: true` with text | exit 2, `ERROR`, never PASS |
@@ -184,4 +185,5 @@ Not covered: a hung call has no timeout. A keyword grep cannot judge whether a f
 - Bash in `lib/bench/`, not a verb of `bench.py`: see Approaches considered.
 - Exit 3 for a dry run, so no script reads a dry run as a pass.
 - `--safe-mode` over `--bare`: `--bare` never reads OAuth, which is how the operator logs in.
+- Scoring by finding block, not by line: the first live run tagged each finding `Reviewer 7.` on its title line and put the detail on indented lines. The line grep missed a credential-rotation finding that was there.
 - Validation (seven lenses, APPROVED, design record PASS, design-bearing=yes, Reviewer 7 long-lived with all five answers present) raised three warnings, all folded in: an `is_error` envelope counts as a failed sample (Reviewer 2), a base ref starting with `-` is refused before `git show` (Reviewer 1), and the `reviewer` regex should accept a reviewer's name as well as its number (Reviewer 3).

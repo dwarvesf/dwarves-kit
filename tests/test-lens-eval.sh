@@ -70,7 +70,8 @@ if printf '%s' "$prompt" | grep -q '### Reviewer 7'; then
     if ! on "${STUB_MISS_CALLS:-}"; then
       if on "${STUB_SCOPE_CALLS:-}"; then
         r="$r
-3. No heartbeat on the nightly job - Reviewer 2 - add one"
+3. **Nightly job failure.** Reviewer 2.
+   - No heartbeat on the nightly job; add one."
       else
         r="$r
 3. No heartbeat or alert: a missed launchd fire dies silently - Reviewer 7 - add a heartbeat"
@@ -78,7 +79,10 @@ if printf '%s' "$prompt" | grep -q '### Reviewer 7'; then
       r="$r
 4. Unbounded run cost: one paid call per email with no cap - Reviewer 7 - cap calls per night
 5. No retirement path: unloading the plist leaves the .env keys orphaned - Reviewer 7 - add a retire step
-6. The API keys have no rotation path - Reviewer 7 - name the rotation"
+6. **Dependency and credential lifespan.** Reviewer 7.
+   - There is no rotation path for the IMAP or API keys.
+7. **Discord webhook** Reviewer 1.
+   - The webhook URL is unguarded."
     fi
   else
     r="$r
@@ -165,6 +169,7 @@ assert_eq "live pass exit 0" 0 "$RC"
 assert_has "verdict PASS 9/9" "verdict: PASS (9/9 signals)" "$OUT"
 assert_eq "3 calls" 3 "$CALLS"
 assert_has "liveness row" "| long-lived | liveness-r7 | 1/1 want hit | - | PASS |" "$OUT"
+assert_has "detail on an indented line under a Reviewer 7 title hits" "| long-lived | rotation-r7 | 1/1 want hit | - | PASS |" "$OUT"
 assert_has "control row" "| long-lived | liveness-any | - | 0/1 want miss | PASS |" "$OUT"
 assert_has "quiet row, no control cell" "| short-lived | quiet-pass | 1/1 want hit | - | PASS |" "$OUT"
 assert_has "cost sum" "cost: \$0.03 over 3 calls" "$OUT"

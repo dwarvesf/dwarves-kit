@@ -4,8 +4,8 @@
 #
 # Treatment is the working-tree text of <command-file>; control is the same path at
 # <base-ref>. Each case's fixture spec runs through headless `claude -p` under each arm the
-# case's signals name, N samples per arm. A sample hits a signal when one output line
-# matches `pattern` (and `reviewer`, when set). An arm hits when a strict majority of its
+# case's signals name, N samples per arm. A sample hits a signal when one finding block
+# (a list item or paragraph plus its indented lines) matches `pattern` (and `reviewer`). An arm hits when a strict majority of its
 # samples hit; a tie is a miss. Prints a markdown table, the saved-samples dir, the cost,
 # and one verdict line.
 #
@@ -94,13 +94,21 @@ if [ "$failed" -gt 0 ]; then
   summary; echo "verdict: ERROR ($failed failed samples, see $out)"; exit 2
 fi
 
-# hits <case> <arm> <reviewer-regex> <pattern>: how many samples have one line matching both.
+# blocks <file>: one line per finding. Models tag a finding on its first line and put the
+# detail on indented lines under it, so a block is a top-level list item, a heading, or a
+# paragraph start, joined with its continuation lines.
+blocks() {
+  awk '/^[[:space:]]*$/ { blank = 1; next }
+       /^([0-9]+[.)]|[-*+]) |^#/ || (blank && /^[^[:space:]]/) { if (b != "") print b; b = $0; blank = 0; next }
+       { b = b " " $0; blank = 0 }
+       END { if (b != "") print b }' "$1"
+}
+
+# hits <case> <arm> <reviewer-regex> <pattern>: how many samples have one block matching both.
 hits() {
-  local n=0 i f
+  local n=0 i
   for ((i = 1; i <= samples; i++)); do
-    f="$out/$1.$2.$i.md"
-    if [ -n "$3" ]; then grep -iE -- "$3" "$f" | grep -qiE -- "$4" && n=$((n + 1))
-    else grep -qiE -- "$4" "$f" && n=$((n + 1)); fi
+    blocks "$out/$1.$2.$i.md" | grep -iE -- "${3:-.}" | grep -qiE -- "$4" && n=$((n + 1))
   done
   echo "$n"
 }
