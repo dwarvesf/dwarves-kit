@@ -2713,6 +2713,16 @@ cmd_follow_mode() {
 # Exit 0 all success, 1 a completed run failed, 2 gh missing or a non-transient read error,
 # 124 timeout, 64 usage. Writes nothing but its own temp file.
 DEPLOY_POLL_SECS="${DEPLOY_POLL_SECS:-10}"
+
+# _dw_seconds -- elapsed-time source for the timeout budget. Real runs read bash's $SECONDS.
+# A test can set DEPLOY_WAIT_CLOCK_FILE to a path it advances itself instead, so a stubbed
+# slow `gh` reports its own elapsed time deterministically rather than a real sleep racing
+# against $SECONDS' one-second granularity.
+_dw_seconds() {
+  if [ -n "${DEPLOY_WAIT_CLOCK_FILE:-}" ]; then cat "$DEPLOY_WAIT_CLOCK_FILE"
+  else printf '%s' "$SECONDS"; fi
+}
+
 cmd_deploy_wait() {
   local usage="usage: wrap.sh deploy-wait <owner>/<name> <sha> [--check <name-substring>]... [--timeout <secs>]"
   local slug="" sha="" checks="" timeout=600 count=0
@@ -2752,7 +2762,8 @@ cmd_deploy_wait() {
 # _deploy_wait_poll <slug> <sha> <checks, newline-separated> <timeout> <errfile>
 _deploy_wait_poll() {
   local slug="$1" sha="$2" checks="$3" timeout="$4" errf="$5" s7="${2:0:7}"
-  local waited=0 good=0 raw rc err runs="[]" state start=$SECONDS
+  local waited=0 good=0 raw rc err runs="[]" state start
+  start=$(_dw_seconds)
   # Keep the runs whose name contains any --check value (all runs with none), the highest id
   # per name. `missing` lists each --check value no run matches yet.
   local judge='($cs | split("\n") | map(select(. != ""))) as $want
@@ -2791,7 +2802,8 @@ _deploy_wait_poll() {
     fi
     sleep "$DEPLOY_POLL_SECS"; waited=$((waited + DEPLOY_POLL_SECS))
     # Wall time also counts, so slow gh calls cannot stretch the timeout.
-    [ $((SECONDS - start)) -gt "$waited" ] && waited=$((SECONDS - start))
+    local now; now=$(_dw_seconds)
+    [ $((now - start)) -gt "$waited" ] && waited=$((now - start))
   done
 
   printf '%s' "$runs" | jq -r '.[] | "\(.conclusion // "none") \(.name)"'
