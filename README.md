@@ -334,7 +334,7 @@ Which hooks BLOCK vs warn vs neither is a declared contract: `docs/architecture.
 | /kit:dispatch | Orchestrate | Fire N disjoint VALIDATED specs concurrently, each in its own worktree, behind a disjointness gate; lead-owned merge |
 | /kit:mega | Orchestrate | Mirrors the plan-for-mega-goal skill: decompose 3-8 dependent sub-goals, front-load every clarification once, set the per-run merge config, hand off to the bounded loop; ship-layer auto-merge rides the ship-gate via `lib/goal/mega-merge.sh`, never bypasses it |
 | /kit:spec | Spec | Generate docs/specs/SPEC-NNN-<slug>.md with 4 parallel research agents |
-| /kit:spec-validate | Spec | 5 adversarial reviewers attack the spec (incl. solution-design + extensibility) |
+| /kit:spec-validate | Spec | 7 adversarial reviewers attack the spec (incl. solution-design, design record, sustainability) |
 | /kit:test-plan | Spec | Opt-in: coverage matrix from acceptance criteria into the spec's `## Test plan` section |
 | /kit:feature-map | Spec | Source-cited, agent-checkable feature inventory for ANY target project: per-module spec + a top-level checklist. Standalone (what does this codebase do) or migration source of truth (what needs porting) when a port target is named |
 | /kit:execute | Build | Autonomous: worker > verifier > fix-agent retry loop |

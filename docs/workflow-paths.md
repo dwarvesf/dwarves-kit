@@ -91,7 +91,7 @@ Every workflow, lane, loop, side-flow, and alternate path in one connected pictu
  |        |   +--> downstream UI offshoot: [H] /kit:ui-design -> frontend-design skill ->
  |        |        [H] /kit:visual-team (5 design lenses) -> fix-agent revise (max 2) -> SOLID
  |        v
- |   [H/I] /kit:spec-validate  6 lenses (1 HARD on the design record)
+ |   [H/I] /kit:spec-validate  7 lenses (1 HARD on the design record)
  |        |     NEEDS REVISION ==> back to /kit:spec
  |        v  Status: VALIDATED
  |   [H] /kit:test-plan ...... coverage matrix -> ## Test plan (default on normal/full)
@@ -239,7 +239,7 @@ Commands never hand off in memory; the baton passes through stores on disk.
  [H/I] /kit:spec ──> [D] research-architecture + research-context
         |                + research-pitfalls + research-stack (brownfield, read-only)
         v
-     SPEC-NNN DRAFT ──> [H/I] /kit:spec-validate (6 lenses, 1 HARD on the design record)
+     SPEC-NNN DRAFT ──> [H/I] /kit:spec-validate (7 lenses, 1 HARD on the design record)
         |                        NEEDS REVISION ──> back to /kit:spec
         v
      Status: VALIDATED ──> Build
@@ -373,7 +373,7 @@ One line per live feature: `entry -> ... -> terminal`. Grouped by kind; every fe
 | `[H] /kit:prototype -> spike on prototype/<name> branch -> decision folds into brief/spec` |
 | `[H] /kit:devs-team -> 5 engineering lenses -> report-only -> feeds /kit:design` |
 | `[H/I] /kit:spec -> 4 research agents -> SPEC-NNN DRAFT -> spec-validate or ui-design` |
-| `[H/I] /kit:spec-validate -> 6 lenses (1 HARD) -> VALIDATED or back to /kit:spec` |
+| `[H/I] /kit:spec-validate -> 7 lenses (1 HARD) -> VALIDATED or back to /kit:spec` |
 | `[H/I] /kit:feature-map -> research-features per module (parallel) -> docs/specs/<module>.md + top-level checklist` |
 | `[H] /kit:test-plan -> coverage matrix -> ## Test plan -> review-team or execute` |
 | `[H] /kit:test-plan-review-team -> 6 lenses + revise loop -> SOLID verdict -> test-write or execute` |

@@ -1191,11 +1191,11 @@ else
 fi
 
 TOTAL=$((TOTAL + 1))
-if grep -qF "## The 6 reviewers" "$VALIDATE_CMD" 2>/dev/null; then
-  echo -e "  ${GREEN}PASS${NC} spec-validate.md header says 6 reviewers"
+if grep -qF "## The 7 reviewers" "$VALIDATE_CMD" 2>/dev/null; then
+  echo -e "  ${GREEN}PASS${NC} spec-validate.md header says 7 reviewers"
   PASS=$((PASS + 1))
 else
-  echo -e "  ${RED}FAIL${NC} spec-validate.md header not updated to 6 reviewers"
+  echo -e "  ${RED}FAIL${NC} spec-validate.md header not updated to 7 reviewers"
   FAIL=$((FAIL + 1))
 fi
 
@@ -1212,8 +1212,18 @@ fi
 # command (the heading, frontmatter, and output-format intro must all agree). Historical
 # "N reviewers run <date>" lines live in docs/specs/, not here, so this file is safe
 # to assert clean. Caught a real regression in the SPEC-008 review; SPEC-122 bumps 5 -> 6.
-STALE_COUNT=$(grep -E "4 reviewer|5 reviewer" "$VALIDATE_CMD" 2>/dev/null | wc -l | tr -d ' ')
-assert_eq "spec-validate.md has no stale '4 reviewer' / '5 reviewer' references" "0" "$STALE_COUNT"
+STALE_COUNT=$(grep -E "4 reviewer|5 reviewer|6 reviewer|6 specialist lenses" "$VALIDATE_CMD" 2>/dev/null | wc -l | tr -d ' ')
+assert_eq "spec-validate.md has no stale 4/5/6 reviewer or '6 specialist lenses' references" "0" "$STALE_COUNT"
+
+# SPEC-314: Reviewer 7 (sustainability) exists and stays advisory. The BLOCKING check is scoped
+# to Reviewer 7's own section, because that section may name Reviewer 6 as the blocking one.
+RC=0; grep -qE "^### Reviewer 7:" "$VALIDATE_CMD" || RC=1
+assert_eq "spec-validate.md has Reviewer 7 (sustainability)" "0" "$RC"
+R7_BLOCKING=$(awk '/^### Reviewer 7/{f=1} /^## Output format/{f=0} f' "$VALIDATE_CMD" | grep -c 'BLOCKING')
+R7_LINES=$(awk '/^### Reviewer 7/{f=1} /^## Output format/{f=0} f' "$VALIDATE_CMD" | wc -l | tr -d ' ')
+assert_eq "spec-validate.md Reviewer 7 section carries no BLOCKING marker" "0" "$R7_BLOCKING"
+RC=0; [ "$R7_LINES" -gt 5 ] || RC=1
+assert_eq "spec-validate.md Reviewer 7 section is non-empty (scope guard can match)" "0" "$RC"
 
 # ============================================================
 echo ""
