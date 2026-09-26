@@ -133,7 +133,7 @@ variant <N>: <one line on what it shows>.
      viable approaches. Otherwise collapse this WHOLE block to one line: `obvious: <why>` --
      do not force a diagram or the sub-headings below on obvious work.
      Enforced by /kit:spec-validate Reviewer 6: a design-bearing spec with an empty/missing
-     Design block is refused VALIDATED (blocking, unlike the other 5 advisory reviewers). -->
+     Design block is refused VALIDATED (blocking, unlike the advisory reviewers). -->
 
 **Ordering:** when this design covers more than one decision, write about them in order of
 likelihood-to-tweak , the parts most expensive to change once other code depends on them get

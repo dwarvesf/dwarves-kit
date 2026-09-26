@@ -1,16 +1,16 @@
 ---
-description: "Adversarial review of a spec before implementation. 6 specialist lenses attack the spec from different angles (5 advisory, 1 blocking on the design record)."
+description: "Adversarial review of a spec before implementation. 7 specialist lenses attack the spec from different angles (6 advisory, 1 blocking on the design record)."
 ---
 
 You are running an adversarial spec review. Read the spec from `docs/specs/SPEC-NNN-<slug>.md` (the most recent non-shipped spec if several exist). If no spec exists, tell the user to run `/kit:spec` first.
 
-## The 6 reviewers
+## The 7 reviewers
 
 Bracket both phases this lane owns for timing, before running Reviewer 1:
 `bash lib/gate/gate-ledger.sh outcome <rid> Validate start` and
 `bash lib/gate/gate-ledger.sh outcome <rid> design-record start`.
 
-Run each reviewer sequentially. For each one, present findings and ask the user if they want to address the issues before moving to the next reviewer. Reviewers 1-5 are advisory; Reviewer 6 (below) is the one exception that can block the `VALIDATED` flip.
+Run each reviewer sequentially. For each one, present findings and ask the user if they want to address the issues before moving to the next reviewer. Reviewers 1-5 and 7 are advisory; Reviewer 6 (below) is the one exception that can block the `VALIDATED` flip.
 
 ### Reviewer 1: Security Auditor
 Look for:
@@ -67,7 +67,7 @@ Look for:
 Source: forked from superpowers:brainstorming ("design for isolation and clarity") + its spec-document-reviewer calibration. See the spec-validate design spec under docs/specs/.
 
 ### Reviewer 6: Design Record Auditor (BLOCKING)
-Unlike Reviewers 1-5 above (all advisory), this check can REFUSE the `VALIDATED` flip.
+Unlike Reviewers 1-5 and 7 (all advisory), this check can REFUSE the `VALIDATED` flip.
 
 1. **Decide design-bearing.** Is the spec above the tiny lane AND does it do any of: introduce
    a new component/module, non-obvious control flow, a schema/data-model change, an external
@@ -90,9 +90,38 @@ Unlike Reviewers 1-5 above (all advisory), this check can REFUSE the `VALIDATED`
 Keep the design-bearing test honest in both directions , neither rubber-stamping a real
 architecture change as `obvious`, nor demanding a diagram for a one-line config tweak.
 
+### Reviewer 7: Sustainability Critic
+Reviewers 1-6 judge the design on the day it ships. This lens asks what it costs to keep alive a year later.
+
+1. **Decide long-lived.** The spec is long-lived when it creates, or moves onto a new host or
+   vendor, something that keeps running or keeps costing after merge: a scheduled job, daemon,
+   service, or deploy target; a data store outside the repo; a new external dependency
+   (package, vendor API, fork, or local patch); a credential; or per-use paid calls. An edit to
+   an in-repo hook, script, or ledger that the repo's own tests already cover is not long-lived.
+2. **If NOT long-lived:** one line, `not long-lived: <why>`, and no findings.
+3. **If long-lived:** ask five questions. A missing or hand-waved answer is a warning.
+   - **Run cost:** what does it cost per month at expected load (infra, API calls, model
+     tokens, quota), and is any cost path unbounded, such as a paid call per item with no cap?
+   - **Owner and liveness:** who owns it after merge, and which signal fires when it stops? A
+     job or daemon with no heartbeat, alert, or health check dies silently.
+   - **Dependency lifespan:** which dependency breaks or disappears first (vendor API, floating
+     version, local patch on a moving upstream, credential expiry), and what happens then? A
+     credential with no rotation path is a finding.
+   - **Retirement:** how is it turned off and removed? Flag a design whose removal would leave
+     an orphaned schedule, heartbeat, secret, or data store.
+   - **Handover:** can someone who did not build it debug and rebuild it from the repo alone
+     (where the logs are, how to rerun, how to redeploy)?
+
+Do not repeat Reviewer 2 (incident recovery), Reviewer 3 (whether a dependency is stable
+today), or Reviewer 5 (growth and coupling); this lens covers slow decay and upkeep after ship.
+
+**Calibration (critical):** flag only a gap that would let the thing die silently, cost without
+bound, or outlive its purpose. A short answer in `## After state` or `## Failure modes` counts;
+do not demand a new section. This reviewer is advisory; Reviewer 6 stays the one blocking check.
+
 ## Output format
 
-After all 6 reviewers complete, produce a summary:
+After all 7 reviewers complete, produce a summary:
 
 ```markdown
 # Spec Validation Report
@@ -113,7 +142,7 @@ Spec: [spec name]
 
 If NEEDS REVISION, update `docs/specs/SPEC-NNN-<slug>.md` with the fixes and mark the Decision Log with entries for each change made.
 
-If APPROVED, update the Status line in SPEC.md to `VALIDATED`. **Exception:** if Reviewer 6 raised a CRITICAL, BLOCKING finding (a design-bearing spec with an empty/missing `## Design` block), the Verdict is NEEDS REVISION regardless of Reviewers 1-5's outcome, and Status does NOT flip to `VALIDATED` until the Design block is filled and this reviewer re-runs clean.
+If APPROVED, update the Status line in SPEC.md to `VALIDATED`. **Exception:** if Reviewer 6 raised a CRITICAL, BLOCKING finding (a design-bearing spec with an empty/missing `## Design` block), the Verdict is NEEDS REVISION regardless of the advisory reviewers' outcome, and Status does NOT flip to `VALIDATED` until the Design block is filled and this reviewer re-runs clean.
 
 After the verdict, record it for lane telemetry, one line:
 `bash lib/gate/gate-ledger.sh record <rid> Validate ran "<APPROVED|NEEDS REVISION> critical=<N> warnings=<K>"`.

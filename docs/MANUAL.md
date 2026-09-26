@@ -191,7 +191,7 @@ schedules, sequences, or merges. Source: SPEC-036; ADR-0022.
 **Reads:** `docs/specs/SPEC-NNN-<slug>.md`
 **Writes:** comments in chat; the maintainer flips SPEC Status to VALIDATED manually after addressing findings
 **When to invoke:** before `/execute` on any spec longer than ~5 tasks
-**Common gotcha:** 6 reviewers (security, failure-mode, assumption-destroyer, scope-critic, solution-design & extensibility, design-record) run sequentially. Budget ~10-12 minutes. The 5th reviewer flags shallow or non-extensible designs and is calibrated against false positives + legacy specs. The 6th, Reviewer 6 (SPEC-122 / ADR-0031 §1), is the one BLOCKING check in the set: a design-bearing spec with an empty `## Design` block cannot flip to VALIDATED.
+**Common gotcha:** 7 reviewers (security, failure-mode, assumption-destroyer, scope-critic, solution-design & extensibility, design-record, sustainability) run sequentially. Budget ~12-14 minutes. The 5th reviewer flags shallow or non-extensible designs and is calibrated against false positives + legacy specs. The 6th, Reviewer 6 (SPEC-122 / ADR-0031 §1), is the one BLOCKING check in the set: a design-bearing spec with an empty `## Design` block cannot flip to VALIDATED. The 7th (SPEC-314) is advisory: a spec that leaves a long-lived job, service, dependency, credential, or paid call behind must answer run cost, owner and liveness, dependency lifespan, retirement, and handover; a short-lived spec passes in one line.
 
 ### `/kit:execute`
 

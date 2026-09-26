@@ -126,7 +126,7 @@ Every command and agent mapped to its V-model arm, grouped so the left side (BUI
 
 | Entry | Type | V-phase | Arm | Note |
 |---|---|---|---|---|
-| `/kit:spec-validate` | command | Spec review | gate | Adversarial pre-build gate; 6 lenses attack the spec (5 advisory, 1 blocking on the design record); sets Status: VALIDATED |
+| `/kit:spec-validate` | command | Spec review | gate | Adversarial pre-build gate; 7 lenses attack the spec (6 advisory, 1 blocking on the design record); sets Status: VALIDATED |
 | `/kit:devs-team` | command | Design critique | gate | Opt-in; 5 engineering lenses stress-test the solution design before the spec hardens |
 | `/kit:review` | command | Code review | gate | Single-pass paranoid review; security, architecture, regressions, edge cases |
 | `/kit:review-team` | command | Code review | gate | Parallel variant; dispatches `security-reviewer` (security) plus the `code-reviewer` agent x2 (architecture / test-coverage lenses) |
@@ -190,7 +190,7 @@ Decision test, in order:
 3. Does it **sequence or gate** other steps? -> command.
 4. Is it a **repeatable single-job actor** invoked by a step? -> agent.
 
-The load-bearing reason agents exist is **isolation**, not "sub-functions" (PHILOSOPHY "verify with a fresh context, not self-report"). A job needing neither isolation nor parallelism is steps inside a command, not an agent (that is why `/kit:spec-validate`'s 6 lenses are inline: they share the spec's context).
+The load-bearing reason agents exist is **isolation**, not "sub-functions" (PHILOSOPHY "verify with a fresh context, not self-report"). A job needing neither isolation nor parallelism is steps inside a command, not an agent (that is why `/kit:spec-validate`'s 7 lenses are inline: they share the spec's context).
 
 Two failure modes this rule catches:
 

@@ -1351,7 +1351,7 @@ mistake is irreversible:
 | `/kit:dispatch <specs>` | disjointness gate -> N background worktree workers -> lead-owned convergence | all workers READY + drift-clean, converged via `/kit:ship` | disjointness gate + drift guard (`lib/gate/dispatch-gate.sh`); no auto-merge; no DAG |
 | `/kit:think` | decision brief | brief written (if BUILD) | advisory |
 | `/kit:spec` | spec scaffold | spec exists, `Status: DRAFT` | spec-drift-guard hook |
-| `/kit:spec-validate` | 6-lens adversarial review (5 advisory, 1 blocking) | `Status: VALIDATED` | advisory (full lane) |
+| `/kit:spec-validate` | 7-lens adversarial review (6 advisory, 1 blocking) | `Status: VALIDATED` | advisory (full lane) |
 | `/kit:execute` | verification pipeline | all tasks + integration PASS | verification pipeline (hard) |
 | `/kit:debug` | feedback-loop-first debug loop (Phase 0 + 4 phases) | root cause + fix verified (human-confirmed only when `debug.confirm_fix=true`) | iron law + guess-fix guard |
 | `/kit:review[-team]` | review | verdict recorded in the spec's `## Review` | advisory |
