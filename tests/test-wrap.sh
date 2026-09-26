@@ -4629,7 +4629,7 @@ chk "the off-mode FYI row passes the ask rule" "$([ "$rc" -eq 0 ]; echo $?)"
 # worktree. The generator is a stub at the kit's own
 # path: FEATURES.md is the sorted listing of specs/, so a regeneration is deterministic. Env
 # knobs make it fail (RB_GEN_FAIL), do nothing (RB_GEN_NOOP), or also rewrite a README count
-# (RB_GEN_README). A grep over git output reads it through process substitution: under
+# (RB_GEN_README) or a non-ASCII tracked path (RB_GEN_UTF8). A grep over git output reads it through process substitution: under
 # pipefail, `git log | grep -q` reports the SIGPIPE, never the match.
 echo
 echo "=== rebase: a worktree branch onto origin/<default>, only the safe conflicts resolved ==="
@@ -4643,6 +4643,7 @@ root="$(cd "$(dirname "$0")/../.." && pwd)"
 [ -n "${RB_GEN_FAIL:-}" ] && exit 3
 [ -n "${RB_GEN_NOOP:-}" ] && exit 0
 ls "$root/specs" | LC_ALL=C sort > "$root/docs/FEATURES.md"
+[ -n "${RB_GEN_UTF8:-}" ] && echo changed > "$root/docs/café.md"
 [ -n "${RB_GEN_README:-}" ] && printf 'count: %s\n' "$(ls "$root/specs" | wc -l | tr -d ' ')" > "$root/README.md"
 exit 0
 GEN
@@ -4652,6 +4653,7 @@ GEN
   printf '# Changelog\n\n## [Unreleased]\n\n- one\n- two\n' > "$work/docs/CHANGELOG.md"
   printf 'line\n' > "$work/other.md"
   printf 'count: 1\n' > "$work/README.md"
+  echo base > "$work/docs/café.md"
   printf '| ID | Status |\n' > "$work/_meta/BACKLOG.md"
   printf '_meta/BACKLOG.md merge=union\n' > "$work/.gitattributes"
   git -C "$work" add -A; git -C "$work" commit -qm base
@@ -4785,6 +4787,7 @@ echo b > "$RBW/specs/b.md"; rb_gen "$RBW"; rb_branch "feat: b"; old="$(rb_tip)"
 out="$(RB_GEN_FAIL=1 rb_run)"; rc=$?
 chk "rebase: generator failure exits 1" "$([ "$rc" -eq 1 ]; echo $?)"
 chk_has "rebase: generator failure named" "$out" "GENERATOR FAILED feat/rb"
+chk_no "rebase: a mid-rebase generator failure is not an after-rebase one" "$out" "AFTER REBASE"
 chk "rebase: generator failure restores the old tip" "$([ "$(rb_tip)" = "$old" ]; echo $?)"
 
 echo "--- no generator in the repo: FEATURES is an ordinary file"
@@ -4856,6 +4859,57 @@ chk "rebase: a rebase already in progress exits 1" "$([ "$rc" -eq 1 ]; echo $?)"
 chk_has "rebase: in-progress operation named" "$out" "already in progress"
 git -C "$RBW" rebase --abort >/dev/null 2>&1
 chk "rebase: preflight refusals leave HEAD" "$([ "$(rb_tip)" = "$old" ]; echo $?)"
+
+echo "--- CHANGELOG: both sides added the same line refuses"
+rb_build cldup
+printf '# Changelog\n\n## [Unreleased]\n\n- a\n- shared\n- one\n- two\n' > "$RBO/docs/CHANGELOG.md"; rb_origin "docs: o"
+printf '# Changelog\n\n## [Unreleased]\n\n- shared\n- c\n- one\n- two\n' > "$RBW/docs/CHANGELOG.md"; rb_branch "docs: b"; old="$(rb_tip)"
+out="$(rb_run)"; rc=$?
+chk "rebase: a line both sides added exits 1" "$([ "$rc" -eq 1 ]; echo $?)"
+chk_has "rebase: a line both sides added refused by name" "$out" "REFUSED feat/rb: conflict in docs/CHANGELOG.md"
+chk "rebase: a line both sides added restores the old tip" "$([ "$(rb_tip)" = "$old" ]; echo $?)"
+
+echo "--- a recorded rerere resolution never resolves a stop (rerere pinned off)"
+rb_build rerere; git -C "$RBC" config rerere.enabled true; git -C "$RBC" config rerere.autoupdate true
+echo o-line > "$RBO/other.md"; rb_origin "o"; echo b-line > "$RBW/other.md"; rb_branch "b"; old="$(rb_tip)"
+git -C "$RBW" fetch -q origin 2>/dev/null
+GIT_EDITOR=true git -C "$RBW" rebase origin/main >/dev/null 2>&1
+echo resolved-line > "$RBW/other.md"; git -C "$RBW" rerere >/dev/null 2>&1; git -C "$RBW" rebase --abort >/dev/null 2>&1
+chk "rebase: the rerere fixture recorded a resolution" "$(ls "$(git -C "$RBC" rev-parse --path-format=absolute --git-common-dir)"/rr-cache/*/postimage >/dev/null 2>&1; echo $?)"
+out="$(rb_run)"; rc=$?
+chk "rebase: a recorded resolution still exits 1" "$([ "$rc" -eq 1 ]; echo $?)"
+chk_has "rebase: a recorded resolution is still refused by name" "$out" "REFUSED feat/rb: conflict in other.md"
+chk "rebase: a recorded resolution restores the old tip" "$([ "$(rb_tip)" = "$old" ]; echo $?)"
+
+echo "--- a stacked branch ref never moves (updateRefs pinned off)"
+rb_build stack; git -C "$RBC" config rebase.updateRefs true
+echo o > "$RBO/o.txt"; rb_origin "o"
+echo b1 > "$RBW/b1.txt"; rb_branch "b1"; git -C "$RBW" branch feat/rb-lower; lower="$(git -C "$RBW" rev-parse feat/rb-lower)"
+echo b2 > "$RBW/b2.txt"; rb_branch "b2"
+out="$(rb_run)"; rc=$?
+chk "rebase: stacked branch run exits 0" "$rc"
+chk "rebase: the stacked branch ref did not move" "$([ "$(git -C "$RBW" rev-parse feat/rb-lower)" = "$lower" ]; echo $?)"
+
+echo "--- a non-ASCII path the generator changes is staged as itself"
+rb_build utf8; echo o > "$RBO/specs/o.md"; rb_gen "$RBO"; rb_origin "feat: o"
+echo b > "$RBW/specs/b.md"; rb_gen "$RBW"; rb_branch "feat: b"
+out="$(RB_GEN_UTF8=1 rb_run)"; rc=$?
+chk "rebase: non-ASCII side effect exits 0" "$rc"
+chk "rebase: the non-ASCII path landed in the pick" "$([ "$(git -C "$RBW" show 'HEAD:docs/café.md')" = "changed" ]; echo $?)"
+chk "rebase: worktree clean after the non-ASCII side effect" "$([ -z "$(git -C "$RBW" status --porcelain)" ]; echo $?)"
+
+echo "--- a failing final regeneration says the branch is already rebased"
+rb_build finalfail; echo o > "$RBO/o.txt"; rb_origin "o"; echo b > "$RBW/b.txt"; rb_branch "b"
+out="$(RB_GEN_FAIL=1 rb_run)"; rc=$?
+chk "rebase: final-pass failure exits 1" "$([ "$rc" -eq 1 ]; echo $?)"
+chk_has "rebase: final-pass failure carries its own prefix" "$out" "AFTER REBASE GENERATOR FAILED feat/rb"
+chk "rebase: final-pass failure leaves the branch rebased" "$(git -C "$RBW" merge-base --is-ancestor origin/main HEAD; echo $?)"
+
+echo "--- /kit:wrap step 10 runs the verb before the push and re-verifies"
+step2="$(sed -n '/^\*\*Land, one repo at a time/,$p' "$KIT_DIR/commands/wrap.md" | grep -m1 '^2\. ')"
+chk_has "step 10 landing step 2 runs wrap rebase first" "$step2" '2. Run `bin/wrap rebase <wt>` first'
+chk_has "step 10 re-runs the verification after a rebase" "$step2" "re-run the worker's verification command"
+chk_no "step 10 drops the moved-past condition" "$(cat "$KIT_DIR/commands/wrap.md")" 'when `origin/<default>` moved past it'
 
 echo "--- usage"
 out="$("$WRAP" rebase 2>&1)"; rc=$?

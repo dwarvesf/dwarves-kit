@@ -3123,28 +3123,22 @@ _rb_stages() {
   done
 }
 
-# _rb_changelog_pure <wt> <path> -- 0 when both sides only ADD lines to the base: a plain
-# diff of the base against each side prints no `<` line. A reworded, moved or deleted base
-# line fails, because union would then keep the old and the new line side by side.
-_rb_changelog_pure() {
+# _rb_changelog_merge <wt> <path> <out> -- writes the union of both sides to <out> and returns
+# 0 only when that union is safe: both sides only ADD lines to the base (a diff of the base
+# against each side prints no `<` line; a reworded, moved or deleted base line would come out
+# twice), and no line was added by BOTH sides (the union would then carry it twice).
+_rb_changelog_merge() {
   local d rc=1
   d="$(mktemp -d)" || return 1
   # Process substitution, not a pipe: under pipefail diff's exit 1 would mask grep's answer.
   if _rb_stages "$1" "$2" "$d" \
-     && ! grep -q '^<' < <(diff "$d/1" "$d/2"; diff "$d/1" "$d/3"); then
+     && ! grep -q '^<' < <(diff -a "$d/1" "$d/2"; diff -a "$d/1" "$d/3") \
+     && git merge-file --union -p "$d/2" "$d/1" "$d/3" > "$3" \
+     && awk '{ n[FILENAME, $0]++; seen[$0] = 1 }
+             END { for (l in seen)
+                     if (n[ARGV[3], l] > n[ARGV[1], l] && n[ARGV[3], l] > n[ARGV[2], l]) exit 1 }' \
+          "$d/2" "$d/3" "$3"; then
     rc=0
-  fi
-  rm -rf "$d"
-  return "$rc"
-}
-
-# _rb_union_write <wt> <path> -- keeps both sides' additions: git's own union merge of the
-# three stages, written over the conflicted file.
-_rb_union_write() {
-  local d rc=1
-  d="$(mktemp -d)" || return 1
-  if _rb_stages "$1" "$2" "$d" && git merge-file --union -p "$d/2" "$d/1" "$d/3" > "$d/out"; then
-    cat "$d/out" > "$1/$2" && rc=0
   fi
   rm -rf "$d"
   return "$rc"
@@ -3164,14 +3158,16 @@ _rb_abort() {
   return 1
 }
 
-# _rb_new_paths <before> <after> -- the lines of <after> that <before> lacks.
-_rb_new_paths() {
-  local p
-  while IFS= read -r p; do
-    [ -n "$p" ] || continue
-    printf '%s\n' "$1" | grep -qxF -- "$p" || printf '%s\n' "$p"
-  done <<< "$2"
+# _rb_has <needle> <item>... -- 0 when <needle> is one of the items.
+_rb_has() {
+  local x="$1" y; shift
+  for y in "$@"; do [ "$y" = "$x" ] && return 0; done
+  return 1
 }
+
+# _rb_changed <wt> -- tracked paths whose worktree copy differs from the index, NUL-terminated
+# (-z, so a non-ASCII or quoted path reaches `git add` as itself).
+_rb_changed() { git -C "$1" diff --name-only -z 2>/dev/null; }
 
 # _rb_stop <wt> <branch> <old tip> <generator or empty> <git output file> -- one rebase stop.
 # Every unmerged path is classified before anything is written, so a refused stop writes
@@ -3179,8 +3175,8 @@ _rb_new_paths() {
 # or the generator newly changed, marker-scanned, then staged by name. Never `add -u`/`-A`.
 _rb_stop() {
   local wt="$1" branch="$2" old="$3" gen="$4" log="$5"
-  local p refused="" cl=0 regen=0 before after hits
-  local -a unmerged=() set=()
+  local p refused="" regen=0 cl_out="" hits
+  local -a unmerged=() before=() set=()
   while IFS= read -r -d '' p; do unmerged+=("$p"); done \
     < <(git -C "$wt" diff --name-only --diff-filter=U -z 2>/dev/null)
   if [ "${#unmerged[@]}" -eq 0 ]; then
@@ -3190,24 +3186,26 @@ _rb_stop() {
   fi
   for p in "${unmerged[@]}"; do
     if [ "$p" = "$_RB_GENERATED" ] && [ -n "$gen" ]; then regen=1
-    elif [ "$p" = "$_RB_CHANGELOG" ] && _rb_changelog_pure "$wt" "$p"; then cl=1
+    elif [ "$p" = "$_RB_CHANGELOG" ] && cl_out="$(mktemp)" && _rb_changelog_merge "$wt" "$p" "$cl_out"; then :
     elif _union_marked "$wt" "$p"; then refused="${refused}${refused:+, }${p} (merge=union, delete/rename conflict)"
     else refused="${refused}${refused:+, }${p}"
     fi
   done
   if [ -n "$refused" ]; then
+    [ -n "$cl_out" ] && rm -f "$cl_out"
     _rb_abort "$wt" "$branch" "$old" "REFUSED ${branch}: conflict in ${refused}"; return 1
   fi
-  before="$(git -C "$wt" diff --name-only 2>/dev/null)"
-  if [ "$cl" = 1 ] && ! _rb_union_write "$wt" "$_RB_CHANGELOG"; then
-    _rb_abort "$wt" "$branch" "$old" "REFUSED ${branch}: ${_RB_CHANGELOG} would not union-merge"; return 1
+  while IFS= read -r -d '' p; do before+=("$p"); done < <(_rb_changed "$wt")
+  if [ -n "$cl_out" ]; then
+    cat "$cl_out" > "$wt/$_RB_CHANGELOG"; rm -f "$cl_out"
   fi
   if [ "$regen" = 1 ] && ! ( cd "$wt" && bash "$gen" generate ) >/dev/null 2>&1; then
     _rb_abort "$wt" "$branch" "$old" "GENERATOR FAILED ${branch}: ${_RB_GENERATOR} generate exited non-zero"; return 1
   fi
-  after="$(git -C "$wt" diff --name-only 2>/dev/null)"
   set=("${unmerged[@]}")
-  while IFS= read -r p; do [ -n "$p" ] && set+=("$p"); done < <(_rb_new_paths "$before" "$after")
+  while IFS= read -r -d '' p; do
+    _rb_has "$p" ${before[@]+"${before[@]}"} || set+=("$p")
+  done < <(_rb_changed "$wt")
   if hits="$(_rb_markers "$wt" "${set[@]}")"; then
     _rb_abort "$wt" "$branch" "$old" "MARKERS ${branch}: $(printf '%s' "$hits" | paste -sd, - | sed 's/,/, /g')"
     return 1
@@ -3220,25 +3218,27 @@ _rb_stop() {
 
 # _rb_final_regen <wt> <branch> <generator> -- after the rebase finished: regenerate once
 # more and record the change as its own commit. The only commit the verb makes, and it can
-# only run once no rebase is stopped.
+# only run once no rebase is stopped. Every failure line here starts `AFTER REBASE`: the branch
+# is already rebased, unlike a stop's refusal, which restored the old tip.
 _rb_final_regen() {
-  local wt="$1" branch="$2" gen="$3" before after hits p
-  local -a set=()
-  _rb_rebasing "$wt" && { echo "FAILED ${branch}: a rebase is still stopped, nothing committed"; return 1; }
-  before="$(git -C "$wt" diff --name-only 2>/dev/null)"
+  local wt="$1" branch="$2" gen="$3" hits p
+  local -a before=() set=()
+  _rb_rebasing "$wt" && { echo "AFTER REBASE FAILED ${branch}: a rebase is still stopped, nothing committed"; return 1; }
+  while IFS= read -r -d '' p; do before+=("$p"); done < <(_rb_changed "$wt")
   if ! ( cd "$wt" && bash "$gen" generate ) >/dev/null 2>&1; then
-    echo "GENERATOR FAILED ${branch}: after the rebase; the branch is rebased, ${_RB_GENERATED} not regenerated"
+    echo "AFTER REBASE GENERATOR FAILED ${branch}: the branch is rebased, ${_RB_GENERATED} not regenerated"
     return 1
   fi
-  after="$(git -C "$wt" diff --name-only 2>/dev/null)"
-  while IFS= read -r p; do [ -n "$p" ] && set+=("$p"); done < <(_rb_new_paths "$before" "$after")
+  while IFS= read -r -d '' p; do
+    _rb_has "$p" ${before[@]+"${before[@]}"} || set+=("$p")
+  done < <(_rb_changed "$wt")
   [ "${#set[@]}" -gt 0 ] || return 0
   if hits="$(_rb_markers "$wt" "${set[@]}")"; then
-    echo "MARKERS ${branch}: $(printf '%s' "$hits" | paste -sd, - | sed 's/,/, /g') (left unstaged)"; return 1
+    echo "AFTER REBASE MARKERS ${branch}: $(printf '%s' "$hits" | paste -sd, - | sed 's/,/, /g') (left unstaged)"; return 1
   fi
   if ! git -C "$wt" add -- "${set[@]}" 2>/dev/null \
      || ! git -C "$wt" commit -q -m "chore(registry): regenerate ${_RB_GENERATED##*/} after rebase" >/dev/null 2>&1; then
-    echo "FAILED ${branch}: the regenerated ${set[*]} could not be committed; left staged"; return 1
+    echo "AFTER REBASE FAILED ${branch}: the regenerated ${set[*]} could not be committed; left staged"; return 1
   fi
   echo "     regenerated after the rebase: ${set[*]}"
 }
@@ -3262,7 +3262,7 @@ cmd_rebase() {
   local repo gd
   repo="$(git -C "$wt" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)"
   repo="${repo%/.git}"; repo="${repo%/}"
-  repo="$(cd "$repo" 2>/dev/null && pwd -P)" || { echo "wrap.sh rebase: the main checkout does not resolve" >&2; return 1; }
+  repo="$(cd "$repo" 2>/dev/null && pwd -P)" || { echo "wrap.sh rebase: the main checkout does not resolve" >&2; return 64; }
   [ "$repo" != "$wt" ] || { echo "wrap.sh rebase: ${wt} is the main checkout, not a worktree" >&2; return 1; }
   gd="$(git -C "$wt" rev-parse --path-format=absolute --git-dir 2>/dev/null)"
   if _rb_rebasing "$wt" || [ -e "$gd/MERGE_HEAD" ] || [ -e "$gd/CHERRY_PICK_HEAD" ]; then
