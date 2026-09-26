@@ -44,6 +44,20 @@ Exit: 0 (green after restore)
 Verdict: PASS
 ```
 
+Second negctl, review-fix 1 (the last-line-wins preflight grep):
+
+```
+## Negative control (negctl)
+Command: bash tests/test-hooks.sh
+Exit: 0 (green before mutation)
+Mutation: sed -i '' "s/| grep -Ei '\\\| GATE \\\| validate \\\| ' | tail -1 | grep -Eq '\\\| (ran|override) \\\|'/| grep -Eqi '\\\| GATE \\\| validate \\\| (ran|override) \\\|'/" tests/test-hooks.sh
+Changed: tests/test-hooks.sh
+Exit: 1 (under mutation, RED expected)
+Restore: git checkout HEAD -- tests/test-hooks.sh
+Exit: 0 (green after restore)
+Verdict: PASS
+```
+
 ## Test plan coverage
 
 | Test plan case | Covered by | Run |
