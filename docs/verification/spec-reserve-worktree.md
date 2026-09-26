@@ -11,6 +11,8 @@ Acceptance: every worktree of one repo shares one reservation key, the physical 
 | Changed suites | `bash tests/run-all.sh --changed` | 0 | PASS, 13/13 |
 | Negative control | `lib/gate/negctl.sh` (below) | 0 | PASS |
 | Real two-worktree run | scratch repo under `$TMPDIR` (below) | 0 | PASS, 042 and 043 |
+| Review-fix round (CDPATH, T24 added) | `bash tests/test-spec-reserve.sh` | 0 | PASS, 67/67 |
+| Review-fix negative control | `lib/gate/negctl.sh` (below) | 0 | PASS |
 
 ## Green run
 
@@ -70,6 +72,39 @@ alpha: 042
 ```
 
 The old code reproduces the observed bug: one number, two worktree-slug keys. The new code writes one key and two numbers.
+
+## Review-fix round: CDPATH negative control
+
+A design critique of this branch's own diff (recorded in the spec's `## Design critique`)
+found a High: the repo-key `cd` honored an inherited `CDPATH`, silently double-issuing numbers.
+Fixed with a named `_git_common_dir` helper and `CDPATH= cd -- "$cd_rel"`. T24 added: a decoy
+`.git` under a `CDPATH` entry, two `reserve` calls, asserts distinct numbers and one physical
+ledger line per entry.
+
+```
+Command: bash tests/test-spec-reserve.sh
+Exit: 0
+Output: PASS T24 two reserves under CDPATH get distinct numbers (006 != 007)
+        PASS T24 the ledger has exactly one physical line per RESERVE entry (no CDPATH-split key)
+        Passed: 67 / 67
+        spec-reserve green.
+Verdict: PASS
+```
+
+```
+## Negative control (negctl)
+Command: bash tests/test-spec-reserve.sh
+Exit: 0 (green before mutation)
+Mutation: sed -i "" "s/CDPATH= cd -- \"\$cd_rel\"/cd \"\$cd_rel\"/" lib/spec/spec-next.sh
+Changed: lib/spec/spec-next.sh
+Exit: 1 (under mutation, RED expected)
+Restore: git checkout HEAD -- lib/spec/spec-next.sh
+Exit: 0 (green after restore)
+Verdict: PASS
+```
+
+Under the mutation (bare `cd "$cd_rel"`, CDPATH honored again) T24 goes red: both reserve calls
+return the same number and the ledger holds a CDPATH-split key, reproducing the original bug.
 
 ## Not covered
 
