@@ -51,7 +51,7 @@ echo "=== AC-3: dispatch contract, both sides ==="
 grep -qF '### Step 2: Research (if brownfield)' "$C"
 assert "row 7: dispatcher Step 2 is brownfield-gated" $?
 
-grep -qF '**research-architecture** agent: "Map architecture patterns and conventions. Write to `docs/research/<date>-<slug>-architecture.md`."' "$C"
+grep -qF '**kit:research-architecture** agent: "Map architecture patterns and conventions. Write to `docs/research/<date>-<slug>-architecture.md`."' "$C"
 assert "row 8: Mode A dispatch line names agent + exact write target" $?
 
 grep -qF 'dispatch all 4 via the Task tool in parallel' "$C"

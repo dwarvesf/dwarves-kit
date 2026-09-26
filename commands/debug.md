@@ -1,5 +1,5 @@
 ---
-description: "Systematic debug loop: root cause before any fix. Four phases, an evidence ledger, the 3-fix architecture wall. Use for any bug, defect, regression, test failure, or unexpected behavior before proposing a fix: 'fix this bug', 'why does X fail', 'the test is failing', 'it broke after Y', 'debug X', 'bị lỗi', 'sửa bug', 'test fail', 'chạy sai'."
+description: "Systematic debug loop: root cause before any fix. Four phases, an evidence ledger, the 3-fix architecture wall. Use for any bug, defect, regression, test failure, or unexpected behavior before proposing a fix: 'fix this bug', 'why does X fail', 'the test is failing', 'it broke after Y', 'debug X', 'bị lỗi', 'sửa bug', 'test fail', 'chạy sai'. Replaces superpowers:systematic-debugging."
 ---
 
 You are debugging a defect, regression, or test failure. You are not here to guess. Random fixes waste time and create new bugs.
