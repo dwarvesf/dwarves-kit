@@ -4629,7 +4629,8 @@ chk "the off-mode FYI row passes the ask rule" "$([ "$rc" -eq 0 ]; echo $?)"
 # worktree. The generator is a stub at the kit's own
 # path: FEATURES.md is the sorted listing of specs/, so a regeneration is deterministic. Env
 # knobs make it fail (RB_GEN_FAIL), do nothing (RB_GEN_NOOP), or also rewrite a README count
-# (RB_GEN_README).
+# (RB_GEN_README). A grep over git output reads it through process substitution: under
+# pipefail, `git log | grep -q` reports the SIGPIPE, never the match.
 echo
 echo "=== rebase: a worktree branch onto origin/<default>, only the safe conflicts resolved ==="
 rb_build() { # rb_build <name> [--no-generator] -- sets RBO (origin), RBC (main clone), RBW (worktree)
@@ -4721,7 +4722,7 @@ out="$(rb_run)"; rc=$?
 chk "rebase: generated stop exits 0" "$rc"
 chk_has "rebase: generated stop counted" "$out" "1 stop(s) resolved"
 chk "rebase: FEATURES equals a fresh generate" "$([ "$(cat "$RBW/docs/FEATURES.md")" = "$(printf 'a.md\nb.md\no.md')" ]; echo $?)"
-chk "rebase: no marker in any rebased commit" "$(git -C "$RBW" log -p origin/main..HEAD | grep -qE '^\+(<{7}|>{7})' && echo 1 || echo 0)"
+chk "rebase: no marker in any rebased commit" "$(grep -qE '^\+(<{7}|>{7})' < <(git -C "$RBW" log -p origin/main..HEAD) && echo 1 || echo 0)"
 chk "rebase: no merge commit on the branch" "$([ -z "$(git -C "$RBW" rev-list --min-parents=2 origin/main..HEAD)" ]; echo $?)"
 chk "rebase: one pick and no regen commit (committed only after the rebase)" "$([ "$(git -C "$RBW" rev-list --count origin/main..HEAD)" -eq 1 ]; echo $?)"
 chk "rebase: worktree clean after" "$([ -z "$(git -C "$RBW" status --porcelain)" ]; echo $?)"
@@ -4740,7 +4741,7 @@ echo b > "$RBW/specs/b.md"; rb_gen "$RBW"; rb_branch "feat: b"
 echo extra >> "$RBW/docs/FEATURES.md"; rb_branch "chore: hand-edit features"
 out="$(rb_run)"; rc=$?
 chk "rebase: empty-pick run exits 0" "$rc"
-chk "rebase: the empty pick is gone" "$(git -C "$RBW" log --format=%s origin/main..HEAD | grep -q 'hand-edit' && echo 1 || echo 0)"
+chk "rebase: the empty pick is gone" "$(grep -q 'hand-edit' < <(git -C "$RBW" log --format=%s origin/main..HEAD) && echo 1 || echo 0)"
 chk "rebase: one pick survives" "$([ "$(git -C "$RBW" rev-list --count origin/main..HEAD)" -eq 1 ]; echo $?)"
 
 echo "--- final regeneration records a FEATURES left stale by origin"
@@ -4775,7 +4776,7 @@ out="$(RB_GEN_NOOP=1 rb_run)"; rc=$?
 chk "rebase: leftover markers exit 1" "$([ "$rc" -eq 1 ]; echo $?)"
 chk_has "rebase: leftover markers named" "$out" "MARKERS feat/rb: docs/FEATURES.md"
 chk "rebase: leftover markers restore the old tip" "$([ "$(rb_tip)" = "$old" ]; echo $?)"
-chk "rebase: no marker in any reachable commit" "$(git -C "$RBW" log -p --all | grep -qE '^\+(<{7}|>{7})' && echo 1 || echo 0)"
+chk "rebase: no marker in any reachable commit" "$(grep -qE '^\+(<{7}|>{7})' < <(git -C "$RBW" log -p --all) && echo 1 || echo 0)"
 chk "rebase: leftover markers leave no rebase in progress" "$(rb_rebasing && echo 1 || echo 0)"
 
 echo "--- a failing generator aborts"
