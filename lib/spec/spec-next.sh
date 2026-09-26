@@ -29,7 +29,14 @@
 set -euo pipefail
 
 ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
-REPO="$(basename "$ROOT")"
+# Reservations are keyed by the REPOSITORY, not the checkout. Every worktree of a repo shares
+# one common git dir, so they share one key and see each other's claims; keyed by the
+# checkout's folder name, three worktrees each saw zero claims and took the same number. The
+# physical path (not the folder name) keeps two repos that share a folder name apart.
+# `cd` + `pwd -P` instead of `--path-format=absolute`: that flag needs git 2.31, and without
+# it the main checkout prints a relative `.git` while a worktree prints an absolute path.
+REPO="$(cd "$ROOT" 2>/dev/null && _cd="$(git rev-parse --git-common-dir 2>/dev/null)" && cd "$_cd" && pwd -P)" || REPO=""
+REPO="${REPO%/.git}"; [ -n "$REPO" ] || REPO="$ROOT"
 
 # Durable reservations ledger under the kit log dir (same root gate-ledger.sh writes to).
 # Sourced best-effort: if kit-log-dir.sh is missing (e.g. spec-next copied standalone), fall
@@ -65,7 +72,14 @@ _iso_to_epoch() {
 # out so reconciliation can tell a REALIZED reservation (its number now here) from a live one.
 _scan_numbers() {
   {
-    ls "$ROOT/docs/specs" 2>/dev/null | grep -oE 'SPEC-[0-9]+' || true
+    # docs/specs of EVERY worktree, so a sibling's uncommitted spec file reads as taken.
+    # Branches and commit subjects below already come from the refs all worktrees share.
+    local wts wt
+    wts="$(git -C "$ROOT" worktree list --porcelain 2>/dev/null | sed -n 's/^worktree //p')" || wts=""
+    [ -n "$wts" ] || wts="$ROOT"
+    while IFS= read -r wt; do
+      ls "$wt/docs/specs" 2>/dev/null | grep -oE 'SPEC-[0-9]+' || true
+    done <<< "$wts"
     git -C "$ROOT" branch -a --format='%(refname:short)' 2>/dev/null | grep -oE 'SPEC-[0-9]+' || true
     git -C "$ROOT" log --all --format='%s' -200 2>/dev/null | grep -oE 'SPEC-[0-9]+' || true
   } | grep -oE '[0-9]+' | sort -n | uniq
