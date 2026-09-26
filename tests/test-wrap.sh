@@ -3622,11 +3622,17 @@ chk_has "deploy-wait timeout prints the open status" "$out" "in_progress Workers
 chk "deploy-wait timeout is bounded (reads at 0s, 10s, 20s)" "$([ "$(dw_reads)" -eq 3 ]; echo $?)"
 
 echo "--- timeout: slow gh calls count toward it (wall time, not just the poll sleeps)"
+# A stubbed clock file stands in for wall time: the slow-gh stub advances it by 2 on every
+# call instead of really sleeping, so the assertion is exact arithmetic, not a race between
+# a real sleep and $SECONDS' one-second granularity.
 mkdir -p "$TMPD/dwslow"
-printf '#!/usr/bin/env bash\n[ "${1:-}" = api ] && /bin/sleep 2\nexec "%s/dwstub/gh" "$@"\n' "$TMPD" > "$TMPD/dwslow/gh"
+CLOCKF="$TMPD/dw-slow-clock"
+printf '#!/usr/bin/env bash\nif [ "${1:-}" = api ]; then echo $(($(cat "%s") + 2)) > "%s"; fi\nexec "%s/dwstub/gh" "$@"\n' \
+  "$CLOCKF" "$CLOCKF" "$TMPD" > "$TMPD/dwslow/gh"
 chmod +x "$TMPD/dwslow/gh"
 dw_case slow; dw_read 1 "{\"check_runs\":[$WB_OPEN]}"
-out="$(DEPLOY_POLL_SECS=1 PATH="$TMPD/nosleep:$TMPD/dwslow:$PATH" "$WRAP" deploy-wait o/r "$SHA" --timeout 3 2>&1)"; rc=$?
+printf '0' > "$CLOCKF"
+out="$(DEPLOY_POLL_SECS=1 DEPLOY_WAIT_CLOCK_FILE="$CLOCKF" PATH="$TMPD/nosleep:$TMPD/dwslow:$PATH" "$WRAP" deploy-wait o/r "$SHA" --timeout 3 2>&1)"; rc=$?
 chk "deploy-wait slow-gh timeout exits 124" "$([ "$rc" -eq 124 ]; echo $?)"
 chk "deploy-wait counts gh time: 3 reads of 2s pass a 3s timeout (sleeps alone take 4)" "$([ "$(dw_reads)" -eq 3 ]; echo $?)"
 
