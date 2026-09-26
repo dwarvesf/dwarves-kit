@@ -375,7 +375,13 @@ carry_stray_lines = true        # [impl] step 5, before the pull, main checkout 
                                  #        `reset --keep` to the fork point when only merge=union
                                  #        files are dirty, so the pull fast-forwards.
                                  #        false = report the count and carry nothing.
-build_candidates = true         # [impl] step 7b. true = a precedent hit wires the enhancement into
+autoland_carry = false          # [impl] step 5, with carry_stray_lines. true = each carry branch
+                                 #        (new, reused, or an orphan an earlier run left) gets its
+                                 #        PR opened when none is open and merged through
+                                 #        `wrap merge --apply --pr`: same own-PR gate, re-merge and
+                                 #        tree verify. A refused gate leaves the PR open for step 3.
+                                 #        false = print the `gh pr create` command, open nothing.
+build_candidates = true        # [impl] step 7b. true = a precedent hit wires the enhancement into
                                  #        that tool and a clear-shaped miss builds it, both committed
                                  #        in the home repo. false = every candidate is REPORTED in
                                  #        the wrap report instead. Neither setting writes a board

@@ -142,6 +142,13 @@ case "$sub" in
               sq_oid="$(git -C "$GH_STUB_LAND_REPO" rev-parse "${GH_STUB_SQUASH_BRANCH:-feat/union-squash}" 2>/dev/null)"
               val="${val//%SQUASH_TIP%/$sq_oid}"
             fi
+            # %CARRY_TIP% is the newest wrap/stray-* branch (by name, so by stamp) on the
+            # carry-autoland fixture's bare origin: that branch exists only once apply pushes it.
+            if [ -n "${GH_STUB_CARRY_REMOTE:-}" ]; then
+              c_oid="$(git -C "$GH_STUB_CARRY_REMOTE" for-each-ref --sort=-refname --count=1 \
+                --format='%(objectname)' 'refs/heads/wrap/stray-*' 2>/dev/null)"
+              val="${val//%CARRY_TIP%/$c_oid}"
+            fi
             printf '%s\n' "$val" ;;
         esac
         exit 0 ;;
@@ -168,6 +175,15 @@ case "$sub" in
         rc="${GH_STUB_MERGE_RC:-0}"
         if [ "$rc" -ne 0 ] && [ -n "${GH_STUB_MERGE_ERR:-}" ]; then
           printf '%s\n' "$GH_STUB_MERGE_ERR" >&2
+        fi
+        # GH_STUB_LAND_OID=1 lands the --match-head-commit oid itself on the --repo remote's
+        # default branch, for a head no local branch names (a carry branch apply just pushed).
+        if [ "${GH_STUB_LAND_OID:-0}" = "1" ] && [ "$rc" -eq 0 ]; then
+          m_repo=""; m_oid=""
+          while [ $# -gt 0 ]; do
+            case "$1" in --repo) m_repo="${2:-}"; shift 2 ;; --match-head-commit) m_oid="${2:-}"; shift 2 ;; *) shift ;; esac
+          done
+          git -C "$m_repo" update-ref "refs/heads/${GH_STUB_LAND_DEF:-main}" "$m_oid" 2>/dev/null
         fi
         # Stands in for GitHub's own squash landing on the default branch, so the
         # tree-verify step downstream has a real tree to compare against.
@@ -1052,6 +1068,187 @@ chk "stray commits refused push: apply exits 2" "$([ "$rc" = 2 ]; echo $?)"
 chk_has "stray commits refused push: FAILED names the branch" "$out" "FAILED carry 1 stray commits on main to wrap/stray-commits-"
 chk "stray commits refused push: main did not move" "$([ "$(git -C "$SCF" rev-parse HEAD)" = "$SCF_STRAY" ]; echo $?)"
 chk_has "stray commits refused push: the pull step still ran" "$out" "-- pull:"
+
+# ===========================================================================
+echo "=== apply: wrap.autoland_carry lands the carry branches through merge --pr ==="
+# ===========================================================================
+# The incident: an earlier run pushed a carry branch and nobody opened its PR, so every later
+# run skipped the file. With the knob on, apply opens that PR, merges it through `merge --pr`,
+# then carries and lands whatever the orphan did not hold.
+AL_ON="$TMPD/autoland-on"; AL_PROJ="$TMPD/autoland-project"; mkdir -p "$AL_ON" "$AL_PROJ"
+printf '[wrap]\nautoland_carry = true\n' > "$AL_ON/kit.toml"
+printf '[wrap]\nautoland_carry = true\n' > "$AL_PROJ/.kit.toml"
+source "$KIT_DIR/lib/config/kit-config.sh"
+v="$(KIT_CONFIG_ROOT="$KIT_DIR" kit_config_get_root wrap.autoland_carry true)"
+chk "wrap.autoland_carry ships as false" "$([ "$v" = "false" ]; echo $?)"
+v="$(KIT_CONFIG_OPERATOR="$AL_ON" kit_config_get_root wrap.autoland_carry false)"
+chk "wrap.autoland_carry honours the operator kit.toml" "$([ "$v" = "true" ]; echo $?)"
+v="$(KIT_PROJECT_ROOT="$AL_PROJ" kit_config_get_root wrap.autoland_carry false)"
+chk "wrap.autoland_carry ignores a project .kit.toml" "$([ "$v" = "false" ]; echo $?)"
+
+AL_PR='{"number":42,"title":"carry","headRefName":"wrap/stray","headRefOid":"%CARRY_TIP%","baseRefName":"main","mergeable":"MERGEABLE","mergeStateStatus":"CLEAN","reviewDecision":"","statusCheckRollup":[],"isDraft":false}'
+AL_OPEN='[{"number":42,"title":"carry","headRefName":"wrap/stray"}]'
+al_run() { # al_run <bare> <clone> [--apply] -- apply with the knob on and the carry stub wired
+  local bare="$1" clone="$2"; shift 2
+  : > "$GH_STUB_CALLS"; rm -f "$GH_STUB_CALLS".*
+  KIT_CONFIG_OPERATOR="$AL_ON" KIT_WRAP_CARRY_CHECKS_SECS="${AL_WAIT:-0}" GH_STUB_CARRY_REMOTE="$bare" GH_STUB_LAND_OID=1 \
+    GH_STUB_OPEN_PRS="$AL_OPEN" GH_STUB_PR_42="${AL_PR_OVERRIDE:-$AL_PR}" "$WRAP" apply "$@" "$clone" 2>&1
+}
+al_orphan() { # al_orphan <name> -- an origin carry branch holding one of the two stray lines, no PR
+  local p="$TMPD/upush-al-$1"
+  git clone -q "$TMPD/ubare-$1" "$p"; gitc "$p"
+  printf '%s' $'# Lab log\n\n---\n\n2026-09-04 · stray: the first line\n2026-09-01 · base: the first line\n' > "$p/_meta/LAB_LOG.md"
+  git -C "$p" commit -qam "chore(LAB_LOG): carry 1 stray lines from a shared checkout"
+  git -C "$p" push -q origin "HEAD:refs/heads/wrap/stray-meta-lab-log-md-20260101-0000"
+}
+
+build_union_repo aladopt; al_orphan aladopt
+ALC="$TMPD/uclone-aladopt"; ALB="$TMPD/ubare-aladopt"; ALO="wrap/stray-meta-lab-log-md-20260101-0000"
+printf '%s' "$LAB_STRAY" > "$ALC/_meta/LAB_LOG.md"
+out="$(al_run "$ALB" "$ALC")"; rc=$?
+chk "autoland dry-run: apply exits 0" "$rc"
+chk_has "autoland dry-run: the orphan still skips" "$out" "an origin wrap/stray-meta-lab-log-md-* branch already carries this file"
+chk_has "autoland dry-run: names the landing" "$out" "WOULD open and merge its PR (wrap.autoland_carry=true)"
+chk_no "autoland dry-run: no PR was opened" "$(cat "$GH_STUB_CALLS")" "pr create"
+ORPHAN_TIP="$(git -C "$ALB" rev-parse "$ALO")"
+out="$(al_run "$ALB" "$ALC" --apply)"; rc=$?
+chk "autoland adopt: apply exits 0" "$rc"
+chk_has "autoland adopt: the orphan's PR is opened" "$(cat "$GH_STUB_CALLS")" "pr create --repo $ALB --head $ALO"
+chk_has "autoland adopt: the orphan merges pinned to its tip" "$(cat "$GH_STUB_CALLS")" "--squash --match-head-commit $ORPHAN_TIP"
+chk_has "autoland adopt: merge --pr verifies the tree" "$out" "tree verified"
+chk_no "autoland adopt: the file is no longer skipped" "$out" "SKIP _meta/LAB_LOG.md"
+chk_has "autoland adopt: the remainder is one line" "$out" "carried 1 stray lines in _meta/LAB_LOG.md to origin/wrap/stray-meta-lab-log-md-2"
+chk "autoland adopt: two PRs opened, two merges" \
+  "$([ "$(grep -c '^pr create' "$GH_STUB_CALLS")" = 2 ] && [ "$(grep -c '^pr merge' "$GH_STUB_CALLS")" = 2 ]; echo $?)"
+chk "autoland adopt: origin main holds both stray lines once" \
+  "$([ "$(git -C "$ALB" show main:_meta/LAB_LOG.md)" = "${LAB_STRAY%$'\n'}" ]; echo $?)"
+chk_no "autoland adopt: nothing failed" "$out" "FAILED"
+out="$(al_run "$ALB" "$ALC" --apply)"
+chk_has "autoland rerun: no stray lines left" "$(printf '%s' "$out" | grep -A1 -- '-- stray lines:')" "none"
+
+echo "--- autoland: a gate refusal leaves the PR open, exit 0"
+build_union_repo algate
+ALG="$TMPD/uclone-algate"; ALGB="$TMPD/ubare-algate"
+printf '%s' "$LAB_STRAY" > "$ALG/_meta/LAB_LOG.md"
+AL_PR_OVERRIDE="${AL_PR/\"statusCheckRollup\":\[\]/\"statusCheckRollup\":[{\"name\":\"ci\",\"status\":\"COMPLETED\",\"conclusion\":\"FAILURE\",\"completedAt\":\"2026-01-01T00:00:00Z\"}]}"
+out="$(AL_PR_OVERRIDE="$AL_PR_OVERRIDE" al_run "$ALGB" "$ALG" --apply)"; rc=$?
+chk "autoland gate refusal: apply exits 0" "$rc"
+chk_has "autoland gate refusal: the gate names the checks" "$out" "checks are pending or failing"
+chk_has "autoland gate refusal: the PR is left open" "$out" "PR #42 left open; wrap merge --apply --pr 42 merges it once green"
+chk_no "autoland gate refusal: nothing merged" "$(cat "$GH_STUB_CALLS")" "pr merge"
+unset AL_PR_OVERRIDE
+
+echo "--- autoland: a draft PR on the orphan is the lead's call"
+build_union_repo aldraft; al_orphan aldraft
+ALD="$TMPD/uclone-aldraft"; ALDB="$TMPD/ubare-aldraft"
+printf '%s' "$LAB_STRAY" > "$ALD/_meta/LAB_LOG.md"
+out="$(GH_STUB_OPEN_HEAD_wrap_stray_meta_lab_log_md_20260101_0000='[{"number":7,"isDraft":true,"author":{"login":"me"}}]' al_run "$ALDB" "$ALD" --apply)"; rc=$?
+chk "autoland draft: apply exits 0" "$rc"
+chk_has "autoland draft: names the draft" "$out" "SKIP land ${ALO}: its PR #7 is a draft"
+chk_has "autoland draft: today's skip follows" "$out" "SKIP _meta/LAB_LOG.md: 2 stray lines"
+chk_no "autoland draft: never marked ready" "$(cat "$GH_STUB_CALLS")" "pr ready"
+chk_no "autoland draft: nothing merged" "$(cat "$GH_STUB_CALLS")" "pr merge"
+
+echo "--- autoland: a PR another login authored on the orphan is never adopted"
+build_union_repo alforeignpr; al_orphan alforeignpr
+ALP="$TMPD/uclone-alforeignpr"; ALPB="$TMPD/ubare-alforeignpr"
+printf '%s' "$LAB_STRAY" > "$ALP/_meta/LAB_LOG.md"
+out="$(GH_STUB_OPEN_HEAD_wrap_stray_meta_lab_log_md_20260101_0000='[{"number":7,"isDraft":false,"author":{"login":"someone"}}]' al_run "$ALPB" "$ALP" --apply)"; rc=$?
+chk "autoland foreign PR: apply exits 0" "$rc"
+chk_has "autoland foreign PR: names it" "$out" "SKIP land ${ALO}: its PR #7 is not authored by you"
+chk_no "autoland foreign PR: nothing merged" "$(cat "$GH_STUB_CALLS")" "pr merge"
+
+echo "--- autoland: an orphan adding a line this checkout lacks, or a look-alike name, is never landed"
+build_union_repo alforeign
+ALX="$TMPD/uclone-alforeign"; ALXB="$TMPD/ubare-alforeign"; ALXP="$TMPD/upush-al-alforeign"
+git clone -q "$ALXB" "$ALXP"; gitc "$ALXP"
+printf '%s' $'# Lab log\n\n---\n\n2026-09-09 · foreign: nobody here wrote this\n2026-09-04 · stray: the first line\n2026-09-01 · base: the first line\n' > "$ALXP/_meta/LAB_LOG.md"
+git -C "$ALXP" commit -qam "chore(LAB_LOG): carry 2 stray lines from a shared checkout"
+git -C "$ALXP" push -q origin "HEAD:refs/heads/${ALO}" "HEAD:refs/heads/wrap/stray-meta-lab-log-md-bak-x"
+printf '%s' "$LAB_STRAY" > "$ALX/_meta/LAB_LOG.md"
+out="$(al_run "$ALXB" "$ALX" --apply)"; rc=$?
+chk "autoland foreign content: apply exits 0" "$rc"
+chk_has "autoland foreign content: the orphan is refused" "$out" "SKIP land ${ALO}: not a carry of _meta/LAB_LOG.md alone"
+chk_has "autoland foreign content: the look-alike is refused" "$out" "SKIP land wrap/stray-meta-lab-log-md-bak-x: not a carry"
+chk_has "autoland foreign content: today's skip follows" "$out" "SKIP _meta/LAB_LOG.md: 2 stray lines"
+chk_no "autoland foreign content: no PR opened" "$(cat "$GH_STUB_CALLS")" "pr create"
+
+echo "--- autoland: an orphan that removes a line is never landed"
+build_union_repo aldel
+ALR="$TMPD/uclone-aldel"; ALRB="$TMPD/ubare-aldel"; ALRP="$TMPD/upush-al-aldel"
+git clone -q "$ALRB" "$ALRP"; gitc "$ALRP"
+printf '%s' $'# Lab log\n\n---\n\n2026-09-04 · stray: the first line\n' > "$ALRP/_meta/LAB_LOG.md"
+git -C "$ALRP" commit -qam "chore(LAB_LOG): carry 1 stray lines from a shared checkout"
+git -C "$ALRP" push -q origin "HEAD:refs/heads/${ALO}"
+printf '%s' "$LAB_STRAY" > "$ALR/_meta/LAB_LOG.md"
+out="$(al_run "$ALRB" "$ALR" --apply)"
+chk_has "autoland removal: the orphan is refused" "$out" "SKIP land ${ALO}: not a carry of _meta/LAB_LOG.md alone"
+chk_no "autoland removal: no PR opened" "$(cat "$GH_STUB_CALLS")" "pr create"
+
+echo "--- autoland: a PR head that moved off the checked commit is never merged"
+build_union_repo almoved
+ALM="$TMPD/uclone-almoved"; ALMB="$TMPD/ubare-almoved"
+printf '%s' "$LAB_STRAY" > "$ALM/_meta/LAB_LOG.md"
+out="$(AL_PR_OVERRIDE="${AL_PR/"%CARRY_TIP%"/1111111111111111111111111111111111111111}" al_run "$ALMB" "$ALM" --apply)"; rc=$?
+chk "autoland moved head: apply exits 0" "$rc"
+chk_has "autoland moved head: names the moved head" "$out" "PR #42 head is 1111111, not the checked"
+chk_no "autoland moved head: nothing merged" "$(cat "$GH_STUB_CALLS")" "pr merge"
+
+echo "--- autoland: a fresh PR with no checks yet waits for its state to settle"
+build_union_repo alwait
+ALW="$TMPD/uclone-alwait"; ALWB="$TMPD/ubare-alwait"
+printf '%s' "$LAB_STRAY" > "$ALW/_meta/LAB_LOG.md"
+out="$(PATH="$TMPD/nosleep:$PATH" AL_WAIT=30 GH_STUB_PR_42_2="$AL_PR" \
+  AL_PR_OVERRIDE="${AL_PR/\"CLEAN\"/\"BLOCKED\"}" al_run "$ALWB" "$ALW" --apply)"; rc=$?
+chk "autoland settle: apply exits 0" "$rc"
+chk_has "autoland settle: merged once the state went CLEAN" "$out" "tree verified"
+chk "autoland settle: the wait read twice before the merge" \
+  "$([ "$(grep -c '^pr view 42 --repo .* --json statusCheckRollup,mergeStateStatus' "$GH_STUB_CALLS")" = 2 ]; echo $?)"
+
+echo "--- autoland: wrap.merge_own_prs false wins"
+AL_HOLD="$TMPD/autoland-hold"; mkdir -p "$AL_HOLD"
+printf '[wrap]\nautoland_carry = true\nmerge_own_prs = false\n' > "$AL_HOLD/kit.toml"
+build_union_repo alhold
+ALH="$TMPD/uclone-alhold"
+printf '%s' "$LAB_STRAY" > "$ALH/_meta/LAB_LOG.md"
+: > "$GH_STUB_CALLS"
+out="$(KIT_CONFIG_OPERATOR="$AL_HOLD" "$WRAP" apply --apply "$ALH" 2>&1)"
+chk_has "autoland held: prints today's PR command" "$out" "open its PR with: gh pr create --head wrap/stray-meta-lab-log-md-"
+chk_no "autoland held: no PR opened" "$(cat "$GH_STUB_CALLS")" "pr create"
+
+echo "--- autoland: a failed merge exits 2"
+build_union_repo alfail
+ALF="$TMPD/uclone-alfail"; ALFB="$TMPD/ubare-alfail"
+printf '%s' "$LAB_STRAY" > "$ALF/_meta/LAB_LOG.md"
+out="$(GH_STUB_MERGE_RC=1 al_run "$ALFB" "$ALF" --apply)"; rc=$?
+chk "autoland merge failure: apply exits 2" "$([ "$rc" = 2 ]; echo $?)"
+chk_has "autoland merge failure: merge names it" "$out" "FAILED merge #42"
+
+echo "--- autoland: stray commits land, then main moves and pulls"
+build_union_repo alcommit
+ALS="$TMPD/uclone-alcommit"; ALSB="$TMPD/ubare-alcommit"
+printf 'a note\n' > "$ALS/notes.md"; git -C "$ALS" add notes.md; git -C "$ALS" commit -qm "docs: a stray note"
+out="$(al_run "$ALSB" "$ALS")"
+chk_has "autoland commits dry-run: names the landing" "$out" "WOULD open and merge its PR (wrap.autoland_carry=true)"
+out="$(al_run "$ALSB" "$ALS" --apply)"; rc=$?
+ALSR="$(commit_branches "$ALSB")"
+chk "autoland commits: apply exits 0" "$rc"
+chk_has "autoland commits: the PR is opened" "$(cat "$GH_STUB_CALLS")" "pr create --repo $ALSB --head $ALSR"
+chk_has "autoland commits: the merge verifies" "$out" "tree verified"
+chk "autoland commits: origin main holds the note" "$([ "$(git -C "$ALSB" show main:notes.md)" = "a note" ]; echo $?)"
+chk "autoland commits: main is origin/main" "$([ "$(git -C "$ALS" rev-parse HEAD)" = "$(git -C "$ALSB" rev-parse main)" ]; echo $?)"
+chk_no "autoland commits: nothing failed" "$out" "FAILED"
+
+echo "--- autoland: stray commits a dirty file keeps ahead are pushed, not landed"
+build_union_repo alcblock
+ALK="$TMPD/uclone-alcblock"
+printf 'a note\n' > "$ALK/notes.md"; git -C "$ALK" add notes.md; git -C "$ALK" commit -qm "docs: a stray note"
+printf 'readme local\n' > "$ALK/README.md"
+out="$(al_run "$TMPD/ubare-alcblock" "$ALK")"
+chk_no "autoland commits blocked dry-run: no landing named" "$out" "WOULD open and merge"
+out="$(al_run "$TMPD/ubare-alcblock" "$ALK" --apply)"
+chk_has "autoland commits blocked: the reason prints" "$out" "not landed: dirty tracked files block the move: README.md"
+chk_no "autoland commits blocked: no PR opened" "$(cat "$GH_STUB_CALLS")" "pr create"
 
 # ===========================================================================
 echo "=== apply: wrap.pull_past_dirty stashes only the blocking files ==="
