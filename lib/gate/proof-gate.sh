@@ -83,7 +83,7 @@ proof_requirement() {
     stateful)
       echo "stateful: exercise the REAL flow on a copy or dry-run, record the run (command + output + verdict) in docs/verification/<spec-slug>.md, and note rollback/reversibility. No 'done' without a recorded run AND a rollback path." ;;
     behavioral)
-      echo "behavioral: run the REAL primary flow end-to-end (not a proxy test), record the run in docs/verification/<spec-slug>.md, and include a negative control (revert -> RED -> restore)." ;;
+      echo "behavioral: run the REAL primary flow end-to-end (not a proxy test), record the run in docs/verification/<spec-slug>.md, and include a negative control (revert -> RED -> restore; lib/gate/negctl.sh runs this)." ;;
     inert)
       echo "inert: exempt. Record [PROOF OF DONE: exempt -- <reason>] in the log or the task line. No run required." ;;
   esac
@@ -112,7 +112,7 @@ proof_contract() {
   type="$(_classify_type "$desc")"; [ -n "$type" ] || type=spec-feature
   artifact="$(_registry_field "$type" 3)"
   skill="$(_registry_field "$type" 4)"
-  [ -n "$artifact" ] || artifact="(no registry row for type '$type'; default: run the real primary flow + a negative control)"
+  [ -n "$artifact" ] || artifact="(no registry row for type '$type'; default: run the real primary flow + a negative control via lib/gate/negctl.sh)"
   [ -n "$skill" ] || skill="(none)"
   echo "type=$type class=$class"
   echo "proof: $artifact"

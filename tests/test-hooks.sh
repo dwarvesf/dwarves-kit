@@ -1237,6 +1237,7 @@ assert_output_contains "proof: a typo -> inert" "^inert$" "$(PGATE 'fix a typo i
 # requirement strings name the obligation per class.
 assert_output_contains "proof req: stateful names rollback" "rollback" "$(bash "$KIT_DIR/lib/gate/proof-gate.sh" requirement 'deploy to production' 2>/dev/null)"
 assert_output_contains "proof req: behavioral names negative control" "negative control" "$(bash "$KIT_DIR/lib/gate/proof-gate.sh" requirement 'add a flag' 2>/dev/null)"
+assert_output_contains "proof req: behavioral names negctl.sh" "negctl.sh" "$(bash "$KIT_DIR/lib/gate/proof-gate.sh" requirement 'add a flag' 2>/dev/null)"
 assert_output_contains "proof req: inert is exempt" "exempt" "$(bash "$KIT_DIR/lib/gate/proof-gate.sh" requirement 'fix a typo' 2>/dev/null)"
 
 # ============================================================
