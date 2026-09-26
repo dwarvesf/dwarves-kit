@@ -50,3 +50,66 @@ operator-owned open PR ===` section, which is where the `open_pr_json` helper fu
 defined. The new "adopted PR keeps its own title" case inlines the same JSON shape directly
 rather than calling that not-yet-defined function, to avoid reordering unrelated sections of
 the file for one call site.
+
+## Post-build critique: FIX THEN SHIP on tests only (design SOLID, code correct)
+
+A fresh critique+review pass found the design sound and the implementation correct, but the
+test suite did not actually isolate three of the four flags on `_land_feature_title`'s `git
+log` calls. Each gap and its fix:
+
+- **`--reverse` untested (HIGH).** The original #771-shaped fixture (`title-mid`) had its
+  original feature commit ALREADY as the sole non-housekeeping candidate with nothing after
+  it of the same type, so dropping `--reverse` would have picked the same (only) match either
+  way -- the ordering itself was never exercised. Added `title-771`, reproducing the real #771
+  shape exactly: `docs(spec): r` -> `feat(x): the change` -> `fix(x): review follow-up`. Kill
+  (`sed` dropping `--reverse` from the walk's `git log`, line 2141): RED, 1 failure
+  (`title-771` picked the newest non-housekeeping match, the review follow-up, instead of the
+  oldest). Restored: green.
+- **`--no-merges` untested (HIGH).** The original `title-mrg` fixture's own commit
+  (`feat(x): real change`) was ALREADY non-housekeeping, so the walk returned before ever
+  reaching the merge commit -- `--no-merges` was never load-bearing in that shape. Two fixes:
+  (a) changed `title-mrg`'s own commit to `docs(x): only` (housekeeping), forcing the walk to
+  continue past it to the merge commit next. Kill (drop `--no-merges` from the WALK, line
+  2141): RED, 2 failures in `title-mrg` (the merge subject won) AND 2 in `title-mrgfb` (the
+  walk itself now caught the same front-of-range merge before ever reaching the fallback,
+  confirming the walk-level bug's blast radius). Restored: green. (b) added `title-mrgfb`,
+  a branch that owns NO commit at all when it merges (`git merge --no-ff origin/main`), only
+  committing its own `docs(x): a` afterward, so the walk correctly finds nothing and the
+  FALLBACK's own `--no-merges` is what gets exercised. Kill (drop `--no-merges` from the
+  FALLBACK only, line 2142): RED, 2 failures, `title-mrgfb` alone (`title-mrg`'s walk still
+  found nothing, its own `--no-merges` untouched by this mutation, so it stayed green).
+  Restored: green.
+- **`--topo-order` untested (MEDIUM).** Added `title-topo`: the branch's own
+  `feat(x): the main change` at the real commit date, merged (`--no-ff`) with a local
+  `side-topo` branch whose `feat(y): the backdated side change` carries an explicit
+  `GIT_COMMITTER_DATE`/`GIT_AUTHOR_DATE` in 2020. Kill (drop `--topo-order` from the walk,
+  line 2141): RED, 2 failures, `title-topo` alone (plain date-order picked the backdated side
+  commit as "oldest" instead of the branch's own, topologically-earlier commit). Restored:
+  green.
+- **Argument-boundary check (LOW).** Rather than reformat the shared `gh` stub's primary call
+  log (which every pre-existing assertion in the file greps as space-joined text -- reformatting
+  it risked breaking hundreds of unrelated checks for one new assertion), added an ADDITIVE,
+  opt-in second log (`GH_STUB_CALLS_QUOTED`, each argv entry bracketed: `<arg1><arg2>...`),
+  written only when a case sets that env var. `title-mid` now also asserts
+  `<--title><fix(x): the real change>` on that second log, proving the title landed as one
+  argv entry rather than several word-split ones. Zero existing assertions touched.
+- **`title-hk` housekeeping-type coverage (LOW).** Extended from 2 to 4 commits
+  (`docs(x): a`, `chore(x): b`, `test(x): c`, `docs!: d`, the last covering the bare-bang
+  breaking-change marker with no scope), asserting the fallback still lands on the oldest
+  (`docs(x): a`) and never any of the three newer housekeeping subjects, `test` and bare-bang
+  `docs!` included.
+- **Accepted edge case added to the spec.** A branch that merges in a non-default (side)
+  branch, where the branch's OWN commits are all housekeeping but the merged-in side branch
+  carries a real non-housekeeping commit, takes the foreign side commit's subject. Documented
+  as accepted in the Failure modes table: the walk excludes MERGE commits, not non-merge
+  commits inherited via a merge, and has no provenance signal to tell "this branch's own
+  history" from "a foreign branch's history that got merged in." Same family as the
+  already-accepted stacked-branch limitation.
+
+Every mutation above was applied to `lib/wrap/wrap.sh` alone, the SAME line each time
+(`2141` for the walk's three flags, `2142` for the fallback's `--no-merges`), full suite run
+under the mutation, confirmed RED with the exact assertion(s) failing named above, then
+restored via `git checkout HEAD -- lib/wrap/wrap.sh` and confirmed the tree matched HEAD
+exactly (`git diff --stat` empty) before the next mutation. The `--reverse` case additionally
+ran through `lib/gate/negctl.sh` end to end (mutate/RED/restore/green in one gated call);
+the other three were run by hand for per-assertion detail negctl itself discards.
