@@ -1012,6 +1012,59 @@ _pull_default() {
   echo "     HEAD: $(git -C "$repo" log --oneline -1 2>/dev/null)"
 }
 
+# _land_ff_pull <repo> -- `land`'s fast-forward, with a dirty merge=union file carried across
+# it. Reuses `_union_marked` and `_union_carry_back`, the same building blocks `_pull_default`
+# carries `apply`'s pull with, but never the `wrap.pull_past_dirty` stash: `land` runs after a
+# merge has already landed, on a checkout it does not own, and stays inside the guarantee its
+# caller states ("never stashed past and never reset") for any file the repo has not itself
+# declared safe to keep both sides of. A staged change skips the carry entirely, same guard as
+# `_pull_default`, since restoring an index the carry did not stash is out of scope.
+_land_ff_pull() {
+  local repo="$1" f staged modified union_tmp saved_dir="" n=0 rc carried
+
+  staged="$(git -C "$repo" diff --cached --name-only 2>/dev/null)"
+  modified="$(git -C "$repo" diff --name-only 2>/dev/null)"
+  if [ -z "$staged" ] && [ -n "$modified" ]; then
+    union_tmp="$(mktemp)"
+    while IFS= read -r -d '' f; do
+      [ -f "$repo/$f" ] && _union_marked "$repo" "$f" && printf '%s\0' "$f" >> "$union_tmp"
+    done < <(git -C "$repo" diff --name-only -z 2>/dev/null)
+    if [ -s "$union_tmp" ]; then
+      saved_dir="$(mktemp -d)"
+      while IFS= read -r -d '' f; do
+        n=$(( n + 1 ))
+        cp "$repo/$f" "${saved_dir}/${n}"
+        printf '%s\0' "$f" >> "${saved_dir}/list"
+        git -C "$repo" checkout -- "$f"
+        cp "$repo/$f" "${saved_dir}/${n}.base"
+      done < "$union_tmp"
+      echo "     saved ${n} union-marked file(s) aside so the pull can fast-forward"
+    fi
+    rm -f "$union_tmp"
+  fi
+
+  if git -C "$repo" pull --ff-only; then rc=0; else rc=1; fi
+
+  if [ -n "$saved_dir" ]; then
+    n=0
+    while IFS= read -r -d '' f; do
+      n=$(( n + 1 ))
+      if [ "$rc" = 0 ]; then
+        if carried="$(_union_carry_back "${saved_dir}/${n}" "${saved_dir}/${n}.base" "$repo/$f")"; then
+          echo "     carried ${carried} local line(s) back into ${f}"
+        else
+          echo "     FAILED carry: ${f} would not union-merge, so its pre-pull content is back"
+          rc=1
+        fi
+      else
+        cp "${saved_dir}/${n}" "$repo/$f"
+      fi
+    done < "${saved_dir}/list"
+    rm -rf "$saved_dir"
+  fi
+  return "$rc"
+}
+
 # _stray_lines <repo> <def> <path> -- prints, in working-copy order and once each, every
 # non-blank line of the working copy that neither origin/<def>'s version nor HEAD's version
 # holds: a line written into this checkout that no commit origin can see carries.
@@ -2139,14 +2192,15 @@ cmd_land() {
   fi
 
   # The fast-forward is advisory: a checkout this call does not own may be dirty or on
-  # another branch, and neither is a reason to strand a merged worktree. It is never
-  # stashed past and never reset; the refusal is reported and the tidy continues.
+  # another branch, and neither is a reason to strand a merged worktree. A dirty file the
+  # repo declares merge=union is carried across (_land_ff_pull, SPEC-321); any other dirty
+  # file is never stashed past and never reset; the refusal is reported and the tidy continues.
   local blocked=0 cur
   cur="$(git -C "$repo" branch --show-current 2>/dev/null)"
   if [ "$cur" != "$def" ]; then
     echo "     PULL BLOCKED: ${repo} is on '${cur:-<detached>}', not ${def}"
     blocked=1
-  elif git -C "$repo" pull --ff-only; then
+  elif _land_ff_pull "$repo"; then
     echo "     pulled ${repo}: $(git -C "$repo" log --oneline -1 2>/dev/null)"
   else
     echo "     PULL BLOCKED: pull --ff-only refused in ${repo}, nothing was stashed or reset"
