@@ -14,6 +14,9 @@ set -uo pipefail
 
 KIT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SN="$KIT_DIR/lib/spec/spec-next.sh"
+# Hermetic by default: no test here needs the real open-PR gh scan, and leaving it on made
+# T21/T22 reach real `gh` (slow, and a false pass/fail on a machine without `gh` auth).
+export SPEC_NEXT_NO_PR_SCAN=1
 GREEN='\033[0;32m'; RED='\033[0;31m'; NC='\033[0m'
 PASS=0; FAIL=0; TOTAL=0
 ok()  { TOTAL=$((TOTAL+1)); PASS=$((PASS+1)); echo -e "  ${GREEN}PASS${NC} $1"; }
@@ -33,6 +36,8 @@ mk_repo() {
   git -C "$r" add -A; git -C "$r" commit -qm init >/dev/null 2>&1
   printf '%s\n' "$r"
 }
+# The reservation key: the repo's physical path (the main checkout for a non-bare repo).
+key() { (cd "$1" && pwd -P); }
 
 # ============================================================
 echo "=== T1: single reserve on empty ledger ==="
@@ -42,7 +47,7 @@ OUT="$(cd "$R" && SPEC_RESERVE_FILE="$RES" bash "$SN" reserve)"
 eq "T1 reserve returns max+1 (006)" "$OUT" "006"
 LINES="$(count '| RESERVE |' "$RES")"
 eq "T1 exactly one RESERVE line appended" "$LINES" "1"
-expect "T1 line is repo-scoped + carries num" "num=006 repo=$(basename "$R")" "$(cat "$RES")"
+expect "T1 line is repo-scoped + carries num" "num=006 repo=$(key "$R")$" "$(cat "$RES")"
 
 # ============================================================
 echo "=== T2: 20 parallel reserve -> 20 distinct (atomic claim, CORE) ==="
@@ -115,7 +120,7 @@ echo "=== T7: reconcile -- an EXPIRED reservation stops counting ==="
 # ============================================================
 R="$(mk_repo)"; RES="$R/res.log"
 # Hand-write a reservation dated in 1970 (definitely older than any TTL).
-printf '1970-01-01T00:00:00Z | RESERVE | num=006 repo=%s\n' "$(basename "$R")" > "$RES"
+printf '1970-01-01T00:00:00Z | RESERVE | num=006 repo=%s\n' "$(key "$R")" > "$RES"
 # With TTL default 24h, the ancient 006 is expired => not counted => next free is still 006.
 N7="$(cd "$R" && SPEC_RESERVE_FILE="$RES" bash "$SN" next)"
 eq "T7 expired reservation does not inflate next (still 006)" "$N7" "006"
@@ -191,8 +196,8 @@ RES="$R/res.log"
 # A live reservation for repo "<base>-bar" (this repo). A DIFFERENT repo whose name is the
 # bare prefix must not fold this in. Simulate by writing a line for this repo, then asking a
 # would-be prefix repo... simpler: assert the anchored fold only matches the exact repo.
-BASE="$(basename "$R")"                 # e.g. kit-spec-reserve.xxx-bar
-PREFIX="${BASE%-bar}"                    # the bare prefix, kit-spec-reserve.xxx
+BASE="$(key "$R")"                      # e.g. /tmp/kit-spec-reserve.xxx-bar
+PREFIX="${BASE%-bar}"                    # the bare prefix, /tmp/kit-spec-reserve.xxx
 printf '%s | RESERVE | num=006 repo=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$PREFIX" > "$RES"
 # This repo is "<...>-bar"; a line for the PREFIX repo must NOT be folded in, so next is 006.
 N12="$(cd "$R" && SPEC_RESERVE_FILE="$RES" bash "$SN" next)"
@@ -287,6 +292,82 @@ N19="$(cd "$R" && SPEC_RESERVE_FILE="$RES" bash "$SN" next foo 2>&1 >/dev/null; 
 expect "T19 next also rejects an argument" "rc=64" "$N19"
 
 # ============================================================
+echo "=== T20: two WORKTREES of one repo reserve concurrently -> distinct numbers ==="
+# ============================================================
+# The observed bug: worktrees at <repo>/.claude/worktrees/<slug> keyed their claims by slug,
+# so each saw zero live reservations and all claimed the same number.
+R="$(mk_repo)"; RES="$R/res.log"; ACC="$R/acc20"; : > "$ACC"
+git -C "$R" worktree add -q "$R/.claude/worktrees/wa" -b wa >/dev/null 2>&1
+git -C "$R" worktree add -q "$R/.claude/worktrees/wb" -b wb >/dev/null 2>&1
+for W in wa wb; do ( cd "$R/.claude/worktrees/$W" && SPEC_RESERVE_FILE="$RES" SPEC_NEXT_NO_PR_SCAN=1 bash "$SN" reserve >> "$ACC" 2>/dev/null ) & done
+wait
+eq "T20 both worktrees got a number" "$(grep -c . "$ACC" | tr -d ' ')" "2"
+eq "T20 the two numbers differ" "$(sort -u "$ACC" | grep -c . | tr -d ' ')" "2"
+eq "T20 both claims carry the one repo key" "$(grep -c "repo=$(key "$R")\$" "$RES" | tr -d ' ')" "2"
+N20M="$(cd "$R" && SPEC_RESERVE_FILE="$RES" SPEC_NEXT_NO_PR_SCAN=1 bash "$SN" next 2>/dev/null)"
+eq "T20 the main checkout sees both worktree claims (008)" "$N20M" "008"
+
+# ============================================================
+echo "=== T21: two DIFFERENT repos sharing a folder name keep separate counters ==="
+# ============================================================
+P1="$(mktemp -d "${TMPDIR:-/tmp}/kit-spec-reserve-p1.XXXXXX")"; P2="$(mktemp -d "${TMPDIR:-/tmp}/kit-spec-reserve-p2.XXXXXX")"
+for P in "$P1" "$P2"; do
+  mkdir -p "$P/same/docs/specs"; git -C "$P/same" init -q; git -C "$P/same" config user.email t@t.t; git -C "$P/same" config user.name t
+  : > "$P/same/docs/specs/SPEC-005-x.md"; git -C "$P/same" add -A; git -C "$P/same" commit -qm init >/dev/null 2>&1
+done
+RES="$P1/shared.log"
+(cd "$P1/same" && SPEC_RESERVE_FILE="$RES" bash "$SN" reserve >/dev/null 2>&1)   # 006 for repo 1
+(cd "$P1/same" && SPEC_RESERVE_FILE="$RES" bash "$SN" reserve >/dev/null 2>&1)   # 007 for repo 1
+N21="$(cd "$P2/same" && SPEC_RESERVE_FILE="$RES" bash "$SN" next 2>/dev/null)"
+eq "T21 repo 2 ignores repo 1's claims despite the shared folder name (006)" "$N21" "006"
+(cd "$P2/same" && SPEC_RESERVE_FILE="$RES" bash "$SN" reserve >/dev/null 2>&1)
+eq "T21 repo 2's reserve leaves repo 1's live lines alone" "$(grep -c "repo=$(key "$P1/same")\$" "$RES" | tr -d ' ')" "2"
+
+# ============================================================
+echo "=== T22: a LEGACY folder-name line does not break parsing ==="
+# ============================================================
+R="$(mk_repo)"; RES="$R/res.log"
+{ printf '%s | RESERVE | num=040 repo=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$(basename "$R")"
+  printf '1970-01-01T00:00:00Z | RESERVE | num=041 repo=%s\n' "$(basename "$R")"; } > "$RES"
+N22="$(cd "$R" && SPEC_RESERVE_FILE="$RES" bash "$SN" next 2>/dev/null; echo "rc=$?")"
+expect "T22 next still works with legacy lines present" "rc=0" "$N22"
+expect "T22 a live legacy line is not counted (006)" "^006" "$N22"
+(cd "$R" && SPEC_RESERVE_FILE="$RES" bash "$SN" reserve >/dev/null 2>&1)
+eq "T22 an expired legacy line is pruned" "$(count 'num=041' "$RES")" "0"
+eq "T22 a live legacy line stays until its TTL" "$(count 'num=040' "$RES")" "1"
+
+# ============================================================
+echo "=== T23: an uncommitted spec in a SIBLING worktree reads as taken ==="
+# ============================================================
+R="$(mk_repo)"; RES="$R/res.log"
+git -C "$R" worktree add -q "$R/.claude/worktrees/wa" -b wa >/dev/null 2>&1
+git -C "$R" worktree add -q "$R/.claude/worktrees/wb" -b wb >/dev/null 2>&1
+: > "$R/.claude/worktrees/wb/docs/specs/SPEC-009-x.md"     # written, never committed
+N23="$(cd "$R/.claude/worktrees/wa" && SPEC_RESERVE_FILE="$RES" bash "$SN" next 2>/dev/null)"
+eq "T23 next from worktree a sees worktree b's spec file (010)" "$N23" "010"
+CHK23="$(cd "$R/.claude/worktrees/wa" && SPEC_RESERVE_FILE="$RES" bash "$SN" check 009 2>&1; echo "rc=$?")"
+expect "T23 check 009 from worktree a says TAKEN" "rc=1" "$CHK23"
+
+# ============================================================
+
+# ============================================================
+echo "=== T24: CDPATH must not hijack the bare 'cd' that computes the repo key (HIGH) ==="
+# ============================================================
+# A CDPATH entry holding a decoy .git makes a bare `cd "$_cd"` search CDPATH: it jumps into the
+# decoy AND prints the found path to stdout. Command substitution captures that print alongside
+# `pwd -P`, so REPO becomes two lines -- a key no ledger line's suffix match ever hits, so
+# `_reservations()` never sees a repo's own prior claims and every `reserve` re-derives the SAME
+# max+1, double-issuing a number.
+R="$(mk_repo)"; RES="$R/res.log"
+DECOY_PARENT="$(mktemp -d "${TMPDIR:-/tmp}/kit-spec-reserve-decoy.XXXXXX")"
+mkdir -p "$DECOY_PARENT/decoy/.git"
+N24A="$(cd "$R" && CDPATH="$DECOY_PARENT/decoy" SPEC_RESERVE_FILE="$RES" bash "$SN" reserve 2>/dev/null)"
+N24B="$(cd "$R" && CDPATH="$DECOY_PARENT/decoy" SPEC_RESERVE_FILE="$RES" bash "$SN" reserve 2>/dev/null)"
+if [ "$N24A" != "$N24B" ]; then ok "T24 two reserves under CDPATH get distinct numbers ($N24A != $N24B)"; else bad "T24 two reserves under CDPATH double-issued the same number ($N24A == $N24B)"; fi
+LEDGER_LINES="$(wc -l < "$RES" | tr -d ' ')"
+RESERVE_LINES="$(count '| RESERVE |' "$RES")"
+eq "T24 the ledger has exactly one physical line per RESERVE entry (no CDPATH-split key)" "$LEDGER_LINES" "$RESERVE_LINES"
+
 echo ""
 echo "=== Results ==="
 echo -e "Passed: ${GREEN}$PASS${NC} / $TOTAL"

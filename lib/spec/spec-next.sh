@@ -3,9 +3,9 @@
 #
 # SPEC numbers collided twice in one week because "max of
 # docs/specs/ + 1" goes stale the moment a numbered spec ages inside an unmerged
-# branch. This scans EVERY visible surface: docs/specs/ filenames, local branch
-# names, remote branch names (after a fetch), and SPEC-NNN mentions in recent
-# commit subjects, then prints max+1.
+# branch. This scans EVERY visible surface: docs/specs/ filenames in every worktree of the
+# repo, local branch names, remote branch names (after a fetch), and SPEC-NNN mentions in
+# recent commit subjects, then prints max+1.
 #
 # Usage:
 #   spec-next.sh next         -> the next free number (e.g. "064")
@@ -17,7 +17,11 @@
 # The scan is correct; the reservation happens too late. `reserve` claims a number under a
 # portable mkdir-mutex and records it in a reservations ledger that `_numbers()` folds in, so
 # a reserved number reads as TAKEN by the very next caller. `next`/`check` are unchanged in
-# contract: with an empty ledger they behave byte-identically to before.
+# contract for the RESERVATION LEDGER: with an empty ledger they behave as before that ledger
+# existed. That is narrower than "byte-identical to the pre-reservation code" in every case:
+# the worktree-wide docs/specs/ scan below counts a sibling worktree's uncommitted spec file
+# regardless of ledger state, so a repo with sibling worktrees can see a different max than the
+# single-checkout code did, even with zero reservations.
 #
 # A second concurrency gap: three workers each opened a PR before any of them merged, so none
 # of their local scans (docs/specs/, local branches, commit subjects) saw the others' numbers,
@@ -29,7 +33,26 @@
 set -euo pipefail
 
 ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
-REPO="$(basename "$ROOT")"
+# Reservations are keyed by the REPOSITORY, not the checkout. Every worktree of a repo shares
+# one common git dir, so they share one key and see each other's claims; keyed by the
+# checkout's folder name, three worktrees each saw zero claims and took the same number. The
+# physical path (not the folder name) keeps two repos that share a folder name apart.
+# `cd` + `pwd -P` instead of `--path-format=absolute`: that flag needs git 2.31, and without
+# it the main checkout prints a relative `.git` while a worktree prints an absolute path.
+# `CDPATH=` on the `cd` (review HIGH): an inherited CDPATH with an entry holding its own `.git`
+# subdir makes a bare `cd "$_cd"` search CDPATH instead of the current directory. That both
+# jumps into the wrong place and prints the found path to stdout, so command substitution below
+# would capture two lines (the printed jump plus `pwd -P`), corrupting REPO into a key no
+# ledger line ever matches and silently double-issuing numbers. Clearing CDPATH for this one
+# `cd` closes it without touching the caller's shell.
+_git_common_dir() {
+  cd "$ROOT" 2>/dev/null || return 1
+  local cd_rel; cd_rel="$(git rev-parse --git-common-dir 2>/dev/null)" || return 1
+  CDPATH= cd -- "$cd_rel" 2>/dev/null || return 1
+  pwd -P
+}
+REPO="$(_git_common_dir)" || REPO=""
+REPO="${REPO%/.git}"; [ -n "$REPO" ] || REPO="$ROOT"
 
 # Durable reservations ledger under the kit log dir (same root gate-ledger.sh writes to).
 # Sourced best-effort: if kit-log-dir.sh is missing (e.g. spec-next copied standalone), fall
@@ -65,7 +88,14 @@ _iso_to_epoch() {
 # out so reconciliation can tell a REALIZED reservation (its number now here) from a live one.
 _scan_numbers() {
   {
-    ls "$ROOT/docs/specs" 2>/dev/null | grep -oE 'SPEC-[0-9]+' || true
+    # docs/specs of EVERY worktree, so a sibling's uncommitted spec file reads as taken.
+    # Branches and commit subjects below already come from the refs all worktrees share.
+    local wts wt
+    wts="$(git -C "$ROOT" worktree list --porcelain 2>/dev/null | sed -n 's/^worktree //p')" || wts=""
+    [ -n "$wts" ] || wts="$ROOT"
+    while IFS= read -r wt; do
+      ls "$wt/docs/specs" 2>/dev/null | grep -oE 'SPEC-[0-9]+' || true
+    done <<< "$wts"
     git -C "$ROOT" branch -a --format='%(refname:short)' 2>/dev/null | grep -oE 'SPEC-[0-9]+' || true
     git -C "$ROOT" log --all --format='%s' -200 2>/dev/null | grep -oE 'SPEC-[0-9]+' || true
   } | grep -oE '[0-9]+' | sort -n | uniq
