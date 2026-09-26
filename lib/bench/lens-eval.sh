@@ -159,8 +159,7 @@ while IFS="$US" read -r cname sname reviewer pattern want_t want_c; do
     h="$(hits "$cname" "$arm" "$reviewer" "$pattern")"
     if [ "$want" = fewer ]; then
       fewer_total=$((fewer_total + 1))
-      # No gap only counts against the base when treatment itself hit: a treatment miss (0/N)
-      # tying control at 0/N is a treatment regression, never a base-ref mismatch.
+      # No gap counts only when treatment itself hit; a treatment miss is a regression, not a base mismatch.
       if [ "$t_hit" -eq 1 ] && [ "$h" -ge "$ht" ]; then fewer_nogap=$((fewer_nogap + 1)); fi
       # A planted gap: the old text may notice it too, so only the gap between arms counts.
       [ "$h" -lt "$ht" ] || ok=0
@@ -180,8 +179,7 @@ while IFS="$US" read -r cname sname reviewer pattern want_t want_c; do
 done < <(jq -r --arg us "$US" '.cases[] | .name as $c | .signals[]
   | [$c, .name, (.reviewer // ""), .pattern, (.treatment // "-"), (.control // "-")] | join($us)' "$cases")
 
-# A base ref that already carries the capability every `fewer` signal probes makes them all tie
-# or lose to treatment, which fails them by construction, not from a regression. Flag it once.
+# A base already carrying every `fewer` signal's capability makes them all tie or lose; flag it once.
 if [ "$fewer_total" -gt 0 ] && [ "$fewer_nogap" -eq "$fewer_total" ]; then
   echo "note: all $fewer_total 'fewer' signals show no gap between arms; base $base may already carry what they assume it predates"
 fi
