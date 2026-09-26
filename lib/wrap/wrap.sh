@@ -55,7 +55,9 @@
 # of a new wrap/stray-* branch, knob wrap.carry_stray_lines), `apply`'s stray-commit carry
 # (the main checkout on the default branch and ahead of origin: one local and pushed
 # wrap/stray-commits-* branch at HEAD, then one `reset --keep origin/<default>` when only
-# merge=union files are dirty and origin holds HEAD, same knob),
+# merge=union files are dirty and origin holds HEAD, same knob), and under knob
+# wrap.autoland_carry (default false) one `gh pr create --head` per carry branch with no open
+# PR plus one `merge --apply --pr` of it, with every write that verb owns,
 # `apply --archive-unmerged`'s one push per qualifying branch to a new origin
 # archive/<slug>-<date> ref, never forced, followed by one local `branch -D` only once that
 # push lands,
@@ -1092,24 +1094,167 @@ _stray_board_rows() {
   mv -f "$add.rest" "$add"
 }
 
+# _autoland_on -- 0 when the operator authorized `apply` to open and merge its own carry PRs.
+# Root-only for the same reason as the carry itself: it authorizes a write to origin/<def>.
+# wrap.merge_own_prs false wins: an operator who holds back their own PRs holds these too.
+_autoland_on() {
+  [ "$(kit_config_get_root wrap.autoland_carry false)" = "true" ] \
+    && [ "$(kit_config_get_root wrap.merge_own_prs true)" = "true" ]
+}
+
+# _carry_branch_ours <repo> <def> <branch> <path> <slug> <oid> -- 0 when <branch> at <oid>
+# reads as this file's carry: the exact wrap/stray-<slug>-<stamp> name, a diff from
+# origin/<def> touching <path> alone, every line it adds present in the working copy, and no
+# line removed except a board row whose id it adds back (the in-place flip the carry makes).
+# Opening the PR makes any branch "own", so a look-alike branch is never landed.
+_carry_branch_ours() {
+  local repo="$1" def="$2" b="$3" f="$4" slug="$5" oid="$6" base d
+  printf '%s' "$b" | grep -qxE "wrap/stray-${slug}-[0-9]{8}-[0-9]{4}" || return 1
+  base="$(git -C "$repo" merge-base "origin/${def}" "$oid" 2>/dev/null)" || return 1
+  [ "$(git -C "$repo" diff --name-only "$base" "$oid")" = "$f" ] || return 1
+  d="$(mktemp -d)"
+  # Every line before the first hunk is header; after it, a leading + or - is content.
+  git -C "$repo" diff -U0 "$base" "$oid" -- "$f" | awk -v d="$d" '
+    /^@@/ { h = 1; next }
+    h && /^\+/ { print substr($0, 2) > (d "/add") }
+    h && /^-/  { print substr($0, 2) > (d "/del") }'
+  touch "$d/add" "$d/del"
+  if grep -Fxv -f "$repo/$f" "$d/add" | grep -q . \
+     || awk -F'|' 'function rid() { if ($0 !~ /^\| *[A-Z]+-[0-9]+ *\|/) return ""; i = $2; gsub(/^ +| +$/, "", i); return i }
+          FILENAME == ARGV[1] { if ((i = rid()) != "") back[i] = 1; next }
+          { i = rid(); if (i == "" || !(i in back)) { bad = 1 } } END { exit !bad }' "$d/add" "$d/del"; then
+    rm -rf "$d"; return 1
+  fi
+  rm -rf "$d"
+}
+
+# _autoland_carry <repo> <def> <branch> <oid> -- lands one carry branch through the door every own PR
+# takes: `cmd_merge --apply --pr` (the own-PR check, `_pr_gate`, the union re-merge, the pinned
+# squash, `_tree_verify`), never a second merge path. It opens the branch's PR when none is
+# open and waits a bounded time for pending checks first. 0 only once a merge verified; a gate
+# refusal leaves the PR open for step 3, and a failed merge or tree check sets FAILURES.
+# <oid> is the head the caller checked; a branch or PR head anywhere else by the merge refuses,
+# so a push landing during the check wait never rides the merge unchecked.
+KIT_WRAP_CARRY_CHECKS_SECS=${KIT_WRAP_CARRY_CHECKS_SECS:-300}
+case "$KIT_WRAP_CARRY_CHECKS_SECS" in ''|*[!0-9]*) KIT_WRAP_CARRY_CHECKS_SECS=300 ;; esac
+_autoland_carry() {
+  local repo="$1" def="$2" branch="$3" want="$4" ghs url tip open cnt n title created out rc waited=0 pending
+  ghs="$(_gh_state)"
+  if [ "$ghs" != "ok" ]; then
+    echo "     SKIP land ${branch}: $(_gh_note "$ghs")"
+    echo "     open its PR with: gh pr create --head ${branch}"; return 1
+  fi
+  url="$(_origin_url "$repo")"
+  tip="$(git -C "$repo" ls-remote origin "refs/heads/${branch}" 2>/dev/null | cut -f1)"
+  [ -n "$tip" ] || { echo "     SKIP land ${branch}: not on origin"; return 1; }
+  [ "$tip" = "$want" ] || { echo "     SKIP land ${branch}: origin moved to $(_short "$tip"), not the checked $(_short "$want")"; return 1; }
+  # A squash-fallback replacement on <branch>-squash that merged landed this branch too.
+  if [ "$(_squash_verdict "$(_squash_json "$url" "$branch")" "$tip" "$def")" = "OK" ] \
+     || [ "$(_squash_json "$url" "${branch}-squash" | jq -r --arg d "$def" \
+           '[.[] | select(.mergedAt != null and .baseRefName == $d)] | length' 2>/dev/null)" -gt 0 ] 2>/dev/null; then
+    echo "     origin/${branch} already merged"; return 0
+  fi
+  open="$(gh pr list --repo "$url" --head "$branch" --state open --json number,isDraft,isCrossRepository,author 2>/dev/null \
+    | jq -c '[.[] | select((.isCrossRepository // false) | not)]' 2>/dev/null)"
+  cnt="$(printf '%s' "$open" | jq -r 'length' 2>/dev/null)"
+  case "$cnt" in
+    0)
+      title="$(git -C "$repo" log -1 --format=%s "$tip" 2>/dev/null)"
+      [ -n "$title" ] || title="chore: land ${branch}"
+      # `--head`, never `--base`: with --repo, gh targets the repository's own default branch.
+      created="$(gh pr create --repo "$url" --head "$branch" --title "$title" \
+        --body "Carried by \`wrap apply\` from a shared checkout; wrap.autoland_carry lands it." 2>&1)"; rc=$?
+      n="$(printf '%s\n' "$created" | tail -1)"; n="${n##*/}"
+      if [ "$rc" -ne 0 ] || ! [ "$n" -gt 0 ] 2>/dev/null; then
+        echo "     FAILED land ${branch}: gh pr create exited ${rc}: ${created}"; FAILURES=1; return 1
+      fi
+      echo "     opened PR #${n} for ${branch}" ;;
+    1)
+      n="$(printf '%s' "$open" | jq -r '.[0].number')"
+      local me; me="$(gh api user --jq .login 2>/dev/null)"
+      if [ -z "$me" ] || [ "$(printf '%s' "$open" | jq -r '.[0].author.login // ""' | tr 'A-Z' 'a-z')" != "$(printf '%s' "$me" | tr 'A-Z' 'a-z')" ]; then
+        echo "     SKIP land ${branch}: its PR #${n} is not authored by you"; return 1
+      fi
+      # Marking a draft ready is the lead's call, made by naming it to `merge --pr`.
+      if [ "$(printf '%s' "$open" | jq -r '.[0].isDraft // false')" = "true" ]; then
+        echo "     SKIP land ${branch}: its PR #${n} is a draft"; return 1
+      fi
+      echo "     adopted PR #${n} for ${branch}" ;;
+    *) echo "     SKIP land ${branch}: the open-PR lookup failed or found several"; return 1 ;;
+  esac
+  # Pending: a check still running, or no check reported yet on a merge state that is not
+  # CLEAN, which is what a PR opened seconds ago shows before its checks register.
+  while :; do
+    pending="$(gh pr view "$n" --repo "$url" --json statusCheckRollup,mergeStateStatus 2>/dev/null | jq -r '
+      (.statusCheckRollup // []) as $r
+      | if ($r | length) == 0 then (if ((.mergeStateStatus // "") | IN("CLEAN", "DIRTY", "BEHIND")) then 0 else 1 end)
+        else [$r[] | select(((.status // "COMPLETED") != "COMPLETED")
+                            or ((.state // "") == "PENDING") or ((.state // "") == "EXPECTED"))] | length end' 2>/dev/null)"
+    [ "${pending:-0}" -gt 0 ] 2>/dev/null && [ "$waited" -lt "$KIT_WRAP_CARRY_CHECKS_SECS" ] || break
+    sleep 10; waited=$(( waited + 10 ))
+  done
+  tip="$(gh pr view "$n" --repo "$url" --json headRefOid 2>/dev/null | jq -r '.headRefOid // ""' 2>/dev/null)"
+  if [ "$tip" != "$want" ]; then
+    echo "     SKIP land ${branch}: PR #${n} head is $(_short "$tip"), not the checked $(_short "$want"); left open"; return 1
+  fi
+  # A subshell keeps merge's globals (REMERGE_OID, SQ_PR, SQ_OID) out of this run.
+  out="$( (cmd_merge --apply --pr "$n" "$repo") 2>&1)"; rc=$?
+  printf '%s\n' "$out" | sed 's/^/       /'
+  if [ "$rc" -ne 0 ]; then FAILURES=1; return 1; fi
+  printf '%s\n' "$out" | grep -qE '^merged #[0-9]+ \(.*\): tree verified' || {
+    echo "     PR #${n} left open; wrap merge --apply --pr ${n} merges it once green"; return 1; }
+  # The squash fallback landed a replacement; the original stays open unless closed here, and
+  # an open own PR on this branch is what the next pass would adopt and land a second time.
+  if printf '%s\n' "$out" | grep -q "^superseded #${n}:"; then
+    gh pr close "$n" --repo "$url" --comment "Landed by its squash-equivalent replacement." >/dev/null 2>&1 \
+      && echo "     closed superseded PR #${n}" \
+      || { echo "     FAILED close superseded PR #${n}; close it by hand"; FAILURES=1; }
+  fi
+  return 0
+}
+
 # _carry_stray_file <repo> <def> <path> <lines-file> <n> -- commits origin/<def>'s version of
 # the file plus the stray lines onto a new branch in a scratch worktree and pushes it. The
 # lines land below the `---` anchor when the file has one, the rule the union carry uses,
-# else at the end. The main checkout's working copy is never touched. Opens no PR.
+# else at the end. The main checkout's working copy is never touched. Opens no PR unless
+# wrap.autoland_carry lands the branch.
 _carry_stray_file() {
-  local repo="$1" def="$2" f="$3" add="$4" n="$5" slug branch wt base head_n name
+  local repo="$1" def="$2" f="$3" add="$4" n="$5" slug branch wt base head_n name held b boid all=1
   if [ "$(kit_config_get_root wrap.carry_stray_lines true)" != "true" ]; then
     echo "     ${n} stray lines in ${f} stay in the working copy (wrap.carry_stray_lines=false)"; return 0
   fi
   slug="$(printf '%s' "$f" | tr 'A-Z' 'a-z' | tr -cs 'a-z0-9' '-' | sed 's/^-*//; s/-*$//')"
   # An open carry branch for this file means an earlier run already carried; a second one
-  # would duplicate the lines. They stay in the working copy until that branch merges.
-  if [ -n "$(git -C "$repo" ls-remote --heads origin "wrap/stray-${slug}-*" 2>/dev/null)" ]; then
+  # would duplicate the lines. They stay in the working copy until that branch merges, which
+  # wrap.autoland_carry does here: land every such branch, then carry only what is left.
+  held="$(git -C "$repo" ls-remote --heads origin "wrap/stray-${slug}-*" 2>/dev/null | sed 's|.*refs/heads/||')"
+  if [ -n "$held" ] && [ "$APPLY" = 1 ] && _autoland_on; then
+    while IFS= read -r b; do
+      boid="$(git -C "$repo" rev-parse -q --verify "refs/remotes/origin/${b}")"
+      if [ -n "$boid" ] && _carry_branch_ours "$repo" "$def" "$b" "$f" "$slug" "$boid"; then
+        _autoland_carry "$repo" "$def" "$b" "$boid" || all=0
+      else
+        echo "     SKIP land ${b}: not a carry of ${f} alone, or adds lines this checkout lacks"; all=0
+      fi
+    done <<< "$held"
+    if [ "$all" = 1 ]; then
+      git -C "$repo" fetch -q origin "$def" 2>/dev/null || {
+        echo "     SKIP ${f}: the carry landed, but fetching origin/${def} failed; the next pass carries the rest"; return 0; }
+      _stray_lines "$repo" "$def" "$f" > "$add"
+      n="$(grep -c '' "$add")"
+      [ "$n" -gt 0 ] 2>/dev/null || { echo "     ${f}: the landed carry held every stray line"; return 0; }
+      held=""
+    fi
+  fi
+  if [ -n "$held" ]; then
     echo "     SKIP ${f}: ${n} stray lines, but an origin wrap/stray-${slug}-* branch already carries this file; merge it first"
+    [ "$APPLY" != 1 ] && _autoland_on && echo "     WOULD open and merge its PR (wrap.autoland_carry=true)"
     return 0
   fi
   if [ "$APPLY" != 1 ]; then
-    echo "     WOULD carry ${n} stray lines in ${f} onto a branch"; return 0
+    echo "     WOULD carry ${n} stray lines in ${f} onto a branch"
+    _autoland_on && echo "     WOULD open and merge its PR (wrap.autoland_carry=true)"
+    return 0
   fi
   branch="wrap/stray-${slug}-$(date +%Y%m%d-%H%M)"
   wt="$(_scratch_wt_add "$repo" "origin/${def}")" || {
@@ -1133,7 +1278,8 @@ _carry_stray_file() {
      && git -C "$wt" commit -q -m "chore(${name}): carry ${n} stray lines from a shared checkout" >/dev/null 2>&1 \
      && git -C "$wt" push -q origin "HEAD:refs/heads/${branch}" >/dev/null 2>&1; then
     echo "     carried ${n} stray lines in ${f} to origin/${branch}"
-    echo "     open its PR with: gh pr create --head ${branch}"
+    if _autoland_on; then _autoland_carry "$repo" "$def" "$branch" "$(git -C "$wt" rev-parse HEAD)"
+    else echo "     open its PR with: gh pr create --head ${branch}"; fi
   else
     echo "     FAILED carry ${n} stray lines in ${f} to ${branch}: the commit or the push refused"
     FAILURES=1
@@ -1219,6 +1365,7 @@ _carry_stray_commits() {
     else
       echo "     WOULD carry ${ahead} stray commits on ${def} onto a branch:"
       git -C "$repo" log --format='       %h %s' "origin/${def}..HEAD"
+      [ -z "$block" ] && _autoland_on && echo "     WOULD open and merge its PR (wrap.autoland_carry=true)"
     fi
     if [ -n "$block" ]; then echo "     ${def} would stay ahead: ${block}"
     else echo "     WOULD move ${def} back to origin/${def}"; fi
@@ -1254,7 +1401,15 @@ _carry_stray_commits() {
         FAILURES=1; return 0
       fi
     fi
-    echo "     open its PR with: gh pr create --head ${branch}"
+    # Landed only when the move can follow and the branch holds exactly HEAD: a squash with
+    # <def> still ahead is re-carried by the next pass whenever patch ids stop matching.
+    tip="$(git -C "$repo" ls-remote origin "refs/heads/${branch}" 2>/dev/null | cut -f1)"
+    if _autoland_on && [ -z "$block" ] && [ "$tip" = "$head" ]; then
+      _autoland_carry "$repo" "$def" "$branch" "$head"
+    else
+      echo "     open its PR with: gh pr create --head ${branch}"
+      _autoland_on && echo "     not landed: ${block:-origin/${branch} holds more than HEAD}"
+    fi
     where="$branch"
   fi
   [ -z "$block" ] || { echo "     ${def} left ahead: ${block}"; return 0; }
