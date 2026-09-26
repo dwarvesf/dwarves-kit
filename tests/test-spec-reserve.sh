@@ -14,6 +14,9 @@ set -uo pipefail
 
 KIT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SN="$KIT_DIR/lib/spec/spec-next.sh"
+# Hermetic by default: no test here needs the real open-PR gh scan, and leaving it on made
+# T21/T22 reach real `gh` (slow, and a false pass/fail on a machine without `gh` auth).
+export SPEC_NEXT_NO_PR_SCAN=1
 GREEN='\033[0;32m'; RED='\033[0;31m'; NC='\033[0m'
 PASS=0; FAIL=0; TOTAL=0
 ok()  { TOTAL=$((TOTAL+1)); PASS=$((PASS+1)); echo -e "  ${GREEN}PASS${NC} $1"; }
@@ -346,6 +349,25 @@ CHK23="$(cd "$R/.claude/worktrees/wa" && SPEC_RESERVE_FILE="$RES" bash "$SN" che
 expect "T23 check 009 from worktree a says TAKEN" "rc=1" "$CHK23"
 
 # ============================================================
+
+# ============================================================
+echo "=== T24: CDPATH must not hijack the bare 'cd' that computes the repo key (HIGH) ==="
+# ============================================================
+# A CDPATH entry holding a decoy .git makes a bare `cd "$_cd"` search CDPATH: it jumps into the
+# decoy AND prints the found path to stdout. Command substitution captures that print alongside
+# `pwd -P`, so REPO becomes two lines -- a key no ledger line's suffix match ever hits, so
+# `_reservations()` never sees a repo's own prior claims and every `reserve` re-derives the SAME
+# max+1, double-issuing a number.
+R="$(mk_repo)"; RES="$R/res.log"
+DECOY_PARENT="$(mktemp -d "${TMPDIR:-/tmp}/kit-spec-reserve-decoy.XXXXXX")"
+mkdir -p "$DECOY_PARENT/decoy/.git"
+N24A="$(cd "$R" && CDPATH="$DECOY_PARENT/decoy" SPEC_RESERVE_FILE="$RES" bash "$SN" reserve 2>/dev/null)"
+N24B="$(cd "$R" && CDPATH="$DECOY_PARENT/decoy" SPEC_RESERVE_FILE="$RES" bash "$SN" reserve 2>/dev/null)"
+if [ "$N24A" != "$N24B" ]; then ok "T24 two reserves under CDPATH get distinct numbers ($N24A != $N24B)"; else bad "T24 two reserves under CDPATH double-issued the same number ($N24A == $N24B)"; fi
+LEDGER_LINES="$(wc -l < "$RES" | tr -d ' ')"
+RESERVE_LINES="$(count '| RESERVE |' "$RES")"
+eq "T24 the ledger has exactly one physical line per RESERVE entry (no CDPATH-split key)" "$LEDGER_LINES" "$RESERVE_LINES"
+
 echo ""
 echo "=== Results ==="
 echo -e "Passed: ${GREEN}$PASS${NC} / $TOTAL"

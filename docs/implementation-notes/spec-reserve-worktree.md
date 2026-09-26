@@ -16,3 +16,29 @@ Deltas from SPEC-318. Nothing here repeats what the spec already states.
 
 ## 2026-09-26 Pre-existing lint left alone
 - `shellcheck` SC2010 (`ls | grep`) fires on the scan line. It fired on the old single-checkout line too, and the change keeps the same idiom.
+
+## 2026-09-26 Design critique (REVISE) fixed in-branch: CDPATH fail-open in the repo-key `cd`
+- Context: a design critique of this branch's diff found the key-derivation `cd "$_cd"` honors
+  an inherited `CDPATH`. A `CDPATH` entry with its own `.git` subdir makes the bare `cd` search
+  `CDPATH`, jump into the decoy, and print the found path to stdout; the surrounding command
+  substitution then captures two lines and `REPO` becomes a key no ledger line's suffix match
+  ever hits. `_reservations()` reads nothing live for the repo, so `reserve` re-derives the same
+  `max+1` every call. Reproduced live: two `reserve` calls under a decoy `CDPATH` both returned
+  `006`, with a 4-line ledger for 2 logical entries.
+- Decision/Change: `lib/spec/spec-next.sh` gained a named `_git_common_dir()` helper; the `cd`
+  onto the relative common dir is now `CDPATH= cd -- "$cd_rel"`, one statement per line instead
+  of the prior dense one-liner.
+- Why: `CDPATH=` on the one `cd` call closes the search without touching the caller's shell
+  (the whole helper runs inside a `$(...)` subshell already, same as the code it replaced).
+  `--` guards a `.git` string that could theoretically start with `-`.
+- Test: `tests/test-spec-reserve.sh` T24 builds a decoy `.git` under a `CDPATH` entry, reserves
+  twice, and asserts the numbers differ and the ledger has one physical line per entry. Red on
+  the old code (both reserves returned `006`, ledger held 4 lines for 2 entries), green after
+  the fix.
+- Also fixed in the same critique pass: T21/T22 reached the real `gh` PR scan (no test needed
+  it; hermeticized with one `export SPEC_NEXT_NO_PR_SCAN=1` at the top of the test file), and
+  the header comment's stale "byte-identical to before" claim (narrowed to the reservation
+  ledger; the worktree-wide `docs/specs/` scan already made that claim inexact).
+- Deferred, pre-existing, out of scope for this branch: `reserve` runs the open-PR `gh` scan
+  while holding the mkdir-mutex, serializing every other reserving worker on the machine behind
+  one network round trip when `gh` is slow. Named in the spec's Design critique, not fixed here.
