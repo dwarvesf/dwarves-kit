@@ -1,6 +1,6 @@
 # SPEC-325: lens-eval names the base a `fewer` signal assumes
 
-**Status:** DRAFT
+**Status:** VALIDATED
 Lane: full
 Type: spec-feature
 **Proof:** `docs/verification/lens-eval-base.md`; `tests/test-lens-eval.sh`.
@@ -32,14 +32,18 @@ manual limits paragraph.
   signals, which do not carry this assumption. The rule cites the r7-quiet-calibration run as the
   worked example: three `-any` signals FAILed against `origin/master` for exactly this reason.
 - `lens-eval.sh`'s scoring loop counts, across all signals in the run, how many carry a `fewer`
-  expectation and how many of those show no gap (control hit count is not strictly fewer than
-  treatment's). When every `fewer` signal in the run shows no gap (and at least one such signal
-  ran), the script prints one extra line after the table, before the summary:
+  expectation and how many of those show no gap. A `fewer` signal shows no gap ONLY when the
+  treatment arm hit on the majority AND control's hit count is not strictly fewer than
+  treatment's. Treatment missing the majority (0/N or below) is a treatment regression, not a
+  base problem, and never counts as no-gap, even when control also ties at a low count. When
+  every `fewer` signal in the run shows no gap (and at least one such signal ran), the script
+  prints one extra line after the table, before the summary:
   `note: all <n> 'fewer' signals show no gap between arms; base <base-ref> may already carry
   what they assume it predates`.
-- The note is silent when zero signals carry `fewer`, or when at least one `fewer` signal still
-  shows a gap (a real per-signal regression looks different from every gap collapsing at once,
-  so the note stays a diagnostic, not a replacement for reading the per-signal FAIL rows).
+- The note is silent when zero signals carry `fewer`, when at least one `fewer` signal still
+  shows a gap, or when a `fewer` signal's treatment arm missed the majority (a real per-signal
+  regression looks different from every gap collapsing at once, so the note stays a diagnostic,
+  not a replacement for reading the per-signal FAIL rows).
 - No new flag, no case-file field, no new exit code. The verdict and exit status (0/1/2/3/64)
   are unchanged; a run that FAILs on `fewer` signals still FAILs, now with one more line
   explaining a likely cause.
@@ -54,10 +58,18 @@ manual limits paragraph.
      |
     yes
      v
- fewer_total++          h < ht? --yes--> fewer_nogap unchanged, PASS
-     |                      |
-     v                     no
- fewer_nogap++ <-----------+                                   FAIL (unchanged)
+ fewer_total++
+     |
+     v
+ treatment hit majority? --no--> not no-gap (treatment regression, not a base problem)
+     |
+    yes
+     v
+ control >= treatment? --no--> not no-gap; PASS still needs treatment to hit AND a real gap
+     |
+    yes
+     v
+ fewer_nogap++                                                 FAIL (scoring unchanged)
      |
      v
  after the table, before summary:
@@ -70,9 +82,9 @@ manual limits paragraph.
 
 ## Design
 
-obvious: a doc rule plus one counter-driven warning line, read off comparisons the scoring loop
-already makes. No new flag, schema field, control-flow branch, or exit code; the fix is legibility,
-not a new mechanism.
+obvious: a doc rule plus one conditional print, no new mode, read off comparisons the scoring
+loop already makes. No new flag, schema field, or exit code; the fix is legibility, not a new
+mechanism.
 
 Approaches considered:
 
@@ -87,23 +99,28 @@ Approaches considered:
 | Task | Files | Acceptance |
 |---|---|---|
 | T1: the rule | `lib/bench/README.md` | the Contract's README rule, with the r7-quiet-calibration example |
-| T2: the warning | `lib/bench/lens-eval.sh` | the Contract's counter and note line |
-| T3: tests | `tests/test-lens-eval.sh` | note fires when all `fewer` signals show no gap; silent when one still shows a gap; silent with zero `fewer` signals; note text names the base ref and the count |
-| T4: docs | `docs/CHANGELOG.md`, regenerated `docs/FEATURES.md` | the new note behavior is listed |
+| T2: the warning | `lib/bench/lens-eval.sh` | the Contract's counter and note line, gated on treatment hitting the majority |
+| T3: tests | `tests/test-lens-eval.sh` | note fires when all `fewer` signals show no gap; silent when one still shows a gap; silent with zero `fewer` signals; silent when a `fewer` signal's treatment misses (control ties at 0); note text names the base ref and the count |
+| T4: docs | `docs/CHANGELOG.md`, regenerated `docs/FEATURES.md` | a CHANGELOG entry for the note; `docs/FEATURES.md` regenerated only because `tests/test-meta.sh`'s freshness check requires it in step with any doc-affecting change, not because it gains a lens-eval row (it has none today and this adds none) |
+| T5: proof | `docs/verification/lens-eval-base.md` | green run, negative control, live-run status per the Verification section below |
 
 ## Test plan
 
 | Case | Setup | Expected |
 |---|---|---|
-| All fewer, no gap | two `fewer` signals, both control ties treatment | the note line prints, naming `2` and the base ref |
-| One still shows a gap | two `fewer` signals, one ties, one control strictly fewer | no note line |
+| All fewer, no gap | two `fewer` signals, both treatment hits the majority and control ties it | the note line prints, naming `2` and the base ref |
+| One still shows a gap | two `fewer` signals, one ties (treatment hit), one control strictly fewer | no note line |
 | No fewer signals | a case file with only `hit`/`miss` signals | no note line |
-| Single fewer, no gap | one `fewer` signal, control ties treatment | the note line prints, naming `1` |
+| Single fewer, no gap | one `fewer` signal, treatment hits the majority, control ties it | the note line prints, naming `1` |
+| Treatment regression, not a base problem | one `fewer` signal, treatment misses (0/N), control also ties at 0/N | no note line; treatment missing the majority is a treatment regression, never counted as no-gap |
 | Exit status unchanged | any of the above | exit code matches what today's script would return (0/1/2/3/64), the note never changes it |
 
-Negative control: `lib/gate/negctl.sh` deletes the `fewer_nogap == fewer_total` check (or the
-counter increments). The "All fewer, no gap" and "Single fewer, no gap" rows must go red (no
-note line printed where one is expected).
+Negative control: one pinned mutation, `lib/gate/negctl.sh` deletes the `fewer_nogap=$((fewer_nogap
++ 1))` increment (the script counts `fewer_total` but never credits a no-gap signal). Under it,
+"All fewer, no gap" and "Single fewer, no gap" go red: the note line the test expects never
+prints, because `fewer_nogap` stays 0 and can never equal a nonzero `fewer_total`. "One still
+shows a gap", "No fewer signals", and "Treatment regression, not a base problem" are unaffected,
+since none of them expect the note to print.
 
 ## Verification
 
@@ -129,3 +146,10 @@ re-read the base choice, not a fix for picking one.
   rather than being explained away by the note.
 - No new exit code: the note is a hint alongside the existing FAIL, never a reason to change
   what counts as pass or fail.
+- No-gap requires treatment to hit the majority, not just control tying it: a validator pass
+  flagged that treatment missing (0/N) alongside control also at 0/N looks identical to a
+  base-mismatch tie unless treatment's own hit status gates it. Without that gate, a genuine
+  treatment regression (the lens stopped firing) could get misread as a base problem.
+- Negative control is pinned to one mutation (deleting the `fewer_nogap` increment) rather than
+  named as "the check or the increments": one mutation is enough to prove the note is load-bearing
+  and keeps the proof reproducible against a single, exact diff.
