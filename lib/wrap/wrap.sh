@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # wrap.sh -- the landing step after ship. One pass over every repo a session
-# touched, with eleven verbs:
+# touched, with twelve verbs:
 #
 #   wrap.sh scan  [--under <root>]... <repo> [<repo>...]    report only, exit 0
 #   wrap.sh apply [--apply] [--worktrees] [--archive-unmerged] [--own <path>]... [--under <root>]... <repo> [...]  dry-run by default
@@ -13,6 +13,7 @@
 #   wrap.sh follow-mode [lanes|all]                         step 10's mode and lanes, report only
 #   wrap.sh deploy-wait <owner>/<name> <sha> [--check S]... [--timeout N]  step 4's push-deploy wait
 #   wrap.sh stage "<title>" "<intent>" "<home>" [--repo <repo>]  stage a candidate
+#   wrap.sh rebase <worktree>                               onto origin/<default>, safe conflicts only
 #   wrap.sh --help
 #
 #   --under <root> (scan and apply, repeatable) appends every immediate child of <root> that
@@ -64,6 +65,9 @@
 # `start`'s one worktree add under `.claude/worktrees` on a new local branch, and `start
 # --carry`'s one named `git stash push -u` in the main checkout, one `stash apply` in the
 # new worktree, and, on a clean apply, one `stash drop` of that same named entry.
+# `rebase` rewrites its worktree's own local branch (one `git rebase origin/<default>`,
+# `--continue` per resolved stop, `--abort` on any refusal) and, once no rebase is stopped,
+# at most one regenerate commit there; it never pushes.
 # Every other action is a report line. The
 # verbs never switch a branch and never force a push or a pull. The one force is
 # `worktree remove -f -f`: it overrides a LOCK, never a dirty, detached, checked-out or
@@ -98,7 +102,7 @@ source "$LIB_ROOT/config/kit-config.sh" || { echo "FATAL: lib/config/kit-config.
 # shellcheck source=lib/gate/default-branch-warn.sh
 source "$LIB_ROOT/gate/default-branch-warn.sh" || { echo "FATAL: lib/gate/default-branch-warn.sh missing or unreadable" >&2; exit 1; }
 
-_usage() { sed -n '2,30p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
+_usage() { sed -n '2,31p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
 
 # --------------------------------------------------------------------------- helpers
 
@@ -3073,6 +3077,242 @@ _deploy_wait_pending() {
       else "open: \($open | join(", "))" end'
 }
 
+# --------------------------------------------------------------------------- rebase
+
+# The one generated file `rebase` regenerates at a stop, and the generator that owns it. The
+# generator runs from the worktree under rebase, never from this kit's own LIB_ROOT, because
+# the projection must match the tree being rebased. A repo without that generator (a consumer)
+# gets an ordinary refusal on the path.
+# ponytail: one hardcoded pair; a second generated file turns this into a [wrap] knob.
+_RB_GENERATED="docs/FEATURES.md"
+_RB_GENERATOR="lib/registry/feature-registry.sh"
+# The only path resolved by keeping both sides, and only when both sides purely added lines.
+_RB_CHANGELOG="docs/CHANGELOG.md"
+
+# _rb_git <wt> <args...> -- git in <wt> with the pins every rebase call carries: a recorded
+# rerere resolution or an operator's updateRefs default must never act inside the verb.
+_rb_git() {
+  local wt="$1"; shift
+  GIT_EDITOR=true git -C "$wt" -c rerere.enabled=false -c rebase.updateRefs=false "$@"
+}
+
+# _rb_rebasing <wt> -- 0 while a rebase is in progress (stopped) in <wt>.
+_rb_rebasing() {
+  local gd
+  gd="$(git -C "$1" rev-parse --path-format=absolute --git-dir 2>/dev/null)" || return 1
+  [ -d "$gd/rebase-merge" ] || [ -d "$gd/rebase-apply" ]
+}
+
+# _rb_markers <wt> <path>... -- prints each path holding a conflict-marker line (the marker
+# plus a space or the line end, so a Markdown `=======` underline never trips it). 0 on a hit.
+_rb_markers() {
+  local wt="$1" p hit=1; shift
+  for p in "$@"; do
+    [ -f "$wt/$p" ] || continue
+    if grep -qE '^(<{7}|>{7}|\|{7})( |$)' "$wt/$p"; then printf '%s\n' "$p"; hit=0; fi
+  done
+  return "$hit"
+}
+
+# _rb_stages <wt> <path> <dir> -- writes stages 1 (base), 2 and 3 of an unmerged path to
+# <dir>/1, <dir>/2, <dir>/3. Nonzero when any stage is missing (add/add, modify/delete).
+_rb_stages() {
+  local n
+  for n in 1 2 3; do
+    git -C "$1" show ":${n}:$2" > "$3/$n" 2>/dev/null || return 1
+  done
+}
+
+# _rb_changelog_pure <wt> <path> -- 0 when both sides only ADD lines to the base: a plain
+# diff of the base against each side prints no `<` line. A reworded, moved or deleted base
+# line fails, because union would then keep the old and the new line side by side.
+_rb_changelog_pure() {
+  local d rc=1
+  d="$(mktemp -d)" || return 1
+  # Process substitution, not a pipe: under pipefail diff's exit 1 would mask grep's answer.
+  if _rb_stages "$1" "$2" "$d" \
+     && ! grep -q '^<' < <(diff "$d/1" "$d/2"; diff "$d/1" "$d/3"); then
+    rc=0
+  fi
+  rm -rf "$d"
+  return "$rc"
+}
+
+# _rb_union_write <wt> <path> -- keeps both sides' additions: git's own union merge of the
+# three stages, written over the conflicted file.
+_rb_union_write() {
+  local d rc=1
+  d="$(mktemp -d)" || return 1
+  if _rb_stages "$1" "$2" "$d" && git merge-file --union -p "$d/2" "$d/1" "$d/3" > "$d/out"; then
+    cat "$d/out" > "$1/$2" && rc=0
+  fi
+  rm -rf "$d"
+  return "$rc"
+}
+
+# _rb_abort <wt> <branch> <old tip> <line> -- prints <line>, aborts the stopped rebase, and
+# proves the branch is back at <old tip>. Always returns 1.
+_rb_abort() {
+  local wt="$1" branch="$2" old="$3"
+  echo "$4"
+  if _rb_git "$wt" rebase --abort >/dev/null 2>&1 && ! _rb_rebasing "$wt" \
+     && [ "$(git -C "$wt" rev-parse HEAD 2>/dev/null)" = "$old" ]; then
+    echo "     aborted; ${branch} is back at $(_short "$old")"
+  else
+    echo "ABORT FAILED ${branch}: run git rebase --abort in ${wt}"
+  fi
+  return 1
+}
+
+# _rb_new_paths <before> <after> -- the lines of <after> that <before> lacks.
+_rb_new_paths() {
+  local p
+  while IFS= read -r p; do
+    [ -n "$p" ] || continue
+    printf '%s\n' "$1" | grep -qxF -- "$p" || printf '%s\n' "$p"
+  done <<< "$2"
+}
+
+# _rb_stop <wt> <branch> <old tip> <generator or empty> <git output file> -- one rebase stop.
+# Every unmerged path is classified before anything is written, so a refused stop writes
+# nothing. The stage set is exact: the unmerged paths plus whatever tracked file the resolver
+# or the generator newly changed, marker-scanned, then staged by name. Never `add -u`/`-A`.
+_rb_stop() {
+  local wt="$1" branch="$2" old="$3" gen="$4" log="$5"
+  local p refused="" cl=0 regen=0 before after hits
+  local -a unmerged=() set=()
+  while IFS= read -r -d '' p; do unmerged+=("$p"); done \
+    < <(git -C "$wt" diff --name-only --diff-filter=U -z 2>/dev/null)
+  if [ "${#unmerged[@]}" -eq 0 ]; then
+    _rb_abort "$wt" "$branch" "$old" \
+      "STOPPED ${branch} without a conflict: $(grep -m1 -v '^$' "$log" 2>/dev/null)"
+    return 1
+  fi
+  for p in "${unmerged[@]}"; do
+    if [ "$p" = "$_RB_GENERATED" ] && [ -n "$gen" ]; then regen=1
+    elif [ "$p" = "$_RB_CHANGELOG" ] && _rb_changelog_pure "$wt" "$p"; then cl=1
+    elif _union_marked "$wt" "$p"; then refused="${refused}${refused:+, }${p} (merge=union, delete/rename conflict)"
+    else refused="${refused}${refused:+, }${p}"
+    fi
+  done
+  if [ -n "$refused" ]; then
+    _rb_abort "$wt" "$branch" "$old" "REFUSED ${branch}: conflict in ${refused}"; return 1
+  fi
+  before="$(git -C "$wt" diff --name-only 2>/dev/null)"
+  if [ "$cl" = 1 ] && ! _rb_union_write "$wt" "$_RB_CHANGELOG"; then
+    _rb_abort "$wt" "$branch" "$old" "REFUSED ${branch}: ${_RB_CHANGELOG} would not union-merge"; return 1
+  fi
+  if [ "$regen" = 1 ] && ! ( cd "$wt" && bash "$gen" generate ) >/dev/null 2>&1; then
+    _rb_abort "$wt" "$branch" "$old" "GENERATOR FAILED ${branch}: ${_RB_GENERATOR} generate exited non-zero"; return 1
+  fi
+  after="$(git -C "$wt" diff --name-only 2>/dev/null)"
+  set=("${unmerged[@]}")
+  while IFS= read -r p; do [ -n "$p" ] && set+=("$p"); done < <(_rb_new_paths "$before" "$after")
+  if hits="$(_rb_markers "$wt" "${set[@]}")"; then
+    _rb_abort "$wt" "$branch" "$old" "MARKERS ${branch}: $(printf '%s' "$hits" | paste -sd, - | sed 's/,/, /g')"
+    return 1
+  fi
+  if ! git -C "$wt" add -- "${set[@]}" 2>/dev/null; then
+    _rb_abort "$wt" "$branch" "$old" "FAILED ${branch}: git add of the resolved paths"; return 1
+  fi
+  echo "     resolved: ${set[*]}"
+}
+
+# _rb_final_regen <wt> <branch> <generator> -- after the rebase finished: regenerate once
+# more and record the change as its own commit. The only commit the verb makes, and it can
+# only run once no rebase is stopped.
+_rb_final_regen() {
+  local wt="$1" branch="$2" gen="$3" before after hits p
+  local -a set=()
+  _rb_rebasing "$wt" && { echo "FAILED ${branch}: a rebase is still stopped, nothing committed"; return 1; }
+  before="$(git -C "$wt" diff --name-only 2>/dev/null)"
+  if ! ( cd "$wt" && bash "$gen" generate ) >/dev/null 2>&1; then
+    echo "GENERATOR FAILED ${branch}: after the rebase; the branch is rebased, ${_RB_GENERATED} not regenerated"
+    return 1
+  fi
+  after="$(git -C "$wt" diff --name-only 2>/dev/null)"
+  while IFS= read -r p; do [ -n "$p" ] && set+=("$p"); done < <(_rb_new_paths "$before" "$after")
+  [ "${#set[@]}" -gt 0 ] || return 0
+  if hits="$(_rb_markers "$wt" "${set[@]}")"; then
+    echo "MARKERS ${branch}: $(printf '%s' "$hits" | paste -sd, - | sed 's/,/, /g') (left unstaged)"; return 1
+  fi
+  if ! git -C "$wt" add -- "${set[@]}" 2>/dev/null \
+     || ! git -C "$wt" commit -q -m "chore(registry): regenerate ${_RB_GENERATED##*/} after rebase" >/dev/null 2>&1; then
+    echo "FAILED ${branch}: the regenerated ${set[*]} could not be committed; left staged"; return 1
+  fi
+  echo "     regenerated after the rebase: ${set[*]}"
+}
+
+# cmd_rebase <worktree> -- the worktree's branch onto origin/<default>, resolving only the
+# conflicts that have one right answer (a regenerated file, a CHANGELOG both sides only added
+# to); anything else aborts and is named. Rewrites the local branch only: never pushes.
+cmd_rebase() {
+  local wt="" arg count=0
+  for arg in "$@"; do
+    case "$arg" in
+      -*) echo "wrap.sh rebase: unknown flag '$arg'" >&2; return 64 ;;
+      *) count=$(( count + 1 )); wt="$arg" ;;
+    esac
+  done
+  [ "$count" -eq 1 ] || { echo "usage: wrap.sh rebase <worktree>" >&2; return 64; }
+  _is_repo "$wt" || { echo "wrap.sh rebase: ${wt} is not a git worktree" >&2; return 64; }
+  wt="$(git -C "$wt" rev-parse --show-toplevel 2>/dev/null)" && wt="$(cd "$wt" 2>/dev/null && pwd -P)" \
+    || { echo "wrap.sh rebase: the worktree path does not resolve" >&2; return 64; }
+
+  local repo gd
+  repo="$(git -C "$wt" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)"
+  repo="${repo%/.git}"; repo="${repo%/}"
+  repo="$(cd "$repo" 2>/dev/null && pwd -P)" || { echo "wrap.sh rebase: the main checkout does not resolve" >&2; return 1; }
+  [ "$repo" != "$wt" ] || { echo "wrap.sh rebase: ${wt} is the main checkout, not a worktree" >&2; return 1; }
+  gd="$(git -C "$wt" rev-parse --path-format=absolute --git-dir 2>/dev/null)"
+  if _rb_rebasing "$wt" || [ -e "$gd/MERGE_HEAD" ] || [ -e "$gd/CHERRY_PICK_HEAD" ]; then
+    echo "wrap.sh rebase: a rebase, merge or cherry-pick is already in progress in ${wt}" >&2; return 1
+  fi
+  local branch def
+  branch="$(git -C "$wt" branch --show-current 2>/dev/null)"
+  [ -n "$branch" ] || { echo "wrap.sh rebase: ${wt} is on a detached HEAD, so there is no branch to rebase" >&2; return 1; }
+  def="$(_default_branch "$wt")" || { echo "wrap.sh rebase: no default branch resolved for ${wt}" >&2; return 1; }
+  case "$branch" in
+    "$def"|main|master)
+      echo "wrap.sh rebase: HEAD is ${branch}, the default or a protected branch name" >&2; return 1 ;;
+  esac
+  [ -z "$(git -C "$wt" status --porcelain --untracked-files=no 2>/dev/null)" ] \
+    || { echo "wrap.sh rebase: ${wt} has tracked changes; commit or drop them first" >&2; return 1; }
+  _write_guard "$wt" || { echo "wrap.sh rebase: index.lock held by another writer in ${wt}" >&2; return 1; }
+  git -C "$wt" fetch -q origin "$def" 2>/dev/null \
+    || { echo "wrap.sh rebase: fetch origin ${def} failed" >&2; return 1; }
+
+  if git -C "$wt" merge-base --is-ancestor "origin/${def}" HEAD 2>/dev/null; then
+    echo "nothing to rebase: ${branch} already contains origin/${def}"; return 0
+  fi
+  local old ahead max stops=0 gen="" log
+  old="$(git -C "$wt" rev-parse HEAD)"
+  ahead="$(git -C "$wt" rev-list --count "origin/${def}..HEAD" 2>/dev/null)"
+  case "$ahead" in ''|*[!0-9]*) ahead=0 ;; esac
+  # internal, a test seam: WRAP_REBASE_MAX_STOPS replaces the one-stop-per-commit bound
+  max="${WRAP_REBASE_MAX_STOPS:-$(( ahead + 1 ))}"
+  [ -f "$wt/$_RB_GENERATOR" ] && gen="$wt/$_RB_GENERATOR"
+  log="$(mktemp)" || { echo "wrap.sh rebase: mktemp failed" >&2; return 1; }
+
+  echo "rebase ${branch} onto origin/${def} (${wt})"
+  _rb_git "$wt" rebase "origin/${def}" > "$log" 2>&1
+  while _rb_rebasing "$wt"; do
+    if [ "$stops" -ge "$max" ]; then
+      _rb_abort "$wt" "$branch" "$old" "STOP BOUND ${branch}: more than ${max} stop(s)"; rm -f "$log"; return 1
+    fi
+    stops=$(( stops + 1 ))
+    _rb_stop "$wt" "$branch" "$old" "$gen" "$log" || { rm -f "$log"; return 1; }
+    _rb_git "$wt" rebase --continue > "$log" 2>&1
+  done
+  if ! git -C "$wt" merge-base --is-ancestor "origin/${def}" HEAD 2>/dev/null; then
+    echo "FAILED ${branch}: the rebase did not run: $(grep -m1 -v '^$' "$log")"; rm -f "$log"; return 1
+  fi
+  rm -f "$log"
+  if [ -n "$gen" ]; then _rb_final_regen "$wt" "$branch" "$gen" || return 1; fi
+  echo "rebased ${branch} onto origin/${def}: ${stops} stop(s) resolved, head $(_short "$(git -C "$wt" rev-parse HEAD)") (was $(_short "$old"))"
+  echo "not pushed: the branch history changed, so its push needs --force-with-lease"
+}
+
 # --------------------------------------------------------------------------- entry
 
 main() {
@@ -3090,6 +3330,7 @@ main() {
     follow-mode)    cmd_follow_mode "$@" ;;
     deploy-wait)    cmd_deploy_wait "$@" ;;
     stage)          cmd_stage "$@" ;;
+    rebase)         cmd_rebase "$@" ;;
     -h|--help|help|"") _usage; return 0 ;;
     *) echo "wrap: unknown verb '$verb' (try: wrap --help)" >&2; return 64 ;;
   esac
