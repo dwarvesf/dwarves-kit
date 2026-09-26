@@ -39,7 +39,7 @@ Only a live run where every signal held exits 0. A failed sample is never scored
 
 The `reviewer` regex should accept the ways a model names a reviewer: `Reviewer 7|R7|Sustainability` rather than `Reviewer 7` alone.
 
-`tests/fixtures/sustainability-lens/lens-eval.json` is the first real case file. Its signals come from the SPEC-314 eval table. The catch fixture expects liveness, retirement, and credential rotation from Reviewer 7 in treatment, and none of the three anywhere in control. It expects run cost from Reviewer 7 in treatment and names no control expectation, because the recorded control 2 run raised cost under Reviewer 5. The quiet fixture expects `not long-lived` from Reviewer 7 in treatment, and no Reviewer 7 line about cost, liveness, retirement, or handover.
+`tests/fixtures/sustainability-lens/lens-eval.json` is the first real case file. Its signals come from the SPEC-314 eval table. The catch fixture expects liveness, retirement, and credential rotation from Reviewer 7 in treatment, and none of the three anywhere in control. It expects run cost from Reviewer 7 in treatment and names no control expectation, because the recorded control 2 run raised cost under Reviewer 5. The quiet fixture expects `not long-lived` from Reviewer 7 in treatment, and no numbered finding tagged Reviewer 7, since the lens contract gives a short-lived spec a one-line pass and no findings.
 
 ## Picture
 

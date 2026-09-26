@@ -18,7 +18,7 @@
       "fixture": "short-lived.md",
       "signals": [
         { "name": "quiet-pass", "reviewer": "Reviewer 7|R7|Sustainab", "pattern": "not long-lived", "treatment": "hit" },
-        { "name": "quiet-no-upkeep", "reviewer": "Reviewer 7|R7|Sustainab", "pattern": "run cost|heartbeat|liveness|retire|handover|rotat", "treatment": "miss" }
+        { "name": "quiet-no-findings", "reviewer": "Reviewer 7|R7|Sustainab", "pattern": "^[0-9]+[.)] ", "treatment": "miss" }
       ]
     }
   ]

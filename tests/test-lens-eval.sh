@@ -199,7 +199,7 @@ assert_eq "treatment miss exit 1" 1 "$RC"
 assert_has "treatment miss row FAIL" "| long-lived | retirement-r7 | 0/1 want hit | - | FAIL |" "$OUT"
 run_eval f3 STUB_NOISY=1 -- "$CMDFILE" HEAD "$CASES" --live
 assert_eq "noisy quiet case exit 1" 1 "$RC"
-assert_has "quiet row FAIL" "| short-lived | quiet-no-upkeep | 1/1 want miss | - | FAIL |" "$OUT"
+assert_has "quiet row FAIL" "| short-lived | quiet-no-findings | 1/1 want miss | - | FAIL |" "$OUT"
 run_eval f4 STUB_SCOPE_CALLS=1 -- "$CMDFILE" HEAD "$ONE" --live
 assert_has "liveness under Reviewer 2 only misses the R7 scope" "| ll | liveness-r7 | 0/1 want hit | - | FAIL |" "$OUT"
 
