@@ -8,7 +8,7 @@ Acceptance: every worktree of one repo shares one reservation key, the physical 
 |---|---|---|---|
 | Unit suite | `bash tests/test-spec-reserve.sh` | 0 | PASS, 65/65 |
 | Sibling suites | `bash tests/test-spec-next-pr-scan.sh`, `test-kri-wiring.sh`, `test-multiplexer.sh` | 0 | PASS |
-| Changed suites | `bash tests/run-all.sh --changed` | 0 | PASS, 12/12 |
+| Changed suites | `bash tests/run-all.sh --changed` | 0 | PASS, 13/13 |
 | Negative control | `lib/gate/negctl.sh` (below) | 0 | PASS |
 | Real two-worktree run | scratch repo under `$TMPDIR` (below) | 0 | PASS, 042 and 043 |
 
@@ -29,8 +29,8 @@ Verdict: PASS
 ```
 Command: bash tests/run-all.sh --changed
 Exit: 0
-Output: run-all: --changed against 60de8b18: 5 changed files -> 12 suites (7 named, the rest always-on)
-        run-all: all 12 suites passed, 0 skipped for missing tooling
+Output: run-all: --changed against 60de8b18: 7 changed files -> 13 suites (8 named, the rest always-on)
+        run-all: all 13 suites passed, 0 skipped for missing tooling
 Verdict: PASS
 ```
 
