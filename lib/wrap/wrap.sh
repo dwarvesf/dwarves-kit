@@ -88,6 +88,9 @@ LIB_ROOT="$(cd "$SELF_DIR/.." && pwd)"
 # than growing a second copy of the dedupe/render/append grammar in bash.
 STAGING_FORMAT_PY="$LIB_ROOT/reflect/staging-format.py"
 BACKLOG_SH="$LIB_ROOT/board/backlog.sh"
+# `land`'s ship-gate record (SPEC-315) shells out to this rather than reimplementing the
+# rid/ledger rules -- see cmd_land's use below.
+GATE_LEDGER_SH="$LIB_ROOT/gate/gate-ledger.sh"
 # shellcheck source=lib/config/kit-config.sh
 source "$LIB_ROOT/config/kit-config.sh" || { echo "FATAL: lib/config/kit-config.sh missing or unreadable" >&2; exit 1; }
 # shellcheck source=lib/gate/default-branch-warn.sh
@@ -2078,6 +2081,22 @@ cmd_land() {
       echo "     merged #${n} (${sha}): tree ${tv}" >&2
       return 3 ;;
   esac
+
+  # Ship-gate record (SPEC-315): `/kit:ship` records `| GATE | ship | ran | shipping pr=#<n>`
+  # on its own path (commands/ship.md Step 8); `land` never did, so a spec cycle shipped
+  # through `land` instead never trips /kit:wrap step 8's retro-trigger grep. Reuse the
+  # existing `rid` verb (cwd'd into the worktree, still on the landed branch -- removal is
+  # several steps below) rather than reimplementing its slug rule, and record only when the
+  # rid already started a run (a `show` hit), so a plain hand-made land with no spec cycle
+  # behind it stays silent. A failed derive or record never fails the land: one line instead.
+  local land_rid; land_rid="$(cd "$wt" && bash "$GATE_LEDGER_SH" rid 2>/dev/null)" || land_rid=""
+  if [ -n "$land_rid" ] && bash "$GATE_LEDGER_SH" show "$land_rid" >/dev/null 2>&1; then
+    if bash "$GATE_LEDGER_SH" record "$land_rid" Ship ran "shipping pr=#${n}" >/dev/null 2>&1; then
+      echo "     recorded ship gate for ${land_rid} (pr=#${n})"
+    else
+      echo "     ship-gate record FAILED for ${land_rid} (pr=#${n}); record it by hand" >&2
+    fi
+  fi
 
   # Mirrors _apply_origin_branches: leased to the tip land itself pushed, skipped when an
   # open PR still bases off this branch (deleting it would close that PR), and never fails

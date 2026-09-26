@@ -37,6 +37,13 @@ trap 'chmod -R u+w "$TMPD" 2>/dev/null; rm -rf "$TMPD"' EXIT
 # ~/.config/dwarves-kit/kit.toml can never reach a case that does not set it deliberately.
 KIT_CONFIG_OPERATOR="$TMPD/no-operator-config"; export KIT_CONFIG_OPERATOR
 
+# Pin the gate-ledger root at a scratch dir: `land`'s ship-gate record (SPEC-315) is the first
+# thing in this file that calls gate-ledger.sh, so every `$WRAP` call below now shells out to
+# it. Without this, that call would resolve the real machine's ~/.local/state/dwarves-kit/logs
+# corpus instead of a throwaway one.
+KIT_LEDGER_DIR="$TMPD/ledger"; export KIT_LEDGER_DIR
+GATE_LEDGER="$KIT_DIR/lib/gate/gate-ledger.sh"
+
 # --------------------------------------------------------------------------- gh stub
 mkdir -p "$TMPD/stub"
 cat > "$TMPD/stub/gh" <<'STUB'
@@ -2311,15 +2318,15 @@ echo "=== land: one hand-made worktree, from a committed branch to landed ==="
 # ===========================================================================
 # Real git throughout, `gh` stubbed: the push, the fast-forward, the worktree removal and
 # the branch delete are the subject, so nothing about the tree state is faked.
-build_land() { # build_land <name> [--modify-base]
-  local name="$1" mode="${2:-}" work="$TMPD/ld-work-$1" repo="$TMPD/ld-repo-$1"
+build_land() { # build_land <name> [--modify-base] [branch]
+  local name="$1" mode="${2:-}" branch="${3:-feat/land}" work="$TMPD/ld-work-$1" repo="$TMPD/ld-repo-$1"
   mkdir -p "$work"; git -C "$work" init -q; gitc "$work"
   git -C "$work" symbolic-ref HEAD refs/heads/main
   echo base > "$work/base.txt"; git -C "$work" add -A; git -C "$work" commit -qm base
   git clone -q --bare "$work" "$TMPD/ld-bare-$name"
   git clone -q "$TMPD/ld-bare-$name" "$repo"; gitc "$repo"
   git -C "$repo" remote set-head origin main >/dev/null 2>&1
-  git -C "$repo" worktree add -q -b feat/land "$repo/wt" main >/dev/null 2>&1
+  git -C "$repo" worktree add -q -b "$branch" "$repo/wt" main >/dev/null 2>&1
   if [ "$mode" = "--modify-base" ]; then
     echo "branch edit" > "$repo/wt/base.txt"
   else
@@ -2438,6 +2445,46 @@ echo "--- the usage text and the command doc name the verb"
 chk_has "wrap --help names land" "$("$WRAP" --help 2>&1)" "wrap.sh land  <worktree>"
 chk_has "commands/wrap.md names land for a hand-made worktree" "$(cat "$KIT_DIR/commands/wrap.md")" \
   "bin/wrap land <worktree>"
+
+echo "--- ship-gate record (SPEC-315): a rid with a prior ledger gets the Ship gate recorded"
+build_land shiprec "" feat/shiprec
+LWT_SR="$(cd "$TMPD/ld-repo-shiprec/wt" && pwd -P)"
+bash "$GATE_LEDGER" record shiprec spec ran "spec cycle for the land test" >/dev/null
+: > "$GH_STUB_CALLS"
+out="$(GH_STUB_OPEN_PRS='[]' GH_STUB_CREATE_NUM=61 GH_STUB_LAND_REPO="$LWT_SR" GH_STUB_LAND_REMOTE="$TMPD/ld-bare-shiprec" \
+  GH_STUB_LAND_BRANCH=feat/shiprec GH_STUB_LAND_DEF=main "$WRAP" land "$LWT_SR" 2>&1)"; rc=$?
+chk "ship-gate record: land still exits 0" "$([ "$rc" -eq 0 ]; echo $?)"
+chk_has "ship-gate record: land reports the record" "$out" "recorded ship gate for shiprec (pr=#61)"
+chk_has "ship-gate record: the ledger gained the Ship line" \
+  "$(cat "$KIT_LEDGER_DIR/runs/shiprec.log")" "| GATE | ship | ran | shipping pr=#61"
+
+echo "--- ship-gate record: a rid with no prior ledger writes nothing"
+build_land noship "" feat/noship
+LWT_NS="$(cd "$TMPD/ld-repo-noship/wt" && pwd -P)"
+[ ! -f "$KIT_LEDGER_DIR/runs/noship.log" ] || rm -f "$KIT_LEDGER_DIR/runs/noship.log"
+: > "$GH_STUB_CALLS"
+out="$(GH_STUB_OPEN_PRS='[]' GH_STUB_CREATE_NUM=62 GH_STUB_LAND_REPO="$LWT_NS" GH_STUB_LAND_REMOTE="$TMPD/ld-bare-noship" \
+  GH_STUB_LAND_BRANCH=feat/noship GH_STUB_LAND_DEF=main "$WRAP" land "$LWT_NS" 2>&1)"; rc=$?
+chk "ship-gate record: no-prior-ledger land still exits 0" "$([ "$rc" -eq 0 ]; echo $?)"
+chk_no "ship-gate record: no-prior-ledger land reports no record" "$out" "recorded ship gate"
+chk_no "ship-gate record: no-prior-ledger land reports no failure" "$out" "ship-gate record FAILED"
+chk "ship-gate record: no-prior-ledger land created no ledger file" \
+  "$([ ! -f "$KIT_LEDGER_DIR/runs/noship.log" ]; echo $?)"
+
+echo "--- ship-gate record: a record failure never fails the land"
+build_land shipfail "" feat/shipfail
+LWT_SF="$(cd "$TMPD/ld-repo-shipfail/wt" && pwd -P)"
+bash "$GATE_LEDGER" record shipfail spec ran "spec cycle for the land test" >/dev/null
+chmod 444 "$KIT_LEDGER_DIR/runs/shipfail.log"
+: > "$GH_STUB_CALLS"
+out="$(GH_STUB_OPEN_PRS='[]' GH_STUB_CREATE_NUM=63 GH_STUB_LAND_REPO="$LWT_SF" GH_STUB_LAND_REMOTE="$TMPD/ld-bare-shipfail" \
+  GH_STUB_LAND_BRANCH=feat/shipfail GH_STUB_LAND_DEF=main "$WRAP" land "$LWT_SF" 2>&1)"; rc=$?
+chmod 644 "$KIT_LEDGER_DIR/runs/shipfail.log" 2>/dev/null || true
+chk "ship-gate record: a record failure still exits 0" "$([ "$rc" -eq 0 ]; echo $?)"
+chk_has "ship-gate record: a record failure is reported" "$out" \
+  "ship-gate record FAILED for shipfail (pr=#63); record it by hand"
+chk "ship-gate record: the land still tidied despite the record failure" \
+  "$([ ! -e "$LWT_SF" ]; echo $?)"
 
 # ===========================================================================
 echo "=== land: adopting an operator-owned open PR for the branch (SPEC-299) ==="
