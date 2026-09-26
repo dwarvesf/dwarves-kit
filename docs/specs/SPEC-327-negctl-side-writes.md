@@ -373,10 +373,14 @@ Fixed in the same branch, tests-first, before this spec is considered done:
 | P2 | MEDIUM | `restore()` restored MUTATE_SET and the beyond-set in two separate calls, so a HEAD-absent path *inside MUTATE_SET itself* (a `git mv` as the mutation, or a baseline write that stages a new file) still aborted its own checkout call whole -- the exact class this spec already fixed for the *beyond* path, left open as "pre-existing" until this round. | One partition loop over MUTATE_SET union the beyond-set, by `git cat-file -e HEAD:<path>`; one checkout call for everything that resolves at `HEAD`; the rest failed by name, same as before. The separate MUTATE_SET-only checkout is gone. |
 | -- | tests | The existing 27 cases stayed green even with every `--no-renames` stripped or the old early return restored -- real coverage gaps, not just the two probed criticals. | Case [27]/[28]: `git mv` as the mutation, asserting `Changed: lib.sh, lib2.sh` and lib.sh's actual restoration; stripping `--no-renames` reverts to `Changed: lib2.sh` and lib.sh never restored. Case [29]/[30]: an inert mutation with `test-retrywriter.sh` at the default `NEGCTL_RED_ATTEMPTS=1`, empty MUTATE_SET, asserting the side-effect restore still runs and the tree ends clean; restoring the old early return leaves it dirty. Case [31]/[32]: a slow-git shim plus a process-group SIGINT prove the checkout survives the interrupt with the trap in place, and leaves `lib.sh` dirty without it. |
 | P4 | LOW | `diff <(before) <(after)` on an empty snapshot prints a bare `Delta: ` line with no content, noise ahead of the real delta. | The delta filter now excludes an exactly-empty marker line (`/^[<>] $/!s/.../.../p`, portable across GNU and BSD sed -- no brace-block form, which BSD `sed` rejects). |
+| -- | tests | Found *while dogfooding this same fix* (running `negctl.sh` against `tests/test-proof-negctl.sh` as its own test-cmd, per the spec's own "negctl on its own suite" verification): cases [31]/[32] reliably failed nested, twice in a row. The outer run's own step-5 `restore()` ignores INT/TERM/HUP in its own process before step 6 spawns the inner suite; that ignored disposition is inherited across `fork`/`exec`, and POSIX shells can never un-ignore an inherited-ignored signal, so the inner mutated copy's own (removed) `trap ''` line no longer had anything to prove. | [31]/[32] now open with an empirical self-check (a disposable `bash -c` child traps and signals itself; the marker file answers whether SIGINT is catchable here at all) and skip, named, when it is not -- rather than assert a result a poisoned ambient disposition can no longer prove either way. |
 
 Verified: `bash tests/test-proof-negctl.sh` and `/bin/bash tests/test-proof-negctl.sh` both report
 `all 33 passed`, stable across repeated runs (the SIGINT cases are the only timing-sensitive
 ones, and use a 1.0s margin against a 2s shim delay). `bash tests/run-all.sh --changed` green.
+The self-negctl dogfood run (mutating the retry guard) reports `Verdict: PASS` reliably across
+repeats once the SIGINT self-check landed; before it, the same dogfood run failed on [31]/[32]
+for the reason above, not on the actual fix being verified.
 `lib/gate/negctl.sh` dogfooded on itself: `Verdict: PASS` -- see
 `docs/verification/negctl-side-writes.md` for the captured runs.
 
@@ -436,3 +440,7 @@ ones, and use a 1.0s margin against a 2s shim delay). `bash tests/run-all.sh --c
   because a mutation pass on the round-2 suite found both stripping `--no-renames` and restoring
   the old early return left it fully green -- real coverage gaps distinct from the two probed
   criticals, not merely additional confidence.
+- Round 3: chose an empirical self-check (trap-and-signal-self, in a disposable child) over
+  trusting `trap -p INT` or the call depth to decide whether the SIGINT cases can run, after
+  dogfooding this exact fix reliably failed them nested: an inherited-ignored signal disposition
+  is invisible to `trap -p` and not reliably inferable from context, so it has to be tested.

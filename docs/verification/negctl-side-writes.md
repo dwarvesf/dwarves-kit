@@ -138,6 +138,31 @@ even the shim's own `sleep` runs to completion). `tests/test-proof-negctl.sh` ca
 carry this permanently, generously margined (2s shim delay, 1.0s signal delay), stable across
 repeated runs on both bash 3.2 and default bash.
 
+**Found while dogfooding this very fix: cases [31]/[32] are nesting-unsafe by construction, now
+guarded.** Running `bash lib/gate/negctl.sh "$PWD" "bash tests/test-proof-negctl.sh" "<mutate the
+retry guard>"` (the "negctl on its own suite" proof) reproduced a real, repeatable failure: step
+6's own `test-cmd` run is the entire `test-proof-negctl.sh` suite, and by step 6 the OUTER
+negctl's own step-5 `restore()` has already run `trap '' INT TERM HUP` *in the outer process*.
+SIGINT/TERM/HUP ignored dispositions are inherited across `fork`/`exec`, and POSIX is explicit
+that a non-interactive shell can never un-ignore a signal it inherited as already ignored -- so
+the INNER suite's own case [32] (which removes the `trap ''` line from ITS OWN copy under test)
+still could not reproduce the bug: the signal was already neutralized three process-generations
+up, before the inner mutated copy ever got a chance to matter. Confirmed the mechanism directly:
+
+```
+$ bash -c 'trap "" INT TERM HUP; bash -c '"'"'trap "touch marker" INT; kill -INT $$; sleep 0.2'"'"''
+$ ls marker 2>/dev/null || echo "marker never created -- SIGINT was inherited-ignored"
+marker never created -- SIGINT was inherited-ignored
+```
+Fixed by detecting this empirically (an inherited ignore does not show in `trap -p`, so it must
+be tested, not assumed): before running [31]/[32], a disposable `bash -c` child sets its own
+`trap ... INT`, signals itself, and checks whether the trap fired. If not, [31]/[32] are skipped
+with a named reason instead of asserting a result a poisoned ambient disposition can no longer
+prove either way. Re-ran the exact dogfood scenario twice more after the fix: `Verdict: PASS`
+both times, tree clean, and a direct (non-nested) run of the suite still exercises [31]/[32] for
+real (confirmed: `ok: checkout survives a SIGINT mid-restore` / `ok: without the trap, the
+interrupted checkout leaves lib.sh mutated`, both printed on a direct run).
+
 **P2 (MEDIUM) -- MUTATE_SET's own restore could still abort whole.** Round 2 explicitly scoped
 this out as "pre-existing." Closed in round 3 by unifying the partition: MUTATE_SET and the
 beyond-set are now walked in one loop, by `git cat-file -e HEAD:<path>`, into one checkout call.

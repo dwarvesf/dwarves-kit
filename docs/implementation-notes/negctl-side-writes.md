@@ -82,6 +82,24 @@ Delta from `docs/specs/SPEC-327-negctl-side-writes.md` only.
   2x real `/bin/bash`) before being kept permanently; `set -m` inside a subshell scopes job
   control to that block only, and `kill -INT -$PID` targets the whole process group so the
   signal reaches the shimmed `git` child the same way a real terminal Ctrl-C would.
+- Discovered by dogfooding this exact fix (running `lib/gate/negctl.sh` against
+  `tests/test-proof-negctl.sh` as its own test-cmd, mutating the retry guard): [31]/[32]
+  reliably FAILED when nested this way, twice in a row, not a one-off flake. Root cause: SIGINT/
+  TERM/HUP ignored dispositions are inherited across `fork`/`exec`, and POSIX shells can never
+  un-ignore a signal inherited as already ignored. The OUTER negctl's own step-5 `restore()`
+  ignores those three signals in its own process before step 6 ever spawns the inner suite, so
+  by the time [32]'s mutated copy runs (three process-generations down), the signal was already
+  neutralized -- `[ -n "$DIRTY" ]` came back false regardless of whether the copy's own `trap ''`
+  line was present. Confirmed the mechanism in isolation (`bash -c 'trap "" INT; bash -c
+  "trap ...; kill -INT $$"'`: the inner trap never fires) before writing the fix. `trap -p INT`
+  cannot detect an inherited ignore (it only shows a trap the CURRENT shell itself set), so
+  [31]/[32] now open with an empirical self-check: a disposable `bash -c` child sets its own
+  trap, signals itself, and the marker file's presence answers "can this process tree actually
+  catch SIGINT right now" directly, skipping [31]/[32] with a named reason when it cannot. This
+  is a load-bearing fix, not cosmetic: `lib/gate/negctl.sh` proving a future change to ITSELF
+  this exact way (as this spec did) is the documented, encouraged proof pattern for this file,
+  so the nesting case is not an edge case -- it is how this test will actually be exercised the
+  next time someone touches `restore()`.
 - The `git mv`/`--no-renames` negative control ([28]) leaves `lib.sh` genuinely deleted from the
   scratch repo's working tree (not merely "dirty") when run against the un-fixed capture, since
   the un-fixed script never even captures `lib.sh` as changed; the cleanup renames `lib2.sh` back
