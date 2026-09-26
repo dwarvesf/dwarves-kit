@@ -27,10 +27,14 @@ The self-run pass is weak evidence. On 2026-09-26 three step-10 workers self-val
    - `design-record ran "design-bearing=<yes|no> pass"` on a Reviewer 6 pass, and `design-record skipped "critical: <finding>"` on a Reviewer 6 critical, so the full lane's ship-gate refuses a blocked design;
    - both outcome brackets, the `start` written before the dispatch so `dur_s` measures the validation.
    Status flips to `VALIDATED` only under `/kit:spec-validate`'s own verdict rules (Reviewer 6 still blocks).
-3. **`/kit:spec` dispatches it.** After step 4's approval and, on the full lane, after the devs-team and advisor fold, `/kit:spec` dispatches the validator and applies item 2. The reminder line is removed.
-4. **`/kit:execute` preflight.** After execute's spec-to-build lane re-check (execute.md steps 18-40), so an escalation to the full lane picks the Opus tier, and before task 1: on a spec whose `Lane:` is normal, full, or backfill and whose rid has no validate line (`gate-ledger.sh show <rid> | grep -qi '| GATE | validate |'` fails), execute dispatches the validator and applies item 2. The lead folds warnings and continues. A critical, a second NEEDS REVISION, or a Reviewer 6 BLOCK stops execute before task 1 with the findings and asks the operator; execute never builds a spec whose validation did not pass. This covers hand-written specs and specs from paths that skip `/kit:spec`.
-5. **No fresh context available.** An agent with no subagent tool does not self-validate. It commits the spec and stops with `VALIDATE PENDING: <spec path>` to whoever dispatched it. A self-run pass never records `Validate ran`.
-6. **`/kit:wrap` step 10, full lane.** The worker writes and commits the spec, then stops with `VALIDATE PENDING`. The lead, on that notification, dispatches the validator in the background. On the report: a Reviewer 6 BLOCK leaves the item `REPORTED` with `reported: spec-validate BLOCK: <finding>` and the worker is not resumed; otherwise the lead applies item 2 and resumes the worker with `SendMessage`, handing it the report to fold and build. A worker that cannot be resumed is replaced by a fresh builder on the same worktree, given the committed spec and the report. The sentence that has the worker "run the `kit:spec-validate` lenses" is replaced.
+3. **`/kit:spec` dispatches it.** After step 4's approval, after the full lane's devs-team and advisor fold, and after the command records `Spec ran` (so `descent` sees spec before validate), `/kit:spec` dispatches the validator and applies item 2. The reminder line is removed.
+4. **`/kit:execute` preflight.** After execute's spec-to-build lane re-check (execute.md steps 18-40), so an escalation to the full lane picks the Opus tier, and before task 1: on a spec whose `Lane:` is normal, full, or backfill and whose rid has no passing validate line (`gate-ledger.sh show <rid> | grep -Eqi '\| GATE \| validate \| (ran|override) \|'` fails; a `skipped` line does not count), execute dispatches the validator. Execute folds warnings only. Any critical, including a Reviewer 6 BLOCK, stops execute before task 1 with nothing folded and asks the operator, because folding a critical is a scope call the loop must not make alone. Execute never builds a spec whose validation did not pass. This covers hand-written specs and specs from paths that skip `/kit:spec`.
+5. **No fresh context available.** An agent never runs `/kit:spec-validate` on a spec it wrote. An agent with no subagent tool commits the spec, records `Spec ran`, and stops with `VALIDATE PENDING: <spec path>` to whoever dispatched it. A direct operator run of `/kit:spec-validate` still records (item 8); its note carries no `fresh agent=`, so an audit can tell the two apart.
+6. **`/kit:wrap` step 10, full lane.** The worker writes and commits the spec, records `Spec ran`, then stops with `VALIDATE PENDING`. The lead, on that notification, dispatches the validator in the background. On the report:
+   - APPROVED: the lead applies item 2 and resumes the worker with `SendMessage` to fold the warnings and build.
+   - NEEDS REVISION, first time: the lead resumes the worker to fold the findings, commit, and stop again with `VALIDATE PENDING`, then re-validates once.
+   - A Reviewer 6 BLOCK, or NEEDS REVISION on the re-run: the item stays `REPORTED` with `reported: spec-validate BLOCK|NEEDS REVISION: <criticals>`, and the worker is not resumed. The committed spec stays on the branch for the operator.
+   A worker that cannot be resumed is replaced by a fresh builder on the same worktree, given the committed spec and the report. Two `commands/wrap.md` step-10 sentences are replaced: the worker "runs the `kit:spec-validate` lenses", and a design-record BLOCK stops it with "nothing is committed".
 7. **Matrix.** The `docs/WORKFLOW.md` Validate row becomes `run-lite` on normal and backfill (full stays `measure-twice`). Normal and backfill runs now list Validate in `plan` and `progress`; the ship-gate does not refuse and prints nothing for it (lite phases have no ship-time advisory). `plan-record` now needs a validate disposition on those lanes, and `progress` on a past normal rid reads one step short of complete; the CHANGELOG says both. No read-side alias: three live ledgers carry `spec-validate` lines whose notes say self-validated, and counting them would contradict item 5.
 8. **`/kit:spec-validate` itself records honestly.** Run directly, it records `Validate ran` only on APPROVED and `Validate skipped "NEEDS REVISION: <criticals>"` otherwise, and `design-record skipped "critical: ..."` on a Reviewer 6 critical, matching item 2.
 
@@ -64,7 +68,8 @@ Step-10 item lifecycle:
         |                                   |
         |                     R6 BLOCK -----+----> REPORTED (stop)
         |                                   |
-        |                     NEEDS REVISION: fold, one re-run
+        |          NEEDS REVISION (1st): worker folds, commits, VALIDATE PENDING again
+        |          NEEDS REVISION (2nd) ----+----> REPORTED (stop)
         |                                   |
         v                                   v
   resume worker (SendMessage) <--- APPROVED (records written by the lead)
@@ -100,7 +105,7 @@ Approaches considered:
 
 | Task | Files | Acceptance |
 |---|---|---|
-| T1: matrix | `docs/WORKFLOW.md` (Validate row; stale lines ~57, ~165, ~1010, ~1281, ~1354; a depth-call note for normal = run-lite) | `plan normal` and `plan backfill` list validate as lite; `required normal` unchanged |
+| T1: matrix | `docs/WORKFLOW.md` (Validate row; stale lines ~57, ~144, ~165, ~1010, ~1281, ~1354; a depth-call note for normal = run-lite) | `plan normal` and `plan backfill` list validate as lite; `required normal` unchanged |
 | T2: pins | `tests/test-hooks.sh` (~1200-1217), `tests/test-e2e.sh` (~69, ~78, ~87), `tests/test-gate-ledger-plan-record.sh` (`NORMAL_TAIL`, the `-eq 9` counts, plus a case for the new validate disposition refusal) | pins updated; new asserts: normal and backfill list validate lite, tiny and bug do not; seen red first |
 | T3: commands | `commands/spec.md` step 4, `commands/execute.md` preflight, `commands/wrap.md` step 10, `commands/spec-validate.md` record lines | the validator shape, item 2's records, the preflight and its stop rule, the split lifecycle, item 8; the reminder and the self-run sentence gone; `tests/test-meta.sh` greps each |
 | T4: docs | `docs/CHANGELOG.md` (COMPAT: normal and backfill plans gain a lite Validate step; plan-record needs its disposition; past normal rids read one step short in `progress`; spec-validate records ran on APPROVED only), `docs/MANUAL.md` spec-validate entry, regenerated `docs/FEATURES.md` | present |
@@ -112,6 +117,7 @@ Approaches considered:
 | Normal plan lists validate lite | `gate-ledger.sh plan normal` | `validate  lite` |
 | Normal ship not refused | normal rid with spec, build, ship, no Validate; `check normal <rid>` | exit 0 |
 | Full ship refused on skipped Validate | full rid with every gate ran except `Validate skipped "NEEDS REVISION..."` | exit 1, `MISSING-GATE: validate` |
+| Preflight ignores a failed validation | a rid whose only validate line is `skipped "NEEDS REVISION..."`; run item 4's grep | no match, so the preflight dispatches |
 | Honest direct record | test-meta greps `commands/spec-validate.md` for `ran` on APPROVED only and `skipped` otherwise | present |
 | plan-record refusal | `plan-record` on a normal rid with no validate disposition | exit 64 naming validate; with one, exit 0 |
 | Tiny, bug untouched | `plan tiny`, `plan bug` | no validate |
@@ -134,6 +140,7 @@ Not covered: `/kit:mega` and `/kit:dispatch` sub-goals reach the validator only 
 
 - Execute in the commands, advise in the matrix on the normal lane. The operator asked to require it; the design critique showed the hard gate lands estate-wide and reclassifies history, while the measured failures were full-lane. The flip to `measure-twice` stays one cell.
 - A self-run pass never counts as validation.
+- Third fresh validation returned NEEDS REVISION with 2 criticals, both folded: the preflight grep now requires `ran` or `override`, and the step-10 NEEDS REVISION path names who folds and stops after one re-run. Five warnings folded: execute folds warnings only, dispatch after `Spec ran`, item 5 scoped to the author, WORKFLOW line 144, the second wrap.md sentence.
 - Second fresh validation returned NEEDS REVISION with 3 criticals, all folded: the read-side alias dropped (it would credit old self-runs), `/kit:spec-validate`'s own record lines made honest (item 8), and the false ship-gate advisory claim removed; nine warnings folded into items 1, 2, 4, 7 and T2-T4.
 - Fresh validation (Opus, 7 reviewers) returned NEEDS REVISION with 3 criticals: the test-pin blast radius, the design-record owner, and a Design section with no diagram. The design critique returned REVISE. Every finding is folded in above.
 
