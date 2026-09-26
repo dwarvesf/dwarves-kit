@@ -224,3 +224,7 @@ reproduction above, historically). The filter now excludes an exactly-empty mark
   spec as a narrower instance of a visibility limit the whole script has always had.
 - A concurrent writer to `$root` during the run remains out of scope by the spec's stated
   Assumption; `--base-ref` mode is the documented alternative for a shared checkout.
+
+## Rollback
+
+Rollback: revert this PR. `lib/gate/negctl.sh` is a local script that runs on demand; it holds no deployed or persistent state, so a revert restores the previous behavior in full.
