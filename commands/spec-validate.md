@@ -112,8 +112,8 @@ Reviewers 1-6 judge the design on the day it ships. This lens asks what it costs
    - **Handover:** can someone who did not build it debug and rebuild it from the repo alone
      (where the logs are, how to rerun, how to redeploy)?
 
-Do not repeat Reviewer 2 (incident recovery) or Reviewer 5 (growth and coupling); this lens
-covers slow decay and upkeep.
+Do not repeat Reviewer 2 (incident recovery), Reviewer 3 (whether a dependency is stable
+today), or Reviewer 5 (growth and coupling); this lens covers slow decay and upkeep after ship.
 
 **Calibration (critical):** flag only a gap that would let the thing die silently, cost without
 bound, or outlive its purpose. A short answer in `## After state` or `## Failure modes` counts;

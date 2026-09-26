@@ -1214,6 +1214,9 @@ fi
 # to assert clean. Caught a real regression in the SPEC-008 review; SPEC-122 bumps 5 -> 6.
 STALE_COUNT=$(grep -E "4 reviewer|5 reviewer|6 reviewer|6 specialist lenses" "$VALIDATE_CMD" 2>/dev/null | wc -l | tr -d ' ')
 assert_eq "spec-validate.md has no stale 4/5/6 reviewer or '6 specialist lenses' references" "0" "$STALE_COUNT"
+# spec.md's Design-block comment names the advisory reviewers too; a count there rots on every new lens.
+STALE_SPEC=$(grep -cE "[0-9]+ advisory reviewers" "$KIT_DIR/commands/spec.md")
+assert_eq "commands/spec.md names the advisory reviewers without a count" "0" "$STALE_SPEC"
 
 # SPEC-314: Reviewer 7 (sustainability) exists and stays advisory. The BLOCKING check is scoped
 # to Reviewer 7's own section, because that section may name Reviewer 6 as the blocking one.
