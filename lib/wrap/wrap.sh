@@ -2126,6 +2126,22 @@ _path_change() {
     | grep -v -e '^index ' -e '^@@ '
 }
 
+# _land_feature_title <wt> <def> -- the branch's feature-commit subject, for `land`'s
+# no-`--title` default. Walks non-merge commits ahead of `origin/<def>`, oldest first
+# (`--topo-order`, so a merged-in side commit with an older date never sorts ahead of the
+# branch's own first commit), and picks the first whose subject is not a `docs`/`chore`/`test`
+# conventional type. Falls back to the oldest non-merge commit ahead when every one is
+# housekeeping. Never combines `--reverse` with `-1`/`-n1`: git applies a count limit BEFORE
+# reversing, so that would silently return the newest commit instead of the oldest -- the walk
+# reads the full list and takes the first line in the shell instead.
+_land_feature_title() {
+  local wt="$1" def="$2" s
+  while IFS= read -r s; do
+    printf '%s\n' "$s" | grep -qE '^(docs|chore|test)(\([^)]*\))?!?:' || { printf '%s\n' "$s"; return 0; }
+  done < <(git -C "$wt" log --no-merges --topo-order --format=%s --reverse "origin/${def}..HEAD" 2>/dev/null)
+  git -C "$wt" log --no-merges --topo-order --format=%s --reverse "origin/${def}..HEAD" 2>/dev/null | head -1
+}
+
 # --------------------------------------------------------------------------- land
 
 # cmd_land <worktree> [--title T] [--body-file F] -- the landing loop for ONE committed
@@ -2194,7 +2210,7 @@ cmd_land() {
   local tip url rc
   tip="$(git -C "$wt" rev-parse HEAD 2>/dev/null)"
   url="$(_origin_url "$wt")"
-  [ -n "$title" ] || title="$(git -C "$wt" log -1 --format=%s 2>/dev/null)"
+  [ -n "$title" ] || title="$(_land_feature_title "$wt" "$def")"
 
   echo "land ${branch} -> ${def} (${wt})"
 
