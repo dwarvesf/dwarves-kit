@@ -13,7 +13,7 @@
 #   --samples N  samples per arm (default 1)    --model M  claude model (default sonnet)
 #   --live       spend the model calls; without it, print the plan and exit 3
 # Exit: 0 PASS, 1 FAIL, 2 ERROR (a failed sample; nothing scored), 3 NOT RUN, 64 usage.
-# Case file shape and the SPEC-314 example: lib/bench/README.md "lens-eval".
+# Case file shape and the sustainability-lens example: lib/bench/README.md "lens-eval".
 set -u
 
 usage() { echo "usage: lens-eval.sh <command-file> <base-ref> <cases.json> [--samples N] [--model M] [--live]" >&2; exit 64; }
@@ -43,8 +43,13 @@ jq -e 'def arm: . == null or . == "hit" or . == "miss";
     and (.signals | type == "array" and length > 0) and all(.signals[];
       (.name | type == "string") and (.pattern | type == "string")
       and ((.reviewer // "") | type == "string")
-      and (.treatment | arm) and (.control | arm) and (.treatment != null or .control != null)))' \
+      and (.treatment | arm) and (.control | arm) and (.treatment != null or .control != null)))
+  and ([.cases[].name] | length == (unique | length))' \
   "$cases" >/dev/null 2>&1 || die "bad case file: $cases"
+# A bad regex would make grep exit 2, which scores as a miss and lets a `miss` pass.
+while IFS= read -r re; do
+  grep -qE -- "$re" /dev/null 2>/dev/null; [ $? -le 1 ] || die "bad regex in $cases: $re"
+done < <(jq -r '.cases[].signals[] | .pattern, (.reviewer // empty)' "$cases")
 dir="$(cd "$(dirname "$cases")" && pwd)"
 ncases="$(jq '.cases | length' "$cases")"
 

@@ -148,10 +148,14 @@ echo '{"cases":[{"name":"a","fixture":"long-lived-gaps.md","signals":[{"name":"s
 run_eval u7 -- "$CMDFILE" HEAD "$TMP/noarm.json" --live;          assert_eq "signal with no arm exit 64" 64 "$RC"
 echo '{"cases":[{"name":"a","fixture":"gone.md","signals":[{"name":"s","pattern":"x","treatment":"hit"}]}]}' >"$TMP/nofix.json"
 run_eval u8 -- "$CMDFILE" HEAD "$TMP/nofix.json" --live;          assert_eq "missing fixture exit 64" 64 "$RC"
+echo '{"cases":[{"name":"a","fixture":"long-lived-gaps.md","signals":[{"name":"s","pattern":"x","treatment":"hit"}]},{"name":"a","fixture":"long-lived-gaps.md","signals":[{"name":"t","pattern":"y","treatment":"hit"}]}]}' >"$TMP/dup.json"
+run_eval u11 -- "$CMDFILE" HEAD "$TMP/dup.json" --live;           assert_eq "duplicate case names exit 64" 64 "$RC"
+echo '{"cases":[{"name":"a","fixture":"long-lived-gaps.md","signals":[{"name":"s","pattern":"(","control":"miss"}]}]}' >"$TMP/badre.json"
+run_eval u12 -- "$CMDFILE" HEAD "$TMP/badre.json" --live;         assert_eq "invalid regex exit 64" 64 "$RC"
 run_eval u9 -- "$CMDFILE" HEAD "$CASES" --bogus --live;           assert_eq "unknown flag exit 64" 64 "$RC"
 run_eval u10 -- "$CMDFILE" "--output=$TMP/x" "$CASES" --live;     assert_eq "option-shaped base exit 64" 64 "$RC"
 assert_eq "option-shaped base wrote no file" no "$([ -e "$TMP/x" ] && echo yes || echo no)"
-UCALLS=0; for l in u1 u2 u3 u4 u5 u6 u7 u8 u9 u10; do UCALLS=$((UCALLS + $(cat "$TMP/log.$l/count" 2>/dev/null || echo 0))); done
+UCALLS=0; for l in u1 u2 u3 u4 u5 u6 u7 u8 u9 u10 u11 u12; do UCALLS=$((UCALLS + $(cat "$TMP/log.$l/count" 2>/dev/null || echo 0))); done
 assert_eq "usage errors never call claude" 0 "$UCALLS"
 
 echo "=== dry run ==="

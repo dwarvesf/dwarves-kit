@@ -33,7 +33,7 @@ In the SPEC-314 session the lead proved a new lens by hand. Fresh subagents ran 
 | 1 | one or more signals failed | `verdict: FAIL (<f>/<k> signals failed: <names>)` |
 | 2 | one or more samples failed: claude missing, a non-zero exit, an envelope with `is_error: true`, or an empty `.result` | `verdict: ERROR (<e> failed samples, see <dir>)` |
 | 3 | no `--live` flag | `verdict: NOT RUN (dry run, 0 model calls)` |
-| 64 | usage error: missing or extra argument, a base ref that starts with `-`, a command file that does not exist, a base ref without the file, a fixture that does not exist, a JSON file that fails the schema check, N not a positive integer, an unknown flag | usage line |
+| 64 | usage error: missing or extra argument, a base ref that starts with `-`, a command file that does not exist, a base ref without the file, a fixture that does not exist, a JSON file that fails the schema check or repeats a case name, a `pattern` or `reviewer` that is not a valid extended regex, N not a positive integer, an unknown flag | usage line |
 
 Only a live run where every signal held exits 0. A failed sample is never scored as a miss, because a `miss` expectation would then pass on an auth failure. An `is_error` envelope counts as failed even when `.result` carries text, since that text is an error message such as a low credit balance.
 
@@ -145,7 +145,7 @@ Every case runs offline. A temp git repo holds a six-reviewer command at `HEAD` 
 
 | Case | Setup | Expected |
 |---|---|---|
-| Usage | no args; `--samples 0`; `--samples x`; missing command file; base without the file; JSON with no cases; JSON with a signal lacking both arms; missing fixture; unknown flag | exit 64, stub never called |
+| Usage | no args; `--samples 0`; `--samples x`; missing command file; base without the file; JSON with no cases; JSON with a signal lacking both arms; missing fixture; duplicate case names; an invalid regex; unknown flag | exit 64, stub never called |
 | Dry run | the SPEC-314 case file, no `--live` | exit 3, `NOT RUN`, the plan names 3 calls (the short-lived case names no control), stub never called |
 | Plan count | `--samples 3`, no `--live` | the plan names 9 calls |
 | Live pass | the SPEC-314 case file, stub answers realistically | exit 0, `verdict: PASS`, one row per signal, 3 calls, `-` in the short-lived control cells |
@@ -187,3 +187,4 @@ Not covered: a hung call has no timeout. A keyword grep cannot judge whether a f
 - `--safe-mode` over `--bare`: `--bare` never reads OAuth, which is how the operator logs in.
 - Scoring by finding block, not by line: the first live run tagged each finding `Reviewer 7.` on its title line and put the detail on indented lines. The line grep missed a credential-rotation finding that was there.
 - Validation (seven lenses, APPROVED, design record PASS, design-bearing=yes, Reviewer 7 long-lived with all five answers present) raised three warnings, all folded in: an `is_error` envelope counts as a failed sample (Reviewer 2), a base ref starting with `-` is refused before `git show` (Reviewer 1), and the `reviewer` regex should accept a reviewer's name as well as its number (Reviewer 3).
+- Self-review found two silent passes, both fixed with a test: a repeated case name let one case's samples overwrite another's, and an invalid regex made grep exit 2, which scored as a miss and passed a `miss` expectation (the old script exited 0 on that case file). Both now exit 64 before any call.
