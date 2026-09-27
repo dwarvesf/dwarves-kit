@@ -5296,6 +5296,38 @@ for sh in /bin/bash bash; do
     "$([ -z "$opened" ]; echo $?)"
 done
 
+echo "--- absorbed: a backslash before an invalid byte, in a UTF-8 locale"
+# Round 5: with core.quotePath=false, bash 5 in a UTF-8 locale cut the changed list at a
+# backslash followed by an invalid byte, so the unlanded zz below was never compared. bash
+# takes an ASCII fast path unless the string also holds a valid multibyte character, hence aé.
+AQW="$TMPD/aq-work"; mkdir -p "$AQW"; git -C "$AQW" init -q -b main; gitc "$AQW"
+printf 'base\n' > "$AQW/base"; git -C "$AQW" add -A; git -C "$AQW" commit -qm base
+git -C "$AQW" branch quotecut
+AQBLOB="$(printf 'q\n' | git -C "$AQW" hash-object -w --stdin)"
+AQPATH="$(printf 'b\\\351\\x')"; AQUTF="$(printf 'a\303\251')"
+# Index-only commits: APFS cannot hold the odd name on disk, so a checkout, reset --hard, or
+# add -A would silently stage its deletion and the fixture would stop testing anything.
+aq_commit() { # aq_commit <branch> <message> <path>...
+  local br="$1" msg="$2" tree commit; shift 2
+  GIT_INDEX_FILE="$TMPD/aq-index" git -C "$AQW" read-tree "$br"
+  for f in "$@"; do
+    GIT_INDEX_FILE="$TMPD/aq-index" git -C "$AQW" update-index --add --cacheinfo "100644,${AQBLOB},${f}"
+  done
+  tree="$(GIT_INDEX_FILE="$TMPD/aq-index" git -C "$AQW" write-tree)"
+  commit="$(git -C "$AQW" commit-tree "$tree" -p "$br" -m "$msg")"
+  git -C "$AQW" update-ref "refs/heads/$br" "$commit"
+}
+aq_commit quotecut "agent: odd paths and zz" "$AQUTF" "$AQPATH" zz
+aq_commit main "main: land the odd paths" "$AQUTF" "$AQPATH"
+git clone -q --bare "$AQW" "$TMPD/aq-bare"
+AQ="$TMPD/aq-clone"; git clone -q --no-checkout "$TMPD/aq-bare" "$AQ"; gitc "$AQ"
+git -C "$AQ" config core.quotePath false; git -C "$AQ" branch -q quotecut origin/quotecut
+chk "absorbed: the branch tip holds both odd paths and zz" \
+  "$([ "$(git -C "$AQ" -c core.quotePath=true ls-tree --name-only origin/quotecut | grep -cE '351|zz|303')" -eq 3 ]; echo $?)"
+out="$(LC_ALL=en_US.UTF-8 GH_STUB_UNAUTH=1 "$WRAP" scan "$AQ" 2>&1)"
+chk_has "absorbed: a backslash before an invalid byte stays LEAVE" "$out" \
+  "quotecut  [NOT merged / unknown: LEAVE]"
+
 echo
 if [ "$FAIL" -gt 0 ]; then echo "test-wrap: $PASS passed, $FAIL FAILED of $TOTAL" >&2; exit 1; fi
 echo "test-wrap: all $PASS passed"

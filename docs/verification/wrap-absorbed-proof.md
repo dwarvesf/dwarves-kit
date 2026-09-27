@@ -4,7 +4,7 @@ Spec: `docs/specs/SPEC-331-wrap-absorbed-proof.md`. Change: `lib/wrap/wrap.sh` `
 
 | Check | Command | Result |
 |---|---|---|
-| Suite | `bash tests/test-wrap.sh` | `test-wrap: all 1434 passed` (1403 before, plus 31 new) |
+| Suite | `bash tests/test-wrap.sh` | `test-wrap: all 1436 passed` (1403 before, plus 33 new) |
 | Negative control | `bash lib/gate/negctl.sh "$PWD" "bash tests/test-wrap.sh" "<force _absorbed to return 1>"` | green, RED under mutation, green after restore, `Verdict: PASS` |
 | Real flow | new and installed `bin/wrap scan` and `apply` dry run on the real ops-toolkit checkout | below |
 
@@ -90,6 +90,15 @@ The descriptor sweep (limits 4 to 12) run against revision 4's `lib/wrap/wrap.sh
 test-wrap: 1432 passed, 2 FAILED of 1434
 ```
 
+## Revision 5 regression check
+
+The odd-path case (a landed `b\<E9>\x` beside a valid `aé`, `core.quotePath=false`, `LC_ALL=en_US.UTF-8`, bash 5.3) run against revision 5's `lib/wrap/wrap.sh` (`git show 72fa403a:lib/wrap/wrap.sh`) reads the unlanded branch as absorbed; revision 6 leaves it:
+
+```
+  FAIL absorbed: a backslash before an invalid byte stays LEAVE
+test-wrap: 1435 passed, 1 FAILED of 1436
+```
+
 ## Test plan coverage
 
 | Row | Run |
@@ -103,7 +112,7 @@ test-wrap: 1432 passed, 2 FAILED of 1434
 | 7 union line deletion | "uniondel stays LEAVE", "the uniondel branch survives apply" |
 | 8 landed then edited, another hunk | "lateredit stays LEAVE", "the lateredit branch survives apply"; real flow `a4039c`, `aa165d` |
 | 9 shadowing tag | "a tag named like the branch does not prove it" |
-| 10 existing cases unchanged | suite 1403 to 1434, all green |
+| 10 existing cases unchanged | suite 1403 to 1436, all green |
 | 11 negative control | `negctl.sh` `Verdict: PASS` |
 | 12 long diff, early match | "an early match in a long diff stays LEAVE", "the longdiff branch survives apply" |
 | 13 non-UTF-8 path | "a non-UTF-8 path stays LEAVE", "the badbytes branch survives apply" |
@@ -111,3 +120,4 @@ test-wrap: 1432 passed, 2 FAILED of 1434
 | 15 landed non-UTF-8 path | "a landed non-UTF-8 path reads absorbed" |
 | 16 tag-shadowed worktree | "nor does the ancestor proof take the tag", "the tag-shadowed worktree survives apply", "the tag-shadowed branch survives apply" |
 | 17 descriptor exhaustion | "descriptor exhaustion stays LEAVE" under /bin/bash and PATH bash, limits 4 to 12 |
+| 18 backslash before an invalid byte | "the branch tip holds both odd paths and zz", "a backslash before an invalid byte stays LEAVE" |
