@@ -1,0 +1,19 @@
+# Implementation notes: wrap-absorbed-proof (SPEC-331)
+
+Delta from the spec only.
+
+## Deviations
+
+- **Mechanism changed after validation.** The first build used `git merge-tree --write-tree` and compared the result with `origin/<default>^{tree}`. Validation and a security review each reproduced a data-loss case: merge-tree runs `.gitattributes` merge drivers. A keep-ours driver returns the default branch's side. `merge=union` keeps the default branch's lines and hides a line the branch deleted. The rewrite never merges. It lists every path the branch changed since its merge base, then requires each path to be byte-identical (same blob id and mode, or absent on both) at the branch tip and on `origin/<default>`. Plain tree diffs read no attributes, run no drivers, and write no objects.
+- **Stricter than the merge-tree form.** A branch whose file the default branch later edited, even in a different hunk, is now left alone. Accepted: that case is the manual "landed then evolved" call the spec already puts out of scope.
+- **Contract 2 narrowed.** Content the branch added and removed in its own intermediate commits is on no ref after the delete. The gh squash proof has always accepted exactly this: a squash-merged branch's intermediate states are gone too. `branch -D` prints the tip sha, so the commits stay recoverable until gc.
+
+## Decisions not in the spec
+
+- The proof takes a commit, not a branch name. Callers pass `refs/heads/<b>` or the tip sha they already read, so a tag named like the branch cannot redirect it. The same tag shadowing still reaches the older ancestor proof. That is pre-existing, and fixing it here would widen the diff.
+- `refs/remotes/origin/<default>` is spelled in full inside the new helper, so a local branch literally named `origin/<default>` cannot stand in for the remote.
+- `--ignore-submodules=none` and `--no-renames` are pinned, so neither a `diff.ignoreSubmodules` setting nor rename pairing can hide a changed path.
+
+## Open questions
+
+- The race that review flagged (a commit landing between the proof and `branch -D`) exists for every proof in `_apply_branches`. A leased `git update-ref -d refs/heads/<b> <tip>` would close it for all three. It is left for a separate change because it touches the older proofs too.

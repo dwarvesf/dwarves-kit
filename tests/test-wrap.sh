@@ -5161,6 +5161,47 @@ chk_has "absorbed: the branch sweep names the proof" "$out" \
 chk "absorbed: the branch sweep deleted it" \
   "$(git -C "$AB" show-ref --verify --quiet refs/heads/absorbed2 && echo 1 || echo 0)"
 
+echo "--- absorbed: merge drivers, a later edit, and a shadowing tag never fake the proof"
+# Each shape a merge-based check got wrong in review. The proof compares trees, so no
+# .gitattributes driver runs and no branch-only content can read as landed.
+ADW="$TMPD/ad-work"; mkdir -p "$ADW"; git -C "$ADW" init -q -b main; gitc "$ADW"
+printf 'o.txt merge=keepours\nu.txt merge=union\n' > "$ADW/.gitattributes"
+printf 'one\n' > "$ADW/o.txt"; printf 'a\nb\nc\n' > "$ADW/u.txt"
+printf 'l1\nl2\nl3\nl4\nl5\nl6\n' > "$ADW/e.txt"
+git -C "$ADW" add -A; git -C "$ADW" commit -qm base
+for b in driver uniondel lateredit shadowed; do git -C "$ADW" branch "$b"; done
+git -C "$ADW" checkout -q driver
+printf 'one\nAGENT ONLY\n' > "$ADW/o.txt"; git -C "$ADW" commit -qam "agent: o.txt"
+git -C "$ADW" checkout -q uniondel
+printf 'a\nc\n' > "$ADW/u.txt"; git -C "$ADW" commit -qam "agent: drop b"
+git -C "$ADW" checkout -q lateredit
+printf 'l1 agent\nl2\nl3\nl4\nl5\nl6\n' > "$ADW/e.txt"; git -C "$ADW" commit -qam "agent: e.txt"
+git -C "$ADW" checkout -q shadowed
+printf 'never landed\n' > "$ADW/s.txt"; git -C "$ADW" add -A; git -C "$ADW" commit -qm "agent: s.txt"
+git -C "$ADW" checkout -q main
+printf 'one\nmain line\n' > "$ADW/o.txt"; printf 'a\nB\nc\n' > "$ADW/u.txt"
+printf 'l1 agent\nl2\nl3\nl4\nl5\nl6 main\n' > "$ADW/e.txt"
+git -C "$ADW" commit -qam "main: edits"
+git -C "$ADW" tag shadowed main
+git clone -q --bare "$ADW" "$TMPD/ad-bare"
+AD="$TMPD/ad-clone"; git clone -q "$TMPD/ad-bare" "$AD"; gitc "$AD"
+git -C "$AD" config merge.keepours.driver true
+for b in driver uniondel lateredit shadowed; do git -C "$AD" branch -q "$b" "origin/$b"; done
+git -C "$AD" worktree add -q "$TMPD/ad-wt-shadowed" shadowed
+
+out="$(GH_STUB_UNAUTH=1 "$WRAP" scan "$AD" 2>&1)"
+for b in driver uniondel lateredit; do
+  chk_has "absorbed: $b stays LEAVE" "$out" "$b  [NOT merged / unknown: LEAVE]"
+done
+out="$(GH_STUB_UNAUTH=1 "$WRAP" apply --worktrees "$AD" 2>&1)"
+chk_no "absorbed: a tag named like the branch does not prove it" "$out" \
+  "and delete shadowed (content already on origin/main)"
+out="$(GH_STUB_UNAUTH=1 "$WRAP" apply --apply "$AD" 2>&1)"
+for b in driver uniondel lateredit; do
+  chk "absorbed: the $b branch survives apply" \
+    "$(git -C "$AD" show-ref --verify --quiet "refs/heads/$b"; echo $?)"
+done
+
 echo
 if [ "$FAIL" -gt 0 ]; then echo "test-wrap: $PASS passed, $FAIL FAILED of $TOTAL" >&2; exit 1; fi
 echo "test-wrap: all $PASS passed"

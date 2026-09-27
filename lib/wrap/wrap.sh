@@ -278,7 +278,7 @@ _scan_repo() {
       echo "     ${b}  [SAFE-d: ancestor of origin/${def}]"
       continue
     fi
-    if _absorbed "$repo" "$def" "$b"; then
+    if _absorbed "$repo" "$def" "refs/heads/${b}"; then
       echo "     ${b}  [ABSORBED: content already on origin/${def}, safe to -D]"
       continue
     fi
@@ -430,7 +430,7 @@ _merge_proof() {
   if git -C "$repo" merge-base --is-ancestor "$b" "origin/${def}" 2>/dev/null; then
     printf 'ancestor of origin/%s\n' "$def"; return 0
   fi
-  if _absorbed "$repo" "$def" "$b"; then
+  if _absorbed "$repo" "$def" "refs/heads/${b}"; then
     printf 'content already on origin/%s\n' "$def"; return 0
   fi
   [ "$ghs" = "ok" ] || return 1
@@ -440,16 +440,27 @@ _merge_proof() {
   printf 'squash-merged per gh\n'
 }
 
-# _absorbed <repo> <default branch> <branch> -- 0 when merging the branch into origin/<def> is
-# clean AND leaves origin/<def>'s tree unchanged, so every change the branch carries is already on
-# the default branch. It covers a subagent branch whose lead re-committed the work under its own
-# PR: new hashes, no PR for the branch, so neither other proof can ever hold. Deleting it loses
-# commit metadata, never content. A conflict, or a git older than 2.38 (no
-# `merge-tree --write-tree`), exits non-zero and the proof simply does not hold.
+# _absorbed <repo> <default branch> <commit> -- 0 when every path the commit changed since its
+# merge base with origin/<def> is byte-identical (same blob and mode, or absent on both) at the
+# commit and on origin/<def>. It covers a subagent branch whose lead re-committed the work under
+# its own PR: new hashes, no PR for the branch, so neither other proof can ever hold. It never
+# merges: a merge would run .gitattributes drivers, and keep-ours or union can return the
+# default branch's side while the branch's edit exists nowhere else. Plain tree diffs read no
+# attributes and write no objects. Like the squash proof, it guarantees the branch's net change,
+# not content its own intermediate commits added and removed; `branch -D` prints the tip sha.
+# Callers pass a full ref or a sha, so a tag named like the branch cannot stand in for it.
 _absorbed() {
-  local repo="$1" def="$2" b="$3" merged
-  merged="$(git -C "$repo" merge-tree --write-tree "origin/${def}" "$b" 2>/dev/null)" || return 1
-  [ -n "$merged" ] && [ "$merged" = "$(git -C "$repo" rev-parse "origin/${def}^{tree}" 2>/dev/null)" ]
+  local repo="$1" def="$2" tip="$3" main base changed differ
+  main="$(git -C "$repo" rev-parse --verify --quiet "refs/remotes/origin/${def}^{commit}")" || return 1
+  tip="$(git -C "$repo" rev-parse --verify --quiet "${tip}^{commit}")" || return 1
+  base="$(git -C "$repo" merge-base "$main" "$tip" 2>/dev/null)" || return 1
+  changed="$(git -C "$repo" diff --no-renames --ignore-submodules=none --name-only "$base" "$tip")" \
+    || return 1
+  [ -n "$changed" ] || return 1
+  differ="$(git -C "$repo" diff --no-renames --ignore-submodules=none --name-only "$tip" "$main")" \
+    || return 1
+  # Both lists use git's quoted path form, so an odd path still compares exactly.
+  ! printf '%s\n' "$differ" | grep -qxF -f <(printf '%s\n' "$changed")
 }
 
 # _wt_locked <worktree path> -- 0 when the worktree carries a lock. git keeps the lock as a
@@ -609,7 +620,7 @@ _apply_branches() {
       run "$repo" "delete ${b} (ancestor of origin/${def})" git -C "$repo" branch -D "$b"
       continue
     fi
-    if _absorbed "$repo" "$def" "$b"; then
+    if _absorbed "$repo" "$def" "$tip"; then
       run "$repo" "delete ${b} (content already on origin/${def})" git -C "$repo" branch -D "$b"
       continue
     fi
