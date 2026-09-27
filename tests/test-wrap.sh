@@ -5328,6 +5328,82 @@ out="$(LC_ALL=en_US.UTF-8 GH_STUB_UNAUTH=1 "$WRAP" scan "$AQ" 2>&1)"
 chk_has "absorbed: a backslash before an invalid byte stays LEAVE" "$out" \
   "quotecut  [NOT merged / unknown: LEAVE]"
 
+echo "=== pinned refs: a colliding tag, branch, or leaked GIT_DIR never proves a branch merged ==="
+# Each proof and tip read names refs/heads/<b> and refs/remotes/origin/<def>. A bare name
+# resolves a tag or local branch first, so each fixture below once deleted unlanded work.
+# pin_fixture <name> -- a clone whose `agent` (worktree <name>-wt) and `agent2` (no worktree)
+# carry one commit origin/main lacks. Prints the clone path.
+pin_fixture() {
+  local w="$TMPD/$1-work" c="$TMPD/$1-clone"
+  mkdir -p "$w"; git -C "$w" init -q -b main; gitc "$w"
+  printf 'base\n' > "$w/f.txt"; git -C "$w" add -A; git -C "$w" commit -qm base
+  git -C "$w" checkout -q -b agent
+  printf 'never landed\n' > "$w/a.txt"; git -C "$w" add -A; git -C "$w" commit -qm "agent: a.txt"
+  git -C "$w" checkout -q main
+  git clone -q --bare "$w" "$TMPD/$1-bare"
+  git clone -q "$TMPD/$1-bare" "$c"; gitc "$c"
+  git -C "$c" branch -q agent origin/agent; git -C "$c" branch -q agent2 origin/agent
+  git -C "$c" worktree add -q "$TMPD/$1-wt" agent
+  printf '%s' "$c"
+}
+pin_kept() { # pin_kept <label> <clone> <worktree>
+  chk "$1: the worktree survives apply" "$([ -d "$3" ]; echo $?)"
+  chk "$1: agent survives apply" "$(git -C "$2" show-ref --verify --quiet refs/heads/agent; echo $?)"
+  chk "$1: agent2 survives apply" "$(git -C "$2" show-ref --verify --quiet refs/heads/agent2; echo $?)"
+}
+
+echo "--- pinned refs: a tag named origin/main at the unlanded branch"
+PT="$(pin_fixture pt)"
+git -C "$PT" tag origin/main agent
+out="$(GH_STUB_UNAUTH=1 "$WRAP" apply --apply --worktrees "$PT" 2>&1)"
+chk_no "pinned tag: no ancestor proof from the tag" "$out" "(ancestor of origin/main"
+pin_kept "pinned tag" "$PT" "$TMPD/pt-wt"
+
+echo "--- pinned refs: a local branch named origin/main at the unlanded branch"
+PB="$(pin_fixture pb)"
+git -C "$PB" branch -q origin/main agent
+out="$(GH_STUB_UNAUTH=1 "$WRAP" scan "$PB" 2>&1)"
+chk_has "pinned branch: scan names the branch in full, never heads/" "$out" \
+  "     origin/main  [NOT merged / unknown: LEAVE]"
+chk_no "pinned branch: scan does not SAFE-d agent off the local branch" "$out" "agent  [SAFE-d"
+out="$(GH_STUB_UNAUTH=1 "$WRAP" apply --apply --worktrees "$PB" 2>&1)"
+chk_no "pinned branch: no ancestor proof from the local branch" "$out" "(ancestor of origin/main"
+pin_kept "pinned branch" "$PB" "$TMPD/pb-wt"
+chk "pinned branch: the origin/main branch itself survives" \
+  "$(git -C "$PB" show-ref --verify --quiet refs/heads/origin/main; echo $?)"
+
+echo "--- pinned refs: a tag at the merged PR head shadows a branch with an extra commit"
+# gh reports agent merged at its first commit, the tag named agent points there, and the branch
+# carries one more commit. The squash proof must read refs/heads/agent, and the scan snapshot
+# must name it agent (not heads/agent) so the tip-moved guard still matches it.
+PS="$(pin_fixture ps)"
+git -C "$PS" tag agent agent
+printf 'after the merge\n' > "$TMPD/ps-wt/b.txt"
+git -C "$TMPD/ps-wt" add -A; git -C "$TMPD/ps-wt" commit -qm "agent: unpushed b.txt"
+PS_MERGED="[{\"headRefOid\":\"$(git -C "$PS" rev-parse refs/tags/agent)\",\"baseRefName\":\"main\",\"mergedAt\":\"2026-01-01T00:00:00Z\"}]"
+out="$(GH_STUB_MERGED_agent="$PS_MERGED" "$WRAP" scan "$PS" 2>&1)"
+chk_has "pinned squash: scan leaves agent" "$out" "     agent  [NOT merged / unknown: LEAVE]"
+chk_no "pinned squash: scan never names the branch heads/agent" "$out" "     heads/agent  ["
+out="$(GH_STUB_MERGED_agent="$PS_MERGED" "$WRAP" apply --apply --worktrees "$PS" 2>&1)"
+chk_no "pinned squash: no squash proof from the tag" "$out" "squash-merged per gh"
+chk "pinned squash: the worktree survives apply" "$([ -d "$TMPD/ps-wt" ]; echo $?)"
+chk "pinned squash: agent survives apply" \
+  "$(git -C "$PS" show-ref --verify --quiet refs/heads/agent; echo $?)"
+
+echo "--- pinned refs: a leaked GIT_DIR pointing at another repo"
+# A git hook exports its own repo's GIT_DIR. Wrap must still act on the repo it was given: the
+# other repo's merged agent2 stays, and the target's unlanded worktree is reported as its own.
+PG="$(pin_fixture pg)"
+PO="$(pin_fixture po)"
+git -C "$TMPD/po-work" merge -q --ff-only agent; git -C "$TMPD/po-work" push -q "$TMPD/po-bare" main
+git -C "$PO" fetch -q
+out="$(GIT_DIR="$PO/.git" GH_STUB_UNAUTH=1 "$WRAP" apply --apply --worktrees "$PG" 2>&1)"
+chk_has "pinned GIT_DIR: apply reads the target's worktree" "$out" \
+  "SKIP $TMPD_P/pg-wt: agent is not proven merged into main (leave it)"
+pin_kept "pinned GIT_DIR" "$PG" "$TMPD/pg-wt"
+chk "pinned GIT_DIR: the other repo's merged agent2 survives" \
+  "$(git -C "$PO" show-ref --verify --quiet refs/heads/agent2; echo $?)"
+
 echo
 if [ "$FAIL" -gt 0 ]; then echo "test-wrap: $PASS passed, $FAIL FAILED of $TOTAL" >&2; exit 1; fi
 echo "test-wrap: all $PASS passed"

@@ -83,6 +83,14 @@ set -uo pipefail
 # A git call must never block on a credential prompt inside an unattended wrap.
 export GIT_TERMINAL_PROMPT=0
 
+# A caller such as a git hook exports its own repo's GIT_DIR, index and -c config. Inherited,
+# they point every `git -C <repo>` below at that other repo, so wrap drops them once here.
+unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_CONFIG_PARAMETERS GIT_CONFIG_COUNT
+for _v in $(compgen -e); do
+  case "$_v" in GIT_CONFIG_KEY_*|GIT_CONFIG_VALUE_*) unset "$_v" ;; esac
+done
+unset _v
+
 # An index.lock at least this old belongs to a foreign writer, not to ordinary git traffic.
 LOCK_STALE_SECS=5
 # A routine activity line stays inside this many characters. Over it, `log` warns and writes.
@@ -272,9 +280,11 @@ _scan_repo() {
 
   echo "-- local branches (an ancestor of origin/${def} is SAFE-d; a squash merge needs the gh proof):"
   local b tip json verdict
-  for b in $(git -C "$repo" for-each-ref --format='%(refname:short)' refs/heads/); do
+  # Every proof below names full refs: a bare name resolves a same-named tag first, and a tag
+  # or local branch called origin/<def> beats the remote-tracking ref.
+  for b in $(git -C "$repo" for-each-ref --format='%(refname:lstrip=2)' refs/heads/); do
     case "$b" in "$def"|main|master) continue ;; esac
-    if git -C "$repo" merge-base --is-ancestor "$b" "origin/${def}" 2>/dev/null; then
+    if git -C "$repo" merge-base --is-ancestor "refs/heads/${b}" "refs/remotes/origin/${def}" 2>/dev/null; then
       echo "     ${b}  [SAFE-d: ancestor of origin/${def}]"
       continue
     fi
@@ -286,7 +296,7 @@ _scan_repo() {
       echo "     ${b}  [NOT merged / unknown: LEAVE]"
       continue
     fi
-    tip="$(git -C "$repo" rev-parse "$b" 2>/dev/null)"
+    tip="$(git -C "$repo" rev-parse --verify --quiet "refs/heads/${b}" 2>/dev/null)"
     json="$(_squash_json "$(_origin_url "$repo")" "$b")"
     verdict="$(_squash_verdict "$json" "$tip" "$def")"
     case "$verdict" in
@@ -427,16 +437,17 @@ _scanned_tip() { awk -v b="$1" '$1 == b { print $2 }' "$TIPS_FILE"; }
 # or the gh squash proof.
 _merge_proof() {
   local repo="$1" def="$2" ghs="$3" b="$4" tip json
-  # refs/heads/: a bare name resolves a same-named tag first, and a tag on the default branch
-  # once proved an unlanded worktree branch "merged".
-  if git -C "$repo" merge-base --is-ancestor "refs/heads/${b}" "origin/${def}" 2>/dev/null; then
+  # Full refs only: a bare name resolves a same-named tag first, and a tag or local branch
+  # called origin/<def> beats the remote-tracking ref. Either once proved an unlanded worktree
+  # branch "merged".
+  if git -C "$repo" merge-base --is-ancestor "refs/heads/${b}" "refs/remotes/origin/${def}" 2>/dev/null; then
     printf 'ancestor of origin/%s\n' "$def"; return 0
   fi
   if _absorbed "$repo" "$def" "refs/heads/${b}"; then
     printf 'content already on origin/%s\n' "$def"; return 0
   fi
   [ "$ghs" = "ok" ] || return 1
-  tip="$(git -C "$repo" rev-parse "$b" 2>/dev/null)"
+  tip="$(git -C "$repo" rev-parse --verify --quiet "refs/heads/${b}" 2>/dev/null)"
   json="$(_squash_json "$(_origin_url "$repo")" "$b")"
   [ "$(_squash_verdict "$json" "$tip" "$def")" = "OK" ] || return 1
   printf 'squash-merged per gh\n'
@@ -569,7 +580,7 @@ _apply_worktrees() {
     if [ -n "$(git -C "$wt" status --short 2>/dev/null)" ]; then
       echo "     SKIP ${wt}: went dirty while the proof was read"; continue
     fi
-    tip="$(git -C "$repo" rev-parse "$wtb" 2>/dev/null)"
+    tip="$(git -C "$repo" rev-parse --verify --quiet "refs/heads/${wtb}" 2>/dev/null)"
     scanned="$(_scanned_tip "$wtb")"
     if [ -n "$scanned" ] && [ "$tip" != "$scanned" ]; then
       echo "     SKIP ${wt}: ${wtb} tip moved during this run ($(_short "$scanned") -> $(_short "$tip"))"; continue
@@ -617,7 +628,7 @@ _apply_branches() {
   local repo="$1" def="$2" cur="$3" fetch_ok="$4" ghs="$5"
   echo "-- branches:"
   local b tip scanned json verdict
-  for b in $(git -C "$repo" for-each-ref --format='%(refname:short)' refs/heads/); do
+  for b in $(git -C "$repo" for-each-ref --format='%(refname:lstrip=2)' refs/heads/); do
     case "$b" in "$def"|main|master) echo "     SKIP ${b}: default or protected branch name"; continue ;; esac
     if [ "$b" = "$cur" ]; then echo "     SKIP ${b}: currently checked out"; continue; fi
     if git -C "$repo" worktree list --porcelain 2>/dev/null | grep -qx "branch refs/heads/${b}"; then
@@ -626,7 +637,7 @@ _apply_branches() {
     if [ "$fetch_ok" != 1 ]; then
       echo "     SKIP ${b}: fetch failed, stale ancestor data"; continue
     fi
-    tip="$(git -C "$repo" rev-parse "$b" 2>/dev/null)"
+    tip="$(git -C "$repo" rev-parse --verify --quiet "refs/heads/${b}" 2>/dev/null)"
     scanned="$(_scanned_tip "$b")"
     if [ -n "$scanned" ] && [ "$tip" != "$scanned" ]; then
       echo "     SKIP ${b}: tip moved during this run ($(_short "$scanned") -> $(_short "$tip"))"; continue
@@ -634,7 +645,8 @@ _apply_branches() {
     # -D, not -d: the proof above is wrap's own, against origin/<def>. `branch -d` judges
     # against the branch's OWN upstream (or HEAD when it has none), so it refused a branch
     # that tracks another ref or nothing even though origin/<def> already holds its tip.
-    if git -C "$repo" merge-base --is-ancestor "$b" "origin/${def}" 2>/dev/null; then
+    # The sha and the full remote ref, never bare names: see _merge_proof.
+    if git -C "$repo" merge-base --is-ancestor "$tip" "refs/remotes/origin/${def}" 2>/dev/null; then
       run "$repo" "delete ${b} (ancestor of origin/${def})" git -C "$repo" branch -D "$b"
       continue
     fi
@@ -1517,7 +1529,7 @@ _apply_repo() {
     TIPS_FILE="$TIPS_OVERRIDE"; own_snapshot=0
   else
     TIPS_FILE="$(mktemp)"
-    git -C "$repo" for-each-ref --format='%(refname:short) %(objectname)' refs/heads/ > "$TIPS_FILE" 2>/dev/null
+    git -C "$repo" for-each-ref --format='%(refname:lstrip=2) %(objectname)' refs/heads/ > "$TIPS_FILE" 2>/dev/null
   fi
 
   _apply_worktrees "$repo" "$def" "$cur" "$fetch_ok" "$ghs"
