@@ -16,7 +16,11 @@
 # (`B=main; git push origin $B`) or an escape (`$'\x6dain'`) is not resolved; a script
 # run from a file or a pipe (`bash push.sh`, `printf ... | bash`) is not read; and a
 # quoted separator inside a wrapped script (`bash -c "cd x; git push -o 'a;b' ..."`) or
-# a `)` in a case pattern inside `"$(...)"` desyncs the walk.
+# a `)` in a case pattern inside `"$(...)"` desyncs the walk; a misread << (in ${...})
+# whose false delimiter line appears later skips the lines between; a wrapper flag
+# whose operand the segment-start table does not list (sudo -s, timeout -s SIG) turns
+# the operand into the binary; zsh-only syntax beyond noglob, nocorrect, repeat, and
+# always is read as bash.
 
 set -euo pipefail
 set -f  # no globbing while we word-split segments
@@ -83,24 +87,31 @@ SEGMENTS=$(printf '%s\n' "$CMD" | awk -v sq="$SQ" '
       c = substr(line, i, 1); nx = substr(line, i + 1, 1); t = top()
       if (t == sq) { if (c == sq) d--; seg = seg c; continue }
       if (t == "A") {
+        if (c == "$" && nx == "(") { st[++d] = "$"; i++; emit(); continue }
+        if (c == "`") { st[++d] = "`"; emit(); continue }
         if (c == "(") ap[d]++
-        else if (c == ")") { if (ap[d]) ap[d]--; else { d--; i++ } }
+        else if (c == ")") {
+          if (ap[d]) ap[d]--
+          else if (nx == ")") { d--; i++ }
+          else { st[d] = ak[d]; emit(); continue }
+        }
         seg = seg c; continue
       }
-      if (c == "\\") { if (i == n) { cont = 1; continue } seg = seg c nx; i++; continue }
+      if (c == "\\") { if (i == n) { cont = 1; continue } seg = seg c nx; ee = length(seg); i++; continue }
       if (t == "E") { if (c == sq) d--; seg = seg c; continue }
       if (t == "\"") {
         if (c == "\"") { d--; seg = seg c; continue }
-        if (c == "$" && substr(line, i, 3) == "$((") { st[++d] = "A"; ap[d] = 0; i += 2; continue }
+        if (c == "$" && substr(line, i, 3) == "$((") { st[++d] = "A"; ak[d] = "$"; ap[d] = 0; i += 2; continue }
         if (c == "$" && nx == "(") { st[++d] = "$"; i++; emit(); continue }
         if (c == "`") { st[++d] = "`"; emit(); continue }
         seg = seg c; continue
       }
       # code context: top level, $( ... ), ( ... ) or ` ... `
-      if (c == "#" && (i == 1 || index(" \t;&|()", substr(line, i - 1, 1)))) break
+      if (c == "#" && (seg ~ /^[ \t]*$/ || (substr(seg, length(seg), 1) ~ /[ \t]/ && ee != length(seg)))) break
       if (c == sq || c == "\"") { st[++d] = c; seg = seg c; continue }
       if (c == "$" && nx == sq) { st[++d] = "E"; seg = seg c nx; i++; continue }
-      if (c == "$" && substr(line, i, 3) == "$((") { st[++d] = "A"; ap[d] = 0; i += 2; continue }
+      if (c == "$" && substr(line, i, 3) == "$((") { st[++d] = "A"; ak[d] = "$"; ap[d] = 0; i += 2; continue }
+      if (c == "(" && nx == "(" && seg ~ /^[ \t]*$/) { st[++d] = "A"; ak[d] = "("; ap[d] = 0; i++; continue }
       if (c == "$" && nx == "(") { st[++d] = "$"; i++; emit(); continue }
       if (c == "`") { if (t == "`") d--; else st[++d] = "`"; emit(); continue }
       if (c == ")") { if (t == "$" || t == "(") d--; emit(); continue }
@@ -191,8 +202,8 @@ while IFS= read -r SEG; do
       coproc) shift; case "${2:-}" in '{'|if|while|until|for|select|'!') shift ;; esac ;;
       function) shift; [ $# -gt 0 ] && shift ;;
       # an operand flag of sudo, doas, env, xargs, or exec (sudo -u root, env -C dir,
-      # xargs -I {}); for any other wrapper (caffeinate -u, bash -u) it is a plain flag
-      -u|-g|-U|-C|-D|-T|-I|-a) shift; case "$W" in ?*) [ $# -gt 0 ] && shift ;; esac ;;
+      # xargs -I {}, xargs -d x); for any other wrapper (caffeinate -u, bash -u) it is a plain flag
+      -u|-g|-U|-C|-D|-T|-I|-a|-d) shift; case "$W" in ?*) [ $# -gt 0 ] && shift ;; esac ;;
       # any other flag, and a duration or niceness operand (timeout 5m, nice -n 10);
       # bash -c / -lc lands here too
       -*|[0-9]|[0-9]*[0-9smhd.]) shift ;;

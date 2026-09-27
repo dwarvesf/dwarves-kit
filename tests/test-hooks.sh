@@ -240,6 +240,18 @@ B")"
 assert_exit "Q59: zsh noglob and repeat wrappers" 2 "$(q_hook "noglob repeat 2 $PUSH origin main")"
 assert_exit "Q60: zsh always block" 2 "$(q_hook "{ true; } always { $PUSH origin main; }")"
 assert_exit "Q61: arithmetic then a feature push is allowed" 0 "$(q_hook "echo \$(( (1<<3) + 2 )); $PUSH -u origin feat/x")"
+# SPEC-332 rev 4: validation round 3.
+assert_exit "Q62: # after an escaped blank is not a comment" 2 "$(q_hook "echo a\\ #b & $PUSH origin main")"
+assert_exit "Q63: # after an escaped ; is not a comment" 2 "$(q_hook "echo a\\;#b \$($PUSH origin main)")"
+assert_exit "Q64: \$( ) inside \$(( )) is read" 2 "$(q_hook "echo \$(( \$($PUSH origin main) + 1 ))")"
+assert_exit "Q65: \$((x)& ...) is a substitution, not arithmetic" 2 "$(q_hook "echo \$((true)& $PUSH origin main)")"
+assert_exit "Q66: a shift in (( )) queues no delimiter" 2 "$(q_hook "cat <<A; (( x = 1<<B ))
+A
+$PUSH origin main
+B")"
+assert_exit "Q67: xargs -d takes an operand" 2 "$(q_hook "xargs -d x $PUSH origin main")"
+assert_exit "Q68: an apostrophe in a trailing comment opens no quote" 0 "$(q_hook "$PUSH -u origin feat/x # don't
+echo done")"
 # F4: cd-prefix repo resolution parses portably (probe affordance prints the target)
 CDOUT=$(echo '{"tool_input":{"command":"cd /tmp/some-repo && git push -q origin feat/x"}}' | DWARVES_KIT_PRINT_CDDIR=1 bash "$KIT_DIR/hooks/ship-gate.sh" 2>/dev/null)
 assert_output_contains "F4: ship-gate resolves the cd target" "^/tmp/some-repo$" "$CDOUT"
