@@ -5278,6 +5278,24 @@ out="$(GH_STUB_UNAUTH=1 "$WRAP" apply --apply "$AR/sub" 2>&1)"
 chk "absorbed: the relhide branch survives apply" \
   "$(git -C "$AR" show-ref --verify --quiet refs/heads/relhide; echo $?)"
 
+echo "--- absorbed: no free descriptor never reads as absorbed"
+# Round 4: with a <(...) operand, a process that could not make a pipe lost the operand
+# entirely, grep read stdin, found nothing, and exited 1: absorbed. The comparison is pure
+# bash now. Source the real helper and starve it of descriptors, for both bash versions.
+ABS_FN="$(sed -n '/^_absorbed() {/,/^}/p' "$KIT_DIR/lib/wrap/wrap.sh")"
+# The limit where git still runs but a pipe cannot be made differs per bash version, so sweep
+# it: every limit must fail closed.
+for sh in /bin/bash bash; do
+  opened=""
+  for n in 4 5 6 7 8 9 10 11 12; do
+    "$sh" -c "$ABS_FN"'
+      ( ulimit -n "$2"; _absorbed "$1" main refs/heads/longdiff </dev/null )' _ "$AL" "$n" \
+      2>/dev/null && opened="$opened $n"
+  done
+  chk "absorbed: descriptor exhaustion stays LEAVE under $sh (opened at:${opened:- none})" \
+    "$([ -z "$opened" ]; echo $?)"
+done
+
 echo
 if [ "$FAIL" -gt 0 ]; then echo "test-wrap: $PASS passed, $FAIL FAILED of $TOTAL" >&2; exit 1; fi
 echo "test-wrap: all $PASS passed"

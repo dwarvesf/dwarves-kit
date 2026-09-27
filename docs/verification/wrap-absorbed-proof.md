@@ -4,7 +4,7 @@ Spec: `docs/specs/SPEC-331-wrap-absorbed-proof.md`. Change: `lib/wrap/wrap.sh` `
 
 | Check | Command | Result |
 |---|---|---|
-| Suite | `bash tests/test-wrap.sh` | `test-wrap: all 1432 passed` (1403 before, plus 29 new) |
+| Suite | `bash tests/test-wrap.sh` | `test-wrap: all 1434 passed` (1403 before, plus 31 new) |
 | Negative control | `bash lib/gate/negctl.sh "$PWD" "bash tests/test-wrap.sh" "<force _absorbed to return 1>"` | green, RED under mutation, green after restore, `Verdict: PASS` |
 | Real flow | new and installed `bin/wrap scan` and `apply` dry run on the real ops-toolkit checkout | below |
 
@@ -80,6 +80,16 @@ test-wrap: 1426 passed, 6 FAILED of 1432
 
 The first three are the pre-existing ancestor proof: on master too, a tag named like an unlanded worktree branch proves it merged and `apply --worktrees` removes it.
 
+## Revision 4 regression check
+
+The descriptor sweep (limits 4 to 12) run against revision 4's `lib/wrap/wrap.sh` (`git show 743ad710:lib/wrap/wrap.sh`) finds a limit where the helper reads an unlanded branch as absorbed under each bash; revision 5 fails closed at every limit:
+
+```
+  FAIL absorbed: descriptor exhaustion stays LEAVE under /bin/bash (opened at: 5)
+  FAIL absorbed: descriptor exhaustion stays LEAVE under bash (opened at: 6)
+test-wrap: 1432 passed, 2 FAILED of 1434
+```
+
 ## Test plan coverage
 
 | Row | Run |
@@ -93,10 +103,11 @@ The first three are the pre-existing ancestor proof: on master too, a tag named 
 | 7 union line deletion | "uniondel stays LEAVE", "the uniondel branch survives apply" |
 | 8 landed then edited, another hunk | "lateredit stays LEAVE", "the lateredit branch survives apply"; real flow `a4039c`, `aa165d` |
 | 9 shadowing tag | "a tag named like the branch does not prove it" |
-| 10 existing cases unchanged | suite 1403 to 1432, all green |
+| 10 existing cases unchanged | suite 1403 to 1434, all green |
 | 11 negative control | `negctl.sh` `Verdict: PASS` |
 | 12 long diff, early match | "an early match in a long diff stays LEAVE", "the longdiff branch survives apply" |
 | 13 non-UTF-8 path | "a non-UTF-8 path stays LEAVE", "the badbytes branch survives apply" |
 | 14 diff.relative | "diff.relative from a subdirectory stays LEAVE", "the relhide branch survives apply" |
 | 15 landed non-UTF-8 path | "a landed non-UTF-8 path reads absorbed" |
 | 16 tag-shadowed worktree | "nor does the ancestor proof take the tag", "the tag-shadowed worktree survives apply", "the tag-shadowed branch survives apply" |
+| 17 descriptor exhaustion | "descriptor exhaustion stays LEAVE" under /bin/bash and PATH bash, limits 4 to 12 |

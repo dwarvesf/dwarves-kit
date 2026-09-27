@@ -451,26 +451,30 @@ _merge_proof() {
 # attributes and write no objects. Like the squash proof, it guarantees the branch's net change,
 # not content its own intermediate commits added and removed; `branch -D` prints the tip sha.
 # Callers pass a full ref or a sha, so a tag named like the branch cannot stand in for it.
+# --no-relative: diff.relative with a subdirectory <repo> would drop paths from both lists.
 _absorbed() {
-  local repo="$1" def="$2" tip="$3" main base changed differ
-  main="$(git -C "$repo" rev-parse --verify --quiet "refs/remotes/origin/${def}^{commit}")" || return 1
-  tip="$(git -C "$repo" rev-parse --verify --quiet "${tip}^{commit}")" || return 1
-  base="$(git -C "$repo" merge-base "$main" "$tip" 2>/dev/null)" || return 1
-  changed="$(git -C "$repo" --no-replace-objects diff --no-relative --no-renames \
-    --ignore-submodules=none --name-only "$base" "$tip")" || return 1
+  local repo="$1" def="$2" tip="$3" main base changed differ rest path nl=$'\n'
+  local -a g=(git -C "$repo" --no-replace-objects)
+  main="$("${g[@]}" rev-parse --verify --quiet "refs/remotes/origin/${def}^{commit}")" || return 1
+  tip="$("${g[@]}" rev-parse --verify --quiet "${tip}^{commit}")" || return 1
+  base="$("${g[@]}" merge-base "$main" "$tip" 2>/dev/null)" || return 1
+  changed="$("${g[@]}" diff --no-relative --no-renames --ignore-submodules=none --name-only \
+    "$base" "$tip")" || return 1
   [ -n "$changed" ] || return 1
-  differ="$(git -C "$repo" --no-replace-objects diff --no-relative --no-renames \
-    --ignore-submodules=none --name-only "$tip" "$main")" || return 1
-  # Both lists use git's quoted path form, so an odd path still compares exactly. Only grep's
-  # "no match" (exit 1) proves it: a match is 0 and an error is 2, and both fail closed. Both
-  # lists are file operands. A pipe into `grep -q` once read SIGPIPE's 141 as absorbed under
-  # pipefail, and a here-string whose temp file cannot be written (a full disk) makes the
-  # command exit 1 without grep ever running. A file operand grep cannot open exits 2.
-  # --no-relative: diff.relative with a subdirectory <repo> would drop paths from both lists.
-  # LC_ALL=C stops a non-UTF-8 path erroring out.
-  local rc=0
-  LC_ALL=C grep -xF -f <(printf '%s\n' "$changed") <(printf '%s\n' "$differ") >/dev/null || rc=$?
-  [ "$rc" -eq 1 ]
+  differ="$("${g[@]}" diff --no-relative --no-renames --ignore-submodules=none --name-only \
+    "$tip" "$main")" || return 1
+  # Both lists use git's quoted path form, one path per line, so an odd path still compares
+  # exactly. The comparison is pure bash: no pipe, file, or subprocess that could fail and read
+  # as "no overlap". A pipe into `grep -q` once read SIGPIPE's 141 as absorbed; a here-string
+  # temp file and a <(...) operand can each vanish (full disk, no free descriptor) and leave
+  # grep reading nothing. A quoted "$path" in a case pattern matches literally.
+  rest="$changed"
+  while [ -n "$rest" ]; do
+    path="${rest%%"$nl"*}"
+    case "$rest" in *"$nl"*) rest="${rest#*"$nl"}" ;; *) rest="" ;; esac
+    case "$nl$differ$nl" in *"$nl$path$nl"*) return 1 ;; esac
+  done
+  return 0
 }
 
 # _wt_locked <worktree path> -- 0 when the worktree carries a lock. git keeps the lock as a
