@@ -35,3 +35,40 @@ node's own basename, which never re-examines the start point's ancestor path com
 was recorded by the fresh-context validator's Reviewer 6 pass (no new component, no
 schema/data-model change, no external integration, one existing internal function's filter
 logic). Not re-recorded here per the coordinator's instruction.
+
+## Commit-format hook strips SPEC- markers from subjects
+
+Every commit subject in this worktree omits the `SPEC-333` tag (the repo's own
+commit-format hook blocks a `SPEC-`/`TASK-`/phase marker in the subject line, over
+72 chars for one attempt too). The spec number lives in the commit body instead.
+
+## NC2's mutate-cmd ran from the session scratchpad, not a repo path
+
+The negative control for approach 2 (the rejected naive `-not -path` append) needed a
+multi-line awk rewrite as its mutate-cmd; passing it as an inline string through negctl's own
+`bash -c "$mutate_cmd"` layer produced unreadable, escaping-fragile nesting. Wrote it as a
+script file under this session's scratchpad instead, ran `bash lib/gate/negctl.sh . "bash
+lib/session/tests/test-handoffs.sh" "bash <scratchpad path>/nc2-mutate.sh"`. The proof file
+inlines the identical script content via a heredoc so the reproduction doesn't depend on this
+session's ephemeral scratchpad path; verified byte-identical (function body only, comments
+differ) against the script actually run.
+
+## Proof file renamed: docs/verification/handoffs-archive-skip.md collides with a gitignore rule
+
+`proof-ledger.sh check()` accepts any `docs/verification/*.md` the branch adds (matched by
+regex, not an exact slug filename), so the proof file's name is not load-bearing beyond that.
+The natural name, `docs/verification/handoffs-archive-skip.md` (matching the rid), is silently
+gitignored: root `.gitignore` has `HANDOFF*.md` for wavefront/orchestrator runtime artifacts,
+and this filesystem is case-insensitive, so `HANDOFF*.md` matches any basename starting with
+`handoff`/`Handoff`/`HANDOFF` regardless of case, including this one, by coincidence of the
+task's own subject matter. Renamed to `docs/verification/session-handoffs-archive-skip.md`
+(confirmed un-ignored via `git check-ignore -v`), no content change otherwise.
+
+## Gate-ledger entries recorded post-implementation
+
+`Build ran "bash lib/session/tests/test-handoffs.sh: smoke: all 22 passed"` is the only
+measure-twice gate the `normal` lane still needed (`spec`, `build`, `ship` are the three; spec
+and its validate/design-record satellites were already recorded). `Ship` was deliberately left
+unrecorded: this session never pushes or merges (explicit instruction), and recording `Ship
+ran` before an actual ship step would be a false ledger entry. Whoever eventually runs
+`/kit:ship` on this branch records it then.
