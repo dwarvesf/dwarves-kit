@@ -4,7 +4,7 @@ Spec: `docs/specs/SPEC-331-wrap-absorbed-proof.md`. Change: `lib/wrap/wrap.sh` `
 
 | Check | Command | Result |
 |---|---|---|
-| Suite | `bash tests/test-wrap.sh` | `test-wrap: all 1420 passed` (1403 before, plus 17 new) |
+| Suite | `bash tests/test-wrap.sh` | `test-wrap: all 1426 passed` (1403 before, plus 23 new) |
 | Negative control | `bash lib/gate/negctl.sh "$PWD" "bash tests/test-wrap.sh" "<force _absorbed to return 1>"` | green, RED under mutation, green after restore, `Verdict: PASS` |
 | Real flow | new and installed `bin/wrap scan` and `apply` dry run on the real ops-toolkit checkout | below |
 
@@ -52,6 +52,18 @@ Revision 1 proved absorption with `git merge-tree --write-tree`. Validation and 
 test-wrap: 1414 passed, 6 FAILED of 1420
 ```
 
+## Revision 2 regression check
+
+Revision 2 compared the path lists with `! printf | grep -qxF -f` under `pipefail`. The revision 3 cases run against revision 2's `lib/wrap/wrap.sh` (`git show 0e0668f2:lib/wrap/wrap.sh`) go red, and green against revision 3:
+
+```
+  FAIL absorbed: an early match in a long diff stays LEAVE
+  FAIL absorbed: a non-UTF-8 path stays LEAVE
+  FAIL absorbed: the longdiff branch survives apply
+  FAIL absorbed: the badbytes branch survives apply
+test-wrap: 1422 passed, 4 FAILED of 1426
+```
+
 ## Test plan coverage
 
 | Row | Run |
@@ -65,5 +77,7 @@ test-wrap: 1414 passed, 6 FAILED of 1420
 | 7 union line deletion | "uniondel stays LEAVE", "the uniondel branch survives apply" |
 | 8 landed then edited, another hunk | "lateredit stays LEAVE", "the lateredit branch survives apply"; real flow `a4039c`, `aa165d` |
 | 9 shadowing tag | "a tag named like the branch does not prove it" |
-| 10 existing cases unchanged | suite 1403 to 1420, all green |
-| 11 negative control | `negctl.sh` `Verdict: PASS` (below) |
+| 10 existing cases unchanged | suite 1403 to 1426, all green |
+| 11 negative control | `negctl.sh` `Verdict: PASS` |
+| 12 long diff, early match | "an early match in a long diff stays LEAVE", "the longdiff branch survives apply" |
+| 13 non-UTF-8 path | "a non-UTF-8 path stays LEAVE", "the badbytes branch survives apply" |

@@ -8,6 +8,9 @@ Delta from the spec only.
 - **Stricter than the merge-tree form.** A branch whose file the default branch later edited, even in a different hunk, is now left alone. Accepted: that case is the manual "landed then evolved" call the spec already puts out of scope.
 - **Contract 2 narrowed.** Content the branch added and removed in its own intermediate commits is on no ref after the delete. The gh squash proof has always accepted exactly this: a squash-merged branch's intermediate states are gone too. `branch -D` prints the tip sha, so the commits stay recoverable until gc.
 
+- **Revision 3: exact grep exit, no negated pipeline.** Revision 2 compared the path lists with `! printf | grep -qxF -f`. Under the script's `pipefail`, an early `grep -q` match SIGPIPEd the `printf`, the pipeline returned 141, and the `!` read that as absorbed. It fired once main's diff passed about 64 KB with the branch's path early. Today's real ops-toolkit archives run 47 to 68 KB. BSD grep's exit 2 on a non-UTF-8 path (with `core.quotePath=false`) was also negated into absorbed. Revision 3 feeds grep a here-string, drops `-q`, pins `LC_ALL=C`, and accepts only exit 1. A match and an error both fail closed.
+- **Test fixture: the Latin-1 path goes in through `update-index --cacheinfo`.** APFS refuses a non-UTF-8 file name at the filesystem, so the first fixture's commit silently never happened. The branch sat on the base commit, the ancestor proof deleted it, and the test failed for the wrong reason. A fixture check now asserts the branch owns one commit.
+
 ## Decisions not in the spec
 
 - The proof takes a commit, not a branch name. Callers pass `refs/heads/<b>` or the tip sha they already read, so a tag named like the branch cannot redirect it. The same tag shadowing still reaches the older ancestor proof. That is pre-existing, and fixing it here would widen the diff.

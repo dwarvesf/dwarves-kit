@@ -1,6 +1,6 @@
 # SPEC-331: wrap accepts absorbed content as a merge proof
 
-**Status:** DRAFT (revision 2, after a NEEDS REVISION validation)
+**Status:** DRAFT (revision 3, after two NEEDS REVISION validations)
 Lane: full
 Type: spec-feature / behavioral
 **Proof:** `docs/verification/wrap-absorbed-proof.md`; `tests/test-wrap.sh`, the `absorbed proof` section.
@@ -39,7 +39,8 @@ obvious: one read-only helper beside the two existing proofs. The one real choic
 4. `_apply_branches` deletes an absorbed branch with the verdict `delete <b> (content already on origin/<default>)`, after the ancestor check and before the gh check, behind the same fetch-ok and tip-moved guards. It passes the tip sha it already read.
 5. `scan` reports an absorbed branch as `[ABSORBED: content already on origin/<default>, safe to -D]`, so scan and apply agree. Scan and the worktree sweep pass `refs/heads/<b>`, so a tag named like the branch cannot stand in for it.
 6. The proof needs no `gh`. With `gh` absent or unauthenticated, an absorbed branch is still proven.
-7. The branch stays `NOT merged / unknown: LEAVE` in each of these cases: the content landed only in part; the default branch edited one of the branch's files after landing it, even in another hunk; a merge driver would hide the difference.
+7. Only grep's no-match exit (1) proves the lists disjoint. A match (0) and an error (2) both fail closed. The comparison runs with no pipe into grep and with `LC_ALL=C`, so neither SIGPIPE under `pipefail` nor a non-UTF-8 path can read as absorbed.
+8. The branch stays `NOT merged / unknown: LEAVE` in each of these cases: the content landed only in part; the default branch edited one of the branch's files after landing it, even in another hunk; a merge driver would hide the difference.
 
 ## Out of scope
 
@@ -61,8 +62,10 @@ obvious: one read-only helper beside the two existing proofs. The one real choic
 | 9 | Tag on the default branch named like an unlanded branch | no absorbed verdict for the branch |
 | 10 | Every pre-existing `test-wrap.sh` case | unchanged |
 | 11 | Negative control: `_absorbed` forced to exit 1 | the suite goes red |
+| 12 | Default branch diff past 64 KB with the unlanded branch's path sorting first | `LEAVE`, branch kept |
+| 13 | Branch path that is not valid UTF-8, `core.quotePath=false` | `LEAVE`, branch kept |
 
 ## Tasks
 
 - [x] TASK-001: `_absorbed` helper, wired into `_merge_proof`, `_apply_branches`, and the `scan` verdict; `commands/wrap.md` step 5 names the three proofs; `docs/CHANGELOG.md` entry.
-- [x] TASK-002: `tests/test-wrap.sh` absorbed section covering test plan rows 1 to 9.
+- [x] TASK-002: `tests/test-wrap.sh` absorbed section covering test plan rows 1 to 9, 12 and 13.

@@ -459,8 +459,13 @@ _absorbed() {
   [ -n "$changed" ] || return 1
   differ="$(git -C "$repo" diff --no-renames --ignore-submodules=none --name-only "$tip" "$main")" \
     || return 1
-  # Both lists use git's quoted path form, so an odd path still compares exactly.
-  ! printf '%s\n' "$differ" | grep -qxF -f <(printf '%s\n' "$changed")
+  # Both lists use git's quoted path form, so an odd path still compares exactly. Only grep's
+  # "no match" (exit 1) proves it: a match is 0 and an error is 2, and both fail closed. A
+  # here-string, not a pipe, and no -q: an early `grep -q` exit SIGPIPEs its writer, and under
+  # pipefail that 141 once read as absorbed. LC_ALL=C stops a non-UTF-8 path erroring out.
+  local rc=0
+  LC_ALL=C grep -xF -f <(printf '%s\n' "$changed") >/dev/null <<<"$differ" || rc=$?
+  [ "$rc" -eq 1 ]
 }
 
 # _wt_locked <worktree path> -- 0 when the worktree carries a lock. git keeps the lock as a

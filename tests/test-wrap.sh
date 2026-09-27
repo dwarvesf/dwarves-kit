@@ -5107,9 +5107,9 @@ chk_has "bin/wrap header names rebase" "$(sed -n '1,25p' "$KIT_DIR/bin/wrap")" "
 
 echo "=== absorbed proof: a branch whose content already sits on origin/<default> ==="
 # A subagent commits on its own branch; the lead re-commits the same change under its own PR,
-# so the branch has new-hash commits, no PR of its own, and no ancestry or gh proof. Merging it
-# into origin/main changes nothing, which is the proof. A partial landing or a later edit on
-# main (a conflict) is not.
+# so the branch has new-hash commits, no PR of its own, and no ancestry or gh proof. Every path
+# it changed being byte-identical on origin/main is the proof. A partial landing or a later
+# edit on main is not.
 ABW="$TMPD/ab-work"; mkdir -p "$ABW"; git -C "$ABW" init -q -b main; gitc "$ABW"
 printf 'base\n' > "$ABW/f.txt"; printf 'x\n' > "$ABW/g.txt"
 git -C "$ABW" add -A; git -C "$ABW" commit -qm base
@@ -5200,6 +5200,46 @@ out="$(GH_STUB_UNAUTH=1 "$WRAP" apply --apply "$AD" 2>&1)"
 for b in driver uniondel lateredit; do
   chk "absorbed: the $b branch survives apply" \
     "$(git -C "$AD" show-ref --verify --quiet "refs/heads/$b"; echo $?)"
+done
+
+echo "--- absorbed: a long diff or a grep error never reads as absorbed"
+# Round-2 review: `! printf | grep -q` under pipefail returned 141 when grep matched early and
+# its writer died on SIGPIPE, so an unlanded branch read as absorbed once main's diff passed
+# about 64 KB. A non-UTF-8 path made BSD grep exit 2, which the negation also accepted.
+ALW="$TMPD/al-work"; mkdir -p "$ALW/many"; git -C "$ALW" init -q -b main; gitc "$ALW"
+printf 'base\n' > "$ALW/base.txt"; git -C "$ALW" add -A; git -C "$ALW" commit -qm base
+git -C "$ALW" branch longdiff; git -C "$ALW" branch badbytes
+git -C "$ALW" checkout -q longdiff
+printf 'AGENT ONLY WORK\n' > "$ALW/a.txt"; git -C "$ALW" add -A; git -C "$ALW" commit -qm "agent: a.txt"
+git -C "$ALW" checkout -q badbytes
+# APFS refuses a non-UTF-8 file name, so the path goes in through the index, never the disk.
+ALBLOB="$(printf 'agent\n' | git -C "$ALW" hash-object -w --stdin)"
+git -C "$ALW" update-index --add --cacheinfo "100644,${ALBLOB},$(printf 'caf\351.txt')"
+git -C "$ALW" commit -qm "agent: latin-1 name"
+git -C "$ALW" reset -q --hard
+git -C "$ALW" checkout -q main
+# 3000 paths of about 40 bytes each puts main's diff well past a 64 KB pipe buffer, and the
+# branch's a.txt sorts ahead of all of them.
+i=0; while [ "$i" -lt 3000 ]; do
+  printf 'x\n' > "$ALW/many/unrelated-file-number-$(printf '%05d' "$i").txt"; i=$((i + 1))
+done
+git -C "$ALW" add -A; git -C "$ALW" commit -qm "main: many unrelated files"
+git clone -q --bare "$ALW" "$TMPD/al-bare"
+AL="$TMPD/al-clone"; git clone -q "$TMPD/al-bare" "$AL"; gitc "$AL"
+git -C "$AL" config core.quotePath false
+for b in longdiff badbytes; do git -C "$AL" branch -q "$b" "origin/$b"; done
+chk "absorbed: the latin-1 fixture has its own commit" \
+  "$([ "$(git -C "$AL" rev-list --count origin/main..badbytes)" -eq 1 ]; echo $?)"
+chk "absorbed: main's diff is past 64 KB" \
+  "$([ "$(git -C "$AL" diff --name-only longdiff origin/main | wc -c)" -gt 65536 ]; echo $?)"
+
+out="$(GH_STUB_UNAUTH=1 "$WRAP" scan "$AL" 2>&1)"
+chk_has "absorbed: an early match in a long diff stays LEAVE" "$out" "longdiff  [NOT merged / unknown: LEAVE]"
+chk_has "absorbed: a non-UTF-8 path stays LEAVE" "$out" "badbytes  [NOT merged / unknown: LEAVE]"
+out="$(GH_STUB_UNAUTH=1 "$WRAP" apply --apply "$AL" 2>&1)"
+for b in longdiff badbytes; do
+  chk "absorbed: the $b branch survives apply" \
+    "$(git -C "$AL" show-ref --verify --quiet "refs/heads/$b"; echo $?)"
 done
 
 echo
