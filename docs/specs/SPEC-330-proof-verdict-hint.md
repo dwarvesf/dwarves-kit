@@ -1,6 +1,6 @@
 # Spec: proof-of-done BLOCKED message names a rejected verdict file
 Generated: 2026-09-27
-Status: DRAFT
+Status: VALIDATED
 Lane: full
 
 ## Problem
@@ -123,12 +123,22 @@ in `## Solution` above: it does not.
 ### Interfaces (I/O contract)
 - **Inputs / consumes:** the same `_fresh_proof_files` list `check()` already builds, and the
   same `last_v` string already computed per file/group. No new input.
+- **Internal accumulator:** `near_miss` holds one `path<TAB>last_v` line per near-miss
+  identity (tab-separated so a `last_v` line containing spaces or colons never breaks the
+  field split at print time). `last_v` is overwritten on every loop pass exactly like the
+  existing variable of the same name; only the value captured at the moment a path is
+  appended is stored, so each `near_miss` line freezes that file's own final `Verdict:` line,
+  not a live reference to the loop variable.
 - **Outputs / produces:** `check()`'s stderr BLOCKED block gains zero or more `Hint:` lines
-  (one per near-miss file/group) between the existing "Need:" paragraph and the "Type-specific
-  shape:" line. Exit code and stdout are unchanged.
-- **Invariants:** `check()`'s return value depends only on `ok`, exactly as today. The new hint
-  logic must never set `ok=0` and must never be reached when `ok` is already 0 (i.e. it only
-  runs on the already-decided BLOCKED path, right before the message is printed).
+  (one per near-miss identity, deduped, see the set-wise dedupe rule below) between the
+  existing "Need:" paragraph and the "Type-specific shape:" line. Exit code and stdout are
+  unchanged.
+- **Invariants:** `check()`'s return value depends only on `ok`, exactly as today. Appending to
+  `near_miss` is side-effect-free: it never sets `ok`, never triggers a `break` on its own, and
+  never runs on a path where `ok` already became 0 (a real pass short-circuits the scan before
+  the near-miss test is reached). `near_miss` is read, and the `Hint:` lines are printed, only
+  once the function has already committed to the BLOCKED path (i.e. after the existing
+  `[ "$ok" -eq 0 ] && return 0` and override-branch returns have both been passed).
 
 ### Data model changes
 None.
@@ -145,35 +155,32 @@ None.
 ## Task Breakdown
 
 ### Phase 1: Foundation
-- [x] TASK-A: Write this spec, validated by a fresh-context validator.
+- [x] TASK-A: Write this spec.
 
 ### Phase 2: Core
 - [ ] TASK-B: In the per-file loop (around line 300-315 of `lib/gate/proof-ledger.sh`), when
-  the behavioral branch's full condition (NEGATIVE CONTROL present AND a green run/PASS
-  present) holds but the file is rejected solely because `last_v` matches
-  `FAIL|INCONCLUSIVE`, append that file's path to a `near_miss` accumulator (newline-joined,
-  matching the existing accumulator style used elsewhere in this file, e.g. `src_remainder` in
-  the override branch). Do not alter `ok`, the `break`, or any existing condition.
-  Acceptance: a fixture proof file with a NEGATIVE CONTROL marker, a green
-  `Exit: 0`/`Verdict: PASS` line, and a final `Verdict: FAIL as expected` line as its true last
-  line lands in `near_miss` with its correct relative path, while `check()` still returns 1
-  for it exactly as before the change.
+  the behavioral branch's full condition (NEGATIVE CONTROL present AND a green run present)
+  holds but the file is rejected solely because `last_v` matches `FAIL|INCONCLUSIVE`, append
+  `"$f<TAB>$last_v"` to a `near_miss` accumulator (newline-joined, matching the existing
+  accumulator style used elsewhere in this file, e.g. `src_remainder` in the override branch;
+  tab-separated per the Interfaces note above). Do not alter `ok`, the `break`, or any existing
+  condition. Acceptance: folded into TASK-D below (the accumulator itself is an internal shell
+  variable with no independent external surface; what is observable is the stderr `Hint:` line
+  TASK-D produces from it).
 - [ ] TASK-C: Apply the same accumulation in the set-wise (grouped) loop (around line
-  319-344), using the group's content/last_v the same way, appending the group's representative
-  path(s) (or the group prefix) to `near_miss`.
-  Acceptance: an equivalent fixture split across `docs/verification/<slug>/run.md` +
-  `.../control.md` produces the same `near_miss` entry via the grouped path.
+  319-344), using the group's content/`last_v` the same way, appending `"<group-prefix><TAB>$last_v"`.
+  **Dedupe rule:** before appending a group's near-miss entry, skip it if any path already
+  recorded in `near_miss` (by TASK-B, from this same scan) starts with that group's prefix , a
+  member file that already qualifies as a per-file near miss on its own is not reported a
+  second time as part of the group rollup. Acceptance: folded into TASK-D (case 2 in
+  `## Test plan`, both the pure-group and the overlap/dedupe sub-cases).
 - [ ] TASK-D: In the BLOCKED message block (around line 391-411), when `class = "behavioral"`
-  and `near_miss` is non-empty, print one line per entry, placed after the existing
-  `('green run' = ...)` line and before the `Type-specific shape:` line:
-  `  Hint: <path> has a NEGATIVE CONTROL and a PASS run, but its LAST Verdict line reads
-  FAIL/INCONCLUSIVE ("<last_v-for-that-file>"). The gate reads the file's FINAL Verdict line
-  as the outcome: record the negative control's own outcome as ` + "`Result: RED as expected`"
-  + ` (not ` + "`Verdict:`" + `), and end the file on ` + "`Verdict: PASS`" + ` after the real
-  run.`
+  and `near_miss` is non-empty, print one `Hint:` line per entry (path, tab, `last_v` split back
+  apart), placed after the existing `('green run' = ...)` line and before the `Type-specific
+  shape:` line, using the exact literal in `## Test plan`'s "Hint literal" block below.
   Acceptance: the fixture from TASK-B produces this exact `Hint:` line on stderr, naming the
   file, and the message is silent (no `Hint:` line) when the branch adds no proof file at all
-  (the pre-existing "nothing found" case is unchanged).
+  (the pre-existing "nothing found" case is unchanged) , see `## Test plan` cases 1-7.
 - [ ] TASK-E: Write `tests/test-proof-verdict-hint.sh` per `## Test plan` below; run it and
   fix any deviation.
 
@@ -188,15 +195,16 @@ None.
   the exact fix (`Result: RED as expected` for the control, `Verdict: PASS` as the file's last
   line). (Today: the message is generic and never names the file.)
 - [ ] A branch with no proof file at all still gets the pre-existing generic message, with no
-  `Hint:` line (checkable by `bash tests/test-proof-verdict-hint.sh`, case "no file").
+  `Hint:` line (checkable by `bash tests/test-proof-verdict-hint.sh`, case 4).
 - [ ] Every existing `tests/test-proof-*.sh` file still passes unchanged (checkable by running
   each).
 
 ## Acceptance Criteria (global)
 - [ ] All tasks pass their individual acceptance criteria
-- [ ] `tests/test-proof-verdict-hint.sh` covers: (a) the near-miss shape producing the named
-  hint, (b) the pre-existing "no proof file" shape producing no hint, (c) a genuinely PASSing
-  proof file still passing (no message at all)
+- [ ] `tests/test-proof-verdict-hint.sh` covers all seven cases in `## Test plan` (1, 2a, 2b,
+  3, 4, 5, 6): the per-file near miss, the pure set-wise near miss, the set-wise/per-file
+  dedupe, a genuine pass, no proof file at all, an unrelated (no-control) rejection, and a
+  mixed branch with both a near miss and an unrelated rejection
 - [ ] No regressions in existing `tests/test-proof-*.sh` behavior
 
 ## Verification
@@ -206,7 +214,26 @@ None.
 
 **Test file:** `tests/test-proof-verdict-hint.sh`, shaped like the existing
 `tests/test-proof-override-order.sh` (a throwaway git fixture under `/tmp`, `pass()`/`fail()`
-counters, a final `ALL PASS (N/N)` / `FAILS: N` line and matching exit code).
+counters, a final `ALL PASS (N/N)` / `FAILS: N` line and matching exit code). Resolve the
+lib under test the same way `test-proof-override-order.sh` does , relative to the test file's
+own location, so the test always exercises THIS worktree's copy, never an installed kit at
+`~/.claude/dwarves-kit` or `$DWARVES_KIT`:
+```sh
+KIT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+LIB="$KIT/lib/gate/proof-ledger.sh"
+```
+
+**Hint literal (pin once, exact):**
+```
+  Hint: <path> has a NEGATIVE CONTROL and a green run, but its LAST Verdict line reads
+  FAIL/INCONCLUSIVE ("<last_v>"). The gate reads the file's FINAL Verdict line as the outcome:
+  record the negative control's own outcome as `Result: RED as expected` (not `Verdict:`), and
+  end the file on `Verdict: PASS` after the real run (the shape lib/gate/negctl.sh itself
+  emits: `Exit: 0` / `Verdict: PASS` are the two valid "green run" spellings this gate already
+  accepts).
+```
+Every case below asserts against this literal (path and `<last_v>` substituted), not a
+paraphrase.
 
 Cases, each built as a fixture repo with a `docs/verification/README.md` marker and a
 behavioral (`.sh`) diff, matching `make_fixture()` in `test-proof-override-order.sh`:
@@ -214,40 +241,47 @@ behavioral (`.sh`) diff, matching `make_fixture()` in `test-proof-override-order
 1. **Near miss, per-file shape.** `docs/verification/<slug>.md` contains a green run
    (`Exit: 0`, or `Verdict: PASS`) block, then a `## ... [negative control]` block whose own
    line reads `Verdict: FAIL as expected` as the file's true last `Verdict:` line. Assert
-   `check()` exits 1 (unchanged) AND its stderr contains a `Hint:` line naming this file and
-   the exact remediation text (`Result: RED as expected`, `Verdict: PASS`).
-2. **Near miss, set-wise shape.** Same content split across
-   `docs/verification/<slug>/run.md` (green) and `docs/verification/<slug>/control.md`
-   (`Verdict: FAIL as expected` last). Assert the same hint fires, naming the group.
+   `check()` exits 1 (unchanged) AND its stderr contains the Hint literal naming this file.
+2a. **Near miss, pure set-wise shape.** Content split across `docs/verification/<slug>/run.md`
+   (green only) and `docs/verification/<slug>/control.md` (`NEGATIVE CONTROL` +
+   `Verdict: FAIL as expected` only) , neither file alone satisfies the per-file condition
+   (each is missing one half), only the group's union does. Assert the hint fires exactly
+   once, identified by the group prefix `docs/verification/<slug>/`.
+2b. **Set-wise dedupe.** `docs/verification/<slug>/run.md` alone already carries the FULL
+   near-miss shape (green run + NEGATIVE CONTROL + final `Verdict: FAIL as expected`, so the
+   per-file loop flags it on its own), plus a sibling `docs/verification/<slug>/notes.md` with
+   unrelated prose in the same group directory. Assert `check()`'s stderr contains **exactly
+   one** Hint line, naming `docs/verification/<slug>/run.md` (the per-file entry), and does
+   NOT also print a second hint for the group prefix (the dedupe rule in TASK-C).
 3. **Genuine pass (control group).** Same as case 1 but the file's true last line is
-   `Verdict: PASS` (control's own outcome recorded as `Result: RED as expected` instead of
-   `Verdict:`). Assert `check()` exits 0 and prints nothing (proves the fix doesn't fire when
-   nothing is wrong).
+   `Verdict: PASS` (the control's own outcome recorded as `Result: RED as expected` instead of
+   `Verdict:`, per the Hint literal's own guidance). Assert `check()` exits 0 and prints
+   nothing (proves the fix doesn't fire when nothing is wrong).
 4. **No proof file at all (control group).** No `docs/verification/*.md` added. Assert
    `check()` exits 1 and its stderr contains the existing generic `Need:` text but NO `Hint:`
    line (proves the new hint is scoped to the near-miss shape, not printed unconditionally).
-5. **Unrelated rejection (control group).** A proof file with a green run and a final
-   `Verdict: PASS` line but no `NEGATIVE CONTROL` marker at all. Assert `check()` exits 1 with
-   no `Hint:` line (the existing generic message is the only output; a different failure mode
-   must not be mistaken for this one).
+5. **Unrelated rejection, no NEGATIVE CONTROL at all (control group, the over-broad-match
+   guard).** A proof file with a green run (`Exit: 0`) whose final `Verdict:` line is
+   `Verdict: FAIL` (a plain failed run, no control attempted, no `NEGATIVE CONTROL` marker
+   anywhere in the file). Assert `check()` exits 1 with **no** `Hint:` line , the hint's first
+   condition (`NEGATIVE CONTROL` present) is false, so this must fall through to the plain
+   generic message untouched, proving the hint cannot fire on a merely-failing file that never
+   attempted a control.
+6. **Mixed branch (edge case 3).** Two proof files land on the same branch: `docs/verification/
+   near-miss-slug.md` (the case-1 near miss) and `docs/verification/unrelated-slug.md` (the
+   case-5 shape: green + plain FAIL, no control). Assert `check()` exits 1 and stderr contains
+   **exactly one** `Hint:` line, naming only `near-miss-slug.md`.
 
-**Negative control (mechanised, base-ref mode):** this repo's own checkout is shared and
-often dirty (per `lib/gate/negctl.sh`'s own rationale for `--base-ref` mode), and the fix does
-not exist yet at `origin/master`. Prove the CURRENT behavior (no hint) at the pre-fix ref
-directly, then prove the fixed behavior only exists after this branch's commit:
-
+**Negative control (mechanised, mutate mode, run AFTER the feature commit lands):**
 ```
-bash lib/gate/negctl.sh --base-ref origin/master . 'bash tests/test-proof-verdict-hint.sh'
+bash lib/gate/negctl.sh . 'bash tests/test-proof-verdict-hint.sh' 'git checkout origin/master -- lib/gate/proof-ledger.sh'
 ```
-
-`tests/test-proof-verdict-hint.sh` does not exist at `origin/master`, so this command is
-expected to fail at the `test_cmd` step there (no such file) -- which negctl.sh reports as
-`Exit: <nonzero>` and, since a nonzero exit is what `--base-ref` mode wants (RED expected),
-prints `Verdict: PASS`, correctly proving the pre-fix ref cannot satisfy the new test. Record
-this alongside the direct run of case 1 against the base ref's `proof-ledger.sh` (extracted the
-same way, or via `git show origin/master:lib/gate/proof-ledger.sh`) showing case 1's assertion
-on the `Hint:` line fails there (RED), then passes on this branch's HEAD (green), which is the
-actual revert -> RED -> restore shape for THIS specific change.
+The mutate command reverts just `lib/gate/proof-ledger.sh` to its pre-fix state at
+`origin/master` (where the hint logic does not exist); negctl.sh requires the new test suite
+to go RED under that reversion (proving the test actually exercises the new code, not a
+tautology) and then restores the worktree's own `lib/gate/proof-ledger.sh`, verifying the
+suite is GREEN again. `git checkout HEAD --` (its restore step) requires a clean tracked tree
+first, so this command runs only once TASK-B through TASK-E are committed.
 
 ## Edge Cases
 1. Proof file has a NEGATIVE CONTROL and a green run, but the LAST `Verdict:` line is
@@ -259,7 +293,8 @@ actual revert -> RED -> restore shape for THIS specific change.
    clause), so the hint fires for the image-evidence path too.
 3. Multiple proof files on the branch: one is a genuine near miss, another has no
    NEGATIVE CONTROL at all (a different, unrelated failure mode). Only the near-miss file gets
-   a `Hint:` line; the other stays covered by the existing generic `Need:` text.
+   a `Hint:` line; the other stays covered by the existing generic `Need:` text. Covered by
+   `## Test plan` case 6.
 4. Set-wise group where only one file in the group carries the final Verdict line: the grouped
    `last_v` is computed from the concatenated, sorted content exactly as `check()` already does
    today, so the hint fires (or not) based on the same union the pass/fail decision already
@@ -271,8 +306,9 @@ actual revert -> RED -> restore shape for THIS specific change.
 ## Failure modes
 | Failure class | Detection signal | Mitigation / recovery |
 |---|---|---|
-| Hint logic accidentally flips `ok` or the return code | `test-proof-verdict-hint.sh` case (c) (a genuinely passing file) starts failing, or any existing `test-proof-*.sh` starts failing | TASK-B/C acceptance requires `ok`/`break`/existing conditions untouched; run the full existing suite in TASK-F before considering this done |
-| Hint fires on a file that has no NEGATIVE CONTROL at all (over-broad match) | `test-proof-verdict-hint.sh` case with a non-NEGATIVE-CONTROL FAIL-ending file asserts no hint | Reuse the exact existing `grep -qi 'NEGATIVE CONTROL'` condition already gating the win path; do not write a new, looser pattern |
+| Hint logic accidentally flips `ok` or the return code | `test-proof-verdict-hint.sh` case 3 (a genuinely passing file) starts failing, or any existing `test-proof-*.sh` starts failing | TASK-B/C acceptance requires `ok`/`break`/existing conditions untouched; run the full existing suite in TASK-F before considering this done |
+| Hint fires on a file that has no NEGATIVE CONTROL at all (over-broad match) | `test-proof-verdict-hint.sh` case 5 (a non-NEGATIVE-CONTROL FAIL-ending file) asserts no hint | Reuse the exact existing `grep -qi 'NEGATIVE CONTROL'` condition already gating the win path; do not write a new, looser pattern |
+| Set-wise loop re-reports a file already flagged by the per-file loop (duplicate hint for one underlying issue) | `test-proof-verdict-hint.sh` case 2b asserts exactly one `Hint:` line | TASK-C's dedupe rule: skip a group append when an existing `near_miss` path already falls under that group's prefix |
 
 ## Out of Scope
 - Changing which verdict wins (last-verdict-wins stays as-is).
@@ -280,7 +316,9 @@ actual revert -> RED -> restore shape for THIS specific change.
 - Any change to `override()`, `is_overridden()`, `classify()`, or `delivery_ratio()`.
 
 ## Touches
-Not intended for `/kit:dispatch` fan-out (single-file, single-branch full-lane spec).
+- lib/gate/**
+- tests/**
+- docs/verification/**
 
 ## Decision Log
 - DEC-A: Additive-only hint appended to the existing BLOCKED message, not a rewrite of the
