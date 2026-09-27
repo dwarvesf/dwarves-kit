@@ -82,18 +82,25 @@ SEGMENTS=$(printf '%s\n' "$CMD" | awk -v sq="$SQ" '
     for (i = 1; i <= n; i++) {
       c = substr(line, i, 1); nx = substr(line, i + 1, 1); t = top()
       if (t == sq) { if (c == sq) d--; seg = seg c; continue }
+      if (t == "A") {
+        if (c == "(") ap[d]++
+        else if (c == ")") { if (ap[d]) ap[d]--; else { d--; i++ } }
+        seg = seg c; continue
+      }
       if (c == "\\") { if (i == n) { cont = 1; continue } seg = seg c nx; i++; continue }
       if (t == "E") { if (c == sq) d--; seg = seg c; continue }
       if (t == "\"") {
         if (c == "\"") { d--; seg = seg c; continue }
+        if (c == "$" && substr(line, i, 3) == "$((") { st[++d] = "A"; ap[d] = 0; i += 2; continue }
         if (c == "$" && nx == "(") { st[++d] = "$"; i++; emit(); continue }
         if (c == "`") { st[++d] = "`"; emit(); continue }
         seg = seg c; continue
       }
-      # code context: top level, $( ... ) or ` ... `
+      # code context: top level, $( ... ), ( ... ) or ` ... `
       if (c == "#" && (i == 1 || index(" \t;&|()", substr(line, i - 1, 1)))) break
       if (c == sq || c == "\"") { st[++d] = c; seg = seg c; continue }
       if (c == "$" && nx == sq) { st[++d] = "E"; seg = seg c nx; i++; continue }
+      if (c == "$" && substr(line, i, 3) == "$((") { st[++d] = "A"; ap[d] = 0; i += 2; continue }
       if (c == "$" && nx == "(") { st[++d] = "$"; i++; emit(); continue }
       if (c == "`") { if (t == "`") d--; else st[++d] = "`"; emit(); continue }
       if (c == ")") { if (t == "$" || t == "(") d--; emit(); continue }
@@ -164,6 +171,7 @@ while IFS= read -r SEG; do
   # shellcheck disable=SC2086
   set -- $WORDS
   # skip wrappers, env assignments, shell grammar, and redirections to find the real binary
+  W=""  # the last wrapper whose flags can take an operand
   while [ $# -gt 0 ]; do
     # assignments and redirections read the raw word; the rest read its basename (/usr/bin/git)
     case "$1" in
@@ -175,12 +183,18 @@ while IFS= read -r SEG; do
         continue ;;
     esac
     case "${1##*/}" in
-      sudo|command|exec|nohup|time|env|eval|xargs|builtin|coproc|bash|sh|zsh) shift ;;
-      timeout|nice|stdbuf|ionice|caffeinate|doas|chronic|unbuffer) shift ;;
-      if|then|else|elif|while|until|do|'{'|'}'|'!') shift ;;
-      # a wrapper's own flags (sudo -u, env -C, xargs -I take an operand), and a
-      # duration or niceness operand (timeout 5m, nice -n 10); bash -c / -lc lands here too
-      -u|-g|-U|-C|-D|-T|-I|-a) shift; [ $# -gt 0 ] && shift ;;
+      sudo|doas|env|xargs|exec) W="${1##*/}"; shift ;;
+      command|nohup|time|eval|builtin|bash|sh|zsh|noglob|nocorrect|repeat) W=""; shift ;;
+      timeout|nice|stdbuf|ionice|caffeinate|chronic|unbuffer) W=""; shift ;;
+      if|then|else|elif|while|until|do|'{'|'}'|'!'|always) shift ;;
+      # coproc NAME { ... } and function NAME { ... }: the name is not the command
+      coproc) shift; case "${2:-}" in '{'|if|while|until|for|select|'!') shift ;; esac ;;
+      function) shift; [ $# -gt 0 ] && shift ;;
+      # an operand flag of sudo, doas, env, xargs, or exec (sudo -u root, env -C dir,
+      # xargs -I {}); for any other wrapper (caffeinate -u, bash -u) it is a plain flag
+      -u|-g|-U|-C|-D|-T|-I|-a) shift; case "$W" in ?*) [ $# -gt 0 ] && shift ;; esac ;;
+      # any other flag, and a duration or niceness operand (timeout 5m, nice -n 10);
+      # bash -c / -lc lands here too
       -*|[0-9]|[0-9]*[0-9smhd.]) shift ;;
       *) break ;;
     esac

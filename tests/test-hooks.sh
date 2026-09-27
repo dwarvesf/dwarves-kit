@@ -229,6 +229,17 @@ assert_exit "Q52: sudo -E pushing a feature ref is allowed" 0 "$(q_hook "sudo -E
 assert_exit "Q53: here-string then a feature push is allowed" 0 "$(q_hook "cat <<<hello; $PUSH -u origin feat/x")"
 assert_exit "Q54: continued rm of artifacts is allowed" 0 "$(q_hook "rm -rf \\
   node_modules dist")"
+# SPEC-332 rev 3: validation round 2.
+assert_exit "Q55: coproc NAME { } names no command" 2 "$(q_hook "coproc NAME { $PUSH origin main; }")"
+assert_exit "Q56: function NAME { } names no command" 2 "$(q_hook "function f { $PUSH origin main; }; f")"
+assert_exit "Q57: caffeinate -u takes no operand" 2 "$(q_hook "caffeinate -u $PUSH origin main")"
+assert_exit "Q58: a shift in \$(( )) queues no delimiter" 2 "$(q_hook "cat <<A; echo \$((1<<B))
+A
+$PUSH origin main
+B")"
+assert_exit "Q59: zsh noglob and repeat wrappers" 2 "$(q_hook "noglob repeat 2 $PUSH origin main")"
+assert_exit "Q60: zsh always block" 2 "$(q_hook "{ true; } always { $PUSH origin main; }")"
+assert_exit "Q61: arithmetic then a feature push is allowed" 0 "$(q_hook "echo \$(( (1<<3) + 2 )); $PUSH -u origin feat/x")"
 # F4: cd-prefix repo resolution parses portably (probe affordance prints the target)
 CDOUT=$(echo '{"tool_input":{"command":"cd /tmp/some-repo && git push -q origin feat/x"}}' | DWARVES_KIT_PRINT_CDDIR=1 bash "$KIT_DIR/hooks/ship-gate.sh" 2>/dev/null)
 assert_output_contains "F4: ship-gate resolves the cd target" "^/tmp/some-repo$" "$CDOUT"
