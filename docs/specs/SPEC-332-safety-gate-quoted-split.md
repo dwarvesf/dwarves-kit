@@ -1,6 +1,6 @@
 # SPEC-332: safety-gate splits segments the way bash does
 
-**Status:** DRAFT, revision 5 (validation rounds 1 to 4 and a break-it pass folded in)
+**Status:** DRAFT, revision 6 (validation rounds 1 to 5 and a break-it pass folded in)
 Lane: full
 Type: spec-bugfix
 **Proof:** `docs/verification/safety-gate-quoted-split.md`; `tests/test-hooks.sh`, the safety-gate `Q` rows.
@@ -42,11 +42,11 @@ Two passes print segments. The rules read every segment from both passes, as tod
 
 | Top of stack | Meaning of characters |
 |---|---|
-| none, `$(`, `(`, or backtick (code) | `\` escapes the next character; a trailing `\` deletes the newline (no space). An unquoted `#` at a word start ends the line. A word starts after a blank, `<`, `>`, `;`, `\|`, `&`, `(`, a subshell `)`, the opening of `$(` or a backtick, and a new line that does not continue the last; any other character, an escape, a closing quote, and the `)` or backtick that closes a substitution continue the word (`$(x)#y` and `a\ #y` are one word). `'`, `"`, `$'` open a quote. `$((`, and `((` at a command start (only blanks and the words `if then elif else while until do time for ! {` before it in the segment), open an arithmetic frame. `$(`, `(`, and a backtick open a frame and end the segment. `)` closes a `$(` or `(` frame and ends the segment. `;`, `\|`, `&` end the segment. An unquoted `<<` (not part of `<<<`) records a heredoc delimiter, and the walk continues on the same line. |
+| none, `$(`, `(`, or backtick (code) | `\` escapes the next character; a trailing `\` deletes the newline (no space). An unquoted `#` at a word start ends the line. A word starts after a blank, `<`, `>`, `;`, `\|`, `&`, `(`, a subshell `)`, the opening of `$(` or a backtick, and a new line that does not continue the last; any other character, an escape, a closing quote, and the `)` or backtick that closes a substitution continue the word (`$(x)#y` and `a\ #y` are one word). `'`, `"`, `$'` open a quote. `$((`, and `((` at a command start (only blanks and the words `if then elif else while until do time -p for ! {` before it in the segment, blanks optional), open an arithmetic frame. `$(`, `(`, and a backtick open a frame and end the segment. `)` closes a `$(` or `(` frame and ends the segment. `;`, `\|`, `&` end the segment. An unquoted `<<` (not part of `<<<`) records a heredoc delimiter, and the walk continues on the same line. |
 | `'` | literal until the next `'` |
 | `$'` | `\` escapes the next character; `'` closes |
 | `"` | `\` escapes the next character; `$((` opens an arithmetic frame; `$(` and a backtick open a frame and end the segment; `"` closes |
-| `$((` or `((` (arithmetic) | no boundary and no heredoc (`1<<B` is a shift). `$(` and a backtick still open frames and end the segment. Nested `(` counts; the `))` that balances it closes. A lone unbalanced `)` means it was never arithmetic: the walk drops what the frame read, turns the frame into `$(` (or `(`), and walks the text again as code from the second `(`. A frame opened on an earlier line only turns, with no re-walk |
+| `$((` or `((` (arithmetic) | no boundary and no heredoc (`1<<B` is a shift). `$(` and a backtick still open frames and end the segment. Nested `(` counts; the `))` that balances it closes (a word starts after the `))` of a `((` command, not of `$((`). A lone unbalanced `)` means it was never arithmetic: the walk drops what the frame read, restores the heredoc count from the open, turns the frame into `$(` (or `(`), and walks the text again as code from the second `(`. A position rewound once never opens a frame again, so the re-walk stays linear. A frame opened on an earlier line only turns, with no re-walk |
 
 A newline ends the segment in a code context. Inside a quote, it joins the next line.
 
@@ -146,22 +146,22 @@ Detection for every fail-open row is none: the remote branch protection is the b
 | Prose in a comment after a separator (`# x; <push> origin main`) | pass 2 blocks, as master does. Accepted false positive. |
 | A heredoc body line that equals the delimiter after trimming blanks (`<<EOF` body line `  EOF`) | the body ends early and the rest is read. Fail safe. |
 | An unterminated real heredoc | its body replays and may block. Fail safe. |
-| A separator inside quotes inside a wrapped script; a `)` in a `case` pattern inside `"$(...)"`; an escape in a ref (`$'\x6dain'`) | not covered, recorded in the hook header |
+| A separator inside quotes inside a wrapped script; a `)` in a `case` pattern inside `"$(...)"`; an escape in a ref (`$'\x6dain'`); a false `$((` or `((` frame that spans lines with a separator on an earlier line | not covered, recorded in the hook header |
 | A ref in a variable, a script file, a pipe into `bash` | not covered, unchanged |
 | `sudo -s`, `timeout -s SIG` and other flags with an operand outside the table | the operand becomes the binary; not covered |
 | Shell dialect | the walk reads bash grammar, and Claude Code may run the command under zsh. zsh `noglob`, `nocorrect`, `repeat`, and `always` are skipped; other zsh-only syntax (`=(...)`, glob qualifiers) is not read |
 | A misread `<<` in `${...}` or `$[...]` whose false delimiter appears later | lines between are skipped. Master tracked only the first delimiter, so this one ordering is a master-blocks, branch-allows shape; `$((...))` and `((...))` at a command start are covered by the arithmetic frame; `((` after any word outside the grammar list is read as two subshells |
 | Unterminated quote | the walk ends in a quote context and prints what it holds; pass 2 still prints its split |
-| Walk cost | one character loop per command; string concatenation per character is quadratic in one segment's length. A 28 KB command takes 0.4 s against master's 17 s, because the per-segment strip no longer forks a subshell |
+| Walk cost | one character loop per command, plus one re-walk per false arithmetic frame (a rewound position never reopens, so 30 nested false frames take 0.04 s); string concatenation per character is quadratic in one segment's length. A 28 KB command takes 0.4 s against master's 17 s, because the per-segment strip no longer forks a subshell |
 | awk dialect | POSIX awk only: the suite passes under BSD awk 20200816, gawk 5.4.1, and mawk 1.3.4 |
 
 ## Task Breakdown
 
 | Task | Files | Acceptance |
 |---|---|---|
-| T1: walk, heredoc replay, naive pass, token strip | `hooks/safety-gate.sh` | Q1 to Q34 and Q50 to Q54 pass; the existing safety-gate rows stay green |
-| T2: segment start and rule tokens | `hooks/safety-gate.sh` | Q35 to Q49, Q55 to Q77 pass |
-| T3: tests | `tests/test-hooks.sh` | rows Q1 to Q77, each through the real hook |
+| T1: walk, heredoc replay, naive pass, token strip, arithmetic frame, word start | `hooks/safety-gate.sh` | Q1 to Q34, Q50 to Q54, Q58, Q61 to Q66, Q68 to Q82 pass; the existing safety-gate rows stay green |
+| T2: segment start and rule tokens | `hooks/safety-gate.sh` | Q35 to Q49, Q55 to Q57, Q59, Q60, Q67 pass |
+| T3: tests | `tests/test-hooks.sh` | rows Q1 to Q82, each through the real hook |
 | T4: records | `docs/CHANGELOG.md`, `docs/verification/safety-gate-quoted-split.md`, `docs/implementation-notes/safety-gate-quoted-split.md` | CHANGELOG names the closed holes and the accepted false positives |
 
 ## Test plan
@@ -247,6 +247,11 @@ Every row runs the real hook through `q_hook`, which builds the JSON with jq. Bl
 | Q75 | `((true; <push> -o 'a;b' origin main) )` | block |
 | Q76 | `echo $((true & <push> origin main) )` | block |
 | Q77 | `for (( i=0; i<3; i++ )); do echo $i; done; <push> -u origin feat/x` | allow |
+| Q78 | `cat <<A; if((x=1<<B)); then :; fi~A~<push> origin main~B` | block |
+| Q79 | `cat <<A; ((1))#<<B~A~<push> origin main~B` | block |
+| Q80 | `echo $(( $(cat <<X) ) )~body~X~<push> origin main~X` | block |
+| Q81 | 30 nested `$((a ` then `) & <push> origin main` | block, under 5 s |
+| Q82 | `for((i=0;i<3;i++)); do echo $i; done; <push> -u origin feat/x` | allow |
 
 Negative controls, through `lib/gate/negctl.sh`:
 
@@ -257,10 +262,12 @@ Negative controls, through `lib/gate/negctl.sh`:
 | NC3 | drop the heredoc replay | Q30 |
 | NC4 | drop the comment rule | Q27, Q28, Q51, Q68 |
 | NC5 | drop the grammar arm of the segment-start loop | Q35 to Q37, Q60 |
+| NC6 | drop the lone-`)` re-walk (the frame only turns) | Q74 to Q76 |
+| NC7 | pin the word-start flag (every `#` is a comment) | Q62, Q71, Q72 |
 
 ## Verification
 
-`bash tests/test-hooks.sh` exits 0 under BSD awk, gawk, and mawk. NC1 to NC5 report PASS. `bash tests/run-all.sh --changed` exits 0.
+`bash tests/test-hooks.sh` exits 0 under BSD awk, gawk, and mawk. NC1 to NC7 report PASS. `bash tests/run-all.sh --changed` exits 0.
 
 ## After state
 
@@ -288,5 +295,6 @@ Behavior changes to flag at review:
 - Revision 3: an arithmetic frame after all, but only for `$((`, because master's first-delimiter-only rule blocked `cat <<A; echo $((1<<B))` with a later `B` line and the replay alone did not. Operand flags bind to the wrapper that owns them, so `caffeinate -u` no longer eats the command.
 - Revision 4: a `#` is a comment only at a word start, so an escaped blank or operator before it keeps the line live. The arithmetic frame reads `$(` and backticks inside it, closes only on `))`, and turns back into `$(` or `(` on a lone `)`; `((` at a command start opens it too.
 - Revision 5: "is the segment empty" was standing in for two questions. A word-start flag now answers "is this # a comment", and a grammar-word test answers "is this (( a command". A lone `)` in a frame opened on the same line re-walks the frame's text, so a separator read before it is not lost.
+- Revision 6: blanks after a grammar word are optional (`if((`), `time -p` counts, the `))` of a `((` command starts a word, a rewind restores the heredoc count, and a rewound position never reopens a frame. Round 5 rated every finding contrived; each was a one-line change.
 - `--all` stays blocked: it pushes every local branch, main included. The implementation-notes open question is closed by this call.
 - Bash and awk only, per `docs/PHILOSOPHY.md`.

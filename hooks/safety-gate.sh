@@ -17,7 +17,9 @@
 # run from a file or a pipe (`bash push.sh`, `printf ... | bash`) is not read; and a
 # quoted separator inside a wrapped script (`bash -c "cd x; git push -o 'a;b' ..."`) or
 # a `)` in a case pattern inside `"$(...)"` desyncs the walk; a misread << (in ${...})
-# whose false delimiter line appears later skips the lines between; a wrapper flag
+# whose false delimiter line appears later skips the lines between; a false $(( or ((
+# frame that spans lines only turns at its lone ), so a separator on an earlier line
+# stays unread; a wrapper flag
 # whose operand the segment-start table does not list (sudo -s, timeout -s SIG) turns
 # the operand into the binary; zsh-only syntax beyond noglob, nocorrect, repeat, and
 # always is read as bash.
@@ -64,9 +66,15 @@ SQ="'"
 SEGMENTS=$(printf '%s\n' "$CMD" | awk -v sq="$SQ" '
   function emit() { gsub(/[$()`]/, " ", seg); print seg; seg = "" }
   function top() { return d ? st[d] : "" }
-  # open an arithmetic frame: kind ($ for $((, ( for (( at a command start), the index of
-  # its second (, and the segment length and line it opened on, for the lone-) rewind
-  function arith(kind, second) { st[++d] = "A"; ak[d] = kind; ap[d] = 0; ao[d] = second; as[d] = length(seg); al[d] = ln }
+  # open an arithmetic frame: kind ($ for $((, ( for (( at a command start), where it
+  # opened, the index of its second (, and the segment length, line, and heredoc count at
+  # the open, for the lone-) rewind. A position rewound once never reopens a frame, so
+  # nested false frames cost one re-walk each, not one per enclosing rewind.
+  function arith(kind, at, second) {
+    if ((ln, at) in rw) return 0
+    st[++d] = "A"; ak[d] = kind; ap[d] = 0; aw[d] = at; ao[d] = second; as[d] = length(seg); al[d] = ln; an[d] = nh
+    return 1
+  }
   function naive(s) { gsub(/&&|\|\||;|\|/, "\n", s); gsub(/[$()`]/, " ", s); print s }
   # The heredoc delimiter word at the start of s, after quote and backslash removal
   # (bash reads <<"E"OF as EOF). Sets wl to the characters consumed.
@@ -99,10 +107,11 @@ SEGMENTS=$(printf '%s\n' "$CMD" | awk -v sq="$SQ" '
         if (c == "(") ap[d]++
         else if (c == ")") {
           if (ap[d]) ap[d]--
-          else if (nx == ")") { d--; i++; ws = 0 }
+          else if (nx == ")") { ws = (ak[d] == "("); d--; i++ }
           else if (al[d] == ln) {
             # a lone ) means it was never arithmetic, but $( ( or ( (: drop what the frame
             # read without boundaries and walk it again as code from the second (
+            rw[ln, aw[d]] = 1; nh = an[d]
             seg = substr(seg, 1, as[d]); st[d] = ak[d]; emit(); ws = 1; i = ao[d] - 1; continue
           } else { st[d] = ak[d]; emit(); ws = 1; continue }
         }
@@ -112,7 +121,7 @@ SEGMENTS=$(printf '%s\n' "$CMD" | awk -v sq="$SQ" '
       if (t == "E") { if (c == sq) { d--; ws = 0 } seg = seg c; continue }
       if (t == "\"") {
         if (c == "\"") { d--; seg = seg c; ws = 0; continue }
-        if (c == "$" && substr(line, i, 3) == "$((") { arith("$", i + 2); i += 2; continue }
+        if (c == "$" && substr(line, i, 3) == "$((" && arith("$", i, i + 2)) { i += 2; continue }
         if (c == "$" && nx == "(") { st[++d] = "$"; i++; emit(); ws = 1; continue }
         if (c == "`") { st[++d] = "`"; emit(); ws = 1; continue }
         seg = seg c; continue
@@ -130,9 +139,9 @@ SEGMENTS=$(printf '%s\n' "$CMD" | awk -v sq="$SQ" '
       }
       if (c == sq || c == "\"") { st[++d] = c; seg = seg c; ws = 0; continue }
       if (c == "$" && nx == sq) { st[++d] = "E"; seg = seg c nx; i++; ws = 0; continue }
-      if (c == "$" && substr(line, i, 3) == "$((") { arith("$", i + 2); i += 2; ws = 0; continue }
-      if (c == "(" && nx == "(" && seg ~ /^[ \t]*(((if|then|elif|else|while|until|do|time|for|!|\{)[ \t]+)*)$/) {
-        arith("(", i + 1); i++; continue
+      if (c == "$" && substr(line, i, 3) == "$((" && arith("$", i, i + 2)) { i += 2; ws = 0; continue }
+      if (c == "(" && nx == "(" && seg ~ /^[ \t]*(((if|then|elif|else|while|until|do|time|-p|for|!|\{)[ \t]*)*)$/ && arith("(", i, i + 1)) {
+        i++; continue
       }
       if (c == "$" && nx == "(") { st[++d] = "$"; i++; emit(); ws = 1; continue }
       if (c == "`") { if (t == "`") { d--; ws = 0 } else { st[++d] = "`"; ws = 1 } emit(); continue }

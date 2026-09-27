@@ -270,6 +270,27 @@ assert_exit "Q74: a lone ) re-reads (( as subshells" 2 "$(q_hook "((true & $PUSH
 assert_exit "Q75: a lone ) re-reads a quoted ; inside ((" 2 "$(q_hook "((true; $PUSH -o 'a;b' origin main) )")"
 assert_exit "Q76: a lone ) re-reads \$(( as a substitution" 2 "$(q_hook "echo \$((true & $PUSH origin main) )")"
 assert_exit "Q77: arithmetic loop then a feature push is allowed" 0 "$(q_hook "for (( i=0; i<3; i++ )); do echo \$i; done; $PUSH -u origin feat/x")"
+# SPEC-332 rev 6: validation round 5.
+assert_exit "Q78: if(( with no blank queues no delimiter" 2 "$(q_hook "cat <<A; if((x=1<<B)); then :; fi
+A
+$PUSH origin main
+B")"
+assert_exit "Q79: # after a (( )) command is a comment" 2 "$(q_hook "cat <<A; ((1))#<<B
+A
+$PUSH origin main
+B")"
+assert_exit "Q80: a re-walk does not queue a delimiter twice" 2 "$(q_hook "echo \$(( \$(cat <<X) ) )
+body
+X
+$PUSH origin main
+X")"
+DEEP="echo "; for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30; do DEEP="$DEEP\$((a "; done
+DEEP="$DEEP) & $PUSH origin main"
+Q81_START=$(date +%s)
+assert_exit "Q81: nested false (( frames still block" 2 "$(q_hook "$DEEP")"
+Q81_SECS=$(( $(date +%s) - Q81_START ))
+assert_true "Q81b: nested false (( frames re-walk in linear time (${Q81_SECS}s)" "$([ "$Q81_SECS" -lt 5 ]; echo $?)"
+assert_exit "Q82: compact for(( loop then a feature push is allowed" 0 "$(q_hook "for((i=0;i<3;i++)); do echo \$i; done; $PUSH -u origin feat/x")"
 # F4: cd-prefix repo resolution parses portably (probe affordance prints the target)
 CDOUT=$(echo '{"tool_input":{"command":"cd /tmp/some-repo && git push -q origin feat/x"}}' | DWARVES_KIT_PRINT_CDDIR=1 bash "$KIT_DIR/hooks/ship-gate.sh" 2>/dev/null)
 assert_output_contains "F4: ship-gate resolves the cd target" "^/tmp/some-repo$" "$CDOUT"
