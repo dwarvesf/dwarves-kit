@@ -3,7 +3,8 @@
 # entry instead of them piling up unread. A handoff (written by the `handoff`
 # skill) is a one-off note, not a lifecycle-managed draft like .claude/goals/
 # (see lib/goal/goal-drafts.sh): there is no archive/ship flow here, only a
-# `done/` or `_archive/` convention a repo may use to mark one consumed.
+# `done/`, `_archive/`, or `archive/` convention a repo may use to mark one
+# consumed, or a stray nested `.claude/` directory a repo may leave behind.
 #
 # Read-only. Pure bash + find/awk/sed, no python (same shape as
 # lib/session/parse-transcript.sh's sibling test, lib/session/tests/).
@@ -18,7 +19,8 @@
 #                  "+N more" (default: 5; 0 means unlimited)
 #
 #   Scans <repo>/_meta/handoffs/ and <repo>/.claude/handoffs/ for *.md files,
-#   skipping anything under a done/ or _archive/ subdirectory. One line per
+#   skipping anything under a done/, _archive/, archive/, or nested .claude/
+#   subdirectory. One line per
 #   file, oldest first:
 #     <age>d  <repo-relative path>  next: <excerpt>  <liveness>
 #   <excerpt> is the first non-empty line under a heading matching
@@ -165,8 +167,9 @@ cmd_list() {
     [ -d "$d" ] || continue
     while IFS= read -r f; do
       files+=("$f")
-    done < <(find "$d" -type f -name '*.md' \
-      -not -path '*/done/*' -not -path '*/_archive/*' 2>/dev/null)
+    done < <(find "$d" -mindepth 1 \
+      \( -name done -o -name _archive -o -name archive -o -name .claude \) -type d -prune \
+      -o -type f -name '*.md' -print 2>/dev/null)
   done
 
   if [ "${#files[@]}" -eq 0 ]; then
