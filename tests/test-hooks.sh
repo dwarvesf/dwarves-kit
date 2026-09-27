@@ -180,6 +180,55 @@ echo done")"
 assert_exit "Q24: quoted parens in a git format are allowed" 0 "$(q_hook "git log --format=\"%(refname) x\"")"
 assert_exit "Q25: quoted non-artifact rm target still blocks" 2 "$(q_hook "rm -rf \"my dir\"")"
 assert_exit "Q26: quoted artifact rm target still allowed" 0 "$(q_hook "rm -rf \"node_modules\"")"
+# SPEC-332 rev 2: fresh-validator and break-it findings. Comments, here-strings, arithmetic,
+# and delimiter quoting used to open a false heredoc that hid every later line.
+assert_exit "Q27: apostrophe in a comment opens no quote" 2 "$(q_hook "echo hi # don't
+$PUSH -o 'a;b' origin main")"
+assert_exit "Q28: << in a comment opens no heredoc" 2 "$(q_hook "cat <<A # see <<B
+body
+A
+$PUSH origin main")"
+assert_exit "Q29: a here-string opens no heredoc" 2 "$(q_hook "cat <<<hello
+$PUSH origin main")"
+assert_exit "Q30: a shift in arithmetic opens no heredoc" 2 "$(q_hook "echo \$((1<<x))
+$PUSH origin main")"
+assert_exit "Q31: a quoted delimiter part reads as bash reads it" 2 "$(q_hook "cat <<'E'OF
+x
+EOF
+$PUSH origin main")"
+assert_exit "Q32: a heredoc body starts after the logical line" 2 "$(q_hook "cat <<A \\
+; $PUSH origin main
+A")"
+assert_exit "Q33: ( inside \$( ) keeps the substitution open" 2 "$(q_hook "echo \"\$( (true) & $PUSH origin main )\"")"
+assert_exit "Q34: backslash-newline inside a ref joins with no space" 2 "$(q_hook "$PUSH origin ma\\
+in")"
+assert_exit "Q35: if/then segment start" 2 "$(q_hook "if true; then $PUSH origin main; fi")"
+assert_exit "Q36: brace group and ! segment start" 2 "$(q_hook "{ ! $PUSH origin main; }")"
+assert_exit "Q37: for/do segment start" 2 "$(q_hook "for x in 1; do $PUSH origin main; done")"
+assert_exit "Q38: timeout and nice wrappers" 2 "$(q_hook "timeout 5m nice -n 10 $PUSH origin main")"
+assert_exit "Q39: sudo -u with an operand" 2 "$(q_hook "sudo -u root $PUSH origin main")"
+assert_exit "Q40: bash -lc wrapper" 2 "$(q_hook "bash -lc \"$PUSH origin main\"")"
+assert_exit "Q41: absolute path to git" 2 "$(q_hook "/usr/bin/git push origin main")"
+assert_exit "Q42: git -c before push" 2 "$(q_hook "git -c a.b=c push origin main")"
+assert_exit "Q43: leading redirection" 2 "$(q_hook "2>/dev/null $PUSH origin main")"
+assert_exit "Q44: bundled short force flags" 2 "$(q_hook "$PUSH -fu origin feat/x")"
+assert_exit "Q45: full ref destination main" 2 "$(q_hook "$PUSH origin HEAD:refs/heads/main")"
+assert_exit "Q46: --mirror push" 2 "$(q_hook "$PUSH --mirror origin")"
+assert_exit "Q47: brace-expanded ref" 2 "$(q_hook "$PUSH origin ma{in,x}")"
+assert_exit "Q48: rm -Rf" 2 "$(q_hook "rm -Rf ~/x")"
+assert_exit "Q49: kubectl -n ns delete" 2 "$(q_hook "kubectl -n prod delete pod x")"
+assert_exit "Q50: DROP TABLE in a psql heredoc" 2 "$(q_hook "psql <<SQL
+DROP TABLE x;
+SQL")"
+assert_exit "Q51: comment apostrophe before a heredoc commit is allowed" 0 "$(q_hook "# don't forget
+git commit -m \"\$(cat <<'EOF'
+rm -rf ~ was the bug
+EOF
+)\"")"
+assert_exit "Q52: sudo -E pushing a feature ref is allowed" 0 "$(q_hook "sudo -E $PUSH -u origin feat/x")"
+assert_exit "Q53: here-string then a feature push is allowed" 0 "$(q_hook "cat <<<hello; $PUSH -u origin feat/x")"
+assert_exit "Q54: continued rm of artifacts is allowed" 0 "$(q_hook "rm -rf \\
+  node_modules dist")"
 # F4: cd-prefix repo resolution parses portably (probe affordance prints the target)
 CDOUT=$(echo '{"tool_input":{"command":"cd /tmp/some-repo && git push -q origin feat/x"}}' | DWARVES_KIT_PRINT_CDDIR=1 bash "$KIT_DIR/hooks/ship-gate.sh" 2>/dev/null)
 assert_output_contains "F4: ship-gate resolves the cd target" "^/tmp/some-repo$" "$CDOUT"

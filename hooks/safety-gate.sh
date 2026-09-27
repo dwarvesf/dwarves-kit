@@ -13,8 +13,10 @@
 # fires on a segment whose command IS rm; a push rule only reads the ref tokens
 # of a segment whose command IS git push. Known accepted holes, fail-open, with the
 # remote branch protection as the backstop: a ref hidden in a variable
-# (`B=main; git push origin $B`) is not resolved, and a script run from a file or a
-# pipe (`bash push.sh`, `printf ... | bash`) is not read.
+# (`B=main; git push origin $B`) or an escape (`$'\x6dain'`) is not resolved; a script
+# run from a file or a pipe (`bash push.sh`, `printf ... | bash`) is not read; and a
+# quoted separator inside a wrapped script (`bash -c "cd x; git push -o 'a;b' ..."`) or
+# a `)` in a case pattern inside `"$(...)"` desyncs the walk.
 
 set -euo pipefail
 set -f  # no globbing while we word-split segments
@@ -44,30 +46,43 @@ block() {  # <rule> <message>
 # Heredoc bodies are DATA (test fixtures, generated file content, prose); rules must
 # never read them. Two passes print segments, and the rules read every one:
 #   1. The quote-aware walk splits the way bash does. A stack of open contexts
-#      (' " $' $( `) decides what each character means, so a ; | & ( ) or newline
+#      (' " $' $( ( `) decides what each character means, so a ; | & ( ) or newline
 #      inside quotes stays data and `git push -o 'a;b' origin main` stays one segment.
-#      Only an unquoted << opens a heredoc, and the rest of its line is still walked.
+#      An unquoted # at a word start ends the line. Only an unquoted << (not <<<)
+#      opens a heredoc; its body starts after the logical line ends, and the rest of
+#      the marker's own line is still walked.
 #   2. The naive pass splits on &&, ||, ;, | even inside quotes, because a quoted
 #      string can be a script (`bash -c "cd x; git push origin main"`). Fail safe: it
 #      can only add blocks, so prose like `-m "x; rm -rf y"` blocks as it always has.
+# A heredoc whose delimiter never appears means the walk misread a << (arithmetic, a
+# parameter expansion): the skipped lines are replayed through both passes, fail safe.
 SQ="'"
 SEGMENTS=$(printf '%s\n' "$CMD" | awk -v sq="$SQ" '
   function emit() { gsub(/[$()`]/, " ", seg); print seg; seg = "" }
   function top() { return d ? st[d] : "" }
-  BEGIN { hdre = "^<<-?[ \t]*[\"" sq "]?[A-Za-z_][A-Za-z0-9_]*[\"" sq "]?" }
-  {
-    line = $0
-    if (inhd) {
-      t = line; gsub(/^[ \t]+|[ \t]+$/, "", t)
-      if (t == hm[hi] && ++hi > nh) { inhd = 0; nh = 0 }
-      next
+  function naive(s) { gsub(/&&|\|\||;|\|/, "\n", s); gsub(/[$()`]/, " ", s); print s }
+  # The heredoc delimiter word at the start of s, after quote and backslash removal
+  # (bash reads <<"E"OF as EOF). Sets wl to the characters consumed.
+  function hdword(s,   k, ch, w, q) {
+    k = 1; while (substr(s, k, 1) == " " || substr(s, k, 1) == "\t") k++
+    w = ""; q = ""
+    for (; k <= length(s); k++) {
+      ch = substr(s, k, 1)
+      if (q != "") { if (ch == q) q = ""; else w = w ch; continue }
+      if (ch == sq || ch == "\"") { q = ch; continue }
+      if (ch == "\\") { k++; w = w substr(s, k, 1); continue }
+      if (index(" \t;&|<>()", ch)) break
+      w = w ch
     }
-    naive = line; gsub(/&&|\|\||;|\|/, "\n", naive); gsub(/[$()`]/, " ", naive); print naive
+    wl = k - 1; return w
+  }
+  function proc(line,   i, n, c, nx, t, k, w) {
+    nv = nv line
     n = length(line); cont = 0
     for (i = 1; i <= n; i++) {
       c = substr(line, i, 1); nx = substr(line, i + 1, 1); t = top()
       if (t == sq) { if (c == sq) d--; seg = seg c; continue }
-      if (c == "\\") { seg = seg c nx; if (i == n) cont = 1; i++; continue }
+      if (c == "\\") { if (i == n) { cont = 1; continue } seg = seg c nx; i++; continue }
       if (t == "E") { if (c == sq) d--; seg = seg c; continue }
       if (t == "\"") {
         if (c == "\"") { d--; seg = seg c; continue }
@@ -76,25 +91,42 @@ SEGMENTS=$(printf '%s\n' "$CMD" | awk -v sq="$SQ" '
         seg = seg c; continue
       }
       # code context: top level, $( ... ) or ` ... `
+      if (c == "#" && (i == 1 || index(" \t;&|()", substr(line, i - 1, 1)))) break
       if (c == sq || c == "\"") { st[++d] = c; seg = seg c; continue }
       if (c == "$" && nx == sq) { st[++d] = "E"; seg = seg c nx; i++; continue }
       if (c == "$" && nx == "(") { st[++d] = "$"; i++; emit(); continue }
       if (c == "`") { if (t == "`") d--; else st[++d] = "`"; emit(); continue }
-      if (c == ")") { if (t == "$") d--; emit(); continue }
-      if (c == "(" || c == ";" || c == "|" || c == "&") { emit(); continue }
-      if (c == "<" && substr(line, i, 3) != "<<<" && match(substr(line, i), hdre)) {
-        m = substr(line, i, RLENGTH); sub(/^<<-?[ \t]*/, "", m); gsub("[\"" sq "]", "", m)
-        hm[++nh] = m; i += RLENGTH - 1; continue
+      if (c == ")") { if (t == "$" || t == "(") d--; emit(); continue }
+      if (c == "(") { st[++d] = "("; emit(); continue }
+      if (c == ";" || c == "|" || c == "&") { emit(); continue }
+      if (c == "<" && nx == "<" && substr(line, i + 2, 1) != "<" && (i == 1 || substr(line, i - 1, 1) != "<")) {
+        k = (substr(line, i + 2, 1) == "-") ? 3 : 2
+        w = hdword(substr(line, i + k))
+        if (w != "" && !replay) hm[++nh] = w
+        i += k + wl - 1; continue
       }
       seg = seg c
     }
-    if (nh) { inhd = 1; hi = 1 }
+    if (cont) { nv = substr(nv, 1, length(nv) - 1); return }
+    naive(nv); nv = ""
     t = top()
-    if (cont) seg = seg " "
-    else if (t == sq || t == "\"" || t == "E") seg = seg " "
-    else emit()
+    if (t == sq || t == "\"" || t == "E") seg = seg " "
+    else { emit(); if (nh) { inhd = 1; hi = 1; nb = 0 } }
   }
-  END { emit() }')
+  {
+    if (inhd) {
+      buf[++nb] = $0
+      t = $0; gsub(/^[ \t]+|[ \t]+$/, "", t)
+      if (t == hm[hi] && ++hi > nh) { inhd = 0; nh = 0 }
+      next
+    }
+    proc($0)
+  }
+  END {
+    if (inhd) { replay = 1; nh = 0; for (k = 1; k <= nb; k++) proc(buf[k]) }
+    if (nv != "") naive(nv)
+    emit()
+  }')
 
 # Build-artifact allowlist: regenerable dirs only; any other target blocks. Shared
 # by every delete verb (rm, find), so the set of "safe to wipe" paths is defined
@@ -131,17 +163,30 @@ while IFS= read -r SEG; do
   WORDS=${SEG//[\'\"\\]/}
   # shellcheck disable=SC2086
   set -- $WORDS
-  # skip wrappers and env assignments to find the real binary
+  # skip wrappers, env assignments, shell grammar, and redirections to find the real binary
   while [ $# -gt 0 ]; do
+    # assignments and redirections read the raw word; the rest read its basename (/usr/bin/git)
     case "$1" in
-      *=*) shift ;;
-      sudo|command|exec|nohup|time|env|eval|xargs) shift ;;
-      bash|sh|zsh) shift; [ "${1:-}" = "-c" ] || [ "${1:-}" = "-s" ] && shift || break ;;
+      *=*) shift; continue ;;
+      # N>&M duplicates carry no operand; a bare operator takes the next word
+      *\>\&[0-9-]|*\<\&[0-9-]) shift; continue ;;
+      \>*|\<*|\&\>*|[0-9]\>*|[0-9]\<*)
+        case "$1" in *[!0-9\<\>\&\|]*) shift ;; *) shift; [ $# -gt 0 ] && shift ;; esac
+        continue ;;
+    esac
+    case "${1##*/}" in
+      sudo|command|exec|nohup|time|env|eval|xargs|builtin|coproc|bash|sh|zsh) shift ;;
+      timeout|nice|stdbuf|ionice|caffeinate|doas|chronic|unbuffer) shift ;;
+      if|then|else|elif|while|until|do|'{'|'}'|'!') shift ;;
+      # a wrapper's own flags (sudo -u, env -C, xargs -I take an operand), and a
+      # duration or niceness operand (timeout 5m, nice -n 10); bash -c / -lc lands here too
+      -u|-g|-U|-C|-D|-T|-I|-a) shift; [ $# -gt 0 ] && shift ;;
+      -*|[0-9]|[0-9]*[0-9smhd.]) shift ;;
       *) break ;;
     esac
   done
   [ $# -eq 0 ] && continue
-  BIN="$1"; shift
+  BIN="${1##*/}"; shift
 
   case "$BIN" in
     rm)
@@ -151,8 +196,8 @@ while IFS= read -r SEG; do
           --recursive) HAS_R=1 ;;
           --force) HAS_F=1 ;;
           --*) ;;
-          -*r*f*|-*f*r*) HAS_R=1; HAS_F=1 ;;
-          -*r*) HAS_R=1 ;;
+          -*[rR]*f*|-*f*[rR]*) HAS_R=1; HAS_F=1 ;;
+          -*[rR]*) HAS_R=1 ;;
           -*f*) HAS_F=1 ;;
         esac
       done
@@ -190,7 +235,7 @@ while IFS= read -r SEG; do
       for t in "$@"; do
         if [ "$SKIP_NEXT" = 1 ]; then SKIP_NEXT=0; continue; fi
         case "$t" in
-          -C|--git-dir|--work-tree) SKIP_NEXT=1 ;;
+          -C|-c|--git-dir|--work-tree|--namespace|--config-env|--super-prefix) SKIP_NEXT=1 ;;
           -*) ;;
           *) SUB="$t"; break ;;
         esac
@@ -199,10 +244,12 @@ while IFS= read -r SEG; do
         push)
           for t in "$@"; do
             case "$t" in
-              --force|-f) block "force-push" "Force push is dangerous. Use --force-with-lease if you must overwrite remote history." ;;
+              --force|-f*|-[!-]*f*) block "force-push" "Force push is dangerous. Use --force-with-lease if you must overwrite remote history." ;;
               --force-with-lease*|--force-if-includes) ;;
               +*) block "force-push" "Refspec force push (+ref) is --force without the lease. Use --force-with-lease." ;;
-              main|master|*:main|*:master) block "push-to-main" "Do not push directly to main/master. Create a feature branch and open a PR." ;;
+              --mirror|--all|*\**|*\{*) block "push-all" "--mirror, --all, or a glob or brace refspec can push main/master. Push one feature branch." ;;
+              main|master|*:main|*:master|refs/heads/main|refs/heads/master|*:refs/heads/main|*:refs/heads/master)
+                block "push-to-main" "Do not push directly to main/master. Create a feature branch and open a PR." ;;
             esac
           done
           ;;
@@ -215,11 +262,20 @@ while IFS= read -r SEG; do
       ;;
     kubectl)
       SUB=""
-      for t in "$@"; do case "$t" in -*) ;; *) SUB="$t"; break ;; esac; done
+      SKIP_NEXT=0
+      for t in "$@"; do
+        if [ "$SKIP_NEXT" = 1 ]; then SKIP_NEXT=0; continue; fi
+        case "$t" in
+          -n|--namespace|--context|--cluster|--user|--kubeconfig|-s|--server|-l|--selector) SKIP_NEXT=1 ;;
+          -*) ;;
+          *) SUB="$t"; break ;;
+        esac
+      done
       [ "$SUB" = "delete" ] && block "kubectl-delete" "'kubectl delete' mutates a live cluster. Confirm the context and run it manually."
       ;;
     psql|mysql|sqlite3)
-      printf '%s' "$SEG" | grep -qiE '\bDROP[ \t]+TABLE\b' && block "drop-table" "DROP TABLE is destructive. Run it manually after a backup, or use a reversible migration."
+      # the SQL often arrives as a heredoc body, so read the whole command
+      printf '%s' "$CMD" | grep -qiE '\bDROP[ \t]+TABLE\b' && block "drop-table" "DROP TABLE is destructive. Run it manually after a backup, or use a reversible migration."
       ;;
   esac
 done <<< "$SEGMENTS"
