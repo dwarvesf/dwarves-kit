@@ -134,6 +134,52 @@ RC=$(run_hook safety-gate.sh '{"tool_input":{"command":"find . -name \"*.go\" -e
 assert_exit "D4: find -exec without rm is allowed" 0 $RC
 RC=$(run_hook safety-gate.sh '{"tool_input":{"command":"find ~/workspace -name \"*.md\" -type f"}}')
 assert_exit "D5: read-only find is allowed" 0 $RC
+
+# SPEC-332: segments split the way bash does. A quoted or escaped separator, a quoted <<,
+# a continuation line, a single &, or a substitution used to hide the push ref from the rule.
+# jq builds the JSON so the shell quoting under test reaches the hook byte for byte.
+q_hook() {
+  local RC=0
+  jq -n --arg c "$1" '{tool_input:{command:$c}}' | bash "$KIT_DIR/hooks/safety-gate.sh" >/dev/null 2>&1 || RC=$?
+  echo "$RC"
+}
+PUSH="git push"
+assert_exit "Q1: quoted ; in -o before main blocks" 2 "$(q_hook "$PUSH -o 'a;b' origin main")"
+assert_exit "Q2: quoted | in -o before main blocks" 2 "$(q_hook "$PUSH -o 'a|b' origin main")"
+assert_exit "Q3: quoted ; before --force blocks" 2 "$(q_hook "$PUSH -o 'a;b' --force origin feat/x")"
+assert_exit "Q4: double-quoted ; before main blocks" 2 "$(q_hook "$PUSH -o \"a;b\" origin main")"
+assert_exit "Q5: escaped ; before main blocks" 2 "$(q_hook "$PUSH -o a\\;b origin main")"
+assert_exit "Q6: ANSI-C quoted ; before main blocks" 2 "$(q_hook "$PUSH -o \$'a\\';b' origin main")"
+assert_exit "Q7: continuation line before main blocks" 2 "$(q_hook "$PUSH \\
+  origin main")"
+assert_exit "Q8: escaped quotes around a push block" 2 "$(q_hook "echo \\\" ; $PUSH origin main ; echo \\\"")"
+assert_exit "Q9: quoted << opens no heredoc" 2 "$(q_hook "echo \"<<X\"; $PUSH origin main")"
+assert_exit "Q10: quoted << hides no later line" 2 "$(q_hook "echo \"<<X\"
+$PUSH origin main")"
+assert_exit "Q11: the rest of a heredoc line is read" 2 "$(q_hook "cat <<EOF; $PUSH origin main
+body
+EOF")"
+assert_exit "Q12: push after ; inside bash -c blocks" 2 "$(q_hook "bash -c \"cd x; $PUSH origin main\"")"
+assert_exit "Q13: escaped-quoted main inside bash -c blocks" 2 "$(q_hook "bash -c \"cd x && $PUSH origin \\\"main\\\"\"")"
+assert_exit "Q14: push inside \$( ) inside quotes blocks" 2 "$(q_hook "echo \"\$($PUSH -o \"a;b\" origin main)\"")"
+assert_exit "Q15: push inside backticks blocks" 2 "$(q_hook "echo \`$PUSH origin main\`")"
+assert_exit "Q16: push after |& blocks" 2 "$(q_hook "x |& $PUSH origin main")"
+assert_exit "Q17: push after a single & blocks" 2 "$(q_hook "sleep 1 & $PUSH origin main")"
+assert_exit "Q18: push in a subshell with a quoted ; blocks" 2 "$(q_hook "($PUSH -o \"a;b\" origin main)")"
+assert_exit "Q19: quoted ; before a feature ref is allowed" 0 "$(q_hook "$PUSH -o \"a;b\" origin feat/x")"
+assert_exit "Q20: git -C with a quoted dir pushing a feature ref is allowed" 0 "$(q_hook "git -C \"\$WT\" push -u origin fix/x")"
+assert_exit "Q21: commit message with ; and | is allowed" 0 "$(q_hook "git commit -m \"feat(x): a; b | c\"")"
+assert_exit "Q22: heredoc commit message naming a push is allowed" 0 "$(q_hook "git commit -m \"\$(cat <<'EOF'
+fix: never $PUSH origin main; rm -rf /
+EOF
+)\"")"
+assert_exit "Q23: heredoc body naming a push is allowed" 0 "$(q_hook "cat > f <<EOF
+$PUSH origin main
+EOF
+echo done")"
+assert_exit "Q24: quoted parens in a git format are allowed" 0 "$(q_hook "git log --format=\"%(refname) x\"")"
+assert_exit "Q25: quoted non-artifact rm target still blocks" 2 "$(q_hook "rm -rf \"my dir\"")"
+assert_exit "Q26: quoted artifact rm target still allowed" 0 "$(q_hook "rm -rf \"node_modules\"")"
 # F4: cd-prefix repo resolution parses portably (probe affordance prints the target)
 CDOUT=$(echo '{"tool_input":{"command":"cd /tmp/some-repo && git push -q origin feat/x"}}' | DWARVES_KIT_PRINT_CDDIR=1 bash "$KIT_DIR/hooks/ship-gate.sh" 2>/dev/null)
 assert_output_contains "F4: ship-gate resolves the cd target" "^/tmp/some-repo$" "$CDOUT"

@@ -11,9 +11,10 @@
 # normalized first (heredoc bodies stripped, compound commands split into
 # segments) and every rule keys on the segment's actual argv: an `rm` rule only
 # fires on a segment whose command IS rm; a push rule only reads the ref tokens
-# of a segment whose command IS git push. Known accepted hole: a ref hidden in a
-# variable (`B=main; git push origin $B`) is not resolved; fail-open there, the
-# remote branch protection is the backstop.
+# of a segment whose command IS git push. Known accepted holes, fail-open, with the
+# remote branch protection as the backstop: a ref hidden in a variable
+# (`B=main; git push origin $B`) is not resolved, and a script run from a file or a
+# pipe (`bash push.sh`, `printf ... | bash`) is not read.
 
 set -euo pipefail
 set -f  # no globbing while we word-split segments
@@ -41,35 +42,59 @@ block() {  # <rule> <message>
 
 # --- Normalize: strip heredoc bodies, then split compounds into one segment per line ---
 # Heredoc bodies are DATA (test fixtures, generated file content, prose); rules must
-# never read them. After stripping, &&, ||, ;, |, newlines, and subshell punctuation
-# become segment boundaries, so each segment is one simple command whose first word is
-# the binary the rules key on.
-SEGMENTS=$(printf '%s\n' "$CMD" | awk '
-  BEGIN { inhd = 0 }
+# never read them. Two passes print segments, and the rules read every one:
+#   1. The quote-aware walk splits the way bash does. A stack of open contexts
+#      (' " $' $( `) decides what each character means, so a ; | & ( ) or newline
+#      inside quotes stays data and `git push -o 'a;b' origin main` stays one segment.
+#      Only an unquoted << opens a heredoc, and the rest of its line is still walked.
+#   2. The naive pass splits on &&, ||, ;, | even inside quotes, because a quoted
+#      string can be a script (`bash -c "cd x; git push origin main"`). Fail safe: it
+#      can only add blocks, so prose like `-m "x; rm -rf y"` blocks as it always has.
+SQ="'"
+SEGMENTS=$(printf '%s\n' "$CMD" | awk -v sq="$SQ" '
+  function emit() { gsub(/[$()`]/, " ", seg); print seg; seg = "" }
+  function top() { return d ? st[d] : "" }
+  BEGIN { hdre = "^<<-?[ \t]*[\"" sq "]?[A-Za-z_][A-Za-z0-9_]*[\"" sq "]?" }
   {
     line = $0
     if (inhd) {
-      t = line; gsub(/^[ \t]+/, "", t)
-      if (t == marker) inhd = 0
+      t = line; gsub(/^[ \t]+|[ \t]+$/, "", t)
+      if (t == hm[hi] && ++hi > nh) { inhd = 0; nh = 0 }
       next
     }
-    if (match(line, /<<-?[ \t]*["'\'']?[A-Za-z_][A-Za-z0-9_]*["'\'']?/)) {
-      m = substr(line, RSTART, RLENGTH)
-      sub(/<<-?[ \t]*/, "", m); gsub(/["'\'']/, "", m)
-      marker = m; inhd = 1
-      line = substr(line, 1, RSTART - 1)
+    naive = line; gsub(/&&|\|\||;|\|/, "\n", naive); gsub(/[$()`]/, " ", naive); print naive
+    n = length(line); cont = 0
+    for (i = 1; i <= n; i++) {
+      c = substr(line, i, 1); nx = substr(line, i + 1, 1); t = top()
+      if (t == sq) { if (c == sq) d--; seg = seg c; continue }
+      if (c == "\\") { seg = seg c nx; if (i == n) cont = 1; i++; continue }
+      if (t == "E") { if (c == sq) d--; seg = seg c; continue }
+      if (t == "\"") {
+        if (c == "\"") { d--; seg = seg c; continue }
+        if (c == "$" && nx == "(") { st[++d] = "$"; i++; emit(); continue }
+        if (c == "`") { st[++d] = "`"; emit(); continue }
+        seg = seg c; continue
+      }
+      # code context: top level, $( ... ) or ` ... `
+      if (c == sq || c == "\"") { st[++d] = c; seg = seg c; continue }
+      if (c == "$" && nx == sq) { st[++d] = "E"; seg = seg c nx; i++; continue }
+      if (c == "$" && nx == "(") { st[++d] = "$"; i++; emit(); continue }
+      if (c == "`") { if (t == "`") d--; else st[++d] = "`"; emit(); continue }
+      if (c == ")") { if (t == "$") d--; emit(); continue }
+      if (c == "(" || c == ";" || c == "|" || c == "&") { emit(); continue }
+      if (c == "<" && substr(line, i, 3) != "<<<" && match(substr(line, i), hdre)) {
+        m = substr(line, i, RLENGTH); sub(/^<<-?[ \t]*/, "", m); gsub("[\"" sq "]", "", m)
+        hm[++nh] = m; i += RLENGTH - 1; continue
+      }
+      seg = seg c
     }
-    print line
-  }' | awk '{ gsub(/&&|\|\||;|\|/, "\n"); gsub(/[$()`]/, " "); print }')
-
-# UNWRAP quotes (keep content, drop the quote marks) so a quoted ref ("main") still
-# reaches the token scan while rule scoping (per-segment binary) keeps prose harmless:
-# a commit -m sentence never reaches the push rule because its segment's subcommand is
-# commit, not push. (Review F1/F2: deleting spans both opened a quoted-ref bypass AND
-# broke the quoted-allowlist-target case.)
-strip_quotes() {
-  printf '%s' "$1" | sed -E "s/\"([^\"]*)\"/\\1/g; s/'([^']*)'/\\1/g"
-}
+    if (nh) { inhd = 1; hi = 1 }
+    t = top()
+    if (cont) seg = seg " "
+    else if (t == sq || t == "\"" || t == "E") seg = seg " "
+    else emit()
+  }
+  END { emit() }')
 
 # Build-artifact allowlist: regenerable dirs only; any other target blocks. Shared
 # by every delete verb (rm, find), so the set of "safe to wipe" paths is defined
@@ -96,8 +121,16 @@ targets_all_safe() {
 
 while IFS= read -r SEG; do
   [ -n "${SEG// /}" ] || continue
+  # DELETE quote marks and backslashes (keep content) so a quoted or escaped ref ("main",
+  # ma\in) still reaches the token scan while rule scoping (per-segment binary) keeps prose
+  # harmless: a commit -m sentence never reaches the push rule because its segment's
+  # subcommand is commit, not push. Marks go, never spans (review F1/F2: deleting spans
+  # opened a quoted-ref bypass AND broke the quoted-allowlist-target case). Deleting every
+  # mark, not only paired ones, also clears the stray mark a naive-pass segment carries.
+  # Parameter expansion, no subshell: this runs once per segment.
+  WORDS=${SEG//[\'\"\\]/}
   # shellcheck disable=SC2086
-  set -- $(strip_quotes "$SEG")
+  set -- $WORDS
   # skip wrappers and env assignments to find the real binary
   while [ $# -gt 0 ]; do
     case "$1" in
