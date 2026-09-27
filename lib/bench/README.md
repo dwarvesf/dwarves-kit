@@ -275,6 +275,21 @@ Two control expectations, picked per signal by the case file:
 The quiet case uses a hard `treatment: miss`: no numbered finding tagged
 Reviewer 7 on a short-lived spec.
 
+A `fewer` signal is only meaningful evidence when `<base-ref>` predates the
+capability the signal names. Run it against a base that already carries that
+capability, and control ties or beats treatment, so the signal fails by
+construction, not from a regression: `docs/verification/r7-quiet-calibration.md`
+hit exactly this, three `-any` signals FAILing against `origin/master` because
+master already carried the sustainability lens the fix under test only
+reworded one branch of. Pick a base before the lens landed, or drop the
+`fewer` signal for that base and keep the hard `hit`/`miss` signals, which
+carry no such assumption. When every `fewer` signal in a run shows no gap
+between arms (and at least one ran, and treatment itself hit the majority --
+a treatment miss is its own regression, not a base problem), the script
+prints one line after the table: `note: all <n> 'fewer' signals show no gap
+between arms; base <base-ref> may already carry what they assume it
+predates`. It never changes the exit code.
+
 One model plays every reviewer inline, in a single context, from a header
 that says to run no tools. The real command dispatches reviewers as separate
 subagents. A PASS is evidence about the prompt text, not about a production

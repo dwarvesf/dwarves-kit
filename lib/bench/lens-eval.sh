@@ -150,21 +150,27 @@ hits() {
 
 echo "| case | signal | treatment | control | result |"
 echo "|---|---|---|---|---|"
-total=0 nbad=0 bad=""
+total=0 nbad=0 bad="" fewer_total=0 fewer_nogap=0
 while IFS="$US" read -r cname sname reviewer pattern want_t want_c; do
-  ok=1 cells="" ht=0
+  ok=1 cells="" ht=0 t_hit=0
   for pair in "treatment:$want_t" "control:$want_c"; do
     arm="${pair%%:*}" want="${pair#*:}"
     if [ "$want" = "-" ]; then cells="$cells | -"; continue; fi
     h="$(hits "$cname" "$arm" "$reviewer" "$pattern")"
     if [ "$want" = fewer ]; then
+      fewer_total=$((fewer_total + 1))
+      # No gap counts only when treatment itself hit; a treatment miss is a regression, not a base mismatch.
+      if [ "$t_hit" -eq 1 ] && [ "$h" -ge "$ht" ]; then fewer_nogap=$((fewer_nogap + 1)); fi
       # A planted gap: the old text may notice it too, so only the gap between arms counts.
       [ "$h" -lt "$ht" ] || ok=0
     else
       if [ $((h * 2)) -gt "$samples" ]; then got=hit; else got=miss; fi
       [ "$got" = "$want" ] || ok=0
     fi
-    [ "$arm" = treatment ] && ht=$h
+    if [ "$arm" = treatment ]; then
+      ht=$h
+      [ $((h * 2)) -gt "$samples" ] && t_hit=1
+    fi
     cells="$cells | $h/$samples want $want"
   done
   total=$((total + 1))
@@ -172,6 +178,11 @@ while IFS="$US" read -r cname sname reviewer pattern want_t want_c; do
   echo "| $cname | $sname$cells | $res |"
 done < <(jq -r --arg us "$US" '.cases[] | .name as $c | .signals[]
   | [$c, .name, (.reviewer // ""), .pattern, (.treatment // "-"), (.control // "-")] | join($us)' "$cases")
+
+# A base already carrying every `fewer` signal's capability makes them all tie or lose; flag it once.
+if [ "$fewer_total" -gt 0 ] && [ "$fewer_nogap" -eq "$fewer_total" ]; then
+  echo "note: all $fewer_total 'fewer' signals show no gap between arms; base $base may already carry what they assume it predates"
+fi
 
 summary
 if [ "$nbad" -gt 0 ]; then echo "verdict: FAIL ($nbad/$total signals failed: $bad)"; exit 1; fi
