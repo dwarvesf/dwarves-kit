@@ -5196,6 +5196,12 @@ done
 out="$(GH_STUB_UNAUTH=1 "$WRAP" apply --worktrees "$AD" 2>&1)"
 chk_no "absorbed: a tag named like the branch does not prove it" "$out" \
   "and delete shadowed (content already on origin/main)"
+chk_no "absorbed: nor does the ancestor proof take the tag for the branch" "$out" \
+  "and delete shadowed (ancestor of origin/main)"
+out="$(GH_STUB_UNAUTH=1 "$WRAP" apply --apply --worktrees "$AD" 2>&1)"
+chk "absorbed: the tag-shadowed worktree survives apply" "$([ -d "$TMPD/ad-wt-shadowed" ]; echo $?)"
+chk "absorbed: the tag-shadowed branch survives apply" \
+  "$(git -C "$AD" show-ref --verify --quiet refs/heads/shadowed; echo $?)"
 out="$(GH_STUB_UNAUTH=1 "$WRAP" apply --apply "$AD" 2>&1)"
 for b in driver uniondel lateredit; do
   chk "absorbed: the $b branch survives apply" \
@@ -5241,6 +5247,36 @@ for b in longdiff badbytes; do
   chk "absorbed: the $b branch survives apply" \
     "$(git -C "$AL" show-ref --verify --quiet "refs/heads/$b"; echo $?)"
 done
+
+echo "--- absorbed: diff.relative, and a landed non-UTF-8 path"
+# Round 3: diff.relative with a subdirectory <repo> dropped the unlanded top-level path from
+# both lists. And a Latin-1 path that DID land must still read absorbed under LC_ALL=C.
+ARW="$TMPD/ar-work"; mkdir -p "$ARW/sub"; git -C "$ARW" init -q -b main; gitc "$ARW"
+printf 'base\n' > "$ARW/sub/base"; git -C "$ARW" add -A; git -C "$ARW" commit -qm base
+git -C "$ARW" branch relhide; git -C "$ARW" branch latinok
+git -C "$ARW" checkout -q relhide
+printf 'landed\n' > "$ARW/sub/a"; printf 'never landed\n' > "$ARW/top"
+git -C "$ARW" add -A; git -C "$ARW" commit -qm "agent: sub/a and top"
+git -C "$ARW" checkout -q latinok
+ARBLOB="$(printf 'latin\n' | git -C "$ARW" hash-object -w --stdin)"
+git -C "$ARW" update-index --add --cacheinfo "100644,${ARBLOB},$(printf 'caf\351.txt')"
+git -C "$ARW" commit -qm "agent: latin-1 name"; git -C "$ARW" reset -q --hard
+git -C "$ARW" checkout -q main
+printf 'landed\n' > "$ARW/sub/a"; git -C "$ARW" add -A
+git -C "$ARW" update-index --add --cacheinfo "100644,${ARBLOB},$(printf 'caf\351.txt')"
+git -C "$ARW" commit -qm "main: land sub/a and the latin-1 file"; git -C "$ARW" reset -q --hard
+git clone -q --bare "$ARW" "$TMPD/ar-bare"
+AR="$TMPD/ar-clone"; git clone -q "$TMPD/ar-bare" "$AR"; gitc "$AR"
+git -C "$AR" config diff.relative true; git -C "$AR" config core.quotePath false
+for b in relhide latinok; do git -C "$AR" branch -q "$b" "origin/$b"; done
+out="$(GH_STUB_UNAUTH=1 "$WRAP" scan "$AR/sub" 2>&1)"
+chk_has "absorbed: diff.relative from a subdirectory stays LEAVE" "$out" \
+  "relhide  [NOT merged / unknown: LEAVE]"
+chk_has "absorbed: a landed non-UTF-8 path reads absorbed" "$out" \
+  "latinok  [ABSORBED: content already on origin/main, safe to -D]"
+out="$(GH_STUB_UNAUTH=1 "$WRAP" apply --apply "$AR/sub" 2>&1)"
+chk "absorbed: the relhide branch survives apply" \
+  "$(git -C "$AR" show-ref --verify --quiet refs/heads/relhide; echo $?)"
 
 echo
 if [ "$FAIL" -gt 0 ]; then echo "test-wrap: $PASS passed, $FAIL FAILED of $TOTAL" >&2; exit 1; fi

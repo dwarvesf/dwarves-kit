@@ -427,7 +427,9 @@ _scanned_tip() { awk -v b="$1" '$1 == b { print $2 }' "$TIPS_FILE"; }
 # or the gh squash proof.
 _merge_proof() {
   local repo="$1" def="$2" ghs="$3" b="$4" tip json
-  if git -C "$repo" merge-base --is-ancestor "$b" "origin/${def}" 2>/dev/null; then
+  # refs/heads/: a bare name resolves a same-named tag first, and a tag on the default branch
+  # once proved an unlanded worktree branch "merged".
+  if git -C "$repo" merge-base --is-ancestor "refs/heads/${b}" "origin/${def}" 2>/dev/null; then
     printf 'ancestor of origin/%s\n' "$def"; return 0
   fi
   if _absorbed "$repo" "$def" "refs/heads/${b}"; then
@@ -454,17 +456,20 @@ _absorbed() {
   main="$(git -C "$repo" rev-parse --verify --quiet "refs/remotes/origin/${def}^{commit}")" || return 1
   tip="$(git -C "$repo" rev-parse --verify --quiet "${tip}^{commit}")" || return 1
   base="$(git -C "$repo" merge-base "$main" "$tip" 2>/dev/null)" || return 1
-  changed="$(git -C "$repo" diff --no-renames --ignore-submodules=none --name-only "$base" "$tip")" \
-    || return 1
+  changed="$(git -C "$repo" --no-replace-objects diff --no-relative --no-renames \
+    --ignore-submodules=none --name-only "$base" "$tip")" || return 1
   [ -n "$changed" ] || return 1
-  differ="$(git -C "$repo" diff --no-renames --ignore-submodules=none --name-only "$tip" "$main")" \
-    || return 1
+  differ="$(git -C "$repo" --no-replace-objects diff --no-relative --no-renames \
+    --ignore-submodules=none --name-only "$tip" "$main")" || return 1
   # Both lists use git's quoted path form, so an odd path still compares exactly. Only grep's
-  # "no match" (exit 1) proves it: a match is 0 and an error is 2, and both fail closed. A
-  # here-string, not a pipe, and no -q: an early `grep -q` exit SIGPIPEs its writer, and under
-  # pipefail that 141 once read as absorbed. LC_ALL=C stops a non-UTF-8 path erroring out.
+  # "no match" (exit 1) proves it: a match is 0 and an error is 2, and both fail closed. Both
+  # lists are file operands. A pipe into `grep -q` once read SIGPIPE's 141 as absorbed under
+  # pipefail, and a here-string whose temp file cannot be written (a full disk) makes the
+  # command exit 1 without grep ever running. A file operand grep cannot open exits 2.
+  # --no-relative: diff.relative with a subdirectory <repo> would drop paths from both lists.
+  # LC_ALL=C stops a non-UTF-8 path erroring out.
   local rc=0
-  LC_ALL=C grep -xF -f <(printf '%s\n' "$changed") >/dev/null <<<"$differ" || rc=$?
+  LC_ALL=C grep -xF -f <(printf '%s\n' "$changed") <(printf '%s\n' "$differ") >/dev/null || rc=$?
   [ "$rc" -eq 1 ]
 }
 

@@ -4,7 +4,7 @@ Spec: `docs/specs/SPEC-331-wrap-absorbed-proof.md`. Change: `lib/wrap/wrap.sh` `
 
 | Check | Command | Result |
 |---|---|---|
-| Suite | `bash tests/test-wrap.sh` | `test-wrap: all 1426 passed` (1403 before, plus 23 new) |
+| Suite | `bash tests/test-wrap.sh` | `test-wrap: all 1432 passed` (1403 before, plus 29 new) |
 | Negative control | `bash lib/gate/negctl.sh "$PWD" "bash tests/test-wrap.sh" "<force _absorbed to return 1>"` | green, RED under mutation, green after restore, `Verdict: PASS` |
 | Real flow | new and installed `bin/wrap scan` and `apply` dry run on the real ops-toolkit checkout | below |
 
@@ -12,7 +12,7 @@ Spec: `docs/specs/SPEC-331-wrap-absorbed-proof.md`. Change: `lib/wrap/wrap.sh` `
 
 The ops-toolkit checkout held 20 `agent-*` worktrees on `worktree-agent-<id>` branches that no proof covered. Their branches were archived to origin as `archive/<branch>-20260927` before the worktrees were removed by hand. For this run, six archives were restored as local branches. A trial merge called four of them absorbed; the tree-identity proof (revision 2) calls two absorbed, because `origin/main` later edited files the other two touched.
 
-New `wrap scan` (this branch, revision 2):
+New `wrap scan` (this branch; revision 2 and revision 4 print the same):
 
 ```
      proof-a0dd8e3cbf62e339b  [ABSORBED: content already on origin/main, safe to -D]
@@ -64,6 +64,22 @@ Revision 2 compared the path lists with `! printf | grep -qxF -f` under `pipefai
 test-wrap: 1422 passed, 4 FAILED of 1426
 ```
 
+## Revision 3 regression check
+
+The revision 4 cases run against revision 3's `lib/wrap/wrap.sh` (`git show a90af4ff:lib/wrap/wrap.sh`) go red, and green against revision 4:
+
+```
+  FAIL absorbed: nor does the ancestor proof take the tag for the branch
+  FAIL absorbed: the tag-shadowed worktree survives apply
+  FAIL absorbed: the tag-shadowed branch survives apply
+  FAIL absorbed: diff.relative from a subdirectory stays LEAVE
+  FAIL absorbed: a landed non-UTF-8 path reads absorbed
+  FAIL absorbed: the relhide branch survives apply
+test-wrap: 1426 passed, 6 FAILED of 1432
+```
+
+The first three are the pre-existing ancestor proof: on master too, a tag named like an unlanded worktree branch proves it merged and `apply --worktrees` removes it.
+
 ## Test plan coverage
 
 | Row | Run |
@@ -77,7 +93,10 @@ test-wrap: 1422 passed, 4 FAILED of 1426
 | 7 union line deletion | "uniondel stays LEAVE", "the uniondel branch survives apply" |
 | 8 landed then edited, another hunk | "lateredit stays LEAVE", "the lateredit branch survives apply"; real flow `a4039c`, `aa165d` |
 | 9 shadowing tag | "a tag named like the branch does not prove it" |
-| 10 existing cases unchanged | suite 1403 to 1426, all green |
+| 10 existing cases unchanged | suite 1403 to 1432, all green |
 | 11 negative control | `negctl.sh` `Verdict: PASS` |
 | 12 long diff, early match | "an early match in a long diff stays LEAVE", "the longdiff branch survives apply" |
 | 13 non-UTF-8 path | "a non-UTF-8 path stays LEAVE", "the badbytes branch survives apply" |
+| 14 diff.relative | "diff.relative from a subdirectory stays LEAVE", "the relhide branch survives apply" |
+| 15 landed non-UTF-8 path | "a landed non-UTF-8 path reads absorbed" |
+| 16 tag-shadowed worktree | "nor does the ancestor proof take the tag", "the tag-shadowed worktree survives apply", "the tag-shadowed branch survives apply" |
