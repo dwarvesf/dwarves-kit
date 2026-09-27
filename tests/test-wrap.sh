@@ -5431,6 +5431,7 @@ git -C "$PA" tag agent2 agent
 PA_TIP="$(git -C "$PA" rev-parse refs/heads/agent2)"
 PA_TAG="$(git -C "$PA" rev-parse refs/tags/agent2)"
 PA_REF="refs/heads/archive/agent2-$(date +%Y%m%d)"
+git -C "$PA" config branch.agent2.remote origin; git -C "$PA" config branch.agent2.merge refs/heads/agent2
 out="$(KIT_CONFIG_ROOT="$KIT_DIR" GH_STUB_UNAUTH=1 "$WRAP" apply --apply --archive-unmerged "$PA" 2>&1)"
 chk_has "pinned archive: reports the archive" "$out" "archived agent2 -> ${PA_REF#refs/heads/}"
 chk "pinned archive: origin holds the branch's own tip" \
@@ -5440,8 +5441,95 @@ chk "pinned archive: origin never holds the tag's commit" \
 chk "pinned archive: the local branch goes once archived" \
   "$(git -C "$PA" show-ref --verify --quiet refs/heads/agent2 && echo 1 || echo 0)"
 chk "pinned archive: the tag stays" "$([ "$(git -C "$PA" rev-parse -q --verify refs/tags/agent2)" = "$PA_TAG" ]; echo $?)"
+chk "pinned archive: the branch.agent2 config goes with it" \
+  "$([ -z "$(git -C "$PA" config --get-regexp '^branch\.agent2\.')" ]; echo $?)"
 chk "pinned archive: the worktree-held agent stays" \
   "$(git -C "$PA" show-ref --verify --quiet refs/heads/agent; echo $?)"
+
+echo "--- pinned refs: archive-unmerged never follows a symbolic ref into a held branch"
+# zalias points at the worktree-held, unmerged agent. Its own guards pass, so a delete that
+# followed the symref once removed agent out from under its worktree.
+SY="$(pin_fixture sy)"
+SY_TIP="$(git -C "$SY" rev-parse refs/heads/agent)"
+git -C "$SY" symbolic-ref refs/heads/zalias refs/heads/agent
+out="$(KIT_CONFIG_ROOT="$KIT_DIR" GH_STUB_UNAUTH=1 "$WRAP" apply --apply --archive-unmerged "$SY" 2>&1)"
+chk_has "pinned symref: the alias is skipped by name" "$out" "SKIP zalias: a symbolic ref, not a branch of its own"
+chk "pinned symref: the held agent keeps its tip" \
+  "$([ "$(git -C "$SY" rev-parse -q --verify refs/heads/agent)" = "$SY_TIP" ]; echo $?)"
+chk "pinned symref: the worktree is still on agent" \
+  "$([ "$(git -C "$TMPD/sy-wt" symbolic-ref -q HEAD)" = refs/heads/agent ]; echo $?)"
+
+echo "--- pinned refs: archive-unmerged keeps a branch checked out during the push"
+# The pre-push hook adds a worktree on agent2 after the guards ran; the delete must see it.
+RK="$(pin_fixture rk)"
+mkdir -p "$RK/.git/hooks"
+cat > "$RK/.git/hooks/pre-push" <<HOOK
+#!/bin/sh
+unset GIT_DIR GIT_INDEX_FILE GIT_WORK_TREE
+git -C "$RK" worktree add -q "$TMPD/rk-wt2" agent2 >/dev/null 2>&1
+exit 0
+HOOK
+chmod +x "$RK/.git/hooks/pre-push"
+RK_REF="archive/agent2-$(date +%Y%m%d)"
+out="$(KIT_CONFIG_ROOT="$KIT_DIR" GH_STUB_UNAUTH=1 "$WRAP" apply --apply --archive-unmerged "$RK" 2>&1)"
+chk_has "pinned recheck: reports the branch kept" "$out" \
+  "kept agent2: archived to ${RK_REF}, but it was checked out during the push"
+chk "pinned recheck: agent2 survives" "$(git -C "$RK" show-ref --verify --quiet refs/heads/agent2; echo $?)"
+chk "pinned recheck: the archive ref landed" \
+  "$(git -C "$TMPD/rk-bare" show-ref --verify --quiet "refs/heads/${RK_REF}"; echo $?)"
+
+echo "--- pinned refs: archive-unmerged leases the delete to the tip it read"
+# The pre-push hook moves agent2 after wrap read its tip: origin holds the old tip, the local
+# branch now holds new work, and the leased delete must refuse.
+LM="$(pin_fixture lm)"
+printf 'more\n' > "$TMPD/lm-wt/m.txt"
+git -C "$TMPD/lm-wt" add -A; git -C "$TMPD/lm-wt" commit -qm "agent: more"
+LM_NEW="$(git -C "$LM" rev-parse refs/heads/agent)"
+mkdir -p "$LM/.git/hooks"
+cat > "$LM/.git/hooks/pre-push" <<HOOK
+#!/bin/sh
+unset GIT_DIR GIT_INDEX_FILE GIT_WORK_TREE
+git -C "$LM" update-ref refs/heads/agent2 "$LM_NEW"
+exit 0
+HOOK
+chmod +x "$LM/.git/hooks/pre-push"
+out="$(KIT_CONFIG_ROOT="$KIT_DIR" GH_STUB_UNAUTH=1 "$WRAP" apply --apply --archive-unmerged "$LM" 2>&1)"; rc=$?
+chk "pinned lease: a moved branch exits 2" "$([ "$rc" -eq 2 ]; echo $?)"
+chk_has "pinned lease: the refused delete is FAILED" "$out" \
+  "FAILED archive agent2: pushed to archive/agent2-$(date +%Y%m%d) but the local branch delete refused"
+chk "pinned lease: agent2 survives with its new work" \
+  "$([ "$(git -C "$LM" rev-parse -q --verify refs/heads/agent2)" = "$LM_NEW" ]; echo $?)"
+
+echo "--- pinned refs: archive-unmerged keeps the branch when origin holds another sha"
+# A post-receive hook on the bare remote moves the archive ref, so origin never holds the tip.
+RM="$(pin_fixture rm)"
+mkdir -p "$TMPD/rm-bare/hooks"
+cat > "$TMPD/rm-bare/hooks/post-receive" <<'HOOK'
+#!/bin/sh
+while read -r old new ref; do
+  case "$ref" in refs/heads/archive/*) git update-ref "$ref" refs/heads/main ;; esac
+done
+HOOK
+chmod +x "$TMPD/rm-bare/hooks/post-receive"
+out="$(KIT_CONFIG_ROOT="$KIT_DIR" GH_STUB_UNAUTH=1 "$WRAP" apply --apply --archive-unmerged "$RM" 2>&1)"; rc=$?
+chk "pinned remote lease: exits 2" "$([ "$rc" -eq 2 ]; echo $?)"
+chk_has "pinned remote lease: FAILED names the mismatch" "$out" \
+  "FAILED archive agent2: origin archive/agent2-$(date +%Y%m%d) holds"
+chk "pinned remote lease: agent2 survives" "$(git -C "$RM" show-ref --verify --quiet refs/heads/agent2; echo $?)"
+
+echo "--- pinned refs: injected GIT_CONFIG_COUNT config reaches wrap's git calls"
+# mini-run and checkout-sync pass credential and insteadOf config through GIT_CONFIG_COUNT.
+# origin's URL resolves only through that mapping, and agent2 is proven merged only once the
+# fetch through it succeeds.
+IC="$(pin_fixture ic)"
+git -C "$TMPD/ic-work" merge -q --ff-only agent; git -C "$TMPD/ic-work" push -q "$TMPD/ic-bare" main
+git -C "$IC" remote set-url origin "fake://ic/remote"
+out="$(GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0="url.$TMPD/ic-bare.insteadOf" GIT_CONFIG_VALUE_0="fake://ic/remote" \
+  GH_STUB_UNAUTH=1 "$WRAP" apply --apply "$IC" 2>&1)"
+chk_no "pinned config: the fetch through the mapping succeeds" "$out" "fetch failed"
+chk_has "pinned config: agent2 is proven merged after that fetch" "$out" "delete agent2 (ancestor of origin/main)"
+chk "pinned config: agent2 is gone" \
+  "$(git -C "$IC" show-ref --verify --quiet refs/heads/agent2 && echo 1 || echo 0)"
 
 echo
 if [ "$FAIL" -gt 0 ]; then echo "test-wrap: $PASS passed, $FAIL FAILED of $TOTAL" >&2; exit 1; fi

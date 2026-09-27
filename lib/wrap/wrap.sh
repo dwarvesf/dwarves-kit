@@ -83,18 +83,20 @@ set -uo pipefail
 # A git call must never block on a credential prompt inside an unattended wrap.
 export GIT_TERMINAL_PROMPT=0
 
-# A caller such as a git hook exports its own repo's GIT_DIR, index and -c config. Inherited,
-# they point every `git -C <repo>` below at that other repo, so wrap drops them once here:
-# git's own list of repo-local variables (the set it clears before entering another repo),
-# plus the numbered GIT_CONFIG_KEY_/VALUE_ pairs it does not list. The config variables go
-# first, so a malformed one cannot fail the git call that lists the rest.
-unset GIT_CONFIG_PARAMETERS GIT_CONFIG_COUNT
-for _v in $(compgen -e); do
-  case "$_v" in GIT_CONFIG_KEY_*|GIT_CONFIG_VALUE_*) unset "$_v" ;; esac
+# A caller such as a git hook exports its own repo's GIT_DIR, GIT_COMMON_DIR or index.
+# Inherited, they point every `git -C <repo>` below at that other repo, so wrap drops the
+# repo-location variables once here: git's own list of the ones it clears before entering
+# another repo, plus GIT_NAMESPACE, or a fixed copy of that list when git cannot print it.
+# Config injection (GIT_CONFIG*) stays: callers such as mini-run pass credential and
+# insteadOf settings that way on purpose, and without them every fetch fails.
+_loc_vars="$(git rev-parse --local-env-vars 2>/dev/null)"
+[ -n "$_loc_vars" ] || _loc_vars="GIT_DIR GIT_WORK_TREE GIT_IMPLICIT_WORK_TREE GIT_COMMON_DIR
+GIT_INDEX_FILE GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_GRAFT_FILE
+GIT_NO_REPLACE_OBJECTS GIT_REPLACE_REF_BASE GIT_PREFIX GIT_SHALLOW_FILE"
+for _v in $_loc_vars GIT_NAMESPACE; do
+  case "$_v" in GIT_CONFIG*) ;; *) unset "$_v" ;; esac
 done
-unset _v
-# shellcheck disable=SC2046 # one variable name per line; word splitting is the point
-unset $(git rev-parse --local-env-vars 2>/dev/null)
+unset _v _loc_vars
 
 # An index.lock at least this old belongs to a foreign writer, not to ordinary git traffic.
 LOCK_STALE_SECS=5
@@ -712,6 +714,11 @@ _apply_archive_unmerged() {
   for b in $(git -C "$repo" for-each-ref --format='%(refname:lstrip=2)' refs/heads/); do
     case "$b" in "$def"|main|master) continue ;; esac
     [ "$b" = "$cur" ] && continue
+    # A symbolic ref names another branch's work: its guards would check the alias while the
+    # push and the delete reached the target.
+    if git -C "$repo" symbolic-ref -q "refs/heads/${b}" >/dev/null 2>&1; then
+      echo "     SKIP ${b}: a symbolic ref, not a branch of its own"; continue
+    fi
     if git -C "$repo" worktree list --porcelain 2>/dev/null | grep -qx "branch refs/heads/${b}"; then
       echo "     SKIP ${b}: held by a worktree"; continue
     fi
@@ -741,7 +748,12 @@ _apply_archive_unmerged() {
       if [ -z "$tip" ] || [ "$pushed" != "$tip" ]; then
         echo "     FAILED archive ${b}: origin ${ref} holds $(_short "${pushed:-nothing}"), not the local tip $(_short "${tip:-unread}"); the branch stays"
         FAILURES=1
-      elif git -C "$repo" update-ref -d "refs/heads/${b}" "$tip" >/dev/null 2>&1; then
+      # update-ref lacks branch -D's refusals, and the guards above ran before a network push,
+      # so the checked-out and worktree-held checks are repeated right before the delete.
+      elif [ "$(git -C "$repo" symbolic-ref -q HEAD 2>/dev/null)" = "refs/heads/${b}" ] \
+          || git -C "$repo" worktree list --porcelain 2>/dev/null | grep -qxF "branch refs/heads/${b}"; then
+        echo "     kept ${b}: archived to ${ref}, but it was checked out during the push"
+      elif git -C "$repo" update-ref --no-deref -d "refs/heads/${b}" "$tip" >/dev/null 2>&1; then
         git -C "$repo" config --remove-section "branch.${b}" >/dev/null 2>&1
         echo "     archived ${b} -> ${ref}"
       else
