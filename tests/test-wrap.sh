@@ -5328,6 +5328,209 @@ out="$(LC_ALL=en_US.UTF-8 GH_STUB_UNAUTH=1 "$WRAP" scan "$AQ" 2>&1)"
 chk_has "absorbed: a backslash before an invalid byte stays LEAVE" "$out" \
   "quotecut  [NOT merged / unknown: LEAVE]"
 
+echo "=== pinned refs: a colliding tag, branch, or leaked GIT_DIR never proves a branch merged ==="
+# Each proof and tip read names refs/heads/<b> and refs/remotes/origin/<def>. A bare name
+# resolves a tag or local branch first, so each fixture below once deleted unlanded work.
+# pin_fixture <name> -- a clone whose `agent` (worktree <name>-wt) and `agent2` (no worktree)
+# carry one commit origin/main lacks. Prints the clone path.
+pin_fixture() {
+  local w="$TMPD/$1-work" c="$TMPD/$1-clone"
+  mkdir -p "$w"; git -C "$w" init -q -b main; gitc "$w"
+  printf 'base\n' > "$w/f.txt"; git -C "$w" add -A; git -C "$w" commit -qm base
+  git -C "$w" checkout -q -b agent
+  printf 'never landed\n' > "$w/a.txt"; git -C "$w" add -A; git -C "$w" commit -qm "agent: a.txt"
+  git -C "$w" checkout -q main
+  git clone -q --bare "$w" "$TMPD/$1-bare"
+  git clone -q "$TMPD/$1-bare" "$c"; gitc "$c"
+  git -C "$c" branch -q agent origin/agent; git -C "$c" branch -q agent2 origin/agent
+  git -C "$c" worktree add -q "$TMPD/$1-wt" agent
+  printf '%s' "$c"
+}
+pin_kept() { # pin_kept <label> <clone> <worktree>
+  chk "$1: the worktree survives apply" "$([ -d "$3" ]; echo $?)"
+  chk "$1: agent survives apply" "$(git -C "$2" show-ref --verify --quiet refs/heads/agent; echo $?)"
+  chk "$1: agent2 survives apply" "$(git -C "$2" show-ref --verify --quiet refs/heads/agent2; echo $?)"
+}
+
+echo "--- pinned refs: a tag named origin/main at the unlanded branch"
+PT="$(pin_fixture pt)"
+git -C "$PT" tag origin/main agent
+out="$(GH_STUB_UNAUTH=1 "$WRAP" apply --apply --worktrees "$PT" 2>&1)"
+chk_no "pinned tag: no ancestor proof from the tag" "$out" "(ancestor of origin/main"
+pin_kept "pinned tag" "$PT" "$TMPD/pt-wt"
+
+echo "--- pinned refs: a local branch named origin/main at the unlanded branch"
+PB="$(pin_fixture pb)"
+git -C "$PB" branch -q origin/main agent
+out="$(GH_STUB_UNAUTH=1 "$WRAP" scan "$PB" 2>&1)"
+chk_has "pinned branch: scan names the branch in full, never heads/" "$out" \
+  "     origin/main  [NOT merged / unknown: LEAVE]"
+chk_no "pinned branch: scan does not SAFE-d agent off the local branch" "$out" "agent  [SAFE-d"
+out="$(GH_STUB_UNAUTH=1 "$WRAP" apply --apply --worktrees "$PB" 2>&1)"
+chk_no "pinned branch: no ancestor proof from the local branch" "$out" "(ancestor of origin/main"
+pin_kept "pinned branch" "$PB" "$TMPD/pb-wt"
+chk "pinned branch: the origin/main branch itself survives" \
+  "$(git -C "$PB" show-ref --verify --quiet refs/heads/origin/main; echo $?)"
+
+echo "--- pinned refs: a tag at the merged PR head shadows a branch with an extra commit"
+# gh reports agent merged at its first commit, the tag named agent points there, and the branch
+# carries one more commit. The squash proof must read refs/heads/agent, and the scan snapshot
+# must name it agent (not heads/agent) so the tip-moved guard still matches it.
+PS="$(pin_fixture ps)"
+git -C "$PS" tag agent agent
+printf 'after the merge\n' > "$TMPD/ps-wt/b.txt"
+git -C "$TMPD/ps-wt" add -A; git -C "$TMPD/ps-wt" commit -qm "agent: unpushed b.txt"
+PS_MERGED="[{\"headRefOid\":\"$(git -C "$PS" rev-parse refs/tags/agent)\",\"baseRefName\":\"main\",\"mergedAt\":\"2026-01-01T00:00:00Z\"}]"
+out="$(GH_STUB_MERGED_agent="$PS_MERGED" "$WRAP" scan "$PS" 2>&1)"
+chk_has "pinned squash: scan leaves agent" "$out" "     agent  [NOT merged / unknown: LEAVE]"
+chk_no "pinned squash: scan never names the branch heads/agent" "$out" "     heads/agent  ["
+out="$(GH_STUB_MERGED_agent="$PS_MERGED" "$WRAP" apply --apply --worktrees "$PS" 2>&1)"
+chk_no "pinned squash: no squash proof from the tag" "$out" "squash-merged per gh"
+chk "pinned squash: the worktree survives apply" "$([ -d "$TMPD/ps-wt" ]; echo $?)"
+chk "pinned squash: agent survives apply" \
+  "$(git -C "$PS" show-ref --verify --quiet refs/heads/agent; echo $?)"
+
+echo "--- pinned refs: a leaked GIT_DIR pointing at another repo"
+# A git hook exports its own repo's GIT_DIR. Wrap must still act on the repo it was given: the
+# other repo's merged agent2 stays, and the target's unlanded worktree is reported as its own.
+PG="$(pin_fixture pg)"
+PO="$(pin_fixture po)"
+git -C "$TMPD/po-work" merge -q --ff-only agent; git -C "$TMPD/po-work" push -q "$TMPD/po-bare" main
+git -C "$PO" fetch -q
+out="$(GIT_DIR="$PO/.git" GH_STUB_UNAUTH=1 "$WRAP" apply --apply --worktrees "$PG" 2>&1)"
+chk_has "pinned GIT_DIR: apply reads the target's worktree" "$out" \
+  "SKIP $TMPD_P/pg-wt: agent is not proven merged into main (leave it)"
+pin_kept "pinned GIT_DIR" "$PG" "$TMPD/pg-wt"
+chk "pinned GIT_DIR: the other repo's merged agent2 survives" \
+  "$(git -C "$PO" show-ref --verify --quiet refs/heads/agent2; echo $?)"
+
+echo "--- pinned refs: a leaked GIT_COMMON_DIR pointing at another repo"
+# Not in the old hand-listed unset; git's --local-env-vars list covers it. The common dir holds
+# refs and worktrees, so a leaked one points the sweep at the other repo's merged agent.
+PC="$(pin_fixture pc)"
+PD="$(pin_fixture pd)"
+git -C "$TMPD/pd-work" merge -q --ff-only agent; git -C "$TMPD/pd-work" push -q "$TMPD/pd-bare" main
+git -C "$PD" fetch -q
+out="$(GIT_COMMON_DIR="$PD/.git" GH_STUB_UNAUTH=1 "$WRAP" apply --apply --worktrees "$PC" 2>&1)"
+chk_has "pinned GIT_COMMON_DIR: apply reads the target's worktree" "$out" \
+  "SKIP $TMPD_P/pc-wt: agent is not proven merged into main (leave it)"
+pin_kept "pinned GIT_COMMON_DIR" "$PC" "$TMPD/pc-wt"
+chk "pinned GIT_COMMON_DIR: the other repo's merged worktree survives" "$([ -d "$TMPD/pd-wt" ]; echo $?)"
+chk "pinned GIT_COMMON_DIR: the other repo's merged agent survives" \
+  "$(git -C "$PD" show-ref --verify --quiet refs/heads/agent; echo $?)"
+chk "pinned GIT_COMMON_DIR: the other repo's merged agent2 survives" \
+  "$(git -C "$PD" show-ref --verify --quiet refs/heads/agent2; echo $?)"
+
+echo "--- pinned refs: archive-unmerged pushes the branch, never a same-named tag"
+# agent2 is unmerged; a tag named agent2 points at a different unmerged commit. The archive
+# ref on origin must hold agent2's own tip, and the local branch goes only after that.
+PA="$(pin_fixture pa)"
+printf 'other work\n' > "$TMPD/pa-wt/o.txt"
+git -C "$TMPD/pa-wt" add -A; git -C "$TMPD/pa-wt" commit -qm "agent: other work"
+git -C "$PA" tag agent2 agent
+PA_TIP="$(git -C "$PA" rev-parse refs/heads/agent2)"
+PA_TAG="$(git -C "$PA" rev-parse refs/tags/agent2)"
+PA_REF="refs/heads/archive/agent2-$(date +%Y%m%d)"
+git -C "$PA" config branch.agent2.remote origin; git -C "$PA" config branch.agent2.merge refs/heads/agent2
+out="$(KIT_CONFIG_ROOT="$KIT_DIR" GH_STUB_UNAUTH=1 "$WRAP" apply --apply --archive-unmerged "$PA" 2>&1)"
+chk_has "pinned archive: reports the archive" "$out" "archived agent2 -> ${PA_REF#refs/heads/}"
+chk "pinned archive: origin holds the branch's own tip" \
+  "$([ "$(git -C "$TMPD/pa-bare" rev-parse -q --verify "$PA_REF")" = "$PA_TIP" ]; echo $?)"
+chk "pinned archive: origin never holds the tag's commit" \
+  "$([ "$(git -C "$TMPD/pa-bare" rev-parse -q --verify "$PA_REF")" != "$PA_TAG" ]; echo $?)"
+chk "pinned archive: the local branch goes once archived" \
+  "$(git -C "$PA" show-ref --verify --quiet refs/heads/agent2 && echo 1 || echo 0)"
+chk "pinned archive: the tag stays" "$([ "$(git -C "$PA" rev-parse -q --verify refs/tags/agent2)" = "$PA_TAG" ]; echo $?)"
+chk "pinned archive: the branch.agent2 config goes with it" \
+  "$([ -z "$(git -C "$PA" config --get-regexp '^branch\.agent2\.')" ]; echo $?)"
+chk "pinned archive: the worktree-held agent stays" \
+  "$(git -C "$PA" show-ref --verify --quiet refs/heads/agent; echo $?)"
+
+echo "--- pinned refs: archive-unmerged never follows a symbolic ref into a held branch"
+# zalias points at the worktree-held, unmerged agent. Its own guards pass, so a delete that
+# followed the symref once removed agent out from under its worktree.
+SY="$(pin_fixture sy)"
+SY_TIP="$(git -C "$SY" rev-parse refs/heads/agent)"
+git -C "$SY" symbolic-ref refs/heads/zalias refs/heads/agent
+out="$(KIT_CONFIG_ROOT="$KIT_DIR" GH_STUB_UNAUTH=1 "$WRAP" apply --apply --archive-unmerged "$SY" 2>&1)"
+chk_has "pinned symref: the alias is skipped by name" "$out" "SKIP zalias: a symbolic ref, not a branch of its own"
+chk "pinned symref: the held agent keeps its tip" \
+  "$([ "$(git -C "$SY" rev-parse -q --verify refs/heads/agent)" = "$SY_TIP" ]; echo $?)"
+chk "pinned symref: the worktree is still on agent" \
+  "$([ "$(git -C "$TMPD/sy-wt" symbolic-ref -q HEAD)" = refs/heads/agent ]; echo $?)"
+
+echo "--- pinned refs: archive-unmerged keeps a branch checked out during the push"
+# The pre-push hook adds a worktree on agent2 after the guards ran; the delete must see it.
+RK="$(pin_fixture rk)"
+mkdir -p "$RK/.git/hooks"
+cat > "$RK/.git/hooks/pre-push" <<HOOK
+#!/bin/sh
+unset GIT_DIR GIT_INDEX_FILE GIT_WORK_TREE
+git -C "$RK" worktree add -q "$TMPD/rk-wt2" agent2 >/dev/null 2>&1
+exit 0
+HOOK
+chmod +x "$RK/.git/hooks/pre-push"
+RK_REF="archive/agent2-$(date +%Y%m%d)"
+out="$(KIT_CONFIG_ROOT="$KIT_DIR" GH_STUB_UNAUTH=1 "$WRAP" apply --apply --archive-unmerged "$RK" 2>&1)"
+chk_has "pinned recheck: reports the branch kept" "$out" \
+  "kept agent2: archived to ${RK_REF}, but it was checked out during the push"
+chk "pinned recheck: agent2 survives" "$(git -C "$RK" show-ref --verify --quiet refs/heads/agent2; echo $?)"
+chk "pinned recheck: the archive ref landed" \
+  "$(git -C "$TMPD/rk-bare" show-ref --verify --quiet "refs/heads/${RK_REF}"; echo $?)"
+
+echo "--- pinned refs: archive-unmerged leases the delete to the tip it read"
+# The pre-push hook moves agent2 after wrap read its tip: origin holds the old tip, the local
+# branch now holds new work, and the leased delete must refuse.
+LM="$(pin_fixture lm)"
+printf 'more\n' > "$TMPD/lm-wt/m.txt"
+git -C "$TMPD/lm-wt" add -A; git -C "$TMPD/lm-wt" commit -qm "agent: more"
+LM_NEW="$(git -C "$LM" rev-parse refs/heads/agent)"
+mkdir -p "$LM/.git/hooks"
+cat > "$LM/.git/hooks/pre-push" <<HOOK
+#!/bin/sh
+unset GIT_DIR GIT_INDEX_FILE GIT_WORK_TREE
+git -C "$LM" update-ref refs/heads/agent2 "$LM_NEW"
+exit 0
+HOOK
+chmod +x "$LM/.git/hooks/pre-push"
+out="$(KIT_CONFIG_ROOT="$KIT_DIR" GH_STUB_UNAUTH=1 "$WRAP" apply --apply --archive-unmerged "$LM" 2>&1)"; rc=$?
+chk "pinned lease: a moved branch exits 2" "$([ "$rc" -eq 2 ]; echo $?)"
+chk_has "pinned lease: the refused delete is FAILED" "$out" \
+  "FAILED archive agent2: pushed to archive/agent2-$(date +%Y%m%d) but the local branch delete refused"
+chk "pinned lease: agent2 survives with its new work" \
+  "$([ "$(git -C "$LM" rev-parse -q --verify refs/heads/agent2)" = "$LM_NEW" ]; echo $?)"
+
+echo "--- pinned refs: archive-unmerged keeps the branch when origin holds another sha"
+# A post-receive hook on the bare remote moves the archive ref, so origin never holds the tip.
+RM="$(pin_fixture rm)"
+mkdir -p "$TMPD/rm-bare/hooks"
+cat > "$TMPD/rm-bare/hooks/post-receive" <<'HOOK'
+#!/bin/sh
+while read -r old new ref; do
+  case "$ref" in refs/heads/archive/*) git update-ref "$ref" refs/heads/main ;; esac
+done
+HOOK
+chmod +x "$TMPD/rm-bare/hooks/post-receive"
+out="$(KIT_CONFIG_ROOT="$KIT_DIR" GH_STUB_UNAUTH=1 "$WRAP" apply --apply --archive-unmerged "$RM" 2>&1)"; rc=$?
+chk "pinned remote lease: exits 2" "$([ "$rc" -eq 2 ]; echo $?)"
+chk_has "pinned remote lease: FAILED names the mismatch" "$out" \
+  "FAILED archive agent2: origin archive/agent2-$(date +%Y%m%d) holds"
+chk "pinned remote lease: agent2 survives" "$(git -C "$RM" show-ref --verify --quiet refs/heads/agent2; echo $?)"
+
+echo "--- pinned refs: injected GIT_CONFIG_COUNT config reaches wrap's git calls"
+# mini-run and checkout-sync pass credential and insteadOf config through GIT_CONFIG_COUNT.
+# origin's URL resolves only through that mapping, and agent2 is proven merged only once the
+# fetch through it succeeds.
+IC="$(pin_fixture ic)"
+git -C "$TMPD/ic-work" merge -q --ff-only agent; git -C "$TMPD/ic-work" push -q "$TMPD/ic-bare" main
+git -C "$IC" remote set-url origin "fake://ic/remote"
+out="$(GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0="url.$TMPD/ic-bare.insteadOf" GIT_CONFIG_VALUE_0="fake://ic/remote" \
+  GH_STUB_UNAUTH=1 "$WRAP" apply --apply "$IC" 2>&1)"
+chk_no "pinned config: the fetch through the mapping succeeds" "$out" "fetch failed"
+chk_has "pinned config: agent2 is proven merged after that fetch" "$out" "delete agent2 (ancestor of origin/main)"
+chk "pinned config: agent2 is gone" \
+  "$(git -C "$IC" show-ref --verify --quiet refs/heads/agent2 && echo 1 || echo 0)"
+
 echo
 if [ "$FAIL" -gt 0 ]; then echo "test-wrap: $PASS passed, $FAIL FAILED of $TOTAL" >&2; exit 1; fi
 echo "test-wrap: all $PASS passed"

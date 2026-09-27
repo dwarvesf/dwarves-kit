@@ -83,6 +83,21 @@ set -uo pipefail
 # A git call must never block on a credential prompt inside an unattended wrap.
 export GIT_TERMINAL_PROMPT=0
 
+# A caller such as a git hook exports its own repo's GIT_DIR, GIT_COMMON_DIR or index.
+# Inherited, they point every `git -C <repo>` below at that other repo, so wrap drops the
+# repo-location variables once here: git's own list of the ones it clears before entering
+# another repo, plus GIT_NAMESPACE, or a fixed copy of that list when git cannot print it.
+# Config injection (GIT_CONFIG*) stays: callers such as mini-run pass credential and
+# insteadOf settings that way on purpose, and without them every fetch fails.
+_loc_vars="$(git rev-parse --local-env-vars 2>/dev/null)"
+[ -n "$_loc_vars" ] || _loc_vars="GIT_DIR GIT_WORK_TREE GIT_IMPLICIT_WORK_TREE GIT_COMMON_DIR
+GIT_INDEX_FILE GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_GRAFT_FILE
+GIT_NO_REPLACE_OBJECTS GIT_REPLACE_REF_BASE GIT_PREFIX GIT_SHALLOW_FILE"
+for _v in $_loc_vars GIT_NAMESPACE; do
+  case "$_v" in GIT_CONFIG*) ;; *) unset "$_v" ;; esac
+done
+unset _v _loc_vars
+
 # An index.lock at least this old belongs to a foreign writer, not to ordinary git traffic.
 LOCK_STALE_SECS=5
 # A routine activity line stays inside this many characters. Over it, `log` warns and writes.
@@ -272,9 +287,11 @@ _scan_repo() {
 
   echo "-- local branches (an ancestor of origin/${def} is SAFE-d; a squash merge needs the gh proof):"
   local b tip json verdict
-  for b in $(git -C "$repo" for-each-ref --format='%(refname:short)' refs/heads/); do
+  # Every proof below names full refs: a bare name resolves a same-named tag first, and a tag
+  # or local branch called origin/<def> beats the remote-tracking ref.
+  for b in $(git -C "$repo" for-each-ref --format='%(refname:lstrip=2)' refs/heads/); do
     case "$b" in "$def"|main|master) continue ;; esac
-    if git -C "$repo" merge-base --is-ancestor "$b" "origin/${def}" 2>/dev/null; then
+    if git -C "$repo" merge-base --is-ancestor "refs/heads/${b}" "refs/remotes/origin/${def}" 2>/dev/null; then
       echo "     ${b}  [SAFE-d: ancestor of origin/${def}]"
       continue
     fi
@@ -286,7 +303,7 @@ _scan_repo() {
       echo "     ${b}  [NOT merged / unknown: LEAVE]"
       continue
     fi
-    tip="$(git -C "$repo" rev-parse "$b" 2>/dev/null)"
+    tip="$(git -C "$repo" rev-parse --verify --quiet "refs/heads/${b}" 2>/dev/null)"
     json="$(_squash_json "$(_origin_url "$repo")" "$b")"
     verdict="$(_squash_verdict "$json" "$tip" "$def")"
     case "$verdict" in
@@ -427,16 +444,17 @@ _scanned_tip() { awk -v b="$1" '$1 == b { print $2 }' "$TIPS_FILE"; }
 # or the gh squash proof.
 _merge_proof() {
   local repo="$1" def="$2" ghs="$3" b="$4" tip json
-  # refs/heads/: a bare name resolves a same-named tag first, and a tag on the default branch
-  # once proved an unlanded worktree branch "merged".
-  if git -C "$repo" merge-base --is-ancestor "refs/heads/${b}" "origin/${def}" 2>/dev/null; then
+  # Full refs only: a bare name resolves a same-named tag first, and a tag or local branch
+  # called origin/<def> beats the remote-tracking ref. Either once proved an unlanded worktree
+  # branch "merged".
+  if git -C "$repo" merge-base --is-ancestor "refs/heads/${b}" "refs/remotes/origin/${def}" 2>/dev/null; then
     printf 'ancestor of origin/%s\n' "$def"; return 0
   fi
   if _absorbed "$repo" "$def" "refs/heads/${b}"; then
     printf 'content already on origin/%s\n' "$def"; return 0
   fi
   [ "$ghs" = "ok" ] || return 1
-  tip="$(git -C "$repo" rev-parse "$b" 2>/dev/null)"
+  tip="$(git -C "$repo" rev-parse --verify --quiet "refs/heads/${b}" 2>/dev/null)"
   json="$(_squash_json "$(_origin_url "$repo")" "$b")"
   [ "$(_squash_verdict "$json" "$tip" "$def")" = "OK" ] || return 1
   printf 'squash-merged per gh\n'
@@ -569,7 +587,7 @@ _apply_worktrees() {
     if [ -n "$(git -C "$wt" status --short 2>/dev/null)" ]; then
       echo "     SKIP ${wt}: went dirty while the proof was read"; continue
     fi
-    tip="$(git -C "$repo" rev-parse "$wtb" 2>/dev/null)"
+    tip="$(git -C "$repo" rev-parse --verify --quiet "refs/heads/${wtb}" 2>/dev/null)"
     scanned="$(_scanned_tip "$wtb")"
     if [ -n "$scanned" ] && [ "$tip" != "$scanned" ]; then
       echo "     SKIP ${wt}: ${wtb} tip moved during this run ($(_short "$scanned") -> $(_short "$tip"))"; continue
@@ -617,7 +635,7 @@ _apply_branches() {
   local repo="$1" def="$2" cur="$3" fetch_ok="$4" ghs="$5"
   echo "-- branches:"
   local b tip scanned json verdict
-  for b in $(git -C "$repo" for-each-ref --format='%(refname:short)' refs/heads/); do
+  for b in $(git -C "$repo" for-each-ref --format='%(refname:lstrip=2)' refs/heads/); do
     case "$b" in "$def"|main|master) echo "     SKIP ${b}: default or protected branch name"; continue ;; esac
     if [ "$b" = "$cur" ]; then echo "     SKIP ${b}: currently checked out"; continue; fi
     if git -C "$repo" worktree list --porcelain 2>/dev/null | grep -qx "branch refs/heads/${b}"; then
@@ -626,7 +644,7 @@ _apply_branches() {
     if [ "$fetch_ok" != 1 ]; then
       echo "     SKIP ${b}: fetch failed, stale ancestor data"; continue
     fi
-    tip="$(git -C "$repo" rev-parse "$b" 2>/dev/null)"
+    tip="$(git -C "$repo" rev-parse --verify --quiet "refs/heads/${b}" 2>/dev/null)"
     scanned="$(_scanned_tip "$b")"
     if [ -n "$scanned" ] && [ "$tip" != "$scanned" ]; then
       echo "     SKIP ${b}: tip moved during this run ($(_short "$scanned") -> $(_short "$tip"))"; continue
@@ -634,7 +652,8 @@ _apply_branches() {
     # -D, not -d: the proof above is wrap's own, against origin/<def>. `branch -d` judges
     # against the branch's OWN upstream (or HEAD when it has none), so it refused a branch
     # that tracks another ref or nothing even though origin/<def> already holds its tip.
-    if git -C "$repo" merge-base --is-ancestor "$b" "origin/${def}" 2>/dev/null; then
+    # The sha and the full remote ref, never bare names: see _merge_proof.
+    if git -C "$repo" merge-base --is-ancestor "$tip" "refs/remotes/origin/${def}" 2>/dev/null; then
       run "$repo" "delete ${b} (ancestor of origin/${def})" git -C "$repo" branch -D "$b"
       continue
     fi
@@ -689,14 +708,21 @@ _apply_archive_unmerged() {
   if [ "$fetch_ok" != 1 ]; then
     echo "     SKIP archive sweep: fetch failed, stale data"; return 0
   fi
-  local b cherry n slug ref err first
-  for b in $(git -C "$repo" for-each-ref --format='%(refname:short)' refs/heads/); do
+  local b tip pushed cherry n slug ref err first
+  # Full refs throughout, as in _merge_proof: a tag named like the branch once made the push
+  # source ambiguous, and a bare origin/<def> can resolve a tag or local branch.
+  for b in $(git -C "$repo" for-each-ref --format='%(refname:lstrip=2)' refs/heads/); do
     case "$b" in "$def"|main|master) continue ;; esac
     [ "$b" = "$cur" ] && continue
+    # A symbolic ref names another branch's work: its guards would check the alias while the
+    # push and the delete reached the target.
+    if git -C "$repo" symbolic-ref -q "refs/heads/${b}" >/dev/null 2>&1; then
+      echo "     SKIP ${b}: a symbolic ref, not a branch of its own"; continue
+    fi
     if git -C "$repo" worktree list --porcelain 2>/dev/null | grep -qx "branch refs/heads/${b}"; then
       echo "     SKIP ${b}: held by a worktree"; continue
     fi
-    cherry="$(git -C "$repo" cherry "origin/${def}" "$b" 2>/dev/null)"
+    cherry="$(git -C "$repo" cherry "refs/remotes/origin/${def}" "refs/heads/${b}" 2>/dev/null)"
     n="$(printf '%s\n' "$cherry" | grep -c '^+')"
     if [ "$n" -eq 0 ]; then
       echo "     ${b}: nothing unique, left for the merged sweep"; continue
@@ -712,8 +738,26 @@ _apply_archive_unmerged() {
     if git -C "$repo" ls-remote --exit-code --heads origin "$ref" >/dev/null 2>&1; then
       echo "     FAILED archive ${b}: origin ${ref} already exists"; FAILURES=1; continue
     fi
-    if err="$(git -C "$repo" push origin "${b}:refs/heads/${ref}" 2>&1)"; then
-      if git -C "$repo" branch -D "$b" >/dev/null 2>&1; then
+    tip="$(git -C "$repo" rev-parse --verify --quiet "refs/heads/${b}")"
+    if err="$(git -C "$repo" push origin "refs/heads/${b}:refs/heads/${ref}" 2>&1)"; then
+      # The local delete is leased to the tip read above, and only once origin holds that
+      # tip: a commit made during the push, or an archive ref holding anything else, keeps
+      # the branch.
+      pushed="$(git -C "$repo" ls-remote origin "refs/heads/${ref}" 2>/dev/null \
+        | awk -v r="refs/heads/${ref}" '$2 == r { print $1 }')"
+      if [ -z "$tip" ] || [ "$pushed" != "$tip" ]; then
+        echo "     FAILED archive ${b}: origin ${ref} holds $(_short "${pushed:-nothing}"), not the local tip $(_short "${tip:-unread}"); the branch stays"
+        FAILURES=1
+      # update-ref lacks branch -D's refusals, and the guards above ran before a network push,
+      # so the checked-out and worktree-held checks are repeated right before the delete.
+      # The list is captured, never piped into `grep -q`: an early grep exit can SIGPIPE the
+      # writer, and under pipefail that 141 would read as "not held" and let the delete run.
+      elif [ "$(git -C "$repo" symbolic-ref -q HEAD 2>/dev/null)" = "refs/heads/${b}" ] \
+          || ! _wt_list="$(git -C "$repo" worktree list --porcelain 2>/dev/null)" \
+          || case $'\n'"${_wt_list}"$'\n' in *$'\n'"branch refs/heads/${b}"$'\n'*) true ;; *) false ;; esac; then
+        echo "     kept ${b}: archived to ${ref}, but it was checked out during the push"
+      elif git -C "$repo" update-ref --no-deref -d "refs/heads/${b}" "$tip" >/dev/null 2>&1; then
+        git -C "$repo" config --remove-section "branch.${b}" >/dev/null 2>&1
         echo "     archived ${b} -> ${ref}"
       else
         echo "     FAILED archive ${b}: pushed to ${ref} but the local branch delete refused"
@@ -1517,7 +1561,7 @@ _apply_repo() {
     TIPS_FILE="$TIPS_OVERRIDE"; own_snapshot=0
   else
     TIPS_FILE="$(mktemp)"
-    git -C "$repo" for-each-ref --format='%(refname:short) %(objectname)' refs/heads/ > "$TIPS_FILE" 2>/dev/null
+    git -C "$repo" for-each-ref --format='%(refname:lstrip=2) %(objectname)' refs/heads/ > "$TIPS_FILE" 2>/dev/null
   fi
 
   _apply_worktrees "$repo" "$def" "$cur" "$fetch_ok" "$ghs"
