@@ -40,7 +40,7 @@
 # repo, so a test or real-repo run of the bare form alone misses that path. The first origin
 # sweep shipped skipping `--own` and every shared repo kept its merged heads.
 #
-# The write set is closed: branch delete under two proofs, `apply`'s origin delete of
+# The write set is closed: branch delete under three proofs, `apply`'s origin delete of
 # merged branches, each leased to the tip it read (knob wrap.delete_merged_remote_branches),
 # worktree remove under
 # --worktrees, pull --ff-only on the default branch and its pull-past-dirty stash, the
@@ -278,6 +278,10 @@ _scan_repo() {
       echo "     ${b}  [SAFE-d: ancestor of origin/${def}]"
       continue
     fi
+    if _absorbed "$repo" "$def" "$b"; then
+      echo "     ${b}  [ABSORBED: content already on origin/${def}, safe to -D]"
+      continue
+    fi
     if [ "$ghs" != "ok" ]; then
       echo "     ${b}  [NOT merged / unknown: LEAVE]"
       continue
@@ -418,18 +422,34 @@ run() {
 _scanned_tip() { awk -v b="$1" '$1 == b { print $2 }' "$TIPS_FILE"; }
 
 # _merge_proof <repo> <default branch> <gh state> <branch> -- prints the proof that the branch
-# already reached the default branch and exits 0; exit 1 when no proof exists. The two proofs are
-# the same two `_apply_branches` deletes a branch under: a plain ancestor, or the gh squash proof.
+# already reached the default branch and exits 0; exit 1 when no proof exists. The three proofs
+# are the same three `_apply_branches` deletes a branch under: a plain ancestor, absorbed content,
+# or the gh squash proof.
 _merge_proof() {
   local repo="$1" def="$2" ghs="$3" b="$4" tip json
   if git -C "$repo" merge-base --is-ancestor "$b" "origin/${def}" 2>/dev/null; then
     printf 'ancestor of origin/%s\n' "$def"; return 0
+  fi
+  if _absorbed "$repo" "$def" "$b"; then
+    printf 'content already on origin/%s\n' "$def"; return 0
   fi
   [ "$ghs" = "ok" ] || return 1
   tip="$(git -C "$repo" rev-parse "$b" 2>/dev/null)"
   json="$(_squash_json "$(_origin_url "$repo")" "$b")"
   [ "$(_squash_verdict "$json" "$tip" "$def")" = "OK" ] || return 1
   printf 'squash-merged per gh\n'
+}
+
+# _absorbed <repo> <default branch> <branch> -- 0 when merging the branch into origin/<def> is
+# clean AND leaves origin/<def>'s tree unchanged, so every change the branch carries is already on
+# the default branch. It covers a subagent branch whose lead re-committed the work under its own
+# PR: new hashes, no PR for the branch, so neither other proof can ever hold. Deleting it loses
+# commit metadata, never content. A conflict, or a git older than 2.38 (no
+# `merge-tree --write-tree`), exits non-zero and the proof simply does not hold.
+_absorbed() {
+  local repo="$1" def="$2" b="$3" merged
+  merged="$(git -C "$repo" merge-tree --write-tree "origin/${def}" "$b" 2>/dev/null)" || return 1
+  [ -n "$merged" ] && [ "$merged" = "$(git -C "$repo" rev-parse "origin/${def}^{tree}" 2>/dev/null)" ]
 }
 
 # _wt_locked <worktree path> -- 0 when the worktree carries a lock. git keeps the lock as a
@@ -587,6 +607,10 @@ _apply_branches() {
     # that tracks another ref or nothing even though origin/<def> already holds its tip.
     if git -C "$repo" merge-base --is-ancestor "$b" "origin/${def}" 2>/dev/null; then
       run "$repo" "delete ${b} (ancestor of origin/${def})" git -C "$repo" branch -D "$b"
+      continue
+    fi
+    if _absorbed "$repo" "$def" "$b"; then
+      run "$repo" "delete ${b} (content already on origin/${def})" git -C "$repo" branch -D "$b"
       continue
     fi
     if [ "$ghs" != "ok" ]; then

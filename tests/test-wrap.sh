@@ -5105,6 +5105,62 @@ out="$("$WRAP" rebase "$TMPD/rb-notrepo" 2>&1)"; rc=$?
 chk "rebase: not a repo exits 64" "$([ "$rc" -eq 64 ]; echo $?)"
 chk_has "bin/wrap header names rebase" "$(sed -n '1,25p' "$KIT_DIR/bin/wrap")" "wrap rebase <worktree>"
 
+echo "=== absorbed proof: a branch whose content already sits on origin/<default> ==="
+# A subagent commits on its own branch; the lead re-commits the same change under its own PR,
+# so the branch has new-hash commits, no PR of its own, and no ancestry or gh proof. Merging it
+# into origin/main changes nothing, which is the proof. A partial landing or a later edit on
+# main (a conflict) is not.
+ABW="$TMPD/ab-work"; mkdir -p "$ABW"; git -C "$ABW" init -q -b main; gitc "$ABW"
+printf 'base\n' > "$ABW/f.txt"; printf 'x\n' > "$ABW/g.txt"
+git -C "$ABW" add -A; git -C "$ABW" commit -qm base
+for b in absorbed partial conflicting; do git -C "$ABW" branch "$b"; done
+git -C "$ABW" checkout -q absorbed
+printf 'agent line\n' > "$ABW/new.txt"; git -C "$ABW" add -A; git -C "$ABW" commit -qm "agent: new.txt"
+git -C "$ABW" checkout -q partial
+printf 'landed\n' > "$ABW/p1.txt"; printf 'never landed\n' > "$ABW/p2.txt"
+git -C "$ABW" add -A; git -C "$ABW" commit -qm "agent: p1 and p2"
+git -C "$ABW" checkout -q conflicting
+printf 'agent version\n' > "$ABW/c.txt"; git -C "$ABW" add -A; git -C "$ABW" commit -qm "agent: c.txt"
+git -C "$ABW" checkout -q main
+# The lead's own commits: new.txt and p1.txt re-committed, c.txt landed then edited further,
+# plus an unrelated later change so origin/main is not just the branch tips.
+printf 'agent line\n' > "$ABW/new.txt"; printf 'landed\n' > "$ABW/p1.txt"
+printf 'agent version\n' > "$ABW/c.txt"
+git -C "$ABW" add -A; git -C "$ABW" commit -qm "lead: land the agents' work"
+printf 'lead edit\n' > "$ABW/c.txt"; printf 'y\n' > "$ABW/g.txt"
+git -C "$ABW" add -A; git -C "$ABW" commit -qm "lead: later edits"
+git clone -q --bare "$ABW" "$TMPD/ab-bare"
+AB="$TMPD/ab-clone"; git clone -q "$TMPD/ab-bare" "$AB"; gitc "$AB"
+for b in absorbed partial conflicting; do git -C "$AB" branch -q "$b" "origin/$b"; done
+git -C "$AB" worktree add -q "$TMPD/ab-wt" absorbed
+
+out="$(GH_STUB_UNAUTH=1 "$WRAP" scan "$AB" 2>&1)"
+chk_has "absorbed: scan names it safe without gh" "$out" \
+  "absorbed  [ABSORBED: content already on origin/main, safe to -D]"
+chk_has "absorbed: a partial landing is left" "$out" "partial  [NOT merged / unknown: LEAVE]"
+chk_has "absorbed: a branch main edited since is left" "$out" "conflicting  [NOT merged / unknown: LEAVE]"
+
+out="$(GH_STUB_UNAUTH=1 "$WRAP" apply --worktrees "$AB" 2>&1)"
+chk_has "absorbed: dry run would remove the worktree" "$out" \
+  "WOULD remove worktree $TMPD_P/ab-wt [absorbed, unlocked] and delete absorbed (content already on origin/main)"
+
+out="$(GH_STUB_UNAUTH=1 "$WRAP" apply --apply --worktrees "$AB" 2>&1)"
+chk "absorbed: the worktree is gone" "$([ ! -d "$TMPD/ab-wt" ]; echo $?)"
+chk "absorbed: the branch is gone" \
+  "$(git -C "$AB" show-ref --verify --quiet refs/heads/absorbed && echo 1 || echo 0)"
+chk "absorbed: the partial branch stays" \
+  "$(git -C "$AB" show-ref --verify --quiet refs/heads/partial; echo $?)"
+chk "absorbed: the conflicting branch stays" \
+  "$(git -C "$AB" show-ref --verify --quiet refs/heads/conflicting; echo $?)"
+
+# The branch sweep holds the same proof: a bare absorbed branch, no worktree, is deleted.
+git -C "$AB" branch -q absorbed2 "origin/absorbed"
+out="$(GH_STUB_UNAUTH=1 "$WRAP" apply --apply "$AB" 2>&1)"
+chk_has "absorbed: the branch sweep names the proof" "$out" \
+  "delete absorbed2 (content already on origin/main)"
+chk "absorbed: the branch sweep deleted it" \
+  "$(git -C "$AB" show-ref --verify --quiet refs/heads/absorbed2 && echo 1 || echo 0)"
+
 echo
 if [ "$FAIL" -gt 0 ]; then echo "test-wrap: $PASS passed, $FAIL FAILED of $TOTAL" >&2; exit 1; fi
 echo "test-wrap: all $PASS passed"
