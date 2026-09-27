@@ -750,8 +750,11 @@ _apply_archive_unmerged() {
         FAILURES=1
       # update-ref lacks branch -D's refusals, and the guards above ran before a network push,
       # so the checked-out and worktree-held checks are repeated right before the delete.
+      # The list is captured, never piped into `grep -q`: an early grep exit can SIGPIPE the
+      # writer, and under pipefail that 141 would read as "not held" and let the delete run.
       elif [ "$(git -C "$repo" symbolic-ref -q HEAD 2>/dev/null)" = "refs/heads/${b}" ] \
-          || git -C "$repo" worktree list --porcelain 2>/dev/null | grep -qxF "branch refs/heads/${b}"; then
+          || ! _wt_list="$(git -C "$repo" worktree list --porcelain 2>/dev/null)" \
+          || case $'\n'"${_wt_list}"$'\n' in *$'\n'"branch refs/heads/${b}"$'\n'*) true ;; *) false ;; esac; then
         echo "     kept ${b}: archived to ${ref}, but it was checked out during the push"
       elif git -C "$repo" update-ref --no-deref -d "refs/heads/${b}" "$tip" >/dev/null 2>&1; then
         git -C "$repo" config --remove-section "branch.${b}" >/dev/null 2>&1
