@@ -55,8 +55,17 @@ CTX=$(printf '%s' "$LAST_TURN" | jq -r '.ctx' 2>/dev/null)
 MODEL=$(printf '%s' "$LAST_TURN" | jq -r '.model' 2>/dev/null)
 case "$CTX" in ''|*[!0-9]*) exit 0 ;; esac
 
+STATE_DIR="${HOME}/.cache/claude-context-budget"
+# A statusline that sees Claude Code's context_window_size may drop it here; it is the
+# real window, so it beats every guess below (a 1M model often logs a bare model id).
+WINDOW_FILE_VAL=""
+[ -r "$STATE_DIR/$SESSION_ID.window" ] && read -r WINDOW_FILE_VAL < "$STATE_DIR/$SESSION_ID.window" 2>/dev/null
+case "$WINDOW_FILE_VAL" in ''|*[!0-9]*) WINDOW_FILE_VAL="" ;; esac
+
 if [ -n "${KIT_CTX_WINDOW:-}" ]; then
     WINDOW="$KIT_CTX_WINDOW"
+elif [ -n "$WINDOW_FILE_VAL" ]; then
+    WINDOW="$WINDOW_FILE_VAL"
 else
     # The transcript records the API model id, which drops the `[1m]` suffix Claude Code
     # uses to select the 1M window (`opus[1m]` logs as `claude-opus-5-5`). Also check the
@@ -81,7 +90,6 @@ fi
 case "$WINDOW" in *[!0-9]*) exit 0 ;; esac
 [ "$WINDOW" -gt 0 ] || exit 0
 
-STATE_DIR="${HOME}/.cache/claude-context-budget"
 STATE="$STATE_DIR/$SESSION_ID"
 mkdir -p "$STATE_DIR" 2>/dev/null || exit 0
 

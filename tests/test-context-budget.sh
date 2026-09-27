@@ -131,6 +131,16 @@ ANTHROPIC_MODEL="claude-opus-5-5[1m]" step "7.6 ANTHROPIC_MODEL carries [1m]: 14
 T7g="$HOME/.claude/projects/p/s7g.jsonl"
 transcript "$T7g" 250000 "claude-opus-5-5"
 step "7.7 usage past 200k proves a bigger window: 250k is 25% of 1M, silent" silent s7g "$T7g"
+# The live bug: opus-5-5 on a 1M window logs a bare id, 167k read as 83%.
+T7h="$HOME/.claude/projects/p/s7h.jsonl"
+transcript "$T7h" 167000 "claude-opus-5-5"
+mkdir -p "$HOME/.cache/claude-context-budget"
+echo 1000000 > "$HOME/.cache/claude-context-budget/s7h.window"
+step "7.8 statusline window file 1M, bare id: 167k is 16%, silent" silent s7h "$T7h"
+T7i="$HOME/.claude/projects/p/s7i.jsonl"
+transcript "$T7i" 167000 "claude-opus-5-5"
+echo junk > "$HOME/.cache/claude-context-budget/s7i.window"
+step "7.9 junk window file ignored: falls back to 200k, 83% speaks" speak s7i "$T7i"
 
 echo "== Case 8: threshold 0 (warn) is advisory, threshold 1 (strong) is a directive =="
 tone() {
