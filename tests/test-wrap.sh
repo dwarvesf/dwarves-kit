@@ -5105,6 +5105,229 @@ out="$("$WRAP" rebase "$TMPD/rb-notrepo" 2>&1)"; rc=$?
 chk "rebase: not a repo exits 64" "$([ "$rc" -eq 64 ]; echo $?)"
 chk_has "bin/wrap header names rebase" "$(sed -n '1,25p' "$KIT_DIR/bin/wrap")" "wrap rebase <worktree>"
 
+echo "=== absorbed proof: a branch whose content already sits on origin/<default> ==="
+# A subagent commits on its own branch; the lead re-commits the same change under its own PR,
+# so the branch has new-hash commits, no PR of its own, and no ancestry or gh proof. Every path
+# it changed being byte-identical on origin/main is the proof. A partial landing or a later
+# edit on main is not.
+ABW="$TMPD/ab-work"; mkdir -p "$ABW"; git -C "$ABW" init -q -b main; gitc "$ABW"
+printf 'base\n' > "$ABW/f.txt"; printf 'x\n' > "$ABW/g.txt"
+git -C "$ABW" add -A; git -C "$ABW" commit -qm base
+for b in absorbed partial conflicting; do git -C "$ABW" branch "$b"; done
+git -C "$ABW" checkout -q absorbed
+printf 'agent line\n' > "$ABW/new.txt"; git -C "$ABW" add -A; git -C "$ABW" commit -qm "agent: new.txt"
+git -C "$ABW" checkout -q partial
+printf 'landed\n' > "$ABW/p1.txt"; printf 'never landed\n' > "$ABW/p2.txt"
+git -C "$ABW" add -A; git -C "$ABW" commit -qm "agent: p1 and p2"
+git -C "$ABW" checkout -q conflicting
+printf 'agent version\n' > "$ABW/c.txt"; git -C "$ABW" add -A; git -C "$ABW" commit -qm "agent: c.txt"
+git -C "$ABW" checkout -q main
+# The lead's own commits: new.txt and p1.txt re-committed, c.txt landed then edited further,
+# plus an unrelated later change so origin/main is not just the branch tips.
+printf 'agent line\n' > "$ABW/new.txt"; printf 'landed\n' > "$ABW/p1.txt"
+printf 'agent version\n' > "$ABW/c.txt"
+git -C "$ABW" add -A; git -C "$ABW" commit -qm "lead: land the agents' work"
+printf 'lead edit\n' > "$ABW/c.txt"; printf 'y\n' > "$ABW/g.txt"
+git -C "$ABW" add -A; git -C "$ABW" commit -qm "lead: later edits"
+git clone -q --bare "$ABW" "$TMPD/ab-bare"
+AB="$TMPD/ab-clone"; git clone -q "$TMPD/ab-bare" "$AB"; gitc "$AB"
+for b in absorbed partial conflicting; do git -C "$AB" branch -q "$b" "origin/$b"; done
+git -C "$AB" worktree add -q "$TMPD/ab-wt" absorbed
+
+out="$(GH_STUB_UNAUTH=1 "$WRAP" scan "$AB" 2>&1)"
+chk_has "absorbed: scan names it safe without gh" "$out" \
+  "absorbed  [ABSORBED: content already on origin/main, safe to -D]"
+chk_has "absorbed: a partial landing is left" "$out" "partial  [NOT merged / unknown: LEAVE]"
+chk_has "absorbed: a branch main edited since is left" "$out" "conflicting  [NOT merged / unknown: LEAVE]"
+
+out="$(GH_STUB_UNAUTH=1 "$WRAP" apply --worktrees "$AB" 2>&1)"
+chk_has "absorbed: dry run would remove the worktree" "$out" \
+  "WOULD remove worktree $TMPD_P/ab-wt [absorbed, unlocked] and delete absorbed (content already on origin/main)"
+
+out="$(GH_STUB_UNAUTH=1 "$WRAP" apply --apply --worktrees "$AB" 2>&1)"
+chk "absorbed: the worktree is gone" "$([ ! -d "$TMPD/ab-wt" ]; echo $?)"
+chk "absorbed: the branch is gone" \
+  "$(git -C "$AB" show-ref --verify --quiet refs/heads/absorbed && echo 1 || echo 0)"
+chk "absorbed: the partial branch stays" \
+  "$(git -C "$AB" show-ref --verify --quiet refs/heads/partial; echo $?)"
+chk "absorbed: the conflicting branch stays" \
+  "$(git -C "$AB" show-ref --verify --quiet refs/heads/conflicting; echo $?)"
+
+# The branch sweep holds the same proof: a bare absorbed branch, no worktree, is deleted.
+git -C "$AB" branch -q absorbed2 "origin/absorbed"
+out="$(GH_STUB_UNAUTH=1 "$WRAP" apply --apply "$AB" 2>&1)"
+chk_has "absorbed: the branch sweep names the proof" "$out" \
+  "delete absorbed2 (content already on origin/main)"
+chk "absorbed: the branch sweep deleted it" \
+  "$(git -C "$AB" show-ref --verify --quiet refs/heads/absorbed2 && echo 1 || echo 0)"
+
+echo "--- absorbed: merge drivers, a later edit, and a shadowing tag never fake the proof"
+# Each shape a merge-based check got wrong in review. The proof compares trees, so no
+# .gitattributes driver runs and no branch-only content can read as landed.
+ADW="$TMPD/ad-work"; mkdir -p "$ADW"; git -C "$ADW" init -q -b main; gitc "$ADW"
+printf 'o.txt merge=keepours\nu.txt merge=union\n' > "$ADW/.gitattributes"
+printf 'one\n' > "$ADW/o.txt"; printf 'a\nb\nc\n' > "$ADW/u.txt"
+printf 'l1\nl2\nl3\nl4\nl5\nl6\n' > "$ADW/e.txt"
+git -C "$ADW" add -A; git -C "$ADW" commit -qm base
+for b in driver uniondel lateredit shadowed; do git -C "$ADW" branch "$b"; done
+git -C "$ADW" checkout -q driver
+printf 'one\nAGENT ONLY\n' > "$ADW/o.txt"; git -C "$ADW" commit -qam "agent: o.txt"
+git -C "$ADW" checkout -q uniondel
+printf 'a\nc\n' > "$ADW/u.txt"; git -C "$ADW" commit -qam "agent: drop b"
+git -C "$ADW" checkout -q lateredit
+printf 'l1 agent\nl2\nl3\nl4\nl5\nl6\n' > "$ADW/e.txt"; git -C "$ADW" commit -qam "agent: e.txt"
+git -C "$ADW" checkout -q shadowed
+printf 'never landed\n' > "$ADW/s.txt"; git -C "$ADW" add -A; git -C "$ADW" commit -qm "agent: s.txt"
+git -C "$ADW" checkout -q main
+printf 'one\nmain line\n' > "$ADW/o.txt"; printf 'a\nB\nc\n' > "$ADW/u.txt"
+printf 'l1 agent\nl2\nl3\nl4\nl5\nl6 main\n' > "$ADW/e.txt"
+git -C "$ADW" commit -qam "main: edits"
+git -C "$ADW" tag shadowed main
+git clone -q --bare "$ADW" "$TMPD/ad-bare"
+AD="$TMPD/ad-clone"; git clone -q "$TMPD/ad-bare" "$AD"; gitc "$AD"
+git -C "$AD" config merge.keepours.driver true
+for b in driver uniondel lateredit shadowed; do git -C "$AD" branch -q "$b" "origin/$b"; done
+git -C "$AD" worktree add -q "$TMPD/ad-wt-shadowed" shadowed
+
+out="$(GH_STUB_UNAUTH=1 "$WRAP" scan "$AD" 2>&1)"
+for b in driver uniondel lateredit; do
+  chk_has "absorbed: $b stays LEAVE" "$out" "$b  [NOT merged / unknown: LEAVE]"
+done
+out="$(GH_STUB_UNAUTH=1 "$WRAP" apply --worktrees "$AD" 2>&1)"
+chk_no "absorbed: a tag named like the branch does not prove it" "$out" \
+  "and delete shadowed (content already on origin/main)"
+chk_no "absorbed: nor does the ancestor proof take the tag for the branch" "$out" \
+  "and delete shadowed (ancestor of origin/main)"
+out="$(GH_STUB_UNAUTH=1 "$WRAP" apply --apply --worktrees "$AD" 2>&1)"
+chk "absorbed: the tag-shadowed worktree survives apply" "$([ -d "$TMPD/ad-wt-shadowed" ]; echo $?)"
+chk "absorbed: the tag-shadowed branch survives apply" \
+  "$(git -C "$AD" show-ref --verify --quiet refs/heads/shadowed; echo $?)"
+out="$(GH_STUB_UNAUTH=1 "$WRAP" apply --apply "$AD" 2>&1)"
+for b in driver uniondel lateredit; do
+  chk "absorbed: the $b branch survives apply" \
+    "$(git -C "$AD" show-ref --verify --quiet "refs/heads/$b"; echo $?)"
+done
+
+echo "--- absorbed: a long diff or a grep error never reads as absorbed"
+# Round-2 review: `! printf | grep -q` under pipefail returned 141 when grep matched early and
+# its writer died on SIGPIPE, so an unlanded branch read as absorbed once main's diff passed
+# about 64 KB. A non-UTF-8 path made BSD grep exit 2, which the negation also accepted.
+ALW="$TMPD/al-work"; mkdir -p "$ALW/many"; git -C "$ALW" init -q -b main; gitc "$ALW"
+printf 'base\n' > "$ALW/base.txt"; git -C "$ALW" add -A; git -C "$ALW" commit -qm base
+git -C "$ALW" branch longdiff; git -C "$ALW" branch badbytes
+git -C "$ALW" checkout -q longdiff
+printf 'AGENT ONLY WORK\n' > "$ALW/a.txt"; git -C "$ALW" add -A; git -C "$ALW" commit -qm "agent: a.txt"
+git -C "$ALW" checkout -q badbytes
+# APFS refuses a non-UTF-8 file name, so the path goes in through the index, never the disk.
+ALBLOB="$(printf 'agent\n' | git -C "$ALW" hash-object -w --stdin)"
+git -C "$ALW" update-index --add --cacheinfo "100644,${ALBLOB},$(printf 'caf\351.txt')"
+git -C "$ALW" commit -qm "agent: latin-1 name"
+git -C "$ALW" reset -q --hard
+git -C "$ALW" checkout -q main
+# 3000 paths of about 40 bytes each puts main's diff well past a 64 KB pipe buffer, and the
+# branch's a.txt sorts ahead of all of them.
+i=0; while [ "$i" -lt 3000 ]; do
+  printf 'x\n' > "$ALW/many/unrelated-file-number-$(printf '%05d' "$i").txt"; i=$((i + 1))
+done
+git -C "$ALW" add -A; git -C "$ALW" commit -qm "main: many unrelated files"
+git clone -q --bare "$ALW" "$TMPD/al-bare"
+AL="$TMPD/al-clone"; git clone -q "$TMPD/al-bare" "$AL"; gitc "$AL"
+git -C "$AL" config core.quotePath false
+for b in longdiff badbytes; do git -C "$AL" branch -q "$b" "origin/$b"; done
+chk "absorbed: the latin-1 fixture has its own commit" \
+  "$([ "$(git -C "$AL" rev-list --count origin/main..badbytes)" -eq 1 ]; echo $?)"
+chk "absorbed: main's diff is past 64 KB" \
+  "$([ "$(git -C "$AL" diff --name-only longdiff origin/main | wc -c)" -gt 65536 ]; echo $?)"
+
+out="$(GH_STUB_UNAUTH=1 "$WRAP" scan "$AL" 2>&1)"
+chk_has "absorbed: an early match in a long diff stays LEAVE" "$out" "longdiff  [NOT merged / unknown: LEAVE]"
+chk_has "absorbed: a non-UTF-8 path stays LEAVE" "$out" "badbytes  [NOT merged / unknown: LEAVE]"
+out="$(GH_STUB_UNAUTH=1 "$WRAP" apply --apply "$AL" 2>&1)"
+for b in longdiff badbytes; do
+  chk "absorbed: the $b branch survives apply" \
+    "$(git -C "$AL" show-ref --verify --quiet "refs/heads/$b"; echo $?)"
+done
+
+echo "--- absorbed: diff.relative, and a landed non-UTF-8 path"
+# Round 3: diff.relative with a subdirectory <repo> dropped the unlanded top-level path from
+# both lists. And a Latin-1 path that DID land must still read absorbed under LC_ALL=C.
+ARW="$TMPD/ar-work"; mkdir -p "$ARW/sub"; git -C "$ARW" init -q -b main; gitc "$ARW"
+printf 'base\n' > "$ARW/sub/base"; git -C "$ARW" add -A; git -C "$ARW" commit -qm base
+git -C "$ARW" branch relhide; git -C "$ARW" branch latinok
+git -C "$ARW" checkout -q relhide
+printf 'landed\n' > "$ARW/sub/a"; printf 'never landed\n' > "$ARW/top"
+git -C "$ARW" add -A; git -C "$ARW" commit -qm "agent: sub/a and top"
+git -C "$ARW" checkout -q latinok
+ARBLOB="$(printf 'latin\n' | git -C "$ARW" hash-object -w --stdin)"
+git -C "$ARW" update-index --add --cacheinfo "100644,${ARBLOB},$(printf 'caf\351.txt')"
+git -C "$ARW" commit -qm "agent: latin-1 name"; git -C "$ARW" reset -q --hard
+git -C "$ARW" checkout -q main
+printf 'landed\n' > "$ARW/sub/a"; git -C "$ARW" add -A
+git -C "$ARW" update-index --add --cacheinfo "100644,${ARBLOB},$(printf 'caf\351.txt')"
+git -C "$ARW" commit -qm "main: land sub/a and the latin-1 file"; git -C "$ARW" reset -q --hard
+git clone -q --bare "$ARW" "$TMPD/ar-bare"
+AR="$TMPD/ar-clone"; git clone -q "$TMPD/ar-bare" "$AR"; gitc "$AR"
+git -C "$AR" config diff.relative true; git -C "$AR" config core.quotePath false
+for b in relhide latinok; do git -C "$AR" branch -q "$b" "origin/$b"; done
+out="$(GH_STUB_UNAUTH=1 "$WRAP" scan "$AR/sub" 2>&1)"
+chk_has "absorbed: diff.relative from a subdirectory stays LEAVE" "$out" \
+  "relhide  [NOT merged / unknown: LEAVE]"
+chk_has "absorbed: a landed non-UTF-8 path reads absorbed" "$out" \
+  "latinok  [ABSORBED: content already on origin/main, safe to -D]"
+out="$(GH_STUB_UNAUTH=1 "$WRAP" apply --apply "$AR/sub" 2>&1)"
+chk "absorbed: the relhide branch survives apply" \
+  "$(git -C "$AR" show-ref --verify --quiet refs/heads/relhide; echo $?)"
+
+echo "--- absorbed: no free descriptor never reads as absorbed"
+# Round 4: with a <(...) operand, a process that could not make a pipe lost the operand
+# entirely, grep read stdin, found nothing, and exited 1: absorbed. The comparison is pure
+# bash now. Source the real helper and starve it of descriptors, for both bash versions.
+ABS_FN="$(sed -n '/^_absorbed() {/,/^}/p' "$KIT_DIR/lib/wrap/wrap.sh")"
+# The limit where git still runs but a pipe cannot be made differs per bash version, so sweep
+# it: every limit must fail closed.
+for sh in /bin/bash bash; do
+  opened=""
+  for n in 4 5 6 7 8 9 10 11 12; do
+    "$sh" -c "$ABS_FN"'
+      ( ulimit -n "$2"; _absorbed "$1" main refs/heads/longdiff </dev/null )' _ "$AL" "$n" \
+      2>/dev/null && opened="$opened $n"
+  done
+  chk "absorbed: descriptor exhaustion stays LEAVE under $sh (opened at:${opened:- none})" \
+    "$([ -z "$opened" ]; echo $?)"
+done
+
+echo "--- absorbed: a backslash before an invalid byte, in a UTF-8 locale"
+# Round 5: with core.quotePath=false, bash 5 in a UTF-8 locale cut the changed list at a
+# backslash followed by an invalid byte, so the unlanded zz below was never compared. bash
+# takes an ASCII fast path unless the string also holds a valid multibyte character, hence aé.
+AQW="$TMPD/aq-work"; mkdir -p "$AQW"; git -C "$AQW" init -q -b main; gitc "$AQW"
+printf 'base\n' > "$AQW/base"; git -C "$AQW" add -A; git -C "$AQW" commit -qm base
+git -C "$AQW" branch quotecut
+AQBLOB="$(printf 'q\n' | git -C "$AQW" hash-object -w --stdin)"
+AQPATH="$(printf 'b\\\351\\x')"; AQUTF="$(printf 'a\303\251')"
+# Index-only commits: APFS cannot hold the odd name on disk, so a checkout, reset --hard, or
+# add -A would silently stage its deletion and the fixture would stop testing anything.
+aq_commit() { # aq_commit <branch> <message> <path>...
+  local br="$1" msg="$2" tree commit; shift 2
+  GIT_INDEX_FILE="$TMPD/aq-index" git -C "$AQW" read-tree "$br"
+  for f in "$@"; do
+    GIT_INDEX_FILE="$TMPD/aq-index" git -C "$AQW" update-index --add --cacheinfo "100644,${AQBLOB},${f}"
+  done
+  tree="$(GIT_INDEX_FILE="$TMPD/aq-index" git -C "$AQW" write-tree)"
+  commit="$(git -C "$AQW" commit-tree "$tree" -p "$br" -m "$msg")"
+  git -C "$AQW" update-ref "refs/heads/$br" "$commit"
+}
+aq_commit quotecut "agent: odd paths and zz" "$AQUTF" "$AQPATH" zz
+aq_commit main "main: land the odd paths" "$AQUTF" "$AQPATH"
+git clone -q --bare "$AQW" "$TMPD/aq-bare"
+AQ="$TMPD/aq-clone"; git clone -q --no-checkout "$TMPD/aq-bare" "$AQ"; gitc "$AQ"
+git -C "$AQ" config core.quotePath false; git -C "$AQ" branch -q quotecut origin/quotecut
+chk "absorbed: the branch tip holds both odd paths and zz" \
+  "$([ "$(git -C "$AQ" -c core.quotePath=true ls-tree --name-only origin/quotecut | grep -cE '351|zz|303')" -eq 3 ]; echo $?)"
+out="$(LC_ALL=en_US.UTF-8 GH_STUB_UNAUTH=1 "$WRAP" scan "$AQ" 2>&1)"
+chk_has "absorbed: a backslash before an invalid byte stays LEAVE" "$out" \
+  "quotecut  [NOT merged / unknown: LEAVE]"
+
 echo
 if [ "$FAIL" -gt 0 ]; then echo "test-wrap: $PASS passed, $FAIL FAILED of $TOTAL" >&2; exit 1; fi
 echo "test-wrap: all $PASS passed"

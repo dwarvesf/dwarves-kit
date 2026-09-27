@@ -40,7 +40,7 @@
 # repo, so a test or real-repo run of the bare form alone misses that path. The first origin
 # sweep shipped skipping `--own` and every shared repo kept its merged heads.
 #
-# The write set is closed: branch delete under two proofs, `apply`'s origin delete of
+# The write set is closed: branch delete under three proofs, `apply`'s origin delete of
 # merged branches, each leased to the tip it read (knob wrap.delete_merged_remote_branches),
 # worktree remove under
 # --worktrees, pull --ff-only on the default branch and its pull-past-dirty stash, the
@@ -278,6 +278,10 @@ _scan_repo() {
       echo "     ${b}  [SAFE-d: ancestor of origin/${def}]"
       continue
     fi
+    if _absorbed "$repo" "$def" "refs/heads/${b}"; then
+      echo "     ${b}  [ABSORBED: content already on origin/${def}, safe to -D]"
+      continue
+    fi
     if [ "$ghs" != "ok" ]; then
       echo "     ${b}  [NOT merged / unknown: LEAVE]"
       continue
@@ -418,18 +422,63 @@ run() {
 _scanned_tip() { awk -v b="$1" '$1 == b { print $2 }' "$TIPS_FILE"; }
 
 # _merge_proof <repo> <default branch> <gh state> <branch> -- prints the proof that the branch
-# already reached the default branch and exits 0; exit 1 when no proof exists. The two proofs are
-# the same two `_apply_branches` deletes a branch under: a plain ancestor, or the gh squash proof.
+# already reached the default branch and exits 0; exit 1 when no proof exists. The three proofs
+# are the same three `_apply_branches` deletes a branch under: a plain ancestor, absorbed content,
+# or the gh squash proof.
 _merge_proof() {
   local repo="$1" def="$2" ghs="$3" b="$4" tip json
-  if git -C "$repo" merge-base --is-ancestor "$b" "origin/${def}" 2>/dev/null; then
+  # refs/heads/: a bare name resolves a same-named tag first, and a tag on the default branch
+  # once proved an unlanded worktree branch "merged".
+  if git -C "$repo" merge-base --is-ancestor "refs/heads/${b}" "origin/${def}" 2>/dev/null; then
     printf 'ancestor of origin/%s\n' "$def"; return 0
+  fi
+  if _absorbed "$repo" "$def" "refs/heads/${b}"; then
+    printf 'content already on origin/%s\n' "$def"; return 0
   fi
   [ "$ghs" = "ok" ] || return 1
   tip="$(git -C "$repo" rev-parse "$b" 2>/dev/null)"
   json="$(_squash_json "$(_origin_url "$repo")" "$b")"
   [ "$(_squash_verdict "$json" "$tip" "$def")" = "OK" ] || return 1
   printf 'squash-merged per gh\n'
+}
+
+# _absorbed <repo> <default branch> <commit> -- 0 when every path the commit changed since its
+# merge base with origin/<def> is byte-identical (same blob and mode, or absent on both) at the
+# commit and on origin/<def>. It covers a subagent branch whose lead re-committed the work under
+# its own PR: new hashes, no PR for the branch, so neither other proof can ever hold. It never
+# merges: a merge would run .gitattributes drivers, and keep-ours or union can return the
+# default branch's side while the branch's edit exists nowhere else. Plain tree diffs read no
+# attributes and write no objects. Like the squash proof, it guarantees the branch's net change,
+# not content its own intermediate commits added and removed; `branch -D` prints the tip sha.
+# Callers pass a full ref or a sha, so a tag named like the branch cannot stand in for it.
+# --no-relative: diff.relative with a subdirectory <repo> would drop paths from both lists.
+_absorbed() {
+  local repo="$1" def="$2" tip="$3" main base changed differ rest path nl=$'\n'
+  # core.quotePath=true makes both lists pure ASCII: bash 5 in a UTF-8 locale truncates a
+  # string at a backslash before an invalid byte, which once dropped an overlapping path.
+  # LC_ALL=C also halves the loop's cost.
+  local LC_ALL=C
+  local -a g=(git -C "$repo" --no-replace-objects -c core.quotePath=true)
+  main="$("${g[@]}" rev-parse --verify --quiet "refs/remotes/origin/${def}^{commit}")" || return 1
+  tip="$("${g[@]}" rev-parse --verify --quiet "${tip}^{commit}")" || return 1
+  base="$("${g[@]}" merge-base "$main" "$tip" 2>/dev/null)" || return 1
+  changed="$("${g[@]}" diff --no-relative --no-renames --ignore-submodules=none --name-only \
+    "$base" "$tip")" || return 1
+  [ -n "$changed" ] || return 1
+  differ="$("${g[@]}" diff --no-relative --no-renames --ignore-submodules=none --name-only \
+    "$tip" "$main")" || return 1
+  # Both lists use git's quoted path form, one path per line, so an odd path still compares
+  # exactly. The comparison is pure bash: no pipe, file, or subprocess that could fail and read
+  # as "no overlap". A pipe into `grep -q` once read SIGPIPE's 141 as absorbed; a here-string
+  # temp file and a <(...) operand can each vanish (full disk, no free descriptor) and leave
+  # grep reading nothing. A quoted "$path" in a case pattern matches literally.
+  rest="$changed"
+  while [ -n "$rest" ]; do
+    path="${rest%%"$nl"*}"
+    case "$rest" in *"$nl"*) rest="${rest#*"$nl"}" ;; *) rest="" ;; esac
+    case "$nl$differ$nl" in *"$nl$path$nl"*) return 1 ;; esac
+  done
+  return 0
 }
 
 # _wt_locked <worktree path> -- 0 when the worktree carries a lock. git keeps the lock as a
@@ -587,6 +636,10 @@ _apply_branches() {
     # that tracks another ref or nothing even though origin/<def> already holds its tip.
     if git -C "$repo" merge-base --is-ancestor "$b" "origin/${def}" 2>/dev/null; then
       run "$repo" "delete ${b} (ancestor of origin/${def})" git -C "$repo" branch -D "$b"
+      continue
+    fi
+    if _absorbed "$repo" "$def" "$tip"; then
+      run "$repo" "delete ${b} (content already on origin/${def})" git -C "$repo" branch -D "$b"
       continue
     fi
     if [ "$ghs" != "ok" ]; then

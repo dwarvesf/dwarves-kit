@@ -1,0 +1,29 @@
+# Implementation notes: wrap-absorbed-proof (SPEC-331)
+
+Delta from the spec only.
+
+## Deviations
+
+- **Mechanism changed after validation.** The first build used `git merge-tree --write-tree` and compared the result with `origin/<default>^{tree}`. Validation and a security review each reproduced a data-loss case: merge-tree runs `.gitattributes` merge drivers. A keep-ours driver returns the default branch's side. `merge=union` keeps the default branch's lines and hides a line the branch deleted. The rewrite never merges. It lists every path the branch changed since its merge base, then requires each path to be byte-identical (same blob id and mode, or absent on both) at the branch tip and on `origin/<default>`. Plain tree diffs read no attributes, run no drivers, and write no objects.
+- **Stricter than the merge-tree form.** A branch whose file the default branch later edited, even in a different hunk, is now left alone. Accepted: that case is the manual "landed then evolved" call the spec already puts out of scope.
+- **Contract 2 narrowed.** Content the branch added and removed in its own intermediate commits is on no ref after the delete. The gh squash proof has always accepted exactly this: a squash-merged branch's intermediate states are gone too. `branch -D` prints the tip sha, so the commits stay recoverable until gc.
+
+- **Revision 3: exact grep exit, no negated pipeline.** Revision 2 compared the path lists with `! printf | grep -qxF -f`. Under the script's `pipefail`, an early `grep -q` match SIGPIPEd the `printf`, the pipeline returned 141, and the `!` read that as absorbed. It fired once main's diff passed about 64 KB with the branch's path early. Today's real ops-toolkit archives run 47 to 68 KB. BSD grep's exit 2 on a non-UTF-8 path (with `core.quotePath=false`) was also negated into absorbed. Revision 3 feeds grep a here-string, drops `-q`, pins `LC_ALL=C`, and accepts only exit 1. A match and an error both fail closed.
+- **Test fixture: the Latin-1 path goes in through `update-index --cacheinfo`.** APFS refuses a non-UTF-8 file name at the filesystem, so the first fixture's commit silently never happened. The branch sat on the base commit, the ancestor proof deleted it, and the test failed for the wrong reason. A fixture check now asserts the branch owns one commit.
+
+- **Revision 4: file operands, `--no-relative`, and the ancestor proof's tag bug.** Round 3 reproduced two more fail-open paths. First, `diff.relative=true` with a subdirectory `<repo>` dropped the unlanded top-level path from both lists. Second, a here-string whose temp file cannot be written (a full disk) makes the command exit 1 without grep running. Both lists are now grep file operands, so an open failure exits 2, and both diffs pin `--no-relative` and `--no-replace-objects`. Round 3 also showed the older ancestor proof in `_merge_proof` resolving a same-named tag: a tag on the default branch "proved" an unlanded worktree branch merged, and apply removed it. That is a pre-existing bug, fixed here with `refs/heads/<b>` because the row-9 test had passed while the deletion happened.
+
+- **Revision 5: pure-bash comparison.** Round 4 reproduced a `<(...)` operand vanishing when bash cannot make a pipe (descriptor limit): grep then read stdin, found nothing, and exited 1. Each I/O-based comparison so far had its own fail-open shape, so revision 5 does no I/O after the two git diffs: it walks the changed list with parameter expansion and matches each path in a `case` pattern. The trade is O(changed x differ) string scanning. Round 5 timed it against a 114 KB differ: 1,000 changed paths take 0.8 to 1.2 s under `LC_ALL=C`, 3,000 take 5 to 6 s, 5,000 take 11 to 14 s. Agent-sized branches are trivial; a vendoring-sized branch makes `wrap scan` slow, never wrong.
+- **Revision 6: ASCII-only lists.** Round 5 reproduced bash 5.3 in a UTF-8 locale truncating a string at a backslash before an invalid byte, which git emits only under `core.quotePath=false`. The truncated changed list skipped an overlapping path and read absorbed. The helper forces `core.quotePath=true` (every non-ASCII byte becomes an octal escape) and runs under `LC_ALL=C`.
+- **Scope cut after round 4.** Round 4's other two criticals are the older proofs resolving `origin/<default>` and the branch name loosely (a tag or local branch named `origin/main`, a tag-shadowed squash proof). Both reproduce on master's code. They need a sweep across the whole file's proof and tip reads, so they go to a follow-up change rather than widening this one a fifth time.
+- **Leaked git environment** (`GIT_DIR`, `GIT_WORK_TREE`, `GIT_CONFIG_*` from a hook): round 4 found no loss, but wrap never unsets them. The follow-up takes it too.
+
+## Decisions not in the spec
+
+- The proof takes a commit, not a branch name. Callers pass `refs/heads/<b>` or the tip sha they already read, so a tag named like the branch cannot redirect it. Revision 4 also fixed the older ancestor proof in `_merge_proof`, the worktree path. `scan` still names an ambiguous branch `heads/<b>` and so checks `refs/heads/heads/<b>`, which fails closed there. In the worktree sweep the same ambiguity also switches off the tip-moved guard (`_scanned_tip` misses). That is pre-existing, and the follow-up takes it.
+- `refs/remotes/origin/<default>` is spelled in full inside the new helper, so a local branch literally named `origin/<default>` cannot stand in for the remote.
+- `--ignore-submodules=none` and `--no-renames` are pinned, so neither a `diff.ignoreSubmodules` setting nor rename pairing can hide a changed path.
+
+## Open questions
+
+- The race that review flagged (a commit landing between the proof and `branch -D`) exists for every proof in `_apply_branches`. A leased `git update-ref -d refs/heads/<b> <tip>` would close it for all three. It is left for a separate change because it touches the older proofs too.

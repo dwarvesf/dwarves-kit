@@ -1,0 +1,123 @@
+# Verification: wrap accepts absorbed content as a merge proof
+
+Spec: `docs/specs/SPEC-331-wrap-absorbed-proof.md`. Change: `lib/wrap/wrap.sh` `_absorbed`, wired into `_merge_proof`, `_apply_branches`, and the `scan` verdict.
+
+| Check | Command | Result |
+|---|---|---|
+| Suite | `bash tests/test-wrap.sh` | `test-wrap: all 1436 passed` (1403 before, plus 33 new) |
+| Negative control | `bash lib/gate/negctl.sh "$PWD" "bash tests/test-wrap.sh" "<force _absorbed to return 1>"` | green, RED under mutation, green after restore, `Verdict: PASS` |
+| Real flow | new and installed `bin/wrap scan` and `apply` dry run on the real ops-toolkit checkout | below |
+
+## Real flow
+
+The ops-toolkit checkout held 20 `agent-*` worktrees on `worktree-agent-<id>` branches that no proof covered. Their branches were archived to origin as `archive/<branch>-20260927` before the worktrees were removed by hand. For this run, six archives were restored as local branches. A trial merge called four of them absorbed; the tree-identity proof (revision 2) calls two absorbed, because `origin/main` later edited files the other two touched.
+
+New `wrap scan` (this branch; revision 2 and revision 4 print the same):
+
+```
+     proof-a0dd8e3cbf62e339b  [ABSORBED: content already on origin/main, safe to -D]
+     proof-a4039cfab8f83e3cc  [NOT merged / unknown: LEAVE]
+     proof-a7c5f5dbec7a6c956  [NOT merged / unknown: LEAVE]
+     proof-aa165da2cb97cc523  [NOT merged / unknown: LEAVE]
+     proof-acf7a10e552031edd  [ABSORBED: content already on origin/main, safe to -D]
+     proof-adfa1398d3a81946f  [NOT merged / unknown: LEAVE]
+```
+
+Installed `wrap scan` (master, 2.2.0), same checkout, same branches: all six `[NOT merged / unknown: LEAVE]`.
+
+New `wrap apply` dry run (branch sweep):
+
+```
+     [DRY-RUN] delete proof-a0dd8e3cbf62e339b (content already on origin/main)
+     SKIP proof-a4039cfab8f83e3cc: no merged PR found for this head
+     SKIP proof-a7c5f5dbec7a6c956: no merged PR found for this head
+     SKIP proof-aa165da2cb97cc523: no merged PR found for this head
+     [DRY-RUN] delete proof-acf7a10e552031edd (content already on origin/main)
+     SKIP proof-adfa1398d3a81946f: no merged PR found for this head
+```
+
+The six temporary branches were deleted afterwards; their archives stay on origin.
+
+## Revision 1 regression check
+
+Revision 1 proved absorption with `git merge-tree --write-tree`. Validation and review each reproduced data loss through `.gitattributes` merge drivers. The revision 2 attack cases run against revision 1's `lib/wrap/wrap.sh` (`git show e6fcb91a:lib/wrap/wrap.sh`) go red, and green against revision 2:
+
+```
+  FAIL absorbed: driver stays LEAVE
+  FAIL absorbed: uniondel stays LEAVE
+  FAIL absorbed: lateredit stays LEAVE
+  FAIL absorbed: the driver branch survives apply
+  FAIL absorbed: the uniondel branch survives apply
+  FAIL absorbed: the lateredit branch survives apply
+test-wrap: 1414 passed, 6 FAILED of 1420
+```
+
+## Revision 2 regression check
+
+Revision 2 compared the path lists with `! printf | grep -qxF -f` under `pipefail`. The revision 3 cases run against revision 2's `lib/wrap/wrap.sh` (`git show 0e0668f2:lib/wrap/wrap.sh`) go red, and green against revision 3:
+
+```
+  FAIL absorbed: an early match in a long diff stays LEAVE
+  FAIL absorbed: a non-UTF-8 path stays LEAVE
+  FAIL absorbed: the longdiff branch survives apply
+  FAIL absorbed: the badbytes branch survives apply
+test-wrap: 1422 passed, 4 FAILED of 1426
+```
+
+## Revision 3 regression check
+
+The revision 4 cases run against revision 3's `lib/wrap/wrap.sh` (`git show a90af4ff:lib/wrap/wrap.sh`) go red, and green against revision 4:
+
+```
+  FAIL absorbed: nor does the ancestor proof take the tag for the branch
+  FAIL absorbed: the tag-shadowed worktree survives apply
+  FAIL absorbed: the tag-shadowed branch survives apply
+  FAIL absorbed: diff.relative from a subdirectory stays LEAVE
+  FAIL absorbed: a landed non-UTF-8 path reads absorbed
+  FAIL absorbed: the relhide branch survives apply
+test-wrap: 1426 passed, 6 FAILED of 1432
+```
+
+The first three are the pre-existing ancestor proof: on master too, a tag named like an unlanded worktree branch proves it merged and `apply --worktrees` removes it.
+
+## Revision 4 regression check
+
+The descriptor sweep (limits 4 to 12) run against revision 4's `lib/wrap/wrap.sh` (`git show 743ad710:lib/wrap/wrap.sh`) finds a limit where the helper reads an unlanded branch as absorbed under each bash; revision 5 fails closed at every limit:
+
+```
+  FAIL absorbed: descriptor exhaustion stays LEAVE under /bin/bash (opened at: 5)
+  FAIL absorbed: descriptor exhaustion stays LEAVE under bash (opened at: 6)
+test-wrap: 1432 passed, 2 FAILED of 1434
+```
+
+## Revision 5 regression check
+
+The odd-path case (a landed `b\<E9>\x` beside a valid `aé`, `core.quotePath=false`, `LC_ALL=en_US.UTF-8`, bash 5.3) run against revision 5's `lib/wrap/wrap.sh` (`git show 72fa403a:lib/wrap/wrap.sh`) reads the unlanded branch as absorbed; revision 6 leaves it:
+
+```
+  FAIL absorbed: a backslash before an invalid byte stays LEAVE
+test-wrap: 1435 passed, 1 FAILED of 1436
+```
+
+## Test plan coverage
+
+| Row | Run |
+|---|---|
+| 1 absorbed branch with a worktree | `test-wrap.sh` absorbed section: scan, dry run, apply removal; real flow above |
+| 2 partial landing | "a partial landing is left", "the partial branch stays" |
+| 3 landed then edited, same lines | "a branch main edited since is left"; real flow `a7c5f5`, `adfa13` |
+| 4 absorbed branch, no worktree | "the branch sweep names the proof", "the branch sweep deleted it" |
+| 5 without gh | every absorbed case runs with `GH_STUB_UNAUTH=1` |
+| 6 keep-ours driver | "driver stays LEAVE", "the driver branch survives apply" |
+| 7 union line deletion | "uniondel stays LEAVE", "the uniondel branch survives apply" |
+| 8 landed then edited, another hunk | "lateredit stays LEAVE", "the lateredit branch survives apply"; real flow `a4039c`, `aa165d` |
+| 9 shadowing tag | "a tag named like the branch does not prove it" |
+| 10 existing cases unchanged | suite 1403 to 1436, all green |
+| 11 negative control | `negctl.sh` `Verdict: PASS` |
+| 12 long diff, early match | "an early match in a long diff stays LEAVE", "the longdiff branch survives apply" |
+| 13 non-UTF-8 path | "a non-UTF-8 path stays LEAVE", "the badbytes branch survives apply" |
+| 14 diff.relative | "diff.relative from a subdirectory stays LEAVE", "the relhide branch survives apply" |
+| 15 landed non-UTF-8 path | "a landed non-UTF-8 path reads absorbed" |
+| 16 tag-shadowed worktree | "nor does the ancestor proof take the tag", "the tag-shadowed worktree survives apply", "the tag-shadowed branch survives apply" |
+| 17 descriptor exhaustion | "descriptor exhaustion stays LEAVE" under /bin/bash and PATH bash, limits 4 to 12 |
+| 18 backslash before an invalid byte | "the branch tip holds both odd paths and zz", "a backslash before an invalid byte stays LEAVE" |
