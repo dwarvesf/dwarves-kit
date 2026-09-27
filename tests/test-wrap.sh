@@ -50,6 +50,13 @@ cat > "$TMPD/stub/gh" <<'STUB'
 #!/usr/bin/env bash
 # gh stub: answers exactly what wrap.sh asks and records every call.
 printf '%s\n' "$*" >> "${GH_STUB_CALLS:-/dev/null}"
+# A second, additive log: each argument bracketed on its own, so a case that must prove an
+# arg's exact boundaries (a title with internal spaces landed as ONE argv entry, not several)
+# can check it without touching the space-joined $GH_STUB_CALLS format every existing
+# assertion in this file already depends on.
+if [ -n "${GH_STUB_CALLS_QUOTED:-}" ]; then
+  { printf '<%s>' "$@"; printf '\n'; } >> "$GH_STUB_CALLS_QUOTED"
+fi
 sub="${1:-}"; [ $# -gt 0 ] && shift
 case "$sub" in
   auth)
@@ -2515,8 +2522,10 @@ echo "=== land: one hand-made worktree, from a committed branch to landed ==="
 # ===========================================================================
 # Real git throughout, `gh` stubbed: the push, the fast-forward, the worktree removal and
 # the branch delete are the subject, so nothing about the tree state is faked.
-build_land() { # build_land <name> [--modify-base|--union-log] [branch]
+build_land() { # build_land <name> [--modify-base|--union-log] [branch] [commit-subject...]
   local name="$1" mode="${2:-}" branch="${3:-feat/land}" work="$TMPD/ld-work-$1" repo="$TMPD/ld-repo-$1"
+  local nshift=$#; [ "$nshift" -gt 3 ] && nshift=3
+  shift "$nshift"
   mkdir -p "$work"; git -C "$work" init -q; gitc "$work"
   git -C "$work" symbolic-ref HEAD refs/heads/main
   echo base > "$work/base.txt"
@@ -2532,13 +2541,24 @@ build_land() { # build_land <name> [--modify-base|--union-log] [branch]
   git -C "$repo" worktree add -q -b "$branch" "$repo/wt" main >/dev/null 2>&1
   if [ "$mode" = "--modify-base" ]; then
     echo "branch edit" > "$repo/wt/base.txt"
+    git -C "$repo/wt" add -A; git -C "$repo/wt" commit -qm "feat: the landed change"
   elif [ "$mode" = "--union-log" ]; then
     echo "pr change" > "$repo/wt/pr-file.txt"
     printf 'remote entry\nbase entry\n' > "$repo/wt/_meta/LAB_LOG.md"
+    git -C "$repo/wt" add -A; git -C "$repo/wt" commit -qm "feat: the landed change"
+  elif [ $# -gt 0 ]; then
+    # SPEC-326 title-selection fixtures: one trivial commit per subject given, in order,
+    # so a case can seed the exact multi-commit shape its title-pick expectation needs.
+    local i=0 subj
+    for subj in "$@"; do
+      i=$((i + 1))
+      echo "line $i" >> "$repo/wt/multi.txt"
+      git -C "$repo/wt" add -A; git -C "$repo/wt" commit -qm "$subj"
+    done
   else
     echo "pr change" > "$repo/wt/pr-file.txt"
+    git -C "$repo/wt" add -A; git -C "$repo/wt" commit -qm "feat: the landed change"
   fi
-  git -C "$repo/wt" add -A; git -C "$repo/wt" commit -qm "feat: the landed change"
 }
 echo "--- happy path: pushed, PR opened with --head, merged alone, pulled, tidied"
 build_land ok
@@ -2673,6 +2693,168 @@ chk "the pr-file.txt content also landed" \
 chk "the worktree was removed" "$([ ! -e "$LWT_U" ]; echo $?)"
 chk "the branch was deleted" \
   "$(git -C "$LREPO_U" rev-parse --verify feat/land >/dev/null 2>&1 && echo 1 || echo 0)"
+
+# ===========================================================================
+echo "=== land: no-flag title picks the feature commit, not the tip (SPEC-326) ==="
+# ===========================================================================
+echo "--- feature commit in the middle: the doc bookends are skipped"
+build_land title-mid "" feat/land "docs(spec): reserve" "fix(x): the real change" "docs(x): proof"
+LWT_TM="$(cd "$TMPD/ld-repo-title-mid/wt" && pwd -P)"
+: > "$GH_STUB_CALLS"
+GH_QUOTED_MID="$TMPD/gh-calls-quoted-mid.log"; : > "$GH_QUOTED_MID"
+out="$(GH_STUB_OPEN_PRS='[]' GH_STUB_CREATE_NUM=70 GH_STUB_LAND_REPO="$LWT_TM" GH_STUB_LAND_REMOTE="$TMPD/ld-bare-title-mid" \
+  GH_STUB_LAND_BRANCH=feat/land GH_STUB_LAND_DEF=main GH_STUB_CALLS_QUOTED="$GH_QUOTED_MID" \
+  "$WRAP" land "$LWT_TM" 2>&1)"; rc=$?
+chk "title-mid: land exits 0" "$rc"
+chk_has "title-mid: the create call titles from the feature commit" "$(cat "$GH_STUB_CALLS")" \
+  "--title fix(x): the real change"
+chk_no "title-mid: the tip's docs subject is never the title" "$(cat "$GH_STUB_CALLS")" \
+  "--title docs(x): proof"
+chk_has "title-mid: the title landed as ONE argv entry, not word-split" "$(cat "$GH_QUOTED_MID")" \
+  "<--title><fix(x): the real change>"
+
+echo "--- feature commit first: it is also the only non-housekeeping one"
+build_land title-first "" feat/land "fix(x): the real change" "docs(x): proof and changelog"
+LWT_TF="$(cd "$TMPD/ld-repo-title-first/wt" && pwd -P)"
+: > "$GH_STUB_CALLS"
+out="$(GH_STUB_OPEN_PRS='[]' GH_STUB_CREATE_NUM=71 GH_STUB_LAND_REPO="$LWT_TF" GH_STUB_LAND_REMOTE="$TMPD/ld-bare-title-first" \
+  GH_STUB_LAND_BRANCH=feat/land GH_STUB_LAND_DEF=main "$WRAP" land "$LWT_TF" 2>&1)"; rc=$?
+chk "title-first: land exits 0" "$rc"
+chk_has "title-first: titled from the first, non-housekeeping commit" "$(cat "$GH_STUB_CALLS")" \
+  "--title fix(x): the real change"
+
+echo "--- the #771 shape: a later same-type commit never outranks the original (proves --reverse)"
+build_land title-771 "" feat/land "docs(spec): r" "feat(x): the change" "fix(x): review follow-up"
+LWT_771="$(cd "$TMPD/ld-repo-title-771/wt" && pwd -P)"
+: > "$GH_STUB_CALLS"
+out="$(GH_STUB_OPEN_PRS='[]' GH_STUB_CREATE_NUM=90 GH_STUB_LAND_REPO="$LWT_771" GH_STUB_LAND_REMOTE="$TMPD/ld-bare-title-771" \
+  GH_STUB_LAND_BRANCH=feat/land GH_STUB_LAND_DEF=main "$WRAP" land "$LWT_771" 2>&1)"; rc=$?
+chk "title-771: land exits 0" "$rc"
+chk_has "title-771: titled from the original feature commit, oldest first" "$(cat "$GH_STUB_CALLS")" \
+  "--title feat(x): the change"
+chk_no "title-771: the later review-followup commit is never the title" "$(cat "$GH_STUB_CALLS")" \
+  "--title fix(x): review follow-up"
+
+echo "--- every commit ahead is housekeeping: falls back to the OLDEST, never the tip"
+build_land title-hk "" feat/land "docs(x): a" "chore(x): b" "test(x): c" "docs!: d"
+LWT_HK="$(cd "$TMPD/ld-repo-title-hk/wt" && pwd -P)"
+: > "$GH_STUB_CALLS"
+out="$(GH_STUB_OPEN_PRS='[]' GH_STUB_CREATE_NUM=72 GH_STUB_LAND_REPO="$LWT_HK" GH_STUB_LAND_REMOTE="$TMPD/ld-bare-title-hk" \
+  GH_STUB_LAND_BRANCH=feat/land GH_STUB_LAND_DEF=main "$WRAP" land "$LWT_HK" 2>&1)"; rc=$?
+chk "title-hk: land exits 0" "$rc"
+chk_has "title-hk: falls back to the oldest commit ahead" "$(cat "$GH_STUB_CALLS")" "--title docs(x): a"
+chk_no "title-hk: never the newest housekeeping commit" "$(cat "$GH_STUB_CALLS")" "--title chore(x): b"
+chk_no "title-hk: a test-type housekeeping commit is never picked either" "$(cat "$GH_STUB_CALLS")" "--title test(x): c"
+chk_no "title-hk: a bare-bang docs subject is never picked either" "$(cat "$GH_STUB_CALLS")" "--title docs!: d"
+
+echo "--- a non-conventional subject counts as the feature, never treated as housekeeping"
+build_land title-wip "" feat/land "docs(x): a" "wip stuff"
+LWT_WIP="$(cd "$TMPD/ld-repo-title-wip/wt" && pwd -P)"
+: > "$GH_STUB_CALLS"
+out="$(GH_STUB_OPEN_PRS='[]' GH_STUB_CREATE_NUM=73 GH_STUB_LAND_REPO="$LWT_WIP" GH_STUB_LAND_REMOTE="$TMPD/ld-bare-title-wip" \
+  GH_STUB_LAND_BRANCH=feat/land GH_STUB_LAND_DEF=main "$WRAP" land "$LWT_WIP" 2>&1)"; rc=$?
+chk "title-wip: land exits 0" "$rc"
+chk_has "title-wip: the non-conventional subject is picked" "$(cat "$GH_STUB_CALLS")" "--title wip stuff"
+
+echo "--- an explicit --title still wins over a multi-commit branch's feature commit"
+build_land title-flag "" feat/land "docs(spec): reserve" "fix(x): the real change"
+LWT_TFL="$(cd "$TMPD/ld-repo-title-flag/wt" && pwd -P)"
+: > "$GH_STUB_CALLS"
+out="$(GH_STUB_OPEN_PRS='[]' GH_STUB_CREATE_NUM=74 GH_STUB_LAND_REPO="$LWT_TFL" GH_STUB_LAND_REMOTE="$TMPD/ld-bare-title-flag" \
+  GH_STUB_LAND_BRANCH=feat/land GH_STUB_LAND_DEF=main "$WRAP" land "$LWT_TFL" --title "custom title" 2>&1)"; rc=$?
+chk "title-flag: land exits 0" "$rc"
+chk_has "title-flag: the explicit title wins" "$(cat "$GH_STUB_CALLS")" "--title custom title"
+chk_no "title-flag: the walk's own pick never surfaces" "$(cat "$GH_STUB_CALLS")" "--title fix(x): the real change"
+
+echo "--- an adopted PR on a multi-commit branch keeps its own title, no create call at all"
+build_land title-adopt "" feat/land "docs(spec): reserve" "fix(x): the real change"
+LWT_TA="$(cd "$TMPD/ld-repo-title-adopt/wt" && pwd -P)"
+: > "$GH_STUB_CALLS"
+out="$(GH_STUB_OPEN_HEAD_feat_land='[{"number":75,"baseRefName":"main","author":{"login":"me"},"isDraft":false,"isCrossRepository":false}]' \
+  GH_STUB_LAND_REPO="$LWT_TA" GH_STUB_LAND_REMOTE="$TMPD/ld-bare-title-adopt" \
+  GH_STUB_LAND_BRANCH=feat/land GH_STUB_LAND_DEF=main "$WRAP" land "$LWT_TA" 2>&1)"; rc=$?
+chk "title-adopt: land exits 0" "$rc"
+chk_has "title-adopt: adopted, not created" "$out" "adopted PR #75"
+chk_no "title-adopt: never calls pr create" "$(cat "$GH_STUB_CALLS")" "pr create"
+
+echo "--- --no-merges on the WALK: a housekeeping own commit lets a later merge subject through unless excluded"
+build_land title-mrg "" feat/land "docs(x): only"
+LREPO_MRG="$TMPD/ld-repo-title-mrg"; LWT_MRG="$(cd "$LREPO_MRG/wt" && pwd -P)"
+BARE_MRG="$TMPD/ld-bare-title-mrg"
+# Advance the bare remote's main first, so the merge below is a real, two-parent merge and
+# not a no-op fast-forward the branch already contained. The branch's OWN commit is
+# housekeeping on purpose: the walk must skip it and reach the merge commit next, which is
+# exactly the point where --no-merges either excludes it (correct) or lets it through (bug).
+CLONE_MRG="$TMPD/ld-clone-title-mrg-advance"
+git clone -q "$BARE_MRG" "$CLONE_MRG"; gitc "$CLONE_MRG"
+echo "remote moved on" >> "$CLONE_MRG/base.txt"
+git -C "$CLONE_MRG" add -A; git -C "$CLONE_MRG" commit -qm "docs(x): remote advanced"
+git -C "$CLONE_MRG" push -q origin main
+git -C "$LWT_MRG" fetch -q origin main
+git -C "$LWT_MRG" merge -q --no-edit origin/main
+chk "title-mrg: fixture precondition, exactly one real merge commit ahead" \
+  "$([ "$(git -C "$LWT_MRG" rev-list --merges --count origin/main..HEAD)" = "1" ]; echo $?)"
+: > "$GH_STUB_CALLS"
+out="$(GH_STUB_OPEN_PRS='[]' GH_STUB_CREATE_NUM=76 GH_STUB_LAND_REPO="$LWT_MRG" GH_STUB_LAND_REMOTE="$BARE_MRG" \
+  GH_STUB_LAND_BRANCH=feat/land GH_STUB_LAND_DEF=main "$WRAP" land "$LWT_MRG" 2>&1)"; rc=$?
+chk "title-mrg: land exits 0" "$rc"
+chk_has "title-mrg: falls back to the own housekeeping commit, never the merge" "$(cat "$GH_STUB_CALLS")" \
+  "--title docs(x): only"
+chk_no "title-mrg: the merge commit's own subject is never the title" "$(cat "$GH_STUB_CALLS")" "--title Merge"
+
+echo "--- --no-merges on the FALLBACK: a merge before any own commit never surfaces the merge subject"
+FBWORK="$TMPD/ld-work-title-mrgfb"; FBREPO="$TMPD/ld-repo-title-mrgfb"; FBBARE="$TMPD/ld-bare-title-mrgfb"
+mkdir -p "$FBWORK"; git -C "$FBWORK" init -q; gitc "$FBWORK"
+git -C "$FBWORK" symbolic-ref HEAD refs/heads/main
+echo base > "$FBWORK/base.txt"; git -C "$FBWORK" add -A; git -C "$FBWORK" commit -qm base
+git clone -q --bare "$FBWORK" "$FBBARE"
+git clone -q "$FBBARE" "$FBREPO"; gitc "$FBREPO"
+git -C "$FBREPO" remote set-head origin main >/dev/null 2>&1
+git -C "$FBREPO" worktree add -q -b feat/land "$FBREPO/wt" main >/dev/null 2>&1
+LWT_MRGFB="$(cd "$FBREPO/wt" && pwd -P)"
+# The branch owns NO commit yet when it merges: origin/main advances first, the branch
+# merges it in with --no-ff (a real merge, not a fast-forward), and only THEN commits its own
+# housekeeping change. The walk finds nothing (its own commit is housekeeping, the merge is
+# excluded), so this exercises the FALLBACK's own --no-merges, not the walk's.
+FBCLONE="$TMPD/ld-clone-title-mrgfb-advance"
+git clone -q "$FBBARE" "$FBCLONE"; gitc "$FBCLONE"
+echo "remote moved on" >> "$FBCLONE/base.txt"
+git -C "$FBCLONE" add -A; git -C "$FBCLONE" commit -qm "docs(x): remote advanced"
+git -C "$FBCLONE" push -q origin main
+git -C "$LWT_MRGFB" fetch -q origin main
+git -C "$LWT_MRGFB" merge -q --no-ff --no-edit origin/main
+echo "own file" > "$LWT_MRGFB/own.txt"
+git -C "$LWT_MRGFB" add -A; git -C "$LWT_MRGFB" commit -qm "docs(x): a"
+chk "title-mrgfb: fixture precondition, a real merge landed before any own commit" \
+  "$([ "$(git -C "$LWT_MRGFB" rev-list --merges --count origin/main..HEAD)" = "1" ]; echo $?)"
+: > "$GH_STUB_CALLS"
+out="$(GH_STUB_OPEN_PRS='[]' GH_STUB_CREATE_NUM=91 GH_STUB_LAND_REPO="$LWT_MRGFB" GH_STUB_LAND_REMOTE="$FBBARE" \
+  GH_STUB_LAND_BRANCH=feat/land GH_STUB_LAND_DEF=main "$WRAP" land "$LWT_MRGFB" 2>&1)"; rc=$?
+chk "title-mrgfb: land exits 0" "$rc"
+chk_has "title-mrgfb: the fallback picks the own housekeeping commit" "$(cat "$GH_STUB_CALLS")" "--title docs(x): a"
+chk_no "title-mrgfb: the merge commit's own subject is never the fallback pick" "$(cat "$GH_STUB_CALLS")" \
+  "--title Merge"
+
+echo "--- --topo-order: a merged-in side commit with an older date never outranks the branch's own"
+build_land title-topo "" feat/land "feat(x): the main change"
+LREPO_TOPO="$TMPD/ld-repo-title-topo"; LWT_TOPO="$(cd "$LREPO_TOPO/wt" && pwd -P)"
+git -C "$LWT_TOPO" checkout -q -b side-topo main
+echo "side file" > "$LWT_TOPO/side-topo.txt"
+git -C "$LWT_TOPO" add -A
+GIT_AUTHOR_DATE="2020-01-01T00:00:00" GIT_COMMITTER_DATE="2020-01-01T00:00:00" \
+  git -C "$LWT_TOPO" commit -qm "feat(y): the backdated side change"
+git -C "$LWT_TOPO" checkout -q feat/land
+git -C "$LWT_TOPO" merge -q --no-ff --no-edit side-topo
+chk "title-topo: fixture precondition, the backdated side commit is really merged in" \
+  "$(git -C "$LWT_TOPO" merge-base --is-ancestor side-topo feat/land 2>/dev/null; echo $?)"
+: > "$GH_STUB_CALLS"
+out="$(GH_STUB_OPEN_PRS='[]' GH_STUB_CREATE_NUM=92 GH_STUB_LAND_REPO="$LWT_TOPO" GH_STUB_LAND_REMOTE="$TMPD/ld-bare-title-topo" \
+  GH_STUB_LAND_BRANCH=feat/land GH_STUB_LAND_DEF=main "$WRAP" land "$LWT_TOPO" 2>&1)"; rc=$?
+chk "title-topo: land exits 0" "$rc"
+chk_has "title-topo: the branch's own commit wins over the backdated side commit" "$(cat "$GH_STUB_CALLS")" \
+  "--title feat(x): the main change"
+chk_no "title-topo: the backdated side commit is never the title" "$(cat "$GH_STUB_CALLS")" \
+  "--title feat(y): the backdated side change"
 
 echo "--- the usage text and the command doc name the verb"
 chk_has "wrap --help names land" "$("$WRAP" --help 2>&1)" "wrap.sh land  <worktree>"
