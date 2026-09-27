@@ -12,6 +12,11 @@
 # CLOSED. Mixing the two behind one banner is the invariant a reader would trust and get
 # burned by. proof-ledger.sh keeps a `negctl` verb that forwards here.
 #
+# A new test must also go red on the code it guards against. The mutation can be the prior
+# revision itself: `negctl.sh "$PWD" "bash tests/test-x.sh" "git show <prev-sha>:lib/x.sh > lib/x.sh"`
+# runs the new suite against the old file and restores it, instead of a hand-rolled
+# copy-swap-run-restore script per revision.
+#
 # A PROBABILISTIC test breaks step 4. `run_test` is treated as deterministic, so a flaky
 # suite can come back green under the mutation and negctl calls the control vacuous when the
 # mutation was real. Set NEGCTL_RED_ATTEMPTS=<n> (default 1, byte-identical to before) to run
