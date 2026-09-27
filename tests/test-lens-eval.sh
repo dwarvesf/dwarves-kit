@@ -328,6 +328,70 @@ assert_has "grouped: items under Reviewer 2 stay Reviewer 2" "| s | retry-r7 | 0
 assert_has "grouped: a later heading ends the Reviewer 7 group" "| s | liveness-r7 | 0/1 want miss | - | PASS |" "$OUT"
 assert_has "grouped: shape verdict" "verdict: PASS (5/5 signals)" "$OUT"
 
+echo "=== base-mismatch note ==="
+# Two `fewer` signals whose patterns both match the stub's leaked line ("no heartbeat and dies
+# silently"), which STUB_LEAK_CALLS injects into whichever call number it names, treatment or
+# control alike.
+TWOFEWER="$TMP/twofewer.json"
+cat >"$TWOFEWER" <<'JSON'
+{"cases":[{"name":"ll","fixture":"long-lived-gaps.md","signals":[
+  {"name":"heartbeat-any","pattern":"heartbeat","treatment":"hit","control":"fewer"},
+  {"name":"silent-any","pattern":"silently","treatment":"hit","control":"fewer"}]}]}
+JSON
+ONEFEWER="$TMP/onefewer.json"
+cat >"$ONEFEWER" <<'JSON'
+{"cases":[{"name":"ll","fixture":"long-lived-gaps.md","signals":[
+  {"name":"heartbeat-any","pattern":"heartbeat","treatment":"hit","control":"fewer"}]}]}
+JSON
+# heartbeat-any ties via the leak; retire-any never leaks (the stub's leaked line names no
+# retirement), so it keeps a real gap: not every `fewer` signal in this run is gapless.
+MIXEDFEWER="$TMP/mixedfewer.json"
+cat >"$MIXEDFEWER" <<'JSON'
+{"cases":[{"name":"ll","fixture":"long-lived-gaps.md","signals":[
+  {"name":"heartbeat-any","pattern":"heartbeat","treatment":"hit","control":"fewer"},
+  {"name":"retire-any","pattern":"retire","treatment":"hit","control":"fewer"}]}]}
+JSON
+# call 1 = ll treatment, call 2 = ll control (one case, both arms named, N=1 default).
+run_eval bm1 STUB_LEAK_CALLS=2 -- "$CMDFILE" HEAD "$TWOFEWER" --live
+assert_has "all-fewer-no-gap: note prints, names the count" "note: all 2 'fewer' signals show no gap between arms; base HEAD may already carry what they assume it predates" "$OUT"
+# Both signals tie (no real gap), so both still FAIL: the note is additive, never a reason to pass.
+assert_eq "all-fewer-no-gap: exit code unchanged (still FAIL)" 1 "$RC"
+NOTE_LINE="$(printf '%s\n' "$OUT" | grep -n '^note:' | head -1 | cut -d: -f1)"
+SAMPLES_LINE="$(printf '%s\n' "$OUT" | grep -n '^samples:' | head -1 | cut -d: -f1)"
+assert_eq "note line prints before the samples line" 1 "$([ "${NOTE_LINE:-0}" -gt 0 ] && [ "${SAMPLES_LINE:-0}" -gt 0 ] && [ "$NOTE_LINE" -lt "$SAMPLES_LINE" ] && echo 1 || echo 0)"
+run_eval bm2 STUB_LEAK_CALLS=2 -- "$CMDFILE" HEAD "$ONEFEWER" --live
+assert_has "single-fewer-no-gap: note prints, names 1" "note: all 1 'fewer' signals show no gap" "$OUT"
+run_eval bm3 STUB_LEAK_CALLS=2 -- "$CMDFILE" HEAD "$MIXEDFEWER" --live
+assert_eq "one-still-shows-a-gap: no note line" 0 "$(printf '%s\n' "$OUT" | grep -c '^note:')"
+assert_has "one-still-shows-a-gap: retire-any keeps its real gap" "| ll | retire-any | 1/1 want hit | 0/1 want fewer | PASS |" "$OUT"
+run_eval bm4 "STUB_REPORT=$TMP/table.md" -- "$CMDFILE" HEAD "$SHAPES" --live
+assert_eq "no-fewer-signals: no note line" 0 "$(printf '%s\n' "$OUT" | grep -c '^note:')"
+# STUB_MISS_CALLS=1 drops the Reviewer-7 findings on the treatment call, so heartbeat-any misses
+# (0/1) in treatment; control was never going to mention it either (no leak here), so both tie
+# at 0/1. A treatment miss is a treatment regression, not a base mismatch: no note.
+run_eval bm5 STUB_MISS_CALLS=1 -- "$CMDFILE" HEAD "$ONEFEWER" --live
+assert_eq "treatment-miss-not-base-problem: no note line" 0 "$(printf '%s\n' "$OUT" | grep -c '^note:')"
+assert_has "treatment-miss-not-base-problem: signal still recorded as a tie" "| ll | heartbeat-any | 0/1 want hit | 0/1 want fewer |" "$OUT"
+# N=3: treatment hits only 1 of 3 (calls 2,3 suppressed), a minority, not the majority `t_hit`
+# requires; control ties it at 1/3 via a leak on its first sample. A cruder majority test
+# (h > 0) would misread 1/3 as a treatment hit and wrongly count this as a gapless base.
+run_eval bm6 "STUB_MISS_CALLS=2 3" STUB_LEAK_CALLS=4 -- "$CMDFILE" HEAD "$ONEFEWER" --samples 3 --live
+assert_has "majority-gate-at-n-gt-1: treatment and control tie at 1/3" "| ll | heartbeat-any | 1/3 want hit | 1/3 want fewer | FAIL |" "$OUT"
+assert_eq "majority-gate-at-n-gt-1: no note line" 0 "$(printf '%s\n' "$OUT" | grep -c '^note:')"
+# Two `fewer` signals in one case: heartbeat-any ties via the leak (a real no-gap signal), then
+# never-any (a pattern nothing ever matches) misses in both arms. If `t_hit` were not reset for
+# each signal, never-any would inherit heartbeat-any's stale "treatment hit" and wrongly count
+# its own 0-vs-0 tie as gapless too, making every fewer signal in the run look gapless.
+RESETCASE="$TMP/resetcase.json"
+cat >"$RESETCASE" <<'JSON'
+{"cases":[{"name":"ll","fixture":"long-lived-gaps.md","signals":[
+  {"name":"heartbeat-any","pattern":"heartbeat","treatment":"hit","control":"fewer"},
+  {"name":"never-any","pattern":"zzz-none","treatment":"hit","control":"fewer"}]}]}
+JSON
+run_eval bm7 STUB_LEAK_CALLS=2 -- "$CMDFILE" HEAD "$RESETCASE" --live
+assert_eq "per-signal-t-hit-reset: no note line" 0 "$(printf '%s\n' "$OUT" | grep -c '^note:')"
+assert_has "per-signal-t-hit-reset: never-any really misses both arms" "| ll | never-any | 0/1 want hit | 0/1 want fewer | FAIL |" "$OUT"
+
 echo "=== failed samples ==="
 for k in STUB_EMPTY_CALLS STUB_FAIL_CALLS STUB_ISERR_CALLS; do
   run_eval "e-$k" "$k=2" -- "$CMDFILE" HEAD "$CASES" --samples 3 --live
