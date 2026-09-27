@@ -21,9 +21,10 @@ The delta from `docs/specs/SPEC-332-safety-gate-quoted-split.md`. Decisions alre
 | 1b | Opus break-it pass | 3 regressions + bypasses | a `<<` in a comment or a here-string queued a second delimiter and hid lines master read; `(` inside `$(`; backslash-newline joined with a space; `sudo -u`, `bash -lc`, `/usr/bin/git`, brace refs, `rm -Rf`, `kubectl -n`, psql heredoc |
 | 2 | fresh Opus validator | NEEDS REVISION (static read, probes confirmed by the lead) | `coproc NAME`, `function NAME`, `caffeinate -u` eating the command, and one master-blocks, branch-allows ordering (`cat <<A; echo $((1<<B))` with a later `B`); also zsh `noglob`, `repeat`, `always` |
 | 3 | fresh Opus validator, every critical probe-confirmed | NEEDS REVISION | `#` after an escaped blank or operator read as a comment (hid `&` and `$(`); rev-3 arithmetic frame skipped `$(` inside it and closed on a lone `)`; `((` ordering; `xargs -d` |
+| 4 | fresh Opus validator, every critical probe-confirmed | NEEDS REVISION | `((` after `if`/`for`/`!`/`{` queued a delimiter (regression vs master); `#` right after `$( )` or a backtick; the rev-4 escape marker never reset; text before a lone `)` never re-walked |
 
 The round-2 validator found its criticals by reading the code; its probe pass was cut short. The lead confirmed each against branch and master before fixing (`probe-r3.sh` in the job scratch dir): R1, R3, R4 were bypasses on both; R5 was the one regression.
 
 ## Open questions
 
-- `--all` now blocks as `push-all`. A repo whose only branches are feature branches loses that shortcut. Confirm this trade is wanted.
+- None. `--all` stays blocked (decided in the spec's Decision Log): it pushes every local branch, main included. Reversible if an operator wants the shortcut back.

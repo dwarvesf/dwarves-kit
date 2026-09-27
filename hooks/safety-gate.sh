@@ -64,6 +64,9 @@ SQ="'"
 SEGMENTS=$(printf '%s\n' "$CMD" | awk -v sq="$SQ" '
   function emit() { gsub(/[$()`]/, " ", seg); print seg; seg = "" }
   function top() { return d ? st[d] : "" }
+  # open an arithmetic frame: kind ($ for $((, ( for (( at a command start), the index of
+  # its second (, and the segment length and line it opened on, for the lone-) rewind
+  function arith(kind, second) { st[++d] = "A"; ak[d] = kind; ap[d] = 0; ao[d] = second; as[d] = length(seg); al[d] = ln }
   function naive(s) { gsub(/&&|\|\||;|\|/, "\n", s); gsub(/[$()`]/, " ", s); print s }
   # The heredoc delimiter word at the start of s, after quote and backslash removal
   # (bash reads <<"E"OF as EOF). Sets wl to the characters consumed.
@@ -80,50 +83,63 @@ SEGMENTS=$(printf '%s\n' "$CMD" | awk -v sq="$SQ" '
     }
     wl = k - 1; return w
   }
-  function proc(line,   i, n, c, nx, t, k, w) {
-    nv = nv line
-    n = length(line); cont = 0
+  # ws: the next character starts a word (a # there is a comment). Set by blanks and
+  # operators; cleared by any other character, an escape, a closing quote, and the ) or `
+  # that closes a substitution, because bash reads $(x)#y and a\ #y as one word.
+  function proc(line,   i, n, c, nx, t, k, w, pc) {
+    nv = nv line; ln++
+    n = length(line); pc = cont; cont = 0
+    if (!pc) ws = 1
     for (i = 1; i <= n; i++) {
       c = substr(line, i, 1); nx = substr(line, i + 1, 1); t = top()
-      if (t == sq) { if (c == sq) d--; seg = seg c; continue }
+      if (t == sq) { if (c == sq) { d--; ws = 0 } seg = seg c; continue }
       if (t == "A") {
-        if (c == "$" && nx == "(") { st[++d] = "$"; i++; emit(); continue }
-        if (c == "`") { st[++d] = "`"; emit(); continue }
+        if (c == "$" && nx == "(") { st[++d] = "$"; i++; emit(); ws = 1; continue }
+        if (c == "`") { st[++d] = "`"; emit(); ws = 1; continue }
         if (c == "(") ap[d]++
         else if (c == ")") {
           if (ap[d]) ap[d]--
-          else if (nx == ")") { d--; i++ }
-          else { st[d] = ak[d]; emit(); continue }
+          else if (nx == ")") { d--; i++; ws = 0 }
+          else if (al[d] == ln) {
+            # a lone ) means it was never arithmetic, but $( ( or ( (: drop what the frame
+            # read without boundaries and walk it again as code from the second (
+            seg = substr(seg, 1, as[d]); st[d] = ak[d]; emit(); ws = 1; i = ao[d] - 1; continue
+          } else { st[d] = ak[d]; emit(); ws = 1; continue }
         }
         seg = seg c; continue
       }
-      if (c == "\\") { if (i == n) { cont = 1; continue } seg = seg c nx; ee = length(seg); i++; continue }
-      if (t == "E") { if (c == sq) d--; seg = seg c; continue }
+      if (c == "\\") { if (i == n) { cont = 1; continue } seg = seg c nx; ws = 0; i++; continue }
+      if (t == "E") { if (c == sq) { d--; ws = 0 } seg = seg c; continue }
       if (t == "\"") {
-        if (c == "\"") { d--; seg = seg c; continue }
-        if (c == "$" && substr(line, i, 3) == "$((") { st[++d] = "A"; ak[d] = "$"; ap[d] = 0; i += 2; continue }
-        if (c == "$" && nx == "(") { st[++d] = "$"; i++; emit(); continue }
-        if (c == "`") { st[++d] = "`"; emit(); continue }
+        if (c == "\"") { d--; seg = seg c; ws = 0; continue }
+        if (c == "$" && substr(line, i, 3) == "$((") { arith("$", i + 2); i += 2; continue }
+        if (c == "$" && nx == "(") { st[++d] = "$"; i++; emit(); ws = 1; continue }
+        if (c == "`") { st[++d] = "`"; emit(); ws = 1; continue }
         seg = seg c; continue
       }
       # code context: top level, $( ... ), ( ... ) or ` ... `
-      if (c == "#" && (seg ~ /^[ \t]*$/ || (substr(seg, length(seg), 1) ~ /[ \t]/ && ee != length(seg)))) break
-      if (c == sq || c == "\"") { st[++d] = c; seg = seg c; continue }
-      if (c == "$" && nx == sq) { st[++d] = "E"; seg = seg c nx; i++; continue }
-      if (c == "$" && substr(line, i, 3) == "$((") { st[++d] = "A"; ak[d] = "$"; ap[d] = 0; i += 2; continue }
-      if (c == "(" && nx == "(" && seg ~ /^[ \t]*$/) { st[++d] = "A"; ak[d] = "("; ap[d] = 0; i++; continue }
-      if (c == "$" && nx == "(") { st[++d] = "$"; i++; emit(); continue }
-      if (c == "`") { if (t == "`") d--; else st[++d] = "`"; emit(); continue }
-      if (c == ")") { if (t == "$" || t == "(") d--; emit(); continue }
-      if (c == "(") { st[++d] = "("; emit(); continue }
-      if (c == ";" || c == "|" || c == "&") { emit(); continue }
-      if (c == "<" && nx == "<" && substr(line, i + 2, 1) != "<" && (i == 1 || substr(line, i - 1, 1) != "<")) {
-        k = (substr(line, i + 2, 1) == "-") ? 3 : 2
-        w = hdword(substr(line, i + k))
-        if (w != "" && !replay) hm[++nh] = w
-        i += k + wl - 1; continue
+      if (c == "#" && ws) break
+      if (c == " " || c == "\t" || c == "<" || c == ">") {
+        if (c == "<" && nx == "<" && substr(line, i + 2, 1) != "<" && (i == 1 || substr(line, i - 1, 1) != "<")) {
+          k = (substr(line, i + 2, 1) == "-") ? 3 : 2
+          w = hdword(substr(line, i + k))
+          if (w != "" && !replay) hm[++nh] = w
+          i += k + wl - 1; ws = 0; continue
+        }
+        seg = seg c; ws = 1; continue
       }
-      seg = seg c
+      if (c == sq || c == "\"") { st[++d] = c; seg = seg c; ws = 0; continue }
+      if (c == "$" && nx == sq) { st[++d] = "E"; seg = seg c nx; i++; ws = 0; continue }
+      if (c == "$" && substr(line, i, 3) == "$((") { arith("$", i + 2); i += 2; ws = 0; continue }
+      if (c == "(" && nx == "(" && seg ~ /^[ \t]*(((if|then|elif|else|while|until|do|time|for|!|\{)[ \t]+)*)$/) {
+        arith("(", i + 1); i++; continue
+      }
+      if (c == "$" && nx == "(") { st[++d] = "$"; i++; emit(); ws = 1; continue }
+      if (c == "`") { if (t == "`") { d--; ws = 0 } else { st[++d] = "`"; ws = 1 } emit(); continue }
+      if (c == ")") { if (t == "$") { d--; ws = 0 } else { if (t == "(") d--; ws = 1 } emit(); continue }
+      if (c == "(") { st[++d] = "("; emit(); ws = 1; continue }
+      if (c == ";" || c == "|" || c == "&") { emit(); ws = 1; continue }
+      seg = seg c; ws = 0
     }
     if (cont) { nv = substr(nv, 1, length(nv) - 1); return }
     naive(nv); nv = ""

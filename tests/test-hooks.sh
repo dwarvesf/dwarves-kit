@@ -252,6 +252,24 @@ B")"
 assert_exit "Q67: xargs -d takes an operand" 2 "$(q_hook "xargs -d x $PUSH origin main")"
 assert_exit "Q68: an apostrophe in a trailing comment opens no quote" 0 "$(q_hook "$PUSH -u origin feat/x # don't
 echo done")"
+# SPEC-332 rev 5: validation round 4. Word start and command start are tracked, not
+# guessed from an empty segment.
+assert_exit "Q69: (( after if queues no delimiter" 2 "$(q_hook "cat <<A; if (( x = 1<<B )); then :; fi
+A
+$PUSH origin main
+B")"
+assert_exit "Q70: (( after for queues no delimiter" 2 "$(q_hook "cat <<A; for (( i=0; i<<B; i++ )); do :; done
+A
+$PUSH origin main
+B")"
+assert_exit "Q71: # right after \$( ) is not a comment" 2 "$(q_hook "echo \$(true)# & $PUSH origin main")"
+assert_exit "Q72: # right after a backtick is not a comment" 2 "$(q_hook "echo \`true\`# & $PUSH origin main")"
+assert_exit "Q73: an escape in an earlier segment does not unmake a comment" 2 "$(q_hook "echo a\\ ; echo b #don't
+$PUSH -o 'a;b' origin main")"
+assert_exit "Q74: a lone ) re-reads (( as subshells" 2 "$(q_hook "((true & $PUSH origin main) )")"
+assert_exit "Q75: a lone ) re-reads a quoted ; inside ((" 2 "$(q_hook "((true; $PUSH -o 'a;b' origin main) )")"
+assert_exit "Q76: a lone ) re-reads \$(( as a substitution" 2 "$(q_hook "echo \$((true & $PUSH origin main) )")"
+assert_exit "Q77: arithmetic loop then a feature push is allowed" 0 "$(q_hook "for (( i=0; i<3; i++ )); do echo \$i; done; $PUSH -u origin feat/x")"
 # F4: cd-prefix repo resolution parses portably (probe affordance prints the target)
 CDOUT=$(echo '{"tool_input":{"command":"cd /tmp/some-repo && git push -q origin feat/x"}}' | DWARVES_KIT_PRINT_CDDIR=1 bash "$KIT_DIR/hooks/ship-gate.sh" 2>/dev/null)
 assert_output_contains "F4: ship-gate resolves the cd target" "^/tmp/some-repo$" "$CDOUT"
