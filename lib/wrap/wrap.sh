@@ -84,12 +84,17 @@ set -uo pipefail
 export GIT_TERMINAL_PROMPT=0
 
 # A caller such as a git hook exports its own repo's GIT_DIR, index and -c config. Inherited,
-# they point every `git -C <repo>` below at that other repo, so wrap drops them once here.
-unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_CONFIG_PARAMETERS GIT_CONFIG_COUNT
+# they point every `git -C <repo>` below at that other repo, so wrap drops them once here:
+# git's own list of repo-local variables (the set it clears before entering another repo),
+# plus the numbered GIT_CONFIG_KEY_/VALUE_ pairs it does not list. The config variables go
+# first, so a malformed one cannot fail the git call that lists the rest.
+unset GIT_CONFIG_PARAMETERS GIT_CONFIG_COUNT
 for _v in $(compgen -e); do
   case "$_v" in GIT_CONFIG_KEY_*|GIT_CONFIG_VALUE_*) unset "$_v" ;; esac
 done
 unset _v
+# shellcheck disable=SC2046 # one variable name per line; word splitting is the point
+unset $(git rev-parse --local-env-vars 2>/dev/null)
 
 # An index.lock at least this old belongs to a foreign writer, not to ordinary git traffic.
 LOCK_STALE_SECS=5
@@ -701,14 +706,16 @@ _apply_archive_unmerged() {
   if [ "$fetch_ok" != 1 ]; then
     echo "     SKIP archive sweep: fetch failed, stale data"; return 0
   fi
-  local b cherry n slug ref err first
-  for b in $(git -C "$repo" for-each-ref --format='%(refname:short)' refs/heads/); do
+  local b tip pushed cherry n slug ref err first
+  # Full refs throughout, as in _merge_proof: a tag named like the branch once made the push
+  # source ambiguous, and a bare origin/<def> can resolve a tag or local branch.
+  for b in $(git -C "$repo" for-each-ref --format='%(refname:lstrip=2)' refs/heads/); do
     case "$b" in "$def"|main|master) continue ;; esac
     [ "$b" = "$cur" ] && continue
     if git -C "$repo" worktree list --porcelain 2>/dev/null | grep -qx "branch refs/heads/${b}"; then
       echo "     SKIP ${b}: held by a worktree"; continue
     fi
-    cherry="$(git -C "$repo" cherry "origin/${def}" "$b" 2>/dev/null)"
+    cherry="$(git -C "$repo" cherry "refs/remotes/origin/${def}" "refs/heads/${b}" 2>/dev/null)"
     n="$(printf '%s\n' "$cherry" | grep -c '^+')"
     if [ "$n" -eq 0 ]; then
       echo "     ${b}: nothing unique, left for the merged sweep"; continue
@@ -724,8 +731,18 @@ _apply_archive_unmerged() {
     if git -C "$repo" ls-remote --exit-code --heads origin "$ref" >/dev/null 2>&1; then
       echo "     FAILED archive ${b}: origin ${ref} already exists"; FAILURES=1; continue
     fi
-    if err="$(git -C "$repo" push origin "${b}:refs/heads/${ref}" 2>&1)"; then
-      if git -C "$repo" branch -D "$b" >/dev/null 2>&1; then
+    tip="$(git -C "$repo" rev-parse --verify --quiet "refs/heads/${b}")"
+    if err="$(git -C "$repo" push origin "refs/heads/${b}:refs/heads/${ref}" 2>&1)"; then
+      # The local delete is leased to the tip read above, and only once origin holds that
+      # tip: a commit made during the push, or an archive ref holding anything else, keeps
+      # the branch.
+      pushed="$(git -C "$repo" ls-remote origin "refs/heads/${ref}" 2>/dev/null \
+        | awk -v r="refs/heads/${ref}" '$2 == r { print $1 }')"
+      if [ -z "$tip" ] || [ "$pushed" != "$tip" ]; then
+        echo "     FAILED archive ${b}: origin ${ref} holds $(_short "${pushed:-nothing}"), not the local tip $(_short "${tip:-unread}"); the branch stays"
+        FAILURES=1
+      elif git -C "$repo" update-ref -d "refs/heads/${b}" "$tip" >/dev/null 2>&1; then
+        git -C "$repo" config --remove-section "branch.${b}" >/dev/null 2>&1
         echo "     archived ${b} -> ${ref}"
       else
         echo "     FAILED archive ${b}: pushed to ${ref} but the local branch delete refused"

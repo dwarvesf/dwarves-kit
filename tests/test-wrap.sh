@@ -5404,6 +5404,45 @@ pin_kept "pinned GIT_DIR" "$PG" "$TMPD/pg-wt"
 chk "pinned GIT_DIR: the other repo's merged agent2 survives" \
   "$(git -C "$PO" show-ref --verify --quiet refs/heads/agent2; echo $?)"
 
+echo "--- pinned refs: a leaked GIT_COMMON_DIR pointing at another repo"
+# Not in the old hand-listed unset; git's --local-env-vars list covers it. The common dir holds
+# refs and worktrees, so a leaked one points the sweep at the other repo's merged agent.
+PC="$(pin_fixture pc)"
+PD="$(pin_fixture pd)"
+git -C "$TMPD/pd-work" merge -q --ff-only agent; git -C "$TMPD/pd-work" push -q "$TMPD/pd-bare" main
+git -C "$PD" fetch -q
+out="$(GIT_COMMON_DIR="$PD/.git" GH_STUB_UNAUTH=1 "$WRAP" apply --apply --worktrees "$PC" 2>&1)"
+chk_has "pinned GIT_COMMON_DIR: apply reads the target's worktree" "$out" \
+  "SKIP $TMPD_P/pc-wt: agent is not proven merged into main (leave it)"
+pin_kept "pinned GIT_COMMON_DIR" "$PC" "$TMPD/pc-wt"
+chk "pinned GIT_COMMON_DIR: the other repo's merged worktree survives" "$([ -d "$TMPD/pd-wt" ]; echo $?)"
+chk "pinned GIT_COMMON_DIR: the other repo's merged agent survives" \
+  "$(git -C "$PD" show-ref --verify --quiet refs/heads/agent; echo $?)"
+chk "pinned GIT_COMMON_DIR: the other repo's merged agent2 survives" \
+  "$(git -C "$PD" show-ref --verify --quiet refs/heads/agent2; echo $?)"
+
+echo "--- pinned refs: archive-unmerged pushes the branch, never a same-named tag"
+# agent2 is unmerged; a tag named agent2 points at a different unmerged commit. The archive
+# ref on origin must hold agent2's own tip, and the local branch goes only after that.
+PA="$(pin_fixture pa)"
+printf 'other work\n' > "$TMPD/pa-wt/o.txt"
+git -C "$TMPD/pa-wt" add -A; git -C "$TMPD/pa-wt" commit -qm "agent: other work"
+git -C "$PA" tag agent2 agent
+PA_TIP="$(git -C "$PA" rev-parse refs/heads/agent2)"
+PA_TAG="$(git -C "$PA" rev-parse refs/tags/agent2)"
+PA_REF="refs/heads/archive/agent2-$(date +%Y%m%d)"
+out="$(KIT_CONFIG_ROOT="$KIT_DIR" GH_STUB_UNAUTH=1 "$WRAP" apply --apply --archive-unmerged "$PA" 2>&1)"
+chk_has "pinned archive: reports the archive" "$out" "archived agent2 -> ${PA_REF#refs/heads/}"
+chk "pinned archive: origin holds the branch's own tip" \
+  "$([ "$(git -C "$TMPD/pa-bare" rev-parse -q --verify "$PA_REF")" = "$PA_TIP" ]; echo $?)"
+chk "pinned archive: origin never holds the tag's commit" \
+  "$([ "$(git -C "$TMPD/pa-bare" rev-parse -q --verify "$PA_REF")" != "$PA_TAG" ]; echo $?)"
+chk "pinned archive: the local branch goes once archived" \
+  "$(git -C "$PA" show-ref --verify --quiet refs/heads/agent2 && echo 1 || echo 0)"
+chk "pinned archive: the tag stays" "$([ "$(git -C "$PA" rev-parse -q --verify refs/tags/agent2)" = "$PA_TAG" ]; echo $?)"
+chk "pinned archive: the worktree-held agent stays" \
+  "$(git -C "$PA" show-ref --verify --quiet refs/heads/agent; echo $?)"
+
 echo
 if [ "$FAIL" -gt 0 ]; then echo "test-wrap: $PASS passed, $FAIL FAILED of $TOTAL" >&2; exit 1; fi
 echo "test-wrap: all $PASS passed"
