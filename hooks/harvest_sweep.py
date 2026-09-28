@@ -493,6 +493,47 @@ def extract_ok(obj):
     return isinstance(obj, dict) and ("learnings" in obj or "sightings" in obj)
 
 
+# Credential shapes redacted out of evidence and why before anything is stored
+# (DEC-63, DEC-89): 32+ hex runs, the known token prefixes, `xox` + letter + dash,
+# JWT-shaped strings, and PEM private-key headers.
+CREDENTIAL_RE = re.compile(
+    r"[0-9a-fA-F]{32,}"
+    r"|eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+"
+    r"|-{2,}BEGIN(?: [A-Z0-9]+)* PRIVATE KEY-{2,}"
+    r"|(?<![A-Za-z0-9_])(?:sk_live_|rk_live_|github_pat_|glpat-"
+    r"|sk-|ghp_|gho_|AIza|AKIA|ops_)[A-Za-z0-9_-]*"
+    r"|(?<![A-Za-z0-9_])xox[a-zA-Z]-[A-Za-z0-9-]*")
+
+
+def redact(text):
+    """Every credential-shaped match becomes the literal string [redacted]."""
+    return CREDENTIAL_RE.sub("[redacted]", str(text))
+
+
+def sanitize_text(text):
+    """Redact first, then keep only printable ASCII without `, <, >, $, or newlines,
+    cut to 200 characters (DEC-25, DEC-89)."""
+    return "".join(c for c in redact(text)
+                   if 32 <= ord(c) < 127 and c not in "`<>$")[:200]
+
+
+def sanitize_extraction(obj):
+    """The parsed extractor object with every entry's evidence and why redacted and cut,
+    and entries whose pattern or item fails the slug charset dropped. Returns
+    {"learnings", "sightings"}; other per-entry fields pass through untouched."""
+    clean = {"learnings": [], "sightings": []}
+    for l in obj.get("learnings") or []:
+        if isinstance(l, dict) and SLUG_RE.match(str(l.get("item") or "")):
+            clean["learnings"].append(
+                dict(l, why=sanitize_text(l.get("why") or ""),
+                     evidence=sanitize_text(l.get("evidence") or "")))
+    for s in obj.get("sightings") or []:
+        if isinstance(s, dict) and SLUG_RE.match(str(s.get("pattern") or "")):
+            clean["sightings"].append(
+                dict(s, evidence=sanitize_text(s.get("evidence") or "")))
+    return clean
+
+
 def _as_text(data):
     if isinstance(data, bytes):
         return data.decode("utf-8", "replace")
@@ -626,11 +667,42 @@ def limit_state_row(source, failure):
 
 
 def sweep_process(t, text):
-    """The default per-session step of run_selection. True when the extraction succeeded,
-    an ExtractFailure otherwise (the failure classes read its out/err). Staging the
-    object's learnings and recording its sightings attach here, on obj."""
+    """The default per-session step of run_selection. The sanitized extraction object
+    (truthy, always a dict with both keys) when the call succeeded, an ExtractFailure
+    otherwise. Learnings stage and sightings record from this object in later tasks."""
     ok, obj, out, err = extract_session(t, text)
-    return True if ok else ExtractFailure(out, err)
+    if not ok:
+        return ExtractFailure(out, err)
+    return sanitize_extraction(obj)
+
+
+class Stage1Log(object):
+    """runs/<run-id>/stage1.log, mode 0600: counts, ids, and error classes only, never
+    transcript or extractor text (DEC-89). The file appears on the first logged line, so
+    a run with nothing new leaves no runs/<run-id>/ directory."""
+
+    def __init__(self, run_id):
+        self.path = os.path.join(harvest._state_dir(), "sweep", "runs", run_id,
+                                 "stage1.log")
+        self._fh = None
+
+    @property
+    def active(self):
+        return self._fh is not None
+
+    def line(self, *fields):
+        if self._fh is None:
+            _private_dir(os.path.dirname(self.path))
+            fd = os.open(self.path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
+            self._fh = os.fdopen(fd, "a", encoding="utf-8")
+            os.chmod(self.path, 0o600)  # a pre-existing file gets the mode too
+        self._fh.write(" ".join(str(f) for f in fields) + "\n")
+        self._fh.flush()
+
+    def close(self):
+        if self._fh is not None:
+            self._fh.close()
+            self._fh = None
 
 
 # ---- selection, cursor, and the per-session loop -------------------------------------
@@ -728,8 +800,9 @@ def parse_since(value):
     return epoch
 
 
-def _plan_source(cursor, source, items, load, now, schedule_hours, since=None):
-    """Scan one source: its cursor state, the scanned candidates, and the eligible ones."""
+def _plan_source(cursor, source, items, load, now, schedule_hours, since=None, log=None):
+    """Scan one source: its cursor state, the scanned candidates, and the eligible ones.
+    Quarantine lifts land here, ahead of eligibility, and log a line and a STATE row."""
     state = _source_state(cursor, source, int(since if since is not None else now - schedule_hours * 3600))
     if since is not None and since < state["hwm"]:
         # Lowering only: raising the hwm would skip unread sessions (DEC-71). The lowered hwm
@@ -745,6 +818,8 @@ def _plan_source(cursor, source, items, load, now, schedule_hours, since=None):
             continue
         if _lifted(state, i):
             lifted.append(i["session_id"])
+            if log is not None:
+                log.line("lifted", source, i["session_id"])
         if not _settled(state, i):
             eligible.append(i)
     return {"source": source, "state": state, "scanned": scanned, "eligible": eligible,
@@ -754,7 +829,8 @@ def _plan_source(cursor, source, items, load, now, schedule_hours, since=None):
                                       for s in lifted]}}
 
 
-def _sweep_one(cursor, plan, item, process, now, max_chars, records, run, quarantine_after):
+def _sweep_one(cursor, plan, item, process, now, max_chars, records, run, quarantine_after,
+               log):
     """Classify and, unless filtered, process one session. Returns True when it used an
     extraction attempt (counts against the cap), False otherwise. Failure classes
     (DEC-39, DEC-80): a limit-shaped failure is a hold (no fail count, run stops, rc 0);
@@ -763,19 +839,23 @@ def _sweep_one(cursor, plan, item, process, now, max_chars, records, run, quaran
     `quarantine_after` failures the session is quarantined with its last_activity, marked
     done, and reported, which lets the hwm pass it (DEC-30, DEC-39)."""
     source, state, out, sid = plan["source"], plan["state"], plan["out"], item["session_id"]
-    skip, t = (is_hidden(item), None) if source == "devin" else (False, None)
+    skip, reason, t = (is_hidden(item), "hidden", None) if source == "devin" \
+        else (False, None, None)
     if not skip:
         t = plan["load"](item)
         if isinstance(t, SourceFailure):
             out["source_failure"] = t
+            log.line("source-failure", source, t.error_class)
             return False
         out["read"] += 1
         trivial = is_trivial(t)
         out["trivial"] += trivial
         skip = is_self_harvest(t) or trivial
+        reason = "self-harvest" if is_self_harvest(t) else ("trivial" if trivial else None)
     if skip:
         state["done"][sid] = item["last_activity"]  # outside the cap
         out["filtered"].append(sid)
+        log.line("filtered", source, sid, reason)
     else:
         if source == "devin":
             attribute(t, records)
@@ -788,16 +868,20 @@ def _sweep_one(cursor, plan, item, process, now, max_chars, records, run, quaran
             if text:
                 state["seen"][sid] = {"last_ts": newest_ts(t), "ts": int(now)}
             out["processed"].append(sid)
+            log.line("processed", source, sid)
         elif isinstance(ok, ExtractFailure) and ok.limit:
             out["state_rows"].append(limit_state_row(source, ok))
             run["stop"] = "limit"
+            log.line("hold", source, sid, "extractor-limit")
         else:
             out["failed"].append(sid)
+            log.line("failed", source, sid, type(ok).__name__)
             if run["fail_seen"]:
                 # a second session failing this run is auth-shaped (DEC-39)
                 run["stop"] = "auth"
                 out["state_rows"].append(
                     "STATE %s: extractor-auth: a second session failed this run" % source)
+                log.line("stop", source, sid, "extractor-auth")
             else:
                 run["fail_seen"] = True
                 ok_p, detail = _extractor_probe()
@@ -807,6 +891,7 @@ def _sweep_one(cursor, plan, item, process, now, max_chars, records, run, quaran
                         "INCIDENT extractor: probe failed: %s" % detail)
                     out["state_rows"].append(
                         "STATE %s: extractor-auth: the probe failed" % source)
+                    log.line("stop", source, sid, "extractor-auth")
             # every non-limit failure counts, the stop path included (DEC-39)
             state["fail"][sid] = state["fail"].get(sid, 0) + 1
             if state["fail"][sid] >= quarantine_after:
@@ -816,6 +901,7 @@ def _sweep_one(cursor, plan, item, process, now, max_chars, records, run, quaran
                                              "ts": int(now)}
                 state["done"][sid] = item["last_activity"]
                 out["state_rows"].append("STATE %s: quarantined: %s" % (source, sid))
+                log.line("quarantined", source, sid)
     _advance_hwm(state, plan["scanned"])
     save_cursor(cursor)
     return not skip
@@ -865,7 +951,10 @@ def run_selection(process=None, schedule_hours=6, max_sessions=20, since=None):
     max_chars = int(os.environ.get("HARVEST_MAXCHARS", "12000"))
     quarantine_after = int(os.environ.get("HARVEST_SWEEP_QUARANTINE_AFTER", "3"))
     result, plans = {}, []
-    run = {"stop": None, "fail_seen": False, "state_rows": [], "incidents": []}
+    run_id = "run-%d" % int(now)
+    log = Stage1Log(run_id)
+    run = {"stop": None, "fail_seen": False, "state_rows": [], "incidents": [],
+           "run_id": run_id}
     if os.environ.get("HARVEST_EXTRACTOR"):
         # the operator override replaces the whole default command, so its safety
         # flags (--tools "", --strict-mcp-config, --no-session-persistence) do not apply
@@ -877,8 +966,10 @@ def run_selection(process=None, schedule_hours=6, max_sessions=20, since=None):
             result[source] = {"processed": [], "filtered": [], "failed": [], "deferred": [],
                               "read": 0, "trivial": 0, "state_rows": [],
                               "source_failure": items}
+            log.line("source-failure", source, items.error_class)
             continue
-        plan = _plan_source(cursor, source, items, loader, now, schedule_hours, since)
+        plan = _plan_source(cursor, source, items, loader, now, schedule_hours, since,
+                            log=log)
         result[source] = plan["out"]
         plans.append(plan)
 
@@ -893,9 +984,21 @@ def run_selection(process=None, schedule_hours=6, max_sessions=20, since=None):
             continue  # a broken source stays untouched for the rest of the run
         if run["stop"] or attempts >= max_sessions:
             plan["out"]["deferred"].append(item)  # stays eligible, oldest first next run (DEC-71)
+            log.line("deferred", plan["source"], sid)
             continue
         attempts += _sweep_one(cursor, plan, item, process, now, max_chars, records, run,
-                               quarantine_after)
+                               quarantine_after, log)
     _finish_run(cursor, result, now)  # also pins a first-run hwm when nothing was selected
+    if log.active:
+        # counts lines only attach to a run that did work, so an idle run leaves no
+        # runs/<run-id>/ directory at all
+        for src, out_ in result.items():
+            log.line("counts", src,
+                     "read=%d" % out_["read"],
+                     "processed=%d" % len(out_["processed"]),
+                     "filtered=%d" % len(out_["filtered"]),
+                     "failed=%d" % len(out_["failed"]),
+                     "deferred=%d" % len(out_["deferred"]))
+    log.close()
     result["run"] = run
     return result

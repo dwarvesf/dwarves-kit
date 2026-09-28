@@ -1588,6 +1588,181 @@ assert_eq "AC5b: the hwm passes the quarantined oldest session" "True" "$(t7b p_
 assert_eq "AC5b: HARVEST_SWEEP_QUARANTINE_AFTER overrides the threshold" "True" "$(t7b e_quar)"
 
 # ============================================================
+echo "=== T8 sanitizing ==="
+
+T8_OUT=$(KIT_DIR="$KIT_DIR" TD="$TD" T5_NOW="$T5_NOW" python3 - <<'PY'
+import datetime, importlib.util, json, os, shlex, stat
+spec = importlib.util.spec_from_file_location("hs", os.path.join(os.environ["KIT_DIR"], "hooks", "harvest_sweep.py"))
+hs = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(hs)
+TD, NOW = os.environ["TD"], int(os.environ["T5_NOW"])
+STUB = os.path.join(os.environ["KIT_DIR"], "tests", "fixtures", "harvest-sweep", "stub-extractor.sh")
+FIX = os.path.join(os.environ["KIT_DIR"], "tests", "fixtures", "harvest-sweep")
+P = lambda k, v: print("%s=%s" % (k, v))
+
+base = os.path.join(TD, "t8")
+os.environ["HARVEST_STATE_DIR"] = os.path.join(base, "state")
+os.environ["HARVEST_SWEEP_CLAUDE_ROOT"] = os.path.join(base, "claude")
+os.makedirs(os.environ["HARVEST_SWEEP_CLAUDE_ROOT"])
+os.environ["HARVEST_SWEEP_DEVIN_DB"] = os.path.join(base, "none.db")
+os.environ["HARVEST_SWEEP_NOW"] = str(NOW)
+os.environ["HARVEST_EXTRACTOR"] = shlex.quote(STUB)
+
+inj = open(os.path.join(FIX, "injection-evidence.txt")).read()
+cred_lines = [l for l in open(os.path.join(FIX, "credential-evidence.txt")).read()
+              .splitlines() if l.strip()]
+
+# ---- every credential-shaped line redacts; the safe line is untouched ----
+cred_tokens = {
+    "hex": "0123456789abcdef0123456789abcdef01234567", "jwt": "eyJmYWtldG9rZW4",
+    "pem": "PRIVATE KEY", "xoxb": "xoxb-fk"}
+bad = []
+for line in cred_lines:
+    got = hs.redact(line)
+    if line.startswith("safe words:"):
+        if got != line:
+            bad.append("safe line changed")
+        continue
+    if "[redacted]" not in got:
+        bad.append("no redaction: " + line[:20])
+        continue
+    key = line.split()[0]
+    token = cred_tokens.get(key, line.split()[1])
+    if token in got:
+        bad.append("token survived: " + line[:20])
+P("redact_all", not bad and len(cred_lines) == 15)
+P("redact_bad", ",".join(bad))
+P("redact_31hex", hs.redact("f" * 31) == "f" * 31)
+P("redact_32hex", hs.redact("b" * 32))
+P("redact_word_boundary", hs.redact("task-list disk-usage") == "task-list disk-usage")
+
+# ---- sanitize_text: redact first, then printable-only and the 200-char cut ----
+s = hs.sanitize_text(inj)
+P("inj_len_le200", len(s) <= 200)
+P("inj_printable", all(32 <= ord(c) < 127 for c in s))
+P("inj_no_chars", not any(c in s for c in "`<>$\n"))
+P("inj_canary_survives", "INJECTION-CANARY" in s)   # the text stays, inert, charset-only
+P("inj_not_raw", "$(rm -rf /)" not in s and "<script>" not in s)
+P("san_long", len(hs.sanitize_text("x" * 300)))
+P("san_unicode_gone", hs.sanitize_text("café snow ☃ ok") == "caf snow  ok")
+
+# ---- sanitize_extraction: bad slugs drop, evidence and why are cleaned ----
+obj = hs.sanitize_extraction({
+    "learnings": [
+        {"item": "ok-slug", "kind": "insight", "home": "til", "why": "w `code` <b>$x</b>",
+         "evidence": inj},
+        {"item": "Bad Slug!", "kind": "insight", "home": "til", "why": "w", "evidence": "e"},
+        {"item": "", "kind": "insight", "home": "til", "why": "w", "evidence": "e"}],
+    "sightings": [
+        {"pattern": "good-pattern", "kind": "repeat", "count": 3,
+         "evidence": cred_lines[0]},
+        {"pattern": "UPPER_case!", "kind": "repeat", "count": 1, "evidence": "e"}]})
+P("obj_learn_n", len(obj["learnings"]))
+P("obj_sight_n", len(obj["sightings"]))
+P("obj_why_clean", obj["learnings"][0]["why"])
+P("obj_ev_clean", all(c not in "`<>$\n" and 32 <= ord(c) < 127
+                      for c in obj["learnings"][0]["evidence"]))
+P("obj_sight_redacted", "[redacted]" in obj["sightings"][0]["evidence"]
+                      and "0123456789" not in obj["sightings"][0]["evidence"])
+
+# ---- sweep_process returns the sanitized object ----
+t = {"source": "claude", "session_id": "sx", "last_activity": NOW - 7200, "messages": []}
+os.environ["STUB_OUT"] = json.dumps({"learnings": [
+    {"item": "ok-slug", "kind": "insight", "home": "til", "why": "w", "evidence": inj}],
+    "sightings": [{"pattern": "p", "kind": "repeat", "count": 1,
+                   "evidence": cred_lines[9]}]})
+res = hs.sweep_process(t, "x")
+P("proc_truthy", bool(res))
+P("proc_sanitized", all(c not in "`<>$\n" for c in res["learnings"][0]["evidence"])
+                    and "[redacted]" in res["sightings"][0]["evidence"])
+del os.environ["STUB_OUT"]
+
+# ---- stage1.log: ids and classes only, mode 0600, no transcript/extractor text ----
+iso = lambda e: datetime.datetime.fromtimestamp(e, datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+d = os.path.join(os.environ["HARVEST_SWEEP_CLAUDE_ROOT"], "p")
+os.makedirs(d, exist_ok=True)
+canary_tr = "TRANSCRIPT-CANARY-1"
+canary_ex = "EXTRACTOR-CANARY-2"
+with open(os.path.join(d, "s1.jsonl"), "w") as fh:
+    for k in range(6):
+        fh.write(json.dumps({"type": "user" if k % 2 == 0 else "assistant", "cwd": "/w/x",
+                             "timestamp": iso(NOW - 7200 - (6 - k) * 10),
+                             "message": {"content": [{"type": "text",
+                                          "text": "msg %d %s" % (k, canary_tr)}]}}) + "\n")
+os.utime(os.path.join(d, "s1.jsonl"), (NOW - 7200, NOW - 7200))
+os.environ["STUB_OUT"] = json.dumps({"learnings": [{"item": "ok", "kind": "insight",
+    "home": "til", "why": "w", "evidence": "e %s" % canary_ex}], "sightings": []})
+r = hs.run_selection(schedule_hours=48)
+lp = os.path.join(os.environ["HARVEST_STATE_DIR"], "sweep", "runs",
+                  r["run"]["run_id"], "stage1.log")
+logtext = open(lp).read()
+P("log_exists", True)
+P("log_mode", oct(stat.S_IMODE(os.stat(lp).st_mode)))
+P("log_processed_line", "processed claude s1" in logtext)
+P("log_counts_line", "counts claude" in logtext)
+P("log_no_transcript_text", canary_tr not in logtext)
+P("log_no_extractor_text", canary_ex not in logtext)
+P("log_no_json", '{"learnings"' not in logtext)
+
+# ---- an idle run writes no runs/<run-id>/ directory ----
+base2 = os.path.join(TD, "t8-idle")
+os.environ["HARVEST_STATE_DIR"] = os.path.join(base2, "state")
+os.environ["HARVEST_SWEEP_CLAUDE_ROOT"] = os.path.join(base2, "claude")
+os.makedirs(os.environ["HARVEST_SWEEP_CLAUDE_ROOT"])
+# an empty-but-valid devin db, so the idle run has no source failure either
+import sqlite3
+dbp = os.path.join(base2, "sessions.db")
+conn = sqlite3.connect(dbp)
+conn.execute("CREATE TABLE sessions (id TEXT PRIMARY KEY, working_directory TEXT NOT NULL,"
+             " backend_type TEXT NOT NULL, model TEXT NOT NULL, agent_mode TEXT NOT NULL,"
+             " created_at INTEGER NOT NULL, last_activity_at INTEGER NOT NULL,"
+             " title TEXT, main_chain_id INTEGER, hidden INTEGER NOT NULL DEFAULT 0)")
+conn.execute("CREATE TABLE message_nodes (row_id INTEGER PRIMARY KEY, session_id TEXT"
+             " NOT NULL, node_id INTEGER NOT NULL, parent_node_id INTEGER,"
+             " chat_message TEXT NOT NULL, created_at INTEGER NOT NULL)")
+conn.commit(); conn.close()
+os.environ["HARVEST_SWEEP_DEVIN_DB"] = dbp
+del os.environ["STUB_OUT"]
+r = hs.run_selection(schedule_hours=48)
+P("idle_no_runs_dir", not os.path.exists(os.path.join(
+    os.environ["HARVEST_STATE_DIR"], "sweep", "runs")))
+PY
+)
+t8() { printf '%s\n' "$T8_OUT" | sed -n "s/^$1=//p"; }
+
+assert_eq "AC22: every credential-shape fixture line redacts" "True" "$(t8 redact_all)"
+assert_eq "AC22: redaction leaves no residue (empty = none leaked)" "" "$(t8 redact_bad)"
+assert_eq "AC22: a 31-hex run is not a credential" "True" "$(t8 redact_31hex)"
+assert_eq "AC22: a 32-hex run becomes [redacted]" "[redacted]" "$(t8 redact_32hex)"
+assert_eq "AC22: words merely containing sk- or xox-shaped fragments stay" "True" "$(t8 redact_word_boundary)"
+
+assert_eq "AC9: injection evidence is cut to at most 200 characters" "True" "$(t8 inj_len_le200)"
+assert_eq "AC9: injection evidence is printable ASCII only" "True" "$(t8 inj_printable)"
+assert_eq "AC9: injection evidence drops backticks, angles, \$, newlines" "True" "$(t8 inj_no_chars)"
+assert_eq "AC9: the injection text stays inert, not executed" "True" "$(t8 inj_canary_survives)"
+assert_eq "AC9: no raw metachar sequence survives" "True" "$(t8 inj_not_raw)"
+assert_eq "AC9: the 200-character cut applies" "200" "$(t8 san_long)"
+assert_eq "AC9: non-ASCII is dropped" "True" "$(t8 san_unicode_gone)"
+
+assert_eq "AC9: a learning with a bad slug is dropped, good ones kept" "1" "$(t8 obj_learn_n)"
+assert_eq "AC9: a sighting with a bad pattern is dropped" "1" "$(t8 obj_sight_n)"
+assert_eq "AC9: why is cleaned" "w code bx/b" "$(t8 obj_why_clean)"
+assert_eq "AC9: evidence is cleaned" "True" "$(t8 obj_ev_clean)"
+assert_eq "AC22: a credential in evidence becomes [redacted]" "True" "$(t8 obj_sight_redacted)"
+
+assert_eq "sweep_process returns the sanitized object" "True" "$(t8 proc_truthy)"
+assert_eq "sweep_process output is already redacted and cut" "True" "$(t8 proc_sanitized)"
+
+assert_eq "stage1.log exists after a run that did work" "True" "$(t8 log_exists)"
+assert_eq "stage1.log is mode 0600" "0o600" "$(t8 log_mode)"
+assert_eq "stage1.log logs processed ids" "True" "$(t8 log_processed_line)"
+assert_eq "stage1.log logs per-source counts" "True" "$(t8 log_counts_line)"
+assert_eq "stage1.log never holds transcript text" "True" "$(t8 log_no_transcript_text)"
+assert_eq "stage1.log never holds extractor text" "True" "$(t8 log_no_extractor_text)"
+assert_eq "stage1.log holds no extractor JSON" "True" "$(t8 log_no_json)"
+assert_eq "an idle run leaves no runs/ directory" "True" "$(t8 idle_no_runs_dir)"
+
+# ============================================================
 echo ""
 echo "=== Results ==="
 echo "Passed: $PASS / $TOTAL"
