@@ -15,6 +15,8 @@ SEMOUT="${DIR}/tests/fixtures/semantic-llm-out.json"  # injected fake model resp
 SFIX="${DIR}/tests/fixtures/session-sample.jsonl"  # clean session (no sidechain) for archetype/circadian
 LFIX="${DIR}/tests/fixtures/skill-latency-sample.jsonl"  # per-skill wall-time: tiny-frequent 3x50ms=150, rare-slow 1x100ms=100
 GFIX="${DIR}/tests/fixtures/goal-hook-sample.jsonl"  # /goal Stop hooks: alpha x3, beta x2 (both first-word "Drive"), gamma x2 (prose mentions build.sh), + one real script hook
+HEFIX="${DIR}/tests/fixtures/hook-events-sample.jsonl"  # a file WITH hookInfos: Stop (hookInfos), a no-duration hookInfos entry, SessionStart/PreToolUse/PostToolUse/cancelled attachments, a duplicate Stop attachment, a no-command/no-duration attachment
+HESDKFIX="${DIR}/tests/fixtures/hook-events-sdkcli-sample.jsonl"  # a headless (entrypoint: sdk-cli) file with NO hookInfos at all: its only Stop record is an attachment
 
 pass=0; fail=0
 ok() { echo "  ok: $*"; pass=$((pass+1)); }
@@ -33,11 +35,12 @@ if grep -Eq 'Read[[:space:]]+1[[:space:]]+0' <<<"$out"; then ok "Read count 1, e
 
 echo "[4] hooks: slow hook flagged with max >= 500 (negative control vs fast hook)"
 out="$("$CC" hooks --file "$FIX")"
-slowmax="$(awk '/slow-hook\.sh/ {print $5}' <<<"$out")"
+# column 6 (event now sits at column 2, shifting runs/p50/p95/maxms right by one)
+slowmax="$(awk '/slow-hook\.sh/ {print $6}' <<<"$out")"
 if grep -q 'slow-hook.sh' <<<"$out" && [[ "${slowmax:-0}" -ge 500 ]]; then ok "slow-hook.sh maxms=${slowmax}"; else no "slow hook not flagged: $out"; fi
 
 echo "[5] hooks: fast inline-echo hook stays small (< 100ms)"
-fastmax="$(awk '/inline-echo/ {print $5}' <<<"$out")"
+fastmax="$(awk '/inline-echo/ {print $6}' <<<"$out")"
 if [[ -n "${fastmax:-}" && "${fastmax}" -lt 100 ]]; then ok "inline-echo maxms=${fastmax} (negative control)"; else no "fast hook wrong: $out"; fi
 
 echo "[6] hooks: hook error surfaced (count 1)"
@@ -547,5 +550,91 @@ assert byhook["~/.claude/hooks/huge-dump/huge-dump.sh"] == (0, True), byhook
 ' "$jout"; then ok "json sub-rows correct, spilled flagged (incl. zero-token spill), no --detail needed"; else no "json sub-rows wrong: $jout"; fi
 
 echo
+echo "[102] hooks AC1: stop-hook.sh/Stop comes only from hookInfos (runs=1); the duplicate attachment (line 5) and the no-duration hookInfos entry (line 2) do not add to it or produce their own row"
+hjson="$("$CC" hooks --file "$HEFIX" --json)"
+if echo "$hjson" | python3 -c '
+import json, sys
+d = json.load(sys.stdin)
+rows = [h for h in d["hooks"] if h["hook"] == "stop-hook.sh" and h["event"] == "Stop"]
+assert len(rows) == 1, rows
+assert rows[0]["count"] == 1, rows
+nodur = [h for h in d["hooks"] if h["hook"] == "nodur-hook.sh"]
+assert nodur == [], nodur
+'; then ok "stop-hook.sh/Stop runs=1, nodur-hook.sh absent"; else no "AC1 wrong: $hjson"; fi
+
+echo "[103] hooks AC2: tool-first.sh/SessionStart surfaces (runs=1, maxms>=1500) - the previously-invisible slow SessionStart hook"
+if echo "$hjson" | python3 -c '
+import json, sys
+d = json.load(sys.stdin)
+rows = [h for h in d["hooks"] if h["hook"] == "tool-first.sh" and h["event"] == "SessionStart"]
+assert len(rows) == 1, rows
+assert rows[0]["count"] == 1 and rows[0]["max_ms"] >= 1500, rows
+'; then ok "tool-first.sh/SessionStart surfaced"; else no "AC2 wrong: $hjson"; fi
+
+echo "[104] hooks AC3: pre-hook.sh/PreToolUse runs=2, p50/max computed over [40, 44]"
+if echo "$hjson" | python3 -c '
+import json, sys
+d = json.load(sys.stdin)
+rows = [h for h in d["hooks"] if h["hook"] == "pre-hook.sh" and h["event"] == "PreToolUse"]
+assert len(rows) == 1, rows
+assert rows[0]["count"] == 2 and rows[0]["max_ms"] == 44, rows
+'; then ok "pre-hook.sh/PreToolUse runs=2, max=44"; else no "AC3 wrong: $hjson"; fi
+
+echo "[105] hooks AC4: pre-hook.sh/PostToolUse (runs=1, maxms=70) is a SEPARATE row from pre-hook.sh/PreToolUse - (label, event) split, not label-only"
+if echo "$hjson" | python3 -c '
+import json, sys
+d = json.load(sys.stdin)
+post = [h for h in d["hooks"] if h["hook"] == "pre-hook.sh" and h["event"] == "PostToolUse"]
+pre = [h for h in d["hooks"] if h["hook"] == "pre-hook.sh" and h["event"] == "PreToolUse"]
+assert len(post) == 1 and post[0]["count"] == 1 and post[0]["max_ms"] == 70, post
+assert len(pre) == 1 and pre[0]["count"] == 2, pre
+'; then ok "pre-hook.sh split into PreToolUse (2) + PostToolUse (1) rows"; else no "AC4 wrong: $hjson"; fi
+
+echo "[106] hooks AC5: repo-memory.sh/SessionStart (hook_cancelled attachment) is counted, runs=1 maxms>=3500 - a timed-out hook still cost turn time"
+if echo "$hjson" | python3 -c '
+import json, sys
+d = json.load(sys.stdin)
+rows = [h for h in d["hooks"] if h["hook"] == "repo-memory.sh" and h["event"] == "SessionStart"]
+assert len(rows) == 1, rows
+assert rows[0]["count"] == 1 and rows[0]["max_ms"] >= 3500, rows
+'; then ok "repo-memory.sh/SessionStart (cancelled) counted"; else no "AC5 wrong: $hjson"; fi
+
+echo "[107] hooks AC6: the fixture's total row count is exactly 5 (nodur-hook.sh and the output_style attachment produce no rows, no crash)"
+if echo "$hjson" | python3 -c '
+import json, sys
+d = json.load(sys.stdin)
+assert len(d["hooks"]) == 5, d["hooks"]
+'; then ok "exactly 5 (hook, event) rows"; else no "AC6 wrong: $hjson"; fi
+
+echo "[108] hooks AC7: text table header carries an event column; --json hooks array carries event per row, one entry per (hook, event) pair"
+htext="$("$CC" hooks --file "$HEFIX")"
+if sed -n '2p' <<<"$htext" | grep -Eq '^ *hook +event +runs' && echo "$hjson" | python3 -c '
+import json, sys
+d = json.load(sys.stdin)
+assert all("event" in h for h in d["hooks"]), d["hooks"]
+'; then ok "event column in header and json"; else no "AC7 wrong: header=$(head -1 <<<"$htext") json=$hjson"; fi
+
+echo "[109] hooks AC10 (headless gap): a transcript with NO hookInfos anywhere (entrypoint sdk-cli) still counts its Stop hook, from the attachment alone"
+sdkjson="$("$CC" hooks --file "$HESDKFIX" --json)"
+if echo "$sdkjson" | python3 -c '
+import json, sys
+d = json.load(sys.stdin)
+rows = [h for h in d["hooks"] if h["hook"] == "headless-stop-hook.sh" and h["event"] == "Stop"]
+assert len(rows) == 1, rows
+assert rows[0]["count"] == 1 and rows[0]["max_ms"] == 25, rows
+'; then ok "headless-only Stop attachment counted (runs=1, maxms=25)"; else no "AC10 wrong: $sdkjson"; fi
+
+echo "[110] hooks AC10 negative control (per-file scoping): the headless file's Stop row appears while the non-headless fixture's duplicate Stop attachment (its own AC1) still does not add a second run"
+if echo "$hjson" | python3 -c '
+import json, sys
+d = json.load(sys.stdin)
+rows = [h for h in d["hooks"] if h["hook"] == "stop-hook.sh" and h["event"] == "Stop"]
+assert rows[0]["count"] == 1, rows  # still 1, not 2: the per-file buffer for THIS file was discarded
+' && echo "$sdkjson" | python3 -c '
+import json, sys
+d = json.load(sys.stdin)
+assert any(h["hook"] == "headless-stop-hook.sh" for h in d["hooks"]), d["hooks"]
+'; then ok "per-file Stop scoping holds on both fixtures"; else no "AC10 scoping wrong: $hjson / $sdkjson"; fi
+
 if [[ $fail -gt 0 ]]; then echo "smoke: $pass passed, $fail FAILED" >&2; exit 1; fi
 echo "smoke: all $pass passed"

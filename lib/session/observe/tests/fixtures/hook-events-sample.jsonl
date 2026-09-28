@@ -1,0 +1,9 @@
+{"type":"system","timestamp":"2026-09-28T10:00:00Z","subtype":"stop_hook_summary","hookInfos":[{"command":"bash /x/stop-hook.sh","durationMs":30}]}
+{"type":"system","timestamp":"2026-09-28T10:00:01Z","subtype":"stop_hook_summary","hookInfos":[{"command":"bash /x/nodur-hook.sh"}]}
+{"type":"attachment","timestamp":"2026-09-28T10:00:02Z","attachment":{"type":"hook_success","hookName":"SessionStart:startup","hookEvent":"SessionStart","command":"~/.claude/hooks/tool-first/tool-first.sh","durationMs":1500,"exitCode":0,"stdout":"","stderr":""}}
+{"type":"attachment","timestamp":"2026-09-28T10:00:03Z","attachment":{"type":"hook_success","hookName":"pre-hook","hookEvent":"PreToolUse","command":"bash /x/pre-hook.sh","durationMs":40,"exitCode":0,"stdout":"","stderr":""}}
+{"type":"attachment","timestamp":"2026-09-28T10:00:04Z","attachment":{"type":"hook_success","hookName":"Stop","hookEvent":"Stop","command":"bash /x/stop-hook.sh","durationMs":9999,"exitCode":0,"stdout":"","stderr":""}}
+{"type":"attachment","timestamp":"2026-09-28T10:00:05Z","attachment":{"type":"output_style","content":"some style text"}}
+{"type":"attachment","timestamp":"2026-09-28T10:00:06Z","attachment":{"type":"hook_success","hookName":"pre-hook","hookEvent":"PreToolUse","command":"bash /x/pre-hook.sh","durationMs":44,"exitCode":0,"stdout":"","stderr":""}}
+{"type":"attachment","timestamp":"2026-09-28T10:00:07Z","attachment":{"type":"hook_success","hookName":"pre-hook","hookEvent":"PostToolUse","command":"bash /x/pre-hook.sh","durationMs":70,"exitCode":0,"stdout":"","stderr":""}}
+{"type":"attachment","timestamp":"2026-09-28T10:00:08Z","attachment":{"type":"hook_cancelled","hookName":"SessionStart:startup","hookEvent":"SessionStart","command":"~/.claude/hooks/repo-memory/repo-memory.sh","durationMs":3500,"timedOut":true}}
