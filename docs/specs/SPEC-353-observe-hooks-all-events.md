@@ -1,7 +1,7 @@
 # Spec: session observe hooks counts every hook event, not just Stop
 
 Generated: 2026-09-28
-Status: DRAFT (branch `feat/observe-all-hook-events`), revised after Validate (NEEDS REVISION, 2 critical, 6 warnings)
+Status: DRAFT (branch `feat/observe-all-hook-events`), revised after Validate round 1 (NEEDS REVISION, 2 critical, 6 warnings) and round 2 (NEEDS REVISION, 1 critical, 6 warnings)
 Lane: normal
 Type: spec-feature
 File: `docs/specs/SPEC-353-observe-hooks-all-events.md`
@@ -101,6 +101,51 @@ different events), so the split is exercised, not just argued for.
 
 ## Design
 
+### Routing diagram
+
+```
+                    entry in collect()'s single pass over the transcript
+                                        |
+                +-----------------------------------------------+
+                |                                                |
+       type == "system"                                type == "attachment"
+   hookInfos: [{command, durationMs}]              attachment: {type, command,
+                |                                    durationMs, hookEvent, ...}
+                v                                                v
+   for each h in hookInfos:                      attachment a dict, command a
+   durationMs a number,                          non-empty string, durationMs
+   excluding bool? --no--> skip h                 a number, excluding bool?
+                |                                                |
+               yes                                    --no--> skip record
+                v                                                |
+   key = (hook_label(command),                                  yes
+          "Stop")                                                v
+                |                                  event = attachment["hookEvent"]
+                |                                     (fallback "?" if not a
+                |                                      non-empty string)
+                |                                                |
+                |                                  event == "Stop"? --yes--> skip
+                |                                                |          (hookInfos already
+                |                                               no           counts this Stop hook)
+                |                                                v
+                |                            key = (hook_label(command), event)
+                |                                                |
+                +------------------------+-----------------------+
+                                          |
+                                          v
+                     hook_durs[key].append(durationMs)
+                     hook_sample[key] = command[:60] (first sample only)
+                                          |
+                                          v
+                    hook_rows() unpacks (label, event) per key
+                                          |
+                        +------------------------------+
+                        |                                |
+                  hooks text table                  --json "hooks"
+             hook/event/runs/p50ms/               [{"hook", "event",
+             p95ms/maxms/sample                     "count", "p50_ms", ...}]
+```
+
 ### The change
 
 In `collect()`, at the existing `hookInfos` block (session-observe.py, around
@@ -113,30 +158,39 @@ line 364-372):
   transcripts, so this is not a guess dressed as data; it is what the field
   means today).
 - The `hookInfos` branch now skips an entry whose `durationMs` is missing or
-  not a number, instead of the current `h.get("durationMs") or 0`. Counting a
-  missing duration as zero silently drags the Stop percentiles down; skipping
-  it matches "no duration recorded means not counted," the same rule the new
-  attachment branch uses. This is a small independent fix riding along with
-  the main one, on the same field, in the same block.
+  not a number, instead of the current `h.get("durationMs") or 0`. "Number"
+  means `isinstance(x, (int, float))` **excluding `bool`**: `True`/`False`
+  are `int` subclasses in Python, so a naive `isinstance` check would accept
+  a stray boolean as a duration. Counting a missing duration as zero silently
+  drags the Stop percentiles down; skipping it matches "no duration recorded
+  means not counted," the same rule the new attachment branch uses. This is
+  a small independent fix riding along with the main one, on the same field,
+  in the same block.
 - A new branch, alongside the `hookInfos` branch, handles
   `entry.get("type") == "attachment"`:
   - Skip unless `attachment` is a dict, `attachment["command"]` is a
-    non-empty string, and `attachment["durationMs"]` is an int or float.
-    This is the general rule the item asks for ("any other attachment type
-    that carries `durationMs` and `command`"): it does not special-case
-    `hook_success` by name, so a future attachment type with the same two
-    fields is picked up automatically, and one missing either field (no
-    `command`, no `durationMs`) is skipped rather than counted as zero.
+    non-empty string, and `attachment["durationMs"]` is a number per the same
+    int-or-float-excluding-bool check above. This is the general rule the
+    item asks for ("any other attachment type that carries `durationMs` and
+    `command`"): it does not special-case `hook_success` by name, so a
+    future attachment type with the same two fields is picked up
+    automatically, and one missing either field (no `command`, no
+    `durationMs`) is skipped rather than counted as zero.
   - **Decision: this generic rule also counts `hook_cancelled` and
     `hook_non_blocking_error` attachments**, both of which carry `command`
     and `durationMs` in observed transcripts. This is deliberate, not an
     accepted side effect: a cancelled (timed-out) or non-blocking-failed
     hook still occupied turn time, and excluding it would hide exactly the
     worst-case hooks this view exists to surface. The existing `hookErrors`
-    counter is unchanged and still counts these as errors too; a hook
-    showing up both as slow (in the `hooks` table) and as an error (in the
-    error count) is two different axes agreeing, not a double-count of one
-    axis.
+    counter is **not** a safety net against double-counting here: in
+    observed transcripts every non-empty `hookErrors` list sits on a
+    `stop_hook_summary` system entry (Stop only), and most `hook_cancelled`
+    / `hook_non_blocking_error` attachments fire under non-Stop events (a
+    broad scan found 57 of 64 non-Stop). Those never reach `hookErrors` at
+    all, so the `hooks` view is the only place their cost shows up; it is
+    not a duplicate of an existing error signal. The small Stop-event share
+    of these attachments is excluded by the `event == "Stop"` skip below,
+    same as any other Stop attachment.
   - Read `event = attachment.get("hookEvent")` (fall back to `"?"` if not a
     non-empty string).
   - **Skip when `event == "Stop"`.** `hookInfos` already counts every Stop
@@ -197,7 +251,22 @@ is this hook slow under" answerable directly, which is what the item's
 | Task | Files | Depends on |
 |---|---|---|
 | T1: attachment aggregation, `(label, event)` keying, skip-missing on both branches, `hook_cancelled`/`hook_non_blocking_error` coverage, fixture + smoke tests | `lib/session/observe/bin/session-observe`, `lib/session/observe/tests/fixtures/hook-events-sample.jsonl`, `lib/session/observe/tests/smoke.sh` | none |
-| T2: docs | `lib/session/observe/README.md` ("What it reads" hooks bullet + the sample `# hooks` output table), `lib/session/observe/SPEC.md` (hooks purpose bullet, the "Source" paragraph, the `collect` behaviour `hookInfos[]` bullet), `bin/session-observe` module docstring | T1 |
+| T2: docs | `lib/session/observe/README.md` ("What it reads" hooks bullet + the sample `# hooks` output table), `lib/session/observe/SPEC.md` (hooks purpose bullet, the "Source" paragraph, the `collect` behaviour `hookInfos[]` bullet, and the stale "Hook labels" known-limitation line, see note below), `bin/session-observe` module docstring | T1 |
+
+T1 carries AC1-AC9 (9 acceptance criteria) as one task; it does not need to
+split. If a smaller merge is preferred, the `hookInfos` skip-missing fix
+(AC1, AC6, AC9) is independently valuable and low-risk, and could land first
+as T1a, with the attachment-aggregation branch and `(label, event)` keying
+following as T1b.
+
+T2 also corrects `SPEC.md`'s "Hook labels" paragraph, which still says
+long-text inline hooks "fragment by first word." That is already fixed:
+`hook_label()`'s `len(c) > 120` check routes any long command (not just ones
+starting with `echo`) to the stable `inline-echo:<hash>` branch before the
+first-word fallback runs, and `tests/fixtures/goal-hook-sample.jsonl` already
+proves distinct long-text hooks (alpha/beta/gamma) land in separate rows, not
+one merged-by-first-word row. Unrelated to this spec's fix, but T2 already
+opens `SPEC.md`, so the stale line is corrected in the same edit pass.
 
 ## Test plan
 
@@ -240,7 +309,10 @@ New fixture `lib/session/observe/tests/fixtures/hook-events-sample.jsonl`:
   `hook  event  runs  p50ms  p95ms  maxms  sample` (`event` between `hook`
   and `runs`). `--json`'s `hooks` array carries an `"event"` key per row and
   has one entry per `(hook, event)` pair, not one per hook label: a
-  documented cardinality change (see Design), not an oversight.
+  documented cardinality change (see Design), not an oversight. `--top N`
+  now caps the number of `(hook, event)` rows returned, not the number of
+  distinct hook labels: a hook firing under 3 events can occupy up to 3 of
+  those N slots, where before this change it occupied at most 1.
 - AC8: `smoke.sh` cases `[4]` and `[5]` (slow-hook flagged, fast inline-echo
   hook stays small) are updated to read column `$6` for `maxms`, not `$5`.
   The new `event` column shifts `maxms` from column 5 to column 6; with the
@@ -252,18 +324,23 @@ New fixture `lib/session/observe/tests/fixtures/hook-events-sample.jsonl`:
   output keeps the same rows and duration values as before, with `event`
   added as `Stop` on every existing row and the new header column; it is
   **not** byte-identical to the pre-change output.
-- AC9: the negative control (revert the `collect()` attachment branch and
-  the `hookInfos` skip-missing guard, restoring `h.get("durationMs") or 0`
-  and no attachment aggregation) on `hook-events-sample.jsonl` produces only
-  2 rows total: `stop-hook.sh` (from `hookInfos` line 1, `runs=1`) and
-  `nodur-hook.sh` (from `hookInfos` line 2, wrongly shown with `runs=1`,
-  `maxms=0`, because the old code counts a missing duration as zero). No
-  `event` column, no SessionStart/PreToolUse/PostToolUse/cancelled rows.
-  This demonstrates the fixture actually exercises both fixes and is not
-  trivially green either way.
+- AC9: the negative control reverts `session-observe` to its whole pre-fix
+  version (the file as it stands before this spec's implementation lands,
+  for example `git show <base-ref>:lib/session/observe/bin/session-observe`
+  applied over the fixture run), not just one branch. That means no
+  attachment aggregation, no `(label, event)` keying, no `event` column, and
+  the old `h.get("durationMs") or 0` behaviour. On `hook-events-sample.jsonl`
+  it produces exactly 2 rows total, both keyed by label only: `stop-hook.sh`
+  (from `hookInfos` line 1, `runs=1`, `maxms=30`) and `nodur-hook.sh` (from
+  `hookInfos` line 2, wrongly shown with `runs=1`, `maxms=0`, because the old
+  code counts a missing duration as zero). No SessionStart, PreToolUse,
+  PostToolUse, or cancelled-hook rows appear at all. This demonstrates the
+  fixture actually exercises every part of the fix and is not trivially
+  green either way.
 - AC10 (docs): `README.md`'s "What it reads" hooks bullet and its sample
   `# hooks` output table, `SPEC.md`'s hooks purpose bullet, its "Source"
-  paragraph, and its `collect` behaviour `hookInfos[]` bullet, and the
+  paragraph, its `collect` behaviour `hookInfos[]` bullet, and its "Hook
+  labels" known-limitation line (see Task breakdown), and the
   `bin/session-observe` module docstring, are all updated to say hook
   durations come from `hookInfos` (Stop only, via `stop_hook_summary`) plus
   `attachment` records (`hook_success`, `hook_cancelled`,
@@ -320,3 +397,11 @@ above is run once the implementation phase lands it.)
 - The `--json` `hooks` array's cardinality change (one row per hook to one
   row per `(hook, event)`) is called out explicitly here and lands in this
   module's own `SPEC.md` in the same change (T2), per validation feedback.
+- The numeric check on both branches excludes `bool` explicitly
+  (`isinstance(True, int)` is true in Python), so a stray boolean value
+  never counts as a duration.
+- `hookErrors` is not treated as already covering `hook_cancelled` /
+  `hook_non_blocking_error`: it only appears on `stop_hook_summary` (Stop)
+  entries in observed transcripts, and most of those two attachment types
+  fire under non-Stop events, so counting their durations in `hooks` is not
+  a duplicate signal.
