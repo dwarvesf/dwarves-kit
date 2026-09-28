@@ -209,14 +209,19 @@ Claude Code                         Codex
             |                                   |
             v                                   v
 hooks/hooks.json                    hooks/codex-hooks.json
-            |                                   |
+(and root settings.json)                        |
             |                                   v
-            |                        codex-hook-adapter.sh
+            v                        codex-hook-adapter.sh
+     anchor-root.sh                             |
+  (cd to the repo root,                         |
+   then exec the hook)                          |
             |                                   |
             +-------------------+---------------+
                                 v
                  shared hooks/*.sh policies
 ```
+
+On the Claude Code side every dispatch-table entry runs through `hooks/anchor-root.sh`, so a hook fired from a subdirectory reads and writes at the repo (or worktree) root. `secrets-guard.sh` is the one entry left unanchored: it resolves relative path operands against the real cwd. `tests/test-hook-anchor.sh` pins both tables.
 
 The Codex adapter maps `last_assistant_message` into the shared Stop input and extracts Bash or `apply_patch` paths for the shared secret policy. It fails closed when `jq` or a hard policy is unavailable. Claude manifests and settings remain unchanged. The shared denylist adds Codex and Cloudflare credential files for both runtimes.
 
