@@ -372,8 +372,10 @@ all", not "which way should I build it".
 
 After each PASS verdict, mark it as done in `docs/specs/SPEC-NNN-<slug>.md`:
 ```
-- [x] TASK-A: [description] -- DONE (commit: abc1234, verified)
+- [x] TASK-A (DONE, commit abc1234, verified): [description]
 ```
+
+Make this edit, and the task's verification-log entry, with `bash lib/spec/spec.sh task-done docs/specs/SPEC-NNN-<slug>.md TASK-A --commit <sha> --verify-log docs/verification/<spec-slug>.md --command '<cmd>' --exit <n> --excerpt '<output>' --verdict PASS`, which never commits, so commit both paths yourself.
 
 The "verified" tag distinguishes tasks that passed the verification pipeline from tasks that were manually approved.
 
