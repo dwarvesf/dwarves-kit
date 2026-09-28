@@ -1015,6 +1015,129 @@ def candidates(now=None):
     return out
 
 
+# ---- annotator -----------------------------------------------------------------
+
+_KIT_ROOT = os.path.dirname(_HERE)
+_PRECEDENT_META = {"data_marker", "records", "total_hits", "sections_with_hits",
+                   "nothing_matched"}
+
+# A port of lib/wrap/report-lint.sh's PROSE_TARGET_RE: a home under memory/,
+# research/, or _meta/handoffs/ is prose, not code (DEC-59).
+PROSE_HIT_RE = re.compile(
+    r"(^|/|\s)memory([/.]|\s|$)|(^|/|\s)research/|_meta/handoffs/")
+
+
+def _precedent_bin():
+    return os.environ.get("HARVEST_SWEEP_PRECEDENT") \
+        or os.path.join(_KIT_ROOT, "bin", "precedent")
+
+
+def _lane_classify_bin():
+    return os.environ.get("HARVEST_SWEEP_LANE_CLASSIFY") \
+        or os.path.join(_KIT_ROOT, "lib", "classify", "lane-classify.sh")
+
+
+def _run_argv(argv):
+    """One annotator subprocess: an argv list through subprocess.run, never a
+    shell (DEC-77). Returns (rc, stdout); a spawn failure is rc 127."""
+    try:
+        r = subprocess.run(argv, capture_output=True, text=True, timeout=30)
+        return r.returncode, r.stdout or ""
+    except (OSError, subprocess.SubprocessError):
+        return 127, ""
+
+
+def _precedent_hits(words):
+    """The flattened, still-ordered hit list of `precedent find --surface
+    inventory --json`: section values in JSON order, hits in score order."""
+    _rc, out = _run_argv([_precedent_bin(), "find", "--surface", "inventory",
+                          "--json", words])
+    try:
+        data = json.loads(out)
+    except ValueError:
+        return []
+    hits = []
+    for key, val in data.items():
+        if key in _PRECEDENT_META or not isinstance(val, dict):
+            continue
+        hits += [h for h in (val.get("hits") or []) if isinstance(h, str)]
+    return hits
+
+
+def _home_of(hit):
+    """The path a precedent hit names: the text before the '  , ' summary join."""
+    return hit.split("  , ", 1)[0].strip()
+
+
+def _hit_summary(hit):
+    """The text after '  , ' (the hit's summary), empty when the hit has none."""
+    parts = hit.split("  , ", 1)
+    return parts[1].strip() if len(parts) > 1 else ""
+
+
+def _classify_lane(query):
+    """The last stdout line of `lane-classify.sh classify`, or 'normal' when the
+    call gave nothing (the classifier's own default lane)."""
+    _rc, out = _run_argv([_lane_classify_bin(), "classify", query])
+    lines = [l.strip() for l in out.splitlines() if l.strip()]
+    return lines[-1] if lines else "normal"
+
+
+def _append_proposed(c, run_id, now):
+    """The REPORTED proposed.jsonl entry for one annotated candidate (DEC-51)."""
+    row = {"pattern": c["pattern"], "run_id": run_id, "outcome": "REPORTED",
+           "precedent": c["precedent"], "lane": c["lane"], "ts": int(now)}
+    with open(_sweep_file("proposed.lock"), "a") as lockf:
+        fcntl.flock(lockf, fcntl.LOCK_EX)
+        try:
+            with open(_sweep_file("proposed.jsonl"), "a", encoding="utf-8") as fh:
+                fh.write(json.dumps(row, sort_keys=True) + "\n")
+        finally:
+            fcntl.flock(lockf, fcntl.LOCK_UN)
+
+
+def annotate_candidates(cands, run_id, now=None):
+    """Precedent + lane per candidate (DEC-51, DEC-59, DEC-77), each annotated in
+    place and recorded REPORTED in proposed.jsonl with `reported: phase 1 reports
+    only` in the bullet. Returns (cands, prose_only_slugs): a candidate whose
+    hits are all prose lands in the slug list the report turns into the single
+    PROSE-ONLY: bullet. Top code hit beats every prose hit in one list."""
+    now = _now() if now is None else now
+    prose_only = []
+    for c in cands:
+        words = c["pattern"].replace("-", " ")
+        hits = _precedent_hits(words)
+        code = next((h for h in hits
+                     if not PROSE_HIT_RE.search(_home_of(h).lower())), None)
+        pick = code if code is not None else (hits[0] if hits else "")
+        c["home"] = _home_of(pick) if pick else ""
+        c["hit"] = pick
+        c["hit_summary"] = _hit_summary(pick)
+        c["precedent"] = "ENHANCE %s" % c["home"] if c["home"] \
+            else "NEW (precedent: nothing matched)"
+        evidence = (c.get("evidence") or "").split("\n")[0]
+        c["lane"] = _classify_lane("%s: %s" % (words, evidence))
+        if hits and code is None:
+            prose_only.append(c["pattern"])
+        _append_proposed(c, run_id, now)
+    return cands, prose_only
+
+
+def reported_line(c):
+    """The REPORTED bullet for one annotated candidate (report grammar, DEC-56)."""
+    tail = "%s (lane=%s, reported: phase 1 reports only)" % (
+        (c["hit_summary"] or c["hit"]) if c["home"] else c["pattern"],
+        c["lane"])
+    return "- REPORTED %s %s: %s" % (c["pattern"], c["precedent"], tail)
+
+
+def prose_only_line(slugs):
+    """The one PROSE-ONLY: bullet the report emits when an all-prose candidate
+    list matched only memory/research/handoff homes (DEC-59)."""
+    return ("- PROSE-ONLY: %s: only prose homes matched; "
+            "phase 1 reports and builds nothing" % ", ".join(slugs))
+
+
 class Stage1Log(object):
     """runs/<run-id>/stage1.log, mode 0600: counts, ids, and error classes only, never
     transcript or extractor text (DEC-89). The file appears on the first logged line, so

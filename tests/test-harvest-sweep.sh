@@ -2157,6 +2157,140 @@ assert_eq "T10: sighting evidence is stored sanitized" "raw tag tick var" "$(t10
 assert_eq "T10: the sighting row has the spec's keys" "canonical,count,cwd,evidence,extract_key,kind,lead_session_id,pattern,session_id,source,ts" "$(t10 wired_keys)"
 
 # ============================================================
+echo "=== T11 annotator ==="
+
+T11_OUT=$(KIT_DIR="$KIT_DIR" TD="$TD" T5_NOW="$T5_NOW" python3 - <<'PY'
+import importlib.util, json, os, subprocess
+spec = importlib.util.spec_from_file_location("hs", os.path.join(os.environ["KIT_DIR"], "hooks", "harvest_sweep.py"))
+hs = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(hs)
+KIT, TD, NOW = (os.environ["KIT_DIR"], os.environ["TD"], int(os.environ["T5_NOW"]))
+FIX = os.path.join(KIT, "tests", "fixtures", "harvest-sweep")
+P = lambda k, v: print("%s=%s" % (k, v))
+DAY = 86400
+base = os.path.join(TD, "t11")
+os.makedirs(base, exist_ok=True)
+os.environ["HARVEST_STATE_DIR"] = os.path.join(base, "state")
+os.environ["HARVEST_SWEEP_NOW"] = str(NOW)
+os.environ["HARVEST_SWEEP_PRECEDENT"] = os.path.join(FIX, "stub-precedent.sh")
+os.environ["HARVEST_SWEEP_LANE_CLASSIFY"] = os.path.join(FIX, "stub-lane-classify.sh")
+os.environ["STUB_PRECEDENT_RECORD"] = os.path.join(base, "prec-rec")
+os.environ["STUB_LANE_RECORD"] = os.path.join(base, "lane-rec")
+os.environ["STUB_LANE"] = "backfill"
+HITS_FILE = os.path.join(base, "hits.json")
+os.environ["STUB_PRECEDENT_HITS_FILE"] = HITS_FILE
+
+def t(sid, lead=None):
+    return {"source": "claude", "session_id": sid, "lead_session_id": lead,
+            "cwd": "/work/app", "last_activity": NOW}
+
+def sight(pattern, kind="repeat", count=1, evidence=None):
+    return {"pattern": pattern, "kind": kind, "count": count,
+            "evidence": evidence or ("ev " + pattern)}
+
+def write_hits(arr):
+    with open(HITS_FILE, "w") as fh:
+        json.dump(arr, fh)
+
+def rec(name):
+    return open(os.path.join(os.environ["STUB_%s_RECORD" % name], "argv")).read().splitlines()
+
+def cands_for(pattern, n=3, evidence=None):
+    for i in range(n):
+        hs._record_sightings(t("%s-%d" % (pattern[:6], i)),
+                             [sight(pattern, evidence=evidence)])
+    return [c for c in hs.candidates(NOW) if c["pattern"] == pattern]
+
+# ---- AC18: a code home beats a prose home in one hit list ----
+write_hits(["memory/notes/retry-proc.md  , the hand procedure",
+            "tools/retry/bin/retry.sh  , retries flaky jobs"])
+mc = cands_for("mixed-home-pat", evidence="did it by hand")[0]
+annotated, prose = hs.annotate_candidates([mc], "run-t1", NOW)
+mc = annotated[0]
+P("mixed_home", mc["home"])
+P("mixed_prec", mc["precedent"])
+P("mixed_prose", "mixed-home-pat" in prose)
+P("mixed_line", hs.reported_line(mc))
+P("argv_prec", "|".join(rec("PRECEDENT")))
+P("argv_lane", "|".join(rec("LANE")))
+P("lane_used", mc["lane"])
+
+# ---- AC18: an all-prose hit list lands one PROSE-ONLY bullet and lint rc 0 ----
+ap = cands_for("all-prose-pat", evidence="notes say do it")[0]
+write_hits(["memory/notes/proc-a.md  , hand procedure",
+            "research/2026-09-10-proc.md  , research note"])
+annotated2, prose2 = hs.annotate_candidates([ap], "run-t2", NOW)
+ap = annotated2[0]
+P("prose_home", ap["home"])
+P("prose_flag", "all-prose-pat" in prose2)
+P("prose_line", hs.prose_only_line(prose2))
+bullets = [hs.reported_line(ap)] + ([hs.prose_only_line(prose2)] if prose2 else [])
+report = "\n".join(["## Harvest sweep: run-t2", "",
+                    "**Needs you:** NOTHING", "",
+                    "**Built:**"] + bullets + [
+                    "", "**Seam:** SKIPPED: the sweep runs no seams in phase 1",
+                    "", "**What happened**", "- body"])
+rp = os.path.join(base, "report.md")
+with open(rp, "w") as fh:
+    fh.write(report)
+lint = subprocess.run(["bash", os.path.join(KIT, "lib", "wrap", "report-lint.sh"), rp],
+                      capture_output=True, text=True)
+P("prose_lint_rc", lint.returncode)
+P("prose_lint_err", lint.stderr.strip().splitlines()[0] if lint.stderr.strip() else "")
+
+# ---- AC15: a precedent miss records NEW ----
+nm = cands_for("no-match-pat")[0]
+write_hits([])
+annotated3, _ = hs.annotate_candidates([nm], "run-t3", NOW)
+nm = annotated3[0]
+P("new_prec", nm["precedent"])
+P("new_line", hs.reported_line(nm))
+
+# ---- AC15: proposed.jsonl rows are REPORTED, and a rerun reports nothing again ----
+prows = [json.loads(l) for l in open(os.path.join(
+    os.environ["HARVEST_STATE_DIR"], "sweep", "proposed.jsonl"))]
+prow = [r for r in prows if r["pattern"] == "mixed-home-pat"][0]
+P("prow", "%s|%s|%s|%s" % (prow["outcome"], prow["run_id"], prow["precedent"], prow["lane"]))
+P("prow_keys", ",".join(sorted(prow.keys())))
+rest = [c["pattern"] for c in hs.candidates(NOW)
+        if c["pattern"] in ("mixed-home-pat", "all-prose-pat", "no-match-pat")]
+P("rerun_blocked", ",".join(rest))
+
+# ---- AC23: metachar evidence is one argv element, never shell-split ----
+marker = os.path.join(base, "pwned")
+evil = "ok ; mkdir %s |& ' \"q\" ;" % marker
+pc = cands_for("pwn-evidence-pat", evidence=evil)[0]
+write_hits([])
+hs.annotate_candidates([pc], "run-t4", NOW)
+lane_argv = rec("LANE")
+P("pwn_marker", os.path.exists(marker))
+P("pwn_argv_one", lane_argv[-1] == "pwn evidence pat: %s" % evil)
+P("pwn_argv_head", "|".join(lane_argv[:-1]))
+PY
+)
+t11() { printf '%s\n' "$T11_OUT" | sed -n "s/^$1=//p"; }
+
+assert_eq "AC18: the code hit beats an earlier prose hit" "tools/retry/bin/retry.sh" "$(t11 mixed_home)"
+assert_eq "AC15: a hit records ENHANCE <home>" "ENHANCE tools/retry/bin/retry.sh" "$(t11 mixed_prec)"
+assert_eq "AC18: a code-homed candidate is not prose-only" "False" "$(t11 mixed_prose)"
+assert_eq "T11: the REPORTED bullet carries home, hit, lane, and the phase-1 closure" "- REPORTED mixed-home-pat ENHANCE tools/retry/bin/retry.sh: retries flaky jobs (lane=backfill, reported: phase 1 reports only)" "$(t11 mixed_line)"
+assert_eq "AC23: precedent runs argv-style with the slug words as one arg" "find|--surface|inventory|--json|mixed home pat" "$(t11 argv_prec)"
+assert_eq "AC23: lane-classify gets '<slug words>: <first evidence line>' as one arg" "classify|mixed home pat: did it by hand" "$(t11 argv_lane)"
+assert_eq "AC15: the lane comes from lane-classify" "backfill" "$(t11 lane_used)"
+assert_eq "AC18: an all-prose list homes the top prose hit" "memory/notes/proc-a.md" "$(t11 prose_home)"
+assert_eq "AC18: the all-prose candidate is flagged prose-only" "True" "$(t11 prose_flag)"
+assert_eq "AC18: the one PROSE-ONLY bullet names the slug and the phase-1 rule" "- PROSE-ONLY: all-prose-pat: only prose homes matched; phase 1 reports and builds nothing" "$(t11 prose_line)"
+assert_eq "AC18: an all-prose report with the PROSE-ONLY bullet lints rc 0" "0" "$(t11 prose_lint_rc)"
+assert_eq "AC15: a precedent miss records NEW (precedent: nothing matched)" "NEW (precedent: nothing matched)" "$(t11 new_prec)"
+assert_eq "T11: the NEW bullet names the slug after the colon" "- REPORTED no-match-pat NEW (precedent: nothing matched): no-match-pat (lane=backfill, reported: phase 1 reports only)" "$(t11 new_line)"
+assert_eq "AC15: the proposed.jsonl row is REPORTED with precedent and lane" "REPORTED|run-t1|ENHANCE tools/retry/bin/retry.sh|backfill" "$(t11 prow)"
+assert_eq "AC15: the proposed row has the spec's keys" "lane,outcome,pattern,precedent,run_id,ts" "$(t11 prow_keys)"
+assert_eq "AC15: a REPORTED candidate is not reported again next run" "" "$(t11 rerun_blocked)"
+assert_eq "AC23: a shell-interpreted ';' would have made a marker; none exists" "False" "$(t11 pwn_marker)"
+assert_eq "AC23: the metachar evidence arrives as one argv element, byte for byte" "True" "$(t11 pwn_argv_one)"
+assert_eq "AC23: the lane call itself is classify plus the one query arg" "classify" "$(t11 pwn_argv_head)"
+
+# ============================================================
 echo ""
 echo "=== Results ==="
 echo "Passed: $PASS / $TOTAL"
