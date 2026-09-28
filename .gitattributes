@@ -12,3 +12,6 @@
 _meta/BACKLOG.md merge=union
 _meta/backlog-staging.md merge=union
 docs/implementation-notes/*.md merge=union
+
+# A line-count fixture that must keep its CRLF bytes (citation-guard parity, crlf-lines).
+tests/fixtures/citation-guard-parity/root/crlf.txt -text
