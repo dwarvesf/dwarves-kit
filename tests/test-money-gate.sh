@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# money-gate hook (hooks/money-gate.sh + money-gate.py): fires only for
+# money-gate hook (hooks/money-gate.sh, bash + jq): fires only for
 # money-touching edits inside a CONSUMER-NAMED financial repo (MONEY_GATE_REPOS);
 # strict mode asks, default mode logs; with MONEY_GATE_REPOS unset the gate is
 # INERT (adapter-default invariant: the kit ships no tenant repo names).

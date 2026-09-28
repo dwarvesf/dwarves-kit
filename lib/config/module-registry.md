@@ -265,6 +265,8 @@ single-reader fence). No env vars; per-repo values live in `.kit.toml [sync]`.
 | PROSE_RAG_INJECT | env-only | unset (hook inert) | [impl] | prose_rag | The engine's own opt-in master switch for the recall-inject hook , deliberately NOT `modules.prose_rag` (that toggle only gates hook *install*, this gates whether the installed hook actually fires). |
 | PROSE_RAG_CORPUS | env-only | unset (index skips clean) | [impl] | prose_rag | Colon-separated corpus dirs/files for `prose-rag index` (adapter-default invariant: no personal path in the kit). Unset with no `--corpus` = unconfigured consumer -> `index` exits 0, db untouched (the shipped kit-weekly `prose-rag-index` job stays silent-green). Under launchd, supplied via `~/.config/kit-weekly/env`. |
 | MONEY_GATE_REPOS | env-only | (unset) | [impl] | money_gate | Colon-separated list of repo names the guard treats as financial; hook is inert (exits 0) without it. |
+| MONEY_GATE_STRICT | env-only | (unset) | [impl] | money_gate | A truthy spelling (`1`/`true`/`yes`/`on`, trimmed, case-insensitive) upgrades the guard from log-only to a PreToolUse `ask`; anything else stays log-only. |
+| MONEY_GATE_LOG | env-only | `~/.claude/logs/money-gate.log` | [impl] | money_gate | Log destination for every fired edit. The default applies only when the var is unset; a set-but-empty or slashless value writes no log. |
 | PROSE_RAG_BIN | env-only | `ctx` on PATH, else `prose-rag` | [consumer] | prose_rag | Path to the recall engine (context-kit fills this: `cargo install --path src/ctx`; the engine folded into `ctx` and `prose-rag` is the kept-forever alias, same `index|query|hook` argv). `bin/prose-rag` is an adapter and resolves the same order `config seams` reports for the `binary` kind: `${PROSE_RAG_BIN:-}` if set must be an executable regular file, else `ctx` on PATH, else `prose-rag` on PATH. Unset with nothing on PATH means the overlay is not installed, not an error. |
 | PROSE_RAG_SHIM_ACTIVE | env-only | (unset) | [impl] | prose_rag | Recursion guard set by `bin/prose-rag` before it execs the resolved engine. The kit installer puts a PATH wrapper named `prose-rag` that execs this shim, so without the marker `command -v prose-rag` would resolve to the shim itself. Internal: nothing sets it by hand. |
 
@@ -502,8 +504,7 @@ vars were found OUTSIDE that family; they are NOT covered by the drift lint
 (a future sub-goal widening the prefix family, or switching the lint's detection
 to the structural `${VAR:-`/`[ -n "${VAR:-}" ]` pattern instead of a prefix
 allowlist, would close this), but are named here so they are not lost:
-`LANE_DEESCALATE_FLOOR` (`lib/classify/lane-classify.sh`), `MONEY_GATE_STRICT`
-(`hooks/money-gate.py`, Python-only, no `$` token), `MUTATION_SMOKE_BASE` /
+`LANE_DEESCALATE_FLOOR` (`lib/classify/lane-classify.sh`), `MUTATION_SMOKE_BASE` /
 `MUTATION_SMOKE_TEST_CMD` / `MUTATION_SMOKE_RID` / `MUTATION_SMOKE_MAX`
 (`lib/gate/mutation-smoke.sh`), `HANDOFF_MAX_LINES` / `WATCHDOG_STALL_SECS` /
 `WATCHDOG_POLL_SECS` / `FLIP_LOCK_STALE_SECS` / `FLIP_LOCK_POLL_SECS` /

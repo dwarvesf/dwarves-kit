@@ -7,8 +7,8 @@ file, a payroll row, or a wallet address should never be silent.
 Folded in from ops-toolkit's `cc-money-gate` at kit-foldin (2026-07-11), function-named on
 entry (`MONEY_GATE_*`, the host-agent `CC_` prefix dropped).
 
-**Hook-only module.** The code lives in `hooks/money-gate.sh` (shim) and
-`hooks/money-gate.py` (logic, stdlib-only). This directory is the module's doc home:
+**Hook-only module.** The code lives in `hooks/money-gate.sh` (bash + jq + POSIX
+tools). This directory is the module's doc home:
 `SPEC.md` is the contract, `docs/proof-of-done.md` is the acceptance record.
 
 ## Ships inert
@@ -30,7 +30,7 @@ export MONEY_GATE_STRICT=1                 # upgrade to ask-to-confirm
 ```
 
 Now the same edit emits a PreToolUse `ask`, and Claude Code prompts you before it lands.
-`MONEY_GATE_STRICT` must be the literal `1`; `true` is log-only.
+Any truthy spelling arms it (`1`, `true`, `yes`, `on`; trimmed, case-insensitive).
 
 ## When it fires
 
@@ -53,7 +53,7 @@ broken gate can never wedge an edit.
 | Var | Default | Effect |
 |---|---|---|
 | `MONEY_GATE_REPOS` | unset | Colon-separated financial repo names. Unset = inert. |
-| `MONEY_GATE_STRICT` | unset | Literal `1` = ask-to-confirm. Anything else = log-only. |
+| `MONEY_GATE_STRICT` | unset | `1`/`true`/`yes`/`on` = ask-to-confirm. Anything else = log-only. |
 | `MONEY_GATE_LOG` | `~/.claude/logs/money-gate.log` | Log destination. |
 
 ## Test
@@ -69,6 +69,6 @@ knowing before you trust this gate:
 
 1. The log path bypasses the durable-root resolver (`lib/telemetry/kit-log-dir.sh`).
 2. The keyword list (`token`, `secret`, `password`) also fires on ordinary auth code.
-3. **The regex is `\b`-anchored, so it misses snake_case identifiers and plurals.**
-   `payroll_total = 5000` does **not** trip the gate; `payroll = 5000` does. This is the
-   real hole, and identifier-shaped money code is exactly what an agent edits.
+3. The scan works on bytes under `LC_ALL=C`: Python's `re.IGNORECASE` folded a few
+   exotic Unicode letters into ASCII terms (the Kelvin sign, the long s); the hook does
+   not. No realistic payload carries them.
