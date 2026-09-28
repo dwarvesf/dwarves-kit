@@ -714,6 +714,51 @@ assert_output_not_contains "does not approve printenv (dumps all env vars incl. 
 OUTPUT=$(echo '{"tool_name":"Bash","tool_input":{"command":"npx -y prettier --check"}}' | bash "$KIT_DIR/hooks/permission-auto-approve.sh" 2>/dev/null)
 assert_output_not_contains "does not approve npx -y prettier (auto-confirms install)" '"allow"' "$OUTPUT"
 
+# Group (a) continued: git global flags inject config or change the repo the command acts
+# on; the safe-flag set only covers post-subcommand tokens, so -c/-C fall through.
+
+OUTPUT=$(echo '{"tool_name":"Bash","tool_input":{"command":"git -c core.pager=x log"}}' | bash "$KIT_DIR/hooks/permission-auto-approve.sh" 2>/dev/null)
+assert_output_not_contains "does not approve git -c (global config flag)" '"allow"' "$OUTPUT"
+
+OUTPUT=$(echo '{"tool_name":"Bash","tool_input":{"command":"git -C /tmp log"}}' | bash "$KIT_DIR/hooks/permission-auto-approve.sh" 2>/dev/null)
+assert_output_not_contains "does not approve git -C (global chdir flag)" '"allow"' "$OUTPUT"
+
+OUTPUT=$(echo '{"tool_name":"Bash","tool_input":{"command":"git log --out=/tmp/paa-test-x2"}}' | bash "$KIT_DIR/hooks/permission-auto-approve.sh" 2>/dev/null)
+assert_output_not_contains "does not approve git log --out= (unlisted flag)" '"allow"' "$OUTPUT"
+
+# Exact-match entries must stay exact: a trailing token falls through.
+
+OUTPUT=$(echo '{"tool_name":"Bash","tool_input":{"command":"pwd -P"}}' | bash "$KIT_DIR/hooks/permission-auto-approve.sh" 2>/dev/null)
+assert_output_not_contains "does not approve pwd -P (pwd is exact-match only)" '"allow"' "$OUTPUT"
+
+OUTPUT=$(echo '{"tool_name":"Bash","tool_input":{"command":"node --version x"}}' | bash "$KIT_DIR/hooks/permission-auto-approve.sh" 2>/dev/null)
+assert_output_not_contains "does not approve node --version x (--version trio is exact-match)" '"allow"' "$OUTPUT"
+
+# A spaces-only command passes the non-empty check and the character allowlist but yields an
+# empty WORDS[]; the Stage C guard must fall through without tripping set -u.
+
+RC=$(run_hook permission-auto-approve.sh '{"tool_name":"Bash","tool_input":{"command":"   "}}')
+assert_exit "spaces-only command exits 0 (empty WORDS guard)" 0 $RC
+
+OUTPUT=$(echo '{"tool_name":"Bash","tool_input":{"command":"   "}}' | bash "$KIT_DIR/hooks/permission-auto-approve.sh" 2>/dev/null)
+assert_output_not_contains "does not approve a spaces-only command" '"allow"' "$OUTPUT"
+
+# Group (a) continued: config-loading tools dropped entirely. A checked-in or command-line
+# config can turn a "read" into a write or code execution, so flag lists were replaced by
+# removal (see the spec's Decision Log).
+
+OUTPUT=$(echo '{"tool_name":"Bash","tool_input":{"command":"npm ls"}}' | bash "$KIT_DIR/hooks/permission-auto-approve.sh" 2>/dev/null)
+assert_output_not_contains "does not approve npm ls (npm loads checked-in/CLI config)" '"allow"' "$OUTPUT"
+
+OUTPUT=$(echo '{"tool_name":"Bash","tool_input":{"command":"npx prettier --check x"}}' | bash "$KIT_DIR/hooks/permission-auto-approve.sh" 2>/dev/null)
+assert_output_not_contains "does not approve npx prettier --check (prettier loads config/plugins)" '"allow"' "$OUTPUT"
+
+OUTPUT=$(echo '{"tool_name":"Bash","tool_input":{"command":"ruff check ."}}' | bash "$KIT_DIR/hooks/permission-auto-approve.sh" 2>/dev/null)
+assert_output_not_contains "does not approve ruff check . (ruff loads checked-in/CLI config)" '"allow"' "$OUTPUT"
+
+OUTPUT=$(echo '{"tool_name":"Bash","tool_input":{"command":"go env"}}' | bash "$KIT_DIR/hooks/permission-auto-approve.sh" 2>/dev/null)
+assert_output_not_contains "does not approve go env (go reads env/flag config surfaces)" '"allow"' "$OUTPUT"
+
 # AC5: neither sed nor sort may appear as a word anywhere in the hook source, so a future
 # edit that adds a loose ^sed or ^sort entry is caught.
 
@@ -745,17 +790,14 @@ assert_output_contains "still approves git remote -v" '"allow"' "$OUTPUT"
 OUTPUT=$(echo '{"tool_name":"Bash","tool_input":{"command":"git tag -l"}}' | bash "$KIT_DIR/hooks/permission-auto-approve.sh" 2>/dev/null)
 assert_output_contains "still approves git tag -l" '"allow"' "$OUTPUT"
 
-OUTPUT=$(echo '{"tool_name":"Bash","tool_input":{"command":"npm list"}}' | bash "$KIT_DIR/hooks/permission-auto-approve.sh" 2>/dev/null)
-assert_output_contains "still approves npm list" '"allow"' "$OUTPUT"
+OUTPUT=$(echo '{"tool_name":"Bash","tool_input":{"command":"git ls-files"}}' | bash "$KIT_DIR/hooks/permission-auto-approve.sh" 2>/dev/null)
+assert_output_contains "still approves git ls-files" '"allow"' "$OUTPUT"
+
+OUTPUT=$(echo '{"tool_name":"Bash","tool_input":{"command":"git show"}}' | bash "$KIT_DIR/hooks/permission-auto-approve.sh" 2>/dev/null)
+assert_output_contains "still approves git show" '"allow"' "$OUTPUT"
 
 OUTPUT=$(echo '{"tool_name":"Bash","tool_input":{"command":"pwd"}}' | bash "$KIT_DIR/hooks/permission-auto-approve.sh" 2>/dev/null)
 assert_output_contains "still approves bare pwd" '"allow"' "$OUTPUT"
-
-OUTPUT=$(echo '{"tool_name":"Bash","tool_input":{"command":"ruff check ."}}' | bash "$KIT_DIR/hooks/permission-auto-approve.sh" 2>/dev/null)
-assert_output_contains "still approves ruff check ." '"allow"' "$OUTPUT"
-
-OUTPUT=$(echo '{"tool_name":"Bash","tool_input":{"command":"npx prettier --check README.md"}}' | bash "$KIT_DIR/hooks/permission-auto-approve.sh" 2>/dev/null)
-assert_output_contains "still approves npx prettier --check README.md" '"allow"' "$OUTPUT"
 
 OUTPUT=$(echo '{"tool_name":"Bash","tool_input":{"command":"file README.md"}}' | bash "$KIT_DIR/hooks/permission-auto-approve.sh" 2>/dev/null)
 assert_output_contains "still approves file README.md" '"allow"' "$OUTPUT"
@@ -763,11 +805,49 @@ assert_output_contains "still approves file README.md" '"allow"' "$OUTPUT"
 OUTPUT=$(echo '{"tool_name":"Bash","tool_input":{"command":"git log -n 5"}}' | bash "$KIT_DIR/hooks/permission-auto-approve.sh" 2>/dev/null)
 assert_output_contains "still approves git log -n 5" '"allow"' "$OUTPUT"
 
-OUTPUT=$(echo '{"tool_name":"Bash","tool_input":{"command":"go env GOPATH"}}' | bash "$KIT_DIR/hooks/permission-auto-approve.sh" 2>/dev/null)
-assert_output_contains "still approves go env GOPATH" '"allow"' "$OUTPUT"
-
 OUTPUT=$(echo '{"tool_name":"Bash","tool_input":{"command":"git log --format=%h"}}' | bash "$KIT_DIR/hooks/permission-auto-approve.sh" 2>/dev/null)
 assert_output_contains "still approves git log --format=%h" '"allow"' "$OUTPUT"
+
+# Group (b) continued: every remaining Stage D entry gets one pin.
+
+OUTPUT=$(echo '{"tool_name":"Bash","tool_input":{"command":"node --version"}}' | bash "$KIT_DIR/hooks/permission-auto-approve.sh" 2>/dev/null)
+assert_output_contains "still approves node --version" '"allow"' "$OUTPUT"
+
+OUTPUT=$(echo '{"tool_name":"Bash","tool_input":{"command":"python3 --version"}}' | bash "$KIT_DIR/hooks/permission-auto-approve.sh" 2>/dev/null)
+assert_output_contains "still approves python3 --version" '"allow"' "$OUTPUT"
+
+OUTPUT=$(echo '{"tool_name":"Bash","tool_input":{"command":"cargo --version"}}' | bash "$KIT_DIR/hooks/permission-auto-approve.sh" 2>/dev/null)
+assert_output_contains "still approves cargo --version" '"allow"' "$OUTPUT"
+
+OUTPUT=$(echo '{"tool_name":"Bash","tool_input":{"command":"grep -n spec README.md"}}' | bash "$KIT_DIR/hooks/permission-auto-approve.sh" 2>/dev/null)
+assert_output_contains "still approves grep -n spec README.md" '"allow"' "$OUTPUT"
+
+OUTPUT=$(echo '{"tool_name":"Bash","tool_input":{"command":"echo hello"}}' | bash "$KIT_DIR/hooks/permission-auto-approve.sh" 2>/dev/null)
+assert_output_contains "still approves echo hello" '"allow"' "$OUTPUT"
+
+OUTPUT=$(echo '{"tool_name":"Bash","tool_input":{"command":"head -5 README.md"}}' | bash "$KIT_DIR/hooks/permission-auto-approve.sh" 2>/dev/null)
+assert_output_contains "still approves head -5 README.md" '"allow"' "$OUTPUT"
+
+OUTPUT=$(echo '{"tool_name":"Bash","tool_input":{"command":"tail -5 README.md"}}' | bash "$KIT_DIR/hooks/permission-auto-approve.sh" 2>/dev/null)
+assert_output_contains "still approves tail -5 README.md" '"allow"' "$OUTPUT"
+
+OUTPUT=$(echo '{"tool_name":"Bash","tool_input":{"command":"wc -l README.md"}}' | bash "$KIT_DIR/hooks/permission-auto-approve.sh" 2>/dev/null)
+assert_output_contains "still approves wc -l README.md" '"allow"' "$OUTPUT"
+
+OUTPUT=$(echo '{"tool_name":"Bash","tool_input":{"command":"which bash"}}' | bash "$KIT_DIR/hooks/permission-auto-approve.sh" 2>/dev/null)
+assert_output_contains "still approves which bash" '"allow"' "$OUTPUT"
+
+OUTPUT=$(echo '{"tool_name":"Bash","tool_input":{"command":"type grep"}}' | bash "$KIT_DIR/hooks/permission-auto-approve.sh" 2>/dev/null)
+assert_output_contains "still approves type grep" '"allow"' "$OUTPUT"
+
+OUTPUT=$(echo '{"tool_name":"Bash","tool_input":{"command":"stat README.md"}}' | bash "$KIT_DIR/hooks/permission-auto-approve.sh" 2>/dev/null)
+assert_output_contains "still approves stat README.md" '"allow"' "$OUTPUT"
+
+OUTPUT=$(echo '{"tool_name":"Bash","tool_input":{"command":"du -sh ."}}' | bash "$KIT_DIR/hooks/permission-auto-approve.sh" 2>/dev/null)
+assert_output_contains "still approves du -sh ." '"allow"' "$OUTPUT"
+
+OUTPUT=$(echo '{"tool_name":"Bash","tool_input":{"command":"df -h"}}' | bash "$KIT_DIR/hooks/permission-auto-approve.sh" 2>/dev/null)
+assert_output_contains "still approves df -h" '"allow"' "$OUTPUT"
 
 # ============================================================
 echo ""

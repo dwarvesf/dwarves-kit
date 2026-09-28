@@ -72,14 +72,31 @@ flags each gated tool may carry (Stage F). The cost is real (fewer commands auto
 prompts show) and it is the correct trade for a hook whose entire job is deciding what to
 approve WITHOUT asking a human.
 
+**Config-loading tools are never auto-approved, stated once, applies everywhere below.** A tool
+that can load checked-in or command-line config or plugins has an attack surface no flag list
+converges on: every round of review on the draft surfaced another such flag (`prettier --config=`
+executes JS, `ruff --config=fix=true` overrides config into a rewrite and a checked-in `fix = true`
+does the same with no flag at all, `npm --logs-dir=`/`--cache=` write and `--registry=` sends
+requests). Patching flags one by one does not converge, so the rule is categorical, not
+per-flag: such a tool is never on the approved set. `npm`, `npx`, `ruff`, and `go` are dropped
+entirely and fall through to the normal prompt (## Decision Log). `git` is the named exception:
+every config surface that can make it run code or write files (`core.pager`, `pager.*`, aliases,
+filter drivers, `diff.external`, `core.hooksPath`) lives in `.git/config` or `.git/hooks`, which
+are never checked in, so no repository file can steer it. Its flag allowlist stays (## Picture,
+Stage F). What remains in the approved set is exactly what ## Picture shows: tools whose
+behaviour no repo file can change, plus exact `--version` matches.
+
 **Executing shell, stated once.** Commands approved here run under the harness's non-interactive
-bash, which follows POSIX expansion rules: quote removal, backslash escapes, `$VAR`/`${..}`
-expansion, brace expansion, ANSI-C quoting, command substitution, tilde expansion, globbing.
-Stage B's character allowlist exists precisely so that after it passes, the token stream bash
-will build from `CMD` equals the `WORDS[]` the hook scanned. Two expansions survive the
-allowlist and are handled on purpose: `~` (expands only to paths, never to a `-`-token) and `*`
-(handled per-tool at Stage F; see its rule). A runtime that executes Bash-tool commands under a
-different shell grammar needs its own review of the character set; recorded in ## Failure modes.
+bash or zsh with default options: quote removal, backslash escapes, `$VAR`/`${..}` expansion,
+brace expansion, ANSI-C quoting, command substitution, tilde expansion, globbing, and (zsh only)
+`=word` path expansion. Stage B's character allowlist exists precisely so that after it passes,
+the token stream the shell will build from `CMD` equals the `WORDS[]` the hook scanned. Three
+expansions survive the allowlist and are handled on purpose: `~` (expands only to paths, never
+to a `-`-token), `*` (handled per-tool at Stage F; see its rule), and zsh's `=word` (expands
+`word` to its absolute path, e.g. `=ls` -> `/bin/ls`; it only ever yields a path, never a
+`-`-token or a second command, so `=` stays in the allowlist). A runtime that executes Bash-tool
+commands under a different shell grammar needs its own review of the character set; recorded in
+## Failure modes.
 
 ### Rejected alternatives
 
@@ -112,6 +129,7 @@ different shell grammar needs its own review of the character set; recorded in #
         |yes                                   [cases 1-3, 5: quotes,
         v                                       \, $, {}, ;&|<>`()[]?,
  STAGE C: split CMD on whitespace into WORDS[]  #!^ tab non-ASCII die]
+          WORDS[] empty (spaces-only CMD)?  --yes--> no decision
         |
         v
  STAGE D: WORDS[0] on the "no write-capable option" list
@@ -120,12 +138,20 @@ different shell grammar needs its own review of the character set; recorded in #
         |yes --------------------------------------------> allow
         |no
         v
- STAGE D: WORDS[0] is "pwd" and WORDS has length 1?
+ STAGE D: WORDS[0..1] in {git status, git ls-files}?
+          (trailing flags unrestricted)
         |yes --------------------------------------------> allow
         |no
         v
- STAGE E: WORDS[0] is a GATED tool (find, git, npm, npx,
-          go, ruff, file)?
+ STAGE D: CMD exactly one of {pwd,
+          node --version, python3 --version,
+          cargo --version}?
+        |yes --------------------------------------------> allow
+        |no
+        v
+ STAGE E: WORDS[0] is a GATED tool (find, git, file)?
+          (config-loading tools npm/npx/ruff/go were
+           dropped entirely; see ## Design)
         |no ---------------------------------------------> no decision
         |yes
         v
@@ -163,18 +189,47 @@ parameter expansion, brace expansion, ANSI-C quoting, or command substitution su
 time. The ASCII-only bound also kills lookalike characters (a Unicode minus in place of `-`)
 for free. Closes cases 1 and 5 and the whole smuggle class.
 
+Mechanism, pinned: the hook sets `LC_ALL=C` before the test and runs it as bash's
+`[[ $CMD =~ ^[A-Za-z0-9\ ._\/=:,@%+*~-]+$ ]]`, never as `echo "$CMD" | grep -E ...`. `grep`
+applies locale-dependent range semantics (a non-C locale can reorder or widen `A-Za-z`) and
+reads its input line-wise; both are wrong for a whole-string, byte-exact check. `[[ =~ ]]`
+evaluates against the string as-is with no line splitting, and `LC_ALL=C` makes the ranges
+pure ASCII.
+
 **Stage C, tokenize.** Split `CMD` on whitespace into `WORDS[]`. This split is exact, not
 heuristic: Stage B already removed every quote and escape character, so no token can hide a
-leading `-` behind `"`, `'`, or `\`, and none can expand into one at run time.
+leading `-` behind `"`, `'`, or `\`, and none can expand into one at run time. Guard: a
+spaces-only `CMD` passes the non-empty check and Stage B (spaces are allowlisted) but yields
+an empty `WORDS[]`; the hook checks `WORDS` non-empty before any `WORDS[0]` read and falls
+through, so `set -u` never trips on the unset element. Pinned by the spaces-only group-(a)
+case in ## Test plan.
 
-**Stage D, commands with no write-capable option (first word decides, no further check):**
+**Stage D, commands with no write-capable option (first word decides, no further check).**
+Admission criterion, verified per tool against its man page or builtin doc: no flag writes to
+the filesystem and none loads config or runs another program, so trailing flags are
+unrestricted and a glob-expanded filename can only ever become a harmless flag. One citation
+line per remaining tool:
 
-| Command | Notes |
+| Command | Citation |
 |---|---|
-| `ls`, `cat`, `head`, `tail`, `wc`, `echo`, `which`, `type`, `stat`, `du`, `df`, `grep` | Admission criterion, verified per tool: no flag writes to the filesystem or runs another program, so trailing flags are unrestricted and a glob-expanded filename can only ever become a harmless flag. `file` fails the criterion (`-C` writes a compiled magic file) and moved to Stage E. `printenv` was dropped, see ## Decision Log. |
-| `pwd` | Exact match, zero further tokens. `env` lost its former zero-arg seat by the same Decision Log entry. |
-| `git status`, `git ls-files` | Exact two-word match at `WORDS[0..1]`; neither subcommand has a write-capable flag, so trailing flags are unrestricted. |
-| `node --version`, `python3 --version`, `cargo --version` | Exact match, `WORDS[0..1]` only, nothing after. |
+| `ls` | `ls(1)` (POSIX `ls` and macOS/BSD `ls`): options only shape stdout listing; none writes a file or execs. |
+| `cat` | `cat(1)`: concatenates to stdout; the tool has no file-writing or exec option at all. |
+| `head` | `head(1)`: prints leading lines to stdout; no write/exec option. |
+| `tail` | `tail(1)`: prints trailing lines to stdout, `-f` only keeps reading; no write/exec option. |
+| `wc` | `wc(1)`: counts to stdout; no write/exec option. |
+| `echo` | `echo(1)` / bash builtin `help echo`: prints args to stdout; no write/exec option. |
+| `which` | `which(1)` / zsh builtin: prints a command's path; no write/exec option. |
+| `type` | bash builtin `help type`: describes how a name resolves; no write/exec option. |
+| `stat` | `stat(1)` (BSD and GNU): reads inode metadata to stdout; no write/exec option. |
+| `du` | `du(1)`: reports disk usage to stdout; no write/exec option. |
+| `df` | `df(1)`: reports filesystem space to stdout; no write/exec option. |
+| `grep` | `grep(1)`: no write/exec option; `GREP_OPTIONS` flag injection was removed in GNU grep 2.21 (2014), so the environment cannot smuggle flags either. |
+| `pwd` | `pwd(1)` / bash builtin: exact match, zero further tokens. `env` lost its former zero-arg seat; see ## Decision Log. |
+| `git status`, `git ls-files` | `git-status(1)` / `git-ls-files(1)`: exact two-word match at `WORDS[0..1]`; neither subcommand has a write-capable option, so trailing flags are unrestricted. The stat-cache index refresh `git status` may do is an internal bookkeeping write to `.git/`, not reachable file content. Every git config surface that could run code lives in `.git/config` (never checked in); see ## Failure modes. |
+| `node --version`, `python3 --version`, `cargo --version` | Exact match, `WORDS[0..1]` only, nothing after; `--version` prints and exits on every one of these. |
+
+`file` fails the criterion (`-C` writes a compiled magic file) and stays in the gated set.
+`printenv` was dropped, see ## Decision Log.
 
 **Stage E/F, gated tools (explicit safe subcommand/flag allowlist required).** Two rules apply
 to every gated tool's `WORDS[1:]` before the per-tool table below:
@@ -195,19 +250,20 @@ to every gated tool's `WORDS[1:]` before the per-tool table below:
 | `git branch` | `WORDS[1] == "branch"`. Zero non-flag tokens allowed (no branch-name argument, which is what creates a branch). Any `-`-prefixed token must be one of `-v`, `-vv`, `-a`, `-r`, `--list`, `--show-current`. Closes the `git branch newbranch` case. |
 | `git remote` | `WORDS[1] == "remote"`. Zero or one further token; if present it must be exactly `-v`, `--verbose`, or `show`. `add`/`remove`/`rename`/`set-url`/`set-branches`/`set-head`/`prune` are excluded by omission. |
 | `git tag` | `WORDS[1] == "tag"`. Zero non-flag tokens allowed (no tag-name argument, which is what creates a tag). Any `-`-prefixed token must be one of `-l`, `--list`, or match `^-n[0-9]*$`. `-d`, `-a`, `-f`, `-s`, `-m` are excluded by omission. |
-| `npm` | `WORDS[1]` in `{list, ls, outdated, view}`. Trailing flags unrestricted: verified that none of these four subcommands has a write-capable or exec-capable flag. The `*` ban still applies. |
-| `npx` | `WORDS[1] == "prettier"`, `--check` appears among `WORDS[2:]`, and every `-`-prefixed token in `WORDS[2:]` is one of `--check`, `--ignore-unknown`, `--no-error-on-unmatched-pattern` or starts with `--config=` or `--ignore-path=`. `--plugin=` (loads arbitrary JS) is excluded by omission, and `npx -y`/`-p`/`--yes` can never appear because `WORDS[1]` must be `prettier`. |
-| `go` | `WORDS[1] == "version"`: flags only from `{-m, -v}`. `WORDS[1] == "env"`: flags only from `{-json, -changed}` and non-flag tokens unrestricted (variable names); `-w` (writes persistent config) and `-u` (unsets it) excluded. `WORDS[1] == "list"`: flags only from `{-e, -f, -json, -m, -deps, -test, -u}`; `-toolexec=` (names a program to run) and `-export` excluded. Any other `WORDS[1]` falls through. |
-| `ruff` | `WORDS[1] == "check"`. Every `-`-prefixed token must be one of `-v`, `-q`, `-s`, `--statistics`, `--diff`, `--isolated`, `--no-cache`, `--exit-zero`, `--exit-non-zero-on-fix`, `--preview`, `--no-preview`, `--respect-gitignore`, `--no-respect-gitignore`, `--force-exclude`, or start with one of the prefixes `--select=`, `--ignore=`, `--extend-select=`, `--extend-ignore=`, `--per-file-ignores=`, `--line-length=`, `--target-version=`, `--output-format=`, `--config=`. `--fix`, `--fix-only`, `--unsafe-fixes`, `--add-noqa`, `--output-file`, `--watch` are excluded by omission, as is every other ruff subcommand (`ruff format` rewrites files in place). |
 | `file` | Every `-`-prefixed token must be one of `-b`, `--brief`, `-i`, `-s`, `-z`, `-L`, `-f`, `--mime`, `--mime-type`, `--mime-encoding`. `-C`/`--compile` (writes a compiled `.mgc` magic file) and `-m` are excluded by omission. |
+
+`npm`, `npx`, `ruff`, and `go` had per-tool rows here in the draft; they are gone entirely per
+the config-loading rule in ## Design (dropped approvals, reason in ## Decision Log). They fall
+through at Stage E, which no longer names them.
 
 `sed` and `sort` are named in the task brief as tools whose base command has write-capable
 options (`sed -i`, `sort -o`). Neither appears anywhere in the current hook, so there is no
-existing bypass to fix; ## Design's Rejected alternatives states the decision to leave them off
-the allowlist entirely rather than add them as new capability. `tests/test-hooks.sh` gets one
-must-not-approve case each (`sed -i s/a/b/ file`, `sort -o out.txt file`) proving they fall
-through purely because Stage D/E never names them, not because of any sed/sort-specific logic,
-plus a source-level grep test (AC5) pinning that neither word appears in the hook.
+existing bypass to fix; the "Sed/sort, explicitly rejected as new scope" table below states the
+decision to leave them off the allowlist entirely rather than add them as new capability.
+`tests/test-hooks.sh` gets one must-not-approve case each (`sed -i s/a/b/ file`, `sort -o
+out.txt file`) proving they fall through purely because Stage D/E never names them, not because
+of any sed/sort-specific logic, plus a source-level grep test (AC5) pinning that neither word
+appears in the hook.
 
 **Sed/sort, explicitly rejected as new scope:**
 
@@ -230,10 +286,11 @@ plus a source-level grep test (AC5) pinning that neither word appears in the hoo
 |---|---|---|
 | A safe command uses a flag not yet on its tool's safe list (e.g. `git log --follow`) | Falls through to the normal prompt instead of auto-approving | The stated failure mode: never a false approve, only an extra prompt. The safe-flag lists can be extended later, named as a follow-up, without touching Stages A-C. |
 | A safe command contains a banned character: a quote (`git log --format="%h %s"`, `find . -name '*.md'`), a backslash, a `$VAR`, a brace group, or any non-ASCII byte | Falls through to the normal prompt | These are exactly the smuggle characters: a quoted, escaped, or expanded `-flag` defeats any text-level leading-`-` check because bash restores the dash at run time. Banning them outright is what makes Stage F's "starts with `-`" test mean anything. The cost is an occasional prompt on a safe command. |
-| An unquoted `*` in a Stage-D command (`ls *.md`, `cat *`) glob-expands to a filename the scan never saw, potentially one literally named like a flag | The planted name lands as a flag to a Stage-D tool | Stage D's admission criterion is "no flag on this tool writes or execs", verified per tool, so a planted flag-looking filename is harmless there. For gated tools `*` is banned outright (Stage F rule 1), so the same trick cannot reach find/git/ruff/etc. |
-| Commands execute under the harness's non-interactive bash | Stage B's allowlist is derived from POSIX expansion rules | Recorded assumption: a runtime that executes Bash-tool commands under a different grammar (fish, PowerShell, cmd) needs its own review of the character set. Out of scope here. |
-| `git log`/`diff`/`show`/`branch`/`tag` honor the local `.git/config` (`core.pager`, `pager.*`, `include.path`) | A crafted local pager config would run a program on an auto-approved read | `.git/config` is never checked into a repository, so writing it needs prior local file access, at which point code execution is already in hand. The hook cannot modify the command or its environment, it can only approve or abstain; the assumption is recorded, not mitigated. `git -c`/`-C` overrides fall through (not on the safe-flag list). |
-| A genuinely malicious command built entirely from safe-looking tokens (an unlisted git subcommand, an unlisted tool) | Falls through | Stage E recognizes only the seven gated tools and their named subcommands; any subcommand outside `{status, ls-files, log, diff, show, branch, remote, tag}` for `git`, or any tool outside the Stage D/E tables entirely, never reaches an approve branch. Same "excluded by omission" property the whole design relies on. |
+| An unquoted `*` in a Stage-D command (`ls *.md`, `cat *`) glob-expands to a filename the scan never saw, potentially one literally named like a flag | The planted name lands as a flag to a Stage-D tool | Stage D's admission criterion is "no flag on this tool writes or execs", verified per tool, so a planted flag-looking filename is harmless there. For gated tools `*` is banned outright (Stage F rule 1), so the same trick cannot reach find/git/file. |
+| Commands execute under the harness's non-interactive bash or zsh with default options | Stage B's allowlist is derived from bash/zsh expansion rules | Recorded assumption: a runtime that executes Bash-tool commands under a different grammar (fish, PowerShell, cmd) needs its own review of the character set. Under zsh the only extra expansion the allowlist permits is `=word` at word start, which expands `word` to its absolute path (`=ls` -> `/bin/ls`); it only ever yields a path, never a `-`-token or a second command, so it is harmless. Out of scope beyond bash/zsh. |
+| A checked-in tool config file steers an approved tool (`.prettierrc`, `.prettierrc.js`, `ruff.toml`, `pyproject.toml`, `.npmrc`, `.go-version`-adjacent env files) | An attacker-authored repo file turns a silently approved "read" into a write or code execution, the exact class this spec exists to close | Named as a trust assumption and removed, not patched: the config-loading rule in ## Design drops every such tool (`npm`, `npx`, `ruff`, `go`) from the approved set entirely rather than flag-gating it, because a checked-in config needs no flag at all to rewrite files (`ruff.toml` with `fix = true`) or run code (`.prettierrc.js`). The surviving tools have no checked-in config surface; `git`'s is recorded in the row below. |
+| `git log`/`diff`/`show`/`branch`/`tag` honor the local `.git/config` (`core.pager`, `pager.*`, `include.path`), and a checked-in `.gitattributes` can name a filter or textconv driver | A crafted local pager config would run a program on an auto-approved read | `.git/config` and `.git/hooks` are never checked into a repository, so writing them needs prior local file access, at which point code execution is already in hand. `.gitattributes` can be checked in but only *names* a driver; the driver command itself lives in `.git/config`. The hook cannot modify the command or its environment, it can only approve or abstain; the assumption is recorded, not mitigated. `git -c`/`-C` overrides fall through (not on the safe-flag list). |
+| A genuinely malicious command built entirely from safe-looking tokens (an unlisted git subcommand, an unlisted tool) | Falls through | Stage E recognizes only the three gated tools (`find`, `git`, `file`) and their named subcommands; any subcommand outside `{status, ls-files, log, diff, show, branch, remote, tag}` for `git`, or any tool outside the Stage D/E tables entirely, never reaches an approve branch. Same "excluded by omission" property the whole design relies on. |
 
 ## Acceptance criteria
 
@@ -299,14 +356,29 @@ No new test file.
 | a36 | `python --version` | dropped approval: only `python3` kept (this stack's interpreter) |
 | a37 | `env` | dropped approval: dumps every env var, secrets included, with no prompt |
 | a38 | `printenv` | dropped approval: same reason |
-| a39 | `npx -y prettier --check` | `WORDS[1]` must be `prettier`; `npx -y` auto-confirms installs |
+| a39 | `npx -y prettier --check` | `npx` dropped entirely; this case also pins that `-y` auto-confirm can never ride along |
+| a40 | `git -c core.pager=x log` | git global `-c` config injection; `WORDS[1]` is not an allowed subcommand |
+| a41 | `git -C /tmp log` | git global `-C` chdir flag; same class |
+| a42 | `git log --out=/tmp/paa-test-x2` | unlisted `--out=` write-shaped flag; Stage F excludes by omission (same class as a3) |
+| a43 | `pwd -P` | Stage D `pwd` is exact-match; any trailing token falls through |
+| a44 | `node --version x` | the `--version` trio is exact-match; an extra token falls through |
+| a45 | `npm ls` | dropped approval: npm loads checked-in and command-line config (`.npmrc`, `--registry=`, `--cache=`, `--logs-dir=`) |
+| a46 | `npx prettier --check x` | dropped approval: prettier loads checked-in/CLI config and plugins |
+| a47 | `ruff check .` | dropped approval: ruff loads checked-in/CLI config (`ruff.toml`, `pyproject.toml`, `--config=`) |
+| a48 | `go env` | dropped approval: go reads env/flag config surfaces (`GOFLAGS`, `go env -w`) |
+| a49 | `   ` (spaces only, plus an exit-0 assert) | Stage C empty-WORDS guard: `set -u` must not trip, no decision |
+
+a25-a31 (the `go`/`ruff`/`npx` flag cases) are now closed twice: the specific write flag was
+already unsafe, and the whole tool is dropped from the gated set under the config-loading rule,
+so they fall through at Stage E before Stage F's flag table is ever consulted.
 
 **Group (b), must-still-approve (each asserts the output DOES contain `"allow"`, guards against
-"fixed by turning every read into a prompt"):**
+"fixed by turning every read into a prompt"). Every command the new Stage D/E still approves is
+pinned here:**
 
 | Case | Command | Exercises |
 |---|---|---|
-| b1 | `git status` (already asserted above; unchanged) | Stage D exact two-word |
+| b1 | `git status` (already asserted above; unchanged) | Stage D `WORDS[0..1]` match |
 | b2 | `git log --oneline -5` (already asserted above; unchanged) | Stage F flag set + `^-[0-9]+$` |
 | b3 | `ls -la` (already asserted above; unchanged) | Stage D no-write-option tool |
 | b4 | `cat README.md` | Stage D |
@@ -315,25 +387,36 @@ No new test file.
 | b7 | `git branch -v` | Stage F git branch |
 | b8 | `git remote -v` | Stage F git remote |
 | b9 | `git tag -l` | Stage F git tag |
-| b10 | `npm list` | Stage F npm |
-| b11 | `pwd` | Stage D exact match |
-| b12 | `ruff check .` | Stage F ruff, no flags |
-| b13 | `npx prettier --check README.md` | Stage F npx |
-| b14 | `file README.md` | Stage F file, no flags |
-| b15 | `git log -n 5` | Stage F `-n` entry |
-| b16 | `go env GOPATH` | Stage F go env, non-flag var name |
-| b17 | `git log --format=%h` | Stage F `--format=` prefix; `=` and `%` are Stage-B-legal |
+| b10 | `git ls-files` | Stage D `WORDS[0..1]` match |
+| b11 | `git show` | Stage F git show, zero flags |
+| b12 | `pwd` | Stage D exact match |
+| b13 | `file README.md` | Stage F file, no flags |
+| b14 | `git log -n 5` | Stage F `-n` entry |
+| b15 | `git log --format=%h` | Stage F `--format=` prefix; `=` and `%` are Stage-B-legal |
+| b16 | `node --version` | Stage D exact match, `--version` trio |
+| b17 | `python3 --version` | Stage D exact match |
+| b18 | `cargo --version` | Stage D exact match |
+| b19 | `grep -n spec README.md` | Stage D |
+| b20 | `echo hello` | Stage D |
+| b21 | `head -5 README.md` | Stage D |
+| b22 | `tail -5 README.md` | Stage D |
+| b23 | `wc -l README.md` | Stage D |
+| b24 | `which bash` | Stage D |
+| b25 | `type grep` | Stage D |
+| b26 | `stat README.md` | Stage D |
+| b27 | `du -sh .` | Stage D |
+| b28 | `df -h` | Stage D |
 
 **Negative control, run and recorded.** Executed live against the pre-fix
 `hooks/permission-auto-approve.sh` (this worktree, before Stage A-F lands) with the new test
-cases in place. Result: 30 group-(a) assertions go red, every group (b) assertion stays green,
-and six group-(a) assertions pass even pre-fix, each for a documented accidental reason rather
-than by design:
+cases in place. Result: 36 group-(a) assertions go red, every group (b) assertion stays green
+(28/28), and eleven group-(a) assertions pass even pre-fix, each for a documented accidental
+reason rather than by design:
 
 | Pre-fix result | Cases | Why |
 |---|---|---|
-| Red (old hook emits `"allow"`) | a1-a9, a18-a38 | The live bypasses: a18-a24 match the old `^find\b.*-name\b`, `^git\s+...`, `^ruff\s+check` patterns once the text-level `-` is hidden; a25-a31 match `^go`, `^ruff`, `^npx`, `^file`; a32-a34 match `^find`/`^git`; a35-a38 match `^cargo`, `^python3?`, `^env$`, `^printenv`. |
-| Green by accident | a13, a14, a15, a16, a17, a39 | a13: backtick was already in the old chain-guard class. a14: bare parens never matched any old prefix. a15/a16: `sed`/`sort` were never whitelisted. a17: caught only because the literal `;` inside `\;` trips the old guard, not because of `-exec`. a39: `npx -y` never matched `^npx\s+prettier`. |
+| Red (old hook emits `"allow"`) | a1-a9, a18-a38, a42, a44-a48 | The live bypasses: a18-a24 match the old `^find\b.*-name\b`, `^git\s+...`, `^ruff\s+check` patterns once the text-level `-` is hidden; a25-a31 match `^go`, `^ruff`, `^npx`, `^file`; a32-a34 match `^find`/`^git`; a35-a38 match `^cargo`, `^python3?`, `^env$`, `^printenv`; a42 matches `^git\s+log`; a44 matches `^node\s+--version` (no end anchor); a45-a48 match `^npm`, `^npx\s+prettier`, `^ruff`, `^go`. |
+| Green by accident | a13, a14, a15, a16, a17, a39, a40, a41, a43, a49 (two asserts) | a13: backtick was already in the old chain-guard class. a14: bare parens never matched any old prefix. a15/a16: `sed`/`sort` were never whitelisted. a17: caught only because the literal `;` inside `\;` trips the old guard, not because of `-exec`. a39: `npx -y` never matched `^npx\s+prettier`. a40/a41: the old git patterns require an approved subcommand immediately after `^git\s+`, which `-c`/`-C` do not satisfy. a43: `^pwd$` is already exact. a49: spaces match no whitelist prefix; the hook also exits 0 unharmed, so the new guard only has to hold the line, not fix a crash. |
 
 a10-a12 are informational rows only (already covered by the suite's pre-existing
 pipe/chain/subshell cases, not duplicated). Every group (a) case is kept as a pin regardless
@@ -373,8 +456,9 @@ portion of group (a) is red against the unpatched hook and all of it is green ag
 today (Group (b)), and no longer auto-approves any of the write/exfiltration shapes found in
 ## Problem: the four named cases, the three audit cases, the whole quote/escape/expansion
 smuggle class, the per-tool write flags on `go`/`ruff`/`npx`/`file`, and glob-expanded planted
-flags. `env`, `printenv`, `cargo check`, and `python --version` lose their auto-approval (see
-## Decision Log); `file` moves to the gated set. The hook still never emits a deny decision; a
+flags. `env`, `printenv`, `cargo check`, `python --version`, `npm`, `npx`, `ruff`, and `go`
+lose their auto-approval entirely, the last four under the config-loading rule (see
+## Decision Log); `file` stays in the gated set. The hook still never emits a deny decision; a
 command it cannot positively confirm as read-only falls through to the normal Claude Code
 permission prompt instead. `sed` and `sort` remain absent from the approved set, unchanged from
 today's behavior, now with a regression test proving it stays that way.
@@ -411,7 +495,8 @@ Not covered:
 - Chose explicit per-subcommand flag allowlists for `go`, `ruff`, `npx`, and `file` over flag
   denylists or unrestricted trailing flags, after the validation pass showed each had a
   write-capable or exec-capable flag the draft admitted (`go env -w`, `ruff --fix-only`,
-  `npx --plugin=`, `file -C`).
+  `npx --plugin=`, `file -C`). Superseded for `go`/`ruff`/`npx` by the config-loading drop
+  recorded below; only `file` keeps its flag allowlist.
 - Chose to ban `*` in gated-tool args rather than accept glob expansion there: a checked-in
   file named `-delete`/`--fix`/`--output` becomes a live flag on expansion. Stage D tools keep
   `*` because their admission criterion (no write-capable flag exists) makes a planted flag
@@ -436,3 +521,14 @@ Not covered:
   rather than exhaustive, and named the gap explicitly in `Not covered`: the cost of an
   unlisted-but-safe flag is one extra prompt, not a security hole, so there is no pressure to
   front-load every git flag.
+- Chose to drop `npm`, `npx`, `ruff`, and `go` from the approved set entirely after a second
+  review round showed the per-tool flag lists do not converge: every round surfaced another
+  config-loading or config-writing flag (`prettier --config=` executes JS, `ruff
+  --config=fix=true` and a checked-in `fix = true` rewrite files, `npm --logs-dir=`/`--cache=`
+  write, `--registry=` sends requests, `go env -w` persists config). The rule replacing the
+  flag lists is categorical: a tool that can load checked-in or command-line config or plugins
+  is never auto-approved. `git` is the named exception because every config surface that can
+  make it run code or write lives in `.git/config` or `.git/hooks`, never checked in. The four
+  dropped tools fall through to the normal prompt; recorded so the extra prompts are
+  explainable, and reversible per-tool in a follow-up if a config-free invocation class is ever
+  worth scoping.
