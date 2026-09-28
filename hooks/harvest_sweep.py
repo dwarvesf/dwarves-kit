@@ -432,74 +432,88 @@ def _sources():
     return [("claude", list_claude_sessions, load_claude), ("devin", list_devin_sessions, load_devin)]
 
 
-def _sweep_source(cursor, source, items, load, process, now, schedule_hours, max_sessions, records):
+def _plan_source(cursor, source, items, load, now, schedule_hours):
+    """Scan one source: its cursor state, the scanned candidates, and the eligible ones."""
     state = _source_state(cursor, source, int(now - schedule_hours * 3600))
     max_scan = int(os.environ.get("HARVEST_SWEEP_MAX_SCAN", "2000"))
     quiet_before = now - int(os.environ.get("HARVEST_SWEEP_QUIET_MINUTES", "30")) * 60
-    max_chars = int(os.environ.get("HARVEST_MAXCHARS", "12000"))
-    out = {"processed": [], "filtered": [], "failed": [], "deferred": []}
-
     scanned = sorted((i for i in items if i["last_activity"] >= state["hwm"]),
                      key=lambda i: (i["last_activity"], i["session_id"]))[:max_scan]
     eligible = [i for i in scanned
-                if i["last_activity"] <= quiet_before
-                and not _settled(state, i)]
+                if i["last_activity"] <= quiet_before and not _settled(state, i)]
+    return {"source": source, "state": state, "scanned": scanned, "eligible": eligible,
+            "load": load, "out": {"processed": [], "filtered": [], "failed": [], "deferred": []}}
 
-    attempts = 0
-    for pos, item in enumerate(eligible):
-        sid = item["session_id"]
-        if attempts >= max_sessions:
-            out["deferred"] = eligible[pos:]  # stay eligible, oldest first next run (DEC-71)
-            break
-        skip = is_hidden(item) if source == "devin" else False
-        t = None
-        if not skip:
-            t = load(item)
-            if isinstance(t, SourceFailure):
-                out["source_failure"] = t
-                break
-            skip = is_self_harvest(t) or is_trivial(t)
-        if skip:
-            state["done"][sid] = item["last_activity"]  # outside the cap
-            out["filtered"].append(sid)
-        else:
-            attempts += 1
-            if source == "devin":
-                attribute(t, records)
-            last_ts = state["seen"].get(sid, {}).get("last_ts", 0)
-            text = render(t, last_ts, max_chars)
-            # An empty delta has nothing to read; T7a's failure handling hangs off `ok`.
-            ok = process(t, text) if text else True
-            if not ok:
-                out["failed"].append(sid)
-                continue
-            state["done"][sid] = item["last_activity"]
-            if text:
-                state["seen"][sid] = {"last_ts": newest_ts(t), "ts": int(now)}
-            out["processed"].append(sid)
-        _advance_hwm(state, scanned)
-        save_cursor(cursor)
-    return out
+
+def _sweep_one(cursor, plan, item, process, now, max_chars, records):
+    """Classify and, unless filtered, process one session. Returns True when it used an
+    extraction attempt (counts against the cap), False otherwise."""
+    source, state, out, sid = plan["source"], plan["state"], plan["out"], item["session_id"]
+    skip, t = (is_hidden(item), None) if source == "devin" else (False, None)
+    if not skip:
+        t = plan["load"](item)
+        if isinstance(t, SourceFailure):
+            out["source_failure"] = t
+            return False
+        skip = is_self_harvest(t) or is_trivial(t)
+    if skip:
+        state["done"][sid] = item["last_activity"]  # outside the cap
+        out["filtered"].append(sid)
+    else:
+        if source == "devin":
+            attribute(t, records)
+        last_ts = state["seen"].get(sid, {}).get("last_ts", 0)
+        text = render(t, last_ts, max_chars)
+        # An empty delta has nothing to read; T7a's failure handling hangs off `ok`.
+        ok = process(t, text) if text else True
+        if not ok:
+            out["failed"].append(sid)
+            return True
+        state["done"][sid] = item["last_activity"]
+        if text:
+            state["seen"][sid] = {"last_ts": newest_ts(t), "ts": int(now)}
+        out["processed"].append(sid)
+    _advance_hwm(state, plan["scanned"])
+    save_cursor(cursor)
+    return not skip
 
 
 def run_selection(process, schedule_hours=6, max_sessions=20):
-    """One pass over every source: select, then call process(t, rendered_delta) per session,
-    oldest first. process returns True on success; anything else is a failed session (not
-    done, hwm held back). The cursor is written after each session. Returns per-source
-    {processed, filtered, failed, deferred[, source_failure]}."""
+    """One pass over every source: select, then call process(t, rendered_delta) per session.
+    ONE budget of max_sessions covers all sources, and eligible sessions of every source are
+    taken in global last_activity order, so a busy claude backlog cannot starve devin
+    (DEC-55's quota bound). process returns True on success; anything else is a failed
+    session (not done, hwm held back). The cursor is written after each session. Returns
+    per-source {processed, filtered, failed, deferred[, source_failure]}."""
     now = _now()
     cursor = load_cursor()
     fresh = [s for s, _, _ in _sources() if s not in cursor]
     records = load_launch_records()
-    result = {}
+    max_chars = int(os.environ.get("HARVEST_MAXCHARS", "12000"))
+    result, plans = {}, []
     for source, lister, loader in _sources():
         items = lister()
         if isinstance(items, SourceFailure):
             result[source] = {"processed": [], "filtered": [], "failed": [], "deferred": [],
                               "source_failure": items}
             continue
-        result[source] = _sweep_source(cursor, source, items, loader, process, now,
-                                       schedule_hours, max_sessions, records)
+        plan = _plan_source(cursor, source, items, loader, now, schedule_hours)
+        result[source] = plan["out"]
+        plans.append(plan)
+
+    merged = sorted(((i["last_activity"], i["session_id"], n) for n, p in enumerate(plans)
+                     for i in p["eligible"]))
+    by_key = {(n, i["session_id"], i["last_activity"]): i
+              for n, p in enumerate(plans) for i in p["eligible"]}
+    attempts = 0
+    for la, sid, n in merged:
+        plan, item = plans[n], by_key[(n, sid, la)]
+        if "source_failure" in plan["out"]:
+            continue  # a broken source stays untouched for the rest of the run
+        if attempts >= max_sessions:
+            plan["out"]["deferred"].append(item)  # stays eligible, oldest first next run (DEC-71)
+            continue
+        attempts += _sweep_one(cursor, plan, item, process, now, max_chars, records)
     if fresh:
         save_cursor(cursor)  # pin the first-run hwm even when nothing was selected
     return result

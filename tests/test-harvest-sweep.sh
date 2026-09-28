@@ -592,6 +592,22 @@ P("ac26_hwm_passed", c["hwm"] == NOW - 10800)
 P("ac26_attributed", leads.get("s-main"))
 P("ac26_unattributed", leads.get("s-null"))
 
+# ---- run-wide cap: one budget across sources, global last_activity order ----
+state, root = scenario(devin=True)
+os.environ["HARVEST_SWEEP_MIN_MESSAGES"] = "2"
+os.environ["HARVEST_SWEEP_LAUNCH_RECORD"] = os.path.join(TD, "nonexistent-launch.jsonl")
+for sid, off in (("c1", 19000), ("c2", 16000), ("c3", 12000), ("c4", 9000)):
+    mk(root, sid, NOW - off)
+log = []
+res = hs.run_selection(lambda t, text: log.append(t["session_id"]) or True, schedule_hours=6, max_sessions=4)
+P("cap_run1_order", ",".join(log))
+P("cap_run1_per_source", "%s|%s" % (",".join(res["claude"]["processed"]), ",".join(res["devin"]["processed"])))
+P("cap_run1_deferred", "%d|%d" % (len(res["claude"]["deferred"]), len(res["devin"]["deferred"])))
+log[:] = []
+hs.run_selection(lambda t, text: log.append(t["session_id"]) or True, schedule_hours=6, max_sessions=4)
+P("cap_run2_order", ",".join(log))
+del os.environ["HARVEST_SWEEP_MIN_MESSAGES"]
+
 # ---- cursor.json is atomic ----
 state, root = scenario()
 for k, sid in enumerate(("a1", "a2", "a3")):
@@ -671,6 +687,11 @@ assert_eq "AC26: a hidden session is marked done" "True" "$(t5 ac26_hidden_done)
 assert_eq "AC26: the hwm moves past a hidden session" "True" "$(t5 ac26_hwm_passed)"
 assert_eq "AC1: a devin session is attributed before processing" "lead-z" "$(t5 ac26_attributed)"
 assert_eq "AC1: an unmatched devin session stays unattributed" "None" "$(t5 ac26_unattributed)"
+
+assert_eq "AC6: one cap covers all sources, taken in global last_activity order" "c1,s-main,c2,s-null" "$(t5 cap_run1_order)"
+assert_eq "AC6: each source's processed list keeps its own sessions" "c1,c2|s-main,s-null" "$(t5 cap_run1_per_source)"
+assert_eq "AC6: deferred stays per source (hidden devin is unclassified past the cap)" "2|1" "$(t5 cap_run1_deferred)"
+assert_eq "AC6: the next run takes the rest; the hidden session is free" "c3,c4" "$(t5 cap_run2_order)"
 
 assert_eq "cursor: a crash between sessions leaves a parseable file with the earlier session" "True" "$(t5 atomic_crash_between)"
 assert_eq "cursor: the crashed session is not marked done" "True" "$(t5 atomic_a2_not_done)"
