@@ -1,6 +1,6 @@
 # SPEC-340: permission-auto-approve stops silently approving writes
 
-Status: DRAFT
+Status: VALIDATED
 Lane: full
 Type: bug-fix / behavioral
 Board: -
@@ -74,6 +74,14 @@ flags each gated tool may carry (Stage F). The cost is real (fewer commands auto
 prompts show) and it is the correct trade for a hook whose entire job is deciding what to
 approve WITHOUT asking a human.
 
+**Threat model, stated once: writes and code execution.** This spec stops the hook from
+silently approving commands that write files, mutate state, or run a second program. It does
+NOT try to constrain what an approved READ returns: `cat`, `grep`, `stat`, and friends still
+read whatever path they are pointed at, and the unconditional `WebFetch` approve means read
+content can still leave the host. The named read-side gaps are listed under `Not covered` in
+## After state; the `env`/`printenv` drop is a deliberate read-surface reduction recorded in
+## Decision Log, not a secrecy guarantee.
+
 **Config-loading tools are never auto-approved, stated once, applies everywhere below.** A tool
 that can load checked-in or command-line config or plugins has an attack surface no flag list
 converges on: every round of review on the draft surfaced another such flag (`prettier --config=`
@@ -113,6 +121,7 @@ commands under a different shell grammar needs its own review of the character s
 | Keep the regex-whitelist shape but require every regex to end in `$` (anchor both ends) | Closes the git-subcommand-only and find-presence-only gaps for the SPECIFIC patterns rewritten, but a `$`-anchored regex still cannot express "no `-delete` token anywhere among these args" without turning into the same per-flag enumeration this spec ends up doing anyway. Anchoring is necessary but not sufficient, so the fix goes straight to explicit flag lists rather than a halfway regex patch that still needs a second pass. |
 | Keep the character denylist but add the newly found smuggle characters to it (`"`, `'`, `\`, `$`, `{`, `}`) | The validation pass is the proof that this list never stays complete: it found five characters the first draft missed, and a sixth idea (history expansion `!`, `^` substitution, `[` globbing) would be next. The character set a command is allowed to contain is enumerable and small; the set of characters that can hurt is not. An allowlist is strictly easier to audit here. |
 | Unquote/unescape tokens before the Stage F scan instead of banning the metacharacters | Re-implementing bash's expansion rules inside a bash hook is exactly the partial-parser shape rejected above, and every unhandled expansion reintroduces the same bug. Banning the characters is simpler and the failure mode is only an extra prompt. |
+| Retire the Bash half and express the approved list as native `permissions.allow` rules in settings.json | `permissions.allow` is a Claude-Code-only surface; the hook form is the shape the kit can carry to other runtimes (the Codex adapter already ports the spine hooks via `hooks/codex-hooks.json` / `lib/codex/repin.sh`), and only the hook emits the per-stage `DWARVES_KIT_DEBUG` reason when a command falls through. Native rules also cannot express the staged checks (character allowlist, per-subcommand flag sets), so the equivalent rule list would be a coarser approximation with the same presence-check shape this fix removes. |
 | **Chosen: single-line + character allowlist gate, then a first-word allowlist, then an explicit safe-flag allowlist for every tool that has a write-capable option** | Directly implements "positively confirm read-only." Each stage is independently simple to read and to test; a character absent from Stage B, a tool absent from the first-word lists, or a flag absent from its safe-flag list is excluded by construction rather than by someone remembering to add it to a denylist. |
 
 ## Picture
@@ -140,8 +149,9 @@ commands under a different shell grammar needs its own review of the character s
           [A-Za-z0-9 ._/=:,@%+*~-] ?           --no-->  no decision
         |yes                                   [cases 1-3, 5: quotes,
         v                                       \, $, {}, ;&|<>`()[]?,
- STAGE C: split CMD on whitespace into WORDS[]  #!^ tab non-ASCII die]
-          WORDS[] empty (spaces-only CMD)?  --yes--> no decision
+ STAGE C: read -ra WORDS <<< "$CMD" (IFS split,   #!^ tab non-ASCII die]
+          never glob-expands); WORDS[] empty
+          (spaces-only CMD)?            --yes--> no decision
         |
         v
  STAGE D: WORDS[0] on the "no write-capable option" list
@@ -166,7 +176,8 @@ commands under a different shell grammar needs its own review of the character s
         |no ---------------------------------------------> no decision
         |yes
         v
- STAGE F: WORDS[1] is an allowed subcommand AND no arg
+ STAGE F: for git, WORDS[1] is an allowed subcommand
+          (find and file have no subcommand gate); no arg
           token contains "*" AND every token starting with
           "-" is in that tool's explicit safe-flag set?    [cases 2, 3,
         |no --------------------------------------------->    5, 6, 7]
@@ -185,15 +196,33 @@ containing pipe operators" lines) is rewritten to describe this contract, one li
 with Stage B named as a character allowlist. Every fall-through (the NUL guard and each stage)
 emits one `DWARVES_KIT_DEBUG=1` stderr line naming the stage and the failed check (same
 `[dwarves-kit:permission]` prefix as the existing debug lines), so an unexpected prompt is
-diagnosable.
+diagnosable. Each line carries a stable grep-able token per fall-through point (`nul-guard`,
+`stage-a`, `stage-b`, `stage-c`, `stage-e`, `stage-f`); AC6 pins them.
+
+**Runtime, pinned: `/bin/bash` (3.2.x).** The hook's shebang and production invocation are
+`/bin/bash`, so every idiom below must hold on bash 3.2: no associative arrays (each
+safe-flag set is a `case` pattern list), no `mapfile`/`readarray`, and under `set -u` an
+empty array makes `"${arr[@]}"` abort as unbound, so every `"${arr[@]}"` expansion is either
+reached only after a `${#arr[@]}` length check or written `${arr[@]+"${arr[@]}"}`, and
+`${#arr[@]}` itself is only read after the array is initialized (3.2 also raises unbound on
+`${#unset[@]}`). `tests/test-hooks.sh`'s permission block invokes the hook via
+`"${PAA_BASH:-/bin/bash}"`: `/bin/bash` is the default so the suite exercises the production
+interpreter, and `PAA_BASH=$(command -v bash) bash tests/test-hooks.sh` re-runs the block
+under the PATH bash to catch a dependency on either side.
 
 **NUL guard, input fidelity.** `CMD` is produced by `$(jq -r ...)`: jq decodes a `\u0000`
 escape to a real NUL byte, and bash command substitution drops NUL bytes silently, so a raw
 command containing `\u0000` yields a `CMD` that differs from the string the runtime executes.
 If the decoded `.tool_input.command` contains a NUL, the hook falls through before any stage
-runs. Mechanism, pinned: `jq -e '(.tool_input.command // "") | contains("\u0000")'` on the raw
-INPUT, a boolean probe on the decoded value rather than a text scan of the JSON (a NUL can only
-arrive as the `\u0000` escape, since JSON forbids a raw control byte). Chosen over moving the
+runs. Mechanism, pinned: `jq -e '(.tool_input.command // "") | explode | any(. == 0)'` on the
+raw INPUT, a codepoint probe on the decoded value. `contains("\u0000")` is explicitly not the
+mechanism: jq 1.6 truncates decoded strings at the first NUL byte, so `contains` can answer
+false for a command that carries one; `explode | any(. == 0)` reads the codepoint list, which
+is the shape that stays honest across jq versions. It is also not a text scan of the raw JSON
+(a NUL can only arrive as the `\u0000` escape, since JSON forbids a raw control byte). Exit
+semantics pinned: the probe runs under `jq -e` and the scan continues only when it exits
+exactly 1 (decoded command is NUL-free); exit 0 (a NUL is present) and every other exit (a jq
+error, e.g. unparseable INPUT or a non-string `command`) both fall through. Chosen over moving the
 Stage B test into jq: the allowlist check stays in bash `[[ =~ ]]` per the mechanism pinned
 below, the gate keeps one implementation language, and the probe is a single boolean. A
 trailing newline needs no guard: `$(...)` strips it from the checked string, and stripped
@@ -223,7 +252,10 @@ reads its input line-wise; both are wrong for a whole-string, byte-exact check. 
 evaluates against the string as-is with no line splitting, and `LC_ALL=C` makes the ranges
 pure ASCII.
 
-**Stage C, tokenize.** Split `CMD` on whitespace into `WORDS[]`. This split is exact, not
+**Stage C, tokenize.** Split `CMD` on whitespace into `WORDS[]`. Mechanism, pinned:
+`read -ra WORDS <<< "$CMD"`: `read` applies the IFS split and never glob-expands, which
+matters because Stage B lets `*` through; a `WORDS=($CMD)` split would glob unless `set -f`
+ran first, and is not used. This split is exact, not
 heuristic: Stage B already removed every quote and escape character, so no token can hide a
 leading `-` behind `"`, `'`, or `\`, and none can expand into one at run time. Guard: a
 spaces-only `CMD` passes the non-empty check and Stage B (spaces are allowlisted) but yields
@@ -311,16 +343,21 @@ appears on a code line of the hook (comment lines skipped, so prose cannot trip 
 
 ## Failure modes
 
-| Class | Consequence | Why acceptable |
-|---|---|---|
-| A safe command uses a flag not yet on its tool's safe list (e.g. `git log --follow`) | Falls through to the normal prompt instead of auto-approving | The stated failure mode: never a false approve, only an extra prompt. The safe-flag lists can be extended later, named as a follow-up, without touching Stages A-C. |
-| A safe command contains a banned character: a quote (`git log --format="%h %s"`, `find . -name '*.md'`), a backslash, a `$VAR`, a brace group, or any non-ASCII byte | Falls through to the normal prompt | These are exactly the smuggle characters: a quoted, escaped, or expanded `-flag` defeats any text-level leading-`-` check because bash restores the dash at run time. Banning them outright is what makes Stage F's "starts with `-`" test mean anything. The cost is an occasional prompt on a safe command. |
-| An unquoted `*` in a Stage-D command (`ls *.md`, `cat *`) glob-expands to a filename the scan never saw, potentially one literally named like a flag | The planted name lands as a flag to a Stage-D tool | Stage D's admission criterion is "no flag on this tool writes or execs", verified per tool, so a planted flag-looking filename is harmless there. For gated tools `*` is banned outright (Stage F rule 1), so the same trick cannot reach find/git/file. |
-| Commands execute under the harness's non-interactive bash or zsh with default options | Stage B's allowlist is derived from bash/zsh expansion rules | Recorded assumption: a runtime that executes Bash-tool commands under a different grammar (fish, PowerShell, cmd) needs its own review of the character set. Under zsh the only extra expansion the allowlist permits is `=word` at word start, which expands `word` to its absolute path (`=ls` -> `/bin/ls`); it only ever yields a path, never a `-`-token or a second command, so it is harmless. Out of scope beyond bash/zsh. |
-| A checked-in tool config file steers an approved tool (`.prettierrc`, `.prettierrc.js`, `ruff.toml`, `pyproject.toml`, `.npmrc`, `.tool-versions`, `rust-toolchain.toml`, `.go-version`-adjacent env files) | An attacker-authored repo file turns a silently approved "read" into a write or code execution, the exact class this spec exists to close | Named as a trust assumption and removed, not patched: the config-loading rule in ## Design drops every such tool (`npm`, `npx`, `ruff`, `go`) and every version-manager shim (`node`, `python3`, `cargo`) from the approved set entirely rather than flag-gating it, because a checked-in config needs no flag at all to rewrite files (`ruff.toml` with `fix = true`), run code (`.prettierrc.js`), or redirect a shim to a planted binary (`.tool-versions` `path:`). The surviving tools have no checked-in config surface; `git`'s is recorded in the row below. |
-| `git log`/`diff`/`show`/`branch`/`tag` honor the local `.git/config` (`core.pager`, `pager.*`, `core.fsmonitor`, `include.path`), and a checked-in `.gitattributes` can name a filter or textconv driver | A crafted local pager or fsmonitor config would run a program on an auto-approved read | "Never checked in" means git does not track `.git`; it does NOT mean a `.git/config` cannot arrive by other means. An attacker-supplied tarball/zip or a vendored bare repository can carry a live `.git/config` (e.g. `core.fsmonitor` pointing at a script), so `git status` inside an unpacked tree can run code. Writing a config into a repo's own `.git/` still needs prior local file access, at which point code execution is already in hand; the archive case is the residual gap, recorded not mitigated since the hook can only approve or abstain, never inspect the tree. `.gitattributes` can be checked in but only *names* a driver; the driver command itself lives in `.git/config`. `git -c`/`-C` overrides fall through (not on the safe-flag list). |
-| An approved command name resolves to a shell wrapper instead of the standalone binary the criterion was verified against | The wrapper may rewrite flags or add behavior the man-page check never saw | Observed, not hypothetical: the Claude Code zsh shell snapshot shadows `find` with a `bfs` function (base flags `-S dfs -regextype findutils-default`) and `grep` with a `ugrep` function (base flags `-G --ignore-files --hidden -I --exclude-dir=...`), and interactive rc files alias `ls`, `du`, `df`, `type`. Stage D's "no write-capable option" and `find`'s Stage F flag set were verified against the standalone tools; under a wrapper the same flag text reaches a different parser (e.g. ugrep carries `--save-config`, which writes). The snapshot's own `grep` wrapper reroutes `*config*`/`-save-config`-shaped args to `command grep`, which narrows this specific case but does not close the class. Recorded as an environment assumption: the allowlist pins command TEXT, and what the first word resolves to is the harness's contract, not the hook's. |
-| A genuinely malicious command built entirely from safe-looking tokens (an unlisted git subcommand, an unlisted tool) | Falls through | Stage E recognizes only the three gated tools (`find`, `git`, `file`) and their named subcommands; any subcommand outside `{status, ls-files, log, diff, show, branch, remote, tag}` for `git`, or any tool outside the Stage D/E tables entirely, never reaches an approve branch. Same "excluded by omission" property the whole design relies on. |
+| Class | Consequence | Why acceptable | Detection |
+|---|---|---|---|
+| A safe command uses a flag not yet on its tool's safe list (e.g. `git log --follow`) | Falls through to the normal prompt instead of auto-approving | The stated failure mode: never a false approve, only an extra prompt. The safe-flag lists can be extended later, named as a follow-up, without touching Stages A-C. | The prompt itself is the signal; `DWARVES_KIT_DEBUG=1` names `stage-f` as the refusing stage. |
+| A safe command contains a banned character: a quote (`git log --format="%h %s"`, `find . -name '*.md'`), a backslash, a `$VAR`, a brace group, or any non-ASCII byte | Falls through to the normal prompt | These are exactly the smuggle characters: a quoted, escaped, or expanded `-flag` defeats any text-level leading-`-` check because bash restores the dash at run time. Banning them outright is what makes Stage F's "starts with `-`" test mean anything. The cost is an occasional prompt on a safe command. | The prompt itself; the `stage-b` debug line names the cause. |
+| An unquoted `*` in a Stage-D command (`ls *.md`, `cat *`) glob-expands to a filename the scan never saw, potentially one literally named like a flag | The planted name lands as a flag to a Stage-D tool | Stage D's admission criterion is "no flag on this tool writes or execs", verified per tool, so a planted flag-looking filename is harmless there. For gated tools `*` is banned outright (Stage F rule 1), so the same trick cannot reach find/git/file. | None needed at run time: harmlessness follows from the per-tool admission check. The gated-tool side is pinned by group-(a) cases a32-a34. |
+| Commands execute under the harness's non-interactive bash or zsh with default options | Stage B's allowlist is derived from bash/zsh expansion rules | Recorded assumption: a runtime that executes Bash-tool commands under a different grammar (fish, PowerShell, cmd) needs its own review of the character set. Under zsh the only extra expansion the allowlist permits is `=word` at word start, which expands `word` to its absolute path (`=ls` -> `/bin/ls`); it only ever yields a path, never a `-`-token or a second command, so it is harmless. Out of scope beyond bash/zsh. | No hook-side detection. A wrong-grammar runtime surfaces as unexplained prompts (the fail-closed direction); an approval a grammar did not earn would only be caught by re-running the audit that produced this spec. |
+| A checked-in tool config file steers an approved tool (`.prettierrc`, `.prettierrc.js`, `ruff.toml`, `pyproject.toml`, `.npmrc`, `.tool-versions`, `rust-toolchain.toml`, `.go-version`-adjacent env files) | An attacker-authored repo file turns a silently approved "read" into a write or code execution, the exact class this spec exists to close | Named as a trust assumption and removed, not patched: the config-loading rule in ## Design drops every such tool (`npm`, `npx`, `ruff`, `go`) and every version-manager shim (`node`, `python3`, `cargo`) from the approved set entirely rather than flag-gating it, because a checked-in config needs no flag at all to rewrite files (`ruff.toml` with `fix = true`), run code (`.prettierrc.js`), or redirect a shim to a planted binary (`.tool-versions` `path:`). The surviving tools have no checked-in config surface; `git`'s is recorded in the row below. | Silent false-approve until the tool is dropped; the drop is pinned by the group-(a) cases per dropped tool (a35-a39, a44-a48, a50-a52), so a regression that re-admits one goes red. |
+| `git log`/`diff`/`show`/`branch`/`tag` honor the local `.git/config` (`core.pager`, `pager.*`, `core.fsmonitor`, `include.path`), and a checked-in `.gitattributes` can name a filter or textconv driver | A crafted local pager or fsmonitor config would run a program on an auto-approved read | "Never checked in" means git does not track `.git`; it does NOT mean a `.git/config` cannot arrive by other means. An attacker-supplied tarball/zip or a vendored bare repository can carry a live `.git/config` (e.g. `core.fsmonitor` pointing at a script), so `git status` inside an unpacked tree can run code. Writing a config into a repo's own `.git/` still needs prior local file access, at which point code execution is already in hand; the archive case is the residual gap, recorded not mitigated since the hook can only approve or abstain, never inspect the tree. `.gitattributes` can be checked in but only *names* a driver; the driver command itself lives in `.git/config`. A checked-in `.gitattributes` can also select a driver defined in `~/.gitconfig` or another user-level config the repo does not control: the repo supplies the name, not the command, though a common driver name may already exist on the operator's machine (git-lfs additionally reads the checked-in `.lfsconfig`). Low risk; recorded. `git -c`/`-C` overrides fall through (not on the safe-flag list). | Silent at run time: the archive-carried `.git` case is the recorded residual gap with no hook-side detection. The `-c`/`-C` flag path is pinned closed by a40/a41. |
+| An approved command name resolves to a shell wrapper instead of the standalone binary the criterion was verified against | The wrapper may rewrite flags or add behavior the man-page check never saw | Observed, not hypothetical: the Claude Code zsh shell snapshot shadows `find` with a `bfs` function (base flags `-S dfs -regextype findutils-default`) and `grep` with a `ugrep` function (base flags `-G --ignore-files --hidden -I --exclude-dir=...`), and interactive rc files alias `ls`, `du`, `df`, `type`. Stage D's "no write-capable option" and `find`'s Stage F flag set were verified against the standalone tools; under a wrapper the same flag text reaches a different parser (e.g. ugrep carries `--save-config`, which writes). The snapshot's own `grep` wrapper reroutes `*config*`/`-save-config`-shaped args to `command grep`, which narrows this specific case but does not close the class. Recorded as an environment assumption: the allowlist pins command TEXT, and what the first word resolves to is the harness's contract, not the hook's. | Silent at run time; detected only by the same kind of audit that found the bfs/ugrep shadowing. |
+| A genuinely malicious command built entirely from safe-looking tokens (an unlisted git subcommand, an unlisted tool) | Falls through | Stage E recognizes only the three gated tools (`find`, `git`, `file`) and their named subcommands; any subcommand outside `{status, ls-files, log, diff, show, branch, remote, tag}` for `git`, or any tool outside the Stage D/E tables entirely, never reaches an approve branch. Same "excluded by omission" property the whole design relies on. | The prompt itself: the failure mode IS the visible fall-through. |
+
+A false approve (the direction this spec exists to close) has no runtime signal by
+construction: the command runs and nothing is printed. Detection for that direction is the
+group-(a) suite plus audit, which is why every live bypass found in ## Problem is kept as a
+permanent pin even when the old hook already rejected it by accident.
 
 ## Acceptance criteria
 
@@ -337,13 +374,19 @@ appears on a code line of the hook (comment lines skipped, so prose cannot trip 
 - AC5: `sed -i ...` and `sort -o ...` do not auto-approve, and neither `sed` nor `sort` appears
   as a word on any code line of the rewritten hook source (comment lines are skipped, so prose
   cannot trip the check; grep-checkable, pinned by a test).
+- AC6: every instrumented fall-through emits its `DWARVES_KIT_DEBUG=1` stderr line carrying
+  the stage token (`nul-guard`, `stage-a`, `stage-b`, `stage-c`, `stage-e`, `stage-f`); one
+  representative input per stage asserts the token appears on stderr (## Test plan group (c)).
 
 ## Test plan
 
 New cases land in `tests/test-hooks.sh`'s existing `=== permission-auto-approve.sh ===` block,
 same `OUTPUT=...; assert_output_not_contains "..." '"allow"' "$OUTPUT"` /
-`assert_output_contains` shape already used there, plus one `assert_true` source grep for AC5.
-No new test file.
+`assert_output_contains` shape already used there, plus one `assert_true` source grep for AC5
+and six stderr greps for AC6. No new test file. The whole block invokes the hook as
+`"${PAA_BASH:-/bin/bash}"`: `/bin/bash` (3.2, the production interpreter) is the default under
+test; `PAA_BASH=$(command -v bash) bash tests/test-hooks.sh` re-runs the same block under the
+PATH bash, and the implementation is required green under both.
 
 **Group (a), must-not-approve (each asserts the output does NOT contain `"allow"`):**
 
@@ -385,7 +428,7 @@ No new test file.
 | a34 | `find . -name *.md` | case 7: the former group-(b) case, now must-not-approve because the pattern carries `*` |
 | a35 | `cargo check` | dropped approval: writes `target/` and runs build scripts |
 | a36 | `python --version` | dropped approval: resolves through a version-manager shim (same class as a50-a52) |
-| a37 | `env` | dropped approval: bulk dump of the whole environment, secrets included, with no prompt |
+| a37 | `env` | dropped approval: bulk dump of the whole environment with no named target (Decision Log) |
 | a38 | `printenv` | dropped approval: same bulk-dump reason |
 | a39 | `npx -y prettier --check` | `npx` dropped entirely; this case also pins that `-y` auto-confirm can never ride along |
 | a40 | `git -c core.pager=x log` | git global `-c` config injection; `WORDS[1]` is not an allowed subcommand |
@@ -439,11 +482,25 @@ pinned here:**
 | b24 | `du -sh .` | Stage D |
 | b25 | `df -h` | Stage D |
 
+**Group (c), debug lines (AC6):** six cases, each runs the hook with `DWARVES_KIT_DEBUG=1`,
+discards stdout, and asserts stderr carries the pinned stage token. One representative input
+per instrumented fall-through:
+
+| Case | Input | Token |
+|---|---|---|
+| c1 | the a53 `\u0000` payload | `nul-guard` |
+| c2 | the a4 two-line payload | `stage-a` |
+| c3 | `echo x >/tmp/paa-test-f` | `stage-b` |
+| c4 | `   ` (spaces only) | `stage-c` |
+| c5 | `curl http://example.com` | `stage-e` |
+| c6 | `find /tmp -name *.tmp -delete` | `stage-f` |
+
 **Negative control, run and recorded.** Executed live against the pre-fix
 `hooks/permission-auto-approve.sh` (this worktree, before Stage A-F lands) with the new test
 cases in place. Result: 40 group-(a) assertions go red, every group (b) assertion stays green
 (25/25), and eleven group-(a) assertions pass even pre-fix, each for a documented accidental
-reason rather than by design:
+reason rather than by design. The six group-(c) debug asserts also go red pre-fix for the
+structural reason that the old hook emits no stage lines at all:
 
 | Pre-fix result | Cases | Why |
 |---|---|---|
@@ -458,10 +515,18 @@ documented reason, not by continuing to rely on an accident of the old regex.
 ## Verification
 
 `bash tests/test-hooks.sh` exits 0, permission-auto-approve section shows the new
-group-(a)/group-(b) cases plus the AC5 source grep passing (`PASS` count increases by the
-number of new assertions listed above, `FAIL` count 0). The negative control above run once,
-live, during implementation (not part of the committed suite), confirming the live-bypass
-portion of group (a) is red against the unpatched hook and all of it is green against the fix.
+group-(a)/group-(b) cases plus the AC5 source grep and the group-(c) debug-line asserts
+passing (`PASS` count increases by the number of new assertions listed above, `FAIL` count 0).
+The suite is run twice against the permission block: default `PAA_BASH=/bin/bash` (3.2, the
+production interpreter) and `PAA_BASH=$(command -v bash)`; both green. Negative controls run
+once, live, during implementation via `lib/gate/negctl.sh` (not part of the committed suite):
+(1) the pre-fix hook restored over the new tests, expecting the live-bypass portion of group
+(a) red (group (c) goes red too, the pre-fix hook has no stage lines); (2) the NUL guard
+mutated to `jq contains("\u0000")`, expecting c1/a53 red, on jq >= 1.7 strings retain NULs
+and `contains` detects the byte correctly, so on such a toolchain this mutation is
+behavior-preserving and the control is expected to report vacuous, recorded verbatim either
+way; (3) the NUL guard neutralized (`any(. == 0)` -> `any(. == -1)`), expecting a53/c1 red,
+which proves the case has teeth independent of the jq version.
 
 ## Touches
 
@@ -485,8 +550,8 @@ portion of group (a) is red against the unpatched hook and all of it is green ag
 ## After state
 
 `hooks/permission-auto-approve.sh` still auto-approves the everyday read-only commands it does
-today (Group (b)), and no longer auto-approves any of the write/exfiltration shapes found in
-## Problem: the four named cases, the three audit cases, the whole quote/escape/expansion
+today (Group (b)), and no longer auto-approves any of the write or code-execution shapes found
+in ## Problem: the four named cases, the three audit cases, the whole quote/escape/expansion
 smuggle class, the per-tool write flags on `go`/`ruff`/`npx`/`file`, and glob-expanded planted
 flags. `env`, `printenv`, `cargo check`, `python --version`, the `--version` trio (`node`,
 `python3`, `cargo`), `npm`, `npx`, `ruff`, and `go` lose their auto-approval entirely: the last
@@ -510,6 +575,16 @@ Not covered:
   Decision Log.
 - Adding `sed`/`sort` (or any other tool) to the approved set. Explicitly rejected in ## Design;
   a separate, explicitly-scoped follow-up if ever wanted.
+- Read-then-send exfiltration. An approved read (`cat`/`grep`/`stat` on a secret file) hands
+  the content to the model, and the unconditional `WebFetch` approve lets it leave the host.
+  Closing that needs an egress-side control (WebFetch policy), not a Bash-side one; the threat
+  model here is writes and code execution, so this is recorded, not attempted.
+- Path policy on approved read tools: `cat /proc/...`, `cat ~/.ssh/id_rsa`, `stat`/`du`/`df`
+  on sensitive paths still auto-approve. Narrowing which PATHS a read tool may touch is a
+  different layer than the character/flag allowlist this spec builds; recorded, not attempted.
+- Network side effects of approved reads: on macOS an `ls`/`stat`/`df` under an automounter
+  path (`/net/...`, or an autofs-style `/home` map elsewhere) can trigger DNS/NFS lookups.
+  The allowlist covers what a command does to local files, not which mount paths it prods.
 
 ## Decision Log
 
@@ -534,10 +609,13 @@ Not covered:
   file named `-delete`/`--fix`/`--output` becomes a live flag on expansion. Stage D tools keep
   `*` because their admission criterion (no write-capable flag exists) makes a planted flag
   harmless.
-- Chose to drop `env` and `printenv` from the approved set: both emit a bulk dump of the whole
-  environment, secrets included, with zero user visibility, and a security-hardening pass is
-  the wrong place to keep silent secret reads for marginal convenience. Reversible in a
-  follow-up if the prompts annoy (see `Not covered`).
+- Chose to drop `env` and `printenv` from the approved set: both dump the whole environment
+  in one invocation, and unlike a targeted read (`cat ~/.aws/credentials` names its target in
+  the command text, visible in the prompt the hook bypasses) the bulk dump gives a reviewer
+  nothing to weigh. This is a read-surface reduction, not a secrecy guarantee: targeted
+  secret reads by Stage-D tools remain approved, and the threat model here is writes and code
+  execution (the read-then-send gap is named under `Not covered`). Reversible in a follow-up
+  if the prompts annoy (see `Not covered`).
 - Chose to drop `cargo check` (writes `target/` and executes `build.rs` build scripts, so it
   was never read-only). Approved by the old regexes; the drop is recorded so the extra prompt
   is explainable. `python --version` moved into the version-manager-shim drop recorded in the
