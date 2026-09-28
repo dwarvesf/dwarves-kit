@@ -412,5 +412,58 @@ else
   else no "dirty=[$DIRTY]"; fi
 fi
 
+echo
+# --- --at mode: the full mutate control against an exported commit, live tree untouched ---
+ATREPO="$TMP/atrepo"; mkrepo "$ATREPO"
+AT_SHA="$(git -C "$ATREPO" rev-parse HEAD)"
+MUT="sed -i.bak 's/+/-/' lib.sh && rm -f lib.sh.bak"
+
+echo "[33] --at: runs against the commit, not a live uncommitted change that fails the test"
+printf 'add() { echo 0; }\n' > "$ATREPO/lib.sh"   # a worker's uncommitted WIP that fails the test
+( cd "$ATREPO" && ! bash test.sh ) || no "fixture: the live WIP should fail the test"
+LIVE_BEFORE="$(git -C "$ATREPO" status --porcelain --untracked-files=all; git -C "$ATREPO" diff; cksum "$ATREPO/lib.sh")"
+OUT="$(TMPDIR="$TMP" bash "$NC" --at "$AT_SHA" "$ATREPO" "bash test.sh" "$MUT" 2>&1)"; RC=$?
+LIVE_AFTER="$(git -C "$ATREPO" status --porcelain --untracked-files=all; git -C "$ATREPO" diff; cksum "$ATREPO/lib.sh")"
+EXPORT="$(sed -n 's/^Export: //p' <<<"$OUT")"
+if [ "$RC" -eq 0 ] && grep -q '^Verdict: PASS$' <<<"$OUT" && grep -q "^At: $AT_SHA$" <<<"$OUT" \
+   && grep -q '^Exit: 0 (green before' <<<"$OUT" && grep -qE '^Exit: [1-9][0-9]* \(under mutation' <<<"$OUT" \
+   && [ -n "$EXPORT" ] && [ -f "$EXPORT/lib.sh" ] && case "$EXPORT" in "$TMP"/negctl-at.*) true ;; *) false ;; esac; then
+  ok "PASS against the exported commit, export under TMPDIR at $EXPORT"
+else no "rc=$RC out=$OUT"; fi
+
+echo "[34] --at: the live tree is byte-identical afterwards (status, diff, content)"
+if [ "$LIVE_BEFORE" = "$LIVE_AFTER" ] && grep -q 'echo 0' "$ATREPO/lib.sh"; then
+  ok "live WIP untouched"
+else no "before=[$LIVE_BEFORE] after=[$LIVE_AFTER]"; fi
+git -C "$ATREPO" checkout -q -- lib.sh   # drop the simulated WIP
+
+echo "[35] --at --path --setup: export limited to the subdir, setup runs in the export first"
+TCMD='test -f setup-ran && test ! -e lib.sh && source "./sub dir/lib file.sh" && [ "$(mul 2 3)" = "6" ]'
+PMUT="sed -i.bak 's/\\*/+/' 'sub dir/lib file.sh' && rm -f 'sub dir/lib file.sh.bak'"
+OUT="$(TMPDIR="$TMP" bash "$NC" --at "$AT_SHA" --path "sub dir" --setup "touch setup-ran" "$ATREPO" "$TCMD" "$PMUT" 2>&1)"; RC=$?
+if [ "$RC" -eq 0 ] && grep -q '^Verdict: PASS$' <<<"$OUT" && grep -q '^Setup: touch setup-ran$' <<<"$OUT" \
+   && grep -q "^At: $AT_SHA (sub dir)$" <<<"$OUT" && clean "$ATREPO"; then
+  ok "subdir-only export with setup: PASS, live tree clean"
+else no "rc=$RC out=$OUT"; fi
+
+echo "[36] --at usage: bad sha, --path without --at, --at with --base-ref all exit 64"
+OUT1="$(bash "$NC" --at no-such-sha "$ATREPO" "bash test.sh" "$MUT" 2>&1)"; R1=$?
+OUT2="$(bash "$NC" --path "sub dir" "$ATREPO" "bash test.sh" "$MUT" 2>&1)"; R2=$?
+OUT3="$(bash "$NC" --at "$AT_SHA" --base-ref "$AT_SHA" "$ATREPO" "bash test.sh" 2>&1)"; R3=$?
+if [ "$R1" -eq 64 ] && grep -q 'does not resolve to a commit' <<<"$OUT1" \
+   && [ "$R2" -eq 64 ] && grep -q 'usage: negctl.sh --at' <<<"$OUT2" \
+   && [ "$R3" -eq 64 ] && grep -q 'usage: negctl.sh --at' <<<"$OUT3"; then
+  ok "all three exit 64"
+else no "r1=$R1 r2=$R2 r3=$R3 out1=$OUT1 out2=$OUT2 out3=$OUT3"; fi
+
+echo "[37] default mode unchanged: no At/Export lines, still REFUSES a dirty live tree"
+OUT="$(bash "$NC" "$ATREPO" "bash test.sh" "$MUT" 2>&1)"; RC=$?
+echo "# wip" >> "$ATREPO/lib.sh"
+OUT2="$(bash "$NC" "$ATREPO" "bash test.sh" "$MUT" 2>&1)"; RC2=$?
+git -C "$ATREPO" checkout -q -- lib.sh
+if [ "$RC" -eq 0 ] && ! grep -qE '^(At|Export|Setup):' <<<"$OUT" && [ "$RC2" -eq 2 ] && grep -q 'REFUSED' <<<"$OUT2"; then
+  ok "default output has no --at lines; dirty tree still REFUSED"
+else no "rc=$RC rc2=$RC2 out=$OUT out2=$OUT2"; fi
+
 if [ "$fail" -gt 0 ]; then echo "test-proof-negctl: $pass passed, $fail FAILED" >&2; exit 1; fi
 echo "test-proof-negctl: all $pass passed"
