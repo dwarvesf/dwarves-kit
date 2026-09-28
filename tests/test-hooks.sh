@@ -636,14 +636,102 @@ assert_output_not_contains "does not approve sed -i (never on the allowlist)" '"
 OUTPUT=$(echo '{"tool_name":"Bash","tool_input":{"command":"sort -o /tmp/paa-test-f /tmp/paa-test-f"}}' | bash "$KIT_DIR/hooks/permission-auto-approve.sh" 2>/dev/null)
 assert_output_not_contains "does not approve sort -o (never on the allowlist)" '"allow"' "$OUTPUT"
 
+# Group (a) continued: quote/escape/expansion smuggles. Each form rebuilds a leading "-" at
+# run time after a text-level "-" scan has passed the token; only a character allowlist
+# closes the class.
+
+OUTPUT=$(echo '{"tool_name":"Bash","tool_input":{"command":"find /tmp -name x \"-delete\""}}' | bash "$KIT_DIR/hooks/permission-auto-approve.sh" 2>/dev/null)
+assert_output_not_contains "does not approve a quoted flag (find \"-delete\")" '"allow"' "$OUTPUT"
+
+OUTPUT=$(echo '{"tool_name":"Bash","tool_input":{"command":"find /tmp -name x \\-delete"}}' | bash "$KIT_DIR/hooks/permission-auto-approve.sh" 2>/dev/null)
+assert_output_not_contains "does not approve a backslash-escaped flag (find \\-delete)" '"allow"' "$OUTPUT"
+
+OUTPUT=$(echo '{"tool_name":"Bash","tool_input":{"command":"find /tmp -name x ${NOPE:--delete}"}}' | bash "$KIT_DIR/hooks/permission-auto-approve.sh" 2>/dev/null)
+assert_output_not_contains "does not approve a parameter-expanded flag (find \${..:-..})" '"allow"' "$OUTPUT"
+
+OUTPUT=$(echo '{"tool_name":"Bash","tool_input":{"command":"find /tmp -name x {-delete,}"}}' | bash "$KIT_DIR/hooks/permission-auto-approve.sh" 2>/dev/null)
+assert_output_not_contains "does not approve a brace-expanded flag (find {-delete,})" '"allow"' "$OUTPUT"
+
+OUTPUT=$(echo '{"tool_name":"Bash","tool_input":{"command":"find /tmp -name x $'"'"'\\x2ddelete'"'"'"}}' | bash "$KIT_DIR/hooks/permission-auto-approve.sh" 2>/dev/null)
+assert_output_not_contains "does not approve an ANSI-C quoted flag (find \$'\\x2ddelete')" '"allow"' "$OUTPUT"
+
+OUTPUT=$(echo '{"tool_name":"Bash","tool_input":{"command":"git log '"'"'--output=/tmp/paa-test-x'"'"'"}}' | bash "$KIT_DIR/hooks/permission-auto-approve.sh" 2>/dev/null)
+assert_output_not_contains "does not approve a quoted write flag (git log '--output=..')" '"allow"' "$OUTPUT"
+
+OUTPUT=$(echo '{"tool_name":"Bash","tool_input":{"command":"ruff check \"--fix\""}}' | bash "$KIT_DIR/hooks/permission-auto-approve.sh" 2>/dev/null)
+assert_output_not_contains "does not approve a quoted write flag (ruff check \"--fix\")" '"allow"' "$OUTPUT"
+
+# Group (a) continued: per-tool write/exec flags the old subcommand-only or denylist rules
+# admitted.
+
+OUTPUT=$(echo '{"tool_name":"Bash","tool_input":{"command":"go env -w GOFLAGS=-mod=mod"}}' | bash "$KIT_DIR/hooks/permission-auto-approve.sh" 2>/dev/null)
+assert_output_not_contains "does not approve go env -w (writes persistent config)" '"allow"' "$OUTPUT"
+
+OUTPUT=$(echo '{"tool_name":"Bash","tool_input":{"command":"go list -toolexec=echo"}}' | bash "$KIT_DIR/hooks/permission-auto-approve.sh" 2>/dev/null)
+assert_output_not_contains "does not approve go list -toolexec (names a program)" '"allow"' "$OUTPUT"
+
+OUTPUT=$(echo '{"tool_name":"Bash","tool_input":{"command":"ruff check --fix-only"}}' | bash "$KIT_DIR/hooks/permission-auto-approve.sh" 2>/dev/null)
+assert_output_not_contains "does not approve ruff check --fix-only" '"allow"' "$OUTPUT"
+
+OUTPUT=$(echo '{"tool_name":"Bash","tool_input":{"command":"ruff check --add-noqa"}}' | bash "$KIT_DIR/hooks/permission-auto-approve.sh" 2>/dev/null)
+assert_output_not_contains "does not approve ruff check --add-noqa" '"allow"' "$OUTPUT"
+
+OUTPUT=$(echo '{"tool_name":"Bash","tool_input":{"command":"ruff check --output-file=/tmp/paa-ruff.txt"}}' | bash "$KIT_DIR/hooks/permission-auto-approve.sh" 2>/dev/null)
+assert_output_not_contains "does not approve ruff check --output-file" '"allow"' "$OUTPUT"
+
+OUTPUT=$(echo '{"tool_name":"Bash","tool_input":{"command":"npx prettier --check --plugin=./evil.js"}}' | bash "$KIT_DIR/hooks/permission-auto-approve.sh" 2>/dev/null)
+assert_output_not_contains "does not approve npx prettier --plugin (loads arbitrary JS)" '"allow"' "$OUTPUT"
+
+OUTPUT=$(echo '{"tool_name":"Bash","tool_input":{"command":"file -C -m /tmp/paa-magic"}}' | bash "$KIT_DIR/hooks/permission-auto-approve.sh" 2>/dev/null)
+assert_output_not_contains "does not approve file -C (compiles a magic file)" '"allow"' "$OUTPUT"
+
+# Group (a) continued: a bare glob in a gated tool's args expands against cwd, where a
+# checked-in file named like a flag lands in flag position.
+
+OUTPUT=$(echo '{"tool_name":"Bash","tool_input":{"command":"find . -name *"}}' | bash "$KIT_DIR/hooks/permission-auto-approve.sh" 2>/dev/null)
+assert_output_not_contains "does not approve a bare glob in gated args (find -name *)" '"allow"' "$OUTPUT"
+
+OUTPUT=$(echo '{"tool_name":"Bash","tool_input":{"command":"git log *"}}' | bash "$KIT_DIR/hooks/permission-auto-approve.sh" 2>/dev/null)
+assert_output_not_contains "does not approve a bare glob in gated args (git log *)" '"allow"' "$OUTPUT"
+
+OUTPUT=$(echo '{"tool_name":"Bash","tool_input":{"command":"find . -name *.md"}}' | bash "$KIT_DIR/hooks/permission-auto-approve.sh" 2>/dev/null)
+assert_output_not_contains "does not approve a glob pattern in gated args (find -name *.md)" '"allow"' "$OUTPUT"
+
+# Group (a) continued: approvals dropped on purpose (recorded in the spec's Decision Log).
+
+OUTPUT=$(echo '{"tool_name":"Bash","tool_input":{"command":"cargo check"}}' | bash "$KIT_DIR/hooks/permission-auto-approve.sh" 2>/dev/null)
+assert_output_not_contains "does not approve cargo check (writes target/, runs build scripts)" '"allow"' "$OUTPUT"
+
+OUTPUT=$(echo '{"tool_name":"Bash","tool_input":{"command":"python --version"}}' | bash "$KIT_DIR/hooks/permission-auto-approve.sh" 2>/dev/null)
+assert_output_not_contains "does not approve python --version (only python3 kept)" '"allow"' "$OUTPUT"
+
+OUTPUT=$(echo '{"tool_name":"Bash","tool_input":{"command":"env"}}' | bash "$KIT_DIR/hooks/permission-auto-approve.sh" 2>/dev/null)
+assert_output_not_contains "does not approve env (dumps all env vars incl. secrets)" '"allow"' "$OUTPUT"
+
+OUTPUT=$(echo '{"tool_name":"Bash","tool_input":{"command":"printenv"}}' | bash "$KIT_DIR/hooks/permission-auto-approve.sh" 2>/dev/null)
+assert_output_not_contains "does not approve printenv (dumps all env vars incl. secrets)" '"allow"' "$OUTPUT"
+
+OUTPUT=$(echo '{"tool_name":"Bash","tool_input":{"command":"npx -y prettier --check"}}' | bash "$KIT_DIR/hooks/permission-auto-approve.sh" 2>/dev/null)
+assert_output_not_contains "does not approve npx -y prettier (auto-confirms install)" '"allow"' "$OUTPUT"
+
+# AC5: neither sed nor sort may appear as a word anywhere in the hook source, so a future
+# edit that adds a loose ^sed or ^sort entry is caught.
+
+if grep -qwE 'sed|sort' "$KIT_DIR/hooks/permission-auto-approve.sh" 2>/dev/null; then
+  PAA_NAMES=1
+else
+  PAA_NAMES=0
+fi
+assert_true "hook source names neither sed nor sort (AC5)" "$PAA_NAMES"
+
 # Group (b): must-still-approve. Guards against "fixed by turning every read into a prompt."
 # git status / git log --oneline -5 / ls -la are already asserted above; not repeated here.
 
 OUTPUT=$(echo '{"tool_name":"Bash","tool_input":{"command":"cat README.md"}}' | bash "$KIT_DIR/hooks/permission-auto-approve.sh" 2>/dev/null)
 assert_output_contains "still approves cat README.md" '"allow"' "$OUTPUT"
 
-OUTPUT=$(echo '{"tool_name":"Bash","tool_input":{"command":"find . -name *.md"}}' | bash "$KIT_DIR/hooks/permission-auto-approve.sh" 2>/dev/null)
-assert_output_contains "still approves find . -name *.md" '"allow"' "$OUTPUT"
+OUTPUT=$(echo '{"tool_name":"Bash","tool_input":{"command":"find . -name readme.md"}}' | bash "$KIT_DIR/hooks/permission-auto-approve.sh" 2>/dev/null)
+assert_output_contains "still approves find . -name readme.md (literal pattern)" '"allow"' "$OUTPUT"
 
 OUTPUT=$(echo '{"tool_name":"Bash","tool_input":{"command":"git diff --stat"}}' | bash "$KIT_DIR/hooks/permission-auto-approve.sh" 2>/dev/null)
 assert_output_contains "still approves git diff --stat" '"allow"' "$OUTPUT"
@@ -663,8 +751,23 @@ assert_output_contains "still approves npm list" '"allow"' "$OUTPUT"
 OUTPUT=$(echo '{"tool_name":"Bash","tool_input":{"command":"pwd"}}' | bash "$KIT_DIR/hooks/permission-auto-approve.sh" 2>/dev/null)
 assert_output_contains "still approves bare pwd" '"allow"' "$OUTPUT"
 
-OUTPUT=$(echo '{"tool_name":"Bash","tool_input":{"command":"env"}}' | bash "$KIT_DIR/hooks/permission-auto-approve.sh" 2>/dev/null)
-assert_output_contains "still approves bare env" '"allow"' "$OUTPUT"
+OUTPUT=$(echo '{"tool_name":"Bash","tool_input":{"command":"ruff check ."}}' | bash "$KIT_DIR/hooks/permission-auto-approve.sh" 2>/dev/null)
+assert_output_contains "still approves ruff check ." '"allow"' "$OUTPUT"
+
+OUTPUT=$(echo '{"tool_name":"Bash","tool_input":{"command":"npx prettier --check README.md"}}' | bash "$KIT_DIR/hooks/permission-auto-approve.sh" 2>/dev/null)
+assert_output_contains "still approves npx prettier --check README.md" '"allow"' "$OUTPUT"
+
+OUTPUT=$(echo '{"tool_name":"Bash","tool_input":{"command":"file README.md"}}' | bash "$KIT_DIR/hooks/permission-auto-approve.sh" 2>/dev/null)
+assert_output_contains "still approves file README.md" '"allow"' "$OUTPUT"
+
+OUTPUT=$(echo '{"tool_name":"Bash","tool_input":{"command":"git log -n 5"}}' | bash "$KIT_DIR/hooks/permission-auto-approve.sh" 2>/dev/null)
+assert_output_contains "still approves git log -n 5" '"allow"' "$OUTPUT"
+
+OUTPUT=$(echo '{"tool_name":"Bash","tool_input":{"command":"go env GOPATH"}}' | bash "$KIT_DIR/hooks/permission-auto-approve.sh" 2>/dev/null)
+assert_output_contains "still approves go env GOPATH" '"allow"' "$OUTPUT"
+
+OUTPUT=$(echo '{"tool_name":"Bash","tool_input":{"command":"git log --format=%h"}}' | bash "$KIT_DIR/hooks/permission-auto-approve.sh" 2>/dev/null)
+assert_output_contains "still approves git log --format=%h" '"allow"' "$OUTPUT"
 
 # ============================================================
 echo ""
