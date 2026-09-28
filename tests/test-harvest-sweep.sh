@@ -14,6 +14,8 @@ export HARVEST_STATE_DIR="$TD/state"
 export HARVEST_SWEEP_CLAUDE_ROOT="$TD/claude-root"
 export HARVEST_SWEEP_DEVIN_DB="$TD/devin.db"
 export HARVEST_SWEEP_LAUNCH_RECORD="$TD/launch-record"
+# Safety net: no test can reach a real model, even one that forgets to set its own stub.
+export HARVEST_EXTRACTOR="$KIT_DIR/tests/fixtures/harvest-sweep/stub-extractor.sh"
 
 PASS=0
 FAIL=0
@@ -887,6 +889,311 @@ assert_eq "since: the hwm returns to its old place once the backfill settles" "T
 assert_eq "since: the first run reads only the schedule window by default" "" "$(t5b since_first_run_default)"
 assert_eq "since: the first run starts at an epoch --since instead" "far" "$(t5b since_first_run_epoch)"
 assert_eq "since: an unparseable value is an error" "ValueError" "$(t5b since_bad)"
+
+# ============================================================
+echo ""
+echo "=== T6 extractor call and raw output cache ==="
+
+T6_OUT=$(KIT_DIR="$KIT_DIR" TD="$TD" T5_NOW="$T5_NOW" python3 - <<'PY'
+import datetime, importlib.util, json, os, shlex, stat
+spec = importlib.util.spec_from_file_location("hs", os.path.join(os.environ["KIT_DIR"], "hooks", "harvest_sweep.py"))
+hs = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(hs)
+TD, NOW = os.environ["TD"], int(os.environ["T5_NOW"])
+STUB = os.path.join(os.environ["KIT_DIR"], "tests", "fixtures", "harvest-sweep", "stub-extractor.sh")
+P = lambda k, v: print("%s=%s" % (k, v))
+# A permissive umask, so a directory made without the explicit 0700 comes out 0755 and
+# the AC24 control is never vacuous whatever the caller's umask is.
+os.umask(0o022)
+n_scn = [0]
+
+def scenario(now=NOW):
+    n_scn[0] += 1
+    base = os.path.join(TD, "t6-s%d" % n_scn[0])
+    os.environ["HARVEST_STATE_DIR"] = os.path.join(base, "state")
+    os.environ["HARVEST_SWEEP_CLAUDE_ROOT"] = os.path.join(base, "claude")
+    os.makedirs(os.environ["HARVEST_SWEEP_CLAUDE_ROOT"])
+    os.environ["HARVEST_SWEEP_DEVIN_DB"] = os.path.join(base, "none.db")
+    os.environ["HARVEST_SWEEP_NOW"] = str(now)
+    os.environ["HARVEST_EXTRACTOR"] = shlex.quote(STUB)
+    os.environ["STUB_CALLS"] = os.path.join(base, "calls")
+    for k in ("STUB_MODE", "STUB_OUT", "STUB_RECORD"):
+        os.environ.pop(k, None)
+    return base, os.environ["HARVEST_SWEEP_CLAUDE_ROOT"]
+
+iso = lambda e: datetime.datetime.fromtimestamp(e, datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+def mk(root, sid, la, n=6):
+    d = os.path.join(root, "p")
+    os.makedirs(d, exist_ok=True)
+    path = os.path.join(d, sid + ".jsonl")
+    with open(path, "w") as fh:
+        for k in range(n):
+            fh.write(json.dumps({"type": "user" if k % 2 == 0 else "assistant", "cwd": "/w/x",
+                                 "timestamp": iso(la - (n - k) * 10),
+                                 "message": {"content": [{"type": "text", "text": "%s msg %d" % (sid, k)}]}}) + "\n")
+    os.utime(path, (la, la))
+
+def calls():
+    try:
+        with open(os.environ["STUB_CALLS"]) as fh:
+            return len(fh.readlines())
+    except OSError:
+        return 0
+
+def cursor():
+    with open(hs._cursor_path()) as fh:
+        return json.load(fh)
+
+mode = lambda p: oct(stat.S_IMODE(os.stat(p).st_mode))
+extract_dir = lambda: os.path.join(os.environ["HARVEST_STATE_DIR"], "sweep", "extract")
+run = lambda **kw: hs.run_selection(schedule_hours=48, **kw)["claude"]
+OUT = '{"learnings": [{"item": "cache-me", "kind": "insight", "home": "til", "why": "w", "evidence": "e"}], "sightings": []}'
+
+# ---- AC22 / AC8: the default command's argv, cwd, and child env ----
+base, root = scenario()
+mk(root, "argv1", NOW - 7200)
+bindir = os.path.join(base, "bin")
+os.makedirs(bindir)
+os.symlink(STUB, os.path.join(bindir, "claude"))
+saved_path = os.environ["PATH"]
+os.environ["PATH"] = bindir + os.pathsep + saved_path
+del os.environ["HARVEST_EXTRACTOR"]
+os.environ["STUB_RECORD"] = os.path.join(base, "rec")
+r = run()
+os.environ["PATH"] = saved_path
+argv = open(os.path.join(base, "rec", "argv")).read().split("\n")[:-1]
+P("argv_processed", ",".join(r["processed"]))
+i = argv.index("--tools") if "--tools" in argv else -1
+P("argv_tools_empty", i >= 0 and i + 1 < len(argv) and argv[i + 1] == "")
+P("argv_strict_mcp", "--strict-mcp-config" in argv)
+P("argv_no_persist", "--no-session-persistence" in argv)
+j = argv.index("--setting-sources") if "--setting-sources" in argv else -1
+P("argv_setting_sources", j >= 0 and argv[j + 1:j + 2] == ["project"])
+P("argv_no_bare", "--bare" not in argv)
+P("argv_cwd", open(os.path.join(base, "rec", "cwd")).read().strip()
+  == os.path.realpath(os.path.join(os.environ["HARVEST_STATE_DIR"], "sweep", "extract-cwd")))
+P("argv_child", open(os.path.join(base, "rec", "child")).read().strip())
+P("argv_prompt_has_transcript", "argv1 msg 5" in open(os.path.join(base, "rec", "prompt")).read())
+
+# ---- AC24: modes. extract/ and extract/<source> 0700, cache files 0600 ----
+base, root = scenario()
+for k in range(3):
+    mk(root, "m%d" % k, NOW - 7200 + k)
+run()
+files = [os.path.join(extract_dir(), "claude", f) for f in os.listdir(os.path.join(extract_dir(), "claude"))]
+P("modes_dirs", "%s,%s" % (mode(extract_dir()), mode(os.path.join(extract_dir(), "claude"))))
+P("modes_files", ",".join(sorted({mode(f) for f in files})) + ":%d" % len(files))
+os.makedirs(os.path.join(base, "umask-probe"))
+P("modes_umask_bites", mode(os.path.join(base, "umask-probe")))
+
+# ---- replay reuses the cache: no extractor call ----
+base, root = scenario()
+mk(root, "rp", NOW - 7200)
+os.environ["STUB_OUT"] = OUT
+run()
+cache = os.path.join(extract_dir(), "claude", "rp@%d.json" % (NOW - 7200))
+P("replay_first_calls", calls())
+P("replay_cache_name", os.path.exists(cache))
+os.replace(hs._cursor_path(), hs._cursor_path() + ".bak")  # a crash before the cursor write
+t = hs.load_claude(hs.list_claude_sessions()[0])
+ok, obj, _, _ = hs.extract_session(t, "anything")
+r = run()
+P("replay_calls_after", calls())
+P("replay_processed", ",".join(r["processed"]))
+P("replay_obj", ok and obj["learnings"][0]["item"])
+
+# ---- AC30: a truncated cache file is removed and re-extracted, no fail count ----
+full = open(cache).read()
+with open(cache, "w") as fh:
+    fh.write(full[: len(full) // 2])
+os.replace(hs._cursor_path(), hs._cursor_path() + ".bak")
+r = run()
+P("trunc_calls", calls())
+P("trunc_processed", ",".join(r["processed"]) + "|" + ",".join(r["failed"]))
+P("trunc_restored", open(cache).read() == full)
+P("trunc_no_fail", cursor()["claude"]["fail"])
+
+# ---- AC30: a crash mid-write leaves no partial cache file; a stray temp file is never read ----
+base, root = scenario()
+mk(root, "cw", NOW - 7200)
+os.environ["STUB_OUT"] = OUT
+real_replace = hs.os.replace
+def boom(src, dst):
+    raise OSError("simulated crash in os.replace")
+hs.os.replace = boom
+try:
+    run()
+    P("crash_raised", False)
+except OSError:
+    P("crash_raised", True)
+hs.os.replace = real_replace
+cdir = os.path.join(extract_dir(), "claude")
+P("crash_left", ",".join(sorted(os.listdir(cdir))))
+with open(os.path.join(cdir, ".tmp-stray"), "w") as fh:
+    fh.write('{"learnings": [{"item": "from-a-temp-file"}], "sightings": []}')
+n0 = calls()
+r = run()
+cache = os.path.join(cdir, "cw@%d.json" % (NOW - 7200))
+P("crash_reextracted", "%d|%s" % (calls() - n0, ",".join(r["processed"])))
+P("crash_cache_whole", json.loads(open(cache).read())["learnings"][0]["item"])
+
+# ---- ok contract: non-JSON, failure, timeout, missing binary, prose-wrapped, empty arrays ----
+base, root = scenario()
+def ok_of(mode_, out=None):
+    os.environ["STUB_MODE"] = mode_
+    os.environ.pop("STUB_OUT", None)
+    if out is not None:
+        os.environ["STUB_OUT"] = out
+    return hs.run_sweep_extractor("prompt")
+P("ok_nonjson", ok_of("nonjson")[0])
+res = ok_of("fail")
+P("ok_fail", "%s|%s" % (res[0], res[2].strip()))
+P("ok_empty_arrays", ok_of("ok", '{"learnings": [], "sightings": []}')[0])
+P("ok_prose_wrapped", ok_of("prose", OUT)[0])
+P("ok_array_only", ok_of("ok", "[1, 2]")[0])
+hs.EXTRACT_TIMEOUT = 1
+res = ok_of("sleep")
+hs.EXTRACT_TIMEOUT = 120
+P("ok_timeout", "%s|%s" % (res[0], res[2]))
+os.environ["HARVEST_EXTRACTOR"] = os.path.join(base, "no-such-extractor")
+res = hs.run_sweep_extractor("prompt")
+P("ok_missing_binary", res[0])
+os.environ["HARVEST_EXTRACTOR"] = shlex.quote(STUB)
+
+# a non-JSON answer is a failed session: not done, no cache file
+os.environ["STUB_MODE"] = "nonjson"
+mk(root, "nj", NOW - 7200)
+r = run()
+P("nonjson_session", "%s|%s|%s" % (",".join(r["processed"]), ",".join(r["failed"]),
+                                   os.path.exists(os.path.join(extract_dir(), "claude", "nj@%d.json" % (NOW - 7200)))))
+
+# ---- extract_json_object ----
+E = hs.extract_json_object
+P("ejo_fenced", E('prose\n```json\n{"a": 1}\n```\n') == {"a": 1})
+P("ejo_brace_in_string", E('{"a": "} not the end {", "b": [{"c": 1}]}') == {"a": "} not the end {", "b": [{"c": 1}]})
+P("ejo_escaped_quote", E(r'{"a": "say \"}\" twice"}') == {"a": 'say "}" twice'})
+P("ejo_inner_array_first", E('[{"x": 1}] then {"learnings": []}') == {"x": 1})
+P("ejo_skips_non_json_braces", E('use {braces} here: {"a": 2}') == {"a": 2})
+P("ejo_truncated_is_none", E('{"learnings": [{"item": "a"}, {"item": "b"') is None)
+P("ejo_none", E("nothing here") is None)
+
+# ---- hostile session id: the cache file stays inside extract/<source>, no collision ----
+base, root = scenario()
+hostile = "../../../escaped"
+p1 = hs._cache_path("devin", hostile, 5)
+inside = os.path.realpath(os.path.join(extract_dir(), "devin")) + os.sep
+P("hostile_inside", os.path.realpath(p1).startswith(inside))
+P("hostile_no_collision", p1 != hs._cache_path("devin", "_.._.._escaped", 5)
+  and hs._cache_path("devin", "a/b", 5) != hs._cache_path("devin", "a_b", 5))
+P("hostile_plain_kept", os.path.basename(hs._cache_path("claude", "abc-123", 7)))
+t = {"source": "devin", "session_id": hostile, "last_activity": 5, "messages": []}
+hs.extract_session(t, "text")
+P("hostile_written_inside", os.path.exists(p1) and not os.path.exists(os.path.join(base, "escaped@5.json")))
+
+# ---- AC6: 300 pattern slugs + 300 proposed slugs, the prompt carries exactly 100 ----
+base, root = scenario()
+sweep = os.path.join(os.environ["HARVEST_STATE_DIR"], "sweep")
+os.makedirs(sweep)
+slug = lambda tag, k: ("%s-%03d-" % (tag, k)).ljust(60, "x")
+with open(os.path.join(sweep, "patterns.jsonl"), "w") as fh:
+    for k in range(300):
+        fh.write(json.dumps({"pattern": slug("p", k), "canonical": slug("p", k), "ts": 1000 + k}) + "\n")
+    fh.write(json.dumps({"canonical": "NOT A SLUG " + "y" * 80, "ts": 99999}) + "\n")
+with open(os.path.join(sweep, "proposed.jsonl"), "w") as fh:
+    for k in range(300):
+        fh.write(json.dumps({"pattern": slug("q", k), "outcome": "REPORTED", "ts": 1000 + k}) + "\n")
+big = "z" * 20000
+t = {"source": "claude", "session_id": "big", "last_activity": 1, "messages": [
+    {"role": "user", "text": big, "ts": 1, "sub": False},
+    {"role": "assistant", "text": big, "ts": 2, "sub": True}]}
+text = hs.render(t, 0, 12000)
+prompt = hs.build_prompt(text)
+listed = prompt.split("Known slugs:\n", 1)[1].split("Transcript follows:", 1)[0].split("\n")[:-1]
+P("cap_slugs", len(listed))
+P("cap_most_recent", slug("p", 299) in listed and slug("p", 250) in listed and slug("p", 249) not in listed
+  and slug("q", 299) in listed and slug("q", 249) not in listed)
+P("cap_charset_skip", not any("NOT A SLUG" in s for s in listed))
+P("cap_render_len", len(text) >= 12000)
+P("cap_prompt_len", "%s|%d" % (len(prompt) <= 19400, len(prompt)))
+P("cap_prompt_over_maxchars", len(hs.build_prompt(big)) <= 19400)
+
+# ---- AC25: the outage scenario with the real processor; every session has a cache file ----
+base, root = scenario()
+las = {}
+for k in range(50):
+    sid = "out%02d" % k
+    las[sid] = NOW - 172800 + k * 3400
+    mk(root, sid, las[sid])
+sizes, done_without_cache = [], 0
+for _ in range(3):
+    r = hs.run_selection(schedule_hours=50, max_sessions=20)["claude"]
+    sizes.append(len(r["processed"]))
+    done_without_cache += sum(1 for sid in cursor()["claude"]["done"]
+                              if not os.path.exists(os.path.join(extract_dir(), "claude", "%s@%d.json" % (sid, las[sid]))))
+P("ac25_sizes", ",".join(map(str, sizes)))
+P("ac25_all_cached", sum(1 for sid in las if os.path.exists(os.path.join(extract_dir(), "claude", "%s@%d.json" % (sid, las[sid])))))
+P("ac25_done_without_cache", done_without_cache)
+P("ac25_calls", calls())
+PY
+)
+t6() { printf '%s\n' "$T6_OUT" | sed -n "s/^$1=//p"; }
+
+assert_eq "AC22: the default command runs with no HARVEST_EXTRACTOR set" "argv1" "$(t6 argv_processed)"
+assert_eq "AC22: argv carries --tools followed by an empty-string element" "True" "$(t6 argv_tools_empty)"
+assert_eq "AC22: argv carries --strict-mcp-config" "True" "$(t6 argv_strict_mcp)"
+assert_eq "AC22: argv carries --no-session-persistence" "True" "$(t6 argv_no_persist)"
+assert_eq "AC8: argv carries --setting-sources project" "True" "$(t6 argv_setting_sources)"
+assert_eq "AC8: argv never carries --bare" "True" "$(t6 argv_no_bare)"
+assert_eq "AC22: the extractor runs in the state dir's sweep/extract-cwd" "True" "$(t6 argv_cwd)"
+assert_eq "AC22: the extractor's env carries HARVEST_SWEEP_CHILD=1" "1" "$(t6 argv_child)"
+assert_eq "AC22: the rendered transcript reaches the extractor on stdin" "True" "$(t6 argv_prompt_has_transcript)"
+assert_eq "AC24: extract/ and extract/claude are 0700" "0o700,0o700" "$(t6 modes_dirs)"
+assert_eq "AC24: every cache file is 0600" "0o600:3" "$(t6 modes_files)"
+assert_eq "AC24: the test umask gives 0755 without an explicit mode" "0o755" "$(t6 modes_umask_bites)"
+assert_eq "AC30: the first run calls the extractor once" "1" "$(t6 replay_first_calls)"
+assert_eq "AC30: the cache file is extract/claude/<id>@<last_activity>.json" "True" "$(t6 replay_cache_name)"
+assert_eq "AC30: a replay of the same key makes no extractor call" "1" "$(t6 replay_calls_after)"
+assert_eq "AC30: the replayed session still completes" "rp" "$(t6 replay_processed)"
+assert_eq "AC30: the replay returns the cached object" "cache-me" "$(t6 replay_obj)"
+assert_eq "AC30: a truncated cache file is re-extracted" "2" "$(t6 trunc_calls)"
+assert_eq "AC30: the re-extracted session completes, not failed" "rp|" "$(t6 trunc_processed)"
+assert_eq "AC30: the truncated file is replaced by a whole one" "True" "$(t6 trunc_restored)"
+assert_eq "AC30: a truncated cache file raises no fail count" "{}" "$(t6 trunc_no_fail)"
+assert_eq "AC30: a crash in os.replace propagates" "True" "$(t6 crash_raised)"
+assert_eq "AC30: a crash mid-write leaves no cache or temp file" "" "$(t6 crash_left)"
+assert_eq "AC30: a stray temp file is never read; the session is extracted" "1|cw" "$(t6 crash_reextracted)"
+assert_eq "AC30: the cache file written after the crash is whole" "cache-me" "$(t6 crash_cache_whole)"
+assert_eq "extractor: non-JSON stdout is ok false" "False" "$(t6 ok_nonjson)"
+assert_eq "extractor: a non-zero exit is ok false with its stderr" "False|stub extractor failure" "$(t6 ok_fail)"
+assert_eq "extractor: empty learnings and sightings are ok true" "True" "$(t6 ok_empty_arrays)"
+assert_eq "extractor: prose-wrapped JSON is ok true" "True" "$(t6 ok_prose_wrapped)"
+assert_eq "extractor: a JSON array with no object is ok false" "False" "$(t6 ok_array_only)"
+assert_eq "extractor: a timeout is ok false" "False|timeout after 1s" "$(t6 ok_timeout)"
+assert_eq "extractor: a missing binary is ok false" "False" "$(t6 ok_missing_binary)"
+assert_eq "extractor: a non-JSON answer fails the session and caches nothing" "|nj|False" "$(t6 nonjson_session)"
+assert_eq "extract_json_object: fenced JSON" "True" "$(t6 ejo_fenced)"
+assert_eq "extract_json_object: braces inside strings do not count" "True" "$(t6 ejo_brace_in_string)"
+assert_eq "extract_json_object: escaped quotes inside strings" "True" "$(t6 ejo_escaped_quote)"
+assert_eq "extract_json_object: an object inside a leading array is still found" "True" "$(t6 ejo_inner_array_first)"
+assert_eq "extract_json_object: skips braces that are not JSON" "True" "$(t6 ejo_skips_non_json_braces)"
+assert_eq "extract_json_object: a truncated object is None, not an inner object" "True" "$(t6 ejo_truncated_is_none)"
+assert_eq "extract_json_object: no object is None" "True" "$(t6 ejo_none)"
+assert_eq "cache: a hostile session id stays inside extract/<source>" "True" "$(t6 hostile_inside)"
+assert_eq "cache: sanitized ids never collide with a plain id" "True" "$(t6 hostile_no_collision)"
+assert_eq "cache: a plain id keeps its name" "abc-123@7.json" "$(t6 hostile_plain_kept)"
+assert_eq "cache: a hostile id is written inside, nothing outside" "True" "$(t6 hostile_written_inside)"
+assert_eq "AC6: 300 pattern plus 300 proposed slugs give exactly 100 in the prompt" "100" "$(t6 cap_slugs)"
+assert_eq "AC6: the prompt takes the 50 most recent of each file" "True" "$(t6 cap_most_recent)"
+assert_eq "AC6: a stored value off the slug charset never reaches the prompt" "True" "$(t6 cap_charset_skip)"
+assert_eq "AC6: the render under test is max size" "True" "$(t6 cap_render_len)"
+assert_eq "AC6: the prompt is at most 19,400 chars" "True" "$(t6 cap_prompt_len | cut -d'|' -f1)"
+assert_eq "AC6: an over-long transcript is cut to HARVEST_MAXCHARS" "True" "$(t6 cap_prompt_over_maxchars)"
+assert_eq "AC25: 3 capped runs with the real processor extract 20, 20, 10" "20,20,10" "$(t6 ac25_sizes)"
+assert_eq "AC25: every one of the 50 has a raw output cache file" "50" "$(t6 ac25_all_cached)"
+assert_eq "AC25: no session is marked done without a cache file" "0" "$(t6 ac25_done_without_cache)"
+assert_eq "AC25: one extractor call per session" "50" "$(t6 ac25_calls)"
+echo "  (T6 max prompt length: $(t6 cap_prompt_len | cut -d'|' -f2))"
 
 # ============================================================
 echo ""
