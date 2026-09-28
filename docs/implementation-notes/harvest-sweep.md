@@ -40,3 +40,10 @@ Deltas from SPEC-357 (phase 1, kit-side tasks T1 to T19, T13b, T22). Nothing her
 - Decision: a tool-role row keeps its content cut to 200 characters. Each `tool_calls` name becomes its own `tool` line, so the text of an assistant node and its calls stay separate lines.
 - Deviation (T2 code): `render` put same-timestamp messages in reverse order, because `_take_recent` returns newest first and the sort is stable. A text block and its tool call share one entry timestamp, so claude output was affected too. Fix: reverse each share before the sort. The devin render assertion covers it.
 - Deviation (test file): the spec row names `tests/test-hooks.sh`. Tests live in `tests/test-harvest-sweep.sh` per the earlier note.
+
+## 2026-09-29 T4 launch-record attribution
+- Change (DEC-19, DEC-23; AC1 attribution): `load_launch_records()` reads the record file once and returns the valid JSON objects. `attribute(t, records)` sets `lead_session_id` in place and returns it. The run calls the first once, then the second per Devin session after `load_devin`.
+- Decision: the brief match reads the first `user` message in the normalized transcript. The transcript already holds only kept messages, so "first kept user message" is that.
+- Decision: a matching record with no parseable `ts` sorts after every dated match. With only such records, the first listed wins.
+- Decision: `attribute` writes one stderr line per attribution naming session, lead, and brief. This is the "log the choice" line. Non-JSON-object lines (a bare list) are skipped like malformed ones.
+- Impact: attribution of a claude session is a no-op. The spec's Devin-only rule holds in the function, not only in the caller.

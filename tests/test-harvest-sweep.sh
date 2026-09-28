@@ -336,6 +336,72 @@ assert_eq "AC14: HARVEST_SWEEP_SOURCE_FAIL_RUNS moves the line" "True" "$(d knob
 
 # ============================================================
 echo ""
+echo "=== T4 launch-record attribution ==="
+
+T4_OUT=$(KIT_DIR="$KIT_DIR" TD="$TD" python3 - 2>/dev/null <<'PY'
+import datetime, importlib.util, os
+spec = importlib.util.spec_from_file_location("hs", os.path.join(os.environ["KIT_DIR"], "hooks", "harvest_sweep.py"))
+hs = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(hs)
+P = lambda k, v: print("%s=%s" % (k, v))
+
+fixture = os.path.join(os.environ["KIT_DIR"], "tests", "fixtures", "harvest-sweep", "launches.jsonl")
+os.environ["HARVEST_SWEEP_LAUNCH_RECORD"] = fixture
+records = hs.load_launch_records()
+P("records_loaded", len(records))
+
+def session(first, started="2026-09-20T10:05:30Z", source="devin"):
+    return {"source": source, "session_id": "s1", "lead_session_id": None, "cwd": "/work/app",
+            "started": datetime.datetime.fromisoformat(started.replace("Z", "+00:00")).timestamp(),
+            "last_activity": 0,
+            "messages": [{"role": "assistant", "text": "hi", "ts": 0, "sub": False},
+                         {"role": "user", "text": first, "ts": 0, "sub": False}]}
+
+t = session("Read the brief at /w/briefs/beta.md and go.")
+P("brief_match", hs.attribute(t, records))
+P("brief_match_set", t["lead_session_id"])
+P("brief_copy_match", hs.attribute(session("Task: /w/copies/beta-1.md"), records))
+# alpha.md is named by three records (old, near, claude): nearest ts to started wins
+P("nearest_ts", hs.attribute(session("see /w/briefs/alpha.md"), records))
+P("nearest_ts_early", hs.attribute(session("see /w/briefs/alpha.md", "2026-09-20T09:59:00Z"), records))
+# the claude record has the exact ts 10:04 for this start, and must still lose
+P("non_devin_ignored", hs.attribute(session("see /w/briefs/alpha.md", "2026-09-20T10:04:00Z"), records))
+P("claude_session_untouched", hs.attribute(session("see /w/briefs/alpha.md", source="claude"), records))
+P("no_match_null", hs.attribute(session("no brief path here"), records))
+P("no_match_field", session("x")["lead_session_id"])
+P("no_user_message", hs.attribute(dict(session("x"), messages=[]), records))
+P("empty_records", hs.attribute(session("see /w/briefs/alpha.md"), []))
+
+os.environ["HARVEST_SWEEP_LAUNCH_RECORD"] = os.path.join(os.environ["TD"], "no-such-launches.jsonl")
+P("missing_file", hs.load_launch_records())
+P("missing_file_null", hs.attribute(session("see /w/briefs/alpha.md"), hs.load_launch_records()))
+
+bad = os.path.join(os.environ["TD"], "mixed.jsonl")
+open(bad, "w").write('{oops\n\n[1, 2]\n{"ts": "2026-09-20T10:00:00Z", "agent": "devin", "brief": "/w/x.md", "lead_session": "lead-x"}\n')
+os.environ["HARVEST_SWEEP_LAUNCH_RECORD"] = bad
+P("malformed_skipped", hs.attribute(session("run /w/x.md"), hs.load_launch_records()))
+PY
+)
+a() { printf '%s\n' "$T4_OUT" | sed -n "s/^$1=//p"; }
+
+assert_eq "AC1 attribution: the malformed line is skipped, four records load" "4" "$(a records_loaded)"
+assert_eq "AC1 attribution: a brief path in the first user message gives the lead session" "lead-beta" "$(a brief_match)"
+assert_eq "AC1 attribution: the session's lead_session_id takes it" "lead-beta" "$(a brief_match_set)"
+assert_eq "AC1 attribution: a brief_copy path matches too" "lead-beta" "$(a brief_copy_match)"
+assert_eq "AC1 attribution: nearest ts to started wins among several matches" "lead-near" "$(a nearest_ts)"
+assert_eq "AC1 attribution: nearest ts picks the older record when started is early" "lead-old" "$(a nearest_ts_early)"
+assert_eq "AC1 attribution: a non-devin record with the same brief is ignored" "lead-near" "$(a non_devin_ignored)"
+assert_eq "AC1 attribution: a claude session is never attributed" "None" "$(a claude_session_untouched)"
+assert_eq "AC1 attribution: no match stays null" "None" "$(a no_match_null)"
+assert_eq "AC1 attribution: no match leaves the field null" "None" "$(a no_match_field)"
+assert_eq "AC1 attribution: a session with no user message stays null" "None" "$(a no_user_message)"
+assert_eq "AC1 attribution: no records stays null" "None" "$(a empty_records)"
+assert_eq "AC1 attribution: a missing record file loads as no records" "[]" "$(a missing_file)"
+assert_eq "AC1 attribution: a missing record file leaves null" "None" "$(a missing_file_null)"
+assert_eq "AC1 attribution: a malformed line skips that line only" "lead-x" "$(a malformed_skipped)"
+
+# ============================================================
+echo ""
 echo "=== Results ==="
 echo "Passed: $PASS / $TOTAL"
 if [ "$FAIL" -gt 0 ]; then

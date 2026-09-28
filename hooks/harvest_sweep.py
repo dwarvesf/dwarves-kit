@@ -9,6 +9,7 @@ extractor. Selection, the cursor, and the extractor call come in later tasks.
 Env (tests point these at temp dirs):
   HARVEST_SWEEP_CLAUDE_ROOT=DIR    claude projects root (default ~/.claude/projects)
   HARVEST_SWEEP_DEVIN_DB=FILE      devin sessions db (default ~/.local/share/devin/cli/sessions.db)
+  HARVEST_SWEEP_LAUNCH_RECORD=FILE worker-launch record (default ~/.local/state/worker-launch/launches.jsonl)
   HARVEST_SWEEP_SOURCE_FAIL_RUNS=N consecutive failed runs of one source that trip rc 5 (default 3)
   HARVEST_SWEEP_MIN_MESSAGES=N     a session with fewer kept user+assistant messages is trivial (default 6)
   HARVEST_STATE_DIR=DIR            harvest state dir; a session whose cwd is under it is self-harvest
@@ -307,3 +308,51 @@ def source_fail_tripped(cursor, source):
     """True once `source` has failed HARVEST_SWEEP_SOURCE_FAIL_RUNS runs in a row (rc 5)."""
     limit = int(os.environ.get("HARVEST_SWEEP_SOURCE_FAIL_RUNS", "3"))
     return cursor.get("source_fail", {}).get(source, 0) >= limit
+
+
+# ---- launch-record attribution -------------------------------------------------------
+
+def load_launch_records():
+    """Records of the worker-launch file, read once per run. A missing or unreadable file
+    is an empty list and a malformed line is skipped alone: attribution never fails a run."""
+    path = os.environ.get("HARVEST_SWEEP_LAUNCH_RECORD",
+                          os.path.expanduser("~/.local/state/worker-launch/launches.jsonl"))
+    records = []
+    try:
+        with open(path, errors="replace") as fh:
+            for line in fh:
+                try:
+                    rec = json.loads(line)
+                except ValueError:
+                    continue
+                if isinstance(rec, dict):
+                    records.append(rec)
+    except OSError:
+        pass
+    return records
+
+
+def attribute(t, records):
+    """Set t["lead_session_id"] from the launch record whose brief path the first kept user
+    message names. Devin only. Nearest record ts to the session start wins (DEC-23: no
+    time-window fallback). No match leaves it null. Returns the lead session id or None."""
+    if t["source"] != "devin":
+        return None
+    first = next((m["text"] for m in t["messages"] if m["role"] == "user"), "")
+    matches = [r for r in records
+               if r.get("agent") == "devin"
+               and any(isinstance(r.get(k), str) and r[k] and r[k] in first
+                       for k in ("brief", "brief_copy"))]
+    if not matches:
+        return None
+
+    def distance(rec):
+        ts = _epoch(rec.get("ts"))
+        # A record with no parseable ts sorts last, so a dated match always beats it.
+        return float("inf") if ts is None else abs(ts - t["started"])
+
+    best = min(matches, key=distance)
+    t["lead_session_id"] = best.get("lead_session")
+    sys.stderr.write("harvest-sweep: %s attributed to lead %s via %s\n"
+                     % (t["session_id"], t["lead_session_id"], best.get("brief")))
+    return t["lead_session_id"]
