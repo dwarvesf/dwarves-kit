@@ -307,7 +307,7 @@ Within one spec, tasks run sequentially. Across specs, `/kit:dispatch` fans out 
 | intake-sweep | SessionStart (via backlog-stage --surface, same opt-in) | Sweeps consumer-declared deferred-link sources (`_meta/intake-sources.json`: jsonl / command adapters) into the same staging file. Config-gated no-op; never writes the board directly |
 | post-compact-reinject | PostToolUse(compact) | Re-injects critical rules after compaction |
 | notification | Notification | Desktop alert when Claude needs input |
-| permission-auto-approve | PermissionRequest | Auto-approves read-only operations (pipe-safe) |
+| permission-auto-approve | PermissionRequest | Auto-approves allowlisted read-only commands; everything else gets the normal prompt |
 | tool-policy-guard | PreToolUse | Enforces the tool-choice policy file (allow/ask/deny per tool domain; the enforcement half of the dashboard's tool-policy page) |
 | statusline | StatusLine | Shows model, branch, context %, cost, thinking mode |
 | codebase-index | SessionStart (opt-in) | Background-indexes the repo into codebase-memory-mcp |
