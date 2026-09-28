@@ -462,23 +462,23 @@ attempts.
 - [x] TASK-A: Write this spec.
 
 ### Phase 2: Core
-- [ ] TASK-B: Add `hooks/anchor-root.sh` per `## Solution`, committed with the executable bit set
+- [x] TASK-B: Add `hooks/anchor-root.sh` per `## Solution`, committed with the executable bit set
   (mode 100755).
-- [ ] TASK-C: Rewrite every `command` entry in `hooks/hooks.json` per `## Solution`, "Two
+- [x] TASK-C: Rewrite every `command` entry in `hooks/hooks.json` per `## Solution`, "Two
   dispatch tables", except `secrets-guard.sh`'s entry (left unchanged).
-- [ ] TASK-C2: Rewrite every `command` entry in the root `settings.json` the same way, same
+- [x] TASK-C2: Rewrite every `command` entry in the root `settings.json` the same way, same
   exception.
-- [ ] TASK-C3: Apply the scoped `ship-gate.sh` fix per `## Solution`, "ship-gate.sh needs its own
+- [x] TASK-C3: Apply the scoped `ship-gate.sh` fix per `## Solution`, "ship-gate.sh needs its own
   scoped fix" (the three-tier `.cwd` / `DWARVES_KIT_INVOCATION_CWD` / `$PWD` fallback).
-- [ ] TASK-C4: In `lib/adopt.sh`, add `| grep -v '/anchor-root\.sh$'` to the `before_wired` and
+- [x] TASK-C4: In `lib/adopt.sh`, add `| grep -v '/anchor-root\.sh$'` to the `before_wired` and
   `after_wired` extraction lines per `## Solution`, "install.sh and lib/adopt.sh".
-- [ ] TASK-C5: After TASK-C3 lands, run `bash lib/codex/repin.sh` then `bash lib/codex/repin.sh
+- [x] TASK-C5: After TASK-C3 lands, run `bash lib/codex/repin.sh` then `bash lib/codex/repin.sh
   check` per `## Solution`, "Codex trust pins", so `hooks/codex-hooks.json`'s stale
   `ship-gate.sh` pin is refreshed before commit.
-- [ ] TASK-C6: In `tests/test-install-modules.sh`, add `| grep -v '^anchor-root\.sh$'` to
+- [x] TASK-C6: In `tests/test-install-modules.sh`, add `| grep -v '^anchor-root\.sh$'` to
   `wired_hooks()` per `## Solution`, "tests/test-install-modules.sh and tests/test-adopt.sh".
   `tests/test-adopt.sh` needs no change (verified, membership-only checks).
-- [ ] TASK-D (depends on TASK-C, TASK-C2): Add `tests/test-hook-anchor.sh` (new, a sibling of `tests/test-hooks.sh`, picked up
+- [x] TASK-D (depends on TASK-C, TASK-C2): Add `tests/test-hook-anchor.sh` (new, a sibling of `tests/test-hooks.sh`, picked up
   by `tests/run-all.sh`'s `tests/test-*.sh` glob): parses BOTH `hooks/hooks.json` and root
   `settings.json`, `.hooks.*` entries only (not the root `statusLine` key, see `## Solution`,
   "Two dispatch tables", scope boundary), asserts every command has the `anchor-root.sh` prefix
@@ -486,13 +486,13 @@ attempts.
   check function first against a small embedded fixture with one entry missing the wrapper
   (proving the checker itself catches a bypass, not merely vacuously true because the real files
   already comply), then against both real files.
-- [ ] TASK-E1 (depends on TASK-B, TASK-C, TASK-C3): In `tests/test-hooks.sh`, add cases 1-5 of
+- [x] TASK-E1 (depends on TASK-B, TASK-C, TASK-C3): In `tests/test-hooks.sh`, add cases 1-5 of
   `## Test plan` below, each invoking its hook THROUGH the wrapper
   (`bash "$KIT_DIR/hooks/anchor-root.sh" "$KIT_DIR/hooks/<hook>.sh" [args]`), not the bare hook.
   Existing cases that invoke hooks directly are untouched, they test a hook's own internal logic
   and are unaffected by this fix either way, since those fixtures already sit at their own repo
   root.
-- [ ] TASK-E2 (depends on TASK-B, TASK-C, TASK-C3; the settings.json half of case 7 also reads
+- [x] TASK-E2 (depends on TASK-B, TASK-C, TASK-C3; the settings.json half of case 7 also reads
   TASK-C2's output): In `tests/test-hooks.sh`, add cases 6a, 6b, 6c, and 7 of `## Test plan`,
   same wrapper-routed shape.
   For both E1 and E2: each assertion's name string MUST include the exact literal substring named
@@ -500,12 +500,12 @@ attempts.
   `relative cd resolves`, `payload cwd resolves root`, `smoke exec`), matching, verbatim, what
   the negative controls below grep for; a test written with a different label silently breaks
   NC1/NC3's scoping.
-- [ ] TASK-E3: Docs projection per `## Solution`, "Docs projection": one new row each in
+- [x] TASK-E3: Docs projection per `## Solution`, "Docs projection": one new row each in
   `docs/architecture.md`'s Hook fallback layer table and `README.md`'s Hooks table, then
   `bash lib/registry/feature-registry.sh generate` to refresh `docs/FEATURES.md`.
 
 ### Phase 3: Polish
-- [ ] TASK-F: Commit TASK-B through TASK-E3, then run all three negative controls in
+- [x] TASK-F: Commit TASK-B through TASK-E3, then run all three negative controls in
   `## Test plan` (bottom) and confirm each goes RED under its mutation, then GREEN again
   restored.
 
