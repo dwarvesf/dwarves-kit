@@ -322,10 +322,10 @@ Each task touches at most five files and carries one mechanism. Tests go in the 
 
 ### Phase 1a: shared pieces and sources
 
-- [ ] T1: shared stager. Factor `_stage_candidates` out of `_harvest_payload` in `hooks/harvest.py`. Files: `hooks/harvest.py`, `tests/test-hooks.sh`. AC: every existing harvest test passes unchanged.
-- [ ] T2: claude adapter. Lead plus subagents interleaved by timestamp, the 60/40 render budget, the `seen{}` delta key, self-harvest drop, min-messages skip. Files: `hooks/harvest_sweep.py`, `tests/test-hooks.sh`, a lead fixture, two subagent fixtures. AC: the claude parts of AC1.
-- [ ] T3: devin adapter. Read-only open, `working_directory` as cwd, `hidden` skip, main-chain walk with fallback, `system` drop, source failure `STATE` row and `source_fail`. Files: `hooks/harvest_sweep.py`, `tests/test-hooks.sh`, `tests/fixtures/harvest-sweep/make-devin-db.sh`. AC: the devin parts of AC1 and AC26; AC14.
-- [ ] T4: launch-record attribution. Brief-path match, nearest `ts`, null on no match. Files: `hooks/harvest_sweep.py`, `tests/test-hooks.sh`, a `launches.jsonl` fixture. AC: the attribution part of AC1.
+- [x] T1 (DONE, commit eed75870, verified): shared stager. Factor `_stage_candidates` out of `_harvest_payload` in `hooks/harvest.py`. Files: `hooks/harvest.py`, `tests/test-hooks.sh`. AC: every existing harvest test passes unchanged.
+- [x] T2 (DONE, commit 3d6309de, verified): claude adapter. Lead plus subagents interleaved by timestamp, the 60/40 render budget, the `seen{}` delta key, self-harvest drop, min-messages skip. Files: `hooks/harvest_sweep.py`, `tests/test-hooks.sh`, a lead fixture, two subagent fixtures. AC: the claude parts of AC1.
+- [x] T3 (DONE, commit 36e49bc7, verified): devin adapter. Read-only open, `working_directory` as cwd, `hidden` skip, main-chain walk with fallback, `system` drop, source failure `STATE` row and `source_fail`. Files: `hooks/harvest_sweep.py`, `tests/test-hooks.sh`, `tests/fixtures/harvest-sweep/make-devin-db.sh`. AC: the devin parts of AC1 and AC26; AC14.
+- [x] T4 (DONE, commit ab86a903, verified): launch-record attribution. Brief-path match, nearest `ts`, null on no match. Files: `hooks/harvest_sweep.py`, `tests/test-hooks.sh`, a `launches.jsonl` fixture. AC: the attribution part of AC1.
 
 ### Phase 1b: cursor and extraction
 
