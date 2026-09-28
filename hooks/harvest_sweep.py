@@ -4,7 +4,8 @@
 This file grows task by task. So far it holds the claude adapter and the render step:
 enumerate lead sessions cheaply (stat only), load one into the normalized transcript
 (lead plus subagents interleaved by entry timestamp), and render a delta of it for the
-extractor. Selection, the cursor, and the extractor call come in later tasks.
+extractor. Below them sit selection, the cursor, and the per-session loop; the extractor,
+staging, and report plug into that loop in later tasks.
 
 Env (tests point these at temp dirs):
   HARVEST_SWEEP_CLAUDE_ROOT=DIR    claude projects root (default ~/.claude/projects)
@@ -13,6 +14,10 @@ Env (tests point these at temp dirs):
   HARVEST_SWEEP_SOURCE_FAIL_RUNS=N consecutive failed runs of one source that trip rc 5 (default 3)
   HARVEST_SWEEP_MIN_MESSAGES=N     a session with fewer kept user+assistant messages is trivial (default 6)
   HARVEST_STATE_DIR=DIR            harvest state dir; a session whose cwd is under it is self-harvest
+  HARVEST_SWEEP_NOW=EPOCH          pin the clock (tests)
+  HARVEST_SWEEP_MAX_SCAN=N         candidates scanned per source per run (default 2000)
+  HARVEST_SWEEP_QUIET_MINUTES=N    a session is read only after this long without activity (default 30)
+  HARVEST_MAXCHARS=N               transcript chars rendered per session (default 12000)
 """
 import datetime
 import glob
@@ -356,3 +361,145 @@ def attribute(t, records):
     sys.stderr.write("harvest-sweep: %s attributed to lead %s via %s\n"
                      % (t["session_id"], t["lead_session_id"], best.get("brief")))
     return t["lead_session_id"]
+
+
+# ---- selection, cursor, and the per-session loop -------------------------------------
+
+def _now():
+    """One clock for the whole sweep; tests pin it with HARVEST_SWEEP_NOW (epoch seconds)."""
+    return float(os.environ.get("HARVEST_SWEEP_NOW") or time.time())
+
+
+def _cursor_path():
+    return os.path.join(harvest._state_dir(), "sweep", "cursor.json")
+
+
+def load_cursor():
+    """cursor.json, or an empty cursor when it is absent or unreadable (first run)."""
+    try:
+        with open(_cursor_path()) as fh:
+            cursor = json.load(fh)
+        if isinstance(cursor, dict):
+            return cursor
+    except (OSError, ValueError):
+        pass
+    return {}
+
+
+def save_cursor(cursor):
+    """Atomic: a crash leaves the previous file whole, never a partial one."""
+    path = _cursor_path()
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    tmp = path + ".tmp"
+    with open(tmp, "w") as fh:
+        json.dump(cursor, fh, sort_keys=True)
+    os.replace(tmp, path)
+
+
+def _source_state(cursor, source, initial_hwm):
+    """The per-source cursor entry, every key present. Keys another task owns (fail,
+    quarantined) are created empty and never touched here."""
+    state = cursor.setdefault(source, {"hwm": initial_hwm})
+    for key in ("done", "seen", "fail", "quarantined"):
+        state.setdefault(key, {})
+    return state
+
+
+def _settled(state, item):
+    """Done at this exact last_activity, or quarantined (T7b owns the lift): either way the
+    hwm may pass it."""
+    return (state["done"].get(item["session_id"]) == item["last_activity"]
+            or item["session_id"] in state["quarantined"])
+
+
+def _advance_hwm(state, scanned):
+    """hwm moves through the longest settled prefix of the scan, never past an unsettled
+    session (DEC-30). Only done{} is pruned by it: seen{} holds delta keys and ages out on
+    its own (DEC-60)."""
+    hwm = state["hwm"]
+    for item in scanned:
+        if item["last_activity"] < state["hwm"]:
+            continue  # an earlier pass moved the hwm past it and pruned its done{} entry
+        if not _settled(state, item):
+            break
+        hwm = max(hwm, item["last_activity"])
+    state["hwm"] = hwm
+    state["done"] = {i: la for i, la in state["done"].items() if la >= hwm}
+
+
+def _sources():
+    """(name, list, load) per source; devin lists a SourceFailure when its db is unreadable."""
+    return [("claude", list_claude_sessions, load_claude), ("devin", list_devin_sessions, load_devin)]
+
+
+def _sweep_source(cursor, source, items, load, process, now, schedule_hours, max_sessions, records):
+    state = _source_state(cursor, source, int(now - schedule_hours * 3600))
+    max_scan = int(os.environ.get("HARVEST_SWEEP_MAX_SCAN", "2000"))
+    quiet_before = now - int(os.environ.get("HARVEST_SWEEP_QUIET_MINUTES", "30")) * 60
+    max_chars = int(os.environ.get("HARVEST_MAXCHARS", "12000"))
+    out = {"processed": [], "filtered": [], "failed": [], "deferred": []}
+
+    scanned = sorted((i for i in items if i["last_activity"] >= state["hwm"]),
+                     key=lambda i: (i["last_activity"], i["session_id"]))[:max_scan]
+    eligible = [i for i in scanned
+                if i["last_activity"] <= quiet_before
+                and not _settled(state, i)]
+
+    attempts = 0
+    for pos, item in enumerate(eligible):
+        sid = item["session_id"]
+        if attempts >= max_sessions:
+            out["deferred"] = eligible[pos:]  # stay eligible, oldest first next run (DEC-71)
+            break
+        skip = is_hidden(item) if source == "devin" else False
+        t = None
+        if not skip:
+            t = load(item)
+            if isinstance(t, SourceFailure):
+                out["source_failure"] = t
+                break
+            skip = is_self_harvest(t) or is_trivial(t)
+        if skip:
+            state["done"][sid] = item["last_activity"]  # outside the cap
+            out["filtered"].append(sid)
+        else:
+            attempts += 1
+            if source == "devin":
+                attribute(t, records)
+            last_ts = state["seen"].get(sid, {}).get("last_ts", 0)
+            text = render(t, last_ts, max_chars)
+            # An empty delta has nothing to read; T7a's failure handling hangs off `ok`.
+            ok = process(t, text) if text else True
+            if not ok:
+                out["failed"].append(sid)
+                continue
+            state["done"][sid] = item["last_activity"]
+            if text:
+                state["seen"][sid] = {"last_ts": newest_ts(t), "ts": int(now)}
+            out["processed"].append(sid)
+        _advance_hwm(state, scanned)
+        save_cursor(cursor)
+    return out
+
+
+def run_selection(process, schedule_hours=6, max_sessions=20):
+    """One pass over every source: select, then call process(t, rendered_delta) per session,
+    oldest first. process returns True on success; anything else is a failed session (not
+    done, hwm held back). The cursor is written after each session. Returns per-source
+    {processed, filtered, failed, deferred[, source_failure]}."""
+    now = _now()
+    cursor = load_cursor()
+    fresh = [s for s, _, _ in _sources() if s not in cursor]
+    records = load_launch_records()
+    result = {}
+    for source, lister, loader in _sources():
+        items = lister()
+        if isinstance(items, SourceFailure):
+            result[source] = {"processed": [], "filtered": [], "failed": [], "deferred": [],
+                              "source_failure": items}
+            continue
+        result[source] = _sweep_source(cursor, source, items, loader, process, now,
+                                       schedule_hours, max_sessions, records)
+    if fresh:
+        save_cursor(cursor)  # pin the first-run hwm even when nothing was selected
+    return result

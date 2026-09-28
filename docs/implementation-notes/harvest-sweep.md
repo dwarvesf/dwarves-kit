@@ -47,3 +47,14 @@ Deltas from SPEC-357 (phase 1, kit-side tasks T1 to T19, T13b, T22). Nothing her
 - Decision: a matching record with no parseable `ts` sorts after every dated match. With only such records, the first listed wins.
 - Decision: `attribute` writes one stderr line per attribution naming session, lead, and brief. This is the "log the choice" line. Non-JSON-object lines (a bare list) are skipped like malformed ones.
 - Impact: attribution of a claude session is a no-op. The spec's Devin-only rule holds in the function, not only in the caller.
+
+## 2026-09-29 T5a selection and cursor
+- Change (DEC-18, DEC-28, DEC-30, DEC-60, DEC-71; AC6, AC25, AC20 `seen{}` part, AC1/AC26 hwm parts): `run_selection(process, schedule_hours=6, max_sessions=20)` selects, loops per session, and writes `cursor.json` after each one. `process(t, rendered_delta)` returns True on success. Any other value marks the session failed: not done, hwm held. T7a hangs fail counts, the limit hold, and the stop rules on that `ok` line. T14 resolves the config key for `max_sessions`.
+- Decision: the clock seam is `_now()`, which reads `HARVEST_SWEEP_NOW` (epoch seconds) else `time.time()`.
+- Decision: classification and processing run in one oldest-first pass. A hidden or self-harvest or trivial session goes to `done{}` without counting against the cap. A processing attempt counts against it, success or failure. The pass stops at the cap and returns the rest unloaded as `deferred`, which T5b turns into the lag line.
+- Decision: `max_sessions` caps each source separately, not the run as a whole. Why: the brief describes selection per source, and Devin volume is small. Open question: the spec says "20 extractions a run"; a run-wide cap needs one shared counter if the operator wants it.
+- Decision: the hwm advances over the longest settled prefix of the scan. A quarantined id counts as settled, so quarantine can free the hwm. T7b owns the lift.
+- Decision: a session whose rendered delta is empty is marked done without calling `process`. Why: nothing new to read, and `seen{}` stays as it was.
+- Decision: a source with no cursor entry gets its first-run hwm written at the end of the run, even when nothing was selected. Why: otherwise a quiet first run would slide the window forward on the next run and skip sessions. Later runs write only after a session settles.
+- Decision: a `SourceFailure` from a lister or a loader ends that source for the run and is returned as `source_failure`. `source_fail_update` is not called here.
+- Bug caught in test: pruning `done{}` by hwm made the next `_advance_hwm` see the pruned prefix as unsettled. Sessions below the current hwm now count as passed.

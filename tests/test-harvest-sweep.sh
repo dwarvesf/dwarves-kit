@@ -402,6 +402,284 @@ assert_eq "AC1 attribution: a malformed line skips that line only" "lead-x" "$(a
 
 # ============================================================
 echo ""
+echo "=== T5a selection and cursor ==="
+
+# Devin fixture for the sweep scenarios: last_activity_at is set relative to the pinned clock.
+T5_NOW=2000000000
+bash "$KIT_DIR/tests/fixtures/harvest-sweep/make-devin-db.sh" "$TD/t5-devin.db"
+sqlite3 "$TD/t5-devin.db" "UPDATE sessions SET last_activity_at = $((T5_NOW - 18000)) WHERE id = 's-main'; UPDATE sessions SET last_activity_at = $((T5_NOW - 14400)) WHERE id = 's-null'; UPDATE sessions SET last_activity_at = $((T5_NOW - 10800)) WHERE id = 's-hidden';"
+printf '%s\n' '{"agent":"devin","brief":"Fix the flaky login test","lead_session":"lead-z","ts":"2033-05-18T03:00:00Z"}' > "$TD/t5-launch.jsonl"
+
+T5_OUT=$(KIT_DIR="$KIT_DIR" TD="$TD" T5_NOW="$T5_NOW" python3 - <<'PY'
+import datetime, importlib.util, json, os, shutil
+spec = importlib.util.spec_from_file_location("hs", os.path.join(os.environ["KIT_DIR"], "hooks", "harvest_sweep.py"))
+hs = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(hs)
+TD, NOW = os.environ["TD"], int(os.environ["T5_NOW"])
+P = lambda k, v: print("%s=%s" % (k, v))
+scenario_n = [0]
+
+def scenario(devin=False, now=NOW):
+    """Fresh state dir and claude root per scenario; returns (state dir, claude root)."""
+    scenario_n[0] += 1
+    base = os.path.join(TD, "t5-s%d" % scenario_n[0])
+    os.environ["HARVEST_STATE_DIR"] = os.path.join(base, "state")
+    os.environ["HARVEST_SWEEP_CLAUDE_ROOT"] = os.path.join(base, "claude")
+    os.makedirs(os.environ["HARVEST_SWEEP_CLAUDE_ROOT"])
+    os.environ["HARVEST_SWEEP_DEVIN_DB"] = os.path.join(TD, "t5-devin.db") if devin else os.path.join(base, "none.db")
+    os.environ["HARVEST_SWEEP_NOW"] = str(now)
+    return os.environ["HARVEST_STATE_DIR"], os.environ["HARVEST_SWEEP_CLAUDE_ROOT"]
+
+iso = lambda e: datetime.datetime.fromtimestamp(e, datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+def mk(root, sid, la, n=6, cwd="/w/x", tag=""):
+    """A claude lead session of n messages ending just before `la`, mtime = la."""
+    d = os.path.join(root, "p")
+    os.makedirs(d, exist_ok=True)
+    path = os.path.join(d, sid + ".jsonl")
+    with open(path, "w") as fh:
+        for k in range(n):
+            fh.write(json.dumps({"type": "user" if k % 2 == 0 else "assistant", "cwd": cwd,
+                                 "timestamp": iso(la - (n - k) * 10),
+                                 "message": {"content": [{"type": "text", "text": "%s%s msg %d" % (sid, tag, k)}]}}) + "\n")
+    os.utime(path, (la, la))
+    return path
+
+def cursor():
+    with open(hs._cursor_path()) as fh:
+        return json.load(fh)
+
+def stub(log, fail=()):
+    def process(t, text):
+        log.append((t["session_id"], text))
+        return t["session_id"] not in fail
+    return process
+
+# ---- AC6: bounds. 25 leads plus 10 trivial, cap 20 ----
+state, root = scenario()
+for k in range(25):
+    mk(root, "lead%02d" % k, NOW - 36000 + k * 60)
+for k in range(10):
+    mk(root, "triv%02d" % k, NOW - 36000 + k * 60 + 30, n=2)
+log = []
+r1 = hs.run_selection(stub(log), schedule_hours=24, max_sessions=20)["claude"]
+P("ac6_run1_processed", len(r1["processed"]))
+P("ac6_run1_trivial_done", len(r1["filtered"]))
+P("ac6_run1_deferred", len(r1["deferred"]))
+r2 = hs.run_selection(stub(log), schedule_hours=24, max_sessions=20)["claude"]
+P("ac6_run2_processed", len(r2["processed"]))
+r3 = hs.run_selection(stub(log), schedule_hours=24, max_sessions=20)["claude"]
+P("ac6_run3_processed", len(r3["processed"]))
+P("ac6_trivial_never_processed", not any(s.startswith("triv") for s, _ in log))
+P("ac6_keys", ",".join(sorted(cursor()["claude"])))
+
+# ---- AC25: 50 leads across a 48h outage, three runs capped at 20 ----
+state, root = scenario()
+las = {}
+for k in range(50):
+    sid = "out%02d" % k
+    las[sid] = NOW - 172800 + k * 3400
+    mk(root, sid, las[sid])
+log, sizes, marked_unprocessed = [], [], 0
+for _ in range(3):
+    n0 = len(log)
+    hs.run_selection(stub(log), schedule_hours=50, max_sessions=20)
+    sizes.append(len(log) - n0)
+    seen_so_far = {s for s, _ in log}
+    marked_unprocessed += len(set(cursor()["claude"]["done"]) - seen_so_far)
+ids = [s for s, _ in log]
+P("ac25_sizes", ",".join(map(str, sizes)))
+P("ac25_oldest_first", ids == sorted(las, key=lambda s: las[s]))
+P("ac25_each_once", len(ids) == len(set(ids)) == 50)
+P("ac25_none_done_unprocessed", marked_unprocessed)
+P("ac25_hwm_at_newest", cursor()["claude"]["hwm"] == max(las.values()))
+
+# ---- quiet window ----
+state, root = scenario()
+mk(root, "old", NOW - 7200)
+mk(root, "busy", NOW - 600)
+log = []
+r = hs.run_selection(stub(log), schedule_hours=6)["claude"]
+P("quiet_first_run", ",".join(r["processed"]))
+P("quiet_hwm_holds", cursor()["claude"]["hwm"] == NOW - 7200)
+os.environ["HARVEST_SWEEP_NOW"] = str(NOW + 1800)
+r = hs.run_selection(stub(log), schedule_hours=6)["claude"]
+P("quiet_second_run", ",".join(r["processed"]))
+
+# ---- tie on last_activity: (last_activity, id) order, cap splits the tie ----
+state, root = scenario()
+for sid in ("tie-b", "tie-a", "tie-c"):
+    mk(root, sid, NOW - 7200)
+log = []
+r = hs.run_selection(stub(log), schedule_hours=6, max_sessions=2)["claude"]
+P("tie_run1", ",".join(r["processed"]))
+r = hs.run_selection(stub(log), schedule_hours=6, max_sessions=2)["claude"]
+P("tie_run2", ",".join(r["processed"]))
+
+# ---- a failing session blocks the hwm; later sessions still complete ----
+state, root = scenario()
+for k, sid in enumerate(("f1", "f2", "f3")):
+    mk(root, sid, NOW - 9000 + k * 600)
+log = []
+r = hs.run_selection(stub(log, fail={"f1"}), schedule_hours=6)["claude"]
+c = cursor()["claude"]
+P("fail_processed", ",".join(r["processed"]))
+P("fail_failed", ",".join(r["failed"]))
+P("fail_hwm_held", c["hwm"] == NOW - 21600)
+P("fail_not_done", "f1" not in c["done"])
+P("fail_later_done", ",".join(sorted(c["done"])))
+r = hs.run_selection(stub(log), schedule_hours=6)["claude"]
+P("fail_retry", ",".join(r["processed"]))
+P("fail_hwm_after", cursor()["claude"]["hwm"] == NOW - 9000 + 1200)
+
+# ---- AC20: seen{} survives the done{} prune by hwm ----
+state, root = scenario()
+for k, sid in enumerate(("s1", "s2", "s3")):
+    mk(root, sid, NOW - 9000 + k * 600)
+hs.run_selection(stub([]), schedule_hours=6)
+c = cursor()["claude"]
+P("ac20_done_pruned", "s1" not in c["done"] and "s2" not in c["done"])
+P("ac20_seen_kept", ",".join(sorted(c["seen"])))
+P("ac20_seen_shape", sorted(c["seen"]["s1"]) == ["last_ts", "ts"] and c["seen"]["s1"]["ts"] == NOW)
+
+# ---- resumed session: re-selected, rendered as a delta from seen{id}.last_ts ----
+state, root = scenario()
+mk(root, "res", NOW - 14400)
+log = []
+hs.run_selection(stub(log), schedule_hours=6)
+first_text = log[0][1]
+old_last = cursor()["claude"]["seen"]["res"]["last_ts"]
+mk_path = os.path.join(root, "p", "res.jsonl")
+with open(mk_path, "a") as fh:
+    for k in range(2):
+        fh.write(json.dumps({"type": "user", "cwd": "/w/x", "timestamp": iso(NOW - 3600 + k * 10),
+                             "message": {"content": [{"type": "text", "text": "resumed new %d" % k}]}}) + "\n")
+os.utime(mk_path, (NOW - 3500, NOW - 3500))
+log = []
+r = hs.run_selection(stub(log), schedule_hours=6)["claude"]
+P("resume_first_full", "res msg 0" in first_text)
+P("resume_reselected", ",".join(r["processed"]))
+P("resume_delta_only", log[0][1] == "user: resumed new 0\nuser: resumed new 1")
+P("resume_seen_moved", cursor()["claude"]["seen"]["res"]["last_ts"] > old_last)
+
+# ---- AC1: a self-harvest cwd is never processed, is marked done, and the hwm passes it ----
+state, root = scenario()
+mk(root, "normal", NOW - 9000)
+mk(root, "selfh", NOW - 7200, cwd=os.path.join(state, "sweep"))
+log = []
+r = hs.run_selection(stub(log), schedule_hours=6)["claude"]
+c = cursor()["claude"]
+P("ac1_selfh_processed", ",".join(s for s, _ in log))
+P("ac1_selfh_filtered", ",".join(r["filtered"]))
+P("ac1_selfh_hwm_passed", c["hwm"] == NOW - 7200)
+
+# ---- AC26: devin hidden = 1 is never processed, is marked done, and the hwm passes it ----
+state, root = scenario(devin=True)
+os.environ["HARVEST_SWEEP_MIN_MESSAGES"] = "2"
+os.environ["HARVEST_SWEEP_LAUNCH_RECORD"] = os.path.join(TD, "t5-launch.jsonl")
+log, leads = [], {}
+def devin_stub(t, text):
+    log.append(t["session_id"])
+    leads[t["session_id"]] = t["lead_session_id"]
+    return True
+r = hs.run_selection(devin_stub, schedule_hours=6)["devin"]
+c = cursor()["devin"]
+del os.environ["HARVEST_SWEEP_MIN_MESSAGES"]
+P("ac26_processed", ",".join(log))
+P("ac26_hidden_not_processed", "s-hidden" not in log)
+P("ac26_hidden_done", c["done"].get("s-hidden") == NOW - 10800)
+P("ac26_hwm_passed", c["hwm"] == NOW - 10800)
+P("ac26_attributed", leads.get("s-main"))
+P("ac26_unattributed", leads.get("s-null"))
+
+# ---- cursor.json is atomic ----
+state, root = scenario()
+for k, sid in enumerate(("a1", "a2", "a3")):
+    mk(root, sid, NOW - 9000 + k * 600)
+def crashing(t, text):
+    if t["session_id"] == "a2":
+        raise RuntimeError("simulated crash")
+    return True
+try:
+    hs.run_selection(crashing, schedule_hours=6)
+except RuntimeError:
+    pass
+c = cursor()["claude"]
+P("atomic_crash_between", "a1" in c["done"] or c["hwm"] == NOW - 9000)
+P("atomic_a2_not_done", "a2" not in c["done"])
+before = open(hs._cursor_path()).read()
+real_replace = os.replace
+def broken_replace(a, b):
+    raise OSError("simulated crash mid-write")
+os.replace = broken_replace
+try:
+    hs.run_selection(stub([]), schedule_hours=6)
+except OSError:
+    pass
+finally:
+    os.replace = real_replace
+P("atomic_file_intact", open(hs._cursor_path()).read() == before)
+P("atomic_parses", isinstance(json.loads(before), dict))
+P("clock_env", hs._now() == float(os.environ["HARVEST_SWEEP_NOW"]))
+PY
+)
+t5() { printf '%s\n' "$T5_OUT" | sed -n "s/^$1=//p"; }
+
+assert_eq "AC6: run 1 processes 20 of 25 leads" "20" "$(t5 ac6_run1_processed)"
+assert_eq "AC6: run 1 marks the 10 trivial sessions done outside the cap" "10" "$(t5 ac6_run1_trivial_done)"
+assert_eq "AC6: run 1 leaves 5 leads eligible" "5" "$(t5 ac6_run1_deferred)"
+assert_eq "AC6: run 2 processes the remaining 5" "5" "$(t5 ac6_run2_processed)"
+assert_eq "AC6: run 3 has nothing to process" "0" "$(t5 ac6_run3_processed)"
+assert_eq "AC6: a trivial session is never processed" "True" "$(t5 ac6_trivial_never_processed)"
+assert_eq "AC6: the cursor entry carries every stored key" "done,fail,hwm,quarantined,seen" "$(t5 ac6_keys)"
+
+assert_eq "AC25: 3 capped runs process 20, 20, 10" "20,20,10" "$(t5 ac25_sizes)"
+assert_eq "AC25: sessions come out in last_activity order, oldest first" "True" "$(t5 ac25_oldest_first)"
+assert_eq "AC25: all 50 are processed exactly once" "True" "$(t5 ac25_each_once)"
+assert_eq "AC25: no session is marked done without being processed" "0" "$(t5 ac25_none_done_unprocessed)"
+assert_eq "AC25: the hwm ends at the newest session" "True" "$(t5 ac25_hwm_at_newest)"
+
+assert_eq "AC6: a session inside the quiet window is not selected" "old" "$(t5 quiet_first_run)"
+assert_eq "AC6: the hwm holds behind a session still in the quiet window" "True" "$(t5 quiet_hwm_holds)"
+assert_eq "AC6: the session is selected once it goes quiet" "busy" "$(t5 quiet_second_run)"
+assert_eq "AC6: a tie on last_activity orders by id and the cap splits it" "tie-a,tie-b" "$(t5 tie_run1)"
+assert_eq "AC6: the rest of the tie is picked up next run" "tie-c" "$(t5 tie_run2)"
+
+assert_eq "AC25: a failing session does not stop later sessions" "f2,f3" "$(t5 fail_processed)"
+assert_eq "AC25: the failing session is reported failed" "f1" "$(t5 fail_failed)"
+assert_eq "AC25: the hwm does not pass a failing session" "True" "$(t5 fail_hwm_held)"
+assert_eq "AC25: the failing session is not marked done" "True" "$(t5 fail_not_done)"
+assert_eq "AC25: later sessions are done" "f2,f3" "$(t5 fail_later_done)"
+assert_eq "AC25: the next run retries only the failed session" "f1" "$(t5 fail_retry)"
+assert_eq "AC25: the hwm passes the whole prefix once it clears" "True" "$(t5 fail_hwm_after)"
+
+assert_eq "AC20: done{} entries below the hwm are pruned" "True" "$(t5 ac20_done_pruned)"
+assert_eq "AC20: seen{} survives the done{} prune by hwm" "s1,s2,s3" "$(t5 ac20_seen_kept)"
+assert_eq "AC20: a seen{} entry holds last_ts and ts" "True" "$(t5 ac20_seen_shape)"
+
+assert_eq "AC6: the first read of a session renders it whole" "True" "$(t5 resume_first_full)"
+assert_eq "AC6: a resumed session is selected again" "res" "$(t5 resume_reselected)"
+assert_eq "AC6: a resumed session renders only entries after seen last_ts" "True" "$(t5 resume_delta_only)"
+assert_eq "AC6: a resumed session moves seen last_ts forward" "True" "$(t5 resume_seen_moved)"
+
+assert_eq "AC1: a self-harvest-cwd session is never processed" "normal" "$(t5 ac1_selfh_processed)"
+assert_eq "AC1: a self-harvest-cwd session is marked done" "selfh" "$(t5 ac1_selfh_filtered)"
+assert_eq "AC1: the hwm moves past a self-harvest-cwd session" "True" "$(t5 ac1_selfh_hwm_passed)"
+assert_eq "AC26: a devin hidden = 1 session is never processed" "s-main,s-null" "$(t5 ac26_processed)"
+assert_eq "AC26: a hidden session is not handed to the extractor" "True" "$(t5 ac26_hidden_not_processed)"
+assert_eq "AC26: a hidden session is marked done" "True" "$(t5 ac26_hidden_done)"
+assert_eq "AC26: the hwm moves past a hidden session" "True" "$(t5 ac26_hwm_passed)"
+assert_eq "AC1: a devin session is attributed before processing" "lead-z" "$(t5 ac26_attributed)"
+assert_eq "AC1: an unmatched devin session stays unattributed" "None" "$(t5 ac26_unattributed)"
+
+assert_eq "cursor: a crash between sessions leaves a parseable file with the earlier session" "True" "$(t5 atomic_crash_between)"
+assert_eq "cursor: the crashed session is not marked done" "True" "$(t5 atomic_a2_not_done)"
+assert_eq "cursor: a crash inside the replace leaves the previous file intact" "True" "$(t5 atomic_file_intact)"
+assert_eq "cursor: the file always parses" "True" "$(t5 atomic_parses)"
+assert_eq "clock: HARVEST_SWEEP_NOW pins _now()" "True" "$(t5 clock_env)"
+
+# ============================================================
+echo ""
 echo "=== Results ==="
 echo "Passed: $PASS / $TOTAL"
 if [ "$FAIL" -gt 0 ]; then
