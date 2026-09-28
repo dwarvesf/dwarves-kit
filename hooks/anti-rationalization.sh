@@ -29,7 +29,7 @@ if [ -f "$POLICY" ]; then
   if [ "$PRC" -eq 1 ]; then
     LOG_DIR="${DWARVES_KIT_LOG_DIR:-$HOME/.claude/dwarves-kit/logs}"
     mkdir -p "$LOG_DIR" 2>/dev/null || true
-    echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) | OFF-BY-CONFIG | understanding_gate | $(pwd)" >> "$LOG_DIR/anti-rationalization.log" 2>/dev/null || true
+    echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) | OFF-BY-CONFIG | understanding_gate | ${DWARVES_KIT_INVOCATION_CWD:-$(pwd)}" >> "$LOG_DIR/anti-rationalization.log" 2>/dev/null || true
     exit 0
   fi
 fi
@@ -55,7 +55,7 @@ for PATTERN in "${PATTERNS[@]}"; do
     # Log for future eval corpus
     LOG_DIR="${DWARVES_KIT_LOG_DIR:-$HOME/.claude/dwarves-kit/logs}"
     mkdir -p "$LOG_DIR"
-    echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) | BLOCKED | $PATTERN | $(pwd)" >> "$LOG_DIR/anti-rationalization.log"
+    echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) | BLOCKED | $PATTERN | ${DWARVES_KIT_INVOCATION_CWD:-$(pwd)}" >> "$LOG_DIR/anti-rationalization.log"
 
     [ "${DWARVES_KIT_DEBUG:-0}" = "1" ] && echo "[dwarves-kit:anti-rat] BLOCKED on pattern: $PATTERN" >&2
 
@@ -99,7 +99,7 @@ if [ -d ".claude/debug" ]; then
       if echo "$RESPONSE" | grep -qi "$PATTERN"; then
         LOG_DIR="${DWARVES_KIT_LOG_DIR:-$HOME/.claude/dwarves-kit/logs}"
         mkdir -p "$LOG_DIR"
-        echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) | BLOCKED-GUESSFIX | $PATTERN | $(pwd)" >> "$LOG_DIR/anti-rationalization.log"
+        echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) | BLOCKED-GUESSFIX | $PATTERN | ${DWARVES_KIT_INVOCATION_CWD:-$(pwd)}" >> "$LOG_DIR/anti-rationalization.log"
 
         [ "${DWARVES_KIT_DEBUG:-0}" = "1" ] && echo "[dwarves-kit:anti-rat] BLOCKED guess-fix: $PATTERN" >&2
 
@@ -123,7 +123,7 @@ if echo "$RESPONSE" | grep -qiE '\b(all done|done\b|complete|completed|finished|
   if [ -n "$PHANTOM" ]; then
     LOG_DIR="${DWARVES_KIT_LOG_DIR:-$HOME/.claude/dwarves-kit/logs}"
     mkdir -p "$LOG_DIR"
-    echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) | BLOCKED-PHANTOM | $(pwd)" >> "$LOG_DIR/anti-rationalization.log"
+    echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) | BLOCKED-PHANTOM | ${DWARVES_KIT_INVOCATION_CWD:-$(pwd)}" >> "$LOG_DIR/anti-rationalization.log"
 
     [ "${DWARVES_KIT_DEBUG:-0}" = "1" ] && echo "[dwarves-kit:anti-rat] BLOCKED phantom-impl" >&2
 

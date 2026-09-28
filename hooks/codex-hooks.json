@@ -7,17 +7,17 @@
         "hooks": [
           {
             "type": "command",
-            "command": "hash_file() { if command -v shasum >/dev/null 2>&1; then shasum -a 256 \"$1\"; elif command -v sha256sum >/dev/null 2>&1; then sha256sum \"$1\"; else return 2; fi; }; hash_file \"${PLUGIN_ROOT}/hooks/codex-hook-adapter.sh\" | /usr/bin/grep -q '^fefc20ca95217d304af2bbf4c14aef73ff0928472cde59f67f2cd6b3656e15af ' && hash_file \"${PLUGIN_ROOT}/hooks/safety-gate.sh\" | /usr/bin/grep -q '^795e227f4a0693e7ccaf0c2385092f9e39d6091fa14c394c8ccee3b2e6d3f480 ' || { echo 'dwarves-kit: trusted hook content changed' >&2; exit 2; }; exec \"${PLUGIN_ROOT}/hooks/codex-hook-adapter.sh\" PreToolUse safety-gate.sh",
+            "command": "hash_file() { if command -v shasum >/dev/null 2>&1; then shasum -a 256 \"$1\"; elif command -v sha256sum >/dev/null 2>&1; then sha256sum \"$1\"; else return 2; fi; }; hash_file \"${PLUGIN_ROOT}/hooks/codex-hook-adapter.sh\" | /usr/bin/grep -q '^974405ac8c8eb00ed7ed463408f571cefb263d15c0da7ea3e9db57b976d150c9 ' && hash_file \"${PLUGIN_ROOT}/hooks/safety-gate.sh\" | /usr/bin/grep -q '^5faea110cef73f01f2b619d2a55751db7f1f27e69c72fb6997488051836dc308 ' || { echo 'dwarves-kit: trusted hook content changed' >&2; exit 2; }; exec \"${PLUGIN_ROOT}/hooks/codex-hook-adapter.sh\" PreToolUse safety-gate.sh",
             "timeout": 30
           },
           {
             "type": "command",
-            "command": "hash_file() { if command -v shasum >/dev/null 2>&1; then shasum -a 256 \"$1\"; elif command -v sha256sum >/dev/null 2>&1; then sha256sum \"$1\"; else return 2; fi; }; hash_file \"${PLUGIN_ROOT}/hooks/codex-hook-adapter.sh\" | /usr/bin/grep -q '^fefc20ca95217d304af2bbf4c14aef73ff0928472cde59f67f2cd6b3656e15af ' && hash_file \"${PLUGIN_ROOT}/hooks/ship-gate.sh\" | /usr/bin/grep -q '^519cf762a8b620a495bb67cb7bd872284d7e3f4e9bc17053b72406757f8d3ebe ' || { echo 'dwarves-kit: trusted hook content changed' >&2; exit 2; }; exec \"${PLUGIN_ROOT}/hooks/codex-hook-adapter.sh\" PreToolUse ship-gate.sh",
+            "command": "hash_file() { if command -v shasum >/dev/null 2>&1; then shasum -a 256 \"$1\"; elif command -v sha256sum >/dev/null 2>&1; then sha256sum \"$1\"; else return 2; fi; }; hash_file \"${PLUGIN_ROOT}/hooks/codex-hook-adapter.sh\" | /usr/bin/grep -q '^974405ac8c8eb00ed7ed463408f571cefb263d15c0da7ea3e9db57b976d150c9 ' && hash_file \"${PLUGIN_ROOT}/hooks/ship-gate.sh\" | /usr/bin/grep -q '^519cf762a8b620a495bb67cb7bd872284d7e3f4e9bc17053b72406757f8d3ebe ' || { echo 'dwarves-kit: trusted hook content changed' >&2; exit 2; }; exec \"${PLUGIN_ROOT}/hooks/codex-hook-adapter.sh\" PreToolUse ship-gate.sh",
             "timeout": 30
           },
           {
             "type": "command",
-            "command": "hash_file() { if command -v shasum >/dev/null 2>&1; then shasum -a 256 \"$1\"; elif command -v sha256sum >/dev/null 2>&1; then sha256sum \"$1\"; else return 2; fi; }; hash_file \"${PLUGIN_ROOT}/hooks/codex-hook-adapter.sh\" | /usr/bin/grep -q '^fefc20ca95217d304af2bbf4c14aef73ff0928472cde59f67f2cd6b3656e15af ' && hash_file \"${PLUGIN_ROOT}/hooks/commit-format.sh\" | /usr/bin/grep -q '^a4b785a74449e4bd8fa82679f42c4dd1e0299ea158a152ced2c695489f7c959c ' || { echo 'dwarves-kit: trusted hook content changed' >&2; exit 2; }; exec \"${PLUGIN_ROOT}/hooks/codex-hook-adapter.sh\" PreToolUse commit-format.sh",
+            "command": "hash_file() { if command -v shasum >/dev/null 2>&1; then shasum -a 256 \"$1\"; elif command -v sha256sum >/dev/null 2>&1; then sha256sum \"$1\"; else return 2; fi; }; hash_file \"${PLUGIN_ROOT}/hooks/codex-hook-adapter.sh\" | /usr/bin/grep -q '^974405ac8c8eb00ed7ed463408f571cefb263d15c0da7ea3e9db57b976d150c9 ' && hash_file \"${PLUGIN_ROOT}/hooks/commit-format.sh\" | /usr/bin/grep -q '^a4b785a74449e4bd8fa82679f42c4dd1e0299ea158a152ced2c695489f7c959c ' || { echo 'dwarves-kit: trusted hook content changed' >&2; exit 2; }; exec \"${PLUGIN_ROOT}/hooks/codex-hook-adapter.sh\" PreToolUse commit-format.sh",
             "timeout": 30
           }
         ]
@@ -27,7 +27,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "hash_file() { if command -v shasum >/dev/null 2>&1; then shasum -a 256 \"$1\"; elif command -v sha256sum >/dev/null 2>&1; then sha256sum \"$1\"; else return 2; fi; }; hash_file \"${PLUGIN_ROOT}/hooks/codex-hook-adapter.sh\" | /usr/bin/grep -q '^fefc20ca95217d304af2bbf4c14aef73ff0928472cde59f67f2cd6b3656e15af ' && hash_file \"${PLUGIN_ROOT}/hooks/secrets-guard.sh\" | /usr/bin/grep -q '^81b8c03e610cbcd58f0150c60e544fc89d4ab84ead1ed3251ac52bb9460c4e3a ' || { echo 'dwarves-kit: trusted hook content changed' >&2; exit 2; }; exec \"${PLUGIN_ROOT}/hooks/codex-hook-adapter.sh\" PreToolUse secrets-guard.sh",
+            "command": "hash_file() { if command -v shasum >/dev/null 2>&1; then shasum -a 256 \"$1\"; elif command -v sha256sum >/dev/null 2>&1; then sha256sum \"$1\"; else return 2; fi; }; hash_file \"${PLUGIN_ROOT}/hooks/codex-hook-adapter.sh\" | /usr/bin/grep -q '^974405ac8c8eb00ed7ed463408f571cefb263d15c0da7ea3e9db57b976d150c9 ' && hash_file \"${PLUGIN_ROOT}/hooks/secrets-guard.sh\" | /usr/bin/grep -q '^81b8c03e610cbcd58f0150c60e544fc89d4ab84ead1ed3251ac52bb9460c4e3a ' || { echo 'dwarves-kit: trusted hook content changed' >&2; exit 2; }; exec \"${PLUGIN_ROOT}/hooks/codex-hook-adapter.sh\" PreToolUse secrets-guard.sh",
             "timeout": 30
           }
         ]
@@ -38,7 +38,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "hash_file() { if command -v shasum >/dev/null 2>&1; then shasum -a 256 \"$1\"; elif command -v sha256sum >/dev/null 2>&1; then sha256sum \"$1\"; else return 2; fi; }; hash_file \"${PLUGIN_ROOT}/hooks/codex-hook-adapter.sh\" | /usr/bin/grep -q '^fefc20ca95217d304af2bbf4c14aef73ff0928472cde59f67f2cd6b3656e15af ' && hash_file \"${PLUGIN_ROOT}/hooks/anti-rationalization.sh\" | /usr/bin/grep -q '^d6a7982dfa7548fce97270f72653fcde141569cf8b65a4c5e4dd288ae17e6117 ' || { echo 'dwarves-kit: trusted hook content changed' >&2; exit 2; }; exec \"${PLUGIN_ROOT}/hooks/codex-hook-adapter.sh\" Stop anti-rationalization.sh",
+            "command": "hash_file() { if command -v shasum >/dev/null 2>&1; then shasum -a 256 \"$1\"; elif command -v sha256sum >/dev/null 2>&1; then sha256sum \"$1\"; else return 2; fi; }; hash_file \"${PLUGIN_ROOT}/hooks/codex-hook-adapter.sh\" | /usr/bin/grep -q '^974405ac8c8eb00ed7ed463408f571cefb263d15c0da7ea3e9db57b976d150c9 ' && hash_file \"${PLUGIN_ROOT}/hooks/anti-rationalization.sh\" | /usr/bin/grep -q '^4436673e136a0637fe036f680d537ee2d0d34aa6d151f21322fb7ab0812e1aab ' || { echo 'dwarves-kit: trusted hook content changed' >&2; exit 2; }; exec \"${PLUGIN_ROOT}/hooks/codex-hook-adapter.sh\" Stop anti-rationalization.sh",
             "timeout": 30
           }
         ]

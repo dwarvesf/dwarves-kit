@@ -2634,6 +2634,85 @@ rm -rf "$SUBDIR_REPO" "$NOGIT3" "$PCB_REPO" "$AN_PARENT" "$AN_EMPTY_PLUGIN" "$AN
 
 # ============================================================
 echo ""
+echo "=== anchor-root.sh: hard gates still block through the wrapper ==="
+# ============================================================
+# Each hard gate gets a block-worthy payload through its REAL dispatch-table string, from both
+# tables, run from a repo subdirectory. A block must stay exit 2 (money-gate never exits 2: it
+# asks through a permissionDecision, so its pass-through is the ask JSON). Label substring for
+# every case: "wrapped gate blocks".
+_wired() {  # _wired <hook basename> <hooks.json|settings.json> : that entry's command, pointed at $KIT_DIR
+  if [ "$2" = hooks.json ]; then
+    jq -r '.hooks[][].hooks[].command' "$KIT_DIR/hooks/hooks.json" | grep -m1 "/hooks/$1\$" \
+      | sed 's|${CLAUDE_PLUGIN_ROOT}|'"$KIT_DIR"'|g'
+  else
+    jq -r '.hooks[][].hooks[].command' "$KIT_DIR/settings.json" | grep -m1 "/hooks/$1\$" \
+      | sed 's|$HOME/.claude/dwarves-kit|'"$KIT_DIR"'|g'
+  fi
+}
+_gate_rc() {  # _gate_rc <cwd> <payload> <hook> <table> [env assignments...] : exit code of the wired run
+  local cwd="$1" payload="$2" hook="$3" table="$4" rc=0; shift 4
+  local cmd; cmd="$(_wired "$hook" "$table")"
+  [ -n "$cmd" ] || { echo "no-entry"; return; }
+  ( cd "$cwd" && printf '%s' "$payload" | env "$@" sh -c "$cmd" >/dev/null 2>&1 ) || rc=$?
+  echo "$rc"
+}
+GB=$(mktemp -d "${TMPDIR:-/tmp}/dk-gateblock.XXXXXX")
+_git_repo "$GB/repo"; mkdir -p "$GB/repo/sub"
+# ship-gate fixture: a feature branch whose normal-lane spec has no recorded gates
+( cd "$GB/repo" && git checkout -q -b feat/anchor-sg && mkdir -p docs/specs \
+  && printf 'Lane: normal\n' > docs/specs/SPEC-001-anchor-sg.md && git add -A && git commit -q -m spec )
+# board-row-gate fixture: a board with a staged NEW row and no board-row-ok marker
+_git_repo "$GB/board"; mkdir -p "$GB/board/_meta" "$GB/board/sub"
+printf '| ID | Item | Notes | Status |\n|---|---|---|---|\n| ID-001 | a | n | queued |\n' > "$GB/board/_meta/BACKLOG.md"
+( cd "$GB/board" && git add -A && git commit -q -m board \
+  && printf '| ID-002 | b | n | queued |\n' >> _meta/BACKLOG.md && git add _meta/BACKLOG.md )
+SAFETY_P='{"tool_input":{"command":"git push --force origin main"}}'
+SHIP_P='{"tool_input":{"command":"git push -u origin feat/anchor-sg"}}'
+COMMIT_P='{"tool_input":{"command":"git commit -m \"random message no type\""}}'
+ANTI_P='{"stop_hook_active":false,"assistant_response":"This can be addressed in a follow-up PR."}'
+BOARD_P=$(jq -cn --arg d "$GB/board/sub" '{tool_name:"Bash",cwd:$d,tool_input:{command:"git commit -m \"docs(board): file ID-002\""}}')
+MONEY_P='{"tool_input":{"file_path":"/home/u/work/acme-books/tracking/transactions.csv","new_string":"transfer 500 USD to wallet 0xabc"},"cwd":"/home/u/work/acme-books"}'
+for T in hooks.json settings.json; do
+  assert_exit "anchor: wrapped gate blocks, safety-gate force push to main ($T)" 2 \
+    "$(_gate_rc "$GB/repo/sub" "$SAFETY_P" safety-gate.sh "$T")"
+  assert_exit "anchor: wrapped gate blocks, ship-gate missing lane gates from a subdir ($T)" 2 \
+    "$(_gate_rc "$GB/repo/sub" "$SHIP_P" ship-gate.sh "$T" CLAUDE_PLUGIN_ROOT="$KIT_DIR")"
+  assert_exit "anchor: wrapped gate blocks, commit-format bad subject ($T)" 2 \
+    "$(_gate_rc "$GB/repo/sub" "$COMMIT_P" commit-format.sh "$T" CLAUDE_PLUGIN_ROOT="$KIT_DIR")"
+  assert_exit "anchor: wrapped gate blocks, anti-rationalization deferral ($T)" 2 \
+    "$(_gate_rc "$GB/repo/sub" "$ANTI_P" anti-rationalization.sh "$T" CLAUDE_PLUGIN_ROOT="$KIT_DIR")"
+  assert_exit "anchor: wrapped gate blocks, board-row-gate unmarked new row ($T)" 2 \
+    "$(_gate_rc "$GB/board/sub" "$BOARD_P" board-row-gate.sh "$T" CLAUDE_PLUGIN_ROOT="$KIT_DIR" KIT_CONFIG_ROOT="$KIT_DIR")"
+  MONEY_OUT=$( cd "$GB/repo/sub" && printf '%s' "$MONEY_P" \
+    | env MONEY_GATE_REPOS=acme-books MONEY_GATE_STRICT=1 MONEY_GATE_LOG="$GB/money.log" sh -c "$(_wired money-gate.sh "$T")" 2>/dev/null )
+  assert_output_contains "anchor: wrapped gate blocks, money-gate asks ($T)" '"permissionDecision": "ask"' "$MONEY_OUT"
+done
+
+# Negative control: a hook that lost its exec bit must STILL block through the wrapper (the
+# wrapper runs it under an explicit bash). A copy of hooks/ is mutated, never the real tree.
+GBK="$GB/kitcopy"; mkdir -p "$GBK"; cp -R "$KIT_DIR/hooks" "$GBK/hooks"
+chmod -x "$GBK/hooks/safety-gate.sh" "$GBK/hooks/anchor-root.sh"
+for T in hooks.json settings.json; do
+  _nx_cmd="$(_wired safety-gate.sh "$T" | sed 's|'"$KIT_DIR"'/hooks/|'"$GBK"'/hooks/|g')"
+  _nx_rc=0; ( cd "$GB/repo/sub" && printf '%s' "$SAFETY_P" | sh -c "$_nx_cmd" >/dev/null 2>&1 ) || _nx_rc=$?
+  assert_exit "anchor: wrapped gate blocks with the exec bit lost on hook and wrapper ($T)" 2 "$_nx_rc"
+done
+rm -rf "$GB"
+
+# The anchor cds only when the physical cwd sits under git's toplevel. With GIT_WORK_TREE
+# pointing elsewhere, a cd would strand the hook outside any repo, so it stays put.
+AW=$(mktemp -d "${TMPDIR:-/tmp}/dk-anworktree.XXXXXX")
+_git_repo "$AW/repo"; mkdir -p "$AW/repo/sub" "$AW/elsewhere"
+printf '#!/bin/bash\npwd -P\n' > "$AW/probe.sh"; chmod +x "$AW/probe.sh"
+AW_REPO=$(cd "$AW/repo" && pwd -P); AW_ELSE=$(cd "$AW/elsewhere" && pwd -P)
+assert_eq_str "anchor: cds to the toplevel from a subdirectory" "$AW_REPO" \
+  "$(cd "$AW/repo/sub" && bash "$ANCHOR" "$AW/probe.sh" </dev/null)"
+assert_eq_str "anchor: stays put when GIT_WORK_TREE puts the toplevel elsewhere" "$AW_ELSE" \
+  "$(cd "$AW/elsewhere" && GIT_DIR="$AW/repo/.git" GIT_WORK_TREE="$AW/repo" bash "$ANCHOR" "$AW/probe.sh" </dev/null)"
+rm -rf "$AW"
+
+# ============================================================
+echo ""
 echo "=== Results ==="
 # ============================================================
 echo -e "Passed: ${GREEN}${PASS}${NC} / ${TOTAL}"

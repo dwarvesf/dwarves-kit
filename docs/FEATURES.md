@@ -110,12 +110,12 @@ GENERATED , do not hand-edit. Regenerate: `bash lib/registry/feature-registry.sh
 
 | Hook | Trigger | Event | Description | Specs | Tests |
 |---|---|---|---|---|---|
-| `anchor-root.sh` | `[E]` | - | cd to the repo (or worktree) root, then run the given hook command. | SPEC-334, SPEC-340 | test-hook-anchor.sh, test-hooks.sh, test-install-modules.sh |
+| `anchor-root.sh` | `[E]` | - | cd to the repo (or worktree) root, then run the given hook command. | SPEC-334, SPEC-340 | test-adopt.sh, test-hook-anchor.sh, test-hooks.sh +1 |
 | `anti-rationalization.sh` | `[E]` | Stop | all legitimate phrases Claude | SPEC-003, SPEC-006, SPEC-008 +10 | test-codex-hooks.sh, test-gate-opt-in.sh, test-gate-opt-out.sh +3 |
 | `auto-format.sh` | `[E]` | PostToolUse | PostToolUse hook, matcher: Write\|Edit | SPEC-003, SPEC-084, SPEC-334 | test-adopt.sh, test-hooks.sh, test-install-modules.sh |
 | `backlog-stage.sh` | `[E]` | SessionEnd | SessionEnd hook, function-named port of ops-toolkit's cc-backlog | SPEC-192, SPEC-194, SPEC-195 +5 | test-adopt.sh, test-install-modules.sh, test-intake-sweep.sh +2 |
 | `batch-debt-warn.sh` | `[E]` | PreToolUse | PreToolUse hook, matcher: Bash | SPEC-334 | test-batch-debt-warn.sh, test-install-modules.sh |
-| `board-row-gate.sh` | `[E]` | PreToolUse | PreToolUse hook, matcher: Bash | SPEC-334 | test-board-row-gate.sh, test-install-modules.sh |
+| `board-row-gate.sh` | `[E]` | PreToolUse | PreToolUse hook, matcher: Bash | SPEC-334 | test-board-row-gate.sh, test-hooks.sh, test-install-modules.sh |
 | `citation-guard.sh` | `[E]` | Stop | Stop hook, function-named port of ops-toolkit's cc-citation-guard | SPEC-253, SPEC-334 | test-install-modules.sh, test-kit-foldin-hooks.sh |
 | `codebase-index.sh` | `[E]` | SessionStart | SessionStart hook (OPT-IN), dwarves-kit | SPEC-043, SPEC-084, SPEC-085 +1 | test-hooks.sh, test-install-modules.sh, test-meta.sh |
 | `codex-hook-adapter.sh` | `[E]` | - | Normalize Codex hook input before invoking shared dwarves-kit policies. | SPEC-288, SPEC-334, SPEC-340 | test-codex-hooks.sh |
@@ -125,7 +125,7 @@ GENERATED , do not hand-edit. Regenerate: `bash lib/registry/feature-registry.sh
 | `context-readiness.sh` | `[E]` | SessionStart | SessionStart hook | SPEC-003, SPEC-005, SPEC-010 +9 | test-adopt.sh, test-hooks.sh, test-install-modules.sh +1 |
 | `harvest.sh` | `[E]` | PreCompact | PreCompact / SessionEnd hook, function-named port of ops-toolkit's | SPEC-194, SPEC-196, SPEC-245 +3 | test-install-modules.sh, test-kit-foldin-hooks.sh, test-repohygiene.sh |
 | `intake-sweep.sh` | `[E]` | - | thin shim over intake-sweep.py (backlog-stage.sh precedent). | SPEC-200, SPEC-285, SPEC-334 | test-board-promote.sh, test-intake-sweep.sh |
-| `money-gate.sh` | `[E]` | PreToolUse | PreToolUse(Edit\|Write\|MultiEdit) hook, function-named port of | SPEC-232, SPEC-334 | test-install-clis.sh, test-install-modules.sh, test-money-gate.sh +1 |
+| `money-gate.sh` | `[E]` | PreToolUse | PreToolUse(Edit\|Write\|MultiEdit) hook, function-named port of | SPEC-232, SPEC-334 | test-hooks.sh, test-install-clis.sh, test-install-modules.sh +2 |
 | `notification.sh` | `[E]` | Notification | Notification hook | SPEC-032, SPEC-084, SPEC-196 +3 | test-hooks.sh, test-install-modules.sh |
 | `output-offload.sh` | `[E]` | PostToolUse | PostToolUse. When a tool returns more than ~OFFLOAD_MAX_TOKENS tokens, | SPEC-334 | test-hooks.sh, test-install-modules.sh |
 | `permission-auto-approve.sh` | `[E]` | PermissionRequest | PermissionRequest hook | SPEC-084, SPEC-334, SPEC-340 | test-hooks.sh, test-install-modules.sh |

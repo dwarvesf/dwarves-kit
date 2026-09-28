@@ -18,18 +18,23 @@ bad() { FAIL=$((FAIL + 1)); printf '  FAIL  %s\n' "$1"; }
 # entry must appear in the spec's Decision Log (the two lists never drift apart).
 #   secrets-guard.sh: canonicalizes a relative path operand against the tool's REAL cwd;
 #                     anchoring to the repo root would silently change a denylist decision.
-EXEMPT_RE='/hooks/secrets-guard\.sh( |$)'
+# EXEMPT_RE is anchored end to end: the exempt entry is the bare hook and nothing else, so a
+# command that merely mentions an exempt path as an argument is never exempted.
+EXEMPT_RE='^(bash )?[^ ]*/hooks/secrets-guard\.sh$'
+# An anchored command whose TARGET (the path right after anchor-root.sh) is an exempt hook.
+EXEMPT_WRAPPED_RE='/hooks/anchor-root\.sh [^ ]*/hooks/secrets-guard\.sh( |$)'
 
-# Anchored shape: the first program (optionally after `bash `) is .../hooks/anchor-root.sh,
-# followed by the real hook path.
-ANCHOR_RE='^(bash )?[^ ]*/hooks/anchor-root\.sh [^ ]+'
+# Anchored shape: `bash .../hooks/anchor-root.sh <real hook path>`. The explicit `bash` is
+# required: without it the wrapper runs by its exec bit, and a lost bit turns every gate's
+# exit 2 into a 126 that Claude Code treats as non-blocking.
+ANCHOR_RE='^bash [^ ]*/hooks/anchor-root\.sh [^ ]+'
 
 # anchor_violations <json-file>: print one line per offending command, nothing when clean.
 anchor_violations() {
-  jq -r --arg anchor "$ANCHOR_RE" --arg exempt "$EXEMPT_RE" '
+  jq -r --arg anchor "$ANCHOR_RE" --arg exempt "$EXEMPT_RE" --arg exwrap "$EXEMPT_WRAPPED_RE" '
     [.hooks // {} | to_entries[] | .value[]? | .hooks[]? | .command // empty] | .[]
-    | if test($exempt) then (if test($anchor) then "exempt-but-wrapped: \(.)" else empty end)
-      elif test($anchor) then empty
+    | if test($exempt) then empty
+      elif test($anchor) then (if test($exwrap) then "exempt-but-wrapped: \(.)" else empty end)
       else "unwrapped: \(.)" end
   ' "$1"
 }
@@ -40,7 +45,7 @@ trap 'rm -rf "$TMP"' EXIT
 echo "=== anchor lint: the checker itself ==="
 cat > "$TMP/bypass.json" <<'EOF'
 {"hooks":{"Stop":[{"hooks":[
-  {"type":"command","command":"${CLAUDE_PLUGIN_ROOT}/hooks/anchor-root.sh ${CLAUDE_PLUGIN_ROOT}/hooks/slop-cleaner.sh"},
+  {"type":"command","command":"bash ${CLAUDE_PLUGIN_ROOT}/hooks/anchor-root.sh ${CLAUDE_PLUGIN_ROOT}/hooks/slop-cleaner.sh"},
   {"type":"command","command":"${CLAUDE_PLUGIN_ROOT}/hooks/session-state-save.sh"},
   {"type":"command","command":"${CLAUDE_PLUGIN_ROOT}/hooks/secrets-guard.sh"}
 ]}]}}
@@ -61,6 +66,28 @@ OUT="$(anchor_violations "$TMP/exempt-wrapped.json")"
 case "$OUT" in
   exempt-but-wrapped:*) ok "fixture: flags a wrapped exempt entry" ;;
   *) bad "fixture: flags a wrapped exempt entry (got: ${OUT:-nothing})" ;;
+esac
+
+cat > "$TMP/exempt-substring.json" <<'EOF2'
+{"hooks":{"Stop":[{"hooks":[
+  {"type":"command","command":"${CLAUDE_PLUGIN_ROOT}/hooks/slop-cleaner.sh /hooks/secrets-guard.sh"}
+]}]}}
+EOF2
+OUT="$(anchor_violations "$TMP/exempt-substring.json")"
+case "$OUT" in
+  unwrapped:*) ok "fixture: an exempt path as a mere argument earns no exemption" ;;
+  *) bad "fixture: an exempt path as a mere argument earns no exemption (got: ${OUT:-nothing})" ;;
+esac
+
+cat > "$TMP/no-bash.json" <<'EOF3'
+{"hooks":{"Stop":[{"hooks":[
+  {"type":"command","command":"${CLAUDE_PLUGIN_ROOT}/hooks/anchor-root.sh ${CLAUDE_PLUGIN_ROOT}/hooks/slop-cleaner.sh"}
+]}]}}
+EOF3
+OUT="$(anchor_violations "$TMP/no-bash.json")"
+case "$OUT" in
+  unwrapped:*) ok "fixture: a wrapper call with no explicit bash is flagged" ;;
+  *) bad "fixture: a wrapper call with no explicit bash is flagged (got: ${OUT:-nothing})" ;;
 esac
 
 echo "=== anchor lint: the real dispatch tables ==="
