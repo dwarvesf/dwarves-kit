@@ -358,37 +358,25 @@ def cmd_lab_log(payload):
     return 0
 
 
-def _harvest_payload(payload):
-    """The core no-arg harvest, factored out so --stop-trigger can reuse it on a payload dict
-    (the no-arg main() reads the same payload from stdin)."""
-    tp = payload.get("transcript_path")
-    if not tp:
-        return 0
-    text = transcript_text(tp, int(os.environ.get("HARVEST_MAXCHARS", "12000")))
-    if not text.strip():
-        return 0
+def _stage_candidates(ledger, glossaries, candidates, extra_known=()):
+    """Dedup candidates against the ledger + glossaries, append the fresh rows, return them.
 
-    raw = run_extractor(PROMPT_HEAD + text)
-    candidates = extract_json_array(raw)
-    if not candidates:
-        return 0
+    Dedup-on-append race (ID-202): harvest.sh fires on PreCompact, and a single
+    long session (or several parallel subagent sessions sharing one repo) can
+    trigger concurrent harvest.py processes against the SAME ledger. Reading
+    existing_slugs() and appending were two separate unlocked steps, so two
+    processes could both read the ledger before either had appended, both decide
+    the same slug was new, and both append it -- observed as up to 6x duplicates.
+    Fix: hold a blocking exclusive flock across read-known + append, so concurrent
+    invocations serialize instead of racing (mirrors _run_harvest_locked's fcntl
+    pattern, but blocking -- a harvest here has real work to do, unlike the
+    stop-trigger single-flight which just skips).
 
-    ledger = os.environ.get("HARVEST_LEDGER", _default_ledger())
-    gl_env = os.environ.get("HARVEST_GLOSSARIES")
-    glossaries = gl_env.split(":") if gl_env else glob.glob(_default_glossary_glob())
+    extra_known is reserved for the sweep (extra files whose rows count as known);
+    the hook passes none and it is not read yet.
+    """
     fuzzy = _fuzzy_threshold()
     today = datetime.date.today().isoformat()
-
-    # Dedup-on-append race (ID-202): harvest.sh fires on PreCompact, and a single
-    # long session (or several parallel subagent sessions sharing one repo) can
-    # trigger concurrent harvest.py processes against the SAME ledger. Reading
-    # existing_slugs() and appending were two separate unlocked steps, so two
-    # processes could both read the ledger before either had appended, both decide
-    # the same slug was new, and both append it -- observed as up to 6x duplicates.
-    # Fix: hold a blocking exclusive flock across read-known + append, so concurrent
-    # invocations serialize instead of racing (mirrors _run_harvest_locked's fcntl
-    # pattern, but blocking -- a harvest here has real work to do, unlike the
-    # stop-trigger single-flight which just skips).
     os.makedirs(os.path.dirname(ledger), exist_ok=True)
     fresh = []
     with open(_ledger_lock_path(ledger), "a") as lockf:
@@ -413,6 +401,28 @@ def _harvest_payload(payload):
                 append_rows(ledger, fresh)
         finally:
             fcntl.flock(lockf, fcntl.LOCK_UN)
+    return fresh
+
+
+def _harvest_payload(payload):
+    """The core no-arg harvest, factored out so --stop-trigger can reuse it on a payload dict
+    (the no-arg main() reads the same payload from stdin)."""
+    tp = payload.get("transcript_path")
+    if not tp:
+        return 0
+    text = transcript_text(tp, int(os.environ.get("HARVEST_MAXCHARS", "12000")))
+    if not text.strip():
+        return 0
+
+    raw = run_extractor(PROMPT_HEAD + text)
+    candidates = extract_json_array(raw)
+    if not candidates:
+        return 0
+
+    ledger = os.environ.get("HARVEST_LEDGER", _default_ledger())
+    gl_env = os.environ.get("HARVEST_GLOSSARIES")
+    glossaries = gl_env.split(":") if gl_env else glob.glob(_default_glossary_glob())
+    fresh = _stage_candidates(ledger, glossaries, candidates)
 
     print(f"harvest: staged {len(fresh)} new (of {len(candidates)} extracted) -> {ledger}", file=sys.stderr)
     return 0
