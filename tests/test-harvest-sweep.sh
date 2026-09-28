@@ -1771,6 +1771,219 @@ assert_eq "stage1.log holds no extractor JSON" "True" "$(t8 log_no_json)"
 assert_eq "an idle run leaves no runs/ directory" "True" "$(t8 idle_no_runs_dir)"
 
 # ============================================================
+echo "=== T9 sweep ledgers ==="
+
+T9_OUT=$(KIT_DIR="$KIT_DIR" TD="$TD" T5_NOW="$T5_NOW" python3 - <<'PY'
+import datetime, hashlib, importlib.util, json, os, shlex, shutil, sqlite3, subprocess
+spec = importlib.util.spec_from_file_location("hs", os.path.join(os.environ["KIT_DIR"], "hooks", "harvest_sweep.py"))
+hs = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(hs)
+TD, NOW = os.environ["TD"], int(os.environ["T5_NOW"])
+STUB = os.path.join(os.environ["KIT_DIR"], "tests", "fixtures", "harvest-sweep", "stub-extractor.sh")
+P = lambda k, v: print("%s=%s" % (k, v))
+base = os.path.join(TD, "t9")
+repos = os.path.join(base, "repos")
+iso = lambda e: datetime.datetime.fromtimestamp(e, datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+def git(path, *args):
+    return subprocess.run(["git", "-C", path] + list(args), capture_output=True,
+                          text=True, check=True).stdout.strip()
+
+LEDGER_HEAD = "| date | item | kind | home | status |\n|---|---|---|---|---|\n"
+def lrow(item, status="queued"):
+    return "| 2026-09-01 | %s | insight | til | %s |\n" % (item, status)
+
+def mkgit(path, origin=None, extra_files=None):
+    os.makedirs(path)
+    subprocess.run(["git", "init", "-q", path], check=True)
+    git(path, "config", "user.email", "t@t.test")
+    git(path, "config", "user.name", "t")
+    for rel, text in (extra_files or {}).items():
+        fp = os.path.join(path, rel)
+        os.makedirs(os.path.dirname(fp), exist_ok=True)
+        with open(fp, "w") as fh:
+            fh.write(text)
+        git(path, "add", rel)
+    with open(os.path.join(path, "seed"), "w") as fh:
+        fh.write("x")
+    git(path, "add", "seed")
+    git(path, "commit", "-qm", "init")
+    if origin:
+        git(path, "remote", "add", "origin", origin)
+
+# ---- fixture repos: two same-basename repos, one with origin, one without ----
+repoO = os.path.join(repos, "o", "app")
+repoP = os.path.join(repos, "p", "app")
+mkgit(repoO, origin="git@github.com:dwarvesf/app.git", extra_files={
+    "_meta/learned-ledger.md": LEDGER_HEAD + lrow("known-repo-row"),
+    "_meta/learned-ledger.archive.md": LEDGER_HEAD + lrow("archived-repo-row"),
+    "learning/x/GLOSSARY.md": "# gloss\n\n## gloss-row\n\nbody text\n"})
+mkgit(repoP, extra_files={
+    "_meta/learned-ledger.md": LEDGER_HEAD + lrow("p-known-row"),
+    "_meta/learned-ledger.md.lock": ""})
+# git's --path-format=absolute resolves symlinks (/var -> /private/var on macOS),
+# so the hash slug is over the REAL path, matching the code under test.
+slugO = "dwarvesf__app"
+slugP = "app-" + hashlib.sha256(os.path.realpath(repoP).encode()).hexdigest()[:12]
+
+# ---- fixture repo with a deleted .claude/worktrees worktree ----
+mainr = os.path.join(repos, "mainr")
+mkgit(mainr, origin="https://github.com/acme/mainr.git")
+wt = os.path.join(mainr, ".claude", "worktrees", "wt1")
+git(mainr, "worktree", "add", "--detach", wt)
+shutil.rmtree(wt)
+git(mainr, "worktree", "prune")
+
+def empty_db(b):
+    dbp = os.path.join(b, "sessions.db")
+    conn = sqlite3.connect(dbp)
+    conn.execute("CREATE TABLE sessions (id TEXT PRIMARY KEY, working_directory TEXT NOT NULL,"
+                 " backend_type TEXT NOT NULL, model TEXT NOT NULL, agent_mode TEXT NOT NULL,"
+                 " created_at INTEGER NOT NULL, last_activity_at INTEGER NOT NULL,"
+                 " title TEXT, main_chain_id INTEGER, hidden INTEGER NOT NULL DEFAULT 0)")
+    conn.execute("CREATE TABLE message_nodes (row_id INTEGER PRIMARY KEY, session_id TEXT"
+                 " NOT NULL, node_id INTEGER NOT NULL, parent_node_id INTEGER,"
+                 " chat_message TEXT NOT NULL, created_at INTEGER NOT NULL)")
+    conn.commit(); conn.close()
+    return dbp
+
+root = os.path.join(base, "claude")
+os.environ["HARVEST_STATE_DIR"] = os.path.join(base, "state")
+os.environ["HARVEST_SWEEP_CLAUDE_ROOT"] = root
+os.makedirs(root)
+os.environ["HARVEST_SWEEP_DEVIN_DB"] = empty_db(base)
+os.environ["HARVEST_SWEEP_NOW"] = str(NOW)
+os.environ["HARVEST_EXTRACTOR"] = shlex.quote(STUB)
+
+def mk(sid, la, cwd):
+    d = os.path.join(root, "p")
+    os.makedirs(d, exist_ok=True)
+    path = os.path.join(d, sid + ".jsonl")
+    with open(path, "w") as fh:
+        for k in range(6):
+            fh.write(json.dumps({"type": "user" if k % 2 == 0 else "assistant", "cwd": cwd,
+                                 "timestamp": iso(la - (6 - k) * 10),
+                                 "message": {"content": [{"type": "text",
+                                              "text": "%s msg %d" % (sid, k)}]}}) + "\n")
+    os.utime(path, (la, la))
+
+def learn(item):
+    return {"item": item, "kind": "insight", "home": "til",
+            "why": "why %s" % item, "evidence": "evidence for %s" % item}
+
+# pre-seed the repoO sweep ledger: a queued row with no sidecar (the crash repair
+# case) plus an archive sibling (the DEC-70 dedup case)
+leddir = os.path.join(os.environ["HARVEST_STATE_DIR"], "sweep", "ledger")
+os.makedirs(leddir)
+with open(os.path.join(leddir, slugO + ".md"), "w") as fh:
+    fh.write(LEDGER_HEAD + lrow("crash-row"))
+with open(os.path.join(leddir, slugO + ".archive.md"), "w") as fh:
+    fh.write(LEDGER_HEAD + lrow("sweep-arch-row", status="flushed:abc"))
+
+mk("s-a", NOW - 7200, repoO)
+mk("s-b", NOW - 7200, repoP)
+mk("s-wt", NOW - 7200, wt)
+mk("s-nr", NOW - 7200, "/nonexistent/deep/path")
+os.environ["STUB_OUT"] = json.dumps({"learnings": [
+    learn(x) for x in ("shared-item", "known-repo-row", "archived-repo-row",
+                       "gloss-row", "sweep-arch-row", "crash-row", "fresh-row",
+                       "p-known-row")],
+    "sightings": []})
+
+# ---- AC11 snapshots before the run ----
+def snapshot(r):
+    return {"head": git(r, "rev-parse", "HEAD"),
+            "branch": git(r, "rev-parse", "--abbrev-ref", "HEAD"),
+            "config": open(os.path.join(r, ".git", "config")).read(),
+            "worktrees": git(r, "worktree", "list"),
+            "status": git(r, "status", "--porcelain"),
+            "meta": open(os.path.join(r, "_meta", "learned-ledger.md")).read()
+                    if os.path.exists(os.path.join(r, "_meta", "learned-ledger.md")) else None}
+before = {r: snapshot(r) for r in (repoO, repoP, mainr)}
+
+r = hs.run_selection(schedule_hours=48)
+sweep_led = os.path.join(os.environ["HARVEST_STATE_DIR"], "sweep", "ledger")
+
+def ledger_items(slug):
+    """Sorted col-2 items of a sweep ledger, None when the file does not exist."""
+    p = os.path.join(sweep_led, slug + ".md")
+    if not os.path.exists(p):
+        return None
+    items = []
+    for line in open(p):
+        cells = [c.strip() for c in line.split("|")]
+        if len(cells) >= 4 and cells[1].startswith("202"):
+            items.append(cells[2])
+    return sorted(items)
+
+P("processed", ",".join(sorted(r["claude"]["processed"])))
+P("ledO_items", ",".join(ledger_items(slugO) or []))
+P("ledP_exists", os.path.exists(os.path.join(sweep_led, slugP + ".md")))
+P("ledP_has_shared", "shared-item" in (ledger_items(slugP) or []))
+P("ledP_has_pknown", "p-known-row" in (ledger_items(slugP) or []))
+P("ledWT_exists", os.path.exists(os.path.join(sweep_led, "acme__mainr.md")))
+P("ledWT_items", ",".join(ledger_items("acme__mainr") or []))
+P("ledNR_exists", os.path.exists(os.path.join(sweep_led, "_no-repo.md")))
+
+# ---- sidecar rows ----
+side = [json.loads(l) for l in open(os.path.join(sweep_led, slugO + ".rows.jsonl"))]
+by_id = {s["row_id"]: s for s in side}
+fr = by_id.get(slugO + ":fresh-row", {})
+P("side_fresh", "%s|%s|%s|%s" % (fr.get("why"), fr.get("evidence"),
+                                 fr.get("source"), fr.get("lead_session_id")))
+P("side_crash", slugO + ":crash-row" in by_id)
+P("side_no_dupes", len(side) == len(by_id))
+P("side_no_known", slugO + ":known-repo-row" not in by_id)
+sideP = {s["row_id"] for s in (json.loads(l) for l in
+         open(os.path.join(sweep_led, slugP + ".rows.jsonl")))}
+P("sideP_shared", slugP + ":shared-item" in sideP and slugO + ":shared-item" in by_id)
+
+# ---- AC11: the repos are byte-identical after the run ----
+after = {r: snapshot(r) for r in (repoO, repoP, mainr)}
+P("repo_same", before == after)
+P("repoO_no_lock", not os.path.exists(os.path.join(repoO, "_meta", "learned-ledger.md.lock")))
+P("repoP_lock_kept", os.path.exists(os.path.join(repoP, "_meta", "learned-ledger.md.lock")))
+
+# ---- second run is a no-op for the ledgers and sidecars ----
+led_state = {f: open(os.path.join(sweep_led, f)).read() for f in os.listdir(sweep_led)}
+hs.run_selection(schedule_hours=48)
+led_state2 = {f: open(os.path.join(sweep_led, f)).read() for f in os.listdir(sweep_led)}
+P("second_run_same", led_state == led_state2)
+
+# ---- slug resolution edges ----
+P("slug_norepo", hs.repo_slug("/nonexistent/deep/path")[0])
+P("slug_wt", hs.repo_slug(wt)[0])
+P("slug_deep_in_wt_parent", hs.repo_slug(os.path.join(wt, "src", "pkg"))[0])
+P("slugP_shape", hs.repo_slug(repoP)[0] == slugP)
+P("slugO_shape", hs.repo_slug(repoO)[0])
+PY
+)
+t9() { printf '%s\n' "$T9_OUT" | sed -n "s/^$1=//p"; }
+
+assert_eq "T9: all four sessions processed" "s-a,s-b,s-nr,s-wt" "$(t9 processed)"
+assert_eq "AC26: repoO ledger has only the fresh, shared, and pre-seeded rows" "crash-row,fresh-row,p-known-row,shared-item" "$(t9 ledO_items)"
+assert_eq "AC26: the same-basename repo gets its own hash-slug ledger" "True" "$(t9 ledP_exists)"
+assert_eq "AC26: shared-item lands in both ledgers" "True" "$(t9 ledP_has_shared)"
+assert_eq "AC26: repoP's _meta row dedups too" "False" "$(t9 ledP_has_pknown)"
+assert_eq "AC1: a deleted-worktree cwd resolves to its main repo's slug" "True" "$(t9 ledWT_exists)"
+assert_eq "AC1: the deleted-worktree session staged into the main slug" "archived-repo-row,crash-row,fresh-row,gloss-row,known-repo-row,p-known-row,shared-item,sweep-arch-row" "$(t9 ledWT_items)"
+assert_eq "AC26: a cwd outside any repo lands in _no-repo.md" "True" "$(t9 ledNR_exists)"
+assert_eq "AC29: sidecar entry carries why, evidence, source, lead" "why fresh-row|evidence for fresh-row|claude/s-a|None" "$(t9 side_fresh)"
+assert_eq "AC29: the pre-seeded row's missing sidecar entry is repaired" "True" "$(t9 side_crash)"
+assert_eq "AC29: sidecar has no duplicate row ids" "True" "$(t9 side_no_dupes)"
+assert_eq "AC29: a deduped row gets no sidecar entry" "True" "$(t9 side_no_known)"
+assert_eq "AC26: row ids never collide across same-basename repos" "True" "$(t9 sideP_shared)"
+assert_eq "AC11: every fixture repo is byte-identical after the run" "True" "$(t9 repo_same)"
+assert_eq "AC11: no .lock file appears in a repo that had none" "True" "$(t9 repoO_no_lock)"
+assert_eq "AC11: an existing repo .lock survives and the read still works" "True" "$(t9 repoP_lock_kept)"
+assert_eq "AC2: a second run leaves ledgers and sidecars byte-identical" "True" "$(t9 second_run_same)"
+assert_eq "AC26: a nonexistent cwd slugs _no-repo" "_no-repo" "$(t9 slug_norepo)"
+assert_eq "AC1: the deleted worktree path slugs to its main repo" "acme__mainr" "$(t9 slug_wt)"
+assert_eq "AC1: a path under the deleted worktree slugs to its main repo" "acme__mainr" "$(t9 slug_deep_in_wt_parent)"
+assert_eq "AC26: a no-origin repo slugs <basename>-<12 hex of its path hash>" "True" "$(t9 slugP_shape)"
+assert_eq "AC26: an origin repo slugs <owner>__<name>" "dwarvesf__app" "$(t9 slugO_shape)"
+
+# ============================================================
 echo ""
 echo "=== Results ==="
 echo "Passed: $PASS / $TOTAL"

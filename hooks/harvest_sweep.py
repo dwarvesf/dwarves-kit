@@ -24,6 +24,7 @@ Env (tests point these at temp dirs):
                                    SWEEP_EXTRACTOR); the same seam the hook uses
 """
 import datetime
+import fcntl
 import glob
 import hashlib
 import importlib.util
@@ -671,11 +672,145 @@ def limit_state_row(source, failure):
 def sweep_process(t, text):
     """The default per-session step of run_selection. The sanitized extraction object
     (truthy, always a dict with both keys) when the call succeeded, an ExtractFailure
-    otherwise. Learnings stage and sightings record from this object in later tasks."""
+    otherwise. Learnings stage into the session repo's sweep ledger (with the
+    rows.jsonl sidecar); sightings record into patterns.jsonl from this object."""
     ok, obj, out, err = extract_session(t, text)
     if not ok:
         return ExtractFailure(out, err)
-    return sanitize_extraction(obj)
+    clean = sanitize_extraction(obj)
+    _stage_sweep(t, clean["learnings"])
+    return clean
+
+
+# ---- sweep ledgers and the row-context sidecar --------------------------------
+
+def repo_root_for(cwd):
+    """The main checkout of the repo a session cwd lives in, or None outside any repo.
+    A trailing /.claude/worktrees/<name> is stripped first (a deleted worktree leaves
+    no directory to run git in), then the walk climbs to the first directory that
+    exists, and `git rev-parse --git-common-dir` resolves a linked worktree to its
+    main repo (DEC-79, edge case 4)."""
+    cwd = re.sub(r"/\.claude/worktrees/[^/]+/?$", "", str(cwd or ""))
+    d = cwd
+    while d and not os.path.isdir(d):
+        d = os.path.dirname(d)
+    if not d:
+        return None
+    try:
+        r = subprocess.run(["git", "-C", d, "rev-parse", "--path-format=absolute",
+                            "--git-common-dir"],
+                           capture_output=True, text=True, timeout=5)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if r.returncode != 0:
+        return None
+    common = r.stdout.strip()
+    if not common:
+        return None
+    return common[:-len("/.git")] if common.endswith("/.git") else common
+
+
+def _origin_owner_name(url):
+    """(owner, name) from a remote URL, both GitHub forms plus their scp and ssh
+    kin: git@host:owner/name(.git), https://host/owner/name(.git), ssh://..., or a
+    filesystem path remote. () parts missing on any other shape."""
+    url = (url or "").strip()
+    m = re.match(r"^[^/@\s]+@[^:\s]+:(.+)$", url)          # git@host:owner/name.git
+    path = m.group(1) if m else None
+    if path is None:
+        m = re.match(r"^[a-zA-Z][a-zA-Z0-9+.-]*://[^/]+/(.+)$", url)  # https://host/owner/name
+        path = m.group(1) if m else url                  # a bare path also parses
+    parts = [p for p in path.split("/") if p]
+    if not parts:
+        return "", ""
+    name = parts[-1]
+    name = name[:-4] if name.endswith(".git") else name
+    owner = parts[-2] if len(parts) >= 2 else ""
+    return owner, name
+
+
+def repo_slug(cwd):
+    """(slug, root) for a session cwd (DEC-79). root is None outside any repo, which
+    slugs to _no-repo. With an origin URL the slug is <owner>__<name>; without one it
+    is <basename>-<first 12 hex of sha256(abspath)>, so two repos named the same
+    never share ledger/<slug>.md or a row id."""
+    root = repo_root_for(cwd)
+    if root is None:
+        return "_no-repo", None
+    url = ""
+    try:
+        r = subprocess.run(["git", "-C", root, "config", "--get", "remote.origin.url"],
+                           capture_output=True, text=True, timeout=5)
+        if r.returncode == 0:
+            url = r.stdout.strip()
+    except (OSError, subprocess.SubprocessError):
+        pass
+    owner, name = _origin_owner_name(url)
+    if owner and name:
+        return "%s__%s" % (owner, name), root
+    digest = hashlib.sha256(os.path.abspath(root).encode("utf-8")).hexdigest()[:12]
+    return "%s-%s" % (os.path.basename(root) or "repo", digest), root
+
+
+def _sidecar_path(ledger):
+    """ledger/<repo-slug>.rows.jsonl beside ledger/<repo-slug>.md (DEC-83)."""
+    return os.path.splitext(ledger)[0] + ".rows.jsonl"
+
+
+def _write_sidecar(ledger, slug, t, learnings):
+    """The sidecar entry per staged row, under the ledger's own .lock right after
+    _stage_candidates. Idempotent by row id: an entry already present is never
+    rewritten, and a ledger row that lacks one gets it -- the crash repair path,
+    where the ledger append landed but the sidecar write did not (DEC-83)."""
+    lockp = harvest._ledger_lock_path(ledger)
+    with open(lockp, "a") as lockf:
+        fcntl.flock(lockf, fcntl.LOCK_EX)
+        try:
+            present = harvest._slugs_in_ledger_file(ledger)
+            have = set()
+            for row in _jsonl_rows(_sidecar_path(ledger)):
+                if isinstance(row, dict) and row.get("row_id"):
+                    have.add(row["row_id"])
+            fresh_rows = []
+            for l in learnings:
+                if not isinstance(l, dict):
+                    continue
+                item = harvest.slugify(l.get("item"))
+                row_id = "%s:%s" % (slug, item)
+                if not item or item not in present or row_id in have:
+                    continue
+                have.add(row_id)
+                fresh_rows.append({"row_id": row_id, "why": l.get("why") or "",
+                                   "evidence": l.get("evidence") or "",
+                                   "source": "%s/%s" % (t.get("source"),
+                                                        t.get("session_id")),
+                                   "lead_session_id": t.get("lead_session_id")})
+            if fresh_rows:
+                with open(_sidecar_path(ledger), "a", encoding="utf-8") as fh:
+                    for row in fresh_rows:
+                        fh.write(json.dumps(row, sort_keys=True) + "\n")
+        finally:
+            fcntl.flock(lockf, fcntl.LOCK_UN)
+
+
+def _stage_sweep(t, learnings):
+    """Stage one session's learnings into its repo slug's sweep ledger: dedup through
+    the shared _stage_candidates with the repo's learning/*/GLOSSARY.md files as
+    glossaries and, as extra_known, the sweep ledger's .archive.md plus the repo's
+    _meta/learned-ledger.md and its .archive.md (DEC-85, DEC-70). The sidecar write
+    follows under the same .lock (DEC-83). Repo files are only read, never created."""
+    if not learnings:
+        return
+    slug, root = repo_slug(t.get("cwd"))
+    ledger = os.path.join(harvest._state_dir(), "sweep", "ledger", slug + ".md")
+    glossaries = sorted(glob.glob(os.path.join(
+        root, "learning", "*", "GLOSSARY.md"))) if root else []
+    extra = [harvest._archive_path(ledger)]
+    if root:
+        repo_ledger = os.path.join(root, "_meta", "learned-ledger.md")
+        extra += [repo_ledger, harvest._archive_path(repo_ledger)]
+    harvest._stage_candidates(ledger, glossaries, learnings, extra_known=extra)
+    _write_sidecar(ledger, slug, t, learnings)
 
 
 class Stage1Log(object):

@@ -241,15 +241,61 @@ def _is_fuzzy_dup(slug, known, threshold):
     return any(_levenshtein(slug, k) <= threshold for k in known)
 
 
+def _slugs_in_ledger_file(path):
+    """Col-2 slugs of every data row in a ledger-shaped file (any status, so a flushed
+    or archived row still suppresses a re-stage). Missing file -> empty set."""
+    slugs = set()
+    if not os.path.isfile(path):
+        return slugs
+    for line in open(path, encoding="utf-8"):
+        cells = [c.strip() for c in line.split("|")]
+        # table row: ['', date, item, kind, home, status, '']
+        if len(cells) >= 4 and re.match(r"\d{4}-\d{2}-\d{2}$", cells[1] or ""):
+            slugs.add(slugify(cells[2]))
+    return slugs
+
+
+def _covering_lock(path):
+    """The .lock guarding a ledger file: <file>.lock, or for an .archive sibling the
+    base ledger's .lock (learned-ledger.archive.md -> learned-ledger.md.lock)."""
+    base, ext = os.path.splitext(path)
+    if base.endswith(".archive"):
+        path = base[:-len(".archive")] + ext
+    return path + ".lock"
+
+
+def _extra_known_slugs(paths, held_lock=None):
+    """Slugs from extra known-files (DEC-85). Each file is read only if it exists, and
+    only under its covering .lock when that lock file already exists -- opened
+    read-only without O_CREAT, so a repo read never creates a file (DEC-86). With no
+    lock file the read goes ahead unlocked. The caller's own held lock (the ledger's
+    .lock, which also covers its .archive sibling) is skipped by realpath."""
+    held = os.path.realpath(held_lock) if held_lock else None
+    locks = {}
+    for p in paths:
+        lock = _covering_lock(p)
+        rp = os.path.realpath(lock)
+        if rp != held and rp not in locks and os.path.exists(lock):
+            locks[rp] = lock
+    fds = []
+    try:
+        for lock in locks.values():
+            fd = os.open(lock, os.O_RDONLY)
+            fcntl.flock(fd, fcntl.LOCK_SH)
+            fds.append(fd)
+        slugs = set()
+        for p in paths:
+            slugs |= _slugs_in_ledger_file(p)
+        return slugs
+    finally:
+        for fd in fds:
+            fcntl.flock(fd, fcntl.LOCK_UN)
+            os.close(fd)
+
+
 def existing_slugs(ledger, glossaries):
     """Slugs already known: ledger col-2 + any glossary token that matches a slug shape."""
-    slugs = set()
-    if os.path.isfile(ledger):
-        for line in open(ledger, encoding="utf-8"):
-            cells = [c.strip() for c in line.split("|")]
-            # table row: ['', date, item, kind, home, status, '']
-            if len(cells) >= 4 and re.match(r"\d{4}-\d{2}-\d{2}$", cells[1] or ""):
-                slugs.add(slugify(cells[2]))
+    slugs = _slugs_in_ledger_file(ledger)
     for gpath in glossaries:
         if os.path.isfile(gpath):
             # headings only (## concept), not body prose: scanning the whole body made
@@ -372,8 +418,10 @@ def _stage_candidates(ledger, glossaries, candidates, extra_known=()):
     pattern, but blocking -- a harvest here has real work to do, unlike the
     stop-trigger single-flight which just skips).
 
-    extra_known is reserved for the sweep (extra files whose rows count as known);
-    the hook passes none and it is not read yet.
+    extra_known: extra ledger-shaped files whose rows count as known slugs (the
+    sweep passes its ledger's .archive.md plus the repo's _meta/learned-ledger.md
+    pair). Each is read only if it exists, under its covering .lock when that file
+    exists, opened read-only without O_CREAT (DEC-86).
     """
     fuzzy = _fuzzy_threshold()
     today = datetime.date.today().isoformat()
@@ -383,6 +431,8 @@ def _stage_candidates(ledger, glossaries, candidates, extra_known=()):
         fcntl.flock(lockf, fcntl.LOCK_EX)
         try:
             known = existing_slugs(ledger, glossaries)
+            known |= _extra_known_slugs(extra_known,
+                                        held_lock=_ledger_lock_path(ledger))
             seen = set()
             for c in candidates:
                 if not isinstance(c, dict):
