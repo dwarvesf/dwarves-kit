@@ -83,7 +83,7 @@ tokens at the edges (intent in, proof out), not in between.
 | M8 | Mission install (5 layers, pieces cited by path and hash, agent derives its own delta) | handoff skill + context-readiness hook | PARK. Unpark on a recorded cold-pickup failure (a handoff whose receiver acted on a stale premise) |
 | M9 | Context gate: only context-holders author research prompts or adversarial passes | the kit's validators are fresh-context by design | SKIP as a rule. Both are right for different jobs: fresh context verifies claims, a context-holder judges goal fit. The kit's intent-in edge (think/grill) is already the context-holder |
 | M10 | Recursive proof loop, "doghouse to moonbase" | covered: `.claude/memory/megagoal-proof-ceremony-rot.md` (ops-toolkit) records the same rot | SKIP, covered |
-| M11 | Seats, pods, rigs, durable queue, tmux messaging | Orca orchestration skill, board state machine with closure reasons | SKIP. OpenRig issues #79, #86, #81, #64, #48 are all provider-TUI detection drift |
+| M11 | Seats, pods, rigs, durable queue, tmux messaging | Orca orchestration ships the primitives but has zero use (see Operator review) | SKIP the OpenRig runtime; ABSORB the mechanism on Orca, D7. OpenRig issues #79, #86, #81, #64, #48 are all provider-TUI detection drift |
 | M12 | "Mind viruses" / epidemiology rig | `kit:memory-tidy` | SKIP, unfalsifiable anecdote |
 
 On onboarding, a challenge to the premise: OpenRig does not have little structure. It
@@ -165,7 +165,61 @@ guarantee (its own README). Any future trial runs in a throwaway HOME. No secret
 - OpenRig docs not read: `product-management-pass.md`, most of `product-journey-sdlc.md`,
   `skills/_canonical/`.
 
-## Build order (proposed, not filed)
+## Operator review (same day)
+
+The operator named two things this record undervalued: work managed by agent status,
+and configuration flexibility. Both hold up on re-check. M11 was marked SKIP as
+"covered by Orca", and that claim was covered on paper only.
+
+| Claim re-checked | Evidence | Revised reading |
+|---|---|---|
+| Orca covers status-driven orchestration | Orca ships `orchestration task-create/task-list/task-update`, DAGs, `dispatch`, supervised `worker-start`, `gate-create`, a mailbox, `worktree ps`. `orca orchestration run-list` shows no run; no kit or ops-toolkit code calls `orca orchestration` (M) | Primitives present, unused. The kit dispatches in-process subagents that no status surface can see |
+| The kit is as configurable as OpenRig | `kit.toml` has 20 sections of knobs (gates, modules, per-command settings); lanes and phases live in `docs/WORKFLOW.md` and command prose, not data (M) | OpenRig composes the team (RigSpec: pods, members, runtime, model, startup files, culture file) and the pipeline (a per-mission component menu). The kit tunes one fixed pipeline |
+
+What OpenRig does that the kit lacks (`docs/reference/agent-state-taxonomy.md`):
+
+```
+ queue row (one owner, append-only transitions)      seat (stable address, e.g. impl@dev)
+            \                                            /
+             +-------- read-time join, never stored ----+
+                              |
+     PARKED      = seat idle or blocked on input  AND  it owns an open row   (dropped baton)
+     HELD        = deliberate hold with a named owner and an armed wake
+     DONE-UNSEEN = finished, nobody consumed the result
+                              |
+            orchestrator reads the view as its "GPS": next ready row, stuck seats
+```
+
+State has three separate axes (session present or absent, activity working or idle or
+unknown, resumability), and "unknown" is an honest value, never guessed.
+
+**D7. Work by agent status, on Orca.** Map a mega sub-goal or board row to an Orca task,
+dispatch each to a supervised Orca worker, and derive PARKED, HELD, and DONE-UNSEEN from
+task status joined with worker activity. The orchestrator asks the view for the next
+ready task instead of holding the sequence in context. Orca, not OpenRig, because it is
+already installed, the operator drives it from the phone, and OpenRig's weak spot is
+exactly its status detection. Smallest deliverable: a `--backend orca` path for one mega
+run, trialed on a real mega. Measures: stranded work caught, orchestrator context size,
+operator interventions. Over-test. Negative control: stop a worker mid-task; the view
+must show PARKED within one poll.
+
+**D8. Config as composition.** Two steps. First, lanes become data: `[lane.<name>]
+phases = [...]` in `kit.toml`, shipped defaults equal today's lanes, a repo or mission
+may override. D1 and D2 then become data changes, not prose rewrites. Second, after D7
+proves the worker path, `[role.<name>]` (model, runtime, startup reading list, skills)
+gives dispatch a seat concept. Onboarding then starts from a starter template (as
+OpenRig's `first-project` does), not a concept tour. Over-test. Negative control: a repo
+override that drops `review` from `normal` must show the phase skipped in the ledger, and
+the ship-gate hard paths must still block.
+
+Caveat: OpenRig publishes no measurement that status-driven orchestration beats a single
+orchestrator. Its full RigSpec example is large, and flexibility grows the YAML surface
+the operator maintains. D7 trials on one mega before anything is rebuilt around it.
+
+Revised build order: D4 shipped (kit #810). D5, then D7 trial and D8 step one in
+parallel, then D1 + D2 as data on D8, then D3, then D6 on starter templates.
+
+## Build order (original, superseded above)
 
 D4 now (in flight). D5 next, because it produces the baseline number. Then D1 + D2 (one
 change to classification and spec header), then D3 (the big token cut, measured by D5),
