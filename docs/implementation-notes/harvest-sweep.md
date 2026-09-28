@@ -82,6 +82,11 @@ Deltas from SPEC-357 (phase 1, kit-side tasks T1 to T19, T13b, T22). Nothing her
 - Change: `_jsonl_rows(path)` is factored out of `load_launch_records`, which now calls it. The known-slug reader uses it too.
 - Tests: the suite exports `HARVEST_EXTRACTOR` pointing at `tests/fixtures/harvest-sweep/stub-extractor.sh`, as a guard against any test reaching a real model. The argv test unsets it and puts the stub first on PATH as `claude`. The T6 block sets `umask 022` so the AC24 control is not vacuous under a stricter umask.
 
+## 2026-09-29 Devin adapter checked against the real sessions.db (pre-step before T7a)
+- Read-only run of `list_devin_sessions`/`load_devin` against `~/.local/share/devin/cli/sessions.db` (10,024 nodes, 53 sessions incl. `simple-tango`, `held-duke`). Roles, content, tool calls, `working_directory`, and the main-chain walk all come out right; no adapter change needed.
+- Fixture fix: real `tool_calls` entries are `{"id", "name", "arguments": <object>, "index", "kind": "function"}`, top-level `name`, never the OpenAI `function.name` envelope the fixture used. `make-devin-db.sh` now uses the real shape; the adapter's `call.get("name") or ...function.name` chain stays as a fallback. Every real row also carries `message_id` and `metadata`; added to the fixture. `content` was a plain string on all 10,024 nodes, the block-list fixture row stays only as defensive coverage of `_devin_text`, and is marked as such in the fixture header.
+- Resolved open question (DEC-16/DEC-79): the `chat_message` shape is now observed, not spec-derived.
+
 ## 2026-09-29 Handoff after T6: state for the next builder
 - Context: the operator moved the remaining tasks to Devin workers. T1 to T6 (T5 split as T5a, T5b) are built, verified by a fresh task verifier, and marked done in the spec with their verification-log entries. The next task is T7a. Nothing is uncommitted.
 - Order still to build, serially (every one edits `hooks/harvest_sweep.py`, most also `hooks/harvest.py` or the test file): T7a, T7b, T8, T9, T10, T11, T12, T13b, T13, T14, T22, then T15, T16, T17, T18, T19. Rollout tasks T24, T20, T20b, T23, T21 stay with the operator.
