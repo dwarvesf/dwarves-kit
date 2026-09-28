@@ -16,6 +16,13 @@ Spec: `docs/specs/SPEC-332-safety-gate-quoted-split.md` (revision 7). Change: `h
 | Feature registry | `bash lib/registry/feature-registry.sh check --fix` | `docs/FEATURES.md regenerated`, committed |
 | Cost | a 28 KB `python3 -c "x = 1; ..."` command through the hook | 0.4 s (master: 17 s); 30 nested false `$((` frames: 0.04 s |
 
+## Test plan coverage
+
+| Test plan row | Evidence |
+|---|---|
+| Q1 to Q91 | `tests/test-hooks.sh`, one `assert_exit` per row, labelled `Q<n>:`; `Passed: 605 / 605` at `d175edcf` |
+| NC1 to NC7 | Negative controls table below |
+
 ## Red on master
 
 The 63 Q rows that fail against master's hook: Q1 to Q7, Q9 to Q18, Q27, Q29 to Q50, Q54 to Q57, Q59, Q60, Q62 to Q65, Q67, Q71 to Q76, Q81, Q83 to Q86, Q88, and Q91. Q54 is a false positive master had (a continued `rm -rf` of artifacts); the rest are bypasses master allowed.
