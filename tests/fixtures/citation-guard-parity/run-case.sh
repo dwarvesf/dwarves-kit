@@ -30,7 +30,7 @@ before=$(cd "$ROOT" && find . -type f | LC_ALL=C sort)
 rc=0
 # a UTF-8 locale, as Claude Code passes the user's: a hook whose awk or tr is locale-
 # sensitive must pin LC_ALL=C itself (macOS awk dies on a non-ASCII byte under UTF-8)
-err=$(cd "$ROOT" && printf '%s' "$payload" | env -i PATH="$PATH" HOME="$TMP/home" LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8 "${envs[@]}" "$@" 2>&1 >"$TMP/stdout") || rc=$?
+err=$(cd "$ROOT" && printf '%s' "$payload" | env -i PATH="$PATH" HOME="$TMP/home" LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8 ${envs[@]+"${envs[@]}"} "$@" 2>&1 >"$TMP/stdout") || rc=$?
 out=$(cat "$TMP/stdout")
 # the log the hook was told to write: the harness default, the case's absolute path, or
 # the documented default under HOME when the case unsets it

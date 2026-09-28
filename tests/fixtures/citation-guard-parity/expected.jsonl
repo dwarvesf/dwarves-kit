@@ -58,3 +58,4 @@
 {"name":"crash-text-null","rc":0,"stdout":"","stderr":"","log":"","stray":""}
 {"name":"line-zero-missing","rc":2,"stdout":"","stderr":"citation-guard: unresolved citations: nope.md:0 (no such file)","log":"?\tnope.md:0 (no such file)","stray":""}
 {"name":"crash-text-null-before-ref","rc":0,"stdout":"","stderr":"","log":"","stray":""}
+{"name":"lone-surrogate-final","rc":0,"stdout":"","stderr":"","log":"","stray":""}

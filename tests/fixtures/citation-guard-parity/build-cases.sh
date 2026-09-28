@@ -110,4 +110,8 @@ done
 case_ line-zero-missing "$S" '{}' 'see nope.md:0 and nope.md:00 and a.md:00'
 { jq -c -n '{type:"assistant", message:{content:[{type:"text", text:null}]}}'; jq -c -n '{type:"assistant", message:{content:[{type:"text", text:"now nope.md:1"}]}}'; } > "$T/crash-text-null-before-ref.jsonl"
 jq -c -n '{name:"crash-text-null-before-ref", env:{"CITATION_GUARD_STRICT":"1"}, payload:{transcript_path:"transcripts/crash-text-null-before-ref.jsonl", cwd:"ROOT"}}' >> "$HERE/cases.jsonl"
-echo "built $(wc -l < "$HERE/cases.jsonl" | tr -d ' ') cases (round 2 folded)"
+
+# fresh review: a lone high surrogate in the final text (json.loads accepts it)
+{ jq -c -n '{type:"assistant", message:{content:[{type:"text", text:"old gone.md:9"}]}}'; printf '%s\n' '{"type":"assistant","message":{"content":[{"type":"text","text":"done \ud83d ok"}]}}'; } > "$T/lone-surrogate-final.jsonl"
+jq -c -n '{name:"lone-surrogate-final", env:{"CITATION_GUARD_STRICT":"1"}, payload:{transcript_path:"transcripts/lone-surrogate-final.jsonl", cwd:"ROOT"}}' >> "$HERE/cases.jsonl"
+echo "built $(wc -l < "$HERE/cases.jsonl" | tr -d ' ') cases (review folded)"

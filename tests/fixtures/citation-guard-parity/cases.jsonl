@@ -58,3 +58,4 @@
 {"name":"crash-text-null","env":{"CITATION_GUARD_STRICT":"1"},"payload":{"transcript_path":"transcripts/crash-text-null.jsonl","cwd":"ROOT"}}
 {"name":"line-zero-missing","env":{"CITATION_GUARD_STRICT":"1"},"payload":{"transcript_path":"transcripts/line-zero-missing.jsonl","cwd":"ROOT"}}
 {"name":"crash-text-null-before-ref","env":{"CITATION_GUARD_STRICT":"1"},"payload":{"transcript_path":"transcripts/crash-text-null-before-ref.jsonl","cwd":"ROOT"}}
+{"name":"lone-surrogate-final","env":{"CITATION_GUARD_STRICT":"1"},"payload":{"transcript_path":"transcripts/lone-surrogate-final.jsonl","cwd":"ROOT"}}

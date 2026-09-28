@@ -37,7 +37,9 @@ tp=$(jq -r '.transcript_path | strings' <<<"$INPUT")
 # newline-join of text blocks from the LAST assistant entry that has any.
 text=$(jq -nRr '
   def truthy: . != null and . != false and . != 0 and . != "" and . != [] and . != {};
-  reduce (inputs | fromjson?) as $o ({t: "", ok: true};
+  # A lone high surrogate (\ud83d with no low half) fails fromjson; json.loads
+  # accepts it, so swap it for U+FFFD and parse again before skipping the line.
+  reduce (inputs | (fromjson? // (gsub("\\\\u[dD][89abAB][0-9a-fA-F]{2}(?!\\\\u[dD][c-fC-F])"; "\\ufffd") | fromjson?))) as $o ({t: "", ok: true};
     if .ok | not then .
     elif ($o | type) != "object" then .ok = false
     elif ($o.type // "") != "assistant" then .
@@ -52,7 +54,7 @@ text=$(jq -nRr '
             end
         end
     end)
-  | if .ok then .t else "" end' <"$tp") || exit 0
+  | if .ok then .t else "" end' 2>/dev/null <"$tp") || exit 0
 [ -n "$text" ] || exit 0
 
 # Strip code and URLs, then emit deduped "path<TAB>line" refs in first-seen
@@ -68,6 +70,8 @@ refs=$(printf '%s' "$text" | jq -Rsr '
   | .o[]' 2>/dev/null || true)
 [ -n "$refs" ] || exit 0
 
+# A truthy non-string cwd crashed the Python (exit 1, never a block); decline too.
+jq -e '(.cwd | . == null or . == false or . == 0 or . == "" or . == [] or . == {} or type == "string")' <<<"$INPUT" >/dev/null 2>&1 || exit 0
 root=${CITATION_GUARD_ROOT:-}
 [ -n "$root" ] || root=$(jq -r '.cwd | strings' <<<"$INPUT")
 [ -n "$root" ] || root=$PWD
@@ -85,7 +89,7 @@ while IFS=$'\t' read -r path num; do
   fi
   # jq -R yields one input per line and counts a trailing partial line, which
   # reproduces Python's line iteration without a wc + tail + od dance.
-  if ! n=$(jq -Rn 'reduce inputs as $_ (0; . + 1)' <"$target" 2>/dev/null); then
+  if ! n=$(jq -Rn 'reduce inputs as $_ (0; . + 1)' 2>/dev/null <"$target"); then
     bad="${bad:+$bad; }$path:$num (unreadable)"
     continue
   fi
@@ -112,7 +116,7 @@ case $logp in
         if (.sessionId | truthy) then .sessionId
         elif (.session_id | truthy) then .session_id
         else "?" end' <<<"$INPUT")
-      printf '%s\t%s\t%s\n' "$(date +%s)" "$sid" "$bad" >>"$logp" 2>/dev/null || true
+      printf '%s\t%s\t%s\n' "$(date +%s)" "$sid" "$bad" 2>/dev/null >>"$logp" || true
     fi
     ;;
 esac
