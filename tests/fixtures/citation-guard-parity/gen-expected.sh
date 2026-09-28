@@ -20,6 +20,6 @@ done < "$HERE/cases.jsonl"
 # on a non-object payload and on three malformed transcript shapes; the port exits 0
 # silently, like every other malformed input.
 tmpf="$(mktemp)"
-jq -c 'if (.name | IN("non-object-payload", "crash-nonobject-line", "crash-message-string", "crash-text-null")) then .rc = 0 | .stderr = "" | .log = "" | .stray = "" else . end' "$HERE/expected.jsonl" > "$tmpf"
+jq -c 'if (.name | IN("non-object-payload", "crash-nonobject-line", "crash-message-string", "crash-text-null", "crash-text-null-before-ref")) then .rc = 0 | .stdout = "" | .stderr = "" | .log = "" | .stray = "" else . end' "$HERE/expected.jsonl" > "$tmpf"
 mv -f "$tmpf" "$HERE/expected.jsonl"
 echo "wrote $(wc -l < "$HERE/expected.jsonl" | tr -d ' ') cases from $REV"

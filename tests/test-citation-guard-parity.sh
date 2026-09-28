@@ -24,8 +24,9 @@ echo "citation-guard parity: $pass passed, $fail failed"
 
 # Latency: a Stop hook reads the whole transcript, and a long session's transcript runs to
 # tens of MB, with multi-MB single lines (tool results). A ~20 MB transcript must check well inside the hook timeout; the budget is
-# 500 ms on an idle machine (the Python took 72 ms), and the assertion allows 2 s so a
-# loaded machine does not flake it, which still catches a slurp-the-file jq pass.
+# 500 ms on an idle machine, and the assertion allows 2 s so a loaded machine does not
+# flake it. (A slurping `jq -s` is fast enough here; NC5 and `nonjson-before-final` catch
+# it instead, because it aborts at the first line that is not JSON.)
 T="$(mktemp -d)"
 filler=$(head -c 5000 /dev/zero | tr '\0' 'x')
 big=$(head -c 5000000 /dev/zero | tr '\0' 'y')

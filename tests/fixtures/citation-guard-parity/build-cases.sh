@@ -105,4 +105,9 @@ case_ cwd-empty-string "$S" '{"cwd":""}' 'see a.md:6'
 for n in nonjson-before-final truncated-last-line empty-text-block-last text-block-no-key crash-nonobject-line crash-message-string crash-text-null; do
   jq -c -n --arg n "$n" '{name:$n, env:{"CITATION_GUARD_STRICT":"1"}, payload:{transcript_path:("transcripts/" + $n + ".jsonl"), cwd:"ROOT"}}' >> "$HERE/cases.jsonl"
 done
-echo "built $(wc -l < "$HERE/cases.jsonl" | tr -d ' ') cases (round 1 folded)"
+
+# validation round 2 (SPEC-356 rev 3)
+case_ line-zero-missing "$S" '{}' 'see nope.md:0 and nope.md:00 and a.md:00'
+{ jq -c -n '{type:"assistant", message:{content:[{type:"text", text:null}]}}'; jq -c -n '{type:"assistant", message:{content:[{type:"text", text:"now nope.md:1"}]}}'; } > "$T/crash-text-null-before-ref.jsonl"
+jq -c -n '{name:"crash-text-null-before-ref", env:{"CITATION_GUARD_STRICT":"1"}, payload:{transcript_path:"transcripts/crash-text-null-before-ref.jsonl", cwd:"ROOT"}}' >> "$HERE/cases.jsonl"
+echo "built $(wc -l < "$HERE/cases.jsonl" | tr -d ' ') cases (round 2 folded)"
