@@ -64,6 +64,21 @@ and this filesystem is case-insensitive, so `HANDOFF*.md` matches any basename s
 task's own subject matter. Renamed to `docs/verification/session-handoffs-archive-skip.md`
 (confirmed un-ignored via `git check-ignore -v`), no content change otherwise.
 
+## Operator override: name denylist replaced with a one-level scan
+
+After the first implementation shipped the `-prune`/`-name` denylist (commit `359d8836`,
+DEC-A), Han reviewed and rejected it: a denylist of four names breaks the next time a repo
+archives into a fifth convention, and a subdirectory rule needs no list at all. Replaced with
+`find "$d" -maxdepth 1 -type f -name '*.md'`: any file not sitting directly in a scan root
+counts as consumed, regardless of the subdirectory's name. This also carries forward the
+ancestor-path fix for free, a one-level scan performs no path-substring match at all, so an
+ancestor segment above the scan root is structurally never examined. Verified before the
+change: no repo under `~/workspace/tieubao` keeps a live handoff in a subdirectory of either
+scan root. Spec DEC-A moved to rejected (approach 3), DEC-B added, Status reset to APPROVED.
+Test suite cases `[16]`-`[19]` (built around the four-name fixture) replaced with cases
+proving the design generalizes: an arbitrarily-named subdirectory (`old/`, not on any list)
+excluded, plus the original named shapes still excluded, plus the ancestor case kept.
+
 ## Gate-ledger entries recorded post-implementation
 
 `Build ran "bash lib/session/tests/test-handoffs.sh: smoke: all 22 passed"` is the only

@@ -253,24 +253,25 @@ limout="$(bash "$HO" list --repo "$CAPREPO" --limit 2)"
 limshown=$(printf '%s\n' "$limout" | grep -c '^[0-9]\+d ')
 if [[ "$limshown" -eq 2 && "$limout" == *"+5 more"* ]]; then ok "--limit 2: $limshown shown, +5 more"; else no "wrong --limit output: $limout"; fi
 
-# --- archive/ and nested .claude/ exclusion, plus the ancestor-path fix ----
+# --- one-level scan: any subdirectory is consumed, plus the ancestor-path fix ----
 # Own fixture repos throughout: $REPO above backs the exact-count assertions
 # in [1]/[4]/[6], so new files never land there.
 
-echo "[16] archive/, _archive/, and nested .claude/ excluded"
+echo "[16] an arbitrarily-named subdirectory (not on any list) is excluded"
 ARCREPO="$(mktemp -d)"
-mkdir -p "$ARCREPO/.claude/handoffs/archive" \
+mkdir -p "$ARCREPO/_meta/handoffs/old" \
+         "$ARCREPO/.claude/handoffs/archive" \
          "$ARCREPO/.claude/handoffs/.claude/session-state" \
-         "$ARCREPO/_meta/handoffs/archive" \
          "$ARCREPO/_meta/handoffs/_archive"
-cat > "$ARCREPO/.claude/handoffs/archive/old.md" <<'EOF'
-# Handoff: archived under .claude/handoffs/archive
+cat > "$ARCREPO/_meta/handoffs/old/x.md" <<'EOF'
+# Handoff: nested under an arbitrary name, not done/_archive/archive/.claude
 
 ## Next
-This must never show up: archived.
+This must never show up: a one-level scan excludes any subdirectory, not
+just the four names an earlier denylist design would have picked.
 EOF
-cat > "$ARCREPO/_meta/handoffs/archive/old.md" <<'EOF'
-# Handoff: archived under _meta/handoffs/archive
+cat > "$ARCREPO/.claude/handoffs/archive/old.md" <<'EOF'
+# Handoff: archived under .claude/handoffs/archive
 
 ## Next
 This must never show up: archived.
@@ -301,10 +302,10 @@ Still open.
 EOF
 
 arcout="$(bash "$HO" list --repo "$ARCREPO")"
-if [[ "$arcout" != *"archive/old.md"* && "$arcout" != *"session-state/foo.md"* ]]; then
-  ok "archived/nested paths excluded: $arcout"
+if [[ "$arcout" != *"old/x.md"* && "$arcout" != *"archive/old.md"* && "$arcout" != *"session-state/foo.md"* ]]; then
+  ok "arbitrary and named subdirectory paths excluded: $arcout"
 else
-  no "archived/nested paths leaked: $arcout"
+  no "a nested path leaked: $arcout"
 fi
 
 echo "[17] live files under both scan roots present, exact count 2"
@@ -338,9 +339,9 @@ else
   no "a .claude/ ancestor blanked a scan root: $cout"
 fi
 
-echo "[19] only-excluded repo: honest 'no handoffs'"
+echo "[19] only-excluded repo (arbitrary + named subdirectories): honest 'no handoffs'"
 EXREPO="$(mktemp -d)"
-mkdir -p "$EXREPO/.claude/handoffs/archive" "$EXREPO/_meta/handoffs/_archive"
+mkdir -p "$EXREPO/.claude/handoffs/archive" "$EXREPO/_meta/handoffs/_archive" "$EXREPO/_meta/handoffs/old"
 cat > "$EXREPO/.claude/handoffs/archive/old.md" <<'EOF'
 # Handoff: archived
 
@@ -349,6 +350,12 @@ Never shows up.
 EOF
 cat > "$EXREPO/_meta/handoffs/_archive/old.md" <<'EOF'
 # Handoff: archived
+
+## Next
+Never shows up.
+EOF
+cat > "$EXREPO/_meta/handoffs/old/x.md" <<'EOF'
+# Handoff: arbitrary subdirectory
 
 ## Next
 Never shows up.
