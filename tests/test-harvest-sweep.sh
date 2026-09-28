@@ -2292,6 +2292,38 @@ assert_eq "AC23: the lane call itself is classify plus the one query arg" "class
 
 # ============================================================
 echo ""
+echo "=== T12 sweep_report lint flag ==="
+
+# AC10: a `## Harvest sweep:` report is its own report kind in report-lint.sh
+# (sweep_report, separate from follow_report so the Seam rule survives): every
+# Built item opens with REPORTED, Seam stays required, and a wrap-mode report
+# with the harvest SKIPPED lines still passes.
+LINT="$KIT_DIR/lib/wrap/report-lint.sh"
+FX="$KIT_DIR/tests/fixtures/harvest-sweep"
+
+out="$(bash "$LINT" "$FX/report-reported-ok.md" 2>&1)"; rc=$?
+assert_eq "AC10: an all-REPORTED sweep report passes" "0" "$rc"
+assert_eq "AC10: the pass reports clean" "report-lint: clean (0 warn(s))" "$out"
+
+out="$(bash "$LINT" "$FX/report-sweep-built.md" 2>&1)"; rc=$?
+assert_eq "AC10: a BUILT item in a sweep report fails" "1" "$rc"
+assert_eq "AC10: the finding names the phase-1 REPORTED rule" "line 0: '**Built:**' item 1 claims a build in a sweep report; the sweep builds nothing in phase 1, so every item opens with REPORTED" "$(printf '%s\n' "$out" | sed -n '1p')"
+assert_eq "AC10: a NOTE item in a sweep report fails too" "line 0: '**Built:**' item 2 claims a build in a sweep report; the sweep builds nothing in phase 1, so every item opens with REPORTED" "$(printf '%s\n' "$out" | sed -n '3p')"
+
+out="$(bash "$LINT" "$FX/report-sweep-no-seam.md" 2>&1)"; rc=$?
+assert_eq "AC10: a sweep report without Seam still fails (the Seam rule is kept)" "1" "$rc"
+assert_eq "AC10: the finding is the missing Seam line" "line 0: no '**Seam:**' line; step -1 (the before/after seams) owes an outcome" "$(printf '%s\n' "$out" | sed -n '1p')"
+
+out="$(bash "$LINT" "$FX/report-wrap-harvest-skip.md" 2>&1)"; rc=$?
+assert_eq "AC10: a wrap report with both 'SKIPPED: distill runs in the harvest sweep' lines passes" "0" "$rc"
+
+# the sweep heading keys on the first `## ` line only; a report that opens with a
+# different heading keeps the ordinary rules
+out="$(sed '1s/^## Harvest sweep:.*/## Wrap: plain/' "$FX/report-sweep-built.md" | bash "$LINT" 2>&1)"; rc=$?
+assert_eq "AC10: the same Built list passes when the heading is not a sweep heading" "0" "$rc"
+
+# ============================================================
+echo ""
 echo "=== Results ==="
 echo "Passed: $PASS / $TOTAL"
 if [ "$FAIL" -gt 0 ]; then
