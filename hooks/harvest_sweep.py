@@ -512,9 +512,11 @@ def redact(text):
 
 def sanitize_text(text):
     """Redact first, then keep only printable ASCII without `, <, >, $, or newlines,
-    cut to 200 characters (DEC-25, DEC-89)."""
-    return "".join(c for c in redact(text)
-                   if 32 <= ord(c) < 127 and c not in "`<>$")[:200]
+    cut to 200 characters (DEC-25, DEC-89). The strip can join the two halves of a
+    credential into one contiguous run, so redact again after it."""
+    stripped = "".join(c for c in redact(text)
+                       if 32 <= ord(c) < 127 and c not in "`<>$")
+    return redact(stripped)[:200]
 
 
 def sanitize_extraction(obj):

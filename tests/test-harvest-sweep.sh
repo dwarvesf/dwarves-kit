@@ -1646,6 +1646,12 @@ P("inj_not_raw", "$(rm -rf /)" not in s and "<script>" not in s)
 P("san_long", len(hs.sanitize_text("x" * 300)))
 P("san_unicode_gone", hs.sanitize_text("café snow ☃ ok") == "caf snow  ok")
 
+# ---- a credential split by a stripped char still redacts (the strip joins it) ----
+hex20 = "0a1b2c3d4e5f60718293"  # 20 hex chars, built at runtime
+P("san_split_all", all("[redacted]" in hs.sanitize_text(hex20 + s + hex20)
+                       for s in ("\n", "`", "<", ">", "$")))
+P("san_split_no_join", (hex20 + hex20) not in hs.sanitize_text(hex20 + "\n" + hex20))
+
 # ---- sanitize_extraction: bad slugs drop, evidence and why are cleaned ----
 obj = hs.sanitize_extraction({
     "learnings": [
@@ -1743,6 +1749,8 @@ assert_eq "AC9: the injection text stays inert, not executed" "True" "$(t8 inj_c
 assert_eq "AC9: no raw metachar sequence survives" "True" "$(t8 inj_not_raw)"
 assert_eq "AC9: the 200-character cut applies" "200" "$(t8 san_long)"
 assert_eq "AC9: non-ASCII is dropped" "True" "$(t8 san_unicode_gone)"
+assert_eq "AC9: a credential split by a stripped char still redacts" "True" "$(t8 san_split_all)"
+assert_eq "AC9: the joined credential never reaches storage" "True" "$(t8 san_split_no_join)"
 
 assert_eq "AC9: a learning with a bad slug is dropped, good ones kept" "1" "$(t8 obj_learn_n)"
 assert_eq "AC9: a sighting with a bad pattern is dropped" "1" "$(t8 obj_sight_n)"
