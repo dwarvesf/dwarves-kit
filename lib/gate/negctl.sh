@@ -79,7 +79,33 @@
 #   proof-ledger.sh check() parses. Mutate mode also assumes it is the sole writer to <root>
 #   for the run's duration; a concurrently-touched (shared) checkout should use this mode
 #   instead, since it never touches the working tree at all.
+#
+# Usage: negctl.sh --at <sha> [--path <subdir>] [--setup <cmd>] <root> <test-cmd> <mutate-cmd>
+#   A verifier judging a commit while a worker still edits <root> needs the full mutate
+#   control against THAT commit, not the live tree. This mode `git archive`s <sha> (only
+#   <subdir> with --path, prefix kept) into a fresh dir under $TMPDIR, commits it there as a
+#   throwaway repo so the restore step has a HEAD, runs <setup> in it (e.g. `pnpm install
+#   --frozen-lockfile`; its output goes to stderr), then runs steps 1-6 above against the
+#   export. Commands run from the export root. The source worktree is never written: archive
+#   reads the object store only. The export is kept and printed as `Export:` for inspection.
 set -uo pipefail
+
+at_sha=""; at_path=""; at_setup=""
+at_usage() { echo "usage: negctl.sh --at <sha> [--path <subdir>] [--setup <cmd>] <root> <test-cmd> <mutate-cmd>" >&2; exit 64; }
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --at|--path|--setup) { [ $# -ge 2 ] && [ -n "$2" ]; } || at_usage ;;
+  esac
+  case "$1" in
+    --at) at_sha="$2" ;;
+    --path) at_path="$2" ;;
+    --setup) at_setup="$2" ;;
+    *) break ;;
+  esac
+  shift 2
+done
+[ -z "$at_path$at_setup" ] || [ -n "$at_sha" ] || at_usage
+[ -z "$at_sha" ] || [ "${1:-}" != "--base-ref" ] || at_usage
 
 if [ "${1:-}" = "--base-ref" ]; then
   base_ref="${2:-}"; root="${3:-}"; test_cmd="${4:-}"
@@ -118,6 +144,32 @@ root="${1:-}"; test_cmd="${2:-}"; mutate_cmd="${3:-}"
 [ -n "$root" ] && [ -n "$test_cmd" ] && [ -n "$mutate_cmd" ] \
   || { echo "usage: negctl.sh <root> <test-cmd> <mutate-cmd>" >&2; exit 64; }
 git -C "$root" rev-parse --git-dir >/dev/null 2>&1 || { echo "negctl: $root is not a git repo" >&2; exit 64; }
+
+if [ -n "$at_sha" ]; then
+  git -C "$root" rev-parse --verify "${at_sha}^{commit}" >/dev/null 2>&1 \
+    || { echo "negctl: '$at_sha' does not resolve to a commit in $root" >&2; exit 64; }
+  tmp_base="${TMPDIR:-/tmp}"
+  export_dir="$(mktemp -d "${tmp_base%/}/negctl-at.XXXXXX")" || { echo "negctl: mktemp failed" >&2; exit 1; }
+  if ! git -C "$root" archive "$at_sha" ${at_path:+"$at_path"} | tar -x -C "$export_dir"; then
+    echo "negctl: failed to export $at_sha${at_path:+ ($at_path)} from $root into $export_dir" >&2
+    exit 1
+  fi
+  # -f: the archive is exactly the commit's tracked content, so an ignore rule must not drop
+  # a file from the throwaway HEAD. Hooks and signing are off: this commit is scaffolding.
+  if ! { git -C "$export_dir" init -q \
+         && git -C "$export_dir" add -A -f \
+         && git -C "$export_dir" -c user.name=negctl -c user.email=negctl@localhost \
+              -c commit.gpgsign=false -c core.hooksPath=/dev/null \
+              commit -q --no-verify -m "negctl export of $at_sha"; } >/dev/null 2>&1; then
+    echo "negctl: failed to commit the export in $export_dir" >&2
+    exit 1
+  fi
+  if [ -n "$at_setup" ]; then
+    (cd "$export_dir" && bash -c "$at_setup") >&2 \
+      || { echo "negctl: setup failed in $export_dir: $at_setup" >&2; exit 1; }
+  fi
+  root="$export_dir"
+fi
 
 # Bounded retries for the RED step only. Rejected rather than coerced: a typo that silently
 # became 1 would read as a clean single-attempt run and hide that the operator asked for more.
@@ -220,6 +272,11 @@ restore() {
 trap restore EXIT
 
 echo "## Negative control (negctl)"
+if [ -n "$at_sha" ]; then
+  echo "At: $at_sha${at_path:+ ($at_path)}"
+  echo "Export: $export_dir"
+  [ -z "$at_setup" ] || echo "Setup: $at_setup"
+fi
 before="$(snapshot)"
 echo "Command: $test_cmd"
 run_test; rc_before=$?
