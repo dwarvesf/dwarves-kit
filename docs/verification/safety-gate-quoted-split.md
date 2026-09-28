@@ -2,23 +2,23 @@
 
 Verdict: PASS
 
-Spec: `docs/specs/SPEC-332-safety-gate-quoted-split.md` (revision 7). Change: `hooks/safety-gate.sh`, `tests/test-hooks.sh` (rows Q1 to Q90).
+Spec: `docs/specs/SPEC-332-safety-gate-quoted-split.md` (revision 7). Change: `hooks/safety-gate.sh`, `tests/test-hooks.sh` (rows Q1 to Q91).
 
 ## Checks
 
 | Check | Command | Result |
 |---|---|---|
-| Suite, fix, BSD awk 20200816 | `bash tests/test-hooks.sh` | `Passed: 604 / 604` |
-| Suite, fix, gawk 5.4.1 | same, with a PATH shim so `awk` is gawk | `Passed: 604 / 604` |
-| Suite, fix, mawk 1.3.4 | same, with a PATH shim so `awk` is mawk | `Passed: 604 / 604` |
-| Suite, master's hook | `git show origin/master:hooks/safety-gate.sh` swapped in on a scratch clone | `Passed: 541 / 604`; all 63 failures are Q rows, every pre-existing row passes |
+| Suite, fix, BSD awk 20200816 | `bash tests/test-hooks.sh` | `Passed: 605 / 605` (at `d175edcf`) |
+| Suite, fix, gawk 5.4.1 | same, with a PATH shim so `awk` is gawk | `Passed: 604 / 604` (at `d3c5affb`, before Q91) |
+| Suite, fix, mawk 1.3.4 | same, with a PATH shim so `awk` is mawk | `Passed: 604 / 604` (at `d3c5affb`, before Q91) |
+| Suite, master's hook | `git show origin/master:hooks/safety-gate.sh` swapped in on a scratch clone | `Passed: 541 / 604` at `237f2fae`; all 63 failures are Q rows, every pre-existing row passes. Q91, added later, returns rc 0 on master too |
 | Negative controls | `bash lib/gate/negctl.sh <clone> "bash tests/test-hooks.sh" "bash <mutation>"`, seven mutations, below | see below |
 | Feature registry | `bash lib/registry/feature-registry.sh check --fix` | `docs/FEATURES.md regenerated`, committed |
 | Cost | a 28 KB `python3 -c "x = 1; ..."` command through the hook | 0.4 s (master: 17 s); 30 nested false `$((` frames: 0.04 s |
 
 ## Red on master
 
-The 63 Q rows that fail against master's hook: Q1 to Q7, Q9 to Q18, Q27, Q29 to Q50, Q54 to Q57, Q59, Q60, Q62 to Q65, Q67, Q71 to Q76, Q81, Q83 to Q86, Q88. Q54 is a false positive master had (a continued `rm -rf` of artifacts); the rest are bypasses master allowed.
+The 63 Q rows that fail against master's hook: Q1 to Q7, Q9 to Q18, Q27, Q29 to Q50, Q54 to Q57, Q59, Q60, Q62 to Q65, Q67, Q71 to Q76, Q81, Q83 to Q86, Q88, and Q91. Q54 is a false positive master had (a continued `rm -rf` of artifacts); the rest are bypasses master allowed.
 
 The Q rows that pass on master pin shapes master already handled or allowed (Q8, Q19 to Q26, Q28, Q51 to Q53, Q58, Q61, Q66, Q68 to Q70, Q77 to Q80, Q82, Q87, Q89, Q90). They guard the new walk against regressions: Q28, Q58, Q66, Q69, Q70, Q78 to Q80, and Q87 are the orderings where an earlier revision allowed what master blocked.
 
@@ -28,13 +28,13 @@ Six fresh-context Opus validation rounds plus one Opus break-it pass. Rounds 1 t
 
 ## Negative controls
 
-Each ran in a scratch clone of the committed branch, in parallel, with the full suite as the test command.
+Each ran in a scratch clone of the committed branch with the full suite as the test command. Parallel runs made the unmutated suite fail its `backlog.sh` rows (shared state across concurrent suites, a pre-existing isolation gap), so NC1 and NC3 to NC7 were re-run one at a time. NC2 passed in the parallel run. NC3 first came back vacuous: the arithmetic frame now reads Q30 before the replay is needed. Q91 (a `<<` inside `${ }`) pins the replay, and NC3 passed against `d175edcf`.
 
 | # | Behavior | Mutation | Under mutation | Verdict |
 |---|---|---|---|---|
 | NC1 | quote-aware split | pass 1 splits on `;` and `\|` inside quotes | Exit 1 | PASS |
 | NC2 | naive pass | the naive split no longer prints | Exit 1 | PASS |
-| NC3 | heredoc replay | the END replay is dropped | Exit 1 | PASS |
+| NC3 | heredoc replay | the END replay is dropped (Q91 goes red) | Exit 1 | PASS |
 | NC4 | comment rule | `#` is never a comment | Exit 1 | PASS |
 | NC5 | grammar skip | the grammar arm of the segment-start loop is deleted | Exit 1 | PASS |
 | NC6 | lone-`)` re-walk | the frame only turns | Exit 1 | PASS |
