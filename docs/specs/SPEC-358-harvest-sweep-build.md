@@ -139,19 +139,19 @@ AC numbers are the combined spec's. Parts of AC7, AC8, AC11, AC12, and AC13 that
 
 ## Open from validation round 2
 
-The two criticals come from the round-2 gate-ledger record. The suggested fixes below are this spec's author's, not the validator's.
+The two criticals come from the round-2 gate-ledger record, and their suggested fixes are this spec's author's. The warnings and their suggested fixes are the round-2 validator's.
 
 | ID | Finding | Suggested fix |
 |---|---|---|
 | C1 | stage 2's `wrap start` fetches `origin/<default>`, and the fetch fails in stage 2's stripped env (no token, no credential helper, no ssh agent) | code fetches `origin/<default>` for every build repo with the launcher's credentials before stage 2 starts; the worktree helper calls `wrap start` with a no-fetch mode that uses that already-fetched ref, and refuses when the ref is older than the run start |
 | C2 | stage 3's origin calls (`wrap merge`, `wrap rebase`, fetches) use the repo's `origin` remote, which is an ssh URL, and ssh fails under launchd with `IdentityAgent=none` | stage 3 runs every git subprocess with `GIT_CONFIG_COUNT` setting `url.https://github.com/.insteadOf=git@github.com:` (and the `ssh://` form) plus the `gh auth git-credential` helper, so every origin call goes over HTTPS with the token; the launchd push check covers a `wrap merge` as well as a push |
-| W1 | text not in this author's context | copy the finding and the validator's fix verbatim from the round-2 validation report before the rewrite |
-| W2 | text not in this author's context | same |
-| W4 | text not in this author's context | same |
-| W5 | text not in this author's context | same |
-| W6 | text not in this author's context | same |
-| W7 | text not in this author's context | same |
-| W9 | text not in this author's context | same |
+| W1 | lane authorization is not code-enforced, and the text contradicts itself: DEC-1 says tiny/normal build and merge, the spec also says build lanes come from `wrap.build_lanes` (default tiny); the distill prompt always runs full-lane candidates while `kit.toml` says full can never buy an inline build; stage 3 drafts only on full or a denylist hit and never compares its fixed-text lane against `build_lanes`, so a model-built normal diff merges even when the operator allowed only tiny | stage 3 drafts any lane not in `build_lanes`; state in one place whether full-lane candidates build at all |
+| W2 | stage 3 writes `proposed.jsonl` only on MERGED: the blocking rule relies on `by: stage3` entries with outcome DRAFT/OPEN, but steps 6 and 7 never write them, so a DRAFT or red-check PR does not block its pattern and the next run builds a duplicate; "build-cap REPORTED gets no blocking entry" conflicts with "append an advisory entry as each candidate closes" | stage 3 writes an entry at every terminal step (draft, OPEN, reported, merged); the build-cap case writes none |
+| W4 | "at most 3 fix passes" on a code-written report has no fixer: stage 3 is code with no model | a lint failure is a bug (rc 3, no retry), or name who fixes it |
+| W5 | the merged-in-window INCIDENT check is noise: the operator merges many PRs a day in ops-toolkit and dwarves-kit under the same identity as the stage-3 token, so every run gets INCIDENT rows and the alarm becomes wallpaper | narrow it to PRs whose head branch appears in any sweep `worktrees.jsonl`, plus direct pushes to the default branch that no PR explains; other merges go to FYI |
+| W6 | the credential residual is understated: the easiest exfiltration paths are `source ~/.config/harvest-sweep/env` and gh's own keychain entry or `hosts.yml`, not the login keychain; stage 2 runs `bypassPermissions` with unrestricted egress | Read and Bash denies on the env file and `~/.config/gh`; name the egress residual in Failure modes |
+| W7 | main-checkout write detection exists only in fixtures: the "writes into a live checkout" row cites a signal no production code emits; only AC11 checks it, in fixtures | stage 3 snapshots each build repo's main checkout (HEAD, branch, porcelain hash) before and after the spawn; any difference is an INCIDENT row |
+| W9 | `extensions.worktreeConfig` changes every build repo's shared config for a speed bump: the model can bypass the per-worktree push URL with an explicit push URL (edge case 12 admits it) | weigh that cost; `install` checks `core.repositoryformatversion` and tool compatibility before setting it |
 
 Round-2 warnings W3, W8, W10, W11, and W12 were folded into SPEC-357.
 
