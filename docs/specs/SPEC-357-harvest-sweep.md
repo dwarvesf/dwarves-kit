@@ -1,7 +1,7 @@
 # Spec: harvest sweep, phase 1 (scheduled multi-agent distill, report only)
 
 Generated: 2026-09-29
-Status: APPROVED (operator re-approved after phase 1 final validation; validation pending)
+Status: APPROVED (operator approved the last folds with no further validation round; ready to build)
 Lane: full
 Type: spec-feature
 File: `docs/specs/SPEC-357-harvest-sweep.md`
@@ -45,6 +45,9 @@ Approach 1. Code owns everything that must be exact: which sessions, how many, w
   launchd (StartInterval = schedule_hours)
         |
         v
+  deploy/macos/harvest-sweep/install --label L --apply  (T17)
+        |  renders the plist, writes the host marker state/harvest/sweep/installed
+        v
   deploy/macos/harvest-sweep/harvest-sweep   (launcher, #!/bin/bash, no .sh)
         |  enable false, no host marker, or sweep.lock held  --> log, exit 0, NO bridge call
         v
@@ -53,7 +56,8 @@ Approach 1. Code owns everything that must be exact: which sessions, how many, w
         |  cursor.json --> adapters: claude (subagents interleaved by ts) | devin
         |                  launches.jsonl --> lead attribution (brief-path match)
         |  per lead session: cached raw output, or Haiku extractor (cwd under the state dir)
-        |      --> sanitize --> learnings --> _stage_candidates --> ledger/<repo-slug>.md
+        |      --> sanitize + redact --> learnings --> _stage_candidates --> ledger/<repo-slug>.md
+        |                                          why + evidence + source --> <repo-slug>.rows.jsonl
         |                   --> sightings --> patterns.jsonl
         |  aggregate (occurrences >= MIN_PATTERN_COUNT) --> candidates
         |  per source lag: eligible unread count + oldest age (nothing is ever dropped unread)
@@ -67,13 +71,14 @@ Approach 1. Code owns everything that must be exact: which sessions, how many, w
   bridge ~/.config/harvest-sweep/bridge <rc> <report path or "-">  --> vps-mon heartbeat
 
   learnings stay queued in the sweep ledgers
-      learning-ledger skill --> harvest.py --flush-list        (JSON, each ledger's .lock)
-                            --> routes each row to its home
+      learning-ledger skill --> harvest.py --flush-list        (JSON rows + sidecar context)
+                            --> routes each row to its home from why + evidence
                             --> harvest.py --mark-flushed <row-id> <ref>   (under the lock)
       next sweep run --> archives flushed rows to <ledger>.archive.md (still read for dedup)
 
   /kit:wrap on a host with the sweep marker and wrap.distill = "harvest": landing half only,
   Built/Seam = SKIPPED: distill runs in the harvest sweep
+  harvest_sweep.py --status (T14) --> wrap FYI STATE row: newest report, candidates, queued (T18)
   harvest.sh auto modes: sweep active on this host and hook_when_sweep_on = false => exit 0
 ```
 
@@ -97,12 +102,14 @@ See `## Picture` (component view). Cursor lifecycle per source:
   select: last_activity <= now - QUIET_MINUTES, cwd not under the harvest state dir,
           (id, last_activity) not in done{}, not quarantined
           (a quarantined id whose last_activity moved past its quarantine value is lifted)
+  filtered at selection (cwd under the state dir, Devin hidden = 1) --> done{}, like trivial
   order by last_activity asc; trivial sessions --> done{} without counting against the cap
   take max_sessions_per_run; the rest stay eligible, oldest first next run (never dropped)
   lag = count and oldest age of eligible sessions not taken
       |
       v  per session, in order
-  raw output cached for <id>@<last_activity>? --yes--> reuse it
+  raw output cached for <id>@<last_activity>? --yes, parseable--> reuse it
+                                              --yes, unparseable--> remove it, extract again
       | no
       v
   extract with --tools "" (only entries with ts > seen{id}.last_ts)
@@ -189,7 +196,7 @@ Attribution applies to a Devin session. A record matches when its `agent` is `de
 **Sweep extractor.** `PROMPT_SWEEP` in `harvest_sweep.py`, same `HARVEST_EXTRACTOR` seam, with its own default `claude -p --model haiku --setting-sources project --tools "" --strict-mcp-config --no-session-persistence`. `--strict-mcp-config` loads no MCP server, and `--no-session-persistence` keeps the call from writing a transcript at all (both flags checked in `claude --help` on the Mini, DEC-76). `--tools ""` disables every built-in tool (checked against `claude --help`, whose `--tools` entry says an empty string disables all tools), so a hostile transcript cannot make the extractor act (DEC-63). It runs with cwd `$HARVEST_STATE_DIR/sweep/extract-cwd/` and `HARVEST_SWEEP_CHILD=1` in its env, so its own transcripts fall under the self-harvest drop and it cannot re-fire the hook. It returns one JSON object, read by a new `extract_json_object` (the existing `extract_json_array` returns the first `[`, which would find an inner array):
 
 ```
-{"learnings": [<the existing hook element shape: item, kind, home, why>],
+{"learnings": [<the hook element shape: item, kind, home, why> plus "evidence": "<one line from the session>"],
  "sightings": [{"pattern": "<kebab slug>", "kind": "repeat|friction|failure|ask",
                 "count": <int, occurrences in this session>, "evidence": "<one line>"}]}
 ```
@@ -200,11 +207,13 @@ The prompt carries at most 100 known slugs: the canonical slugs of the 50 most r
 
 **Quarantine.** At `fail{id} = HARVEST_SWEEP_QUARANTINE_AFTER` (default 3) the session goes into `quarantined` with its `last_activity` at that moment, is marked done, and the report carries a `STATE` row. When a later scan sees that session's `last_activity` move past the recorded value, the quarantine lifts, `fail{id}` resets, and the session is selected again (DEC-54). Quarantine entries older than 30 days are pruned.
 
-**Raw output cache.** The extractor's stdout is saved to `extract/<source>/<id>@<last_activity>.json` before anything is staged. A replay of the same key reuses the file, so a crash after extraction never pays or varies the model call twice. `extract/` and its subdirectories are created mode 0700 and each file 0600, because the cache holds unredacted model output (DEC-78).
+**Raw output cache.** The extractor's stdout is saved to `extract/<source>/<id>@<last_activity>.json` before anything is staged. A replay of the same key reuses the file, so a crash after extraction never pays or varies the model call twice. `extract/` and its subdirectories are created mode 0700 and each file 0600, because the cache holds unredacted model output (DEC-78). Each cache file is written to a temp file in the same directory and moved into place with `os.replace`, so a crash never leaves a half-written file. A cache file that does not parse is removed and the session is extracted again; that is not a failure and raises no fail count (DEC-82).
 
-**Sanitizing.** Before a sighting or learning is stored: `pattern` and `item` must match `^[a-z0-9-]{1,60}$` (else dropped). `evidence` and `why` first pass a credential-shape redaction that replaces each match with `[redacted]`: runs of 32 or more hex characters, tokens starting `sk-`, `ghp_`, `gho_`, `github_pat_`, `AKIA`, or `xox` followed by a letter and a dash, and PEM `BEGIN ... PRIVATE KEY` headers (DEC-63). Then they are cut to 200 characters of printable ASCII with backticks, angle brackets, `$`, and newlines removed.
+**Sanitizing.** Before a sighting or learning is stored: `pattern` and `item` must match `^[a-z0-9-]{1,60}$` (else dropped). `evidence` and `why` first pass a credential-shape redaction that replaces each match with `[redacted]`: runs of 32 or more hex characters, tokens starting `sk-`, `sk_live_`, `rk_live_`, `ghp_`, `gho_`, `github_pat_`, `glpat-`, `AIza`, `AKIA`, `ops_`, or `xox` followed by a letter and a dash, JWT-shaped strings (`eyJ` then two more base64url segments joined by dots), and PEM `BEGIN ... PRIVATE KEY` headers (DEC-63, DEC-89). Then they are cut to 200 characters of printable ASCII with backticks, angle brackets, `$`, and newlines removed. `stage1.log` carries counts, ids, and error classes only, never transcript or extractor text, and is written mode 0600 (DEC-89).
 
-**Shared stager.** The locked read-known, dedup, and append block in `_harvest_payload` moves into `_stage_candidates(ledger, glossaries, candidates) -> fresh_rows`. The hook calls it with the session's ledger as today. The sweep calls it with the sweep ledger. Both share slugify, glossary dedup, and the `.lock` file. `existing_slugs` reads rows of every status, and the sweep also reads each sweep ledger's `.archive.md` sibling, so a learning already flushed or archived is never staged again (DEC-70). The sweep reads a repo's `_meta/learned-ledger.md` under that ledger's own `.lock` for dedup and never writes it.
+**Shared stager (DEC-85, DEC-86).** The locked read-known, dedup, and append block in `_harvest_payload` moves into `_stage_candidates(ledger, glossaries, candidates, extra_known=()) -> fresh_rows`. `extra_known` is a list of extra files whose rows count as known slugs. The hook calls it with the session's ledger and no extras, as today. The sweep calls it per repo slug with that slug's sweep ledger, the repo's `learning/*/GLOSSARY.md` files as `glossaries`, and as `extra_known`: the sweep ledger's `.archive.md`, the repo's `_meta/learned-ledger.md`, and that file's `.archive.md`. Both callers share slugify, glossary dedup, and the sweep ledger's `.lock`. `existing_slugs` reads rows of every status, so a learning already flushed or archived is never staged again (DEC-70). A repo file is read only if it already exists, and its `.lock` is opened only if it already exists, read-only and without `O_CREAT`; with no lock file the read goes ahead unlocked. The sweep never creates or writes a file in a repo.
+
+**Row context sidecar (DEC-83).** The ledger table keeps only `date | item | kind | home | status`, so each sweep ledger has a sidecar, `ledger/<repo-slug>.rows.jsonl`, one JSON object per row id: `{"row_id": "<repo-slug>:<item>", "why", "evidence", "source": "<source>/<session_id>", "lead_session_id"}`, with `why` and `evidence` already redacted and cut. The sweep writes the sidecar entry under the ledger's `.lock` right after `_stage_candidates` returns the fresh rows. The write is idempotent by row id and also runs for a row that exists without a sidecar entry, so a crash between the two writes is repaired by the replay of the cached raw output.
 
 **Stored state** (under `$HARVEST_STATE_DIR/sweep/`, default `~/.claude/dwarves-kit/state/harvest/sweep/`):
 
@@ -212,18 +221,18 @@ The prompt carries at most 100 known slugs: the canonical slugs of the 50 most r
 |---|---|---|---|
 | `cursor.json` | `{"<source>": {"hwm", "done": {"<id>": last_activity}, "seen": {"<id>": {"last_ts", "ts"}}, "fail": {"<id>": n}, "quarantined": {"<id>": {"last_activity", "ts"}}}, "source_fail": {"<source>": n}, "lag_runs": n}` | atomic replace after each session | (source, id, last_activity) |
 | `extract/<source>/<id>@<last_activity>.json` | raw extractor stdout | extraction | file name |
-| `ledger/<repo-slug>.md` (+ `.archive.md`) | the learned-ledger table, `status: queued`, later `flushed:<ref>`; flushed rows move to the archive sibling | `_stage_candidates`; `--mark-flushed`; the next run's archive step | slug (exact + fuzzy + glossary + archive) |
+| `ledger/<repo-slug>.md` (+ `.archive.md`, + `.rows.jsonl`) | the learned-ledger table, `status: queued`, later `flushed:<ref>`; flushed rows move to the archive sibling; the sidecar holds each row's `why`, `evidence`, `source`, and `lead_session_id` | `_stage_candidates` and the sidecar write; `--mark-flushed`; the next run's archive step | slug (exact + fuzzy + glossary + archive); sidecar by row id |
 | `patterns.jsonl` | `{"pattern", "canonical", "kind", "source", "session_id", "extract_key", "lead_session_id", "cwd", "count", "evidence", "ts"}` | rewritten via tmp + `os.replace` under `patterns.lock` | (canonical, session_id, extract_key); a replay of the same key replaces its row; occurrences SUM across keys (DEC-60) |
 | `proposed.jsonl` | `{"pattern", "run_id", "outcome": "REPORTED", "precedent", "lane", "ts"}` | the annotator, once per candidate | canonical pattern, subject to the re-propose rule |
 | `runs/<run-id>/manifest.json` | `{"run_id", "sessions": [...], "learnings_staged": n, "learnings_queued": n, "candidates": [{"pattern", "kind", "occurrences", "sessions", "leads", "evidence", "precedent", "lane"}], "lag": {"<source>": {"eligible": n, "oldest_age_s": n}}}` | the run | run_id |
-| `runs/<run-id>/stage1.log`, `report.md` | run log; wrap step 9 grammar under `## Harvest sweep: <run-id>` | the run | run_id |
+| `runs/<run-id>/stage1.log` (0600), `report.md` | run log with counts, ids, and error classes only; wrap step 9 grammar under `## Harvest sweep: <run-id>` | the run | run_id |
 | `installed` | host marker: `{"label", "host", "kit", "ts"}` | `install --apply` | host |
 
 A run with nothing new writes no `runs/<run-id>/` directory and no manifest; it logs one line to the launcher log.
 
 `<repo-slug>` comes from the session cwd: strip a trailing `/.claude/worktrees/<name>`, walk up to the first directory that exists, then `git rev-parse --path-format=absolute --git-common-dir` with the trailing `/.git` stripped. The slug is `<owner>__<name>` from the origin URL when one exists (both GitHub URL forms), else `<basename>-<first 12 hex of sha256(absolute path)>`, so two repos with the same basename never share `ledger/<repo-slug>.md` or a row id (DEC-79). A cwd outside any repo goes to `ledger/_no-repo.md`. Rows the hook staged in repo ledgers before the sweep was enabled stay there; the learning-ledger skill's existing flush drains them (DEC-64).
 
-**Aggregation.** Slugs cluster with a fixed fuzzy threshold (`HARVEST_SWEEP_FUZZY`, default 2, independent of the hook's `HARVEST_FUZZY_THRESHOLD`). The first slug seen in a cluster is its canonical name and stays so. Over sightings newer than `HARVEST_SWEEP_PATTERN_WINDOW_DAYS` (default 14), a canonical pattern is a candidate when the sum of `count` over its rows (every session and every extract key) is at least `HARVEST_SWEEP_MIN_PATTERN_COUNT` (default 3) and it has no blocking `proposed.jsonl` entry. `kind: ask` qualifies at 1. One sighting of count 1 never qualifies. Re-propose rule: a `REPORTED` entry stops blocking after 14 days if the pattern's occurrences grew by at least the threshold since its `ts`.
+**Aggregation (DEC-87, DEC-88).** Slugs cluster with a fixed fuzzy threshold (`HARVEST_SWEEP_FUZZY`, default 2, independent of the hook's `HARVEST_FUZZY_THRESHOLD`). Fuzzy matching applies only when both slugs are at least 12 characters long and their lengths differ by 2 or less; shorter slugs match exactly. The first slug seen in a cluster is its canonical name and stays so. Occurrences count lead groups, not raw sessions: a lead group is the `lead_session_id` when known (a claude lead with its folded subagents, a Devin worker attributed to its lead) and the session's own id otherwise. A group's count is the largest per-session total (the sum over that session's extract keys) among its sessions, and a pattern's occurrences are the sum of its group counts over sightings newer than `HARVEST_SWEEP_PATTERN_WINDOW_DAYS` (default 14). A canonical pattern is a candidate when its occurrences reach `HARVEST_SWEEP_MIN_PATTERN_COUNT` (default 3) and it has no blocking `proposed.jsonl` entry. `kind: ask` qualifies at 1. One sighting of count 1 never qualifies. The manifest and the report also show the raw session count beside the group count. Re-propose rule: a `REPORTED` entry stops blocking after 14 days if the pattern's occurrences grew by at least the threshold since its `ts`.
 
 **Annotator (DEC-51, DEC-59, DEC-77).** For each candidate, code runs, as argv lists through `subprocess.run` and never through a shell, `bin/precedent find --surface inventory --json "<slug words>"` and `lib/classify/lane-classify.sh classify "<slug words>: <first evidence line>"`. It picks the home with wrap step 7b's rule: when the hit list holds a code home and a prose home (a memory note, a research file, a handoff: the kinds `report-lint.sh`'s `PROSE_TARGET_RE` matches), the top code hit wins. It records that hit (`ENHANCE <home>`) or `NEW (precedent: nothing matched)`, and the lane. When a candidate's hits are all prose, its home is the top prose hit and the report adds one `- PROSE-ONLY: <slugs>: only prose homes matched; phase 1 reports and builds nothing` bullet, the lint's escape for an all-prose `**Built:**`. The candidate is `REPORTED` with `reported: phase 1 reports only`. Nothing is built.
 
@@ -241,10 +250,10 @@ A lint failure is a renderer bug: the findings are appended to the report and th
 
 **Flush path (DEC-52, DEC-58).** Today nothing drains a sweep ledger: the learning-ledger skill reads and writes only `ops-toolkit/_meta/learned-ledger.md`, and `commands/wrap.md` has no learned-ledger handling. Two kit verbs close that:
 
-- `python3 <kit>/hooks/harvest.py --flush-list` prints every `queued` row across `$HARVEST_STATE_DIR/sweep/ledger/` as one JSON array, `[{"row_id": "<repo-slug>:<item>", "ledger": <path>, "date", "item", "kind", "home"}]`, taking each ledger's `.lock` while it reads.
+- `python3 <kit>/hooks/harvest.py --flush-list` prints every `queued` row across `$HARVEST_STATE_DIR/sweep/ledger/` as one JSON array, `[{"row_id": "<repo-slug>:<item>", "ledger": <path>, "date", "item", "kind", "home", "why", "evidence", "source", "lead_session_id"}]`, joining each row with its sidecar entry and taking each ledger's `.lock` while it reads. A row with no sidecar entry is listed with `why` and `evidence` null.
 - `python3 <kit>/hooks/harvest.py --mark-flushed <row-id> <ref>` flips that row's status to `flushed:<ref>` under the ledger's `.lock` (atomic tmp + `os.replace`). `<ref>` follows the skill's grammar (commit SHA, til slug, or file path). An unknown row id or a row not `queued` exits 1 and changes nothing.
 
-The learning-ledger skill calls both (companion task T23 in the dotfiles repo): list, route each row to its home, mark it flushed. `/kit:wrap distill` reaches the same verbs through its `wrap.after` seam when that seam names the skill. Each sweep run then moves `flushed:` rows into the ledger's `.archive.md` sibling. It calls `cmd_cleanup(ledger)`, which now takes the ledger path as an argument (the `HARVEST_LEDGER` env stays as the CLI default) and holds that ledger's `.lock` for the whole read, archive append, and rewrite, so a concurrent `--mark-flushed` either lands before the archive or after it, never inside it (DEC-73). Dedup still reads the archive. The sweep never marks a row flushed itself.
+The learning-ledger skill calls both (companion task T23 in the dotfiles repo): list, route each row to its home from its `why` and `evidence` (never from the slug alone; a row with null context stays queued), and mark it flushed. `/kit:wrap distill` reaches the same verbs through its `wrap.after` seam when that seam names the skill. Each sweep run then moves `flushed:` rows into the ledger's `.archive.md` sibling. It calls `cmd_cleanup(ledger)`, which now takes the ledger path as an argument (the `HARVEST_LEDGER` env stays as the CLI default) and holds that ledger's `.lock` for the whole read, archive append, and rewrite, so a concurrent `--mark-flushed` either lands before the archive or after it, never inside it (DEC-73). Dedup still reads the archive. The sweep never marks a row flushed itself.
 
 **Lag, not staleness (DEC-71, DEC-72).** No session is ever marked done without being read. Each run records, per source, the eligible unread sessions it did not take (past the quiet window, not done, not quarantined): their count and the age of the oldest. The report carries that as a `STATE` row. `lag_runs` counts consecutive runs where any source's oldest eligible session is older than `HARVEST_SWEEP_LAG_HOURS` (default 24). At 2 the report adds a `Needs you` `DECIDE` item and the rc is 6; a run under the threshold resets it. After an outage the backlog drains oldest first at up to 80 lead sessions a day. Claude deletes transcripts after its own retention period (30 days by default), so a lag that reaches that age loses sessions to Claude's cleanup, not to the sweep; the lag alarm fires weeks earlier.
 
@@ -261,7 +270,7 @@ The learning-ledger skill calls both (companion task T23 in the dotfiles repo): 
 
 The launcher calls `python3 <kit>/hooks/harvest_sweep.py --sweep` directly, never through `harvest.sh`, whose `|| true; exit 0` would hide every failure. `harvest.py`'s `_dispatch` routes `--sweep` to the same entry before its `read_payload` fall-through, for manual runs. A disabled or skipped run never calls the bridge, so a job left loaded but disabled goes silent and vps-mon alerts; turning the sweep off for good is `install --uninstall` plus retiring the heartbeat per `job-monitoring-onboarding`.
 
-**Pruning** (each run): `patterns.jsonl` rows older than the pattern window, `proposed.jsonl` entries older than 90 days (owned by T11), quarantine entries and `seen{}` entries older than 30 days, `extract/` files and `runs/` dirs older than 30 days. Pruning never touches an unread session.
+**Pruning** (each run): `patterns.jsonl` rows older than the pattern window, `proposed.jsonl` entries older than 90 days, quarantine entries and `seen{}` entries older than 30 days, `extract/` files and `runs/` dirs older than 30 days. Pruning never touches an unread session. One task, T13b, owns every pruning rule (DEC-90).
 
 ### Data model changes
 
@@ -309,7 +318,7 @@ Monitoring (consumer side, ops-toolkit): the bridge's source lives at `ops-toolk
 
 Each task touches at most five files and carries one mechanism. Tests go in the harvest section of `tests/test-hooks.sh`; fixtures go under `tests/fixtures/harvest-sweep/`.
 
-**Order (DEC-65).** T2 to T14 and T22 all edit `hooks/harvest_sweep.py`, and T1, T14, and T22 all edit `hooks/harvest.py`, so those tasks run serially and are never fanned out to parallel workers. Dependencies: T1 before T9 and T22; T5a before T5b and T7; T9 before T22; T10, T11, and T12 before T13; T5a to T13 before T14; T14 before T16; T15 and T16 before T17; T1 to T19 and T22 before T20; T20 before T20b; T20b and T22 before T23; T23 and T24 merged before T21.
+**Order (DEC-65, DEC-90).** T2 to T14, T13b, and T22 all edit `hooks/harvest_sweep.py`, and T1, T9, T14, and T22 all edit `hooks/harvest.py`, so those tasks run serially and are never fanned out to parallel workers. Dependencies: T1 before T9 and T22; T5a before T5b and T7a; T7a before T7b; T9 before T22; T5a, T7b, T10, and T11 before T13b; T10, T11, T12, and T13b before T13; T5a to T13b before T14; T14 before T16; T15 and T16 before T17; T1 to T19 and T22 before T20; T20 before T20b; T20b and T22 before T23; T23 and T24 merged before T21.
 
 ### Phase 1a: shared pieces and sources
 
@@ -320,21 +329,23 @@ Each task touches at most five files and carries one mechanism. Tests go in the 
 
 ### Phase 1b: cursor and extraction
 
-- [ ] T5a: selection. hwm, `done{}`, `seen{}` pruned by age, quiet window, scan cap, `max_sessions_per_run`, trivial skips outside the cap, oldest-first order, atomic writes. Files: `hooks/harvest_sweep.py`, `tests/test-hooks.sh`. AC: AC6, AC25, the `seen{}` part of AC20.
+- [ ] T5a: selection. hwm, `done{}`, `seen{}`, quiet window, scan cap, `max_sessions_per_run`, trivial and filtered sessions marked done outside the cap, oldest-first order, atomic writes. Files: `hooks/harvest_sweep.py`, `tests/test-hooks.sh`. AC: AC6, AC25, the `seen{}` part of AC20.
 - [ ] T5b: lag and drift. Per-source lag, `lag_runs`, the all-trivial drift rule, `--since`. Files: `hooks/harvest_sweep.py`, `tests/test-hooks.sh`. AC: AC20, AC21.
-- [ ] T6: extractor call. `(ok, stdout, stderr)`, `extract_json_object`, the default flags (`--tools ""`, `--strict-mcp-config`, `--no-session-persistence`), extractor cwd and child env, the raw output cache with its modes, the 100-slug prompt cap. Files: `hooks/harvest_sweep.py`, `tests/test-hooks.sh`, a stub extractor fixture. AC: the argv part of AC22; AC24.
-- [ ] T7: failure handling. The limit hold, fail counts on every other path, the probe, the auth stop, quarantine, lift on new activity, quarantine pruning. Files: `hooks/harvest_sweep.py`, `tests/test-hooks.sh`. AC: AC4, AC5, AC5b, AC27.
-- [ ] T8: sanitizing. Credential-shape redaction, slug charset, evidence and reason cuts. Files: `hooks/harvest_sweep.py`, `tests/test-hooks.sh`, an injection-text fixture, a credential-shape fixture. AC: AC9, the redaction part of AC22.
+- [ ] T6: extractor call. `(ok, stdout, stderr)`, `extract_json_object`, the default flags (`--tools ""`, `--strict-mcp-config`, `--no-session-persistence`), extractor cwd and child env, the raw output cache with atomic writes, its modes, and the unparseable-file rule, the 100-slug prompt cap. Files: `hooks/harvest_sweep.py`, `tests/test-hooks.sh`, a stub extractor fixture. AC: the argv part of AC22; AC24; AC30.
+- [ ] T7a: failure classes. The limit hold, the probe, the auth stop, and fail counts on every other path. Files: `hooks/harvest_sweep.py`, `tests/test-hooks.sh`. AC: AC4, AC27, the rc 1 part of AC5b.
+- [ ] T7b: quarantine. Quarantine at the threshold and its lift on new activity. Files: `hooks/harvest_sweep.py`, `tests/test-hooks.sh`. AC: AC5, AC5b.
+- [ ] T8: sanitizing. Credential-shape redaction (the full prefix list), slug charset, evidence and reason cuts, the `stage1.log` content rule and mode. Files: `hooks/harvest_sweep.py`, `tests/test-hooks.sh`, an injection-text fixture, a credential-shape fixture. AC: AC9, the redaction part of AC22.
 
 ### Phase 1c: learnings, patterns, report
 
-- [ ] T9: sweep ledgers. Repo-slug walk and naming, `_stage_candidates` into `ledger/<repo-slug>.md`, repo-ledger reads under its lock, archive-sibling dedup. Files: `hooks/harvest_sweep.py`, `tests/test-hooks.sh`, a deleted-worktree cwd fixture, a same-basename repo pair fixture. AC: the slug part of AC1; AC11; the slug part of AC26.
-- [ ] T10: pattern aggregation. `patterns.jsonl` under its lock keyed by (canonical, session, extract key) and summed, fuzzy clusters with canonical slugs, window, threshold, `ask`, pruning. Files: `hooks/harvest_sweep.py`, `tests/test-hooks.sh`. AC: AC7.
-- [ ] T11: annotator. Precedent and lane per candidate through argv lists, the code-home-wins rule, the `PROSE-ONLY:` bullet, `proposed.jsonl` with the re-propose rule and its 90-day pruning. Files: `hooks/harvest_sweep.py`, `tests/test-hooks.sh`, a stub `bin/precedent` fixture, a shell-metacharacter evidence fixture. AC: AC15, AC18, AC23.
+- [ ] T9: sweep ledgers. Repo-slug walk and naming, `_stage_candidates` with `extra_known` into `ledger/<repo-slug>.md`, the row-context sidecar, repo files read only when present and locks opened without `O_CREAT`. Files: `hooks/harvest.py` (the `extra_known` parameter), `hooks/harvest_sweep.py`, `tests/test-hooks.sh`, a deleted-worktree cwd fixture, a same-basename repo pair fixture. AC: the slug part of AC1; AC11; the slug part of AC26; AC29.
+- [ ] T10: pattern aggregation. `patterns.jsonl` under its lock keyed by (canonical, session, extract key), lead-group counting, fuzzy clusters with the length and 12-character rules, canonical slugs, window, threshold, `ask`. Files: `hooks/harvest_sweep.py`, `tests/test-hooks.sh`. AC: AC7.
+- [ ] T11: annotator. Precedent and lane per candidate through argv lists, the code-home-wins rule, the `PROSE-ONLY:` bullet, `proposed.jsonl` with the re-propose rule. Files: `hooks/harvest_sweep.py`, `tests/test-hooks.sh`, a stub `bin/precedent` fixture, a shell-metacharacter evidence fixture. AC: AC15, AC18, AC23.
 - [ ] T12: lint flag. `sweep_report` in `lib/wrap/report-lint.sh` with its fixtures. Files: `lib/wrap/report-lint.sh`, `tests/test-hooks.sh`, three report fixtures. AC: AC10.
-- [ ] T13: report and rc. Render the report, lint once, the gate-ledger record, the rc contract (including rc 6), `runs/` and `extract/` pruning. Files: `hooks/harvest_sweep.py`, `tests/test-hooks.sh`. AC: AC12.
-- [ ] T14: entry. `--sweep`, `--dry-run`, `--status`, `sweep.lock`, and the `_dispatch` route in `harvest.py`. Files: `hooks/harvest_sweep.py`, `hooks/harvest.py`, `tests/test-hooks.sh`. AC: AC2, AC3, the lock part of AC4, the `--status` part of AC28; the After state dry run.
-- [ ] T22: flush lifecycle. `harvest.py --flush-list`, `--mark-flushed <row-id> <ref>`, `cmd_cleanup(ledger)` with the ledger argument and the lock held throughout, and the sweep run's per-run archive call. Files: `hooks/harvest.py`, `hooks/harvest_sweep.py`, `tests/test-hooks.sh`. AC: AC17.
+- [ ] T13: report and rc. Render the report, lint once, the gate-ledger record, the rc contract (including rc 6). Files: `hooks/harvest_sweep.py`, `tests/test-hooks.sh`. AC: AC12.
+- [ ] T13b: pruning. Every age rule in one place: `patterns.jsonl` by window, `proposed.jsonl` at 90 days, quarantine and `seen{}` entries at 30 days, `extract/` and `runs/` at 30 days; never an unread session. Files: `hooks/harvest_sweep.py`, `tests/test-hooks.sh`. AC: AC31.
+- [ ] T14: entry. `--sweep`, `--dry-run` (which also takes `sweep.lock`), `--status`, `sweep.lock`, and the `_dispatch` route in `harvest.py`. Files: `hooks/harvest_sweep.py`, `hooks/harvest.py`, `tests/test-hooks.sh`. AC: AC2, AC3, the lock part of AC4, the `--status` part of AC28; the After state dry run.
+- [ ] T22: flush lifecycle. `harvest.py --flush-list` joined with the sidecar, `--mark-flushed <row-id> <ref>`, `cmd_cleanup(ledger)` with the ledger argument and the lock held throughout, and the sweep run's per-run archive call. Files: `hooks/harvest.py`, `hooks/harvest_sweep.py`, `tests/test-hooks.sh`. AC: AC17.
 
 ### Phase 1d: config, hook, deploy, wrap
 
@@ -343,12 +354,12 @@ Each task touches at most five files and carries one mechanism. Tests go in the 
 - [ ] T17: installer. `--label`, `--apply`, `--uninstall`, the marker. Files: `deploy/macos/harvest-sweep/install`, `deploy/macos/harvest-sweep/README.md`, `tests/test-hooks.sh`. AC: AC13.
 - [ ] T18: wrap knob. `wrap.distill = "harvest"` with host scoping, the explicit-word override, and the `--status` `FYI` row. Files: `commands/wrap.md`, `kit.toml` (the `[wrap]` comment), `MANUAL.md`, `tests/test-meta.sh`. AC: the wrap part of AC10; the wrap part of AC28; test-meta asserts the three states in wrap.md.
 - [ ] T19: ADR-0034 amendment to decisions 6 and 9. Files: `docs/decisions/0034-harness-loop-taxonomy.md`. AC: the amendment names the label, the cadence, and why kit-weekly does not carry it, and records that the kit owns the template, launcher, and installer while the instance and the heartbeat bridge stay consumer-side (the `board-sync-cron` precedent).
-- [ ] T23 (companion, dotfiles repo, its own PR): the learning-ledger skill drains the sweep ledgers. File: `dotfiles/home/dot_claude/skills/learning-ledger/SKILL.md`. Insertion point: the top of `## Flush + route (at session close or on request)`, a new first step: run `python3 ~/.claude/dwarves-kit/hooks/harvest.py --flush-list`, route each listed row like a ledger row, then run `--mark-flushed <row-id> <ref>` for it instead of editing a file. Also add the sweep ledger dir to `## The three layers` and `## References`. AC: one real `/kit:wrap distill` on the Mini lists, routes, and marks a real sweep row from T20b, recorded in `docs/verification/harvest-sweep.md`.
+- [ ] T23 (companion, dotfiles repo, its own PR): the learning-ledger skill drains the sweep ledgers. File: `dotfiles/home/dot_claude/skills/learning-ledger/SKILL.md`. Insertion point: the top of `## Flush + route (at session close or on request)`, a new first step: run `python3 ~/.claude/dwarves-kit/hooks/harvest.py --flush-list`, route each listed row from its `why` and `evidence` (never from the slug alone; a row with null context stays queued), then run `--mark-flushed <row-id> <ref>` for it instead of editing a file. Amend the rule at about line 141, "Rows from other sessions stay queued", so rows returned by `--flush-list` are eligible whatever session staged them. Also add the sweep ledger dir to `## The three layers` and `## References`. AC: one real `/kit:wrap distill` on the Mini lists, routes, and marks a real sweep row from T20b, recorded in `docs/verification/harvest-sweep.md`.
 - [ ] T24 (companion, ops-toolkit repo, its own PR): the heartbeat bridge as a deploy bundle. Folder: `ops-toolkit/tools/harvest-sweep-deploy/` with `bridge` (reads `/etc/vps-mon/harvest-sweep-heartbeat-url`, pings success on rc 0 and fail otherwise, never prints the URL), `README.md` with the rebuild runbook, `tool.toml`, the regenerated `MANIFEST.md`, and `docs/proof-of-done.md`, all in one commit per that repo's rules. AC: the bundle passes that repo's pre-commit and proof gate; the bridge's own test pings a stub URL on rc 0 and a fail URL on rc 1.
 
 ### Phase 1e: rollout (Mini, in this order)
 
-- [ ] T20: hand dry runs, no plist. Run `python3 <kit>/hooks/harvest_sweep.py --sweep --dry-run` three times across a day with `sources = "claude devin"`; compare each manifest against a hand review of the same sessions. AC: the comparison recorded in `docs/verification/harvest-sweep.md`.
+- [ ] T20: hand dry runs, no plist. Run `python3 <kit>/hooks/harvest_sweep.py --sweep --dry-run` three times across a day with `sources = "claude devin"`; compare each manifest against a hand review of the same sessions. Run one real extractor call with `--output-format json` and record its input tokens; restate the monthly quota figure from that number. If the default Claude Code system prompt dominates it, set `--system-prompt` to a short extraction prompt in the extractor default and measure again (DEC-84). AC: the comparison and the measured tokens recorded in `docs/verification/harvest-sweep.md`.
 - [ ] T20b: one real manual run, no plist. Run `python3 <kit>/hooks/harvest_sweep.py --sweep` once by hand; it writes only kit state. AC: `--flush-list` shows at least one real row, and no repo on the Mini changed.
 - [ ] T21: enable and install. Set `harvest.enable = true`, `harvest.sources = "claude devin"`, and `wrap.distill = "harvest"` in the Mini operator `kit.toml`; run `install --label mini.harvest-sweep --apply`; install T24's bridge to `~/.config/harvest-sweep/bridge`; provision the heartbeat; add the catalog link, in that order. AC: two consecutive scheduled runs report clean lint, a gate-ledger line, and a heartbeat ping; vps-mon shows the job monitored, not gap.
 
@@ -365,18 +376,18 @@ The week that follows is SPEC-358's entry condition: every scheduled run rc 0 wi
 
 ## Acceptance Criteria (global)
 
-- [ ] AC1: adapters. Each fixture source yields the normalized shape. Devin `system` rows are absent from `messages`. Subagent files interleave with the lead by timestamp into one transcript (one extraction), the lead keeps its 60% share of the budget, and a later read of the same session renders only entries newer than `last_ts`. A Devin worker whose first user message names a record's `brief` takes that record's `lead_session`; with no match it stays null. A session whose cwd is under the harvest state dir, including an extractor call's own transcript, is never selected. A deleted-worktree cwd resolves to its main repo's slug.
+- [ ] AC1: adapters. Each fixture source yields the normalized shape. Devin `system` rows are absent from `messages`. Subagent files interleave with the lead by timestamp into one transcript (one extraction), the lead keeps its 60% share of the budget, and a later read of the same session renders only entries newer than `last_ts`. A Devin worker whose first user message names a record's `brief` takes that record's `lead_session`; with no match it stays null. A session whose cwd is under the harvest state dir, including an extractor call's own transcript, is never selected, is marked done, and the hwm moves past it. A deleted-worktree cwd resolves to its main repo's slug.
 - [ ] AC2: idempotency. Running `--sweep` twice over the same fixtures leaves the sweep ledger, `patterns.jsonl`, and `proposed.jsonl` byte-identical after the second run, and the second run makes no extractor call.
 - [ ] AC3: crash safety. Killing the sweep after a session's staging and before its cursor write, then re-running, stages no duplicate row, double-counts no sighting, and reuses the cached raw output (the stub extractor is called once for that session). No session between the old and new hwm is skipped.
 - [ ] AC4: auth stop, rc, and skips. A stub extractor that exits 1 on every call leaves the hwm unchanged, the sweep exits 1, and the launcher passes 1 to a stub bridge. A disabled run, an unmarked host, and a lock-held run exit 0 and never call the bridge.
 - [ ] AC5: quarantine, middle session. A stub extractor that fails only for session B (not the oldest), with a passing probe, lets A and C complete; B's fail count rises each run, the hwm never passes B, and B is quarantined on the third run with a `STATE` row. When B's fixture later gains a newer entry, the quarantine lifts and B is extracted.
 - [ ] AC5b: quarantine, oldest session. A stub extractor that fails only for session A, the oldest, with a passing probe: each run increments A's fail count, continues past A to B and C, exits 0, and quarantines A on the third run with a `STATE` row; the hwm then moves past A. With a failing probe, the same run stops with rc 1 and A's fail count still rises.
 - [ ] AC6: bounds. Twenty-five new lead fixtures plus ten trivial ones: one run extracts 20 and marks the 10 trivial done; the next run extracts 5. With 300 known pattern slugs and 300 proposed slugs, each extractor prompt carries exactly 100 slugs and is at most 19,400 characters (`HARVEST_MAXCHARS` of transcript plus the fixed prompt and slugs). The report carries each source's lag line.
-- [ ] AC7: threshold. Two sessions each sighting a pattern once produce no candidate. A third produces one. One session sighting it with count 3 produces one. One session read in two delta windows, each sighting it with count 2, produces one (the counts sum to 4); replaying either window does not raise the sum. An `ask` produces one at count 1. Sightings `commit-hook-false-block` and `commit-hok-false-block` count as one canonical pattern.
+- [ ] AC7: threshold. Two lead groups each sighting a pattern once produce no candidate. A third produces one. One session sighting it with count 3 produces one. One session read in two delta windows, each sighting it with count 2, counts 4; replaying either window does not raise it. Seven Devin workers attributed to one lead, each sighting a pattern once, count 1, and the report shows 7 sessions beside 1 group. An `ask` produces one at count 1. Sightings `commit-hook-false-block` and `commit-hok-false-block` count as one canonical pattern; `fix-lint` and `fix-link` (under 12 characters) stay two; two 14-character slugs whose lengths differ by 3 never cluster.
 - [ ] AC8: hook switch and recursion guard. With the sweep active and `hook_when_sweep_on = false`, the no-arg, `--lab-log`, and `--stop-trigger` modes exit 0 without a child. With `enable = false`, or with no host marker, today's behavior holds. `HARVEST_SWEEP_CHILD=1` suppresses all three modes. A project `.kit.toml` setting any `[harvest]` key changes nothing. The stub extractor's argv contains `--setting-sources project` and never `--bare`.
 - [ ] AC9: sanitizing. A fixture transcript whose tool output carries shell metacharacters, angle-bracket tags, and an instruction to edit `hooks/ship-gate.sh` reaches `patterns.jsonl`, the ledger, and the report only as a charset-valid slug and an evidence line of at most 200 printable characters without backticks, angle brackets, `$`, or newlines.
 - [ ] AC10: wrap and lint. A `## Harvest sweep:` report whose `**Built:**` items are all `REPORTED` passes; the same report with one `BUILT` item fails; the same report without `**Seam:**` fails. A wrap report with both `SKIPPED: distill runs in the harvest sweep` lines passes.
-- [ ] AC11: no repo writes. After a fixture run, each fixture repo's main checkout has the same HEAD sha, the same checked-out branch, the same `.git/config`, the same worktree list, and an empty `git status --porcelain`; its `_meta/learned-ledger.md` is byte-identical. An empty run writes no manifest.
+- [ ] AC11: no repo writes. After a fixture run, each fixture repo's main checkout has the same HEAD sha, the same checked-out branch, the same `.git/config`, the same worktree list, and an empty `git status --porcelain`; its `_meta/learned-ledger.md` is byte-identical; no `.lock` file exists in a repo that had none before. An empty run writes no manifest.
 - [ ] AC12: report and rc. A fixture run's report passes `report-lint.sh`, lists each staged learning under `**Learnings staged:**`, and writes one gate-ledger line under `harvest-sweep-<run-id>`. A renderer mutated to drop the `**Seam:**` line gives rc 3 with the findings appended. A devin source failing three runs in a row gives rc 5 and a `Needs you` `UNBLOCK` item.
 - [ ] AC13: install and uninstall. The dry run renders a plist whose `ProgramArguments[0]` is the launcher path and refuses with `enable = false`. `install --uninstall` removes the plist and the marker; afterwards `harvest.sh` runs its hook modes again and wrap treats `harvest` as not active; the cursor, ledgers, `patterns.jsonl`, `proposed.jsonl`, `extract/`, and `runs/` are still present, and the command prints the queued-learning count and a purge command for `extract/`, which it does not run.
 - [ ] AC14: source drift. A devin fixture db with a renamed column yields a `STATE` row and no crash; the claude source still runs; after the third consecutive failing run the rc is 5; one good read resets the count.
@@ -387,13 +398,16 @@ The week that follows is SPEC-358's entry condition: every scheduled run rc 0 wi
 - [ ] AC19: launcher log. A launcher run with `HOME` pointed at a temp dir writes a start line and an `end rc=<n>` line to `<HOME>/Library/Logs/dwarves-kit/<label>.log`.
 - [ ] AC20: format drift. A claude fixture set of 12 sessions that are all trivial yields a `STATE` row and counts as a source failure; three such runs in a row give rc 5. A `seen{}` entry survives the `done{}` prune by hwm and is dropped only after 30 days.
 - [ ] AC21: lag alarm. A run whose oldest eligible unread session is 30h old gives rc 0 with a lag `STATE` row; a second consecutive such run gives rc 6 and a `Needs you` `DECIDE` item; a following run under 24h gives rc 0 and resets the count.
-- [ ] AC22: extractor safety. The stub extractor's argv carries `--tools ""`, `--strict-mcp-config`, and `--no-session-persistence`. A fixture whose evidence and reason carry a 40-character hex run, a token with a `ghp_` prefix, one with an `AKIA` prefix, and a PEM private-key header stores each as `[redacted]` in `patterns.jsonl`, the ledger, and the report.
+- [ ] AC22: extractor safety. The stub extractor's argv carries `--tools ""`, `--strict-mcp-config`, and `--no-session-persistence`. A fixture whose evidence and reason carry a 40-character hex run and tokens with the `ghp_`, `AKIA`, `sk_live_`, `glpat-`, `AIza`, and `ops_` prefixes, a JWT-shaped string, and a PEM private-key header stores each as `[redacted]` in `patterns.jsonl`, the sidecar (`.rows.jsonl`), and the report. `stage1.log` is mode 0600 and contains none of the fixture's transcript or extractor text.
 - [ ] AC23: no shell. With a candidate whose evidence carries `;`, `|`, `&`, single quotes, and double quotes, the stub `bin/precedent` and stub `lane-classify.sh` receive the text as one argv element, byte for byte, and no marker file that a shell-interpreted `;` would create exists afterwards.
 - [ ] AC24: cache modes. After a run, `extract/` and its subdirectories are mode 0700 and every cache file is 0600.
 - [ ] AC25: no drop after an outage. A fixture of 50 lead sessions spread across a simulated 48h auth outage, then 3 consecutive runs capped at 20: the runs extract 20, 20, and 10, in `last_activity` order, oldest first; afterwards every one of the 50 has a raw output cache file and none was marked done without one.
-- [ ] AC26: repo identity. Two fixture repos named `app` under different parents, one with an origin URL and one without, stage into two different `ledger/<repo-slug>.md` files (`<owner>__<name>` and `app-<hash>`), and their row ids never collide. A Devin fixture session with `hidden = 1` is never selected, and its cwd comes from `working_directory`.
+- [ ] AC26: repo identity. Two fixture repos named `app` under different parents, one with an origin URL and one without, stage into two different `ledger/<repo-slug>.md` files (`<owner>__<name>` and `app-<hash>`), and their row ids never collide. A Devin fixture session with `hidden = 1` is never selected, is marked done, and the hwm moves past it; a visible session's cwd comes from `working_directory`.
 - [ ] AC27: limit hold. A stub extractor that prints `usage limit reached` on stderr and exits 1: the run stops extracting, no `fail{id}` rises, the hwm does not move, the report carries a `STATE` row, and the rc is 0. The next run with a working stub resumes at the same session.
 - [ ] AC28: visibility. `harvest_sweep.py --status` prints the newest report path with its candidate and queued counts, or `none`. A wrap report fixture in harvest mode carries a `STATE` row holding that line.
+- [ ] AC29: row context. A staged learning's sidecar entry holds its redacted `why` and `evidence`, `source: <source>/<session_id>`, and the lead id when known, and `--flush-list` returns them on the row. A run killed between the ledger append and the sidecar write lists the row with null context; the next run's replay fills the sidecar entry without staging the row twice.
+- [ ] AC30: cache integrity. A truncated cache file is removed and the session is extracted again with no fail count; a crash mid-write leaves no partial cache file (the temp file is never read). `--dry-run` refuses to start while `sweep.lock` is held.
+- [ ] AC31: pruning. Fixture entries past each age limit (patterns past the window, proposed past 90 days, quarantine and `seen{}` past 30 days, `extract/` and `runs/` past 30 days) are pruned in one run; an eligible unread session of any age is not.
 
 ## Test plan
 
@@ -409,6 +423,7 @@ Outline. `/kit:test-plan` expands it into the coverage matrix.
 | sanitizing | slug charset; evidence length and stripped characters; injection fixture | unit |
 | annotation | stub precedent hit and miss; code home over prose home; all-prose `PROSE-ONLY:` bullet; lane recorded; `REPORTED` only | unit |
 | flush verbs | list, mark, double mark, unknown id, archive on next run, no re-stage, concurrent mark during archive | integration |
+| context and integrity | sidecar content and null-context repair; cache atomic write and unparseable removal; dry-run lock; lead-group counting; fuzzy length rules; prune in one task | unit |
 | limits and identity | limit hold keeps the cursor with rc 0; same-basename repos; devin hidden and working_directory; no-shell argv; cache modes | unit |
 | safety | `--tools ""` in argv; credential-shape redaction; 100-slug cap | unit |
 | lag and drift | two runs over 24h give rc 6; reset under the threshold; all-trivial source counts as a failure | unit |
@@ -450,6 +465,16 @@ Outline. `/kit:test-plan` expands it into the coverage matrix.
 | slug by repo basename only | AC26 distinct ledgers |
 | treat a limit-shaped failure as an auth failure | AC27 rc 0 and no fail count |
 | drop the `--status` row from wrap's harvest FYI | AC28 wrap fixture |
+| stop writing the sidecar | AC29 `why` and `evidence` on the listed row |
+| `--flush-list` omits the sidecar join | AC29 fields returned |
+| skip the sidecar repair on replay | AC29 null context filled |
+| count a failure on an unparseable cache file | AC30 no fail count |
+| open a repo `.lock` with `O_CREAT` | AC11 no new `.lock` in the repo |
+| count raw sessions instead of lead groups | AC7 seven workers count 1 |
+| drop the 12-character fuzzy floor | AC7 `fix-lint` and `fix-link` stay two |
+| mark filtered sessions skipped but not done | AC1 and AC26 hwm moves past |
+| drop the `sk_live_`, `AIza`, `ops_`, or JWT pattern | AC22 `[redacted]` stored |
+| prune `extract/` entries for sessions still unread | AC31 unread session kept |
 | skip the redaction pass | AC22 `[redacted]` stored |
 
 ## Verification
@@ -471,7 +496,7 @@ Rollout proof (T20, T21) goes into `docs/verification/harvest-sweep.md`: the thr
 4. A session's cwd was a worktree that has since been removed. The slug walk strips `/.claude/worktrees/<name>` and walks up to an existing parent.
 5. Two sessions share a cwd in a repo with no `_meta/learned-ledger.md`. The sweep ledger for that repo slug is created; nothing is created in the repo.
 6. A pattern slug drifts across sessions. The canonical-slug list in the prompt is the first guard, and the fixed fuzzy threshold is the second. A miss splits the count and delays the candidate. It never reports a single sighting.
-7. The system clock jumps backward. The hwm is compared against source timestamps, so no session is lost; the quiet window may delay one run.
+7. The system clock steps backward. The hwm is compared against source timestamps, so no session is lost: a session with new activity has a changed mtime and is selected again. The delta key has a limit: entries written during the step carry timestamps at or below `seen{id}.last_ts` and are skipped for that session's delta, so the loss is entry-level and bounded by the step size; the session-level guarantee holds (DEC-91).
 8. The operator runs `/kit:wrap distill` on the Mini. Both distill the same session. Learnings dedup by slug; wrap may build a candidate the sweep only reported, and the sweep's next precedent result then names wrap's build.
 9. `sources` names an agent with no adapter (for example `codex`). That word logs `unknown source` and is skipped; the others run.
 10. The operator `kit.toml` syncs to the Air with `wrap.distill = "harvest"`. The Air has no marker, so its wraps keep distilling and its hook keeps running, each saying so in a `STATE` row or log line.
@@ -491,6 +516,7 @@ Rollout proof (T20, T21) goes into `docs/verification/harvest-sweep.md`: the thr
 | Load above the cap, or a long outage | lag `STATE` row grows; rc 6 and a `DECIDE` item after two runs over 24h | nothing is dropped; raise `max_sessions_per_run` or lower `schedule_hours`; a lag near Claude's own 30-day transcript retention would lose sessions to Claude's cleanup, which the alarm precedes by weeks |
 | Max-plan usage limit hit | limit-shaped extractor stderr; `STATE` row; rc 0 | a hold, not a failure: no fail count, cursor held, no fail ping; a persistent limit surfaces through the lag alarm |
 | Claude transcript format drift | every session trivial on a busy source; `STATE` row; rc 5 after 3 runs | treated as a source failure (DEC-61); fix the adapter |
+| A flusher routes from a slug with no context | a sweep row flushed to a wrong home | the sidecar carries `why` and `evidence`; T23 routes from them and leaves null-context rows queued |
 | Learnings pile up unflushed | the queued-learnings `STATE` row grows run over run | the learning-ledger skill drains them through `--flush-list` and `--mark-flushed` once T23 lands; the sweep never flushes on its own |
 | Heartbeat can never go red | job silently broken, monitor green | the launcher calls the sweep entry directly and passes its rc; disabled runs skip the bridge |
 | Transcript data to a new provider | Devin transcripts reach Anthropic Haiku | `sources` defaults to `claude`; adding `devin` is an operator decision in root-only config |
@@ -595,7 +621,17 @@ Entries marked "moved to phase 2" keep their history here; their effect lives in
 - DEC-79: the repo slug comes from `git rev-parse --path-format=absolute --git-common-dir`, named `<owner>__<name>` from the origin URL when there is one, else `<basename>-<12 hex of the path hash>`. The Devin adapter reads cwd from `working_directory` and skips `hidden = 1` sessions, since the column's meaning is undocumented.
 - DEC-80: a limit-shaped extractor failure (usage or rate limit, the 5-hour window) is a hold: `STATE` row, cursor held, no fail count, rc 0, so no fail ping. Only auth-shaped failures stop with rc 1. A persistent limit surfaces through the lag alarm.
 - DEC-81: in harvest mode wrap's `FYI` carries a `STATE` row from `harvest_sweep.py --status` (newest report path, candidate count, queued-learnings count). SPEC-358's clean-week entry condition also requires that the reports were read: at least one sweep row marked `flushed:` during the week, or one reported candidate built by hand.
+- DEC-82: raw output cache files are written through a temp file and `os.replace`; an unparseable cache file is removed and re-extracted without a fail count; `--dry-run` takes `sweep.lock`.
+- DEC-83: each sweep ledger has a `rows.jsonl` sidecar keyed by row id, holding the redacted `why` and `evidence`, `source: <source>/<session_id>`, and the lead id. `--flush-list` returns them, and the sidecar write is idempotent and repaired on replay. The ledger table's five columns dropped the extractor's reason, which left a flusher only a slug. T23 amends the skill's "rows from other sessions stay queued" rule and routes from context, never from the slug alone.
+- DEC-84: T20 measures one real extractor call's input tokens with `--output-format json` and restates the quota from it; `--system-prompt` is the lever if Claude Code's default system prompt dominates.
+- DEC-85: `_stage_candidates` takes an explicit `extra_known` list. Per repo slug the sweep passes the sweep ledger's archive, the repo's `_meta/learned-ledger.md`, and its archive; `glossaries` is the repo's `learning/*/GLOSSARY.md`.
+- DEC-86: repo files are read only when they exist, and a repo `.lock` is opened only when it exists, without `O_CREAT`; the sweep never creates a file in a repo.
+- DEC-87: fuzzy clustering applies only to slugs of 12 or more characters whose lengths differ by 2 or less.
+- DEC-88: occurrences count lead groups (a lead with its subagents and its attributed Devin workers counts once, at its largest per-session total); the report shows the raw session count beside it. This gives launch-record attribution (T4) its effect on counting.
+- DEC-89: redaction also covers `sk_live_`, `rk_live_`, `AIza`, `glpat-`, `ops_`, and JWT-shaped strings; `stage1.log` holds counts, ids, and error classes only, mode 0600.
+- DEC-90: T7 splits into T7a (limit hold, probe, auth stop, fail counts) and T7b (quarantine and lift); every pruning rule moves into T13b; the serial order and dependencies are restated.
+- DEC-91: the delta key's clock-step limit: a backward step can skip entries written during the step for that session's delta; a session with new activity is still selected again.
 
 ## Open questions
 
-(none; design questions were resolved at approval, in the design critique, in validation rounds 1 and 2, and in phase 1 validation, see DEC-11 to DEC-81; phase 2's open items live in SPEC-358)
+(none; design questions were resolved at approval, in the design critique, in validation rounds 1 and 2, and in phase 1 validation, see DEC-11 to DEC-91; phase 2's open items live in SPEC-358)
