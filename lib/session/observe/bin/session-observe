@@ -6,7 +6,10 @@ Three views, all derived from the JSONL transcripts under ~/.claude/projects/:
               (--latency adds a per-skill total wall-time table, ranked by summed ms)
   tools     - which tools (Bash/Read/Edit/Agent/...) fired, with error rate
               (--errors TOOL groups that tool's error results by message prefix)
-  hooks     - per-hook execution latency (count/p50/p95/max) + hook errors
+  hooks     - per (hook, event) execution latency (count/p50/p95/max) + hook errors:
+              Stop comes from hookInfos (or, for a headless claude -p file with no
+              hookInfos, from its attachment copy); every other event comes from
+              attachment records (hook_success, hook_cancelled, hook_non_blocking_error)
   subagents - subagent (Agent/Task) spawns per day + by type, normalized per prompt
   friction  - deterministic friction: thrash (rework), permission-prompts, context
               pressure (compactions), skill mis-fires
@@ -31,8 +34,11 @@ busy day and a quiet day are comparable. Sidechain entries (the subagents' own
 transcripts) are excluded, so each spawn is counted once from the main session.
 
 Why JSONL and not a hook wrapper: the transcript already records, per entry,
-`hookInfos: [{command, durationMs}]` and `hookErrors`, plus every `tool_use`
-and `tool_result` block. So hook latency AND tool/skill usage come from one
+`hookInfos: [{command, durationMs}]` (Stop hooks only, via a stop_hook_summary
+system entry) and `hookErrors`, plus an `attachment` record per hook for every
+other event (SessionStart, PreToolUse, PostToolUse, PostToolUseFailure,
+UserPromptSubmit, SubagentStart, SubagentStop), plus every `tool_use` and
+`tool_result` block. So hook latency AND tool/skill usage come from one
 source with zero instrumentation, no dotfiles change, no always-on daemon.
 
 Stdlib only (no external deps) so it can run anywhere, including from a hook.
@@ -258,6 +264,17 @@ def hook_label(command):
     return toks[0].rsplit("/", 1)[-1][:40] or "?"
 
 
+def _hook_duration(x):
+    """A usable hook duration: int or float, excluding bool (bool is an int
+    subclass in Python, so a naive isinstance check would accept True/False
+    as a duration). Returns the value, or None if not usable."""
+    if isinstance(x, bool):
+        return None
+    if isinstance(x, (int, float)):
+        return x
+    return None
+
+
 def _rank_index(n, p):
     """Nearest-rank index into a sorted list of n values for percentile p.
 
@@ -312,6 +329,11 @@ def collect(args):
         f_tools = f_turns = 0    # session tool + prompt volume (for archetype)
         f_interrupted = False
         f_sidechain = False      # a subagent's own transcript, not a session Han ran
+        stop_buffer = []          # buffered (key, durationMs, sample) from Stop attachments,
+                                   # committed only if this file has no hookInfos at all
+                                   # (a headless claude -p transcript has no stop_hook_summary
+                                   # system entry, so its attachment copy is the only record)
+        file_has_hookinfos = False
         for entry in iter_entries(path):
             # day + sidechain are needed by both the prompt-turn count and the
             # subagent-spawn count; a spawn in a sidechain file is the subagent's
@@ -361,18 +383,49 @@ def collect(args):
             if entry.get("isCompactSummary") and day:
                 compact_day[day] += 1
 
-            # hookInfos/hookErrors ride on (mostly) system entries.
+            # hookInfos/hookErrors ride on (mostly) system entries: a
+            # stop_hook_summary entry, the only observed source of
+            # hookInfos, so every hookInfos entry is a Stop hook.
             hi = entry.get("hookInfos")
             if isinstance(hi, list):
+                # the field's presence, not any one entry's duration, is what
+                # marks this file as having the hookInfos Stop source
+                file_has_hookinfos = True
                 for h in hi:
                     if not isinstance(h, dict):
                         continue
+                    dur = _hook_duration(h.get("durationMs"))
+                    if dur is None:
+                        continue  # no usable duration: skip, don't count as zero
                     lab = hook_label(str(h.get("command", "?")))
-                    hook_durs[lab].append(h.get("durationMs") or 0)
-                    hook_sample.setdefault(lab, str(h.get("command", ""))[:60])
+                    key = (lab, "Stop")
+                    hook_durs[key].append(dur)
+                    hook_sample.setdefault(key, str(h.get("command", ""))[:60])
             he = entry.get("hookErrors")
             if isinstance(he, list):
                 hook_errors += len(he)
+
+            # attachment records: hook_success (and any other attachment type
+            # carrying command + durationMs, e.g. hook_cancelled, hook_non_blocking_error)
+            # cover every hook event other than what hookInfos already counts.
+            # A cancelled/failed hook still cost turn time, so it is counted too.
+            if entry.get("type") == "attachment":
+                att = entry.get("attachment")
+                if isinstance(att, dict):
+                    cmd = att.get("command")
+                    dur = _hook_duration(att.get("durationMs"))
+                    if isinstance(cmd, str) and cmd and dur is not None:
+                        event = att.get("hookEvent")
+                        event = event if isinstance(event, str) and event else "?"
+                        lab = hook_label(cmd)
+                        key = (lab, event)
+                        if event == "Stop":
+                            # buffered: committed only if this file has no
+                            # hookInfos at all (see stop_buffer comment above)
+                            stop_buffer.append((key, dur, cmd[:60]))
+                        else:
+                            hook_durs[key].append(dur)
+                            hook_sample.setdefault(key, cmd[:60])
 
             for b in blocks(entry):
                 if not isinstance(b, dict):
@@ -438,7 +491,16 @@ def collect(args):
                             label = "Bash:" + id_cmd[tid]
                         perm[label] += 1
 
-        # end of transcript (= one session): fold per-session edit counts into thrash
+        # end of transcript (= one session): reconcile buffered Stop attachments.
+        # A file with hookInfos already counted every Stop hook in it via that
+        # branch, so its buffered attachment copies are discarded (double-counting
+        # rule). A headless (claude -p) file has no hookInfos at all, so its
+        # buffered Stop attachments are the only record and are committed.
+        if not file_has_hookinfos:
+            for key, dur, sample in stop_buffer:
+                hook_durs[key].append(dur)
+                hook_sample.setdefault(key, sample)
+        # fold per-session edit counts into thrash
         for fp, n in file_edits.items():
             if n >= THRASH_MIN:
                 thrash[fp] += 1
@@ -519,12 +581,16 @@ def skill_usage_rows(counts, errs, last, recent, top):
 
 
 def hook_rows(durs, sample, top):
+    """One row per (hook label, event) key. --top caps the number of these
+    rows, not the number of distinct hook labels: a hook firing under N
+    events can occupy up to N of the top slots."""
     rows = []
     ranked = sorted(durs.items(), key=lambda kv: max(kv[1]) if kv[1] else 0, reverse=True)
     if top:
         ranked = ranked[:top]
-    for lab, vals in ranked:
-        rows.append([lab, len(vals), pctl(vals, 50), pctl(vals, 95), max(vals) if vals else 0, sample.get(lab, "")])
+    for key, vals in ranked:
+        lab, event = key
+        rows.append([lab, event, len(vals), pctl(vals, 50), pctl(vals, 95), max(vals) if vals else 0, sample.get(key, "")])
     return rows
 
 
@@ -1346,7 +1412,7 @@ def emit(args, data):
                        for k, v in data["skills"].most_common()],
             "skill_latency": [{"skill": r[0], "fires": r[1], "total_ms": r[2], "p50_ms": r[3], "p95_ms": r[4], "max_ms": r[5]} for r in skill_latency_rows(data["skill_durs"], 0)],
             "tools": [{"tool": k, "count": v, "errors": data["tool_err"].get(k, 0)} for k, v in data["tools"].most_common()],
-            "hooks": [{"hook": lab, "count": len(v), "p50_ms": pctl(v, 50), "p95_ms": pctl(v, 95), "max_ms": max(v) if v else 0} for lab, v in data["hook_durs"].items()],
+            "hooks": [{"hook": lab, "event": event, "count": len(v), "p50_ms": pctl(v, 50), "p95_ms": pctl(v, 95), "max_ms": max(v) if v else 0} for (lab, event), v in data["hook_durs"].items()],
             "hook_errors": data["hook_errors"],
             "subagents": {
                 "by_day": [{"day": d, "spawns": data["sub_day"][d], "prompts": data["turns_day"].get(d, 0)} for d in sorted(data["sub_day"], reverse=True)],
@@ -1412,7 +1478,7 @@ def emit(args, data):
             print()
     if want in ("hooks", "report"):
         print(f"# hooks  ({data['hook_errors']} hook errors across {data['files']} transcripts)")
-        print_table(["hook", "runs", "p50ms", "p95ms", "maxms", "sample"], hook_rows(data["hook_durs"], data["hook_sample"], args.top))
+        print_table(["hook", "event", "runs", "p50ms", "p95ms", "maxms", "sample"], hook_rows(data["hook_durs"], data["hook_sample"], args.top))
         print()
     if want in ("subagents", "report"):
         total_sub = sum(data["sub_type"].values())
