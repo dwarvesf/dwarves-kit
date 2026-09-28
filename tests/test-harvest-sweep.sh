@@ -1413,6 +1413,181 @@ assert_eq "ExtractFailure.limit catches the 5-hour shape" "True" "$(t7a limit_cl
 assert_eq "ExtractFailure.limit is False on a plain failure" "False" "$(t7a limit_class_plain_fail)"
 
 # ============================================================
+echo "=== T7b quarantine and lift ==="
+
+T7B_OUT=$(KIT_DIR="$KIT_DIR" TD="$TD" T5_NOW="$T5_NOW" python3 - <<'PY'
+import datetime, importlib.util, json, os, shlex
+spec = importlib.util.spec_from_file_location("hs", os.path.join(os.environ["KIT_DIR"], "hooks", "harvest_sweep.py"))
+hs = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(hs)
+TD, NOW = os.environ["TD"], int(os.environ["T5_NOW"])
+STUB = os.path.join(os.environ["KIT_DIR"], "tests", "fixtures", "harvest-sweep", "stub-extractor.sh")
+P = lambda k, v: print("%s=%s" % (k, v))
+n_scn = [0]
+
+def scenario(now=NOW):
+    n_scn[0] += 1
+    base = os.path.join(TD, "t7b-s%d" % n_scn[0])
+    os.environ["HARVEST_STATE_DIR"] = os.path.join(base, "state")
+    os.environ["HARVEST_SWEEP_CLAUDE_ROOT"] = os.path.join(base, "claude")
+    os.makedirs(os.environ["HARVEST_SWEEP_CLAUDE_ROOT"])
+    os.environ["HARVEST_SWEEP_DEVIN_DB"] = os.path.join(base, "none.db")
+    os.environ["HARVEST_SWEEP_NOW"] = str(now)
+    os.environ["HARVEST_EXTRACTOR"] = shlex.quote(STUB)
+    for k in ("STUB_MODE", "STUB_OUT", "STUB_ERR", "STUB_RECORD", "STUB_FAIL_MATCH",
+              "HARVEST_SWEEP_QUARANTINE_AFTER"):
+        os.environ.pop(k, None)
+    return base, os.environ["HARVEST_SWEEP_CLAUDE_ROOT"]
+
+iso = lambda e: datetime.datetime.fromtimestamp(e, datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+def mk(root, sid, la, n=6):
+    d = os.path.join(root, "p")
+    os.makedirs(d, exist_ok=True)
+    path = os.path.join(d, sid + ".jsonl")
+    with open(path, "w") as fh:
+        for k in range(n):
+            fh.write(json.dumps({"type": "user" if k % 2 == 0 else "assistant", "cwd": "/w/x",
+                                 "timestamp": iso(la - (n - k) * 10),
+                                 "message": {"content": [{"type": "text", "text": "%s msg %d" % (sid, k)}]}}) + "\n")
+    os.utime(path, (la, la))
+
+def cursor():
+    with open(hs._cursor_path()) as fh:
+        return json.load(fh)
+
+run = lambda: hs.run_selection(schedule_hours=48)
+rows = lambda res: " | ".join(res["claude"]["state_rows"])
+LA_A, LA_B, LA_C = NOW - 7400, NOW - 7200, NOW - 7000
+initial_hwm = NOW - 48 * 3600
+
+# ---- AC5: the middle session quarantines on run 3, then lifts on new activity ----
+base, root = scenario()
+mk(root, "a", LA_A)
+mk(root, "bad-b", LA_B)
+mk(root, "c", LA_C)
+os.environ["STUB_FAIL_MATCH"] = "bad-b"
+r = run()
+P("m_r1_processed", ",".join(r["claude"]["processed"]))
+P("m_r1_fail", json.dumps(cursor()["claude"]["fail"]))
+P("m_r1_hwm", cursor()["claude"]["hwm"] == LA_A)
+run()
+P("m_r2_fail", cursor()["claude"]["fail"].get("bad-b"))
+P("m_r2_hwm", cursor()["claude"]["hwm"] == LA_A)
+r = run()
+P("m_r3_state_row", "quarantined" in rows(r))
+P("m_r3_quar", cursor()["claude"]["quarantined"])
+P("m_r3_done", hs._settled(cursor()["claude"], {"session_id": "bad-b", "last_activity": LA_B}))
+P("m_r3_hwm", cursor()["claude"]["hwm"] == LA_C)
+P("m_r3_processed", ",".join(r["claude"]["processed"]))
+# an unchanged session stays quarantined
+r = run()
+P("m_r4_processed", ",".join(r["claude"]["processed"]))
+P("m_r4_still", "bad-b" in cursor()["claude"]["quarantined"])
+# new activity lifts it and the run extracts it
+mk(root, "bad-b", NOW - 6900, n=8)
+del os.environ["STUB_FAIL_MATCH"]
+r = run()
+P("m_lift_row", "quarantine lifted" in rows(r))
+P("m_lift_processed", ",".join(r["claude"]["processed"]))
+P("m_lift_quar", cursor()["claude"]["quarantined"])
+P("m_lift_fail", cursor()["claude"]["fail"])
+P("m_lift_done", cursor()["claude"]["done"].get("bad-b") == NOW - 6900)
+
+# ---- AC5b: the oldest session quarantines on run 3 and the hwm moves past it ----
+base, root = scenario()
+mk(root, "bad-a", LA_A)
+mk(root, "b", LA_B)
+mk(root, "c", LA_C)
+os.environ["STUB_FAIL_MATCH"] = "bad-a"
+r = run()
+P("o_r1_processed", ",".join(r["claude"]["processed"]))
+P("o_r1_fail", cursor()["claude"]["fail"].get("bad-a"))
+P("o_r1_hwm_held", cursor()["claude"]["hwm"] == initial_hwm)
+run()
+P("o_r2_fail", cursor()["claude"]["fail"].get("bad-a"))
+r = run()
+P("o_r3_fail", cursor()["claude"]["fail"].get("bad-a"))
+P("o_r3_quar", "bad-a" in cursor()["claude"]["quarantined"])
+P("o_r3_state_row", "quarantined" in rows(r))
+P("o_r3_hwm", cursor()["claude"]["hwm"] == LA_C)
+mk(root, "bad-a", NOW - 6900, n=8)
+del os.environ["STUB_FAIL_MATCH"]
+r = run()
+P("o_lift_processed", ",".join(r["claude"]["processed"]))
+P("o_lift_row", "quarantine lifted" in rows(r))
+P("o_lift_fail", cursor()["claude"]["fail"])
+
+# ---- AC5b: a failing probe on the oldest still quarantines on the third run ----
+base, root = scenario()
+mk(root, "bad-x", LA_A)
+mk(root, "y", LA_B)
+os.environ["STUB_MODE"] = "fail"
+run()
+P("p_r1_fail", cursor()["claude"]["fail"].get("bad-x"))
+run()
+r = run()
+P("p_r3_stop", r["run"]["stop"])
+P("p_r3_fail", cursor()["claude"]["fail"].get("bad-x"))
+P("p_r3_quar", "bad-x" in cursor()["claude"]["quarantined"])
+P("p_r3_state_row", "quarantined" in rows(r))
+os.environ["STUB_MODE"] = "ok"
+r = run()
+P("p_r4_processed", ",".join(r["claude"]["processed"]))
+P("p_r4_still", "bad-x" in cursor()["claude"]["quarantined"])
+P("p_r4_hwm", cursor()["claude"]["hwm"] == LA_B)
+
+# ---- the threshold is env-overridable ----
+base, root = scenario()
+mk(root, "bad-e", LA_A)
+os.environ["HARVEST_SWEEP_QUARANTINE_AFTER"] = "1"
+os.environ["STUB_MODE"] = "fail"
+r = run()
+P("e_quar", "bad-e" in cursor()["claude"]["quarantined"])
+PY
+)
+t7b() { printf '%s\n' "$T7B_OUT" | sed -n "s/^$1=//p"; }
+
+assert_eq "AC5: a failing middle session's run still completes A and C" "a,c" "$(t7b m_r1_processed)"
+assert_eq "AC5: the middle session's fail count rises" '{"bad-b": 1}' "$(t7b m_r1_fail)"
+assert_eq "AC5: the hwm never passes the failing middle session" "True" "$(t7b m_r1_hwm)"
+assert_eq "AC5: run 2 increments the fail count again" "2" "$(t7b m_r2_fail)"
+assert_eq "AC5: the hwm is still held after run 2" "True" "$(t7b m_r2_hwm)"
+assert_eq "AC5: run 3 quarantines with a STATE row" "True" "$(t7b m_r3_state_row)"
+assert_eq "AC5: quarantine stores the session's last_activity" "{'bad-b': {'last_activity': $((T5_NOW - 7200)), 'ts': $T5_NOW}}" "$(t7b m_r3_quar)"
+assert_eq "AC5: the quarantined session counts as settled" "True" "$(t7b m_r3_done)"
+assert_eq "AC5: the hwm moves past a quarantined session" "True" "$(t7b m_r3_hwm)"
+assert_eq "AC5: an unchanged session stays quarantined" "" "$(t7b m_r4_processed)"
+assert_eq "AC5: the quarantine persists without new activity" "True" "$(t7b m_r4_still)"
+assert_eq "AC5: new activity lifts the quarantine with a STATE row" "True" "$(t7b m_lift_row)"
+assert_eq "AC5: the lifted session is extracted" "bad-b" "$(t7b m_lift_processed)"
+assert_eq "AC5: the lift clears the quarantine entry" "{}" "$(t7b m_lift_quar)"
+assert_eq "AC5: the lift resets the fail count" "{}" "$(t7b m_lift_fail)"
+assert_eq "AC5: the lifted session settles at its new activity" "True" "$(t7b m_lift_done)"
+
+assert_eq "AC5b: the run continues past a failing oldest session" "b,c" "$(t7b o_r1_processed)"
+assert_eq "AC5b: the oldest session's fail count rises" "1" "$(t7b o_r1_fail)"
+assert_eq "AC5b: the hwm stays at the initial value while the oldest fails" "True" "$(t7b o_r1_hwm_held)"
+assert_eq "AC5b: run 2 increments the oldest session's count" "2" "$(t7b o_r2_fail)"
+assert_eq "AC5b: run 3 increments to the threshold" "3" "$(t7b o_r3_fail)"
+assert_eq "AC5b: the oldest session is quarantined on run 3" "True" "$(t7b o_r3_quar)"
+assert_eq "AC5b: the quarantine carries a STATE row" "True" "$(t7b o_r3_state_row)"
+assert_eq "AC5b: the hwm then moves past the oldest session" "True" "$(t7b o_r3_hwm)"
+assert_eq "AC5b: new activity lifts and extracts the oldest session" "bad-a" "$(t7b o_lift_processed)"
+assert_eq "AC5b: the lift carries a STATE row" "True" "$(t7b o_lift_row)"
+assert_eq "AC5b: the lift resets the oldest session's fail count" "{}" "$(t7b o_lift_fail)"
+
+assert_eq "AC5b: a failing probe still increments the fail count" "1" "$(t7b p_r1_fail)"
+assert_eq "AC5b: the run stops auth-shaped with the probe failing" "auth" "$(t7b p_r3_stop)"
+assert_eq "AC5b: the count reaches the threshold on the stop path" "3" "$(t7b p_r3_fail)"
+assert_eq "AC5b: the quarantine still lands on the stop path" "True" "$(t7b p_r3_quar)"
+assert_eq "AC5b: the quarantine STATE row lands on the stop path" "True" "$(t7b p_r3_state_row)"
+assert_eq "AC5b: the next run resumes past the quarantined session" "y" "$(t7b p_r4_processed)"
+assert_eq "AC5b: an unchanged quarantine stays put" "True" "$(t7b p_r4_still)"
+assert_eq "AC5b: the hwm passes the quarantined oldest session" "True" "$(t7b p_r4_hwm)"
+assert_eq "AC5b: HARVEST_SWEEP_QUARANTINE_AFTER overrides the threshold" "True" "$(t7b e_quar)"
+
+# ============================================================
 echo ""
 echo "=== Results ==="
 echo "Passed: $PASS / $TOTAL"

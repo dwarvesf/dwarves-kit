@@ -676,10 +676,24 @@ def _source_state(cursor, source, initial_hwm):
 
 
 def _settled(state, item):
-    """Done at this exact last_activity, or quarantined (T7b owns the lift): either way the
-    hwm may pass it."""
+    """Done at this exact last_activity, or still quarantined: either way the hwm may pass
+    it. A quarantined session whose last_activity moved is lifted in _plan_source first,
+    so what remains quarantined here is unmoved."""
     return (state["done"].get(item["session_id"]) == item["last_activity"]
             or item["session_id"] in state["quarantined"])
+
+
+def _lifted(state, item):
+    """True when a quarantined session's last_activity moved past the value recorded at
+    quarantine time (DEC-54). The lift removes the entry, resets fail{id}, and drops the
+    stale done{} mark, so the session is selected again."""
+    rec = state["quarantined"].get(item["session_id"])
+    if rec is None or item["last_activity"] <= rec["last_activity"]:
+        return False
+    del state["quarantined"][item["session_id"]]
+    state["fail"].pop(item["session_id"], None)
+    state["done"].pop(item["session_id"], None)
+    return True
 
 
 def _advance_hwm(state, scanned):
@@ -725,19 +739,29 @@ def _plan_source(cursor, source, items, load, now, schedule_hours, since=None):
     quiet_before = now - int(os.environ.get("HARVEST_SWEEP_QUIET_MINUTES", "30")) * 60
     scanned = sorted((i for i in items if i["last_activity"] >= state["hwm"]),
                      key=lambda i: (i["last_activity"], i["session_id"]))[:max_scan]
-    eligible = [i for i in scanned
-                if i["last_activity"] <= quiet_before and not _settled(state, i)]
+    eligible, lifted = [], []
+    for i in scanned:
+        if i["last_activity"] > quiet_before:
+            continue
+        if _lifted(state, i):
+            lifted.append(i["session_id"])
+        if not _settled(state, i):
+            eligible.append(i)
     return {"source": source, "state": state, "scanned": scanned, "eligible": eligible,
             "load": load, "out": {"processed": [], "filtered": [], "failed": [], "deferred": [],
-                                 "read": 0, "trivial": 0, "state_rows": []}}
+                                 "read": 0, "trivial": 0, "state_rows":
+                                     ["STATE %s: quarantine lifted: %s" % (source, s)
+                                      for s in lifted]}}
 
 
-def _sweep_one(cursor, plan, item, process, now, max_chars, records, run):
+def _sweep_one(cursor, plan, item, process, now, max_chars, records, run, quarantine_after):
     """Classify and, unless filtered, process one session. Returns True when it used an
     extraction attempt (counts against the cap), False otherwise. Failure classes
     (DEC-39, DEC-80): a limit-shaped failure is a hold (no fail count, run stops, rc 0);
     any other failure counts in `fail{id}` and is auth-shaped when a second session also
-    fails this run or the probe fails, which stops the run (rc 1, at the T14 entry)."""
+    fails this run or the probe fails, which stops the run (rc 1, at the T14 entry). At
+    `quarantine_after` failures the session is quarantined with its last_activity, marked
+    done, and reported, which lets the hwm pass it (DEC-30, DEC-39)."""
     source, state, out, sid = plan["source"], plan["state"], plan["out"], item["session_id"]
     skip, t = (is_hidden(item), None) if source == "devin" else (False, None)
     if not skip:
@@ -785,6 +809,13 @@ def _sweep_one(cursor, plan, item, process, now, max_chars, records, run):
                         "STATE %s: extractor-auth: the probe failed" % source)
             # every non-limit failure counts, the stop path included (DEC-39)
             state["fail"][sid] = state["fail"].get(sid, 0) + 1
+            if state["fail"][sid] >= quarantine_after:
+                # marked done with the activity at quarantine time; the entry lifts in
+                # _plan_source the first time that activity moves (DEC-54)
+                state["quarantined"][sid] = {"last_activity": item["last_activity"],
+                                             "ts": int(now)}
+                state["done"][sid] = item["last_activity"]
+                out["state_rows"].append("STATE %s: quarantined: %s" % (source, sid))
     _advance_hwm(state, plan["scanned"])
     save_cursor(cursor)
     return not skip
@@ -832,6 +863,7 @@ def run_selection(process=None, schedule_hours=6, max_sessions=20, since=None):
     cursor = load_cursor()
     records = load_launch_records()
     max_chars = int(os.environ.get("HARVEST_MAXCHARS", "12000"))
+    quarantine_after = int(os.environ.get("HARVEST_SWEEP_QUARANTINE_AFTER", "3"))
     result, plans = {}, []
     run = {"stop": None, "fail_seen": False, "state_rows": [], "incidents": []}
     if os.environ.get("HARVEST_EXTRACTOR"):
@@ -862,7 +894,8 @@ def run_selection(process=None, schedule_hours=6, max_sessions=20, since=None):
         if run["stop"] or attempts >= max_sessions:
             plan["out"]["deferred"].append(item)  # stays eligible, oldest first next run (DEC-71)
             continue
-        attempts += _sweep_one(cursor, plan, item, process, now, max_chars, records, run)
+        attempts += _sweep_one(cursor, plan, item, process, now, max_chars, records, run,
+                               quarantine_after)
     _finish_run(cursor, result, now)  # also pins a first-run hwm when nothing was selected
     result["run"] = run
     return result
