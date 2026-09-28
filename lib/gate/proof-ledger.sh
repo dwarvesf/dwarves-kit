@@ -290,6 +290,10 @@ check() {
   [ "$class" = "inert" ] && return 0          # docs/cosmetic: no ritual.
 
   local files f ok=1
+  # near_miss (SPEC-330): one "path<TAB>last_v" line per behavioral file/group that has a
+  # NEGATIVE CONTROL and a green run but is rejected solely because its own FINAL Verdict
+  # line reads FAIL/INCONCLUSIVE , read only on the BLOCKED path below, never touches ok.
+  local near_miss="" has_negctl has_green last_ok
   # A committed screenshot/GIF embed counts as captured run-evidence too (visual/demo work
   # proves "it actually ran" with a picture, not only a text run-table). The semantic marker
   # (NEGATIVE CONTROL / rollback) is still required, and the image must actually EXIST , see
@@ -306,8 +310,15 @@ check() {
         # LAST-verdict-wins (review lens 2): the documented append shape retries after a
         # noisy run, so only the most recent Verdict: line in the file decides.
         last_v="$(grep -iE '^[[:space:]]*Verdict:' "$p" | tail -1)"
-        grep -qi 'NEGATIVE CONTROL' "$p" && { grep -qE 'Exit:[[:space:]]*0|VERDICT: PASS|Verdict: PASS|PASS' "$p" || _has_committed_image "$p" "$root"; } \
-          && ! printf '%s' "$last_v" | grep -qiE 'Verdict:[[:space:]]*(INCONCLUSIVE|FAIL)' && ok=0 && break
+        has_negctl=1; grep -qi 'NEGATIVE CONTROL' "$p" && has_negctl=0
+        has_green=1; { grep -qE 'Exit:[[:space:]]*0|VERDICT: PASS|Verdict: PASS|PASS' "$p" || _has_committed_image "$p" "$root"; } && has_green=0
+        last_ok=1; ! printf '%s' "$last_v" | grep -qiE 'Verdict:[[:space:]]*(INCONCLUSIVE|FAIL)' && last_ok=0
+        if [ "$has_negctl" -eq 0 ] && [ "$has_green" -eq 0 ] && [ "$last_ok" -eq 0 ]; then
+          ok=0; break
+        fi
+        if [ "$has_negctl" -eq 0 ] && [ "$has_green" -eq 0 ] && [ "$last_ok" -ne 0 ]; then
+          near_miss="${near_miss}${f}$(printf '\t')${last_v}"$'\n'
+        fi
       else # stateful
         grep -qiE 'rollback|\[UNAVAILABLE' "$p" && { grep -qE 'Command:|Exit:' "$p" || _has_committed_image "$p" "$root"; } && ok=0 && break
       fi
@@ -331,10 +342,18 @@ check() {
         # Last-verdict-wins, set-wise: files concatenate in sorted (= chronological)
         # order, so the union's final Verdict: line is the latest run's.
         last_v="$(printf '%s' "$content" | grep -iE '^[[:space:]]*Verdict:' | tail -1)"
-        printf '%s' "$content" | grep -qi 'NEGATIVE CONTROL' \
-          && { printf '%s' "$content" | grep -qE 'Exit:[[:space:]]*0|VERDICT: PASS|Verdict: PASS|PASS' || [ "$grp_img" -eq 0 ]; } \
-          && ! printf '%s' "$last_v" | grep -qiE 'Verdict:[[:space:]]*(INCONCLUSIVE|FAIL)' \
-          && ok=0 && break
+        has_negctl=1; printf '%s' "$content" | grep -qi 'NEGATIVE CONTROL' && has_negctl=0
+        has_green=1; { printf '%s' "$content" | grep -qE 'Exit:[[:space:]]*0|VERDICT: PASS|Verdict: PASS|PASS' || [ "$grp_img" -eq 0 ]; } && has_green=0
+        last_ok=1; ! printf '%s' "$last_v" | grep -qiE 'Verdict:[[:space:]]*(INCONCLUSIVE|FAIL)' && last_ok=0
+        if [ "$has_negctl" -eq 0 ] && [ "$has_green" -eq 0 ] && [ "$last_ok" -eq 0 ]; then
+          ok=0; break
+        fi
+        # near-miss dedupe: a per-file near miss already recorded for a member of this group
+        # covers the same underlying issue, so the group rollup is not reported a second time.
+        if [ "$has_negctl" -eq 0 ] && [ "$has_green" -eq 0 ] && [ "$last_ok" -ne 0 ] \
+           && ! printf '%s' "$near_miss" | cut -f1 | grep -qF "$g"; then
+          near_miss="${near_miss}${g}$(printf '\t')${last_v}"$'\n'
+        fi
       else # stateful
         printf '%s' "$content" | grep -qiE 'rollback|\[UNAVAILABLE' \
           && { printf '%s' "$content" | grep -qE 'Command:|Exit:' || [ "$grp_img" -eq 0 ]; } \
@@ -393,6 +412,16 @@ check() {
     if [ "$class" = "behavioral" ]; then
       echo "  Need: a docs/verification/<slug>.md added by this branch with a green run AND a NEGATIVE CONTROL (revert -> RED -> restore)."
       echo "        ('green run' = a text run-table (Command:/Exit:/Verdict: PASS) OR a committed screenshot/GIF embed for visual/demo work.)"
+      # SPEC-330: a file that IS found and carries a NEGATIVE CONTROL + a green run, but is
+      # rejected solely because its own final Verdict line reads FAIL/INCONCLUSIVE, gets named
+      # here instead of vanishing into the generic message above.
+      if [ -n "$near_miss" ]; then
+        local nm_f nm_v
+        while IFS=$'\t' read -r nm_f nm_v; do
+          [ -n "$nm_f" ] || continue
+          echo "  Hint: $nm_f has a NEGATIVE CONTROL and a green run, but its LAST Verdict line reads FAIL/INCONCLUSIVE (\"$nm_v\"). The gate reads the file's FINAL Verdict line as the outcome: record the negative control's own outcome as \`Result: RED as expected\` (not \`Verdict:\`), and end the file on \`Verdict: PASS\` after the real run (the shape lib/gate/negctl.sh itself emits: \`Exit: 0\` / \`Verdict: PASS\` are the two valid \"green run\" spellings this gate already accepts)."
+        done <<< "$near_miss"
+      fi
     else
       echo "  Need: a docs/verification/<slug>.md added by this branch with a recorded run AND a rollback note, or [UNAVAILABLE: reason] if no such flow exists here."
       echo "        ('recorded run' = Command:/Exit: text OR a committed screenshot/GIF embed for visual/demo work.)"
