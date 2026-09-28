@@ -12,6 +12,11 @@ set -uo pipefail
 # fallback below uses $HOME, so default it to empty rather than error-exit.
 HOME="${HOME:-}"
 INPUT=$(cat)
+# The tool's real cwd: the payload .cwd, else the cwd anchor-root.sh saved before it cd'd
+# to the repo root, else $PWD (a direct invocation). A relative `cd` resolves against this.
+REAL_CWD=$(printf '%s' "$INPUT" | jq -r '.cwd // empty' 2>/dev/null)
+[ -n "$REAL_CWD" ] || REAL_CWD="${DWARVES_KIT_INVOCATION_CWD:-}"
+[ -n "$REAL_CWD" ] || REAL_CWD="$PWD"
 CMD=$(printf '%s' "$INPUT" | jq -r '.tool_input.command // empty' 2>/dev/null || true)
 [ -z "$CMD" ] && exit 0
 
@@ -45,12 +50,13 @@ CDDIR=$(printf '%s' "$CMD_CODE" | grep -oE '^[[:space:]]*cd[[:space:]]+[^&;|]+' 
   | sed -E 's/^[[:space:]]*cd[[:space:]]+//; s/[[:space:]]+$//; s/^"//; s/"$//' || true)
 case "$CDDIR" in *'$'*) CDDIR="" ;; esac   # variables cannot be resolved: fall back
 CDDIR="${CDDIR/#\~/$HOME}"
+case "$CDDIR" in ""|/*) ;; *) CDDIR="$REAL_CWD/$CDDIR" ;; esac
 # Test affordance: print the resolved cd-target and exit (never set outside tests).
 if [ "${DWARVES_KIT_PRINT_CDDIR:-0}" = "1" ]; then printf '%s\n' "$CDDIR"; exit 0; fi
 if [ -n "$CDDIR" ] && [ -d "$CDDIR" ]; then
   ROOT=$(git -C "$CDDIR" rev-parse --show-toplevel 2>/dev/null || true)
 else
-  ROOT=$(git rev-parse --show-toplevel 2>/dev/null || true)
+  ROOT=$(git -C "$REAL_CWD" rev-parse --show-toplevel 2>/dev/null || true)
 fi
 [ -n "$ROOT" ] || exit 0
 BRANCH=$(git -C "$ROOT" rev-parse --abbrev-ref HEAD 2>/dev/null || true)

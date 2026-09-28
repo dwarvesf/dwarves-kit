@@ -2496,6 +2496,144 @@ assert_output_contains "statusline still renders the context percentage" "ctx:25
 
 # ============================================================
 echo ""
+echo "=== anchor-root.sh: hooks resolve the repo root from a subdirectory ==="
+# ============================================================
+# Every case runs its hook THROUGH the wrapper, the way both dispatch tables invoke it.
+# Assertion labels carry the literal substrings the negative controls grep for
+# (subdir with content, worktree keeps own state, writer/reader pair, relative cd
+# resolves, payload cwd resolves root, smoke exec): renaming one breaks that scoping.
+ANCHOR="$KIT_DIR/hooks/anchor-root.sh"
+_git_repo() {  # _git_repo <dir> : init a repo with one commit
+  mkdir -p "$1" && ( cd "$1" && git init -q && git config user.email t@t && git config user.name t \
+    && git commit -q --allow-empty -m base )
+}
+AN_MARK=$(mktemp "${TMPDIR:-/tmp}/dk-anmark.XXXXXX")
+touch -t 202001010000 "$AN_MARK"
+
+# Case 1: session-state-save from a nested subdirectory writes at the toplevel.
+SUBDIR_REPO=$(mktemp -d "${TMPDIR:-/tmp}/dk-subdir.XXXXXX")
+_git_repo "$SUBDIR_REPO"
+mkdir -p "$SUBDIR_REPO/docs/specs" "$SUBDIR_REPO/.claude/handoffs"
+printf '# Spec\nStatus: DRAFT\n' > "$SUBDIR_REPO/docs/specs/SPEC-001-x.md"
+printf 'x = 1\n' > "$SUBDIR_REPO/touched.py"
+( cd "$SUBDIR_REPO/.claude/handoffs" && echo '{"stop_hook_active":false}' \
+  | DWARVES_KIT_SESSION_MARKER="$AN_MARK" bash "$ANCHOR" "$KIT_DIR/hooks/session-state-save.sh" 2>/dev/null )
+[ -f "$SUBDIR_REPO/.claude/session-state/last-state.md" ]
+assert_true "anchor: session-state subdir with content lands at the toplevel" $?
+[ ! -e "$SUBDIR_REPO/.claude/handoffs/.claude/session-state" ]
+assert_true "anchor: session-state subdir with content leaves no nested copy" $?
+AN_STATE=$(cat "$SUBDIR_REPO/.claude/session-state/last-state.md" 2>/dev/null)
+assert_output_contains "anchor: session-state subdir with content reads the root spec" "Spec: DRAFT" "$AN_STATE"
+assert_output_contains "anchor: session-state subdir with content scans the root files" "touched.py" \
+  "$(printf '%s\n' "$AN_STATE" | sed -n '/^## Files modified this session/,/^## /p')"
+
+# Case 2: a worktree session keeps its own state, the main checkout is untouched.
+WT_DIR=$(mktemp -d "${TMPDIR:-/tmp}/dk-wt.XXXXXX")
+rmdir "$WT_DIR"   # git worktree add wants to create the directory itself
+( cd "$SUBDIR_REPO" && git worktree add -q "$WT_DIR" -b anchor-wt 2>/dev/null )
+mkdir -p "$WT_DIR/sub"
+AN_SUM_BEFORE=$(shasum "$SUBDIR_REPO/.claude/session-state/last-state.md" 2>/dev/null | awk '{print $1}')
+( cd "$WT_DIR/sub" && echo '{"stop_hook_active":false}' \
+  | DWARVES_KIT_SESSION_MARKER="$AN_MARK" bash "$ANCHOR" "$KIT_DIR/hooks/session-state-save.sh" 2>/dev/null )
+[ -f "$WT_DIR/.claude/session-state/last-state.md" ]
+assert_true "anchor: worktree keeps own state at the worktree toplevel" $?
+AN_SUM_AFTER=$(shasum "$SUBDIR_REPO/.claude/session-state/last-state.md" 2>/dev/null | awk '{print $1}')
+[ -n "$AN_SUM_BEFORE" ] && [ "$AN_SUM_BEFORE" = "$AN_SUM_AFTER" ]
+assert_true "anchor: worktree keeps own state, main checkout state unchanged" $?
+( cd "$SUBDIR_REPO" && git worktree remove --force "$WT_DIR" 2>/dev/null )
+
+# Case 3: outside a git repo the wrapper is a no-op (same contract as NOGIT2 above).
+NOGIT3=$(mktemp -d "${TMPDIR:-/tmp}/dk-nogit3.XXXXXX")
+printf 'q = 9\n' > "$NOGIT3/orphan.py"
+( cd "$NOGIT3" && echo '{"stop_hook_active":false}' \
+  | DWARVES_KIT_SESSION_MARKER="$AN_MARK" bash "$ANCHOR" "$KIT_DIR/hooks/session-state-save.sh" 2>/dev/null )
+SS_NG3=$(cat "$NOGIT3/.claude/session-state/last-state.md" 2>/dev/null)
+assert_output_not_contains "anchor: session-state outside a repo, wrapper-routed, does not scan" "orphan.py" "$SS_NG3"
+
+# Case 4: pre-compact-backup from a subdirectory writes at the toplevel.
+PCB_REPO=$(mktemp -d "${TMPDIR:-/tmp}/dk-pcb.XXXXXX")
+_git_repo "$PCB_REPO"
+mkdir -p "$PCB_REPO/docs/specs" "$PCB_REPO/.claude/handoffs"
+printf '# Spec\nStatus: DRAFT\n' > "$PCB_REPO/docs/specs/SPEC-001-x.md"
+( cd "$PCB_REPO/.claude/handoffs" && echo '{"session_id":"anchor"}' \
+  | bash "$ANCHOR" "$KIT_DIR/hooks/pre-compact-backup.sh" 2>/dev/null )
+PCB_FILE=$(ls "$PCB_REPO"/.claude/backups/*-backup-*.md 2>/dev/null | head -1)
+[ -n "$PCB_FILE" ]
+assert_true "anchor: pre-compact-backup subdir with content lands at the toplevel" $?
+[ ! -e "$PCB_REPO/.claude/handoffs/.claude/backups" ]
+assert_true "anchor: pre-compact-backup subdir with content leaves no nested copy" $?
+assert_output_contains "anchor: pre-compact-backup subdir with content reads the root spec" \
+  "Spec: docs/specs/SPEC-001-x.md" "$(cat "$PCB_FILE" 2>/dev/null)"
+
+# Case 5: post-compact-reinject reads what pre-compact-backup just wrote (same root).
+PCR_OUT=$( cd "$PCB_REPO/.claude/handoffs" && echo '{}' \
+  | bash "$ANCHOR" "$KIT_DIR/hooks/post-compact-reinject.sh" 2>/dev/null )
+assert_output_contains "anchor: writer/reader pair, reinject finds the backup" "BACKUP: .claude/backups/" "$PCR_OUT"
+[ -d "$PCB_REPO/.claude/backups" ]
+assert_true "anchor: writer/reader pair, backups dir is at the repo root" $?
+[ ! -e "$PCB_REPO/.claude/handoffs/.claude/backups" ]
+assert_true "anchor: writer/reader pair, no nested backups dir" $?
+
+# Case 6: ship-gate resolves a relative embedded cd against the real invocation cwd.
+AN_PARENT=$(mktemp -d "${TMPDIR:-/tmp}/dk-parent.XXXXXX")
+_git_repo "$AN_PARENT/session-repo"; mkdir -p "$AN_PARENT/session-repo/sub"
+_git_repo "$AN_PARENT/other-repo"
+AN_EXPECT=$(cd / && cd "$AN_PARENT/other-repo" && pwd -P)
+_cddir_check() {  # _cddir_check <label> <raw printed CDDIR>
+  local RAW="$2" CANON=""
+  case "$RAW" in /*) CANON=$(cd / && cd "$RAW" 2>/dev/null && pwd -P) ;; esac
+  assert_eq_str "$1" "$AN_EXPECT" "$CANON"
+}
+# 6a: via the payload .cwd
+AN_RAW=$( cd "$AN_PARENT/session-repo/sub" \
+  && printf '{"cwd":"%s","tool_input":{"command":"cd ../../other-repo && git push origin feat/x"}}' "$AN_PARENT/session-repo/sub" \
+  | DWARVES_KIT_PRINT_CDDIR=1 bash "$ANCHOR" "$KIT_DIR/hooks/ship-gate.sh" 2>/dev/null )
+_cddir_check "anchor: ship-gate relative cd resolves via the payload .cwd (6a)" "$AN_RAW"
+# 6b: payload has no .cwd, so the anchor's DWARVES_KIT_INVOCATION_CWD carries it
+AN_RAW=$( cd "$AN_PARENT/session-repo/sub" \
+  && printf '{"tool_input":{"command":"cd ../../other-repo && git push origin feat/x"}}' \
+  | env -u DWARVES_KIT_INVOCATION_CWD DWARVES_KIT_PRINT_CDDIR=1 bash "$ANCHOR" "$KIT_DIR/hooks/ship-gate.sh" 2>/dev/null )
+_cddir_check "anchor: ship-gate relative cd resolves via DWARVES_KIT_INVOCATION_CWD (6b)" "$AN_RAW"
+# 6c: no embedded cd, so ROOT comes from git -C "$REAL_CWD". The BACKLOG advisory fires
+# only when ROOT is other-repo (the payload's repo), never the anchored session-repo.
+( cd "$AN_PARENT/other-repo" && git checkout -q -b feat/anchor-probe && mkdir -p _meta \
+  && printf '| ID | Item | Status |\n|---|---|---|\n| X-1 | unrelated | queued |\n' > _meta/BACKLOG.md \
+  && git add -A && git commit -q -m backlog )
+AN_EMPTY_PLUGIN=$(mktemp -d "${TMPDIR:-/tmp}/dk-noplugin.XXXXXX")
+AN_SG_ERR=$( cd "$AN_PARENT/session-repo/sub" \
+  && printf '{"cwd":"%s","tool_input":{"command":"git push origin feat/anchor-probe"}}' "$AN_PARENT/other-repo" \
+  | CLAUDE_PLUGIN_ROOT="$AN_EMPTY_PLUGIN" bash "$ANCHOR" "$KIT_DIR/hooks/ship-gate.sh" 2>&1 >/dev/null )
+assert_output_contains "anchor: ship-gate payload cwd resolves root via git -C (6c)" \
+  "appears nowhere in _meta/BACKLOG.md" "$AN_SG_ERR"
+
+# Case 7: every entry in BOTH dispatch tables launches through the wrapper (never 126/127).
+# Side effects fenced: HOME is a temp dir, and PATH stubs shadow the notifier and indexer.
+AN_HOME=$(mktemp -d "${TMPDIR:-/tmp}/dk-anhome.XXXXXX")
+mkdir -p "$AN_HOME/stubs"
+for _b in osascript notify-send codebase-memory-mcp; do
+  printf '#!/bin/sh\nexit 0\n' > "$AN_HOME/stubs/$_b"; chmod +x "$AN_HOME/stubs/$_b"
+done
+AN_SMOKE=$(mktemp -d "${TMPDIR:-/tmp}/dk-smoke.XXXXXX")
+_git_repo "$AN_SMOKE"; mkdir -p "$AN_SMOKE/sub"
+AN_BAD=""; AN_N=0
+while IFS= read -r _cmd; do
+  [ -n "$_cmd" ] || continue
+  AN_N=$((AN_N + 1))
+  _rc=0
+  ( cd "$AN_SMOKE/sub" && echo '{"stop_hook_active":true}' \
+    | env -u CLAUDE_PLUGIN_ROOT HOME="$AN_HOME" PATH="$AN_HOME/stubs:$PATH" sh -c "$_cmd" >/dev/null 2>&1 ) || _rc=$?
+  case "$_rc" in 126|127) AN_BAD="$AN_BAD [$_rc] $_cmd" ;; esac
+done <<EOF
+$(jq -r '.hooks[][].hooks[].command' "$KIT_DIR/hooks/hooks.json" | sed 's|${CLAUDE_PLUGIN_ROOT}|'"$KIT_DIR"'|g')
+$(jq -r '.hooks[][].hooks[].command' "$KIT_DIR/settings.json" | sed 's|$HOME/.claude/dwarves-kit|'"$KIT_DIR"'|g')
+EOF
+[ "$AN_N" -gt 0 ] && [ -z "$AN_BAD" ]
+assert_true "anchor: smoke exec, all $AN_N dispatch entries launch (no 126/127)${AN_BAD:+:$AN_BAD}" $?
+
+rm -rf "$SUBDIR_REPO" "$NOGIT3" "$PCB_REPO" "$AN_PARENT" "$AN_EMPTY_PLUGIN" "$AN_HOME" "$AN_SMOKE" "$AN_MARK"
+
+# ============================================================
+echo ""
 echo "=== Results ==="
 # ============================================================
 echo -e "Passed: ${GREEN}${PASS}${NC} / ${TOTAL}"

@@ -374,7 +374,7 @@ if [ -n "$kit_root_toml" ] && [ "$RESOLVER_OK" -eq 1 ] && command -v jq >/dev/nu
       note "wire $project_settings for modules:${enabled_list:-<none>} (hooks:${wired_hook_names:-none})"
     else
       before_wired=""
-      [ -f "$project_settings" ] && before_wired="$(jq -r '[.hooks // {} | to_entries[]? | .value[]? | .hooks[]? | .command] | .[]' "$project_settings" 2>/dev/null | grep -oE 'dwarves-kit/hooks/[A-Za-z0-9._-]+\.sh' | sort -u)"
+      [ -f "$project_settings" ] && before_wired="$(jq -r '[.hooks // {} | to_entries[]? | .value[]? | .hooks[]? | .command] | .[]' "$project_settings" 2>/dev/null | grep -oE 'dwarves-kit/hooks/[A-Za-z0-9._-]+\.sh' | grep -v '/anchor-root\.sh$' | sort -u)"
 
       filtered="$(mktemp)"
       if [ -n "$hook_re" ]; then
@@ -427,7 +427,7 @@ if [ -n "$kit_root_toml" ] && [ "$RESOLVER_OK" -eq 1 ] && command -v jq >/dev/nu
       rm -f "$filtered"
 
       after_wired=""
-      [ -f "$project_settings" ] && after_wired="$(jq -r '[.hooks // {} | to_entries[]? | .value[]? | .hooks[]? | .command] | .[]' "$project_settings" 2>/dev/null | grep -oE 'dwarves-kit/hooks/[A-Za-z0-9._-]+\.sh' | sort -u)"
+      [ -f "$project_settings" ] && after_wired="$(jq -r '[.hooks // {} | to_entries[]? | .value[]? | .hooks[]? | .command] | .[]' "$project_settings" 2>/dev/null | grep -oE 'dwarves-kit/hooks/[A-Za-z0-9._-]+\.sh' | grep -v '/anchor-root\.sh$' | sort -u)"
       [ "$before_wired" != "$after_wired" ] && did=1
       echo "adopt: project hook-module wiring for $TARGET -> modules:${enabled_list:-<none>}"
     fi

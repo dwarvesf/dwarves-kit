@@ -13,14 +13,14 @@ GENERATED , do not hand-edit. Regenerate: `bash lib/registry/feature-registry.sh
 | Command | Trigger | Description | Specs | Tests |
 |---|---|---|---|---|
 | `/kit:absorb` | `[H/I]` | Maintainer-only: audit the kit's upstream sources (Credits drift + seed-rescan) and draft a dated, proposal-only absorption report. Does no… | SPEC-004, SPEC-007, SPEC-009 +7 | test-command-emit-sweep.sh, test-hooks.sh, test-meta.sh |
-| `/kit:adopt` | `[H/I]` | Adopt the current (or a target) repo into the dwarves-kit operate-contract: inject AGENTS.md + a CLAUDE.md loader + a WORKFLOW pointer + th… | SPEC-004, SPEC-013, SPEC-014 +24 | proof-loop-09-scenario-b.sh, test-adopt.sh, test-command-emit-sweep.sh +8 |
+| `/kit:adopt` | `[H/I]` | Adopt the current (or a target) repo into the dwarves-kit operate-contract: inject AGENTS.md + a CLAUDE.md loader + a WORKFLOW pointer + th… | SPEC-004, SPEC-013, SPEC-014 +25 | proof-loop-09-scenario-b.sh, test-adopt.sh, test-command-emit-sweep.sh +8 |
 | `/kit:assign` | `[H/I]` | Turn a backlog item (ID-NNN) into a scoped goal draft and route it into the right WORKFLOW lane. Writes .claude/goals/, never executes. | SPEC-006, SPEC-007, SPEC-024 +32 | test-hooks.sh, test-meta.sh |
 | `/kit:battery` | `[H/I]` | The full independent-verification battery for a finished branch: a fresh-context acceptance verifier that RE-EXECUTES the verification comm… | SPEC-239, SPEC-244, SPEC-245 +4 | run-workflow.sh, test-boundary-lint.sh, test-break-it.sh +4 |
-| `/kit:debug` | `[H/I]` | Systematic debug loop: root cause before any fix. Four phases, an evidence ledger, the 3-fix architecture wall. Use for any bug, defect, re… | SPEC-006, SPEC-013, SPEC-014 +13 | test-command-triggers.sh, test-config-registry.sh, test-hooks.sh +2 |
-| `/kit:design` | `[H/I]` | Opt-in interactive solution-design beat between /think and /spec. Use when the operator wants to shape HOW to build after the idea passed /… | SPEC-003, SPEC-004, SPEC-005 +119 | test-command-emit-sweep.sh, test-command-triggers.sh, test-design-record.sh +21 |
+| `/kit:debug` | `[H/I]` | Systematic debug loop: root cause before any fix. Four phases, an evidence ledger, the 3-fix architecture wall. Use for any bug, defect, re… | SPEC-006, SPEC-013, SPEC-014 +14 | test-command-triggers.sh, test-config-registry.sh, test-hooks.sh +2 |
+| `/kit:design` | `[H/I]` | Opt-in interactive solution-design beat between /think and /spec. Use when the operator wants to shape HOW to build after the idea passed /… | SPEC-003, SPEC-004, SPEC-005 +121 | test-command-emit-sweep.sh, test-command-triggers.sh, test-design-record.sh +21 |
 | `/kit:devs-team` | `[H/I]` | Parallel multi-lens critique of a solution design (the active spec if present, else the decision brief). Dispatches 5 engineering lenses, m… | SPEC-016, SPEC-018, SPEC-019 +13 | test-gate-vocab-recording.sh, test-meta.sh, test-outcome-emit-sweep.sh |
-| `/kit:dispatch` | `[H/I]` | Fire several disjoint VALIDATED specs concurrently, each in its own worktree, then converge. Cross-goal fan-out behind a disjointness gate … | SPEC-002, SPEC-016, SPEC-017 +90 | test-advisor.sh, test-agent-effectiveness.sh, test-attempt-state.sh +36 |
-| `/kit:docs` | `[H/I]` | Update all project documentation to match the current codebase. Cross-references the diff against every doc file and fixes drift. | SPEC-001, SPEC-002, SPEC-003 +228 | proof-loop-09-scenario-b.sh, run-all.sh, run-workflow.sh +76 |
+| `/kit:dispatch` | `[H/I]` | Fire several disjoint VALIDATED specs concurrently, each in its own worktree, then converge. Cross-goal fan-out behind a disjointness gate … | SPEC-002, SPEC-016, SPEC-017 +91 | test-advisor.sh, test-agent-effectiveness.sh, test-attempt-state.sh +37 |
+| `/kit:docs` | `[H/I]` | Update all project documentation to match the current codebase. Cross-references the diff against every doc file and fixes drift. | SPEC-001, SPEC-002, SPEC-003 +229 | proof-loop-09-scenario-b.sh, run-all.sh, run-workflow.sh +76 |
 | `/kit:draft-agent` | `[H/I]` | Meta-agent agent-builder. From a one-line description, generates a new subagent definition OR a mega-goal sub-goal file and (by default) in… | SPEC-089, SPEC-108, SPEC-139 +1 | test-agent-effectiveness.sh, test-command-emit-sweep.sh, test-meta-agent.sh +1 |
 | `/kit:execute` | `[H/I]` | Autonomous spec execution with verification. Dispatches worker subagents per task, verifies each with kit:task-verifier, retries fixable fa… | SPEC-001, SPEC-003, SPEC-004 +65 | test-break-it.sh, test-gate-vocab-recording.sh, test-hooks.sh +11 |
 | `/kit:explain` | `[H/I]` | Turn a merged change into a literate-diff explainer a human READS to understand: background -> goal + intuition -> a prose-ordered diff -> … | SPEC-050, SPEC-060, SPEC-094 +20 | proof-loop-09-scenario-b.sh, test-boundary-lint.sh, test-command-emit-sweep.sh +11 |
@@ -30,18 +30,18 @@ GENERATED , do not hand-edit. Regenerate: `bash lib/registry/feature-registry.sh
 | `/kit:grill` | `[H/I]` | Universal intake interview: one type-shaped question at a time, each with a recommended answer, until the task is actually understood. Answ… | SPEC-058, SPEC-059, SPEC-063 +23 | test-config-stamp.sh, test-e2e.sh, test-gate-ledger-plan-record.sh +8 |
 | `/kit:kit-health` | `[H/I]` | Run a self-assessment of the kit against its own philosophy. Checks file count, hook performance, source citations, and structural health. | SPEC-001, SPEC-002, SPEC-004 +16 | test-command-emit-sweep.sh, test-meta.sh |
 | `/kit:mega` | `[H/I]` | Turn a multi-objective destination into a sequenced roadmap of dependent sub-goals: decompose, front-load every clarification once, set the… | SPEC-034, SPEC-036, SPEC-088 +37 | proof-loop-09-scenario-b.sh, test-advisor.sh, test-bin-forwarders.sh +22 |
-| `/kit:next` | `[H/I]` | Pick up the next undone task from the spec. Loads context, shows acceptance criteria, lets you drive the implementation. | SPEC-001, SPEC-002, SPEC-003 +104 | run-all.sh, test-advisor.sh, test-agent-effectiveness.sh +37 |
+| `/kit:next` | `[H/I]` | Pick up the next undone task from the spec. Loads context, shows acceptance criteria, lets you drive the implementation. | SPEC-001, SPEC-002, SPEC-003 +106 | run-all.sh, test-advisor.sh, test-agent-effectiveness.sh +37 |
 | `/kit:onboard` | `[H/I]` | Guided first-run: detect the install mode, offer /kit:adopt for this repo, pick modules, capture the consumer knobs that make them work, di… | SPEC-199, SPEC-213, SPEC-232 +1 | proof-loop-09-scenario-b.sh, test-command-emit-sweep.sh, test-onboard-detect.sh |
 | `/kit:pitch` | `[H/I]` | Assemble an outward buy-in doc from what a gated run already produced: the spec, the proof-of-done, the implementation-notes, and the gate … | SPEC-140, SPEC-141, SPEC-193 +3 | test-outcome-emit-sweep.sh, test-pitch.sh |
 | `/kit:prototype` | `[H/I]` | Opt-in throwaway-spike beat beside /kit:design. Builds throwaway code that answers ONE design question: a logic/state model driven by hand … | SPEC-075, SPEC-206, SPEC-207 +2 | test-picture-section.sh |
 | `/kit:quiz-gate` | `[H/I]` | The ★-tap NUDGE before merging a significant+worthy gate PR: a 5-question quiz built from the ACTUAL diff+tests, handed to the operator's… | SPEC-125, SPEC-127, SPEC-136 +3 | test-boundary-lint.sh, test-install-modules.sh, test-kit-contract.sh +3 |
 | `/kit:retro` | `[H/I]` | Run a retrospective after shipping. Captures what worked, what didn't, and action items for the next cycle. Outputs to docs/retro/RETRO.md. | SPEC-002, SPEC-003, SPEC-006 +38 | test-command-emit-sweep.sh, test-gate-vocab-recording.sh, test-hooks.sh +3 |
 | `/kit:review-team` | `[H/I]` | Parallel code review with 3 specialist lenses plus the kit-default kit:advisor extra lens. Dispatches the security, architecture, and test-… | SPEC-002, SPEC-003, SPEC-007 +42 | test-advisor.sh, test-config-registry.sh, test-every-step-review.sh +6 |
-| `/kit:review` | `[H/I]` | Paranoid code review. Security, architecture, regressions, missing tests, edge cases. Produces actionable TODOS. | SPEC-001, SPEC-002, SPEC-003 +113 | test-adopt.sh, test-advisor.sh, test-agent-effectiveness.sh +41 |
+| `/kit:review` | `[H/I]` | Paranoid code review. Security, architecture, regressions, missing tests, edge cases. Produces actionable TODOS. | SPEC-001, SPEC-002, SPEC-003 +115 | test-adopt.sh, test-advisor.sh, test-agent-effectiveness.sh +41 |
 | `/kit:ship` | `[H/I]` | Ship: review gate, tests, version bump, changelog, conventional commit, docs update, PR. Complete pipeline from done to merged. | SPEC-001, SPEC-002, SPEC-003 +84 | test-adopt.sh, test-board-mirror.sh, test-board-writeback.sh +33 |
 | `/kit:spec-validate` | `[H/I]` | Adversarial review of a spec before implementation. 7 specialist lenses attack the spec from different angles (6 advisory, 1 blocking on th… | SPEC-002, SPEC-003, SPEC-004 +65 | test-command-emit-sweep.sh, test-design-record.sh, test-every-step-review.sh +7 |
-| `/kit:spec` | `[H/I]` | Generate a development spec from a feature idea or decision brief. Creates docs/specs/ with structured requirements. | SPEC-001, SPEC-002, SPEC-003 +188 | test-bin-forwarders.sh, test-break-it.sh, test-codex-hooks.sh +49 |
-| `/kit:start` | `[H/I]` | Detect project state and suggest the right next command. The entry point for any session. | SPEC-002, SPEC-003, SPEC-004 +52 | test-board-atomic-mint.sh, test-command-emit-sweep.sh, test-config-stamp.sh +32 |
+| `/kit:spec` | `[H/I]` | Generate a development spec from a feature idea or decision brief. Creates docs/specs/ with structured requirements. | SPEC-001, SPEC-002, SPEC-003 +190 | test-bin-forwarders.sh, test-break-it.sh, test-codex-hooks.sh +50 |
+| `/kit:start` | `[H/I]` | Detect project state and suggest the right next command. The entry point for any session. | SPEC-002, SPEC-003, SPEC-004 +54 | test-board-atomic-mint.sh, test-command-emit-sweep.sh, test-config-stamp.sh +32 |
 | `/kit:test-plan-review-team` | `[H/I]` | Parallel multi-lens adversarial critique of a spec's test plan (the ## Test plan section), with a bounded revise loop that tightens it. Dis… | SPEC-031, SPEC-052, SPEC-062 +12 | test-meta.sh, test-outcome-emit-sweep.sh |
 | `/kit:test-plan` | `[H/I]` | Derive a test-case coverage matrix from a spec's acceptance criteria before /kit:execute. Writes a `## Test plan` section into the active s… | SPEC-004, SPEC-016, SPEC-018 +27 | test-e2e.sh, test-gate-ledger-plan-record.sh, test-gate-vocab-recording.sh +5 |
 | `/kit:test-write` | `[H/I]` | Turn a SOLID-verdict `## Test plan critique` into real, executing test code via `kit:test-writer`, one case per matrix row. Never dispatche… | SPEC-203, SPEC-227, SPEC-237 | test-test-writer-contract.sh |
@@ -110,33 +110,34 @@ GENERATED , do not hand-edit. Regenerate: `bash lib/registry/feature-registry.sh
 
 | Hook | Trigger | Event | Description | Specs | Tests |
 |---|---|---|---|---|---|
-| `anti-rationalization.sh` | `[E]` | Stop | all legitimate phrases Claude | SPEC-003, SPEC-006, SPEC-008 +9 | test-codex-hooks.sh, test-gate-opt-in.sh, test-gate-opt-out.sh +3 |
-| `auto-format.sh` | `[E]` | PostToolUse | PostToolUse hook, matcher: Write\|Edit | SPEC-003, SPEC-084 | test-adopt.sh, test-hooks.sh, test-install-modules.sh |
-| `backlog-stage.sh` | `[E]` | SessionEnd | SessionEnd hook, function-named port of ops-toolkit's cc-backlog | SPEC-192, SPEC-194, SPEC-195 +4 | test-adopt.sh, test-install-modules.sh, test-intake-sweep.sh +2 |
-| `batch-debt-warn.sh` | `[E]` | PreToolUse | PreToolUse hook, matcher: Bash | - | test-batch-debt-warn.sh, test-install-modules.sh |
-| `board-row-gate.sh` | `[E]` | PreToolUse | PreToolUse hook, matcher: Bash | - | test-board-row-gate.sh, test-install-modules.sh |
-| `citation-guard.sh` | `[E]` | Stop | Stop hook, function-named port of ops-toolkit's cc-citation-guard | SPEC-253 | test-install-modules.sh, test-kit-foldin-hooks.sh |
-| `codebase-index.sh` | `[E]` | SessionStart | SessionStart hook (OPT-IN), dwarves-kit | SPEC-043, SPEC-084, SPEC-085 | test-hooks.sh, test-install-modules.sh, test-meta.sh |
-| `codex-hook-adapter.sh` | `[E]` | - | Normalize Codex hook input before invoking shared dwarves-kit policies. | SPEC-288, SPEC-340 | test-codex-hooks.sh |
-| `commit-format.sh` | `[E]` | PreToolUse | PreToolUse hook, matcher: Bash | SPEC-014, SPEC-032, SPEC-064 +3 | test-codex-hooks.sh, test-gate-opt-in.sh, test-gate-opt-out.sh +3 |
-| `context-budget.sh` | `[E]` | UserPromptSubmit | UserPromptSubmit hook that warns once per threshold once live context passes a percentage of the model's window. | SPEC-255 | test-context-budget.sh, test-install-modules.sh |
-| `context-hints.sh` | `[E]` | UserPromptSubmit | UserPromptSubmit hook, function-named port of ops-toolkit's | SPEC-255 | test-adopt.sh, test-install-modules.sh, test-kit-foldin-hooks.sh |
-| `context-readiness.sh` | `[E]` | SessionStart | SessionStart hook | SPEC-003, SPEC-005, SPEC-010 +8 | test-adopt.sh, test-hooks.sh, test-install-modules.sh +1 |
-| `harvest.sh` | `[E]` | PreCompact | PreCompact / SessionEnd hook, function-named port of ops-toolkit's | SPEC-194, SPEC-196, SPEC-245 +2 | test-install-modules.sh, test-kit-foldin-hooks.sh, test-repohygiene.sh |
-| `intake-sweep.sh` | `[E]` | - | thin shim over intake-sweep.py (backlog-stage.sh precedent). | SPEC-200, SPEC-285 | test-board-promote.sh, test-intake-sweep.sh |
-| `money-gate.sh` | `[E]` | PreToolUse | PreToolUse(Edit\|Write\|MultiEdit) hook, function-named port of | SPEC-232 | test-install-clis.sh, test-install-modules.sh, test-money-gate.sh +1 |
-| `notification.sh` | `[E]` | Notification | Notification hook | SPEC-032, SPEC-084, SPEC-196 +2 | test-hooks.sh, test-install-modules.sh |
-| `output-offload.sh` | `[E]` | PostToolUse | PostToolUse. When a tool returns more than ~OFFLOAD_MAX_TOKENS tokens, | - | test-hooks.sh, test-install-modules.sh |
-| `permission-auto-approve.sh` | `[E]` | PermissionRequest | PermissionRequest hook | SPEC-084, SPEC-340 | test-hooks.sh, test-install-modules.sh |
-| `post-compact-reinject.sh` | `[E]` | PostToolUse | PostToolUse hook, matcher: compact | SPEC-003, SPEC-010, SPEC-034 +1 | test-install-modules.sh |
-| `pre-compact-backup.sh` | `[E]` | PreCompact | PreCompact hook | SPEC-010, SPEC-084 | test-install-modules.sh |
-| `prose-rag.sh` | `[E]` | UserPromptSubmit | UserPromptSubmit hook shim for the prose-rag recall inject | SPEC-194, SPEC-204, SPEC-249 +4 | test-bin-forwarders.sh, test-config-seams.sh, test-install-clis.sh +3 |
-| `safety-gate.sh` | `[E]` | PreToolUse | PreToolUse hook, matcher: Bash | SPEC-003, SPEC-014, SPEC-019 +9 | proof-loop-09-scenario-b.sh, test-codex-hooks.sh, test-gate-opt-out.sh +4 |
-| `secrets-guard.sh` | `[E]` | PreToolUse | PreToolUse hook, matcher: Read\|Edit\|Bash | SPEC-014, SPEC-084, SPEC-288 +1 | test-codex-hooks.sh, test-hooks.sh, test-install-modules.sh +1 |
-| `session-state-save.sh` | `[E]` | Stop+SubagentStop | Stop hook (runs alongside anti-rationalization + slop-cleaner) | SPEC-003, SPEC-010, SPEC-030 +5 | test-hooks.sh, test-install-modules.sh, test-meta.sh |
-| `ship-gate.sh` | `[E]` | PreToolUse | each matrix row mapped to the run that exercised it, or an | SPEC-006, SPEC-042, SPEC-044 +58 | test-codex-hooks.sh, test-every-step-review.sh, test-gate-opt-in.sh +18 |
-| `slop-cleaner.sh` | `[E]` | Stop | breaking the "Exit 0 always" contract three lines above. | SPEC-013, SPEC-014, SPEC-084 +3 | test-hooks.sh, test-install-modules.sh |
-| `spec-drift-guard.sh` | `[E]` | PreToolUse | PreToolUse hook, matcher: Write | SPEC-003, SPEC-005, SPEC-006 +4 | test-hooks.sh, test-install-modules.sh |
-| `statusline.sh` | `[E]` | StatusLine | StatusLine script | SPEC-025, SPEC-084, SPEC-219 +1 | test-context-budget.sh, test-hooks.sh, test-install-modules.sh +1 |
-| `tool-policy-guard.sh` | `[E]` | PreToolUse | PreToolUse hook enforcing the tool-choice policy. | SPEC-212 | test-install-modules.sh, test-tool-policy-guard.sh |
+| `anchor-root.sh` | `[E]` | - | cd to the repo (or worktree) root, then run the given hook command. | SPEC-334, SPEC-340 | test-hook-anchor.sh, test-hooks.sh, test-install-modules.sh |
+| `anti-rationalization.sh` | `[E]` | Stop | all legitimate phrases Claude | SPEC-003, SPEC-006, SPEC-008 +10 | test-codex-hooks.sh, test-gate-opt-in.sh, test-gate-opt-out.sh +3 |
+| `auto-format.sh` | `[E]` | PostToolUse | PostToolUse hook, matcher: Write\|Edit | SPEC-003, SPEC-084, SPEC-334 | test-adopt.sh, test-hooks.sh, test-install-modules.sh |
+| `backlog-stage.sh` | `[E]` | SessionEnd | SessionEnd hook, function-named port of ops-toolkit's cc-backlog | SPEC-192, SPEC-194, SPEC-195 +5 | test-adopt.sh, test-install-modules.sh, test-intake-sweep.sh +2 |
+| `batch-debt-warn.sh` | `[E]` | PreToolUse | PreToolUse hook, matcher: Bash | SPEC-334 | test-batch-debt-warn.sh, test-install-modules.sh |
+| `board-row-gate.sh` | `[E]` | PreToolUse | PreToolUse hook, matcher: Bash | SPEC-334 | test-board-row-gate.sh, test-install-modules.sh |
+| `citation-guard.sh` | `[E]` | Stop | Stop hook, function-named port of ops-toolkit's cc-citation-guard | SPEC-253, SPEC-334 | test-install-modules.sh, test-kit-foldin-hooks.sh |
+| `codebase-index.sh` | `[E]` | SessionStart | SessionStart hook (OPT-IN), dwarves-kit | SPEC-043, SPEC-084, SPEC-085 +1 | test-hooks.sh, test-install-modules.sh, test-meta.sh |
+| `codex-hook-adapter.sh` | `[E]` | - | Normalize Codex hook input before invoking shared dwarves-kit policies. | SPEC-288, SPEC-334, SPEC-340 | test-codex-hooks.sh |
+| `commit-format.sh` | `[E]` | PreToolUse | PreToolUse hook, matcher: Bash | SPEC-014, SPEC-032, SPEC-064 +4 | test-codex-hooks.sh, test-gate-opt-in.sh, test-gate-opt-out.sh +3 |
+| `context-budget.sh` | `[E]` | UserPromptSubmit | UserPromptSubmit hook that warns once per threshold once live context passes a percentage of the model's window. | SPEC-255, SPEC-334 | test-context-budget.sh, test-install-modules.sh |
+| `context-hints.sh` | `[E]` | UserPromptSubmit | UserPromptSubmit hook, function-named port of ops-toolkit's | SPEC-255, SPEC-334 | test-adopt.sh, test-install-modules.sh, test-kit-foldin-hooks.sh |
+| `context-readiness.sh` | `[E]` | SessionStart | SessionStart hook | SPEC-003, SPEC-005, SPEC-010 +9 | test-adopt.sh, test-hooks.sh, test-install-modules.sh +1 |
+| `harvest.sh` | `[E]` | PreCompact | PreCompact / SessionEnd hook, function-named port of ops-toolkit's | SPEC-194, SPEC-196, SPEC-245 +3 | test-install-modules.sh, test-kit-foldin-hooks.sh, test-repohygiene.sh |
+| `intake-sweep.sh` | `[E]` | - | thin shim over intake-sweep.py (backlog-stage.sh precedent). | SPEC-200, SPEC-285, SPEC-334 | test-board-promote.sh, test-intake-sweep.sh |
+| `money-gate.sh` | `[E]` | PreToolUse | PreToolUse(Edit\|Write\|MultiEdit) hook, function-named port of | SPEC-232, SPEC-334 | test-install-clis.sh, test-install-modules.sh, test-money-gate.sh +1 |
+| `notification.sh` | `[E]` | Notification | Notification hook | SPEC-032, SPEC-084, SPEC-196 +3 | test-hooks.sh, test-install-modules.sh |
+| `output-offload.sh` | `[E]` | PostToolUse | PostToolUse. When a tool returns more than ~OFFLOAD_MAX_TOKENS tokens, | SPEC-334 | test-hooks.sh, test-install-modules.sh |
+| `permission-auto-approve.sh` | `[E]` | PermissionRequest | PermissionRequest hook | SPEC-084, SPEC-334, SPEC-340 | test-hooks.sh, test-install-modules.sh |
+| `post-compact-reinject.sh` | `[E]` | PostToolUse | PostToolUse hook, matcher: compact | SPEC-003, SPEC-010, SPEC-034 +2 | test-hooks.sh, test-install-modules.sh |
+| `pre-compact-backup.sh` | `[E]` | PreCompact | PreCompact hook | SPEC-010, SPEC-084, SPEC-334 | test-hooks.sh, test-install-modules.sh |
+| `prose-rag.sh` | `[E]` | UserPromptSubmit | UserPromptSubmit hook shim for the prose-rag recall inject | SPEC-194, SPEC-204, SPEC-249 +5 | test-bin-forwarders.sh, test-config-seams.sh, test-install-clis.sh +3 |
+| `safety-gate.sh` | `[E]` | PreToolUse | PreToolUse hook, matcher: Bash | SPEC-003, SPEC-014, SPEC-019 +10 | proof-loop-09-scenario-b.sh, test-codex-hooks.sh, test-gate-opt-out.sh +4 |
+| `secrets-guard.sh` | `[E]` | PreToolUse | PreToolUse hook, matcher: Read\|Edit\|Bash | SPEC-014, SPEC-084, SPEC-288 +2 | test-codex-hooks.sh, test-hook-anchor.sh, test-hooks.sh +2 |
+| `session-state-save.sh` | `[E]` | Stop+SubagentStop | Stop hook (runs alongside anti-rationalization + slop-cleaner) | SPEC-003, SPEC-010, SPEC-030 +6 | test-hook-anchor.sh, test-hooks.sh, test-install-modules.sh +1 |
+| `ship-gate.sh` | `[E]` | PreToolUse | each matrix row mapped to the run that exercised it, or an | SPEC-006, SPEC-042, SPEC-044 +59 | test-codex-hooks.sh, test-every-step-review.sh, test-gate-opt-in.sh +18 |
+| `slop-cleaner.sh` | `[E]` | Stop | breaking the "Exit 0 always" contract three lines above. | SPEC-013, SPEC-014, SPEC-084 +4 | test-hook-anchor.sh, test-hooks.sh, test-install-modules.sh |
+| `spec-drift-guard.sh` | `[E]` | PreToolUse | PreToolUse hook, matcher: Write | SPEC-003, SPEC-005, SPEC-006 +5 | test-hooks.sh, test-install-modules.sh |
+| `statusline.sh` | `[E]` | StatusLine | StatusLine script | SPEC-025, SPEC-084, SPEC-219 +2 | test-context-budget.sh, test-hooks.sh, test-install-modules.sh +1 |
+| `tool-policy-guard.sh` | `[E]` | PreToolUse | PreToolUse hook enforcing the tool-choice policy. | SPEC-212, SPEC-334 | test-install-modules.sh, test-tool-policy-guard.sh |
 
