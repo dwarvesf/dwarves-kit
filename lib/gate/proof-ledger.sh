@@ -31,6 +31,7 @@
 #   is-overridden <slug>              exit 0 if an override is logged
 #   negctl   <root> <test-cmd> <mutate-cmd>
 #   negctl   --base-ref <ref> <root> <test-cmd>
+#   negctl   --at <sha> [--path <subdir>] [--setup <cmd>] <root> <test-cmd> <mutate-cmd>
 #                                     forwards to lib/gate/negctl.sh (the mechanised negative
 #                                     control; FAILS CLOSED, prints the block check() reads.
 #                                     --base-ref mode proves the control against a git ref

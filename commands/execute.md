@@ -273,6 +273,8 @@ TASK-[ID]: [description]
 [paste worker's output]
 ```
 
+A verifier (kit:task-verifier or kit:recheck-verifier) judging a commit while a worker still edits the tree runs its negative control with `lib/gate/negctl.sh --at <sha> [--path <subdir>] [--setup "<install-cmd>"] <root> "<test-cmd>" "<mutate-cmd>"`: it exports that commit to a temp dir and never writes the live worktree, so no hand-rolled `git archive | tar -x` scratch copy.
+
 The kit:task-verifier will return one of three verdicts. Each maps onto one of the kit's named
 failure policies (`docs/patterns/failure-policy.md`), noted below -- the policy is
 the interpretive layer used when recording this task's outcome (2e) and the phase's outcome
