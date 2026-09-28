@@ -246,11 +246,16 @@ time. The ASCII-only bound also kills lookalike characters (a Unicode minus in p
 for free. Closes cases 1 and 5 and the whole smuggle class.
 
 Mechanism, pinned: the hook sets `LC_ALL=C` before the test and runs it as bash's
-`[[ $CMD =~ ^[A-Za-z0-9\ ._\/=:,@%+*~-]+$ ]]`, never as `echo "$CMD" | grep -E ...`. `grep`
-applies locale-dependent range semantics (a non-C locale can reorder or widen `A-Za-z`) and
-reads its input line-wise; both are wrong for a whole-string, byte-exact check. `[[ =~ ]]`
-evaluates against the string as-is with no line splitting, and `LC_ALL=C` makes the ranges
-pure ASCII.
+`[[ $CMD =~ ^[A-Za-z0-9 ./_=:,@%+*~-]+$ ]]` with the pattern in a variable (the safe idiom:
+an unquoted literal on the RHS is the same thing, but the variable keeps `[[ =~ ]]`
+portable across bash 3.2's parser), never as `echo "$CMD" | grep -E ...`. The class
+carries NO backslash escapes: on the macOS regex engine a `\/` inside a bracket expression
+is read as a literal backslash AND a slash, which would quietly allowlist the escape
+character itself; every allowlisted char is written bare (`/` and space need no escape
+inside brackets). `grep` applies locale-dependent range semantics (a non-C locale can
+reorder or widen `A-Za-z`) and reads its input line-wise; both are wrong for a
+whole-string, byte-exact check. `[[ =~ ]]` evaluates against the string as-is with no
+line splitting, and `LC_ALL=C` makes the ranges pure ASCII.
 
 **Stage C, tokenize.** Split `CMD` on whitespace into `WORDS[]`. Mechanism, pinned:
 `read -ra WORDS <<< "$CMD"`: `read` applies the IFS split and never glob-expands, which
