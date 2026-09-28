@@ -1,6 +1,6 @@
 # Spec: one repo-root anchor for every dwarves-kit hook, across both dispatch tables
 Generated: 2026-09-28
-Status: DRAFT
+Status: VALIDATED
 Lane: full
 
 ## Problem
@@ -255,6 +255,7 @@ pattern would have found).
 | `citation-guard.py` | `payload.get("cwd")` wins before its `os.getcwd()` fallback; anchoring only touches that last resort, and only makes it MORE correct |
 | `harvest.py`, `backlog-stage.py`, `intake-sweep.py` | Each already has its own `_repo_root()` doing `git rev-parse --show-toplevel`, falling back to `os.getcwd()` only on failure |
 | `prose-rag.sh` | Its `pwd` resolves the SCRIPT's own directory (`cd "$(dirname ...)" && pwd`), not the session cwd, an unrelated use |
+| `auto-format.sh` | `tool_input.file_path` is absolute, so the file it formats is unaffected. Caveat: `find_prettier()`'s `./node_modules/.bin/prettier` probe is cwd-relative, so a monorepo package's own local prettier is no longer found from a package subdirectory once anchored; the hook then falls back to a global `prettier` or skips. Advisory-only (exits 0 always), accepted, see the audit above |
 | `context-hints.py`, `notification.sh`, `permission-auto-approve.sh`, `output-offload.sh` | No cwd/pwd/`getcwd()` reference found in any of the four |
 
 **Table 3: needed a scoped code fix to keep working correctly under the anchor**
@@ -356,6 +357,12 @@ Three docs are pinned to the `hooks/*.sh` file count or list by tests that will 
   SessionEnd entry), not introduced by this fix and not fixed here; named as a follow-up to
   `lib/registry/feature-registry.sh`, not this spec.
 
+### Failure modes
+
+| Failure | Effect | Mitigation |
+|---|---|---|
+| `anchor-root.sh` missing, or present without its executable bit | Every anchored entry exits 126 (not executable) or 127 (not found) before the real hook runs. Claude Code treats any exit other than 2 as non-blocking, so every gate (safety-gate, ship-gate, commit-format, ...) goes dark silently instead of failing loud | `tests/test-meta.sh:147` asserts every `hooks/*.sh` carries the exec bit (it globs `anchor-root.sh` in automatically); `install.sh:483` copies every `hooks/*.sh` and runs `chmod +x` on each copy; test case 7 asserts no entry in either table exits 126/127 |
+
 ## Picture
 
 ```
@@ -367,6 +374,9 @@ Three docs are pinned to the `hooks/*.sh` file count or list by tests that will 
         +----------------------+-----------------------------+
                                v
                     anchor-root.sh (one file, both tables point at it)
+                               |
+                               v
+                    export DWARVES_KIT_INVOCATION_CWD="$PWD"   (true cwd, saved BEFORE the cd)
                                |
               git rev-parse --show-toplevel --fails (no work tree)--> ROOT = $PWD (fail-open)
                                |
@@ -382,9 +392,17 @@ Three docs are pinned to the `hooks/*.sh` file count or list by tests that will 
  no anchor-root.sh prefix. It keeps running at the tool's real invocation cwd (needed to
  canonicalize a relative path OPERAND the same way the tool call itself would).
 
- ONE hook needed its own scoped fix, not just the wrapper: ship-gate.sh now reads the
- payload's .cwd (REAL_CWD) to resolve a relative embedded `cd <path>`, instead of trusting
- its own (now possibly anchored) $PWD, the same pattern board-row-gate.sh already used.
+ ONE hook needed its own scoped fix, not just the wrapper: ship-gate.sh resolves REAL_CWD
+ and uses it for a relative embedded `cd <path>` and for its no-cd ROOT fallback, instead of
+ trusting its own (now possibly anchored) $PWD, the same pattern board-row-gate.sh used:
+
+   payload .cwd --empty--> $DWARVES_KIT_INVOCATION_CWD --empty--> $PWD
+        |                          |                                 |
+        +--------------------------+---------------------------------+
+                                   v
+                               REAL_CWD
+                                   |
+             relative CDDIR -> "$REAL_CWD/$CDDIR";  no CDDIR -> git -C "$REAL_CWD"
 
  tests/test-hook-anchor.sh (the lint)
         |
@@ -460,7 +478,7 @@ attempts.
 - [ ] TASK-C6: In `tests/test-install-modules.sh`, add `| grep -v '^anchor-root\.sh$'` to
   `wired_hooks()` per `## Solution`, "tests/test-install-modules.sh and tests/test-adopt.sh".
   `tests/test-adopt.sh` needs no change (verified, membership-only checks).
-- [ ] TASK-D: Add `tests/test-hook-anchor.sh` (new, a sibling of `tests/test-hooks.sh`, picked up
+- [ ] TASK-D (depends on TASK-C, TASK-C2): Add `tests/test-hook-anchor.sh` (new, a sibling of `tests/test-hooks.sh`, picked up
   by `tests/run-all.sh`'s `tests/test-*.sh` glob): parses BOTH `hooks/hooks.json` and root
   `settings.json`, `.hooks.*` entries only (not the root `statusLine` key, see `## Solution`,
   "Two dispatch tables", scope boundary), asserts every command has the `anchor-root.sh` prefix
@@ -468,21 +486,26 @@ attempts.
   check function first against a small embedded fixture with one entry missing the wrapper
   (proving the checker itself catches a bypass, not merely vacuously true because the real files
   already comply), then against both real files.
-- [ ] TASK-E: In `tests/test-hooks.sh`, add the seven cases in `## Test plan` below, each
-  invoking its hook THROUGH the wrapper (`bash "$KIT_DIR/hooks/anchor-root.sh"
-  "$KIT_DIR/hooks/<hook>.sh" [args]`), not the bare hook. Existing cases that invoke hooks
-  directly are untouched, they test a hook's own internal logic and are unaffected by this fix
-  either way, since those fixtures already sit at their own repo root. Each assertion's name
-  string MUST include the exact literal substring named in `## Test plan` (`subdir with content`,
-  `worktree keeps own state`, `writer/reader pair`, `relative cd resolves`), matching, verbatim,
-  what the negative controls below grep for; a test written with a different label silently
-  breaks NC1/NC3's scoping.
-- [ ] TASK-E2: Docs projection per `## Solution`, "Docs projection": one new row each in
+- [ ] TASK-E1 (depends on TASK-B, TASK-C, TASK-C3): In `tests/test-hooks.sh`, add cases 1-5 of
+  `## Test plan` below, each invoking its hook THROUGH the wrapper
+  (`bash "$KIT_DIR/hooks/anchor-root.sh" "$KIT_DIR/hooks/<hook>.sh" [args]`), not the bare hook.
+  Existing cases that invoke hooks directly are untouched, they test a hook's own internal logic
+  and are unaffected by this fix either way, since those fixtures already sit at their own repo
+  root.
+- [ ] TASK-E2 (depends on TASK-B, TASK-C, TASK-C3; the settings.json half of case 7 also reads
+  TASK-C2's output): In `tests/test-hooks.sh`, add cases 6a, 6b, 6c, and 7 of `## Test plan`,
+  same wrapper-routed shape.
+  For both E1 and E2: each assertion's name string MUST include the exact literal substring named
+  in `## Test plan` (`subdir with content`, `worktree keeps own state`, `writer/reader pair`,
+  `relative cd resolves`, `payload cwd resolves root`, `smoke exec`), matching, verbatim, what
+  the negative controls below grep for; a test written with a different label silently breaks
+  NC1/NC3's scoping.
+- [ ] TASK-E3: Docs projection per `## Solution`, "Docs projection": one new row each in
   `docs/architecture.md`'s Hook fallback layer table and `README.md`'s Hooks table, then
   `bash lib/registry/feature-registry.sh generate` to refresh `docs/FEATURES.md`.
 
 ### Phase 3: Polish
-- [ ] TASK-F: Commit TASK-B through TASK-E2, then run all three negative controls in
+- [ ] TASK-F: Commit TASK-B through TASK-E3, then run all three negative controls in
   `## Test plan` (bottom) and confirm each goes RED under its mutation, then GREEN again
   restored.
 
@@ -509,16 +532,18 @@ attempts.
   hook file; the two row-count parity tests in `tests/test-meta.sh` stay green.
 - [ ] `hooks/codex-hooks.json`'s trust pin for `ship-gate.sh` matches its new content;
   `tests/test-codex-hooks.sh` and `bash lib/codex/repin.sh check` both pass.
-- [ ] Every existing case in `tests/test-hooks.sh`, `tests/test-install-modules.sh`, and
-  `tests/test-adopt.sh` still passes unchanged.
+- [ ] Every existing assertion in `tests/test-hooks.sh`, `tests/test-install-modules.sh`, and
+  `tests/test-adopt.sh` still passes. (The assertions stay as written; only
+  `tests/test-install-modules.sh`'s shared `wired_hooks()` helper gains the TASK-C6 filter.)
 
 ## Acceptance Criteria (global)
 - [ ] All tasks pass their individual acceptance criteria.
-- [ ] The seven new `tests/test-hooks.sh` cases pass (session-state subdirectory-with-content,
-  session-state worktree, session-state outside-repo confirmation (wrapper-routed), pre-compact-
-  backup subdirectory, post-compact-reinject writer/reader pair, ship-gate relative-cd
-  cross-repo resolution (both the payload-`.cwd` and the `DWARVES_KIT_INVOCATION_CWD`-fallback
-  variants), and the every-entry smoke test).
+- [ ] The nine new `tests/test-hooks.sh` cases pass: cases 1-5 (session-state
+  subdirectory-with-content, session-state worktree, session-state outside-repo confirmation
+  (wrapper-routed), pre-compact-backup subdirectory, post-compact-reinject writer/reader pair),
+  cases 6a/6b/6c (ship-gate relative-cd cross-repo resolution via the payload `.cwd` and via the
+  `DWARVES_KIT_INVOCATION_CWD` fallback, plus the no-cd `git -C "$REAL_CWD"` ROOT fallback), and
+  case 7 (the every-entry smoke test over both dispatch tables).
 - [ ] `tests/test-hook-anchor.sh` passes: every entry in both `hooks.json` and `settings.json` is
   wrapped except the one named exemption, and its embedded bypass fixture is correctly flagged.
 - [ ] No regression in existing `tests/test-hooks.sh`, `tests/test-meta.sh`,
@@ -590,11 +615,14 @@ repo under `mktemp -d "${TMPDIR:-/tmp}/dk-....XXXXXX"`, JSON piped on stdin, cle
      `cd "$PARENT/session-repo/sub"` first, so the wrapper anchors `ship-gate.sh`'s own `$PWD`
      to `session-repo`'s root (NOT `other-repo`, matching what the anchor does today for a
      same-repo subdirectory), then pipe the payload with `DWARVES_KIT_PRINT_CDDIR=1` into
-     `bash "$KIT_DIR/hooks/anchor-root.sh" "$KIT_DIR/hooks/ship-gate.sh"`. Assert: canonicalize
-     BOTH the printed CDDIR and the expected path through an actual `cd`+`pwd -P` round trip
-     before comparing (`OUT_CANON=$(cd "$(printf '%s' "$RAW_CDDIR")" && pwd -P)`,
-     `EXPECT_CANON=$(cd "$PARENT/other-repo" && pwd -P)`, assert `OUT_CANON` equals
-     `EXPECT_CANON`), NOT a raw string comparison. `REAL_CWD/CDDIR` is a plain concatenation
+     `bash "$KIT_DIR/hooks/anchor-root.sh" "$KIT_DIR/hooks/ship-gate.sh"`. Assert, in order:
+     the printed CDDIR is ABSOLUTE (`case "$RAW_CDDIR" in /*) ;; *) fail ;; esac`, so a
+     relative value that happens to resolve from the test's own cwd cannot pass); then
+     canonicalize BOTH the printed CDDIR and the expected path through an actual `cd`+`pwd -P`
+     round trip started from a NEUTRAL directory, never the fixture's own tree
+     (`OUT_CANON=$(cd / && cd "$RAW_CDDIR" && pwd -P)`,
+     `EXPECT_CANON=$(cd / && cd "$PARENT/other-repo" && pwd -P)`), and assert `OUT_CANON`
+     equals `EXPECT_CANON`, NOT a raw string comparison. `REAL_CWD/CDDIR` is a plain concatenation
      (`.../sub/../../other-repo`), never collapsed by the fix itself (the OS resolves `..`
      segments transparently, so the fix does not need to); a raw string compare against
      `$PARENT/other-repo` would fail even on a correct resolution. Round-tripping both sides
@@ -607,17 +635,37 @@ repo under `mktemp -d "${TMPDIR:-/tmp}/dk-....XXXXXX"`, JSON piped on stdin, cle
      assertion as 6a. Proves the anchor's own exported `DWARVES_KIT_INVOCATION_CWD` (see
      `## Solution`, "The anchor") correctly substitutes when the event's payload has no `.cwd`,
      not just when it does.
-7. **Smoke test: every `hooks.json` entry is exec'able through the wrapper.** Broader and
-   shallower than cases 1-6: extract EVERY `.command` string from `hooks/hooks.json` via
-   `jq -r '.hooks[][].hooks[].command'`, expand `${CLAUDE_PLUGIN_ROOT}` to `$KIT_DIR`, and run
-   each, one at a time, via `sh -c "$EXPANDED"` with a minimal, universal payload
-   (`{"stop_hook_active":true}`, already special-cased to a fast exit by most Stop/SubagentStop
-   hooks, and ignored harmlessly by the rest) piped on stdin, `cd`'d into a subdirectory of a
-   throwaway repo first. Assert the exit code is NEVER 126 (permission denied, not executable) or
-   127 (command not found) for any entry, the shell's own "could not even launch the program"
-   codes, never a hook's own logic. This is a plumbing check (right paths, the executable bit,
-   correct argument splitting through the wrapper), not a per-hook behavior check, covering every
-   wired hook at once instead of only the ones with dedicated cases above.
+   - **6c, the `git -C "$REAL_CWD"` fallback branch (no embedded `cd`).** 6a and 6b stop at the
+     `DWARVES_KIT_PRINT_CDDIR` early exit, so they never reach the ROOT resolution itself. 6c
+     does, with no print affordance set. `PARENT/other-repo` gets a committed
+     `_meta/BACKLOG.md` holding one table row that does NOT mention the branch slug, and is
+     checked out on branch `feat/anchor-probe`; `session-repo` has no `_meta/BACKLOG.md`.
+     Payload: `{"cwd":"<PARENT>/other-repo","tool_input":{"command":"git push origin
+     feat/anchor-probe"}}` (no `cd`, so CDDIR is empty and the hook takes the fallback branch).
+     Run from `cd "$PARENT/session-repo/sub"` through the wrapper, with `CLAUDE_PLUGIN_ROOT`
+     pointed at an empty temp dir (no ledger, no proof lib: every other block fails open, and
+     the real `~/.claude` ledger is never read). Assert stderr carries the board-registration
+     advisory `appears nowhere in _meta/BACKLOG.md`, which fires only when ROOT resolved to
+     `other-repo`, the payload's repo, not the anchored `session-repo`. Label substring:
+     `payload cwd resolves root`.
+7. **Smoke test: every wired entry in BOTH dispatch tables is exec'able through the wrapper.**
+   Broader and shallower than cases 1-6: extract EVERY `.command` string from `hooks/hooks.json`
+   via `jq -r '.hooks[][].hooks[].command'` and expand `${CLAUDE_PLUGIN_ROOT}` to `$KIT_DIR`;
+   extract every `.hooks` command from root `settings.json` the same way and rewrite the literal
+   `$HOME/.claude/dwarves-kit` prefix to `$KIT_DIR` (the settings.json path assumes an installed
+   kit; the rewrite points it at this checkout without installing). Run each, one at a time, via
+   `sh -c "$EXPANDED"` with a minimal, universal payload (`{"stop_hook_active":true}`, already
+   special-cased to a fast exit by most Stop/SubagentStop hooks, and ignored harmlessly by the
+   rest) piped on stdin, `cd`'d into a subdirectory of a throwaway repo first. The whole loop
+   runs with side effects fenced off: `HOME` points at a throwaway temp dir (no write reaches the
+   real `~/.claude`), and a stub directory prepended to `PATH` shadows `osascript`,
+   `notify-send`, and `codebase-memory-mcp` with scripts that `exit 0` (no real desktop
+   notification, no real index write). Assert the exit code is NEVER 126 (permission denied, not
+   executable) or 127 (command not found) for any entry in either table, the shell's own "could
+   not even launch the program" codes, never a hook's own logic. This is a plumbing check (right
+   paths, the executable bit, correct argument splitting through the wrapper), not a per-hook
+   behavior check, covering every wired hook at once instead of only the ones with dedicated
+   cases above. Label substring: `smoke exec`.
 
 **Negative control 1 (the anchor's own cd).** `hooks/anchor-root.sh` is a new file with no
 pre-fix revision to pin to, so its mutation is a no-op passthrough rather than a `git show` pin:
@@ -648,12 +696,14 @@ just under this control.
 the `REAL_CWD`/CDDIR-join/fallback change:
 ```sh
 bash lib/gate/negctl.sh "$PWD" \
-  'bash tests/test-hooks.sh 2>&1 | grep -E "FAIL.*relative cd resolves" && exit 1 || exit 0' \
+  'bash tests/test-hooks.sh 2>&1 | grep -E "FAIL.*(relative cd resolves|payload cwd resolves root)" && exit 1 || exit 0' \
   'git show afb52d01:hooks/ship-gate.sh > hooks/ship-gate.sh'
 ```
-Reverting just `ship-gate.sh` to its pre-fix content makes case 6 go RED (the printed CDDIR
-resolves against the anchored `$PWD`, landing on `session-repo`, not `other-repo`); `negctl.sh`
-then restores the real `ship-gate.sh` and confirms green again.
+Reverting just `ship-gate.sh` to its pre-fix content makes case 6 go RED (6a/6b: the printed
+CDDIR stays relative and resolves against the anchored `$PWD`, landing on `session-repo`, not
+`other-repo`; 6c: the bare `git rev-parse` resolves ROOT to the anchored `session-repo`, so the
+BACKLOG advisory never fires); `negctl.sh` then restores the real `ship-gate.sh` and confirms
+green again.
 
 ## Edge Cases
 1. `git rev-parse --show-toplevel` returns the PHYSICAL path (symlinks resolved), not necessarily
@@ -662,9 +712,10 @@ then restores the real `ship-gate.sh` and confirms green again.
    `mktemp -d "${TMPDIR:-/tmp}/..."` sees the anchor's resolved `ROOT` differ, as a STRING, from
    the fixture variable's own `/tmp/...` path, even though both name the same directory. Every
    test assertion above uses existence checks (`[ -f ]`/`[ -d ]`), content checks (`grep`,
-   checksums), or a PRE-git-resolution string comparison (case 6), all of which are symlink-safe;
-   none compares a POST-`git rev-parse` absolute path by raw string equality against a
-   `mktemp`-returned path.
+   checksums), or, for case 6, a canonical comparison: both the printed CDDIR and the expected
+   path go through a `cd` + `pwd -P` round trip (from a neutral directory) before the compare,
+   which resolves `..` segments and the `/tmp` symlink identically on both sides. None compares
+   a POST-`git rev-parse` absolute path by raw string equality against a `mktemp`-returned path.
 2. A bare repository, or a cwd already inside the `.git` directory itself: `git rev-parse
    --show-toplevel` FAILS in both cases (no work tree to report), so `ROOT` falls back to `$PWD`
    and the following `cd` is a no-op; unchanged fail-open behavior, not a special case.
@@ -771,13 +822,18 @@ then restores the real `ship-gate.sh` and confirms green again.
   that file exists in this repo today (`lib/adopt.sh` only lists it as part of the `session`
   install module's file manifest); the audience for a correctly-placed state file is crash
   recovery and a human skimming the repo, not a verified `start` code path.
-- DEC-F: `ship-gate.sh` gets a scoped, three-line fix (read the payload's `.cwd` as `REAL_CWD`,
-  join a relative CDDIR against it, fall back to `git -C "$REAL_CWD"` instead of bare `git
-  rev-parse`) rather than being excluded from the anchor like `secrets-guard.sh`. Rationale: the
-  hook's OWN root resolution (not a tool_input operand read) is what breaks, and the fix is a
-  same-shape port of `board-row-gate.sh`'s already-working `.cwd`-preferring pattern, not a novel
-  mechanism; excluding it would still leave it anchored-but-wrong for the CDDIR-relative case
-  specifically, since the wrapper's `cd` still runs before it either way.
+- DEC-F: `ship-gate.sh` gets a scoped, three-line fix (resolve `REAL_CWD` from the payload's
+  `.cwd`, then the anchor-exported `DWARVES_KIT_INVOCATION_CWD`, then `$PWD`; join a relative
+  CDDIR against it; fall back to `git -C "$REAL_CWD"` instead of bare `git rev-parse`) rather
+  than being excluded from the anchor like `secrets-guard.sh`. An excluded entry never passes
+  through the wrapper at all, so exclusion WOULD also keep today's behavior intact. The real
+  tradeoff: exclusion costs no hook code change, no Codex trust repin, and no NC3, but leaves
+  `ship-gate.sh` correct only by the accident of its own `$PWD`, and adds a second named
+  exemption to the lint. The fix makes `ship-gate.sh` resolve the pushed repo from the payload's
+  `.cwd` whether or not the wrapper runs (a hardening that holds under a direct invocation, the
+  anchored path, and any future dispatcher that changes `$PWD`), keeps the exemption list at one
+  entry, and ports `board-row-gate.sh`'s already-working `.cwd`-preferring pattern rather than
+  inventing a mechanism. The operator chose the fix; its costs are the repin (TASK-C5) and NC3.
 - DEC-G: Both dwarves-kit dispatch tables (`hooks/hooks.json`, root `settings.json`) are rewritten
   and both are checked by the same lint. Rationale: ADR-0009 already commits to keeping them in
   sync manually until sunset; fixing only one would silently un-fix the bash-install path the
