@@ -225,6 +225,117 @@ assert_eq "AC1: a sibling dir sharing the state dir's prefix is not self-harvest
 
 # ============================================================
 echo ""
+echo "=== T3 devin adapter ==="
+
+bash "$KIT_DIR/tests/fixtures/harvest-sweep/make-devin-db.sh" "$HARVEST_SWEEP_DEVIN_DB"
+bash "$KIT_DIR/tests/fixtures/harvest-sweep/make-devin-db.sh" "$TD/drift.db" --rename-column
+
+T3_OUT=$(KIT_DIR="$KIT_DIR" TD="$TD" python3 - <<'PY'
+import importlib.util, os
+spec = importlib.util.spec_from_file_location("hs", os.path.join(os.environ["KIT_DIR"], "hooks", "harvest_sweep.py"))
+hs = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(hs)
+P = lambda k, v: print("%s=%s" % (k, v))
+
+items = hs.list_devin_sessions()
+by = {i["session_id"]: i for i in items}
+P("enum_ids", ",".join(i["session_id"] for i in items))
+P("enum_last_activity", by["s-main"]["last_activity"])
+P("hidden_flags", ",".join("%s:%s" % (i["session_id"], hs.is_hidden(i)) for i in items))
+
+t = hs.load_devin(by["s-main"])
+P("shape_keys", ",".join(sorted(t)))
+P("shape_source", t["source"])
+P("shape_lead_null", t["lead_session_id"] is None)
+P("shape_cwd", t["cwd"])
+P("shape_started", t["started"])
+P("shape_last_activity", t["last_activity"])
+P("shape_msg_keys", ",".join(sorted(t["messages"][0])))
+P("roles", ",".join(m["role"] for m in t["messages"]))
+P("system_absent", not any("INJECTED" in m["text"] for m in t["messages"]))
+P("chain_order", "|".join(m["text"][:12] for m in t["messages"]))
+P("branch_absent", not any("ABANDONED" in m["text"] for m in t["messages"]))
+P("ts_sorted", [m["ts"] for m in t["messages"]] == sorted(m["ts"] for m in t["messages"]))
+P("newest", hs.newest_ts(t))
+P("render", hs.render(t, 1002, 1000).replace("\n", "|"))
+
+n = hs.load_devin(by["s-null"])
+P("null_order", "|".join(m["text"] for m in n["messages"]))
+P("null_cwd", n["cwd"])
+P("null_system_absent", not any("INJECTED" in m["text"] for m in n["messages"]))
+P("null_trivial", hs.is_trivial(n))
+
+# a dangling main_chain_id falls back like a null one
+dangling = dict(by["s-null"], main_chain_id=99)
+P("dangling_fallback", len(hs.load_devin(dangling)["messages"]))
+
+# drift and missing file: failure objects, no exception, claude adapter unaffected
+os.environ["HARVEST_SWEEP_DEVIN_DB"] = os.path.join(os.environ["TD"], "drift.db")
+f = hs.list_devin_sessions()
+P("drift_type", type(f).__name__)
+P("drift_class", f.error_class)
+P("drift_state_row", f.state_row().startswith("STATE devin: OperationalError: ") and "last_activity_at" in f.state_row())
+P("drift_claude_ok", isinstance(hs.list_claude_sessions(), list) and len(hs.list_claude_sessions()) == 3)
+os.environ["HARVEST_SWEEP_DEVIN_DB"] = os.path.join(os.environ["TD"], "missing.db")
+m = hs.list_devin_sessions()
+P("missing_type", type(m).__name__)
+P("missing_no_create", not os.path.exists(os.environ["HARVEST_SWEEP_DEVIN_DB"]))
+P("load_fail_type", type(hs.load_devin(by["s-main"])).__name__)
+
+# source_fail bookkeeping
+c = {}
+P("fail_counts", ",".join(str(hs.source_fail_update(c, "devin", True)) for _ in range(3)))
+P("tripped_at_three", hs.source_fail_tripped(c, "devin"))
+P("other_source_untouched", hs.source_fail_tripped(c, "claude"))
+hs.source_fail_update(c, "devin", False)
+P("reset_by_good_read", c["source_fail"]["devin"] == 0 and not hs.source_fail_tripped(c, "devin"))
+c2 = {}
+hs.source_fail_update(c2, "devin", True); hs.source_fail_update(c2, "devin", True)
+P("two_not_tripped", hs.source_fail_tripped(c2, "devin"))
+os.environ["HARVEST_SWEEP_SOURCE_FAIL_RUNS"] = "2"
+P("knob_trips_at_two", hs.source_fail_tripped(c2, "devin"))
+PY
+)
+d() { printf '%s\n' "$T3_OUT" | sed -n "s/^$1=//p"; }
+
+assert_eq "AC1: devin lists every session, oldest activity first" "s-main,s-null,s-hidden" "$(d enum_ids)"
+assert_eq "AC1: last_activity comes from last_activity_at" "1900" "$(d enum_last_activity)"
+assert_eq "AC26: hidden = 1 is flagged, visible sessions are not" "s-main:False,s-null:False,s-hidden:True" "$(d hidden_flags)"
+assert_eq "AC1: devin transcript keys match the claude shape" "cwd,last_activity,lead_session_id,messages,session_id,source,started" "$(d shape_keys)"
+assert_eq "AC1: source is devin" "devin" "$(d shape_source)"
+assert_eq "AC1: lead_session_id starts null" "True" "$(d shape_lead_null)"
+assert_eq "AC26: cwd comes from working_directory" "/work/app" "$(d shape_cwd)"
+assert_eq "AC1: started is sessions.created_at" "1000.0" "$(d shape_started)"
+assert_eq "AC1: transcript last_activity is last_activity_at" "1900" "$(d shape_last_activity)"
+assert_eq "AC1: message keys" "role,sub,text,ts" "$(d shape_msg_keys)"
+assert_eq "AC1: roles kept are user, assistant, tool (a tool call adds a tool line)" "user,assistant,tool,tool,assistant" "$(d roles)"
+assert_eq "AC1: system rows are absent from messages" "True" "$(d system_absent)"
+assert_eq "AC1: the main chain walks root first and lists tool_calls names" "Fix the flak|Reading the |read_file|def test_log|Fixed with a" "$(d chain_order)"
+assert_eq "AC1: nodes off the main chain are excluded" "True" "$(d branch_absent)"
+assert_eq "AC1: messages are in ts order" "True" "$(d ts_sorted)"
+assert_eq "AC1: newest_ts is the newest kept message" "1007.0" "$(d newest)"
+assert_eq "AC1: render takes only messages after last_ts" "assistant: Reading the test.|tool: read_file|tool: def test_login(): pass|assistant: Fixed with a retry." "$(d render)"
+assert_eq "AC1: a null main_chain_id falls back to all nodes by node_id" "Summarize the repo|It is a CLI.|Thanks|Done." "$(d null_order)"
+assert_eq "AC26: fallback session cwd from working_directory" "/work/other" "$(d null_cwd)"
+assert_eq "AC1: system rows absent in the fallback too" "True" "$(d null_system_absent)"
+assert_eq "AC1: a 4-message devin session is trivial at the default line" "True" "$(d null_trivial)"
+assert_eq "AC1: a dangling main_chain_id falls back like null" "4" "$(d dangling_fallback)"
+assert_eq "AC14: a renamed column yields a failure object, not an exception" "SourceFailure" "$(d drift_type)"
+assert_eq "AC14: the failure carries the sqlite error class" "OperationalError" "$(d drift_class)"
+assert_eq "AC14: the STATE row names the source, the class and the missing column" "True" "$(d drift_state_row)"
+assert_eq "AC14: the claude source still lists its sessions" "True" "$(d drift_claude_ok)"
+assert_eq "AC14: a missing db is a failure object" "SourceFailure" "$(d missing_type)"
+assert_eq "AC14: opening a missing db read-only does not create it" "True" "$(d missing_no_create)"
+assert_eq "AC14: a failed session load is a failure object" "SourceFailure" "$(d load_fail_type)"
+assert_eq "AC14: source_fail counts consecutive failed reads" "1,2,3" "$(d fail_counts)"
+assert_eq "AC14: three consecutive failures trip the helper" "True" "$(d tripped_at_three)"
+assert_eq "AC14: another source is untouched" "False" "$(d other_source_untouched)"
+assert_eq "AC14: one good read resets the count" "True" "$(d reset_by_good_read)"
+assert_eq "AC14: two failures do not trip the default" "False" "$(d two_not_tripped)"
+assert_eq "AC14: HARVEST_SWEEP_SOURCE_FAIL_RUNS moves the line" "True" "$(d knob_trips_at_two)"
+
+# ============================================================
+echo ""
 echo "=== Results ==="
 echo "Passed: $PASS / $TOTAL"
 if [ "$FAIL" -gt 0 ]; then

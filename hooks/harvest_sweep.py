@@ -8,6 +8,8 @@ extractor. Selection, the cursor, and the extractor call come in later tasks.
 
 Env (tests point these at temp dirs):
   HARVEST_SWEEP_CLAUDE_ROOT=DIR    claude projects root (default ~/.claude/projects)
+  HARVEST_SWEEP_DEVIN_DB=FILE      devin sessions db (default ~/.local/share/devin/cli/sessions.db)
+  HARVEST_SWEEP_SOURCE_FAIL_RUNS=N consecutive failed runs of one source that trip rc 5 (default 3)
   HARVEST_SWEEP_MIN_MESSAGES=N     a session with fewer kept user+assistant messages is trivial (default 6)
   HARVEST_STATE_DIR=DIR            harvest state dir; a session whose cwd is under it is self-harvest
 """
@@ -16,7 +18,10 @@ import glob
 import importlib.util
 import json
 import os
+import sqlite3
 import sys
+import time
+import urllib.parse
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, _HERE)
@@ -155,8 +160,10 @@ def render(t, after_ts, max_chars):
     push the lead out, and the budget stays a hard cap for the prompt-size bound."""
     fresh = [m for m in t["messages"] if m["ts"] > after_ts]
     lead_budget = int(max_chars * LEAD_SHARE)
-    picked = (_take_recent([m for m in fresh if not m["sub"]], lead_budget)
-              + _take_recent([m for m in fresh if m["sub"]], max_chars - lead_budget))
+    # _take_recent returns newest first; restore file order so the stable sort keeps
+    # same-ts messages (a text block and its tool call share one entry ts) in order.
+    picked = (_take_recent([m for m in fresh if not m["sub"]], lead_budget)[::-1]
+              + _take_recent([m for m in fresh if m["sub"]], max_chars - lead_budget)[::-1])
     picked.sort(key=lambda p: p[0]["ts"])
     return "\n".join(line for _, line in picked)
 
@@ -173,3 +180,130 @@ def is_self_harvest(t):
     state = os.path.realpath(harvest._state_dir())
     cwd = os.path.realpath(t["cwd"])
     return cwd == state or cwd.startswith(state + os.sep)
+
+
+# ---- devin adapter -------------------------------------------------------------------
+
+class SourceFailure(object):
+    """A source that could not be read this run. Returned, never raised, so one broken
+    source cannot stop the others (SPEC-357 source drift)."""
+
+    def __init__(self, source, exc):
+        self.source = source
+        self.error_class = type(exc).__name__
+        self.message = str(exc)
+
+    def state_row(self):
+        return "STATE %s: %s: %s" % (self.source, self.error_class, self.message)
+
+
+def _devin_db():
+    return os.environ.get("HARVEST_SWEEP_DEVIN_DB",
+                          os.path.expanduser("~/.local/share/devin/cli/sessions.db"))
+
+
+def _devin_query(sql, params=()):
+    """Rows from the devin db, opened read-only by URI so a live Devin is never disturbed.
+    A locked db is retried once (Edge case: db locked by a running Devin), then raised."""
+    uri = "file:%s?mode=ro" % urllib.parse.quote(_devin_db())
+    for attempt in (0, 1):
+        try:
+            con = sqlite3.connect(uri, uri=True, timeout=1)
+            try:
+                return con.execute(sql, params).fetchall()
+            finally:
+                con.close()
+        except sqlite3.OperationalError as exc:
+            if attempt or not any(w in str(exc) for w in ("locked", "busy")):
+                raise
+            time.sleep(0.2)
+
+
+def list_devin_sessions():
+    """Sessions in the devin db, oldest activity first, or a SourceFailure.
+
+    Each item: {session_id, cwd, started, last_activity, hidden, main_chain_id}. Hidden
+    rows are listed, not dropped: the caller marks them done so the hwm can pass them."""
+    try:
+        rows = _devin_query("SELECT id, working_directory, created_at, last_activity_at, hidden, "
+                            "main_chain_id FROM sessions ORDER BY last_activity_at, id")
+    except (sqlite3.Error, OSError) as exc:
+        return SourceFailure("devin", exc)
+    return [{"session_id": r[0], "cwd": r[1] or "", "started": float(r[2] or 0),
+             "last_activity": int(r[3] or 0), "hidden": bool(r[4]), "main_chain_id": r[5]}
+            for r in rows]
+
+
+def is_hidden(item):
+    """hidden = 1: skipped rather than guessed at, since the column's meaning is undocumented (DEC-79)."""
+    return bool(item.get("hidden"))
+
+
+def _devin_text(content):
+    if isinstance(content, list):
+        content = "\n".join(b.get("text", "") for b in content
+                            if isinstance(b, dict) and isinstance(b.get("text"), str))
+    return content.strip() if isinstance(content, str) else ""
+
+
+def _node_messages(chat_message, ts):
+    """Kept messages of one node: user/assistant/tool content, plus one tool line per call."""
+    try:
+        cm = json.loads(chat_message)
+    except ValueError:
+        return []
+    role = cm.get("role") if isinstance(cm, dict) else None
+    if role not in ("user", "assistant", "tool"):  # system rows are injected rules
+        return []
+    text = _devin_text(cm.get("content"))
+    if role == "tool":
+        text = text[:TOOL_INPUT_CHARS]
+    msgs = [{"role": role, "text": text, "ts": ts, "sub": False}] if text else []
+    for call in cm.get("tool_calls") or []:
+        if not isinstance(call, dict):
+            continue
+        name = call.get("name") or (call.get("function") or {}).get("name")
+        if name:
+            msgs.append({"role": "tool", "text": str(name), "ts": ts, "sub": False})
+    return msgs
+
+
+def load_devin(item):
+    """Normalized transcript for one list_devin_sessions item, or a SourceFailure.
+
+    The main chain is the parent_node_id walk up from main_chain_id, root first. A null
+    or dangling main_chain_id falls back to every node by node_id (DEC-16)."""
+    try:
+        nodes = _devin_query("SELECT node_id, parent_node_id, chat_message, created_at "
+                             "FROM message_nodes WHERE session_id = ? ORDER BY node_id",
+                             (item["session_id"],))
+    except (sqlite3.Error, OSError) as exc:
+        return SourceFailure("devin", exc)
+    by_id = {n[0]: n for n in nodes}
+    chain, cur = [], item["main_chain_id"]
+    while cur in by_id and by_id[cur] not in chain:  # membership also stops a parent cycle
+        chain.append(by_id[cur])
+        cur = by_id[cur][1]
+    ordered = chain[::-1] if chain else nodes
+    messages = []
+    for _, _, chat_message, created in ordered:
+        messages.extend(_node_messages(chat_message, float(created or 0)))
+    return {"source": "devin", "session_id": item["session_id"], "lead_session_id": None,
+            "cwd": item["cwd"], "started": item["started"],
+            "last_activity": item["last_activity"], "messages": messages}
+
+
+# ---- source failure bookkeeping ------------------------------------------------------
+
+def source_fail_update(cursor, source, failed):
+    """Consecutive failed runs of `source`, kept in cursor["source_fail"]: +1 on a failed
+    read, back to 0 on a good one. Returns the new count."""
+    counts = cursor.setdefault("source_fail", {})
+    counts[source] = counts.get(source, 0) + 1 if failed else 0
+    return counts[source]
+
+
+def source_fail_tripped(cursor, source):
+    """True once `source` has failed HARVEST_SWEEP_SOURCE_FAIL_RUNS runs in a row (rc 5)."""
+    limit = int(os.environ.get("HARVEST_SWEEP_SOURCE_FAIL_RUNS", "3"))
+    return cursor.get("source_fail", {}).get(source, 0) >= limit
