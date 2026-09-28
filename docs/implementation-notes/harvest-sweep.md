@@ -20,3 +20,14 @@ Deltas from SPEC-357 (phase 1, kit-side tasks T1 to T19, T13b, T22). Nothing her
 - T1 (DEC-85, DEC-86): the sweep suite lives in `tests/test-harvest-sweep.sh`, not `tests/test-hooks.sh`, by operator brief.
 - Change: `_stage_candidates(ledger, glossaries, candidates, extra_known=())` holds the lock, read-known, dedup, and append block. `extra_known` is accepted and not read yet; T9 wires it.
 - Impact: hook behavior is unchanged. The per-call summary print stays in `_harvest_payload`. All 97 existing kit-foldin tests pass unedited.
+
+## 2026-09-29 T2 claude adapter
+- Change (DEC-43, DEC-44, DEC-60; AC1 claude parts): `hooks/harvest_sweep.py` holds `list_claude_sessions()` (stat only, returns `{session_id, path, subagent_paths, last_activity}`), `load_claude(item)` (the normalized transcript), `newest_ts(t)`, `render(t, after_ts, max_chars)`, `is_trivial(t)`, and `is_self_harvest(t)`. Enumeration and load are separate calls so T5a can scan without parsing.
+- Decision: the 60/40 split stays fixed. A share one side leaves unused is not lent to the other. Why: lending would let a huge subagent push the lead out, which is what the split prevents, and the hard cap keeps the AC6 prompt-size bound. Cost: a lead with no subagents renders at most 60% of `HARVEST_MAXCHARS`.
+- Decision: a share keeps whole recent messages. When the newest message alone exceeds the share, its tail is kept, cut mid-line, so it loses its `<role>:` prefix.
+- Decision: the `subagent: ` prefix lives in the normalized message text, not in `render`. A subagent line therefore reads `assistant: subagent: <text>`, and a subagent tool call reads `tool: subagent: <name> <input>`.
+- Decision: a user entry whose `content` is a bare string counts as a text message (typed prompts are stored that way). `tool_result` blocks are dropped. Tool input is `json.dumps(input)` cut to 200 characters.
+- Decision: `is_trivial` counts user plus assistant messages across lead and subagents, so a lead that delegated all its work is not trivial.
+- Decision: an entry with no parseable timestamp inherits the previous entry's ts in the same file, else the file mtime. `newest_ts` is the newest kept message ts; T5a stores it as `seen{id}.last_ts`.
+- Decision: no time seam added. Nothing in the adapter reads the clock. T5a, the first task that needs "now", picks the seam (suggested: one `_now()` reading `HARVEST_SWEEP_NOW`).
+- Impact: `is_self_harvest` compares `realpath` of the cwd to the state dir with a path-separator boundary, so `state-other` is not matched.

@@ -1,0 +1,8 @@
+{"type":"summary","summary":"not a message","leafUuid":"x"}
+{"type":"user","timestamp":"2026-09-01T10:00:00.000Z","cwd":"/work/app","message":{"role":"user","content":"Fix the flaky login test"}}
+this line is not json
+{"type":"assistant","timestamp":"2026-09-01T10:00:10.000Z","cwd":"/work/app","message":{"role":"assistant","content":[{"type":"text","text":"Looking at the test."},{"type":"tool_use","id":"t1","name":"Read","input":{"file_path":"/work/app/login_test.py"}}]}}
+{"type":"user","timestamp":"2026-09-01T10:00:20.000Z","cwd":"/work/app","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"t1","content":"def test_login(): ..."}]}}
+{"type":"assistant","timestamp":"2026-09-01T10:00:30.000Z","cwd":"/work/app","message":{"role":"assistant","content":[{"type":"text","text":"Found a race in setup."}]}}
+{"type":"user","timestamp":"2026-09-01T10:00:40.000Z","cwd":"/work/app","message":{"role":"user","content":[{"type":"text","text":"Go ahead and fix it"}]}}
+{"type":"assistant","timestamp":"2026-09-01T10:00:50.000Z","cwd":"/work/app","message":{"role":"assistant","content":[{"type":"text","text":"Fixed with a retry."}]}}
