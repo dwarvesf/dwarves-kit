@@ -32,13 +32,13 @@ The suites:
 ```
 Command: bash tests/test-hooks.sh
 Exit: 0
-Verdict: PASS (530 of 530, including the nine new wrapper-routed cases)
+Verdict: PASS (546 of 546, including the wrapped exit-2, exec-bit, and worktree cases)
 ```
 
 ```
 Command: bash tests/test-hook-anchor.sh
 Exit: 0
-Verdict: PASS (6 of 6: two self-check fixtures, then both real dispatch tables)
+Verdict: PASS (8 of 8: fixtures plus both real dispatch tables and the bash prefix)
 ```
 
 ```
@@ -47,8 +47,15 @@ Exit: 0
 Verdict: PASS (repin: all pins fresh in hooks/codex-hooks.json)
 ```
 
-`bash tests/run-all.sh` results are in the feature commit's `## How I verified it` section and
-in `## Not proven` below (two pre-existing failures, both reproduced on clean `afb52d01`).
+```
+Command: RUN_ALL_TIMEOUT_SECS=900 bash tests/run-all.sh --all
+Exit: 1
+Verdict: FAIL (run-all: FAILED -> test-no-scattered-ids; 161 suites run, 0 skipped)
+```
+
+The only failure is `test-no-scattered-ids`, with the same 2 hits in
+`lib/gate/proof-ledger.sh:293,415` it shows on clean `afb52d01` (see `## Not proven`).
+`test-meta` passed inside this run under the raised 900s per-suite ceiling.
 
 ## Negative control
 
@@ -67,8 +74,8 @@ Verdict: PASS (the bug reproduces: state nested, spec missed)
 | `<live-before>/.claude/handoffs/.claude/session-state/last-state.md` (nested copy) | exists |
 | `Spec:` line in the state file | `Spec: none` |
 
-The three spec-defined controls, each through `lib/gate/negctl.sh` on committed HEAD
-`901961a1`:
+The three spec-defined controls plus a fourth for the review fix, each through
+`lib/gate/negctl.sh` on committed HEAD `55b2ab5a`:
 
 ```
 ## Negative control (negctl)  NC1: the anchor's own cd
@@ -106,7 +113,23 @@ Exit: 0 (green after restore)
 Verdict: PASS
 ```
 
-Each mutation was restored by negctl; `git status --short` was empty after all three.
+```
+## Negative control (negctl)  NC4: the review fix (previous wrapper)
+Command: bash tests/test-hooks.sh 2>&1 | grep -E "FAIL.*(exec bit lost|stays put when GIT_WORK_TREE)" && exit 1 || exit 0
+Exit: 0 (green before mutation)
+Mutation: git show 901961a1:hooks/anchor-root.sh > hooks/anchor-root.sh
+Changed: hooks/anchor-root.sh
+Exit: 1 (under mutation, RED expected)
+Restore: git checkout HEAD -- hooks/anchor-root.sh
+Exit: 0 (green after restore)
+Verdict: PASS
+```
+
+NC4 restores the pre-review wrapper, which execs each hook by its shebang and cds
+unconditionally. Under it the chmod -x control returns 126 instead of 2 on both dispatch
+tables, and the GIT_WORK_TREE case resolves the wrong directory; both new assertions bite.
+
+Each mutation was restored by negctl; `git status --short` was empty after all four.
 
 ## Test plan coverage
 | Row | Run / skip reason |
@@ -117,7 +140,7 @@ Each mutation was restored by negctl; `git status --short` was empty after all t
 | 4 | tests/test-hooks.sh "pre-compact-backup subdir with content" cases; NC1 |
 | 5 | tests/test-hooks.sh "writer/reader pair" cases; NC1 |
 | 6 | tests/test-hooks.sh 6a, 6b ("relative cd resolves") and 6c ("payload cwd resolves root"); NC3 |
-| 7 | tests/test-hooks.sh "smoke exec" case; hand mutation (anchor-root.sh chmod -x) turned every hooks.json entry to 126, recorded in the implementation notes |
+| 7 | tests/test-hooks.sh "smoke exec" case; hand mutation (anchor-root.sh chmod -x) turned every hooks.json entry to 126, recorded in the implementation notes; NC4 reddens the exec-bit case |
 
 ## Not proven
 
@@ -129,6 +152,6 @@ Each mutation was restored by negctl; `git status --short` was empty after all t
 - Per-fire latency of the extra wrapper and `git rev-parse` processes is not benchmarked.
 - `tests/test-no-scattered-ids.sh` fails on this branch and on clean `afb52d01` alike (2 hits in
   `lib/gate/proof-ledger.sh:293,415`, a file this branch does not touch).
-- `tests/test-meta.sh` is load-sensitive: it timed out at `run-all.sh`'s 300s default ceiling
-  on this branch under concurrent load, and on clean `afb52d01` too. It passes in full alone,
-  with the ceiling raised, and inside the final bare `run-all.sh` run.
+- `tests/test-meta.sh` is slow (~6 minutes alone): it timed out at `run-all.sh`'s 300s
+  default ceiling on this branch and on clean `afb52d01`. It passed inside the
+  `RUN_ALL_TIMEOUT_SECS=900` run recorded above.
