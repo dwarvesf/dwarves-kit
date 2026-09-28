@@ -17,7 +17,7 @@
 {"name":"dir-not-file","rc":2,"stdout":"","stderr":"citation-guard: unresolved citations: dir.d:1 (no such file)","log":"?\tdir.d:1 (no such file)","stray":""}
 {"name":"names","rc":2,"stdout":"","stderr":"citation-guard: unresolved citations: dash-name_v2.test.js:2 (file has 1 lines)","log":"?\tdash-name_v2.test.js:2 (file has 1 lines)","stray":""}
 {"name":"huge-line","rc":2,"stdout":"","stderr":"citation-guard: unresolved citations: a.md:99999999999999999999 (file has 5 lines)","log":"?\ta.md:99999999999999999999 (file has 5 lines)","stray":""}
-{"name":"root-override","rc":2,"stdout":"","stderr":"citation-guard: unresolved citations: b.py:3 (no such file)","log":"?\tb.py:3 (no such file)","stray":""}
+{"name":"root-override","rc":2,"stdout":"","stderr":"citation-guard: unresolved citations: a.md:1 (no such file)","log":"?\ta.md:1 (no such file)","stray":""}
 {"name":"session-id","rc":2,"stdout":"","stderr":"citation-guard: unresolved citations: nope.md:1 (no such file)","log":"S1\tnope.md:1 (no such file)","stray":""}
 {"name":"session-underscore","rc":2,"stdout":"","stderr":"citation-guard: unresolved citations: nope.md:1 (no such file)","log":"S2\tnope.md:1 (no such file)","stray":""}
 {"name":"no-refs","rc":0,"stdout":"","stderr":"","log":"","stray":""}

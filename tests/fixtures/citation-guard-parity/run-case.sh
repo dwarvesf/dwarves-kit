@@ -16,7 +16,9 @@ if [ "$(jq -r '.env | has("CITATION_GUARD_LOG")' <<<"$c")" = "true" ]; then
 else
   envs+=("CITATION_GUARD_LOG=$log")
 fi
-while IFS= read -r kv; do envs+=("${kv//ROOT/$ROOT}"); done < <(jq -r '.env | to_entries[] | select(.value != null) | "\(.key)=\(.value)"' <<<"$c")
+# ROOT expands in the VALUE only: substituting across the whole KEY=VALUE also rewrote
+# CITATION_GUARD_ROOT's own name, and the mangled variable never reached the hook
+while IFS= read -r kv; do k=${kv%%=*}; v=${kv#*=}; envs+=("$k=${v//ROOT/$ROOT}"); done < <(jq -r '.env | to_entries[] | select(.value != null) | "\(.key)=\(.value)"' <<<"$c")
 if [ "$(jq -r '.payload | type' <<<"$c")" = "string" ]; then
   payload=$(jq -r '.payload' <<<"$c"); payload=${payload#RAW:}
 else
