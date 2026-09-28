@@ -212,6 +212,47 @@ OpenRig's `first-project` does), not a concept tour. Over-test. Negative control
 override that drops `review` from `normal` must show the phase skipped in the ledger, and
 the ship-gate hard paths must still block.
 
+### The dashboard (second operator review)
+
+The operator asked about the status dashboard shown in the talk. It is OpenRig's own
+TUI (`rig tui`, package `packages/tui`), not a separate tool. The talk's "graph" means
+the TUI's GRAPH tab and the project, mission, slice link chain, not a product named
+"graph engineering".
+
+| TUI view | What it answers | Source |
+|---|---|---|
+| Topology TABLE | per seat: pod, runtime, model, context %, state (working, idle, unknown, failed), queue count, current work; footer "17 seats, 6 working, 1 need attention, 0 open rows" | README GIF frame; `agent-state-taxonomy.md` |
+| Topology GRAPH | seats grouped by pod, edges show who hands work to whom | `assets/ui/screenshots/tui-topology.png` |
+| `rig view show execution` | Q1 who is on what and where, Q2 sequencing, Q3 care dial, Q4 completion ladder (locked, built, reviewed, folded, adopted), Q5 parked work, Q6 parallelism health; unknown renders INDETERMINATE, never idle or done | `packages/daemon/src/domain/execution-view.ts` (1,205 lines) |
+| `rig view show held` / `escalations` | deliberate holds with an owner and wake; items waiting on a human | release notes v0.5.6 |
+| HEALTH | queue traffic versus outcomes; at 20 transitions a family becomes "needs diagnosis" and an assigned agent counts real outcomes before any warning fires | `docs/reference/health-diagnosis.md` |
+| SPECS, PROJECTS | drill from a slice up to its mission and project | talk 8:09-8:26 |
+
+Every view is computed at read time from stored facts (queue rows, transitions, seat
+evidence, frontmatter). No view stores a status of its own.
+
+What the estate has today:
+
+| Question | Today | Gap |
+|---|---|---|
+| Who is working, idle, stuck right now | `orca worktree ps`: live terminal per worktree, preview line, unread flag | per worktree, not per role; no "idle while owning work" flag |
+| Who owns what | board rows (`_meta/board-all`), mega NOTES | no link from a row to the agent working it |
+| Where each item stands | kit run ledger per rid; `lib/bench/dashboard.py` builds a static control-plane page after the fact | no live completion ladder |
+| Ceremony versus progress | none | D5 |
+
+`precedent find --surface inventory` returned no existing agent-status view.
+
+**D7a. Execution view first, dispatch change second.** Before moving dispatch onto Orca,
+build the read-time join over data that already exists: board rows and mega sub-goal
+files (the work and its worktree or branch), `orca worktree ps` (live terminal state and
+last activity), and the kit run ledger (spec validated, built, reviewed, shipped). Output
+one table: item, owner worktree, agent state, ladder rung, and flags PARKED (item in
+progress, terminal idle past a threshold), DONE-UNSEEN (shipped, no wrap), and
+INDETERMINATE when a join key is missing. A CLI table first, readable from Orca Mobile;
+no new daemon, no TUI. Over-test. Negative control: an in-progress row whose worktree
+terminal is idle past the threshold must render PARKED; a row with no worktree must
+render INDETERMINATE, never idle.
+
 Caveat: OpenRig publishes no measurement that status-driven orchestration beats a single
 orchestrator. Its full RigSpec example is large, and flexibility grows the YAML surface
 the operator maintains. D7 trials on one mega before anything is rebuilt around it.
