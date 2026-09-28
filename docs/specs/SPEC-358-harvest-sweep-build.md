@@ -6,7 +6,7 @@ Lane: full
 Type: spec-feature
 File: `docs/specs/SPEC-358-harvest-sweep-build.md`
 Phase 1: `docs/specs/SPEC-357-harvest-sweep.md` (the report-only sweep this phase extends)
-Entry condition: SPEC-357 has shipped and its sweep has run clean on the Mini for one week (every scheduled run rc 0, clean lint, heartbeat green, no hand fix to its state).
+Entry condition: SPEC-357 has shipped and its sweep has run clean on the Mini for one week (every scheduled run rc 0, clean lint, heartbeat green, no hand fix to its state), AND the reports were read: during that week the operator acted on at least one candidate or learning (at least one sweep-ledger row marked `flushed:`, or one reported candidate built by hand), per SPEC-357 DEC-81.
 References: `docs/specs/SPEC-357-harvest-sweep.md` (stage 1, the cursor, the ledgers, the report, the launcher), `commands/wrap.md` (step 7b build rules, step 10 landing and full-lane draft rules), `hooks/ship-gate.sh` (reads a PreToolUse payload with `tool_input.command` and `cwd`; resolves its libs from `CLAUDE_PLUGIN_ROOT`, falling back to `$HOME/.claude/dwarves-kit` at lines 80, 85, 193, and 270; exits 0 when `gate-ledger.sh` is missing at line 271).
 
 ## Problem
