@@ -81,6 +81,13 @@ Verdict: PASS
 The neutralized guard lets the NUL payload through to Stage D ("git status
 tail-token" approves), so a53 and c1 go red: the NUL case is genuinely pinned.
 
+## Ledger honesty
+
+`~/.local/state/dwarves-kit/logs/runs/auto-approve-writes.log` was hand-edited
+once during the run to remove a stray `build ran "test"` line, and the file
+was rewritten in place. That file is never hand-edited again; it appends only
+through `lib/gate/gate-ledger.sh`.
+
 ## Not proven
 
 - jq 1.6 behavior: this host runs jq 1.8.2, so the truncation that motivated

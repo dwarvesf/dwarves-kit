@@ -32,6 +32,11 @@ from the Contract lives here.
 
 ## Deviations and notes
 
+- Deviation: the Stage B bracket class was drafted as `\/` (escaped slash); on
+  the macOS regex engine a `\/` inside a bracket expression admits a literal
+  backslash AND a slash, so the shipped class writes `/` bare (the spec's
+  mechanism note already warns about this; the draft class itself was wrong).
+  The group-(a) `\/` cases pin it: a revert to the `\/` class goes red.
 - The spec's second negative control (NUL guard mutated to `jq contains`) is
   jq-version-dependent: jq >= 1.7 keeps NULs in strings, so on this host
   (jq 1.8.2) the mutation is behavior-preserving and negctl correctly reports
@@ -39,5 +44,6 @@ from the Contract lives here.
   (`any(. == 0)` -> `any(. == -1)`) does go red on a53/c1 and is the run that
   proves the NUL case has teeth here.
 - `git remote show` (no remote name) approves per the spec's rule as written
-  ("zero or one further token"); bare `git remote show` errors at run time
-  anyway, so no capability is gained.
+  ("zero or one further token"); bare `git remote show` lists remotes
+  (verified on git 2.55.0: prints remote names, exit 0), so the approval is a
+  real read, not a free pass on an erroring command.

@@ -57,7 +57,9 @@ approve() {
   exit 0
 }
 
-debug "tool=$TOOL cmd=$(echo "$CMD" | head -c 80)"
+if [ "${DWARVES_KIT_DEBUG:-0}" = "1" ]; then
+  debug "tool=$TOOL cmd=$(echo "$CMD" | head -c 80)"
+fi
 
 # Always auto-approve read-only tools
 case "$TOOL" in
@@ -149,6 +151,7 @@ flag_ok() {
     git-logdiffshow)
       case "$tok" in
         --oneline|--graph|--all|--stat|--name-only|--name-status|-p|--patch|--no-merges|--merges|--reverse|--cached|--staged|-n|--) return 0 ;;
+        --format=*%G*|--pretty=*%G*) return 1 ;;
         --format=*|--pretty=*|--since=*|--until=*|--author=*|--grep=*|--max-count=*) return 0 ;;
         *) [[ "$tok" =~ ^-[0-9]+$ ]] ;;
       esac
@@ -167,7 +170,7 @@ flag_ok() {
       ;;
     file)
       case "$tok" in
-        -b|--brief|-i|-s|-z|-L|-f|--mime|--mime-type|--mime-encoding) return 0 ;;
+        -b|--brief|-i|-s|-L|-f|--mime|--mime-type|--mime-encoding) return 0 ;;
         *) return 1 ;;
       esac
       ;;
