@@ -1,6 +1,6 @@
 # SPEC-333: handoffs.sh skips archive/ and nested .claude/
 
-**Status:** VALIDATED
+**Status:** APPROVED
 Lane: normal
 Type: spec-feature / behavioral
 
@@ -37,11 +37,24 @@ included.
 
 ## Solution
 
-Replace the `-not -path` substring clauses with a `-prune` walk keyed on the exact directory
-NAME of each node `find` visits at or below the start point, not a substring match anywhere in
-the full path string. Update the two header-doc passages near the top of the file to name all
-four exclusions. No change to the two scan roots (`_meta/handoffs`, `.claude/handoffs`), no
-change to `handoff_liveness` or any other function.
+Operator decision (2026-09-28): replace name-based exclusion entirely with a **one-level
+scan**. `cmd_list` lists only `*.md` files sitting DIRECTLY inside `_meta/handoffs/` and
+`.claude/handoffs/`:
+
+```sh
+find "$d" -maxdepth 1 -type f -name '*.md' 2>/dev/null
+```
+
+A file living in ANY subdirectory of either scan root, whatever that subdirectory is named,
+counts as consumed/archived; no exclusion list of names is maintained anywhere. This also
+eliminates the ancestor-path bug class as a structural side effect: `-maxdepth 1` never walks
+below the immediate children of `$d`, and (unlike `-not -path`) never tests a substring of the
+full printed path against anything, so a `done`, `_archive`, `archive`, or `.claude` segment
+sitting ABOVE `$d` in the checkout path is never examined at all.
+
+Update the two header-doc passages near the top of the file to describe the one-level rule
+(not a list of excluded names), and reconcile the DEAD-verdict advice line to say a DEAD
+handoff is deleted OR moved into any subdirectory, either marks it consumed.
 
 ### Approaches considered
 1. **Rename/move the offending directories instead of changing the filter.** Rejected: this
@@ -58,59 +71,66 @@ change to `handoff_liveness` or any other function.
    would lose every handoff under `_meta/handoffs` too, live ones included, because that
    ancestor segment is part of the full path string every match is tested against.
 3. **`-mindepth 1 \( -name done -o -name _archive -o -name archive -o -name .claude \)
-   -type d -prune -o -type f -name '*.md' -print`.** Chosen: `-name` tests only the basename
-   of the specific node `find` is currently visiting, never a substring of the full path, and
-   `find` starting at `$d` never re-examines `$d`'s own ancestor path components as separate
-   nodes at all (walking begins AT `$d`, not above it) , so a `.claude`, `archive`, `done`, or
-   `_archive` segment sitting ABOVE `$d` in the checkout path is structurally outside what
-   `-name` ever sees, independent of any flag. `-mindepth 1` adds one narrow extra guard on top
-   of that: it stops `$d` itself (depth 0) from being tested by `-name`, for the edge case
-   where a scan root's own basename happens to equal one of the four excluded names. Only a
-   directory named exactly one of the four, found AT OR BELOW `$d` (depth >= 1), gets pruned.
-   This also fixes the pre-existing ancestor bug for `done/` and `_archive/` as a side effect,
-   not just the two new exclusions.
+   -type d -prune -o -type f -name '*.md' -print` (a name denylist pruned by exact directory
+   name).** This was the FIRST fix picked for this spec, and it does correctly fix both the
+   two named shapes and the ancestor bug (`-name` tests only a visited node's own basename,
+   never a substring of the full path). Rejected on operator review: a name denylist breaks
+   the next time a repo picks a fifth archive-folder convention (`superseded/`, `resolved/`,
+   `old/`, anything not on the list), silently reporting those files as still-open again, the
+   exact failure mode this spec exists to close. A subdirectory convention needs no list at
+   all: any file not sitting directly in the scan root is, by construction, not a live
+   top-level handoff. Verified before choosing approach 4: no repo under `~/workspace/tieubao`
+   keeps a live (unconsumed) handoff in a subdirectory of either scan root, so "any subdir
+   means consumed" costs nothing today and is immune to every future naming choice.
+4. **One-level scan: `find "$d" -maxdepth 1 -type f -name '*.md'`.** Chosen. No exclusion list
+   to maintain, ever: depth alone decides open vs. consumed. Also fixes the ancestor bug as a
+   structural side effect (see `## Solution` above), and is the simplest of the four -- one
+   flag, no `-prune` branch, no name enumeration.
 
 ## Design
-obvious: replace one `find` filter shape with a `-prune`-based walk plus a header-doc update.
-No new component, no data-model change, no external integration.
+obvious: replace one `find` filter shape with a strict one-level (`-maxdepth 1`) scan plus a
+header-doc update. No new component, no data-model change, no external integration.
 
 ## Contract
 
 1. The `find` call in `cmd_list` becomes:
    ```sh
-   find "$d" -mindepth 1 \( -name done -o -name _archive -o -name archive -o -name .claude \) \
-     -type d -prune -o -type f -name '*.md' -print 2>/dev/null
+   find "$d" -maxdepth 1 -type f -name '*.md' 2>/dev/null
    ```
-   replacing the two `-not -path` clauses entirely (not appended alongside them).
-2. `lib/session/handoffs.sh`'s two existing header-doc passages get updated to name all four
-   exclusions, not just `done/`/`_archive/`:
-   - Lines ~5-6 (currently "there is no archive/ship flow here, only a `done/` or `_archive/`
-     convention a repo may use to mark one consumed") gain `archive/` and a nested `.claude/`
-     as convention variants a repo may use.
-   - Lines ~20-21 (currently "skipping anything under a done/ or _archive/ subdirectory") list
-     all four: `done/`, `_archive/`, `archive/`, or a nested `.claude/`.
-3. A file under a pruned directory is skipped identically to how `done/`/`_archive/` are
-   skipped today: it never enters `files[]`, never gets an age/excerpt/liveness row, and
-   never affects the "no handoffs" empty-result message.
+   replacing the two `-not -path` clauses (and, in this worktree's history, the `-prune`/
+   `-name` denylist that briefly replaced them) entirely.
+2. `lib/session/handoffs.sh`'s two existing header-doc passages get updated to describe the
+   one-level rule, not a list of excluded names:
+   - Lines ~5-6 (currently naming a `done/`/`_archive/`/`archive/`/nested-`.claude/`
+     convention) become: a file sitting directly in a scan root is open; a file moved into ANY
+     subdirectory, whatever it is named, counts as consumed. No enumeration of names.
+   - Lines ~20-21 (currently "skipping anything under a done/, _archive/, archive/, or nested
+     .claude/ subdirectory") become: scans each root ONE LEVEL DEEP (no recursion); a file in
+     any subdirectory is treated as consumed.
+   - The DEAD-verdict advice line ("delete it") becomes "delete it or move it into any
+     subdirectory, either marks it consumed".
+3. A file sitting in any subdirectory of either scan root, whatever that subdirectory's name,
+   is skipped: it never enters `files[]`, never gets an age/excerpt/liveness row, and never
+   affects the "no handoffs" empty-result message. This holds regardless of the subdirectory's
+   name, one level deep or many levels deep.
 4. The fix's protection for a scan root checked out under a `done`, `_archive`, `archive`, or
-   `.claude` ANCESTOR (a path segment above `$d`, not a descendant of it) comes from `-name`
-   matching only a visited node's own basename, never a substring of the full path; `find`
-   never visits `$d`'s own ancestor components as nodes in the first place. `-mindepth 1` is a
-   separate, narrower guard: it only stops `$d` itself (depth 0) from being tested by `-name`,
-   for the degenerate case where a scan root's own basename equals one of the four excluded
-   names (not the case for `_meta/handoffs` or `.claude/handoffs` today, both end in
-   `handoffs`). This covers both scan roots checked out under a path like
-   `<repo>/.claude/worktrees/<name>/`.
-5. A legitimate handoff whose path merely contains the substring `archive` or `.claude` as
-   part of a longer segment name (e.g. `_meta/handoffs/archived-notes.md`,
-   `_meta/handoffs/.clauded.md`) is unaffected: `-name` matches the whole basename exactly,
-   never a substring inside a longer name.
+   `.claude` ANCESTOR (a path segment above `$d`, not a descendant of it) is structural:
+   `-maxdepth 1` never descends below `$d`'s immediate children and performs no substring match
+   against the full path at all, so an ancestor segment above `$d` is never examined. This
+   covers both scan roots checked out under a path like `<repo>/.claude/worktrees/<name>/`.
+5. A legitimate handoff file whose OWN NAME merely contains the substring `archive` or
+   `.claude` (e.g. `_meta/handoffs/archived-notes.md`, `_meta/handoffs/.clauded.md`) is
+   unaffected as long as it sits directly in the scan root: `-maxdepth 1` only tests depth, and
+   `-name '*.md'` only tests the `.md` suffix, neither inspects the file's own basename for a
+   forbidden substring.
 
 ## Out of scope
 
-- Renaming or migrating any repo's existing `archive/` or `.claude/session-state/` content.
+- Renaming or migrating any repo's existing archived-subdirectory content.
 - Any change to `_meta/handoffs` or `.claude/handoffs` as the two scan roots.
 - Any change to `handoff_liveness`, board loading, or the age/excerpt columns.
+- Maintaining or extending a name denylist anywhere in this file (rejected by design; see
+  approach 3 above).
 
 ## Test plan
 
@@ -122,54 +142,48 @@ every count asserted is local to that fixture, never a shared or moving number.
 
 | # | Case | Fixture | Expected |
 |---|---|---|---|
-| 1 | `$ARCREPO/.claude/handoffs/archive/old.md` | `ARCREPO="$(mktemp -d)"` | excluded, not listed |
-| 2 | `$ARCREPO/_meta/handoffs/archive/old.md` | same `$ARCREPO` | excluded, not listed |
-| 3 | `$ARCREPO/.claude/handoffs/.claude/session-state/foo.md` | same `$ARCREPO` | excluded, not listed |
-| 4 | `$ARCREPO/_meta/handoffs/_archive/old.md` (new `_archive` fixture; the pre-existing suite only covers `done/`) | same `$ARCREPO` | excluded, not listed |
-| 5 | Live `$ARCREPO/.claude/handoffs/live.md` | same `$ARCREPO` | listed |
-| 6 | Live `$ARCREPO/_meta/handoffs/live.md` | same `$ARCREPO` | listed |
-| 7 | `$ARCREPO` count after cases 1 to 6 | same `$ARCREPO` | exactly 2 open handoffs (the two live files; cases 1 to 4 excluded) |
-| 8 | Repo itself checked out under a `.claude/` ancestor: `CREPO="$(mktemp -d)/.claude/worktrees/x/repo"`, with live `$CREPO/_meta/handoffs/live.md` and live `$CREPO/.claude/handoffs/live.md` | `$CREPO` | both listed (proves the ancestor fix; see `## Negative control` for which half is decisive) |
-| 9 | Only excluded files exist (a fixture repo with cases 1 to 4's paths and no live file) | fresh `$(mktemp -d)` | "no handoffs" message |
+| 1 | Pre-existing golden-path cases `[1]`-`[15]` (including the `done/` decoy under `$REPO`) | `$REPO` and its siblings, unchanged | still pass unmodified: a `done/` subdirectory is excluded because it is a subdirectory (depth-based), not because its name is on a list |
+| 2 | An arbitrarily named subdirectory neither `done`/`_archive`/`archive`/`.claude`, e.g. `$ARCREPO/_meta/handoffs/old/x.md` | new `ARCREPO="$(mktemp -d)"` | excluded, not listed (proves the design is NOT a name denylist) |
+| 3 | `archive/`, `_archive/`, and a nested `.claude/session-state/` under both scan roots (the shapes the original bug report named) | same `$ARCREPO` | excluded, not listed |
+| 4 | Live files sitting directly in `$ARCREPO/.claude/handoffs/live.md` and `$ARCREPO/_meta/handoffs/live.md` | same `$ARCREPO` | both listed, exact count 2 |
+| 5 | Repo itself checked out under a `.claude/` ancestor: `CREPO="$(mktemp -d)/.claude/worktrees/x/repo"`, with live `$CREPO/_meta/handoffs/live.md` and live `$CREPO/.claude/handoffs/live.md` (both directly in the scan root, no subdirectory) | `$CREPO` | both listed (proves the ancestor fix) |
+| 6 | Only subdirectory-nested files exist (no top-level `.md` in either scan root) | fresh `$(mktemp -d)` | "no handoffs" message |
 
 ## After state
 
-- [ ] `bash lib/session/handoffs.sh list --repo <repo>` on a repo with `archive/` or nested
-  `.claude/` handoff paths no longer reports them as open, and still lists every live handoff
-  under both scan roots, including when the repo itself is checked out under a `.claude/`
-  ancestor path.
-- [ ] `bash lib/session/tests/test-handoffs.sh` passes, covering all nine cases above.
+- [ ] `bash lib/session/handoffs.sh list --repo <repo>` on a repo with any archived-style
+  subdirectory under either scan root, named anything at all, no longer reports its files as
+  open, and still lists every live handoff sitting directly in either scan root, including
+  when the repo itself is checked out under a `.claude/` ancestor path.
+- [ ] `bash lib/session/tests/test-handoffs.sh` passes, covering the cases above.
 
 ## Acceptance Criteria (global)
 
 - [ ] Every Contract item above holds under `bash lib/session/tests/test-handoffs.sh`.
-- [ ] The suite asserts, from its own fixtures: every archived/nested path (cases 1 to 4) is
-  absent from `cmd_list` output, AND every live path under `.claude/handoffs` and
-  `_meta/handoffs` (cases 5, 6, and case 8's ancestor-path variant) is present, with an exact
-  expected file count per fixture (case 7), not an external moving number.
+- [ ] The suite asserts, from its own fixtures: a file in an arbitrarily-named subdirectory
+  (not on any list) is excluded, proving the design has no denylist to bypass; every named
+  shape from the original bug report (`archive/`, `_archive/`, nested `.claude/`) is also
+  excluded; every live top-level file under both `.claude/handoffs` and `_meta/handoffs`,
+  including the ancestor-path variant, is present with an exact expected file count.
 - [ ] The fix must not merely reduce false positives while also dropping true positives: a
-  test run where live counts silently went to zero would be a regression, not a pass, per
-  case 8.
+  test run where live counts silently went to zero would be a regression, not a pass.
 
 ## Verification
 `bash lib/session/tests/test-handoffs.sh`
 
 ## Negative control
-Two reversions, each run against the full case 1 to 9 fixture set, each required to turn the
-suite RED, then reverted back to confirm GREEN:
+Two reversions, each run against the full fixture set, each required to turn the suite RED,
+then reverted back to confirm GREEN:
 
-1. Revert the `find` clause back to the two `-not -path` clauses from before this spec (no
-   `-prune`, no `-mindepth 1`). Cases 1 to 4 must fail (archived/nested paths reappear as
-   listed).
-2. Apply approach 2 from `## Solution` (`-not -path '*/archive/*' -not -path
-   '*/.claude/*'` appended to the original two clauses, no `-prune`/`-mindepth`) instead of
-   the chosen fix. The decisive assertion is case 8's `_meta/handoffs/live.md` entry going
-   missing: `_meta/handoffs` is not itself named `.claude`, so its live file disappearing can
-   only be explained by the ANCESTOR segment (`.claude/worktrees/x/repo` above `$CREPO`)
-   leaking into the path match, which is the exact ancestor bug this spec fixes. (Case 8's
-   `.claude/handoffs/live.md` half is expected to fail too under approach 2, but that failure
-   is already explained by the scan root's own name and proves nothing new beyond what
-   `## Solution` approach 2 already states.)
+1. **Revert to the pre-SPEC-333 `-not -path` filter** (`git show 194c89f0:lib/session/handoffs.sh`,
+   the two-clause `done/`/`_archive/`-only filter that predates this spec entirely). Must go
+   RED on the arbitrarily-named-subdirectory case (`old/x.md`) and on the `archive/`/nested
+   `.claude/` cases: none of those are excluded by the old two-clause filter.
+2. **Apply the rejected name-denylist approach** (approach 3 above; the `-prune`/`-name`
+   filter this worktree's history briefly shipped as commit `359d8836`). Must go RED
+   specifically on the arbitrarily-named-subdirectory case (`old/x.md`): `old` is not one of
+   the four denylisted names, so a denylist-based fix reports that file as open, which is
+   exactly the future-proofing gap this spec's operator decision exists to close.
 
 ## Touches
 - lib/session/handoffs.sh
@@ -177,14 +191,16 @@ suite RED, then reverted back to confirm GREEN:
 
 ## Decision Log
 - DEC-A: Prune on exact directory NAME (`-name ... -prune`), not a `-not -path`
-  substring/glob match against the full path. Rationale: `-not -path` matches the full path
-  `find` prints, which includes everything above the start point too, so a scan root whose own
-  ancestor path contains an excluded segment name loses every descendant, live files included
-  (verified for both the two new exclusions and, retroactively, the two original ones).
-  `-name`-based pruning tests only each visited node's own basename, so an ancestor segment
-  above the start point is never examined at all; `-mindepth 1` is kept as an additional,
-  narrower guard against the start point's own basename matching, not the mechanism that makes
-  ancestors safe.
+  substring/glob match against the full path. Rationale (superseded by DEC-B below): `-not
+  -path` matches the full path `find` prints, which includes everything above the start point
+  too, so a scan root whose own ancestor path contains an excluded segment name loses every
+  descendant, live files included. Originally implemented as commit `359d8836`.
+- DEC-B (operator override, 2026-09-28): Replace the name-denylist design (DEC-A) with a
+  one-level (`-maxdepth 1`) scan. A denylist breaks the next time a repo archives into a new
+  folder name; a subdirectory convention needs no list, and structurally also carries forward
+  DEC-A's ancestor-path fix (a one-level scan never tests a substring of the full path either).
+  Verified before this change: no repo under `~/workspace/tieubao` keeps a live handoff in a
+  subdirectory of either scan root.
 
 ## Open questions
 (none)
