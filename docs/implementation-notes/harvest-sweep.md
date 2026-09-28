@@ -109,6 +109,9 @@ Deltas from SPEC-357 (phase 1, kit-side tasks T1 to T19, T13b, T22). Nothing her
 - Decision: token bodies redact as `prefix` + `[A-Za-z0-9_-]*` on a `(?<![A-Za-z0-9_])` boundary, so `task-list`/`disk-usage` do not false-positive while a lone `sk-` still redacts. Prefix match is by the prefix alone, so the fixture's deliberately fake bodies prove the shape rule without holding real-looking tokens (the repo's secret-guard hook blocks literal credential shapes in Write; fixture bodies are lowercase fakes and the PEM line uses `--` dashes, both still matching the sweep's patterns).
 - Fixtures: `injection-evidence.txt` (metachars, angles, `$`, an edit-ship-gate instruction, a canary inside the 200-char window) and `credential-evidence.txt` (14 credential lines + a safe line); both read by the T8 block of `tests/test-harvest-sweep.sh`, which also asserts stage1.log mode and that neither transcript nor extractor text leaks into it.
 
+## 2026-09-29 Redaction ordering fix (delta from DEC-89)
+- `sanitize_text` redacted first and stripped characters second. A credential split by a stripped character (newline, backtick, `<`, `>`, `$`) was joined into one contiguous run after the redaction pass and stored unredacted. Fix: redact again after the strip, before the 200-char cut. The test builds the split hex at runtime; the negative control (drop the second pass) went red.
+
 ## 2026-09-29 Handoff after T6: state for the next builder
 - Context: the operator moved the remaining tasks to Devin workers. T1 to T6 (T5 split as T5a, T5b) are built, verified by a fresh task verifier, and marked done in the spec with their verification-log entries. The next task is T7a. Nothing is uncommitted.
 - Order still to build, serially (every one edits `hooks/harvest_sweep.py`, most also `hooks/harvest.py` or the test file): T7a, T7b, T8, T9, T10, T11, T12, T13b, T13, T14, T22, then T15, T16, T17, T18, T19. Rollout tasks T24, T20, T20b, T23, T21 stay with the operator.
