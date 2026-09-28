@@ -97,8 +97,9 @@ the rustup proxy), so the `--version` trio leaves the approved set too. `git` is
 exception: every config surface that can make it run code or write files (`core.pager`,
 `pager.*`, aliases, filter drivers, `diff.external`, `core.hooksPath`) lives in `.git/config`
 or `.git/hooks`, which git never tracks; the archive-carried `.git` case is recorded in
-## Failure modes. Its flag allowlist stays (## Picture, Stage F). What remains in the approved
-set is exactly what ## Picture shows: tools whose behaviour no repo file can change.
+## Failure modes, and the clone-carried bare-layout case from the same row is closed by the
+Stage E work-tree probe. Its flag allowlist stays (## Picture, Stage F). What remains in the
+approved set is exactly what ## Picture shows: tools whose behaviour no repo file can change.
 
 **Executing shell, stated once.** Commands approved here run under the harness's non-interactive
 bash or zsh with default options: quote removal, backslash escapes, `$VAR`/`${..}` expansion,
@@ -154,6 +155,15 @@ commands under a different shell grammar needs its own review of the character s
           (spaces-only CMD)?            --yes--> no decision
         |
         v
+ GIT WORK-TREE PROBE (part of Stage E, runs before
+          the Stage D git fast-path): if WORDS[0] == git,
+          git -C <payload .cwd, else $PWD> rev-parse
+          --is-inside-work-tree must print exactly
+          "true" and exit 0?                --no-->  no decision
+        |                                   [a clone can carry a tracked
+        v                                    bare-repo layout whose config
+                                             names programs git would run;
+                                             covers EVERY git command]
  STAGE D: WORDS[0] on the "no write-capable option" list
           (ls, cat, head, tail, wc, echo, which, type,
            stat, du, df, grep)?
@@ -289,7 +299,7 @@ line per remaining tool:
 | `df` | `df(1)`: reports filesystem space to stdout; no write/exec option. |
 | `grep` | `grep(1)`: no write/exec option; `GREP_OPTIONS` flag injection was removed in GNU grep 2.21 (2014), so the environment cannot smuggle flags either. |
 | `pwd` | `pwd(1)` / bash builtin: exact match, zero further tokens. `env` lost its former zero-arg seat; see ## Decision Log. |
-| `git status`, `git ls-files` | `git-status(1)` / `git-ls-files(1)`: exact two-word match at `WORDS[0..1]`; neither subcommand has a write-capable option, so trailing flags are unrestricted. The stat-cache index refresh `git status` may do is an internal bookkeeping write to `.git/`, not reachable file content. Every git config surface that could run code lives in `.git/config` (git never tracks it; the archive-carried `.git` case is in ## Failure modes). |
+| `git status`, `git ls-files` | `git-status(1)` / `git-ls-files(1)`: exact two-word match at `WORDS[0..1]`; neither subcommand has a write-capable option, so trailing flags are unrestricted. The stat-cache index refresh `git status` may do is an internal bookkeeping write to `.git/`, not reachable file content. Every git config surface that could run code lives in `.git/config` (git never tracks it; the archive-carried `.git` case is in ## Failure modes, and the clone-carried bare-layout case is closed by the Stage E work-tree probe). |
 
 `file` fails the criterion (`-C` writes a compiled magic file) and stays in the gated set.
 `printenv` was dropped, see ## Decision Log. The `--version` trio (`node`, `python3`, `cargo`)
@@ -298,7 +308,32 @@ version-manager shims (mise, rustup) that honor checked-in `.tool-versions` /
 `rust-toolchain.toml` entries; see ## Decision Log.
 
 **Stage E/F, gated tools (explicit safe subcommand/flag allowlist required).** Two rules apply
-to every gated tool's `WORDS[1:]` before the per-tool table below:
+to every gated tool's `WORDS[1:]` before the per-tool table below, and one gate applies to
+`git` before any of its approve paths:
+
+0. **Git work-tree probe.** No `git` command approves, including the Stage D
+   `git status`/`git ls-files` fast-path, unless `git -C <cwd> rev-parse
+   --is-inside-work-tree` prints exactly `true` and exits 0, where `<cwd>` is the
+   payload's `.cwd` when present and the hook's `$PWD` otherwise. A `git clone`
+   can materialize a bare-repo layout as ordinary tracked content (`HEAD`,
+   `objects/`, `refs/`, `config`); git discovers such a directory as a bare
+   repository and an approved `git log`/`git diff` then executes whatever the
+   carried config names (`diff.external`, `gpg.program`, `core.fsmonitor`, a
+   pager). `--is-inside-work-tree` prints `false` for a bare layout, including
+   one nested inside a real repo's subdirectory (git tests the directory itself
+   before walking up to the parent's `.git`), and exits nonzero outside any
+   repo; every outcome but an exact `true` falls through. The probe is safe to
+   run against a hostile layout: `rev-parse` is plumbing and reads config
+   without executing any of it, verified live with `core.fsmonitor`,
+   `core.pager`/`pager.rev-parse`, `diff.external`, filter drivers,
+   `diff.<drv>.textconv`, and `gpg.program` all armed, zero of them ran
+   (plumbing output is never paged, and `--is-inside-work-tree` touches neither
+   the index nor a diff/filter path). The `.cwd` read uses the same fail-closed
+   jq pattern as `TOOL`/`CMD`; a missing or unparseable `.cwd` degrades to
+   `$PWD`, and a `.cwd` that is not a directory makes the probe exit nonzero,
+   both of which fall through rather than approve. Runs once, ahead of the
+   Stage D git arm in the code so every git approve is behind it. Closes the
+   clone case in ## Failure modes.
 
 1. A token containing `*` falls through. After Stage B, globbing is the only expansion that can
    still manufacture a `-`-token the scan never saw: an unquoted `*` expands against the current
@@ -355,7 +390,7 @@ appears on a code line of the hook (comment lines skipped, so prose cannot trip 
 | An unquoted `*` in a Stage-D command (`ls *.md`, `cat *`) glob-expands to a filename the scan never saw, potentially one literally named like a flag | The planted name lands as a flag to a Stage-D tool | Stage D's admission criterion is "no flag on this tool writes or execs", verified per tool, so a planted flag-looking filename is harmless there. For gated tools `*` is banned outright (Stage F rule 1), so the same trick cannot reach find/git/file. | None needed at run time: harmlessness follows from the per-tool admission check. The gated-tool side is pinned by group-(a) cases a32-a34. |
 | Commands execute under the harness's non-interactive bash or zsh | Stage B's allowlist is derived from bash/zsh expansion rules | Recorded assumption: a runtime that executes Bash-tool commands under a different grammar (fish, PowerShell, cmd) needs its own review of the character set. The real Claude Code zsh shell snapshot is not default options: it enables `extendedglob`, `nocaseglob`, `autocd`, `cdablevars`, and `pathdirs`; probing the allowlist under that snapshot found no bypass (the extra glob characters extendedglob arms, `#`/`^`/`~`, only act on a pattern when globbing runs, and the only allowlisted glob char `*` is banned in gated-tool args; `nocaseglob` only changes match case; `autocd`/`cdablevars`/`pathdirs` act on command position or `cd`, and `cd` is never approved). Under zsh the only extra expansion the allowlist permits is `=word` at word start, which expands `word` to its absolute path (`=ls` -> `/bin/ls`); it only ever yields a path, never a `-`-token or a second command, so it is harmless. Out of scope beyond bash/zsh. | No hook-side detection. A wrong-grammar runtime surfaces as unexplained prompts (the fail-closed direction); an approval a grammar did not earn would only be caught by re-running the audit that produced this spec. |
 | A checked-in tool config file steers an approved tool (`.prettierrc`, `.prettierrc.js`, `ruff.toml`, `pyproject.toml`, `.npmrc`, `.tool-versions`, `rust-toolchain.toml`, `.go-version`-adjacent env files) | An attacker-authored repo file turns a silently approved "read" into a write or code execution, the exact class this spec exists to close | Named as a trust assumption and removed, not patched: the config-loading rule in ## Design drops every such tool (`npm`, `npx`, `ruff`, `go`) and every version-manager shim (`node`, `python3`, `cargo`) from the approved set entirely rather than flag-gating it, because a checked-in config needs no flag at all to rewrite files (`ruff.toml` with `fix = true`), run code (`.prettierrc.js`), or redirect a shim to a planted binary (`.tool-versions` `path:`). The surviving tools have no checked-in config surface; `git`'s is recorded in the row below. | Silent false-approve until the tool is dropped; the drop is pinned by the group-(a) cases per dropped tool (a35-a39, a44-a48, a50-a52), so a regression that re-admits one goes red. |
-| `git log`/`diff`/`show`/`branch`/`tag` honor the local `.git/config` (`core.pager`, `pager.*`, `core.fsmonitor`, `include.path`), and a checked-in `.gitattributes` can name a filter or textconv driver | A crafted local pager or fsmonitor config would run a program on an auto-approved read | "Never checked in" means git does not track `.git`; it does NOT mean a `.git/config` cannot arrive by other means. An attacker-supplied tarball/zip or a vendored bare repository can carry a live `.git/config` (e.g. `core.fsmonitor` pointing at a script), so `git status` inside an unpacked tree can run code. A normal `git clone` delivers the same thing: a tracked directory can commit a bare-repo layout (`HEAD`, `config`, `objects/`, `refs/`) as ordinary tree content, so the clone materializes a live `config` setting `diff.external` or `gpg.program`, and a git command run inside that directory treats it as a bare repo and executes the configured program. Git's own mitigation is `safe.bareRepository=explicit` (a bare repo is recognized only when explicitly named via `GIT_DIR`/`--git-dir`); it is an operator-side git config, out of this PR. Writing a config into a repo's own `.git/` still needs prior local file access, at which point code execution is already in hand; the archive and clone cases are the residual gap, recorded not mitigated since the hook can only approve or abstain, never inspect the tree. `.gitattributes` can be checked in but only *names* a driver; the driver command itself lives in `.git/config`. A checked-in `.gitattributes` can also select a driver defined in `~/.gitconfig` or another user-level config the repo does not control: the repo supplies the name, not the command, though a common driver name may already exist on the operator's machine (git-lfs additionally reads the checked-in `.lfsconfig`). Low risk; recorded. `git -c`/`-C` overrides fall through (not on the safe-flag list). | Silent at run time: the archive-carried `.git` case is the recorded residual gap with no hook-side detection. The `-c`/`-C` flag path is pinned closed by a40/a41. |
+| `git log`/`diff`/`show`/`branch`/`tag` honor the local `.git/config` (`core.pager`, `pager.*`, `core.fsmonitor`, `include.path`), and a checked-in `.gitattributes` can name a filter or textconv driver | A crafted local pager or fsmonitor config would run a program on an auto-approved read | "Never checked in" means git does not track `.git`; it does NOT mean a `.git/config` cannot arrive by other means. An attacker-supplied tarball/zip or a vendored bare repository can carry a live `.git/config` (e.g. `core.fsmonitor` pointing at a script), so `git status` inside an unpacked tree can run code. A normal `git clone` can deliver the same thing: a tracked directory can commit a bare-repo layout (`HEAD`, `config`, `objects/`, `refs/`) as ordinary tree content, so the clone materializes a live `config` setting `diff.external` or `gpg.program`, and a git command run inside that directory treats it as a bare repo and executes the configured program (reproduced live: `diff.external` aimed at a marker script ran on `git diff`). The clone/bare-layout case is now closed in the hook: before any git command approves, `git -C <payload .cwd, else $PWD> rev-parse --is-inside-work-tree` must print exactly `true` and exit 0 (see Stage E); a bare layout prints `false`, including one nested inside a real repo's subdirectory, because git tests the directory itself before walking up. Git's own mitigation, `safe.bareRepository=explicit` (a bare repo is recognized only when explicitly named via `GIT_DIR`/`--git-dir`), was considered and rejected: it is a global operator config, it cannot be set per-invocation for this purpose (`git -c safe.bareRepository=explicit` is itself a `-c` flag, which falls through), and it breaks legitimate `git -C <bare>` use elsewhere on this machine (ops-toolkit `tools/hermes/scripts/push-mini-branch.sh`, and this suite's own bare-remote fixtures). Writing a config into a repo's own `.git/` still needs prior local file access, at which point code execution is already in hand; the remaining residual is the archive-carried `.git` case: an unpacked real `.git` directory IS a work tree, so the probe passes and the hook can only approve or abstain, never inspect the tree. Recorded, not mitigated. `.gitattributes` can be checked in but only *names* a driver; the driver command itself lives in `.git/config`. A checked-in `.gitattributes` can also select a driver defined in `~/.gitconfig` or another user-level config the repo does not control: the repo supplies the name, not the command, though a common driver name may already exist on the operator's machine (git-lfs additionally reads the checked-in `.lfsconfig`). Low risk; recorded. `git -c`/`-C` overrides fall through (not on the safe-flag list). | Silent at run time: the archive-carried `.git` case is the recorded residual gap with no hook-side detection. The `-c`/`-C` flag path is pinned closed by a40/a41; the bare-layout case is pinned by a54-a56. |
 | An approved command name resolves to a shell wrapper instead of the standalone binary the criterion was verified against | The wrapper may rewrite flags or add behavior the man-page check never saw | Observed, not hypothetical: the Claude Code zsh shell snapshot shadows `find` with a `bfs` function (base flags `-S dfs -regextype findutils-default`) and `grep` with a `ugrep` function (base flags `-G --ignore-files --hidden -I --exclude-dir=...`), and interactive rc files alias `ls`, `du`, `df`, `type`. Stage D's "no write-capable option" and `find`'s Stage F flag set were verified against the standalone tools; under a wrapper the same flag text reaches a different parser (e.g. ugrep carries `--save-config`, which writes). The snapshot's own `grep` wrapper reroutes `*config*`/`-save-config`-shaped args to `command grep`, which narrows this specific case but does not close the class. Recorded as an environment assumption: the allowlist pins command TEXT, and what the first word resolves to is the harness's contract, not the hook's. | Silent at run time; detected only by the same kind of audit that found the bfs/ugrep shadowing. |
 | A genuinely malicious command built entirely from safe-looking tokens (an unlisted git subcommand, an unlisted tool) | Falls through | Stage E recognizes only the three gated tools (`find`, `git`, `file`) and their named subcommands; any subcommand outside `{status, ls-files, log, diff, show, branch, remote, tag}` for `git`, or any tool outside the Stage D/E tables entirely, never reaches an approve branch. Same "excluded by omission" property the whole design relies on. | The prompt itself: the failure mode IS the visible fall-through. |
 
@@ -450,6 +485,9 @@ PATH bash, and the implementation is required green under both.
 | a51 | `python3 --version` | dropped approval: same mise-shim class |
 | a52 | `cargo --version` | dropped approval: rustup proxy honors `rust-toolchain.toml` `path =` |
 | a53 | `git status` + `\u0000` + ` tail-token` (JSON escape in the payload, jq decodes to a real NUL byte) | NUL guard: bash `$( )` drops the NUL, so the scanned CMD would differ from the executed string |
+| a54 | `git log` with payload `.cwd` = a `git init --bare` fixture dir | the clone-carried bare-repo layout: git discovers the directory itself as a bare repo, so the Stage E work-tree probe prints `false` and the command falls through |
+| a55 | `git diff A B` with `.cwd` = a bare layout nested inside a normal repo's subdirectory | the same discovery applies at the nested level; the parent's `.git` never wins |
+| a56 | `git status` with `.cwd` = a directory outside any repo | the probe requires an actual work tree, not just a directory that exists |
 
 a25-a31 (the `go`/`ruff`/`npx` flag cases) are now closed twice: the specific write flag was
 already unsafe, and the whole tool is dropped from the gated set under the config-loading rule,
@@ -486,6 +524,8 @@ pinned here:**
 | b23 | `stat README.md` | Stage D |
 | b24 | `du -sh .` | Stage D |
 | b25 | `df -h` | Stage D |
+| b26 | `git status` with payload `.cwd` = `$KIT_DIR` (a real work tree) | the `.cwd`-driven probe path approves inside a work tree (b1/b2 already pin the `$PWD` fallback, the suite runs inside the repo) |
+| b27 | `git log --oneline -5` with payload `.cwd` = `$KIT_DIR` | same, on a Stage-F subcommand |
 
 **Group (c), debug lines (AC6):** six cases, each runs the hook with `DWARVES_KIT_DEBUG=1`,
 discards stdout, and asserts stderr carries the pinned stage token. One representative input
@@ -531,7 +571,8 @@ mutated to `jq contains("\u0000")`, expecting c1/a53 red, on jq >= 1.7 strings r
 and `contains` detects the byte correctly, so on such a toolchain this mutation is
 behavior-preserving and the control is expected to report vacuous, recorded verbatim either
 way; (3) the NUL guard neutralized (`any(. == 0)` -> `any(. == -1)`), expecting a53/c1 red,
-which proves the case has teeth independent of the jq version.
+which proves the case has teeth independent of the jq version; (4) the work-tree probe
+removed from the hook, expecting the bare-layout a-cases (a54-a56) red.
 
 ## Touches
 
@@ -558,7 +599,10 @@ which proves the case has teeth independent of the jq version.
 today (Group (b)), and no longer auto-approves any of the write or code-execution shapes found
 in ## Problem: the four named cases, the three audit cases, the whole quote/escape/expansion
 smuggle class, the per-tool write flags on `go`/`ruff`/`npx`/`file`, and glob-expanded planted
-flags. `env`, `printenv`, `cargo check`, `python --version`, the `--version` trio (`node`,
+flags. Git commands additionally approve only inside a real work tree: before any git approve
+path the hook runs `git -C <payload .cwd, else $PWD> rev-parse --is-inside-work-tree` and
+requires an exact `true`, which closes the clone-carried bare-layout case from ## Failure
+modes (the archive-carried `.git` case remains the recorded residual). `env`, `printenv`, `cargo check`, `python --version`, the `--version` trio (`node`,
 `python3`, `cargo`), `npm`, `npx`, `ruff`, and `go` lose their auto-approval entirely: the last
 four and the trio under the config-loading rule (the trio resolve through version-manager
 shims; see ## Decision Log); `file` stays in the gated set. The hook still never emits a deny decision; a

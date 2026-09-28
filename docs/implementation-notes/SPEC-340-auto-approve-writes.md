@@ -20,6 +20,18 @@ from the Contract lives here.
 - The non-Bash / empty-command early exit emits a `bash-gate` debug line too;
   it is not one of the six AC6 tokens (it is not a stage) but keeps the "every
   fall-through is diagnosable" contract uniform.
+- Delta (bare-layout fix): before any git approve path, the hook runs
+  `git -C "${HOOK_CWD:-$PWD}" rev-parse --is-inside-work-tree`, where
+  `HOOK_CWD` is the payload's `.cwd` read with the same fail-closed jq
+  pattern as TOOL/CMD. It approves only on an exact `true` plus exit 0, so a
+  tracked bare-repo layout (HEAD/objects/refs/config), a bare layout nested
+  inside a real repo's subdir, and a non-repo `.cwd` all fall through. The
+  probe sits ahead of the stage-d git fast-path so `git status`/`git
+  ls-files` are covered, and its fall-through reuses the `stage-e` debug
+  token rather than minting a seventh. `git -C` over a subshell `cd`: one
+  process, and a nonexistent `.cwd` exits nonzero, which is the same
+  fall-through path. Verified live that rev-parse executes none of
+  fsmonitor/pager/diff/filter/gpg config even with all traps armed.
 
 ## Test changes
 

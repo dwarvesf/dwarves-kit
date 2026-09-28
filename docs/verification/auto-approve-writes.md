@@ -140,3 +140,57 @@ through `lib/gate/gate-ledger.sh`.
 - The archive-carried and clone-carried `.git` config residual gaps are
   recorded in the spec (mitigation `safe.bareRepository=explicit` is an
   operator setting), not exercised here.
+
+## Add-on: git work-tree probe (clone-carried bare layout)
+
+HEAD under test: bbc06384 (fix/auto-approve-writes).
+
+Reproduction, pre-fix: a `git init --bare` fixture with `diff.external`
+pointed at a marker-writing script ran the script on `git diff` from inside
+the layout (marker written), and the hook approved `git log` / `git diff A B`
+payloads whose `.cwd` named the layout. The same layout nested inside a
+normal repo's subdirectory still resolves as the bare repo (git tests the
+directory itself before walking up); `rev-parse --is-inside-work-tree`
+prints `false` in both.
+
+Fix: before any git approve path, `git -C <payload .cwd, else $PWD>
+rev-parse --is-inside-work-tree` must print exactly `true` and exit 0.
+
+Probe safety, verified live: in a repo with `core.fsmonitor`, `core.pager`,
+`pager.rev-parse`, `diff.external`, `filter.<drv>.clean`,
+`diff.<drv>.textconv`, and `gpg.program` all pointed at marker scripts,
+`git rev-parse --is-inside-work-tree` ran none of them.
+
+### Green runs
+
+```
+Command: bash tests/test-hooks.sh
+Exit: 0
+Verdict: PASS -- 673/673 under /bin/bash 3.2, and again 673/673 under
+         PAA_BASH=$(command -v bash). New pins: a54 bare-layout .cwd, a55
+         nested-bare .cwd, a56 non-repo .cwd all fall through; b26/b27
+         approve through the .cwd-driven probe path inside KIT_DIR.
+```
+
+```
+Command: RUN_ALL_TIMEOUT_SECS=900 bash tests/run-all.sh --all
+Exit: 0 reported; one suite red
+Verdict: PASS with the same allowed failure: test-no-scattered-ids only
+         (pre-existing on master). 161 suites run, 0 skipped.
+```
+
+### Negative control 5: work-tree probe removed
+
+```
+Command: bash tests/test-hooks.sh
+Exit: 0 (green before mutation)
+Mutation: sed -i '' '/^if \[ "${WORDS\[0\]}" = "git" \]; then$/,/^fi$/d' hooks/permission-auto-approve.sh
+Changed: hooks/permission-auto-approve.sh
+Exit: 1 (under mutation, RED expected)
+Restore: git checkout HEAD -- hooks/permission-auto-approve.sh
+Exit: 0 (green after restore)
+Verdict: PASS
+```
+
+With the probe deleted, `.cwd` is never consulted and the bare-layout,
+nested-bare, and non-repo cases approve again, so a54-a56 go red.
