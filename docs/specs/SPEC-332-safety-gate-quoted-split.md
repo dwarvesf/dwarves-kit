@@ -162,7 +162,7 @@ Detection for every fail-open row is none: the remote branch protection is the b
 |---|---|---|
 | T1: walk, heredoc replay, naive pass, token strip, arithmetic frame, word start, substitutions | `hooks/safety-gate.sh` | Q1 to Q34, Q50 to Q54, Q58, Q61 to Q66, Q68 to Q86, Q89 pass; the existing safety-gate rows stay green |
 | T2: segment start and rule tokens | `hooks/safety-gate.sh` | Q35 to Q49, Q55 to Q57, Q59, Q60, Q67, Q87, Q88, Q90 pass |
-| T3: tests | `tests/test-hooks.sh` | rows Q1 to Q90, each through the real hook |
+| T3: tests | `tests/test-hooks.sh` | rows Q1 to Q91, each through the real hook |
 | T4: records | `docs/CHANGELOG.md`, `docs/verification/safety-gate-quoted-split.md`, `docs/implementation-notes/safety-gate-quoted-split.md` | CHANGELOG names the closed holes and the accepted false positives |
 
 ## Test plan
@@ -261,6 +261,7 @@ Every row runs the real hook through `q_hook`, which builds the JSON with jq. Bl
 | Q88 | `op run -- mise exec node@20 -- <push> origin main` | block |
 | Q89 | `git -C "$(git rev-parse --show-toplevel)" push -u origin feat/x` | allow |
 | Q90 | `<push> origin 'refs/tags/v1.*'` | allow |
+| Q91 | `echo ${x#<<y}~<push> origin main` | block |
 
 Negative controls, through `lib/gate/negctl.sh`:
 
@@ -268,7 +269,7 @@ Negative controls, through `lib/gate/negctl.sh`:
 |---|---|---|
 | NC1 | pass 1 treats `;` and `\|` as boundaries inside quotes (the old split) | Q1 to Q6 |
 | NC2 | drop pass 2 (the naive print) | Q12, Q13 |
-| NC3 | drop the heredoc replay | Q30 |
+| NC3 | drop the heredoc replay | Q91 (Q30 no longer needs the replay: the arithmetic frame reads it first) |
 | NC4 | drop the comment rule | Q27, Q28, Q51, Q68 |
 | NC5 | drop the grammar arm of the segment-start loop | Q35 to Q37, Q60 |
 | NC6 | drop the lone-`)` re-walk (the frame only turns) | Q74 to Q76 |

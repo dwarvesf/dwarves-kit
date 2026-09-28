@@ -303,6 +303,8 @@ B")"
 assert_exit "Q88: op run and mise exec wrappers" 2 "$(q_hook "op run -- mise exec node@20 -- $PUSH origin main")"
 assert_exit "Q89: \$( ) as the -C operand of a feature push is allowed" 0 "$(q_hook "git -C \"\$(git rev-parse --show-toplevel)\" push -u origin feat/x")"
 assert_exit "Q90: a tag glob is allowed" 0 "$(q_hook "$PUSH origin 'refs/tags/v1.*'")"
+assert_exit "Q91: a << in \${ } that never closes replays" 2 "$(q_hook "echo \${x#<<y}
+$PUSH origin main")"
 # F4: cd-prefix repo resolution parses portably (probe affordance prints the target)
 CDOUT=$(echo '{"tool_input":{"command":"cd /tmp/some-repo && git push -q origin feat/x"}}' | DWARVES_KIT_PRINT_CDDIR=1 bash "$KIT_DIR/hooks/ship-gate.sh" 2>/dev/null)
 assert_output_contains "F4: ship-gate resolves the cd target" "^/tmp/some-repo$" "$CDOUT"

@@ -11,6 +11,8 @@ The delta from `docs/specs/SPEC-332-safety-gate-quoted-split.md`. Decisions alre
 | Negative controls | run in a throwaway `git clone` of the worktree, not the worktree | the validator and the break-it agent were probing the worktree hook at the same time |
 | Heredoc misreads | one replay backstop instead of the break-it pass's prefix match on the delimiter; an arithmetic frame joined in revision 3 (superseding the rev-2 'no frames' call), `${}` still has none | the replay covers every misread whose false delimiter never appears; only arithmetic showed a master-blocks, branch-allows ordering |
 | `-E` operand | `sudo -E` takes no operand, so `-E` stays out of the operand list | round 2 of the scratch probes: `-E` in the list ate `git` in `sudo -E git push` |
+| Negative controls run serially | seven parallel negctl clones went "not green" on the unmutated suite: the `backlog.sh` rows fail when two suites run at once (shared state outside the per-test `mktemp`). Re-ran serially | pre-existing test isolation gap, not this change; flagged here, not fixed |
+| Validation stop | a `validate` override after round 6 instead of a seventh round | the walk is a shell parser with unbounded edge cases; rounds 5 and 6 rated their findings contrived except one plausible shape, now fixed |
 | Redirect before basename | redirection and `NAME=value` checks read the raw word before the basename case | the basename of `>/dev/null` is `null`, which broke the redirect skip in a scratch build |
 
 ## Validation rounds
