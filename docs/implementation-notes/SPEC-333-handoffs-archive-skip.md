@@ -79,11 +79,44 @@ Test suite cases `[16]`-`[19]` (built around the four-name fixture) replaced wit
 proving the design generalizes: an arbitrarily-named subdirectory (`old/`, not on any list)
 excluded, plus the original named shapes still excluded, plus the ancestor case kept.
 
+## Fold: re-validation warnings W1-W5 (post-VALIDATED)
+
+The one-level design passed re-validation (critical=0, 5 warnings). Folded in the same
+worktree, no new spec number:
+
+- W1: the runtime `DEAD` message (`handoff_liveness`, line 143) said only "delete it"; a repo
+  can now also move a handoff into a subdirectory to mark it consumed, so the message and its
+  header passage both say "delete it or move it into any subdirectory". Test case `[10]`'s
+  exact-match assertion updated to the new string.
+- W2: `commands/start.md`'s kit:start line described the OLD `done/`/`_archive/` exclusion,
+  stale after the one-level rewrite; reworded to the depth rule.
+- W3: added Contract item 6 (and a DEC-B addendum): a handoff is one top-level `.md`; a
+  multi-file bundle needs a top-level index file, since a subdirectory is consumed by design
+  regardless of what it holds. The `handoff` skill that writes bundles is a separate touch,
+  owned by the lead.
+- W4: test case `[18]` (the `.claude/` ancestor) checked presence only; added the same
+  exact-count assertion case `[17]` already had, so a silent extra/missing file would be
+  caught there too.
+- W5: added case `[20]`, a `done/`-ancestor fixture (`$(mktemp -d)/done/repo`). This is the
+  decisive case for NC1: the pre-SPEC-333 filter's `-not -path '*/done/*'` matches a `done`
+  segment ANYWHERE in the full printed path, including this ancestor, so NC1 must (and does)
+  go red here specifically, not just on the arbitrary-name and named-shape cases. Spec test
+  plan gained this as row 3 (renumbering the rows after it); the `## Negative control` section
+  names it as NC1's decisive assertion.
+
+Both negative controls re-ran clean after the fold: NC1 (revert to `194c89f0`) goes red on
+cases `[16]`, `[17]`, `[19]`, and `[20]`; NC2 (apply the rejected denylist, `359d8836`) goes
+red only on `[16]`/`[17]`/`[19]`, with both ancestor cases (`[18]` `.claude/`, `[20]` `done/`)
+staying green, confirming the denylist's ancestor fix generalizes across segment names while
+its name enumeration does not generalize across archive-folder names.
+
 ## Gate-ledger entries recorded post-implementation
 
-`Build ran "bash lib/session/tests/test-handoffs.sh: smoke: all 22 passed"` is the only
-measure-twice gate the `normal` lane still needed (`spec`, `build`, `ship` are the three; spec
-and its validate/design-record satellites were already recorded). `Ship` was deliberately left
+`Build ran "bash lib/session/tests/test-handoffs.sh: smoke: all 22 passed"` was the first
+`Build` record, before the fold above; a second `Build ran` records the post-fold state at 25
+assertions. `spec`, `build`, `ship` are the three measure-twice gates the `normal` lane needs;
+spec and its validate/design-record satellites were already recorded, and the fold's
+re-validation is the same VALIDATED verdict, not a new spec gate. `Ship` was deliberately left
 unrecorded: this session never pushes or merges (explicit instruction), and recording `Ship
 ran` before an actual ship step would be a false ledger entry. Whoever eventually runs
 `/kit:ship` on this branch records it then.
