@@ -17,6 +17,8 @@ Env (tests point these at temp dirs):
   HARVEST_SWEEP_NOW=EPOCH          pin the clock (tests)
   HARVEST_SWEEP_MAX_SCAN=N         candidates scanned per source per run (default 2000)
   HARVEST_SWEEP_QUIET_MINUTES=N    a session is read only after this long without activity (default 30)
+  HARVEST_SWEEP_LAG_HOURS=N        oldest unread eligible session older than this is lagging (default 24)
+  HARVEST_SWEEP_DRIFT_MIN_SCANNED=N  all-trivial reads at or above this count as a failed read (default 10)
   HARVEST_MAXCHARS=N               transcript chars rendered per session (default 12000)
 """
 import datetime
@@ -315,6 +317,32 @@ def source_fail_tripped(cursor, source):
     return cursor.get("source_fail", {}).get(source, 0) >= limit
 
 
+def source_drifted(out):
+    """DEC-61: every session this run loaded was trivial, and at least
+    HARVEST_SWEEP_DRIFT_MIN_SCANNED of them. That is what a format change that empties
+    every transcript looks like; a quiet source with few sessions is not drift."""
+    floor = int(os.environ.get("HARVEST_SWEEP_DRIFT_MIN_SCANNED", "10"))
+    return out["trivial"] >= floor and out["trivial"] == out["read"]
+
+
+def drift_state_row(source, out):
+    return "STATE %s: drift: all %d sessions read this run were trivial" % (source, out["trivial"])
+
+
+def lag_state_row(source, lag):
+    return "STATE %s: lag: %d eligible unread, oldest %.1fh" % (
+        source, lag["eligible"], lag["oldest_age_s"] / 3600.0)
+
+
+def _lag_limit_s():
+    return float(os.environ.get("HARVEST_SWEEP_LAG_HOURS", "24")) * 3600
+
+
+def lag_tripped(cursor):
+    """True once lag_runs reaches 2: lag over the limit on two consecutive runs (rc 6)."""
+    return cursor.get("lag_runs", 0) >= 2
+
+
 # ---- launch-record attribution -------------------------------------------------------
 
 def load_launch_records():
@@ -432,9 +460,25 @@ def _sources():
     return [("claude", list_claude_sessions, load_claude), ("devin", list_devin_sessions, load_devin)]
 
 
-def _plan_source(cursor, source, items, load, now, schedule_hours):
+def parse_since(value):
+    """--since as epoch seconds: a number, or an ISO 8601 timestamp (naive means local time)."""
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        pass
+    epoch = _epoch(value) if isinstance(value, str) else None
+    if epoch is None:
+        raise ValueError("--since %r is neither an epoch nor an ISO 8601 timestamp" % (value,))
+    return epoch
+
+
+def _plan_source(cursor, source, items, load, now, schedule_hours, since=None):
     """Scan one source: its cursor state, the scanned candidates, and the eligible ones."""
-    state = _source_state(cursor, source, int(now - schedule_hours * 3600))
+    state = _source_state(cursor, source, int(since if since is not None else now - schedule_hours * 3600))
+    if since is not None and since < state["hwm"]:
+        # Lowering only: raising the hwm would skip unread sessions (DEC-71). The lowered hwm
+        # persists so a backfill capped mid-way keeps draining oldest first on the next run.
+        state["hwm"] = int(since)
     max_scan = int(os.environ.get("HARVEST_SWEEP_MAX_SCAN", "2000"))
     quiet_before = now - int(os.environ.get("HARVEST_SWEEP_QUIET_MINUTES", "30")) * 60
     scanned = sorted((i for i in items if i["last_activity"] >= state["hwm"]),
@@ -442,7 +486,8 @@ def _plan_source(cursor, source, items, load, now, schedule_hours):
     eligible = [i for i in scanned
                 if i["last_activity"] <= quiet_before and not _settled(state, i)]
     return {"source": source, "state": state, "scanned": scanned, "eligible": eligible,
-            "load": load, "out": {"processed": [], "filtered": [], "failed": [], "deferred": []}}
+            "load": load, "out": {"processed": [], "filtered": [], "failed": [], "deferred": [],
+                                 "read": 0, "trivial": 0}}
 
 
 def _sweep_one(cursor, plan, item, process, now, max_chars, records):
@@ -455,7 +500,10 @@ def _sweep_one(cursor, plan, item, process, now, max_chars, records):
         if isinstance(t, SourceFailure):
             out["source_failure"] = t
             return False
-        skip = is_self_harvest(t) or is_trivial(t)
+        out["read"] += 1
+        trivial = is_trivial(t)
+        out["trivial"] += trivial
+        skip = is_self_harvest(t) or trivial
     if skip:
         state["done"][sid] = item["last_activity"]  # outside the cap
         out["filtered"].append(sid)
@@ -478,16 +526,44 @@ def _sweep_one(cursor, plan, item, process, now, max_chars, records):
     return not skip
 
 
-def run_selection(process, schedule_hours=6, max_sessions=20):
+def _finish_run(cursor, result, now):
+    """Lag and drift bookkeeping, once per run. Lag counts the eligible sessions a source
+    left unread; those past the cap are deferred unloaded, so a trivial one among them still
+    counts (accepted: classifying it needs a load, and the overcount clears once it is read).
+    A drifted or unreadable source adds a failed run, any good read resets it."""
+    over = False
+    for source, out in result.items():
+        rows = out.setdefault("state_rows", [])
+        failure = out.get("source_failure")
+        if failure:
+            rows.append(failure.state_row())
+        drifted = not failure and source_drifted(out)
+        if drifted:
+            rows.append(drift_state_row(source, out))
+        source_fail_update(cursor, source, bool(failure) or drifted)
+        oldest = out["deferred"][0]["last_activity"] if out["deferred"] else None
+        out["lag"] = {"eligible": len(out["deferred"]),
+                      "oldest_age_s": int(now - oldest) if oldest is not None else 0}
+        if oldest is not None:
+            rows.append(lag_state_row(source, out["lag"]))
+        over = over or out["lag"]["oldest_age_s"] > _lag_limit_s()
+    cursor["lag_runs"] = cursor.get("lag_runs", 0) + 1 if over else 0
+    save_cursor(cursor)
+
+
+def run_selection(process, schedule_hours=6, max_sessions=20, since=None):
     """One pass over every source: select, then call process(t, rendered_delta) per session.
     ONE budget of max_sessions covers all sources, and eligible sessions of every source are
     taken in global last_activity order, so a busy claude backlog cannot starve devin
     (DEC-55's quota bound). process returns True on success; anything else is a failed
     session (not done, hwm held back). The cursor is written after each session. Returns
-    per-source {processed, filtered, failed, deferred[, source_failure]}."""
+    per-source {processed, filtered, failed, deferred, lag, state_rows[, source_failure]}.
+    since (epoch or ISO) lowers each source's hwm for a manual backfill (DEC-18)."""
     now = _now()
+    if since is not None:
+        since = parse_since(since)
+        sys.stderr.write("harvest-sweep: --since %s read as epoch %d\n" % (since, since))
     cursor = load_cursor()
-    fresh = [s for s, _, _ in _sources() if s not in cursor]
     records = load_launch_records()
     max_chars = int(os.environ.get("HARVEST_MAXCHARS", "12000"))
     result, plans = {}, []
@@ -495,9 +571,9 @@ def run_selection(process, schedule_hours=6, max_sessions=20):
         items = lister()
         if isinstance(items, SourceFailure):
             result[source] = {"processed": [], "filtered": [], "failed": [], "deferred": [],
-                              "source_failure": items}
+                              "read": 0, "trivial": 0, "source_failure": items}
             continue
-        plan = _plan_source(cursor, source, items, loader, now, schedule_hours)
+        plan = _plan_source(cursor, source, items, loader, now, schedule_hours, since)
         result[source] = plan["out"]
         plans.append(plan)
 
@@ -514,6 +590,5 @@ def run_selection(process, schedule_hours=6, max_sessions=20):
             plan["out"]["deferred"].append(item)  # stays eligible, oldest first next run (DEC-71)
             continue
         attempts += _sweep_one(cursor, plan, item, process, now, max_chars, records)
-    if fresh:
-        save_cursor(cursor)  # pin the first-run hwm even when nothing was selected
+    _finish_run(cursor, result, now)  # also pins a first-run hwm when nothing was selected
     return result

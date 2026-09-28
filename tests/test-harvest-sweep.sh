@@ -701,6 +701,195 @@ assert_eq "clock: HARVEST_SWEEP_NOW pins _now()" "True" "$(t5 clock_env)"
 
 # ============================================================
 echo ""
+echo "=== T5b lag, drift, and --since ==="
+
+T5B_OUT=$(KIT_DIR="$KIT_DIR" TD="$TD" T5_NOW="$T5_NOW" python3 - <<'PY'
+import datetime, importlib.util, json, os
+spec = importlib.util.spec_from_file_location("hs", os.path.join(os.environ["KIT_DIR"], "hooks", "harvest_sweep.py"))
+hs = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(hs)
+TD, NOW = os.environ["TD"], int(os.environ["T5_NOW"])
+P = lambda k, v: print("%s=%s" % (k, v))
+n_scn = [0]
+
+def scenario(devin_db=None, now=NOW):
+    n_scn[0] += 1
+    base = os.path.join(TD, "t5b-s%d" % n_scn[0])
+    os.environ["HARVEST_STATE_DIR"] = os.path.join(base, "state")
+    os.environ["HARVEST_SWEEP_CLAUDE_ROOT"] = os.path.join(base, "claude")
+    os.makedirs(os.environ["HARVEST_SWEEP_CLAUDE_ROOT"])
+    os.environ["HARVEST_SWEEP_DEVIN_DB"] = devin_db or os.path.join(base, "none.db")
+    os.environ["HARVEST_SWEEP_NOW"] = str(now)
+    return os.environ["HARVEST_SWEEP_CLAUDE_ROOT"]
+
+iso = lambda e: datetime.datetime.fromtimestamp(e, datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+def mk(root, sid, la, n=6):
+    d = os.path.join(root, "p")
+    os.makedirs(d, exist_ok=True)
+    path = os.path.join(d, sid + ".jsonl")
+    with open(path, "w") as fh:
+        for k in range(n):
+            fh.write(json.dumps({"type": "user" if k % 2 == 0 else "assistant", "cwd": "/w/x",
+                                 "timestamp": iso(la - (n - k) * 10),
+                                 "message": {"content": [{"type": "text", "text": "%s msg %d" % (sid, k)}]}}) + "\n")
+    os.utime(path, (la, la))
+    return path
+
+def cursor():
+    with open(hs._cursor_path()) as fh:
+        return json.load(fh)
+
+ok = lambda t, text: True
+sweep = lambda **kw: hs.run_selection(ok, schedule_hours=48, **kw)
+rows = lambda res, src: " | ".join(res[src]["state_rows"])
+
+# ---- AC20: 12 all-trivial claude sessions per run is drift ----
+root = scenario()
+runs = []
+for r in range(3):
+    for k in range(12):
+        mk(root, "t%d-%02d" % (r, k), NOW - 7200 + r * 600 + k, n=2)
+    res = sweep()
+    runs.append((res, cursor()))
+P("ac20_row", "drift" in rows(runs[0][0], "claude") and "claude" in rows(runs[0][0], "claude"))
+P("ac20_counts", ",".join(str(c["source_fail"]["claude"]) for _, c in runs))
+P("ac20_tripped", ",".join(str(hs.source_fail_tripped(c, "claude")) for _, c in runs))
+# a run that reads a real session is a good read
+mk(root, "real1", NOW - 3600)
+res = sweep()
+P("ac20_reset", "%s|%s|%s" % (cursor()["source_fail"]["claude"], hs.source_fail_tripped(cursor(), "claude"), rows(res, "claude") == ""))
+# 12 trivial mixed with one real session: not drift
+root = scenario()
+for k in range(12):
+    mk(root, "mt%02d" % k, NOW - 7200 - k, n=2)
+mk(root, "mreal", NOW - 3600)
+res = sweep()
+P("ac20_mixed_not_drift", "%s|%s" % (cursor()["source_fail"]["claude"], rows(res, "claude") == ""))
+# 9 trivial sessions: under the floor
+root = scenario()
+for k in range(9):
+    mk(root, "u%02d" % k, NOW - 7200 - k, n=2)
+res = sweep()
+P("ac20_under_floor", "%s|%s" % (cursor()["source_fail"]["claude"], rows(res, "claude") == ""))
+os.environ["HARVEST_SWEEP_DRIFT_MIN_SCANNED"] = "5"
+root = scenario()
+for k in range(9):
+    mk(root, "v%02d" % k, NOW - 7200 - k, n=2)
+sweep()
+P("ac20_floor_knob", cursor()["source_fail"]["claude"])
+del os.environ["HARVEST_SWEEP_DRIFT_MIN_SCANNED"]
+
+# ---- AC21: lag alarm, oldest eligible unread 30h old (cap 0 takes nothing) ----
+root = scenario()
+path = mk(root, "old30", NOW - 30 * 3600)
+res = sweep(max_sessions=0)
+c = cursor()
+P("ac21_run1", "%s|%s|%s" % (res["claude"]["lag"], c["lag_runs"], hs.lag_tripped(c)))
+P("ac21_run1_row", "lag" in rows(res, "claude") and "30.0h" in rows(res, "claude"))
+res = sweep(max_sessions=0)
+c = cursor()
+P("ac21_run2", "%s|%s" % (c["lag_runs"], hs.lag_tripped(c)))
+os.utime(path, (NOW - 10 * 3600, NOW - 10 * 3600))  # the oldest unread is now 10h old
+res = sweep(max_sessions=0)
+c = cursor()
+P("ac21_run3", "%s|%s|%s" % (c["lag_runs"], hs.lag_tripped(c), res["claude"]["lag"]["oldest_age_s"]))
+res = sweep(max_sessions=20)
+P("ac21_drained", "%s|%s" % (res["claude"]["lag"], cursor()["lag_runs"]))
+# the limit is env-tunable
+os.environ["HARVEST_SWEEP_LAG_HOURS"] = "5"
+mk(root, "later", NOW - 8 * 3600)
+sweep(max_sessions=0)
+P("ac21_lag_hours_knob", cursor()["lag_runs"])
+del os.environ["HARVEST_SWEEP_LAG_HOURS"]
+
+# ---- AC14 end to end: drifted devin db, three runs; claude still processes ----
+drift_db = os.path.join(TD, "drift.db")
+good_db = os.path.join(TD, "t5-devin.db")
+root = scenario(devin_db=drift_db)
+counts, tripped, claude_done = [], [], []
+for r in range(3):
+    mk(root, "e2e%d" % r, NOW - 7200 + r * 60)
+    log = []
+    res = hs.run_selection(lambda t, text: log.append(t["session_id"]) or True, schedule_hours=24)
+    c = cursor()
+    counts.append(c["source_fail"]["devin"])
+    tripped.append(hs.source_fail_tripped(c, "devin"))
+    claude_done.append(",".join(log))
+P("ac14_counts", ",".join(map(str, counts)))
+P("ac14_tripped", ",".join(map(str, tripped)))
+P("ac14_claude_each_run", "|".join(claude_done))
+P("ac14_row", res["devin"]["state_rows"][0].startswith("STATE devin:"))
+P("ac14_claude_clean", cursor()["source_fail"]["claude"])
+os.environ["HARVEST_SWEEP_DEVIN_DB"] = good_db
+hs.run_selection(ok, schedule_hours=24)
+c = cursor()
+P("ac14_reset", "%s|%s" % (c["source_fail"]["devin"], hs.source_fail_tripped(c, "devin")))
+
+# ---- --since: a one-off backfill ----
+root = scenario()
+mk(root, "a", NOW - 3 * 3600)
+hs.run_selection(ok, schedule_hours=6)
+mk(root, "b", NOW - 5 * 3600)  # older than the hwm: never read without --since
+hwm = cursor()["claude"]["hwm"]
+log = []
+take = lambda t, text: log.append(t["session_id"]) or True
+hs.run_selection(take, schedule_hours=6)
+P("since_off", ",".join(log))
+hs.run_selection(take, schedule_hours=6, since=NOW + 100)  # newer than the hwm: ignored
+P("since_newer_ignored", "%s|%s" % (",".join(log), cursor()["claude"]["hwm"] == hwm))
+hs.run_selection(take, schedule_hours=6, since=iso(NOW - 6 * 3600))
+P("since_iso_backfill", ",".join(log))
+P("since_hwm_back_up", cursor()["claude"]["hwm"] == hwm)
+# first run: --since replaces the schedule_hours window
+root = scenario()
+mk(root, "far", NOW - 20 * 3600)
+log = []
+hs.run_selection(take, schedule_hours=6)
+P("since_first_run_default", ",".join(log))
+root = scenario()
+mk(root, "far", NOW - 20 * 3600)
+log = []
+hs.run_selection(take, schedule_hours=6, since=str(NOW - 24 * 3600))
+P("since_first_run_epoch", ",".join(log))
+try:
+    hs.run_selection(take, since="last tuesday")
+    P("since_bad", "no error")
+except ValueError:
+    P("since_bad", "ValueError")
+PY
+)
+t5b() { printf '%s\n' "$T5B_OUT" | sed -n "s/^$1=//p"; }
+
+assert_eq "AC20: 12 all-trivial sessions yield a drift STATE row" "True" "$(t5b ac20_row)"
+assert_eq "AC20: each all-trivial run adds one source failure" "1,2,3" "$(t5b ac20_counts)"
+assert_eq "AC20: three all-trivial runs trip the source failure (rc 5)" "False,False,True" "$(t5b ac20_tripped)"
+assert_eq "AC20: a run with a real session resets the count" "0|False|True" "$(t5b ac20_reset)"
+assert_eq "AC20: trivial sessions mixed with a real one are not drift" "0|True" "$(t5b ac20_mixed_not_drift)"
+assert_eq "AC20: fewer than 10 scanned trivial sessions is not drift" "0|True" "$(t5b ac20_under_floor)"
+assert_eq "AC20: HARVEST_SWEEP_DRIFT_MIN_SCANNED moves the floor" "1" "$(t5b ac20_floor_knob)"
+assert_eq "AC21: a 30h-old unread session reports lag, lag_runs 1, not tripped" "{'eligible': 1, 'oldest_age_s': 108000}|1|False" "$(t5b ac21_run1)"
+assert_eq "AC21: the lag STATE row names the source, count, and age" "True" "$(t5b ac21_run1_row)"
+assert_eq "AC21: a second run over 24h trips lag" "2|True" "$(t5b ac21_run2)"
+assert_eq "AC21: a following run under 24h resets lag_runs" "0|False|36000" "$(t5b ac21_run3)"
+assert_eq "AC21: a drained backlog reports no lag" "{'eligible': 0, 'oldest_age_s': 0}|0" "$(t5b ac21_drained)"
+assert_eq "AC21: HARVEST_SWEEP_LAG_HOURS moves the limit" "1" "$(t5b ac21_lag_hours_knob)"
+assert_eq "AC14: a drifted devin db adds one source failure per run" "1,2,3" "$(t5b ac14_counts)"
+assert_eq "AC14: devin trips on the third run only" "False,False,True" "$(t5b ac14_tripped)"
+assert_eq "AC14: the claude source still processes every run" "e2e0|e2e1|e2e2" "$(t5b ac14_claude_each_run)"
+assert_eq "AC14: the drifted source carries a STATE row" "True" "$(t5b ac14_row)"
+assert_eq "AC14: claude counts no failure meanwhile" "0" "$(t5b ac14_claude_clean)"
+assert_eq "AC14: one good devin read resets the count" "0|False" "$(t5b ac14_reset)"
+assert_eq "since: without it a session older than the hwm stays unread" "" "$(t5b since_off)"
+assert_eq "since: a value newer than the hwm is ignored, never skips sessions" "|True" "$(t5b since_newer_ignored)"
+assert_eq "since: an ISO value backfills a session older than the hwm" "b" "$(t5b since_iso_backfill)"
+assert_eq "since: the hwm returns to its old place once the backfill settles" "True" "$(t5b since_hwm_back_up)"
+assert_eq "since: the first run reads only the schedule window by default" "" "$(t5b since_first_run_default)"
+assert_eq "since: the first run starts at an epoch --since instead" "far" "$(t5b since_first_run_epoch)"
+assert_eq "since: an unparseable value is an error" "ValueError" "$(t5b since_bad)"
+
+# ============================================================
+echo ""
 echo "=== Results ==="
 echo "Passed: $PASS / $TOTAL"
 if [ "$FAIL" -gt 0 ]; then
