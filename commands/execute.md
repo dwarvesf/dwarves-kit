@@ -218,6 +218,7 @@ These traps recur cycle after cycle. Use the correct form up front:
 - fish `noclobber`: a bare `>` redirect fails ("file already exists"). Force it with `>|` (e.g. `cmd >| out.txt`).
 - Multi-line commit body: a `git commit -m` heredoc gets mis-parsed (the whole body can be read as the subject). Use `git commit -F <file>` or `git commit -F -` (pipe the message in) instead.
 - `rm` is blocked by the safety hook. To remove something, `mv` it to an out-of-the-way path (e.g. `mv stale /tmp/`), not `rm`.
+- `index.lock` exists in a shared worktree: another writer (often a statusline's `git status`) holds the index. Commit only your own paths (`git commit -- <paths>`) and retry after a few seconds; a lock no git process holds is stale, so `mv` it aside. Read-only git calls such as a statusline run with `GIT_OPTIONAL_LOCKS=0`.
 
 ## Collaborative design protocol
 When you encounter a decision with 2+ valid approaches (data model choice, library selection,
