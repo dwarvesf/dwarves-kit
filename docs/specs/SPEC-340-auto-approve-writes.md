@@ -53,6 +53,8 @@ and passed.
 
 ## Design
 
+Diagram: see ## Picture (flowchart).
+
 **Goal:** the hook approves a command only when it can positively confirm the command is a
 single, simple, read-only invocation. Anything it cannot positively confirm returns no decision,
 so Claude Code shows the normal permission prompt. The hook never denies; ## Contract keeps that
@@ -79,12 +81,16 @@ executes JS, `ruff --config=fix=true` overrides config into a rewrite and a chec
 does the same with no flag at all, `npm --logs-dir=`/`--cache=` write and `--registry=` sends
 requests). Patching flags one by one does not converge, so the rule is categorical, not
 per-flag: such a tool is never on the approved set. `npm`, `npx`, `ruff`, and `go` are dropped
-entirely and fall through to the normal prompt (## Decision Log). `git` is the named exception:
-every config surface that can make it run code or write files (`core.pager`, `pager.*`, aliases,
-filter drivers, `diff.external`, `core.hooksPath`) lives in `.git/config` or `.git/hooks`, which
-are never checked in, so no repository file can steer it. Its flag allowlist stays (## Picture,
-Stage F). What remains in the approved set is exactly what ## Picture shows: tools whose
-behaviour no repo file can change, plus exact `--version` matches.
+entirely and fall through to the normal prompt (## Decision Log). A version-manager shim is the
+same class: `node`, `python3`, and `cargo` resolve through mise, asdf, or rustup proxies that
+read checked-in config (reproduced live: a `.tool-versions` line `node path:./ntc` made
+`node --version` execute a planted binary; `rust-toolchain.toml`'s `path =` does the same for
+the rustup proxy), so the `--version` trio leaves the approved set too. `git` is the named
+exception: every config surface that can make it run code or write files (`core.pager`,
+`pager.*`, aliases, filter drivers, `diff.external`, `core.hooksPath`) lives in `.git/config`
+or `.git/hooks`, which git never tracks; the archive-carried `.git` case is recorded in
+## Failure modes. Its flag allowlist stays (## Picture, Stage F). What remains in the approved
+set is exactly what ## Picture shows: tools whose behaviour no repo file can change.
 
 **Executing shell, stated once.** Commands approved here run under the harness's non-interactive
 bash or zsh with default options: quote removal, backslash escapes, `$VAR`/`${..}` expansion,
@@ -121,6 +127,12 @@ commands under a different shell grammar needs its own review of the character s
  TOOL == Bash and CMD non-empty?  --no--> no decision (fall through)
         |yes
         v
+ NUL GUARD: raw decoded command contains     --yes--> no decision
+          \u0000?  (jq -r emits a real NUL;
+          bash $( ) drops it, so CMD would
+          differ from the executed string)
+        |no
+        v
  STAGE A: CMD contains a newline?             --yes--> no decision   [case 4]
         |no                                    (subsumed by B; kept
         v                                       for readable failure)
@@ -143,15 +155,14 @@ commands under a different shell grammar needs its own review of the character s
         |yes --------------------------------------------> allow
         |no
         v
- STAGE D: CMD exactly one of {pwd,
-          node --version, python3 --version,
-          cargo --version}?
+ STAGE D: CMD exactly "pwd"?
         |yes --------------------------------------------> allow
         |no
         v
  STAGE E: WORDS[0] is a GATED tool (find, git, file)?
-          (config-loading tools npm/npx/ruff/go were
-           dropped entirely; see ## Design)
+          (config-loading tools npm/npx/ruff/go and
+           version-manager shims node/python3/cargo
+           were dropped entirely; see ## Design)
         |no ---------------------------------------------> no decision
         |yes
         v
@@ -171,7 +182,23 @@ Every check below runs in the order shown; the first failing check falls through
 (the normal prompt). Nothing in this hook ever emits a deny/block decision (unchanged
 invariant). The stale header comment at the top of the hook (the "SECURITY: Rejects any command
 containing pipe operators" lines) is rewritten to describe this contract, one line per stage,
-with Stage B named as a character allowlist.
+with Stage B named as a character allowlist. Every fall-through (the NUL guard and each stage)
+emits one `DWARVES_KIT_DEBUG=1` stderr line naming the stage and the failed check (same
+`[dwarves-kit:permission]` prefix as the existing debug lines), so an unexpected prompt is
+diagnosable.
+
+**NUL guard, input fidelity.** `CMD` is produced by `$(jq -r ...)`: jq decodes a `\u0000`
+escape to a real NUL byte, and bash command substitution drops NUL bytes silently, so a raw
+command containing `\u0000` yields a `CMD` that differs from the string the runtime executes.
+If the decoded `.tool_input.command` contains a NUL, the hook falls through before any stage
+runs. Mechanism, pinned: `jq -e '(.tool_input.command // "") | contains("\u0000")'` on the raw
+INPUT, a boolean probe on the decoded value rather than a text scan of the JSON (a NUL can only
+arrive as the `\u0000` escape, since JSON forbids a raw control byte). Chosen over moving the
+Stage B test into jq: the allowlist check stays in bash `[[ =~ ]]` per the mechanism pinned
+below, the gate keeps one implementation language, and the probe is a single boolean. A
+trailing newline needs no guard: `$(...)` strips it from the checked string, and stripped
+trailing newlines can only ever remove empty trailing commands from the executed string, never
+hide a live one.
 
 **Stage A, single line.** `CMD` must not contain a newline (`$'\n'`). Redundant once Stage B
 lands (a newline is not in the character allowlist) but kept as its own stage so a multi-line
@@ -225,11 +252,13 @@ line per remaining tool:
 | `df` | `df(1)`: reports filesystem space to stdout; no write/exec option. |
 | `grep` | `grep(1)`: no write/exec option; `GREP_OPTIONS` flag injection was removed in GNU grep 2.21 (2014), so the environment cannot smuggle flags either. |
 | `pwd` | `pwd(1)` / bash builtin: exact match, zero further tokens. `env` lost its former zero-arg seat; see ## Decision Log. |
-| `git status`, `git ls-files` | `git-status(1)` / `git-ls-files(1)`: exact two-word match at `WORDS[0..1]`; neither subcommand has a write-capable option, so trailing flags are unrestricted. The stat-cache index refresh `git status` may do is an internal bookkeeping write to `.git/`, not reachable file content. Every git config surface that could run code lives in `.git/config` (never checked in); see ## Failure modes. |
-| `node --version`, `python3 --version`, `cargo --version` | Exact match, `WORDS[0..1]` only, nothing after; `--version` prints and exits on every one of these. |
+| `git status`, `git ls-files` | `git-status(1)` / `git-ls-files(1)`: exact two-word match at `WORDS[0..1]`; neither subcommand has a write-capable option, so trailing flags are unrestricted. The stat-cache index refresh `git status` may do is an internal bookkeeping write to `.git/`, not reachable file content. Every git config surface that could run code lives in `.git/config` (git never tracks it; the archive-carried `.git` case is in ## Failure modes). |
 
 `file` fails the criterion (`-C` writes a compiled magic file) and stays in the gated set.
-`printenv` was dropped, see ## Decision Log.
+`printenv` was dropped, see ## Decision Log. The `--version` trio (`node`, `python3`, `cargo`)
+was dropped under the config-loading rule: on this stack all three resolve through
+version-manager shims (mise, rustup) that honor checked-in `.tool-versions` /
+`rust-toolchain.toml` entries; see ## Decision Log.
 
 **Stage E/F, gated tools (explicit safe subcommand/flag allowlist required).** Two rules apply
 to every gated tool's `WORDS[1:]` before the per-tool table below:
@@ -263,7 +292,7 @@ decision to leave them off the allowlist entirely rather than add them as new ca
 `tests/test-hooks.sh` gets one must-not-approve case each (`sed -i s/a/b/ file`, `sort -o
 out.txt file`) proving they fall through purely because Stage D/E never names them, not because
 of any sed/sort-specific logic, plus a source-level grep test (AC5) pinning that neither word
-appears in the hook.
+appears on a code line of the hook (comment lines skipped, so prose cannot trip it).
 
 **Sed/sort, explicitly rejected as new scope:**
 
@@ -288,8 +317,9 @@ appears in the hook.
 | A safe command contains a banned character: a quote (`git log --format="%h %s"`, `find . -name '*.md'`), a backslash, a `$VAR`, a brace group, or any non-ASCII byte | Falls through to the normal prompt | These are exactly the smuggle characters: a quoted, escaped, or expanded `-flag` defeats any text-level leading-`-` check because bash restores the dash at run time. Banning them outright is what makes Stage F's "starts with `-`" test mean anything. The cost is an occasional prompt on a safe command. |
 | An unquoted `*` in a Stage-D command (`ls *.md`, `cat *`) glob-expands to a filename the scan never saw, potentially one literally named like a flag | The planted name lands as a flag to a Stage-D tool | Stage D's admission criterion is "no flag on this tool writes or execs", verified per tool, so a planted flag-looking filename is harmless there. For gated tools `*` is banned outright (Stage F rule 1), so the same trick cannot reach find/git/file. |
 | Commands execute under the harness's non-interactive bash or zsh with default options | Stage B's allowlist is derived from bash/zsh expansion rules | Recorded assumption: a runtime that executes Bash-tool commands under a different grammar (fish, PowerShell, cmd) needs its own review of the character set. Under zsh the only extra expansion the allowlist permits is `=word` at word start, which expands `word` to its absolute path (`=ls` -> `/bin/ls`); it only ever yields a path, never a `-`-token or a second command, so it is harmless. Out of scope beyond bash/zsh. |
-| A checked-in tool config file steers an approved tool (`.prettierrc`, `.prettierrc.js`, `ruff.toml`, `pyproject.toml`, `.npmrc`, `.go-version`-adjacent env files) | An attacker-authored repo file turns a silently approved "read" into a write or code execution, the exact class this spec exists to close | Named as a trust assumption and removed, not patched: the config-loading rule in ## Design drops every such tool (`npm`, `npx`, `ruff`, `go`) from the approved set entirely rather than flag-gating it, because a checked-in config needs no flag at all to rewrite files (`ruff.toml` with `fix = true`) or run code (`.prettierrc.js`). The surviving tools have no checked-in config surface; `git`'s is recorded in the row below. |
-| `git log`/`diff`/`show`/`branch`/`tag` honor the local `.git/config` (`core.pager`, `pager.*`, `include.path`), and a checked-in `.gitattributes` can name a filter or textconv driver | A crafted local pager config would run a program on an auto-approved read | `.git/config` and `.git/hooks` are never checked into a repository, so writing them needs prior local file access, at which point code execution is already in hand. `.gitattributes` can be checked in but only *names* a driver; the driver command itself lives in `.git/config`. The hook cannot modify the command or its environment, it can only approve or abstain; the assumption is recorded, not mitigated. `git -c`/`-C` overrides fall through (not on the safe-flag list). |
+| A checked-in tool config file steers an approved tool (`.prettierrc`, `.prettierrc.js`, `ruff.toml`, `pyproject.toml`, `.npmrc`, `.tool-versions`, `rust-toolchain.toml`, `.go-version`-adjacent env files) | An attacker-authored repo file turns a silently approved "read" into a write or code execution, the exact class this spec exists to close | Named as a trust assumption and removed, not patched: the config-loading rule in ## Design drops every such tool (`npm`, `npx`, `ruff`, `go`) and every version-manager shim (`node`, `python3`, `cargo`) from the approved set entirely rather than flag-gating it, because a checked-in config needs no flag at all to rewrite files (`ruff.toml` with `fix = true`), run code (`.prettierrc.js`), or redirect a shim to a planted binary (`.tool-versions` `path:`). The surviving tools have no checked-in config surface; `git`'s is recorded in the row below. |
+| `git log`/`diff`/`show`/`branch`/`tag` honor the local `.git/config` (`core.pager`, `pager.*`, `core.fsmonitor`, `include.path`), and a checked-in `.gitattributes` can name a filter or textconv driver | A crafted local pager or fsmonitor config would run a program on an auto-approved read | "Never checked in" means git does not track `.git`; it does NOT mean a `.git/config` cannot arrive by other means. An attacker-supplied tarball/zip or a vendored bare repository can carry a live `.git/config` (e.g. `core.fsmonitor` pointing at a script), so `git status` inside an unpacked tree can run code. Writing a config into a repo's own `.git/` still needs prior local file access, at which point code execution is already in hand; the archive case is the residual gap, recorded not mitigated since the hook can only approve or abstain, never inspect the tree. `.gitattributes` can be checked in but only *names* a driver; the driver command itself lives in `.git/config`. `git -c`/`-C` overrides fall through (not on the safe-flag list). |
+| An approved command name resolves to a shell wrapper instead of the standalone binary the criterion was verified against | The wrapper may rewrite flags or add behavior the man-page check never saw | Observed, not hypothetical: the Claude Code zsh shell snapshot shadows `find` with a `bfs` function (base flags `-S dfs -regextype findutils-default`) and `grep` with a `ugrep` function (base flags `-G --ignore-files --hidden -I --exclude-dir=...`), and interactive rc files alias `ls`, `du`, `df`, `type`. Stage D's "no write-capable option" and `find`'s Stage F flag set were verified against the standalone tools; under a wrapper the same flag text reaches a different parser (e.g. ugrep carries `--save-config`, which writes). The snapshot's own `grep` wrapper reroutes `*config*`/`-save-config`-shaped args to `command grep`, which narrows this specific case but does not close the class. Recorded as an environment assumption: the allowlist pins command TEXT, and what the first word resolves to is the harness's contract, not the hook's. |
 | A genuinely malicious command built entirely from safe-looking tokens (an unlisted git subcommand, an unlisted tool) | Falls through | Stage E recognizes only the three gated tools (`find`, `git`, `file`) and their named subcommands; any subcommand outside `{status, ls-files, log, diff, show, branch, remote, tag}` for `git`, or any tool outside the Stage D/E tables entirely, never reaches an approve branch. Same "excluded by omission" property the whole design relies on. |
 
 ## Acceptance criteria
@@ -305,7 +335,8 @@ appears in the hook.
 - AC4: the hook still exits 0 on every one of the ten `COSMETIC_GARBAGE` malformed-JSON shapes
   already pinned in the cosmetic-module block (fail-closed, never crashes).
 - AC5: `sed -i ...` and `sort -o ...` do not auto-approve, and neither `sed` nor `sort` appears
-  as a word anywhere in the rewritten hook source (grep-checkable, pinned by a test).
+  as a word on any code line of the rewritten hook source (comment lines are skipped, so prose
+  cannot trip the check; grep-checkable, pinned by a test).
 
 ## Test plan
 
@@ -353,20 +384,24 @@ No new test file.
 | a33 | `git log *` | case 7: bare glob in gated-tool args |
 | a34 | `find . -name *.md` | case 7: the former group-(b) case, now must-not-approve because the pattern carries `*` |
 | a35 | `cargo check` | dropped approval: writes `target/` and runs build scripts |
-| a36 | `python --version` | dropped approval: only `python3` kept (this stack's interpreter) |
-| a37 | `env` | dropped approval: dumps every env var, secrets included, with no prompt |
-| a38 | `printenv` | dropped approval: same reason |
+| a36 | `python --version` | dropped approval: resolves through a version-manager shim (same class as a50-a52) |
+| a37 | `env` | dropped approval: bulk dump of the whole environment, secrets included, with no prompt |
+| a38 | `printenv` | dropped approval: same bulk-dump reason |
 | a39 | `npx -y prettier --check` | `npx` dropped entirely; this case also pins that `-y` auto-confirm can never ride along |
 | a40 | `git -c core.pager=x log` | git global `-c` config injection; `WORDS[1]` is not an allowed subcommand |
 | a41 | `git -C /tmp log` | git global `-C` chdir flag; same class |
 | a42 | `git log --out=/tmp/paa-test-x2` | unlisted `--out=` write-shaped flag; Stage F excludes by omission (same class as a3) |
 | a43 | `pwd -P` | Stage D `pwd` is exact-match; any trailing token falls through |
-| a44 | `node --version x` | the `--version` trio is exact-match; an extra token falls through |
+| a44 | `node --version x` | `node` is dropped as a shim, so no token arrangement on it approves |
 | a45 | `npm ls` | dropped approval: npm loads checked-in and command-line config (`.npmrc`, `--registry=`, `--cache=`, `--logs-dir=`) |
 | a46 | `npx prettier --check x` | dropped approval: prettier loads checked-in/CLI config and plugins |
 | a47 | `ruff check .` | dropped approval: ruff loads checked-in/CLI config (`ruff.toml`, `pyproject.toml`, `--config=`) |
 | a48 | `go env` | dropped approval: go reads env/flag config surfaces (`GOFLAGS`, `go env -w`) |
 | a49 | `   ` (spaces only, plus an exit-0 assert) | Stage C empty-WORDS guard: `set -u` must not trip, no decision |
+| a50 | `node --version` | dropped approval: mise shim honors a checked-in `.tool-versions` (`path:` entry ran a planted binary in review) |
+| a51 | `python3 --version` | dropped approval: same mise-shim class |
+| a52 | `cargo --version` | dropped approval: rustup proxy honors `rust-toolchain.toml` `path =` |
+| a53 | `git status` + `\u0000` + ` tail-token` (JSON escape in the payload, jq decodes to a real NUL byte) | NUL guard: bash `$( )` drops the NUL, so the scanned CMD would differ from the executed string |
 
 a25-a31 (the `go`/`ruff`/`npx` flag cases) are now closed twice: the specific write flag was
 already unsafe, and the whole tool is dropped from the gated set under the config-loading rule,
@@ -393,29 +428,26 @@ pinned here:**
 | b13 | `file README.md` | Stage F file, no flags |
 | b14 | `git log -n 5` | Stage F `-n` entry |
 | b15 | `git log --format=%h` | Stage F `--format=` prefix; `=` and `%` are Stage-B-legal |
-| b16 | `node --version` | Stage D exact match, `--version` trio |
-| b17 | `python3 --version` | Stage D exact match |
-| b18 | `cargo --version` | Stage D exact match |
-| b19 | `grep -n spec README.md` | Stage D |
-| b20 | `echo hello` | Stage D |
-| b21 | `head -5 README.md` | Stage D |
-| b22 | `tail -5 README.md` | Stage D |
-| b23 | `wc -l README.md` | Stage D |
-| b24 | `which bash` | Stage D |
-| b25 | `type grep` | Stage D |
-| b26 | `stat README.md` | Stage D |
-| b27 | `du -sh .` | Stage D |
-| b28 | `df -h` | Stage D |
+| b16 | `grep -n spec README.md` | Stage D |
+| b17 | `echo hello` | Stage D |
+| b18 | `head -5 README.md` | Stage D |
+| b19 | `tail -5 README.md` | Stage D |
+| b20 | `wc -l README.md` | Stage D |
+| b21 | `which bash` | Stage D |
+| b22 | `type grep` | Stage D |
+| b23 | `stat README.md` | Stage D |
+| b24 | `du -sh .` | Stage D |
+| b25 | `df -h` | Stage D |
 
 **Negative control, run and recorded.** Executed live against the pre-fix
 `hooks/permission-auto-approve.sh` (this worktree, before Stage A-F lands) with the new test
-cases in place. Result: 36 group-(a) assertions go red, every group (b) assertion stays green
-(28/28), and eleven group-(a) assertions pass even pre-fix, each for a documented accidental
+cases in place. Result: 40 group-(a) assertions go red, every group (b) assertion stays green
+(25/25), and eleven group-(a) assertions pass even pre-fix, each for a documented accidental
 reason rather than by design:
 
 | Pre-fix result | Cases | Why |
 |---|---|---|
-| Red (old hook emits `"allow"`) | a1-a9, a18-a38, a42, a44-a48 | The live bypasses: a18-a24 match the old `^find\b.*-name\b`, `^git\s+...`, `^ruff\s+check` patterns once the text-level `-` is hidden; a25-a31 match `^go`, `^ruff`, `^npx`, `^file`; a32-a34 match `^find`/`^git`; a35-a38 match `^cargo`, `^python3?`, `^env$`, `^printenv`; a42 matches `^git\s+log`; a44 matches `^node\s+--version` (no end anchor); a45-a48 match `^npm`, `^npx\s+prettier`, `^ruff`, `^go`. |
+| Red (old hook emits `"allow"`) | a1-a9, a18-a38, a42, a44-a48, a50-a53 | The live bypasses: a18-a24 match the old `^find\b.*-name\b`, `^git\s+...`, `^ruff\s+check` patterns once the text-level `-` is hidden; a25-a31 match `^go`, `^ruff`, `^npx`, `^file`; a32-a34 match `^find`/`^git`; a35-a38 match `^cargo`, `^python3?`, `^env$`, `^printenv`; a42 matches `^git\s+log`; a44, a50-a52 match `^node\s+--version`, `^python3?\s+--version`, `^cargo\s+(--version\|check)` (no end anchor); a45-a48 match `^npm`, `^npx\s+prettier`, `^ruff`, `^go`; a53's NUL is dropped by `$( )`, leaving `git status tail-token`, which matches `^git\s+status`. |
 | Green by accident | a13, a14, a15, a16, a17, a39, a40, a41, a43, a49 (two asserts) | a13: backtick was already in the old chain-guard class. a14: bare parens never matched any old prefix. a15/a16: `sed`/`sort` were never whitelisted. a17: caught only because the literal `;` inside `\;` trips the old guard, not because of `-exec`. a39: `npx -y` never matched `^npx\s+prettier`. a40/a41: the old git patterns require an approved subcommand immediately after `^git\s+`, which `-c`/`-C` do not satisfy. a43: `^pwd$` is already exact. a49: spaces match no whitelist prefix; the hook also exits 0 unharmed, so the new guard only has to hold the line, not fix a crash. |
 
 a10-a12 are informational rows only (already covered by the suite's pre-existing
@@ -456,9 +488,10 @@ portion of group (a) is red against the unpatched hook and all of it is green ag
 today (Group (b)), and no longer auto-approves any of the write/exfiltration shapes found in
 ## Problem: the four named cases, the three audit cases, the whole quote/escape/expansion
 smuggle class, the per-tool write flags on `go`/`ruff`/`npx`/`file`, and glob-expanded planted
-flags. `env`, `printenv`, `cargo check`, `python --version`, `npm`, `npx`, `ruff`, and `go`
-lose their auto-approval entirely, the last four under the config-loading rule (see
-## Decision Log); `file` stays in the gated set. The hook still never emits a deny decision; a
+flags. `env`, `printenv`, `cargo check`, `python --version`, the `--version` trio (`node`,
+`python3`, `cargo`), `npm`, `npx`, `ruff`, and `go` lose their auto-approval entirely: the last
+four and the trio under the config-loading rule (the trio resolve through version-manager
+shims; see ## Decision Log); `file` stays in the gated set. The hook still never emits a deny decision; a
 command it cannot positively confirm as read-only falls through to the normal Claude Code
 permission prompt instead. `sed` and `sort` remain absent from the approved set, unchanged from
 today's behavior, now with a regression test proving it stays that way.
@@ -501,21 +534,21 @@ Not covered:
   file named `-delete`/`--fix`/`--output` becomes a live flag on expansion. Stage D tools keep
   `*` because their admission criterion (no write-capable flag exists) makes a planted flag
   harmless.
-- Chose to drop `env` and `printenv` from the approved set: both dump every environment
-  variable, secrets included, with zero user visibility, and a security-hardening pass is the
-  wrong place to keep silent secret reads for marginal convenience. Reversible in a follow-up
-  if the prompts annoy (see `Not covered`).
+- Chose to drop `env` and `printenv` from the approved set: both emit a bulk dump of the whole
+  environment, secrets included, with zero user visibility, and a security-hardening pass is
+  the wrong place to keep silent secret reads for marginal convenience. Reversible in a
+  follow-up if the prompts annoy (see `Not covered`).
 - Chose to drop `cargo check` (writes `target/` and executes `build.rs` build scripts, so it
-  was never read-only) and `python --version` (this stack uses `python3`; narrowing rather than
-  keeping a second interpreter entry nobody invokes). Both were approved by the old regexes;
-  the drop is recorded so the extra prompts are explainable.
+  was never read-only). Approved by the old regexes; the drop is recorded so the extra prompt
+  is explainable. `python --version` moved into the version-manager-shim drop recorded in the
+  config-loading entry below.
 - Chose to leave `sed`/`sort` off the allowlist entirely (proven by a must-not-approve test and
   the AC5 source grep) rather than add flag-gated entries for them, since neither has ever been
   part of the hook's approved surface; adding new approved tools is out of scope for a
   hardening fix.
-- Chose exact, zero-argument matches for `pwd` and the `--version` trio (`node`, `python3`,
-  `cargo`) over allowing trailing flags, carrying forward the current hook's existing `^pwd$`
-  exactness rather than loosening it while rewriting everything around it.
+- Chose an exact, zero-argument match for `pwd` over allowing trailing flags, carrying forward
+  the current hook's existing `^pwd$` exactness rather than loosening it while rewriting
+  everything around it.
 - Chose to keep the safe-flag lists for `git log`/`diff`/`show` deliberately short (covering the
   pre-existing must-still-approve baseline plus a handful of obviously-safe additions like `-n`)
   rather than exhaustive, and named the gap explicitly in `Not covered`: the cost of an
@@ -527,8 +560,14 @@ Not covered:
   --config=fix=true` and a checked-in `fix = true` rewrite files, `npm --logs-dir=`/`--cache=`
   write, `--registry=` sends requests, `go env -w` persists config). The rule replacing the
   flag lists is categorical: a tool that can load checked-in or command-line config or plugins
-  is never auto-approved. `git` is the named exception because every config surface that can
-  make it run code or write lives in `.git/config` or `.git/hooks`, never checked in. The four
-  dropped tools fall through to the normal prompt; recorded so the extra prompts are
-  explainable, and reversible per-tool in a follow-up if a config-free invocation class is ever
-  worth scoping.
+  is never auto-approved. A third review round put `node --version`, `python3 --version`,
+  `python --version`, and `cargo --version` under the same rule: on this stack `node` and
+  `python3` resolve to mise shims and `cargo` to the rustup proxy, and each honors checked-in
+  config. Reproduced live: a checked-in `.tool-versions` containing `node path:./ntc` made
+  `node --version` execute a planted binary; `rust-toolchain.toml`'s `path =` steers the rustup
+  proxy the same way. A version-manager shim is a config-loading tool, so no flag shape is
+  enumerated, the whole name is dropped. `git` is the named exception because every config
+  surface that can make it run code or write lives in `.git/config` or `.git/hooks`, which git
+  never tracks (the archive-carried `.git` case is recorded in ## Failure modes). The dropped
+  tools fall through to the normal prompt; recorded so the extra prompts are explainable, and
+  reversible per-tool in a follow-up if a config-free invocation class is ever worth scoping.

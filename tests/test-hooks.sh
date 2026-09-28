@@ -703,13 +703,27 @@ OUTPUT=$(echo '{"tool_name":"Bash","tool_input":{"command":"cargo check"}}' | ba
 assert_output_not_contains "does not approve cargo check (writes target/, runs build scripts)" '"allow"' "$OUTPUT"
 
 OUTPUT=$(echo '{"tool_name":"Bash","tool_input":{"command":"python --version"}}' | bash "$KIT_DIR/hooks/permission-auto-approve.sh" 2>/dev/null)
-assert_output_not_contains "does not approve python --version (only python3 kept)" '"allow"' "$OUTPUT"
+assert_output_not_contains "does not approve python --version (version-manager shim, dropped)" '"allow"' "$OUTPUT"
+
+# Group (a) continued: the --version trio is dropped. node/python3 resolve through mise
+# shims and cargo through the rustup proxy; a checked-in .tool-versions or
+# rust-toolchain.toml steers the shim (a config-loading surface), so no --version form
+# is auto-approved.
+
+OUTPUT=$(echo '{"tool_name":"Bash","tool_input":{"command":"node --version"}}' | bash "$KIT_DIR/hooks/permission-auto-approve.sh" 2>/dev/null)
+assert_output_not_contains "does not approve node --version (mise shim loads checked-in .tool-versions)" '"allow"' "$OUTPUT"
+
+OUTPUT=$(echo '{"tool_name":"Bash","tool_input":{"command":"python3 --version"}}' | bash "$KIT_DIR/hooks/permission-auto-approve.sh" 2>/dev/null)
+assert_output_not_contains "does not approve python3 --version (mise shim loads checked-in .tool-versions)" '"allow"' "$OUTPUT"
+
+OUTPUT=$(echo '{"tool_name":"Bash","tool_input":{"command":"cargo --version"}}' | bash "$KIT_DIR/hooks/permission-auto-approve.sh" 2>/dev/null)
+assert_output_not_contains "does not approve cargo --version (rustup proxy honors rust-toolchain.toml)" '"allow"' "$OUTPUT"
 
 OUTPUT=$(echo '{"tool_name":"Bash","tool_input":{"command":"env"}}' | bash "$KIT_DIR/hooks/permission-auto-approve.sh" 2>/dev/null)
-assert_output_not_contains "does not approve env (dumps all env vars incl. secrets)" '"allow"' "$OUTPUT"
+assert_output_not_contains "does not approve env (bulk dump of the whole environment)" '"allow"' "$OUTPUT"
 
 OUTPUT=$(echo '{"tool_name":"Bash","tool_input":{"command":"printenv"}}' | bash "$KIT_DIR/hooks/permission-auto-approve.sh" 2>/dev/null)
-assert_output_not_contains "does not approve printenv (dumps all env vars incl. secrets)" '"allow"' "$OUTPUT"
+assert_output_not_contains "does not approve printenv (bulk dump of the whole environment)" '"allow"' "$OUTPUT"
 
 OUTPUT=$(echo '{"tool_name":"Bash","tool_input":{"command":"npx -y prettier --check"}}' | bash "$KIT_DIR/hooks/permission-auto-approve.sh" 2>/dev/null)
 assert_output_not_contains "does not approve npx -y prettier (auto-confirms install)" '"allow"' "$OUTPUT"
@@ -732,7 +746,7 @@ OUTPUT=$(echo '{"tool_name":"Bash","tool_input":{"command":"pwd -P"}}' | bash "$
 assert_output_not_contains "does not approve pwd -P (pwd is exact-match only)" '"allow"' "$OUTPUT"
 
 OUTPUT=$(echo '{"tool_name":"Bash","tool_input":{"command":"node --version x"}}' | bash "$KIT_DIR/hooks/permission-auto-approve.sh" 2>/dev/null)
-assert_output_not_contains "does not approve node --version x (--version trio is exact-match)" '"allow"' "$OUTPUT"
+assert_output_not_contains "does not approve node --version x (node dropped as a shim; extra token never approves)" '"allow"' "$OUTPUT"
 
 # A spaces-only command passes the non-empty check and the character allowlist but yields an
 # empty WORDS[]; the Stage C guard must fall through without tripping set -u.
@@ -742,6 +756,13 @@ assert_exit "spaces-only command exits 0 (empty WORDS guard)" 0 $RC
 
 OUTPUT=$(echo '{"tool_name":"Bash","tool_input":{"command":"   "}}' | bash "$KIT_DIR/hooks/permission-auto-approve.sh" 2>/dev/null)
 assert_output_not_contains "does not approve a spaces-only command" '"allow"' "$OUTPUT"
+
+# Group (a) continued: input fidelity. jq -r emits a real NUL for a \u0000 escape and bash
+# command substitution drops NUL bytes silently, so CMD would differ from the command the
+# runtime executes. The raw decoded command must never contain a NUL.
+
+OUTPUT=$(echo '{"tool_name":"Bash","tool_input":{"command":"git status\\u0000 tail-token"}}' | bash "$KIT_DIR/hooks/permission-auto-approve.sh" 2>/dev/null)
+assert_output_not_contains "does not approve a command with an embedded NUL escape" '"allow"' "$OUTPUT"
 
 # Group (a) continued: config-loading tools dropped entirely. A checked-in or command-line
 # config can turn a "read" into a write or code execution, so flag lists were replaced by
@@ -759,15 +780,16 @@ assert_output_not_contains "does not approve ruff check . (ruff loads checked-in
 OUTPUT=$(echo '{"tool_name":"Bash","tool_input":{"command":"go env"}}' | bash "$KIT_DIR/hooks/permission-auto-approve.sh" 2>/dev/null)
 assert_output_not_contains "does not approve go env (go reads env/flag config surfaces)" '"allow"' "$OUTPUT"
 
-# AC5: neither sed nor sort may appear as a word anywhere in the hook source, so a future
-# edit that adds a loose ^sed or ^sort entry is caught.
+# AC5: neither sed nor sort may appear as a word on any code line in the hook source, so
+# a future edit that adds a loose ^sed or ^sort entry is caught. Comment lines are
+# skipped: the check pins code, not prose.
 
-if grep -qwE 'sed|sort' "$KIT_DIR/hooks/permission-auto-approve.sh" 2>/dev/null; then
+if grep -vE '^[[:space:]]*#' "$KIT_DIR/hooks/permission-auto-approve.sh" | grep -qwE 'sed|sort'; then
   PAA_NAMES=1
 else
   PAA_NAMES=0
 fi
-assert_true "hook source names neither sed nor sort (AC5)" "$PAA_NAMES"
+assert_true "hook source names neither sed nor sort on a code line (AC5)" "$PAA_NAMES"
 
 # Group (b): must-still-approve. Guards against "fixed by turning every read into a prompt."
 # git status / git log --oneline -5 / ls -la are already asserted above; not repeated here.
@@ -809,15 +831,6 @@ OUTPUT=$(echo '{"tool_name":"Bash","tool_input":{"command":"git log --format=%h"
 assert_output_contains "still approves git log --format=%h" '"allow"' "$OUTPUT"
 
 # Group (b) continued: every remaining Stage D entry gets one pin.
-
-OUTPUT=$(echo '{"tool_name":"Bash","tool_input":{"command":"node --version"}}' | bash "$KIT_DIR/hooks/permission-auto-approve.sh" 2>/dev/null)
-assert_output_contains "still approves node --version" '"allow"' "$OUTPUT"
-
-OUTPUT=$(echo '{"tool_name":"Bash","tool_input":{"command":"python3 --version"}}' | bash "$KIT_DIR/hooks/permission-auto-approve.sh" 2>/dev/null)
-assert_output_contains "still approves python3 --version" '"allow"' "$OUTPUT"
-
-OUTPUT=$(echo '{"tool_name":"Bash","tool_input":{"command":"cargo --version"}}' | bash "$KIT_DIR/hooks/permission-auto-approve.sh" 2>/dev/null)
-assert_output_contains "still approves cargo --version" '"allow"' "$OUTPUT"
 
 OUTPUT=$(echo '{"tool_name":"Bash","tool_input":{"command":"grep -n spec README.md"}}' | bash "$KIT_DIR/hooks/permission-auto-approve.sh" 2>/dev/null)
 assert_output_contains "still approves grep -n spec README.md" '"allow"' "$OUTPUT"
