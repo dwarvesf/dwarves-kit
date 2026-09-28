@@ -1,7 +1,7 @@
 # Spec: harvest sweep, a scheduled multi-agent distill job
 
 Generated: 2026-09-29
-Status: DRAFT
+Status: APPROVED (operator, kit:spec step 4; validation pending)
 Lane: full
 Type: spec-feature
 File: `docs/specs/SPEC-357-harvest-sweep.md`
@@ -48,7 +48,7 @@ Approach 1. Code owns everything that must be exact (which sessions, how many, w
         |
         |  STAGE 1 (deterministic, Haiku per session)
         |    cursor.json --> adapters: claude | devin | codex --> normalized transcripts
-        |                          (optional) worker-launch record --> lead attribution
+        |    (optional) ~/.local/state/worker-launch/launches.jsonl --> lead attribution
         |    per session: extractor --> learnings  --> _stage_candidates (shared w/ hook)
         |                           --> sightings  --> patterns.jsonl
         |    aggregate sightings (occurrences >= min_pattern_count) --> manifest.json
@@ -109,7 +109,7 @@ See `## Picture` (component view). Cursor lifecycle per source:
 
 No new ADR exists. Two decisions are lasting and need one at ship:
 
-- A second kit LaunchAgent beside `kit-weekly`. ADR-0034 decision 9 chose ONE kit scheduler and rejected a plist per job. This spec deviates because the cadence differs (every 6h against a fixed weekly slot). It needs an amendment to ADR-0034 or a new ADR (open question 2).
+- A second kit LaunchAgent beside `kit-weekly`. ADR-0034 decision 9 chose ONE kit scheduler and rejected a plist per job. This spec deviates because the cadence differs (every 6h against a fixed weekly slot). T6 amends ADR-0034 to record the exception (DEC-12).
 - `wrap.distill` becomes a three-value knob and the distill half moves out of wrap when set to `harvest`.
 
 ### Boundaries & failure modes
@@ -135,18 +135,19 @@ The sweep reads transcripts outside any repo and writes into repos only through 
 | Source | Session unit | last_activity | Keep | Drop |
 |---|---|---|---|---|
 | claude | `~/.claude/projects/<slug>/<id>.jsonl`; each `<id>/subagents/agent-*.jsonl` is its own session with `lead_session_id = <id>` | file mtime | `type` user/assistant, `text` blocks; `tool_use` as `tool: <name> <input, 200 chars>` | everything else. Reuses `parse_transcript.iter_entries`. |
-| devin | row of `sessions` in `~/.local/share/devin/cli/sessions.db`, opened read-only (`mode=ro` URI) | `sessions.last_activity_at` (epoch seconds) | `message_nodes.chat_message` JSON roles user, assistant, tool: `content` plus `tool_calls` names | role `system` (injected rules). Chain: walk `parent_node_id` up from `sessions.main_chain_id`; fall back to all nodes by `node_id` when null (open question 7). |
-| codex | `~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl`, id from the `session_meta` line | file mtime | `response_item` with `payload.type == "message"`, roles user and assistant, `input_text`/`output_text` blocks | role `developer`; user blocks that open with `<` (tag-wrapped injected context) or `# AGENTS.md instructions`; `reasoning`, `event_msg`, `turn_context`, `world_state`, token records. Verified against one local `codex exec` rollout (cli 0.156.1), see open question 8. |
+| devin | row of `sessions` in `~/.local/share/devin/cli/sessions.db`, opened read-only (`mode=ro` URI) | `sessions.last_activity_at` (epoch seconds) | `message_nodes.chat_message` JSON roles user, assistant, tool: `content` plus `tool_calls` names | role `system` (injected rules). Chain: walk `parent_node_id` up from `sessions.main_chain_id`; fall back to all nodes by `node_id` when null; a fixture pins the choice (DEC-16). |
+| codex | `~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl`, id from the `session_meta` line | file mtime | `response_item` with `payload.type == "message"`, roles user and assistant, `input_text`/`output_text` blocks | role `developer`; user blocks that open with `<` (tag-wrapped injected context) or `# AGENTS.md instructions`; `reasoning`, `event_msg`, `turn_context`, `world_state`, token records. Verified against one local `codex exec` rollout (cli 0.156.1) only, so `codex` stays out of the default `sources` until T7 checks an interactive rollout (DEC-17). |
 
 A session with fewer than `min_messages` kept messages (user plus assistant, tool excluded) is marked done and skipped with no extractor call.
 
-**Launch record** (optional input, `harvest.launch_record` path, one JSON object per line, written by `ops-toolkit/tools/worker-launch`, which does not write it yet):
+**Launch record** (optional input, shipped in ops-toolkit #3631, `d43a81b`). `tools/worker-launch` appends one JSON object per launch to `~/.local/state/worker-launch/launches.jsonl` (the `harvest.launch_record` default):
 
 ```
-{"ts": epoch_s, "agent": "devin|codex|claude", "handle": str, "brief": path, "cwd": path, "lead_session_id": str|null}
+{"ts": "<UTC ISO>", "agent": str, "mode": "tui|print", "handle": str|null, "title": str,
+ "brief": path, "brief_copy": path, "cwd": path, "lead_session": str|null}
 ```
 
-A worker session with no `lead_session_id` of its own gets one when a record matches on agent, cwd, and `ts` within 120s of the session's `started`. No file, or no match, leaves it null. The sweep never fails on this input.
+Attribution applies to a worker session with no `lead_session_id` of its own (claude subagents already carry one). A record matches when its `agent` equals the session's source and its `brief` or `brief_copy` path appears in the session's first kept user message; the session then takes the record's `lead_session`. When several records match, the one whose `ts` is nearest the session's `started` wins. When no record matches this way, the fallback is a record with the same `agent` and `cwd` whose `ts` falls within 120s of `started`. No file, a malformed line, or no match leaves `lead_session_id` null. The sweep never fails on this input.
 
 **Sweep extractor prompt** (`PROMPT_SWEEP` in harvest.py, same `HARVEST_EXTRACTOR` seam). It returns one JSON object:
 
@@ -186,7 +187,7 @@ HARVEST_SWEEP_CHILD=1 claude -p "$(render hooks/harvest-sweep-prompt.md)" \
   --settings <kit>/hooks/harvest-sweep-settings.json --permission-mode bypassPermissions
 ```
 
-Never `--bare` (it skips keychain reads and breaks auth). `HARVEST_SWEEP_DISTILL_CMD` overrides the whole command for tests. harvest.py runs it with a `distill_timeout_minutes` timeout. `harvest-sweep-settings.json` wires the kit's enforcement hooks (safety-gate, ship-gate, push-to-main blocker, commit-format, secrets-guard) and no PreCompact, SessionEnd, or Stop harvest hook. That keeps the hooks a user-settings session would get without loading the user settings that carry the harvest hook (open question 1).
+Never `--bare` (it skips keychain reads and breaks auth). `HARVEST_SWEEP_DISTILL_CMD` overrides the whole command for tests. harvest.py runs it with a `distill_timeout_minutes` timeout. `harvest-sweep-settings.json` wires the kit's enforcement hooks (safety-gate, ship-gate, push-to-main blocker, commit-format, secrets-guard) and no PreCompact, SessionEnd, or Stop harvest hook. That keeps the hooks a user-settings session would get without loading the user settings that carry the harvest hook. The prompt calls kit scripts by absolute path and never a `/kit:*` slash command, because project-only sources may not load the kit plugin. T7 verifies that flag settings load under project-only sources and that ship-gate fires on a test push (DEC-11).
 
 **The distill prompt** (`hooks/harvest-sweep-prompt.md`) points at `commands/wrap.md` by absolute kit path and names the steps to run. It does not restate them:
 
@@ -206,9 +207,9 @@ New kit state under `$HARVEST_STATE_DIR/sweep/` (table above). No repo file form
 
 ### API changes
 
-- `harvest.sh --sweep [--dry-run] [--since <iso>] [--source <name>]`. `--dry-run` runs stage 1 with the extractor, prints the manifest, and writes nothing (no cursor, no ledger, no patterns). `--since` sets a one-off hwm for a manual backfill. `--source` limits the run to one adapter.
+- `harvest.sh --sweep [--dry-run] [--since <iso>] [--source <name>]`. With no cursor, the first run starts `schedule_hours` back and backfills nothing (DEC-18). `--dry-run` runs stage 1 with the extractor, prints the manifest, and writes nothing (no cursor, no ledger, no patterns). `--since` sets a one-off hwm for a manual backfill. `--source` limits the run to one adapter.
 - `harvest.sh` (every auto mode: no-arg, `--lab-log`, `--stop-trigger`) exits 0 without work when `HARVEST_SWEEP_CHILD=1`, or when `harvest.enable` is true and `harvest.hook_when_sweep_on` is false. `--cleanup` and `--sweep` are unaffected. The shim reads both keys with `kit_config_get_root`.
-- `/kit:wrap`: `wrap.distill` accepts `true`, `false`, or `harvest`. `harvest` runs the landing half, reads no seam key, and reports `**Built:** SKIPPED: distill runs in the harvest sweep` and `**Seam:** SKIPPED: distill runs in the harvest sweep`, plus one `FYI` `STATE` row naming the knob. The word `distill` in the invocation still runs the distill half for that one run (open question 5).
+- `/kit:wrap`: `wrap.distill` accepts `true`, `false`, or `harvest`. `harvest` runs the landing half, reads no seam key, and reports `**Built:** SKIPPED: distill runs in the harvest sweep` and `**Seam:** SKIPPED: distill runs in the harvest sweep`, plus one `FYI` `STATE` row naming the knob. The word `distill` in the invocation wins for that one run: the distill half runs, and the report's `FYI` carries a `STATE` row saying the sweep will also see this session (DEC-15).
 - `lib/wrap/report-lint.sh`: a report whose first `## ` line opens `## Harvest sweep:` gets the follow-through report's full-lane rule (a `lane=full` item may close `verified: ..., #<pr> DRAFT` when a `REVIEW #<pr>` item names the same PR). It still owes `**Seam:**`. `SKIPPED: distill runs in the harvest sweep` passes on both lines. It passes today; a fixture pins it.
 
 ### UI changes
@@ -236,7 +237,7 @@ build_lanes = ""             # empty = inherit wrap.build_lanes; full always goe
 max_builds_per_run = 3       # builds of every lane per run; the rest are REPORTED
 model = "sonnet"             # stage-2 session model; stage 1 stays on the HARVEST_EXTRACTOR default
 distill_timeout_minutes = 90 # stage-2 wall clock
-launch_record = ""           # optional worker-launch jsonl path
+launch_record = "~/.local/state/worker-launch/launches.jsonl"  # optional; missing file = no attribution
 hook_when_sweep_on = false   # true = the per-session hook keeps running while the sweep is on
 ```
 
@@ -244,7 +245,7 @@ Launchd deploy under `deploy/macos/harvest-sweep/`, copying `lib/sync/deploy/mac
 
 - `harvest-sweep`: the launcher. `#!/bin/bash`, no `.sh`, launchd-safe PATH, optional `~/.config/harvest-sweep/env`, re-reads `harvest.enable` each run, logs start and end with rc, runs `hooks/harvest.sh --sweep`, then runs `~/.config/harvest-sweep/bridge <rc> <report-path>` best-effort.
 - `harvest-sweep.plist.tmpl`: `ProgramArguments[0]` is the launcher's absolute path. Rendered `__LABEL__`, `__KIT__`, `__HOME__`, `__INTERVAL__`.
-- `install [--label L] [--apply]`: dry run by default, `--label` defaults to `harvest-sweep`. The Mini installs `mini.harvest-sweep` (open question 3). It refuses when `harvest.enable` is not true, the same gate board-sync's installer applies.
+- `install [--label L] [--apply]`: dry run by default, `--label` defaults to `harvest-sweep`. The Mini installs `mini.harvest-sweep`, a prefix already in vps-mon's `OWNED_PREFIXES` (DEC-13). It refuses when `harvest.enable` is not true, the same gate board-sync's installer applies.
 
 Monitoring (consumer side, ops-toolkit): the Mini's bridge pings the vps-mon heartbeat on rc 0. The heartbeat URL lives in `/etc/vps-mon/harvest-sweep-heartbeat-url`, `hb_id` is the discovered label, the interval is `schedule_hours` and the grace is 2x. The catalog link follows `job-monitoring-onboarding`. The kit ships no endpoint or secret.
 
@@ -253,18 +254,18 @@ Monitoring (consumer side, ops-toolkit): the Mini's bridge pings the vps-mon hea
 ### Phase 1: Foundation
 
 - [ ] T1: factor `_stage_candidates` out of `_harvest_payload`; add the `(ok, stdout)` extractor variant for sweep use. AC: every existing harvest test in `tests/test-hooks.sh` passes unchanged.
-- [ ] T2: `hooks/harvest_sources.py` with the claude, devin, and codex adapters, the min-messages skip, and launch-record attribution; fixtures under `tests/fixtures/harvest-sweep/` (a claude project dir with one subagent file, a devin db built by a fixture script, the codex rollout shape). AC: each adapter yields the normalized shape, drops the listed roles and blocks, and attributes the subagent to its lead.
+- [ ] T2: `hooks/harvest_sources.py` with the claude, devin, and codex adapters, the min-messages skip, and launch-record attribution (brief match first, agent + cwd + 120s window as fallback); fixtures under `tests/fixtures/harvest-sweep/` (a claude project dir with one subagent file, a devin db built by a fixture script with a branched message forest, the codex rollout shape, a `launches.jsonl`). AC: each adapter yields the normalized shape, drops the listed roles and blocks, and attributes the subagent to its lead; the devin fixture pins the main-chain walk.
 - [ ] T3: `harvest.py sweep` stage 1: cursor, selection, extraction, sweep ledger, `patterns.jsonl`, aggregation, manifest, `--dry-run`, `--since`, `--source`, single-flight lock. AC: the cursor tests in `## Test plan` pass.
 
 ### Phase 2: Core
 
 - [ ] T4: stage 2: `hooks/harvest-sweep-prompt.md`, `hooks/harvest-sweep-settings.json`, the spawn with `HARVEST_SWEEP_CHILD=1`, the timeout, the pending-manifest resume, the skip when nothing is new. AC: a stub distill command sees `--setting-sources project` and `--settings`, never `--bare`, and is not invoked on an empty manifest.
 - [ ] T5: `[harvest]` table in `kit.toml`; the `harvest.sh` gate; `deploy/macos/harvest-sweep/` launcher, template, and installer. AC: gate tests pass; `install` dry run renders a plist whose `ProgramArguments[0]` is the launcher path.
-- [ ] T6: `commands/wrap.md` `distill = "harvest"`; `lib/wrap/report-lint.sh` sweep heading; MANUAL.md and the `[wrap]` comment in `kit.toml`; ADR-0034 amendment. AC: lint fixtures pass, test-meta asserts the wrap string.
+- [ ] T6: `commands/wrap.md` `distill = "harvest"` (and the explicit `distill` word winning for one run); `lib/wrap/report-lint.sh` sweep heading; MANUAL.md and the `[wrap]` comment in `kit.toml`; an ADR-0034 amendment recording the second LaunchAgent. AC: lint fixtures pass, test-meta asserts the wrap string.
 
 ### Phase 3: Rollout
 
-- [ ] T7: Mini, consumer side in ops-toolkit: bridge script, heartbeat provision, catalog link, `install --label mini.harvest-sweep --apply` with `enable = false`. Then three manual `--sweep --dry-run` runs; compare manifests against a hand review of the same sessions. AC: vps-mon shows the job monitored, not gap.
+- [ ] T7: Mini, consumer side in ops-toolkit: bridge script, heartbeat provision, catalog link, `install --label mini.harvest-sweep --apply` with `enable = false`. Verify that a `--settings` file loads under `--setting-sources project` and that ship-gate refuses a test push from a spawned session. Check one interactive Codex rollout against the adapter before adding `codex` to `sources`. Then three manual `--sweep --dry-run` runs; compare manifests against a hand review of the same sessions. AC: vps-mon shows the job monitored, not gap.
 - [ ] T8: set `enable = true` and `wrap.distill = "harvest"` in the Mini operator `kit.toml` after the dry runs agree. AC: two consecutive scheduled runs report clean lint, a gate-ledger line, and a heartbeat ping.
 
 ## After state
@@ -277,7 +278,7 @@ Monitoring (consumer side, ops-toolkit): the Mini's bridge pings the vps-mon hea
 
 ## Acceptance Criteria (global)
 
-- [ ] AC1: adapters. Each fixture source yields the normalized shape. Devin `system` rows, Codex `developer` rows and injected user blocks are absent from `messages`. A claude subagent session carries its lead's id.
+- [ ] AC1: adapters. Each fixture source yields the normalized shape. Devin `system` rows, Codex `developer` rows and injected user blocks are absent from `messages`. A claude subagent session carries its lead's id. A devin worker whose first user message names a record's `brief` takes that record's `lead_session`; with no brief match, the agent + cwd + 120s fallback applies; with neither, it stays null.
 - [ ] AC2: idempotency. Running `--sweep` twice over the same fixtures leaves the sweep ledger, `patterns.jsonl`, and `proposed.jsonl` byte-identical after the second run.
 - [ ] AC3: crash safety. Killing the sweep after a session's staging and before its cursor write, then re-running, stages no duplicate row and double-counts no sighting. No session between the old and new hwm is skipped.
 - [ ] AC4: extractor failure. A stub extractor that exits 1 leaves `cursor.json` unchanged and the run exits non-zero, so the bridge gets a non-zero rc.
@@ -295,7 +296,8 @@ Outline. `/kit:test-plan` expands it into the coverage matrix.
 
 | Area | Case | Kind |
 |---|---|---|
-| adapters | one fixture per source; role and injected-block drops; subagent lead; trivial-session skip; unreadable db or file skips the source with a log line | unit |
+| adapters | one fixture per source; role and injected-block drops; subagent lead; devin main-chain walk and null fallback; trivial-session skip; unreadable db or file skips the source with a log line | unit |
+| attribution | brief match; fallback window match; nearest-ts tie; malformed line; missing file | unit |
 | cursor | first run window; second run empty; resumed session (newer last_activity) re-read and replacing its own sightings; tie on last_activity; crash between staging and cursor write | unit |
 | extractor | failure stops the run with cursor untouched; non-JSON output counts as failure; empty arrays count as success | unit |
 | aggregation | 2 vs 3 occurrences; in-session count; `ask`; window expiry; already proposed | unit |
@@ -351,8 +353,8 @@ Rollout proof (T7, T8): the three dry-run manifests, `launchctl print` for the l
 - Replacing `session-audit` (weekly deep audit, Claude only, staging output) or `session-intel repeat` (deterministic bash 3-grams). They stay on kit-weekly. The sweep may reuse `repeat_detect` later; this spec does not.
 - `bin/reflect`, which proposes from gate and run ledgers, not transcripts.
 - Adapters beyond claude, devin, and codex (Gemini, opencode, omp). Each is a later one-function change.
-- Writing the launch record in `ops-toolkit/tools/worker-launch`. That lives in ops-toolkit; the sweep only reads it.
-- LAB_LOG drafts from the sweep (open question 4).
+- Changing the launch record. ops-toolkit #3631 owns its format; the sweep only reads it.
+- LAB_LOG drafts from the sweep. The hook's `--lab-log` draft stops with the hook (DEC-3), and wrap step 6's activity line covers the session record (DEC-14).
 - Any board row. The sweep follows wrap: a candidate not built is reported, never filed.
 - Linux or systemd scheduling. The kit's scheduled jobs are macOS LaunchAgents today.
 - Auto-enabling. `enable` ships false.
@@ -369,16 +371,17 @@ Rollout proof (T7, T8): the three dry-run manifests, `launchctl print` for the l
 - DEC-8: a pattern needs `min_pattern_count` occurrences (in-session counts included, matching wrap step 7b's "three or more times" rule) before it is built. An operator `ask` needs one.
 - DEC-9: every `[harvest]` key resolves root-only (`kit_config_get_root`), the same reason as wrap's autonomy knobs: it authorizes writes.
 - DEC-10: `sources` defaults to `claude`. Sending another agent's transcripts to Haiku is a new data path and an explicit operator choice.
+- DEC-11 (operator): stage 2 runs with a sweep settings file that wires only the enforcement hooks, and the prompt calls kit scripts by absolute path. T7 verifies ship-gate still fires.
+- DEC-12 (operator): a separate LaunchAgent, not a `jobs.txt` line, because the cadence differs from kit-weekly. T6 amends ADR-0034 decision 9. Rejected: per-job intervals in kit-weekly.
+- DEC-13 (operator): the installer takes `--label` (default `harvest-sweep`); the Mini installs `mini.harvest-sweep`.
+- DEC-14 (operator): the sweep drafts no LAB_LOG entry.
+- DEC-15 (operator): an explicit `distill` word in `/kit:wrap` wins over `wrap.distill = "harvest"` for that run.
+- DEC-16 (operator): the devin adapter walks `parent_node_id` up from `sessions.main_chain_id` and falls back to all nodes by `node_id`; a fixture pins it.
+- DEC-17 (operator): `codex` stays out of the default `sources` until an interactive rollout is verified.
+- DEC-18 (operator): with no cursor, the first run starts `schedule_hours` back; `--since` covers a manual backfill.
+- DEC-19 (resolved upstream): attribution reads the worker-launch record from ops-toolkit #3631 (`d43a81b`). A brief-path match comes first; agent + cwd + a 120s start window is only the fallback.
+- DEC-20 (operator): the sweep's gate-ledger rid is `harvest-sweep-<run-id>`. It is never pushed, so ship-gate never looks for it; each build keeps its own branch rid.
 
 ## Open questions
 
-1. `--setting-sources project` also drops the user-level kit hooks (ship-gate, commit-format, safety-gate) and may drop the kit plugin's `/kit:*` commands. Recommended: pass `--settings hooks/harvest-sweep-settings.json` wiring the enforcement hooks only, and have the prompt use kit scripts by absolute path, never slash commands. Verify in T7 that flag settings load under project-only sources and that ship-gate fires on a test push.
-2. ADR-0034 decision 9 says one kit scheduler. Recommended: a separate LaunchAgent (the cadence differs from kit-weekly's weekly calendar slot) plus an ADR-0034 amendment in T6. The alternative is per-job intervals in `jobs.txt`, which turns kit-weekly into a cron engine.
-3. The label prefix. Recommended: the template renders `__LABEL__`, `install --label` defaults to `harvest-sweep`, and the Mini installs `mini.harvest-sweep`, a prefix already in vps-mon's `OWNED_PREFIXES`.
-4. The hook's `--lab-log` SessionEnd draft also stops under DEC-3. Recommended: the sweep drafts no LAB_LOG entry; wrap step 6's activity line covers it.
-5. `/kit:wrap distill` when `wrap.distill = "harvest"`. Recommended: the explicit word wins for that run, and the report's `FYI` says the sweep will see the same session.
-6. The first run with no cursor. Recommended: `hwm = now - schedule_hours`, no backfill, and `--since` for a one-off manual backfill.
-7. Devin's `sessions.main_chain_id` looks like the leaf node of the active branch (it sits one or two below `max(node_id)` in live rows). Recommended: walk `parent_node_id` up from it, fall back to all nodes by `node_id`, and pin the choice with a fixture.
-8. Codex format was verified from one local `codex exec` rollout (cli 0.156.1). Recommended: the adapter skips unknown line types, and codex stays out of `sources` until an interactive rollout is checked in T7.
-9. worker-launch writes no launch record today, and a Devin session id may not equal the launch `handle`. Recommended: match on agent, cwd, and a 120s start window; ops-toolkit adds the record as a separate change.
-10. The sweep's gate-ledger rid. `gate-ledger.sh rid` refuses without a branch. Recommended: the synthetic `harvest-sweep-<run-id>` for the run record. It is never pushed, so ship-gate never looks for it, and each build keeps its own branch rid.
+(none; the ten design questions were resolved at approval, see DEC-11 to DEC-20)
