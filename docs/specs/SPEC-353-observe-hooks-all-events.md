@@ -1,7 +1,7 @@
 # Spec: session observe hooks counts every hook event, not just Stop
 
 Generated: 2026-09-28
-Status: DRAFT (branch `feat/observe-all-hook-events`), revised after Validate round 1 (NEEDS REVISION, 2 critical, 6 warnings) and round 2 (NEEDS REVISION, 1 critical, 6 warnings)
+Status: VALIDATED (round 3: 0 critical, 4 warnings, folded below). Prior rounds: round 1 (NEEDS REVISION, 2 critical, 6 warnings), round 2 (NEEDS REVISION, 1 critical, 6 warnings).
 Lane: normal
 Type: spec-feature
 File: `docs/specs/SPEC-353-observe-hooks-all-events.md`
@@ -63,6 +63,19 @@ Some `attachment` records carry no `command` and no `durationMs` (for example
 `hook_system_message`, `instructions`, `output_style`); those must be skipped,
 not counted as a zero-duration hook.
 
+**Headless gap: a plain `event == "Stop"` skip is wrong for some
+transcripts.** `claude -p` runs (transcripts with `"entrypoint": "sdk-cli"`)
+never write the `system` entry that carries `hookInfos`, so they have no
+`stop_hook_summary` at all; their only record of a Stop hook is the
+`attachment` copy. A scan of every local transcript file found 12 such
+files (Stop attachments present, no `hookInfos` anywhere in the file) and 84
+files carrying both sources, where every Stop attachment's command was
+already a subset of that file's `hookInfos` commands (0 violations out of
+84). A global `event == "Stop"` skip would silently zero out Stop-hook
+latency for those 12 headless files: exactly the SessionStart-style blind
+spot this item exists to close, just on a different event. The rule has to
+be per file, not global; see Design.
+
 A separate, smaller gap in the existing code: the current `hookInfos` branch
 reads `h.get("durationMs") or 0`, so an entry with no `durationMs` counts as a
 zero-ms sample instead of being skipped. Roughly 8 percent of `hookInfos`
@@ -103,8 +116,13 @@ different events), so the split is exercised, not just argued for.
 
 ### Routing diagram
 
+Per-file state (`stop_buffer = []`, `file_has_hookinfos = False`) resets at
+the top of each `for path in iter_files(args):` iteration.
+
+Stage 1, per entry inside one file:
+
 ```
-                    entry in collect()'s single pass over the transcript
+                    entry in collect()'s single pass over one FILE
                                         |
                 +-----------------------------------------------+
                 |                                                |
@@ -112,32 +130,45 @@ different events), so the split is exercised, not just argued for.
    hookInfos: [{command, durationMs}]              attachment: {type, command,
                 |                                    durationMs, hookEvent, ...}
                 v                                                v
-   for each h in hookInfos:                      attachment a dict, command a
-   durationMs a number,                          non-empty string, durationMs
-   excluding bool? --no--> skip h                 a number, excluding bool?
-                |                                                |
-               yes                                    --no--> skip record
-                v                                                |
-   key = (hook_label(command),                                  yes
-          "Stop")                                                v
-                |                                  event = attachment["hookEvent"]
-                |                                     (fallback "?" if not a
-                |                                      non-empty string)
-                |                                                |
-                |                                  event == "Stop"? --yes--> skip
-                |                                                |          (hookInfos already
-                |                                               no           counts this Stop hook)
-                |                                                v
-                |                            key = (hook_label(command), event)
-                |                                                |
-                +------------------------+-----------------------+
-                                          |
-                                          v
-                     hook_durs[key].append(durationMs)
-                     hook_sample[key] = command[:60] (first sample only)
-                                          |
-                                          v
-                    hook_rows() unpacks (label, event) per key
+   file_has_hookinfos = True          attachment a dict, command a non-empty
+                |                     string, durationMs a number, excluding
+   for each h in hookInfos:           bool?  --no--> skip record
+   durationMs a number,                                          |
+   excluding bool? --no--> skip h                                yes
+                |                                                 v
+               yes                                  event = attachment["hookEvent"]
+                v                                     (fallback "?" if not a
+   key = (hook_label(command),                          non-empty string)
+          "Stop")                                                |
+                |                                    event == "Stop"?
+                |                                yes /            \ no
+                |                                   v               v
+                |                    stop_buffer.append(    key = (hook_label
+                |                     (key, durationMs,             (command), event)
+                |                      sample))                       |
+                |                    (held, not committed yet)        |
+                v                                                     v
+   hook_durs[key].append(durationMs)                hook_durs[key].append(durationMs)
+   hook_sample[key] = command[:60]                   hook_sample[key] = command[:60]
+```
+
+Stage 2, once the file's entries are exhausted (still inside the same
+`for path in iter_files(args):` iteration, before moving to the next file):
+
+```
+   if not file_has_hookinfos:                 # sdk-cli / headless file:
+       for (key, dur, sample) in stop_buffer:  # its Stop attachments are
+           hook_durs[key].append(dur)          # the only record of its
+           hook_sample.setdefault(key, sample) # Stop hooks, so keep them
+   else:
+       discard stop_buffer                     # a file with hookInfos already
+                                                 # counted every Stop hook there
+```
+
+Stage 3, after every file:
+
+```
+        hook_rows() unpacks (label, event) per key in hook_durs
                                           |
                         +------------------------------+
                         |                                |
@@ -148,8 +179,8 @@ different events), so the split is exercised, not just argued for.
 
 ### The change
 
-In `collect()`, at the existing `hookInfos` block (session-observe.py, around
-line 364-372):
+In `collect()`, at the existing `hookInfos` block (`lib/session/observe/bin/session-observe`,
+around line 364-372):
 
 - `hook_durs` and `hook_sample` become keyed by a `(label, event)` tuple, not
   a bare label.
@@ -193,11 +224,22 @@ line 364-372):
     same as any other Stop attachment.
   - Read `event = attachment.get("hookEvent")` (fall back to `"?"` if not a
     non-empty string).
-  - **Skip when `event == "Stop"`.** `hookInfos` already counts every Stop
-    hook; counting the `attachment` copy too would double it (the item's
-    "double-counting rule").
-  - Otherwise key as `(hook_label(attachment["command"]), event)` and append
-    `durationMs`, same as the `hookInfos` branch.
+  - **`event == "Stop"` is buffered per file, not skipped outright.** A
+    global skip is wrong for a headless (`entrypoint: sdk-cli`) transcript,
+    which never writes a `hookInfos`-carrying `system` entry at all (see
+    Problem, "Headless gap"). Instead: hold the `(key, durationMs, sample)`
+    tuple in a per-file `stop_buffer` list. Once the file's entries are
+    exhausted, commit the whole buffer into `hook_durs`/`hook_sample` only
+    if that file had **no** `hookInfos` entries anywhere in it
+    (`file_has_hookinfos` stays `False`); otherwise discard the buffer,
+    because that file's `hookInfos` already counts every Stop hook in it
+    (the item's "double-counting rule," now scoped per file instead of
+    globally, since the 84-file scan found the two sources agree file by
+    file, not just in aggregate).
+  - A non-Stop `event` keys directly as `(hook_label(attachment["command"]),
+    event)` and appends `durationMs` immediately, same as the `hookInfos`
+    branch; no buffering needed, since there is no cross-source duplicate to
+    reconcile outside Stop.
   - **`SubagentStart` and `SubagentStop` are ordinary non-Stop events under
     this rule.** The skip is a literal `event == "Stop"` string check;
     `"SubagentStop" != "Stop"`, so a subagent-lifecycle hook is counted like
@@ -242,7 +284,7 @@ is this hook slow under" answerable directly, which is what the item's
 - No change to `hook_errors` counting beyond what is already unchanged above
   (untouched; `hookErrors` is a separate field from `hookInfos`/`attachment`
   and this item does not touch it).
-- No de-duplication heuristic beyond the `event == "Stop"` skip and the
+- No de-duplication heuristic beyond the per-file Stop reconciliation and the
   missing-duration skip. If a future transcript shape duplicates a
   non-Stop event the same way, that is a separate, evidence-driven change.
 
@@ -250,27 +292,40 @@ is this hook slow under" answerable directly, which is what the item's
 
 | Task | Files | Depends on |
 |---|---|---|
-| T1: attachment aggregation, `(label, event)` keying, skip-missing on both branches, `hook_cancelled`/`hook_non_blocking_error` coverage, fixture + smoke tests | `lib/session/observe/bin/session-observe`, `lib/session/observe/tests/fixtures/hook-events-sample.jsonl`, `lib/session/observe/tests/smoke.sh` | none |
-| T2: docs | `lib/session/observe/README.md` ("What it reads" hooks bullet + the sample `# hooks` output table), `lib/session/observe/SPEC.md` (hooks purpose bullet, the "Source" paragraph, the `collect` behaviour `hookInfos[]` bullet, and the stale "Hook labels" known-limitation line, see note below), `bin/session-observe` module docstring | T1 |
+| T1: attachment aggregation, `(label, event)` keying, per-file Stop buffering, skip-missing on both branches, `hook_cancelled`/`hook_non_blocking_error` coverage, fixtures + smoke tests | `lib/session/observe/bin/session-observe`, `lib/session/observe/tests/fixtures/hook-events-sample.jsonl`, `lib/session/observe/tests/fixtures/hook-events-sdkcli-sample.jsonl`, `lib/session/observe/tests/smoke.sh` | none |
+| T2: docs | `lib/session/observe/README.md` ("What it reads" hooks bullet + the sample `# hooks` output table + the "Limits" line at `README.md:81`), `lib/session/observe/SPEC.md` (hooks purpose bullet, the "Source" paragraph, the `collect` behaviour `hookInfos[]` bullet, the stale "Hook labels" known-limitation line, and the `## Verification (acceptance criteria)` smoke-case list at `SPEC.md:74-80`, extended to describe the new fixtures and cases), `bin/session-observe` module docstring | T1 |
 
-T1 carries AC1-AC9 (9 acceptance criteria) as one task; it does not need to
-split. If a smaller merge is preferred, the `hookInfos` skip-missing fix
-(AC1, AC6, AC9) is independently valuable and low-risk, and could land first
-as T1a, with the attachment-aggregation branch and `(label, event)` keying
-following as T1b.
+T1 carries 10 acceptance criteria (AC1-AC10, see Acceptance criteria) as one
+task; it stays one task. It is not split into T1a/T1b unless the diff grows
+past what one task can hold; if that happens, the `hookInfos` skip-missing
+fix (AC1, AC6, AC9) is the natural first slice (independently valuable, low
+risk), with attachment aggregation and per-file Stop buffering following.
 
-T2 also corrects `SPEC.md`'s "Hook labels" paragraph, which still says
-long-text inline hooks "fragment by first word." That is already fixed:
+T2 also corrects the same stale "fragment by first word" line in TWO places,
+not one: `SPEC.md`'s "Hook labels" paragraph and the near-identical line in
+`README.md`'s "Limits" section (`README.md:81`). Both say long-text inline
+hooks fragment by first word, and both are already wrong:
 `hook_label()`'s `len(c) > 120` check routes any long command (not just ones
 starting with `echo`) to the stable `inline-echo:<hash>` branch before the
 first-word fallback runs, and `tests/fixtures/goal-hook-sample.jsonl` already
 proves distinct long-text hooks (alpha/beta/gamma) land in separate rows, not
-one merged-by-first-word row. Unrelated to this spec's fix, but T2 already
-opens `SPEC.md`, so the stale line is corrected in the same edit pass.
+one merged-by-first-word row (see
+`lib/session/observe/docs/implementation-notes/02-goal-hook-collapse.md`).
+Unrelated to this spec's fix, but T2 already opens both files, so both stale
+lines are corrected in the same edit pass.
+
+T2 also extends `SPEC.md`'s `## Verification (acceptance criteria)` numbered
+list (currently ending at item 22, plus a "Plus, against `sample.jsonl`'s
+three appended usage entries" block) with a new block in the same style:
+"Plus, against `hook-events-sample.jsonl`" (the AC1-AC9 cases) and "Plus,
+against `hook-events-sdkcli-sample.jsonl`" (the AC10 headless case), so the
+module's own spec stays the single source for what `smoke.sh` actually
+checks.
 
 ## Test plan
 
-New fixture `lib/session/observe/tests/fixtures/hook-events-sample.jsonl`:
+New fixture `lib/session/observe/tests/fixtures/hook-events-sample.jsonl`
+(a transcript that HAS `hookInfos`, i.e. not headless):
 
 | Line | Shape | Purpose |
 |---|---|---|
@@ -278,11 +333,19 @@ New fixture `lib/session/observe/tests/fixtures/hook-events-sample.jsonl`:
 | 2 | `system` entry, `subtype: stop_hook_summary`, `hookInfos: [{"command": "bash /x/nodur-hook.sh"}]` (no `durationMs`) | `hookInfos`-branch skip-missing: must produce no row, not a zero-ms row |
 | 3 | `attachment`, `type: hook_success`, `hookEvent: SessionStart`, `command: ~/.claude/hooks/tool-first/tool-first.sh`, `durationMs: 1500` | the missed case: a slow SessionStart hook must now surface |
 | 4 | `attachment`, `type: hook_success`, `hookEvent: PreToolUse`, `command: bash /x/pre-hook.sh`, `durationMs: 40` | a non-Stop event, first sample |
-| 5 | `attachment`, `type: hook_success`, `hookEvent: Stop`, `command: bash /x/stop-hook.sh`, `durationMs: 9999` | the duplicate-Stop shape; must be skipped (double-counting rule) |
+| 5 | `attachment`, `type: hook_success`, `hookEvent: Stop`, `command: bash /x/stop-hook.sh`, `durationMs: 9999` | the duplicate-Stop shape; this file has `hookInfos`, so the buffered copy is discarded (double-counting rule) |
 | 6 | `attachment`, `type: output_style`, no `command`, no `durationMs` | a record with neither field; must be skipped without error |
 | 7 | `attachment`, `type: hook_success`, `hookEvent: PreToolUse`, `command: bash /x/pre-hook.sh`, `durationMs: 44` | second firing of line 4's hook, for a real p50/max over 2 samples |
 | 8 | `attachment`, `type: hook_success`, `hookEvent: PostToolUse`, `command: bash /x/pre-hook.sh`, `durationMs: 70` | same command as lines 4/7 under a different event: proves the `(label, event)` split, not label-only aggregation |
 | 9 | `attachment`, `type: hook_cancelled`, `hookEvent: SessionStart`, `command: ~/.claude/hooks/repo-memory/repo-memory.sh`, `durationMs: 3500`, `timedOut: true` | a timed-out hook is still counted (Design decision) |
+
+New fixture `lib/session/observe/tests/fixtures/hook-events-sdkcli-sample.jsonl`
+(a headless transcript, `"entrypoint": "sdk-cli"`, with NO `system`/`hookInfos`
+entry anywhere, matching the 12 real files found in the headless-gap scan):
+
+| Line | Shape | Purpose |
+|---|---|---|
+| 1 | `attachment`, `type: hook_success`, `hookEvent: Stop`, `command: bash /x/headless-stop-hook.sh`, `durationMs: 25` | the only record of a Stop hook in a headless transcript; must be counted, not skipped, because the file has no `hookInfos` |
 
 ## Acceptance criteria
 
@@ -337,16 +400,28 @@ New fixture `lib/session/observe/tests/fixtures/hook-events-sample.jsonl`:
   PostToolUse, or cancelled-hook rows appear at all. This demonstrates the
   fixture actually exercises every part of the fix and is not trivially
   green either way.
-- AC10 (docs): `README.md`'s "What it reads" hooks bullet and its sample
-  `# hooks` output table, `SPEC.md`'s hooks purpose bullet, its "Source"
-  paragraph, its `collect` behaviour `hookInfos[]` bullet, and its "Hook
-  labels" known-limitation line (see Task breakdown), and the
-  `bin/session-observe` module docstring, are all updated to say hook
-  durations come from `hookInfos` (Stop only, via `stop_hook_summary`) plus
-  `attachment` records (`hook_success`, `hook_cancelled`,
-  `hook_non_blocking_error`, or any future type carrying `command` and
-  `durationMs`) for every other event, and the sample table shows the
-  `event` column.
+- AC10: on `hook-events-sdkcli-sample.jsonl` (no `system`/`hookInfos` entry
+  anywhere), `headless-stop-hook.sh` / `Stop` row shows `runs=1`,
+  `maxms=25`, sourced entirely from the `attachment` (line 1), because
+  `file_has_hookinfos` stays `False` for this file and the buffered Stop
+  duration is committed instead of discarded. Run alongside
+  `hook-events-sample.jsonl` in the same `smoke.sh` invocation (two separate
+  `--file` calls) to prove the per-file reconciliation is scoped correctly:
+  the sdk-cli file's Stop row appears while the other file's duplicate Stop
+  attachment (its own AC1) still does not.
+- AC11 (docs): `README.md`'s "What it reads" hooks bullet, its sample
+  `# hooks` output table, and its "Limits" line at `README.md:81`;
+  `SPEC.md`'s hooks purpose bullet, its "Source" paragraph, its `collect`
+  behaviour `hookInfos[]` bullet, its "Hook labels" known-limitation line,
+  and its `## Verification (acceptance criteria)` smoke-case list at
+  `SPEC.md:74-80` (extended with the new fixtures, per Task breakdown); and
+  the `bin/session-observe` module docstring: all updated to say hook
+  durations come from `hookInfos` (Stop only, via `stop_hook_summary`, and
+  only when the file carries no other Stop source) plus `attachment`
+  records (`hook_success`, `hook_cancelled`, `hook_non_blocking_error`, or
+  any future type carrying `command` and `durationMs`) for every other
+  event, plus Stop on a headless file; the sample table shows the `event`
+  column.
 
 ## Verification
 
@@ -354,9 +429,8 @@ New fixture `lib/session/observe/tests/fixtures/hook-events-sample.jsonl`:
 bash lib/session/observe/tests/smoke.sh
 ```
 
-(new cases for AC1-AC9 land in `smoke.sh` against the new fixture in the same
-change that implements this spec; this spec adds no code, so the command
-above is run once the implementation phase lands it.)
+(new cases for AC1-AC10 land in `smoke.sh` against the two new fixtures in
+the same change that implements this spec.)
 
 ## Out of scope
 
@@ -390,6 +464,13 @@ above is run once the implementation phase lands it.)
 - The Stop skip is a literal string match against `"Stop"` only.
   `SubagentStart`/`SubagentStop` are left untouched on purpose; the fix does
   not audit or special-case them.
+- The Stop-attachment skip is per file, not global: buffer, then commit only
+  if the file has no `hookInfos`. Chosen after finding 12 real headless
+  (`entrypoint: sdk-cli`) transcripts with Stop attachments and no
+  `hookInfos` at all, and 84 files with both sources where the two always
+  agreed (0 violations); a global skip would have zeroed Stop-hook latency
+  for every headless transcript, reintroducing the same blind spot this
+  item exists to close.
 - Both branches (`hookInfos` and `attachment`) now skip an entry with no
   usable `durationMs` instead of counting it as zero: consistent behavior,
   matching real data where roughly 8 percent of `hookInfos` entries carry no
