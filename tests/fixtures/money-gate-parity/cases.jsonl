@@ -32,3 +32,23 @@
 {"name":"no-tool-input","env":{"MONEY_GATE_REPOS":"fin","MONEY_GATE_STRICT":"1"},"payload":"{\"cwd\":\"/w/fin\"}"}
 {"name":"null-tool-input","env":{"MONEY_GATE_REPOS":"fin","MONEY_GATE_STRICT":"1"},"payload":"{\"tool_input\":null,\"cwd\":\"/w/fin\"}"}
 {"name":"file-path-null","env":{"MONEY_GATE_REPOS":"fin","MONEY_GATE_STRICT":"1"},"payload":"{\"tool_input\":{\"file_path\":null,\"new_string\":\"usd\"},\"cwd\":\"/w/fin\"}"}
+{"name":"nul-separator","env":{"MONEY_GATE_REPOS":"fin","MONEY_GATE_STRICT":"1"},"payload":"{\"tool_input\":{\"file_path\":\"/w/fin/x.py\",\"new_string\":\"amount\\u0000balance\"},\"cwd\":\"/w/fin\"}"}
+{"name":"backslash-escape-text","env":{"MONEY_GATE_REPOS":"fin","MONEY_GATE_STRICT":"1"},"payload":"{\"tool_input\":{\"file_path\":\"/w/fin/x.c\",\"new_string\":\"printf(\\\"Total\\\\namount\\\\tbalance\\\")\"},\"cwd\":\"/w/fin\"}"}
+{"name":"non-ascii-adjacent","env":{"MONEY_GATE_REPOS":"fin","MONEY_GATE_STRICT":"1"},"payload":"{\"tool_input\":{\"file_path\":\"/w/fin/x.py\",\"new_string\":\"dưbalance amountđ\"},\"cwd\":\"/w/fin\"}"}
+{"name":"cwd-trailing-newline","env":{"MONEY_GATE_REPOS":"fin","MONEY_GATE_STRICT":"1"},"payload":"{\"tool_input\":{\"file_path\":\"notes.md\",\"new_string\":\"usd\"},\"cwd\":\"/w/fin\\n\"}"}
+{"name":"path-trailing-newline","env":{"MONEY_GATE_REPOS":"fin","MONEY_GATE_STRICT":"1"},"payload":"{\"tool_input\":{\"file_path\":\"/w/fin/x.py\\n\",\"new_string\":\"usd\"},\"cwd\":\"/w/fin\"}"}
+{"name":"path-with-tab","env":{"MONEY_GATE_REPOS":"fin","MONEY_GATE_STRICT":"1"},"payload":"{\"tool_input\":{\"file_path\":\"/w/fin/a\\tb.py\",\"new_string\":\"usd\"},\"cwd\":\"/w/fin\"}"}
+{"name":"log-dir-unwritable","env":{"MONEY_GATE_REPOS":"fin","MONEY_GATE_STRICT":"1","MONEY_GATE_LOG":"/dev/null/sub/m.log"},"payload":"{\"tool_input\":{\"file_path\":\"/w/fin/x.py\",\"new_string\":\"usd\"},\"cwd\":\"/w/fin\"}"}
+{"name":"glob-metachar-repo","env":{"MONEY_GATE_REPOS":"*","MONEY_GATE_STRICT":"1"},"payload":"{\"tool_input\":{\"file_path\":\"/w/other/x.py\",\"new_string\":\"usd\"},\"cwd\":\"/w/other\"}"}
+{"name":"repo-with-space","env":{"MONEY_GATE_REPOS":"my fin","MONEY_GATE_STRICT":"1"},"payload":"{\"tool_input\":{\"file_path\":\"/w/fin/x.py\",\"new_string\":\"usd\"},\"cwd\":\"/w/fin\"}"}
+{"name":"strict-tab-padded","env":{"MONEY_GATE_REPOS":"fin","MONEY_GATE_STRICT":"\tON\t"},"payload":"{\"tool_input\":{\"file_path\":\"/w/fin/x.py\",\"new_string\":\"usd\"},\"cwd\":\"/w/fin\"}"}
+{"name":"empty-file-path-falls-to-path","env":{"MONEY_GATE_REPOS":"fin","MONEY_GATE_STRICT":"1"},"payload":"{\"tool_input\":{\"file_path\":\"\",\"path\":\"/w/fin/x.py\",\"content\":\"usd\"},\"cwd\":\"/elsewhere\"}"}
+{"name":"concatenated-json","env":{"MONEY_GATE_REPOS":"fin","MONEY_GATE_STRICT":"1"},"payload":"{\"tool_input\":{\"file_path\":\"/w/fin/x.py\",\"new_string\":\"usd\"},\"cwd\":\"/w/fin\"} {}"}
+{"name":"non-object-payload","env":{"MONEY_GATE_REPOS":"fin","MONEY_GATE_STRICT":"1"},"payload":"[\"usd\"]"}
+{"name":"cwd-missing","env":{"MONEY_GATE_REPOS":"fin","MONEY_GATE_STRICT":"1"},"payload":"{\"tool_input\":{\"file_path\":\"/w/fin/x.py\",\"new_string\":\"usd\"}}"}
+{"name":"log-unset-default-home","env":{"MONEY_GATE_REPOS":"fin","MONEY_GATE_LOG":null},"payload":"{\"tool_input\":{\"file_path\":\"/w/fin/x.py\",\"new_string\":\"usd\"},\"cwd\":\"/w/fin\"}"}
+{"name":"log-set-empty","env":{"MONEY_GATE_REPOS":"fin","MONEY_GATE_STRICT":"1","MONEY_GATE_LOG":""},"payload":"{\"tool_input\":{\"file_path\":\"/w/fin/x.py\",\"new_string\":\"usd\"},\"cwd\":\"/w/fin\"}"}
+{"name":"log-relative","env":{"MONEY_GATE_REPOS":"fin","MONEY_GATE_STRICT":"1","MONEY_GATE_LOG":"rel.log"},"payload":"{\"tool_input\":{\"file_path\":\"/w/fin/x.py\",\"new_string\":\"usd\"},\"cwd\":\"/w/fin\"}"}
+{"name":"file-path-number","env":{"MONEY_GATE_REPOS":"fin","MONEY_GATE_STRICT":"1"},"payload":"{\"tool_input\":{\"file_path\":123,\"path\":\"/w/fin/x.py\",\"new_string\":\"usd\"},\"cwd\":\"/w/fin\"}"}
+{"name":"tool-input-string","env":{"MONEY_GATE_REPOS":"fin","MONEY_GATE_STRICT":"1"},"payload":"{\"tool_input\":\"usd\",\"cwd\":\"/w/fin\"}"}
+{"name":"large-write","env":{"MONEY_GATE_REPOS":"fin","MONEY_GATE_STRICT":"1"},"payload":{"gen":"large","bytes":1048576}}
