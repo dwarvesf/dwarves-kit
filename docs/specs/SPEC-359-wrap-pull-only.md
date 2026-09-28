@@ -1,6 +1,6 @@
 # SPEC-359: `wrap apply --pull-only`, the pull stage alone
 
-**Status:** DRAFT
+**Status:** VALIDATED (0 criticals, 6 warnings folded)
 Lane: full
 **Source:** operator paraphrase, this session. No board row filed; the operator named the work directly.
 
@@ -74,19 +74,27 @@ comment at `wrap.sh:1592`, "a default branch ahead of origin can never fast-forw
 main checkout is on the default branch and holds commits origin does not, that step pushes them
 to a `wrap/stray-commits-*` branch and moves the local default branch back to where it forked
 from origin, so the pull that follows can land. `--pull-only` skips that step entirely (see
-above), so a checkout with local commits ahead of origin's default branch reaches `_pull_default`
-still ahead, and `git pull --ff-only` refuses as diverging, `FAILED pull --ff-only`, the same
-git message the knob-off `pull_past_dirty` path already prints for a different reason, this time
-because the checkout genuinely has commits origin lacks, not because a file is dirty. This is
-expected under `--pull-only`, not a defect: the flag's whole point is to skip every write but the
-pull, and moving stray commits onto a carry branch is itself a write.
+above). Two different outcomes follow, and they are not the same case:
 
-**NOTE**: an operator who hits `FAILED pull --ff-only` under `--pull-only` on a checkout that is
-ahead of origin (as opposed to merely dirty) should re-run plain `apply --apply <repo>`, which
-carries the stray commits onto a branch and moves the default branch back so the pull lands.
-`--pull-only` prints no line distinguishing "ahead" from "dirty and blocked"; the existing
-`FAILED pull --ff-only` output already differs (git names the diverging refs rather than naming
-an overwritten file), which is enough for an operator reading the output to tell the two apart.
+- **Ahead-only** (the default branch holds a local commit origin lacks, and origin's own tip has
+  not moved): origin's tip is still an ancestor of `HEAD`, so `git pull --ff-only` is a true
+  no-op here, git reports "Already up to date", exits 0, and `HEAD` does not move. The local
+  commit is not lost, but it is not reported or carried anywhere either: `--pull-only` never runs
+  `_carry_stray_commits`, so nothing pushes it to a `wrap/stray-commits-*` branch, and a plain
+  `apply --apply` (or `apply --pull-only` again) is what eventually surfaces it.
+- **Diverged** (origin's tip has also moved, to a commit that is not an ancestor of `HEAD`):
+  `git pull --ff-only` refuses. Its own message here is `fatal: Not possible to fast-forward,
+  aborting.`, no file or ref names, unlike the dirty-tracked-file refusal above, which names the
+  blocking path. `run()` (`wrap.sh:422-437`) prints `FAILED pull --ff-only: exit <rc>` and sets
+  `FAILURES=1`, so the call exits 2. Nothing is pushed and nothing local moves.
+
+This is expected under `--pull-only`, not a defect: the flag's whole point is to skip every write
+but the pull, and moving stray commits onto a carry branch is itself a write.
+
+**NOTE**: an operator who hits `FAILED pull --ff-only` under `--pull-only` should re-run plain
+`apply --apply <repo>`, which carries any stray commits onto a branch and moves the default
+branch back so the pull lands. An ahead-only checkout needs no such recovery, it already exited
+0 with `HEAD` unchanged; the failure is specific to the diverged case.
 
 ### Flag interaction
 
@@ -100,13 +108,20 @@ runs per resolved repo, not how the repo list is built. `--apply` behaves as it 
 it for a dry run (the existing `NOTE`/`WOULD` lines `_pull_default` already prints), pass it to
 execute the fetch and the pull.
 
+**Check order.** The conflict check runs right after `cmd_apply`'s flag-parsing loop, immediately
+after the existing `want_own` bare-flag check and **before** the `TIPS_OVERRIDE` existence check
+at `wrap.sh:1637` (`[ -n "$TIPS_OVERRIDE" ] && [ ! -f "$TIPS_OVERRIDE" ]`). Chosen deliberately:
+`--pull-only --tips-file=<path>` should be refused for the conflict, not for whether `<path>`
+exists, so the operator reading the error sees the actual reason (the flag combination) rather
+than an unrelated file-not-found that would still be wrong advice even with a real path.
+
 ### Report shape
 
 `--pull-only` prints the repo header, the fetch line (or its failure), and the `-- pull:`
 section exactly as `_apply_repo` prints them today, with one wording change: the fetch-failure
 line at `wrap.sh:1548` today reads `(fetch failed; every delete is skipped)`, which is misleading
 under `--pull-only` because nothing here ever deletes. Under the flag it reads `(fetch failed;
-the pull runs against a possibly stale origin)` instead; without the flag the line is unchanged.
+the pull below will likely fail too)` instead; without the flag the line is unchanged.
 `--pull-only` never prints `-- worktrees:`, `-- branches:`, `-- archive unmerged:`,
 `-- origin branches:`, `-- stray lines:`, or `-- stray commits:`, not even a `SKIPPED` line for
 each, because those sections do not run at all under this flag, and a `SKIPPED` line implies a
@@ -116,19 +131,32 @@ step that considered the repo and declined, which is not what happened. The clos
 ## Picture
 
 ```
-_apply_repo(repo, pull_only)
+cmd_apply(args)
       |
       v
-fetch --prune  (message varies under pull_only on failure, see Report shape)
+parse flags (incl. --pull-only -> global PULL_ONLY=1)
+      |
+      v
+[PULL_ONLY=1 && (--worktrees|--archive-unmerged|--own|--tips-file given)?]
+      |                                       |
+      no                                     yes --> exit 64, nothing written
+      v
+gh_state = _gh_state()   -- once, before the repo loop (wrap.sh:1653), unconditional
+      |
+      v
+for each repo: _apply_repo(repo, gh_state)
+      |
+      v
+fetch --prune  (failure message varies under PULL_ONLY, see Report shape)
       |
       v
 resolve def (default branch), cur (checked-out branch)
       |
       v
-tip snapshot, gh_state    -- read-only, accepted leftovers either way
+tip snapshot    -- read-only, accepted leftover either way (global PULL_ONLY, not gated)
       |
       v
-   [pull_only?] ----------------- no ----------------+
+   [PULL_ONLY?] ----------------- no ----------------+
       |                                               v
      yes                              worktrees -> branches -> archive-unmerged
       |                                -> origin branches -> stray lines
@@ -157,19 +185,25 @@ already lives inside; a sibling verb would rebuild all of that for zero new beha
 - [x] TASK-A: Write this spec.
 
 ### Phase 2: Core (`lib/wrap/wrap.sh`)
-- [ ] TASK-B: `cmd_apply` arg parsing: add `--pull-only` (sets `PULL_ONLY=1`, mirroring
-  `WORKTREES`/`ARCHIVE_UNMERGED`). After all flags are parsed, when `PULL_ONLY=1` and any of
-  `--worktrees`, `--archive-unmerged`, `--own`, or `--tips-file` was also given, print
-  `wrap.sh apply: --pull-only cannot combine with <flag>` and exit 64, writing nothing. Acceptance:
+- [ ] TASK-B: add a global `PULL_ONLY=0` next to the existing `APPLY=0`/`WORKTREES=0`/
+  `ARCHIVE_UNMERGED=0` declarations (`wrap.sh:387-389`), matching their style, not a parameter
+  threaded through a call chain. `cmd_apply` arg parsing gains a `--pull-only` case that sets
+  `PULL_ONLY=1`. Immediately after the existing `want_own` bare-flag check, and **before** the
+  `TIPS_OVERRIDE` existence check at `wrap.sh:1637` (see "Flag interaction" → "Check order" for
+  why that order), add: when `PULL_ONLY=1` and any of `WORKTREES=1`, `ARCHIVE_UNMERGED=1`,
+  `OWN_N -gt 0`, or `TIPS_OVERRIDE` non-empty, print `wrap.sh apply: --pull-only cannot combine
+  with <flag>` naming the specific conflicting flag and exit 64, writing nothing. Acceptance:
   Test plan "Flag conflict" rows.
-- [ ] TASK-C: `_apply_repo` gate: thread `pull_only` through as a parameter from `cmd_apply`'s
-  call site. Wrap the `_apply_worktrees`, `_apply_branches`, `_apply_archive_unmerged`,
-  `_apply_origin_branches`, `_carry_stray`, and `_carry_stray_commits` calls (each with its own
-  section-header echo) in `if [ "$pull_only" != 1 ]; then ... fi`, so nothing prints for those
-  sections under the flag. Leave the tip snapshot, `_gh_state`, the fetch call, and the pull
-  section itself unconditional, per "What the flag narrows". Vary the fetch-failure line per
-  "Report shape" (`pull_only=1` → `(fetch failed; the pull runs against a possibly stale
-  origin)`). Acceptance: Test plan "Scope, happy path", "Scope", "Off default branch" rows.
+- [ ] TASK-C: `_apply_repo` gate: read the global `PULL_ONLY` directly inside `_apply_repo`, the
+  same way `ARCHIVE_UNMERGED` is already read there (`[ "$ARCHIVE_UNMERGED" = 1 ] && ...`), not
+  as a parameter passed in from `cmd_apply`'s call site. Wrap the `_apply_worktrees`,
+  `_apply_branches`, `_apply_archive_unmerged`, `_apply_origin_branches`, `_carry_stray`, and
+  `_carry_stray_commits` calls (each with its own section-header echo) in
+  `if [ "$PULL_ONLY" != 1 ]; then ... fi`, so nothing prints for those sections under the flag.
+  Leave the tip snapshot, `_gh_state`, the fetch call, and the pull section itself unconditional,
+  per "What the flag narrows". Vary the fetch-failure line per "Report shape" (`PULL_ONLY=1` →
+  `(fetch failed; the pull below will likely fail too)`). Acceptance: Test plan "Scope, happy
+  path", "Scope", "Off default branch", "Fetch-failure wording" rows.
 
 ### Phase 3: Wiring and docs
 - [ ] TASK-D: `commands/wrap.md` step 5 gains one bullet: when the operator wants the pull alone
@@ -178,10 +212,14 @@ already lives inside; a sibling verb would rebuild all of that for zero new beha
   interaction" NOTE (a checkout ahead of origin still needs plain `apply` to carry those commits
   before the pull can land). Acceptance: reviewed against this spec's wording; no test asserts
   prose.
-- [ ] TASK-E: `bin/wrap` usage header (line 9) and the `wrap.sh apply` usage string
-  (`lib/wrap/wrap.sh` around line 1641) both gain `[--pull-only]` in the flag list. Acceptance:
-  `wrap.sh apply` called with a bad flag combination still prints a usage line containing
-  `--pull-only`; one `chk_has` assertion added alongside TASK-B's tests.
+- [ ] TASK-E: three usage strings gain `[--pull-only]` in the flag list: `bin/wrap`'s own usage
+  header (line 9), `wrap.sh`'s own header comment (line 6, what `_usage()` prints via
+  `sed -n '2,31p'`, `wrap.sh:120`), and the inline usage string `cmd_apply` prints on the no-repo
+  path (`lib/wrap/wrap.sh` around line 1641, `usage: wrap.sh apply [--apply] [--worktrees]
+  ...`). Acceptance: tested through the no-repo path, not a flag conflict, `wrap.sh apply
+  --pull-only` with no repo argument and no other flag exits 64 and its usage line contains
+  `--pull-only` (Test plan "Usage line" row); the flag-conflict rows exercise the conflict check
+  from TASK-B, not this usage string, and stay separate on purpose.
 - [ ] TASK-F: `docs/consumer-contract.md` line 78 (the `bin/wrap` row's `apply` description)
   gains the flag and its one-line behavior. Acceptance: reviewed for accuracy against
   TASK-B/TASK-C; no test.
@@ -191,8 +229,9 @@ already lives inside; a sibling verb would rebuild all of that for zero new beha
   trailing `(SPEC-359)`).
 - [ ] TASK-H: `tests/test-wrap.sh` gains the case block from `## Test plan` below: scope (happy
   path + section-absence), union carry, `pull_past_dirty` on and off, dry run, off-default-branch,
-  stray-commits-ahead, flag conflicts (all four rejected flags), regression, multi-repo.
-  Acceptance: `bash tests/test-wrap.sh` exits 0 with every new `chk`/`chk_has`/`chk_no` passing.
+  stray commits ahead-only, stray commits diverged, fetch-failure wording, usage line (no-repo
+  path), flag conflicts (all four rejected flags), regression, multi-repo. Acceptance:
+  `bash tests/test-wrap.sh` exits 0 with every new `chk`/`chk_has`/`chk_no` passing.
 - [ ] TASK-I: `docs/verification/wrap-pull-only.md`, the negative-control record: remove the
   `pull_only` gate around one swept step (for example `_apply_branches`), confirm the "no branch
   delete" assertion from TASK-H goes red, restore, and record the run (green run plus the
@@ -230,17 +269,19 @@ already lives inside; a sibling verb would rebuild all of that for zero new beha
   present leaves the checkout behind with `FAILED pull --ff-only`; on, the blocking file is
   stashed and restored exactly as SPEC-286 describes; a union-marked dirty file is carried
   across either way.
-- A checkout on the default branch and genuinely ahead of origin (local commits origin lacks)
-  is left ahead under `--pull-only`: `_carry_stray_commits` does not run to move it back, so
-  `git pull --ff-only` refuses as diverging, `FAILED pull --ff-only`, and nothing is pushed
-  anywhere. This is the documented Stray commits interaction, not a defect; plain `apply --apply`
-  is the recovery.
+- A checkout on the default branch, ahead-only (local commits origin lacks, origin's tip
+  unmoved): `_carry_stray_commits` does not run, so nothing pushes the commits anywhere, but
+  `git pull --ff-only` is a genuine no-op, "Already up to date", exit 0, `HEAD` unchanged. The
+  local commits stay unreported until a plain `apply --apply` run carries them.
+- The same checkout, diverged (origin's tip has also moved): `git pull --ff-only` refuses,
+  `FAILED pull --ff-only`, exit 2, nothing pushed, nothing local moves. Plain `apply --apply` is
+  the recovery, per the Stray commits interaction NOTE.
 - No worktree is removed, no local or origin branch is deleted, no stray-line or stray-commit
   carry branch is pushed, under `--pull-only`, whatever those steps would otherwise have done on
   the same repo.
 - `wrap.sh apply --pull-only` combined with `--worktrees`, `--archive-unmerged`, `--own`, or
   `--tips-file` exits 64 and writes nothing.
-- The fetch-failure line reads `(fetch failed; the pull runs against a possibly stale origin)`
+- The fetch-failure line reads `(fetch failed; the pull below will likely fail too)`
   under `--pull-only`, and `(fetch failed; every delete is skipped)` as before without it.
 - Every pre-existing `apply` assertion in `tests/test-wrap.sh` (no `--pull-only` involved) stays
   green, unchanged in outcome.
@@ -257,8 +298,10 @@ already lives inside; a sibling verb would rebuild all of that for zero new beha
 | `pull_past_dirty` off | `--pull-only --apply` with the knob off and a blocking dirty file: exit 2, `FAILED pull --ff-only`, nothing stashed, matching plain `apply --apply` | same |
 | Dry run | `--pull-only` with no `--apply`: prints the pull section's `NOTE`/`WOULD` lines, executes nothing, HEAD unmoved | same |
 | Off default branch | `--pull-only --apply` on a repo whose checkout is on a non-default branch: prints `SKIP pull:` and runs the `fetch origin <def>:<def>` fallback, same as plain `apply` | same |
-| Stray commits ahead | `--pull-only --apply` on a repo whose default branch holds a local commit origin lacks, with origin's default branch also having moved (diverged, not just ahead): exit 2, `FAILED pull --ff-only` naming the diverging refs, no `wrap/stray-commits-*` branch created locally or on origin, default branch left exactly where it was | same |
-| Fetch-failure wording | `--pull-only` on a repo whose fetch fails (origin unreachable): the printed line reads `(fetch failed; the pull runs against a possibly stale origin)`, not the plain-`apply` wording | same |
+| Stray commits, ahead-only | `--pull-only --apply` on a repo whose default branch holds a local commit origin lacks, with origin's own tip unmoved: exit 0, "Already up to date" (no `FAILED` line), `HEAD` unchanged, no `wrap/stray-commits-*` branch created locally or on origin | same |
+| Stray commits, diverged | same fixture, but origin's default branch has also moved to a different commit: exit 2, `FAILED pull --ff-only` present in the output, no `wrap/stray-commits-*` branch created locally or on origin, default branch left exactly where it was | same |
+| Fetch-failure wording | `--pull-only` on a repo whose fetch fails (origin unreachable): the printed line reads `(fetch failed; the pull below will likely fail too)`, not the plain-`apply` wording, and the run exits 2 with a `FAILED pull` line present | same |
+| Usage line | `wrap.sh apply --pull-only` with no repo argument and no other flag: exit 64, the printed `usage: wrap.sh apply ...` line contains `--pull-only` | same |
 | Flag conflict | `--pull-only --worktrees`, `--pull-only --archive-unmerged`, `--pull-only --own <path>`, and `--pull-only --tips-file <path>` each exit 64 and change nothing in the repo | same |
 | Regression | the existing `apply` assertions already in `tests/test-wrap.sh` (worktree removal, branch delete, the pull, all with no `--pull-only` in the call) stay green, unchanged in outcome | same |
 | Multi-repo | `--pull-only --apply` given two repo args: each gets its own header and pull section, in argument order, matching plain `apply`'s existing multi-repo behavior | same |
