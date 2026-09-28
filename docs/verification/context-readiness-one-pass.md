@@ -46,6 +46,16 @@ Verdict: PASS
 
 The mutation stopped the awk pass from case-folding, so the lowercase `status:` spec dropped out and the new edge assertion failed. negctl restored the file with `git checkout HEAD -- hooks/context-readiness.sh`.
 
+A second control, run on commit 112bb82a, removed the readable-file filter (`[ -f "$F" ] && [ -r "$F" ] && `):
+
+```
+Command: bash lib/gate/negctl.sh . '<same test command>' "perl -pi -e 's/\[ -f \"\$F\" \] && \[ -r \"\$F\" \] && //' hooks/context-readiness.sh"
+Exit: 0 green before, 1 under mutation, 0 after restore
+Verdict: PASS
+```
+
+Without the filter, the dangling link in the edge fixture made awk abort, and the assertion failed. The review lens found this regression in the first commit (33d543c5). Commit 112bb82a fixes it. The case-folding control was re-run on 112bb82a and also passed.
+
 ## Not proven
 
 - Timing under heavy load. Fewer spawns should help most there, but these runs were on a lightly loaded Mini.
