@@ -757,11 +757,17 @@ def _sidecar_path(ledger):
     return os.path.splitext(ledger)[0] + ".rows.jsonl"
 
 
-def _write_sidecar(ledger, slug, t, learnings):
+def _write_sidecar(ledger, slug, t, learnings, fresh_items):
     """The sidecar entry per staged row, under the ledger's own .lock right after
     _stage_candidates. Idempotent by row id: an entry already present is never
-    rewritten, and a ledger row that lacks one gets it -- the crash repair path,
-    where the ledger append landed but the sidecar write did not (DEC-83)."""
+    rewritten. fresh_items covers the rows just appended; this extraction's other
+    learnings whose row already sat in the ledger are covered too, which is the
+    crash repair path -- an append that landed without its sidecar write (DEC-83)."""
+    by_item = {}
+    for l in learnings:
+        if isinstance(l, dict) and l.get("item"):
+            by_item.setdefault(harvest.slugify(l["item"]), l)
+    pending = set(fresh_items) | set(by_item)
     lockp = harvest._ledger_lock_path(ledger)
     with open(lockp, "a") as lockf:
         fcntl.flock(lockf, fcntl.LOCK_EX)
@@ -772,13 +778,11 @@ def _write_sidecar(ledger, slug, t, learnings):
                 if isinstance(row, dict) and row.get("row_id"):
                     have.add(row["row_id"])
             fresh_rows = []
-            for l in learnings:
-                if not isinstance(l, dict):
-                    continue
-                item = harvest.slugify(l.get("item"))
+            for item in sorted(pending):
                 row_id = "%s:%s" % (slug, item)
                 if not item or item not in present or row_id in have:
                     continue
+                l = by_item.get(item, {})
                 have.add(row_id)
                 fresh_rows.append({"row_id": row_id, "why": l.get("why") or "",
                                    "evidence": l.get("evidence") or "",
@@ -809,8 +813,9 @@ def _stage_sweep(t, learnings):
     if root:
         repo_ledger = os.path.join(root, "_meta", "learned-ledger.md")
         extra += [repo_ledger, harvest._archive_path(repo_ledger)]
-    harvest._stage_candidates(ledger, glossaries, learnings, extra_known=extra)
-    _write_sidecar(ledger, slug, t, learnings)
+    fresh = harvest._stage_candidates(ledger, glossaries, learnings,
+                                      extra_known=extra)
+    _write_sidecar(ledger, slug, t, learnings, {r["item"] for r in fresh})
 
 
 class Stage1Log(object):
