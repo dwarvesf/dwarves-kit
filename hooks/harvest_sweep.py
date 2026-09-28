@@ -413,6 +413,8 @@ SWEEP_EXTRACTOR = ('claude -p --model haiku --setting-sources project --tools ""
 EXTRACT_TIMEOUT = 120  # the hook's extractor timeout
 KNOWN_SLUGS_PER_FILE = 50
 SLUG_RE = re.compile(r"^[a-z0-9-]{1,60}$")
+PROBE_PROMPT = "harvest-sweep probe."  # the fixed 20-character probe prompt (DEC-39)
+LIMIT_RE = re.compile(r"usage limit|rate limit|5-hour|limit reached", re.I)
 
 PROMPT_SWEEP = (
     "You read one coding/ops session transcript and extract learnings and sightings.\n"
@@ -481,8 +483,14 @@ def run_sweep_extractor(prompt):
         return False, _as_text(exc.stdout), "timeout after %ss" % EXTRACT_TIMEOUT
     except OSError as exc:
         return False, "", "%s: %s" % (type(exc).__name__, exc)
-    ok = r.returncode == 0 and extract_json_object(r.stdout) is not None
+    ok = r.returncode == 0 and extract_ok(extract_json_object(r.stdout))
     return ok, r.stdout, r.stderr
+
+
+def extract_ok(obj):
+    """An extractor reply counts as success only when it is a JSON object holding a
+    `learnings` or `sightings` key (operator); any other object is a failure."""
+    return isinstance(obj, dict) and ("learnings" in obj or "sightings" in obj)
 
 
 def _as_text(data):
@@ -565,8 +573,8 @@ def _write_cache(path, text):
 def extract_session(t, text):
     """(ok, obj, stdout, stderr) for one rendered session delta. A parseable cache file for
     this key is reused with no call, so a replay never pays or varies the model call twice.
-    An unparseable one is removed and the session extracted again, which is not a failure
-    (DEC-82). Output is cached only on success, and before anything is staged."""
+    One that does not hold a valid reply is removed and the session extracted again, which
+    is not a failure (DEC-82). Output is cached only on success, before staging."""
     path = _cache_path(t["source"], t["session_id"], t["last_activity"])
     try:
         with open(path, encoding="utf-8", errors="replace") as fh:
@@ -575,7 +583,7 @@ def extract_session(t, text):
         cached = None
     if cached is not None:
         obj = extract_json_object(cached)
-        if obj is not None:
+        if extract_ok(obj):
             return True, obj, cached, ""
         os.unlink(path)
     ok, out, err = run_sweep_extractor(build_prompt(text))
@@ -585,12 +593,44 @@ def extract_session(t, text):
     return True, extract_json_object(out), out, err
 
 
+class ExtractFailure(object):
+    """A failed extractor call, classified for the run loop. Falsy, so the per-session
+    `ok` check treats it as a failure, while `limit` marks the DEC-80 hold class. obj is
+    None by construction; stdout/stderr stay available for the failure classes."""
+
+    def __init__(self, out, err):
+        self.out, self.err = out, err
+
+    def __bool__(self):
+        return False
+
+    @property
+    def limit(self):
+        """Limit-shaped output (usage or rate limit, the 5-hour window), matching on
+        either stream (DEC-80)."""
+        return bool(LIMIT_RE.search(self.err) or LIMIT_RE.search(self.out))
+
+
+def _extractor_probe():
+    """One extractor call on the fixed 20-char probe prompt, made after the run's first
+    non-limit failure (DEC-39). Returns (ok, detail); a failed probe makes the failure
+    auth-shaped, which stops the run."""
+    ok, out, err = run_sweep_extractor(PROBE_PROMPT)
+    detail = (err or out).strip().splitlines()[:1]
+    return ok, (detail[0][:120] if detail else "no output")
+
+
+def limit_state_row(source, failure):
+    m = LIMIT_RE.search(failure.err + "\n" + failure.out)
+    return "STATE %s: extractor-limit: %s" % (source, m.group(0) if m else "limit")
+
+
 def sweep_process(t, text):
-    """The default per-session step of run_selection. True when the extraction succeeded.
-    Staging the object's learnings and recording its sightings attach here, on obj; the
-    failure classes read stdout and stderr from extract_session."""
-    ok, obj, _out, _err = extract_session(t, text)
-    return ok
+    """The default per-session step of run_selection. True when the extraction succeeded,
+    an ExtractFailure otherwise (the failure classes read its out/err). Staging the
+    object's learnings and recording its sightings attach here, on obj."""
+    ok, obj, out, err = extract_session(t, text)
+    return True if ok else ExtractFailure(out, err)
 
 
 # ---- selection, cursor, and the per-session loop -------------------------------------
@@ -689,12 +729,15 @@ def _plan_source(cursor, source, items, load, now, schedule_hours, since=None):
                 if i["last_activity"] <= quiet_before and not _settled(state, i)]
     return {"source": source, "state": state, "scanned": scanned, "eligible": eligible,
             "load": load, "out": {"processed": [], "filtered": [], "failed": [], "deferred": [],
-                                 "read": 0, "trivial": 0}}
+                                 "read": 0, "trivial": 0, "state_rows": []}}
 
 
-def _sweep_one(cursor, plan, item, process, now, max_chars, records):
+def _sweep_one(cursor, plan, item, process, now, max_chars, records, run):
     """Classify and, unless filtered, process one session. Returns True when it used an
-    extraction attempt (counts against the cap), False otherwise."""
+    extraction attempt (counts against the cap), False otherwise. Failure classes
+    (DEC-39, DEC-80): a limit-shaped failure is a hold (no fail count, run stops, rc 0);
+    any other failure counts in `fail{id}` and is auth-shaped when a second session also
+    fails this run or the probe fails, which stops the run (rc 1, at the T14 entry)."""
     source, state, out, sid = plan["source"], plan["state"], plan["out"], item["session_id"]
     skip, t = (is_hidden(item), None) if source == "devin" else (False, None)
     if not skip:
@@ -714,15 +757,34 @@ def _sweep_one(cursor, plan, item, process, now, max_chars, records):
             attribute(t, records)
         last_ts = state["seen"].get(sid, {}).get("last_ts", 0)
         text = render(t, last_ts, max_chars)
-        # An empty delta has nothing to read; T7a's failure handling hangs off `ok`.
+        # An empty delta has nothing to read and settles without an extraction.
         ok = process(t, text) if text else True
-        if not ok:
+        if ok:
+            state["done"][sid] = item["last_activity"]
+            if text:
+                state["seen"][sid] = {"last_ts": newest_ts(t), "ts": int(now)}
+            out["processed"].append(sid)
+        elif isinstance(ok, ExtractFailure) and ok.limit:
+            out["state_rows"].append(limit_state_row(source, ok))
+            run["stop"] = "limit"
+        else:
             out["failed"].append(sid)
-            return True
-        state["done"][sid] = item["last_activity"]
-        if text:
-            state["seen"][sid] = {"last_ts": newest_ts(t), "ts": int(now)}
-        out["processed"].append(sid)
+            if run["fail_seen"]:
+                # a second session failing this run is auth-shaped (DEC-39)
+                run["stop"] = "auth"
+                out["state_rows"].append(
+                    "STATE %s: extractor-auth: a second session failed this run" % source)
+            else:
+                run["fail_seen"] = True
+                ok_p, detail = _extractor_probe()
+                if not ok_p:
+                    run["stop"] = "auth"
+                    run["incidents"].append(
+                        "INCIDENT extractor: probe failed: %s" % detail)
+                    out["state_rows"].append(
+                        "STATE %s: extractor-auth: the probe failed" % source)
+            # every non-limit failure counts, the stop path included (DEC-39)
+            state["fail"][sid] = state["fail"].get(sid, 0) + 1
     _advance_hwm(state, plan["scanned"])
     save_cursor(cursor)
     return not skip
@@ -771,11 +833,18 @@ def run_selection(process=None, schedule_hours=6, max_sessions=20, since=None):
     records = load_launch_records()
     max_chars = int(os.environ.get("HARVEST_MAXCHARS", "12000"))
     result, plans = {}, []
+    run = {"stop": None, "fail_seen": False, "state_rows": [], "incidents": []}
+    if os.environ.get("HARVEST_EXTRACTOR"):
+        # the operator override replaces the whole default command, so its safety
+        # flags (--tools "", --strict-mcp-config, --no-session-persistence) do not apply
+        run["state_rows"].append(
+            "STATE run: extractor override active, safety flags not enforced")
     for source, lister, loader in _sources():
         items = lister()
         if isinstance(items, SourceFailure):
             result[source] = {"processed": [], "filtered": [], "failed": [], "deferred": [],
-                              "read": 0, "trivial": 0, "source_failure": items}
+                              "read": 0, "trivial": 0, "state_rows": [],
+                              "source_failure": items}
             continue
         plan = _plan_source(cursor, source, items, loader, now, schedule_hours, since)
         result[source] = plan["out"]
@@ -790,9 +859,10 @@ def run_selection(process=None, schedule_hours=6, max_sessions=20, since=None):
         plan, item = plans[n], by_key[(n, sid, la)]
         if "source_failure" in plan["out"]:
             continue  # a broken source stays untouched for the rest of the run
-        if attempts >= max_sessions:
+        if run["stop"] or attempts >= max_sessions:
             plan["out"]["deferred"].append(item)  # stays eligible, oldest first next run (DEC-71)
             continue
-        attempts += _sweep_one(cursor, plan, item, process, now, max_chars, records)
+        attempts += _sweep_one(cursor, plan, item, process, now, max_chars, records, run)
     _finish_run(cursor, result, now)  # also pins a first-run hwm when nothing was selected
+    result["run"] = run
     return result

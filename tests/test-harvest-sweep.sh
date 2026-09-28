@@ -1196,6 +1196,223 @@ assert_eq "AC25: one extractor call per session" "50" "$(t6 ac25_calls)"
 echo "  (T6 max prompt length: $(t6 cap_prompt_len | cut -d'|' -f2))"
 
 # ============================================================
+echo "=== T7a failure classes ==="
+
+T7A_OUT=$(KIT_DIR="$KIT_DIR" TD="$TD" T5_NOW="$T5_NOW" python3 - <<'PY'
+import datetime, importlib.util, json, os, shlex
+spec = importlib.util.spec_from_file_location("hs", os.path.join(os.environ["KIT_DIR"], "hooks", "harvest_sweep.py"))
+hs = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(hs)
+TD, NOW = os.environ["TD"], int(os.environ["T5_NOW"])
+STUB = os.path.join(os.environ["KIT_DIR"], "tests", "fixtures", "harvest-sweep", "stub-extractor.sh")
+P = lambda k, v: print("%s=%s" % (k, v))
+n_scn = [0]
+
+def scenario(now=NOW):
+    n_scn[0] += 1
+    base = os.path.join(TD, "t7a-s%d" % n_scn[0])
+    os.environ["HARVEST_STATE_DIR"] = os.path.join(base, "state")
+    os.environ["HARVEST_SWEEP_CLAUDE_ROOT"] = os.path.join(base, "claude")
+    os.makedirs(os.environ["HARVEST_SWEEP_CLAUDE_ROOT"])
+    os.environ["HARVEST_SWEEP_DEVIN_DB"] = os.path.join(base, "none.db")
+    os.environ["HARVEST_SWEEP_NOW"] = str(now)
+    os.environ["HARVEST_EXTRACTOR"] = shlex.quote(STUB)
+    os.environ["STUB_CALLS"] = os.path.join(base, "calls")
+    for k in ("STUB_MODE", "STUB_OUT", "STUB_ERR", "STUB_RECORD", "STUB_FAIL_MATCH"):
+        os.environ.pop(k, None)
+    return base, os.environ["HARVEST_SWEEP_CLAUDE_ROOT"]
+
+iso = lambda e: datetime.datetime.fromtimestamp(e, datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+def mk(root, sid, la, n=6):
+    d = os.path.join(root, "p")
+    os.makedirs(d, exist_ok=True)
+    path = os.path.join(d, sid + ".jsonl")
+    with open(path, "w") as fh:
+        for k in range(n):
+            fh.write(json.dumps({"type": "user" if k % 2 == 0 else "assistant", "cwd": "/w/x",
+                                 "timestamp": iso(la - (n - k) * 10),
+                                 "message": {"content": [{"type": "text", "text": "%s msg %d" % (sid, k)}]}}) + "\n")
+    os.utime(path, (la, la))
+
+def calls():
+    try:
+        with open(os.environ["STUB_CALLS"]) as fh:
+            return len(fh.readlines())
+    except OSError:
+        return 0
+
+def cursor():
+    with open(hs._cursor_path()) as fh:
+        return json.load(fh)
+
+run = lambda **kw: hs.run_selection(schedule_hours=48, **kw)
+rows = lambda res, src: " | ".join(res[src]["state_rows"])
+initial_hwm = NOW - 48 * 3600
+
+# ---- AC27: a limit-shaped failure is a hold, not a failure ----
+base, root = scenario()
+mk(root, "la", NOW - 7200)
+mk(root, "lb", NOW - 7000)
+os.environ["STUB_MODE"] = "limit"
+r = run()
+P("limit_stop", r["run"]["stop"])
+P("limit_state_row", "extractor-limit" in rows(r, "claude"))
+P("limit_no_fail", cursor()["claude"]["fail"])
+P("limit_hwm_held", cursor()["claude"]["hwm"] == initial_hwm)
+P("limit_processed", ",".join(r["claude"]["processed"]))
+P("limit_calls", calls())  # one extraction, no probe on a limit failure
+del os.environ["STUB_MODE"]
+r = run()
+P("limit_resume", ",".join(r["claude"]["processed"]))
+
+# ---- AC4: every call fails, the probe fails too -> auth stop, hwm untouched ----
+base, root = scenario()
+mk(root, "fa", NOW - 7200)
+mk(root, "fb", NOW - 7000)
+os.environ["STUB_MODE"] = "fail"
+r = run()
+P("auth_stop", r["run"]["stop"])
+P("auth_incident", ",".join(r["run"]["incidents"]))
+P("auth_state_row", "extractor-auth" in rows(r, "claude"))
+P("auth_fail_count", cursor()["claude"]["fail"].get("fa"))
+P("auth_hwm_held", cursor()["claude"]["hwm"] == initial_hwm)
+P("auth_deferred", ",".join(i["session_id"] for i in r["claude"]["deferred"]))
+P("auth_calls", calls())  # one extraction plus one probe
+
+# ---- a single failure continues; a second failure this run is auth-shaped ----
+base, root = scenario()
+mk(root, "bad-a", NOW - 7400)
+mk(root, "ok-mid", NOW - 7200)
+mk(root, "bad-b", NOW - 7000)
+mk(root, "ok-last", NOW - 6800)
+os.environ["STUB_FAIL_MATCH"] = "bad-"   # the probe prompt never carries it
+r = run()
+P("two_stop", r["run"]["stop"])
+P("two_processed", ",".join(r["claude"]["processed"]))
+P("two_failed", ",".join(r["claude"]["failed"]))
+P("two_deferred", ",".join(i["session_id"] for i in r["claude"]["deferred"]))
+P("two_fail_counts", json.dumps(cursor()["claude"]["fail"], sort_keys=True))
+P("two_calls", calls())  # bad-a, probe, ok-mid, bad-b
+P("two_state_row", "a second session failed" in rows(r, "claude"))
+
+# ---- the probe passes: one failure keeps the run going ----
+base, root = scenario()
+mk(root, "bad-1", NOW - 7200)
+mk(root, "ok-1", NOW - 7000)
+os.environ["STUB_FAIL_MATCH"] = "bad-"
+r = run()
+P("one_stop", r["run"]["stop"] is None)
+P("one_processed", ",".join(r["claude"]["processed"]))
+P("one_failed", ",".join(r["claude"]["failed"]))
+P("one_fail_count", cursor()["claude"]["fail"].get("bad-1"))
+P("one_calls", calls())  # bad-1, probe, ok-1
+
+# ---- operator: a reply counts only with a learnings or sightings key ----
+os.environ["STUB_MODE"] = "ok"
+def ok_of(out):
+    os.environ["STUB_OUT"] = out
+    return hs.run_sweep_extractor("p")
+P("keyless_unrelated", ok_of('{"unrelated": 1}')[0])
+P("keyless_learnings_only", ok_of('{"learnings": []}')[0])
+P("keyless_sightings_only", ok_of('{"sightings": []}')[0])
+P("keyless_both_empty", ok_of('{"learnings": [], "sightings": []}')[0])
+os.environ.pop("STUB_OUT")
+# a keyless reply is a failed session that counts, and is never cached
+base, root = scenario()
+mk(root, "kl", NOW - 7200)
+os.environ["STUB_OUT"] = '{"unrelated": 1}'
+r = run()
+P("keyless_failed", ",".join(r["claude"]["failed"]))
+P("keyless_fail_count", cursor()["claude"]["fail"].get("kl"))
+P("keyless_no_cache", os.path.exists(os.path.join(
+    os.environ["HARVEST_STATE_DIR"], "sweep", "extract", "claude", "kl@%d.json" % (NOW - 7200))))
+# a cached reply without the keys is dead and re-extracted, not a failure
+cache_path = hs._cache_path("claude", "kl", NOW - 7200)
+os.makedirs(os.path.dirname(cache_path), exist_ok=True)
+with open(cache_path, "w") as fh:
+    fh.write('{"unrelated": 1}')
+os.environ["STUB_OUT"] = '{"learnings": [{"item": "fresh", "kind": "insight", "home": "til", "why": "w", "evidence": "e"}]}'
+n0 = calls()
+ok, obj, _, _ = hs.extract_session(
+    {"source": "claude", "session_id": "kl", "last_activity": NOW - 7200, "messages": []}, "x")
+with open(cache_path) as fh:
+    P("keyless_reextract", "%s|%s|%s" % (calls() - n0, ok and obj["learnings"][0]["item"],
+                                       "fresh" in fh.read()))
+
+# ---- operator: HARVEST_EXTRACTOR override wires a STATE row into the run data ----
+P("override_row", "extractor override active, safety flags not enforced" in " | ".join(r["run"]["state_rows"]))
+base, root = scenario()
+mk(root, "ov", NOW - 7200)
+bindir = os.path.join(base, "bin")
+os.makedirs(bindir)
+os.symlink(STUB, os.path.join(bindir, "claude"))
+saved_path = os.environ["PATH"]
+os.environ["PATH"] = bindir + os.pathsep + saved_path
+del os.environ["HARVEST_EXTRACTOR"]
+r = run()
+os.environ["PATH"] = saved_path
+P("override_absent", " | ".join(r["run"]["state_rows"]))
+
+# ---- ExtractFailure classes ----
+P("falsy_failure", bool(hs.ExtractFailure("", "")))
+P("limit_class", hs.ExtractFailure("", "usage limit reached").limit)
+P("limit_class_stdout", hs.ExtractFailure("RATE LIMIT tripped", "").limit)
+P("limit_class_five_hour", hs.ExtractFailure("", "Hit your 5-hour cap").limit)
+P("limit_class_plain_fail", hs.ExtractFailure("", "boom").limit)
+PY
+)
+t7a() { printf '%s\n' "$T7A_OUT" | sed -n "s/^$1=//p"; }
+
+assert_eq "AC27: a limit-shaped failure stops the run as a hold" "limit" "$(t7a limit_stop)"
+assert_eq "AC27: the hold carries a STATE row" "True" "$(t7a limit_state_row)"
+assert_eq "AC27: no fail count rises on a limit hold" "{}" "$(t7a limit_no_fail)"
+assert_eq "AC27: the hwm does not move on a limit hold" "True" "$(t7a limit_hwm_held)"
+assert_eq "AC27: nothing is processed on a limit hold" "" "$(t7a limit_processed)"
+assert_eq "AC27: a limit hold runs no probe" "1" "$(t7a limit_calls)"
+assert_eq "AC27: the next run resumes at the same session" "la,lb" "$(t7a limit_resume)"
+
+assert_eq "AC4: a failing extractor plus a failing probe stops the run" "auth" "$(t7a auth_stop)"
+assert_eq "AC4: a failed probe records an INCIDENT row" "INCIDENT extractor: probe failed: stub extractor failure" "$(t7a auth_incident)"
+assert_eq "AC4: the auth stop carries a STATE row" "True" "$(t7a auth_state_row)"
+assert_eq "AC4: the failed session's count still rises on the stop path" "1" "$(t7a auth_fail_count)"
+assert_eq "AC4: the hwm stays at the initial value" "True" "$(t7a auth_hwm_held)"
+assert_eq "AC4: untouched sessions are deferred" "fb" "$(t7a auth_deferred)"
+assert_eq "AC4: one extraction plus one probe" "2" "$(t7a auth_calls)"
+
+assert_eq "AC5b: a second failing session in one run is auth-shaped" "auth" "$(t7a two_stop)"
+assert_eq "AC5b: the passing session between two failures completes" "ok-mid" "$(t7a two_processed)"
+assert_eq "AC5b: both failures are counted" "bad-a,bad-b" "$(t7a two_failed)"
+assert_eq "AC5b: sessions past the stop are deferred" "ok-last" "$(t7a two_deferred)"
+assert_eq "AC5b: each failed session's count rises" '{"bad-a": 1, "bad-b": 1}' "$(t7a two_fail_counts)"
+assert_eq "AC5b: two failures plus one probe plus one success" "4" "$(t7a two_calls)"
+assert_eq "AC5b: the second-failure stop carries a STATE row" "True" "$(t7a two_state_row)"
+
+assert_eq "extractor: one failure with a passing probe does not stop the run" "True" "$(t7a one_stop)"
+assert_eq "extractor: the run continues past a single failure" "ok-1" "$(t7a one_processed)"
+assert_eq "extractor: the failure is reported" "bad-1" "$(t7a one_failed)"
+assert_eq "extractor: the fail count rises" "1" "$(t7a one_fail_count)"
+assert_eq "extractor: one extraction, one probe, one success" "3" "$(t7a one_calls)"
+
+assert_eq "extractor: a JSON object without learnings or sightings fails" "False" "$(t7a keyless_unrelated)"
+assert_eq "extractor: a learnings-only object counts" "True" "$(t7a keyless_learnings_only)"
+assert_eq "extractor: a sightings-only object counts" "True" "$(t7a keyless_sightings_only)"
+assert_eq "extractor: an empty result with both keys counts" "True" "$(t7a keyless_both_empty)"
+assert_eq "extractor: a keyless reply fails the session" "kl" "$(t7a keyless_failed)"
+assert_eq "extractor: a keyless reply feeds the fail count" "1" "$(t7a keyless_fail_count)"
+assert_eq "extractor: a keyless reply is never cached" "False" "$(t7a keyless_no_cache)"
+assert_eq "extractor: a cached keyless reply is re-extracted, not a failure" "1|fresh|True" "$(t7a keyless_reextract)"
+
+assert_eq "extractor: an operator-set HARVEST_EXTRACTOR wires the override STATE row" "True" "$(t7a override_row)"
+assert_eq "extractor: no override env, no row" "" "$(t7a override_absent)"
+
+assert_eq "ExtractFailure is falsy for the ok check" "False" "$(t7a falsy_failure)"
+assert_eq "ExtractFailure.limit reads stderr" "True" "$(t7a limit_class)"
+assert_eq "ExtractFailure.limit reads stdout, case-insensitive" "True" "$(t7a limit_class_stdout)"
+assert_eq "ExtractFailure.limit catches the 5-hour shape" "True" "$(t7a limit_class_five_hour)"
+assert_eq "ExtractFailure.limit is False on a plain failure" "False" "$(t7a limit_class_plain_fail)"
+
+# ============================================================
 echo ""
 echo "=== Results ==="
 echo "Passed: $PASS / $TOTAL"
