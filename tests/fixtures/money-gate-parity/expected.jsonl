@@ -36,7 +36,7 @@
 {"name":"backslash-escape-text","rc":0,"stdout":"","log":"","stray":""}
 {"name":"non-ascii-adjacent","rc":0,"stdout":"{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"ask\",\"permissionDecisionReason\":\"money-gate: edit in a financial repo touches amount, balance: confirm before applying.\"}}","log":"/w/fin/x.py\tamount,balance","stray":""}
 {"name":"cwd-trailing-newline","rc":0,"stdout":"","log":"","stray":""}
-{"name":"path-trailing-newline","rc":0,"stdout":"{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"ask\",\"permissionDecisionReason\":\"money-gate: edit in a financial repo touches usd: confirm before applying.\"}}","log":"/w/fin/x.py\nusd","stray":""}
+{"name":"path-trailing-newline","rc":0,"stdout":"{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"ask\",\"permissionDecisionReason\":\"money-gate: edit in a financial repo touches usd: confirm before applying.\"}}","log":"BAD-EPOCH /w/fin/x.py\nusd","stray":""}
 {"name":"path-with-tab","rc":0,"stdout":"{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"ask\",\"permissionDecisionReason\":\"money-gate: edit in a financial repo touches usd: confirm before applying.\"}}","log":"/w/fin/a\tb.py\tusd","stray":""}
 {"name":"log-dir-unwritable","rc":0,"stdout":"{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"ask\",\"permissionDecisionReason\":\"money-gate: edit in a financial repo touches usd: confirm before applying.\"}}","log":"","stray":""}
 {"name":"glob-metachar-repo","rc":0,"stdout":"","log":"","stray":""}
@@ -52,3 +52,7 @@
 {"name":"file-path-number","rc":0,"stdout":"","log":"","stray":""}
 {"name":"tool-input-string","rc":0,"stdout":"","log":"","stray":""}
 {"name":"large-write","rc":0,"stdout":"{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"ask\",\"permissionDecisionReason\":\"money-gate: edit in a financial repo touches usd: confirm before applying.\"}}","log":"/w/fin/big.csv\tusd","stray":""}
+{"name":"log-appends","rc":0,"stdout":"","log":"prior\tline\n/w/fin/x.py\tusd","stray":""}
+{"name":"strict-cr","rc":0,"stdout":"{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"ask\",\"permissionDecisionReason\":\"money-gate: edit in a financial repo touches usd: confirm before applying.\"}}","log":"/w/fin/x.py\tusd","stray":""}
+{"name":"strict-vt-ff","rc":0,"stdout":"{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"ask\",\"permissionDecisionReason\":\"money-gate: edit in a financial repo touches usd: confirm before applying.\"}}","log":"/w/fin/x.py\tusd","stray":""}
+{"name":"path-key-object-ignored","rc":0,"stdout":"{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"ask\",\"permissionDecisionReason\":\"money-gate: edit in a financial repo touches usd: confirm before applying.\"}}","log":"/w/fin/x.py\tusd","stray":""}

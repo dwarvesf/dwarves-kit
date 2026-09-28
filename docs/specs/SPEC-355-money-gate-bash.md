@@ -1,6 +1,6 @@
 # SPEC-355: money-gate runs as bash plus jq
 
-**Status:** DRAFT, revision 2 (validation round 1 folded in)
+**Status:** VALIDATED, revision 3 (round 2 APPROVED; its warnings folded in)
 Lane: full
 Type: spec-refactor
 **Proof:** `docs/verification/money-gate-bash.md`; `tests/test-money-gate-parity.sh`, `tests/test-money-gate.sh`.
@@ -19,16 +19,16 @@ References: `hooks/money-gate.py` at `ce08a00b` (the behavior to reproduce); `li
 | Exit code | always 0 |
 | Inert | `MONEY_GATE_REPOS` unset or empty: exit 0 with no output and no log |
 | Stdin | must be exactly one JSON object; anything else (malformed, empty, two concatenated values, an array or scalar) exits 0 with no output and no log |
-| Other shapes | a `tool_input` that is truthy but not an object, or a truthy `file_path`/`path` that is not a string: exit 0, no output, no log (the Python crashed there and its shim swallowed the crash) |
+| Other shapes | a `tool_input` that is truthy but not an object, or a SELECTED `file_path` value (see Location match) that is truthy but not a string (a non-string `path` beside a string `file_path` is ignored): exit 0, no output, no log (the Python crashed there and its shim swallowed the crash) |
 | Location match | `haystack = file_path + "\n" + cwd`, where `file_path` is the first of `tool_input.file_path`, `tool_input.path` that is truthy in Python's sense (not null, `""`, `false`, `0`, `[]`, `{}`), else `""`, and `cwd` is `.cwd` when truthy, else `""`. Strings are used byte for byte: a trailing newline or a tab stays in. A repo name `r` (a non-empty `:`-separated entry of `MONEY_GATE_REPOS`) matches when `haystack` contains `/r/` or ends with `/r`. Literal substring match, no regex |
 | Scanned text | `file_path`, then every string value anywhere under `tool_input` (recursive over objects and arrays, in document order), joined by newlines. Keys, numbers, booleans, and null are never scanned |
 | Money terms | Python's `MONEY_RE`, case-insensitive: a term from the list, optional trailing `s`, where the character before is not `[A-Za-z0-9]` (or is the start) and the character after is not `[A-Za-z0-9]` (or is the end). `_`, `-`, blanks, and punctuation count as separators. The term list and the `[_-]?` variants are exactly those in `money-gate.py` |
 | Hits | every match, lowercased, deduplicated, sorted by byte order (`LC_ALL=C`) |
 | Log | on any hit: append `<epoch>\t<file_path>\t<hits joined by ",">` plus a newline. The path is `$MONEY_GATE_LOG` when the variable is SET, verbatim, even when empty; `~/.claude/logs/money-gate.log` only when it is unset. The directory part is created first; when it is empty (an empty value, or a bare name like `rel.log`) or cannot be created, no log is written anywhere and the hook carries on (Python's `os.makedirs("")` failure, caught) |
-| Strict | `MONEY_GATE_STRICT`, trimmed of blanks (spaces, tabs, newlines) and lowercased, in `1 true yes on`; the ask prints even when the log could not be written: print one JSON object `{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"ask","permissionDecisionReason":<reason>}}` |
+| Strict | `MONEY_GATE_STRICT`, trimmed the way Python's `str.strip()` trims (at least `[[:space:]]` under `LC_ALL=C`: space, tab, newline, `\r`, `\v`, `\f`) and lowercased, in `1 true yes on`; the ask prints even when the log could not be written: print one JSON object `{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"ask","permissionDecisionReason":<reason>}}` |
 | Reason | `money-gate: edit in a financial repo touches <first 6 hits joined by ", ">: confirm before applying.` |
-| Text handling | the scanned text is handled as bytes: a NUL, a literal backslash sequence (`\\n` in source code), or any non-ASCII byte is data, never an escape or a terminator. Pass it to awk on stdin or in a file, never through `awk -v` or argv (escape processing, and Linux caps one argument at 128 KB) |
-| Latency | a 1 MB payload finishes in under 500 ms on an idle machine under the stock macOS awk, gawk, and mawk (the hook timeout is 5 s, and a timed-out hook does not fire) |
+| Text handling | the hook sets `LC_ALL=C` for itself before any awk, tr, or sort: Claude Code passes the user's locale (often `en_US.UTF-8`), and under it the stock macOS awk dies on a non-ASCII byte (`towc: multibyte conversion failure`) and gawk rejects byte ranges. The harness runs every case under `LANG=LC_ALL=en_US.UTF-8`. The scanned text is handled as bytes: a NUL, a literal backslash sequence (`\\n` in source code), or any non-ASCII byte is data, never an escape or a terminator. Pass it to awk on stdin or in a file, never through `awk -v` or argv (escape processing, and Linux caps one argument at 128 KB) |
+| Latency | a 1 MB payload finishes in under 500 ms on an idle machine under the stock macOS awk, gawk, and mawk, both sparse (few hits) and dense (one line of minified JSON full of hits). The hook timeout is 5 s, and a timed-out hook does not fire. The scan must not copy the remainder of the text once per match (`index()` then `substr(rest)` in a loop is quadratic: 17 s on the dense 1 MB under the stock macOS awk); scan line by line, or use `split(text, parts, term)` per term |
 | jq missing | exit 0 and print one line to stderr naming the missing tool (the gate is off) |
 
 `hooks/money-gate.py` is deleted. The docs that name it (`lib/money-gate/README.md`, `lib/money-gate/SPEC.md` "Where the code lives", `lib/config/module-registry.md`, the header of `tests/test-money-gate.sh`, `docs/test-value-audit.md`) say the logic now lives in `hooks/money-gate.sh`. Dated records (CHANGELOG entries, proofs, retros) stay as written.
@@ -68,9 +68,9 @@ Why a per-term search equals `finditer`: the boundaries are zero-width lookaroun
 
 | Class | Mitigation |
 |---|---|
-| A boundary or ordering difference from Python | the parity corpus (34 cases, goldens from Python) fails |
+| A boundary or ordering difference from Python | the parity corpus (goldens from Python) fails |
 | A non-ASCII character next to a term | the port reads bytes under `LC_ALL=C`, so any non-ASCII byte is a separator, as it is in Python for ordinary text (`dưbalance` hits `balance`). Deliberate divergence: under `re.IGNORECASE` Python also folds a few Unicode letters into ASCII terms (the Kelvin sign in `private_Key`, the long s in `tranſfer`, dotted `İBAN`); the port does not. No realistic payload carries them, so the corpus does not pin them |
-| Raw invalid UTF-8 in the payload | out of parity: Claude Code sends valid JSON, and Python's handling depends on the locale |
+| Out of parity (no realistic tool sends these) | raw invalid UTF-8; `NaN` in the payload (Python accepts it, jq rejects it); a list as `cwd` (Python matches through `str(list)`); a lone surrogate in `file_path` (Python crashes after creating an empty log); `MONEY_GATE_LOG` with a trailing `/` |
 | jq missing | the hook exits 0 and names the missing tool on stderr (fail open, as the Python shim did when python3 was missing, but visible) |
 | A hook error | never block: every path exits 0 |
 
@@ -79,19 +79,20 @@ Why a per-term search equals `finditer`: the boundaries are zero-width lookaroun
 | Task | Files | Acceptance |
 |---|---|---|
 | T1: port | `hooks/money-gate.sh`; delete `hooks/money-gate.py` | `bash tests/test-money-gate-parity.sh` passes every case and the latency check; `bash tests/test-money-gate.sh` green; no `python3` in `hooks/money-gate.sh` |
-| T2: references | `lib/money-gate/README.md`, `lib/money-gate/SPEC.md`, `lib/config/module-registry.md`, `tests/test-money-gate.sh` header, `docs/test-value-audit.md` | no live doc names `money-gate.py` as current code; `lib/money-gate/SPEC.md`'s stale rows are fixed too (its Modes table says strict is the literal `1`, it calls the keywords `\b`-anchored, and its step 1 says "before python3 is spawned") |
+| T2: references | `lib/money-gate/README.md`, `lib/money-gate/SPEC.md`, `lib/config/module-registry.md`, `tests/test-money-gate.sh` header, `docs/test-value-audit.md` | no live doc names `money-gate.py` as current code. Stale rows fixed: `lib/money-gate/SPEC.md` (Modes table and config table say strict is the literal `1`; keywords called `\b`-anchored; "before python3 is spawned", "spawning Python", "python3 missing"; the line naming `money-gate.py`), `lib/money-gate/README.md` (literal `1`, `\b`-anchored). `lib/config/module-registry.md` gains `MONEY_GATE_LOG` and `MONEY_GATE_STRICT` rows beside `MONEY_GATE_REPOS`, and loses the "`hooks/money-gate.py`, Python-only, no `$` token" note, so `tests/test-config-registry.sh` stays green without reading the variables indirectly |
 | T3: records | `docs/CHANGELOG.md`, `docs/verification/money-gate-bash.md`, `docs/implementation-notes/money-gate-bash.md`, `docs/FEATURES.md` (regenerated) | CHANGELOG names the port |
 
 ## Test plan
 
 | # | Check | Expect |
 |---|---|---|
-| P1 | `bash tests/test-money-gate-parity.sh` | every case passes, `0 failed`, and the 1 MB latency line passes |
+| P1 | `bash tests/test-money-gate-parity.sh` | every case passes, `0 failed`; both 1 MB latency lines and the jq-missing line pass |
 | P2 | `bash tests/test-money-gate.sh` | exit 0 |
 | P3 | `bash tests/test-kit-foldin-hooks.sh` | exit 0 |
 | P4 | P1 under gawk and mawk (PATH shims); the stock macOS awk is P1 itself | every case passes |
-| P6 | the 1 MB payload timed on an idle machine, stock macOS awk | under 500 ms, recorded in the verification doc |
 | P5 | `grep -c python3 hooks/money-gate.sh` | 0 |
+| P6 | both 1 MB payloads timed on an idle machine, stock macOS awk | under 500 ms, recorded in the verification doc |
+| P7 | `bash tests/test-config-registry.sh` | exit 0 |
 
 The harness (`tests/fixtures/money-gate-parity/run-case.sh`) gives each case its own HOME and an empty cwd, and records any file the hook leaves there other than the log it was told to write, so a port that writes a log Python never wrote fails.
 
@@ -103,10 +104,11 @@ Negative controls, through `lib/gate/negctl.sh` with P1 as the test command:
 | NC2 | treat only `1` as strict | `strict-true-upper`, `strict-yes`, `strict-on` |
 | NC3 | scan only `new_string` | `old-string-delete`, `multiedit-array`, `numbers-and-bools` |
 | NC4 | fall back to `~/.claude/logs/money-gate.log` when `MONEY_GATE_LOG` is set but empty | `log-set-empty` (stray file) |
+| NC5 | drop the hook's own `LC_ALL=C` | `unicode-and-newlines`, `non-ascii-adjacent` |
 
 ## Verification
 
-P1 to P5 hold and NC1 to NC3 report PASS. `bash tests/run-all.sh --changed` exits 0.
+P1 to P7 hold and NC1 to NC5 report PASS. `bash tests/run-all.sh --changed` exits 0.
 
 ## After state
 
@@ -117,5 +119,6 @@ money-gate runs with no Python. Its behavior is byte-identical to the Python hoo
 - Goldens come from the Python hook, generated by the orchestrator before the port, so the implementer cannot fit the test to the code.
 - Parity includes quirks (a bare `/w/fin` path with an unrelated cwd does not match; an empty or relative `MONEY_GATE_LOG` writes no log). A behavior change would be a separate spec.
 - Goldens run through the `ce08a00b` shim, not the bare `.py`, so a Python crash reads as the shim surfaced it: exit 0, nothing printed.
+- Revision 3 (round 2 APPROVED, critical=0): its warnings folded in as corpus cases (`log-appends`, `strict-cr`, `strict-vt-ff`, `path-key-object-ignored`), a dense latency payload, a jq-missing check, a UTF-8 harness locale with an `LC_ALL=C` mandate (found by SPEC-356's round 1), the no-copy scan rule, the config-registry rows, and the out-of-parity list.
 - Revision 2 (validation round 1): per-term `index()` search for latency; exact log-path, truthiness, and stdin rules; 20 new corpus cases; a per-case HOME and cwd with a stray-file check; the Unicode case-folding divergence recorded.
 - The implementer is Devin (`devin -p`, headless, sandboxed) in this worktree; the orchestrator owns the spec, the goldens, verification, review, and ship.

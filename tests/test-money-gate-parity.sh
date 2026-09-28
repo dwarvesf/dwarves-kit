@@ -26,18 +26,37 @@ echo "money-gate parity: $pass passed, $fail failed"
 
 # Latency: a 1 MB Write in a financial repo must finish well inside the hook's 5 s timeout
 # (a hook that times out does not fire). The budget is 500 ms on an idle machine; the
-# assertion allows 2 s so a loaded machine does not flake it, which still catches a
-# per-position scan (4 s at 100 KB under the stock macOS awk).
+# assertion allows 2 s so a loaded machine does not flake it. Two payloads: a sparse one
+# (1 MB of filler, one hit at the end) and a dense one (one line of minified JSON full of
+# hits), which catches a scan that copies the rest of the string once per match.
 T="$(mktemp -d)"
-head -c 1048576 /dev/zero | tr '\0' 'a' > "$T/filler"
-printf '{"tool_input":{"file_path":"/w/fin/big.csv","content":"%s usd"},"cwd":"/w/fin"}' "$(cat "$T/filler")" > "$T/payload"
-start=$(perl -MTime::HiRes=time -e 'printf "%d", time*1000' 2>/dev/null || date +%s000)
-out=$(env -i PATH="$PATH" HOME="$T" MONEY_GATE_LOG="$T/l.log" MONEY_GATE_REPOS=fin MONEY_GATE_STRICT=1 bash "$HOOK" < "$T/payload")
-end=$(perl -MTime::HiRes=time -e 'printf "%d", time*1000' 2>/dev/null || date +%s000)
-ms=$((end - start))
-if [ "$ms" -lt 2000 ] && printf '%s' "$out" | grep -q '"ask"'; then
-  echo "  PASS 1 MB Write checked in ${ms} ms"
+head -c 1048576 /dev/zero | tr '\0' 'a' > "$T/sparse"
+i=0; : > "$T/dense"; unit='{\"amount\":1,\"currency\":\"usd\",\"tokenize\":\"x\"},'
+while [ "$(wc -c < "$T/dense")" -lt 1048576 ]; do
+  i=$((i + 1)); printf '%s%s%s%s%s%s%s%s' "$unit" "$unit" "$unit" "$unit" "$unit" "$unit" "$unit" "$unit" >> "$T/dense"
+done
+now_ms() { perl -MTime::HiRes=time -e 'printf "%d", time*1000' 2>/dev/null || date +%s000; }
+for kind in sparse dense; do
+  printf '{"tool_input":{"file_path":"/w/fin/big.json","content":"%s usd"},"cwd":"/w/fin"}' "$(cat "$T/$kind")" > "$T/payload"
+  start=$(now_ms)
+  out=$(env -i PATH="$PATH" HOME="$T" LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8 MONEY_GATE_LOG="$T/l.log" MONEY_GATE_REPOS=fin MONEY_GATE_STRICT=1 bash "$HOOK" < "$T/payload")
+  ms=$(( $(now_ms) - start ))
+  if [ "$ms" -lt 2000 ] && printf '%s' "$out" | grep -q '"ask"'; then
+    echo "  PASS 1 MB $kind Write checked in ${ms} ms"
+  else
+    fail=$((fail + 1)); echo "  FAIL 1 MB $kind Write: ${ms} ms, ask=$(printf '%s' "$out" | grep -c '"ask"')"
+  fi
+done
+
+# jq missing: the gate is off, visibly. A PATH with bash and a few basics but no jq (macOS
+# ships /usr/bin/jq, so /usr/bin itself cannot be on it).
+B="$(mktemp -d)"
+for t in bash env cat dirname mkdir date; do p=$(command -v "$t") && ln -s "$p" "$B/$t"; done
+err=$(printf '{"tool_input":{"file_path":"/w/fin/x.py","new_string":"usd"},"cwd":"/w/fin"}' \
+  | env -i PATH="$B" HOME="$T" MONEY_GATE_REPOS=fin MONEY_GATE_STRICT=1 "$B/bash" "$HOOK" 2>&1 >/dev/null); rc=$?
+if [ "$rc" = 0 ] && [ "$(printf '%s\n' "$err" | grep -c 'jq')" = 1 ]; then
+  echo "  PASS jq missing: exit 0, one stderr line"
 else
-  fail=$((fail + 1)); echo "  FAIL 1 MB Write: ${ms} ms, ask=$(printf '%s' "$out" | grep -c '"ask"')"
+  fail=$((fail + 1)); echo "  FAIL jq missing: rc=$rc stderr=$err"
 fi
 [ "$fail" -eq 0 ]

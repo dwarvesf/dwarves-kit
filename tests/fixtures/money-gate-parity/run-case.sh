@@ -5,7 +5,7 @@
 # bash port), so both sides run a case the same way.
 #
 # Case fields: name; env (MONEY_GATE_LOG present overrides the harness log path, null means
-# unset); payload (a string fed verbatim, or {"gen":"large","bytes":N} for a generated Write
+# unset); prelog (true: the log already holds one line, so an overwrite shows); payload (a string fed verbatim, or {"gen":"large","bytes":N} for a generated Write
 # of N bytes whose content ends in " usd"). Each case gets its own HOME and its own empty
 # cwd; `stray` lists every file the hook left in either, other than the log it was told to
 # write, so a port that writes a log the Python never wrote shows up.
@@ -28,15 +28,23 @@ if [ "$(jq -r '.payload | type' <<<"$c")" = "object" ]; then
 else
   jq -j .payload <<<"$c" > "$T/payload"
 fi
-rc=0
-out=$(cd "$T/cwd" && env -i PATH="$PATH" HOME="$T/home" "${envs[@]}" "$@" < "$T/payload" 2>/dev/null) || rc=$?
-norm=$( [ -n "$out" ] && jq -S -c . <<<"$out" 2>/dev/null || printf '%s' "$out" )
-# the log the hook was told to write: the harness default, the case's absolute path, or
-# the documented default under HOME when the case unsets it
 if [ "$unset_log" = 1 ]; then eff="$T/home/.claude/logs/money-gate.log"
 else eff=$(printf '%s\n' "${envs[@]}" | grep '^MONEY_GATE_LOG=' | tail -1 | cut -d= -f2-); fi
+if [ "$(jq -r '.prelog // false' <<<"$c")" = "true" ]; then
+  case "$eff" in /*) mkdir -p "$(dirname "$eff")"; printf '1\tprior\tline\n' > "$eff" ;; esac
+fi
+rc=0
+# a UTF-8 locale, as Claude Code passes the user's: a hook whose awk or tr is locale-
+# sensitive must pin LC_ALL=C itself (macOS awk dies on a non-ASCII byte under UTF-8)
+out=$(cd "$T/cwd" && env -i PATH="$PATH" HOME="$T/home" LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8 "${envs[@]}" "$@" < "$T/payload" 2>/dev/null) || rc=$?
+norm=$( [ -n "$out" ] && jq -S -c . <<<"$out" 2>/dev/null || printf '%s' "$out" )
+# the log the hook was told to write (eff, above): every line minus its epoch, and the
+# epoch itself must be all digits
 logn=""
-case "$eff" in /*) [ -f "$eff" ] && logn=$(cut -f2- "$eff") ;; esac
+case "$eff" in /*) if [ -f "$eff" ]; then
+  logn=$(cut -f2- "$eff")
+  cut -f1 "$eff" | grep -qv '^[0-9][0-9]*$' && logn="BAD-EPOCH $logn"
+fi ;; esac
 stray=$(cd "$T" && find home cwd -type f 2>/dev/null | while IFS= read -r f; do [ "$T/$f" = "$eff" ] || printf '%s\n' "$f"; done | LC_ALL=C sort | paste -sd, -)
 jq -c -n --arg name "$name" --argjson rc "$rc" --arg stdout "$norm" --arg log "$logn" --arg stray "$stray" \
   '{name:$name, rc:$rc, stdout:$stdout, log:$log, stray:$stray}'

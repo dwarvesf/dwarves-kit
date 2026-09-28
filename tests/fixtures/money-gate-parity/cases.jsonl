@@ -52,3 +52,7 @@
 {"name":"file-path-number","env":{"MONEY_GATE_REPOS":"fin","MONEY_GATE_STRICT":"1"},"payload":"{\"tool_input\":{\"file_path\":123,\"path\":\"/w/fin/x.py\",\"new_string\":\"usd\"},\"cwd\":\"/w/fin\"}"}
 {"name":"tool-input-string","env":{"MONEY_GATE_REPOS":"fin","MONEY_GATE_STRICT":"1"},"payload":"{\"tool_input\":\"usd\",\"cwd\":\"/w/fin\"}"}
 {"name":"large-write","env":{"MONEY_GATE_REPOS":"fin","MONEY_GATE_STRICT":"1"},"payload":{"gen":"large","bytes":1048576}}
+{"name":"log-appends","env":{"MONEY_GATE_REPOS":"fin"},"prelog":true,"payload":"{\"tool_input\":{\"file_path\":\"/w/fin/x.py\",\"new_string\":\"usd\"},\"cwd\":\"/w/fin\"}"}
+{"name":"strict-cr","env":{"MONEY_GATE_REPOS":"fin","MONEY_GATE_STRICT":"1\r"},"payload":"{\"tool_input\":{\"file_path\":\"/w/fin/x.py\",\"new_string\":\"usd\"},\"cwd\":\"/w/fin\"}"}
+{"name":"strict-vt-ff","env":{"MONEY_GATE_REPOS":"fin","MONEY_GATE_STRICT":"\u000bon\f"},"payload":"{\"tool_input\":{\"file_path\":\"/w/fin/x.py\",\"new_string\":\"usd\"},\"cwd\":\"/w/fin\"}"}
+{"name":"path-key-object-ignored","env":{"MONEY_GATE_REPOS":"fin","MONEY_GATE_STRICT":"1"},"payload":"{\"tool_input\":{\"file_path\":\"/w/fin/x.py\",\"path\":{\"a\":1},\"new_string\":\"usd\"},\"cwd\":\"/w/fin\"}"}
