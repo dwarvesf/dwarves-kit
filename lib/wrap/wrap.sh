@@ -1229,6 +1229,62 @@ _carry_branch_ours() {
   rm -rf "$d"
 }
 
+# _ci_label_sync <repo-url> <pr> -- repos whose PR workflows run on `pull_request:
+# types: [labeled]` only test a head when the PR carries the `ci` label, so an unlabeled
+# PR reports an empty rollup and a pending-check wait reads it as "nothing pending" on an
+# untested head. When the repo carries the label this adds it to the PR, or removes and
+# re-adds it when the label predates the head (a `labeled` event fired before the pushed
+# commits starts no run on them, which reads as the label present but an empty rollup on
+# the current head). Returns 0 when the repo gates on `ci` and the PR now carries it, 1
+# when the repo has no such label (a repo without one, or a repo whose label read failed,
+# behaves exactly as before), 2 when the repo gates but the label could not be set: that
+# merge would run untested, so the caller refuses it.
+_ci_label_sync() {
+  local url="$1" n="$2" detail
+  gh label list --repo "$url" --search ci --limit 200 --json name 2>/dev/null \
+    | jq -e '[.[] | select(.name == "ci")] | length > 0' >/dev/null 2>&1 || return 1
+  detail="$(gh pr view "$n" --repo "$url" --json labels,statusCheckRollup 2>/dev/null)"
+  if ! printf '%s' "$detail" | jq -e '[.labels // [] | .[] | select(.name == "ci")] | length > 0' >/dev/null 2>&1; then
+    gh pr edit "$n" --repo "$url" --add-label ci >/dev/null 2>&1 || {
+      echo "     could not add the ci label to #${n}" >&2; return 2; }
+    echo "     labeled #${n} ci (this repo runs PR checks only on the label)"
+  elif [ "$(printf '%s' "$detail" | jq -r '(.statusCheckRollup // []) | length' 2>/dev/null)" = "0" ]; then
+    { gh pr edit "$n" --repo "$url" --remove-label ci >/dev/null 2>&1 \
+      && gh pr edit "$n" --repo "$url" --add-label ci >/dev/null 2>&1; } || {
+      echo "     could not re-add the ci label on #${n}" >&2; return 2; }
+    echo "     re-labeled #${n} ci (the label predates the head)"
+  fi
+  return 0
+}
+
+# _ci_checks_wait <repo-url> <pr> -- the bounded wait for the runs a `ci` label just
+# started, used instead of the ordinary pending-check wait on a label-gated repo. The
+# `labeled` event registers the runs a few seconds after the edit, so an empty rollup
+# inside KIT_WRAP_CI_GRACE_SECS still counts as pending; past it, an empty rollup is a
+# paths-filtered workflow that started nothing and the wait ends. Pending checks wait to
+# KIT_WRAP_CARRY_CHECKS_SECS, and an unreadable read waits the same way a pending check
+# does. What red checks do is not this wait's call: the merge and its gate read them as
+# they always did.
+KIT_WRAP_CI_GRACE_SECS=${KIT_WRAP_CI_GRACE_SECS:-90}
+case "$KIT_WRAP_CI_GRACE_SECS" in ''|*[!0-9]*) KIT_WRAP_CI_GRACE_SECS=90 ;; esac
+_ci_checks_wait() {
+  local url="$1" n="$2" waited=0 state
+  while :; do
+    state="$(gh pr view "$n" --repo "$url" --json statusCheckRollup 2>/dev/null | jq -r '
+      (.statusCheckRollup // []) as $r
+      | if ($r | length) == 0 then "EMPTY"
+        else [$r[] | select(((.status // "COMPLETED") != "COMPLETED")
+                            or ((.state // "") == "PENDING") or ((.state // "") == "EXPECTED"))] | length end' 2>/dev/null)"
+    [ "$state" = "0" ] && break
+    if [ "$state" = "EMPTY" ]; then
+      [ "$waited" -lt "$KIT_WRAP_CI_GRACE_SECS" ] || break
+    else
+      [ "$waited" -lt "$KIT_WRAP_CARRY_CHECKS_SECS" ] || break
+    fi
+    sleep 10; waited=$(( waited + 10 ))
+  done
+}
+
 # _autoland_carry <repo> <def> <branch> <oid> -- lands one carry branch through the door every own PR
 # takes: `cmd_merge --apply --pr` (the own-PR check, `_pr_gate`, the union re-merge, the pinned
 # squash, `_tree_verify`), never a second merge path. It opens the branch's PR when none is
@@ -1283,6 +1339,16 @@ _autoland_carry() {
       echo "     adopted PR #${n} for ${branch}" ;;
     *) echo "     SKIP land ${branch}: the open-PR lookup failed or found several"; return 1 ;;
   esac
+  # A label-gated repo runs no checks until the PR carries `ci`, which the plain wait
+  # below would read as "nothing pending" and merge untested; sync the label first, then
+  # wait for the runs it starts. A repo without the label takes the wait it always did,
+  # and a label that could not be set refuses the land rather than landing untested.
+  _ci_label_sync "$url" "$n"; rc=$?
+  case "$rc" in
+    0) _ci_checks_wait "$url" "$n" ;;
+    2) echo "     SKIP land ${branch}: PR #${n} is unlabeled on a ci-gated repo; left open"; return 1 ;;
+  esac
+  if [ "$rc" -eq 1 ]; then
   # Pending: a check still running, or no check reported yet on a merge state that is not
   # CLEAN, which is what a PR opened seconds ago shows before its checks register.
   while :; do
@@ -1294,6 +1360,7 @@ _autoland_carry() {
     [ "${pending:-0}" -gt 0 ] 2>/dev/null && [ "$waited" -lt "$KIT_WRAP_CARRY_CHECKS_SECS" ] || break
     sleep 10; waited=$(( waited + 10 ))
   done
+  fi
   tip="$(gh pr view "$n" --repo "$url" --json headRefOid 2>/dev/null | jq -r '.headRefOid // ""' 2>/dev/null)"
   if [ "$tip" != "$want" ]; then
     echo "     SKIP land ${branch}: PR #${n} head is $(_short "$tip"), not the checked $(_short "$want"); left open"; return 1
@@ -2385,6 +2452,17 @@ cmd_land() {
     esac
     echo "     opened PR #${n}"
   fi
+
+  # A label-gated repo runs no checks until the PR carries `ci`, so the label goes on
+  # before the merge and the runs it starts get a bounded wait; a repo without the label
+  # merges as it always did, and a label that could not be set refuses rather than
+  # merging untested.
+  _ci_label_sync "$url" "$n"; rc=$?
+  case "$rc" in
+    0) _ci_checks_wait "$url" "$n" ;;
+    1) ;;
+    *) echo "     MERGE FAILED #${n}: the ci label could not be set" >&2; return 2 ;;
+  esac
 
   _gh_merge_retry "$n" "$url" "$tip"; rc=$?
   if [ "$rc" -ne 0 ]; then echo "     MERGE FAILED #${n}: exit ${rc}" >&2; return 2; fi

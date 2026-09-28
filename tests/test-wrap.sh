@@ -166,6 +166,11 @@ case "$sub" in
       ready)
         # `merge --pr N` marks a targeted draft ready. Nothing to print; real gh is silent too.
         exit "${GH_STUB_READY_RC:-0}" ;;
+      edit)
+        # `land`'s ci-label sync adds (or removes and re-adds) the `ci` label. The call is
+        # recorded like every other; a case that needs the next `pr view` to show the new
+        # label steps its GH_STUB_PR_<n>_<j> fixtures, the same way a moved head is modeled.
+        exit "${GH_STUB_EDIT_RC:-0}" ;;
       merge)
         # GH_STUB_MERGE_FAILS=N fails the first N merge calls with
         # GH_STUB_MERGE_ERR (default a 502 body) and GH_STUB_MERGE_FAIL_RC
@@ -199,6 +204,17 @@ case "$sub" in
             "${GH_STUB_LAND_BRANCH:-feat/union}:refs/heads/${GH_STUB_LAND_DEF:-main}" 2>/dev/null
         fi
         exit "$rc" ;;
+    esac
+    exit 1 ;;
+  label)
+    verb="${1:-}"; [ $# -gt 0 ] && shift
+    case "$verb" in
+      list)
+        # GH_STUB_LABELS is the repo's whole fuzzy --search answer: the exact-match on
+        # `ci` is the code under test, so a fixture can hold "ci-cd" without a "ci".
+        [ "${GH_STUB_LABEL_RC:-0}" = "0" ] || exit "$GH_STUB_LABEL_RC"
+        printf '%s\n' "${GH_STUB_LABELS:-[]}"
+        exit 0 ;;
     esac
     exit 1 ;;
 esac
@@ -2591,6 +2607,112 @@ chk_has "land reports the delete" "$out" "deleted feat/land"
 chk "land deleted the branch on origin too" \
   "$(git -C "$TMPD/ld-bare-ok" rev-parse --verify feat/land >/dev/null 2>&1 && echo 1 || echo 0)"
 chk_has "land reports the origin delete" "$out" "deleted feat/land on origin"
+
+echo "=== land: the ci label gate arms CI before the merge ==="
+# A label-gated repo runs no checks on an unlabeled PR, so a land that skipped the label
+# would merge the pushed head untested. The stub serves the read sequence the sync and
+# the wait make: view 1 sees the unlabeled PR, view 2 a run the label just started, view
+# 3 the same run green.
+build_land cigated
+LWT_CI="$(cd "$TMPD/ld-repo-cigated/wt" && pwd -P)"
+LTIP_CI="$(git -C "$LWT_CI" rev-parse HEAD)"
+: > "$GH_STUB_CALLS"; rm -f "$GH_STUB_CALLS".*
+out="$(PATH="$TMPD/nosleep:$PATH" \
+  GH_STUB_LABELS='[{"name":"ci-extra"},{"name":"ci"}]' \
+  GH_STUB_OPEN_PRS='[]' GH_STUB_CREATE_NUM=42 \
+  GH_STUB_PR_42='{"number":42,"labels":[],"statusCheckRollup":[],"mergeStateStatus":"CLEAN"}' \
+  GH_STUB_PR_42_2='{"number":42,"labels":[{"name":"ci"}],"statusCheckRollup":[{"name":"pr-check","status":"IN_PROGRESS"}]}' \
+  GH_STUB_PR_42_3='{"number":42,"labels":[{"name":"ci"}],"statusCheckRollup":[{"name":"pr-check","status":"COMPLETED","conclusion":"SUCCESS"}]}' \
+  GH_STUB_LAND_REPO="$LWT_CI" GH_STUB_LAND_REMOTE="$TMPD/ld-bare-cigated" \
+  GH_STUB_LAND_BRANCH=feat/land GH_STUB_LAND_DEF=main "$WRAP" land "$LWT_CI" 2>&1)"; rc=$?
+LAND_CALLS="$(cat "$GH_STUB_CALLS")"
+chk "ci-gated land: exits 0" "$rc"
+chk_has "ci-gated land: probed the repo labels" "$LAND_CALLS" "label list"
+chk_has "ci-gated land: added the ci label" "$LAND_CALLS" "pr edit 42 --repo $TMPD/ld-bare-cigated --add-label ci"
+chk_has "ci-gated land: reports the labeling" "$out" "labeled #42 ci"
+chk "ci-gated land: the label precedes the merge" \
+  "$(awk '/^pr edit 42 .*--add-label ci/{a=NR} /^pr merge 42 /{m=NR} END{exit !(a && m && a<m)}' "$GH_STUB_CALLS"; echo $?)"
+chk "ci-gated land: the pending run was waited out, not merged through" \
+  "$([ "$(grep -c '^pr view 42 ' "$GH_STUB_CALLS")" -ge 3 ]; echo $?)"
+chk_has "ci-gated land: the merge pins the pushed head" "$LAND_CALLS" "--squash --match-head-commit ${LTIP_CI}"
+chk_has "ci-gated land: merged once the check read green" "$out" "merged #42 ($(git -C "$TMPD/ld-bare-cigated" rev-parse main)): tree verified"
+
+echo "--- ci-gated land: a fuzzy label hit that is not exactly ci never arms"
+# `gh label list --search` matches substrings; a repo whose only hit is "ci-cd" has no
+# label gate and must get the ungated path: no edit call, the merge runs as it always did.
+build_land cifuzzy
+LWT_CF="$(cd "$TMPD/ld-repo-cifuzzy/wt" && pwd -P)"
+: > "$GH_STUB_CALLS"; rm -f "$GH_STUB_CALLS".*
+out="$(GH_STUB_LABELS='[{"name":"ci-cd"},{"name":"bug"}]' \
+  GH_STUB_OPEN_PRS='[]' GH_STUB_CREATE_NUM=42 \
+  GH_STUB_LAND_REPO="$LWT_CF" GH_STUB_LAND_REMOTE="$TMPD/ld-bare-cifuzzy" \
+  GH_STUB_LAND_BRANCH=feat/land GH_STUB_LAND_DEF=main "$WRAP" land "$LWT_CF" 2>&1)"; rc=$?
+LAND_CALLS="$(cat "$GH_STUB_CALLS")"
+chk "ci-fuzzy land: exits 0" "$rc"
+chk_has "ci-fuzzy land: still probed the labels" "$LAND_CALLS" "label list"
+chk_no "ci-fuzzy land: no ci label means no pr edit" "$LAND_CALLS" "pr edit"
+chk_has "ci-fuzzy land: merged as before" "$LAND_CALLS" "pr merge 42"
+
+echo "--- ci-gated land: a label already on with runs on the head is left alone"
+build_land ciarmed
+LWT_CA="$(cd "$TMPD/ld-repo-ciarmed/wt" && pwd -P)"
+: > "$GH_STUB_CALLS"; rm -f "$GH_STUB_CALLS".*
+out="$(PATH="$TMPD/nosleep:$PATH" \
+  GH_STUB_LABELS='[{"name":"ci"}]' \
+  GH_STUB_OPEN_PRS='[]' GH_STUB_CREATE_NUM=42 \
+  GH_STUB_PR_42='{"number":42,"labels":[{"name":"ci"}],"statusCheckRollup":[{"name":"pr-check","status":"COMPLETED","conclusion":"SUCCESS"}],"mergeStateStatus":"CLEAN"}' \
+  GH_STUB_LAND_REPO="$LWT_CA" GH_STUB_LAND_REMOTE="$TMPD/ld-bare-ciarmed" \
+  GH_STUB_LAND_BRANCH=feat/land GH_STUB_LAND_DEF=main "$WRAP" land "$LWT_CA" 2>&1)"; rc=$?
+LAND_CALLS="$(cat "$GH_STUB_CALLS")"
+chk "ci-armed land: exits 0" "$rc"
+chk_no "ci-armed land: an armed label is never re-added" "$LAND_CALLS" "pr edit"
+chk_has "ci-armed land: merged" "$LAND_CALLS" "pr merge 42"
+
+echo "--- ci-gated land: a label that predates the head is removed and re-added"
+# The PR carries ci but the rollup is empty: the labeled event fired before the pushed
+# commits, so the head was never tested. Remove+re-add re-fires the event on it.
+build_land cistale
+LWT_CS="$(cd "$TMPD/ld-repo-cistale/wt" && pwd -P)"
+: > "$GH_STUB_CALLS"; rm -f "$GH_STUB_CALLS".*
+out="$(PATH="$TMPD/nosleep:$PATH" \
+  GH_STUB_LABELS='[{"name":"ci"}]' \
+  GH_STUB_OPEN_PRS='[]' GH_STUB_CREATE_NUM=42 \
+  GH_STUB_PR_42='{"number":42,"labels":[{"name":"ci"}],"statusCheckRollup":[],"mergeStateStatus":"CLEAN"}' \
+  GH_STUB_PR_42_2='{"number":42,"labels":[{"name":"ci"}],"statusCheckRollup":[{"name":"pr-check","status":"COMPLETED","conclusion":"SUCCESS"}]}' \
+  GH_STUB_LAND_REPO="$LWT_CS" GH_STUB_LAND_REMOTE="$TMPD/ld-bare-cistale" \
+  GH_STUB_LAND_BRANCH=feat/land GH_STUB_LAND_DEF=main "$WRAP" land "$LWT_CS" 2>&1)"; rc=$?
+LAND_CALLS="$(cat "$GH_STUB_CALLS")"
+chk "ci-stale land: exits 0" "$rc"
+chk_has "ci-stale land: reports the re-label" "$out" "re-labeled #42 ci"
+chk "ci-stale land: remove precedes re-add precedes merge" \
+  "$(awk '/^pr edit 42 .*--remove-label ci/{r=NR} /^pr edit 42 .*--add-label ci/{a=NR} /^pr merge 42 /{m=NR} END{exit !(r && a && m && r<a && a<m)}' "$GH_STUB_CALLS"; echo $?)"
+
+echo "--- ci-gated land: a label that will not set refuses the merge"
+build_land cinoset
+LWT_CN="$(cd "$TMPD/ld-repo-cinoset/wt" && pwd -P)"
+: > "$GH_STUB_CALLS"; rm -f "$GH_STUB_CALLS".*
+out="$(GH_STUB_LABELS='[{"name":"ci"}]' GH_STUB_EDIT_RC=1 \
+  GH_STUB_OPEN_PRS='[]' GH_STUB_CREATE_NUM=42 \
+  GH_STUB_PR_42='{"number":42,"labels":[],"statusCheckRollup":[],"mergeStateStatus":"CLEAN"}' \
+  GH_STUB_LAND_REPO="$LWT_CN" GH_STUB_LAND_REMOTE="$TMPD/ld-bare-cinoset" \
+  GH_STUB_LAND_BRANCH=feat/land GH_STUB_LAND_DEF=main "$WRAP" land "$LWT_CN" 2>&1)"; rc=$?
+chk "ci-noset land: exits 2" "$([ "$rc" -eq 2 ]; echo $?)"
+chk_has "ci-noset land: names the refusal" "$out" "MERGE FAILED #42: the ci label could not be set"
+chk_no "ci-noset land: untested head never merges" "$(cat "$GH_STUB_CALLS")" "pr merge 42"
+
+echo "--- autoland on a ci-gated repo labels the carry PR before the merge"
+build_union_repo alci; al_orphan alci
+ALI="$TMPD/uclone-alci"; ALIB="$TMPD/ubare-alci"
+printf '%s' "$LAB_STRAY" > "$ALI/_meta/LAB_LOG.md"
+AL_PR_CI_2='{"number":42,"title":"carry","headRefName":"wrap/stray","headRefOid":"%CARRY_TIP%","baseRefName":"main","mergeable":"MERGEABLE","mergeStateStatus":"CLEAN","reviewDecision":"","statusCheckRollup":[{"name":"pr-check","status":"COMPLETED","conclusion":"SUCCESS"}],"labels":[{"name":"ci"}],"isDraft":false}'
+out="$(PATH="$TMPD/nosleep:$PATH" AL_WAIT=30 \
+  GH_STUB_LABELS='[{"name":"ci"}]' GH_STUB_PR_42_2="$AL_PR_CI_2" \
+  al_run "$ALIB" "$ALI" --apply)"; rc=$?
+chk "autoland ci-gated: apply exits 0" "$rc"
+chk_has "autoland ci-gated: the label went on the orphan's PR" "$(cat "$GH_STUB_CALLS")" "pr edit 42 --repo $ALIB --add-label ci"
+chk "autoland ci-gated: the label precedes the merge" \
+  "$(awk '/^pr edit 42 .*--add-label ci/{a=NR} /^pr merge 42 /{m=NR} END{exit !(a && m && a<m)}' "$GH_STUB_CALLS"; echo $?)"
+chk_has "autoland ci-gated: merge --pr verifies the tree" "$out" "tree verified"
 
 echo "--- knob false leaves the merged branch on origin"
 build_land knobkeep
