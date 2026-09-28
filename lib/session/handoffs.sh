@@ -39,13 +39,13 @@
 #   "(local)" suffix when there is no origin remote:
 #     LIVE (n open: ID-a, ID-b)   -- at least one cited row is still open
 #     DEAD (all n cited rows closed, delete it or move it into any
-#       subdirectory, either marks it consumed)  -- every cited row shipped/
-#       dropped/done/resolved
+#       subdirectory)  -- every cited row shipped/dropped/done/resolved
 #     UNCITED (no row IDs; read it)  -- the file names no board row
 #   A row ID this repo's board cannot resolve counts as open (unproven, not
 #   confirmed closed). The board owns the work; the handoff owns only the
 #   context (see AGENTS.md's handoff rule). A DEAD handoff is deleted by the
-#   session that finds it, git history keeps it.
+#   session that finds it, or moved into any subdirectory; either marks it
+#   consumed and git history keeps it.
 set -euo pipefail
 shopt -s nullglob
 
@@ -140,7 +140,7 @@ handoff_liveness() { # <file>
   local suffix=""
   [ "$BOARD_SOURCE" = "local" ] && suffix=" (local)"
   if [ "${#open[@]}" -eq 0 ]; then
-    echo "DEAD (all $n cited rows closed, delete it)$suffix"
+    echo "DEAD (all $n cited rows closed, delete it or move it into any subdirectory)$suffix"
   else
     local joined; joined="$(IFS=,; echo "${open[*]}")"
     joined="$(printf '%s' "$joined" | sed 's/,/, /g')"

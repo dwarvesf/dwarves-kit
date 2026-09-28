@@ -188,7 +188,7 @@ gout="$(bash "$HO" list --repo "$GREPO")"
 
 echo "[10] DEAD: all cited rows closed on origin (local copy says the opposite)"
 dead_line="$(printf '%s\n' "$gout" | grep 'dead-one.md')"
-if [[ "$dead_line" == *"DEAD (all 1 cited rows closed, delete it)"* ]]; then
+if [[ "$dead_line" == *"DEAD (all 1 cited rows closed, delete it or move it into any subdirectory)"* ]]; then
   ok "dead-one.md verdict: $dead_line"
 else
   no "expected DEAD verdict, got: $dead_line"
@@ -338,6 +338,8 @@ if [[ "$cout" == *"_meta/handoffs/live.md"* && "$cout" == *".claude/handoffs/liv
 else
   no "a .claude/ ancestor blanked a scan root: $cout"
 fi
+c_last="$(printf '%s\n' "$cout" | tail -1)"
+if [[ "$c_last" == "2 open handoffs" ]]; then ok "count: $c_last"; else no "expected '2 open handoffs', got: $c_last"; fi
 
 echo "[19] only-excluded repo (arbitrary + named subdirectories): honest 'no handoffs'"
 EXREPO="$(mktemp -d)"
@@ -362,6 +364,30 @@ Never shows up.
 EOF
 exout="$(bash "$HO" list --repo "$EXREPO")"
 if [[ "$exout" == "no handoffs" ]]; then ok "no handoffs for only-excluded repo"; else no "expected 'no handoffs', got: $exout"; fi
+
+echo "[20] a done/ ancestor above the repo root blanks neither scan root"
+DREPO="$(mktemp -d)/done/repo"
+mkdir -p "$DREPO/_meta/handoffs" "$DREPO/.claude/handoffs"
+cat > "$DREPO/_meta/handoffs/live.md" <<'EOF'
+# Handoff: live under _meta/handoffs, repo nested under done/
+
+## Next
+Still open.
+EOF
+cat > "$DREPO/.claude/handoffs/live.md" <<'EOF'
+# Handoff: live under .claude/handoffs, repo nested under done/
+
+## Next
+Still open.
+EOF
+dout="$(bash "$HO" list --repo "$DREPO")"
+if [[ "$dout" == *"_meta/handoffs/live.md"* && "$dout" == *".claude/handoffs/live.md"* ]]; then
+  ok "both scan roots survive a done/ ancestor: $dout"
+else
+  no "a done/ ancestor blanked a scan root: $dout"
+fi
+d_last="$(printf '%s\n' "$dout" | tail -1)"
+if [[ "$d_last" == "2 open handoffs" ]]; then ok "count: $d_last"; else no "expected '2 open handoffs', got: $d_last"; fi
 
 echo
 if [[ $fail -eq 0 ]]; then

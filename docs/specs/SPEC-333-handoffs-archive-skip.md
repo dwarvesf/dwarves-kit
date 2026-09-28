@@ -1,6 +1,6 @@
 # SPEC-333: handoffs.sh skips archive/ and nested .claude/
 
-**Status:** APPROVED
+**Status:** VALIDATED
 Lane: normal
 Type: spec-feature / behavioral
 
@@ -123,6 +123,11 @@ header-doc update. No new component, no data-model change, no external integrati
    unaffected as long as it sits directly in the scan root: `-maxdepth 1` only tests depth, and
    `-name '*.md'` only tests the `.md` suffix, neither inspects the file's own basename for a
    forbidden substring.
+6. A handoff is one top-level `.md` file. A multi-file handoff bundle needs a top-level index
+   `.md` that a reader (and this lister) can find directly in the scan root; any supporting
+   file the bundle puts in a subdirectory is invisible to `cmd_list`, since subdirectories
+   count as consumed by design. (The `handoff` skill that WRITES bundles is updated separately,
+   outside this spec's touches.)
 
 ## Out of scope
 
@@ -144,17 +149,18 @@ every count asserted is local to that fixture, never a shared or moving number.
 |---|---|---|---|
 | 1 | Pre-existing golden-path cases `[1]`-`[15]` (including the `done/` decoy under `$REPO`) | `$REPO` and its siblings, unchanged | still pass unmodified: a `done/` subdirectory is excluded because it is a subdirectory (depth-based), not because its name is on a list |
 | 2 | An arbitrarily named subdirectory neither `done`/`_archive`/`archive`/`.claude`, e.g. `$ARCREPO/_meta/handoffs/old/x.md` | new `ARCREPO="$(mktemp -d)"` | excluded, not listed (proves the design is NOT a name denylist) |
-| 3 | `archive/`, `_archive/`, and a nested `.claude/session-state/` under both scan roots (the shapes the original bug report named) | same `$ARCREPO` | excluded, not listed |
-| 4 | Live files sitting directly in `$ARCREPO/.claude/handoffs/live.md` and `$ARCREPO/_meta/handoffs/live.md` | same `$ARCREPO` | both listed, exact count 2 |
-| 5 | Repo itself checked out under a `.claude/` ancestor: `CREPO="$(mktemp -d)/.claude/worktrees/x/repo"`, with live `$CREPO/_meta/handoffs/live.md` and live `$CREPO/.claude/handoffs/live.md` (both directly in the scan root, no subdirectory) | `$CREPO` | both listed (proves the ancestor fix) |
-| 6 | Only subdirectory-nested files exist (no top-level `.md` in either scan root) | fresh `$(mktemp -d)` | "no handoffs" message |
+| 3 | Repo itself checked out under a `done/` ancestor: `DREPO="$(mktemp -d)/done/repo"`, with live `$DREPO/_meta/handoffs/live.md` and live `$DREPO/.claude/handoffs/live.md` (both directly in the scan root, no subdirectory) | `$DREPO` | both listed, exact count 2 (the decisive NC1 case: the pre-SPEC-333 filter's `-not -path '*/done/*'` matches this ancestor segment and wipes both scan roots, since the printed path is `.../done/repo/_meta/handoffs/live.md`) |
+| 4 | `archive/`, `_archive/`, and a nested `.claude/session-state/` under both scan roots (the shapes the original bug report named) | same `$ARCREPO` as case 2 | excluded, not listed |
+| 5 | Live files sitting directly in `$ARCREPO/.claude/handoffs/live.md` and `$ARCREPO/_meta/handoffs/live.md` | same `$ARCREPO` | both listed, exact count 2 |
+| 6 | Repo itself checked out under a `.claude/` ancestor: `CREPO="$(mktemp -d)/.claude/worktrees/x/repo"`, with live `$CREPO/_meta/handoffs/live.md` and live `$CREPO/.claude/handoffs/live.md` (both directly in the scan root, no subdirectory) | `$CREPO` | both listed, exact count 2 (proves the `.claude/` ancestor fix) |
+| 7 | Only subdirectory-nested files exist (no top-level `.md` in either scan root) | fresh `$(mktemp -d)` | "no handoffs" message |
 
 ## After state
 
 - [ ] `bash lib/session/handoffs.sh list --repo <repo>` on a repo with any archived-style
   subdirectory under either scan root, named anything at all, no longer reports its files as
   open, and still lists every live handoff sitting directly in either scan root, including
-  when the repo itself is checked out under a `.claude/` ancestor path.
+  when the repo itself is checked out under a `.claude/` OR `done/` ancestor path.
 - [ ] `bash lib/session/tests/test-handoffs.sh` passes, covering the cases above.
 
 ## Acceptance Criteria (global)
@@ -177,8 +183,10 @@ then reverted back to confirm GREEN:
 
 1. **Revert to the pre-SPEC-333 `-not -path` filter** (`git show 194c89f0:lib/session/handoffs.sh`,
    the two-clause `done/`/`_archive/`-only filter that predates this spec entirely). Must go
-   RED on the arbitrarily-named-subdirectory case (`old/x.md`) and on the `archive/`/nested
-   `.claude/` cases: none of those are excluded by the old two-clause filter.
+   RED on the arbitrarily-named-subdirectory case (`old/x.md`), on the `archive/`/nested
+   `.claude/` cases, AND specifically on the `done/`-ancestor case (test plan row 3): the old
+   filter's `-not -path '*/done/*'` matches the ancestor segment in `$DREPO`'s own path and
+   wipes both scan roots there, live files included, not just the four named shapes.
 2. **Apply the rejected name-denylist approach** (approach 3 above; the `-prune`/`-name`
    filter this worktree's history briefly shipped as commit `359d8836`). Must go RED
    specifically on the arbitrarily-named-subdirectory case (`old/x.md`): `old` is not one of
@@ -188,6 +196,7 @@ then reverted back to confirm GREEN:
 ## Touches
 - lib/session/handoffs.sh
 - lib/session/tests/test-handoffs.sh
+- commands/start.md
 
 ## Decision Log
 - DEC-A: Prune on exact directory NAME (`-name ... -prune`), not a `-not -path`
@@ -200,7 +209,10 @@ then reverted back to confirm GREEN:
   folder name; a subdirectory convention needs no list, and structurally also carries forward
   DEC-A's ancestor-path fix (a one-level scan never tests a substring of the full path either).
   Verified before this change: no repo under `~/workspace/tieubao` keeps a live handoff in a
-  subdirectory of either scan root.
+  subdirectory of either scan root. Consequence: a handoff is one top-level `.md` file; a
+  multi-file bundle needs a top-level index `.md`, since a subdirectory counts as consumed
+  regardless of its contents (Contract item 6). The `handoff` skill that writes bundles is
+  updated separately, outside this spec's touches.
 
 ## Open questions
 (none)
