@@ -209,14 +209,19 @@ Claude Code                         Codex
             |                                   |
             v                                   v
 hooks/hooks.json                    hooks/codex-hooks.json
-            |                                   |
+(and root settings.json)                        |
             |                                   v
-            |                        codex-hook-adapter.sh
+            v                        codex-hook-adapter.sh
+     anchor-root.sh                             |
+  (cd to the repo root,                         |
+   then exec the hook)                          |
             |                                   |
             +-------------------+---------------+
                                 v
                  shared hooks/*.sh policies
 ```
+
+On the Claude Code side every dispatch-table entry runs through `hooks/anchor-root.sh`, so a hook fired from a subdirectory reads and writes at the repo (or worktree) root. `secrets-guard.sh` is the one entry left unanchored: it resolves relative path operands against the real cwd. `tests/test-hook-anchor.sh` pins both tables.
 
 The Codex adapter maps `last_assistant_message` into the shared Stop input and extracts Bash or `apply_patch` paths for the shared secret policy. It fails closed when `jq` or a hard policy is unavailable. Claude manifests and settings remain unchanged. The shared denylist adds Codex and Cloudflare credential files for both runtimes.
 
@@ -260,6 +265,7 @@ file count so this table cannot drift):
 | Hook | Event | Class | Failure mode it backstops |
 |---|---|---|---|
 | `codex-hook-adapter` | Codex PreToolUse, Stop | compatibility | normalizes Codex payloads and dispatches shared policies; owns no allow or deny rule |
+| `anchor-root` | every hooks.json/settings.json event except secrets-guard's PreToolUse entry | infrastructure | none (cds to the resolved root before exec'ing the real hook; owns no allow or deny rule) |
 | `safety-gate` | PreToolUse Bash | hard | destructive deletes, push-to-main, force-push under deadline pressure |
 | `secrets-guard` | PreToolUse Read/Edit/Bash | hard | reading secret files "just to check"; transcript is plaintext |
 | `ship-gate` | PreToolUse Bash | hard | shipping without proof of done / recorded gates (ADR-0024 boundary) |

@@ -1,0 +1,1 @@
+{"type":"attachment","timestamp":"2026-09-28T11:00:00Z","entrypoint":"sdk-cli","attachment":{"type":"hook_success","hookName":"Stop","hookEvent":"Stop","command":"bash /x/headless-stop-hook.sh","durationMs":25,"exitCode":0,"stdout":"","stderr":""}}

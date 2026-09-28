@@ -40,7 +40,7 @@ LOG_DIR="${DWARVES_KIT_LOG_DIR:-$HOME/.claude/dwarves-kit/logs}"
 
 log_block() {
   mkdir -p "$LOG_DIR"
-  echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) | BLOCKED | $1 | $(pwd)" >> "$LOG_DIR/safety-gate.log"
+  echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) | BLOCKED | $1 | ${DWARVES_KIT_INVOCATION_CWD:-$(pwd)}" >> "$LOG_DIR/safety-gate.log"
 }
 
 block() {  # <rule> <message>

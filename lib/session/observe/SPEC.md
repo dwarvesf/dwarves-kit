@@ -15,9 +15,9 @@ Make my own Claude Code usage observable, the way I instrument any system I run.
 
 - **skills**: which Skills actually fire, how often, with what error rate (which of my ~90 skills earn their keep vs rot).
 - **tools**: which tools (Bash/Edit/Read/Agent/...) fire, with error rates.
-- **hooks**: per-hook execution latency (count, p50, p95, max) and hook-error counts (which hooks are slow and eating turn time).
+- **hooks**: per `(hook, event)` execution latency (count, p50, p95, max) and hook-error counts (which hooks are slow and eating turn time, under which event).
 
-Source: the JSONL transcripts under `~/.claude/projects/`. Each entry already carries `hookInfos: [{command, durationMs}]` + `hookErrors`, and every `tool_use` / `tool_result` block. So the tool is a read-only parser, no wrapper, no daemon, no dotfiles change (see `docs/implementation-notes/01-observability.md` for why the originally-specced timing wrapper was dropped).
+Source: the JSONL transcripts under `~/.claude/projects/`. Each entry already carries `hookInfos: [{command, durationMs}]` (Stop hooks only, via a `stop_hook_summary` system entry) + `hookErrors`, an `attachment` record per hook fired under every other event, and every `tool_use` / `tool_result` block. So the tool is a read-only parser, no wrapper, no daemon, no dotfiles change (see `docs/implementation-notes/01-observability.md` for why the originally-specced timing wrapper was dropped, and `docs/implementation-notes/observe-hooks-all-events.md` for the per-file Stop reconciliation).
 
 This is sub-goal 01 of the `cc-elevation` mega-goal (self-observability axis). Source analysis: `research/2026-06-14-claude-code-events-tools-elevation.md` Axis 2.
 
@@ -49,7 +49,7 @@ The intended recurring use is `cc-observe report --days 7 --json` (the weekly di
 2. Single pass over every JSONL line (unparseable lines skipped):
    - `tool_use` blocks -> count by tool name; `Skill` also counts `input.skill`. Remember `id -> name`.
    - `tool_result` blocks with `is_error` -> attribute the error to the tool/skill via `tool_use_id`.
-   - `hookInfos[]` -> collect `durationMs` per normalized hook label; `hookErrors` -> counted.
+   - `hookInfos[]` -> every entry is a Stop hook; collect a usable (int/float, non-bool) `durationMs` per `(normalized hook label, "Stop")`, buffered per file. `attachment` records of type `hook_success`, `hook_cancelled`, `hook_non_blocking_error` (or any type carrying `command` + a usable `durationMs`) -> collect per `(label, hookEvent)` for every event except Stop, which is instead buffered and committed only if that transcript file has no `hookInfos` at all (a headless `claude -p` file has none, so its Stop attachments are the only record); otherwise the file's `hookInfos` already counts Stop and the buffered attachment copy is discarded. `hookErrors` -> counted.
    - `tool_use` named `Agent`/`Task` in a non-sidechain entry -> count a subagent spawn by `timestamp` day and by `input.subagent_type`. A real user-message turn (text content, non-sidechain) -> count a prompt for that day (the `per100` denominator). Sidechain entries are the subagents' own runs, excluded from both.
    - friction: `Edit`/`Write`/`MultiEdit` -> per-session edit count by `file_path`, folded into `thrash` at end of each transcript (`>= THRASH_MIN`); `tool_result` content matching a `PERM_MARKERS` string -> a permission-friction event attributed to the tool via `tool_use_id` (Bash labeled by command); `isCompactSummary` entry -> a compaction for that day; a Skill's errored `tool_result` -> a skill mis-fire (skill-precision).
    - sessions: per transcript, track first/last `timestamp` (wall-clock), tool-use count, prompt-turn count -> `classify_session` buckets it (quick/standard/deep/marathon/automation, thresholds in `ARCH`); sidechain transcripts are skipped (not Han's sessions). Prompt-turns + tool-uses are bucketed by UTC hour (`circadian`). A prompt turn whose text holds `INTERRUPT_MARK` is an interruption.
@@ -57,7 +57,7 @@ The intended recurring use is `cc-observe report --days 7 --json` (the weekly di
    - entry-fee: per transcript, the FIRST main-chain assistant turn's `input + cache_creation + cache_read` is the session's MEASURED entry fee (the fixed preamble every turn re-reads). Preamble `attachment` entries are sized from their `rendered` text at 4 chars per token and keyed by `attachment.type`, an ESTIMATE labelled as one; the remainder against the measured fee is `(unattributed)` (system prompt + tool schemas, absent from the transcript). The `instructions` and `hook_success` rows carry sub-rows: `instructions` splits its component tokens across the attachment's `files` list (proportional to each file's content length, largest-remainder rounding so the sub-rows always sum to the parent row); `hook_success` splits by SessionStart hook `command` (truncated to 50 chars), flagged `SPILLED` when the hook's `content` carries the marker text `Output too large` (its stdout exceeded the harness's inline cap and only a preview reached the model). Sub-rows print in the text table only with `--detail`; `--json` carries them unconditionally under `split_components[].files` / `.hooks`. Transcripts with no main-chain assistant turn (a subagent's own run, a session with no reply) and transcripts under a `subagents/` dir contribute no row. Per-repo and weekly (`--trend`) tables carry the median measured fee. Full contract: `docs/specs/SPEC-289-observe-entry-fee.md`.
 3. Emit the requested view(s) as aligned tables, or one JSON object with `--json`.
 
-**Hook labels**: script hooks collapse to their basename (`slop-cleaner.sh`); inline `echo` guard hooks key on a short command hash (`inline-echo:ab12cd34`); other commands use their first token. Known limitation: long-text inline/condition hooks (e.g. the `/goal` Stop-hook, whose command is the goal text) fragment by first word. Script hooks, the ones with actionable latency, label cleanly.
+**Hook labels**: script hooks collapse to their basename (`slop-cleaner.sh`); inline `echo` guard hooks key on a short command hash (`inline-echo:ab12cd34`); other commands use their first token. A long-text inline/condition hook (e.g. the `/goal` Stop-hook, whose command is the goal text) hashes to a stable `inline-echo:<hash>` row per unique command (`len(c) > 120` routes it there before the first-word fallback runs), so distinct goals land in distinct rows rather than fragmenting or merging by first word; see `docs/implementation-notes/02-goal-hook-collapse.md`.
 
 ## Non-goals
 
@@ -101,6 +101,19 @@ Plus, against `sample.jsonl`'s three appended usage entries (opus 1M/1M/900k-rd/
 20. `cost`: haiku 1M input prices to `$0.80`.
 21. `cost` negative control: fable (unknown family) counts tokens but shows `?`, not a `$`.
 22. `cost` cache-hit: 90% (900k read / 100k create) in the header.
+
+Plus, against `hook-events-sample.jsonl` (a file WITH `hookInfos`: a Stop hook via `hookInfos`, a `hookInfos` entry with no `durationMs`, SessionStart/PreToolUse/PostToolUse/cancelled-hook `attachment` records, a duplicate Stop `attachment`, and an `attachment` with no `command`/`durationMs`):
+
+23. `hooks` counts the `hookInfos` Stop hook once; the no-duration `hookInfos` entry and the duplicate Stop `attachment` add nothing (double-counting rule, scoped to this file because it has `hookInfos`).
+24. `hooks` surfaces the SessionStart `attachment` hook (previously invisible), `maxms >= 1500`.
+25. `hooks` splits the same command into separate `PreToolUse` (2 runs) and `PostToolUse` (1 run) rows: `(label, event)` keying, not label-only.
+26. `hooks` counts the `hook_cancelled` attachment (a timed-out hook still cost turn time).
+27. `hooks` produces exactly 5 `(hook, event)` rows total; the no-duration and no-command/no-duration records produce none, no crash.
+28. `hooks` text table and `--json` both carry an `event` column/key.
+
+Plus, against `hook-events-sdkcli-sample.jsonl` (a headless `entrypoint: sdk-cli` file with NO `hookInfos` anywhere):
+
+29. `hooks` still counts its Stop hook, read entirely from the `attachment` copy (negative control against a global Stop skip, which would silently zero this out).
 
 Plus real-data runs (`friction --days 7`, `sessions --days 7`, `cost --days 7`) in `docs/proof-of-done.md`.
 
