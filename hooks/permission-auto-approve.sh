@@ -24,7 +24,15 @@
 #   stage-d:   WORDS[0] in {ls cat head tail wc echo which type stat du df grep},
 #              WORDS[0..1] in {git status, git ls-files}, or CMD exactly "pwd"
 #              approves with no further checks (no write-capable option exists).
-#   stage-e:   WORDS[0] must be a gated tool: find, git, or file.
+#   stage-e:   WORDS[0] must be a gated tool: find, git, or file. For git the
+#              stage also requires a work tree: git -C <payload .cwd, else
+#              $PWD> rev-parse --is-inside-work-tree must print exactly "true"
+#              and exit 0. A clone can deliver a tracked bare-repo layout
+#              (HEAD, objects/, refs/, config); git discovers it as a bare
+#              repository and an approved "read" would run whatever the
+#              carried config names (diff.external, gpg.program). The probe
+#              runs before the stage-d git fast-path so NO git command
+#              approves outside a work tree.
 #   stage-f:   for git, WORDS[1] must be an allowed subcommand (find and file
 #              have no subcommand gate); no arg token may contain "*"; every
 #              "-"-leading token must be in the tool's safe-flag set.
@@ -106,6 +114,27 @@ read -ra WORDS <<< "$CMD" || true
 if [ "${#WORDS[@]}" -eq 0 ]; then
   debug "fall-through: stage-c (whitespace-only command)"
   exit 0
+fi
+
+# git work-tree probe (part of stage-e, runs before the stage-d git
+# fast-path): a clone can deliver a tracked bare-repo layout, a directory
+# carrying HEAD, objects/, refs/, and a live config. git discovers it as a
+# bare repository, and an approved "read" (log via gpg.program, diff via
+# diff.external, status via core.fsmonitor) then runs whatever the config
+# names. --is-inside-work-tree prints "true" only inside a real work tree: a
+# bare layout prints "false" and a non-repo exits nonzero, so every other
+# outcome falls through. The probe itself executes no pager, fsmonitor, or
+# diff/filter driver (rev-parse is plumbing; it reads config, never runs it;
+# verified live against all four trap kinds). The .cwd read is the same
+# fail-closed jq pattern as TOOL/CMD: missing or unparseable falls back to
+# $PWD, and a nonexistent .cwd makes git -C exit nonzero, which falls through.
+if [ "${WORDS[0]}" = "git" ]; then
+  HOOK_CWD=$(printf '%s' "$INPUT" | jq -r '.cwd // empty' 2>/dev/null || true)
+  WT=$(git -C "${HOOK_CWD:-$PWD}" rev-parse --is-inside-work-tree 2>/dev/null) || WT=""
+  if [ "$WT" != "true" ]; then
+    debug "fall-through: stage-e (git outside a work tree)"
+    exit 0
+  fi
 fi
 
 # stage-d: tools whose flag set has no write-capable option approve outright.

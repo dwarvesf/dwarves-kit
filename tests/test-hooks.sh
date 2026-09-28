@@ -718,6 +718,31 @@ paa_fallthrough "does not approve printenv (bulk dump of the whole environment)"
 
 paa_fallthrough "does not approve npx -y prettier (auto-confirms install)" '{"tool_name":"Bash","tool_input":{"command":"npx -y prettier --check"}}'
 
+# Group (a) continued: a git command whose payload .cwd sits in a bare-repo
+# layout falls through. `git init --bare` produces the same shape a hostile
+# clone can deliver as tracked tree content (HEAD, objects/, refs/, config):
+# git discovers it as a bare repository, and an approved read would run a
+# config-named program (diff.external, gpg.program). The hook approves git
+# only when rev-parse --is-inside-work-tree prints "true" from the payload's
+# .cwd ($PWD when absent); a bare layout prints "false".
+PAA_BARE=$(mktemp -d "${TMPDIR:-/tmp}/paa-bare.XXXXXX")
+git init -q --bare "$PAA_BARE/layout"
+
+paa_fallthrough "does not approve git log inside a bare layout (payload .cwd)" "$(printf '{"tool_name":"Bash","cwd":"%s","tool_input":{"command":"git log"}}' "$PAA_BARE/layout")"
+
+# The same layout nested inside a normal repo's subdirectory: at each level
+# git checks the directory itself before walking up, so the parent's .git
+# never wins and the subdir is still discovered as a bare repo.
+git init -q "$PAA_BARE/host"
+mkdir -p "$PAA_BARE/host/sub"
+git init -q --bare "$PAA_BARE/host/sub/bare"
+
+paa_fallthrough "does not approve git diff in a bare layout nested inside a work tree (payload .cwd)" "$(printf '{"tool_name":"Bash","cwd":"%s","tool_input":{"command":"git diff A B"}}' "$PAA_BARE/host/sub/bare")"
+
+# A payload .cwd outside any repo also falls through: the probe requires an
+# actual work tree, not just a directory that exists.
+paa_fallthrough "does not approve git status outside any repo (payload .cwd)" "$(printf '{"tool_name":"Bash","cwd":"%s","tool_input":{"command":"git status"}}' "$PAA_BARE")"
+
 # Group (a) continued: git global flags inject config or change the repo the command acts
 # on; the safe-flag set only covers post-subcommand tokens, so -c/-C fall through.
 
@@ -816,6 +841,14 @@ assert_output_contains "still approves git log -n 5" '"allow"' "$OUTPUT"
 
 OUTPUT=$(echo '{"tool_name":"Bash","tool_input":{"command":"git log --format=%h"}}' | "$PAA_BASH" "$KIT_DIR/hooks/permission-auto-approve.sh" 2>/dev/null)
 assert_output_contains "still approves git log --format=%h" '"allow"' "$OUTPUT"
+
+# The git cases above exercise the $PWD fallback (the suite runs inside the
+# repo); these two pin the .cwd-driven path of the work-tree probe.
+OUTPUT=$(printf '{"tool_name":"Bash","cwd":"%s","tool_input":{"command":"git status"}}' "$KIT_DIR" | "$PAA_BASH" "$KIT_DIR/hooks/permission-auto-approve.sh" 2>/dev/null)
+assert_output_contains "still approves git status via payload .cwd" '"allow"' "$OUTPUT"
+
+OUTPUT=$(printf '{"tool_name":"Bash","cwd":"%s","tool_input":{"command":"git log --oneline -5"}}' "$KIT_DIR" | "$PAA_BASH" "$KIT_DIR/hooks/permission-auto-approve.sh" 2>/dev/null)
+assert_output_contains "still approves git log --oneline -5 via payload .cwd" '"allow"' "$OUTPUT"
 
 # Group (b) continued: every remaining Stage D entry gets one pin.
 
