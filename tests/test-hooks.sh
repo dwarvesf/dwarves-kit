@@ -1042,6 +1042,14 @@ printf 'Status: SHIPPED (v1)\n' > "$FX/docs/specs/SPEC-001-foo.md"
 printf 'Status: SHIPPED (v2)\n' > "$FX/docs/specs/SPEC-002-bar.md"
 assert_output_contains "all-SHIPPED -> no spec, no abort" "no spec found" "$(cr)"
 
+mkfx main  # live-spec filter edges: any-case Status, a late PARKED line, no Status, empty file
+printf 'status: draft\n' > "$FX/docs/specs/SPEC-001-foo.md"
+printf 'Status: VALIDATED\n' > "$FX/docs/specs/SPEC-002-bar.md"
+printf 'Status: VALIDATED\nlater\nStatus: parked\n' > "$FX/docs/specs/SPEC-003-late.md"
+printf 'no status line\n' > "$FX/docs/specs/SPEC-004-none.md"
+: > "$FX/docs/specs/SPEC-005-empty.md"
+assert_output_contains "live filter: case-insensitive, late PARKED, no-Status and empty skipped" "spec:ambiguous(SPEC-001,SPEC-002) " "$(cr)"
+
 mkfx main  # abort-path: zero specs, ID-013 guards preserved
 RC=0; OUT=$(cr) || RC=$?
 assert_exit "empty docs/specs exits 0" 0 $RC

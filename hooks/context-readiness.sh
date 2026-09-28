@@ -43,13 +43,22 @@ fi
 # (never silently guess).
 SPEC_FILE=""
 SPEC_AMBIG=""
-CANDIDATES=$(
-  for F in $(ls docs/specs/SPEC-*.md 2>/dev/null | sort || true); do
-    grep -qiE '^Status:[[:space:]]*(SHIPPED|PARKED)' "$F" && continue
-    grep -qiE '^Status:' "$F" || continue   # skip files with no parseable Status
-    printf '%s\n' "$F"
-  done
-)
+# One awk pass over every spec: two greps per file cost ~2s on a 267-spec repo,
+# and SessionStart blocks on it. A file is live when some line starts with
+# Status: (any case) and no such line says SHIPPED or PARKED.
+SPEC_LIST=$(ls docs/specs/SPEC-*.md 2>/dev/null | sort || true)
+CANDIDATES=""
+if [ -n "$SPEC_LIST" ]; then
+  # shellcheck disable=SC2086  # word-split the list, as the old for-loop did
+  CANDIDATES=$(awk '
+    function flush() { if (f != "" && has && !closed) print f }
+    FNR == 1 { flush(); f = FILENAME; has = 0; closed = 0 }
+    { l = tolower($0) }
+    l ~ /^status:/ { has = 1 }
+    l ~ /^status:[[:space:]]*(shipped|parked)/ { closed = 1 }
+    END { flush() }
+  ' $SPEC_LIST 2>/dev/null || true)
+fi
 N=$(printf '%s\n' "$CANDIDATES" | grep -c . || true)
 if [ "$N" -eq 1 ]; then
   SPEC_FILE="$CANDIDATES"
@@ -60,12 +69,13 @@ elif [ "$N" -gt 1 ]; then
   if [ -n "$BRANCH_NAME" ]; then
     while IFS= read -r F; do
       [ -z "$F" ] && continue
-      SLUG=$(basename "$F" .md | sed -E 's/^SPEC-[0-9]+-//')
+      SLUG=${F##*/}; SLUG=${SLUG%.md}
+      [[ $SLUG =~ ^SPEC-[0-9]+-(.*)$ ]] && SLUG=${BASH_REMATCH[1]}
       # whole-token match: a slug token must appear as a COMPLETE token in the
       # branch (split on / _ . -), so short tokens (a, db, gate) don't
       # substring-match an unrelated branch (e.g. "gate" in "gateway") and
       # silently mis-select. BTOK is space-padded so the case glob is boundaried.
-      BTOK=" $(printf '%s' "$BRANCH_NAME" | tr '/_.-' '    ') "
+      BTOK=" ${BRANCH_NAME//[\/_.-]/ } "
       HIT=0
       OLDIFS=$IFS; IFS='-'
       for T in $SLUG; do
