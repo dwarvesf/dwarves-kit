@@ -56,3 +56,4 @@
 {"name":"strict-cr","env":{"MONEY_GATE_REPOS":"fin","MONEY_GATE_STRICT":"1\r"},"payload":"{\"tool_input\":{\"file_path\":\"/w/fin/x.py\",\"new_string\":\"usd\"},\"cwd\":\"/w/fin\"}"}
 {"name":"strict-vt-ff","env":{"MONEY_GATE_REPOS":"fin","MONEY_GATE_STRICT":"\u000bon\f"},"payload":"{\"tool_input\":{\"file_path\":\"/w/fin/x.py\",\"new_string\":\"usd\"},\"cwd\":\"/w/fin\"}"}
 {"name":"path-key-object-ignored","env":{"MONEY_GATE_REPOS":"fin","MONEY_GATE_STRICT":"1"},"payload":"{\"tool_input\":{\"file_path\":\"/w/fin/x.py\",\"path\":{\"a\":1},\"new_string\":\"usd\"},\"cwd\":\"/w/fin\"}"}
+{"name":"variant-embedded","env":{"MONEY_GATE_REPOS":"fin","MONEY_GATE_STRICT":"1"},"payload":"{\"tool_input\":{\"file_path\":\"/w/fin/x.py\",\"new_string\":\"xapi_key api_keyx myprivate-key net_worthy xaccount_number api-key\"},\"cwd\":\"/w/fin\"}"}
