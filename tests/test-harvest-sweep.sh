@@ -1984,6 +1984,179 @@ assert_eq "AC26: a no-origin repo slugs <basename>-<12 hex of its path hash>" "T
 assert_eq "AC26: an origin repo slugs <owner>__<name>" "dwarvesf__app" "$(t9 slugO_shape)"
 
 # ============================================================
+echo "=== T10 pattern aggregation ==="
+
+T10_OUT=$(KIT_DIR="$KIT_DIR" TD="$TD" T5_NOW="$T5_NOW" python3 - <<'PY'
+import importlib.util, json, os, shlex
+spec = importlib.util.spec_from_file_location("hs", os.path.join(os.environ["KIT_DIR"], "hooks", "harvest_sweep.py"))
+hs = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(hs)
+TD, NOW = os.environ["TD"], int(os.environ["T5_NOW"])
+STUB = os.path.join(os.environ["KIT_DIR"], "tests", "fixtures", "harvest-sweep", "stub-extractor.sh")
+P = lambda k, v: print("%s=%s" % (k, v))
+DAY = 86400
+os.environ["HARVEST_STATE_DIR"] = os.path.join(TD, "t10", "state")
+os.environ["HARVEST_SWEEP_NOW"] = str(NOW)
+patterns_p = os.path.join(os.environ["HARVEST_STATE_DIR"], "sweep", "patterns.jsonl")
+proposed_p = os.path.join(os.environ["HARVEST_STATE_DIR"], "sweep", "proposed.jsonl")
+
+def t(sid, lead=None, la=None, source="claude", cwd="/work/app"):
+    return {"source": source, "session_id": sid, "lead_session_id": lead,
+            "cwd": cwd, "last_activity": la if la is not None else NOW}
+
+def sight(pattern, count=1, kind="repeat", evidence=None):
+    return {"pattern": pattern, "kind": kind, "count": count,
+            "evidence": evidence or ("ev " + pattern)}
+
+def rows():
+    return [json.loads(l) for l in open(patterns_p)] if os.path.exists(patterns_p) else []
+
+def occ(c, now=None):
+    return hs.pattern_stats(now or NOW).get(c, {}).get("occurrences", 0)
+
+def candset(now=None):
+    return {c["pattern"] for c in hs.candidates(now or NOW)}
+
+# ---- AC7: two lead groups at count 1 do not qualify; a third does ----
+hs._record_sightings(t("s1", lead="L1"), [sight("watch-retry-loop")])
+hs._record_sightings(t("s2", lead="L2"), [sight("watch-retry-loop")])
+P("cand_two_groups", ",".join(sorted(candset())))
+hs._record_sightings(t("s3", lead="L3"), [sight("watch-retry-loop")])
+P("occ_three", occ("watch-retry-loop"))
+P("cand_three_groups", "watch-retry-loop" in candset())
+
+# ---- AC7: one session sighting count 3 qualifies ----
+hs._record_sightings(t("s4"), [sight("solo-thrice", count=3)])
+P("cand_count3", "solo-thrice" in candset())
+
+# ---- AC7: two delta windows of count 2 sum to 4; a replay adds nothing ----
+t5 = t("s5")
+hs._record_sightings(t5, [sight("delta-sum", count=2)])
+hs._record_sightings(dict(t5, last_activity=NOW + 100), [sight("delta-sum", count=2)])
+dump = open(patterns_p).read()
+P("occ_delta", occ("delta-sum"))
+# the replay lands at a later NOW: byte-identity requires the kept ts
+os.environ["HARVEST_SWEEP_NOW"] = str(NOW + 5000)
+hs._record_sightings(dict(t5, last_activity=NOW + 100), [sight("delta-sum", count=2)])
+os.environ["HARVEST_SWEEP_NOW"] = str(NOW)
+P("delta_replay_bytes", open(patterns_p).read() == dump)
+P("occ_delta_replay", occ("delta-sum"))
+
+# ---- AC7: seven devin workers on one lead count as 1 group, 7 sessions ----
+for i in range(7):
+    hs._record_sightings(t("w%d" % i, lead="lead-9", source="devin"),
+                         [sight("shared-hand-work")])
+st = hs.pattern_stats(NOW)["shared-hand-work"]
+P("occ_workers", st["occurrences"])
+P("sess_workers", st["sessions"])
+P("leads_workers", st["leads"])
+P("cand_workers", "shared-hand-work" in candset())
+
+# ---- AC7: an ask qualifies at count 1; one repeat sighting does not ----
+hs._record_sightings(t("s6"), [sight("handoff-button-pls", kind="ask")])
+hs._record_sightings(t("s6b"), [sight("single-repeat-sighting")])
+P("cand_ask", "handoff-button-pls" in candset())
+P("cand_single1", "single-repeat-sighting" in candset())
+
+# ---- AC7: fuzzy clusters ----
+hs._record_sightings(t("s7"), [sight("commit-hook-false-block")])
+hs._record_sightings(t("s8"), [sight("commit-hok-false-block")])
+P("canon_cluster", ",".join(sorted({r["canonical"] for r in rows()
+                           if r["pattern"].endswith("false-block")})))
+P("occ_cluster", occ("commit-hook-false-block"))
+hs._record_sightings(t("s9"), [sight("fix-lint")])
+hs._record_sightings(t("sA"), [sight("fix-link")])
+P("canon_short", ",".join(sorted({r["canonical"] for r in rows()
+                         if r["pattern"] in ("fix-lint", "fix-link")})))
+# length-diff 3 stays two even when the distance threshold would cover it
+os.environ["HARVEST_SWEEP_FUZZY"] = "4"
+hs._record_sightings(t("sB"), [sight("nightly-retry-runs-ok")])
+hs._record_sightings(t("sC"), [sight("nightly-retry-runs")])
+P("canon_lendiff", ",".join(sorted({r["canonical"] for r in rows()
+                           if r["pattern"].startswith("nightly-retry")})))
+del os.environ["HARVEST_SWEEP_FUZZY"]
+
+# ---- window: a sighting older than 14 days falls out of the stats ----
+os.environ["HARVEST_SWEEP_NOW"] = str(NOW - 20 * DAY)
+for sid in ("o1", "o2", "o3"):
+    hs._record_sightings(t(sid), [sight("stale-window-pat")])
+os.environ["HARVEST_SWEEP_NOW"] = str(NOW)
+P("occ_stale_window", occ("stale-window-pat"))
+
+# ---- re-propose rule over a 30-day window ----
+os.environ["HARVEST_SWEEP_PATTERN_WINDOW_DAYS"] = "30"
+os.environ["HARVEST_SWEEP_NOW"] = str(NOW - 20 * DAY)
+for sid in ("b1", "b2", "b3"):
+    hs._record_sightings(t(sid), [sight("blocked-pat")])
+hs._record_sightings(t("u0"), [sight("unblocked-pat")])
+os.environ["HARVEST_SWEEP_NOW"] = str(NOW - DAY)
+hs._record_sightings(t("b4"), [sight("blocked-pat")])
+for sid in ("u1", "u2", "u3", "f1", "f2", "f3"):
+    hs._record_sightings(t(sid), [sight("unblocked-pat")])
+for sid in ("n1", "n2", "n3"):
+    hs._record_sightings(t(sid), [sight("fresh-rep-pat")])
+    hs._record_sightings(t(sid), [sight("nonrep-pat")])
+os.makedirs(os.path.dirname(proposed_p), exist_ok=True)
+with open(proposed_p, "w") as fh:
+    for pat, outcome, ts in (("blocked-pat", "REPORTED", NOW - 15 * DAY),
+                             ("unblocked-pat", "REPORTED", NOW - 15 * DAY),
+                             ("fresh-rep-pat", "REPORTED", NOW - 10 * DAY),
+                             ("nonrep-pat", "BUILT", NOW - DAY)):
+        fh.write(json.dumps({"pattern": pat, "run_id": "run-1",
+                             "outcome": outcome, "ts": ts}) + "\n")
+os.environ["HARVEST_SWEEP_NOW"] = str(NOW)
+cands = candset()
+P("reprop_fresh", "fresh-rep-pat" in cands)          # REPORTED 10d ago: blocked
+P("reprop_stale_growth", "unblocked-pat" in cands)   # 15d + 3 new: re-qualifies
+P("reprop_stale_low", "blocked-pat" in cands)        # 15d + only 1 new: blocked
+P("reprop_nonrep", "nonrep-pat" in cands)            # a BUILT entry never blocks
+del os.environ["HARVEST_SWEEP_PATTERN_WINDOW_DAYS"]
+
+# ---- wiring: sweep_process records the sanitized sighting row ----
+os.environ["HARVEST_EXTRACTOR"] = shlex.quote(STUB)
+os.environ["STUB_OUT"] = json.dumps({"learnings": [], "sightings": [
+    {"pattern": "wired-sighting", "kind": "repeat", "count": 2,
+     "evidence": "raw <tag> `tick` $var"}]})
+ok = hs.sweep_process(t("sw1", cwd="/nonexistent/deep"), "transcript text")
+wired = [r for r in rows() if r["pattern"] == "wired-sighting"][0]
+P("wired_ok", bool(ok))
+P("wired_row", "%s|%s|%s|%s|%s" % (wired["canonical"], wired["count"],
+                                   wired["extract_key"], wired["source"],
+                                   wired["lead_session_id"]))
+P("wired_evidence", wired["evidence"])
+P("wired_keys", ",".join(sorted(wired.keys())))
+PY
+)
+t10() { printf '%s\n' "$T10_OUT" | sed -n "s/^$1=//p"; }
+
+assert_eq "AC7: two lead groups sighting once produce no candidate" "" "$(t10 cand_two_groups)"
+assert_eq "AC7: a third lead group reaches the threshold" "3" "$(t10 occ_three)"
+assert_eq "AC7: the third group produces a candidate" "True" "$(t10 cand_three_groups)"
+assert_eq "AC7: one session at count 3 produces a candidate" "True" "$(t10 cand_count3)"
+assert_eq "AC7: two delta windows of one session sum to 4" "4" "$(t10 occ_delta)"
+assert_eq "AC7: replaying a window leaves the file byte-identical" "True" "$(t10 delta_replay_bytes)"
+assert_eq "AC7: a replayed window does not raise the total" "4" "$(t10 occ_delta_replay)"
+assert_eq "AC7: seven workers on one lead count as one group" "1" "$(t10 occ_workers)"
+assert_eq "AC7: the raw session count beside the group count is 7" "7" "$(t10 sess_workers)"
+assert_eq "AC7: the lead-group count is 1" "1" "$(t10 leads_workers)"
+assert_eq "AC7: one group at count 1 is no candidate" "False" "$(t10 cand_workers)"
+assert_eq "AC7: an ask qualifies at count 1" "True" "$(t10 cand_ask)"
+assert_eq "AC7: one repeat sighting of count 1 never qualifies" "False" "$(t10 cand_single1)"
+assert_eq "AC7: commit-hook-false-block and commit-hok-false-block share one canonical" "commit-hook-false-block" "$(t10 canon_cluster)"
+assert_eq "AC7: the cluster sums both sightings" "2" "$(t10 occ_cluster)"
+assert_eq "AC7: fix-lint and fix-link stay two slugs under the 12-char floor" "fix-link,fix-lint" "$(t10 canon_short)"
+assert_eq "AC7: a length gap of 3 never clusters even at FUZZY=4" "nightly-retry-runs,nightly-retry-runs-ok" "$(t10 canon_lendiff)"
+assert_eq "AC7: sightings older than the window fall out" "0" "$(t10 occ_stale_window)"
+assert_eq "AC7: a REPORTED entry under 14 days blocks re-proposing" "False" "$(t10 reprop_fresh)"
+assert_eq "AC7: a stale REPORTED re-proposes once occurrences grew by the threshold" "True" "$(t10 reprop_stale_growth)"
+assert_eq "AC7: a stale REPORTED keeps blocking on growth under the threshold" "False" "$(t10 reprop_stale_low)"
+assert_eq "AC7: a non-REPORTED proposed entry never blocks" "True" "$(t10 reprop_nonrep)"
+assert_eq "T10: sweep_process records the sanitized sighting" "True" "$(t10 wired_ok)"
+assert_eq "T10: the recorded row carries canonical, count, extract key, source, lead" "wired-sighting|2|sw1@$((T5_NOW))|claude|None" "$(t10 wired_row)"
+assert_eq "T10: sighting evidence is stored sanitized" "raw tag tick var" "$(t10 wired_evidence)"
+assert_eq "T10: the sighting row has the spec's keys" "canonical,count,cwd,evidence,extract_key,kind,lead_session_id,pattern,session_id,source,ts" "$(t10 wired_keys)"
+
+# ============================================================
 echo ""
 echo "=== Results ==="
 echo "Passed: $PASS / $TOTAL"

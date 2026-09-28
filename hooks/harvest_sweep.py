@@ -679,6 +679,7 @@ def sweep_process(t, text):
         return ExtractFailure(out, err)
     clean = sanitize_extraction(obj)
     _stage_sweep(t, clean["learnings"])
+    _record_sightings(t, clean["sightings"])
     return clean
 
 
@@ -816,6 +817,202 @@ def _stage_sweep(t, learnings):
     fresh = harvest._stage_candidates(ledger, glossaries, learnings,
                                       extra_known=extra)
     _write_sidecar(ledger, slug, t, learnings, {r["item"] for r in fresh})
+
+
+# ---- pattern aggregation -------------------------------------------------------
+
+def _sweep_file(name):
+    return os.path.join(harvest._state_dir(), "sweep", name)
+
+
+def _sweep_fuzzy():
+    """HARVEST_SWEEP_FUZZY, default 2: the sweep's own fixed threshold, independent
+    of the hook's HARVEST_FUZZY_THRESHOLD (DEC-87)."""
+    return max(0, int(os.environ.get("HARVEST_SWEEP_FUZZY", "2")))
+
+
+def _pattern_window_s():
+    return int(os.environ.get("HARVEST_SWEEP_PATTERN_WINDOW_DAYS", "14")) * 86400
+
+
+def _min_pattern_count():
+    return int(os.environ.get("HARVEST_SWEEP_MIN_PATTERN_COUNT", "3"))
+
+
+def _fuzzy_pair(a, b):
+    """Fuzzy clustering is a long-slug rule only: both at least 12 characters and
+    lengths within 2 of each other, then edit distance within the threshold
+    (DEC-87). Shorter slugs match exactly, handled by the == check before this."""
+    return (len(a) >= 12 and len(b) >= 12 and abs(len(a) - len(b)) <= 2
+            and harvest._levenshtein(a, b) <= _sweep_fuzzy())
+
+
+def _canonical_of(pattern, members, order):
+    """The canonical slug for a raw pattern: the canonical of the first cluster
+    (in first-seen order) holding a member that matches it exactly or fuzzily;
+    otherwise the pattern starts its own cluster. The first slug seen in a
+    cluster stays its canonical name (DEC-87)."""
+    for c in order:
+        for m in members[c]:
+            if pattern == m or _fuzzy_pair(pattern, m):
+                if pattern not in members[c]:
+                    members[c].append(pattern)
+                return c
+    members[pattern] = [pattern]
+    order.append(pattern)
+    return pattern
+
+
+def _record_sightings(t, sightings):
+    """Append this extraction's sightings to patterns.jsonl under patterns.lock,
+    one row per (canonical, session_id, extract_key); a replay of a window hits
+    the same key and replaces its row in place, keeping the row's original ts so
+    the file stays byte-identical (DEC-29, DEC-60, AC2). The file is rewritten
+    via tmp + os.replace."""
+    if not sightings:
+        return
+    path = _sweep_file("patterns.jsonl")
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    extract_key = "%s@%d" % (t["session_id"], int(t.get("last_activity") or 0))
+    with open(_sweep_file("patterns.lock"), "a") as lockf:
+        fcntl.flock(lockf, fcntl.LOCK_EX)
+        try:
+            rows = _jsonl_rows(path)
+            members, order = {}, []
+            for r in rows:
+                c = r.get("canonical")
+                if c and c not in members:
+                    members[c] = []
+                    order.append(c)
+                if c and r.get("pattern") and r["pattern"] not in members[c]:
+                    members[c].append(r["pattern"])
+            new = {}
+            for s in sightings:
+                pattern = str(s.get("pattern"))
+                try:
+                    count = int(s.get("count"))
+                except (TypeError, ValueError):
+                    count = 1
+                row = {"pattern": pattern,
+                       "canonical": _canonical_of(pattern, members, order),
+                       "kind": s.get("kind"), "source": t.get("source"),
+                       "session_id": t.get("session_id"),
+                       "extract_key": extract_key,
+                       "lead_session_id": t.get("lead_session_id"),
+                       "cwd": t.get("cwd") or "", "count": count,
+                       "evidence": s.get("evidence") or "", "ts": int(_now())}
+                new[(row["canonical"], row["session_id"], extract_key)] = row
+            merged = []
+            for r in rows:
+                key = (r.get("canonical"), r.get("session_id"),
+                       r.get("extract_key"))
+                fresh = new.pop(key, None)
+                if fresh is None:
+                    merged.append(r)
+                else:
+                    fresh["ts"] = r.get("ts", fresh["ts"])  # replays keep ts
+                    merged.append(fresh)
+            merged += new.values()
+            fd, tmp = tempfile.mkstemp(dir=os.path.dirname(path), prefix=".tmp-")
+            try:
+                with os.fdopen(fd, "w", encoding="utf-8") as fh:
+                    for r in merged:
+                        fh.write(json.dumps(r, sort_keys=True) + "\n")
+                os.replace(tmp, path)
+            except BaseException:
+                try:
+                    os.unlink(tmp)
+                except OSError:
+                    pass
+                raise
+        finally:
+            fcntl.flock(lockf, fcntl.LOCK_UN)
+
+
+def _lead_of(row):
+    """The lead group a sighting counts in: the attributed lead when known, the
+    session itself otherwise (DEC-88)."""
+    return row.get("lead_session_id") or row.get("session_id")
+
+
+def _pattern_totals(rows):
+    """{canonical: {"groups": {lead: {session: total}}, "sessions": set, "kind",
+    "evidence"}} over the given rows. A group's count is the largest per-session
+    total among its sessions; occurrences sum the group counts (DEC-88)."""
+    stats = {}
+    for r in rows:
+        c = r.get("canonical")
+        if not c:
+            continue
+        st = stats.setdefault(c, {"groups": {}, "sessions": set(),
+                                  "kind": None, "evidence": "", "ts": 0})
+        groups = st["groups"].setdefault(_lead_of(r), {})
+        sid = r.get("session_id")
+        groups[sid] = groups.get(sid, 0) + (r.get("count") or 0)
+        st["sessions"].add(sid)
+        if (r.get("ts") or 0) >= st["ts"]:
+            st["ts"], st["kind"], st["evidence"] = (r.get("ts") or 0,
+                                                  r.get("kind"),
+                                                  r.get("evidence") or "")
+    for st in stats.values():
+        st["occurrences"] = sum(max(g.values()) for g in st["groups"].values())
+    return stats
+
+
+def pattern_stats(now=None):
+    """Aggregate stats over the sightings window (default 14 days):
+    {canonical: {occurrences, sessions, leads, groups, kind, evidence}}. The raw
+    session count sits beside the lead-group count for the report (DEC-88)."""
+    now = _now() if now is None else now
+    rows = _windowed_rows(now)
+    stats = _pattern_totals(rows)
+    for st in stats.values():
+        st["sessions"] = len(st["sessions"])
+        st["leads"] = len(st["groups"])
+    return stats
+
+
+def _windowed_rows(now):
+    """patterns.jsonl rows inside the sightings window ending at now."""
+    cutoff = now - _pattern_window_s()
+    return [r for r in _jsonl_rows(_sweep_file("patterns.jsonl"))
+            if (r.get("ts") or 0) > cutoff]
+
+
+def candidates(now=None):
+    """Canonical patterns that qualify as candidates right now: occurrences reach
+    the threshold (1 for kind ask, HARVEST_SWEEP_MIN_PATTERN_COUNT otherwise) and
+    no proposed.jsonl entry blocks. The newest REPORTED entry for the canonical
+    blocks until it is 14 days old AND occurrences since its ts grew by at least
+    the threshold (the re-propose rule)."""
+    now = _now() if now is None else now
+    threshold = _min_pattern_count()
+    newest_reported = {}
+    for p in _jsonl_rows(_sweep_file("proposed.jsonl")):
+        if p.get("outcome") != "REPORTED" or not p.get("pattern"):
+            continue
+        if p["pattern"] not in newest_reported \
+                or (p.get("ts") or 0) > newest_reported[p["pattern"]].get("ts", 0):
+            newest_reported[p["pattern"]] = p
+    out = []
+    for c, st in pattern_stats(now).items():
+        need = 1 if st["kind"] == "ask" else threshold
+        if st["occurrences"] < need:
+            continue
+        rep = newest_reported.get(c)
+        if rep is not None:
+            rep_ts = rep.get("ts") or 0
+            if rep_ts > now - 14 * 86400:
+                continue
+            grown = _pattern_totals(
+                [r for r in _windowed_rows(now)
+                 if (r.get("ts") or 0) > rep_ts]
+            ).get(c, {}).get("occurrences", 0)
+            if grown < threshold:
+                continue
+        st["pattern"] = c
+        out.append(st)
+    return out
 
 
 class Stage1Log(object):
