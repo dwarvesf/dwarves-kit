@@ -46,18 +46,22 @@ SPEC_AMBIG=""
 # One awk pass over every spec: two greps per file cost ~2s on a 267-spec repo,
 # and SessionStart blocks on it. A file is live when some line starts with
 # Status: (any case) and no such line says SHIPPED or PARKED.
-SPEC_LIST=$(ls docs/specs/SPEC-*.md 2>/dev/null | sort || true)
+# awk aborts the whole pass on a path it cannot open, so drop dangling links,
+# directories and unreadable files first; the per-file greps skipped those too.
+SPEC_FILES=()
+for F in $(ls docs/specs/SPEC-*.md 2>/dev/null | sort || true); do
+  [ -f "$F" ] && [ -r "$F" ] && SPEC_FILES+=("$F")
+done
 CANDIDATES=""
-if [ -n "$SPEC_LIST" ]; then
-  # shellcheck disable=SC2086  # word-split the list, as the old for-loop did
+if [ ${#SPEC_FILES[@]} -gt 0 ]; then
   CANDIDATES=$(awk '
     function flush() { if (f != "" && has && !closed) print f }
     FNR == 1 { flush(); f = FILENAME; has = 0; closed = 0 }
     { l = tolower($0) }
     l ~ /^status:/ { has = 1 }
-    l ~ /^status:[[:space:]]*(shipped|parked)/ { closed = 1 }
+    l ~ /^status:[ \t\r\f\v]*(shipped|parked)/ { closed = 1 }
     END { flush() }
-  ' $SPEC_LIST 2>/dev/null || true)
+  ' "${SPEC_FILES[@]}" 2>/dev/null || true)
 fi
 N=$(printf '%s\n' "$CANDIDATES" | grep -c . || true)
 if [ "$N" -eq 1 ]; then
