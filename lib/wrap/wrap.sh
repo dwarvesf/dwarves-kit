@@ -3,7 +3,8 @@
 # touched, with twelve verbs:
 #
 #   wrap.sh scan  [--under <root>]... <repo> [<repo>...]    report only, exit 0
-#   wrap.sh apply [--apply] [--worktrees] [--archive-unmerged] [--own <path>]... [--under <root>]... <repo> [...]  dry-run by default
+#   wrap.sh apply [--apply] [--worktrees] [--archive-unmerged] [--pull-only] [--own <path>]... [--under <root>]... <repo> [...]  dry-run by default
+#   wrap.sh apply --pull-only [--apply] <repo> [...]        fetch + pull stage alone, no worktree/branch/stray write
 #   wrap.sh merge [--apply] [--pr N] <repo>                 merges ONE own green PR (--pr: a named draft)
 #   wrap.sh land  <worktree> [--title T] [--body-file F]    one hand-made worktree, landed
 #   wrap.sh start <repo> <branch> [--carry [<path>...]]     one hand-made worktree, started
@@ -117,7 +118,7 @@ source "$LIB_ROOT/config/kit-config.sh" || { echo "FATAL: lib/config/kit-config.
 # shellcheck source=lib/gate/default-branch-warn.sh
 source "$LIB_ROOT/gate/default-branch-warn.sh" || { echo "FATAL: lib/gate/default-branch-warn.sh missing or unreadable" >&2; exit 1; }
 
-_usage() { sed -n '2,31p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
+_usage() { sed -n '2,32p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
 
 # --------------------------------------------------------------------------- helpers
 
@@ -387,6 +388,7 @@ cmd_scan() {
 APPLY=0
 WORKTREES=0
 ARCHIVE_UNMERGED=0
+PULL_ONLY=0
 MODE="DRY-RUN"
 FAILURES=0
 TIPS_FILE=""
@@ -1545,7 +1547,14 @@ _apply_repo() {
   _is_repo "$repo" || { echo "== ${repo}: not a git repo, skipped"; return 0; }
   echo "== ${repo}"
   local fetch_ok=1
-  git -C "$repo" fetch --prune -q 2>/dev/null || { fetch_ok=0; echo "     (fetch failed; every delete is skipped)"; }
+  if ! git -C "$repo" fetch --prune -q 2>/dev/null; then
+    fetch_ok=0
+    if [ "$PULL_ONLY" = 1 ]; then
+      echo "     (fetch failed; the pull below will likely fail too)"
+    else
+      echo "     (fetch failed; every delete is skipped)"
+    fi
+  fi
 
   local def
   def="$(_default_branch "$repo")" || {
@@ -1564,37 +1573,41 @@ _apply_repo() {
     git -C "$repo" for-each-ref --format='%(refname:lstrip=2) %(objectname)' refs/heads/ > "$TIPS_FILE" 2>/dev/null
   fi
 
-  _apply_worktrees "$repo" "$def" "$cur" "$fetch_ok" "$ghs"
-  if [ -n "$OWN_SET" ]; then
-    # The named worktrees' branches were deleted by the worktree step itself; the
-    # all-branches sweep would reach past the session's scope into other sessions'.
-    echo "-- branches:"
-    echo "     SKIP branch sweep: --own scopes cleanup to the named worktrees"
-  else
-    _apply_branches "$repo" "$def" "$cur" "$fetch_ok" "$ghs"
-  fi
-  # Opt-in and never under --own (see the function's own comment); a flag-off run prints
-  # no new section, so the report is byte-identical to before this flag existed.
-  [ "$ARCHIVE_UNMERGED" = 1 ] && _apply_archive_unmerged "$repo" "$def" "$cur" "$fetch_ok"
-  # Outside the --own scope on purpose: it touches no local ref or worktree, and its own
-  # proof (merged PR at the exact tip, no open PR on it) holds whoever owns the branch.
-  # Skipping it under --own left every shared repo's merged heads on origin.
-  _apply_origin_branches "$repo" "$def" "$ghs"
+  # --pull-only runs the fetch + pull stage alone: no worktree, branch, archive, origin-branch,
+  # stray-line, or stray-commit write. See SPEC-359 "What the flag narrows".
+  if [ "$PULL_ONLY" != 1 ]; then
+    _apply_worktrees "$repo" "$def" "$cur" "$fetch_ok" "$ghs"
+    if [ -n "$OWN_SET" ]; then
+      # The named worktrees' branches were deleted by the worktree step itself; the
+      # all-branches sweep would reach past the session's scope into other sessions'.
+      echo "-- branches:"
+      echo "     SKIP branch sweep: --own scopes cleanup to the named worktrees"
+    else
+      _apply_branches "$repo" "$def" "$cur" "$fetch_ok" "$ghs"
+    fi
+    # Opt-in and never under --own (see the function's own comment); a flag-off run prints
+    # no new section, so the report is byte-identical to before this flag existed.
+    [ "$ARCHIVE_UNMERGED" = 1 ] && _apply_archive_unmerged "$repo" "$def" "$cur" "$fetch_ok"
+    # Outside the --own scope on purpose: it touches no local ref or worktree, and its own
+    # proof (merged PR at the exact tip, no open PR on it) holds whoever owns the branch.
+    # Skipping it under --own left every shared repo's merged heads on origin.
+    _apply_origin_branches "$repo" "$def" "$ghs"
 
-  # Any checked-out branch: the incident state is a shared main checkout sitting on a
-  # feature branch while a session writes the board there.
-  if [ "$fetch_ok" = 1 ]; then
-    _carry_stray "$repo" "$def"
-  else
-    echo "-- stray lines:"
-    echo "     SKIP stray lines: fetch failed, origin/${def} may be stale"
-  fi
-  # Before the pull, which a default branch ahead of origin can never fast-forward.
-  if [ "$fetch_ok" != 1 ]; then
-    echo "-- stray commits:"
-    echo "     SKIP stray commits: fetch failed, origin/${def} may be stale"
-  elif [ "$cur" = "$def" ]; then
-    _carry_stray_commits "$repo" "$def"
+    # Any checked-out branch: the incident state is a shared main checkout sitting on a
+    # feature branch while a session writes the board there.
+    if [ "$fetch_ok" = 1 ]; then
+      _carry_stray "$repo" "$def"
+    else
+      echo "-- stray lines:"
+      echo "     SKIP stray lines: fetch failed, origin/${def} may be stale"
+    fi
+    # Before the pull, which a default branch ahead of origin can never fast-forward.
+    if [ "$fetch_ok" != 1 ]; then
+      echo "-- stray commits:"
+      echo "     SKIP stray commits: fetch failed, origin/${def} may be stale"
+    elif [ "$cur" = "$def" ]; then
+      _carry_stray_commits "$repo" "$def"
+    fi
   fi
 
   echo "-- pull:"
@@ -1619,6 +1632,7 @@ cmd_apply() {
       --apply) APPLY=1 ;;
       --worktrees) WORKTREES=1 ;;
       --archive-unmerged) ARCHIVE_UNMERGED=1 ;;
+      --pull-only) PULL_ONLY=1 ;;
       --under=*) nu=$(( nu + 1 )); unders[nu]="${arg#--under=}" ;;
       --under) want_under=1 ;;
       --own=*) OWN_N=$(( OWN_N + 1 )); OWN_PATHS[OWN_N]="${arg#--own=}" ;;
@@ -1634,11 +1648,21 @@ cmd_apply() {
   done
   [ "$want_tips" = 0 ] || { echo "wrap.sh apply: --tips-file needs a path" >&2; return 64; }
   [ "$want_own" = 0 ] || { echo "wrap.sh apply: --own needs a worktree path" >&2; return 64; }
+  # --pull-only runs only the fetch + pull stage, so every other write-capable flag is a
+  # conflict rather than a silent no-op. Checked before the --tips-file existence check just
+  # below: a combination with --tips-file is refused for the conflict, not for whether the
+  # path exists.
+  if [ "$PULL_ONLY" = 1 ]; then
+    if [ "$WORKTREES" = 1 ]; then echo "wrap.sh apply: --pull-only cannot combine with --worktrees" >&2; return 64; fi
+    if [ "$ARCHIVE_UNMERGED" = 1 ]; then echo "wrap.sh apply: --pull-only cannot combine with --archive-unmerged" >&2; return 64; fi
+    if [ "$OWN_N" -gt 0 ]; then echo "wrap.sh apply: --pull-only cannot combine with --own" >&2; return 64; fi
+    if [ -n "$TIPS_OVERRIDE" ]; then echo "wrap.sh apply: --pull-only cannot combine with --tips-file" >&2; return 64; fi
+  fi
   if [ -n "$TIPS_OVERRIDE" ] && [ ! -f "$TIPS_OVERRIDE" ]; then
     echo "wrap.sh apply: --tips-file '${TIPS_OVERRIDE}' is not an existing file" >&2; return 64
   fi
   if [ "$want_under" = 1 ]; then _expand_bare_under apply || return 64; fi
-  [ "$count" -ge 1 ] || [ "$nu" -ge 1 ] || { echo "usage: wrap.sh apply [--apply] [--worktrees] [--archive-unmerged] [--own <path>]... [--under <root>]... <repo> [<repo>...]" >&2; return 64; }
+  [ "$count" -ge 1 ] || [ "$nu" -ge 1 ] || { echo "usage: wrap.sh apply [--apply] [--worktrees] [--archive-unmerged] [--pull-only] [--own <path>]... [--under <root>]... <repo> [<repo>...]" >&2; return 64; }
   while [ "$i" -le "$nu" ]; do _add_under "${unders[$i]}"; i=$(( i + 1 )); done
   # Canonicalise the own set once: the worktree loop compares against `pwd -P`
   # paths, so the same normalisation must apply to the names the operator typed.

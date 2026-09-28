@@ -5531,6 +5531,174 @@ chk_has "pinned config: agent2 is proven merged after that fetch" "$out" "delete
 chk "pinned config: agent2 is gone" \
   "$(git -C "$IC" show-ref --verify --quiet refs/heads/agent2 && echo 1 || echo 0)"
 
+# ===========================================================================
+echo "=== apply --pull-only: the pull stage alone ==="
+# ===========================================================================
+# SPEC-359. Reuses the pull_past_dirty fixtures above (build_pd_repo/advance_pd_repo/
+# pd_sibling_stash/pd_stash_count, PD_ON) since --pull-only changes nothing about
+# _pull_default itself, only which OTHER steps run around it.
+
+echo "--- pull-only: scope, happy path (only fetch + pull run, everything else survives)"
+build_pd_repo puloscope
+PSC="$TMPD/pdclone-puloscope"
+git -C "$PSC" branch old-branch
+advance_pd_repo puloscope
+PSC_TIP="$(git -C "$TMPD/pdbare-puloscope" rev-parse main)"
+out="$("$WRAP" apply --pull-only --apply "$PSC" 2>&1)"; rc=$?
+chk "pull-only scope: exits 0" "$rc"
+chk "pull-only scope: HEAD moved to the incoming commit" \
+  "$([ "$(git -C "$PSC" rev-parse HEAD)" = "$PSC_TIP" ]; echo $?)"
+chk "pull-only scope: old-branch still exists (branch sweep never ran)" \
+  "$(git -C "$PSC" show-ref --verify --quiet refs/heads/old-branch; echo $?)"
+chk_has "pull-only scope: the pull section still prints" "$out" "-- pull:"
+chk_no "pull-only scope: no worktrees section" "$out" "-- worktrees:"
+chk_no "pull-only scope: no branches section" "$out" "-- branches:"
+chk_no "pull-only scope: no archive unmerged section" "$out" "-- archive unmerged:"
+chk_no "pull-only scope: no origin branches section" "$out" "-- origin branches:"
+chk_no "pull-only scope: no stray lines section" "$out" "-- stray lines:"
+chk_no "pull-only scope: no stray commits section" "$out" "-- stray commits:"
+
+echo "--- pull-only: union carry and wrap.pull_past_dirty stash/pop both still work"
+build_pd_repo pulounion; advance_pd_repo pulounion also-lab
+PUO="$TMPD/pdclone-pulounion"
+printf '%s' "$A_LOCAL_FAR" > "$PUO/A.md"
+printf '%s' "$LAB_LOCAL" > "$PUO/_meta/LAB_LOG.md"
+out="$(KIT_CONFIG_OPERATOR="$PD_ON" "$WRAP" apply --pull-only --apply "$PUO" 2>&1)"; rc=$?
+chk "pull-only union+stash: apply exits 0" "$rc"
+chk_no "pull-only union+stash: the pull did not fail" "$out" "FAILED pull --ff-only"
+chk_has "pull-only union+stash: the union file was carried, not stashed" "$out" \
+  "saved 1 union-marked file(s) aside"
+chk_has "pull-only union+stash: the union lines came back" "$out" \
+  "carried 1 local line(s) back into _meta/LAB_LOG.md"
+chk_has "pull-only union+stash: only the non-union blocker was stashed" "$out" \
+  "stashed 1 dirty tracked file(s)"
+chk_has "pull-only union+stash: the stash was restored and dropped" "$out" \
+  "restored the stashed file(s) and dropped"
+chk "pull-only union+stash: the incoming log line landed" \
+  "$(grep -qF 'remote: the incoming line' "$PUO/_meta/LAB_LOG.md"; echo $?)"
+chk "pull-only union+stash: the local log line survived" \
+  "$(grep -qF 'local: the other session line' "$PUO/_meta/LAB_LOG.md"; echo $?)"
+chk "pull-only union+stash: the local line in A.md survived" \
+  "$(grep -qx 'a10 local' "$PUO/A.md"; echo $?)"
+chk "pull-only union+stash: no stash is left behind" "$([ "$(pd_stash_count "$PUO")" = "0" ]; echo $?)"
+chk_no "pull-only union+stash: no branches section" "$out" "-- branches:"
+
+echo "--- pull-only: wrap.pull_past_dirty off still aborts and nothing moves"
+build_pd_repo pulooff; advance_pd_repo pulooff
+POF="$TMPD/pdclone-pulooff"
+printf '%s' "$A_LOCAL_FAR" > "$POF/A.md"
+POF_HEAD="$(git -C "$POF" rev-parse HEAD)"
+out="$("$WRAP" apply --pull-only --apply "$POF" 2>&1)"; rc=$?
+chk "pull-only knob off: apply exits 2" "$([ "$rc" -eq 2 ]; echo $?)"
+chk_has "pull-only knob off: the pull failure is still reported" "$out" "FAILED pull --ff-only"
+chk_no "pull-only knob off: nothing was stashed" "$out" "stashed"
+chk "pull-only knob off: HEAD did not move" "$([ "$(git -C "$POF" rev-parse HEAD)" = "$POF_HEAD" ]; echo $?)"
+
+echo "--- pull-only: dry run changes nothing"
+build_pd_repo pulodry; advance_pd_repo pulodry
+PDR="$TMPD/pdclone-pulodry"
+PDR_HEAD="$(git -C "$PDR" rev-parse HEAD)"
+out="$("$WRAP" apply --pull-only "$PDR" 2>&1)"; rc=$?
+chk "pull-only dry run: exits 0" "$rc"
+chk_has "pull-only dry run: DRY-RUN verdict prints" "$out" "[DRY-RUN] pull --ff-only"
+chk "pull-only dry run: HEAD unmoved" "$([ "$(git -C "$PDR" rev-parse HEAD)" = "$PDR_HEAD" ]; echo $?)"
+chk_no "pull-only dry run: no branches section" "$out" "-- branches:"
+
+echo "--- pull-only: checkout off the default branch fetches instead of pulling"
+build_pd_repo pulooffdef; advance_pd_repo pulooffdef
+POD="$TMPD/pdclone-pulooffdef"
+git -C "$POD" checkout -qb feature/x
+out="$("$WRAP" apply --pull-only --apply "$POD" 2>&1)"; rc=$?
+chk "pull-only off-default: exits 0" "$rc"
+chk_has "pull-only off-default: SKIP pull line" "$out" "SKIP pull: checkout on 'feature/x'"
+chk_has "pull-only off-default: fetch fallback ran" "$out" "fetch origin main:main (ff-only by nature)"
+chk_no "pull-only off-default: no branches section" "$out" "-- branches:"
+chk_no "pull-only off-default: no worktrees section" "$out" "-- worktrees:"
+
+echo "--- pull-only: stray commits, ahead-only (origin unmoved) lands as a no-op"
+build_pd_repo puloahead
+PAH="$TMPD/pdclone-puloahead"
+printf 'local only\n' > "$PAH/B.md"
+git -C "$PAH" commit -qam "chore: a local commit origin never saw"
+PAH_HEAD="$(git -C "$PAH" rev-parse HEAD)"
+out="$("$WRAP" apply --pull-only --apply "$PAH" 2>&1)"; rc=$?
+chk "pull-only ahead-only: exits 0" "$rc"
+chk_no "pull-only ahead-only: no FAILED pull line" "$out" "FAILED pull --ff-only"
+chk "pull-only ahead-only: HEAD unchanged" "$([ "$(git -C "$PAH" rev-parse HEAD)" = "$PAH_HEAD" ]; echo $?)"
+chk_no "pull-only ahead-only: no local stray-commits branch" \
+  "$(git -C "$PAH" for-each-ref --format='%(refname)' refs/heads/)" "wrap/stray-commits-"
+chk_no "pull-only ahead-only: no origin stray-commits branch" \
+  "$(git -C "$TMPD/pdbare-puloahead" for-each-ref --format='%(refname)' refs/heads/)" "wrap/stray-commits-"
+
+echo "--- pull-only: stray commits, diverged still fails the pull"
+build_pd_repo pulodiverged; advance_pd_repo pulodiverged
+PDV="$TMPD/pdclone-pulodiverged"
+printf 'local only\n' > "$PDV/B.md"
+git -C "$PDV" commit -qam "chore: a local commit the remote never saw"
+PDV_HEAD="$(git -C "$PDV" rev-parse HEAD)"
+out="$("$WRAP" apply --pull-only --apply "$PDV" 2>&1)"; rc=$?
+chk "pull-only diverged: exits 2" "$([ "$rc" -eq 2 ]; echo $?)"
+chk_has "pull-only diverged: FAILED pull line present" "$out" "FAILED pull --ff-only"
+chk "pull-only diverged: HEAD did not move" "$([ "$(git -C "$PDV" rev-parse HEAD)" = "$PDV_HEAD" ]; echo $?)"
+chk_no "pull-only diverged: no local stray-commits branch" \
+  "$(git -C "$PDV" for-each-ref --format='%(refname)' refs/heads/)" "wrap/stray-commits-"
+chk_no "pull-only diverged: no origin stray-commits branch" \
+  "$(git -C "$TMPD/pdbare-pulodiverged" for-each-ref --format='%(refname)' refs/heads/)" "wrap/stray-commits-"
+
+echo "--- pull-only: fetch failure wording differs from plain apply"
+build_pd_repo pulofetchfail
+PFF="$TMPD/pdclone-pulofetchfail"
+git -C "$PFF" remote set-url origin "$TMPD/does-not-exist-bare-xyz"
+out="$("$WRAP" apply --pull-only --apply "$PFF" 2>&1)"; rc=$?
+chk "pull-only fetch failure: exits 2" "$([ "$rc" -eq 2 ]; echo $?)"
+chk_has "pull-only fetch failure: the wording names the pull" "$out" \
+  "(fetch failed; the pull below will likely fail too)"
+chk_no "pull-only fetch failure: not the plain-apply wording" "$out" "every delete is skipped"
+chk_has "pull-only fetch failure: a FAILED pull line follows" "$out" "FAILED pull --ff-only"
+
+echo "--- pull-only: the no-repo usage line names the flag"
+out="$("$WRAP" apply --pull-only 2>&1)"; rc=$?
+chk "pull-only usage: exits 64" "$([ "$rc" -eq 64 ]; echo $?)"
+chk_has "pull-only usage: the usage line names --pull-only" "$out" "--pull-only"
+
+echo "--- pull-only: flag conflicts"
+build_pd_repo puloconflict
+PCFL="$TMPD/pdclone-puloconflict"
+out="$("$WRAP" apply --pull-only --worktrees "$PCFL" 2>&1)"; rc=$?
+chk "pull-only conflict --worktrees: exits 64" "$([ "$rc" -eq 64 ]; echo $?)"
+chk_has "pull-only conflict --worktrees: names the flag" "$out" "cannot combine with --worktrees"
+
+out="$("$WRAP" apply --pull-only --archive-unmerged "$PCFL" 2>&1)"; rc=$?
+chk "pull-only conflict --archive-unmerged: exits 64" "$([ "$rc" -eq 64 ]; echo $?)"
+chk_has "pull-only conflict --archive-unmerged: names the flag" "$out" "cannot combine with --archive-unmerged"
+
+out="$("$WRAP" apply --pull-only --own "$PCFL" "$PCFL" 2>&1)"; rc=$?
+chk "pull-only conflict --own: exits 64" "$([ "$rc" -eq 64 ]; echo $?)"
+chk_has "pull-only conflict --own: names the flag" "$out" "cannot combine with --own"
+
+out="$("$WRAP" apply --pull-only --tips-file "$TMPD/does-not-exist-tips" "$PCFL" 2>&1)"; rc=$?
+chk "pull-only conflict --tips-file: exits 64" "$([ "$rc" -eq 64 ]; echo $?)"
+chk_has "pull-only conflict --tips-file: names the flag" "$out" "cannot combine with --tips-file"
+chk_no "pull-only conflict --tips-file: refused for the conflict, not the missing path" "$out" \
+  "is not an existing file"
+
+echo "--- pull-only: multi-repo, each repo gets its own header and pull section"
+build_pd_repo pulomulti1; advance_pd_repo pulomulti1
+build_pd_repo pulomulti2; advance_pd_repo pulomulti2
+PM1="$TMPD/pdclone-pulomulti1"; PM2="$TMPD/pdclone-pulomulti2"
+PM1_TIP="$(git -C "$TMPD/pdbare-pulomulti1" rev-parse main)"
+PM2_TIP="$(git -C "$TMPD/pdbare-pulomulti2" rev-parse main)"
+out="$("$WRAP" apply --pull-only --apply "$PM1" "$PM2" 2>&1)"; rc=$?
+chk "pull-only multi-repo: exits 0" "$rc"
+chk_has "pull-only multi-repo: repo 1 header" "$out" "== $PM1"
+chk_has "pull-only multi-repo: repo 2 header" "$out" "== $PM2"
+chk "pull-only multi-repo: repo 1 pulled" "$([ "$(git -C "$PM1" rev-parse HEAD)" = "$PM1_TIP" ]; echo $?)"
+chk "pull-only multi-repo: repo 2 pulled" "$([ "$(git -C "$PM2" rev-parse HEAD)" = "$PM2_TIP" ]; echo $?)"
+
+# Regression (TASK-J): no new fixture here on purpose -- every pre-existing `apply` assertion
+# above this section runs with no --pull-only in the call, so a full run of this file (not a
+# --pull-only-scoped subset) is itself the regression check.
+
 echo
 if [ "$FAIL" -gt 0 ]; then echo "test-wrap: $PASS passed, $FAIL FAILED of $TOTAL" >&2; exit 1; fi
 echo "test-wrap: all $PASS passed"
