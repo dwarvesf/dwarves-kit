@@ -1,6 +1,6 @@
 # SPEC-332: safety-gate splits segments the way bash does
 
-**Status:** DRAFT, revision 6 (validation rounds 1 to 5 and a break-it pass folded in)
+**Status:** DRAFT, revision 7 (validation rounds 1 to 6 and a break-it pass folded in)
 Lane: full
 Type: spec-bugfix
 **Proof:** `docs/verification/safety-gate-quoted-split.md`; `tests/test-hooks.sh`, the safety-gate `Q` rows.
@@ -42,10 +42,10 @@ Two passes print segments. The rules read every segment from both passes, as tod
 
 | Top of stack | Meaning of characters |
 |---|---|
-| none, `$(`, `(`, or backtick (code) | `\` escapes the next character; a trailing `\` deletes the newline (no space). An unquoted `#` at a word start ends the line. A word starts after a blank, `<`, `>`, `;`, `\|`, `&`, `(`, a subshell `)`, the opening of `$(` or a backtick, and a new line that does not continue the last; any other character, an escape, a closing quote, and the `)` or backtick that closes a substitution continue the word (`$(x)#y` and `a\ #y` are one word). `'`, `"`, `$'` open a quote. `$((`, and `((` at a command start (only blanks and the words `if then elif else while until do time -p for ! {` before it in the segment, blanks optional), open an arithmetic frame. `$(`, `(`, and a backtick open a frame and end the segment. `)` closes a `$(` or `(` frame and ends the segment. `;`, `\|`, `&` end the segment. An unquoted `<<` (not part of `<<<`) records a heredoc delimiter, and the walk continues on the same line. |
+| none, `$(`, `(`, or backtick (code) | `\` escapes the next character; a trailing `\` deletes the newline (no space). An unquoted `#` at a word start ends the line. A word starts after a blank, `<`, `>`, `;`, `\|`, `&`, `(`, a subshell `)`, the opening of `$(` or a backtick, and a new line that does not continue the last; any other character, an escape, a closing quote, and the `)` or backtick that closes a substitution continue the word (`$(x)#y` and `a\ #y` are one word). `'`, `"`, `$'` open a quote. `$((`, and `((` at a command start (only blanks and the words `if then elif else while until do time -p for ! { coproc`, or `coproc NAME`, before it in the segment, blanks optional), open an arithmetic frame. `$(` and a backtick open a substitution: the inner command walks as its own segments while the outer text waits, and on close the outer text resumes with a placeholder word `_` where the substitution stood, so `git -C "$(...)" push origin main` stays one argv. `(` opens a subshell frame and ends the segment; its `)` ends the segment too. `;`, `\|`, `&` end the segment. An unquoted `<<` (not part of `<<<`) records a heredoc delimiter, and the walk continues on the same line. |
 | `'` | literal until the next `'` |
 | `$'` | `\` escapes the next character; `'` closes |
-| `"` | `\` escapes the next character; `$((` opens an arithmetic frame; `$(` and a backtick open a frame and end the segment; `"` closes |
+| `"` | `\` escapes the next character; `$((` opens an arithmetic frame; `$(` and a backtick open a substitution as in code; `"` closes |
 | `$((` or `((` (arithmetic) | no boundary and no heredoc (`1<<B` is a shift). `$(` and a backtick still open frames and end the segment. Nested `(` counts; the `))` that balances it closes (a word starts after the `))` of a `((` command, not of `$((`). A lone unbalanced `)` means it was never arithmetic: the walk drops what the frame read, restores the heredoc count from the open, turns the frame into `$(` (or `(`), and walks the text again as code from the second `(`. A position rewound once never opens a frame again, so the re-walk stays linear. A frame opened on an earlier line only turns, with no re-walk |
 
 A newline ends the segment in a code context. Inside a quote, it joins the next line.
@@ -62,7 +62,8 @@ A newline ends the segment in a code context. Inside a quote, it joins the next 
 |---|---|
 | `NAME=value` | the word |
 | a redirection: `>f`, `2>f`, `&>f`, `<f`; `N>&M` | the word; a bare operator (`>`, `2>`) also takes the next word |
-| wrappers: `sudo doas env xargs exec command nohup time eval builtin bash sh zsh timeout nice stdbuf ionice caffeinate chronic unbuffer`, zsh `noglob nocorrect repeat` | the word |
+| wrappers: `sudo doas env xargs exec command nohup time eval builtin bash sh zsh timeout nice stdbuf ionice caffeinate chronic unbuffer watch`, zsh `noglob nocorrect repeat` | the word |
+| `op run`, `direnv exec DIR`, `mise exec`/`mise x` and its `tool@version` words | those words |
 | grammar: `if then else elif while until do { } !`, zsh `always` | the word |
 | `coproc` | the word; also the next word when the one after it is `{` or a loop keyword (`coproc NAME { ... }`) |
 | `function` | the word and the function name |
@@ -77,7 +78,7 @@ Wrappers and the binary match on the word's basename, so `/usr/bin/git` is `git`
 |---|---|
 | git subcommand scan | `-c`, `--namespace`, `--config-env`, `--super-prefix` skip their operand, like `-C` |
 | force push | `-f*` and `-[!-]*f*` (bundled `-fu`, `-uf`) block |
-| push all | `--mirror`, `--all`, a glob `*` or brace `{` in a push token block as `push-all` |
+| push all | `--mirror`, `--all`, a glob `*` or brace `{` in a push token block as `push-all`; a `refs/tags/` token is exempt |
 | push to main | `refs/heads/main`, `refs/heads/master`, and `*:refs/heads/main\|master` block |
 | rm | `-R` counts as recursive |
 | kubectl | `-n`, `--namespace`, `--context`, `--cluster`, `--user`, `--kubeconfig`, `-s`, `--server`, `-l`, `--selector` skip their operand before the subcommand |
@@ -146,22 +147,22 @@ Detection for every fail-open row is none: the remote branch protection is the b
 | Prose in a comment after a separator (`# x; <push> origin main`) | pass 2 blocks, as master does. Accepted false positive. |
 | A heredoc body line that equals the delimiter after trimming blanks (`<<EOF` body line `  EOF`) | the body ends early and the rest is read. Fail safe. |
 | An unterminated real heredoc | its body replays and may block. Fail safe. |
-| A separator inside quotes inside a wrapped script; a `)` in a `case` pattern inside `"$(...)"`; an escape in a ref (`$'\x6dain'`); a false `$((` or `((` frame that spans lines with a separator on an earlier line | not covered, recorded in the hook header |
+| A separator inside quotes inside a wrapped script; a `)` in a `case` pattern inside `"$(...)"`; an escape in a ref (`$'\x6dain'`); a false `$((` or `((` frame that spans lines with a separator on an earlier line; a wrapper outside the segment-start list (`ssh`, `flock`) | not covered, recorded in the hook header |
 | A ref in a variable, a script file, a pipe into `bash` | not covered, unchanged |
 | `sudo -s`, `timeout -s SIG` and other flags with an operand outside the table | the operand becomes the binary; not covered |
 | Shell dialect | the walk reads bash grammar, and Claude Code may run the command under zsh. zsh `noglob`, `nocorrect`, `repeat`, and `always` are skipped; other zsh-only syntax (`=(...)`, glob qualifiers) is not read |
 | A misread `<<` in `${...}` or `$[...]` whose false delimiter appears later | lines between are skipped. Master tracked only the first delimiter, so this one ordering is a master-blocks, branch-allows shape; `$((...))` and `((...))` at a command start are covered by the arithmetic frame; `((` after any word outside the grammar list is read as two subshells |
 | Unterminated quote | the walk ends in a quote context and prints what it holds; pass 2 still prints its split |
-| Walk cost | one character loop per command, plus one re-walk per false arithmetic frame (a rewound position never reopens, so 30 nested false frames take 0.04 s); string concatenation per character is quadratic in one segment's length. A 28 KB command takes 0.4 s against master's 17 s, because the per-segment strip no longer forks a subshell |
+| Walk cost | one character loop per command, plus one re-walk per false arithmetic frame (a rewound position never reopens, so 30 nested false frames take 0.04 s); string concatenation per character is quadratic in one segment's length. A 28 KB command takes 0.4 s against master's 17 s, because the per-segment strip no longer forks a subshell. The worst shape round 6 found under 50 KB (8000 repeats of `$( ((a `) takes about 2.7 s on BSD awk |
 | awk dialect | POSIX awk only: the suite passes under BSD awk 20200816, gawk 5.4.1, and mawk 1.3.4 |
 
 ## Task Breakdown
 
 | Task | Files | Acceptance |
 |---|---|---|
-| T1: walk, heredoc replay, naive pass, token strip, arithmetic frame, word start | `hooks/safety-gate.sh` | Q1 to Q34, Q50 to Q54, Q58, Q61 to Q66, Q68 to Q82 pass; the existing safety-gate rows stay green |
-| T2: segment start and rule tokens | `hooks/safety-gate.sh` | Q35 to Q49, Q55 to Q57, Q59, Q60, Q67 pass |
-| T3: tests | `tests/test-hooks.sh` | rows Q1 to Q82, each through the real hook |
+| T1: walk, heredoc replay, naive pass, token strip, arithmetic frame, word start, substitutions | `hooks/safety-gate.sh` | Q1 to Q34, Q50 to Q54, Q58, Q61 to Q66, Q68 to Q86, Q89 pass; the existing safety-gate rows stay green |
+| T2: segment start and rule tokens | `hooks/safety-gate.sh` | Q35 to Q49, Q55 to Q57, Q59, Q60, Q67, Q87, Q88, Q90 pass |
+| T3: tests | `tests/test-hooks.sh` | rows Q1 to Q90, each through the real hook |
 | T4: records | `docs/CHANGELOG.md`, `docs/verification/safety-gate-quoted-split.md`, `docs/implementation-notes/safety-gate-quoted-split.md` | CHANGELOG names the closed holes and the accepted false positives |
 
 ## Test plan
@@ -252,6 +253,14 @@ Every row runs the real hook through `q_hook`, which builds the JSON with jq. Bl
 | Q80 | `echo $(( $(cat <<X) ) )~body~X~<push> origin main~X` | block |
 | Q81 | 30 nested `$((a ` then `) & <push> origin main` | block, under 5 s |
 | Q82 | `for((i=0;i<3;i++)); do echo $i; done; <push> -u origin feat/x` | allow |
+| Q83 | `git -C "$(git rev-parse --show-toplevel)" push origin main` | block |
+| Q84 | `git --git-dir="$(pwd)/.git" push origin main` | block |
+| Q85 | `GIT_DIR=$(pwd)/.git <push> origin main` | block |
+| Q86 | `x=$(echo a; <push> -o 'a;b' origin main)` | block |
+| Q87 | `cat <<A; coproc ((1<<B))~A~<push> origin main~B` | block |
+| Q88 | `op run -- mise exec node@20 -- <push> origin main` | block |
+| Q89 | `git -C "$(git rev-parse --show-toplevel)" push -u origin feat/x` | allow |
+| Q90 | `<push> origin 'refs/tags/v1.*'` | allow |
 
 Negative controls, through `lib/gate/negctl.sh`:
 
@@ -281,7 +290,7 @@ Behavior changes to flag at review:
 |---|---|
 | A quoted string whose text after a separator reads as a push to main now blocks (`git commit -m "x; <push> origin main"`) | master already blocks the same shape with `rm -rf` |
 | `--all`, `--mirror`, and a glob or brace refspec block | each can push main |
-| DROP TABLE anywhere in a psql, mysql, or sqlite3 command blocks, heredoc body included | the SQL is the command's input |
+| DROP TABLE anywhere in a psql, mysql, or sqlite3 command blocks, heredoc body included (so `grep -rn 'DROP TABLE' migrations/ && psql "$DB" -f m.sql` blocks too) | the SQL is the command's input |
 | An unterminated heredoc's body is read | the walk cannot tell it from a misread `<<` |
 
 ## Decision Log
@@ -296,5 +305,6 @@ Behavior changes to flag at review:
 - Revision 4: a `#` is a comment only at a word start, so an escaped blank or operator before it keeps the line live. The arithmetic frame reads `$(` and backticks inside it, closes only on `))`, and turns back into `$(` or `(` on a lone `)`; `((` at a command start opens it too.
 - Revision 5: "is the segment empty" was standing in for two questions. A word-start flag now answers "is this # a comment", and a grammar-word test answers "is this (( a command". A lone `)` in a frame opened on the same line re-walks the frame's text, so a separator read before it is not lost.
 - Revision 6: blanks after a grammar word are optional (`if((`), `time -p` counts, the `))` of a `((` command starts a word, a rewind restores the heredoc count, and a rewound position never reopens a frame. Round 5 rated every finding contrived; each was a one-line change.
+- Revision 7: a substitution no longer ends the outer segment. The outer text waits on the frame and resumes with `_`, which closes the one plausible shape round 6 found (`git -C "$(git rev-parse --show-toplevel)" push origin main`, open on master too). `coproc` joins the `((` command-start words; `op run`, `direnv exec`, `mise exec`, `watch` join the wrappers; a tag glob is exempt from `push-all`.
 - `--all` stays blocked: it pushes every local branch, main included. The implementation-notes open question is closed by this call.
 - Bash and awk only, per `docs/PHILOSOPHY.md`.

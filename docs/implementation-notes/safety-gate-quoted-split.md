@@ -23,6 +23,7 @@ The delta from `docs/specs/SPEC-332-safety-gate-quoted-split.md`. Decisions alre
 | 3 | fresh Opus validator, every critical probe-confirmed | NEEDS REVISION | `#` after an escaped blank or operator read as a comment (hid `&` and `$(`); rev-3 arithmetic frame skipped `$(` inside it and closed on a lone `)`; `((` ordering; `xargs -d` |
 | 4 | fresh Opus validator, every critical probe-confirmed | NEEDS REVISION | `((` after `if`/`for`/`!`/`{` queued a delimiter (regression vs master); `#` right after `$( )` or a backtick; the rev-4 escape marker never reset; text before a lone `)` never re-walked |
 | 5 | fresh Opus validator, likelihood-rated | NEEDS REVISION, all contrived | `if((` with no blank, `#` after a `((` command's `))`, a delimiter queued twice by the re-walk (three regressions vs master); exponential re-walk on deep false nests (depth 20 took 2 s; now 0.06 s) |
+| 6 | fresh Opus validator, likelihood-rated, plus a 48-command benign sweep | NEEDS REVISION | a `$( )` before the subcommand split the outer argv (`git -C "$(git rev-parse --show-toplevel)" push origin main`, plausible, open on master too); `coproc ((` (contrived regression); wrappers `op run`, `direnv exec`, `mise exec`; tag-glob false positive |
 
 The round-2 validator found its criticals by reading the code; its probe pass was cut short. The lead confirmed each against branch and master before fixing (`probe-r3.sh` in the job scratch dir): R1, R3, R4 were bypasses on both; R5 was the one regression.
 

@@ -19,7 +19,8 @@
 # a `)` in a case pattern inside `"$(...)"` desyncs the walk; a misread << (in ${...})
 # whose false delimiter line appears later skips the lines between; a false $(( or ((
 # frame that spans lines only turns at its lone ), so a separator on an earlier line
-# stays unread; a wrapper flag
+# stays unread; a wrapper outside the segment-start list (ssh, flock) hides its command;
+# a wrapper flag
 # whose operand the segment-start table does not list (sudo -s, timeout -s SIG) turns
 # the operand into the binary; zsh-only syntax beyond noglob, nocorrect, repeat, and
 # always is read as bash.
@@ -66,6 +67,10 @@ SQ="'"
 SEGMENTS=$(printf '%s\n' "$CMD" | awk -v sq="$SQ" '
   function emit() { gsub(/[$()`]/, " ", seg); print seg; seg = "" }
   function top() { return d ? st[d] : "" }
+  # $( and ` : the inner command walks as its own segments while the outer text waits in
+  # sv[d]; on close it returns with "_" standing in for the substitution
+  function sub_open(kind) { st[++d] = kind; sv[d] = seg; seg = ""; ws = 1 }
+  function sub_close() { emit(); seg = sv[d] "_"; d--; ws = 0 }
   # open an arithmetic frame: kind ($ for $((, ( for (( at a command start), where it
   # opened, the index of its second (, and the segment length, line, and heredoc count at
   # the open, for the lone-) rewind. A position rewound once never reopens a frame, so
@@ -102,8 +107,8 @@ SEGMENTS=$(printf '%s\n' "$CMD" | awk -v sq="$SQ" '
       c = substr(line, i, 1); nx = substr(line, i + 1, 1); t = top()
       if (t == sq) { if (c == sq) { d--; ws = 0 } seg = seg c; continue }
       if (t == "A") {
-        if (c == "$" && nx == "(") { st[++d] = "$"; i++; emit(); ws = 1; continue }
-        if (c == "`") { st[++d] = "`"; emit(); ws = 1; continue }
+        if (c == "$" && nx == "(") { sub_open("$"); i++; continue }
+        if (c == "`") { sub_open("`"); continue }
         if (c == "(") ap[d]++
         else if (c == ")") {
           if (ap[d]) ap[d]--
@@ -112,7 +117,9 @@ SEGMENTS=$(printf '%s\n' "$CMD" | awk -v sq="$SQ" '
             # a lone ) means it was never arithmetic, but $( ( or ( (: drop what the frame
             # read without boundaries and walk it again as code from the second (
             rw[ln, aw[d]] = 1; nh = an[d]
-            seg = substr(seg, 1, as[d]); st[d] = ak[d]; emit(); ws = 1; i = ao[d] - 1; continue
+            seg = substr(seg, 1, as[d]); st[d] = ak[d]
+            if (ak[d] == "$") { sv[d] = seg; seg = "" } else emit()
+            ws = 1; i = ao[d] - 1; continue
           } else { st[d] = ak[d]; emit(); ws = 1; continue }
         }
         seg = seg c; continue
@@ -122,8 +129,8 @@ SEGMENTS=$(printf '%s\n' "$CMD" | awk -v sq="$SQ" '
       if (t == "\"") {
         if (c == "\"") { d--; seg = seg c; ws = 0; continue }
         if (c == "$" && substr(line, i, 3) == "$((" && arith("$", i, i + 2)) { i += 2; continue }
-        if (c == "$" && nx == "(") { st[++d] = "$"; i++; emit(); ws = 1; continue }
-        if (c == "`") { st[++d] = "`"; emit(); ws = 1; continue }
+        if (c == "$" && nx == "(") { sub_open("$"); i++; continue }
+        if (c == "`") { sub_open("`"); continue }
         seg = seg c; continue
       }
       # code context: top level, $( ... ), ( ... ) or ` ... `
@@ -140,12 +147,12 @@ SEGMENTS=$(printf '%s\n' "$CMD" | awk -v sq="$SQ" '
       if (c == sq || c == "\"") { st[++d] = c; seg = seg c; ws = 0; continue }
       if (c == "$" && nx == sq) { st[++d] = "E"; seg = seg c nx; i++; ws = 0; continue }
       if (c == "$" && substr(line, i, 3) == "$((" && arith("$", i, i + 2)) { i += 2; ws = 0; continue }
-      if (c == "(" && nx == "(" && seg ~ /^[ \t]*(((if|then|elif|else|while|until|do|time|-p|for|!|\{)[ \t]*)*)$/ && arith("(", i, i + 1)) {
+      if (c == "(" && nx == "(" && seg ~ /^[ \t]*(((if|then|elif|else|while|until|do|time|-p|for|!|\{|coproc([ \t]+[A-Za-z_][A-Za-z0-9_]*)?)[ \t]*)*)$/ && arith("(", i, i + 1)) {
         i++; continue
       }
-      if (c == "$" && nx == "(") { st[++d] = "$"; i++; emit(); ws = 1; continue }
-      if (c == "`") { if (t == "`") { d--; ws = 0 } else { st[++d] = "`"; ws = 1 } emit(); continue }
-      if (c == ")") { if (t == "$") { d--; ws = 0 } else { if (t == "(") d--; ws = 1 } emit(); continue }
+      if (c == "$" && nx == "(") { sub_open("$"); i++; continue }
+      if (c == "`") { if (t == "`") sub_close(); else sub_open("`"); continue }
+      if (c == ")") { if (t == "$") sub_close(); else { if (t == "(") d--; ws = 1; emit() } continue }
       if (c == "(") { st[++d] = "("; emit(); ws = 1; continue }
       if (c == ";" || c == "|" || c == "&") { emit(); ws = 1; continue }
       seg = seg c; ws = 0
@@ -221,7 +228,11 @@ while IFS= read -r SEG; do
     case "${1##*/}" in
       sudo|doas|env|xargs|exec) W="${1##*/}"; shift ;;
       command|nohup|time|eval|builtin|bash|sh|zsh|noglob|nocorrect|repeat) W=""; shift ;;
-      timeout|nice|stdbuf|ionice|caffeinate|chronic|unbuffer) W=""; shift ;;
+      timeout|nice|stdbuf|ionice|caffeinate|chronic|unbuffer|watch) W=""; shift ;;
+      # op run -- cmd, direnv exec DIR cmd, mise exec [tool@ver] -- cmd
+      op) shift; case "${1:-}" in run) shift ;; esac ;;
+      direnv) shift; case "${1:-}" in exec) shift; [ $# -gt 0 ] && shift ;; esac ;;
+      mise) shift; case "${1:-}" in exec|x) shift; while [ $# -gt 0 ]; do case "$1" in *@*) shift ;; *) break ;; esac; done ;; esac ;;
       if|then|else|elif|while|until|do|'{'|'}'|'!'|always) shift ;;
       # coproc NAME { ... } and function NAME { ... }: the name is not the command
       coproc) shift; case "${2:-}" in '{'|if|while|until|for|select|'!') shift ;; esac ;;
@@ -297,6 +308,7 @@ while IFS= read -r SEG; do
               --force|-f*|-[!-]*f*) block "force-push" "Force push is dangerous. Use --force-with-lease if you must overwrite remote history." ;;
               --force-with-lease*|--force-if-includes) ;;
               +*) block "force-push" "Refspec force push (+ref) is --force without the lease. Use --force-with-lease." ;;
+              refs/tags/*|*:refs/tags/*) ;;
               --mirror|--all|*\**|*\{*) block "push-all" "--mirror, --all, or a glob or brace refspec can push main/master. Push one feature branch." ;;
               main|master|*:main|*:master|refs/heads/main|refs/heads/master|*:refs/heads/main|*:refs/heads/master)
                 block "push-to-main" "Do not push directly to main/master. Create a feature branch and open a PR." ;;

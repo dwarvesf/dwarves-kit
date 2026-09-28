@@ -291,6 +291,18 @@ assert_exit "Q81: nested false (( frames still block" 2 "$(q_hook "$DEEP")"
 Q81_SECS=$(( $(date +%s) - Q81_START ))
 assert_true "Q81b: nested false (( frames re-walk in linear time (${Q81_SECS}s)" "$([ "$Q81_SECS" -lt 5 ]; echo $?)"
 assert_exit "Q82: compact for(( loop then a feature push is allowed" 0 "$(q_hook "for((i=0;i<3;i++)); do echo \$i; done; $PUSH -u origin feat/x")"
+# SPEC-332 rev 7: validation round 6. A substitution keeps the outer argv whole.
+assert_exit "Q83: \$( ) as the -C operand" 2 "$(q_hook "git -C \"\$(git rev-parse --show-toplevel)\" push origin main")"
+assert_exit "Q84: \$( ) inside --git-dir=" 2 "$(q_hook "git --git-dir=\"\$(pwd)/.git\" push origin main")"
+assert_exit "Q85: \$( ) in an assignment prefix" 2 "$(q_hook "GIT_DIR=\$(pwd)/.git $PUSH origin main")"
+assert_exit "Q86: push inside an assigned substitution" 2 "$(q_hook "x=\$(echo a; $PUSH -o 'a;b' origin main)")"
+assert_exit "Q87: coproc before ((" 2 "$(q_hook "cat <<A; coproc ((1<<B))
+A
+$PUSH origin main
+B")"
+assert_exit "Q88: op run and mise exec wrappers" 2 "$(q_hook "op run -- mise exec node@20 -- $PUSH origin main")"
+assert_exit "Q89: \$( ) as the -C operand of a feature push is allowed" 0 "$(q_hook "git -C \"\$(git rev-parse --show-toplevel)\" push -u origin feat/x")"
+assert_exit "Q90: a tag glob is allowed" 0 "$(q_hook "$PUSH origin 'refs/tags/v1.*'")"
 # F4: cd-prefix repo resolution parses portably (probe affordance prints the target)
 CDOUT=$(echo '{"tool_input":{"command":"cd /tmp/some-repo && git push -q origin feat/x"}}' | DWARVES_KIT_PRINT_CDDIR=1 bash "$KIT_DIR/hooks/ship-gate.sh" 2>/dev/null)
 assert_output_contains "F4: ship-gate resolves the cd target" "^/tmp/some-repo$" "$CDOUT"
