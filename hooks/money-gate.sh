@@ -57,7 +57,8 @@ cwd=${raw#*$'\001'}
 haystack=$file_path$'\n'$cwd
 IFS=':' read -r -a repos <<< "$MONEY_GATE_REPOS" || true
 match=0
-for r in "${repos[@]}"; do
+# ${a[@]+...}: bash 3.2 treats an empty array as unbound under set -u
+for r in ${repos[@]+"${repos[@]}"}; do
   [ -n "$r" ] || continue
   # literal substring: quoting inside the pattern pins r down, so glob and regex
   # metacharacters in a repo name are data, never wildcards
@@ -138,7 +139,9 @@ hits_csv=$(printf '%s\n' "$hits" | paste -sd, -)
 # even when empty; the default applies only when it is unset. An empty or slashless
 # path has no directory part (makedirs("") fails in the original) and an unwritable
 # directory never blocks the edit, so both cases write nothing anywhere.
-if [ "${MONEY_GATE_LOG+x}" = "x" ]; then logp=$MONEY_GATE_LOG; else logp=$HOME/.claude/logs/money-gate.log; fi
+# ~ falls back to the password database when HOME is unset (launchd, env -i), as
+# Python's expanduser does; $HOME would trip set -u and lose the ask.
+if [ "${MONEY_GATE_LOG+x}" = "x" ]; then logp=$MONEY_GATE_LOG; else logp=~/.claude/logs/money-gate.log; fi
 dir=
 case "$logp" in */*) dir=${logp%/*} ;; esac
 if [ -n "$dir" ] && mkdir -p "$dir" 2>/dev/null; then

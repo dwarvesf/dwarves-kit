@@ -198,10 +198,10 @@ this SPEC documents reality; items 3 and 4 are fixes, the rest stand.
 ## Verification
 
 ```bash
-bash tests/test-money-gate.sh   # -> test-money-gate: all 12 passed
+bash tests/test-money-gate.sh   # -> test-money-gate: all 16 passed
 ```
 
-12 assertions: 6 positive, 5 negative controls, 1 characterization test.
+16 assertions (tags `[1]` to `[12]`, plus `[10b]`, `[12b]`, `[12c]`).
 
 - **Fires** `[1][2][3][8][9][10][11][12b]`: the `ask` emits on a money edit in a named
   repo, its JSON is valid and names the matched terms; log-only mode logs without asking;

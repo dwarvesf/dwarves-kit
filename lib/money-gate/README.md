@@ -59,16 +59,19 @@ broken gate can never wedge an edit.
 ## Test
 
 ```bash
-bash tests/test-money-gate.sh   # -> test-money-gate: all 12 passed
+bash tests/test-money-gate.sh   # -> test-money-gate: all 16 passed
 ```
 
 ## Known gaps
 
-`SPEC.md` carries the full contract, the degrade paths, and three divergences worth
-knowing before you trust this gate:
+`SPEC.md` carries the full contract and the degrade paths; with
+`docs/specs/SPEC-355-money-gate-bash.md`, three divergences are worth knowing before you
+trust this gate:
 
 1. The log path bypasses the durable-root resolver (`lib/telemetry/kit-log-dir.sh`).
 2. The keyword list (`token`, `secret`, `password`) also fires on ordinary auth code.
 3. The scan works on bytes under `LC_ALL=C`: Python's `re.IGNORECASE` folded a few
    exotic Unicode letters into ASCII terms (the Kelvin sign, the long s); the hook does
-   not. No realistic payload carries them.
+   not, and it reads those letters as separators, so next to a term it fires where Python
+   stayed silent. It over-fires, never misses. No realistic payload carries them
+   (SPEC-355, Failure modes).
