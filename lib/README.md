@@ -15,7 +15,7 @@ orphans with no cluster stay as bare scripts at the root.
 | `queue/` | `orchestrate.sh` `queue.sh` `weekend-batch.sh` |
 | `gate/` | `gate-ledger.sh` `proof-gate.sh` `proof-ledger.sh` `proof-table-gen.py` `proof-table-gen.sh` `dispatch-gate.sh` `quiz-gate.sh` `coverage-delta.sh` `verify-counts.sh` `mutation-smoke.sh` |
 | `classify/` | `lane-classify.sh` `role-classify.sh` `significance-classify.sh` `task-type-classify.sh` `route-suggest.sh` |
-| `spec/` | `spec-index.sh` `spec-next.sh` |
+| `spec/` | `spec-index.sh` `spec-next.sh` `spec-task-done.sh` |
 | `goal/` | `goal-drafts.sh` `goal-registry.sh` `mega-merge.sh` `stack-merge.sh` `handoff-gen` + `handoff/` (`handoff_gen.py`, `cc_compact.py`) |
 | `mega/` | `mega.sh` `mega-report.py` `mega-review.py` (the mega-goal engine + its two python halves; stable entry via `bin/mega`) |
 | `telemetry/` | `lane-telemetry.sh` `kit-log-dir.sh` |

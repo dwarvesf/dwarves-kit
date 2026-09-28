@@ -7,17 +7,19 @@
 # Usage:
 #   spec.sh index [list]        -> spec-index.sh (the grouped spec table)
 #   spec.sh next <args...>      -> spec-next.sh (next|check <NNN>|reserve)
+#   spec.sh task-done <args...> -> spec-task-done.sh (check a task off + log its run; never commits)
 #   spec.sh -h|--help|help      -> this usage
 set -euo pipefail
 
 SPEC_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-usage() { sed -n '2,10p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
+usage() { sed -n '2,11p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
 
 main() {
   local verb="${1:-}"; [ $# -gt 0 ] && shift || true
   case "$verb" in
     index)              exec bash "$SPEC_DIR/spec-index.sh" "$@" ;;
     next)               exec bash "$SPEC_DIR/spec-next.sh" "$@" ;;
+    task-done)          exec bash "$SPEC_DIR/spec-task-done.sh" "$@" ;;
     -h|--help|help|"")  usage ;;
     *) echo "spec: unknown verb '$verb' (try: spec --help)" >&2; exit 1 ;;
   esac
