@@ -16,9 +16,10 @@ ln -s "$(python3 -c 'import sys; print(sys.executable)')" "$H/bin/python3"
 while IFS= read -r c; do
   printf '%s' "$c" | PATH="$H/bin:$PATH" bash "$HERE/run-case.sh" bash "$H/hooks/citation-guard.sh" >> "$HERE/expected.jsonl"
 done < "$HERE/cases.jsonl"
-# Deliberate divergence (SPEC-356): the Python crashed on a non-object payload (exit 1,
-# a traceback); the port exits 0 silently, like every other malformed payload.
+# Deliberate divergence (SPEC-356): the Python crashed (exit 1, a traceback, never a block)
+# on a non-object payload and on three malformed transcript shapes; the port exits 0
+# silently, like every other malformed input.
 tmpf="$(mktemp)"
-jq -c 'if .name == "non-object-payload" then .rc = 0 | .stderr = "" | .log = "" | .stray = "" else . end' "$HERE/expected.jsonl" > "$tmpf"
+jq -c 'if (.name | IN("non-object-payload", "crash-nonobject-line", "crash-message-string", "crash-text-null")) then .rc = 0 | .stderr = "" | .log = "" | .stray = "" else . end' "$HERE/expected.jsonl" > "$tmpf"
 mv -f "$tmpf" "$HERE/expected.jsonl"
 echo "wrote $(wc -l < "$HERE/expected.jsonl" | tr -d ' ') cases from $REV"

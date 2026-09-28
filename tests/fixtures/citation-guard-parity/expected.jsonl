@@ -40,3 +40,19 @@
 {"name":"cwd-absent-uses-pwd","rc":2,"stderr":"citation-guard: unresolved citations: a.md:6 (file has 5 lines)","log":"?\ta.md:6 (file has 5 lines)","stray":""}
 {"name":"nbsp-url","rc":2,"stderr":"citation-guard: unresolved citations: nope.md:1 (no such file)","log":"?\tnope.md:1 (no such file)","stray":""}
 {"name":"non-object-payload","rc":0,"stderr":"","log":"","stray":""}
+{"name":"inline-multiline-a","rc":0,"stderr":"","log":"","stray":""}
+{"name":"inline-multiline-b","rc":0,"stderr":"","log":"","stray":""}
+{"name":"url-nnbsp","rc":2,"stderr":"citation-guard: unresolved citations: nope.md:1 (no such file)","log":"?\tnope.md:1 (no such file)","stray":""}
+{"name":"url-thin-space","rc":2,"stderr":"citation-guard: unresolved citations: nope.md:2 (no such file)","log":"?\tnope.md:2 (no such file)","stray":""}
+{"name":"url-zwsp","rc":0,"stderr":"","log":"","stray":""}
+{"name":"leading-zeros","rc":2,"stderr":"citation-guard: unresolved citations: nope.md:7 (no such file); a.md:6 (file has 5 lines)","log":"?\tnope.md:7 (no such file); a.md:6 (file has 5 lines)","stray":""}
+{"name":"four-backtick-fence","rc":2,"stderr":"citation-guard: unresolved citations: nope.md:1 (no such file)","log":"?\tnope.md:1 (no such file)","stray":""}
+{"name":"unicode-punct-after","rc":2,"stderr":"citation-guard: unresolved citations: a.md:9 (file has 5 lines); a.md:8 (file has 5 lines); a.md:7 (file has 5 lines)","log":"?\ta.md:9 (file has 5 lines); a.md:8 (file has 5 lines); a.md:7 (file has 5 lines)","stray":""}
+{"name":"cwd-empty-string","rc":2,"stderr":"citation-guard: unresolved citations: a.md:6 (file has 5 lines)","log":"?\ta.md:6 (file has 5 lines)","stray":""}
+{"name":"nonjson-before-final","rc":2,"stderr":"citation-guard: unresolved citations: nope.md:1 (no such file)","log":"?\tnope.md:1 (no such file)","stray":""}
+{"name":"truncated-last-line","rc":2,"stderr":"citation-guard: unresolved citations: nope.md:1 (no such file)","log":"?\tnope.md:1 (no such file)","stray":""}
+{"name":"empty-text-block-last","rc":0,"stderr":"","log":"","stray":""}
+{"name":"text-block-no-key","rc":0,"stderr":"","log":"","stray":""}
+{"name":"crash-nonobject-line","rc":0,"stderr":"","log":"","stray":""}
+{"name":"crash-message-string","rc":0,"stderr":"","log":"","stray":""}
+{"name":"crash-text-null","rc":0,"stderr":"","log":"","stray":""}

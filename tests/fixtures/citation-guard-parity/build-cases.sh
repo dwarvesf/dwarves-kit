@@ -84,3 +84,25 @@ case_ cwd-absent-uses-pwd "$S" '{"cwd":null}' 'see a.md:6'
 case_ nbsp-url '{"CITATION_GUARD_STRICT":"1"}' '{}' $'see https://x.y/p nope.md:1 end'
 jq -c -n '{name:"non-object-payload", env:{"CITATION_GUARD_STRICT":"1"}, payload:"RAW:[1,2]"}' >> "$HERE/cases.jsonl"
 echo "built $(wc -l < "$HERE/cases.jsonl" | tr -d ' ') cases (with pre-emptions)"
+
+# validation round 1 (SPEC-356 rev 2)
+case_ inline-multiline-a "$S" '{}' $'the ` char\nsee nope.md:1 and ` here'
+case_ inline-multiline-b "$S" '{}' $'run `x\nnope.md:1\ny` end'
+case_ url-nnbsp "$S" '{}' $'see https://x.y/p nope.md:1 end'
+case_ url-thin-space "$S" '{}' $'see https://x.y/p nope.md:2 end'
+case_ url-zwsp "$S" '{}' $'see https://x.y/p​nope.md:3 end'
+case_ leading-zeros "$S" '{}' 'nope.md:07 and nope.md:7 and a.md:006'
+case_ four-backtick-fence "$S" '{}' $'````md\n```js\ncode nope.md:1\n```\n````'
+case_ unicode-punct-after "$S" '{}' $'see “a.md:9” and a.md:8—x and a.md:7…'
+case_ cwd-empty-string "$S" '{"cwd":""}' 'see a.md:6'
+{ jq -c -n '{type:"assistant", message:{content:[{type:"text", text:"fine"}]}}'; echo 'garbage line'; jq -c -n '{type:"assistant", message:{content:[{type:"text", text:"now nope.md:1"}]}}'; } > "$T/nonjson-before-final.jsonl"
+{ jq -c -n '{type:"assistant", message:{content:[{type:"text", text:"now nope.md:1"}]}}'; printf '{"type":"assist'; } > "$T/truncated-last-line.jsonl"
+{ jq -c -n '{type:"assistant", message:{content:[{type:"text", text:"old nope.md:1"}]}}'; jq -c -n '{type:"assistant", message:{content:[{type:"text", text:""}]}}'; } > "$T/empty-text-block-last.jsonl"
+{ jq -c -n '{type:"assistant", message:{content:[{type:"text", text:"old nope.md:1"}]}}'; jq -c -n '{type:"assistant", message:{content:[{type:"text"}]}}'; } > "$T/text-block-no-key.jsonl"
+{ jq -c -n '{type:"assistant", message:{content:[{type:"text", text:"old nope.md:1"}]}}'; echo '[1,2]'; } > "$T/crash-nonobject-line.jsonl"
+{ jq -c -n '{type:"assistant", message:{content:[{type:"text", text:"old nope.md:1"}]}}'; jq -c -n '{type:"assistant", message:"a string"}'; } > "$T/crash-message-string.jsonl"
+{ jq -c -n '{type:"assistant", message:{content:[{type:"text", text:null}]}}'; } > "$T/crash-text-null.jsonl"
+for n in nonjson-before-final truncated-last-line empty-text-block-last text-block-no-key crash-nonobject-line crash-message-string crash-text-null; do
+  jq -c -n --arg n "$n" '{name:$n, env:{"CITATION_GUARD_STRICT":"1"}, payload:{transcript_path:("transcripts/" + $n + ".jsonl"), cwd:"ROOT"}}' >> "$HERE/cases.jsonl"
+done
+echo "built $(wc -l < "$HERE/cases.jsonl" | tr -d ' ') cases (round 1 folded)"
