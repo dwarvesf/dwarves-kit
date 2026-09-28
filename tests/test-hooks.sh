@@ -1042,6 +1042,21 @@ printf 'Status: SHIPPED (v1)\n' > "$FX/docs/specs/SPEC-001-foo.md"
 printf 'Status: SHIPPED (v2)\n' > "$FX/docs/specs/SPEC-002-bar.md"
 assert_output_contains "all-SHIPPED -> no spec, no abort" "no spec found" "$(cr)"
 
+mkfx main  # live-spec filter edges: any-case Status, a late PARKED line, no Status, empty file
+printf 'status: draft\n' > "$FX/docs/specs/SPEC-001-foo.md"
+printf 'Status: VALIDATED\n' > "$FX/docs/specs/SPEC-002-bar.md"
+printf 'Status: VALIDATED\nlater\nStatus: parked\n' > "$FX/docs/specs/SPEC-003-late.md"
+printf 'no status line\n' > "$FX/docs/specs/SPEC-004-none.md"
+: > "$FX/docs/specs/SPEC-005-empty.md"
+assert_output_contains "live filter: case-insensitive, late PARKED, no-Status and empty skipped" "spec:ambiguous(SPEC-001,SPEC-002) " "$(cr)"
+ln -s /nonexistent "$FX/docs/specs/SPEC-0015-dangling.md"
+assert_output_contains "live filter: a dangling link skips only itself" "spec:ambiguous(SPEC-001,SPEC-002) " "$(cr)"
+if [ "$(id -u)" -ne 0 ]; then  # root reads a mode-000 file, so the case only exists for a normal user
+  printf 'Status: VALIDATED\n' > "$FX/docs/specs/SPEC-006-locked.md"; chmod 000 "$FX/docs/specs/SPEC-006-locked.md"
+  assert_output_contains "live filter: an unreadable spec skips only itself" "spec:ambiguous(SPEC-001,SPEC-002) " "$(cr)"
+  chmod 644 "$FX/docs/specs/SPEC-006-locked.md"
+fi
+
 mkfx main  # abort-path: zero specs, ID-013 guards preserved
 RC=0; OUT=$(cr) || RC=$?
 assert_exit "empty docs/specs exits 0" 0 $RC
