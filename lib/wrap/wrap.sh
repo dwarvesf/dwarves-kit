@@ -2215,6 +2215,31 @@ cmd_merge() {
   [ -n "$head_oid" ] || {
     echo "FAILED merge #${first_eligible}: no head SHA to pin the merge to" >&2; return 2; }
 
+  # A label-gated repo runs no checks until the PR carries `ci`, so the gate above read an
+  # empty rollup on an untested head and called it mergeable. Sync the label and wait out
+  # the runs it starts, then re-read and re-gate that same head: a check the label reveals
+  # failing refuses here. A repo without the label merges as it always did, and a label
+  # that will not set refuses rather than merging untested.
+  local rc
+  _ci_label_sync "$url" "$first_eligible"; rc=$?
+  case "$rc" in
+    0)
+      _ci_checks_wait "$url" "$first_eligible"
+      detail="$(_pr_detail_settled "$url" "$first_eligible")"
+      local new_head; new_head="$(printf '%s' "$detail" | jq -r '.headRefOid // ""' 2>/dev/null)"
+      verdict="$(_pr_gate "$detail" "$def")"
+      if [ "$new_head" != "$head_oid" ]; then
+        echo "FAILED merge #${first_eligible}: head moved to $(_short "$new_head") during the check wait; left open" >&2
+        return 2
+      fi
+      if [ "$verdict" != "OK" ]; then
+        echo "FAILED merge #${first_eligible}: ${verdict#SKIP } once the ci label's checks ran; left open" >&2
+        return 2
+      fi ;;
+    1) ;;
+    *) echo "FAILED merge #${first_eligible}: the ci label could not be set" >&2; return 2 ;;
+  esac
+
   # Squash only, one PR per call, never --delete-branch (a worktree may hold the branch)
   # and never --auto (an armed auto-merge lands a later push).
   # --match-head-commit pins the merge to the head the gates just read, so a push that
