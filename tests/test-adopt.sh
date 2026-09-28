@@ -167,6 +167,24 @@ else
   no "re-wiring after a board=false edit dropped an unrelated still-enabled module's hooks"
 fi
 
+# 15b. Migrating a pre-anchor settings.json (same hooks, no anchor-root.sh prefix) is a real
+# rewrite, so adopt reports "updated", never "already adopted, no-op". A second run is the no-op.
+T10B="$(newrepo)"
+bash lib/adopt.sh "$T10B" >/dev/null
+sed -i.bak 's#\$HOME/\.claude/dwarves-kit/hooks/anchor-root\.sh ##' "$T10B/.claude/settings.json" && rm -f "$T10B/.claude/settings.json.bak"
+grep -q 'anchor-root' "$T10B/.claude/settings.json" && no "test setup: could not strip the anchor prefix in $T10B"
+OUT15B="$(bash lib/adopt.sh "$T10B" 2>&1 | tail -1)"
+if grep -q 'anchor-root' "$T10B/.claude/settings.json" && printf '%s\n' "$OUT15B" | grep -q '(updated)$'; then
+  ok "unwrapped -> wrapped hook migration re-adds the anchor and reports updated"
+else
+  no "unwrapped -> wrapped hook migration misreported: [$OUT15B]"
+fi
+if bash lib/adopt.sh "$T10B" 2>&1 | tail -1 | grep -q 'already adopted, no-op'; then
+  ok "a re-run after the anchor migration is a no-op"
+else
+  no "a re-run after the anchor migration was not a no-op"
+fi
+
 # 16. THE Done= proof, second clause: a [ledger] override in the project .kit.toml is honored
 # by a command reading it (the resolver from goal 01, exercised end-to-end through a real
 # adopted project directory rather than a synthetic fixture).

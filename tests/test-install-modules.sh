@@ -18,7 +18,7 @@ assert_true() { if [ "$2" -eq 0 ]; then ok "$1"; else bad "$1"; fi; }
 
 wired_hooks() { # $1 = settings.json path
   jq -r '[.hooks // {} | to_entries[]? | .value[]? | .hooks[]? | .command] | .[]' "$1" 2>/dev/null \
-    | grep -oE 'hooks/[A-Za-z0-9._-]+\.sh' | sed 's#hooks/##' | sort -u
+    | grep -oE 'hooks/[A-Za-z0-9._-]+\.sh' | sed 's#hooks/##' | grep -v '^anchor-root\.sh$' | sort -u
 }
 
 # modules_section_true <toml-file> -- bare keys set `= true` WITHIN [modules] only
