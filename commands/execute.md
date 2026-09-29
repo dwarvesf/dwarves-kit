@@ -57,7 +57,7 @@ Runs after the lane re-check above, so an escalation to `full` picks the Opus ti
 bash lib/gate/gate-ledger.sh show "$RID" | grep -Ei '\| GATE \| validate \| ' | tail -1 | grep -Eq '\| (ran|override) \|'
 ```
 
-A match means the spec passed validation; go on. No match (no line, or the last validate line is a `skipped` from a failed validation) means execute dispatches the validator `/kit:spec` step 5 defines: the same fresh-context, read-only `general-purpose` subagent and prompt, Sonnet on normal and backfill, Opus on full, with `bash lib/gate/gate-ledger.sh outcome <rid> Validate start` and `bash lib/gate/gate-ledger.sh outcome <rid> design-record start` written before the dispatch. The dispatch is `/kit:spec` step 5's parallel round: one `Reviewer N only` subagent per `### Reviewer N:` heading, Reviewer 6 always on Opus, the lead merging by rule, and the single-pass validator only as the fallback. A second re-validation needs `operator_directed_build: true` in this run's own brief. An incomplete round stops before task 1, records per `/kit:spec` step 5, and asks the operator. On the report:
+A match means the spec passed validation; go on. No match (no line, or the last validate line is a `skipped` from a failed validation) means execute dispatches the validator `/kit:spec` step 5 defines (each dispatch description carries `rid=<rid>`): the same fresh-context, read-only `general-purpose` subagent and prompt, Sonnet on normal and backfill, Opus on full, with `bash lib/gate/gate-ledger.sh outcome <rid> Validate start` and `bash lib/gate/gate-ledger.sh outcome <rid> design-record start` written before the dispatch. The dispatch is `/kit:spec` step 5's parallel round: one `Reviewer N only` subagent per `### Reviewer N:` heading, Reviewer 6 always on Opus, the lead merging by rule, and the single-pass validator only as the fallback. A second re-validation needs `operator_directed_build: true` in this run's own brief. An incomplete round stops before task 1, records per `/kit:spec` step 5, and asks the operator. On the report:
 
 - **APPROVED:** the lead records per `/kit:spec` step 5, folds the warnings (warnings only) into the spec, flips Status to `VALIDATED`, and proceeds to task 1.
 - **Any critical, including a Reviewer 6 BLOCK:** execute stops before task 1 with nothing folded and asks the operator, because folding a critical is a scope call the loop must not make alone. On that stop it still records `bash lib/gate/gate-ledger.sh record <rid> Validate skipped "NEEDS REVISION: <criticals>"`. On a Reviewer 6 critical, record `bash lib/gate/gate-ledger.sh record <rid> design-record skipped "critical: <finding>"`; otherwise Reviewer 6 passed, so record `bash lib/gate/gate-ledger.sh record <rid> design-record ran "design-bearing=<yes|no> pass"`. Always close both brackets: `bash lib/gate/gate-ledger.sh outcome <rid> Validate end caught=true` and `bash lib/gate/gate-ledger.sh outcome <rid> design-record end caught=<true only on a Reviewer 6 critical, else false>`.
@@ -75,7 +75,7 @@ Check once before dispatching any tasks:
 Three agent roles work together:
 
 - **You (orchestrator)**: Stay in the main session. Parse spec, dispatch tasks, manage checkpoints, track retries. Your context stays lean.
-- **Worker subagents**: One per task via the Task tool. Fresh context window, only the context they need, isolated from other tasks.
+- **Worker subagents**: One per task via the Task tool (description carries `rid=<rid>`). Fresh context window, only the context they need, isolated from other tasks.
 - **kit:task-verifier subagent**: Runs after each worker completes. Read-only verification against spec acceptance criteria + test suite.
 - **kit:fix-agent subagent**: Dispatched when kit:task-verifier returns FAIL:fixable. Applies targeted fixes, then re-verification runs.
 
@@ -147,7 +147,7 @@ The role space is OPEN-ENDED: the classifier below is only a cheap fast path for
    - Else if `~/.claude/agents/*<role>*.md` cached from a prior run fits the task, use its body as the
      PREAMBLE. No re-synthesis.
 
-3. **Synthesize open-ended (when no reuse hit):** dispatch the `kit:meta-agent` in **Mode C** with the task +
+3. **Synthesize open-ended (when no reuse hit):** dispatch the `kit:meta-agent` (description carries `rid=<rid>`) in **Mode C** with the task +
    acceptance criteria + the classifier hint (even if the hint is `generic`, the kit:meta-agent infers the
    real role). It returns EITHER `NAME` / `TOOLS (advisory)` / `PREAMBLE`, OR `NO_SPECIALIST: <why>`.
    Only `NO_SPECIALIST` → dispatch today's generic worker (2b, unchanged). Do NOT let it write a file.
@@ -170,6 +170,8 @@ non-reused task; the worker itself is the same Task-tool dispatch as always.
 > single thread. Dispatch one when isolating a task's noise (large reads, long tool chains) from
 > the lead's context is worth the setup overhead, NOT for one-prompt tasks, a single tool call,
 > or when near a rate/budget limit. (research/2026-06-28-token-efficient-design.md Part 1.)
+
+**Run-id tag.** Every Agent/Task dispatch this command instructs sets its `description` to include `rid=<rid>` (the rid `bash lib/gate/gate-ledger.sh rid` prints for this run), e.g. `"verify TASK-003 rid=<rid>"`, so a transcript reader can count dispatches and tokens per run from each subagent's `.meta.json`.
 
 **Model tiering (cheap-first default).** Workers dispatch at `sonnet` by default ,
 mid-tier is the stated cheap-first stance, Opus only on the hard sub-goals. The active
@@ -254,7 +256,7 @@ demand (and passes it to the kit:task-verifier).
 
 #### 2c. Verify worker output (THE VERIFICATION PIPELINE)
 
-After each worker subagent completes, dispatch the **kit:task-verifier** subagent. Per the parity rule
+After each worker subagent completes, dispatch the **kit:task-verifier** subagent (description carries `rid=<rid>`). Per the parity rule
 above, pass `model: opus` when the active spec carries `Model: opus`:
 
 ```
@@ -294,7 +296,7 @@ a reason naming the spec/task itself as wrong, unclear, or not worth building is
 #### 2c-1. Fresh-context re-audit of a kit:task-verifier PASS (kit:recheck-verifier)
 
 Right-arm PASSes are unreviewed by default (the "Right-arm review parity" decision). When
-kit:task-verifier returns PASS, dispatch the **kit:recheck-verifier** subagent in a FRESH context
+kit:task-verifier returns PASS, dispatch the **kit:recheck-verifier** subagent (description carries `rid=<rid>`) in a FRESH context
 (a new Task-tool call, not a continuation of the kit:task-verifier's own context) with the
 kit:task-verifier's full verdict block (including its `Verification record`). It pins `model: opus` in
 its own frontmatter, so no override is needed to raise it; pass one only to match a higher spec
@@ -324,7 +326,7 @@ retry_count = 0
 MAX_RETRIES = 2
 
 while verdict == "FAIL:fixable" AND retry_count < MAX_RETRIES:
-    1. Dispatch kit:fix-agent with:
+    1. Dispatch kit:fix-agent (description carries `rid=<rid>`) with:
        - The verifier's issue list (file paths, fix instructions)
        - The original task context (acceptance criteria)
        - The specific files to modify
@@ -436,13 +438,13 @@ After all phases complete:
    - **inert** (docs / comments / cosmetic): exempt. Record
      `[PROOF OF DONE: exempt -- <reason>]` on the task line; skip the negative control.
    Marking a behavioral or stateful task inert is a finding, not a pass.
-2. **Integration check (multi-task specs only).** If the spec's `## Task Breakdown` had more than one task, dispatch the **kit:integration-verifier** subagent (read-only, `model: opus` when the active spec carries `Model: opus`), passing it the pre-build base ref (record `git rev-parse HEAD` before Step 2 begins, or use the parent of this build's first commit) so it diffs the whole build. It verifies every new component reaches its activation point and that the spec's stated end-to-end chains hold (cross-task wiring, not per-task acceptance). Route the verdict like kit:task-verifier:
+2. **Integration check (multi-task specs only).** If the spec's `## Task Breakdown` had more than one task, dispatch the **kit:integration-verifier** subagent (description carries `rid=<rid>`; read-only, `model: opus` when the active spec carries `Model: opus`), passing it the pre-build base ref (record `git rev-parse HEAD` before Step 2 begins, or use the parent of this build's first commit) so it diffs the whole build. It verifies every new component reaches its activation point and that the spec's stated end-to-end chains hold (cross-task wiring, not per-task acceptance). Route the verdict like kit:task-verifier:
    - **PASS**: continue to the summary.
    - **FAIL:fixable**: dispatch kit:fix-agent on the named wiring gap (reuse the max-2 retry cap), then re-run the kit:integration-verifier.
    - **FAIL:escalate** (or retry >= 2): stop and report the broken seam to the human; do not declare the build complete.
    A single-task spec skips this step (nothing to wire).
 2b. **Fresh-context re-audit of the kit:integration-verifier PASS (kit:recheck-verifier).** When the
-   kit:integration-verifier above returns PASS, dispatch the **kit:recheck-verifier** subagent in a
+   kit:integration-verifier above returns PASS, dispatch the **kit:recheck-verifier** subagent (description carries `rid=<rid>`) in a
    FRESH context with its full verdict block. kit:recheck-verifier RE-EXECUTES the recorded
    verification command itself and re-judges, never reading back the recorded record as
    evidence -- this is what catches a stale or fabricated PASS (the "Right-arm review

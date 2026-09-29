@@ -20,13 +20,15 @@ Check for an existing brief, slugged file first: `docs/briefs/DECISION-BRIEF-<sl
 
 ### Step 2: Research (if brownfield)
 
+**Run-id tag.** Every Agent/Task dispatch this command instructs sets its `description` to include `rid=<rid>` (the rid `bash lib/gate/gate-ledger.sh rid` prints for this run), e.g. `"verify TASK-003 rid=<rid>"`, so a transcript reader can count dispatches and tokens per run from each subagent's `.meta.json`. This covers the step 5 validator dispatches too.
+
 If modifying existing code, run codebase research before generating the spec. This keeps the main session's context clean.
 
 Create `docs/research/` directory first.
 
 #### Mode A: Formal agents (preferred)
 
-If the research agents are installed (check: do `.claude/agents/research-stack.md` etc. exist?), dispatch all 4 via the Task tool in parallel, each dispatch prompt carrying `<date>` and `<slug>` from Step 1:
+If the research agents are installed (check: do `.claude/agents/research-stack.md` etc. exist?), dispatch all 4 via the Task tool in parallel, each dispatch description carrying `rid=<rid>` and each prompt carrying `<date>` and `<slug>` from Step 1:
 
 1. **kit:research-stack** agent: "Map the technology stack. Write to `docs/research/<date>-<slug>-stack.md`."
 2. **kit:research-context** agent: "Map existing features related to [user's feature area]. Write to `docs/research/<date>-<slug>-features.md`."
@@ -35,7 +37,7 @@ If the research agents are installed (check: do `.claude/agents/research-stack.m
 
 #### Mode B: Inline fallback
 
-If the formal agents are NOT installed, dispatch 4 Task tool subagents with these inline prompts (`<date>` and `<slug>` from Step 1):
+If the formal agents are NOT installed, dispatch 4 Task tool subagents (descriptions carry `rid=<rid>`) with these inline prompts (`<date>` and `<slug>` from Step 1):
 
 **Stack research:**
 ```
@@ -291,7 +293,7 @@ Close the timing bracket: `bash lib/gate/gate-ledger.sh outcome <rid> Spec end` 
 
 A spec is never validated by the agent that wrote it; a self-run pass is not validation. After step 4's approval, after the full lane's devs-team and advisor fold, and after `Spec ran` is recorded (so `descent` sees spec before validate), dispatch the validator. Open both timing brackets first, so `dur_s` measures the validation: `bash lib/gate/gate-ledger.sh outcome <rid> Validate start` and `bash lib/gate/gate-ledger.sh outcome <rid> design-record start`.
 
-**The validator** is one fresh-context `general-purpose` subagent (the read-only `kit:*` agent rosters carry no Skill tool), model Sonnet on the normal and backfill lanes, Opus on the full lane. Its prompt:
+**The validator** is one fresh-context `general-purpose` subagent (description carries `rid=<rid>`, e.g. `"spec-validate reviewer 3 rid=<rid>"`; the read-only `kit:*` agent rosters carry no Skill tool), model Sonnet on the normal and backfill lanes, Opus on the full lane. Its prompt:
 
 > Validate `docs/specs/SPEC-NNN-<slug>.md` (this path, not the most recent spec). Invoke `kit:spec-validate` through the Skill tool, or the bare `spec-validate` skill if that is the installed name. Run every reviewer in one pass without pausing for input. READ-ONLY: report only. Do not edit any file, do not flip Status, do not call `gate-ledger.sh`. Return the full Spec Validation Report plus one Reviewer 6 line: `design-bearing=<yes|no> <pass|critical: <finding>>`.
 
