@@ -3008,7 +3008,7 @@ out="$(PATH="$TMPD/nosleep:$PATH" AL_WAIT=30 KIT_WRAP_CI_GRACE_SECS=20 \
   al_run "$ALWB" "$ALW" --apply)"; rc=$?
 chk "autoland ci-wait T13: apply exits 0" "$rc"
 chk_has "autoland ci-wait T13: merge --pr verifies the tree" "$out" "tree verified"
-# 18 reads of #42 with one hold: a second hold in the merge's own wait adds two more.
+# 18 reads of #42 with one hold, measured; a second hold in the merge's own wait adds reads.
 chk "autoland ci-wait T13: the grace hold ran once (18 reads)" "$([ "$(cw_views 42)" -eq 18 ]; echo $?)"
 
 echo "--- knob false leaves the merged branch on origin"

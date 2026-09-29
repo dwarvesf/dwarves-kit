@@ -39,3 +39,4 @@ Deltas from SPEC-360. Nothing here repeats what the spec already states.
 - T12 puts the pre-label check and the two new ones on one URL. Two new checks alone on a shared URL would read NEW either way, so that shape pins nothing about the name prefix.
 - T13's exact count (18 reads of #42) was measured on the green run, not derived; the NC4 control below confirms that dropping the sync's reset on entry changes it.
 - T6 now asserts exactly 4 rollup reads before the merge.
+- NC4 (the sync's reset on entry removed) was added beside NC1 to NC3, because T13 exists to pin that reset; it turned only T13 red.
