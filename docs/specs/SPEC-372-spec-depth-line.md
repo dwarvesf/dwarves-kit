@@ -1,6 +1,6 @@
 # Spec: a depth line in the spec header
 Generated: 2026-09-29
-Status: DRAFT
+Status: VALIDATED
 Lane: full
 Depth: standard (no outside unknown: every file this spec changes is in this repo and cited below; the one live check is named in AC7)
 References: `docs/research/2026-09-29-openrig-absorption.md:107-112` (design D2); `docs/verification/test-plan-review-team.md:37,54-64` (the seeded-gap run where the Coverage and Oracle lenses went RED); SPEC-368 (lanes as data), from which this spec was split.
@@ -62,8 +62,8 @@ B. The discriminator is the reason, not the topic, so it lives next to the spec 
              ledger: | ACTION | depth=<levels> research_agents=<N>
                             |
  spec-validate Reviewer 4:  deeper level, no named reason ........... CRITICAL
-                            standard, but open questions or an
-                            unsampled Grounding claim ............... CRITICAL
+                            standard, but open questions (check) or a
+                            named unknown or unsampled claim (lens) CRITICAL
                             no Depth line on a new spec ............. CRITICAL
                             no Depth line on an older spec .......... warning
                             |
@@ -130,8 +130,8 @@ Out of bounds: lanes and the lane data (SPEC-368); the validator itself, which r
 `check` problems:
 
 - two `Depth:` lines in the header; an unknown level; a missing `repo:` / `outside:` / `failure:` prefix; an empty reason; a reason made only of importance words (after dropping stop words, every remaining word is in the list above);
-- the inverse: level `standard` while the spec has a `## Open questions` section whose body is anything other than empty or a line starting `(none`, or a `## Grounding` section containing `cannot be sampled`;
-- no header `Depth:` line on a NEW spec: its `Generated:` date is on or after `DEPTH_REQUIRED_FROM`, a constant in the helper set to the merge date at TASK-1, or it has no `Generated:` line. An older spec with no line gets one stderr warning and exit 0.
+- the inverse: level `standard` while the spec has a `## Open questions` section whose body is anything other than empty or a line starting `(none`. (A Grounding line saying a claim `cannot be sampled` is not a mechanical trigger: `commands/spec.md` step 4 tells writers to write exactly that. Reviewer 4 judges it as a lens question.);
+- no header `Depth:` line on a NEW spec: its `Generated:` date is on or after `DEPTH_REQUIRED_FROM`, a constant in the helper pinned to the date the PR is cut. A spec with no `Generated:` line counts as OLDER (158 of 273 specs lack one today). An older spec with no `Depth:` line gets one stderr warning and exit 0.
 
 `commands/spec.md` records one ledger line after step 2: `bash lib/gate/gate-ledger.sh action <rid> "depth=<levels> research_agents=<N>"`.
 
@@ -189,9 +189,9 @@ None.
 |---|---|---|---|
 | AC1 | `level` parses every form from the header only | `bash tests/test-spec-depth.sh level` | each fixture prints its expected level set; the fenced-example fixture prints its header level, not the example's; no header line prints `standard` |
 | AC2 | `check` rejects bad lines | `bash tests/test-spec-depth.sh check` | exit 1 for: empty reason, `research (this is important)`, `research (critical core change)`, missing prefix, unknown level, two header lines; exit 0 for `research (outside: the provider's retry schedule is not documented anywhere we have)` |
-| AC3 | Inverse check | `bash tests/test-spec-depth.sh inverse` | exit 1 for `standard` with a non-empty `## Open questions`; exit 1 for `standard` with `cannot be sampled` in `## Grounding`; exit 0 for `standard` with `(none; ...)` |
+| AC3 | Inverse check | `bash tests/test-spec-depth.sh inverse` | exit 1 for `standard` with a non-empty `## Open questions`; exit 0 for `standard` with `cannot be sampled` in `## Grounding` (lens only); exit 0 for `standard` with `(none; ...)` |
 | AC4 | KEEP: the rid-tag phrases survive the step 2 rewrite | ``grep -cF 'include `rid=<rid>`' commands/spec.md`` and `sed -n '/^### Step 2/,/^### Step 3/p' commands/spec.md \| grep -c 'rid=<rid>'` | `1` or more each (the first is the phrase `tests/test-meta.sh` asserts after `feat/dispatch-rid-tag`) |
-| AC5 | Missing line: CRITICAL on new specs, warning on old | `bash tests/test-spec-depth.sh missing-line` | fixture with `Generated:` on or after `DEPTH_REQUIRED_FROM`: exit 1; older fixture: exit 0 plus warning |
+| AC5 | Missing line: CRITICAL on new specs, warning on old | `bash tests/test-spec-depth.sh missing-line` | fixture with `Generated:` on or after `DEPTH_REQUIRED_FROM`: exit 1; older fixture and a fixture with no `Generated:` line: exit 0 plus warning |
 | AC6 | Review routing by depth | `bash tests/test-spec-depth.sh review-routing` | test-plan.md step 4 names `--floor` for the default and the full team for `blind-spot`; test-plan-review-team.md documents `--floor` as lenses 1 and 2, one pass |
 | AC7 | Default depth dispatches zero research agents (live run) | `/kit:spec` on a small brownfield task in this repo, then `bash lib/gate/gate-ledger.sh show <rid> \| grep 'depth=standard research_agents=0'` and `ls docs/research/ \| grep -c <slug>` | one match; `0` |
 | AC8 | `wants` never fires without a header line | `bash lib/spec/spec-depth.sh wants tests/fixtures/spec-depth/no-depth.md research-repo; echo $?` | `1` |
@@ -283,7 +283,7 @@ Single files (serialized by the dispatch gate against any sibling that lists the
 - DEC-3: A missing `Depth:` line is CRITICAL on new specs and a warning only on specs that predate the change (operator decision).
 - DEC-4: The importance-word check is mechanical only for reasons made of nothing else; mixed reasons go to the lens. Rejected: a longer banned-word list (it would reject honest reasons).
 - DEC-5: `standard` keeps a floor review, lenses 1 and 2 in one pass, because those two have a measured bite (operator decision). Rejected: no review at `standard` (5 of 7 critiques found a CRITICAL).
-- DEC-6: The inverse check (a `standard` spec that names an unknown or an untestable failure is CRITICAL) runs both mechanically and as a lens (operator decision).
+- DEC-6: The inverse check (a `standard` spec that names an unknown or an untestable failure is CRITICAL) runs mechanically for a non-empty `## Open questions`, and as a Reviewer 4 lens for everything else, including an unsampled Grounding claim (operator decision).
 - DEC-7: Parse the header only, before the first `## `, so examples in the body never count.
 
 ## Grounding
