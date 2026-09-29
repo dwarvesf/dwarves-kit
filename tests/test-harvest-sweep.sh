@@ -1117,6 +1117,8 @@ P("cap_charset_skip", not any("NOT A SLUG" in s for s in listed))
 P("cap_render_len", len(text) >= 12000)
 P("cap_prompt_len", "%s|%d" % (len(prompt) <= 19400, len(prompt)))
 P("cap_prompt_over_maxchars", len(hs.build_prompt(big)) <= 19400)
+P("prompt_tail_last", prompt.endswith(hs.PROMPT_TAIL) and "End of transcript" in hs.PROMPT_TAIL)
+P("probe_asks_json", hs.PROBE_PROMPT.startswith(hs.PROMPT_SWEEP) and hs.PROBE_PROMPT.endswith(hs.PROMPT_TAIL))
 
 # ---- AC25: the outage scenario with the real processor; every session has a cache file ----
 base, root = scenario()
@@ -1189,6 +1191,8 @@ assert_eq "AC6: a stored value off the slug charset never reaches the prompt" "T
 assert_eq "AC6: the render under test is max size" "True" "$(t6 cap_render_len)"
 assert_eq "AC6: the prompt is at most 19,400 chars" "True" "$(t6 cap_prompt_len | cut -d'|' -f1)"
 assert_eq "AC6: an over-long transcript is cut to HARVEST_MAXCHARS" "True" "$(t6 cap_prompt_over_maxchars)"
+assert_eq "extractor: the task restates after the transcript, so an agent-shaped tail is not continued" "True" "$(t6 prompt_tail_last)"
+assert_eq "extractor: the probe asks the JSON question, so a healthy model passes it" "True" "$(t6 probe_asks_json)"
 assert_eq "AC25: 3 capped runs with the real processor extract 20, 20, 10" "20,20,10" "$(t6 ac25_sizes)"
 assert_eq "AC25: every one of the 50 has a raw output cache file" "50" "$(t6 ac25_all_cached)"
 assert_eq "AC25: no session is marked done without a cache file" "0" "$(t6 ac25_done_without_cache)"
