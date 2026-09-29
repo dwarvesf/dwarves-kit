@@ -1,7 +1,7 @@
 # Spec: ceremony lens (gate work and subagent dispatches versus progress and catches)
 
 Generated: 2026-09-29
-Status: DRAFT
+Status: VALIDATED
 Lane: normal
 References: `lib/stats/src/stats/anomalies.py` (the `_detect_ceremony` floor-and-fire shape, `DEFAULTS`, `--threshold`), `lib/stats/tests/test-anomalies-advisor.sh` (fixture harness: env vars point every source at a temp dir, a real end-to-end rebuild, a negative control per detector)
 Source: `docs/research/2026-09-29-openrig-absorption.md`, design D5 and the "Operator hypothesis, tested" table
@@ -34,6 +34,8 @@ Premise check, what the code does today (all read on 2026-09-29):
 | Per-run "verifier or lens dispatch" counts are not recorded as such | the ledger has `GATE`, `OUTCOME`, `TOKENS`, `DEBT`, `ACTION`, `START` line types only (count over the live corpus, 2026-09-29); a dispatch shows up only inside a reason string such as `fresh agents=<N>` (`commands/spec.md:307`) |
 
 Consequence: the ledger cannot count dispatches, but the transcripts can. This spec owns that measurement: gate records for the anomaly, subagent dispatches and their tokens (read from transcripts) for the per-run report, so SPEC-369's cut is visible as dispatches per task. Tokens appear only where a recorded value exists.
+
+**Baseline method (operator decision).** The before and after comparison does not wait for organic tagged runs. It is an A/B run of ONE fixture spec through the old spine (master before SPEC-369) and the new spine, both dispatches tagged with `rid=<rid>` by the `feat/dispatch-rid-tag` change, both read by this lens's reader. The historical time-window fallback stays as best-effort context only and never feeds the comparison.
 
 ## Solution
 
@@ -80,7 +82,7 @@ A, because the anomaly must land where `kit:stats` already proposes them, and th
 - **Casefolded phases**: every gate name is lowercased and trimmed before the ceremony-list match and before grouping (`Ship` and `ship` are one gate). The writer already lowercases (`gate-ledger.sh:114`); the read side does not trust that for old or hand-written lines.
 - **Bounded reads**: `git log` runs with `--since=<window start>`, never full history; transcript files older than the window start (by mtime) are not opened. Both are needed because the lens rebuild already exceeds 120 s.
 - **Dispatch**: one subagent transcript. Counted per rid by `agentType` (`kit:task-verifier`, `kit:recheck-verifier`, `general-purpose`, and so on). Model is read from the meta file when present, else `?`.
-- **Dispatch to rid join**, in order: (1) a `rid=<rid>` token in the meta `description` (convention going forward: every Agent dispatch description carries it; SPEC-369 adds it in `commands/execute.md`, SPEC-368 in `commands/spec.md` step 5; this spec documents it in `lib/stats/README.md` and reads it, and edits neither command file); (2) for history, time containment: the dispatch's first message timestamp falls inside that rid's `OUTCOME build start` to `end` bracket, and only if exactly one bracket contains it (two overlapping rids make it `ambiguous`, counted, never assigned); (3) otherwise `unattributed`. Never joined on `gitBranch` or `cwd`. Each dispatch row carries `rid_source` = `tag`, `window`, `ambiguous` or `none`, and the report prints the count of each. Only 5 of 85 live `build` rows have a bracket today, so the fallback covers little history; the report says that.
+- **Dispatch to rid join**, in order: (1) a `rid=<rid>` token in the meta `description` (convention going forward: every Agent dispatch description carries it; the emitter is the separate change on branch `feat/dispatch-rid-tag`, which edits `commands/execute.md` and `commands/spec.md`; this spec documents the convention in `lib/stats/README.md` and reads it, and edits neither command file); (2) for history, time containment: the dispatch's first message timestamp falls inside that rid's `OUTCOME build start` to `end` bracket, and only if exactly one bracket contains it (two overlapping rids make it `ambiguous`, counted, never assigned); (3) otherwise `unattributed`. Never joined on `gitBranch` or `cwd`. Each dispatch row carries `rid_source` = `tag`, `window`, `ambiguous` or `none`, and the report prints the count of each. Only 8 of 85 live `build` rows have a bracket today, so the fallback covers little history; the report says that.
 - **Dispatch tokens**: input, output, cache-read and cache-creation summed from the transcript's `message.usage`, LAST line per `message.id`. Per-run tokens are the sum over that run's attributed dispatches, printed with the count of attributed dispatches beside it, `?` when none.
 - **Normalization**: dispatches per task and tokens per task, with N from `tasks=<N>` in the run's `build ran` reason (`commands/execute.md:485`); `?` when the reason has no `tasks=`.
 - **Privacy**: the transcript reader keeps numbers, timestamps, `agentType`, model, and the extracted `rid` token only. It stores no description text and no message content, the same rule as the sessions reader (`adapters.py:612-618`).
@@ -143,6 +145,7 @@ Each row has an exact command. Tests run against fixtures pointed at temp dirs, 
 | 6 | Tokens sum the LAST usage line per message id, come only from attributed dispatches, and print `?` when none | same script, cases S-tokens, S-unknown |
 | 7 | Windows: `--from/--to` and `--since-sha` bound the counts; git is read with `--since`; phase names casefold | same script, cases W-range, W-sha, W-bounded, F-casefold |
 | 8 | The baseline report exists and states window, excluded rids, transcript retention (earliest transcript date), share by week, catches, known-caught count, lines, PRs, dispatches by `agentType`, tokens with attributed-dispatch counts, join-source counts, and the chosen threshold | `test -s docs/verification/ceremony-lens/baseline.md && grep -c '^| ' docs/verification/ceremony-lens/baseline.md` (>= 10 table rows) |
+| 8b | The A/B baseline: one fixture spec run through the old spine and the new spine, each under its own rid, both tagged; `stats ceremony` reports dispatches by `agentType`, tokens, and dispatches per task for both, `rid_source=tag` for every dispatch | `cd lib/stats && uv run stats ceremony --json` (two rids, all dispatches `tag`) recorded in `docs/verification/ceremony-lens/baseline.md` |
 | 9 | The baseline reproduces from the lens, not by hand | `cd lib/stats && uv run stats ceremony --json` output matches the baseline table (three cells spot-checked, recorded in the proof) |
 | 10 | Fixture rids never enter a total; the live corpus run prints excluded rids with START and TOKENS counts | `bash lib/stats/tests/test-ceremony-lens.sh` case X-exclude; `cd lib/stats && uv run stats ceremony` |
 | 11 | Existing suites stay green | `bash tests/test-meta.sh && bash tests/test-hooks.sh && bash lib/stats/tests/test-anomalies-advisor.sh && bash lib/stats/tests/test-schema-parity.sh && bash lib/stats/tests/test-schema-conform.sh` |
@@ -202,7 +205,7 @@ See `### Boundaries & failure modes` under Design.
 - Bench rows (no rid, model race).
 - The fixture-leak fix. The source is known: `tests/test-orchestrate-hardening.sh`, `tests/test-orchestrate-gate-dispatch.sh` and `tests/test-model-routing.sh` do not set `DWARVES_KIT_LOG_DIR`. It ships as its own separate change. This spec keeps only the read-time exclusion.
 - The gap tag (`gap=context|judgment` on escape records). No `escaped-from=` marker exists in the live ledgers (0 hits, 2026-09-29), so there is nothing to tag or read. Revisit when escapes occur.
-- Editing `commands/execute.md` or `commands/spec.md`. This spec documents and reads the `rid=<rid>` dispatch-description convention; SPEC-369 and SPEC-368 add it to those files.
+- Editing `commands/execute.md` or `commands/spec.md`. This spec documents and reads the `rid=<rid>` dispatch-description convention; the separate `feat/dispatch-rid-tag` change owns the tag in both files.
 
 ## Touches
 
@@ -210,7 +213,7 @@ See `### Boundaries & failure modes` under Design.
 - skills/stats/**
 - docs/verification/ceremony-lens/**
 
-No file outside these prefixes is edited: the emitter half of the dropped gap tag (`commands/debug.md`, `tests/test-hooks.sh`) is gone, and `commands/execute.md` and `commands/spec.md` belong to SPEC-369 and SPEC-368.
+No file outside these prefixes is edited: the emitter half of the dropped gap tag (`commands/debug.md`, `tests/test-hooks.sh`) is gone, and `commands/execute.md` and `commands/spec.md` belong to the separate `feat/dispatch-rid-tag` change.
 
 ## Decision Log
 
