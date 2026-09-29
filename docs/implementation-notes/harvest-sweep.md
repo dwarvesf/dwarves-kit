@@ -198,3 +198,9 @@ Deltas from SPEC-357 (phase 1, kit-side tasks T1 to T19, T13b, T22). Nothing her
 - Uninstall chain (AC13): install gates the per-session hook off, `--uninstall` lets `harvest.sh` run it again. Negative control (red then green): `--uninstall` stops removing the marker.
 - Disabled host (AC4): `harvest.enable = false` never calls the bridge. Negative control (red then green): the launcher's enable gate falls through instead of exiting.
 - Stale report (AC4): a run that writes no report passes `-`, never an older run's path. Negative control (red then green): the mtime guard dropped so the newest report always passes.
+
+## 2026-09-29 T20 dry-run fixes: prompt tail and probe
+- Change (DEC-39, DEC-63; AC4): `build_prompt` ends with `PROMPT_TAIL`, a line that restates the extraction task after the transcript. `PROBE_PROMPT` is now `PROMPT_SWEEP` over an empty transcript plus the tail.
+- Why: the T20 dry runs on the Mini hit two real-model failures the stub cannot show. A Devin transcript that ends mid-task made Haiku continue the agent's work, with tool-call markup and no JSON. The old probe, a bare 20-character phrase, drew prose, so `extract_ok` failed it and every first failure stopped the run with rc 1. Both fixes held on two real calls each.
+- Deviation: the spec calls the probe a fixed 20-character prompt. The probe stays fixed, but it is now about 1,300 characters, so it costs about one extraction's fixed prompt per failing run. The DEC-68 bound still holds (the AC6 test passes at 19,400).
+- Negative controls (red then green): the tail dropped from `build_prompt`; `PROBE_PROMPT` restored to the bare phrase.
