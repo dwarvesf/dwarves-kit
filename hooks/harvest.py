@@ -821,7 +821,7 @@ def _dispatch(argv):
     if "--harvest-run" in argv:
         i = argv.index("--harvest-run")
         return cmd_harvest_run(argv[i + 1] if i + 1 < len(argv) else "")
-    if "--sweep" in argv or "--dry-run" in argv:
+    if "--sweep" in argv or "--dry-run" in argv or "--status" in argv:
         # the sweep entry owns its own flags; route before the payload fall-through
         # so a manual run never reads a hook stdin (harvest.sh --sweep lands here too)
         sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
