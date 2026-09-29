@@ -35,3 +35,9 @@ Deltas from SPEC-362. Nothing here repeats what the spec already states.
 - The drift test skips callers that are themselves allowlisted (context-hints calls context-readiness; session-state-save names slop-cleaner) and ignores `hooks.json` wiring, which registers hooks rather than calling them.
 - `_bug_core` is shared; step 4 keeps `repro` by appending it (`"$_bug_core|repro"`), so step 4 is unchanged while the machinery signal drops bare `repro` per R3.
 - Prototype pitfalls the build must avoid: sourcing `lane-classify.sh` turns on `set -euo pipefail` in the sourcing shell; a regex starting with `-` needs `grep -e`; this shell has `noclobber` set, so scratch overwrites use `>|`.
+
+## 2026-09-29 Lead decisions, round 4
+- (a) YES, a proof-gate condition (Change item 7a): demote only when `docs/verification/README.md` exists and `lib/gate/gate-policy.sh enabled proof_of_done` exits exactly 0. My call inside it: fail closed on every other outcome, stricter than ship-gate's `_gate_on`, per "if the check cannot be resolved, do not demote". Known residue: `gate-policy.sh` itself resolves a missing `kit-config.sh` to on, which the classifier cannot see. With an empty operator overlay the replay demotes 0 of 116.
+- (b) YES, `refus(e|es|ed|ing)` and `guard(s|ed|ing)?` are contract signals. Replay: 20 demotions become 17; `d819be88`, `c79471f1` and `d2fe0359` move to `full`. `f9b88744` ("mark intake-born board rows as untrusted data") still demotes; recorded under "What the change does relax". NC5's expected set loses T15 ("wrongly refusing" is now held by the vocabulary as well).
+- (c) NO, `commands/*.md` keeps blocking demotion. The neutral-paths rule is stated under Design.
+- Grounding now pins `KIT_CONFIG_OPERATOR=tests/fixtures/gates-on` for every prototype run, so the numbers do not depend on the developer's own overlay.
