@@ -28,6 +28,7 @@ Some repos run PR checks only when the PR carries the `ci` label (`pull_request:
 - Does the repo carry the label? `gh label list -R <owner>/<repo> --search ci --json name`, exact match on `name == "ci"`. No exact match (or a failed read) -> skip this step entirely; the repo behaves as it always did.
 - Repo has the label, PR does not -> `gh pr edit <N> -R <owner>/<repo> --add-label ci`, then wait a few seconds before the snapshot: the `labeled` event registers its runs a beat after the edit.
 - PR already carries `ci` but the head has no runs (new commits after labeling) -> remove and re-add the label, same wait.
+- A PR can carry completed checks from before the label went on (an earlier plain `pull_request` run, or another label's `labeled` event whose jobs all skipped). Note their `detailsUrl`s before the edit. Right after it, none of them is pending and the label's own runs have not registered, so a snapshot that holds only those checks is the same race as an empty rollup: re-snapshot until a check that was not on the list appears, or a few polls pass with none (a `paths:` filter started nothing).
 
 ### Step 2: Snapshot
 
