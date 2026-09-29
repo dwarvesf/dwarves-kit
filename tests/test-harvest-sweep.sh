@@ -3489,6 +3489,7 @@ assert_eq "AC19: the skip lands a log line" "yes" "$([ -n "$(t16_log)" ] && echo
 printf '[harvest]\nenable = false\n' > "$T16D/kroot/kit.toml"
 R="$(t16_run)"
 assert_eq "AC4: a disabled host exits 0 and never calls the sweep" "0" "$(tf "$R" sweep)"
+assert_eq "AC4: a disabled host never calls the bridge" "none" "$(t16b "$R")"
 
 printf '[harvest]\nenable = true\n' > "$T16D/kroot/kit.toml"
 R="$(t16_run)"
