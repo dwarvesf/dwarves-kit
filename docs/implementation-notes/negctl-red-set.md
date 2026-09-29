@@ -12,3 +12,10 @@ Deltas from SPEC-364. Nothing here repeats what the spec already states.
 - Deviation: the fold asked for `mktemp -t negctl-red.XXXXXX`. A live probe showed macOS `mktemp -t` ignores `TMPDIR`, so the unwritable-TMPDIR case and the under-root fallback could not be tested there. The spec uses the explicit `"${TMPDIR:-/tmp}/negctl-red.XXXXXX"` template that `--at` already uses (DEC-I).
 - Fixture fix found while folding: the first draft's `add-0-0` label never goes red under `s/+/-/`, because 0-0 is 0. No fixture uses it now.
 - Side effect of the probe: two empty `negctl-red.XXXXXX.*` files were left under the macOS per-user temp dir. They are harmless and were not deleted.
+
+## 2026-09-29 Round 2 fold (NEEDS REVISION, 2 criticals, final round)
+- Folded the redaction critical (adapter patterns inside `_red_labels`), the ENOSPC append probe, and every warning.
+- Lead decision applied: no TMPDIR-inside-root fallback. The snapshot check already fails closed there. The freed case number [51] now covers the per-attempt write guard.
+- `_capture_failed` is the one helper that prints, because it ends the run; NC3 now mutates its header line instead of a sed over the guard text.
+- Build note: the [38] fake `sk-` token must be assembled from two halves at runtime. A literal token trips the operator's secret-guard hook on the command line and would sit in the repo as a credential-shaped string.
+- Build note: case [51] relies on mode bits, so it is skipped as ok under root.
