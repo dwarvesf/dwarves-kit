@@ -337,36 +337,153 @@ def _ledger_lock_path(ledger):
     return ledger + ".lock"
 
 
-def cmd_cleanup():
-    """--cleanup: move every `flushed:*` row (a learning already routed to its durable home) out
-    of the active ledger into a sibling append-only archive. Queued / any non-flushed rows stay.
-    Never deletes content. Human-run mode, NOT part of the auto SessionEnd/PreCompact path."""
-    ledger = os.environ.get("HARVEST_LEDGER", _default_ledger())
+def _sweep_ledger_dir():
+    """ledger/ under the sweep state dir: one <repo-slug>.md per repo plus each one's
+    .archive.md sibling, .lock, and .rows.jsonl sidecar."""
+    return os.path.join(_state_dir(), "sweep", "ledger")
+
+
+def cmd_cleanup(ledger=None):
+    """--cleanup [ledger]: move every `flushed:*` row (a learning already routed to its
+    durable home) out of the active ledger into a sibling append-only archive. Queued /
+    any non-flushed rows stay. Never deletes content. The ledger argument is the sweep's
+    per-run archive pass over every ledger/<slug>.md; the CLI default stays HARVEST_LEDGER.
+    The ledger's own .lock is held across the read, the archive append, and the rewrite,
+    so a --mark-flushed that lands mid-pass is serialized, never overwritten by a stale
+    keep set. Not part of the auto SessionEnd/PreCompact path."""
+    ledger = ledger or os.environ.get("HARVEST_LEDGER", _default_ledger())
     if not os.path.isfile(ledger):
         print(f"harvest: --cleanup found no ledger at {ledger} (nothing to do)", file=sys.stderr)
         return 0
-    keep, archived = [], []
-    for line in open(ledger, encoding="utf-8"):
-        cells = [c.strip() for c in line.split("|")]
-        if _is_data_row(cells) and cells[5].startswith("flushed"):
-            archived.append(line if line.endswith("\n") else line + "\n")
-        else:
-            keep.append(line)
-    if not archived:
+    # Unlocked peek: a pass that finds no flushed rows takes no lock and writes
+    # nothing, so a no-op cleanup never creates a .lock beside a lockless ledger.
+    def has_flushed():
+        for line in open(ledger, encoding="utf-8"):
+            cells = [c.strip() for c in line.split("|")]
+            if _is_data_row(cells) and cells[5].startswith("flushed"):
+                return True
+        return False
+    if not has_flushed():
         print(f"harvest: 0 archived (no flushed rows) -> {ledger}", file=sys.stderr)
         return 0
-    archive = _archive_path(ledger)
-    newfile = not os.path.exists(archive)
-    with open(archive, "a", encoding="utf-8") as fh:
-        if newfile:
-            fh.write("| date | item | kind | home | status |\n|---|---|---|---|---|\n")
-        fh.writelines(archived)
-    # Atomic rewrite of the active ledger (temp + replace) so a crash never truncates it.
-    tmp = ledger + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as fh:
-        fh.writelines(keep)
-    os.replace(tmp, ledger)
+    with open(_ledger_lock_path(ledger), "a") as lockf:
+        fcntl.flock(lockf, fcntl.LOCK_EX)
+        try:
+            # Re-read under the lock: a mark that landed between the peek and here is
+            # covered by this pass; one that lands after the read is written out by the
+            # rewrite below as its own flushed row, not lost.
+            keep, archived = [], []
+            for line in open(ledger, encoding="utf-8"):
+                cells = [c.strip() for c in line.split("|")]
+                if _is_data_row(cells) and cells[5].startswith("flushed"):
+                    archived.append(line if line.endswith("\n") else line + "\n")
+                else:
+                    keep.append(line)
+            if not archived:
+                print(f"harvest: 0 archived (no flushed rows) -> {ledger}", file=sys.stderr)
+                return 0
+            archive = _archive_path(ledger)
+            newfile = not os.path.exists(archive)
+            with open(archive, "a", encoding="utf-8") as fh:
+                if newfile:
+                    fh.write("| date | item | kind | home | status |\n|---|---|---|---|---|\n")
+                fh.writelines(archived)
+            # Atomic rewrite of the active ledger (temp + replace) so a crash never truncates it.
+            tmp = ledger + ".tmp"
+            with open(tmp, "w", encoding="utf-8") as fh:
+                fh.writelines(keep)
+            os.replace(tmp, ledger)
+        finally:
+            fcntl.flock(lockf, fcntl.LOCK_UN)
     print(f"harvest: {len(archived)} archived -> {archive}", file=sys.stderr)
+    return 0
+
+
+def cmd_flush_list():
+    """--flush-list: the queued rows of every sweep ledger as one JSON array on stdout.
+    Each ledger is read under its own .lock (shared) and joined with its .rows.jsonl
+    sidecar, so a concurrent --mark-flushed or archive pass can never hand back a
+    half-written file (AC17, AC29). A row whose sidecar entry is absent or unwritten
+    carries null context fields -- the crash window AC29's replay repairs."""
+    d = _sweep_ledger_dir()
+    try:
+        names = sorted(os.listdir(d))
+    except OSError:
+        names = []
+    rows = []
+    for name in names:
+        if not name.endswith(".md") or name.endswith(".archive.md"):
+            continue
+        ledger = os.path.join(d, name)
+        slug = name[:-3]
+        with open(_ledger_lock_path(ledger), "a") as lockf:
+            fcntl.flock(lockf, fcntl.LOCK_SH)
+            try:
+                side = {}
+                sidecar = os.path.splitext(ledger)[0] + ".rows.jsonl"
+                if os.path.isfile(sidecar):
+                    for line in open(sidecar, encoding="utf-8"):
+                        line = line.strip()
+                        if not line:
+                            continue
+                        try:
+                            row = json.loads(line)
+                        except ValueError:
+                            continue
+                        if isinstance(row, dict) and row.get("row_id"):
+                            side[row["row_id"]] = row
+                for line in open(ledger, encoding="utf-8"):
+                    cells = [c.strip() for c in line.split("|")]
+                    if not (_is_data_row(cells) and cells[5] == "queued"):
+                        continue
+                    ctx = side.get("%s:%s" % (slug, cells[2])) or {}
+                    rows.append({"row_id": "%s:%s" % (slug, cells[2]),
+                                 "ledger": ledger,
+                                 "date": cells[1], "item": cells[2],
+                                 "kind": cells[3], "home": cells[4],
+                                 "why": ctx.get("why"),
+                                 "evidence": ctx.get("evidence"),
+                                 "source": ctx.get("source"),
+                                 "lead_session_id": ctx.get("lead_session_id")})
+            finally:
+                fcntl.flock(lockf, fcntl.LOCK_UN)
+    print(json.dumps(rows))
+    return 0
+
+
+def cmd_mark_flushed(row_id, ref):
+    """--mark-flushed <row-id> <ref>: flip one sweep-ledger row from `queued` to
+    `flushed:<ref>` under that ledger's .lock, rewritten through tmp + os.replace so a
+    crash never leaves a half-written ledger (DEC-69, DEC-70). Exits 0 on the flip,
+    1 -- with no write at all -- when the row id is unknown or the row is not queued,
+    so a double mark and a stale list both stay no-ops."""
+    slug, sep, item = row_id.partition(":")
+    ref = re.sub(r"[|\r\n]", "", (ref or "").strip())
+    if not sep or not slug or not item or not ref:
+        return 1
+    ledger = os.path.join(_sweep_ledger_dir(), slug + ".md")
+    if not os.path.isfile(ledger):
+        return 1
+    with open(_ledger_lock_path(ledger), "a") as lockf:
+        fcntl.flock(lockf, fcntl.LOCK_EX)
+        try:
+            lines = open(ledger, encoding="utf-8").readlines()
+            hit = -1
+            for i, line in enumerate(lines):
+                cells = [c.strip() for c in line.split("|")]
+                if _is_data_row(cells) and cells[2] == item:
+                    hit, status = i, cells[5]
+                    break
+            if hit < 0 or status != "queued":
+                return 1
+            cells[5] = "flushed:" + ref
+            lines[hit] = "| " + " | ".join(cells[1:-1]) + " |\n"
+            tmp = ledger + ".tmp"
+            with open(tmp, "w", encoding="utf-8") as fh:
+                fh.writelines(lines)
+            os.replace(tmp, ledger)
+        finally:
+            fcntl.flock(lockf, fcntl.LOCK_UN)
     return 0
 
 
@@ -669,7 +786,19 @@ def cmd_harvest_run(pf):
 
 def _dispatch(argv):
     if "--cleanup" in argv:
-        return cmd_cleanup()
+        i = argv.index("--cleanup")
+        nxt = argv[i + 1] if i + 1 < len(argv) else ""
+        return cmd_cleanup(nxt if nxt and not nxt.startswith("--") else None)
+    if "--flush-list" in argv:
+        return cmd_flush_list()
+    if "--mark-flushed" in argv:
+        i = argv.index("--mark-flushed")
+        rid = argv[i + 1] if i + 1 < len(argv) else ""
+        ref = argv[i + 2] if i + 2 < len(argv) else ""
+        if not rid or not ref:
+            sys.stderr.write("usage: harvest.py --mark-flushed <row-id> <ref>\n")
+            return 2
+        return cmd_mark_flushed(rid, ref)
     if "--lab-log-run" in argv:
         i = argv.index("--lab-log-run")
         return cmd_lab_log_run(argv[i + 1] if i + 1 < len(argv) else "")

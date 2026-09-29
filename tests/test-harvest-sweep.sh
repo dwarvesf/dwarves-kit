@@ -3067,6 +3067,225 @@ assert_eq "AC30: a dry run leaves the real cursor byte-identical" "True" "$(t14b
 assert_eq "AC30: a failed dry run leaves no overlay behind" "" "$(t14b o_leaked)"
 assert_eq "AC30: a failed dry run restores HARVEST_STATE_DIR" "True" "$(t14b o_env_restored)"
 
+# ============================================================================
+# T22 flush lifecycle: --flush-list joins queued rows with the sidecar under each
+# ledger's .lock; --mark-flushed flips queued -> flushed:<ref> once and refuses a
+# repeat or an unknown id with no write; each run drains flushed rows into the
+# ledger's .archive.md sibling via cmd_cleanup holding that lock (DEC-58, DEC-69,
+# DEC-70, DEC-73); a dry run leaves the real ledgers and archives untouched.
+# ============================================================================
+echo
+echo "T22 flush lifecycle (list, mark, archive, concurrency)"
+T22_OUT=$(KIT_DIR="$KIT_DIR" TD="$TD" T5_NOW="$T5_NOW" python3 - <<'PY'
+import contextlib, datetime, fcntl, importlib.util, io, json, os, shlex, sqlite3, sys, threading, time
+spec = importlib.util.spec_from_file_location("hs", os.path.join(os.environ["KIT_DIR"], "hooks", "harvest_sweep.py"))
+hs = importlib.util.module_from_spec(spec)
+sys.modules["hs"] = hs
+spec.loader.exec_module(hs)
+sys.path.insert(0, os.path.join(os.environ["KIT_DIR"], "hooks"))
+import harvest
+KIT, TD, NOW = (os.environ["KIT_DIR"], os.environ["TD"], int(os.environ["T5_NOW"]))
+FIX = os.path.join(KIT, "tests", "fixtures", "harvest-sweep")
+P = lambda k, v: print("%s=%s" % (k, v))
+n_scn = [0]
+iso = lambda e: datetime.datetime.fromtimestamp(e, datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+HEAD = "| date | item | kind | home | status |\n|---|---|---|---|---|\n"
+
+def scenario(active=True, sources="claude", tag="t22", item="flush-1"):
+    n_scn[0] += 1
+    base = os.path.join(TD, "%s-s%d" % (tag, n_scn[0]))
+    os.environ["HARVEST_STATE_DIR"] = os.path.join(base, "state")
+    root = os.path.join(base, "claude"); os.makedirs(root)
+    os.environ["HARVEST_SWEEP_CLAUDE_ROOT"] = root
+    db = os.path.join(base, "devin.db")
+    con = sqlite3.connect(db)
+    con.execute("CREATE TABLE sessions(id TEXT, working_directory TEXT, created_at REAL,"
+                " last_activity_at REAL, hidden INTEGER, main_chain_id TEXT)")
+    con.commit(); con.close()
+    os.environ["HARVEST_SWEEP_DEVIN_DB"] = db
+    os.environ["HARVEST_SWEEP_NOW"] = str(NOW)
+    os.environ["HARVEST_EXTRACTOR"] = shlex.quote(os.path.join(FIX, "stub-extractor.sh"))
+    os.environ["STUB_CALLS"] = os.path.join(base, "calls")
+    os.environ["STUB_OUT"] = json.dumps({"learnings": [{"item": item, "kind": "insight",
+                                                       "home": "til", "why": "w", "evidence": "e"}],
+                                        "sightings": []})
+    os.environ["STUB_MODE"] = "ok"
+    os.environ["STUB_PRECEDENT_HITS_FILE"] = os.path.join(base, "hits.json")
+    os.environ["STUB_LANE"] = "normal"
+    os.environ["HARVEST_SWEEP_PRECEDENT"] = os.path.join(FIX, "stub-precedent.sh")
+    os.environ["HARVEST_SWEEP_LANE_CLASSIFY"] = os.path.join(FIX, "stub-lane-classify.sh")
+    os.environ["KIT_LEDGER_DIR"] = os.path.join(base, "ledger")
+    kroot = os.path.join(base, "kitroot"); os.makedirs(kroot)
+    with open(os.path.join(kroot, "kit.toml"), "w") as fh:
+        fh.write('[harvest]\nenable = %s\nschedule_hours = 48\n'
+                 'max_sessions_per_run = 20\nsources = "%s"\n'
+                 % ("true" if active else "false", sources))
+    os.environ["KIT_CONFIG_ROOT"] = kroot
+    os.environ["KIT_CONFIG_OPERATOR"] = os.path.join(base, "no-operator")
+    if active:
+        sd = os.path.join(os.environ["HARVEST_STATE_DIR"], "sweep")
+        os.makedirs(sd)
+        with open(os.path.join(sd, "installed"), "w") as fh:
+            json.dump({"label": "harvest-sweep", "host": "t", "kit": KIT, "ts": NOW}, fh)
+    return base, root
+
+def mk(root, sid, la, n=6):
+    d = os.path.join(root, "p"); os.makedirs(d, exist_ok=True)
+    path = os.path.join(d, sid + ".jsonl")
+    with open(path, "w") as fh:
+        for k in range(n):
+            fh.write(json.dumps({"type": "user" if k % 2 == 0 else "assistant", "cwd": TD,
+                                 "timestamp": iso(la - (n - k) * 10),
+                                 "message": {"content": [{"type": "text", "text": "%s m%d" % (sid, k)}]}}) + "\n")
+    os.utime(path, (la, la))
+
+def flush_list():
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        rc = harvest._dispatch(["--flush-list"])
+    return rc, json.loads(buf.getvalue() or "[]")
+
+def rows(path):
+    out = {}
+    if os.path.exists(path):
+        for line in open(path):
+            cells = [c.strip() for c in line.split("|")]
+            if len(cells) >= 7 and cells[1].startswith("2"):
+                out.setdefault(cells[2], []).append(cells[5])
+    return out
+
+def cell(path, item):
+    return ",".join(rows(path).get(item) or [])
+
+# -- scenario A: stage one learning, exercise the list/mark/archive cycle ------
+base, root = scenario()
+mk(root, "f1", NOW - 3600)
+with contextlib.redirect_stderr(io.StringIO()):
+    hs.main(["--sweep"])
+leddir = os.path.join(os.environ["HARVEST_STATE_DIR"], "sweep", "ledger")
+led = os.path.join(leddir, "_no-repo.md")
+arch = os.path.join(leddir, "_no-repo.archive.md")
+with open(led, "a") as fh:
+    fh.write("| 2026-01-01 | gone-already | insight | til | flushed:old |\n")
+    fh.write("| 2026-01-01 | sidelined | insight | til | parked |\n")
+with open(os.path.join(leddir, "other.md"), "w") as fh:
+    fh.write(HEAD + "| 2026-01-02 | lone-item | insight | til | queued |\n")
+
+rc, listing = flush_list()
+by_id = {r["row_id"]: r for r in listing}
+rid = "_no-repo:flush-1"
+P("fl_rc", rc)
+P("fl_queued_only", ",".join(sorted(by_id)))
+P("fl_join", json.dumps({k: by_id[rid].get(k) for k in ("why", "evidence", "source", "lead_session_id")}, sort_keys=True))
+P("fl_noctx_nulls", json.dumps({k: by_id["other:lone-item"].get(k)
+                                for k in ("why", "lead_session_id")}, sort_keys=True)
+  if "other:lone-item" in by_id else "missing")
+
+with contextlib.redirect_stderr(io.StringIO()):
+    m1 = harvest._dispatch(["--mark-flushed", rid, "LAB_LOG-9"])
+    after_mark = open(led).read()
+    m2 = harvest._dispatch(["--mark-flushed", rid, "again"])
+    m3 = harvest._dispatch(["--mark-flushed", "_no-repo:no-such", "x"])
+    m4 = harvest._dispatch(["--mark-flushed", "no-colon-here", "x"])
+    m5 = harvest._dispatch(["--mark-flushed", "nosuchslug:i", "x"])
+P("mark_first", m1)
+P("mark_repeat", m2)
+P("mark_unknown", m3)
+P("mark_malformed", m4)
+P("mark_missing_ledger", m5)
+P("mark_failures_noop", open(led).read() == after_mark)
+P("marked_status", cell(led, "flush-1"))
+
+# a run with nothing new still drains the flushed rows into the archive sibling
+with contextlib.redirect_stderr(io.StringIO()):
+    hs.main(["--sweep"])
+P("archive_row", cell(arch, "flush-1"))
+P("archive_seeded", cell(arch, "gone-already"))
+P("active_after_archive", ",".join(sorted(rows(led))))
+rc, listing = flush_list()
+P("fl_after_archive", ",".join(sorted(r["row_id"] for r in listing)))
+
+# DEC-69: a fresh sighting of the archived learning is not restaged
+mk(root, "f2", NOW - 1800)
+with contextlib.redirect_stderr(io.StringIO()):
+    hs.main(["--sweep"])
+P("archived_not_restaged", "flush-1" not in rows(led))
+
+# -- scenario B: 20-row concurrent mark-versus-archive --------------------------
+base2, root2 = scenario(item="conc-x")
+leddir2 = os.path.join(os.environ["HARVEST_STATE_DIR"], "sweep", "ledger")
+os.makedirs(leddir2, exist_ok=True)
+conc = os.path.join(leddir2, "conc.md")
+carch = os.path.join(leddir2, "conc.archive.md")
+items = ["c%02d" % i for i in range(20)]
+conc_errs = []
+with contextlib.redirect_stderr(io.StringIO()):
+    for rnd in range(15):
+        with open(conc, "w") as fh:
+            fh.write(HEAD + "".join("| 2026-01-03 | %s | insight | til | queued |\n" % i for i in items))
+        if os.path.exists(carch):
+            os.remove(carch)
+        done = threading.Event()
+        def marker():
+            for i in items:
+                if harvest._dispatch(["--mark-flushed", "conc:" + i, "ref-" + i]) != 0:
+                    conc_errs.append("mark rc!=0 " + i)
+        def cleaner():
+            while not done.is_set():
+                harvest.cmd_cleanup(conc)
+        t1 = threading.Thread(target=marker); t2 = threading.Thread(target=cleaner)
+        t1.start(); t2.start(); t1.join(); done.set(); t2.join()
+        seen = {}
+        for p_ in (conc, carch):
+            for k, sts in rows(p_).items():
+                seen.setdefault(k, []).extend(sts)
+        for i in items:
+            if seen.get(i) != ["flushed:ref-" + i]:
+                conc_errs.append("round %d %s -> %s" % (rnd, i, seen.get(i)))
+P("conc_errors", len(conc_errs))
+
+# -- scenario C: a dry run drains only its overlay, never the real ledgers ------
+base3, root3 = scenario(item="dry-x")
+mk(root3, "d1", NOW - 3600)
+leddir3 = os.path.join(os.environ["HARVEST_STATE_DIR"], "sweep", "ledger")
+dled = os.path.join(leddir3, "_no-repo.md")
+os.makedirs(leddir3, exist_ok=True)
+with open(dled, "w") as fh:
+    fh.write(HEAD + "| 2026-01-04 | stale-flush | insight | til | flushed:ref1 |\n")
+before = open(dled).read()
+with contextlib.redirect_stderr(io.StringIO()):
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        drc = hs.main(["--sweep", "--dry-run"])
+P("dry_rc", drc)
+P("dry_ledger_untouched", open(dled).read() == before)
+P("dry_no_archive", not os.path.exists(os.path.join(leddir3, "_no-repo.archive.md")))
+P("dry_row_kept", cell(dled, "stale-flush"))
+PY
+)
+t22() { printf '%s\n' "$T22_OUT" | sed -n "s/^$1=//p"; }
+
+assert_eq "AC17: --flush-list exits 0" "0" "$(t22 fl_rc)"
+assert_eq "AC17: --flush-list lists queued rows only" "_no-repo:flush-1,other:lone-item" "$(t22 fl_queued_only)"
+assert_eq "AC29: --flush-list joins the sidecar context" '{"evidence": "e", "lead_session_id": null, "source": "claude/f1", "why": "w"}' "$(t22 fl_join)"
+assert_eq "AC29: a row with no sidecar entry carries nulls" '{"lead_session_id": null, "why": null}' "$(t22 fl_noctx_nulls)"
+assert_eq "AC17: --mark-flushed exits 0 once" "0" "$(t22 mark_first)"
+assert_eq "AC17: a repeat mark exits 1" "1" "$(t22 mark_repeat)"
+assert_eq "AC17: an unknown row id exits 1" "1" "$(t22 mark_unknown)"
+assert_eq "AC17: a malformed row id exits 1" "1" "$(t22 mark_malformed)"
+assert_eq "AC17: an unknown slug exits 1" "1" "$(t22 mark_missing_ledger)"
+assert_eq "AC17: failed marks change nothing" "True" "$(t22 mark_failures_noop)"
+assert_eq "AC17: the row flipped to flushed:<ref>" "flushed:LAB_LOG-9" "$(t22 marked_status)"
+assert_eq "DEC-58: a run archives the flushed row" "flushed:LAB_LOG-9" "$(t22 archive_row)"
+assert_eq "DEC-58: the seeded flushed row drained too" "flushed:old" "$(t22 archive_seeded)"
+assert_eq "DEC-58: only non-flushed rows stay active" "sidelined" "$(t22 active_after_archive)"
+assert_eq "AC17: archived rows leave --flush-list" "other:lone-item" "$(t22 fl_after_archive)"
+assert_eq "DEC-69: an archived learning is not restaged" "True" "$(t22 archived_not_restaged)"
+assert_eq "AC17: concurrent mark and archive lose no rows" "0" "$(t22 conc_errors)"
+assert_eq "AC30: a dry run leaves the real ledger untouched" "True" "$(t22 dry_ledger_untouched)"
+assert_eq "AC30: a dry run writes no real archive" "True" "$(t22 dry_no_archive)"
+assert_eq "AC30: the real flushed row survives a dry run" "flushed:ref1" "$(t22 dry_row_kept)"
+
 # ============================================================
 echo ""
 echo "=== Results ==="

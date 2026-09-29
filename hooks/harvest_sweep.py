@@ -1376,6 +1376,23 @@ def _sweep_one(cursor, plan, item, process, now, max_chars, records, run, quaran
     return not skip
 
 
+def _archive_flushed(leddir=None):
+    """Each run drains `flushed:` rows out of every sweep ledger into its .archive.md
+    sibling through harvest.cmd_cleanup, which holds that ledger's own .lock across the
+    read, the archive append, and the rewrite (DEC-58, DEC-73). Runs even on an idle or
+    stopped sweep: the flush queue drains whether or not sessions were read. Under
+    --dry-run the ledger dir resolves into the throwaway overlay, so the real ledgers
+    and archives are untouched without a code path of its own."""
+    d = leddir or _sweep_file("ledger")
+    try:
+        names = sorted(os.listdir(d))
+    except OSError:
+        return
+    for name in names:
+        if name.endswith(".md") and not name.endswith(".archive.md"):
+            harvest.cmd_cleanup(os.path.join(d, name))
+
+
 def _finish_run(cursor, result, now):
     """Lag and drift bookkeeping, once per run. Lag counts the eligible sessions a source
     left unread; those past the cap are deferred unloaded, so a trivial one among them still
@@ -1583,6 +1600,7 @@ def run_selection(process=None, schedule_hours=6, max_sessions=20, since=None,
         attempts += _sweep_one(cursor, plan, item, process, now, max_chars, records, run,
                                quarantine_after, log)
     _finish_run(cursor, result, now)  # also pins a first-run hwm when nothing was selected
+    _archive_flushed()
     if log.active:
         # counts lines only attach to a run that did work, so an idle run leaves no
         # runs/<run-id>/ directory at all
