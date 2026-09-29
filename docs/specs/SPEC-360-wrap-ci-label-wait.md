@@ -1,7 +1,7 @@
 # Spec: wrap waits for the runs a fresh ci label starts
 
 Generated: 2026-09-29
-Status: DRAFT (round 4: folds validation round 3, NEEDS REVISION, 2 critical, 8 warnings, with live gh evidence). Prior: round 2 (NEEDS REVISION, 1 critical, 9 warnings), round 1 (NEEDS REVISION, 2 critical, 8 warnings).
+Status: VALIDATED (round 4 APPROVED: 0 critical, 8 warnings, folded below). Prior: round 3 (NEEDS REVISION, 2 critical, 8 warnings, with live gh evidence), round 2 (NEEDS REVISION, 1 critical, 9 warnings), round 1 (NEEDS REVISION, 2 critical, 8 warnings).
 Lane: full (lib/ enforcement surface: the merge gate of `wrap merge --apply`, `wrap land` and the carry autoland)
 Type: bug
 File: `docs/specs/SPEC-360-wrap-ci-label-wait.md`
@@ -58,18 +58,22 @@ re-gate (cmd_merge only, unchanged call): _pr_gate on the same head
 2. The entry key is defined once, as a shell variable holding a jq `def` next to the two functions:
 
    ```
-   CI_ENTRY_KEY='def ckey: (.name // .context // "") + "@" + (.detailsUrl // .targetUrl // .startedAt // .createdAt // "");'
+   CI_ENTRY_KEY='def ckey: (.name // .context // "") + "@" + ([.detailsUrl, .targetUrl, .startedAt, .createdAt] | map(select(. != null and . != "" and . != "0001-01-01T00:00:00Z")) | .[0] // "");'
    ```
 
-   Both `_ci_label_sync` (building the baseline) and `_ci_checks_wait` (building NEW) prefix their jq program with `$CI_ENTRY_KEY` and call `ckey`. Neither spells the key out. A CheckRun's `detailsUrl` names one job, and the run keeps it from queued to completed. The name prefix keeps apart third-party checks that share one `detailsUrl` (Netlify posts several checks with the same URL). A StatusContext exposes `targetUrl` and `startedAt`, not `detailsUrl`. The time fields are only the last fallback, because they move when a check changes state.
+   Both `_ci_label_sync` (building the baseline) and `_ci_checks_wait` (building NEW) prefix their jq program with `$CI_ENTRY_KEY` and call `ckey`. Neither spells the key out. A CheckRun's `detailsUrl` names one job, and the run keeps it from queued to completed. The name prefix keeps apart third-party checks that share one `detailsUrl` (Netlify posts several checks with the same URL). A StatusContext exposes `targetUrl` and `startedAt`, not `detailsUrl`. gh emits an absent URL as `""` and an absent time as the zero time, never null, so the key takes the first field that is neither null, empty, nor the zero time; a plain `//` chain would stop at the `""`. The time fields come last because they move when a check changes state.
+
+   `CI_LABEL_BASE` enters jq only as `--argjson base "$CI_LABEL_BASE"`, never spliced into the program text. The add-branch assignment of `CI_LABEL_BASE` stays on one line, so the negative-control `sed` can replace it whole.
 3. `_ci_checks_wait` computes, per read, the pending count over the whole rollup (today's test) and NEW, the entries whose key is not in `CI_LABEL_BASE`. Precedence, in order: a failed read waits on the carry bound; pending > 0 waits on the carry bound; pending = 0 with NEW empty waits on the grace bound; pending = 0 with NEW non-empty ends the wait. With `CI_LABEL_BASE='[]'`, NEW equals the whole rollup, so a label already in place waits exactly as today.
 4. `_pr_gate` changes only its latest-per-name sort key. The key becomes the first real time of the entry:
 
    ```
-   [.completedAt, .startedAt, .createdAt] | map(select(. != null and . != "" and . != "0001-01-01T00:00:00Z")) | .[0] // ""
+   def rtime: [.completedAt, .startedAt, .createdAt] | map(select(. != null and . != "" and . != "0001-01-01T00:00:00Z")) | .[0] // "";
+   def pending: ((.status // "COMPLETED") != "COMPLETED") or ((.state // "") == "PENDING") or ((.state // "") == "EXPECTED");
+   ... | map(sort_by([(if (pending and rtime == "") then 1 else 0 end), rtime]) | last)
    ```
 
-   A pending entry (`status` present and not `COMPLETED`, or `state` of `PENDING` or `EXPECTED`) whose key comes out `""` sorts after every other entry of its name. A completed entry's key is its `completedAt`, as today. A pending entry with a real `startedAt` now keys on that start, which is later than any older completed run of its name. The comment above `_pr_gate` is corrected to match: it drops the false "falling back to startedAt for a still-running check" and names StatusContext's fields as `.context`, `.startedAt`, `.targetUrl`, `.state`. No clause is added or moved: the draft, base, mergeable and CONFLICTING verdicts come first exactly as today, so callers comparing `SKIP not mergeable (CONFLICTING)` (`cmd_merge`, the union re-merge and squash fallback) see no change.
+   `""` sorts first in jq, so the key has two parts. A pending entry whose `rtime` is `""` gets 1 in the first part and sorts after every other entry of its name. A completed entry's key is its `completedAt`, as today. A pending entry with a real `startedAt` now keys on that start, which is later than any older completed run of its name. The comment above `_pr_gate` is corrected to match: it drops the false "falling back to startedAt for a still-running check" and names StatusContext's fields as `.context`, `.startedAt`, `.targetUrl`, `.state`. No clause is added or moved: the draft, base, mergeable and CONFLICTING verdicts come first exactly as today, so callers comparing `SKIP not mergeable (CONFLICTING)` (`cmd_merge`, the union re-merge and squash fallback) see no change.
 5. Nothing else changes. The three callers keep their calls. `_autoland_carry` still lands through `cmd_merge --apply --pr`, which re-gates. The grace and carry bounds keep their names and defaults.
 
 ## Design
@@ -103,7 +107,7 @@ For the re-gate:
 - Two workflows on one event. When one label event starts two workflows, the wait can end once the first workflow's runs appear and finish, before the second registers. In the observed repos one workflow holds every job, and GitHub registers a run's jobs together. Today's EMPTY test has the same race.
 - The read-to-edit window. An entry that registers between the sync's rollup read and the label edit (another label's `labeled` event, say) is missing from the baseline, so it counts as NEW. If it completes before the `ci` runs register, the wait ends early. The window is one `gh pr edit` call wide.
 - `needs:` chains. A job that `needs:` another registers its check run only after its dependency finishes. When the dependency completes green, the wait sees NEW non-empty and 0 pending, and ends before the dependent job registers. foundation-workers `ci.yml` avoids `needs:`, so its jobs register together.
-- StatusContext keys shift. A commit status with no `targetUrl` keys on `context@startedAt`, and a status moving from pending to success reports a new `startedAt`. A status that settles inside the registration window therefore counts as NEW, and the wait can end on it before the `ci` runs register. A status whose `targetUrl` changes on update shifts the same way.
+- StatusContext keys shift. A commit status whose `targetUrl` is empty keys on `context@startedAt`, and a status moving from pending to success reports a new `startedAt`. A status that settles inside the registration window therefore counts as NEW, and the wait can end on it before the `ci` runs register. A status whose `targetUrl` changes on update shifts the same way.
 - A delayed webhook looks like a paths-filtered workflow. When the `labeled` event reaches Actions after the grace window, the wait sees no new entry and ends. The re-gate then reads the pre-label all-SKIPPED rollup and returns OK. `KIT_WRAP_CI_GRACE_SECS` is the lever: raise it on a repo whose webhooks run slow.
 
 ## Failure modes
@@ -119,14 +123,15 @@ For the re-gate:
 | A new run completes red | `cmd_merge`, autoland | the re-gate picks it as latest (later `completedAt`) and refuses |
 | A new run completes red | `cmd_land` | land merges with no gate (out of scope) |
 | The label was already present, rollup non-empty | all three | no baseline; one wait read, as today |
-| A stuck pending entry (an orphaned job on a runner that is gone), with or without a real `startedAt` | every `_pr_gate` read, eligibility included, on repos with or without the `ci` label | the entry is the latest for its name, so that PR reads `SKIP checks are pending or failing` until the job completes or is cancelled. This is fail-closed and deliberate. Today the same PR could pass on an older completed entry of that name. |
+| A stuck pending entry with no real time (an orphaned job on a runner that is gone) | every `_pr_gate` read, eligibility included, on repos with or without the `ci` label | the entry sorts last for its name, so that PR reads `SKIP checks are pending or failing` until the job completes or is cancelled, even after a newer run of that name completes. This is fail-closed and deliberate. Today the same PR could pass on an older completed entry of that name. |
+| A stuck pending entry with a real `startedAt` | every `_pr_gate` read | it is the latest for its name, and the PR refuses, until a newer run of that name completes. That run's `completedAt` is later than the stuck `startedAt`, so the newer run wins and its conclusion decides. |
 
 ## Acceptance criteria
 
 - AC1: On a label-gated repo, `wrap merge --apply` on a PR whose rollup holds only completed pre-label entries does not merge while no new entry has appeared. It waits until a label-started entry appears and completes, then re-gates and merges on green.
 - AC2: In the AC1 setup, a label-started run that completes red refuses the merge with `FAILED merge #<n>: checks are pending or failing once the ci label's checks ran`. No `pr merge` call is made. The rollup at the re-gate holds both the old `test=SKIPPED` and the new `test=FAILURE`.
 - AC3: When no new entry ever appears (a paths-filtered workflow that starts nothing), the wait ends after `KIT_WRAP_CI_GRACE_SECS` and the merge proceeds on the pre-label rollup. This is slightly more generous than today's empty-rollup rule: an empty rollup passes only on `CLEAN`, while a pre-label rollup of SKIPPED and SUCCESS entries passes on any merge state the gate allows (`CLEAN`, `HAS_HOOKS`, `UNSTABLE`).
-- AC4: When the label was already present with a non-empty rollup (no add, no re-add), the wait makes exactly one rollup read before it ends, as today.
+- AC4: When the label was already present with a non-empty rollup (no add, no re-add), the wait makes exactly one rollup read when nothing is pending, as today.
 - AC5: When a label-started run is still queued at `KIT_WRAP_CARRY_CHECKS_SECS` with no real completion time (live shape: zero `completedAt`, empty `conclusion`, real `startedAt`), next to an old completed `test=SKIPPED`, on a `CLEAN` merge state, the re-gate refuses the merge and no `pr merge` call is made. The same holds when the queued entry has no real time at all.
 - AC6: `wrap land` on a label-gated repo with pre-label entries also waits for a new entry before its `pr merge` call.
 - AC7: A `CONFLICTING` PR whose rollup holds a pending entry with no real completion time still verdicts `SKIP not mergeable (CONFLICTING)`.
@@ -148,7 +153,7 @@ The pre-label rollup in every case is `test` SKIPPED with `detailsUrl` `.../job/
 | T5 AC5 | as T1 reads 1-2, then read 3 onward the full detail, CLEAN, with old plus `test` QUEUED job/3 (live shape, real `startedAt`), repeating; `KIT_WRAP_CARRY_CHECKS_SECS=10` | exit 2; the refusal line; no `pr merge N` |
 | T6 AC6 | `wrap land`: read 1 labels `[]` plus the old rollup; read 2 old only; read 3 old plus new IN_PROGRESS (live shape); read 4 old plus new SUCCESS | exit 0; `pr merge` comes after the 4th `pr view`; merged |
 | T7 AC7 | `wrap merge` dry run (no `--apply`), the way the existing CONFLICTING cases drive the gate: one open PR, detail `mergeable: CONFLICTING`, DIRTY, rollup the old entries plus a live-shaped QUEUED `test` | output holds `SKIP #N <title>: not mergeable (CONFLICTING)` |
-| T8 AC5 | as T5, but the QUEUED `test` has zero `completedAt` and `startedAt: null` (no real time at all) | exit 2; the refusal line; no `pr merge N` |
+| T8 AC5 | as T5, but the QUEUED `test` has `completedAt` and `startedAt` both `"0001-01-01T00:00:00Z"` (no real time at all; gh emits the zero time, never null) | exit 2; the refusal line; no `pr merge N` |
 
 The harness exports `KIT_WRAP_SETTLE_SECS=0`, so `_pr_detail_settled` makes exactly one read: the re-gate reads whatever fixture comes right after the wait's last read. The fixtures are laid out for that. In T1, an early-ended wait re-gates on read 4 (full detail, pending `test`) and refuses, so the case goes red. In T2, an early-ended wait re-gates on read 4 (full detail, CLEAN, old rollup only), returns OK and merges, so the case goes red. T4 pins that an operator whose label is already in place pays no extra wait. The existing cases pin the empty-rollup path, the re-label path, the label that will not set, and the autoland door.
 
