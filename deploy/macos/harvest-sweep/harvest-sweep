@@ -1,0 +1,79 @@
+#!/bin/bash
+# harvest-sweep: the launchd launcher for the transcript sweep (SPEC-357).
+# One LaunchAgent on StartInterval; this file is the plist's
+# ProgramArguments[0] (no .sh, per the BTM rule). It re-checks that the sweep is
+# active on this host -- the <state>/sweep/installed marker AND root-only
+# harvest.enable (DEC-27) -- and exits 0 with a log line otherwise, so a synced
+# config can never start a sweep on a host the operator never installed.
+#
+# It calls hooks/harvest_sweep.py --sweep DIRECTLY (never through harvest.sh,
+# which always exits 0 and would swallow the rc), then runs the consumer bridge
+# ~/.config/harvest-sweep/bridge <rc> <report path or -> best-effort (DEC-21).
+# Only a lock-held run gets no bridge call -- the sweep prints one fixed marker
+# line on stderr and exits 0; an idle run pings with '-' so the heartbeat still
+# fires (AC4).
+set -uo pipefail
+
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+KIT="$(cd "$HERE/../../.." && pwd)"
+
+# launchd gives a bare PATH (/usr/bin:/bin:...); the sweep shells out to the
+# claude CLI and git, so widen it the same way kit-weekly does.
+export PATH="$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+
+# Optional per-machine env: PATH extras, Claude auth settings, overrides. The
+# kit ships none of it -- consumer config lives on the consumer's machine.
+ENV_FILE="$HOME/.config/harvest-sweep/env"
+# shellcheck disable=SC1090
+[ -f "$ENV_FILE" ] && . "$ENV_FILE"
+
+LABEL="${HARVEST_SWEEP_LABEL:-harvest-sweep}"
+STATE="${HARVEST_STATE_DIR:-$HOME/.claude/dwarves-kit/state/harvest}"
+LOG_DIR="$HOME/Library/Logs/dwarves-kit"
+LOG="$LOG_DIR/$LABEL.log"
+mkdir -p "$LOG_DIR"
+
+log() { printf '%s %s\n' "$(date '+%Y-%m-%dT%H:%M:%S%z')" "$*" >> "$LOG"; }
+
+if [ ! -f "$STATE/sweep/installed" ]; then
+  log "skip: no installed marker under $STATE"
+  exit 0
+fi
+# shellcheck source=../../../lib/config/kit-config.sh
+. "$KIT/lib/config/kit-config.sh"
+en="$(kit_config_get_root harvest.enable false | tr 'A-Z' 'a-z')"
+case "$en" in
+  true|1|yes|on) ;;
+  *) log "skip: harvest.enable is not true"; exit 0 ;;
+esac
+
+status_report() { python3 "$KIT/hooks/harvest_sweep.py" --status 2>/dev/null | awk '{print $1}'; }
+
+log "start $LABEL"
+sweep_started="$(date +%s)"
+SWEEP_ERR="$(mktemp "${TMPDIR:-/tmp}/harvest-sweep-err.XXXXXX")"
+python3 "$KIT/hooks/harvest_sweep.py" --sweep 2>"$SWEEP_ERR"
+rc=$?
+# the sweep's stderr is diagnostics; relay it so it lands in <label>.log as before
+cat "$SWEEP_ERR" >&2
+log "end rc=$rc"
+
+# A lock-held run is the ONLY skipped case after the gates: the sweep prints
+# one fixed marker line and exits 0. Every other outcome -- idle rc 0, a fresh
+# report, a failure -- owes the bridge a ping (an idle host that stops pinging
+# is exactly what the heartbeat grace catches). The path is this run's report:
+# an idle run leaves the newest report untouched, so it still passes '-'.
+if ! grep -q '^harvest-sweep: sweep\.lock held' "$SWEEP_ERR"; then
+  report="-"
+  newest="$(status_report)"
+  if [ "$newest" != "none" ] && [ -f "$newest" ]; then
+    mtime="$(stat -f %m "$newest" 2>/dev/null || echo 0)"
+    [ "$mtime" -ge "$sweep_started" ] && report="$newest"
+  fi
+  BRIDGE="$HOME/.config/harvest-sweep/bridge"
+  if [ -x "$BRIDGE" ]; then
+    "$BRIDGE" "$rc" "$report" >> "$LOG" 2>&1 || log "bridge exited $?"
+  fi
+fi
+rm -f "$SWEEP_ERR"
+exit "$rc"

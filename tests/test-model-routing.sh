@@ -36,6 +36,7 @@ fail() { total=$((total + 1)); echo "FAIL $*"; fails=$((fails + 1)); }
 
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
+export DWARVES_KIT_LOG_DIR="$TMP/kitlogs"
 
 # ============================ SECTION 1: route-suggest alignment (structural) ============================
 # route-suggest.sh is a decompose-time SUGGESTER (invoked by a human / agents/meta-agent.md Mode B

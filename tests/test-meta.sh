@@ -3299,6 +3299,30 @@ fi
 
 rm -rf "$SYMLINK_FIXTURE"
 
+# ============================================================
+echo ""
+echo "=== SPEC-357 T18: wrap.distill harvest mode documented in wrap.md ==="
+# ============================================================
+# The command doc must carry all three states of the third knob value: active
+# (sweep marker + harvest.enable on THIS host), inactive (knob resolves as
+# true), and the explicit `distill` word override, plus the two FYI STATE rows
+# AC28 pins (the knob row and the --status row).
+WRAPF="$KIT_DIR/commands/wrap.md"
+RC=0; grep -q '`harvest`' "$WRAPF" || RC=1
+assert_eq "wrap.md names the third wrap.distill value" 0 $RC
+RC=0; grep -qF 'sweep/installed' "$WRAPF" || RC=1
+assert_eq "wrap.md scopes harvest mode to the installed marker" 0 $RC
+RC=0; grep -qF 'SKIPPED: distill runs in the harvest sweep' "$WRAPF" || RC=1
+assert_eq "wrap.md pins the harvest SKIPPED Built/Seam wording" 0 $RC
+RC=0; grep -qF 'in phase 1 the sweep reports candidates and builds none' "$WRAPF" || RC=1
+assert_eq "wrap.md carries the harvest FYI STATE knob row" 0 $RC
+RC=0; grep -qF 'harvest_sweep.py --status' "$WRAPF" || RC=1
+assert_eq "wrap.md carries the --status STATE row for the newest report" 0 $RC
+RC=0; grep -qF 'not installed on this host' "$WRAPF" || RC=1
+assert_eq "wrap.md carries the inactive-host STATE row (knob resolves as true)" 0 $RC
+RC=0; grep -qF 'sweep will also see this session' "$WRAPF" || RC=1
+assert_eq "wrap.md carries the explicit-distill override FYI" 0 $RC
+
 echo ""
 echo "=== Results ==="
 # ============================================================
