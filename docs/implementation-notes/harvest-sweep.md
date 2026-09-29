@@ -193,3 +193,8 @@ Deltas from SPEC-357 (phase 1, kit-side tasks T1 to T19, T13b, T22). Nothing her
 
 ## 2026-09-30 T19 ADR-0034 amendment
 - Change (DEC-12, DEC-13, DEC-67): a new `## Amendment (2026-09-30, SPEC-357)` section amends decisions 6 and 9 in the file's own amendment-by-section convention (the decisions' text is untouched, matching the 2026-07-18 precedent). It names the label (`harvest-sweep`, Mini `mini.harvest-sweep`), the cadence (`harvest.schedule_hours`, default 6h, `StartInterval`), and the reason kit-weekly does not carry it: a fixed weekly slot cannot express a 6h cadence, and a per-job interval inside kit-weekly is the plist-per-job fragmentation decision 9 rejected one level down. The ownership split follows board-sync-cron: kit owns template, launcher, installer; the consumer owns the instance and the heartbeat bridge.
+
+## Gap tests (AC4, AC13)
+- Uninstall chain (AC13): install gates the per-session hook off, `--uninstall` lets `harvest.sh` run it again. Negative control (red then green): `--uninstall` stops removing the marker.
+- Disabled host (AC4): `harvest.enable = false` never calls the bridge. Negative control (red then green): the launcher's enable gate falls through instead of exiting.
+- Stale report (AC4): a run that writes no report passes `-`, never an older run's path. Negative control (red then green): the mtime guard dropped so the newest report always passes.
