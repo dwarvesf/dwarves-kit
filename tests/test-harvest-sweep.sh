@@ -3405,6 +3405,121 @@ T15_HV="$(KIT_CONFIG_ROOT="$KIT_DIR" KIT_CONFIG_OPERATOR="$T15D/noop" KIT_PROJEC
     \"\$(kit_config_get_root harvest.hook_when_sweep_on X)\"")"
 assert_eq "kit.toml ships the [harvest] table with safe defaults" "false|6|claude|false" "$T15_HV"
 
+# ============================================================================
+# T16 launchd launcher + plist template (the launcher part of AC4, AC19):
+# the launcher re-checks the host is active (installed marker + root-only
+# harvest.enable), calls harvest_sweep.py --sweep directly so the rc reaches
+# the bridge, and never calls the bridge for a run that produced no report.
+# Tests run it with a temp HOME, a stub python3 on the launcher's own PATH
+# prepend ($HOME/.local/bin), and a stub bridge under ~/.config/harvest-sweep.
+# ============================================================================
+echo
+echo "T16 launcher and plist template"
+
+T16D="$TD/t16"; T16_HOME="$T16D/home"; T16_LAUNCH="$KIT_DIR/deploy/macos/harvest-sweep/harvest-sweep"
+mkdir -p "$T16_HOME/.local/bin" "$T16_HOME/.config/harvest-sweep" \
+  "$T16_HOME/Library/Logs/dwarves-kit" "$T16D/kroot" "$T16D/noop" "$T16D/proj"
+
+# stub python3: $1 is the script path, $2 the verb. --status reports the newest
+# recorded report (or none); --sweep records the call, "produces" a run report
+# unless STUB_SWEEP_RUN=0 (idle/lock-held stand-in), and exits STUB_SWEEP_RC.
+cat > "$T16_HOME/.local/bin/python3" <<EOF
+#!/usr/bin/env bash
+verb="\$2"
+sdir="\${HARVEST_STATE_DIR:-/nonexistent}"
+case "\$verb" in
+  --status)
+    if [ -f "$T16D/newest" ]; then printf '%s candidates=0 queued=0\n' "\$(cat "$T16D/newest")"; else echo none; fi
+    ;;
+  --sweep)
+    echo call >> "$T16D/sweep-calls"
+    if [ "\${STUB_SWEEP_RUN:-1}" = "1" ]; then
+      n=\$(( \$(cat "$T16D/seq" 2>/dev/null || echo 0) + 1 )); echo "\$n" > "$T16D/seq"
+      rep="\$sdir/sweep/runs/run-\$n/report.md"
+      mkdir -p "\$(dirname "\$rep")"; echo report > "\$rep"
+      printf '%s' "\$rep" > "$T16D/newest"
+    fi
+    exit "\${STUB_SWEEP_RC:-0}"
+    ;;
+esac
+EOF
+chmod +x "$T16_HOME/.local/bin/python3"
+cat > "$T16_HOME/.config/harvest-sweep/bridge" <<EOF
+#!/usr/bin/env bash
+printf '%s %s\n' "\$1" "\$2" >> "$T16D/bridge-calls"
+EOF
+chmod +x "$T16_HOME/.config/harvest-sweep/bridge"
+printf '[harvest]\nenable = true\n' > "$T16D/kroot/kit.toml"
+
+# t16_run [env pairs...] -> "rc=N sweep=N bridge=<args|none>"
+t16_run() {
+  rm -rf "$T16_HOME/state"
+  mkdir -p "$T16_HOME/state/sweep"; : > "$T16_HOME/state/sweep/installed"
+  if [ "${1:-}" = "--no-marker" ]; then shift; rm -f "$T16_HOME/state/sweep/installed"; fi
+  rm -f "$T16D/sweep-calls" "$T16D/bridge-calls" "$T16D/newest" "$T16D/seq"
+  rm -f "$T16_HOME/Library/Logs/dwarves-kit"/*.log
+  local rc=0
+  env -i HOME="$T16_HOME" PATH=/usr/bin:/bin TERM=dumb \
+    HARVEST_STATE_DIR="$T16_HOME/state" \
+    KIT_CONFIG_ROOT="$T16D/kroot" KIT_CONFIG_OPERATOR="$T16D/noop" KIT_PROJECT_ROOT="$T16D/proj" \
+    "$@" bash "$T16_LAUNCH" >/dev/null 2>&1 || rc=$?
+  local sw=0 br=none
+  [ -f "$T16D/sweep-calls" ] && sw=$(wc -l < "$T16D/sweep-calls" | tr -d ' ')
+  [ -f "$T16D/bridge-calls" ] && br="$(cat "$T16D/bridge-calls")"
+  printf 'rc=%s sweep=%s\nbridge=%s\n' "$rc" "$sw" "$br"
+}
+t16_log() { cat "$T16_HOME/Library/Logs/dwarves-kit/harvest-sweep.log" 2>/dev/null; }
+t16b() { printf '%s' "$1" | sed -n 's/^bridge=//p'; }
+
+R="$(t16_run --no-marker)"
+assert_eq "AC4: an unmarked host exits 0 and never runs the sweep" "0" "$(tf "$R" rc)"
+assert_eq "AC4: an unmarked host never calls the sweep" "0" "$(tf "$R" sweep)"
+assert_eq "AC4: an unmarked host never calls the bridge" "none" "$(t16b "$R")"
+assert_eq "AC19: the skip lands a log line" "yes" "$([ -n "$(t16_log)" ] && echo yes || echo no)"
+
+printf '[harvest]\nenable = false\n' > "$T16D/kroot/kit.toml"
+R="$(t16_run)"
+assert_eq "AC4: a disabled host exits 0 and never calls the sweep" "0" "$(tf "$R" sweep)"
+
+printf '[harvest]\nenable = true\n' > "$T16D/kroot/kit.toml"
+R="$(t16_run)"
+assert_eq "AC4: an active run calls the sweep once" "1" "$(tf "$R" sweep)"
+assert_eq "AC4: a clean run calls the bridge with rc 0 and the report" "0 $T16_HOME/state/sweep/runs/run-1/report.md" "$(t16b "$R")"
+assert_eq "AC19: the log opens with a start line" "yes" "$(t16_log | grep -c 'start harvest-sweep' | sed 's/^0$/no/;s/^[1-9].*/yes/')"
+assert_eq "AC19: the log records end rc=0" "1" "$(t16_log | grep -c 'end rc=0')"
+
+R="$(t16_run STUB_SWEEP_RC=1)"
+assert_eq "AC4: the launcher passes rc 1 to the bridge" "1 $T16_HOME/state/sweep/runs/run-1/report.md" "$(t16b "$R")"
+
+R="$(t16_run STUB_SWEEP_RC=1 STUB_SWEEP_RUN=0)"
+assert_eq "AC4: a crash before the report sends '-' as the path" "1 -" "$(t16b "$R")"
+
+R="$(t16_run STUB_SWEEP_RUN=0)"
+assert_eq "AC4: a no-report run (idle or lock-held) never calls the bridge" "none" "$(t16b "$R")"
+assert_eq "AC19: the no-report run still logs end rc" "1" "$(t16_log | grep -c 'end rc=0')"
+
+# optional env file: per-machine settings load before the sweep runs
+printf 'export STUB_SWEEP_RC=3\n' > "$T16_HOME/.config/harvest-sweep/env"
+R="$(t16_run)"
+rm -f "$T16_HOME/.config/harvest-sweep/env"
+assert_eq "AC19: the optional env file is sourced" "3 $T16_HOME/state/sweep/runs/run-1/report.md" "$(t16b "$R")"
+
+R="$(t16_run HARVEST_SWEEP_LABEL=mini.harvest-sweep)"
+assert_eq "the label names the log file" "yes" "$([ -f "$T16_HOME/Library/Logs/dwarves-kit/mini.harvest-sweep.log" ] && echo yes || echo no)"
+
+# plist template renders to a valid plist with the launcher as ProgramArguments[0]
+sed -e "s|__LABEL__|mini.harvest-sweep|g" -e "s|__KIT__|$KIT_DIR|g" \
+    -e "s|__HOME__|$T16_HOME|g" -e "s|__INTERVAL__|21600|g" \
+    "$T16_LAUNCH.plist.tmpl" > "$T16D/rendered.plist"
+assert_eq "AC19: the rendered plist lints" "OK" "$(plutil -lint "$T16D/rendered.plist" 2>/dev/null | awk '{print $2}')"
+assert_eq "AC19: ProgramArguments[0] is the launcher's absolute path" "$T16_LAUNCH" \
+  "$(/usr/libexec/PlistBuddy -c 'Print :ProgramArguments:0' "$T16D/rendered.plist" 2>/dev/null)"
+assert_eq "AC19: StartInterval renders the seconds" "21600" \
+  "$(/usr/libexec/PlistBuddy -c 'Print :StartInterval' "$T16D/rendered.plist" 2>/dev/null)"
+assert_eq "AC19: no placeholder survives rendering" "0" "$(grep -c '__[A-Z]*__' "$T16D/rendered.plist")"
+assert_eq "AC19: the launcher is a shebang script without .sh" "yes" \
+  "$(head -1 "$T16_LAUNCH" | grep -q '^#!/bin/bash' && echo yes || echo no)"
+
 # ============================================================
 echo ""
 echo "=== Results ==="
