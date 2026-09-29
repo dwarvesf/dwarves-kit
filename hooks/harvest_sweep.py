@@ -1441,6 +1441,11 @@ def _prune_extract(source, state, age_cutoff):
     safe to drop even after its done{} entry aged out. Age is the key's own
     last_activity, the sweep's clock domain (AC31); anything else in the directory
     is residue (a .tmp-* left by a killed write) and goes by file mtime."""
+    if _DRY_RUN:
+        # extract/ is a symlink into the real state dir under --dry-run; pruning
+        # there would delete real cache files, past the "writes nothing but the
+        # raw output cache" bound
+        return
     d = os.path.join(harvest._state_dir(), "sweep", "extract", source)
     try:
         names = os.listdir(d)
@@ -1517,7 +1522,8 @@ def prune_sweep(cursor, now):
     _prune_runs(age_cutoff)
 
 
-def run_selection(process=None, schedule_hours=6, max_sessions=20, since=None):
+def run_selection(process=None, schedule_hours=6, max_sessions=20, since=None,
+                  sources=None):
     """One pass over every source: select, then call process(t, rendered_delta) per session.
     ONE budget of max_sessions covers all sources, and eligible sessions of every source are
     taken in global last_activity order, so a busy claude backlog cannot starve devin
@@ -1545,7 +1551,10 @@ def run_selection(process=None, schedule_hours=6, max_sessions=20, since=None):
         # flags (--tools "", --strict-mcp-config, --no-session-persistence) do not apply
         run["state_rows"].append(
             "STATE run: extractor override active, safety flags not enforced")
-    for source, lister, loader in _sources():
+    # sources (the kit.toml [harvest] sources list) narrows which adapters run;
+    # None means every adapter, which is what the library-level tests exercise
+    src_list = [t for t in _sources() if sources is None or t[0] in sources]
+    for source, lister, loader in src_list:
         items = lister()
         if isinstance(items, SourceFailure):
             result[source] = {"processed": [], "filtered": [], "failed": [], "deferred": [],
@@ -1742,6 +1751,8 @@ def _lint_report(path):
 def _gate_record(run_id, summary):
     """gate-ledger.sh record harvest-sweep-<run-id> harvest ran "<summary>"
     (DEC-20). Best-effort: a ledger write failure is warned, never fatal."""
+    if _DRY_RUN:
+        return  # a dry run writes nothing real, and the ledger is real state
     path = os.path.join(_HERE, "..", "lib", "gate", "gate-ledger.sh")
     try:
         r = subprocess.run(["bash", path, "record", "harvest-sweep-" + run_id,
@@ -1795,3 +1806,195 @@ def run_report(result):
     if lag_tripped(cursor):
         codes.append(6)
     return (min(codes) if codes else 0), path
+
+
+# ---- entry points (T14) ----------------------------------------------------------
+
+_DRY_RUN = False  # set by main() under --dry-run; the two real-state writes it guards
+
+
+def _kit_toml_get(path, section, key):
+    """_kit_toml_get in Python: the raw value of [section].key in one kit.toml, or "".
+    Line-oriented like the bash resolver (full-line and inline comments, surrounding
+    whitespace, one layer of double quotes), so a value either side reads the same."""
+    try:
+        fh = open(path, encoding="utf-8", errors="replace")
+    except OSError:
+        return ""
+    insec = False
+    with fh:
+        for line in fh:
+            if line.lstrip().startswith("#"):
+                continue
+            if line.lstrip().startswith("["):
+                insec = re.sub(r"[\[\]\s]", "", re.sub(r"#.*", "", line)) == section
+                continue
+            if not insec:
+                continue
+            m = re.match(r"^\s*%s\s*=\s*(.*)$" % re.escape(key),
+                         re.sub(r"#.*", "", line))
+            if m:
+                return m.group(1).strip().strip('"')
+    return ""
+
+
+def _kit_root(dotkey, default=""):
+    """kit_config_get_root in Python: operator kit.toml, else kit-root kit.toml, else
+    default. A project .kit.toml is never read for [harvest] keys -- it rides inside
+    an untrusted PR and cannot switch the sweep on or off (DEC-27, AC8's control)."""
+    section, _, key = dotkey.partition(".")
+    op_dir = os.environ.get("KIT_CONFIG_OPERATOR") or os.path.join(
+        os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config"),
+        "dwarves-kit")
+    root_dir = os.environ.get("KIT_CONFIG_ROOT") or os.environ.get("DWARVES_KIT") \
+        or os.path.expanduser("~/.claude/dwarves-kit")
+    for path in (os.path.join(op_dir, "kit.toml"), os.path.join(root_dir, "kit.toml")):
+        v = _kit_toml_get(path, section, key)
+        if v != "":
+            return v
+    return default
+
+
+def _sweep_active():
+    """The sweep is ACTIVE here when harvest.enable resolves true (operator or
+    kit-root toml) AND this host carries the installed marker (DEC-27). The marker
+    is written by install --apply (T16); config may sync across hosts, it cannot."""
+    return (harvest._truthy(_kit_root("harvest.enable", "false"))
+            and os.path.exists(_sweep_file("installed")))
+
+
+def _take_sweep_lock():
+    """sweep.lock under flock LOCK_EX|LOCK_NB: the open fd, or None when another run
+    holds it. The 0600 file lives inside the 0700 sweep dir; holding the fd keeps the
+    lock for the run's whole body."""
+    d = os.path.join(harvest._state_dir(), "sweep")
+    _private_dir(d)
+    fd = os.open(os.path.join(d, "sweep.lock"), os.O_CREAT | os.O_RDWR, 0o600)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        os.close(fd)
+        return None
+    return fd
+
+
+def _dry_state(real_state):
+    """A throwaway HARVEST_STATE_DIR for --dry-run: cursor, ledgers, patterns and
+    proposed land in the copy so the whole pipeline (annotate, report, lint) runs
+    unchanged, while extract/ is a symlink into the real dir, so the one permitted
+    write -- the raw output cache -- lands where the next real run can reuse it."""
+    d = tempfile.mkdtemp(prefix="harvest-sweep-dry-")
+    real, fake = os.path.join(real_state, "sweep"), os.path.join(d, "sweep")
+    os.makedirs(fake)
+    for name in ("cursor.json", "patterns.jsonl", "proposed.jsonl",
+                 "patterns.lock", "proposed.lock"):
+        src = os.path.join(real, name)
+        if os.path.exists(src):
+            shutil.copy2(src, os.path.join(fake, name))
+    led = os.path.join(real, "ledger")
+    if os.path.isdir(led):
+        shutil.copytree(led, os.path.join(fake, "ledger"))
+    ext = os.path.join(real, "extract")
+    os.makedirs(ext, exist_ok=True)
+    os.symlink(ext, os.path.join(fake, "extract"))
+    return d
+
+
+def _newest_report():
+    """(run_dir_name, report_path) of the newest runs/<run-id>/ that has a report,
+    or None -- the --status and wrap-FYI lookup (AC28)."""
+    d = os.path.join(harvest._state_dir(), "sweep", "runs")
+    try:
+        names = sorted(n for n in os.listdir(d)
+                       if os.path.exists(os.path.join(d, n, "report.md")))
+    except OSError:
+        return None
+    if not names:
+        return None
+    return names[-1], os.path.join(d, names[-1], "report.md")
+
+
+def cmd_status():
+    """--status: '<report path> candidates=<n> queued=<m>' for the newest run, or
+    'none'. Candidates come from its manifest; the queued count is the live flush
+    backlog across ledger/*.md, what --flush-list would drain right now."""
+    newest = _newest_report()
+    if newest is None:
+        print("none")
+        return 0
+    name, report = newest
+    cands = 0
+    try:
+        with open(os.path.join(os.path.dirname(report), "manifest.json")) as fh:
+            cands = len(json.load(fh).get("candidates") or [])
+    except (OSError, ValueError):
+        pass
+    print("%s candidates=%d queued=%d" % (report, cands, _queued_learnings()))
+    return 0
+
+
+def main(argv):
+    """The sweep entry: --sweep [--dry-run] [--since <iso|epoch>], or --status.
+    --sweep needs an active host (config + marker), takes sweep.lock, and exits by
+    the rc table; a disabled, unmarked, or lock-held run exits 0 without work.
+    --dry-run takes the same lock, refuses it when held, and prints the manifest."""
+    if "--status" in argv:
+        return cmd_status()
+    dry = "--dry-run" in argv
+    if "--sweep" not in argv and not dry:
+        sys.stderr.write("usage: harvest_sweep.py --sweep [--dry-run] [--since <iso>] | --status\n")
+        return 64
+    since = None
+    if "--since" in argv:
+        i = argv.index("--since")
+        if i + 1 >= len(argv):
+            sys.stderr.write("harvest-sweep: --since needs a value\n")
+            return 64
+        since = argv[i + 1]
+    if not dry and not _sweep_active():
+        sys.stderr.write("harvest-sweep: not active on this host "
+                         "(harvest.enable or the installed marker is missing)\n")
+        return 0
+    lock = _take_sweep_lock()
+    if lock is None:
+        if dry:
+            sys.stderr.write("harvest-sweep: sweep.lock held; not starting a dry run\n")
+            return 1
+        return 0
+    global _DRY_RUN
+    try:
+        kw = {"schedule_hours": int(_kit_root("harvest.schedule_hours", "6") or "6"),
+              "max_sessions": int(_kit_root("harvest.max_sessions_per_run", "20") or "20"),
+              "sources": (_kit_root("harvest.sources", "claude") or "claude").split(),
+              "since": since}
+        _DRY_RUN = dry
+        if not dry:
+            return run_report(run_selection(**kw))[0]
+        overlay = _dry_state(harvest._state_dir())
+        had = os.environ.get("HARVEST_STATE_DIR")
+        os.environ["HARVEST_STATE_DIR"] = overlay
+        try:
+            result = run_selection(**kw)
+            rc, report = run_report(result)
+        finally:
+            if had is None:
+                os.environ.pop("HARVEST_STATE_DIR", None)
+            else:
+                os.environ["HARVEST_STATE_DIR"] = had
+        if report:
+            with open(os.path.join(os.path.dirname(report), "manifest.json")) as fh:
+                man = json.load(fh)
+        else:
+            man = {"run_id": result["run"]["run_id"], "sessions": [],
+                   "learnings_staged": 0, "learnings_queued": _queued_learnings(),
+                   "candidates": [], "lag": {}}
+        shutil.rmtree(overlay, ignore_errors=True)
+        print(json.dumps(man, indent=2, sort_keys=True))
+        return rc
+    finally:
+        fcntl.flock(lock, fcntl.LOCK_UN)
+        os.close(lock)
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

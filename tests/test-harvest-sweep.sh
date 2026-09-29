@@ -2625,6 +2625,211 @@ assert_eq "AC18: the rendered all-prose report lints rc 0" "0" "$(t13 s8_lint)"
 
 # ============================================================
 echo ""
+echo "=== T14 entry: --sweep, --dry-run, --status, sweep.lock, _dispatch ==="
+
+# AC2/AC3/AC4/AC28 + the After-state dry run: --sweep needs an active host
+# (harvest.enable through the root-only config read AND the installed marker),
+# takes sweep.lock for the whole run, and exits 0 with no work when disabled,
+# unmarked, or lock-held. --dry-run prints the manifest and writes nothing real
+# but the extract cache. --status prints the newest report line or 'none'.
+T14_OUT=$(KIT_DIR="$KIT_DIR" TD="$TD" T5_NOW="$T5_NOW" python3 - <<'PY'
+import contextlib, datetime, fcntl, importlib.util, io, json, os, shlex, sqlite3, sys
+spec = importlib.util.spec_from_file_location("hs", os.path.join(os.environ["KIT_DIR"], "hooks", "harvest_sweep.py"))
+hs = importlib.util.module_from_spec(spec)
+sys.modules["hs"] = hs
+spec.loader.exec_module(hs)
+sys.path.insert(0, os.path.join(os.environ["KIT_DIR"], "hooks"))
+import harvest
+KIT, TD, NOW = (os.environ["KIT_DIR"], os.environ["TD"], int(os.environ["T5_NOW"]))
+FIX = os.path.join(KIT, "tests", "fixtures", "harvest-sweep")
+P = lambda k, v: print("%s=%s" % (k, v))
+n_scn = [0]
+iso = lambda e: datetime.datetime.fromtimestamp(e, datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+def scenario(active=True, sources="claude"):
+    """Fresh host: state dir, claude root, empty devin db, kit config, marker."""
+    n_scn[0] += 1
+    base = os.path.join(TD, "t14-s%d" % n_scn[0])
+    os.environ["HARVEST_STATE_DIR"] = os.path.join(base, "state")
+    root = os.path.join(base, "claude"); os.makedirs(root)
+    os.environ["HARVEST_SWEEP_CLAUDE_ROOT"] = root
+    db = os.path.join(base, "devin.db")
+    con = sqlite3.connect(db)
+    con.execute("CREATE TABLE sessions(id TEXT, working_directory TEXT, created_at REAL,"
+                " last_activity_at REAL, hidden INTEGER, main_chain_id TEXT)")
+    con.commit(); con.close()
+    os.environ["HARVEST_SWEEP_DEVIN_DB"] = db
+    os.environ["HARVEST_SWEEP_NOW"] = str(NOW)
+    os.environ["HARVEST_EXTRACTOR"] = shlex.quote(os.path.join(FIX, "stub-extractor.sh"))
+    os.environ["STUB_CALLS"] = os.path.join(base, "calls")
+    os.environ["STUB_OUT"] = json.dumps({"learnings": [{"item": "dry-%d" % n_scn[0], "kind": "insight",
+                                                       "home": "til", "why": "w", "evidence": "e"}],
+                                        "sightings": []})
+    os.environ["STUB_MODE"] = "ok"
+    os.environ["STUB_PRECEDENT_HITS_FILE"] = os.path.join(base, "hits.json")
+    os.environ["STUB_LANE"] = "normal"
+    os.environ["HARVEST_SWEEP_PRECEDENT"] = os.path.join(FIX, "stub-precedent.sh")
+    os.environ["HARVEST_SWEEP_LANE_CLASSIFY"] = os.path.join(FIX, "stub-lane-classify.sh")
+    os.environ["KIT_LEDGER_DIR"] = os.path.join(base, "ledger")
+    kroot = os.path.join(base, "kitroot"); os.makedirs(kroot)
+    with open(os.path.join(kroot, "kit.toml"), "w") as fh:
+        fh.write('[harvest]\nenable = %s\nschedule_hours = 48\n'
+                 'max_sessions_per_run = 20\nsources = "%s"\n'
+                 % ("true" if active else "false", sources))
+    os.environ["KIT_CONFIG_ROOT"] = kroot
+    os.environ["KIT_CONFIG_OPERATOR"] = os.path.join(base, "no-operator")
+    if active:
+        sd = os.path.join(os.environ["HARVEST_STATE_DIR"], "sweep")
+        os.makedirs(sd)
+        with open(os.path.join(sd, "installed"), "w") as fh:
+            json.dump({"label": "harvest-sweep", "host": "t", "kit": KIT, "ts": NOW}, fh)
+    return base, root
+
+def mk(root, sid, la, n=6):
+    d = os.path.join(root, "p"); os.makedirs(d, exist_ok=True)
+    path = os.path.join(d, sid + ".jsonl")
+    with open(path, "w") as fh:
+        for k in range(n):
+            fh.write(json.dumps({"type": "user" if k % 2 == 0 else "assistant", "cwd": TD,
+                                 "timestamp": iso(la - (n - k) * 10),
+                                 "message": {"content": [{"type": "text", "text": "%s m%d" % (sid, k)}]}}) + "\n")
+    os.utime(path, (la, la))
+
+def calls():
+    try:
+        return sum(1 for _ in open(os.environ["STUB_CALLS"]))
+    except OSError:
+        return 0
+
+def sweep_files(state):
+    d = os.path.join(state, "sweep")
+    out = {}
+    for name in ("cursor.json", "patterns.jsonl", "proposed.jsonl"):
+        p = os.path.join(d, name)
+        out[name] = open(p, "rb").read() if os.path.exists(p) else None
+    led = os.path.join(d, "ledger")
+    out["ledger"] = {}
+    if os.path.isdir(led):
+        for n in sorted(os.listdir(led)):
+            out["ledger"][n] = open(os.path.join(led, n), "rb").read()
+    return out
+
+# ---- status on an empty state dir ----
+base, root = scenario()
+buf = io.StringIO()
+with contextlib.redirect_stdout(buf):
+    rc = hs.main(["--status"])
+P("status_none", "%s|%s" % (rc, buf.getvalue().strip()))
+
+# ---- a live --sweep end to end, then a second run is a no-op ----
+mk(root, "e1", NOW - 3600); mk(root, "e2", NOW - 3700); mk(root, "e3", NOW - 3800)
+rc = hs.main(["--sweep"])
+P("sweep_rc", rc)
+P("sweep_calls", calls())
+state = os.environ["HARVEST_STATE_DIR"]
+runs = os.path.join(state, "sweep", "runs")
+P("sweep_report", os.path.exists(os.path.join(runs, "run-%d" % NOW, "report.md")))
+P("sweep_manifest", os.path.exists(os.path.join(runs, "run-%d" % NOW, "manifest.json")))
+snap = sweep_files(state)
+rc = hs.main(["--sweep"])
+P("rerun_rc", rc)
+P("rerun_calls", calls())                        # AC2: no extractor call
+P("rerun_identical", sweep_files(state) == snap) # AC2: byte-identical state
+P("rerun_runs", ",".join(sorted(os.listdir(runs))))        # no new runs/<id>/ dir
+buf = io.StringIO()
+with contextlib.redirect_stdout(buf):
+    rc = hs.main(["--status"])
+P("status_line", buf.getvalue().strip().endswith(
+    "run-%d/report.md candidates=0 queued=1" % NOW))
+P("status_rc", rc)
+
+# ---- --dry-run: prints a manifest, writes nothing real but the extract cache ----
+base, root = scenario()
+mk(root, "d1", NOW - 3600); mk(root, "d2", NOW - 3700)
+state = os.environ["HARVEST_STATE_DIR"]
+buf = io.StringIO()
+with contextlib.redirect_stdout(buf):
+    rc = hs.main(["--sweep", "--dry-run", "--since", str(NOW - 86400)])
+man = json.loads(buf.getvalue())
+P("dry_rc", rc)
+P("dry_calls", calls())
+P("dry_manifest_sessions", len(man["sessions"]))
+P("dry_manifest_staged", man["learnings_staged"])
+sw = os.path.join(state, "sweep")
+P("dry_extract_cache", ",".join(sorted(os.listdir(os.path.join(sw, "extract", "claude")))))
+P("dry_no_state", ",".join(sorted(n for n in os.listdir(sw) if n != "extract" and n != "installed")))
+buf = io.StringIO()
+with contextlib.redirect_stdout(buf):
+    hs.main(["--sweep", "--dry-run"])
+P("dry_replay_calls", calls())   # the cache lands the second dry run for free
+
+# ---- lock held: --sweep exits 0 without work, --dry-run refuses ----
+lockfd = os.open(os.path.join(sw, "sweep.lock"), os.O_CREAT | os.O_RDWR, 0o600)
+fcntl.flock(lockfd, fcntl.LOCK_EX)
+P("lock_sweep_rc", hs.main(["--sweep"]))
+P("lock_dry_rc", hs.main(["--sweep", "--dry-run"]))
+P("lock_calls", calls())
+fcntl.flock(lockfd, fcntl.LOCK_UN); os.close(lockfd)
+
+# ---- disabled and unmarked hosts exit 0 and call nothing ----
+base, root = scenario(active=False)
+mk(root, "x1", NOW - 3600)
+P("disabled_rc", hs.main(["--sweep"]))
+P("disabled_calls", calls())
+P("disabled_cursor", os.path.exists(os.path.join(os.environ["HARVEST_STATE_DIR"], "sweep", "cursor.json")))
+base, root = scenario()   # enable=true in toml; drop the marker to fake an unmarked host
+os.unlink(os.path.join(os.environ["HARVEST_STATE_DIR"], "sweep", "installed"))
+mk(root, "x2", NOW - 3600)
+P("unmarked_rc", hs.main(["--sweep"]))
+P("unmarked_calls", calls())
+
+# ---- harvest.py's _dispatch routes --sweep before the payload fall-through ----
+base, root = scenario()
+mk(root, "r1", NOW - 3600)
+rc = harvest._dispatch(["--sweep"])
+P("dispatch_rc", rc)
+P("dispatch_report", os.path.exists(os.path.join(
+    os.environ["HARVEST_STATE_DIR"], "sweep", "runs", "run-%d" % NOW, "report.md")))
+buf = io.StringIO()
+with contextlib.redirect_stdout(buf):
+    rc = harvest._dispatch(["--sweep", "--dry-run"])
+P("dispatch_dry_rc", rc)
+P("dispatch_dry_manifest", '"run_id"' in buf.getvalue())
+PY
+)
+t14() { printf '%s\n' "$T14_OUT" | sed -n "s/^$1=//p"; }
+
+assert_eq "AC28: --status on a state with no run prints none" "0|none" "$(t14 status_none)"
+assert_eq "AC4: an active --sweep runs end to end at rc 0" "0" "$(t14 sweep_rc)"
+assert_eq "AC4: the run extracted all three sessions" "3" "$(t14 sweep_calls)"
+assert_eq "AC12: --sweep wrote report.md under runs/<run-id>/" "True" "$(t14 sweep_report)"
+assert_eq "AC12: --sweep wrote manifest.json beside it" "True" "$(t14 sweep_manifest)"
+assert_eq "AC2: a second --sweep exits 0" "0" "$(t14 rerun_rc)"
+assert_eq "AC2: the second run makes no extractor call" "3" "$(t14 rerun_calls)"
+assert_eq "AC2: the second run leaves sweep state byte-identical" "True" "$(t14 rerun_identical)"
+assert_eq "AC2: the second run writes no new runs/ dir" "run-2000000000" "$(t14 rerun_runs)"
+assert_eq "AC28: --status prints the newest report path and counts" "True" "$(t14 status_line)"
+assert_eq "AC28: --status exits 0" "0" "$(t14 status_rc)"
+assert_eq "After state: --dry-run exits 0 and prints the manifest" "0" "$(t14 dry_rc)"
+assert_eq "After state: the dry run did extract (cache is permitted)" "2" "$(t14 dry_calls)"
+assert_eq "After state: the manifest covers both sessions" "2" "$(t14 dry_manifest_sessions)"
+assert_eq "After state: the dry run's manifest carries the staged count" "1" "$(t14 dry_manifest_staged)"
+assert_eq "After state: the raw output cache landed in real state" "d1@1999996400.json,d2@1999996300.json" "$(t14 dry_extract_cache)"
+assert_eq "After state: no cursor, ledgers, patterns, proposed, or runs in real state" "sweep.lock" "$(t14 dry_no_state)"
+assert_eq "After state: a second dry run reuses the cache" "2" "$(t14 dry_replay_calls)"
+assert_eq "AC4: a lock-held --sweep exits 0" "0" "$(t14 lock_sweep_rc)"
+assert_eq "AC4: a lock-held --dry-run refuses to start" "1" "$(t14 lock_dry_rc)"
+assert_eq "AC4: the lock-held runs called no extractor" "2" "$(t14 lock_calls)"
+assert_eq "AC4: a disabled host exits 0" "0" "$(t14 disabled_rc)"
+assert_eq "AC4: a disabled host calls no extractor" "0" "$(t14 disabled_calls)"
+assert_eq "AC4: a disabled host writes no cursor" "False" "$(t14 disabled_cursor)"
+assert_eq "AC4: an unmarked host exits 0 and calls nothing" "0|0" "$(t14 unmarked_rc)|$(t14 unmarked_calls)"
+assert_eq "AC4: _dispatch routes --sweep to the entry" "0" "$(t14 dispatch_rc)"
+assert_eq "AC4: the dispatched run wrote the report" "True" "$(t14 dispatch_report)"
+assert_eq "After state: _dispatch also carries --dry-run" "0|True" "$(t14 dispatch_dry_rc)|$(t14 dispatch_dry_manifest)"
+
+# ============================================================
+echo ""
 echo "=== Results ==="
 echo "Passed: $PASS / $TOTAL"
 if [ "$FAIL" -gt 0 ]; then
