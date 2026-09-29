@@ -87,6 +87,9 @@ hp_run_case() {
 # hp_gen_expected <rev> <hook-basename> <cases.jsonl> <expected.jsonl>
 # Regenerates goldens from the Python hook at <rev>, run through that revision's own
 # bash shim (so a Python crash reads the way the shim surfaced it).
+# HP_SILENT_CASES="name ..." marks cases where the Python crashed and the port
+# deliberately exits 0 silently instead: their goldens become rc 0 with every
+# output field empty (a spec-recorded divergence, never a way to hide a failure).
 hp_gen_expected() {
   local rev="$1" hook="$2" cases_file="$3" expected_file="$4"
   local kit_root="${HP_KIT_ROOT:-}"
@@ -98,7 +101,10 @@ hp_gen_expected() {
   ln -s "$(python3 -c 'import sys; print(sys.executable)')" "$H/bin/python3"
   : > "$expected_file"
   while IFS= read -r c; do
-    PATH="$H/bin:$PATH" hp_run_case "$c" bash "$H/hooks/$hook.sh" >> "$expected_file"
+    PATH="$H/bin:$PATH" hp_run_case "$c" bash "$H/hooks/$hook.sh" \
+      | jq -c --arg silent " ${HP_SILENT_CASES:-} " \
+          '.name as $n | if ($silent | contains(" " + $n + " ")) then .rc = 0 | .stdout = "" | .stderr = "" | .log = "" | .stray = "" else . end' \
+      >> "$expected_file"
   done < "$cases_file"
 }
 

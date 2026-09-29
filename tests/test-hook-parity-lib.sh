@@ -128,5 +128,10 @@ lines=$(wc -l < "$FAKE/gen-expected.jsonl" | tr -d ' ')
 grep -q '"name":"gen-case"' "$FAKE/gen-expected.jsonl" && [ "$lines" = 1 ] && ok=1 || ok=0
 check "hp_gen_expected extracts the rev's hook and runs cases through it" "$ok"
 
+# HP_SILENT_CASES turns a named case's golden into rc 0 with every output field empty
+HP_SILENT_CASES="gen-case" HP_KIT_ROOT="$GITROOT" hp_gen_expected "$REV" fake "$FAKE/gen-cases.jsonl" "$FAKE/gen-silent.jsonl"
+jq -e '.rc == 0 and .stdout == "" and .stderr == "" and .log == "" and .stray == ""' "$FAKE/gen-silent.jsonl" >/dev/null && ok=1 || ok=0
+check "HP_SILENT_CASES blanks a named case's golden to a silent exit 0" "$ok"
+
 echo "hook-parity-lib self-test: $pass passed, $fail failed"
 [ "$fail" -eq 0 ]
