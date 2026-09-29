@@ -2830,6 +2830,245 @@ assert_eq "After state: _dispatch also carries --dry-run" "0|True" "$(t14 dispat
 
 # ============================================================
 echo ""
+echo "=== T14b: crash safety (AC3), dry-run guards, overlay cleanup ==="
+
+# AC3: a run killed after a session's staging but before its cursor write must
+# replay clean -- the ledger row and the sighting are written once, the raw
+# extraction is replayed from the cache (the stub is never re-called for that
+# session), and no session between the old and new hwm is skipped. Two crash
+# shapes are exercised: the write itself failing (cursor unchanged, the session
+# replays through dedup) and a kill just after the write landed (the session is
+# settled and stays settled). The _DRY_RUN guards in _prune_extract and
+# _gate_record keep real state untouched under --dry-run, and a dry run that
+# raises mid-selection still removes its overlay.
+T14B_OUT=$(KIT_DIR="$KIT_DIR" TD="$TD" T5_NOW="$T5_NOW" python3 - <<'PY'
+import contextlib, datetime, glob, importlib.util, io, json, os, shlex, sqlite3, sys, tempfile
+spec = importlib.util.spec_from_file_location("hs", os.path.join(os.environ["KIT_DIR"], "hooks", "harvest_sweep.py"))
+hs = importlib.util.module_from_spec(spec)
+sys.modules["hs"] = hs
+spec.loader.exec_module(hs)
+sys.path.insert(0, os.path.join(os.environ["KIT_DIR"], "hooks"))
+import harvest
+KIT, TD, NOW = (os.environ["KIT_DIR"], os.environ["TD"], int(os.environ["T5_NOW"]))
+FIX = os.path.join(KIT, "tests", "fixtures", "harvest-sweep")
+P = lambda k, v: print("%s=%s" % (k, v))
+n_scn = [0]
+iso = lambda e: datetime.datetime.fromtimestamp(e, datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+def scenario(active=True, sources="claude"):
+    """Fresh host: state dir, claude root, empty devin db, kit config, marker."""
+    n_scn[0] += 1
+    base = os.path.join(TD, "t14b-s%d" % n_scn[0])
+    os.environ["HARVEST_STATE_DIR"] = os.path.join(base, "state")
+    root = os.path.join(base, "claude"); os.makedirs(root)
+    os.environ["HARVEST_SWEEP_CLAUDE_ROOT"] = root
+    db = os.path.join(base, "devin.db")
+    con = sqlite3.connect(db)
+    con.execute("CREATE TABLE sessions(id TEXT, working_directory TEXT, created_at REAL,"
+                " last_activity_at REAL, hidden INTEGER, main_chain_id TEXT)")
+    con.commit(); con.close()
+    os.environ["HARVEST_SWEEP_DEVIN_DB"] = db
+    os.environ["HARVEST_SWEEP_NOW"] = str(NOW)
+    os.environ["HARVEST_EXTRACTOR"] = shlex.quote(os.path.join(FIX, "stub-extractor.sh"))
+    os.environ["STUB_CALLS"] = os.path.join(base, "calls")
+    os.environ["STUB_OUT"] = json.dumps(
+        {"learnings": [{"item": "crash-%d" % n_scn[0], "kind": "insight",
+                        "home": "til", "why": "w", "evidence": "e"}],
+         "sightings": [{"pattern": "crash-sig-%d" % n_scn[0], "kind": "insight",
+                        "count": 1, "evidence": "e"}]})
+    os.environ["STUB_MODE"] = "ok"
+    os.environ["STUB_PRECEDENT_HITS_FILE"] = os.path.join(base, "hits.json")
+    os.environ["STUB_LANE"] = "normal"
+    os.environ["HARVEST_SWEEP_PRECEDENT"] = os.path.join(FIX, "stub-precedent.sh")
+    os.environ["HARVEST_SWEEP_LANE_CLASSIFY"] = os.path.join(FIX, "stub-lane-classify.sh")
+    os.environ["KIT_LEDGER_DIR"] = os.path.join(base, "ledger")
+    kroot = os.path.join(base, "kitroot"); os.makedirs(kroot)
+    with open(os.path.join(kroot, "kit.toml"), "w") as fh:
+        fh.write('[harvest]\nenable = %s\nschedule_hours = 48\n'
+                 'max_sessions_per_run = 20\nsources = "%s"\n'
+                 % ("true" if active else "false", sources))
+    os.environ["KIT_CONFIG_ROOT"] = kroot
+    os.environ["KIT_CONFIG_OPERATOR"] = os.path.join(base, "no-operator")
+    if active:
+        sd = os.path.join(os.environ["HARVEST_STATE_DIR"], "sweep")
+        os.makedirs(sd)
+        with open(os.path.join(sd, "installed"), "w") as fh:
+            json.dump({"label": "harvest-sweep", "host": "t", "kit": KIT, "ts": NOW}, fh)
+    return base, root
+
+def mk(root, sid, la, n=6):
+    d = os.path.join(root, "p"); os.makedirs(d, exist_ok=True)
+    path = os.path.join(d, sid + ".jsonl")
+    with open(path, "w") as fh:
+        for k in range(n):
+            fh.write(json.dumps({"type": "user" if k % 2 == 0 else "assistant", "cwd": TD,
+                                 "timestamp": iso(la - (n - k) * 10),
+                                 "message": {"content": [{"type": "text", "text": "%s m%d" % (sid, k)}]}}) + "\n")
+    os.utime(path, (la, la))
+
+def calls():
+    try:
+        return sum(1 for _ in open(os.environ["STUB_CALLS"]))
+    except OSError:
+        return 0
+
+def read(path):
+    try:
+        with open(path, "rb") as fh:
+            return fh.read()
+    except OSError:
+        return None
+
+def ledger_items(state):
+    d = os.path.join(state, "sweep", "ledger")
+    if not os.path.isdir(d):
+        return ""
+    items = []
+    for n in sorted(os.listdir(d)):
+        if not n.endswith(".md") or n.endswith(".archive.md"):
+            continue
+        for line in open(os.path.join(d, n), encoding="utf-8"):
+            cells = [c.strip() for c in line.split("|")]
+            if len(cells) >= 6 and cells[1].count("-") == 2:
+                items.append("%s:%s" % (n[:-3], cells[2]))
+    return ",".join(items)
+
+# ---- AC3a: the cursor write fails after staging -- the replay must dedup ----
+base, root = scenario()
+mk(root, "ca", NOW - 3700); mk(root, "cb", NOW - 3600)
+state = os.environ["HARVEST_STATE_DIR"]
+orig_save = hs.save_cursor
+def boom(cursor):
+    raise OSError("simulated kill ahead of the cursor write")
+hs.save_cursor = boom
+try:
+    hs.main(["--sweep"])
+    raise AssertionError("the injected crash did not fire")
+except OSError:
+    pass
+finally:
+    hs.save_cursor = orig_save
+P("a_r1_cursor", os.path.exists(os.path.join(state, "sweep", "cursor.json")))
+P("a_r1_items", ledger_items(state))
+P("a_r1_calls", calls())
+def pat_count(state, sid):
+    p = os.path.join(state, "sweep", "patterns.jsonl")
+    if not os.path.exists(p):
+        return 0
+    return sum(1 for r in (json.loads(l) for l in open(p) if l.strip())
+               if r.get("session_id") == sid)
+
+snap_ca_sig = pat_count(state, "ca")
+snap_led = {}
+for n in os.listdir(os.path.join(state, "sweep", "ledger")):
+    snap_led[n] = read(os.path.join(state, "sweep", "ledger", n))
+rc2 = hs.main(["--sweep"])
+P("a_r2_rc", rc2)
+P("a_r2_items", ledger_items(state))
+P("a_r2_calls", calls())           # ca replays from extract/, only cb pays the call
+P("a_r2_ca_sig", pat_count(state, "ca") == snap_ca_sig)
+P("a_r2_cb_sig", pat_count(state, "cb"))
+P("a_r2_led_same", all(read(os.path.join(state, "sweep", "ledger", n)) == b
+                       for n, b in snap_led.items()))
+cur = json.load(open(os.path.join(state, "sweep", "cursor.json")))
+P("a_done", ",".join(sorted(cur["claude"]["done"])))
+P("a_hwm", cur["claude"]["hwm"])
+
+# ---- AC3b: the kill lands just after the cursor write -- the session stays done ----
+base, root = scenario()
+mk(root, "pd", NOW - 3600)
+state = os.environ["HARVEST_STATE_DIR"]
+def persisted_then_dead(cursor):
+    orig_save(cursor)
+    raise OSError("simulated kill just after the cursor write")
+hs.save_cursor = persisted_then_dead
+try:
+    hs.main(["--sweep"])
+    raise AssertionError("the injected crash did not fire")
+except OSError:
+    pass
+finally:
+    hs.save_cursor = orig_save
+P("b_r1_items", ledger_items(state))
+P("b_r1_cursor", os.path.exists(os.path.join(state, "sweep", "cursor.json")))
+rc2 = hs.main(["--sweep"])
+P("b_r2_rc", rc2)
+P("b_r2_items", ledger_items(state))
+P("b_r2_calls", calls())
+
+# ---- AC30/AC31: a dry run never prunes real extract/ and never writes the gate ledger ----
+base, root = scenario()
+state = os.environ["HARVEST_STATE_DIR"]
+sw = os.path.join(state, "sweep")
+with open(os.path.join(sw, "cursor.json"), "w") as fh:
+    json.dump({"claude": {"hwm": 2000, "done": {}, "seen": {}, "fail": {},
+                          "quarantined": {}}}, fh)
+ext = os.path.join(sw, "extract", "claude")
+os.makedirs(ext)
+stale = os.path.join(ext, "stale-session@1000.json")
+with open(stale, "w") as fh:
+    fh.write('{"stale": true}')
+gate_dir = os.path.join(base, "gate-ledger")
+os.makedirs(gate_dir)
+os.environ["KIT_LEDGER_DIR"] = gate_dir
+mk(root, "g1", NOW - 3600)
+cur_snap = read(os.path.join(sw, "cursor.json"))
+buf = io.StringIO()
+with contextlib.redirect_stdout(buf):
+    rc = hs.main(["--sweep", "--dry-run"])
+P("g_rc", rc)
+P("g_stale_survives", os.path.exists(stale))
+P("g_gate_dir", ",".join(sorted(os.listdir(gate_dir))))
+P("g_cache_real", os.path.exists(os.path.join(ext, "g1@%d.json" % (NOW - 3600))))
+P("g_no_ledger", os.path.exists(os.path.join(sw, "ledger")))
+P("g_no_runs", os.path.exists(os.path.join(sw, "runs")))
+P("g_cursor_same", read(os.path.join(sw, "cursor.json")) == cur_snap)
+
+# ---- a dry run that raises mid-selection still removes its overlay ----
+pre = set(glob.glob(os.path.join(tempfile.gettempdir(), "harvest-sweep-dry-*")))
+orig_rs = hs.run_selection
+hs.run_selection = lambda **kw: (_ for _ in ()).throw(RuntimeError("abort mid-selection"))
+try:
+    hs.main(["--sweep", "--dry-run"])
+    raise AssertionError("the injected abort did not fire")
+except RuntimeError:
+    pass
+finally:
+    hs.run_selection = orig_rs
+post = set(glob.glob(os.path.join(tempfile.gettempdir(), "harvest-sweep-dry-*")))
+P("o_leaked", ",".join(sorted(post - pre)))
+P("o_env_restored", os.environ["HARVEST_STATE_DIR"] == state)
+PY
+)
+t14b() { printf '%s\n' "$T14B_OUT" | sed -n "s/^$1=//p"; }
+
+assert_eq "AC3: the crashed run left the staged row" "_no-repo:crash-1" "$(t14b a_r1_items)"
+assert_eq "AC3: the crashed run left no cursor behind" "False" "$(t14b a_r1_cursor)"
+assert_eq "AC3: one extractor call before the crash" "1" "$(t14b a_r1_calls)"
+assert_eq "AC3: the re-run exits clean" "0" "$(t14b a_r2_rc)"
+assert_eq "AC3: the replay staged no duplicate row" "_no-repo:crash-1" "$(t14b a_r2_items)"
+assert_eq "AC3: cb was not skipped between the old and new hwm" "cb" "$(t14b a_done)"
+assert_eq "AC3: the hwm reached the newest session" "1999996400" "$(t14b a_hwm)"
+assert_eq "AC3: the stub ran once per session across both runs" "2" "$(t14b a_r2_calls)"
+assert_eq "AC3: ca's sighting was not double-counted" "True" "$(t14b a_r2_ca_sig)"
+assert_eq "AC3: cb's sighting landed exactly once" "1" "$(t14b a_r2_cb_sig)"
+assert_eq "AC3: the ledger stayed byte-identical on replay" "True" "$(t14b a_r2_led_same)"
+assert_eq "AC3: a kill just after the cursor write still stages once" "_no-repo:crash-2" "$(t14b b_r1_items)"
+assert_eq "AC3: the post-write crash persisted its cursor" "True" "$(t14b b_r1_cursor)"
+assert_eq "AC3: the settled session stays settled on re-run" "0" "$(t14b b_r2_rc)"
+assert_eq "AC3: no duplicate row after the post-write crash" "_no-repo:crash-2" "$(t14b b_r2_items)"
+assert_eq "AC3: the extractor is not re-run for a settled session" "1" "$(t14b b_r2_calls)"
+assert_eq "AC31: a dry run does not prune the real extract cache" "True" "$(t14b g_stale_survives)"
+assert_eq "AC30: a dry run writes nothing to the real gate ledger" "" "$(t14b g_gate_dir)"
+assert_eq "AC30: the raw cache is the one permitted real write" "True" "$(t14b g_cache_real)"
+assert_eq "AC30: a dry run writes no real sweep ledger" "False" "$(t14b g_no_ledger)"
+assert_eq "AC30: a dry run writes no real runs/ dir" "False" "$(t14b g_no_runs)"
+assert_eq "AC30: a dry run leaves the real cursor byte-identical" "True" "$(t14b g_cursor_same)"
+assert_eq "AC30: a failed dry run leaves no overlay behind" "" "$(t14b o_leaked)"
+assert_eq "AC30: a failed dry run restores HARVEST_STATE_DIR" "True" "$(t14b o_env_restored)"
+
+# ============================================================
+echo ""
 echo "=== Results ==="
 echo "Passed: $PASS / $TOTAL"
 if [ "$FAIL" -gt 0 ]; then

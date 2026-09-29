@@ -1976,19 +1976,21 @@ def main(argv):
         try:
             result = run_selection(**kw)
             rc, report = run_report(result)
+            if report:
+                with open(os.path.join(os.path.dirname(report), "manifest.json")) as fh:
+                    man = json.load(fh)
+            else:
+                man = {"run_id": result["run"]["run_id"], "sessions": [],
+                       "learnings_staged": 0, "learnings_queued": _queued_learnings(),
+                       "candidates": [], "lag": {}}
         finally:
             if had is None:
                 os.environ.pop("HARVEST_STATE_DIR", None)
             else:
                 os.environ["HARVEST_STATE_DIR"] = had
-        if report:
-            with open(os.path.join(os.path.dirname(report), "manifest.json")) as fh:
-                man = json.load(fh)
-        else:
-            man = {"run_id": result["run"]["run_id"], "sessions": [],
-                   "learnings_staged": 0, "learnings_queued": _queued_learnings(),
-                   "candidates": [], "lag": {}}
-        shutil.rmtree(overlay, ignore_errors=True)
+            # the overlay is throwaway even when the run raises: a crash mid-run
+            # must not leak the state copy
+            shutil.rmtree(overlay, ignore_errors=True)
         print(json.dumps(man, indent=2, sort_keys=True))
         return rc
     finally:
