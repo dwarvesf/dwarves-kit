@@ -26,6 +26,7 @@ fail() { echo "FAIL $*"; fails=$((fails + 1)); }
 
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
+export DWARVES_KIT_LOG_DIR="$TMP/kitlogs"
 
 # --- fixture: one auto sub-goal; the run ends "all checked; done" on flip ---
 mk_megagoal() {
