@@ -1239,22 +1239,35 @@ _carry_branch_ours() {
 # when the repo has no such label (a repo without one, or a repo whose label read failed,
 # behaves exactly as before), 2 when the repo gates but the label could not be set: that
 # merge would run untested, so the caller refuses it.
-# When it adds the label it also sets CI_LABEL_BASE to the keys of the checks already on the
-# PR, so `_ci_checks_wait` can tell the runs the label starts from runs that predate it; in
-# every other case CI_LABEL_BASE is [] (the re-add branch runs only on an empty rollup).
-# CI_ENTRY_KEY is the one definition of a rollup entry's key both functions use. gh emits an
-# absent URL as "" and an absent time as the zero time, so the key takes the first field that
-# is none of those; the check name keeps apart third-party checks sharing one detailsUrl.
-CI_ENTRY_KEY='def ckey: (.name // .context // "") + "@" + ([.detailsUrl, .targetUrl, .startedAt, .createdAt] | map(select(. != null and . != "" and . != "0001-01-01T00:00:00Z")) | .[0] // "");'
+# A PR read that fails on a gating repo returns 2 as well: without it the sync cannot tell
+# which checks predate the label, and the wait would end on them.
+# When it adds the label it also sets the out-param CI_PRELABEL_KEYS to the keys of the checks
+# already on the PR, so `_ci_checks_wait` can tell the runs the label starts from runs that
+# predate it; in every other case CI_PRELABEL_KEYS is [] (the re-add branch runs only on an
+# empty rollup).
+#
+# CI_JQ_DEFS is the one jq definition of a rollup entry that the ci wait, the carry wait and
+# `_pr_gate` share. gh emits an absent URL as "" and an absent time as the zero time, never
+# null, so `real` drops all three; `ckey` takes the first real URL or time after the check
+# name, which keeps apart third-party checks sharing one detailsUrl; `pending` is a check
+# not yet COMPLETED, or a commit status still PENDING or EXPECTED.
+CI_JQ_DEFS='
+  def real: select(. != null and . != "" and . != "0001-01-01T00:00:00Z");
+  def pending: ((.status // "COMPLETED") != "COMPLETED")
+    or ((.state // "") == "PENDING") or ((.state // "") == "EXPECTED");
+  def ckey: (.name // .context // "") + "@" + ([.detailsUrl, .targetUrl, .startedAt, .createdAt] | map(real) | .[0] // "");
+'
 _ci_label_sync() {
   local url="$1" n="$2" detail
-  CI_LABEL_BASE='[]'
+  CI_PRELABEL_KEYS='[]'
   gh label list --repo "$url" --search ci --limit 200 --json name 2>/dev/null \
     | jq -e '[.[] | select(.name == "ci")] | length > 0' >/dev/null 2>&1 || return 1
   detail="$(gh pr view "$n" --repo "$url" --json labels,statusCheckRollup 2>/dev/null)"
+  printf '%s' "$detail" | jq -e 'type == "object"' >/dev/null 2>&1 || {
+    echo "     could not read the labels and checks of #${n}" >&2; return 2; }
   if ! printf '%s' "$detail" | jq -e '[.labels // [] | .[] | select(.name == "ci")] | length > 0' >/dev/null 2>&1; then
-    CI_LABEL_BASE="$(printf '%s' "$detail" | jq -c "${CI_ENTRY_KEY} [(.statusCheckRollup // [])[] | ckey]" 2>/dev/null)"
-    [ -n "$CI_LABEL_BASE" ] || CI_LABEL_BASE='[]'
+    CI_PRELABEL_KEYS="$(printf '%s' "$detail" | jq -c "${CI_JQ_DEFS} [(.statusCheckRollup // [])[] | ckey]" 2>/dev/null)"
+    [ -n "$CI_PRELABEL_KEYS" ] || CI_PRELABEL_KEYS='[]'
     gh pr edit "$n" --repo "$url" --add-label ci >/dev/null 2>&1 || {
       echo "     could not add the ci label to #${n}" >&2; return 2; }
     echo "     labeled #${n} ci (this repo runs PR checks only on the label)"
@@ -1270,24 +1283,26 @@ _ci_label_sync() {
 # _ci_checks_wait <repo-url> <pr> -- the bounded wait for the runs a `ci` label just
 # started, used instead of the ordinary pending-check wait on a label-gated repo. Pending
 # checks, and an unreadable read, wait to KIT_WRAP_CARRY_CHECKS_SECS. With nothing pending,
-# the wait still holds while no check outside CI_LABEL_BASE has appeared: the `labeled`
-# event registers its runs a few seconds after the edit, and until then the rollup holds
-# only checks that predate the label (none, or an earlier event's SKIPPED runs). That hold
-# is bounded by KIT_WRAP_CI_GRACE_SECS; past it, the workflow is a paths-filtered one that
-# started nothing and the wait ends. What red checks do is not this wait's call: the merge and its gate read them as
-# they always did.
+# the wait still holds while no NEW check has appeared: one outside CI_PRELABEL_KEYS that
+# is not SKIPPED (another label's `labeled` event adds SKIPPED runs, which test nothing).
+# The `labeled` event registers its runs a few seconds after the edit, and until then the
+# rollup holds only checks that predate the label. That hold is bounded by
+# KIT_WRAP_CI_GRACE_SECS; past it, the workflow is a paths-filtered one that started nothing
+# and the wait ends. The out-param CI_WAIT_END is the last read's state (NONEW when the hold
+# ran out), so `cmd_merge` can ask for a CLEAN merge state on that path. What red checks do
+# is not this wait's call: the merge and its gate read them as they always did.
 KIT_WRAP_CI_GRACE_SECS=${KIT_WRAP_CI_GRACE_SECS:-90}
 case "$KIT_WRAP_CI_GRACE_SECS" in ''|*[!0-9]*) KIT_WRAP_CI_GRACE_SECS=90 ;; esac
 _ci_checks_wait() {
   local url="$1" n="$2" waited=0 state
   while :; do
     state="$(gh pr view "$n" --repo "$url" --json statusCheckRollup 2>/dev/null \
-      | jq -r --argjson base "${CI_LABEL_BASE:-[]}" "${CI_ENTRY_KEY}"'
+      | jq -r --argjson prelabel "${CI_PRELABEL_KEYS:-[]}" "${CI_JQ_DEFS}"'
       (.statusCheckRollup // []) as $r
-      | ([$r[] | select(((.status // "COMPLETED") != "COMPLETED")
-                        or ((.state // "") == "PENDING") or ((.state // "") == "EXPECTED"))] | length) as $p
+      | ([$r[] | select(pending)] | length) as $p
       | if $p > 0 then $p
-        elif ([$r[] | ckey | select(IN($base[]) | not)] | length) == 0 then "NONEW"
+        elif ([$r[] | select(((.conclusion // .state // "") | ascii_upcase) != "SKIPPED")
+                    | ckey | select(IN($prelabel[]) | not)] | length) == 0 then "NONEW"
         else 0 end' 2>/dev/null)"
     [ "$state" = "0" ] && break
     if [ "$state" = "NONEW" ]; then
@@ -1297,6 +1312,7 @@ _ci_checks_wait() {
     fi
     sleep 10; waited=$(( waited + 10 ))
   done
+  CI_WAIT_END="$state"
 }
 
 # _autoland_carry <repo> <def> <branch> <oid> -- lands one carry branch through the door every own PR
@@ -1366,11 +1382,10 @@ _autoland_carry() {
   # Pending: a check still running, or no check reported yet on a merge state that is not
   # CLEAN, which is what a PR opened seconds ago shows before its checks register.
   while :; do
-    pending="$(gh pr view "$n" --repo "$url" --json statusCheckRollup,mergeStateStatus 2>/dev/null | jq -r '
+    pending="$(gh pr view "$n" --repo "$url" --json statusCheckRollup,mergeStateStatus 2>/dev/null | jq -r "${CI_JQ_DEFS}"'
       (.statusCheckRollup // []) as $r
       | if ($r | length) == 0 then (if ((.mergeStateStatus // "") | IN("CLEAN", "DIRTY", "BEHIND")) then 0 else 1 end)
-        else [$r[] | select(((.status // "COMPLETED") != "COMPLETED")
-                            or ((.state // "") == "PENDING") or ((.state // "") == "EXPECTED"))] | length end' 2>/dev/null)"
+        else [$r[] | select(pending)] | length end' 2>/dev/null)"
     [ "${pending:-0}" -gt 0 ] 2>/dev/null && [ "$waited" -lt "$KIT_WRAP_CARRY_CHECKS_SECS" ] || break
     sleep 10; waited=$(( waited + 10 ))
   done
@@ -1760,10 +1775,11 @@ _pr_detail() {
 # and the new SUCCESS run in the array. Grouping by name and keeping only the run with the
 # latest real time mirrors what `gh pr checks` already shows and what GitHub's own merge
 # button honors. gh reports a pending run's completedAt as the zero time 0001-01-01T00:00:00Z,
-# never null, so `//` alone would key a pending run on that zero and let an older completed
-# run of the same name win. `rtime` takes the first time that is neither null, empty, nor
-# zero, so a queued or running check keys on its real startedAt; a pending entry with no real
-# time at all sorts last, so it is the latest and its empty conclusion refuses the gate.
+# never null, so `rtime` takes the first time that is neither null, empty, nor zero. Every
+# pending entry sorts last in its group whatever its time: a SKIPPED run from a later
+# `labeled` event completes after an IN_PROGRESS `ci` run started, and keyed on time alone
+# it would stand in as the verdict for an untested head. The cost is fail-closed: a pending
+# entry a newer run superseded blocks its name until it completes or is cancelled.
 #
 # The rollup also mixes two GitHub types: CheckRun (`.name`, `.completedAt`/`.startedAt`,
 # `.conclusion`) and StatusContext (`.context`, `.startedAt`, `.targetUrl`, `.state`, no
@@ -1774,14 +1790,11 @@ _pr_detail() {
 # `.name // .context` keys each type by its own identifier; `rtime` walks completedAt,
 # startedAt, createdAt to cover both types' timestamp fields.
 _pr_gate() {
-  printf '%s' "$1" | jq -r --arg def "$2" '
-    def rtime: [.completedAt, .startedAt, .createdAt]
-      | map(select(. != null and . != "" and . != "0001-01-01T00:00:00Z")) | .[0] // "";
-    def pending: ((.status // "COMPLETED") != "COMPLETED")
-      or ((.state // "") == "PENDING") or ((.state // "") == "EXPECTED");
+  printf '%s' "$1" | jq -r --arg def "$2" "${CI_JQ_DEFS}"'
+    def rtime: [.completedAt, .startedAt, .createdAt] | map(real) | .[0] // "";
     def checks: (.statusCheckRollup // [])
       | group_by(.name // .context)
-      | map(sort_by([(if (pending and rtime == "") then 1 else 0 end), rtime]) | last);
+      | map(sort_by([(if pending then 1 else 0 end), rtime]) | last);
     if (.isDraft == true) then "SKIP draft"
     elif (.baseRefName != $def) then "SKIP base is \(.baseRefName), not the default branch \($def)"
     elif (.mergeable != "MERGEABLE") then "SKIP not mergeable (\(.mergeable // "unknown"))"
@@ -2257,6 +2270,13 @@ cmd_merge() {
       fi
       if [ "$verdict" != "OK" ]; then
         echo "FAILED merge #${first_eligible}: ${verdict#SKIP } once the ci label's checks ran; left open" >&2
+        return 2
+      fi
+      # No new check reported inside the grace hold, so the verdict rests on checks that
+      # predate the label. Those pass only on CLEAN, the rule an empty rollup already meets.
+      local ms; ms="$(printf '%s' "$detail" | jq -r '.mergeStateStatus // ""' 2>/dev/null)"
+      if [ "${CI_WAIT_END:-}" = "NONEW" ] && [ "${CI_PRELABEL_KEYS:-[]}" != "[]" ] && [ "$ms" != "CLEAN" ]; then
+        echo "FAILED merge #${first_eligible}: no check reported after the ci label went on, and merge state ${ms:-unknown} is not CLEAN; left open" >&2
         return 2
       fi ;;
     1) ;;

@@ -29,3 +29,13 @@ Deltas from SPEC-360. Nothing here repeats what the spec already states.
 - `docs/FEATURES.md` was regenerated (`feature-registry.sh check --fix`): the new spec file moved four `SPEC-` reference counts, and `tests/test-meta.sh` plus the ship-gate refuse a stale registry.
 - The first negctl pair wrote one log path per control, so the green-after-restore run overwrote the red run's output. Both controls were rerun with one `mktemp` log per run; the proof quotes the rerun, and both runs of each control passed.
 - `commands/greenlight.md` Step 1b gained one bullet naming the same pre-label race for its snapshot. Greenlight never merges, but its "every check passing and none pending -> done" rule reads the same stale rollup.
+
+## 2026-09-29 Review-team fix batch (security 7/10, architecture 8/10, test-coverage 8/10, 0 critical)
+- Gate key: every pending entry now sorts last, not only one with no real time. A SKIPPED run from a later `labeled` event completed after an IN_PROGRESS `ci` run started, and the time key let it stand in. Accepted cost: a superseded pending entry blocks its name until it clears.
+- Sync read: a PR read that is not a JSON object on a gating repo returns 2. `cmd_merge` and `cmd_land` print their existing "the ci label could not be set" refusal, which is slightly off for a read failure; the sync's own stderr line names the read.
+- NEW excludes SKIPPED entries. Side effect: with the label already on and an all-SKIPPED rollup (the named out-of-scope case), the wait now holds the grace window before the gate still passes it.
+- `cmd_merge` needs `CLEAN` after a NONEW hold when the snapshot was non-empty. The rule does not carry into autoland: its `cmd_merge --pr` runs its own sync with the label already on, so the snapshot is `[]` there and the rule is off. Named in Failure modes, not fixed.
+- `CI_JQ_DEFS` replaces `CI_ENTRY_KEY` and the two inline pending predicates; `rtime` stays local to `_pr_gate`, built on `real`. `CI_LABEL_BASE` became `CI_PRELABEL_KEYS`, and the wait's out-param `CI_WAIT_END` is new.
+- T12 puts the pre-label check and the two new ones on one URL. Two new checks alone on a shared URL would read NEW either way, so that shape pins nothing about the name prefix.
+- T13's exact count (18 reads of #42) was measured on the green run, not derived; the NC4 control below confirms that dropping the sync's reset on entry changes it.
+- T6 now asserts exactly 4 rollup reads before the merge.

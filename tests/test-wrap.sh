@@ -1739,6 +1739,20 @@ chk_has "merge: a re-run that later passed is eligible, not blocked by its stale
 out="$(gate_verdict '{"number":9,"title":"gate case","headRefName":"feat/gate","headRefOid":"aa","baseRefName":"main","mergeable":"MERGEABLE","mergeStateStatus":"CLEAN","reviewDecision":"APPROVED","statusCheckRollup":[{"name":"evidence","conclusion":"SUCCESS","completedAt":"2026-09-24T17:44:08Z"},{"name":"evidence","conclusion":"FAILURE","completedAt":"2026-09-24T17:45:49Z"}]}')"
 chk_has "merge: a re-run whose latest attempt failed after an earlier pass still skips" "$out" "SKIP #9 gate case: checks are pending or failing"
 
+echo "=== merge: a pending check is the latest of its name, whatever its time ==="
+# gh reports a queued or running check with the zero completedAt and an empty conclusion.
+# Every pending entry sorts last in its name group, so an older or later completed entry
+# of that name never stands in as the verdict for a run still going.
+GV_HEAD='"number":9,"title":"gate case","headRefName":"feat/gate","headRefOid":"aa","baseRefName":"main","mergeable":"MERGEABLE","mergeStateStatus":"CLEAN","reviewDecision":"APPROVED"'
+out="$(gate_verdict "{$GV_HEAD,\"statusCheckRollup\":[{\"name\":\"test\",\"status\":\"COMPLETED\",\"conclusion\":\"SKIPPED\",\"completedAt\":\"2026-09-29T10:22:05Z\",\"startedAt\":\"2026-09-29T10:22:05Z\"},{\"name\":\"test\",\"status\":\"IN_PROGRESS\",\"conclusion\":\"\",\"completedAt\":\"0001-01-01T00:00:00Z\",\"startedAt\":\"2026-09-29T10:21:55Z\"}]}")"
+chk_has "gate pending-last: a later SKIPPED does not stand in for a running check" "$out" "SKIP #9 gate case: checks are pending or failing"
+out="$(gate_verdict "{$GV_HEAD,\"statusCheckRollup\":[{\"name\":\"test\",\"status\":\"COMPLETED\",\"conclusion\":\"SKIPPED\",\"completedAt\":\"2026-09-28T02:44:01Z\",\"startedAt\":\"2026-09-28T02:44:01Z\"},{\"name\":\"test\",\"status\":\"QUEUED\",\"conclusion\":\"\",\"completedAt\":\"0001-01-01T00:00:00Z\",\"startedAt\":\"2026-09-29T10:21:58Z\"}]}")"
+chk_has "gate pending-last: an older SKIPPED does not stand in for a queued check" "$out" "SKIP #9 gate case: checks are pending or failing"
+out="$(gate_verdict "{$GV_HEAD,\"statusCheckRollup\":[{\"name\":\"test\",\"status\":\"IN_PROGRESS\",\"conclusion\":\"\",\"completedAt\":\"0001-01-01T00:00:00Z\",\"startedAt\":\"2026-09-29T10:00:00Z\"},{\"name\":\"test\",\"status\":\"COMPLETED\",\"conclusion\":\"SUCCESS\",\"completedAt\":\"2026-09-29T10:30:00Z\",\"startedAt\":\"2026-09-29T10:20:00Z\"}]}")"
+chk_has "gate pending-last: a stuck running entry blocks even behind a newer SUCCESS" "$out" "SKIP #9 gate case: checks are pending or failing"
+out="$(gate_verdict "{$GV_HEAD,\"statusCheckRollup\":[{\"name\":\"test\",\"status\":\"QUEUED\",\"conclusion\":\"\",\"completedAt\":\"0001-01-01T00:00:00Z\",\"startedAt\":\"0001-01-01T00:00:00Z\"},{\"name\":\"test\",\"status\":\"COMPLETED\",\"conclusion\":\"SUCCESS\",\"completedAt\":\"2026-09-29T10:30:00Z\",\"startedAt\":\"2026-09-29T10:20:00Z\"}]}")"
+chk_has "gate pending-last: a stuck entry with no real time blocks behind a newer SUCCESS" "$out" "SKIP #9 gate case: checks are pending or failing"
+
 echo "=== merge: statusCheckRollup mixes CheckRun and StatusContext entries; both dedupe correctly ==="
 out="$(gate_verdict '{"number":9,"title":"gate case","headRefName":"feat/gate","headRefOid":"aa","baseRefName":"main","mergeable":"MERGEABLE","mergeStateStatus":"CLEAN","reviewDecision":"APPROVED","statusCheckRollup":[{"context":"pages-a","state":"FAILURE","createdAt":"2026-09-24T17:00:00Z"},{"context":"pages-b","state":"SUCCESS","createdAt":"2026-09-24T17:01:00Z"}]}')"
 chk_has "merge: two distinct StatusContext entries, one FAILURE, still skips" "$out" "SKIP #9 gate case: checks are pending or failing"
@@ -1992,6 +2006,70 @@ chk_no "ci-wait T8: a queued head never merges" "$(cat "$GH_STUB_CALLS")" "pr me
 out="$(GH_STUB_OPEN_PRS="$(cw_open 66)" GH_STUB_PR_66="$(cw_full 66 DIRTY "$CW_QUEUED" CONFLICTING)" \
   "$WRAP" merge "$TMPD/clone-scan-main" 2>&1)"
 chk_has "ci-wait T7: a conflicting PR with a pending check still verdicts the conflict" "$out" "SKIP #66 ci wait: not mergeable (CONFLICTING)"
+
+# T3b: as T3 on an UNSTABLE merge state. No new check reported inside the grace hold, so the
+# verdict would rest on checks that predate the label; those pass only on CLEAN.
+: > "$GH_STUB_CALLS"; rm -f "$GH_STUB_CALLS".*
+out="$(PATH="$TMPD/nosleep:$PATH" KIT_WRAP_CI_GRACE_SECS=20 GH_STUB_LABELS='[{"name":"ci"}]' GH_STUB_OPEN_PRS="$(cw_open 67)" \
+  GH_STUB_PR_67="$(cw_full 67 UNSTABLE "$CW_OLD")" \
+  GH_STUB_PR_67_2="{\"number\":67,\"labels\":[],\"statusCheckRollup\":$CW_OLD}" \
+  GH_STUB_PR_67_3="$(cw_full 67 UNSTABLE "$CW_OLD")" \
+  "$WRAP" merge --apply "$TMPD/clone-scan-main" 2>&1)"; rc=$?
+chk "ci-wait T3b: exits 2" "$([ "$rc" -eq 2 ]; echo $?)"
+chk_has "ci-wait T3b: names the non-CLEAN refusal" "$out" "FAILED merge #67: no check reported after the ci label went on, and merge state UNSTABLE is not CLEAN"
+chk_no "ci-wait T3b: never merges on pre-label checks alone" "$(cat "$GH_STUB_CALLS")" "pr merge 67"
+
+# T9: the sync's PR read fails on a gating repo. Without it the sync cannot tell which
+# checks predate the label, so the merge refuses and the PR stays open.
+: > "$GH_STUB_CALLS"; rm -f "$GH_STUB_CALLS".*
+out="$(PATH="$TMPD/nosleep:$PATH" GH_STUB_LABELS='[{"name":"ci"}]' GH_STUB_OPEN_PRS="$(cw_open 68)" \
+  GH_STUB_PR_68="$(cw_full 68 CLEAN "$CW_OLD")" \
+  GH_STUB_PR_68_2='not json' \
+  "$WRAP" merge --apply "$TMPD/clone-scan-main" 2>&1)"; rc=$?
+chk "ci-wait T9: exits 2" "$([ "$rc" -eq 2 ]; echo $?)"
+chk_has "ci-wait T9: names the refusal" "$out" "FAILED merge #68: the ci label could not be set"
+chk_no "ci-wait T9: no label edit on an unread PR" "$(cat "$GH_STUB_CALLS")" "pr edit 68"
+chk_no "ci-wait T9: never merges" "$(cat "$GH_STUB_CALLS")" "pr merge 68"
+
+# T10: a new check that only SKIPPED (another label's labeled event) tests nothing, so the
+# hold goes on until the label's own run reports.
+CW_LINT="${CW_OLD%]},{\"name\":\"lint\",\"status\":\"COMPLETED\",\"conclusion\":\"SKIPPED\",\"completedAt\":\"2026-09-29T10:21:57Z\",\"startedAt\":\"2026-09-29T10:21:57Z\",\"detailsUrl\":\"https://gh/job/4\"}]"
+: > "$GH_STUB_CALLS"; rm -f "$GH_STUB_CALLS".*
+out="$(PATH="$TMPD/nosleep:$PATH" GH_STUB_LABELS='[{"name":"ci"}]' GH_STUB_OPEN_PRS="$(cw_open 69)" \
+  GH_STUB_PR_69="$(cw_full 69 CLEAN "$CW_OLD")" \
+  GH_STUB_PR_69_2="{\"number\":69,\"labels\":[],\"statusCheckRollup\":$CW_OLD}" \
+  GH_STUB_PR_69_3="$(cw_full 69 CLEAN "$CW_LINT")" \
+  GH_STUB_PR_69_4="$(cw_full 69 CLEAN "${CW_LINT%]},{\"name\":\"test\",\"status\":\"COMPLETED\",\"conclusion\":\"SUCCESS\",\"completedAt\":\"2026-09-29T10:24:25Z\",\"startedAt\":\"2026-09-29T10:21:58Z\",\"detailsUrl\":\"https://gh/job/3\"}]")" \
+  "$WRAP" merge --apply "$TMPD/clone-scan-main" 2>&1)"; rc=$?
+chk "ci-wait T10: exits 0" "$rc"
+chk "ci-wait T10: a new SKIPPED check did not end the hold (5 reads)" "$([ "$(cw_views 69)" -eq 5 ]; echo $?)"
+chk_has "ci-wait T10: merged once the label's run reported" "$out" "merged #69 ("
+
+# T11: a check running before the label keeps its key when it completes with a new
+# startedAt (the key takes detailsUrl before any time), so it never reads as the label's run.
+CW_PRE_RUN="[{\"name\":\"test\",\"status\":\"IN_PROGRESS\",\"conclusion\":\"\",\"completedAt\":\"0001-01-01T00:00:00Z\",\"startedAt\":\"2026-09-29T10:00:00Z\",\"detailsUrl\":\"https://gh/job/1\"}]"
+CW_PRE_DONE="[{\"name\":\"test\",\"status\":\"COMPLETED\",\"conclusion\":\"SUCCESS\",\"completedAt\":\"2026-09-29T10:05:00Z\",\"startedAt\":\"2026-09-29T10:01:00Z\",\"detailsUrl\":\"https://gh/job/1\"}]"
+: > "$GH_STUB_CALLS"; rm -f "$GH_STUB_CALLS".*
+out="$(PATH="$TMPD/nosleep:$PATH" KIT_WRAP_CI_GRACE_SECS=20 GH_STUB_LABELS='[{"name":"ci"}]' GH_STUB_OPEN_PRS="$(cw_open 70)" \
+  GH_STUB_PR_70="$(cw_full 70 CLEAN "$CW_PRE_DONE")" \
+  GH_STUB_PR_70_2="{\"number\":70,\"labels\":[],\"statusCheckRollup\":$CW_PRE_RUN}" \
+  GH_STUB_PR_70_3="$(cw_full 70 CLEAN "$CW_PRE_DONE")" \
+  "$WRAP" merge --apply "$TMPD/clone-scan-main" 2>&1)"; rc=$?
+chk "ci-wait T11: exits 0" "$rc"
+chk "ci-wait T11: a pre-label check that completed still held the grace wait (6 reads)" "$([ "$(cw_views 70)" -eq 6 ]; echo $?)"
+
+# T12: third-party checks share one detailsUrl; the check name in the key keeps a new
+# check apart from a pre-label one on the same URL, so the new ones end the wait at once.
+CW_NL_OLD='[{"name":"netlify/deploy-preview","status":"COMPLETED","conclusion":"SUCCESS","completedAt":"2026-09-28T02:44:01Z","startedAt":"2026-09-28T02:44:01Z","detailsUrl":"https://app.netlify.com/sites/x/deploys/1"}]'
+CW_NL_NEW="${CW_NL_OLD%]},{\"name\":\"netlify/header-rules\",\"status\":\"COMPLETED\",\"conclusion\":\"SUCCESS\",\"completedAt\":\"2026-09-29T10:22:00Z\",\"startedAt\":\"2026-09-29T10:21:58Z\",\"detailsUrl\":\"https://app.netlify.com/sites/x/deploys/1\"},{\"name\":\"netlify/redirect-rules\",\"status\":\"COMPLETED\",\"conclusion\":\"SUCCESS\",\"completedAt\":\"2026-09-29T10:22:00Z\",\"startedAt\":\"2026-09-29T10:21:58Z\",\"detailsUrl\":\"https://app.netlify.com/sites/x/deploys/1\"}]"
+: > "$GH_STUB_CALLS"; rm -f "$GH_STUB_CALLS".*
+out="$(PATH="$TMPD/nosleep:$PATH" GH_STUB_LABELS='[{"name":"ci"}]' GH_STUB_OPEN_PRS="$(cw_open 71)" \
+  GH_STUB_PR_71="$(cw_full 71 CLEAN "$CW_NL_OLD")" \
+  GH_STUB_PR_71_2="{\"number\":71,\"labels\":[],\"statusCheckRollup\":$CW_NL_OLD}" \
+  GH_STUB_PR_71_3="$(cw_full 71 CLEAN "$CW_NL_NEW")" \
+  "$WRAP" merge --apply "$TMPD/clone-scan-main" 2>&1)"; rc=$?
+chk "ci-wait T12: exits 0" "$rc"
+chk "ci-wait T12: new checks on a shared URL ended the wait at once (4 reads)" "$([ "$(cw_views 71)" -eq 4 ]; echo $?)"
 
 # ===========================================================================
 echo "=== merge --pr: a named draft is marked ready, then gated and merged ==="
@@ -2851,7 +2929,7 @@ out="$(PATH="$TMPD/nosleep:$PATH" \
 chk "ci-wait T6 land: exits 0" "$rc"
 chk_has "ci-wait T6 land: labeled the PR" "$out" "labeled #42 ci"
 chk "ci-wait T6 land: the merge came after the 4th rollup read" \
-  "$(awk '/^pr view 42 .*statusCheckRollup/{v++} /^pr merge 42 /{m=v; exit} END{exit !(m >= 4)}' "$GH_STUB_CALLS"; echo $?)"
+  "$(awk '/^pr view 42 .*statusCheckRollup/{v++} /^pr merge 42 /{m=v; exit} END{exit !(m == 4)}' "$GH_STUB_CALLS"; echo $?)"
 chk_has "ci-wait T6 land: merged" "$out" "merged #42 ("
 
 echo "--- ci-gated land: a label already on with runs on the head is left alone"
@@ -2914,6 +2992,24 @@ chk_has "autoland ci-gated: the label went on the orphan's PR" "$(cat "$GH_STUB_
 chk "autoland ci-gated: the label precedes the merge" \
   "$(awk '/^pr edit 42 .*--add-label ci/{a=NR} /^pr merge 42 /{m=NR} END{exit !(a && m && a<m)}' "$GH_STUB_CALLS"; echo $?)"
 chk_has "autoland ci-gated: merge --pr verifies the tree" "$out" "tree verified"
+
+echo "--- autoland on a ci-gated repo: one grace hold, not two (T13)"
+# The carry PR holds only pre-label checks and the label starts nothing new, so the carry
+# wait holds for the grace window once. `cmd_merge --pr` then runs its own sync in a subshell
+# that inherits the carry's globals; the label is on by then, and the sync's reset of
+# CI_PRELABEL_KEYS on entry is what keeps that second wait from holding again.
+build_union_repo alcw; al_orphan alcw
+ALW="$TMPD/uclone-alcw"; ALWB="$TMPD/ubare-alcw"
+printf '%s' "$LAB_STRAY" > "$ALW/_meta/LAB_LOG.md"
+AL_CW_PR="{\"number\":42,\"title\":\"carry\",\"headRefName\":\"wrap/stray\",\"headRefOid\":\"%CARRY_TIP%\",\"baseRefName\":\"main\",\"mergeable\":\"MERGEABLE\",\"mergeStateStatus\":\"CLEAN\",\"reviewDecision\":\"\",\"statusCheckRollup\":$CW_OLD,\"labels\":[],\"isDraft\":false}"
+out="$(PATH="$TMPD/nosleep:$PATH" AL_WAIT=30 KIT_WRAP_CI_GRACE_SECS=20 \
+  GH_STUB_LABELS='[{"name":"ci"}]' AL_PR_OVERRIDE="$AL_CW_PR" \
+  GH_STUB_PR_42_2="${AL_CW_PR/\"labels\":[]/\"labels\":[{\"name\":\"ci\"}]}" \
+  al_run "$ALWB" "$ALW" --apply)"; rc=$?
+chk "autoland ci-wait T13: apply exits 0" "$rc"
+chk_has "autoland ci-wait T13: merge --pr verifies the tree" "$out" "tree verified"
+# 18 reads of #42 with one hold: a second hold in the merge's own wait adds two more.
+chk "autoland ci-wait T13: the grace hold ran once (18 reads)" "$([ "$(cw_views 42)" -eq 18 ]; echo $?)"
 
 echo "--- knob false leaves the merged branch on origin"
 build_land knobkeep
