@@ -1,7 +1,7 @@
 # Spec: an opt-in Orca backend for the mega runner (trial)
 
 Generated: 2026-09-29
-Status: DRAFT (validation round 1: NEEDS REVISION, must-fixes folded; re-validation pending)
+Status: VALIDATED (fresh-context validator, two rounds; round 1 NEEDS REVISION folded, round 2 items folded and lead-checked; Reviewer 6 design-bearing=yes pass)
 Lane: full
 Type: spec-feature
 File: `docs/specs/SPEC-370-orca-mega-backend.md`
@@ -200,6 +200,7 @@ SPEC-366's `DONE-UNSEEN` means shipped but never tidied (`### Flag rules`). That
 - `<dir>/.orchestrate/orca/map.tsv`: keyed by Task id, `task_id<TAB>SG-NN<TAB>kind` (`work` or `accept`). No Dispatch id is stored; it is re-read each tick. With `run`, `run.lock` and `last-tick`, these are the only new stored facts. States are never stored.
 - `<dir>/.orchestrate/events.log`: the existing append-only log (`lib/queue/orchestrate.sh:460-470`) gains state-change events only; no new file format.
 - ROADMAP.md stays the only source of done. A `worker_done` never advances a sub-goal. An `auto` sub-goal is done when its box is checked and `git ls-remote origin refs/heads/<branch>` finds its branch. A `gate` sub-goal is done only through the operator's `accept`.
+- Prior-Dispatch guard: the backend calls `worker-start` only for a Task with no Dispatch at all in `worker-list --run R` (any terminal state). A Task that already has one (stopped, failed, exited, released) is never restarted by the backend; a restart is the operator's `worker-start --task T --retry-of D`, which the next tick picks up as the Task's newest Dispatch. This keeps F2's restart and every retry an operator intervention and rules out a duplicate editor.
 - Stacking: a sub-goal with one SG dependency starts with `--base-branch <that dependency's branch>`; with none, from the default branch. A sub-goal with two or more SG dependencies is rejected at pre-flight in the trial (no merge step exists without PRs). The final branch of the chain holds all work; merging it is the operator's act, outside both arms.
 - Admission reuses `_wave_gate` (`lib/queue/orchestrate.sh:602`) and `WAVE_CAP`: at most `WAVE_CAP` RUNNING workers, and two run together only when their `## Touches` are provably disjoint. A `gate!` sub-goal halts new dispatch for the whole run, as today.
 - `Model:` and `Effort:` come from `_route` (`lib/queue/orchestrate.sh:721`). Orca needs `--model` for `--effort` (agent-context notes), so an `Effort:` with no `Model:` is dropped with a warning. A `Harness:` other than `claude` is rejected at pre-flight under this backend.
@@ -241,7 +242,7 @@ Every AC below runs against the stub. No test touches the live Orca runtime.
 
 - AC1 default path unchanged: a poison `orca` is first on `PATH` and `ORCA_CMD` names the same poison (each writes a sentinel when called). `orchestrate.sh run <fixture>` with no flag and with `--backend claude` leaves no sentinel. After sourcing `orchestrate.sh` and running `cmd_run` without the flag, `declare -F` lists none of the backend functions (`orca_plan`, `orca_tick`, `orca_gate`, `orca_derive`, `orca_reset`). The existing suites pass. Verify: `bash tests/test-orchestrate-orca.sh 2>&1 | grep -q '^PASS AC1' && bash tests/test-orchestrate.sh && bash tests/test-orchestrate-gate-dispatch.sh && bash tests/test-orchestrate-hardening.sh`
 - AC2 plan: one `run-create`, then four `task-create` calls in ROADMAP order (SG-01, SG-02, SG-03, `SG-03:accept`); SG-02's `--deps` holds SG-01's task id; SG-03's holds SG-02's; `SG-03:accept`'s holds SG-03's; each carries a `--retry-request`; a second `run` on the same dir creates nothing new. Verify: `bash tests/test-orchestrate-orca.sh 2>&1 | grep -q '^PASS AC2'`
-- AC3 dispatch: `worker-start --task` runs only for a Task that Orca reports `ready` AND whose ROADMAP deps are checked; a Task that is Orca-ready but whose dep box is open is not started. Verify: `bash tests/test-orchestrate-orca.sh 2>&1 | grep -q '^PASS AC3'`
+- AC3 dispatch: `worker-start --task` runs only for a Task that Orca reports `ready` AND whose ROADMAP deps are checked; a Task that is Orca-ready but whose dep box is open is not started; a Task that already has any Dispatch in `worker-list` is not started again. Verify: `bash tests/test-orchestrate-orca.sh 2>&1 | grep -q '^PASS AC3'`
 - AC4 negative control, stop mid-task: SG-02 RUNNING; the stub flips its dispatch to `exited` with the Task still `dispatched`; the next `orchestrate.sh status` prints SG-02 as `PARKED` with reason `exited`. Verify: `bash tests/test-orchestrate-orca.sh 2>&1 | grep -q '^PASS AC4'`
 - AC5 unknown stays unknown: liveness `unverifiable`, or no map row, or `ORCA_CMD` exiting nonzero, each prints `INDETERMINATE`, never `RUNNING`, `PARKED` or `DONE`. Verify: `bash tests/test-orchestrate-orca.sh 2>&1 | grep -q '^PASS AC5'`
 - AC6 DONE-UNSEEN then DONE: Task `completed`, box open, no `shipped` event prints `DONE-UNSEEN`; after the worker flips the box and one tick runs, it prints `DONE`, `events.log` has `shipped`, and `calls.log` has `worker-release` for that dispatch. Verify: `bash tests/test-orchestrate-orca.sh 2>&1 | grep -q '^PASS AC6'`
@@ -277,7 +278,7 @@ One new file, `tests/test-orchestrate-orca.sh`, following the fixture pattern of
 | stub-contract | call each supported verb; call `orchestration reset` | valid JSON per verb; `reset` exits 99 |
 | AC1 | poison `ORCA_CMD`; run without flag | no sentinel; existing suites green |
 | AC2 | run `--backend orca` with a tick bound of 0 | calls.log shows 1 run-create, 4 task-create with deps; re-run adds none |
-| AC3 | stub marks SG-02 ready, SG-01 box open | no worker-start for SG-02 |
+| AC3 | stub marks SG-02 ready, SG-01 box open; separately SG-02 ready with one stopped Dispatch | no worker-start for SG-02 in either case |
 | AC4 (negative control) | SG-02 running; `_set` dispatch exited | first `status` after the flip: `SG-02 PARKED exited` |
 | AC5 | liveness unverifiable; delete map row; `ORCA_CMD` exits 1 | INDETERMINATE in all three |
 | AC6 | Task completed, box open, then box flipped, one tick | DONE-UNSEEN, then DONE plus release |
@@ -304,7 +305,7 @@ Each goal file pins its branch: `**Branch:** feat/orca-trial-sg-01`, `-sg-02`, `
 - SG-02 `auto, depends SG-01`: add a line-count flag. Its goal file says the name is undecided between `--lines` and `-l` and the worker must ask before writing. The answer, `-l`, is sealed in the trial record before the run and given only to a worker that asks. This is the fault that strands work: a headless `claude -p` cannot ask, so it guesses or stops; an Orca worker can `ask` and wait.
 - SG-03 `gate, depends SG-02`: README usage section. In Arm B it ends at an Orca decision gate on `SG-03:accept`. In Arm A today's runner dispatches it, finds no PR (`lib/queue/orchestrate.sh:2713-2718`) and halts; the operator reviews the branch and runs `orchestrate.sh flip`. Both arms spend one human decision here.
 
-**Step 0, live capture (before any measured run).** On a separate throwaway copy of the fixture, run Arm B for SG-01 only and capture, into the trial record's `## Capture` section: one real row each from `task-list`, `worker-list`, `worker-show`, `gate-list` (after a `gate-create` on a pending Task, which also shows whether `task-list --ready` still lists a gated Task), one `check` Delivery, and the git branch Orca creates for `--worktree new-top-level --name feat/orca-trial-sg-01`, which must equal the `**Branch:**` line exactly (recorded as `branch created by Orca: <name>`; a mismatch stops the trial until the backend passes a name Orca keeps verbatim). Each item goes under a `### capture: <verb>` heading as a fenced `json` block. Update the stub's field names and the backend's reads to match, commit that with a subject containing `from live capture`, and re-run `bash tests/test-orchestrate-orca.sh` green before step 1. Then `orchestrate.sh orca-reset` the capture copy.
+**Step 0, live capture (before any measured run).** On a separate throwaway copy of the fixture, run Arm B for SG-01 only and capture, into the trial record's `## Capture` section: one real row each from `task-list`, `worker-list`, `worker-show`, `gate-list` (after a `gate-create` on a pending Task, which also shows whether `task-list --ready` still lists a gated Task), one `check` Delivery, and the git branch Orca creates for `--worktree new-top-level --name feat/orca-trial-sg-01`, which must equal the `**Branch:**` line exactly (recorded as `branch created by Orca: <name>`; a mismatch stops the trial until the backend passes a name Orca keeps verbatim). Step 0 also checks two things the design leans on. (1) Every `worker-list` row carries the Task id of its Dispatch, because the Dispatch-to-Task rejoin depends on it; the field name is recorded. If rows carry no Task id, the fallback is `dispatch-show --task T --json` per map Task each tick (read-only, names the Task's current Dispatch), and the stub and backend switch to it before step 1. (2) Stop then retry: `worker-stop` the SG-01 Dispatch, record the Task status right after the stop, then `worker-start --task T --retry-of D` with the same placement and record whether Orca accepts it and the Task status after. Each item goes under a `### capture: <verb>` heading as a fenced `json` block (`stop-retry` for the second check). Update the stub's field names and the backend's reads to match, commit that with a subject containing `from live capture`, and re-run `bash tests/test-orchestrate-orca.sh` green before step 1. Then `orchestrate.sh orca-reset` the capture copy.
 
 **Arms.** Two only. Two fresh copies of the fixture, same model tier (`Model: sonnet` in each goal file), same `WAVE_CAP`, same poll cadence: 60 seconds.
 
@@ -367,7 +368,7 @@ The trial record carries these five rows as `| <measure> | <Arm A value> | <Arm 
 ## Rollback
 
 - Switch off: omit `--backend orca` (or unset `MEGA_BACKEND`). The default path never sources `orca-backend.sh` and never invokes `$ORCA_CMD` (AC1).
-- Orca state for one mega: `bash lib/queue/orchestrate.sh orca-reset <dir>`. It stops live Dispatches from this run's map, releases them, and moves `map.tsv` aside. Worktrees and branches stay (Orca never deletes them on stop).
+- Orca state for one mega: `bash lib/queue/orchestrate.sh orca-reset <dir>`. It finds this Run's Dispatches through `worker-list --run R` (the map holds no Dispatch ids), stops the live ones, releases them, sets unfinished map Tasks to blocked, and moves `map.tsv` aside. Worktrees and branches stay (Orca never deletes them on stop).
 - Full removal: revert the change; `.orchestrate/orca/` is gitignored scratch.
 - Retirement: Orca has no per-Run delete. Orphaned Runs and their Tasks (blocked by `orca-reset`) stay in Orca's database until a global `orca orchestration reset --tasks`. That reset is a last resort only the operator runs, and only when no other Run is live.
 
@@ -422,6 +423,7 @@ Read-only samples from Orca 1.4.209 on this host. No Run, Task or worker was cre
 - DEC-M (validation): the map is keyed by Task id and the live Dispatch is re-read every tick; a separate fail-fast `run.lock`, never the waiting flip lock.
 - DEC-N (validation): the runner keeps ticking through a pending gate, bounded by `ORCA_GATE_TIMEOUT_SECS`; Orca read errors back off, then halt at `ORCA_ERROR_LIMIT`.
 - DEC-O (validation): trial measures are only those both arms can register, at one fixed cadence, with a stated 15 percent context margin and interventions inside the decision rule.
+- DEC-Q (validation round 2): prior-Dispatch guard, step 0 checks the Task id on `worker-list` rows (fallback `dispatch-show`) and stop-then-retry, rollback finds Dispatches via `worker-list --run R`.
 - DEC-P (validation): Orca metadata carries identifiers and paths only, never `Done =` or other goal-file text.
 
 ## Open questions
