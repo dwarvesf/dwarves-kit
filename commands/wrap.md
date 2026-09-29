@@ -37,6 +37,20 @@ kit_config_get_root wrap.distill true
 
 The distill half runs when that value is `true`, or when the invocation carries `distill`, or when the operator's ask says to distill. It does not run only when the operator's own `kit.toml` sets `distill = false` and the invocation names neither `distill` nor an ask to distill: then skip the scan, skip both seams, skip step 7, report `**Built:** SKIPPED: distill off` and `**Seam:** SKIPPED: distill off`, and put one `FYI` bullet of the STATE kind naming the knob and the argument that turns it back on (the operator meets the same skip next wrap, which is what that lane is for). Distill runs by default because operators asked for it every session, not as a special-cased extra. `/kit:wrap` with no `distill` word still lands the session (the LANDING half, steps 0 through 6, 8, 9), whatever the switch resolves to; the switch decides only whether the DISTILL half also runs this pass. An operator who wants landing-only every time sets `distill = false` in their own `kit.toml`. The retro at step 8 is landing, not distill: it fires only when a spec cycle shipped, and it reads the run ledger rather than the session. The knob resolves root-only, same as the autonomy knobs below, because the distill half writes to home repos.
 
+A third value, `harvest`, hands the distill half to the transcript harvest sweep, per host. The knob may sync across machines through the operator `kit.toml`, so it resolves against the host's own sweep marker -- the sweep is active only where `<state>/sweep/installed` exists AND `harvest.enable` is true (both read root-only, never from a project `.kit.toml`):
+
+```bash
+_sweep_state="${HARVEST_STATE_DIR:-$HOME/.claude/dwarves-kit/state/harvest}"
+_sweep_active=0
+if [ -f "$_sweep_state/sweep/installed" ]; then
+  case "$(kit_config_get_root harvest.enable false | tr 'A-Z' 'a-z')" in
+    true|1|yes|on) _sweep_active=1 ;;
+  esac
+fi
+```
+
+With `harvest` and `_sweep_active=1`: the LANDING half still runs end to end, but the DISTILL half is the sweep's job on this host -- read no seam key, skip the scan, skip step 7, report `**Built:** SKIPPED: distill runs in the harvest sweep` and `**Seam:** SKIPPED: distill runs in the harvest sweep`, and add two `FYI` `STATE` rows: one naming the knob (`STATE wrap.distill resolves to harvest on this host; in phase 1 the sweep reports candidates and builds none`), and one carrying the sweep's own status so the newest report gets seen, from `python3 hooks/harvest_sweep.py --status` (`STATE newest sweep report: <path>, candidates=<n>, queued=<m>`, or `STATE newest sweep report: none` when the sweep has written no report yet). With `harvest` and `_sweep_active=0`: the knob resolves as `true` for this host -- the distill half runs as usual -- and the report carries a `STATE` row saying the harvest sweep is not installed on this host. The explicit word still wins: an invocation carrying `distill` runs the distill half even on an active host, and its `FYI` carries a `STATE` row saying the harvest sweep will also see this session (it is harvested on the next scheduled run, so the distillation is a bonus, not a duplicate).
+
 **Scan for candidates before step 0, act on them at step 7b.** (Distill half; skip when the switch is off.) Step 7b's scan reads the session and nothing else, and it is the one step whose input degrades with every step that runs before it: six steps of scan, merge, and pull output later, the model is reasoning about branches and has lost what it did four times by hand at 14:00. So the scan runs FIRST, ahead of even the seams: write the candidate list (label, what was repeated or written, how many times) to the scratch file the step 9 report will use. Step 7b then runs precedent and acts on that list, never on a fresh recollection. The old standalone closeout ran this scan as its first move, before any landing, and produced an enhancement to an existing tool most sessions; the same scan at step 7 produced none across its first two weeks, because by then there was nothing left in context to scan.
 
 ### Step -1: the seams

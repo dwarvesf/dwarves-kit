@@ -315,7 +315,14 @@ distill = true                  # [impl] the distill half. true = every wrap run
                                  #        commit, merge, deploy check, tidy, pull, activity line,
                                  #        retro, report; the report says `SKIPPED: distill off` on
                                  #        `Built:` and `Seam:`. Set it in the operator `kit.toml` for
-                                 #        landing-only every time. Resolves root-only like the knobs
+                                 #        landing-only every time. "harvest" = the distill half is
+                                 #        the transcript sweep's job on hosts where the sweep is
+                                 #        installed (the <state>/sweep/installed marker plus
+                                 #        harvest.enable, per host); the report says
+                                 #        `SKIPPED: distill runs in the harvest sweep` there, and
+                                 #        distills as true everywhere else. The `distill` word in
+                                 #        the invocation still wins for one run either way.
+                                 #        Resolves root-only like the knobs
                                  #        below: the distill half writes to home repos.
 
 # Autonomy knobs. Each one authorizes a WRITE, so each one reads from the
