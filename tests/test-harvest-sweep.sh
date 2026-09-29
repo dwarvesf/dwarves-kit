@@ -3339,17 +3339,20 @@ t15_run() {
 }
 tf() { printf '%s' "$1" | tr ' ' '\n' | sed -n "s/^$2=//p"; }
 
-# base config: sweep enabled, hook suppressed -- the active host
-t15_kroot true false
+# child-marker cases run with NO marker and enable=false, so only the
+# HARVEST_SWEEP_CHILD guard can be doing the suppressing
+t15_kroot false false
 rm -f "$T15D/proj/.kit.toml"
 
-R="$(t15_run 1 "" HARVEST_SWEEP_CHILD=1)"
+R="$(t15_run 0 "" HARVEST_SWEEP_CHILD=1)"
 assert_eq "AC8: child marker suppresses the no-arg mode" "0" "$(tf "$R" calls)"
-R="$(t15_run 1 "--lab-log" HARVEST_SWEEP_CHILD=1)"
+R="$(t15_run 0 "--lab-log" HARVEST_SWEEP_CHILD=1)"
 assert_eq "AC8: child marker suppresses --lab-log" "0" "$(tf "$R" calls)"
-R="$(t15_run 1 "--stop-trigger" HARVEST_SWEEP_CHILD=1 HARVEST_STOP_TRIGGER=1 HARVEST_STOP_N=1 HARVEST_STOP_SYNC=1)"
+R="$(t15_run 0 "--stop-trigger" HARVEST_SWEEP_CHILD=1 HARVEST_STOP_TRIGGER=1 HARVEST_STOP_N=1 HARVEST_STOP_SYNC=1)"
 assert_eq "AC8: child marker suppresses --stop-trigger" "0" "$(tf "$R" turns)"
 
+# base config: sweep enabled, hook suppressed -- the active host
+t15_kroot true false
 R="$(t15_run 1 "")"
 assert_eq "AC8: an active host suppresses the no-arg mode" "0" "$(tf "$R" calls)"
 assert_eq "AC8: the suppressed fire still exits 0" "0" "$(tf "$R" rc)"
