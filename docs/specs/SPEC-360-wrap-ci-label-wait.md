@@ -188,4 +188,4 @@ Both run as `bash lib/gate/negctl.sh <worktree> "bash tests/test-wrap.sh" "<muta
 
 - [x] Task A (DONE, commit 935a5321, verified): `CI_ENTRY_KEY`, the baseline in `_ci_label_sync`, and the NEW-entry precedence in `_ci_checks_wait` (`lib/wrap/wrap.sh`), plus cases T1 to T4 and T6 in `tests/test-wrap.sh`.
 - [x] Task B (DONE, commit 935a5321, verified): the first-real-time sort key in `_pr_gate` and the corrected comment above it (`lib/wrap/wrap.sh`), plus cases T5, T7 and T8.
-- [ ] Task C (review batch): fail-closed sync read, SKIPPED not NEW, pending-last gate key, the NONEW CLEAN rule in `cmd_merge`, `CI_JQ_DEFS` with the `CI_PRELABEL_KEYS` rename (`lib/wrap/wrap.sh`), plus T3b, T9 to T13, the pending-last unit cases, and T6's exact read count.
+- [x] Task C (DONE, commit bc476674, verified) (review batch): fail-closed sync read, SKIPPED not NEW, pending-last gate key, the NONEW CLEAN rule in `cmd_merge`, `CI_JQ_DEFS` with the `CI_PRELABEL_KEYS` rename (`lib/wrap/wrap.sh`), plus T3b, T9 to T13, the pending-last unit cases, and T6's exact read count.
