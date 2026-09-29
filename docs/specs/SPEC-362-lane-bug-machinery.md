@@ -1,121 +1,166 @@
 # Spec: kit-machinery bug fixes size as bug, not full
 
 Generated: 2026-09-29
-Status: DRAFT (round 2: folds the round-1 NEEDS REVISION findings and the lead's enforcement-file ruling)
-Lane: full (policy change to the lane classifier itself; `lib/classify/*` is an enforcement file)
+Status: DRAFT (round 3: kit-repo-only allowlist, replacing the round-2 enforcement denylist per the lead's redesign)
+Lane: full (policy change to the lane classifier itself)
 Type: spec-feature
 File: `docs/specs/SPEC-362-lane-bug-machinery.md`
-References: `lib/classify/lane-classify.sh` (`_files_touch_machinery`, `classify_core`, the precedence comment at line 19), `tests/test-lane-classify.sh`, `hooks/ship-gate.sh` (proof gate, spec lookup), `lib/gate/proof-ledger.sh` (`classify`, the override guard), `docs/WORKFLOW.md` (lane table), `README.md` (lane-classify row), `commands/wrap.md` (step 10 re-size)
+References: `lib/classify/lane-classify.sh` (`_extract_files`, `_files_touch_machinery`, `classify_core`, `main`, the precedence comment at line 19), `tests/test-lane-classify.sh`, `hooks/ship-gate.sh` (proof gate, spec lookup), `lib/gate/proof-ledger.sh`, `lib/gate/negctl.sh`, `kit.toml` (`[gate] proof_of_done`), `docs/WORKFLOW.md` (lane table), `README.md` (lane-classify row), `commands/wrap.md` (step 10 re-size)
 
 ## Problem
 
-`lib/classify/lane-classify.sh` sends every change that touches `lib/` or `hooks/` to `full`. The `--files` path does it through `_files_touch_machinery` (line 89). The text-only path does it through the kit-machinery hard-gate regex (line 60). Neither path asks whether the change is a defect fix.
+`lib/classify/lane-classify.sh` sends every change that touches `lib/` or `hooks/` to `full`. The `--files` path does it through `_files_touch_machinery` (line 89). The text-only path does it through the kit-machinery hard-gate regex (line 60). Neither path asks whether the change is a defect fix, or whether the code it touches enforces anything.
 
-A 20-line bug fix with a proven root cause then pays for think, spec, fresh-context validation, docs and reflect. The `wrap merge` fix (SPEC-360: the merge ran before the ci-label runs registered) paid that cost this week.
+Real data from this repo's history. `git log --no-merges` holds 1071 commits since 2026-03-29. Of those, 116 have a subject starting `fix` and a diff touching `lib/` or `hooks/`. Today's classifier, fed each commit's subject and `--files` = its file list, sizes 115 of the 116 `full` and one `tiny`. Each paid for think, spec, validation, docs and reflect, whether the fix sat in a ship gate or in a board-sync helper.
 
-The operator approved a policy change: a kit-machinery change that is a bug fix and introduces no new contract sizes `bug`. A machinery change that changes a contract stays `full`. When both signals fire, contract wins.
+The operator approved a policy change: a kit-machinery change that is a bug fix and introduces no new contract sizes `bug`. Rounds 1 and 2 tried a vocabulary rule and then an enforcement denylist; both leaked (a relaxation phrased as a fix; files the gates source but the denylist missed; a newline-separated `--files` list read only to its first line). The lead redesigned the rule as a kit-repo-only ALLOWLIST: demotion happens only when every touched machinery path is on a verified list of advisory, non-gate kit code.
 
-Round 1 found the critical hole in that rule: a gate relaxation phrased as a fix ("fix ship-gate wrongly blocking a push whose proof doc has no negative control") carries a bug signal and no contract word. Vocabulary alone cannot close it. The lead ruled a structural guard as the primary defence: a change to an enforcement file never demotes. That ruling has a direct cost: `lib/wrap/wrap.sh` is an enforcement file, so the SPEC-360 fix itself still sizes `full` (Grounding G3). The demotion lands on the rest of the machinery: telemetry, board, session, queue, goal libraries and the non-blocking hooks.
+Replayed through the prototype of this design, 20 of the 116 fix commits size `bug`: `lib/sync` 7, `lib/board` 4, `hooks` 4 (context-budget, auto-format), `lib/spec` 2, `lib/session` 2, `lib/stats` 1. The other 96 stay as today (83 touch a path outside the allowlist, 12 carry another hard flag or a contract signal, 1 stays `tiny`). The SPEC-360 wrap-merge fix stays `full`, because `lib/wrap/wrap.sh` is a merge gate.
 
-This spec is itself a policy change to the classifier, so it sizes `full` under both the old and the new rule. AGENTS.md "Pause if" lists a risk-classification change as a human decision; the operator made it.
+This spec is itself a policy change to the classifier, so it sizes `full` under both rules. AGENTS.md "Pause if" lists a risk-classification change as a human decision; the operator made it.
 
 ## Change
 
 All code lands in `lib/classify/lane-classify.sh`.
 
-1. Shared bug terms and the machinery bug signal. One string feeds both step 4 and the machinery decision, so step 4's behavior is byte-identical:
+1. The allowlist, defined once near the flag arrays as two quoted bash arrays with a header comment:
    ```
-   _bug_terms='\bbug\b|regression|failing test|broken|crash|defect|hotfix|stack ?trace|exception|fix the|fix a |repro'
-   _mbug_re="$_bug_terms"'|\bfix(es|ed|ing)?\b|broke|wrong|root[ -]cause'
+   # Demotable kit paths: advisory, non-gate code where a bug fix with no contract signal may size
+   # `bug` instead of `full`. Kit repo only, --files only, EVERY touched path must be on this list
+   # (or be a neutral test/doc path) and none on the EXCEPT list. Verified: nothing under hooks/,
+   # lib/gate, lib/classify, lib/ledger, lib/wrap or lib/goal sources or calls these paths; no
+   # listed hook blocks; nothing listed reads or filters secrets. tests/test-lane-classify.sh pins it.
+   _DEMOTABLE_GLOBS=(
+     'lib/bench/*' 'lib/cosmetic/*' 'lib/precedent/*' 'lib/prose-rag/*' 'lib/reflect/*'
+     'lib/repohygiene/*' 'lib/session/*' 'lib/skill-curator/*' 'lib/spec/*' 'lib/stats/*'
+     'lib/sync/*' 'lib/webcheck/*'
+     'lib/board/board-mirror.sh' 'lib/board/board-run.sh' 'lib/board/board-writeback.sh'
+     'lib/board/parse-board.sh' 'lib/board/bin/*'
+     'hooks/auto-format.sh' 'hooks/batch-debt-warn.sh' 'hooks/codebase-index.sh'
+     'hooks/context-budget.sh' 'hooks/context-hints.sh' 'hooks/context-hints.py'
+     'hooks/context-readiness.sh' 'hooks/notification.sh' 'hooks/post-compact-reinject.sh'
+     'hooks/pre-compact-backup.sh' 'hooks/prose-rag.sh' 'hooks/session-state-save.sh'
+     'hooks/slop-cleaner.sh' 'hooks/statusline.sh'
+   )
+   # Carve-outs inside the globs above; EXCEPT wins.
+   _DEMOTABLE_EXCEPT=(
+     'lib/bench/dashboard.py'               # SECRET_PATTERNS redaction
+     'lib/precedent/inventory.py'           # SECRET_SHAPE_RE filter
+     'lib/reflect/staging-format.py'        # called by lib/wrap/wrap.sh
+     'lib/session/recall/session_recall.py' # SECRET_SHAPE_RE filter
+     'lib/session/observe/bin/session-report' # reads a key and token from op:// refs
+     'lib/skill-curator/lib/common.sh'      # the secret filter
+     'lib/skill-curator/lib/promote.sh'     # refuses a secret-bearing draft
+     'lib/skill-curator/lib/reviewer-run.sh' # drops a secret-bearing draft
+     'lib/skill-curator/deploy/*'           # install surface
+     'lib/stats/src/stats/adapters.py'      # parses the secret-guard audit log, secret canary
+     'lib/sync/cockpit.py' 'lib/sync/sources/hermes.py' 'lib/sync/sources/multica.py'
+     'lib/sync/sources/notion*'             # external-service credentials
+     'lib/sync/deploy/*'                    # cron job credentials, install surface
+   )
+   # Paths that ride along with any fix and never block demotion. Contract files among them
+   # (docs/WORKFLOW.md) still force full through the file contract signal (item 4).
+   _DEMOTE_NEUTRAL=( 'tests/*' 'docs/*' '_meta/*' 'README.md' )
    ```
-   Step 4's `grep -qE` uses `$_bug_terms`. The extra terms apply to the machinery decision only.
+   Every other path blocks demotion: `commands/`, `agents/`, `skills/`, `bin/`, `.github/`, root files other than `README.md`, and every `lib/` or `hooks/` path not listed. Verification of each candidate is recorded in Grounding.
 
-2. The text contract signal, matched against the lowercased description, written out in full:
+2. Shared bug terms. One string feeds step 4 and the machinery decision:
+   ```
+   _bug_core='\bbug\b|regression|failing test|broken|crash|defect|hotfix|stack ?trace|exception|fix the|fix a '
+   ```
+   Step 4 greps `"$_bug_core|repro"`, which is byte-for-byte today's alternation. The machinery bug signal is `_mbug_re="$_bug_core"'|\bfix(es|ing)?\b|\bbroke\b|wrong|root[ -]cause'`: no `fixed` (so "fixed-width" does not count), `broke` only as a word (not "broker"), no bare `repro` (not "reprocess").
+
+3. The text contract signal `_mcontract_re`, matched against the lowercased description. The relaxation lines of round 2 are gone; the allowlist replaces them. Written out in full, one alternative per line (the variable joins them with `|` and no whitespace):
    ```
    \bnew .{0,20}\b(flags?|verbs?|knobs?|options?|subcommands?|commands?|gates?|checks?|guards?|hooks?|lanes?|phases?|markers?|columns?|fields?|env vars?|config keys?)\b
-   |\badd(s|ed|ing)?\b.{0,20}\b(flags?|verbs?|knobs?|options?|subcommands?|commands?|gates?|checks?|guards?|hooks?|lanes?|phases?|markers?|columns?|fields?|env vars?|config keys?)\b
-   |(^|[^a-z0-9-])--[a-z]
-   |renam[a-z]*\b.{0,20}(--|\b(flags?|verbs?|knobs?|options?|subcommands?|commands?|gates?|checks?|guards?|hooks?|lanes?|phases?|markers?|columns?|fields?|env vars?|config keys?)\b)
-   |now also|no longer|now (refuses|blocks|merges|allows|skips|accepts|requires)
-   |relax|loosen|weaken|narrow|bypass|disabl|opt[ -]out
-   |\b(skip|remov|drop|exempt|ignor|turn(s|ed|ing)? off|allow|accept|permit)[a-z]*\b.{0,40}\b(gate|check|guard|hook|proof|override|lane|negative control|requirement|validation)
-   |\b(gate|check|guard|hook|proof|override|lane|negative control|requirement|validation)[a-z-]*\b.{0,40}\b(skip|remov|drop|exempt|ignor|turn(s|ed|ing)? off|allow|accept|permit)
-   |stop (check|block|requir)|exception for|false positive
-   |(wrong(ly)?|incorrectly|falsely) (block|refus|reject|den)
-   |\bsize[sd]? (tiny|normal|bug)\b
-   |(ledger|log|line|output) format\b
-   |install\.sh|\badopt|kit\.toml|hooks\.json|settings\.json
-   |\bpolicy\b|\b(bug|full|tiny|normal|backfill) lane\b|\blane (table|rule|trigger|floor)\b
+   \badd(s|ed|ing)?\b.{0,20}\b(flags?|verbs?|knobs?|options?|subcommands?|commands?|gates?|checks?|guards?|hooks?|lanes?|phases?|markers?|columns?|fields?|env vars?|config keys?)\b
+   (^|[^a-z0-9-])--[a-z]
+   renam[a-z]*\b.{0,20}(--|\b(flags?|verbs?|knobs?|options?|subcommands?|commands?|gates?|checks?|guards?|hooks?|lanes?|phases?|markers?|columns?|fields?|env vars?|config keys?)\b)
+   now also
+   no longer
+   now (refuses|blocks|merges|allows|skips|accepts|requires)
+   \bsize[sd]? (tiny|normal|bug)\b
+   (ledger|log|line|output) format\b
+   install\.sh
+   \badopt
+   kit\.toml
+   hooks\.json
+   settings\.json
+   workflow\.md
+   agents\.md
+   \bpolicy\b
+   \b(bug|full|tiny|normal|backfill) lane\b
+   \blane (table|rule|trigger|floor)\b
    ```
-   The line breaks are for reading; the variable `_mcontract_re` joins them with no whitespace. A bare `--[a-z]` token counts, so a bug text that names an existing flag sizes `full` (accepted over-size). `.{0,20}` between `add` and the noun makes "add a missing guard to fix the crash" a contract signal. `wrong(ly)? fail` is deliberately absent: "wrongly failing on an empty board" is an ordinary defect.
 
-3. The file contract signal, case-insensitive, over the `--files` list:
+4. The file contract signal, case-insensitive, over the normalized file list:
    ```
    (^|/)(install\.sh|adopt\.sh|hooks\.json|codex-hooks\.json|settings\.json|\.?kit\.toml|WORKFLOW\.md|AGENTS\.md)$|(^|/)lib/config/module-registry\.md$|(^|/)\.claude-plugin/
    ```
+   Under the allowlist it only matters for a contract file on a neutral path (`docs/WORKFLOW.md`); every other contract file already blocks as outside the allowlist.
 
-4. One helper, `_contract_signal <text|all> <lc>`: `text` tests item 2 only; `all` tests item 2, then item 3 when `--files` was passed. Steps 2b and 3 below both call it.
+5. One helper, `_contract_signal <text|all> <lc>`: `text` tests item 3; `all` tests item 3, then item 4 when `--files` was passed. Every `grep` over a stored regex uses `grep -qE -e`.
 
-5. The enforcement set, defined once in a header-commented variable near the flag arrays:
-   ```
-   # Enforcement files: a change here never demotes to bug, whatever the text says. A gate
-   # relaxation reads like a fix ("fix X wrongly blocking Y"), so the file, not the wording,
-   # decides. Keep in sync with any hooks/*.sh that blocks (exit 2); the suite pins that.
-   _ENFORCEMENT_GLOBS='hooks/*-gate.* hooks/*-guard.* hooks/permission-* hooks/anti-rationalization.sh hooks/commit-format.sh hooks/anchor-root.sh hooks/codex-hook-adapter.sh hooks/hooks.json hooks/codex-hooks.json lib/gate/* lib/classify/* lib/wrap/wrap.sh lib/goal/mega-merge.sh lib/goal/stack-merge.sh'
-   # Text-only path: with no file list, a text naming any of these stays full.
-   _ENFORCEMENT_WORDS_RE='-gate\b|guard|proof|secrets|classif|gate-ledger|gate-policy|negctl|premerge|mutation-smoke|coverage-delta|permission-|anti-rationalization|commit-format|anchor-root|lib/gate/|lib/classify/|wrap\.sh|wrap (merge|land)|mega-merge|stack-merge|hooks\.json'
-   ```
-   `_enforcement_hit <lc>`: with `--files`, true when any file matches a glob or `*/<glob>`; without `--files`, true when the text matches `_ENFORCEMENT_WORDS_RE`. Every `grep` over a regex that can start with `-` uses `grep -qE -e`.
-   The blocking hooks came from `grep` over `hooks/*.sh` for `exit 2`: anti-rationalization, board-row-gate, citation-guard, codex-hook-adapter, commit-format, safety-gate, secrets-guard, ship-gate, tool-policy-guard. The `-gate.*` and `-guard.*` globs also cover `money-gate.sh`/`.py`, `spec-drift-guard.sh` and `citation-guard.py`. `anchor-root.sh` relays exit codes for the hooks it wraps, so it is listed. `lib/goal/mega-merge.sh` and `lib/goal/stack-merge.sh` are merge automation in the same class as `wrap.sh`'s merge gate; adding them is my extension of the lead's list.
+6. FILES normalization, once, in `_extract_files`: after reading `--files`, `FILES="$(printf '%s' "$FILES" | tr '\n\t' '  ')"`. One helper, `_files_arr`, splits it with `IFS=' ' read -ra FARR <<< "$FILES"` into a quoted array; no caller iterates an unquoted `$FILES`. Globs are matched with `case "$f" in $g) ...` inside `for g in "${ARRAY[@]}"`, so no pattern ever expands against the working directory. `_files_touch_machinery` switches to `_files_arr`, which fixes the pre-existing bug where a newline-separated list (the form `commands/wrap.md:318` passes) was read only to its first line.
 
-6. Machinery surface, kit repo only. `_files_touch_machinery` keeps `lib/*|hooks/*|*/lib/*|*/hooks/*` and, only when `_in_kit_repo` holds, also fires on a root `install.sh` or a root `settings.json`. `_in_kit_repo` is `[ -f "$(git rev-parse --show-toplevel 2>/dev/null || pwd)/lib/classify/lane-classify.sh" ]`. `lib/adopt.sh`, `hooks/hooks.json` and `hooks/codex-hooks.json` already fire through `lib/*` and `hooks/*`; no any-depth `adopt.sh` or `hooks.json` pattern is added.
+7. Kit-repo machinery surface. `_files_touch_machinery` keeps `lib/*|hooks/*|*/lib/*|*/hooks/*` and, only when `_in_kit_repo` holds, also fires on a root `install.sh` or a root `settings.json`. `_in_kit_repo` is `[ -f "$(git rev-parse --show-toplevel 2>/dev/null || pwd)/lib/classify/lane-classify.sh" ]`.
 
-7. Machinery contract outranks tiny (step 2). When the tiny regex matches, first test whether the kit-machinery flag would fire (item 8's condition) and `_contract_signal text` holds. When both hold, skip the tiny return and fall through; step 3 sizes it `full`. The file check is excluded here, so a typo sweep whose files include `docs/WORKFLOW.md` stays `tiny`. A tiny text that names `install.sh`, `adopt`, `hooks.json` or `settings.json` does size `full` (accepted over-size).
+8. Machinery contract outranks tiny, for `classify`, `explain` and `check` only. `main` sets `TINY_CONTRACT=1` for those three verbs; `escalate` and `deescalate` leave it unset. In step 2, when the tiny regex matches and `TINY_CONTRACT=1`, the kit-machinery flag would fire, and `_contract_signal text` holds, skip the tiny return and fall through. Tiny behavior is otherwise exactly today's: a tiny match returns `tiny` whatever the files, including files outside the allowlist.
 
-8. The demotion (step 3, the kit-machinery branch, today lines 150-163). When the flag would fire on either path, add `kit-machinery` to `hard` unless all three hold: the text matches `_mbug_re`, `_enforcement_hit` is false, and `_contract_signal all` is false. When all three hold, set a local `mbug=1` instead. Record which check overruled a bug signal (`enforcement` or `contract`) for the reason line.
+9. The demotion (step 3, the kit-machinery branch, today lines 150-163). When the flag would fire, add `kit-machinery` to `hard` unless ALL of these hold, in this order:
+   a. the text matches `_mbug_re`;
+   b. `_in_kit_repo`;
+   c. `--files` was passed and the normalized list is non-empty (one guard line at the top of `_all_demotable`);
+   d. `_all_demotable`: every path matches `_DEMOTABLE_GLOBS` or `_DEMOTE_NEUTRAL`, and none matches `_DEMOTABLE_EXCEPT`;
+   e. `_contract_signal all` is false.
+   When all hold, set `mbug=1` instead. Record the first failed check among b to e for the reason line.
 
-9. After the hard-gate verdict: a non-empty `hard` gives `full` as today. When item 8 recorded an overrule, the reason gains ` (enforcement file outranks the bug signal)` or ` (contract signal outranks the bug signal)`. An empty `hard` with `mbug=1` gives `LANE=bug`, `REASON="kit-machinery bug fix (bug signal, no contract signal, no enforcement file)"`, `FIRED="kit-machinery-bug"`.
+10. After the hard-gate verdict: a non-empty `hard` gives `full` as today. When the text carried a bug signal but a later check failed, the reason gains one suffix: ` (not the kit repo)`, ` (no --files)`, ` (a path outside the demotable allowlist)`, or ` (contract signal outranks the bug signal)`. An empty `hard` with `mbug=1` gives `LANE=bug`, `REASON="kit-machinery bug fix (bug signal, no contract signal, every path demotable)"`, `FIRED="kit-machinery-bug"`.
 
-10. The header precedence comment (line 19) becomes: `backfill > tiny (unless machinery + text contract signal) > hard-gate (kit-machinery demotes to bug on a bug signal with no contract signal and no enforcement file) > bug > soft-count > normal`.
+11. The header precedence comment (line 19) becomes: `backfill > tiny (unless classify/explain/check + machinery + text contract signal) > hard-gate (kit-machinery demotes to bug only in the kit repo, with --files, every path on the demotable allowlist, a bug signal and no contract signal) > bug > soft-count > normal`.
 
-11. Docs:
-    - `docs/WORKFLOW.md` lane table: the `full` row's "hooks" becomes "a hook contract"; the `bug` row's "When" cell becomes "a defect, regression, or failing test (not a new feature), incl. a kit-machinery fix with no contract change". One sentence under the table names the enforcement-file exception and points at `_ENFORCEMENT_GLOBS`.
-    - `README.md` lane-classify row: one clause, "a machinery bug fix with no contract signal and no enforcement file sizes bug".
-    - `commands/wrap.md` step 10 landing item 1: "(it touched auth, a hook, a data model, a contract)" becomes "(it touched auth, a hook contract, an enforcement file, a data model, a contract)".
+12. Docs:
+    - `docs/WORKFLOW.md` lane table: the `full` row's "hooks" becomes "a hook contract"; the `bug` row's "When" cell becomes "a defect, regression, or failing test (not a new feature), incl. a kit-machinery fix with no contract change on an allowlisted path". One sentence under the table names `_DEMOTABLE_GLOBS` as the list and says the demotion is kit-repo only.
+    - `README.md` lane-classify row: one clause, "in the kit repo, a bug fix whose files are all on the demotable allowlist and that carries no contract signal sizes bug".
+    - `commands/wrap.md` step 10 landing item 1: "(it touched auth, a hook, a data model, a contract)" becomes "(it touched auth, a gate or hook outside the demotable allowlist, a data model, a contract)".
 
 ## Picture
 
 ```
- description + --files
+ description + --files (normalized: newlines and tabs -> spaces, quoted array)
         |
         v
- backfill? --yes--> backfill                                  (unchanged)
+ backfill? --yes--> backfill                                       (unchanged)
         | no
- tiny? --yes--> machinery AND text contract signal? (file check excluded)
-        |            | no --> tiny          | yes (fall through; step 3 sizes full)
-        | no  <-------------------------------+
+ tiny? --yes--> [classify|explain|check] AND machinery AND text contract signal?
+        |             | no --> tiny                        | yes (fall through)
+        | no  <-----------------------------------------------+
         v
  other hard flags (auth, data-model, audit-security, ...) --any--> full
         |
- kit-machinery would fire?
- (lib/ | hooks/ file; root install.sh | settings.json in the kit repo; or machinery text)
-        | no                                  | yes
-        v                                     v
-   step 4 bug / soft / normal        bug signal? --no--> full (kit-machinery)
-   (step 4 uses _bug_terms,                   | yes
-    unchanged)                                v
-                                  enforcement file (--files) or enforcement word (text-only)?
-                                     | yes --> full (enforcement file outranks the bug signal)
-                                     | no
-                                     v
-                                  contract signal, text or files?
-                                     | yes --> full (contract signal outranks the bug signal)
-                                     | no  --> bug (kit-machinery-bug)
+ kit-machinery would fire?  (lib/ | hooks/ path; kit-repo root install.sh | settings.json;
+        |                    or machinery text when no --files)
+        | no                              | yes
+        v                                 v
+   step 4 bug / soft / normal     bug signal? --no--> full (kit-machinery)
+   (step 4 = _bug_core|repro,              | yes
+    unchanged)                             v
+                                  kit repo? --no--> full (not the kit repo)
+                                           | yes
+                                  --files given, non-empty? --no--> full (no --files)
+                                           | yes
+                                  every path demotable or neutral, none EXCEPT?
+                                           | no --> full (a path outside the allowlist)
+                                           | yes
+                                  contract signal, text or files? --yes--> full (contract)
+                                           | no
+                                           v
+                                    bug (kit-machinery-bug)
 ```
 
 ## Design
 
-The decision sits inside the existing kit-machinery branch because that flag is the only one the policy narrows. Auth and data-model stay subject-risky and keep forcing `full`. Two defences stand between a gate relaxation and the `bug` lane: the enforcement set (structural, primary) and the contract vocabulary (textual, secondary). Either one alone keeps `full`.
+The allowlist is the primary defence and the contract signal the second. A path the kit has not verified as advisory never demotes, so a gate relaxation phrased as a fix cannot reach `bug` through vocabulary. Consumer repos and text-only callers see no demotion at all.
 
 ### Diagram
 
@@ -123,191 +168,197 @@ See `## Picture` above for the decision flow.
 
 ### Approaches considered
 
-1. Structural enforcement-file guard plus a demotion inside the kit-machinery branch, with a contract vocabulary as a second defence (chosen, lead ruling).
-2. Vocabulary only (round 1's design). Rejected: four reviewers found nine gate-relaxation texts with a bug signal and no contract word.
-3. Widen step 4's general bug regex and move it above the hard gate. Rejected: `wrong` and bare `fix` would move non-machinery text such as "fix wrong total in the invoice page" from `normal` to `bug`, and "fix the token refresh crash" would escape the audit-security flag.
-4. Apply the demotion on the `--files` path only. Rejected: `/kit:assign` calls `classify` without `--files`. The text-only path instead demotes only when the text names no enforcement word.
-5. Move the whole hard gate above tiny. Rejected: "fix a typo in lib/telemetry/lane-telemetry.sh" would size `full` (pinned `tiny` by the suite's AC5).
+1. Kit-repo-only allowlist with a contract signal inside it (chosen, lead redesign after round 2).
+2. Enforcement denylist plus vocabulary (round 2). Rejected by round-2 review: the denylist missed files the gates source (`lib/config/kit-config.sh`, `lib/ledger/ledger.sh`, `lib/telemetry/kit-log-dir.sh`, `lib/registry/feature-registry.sh`), missed `codex-hook-adapter` in its word list, and inherited the newline bug.
+3. Vocabulary only (round 1). Rejected: nine gate-relaxation texts carried a bug signal and no contract word.
+4. "Every path on the allowlist", literally, with no neutral paths. Rejected on the history data: 112 of the 116 fix commits also touch `tests/`, `docs/` or `_meta/`, so the literal rule would demote almost nothing. Neutral paths carry no behavior, and a contract file among them still forces `full`.
+5. A fifth condition, "the proof gate is on for this repo" (`gate-policy.sh enabled proof_of_done`). Not taken: it would make the classifier depend on `lib/gate`. Listed as an open option for the lead under Out of scope.
 
-### Deliberate tradeoff: a spec-less bug-lane machinery fix is held by the proof gate alone
+### Deliberate tradeoff: a demoted fix is held by the proof gate alone, when that gate is on
 
-Accepted by the lead. A machinery bug fix in the `bug` lane usually has no spec, so `hooks/ship-gate.sh` never runs its lane-gate check (build, review, debug). The only hook that blocks it is the diff-keyed proof-of-done gate: a green run plus a negative control. That is the same hold every other bug-lane fix has today. The full lane's hook-enforced think, spec, validate, docs and reflect phases are the ceremony this policy drops on purpose. If `/kit:wrap` step 10 builds such a fix (only when an operator adds `bug` to `wrap.build_lanes`), it merges it only through `wrap merge --apply`, whose green gate (`_pr_gate`: checks green, no changes requested, mergeable) must pass, and after the ship-gate proof check at push.
+Accepted by the lead in round 0. A demoted fix usually has no spec, so `hooks/ship-gate.sh` never runs its lane-gate check. The only hook that can block it is the diff-keyed proof-of-done gate (green run plus negative control). `gate.proof_of_done` defaults to `false` in `kit.toml:111`. In this kit checkout it is on only through the operator overlay (`bash lib/gate/gate-policy.sh enabled proof_of_done .` exits 0 here). Where the overlay is absent, no hook holds a demoted fix. The allowlist confines that exposure to advisory code. If `/kit:wrap` step 10 builds a demoted fix (only when an operator adds `bug` to `wrap.build_lanes`), it merges it only through `wrap merge --apply`'s green gate.
 
 ## Grounding
 
+### Method
+
+A scratch prototype sources the real `lib/classify/lane-classify.sh` (for today's `classify_core` and hard regexes) and adds items 1 to 10 on top. "Today" is the real CLI (`bash lib/classify/lane-classify.sh classify [--files "<list>"] "<text>"`) run from the kit worktree root on base `ad901924`; "After" is the prototype. A `\n` in a file list is a real newline. None of this is the built classifier.
+
+### Allowlist verification
+
+- Callers checked: every tracked file under `hooks/*.sh`, `hooks/*.py`, `lib/gate/`, `lib/classify/`, `lib/ledger/`, `lib/wrap/`, `lib/goal/` that is not itself allowlisted (61 files). A prototype of the drift test (T57) searches their non-comment lines for each allowlisted path, its `lib/`-relative suffix, a hook's basename, and `bin/<dir>`. Result: 92 allowlisted code files, 0 callers.
+- The negative checks of that prototype: adding `lib/board/backlog.sh` reports `CALLED: lib/board/backlog.sh <- lib/goal/wt.sh`; adding `lib/config/kit-config.sh` reports `<- lib/gate/gate-policy.sh`; adding `hooks/ship-gate.sh` reports `BLOCKING: hooks/ship-gate.sh`.
+- Excluded from the lead's candidate list, with the reason:
+  - `lib/board/backlog.sh`: `lib/wrap/wrap.sh:111` and `lib/goal/wt.sh:41` call it.
+  - `lib/board/board.sh`: named in the docstrings of `hooks/harvest.py` and `hooks/backlog-stage.py`, so the mechanical drift test would flag it. It also calls `backlog.sh` and `lib/config/kit-config.sh`.
+  - `lib/reflect/staging-format.py`: `lib/wrap/wrap.sh:110` calls it.
+  - The secret and credential files in `_DEMOTABLE_EXCEPT`, each with its reason inline.
+  - `lib/worktree-provision` (env linking) was never a candidate.
+- Included beyond the lead's list: `lib/prose-rag/*`. Its only caller is `hooks/prose-rag.sh` (through `bin/prose-rag`), which is an allowlisted advisory hook, and it touches no credentials.
+- Hooks: every allowlisted hook has no non-comment `exit 2`, `sys.exit(2)`, `permissionDecision` or `"decision":` line. Excluded advisory-looking hooks: `backlog-stage.*`, `harvest.*`, `intake-sweep.*` (they write the board and staging, and `harvest.py` carries a secret filter), `output-offload.sh` (reuses the secret-guard extraction), `money-gate.sh` (fronts the blocking `money-gate.py`), `anchor-root.sh` (relays blocking hooks).
+
 ### Classifier output today and after the change
 
-"Today" is real `bash lib/classify/lane-classify.sh classify [--files "<files>"] "<text>"` output on this branch's base (`ad901924`), run from the kit worktree root. "After" comes from a scratch prototype that sources the real classifier for its hard regexes and applies items 1 to 9; it is not the built classifier. "Held by" names the check that decides the after lane.
+Kit worktree root unless noted. T-ids in the test plan equal the G-ids here.
 
-| ID | --files | Text | Today | After | Held by |
+| ID | --files | Text | Today | After | Decided by |
 |---|---|---|---|---|---|
-| G1 | `lib/telemetry/lane-telemetry.sh tests/test-lane-telemetry.sh` | fix lane-telemetry trace printing the wrong step count for a run with two START lines | full | bug | demotion |
-| G2 | `hooks/context-readiness.sh tests/test-hooks.sh` | fix context-readiness wrongly reporting spec:ambiguous when one live spec matches the branch | full | bug | demotion |
-| G3 | `lib/wrap/wrap.sh tests/test-wrap.sh` | fix wrap merge merging before the ci-label runs registered | full | full | enforcement file (the SPEC-360 case stays full) |
-| G4 | `hooks/ship-gate.sh tests/test-hooks.sh` | ship-gate wrongly resolves the repo root for a relative cd target; root cause is the missing REAL_CWD join | full | full | enforcement file |
-| G5 | `lib/gate/gate-ledger.sh tests/test-gate-ledger.sh` | add a --json flag to gate-ledger check | full | full | no bug signal |
-| G6 | `lib/telemetry/lane-telemetry.sh` | fix lane-telemetry so it now also prints skipped phases | full | full | text contract (`now also`) |
-| G7 | `lib/classify/lane-classify.sh tests/test-lane-classify.sh docs/WORKFLOW.md` | lane-classify: route kit-machinery bug fixes to the bug lane instead of full | full | full | enforcement file (this spec) |
-| G8 | (none) | fix the parser in lib/gate/gate-ledger.sh | full | full | enforcement word, text-only (existing suite case, unchanged) |
-| G9 | (none) | fix lane-telemetry trace printing the wrong step count for a run with two START lines | full | bug | demotion, text-only |
-| G10 | (none) | fix wrong total in the invoice page | normal | normal | machinery does not fire |
-| G11 | `lib/gate/x.sh` | fix the token refresh crash | full | full | audit-security flag |
-| G12 | `lib/wrap/wrap.sh tests/test-wrap.sh` | rename the --foo flag in lib/wrap/wrap.sh | tiny | full | contract beats tiny |
-| G13 | `lib/telemetry/lane-telemetry.sh` | rename a local variable in lib/telemetry/lane-telemetry.sh | tiny | tiny | not a contract rename |
-| G14 | (none) | rename the --foo flag in the cli docs | tiny | tiny | machinery does not fire |
-| G15 | (none) | rename the --json flag in gate-ledger.sh | tiny | full | contract beats tiny, text-only |
-| G16 | (none) | fix a typo in lib/telemetry/lane-telemetry.sh | tiny | tiny | no contract signal |
-| G17 | `install.sh` | fix install.sh crashing on a missing config dir | bug | full | kit-repo install.sh is machinery, and a contract file |
-| G18 | `settings.json` | register the observe hook for every event in settings.json | normal | full | kit-repo settings.json is machinery, no bug signal |
-| G19 | `install.sh` | add a --with flag to install.sh | normal | full | kit-repo install.sh is machinery, no bug signal |
-| G20 | `scripts/install.sh config/settings.json` | add a retry loop to the installer | normal | normal | not root files |
-| G21 | `hooks/ship-gate.sh` | fix ship-gate wrongly blocking a push whose proof doc has no negative control | full | full | enforcement file and text contract |
-| G22 | `hooks/safety-gate.sh` | fix safety-gate wrongly refusing a force push to main | full | full | enforcement file and text contract |
-| G23 | (none) | fix the bug: remove the proof check from ship-gate | full | full | enforcement word and text contract |
-| G24 | (none) | fix ship-gate by skipping the proof check on docs-only diffs | full | full | enforcement word and text contract |
-| G25 | (none) | fix proof-ledger so md-only diffs are exempt from the negative control | full | full | enforcement word and text contract |
-| G26 | (none) | fix lane-classify so machinery edits size normal | full | full | enforcement word and text contract |
-| G27 | (none) | add an exception for docs-only diffs in ship-gate | full | full | enforcement word and text contract |
-| G28 | (none) | fix wrap merge to drop the green-gate requirement | normal | normal | machinery never fired on this text; with `--files lib/wrap/wrap.sh` it is G3's enforcement case |
-| G29 | (none) | fix(wrap): accept a --force flag for merge | normal | normal | same as G28 |
-| G30 | `lib/telemetry/lane-telemetry.sh` | fix lane-telemetry by skipping the proof check for docs-only runs | full | full | text contract only |
-| G31 | `lib/telemetry/lane-telemetry.sh` | fix lane-telemetry by adding an exception for docs-only runs | full | full | text contract only |
-| G32 | `lib/board/backlog.sh` | fix backlog next to accept a --force flag | full | full | text contract only |
-| G33 | `lib/telemetry/lane-telemetry.sh` | fix lane-telemetry wrongly blocking a run whose proof doc has no negative control | full | full | text contract only |
-| G34 | `lib/telemetry/lane-telemetry.sh` | fix lane-telemetry so machinery edits size normal | full | full | text contract only |
-| G35 | `hooks/ship-gate.sh` | fix ship-gate resolving the base from a stale origin/HEAD | full | full | enforcement file only |
-| G36 | (none) | fix mega-merge.sh skipping the last sub-goal | full | full | enforcement word only |
-| G37-G44 | `lib/telemetry/lane-telemetry.sh` plus one of `AGENTS.md`, `hooks/hooks.json`, `lib/adopt.sh`, `.claude-plugin/plugin.json`, `settings.json`, `kit.toml`, `lib/config/module-registry.md`, `docs/WORKFLOW.md` | G1's text | full | full | file contract (`hooks/hooks.json` is also an enforcement file) |
+| G01 | `lib/sync/sync_core.py tests/test-sync.sh` | fix sync_core dropping the last row when the backlog has no trailing newline | full | bug | demotion |
+| G02 | `hooks/context-budget.sh tests/test-hooks.sh` | fix context-budget reading the wrong window size from a stale statusline file | full | bug | demotion |
+| G03 | `lib/session/session.sh\ntests/test-session.sh` | fix session resolving entrypoint paths without realpath | full | bug | demotion, newline list |
+| G04 | `lib/spec/spec-next.sh tests/test-spec-next.sh _meta/BACKLOG.md docs/verification/x.md` | fix spec-next handing out a number the reservation ledger already holds | full | bug | demotion, neutral paths |
+| G05 | `lib/wrap/wrap.sh tests/test-wrap.sh` | fix wrap merge merging before the ci-label runs registered | full | full | outside allowlist (SPEC-360) |
+| G06 | `lib/board/backlog.sh tests/test-backlog.sh` | fix backlog next picking a parked row | full | full | outside allowlist |
+| G07 | `lib/sync/sync_core.py` | fix sync_core so it now also pulls archived rows | full | full | text contract |
+| G08 | `lib/sync/sync_core.py` | fix the sync --dry-run output | full | full | text contract (bare flag) |
+| G09 | `lib/sync/sync_core.py AGENTS.md` | G01 text | full | full | outside allowlist |
+| G10 | `lib/sync/sync_core.py lib/config/module-registry.md` | G01 text | full | full | outside allowlist |
+| G11 | `lib/sync/sync_core.py commands/sync.md` | G01 text | full | full | outside allowlist (commands/) |
+| G12 | (none) | G01 text | normal | normal | machinery text never fires |
+| G13 | (none) | fix the parser in lib/gate/gate-ledger.sh | full | full | no --files (existing suite case) |
+| G14 | `hooks/ship-gate.sh` | fix ship-gate wrongly blocking a push whose proof doc has no negative control | full | full | outside allowlist |
+| G15 | `hooks/safety-gate.sh` | fix safety-gate wrongly refusing a force push to main | full | full | outside allowlist |
+| G16 | (none) | fix the bug: remove the proof check from ship-gate | full | full | no --files |
+| G17 | (none) | fix ship-gate by skipping the proof check on docs-only diffs | full | full | no --files |
+| G18 | `lib/gate/proof-ledger.sh` | fix proof-ledger so md-only diffs are exempt from the negative control | full | full | outside allowlist |
+| G19 | `lib/wrap/wrap.sh` | fix wrap merge to drop the green-gate requirement | full | full | outside allowlist |
+| G20 | `lib/classify/lane-classify.sh` | fix lane-classify so machinery edits size normal | full | full | outside allowlist (and text contract) |
+| G21 | `hooks/ship-gate.sh` | add an exception for docs-only diffs in ship-gate | full | full | outside allowlist |
+| G22 | `lib/wrap/wrap.sh` | fix(wrap): accept a --force flag for merge | full | full | outside allowlist (and bare flag) |
+| G23 | `lib/config/kit-config.sh` | fix kit-config reading the operator overlay before the project file | full | full | outside allowlist (gate-sourced) |
+| G24 | `lib/ledger/ledger.sh` | fix ledger root falling back to the XDG default when the env var is empty | full | full | outside allowlist (gate-sourced) |
+| G25 | `lib/telemetry/kit-log-dir.sh` | fix kit-log-dir resolving the wrong durable dir | full | full | outside allowlist (gate-sourced) |
+| G26 | `lib/registry/feature-registry.sh` | fix feature-registry check failing on a new test file | full | full | outside allowlist (ship-gate exits 2 on it) |
+| G27 | `hooks/codex-hook-adapter.sh` | fix codex-hook-adapter wrongly dropping a block decision | full | full | outside allowlist |
+| G28 | `lib/sync/sync_core.py\nhooks/ship-gate.sh` | G01 text | full | full | outside allowlist, 2nd line of a newline list |
+| G29 | `lib/session/removed.sh` | fix session crash on a removed helper | full | bug | a missing path inside an allowlisted glob |
+| G30 | `lib/board/removed.sh` | fix board crash on a removed helper | full | full | a missing path outside the allowlist |
+| G31 | `lib/skill-curator/lib/common.sh` | fix the secret filter missing a bearer token shape | full | full | audit-security flag (and EXCEPT) |
+| G32 | `lib/skill-curator/lib/surface.sh` | fix surface printing the wrong draft count | full | bug | demotion |
+| G33 | `lib/sync/cockpit.py` | fix cockpit crashing on an empty channel list | full | full | EXCEPT (credentials) |
+| G34 | `lib/sync/sync_core.py` | fix sync_core fixed-width column parse | full | bug | `fix` counts, `fixed-width` does not |
+| G35 | `lib/sync/sync_core.py` | update sync_core for the new broker endpoint | full | full | no bug signal (`broker`) |
+| G36 | `lib/sync/sync_core.py` | reprocess sync_core rows after an import | full | full | no bug signal (`reprocess`) |
+| G37 | `lib/wrap/wrap.sh tests/test-wrap.sh` | rename the --foo flag in lib/wrap/wrap.sh | tiny | full | contract beats tiny |
+| G38 | `lib/session/session.sh` | rename a local variable in lib/session/session.sh | tiny | tiny | not a contract rename |
+| G39 | `escalate tiny <spec file holding the text>` | rename the --json flag in gate-ledger.sh | HOLD tiny | HOLD tiny | contract-beats-tiny off for escalate |
+| G40 | (none) | rename the --json flag in gate-ledger.sh | tiny | full | contract beats tiny, text-only classify |
+| G41 | `install.sh` | fix install.sh crashing on a missing config dir | bug | full | kit-repo install.sh is machinery, outside allowlist |
+| G42 | `settings.json` | register the observe hook for every event in settings.json | normal | full | kit-repo settings.json is machinery |
+| G43 | `scripts/install.sh config/settings.json` | add a retry loop to the installer | normal | normal | not root files |
+| G44 | `lib/gate/x.sh` | fix the token refresh crash | full | full | audit-security flag |
+| G45 | (none) | fix wrong total in the invoice page | normal | normal | machinery does not fire |
+| G46 | `hooks/statusline.sh .github/workflows/ci.yml` | fix statusline printing the wrong model name | full | full | outside allowlist (.github/) |
+| G47 | `lib/sync/sync_core.py tests/test-sync.sh` | fixed-width parse in sync_core breaks on tabs | full | full | no bug signal |
+| G48 | `docs/x.md\nhooks/ship-gate.sh` | tweak a message | normal | full | newline fix: today reads only `docs/x.md` |
+| G49 | `lib/sync/sync_core.py docs/WORKFLOW.md` | G01 text | full | full | file contract (neutral path) |
+| C1 | `install.sh`, in a temp non-kit git repo | G41 text | bug | bug | consumer: item 7 is kit-only |
+| C2 | `settings.json`, same repo | G42 text | normal | normal | consumer |
+| C3 | `lib/sync/sync_core.py`, same repo | G01 text | full | full | consumer: no demotion outside the kit |
 
-Every existing case in `tests/test-lane-classify.sh` (38 cases) keeps its expected lane under the prototype. Round 1's planned flip of "fix the parser in lib/gate/gate-ledger.sh" is gone: the enforcement word keeps it `full` (G8).
+Every round-1 and round-2 critical text (G14 to G28) stays `full`. All 38 existing cases in `tests/test-lane-classify.sh` keep their lane under the prototype.
 
-### Consumer effects (the classifier also sizes consumer repos)
+### Where the classifier's answer changes elsewhere
 
-- Item 6 is kit-only. In a consumer repo, a root `install.sh` or `settings.json` sizes as today (G17 there gives `bug`, G18 `normal`). `_in_kit_repo` reads the caller's working directory, so a caller that sizes a consumer diff from inside the kit checkout gets the kit rule. That only raises a lane, the safe direction.
-- The demotion reaches consumer repos. Today any consumer `lib/` or `hooks/` edit sizes `full` through `lib/*`. After this change, a consumer `lib/` bug fix with no contract signal sizes `bug`, unless its path matches an enforcement glob (a consumer `lib/gate/*` or `lib/classify/*` keeps today's `full`). Under `/kit:wrap` that matters only when an operator lists `bug` in `wrap.build_lanes`.
+- Consumer repos: unchanged. The demotion and item 7 both require `_in_kit_repo`. The only consumer-visible changes are item 8 (a tiny text with a machinery signal and a contract signal now sizes `full`) and item 6 (a newline-separated `--files` list is read in full, which can only raise a lane).
+- Text-only callers (`/kit:assign`, `lib/queue/orchestrate.sh:833` which classifies a sub-goal title with no `--files` and records it as the run's START lane): never demote. Item 8 can raise such a START lane from `tiny` to `full`; nothing lowers it.
+- `escalate`: unchanged; item 8 does not apply (R2 measured it flipping 101 of 269 specs from HOLD to ESCALATE).
 
-### Is this a gate bypass? No: the proof is still owed
+### Is this a gate bypass? No: the proof is still owed where the proof gate runs
 
-Traced through `hooks/ship-gate.sh` and `lib/gate/proof-ledger.sh` on this branch:
-
-- The proof-of-done gate (`hooks/ship-gate.sh:98-110`) runs before the spec lookup and keys on the branch DIFF, not the lane. It engages in any repo carrying `docs/verification/README.md`; this repo carries it.
-- `proof-ledger.sh classify` (`:77-116`) returns `inert` only for a markdown, txt or `.kit.toml`-only diff. A `.sh` change under `lib/` or `hooks/` is `behavioral` (or `stateful` on deploy or migration words).
-- A `behavioral` change needs a `docs/verification/<slug>.md` with a green run AND a negative control (`proof-ledger.sh:411-415`).
-- An override does not excuse it: `proof-ledger.sh:377-404` rejects an override when the branch changes any source file.
-
-So a bug-lane machinery change still owes the proof with a negative control. The change removes lane ceremony, not the proof.
+- The proof-of-done gate (`hooks/ship-gate.sh:98-110`) runs before the spec lookup and keys on the branch diff, not the lane. It engages in a repo carrying `docs/verification/README.md` with `proof_of_done` on; this checkout has both (the second through the operator overlay).
+- `proof-ledger.sh classify` (`:77-116`) returns `inert` only for a markdown, txt or `.kit.toml`-only diff. An allowlisted `.sh` or `.py` change is `behavioral`, which needs a green run AND a negative control (`:411-415`), and `:377-404` rejects an override for source files.
 
 ### What the change does relax
 
-- `hooks/ship-gate.sh:223-225` exits 0 when no `docs/specs/SPEC-*-<slug>.md` exists. A bug-lane run usually has no spec, so its lane gates (build, review, debug; `gate-ledger.sh plan bug`) are not hook-enforced (the deliberate tradeoff above).
-- A negative control on a false-positive fix proves the gate now lets the case through. It does not prove that letting it through was right. That judgment is exactly what the enforcement guard keeps in the `full` lane for gate files; in a non-enforcement file it rests on the review.
-- The proof gate itself can be switched off per repo with `[gate] proof_of_done = false` in a committed `.kit.toml`, and a `.kit.toml`-only diff owes no proof. In such a repo a bug-lane machinery fix is held by nothing but the advisory review rule.
-- The review-escalation rule (`docs/WORKFLOW.md` "Review escalation": a `lib/` or `hooks/` run owes `/kit:review-team`) is lane-independent and stays advisory.
-- `/kit:wrap` step 10 builds and merges non-full items in `wrap.build_lanes`. The default `build_lanes = "tiny"` keeps `bug` out; opting in lets wrap merge a machinery bug fix through `wrap merge --apply`'s green gate with no draft-PR design review.
-- `lib/classify/significance-classify.sh` uses a `full` lane as one significance leg. A demoted fix loses that leg; the understanding gate is advisory.
+- Spec-less bug-lane runs skip the lane-gate check at `hooks/ship-gate.sh:223-225` (the deliberate tradeoff above).
+- A negative control on a false-positive fix proves the code now lets the case through, not that doing so was right. The allowlist keeps gate files out, so that judgment only arises in advisory code.
+- `proof_of_done` defaults off (`kit.toml:111`). Without the operator overlay, no hook holds a demoted fix.
+- 4 of the 20 historical demotions add a refusal or guard inside sync or board code ("refuse bulk status flips", "identity guards stop cross-row title corruption", "mark intake-born board rows as untrusted data", "refuse id-collided spoke items"). The kept vocabulary does not treat a plain "refuse" or "guard" as a new-gate signal, so these size `bug`.
+- The review-escalation rule (`docs/WORKFLOW.md` "Review escalation") is lane-independent and stays advisory. `significance-classify.sh` loses its `full`-lane leg for a demoted fix; that gate is advisory.
 
 ### Accepted limit: the text is pre-diff
 
-The classifier reads the task line and file names, never the diff content. `/kit:wrap` step 10 re-sizes against `git diff --name-only`, so a behavior-relaxing edit inside a non-enforcement machinery file, described with clean bug text, sizes `bug`. The upgrade path, out of scope here: a diff-content probe that flags an added or removed `--flag` definition, a removed `exit 2`, or a changed gate-ledger phase name.
+The classifier reads the task line and file names, never diff content. `/kit:wrap` step 10 re-sizes against `git diff --name-only`, so a behavior change inside an allowlisted file described with clean bug text sizes `bug`. The upgrade path, out of scope: a diff-content probe that flags an added or removed `--flag` definition, a removed `exit 2`, or a changed gate-ledger phase name.
 
-### Negative controls, dry trace
+### Negative controls
 
-Each runs as `lib/gate/negctl.sh <root> "bash tests/test-lane-classify.sh" "<mutate-cmd>"` on a clean tree after the build commit. "Red on at least" is the minimum the proof must show; "expected set" is the full set traced from the prototype, and the proof records the observed set.
+`lib/gate/negctl.sh` discards the suite output (`negctl.sh:189`), so each NC's test command is a wrapper that records its own red set:
+
+```
+bash -c 'log="$1"; shift; bash tests/test-lane-classify.sh >"$log" 2>&1
+  fails=$(grep -F FAIL "$log"); [ -n "$fails" ] || exit 0
+  for e in "$@"; do printf "%s\n" "$fails" | grep -qF -e "$e" || exit 0; done
+  n=$(printf "%s\n" "$fails" | grep -c .); [ "$n" -eq "$#" ] || exit 0
+  exit 1' _ "$TMPDIR/nc-<name>.log" <expected label 1> <expected label 2> ...
+```
+
+It exits 1 (red) only when the FAIL lines are exactly the expected labels, one each; the baseline (no FAIL) and any other outcome exit 0, which `negctl.sh` then reports as a control that never went red. The log path sits outside the repo; the proof copies each log's FAIL lines. New test labels carry `[S362-Tnn]`, so an expected label is `S362-Tnn` or an existing label verbatim.
 
 | NC | Mutates | Red on at least | Expected set |
 |---|---|---|---|
-| NC1 demotion | the `mbug=1` branch in `classify_core` step 3: its condition becomes `false` | T1, T2, T3 | T1, T2, T3, T39, T41 |
-| NC2 text contract | `_contract_signal`: the `_mcontract_re` test returns false | T5, T23, T24, T25 | T5, T10, T13, T23, T24, T25, T26, T27, T40, T41 |
-| NC2F file contract only | `_contract_signal`: the item 3 file test returns false | T31, T33 | T31, T33, T34, T35, T36, T37, T38 |
-| NC3 contract beats tiny | step 2: the item 7 check is removed, tiny returns unconditionally | T10, T13 | T10, T13 |
-| NC4 kit-repo surfaces | `_files_touch_machinery`: the `_in_kit_repo` branch is removed | T14, T15 | T14, T15, T16 |
-| NC5 enforcement guard | `_enforcement_hit` returns false | T28, T29 | T7, T28, T29, T30, T43 |
-| NC6 both defences | `_enforcement_hit` and the `_mcontract_re` test both return false | T19, T20, T21, T22 | T5, T7, T10, T13, T19, T20, T21, T22, T23 to T30, T40, T41, T43 |
+| NC1 demotion | step 3: the `mbug=1` condition becomes `false` | T01, T02, T03, T04 | T01 T02 T03 T04 T29 T32 T34 T53 T56 |
+| NC2 contract | `_contract_signal`: `return 1` first | T07, T08 | T07 T08 T37 T40 T49 T54 T56 |
+| NC2F file contract | `_contract_signal`: the item 4 file test removed | T49 | T49 |
+| NC3 contract beats tiny | step 2: the item 8 check removed | T37, T40 | T37 T40 |
+| NC4 kit-repo surfaces | `_files_touch_machinery`: the `_in_kit_repo` install/settings branch removed | T41, T42 | T41 T42 |
+| NC5 allowlist | `_all_demotable`: the per-path loop replaced by `return 0` after the guard line | T05, T14, T23, T28 | T05 T06 T11 T14 T15 T18 T19 T21 T23 T24 T25 T26 T27 T28 T30 T33 T46 T55 |
+| NC6 kit-repo gate | step 3 check b: `_in_kit_repo` replaced by `true` | T52 | T52 |
+| NC7 no-files guard | `_all_demotable`: the guard line (item 9c) removed | T13, T16 | T13 T16 T17, plus the existing label "AC6 gate-ledger still full" (the suite runs from the kit root under negctl) |
+| NC8 normalization | `_extract_files`: the `tr '\n\t' '  '` removed | T28, T48 | T28 T48 |
+| NC9 drift guard | `_DEMOTABLE_GLOBS`: `'lib/board/backlog.sh'` appended | T57 | T06 T57 |
 
-NC6 is the control for the pinned round-1 texts: each is held by both defences, so only turning off both reddens them. NC5 and NC2 each prove their own defence on rows the other cannot reach.
+The expected sets come from the prototype (NC2, NC2F and NC5 simulated over G01 to G49; the rest traced by hand). The build records the observed set per NC; any delta goes to the implementation notes before the wrapper's expected list is fixed.
 
 ## Acceptance criteria
 
-- AC1: every Grounding row G1 to G44 gives its "After" lane from the built classifier.
-- AC2: `explain` on G1 prints `reason: kit-machinery bug fix (bug signal, no contract signal, no enforcement file)` and `flags: kit-machinery-bug`. `explain` on G6 ends its reason in `(contract signal outranks the bug signal)`; on G35, in `(enforcement file outranks the bug signal)`.
-- AC3: each contract file in item 3 keeps a demotable machinery bug fix `full` (G37 to G44).
-- AC4: with `KIT_LEDGER_DIR` and `DWARVES_KIT_LOG_DIR` both set to a temp dir, `check bug --files lib/telemetry/lane-telemetry.sh "<G1 text>"` prints no `LANE-DOWNGRADE`, and `check bug --files lib/telemetry/lane-telemetry.sh "<G6 text>"` prints it.
-- AC5: every existing case in `tests/test-lane-classify.sh` keeps its expected lane; no existing expectation changes.
-- AC6: `tests/test-lane-classify.sh`, `tests/test-lane-escalation.sh`, `tests/test-significance-classify.sh`, `tests/test-meta.sh`, `tests/test-hooks.sh`, `tests/test-wrap.sh` and `tests/test-e2e.sh` pass. `docs/FEATURES.md` is regenerated when the registry check reports drift.
-- AC7: NC1 to NC6 each go red on at least their named cases and green after restore, recorded by `lib/gate/negctl.sh`.
-- AC8: every `hooks/*.sh` with a non-comment `exit 2` line matches `_ENFORCEMENT_GLOBS` (T42).
-- AC9: in a temp git repo with no `lib/classify/lane-classify.sh`, `--files install.sh` with G17's text gives `bug` and `--files settings.json` with G18's text gives `normal` (T18).
+- AC1: every Grounding row G01 to G49 and C1 to C3 gives its "After" answer from the built classifier.
+- AC2: `explain` on G01 prints `reason: kit-machinery bug fix (bug signal, no contract signal, every path demotable)` and `flags: kit-machinery-bug`; on G07 the reason ends `(contract signal outranks the bug signal)`; on G05 it ends `(a path outside the demotable allowlist)`.
+- AC3: `_DEMOTABLE_GLOBS` and `_DEMOTABLE_EXCEPT` are each defined once, as quoted arrays, with the header comment; no code iterates an unquoted file or glob list.
+- AC4: run in a subshell with `KIT_LEDGER_DIR` and `DWARVES_KIT_LOG_DIR` both set to one temp dir, from the kit root: `check bug --files lib/sync/sync_core.py "<G01 text>"` prints no `LANE-DOWNGRADE`, and `check bug --files lib/sync/sync_core.py "<G07 text>"` prints it.
+- AC5: every existing case in `tests/test-lane-classify.sh` keeps its expected lane.
+- AC6: `bash tests/run-all.sh` passes.
+- AC7: NC1 to NC9 each go red on exactly their observed set through the wrapper, which includes at least the named cases, and green after restore.
+- AC8: T57 passes on the tree, and fails when a gate-called path or a blocking hook joins `_DEMOTABLE_GLOBS` (NC9 plus the Grounding negative checks).
+- AC9: `bash lib/registry/feature-registry.sh check --fix docs/FEATURES.md` runs last before the final commit and leaves no diff after that commit.
 
 ## Test plan
 
-New section in `tests/test-lane-classify.sh`, `=== kit-machinery bug fixes size as bug (SPEC-362) ===`, reusing `classify_is` and `classify_files_is`. Every test that can write a log (T39 to T41) exports `KIT_LEDGER_DIR` and `DWARVES_KIT_LOG_DIR` to one `mktemp -d` dir first.
+New section in `tests/test-lane-classify.sh`, `=== kit-machinery bug fixes size as bug (SPEC-362) ===`. Labels carry `[S362-Tnn]`. Classifier calls run inside `(cd "$KIT_DIR" && ...)` so `_in_kit_repo` holds; T50 to T52 run in a `mktemp -d` git repo instead. T53 to T56 export `KIT_LEDGER_DIR` and `DWARVES_KIT_LOG_DIR` to one `mktemp -d` dir inside their subshell.
 
-| T | Row | Category | Expect |
-|---|---|---|---|
-| T1 | G1 | demotion, lib file | bug |
-| T2 | G2 | demotion, hooks file | bug |
-| T3 | G9 | demotion, text-only | bug |
-| T4 | G5 | no bug signal guard | full |
-| T5 | G6 | bug and text contract | full |
-| T6 | G7 | this spec's own line | full |
-| T7 | G8 | enforcement word, text-only (existing AC6 case, referenced, not duplicated) | full |
-| T8 | G10 | non-machinery regression guard | normal |
-| T9 | G11 | other hard flag wins | full |
-| T10 | G12 | contract beats tiny | full |
-| T11 | G13 | non-contract rename stays tiny | tiny |
-| T12 | G14 | non-machinery rename stays tiny | tiny |
-| T13 | G15 | contract beats tiny, text-only | full |
-| T14 | G17 | kit install.sh bug fix | full |
-| T15 | G18 | kit settings.json | full |
-| T16 | G19 | no bug signal guard, install.sh | full |
-| T17 | G20 | consumer-style paths | normal |
-| T18 | G17, G18 in a temp non-kit repo | consumer scope of item 6 | bug, normal |
-| T19 | G21 | round-1 text, file guard | full |
-| T20 | G22 | round-1 text, file guard | full |
-| T21 | G23 | round-1 text, text-only | full |
-| T22 | G26 | round-1 text, text-only | full |
-| T23 | G30 | vocabulary only, skip | full |
-| T24 | G31 | vocabulary only, exception for | full |
-| T25 | G32 | vocabulary only, bare flag | full |
-| T26 | G33 | vocabulary only, wrongly blocking | full |
-| T27 | G34 | vocabulary only, size normal | full |
-| T28 | G35 | enforcement file only | full |
-| T29 | G3 | enforcement file only, the SPEC-360 line | full |
-| T30 | G36 | enforcement word only, text-only | full |
-| T31 to T38 | G37 to G44 | one row per contract file | full |
-| T39 | G1 | explain reason and flags | per AC2 |
-| T40 | G6 | explain reason, contract overrule | per AC2 |
-| T41 | G1 then G6, chosen `bug` | floor check | no warning, then `LANE-DOWNGRADE` |
-| T42 | all `hooks/*.sh` | drift guard: a blocking hook outside `_ENFORCEMENT_GLOBS` fails | pass |
-| T43 | G4 | enforcement file, bug text with `root cause` | full |
+| T | Row | What it pins |
+|---|---|---|
+| T01 to T49 | G01 to G49 | the After answer in the Grounding table (T13 repeats the existing AC6 text with a new label; T39 runs `escalate tiny` on a temp spec file) |
+| T50 to T52 | C1 to C3 | consumer scope |
+| T53 | G01 | explain reason and flags, demote path |
+| T54 | G07 | explain reason, contract overrule |
+| T55 | G05 | explain reason, allowlist overrule |
+| T56 | G01, then G07, chosen `bug` | floor check: no warning, then `LANE-DOWNGRADE` |
+| T57 | whole tree | drift guard: (a) no non-allowlisted file under `hooks/*.sh`, `hooks/*.py`, `lib/gate/`, `lib/classify/`, `lib/ledger/`, `lib/wrap/`, `lib/goal/` names an allowlisted code path, its `lib/`-relative suffix, an allowlisted hook's basename, or `bin/<allowlisted dir>` on a non-comment line; (b) no allowlisted `hooks/*.sh` or `hooks/*.py` has a non-comment `exit 2`, `sys.exit(2)`, `permissionDecision` or `"decision":` line. One corpus pass, well under a second. |
 
 ## Out of scope
 
-- The text-only kit-machinery regex does not list `lib/wrap/` or `wrap.sh`. "rename the --foo flag in lib/wrap/wrap.sh" without `--files` never fires the flag and stays `tiny`; with `--files` it sizes `full` (G12).
+- A "proof gate on" fifth condition for the demotion (Approaches considered, item 5). Open for the lead.
+- Treating a plain "refuse" or "guard" as a new-gate contract signal (see "What the change does relax"). Open for the lead.
 - A diff-content probe (see "Accepted limit").
-- The keyword lists are a heuristic. A bug fix phrased with a contract word ("add a missing guard to fix the crash") sizes `full`; over-sizing is the safe direction.
+- Neutral status for `commands/*.md`. It blocks demotion today; 17 of the 83 blocked history commits touch `commands/`.
 
 ## Verification
 
 ```bash
-bash tests/test-lane-classify.sh
-bash tests/test-lane-escalation.sh
-bash tests/test-significance-classify.sh
-bash tests/test-hooks.sh
-bash tests/test-wrap.sh
-bash tests/test-e2e.sh
-bash tests/test-meta.sh
-T=$(mktemp -d); export KIT_LEDGER_DIR="$T" DWARVES_KIT_LOG_DIR="$T"
-bash lib/classify/lane-classify.sh explain --files "lib/telemetry/lane-telemetry.sh" "fix lane-telemetry trace printing the wrong step count for a run with two START lines"
-bash lib/classify/lane-classify.sh check bug --files "lib/telemetry/lane-telemetry.sh" "fix lane-telemetry so it now also prints skipped phases"
+bash tests/run-all.sh
+( T=$(mktemp -d); export KIT_LEDGER_DIR="$T" DWARVES_KIT_LOG_DIR="$T"
+  bash lib/classify/lane-classify.sh explain --files "lib/sync/sync_core.py" "fix sync_core dropping the last row when the backlog has no trailing newline"
+  bash lib/classify/lane-classify.sh check bug --files "lib/sync/sync_core.py" "fix sync_core so it now also pulls archived rows" )
 ```
 
-Record: `docs/verification/lane-bug-machinery.md`, with the run table, NC1 to NC6 from `lib/gate/negctl.sh`, and the Grounding table re-run against the built classifier.
+Record: `docs/verification/lane-bug-machinery.md`, with the run table, NC1 to NC9 through `lib/gate/negctl.sh` and the wrapper (each NC's FAIL lines copied in), and the Grounding table re-run against the built classifier.
 
 ## Tasks
 
-- [ ] T1: items 1 to 10 in `lib/classify/lane-classify.sh`. No dependency.
-- [ ] T2: the new test section (T1 to T43) in `tests/test-lane-classify.sh`. Depends on T1.
-- [ ] T3: item 11 docs (`docs/WORKFLOW.md`, `README.md`, `commands/wrap.md`), then regenerate `docs/FEATURES.md` if the registry check drifts. Depends on T2 (the test file is a registry input).
-- [ ] T4: run the Verification block; record every deviation from this spec in `docs/implementation-notes/lane-bug-machinery.md` as it arises. Depends on T1 to T3.
-- [ ] T5: commit, then the proof-of-done with NC1 to NC6 via `lib/gate/negctl.sh` on the clean tree. Depends on T4.
+- [ ] T1: items 1 to 11 in `lib/classify/lane-classify.sh`. No dependency.
+- [ ] T2: the new test section (T01 to T57) in `tests/test-lane-classify.sh`. Depends on T1.
+- [ ] T3: item 12 docs (`docs/WORKFLOW.md`, `README.md`, `commands/wrap.md`). Depends on T1.
+- [ ] T4: run the Verification block; record every deviation from this spec in `docs/implementation-notes/lane-bug-machinery.md` as it arises. Depends on T2 and T3.
+- [ ] T5: commit, then NC1 to NC9 via `lib/gate/negctl.sh` and the wrapper on the clean tree; write the proof. Depends on T4.
+- [ ] T6: `bash lib/registry/feature-registry.sh check --fix docs/FEATURES.md` as the last step, then the final commit. Depends on T5.
