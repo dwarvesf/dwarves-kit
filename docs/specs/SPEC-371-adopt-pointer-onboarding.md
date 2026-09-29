@@ -1,6 +1,6 @@
 # Spec: adopt writes a small pointer AGENTS.md, and the first run teaches two ideas
 Generated: 2026-09-29
-Status: DRAFT (revised after validator round 1: NEEDS REVISION)
+Status: VALIDATED (round 1 NEEDS REVISION, round 2 must-fixes resolved, Reviewer 6 design-bearing=yes pass; round-3 items lead-checked)
 Lane: full (kit-machinery: `lib/adopt.sh` writes into every consumer repo; from `bash lib/classify/lane-classify.sh explain`, flag `kit-machinery`)
 References: `lib/adopt.sh:203-207` (the copy this spec replaces); `tests/test-adopt.sh:37-41` and `:86-96` (the never-overwrite tests this spec changes); `docs/research/2026-09-29-openrig-absorption.md:136-141` (design D6); `docs/verification/gauntlet/2026-09-01-onboarding-campaign/J2/` (the baseline run: install, adopt, ship one tiny change)
 
@@ -45,7 +45,7 @@ The cost of A, stated plainly: an agent that skips the read works from four rule
 
 ### The small file
 
-Template: `lib/adopt/AGENTS.pointer.md`. Target 1KB, hard cap 1200 bytes. Draft measured at 976 bytes with the pin left as a placeholder (`wc -c`; see Grounding). Content:
+Template: `lib/adopt/AGENTS.pointer.md`. Target 1KB, hard cap 1200 bytes. Draft measured at 976 bytes; the rendered file has no per-install text, so its hash is the same on every machine (`wc -c`; see Grounding). Content:
 
 ```
 <!-- kit:agents-pointer v1 -->
@@ -59,19 +59,19 @@ Rules that hold without it:
 3. Work on a branch and open a PR. Never push to main.
 4. Stop and ask a human before: an architecture or interface change, which file is canonical, weakening a test or guardrail, a lighter lane, secrets or access.
 
-No kit on this machine: the rules still apply, nothing enforces them. Ask a human to install it: git clone https://github.com/dwarvesf/dwarves-kit, git checkout <PIN>, review install.sh, then bash install.sh
+No kit on this machine: the rules still apply, nothing enforces them. Ask a human to install it: clone https://github.com/dwarvesf/dwarves-kit, review install.sh, then run it (never pipe it to a shell)
 ```
 
 - Rule 1 carries the full-lane trigger list from `AGENTS.md:180`. Rule 4 carries the Pause-if items (`AGENTS.md:174-182`) in one line.
 - dwarves-kit is public on GitHub with default branch `master`, so the URL works for a Codex or Devin run with no kit installed.
-- The install line is a pinned clone and a reviewed script, never pipe-to-shell. `<PIN>`: the repo has no tag for the current version (`VERSION` is 2.2.0, newest tag is `v1.7.0`), so adopt writes the install's commit (`git -C "$KIT_ROOT" rev-parse HEAD`) and, when the install is not a git checkout, the words `a commit you have reviewed`. The cap holds either way (a 40 character SHA adds under 40 bytes).
+- The install line is a clone, a review, then a run of `install.sh`, never pipe-to-shell. There is no SHA or tag pin: the repo has no tag for the current version (`VERSION` is 2.2.0, newest tag is `v1.7.0`), and a rendered SHA would make the pointer's hash differ per install, break the known-hash match, and drift from the URL. The file is a plain copy of the template.
 - Enforcement stays Claude-only (`AGENTS.md:8-13`). The file says "nothing enforces them" and claims no more.
 
 ### Migration (kit AGENTS.md copy to pointer)
 
 adopt decides by hash, not by size or date. `lib/adopt/agents-known.sha256` holds the sha256 of every version of `AGENTS.md` ever committed (28 commits today) plus each released pointer version. `lib/adopt/known-hashes.sh` regenerates it and refuses in a shallow clone (`git rev-parse --is-shallow-repository` is `true`): a shallow history would silently drop old versions, and a dropped version reads as "edited" and is never swapped.
 
-The operator decision: swapping a known old copy needs an explicit flag, `--refresh --swap-agents`. Plain `--refresh` only prints a notice.
+The operator decision: swapping a known old copy needs an explicit flag, `--refresh --swap-agents`. Plain `--refresh` only prints a notice. `--swap-agents` without `--refresh` exits non-zero with a usage line and writes nothing. `--dry-run --swap-agents` prints the planned swap and writes nothing.
 
 | State of target `AGENTS.md` | plain adopt | `--refresh` | `--refresh --swap-agents` |
 |---|---|---|---|
@@ -192,8 +192,8 @@ Live samples taken in the worktree on 2026-09-29.
 | 4 | Old copies start with a fixed heading | `head -1 AGENTS.md` | `# AGENTS.md: the operating layer` |
 | 5 | `/kit:start` only cites the contract | `grep -n AGENTS commands/start.md` | line 5 only, the Self-intro sentence |
 | 6 | J2 baseline and omp read shape | `jq -s` over `J2/transcript.jsonl` (turn_start count; sum of assistant `usage.totalTokens`); `jq -c` on `toolCall` `read` | turns 47; total 2971254; output 16137; args `{"path":"/work/CARD.md",...}`; 1 read names AGENTS.md |
-| 7 | Pointer draft size | `wc -c` on the drafted text above with the pin as a placeholder | `976` |
-| 8 | No release tag for the current version | `cat VERSION; git tag --sort=-v:refname \| head -1` | `2.2.0`; `v1.7.0` |
+| 7 | Pointer draft size | `wc -c` on the drafted text above  | `976` |
+| 8 | No release tag for the current version (why there is no pin) | `cat VERSION; git tag --sort=-v:refname \| head -1` | `2.2.0`; `v1.7.0` |
 | 9 | Full-lane triggers and Pause-if items | `sed -n 174,182p AGENTS.md` | the five Pause-if bullets; line 180 lists `auth, authz, hooks, data model, data loss, audit/security, external provider, API contract, migration` |
 | 10 | Shallow flag readable | `git rev-parse --is-shallow-repository` | `false` here |
 
@@ -210,7 +210,7 @@ Dry traces for the negative controls (mutation, code path, red test):
 ### Phase 1: The file and the migration
 - [ ] TASK-A: add `lib/adopt/AGENTS.pointer.md` (size cap 1200 bytes, marker first line, names `~/.claude/dwarves-kit/AGENTS.md`); acceptance: AC-1, AC-2.
 - [ ] TASK-B: add `lib/adopt/agents-known.sha256` and `lib/adopt/known-hashes.sh` (regenerate from git history plus the current template; refuse in a shallow clone); acceptance: AC-5, AC-9.
-- [ ] TASK-C: change `lib/adopt.sh` step 1 (`:203-207`) to write the pointer, add the `--swap-agents` flag and the decision and drift tables above, drop the hard exit at `:179`, update the usage line (`:12`, `:59`) and header comment (`:7-8`, `:15-16`); acceptance: AC-1 to AC-4, AC-10.
+- [ ] TASK-C: change `lib/adopt.sh` step 1 (`:203-207`) to write the pointer, add the `--swap-agents` flag (refused without `--refresh`, planned only under `--dry-run`) and the decision and drift tables above, drop the hard exit at `:179`, update the usage line (`:12`, `:59`) and header comment (`:7-8`, `:15-16`); acceptance: AC-1 to AC-4, AC-10, AC-11.
 
 ### Phase 2: Tests and docs
 - [ ] TASK-D: rewrite `tests/test-adopt.sh:37-41` and `:86-96` for the new rule (a local file survives; a known copy is replaced only on `--refresh`); add the cases in the Test plan; acceptance: AC-3, AC-4, AC-5.
@@ -222,7 +222,7 @@ Dry traces for the negative controls (mutation, code path, red test):
 ## After state
 - [ ] A fresh adopt writes an `AGENTS.md` of 1200 bytes or less that names the installed contract path. (Today: 18033 bytes, a full copy.)
 - [ ] A locally edited `AGENTS.md` is byte-identical after `--refresh` and adopt prints its drift in lines. (Today: never touched, never reported.)
-- [ ] An unmodified old kit copy becomes the pointer on `--refresh`. (Today: stays forever.)
+- [ ] An unmodified old kit copy becomes the pointer on `--refresh --swap-agents`; plain `--refresh` only prints a notice. (Today: stays forever, silently.)
 - [ ] The tour teaches two ideas and lists the rest as a menu. (Today: five stages.)
 - [ ] A recorded before and after exists for turns and tokens on J2. (Today: baseline only, in the transcript.)
 
@@ -238,6 +238,7 @@ Dry traces for the negative controls (mutation, code path, red test):
 | AC-6 | The tour teaches lane and proof of done and lists the menu; the five-stage text is gone | `grep -q '\*\*Lane\*\*' commands/onboard.md && grep -q '\*\*Proof of done\*\*' commands/onboard.md && grep -q 'kit:dispatch' commands/onboard.md && ! grep -q '\*\*Check\*\* --' commands/onboard.md && bash tests/test-meta.sh` |
 | AC-7 | A before and after result exists, with turns, tokens and contract read for both | `test -f docs/verification/onboarding-pointer/RESULT.md && grep -c 'contract read' docs/verification/onboarding-pointer/RESULT.md` |
 | AC-8 | No regression | `bash tests/test-adopt.sh && bash tests/test-meta.sh && bash tests/test-hooks.sh` |
+| AC-11 | `--swap-agents` needs `--refresh`; dry-run swaps nothing | `bash tests/test-adopt.sh` (cases "swap-agents alone refused" and "dry-run swap plans only") |
 | AC-9 | `known-hashes.sh` refuses in a shallow clone | `bash tests/test-adopt.sh` (case "known-hashes refuses shallow") |
 | AC-10 | Adopt with no source `AGENTS.md` anywhere still writes the pointer | `bash tests/test-adopt.sh` (case "no source contract") |
 
@@ -256,8 +257,10 @@ Negative controls are the point: each states the mutation and the test that goes
 | T4 | Old kit copy is swapped only with the flag | seed target with a historical copy (`git show <sha>:AGENTS.md`); plain adopt, `--refresh`, then `--refresh --swap-agents` | first two: unchanged plus the notice; third: equals the pointer | Mutate: swap on plain `--refresh`. The "unchanged after --refresh" assert goes red. |
 | T4b | Equals current pointer | adopt twice, and `--refresh` | second run prints nothing about AGENTS.md; file unchanged | Mutate: print the notice for a current pointer. The empty-output assert goes red. |
 | T4c | Drift vs matched template | edit a fresh pointer; edit a historical copy | first line prints `differs from the pointer by N`; second prints `old kit contract by N`; N equals the `diff` count | Mutate: diff both against the full contract. The pointer case reports about 200 and goes red. |
-| T5 | Known list is complete | for each commit in `git log --format=%H -- AGENTS.md`, hash the blob | every hash present in `agents-known.sha256` | Mutate: delete one line from the list. T5 goes red. |
+| T5 | Known list is complete | for each commit in `git log --format=%H -- AGENTS.md`, hash the blob | every hash present in `agents-known.sha256`; on a shallow clone it prints `SKIP: shallow clone, history incomplete` and does not pass or fail | Mutate: delete one line from the list. T5 goes red. |
 | T5b | Shallow clone refused | `git clone --depth 1` the repo, run `known-hashes.sh` there | exit nonzero, message names the shallow clone, list file unchanged | Mutate: drop the shallow check. T5b goes red (the script writes a short list). |
+| T6b | `--swap-agents` alone | seed a known old copy; run adopt with `--swap-agents` only | exit nonzero, usage line names `--refresh`, file unchanged | Mutate: let `--swap-agents` imply `--refresh`. T6b goes red on exit code. |
+| T6c | `--dry-run --swap-agents` | same seed; run `--dry-run --refresh --swap-agents` | prints `would swap AGENTS.md`, file byte-identical | Mutate: make dry-run write. T6c goes red on `cmp`. |
 | T6 | `--dry-run` writes nothing | as `tests/test-adopt.sh:53` | no files | existing test stays green |
 | T7 | `--single-source` untouched | as `tests/test-adopt.sh:278-302` | no pointer written, no drift line | Mutate: run the migration in single-source mode. The existing byte-compare goes red. |
 | T8 | No source contract anywhere | copy `lib/adopt.sh`, `lib/adopt/`, `lib/config/` into a temp tree with no `AGENTS.md`; set `CLAUDE_PLUGIN_ROOT` to an empty dir | adopt exits 0 and writes the pointer | Mutate: restore the hard exit at `lib/adopt.sh:179`. T8 goes red on exit code. |
@@ -270,13 +273,13 @@ Required controls: T2 (a locally edited copy survives untouched) and T1 with AC-
 2. Known-copy file with CRLF or a trailing newline change: hash differs, so it counts as edited and is left alone. Safe direction.
 3. The installed contract is not at `~/.claude/dwarves-kit/AGENTS.md` (odd install): the pointer names the portable `KIT_REF` form (`lib/adopt.sh:50`), never an expanded home path (`lib/adopt.sh:44-49`).
 4. `--check` (`lib/adopt.sh:127-129`) still keys on file presence, not content: a pointer file and an old copy both read as adopted.
-5. A later kit release changes the pointer: the old pointer hash goes into the known list in the same commit, so `--refresh` upgrades it and a hand-edited pointer stays.
+5. A later kit release changes the pointer: the old pointer hash goes into the known list in the same commit, so `--refresh --swap-agents` upgrades it (plain `--refresh` only notices) and a hand-edited pointer stays.
 
 ## Failure modes
 | Failure class | Detection signal | Mitigation / recovery |
 |---|---|---|
 | Agent skips the full-contract read and works from four rules | The Claude Code session records contract read: no and paused: no | The measurement gates the claim; revert is one commit (restore the copy at `lib/adopt.sh:205`). |
-| Known-hash list misses a version, so a stale copy reads as "edited" | Drift line printed on a file that is really an old copy; T5 catches it in CI | Regenerate with `known-hashes.sh`. Failure direction is safe (file left alone). |
+| Known-hash list misses a version, so a stale copy reads as "edited" | Drift line printed on a file that is really an old copy. T5 catches it only in a full clone; CI checks out at depth 1 (`test.yml` sets no `fetch-depth`), so T5 SKIPs there and CI does not catch it. Run T5 locally before any change to `AGENTS.md` | Regenerate with `known-hashes.sh`. Failure direction is safe (file left alone). |
 | Pointer promises enforcement a non-Claude agent lacks | Review of the file text | The file repeats the advisory-only boundary (`AGENTS.md:8-13`) in one clause. |
 
 ## Out of Scope
