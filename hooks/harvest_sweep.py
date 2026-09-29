@@ -32,6 +32,7 @@ import json
 import os
 import re
 import shlex
+import shutil
 import sqlite3
 import subprocess
 import sys
@@ -1391,7 +1392,123 @@ def _finish_run(cursor, result, now):
             rows.append(lag_state_row(source, out["lag"]))
         over = over or out["lag"]["oldest_age_s"] > _lag_limit_s()
     cursor["lag_runs"] = cursor.get("lag_runs", 0) + 1 if over else 0
+    prune_sweep(cursor, now)
     save_cursor(cursor)
+
+
+def _prune_jsonl(name, lock_name, cutoff):
+    """Drop rows with ts at or before cutoff from a sweep JSONL file, under its lock.
+    A file with nothing expired is left byte-identical; an absent one creates
+    nothing. The rewrite uses the tmp + os.replace discipline of _record_sightings."""
+    path = _sweep_file(name)
+    if not os.path.exists(path):
+        return
+    with open(_sweep_file(lock_name), "a") as lockf:
+        fcntl.flock(lockf, fcntl.LOCK_EX)
+        try:
+            rows = _jsonl_rows(path)
+            kept = [r for r in rows if (r.get("ts") or 0) > cutoff]
+            if len(kept) == len(rows):
+                return
+            fd, tmp = tempfile.mkstemp(dir=os.path.dirname(path), prefix=".tmp-")
+            try:
+                with os.fdopen(fd, "w", encoding="utf-8") as fh:
+                    for r in kept:
+                        fh.write(json.dumps(r, sort_keys=True) + "\n")
+                os.replace(tmp, path)
+            except BaseException:
+                try:
+                    os.unlink(tmp)
+                except OSError:
+                    pass
+                raise
+        finally:
+            fcntl.flock(lockf, fcntl.LOCK_UN)
+
+
+def _prune_extract(source, state, age_cutoff):
+    """Remove extract/<source>/ cache files past the cutoff, except any whose
+    session is still unread: a file whose <id>@<last_activity> key is at or past the
+    hwm with no done{} mark and no quarantine at that last_activity (a crash left
+    the cache without its done mark) keeps its replay whatever its age. A
+    last_activity below the hwm was settled when the hwm passed it, so the file is
+    safe to drop even after its done{} entry aged out. Age is the key's own
+    last_activity, the sweep's clock domain (AC31); anything else in the directory
+    is residue (a .tmp-* left by a killed write) and goes by file mtime."""
+    d = os.path.join(harvest._state_dir(), "sweep", "extract", source)
+    try:
+        names = os.listdir(d)
+    except OSError:
+        return
+    settled = set()
+    for sid, la in state.get("done", {}).items():
+        try:
+            settled.add(os.path.basename(_cache_path(source, sid, la)))
+        except (TypeError, ValueError):
+            continue
+    for sid, rec in state.get("quarantined", {}).items():
+        try:
+            settled.add(os.path.basename(
+                _cache_path(source, sid, rec.get("last_activity") or 0)))
+        except (TypeError, ValueError, AttributeError):
+            continue
+    hwm = state.get("hwm") or 0
+    for name in names:
+        path = os.path.join(d, name)
+        try:
+            if not os.path.isfile(path):
+                continue
+            m = re.match(r"^(.+)@(\d+)\.json$", name)
+            if not m:
+                if os.path.getmtime(path) <= age_cutoff:
+                    os.unlink(path)
+                continue
+            la = int(m.group(2))
+            if la >= hwm and name not in settled:
+                continue  # the session owes a read at this key; the replay stays
+            if la <= age_cutoff:
+                os.unlink(path)
+        except OSError:
+            continue
+
+
+def _prune_runs(age_cutoff):
+    """Remove runs/<run-id>/ directories past the cutoff. A run id is the run's
+    epoch, so the name carries the sweep's clock domain; anything not run-<ts>
+    is left alone."""
+    d = os.path.join(harvest._state_dir(), "sweep", "runs")
+    try:
+        names = os.listdir(d)
+    except OSError:
+        return
+    for name in names:
+        path = os.path.join(d, name)
+        try:
+            m = re.match(r"^run-(\d+)$", name)
+            if m and os.path.isdir(path) and int(m.group(1)) <= age_cutoff:
+                shutil.rmtree(path, ignore_errors=True)
+        except OSError:
+            continue
+
+
+def prune_sweep(cursor, now):
+    """Every age rule in one place, once per run (DEC-90): patterns.jsonl rows
+    outside the pattern window, proposed.jsonl entries past 90 days, quarantine
+    and seen{} entries past 30 days, extract/ files and runs/ dirs past 30 days.
+    An unread session is never touched (AC31): the extract/ guard above."""
+    _prune_jsonl("patterns.jsonl", "patterns.lock", now - _pattern_window_s())
+    _prune_jsonl("proposed.jsonl", "proposed.lock", now - 90 * 86400)
+    age_cutoff = now - 30 * 86400
+    for source, _, _ in _sources():
+        state = cursor.get(source) or {}
+        if "quarantined" in state:
+            state["quarantined"] = {i: r for i, r in state["quarantined"].items()
+                                    if (r.get("ts") or 0) > age_cutoff}
+        if "seen" in state:
+            state["seen"] = {i: r for i, r in state["seen"].items()
+                             if (r.get("ts") or 0) > age_cutoff}
+        _prune_extract(source, state, age_cutoff)
+    _prune_runs(age_cutoff)
 
 
 def run_selection(process=None, schedule_hours=6, max_sessions=20, since=None):

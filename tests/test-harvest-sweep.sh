@@ -2324,6 +2324,104 @@ assert_eq "AC10: the same Built list passes when the heading is not a sweep head
 
 # ============================================================
 echo ""
+echo "=== T13b pruning ==="
+
+# AC31: every age rule in one run -- patterns past the window, proposed past 90d,
+# quarantine and seen{} past 30d, extract/ files and runs/ dirs past 30d -- and an
+# eligible unread session is never touched whatever its age. The run is an empty
+# scan (no sessions): pruning is per-run bookkeeping in _finish_run.
+T13B_OUT=$(KIT_DIR="$KIT_DIR" TD="$TD" python3 - <<'PY'
+import importlib.util, json, os
+spec = importlib.util.spec_from_file_location("hs", os.path.join(os.environ["KIT_DIR"], "hooks", "harvest_sweep.py"))
+hs = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(hs)
+TD = os.environ["TD"]
+NOW = 2_000_000_000
+D = 86400
+P = lambda k, v: print("%s=%s" % (k, v))
+
+base = os.path.join(TD, "t13b")
+state_dir = os.path.join(base, "state")
+sweep = os.path.join(state_dir, "sweep")
+os.environ["HARVEST_STATE_DIR"] = state_dir
+os.environ["HARVEST_SWEEP_CLAUDE_ROOT"] = os.path.join(base, "claude")
+os.makedirs(os.environ["HARVEST_SWEEP_CLAUDE_ROOT"])
+os.environ["HARVEST_SWEEP_DEVIN_DB"] = os.path.join(base, "none.db")
+os.environ["HARVEST_SWEEP_NOW"] = str(NOW)
+os.makedirs(sweep)
+
+def wj(name, rows):
+    with open(os.path.join(sweep, name), "w") as fh:
+        for r in rows:
+            fh.write(json.dumps(r, sort_keys=True) + "\n")
+
+wj("patterns.jsonl", [{"pattern": "p-old", "canonical": "p-old", "kind": "rule",
+                       "session_id": "s", "extract_key": "s@1", "count": 1, "ts": NOW - 15 * D},
+                      {"pattern": "p-edge", "canonical": "p-edge", "kind": "rule",
+                       "session_id": "s", "extract_key": "s@1", "count": 1, "ts": NOW - 14 * D},
+                      {"pattern": "p-new", "canonical": "p-new", "kind": "rule",
+                       "session_id": "s", "extract_key": "s@2", "count": 1, "ts": NOW - D}])
+wj("proposed.jsonl", [{"pattern": "x-old", "outcome": "REPORTED", "ts": NOW - 91 * D},
+                      {"pattern": "x-new", "outcome": "REPORTED", "ts": NOW - 10 * D}])
+
+cursor = {"claude": {"hwm": 5000,
+                     "done": {"olddone": 4000, "newdone": 6000, "q-new": 8000,
+                              "freshs": NOW - 5 * D},
+                     "seen": {"s-old": {"last_ts": 1, "ts": NOW - 31 * D},
+                              "s-edge": {"last_ts": 1, "ts": NOW - 30 * D},
+                              "s-new": {"last_ts": 1, "ts": NOW - D}},
+                     "fail": {},
+                     "quarantined": {"q-old": {"last_activity": 7000, "ts": NOW - 31 * D},
+                                     "q-new": {"last_activity": 8000, "ts": NOW - 2 * D}}}}
+with open(hs._cursor_path(), "w") as fh:
+    json.dump(cursor, fh)
+
+# Cache-file age is the key's last_activity, the sweep's clock domain: the planted
+# keys sit at epoch ~5000-9500, far past the 30-day cutoff under NOW=2e9.
+ed = os.path.join(sweep, "extract", "claude")
+os.makedirs(ed)
+def exf(name, age_days=40):
+    p = os.path.join(ed, name)
+    with open(p, "w") as fh:
+        fh.write("{}")
+    os.utime(p, (NOW - age_days * D, NOW - age_days * D))
+exf("olddone@4000.json")               # settled history (la < hwm): prune
+exf("q-new@8000.json")                 # settled via the fresh quarantine: prune
+exf("newdone@6000.json")               # settled via done{} at la >= hwm: prune
+exf("pend@9500.json")                  # la >= hwm, never settled: unread, keep
+exf("q-old@7000.json")                 # quarantine expires this run -> eligible again: keep
+exf("freshs@%d.json" % (NOW - 5 * D))  # settled but inside 30 days: keep
+exf(".tmp-stray")                      # residue of a killed write, old mtime: prune
+
+rd = os.path.join(sweep, "runs")
+os.makedirs(os.path.join(rd, "run-%d" % (NOW - 40 * D)))
+with open(os.path.join(rd, "run-%d" % (NOW - 40 * D), "stage1.log"), "w") as fh:
+    fh.write("x\n")
+os.makedirs(os.path.join(rd, "run-%d" % (NOW - D)))
+os.makedirs(os.path.join(rd, "not-a-run"))
+
+r = hs.run_selection(process=lambda t, text: True)
+
+c = hs.load_cursor()["claude"]
+P("seen_left", ",".join(sorted(c["seen"])))
+P("quar_left", ",".join(sorted(c["quarantined"])))
+P("patterns", ",".join(r["pattern"] for r in hs._jsonl_rows(hs._sweep_file("patterns.jsonl"))))
+P("proposed", ",".join(r["pattern"] for r in hs._jsonl_rows(hs._sweep_file("proposed.jsonl"))))
+P("extract_left", ",".join(sorted(os.listdir(ed))))
+P("runs_left", ",".join(sorted(n for n in os.listdir(rd))))
+PY
+)
+t13b() { printf '%s\n' "$T13B_OUT" | sed -n "s/^$1=//p"; }
+
+assert_eq "AC31: patterns.jsonl rows outside the window are pruned" "p-new" "$(t13b patterns)"
+assert_eq "AC31: proposed.jsonl entries past 90 days are pruned" "x-new" "$(t13b proposed)"
+assert_eq "AC31/AC20: seen{} entries past 30 days are pruned (edge ts pruned too)" "s-new" "$(t13b seen_left)"
+assert_eq "AC31: quarantine entries past 30 days are pruned" "q-new" "$(t13b quar_left)"
+assert_eq "AC31: extract/ drops settled files and residue, keeps unread and fresh" "freshs@1999568000.json,pend@9500.json,q-old@7000.json" "$(t13b extract_left)"
+assert_eq "AC31: runs/ dirs past 30 days are pruned, other entries stay" "not-a-run,run-1999913600,run-2000000000" "$(t13b runs_left)"
+
+# ============================================================
+echo ""
 echo "=== Results ==="
 echo "Passed: $PASS / $TOTAL"
 if [ "$FAIL" -gt 0 ]; then
