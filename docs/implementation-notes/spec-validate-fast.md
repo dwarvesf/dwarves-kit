@@ -2,7 +2,7 @@
 
 Delta from `docs/specs/SPEC-361-spec-validate-fast.md`.
 
-The build has not started; the spec is awaiting a second validation.
+The build has not started; the spec is awaiting its last validation.
 
 ## Reversed: the section-hash cache is dropped
 
@@ -15,6 +15,20 @@ Why: the fresh-context validator returned NEEDS REVISION with 4 criticals, each 
 - A missing spec file failed open.
 A fifth finding removed the benefit: `commands/spec-validate.md` requires a Decision Log entry per fix, Decision Log was outside the section map, so every re-validation re-ran all 7 anyway.
 Impact: the design is now 7 parallel fresh-context reviewers plus one merge, and every round re-runs all 7. The re-validation diff is context only.
+
+## Reversed: the merge subagent is removed
+
+Context: the redesign had an Opus merge subagent write the report.
+Decision: the lead merges mechanically (any CRITICAL means NEEDS REVISION, else APPROVED; duplicates keep the highest severity). Lead decision after round 2, which had already worked that way.
+Why: the merge is a rule, not a judgment. A subagent added a dispatch and its own failure modes.
+Impact: Interfaces, Picture and Failure modes lose the merge dispatch.
+
+## Corrected: reviewer model tiers
+
+Context: the redesign ran six reviewers on Sonnet by default.
+Decision: reviewers inherit the lane's validator model (Opus on full, Sonnet on normal and backfill), Reviewer 6 on Opus on every lane, and the sequential fallback runs at the lane's model.
+Why: four reviewers raised it as a critical. Sonnet-by-default downgraded the full lane's gate.
+Impact: `commands/execute.md` preflight joins the change set.
 
 ## Warnings that became moot
 
