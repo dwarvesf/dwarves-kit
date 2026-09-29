@@ -260,7 +260,7 @@ Run ledger line shape (`~/.local/state/dwarves-kit/logs/runs/land-regate-after-w
 2026-09-29T13:35:20Z | GATE | spec | ran | SPEC-365-land-regate-after-wait drafted, tasks=4
 2026-09-29T14:00:30Z | GATE | validate | skipped | NEEDS REVISION round 1 (7/7 parallel): ...
 ```
-Fields split on ` | `: `$2` = `GATE`, `$3` = phase, `$4` = `ran|skipped`. Writer: `lib/gate/gate-ledger.sh:213`. Ledger root: `LOG_DIR/runs` (`gate-ledger.sh:64`), root from `kit_resolve_log_dir` (pure; only `kit_migrate_log_dir` writes, per `lib/telemetry/kit-log-dir.sh:74-79`).
+Fields split on ` | `: `$2` = `GATE`, `$3` = phase, `$4` = `ran|skipped`. Writer: `lib/gate/gate-ledger.sh:213`. Ledger root: `LOG_DIR/runs` (`gate-ledger.sh:64`), root from `kit_resolve_log_dir` (pure; only `kit_migrate_log_dir` writes, per `lib/telemetry/kit-log-dir.sh:71-80`).
 
 Board rows: `| ID-921 | backlog.sh set folds a stray flag into the note #board #safety | ... | shipped [PR #689] |` (kit `_meta/BACKLOG.md:41`); status is the last cell, leading keyword is the state (`lib/board/parse-board.sh:60-69`). Shipped rows stay in the table. There is no branch or worktree column, which is why the join goes through the goal draft.
 
