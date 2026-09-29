@@ -1,7 +1,7 @@
 # Spec: board work, one table of who is on what and how far along
 
 Generated: 2026-09-29
-Status: DRAFT
+Status: VALIDATED (round 2 APPROVED: 0 critical; fresh-context validator, two rounds; Reviewer 6 design-bearing=yes pass)
 Lane: normal
 References: `lib/mega/mega.sh` (`_sub_branch` line 173, `GH_BIN`/`GIT_BIN` env seams lines 131-132: read a branch from a sub-goal file, swap the external binary in tests); `lib/board/parse-board.sh` (`pb_rows` line 60: the one board row parser); `lib/gate/gate-ledger.sh` (`rid` line 750, `normalize_phase` line 109: the branch to run-id rule and the phase names). Research source: `docs/research/2026-09-29-openrig-absorption.md`, section "The dashboard (second operator review)", design D7a.
 
@@ -42,7 +42,7 @@ Name: `board work`. Plain words: the table answers "what work is going on". "exe
  (in-progress + shipped)     │        (frontmatter id: ID-NNN -> slug)
                              ▼                     │
  mega ROADMAP `- [ ] SG-NN` ─► JOIN by branch ◄────┘
- + goals/SG-NN.md **Branch:**   │   ▲      ▲
+ + goals/NN-*.md **Branch:**   │   ▲      ▲
                                 │   │      └── git for-each-ref / git worktree list
                                 │   │           (branch -> path, rid = branch slug)
                                 │   └── orca worktree ps --json  (path -> state, lastOutputAt)
@@ -78,7 +78,7 @@ Design-bearing: new module, a five-source join, and a rule about missing data.
 3. Branch to worktree path: `git worktree list --porcelain`; every path is canonicalized with `pwd -P` (a symlinked checkout, e.g. `/tmp` vs `/private/tmp`, must not break the match). Miss on an in-progress item: `no-worktree`. A shipped item may lose its worktree legitimately; its `worktree` is null and no flag is raised for that alone.
 4. Path to agent state: the `worktree ps` row whose canonicalized `path` equals the worktree path; when the path does not match, fall back to the row whose `branch` (`refs/heads/<name>`) equals the item's branch. Orca missing, failing, or non-JSON: `no-orca`. Row absent from the page: `not-in-orca`. Row present with zero live terminals or no `lastOutputAt` (and not working): `no-terminal`.
 5. Branch to rid: `slug="${branch#*/}"`, normalized with a local one-line `runid` (below). Ledger file absent: rung `none` with no flag (a freshly claimed row legitimately has no ledger yet).
-6. Mega sub-goal: each `- [ ] SG-NN` (or legacy `NN-slug`) roadmap line resolves its goal file as `goals/NN-*.md` (`SG-NN` maps to `NN-`, the rule at `lib/queue/orchestrate.sh:573-576`; the legacy form is `goals/<NN-slug>.md`, as `lib/mega/mega.sh:173-177` reads it). The branch is the FIRST whitespace-delimited token after `**Branch:**` (a trailing note must not become part of the name). The branch is looked up in `--code-root` (default: the repo root), because a mega's branches often live in another repo (`mega.sh` `--code-root`). An unresolved sub-goal (no goal file, no Branch line, branch not found in the code root) is LISTED as `INDETERMINATE(no-branch)`, never dropped. An unchecked sub-goal is in progress only once it has a resolved branch; an unresolved one is the honest "cannot tell".
+6. Mega sub-goal: each `- [ ] SG-NN` (or legacy `NN-slug`) roadmap line resolves its goal file as `goals/NN-*.md` (`SG-NN` maps to `NN-`, the rule at `lib/queue/orchestrate.sh:573-576`; the legacy form is `goals/<NN-slug>.md`, as `lib/mega/mega.sh:173-177` reads it). The branch is the FIRST whitespace-delimited token after `**Branch:**` (a trailing note must not become part of the name). The branch is looked up in `--code-root` (default: the repo root), because a mega's branches often live in another repo (`mega.sh` `--code-root`). Three outcomes for an unchecked sub-goal: (a) the goal file is missing or has no `**Branch:**` line: LISTED as `INDETERMINATE(no-branch)`, never dropped (the view cannot tell); (b) a `**Branch:**` line names a branch that does not exist in the code root: NOT LISTED, because `/kit:mega` scaffolds write Branch lines before any branch exists (`commands/mega.md:224-226`), so this is "not started", not "unknown"; (c) the branch exists: in progress, joins at step 2. Only `- [ ]` lines are read; a `- [x]` sub-goal is done and is never considered (see Out of Scope).
 
 **No sourcing of the ledger writers.** `lib/gate/gate-ledger.sh` runs `kit_migrate_log_dir` on load (line 62) and `lib/ledger/ledger.sh` calls it in `ledger_root` (line 41); both copy files on first access. `work.sh` sources only `lib/telemetry/kit-log-dir.sh` (pure on load, `kit_resolve_log_dir` never writes) and re-implements the one-line `runid` from `gate-ledger.sh:88`: `printf '%s' "$1" | tr '/ ' '--' | tr -cd '[:alnum:]._-'`. Test `runid_parity` pins it equal to the real function over a fixed list of branch names (slashes, spaces, dots, unicode, empty).
 
@@ -115,7 +115,7 @@ See `## Failure modes`. The view never writes: no ledger append, no `kit_migrate
 
 ### Interfaces (I/O contract)
 
-Command: `board work [--json] [--idle-min N] [--code-root D] [--backlog-file F] [--repo-root D]`; `bin/board` forwards it, `lib/board/board.sh` gets one dispatch case, the logic lives in `lib/board/work.sh`.
+Command: `board work [--json] [--idle-min N] [--code-root D] [--megagoals-root D] [--now EPOCH] [--backlog-file F] [--repo-root D]`; `bin/board` forwards it, `lib/board/board.sh` gets one dispatch case, the logic lives in `lib/board/work.sh`.
 
 - Inputs: `BACKLOG.md` (via `pb_rows`), `<repo-root>/_meta/megagoals/*/ROADMAP.md` and `goals/*.md`, `.claude/goals/{,done/}*.md` under the repo root and every `git worktree list` path, `git` (branches, worktrees), `orca worktree ps --json --limit 500`, `<ledger root>/runs/<rid>.log` (root from `kit_resolve_log_dir`).
 - Flags: `--idle-min N` sets the PARKED threshold in minutes (default 20). `--code-root D` names the repo whose branches and worktrees a mega's sub-goals point at (default: the repo root). `--megagoals-root D` overrides `<repo-root>/_meta/megagoals`. `--now <epoch-seconds>` is a test seam that fixes the clock. Env `ORCA_BIN` (default `orca`) and `GIT_BIN` (default `git`) swap the binaries, same convention as `GH_BIN`/`GIT_BIN` in `lib/mega/mega.sh:131-132`. No `KIT_*` variable and no `kit.toml` key is added.
@@ -173,7 +173,7 @@ n/a: no new dependency, no new bin entry.
 ### Phase 2: Core
 - [ ] TASK-C1: join steps 1 to 5 (board rows, drafts across worktree paths, branch, canonical worktree path, orca match, rid, local `runid`) and the agent-state rule. Acceptance: cases `runid_parity`, `no_worktree_indeterminate`, `no_draft_indeterminate`, `not_in_orca_no_terminal`, `ambiguous_branch`, `duplicate_id`, `orca_absent`, `orca_truncated`, `status_unknown_first`, `worktrees_scanned_for_drafts` green.
 - [ ] TASK-C2: ledger rung reader and the flag rules (`PARKED`, `DONE-UNSEEN`, `INDETERMINATE`). Acceptance: cases `parked_idle_past_threshold`, `not_parked_under_threshold`, `working_never_parked`, `done_unseen`, `rung_ladder`, `shipped_unchecked_footer` green.
-- [ ] TASK-C3: mega source (`SG-NN` to `NN-*.md`, first Branch token, `--code-root`, unresolved rows listed). Acceptance: cases `mega_rows`, `mega_code_root`, `mega_unresolved` green.
+- [ ] TASK-C3: mega source (`SG-NN` to `NN-*.md`, first Branch token, `--code-root`, missing goal file or Branch line listed as `no-branch`, named-but-absent branch not listed). Acceptance: cases `mega_rows`, `mega_code_root`, `mega_unresolved` green.
 - [ ] TASK-C4: table and `--json` renderers, sorting, footer, read-only guarantee. Acceptance: cases `json_shape`, `table_footer`, `read_only` green.
 - [ ] TASK-D: dispatch case `work) shift; exec bash "$BOARD_DIR/work.sh" "$@"` in `lib/board/board.sh` `main()`, one usage line in the header comment, and the help range bumped: `usage()` prints `sed -n '2,168p'` (`lib/board/board.sh:1153`), so adding a line means changing `168` to `169` in the same commit, or the new line prints truncated. Acceptance: `bin/board work --help` shows the verb; `bin/board work --json` and `_meta/board work` in a consumer repo both reach the script.
 
@@ -197,7 +197,7 @@ n/a: no new dependency, no new bin entry.
 - [ ] AC5 orca absent: `ORCA_BIN=/nonexistent bin/board work --json` exits 0, `orca` is `"absent"`, every item's `agent.state` is `"unknown"` and carries `INDETERMINATE`: case `orca_absent`. Same for an orca stub that exits 1 or prints non-JSON (`orca=error`).
 - [ ] AC6 DONE-UNSEEN: ledger with `ship ran` and a live branch or worktree renders `DONE-UNSEEN`; after `git worktree remove` and `git branch -D` the row is gone; a `wrap ran` line changes nothing either way: case `done_unseen`.
 - [ ] AC7 rung: `validate skipped` alone is `none`; `validate ran` is `validated`; `execute ran` (aliased to `build`) is `built`; `review ran` is `reviewed`; a `battery ran` record (aliased to `review`, `gate-ledger.sh:122`) is `reviewed`; `ship ran` is `shipped`: case `rung_ladder`.
-- [ ] AC8 mega: a `- [ ] SG-01` line whose `goals/01-*.md` carries `**Branch:** feat/x  (note)` and a matching worktree lists as `<mega>/SG-01` with branch `feat/x`; a branch living only in `--code-root` resolves; an SG line with no goal file or no Branch is listed as `INDETERMINATE(no-branch)`, not dropped: cases `mega_rows`, `mega_code_root`, `mega_unresolved`.
+- [ ] AC8 mega: a `- [ ] SG-01` line whose `goals/01-*.md` carries `**Branch:** feat/x  (note)` and a matching worktree lists as `<mega>/SG-01` with branch `feat/x`; a branch living only in `--code-root` resolves; an SG line with no goal file or no Branch line is listed as `INDETERMINATE(no-branch)`, not dropped; an SG line whose Branch names a branch that does not exist is not listed: cases `mega_rows`, `mega_code_root`, `mega_unresolved`.
 - [ ] AC9 read-only: file hashes of the fixture repo, ledger dir and goals dir are equal before and after, and the stub orca's call log holds only `worktree ps --json --limit 500`: case `read_only`.
 - [ ] AC10 `--json` contract: `bin/board work --json | jq -e '(.schema==1) and (.generated_at|type=="number") and (.orca|IN("ok","absent","error")) and (.truncated|type=="boolean") and (.items|type=="array") and all(.items[]; has("item") and has("branch") and has("worktree") and (.agent|has("state") and has("idle_s")) and (.agent.state|IN("working","idle","unknown")) and (.rung|IN("none","validated","built","reviewed","shipped")) and (.origin|IN("board","mega")) and (.flags|type=="array") and (.reasons|type=="array"))'` exits 0 (`jq -e` fails on false and null, so every clause is a real assertion); a second `jq -e` asserts `idle_s` is a number iff `state=="idle"` and `has("idle_s")` is true when it is null; a third asserts `worktree` is absolute and equals its `pwd -P` form: case `json_shape`.
 - [ ] No regressions: `bash tests/test-board.sh && bash tests/test-bin-forwarders.sh` stay green (bin census unchanged).
@@ -234,7 +234,7 @@ Coverage matrix (every case hermetic: temp git repo, temp `DWARVES_KIT_LOG_DIR`,
 | `rung_ladder` | happy | ledgers: empty, validate skipped, validate ran, execute ran, review ran, battery ran, ship ran | `none`, `none`, `validated`, `built`, `reviewed`, `reviewed`, `shipped` |
 | `mega_rows` | happy | roadmap `SG-01` with `goals/01-x.md` and `**Branch:** feat/x  (note)`, worktree present | lists `<mega>/SG-01`, branch `feat/x`, agent per orca |
 | `mega_code_root` | edge | branch exists only in a second repo passed as `--code-root` | resolves; without the flag it is `INDETERMINATE(no-branch)` |
-| `mega_unresolved` | NEGATIVE CONTROL | `SG-02` with no goal file; `SG-03` with no Branch line | both listed `INDETERMINATE(no-branch)`, none dropped |
+| `mega_unresolved` | NEGATIVE CONTROL | `SG-02` with no goal file; `SG-03` with no Branch line; `SG-04` with `**Branch:** feat/not-yet` and no such branch | `SG-02`, `SG-03` listed `INDETERMINATE(no-branch)`; `SG-04` absent (not started) |
 | `table_footer` | happy | plain table on the full fixture | footer has threshold, orca scope, ledger root, legend |
 | `read_only` | invariant | hash before and after, stub call log | identical; one orca call, `worktree ps --json --limit 500` |
 | `json_shape` | contract | `--json` on the full fixture | the three `jq -e` checks of AC10 pass (has, enums, types, nullability, absolute canonical paths) |
@@ -249,7 +249,7 @@ The three NEGATIVE CONTROL rows are the ones the operator named: an in-progress 
 4. `ID-NNN` present twice in the backlog (`merge=union` collision): `pb_rows` emits both (`lib/board/parse-board.sh:60-69` does not dedupe), and `backlog.sh get` refuses a duplicate id (`lib/board/backlog.sh:29-34`). This view lists the first row with `INDETERMINATE(duplicate-id)`; it never picks a winner silently.
 5. Draft moved to `.claude/goals/done/` after ship: still found (both directories are read).
 6. A ledger `skipped` record never counts as a rung (the sample ledger shows `validate skipped "NEEDS REVISION ..."`, which must read as not validated).
-7. Guarantee inversion: "a missing key never renders as idle or done" is checked by `no_worktree_indeterminate`, `orca_absent` and `not_in_orca` together; "read-only" is checked by `read_only`.
+7. Guarantee inversion: "a missing key never renders as idle or done" is checked by `no_worktree_indeterminate`, `orca_absent` and `not_in_orca_no_terminal` together; "read-only" is checked by `read_only`.
 8. `phase` naming: `execute` normalizes to `build` and `battery` to `review` (`gate-ledger.sh:122`); the reader applies the same two aliases so an older ledger reads correctly (AC7).
 
 ## Failure modes
@@ -262,6 +262,7 @@ The three NEGATIVE CONTROL rows are the ones the operator named: an in-progress 
 | Clock differs between hosts | orca on another host (`hostId` not `local`) | rows whose `hostId` is not `local` are `INDETERMINATE(no-orca)` in v1 (see Out of Scope) |
 
 ## Out of Scope
+- Reading `- [x]` roadmap lines: a checked sub-goal is done and never listed, so a done mega sub-goal never gets DONE-UNSEEN. DONE-UNSEEN covers board rows only.
 - Any write: no board flip, no ledger record, no `orca worktree set`, no terminal send. The view reports; the operator acts.
 - Per-role or per-seat state, context percent, queue depth, a topology graph, a TUI, a daemon. The research doc lists them for OpenRig's own view; D7a excludes them.
 - Cross-repo aggregation (`board-all` style). One repo per call; SPEC-370 can loop.
