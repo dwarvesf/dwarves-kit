@@ -3534,6 +3534,141 @@ assert_eq "AC19: no placeholder survives rendering" "0" "$(grep -c '__[A-Z]*__' 
 assert_eq "AC19: the launcher is a shebang script without .sh" "yes" \
   "$(head -1 "$T16_LAUNCH" | grep -q '^#!/bin/bash' && echo yes || echo no)"
 
+# ============================================================================
+# T17 installer (AC13, DEC-9, DEC-13, DEC-27, DEC-47, DEC-69): install renders
+# the plist, gates on root-only harvest.enable, --apply writes the plist +
+# installed marker and bootstraps, --uninstall removes only what --apply
+# wrote. Tests stub launchctl on PATH and point HOME/state at temp dirs;
+# nothing touches real launchd, ~/Library, or real state.
+echo
+echo "T17 installer"
+
+T17D="$TD/t17"; T17_HOME="$T17D/home"; T17_INSTALL="$KIT_DIR/deploy/macos/harvest-sweep/install"
+mkdir -p "$T17_HOME" "$T17D/bin" "$T17D/kroot" "$T17D/noop" "$T17D/proj"
+
+cat > "$T17D/bin/launchctl" <<EOF
+#!/usr/bin/env bash
+echo "\$*" >> "$T17D/launchctl-calls"
+EOF
+chmod +x "$T17D/bin/launchctl"
+printf '[harvest]\nenable = true\n' > "$T17D/kroot/kit.toml"
+
+# t17_install [ENV=X ...] -- [install args] -> "rc=N"; installer stdout+stderr
+# lands in $T17D/out, launchctl argv in $T17D/launchctl-calls.
+t17_install() {
+  local envs=() args=() seen=0 a
+  for a in "$@"; do
+    if [ "$a" = "--" ] && [ "$seen" = "0" ]; then seen=1; continue; fi
+    if [ "$seen" = "0" ]; then envs+=("$a"); else args+=("$a"); fi
+  done
+  rm -f "$T17D/launchctl-calls"; : > "$T17D/out"
+  local rc=0
+  env -i HOME="$T17_HOME" PATH="$T17D/bin:/usr/bin:/bin" TERM=dumb \
+    HARVEST_STATE_DIR="$T17D/state" \
+    KIT_CONFIG_ROOT="$T17D/kroot" KIT_CONFIG_OPERATOR="$T17D/noop" KIT_PROJECT_ROOT="$T17D/proj" \
+    ${envs[@]+"${envs[@]}"} bash "$T17_INSTALL" ${args[@]+"${args[@]}"} > "$T17D/out" 2>&1 || rc=$?
+  printf 'rc=%s\n' "$rc"
+}
+t17_out() { cat "$T17D/out"; }
+t17_lc()  { cat "$T17D/launchctl-calls" 2>/dev/null; }
+
+printf '[harvest]\nenable = false\n' > "$T17D/kroot/kit.toml"
+R="$(t17_install --)"
+assert_eq "AC13: install refuses when harvest.enable is false" "2" "$(tf "$R" rc)"
+assert_eq "AC13: the refusal names the knob to set" "yes" \
+  "$(t17_out | grep -q 'harvest.enable' && echo yes || echo no)"
+
+printf '[harvest]\nenable = false\n' > "$T17D/kroot/kit.toml"
+printf '[harvest]\nenable = true\n' > "$T17D/proj/.kit.toml"
+R="$(t17_install --)"
+assert_eq "DEC-9: a project .kit.toml cannot switch the install on" "2" "$(tf "$R" rc)"
+rm -f "$T17D/proj/.kit.toml"
+printf '[harvest]\nenable = true\n' > "$T17D/kroot/kit.toml"
+
+R="$(t17_install -- --label '../evil')"
+assert_eq "a path-shaped label is refused" "2" "$(tf "$R" rc)"
+
+R="$(t17_install --)"
+assert_eq "AC13: the dry run exits 0" "0" "$(tf "$R" rc)"
+assert_eq "AC13: the render's ProgramArguments[0] is the launcher path" "yes" \
+  "$(t17_out | grep -q "<string>$KIT_DIR/deploy/macos/harvest-sweep/harvest-sweep</string>" && echo yes || echo no)"
+assert_eq "AC13: the dry run writes no plist" "no" \
+  "$([ -f "$T17_HOME/Library/LaunchAgents/harvest-sweep.plist" ] && echo yes || echo no)"
+assert_eq "AC13: the dry run writes no marker" "no" \
+  "$([ -f "$T17D/state/sweep/installed" ] && echo yes || echo no)"
+assert_eq "AC13: the dry run never calls launchctl" "0" "$(t17_lc | wc -l | tr -d ' ')"
+assert_eq "AC13: the dry run prints the bootstrap it would run" "yes" \
+  "$(t17_out | grep -q 'launchctl bootstrap' && echo yes || echo no)"
+assert_eq "AC13: the dry run renders the default 6h interval" "yes" \
+  "$(t17_out | grep -q '<integer>21600</integer>' && echo yes || echo no)"
+
+R="$(t17_install -- --label mini.harvest-sweep)"
+assert_eq "DEC-13: --label renders the Mini label" "yes" \
+  "$(t17_out | grep -q '<string>mini.harvest-sweep</string>' && echo yes || echo no)"
+assert_eq "AC13: the label reaches the plist's environment" "yes" \
+  "$(t17_out | grep -q 'HARVEST_SWEEP_LABEL' && echo yes || echo no)"
+
+printf '[harvest]\nenable = true\nschedule_hours = 4\n' > "$T17D/kroot/kit.toml"
+R="$(t17_install --)"
+assert_eq "AC13: schedule_hours renders StartInterval in seconds" "yes" \
+  "$(t17_out | grep -q '<integer>14400</integer>' && echo yes || echo no)"
+printf '[harvest]\nenable = true\n' > "$T17D/kroot/kit.toml"
+
+# --apply: plist + marker written, launchctl bootstrap invoked (stub records)
+R="$(t17_install -- --apply --label mini.harvest-sweep)"
+assert_eq "AC13: --apply exits 0" "0" "$(tf "$R" rc)"
+assert_eq "AC13: --apply writes the plist under LaunchAgents" "yes" \
+  "$([ -f "$T17_HOME/Library/LaunchAgents/mini.harvest-sweep.plist" ] && echo yes || echo no)"
+assert_eq "AC13: the written plist lints" "OK" \
+  "$(plutil -lint "$T17_HOME/Library/LaunchAgents/mini.harvest-sweep.plist" 2>/dev/null | awk '{print $2}')"
+assert_eq "AC13: the written plist's ProgramArguments[0] is the launcher" \
+  "$KIT_DIR/deploy/macos/harvest-sweep/harvest-sweep" \
+  "$(/usr/libexec/PlistBuddy -c 'Print :ProgramArguments:0' "$T17_HOME/Library/LaunchAgents/mini.harvest-sweep.plist" 2>/dev/null)"
+assert_eq "AC13: --apply bootstraps the label" "yes" \
+  "$(t17_lc | grep -q "bootstrap gui/[0-9]* .*mini.harvest-sweep.plist" && echo yes || echo no)"
+assert_eq "AC13: --apply writes the installed marker" "yes" \
+  "$([ -f "$T17D/state/sweep/installed" ] && echo yes || echo no)"
+assert_eq "AC13: the marker carries label, host, kit, ts" \
+  "host,kit,label,ts mini.harvest-sweep $KIT_DIR True" \
+  "$(python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); print(",".join(sorted(d)), d["label"], d["kit"], isinstance(d["ts"], int))' "$T17D/state/sweep/installed")"
+
+# --uninstall: removes only what --apply wrote; sweep state survives
+mkdir -p "$T17D/state/sweep/ledger" "$T17D/state/sweep/extract/claude" "$T17D/state/sweep/runs/run-1"
+printf 'x\n' > "$T17D/state/sweep/cursor.json"
+printf 'x\n' > "$T17D/state/sweep/patterns.jsonl"
+printf 'x\n' > "$T17D/state/sweep/proposed.jsonl"
+printf 'cached\n' > "$T17D/state/sweep/extract/claude/sess@1000.json"
+printf 'report\n' > "$T17D/state/sweep/runs/run-1/report.md"
+cat > "$T17D/state/sweep/ledger/test.md" <<'EOF'
+| date | item | kind | home | status |
+|---|---|---|---|---|
+| 2026-09-30 | Item A | insight | til | queued |
+| 2026-09-30 | Item B | insight | til | queued |
+| 2026-09-30 | Item C | insight | til | flushed:wrap-1 |
+EOF
+R="$(t17_install -- --uninstall --label mini.harvest-sweep)"
+assert_eq "AC13: --uninstall exits 0" "0" "$(tf "$R" rc)"
+assert_eq "AC13: --uninstall boots out the label" "yes" \
+  "$(t17_lc | grep -q 'bootout gui/[0-9]*/mini.harvest-sweep' && echo yes || echo no)"
+assert_eq "AC13: --uninstall removes the plist" "no" \
+  "$([ -f "$T17_HOME/Library/LaunchAgents/mini.harvest-sweep.plist" ] && echo yes || echo no)"
+assert_eq "AC13: --uninstall removes the marker" "no" \
+  "$([ -f "$T17D/state/sweep/installed" ] && echo yes || echo no)"
+for kept in cursor.json patterns.jsonl proposed.jsonl ledger/test.md extract/claude/sess@1000.json runs/run-1/report.md; do
+  assert_eq "AC13: --uninstall leaves sweep/$kept" "yes" \
+    "$([ -f "$T17D/state/sweep/$kept" ] && echo yes || echo no)"
+done
+assert_eq "AC13: --uninstall prints the state path" "yes" \
+  "$(t17_out | grep -q "$T17D/state/sweep" && echo yes || echo no)"
+assert_eq "AC13: --uninstall prints the queued-learning count" "yes" \
+  "$(t17_out | grep -q 'queued learnings: 2' && echo yes || echo no)"
+assert_eq "AC13: --uninstall prints the extract/ size" "yes" \
+  "$(t17_out | grep -q 'extract/ size' && echo yes || echo no)"
+assert_eq "DEC-69: --uninstall prints the purge command it never runs" "yes" \
+  "$(t17_out | grep -qF "rm -rf '$T17D/state/sweep/extract'" && echo yes || echo no)"
+assert_eq "DEC-69: the purge is printed, not run" "yes" \
+  "$([ -d "$T17D/state/sweep/extract" ] && echo yes || echo no)"
+
 # ============================================================
 echo ""
 echo "=== Results ==="
