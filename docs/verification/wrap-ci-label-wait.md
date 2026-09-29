@@ -2,6 +2,8 @@
 
 2026-09-29. Spec: `docs/specs/SPEC-360-wrap-ci-label-wait.md`. Lane: full. Files: `lib/wrap/wrap.sh`, `tests/test-wrap.sh`, `commands/greenlight.md`, `docs/CHANGELOG.md`, `docs/FEATURES.md`. This record covers the feature (`935a5321`) plus the review fix batch (`bc476674`). Every run below is on `bc476674`.
 
+The branch was then rebased onto origin/master `9c2dcb34`, which left `lib/wrap/wrap.sh` and `tests/test-wrap.sh` byte-identical. The pre-rebase SHAs map to: `935a5321` -> `573fc8a4`, `bc476674` -> `e07ab780`. On the rebased head, `bin/test-affected --base origin/master` selected 7 suites and all 7 passed, `tests/test-wrap.sh` passed 1573/1573, and `tests/test-meta.sh` passed 879/879.
+
 On a label-gated repo, `wrap merge --apply` merged dwarvesf/foundation-workers #971 six seconds after it added the `ci` label. The PR already carried completed checks from before the label, so the wait read "0 pending" at once. Now:
 - The label sync records the keys of the checks already on the PR. It refuses when it cannot read the PR.
 - The wait holds, within the grace bound, until a check appears that is outside that set and not SKIPPED.
