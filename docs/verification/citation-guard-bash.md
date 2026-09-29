@@ -1,6 +1,6 @@
 # Verification: citation-guard runs as bash plus jq
 
-Verdict: PASS, one negative control pending a rerun (NC4)
+Verdict: PASS
 
 Spec: `docs/specs/SPEC-356-citation-guard-bash.md` (VALIDATED, revision 3). Change: `hooks/citation-guard.sh` (port), `hooks/citation-guard.py` (removed), `tests/test-kit-foldin-hooks.sh`. Implementer: Devin (`swe-2-high`, headless, `--permission-mode dangerous`, scope-fenced to the worktree). The orchestrator wrote the spec, the goldens, and the harness, and made two review fixes.
 
@@ -35,14 +35,14 @@ A real 16 MB transcript measured 521 ms in the review, over the 500 ms idle budg
 
 ## Negative controls
 
-Rerun on the final head `d36a068c`, serially, in a scratch clone, with the parity test as the test command. NC4 went red under its mutation, but its restore run also failed: the load average was 198, and the parity test's 2 s latency line tripped. NC4 needs a rerun on a quieter machine.
+Rerun on the final head `d36a068c`, serially, in a scratch clone, with the parity test as the test command. NC4's first run went red under its mutation, but its restore run also failed: the load average was 198, and the parity test's 2 s latency line tripped. NC4 was rerun alone at load average 48 on `365c1e4c` and passed.
 
 | # | Mutation | Under mutation | Verdict |
 |---|---|---|---|
 | NC1 | skip the fence strip | Exit 1 | PASS |
 | NC2 | keep the first assistant text instead of the last | Exit 1 | PASS |
 | NC3 | treat `true` as strict | Exit 1 | PASS |
-| NC4 | count lines with `wc -l` | Exit 1 | PENDING: restore run failed at load average 198 |
+| NC4 | count lines with `wc -l` | Exit 1 | PASS (rerun) |
 | NC5 | one jq pass that aborts at the first bad line | Exit 1 | PASS |
 | NC6 | strip inline spans line by line | Exit 1 | PASS |
 
