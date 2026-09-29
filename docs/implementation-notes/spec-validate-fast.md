@@ -2,7 +2,7 @@
 
 Delta from `docs/specs/SPEC-361-spec-validate-fast.md`.
 
-The build has not started; the spec is awaiting its last validation.
+Built after round 3 APPROVED. T1 to T5 done.
 
 ## Reversed: the section-hash cache is dropped
 
@@ -29,6 +29,21 @@ Context: the redesign ran six reviewers on Sonnet by default.
 Decision: reviewers inherit the lane's validator model (Opus on full, Sonnet on normal and backfill), Reviewer 6 on Opus on every lane, and the sequential fallback runs at the lane's model.
 Why: four reviewers raised it as a critical. Sonnet-by-default downgraded the full lane's gate.
 Impact: `commands/execute.md` preflight joins the change set.
+
+## Incident: an interim reviewer block was counted
+
+Round 3: Reviewer 4 returned an interim block, the lead recorded APPROVED, and the final block then raised a critical (FEATURES.md staleness). Rule added: a block counts only from the agent's final completion; an interim notice, or one while the agent has background work, never counts. It is in `spec-validate.md` `## Single-reviewer mode` and `spec.md` step 5.
+
+## Baseline test-meta failure
+
+`tests/test-meta.sh` failed one assertion on the untouched base (`ad901924`): `docs/FEATURES.md is fresh`. That was pre-existing and is what the late critical described; T5 regenerated the file and the suite is 879 / 879. The change added no other failure.
+
+## Deltas in the build
+
+- `spec.md` step 5 holds the parallel-round text once; `wrap.md` and `execute.md` point at it and add only their own lines (DEC-G).
+- The Reviewer 4 Grounding addendum is a `## Grounding addendum (Reviewer 4)` heading, not a `### Reviewer` heading, so the dispatch list regex stays exact.
+- The spec template in `spec.md` is unchanged; `## Grounding` is required by step 5's text, not scaffolded.
+- The contract says a behavioral change needs `negctl.sh`; the docs-only negative control was a manual revert of the four command files to the base, chain red, restore, chain green.
 
 ## Warnings that became moot
 
