@@ -3286,6 +3286,122 @@ assert_eq "AC30: a dry run leaves the real ledger untouched" "True" "$(t22 dry_l
 assert_eq "AC30: a dry run writes no real archive" "True" "$(t22 dry_no_archive)"
 assert_eq "AC30: the real flushed row survives a dry run" "flushed:ref1" "$(t22 dry_row_kept)"
 
+# ============================================================================
+# T15 harvest.sh gate + [harvest] root-only config (AC8, DEC-3, DEC-9, DEC-27):
+# the auto modes exit 0 without spawning harvest.py when HARVEST_SWEEP_CHILD=1,
+# or when the host is sweep-active (installed marker + harvest.enable) and
+# harvest.hook_when_sweep_on is false. kit_config_get_root resolution means a
+# project .kit.toml can neither activate the gate nor reopen the hook.
+# ============================================================================
+echo
+echo "T15 harvest.sh gate (child marker, sweep-active suppression, root-only)"
+
+T15D="$TD/t15"; mkdir -p "$T15D/repo" "$T15D/proj" "$T15D/noop"
+git -C "$T15D/repo" init -q
+cat > "$T15D/transcript.jsonl" <<'EOF'
+{"type":"assistant","message":{"content":[{"type":"text","text":"t15 gate probe text"}]}}
+EOF
+cat > "$T15D/ext.sh" <<'EOF'
+#!/usr/bin/env bash
+echo call >> "$STUB_CALLS"
+cat <<'JSON'
+[{"item":"t15-item","kind":"insight","home":"til","why":"w","evidence":"e"}]
+JSON
+EOF
+chmod +x "$T15D/ext.sh"
+
+t15_kroot() { # $1 enable, $2 hook_when_sweep_on
+  mkdir -p "$T15D/kroot"
+  printf '[harvest]\nenable = %s\nhook_when_sweep_on = %s\n' "$1" "$2" > "$T15D/kroot/kit.toml"
+}
+# t15_run <marker 0|1> <mode> [env pairs...] -> "rc=N calls=M turns=0|1"
+t15_run() {
+  local marker="$1" mode="$2"; shift 2
+  rm -rf "$T15D/state"; rm -f "$T15D/calls"
+  if [ "$marker" = 1 ]; then mkdir -p "$T15D/state/sweep"; : > "$T15D/state/sweep/installed"; fi
+  local rc=0
+  env -i PATH="$PATH" HOME="$HOME" \
+    REPO_ROOT="$T15D/repo" \
+    HARVEST_EXTRACTOR="$T15D/ext.sh" \
+    HARVEST_SYNC=1 HARVEST_MIN_INTERVAL=0 \
+    HARVEST_STATE_DIR="$T15D/state" \
+    STUB_CALLS="$T15D/calls" \
+    KIT_CONFIG_ROOT="$T15D/kroot" \
+    KIT_CONFIG_OPERATOR="$T15D/noop" \
+    KIT_PROJECT_ROOT="$T15D/proj" \
+    "$@" \
+    bash -c "echo '{\"transcript_path\":\"$T15D/transcript.jsonl\",\"session_id\":\"t15\"}' | bash '$KIT_DIR/hooks/harvest.sh' $mode" \
+    >/dev/null 2>&1 || rc=$?
+  local calls=0 turns=0
+  [ -f "$T15D/calls" ] && calls=$(wc -l < "$T15D/calls" | tr -d ' ')
+  [ -d "$T15D/state/turns" ] && turns=1
+  echo "rc=$rc calls=$calls turns=$turns"
+}
+tf() { printf '%s' "$1" | tr ' ' '\n' | sed -n "s/^$2=//p"; }
+
+# base config: sweep enabled, hook suppressed -- the active host
+t15_kroot true false
+rm -f "$T15D/proj/.kit.toml"
+
+R="$(t15_run 1 "" HARVEST_SWEEP_CHILD=1)"
+assert_eq "AC8: child marker suppresses the no-arg mode" "0" "$(tf "$R" calls)"
+R="$(t15_run 1 "--lab-log" HARVEST_SWEEP_CHILD=1)"
+assert_eq "AC8: child marker suppresses --lab-log" "0" "$(tf "$R" calls)"
+R="$(t15_run 1 "--stop-trigger" HARVEST_SWEEP_CHILD=1 HARVEST_STOP_TRIGGER=1 HARVEST_STOP_N=1 HARVEST_STOP_SYNC=1)"
+assert_eq "AC8: child marker suppresses --stop-trigger" "0" "$(tf "$R" turns)"
+
+R="$(t15_run 1 "")"
+assert_eq "AC8: an active host suppresses the no-arg mode" "0" "$(tf "$R" calls)"
+assert_eq "AC8: the suppressed fire still exits 0" "0" "$(tf "$R" rc)"
+R="$(t15_run 1 "--lab-log")"
+assert_eq "AC8: an active host suppresses --lab-log" "0" "$(tf "$R" calls)"
+R="$(t15_run 1 "--stop-trigger" HARVEST_STOP_TRIGGER=1 HARVEST_STOP_N=1 HARVEST_STOP_SYNC=1)"
+assert_eq "AC8: an active host suppresses --stop-trigger" "0" "$(tf "$R" turns)"
+
+t15_kroot true true
+R="$(t15_run 1 "")"
+assert_eq "AC8: hook_when_sweep_on=true keeps the hook running" "1" "$(tf "$R" calls)"
+
+t15_kroot false false
+R="$(t15_run 1 "")"
+assert_eq "AC8: enable=false keeps today's behavior" "1" "$(tf "$R" calls)"
+
+t15_kroot true false
+R="$(t15_run 0 "")"
+assert_eq "AC8: an unmarked host keeps today's behavior" "1" "$(tf "$R" calls)"
+
+# root-only resolution: a project .kit.toml can neither reopen the hook...
+printf '[harvest]\nhook_when_sweep_on = true\n' > "$T15D/proj/.kit.toml"
+R="$(t15_run 1 "")"
+assert_eq "AC8: a project toml cannot reopen the hook" "0" "$(tf "$R" calls)"
+
+# ...nor activate the gate (project enable=true, root enable=false, marker present)
+t15_kroot false false
+printf '[harvest]\nenable = true\n' > "$T15D/proj/.kit.toml"
+R="$(t15_run 1 "")"
+assert_eq "AC8: a project toml cannot activate the gate" "1" "$(tf "$R" calls)"
+rm -f "$T15D/proj/.kit.toml"
+
+# --cleanup is an operator verb: never gated even on an active host
+t15_kroot true false
+printf '| date | item | kind | home | status |\n|---|---|---|---|---|\n| 2026-01-05 | done-row | insight | til | flushed:r1 |\n' > "$T15D/led.md"
+rm -rf "$T15D/state"; mkdir -p "$T15D/state/sweep"; : > "$T15D/state/sweep/installed"
+env -i PATH="$PATH" HOME="$HOME" \
+  HARVEST_LEDGER="$T15D/led.md" \
+  HARVEST_STATE_DIR="$T15D/state" \
+  KIT_CONFIG_ROOT="$T15D/kroot" KIT_CONFIG_OPERATOR="$T15D/noop" KIT_PROJECT_ROOT="$T15D/proj" \
+  bash "$KIT_DIR/hooks/harvest.sh" --cleanup >/dev/null 2>&1 || true
+assert_eq "AC8: --cleanup is unaffected by the gate" "yes" "$([ -f "$T15D/led.archive.md" ] && echo yes || echo no)"
+
+# the shipped kit.toml's [harvest] table parses and defaults the switch off
+T15_HV="$(KIT_CONFIG_ROOT="$KIT_DIR" KIT_CONFIG_OPERATOR="$T15D/noop" KIT_PROJECT_ROOT="$T15D/proj" \
+  bash -c "source '$KIT_DIR/lib/config/kit-config.sh'; printf '%s|%s|%s|%s' \
+    \"\$(kit_config_get_root harvest.enable X)\" \
+    \"\$(kit_config_get_root harvest.schedule_hours X)\" \
+    \"\$(kit_config_get_root harvest.sources X)\" \
+    \"\$(kit_config_get_root harvest.hook_when_sweep_on X)\"")"
+assert_eq "kit.toml ships the [harvest] table with safe defaults" "false|6|claude|false" "$T15_HV"
+
 # ============================================================
 echo ""
 echo "=== Results ==="
