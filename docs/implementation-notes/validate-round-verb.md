@@ -45,3 +45,13 @@ Lead calls:
 - DEC-N window, tightened beyond the warning: the warning bounded the window by the latest `GATE | validate | ran` line, but a fallback validation writes `OUTCOME validate end caught=true` after its `ran` line, inside that window. The window now counts only `end` lines inside verb round blocks (after `ROUND closing`, before the next `ROUND` line), and it reads only lines before this round's own `closing`, else the APPROVED round's own `ran` line would empty it. A scratch awk over four fixture ledgers gave the expected values: NEEDS-REVISION then APPROVED (validate true, design-record false); legacy `caught=true` before the first open (false); a fallback `ran` plus `end caught=true` (false on both gates); R6 critical, then R6 pass, then APPROVED (design-record true).
 - `hooks/ship-gate.sh` gets trailing comments only, so the line numbers 64 and 224 the spec cites stay valid.
 - T3 exit rule: 64 allows one corrected re-run of the same sub-verb; only `close` returns 2.
+
+## Round 4 post-fold check: five lead decisions applied
+
+Status stays VALIDATED. Spec-only edits:
+
+- DEC-X is new: `hooks/ship-gate.sh` is not edited. The T1a comment edits and the `## Touches` entry are gone; the cross-reference lives only in `lib/gate/gate-ledger.sh`, and the C11 ship-gate agreement case guards drift. Reason: any byte change to `ship-gate.sh` breaks the sha256 trust pin in `hooks/codex-hooks.json`. `bash lib/codex/repin.sh check` reports a stale pin, and Codex ship-gate calls exit 2. This supersedes the round 4 note that ship-gate gets trailing comments.
+- The four-variable unset is now `unset $(git rev-parse --local-env-vars)`, git's own list (adds `GIT_COMMON_DIR` and `GIT_ALTERNATE_OBJECT_DIRECTORIES`). C1b gains a leg with `GIT_COMMON_DIR` exported to another repo. DEC-L updated.
+- ERR-trap contract stated precisely: set inside `validate_round()` only; planned exits (1, 2, 3, 64) issued in the verb's main shell, never inside `$(...)` or a tested helper; git runs only in unconditional `x=$(git ...)` assignments, so a git failure reaches the trap and exits 1.
+- `open` path refusals pinned to exit 64 (missing spec, symlinked spec, whitespace, `=`, missing spec directory), checked before any git call and before canonicalization. C11a asserts exactly 64.
+- DEC-N accepts one rare case: a single-pass fallback that ended NEEDS REVISION, then a verb round that closes APPROVED, rolls up `caught=false`.
