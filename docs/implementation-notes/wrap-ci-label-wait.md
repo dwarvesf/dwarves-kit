@@ -27,3 +27,5 @@ Deltas from SPEC-360. Nothing here repeats what the spec already states.
 - T6 counts rollup reads in the gh call log (`pr view 42 ... statusCheckRollup` lines before `pr merge 42`), because land shares PR number 42 with the other land cases and reads no settle detail.
 - T7 drives `wrap merge` without `--apply` against `clone-scan-main`; the verdict line is all it asserts.
 - `docs/FEATURES.md` was regenerated (`feature-registry.sh check --fix`): the new spec file moved four `SPEC-` reference counts, and `tests/test-meta.sh` plus the ship-gate refuse a stale registry.
+- The first negctl pair wrote one log path per control, so the green-after-restore run overwrote the red run's output. Both controls were rerun with one `mktemp` log per run; the proof quotes the rerun, and both runs of each control passed.
+- `commands/greenlight.md` Step 1b gained one bullet naming the same pre-label race for its snapshot. Greenlight never merges, but its "every check passing and none pending -> done" rule reads the same stale rollup.
