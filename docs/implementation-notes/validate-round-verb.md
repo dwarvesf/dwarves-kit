@@ -55,3 +55,15 @@ Status stays VALIDATED. Spec-only edits:
 - ERR-trap contract stated precisely: set inside `validate_round()` only; planned exits (1, 2, 3, 64) issued in the verb's main shell, never inside `$(...)` or a tested helper; git runs only in unconditional `x=$(git ...)` assignments, so a git failure reaches the trap and exits 1.
 - `open` path refusals pinned to exit 64 (missing spec, symlinked spec, whitespace, `=`, missing spec directory), checked before any git call and before canonicalization. C11a asserts exactly 64.
 - DEC-N accepts one rare case: a single-pass fallback that ended NEEDS REVISION, then a verb round that closes APPROVED, rolls up `caught=false`.
+
+## Build notes: T1a/T2a (verb + C1-C4, C11a)
+
+Implementation-time deltas from the spec; each entry is a decision the spec did not make, or a reading picked under the fail-closed rule.
+
+- Field layout: on a `ROUND` line the k=v pairs sit in field 4 (`TS | ROUND | <state> | token=.. ...`); `closing` then carries r6 in field 5 and summary in field 6, matching the spec's "`closing` carries them as ` | `-split fields" wording and the fields-2-to-4 resume key.
+- `open` runs the spec-path refusals (64) before `unset $(git rev-parse --local-env-vars)` and before canonicalization. C11a's "before any git call" reading wins; the unset still guards every repo-touching git call after it.
+- The canonical spec path is re-checked for whitespace/`=` after `pwd -P` (exit 64). A spaced or `=` ancestor can enter through canonicalization even when the raw arg is clean, and a field-4 value with a space or `=` would misparsed read-side.
+- A missing `summary` defaults to `<critical> critical` for APPROVED too, not only NEEDS-REVISION; field 6 then always has content (`0 critical`) instead of a trailing empty field.
+- `validate_round()` runs as `( set -E; trap 'exit 1' ERR; _vr_dispatch "$@" )`: the trap + errtrace are subshell-scoped, planned exits keep their codes, and every git call is an unconditional `x=$(git ...)` assignment.
+- Deviation, flagged: `docs/FEATURES.md` was regenerated in T1a (`feature-registry.sh check --fix`). The new test file's own text bumps five incidental `test_refs` counts (`/kit:docs`, `/kit:grill`, `/kit:spec`, `/kit:start`, `ship-gate.sh`, each +1), which fails test-meta's freshness pin without it. This brief's done-criteria need run-all green, so the mechanical regen came early; no feature content was authored. Phase 2's T4 regen stays unconditional.
+- Pre-existing branch failure noted while iterating: `tests/test-gate-opt-out.sh` FAIL "hook reads config: hooks/harvest.sh, harvest_sweep.py" reproduces on the clean branch baseline (stash-tested). Not caused by this change.
