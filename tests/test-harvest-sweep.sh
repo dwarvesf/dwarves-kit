@@ -3669,6 +3669,20 @@ assert_eq "DEC-69: --uninstall prints the purge command it never runs" "yes" \
 assert_eq "DEC-69: the purge is printed, not run" "yes" \
   "$([ -d "$T17D/state/sweep/extract" ] && echo yes || echo no)"
 
+# AC13 chain: install (marker present, hook gated) -> uninstall -> hook runs again.
+# Reuses the T15 hook harness (stub extractor, transcript) against the T17 state dir.
+printf '[harvest]\nenable = true\nhook_when_sweep_on = false\n' > "$T17D/kroot/kit.toml"
+t17_hook_calls() {
+  rm -f "$T15D/calls"
+  env -i PATH="$PATH" HOME="$HOME" REPO_ROOT="$T15D/repo" HARVEST_EXTRACTOR="$T15D/ext.sh"     HARVEST_SYNC=1 HARVEST_MIN_INTERVAL=0 HARVEST_STATE_DIR="$T17D/state" STUB_CALLS="$T15D/calls"     KIT_CONFIG_ROOT="$T17D/kroot" KIT_CONFIG_OPERATOR="$T17D/noop" KIT_PROJECT_ROOT="$T17D/proj"     bash -c "echo '{\"transcript_path\":\"$T15D/transcript.jsonl\",\"session_id\":\"t17chain\"}' | bash '$KIT_DIR/hooks/harvest.sh'" \
+    >/dev/null 2>&1 || true
+  [ -f "$T15D/calls" ] && wc -l < "$T15D/calls" | tr -d ' ' || echo 0
+}
+t17_install -- --apply --label mini.harvest-sweep >/dev/null
+assert_eq "AC13 chain: after install the hook is gated off" "0" "$(t17_hook_calls)"
+t17_install -- --uninstall --label mini.harvest-sweep >/dev/null
+assert_eq "AC13 chain: after uninstall the hook runs again" "1" "$(t17_hook_calls)"
+
 # ============================================================
 echo ""
 echo "=== Results ==="
