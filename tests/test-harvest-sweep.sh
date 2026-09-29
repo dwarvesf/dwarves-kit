@@ -3467,6 +3467,12 @@ t16_run() {
   if [ "${1:-}" = "--no-marker" ]; then shift; rm -f "$T16_HOME/state/sweep/installed"; fi
   rm -f "$T16D/sweep-calls" "$T16D/bridge-calls" "$T16D/newest" "$T16D/seq"
   rm -f "$T16_HOME/Library/Logs/dwarves-kit"/*.log
+  # T16_STALE=1: an older run's report is already the newest one on disk
+  case " $* " in *"T16_STALE=1"*)
+    mkdir -p "$T16_HOME/state/sweep/runs/run-old"; echo old > "$T16_HOME/state/sweep/runs/run-old/report.md"
+    touch -t 200001010000 "$T16_HOME/state/sweep/runs/run-old/report.md"
+    printf '%s' "$T16_HOME/state/sweep/runs/run-old/report.md" > "$T16D/newest" ;;
+  esac
   local rc=0
   env -i HOME="$T16_HOME" PATH=/usr/bin:/bin TERM=dumb \
     HARVEST_STATE_DIR="$T16_HOME/state" \
@@ -3507,6 +3513,10 @@ assert_eq "AC4: a crash before the report sends '-' as the path" "1 -" "$(t16b "
 R="$(t16_run STUB_SWEEP_RUN=0)"
 assert_eq "AC4: an idle run pings the bridge with '-'" "0 -" "$(t16b "$R")"
 assert_eq "AC19: the no-report run still logs end rc" "1" "$(t16_log | grep -c 'end rc=0')"
+
+# a run that writes no report never passes an older run's report path
+R="$(t16_run STUB_SWEEP_RUN=0 T16_STALE=1)"
+assert_eq "AC4: a stale report is never passed to the bridge" "0 -" "$(t16b "$R")"
 
 R="$(t16_run STUB_SWEEP_LOCKHELD=1)"
 assert_eq "AC4: a lock-held run still reaches the sweep call" "1" "$(tf "$R" sweep)"
