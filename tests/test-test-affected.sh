@@ -26,6 +26,15 @@ printf '#!/bin/bash\necho run-meta >> "$TA_MARK"\nexit 0\n'                  > t
 printf '#!/bin/bash\necho run-a >> "$TA_MARK"\nbash lib/x/a.sh\n'            > tests/test-a.sh
 printf '#!/bin/bash\necho run-b >> "$TA_MARK"\nbash lib/x/b.sh\n'            > tests/test-b.sh
 printf '#!/bin/bash\necho run-f >> "$TA_MARK"\nbash lib/x/f.sh\n'            > tests/test-f.sh
+printf 'echo readme\n' > README.md; printf 'echo dr\n' > docs/README.md
+printf 'echo ab\n' > lib/x/ab.sh; printf 'echo long\n' > lib/x/longname.sh
+printf '#!/bin/bash\ngrep -q readme README.md\n'      > tests/test-readme.sh
+printf '#!/bin/bash\ngrep -q dr docs/README.md\n'     > tests/test-docsreadme.sh
+printf '#!/bin/bash\necho ab.sh\n' > tests/test-short.sh
+printf '#!/bin/bash\necho longname.sh\n'               > tests/test-long.sh
+mkdir -p lib/mod; printf 'echo m\n' > lib/mod/mm.sh
+printf '#!/bin/bash\nexit 0\n' > tests/test-mod-thing.sh
+printf '#!/bin/bash\n# lib/x/b.sh appears only in this comment\nexit 0\n' > tests/test-cmt.sh
 git add -A && git commit -qm init
 git update-ref refs/remotes/origin/main HEAD
 git symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/main
@@ -41,6 +50,34 @@ has   "$out" "tests/test-a.sh  (references lib/x/a.sh)" "changed lib file maps t
 hasnt "$out" "tests/test-b.sh" "unrelated test not selected"
 has   "$out" "tests/test-meta.sh  (always)" "test-meta always selected when anything changed"
 [ ! -e "$TA_MARK" ] && ok "--list runs nothing" || bad "--list ran a test"
+
+echo "== narrowed selection =="
+git stash -q -u
+echo "# edit" >> README.md
+out="$(bash "$TA" --list 2>&1)"
+has   "$out" "tests/test-readme.sh  (references README.md)" "root README.md selects a suite naming the path README.md"
+hasnt "$out" "tests/test-docsreadme.sh" "a suite naming only docs/README.md is not selected by README.md"
+git checkout -q -- README.md
+echo "# edit" >> lib/x/ab.sh
+out="$(bash "$TA" --list 2>&1)"
+hasnt "$out" "tests/test-short.sh" "5-char basename (ab.sh) alone does not select"
+has   "$out" "UNCOVERED lib/x/ab.sh" "short-basename source with no path reference is UNCOVERED"
+git checkout -q -- lib/x/ab.sh
+echo "# edit" >> lib/x/longname.sh
+out="$(bash "$TA" --list 2>&1)"
+has   "$out" "tests/test-long.sh  (references lib/x/longname.sh)" "long basename still selects by basename"
+git checkout -q -- lib/x/longname.sh
+echo "# edit" >> lib/mod/mm.sh
+out="$(bash "$TA" --list 2>&1)"
+has   "$out" "tests/test-mod-thing.sh  (module lib/mod)" "lib/<mod>/ change picks tests/test-<mod>*.sh"
+hasnt "$out" "UNCOVERED lib/mod/mm.sh" "a module-picked file is not UNCOVERED"
+git checkout -q -- lib/mod/mm.sh
+echo "# edit" >> lib/x/b.sh
+out="$(bash "$TA" --list 2>&1)"
+hasnt "$out" "tests/test-cmt.sh" "a comment-only mention does not select"
+has   "$out" "tests/test-b.sh  (references lib/x/b.sh)" "a code mention still selects"
+git checkout -q -- lib/x/b.sh
+git stash pop -q 2>/dev/null || true
 
 echo "== changed test maps to itself; UNCOVERED is not a failure =="
 echo "# edit" >> tests/test-b.sh

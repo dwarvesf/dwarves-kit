@@ -12,8 +12,9 @@
 #                 always), plus UNCOVERED files; run nothing
 #   --no-cache    ignore recorded PASSes (a PASS is still recorded)
 # Selection: a changed tests/test-*.sh -> itself; any other changed file -> every
-# tests/test-*.sh naming its repo-relative path (lib/, hooks/, bin/, commands/ files also
-# match by basename); tests/test-meta.sh whenever anything changed. A changed file no test
+# tests/test-*.sh naming its repo-relative path. A non-source file (docs, fixtures) matches
+# only a full-path reference, never inside a longer path or a comment; a source (lib/, hooks/,
+# bin/, commands/, skills/, agents/) also matches by basename when that is over 5 chars; tests/test-meta.sh whenever anything changed. A changed file no test
 # names is UNCOVERED (reported, not a failure).
 # Cache: key = sha256(test + every source file it names + VERSION), under
 # <kit log dir>/test-cache/. Only PASS is recorded. An unusable cache dir means run all.
@@ -71,14 +72,47 @@ sha() { if command -v shasum >/dev/null 2>&1; then shasum -a 256; else sha256sum
 } | grep -v '^$' | sort -u >"$TMP/changed" || true
 
 # --- source universe (for the cache key) and its token map: path and basename -> path ---
-git -c core.quotepath=off ls-files -co --exclude-standard -- 'lib/*.sh' 'hooks/*' 'bin/*' 'commands/*.md' \
+git -c core.quotepath=off ls-files -co --exclude-standard -- 'lib/*.sh' 'hooks/*' 'bin/*' 'commands/*.md' 'skills/*.md' 'agents/*.md' \
   | grep -v '/tests/' | sort -u | while IFS= read -r s; do [ -f "$s" ] && printf '%s\n' "$s"; done >"$TMP/sources" || true
+# Basenames of 5 chars or fewer (`board`, `lint`) match half the suite; only the path counts.
 while IFS= read -r s; do
-  printf '%s\t%s\n%s\t%s\n' "$s" "$s" "$(basename "$s")" "$s"
-done <"$TMP/sources" >"$TMP/map"
+  b="$(basename "$s")"
+  printf '%s\t%s\n' "$s" "$s"
+  [ "${#b}" -gt 5 ] && printf '%s\t%s\n' "$b" "$s"
+done <"$TMP/sources" >"$TMP/map" || true
 cut -f1 "$TMP/map" | sort -u >"$TMP/pats"
 
-is_source() { case "$1" in lib/*.sh|hooks/*|bin/*|commands/*.md) return 0 ;; *) return 1 ;; esac; }
+is_source() { case "$1" in lib/*.sh|hooks/*|bin/*|commands/*.md|skills/*.md|agents/*.md) return 0 ;; *) return 1 ;; esac; }
+
+# Suites that name a NON-source path as a path: not a comment line, not part of a longer path
+# (docs/README.md is not README.md), and not a longer name. `$KIT_DIR/README.md` counts.
+refs_exact() {
+  perl -e 'my $p = shift;
+FILE: for my $f (@ARGV) {
+  open(my $h, "<", $f) or next;
+  while (<$h>) {
+    next if /^\s*#/;
+    my $pos = 0;
+    while ((my $i = index($_, $p, $pos)) >= 0) {
+      my $end = $i + length($p); $pos = $end;
+      next if substr($_, $end, 1) =~ /[\w-]/;
+      my $pre = substr($_, 0, $i);
+      next if $pre =~ m{[\w.\-]$};
+      next if $pre =~ m{/$} && $pre !~ m{(?:\$\{?\w+\}?|\$\(.*\)|")/$};
+      print "$f\n"; next FILE;
+    }
+  }
+}' "$@"
+}
+
+# Suites naming a SOURCE by path, or by a basename over 5 chars, on a non-comment line.
+refs_any() {
+  perl -e 'my @p = split /\n/, shift;
+FILE: for my $f (@ARGV) {
+  open(my $h, "<", $f) or next;
+  while (<$h>) { next if /^\s*#/; for my $q (@p) { if (index($_, $q) >= 0) { print "$f\n"; next FILE } } }
+}' "$@"
+}
 
 # --- selection: "<test>\t<reason>" pairs and UNCOVERED files ---
 : >"$TMP/pairs"; : >"$TMP/uncovered"
@@ -87,11 +121,29 @@ while IFS= read -r f; do
   case "$f" in
     tests/test-*.sh) [ -f "$f" ] && printf '%s\tself\n' "$f" >>"$TMP/pairs"; continue ;;
   esac
-  set -- -e "$f"
-  is_source "$f" && set -- "$@" -e "$(basename "$f")"
-  hits="$(grep -lF "$@" -- tests/test-*.sh 2>/dev/null || true)"
-  if [ -z "$hits" ]; then printf '%s\n' "$f" >>"$TMP/uncovered"; continue; fi
-  printf '%s\n' "$hits" | while IFS= read -r t; do printf '%s\treferences %s\n' "$t" "$f"; done >>"$TMP/pairs"
+  if is_source "$f"; then
+    b="$(basename "$f")"
+    pats="$f"
+    [ "${#b}" -gt 5 ] && pats="$f
+$b"
+    hits="$(refs_any "$pats" tests/test-*.sh || true)"
+  else
+    hits="$(refs_exact "$f" tests/test-*.sh || true)"
+  fi
+  # A lib/<mod>/ change also picks the suites named for the module: tests/test-<mod>*.sh.
+  covered=0
+  case "$f" in lib/*/*)
+    mod="${f#lib/}"; mod="${mod%%/*}"
+    for t in tests/test-"$mod"*.sh; do
+      [ -f "$t" ] || continue
+      printf '%s\tmodule lib/%s\n' "$t" "$mod" >>"$TMP/pairs"; covered=1
+    done ;;
+  esac
+  if [ -n "$hits" ]; then
+    covered=1
+    printf '%s\n' "$hits" | while IFS= read -r t; do printf '%s\treferences %s\n' "$t" "$f"; done >>"$TMP/pairs"
+  fi
+  [ "$covered" = 1 ] || printf '%s\n' "$f" >>"$TMP/uncovered"
 done <"$TMP/changed"
 if [ -s "$TMP/changed" ] && [ -f tests/test-meta.sh ]; then
   printf 'tests/test-meta.sh\talways\n' >>"$TMP/pairs"
