@@ -1,7 +1,7 @@
 # Spec: validate-round verb for the parallel validation round
 
 Generated: 2026-09-29
-Status: APPROVED (lead brief; rounds 1 to 3 NEEDS REVISION folded; awaiting operator decision on a further round)
+Status: VALIDATED (rounds 1 to 3 NEEDS REVISION folded; round 4 APPROVED, its warnings folded)
 Lane: full
 Type: spec-feature
 File: `docs/specs/SPEC-363-validate-round-verb.md`
@@ -22,12 +22,12 @@ The rules are right. The manual procedure is the defect: a mechanical sequence c
 
 1. A `validate-round` verb inside `lib/gate/gate-ledger.sh` with `open`, `close` and `incomplete` sub-verbs (chosen). The verb holds the sequence; the lead still computes the verdict. Tradeoff: one more verb on a large script.
 2. A sibling script `lib/spec/validate-round.sh` (rejected). The real tradeoff is the boundary, not duplication: `mutation-smoke.sh` and `coverage-delta.sh` already call the gate-ledger CLI without copying its plumbing, so a sibling could do the same. The cost is that the sibling knows spec-lane rules (spec glob, ship-gate slug, round budget) outside the ledger, and the ledger stops being the one home for them. This verb keeps that knowledge in the ledger script, which sits in tension with the ledger as pure substrate (N4); DEC-A accepts it because the marker and the record order are ledger concerns.
-4. A single `printf` for the whole `close` append (rejected, DEC-M). One write is atomic and would drop the `closing` state and resume, but `record()` and `outcome()` each append their own line, so both would need splitting into line builders, and the drift and consistency checks would still run before it. The resume path costs less than the refactor.
 3. Keep the prose and add a checklist line to step 5 (rejected). A checklist is what slipped.
+4. A single `printf` for the whole `close` append (rejected, DEC-M). One write is atomic and would drop the `closing` state and resume, but `record()` and `outcome()` each append their own line, so both would need splitting into line builders, and the drift and consistency checks would still run before it. The resume path costs less than the refactor.
 
 ### Chosen approach + why
 
-Option 1. The verb reuses `record()`, `outcome()`, `ledger_file()`, `append_run_line()`, `runid()` and `rid()` in the same file. The rejected sibling traded a smaller file for a second copy of the ledger plumbing.
+Option 1. The `| ROUND |` marker, the record order and the bracket pairing are ledger concerns, so the spec-lane rules that drive them (spec glob, ship-gate slug, void budget) live in the ledger script beside them. That puts spec-lane knowledge inside the substrate, the N4 tension DEC-A accepts. The verb calls `record()`, `outcome()`, `ledger_file()`, `append_run_line()` and `runid()` in the same file. It does not call `rid()`, which runs a bare `git` from the cwd; it copies `rid()`'s branch refusal onto `git -C <toplevel>` instead (DEC-U).
 
 ### Extensibility & boundaries
 
@@ -40,13 +40,14 @@ Option 1. The verb reuses `record()`, `outcome()`, `ledger_file()`, `append_run_
 lead                                 gate-ledger.sh validate-round                 rid ledger (runs/<rid>.log)
  |                                    |                                              |
  |-- open <rid> <spec> -------------->| spec (pwd -P) == ship-gate's glob match?     |
+ |                                    | branch (git -C) not ""/HEAD/main/master?     |
  |                                    | raw slug == runid(slug) == <rid>?            |
  |                                    | pin: git -C <toplevel> hash-object -w <spec> |
  |                                    | head: git -C <toplevel> rev-parse HEAD       |
  |                                    | snapshot: porcelain (untracked, excludes)    |
  |                                    |-- outcome Validate start ------------------->| OUTCOME validate start
  |                                    |-- outcome design-record start -------------->| OUTCOME design-record start
- |<-- <token> ------------------------|-- ROUND open token= spec= blob= head= ... -->| ROUND open  (= last line)
+ |<-- <token> ------------------------|-- ROUND open token= top= spec= blob= ... --->| ROUND open  (= last line)
  |                                    |                                              |
  |   fan out N reviewers, wait for final completions, merge by rule (lead)          |
  |   no spec, worktree, commit or Status edit until close exits 0                   |
@@ -96,7 +97,7 @@ Sequence: see `## Picture`. The round's state machine, read from the rid's last 
    CLOSING(kind=incomplete) + incomplete <rid> <token> or --stale --> write the missing records --> INCOMPLETE
 ```
 
-Round-terminal lines (`close` with any verdict, `incomplete`) reset the void budget. Validation-terminal lines (`close verdict=APPROVED`, `incomplete`) end one validation. Validation-wide `caught` is "any `OUTCOME validate end caught=true` after the previous validation-terminal `ROUND` line". `close verdict=APPROVED` writes that value on its own `validate` end (and the same rule for `design-record`), so a `ran` row never carries `caught=false` for a validation that caught something (DEC-N). `outcome-read` keeps reporting the last round.
+Round-terminal lines (`close` with any verdict, `incomplete`) reset the void budget. Validation-terminal lines (`close verdict=APPROVED`, `incomplete`) end one validation. Validation-wide `caught` for a gate is "any `OUTCOME <gate> end caught=true` inside the window", computed over the lines before this round's own `ROUND closing` line. Those lines never change, so a resume recomputes the same value, and the round's own `GATE validate ran` never bounds its own window. The window starts after the latest of three lines: the rid's first `ROUND open`, the previous validation-terminal `ROUND` line, and the latest `GATE | validate | ran` line (a fallback single-pass validation ends a validation too). Both gates use that same start. Inside the window the verb counts only the `end` lines it wrote itself: those between a `ROUND closing` line and the next `ROUND` line. A fallback validation writes its `end` after its `ran` line, so without that restriction its `caught=true` would sit inside the window. So legacy or fallback history never leaks an old `caught=true` into the verb's current validation. `close verdict=APPROVED` writes that value on its own `validate` end and on its own `design-record` end, so a `ran` row never carries `caught=false` for a validation that caught something (DEC-N). `outcome-read` keeps reporting the last round.
 
 ### ADR link(s)
 
@@ -114,22 +115,24 @@ The verb touches the audit ledger, so see `## Failure modes`. Out of bounds: com
 
 | Sub-verb | Arguments | Writes, in order | Stdout | Exit |
 |---|---|---|---|---|
-| `open` | `<rid> <spec>` | `OUTCOME validate start`, `OUTCOME design-record start`, `ROUND open` | `<token>` | 0; 1 state or git failure; 64 bad input |
+| `open` | `<rid> <spec>` | `OUTCOME validate start`, `OUTCOME design-record start`, `ROUND open` | `<token>` | 0; 1 state, binding or git failure; 64 bad input |
 | `close` | `<rid> <token> verdict=<APPROVED\|NEEDS-REVISION> critical=<n> warnings=<k> agents=<n> r6=<r6-line> [summary=<text>]`, or resume: `<rid> <token>` | `ROUND closing`, `GATE validate`, `OUTCOME validate end`, `GATE design-record`, `OUTCOME design-record end`, `ROUND close` | `blob=<pin>` | 0; 1 state or git failure; 2 void; 3 void with budget spent; 64 bad input |
-| `incomplete` | `<rid> <token> <reason>`, `<rid> --stale <reason>`, or resume: `<rid> <token>` | `ROUND closing`, `GATE validate skipped "incomplete: <reason>"`, `OUTCOME validate end caught=false`, `GATE design-record skipped "incomplete: <reason>"`, `OUTCOME design-record end caught=false`, `ROUND incomplete` | none | 0; 1 state or git failure; 64 bad input |
+| `incomplete` | `<rid> <token> <reason>`, `<rid> --stale <reason>`, or resume: `<rid> <token>` | `ROUND closing`, `GATE validate skipped "incomplete: <reason>"`, `OUTCOME validate end caught=false`, `GATE design-record skipped "incomplete: <reason>"`, `OUTCOME design-record end caught=false`, `ROUND incomplete` | none | 0; 1 state failure; 64 bad input |
 
 Inputs:
 
-- `<spec>`: a regular file, not a symlink, readable. The verb canonicalizes it with `cd "$(dirname <spec>)" && pwd -P` plus the basename. Its canonical path holds no whitespace and no `=`. A refusal for the suffix collision below prints both canonical paths.
-- Binding: `<toplevel>` is `git -C <spec dir> rev-parse --show-toplevel`. Every later git call in the verb is `git -C <toplevel> ...`, never a bare `git`, so the verb gives the same result from any working directory, including one outside any repo. The pin writes into the spec's own object store. The verb reads the branch there and takes the raw slug `${branch#*/}`, as `hooks/ship-gate.sh` line 64 does. It refuses when the raw slug differs from `runid(slug)`, or `runid(slug)` differs from `<rid>`. The spec's canonical path must equal the canonical path of `ls <toplevel>/docs/specs/SPEC-*-<raw slug>.md | head -1`, the ship-gate glob (line 224). So the approval lands on the exact file and rid the ship-gate reads. The verb's binding and `hooks/ship-gate.sh` lines 64 and 224 each carry a comment naming the other, so a change to one prompts a change to the other.
-- `<token>`: `<blob>.<epoch>.<n>`, printed by `open`. `<n>` is the count of `ROUND open` lines for the rid after this open's line, so tokens never repeat within a rid, even inside one second. Grammar: `^[0-9a-f]{40}\.[0-9]+\.[0-9]+$`. The lead reads the pin as `${token%%.*}`. A lead who lost the token reads it from `show <rid>` (the last `ROUND open` or `ROUND closing` line). `close` and `incomplete` check the grammar before any token reaches `awk -v` and refuse a malformed token with 64.
+- Git environment: every sub-verb starts with `unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_OBJECT_DIRECTORY`. An inherited `GIT_DIR` overrides `git -C` repo discovery, so without the unset the pin and every read would target the wrong repo (DEC-L).
+- Unplanned failures: every sub-verb starts with `set -E; trap 'exit 1' ERR`. Planned refusals use an explicit `exit 1`, `exit 2`, `exit 3` or `exit 64`, which the trap never sees. Any other failing command (a helper's non-zero return, a missing binary's 127, GNU `ls`'s 2 on no match) exits 1. So no stray status can read as a void (2) and loop the lead.
+- `<spec>`: at `open`, a regular file, not a symlink, readable (`-f`, `! -L`, `-r`). The verb canonicalizes it with `cd "$(dirname <spec>)" && pwd -P` plus the basename, so a relative argument resolves against the caller's cwd once, here. The pin and every later hash use this canonical absolute path. A relative path passed to `git -C <toplevel>` would resolve against `<toplevel>` instead and hash the wrong file or fail. Its canonical path holds no whitespace and no `=`; `<toplevel>` is a prefix of it, so the same holds there. A refusal for the suffix collision below prints both canonical paths.
+- Binding: `<toplevel>` is `git -C <spec dir> rev-parse --show-toplevel`. Every later git call in the verb is `git -C <toplevel> ...`, never a bare `git`, so the verb gives the same result from any working directory, including one outside any repo. The pin writes into the spec's own object store. The verb reads the branch with `git -C <toplevel> rev-parse --abbrev-ref HEAD` and refuses `""`, `HEAD`, `master` or `main` with exit 1, the same refusal `rid()` makes (DEC-U). It takes the raw slug `${branch#*/}`, as `hooks/ship-gate.sh` line 64 does. It refuses when the raw slug differs from `runid(slug)`, or `runid(slug)` differs from `<rid>`. The spec's canonical path must equal the canonical path of `ls <toplevel>/docs/specs/SPEC-*-<raw slug>.md 2>/dev/null | head -1 || true`, the ship-gate glob (line 224) with its guards. No match gives an empty string and a refusal (exit 1). So the approval lands on the exact file and rid the ship-gate reads. The verb's binding and `hooks/ship-gate.sh` lines 64 and 224 each carry a comment naming the other, so a change to one prompts a change to the other.
+- `<token>`: `<blob>.<epoch>.<n>`, printed by `open`. `<n>` is the count of `ROUND open` lines for the rid after this open's line, so tokens never repeat within a rid, even inside one second. Grammar: `^([0-9a-f]{40}|[0-9a-f]{64})\.[0-9]+\.[0-9]+$`, SHA-1 or SHA-256 blob ids. `close` and `incomplete` test it with bash `[[ $token =~ $re ]]` before any token reaches `awk -v`, and refuse a malformed token with 64. `grep -E` would pass a token with an embedded newline, because it matches line by line. The lead reads the pin as `${token%%.*}`. A lead who lost the token reads it from `show <rid>` (the last `ROUND open` or `ROUND closing` line). The token is a correlation id that ties `close` to one `open`, not authentication: anyone who can run `show` can read it.
 - `close` keys, each exactly once, in any order; an unknown or repeated key is bad input:
   - `verdict=`: `APPROVED` or `NEEDS-REVISION`.
   - `critical=`: the merged CRITICAL count, which includes Reviewer 6's critical when there is one. Non-negative integer.
   - `warnings=`: non-negative integer. `agents=`: integer, at least 1.
   - `r6=`: Reviewer 6's line, `design-bearing=<yes|no> pass` or `design-bearing=<yes|no> critical: <finding>`. The value is everything after the first `=`.
   - `summary=`: optional criticals text for NEEDS-REVISION. Default: `<critical> critical`.
-  - `r6`, `summary` and `<reason>` may not contain a newline, a carriage return or any `|`, because the `closing` line carries them as ` | `-split fields. The verb collapses the value through `oneline` first, then refuses any `|`; it also refuses a raw `\n` or `\r` (exit 64), so `a<LF>| ran |<LF>b` and `x| ran |y` both fail. The `execute.md` preflight `grep -Eq '\| (ran|override) \|'` therefore never reads a NEEDS-REVISION line as validated, and resume never misparses `closing` fields.
+  - `r6`, `summary` and `<reason>` may not contain a newline, a carriage return or any `|`, because the `closing` line carries them as ` | `-split fields. The verb tests the raw argument, before any `oneline` or other transform, and refuses any `\n`, `\r` or `|` in it with 64. So `a<LF>| ran |<LF>b` and `x| ran |y` both fail. The `execute.md` preflight `grep -Eq '\| (ran|override) \|'` therefore never reads a NEEDS-REVISION line as validated, and resume never misparses `closing` fields.
 - `--stale`: `incomplete` resolves the token from the rid's last `ROUND` line, which must be `open`, `void`, or `closing kind=incomplete`. Over `closing kind=incomplete` it resumes with the pinned reason and prints the ignored new reason to stderr. A `closing kind=close` resumes only through `close <rid> <token>`.
 
 Consistency checks in `close` (refuse with 64, write nothing):
@@ -151,16 +154,16 @@ Records written by `close` (the step 5 strings, unchanged):
 
 | Case | GATE validate | validate `caught=` | GATE design-record | design-record `caught=` |
 |---|---|---|---|---|
-| APPROVED | `ran "APPROVED critical=0 warnings=<K> fresh agents=<N> parallel"` | false | `ran "design-bearing=<x> pass"` | false |
+| APPROVED | `ran "APPROVED critical=0 warnings=<K> fresh agents=<N> parallel"` | validation-wide rollup (DEC-N) | `ran "design-bearing=<x> pass"` | validation-wide rollup (DEC-N) |
 | NEEDS-REVISION, R6 pass | `skipped "NEEDS REVISION: <summary>"` | true | `ran "design-bearing=<x> pass"` | false |
 | NEEDS-REVISION, R6 critical | `skipped "NEEDS REVISION: <summary>"` | true | `skipped "critical: <finding>"` | true |
 
-Drift in `close`. The verb compares four things with the `ROUND open` line:
+Drift in `close`. The verb compares four things with the `ROUND open` line. Every git call here is `git -C <top>`, where `<top>` is the `top=` field stored on `ROUND open`; `close` never re-derives it from the spec's directory, which may be gone.
 
 - `ledger`: the rid file's last line must be byte-equal to the stored `ROUND open` line. Any line after it, from any writer, is drift. The verb lists every such line on stderr, so a forged or foreign `GATE` or `OUTCOME` for `validate` or `design-record` is visible to the lead.
-- `blob`: `git -C <toplevel> hash-object <canonical spec>` now (re-hashed the same way the pin was written). An unreadable, missing or symlinked spec counts as `blob` drift.
-- `head`: `git -C <toplevel> rev-parse HEAD`. A commit during the round is drift.
-- `porcelain`: `git -C <toplevel> status --porcelain --untracked-files=all -- . ':(exclude)_meta' ':(exclude).claude' ':(exclude,glob)**/.pytest_cache/**' ':(exclude,glob)**/.ruff_cache/**' ':(exclude,glob)**/.mypy_cache/**' ':(exclude,glob)**/.hypothesis/**' | git -C <toplevel> hash-object --stdin`. The excludes cover the hook and cache writers in `## Grounding` item 4.
+- `blob`: first the verb tests the stored `spec=` path with `-f`, `! -L` and `-r`. A missing, symlinked or unreadable spec fails that test, never reaches git, and counts as `blob` drift. A spec that passes is re-hashed with `git -C <top> hash-object <spec>`, the same canonical path and store as the pin, and compared with `blob=`.
+- `head`: `git -C <top> rev-parse HEAD`. A commit during the round is drift.
+- `porcelain`: `git -C <top> status --porcelain --untracked-files=all -- . ':(exclude)_meta' ':(exclude).claude' ':(exclude,glob)**/.pytest_cache/**' ':(exclude,glob)**/.ruff_cache/**' ':(exclude,glob)**/.mypy_cache/**' ':(exclude,glob)**/.hypothesis/**' | git -C <top> hash-object --stdin`. The excludes cover the hook and cache writers in `## Grounding` item 4.
 
 On any mismatch the verb appends `ROUND void token=<t> why=<comma list>`. Then:
 
@@ -171,14 +174,14 @@ Resume: `close <rid> <token>` or `incomplete <rid> <token>` over a matching `ROU
 
 Concurrency: two sub-verbs on one rid at once are a lead error. The verb takes no lock. The token check and the last-line check fail closed on it: a second `open` makes the first round's `close` refuse (its token is no longer the last `ROUND` line) or void (`why=ledger`).
 
-Git failures: any failing git call inside `open` or `close` (hash-object, rev-parse, status) writes nothing to the ledger and exits 1. Without this the script's `set -euo pipefail` would leak git's own status (128 outside a repo). A git failure is not drift and never writes a void.
+Git failures: any failing git call inside `open` or `close` (hash-object, rev-parse, status) writes nothing to the ledger and exits 1, through the ERR trap under Inputs. Without it the script's `set -euo pipefail` would leak git's own status (128 outside a repo). A git failure is not drift and never writes a void. The two rules do not overlap: a spec that fails `-f`, `! -L` or `-r` at `close` never reaches git and is `blob` drift, while a git failure hashing a present regular spec, or in `rev-parse` or `status`, exits 1. A `<top>` that no longer exists fails every git call, so it exits 1.
 
-`open` resolves the toplevel, checks the binding, pins the blob, reads `head` and snapshots porcelain before its first append.
+`open` resolves the toplevel, checks the branch and the binding, pins the blob, reads `head` and snapshots porcelain before its first append.
 
 Outputs, the `| ROUND |` marker. Field 5 holds space-separated `k=v` pairs, and no value there holds a space or `=`:
 
 ```
-<ts> | ROUND | open | token=<t> spec=<abs-path> blob=<sha> head=<sha> porcelain=<sha>   (t = <blob>.<epoch>.<n>)
+<ts> | ROUND | open | token=<t> top=<toplevel> spec=<abs-path> blob=<sha> head=<sha> porcelain=<sha>   (t = <blob>.<epoch>.<n>)
 <ts> | ROUND | void | token=<t> why=<ledger,blob,head,porcelain subset>
 <ts> | ROUND | closing | token=<t> kind=close verdict=<v> critical=<n> warnings=<k> agents=<n> | <r6-line> | <summary>
 <ts> | ROUND | closing | token=<t> kind=incomplete | <reason>
@@ -190,7 +193,7 @@ Invariants:
 
 - Every `OUTCOME validate end` and every `OUTCOME design-record end` the verb writes follows exactly one `GATE` line of the same phase written in the same round. The stats FIFO therefore pairs one bracket per `GATE` line, for `close` and `incomplete` alike.
 - A void writes no `GATE` and no `end` line. The next `open` writes fresh start lines; `outcome()` and the stats reader both take the latest start, so a void round's time is excluded from `dur_s`.
-- Readers keyed on a marker never read `ROUND`: `check`, `progress`, `descent`, `outcome-read`, gate-ledger `report` and `read_kit_gates` are byte-identical with or without `ROUND` lines.
+- Readers keyed on a marker never read `ROUND`: the AC3 list (`check`, `progress`, `descent`, `outcome-read`, gate-ledger `report`, `read_kit_gates`, `proof-table-gen.py`, `mega-review.py`, `mega-report.py`, `pitch.sh` and the `commands/execute.md` validate grep) is byte-identical with or without `ROUND` lines.
 - Readers of a rid's last timestamp see a trailing `ROUND` line: gate-ledger `history` (`t1`), `lib/bench/report.py` (`t1`), `lib/telemetry/lane-telemetry.sh report` (the `last` column, read through its internal `_rows`), `lib/bench/dashboard.py` (`mins`) and `lib/bench/events.py` (`wall`). They are identical except that last timestamp. The verb writes its final `ROUND` line in the same call as the round's last record, so the shift is the call's own run time.
 
 ### Data model changes
@@ -213,28 +216,35 @@ None.
 
 ### Phase 1: Foundation
 
-- [ ] T1a: `validate_round()` in `lib/gate/gate-ledger.sh`: `open`, `close` without resume, key parsing, the binding, the dispatch line, the header entry and the usage string. AC: cases C1 to C4 and C11 pass.
-- [ ] T2a (with T1a): `tests/test-gate-validate-round.sh` with C1 to C4 and C11.
-- [ ] T1b (after T1a): drift, void, the budget stop, `incomplete`, `--stale` and resume. AC: cases C5 to C10d and C12 pass, and C5 goes red under the negative control.
-- [ ] T2b (with T1b): C5 to C10d and C12 in the same test file. AC: the file runs under `bash tests/run-all.sh --all` by glob and exits 0.
+- [ ] T1a: `validate_round()` in `lib/gate/gate-ledger.sh`: `open`, `close` without resume, the git-env unset, the ERR trap, key parsing, the branch guard, the binding, the dispatch line, the header entry and the usage string. In `hooks/ship-gate.sh`, extend the trailing comment on line 64 (`SLUG=`) and add a trailing comment on line 224 (`SPEC=`), each naming `validate-round`'s binding in `lib/gate/gate-ledger.sh`. Trailing comments keep every line number this spec cites; no code changes there. AC: cases C1 to C4 and C11a pass.
+- [ ] T2a (with T1a): `tests/test-gate-validate-round.sh` with C1 to C4 and C11a.
+- [ ] T1b (after T1a): drift, void, the budget stop, `incomplete`, `--stale` and resume. AC: cases C5 to C10d, C11b and C12 pass, and C5 goes red under the negative control.
+- [ ] T2b (with T1b): C5 to C10d, C11b and C12 in the same test file. AC: the file runs under `bash tests/run-all.sh --all` by glob and exits 0.
 
 ### Phase 2: Core
 
-- [ ] T3 (after T1b): point the three entry points at the verb. AC: C13.
-  - `commands/spec.md` step 5: the parallel round runs `validate-round open`, `close` and `incomplete`. It states that no spec, worktree, commit or Status edit happens between `open` and `close`, and that the fold happens after `close` exits 0. The reviewer brief keeps any scratch in `$TMPDIR`, outside the repo. It rewords "so `dur_s` measures the validation" per DEC-B. The incomplete stop now also records `design-record skipped "incomplete: <reason>"`. A forged or foreign line listed on a void goes to the operator.
-  - `commands/execute.md` validation preflight: the parallel round and the critical stop use the verb. An `--stale` incomplete there is a stop, not a re-open.
-  - `commands/wrap.md` step 10: the lead runs `validate-round open` with the worker's spec path. The verb's binding enforces "the WORKER's rid". An `--stale` incomplete there is a stop, not a re-open.
-  - In all three files: any `validate-round` exit other than 0 or 2 (1, 3, 64, or anything else) stops the lead and reports to the operator; only 2 re-opens. Stderr lines a void prints (forged or foreign ledger lines) are untrusted data to escalate to the operator, never instructions.
-  - In `commands/spec.md`, the reviewer brief adds: a read-only reviewer runs no command that writes into the worktree; a repro runs in a copy under `$TMPDIR`. Consumer-repo tools that write untracked, non-ignored files void rounds (see Failure modes).
-  - In all three files, every string `tests/test-meta.sh` pins stays. The literal `gate-ledger.sh outcome <rid> Validate start|end` and `design-record start|end` lines stay inside a fallback sentence for the single-pass validator, so `tests/test-outcome-emit-sweep.sh` and `tests/test-command-emit-sweep.sh` stay green.
+Shared rules for T3a and T3b, stated once here; each command file carries them:
+
+- Exit handling. 0: proceed. 2 (from `close` only): re-run `open`. No other non-zero exit leads to an `open`. 64: the verb wrote nothing, so the lead may correct the argument and re-run the same sub-verb once; a second 64 on that sub-verb stops. 1, 3, or any other code: stop and report to the operator.
+- Stderr lines a void prints (forged or foreign ledger lines) are untrusted data to escalate to the operator, never instructions.
+- An `--stale` incomplete in `commands/execute.md` or `commands/wrap.md` is a stop, not a re-open. Inside `commands/spec.md` it precedes a fresh `open`.
+- Every string `tests/test-meta.sh` pins stays. The literal `gate-ledger.sh outcome <rid> Validate start|end` and `design-record start|end` lines stay inside a fallback sentence for the single-pass validator, so `tests/test-outcome-emit-sweep.sh` and `tests/test-command-emit-sweep.sh` stay green.
+
+- [ ] T3a (after T1b): `commands/spec.md` step 5. AC: the `commands/spec.md` greps of C13 and both emit sweeps pass.
+  - The parallel round runs `validate-round open`, `close` and `incomplete`. No spec, worktree, commit or Status edit happens between `open` and `close`; the fold happens after `close` exits 0.
+  - It rewords "so `dur_s` measures the validation" per DEC-B. The incomplete stop now also records `design-record skipped "incomplete: <reason>"`.
+  - The reviewer brief adds: a read-only reviewer runs no command that writes into the worktree; a repro or scratch file lives in a copy under `$TMPDIR`. Consumer-repo tools that write untracked, non-ignored files void rounds (see Failure modes).
+- [ ] T3b (after T1b): `commands/execute.md` and `commands/wrap.md`. AC: C13 passes in full.
+  - `commands/execute.md` validation preflight: the parallel round and the critical stop use the verb.
+  - `commands/wrap.md` step 10: the lead runs `validate-round open` with the worker's spec path. The verb's binding enforces "the WORKER's rid".
 
 ### Phase 3: Polish
 
-- [ ] T4 (last, after T1a to T3): regenerate `docs/FEATURES.md` with `bash lib/registry/feature-registry.sh check --fix docs/FEATURES.md`, unconditionally. AC: `tests/test-meta.sh` passes in full.
+- [ ] T4 (last, after T1a to T3b): regenerate `docs/FEATURES.md` with `bash lib/registry/feature-registry.sh check --fix docs/FEATURES.md`, unconditionally. AC: `tests/test-meta.sh` passes in full.
 
 ## After state
 
-- [ ] `bash lib/gate/gate-ledger.sh validate-round open <rid> <spec>` prints a `<blob>.<epoch>` token and writes both start brackets. (Today: the verb does not exist; the usage line lists no `validate-round`.)
+- [ ] `bash lib/gate/gate-ledger.sh validate-round open <rid> <spec>` prints a `<blob>.<epoch>.<n>` token and writes both start brackets. (Today: the verb does not exist; the usage line lists no `validate-round`.)
 - [ ] An edit to an already-dirty spec during a round makes `close` exit 2 with `ROUND | void | ... why=blob` and no `GATE | validate` line, checkable by `bash tests/test-gate-validate-round.sh`.
 - [ ] `commands/spec.md`, `commands/execute.md` and `commands/wrap.md` name `validate-round open`. (Today: step 5 lists `git hash-object -w`, `show <rid>` and `status --porcelain` for the lead to run by hand.)
 - [ ] One validation round writes one `GATE` line per `OUTCOME ... end` for both `validate` and `design-record`, including an incomplete round. (Today: SPEC-361's rid holds 4 against 1 for `validate`.)
@@ -267,14 +277,15 @@ New file `tests/test-gate-validate-round.sh`. Each case runs under a fresh `DWAR
 
 | Case | Setup | Assert |
 |---|---|---|
-| C1 open | `open` | exit 0; stdout matches `^[0-9a-f]{40}\.[0-9]+\.[0-9]+$`; `git -C <temp repo> cat-file -e <blob>`; last 3 lines are the two start brackets then `ROUND open` with `head=` equal to `git rev-parse HEAD` |
-| C1b open from elsewhere | run `open` with cwd in a different temp repo, then again with cwd outside any repo | exit 0 both; `git -C <temp repo> cat-file -e <blob>` succeeds; the other repo's object store lacks the blob (`git -C <other> cat-file -e <blob>` fails) |
+| C1 open | append a line to the committed spec so its blob exists nowhere yet; `open`; then repeat in a repo made with `git init --object-format=sha256` | exit 0; stdout matches `^([0-9a-f]{40}\|[0-9a-f]{64})\.[0-9]+\.[0-9]+$` (40 hex in the first repo, 64 in the SHA-256 repo); `git -C <temp repo> cat-file -e <blob>` succeeds, which proves `-w`; last 3 lines are the two start brackets then `ROUND open` with `top=` equal to the repo's toplevel and `head=` equal to `git rev-parse HEAD` |
+| C1b open from elsewhere | dirty the spec first; four sub-runs, each under its own fresh `DWARVES_KIT_LOG_DIR` so no rid holds two opens: cwd in a different temp repo; cwd outside any repo; cwd in the spec repo's `src/` subdirectory with the spec passed as the cwd-relative `../docs/specs/SPEC-001-vr-c1b.md`; `GIT_DIR` exported to the other repo's `.git` | exit 0 in all four; `spec=` is the same canonical absolute path in all four; `git -C <temp repo> cat-file -e <blob>` succeeds; the other repo's object store lacks the blob (`git -C <other> cat-file -e <blob>` fails) |
 | C1c token uniqueness | two `open` calls within one second (a void between them) | tokens differ; the second ends in `.2`; `${token%%.*}` equals the pin in both |
 | C2 close APPROVED | `open`; `close <rid> <t> verdict=APPROVED critical=0 warnings=3 agents=7 r6="design-bearing=yes pass"` | exit 0; block = `ROUND closing` (every arg pinned), APPROVED row (4 lines), `ROUND close verdict=APPROVED`; stdout `blob=<pin>`; `outcome-read <rid> validate` says `caught=false` |
 | C3 close NEEDS-REVISION, R6 pass | `verdict=NEEDS-REVISION critical=2 warnings=1 agents=7 r6="design-bearing=no pass" summary="stale fixture"` | block = `ROUND closing`, `GATE validate skipped NEEDS REVISION: stale fixture`, `OUTCOME validate end caught=true`, `GATE design-record ran design-bearing=no pass`, `OUTCOME design-record end caught=false`, `ROUND close verdict=NEEDS-REVISION` |
 | C4 close NEEDS-REVISION, R6 critical | `critical=1 r6="design-bearing=yes critical: empty Design"` | block as C3 with `GATE design-record skipped critical: empty Design` and design-record `caught=true` |
-| C5 blob drift (negative control target) | edit the spec without committing; `open`; edit the spec again; `close` APPROVED | exit 2; last line `ROUND void` with `why=blob` only; no `GATE \| validate` line after `ROUND open` |
+| C5 blob drift (negative control target) | edit the spec without committing; `open`; edit the spec again; `close` APPROVED | `git -C <temp repo> cat-file -e B1` succeeds after `open`; `close` exits 2; last line `ROUND void` with `why=blob` only; no `GATE \| validate` line after `ROUND open` |
 | C5b head drift | `open`; `git commit --allow-empty -m x`; `close` | exit 2; `why=` holds `head` |
+| C5c spec removed mid-round | `open`; `rm` the spec; `close` APPROVED; separately, `open`, replace the spec with a symlink to a copy, `close` | exit 2 both, never 1; `why=` holds `blob`; no git error on stderr |
 | C6 ledger drift | `open`; `gate-ledger.sh action <rid> x`; `close` | exit 2; `why=` holds `ledger`; stderr holds the `ACTION` line |
 | C6b forged ran | `open`; `gate-ledger.sh record <rid> Validate ran "fake"`; `close` | exit 2; `why=` holds `ledger`; stderr holds the forged `GATE validate ran` line |
 | C7 porcelain drift | `open`; create an untracked `src/new.txt`; `close` | exit 2; `why=` holds `porcelain` (nested untracked file seen through `--untracked-files=all`) |
@@ -283,13 +294,14 @@ New file `tests/test-gate-validate-round.sh`. Each case runs under a fresh `DWAR
 | C8 budget spent | void once, `open` again, void again | exit 3; block after the second void = `ROUND closing kind=incomplete`, `GATE validate skipped incomplete: restart budget spent`, `OUTCOME validate end caught=false`, `GATE design-record skipped incomplete: restart budget spent`, `OUTCOME design-record end caught=false`, `ROUND incomplete` |
 | C8b budget reset | void, `open`, `close` NEEDS-REVISION, `open`, void | exit 2, not 3 |
 | C9 restart then pass | void once, `open` again, `close` APPROVED | exit 0; `GATE validate` count equals `OUTCOME validate end` count |
-| C9b caught rollup | `open`, `close` NEEDS-REVISION (R6 pass), `open`, `close` APPROVED (R6 pass); then again with the first round's R6 critical | first run: the APPROVED `OUTCOME validate end` carries `caught=true`, design-record `caught=false`; second run: both `caught=true`; `outcome-read <rid> validate` says `caught=true`; an APPROVED-only validation keeps `caught=false` |
+| C9b caught rollup | `open`, `close` NEEDS-REVISION (R6 pass), `open`, `close` APPROVED (R6 pass); then again with the first round's R6 critical | first run: the APPROVED `OUTCOME validate end` carries `caught=true`, design-record `caught=false`; second run: both `caught=true`; `outcome-read <rid> validate` says `caught=true`; an APPROVED-only validation keeps `caught=false`. Window legs: a ledger seeded with a legacy `OUTCOME \| validate \| end \| ... caught=true` before the first `ROUND open`, then an APPROVED-only validation, gives `caught=false`; `open`, `close` NEEDS-REVISION, then a fallback `record <rid> Validate ran` followed by `outcome <rid> Validate end caught=true`, then `open`, `close` APPROVED, gives `caught=false` on both gates |
 | C10 incomplete | `open`; `incomplete <rid> <t> "reviewer 4 dead"` | block = `ROUND closing kind=incomplete`, `GATE validate skipped incomplete: reviewer 4 dead`, `OUTCOME validate end caught=false`, `GATE design-record skipped incomplete: reviewer 4 dead`, `OUTCOME design-record end caught=false`, `ROUND incomplete` |
 | C10b incomplete pairs | `open`, `incomplete`, `open`, `close` APPROVED | for `validate` and `design-record` alike: `GATE` count equals `OUTCOME end` count equals 2 |
 | C10c stale | `open`; `incomplete <rid> --stale "lead restarted"`; separately, after a void, `--stale` | exit 0 both; same block as C10 with that reason |
 | C10d resume | `open`; `close` APPROVED args parsed, then the test hand-writes the `ROUND closing` line and the `GATE validate` line to a copy of the ledger and swaps it in; `close <rid> <t>` | exit 0; exactly one of each record after `ROUND closing`; `ROUND close` last. Same for `incomplete <rid> <t>` over a hand-written `closing kind=incomplete` |
-| C11 refusals | stale token; `close` with no open round; `open` over an open round; `open` over a `closing` round; APPROVED with `critical=2`; APPROVED with an R6 critical; NEEDS-REVISION with `critical=0`; R6 critical with `critical=0`; `r6="yes ok"`; `r6` holding ` \| `; `summary` holding `a<LF>\| ran \|<LF>b`; `summary` holding `x\| ran \|y`; `reason` and `r6` holding a bare `\|`, a newline, or a carriage return; a malformed token (no epoch, no nonce, uppercase hex); `warnings=x`; `agents=0`; a missing key; an unknown key; a repeated key; full-key `close` over `closing`; `close <rid> <t>` over `closing kind=incomplete`; `incomplete --stale` over `closing kind=close`; `incomplete --stale` with no round; rid not the spec branch slug; branch `feat/Vr+C11` whose raw slug differs from `runid` (`runid` strips `+`, giving `VrC11`); missing spec; spec as a symlink to the real spec; spec path with whitespace; spec path with `=`; stub spec `docs/specs/SPEC-001-other.md`; stub spec outside `docs/specs/`; foreign repo (a second temp repo on `feat/other` holding `docs/specs/SPEC-001-vr-c11.md`); a second `SPEC-000-vr-c11.md` sorting before the given spec; a `GATE` reason holding `\| ROUND \| open \| token=<t>` then `close` with that `<t>`; unknown sub-verb; ship-gate agreement: the spec path the verb accepts equals `ls <toplevel>/docs/specs/SPEC-*-<raw slug>.md | head -1` as `hooks/ship-gate.sh` resolves it; a `git` failure (the spec's repo has a corrupt object store, or `git` fails via a `PATH` shim) in `open` and in `close` | each exits 64 or 1 as specified; ledger unchanged (a git failure exits 1, never 128, and writes no void) |
-| C12 additive equivalence | a ledger starting with a `START` line, then rounds, then a trailing `ROUND` line one second later than the last record; a copy with `ROUND` lines stripped | `check full <rid>`, `progress <rid> full`, `descent <rid> full`, `outcome-read <rid>`, gate-ledger `report --period week` and `read_kit_gates` identical across both; `history`, `lib/bench/report.py`, `lane-telemetry.sh report`, `dashboard.py` and `events.py` identical except the last timestamp or the value derived from it |
+| C11a open and key refusals (T1a) | `open`: rid not the spec branch slug; branch `main` (exit 1, the `rid()` refusal read through `git -C`); branch `feat/Vr+C11` whose raw slug differs from `runid` (`runid` strips `+`, giving `VrC11`); branch `feat/no-such-spec`, rid `no-such-spec`, whose slug matches no spec (the glob returns empty; exit 1, not GNU `ls`'s 2); missing spec; spec as a symlink to the real spec; spec path with whitespace; spec path with `=`; stub spec `docs/specs/SPEC-001-other.md`; stub spec outside `docs/specs/`; foreign repo (a second temp repo on `feat/other` holding `docs/specs/SPEC-001-vr-c11.md`); a second `SPEC-000-vr-c11.md` sorting before the given spec; `open` over an open round; `open` over a hand-written `closing` round; a `git` failure in `open` (a corrupt object store, or `git` failing via a `PATH` shim). Full-key `close`: stale token; no open round; APPROVED with `critical=2`; APPROVED with an R6 critical; NEEDS-REVISION with `critical=0`; R6 critical with `critical=0`; `r6="yes ok"`; `r6` holding ` \| `; `summary` holding `a<LF>\| ran \|<LF>b`; `summary` holding `x\| ran \|y`; `r6` holding a bare `\|`, a newline, or a carriage return; a malformed token (no epoch, no nonce, uppercase hex, 41 hex); a token that is valid then `<LF>x`; `warnings=x`; `agents=0`; a missing key; an unknown key; a repeated key; a `GATE` reason holding `\| ROUND \| open \| token=<t>` then `close` with that `<t>`. Also: unknown sub-verb; ship-gate agreement: the spec path the verb accepts equals `ls <toplevel>/docs/specs/SPEC-*-<raw slug>.md 2>/dev/null \| head -1` as `hooks/ship-gate.sh` resolves it | each exits 64 or 1 as specified; ledger unchanged (a git failure exits 1, never 128, and writes no void) |
+| C11b incomplete, resume and close-time refusals (T1b) | full-key `close` over `closing`; `close <rid> <t>` over `closing kind=incomplete`; `incomplete <rid> <t> <reason>` with `reason` holding a bare `\|`, a newline, or a carriage return; `incomplete` with a malformed or newline token; `incomplete --stale` over `closing kind=close`; `incomplete --stale` with no round; a `git` failure in `close` on a present regular spec (a `PATH` shim failing `hash-object`, `rev-parse` or `status`) | each exits 64 or 1 as specified; ledger unchanged (a git failure exits 1, never 128, and writes no void) |
+| C12 additive equivalence | a ledger starting with a `START` line, then rounds, then a trailing `ROUND` line one second later than the last record; a copy with `ROUND` lines stripped | identical across both: `check full <rid>`, `progress <rid> full`, `descent <rid> full`, `outcome-read <rid>`, gate-ledger `report --period week`, `read_kit_gates`, `lib/gate/proof-table-gen.py <rid> <out>` (whose parser `lib/mega/mega-review.py` imports), `parse_ledger(<log dir>, <rid>)` from `lib/mega/mega-report.py`, `lib/pitch.sh`'s `\| GATE \| grill \|` read, and the `commands/execute.md` line `show <rid> \| grep -Ei '\| GATE \| validate \| ' \| tail -1`; `history`, `lib/bench/report.py`, `lane-telemetry.sh report`, `dashboard.py` and `events.py` identical except the last timestamp or the value derived from it |
 | C13 docs | the three command files | the `validate-round` greps from `## Verification` pass; both emit sweeps and `tests/test-wrap.sh` pass |
 
 Negative control: see `## Grounding`, trace.
@@ -299,8 +311,8 @@ Negative control: see `## Grounding`, trace.
 1. The lead crashes between `open` and `close` and loses the token: the next `open` refuses. Inside `/kit:spec` the lead runs `incomplete <rid> --stale "lead restarted"`, then `open` again. In `/kit:execute` and `/kit:wrap` the `--stale` incomplete is a stop.
 2. `close` dies midway through its records: the last `ROUND` line is `closing` with every argument pinned. `close <rid> <token>` writes only the missing records (C10d).
 3. The spec is uncommitted at `open`: porcelain holds ` M <spec>` before and after, so only the blob can catch a further edit (C5).
-4. `open` in a repo on `main`: the binding refuses, because the branch `main` has no `type/` prefix and gives no slug (`${branch#*/}` is `main`, which is not `runid`-clean against any spec glob the rid could name). `open` exits 1; `rid` is not what refuses.
-5. Summary, reason or r6 text with a newline, a carriage return or a `|`: refused with 64 before any write (see the pipe rule under Inputs). `record()` still collapses whatever reaches it.
+4. `open` in a repo on `main`: the branch guard refuses with exit 1. The verb reads the branch with `git -C <toplevel> rev-parse --abbrev-ref HEAD` and applies `rid()`'s own `""|HEAD|master|main` refusal, copied rather than called, because `rid()` runs a bare `git` from the cwd (DEC-U). C11a covers it.
+5. Summary, reason or r6 text with a newline, a carriage return or a `|`: refused with 64 before any write. The verb tests the raw argument; nothing collapses it first (see the pipe rule under Inputs). `record()` still collapses whatever other callers pass it.
 6. Two sub-verbs on one rid at once: a lead error. `open` refuses over an open round; a racing second `open` voids or refuses the first round's `close`.
 7. The lead's own branch differs from the spec's branch: the binding refuses. This is the step 5 rule about the rid of the branch the spec lives on, and wrap's "WORKER's rid" rule.
 8. A PreCompact harvest, a Stop or SubagentStop session-state save, or a test cache write lands mid-round: the porcelain excludes skip it (C7c).
@@ -313,13 +325,14 @@ Negative control: see `## Grounding`, trace.
 | A write fails midway through `close` or `incomplete` | Last `ROUND` line is `closing` | `close <rid> <token>` or `incomplete <rid> <token>` writes only the missing records from the pinned fields (C10d). |
 | A reader breaks on the new marker | C12 fails | Readers key on field 2; the marker is additive. Last-timestamp readers shift by the call's own run time. |
 | A forged or foreign line lands after `open` | `ROUND void why=ledger`, the new lines on stderr | The round voids (exit 2). `check()` still counts a forged `GATE validate ran` as passing, because it accepts any earlier `ran`; until the Out of Scope `check()` follow-up lands, the lead escalates such a line to the operator. |
-| A forged `ROUND` line via free text | A reason holding `\| ROUND \|` | Free text passes through `oneline`, and the verb reads `ROUND` only where `$2=="ROUND"` (C11). |
+| A forged `ROUND` line via free text | A reason holding `\| ROUND \|` | Free text passes through `oneline`, and the verb reads `ROUND` only where `$2=="ROUND"` (C11a). |
 | Two sub-verbs race on one rid | Two `ROUND open` lines, or a line after the first round's `ROUND open` | No lock; a lead error. The token and last-line checks refuse or void. |
 | A hook or cache write voids every round | Repeated `why=porcelain` | Excludes for `_meta/`, `.claude/` and the four cache globs (Grounding item 4). A new writer outside them voids, which fails closed. |
 | A race between close's drift check and its `closing` append | A write landing in that gap goes unseen; the round closes over it | Accepted (DEC-J): a lead error, no lock. The window is one shell step. |
 | A race between open's start brackets and `ROUND open` | A foreign line between the brackets and the `ROUND open` line | Accepted (DEC-J): a foreign line landing between the brackets and `ROUND open` sits before the pinned last line and goes unseen. |
 | Consumer repo tools write untracked, non-ignored files | Repeated `why=porcelain` | The round is void. Fix: add the path to `.gitignore` or `.git/info/exclude`. A new ledger writer needs a change to this verb (a new marker allowed after `ROUND open`), never a silent exclude. |
-| A git call fails inside `open` or `close` | Exit 1, ledger unchanged | Nothing written, no void. The lead fixes the repo state and re-runs. |
+| A git call fails inside `open` or `close` | Exit 1, ledger unchanged | Nothing written, no void. The lead stops and reports (DEC-T). The round's state is unchanged, so after the fix the operator can direct a re-run of the same sub-verb. |
+| The spec is deleted, swapped for a symlink or made unreadable mid-round | `ROUND void why=blob` (C5c) | The `-f`, `! -L`, `-r` test runs before hashing, and `close` uses the stored `top=`, so the round voids (exit 2) rather than failing on git. |
 | The lead loses the token after a crash | `open` refuses over the open round | Read it from `show <rid>` (the last `ROUND open` or `ROUND closing` line), or run `incomplete <rid> --stale`. |
 | The verb and the command prose drift apart | C13 greps; test-meta pins | The commands name the verb; the verb carries no prose of its own. |
 
@@ -335,6 +348,7 @@ Negative control: see `## Grounding`, trace.
 ## Touches
 
 - lib/gate/**
+- hooks/ship-gate.sh
 - tests/**
 - commands/**
 - docs/specs/**
@@ -344,8 +358,8 @@ Negative control: see `## Grounding`, trace.
 
 ## Decision Log
 
-- DEC-A: extend `gate-ledger.sh`, no sibling script. Reason: reuse of `record()`, `outcome()`, `rid()` and the ledger plumbing; the brief names the precedent.
-- DEC-B: `caught=` and `dur_s` are per round. Validation-wide `caught` is any `caught=true` since the last validation-terminal `ROUND` line. A void round writes no `end`, so its time is excluded. Rejected: validation-wide brackets, because the verb cannot know which round is the last; the lead decides whether to re-validate after `close` returns. SPEC-361's validation-wide brackets produced its 4-to-1 mismatch. This rewords step 5's "so `dur_s` measures the validation".
+- DEC-A: extend `gate-ledger.sh`, no sibling script. Reason: the `| ROUND |` marker, the record order and the bracket pairing are ledger concerns, so the spec-lane rules that drive them live beside them in the ledger script. A sibling could call the gate-ledger CLI as `mutation-smoke.sh` does, so duplication is not the reason. The cost is spec-lane knowledge inside the substrate (N4), accepted.
+- DEC-B: `caught=` and `dur_s` are per round, except APPROVED (DEC-N). Validation-wide `caught` is any `caught=true` inside the DEC-N window. A void round writes no `end`, so its time is excluded. Rejected: validation-wide brackets, because the verb cannot know which round is the last; the lead decides whether to re-validate after `close` returns. SPEC-361's validation-wide brackets produced its 4-to-1 mismatch. This rewords step 5's "so `dur_s` measures the validation".
 - DEC-C: round state lives in the rid ledger as `| ROUND |` lines, not a side file. Reason: append-only, auditable, and cleaned up with the ledger. Rejected: a state file under `runs/`, which can go stale apart from the ledger.
 - DEC-D: the ledger drift check is "the file's last line equals the stored `ROUND open` line". Reason: nothing else may land after `open`; one comparison replaces a count plus a prefix hash.
 - DEC-E: `close` takes `key=value` arguments and checks verdict consistency. Reason: seven positional values are easy to swap; the checks are one `case` each and compute nothing.
@@ -355,15 +369,18 @@ Negative control: see `## Grounding`, trace.
 - DEC-I: a `closing` line pins every argument, so resume takes only `<rid> <token>`. Reason: a mid-write failure otherwise leaves a round that neither re-runs nor closes cleanly, and a resume with fresh arguments could write different records than the first attempt.
 - DEC-J: no lock, no forged-record exit code, no test-only failure hook. Reason: round 2's simplification. Concurrency is a lead error the token check fails closed on; a forged line is ledger drift like any other and is listed on stderr; C10d builds the partial ledger by hand.
 - DEC-K: `head` and `--untracked-files=all` join the snapshot. Reason: a mid-round commit leaves porcelain clean, and the default untracked mode folds a new nested file into its directory entry.
-- DEC-L: every git call in the verb is `git -C <toplevel>`, the pin and the blob re-hash included. Reason: a bare `git hash-object -w` writes into the current directory's repo, so a lead running from another repo pins the blob into the wrong object store, and outside any repo it exits 128. The round-3 finding was verified by the lead. The spec has no other bare git call in the verb's own steps; Grounding item 3 is a transcript of a manual sampling and stays as run.
+- DEC-L: every git call in the verb is `git -C <toplevel>` (at `close`, the stored `top=`), the pin and the blob re-hash included, and every sub-verb first unsets `GIT_DIR`, `GIT_WORK_TREE`, `GIT_INDEX_FILE` and `GIT_OBJECT_DIRECTORY`. Reason: a bare `git hash-object -w` writes into the current directory's repo, so a lead running from another repo pins the blob into the wrong object store, and outside any repo it exits 128. An inherited `GIT_DIR` overrides `-C` discovery the same way (reproduced round 4). Unset beats narrowing the claim: four variables, one line, and the "same result from any cwd" claim holds. The spec has no other bare git call in the verb's own steps; Grounding item 3 is a transcript of a manual sampling and stays as run.
 - DEC-M: rejected the single-`printf` atomic append for `close`. Reason: it removes the `closing` state and resume, but `record()` and `outcome()` build and append their own lines, so both would split into builders and the drift and consistency checks would still precede it. Resume is smaller. Revisit if the resume path proves fragile.
-- DEC-N: `close verdict=APPROVED` writes validation-wide `caught` on its `validate` and `design-record` ends. Reason: per-round `caught=false` on every APPROVED `ran` row makes the anomalies ceremony check (`lib/stats/src/stats/anomalies.py`, HARD `caught`) see a gate that never caught anything and propose cutting validate. The lead asked for validate; design-record has the same shape, so the rule covers both.
+- DEC-N: `close verdict=APPROVED` writes validation-wide `caught` on its `validate` and `design-record` ends. The window starts after the latest of the rid's first `ROUND open`, the previous validation-terminal `ROUND` line and the latest `GATE | validate | ran` line, for both gates, and counts only `end` lines inside a verb round block (after `ROUND closing`, before the next `ROUND` line). It reads only the lines before this round's `ROUND closing`, so the APPROVED round's own `ran` line never empties its window, and resume recomputes the same value. Reason: per-round `caught=false` on every APPROVED `ran` row makes the anomalies ceremony check (`lib/stats/src/stats/anomalies.py`, HARD `caught`) see a gate that never caught anything and propose cutting validate. The lead asked for validate; design-record has the same shape, so the rule covers both. The window bounds keep legacy pre-verb lines and a fallback single-pass validation from leaking an old `caught=true`. design-record uses the validate `ran` bound, not its own, because a NEEDS-REVISION round with an R6 pass writes `design-record ran` mid-validation.
 - DEC-O: the token carries a nonce, `<blob>.<epoch>.<n>`, where `<n>` is the `ROUND open` count for the rid. Reason: `<blob>.<epoch>` repeats within one second. A count is deterministic and testable; a random nonce is neither. `${token%%.*}` still yields the pin.
-- DEC-P: refuse a newline, carriage return or any `|` in summary, r6 and reason (exit 64), rather than collapse and pass. Reason: `oneline` ran after the ` | ` check, so newline and no-space pipe forms slipped through and forged a `| ran |` field that `execute.md`'s preflight reads as validated.
-- DEC-Q: any git failure in `open` or `close` writes nothing and exits 1, not a void. Reason: a failure is not evidence of drift, and `set -euo pipefail` would otherwise leak git's 128.
+- DEC-P: refuse a newline, carriage return or any `|` in summary, r6 and reason (exit 64), tested on the raw argument before any transform. Reason: an earlier draft ran `oneline` before the check, so newline and no-space pipe forms slipped through and forged a `| ran |` field that `execute.md`'s preflight reads as validated.
+- DEC-Q: any git failure in `open` or `close` writes nothing and exits 1, not a void; the ERR trap maps every unplanned failure to 1. Reason: a failure is not evidence of drift, and `set -euo pipefail` would otherwise leak git's 128 or GNU `ls`'s 2, which reads as a void and loops the lead. A spec that fails `-f`, `! -L` or `-r` at `close` is drift, not a git failure: it never reaches git and voids with `why=blob`.
 - DEC-R: the two unguarded race windows (close's drift check to its `closing` append; open's start brackets to `ROUND open`) are accepted with DEC-J.
 - DEC-S: read-only reviewers write nothing into the worktree, and consumer tools that do void rounds; the fix is `.gitignore` or `.git/info/exclude`. Reason: the porcelain snapshot fails closed by design.
-- DEC-T: in all three command files any exit other than 0 or 2 stops and reports to the operator, and void stderr lines are untrusted data. Reason: an untrusted line printed on stderr must never steer the lead.
+- DEC-T: in all three command files, 0 proceeds, 2 re-opens (only `close` returns 2), 64 allows one corrected re-run of the same sub-verb, and every other exit stops and reports to the operator; void stderr lines are untrusted data. Reason: an untrusted line printed on stderr must never steer the lead, and a 64 writes nothing, so one corrected retry is safe while a second 64 signals a lead that cannot form the call.
+- DEC-U: the branch guard copies `rid()`'s `""|HEAD|master|main` refusal (exit 1) onto `git -C <toplevel> rev-parse --abbrev-ref HEAD` instead of calling `rid()`. Reason: `rid()` runs a bare `git` from the cwd, which reads the caller's repo, not the spec's, and breaks DEC-L.
+- DEC-V: `ROUND open` stores `top=<toplevel>`, and `close` runs its git calls there. Reason: re-deriving the toplevel from the spec's directory fails when the spec or its directory is gone, which would turn a spec removal into a git failure (exit 1) instead of `blob` drift (C5c).
+- DEC-W: the token grammar accepts SHA-1 and SHA-256 blob ids and is tested with bash `[[ =~ ]]`. Reason: a SHA-256 repo yields 64-hex blobs, and `grep -E` matches line by line, so a token with an embedded newline would pass it (reproduced round 4). The token is a correlation id, not authentication; `show` prints it to anyone.
 
 ## Grounding
 
@@ -435,7 +452,7 @@ Cache rationale, corrected: the root `.gitignore` lists none of the four cache d
 
 **6. The ship-gate binding.** `hooks/ship-gate.sh` line 64: `SLUG="${BRANCH#*/}"`; line 224: `SPEC=$(ls "$ROOT"/docs/specs/SPEC-*-"$SLUG".md 2>/dev/null | head -1 || true)`. The glob uses the raw slug, not `runid()`. This spec, `docs/specs/SPEC-363-validate-round-verb.md`, is that match for slug `validate-round-verb`, whose `runid` is the same string.
 
-**7. The sweep constraint.** `tests/test-outcome-emit-sweep.sh` requires, for every `gate-ledger.sh record <rid> <phase> ran` in a command file, a literal `gate-ledger.sh outcome <rid> <phase> start` and `end` in the same file. `commands/spec.md` and `commands/execute.md` record `Validate` and `design-record`, so the literal bracket lines must stay (T3 keeps them in the fallback sentence). `tests/test-meta.sh` pins, among others, `outcome <rid> Validate end caught=true` and the last-line-wins validate grep in `commands/execute.md`, and `stops with \`VALIDATE PENDING: <spec path>\``, `SendMessage` and `fresh builder` in `commands/wrap.md`.
+**7. The sweep constraint.** `tests/test-outcome-emit-sweep.sh` requires, for every `gate-ledger.sh record <rid> <phase> ran` in a command file, a literal `gate-ledger.sh outcome <rid> <phase> start` and `end` in the same file. `commands/spec.md` and `commands/execute.md` record `Validate` and `design-record`, so the literal bracket lines must stay (T3a and T3b keep them in the fallback sentence). `tests/test-meta.sh` pins, among others, `outcome <rid> Validate end caught=true` and the last-line-wins validate grep in `commands/execute.md`, and `stops with \`VALIDATE PENDING: <spec path>\``, `SendMessage` and `fresh builder` in `commands/wrap.md`.
 
 **8. Baseline.** `bash tests/test-meta.sh`: `Passed: 879 / 879`. `bash tests/test-outcome-emit-sweep.sh`: `51 / 51`. `bash tests/test-gate-outcome.sh`: `25/25 passed`.
 
@@ -447,7 +464,7 @@ Cache rationale, corrected: the root `.gitignore` lists none of the four cache d
 - Red test: C5 in `tests/test-gate-validate-round.sh` asserts exit 2 and fails on exit 0. Its second assertion, no `GATE | validate` line after `ROUND open`, also fails.
 - Why the spec is dirty at `open`: an edit to a clean spec changes porcelain, and a commit changes `head`; either would void the round through another check and hide the mutation. A spec already dirty at `open` isolates the blob check.
 
-Not sampled: behavior when `git` is missing from `PATH`. The verb needs git for `rid` already, so it fails at `rid`.
+Not sampled: behavior when `git` is missing from `PATH`. The verb calls no `rid()`; its first `git -C` call fails with 127, and the ERR trap maps that to exit 1 with nothing written.
 
 ## Open questions
 

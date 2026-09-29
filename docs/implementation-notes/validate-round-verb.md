@@ -25,3 +25,23 @@ Warnings folded: `head=` and `--untracked-files=all` in the snapshot (DEC-K); gl
 ## Decided at spec time, flagged for the validators
 
 - Brackets are per round (DEC-B). `caught=true` marks the round that caught; the validation-wide value is derived from `ROUND` lines.
+
+## Round 3: NEEDS REVISION, folded
+
+Folded in the spec only (commit `b92b6513`); no notes entry was written at the time. Summary from that commit: pin and re-hash under `git -C <toplevel>`, a token nonce, pipe and newline refusal, the APPROVED caught rollup, git failures exit 1, the race-window and consumer-writer rows, and the C1b, C1c, C9b and C11 rows.
+
+## Round 4: APPROVED, warnings folded, Status VALIDATED
+
+7 parallel reviewers, 0 criticals. Every consolidated warning was folded; none skipped. New decisions: DEC-U, DEC-V, DEC-W. Widened: DEC-A, DEC-B, DEC-L, DEC-N, DEC-P, DEC-Q, DEC-T. Each new shell mechanism was reproduced in a scratch repo under `$TMPDIR` (git 2.55.0, macOS bash).
+
+Lead calls:
+
+- Git env: unset `GIT_DIR`, `GIT_WORK_TREE`, `GIT_INDEX_FILE` and `GIT_OBJECT_DIRECTORY` at verb start, rather than narrowing DEC-L. Repro: with `GIT_DIR` exported to another repo, `git -C <spec repo> rev-parse --abbrev-ref HEAD` read the other repo (exit 128 on its empty history); after the unset it read `feat/vr-x`.
+- Unplanned failures: `set -E; trap 'exit 1' ERR` at verb start, planned refusals as explicit `exit N`. Repro: an unguarded `exit 2` inside a helper gave 1, a missing binary gave 1, a planned `exit 2` stayed 2, and a guarded `ls ... 2>/dev/null | head -1 || true` with no match survived `set -euo pipefail` (unguarded, it killed the shell).
+- Token: bash `[[ =~ ]]` refused a valid token followed by `\nextra`; `grep -Eq` accepted it. A `git init --object-format=sha256` repo pins a 64-hex blob, so the grammar takes both lengths.
+- Relative spec path: `git -C <toplevel> hash-object ../docs/specs/X.md` from a subdirectory failed with 128; the `pwd -P` canonical path hashed fine. So the pin and every hash use the canonical absolute path.
+- Spec removal at `close`: `-f`, `! -L`, `-r` sorted a regular file, a symlink, a missing file and a mode-000 file correctly. `top=` is stored on `ROUND open` so `close` never re-derives the toplevel from a possibly missing directory (DEC-V).
+- `<toplevel>` is a prefix of the canonical spec path: `git rev-parse --show-toplevel` returned the physical `/private/var/...` path, matching `pwd -P`.
+- DEC-N window, tightened beyond the warning: the warning bounded the window by the latest `GATE | validate | ran` line, but a fallback validation writes `OUTCOME validate end caught=true` after its `ran` line, inside that window. The window now counts only `end` lines inside verb round blocks (after `ROUND closing`, before the next `ROUND` line), and it reads only lines before this round's own `closing`, else the APPROVED round's own `ran` line would empty it. A scratch awk over four fixture ledgers gave the expected values: NEEDS-REVISION then APPROVED (validate true, design-record false); legacy `caught=true` before the first open (false); a fallback `ran` plus `end caught=true` (false on both gates); R6 critical, then R6 pass, then APPROVED (design-record true).
+- `hooks/ship-gate.sh` gets trailing comments only, so the line numbers 64 and 224 the spec cites stay valid.
+- T3 exit rule: 64 allows one corrected re-run of the same sub-verb; only `close` returns 2.
