@@ -11,3 +11,6 @@ Deltas from SPEC-360. Nothing here repeats what the spec already states.
 ## 2026-09-29 Two gaps stay out of scope
 - `cmd_land` has no re-gate after the ci wait, so a red label-started run still lands. Adding one alters what `land` promises; the lead holds it as a separate change.
 - Label present, new push, then another label: the all-SKIPPED rollup on the new head reads as done and passes the gate. The sync records no baseline because it neither adds nor re-adds `ci`.
+
+## 2026-09-29 A third validation round, at the operator's direction
+- Round 2 found that negative control 1 could not turn T1 red: the settle loop skipped the minimal wait fixtures. T1 now serves full detail at reads 4 and 5, and T6 is the second tripwire. The zero-time sort clause was dropped because live rollups report null.
