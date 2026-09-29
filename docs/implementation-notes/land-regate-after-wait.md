@@ -14,5 +14,12 @@ Deltas from SPEC-365. Nothing here repeats what the spec already states.
 - Round 1 surfaced a cost the spec now names as C6. With the sync dating the label, autoland on the `NONEW` path with a `CLEAN` state holds the grace window twice: once in the carry's wait and once in the inner merge's. T13 serves no events, so its count cannot see the second hold. The lead should decide whether that cost is acceptable, or whether the inner merge should skip its hold when the carry has just re-gated the same head.
 - E3 serves events and then exits 1, the way a failed later page of `--paginate` does. That pins the sync to honor gh's exit code, not just parse whatever printed (NC7).
 
+## 2026-09-29 Round 2 fold (NEEDS REVISION, 7/7 parallel)
+- The C6 question in the round-1 entry is closed: the lead accepted the double hold per carry with no flag (DEC-D). T13 now serves the `ci` event and counts 26 reads; T13d pins four holds.
+- Two reviewer conflicts resolved fail-closed. A failed events read refuses instead of snapshotting every key (DEC-F). The `completedAt` start fallback is cut, because with no-start entries in the snapshot it could only turn an entry NEW (DEC-I).
+- Calls this worker made beyond the lead's list: the `actions/` URL rule applies to the DATED cut only, which keeps SPEC-360's T12 (DEC-J); the carry gets a catch-all `case` arm rather than a pinned oid (DEC-K); the non-CLEAN message keeps its text under the wider clause (DEC-L); "test the settle defaults" is read as the head wait at a non-zero `KIT_WRAP_SETTLE_SECS` (DEC-O); NC11 mutates the empty-`T` arm to return `[]`, because dropping it lets the head-age arm re-add anyway.
+- The widest behavior change is C7: a failed `gh label list` now refuses `land`, `merge` and the carry on every repo, including repos with no `ci` label. That follows the lead's fail-closed rule for R1(b).
+- T13b and T13c keep round 1's count of 6, which assumes carry 2 makes no read of #42 once carry 1 is skipped. The build confirms or corrects it.
+
 ## 2026-09-29 Process
 - This worker ran the spec steps the lead named (write, Spec ran, Spec end, commit) and stopped at `VALIDATE PENDING`. The full-lane design-time pass (`/kit:devs-team` plus `kit:advisor` over-suggest) did not run here. That call belongs to the lead.
