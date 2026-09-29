@@ -1978,6 +1978,9 @@ def main(argv):
         if dry:
             sys.stderr.write("harvest-sweep: sweep.lock held; not starting a dry run\n")
             return 1
+        # one fixed marker line: the launcher greps it and skips the bridge, the
+        # only case after the gates where no ping is owed (AC4, DEC-21)
+        sys.stderr.write("harvest-sweep: sweep.lock held; skipping run\n")
         return 0
     global _DRY_RUN
     try:

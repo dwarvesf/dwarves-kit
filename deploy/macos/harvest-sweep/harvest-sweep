@@ -9,8 +9,9 @@
 # It calls hooks/harvest_sweep.py --sweep DIRECTLY (never through harvest.sh,
 # which always exits 0 and would swallow the rc), then runs the consumer bridge
 # ~/.config/harvest-sweep/bridge <rc> <report path or -> best-effort (DEC-21).
-# A run that produced no report and no failure -- lock-held, or nothing
-# eligible -- gets no bridge call at all (AC4).
+# Only a lock-held run gets no bridge call -- the sweep prints one fixed marker
+# line on stderr and exits 0; an idle run pings with '-' so the heartbeat still
+# fires (AC4).
 set -uo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -48,25 +49,31 @@ esac
 
 status_report() { python3 "$KIT/hooks/harvest_sweep.py" --status 2>/dev/null | awk '{print $1}'; }
 
-before="$(status_report)"
 log "start $LABEL"
-python3 "$KIT/hooks/harvest_sweep.py" --sweep
+sweep_started="$(date +%s)"
+SWEEP_ERR="$(mktemp "${TMPDIR:-/tmp}/harvest-sweep-err.XXXXXX")"
+python3 "$KIT/hooks/harvest_sweep.py" --sweep 2>"$SWEEP_ERR"
 rc=$?
-after="$(status_report)"
+# the sweep's stderr is diagnostics; relay it so it lands in <label>.log as before
+cat "$SWEEP_ERR" >&2
 log "end rc=$rc"
 
-# A report path appears under runs/ only for a run that actually ran (idle and
-# lock-held runs write nothing, so the newest path is unchanged -- "none" or a
-# stale report). rc != 0 still fires the bridge: a crash between the sweep and
-# the report write is exactly the ping that must not be lost.
-report="-"
-if [ "$after" != "$before" ] && [ "$after" != "none" ]; then
-  report="$after"
-fi
-if [ "$rc" -ne 0 ] || [ "$report" != "-" ]; then
+# A lock-held run is the ONLY skipped case after the gates: the sweep prints
+# one fixed marker line and exits 0. Every other outcome -- idle rc 0, a fresh
+# report, a failure -- owes the bridge a ping (an idle host that stops pinging
+# is exactly what the heartbeat grace catches). The path is this run's report:
+# an idle run leaves the newest report untouched, so it still passes '-'.
+if ! grep -q '^harvest-sweep: sweep\.lock held' "$SWEEP_ERR"; then
+  report="-"
+  newest="$(status_report)"
+  if [ "$newest" != "none" ] && [ -f "$newest" ]; then
+    mtime="$(stat -f %m "$newest" 2>/dev/null || echo 0)"
+    [ "$mtime" -ge "$sweep_started" ] && report="$newest"
+  fi
   BRIDGE="$HOME/.config/harvest-sweep/bridge"
   if [ -x "$BRIDGE" ]; then
     "$BRIDGE" "$rc" "$report" >> "$LOG" 2>&1 || log "bridge exited $?"
   fi
 fi
+rm -f "$SWEEP_ERR"
 exit "$rc"

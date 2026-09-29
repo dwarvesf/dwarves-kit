@@ -2766,7 +2766,10 @@ P("dry_replay_calls", calls())   # the cache lands the second dry run for free
 # ---- lock held: --sweep exits 0 without work, --dry-run refuses ----
 lockfd = os.open(os.path.join(sw, "sweep.lock"), os.O_CREAT | os.O_RDWR, 0o600)
 fcntl.flock(lockfd, fcntl.LOCK_EX)
-P("lock_sweep_rc", hs.main(["--sweep"]))
+err = io.StringIO()
+with contextlib.redirect_stderr(err):
+    P("lock_sweep_rc", hs.main(["--sweep"]))
+P("lock_marker", "harvest-sweep: sweep.lock held" in err.getvalue())
 P("lock_dry_rc", hs.main(["--sweep", "--dry-run"]))
 P("lock_calls", calls())
 fcntl.flock(lockfd, fcntl.LOCK_UN); os.close(lockfd)
@@ -2818,6 +2821,7 @@ assert_eq "After state: the raw output cache landed in real state" "d1@199999640
 assert_eq "After state: no cursor, ledgers, patterns, proposed, or runs in real state" "sweep.lock" "$(t14 dry_no_state)"
 assert_eq "After state: a second dry run reuses the cache" "2" "$(t14 dry_replay_calls)"
 assert_eq "AC4: a lock-held --sweep exits 0" "0" "$(t14 lock_sweep_rc)"
+assert_eq "AC4: a lock-held --sweep prints the bridge-skip marker" "True" "$(t14 lock_marker)"
 assert_eq "AC4: a lock-held --dry-run refuses to start" "1" "$(t14 lock_dry_rc)"
 assert_eq "AC4: the lock-held runs called no extractor" "2" "$(t14 lock_calls)"
 assert_eq "AC4: a disabled host exits 0" "0" "$(t14 disabled_rc)"
@@ -3409,7 +3413,7 @@ assert_eq "kit.toml ships the [harvest] table with safe defaults" "false|6|claud
 # T16 launchd launcher + plist template (the launcher part of AC4, AC19):
 # the launcher re-checks the host is active (installed marker + root-only
 # harvest.enable), calls harvest_sweep.py --sweep directly so the rc reaches
-# the bridge, and never calls the bridge for a run that produced no report.
+# the bridge, and calls the bridge on every outcome except a lock-held run.
 # Tests run it with a temp HOME, a stub python3 on the launcher's own PATH
 # prepend ($HOME/.local/bin), and a stub bridge under ~/.config/harvest-sweep.
 # ============================================================================
@@ -3433,6 +3437,10 @@ case "\$verb" in
     ;;
   --sweep)
     echo call >> "$T16D/sweep-calls"
+    if [ "\${STUB_SWEEP_LOCKHELD:-0}" = "1" ]; then
+      echo 'harvest-sweep: sweep.lock held; skipping run' >&2
+      exit 0
+    fi
     if [ "\${STUB_SWEEP_RUN:-1}" = "1" ]; then
       n=\$(( \$(cat "$T16D/seq" 2>/dev/null || echo 0) + 1 )); echo "\$n" > "$T16D/seq"
       rep="\$sdir/sweep/runs/run-\$n/report.md"
@@ -3455,6 +3463,7 @@ printf '[harvest]\nenable = true\n' > "$T16D/kroot/kit.toml"
 t16_run() {
   rm -rf "$T16_HOME/state"
   mkdir -p "$T16_HOME/state/sweep"; : > "$T16_HOME/state/sweep/installed"
+  case " $* " in *"STUB_SWEEP_LOCKHELD=1"*) : > "$T16_HOME/state/sweep/sweep.lock" ;; esac
   if [ "${1:-}" = "--no-marker" ]; then shift; rm -f "$T16_HOME/state/sweep/installed"; fi
   rm -f "$T16D/sweep-calls" "$T16D/bridge-calls" "$T16D/newest" "$T16D/seq"
   rm -f "$T16_HOME/Library/Logs/dwarves-kit"/*.log
@@ -3495,8 +3504,13 @@ R="$(t16_run STUB_SWEEP_RC=1 STUB_SWEEP_RUN=0)"
 assert_eq "AC4: a crash before the report sends '-' as the path" "1 -" "$(t16b "$R")"
 
 R="$(t16_run STUB_SWEEP_RUN=0)"
-assert_eq "AC4: a no-report run (idle or lock-held) never calls the bridge" "none" "$(t16b "$R")"
+assert_eq "AC4: an idle run pings the bridge with '-'" "0 -" "$(t16b "$R")"
 assert_eq "AC19: the no-report run still logs end rc" "1" "$(t16_log | grep -c 'end rc=0')"
+
+R="$(t16_run STUB_SWEEP_LOCKHELD=1)"
+assert_eq "AC4: a lock-held run still reaches the sweep call" "1" "$(tf "$R" sweep)"
+assert_eq "AC4: a lock-held run exits 0" "0" "$(tf "$R" rc)"
+assert_eq "AC4: a lock-held run never calls the bridge" "none" "$(t16b "$R")"
 
 # optional env file: per-machine settings load before the sweep runs
 printf 'export STUB_SWEEP_RC=3\n' > "$T16_HOME/.config/harvest-sweep/env"
