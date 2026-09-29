@@ -20,3 +20,10 @@ Deltas from SPEC-360. Nothing here repeats what the spec already states.
 - Evidence: the round-3 validator ran gh 2.101 against four public PRs with pending checks. Every QUEUED and IN_PROGRESS CheckRun carried `"completedAt":"0001-01-01T00:00:00Z"` and `"conclusion":""`, and QUEUED entries also carried a real `startedAt`. jq `//` falls through only on null or false, so both today's key and the round-2 key picked the stale SKIPPED.
 - Decision/Change: the key is the first real time among `completedAt`, `startedAt`, `createdAt`, skipping null, empty and the zero time. A pending entry with no real time still sorts last. Every pending test fixture is live-shaped, so T5 fails under the old key.
 - Impact: the bug in `_pr_gate` was wider than the queued case: any pending run lost to an older completed run of its name.
+
+## 2026-09-29 Build deltas
+- `_pr_gate` defines its own `pending` jq def with the same predicate the wait uses. The two stay separate programs, so the predicate is written twice, not shared through a variable the way `CI_ENTRY_KEY` is. Sharing it would touch the wait's jq and the ordinary carry wait for no behavior change.
+- The add-branch `CI_LABEL_BASE=` assignment is one line; the `'[]'` fallback sits on the next line, so the negative-control `sed` replaces the assignment and leaves valid shell.
+- T6 counts rollup reads in the gh call log (`pr view 42 ... statusCheckRollup` lines before `pr merge 42`), because land shares PR number 42 with the other land cases and reads no settle detail.
+- T7 drives `wrap merge` without `--apply` against `clone-scan-main`; the verdict line is all it asserts.
+- `docs/FEATURES.md` was regenerated (`feature-registry.sh check --fix`): the new spec file moved four `SPEC-` reference counts, and `tests/test-meta.sh` plus the ship-gate refuse a stale registry.

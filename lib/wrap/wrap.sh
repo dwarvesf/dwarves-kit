@@ -1239,12 +1239,22 @@ _carry_branch_ours() {
 # when the repo has no such label (a repo without one, or a repo whose label read failed,
 # behaves exactly as before), 2 when the repo gates but the label could not be set: that
 # merge would run untested, so the caller refuses it.
+# When it adds the label it also sets CI_LABEL_BASE to the keys of the checks already on the
+# PR, so `_ci_checks_wait` can tell the runs the label starts from runs that predate it; in
+# every other case CI_LABEL_BASE is [] (the re-add branch runs only on an empty rollup).
+# CI_ENTRY_KEY is the one definition of a rollup entry's key both functions use. gh emits an
+# absent URL as "" and an absent time as the zero time, so the key takes the first field that
+# is none of those; the check name keeps apart third-party checks sharing one detailsUrl.
+CI_ENTRY_KEY='def ckey: (.name // .context // "") + "@" + ([.detailsUrl, .targetUrl, .startedAt, .createdAt] | map(select(. != null and . != "" and . != "0001-01-01T00:00:00Z")) | .[0] // "");'
 _ci_label_sync() {
   local url="$1" n="$2" detail
+  CI_LABEL_BASE='[]'
   gh label list --repo "$url" --search ci --limit 200 --json name 2>/dev/null \
     | jq -e '[.[] | select(.name == "ci")] | length > 0' >/dev/null 2>&1 || return 1
   detail="$(gh pr view "$n" --repo "$url" --json labels,statusCheckRollup 2>/dev/null)"
   if ! printf '%s' "$detail" | jq -e '[.labels // [] | .[] | select(.name == "ci")] | length > 0' >/dev/null 2>&1; then
+    CI_LABEL_BASE="$(printf '%s' "$detail" | jq -c "${CI_ENTRY_KEY} [(.statusCheckRollup // [])[] | ckey]" 2>/dev/null)"
+    [ -n "$CI_LABEL_BASE" ] || CI_LABEL_BASE='[]'
     gh pr edit "$n" --repo "$url" --add-label ci >/dev/null 2>&1 || {
       echo "     could not add the ci label to #${n}" >&2; return 2; }
     echo "     labeled #${n} ci (this repo runs PR checks only on the label)"
@@ -1258,25 +1268,29 @@ _ci_label_sync() {
 }
 
 # _ci_checks_wait <repo-url> <pr> -- the bounded wait for the runs a `ci` label just
-# started, used instead of the ordinary pending-check wait on a label-gated repo. The
-# `labeled` event registers the runs a few seconds after the edit, so an empty rollup
-# inside KIT_WRAP_CI_GRACE_SECS still counts as pending; past it, an empty rollup is a
-# paths-filtered workflow that started nothing and the wait ends. Pending checks wait to
-# KIT_WRAP_CARRY_CHECKS_SECS, and an unreadable read waits the same way a pending check
-# does. What red checks do is not this wait's call: the merge and its gate read them as
+# started, used instead of the ordinary pending-check wait on a label-gated repo. Pending
+# checks, and an unreadable read, wait to KIT_WRAP_CARRY_CHECKS_SECS. With nothing pending,
+# the wait still holds while no check outside CI_LABEL_BASE has appeared: the `labeled`
+# event registers its runs a few seconds after the edit, and until then the rollup holds
+# only checks that predate the label (none, or an earlier event's SKIPPED runs). That hold
+# is bounded by KIT_WRAP_CI_GRACE_SECS; past it, the workflow is a paths-filtered one that
+# started nothing and the wait ends. What red checks do is not this wait's call: the merge and its gate read them as
 # they always did.
 KIT_WRAP_CI_GRACE_SECS=${KIT_WRAP_CI_GRACE_SECS:-90}
 case "$KIT_WRAP_CI_GRACE_SECS" in ''|*[!0-9]*) KIT_WRAP_CI_GRACE_SECS=90 ;; esac
 _ci_checks_wait() {
   local url="$1" n="$2" waited=0 state
   while :; do
-    state="$(gh pr view "$n" --repo "$url" --json statusCheckRollup 2>/dev/null | jq -r '
+    state="$(gh pr view "$n" --repo "$url" --json statusCheckRollup 2>/dev/null \
+      | jq -r --argjson base "${CI_LABEL_BASE:-[]}" "${CI_ENTRY_KEY}"'
       (.statusCheckRollup // []) as $r
-      | if ($r | length) == 0 then "EMPTY"
-        else [$r[] | select(((.status // "COMPLETED") != "COMPLETED")
-                            or ((.state // "") == "PENDING") or ((.state // "") == "EXPECTED"))] | length end' 2>/dev/null)"
+      | ([$r[] | select(((.status // "COMPLETED") != "COMPLETED")
+                        or ((.state // "") == "PENDING") or ((.state // "") == "EXPECTED"))] | length) as $p
+      | if $p > 0 then $p
+        elif ([$r[] | ckey | select(IN($base[]) | not)] | length) == 0 then "NONEW"
+        else 0 end' 2>/dev/null)"
     [ "$state" = "0" ] && break
-    if [ "$state" = "EMPTY" ]; then
+    if [ "$state" = "NONEW" ]; then
       [ "$waited" -lt "$KIT_WRAP_CI_GRACE_SECS" ] || break
     else
       [ "$waited" -lt "$KIT_WRAP_CARRY_CHECKS_SECS" ] || break
@@ -1744,21 +1758,30 @@ _pr_detail() {
 # `gh pr view --json statusCheckRollup` returns one entry per check RUN, not per check name:
 # a re-run of the same job (e.g. a flaky check re-triggered) leaves both the old FAILURE run
 # and the new SUCCESS run in the array. Grouping by name and keeping only the run with the
-# latest completedAt (falling back to startedAt for a still-running check) mirrors what
-# `gh pr checks` already shows and what GitHub's own merge button honors.
+# latest real time mirrors what `gh pr checks` already shows and what GitHub's own merge
+# button honors. gh reports a pending run's completedAt as the zero time 0001-01-01T00:00:00Z,
+# never null, so `//` alone would key a pending run on that zero and let an older completed
+# run of the same name win. `rtime` takes the first time that is neither null, empty, nor
+# zero, so a queued or running check keys on its real startedAt; a pending entry with no real
+# time at all sorts last, so it is the latest and its empty conclusion refuses the gate.
 #
 # The rollup also mixes two GitHub types: CheckRun (`.name`, `.completedAt`/`.startedAt`,
-# `.conclusion`) and StatusContext (`.context`, `.createdAt`, `.state`, no `.name` at all).
+# `.conclusion`) and StatusContext (`.context`, `.startedAt`, `.targetUrl`, `.state`, no
+# `.name` at all).
 # Grouping on `.name` alone puts every StatusContext entry (all `.name == null`) into ONE
 # group, so two distinct commit statuses collapse into a single row and only the last one
 # survives -- a real failing status can be hidden behind a later, unrelated passing one.
-# `.name // .context` keys each type by its own identifier; the sort falls back through
-# `.completedAt // .startedAt // .createdAt` to cover both types' timestamp fields.
+# `.name // .context` keys each type by its own identifier; `rtime` walks completedAt,
+# startedAt, createdAt to cover both types' timestamp fields.
 _pr_gate() {
   printf '%s' "$1" | jq -r --arg def "$2" '
+    def rtime: [.completedAt, .startedAt, .createdAt]
+      | map(select(. != null and . != "" and . != "0001-01-01T00:00:00Z")) | .[0] // "";
+    def pending: ((.status // "COMPLETED") != "COMPLETED")
+      or ((.state // "") == "PENDING") or ((.state // "") == "EXPECTED");
     def checks: (.statusCheckRollup // [])
       | group_by(.name // .context)
-      | map(sort_by(.completedAt // .startedAt // .createdAt // "") | last);
+      | map(sort_by([(if (pending and rtime == "") then 1 else 0 end), rtime]) | last);
     if (.isDraft == true) then "SKIP draft"
     elif (.baseRefName != $def) then "SKIP base is \(.baseRefName), not the default branch \($def)"
     elif (.mergeable != "MERGEABLE") then "SKIP not mergeable (\(.mergeable // "unknown"))"
