@@ -2728,6 +2728,38 @@ rm -rf "$AW"
 
 # ============================================================
 echo ""
+echo "=== post-compact-reinject (SessionStart compact) ==="
+# ============================================================
+PCR_REPO=$(mktemp -d "${TMPDIR:-/tmp}/dk-pcr.XXXXXX")
+_git_repo "$PCR_REPO"
+mkdir -p "$PCR_REPO/docs/specs"
+printf '# SPEC-001: x\nStatus: DRAFT\n\n## Problem\n\nCompaction drops the "spec" intent C:\\dir\n  and more.\n\n## Other\nnot this\n' > "$PCR_REPO/docs/specs/SPEC-001-x.md"
+PCR_JSON=$( cd "$PCR_REPO" && bash "$KIT_DIR/hooks/post-compact-reinject.sh" 2>/dev/null )
+PCR_CTX=$(printf '%s' "$PCR_JSON" | jq -r '.hookSpecificOutput.additionalContext' 2>/dev/null)
+assert_eq_str "reinject: hookEventName is SessionStart" "SessionStart" "$(printf '%s' "$PCR_JSON" | jq -r '.hookSpecificOutput.hookEventName' 2>/dev/null)"
+assert_output_contains "reinject: additionalContext carries the SPEC line" "SPEC: docs/specs/SPEC-001-x.md" "$PCR_CTX"
+assert_output_contains "reinject: additionalContext carries the Problem intent, quotes and backslashes intact" 'INTENT: Compaction drops the "spec" intent C:[\]dir and more.' "$PCR_CTX"
+assert_output_not_contains "reinject: intent stops at the first paragraph" "not this" "$PCR_CTX"
+
+PCR_REPO2=$(mktemp -d "${TMPDIR:-/tmp}/dk-pcr2.XXXXXX")
+_git_repo "$PCR_REPO2"
+mkdir -p "$PCR_REPO2/docs/specs"
+printf '# SPEC-001: y\nStatus: DRAFT\n\n## Notes\nno intent section\n' > "$PCR_REPO2/docs/specs/SPEC-001-y.md"
+PCR_JSON2=$( cd "$PCR_REPO2" && bash "$KIT_DIR/hooks/post-compact-reinject.sh" 2>/dev/null )
+PCR_CTX2=$(printf '%s' "$PCR_JSON2" | jq -r '.hookSpecificOutput.additionalContext' 2>/dev/null)
+assert_output_contains "reinject: spec without Problem still yields valid JSON with the SPEC line" "SPEC: docs/specs/SPEC-001-y.md" "$PCR_CTX2"
+assert_output_not_contains "reinject: spec without Problem emits no INTENT line" "INTENT:" "$PCR_CTX2"
+
+# Wiring: SessionStart(compact) in both tables, never PostToolUse (no tool is named compact).
+for TBL in settings.json hooks/hooks.json; do
+  jq -e '[.hooks.SessionStart[] | select(.matcher=="compact") | .hooks[].command | select(contains("post-compact-reinject.sh"))] | length == 1' "$KIT_DIR/$TBL" >/dev/null 2>&1
+  assert_true "reinject: $TBL wires post-compact-reinject under SessionStart matcher compact" $?
+  jq -e '[.hooks.PostToolUse[]?.hooks[].command | select(contains("post-compact-reinject.sh"))] | length == 0' "$KIT_DIR/$TBL" >/dev/null 2>&1
+  assert_true "reinject: $TBL does not wire post-compact-reinject under PostToolUse" $?
+done
+
+# ============================================================
+echo ""
 echo "=== Results ==="
 # ============================================================
 echo -e "Passed: ${GREEN}${PASS}${NC} / ${TOTAL}"

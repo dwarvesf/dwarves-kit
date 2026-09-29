@@ -604,7 +604,7 @@ Compaction sequence:
 If state is missing, check in order:
 - `.claude/session-state/last-state.md` exists and is current.
 - `.claude/session-state/archive/` for the last 10 rotated snapshots.
-- Bash install only: confirm both PreCompact and PostToolUse(compact) hooks are registered in `settings.json`.
+- Bash install only: confirm both PreCompact and SessionStart(compact) hooks are registered in `settings.json`.
 - Plugin install: same checks against `hooks/hooks.json`.
 
 #### Statusline shows blank or default values

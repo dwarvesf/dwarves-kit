@@ -3,15 +3,16 @@
 #
 # The full glob is 13-15 minutes sequential on a Mac. A branch that touches one lib file
 # needs the handful of suites that name it, and the pre-push check was paying for all of
-# them. Selection: a suite whose CODE lines name a changed file's basename, a changed suite
-# itself, tests/test-<mod>*.sh for lib/<mod>/, plus every suite with an `# always:` header
-# (the tree-wide lints, which a diff-derived pick can never reach).
+# them. Selection is bin/test-affected --list (code lines naming a changed path, a changed
+# suite itself, tests/test-<mod>*.sh for lib/<mod>/), plus every suite with an `# always:`
+# header (the tree-wide lints, which a diff-derived pick can never reach).
 #
 # Each case builds a throwaway kit-shaped git repo (tests/run-all.sh plus fixture suites)
 # and runs the REAL script against it, so nothing here touches the repo's own tests/.
 set -uo pipefail
 DIR="$(cd "$(dirname "$0")/.." && pwd)"
 RA="$DIR/tests/run-all.sh"
+TA="$DIR/bin/test-affected"
 pass=0; fail=0
 ok(){ echo "  ok: $*"; pass=$((pass+1)); }
 no(){ echo "  FAIL: $*" >&2; fail=$((fail+1)); }
@@ -22,8 +23,8 @@ export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null
 g() { git -c user.name=t -c user.email=t@t "$@"; }
 
 mkkit() {  # $1 = dir ; a committed kit-shaped repo holding the real run-all.sh
-  mkdir -p "$1/tests" "$1/lib/foo" "$1/lib/baz" "$1/docs"
-  cp "$RA" "$1/tests/run-all.sh"
+  mkdir -p "$1/tests" "$1/bin" "$1/lib/foo" "$1/lib/baz" "$1/docs"
+  cp "$RA" "$1/tests/run-all.sh"; cp "$TA" "$1/bin/test-affected"
   printf '#!/usr/bin/env bash\nf=lib/foo/foo.sh\nexit 0\n' > "$1/tests/test-foo.sh"
   printf '#!/usr/bin/env bash\n# a comment naming foo.sh is not a dependency\nexit 0\n' > "$1/tests/test-bar.sh"
   printf '#!/usr/bin/env bash\nexit 0\n' > "$1/tests/test-baz.sh"
