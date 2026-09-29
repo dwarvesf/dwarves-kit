@@ -147,6 +147,10 @@ fi
 
 mkdir -p "$HOME/Library/LaunchAgents" "$HOME/Library/Logs/dwarves-kit" "$STATE/sweep"
 cp "$rendered" "$plist"
+# 0644, not mktemp's 0600: vps-mon's launchd discovery reads LaunchAgents as another
+# user and silently drops a plist it cannot read, so the job would never show monitored.
+# The plist carries no secret.
+chmod 644 "$plist"
 # The marker is what flips THIS host into sweep-active: label for the launcher's
 # log line, host and kit for audit, ts for when the host opted in (DEC-27).
 printf '{"label":"%s","host":"%s","kit":"%s","ts":%s}\n' \

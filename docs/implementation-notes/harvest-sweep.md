@@ -204,3 +204,10 @@ Deltas from SPEC-357 (phase 1, kit-side tasks T1 to T19, T13b, T22). Nothing her
 - Why: the T20 dry runs on the Mini hit two real-model failures the stub cannot show. A Devin transcript that ends mid-task made Haiku continue the agent's work, with tool-call markup and no JSON. The old probe, a bare 20-character phrase, drew prose, so `extract_ok` failed it and every first failure stopped the run with rc 1. Both fixes held on two real calls each.
 - Deviation: the spec calls the probe a fixed 20-character prompt. The probe stays fixed, but it is now about 1,300 characters, so it costs about one extraction's fixed prompt per failing run. The DEC-68 bound still holds (the AC6 test passes at 19,400).
 - Negative controls (red then green): the tail dropped from `build_prompt`; `PROBE_PROMPT` restored to the bare phrase.
+
+## 2026-09-29 Rollout on the Mini (T20, T20b, T21)
+- T20b ran before `enable = true` (DEC-22) through a temporary `KIT_CONFIG_OPERATOR` overlay with `enable = true` and a hand-written `installed` marker, both removed after the run. `main()` refuses `--sweep` on an inactive host, so the spec's order is not reachable without that overlay. The marker alone never silenced the hook, since the real operator file still said `enable = false`.
+- The heartbeat URL lives at `~/.config/vps-mon/harvest-sweep-heartbeat-url` (0600), not `/etc/vps-mon/`: the job runs as the GUI user, and that is the vps-mon convention for a user LaunchAgent (`provision-heartbeat` writes it; no root step). The bridge withholds the liveness ping on a non-zero rc and posts a vps-mon event instead (WARN for rc 3, 5, 6; CRIT otherwise).
+- The installer wrote the plist 0600 (mktemp), which vps-mon discovery cannot read, so the job stayed out of the catalog. It now lands 0644.
+- `wrap.distill` stays `true` on the Mini: the spec's T21 sets it to `harvest`, but that stops wrap's inline candidate builds while phase 1 builds nothing. Left for the operator.
+- DEC-84: the default system prompt stays (measurement in `docs/verification/harvest-sweep.md`).
