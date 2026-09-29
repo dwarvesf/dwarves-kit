@@ -25,7 +25,16 @@ Verdict: PASS
 ```
 Run by `lib/gate/negctl.sh`: green before, RED under the mutation, green after `git checkout HEAD -- bin/test-affected`. The two red cases were "edited referenced source misses the cache" and "no stale CACHED after the edit": a stale PASS was served after a source edit.
 
+## Negative control: narrowed selection
+```
+Command: bash tests/test-test-affected.sh
+Exit: 1 (under mutation)
+Verdict: PASS
+```
+Two mutations through `lib/gate/negctl.sh`, each green before, RED under the mutation, green after restore. Dropping the longer-path guard made "a suite naming only docs/README.md is not selected by README.md" fail. Lowering the basename cutoff from 5 to 0 turned the short-basename cases red.
+
+`bash tests/test-run-all-changed.sh`: all 8 passed with `run-all.sh --changed` taking its picks from `bin/test-affected --list`. On this branch `--list` selects 20 distinct suites, down from about 38 before the narrowing (README.md alone: 33 suites to 12).
+
 ## Not proven
 - A full real-repo run: `--list` was checked against this branch, but the selected suites (including the 5.7k-line wrap suite) were not executed through the tool.
-- Non-source files such as `README.md` match every suite that names them by path, so a README edit over-selects (about 40 suites here). Accepted.
-- Basename matching over-selects for short names (`board`, `lint`).
+- Comment-line skipping has no dedicated negative control beyond the fixture case.
