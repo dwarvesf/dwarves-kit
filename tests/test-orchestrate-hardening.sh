@@ -27,6 +27,7 @@ fail() { total=$((total + 1)); echo "FAIL $*"; fails=$((fails + 1)); }
 
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
+export DWARVES_KIT_LOG_DIR="$TMP/kitlogs"
 
 # Source it (not exec) so we can call internal helpers directly, same pattern as
 # tests/test-model-routing.sh / tests/test-multiplexer.sh. The `[ "${BASH_SOURCE[0]}" = "$0" ]`
