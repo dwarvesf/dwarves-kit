@@ -170,10 +170,7 @@ A full-lane spec carries a `## Grounding` section: one read-only live sample (co
 
 - Run only Reviewer N. Read-only: no edit, no Status flip, no `gate-ledger.sh`, no record of any kind.
 - On a re-validation, confirm that this reviewer's own prior criticals cleared. The diff is context only, never a reason to skip a check.
-- Return exactly one block, headed `[reviewer N]`, holding `Critical`, `Warnings`, and `Passed`. Reviewer 6 also returns its line `design-bearing=<yes|no> <pass|critical: <finding>>`, which must agree with its Critical list.
-- A return with no head, a head other than the dispatched N, more than one head, no findings, no passed list, or (for Reviewer 6) a missing or disagreeing `design-bearing=` line is dead. The lead does not count it.
-- A block counts only from the agent's final completion. An interim notice, or a notice while the agent still has background work, never counts as returned.
+- Return exactly one block, headed `[reviewer N]` at the start of a line in your own final message, holding `Critical`, `Warnings`, and `Passed`. Reviewer 6 also returns its line `design-bearing=<yes|no> <pass|critical: <finding>>`, which must agree with its Critical list.
+- Only your final completion counts. An interim notice, or one sent while you still have background work, is never a return.
 
-The lead merges the blocks: any CRITICAL in any block, including a Reviewer 6 `critical:` line, means NEEDS REVISION, else APPROVED. Duplicate findings keep the highest severity and name every reviewer. The lead merges by this rule and writes the report in the Output format above; nothing is judged beyond it.
-
-An incomplete round records nothing. The lead re-dispatches the dead reviewer once; a second dead return records `Validate skipped "incomplete: reviewer N dead"`, closes both brackets with `caught=false`, and stops. Before dispatch the lead pins the spec (`git hash-object -w <spec>`) and snapshots the rid's ledger (`bash lib/gate/gate-ledger.sh show <rid>`) and `git -C <worktree> status --porcelain`, after both start brackets are written. A changed blob or snapshot after the round voids it, and the lead restarts once. A second void records `Validate skipped "incomplete: restart budget spent"`, closes both brackets with `caught=false`, and stops.
+The lead applies `/kit:spec` step 5's dead-reviewer, pin, merge and record rules (authoritative); this file does not restate them.
