@@ -2422,6 +2422,209 @@ assert_eq "AC31: runs/ dirs past 30 days are pruned, other entries stay" "not-a-
 
 # ============================================================
 echo ""
+echo "=== T13 report, lint, gate ledger, rc ==="
+
+# AC12: a fixture run's report passes report-lint.sh, carries the step-9 grammar
+# under `## Harvest sweep: <run-id>`, lists each staged learning in the overlay,
+# and writes one gate-ledger line under harvest-sweep-<run-id>. The rc contract:
+# 1 auth stop, 3 lint failure (findings appended, no retry), 5 a source at its
+# consecutive-failure limit, 6 lag over the limit on two runs running, 0 else.
+T13_OUT=$(KIT_DIR="$KIT_DIR" TD="$TD" T5_NOW="$T5_NOW" python3 - <<'PY'
+import datetime, importlib.util, json, os, shlex, sqlite3, subprocess
+spec = importlib.util.spec_from_file_location("hs", os.path.join(os.environ["KIT_DIR"], "hooks", "harvest_sweep.py"))
+hs = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(hs)
+KIT, TD, NOW = (os.environ["KIT_DIR"], os.environ["TD"], int(os.environ["T5_NOW"]))
+FIX = os.path.join(KIT, "tests", "fixtures", "harvest-sweep")
+STUB = os.path.join(FIX, "stub-extractor.sh")
+P = lambda k, v: print("%s=%s" % (k, v))
+n_scn = [0]
+
+iso = lambda e: datetime.datetime.fromtimestamp(e, datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+def scenario():
+    """Fresh state dir, claude root, EMPTY devin db, stub extractor and annotators."""
+    n_scn[0] += 1
+    base = os.path.join(TD, "t13-s%d" % n_scn[0])
+    os.environ["HARVEST_STATE_DIR"] = os.path.join(base, "state")
+    os.environ["HARVEST_SWEEP_CLAUDE_ROOT"] = os.path.join(base, "claude")
+    os.makedirs(os.environ["HARVEST_SWEEP_CLAUDE_ROOT"])
+    db = os.path.join(base, "devin.db")
+    con = sqlite3.connect(db)
+    con.execute("CREATE TABLE sessions(id TEXT, working_directory TEXT, created_at REAL,"
+                " last_activity_at REAL, hidden INTEGER, main_chain_id TEXT)")
+    con.commit(); con.close()
+    os.environ["HARVEST_SWEEP_DEVIN_DB"] = db
+    os.environ["HARVEST_SWEEP_NOW"] = str(NOW)
+    os.environ["HARVEST_EXTRACTOR"] = shlex.quote(STUB)
+    os.environ["STUB_CALLS"] = os.path.join(base, "calls")
+    os.environ["STUB_PRECEDENT_HITS_FILE"] = os.path.join(base, "hits.json")
+    os.environ["STUB_LANE"] = "normal"
+    os.environ["HARVEST_SWEEP_PRECEDENT"] = os.path.join(FIX, "stub-precedent.sh")
+    os.environ["HARVEST_SWEEP_LANE_CLASSIFY"] = os.path.join(FIX, "stub-lane-classify.sh")
+    os.environ["KIT_LEDGER_DIR"] = os.path.join(base, "ledger")
+    return base, os.environ["HARVEST_SWEEP_CLAUDE_ROOT"]
+
+def mk(root, sid, la, n=6):
+    d = os.path.join(root, "p")
+    os.makedirs(d, exist_ok=True)
+    path = os.path.join(d, sid + ".jsonl")
+    with open(path, "w") as fh:
+        for k in range(n):
+            fh.write(json.dumps({"type": "user" if k % 2 == 0 else "assistant", "cwd": TD,
+                                 "timestamp": iso(la - (n - k) * 10),
+                                 "message": {"content": [{"type": "text", "text": "%s msg %d" % (sid, k)}]}}) + "\n")
+    os.utime(path, (la, la))
+
+OUT = json.dumps({"learnings": [{"item": "cache-alpha", "kind": "insight", "home": "til",
+                                 "why": "w", "evidence": "e"}],
+                  "sightings": [{"pattern": "fix-lint-rule", "kind": "repeat",
+                                 "count": 1, "evidence": "ran it"}]})
+LINT = os.path.join(KIT, "lib", "wrap", "report-lint.sh")
+
+# ---- S1: a clean run renders, lints clean, writes the manifest and the ledger ----
+base, root = scenario()
+for i, sid in enumerate(("s1", "s2", "s3")):
+    mk(root, sid, NOW - 3600 - i * 60)
+os.environ["STUB_OUT"] = OUT
+with open(os.environ["STUB_PRECEDENT_HITS_FILE"], "w") as fh:
+    json.dump(["tools/lint/bin/fix.sh  , fixes the lint"], fh)
+result = hs.run_selection(schedule_hours=48)
+rc, path = hs.run_report(result)
+P("s1_rc", rc)
+report = open(path).read()
+P("s1_lint", subprocess.run(["bash", LINT, path], capture_output=True).returncode)
+P("s1_heading", "## Harvest sweep: run-%d" % NOW in report)
+P("s1_needs", "**Needs you:** NOTHING" in report)
+P("s1_built", "- REPORTED fix-lint-rule ENHANCE tools/lint/bin/fix.sh" in report)
+P("s1_seam", "**Seam:** SKIPPED: the sweep runs no seams in phase 1" in report)
+P("s1_override", "- STATE run: extractor override active, safety flags not enforced" in report)
+P("s1_queued", "- STATE run: 1 learnings queued in sweep ledgers; flush path:" in report)
+P("s1_overlay", "- cache-alpha (insight, til) -> ledger/" in report)
+man = json.load(open(os.path.join(os.path.dirname(path), "manifest.json")))
+P("s1_manifest_keys", ",".join(sorted(man)))
+P("s1_manifest_cand", "%s|%s|%s" % (man["candidates"][0]["pattern"],
+                                   man["candidates"][0]["precedent"],
+                                   man["candidates"][0]["lane"]))
+P("s1_manifest_sessions", len(man["sessions"]))
+llog = os.path.join(os.environ["KIT_LEDGER_DIR"], "runs", "harvest-sweep-run-%d.log" % NOW)
+P("s1_ledger", "| GATE | harvest | ran |" in open(llog).read())
+P("s1_ledger_summary", "3 sessions, 1 learnings, 1 candidates reported, lag 0.0h"
+  in open(llog).read())
+
+# ---- S2: an idle run writes no runs/ dir, no manifest, and returns rc 0 ----
+base, root = scenario()
+rc2, path2 = hs.run_report(hs.run_selection(schedule_hours=48))
+P("s2_rc", rc2)
+P("s2_path", path2)
+P("s2_no_runs", os.path.exists(os.path.join(os.environ["HARVEST_STATE_DIR"], "sweep", "runs")))
+
+# ---- S3: an auth-shaped stop is rc 1, and the probe INCIDENT is in the report ----
+base, root = scenario()
+mk(root, "a1", NOW - 3600)
+os.environ["STUB_MODE"] = "fail"
+rc3, path3 = hs.run_report(hs.run_selection(schedule_hours=48))
+os.environ["STUB_MODE"] = "ok"
+P("s3_rc", rc3)
+P("s3_incident", "- INCIDENT extractor: probe failed:" in open(path3).read())
+
+# ---- S4: a renderer that drops the Seam line is rc 3 with findings appended ----
+base, root = scenario()
+mk(root, "b1", NOW - 3600)
+os.environ["STUB_OUT"] = '{"learnings": [], "sightings": []}'
+result = hs.run_selection(schedule_hours=48)
+orig = hs._report_text
+def _drop_seam(*a, **k):
+    return "\n".join(l for l in orig(*a, **k).splitlines()
+                     if not l.startswith("**Seam:**")) + "\n"
+hs._report_text = _drop_seam
+rc4, path4 = hs.run_report(result)
+hs._report_text = orig
+body4 = open(path4).read()
+P("s4_rc", rc4)
+P("s4_findings_appended", "lint findings:" in body4 and "**Seam:**" in body4.split("lint findings:")[1])
+
+# ---- S5: a devin source unreadable three runs running is rc 5 + UNBLOCK ----
+base, root = scenario()
+os.environ["HARVEST_SWEEP_DEVIN_DB"] = os.path.join(base, "gone.db")
+rcs = []
+for _ in range(3):
+    r_, p_ = hs.run_report(hs.run_selection(schedule_hours=48))
+    rcs.append(r_)
+P("s5_rcs", ",".join(map(str, rcs)))
+P("s5_unblock", "a. UNBLOCK devin: OperationalError" in open(p_).read())
+P("s5_needs_red", "**Needs you:**" in open(p_).read())
+
+# ---- S6: lag above 24h on two consecutive runs is rc 6 + DECIDE ----
+base, root = scenario()
+mk(root, "laggy", NOW - 30 * 3600)
+rcs = []
+for _ in range(2):
+    r_, p_ = hs.run_report(hs.run_selection(schedule_hours=48, max_sessions=0))
+    rcs.append(r_)
+P("s6_rcs", ",".join(map(str, rcs)))
+P("s6_decide", "DECIDE raise harvest.max_sessions_per_run or lower schedule_hours: "
+  "claude lag above 24h two runs running" in open(p_).read())
+P("s6_lag_row", "- STATE claude: lag: 1 eligible unread, oldest 30.0h" in open(p_).read())
+
+# ---- S7: a limit hold is rc 0 with its STATE row ----
+base, root = scenario()
+mk(root, "lim", NOW - 3600)
+os.environ["STUB_MODE"] = "limit"
+rc7, path7 = hs.run_report(hs.run_selection(schedule_hours=48))
+os.environ["STUB_MODE"] = "ok"
+P("s7_rc", rc7)
+P("s7_limit_row", "- STATE claude: extractor-limit: usage limit" in open(path7).read())
+
+# ---- S8: an all-prose candidate lands the PROSE-ONLY bullet and still lints ----
+base, root = scenario()
+for i, sid in enumerate(("p1", "p2", "p3")):
+    mk(root, sid, NOW - 3600 - i * 60)
+os.environ["STUB_OUT"] = OUT
+with open(os.environ["STUB_PRECEDENT_HITS_FILE"], "w") as fh:
+    json.dump(["memory/notes/fix-proc.md  , the fix procedure"], fh)
+rc8, path8 = hs.run_report(hs.run_selection(schedule_hours=48))
+body8 = open(path8).read()
+P("s8_rc", rc8)
+P("s8_prose_bullet", "- PROSE-ONLY: fix-lint-rule: only prose homes matched; "
+  "phase 1 reports and builds nothing" in body8)
+P("s8_lint", subprocess.run(["bash", LINT, path8], capture_output=True).returncode)
+PY
+)
+t13() { printf '%s\n' "$T13_OUT" | sed -n "s/^$1=//p"; }
+
+assert_eq "AC12: a clean fixture run exits rc 0" "0" "$(t13 s1_rc)"
+assert_eq "AC12: the report passes report-lint.sh" "0" "$(t13 s1_lint)"
+assert_eq "AC12: the heading is ## Harvest sweep: <run-id>" "True" "$(t13 s1_heading)"
+assert_eq "AC12: Needs you is NOTHING on a clean run" "True" "$(t13 s1_needs)"
+assert_eq "AC12: the Built bullet is REPORTED with the precedent home" "True" "$(t13 s1_built)"
+assert_eq "AC12: the Seam line reports the phase-1 skip" "True" "$(t13 s1_seam)"
+assert_eq "AC12: the extractor-override safety STATE row renders" "True" "$(t13 s1_override)"
+assert_eq "AC12: the queued-learnings STATE row renders with the flush path" "True" "$(t13 s1_queued)"
+assert_eq "AC12: the learnings overlay lists the staged row" "True" "$(t13 s1_overlay)"
+assert_eq "AC12: the manifest carries the spec's keys" "candidates,lag,learnings_queued,learnings_staged,run_id,sessions" "$(t13 s1_manifest_keys)"
+assert_eq "AC12: the manifest candidate carries precedent and lane" "fix-lint-rule|ENHANCE tools/lint/bin/fix.sh|normal" "$(t13 s1_manifest_cand)"
+assert_eq "AC12: the manifest lists the processed sessions" "3" "$(t13 s1_manifest_sessions)"
+assert_eq "AC12: the gate ledger records harvest-sweep-<run-id>" "True" "$(t13 s1_ledger)"
+assert_eq "AC12: the ledger summary carries sessions, learnings, candidates, lag" "True" "$(t13 s1_ledger_summary)"
+assert_eq "AC11: an idle run returns rc 0" "0" "$(t13 s2_rc)"
+assert_eq "AC11: an idle run writes no runs/ directory" "False" "$(t13 s2_no_runs)"
+assert_eq "AC12: an auth-shaped stop is rc 1" "1" "$(t13 s3_rc)"
+assert_eq "AC12: the failed probe lands an INCIDENT row" "True" "$(t13 s3_incident)"
+assert_eq "AC12: a renderer that drops Seam is rc 3" "3" "$(t13 s4_rc)"
+assert_eq "AC12: lint findings are appended to the report" "True" "$(t13 s4_findings_appended)"
+assert_eq "AC12: a source failing three runs is rc 5" "0,0,5" "$(t13 s5_rcs)"
+assert_eq "AC12: rc 5 carries a Needs-you UNBLOCK item" "True" "$(t13 s5_unblock)"
+assert_eq "AC21: lag above 24h on two runs running is rc 6" "0,6" "$(t13 s6_rcs)"
+assert_eq "AC12: rc 6 carries the DECIDE item naming the source" "True" "$(t13 s6_decide)"
+assert_eq "AC12: the lag STATE row names count and oldest age" "True" "$(t13 s6_lag_row)"
+assert_eq "AC27: a limit hold stays rc 0 with its STATE row" "0" "$(t13 s7_rc)"
+assert_eq "AC12: the limit hold STATE row renders" "True" "$(t13 s7_limit_row)"
+assert_eq "AC18: an all-prose candidate renders its PROSE-ONLY bullet" "True" "$(t13 s8_prose_bullet)"
+assert_eq "AC18: the rendered all-prose report lints rc 0" "0" "$(t13 s8_lint)"
+
+# ============================================================
+echo ""
 echo "=== Results ==="
 echo "Passed: $PASS / $TOTAL"
 if [ "$FAIL" -gt 0 ]; then

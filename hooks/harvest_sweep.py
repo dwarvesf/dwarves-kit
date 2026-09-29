@@ -679,7 +679,9 @@ def sweep_process(t, text):
     if not ok:
         return ExtractFailure(out, err)
     clean = sanitize_extraction(obj)
-    _stage_sweep(t, clean["learnings"])
+    staged, ledger = _stage_sweep(t, clean["learnings"])
+    clean["_staged"] = [{"slug": r["item"], "kind": r["kind"], "home": r["home"],
+                         "ledger": os.path.basename(ledger)} for r in staged]
     _record_sightings(t, clean["sightings"])
     return clean
 
@@ -804,9 +806,10 @@ def _stage_sweep(t, learnings):
     the shared _stage_candidates with the repo's learning/*/GLOSSARY.md files as
     glossaries and, as extra_known, the sweep ledger's .archive.md plus the repo's
     _meta/learned-ledger.md and its .archive.md (DEC-85, DEC-70). The sidecar write
-    follows under the same .lock (DEC-83). Repo files are only read, never created."""
+    follows under the same .lock (DEC-83). Repo files are only read, never created.
+    Returns (fresh rows, ledger path); ([], None) when there was nothing to stage."""
     if not learnings:
-        return
+        return [], None
     slug, root = repo_slug(t.get("cwd"))
     ledger = os.path.join(harvest._state_dir(), "sweep", "ledger", slug + ".md")
     glossaries = sorted(glob.glob(os.path.join(
@@ -818,6 +821,7 @@ def _stage_sweep(t, learnings):
     fresh = harvest._stage_candidates(ledger, glossaries, learnings,
                                       extra_known=extra)
     _write_sidecar(ledger, slug, t, learnings, {r["item"] for r in fresh})
+    return fresh, ledger
 
 
 # ---- pattern aggregation -------------------------------------------------------
@@ -1330,6 +1334,8 @@ def _sweep_one(cursor, plan, item, process, now, max_chars, records, run, quaran
             state["done"][sid] = item["last_activity"]
             if text:
                 state["seen"][sid] = {"last_ts": newest_ts(t), "ts": int(now)}
+            if isinstance(ok, dict):
+                run["staged"].extend(ok.get("_staged") or [])
             out["processed"].append(sid)
             log.line("processed", source, sid)
         elif isinstance(ok, ExtractFailure) and ok.limit:
@@ -1533,7 +1539,7 @@ def run_selection(process=None, schedule_hours=6, max_sessions=20, since=None):
     run_id = "run-%d" % int(now)
     log = Stage1Log(run_id)
     run = {"stop": None, "fail_seen": False, "state_rows": [], "incidents": [],
-           "run_id": run_id}
+           "run_id": run_id, "now": now, "staged": [], "active": False}
     if os.environ.get("HARVEST_EXTRACTOR"):
         # the operator override replaces the whole default command, so its safety
         # flags (--tools "", --strict-mcp-config, --no-session-persistence) do not apply
@@ -1578,6 +1584,214 @@ def run_selection(process=None, schedule_hours=6, max_sessions=20, since=None):
                      "filtered=%d" % len(out_["filtered"]),
                      "failed=%d" % len(out_["failed"]),
                      "deferred=%d" % len(out_["deferred"]))
+    run["active"] = log.active  # a run that logged nothing leaves no runs/<run-id>/
     log.close()
     result["run"] = run
     return result
+
+# ---- report, lint, gate ledger, and the rc contract ----------------------------
+
+def _queued_learnings():
+    """Queued rows across every sweep ledger: the flush backlog depth."""
+    d = os.path.join(harvest._state_dir(), "sweep", "ledger")
+    try:
+        names = os.listdir(d)
+    except OSError:
+        return 0
+    n = 0
+    for name in names:
+        if not name.endswith(".md"):
+            continue
+        try:
+            with open(os.path.join(d, name), errors="replace") as fh:
+                n += sum(1 for line in fh if line.rstrip().endswith("| queued |"))
+        except OSError:
+            continue
+    return n
+
+
+def _write_run_file(run_id, name, text):
+    """runs/<run-id>/<name> at 0600 in a 0700 dir, via tmp + os.replace."""
+    d = os.path.join(harvest._state_dir(), "sweep", "runs", run_id)
+    _private_dir(d)
+    path = os.path.join(d, name)
+    fd, tmp = tempfile.mkstemp(dir=d, prefix=".tmp-")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            fh.write(text)
+        os.chmod(tmp, 0o600)
+        os.replace(tmp, path)
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+    return path
+
+
+def _report_needs(result, cursor, sources):
+    """The lettered Needs-you items: one UNBLOCK per source at its consecutive-failure
+    limit, one DECIDE per lagging source once lag_runs reached two (DEC-72)."""
+    needs = []
+    for s in sources:
+        if not source_fail_tripped(cursor, s):
+            continue
+        out = result[s]
+        if out.get("source_failure"):
+            err = out["source_failure"].error_class
+        else:
+            err = "drift: all %d sessions read this run were trivial" % out.get("trivial", 0)
+        needs.append("UNBLOCK %s: %s" % (s, err))
+    if lag_tripped(cursor):
+        lag_h = _lag_limit_s() / 3600.0
+        for s in sources:
+            if result[s].get("lag", {}).get("oldest_age_s", 0) > _lag_limit_s():
+                needs.append("DECIDE raise harvest.max_sessions_per_run or lower "
+                             "schedule_hours: %s lag above %gh two runs running"
+                             % (s, lag_h))
+    return needs
+
+
+def _report_text(result, cursor, cands, prose_only, queued):
+    """The report body in wrap's step-9 grammar (DEC-56): Needs-you admission first,
+    one What-happened bullet, Shipped and Left alone always NOTHING (phase 1 writes
+    no repo), Built carrying REPORTED bullets and the PROSE-ONLY bullet, Seam always
+    SKIPPED, FYI carrying the run's STATE and INCIDENT rows and the queue depth, and
+    the Learnings-staged overlay after FYI."""
+    run = result["run"]
+    sources = [s for s, _, _ in _sources() if s in result]
+    lines = ["## Harvest sweep: %s" % run["run_id"], ""]
+    needs = _report_needs(result, cursor, sources)
+    if needs:
+        lines.append("🔴 **Needs you:**")
+        for i, item in enumerate(needs):
+            lines.append("%s. %s" % ("abcdefghijklmnopqrstuvwxyz"[i], item))
+        lines.append("")
+    else:
+        lines += ["✅ **Needs you:** NOTHING", ""]
+    per = ", ".join("%s: %d" % (s, result[s].get("read", 0)) for s in sources)
+    total = sum(result[s].get("read", 0) for s in sources)
+    trivial = sum(result[s].get("trivial", 0) for s in sources)
+    counts = (len(run["staged"]), len(cands),
+              trivial,
+              sum(len(result[s]["filtered"]) for s in sources),
+              sum(len(result[s]["failed"]) for s in sources),
+              sum(len(result[s]["deferred"]) for s in sources))
+    lines += ["**What happened**",
+              "- read %d sessions (%s), staged %d learnings, found %d candidates; "
+              "%d trivial, %d filtered, %d failed, %d deferred." % ((total, per) + counts),
+              ""]
+    lines += ["**Shipped**", "- NOTHING", "",
+              "**Left alone:**", "- NOTHING", ""]
+    if cands:
+        lines.append("**Built:**")
+        lines += [reported_line(c) for c in cands]
+        if prose_only:
+            lines.append(prose_only_line(prose_only))
+    else:
+        lines.append("**Built:** NOTHING: no candidates")
+    lines += ["", "**Seam:** SKIPPED: the sweep runs no seams in phase 1", ""]
+    fyi = list(run["state_rows"])
+    for s in sources:
+        fyi += result[s]["state_rows"]
+    fyi += run["incidents"]
+    fyi.append("STATE run: %d learnings queued in sweep ledgers; flush path: "
+               "python3 hooks/harvest.py --flush-list" % queued)
+    lines.append("**FYI:**")
+    lines += ["- " + r for r in fyi]
+    lines += ["", "**Learnings staged:**"]
+    if run["staged"]:
+        lines += ["- %s (%s, %s) -> ledger/%s"
+                  % (r["slug"], r["kind"], r["home"], r["ledger"])
+                  for r in run["staged"]]
+    else:
+        lines.append("- NOTHING")
+    lines.append("")
+    return "\n".join(lines)
+
+
+def collect_manifest(result, cands, queued):
+    """runs/<run-id>/manifest.json's object: the run's sessions, staged and queued
+    counts, the annotated candidates, and per-source lag."""
+    run = result["run"]
+    sources = [s for s, _, _ in _sources() if s in result]
+    return {
+        "run_id": run["run_id"],
+        "sessions": [{"source": s, "session_id": sid}
+                     for s in sources for sid in result[s]["processed"]],
+        "learnings_staged": len(run["staged"]),
+        "learnings_queued": queued,
+        "candidates": [{k: c[k]
+                        for k in ("pattern", "kind", "occurrences", "sessions",
+                                  "leads", "evidence", "precedent", "lane")
+                        if k in c} for c in cands],
+        "lag": {s: result[s]["lag"] for s in sources if "lag" in result[s]},
+    }
+
+
+def _lint_report(path):
+    """report-lint.sh once (DEC-56): (rc, combined output). A nonzero rc is a
+    renderer bug; the caller appends the findings and maps to rc 3, never retries."""
+    r = subprocess.run(["bash", os.path.join(_HERE, "..", "lib", "wrap",
+                                             "report-lint.sh"), path],
+                       capture_output=True, text=True)
+    return r.returncode, (r.stderr + r.stdout).strip()
+
+
+def _gate_record(run_id, summary):
+    """gate-ledger.sh record harvest-sweep-<run-id> harvest ran "<summary>"
+    (DEC-20). Best-effort: a ledger write failure is warned, never fatal."""
+    path = os.path.join(_HERE, "..", "lib", "gate", "gate-ledger.sh")
+    try:
+        r = subprocess.run(["bash", path, "record", "harvest-sweep-" + run_id,
+                            "harvest", "ran", summary],
+                           capture_output=True, text=True)
+        if r.returncode != 0:
+            sys.stderr.write("harvest-sweep: gate-ledger record failed: %s\n"
+                             % (r.stderr.strip() or r.returncode))
+    except OSError as exc:
+        sys.stderr.write("harvest-sweep: gate-ledger record failed: %s\n" % exc)
+
+
+def run_report(result):
+    """Render, lint once, ledger, and map the rc for one finished run. An idle run
+    (no stage1 lines) writes no runs/<run-id>/ at all: (0, None). Otherwise the
+    report always lands -- it is where rc 5's UNBLOCK and rc 6's DECIDE live -- and
+    the lowest nonzero applicable code wins (1 auth stop, 3 lint, 5 source failure,
+    6 lag; 2 and 4 are phase 2)."""
+    run = result["run"]
+    if not run["active"]:
+        return 0, None
+    run_id, now = run["run_id"], run["now"]
+    cursor = load_cursor()
+    sources = [s for s, _, _ in _sources() if s in result]
+    cands, prose_only = annotate_candidates(candidates(now), run_id, now)
+    queued = _queued_learnings()
+    text = _report_text(result, cursor, cands, prose_only, queued)
+    path = _write_run_file(run_id, "report.md", text)
+    _write_run_file(run_id, "manifest.json",
+                    json.dumps(collect_manifest(result, cands, queued),
+                               indent=2, sort_keys=True) + "\n")
+
+    lrc, lout = _lint_report(path)
+    if lrc != 0:
+        with open(path, "a", encoding="utf-8") as fh:
+            fh.write("\nlint findings:\n" + lout + "\n")
+
+    lag_s = max((result[s].get("lag", {}).get("oldest_age_s", 0) for s in sources),
+                default=0)
+    _gate_record(run_id, "%d sessions, %d learnings, %d candidates reported, "
+                 "lag %.1fh" % (sum(result[s].get("read", 0) for s in sources),
+                                len(run["staged"]), len(cands), lag_s / 3600.0))
+
+    codes = []
+    if run["stop"] == "auth":
+        codes.append(1)
+    if lrc != 0:
+        codes.append(3)
+    if any(source_fail_tripped(cursor, s) for s in sources):
+        codes.append(5)
+    if lag_tripped(cursor):
+        codes.append(6)
+    return (min(codes) if codes else 0), path
