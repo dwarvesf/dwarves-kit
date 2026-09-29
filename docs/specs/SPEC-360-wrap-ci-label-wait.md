@@ -178,5 +178,5 @@ Both run as `bash lib/gate/negctl.sh <worktree> "bash tests/test-wrap.sh" "<muta
 
 ## Tasks
 
-- [ ] Task A: `CI_ENTRY_KEY`, the baseline in `_ci_label_sync`, and the NEW-entry precedence in `_ci_checks_wait` (`lib/wrap/wrap.sh`), plus cases T1 to T4 and T6 in `tests/test-wrap.sh`.
-- [ ] Task B: the first-real-time sort key in `_pr_gate` and the corrected comment above it (`lib/wrap/wrap.sh`), plus cases T5, T7 and T8.
+- [x] Task A (DONE, commit 935a5321, verified): `CI_ENTRY_KEY`, the baseline in `_ci_label_sync`, and the NEW-entry precedence in `_ci_checks_wait` (`lib/wrap/wrap.sh`), plus cases T1 to T4 and T6 in `tests/test-wrap.sh`.
+- [x] Task B (DONE, commit 935a5321, verified): the first-real-time sort key in `_pr_gate` and the corrected comment above it (`lib/wrap/wrap.sh`), plus cases T5, T7 and T8.
