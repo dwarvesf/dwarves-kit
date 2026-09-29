@@ -21,5 +21,13 @@ Deltas from SPEC-365. Nothing here repeats what the spec already states.
 - The widest behavior change is C7: a failed `gh label list` now refuses `land`, `merge` and the carry on every repo, including repos with no `ci` label. That follows the lead's fail-closed rule for R1(b).
 - T13b and T13c keep round 1's count of 6, which assumes carry 2 makes no read of #42 once carry 1 is skipped. The build confirms or corrects it.
 
+## 2026-09-29 Round 4 fold (APPROVED, 0 criticals, 7/7; Status VALIDATED)
+- Kept to wording, test additions and rule clarifications, per the lead. No settle was added for the late `synchronize` workflow; it stays a named residual (DEC-AE).
+- One text change reaches behavior: the `NONEW` refusal now has a scoped variant, `no Actions run of this repo reported after the ci label went on`, picked from `CI_NEW_SCOPE` (DEC-AF). T3b, L4 and T13b take the absent-label path, so their asserts keep today's text; E1, L6, E4 and T13c take the scoped one. NC19's red list grew by those three text asserts (L6, E4, T13c), which the round-3 trace missed once the text split.
+- T20 is the new two-carry case for the entry clear. Its count (24, and 26 under NC26) depends on carry 1 taking the DATED path, so it sits in D2, not in D0 beside the code it pins.
+- D0 puts the slug check and the scope at the top of the label-on branch. So today's `[]` fallthrough runs scoped from D0 on, and every existing label-on case (ci-stale, ci-armed, autoland ci-gated, T4, the T13 family) moves to Actions-shaped fixtures in D0 to keep its asserts. T4 keeps its 4-read asserts until D1 rewrites them.
+- Skipped: the optional StatusContext case on the DATED path (R2 to R5). E1's `forged` entry already is that case, pinned by NC20.
+- Verified live, read-only: a Prow StatusContext has no `detailsUrl` and no `workflowName` key; `gh api --hostname github.com` wins over an exported `GH_HOST`; `workflowName` first shipped in gh v2.14.0; the activity API dates pushes.
+
 ## 2026-09-29 Process
 - This worker ran the spec steps the lead named (write, Spec ran, Spec end, commit) and stopped at `VALIDATE PENDING`. The full-lane design-time pass (`/kit:devs-team` plus `kit:advisor` over-suggest) did not run here. That call belongs to the lead.
