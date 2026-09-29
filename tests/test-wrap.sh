@@ -1814,6 +1814,80 @@ out="$(GH_STUB_VIEW_STATE='{"state":"OPEN","mergeCommit":null}' "$WRAP" merge --
 chk "merge --apply exits 2 when the PR is not MERGED after the call" "$([ "$rc" -eq 2 ]; echo $?)"
 
 # ===========================================================================
+echo "=== merge --apply: the ci label gate arms CI before the merge ==="
+# ===========================================================================
+# A label-gated repo runs no checks on an unlabeled PR, so the eligibility gate reads an
+# empty rollup on a CLEAN state as mergeable and would merge the untested head. The stub
+# serves the read sequence the sync, the wait, and the post-label re-gate make: view 1 is
+# the eligibility read (untested), view 2 the label sync's (unlabeled), views 3-4 the
+# check wait's (a run the label started, then green), view 5 the re-gate's. PR numbers
+# 50-52 are fresh: the stub counts `pr view` reads per number in files the per-test reset
+# never touches.
+git -C "$TMPD/clone-scan-main" fetch -q origin main
+git -C "$TMPD/clone-scan-main" checkout -q -b feat/ci-gate origin/main
+echo "ci gated merge" > "$TMPD/clone-scan-main/ci-gate.txt"
+git -C "$TMPD/clone-scan-main" add -A
+git -C "$TMPD/clone-scan-main" commit -qm "ci gated merge"
+PR50_OID="$(git -C "$TMPD/clone-scan-main" rev-parse feat/ci-gate)"
+git -C "$TMPD/clone-scan-main" checkout -q "$MERGE_CUR"
+git -C "$TMPD/clone-scan-main" push -q "$TMPD/bare-rmain" feat/ci-gate:refs/heads/main
+CI_OPEN='[{"number":50,"title":"ci gated merge","headRefName":"feat/ci-gate"}]'
+CI_PR_50="{\"number\":50,\"title\":\"ci gated merge\",\"headRefName\":\"feat/ci-gate\",\"headRefOid\":\"$PR50_OID\",\"baseRefName\":\"main\",\"mergeable\":\"MERGEABLE\",\"mergeStateStatus\":\"CLEAN\",\"reviewDecision\":\"APPROVED\",\"statusCheckRollup\":[],\"isDraft\":false}"
+CI_PR_50_GREEN="{\"number\":50,\"title\":\"ci gated merge\",\"headRefName\":\"feat/ci-gate\",\"headRefOid\":\"$PR50_OID\",\"baseRefName\":\"main\",\"mergeable\":\"MERGEABLE\",\"mergeStateStatus\":\"CLEAN\",\"reviewDecision\":\"APPROVED\",\"statusCheckRollup\":[{\"name\":\"pr-check\",\"status\":\"COMPLETED\",\"conclusion\":\"SUCCESS\"}],\"labels\":[{\"name\":\"ci\"}],\"isDraft\":false}"
+: > "$GH_STUB_CALLS"; rm -f "$GH_STUB_CALLS".*
+out="$(PATH="$TMPD/nosleep:$PATH" \
+  GH_STUB_LABELS='[{"name":"ci-extra"},{"name":"ci"}]' \
+  GH_STUB_OPEN_PRS="$CI_OPEN" \
+  GH_STUB_PR_50="$CI_PR_50" \
+  GH_STUB_PR_50_2='{"number":50,"labels":[],"statusCheckRollup":[]}' \
+  GH_STUB_PR_50_3='{"number":50,"statusCheckRollup":[{"name":"pr-check","status":"IN_PROGRESS"}]}' \
+  GH_STUB_PR_50_4='{"number":50,"statusCheckRollup":[{"name":"pr-check","status":"COMPLETED","conclusion":"SUCCESS"}]}' \
+  GH_STUB_PR_50_5="$CI_PR_50_GREEN" \
+  "$WRAP" merge --apply "$TMPD/clone-scan-main" 2>&1)"; rc=$?
+CI_CALLS="$(cat "$GH_STUB_CALLS")"
+chk "ci-gated merge: exits 0" "$rc"
+chk_has "ci-gated merge: the empty rollup still gates eligible first" "$out" "eligible #50 ci gated merge [feat/ci-gate]"
+chk_has "ci-gated merge: probed the repo labels" "$CI_CALLS" "label list"
+chk_has "ci-gated merge: added the ci label" "$CI_CALLS" "pr edit 50 --repo ${MERGE_URL} --add-label ci"
+chk_has "ci-gated merge: reports the labeling" "$out" "labeled #50 ci"
+chk "ci-gated merge: the label precedes the merge" \
+  "$(awk '/^pr edit 50 .*--add-label ci/{a=NR} /^pr merge 50 /{m=NR} END{exit !(a && m && a<m)}' "$GH_STUB_CALLS"; echo $?)"
+chk "ci-gated merge: the pending run was waited out and the head re-gated" \
+  "$([ "$(cat "$GH_STUB_CALLS.view-50" 2>/dev/null)" -eq 5 ]; echo $?)"
+chk_has "ci-gated merge: pinned the gated head" "$CI_CALLS" "--squash --match-head-commit ${PR50_OID}"
+chk_has "ci-gated merge: merged once the check read green" "$out" "merged #50 ($(git -C "$TMPD/bare-rmain" rev-parse main)): tree verified"
+
+echo "--- ci-gated merge: a label that will not set refuses the merge"
+# The eligibility gate passes the untested head; the sync's failed edit is what stands
+# between it and a merge nothing tested.
+: > "$GH_STUB_CALLS"
+out="$(PATH="$TMPD/nosleep:$PATH" \
+  GH_STUB_LABELS='[{"name":"ci"}]' GH_STUB_EDIT_RC=1 \
+  GH_STUB_OPEN_PRS='[{"number":51,"title":"ci noset","headRefName":"feat/ci-gate"}]' \
+  GH_STUB_PR_51="{\"number\":51,\"title\":\"ci noset\",\"headRefName\":\"feat/ci-gate\",\"headRefOid\":\"$PR50_OID\",\"baseRefName\":\"main\",\"mergeable\":\"MERGEABLE\",\"mergeStateStatus\":\"CLEAN\",\"reviewDecision\":\"APPROVED\",\"statusCheckRollup\":[],\"isDraft\":false}" \
+  GH_STUB_PR_51_2='{"number":51,"labels":[],"statusCheckRollup":[]}' \
+  "$WRAP" merge --apply "$TMPD/clone-scan-main" 2>&1)"; rc=$?
+chk "ci-noset merge: exits 2" "$([ "$rc" -eq 2 ]; echo $?)"
+chk_has "ci-noset merge: names the refusal" "$out" "FAILED merge #51: the ci label could not be set"
+chk_no "ci-noset merge: untested head never merges" "$(cat "$GH_STUB_CALLS")" "pr merge 51"
+
+echo "--- ci-gated merge: a check the label revealed failing refuses the merge"
+# The label's run comes back red on the first wait read, and the post-label re-gate is
+# what refuses: the empty-rollup eligible verdict it replaces was read on an untested head.
+: > "$GH_STUB_CALLS"
+out="$(PATH="$TMPD/nosleep:$PATH" \
+  GH_STUB_LABELS='[{"name":"ci"}]' \
+  GH_STUB_OPEN_PRS='[{"number":52,"title":"ci red","headRefName":"feat/ci-gate"}]' \
+  GH_STUB_PR_52="{\"number\":52,\"title\":\"ci red\",\"headRefName\":\"feat/ci-gate\",\"headRefOid\":\"$PR50_OID\",\"baseRefName\":\"main\",\"mergeable\":\"MERGEABLE\",\"mergeStateStatus\":\"CLEAN\",\"reviewDecision\":\"APPROVED\",\"statusCheckRollup\":[],\"isDraft\":false}" \
+  GH_STUB_PR_52_2='{"number":52,"labels":[],"statusCheckRollup":[]}' \
+  GH_STUB_PR_52_3='{"number":52,"statusCheckRollup":[{"name":"pr-check","status":"COMPLETED","conclusion":"FAILURE"}]}' \
+  GH_STUB_PR_52_4="{\"number\":52,\"title\":\"ci red\",\"headRefName\":\"feat/ci-gate\",\"headRefOid\":\"$PR50_OID\",\"baseRefName\":\"main\",\"mergeable\":\"MERGEABLE\",\"mergeStateStatus\":\"UNSTABLE\",\"reviewDecision\":\"APPROVED\",\"statusCheckRollup\":[{\"name\":\"pr-check\",\"status\":\"COMPLETED\",\"conclusion\":\"FAILURE\"}],\"labels\":[{\"name\":\"ci\"}],\"isDraft\":false}" \
+  "$WRAP" merge --apply "$TMPD/clone-scan-main" 2>&1)"; rc=$?
+chk "ci-red merge: exits 2" "$([ "$rc" -eq 2 ]; echo $?)"
+chk_has "ci-red merge: the re-gate names the failure" "$out" "FAILED merge #52: checks are pending or failing once the ci label's checks ran"
+chk_no "ci-red merge: a red head never merges" "$(cat "$GH_STUB_CALLS")" "pr merge 52"
+
+# ===========================================================================
 echo "=== merge --pr: a named draft is marked ready, then gated and merged ==="
 # ===========================================================================
 # Same real-commit-plus-push shape as the PR7 fixture above: the branch's tip is pushed
