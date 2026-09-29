@@ -1,7 +1,7 @@
 # Spec: whole-spec dispatch for /kit:execute
 
 Generated: 2026-09-29
-Status: DRAFT
+Status: VALIDATED (round 2: fresh-context validator, 0 critical, three advisories folded)
 Lane: full
 Type: spec-feature
 File: `docs/specs/SPEC-369-whole-spec-dispatch.md`
@@ -90,7 +90,7 @@ Both old ADRs keep their bodies and gain a supersede note on the Status line, th
 
 ### Boundaries & failure modes
 
-Out of bounds: `/kit:next`, `/kit:verify`, `/kit:dispatch`, `/kit:battery`, and the verifiers' own checking logic. See `## Failure modes`.
+Out of bounds: the other commands that name `kit:task-verifier` (`/kit:verify`, `/kit:dispatch`, `/kit:battery`, `/kit:debug`, `/kit:docs`, `/kit:greenlight`, `/kit:wrap`), `/kit:next`, and the verifiers' own checking logic. See `## Failure modes`.
 
 ## Requirements
 
@@ -115,13 +115,13 @@ R4. **Verify once at the end.** Remove the per-task `kit:task-verifier` dispatch
 1. The full suite and its verification-log entry (kept, `:411-415`).
 2. ONE `kit:task-verifier` pass whose input is every task with its acceptance criteria, the whole-build diff from the base ref, and the builder's report. It returns one verdict per task plus the overall verdict.
 3. `kit:integration-verifier` when `## Task Breakdown` lists more than one task (today's condition, `:439`).
-4. `kit:acceptance-verifier` on every build. Its Bash allowlist (`agents/acceptance-verifier.md:4-12`) covers only `npm test`, `go test`, `pytest`, `bash tests/*`, `git diff`; it records `[NO EXECUTABLE CHECK]` for anything else (`:32`). The lead runs each such `## Verification` command itself and logs `Command:` / `Exit:` / `Output (excerpt):`. The read-only agent's allowlist is not widened.
+4. `kit:acceptance-verifier` on every build. Its Bash allowlist (`agents/acceptance-verifier.md:4-12`) covers only `npm test`, `go test`, `pytest`, `bash tests/*`, `git diff`; it records `[NO EXECUTABLE CHECK]` for anything else (`:32`). The lead runs each such `## Verification` command itself and logs `Command:` / `Exit:` / `Output (excerpt):` with the literal tag `(lead-run)` on its Verdict line. A `(lead-run)` row cannot be rechecked: `kit:recheck-verifier` has the same narrow allowlist (`agents/recheck-verifier.md:4-12`), so the tag marks it as unaudited evidence rather than implying a re-audit. The read-only agents' allowlists are not widened.
 5. **Check-edit signal:** `git diff --name-only <base> HEAD` intersected with the files the `## Verification` commands and the acceptance criteria name. A non-empty result is recorded as `check-edited: <paths>` and surfaced in the summary for the human; it is a finding, not a block.
 Any FAIL:fixable routes through the kept fix-agent loop (max 2) and the attempt-state check (`:347-360`). Kept verbatim: verifier tier parity (`:182-188`), negative control (`:416-424`), proof-class gate (`:425-438`), build record and outcome bracket (`:484-495`). After an end PASS the lead checks off every task with `lib/spec/spec.sh task-done`. The human checkpoint moves to one point: before the builder dispatch (show the brief, ask to go).
 
 R5. **Sampled recheck.** Replace both recheck sites (`:294-316`, `:444-457`) with one rule:
 - `N=$(kit_config_get_root execute.recheck_sample 5)`. `0` turns sampling off; `1` rechecks every PASS (today's behavior).
-- Key = the post-build HEAD SHA. The run is sampled when `git rev-parse HEAD | cksum` yields a first field divisible by N. Record `bash lib/gate/gate-ledger.sh action "$RID" "recheck: sampled key=<sha>"` or `"recheck: skipped key=<sha>"`. The key is fixed once the build commits, so anyone can recompute the decision.
+- Key = HEAD at the FIRST end-verifier dispatch (step 2 of R4), read once with `git rev-parse HEAD` and reused. Fix-agent commits later in the run do not change it. The run is sampled when that SHA piped to `cksum` yields a first field divisible by N. Record `bash lib/gate/gate-ledger.sh action "$RID" "recheck: sampled key=<sha>"` or `"recheck: skipped key=<sha>"`, so anyone can recompute the decision.
 - A sampled run rechecks every end-verifier PASS.
 - Self-attested producer: each criterion the builder reports as `confirmed-by: read <file:line>` (confirmed by reading, not running) that no end verifier executed gets a verification-log row whose Verdict carries the literal tag `(self-attested)`. Every `(self-attested)` row is rechecked on every run, sampled or not.
 - A PASS not rechecked gets `Re-audit: SKIPPED (sampled out, 1 in N)`.
@@ -147,7 +147,7 @@ R9. **Pinned tests.**
 `tests/test-meta.sh` is a lead-owned hands-off surface (`docs/WORKFLOW.md` "### Hands-off shared-surface list").
 
 R10. **Agent premise lines** (they describe the per-task pipeline as already run):
-- `agents/task-verifier.md:3` description: "Run after each worker subagent completes a task" becomes one pass over every task's criteria (per task under `/kit:next`, whole build under `/kit:execute`).
+- `agents/task-verifier.md:3` description: "Run after each worker subagent completes a task" becomes a check of a task's acceptance criteria that its callers invoke per task or, under `/kit:execute`, once over every task of the build. Callers that name it: `commands/verify.md`, `dispatch.md`, `battery.md`, `debug.md`, `docs.md`, `greenlight.md`, `wrap.md`, `execute.md`.
 - `agents/fix-agent.md:3,18`: name the end verifiers as feedback sources, not only task-verifier.
 - `agents/integration-verifier.md:17,29`: "Each task in this build already passed `kit:task-verifier`" becomes "the end `kit:task-verifier` pass checked each task's criteria".
 - `agents/acceptance-verifier.md:17,45`: same premise fix.
@@ -259,7 +259,7 @@ Fixture (new, `tests/fixtures/whole-spec-dispatch/`): `SPEC-900-unmeetable.md` (
 5. `execute.recheck_sample = 0`: no sampled rechecks; `(self-attested)` rows still rechecked.
 6. `execute.recheck_sample = 1`: every PASS rechecked.
 7. A project `.kit.toml` sets `recheck_sample = 0`: ignored (root-only); T6 proves it.
-8. A `## Verification` command outside the acceptance-verifier allowlist: the lead runs and logs it.
+8. A `## Verification` command outside the acceptance-verifier allowlist: the lead runs and logs it tagged `(lead-run)`; it is never rechecked.
 9. Builder goes silent: attempt-state resume via `SendMessage`, no retry spent (kept, `commands/execute.md:347-360`).
 10. Builder reports a spec contradiction: stop and ask (kept, `:501`); added scope takes the mid-flight amend path.
 11. A `Model: opus` spec: builder and every end verifier dispatch at opus (kept parity rule).
@@ -273,11 +273,11 @@ Fixture (new, `tests/fixtures/whole-spec-dispatch/`): `SPEC-900-unmeetable.md` (
 | Builder context overflows | builder returns `PROGRESS:` or stops mid-task | per-task commits; continuation builder recorded as `split: fork-risk`; the 6-task threshold splits big specs up front |
 | Sampling misses a fabricated PASS | a later review or run finds it | `(self-attested)` rows always rechecked; `recheck_sample = 1` restores full coverage; tagged runs make catches countable |
 | Builder edits a check to make it pass | `check-edited:` non-empty | surfaced in the summary; the task-verifier pass reads the criteria, not only the script |
-| A Verification command the read-only verifier cannot run | `[NO EXECUTABLE CHECK]` in its record | the lead runs and logs it; the allowlist stays narrow |
+| A Verification command the read-only verifier cannot run | `[NO EXECUTABLE CHECK]` in its record | the lead runs and logs it tagged `(lead-run)`, stated as not rechecked; the allowlists stay narrow |
 
 ## Out of Scope
 
-- `/kit:next`, `/kit:verify`, `/kit:dispatch`, `/kit:battery`, `/kit:mega`: they keep their verifier use.
+- `/kit:verify`, `/kit:dispatch`, `/kit:battery`, `/kit:debug`, `/kit:docs`, `/kit:greenlight`, `/kit:wrap`: they keep their `kit:task-verifier` use. `/kit:next` and `/kit:mega` are unchanged.
 - The verifiers' checking logic (only premise lines and one description change, R10).
 - The worker model tier policy (`commands/execute.md:174-180`); see Open questions.
 - Lane classification and the "when in doubt, heavier" rule (SPEC-368, D1).
@@ -342,12 +342,12 @@ Overlap notes: `docs/WORKFLOW.md` sections are listed in R11 and are disjoint fr
 - DEC-1: whole-spec dispatch over trimming the per-task spine; trimming keeps most of the cost (Solution A).
 - DEC-2: keep the criterion-level check as ONE end `kit:task-verifier` pass; it has caught defects a green suite missed, and integration-verifier does not re-check per-task acceptance (`agents/integration-verifier.md:29`).
 - DEC-3: sample the recheck, do not delete it; it has caught two FAIL:fixable, and the wire-first rule applies.
-- DEC-4: sample key is the post-build HEAD SHA, recorded in the ledger, so the decision is fixed after the build and recomputable.
+- DEC-4: sample key is HEAD at the first end-verifier dispatch, recorded in the ledger, so later fix commits cannot move it and the decision is recomputable.
 - DEC-5: the sample key is root-only (`lib/config/module-registry.md` "## Root-only keys").
 - DEC-6: `fork-risk` threshold on task count (more than 6), since every executable spec has tasks and `## Touches` is optional.
 - DEC-7: keep `role-classify.sh agent-for` as a zero-dispatch builder lookup; remove only the meta-agent hop and Mode C.
 - DEC-8: a new ADR-0037 partially supersedes ADR-0028 and ADR-0005, per ADR-0023's supersede convention; no in-place rewrite.
-- DEC-9: do not widen the acceptance-verifier's allowlist; the lead runs checks outside it.
+- DEC-9: do not widen the acceptance-verifier's allowlist; the lead runs checks outside it and tags them `(lead-run)`, which are not rechecked.
 - DEC-10: integration-verifier keeps today's multi-task condition.
 
 ## Open questions
