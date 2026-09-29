@@ -315,6 +315,14 @@ Related, **2b-0 role synthesis** (inside `/kit:execute`): each task is classifie
 **When to invoke:** maintainer-only, before tagging a release of the kit (the release-hygiene check is exactly the "before tagging" guard)
 **Common gotcha:** the rejection-first verdict will REJECT on real violations. Do not soften the criteria; address them.
 
+### `/kit:wrap`
+
+**Phase:** session close-out (landing + optional distillation)
+**Reads:** board, git state, `kit.toml` knobs (`wrap.*`), the session itself
+**Writes:** commits/merges/tidies per the landing steps, the step-9 report; the distill half writes to home repos (memory notes, in-lane candidate builds)
+**When to invoke:** "wrap up", "close out", "land it". The distill half resolves from `wrap.distill` (root-only): `true` runs it every wrap, `false` lands only, and `"harvest"` hands it to the transcript harvest sweep on hosts where the sweep is installed (the `sweep/installed` marker plus `harvest.enable`); there the report says `SKIPPED: distill runs in the harvest sweep` and carries a `STATE` row from `harvest_sweep.py --status`. On a host with no sweep, `harvest` resolves as `true`. The `distill` word in the invocation wins for one run either way.
+**Common gotcha:** the knob is per-host in effect, not per-repo: a synced operator `kit.toml` that says `harvest` does not switch the mode on a machine the sweep was never installed on, which is what keeps wrap distilling where no sweep exists.
+
 ## Hooks (no invocation)
 
 The full hook inventory (every hook, its event, and its behavior) lives in ONE place:
@@ -596,7 +604,7 @@ Compaction sequence:
 If state is missing, check in order:
 - `.claude/session-state/last-state.md` exists and is current.
 - `.claude/session-state/archive/` for the last 10 rotated snapshots.
-- Bash install only: confirm both PreCompact and PostToolUse(compact) hooks are registered in `settings.json`.
+- Bash install only: confirm both PreCompact and SessionStart(compact) hooks are registered in `settings.json`.
 - Plugin install: same checks against `hooks/hooks.json`.
 
 #### Statusline shows blank or default values

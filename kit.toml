@@ -315,7 +315,14 @@ distill = true                  # [impl] the distill half. true = every wrap run
                                  #        commit, merge, deploy check, tidy, pull, activity line,
                                  #        retro, report; the report says `SKIPPED: distill off` on
                                  #        `Built:` and `Seam:`. Set it in the operator `kit.toml` for
-                                 #        landing-only every time. Resolves root-only like the knobs
+                                 #        landing-only every time. "harvest" = the distill half is
+                                 #        the transcript sweep's job on hosts where the sweep is
+                                 #        installed (the <state>/sweep/installed marker plus
+                                 #        harvest.enable, per host); the report says
+                                 #        `SKIPPED: distill runs in the harvest sweep` there, and
+                                 #        distills as true everywhere else. The `distill` word in
+                                 #        the invocation still wins for one run either way.
+                                 #        Resolves root-only like the knobs
                                  #        below: the distill half writes to home repos.
 
 # Autonomy knobs. Each one authorizes a WRITE, so each one reads from the
@@ -432,3 +439,25 @@ teach = ""                      # [consumer] name of a skill that PAYS the under
                                  #        `skipped: no teacher` plus the gathered material's path
                                  #        instead of teaching badly. Filled by learning-kit's
                                  #        `understand` lane, or the operator directly.
+
+[harvest]                       # the transcript sweep (hooks/harvest_sweep.py), phase 1.
+                                #        EVERY key resolves operator `kit.toml` -> this
+                                #        KIT-ROOT file ONLY (kit_config_get_root): a project
+                                #        `.kit.toml` is never read for [harvest], because it
+                                #        rides inside an untrusted PR and can neither switch
+                                #        the sweep on nor keep the per-session hook running.
+enable = false                  # [impl] the switch; a host is ACTIVE only when this is true
+                                #        AND its `<state>/sweep/installed` marker exists --
+                                #        the marker rides with `install --apply`, never with
+                                #        a config sync, so enabling here does not sweep on a
+                                #        host the operator never installed.
+schedule_hours = 6              # [impl] the run gap, rendered into the launchd plist's
+                                #        StartInterval at install time.
+sources = "claude"              # [impl] space-separated source adapters to read:
+                                #        claude devin.
+max_sessions_per_run = 20       # [impl] lead-session extractions per run; trivial skips do
+                                #        not count against it.
+hook_when_sweep_on = false      # [impl] true = the per-session PreCompact/SessionEnd hook
+                                #        keeps running while the sweep is active. False =
+                                #        harvest.sh's auto modes exit 0 without work, so a
+                                #        session is never staged or paid for twice.

@@ -18,6 +18,7 @@ fail() { echo "FAIL $*"; fails=$((fails + 1)); }
 
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
+export DWARVES_KIT_LOG_DIR="$TMP/kitlogs"
 export CLAUDE_FLAGS=""
 
 # A mega-goal dir: SG-01 auto, SG-02 gate. Goal files declare a Branch: so _sg_pr_url has one.

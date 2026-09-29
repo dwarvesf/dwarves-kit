@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  harvest-sweep: the kit's transcript-sweep LaunchAgent (SPEC-357). One job on
+  StartInterval; the launcher re-checks that the host is installed and enabled
+  before touching the sweep, so the plist can be rendered once and left alone.
+
+  TEMPLATE: deploy/macos/harvest-sweep/install renders __LABEL__, __KIT__,
+  __HOME__, and __INTERVAL__ (launchd expands no env vars, and StartInterval is
+  seconds = harvest.schedule_hours * 3600). BTM rule: ProgramArguments[0] is
+  the bare-name launcher itself (no .sh, no /bin/bash wrapper). The launcher's
+  own start/end lines land in <label>.log next to launchd's stdout/stderr.
+
+  Install:   bash deploy/macos/harvest-sweep/install --apply
+  Status:    launchctl print gui/$(id -u)/<label>
+  Run now:   launchctl kickstart -k gui/$(id -u)/<label>
+  Unload:    launchctl bootout gui/$(id -u)/<label>
+  Anti-drift: edit this template in the kit then re-run install; never
+  hand-edit the installed copy.
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>__LABEL__</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>__KIT__/deploy/macos/harvest-sweep/harvest-sweep</string>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>HARVEST_SWEEP_LABEL</key>
+    <string>__LABEL__</string>
+  </dict>
+  <key>StartInterval</key>
+  <integer>__INTERVAL__</integer>
+  <key>RunAtLoad</key>
+  <false/>
+  <key>StandardOutPath</key>
+  <string>__HOME__/Library/Logs/dwarves-kit/__LABEL__.log</string>
+  <key>StandardErrorPath</key>
+  <string>__HOME__/Library/Logs/dwarves-kit/__LABEL__.log</string>
+</dict>
+</plist>
