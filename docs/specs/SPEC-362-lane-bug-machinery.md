@@ -21,11 +21,13 @@ This spec is itself a policy change to the classifier, so it sizes `full` under 
 
 1. Add two index-free signal regexes to `lib/classify/lane-classify.sh`, matched against the lowercased description:
    - `_mbug_re`, the machinery bug signal: `\bfix(es|ed|ing)?\b`, `\bbug\b`, `regression`, `broke`, `wrong`, `root[ -]cause`, plus the existing step-4 bug terms (`failing test`, `crash`, `defect`, `hotfix`, `stack ?trace`, `exception`, `repro`).
-   - `_mcontract_re`, the contract signal: a new or added flag, verb, knob, option, subcommand, gate, check, guard, hook, lane, phase, marker, column, field, env var or config key (`\bnew (...)`, `\badd(s|ed|ing)? (a |an |the )?(new )?(--?[a-z]|...)`); `renam`; a changed promise (`now also`, `no longer`, `now (refuses|blocks|merges|allows|skips|accepts|requires)`); a relaxed gate (`relax`, `loosen`, `weaken`, `narrow`, `bypass`, `disabl`, `opt[ -]out`); a format change (`(ledger|log|line|output) format`); install and adopt surfaces (`install\.sh`, `adopt`, `kit\.toml`, `hooks\.json`, `settings\.json`); policy (`policy`, `(bug|full|tiny|normal|backfill) lane`, `lane (table|rule|trigger|floor)`).
+   - `_mcontract_re`, the contract signal: a new or added flag, verb, knob, option, subcommand, gate, check, guard, hook, lane, phase, marker, column, field, env var or config key (`\bnew (...)`, `\badd(s|ed|ing)? (a |an |the )?(new )?(--?[a-z]|...)`); a rename of one of those (`renam[a-z]* .{0,20}(--|flag|verb|knob|option|subcommand|command|gate|hook|lane|phase|marker|column|field|env var|config key)`, so renaming a local variable is not a contract); a changed promise (`now also`, `no longer`, `now (refuses|blocks|merges|allows|skips|accepts|requires)`); a relaxed gate (`relax`, `loosen`, `weaken`, `narrow`, `bypass`, `disabl`, `opt[ -]out`); a format change (`(ledger|log|line|output) format`); install and adopt surfaces (`install\.sh`, `adopt`, `kit\.toml`, `hooks\.json`, `settings\.json`); policy (`policy`, `(bug|full|tiny|normal|backfill) lane`, `lane (table|rule|trigger|floor)`).
 2. Add one file-list contract check, case-insensitive, over the `--files` list: `(^|/)(install\.sh|adopt\.sh|hooks\.json|settings\.json|WORKFLOW\.md|AGENTS\.md)$` or a path under `.claude-plugin/`.
+2a. Widen `_files_touch_machinery` so the install and adopt surfaces count as kit machinery: a root `install.sh`, a root `settings.json`, and `adopt.sh` or `hooks.json` at any depth. `lib/adopt.sh` and `hooks/hooks.json` already match through `lib/*` and `hooks/*`. The root anchor on `install.sh` and `settings.json` keeps a consumer app's `scripts/install.sh` or `config/settings.json` out of the machinery surface. Because these four are also contract files (item 2), a change touching them sizes `full`, bug signal or not.
+2b. Machinery contract outranks tiny. In step 2 of `classify_core`, when the tiny regex matches, first test whether the kit-machinery flag would fire (item 3's condition) AND the TEXT contract signal fires (item 1 only, not the item 2 file check). When both hold, skip the tiny return and fall through to the hard gate, which sizes it `full`. The file check stays out of this step, so a typo sweep whose `--files` happen to include `docs/WORKFLOW.md` next to a lib file stays `tiny`. The text regex does carry `install\.sh`, `adopt`, `hooks\.json` and `settings\.json`, so a tiny task whose TEXT names one of those surfaces ("fix a typo in install.sh") sizes `full`; that over-size is accepted, because those files are contract surfaces by the lead's ruling. Tiny sizing of every other task is unchanged: a non-machinery rename stays `tiny`, a machinery typo fix carries no contract signal and stays `tiny`, and renaming a local variable is not a contract rename (item 1).
 3. In the kit-machinery branch of `classify_core` (lines 150-163), when the flag would fire on either path: if the description matches `_mbug_re` and neither the description nor the file list carries a contract signal, do not add `kit-machinery` to the hard list and set a local `mbug=1`. Otherwise add `kit-machinery` as today. When the bug signal fired but a contract signal overruled it, remember that for the reason line.
 4. After the hard-gate verdict (line 166): if `hard` is non-empty, the lane is `full` as today. The reason gains ` (contract signal outranks the bug signal)` when step 3 recorded an overrule. If `hard` is empty and `mbug=1`, set `LANE=bug`, `REASON="kit-machinery bug fix (bug signal, no contract signal)"`, `FIRED="kit-machinery-bug"`.
-5. Every other flag, step and precedence stays: backfill, then tiny, then the other hard flags (auth, data-model, audit-security, ...), which still force `full` for a bug fix. The extended bug terms apply to the machinery decision only; step 4's general bug regex is unchanged, so non-machinery text keeps its lane.
+5. Every other flag, step and precedence stays: backfill, then tiny (except item 2b), then the other hard flags (auth, data-model, audit-security, ...), which still force `full` for a bug fix. The extended bug terms apply to the machinery decision only; step 4's general bug regex is unchanged, so non-machinery text keeps its lane.
 6. Docs, one sentence each: the `docs/WORKFLOW.md` lane table (below the table, beside "When in doubt"), the `README.md` lane-classify row, and the header comment of `lane-classify.sh`. The `commands/wrap.md` step-10 parenthetical "(it touched auth, a hook, a data model, a contract)" becomes "(it touched auth, a hook contract, a data model, a contract)".
 
 ## Picture
@@ -36,11 +38,13 @@ This spec is itself a policy change to the classifier, so it sizes `full` under 
         v
  backfill? --yes--> backfill            (unchanged)
         | no
- tiny?     --yes--> tiny                (unchanged)
-        | no
+ tiny? --yes--> machinery AND contract signal? --no--> tiny
+        |                         | yes (fall through, sizes full below)
+        | no  <-------------------+
  other hard flags (auth, data-model, audit-security, ...) --any--> full
         |
- kit-machinery would fire (lib/|hooks/ file, or machinery text)?
+ kit-machinery would fire (lib/|hooks/|install.sh|settings.json|adopt.sh|hooks.json file,
+                           or machinery text)?
         | no                                    | yes
         v                                       v
    step 4 bug / soft / normal         bug signal?  --no--> full (kit-machinery)
@@ -62,6 +66,11 @@ The decision sits inside the existing kit-machinery branch because that flag is 
 1. Demote inside the kit-machinery branch with a bug regex and a contract regex (chosen). One place, both paths (`--files` and text-only) behave the same, and the other hard flags still win.
 2. Widen step 4's general bug regex and move it above the hard gate. Rejected: `wrong` and bare `fix` would move non-machinery text such as "fix wrong total in the invoice page" from `normal` to `bug`, and a bug above the hard gate would let "fix the token refresh crash" escape the audit-security flag.
 3. Apply the demotion on the `--files` path only. Rejected: the same bug text would size `full` without `--files` and `bug` with it, and `/kit:assign` calls `classify` without `--files`.
+4. Move the whole hard gate above tiny. Rejected: "fix a typo in lib/telemetry/lane-telemetry.sh" would size `full` (pinned `tiny` by AC5 of the existing suite), and a typo about auth would size `full`. Only a machinery change with a contract signal jumps the tiny rule (Change item 2b).
+
+### Deliberate tradeoff: a spec-less bug-lane machinery fix is held by the proof gate alone
+
+Accepted by the lead. A machinery bug fix in the `bug` lane usually has no spec, so `hooks/ship-gate.sh` never runs its lane-gate check (build, review, debug). The only hook that blocks it is the diff-keyed proof-of-done gate: a green run plus a negative control. That is the same hold every other bug-lane fix has today. The full lane's hook-enforced think, spec, validate, docs and reflect phases are the ceremony this policy drops on purpose. If `/kit:wrap` step 10 builds such a fix (only when an operator adds `bug` to `wrap.build_lanes`), it merges it only through `wrap merge --apply`, whose green gate (`_pr_gate`: checks green, no changes requested, mergeable) must pass, and after the ship-gate proof check at push.
 
 ## Grounding
 
@@ -79,13 +88,20 @@ Run from the worktree root with `bash lib/classify/lane-classify.sh explain --fi
 | S6 | text-only machinery bug | (none) | fix the parser in lib/gate/gate-ledger.sh | full (hard-gate flag(s): kit-machinery) | yes | no | bug |
 | S7 | non-machinery, regression guard | (none) | fix wrong total in the invoice page | normal | n/a | n/a | normal |
 | S8 | other hard flag wins | `lib/gate/x.sh` | fix the token refresh crash | full | yes | no | full (audit-security) |
+| S9 | machinery rename of a flag (lead item b) | `lib/wrap/wrap.sh tests/test-wrap.sh` | rename the --foo flag in lib/wrap/wrap.sh | tiny (pure cosmetic) | no | yes (`rename the --`) | full |
+| S10 | machinery rename, not a contract | `lib/wrap/wrap.sh` | rename a local variable in lib/wrap/wrap.sh | tiny (pure cosmetic) | no | no | tiny |
+| S11 | non-machinery rename, regression guard | (none) | rename the --foo flag in the cli docs | tiny (pure cosmetic) | n/a | n/a | tiny (machinery does not fire) |
+| S12 | install.sh bug fix (lead item c) | `install.sh` | fix install.sh crashing on a missing config dir | bug (defect / regression) | yes | yes (file `install.sh`, text `install.sh`) | full |
+| S13 | settings.json edit (lead item c) | `settings.json` | register the observe hook for every event in settings.json | normal (bounded feature/fix (default)) | no | yes (file `settings.json`) | full |
+| S14 | install.sh contract | `install.sh` | add a --with flag to install.sh | normal (bounded feature/fix (default)) | no | yes | full |
+| S15 | text-only rename naming a listed basename | (none) | rename the --json flag in gate-ledger.sh | tiny (pure cosmetic) | no | yes | full |
 
 ### Is this a gate bypass? No: the proof is still owed
 
 Traced through `hooks/ship-gate.sh` and `lib/gate/proof-ledger.sh` on this branch:
 
 - The proof-of-done gate (`hooks/ship-gate.sh:98-110`) runs before the spec lookup and keys on the branch DIFF, not the lane. It engages in any repo carrying `docs/verification/README.md`; this repo carries it.
-- `proof-ledger.sh classify` (`:77-116`) returns `inert` only for a markdown, txt or `.kit.toml`-only diff. A `.sh` change under `lib/` or `hooks/` is `behavioral` (or `stateful` on deploy or migration words).
+- `proof-ledger.sh classify` (`:77-116`) returns `inert` only for a markdown, txt or `.kit.toml`-only diff. A `.sh` change under `lib/` or `hooks/` is `behavioral` (or `stateful` on deploy or migration words). So is a root `install.sh` or `settings.json` change, though item 2a sizes those `full` anyway.
 - A `behavioral` change needs a `docs/verification/<slug>.md` with a green run AND a negative control (`proof-ledger.sh:411-415`).
 - An override does not excuse it: `proof-ledger.sh:377-404` rejects an override when the branch changes any source file, and a `lib/` or `hooks/` `.sh` file counts.
 
@@ -95,7 +111,7 @@ What the change does relax, stated plainly:
 
 - `hooks/ship-gate.sh:223-225` exits 0 when no `docs/specs/SPEC-*-<slug>.md` exists. A bug-lane run usually has no spec, so its lane gates (build, review, debug; `gate-ledger.sh plan bug`) are not hook-enforced. Today the full lane's spec made think, spec, validate, build, review, docs, ship and reflect hook-enforced for the same fix. That is the ceremony the operator chose to drop.
 - The review-escalation rule (`docs/WORKFLOW.md` "Review escalation": a `lib/` or `hooks/` run owes `/kit:review-team`) is lane-independent and stays. It was advisory before and stays advisory.
-- `/kit:wrap` step 10 builds and merges non-full items in `wrap.build_lanes` and never merges a `full` one. The shipped default `build_lanes = "tiny"` keeps `bug` out. An operator who adds `bug` to that list lets wrap build and merge a machinery bug fix after its checks pass and its proof gate clears, with no draft-PR design review. This is the intended effect of the policy, and it stays opt-in.
+- `/kit:wrap` step 10 builds and merges non-full items in `wrap.build_lanes` and never merges a `full` one. The shipped default `build_lanes = "tiny"` keeps `bug` out. An operator who adds `bug` to that list lets wrap build a machinery bug fix and merge it only through `wrap merge --apply`'s green gate, after the proof gate clears at push, with no draft-PR design review. This is the intended effect of the policy, and it stays opt-in.
 - `lib/classify/significance-classify.sh` uses a `full` lane as one significance leg. A machinery bug fix loses that leg; its other text triggers still apply. The understanding gate is advisory.
 
 ### Negative control, dry trace
@@ -104,7 +120,11 @@ NC1, the demotion. Mutation: in the kit-machinery branch, replace the demotion c
 
 NC2, contract wins. Mutation: make the contract check always report "no contract signal" (the text regex match and the file check both short to false). Red cases: T4 (S4 expects `full`, gets `bug`), T5 (S5), T7 (the `WORKFLOW.md` file case), T8 (the `bypass` case). Restore, rerun, green.
 
-Both run through `lib/gate/negctl.sh <root> "bash tests/test-lane-classify.sh" "<mutate-cmd>"` on a clean tree after the build commit, and the output lands in the proof doc.
+NC3, contract outranks tiny. Mutation: remove the item 2b check, so a tiny match returns `tiny` unconditionally (the old behavior). Red cases: T16 (S9 expects `full`, gets `tiny`) and T20 (S15). T17 and T18 stay green, which shows the check is scoped to machinery with a contract signal.
+
+NC4, install and adopt surfaces count as machinery. Mutation: revert `_files_touch_machinery` to its `lib/*|hooks/*|*/lib/*|*/hooks/*` case. Red cases: T19 (S13 expects `full`, gets `normal`), T21 (S14 expects `full`, gets `normal`) and T22 (S12 expects `full`, gets `bug`). T7 stays green because `lib/wrap/wrap.sh` still fires the flag and `install.sh` still fires the file contract check.
+
+All four run through `lib/gate/negctl.sh <root> "bash tests/test-lane-classify.sh" "<mutate-cmd>"` on a clean tree after the build commit, and the output lands in the proof doc.
 
 ## Acceptance criteria
 
@@ -114,7 +134,9 @@ Both run through `lib/gate/negctl.sh <root> "bash tests/test-lane-classify.sh" "
 - AC4: `check bug --files lib/wrap/wrap.sh "<S1 text>"` prints no `LANE-DOWNGRADE`. `check bug --files lib/wrap/wrap.sh "<S4 text>"` prints it.
 - AC5: every other existing case in `tests/test-lane-classify.sh` keeps its expected lane. The one planned flip is the AC6 gate-ledger case, noted in the implementation notes.
 - AC6: `tests/test-lane-classify.sh`, `tests/test-lane-escalation.sh`, `tests/test-significance-classify.sh` and `tests/test-meta.sh` pass. `docs/FEATURES.md` is regenerated if the registry check reports drift.
-- AC7: NC1 and NC2 each go red on the named cases and green after restore, recorded by `lib/gate/negctl.sh`.
+- AC7: NC1 to NC4 each go red on the named cases and green after restore, recorded by `lib/gate/negctl.sh`.
+- AC8 (lead item b): S9 and S15 classify `full`. S10 and S11 stay `tiny`. The existing AC5 typo case ("fix a typo in lib/telemetry/lane-telemetry.sh") stays `tiny`.
+- AC9 (lead item c): with `--files` naming a root `install.sh` or a root `settings.json`, or `adopt.sh` or `hooks.json` at any depth, the kit-machinery flag fires. S12, S13 and S14 classify `full`. A consumer-style `scripts/install.sh` or `config/settings.json` alone does not fire the flag.
 
 ## Test plan
 
@@ -137,13 +159,20 @@ New section in `tests/test-lane-classify.sh`, `=== kit-machinery bug fixes size 
 | T13 | explain reason, overrule | `lib/wrap/wrap.sh` | S4 text | reason suffix per AC2 |
 | T14 | floor check | `lib/wrap/wrap.sh` | S1 text, then S4 text, chosen `bug` | no warning, then `LANE-DOWNGRADE` (stderr; `DWARVES_KIT_LOG_DIR` pointed at a temp dir so the suite writes no operator log) |
 | T15 | new gate-ledger contract guard | (none) | add a --json flag to lib/gate/gate-ledger.sh | full |
+| T16 | machinery flag rename beats tiny | `lib/wrap/wrap.sh tests/test-wrap.sh` | S9 text | full |
+| T17 | machinery non-contract rename stays tiny | `lib/wrap/wrap.sh` | S10 text | tiny |
+| T18 | non-machinery rename stays tiny | (none) | S11 text | tiny |
+| T19 | root settings.json is machinery | `settings.json` | S13 text | full |
+| T20 | text-only rename of a listed basename | (none) | S15 text | full |
+| T21 | root install.sh contract | `install.sh` | S14 text | full |
+| T22 | root install.sh bug fix | `install.sh` | S12 text | full |
+| T23 | consumer install and settings files are not machinery | `scripts/install.sh config/settings.json` | add a retry loop to the installer | normal |
 
-Negative controls: NC1 turns T1, T2 and T6 red. NC2 turns T4, T5, T7 and T8 red.
+Negative controls: NC1 turns T1, T2 and T6 red. NC2 turns T4, T5, T7 and T8 red. NC3 turns T16 and T20 red. NC4 turns T19, T21 and T22 red.
 
 ## Out of scope
 
-- `tiny` precedes the hard gate, so "rename the --foo flag in gate-ledger" sizes `tiny` today, not `full`. The operator's "a renamed flag stays full" is not met by the current classifier either. This spec does not change tiny precedence; the lead decides whether that is a separate change.
-- `_files_touch_machinery` matches only `lib/` and `hooks/`. With `--files install.sh` alone, the kit-machinery flag does not fire and the change sizes by text. Widening the machinery surface is a separate change.
+- The text-only kit-machinery regex does not list `lib/wrap/` or `wrap.sh`. "rename the --foo flag in lib/wrap/wrap.sh" without `--files` never fires the flag and stays `tiny`. With `--files` (how `/kit:wrap` sizes a real diff) it sizes `full`. Widening the text regex is a separate change.
 - The keyword lists are a heuristic. A bug fix phrased with a contract word ("add a missing guard to fix the crash") sizes `full`; over-sizing is the safe direction.
 
 ## Verification
@@ -159,11 +188,11 @@ for s in 'lib/wrap/wrap.sh tests/test-wrap.sh|fix wrap merge merging before the 
 done
 ```
 
-Record: `docs/verification/lane-bug-machinery.md`, with the run table, NC1 and NC2 from `lib/gate/negctl.sh`, and the Grounding table re-run against the built classifier.
+Record: `docs/verification/lane-bug-machinery.md`, with the run table, NC1 to NC4 from `lib/gate/negctl.sh`, and the Grounding table re-run against the built classifier.
 
 ## Tasks
 
-- [ ] T1: signals, file check and the demotion in `lib/classify/lane-classify.sh`; header comment sentence.
-- [ ] T2: the new test section and the flipped AC6 case in `tests/test-lane-classify.sh`.
+- [ ] T1: signals, file check, the widened machinery file surface, the machinery-contract-beats-tiny check and the demotion in `lib/classify/lane-classify.sh`; header comment sentence.
+- [ ] T2: the new test section (T1 to T23) and the flipped AC6 case in `tests/test-lane-classify.sh`.
 - [ ] T3: one sentence each in `docs/WORKFLOW.md`, `README.md`, `commands/wrap.md`; regenerate `docs/FEATURES.md` if the check drifts.
-- [ ] T4: proof-of-done with NC1 and NC2.
+- [ ] T4: proof-of-done with NC1 to NC4.

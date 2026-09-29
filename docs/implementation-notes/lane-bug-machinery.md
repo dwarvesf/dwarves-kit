@@ -14,4 +14,10 @@ Deltas from SPEC-362. Nothing here repeats what the spec already states.
 - Impact: a machinery bug fix loses the hook-enforced full-lane phases (think, spec, validate, docs, reflect). The proof gate and the lane-independent review-team rule remain.
 
 ## 2026-09-29 Side effect during grounding
-- Running `lane-classify.sh check bug --files lib/wrap/wrap.sh ...` for the grounding appended one `LANE-CHECK | downgrade` line to the operator's `completeness.log`. That line is a grounding artifact, not a real run.
+- Running `lane-classify.sh check bug --files lib/wrap/wrap.sh ...` for the grounding appended one `LANE-CHECK | downgrade` line to the operator's `completeness.log`. That line is a grounding artifact, not a real run. It stays in the log, by the lead's instruction.
+
+## 2026-09-29 Lead decisions on the three open questions (pre-validation)
+- (a) Accepted: a spec-less bug-lane machinery fix is held only by the proof gate (green run plus negative control), the same as every other bug-lane fix. The spec's Design section records it as a deliberate tradeoff. Wrap step 10 merges such a fix only through `wrap merge --apply`'s green gate.
+- (b) Folded in: a machinery change with a TEXT contract signal sizes `full` even when the tiny rule matches first (Change item 2b). The rename term in the contract regex narrowed to a rename of a flag, verb, knob and the like, so renaming a local variable stays `tiny`. The file contract check stays out of the tiny override; a typo sweep that also touches `docs/WORKFLOW.md` stays `tiny`.
+- (c) Folded in: `_files_touch_machinery` also fires on a root `install.sh`, a root `settings.json`, and `adopt.sh` or `hooks.json` at any depth (Change item 2a). The root anchor on `install.sh` and `settings.json` is my call: any-depth would pull a consumer app's `scripts/install.sh` or `config/settings.json` into the machinery surface in every adopted repo. `lib/skill-curator/deploy/install.sh` already fires through `lib/*`.
+- Known over-size accepted with (b) and (c): a tiny task whose text names `install.sh`, `adopt`, `hooks.json` or `settings.json` sizes `full`, because those words are text contract signals.
