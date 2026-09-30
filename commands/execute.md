@@ -101,7 +101,7 @@ Resolve the active `docs/specs/SPEC-NNN-<slug>.md` branch-aware (the detection `
 
 **Builder type.** One deterministic lookup, no dispatch: `DOMAIN=$(bash lib/classify/role-classify.sh classify "<spec Problem + Task Breakdown text>")`, then `bash lib/classify/role-classify.sh agent-for "$DOMAIN"`. A non-empty result names the builder's `subagent_type` (for example `kit:db-migration-worker`). Empty: the general builder. Reviewers are not in this lookup; domain review lenses run through `/kit:review-team`.
 
-**Split only for a named reason.** Default is one builder. Split only when you write one reason from the closed list `unresolved-decision`, `territory-conflict`, `fork-risk`, and record `bash lib/gate/gate-ledger.sh action "$RID" "split: <reason>: <slices>"`. A reason outside the list is not a split. Slices run one at a time. `fork-risk` threshold: more than 6 tasks in `## Task Breakdown` splits up front into slices of at most 6 tasks. **Verify at each slice boundary:** after a slice's builder returns, run the Step 3 `kit:task-verifier` pass over that slice's tasks before the next slice starts (a FAIL:fixable goes through the fix loop first); the full Step 3 pipeline still runs once at the end.
+**Split only for a named reason.** Default is one builder. Split only when you write one reason from the closed list `unresolved-decision`, `territory-conflict`, `fork-risk`, and record `bash lib/gate/gate-ledger.sh action "$RID" "split: <reason>: <slices>"`. A reason outside the list is not a split. Slices run one at a time. `fork-risk` threshold: more than 6 tasks in `## Task Breakdown` splits up front into slices of at most 6 tasks. **Verify at each slice boundary:** after a slice's builder returns, run the Step 3 `kit:task-verifier` pass over that slice's tasks, against the diff since the previous slice boundary, before the next slice starts (a FAIL:fixable goes through the fix loop first). Its PASS is recheck-sampled like any other (Step 3). The full Step 3 pipeline, with the whole-build diff, still runs once at the end.
 
 **Continuation.** The builder commits after each task. Near its context limit it stops at a task boundary and returns `PROGRESS: done=<ids> remaining=<ids>`. Do not trust the ids: check each done id against `git log <base>..HEAD` (one commit per task, subject without IDs, so match the subject to the task), and move any done id with no commit back to remaining. A builder that dies without `PROGRESS:` gets the same treatment: derive done and remaining from the commit log and the spec, then continue. A dead or full builder gets a continuation, never `kit:fix-agent`. The continuation brief is the same brief narrowed to the remaining ids: it carries the commit log, names `docs/implementation-notes/<spec-slug>.md`, and narrows Territory to the remaining tasks' files. Record `split: fork-risk: continuation <n> after <last done id>`. At most 2 continuations; a third need stops and escalates to the human.
 
@@ -169,7 +169,7 @@ A BOUNDED summary, not a dump:
 After the builder (and any continuation) returns, run in order. A verifier judging a commit while someone still edits the tree runs its negative control with `lib/gate/negctl.sh --at <sha> [--path <subdir>] [--setup "<install-cmd>"] <root> "<test-cmd>" "<mutate-cmd>"`, which never writes the live worktree.
 
 1. **Full suite.** Run it, capturing the exact command, exit code, and an output excerpt. Append a verification-log entry to `docs/verification/<spec-slug>.md` (create it if missing; shape per `docs/verification/README.md`: `Command:` / `Exit:` / `Output (excerpt):` / `Verdict:`). No runnable check: record `[NO EXECUTABLE CHECK: <reason>]`, never a fake pass.
-2. **One `kit:task-verifier` pass** (rid=<rid>; pass `model: opus` only when the spec carries `Model: opus`, per the parity rule). Input: every task with its acceptance criteria, the whole-build diff from the base ref, and the builder's report. It returns one verdict per task plus the overall verdict. Run the recheck decision (below) at this first end-verifier dispatch.
+2. **One `kit:task-verifier` pass** (rid=<rid>; pass `model: opus` only when the spec carries `Model: opus`, per the parity rule). Input: every task with its acceptance criteria, the whole-build diff from the base ref (a slice-boundary pass gets that slice's tasks and the diff since the previous boundary), and the builder's report. It returns one verdict per task plus the overall verdict. Run the recheck decision (below) once, before the first task-verifier pass of the run, slice boundary or end.
 3. **`kit:integration-verifier`** (rid=<rid>) when `## Task Breakdown` lists more than one task, passing the base ref so it diffs the whole build: every new component reaches its activation point and the spec's end-to-end chains hold.
 4. **`kit:acceptance-verifier`** (rid=<rid>) on every build. Its Bash allowlist covers only `npm test`, `go test`, `pytest`, `bash tests/*`, `git diff`; anything else it records as `[NO EXECUTABLE CHECK]`. Run each such `## Verification` command yourself and log `Command:` / `Exit:` / `Output (excerpt):` with the literal tag `(lead-run)` on its Verdict line. A `(lead-run)` row is unaudited evidence: `kit:recheck-verifier` has the same narrow allowlist, so it cannot be rechecked. Do not widen any verifier allowlist.
 5. **Check-edit signal.** `bash lib/gate/check-edit.sh <base> <files the ## Verification commands and acceptance criteria name>`. It prints `check-edited: <paths>` when a named file changed or a test file that already existed at the base ref was modified, and `check-weakened: <file>: <line>` for an added skip, xfail, `.only`, `|| true`, or commented-out assert in a test or named file. Any output is surfaced in the summary: a finding, not a block.
@@ -187,7 +187,7 @@ if verdict still != "PASS": apply the PARTIAL rule below
 
 **Check the attempt state before you re-dispatch anything.** The loop handles a builder that REPORTED a fixable failure. A builder that went SILENT reported nothing, and a re-dispatch races the original on the same files. First: `bash lib/goal/attempt-state.sh status <spec-slug>`. An attempt in `disconnected` with grace remaining means **resume it with `SendMessage`** and spend no retry. Only once `lose-attempt` succeeds may a fresh builder take the work, as a new attempt and not a fix cycle. Max 2 retries: if it takes 3+, the issue is a design problem, not a code bug. A `kit:fix-agent` that reports it cannot fix an issue: escalate at once.
 
-**Sampled recheck (`kit:recheck-verifier`).** Right-arm PASSes are unreviewed by default, so a fresh-context re-audit samples them. Decide once, at the first end-verifier dispatch, with the script (it resolves `kit_config_get_root execute.recheck_sample 5`, root-only):
+**Sampled recheck (`kit:recheck-verifier`).** Right-arm PASSes are unreviewed by default, so a fresh-context re-audit samples them. Decide once per run, before the first task-verifier pass, with the script (it resolves `kit_config_get_root execute.recheck_sample 5`, root-only):
 
 ```bash
 bash lib/gate/recheck-sample.sh decide "$RID"      # normal lane: prints sampled|skipped
@@ -195,7 +195,7 @@ bash lib/gate/recheck-sample.sh decide "$RID" 1    # Lane: full (effective lane 
 ```
 
 - The key is the rid, which exists before the builder dispatches, so no builder commit moves it. The script records `recheck: sampled key=<rid>` or `recheck: skipped key=<rid>` in the ledger, so anyone can recompute the decision. `recheck_sample = 0` never samples; `1` rechecks every PASS. On the full lane every end-verifier PASS is rechecked whatever the config says.
-- A sampled run dispatches `kit:recheck-verifier` (rid=<rid>; it pins opus) in a FRESH context on every end-verifier PASS, passing the full verdict block. It RE-EXECUTES the recorded `Command:` and re-judges; it never reads back the recorded `Exit:` text.
+- The one decision covers every task-verifier PASS of the run, slice-boundary passes included. A sampled run dispatches `kit:recheck-verifier` (rid=<rid>; it pins opus) in a FRESH context on every verifier PASS, passing the full verdict block. It RE-EXECUTES the recorded `Command:` and re-judges; it never reads back the recorded `Exit:` text.
 - A criterion the builder reported as `confirmed-by: read <file:line>` that no end verifier executed gets a verification-log row whose Verdict carries the literal tag `(self-attested)`. Every `(self-attested)` row is rechecked on every run, sampled or not: the recheck re-reads the cited `file:line` and runs the nearest executable check for that criterion (a `## Verification` or `## Test plan` command that names it). With no such command, the row is logged `unverifiable`.
 - A PASS not rechecked gets `Re-audit: SKIPPED (sampled out, 1 in N)`. A recheck PASS is recorded `Re-audit: PASS`.
 - A recheck FAIL is recorded `Re-audit: FAIL -- <finding>` and surfaced in the summary. It is ADVISORY + RECORDED, never a mid-flight hard block: it does not reopen the retry loop.
@@ -225,7 +225,7 @@ Closed: [N] (spec judged wrong-shaped, dropped rather than retried)
 Commits: [N]
 Tests: [pass/fail]
 check-edited: [paths, or none]
-Re-audit: [sampled / skipped key=<sha>; any Re-audit: FAIL]
+Re-audit: [sampled / skipped key=<rid>; any Re-audit: FAIL]
 Files changed: [list]
 Implementation notes: docs/implementation-notes/<spec-slug>.md ([N] entries, or "no deviations")
 Verification log: docs/verification/<spec-slug>.md ([N] runs recorded; re-run any Command: line to regression-check)
@@ -247,7 +247,7 @@ Close the timing bracket opened in Step 1, naming the failure policy (`docs/patt
 ## Error handling
 
 - **Builder fails to complete**: run the end verifiers on whatever exists; they decide whether it is salvageable (FAIL:fixable) or needs a human (FAIL:escalate).
-- **Spec ambiguity**: a genuine contradiction (the spec disagrees with itself) means stop and ask; do not guess and do not dispatch kit:fix-agent for spec problems. Scope that must be ADDED now ("also do Y") is the declared mid-flight amend path: confirm it with the user first, then amend at a checkpoint (append `- [ ]` tasks, record an `## Amendments` entry) and resume with `/kit:next` (WORKFLOW.md "## Mid-flight amend").
+- **Spec ambiguity**: a genuine contradiction (the spec disagrees with itself) means stop and ask; do not guess and do not dispatch kit:fix-agent for spec problems. Scope that must be ADDED now ("also do Y") is the declared mid-flight amend path: confirm it with the user first, then amend at the checkpoint (the stop after the builder or a continuation returns; append `- [ ]` tasks, record an `## Amendments` entry) and resume with `/kit:next` (WORKFLOW.md "## Mid-flight amend").
 - **Task too large**: within the declared scope, the builder splits it itself. Beyond the spec, confirm the added scope with the user and take the amend path.
 
 ## Anti-patterns to avoid
@@ -255,6 +255,6 @@ Close the timing bracket opened in Step 1, naming the failure policy (`docs/patt
 - Do NOT build in the main session. Always dispatch the builder through the Task tool.
 - Do NOT skip end verification, even if the builder says "all criteria met."
 - Do NOT auto-fix failing tests without the verification pipeline.
-- Do NOT silently mutate the spec mid-build. Take the declared amend path: pause at a task checkpoint, append new `- [ ]` tasks, record an `## Amendments` entry, resume with `/kit:next`. A silent rewrite of done (`- [x]`) tasks is forbidden.
+- Do NOT silently mutate the spec mid-build. Take the declared amend path: pause at the stop after the builder or a continuation returns, append new `- [ ]` tasks, record an `## Amendments` entry, resume with `/kit:next`. A silent rewrite of done (`- [x]`) tasks is forbidden.
 - Do NOT retry FAIL:escalate verdicts. They need human judgment by definition.
 - Do NOT dispatch kit:fix-agent for more than 2 issues at once. If the verifiers found 5+, the work needs re-implementation, not patching. Escalate.

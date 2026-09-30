@@ -123,7 +123,7 @@ Any FAIL:fixable routes through the kept fix-agent loop (max 2) and the attempt-
 R5. **Sampled recheck.** Replace both recheck sites (`:294-316`, `:444-457`) with one rule:
 - `lib/gate/recheck-sample.sh decide <rid> [N]` resolves `kit_config_get_root execute.recheck_sample 5` when N is absent. `0` never samples; `1` rechecks every PASS. On `Lane: full` the lead passes N=1, so every end-verifier PASS is rechecked.
 - Key = the rid (the lead creates it before the builder dispatches, so no builder commit moves it), `printf '%s'` piped to `cksum`; sampled when the first field is divisible by N. The script prints `sampled` or `skipped` and records `recheck: sampled key=<rid>` or `recheck: skipped key=<rid>` in the ledger, so anyone can recompute the decision.
-- A sampled run rechecks every end-verifier PASS.
+- A sampled run rechecks every task-verifier PASS of the run (slice-boundary passes included) and every end-verifier PASS. A slice-boundary pass verifies that slice's tasks against the diff since the previous boundary; the whole-build diff belongs to the final pass.
 - Self-attested producer: each criterion the builder reports as `confirmed-by: read <file:line>` (confirmed by reading, not running) that no end verifier executed gets a verification-log row whose Verdict carries the literal tag `(self-attested)`. Every `(self-attested)` row is rechecked on every run, sampled or not: the recheck re-reads the cited `file:line` and runs the nearest executable check for that criterion, or logs the row `unverifiable`.
 - A PASS not rechecked gets `Re-audit: SKIPPED (sampled out, 1 in N)`.
 - A recheck FAIL is recorded as `Re-audit: FAIL -- <finding>` and surfaced in the summary. It stays advisory + recorded, never a mid-flight hard block (`tests/test-right-arm-parity.sh:101-102` pins the phrase).
@@ -257,8 +257,8 @@ Fixture (new, `tests/fixtures/whole-spec-dispatch/`): `SPEC-900-unmeetable.md` (
 2. Spec with one task: integration-verifier skipped (today's rule); the task-verifier pass and acceptance-verifier still run.
 3. Spec with 7+ tasks: up-front `split: fork-risk` into slices of at most 6.
 4. Builder hits its context limit mid-slice: `PROGRESS:` return, continuation builder, `split: fork-risk: continuation`.
-5. `execute.recheck_sample = 0`: no sampled rechecks; `(self-attested)` rows still rechecked.
-6. `execute.recheck_sample = 1`: every PASS rechecked.
+5. `execute.recheck_sample = 0`: no sampled rechecks on the normal lane; `(self-attested)` rows still rechecked. A `Lane: full` run ignores it and rechecks every PASS.
+6. `execute.recheck_sample = 1`: every PASS rechecked (the full-lane behavior).
 7. A project `.kit.toml` sets `recheck_sample = 0`: ignored (root-only); T6 proves it.
 8. A `## Verification` command outside the acceptance-verifier allowlist: the lead runs and logs it tagged `(lead-run)`; it is never rechecked.
 9. Builder goes silent: attempt-state resume via `SendMessage`, no retry spent (kept, `commands/execute.md:347-360`).
