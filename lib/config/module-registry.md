@@ -229,6 +229,7 @@ single-reader fence). No env vars; per-repo values live in `.kit.toml [sync]`.
 
 | Env var | kit.toml key | Default | Status | Module | Doc |
 |---|---|---|---|---|---|
+| HARVEST_STATE_DIR | env-only | `$HOME/.claude/dwarves-kit/state/harvest` | [impl] | session | Harvest state dir: the `--stop-trigger` counter and lock, the detached-child payload handoff, and the sweep's cursor, ledgers and patterns. `--dry-run` points it at a throwaway overlay. |
 | SKILL_CURATOR_STATE_DIR | env-only | `$HOME/.claude/skill-curator` | [impl] | session | Root of the skill-curator tool's state (ledger, lock, log, config). |
 | SKILL_CURATOR_PROPOSALS_DIR | env-only | `$HOME/.claude/skill-proposals` | [impl] | session | Where drafted skill proposals land. |
 | SKILL_CURATOR_SKILLS_DIR | env-only | `$HOME/.claude/skills` | [impl] | session | Where curated/promoted skills are written. |
@@ -333,6 +334,7 @@ never turns the step off.
 | - | wrap.follow_through | `"off"` | [impl] | wrap | Step 10, the follow-through phase, after the step 9 report prints and lints clean. One of `off`, `lanes`, `all`, resolved by `wrap follow-mode [lanes\|all]` (`cmd_follow_mode` in `lib/wrap/wrap.sh`), which prints the mode and the lanes step 10 builds. `off` ends the pass at the first report. `lanes` builds, in background workers each in its own `wrap start` worktree, every `REPORTED` step 7b candidate whose lane is in `wrap.build_lanes` (never `full`, never one reported with `build_candidates off`) and every FYI follow-up the pass can finish in those lanes, merges each green own PR through `wrap merge --apply --pr` after its checks settle, and prints a second `## Follow-through:` report that `report-lint.sh` checks. `all` adds each `REPORTED` full-lane candidate through the home repo's full lane unattended (a spec numbered by `spec-next.sh reserve`, the `kit:spec-validate` lenses with the blocking design-record lens, build, negative control, proof, gate-ledger records); its PR opens as a draft, wrap never merges it, and the second report asks `REVIEW #<pr>` in `Needs you`. The argument `follow` runs `lanes` and `follow all` runs `all` for one call, over the knob. Any other value prints one line naming the knob and the allowed values and runs as `off`. `Needs you` items never run at any setting. Resolved with `kit_config_get_root`, same fence as the knobs above: it authorizes writes in home repos. |
 | KIT_WRAP_SETTLE_SECS | env-only | `60` | [impl] | wrap | `wrap merge`: seconds to wait, one PR read every 2s, for GitHub to recompute mergeability. The wait covers a first read of UNKNOWN, and after wrap's own re-merge push, a head that is still the old one or a verdict of UNKNOWN or CONFLICTING. A head that is neither the old one nor the pushed one ends the wait and is refused. A non-numeric value falls back to 60. (SPEC-306) |
 | KIT_WRAP_CARRY_CHECKS_SECS | env-only | `300` | [impl] | wrap | `wrap apply` under `wrap.autoland_carry`: seconds to wait, one read every 10s, while a carry PR has pending checks before `wrap merge --apply --pr` gates it. A check still pending at the bound leaves the PR open for step 3. A non-numeric value falls back to 300. (SPEC-322) |
+| KIT_WRAP_CI_GRACE_SECS | env-only | `90` | [impl] | wrap | `wrap` CI wait on a label-gated repo: seconds, one read every 10s, to hold while no NEW check has appeared after the label was added. Past it the workflow is a paths-filtered one that started nothing and the wait ends. A non-numeric value falls back to 90. |
 | KIT_SKILL_DIRS | env-only | `$HOME/.claude/skills` plus `${CLAUDE_PLUGIN_ROOT:-}/skills` when set | [consumer] | wrap | Colon-separated list of skill directories `config seams` searches for a `skill` kind row's `SKILL.md` (e.g. `wrap.before`). Entries whose realpath does not sit under `$HOME` are dropped, because a repo `.envrc` can set this. Not read by any code yet; `config seams` is the first consumer. |
 
 ### knowledge (context tree root, no install module)
@@ -403,6 +405,7 @@ against any of these bare tokens as covered without a registry row.
 | BACKLOG_DIR | `lib/board/backlog.sh`: computed via `pwd`, script-local. |
 | KIT_REF | `lib/adopt.sh`: the literal `~/.claude/dwarves-kit` string written into a consumer's AGENTS.md for its own shell to expand; assigned, never env-read. |
 | BACKLOG_SH | `lib/board/board.sh`: computed path, not env-overridable. |
+| HARVEST_SWEEP_CHILD | `hooks/harvest_sweep.py` sets `=1` on its own extractor child; `hooks/harvest.sh` exits 0 on it so the sweep's own transcripts are not self-harvested. A parent-to-child marker, never operator-set. |
 | BACKLOG_LOCK_HELD | `lib/board/backlog.sh` `_board_locked`: reentrancy marker the parent sets on the child it re-execs under the shared flock, never read from the ambient environment. |
 | CC_BACKLOG_BACKLOG_FIX | `lib/stats/tests/test-deviation-rate.sh`: test-fixture-local, assigned then used in the same file, never read as inherited env. |
 | SKILL_CURATOR_LEDGER | `lib/skill-curator/lib/common.sh`: derived from `SKILL_CURATOR_STATE_DIR`, not independently env-read. |
@@ -465,6 +468,8 @@ exercise the primitive on fixture keys -- `mega.wave_cap`, `gauntlet.runner_host
 |---|
 | adopt.single_source |
 | debug.confirm_fix |
+| harvest.enable |
+| harvest.hook_when_sweep_on |
 | intake.boards |
 | intake.notes |
 | intake.url_ledger |
