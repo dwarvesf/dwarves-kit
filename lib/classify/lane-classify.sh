@@ -98,22 +98,24 @@ FILES=""; FILES_SET=0; REMAIN=()
 # Built-in hard paths (case-insensitive ERE over changed paths). Constants on purpose: no
 # config file can remove one. `[lanes] extra_hard_paths` only adds.
 _HP_migration='(^|/)(migrations?|migrate)/|(^|/)alembic/versions/|(^|/)drizzle/|(^|/)schema\.(sql|rb|prisma)$|(^|/)[^/]*changelog[^/]*\.(xml|ya?ml|json|sql)$'
-_HP_auth='(^|/)(auth|oauth|authn|authz|rbac|permissions?|sessions?)(/|\.[a-z]+$)|(^|/)[^/]*(login|password|passwd|jwt)[^/]*$'
+_HP_auth='(^|/)(auth(entication|orization|orisation|n|z|[_-][a-z_-]*)?|oauth|rbac|permissions?|sessions?)(/|\.[a-z]+$)|(^|/)[^/]*(login|password|passwd|jwt)[^/]*$'
 _HP_secret='(^|/)\.env(\.(local|dev|development|prod|production|staging|test))?$|(^|/)secrets?/|\.(pem|key|p12|pfx)$|(^|/)[^/]*credentials?[^/]*$'
-_HP_ci='(^|/)\.github/workflows/'
+_HP_ci='(^|/)\.github/'
+_HP_infra='(^|/)Dockerfile[^/]*$|(^|/)[^/]*(iam|role|polic)[^/]*\.tf$|(^|/)(iam|policies)/[^/]*\.tf$'
 _HP_kitconfig='(^|/)\.kit\.toml$'
 # Added-line signatures for data loss, checked only in non-doc files. `truncate` counts as SQL:
 # any use in a .sql file, or a statement-shaped `truncate <name>;` elsewhere.
 _HL_common='drop[[:space:]]+(table|column|database|schema)|deletemany\([[:space:]]*\{[[:space:]]*\}[[:space:]]*\)'
-_HL_truncate_code='(truncate[[:space:]]+(table[[:space:]]+)?[a-z_."]+[[:space:]]*;)'
+_HL_truncate_code='(truncate[[:space:]]+(table[[:space:]]+)?[a-z_."]+[[:space:]]*;|["'"'"'`][[:space:]]*truncate[[:space:]]+(table[[:space:]]+)?[a-z_."]+)'
 _HL_truncate_sql='(.*[^a-z_])?truncate[[:space:]]+(table[[:space:]]+)?[a-z_."]+'
 
 # _hp_re <kind> -- the built-in ERE for a hard-path kind.
-_HP_KINDS="migration auth secret ci kit-config"
+_HP_KINDS="migration auth secret ci infra kit-config"
 _hp_re() {
   case "$1" in
     migration) printf '%s' "$_HP_migration" ;; auth) printf '%s' "$_HP_auth" ;;
     secret) printf '%s' "$_HP_secret" ;; ci) printf '%s' "$_HP_ci" ;;
+    infra) printf '%s' "$_HP_infra" ;;
     kit-config) printf '%s' "$_HP_kitconfig" ;;
   esac
 }

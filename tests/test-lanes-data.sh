@@ -152,11 +152,12 @@ case_escalate_suggest() {
 case_floor_paths() {
   local p bad="" out
   for p in alembic/versions/x.py drizzle/0001.sql db/changelog/db.changelog-master.xml .github/workflows/ci.yml .kit.toml \
-           db/migrations/0001_users.sql src/auth/login.py config/secrets/prod.txt certs/site.pem app/.env; do
+           db/migrations/0001_users.sql src/auth/login.py config/secrets/prod.txt certs/site.pem app/.env \
+           src/authentication/x.go src/auth_service.py .github/actions/a/action.yml Dockerfile terraform/iam.tf; do
     mkrepo; addfile "$p" "x"
     out="$(floor_out)"; case "$out" in "full "*": $p"*) ;; *) bad="$bad [$p => '$out']" ;; esac
   done
-  for p in .env.example CHANGELOG.md src/app.py docs/notes.md; do
+  for p in .env.example CHANGELOG.md src/app.py docs/notes.md src/authors.go terraform/main.tf; do
     mkrepo; addfile "$p" "x"
     out="$(floor_out)"; [ -z "$out" ] || bad="$bad [$p should not hit: '$out']"
   done
@@ -188,6 +189,10 @@ app/db.js|await db.users.deleteMany({})|hit
 db/reset.sql|TRUNCATE users|hit
 app/db.py|DELETE FROM users|hit
 app/db.py|DELETE FROM users WHERE id = 1|miss
+app/db.py|DELETE FROM users WHERE 1=1|hit
+app/db.py|x("DROP  TABLE users")|hit
+app/db.py|x("TRUNCATE users")|hit
+db/reset.sql|TRUNCATE TABLE users|hit
 app/fmt.py|# truncate long names|miss
 app/fmt.py|name.truncate(20)|miss
 docs/notes.md|DROP TABLE users;|miss
@@ -468,6 +473,15 @@ PY
   [ -z "$bad" ] && pass hook-timeout || fail hook-timeout "ship-gate timeout under 30s in:$bad"
 }
 
+# A submodule bump (gitlink, mode 160000) changes code the diff cannot show: a hard path.
+case_floor_submodule() {
+  mkrepo
+  _git update-index --add --cacheinfo 160000,"$(git -C "$ROOT" rev-parse HEAD)",vendor/sub >/dev/null 2>&1
+  _git commit -q -m "chore: bump submodule" >/dev/null 2>&1   # not _commit: add -A would drop a gitlink with no checkout
+  local out; out="$(floor_out)"
+  case "$out" in "full submodule: vendor/sub") pass floor-submodule ;; *) fail floor-submodule "got '$out'" ;; esac
+}
+
 # ---------------------------------------------------------------------------
 run_case() {
   local fn="case_${1//-/_}"
@@ -475,7 +489,7 @@ run_case() {
 }
 # `parity` (byte-identical against the baseline) holds only at the refactor commit; after the
 # flip the standing check is parity-after-flip.
-ALL="parity-after-flip plan-flip four-false-hits webhook-signature-suggests suggest-records explain-suggest-line classify-files-full escalate-suggest floor-paths floor-rename-counts-both-sides floor-data-loss floor-extra-paths-union floor-invalid-extra-ere override-drop-review override-uncommitted override-typo override-no-light pinned-root malformed-array-fails-closed policy-at-base ship-migration-blocks ship-migration-absent-quiet ship-switch-off-on-base ship-flip-gate-in-pr ship-hollow-full-override ship-data-loss ship-no-spec-advisory ship-suggest-advisory workflow-view floor-timing floor-non-ascii hook-timeout"
+ALL="parity-after-flip plan-flip four-false-hits webhook-signature-suggests suggest-records explain-suggest-line classify-files-full escalate-suggest floor-paths floor-rename-counts-both-sides floor-data-loss floor-extra-paths-union floor-invalid-extra-ere override-drop-review override-uncommitted override-typo override-no-light pinned-root malformed-array-fails-closed policy-at-base ship-migration-blocks ship-migration-absent-quiet ship-switch-off-on-base ship-flip-gate-in-pr ship-hollow-full-override ship-data-loss ship-no-spec-advisory ship-suggest-advisory workflow-view floor-timing floor-non-ascii hook-timeout floor-submodule"
 if [ "$#" -eq 0 ]; then set -- $ALL; fi
 for c in "$@"; do run_case "$c"; done
 [ "$FAILS" -eq 0 ]
