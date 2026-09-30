@@ -29,7 +29,7 @@ fail() { echo "FAIL $1: $2"; FAILS=$((FAILS+1)); }
 # Every gate-ledger call in this file runs on a temp log dir with no operator overlay.
 LOGD=""
 new_log() { LOGD="$(_mk)/logs"; mkdir -p "$LOGD/runs"; }
-gl() { env DWARVES_KIT_LOG_DIR="$LOGD" KIT_CONFIG_OPERATOR=/nonexistent bash "$GL" "$@"; }
+gl() { env DWARVES_KIT_LOG_DIR="$LOGD" KIT_CONFIG_OPERATOR="${GL_OPERATOR:-/nonexistent}" bash "$GL" "$@"; }
 
 # ---------------------------------------------------------------------------
 # capture: plan + required for all five lanes, plus progress + descent against a canned
@@ -673,6 +673,43 @@ case_ship_merge_base_once() {
   [ "$HOOK_RC" = 0 ] || bad="$bad [switch off: rc=$HOOK_RC]"
   [ "$raw" = 0 ] || bad="$bad [switch off but the diff scan ran $raw times]"
   [ -z "$bad" ] && pass ship-merge-base-once || fail ship-merge-base-once "$bad"
+}
+
+# Layer precedence: project (committed) over operator over kit root, per lane, whole-lane wins.
+case_override_operator_precedence() {
+  mkrepo; new_log
+  local op; op="$(_mk)"; printf '[lane.normal]\nphases = ["spec", "build"]\n' > "$op/kit.toml"
+  local via_op via_proj
+  via_op="$(GL_OPERATOR="$op" KIT_PROJECT_ROOT=/nonexistent gl required normal 2>/dev/null | tr '\n' ' ')"
+  commit_kit_toml '[lane.normal]
+phases = ["build"]'
+  via_proj="$(GL_OPERATOR="$op" KIT_PROJECT_ROOT="$ROOT" gl required normal 2>/dev/null | tr '\n' ' ')"
+  if [ "$via_op" = "spec build " ] && [ "$via_proj" = "build " ]; then pass override-operator-precedence
+  else fail override-operator-precedence "operator only='$via_op' operator+project='$via_proj'"; fi
+}
+
+# A committed [lanes] default applies; an unknown lane name falls back to normal.
+case_default_lane_layers() {
+  mkrepo
+  commit_kit_toml '[lanes]
+default = "bug"'
+  local applied; applied="$(KIT_PROJECT_ROOT="$ROOT" lcx classify "add a users page" 2>/dev/null)"
+  commit_kit_toml '[lanes]
+default = "mega"'
+  local fallback; fallback="$(KIT_PROJECT_ROOT="$ROOT" lcx classify "add a users page" 2>/dev/null)"
+  if [ "$applied" = bug ] && [ "$fallback" = normal ]; then pass default-lane-layers
+  else fail default-lane-layers "committed default bug => '$applied'; invalid default => '$fallback' (want normal)"; fi
+}
+
+# start (and start --amend) records each dropped phase once.
+case_start_no_duplicate_skips() {
+  mkrepo; new_log
+  commit_kit_toml '[lane.normal]
+phases = ["think", "spec", "validate", "design-record", "test-plan", "build", "ship", "docs"]'
+  KIT_PROJECT_ROOT="$ROOT" gl start dup-1 normal normal feature >/dev/null 2>&1
+  KIT_PROJECT_ROOT="$ROOT" gl start --amend dup-1 normal normal feature >/dev/null 2>&1
+  local n; n="$(gl show dup-1 2>/dev/null | grep -c '| GATE | review | skipped | repo lane override')"
+  [ "$n" = 1 ] && pass start-no-duplicate-skips || fail start-no-duplicate-skips "review skipped line appears $n times (want 1)"
 }
 
 # ---------------------------------------------------------------------------

@@ -2292,8 +2292,10 @@ assert_output_not_contains "ID-064 negative: code scaffold is not tiny" "tiny" "
 # review HIGH: the doc-bootstrap anchor must NOT preempt a hard-gate subject
 OUT=$(bash "$LC72" explain "bootstrap a learning track with README covering auth tokens and secrets" 2>/dev/null)
 assert_output_contains "ID-064 hard-gate wins: auth/secrets README bootstrap suggests full, not tiny" "suggest: full" "$OUT"
+assert_output_not_contains "ID-064 negative: auth/secrets README bootstrap is not the tiny lane" "^tiny$" "$(bash "$LC72" classify "bootstrap a learning track with README covering auth tokens and secrets" 2>/dev/null)"
 OUT=$(bash "$LC72" explain "bootstrap notes for gate-ledger internals, markdown only" 2>/dev/null)
 assert_output_contains "ID-064 hard-gate wins: kit-machinery notes bootstrap suggests full, not tiny" "suggest: full" "$OUT"
+assert_output_not_contains "ID-064 negative: kit-machinery notes bootstrap is not the tiny lane" "^tiny$" "$(bash "$LC72" classify "bootstrap notes for gate-ledger internals, markdown only" 2>/dev/null)"
 
 # review: bare-cli false-positive guard + noun-arm phrasing consistency
 OUT=$(bash "$TTC72" classify "fix the cli help text typo")
