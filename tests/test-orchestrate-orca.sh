@@ -73,7 +73,9 @@ oenv() {  # run a command with the Orca env
   ORCA_CMD="$STUB" ORCA_STUB_STATE="$STATE" BOARD_WORK_CMD="$TMP/bw" GH_CMD="$TMP/poison/gh" \
   CLAUDE_CMD="$TMP/poison/claude" POISON_SENTINEL="$W/sentinel" ORCA_PERMISSION_MODE="${ORCA_PERMISSION_MODE-bypass}" "$@"
 }
+TO=$(command -v timeout || command -v gtimeout || true)   # bounds a run that must halt, when a timeout binary exists
 orun()  { oenv bash "$ORCH" run "$MEGA" --backend orca "$@"; }
+orun_t() { oenv ${TO:+"$TO" 60} bash "$ORCH" run "$MEGA" --backend orca "$@"; }
 tick()  { ORCA_MAX_TICKS=1 orun >"$W/tick.out" 2>&1; }
 ostat() { oenv bash "$ORCH" status "$MEGA" 2>/dev/null; }
 sset()  { ORCA_STUB_STATE="$STATE" "$STUB" _set "$@"; }
@@ -484,18 +486,18 @@ tc_terminal_halts() {
   # start-outcome-unknown: the failed start is remembered; the next runner halts with that reason
   mkcase
   ORCA_STUB_FAIL_VERB=worker-start ORCA_MAX_TICKS=1 orun >"$W/o.out" 2>&1
-  orun >"$W/o.out" 2>&1; expect "$?" 1 "start-outcome-unknown halts the run"
+  orun_t >"$W/o.out" 2>&1; expect "$?" 1 "start-outcome-unknown halts the run"
   expect_match "$(cat "$W/o.out")" 'halted: SG-01 INDETERMINATE start-outcome-unknown' "names the SG and reason"
   # no-map-row: Task creation keeps failing, so no row ever exists
   mkcase
-  ORCA_STUB_FAIL_VERB=task-create orun >"$W/o.out" 2>&1; expect "$?" 1 "no-map-row halts the run"
+  ORCA_STUB_FAIL_VERB=task-create orun_t >"$W/o.out" 2>&1; expect "$?" 1 "no-map-row halts the run"
   expect_match "$(cat "$W/o.out")" 'halted: SG-01 INDETERMINATE no-map-row' "names the SG and reason"
   # completed-and-consumed-but-box-open: the box was checked, consumed, then reopened
   mkcase
   tick; finish_auto 01; tick
   { sed -n '1,2p' "$MEGA/ROADMAP.md"; echo '- [ ] SG-01 first , auto , PR #__'; grep '^- \[.\] SG-0[23]' "$MEGA/ROADMAP.md"; } > "$W/rm2.tmp"
   cat "$W/rm2.tmp" > "$MEGA/ROADMAP.md"
-  orun >"$W/o.out" 2>&1; expect "$?" 1 "consumed-but-box-open halts the run"
+  orun_t >"$W/o.out" 2>&1; expect "$?" 1 "consumed-but-box-open halts the run"
   expect_match "$(cat "$W/o.out")" 'halted: SG-01 INDETERMINATE completed-and-consumed-but-box-open' "names the SG and reason"
   case_end
 }

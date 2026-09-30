@@ -45,7 +45,15 @@ permission-pin~lib/queue/orca-backend.sh~permission-pin~the permission attestati
 CTL
 )
 
-run_cases() { ONLY="$1" bash "$SUITE" 2>&1 | grep -E '^(PASS|FAIL) ' | tr '\n' ' '; }
+TO=$(command -v timeout || command -v gtimeout || true)
+# A mutant that never halts a run hangs the suite: the timeout counts as red.
+run_cases() {
+  local out rc
+  out=$(ONLY="$1" ${TO:+"$TO" 600} bash "$SUITE" 2>&1); rc=$?
+  printf '%s\n' "$out" | grep -E '^(PASS|FAIL) ' | tr '\n' ' '
+  [ "$rc" = 124 ] && printf 'FAIL(timeout) '
+  return 0
+}
 green_of() { case "$1" in *FAIL*) echo no ;; *PASS*) echo yes ;; *) echo no ;; esac; }
 
 printf '| control | mutation | guarding case | red when broken | green when restored |\n|---|---|---|---|---|\n'
