@@ -601,6 +601,12 @@ CASES
   [ -z "$bad" ] && pass risk-verb || fail risk-verb "$bad"
 }
 
+# Significance keys its "full lane" leg on risk, so a keyword-only task keeps the leg it had.
+case_significance_uses_risk() {
+  local out; out="$(env KIT_PROJECT_ROOT=/nonexistent bash "$KIT_DIR/lib/classify/significance-classify.sh" explain "add a login rate limiter" 2>/dev/null)"
+  printf '%s' "$out" | grep -qF 'significance: high (full lane)' && pass significance-uses-risk || fail significance-uses-risk "$out"
+}
+
 # ---------------------------------------------------------------------------
 run_case() {
   local fn="case_${1//-/_}"
