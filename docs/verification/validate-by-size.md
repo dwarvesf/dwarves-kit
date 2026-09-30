@@ -52,3 +52,49 @@ bash tests/test-lanes-data.sh plan-flip workflow-view pinned-root parity-after-f
 bash tests/test-meta.sh
 bin/test-affected --base origin/master
 ```
+
+## Review fixes (gate bypass, counter, WORKFLOW prose)
+
+A review of the finished branch found three gaps. Each fix went test-first: the new assertions were run red, then the fix made them green.
+
+| Finding | Fix | Tests |
+|---|---|---|
+| HIGH: `validate` is light on the normal lane, so a large normal-lane spec could ship unvalidated | `hooks/ship-gate.sh` blocks a normal-lane ship when `spec.sh depth size` exits 1 and the last `validate` GATE line is not `ran` or `override`. Exit 2 from `spec.sh` or a missing `spec.sh` fails open. | `tests/test-hooks.sh`: large with no validate blocked (exit 2, rule named, override hint printed), large with validate ran passes, large with override passes, small with no validate passes, large whose last validate is `skipped` blocked. 820 of 824 red before, 824 of 824 after. |
+| MEDIUM: `count_tasks` missed real task shapes, so most specs read large | Counts `### TASK-N` headings, `- [ ] **TASK-N**`, indented `- [ ] TASK-N`, and the kit's own `T1` / `T2a` labels (`\| T1: x \|` rows, `- [ ] T1a: x`). `~~~` fences track like backtick fences and a backtick fence inside `~~~` does not close it. An odd fence-line count means one is unclosed, so fence state is ignored. CR is stripped. | `tests/test-spec-depth.sh size`: one assertion per format, unclosed fence, tilde, nested fence, CRLF, two mixed-format specs. 6 red before, 122 of 122 after. |
+| MEDIUM: `docs/WORKFLOW.md` Depth paragraph said the validator runs at every depth | Reworded to the size rule. | `tests/test-meta.sh`: no stale phrase, size-rule phrase present. Both red before. |
+
+Two collateral repairs. `hooks/codex-hooks.json` was already stale for all five pinned hooks on this branch base; `lib/codex/repin.sh` rewrote the pins, which also covers the `ship-gate.sh` change. `tests/test-codex-hooks.sh` "complete feature push is allowed" used a zero-task spec (now reads large) and a ledger with no `review` line; it now uses a one-task spec and records `review`. `docs/FEATURES.md` regenerated (`/kit:review` test-count drift).
+
+### Corpus split, `spec.sh depth size` over `docs/specs/SPEC-3*.md`
+
+| State | Small | Large | Tasks counted as 0 |
+|---|---|---|---|
+| Before the counter fix | 3 | 55 | 40 |
+| After the counter fix | 4 | 54 | 13 |
+
+The one new small spec is SPEC-353. Most formerly zero-task specs are full-lane or carry a deeper Depth and stay large; 13 have no task list at all and read large by design.
+
+### Run table
+
+| Command | Result |
+|---|---|
+| `bash tests/test-spec-depth.sh` | 122 passed, 0 failed |
+| `bash tests/test-hooks.sh` | 824 of 824 |
+| `bash tests/test-lanes-data.sh` | exit 0, 0 FAIL |
+| `bash tests/test-codex-hooks.sh` | 94 passed, 0 failed |
+| `bash tests/test-meta.sh` | 902 of 902 |
+| `bash tests/test-gate-opt-out.sh` | 3 FAIL, identical with the original `hooks/ship-gate.sh`, so pre-existing |
+
+### Negative controls (review fixes)
+
+Each mutation was applied to a saved copy, the pinning suite run, and the file restored by copying the saved file back.
+
+| Mutation | Suite | Result |
+|---|---|---|
+| `ignore = (nf % 2 == 1)` to `ignore = 0` | `test-spec-depth.sh size` | red: unclosed fence |
+| `###` heading alternative removed | `test-spec-depth.sh size` | red: headings, mixed |
+| `(\*\*)?` removed from the checkbox pattern | `test-spec-depth.sh size` | red: bold, mixed |
+| `~~~` dropped from the fence pattern | `test-spec-depth.sh size` | red: tilde |
+| `T[0-9]+` label alternative removed from the checkbox pattern | `test-spec-depth.sh size` | red: `- [ ] T1a:` |
+| `"$SIZE_RC" -eq 1` to `-eq 9` in `hooks/ship-gate.sh` | `test-hooks.sh` | red: large-spec block, rule name, override hint, last-skipped |
+| WORKFLOW size-rule sentence reverted | `test-meta.sh` | red: both new pins |

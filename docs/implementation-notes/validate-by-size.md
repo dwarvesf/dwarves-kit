@@ -18,3 +18,13 @@ Delta from `docs/specs/SPEC-379-validate-by-size.md` only: decisions the spec di
 - `docs/verification/lanes-as-data/baseline.txt` is untouched: `parity-after-flip` already tolerates changed normal-lane validate lines.
 - `lib/gate/README.md` still says the lane gate parses the WORKFLOW matrix at runtime. That text predates the `kit.toml` lane data. Not touched here.
 - Pre-existing failures on a clean origin/master export, unchanged here: `test-gate-opt-out`, `test-install-contract`, `test-research-arch-contract`.
+
+## Review fixes
+
+- The earlier note that a large normal-lane spec is caught by nothing mechanical is superseded: `hooks/ship-gate.sh` now blocks it. The hook reads the size verb's exit code and engages only on exit 1. A missing `spec.sh` or exit 2 (unreadable spec) fails open, matching the hook's other helper failures. The block message names the rule and prints the same `gate-ledger.sh override` hint as the lane-gate block.
+- The hook reads the last `validate` GATE line by field (same awk as `commands/execute.md`), so a newer `skipped` from a failed validation still blocks.
+- The counter now also counts the kit's own `T1` / `T2a` labels, which the review did not list. Reason: 28 of the 40 zero-task specs in `SPEC-3*` use them, so without them the size rule still read nearly every spec large. Counting more only pushes a spec toward large, the safe side. A spec that lists the same task as both a heading and a checkbox double counts for the same reason.
+- An odd fence-line count means an unclosed fence; the counter then ignores fence state entirely. The cost is that a real fenced example in such a file is counted. Accepted, same safe side.
+- A numbered test-plan table (`| 1 | case |`) is not counted as tasks: those rows are cases, not tasks.
+- `hooks/codex-hooks.json` pins were stale for all five hooks before this change. Repinned with `lib/codex/repin.sh`.
+- `tests/test-codex-hooks.sh` "complete feature push is allowed" is the test that shipped a normal-lane spec with no validate line. It now uses a one-task spec and a ledger with a `review` line.
