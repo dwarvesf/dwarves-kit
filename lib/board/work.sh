@@ -288,7 +288,7 @@ def agent_of($o; $wt; $br):
 # PARKED from file activity carries the advisory reason files-idle; it is the one reason that
 # does not make the row INDETERMINATE (the state is derived, not missing).
 def rec($origin; $item; $branch; $wt; $ag; $reasons; $ph; $inprog; $dus):
-  ($inprog and $ag.state == "idle" and $ag.idle_s >= $idle_min * 60) as $parked
+  ($inprog and rung_of($ph) != "shipped" and $ag.state == "idle" and $ag.idle_s >= $idle_min * 60) as $parked
   | ($reasons | unique) as $base
   | ($base + (if $parked and $ag.source == "files" then ["files-idle"] else [] end) | unique) as $rs
   | {item: $item, origin: $origin, branch: $branch, worktree: $wt,
@@ -336,7 +336,7 @@ def joined($g; $b; $origin; $item; $inprog; $dus; $extra):
     | (([$g.branches[] | select(.name == $bn)] | .[0].norm) // "") as $norm
     | agent_of($orca[0]; $w.path; $bn) as $ag
     | rec("worktree"; ($w.path | split("/") | last); (if $bn == "" then null else $bn end); $w.path;
-          $ag; $ag.reasons; ($ledger[0][$norm] // []); true; false);
+          $ag; $ag.reasons; ($ledger[0][$norm] // []); true; true);
   def wtlist($g): [$g.wts[1:][] | select(.path as $p | $joined | index($p) | not) | wtitem($g; .)];
   ($named + wtlist($gmain[0]) + (if $repo == $croot then [] else wtlist($gcode[0]) end)) as $all
 | def bname: split("/") | last;

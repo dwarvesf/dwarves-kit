@@ -445,6 +445,11 @@ check "orca absent: no file guess, agent unknown (AC5 holds)" "$(field "$out" '[
 new_case; worktree feat/solo "$W/solo"; fa_page; echo x > "$W/solo/n.txt"; touchat "$W/solo/n.txt" "$((NOW - 3600))"
 it="$(itemof "$(J)" solo)"
 check "a worktree item (no board row) with old files is PARKED from files too" "$(field "$it" '[.origin,.agent.state,.agent.source,.flags,.reasons]')" '["worktree","idle","files",["PARKED"],["files-idle"]]'
+new_case; worktree feat/done "$W/done"; fa_page; echo x > "$W/done/n.txt"; touchat "$W/done/n.txt" "$((NOW - 3600))"
+lline ship ran > "$LOGS/runs/done.log"
+it="$(itemof "$(J)" done)"
+check "shipped work with an idle files worktree is DONE-UNSEEN only, never PARKED" "$(field "$it" '[.rung,.agent.state,.flags]')" '["shipped","idle",["DONE-UNSEEN"]]'
+new_case; worktree feat/solo "$W/solo"; fa_page; echo x > "$W/solo/n.txt"; touchat "$W/solo/n.txt" "$((NOW - 3600))"
 snap2() { { find "$W/repo" "$W/solo" -type f 2>/dev/null | sort | xargs shasum; git -C "$REPO" status --porcelain; } | shasum; }
 b="$(snap2)"; J > /dev/null; check "file activity reading writes nothing (repo and worktree hashes equal)" "$(snap2)" "$b"
 
