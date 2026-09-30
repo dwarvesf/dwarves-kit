@@ -50,7 +50,7 @@ GENERATED , do not hand-edit. Regenerate: `bash lib/registry/feature-registry.sh
 | `/kit:verify` | `[H/I]` | Re-run the test levels (kit:task-verifier + kit:integration-verifier + kit:acceptance-verifier + kit:system-verifier) on the current spec/b… | SPEC-002, SPEC-003, SPEC-006 +43 | test-break-it.sh, test-codex-hooks.sh, test-command-emit-sweep.sh +10 |
 | `/kit:visual-team` | `[H/I]` | Parallel multi-lens critique of a visual/UI design. Dispatches 5 design lenses, merges findings, reports a verdict. Report-only, downstream… | SPEC-016, SPEC-018, SPEC-019 +12 | test-command-emit-sweep.sh, test-meta.sh |
 | `/kit:wayfind` | `[H]` | Plan a chunk of work too big for one agent session as a shared decision map: map.md + typed decision tickets in the mega-goal folder, resol… | SPEC-206, SPEC-207, SPEC-217 +2 | - |
-| `/kit:wrap` | `[H/I]` | The session-scoped landing step after ship: flips board rows, merges green PRs, checks deploys, tidies worktrees, prints the skim-first rep… | SPEC-020, SPEC-060, SPEC-072 +42 | test-bin-forwarders.sh, test-board-work.sh, test-boundary-lint.sh +9 |
+| `/kit:wrap` | `[H/I]` | The session-scoped landing step after ship: flips board rows, merges green PRs, checks deploys, tidies worktrees, prints the skim-first rep… | SPEC-020, SPEC-060, SPEC-072 +42 | test-bin-forwarders.sh, test-board-work.sh, test-boundary-lint.sh +10 |
 
 ## Agents
 
