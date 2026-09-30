@@ -52,3 +52,26 @@ NEGATIVE CONTROL example (gap test 3, commit 40901380): dropping the launcher's 
 ## Rollback
 
 The sweep ships off: `harvest.enable = false`, `harvest.sources = "claude"`, no plist installed, and `wrap.distill` keeps its current value until an operator sets `"harvest"`. Rollback is a revert of this PR. On a host where the sweep was installed, `install --uninstall` removes the plist, the rendered settings and the host marker, which turns the per-session harvest hook back on; kit state under `~/.claude/dwarves-kit/state/harvest/sweep/` is kept and the uninstall prints the purge command.
+
+## Rollout on the Mini (T20, T20b, T21)
+
+Operator `kit.toml` (`~/.config/dwarves-kit/kit.toml`, chezmoi source in dotfiles): `[harvest] enable = true`, `sources = "claude devin"`; `hook_when_sweep_on` stays false. `wrap.distill` was left at `true` (see the implementation notes).
+
+| Run | Command | Exit | Sessions (claude/devin) | Learnings | Candidates | Notes |
+|-----|---------|------|-------------------------|-----------|------------|-------|
+| T20 dry 1 | `--sweep --dry-run` (claude only) | 0 | 7 extracted | 25 | 7 | 7.5 min, first run |
+| T20 dry 2 | `--sweep --dry-run` | 0 | 12/0 | 25 | 8 | no Devin session quiet inside the 6h first-run window |
+| T20 dry 3 | `--sweep --dry-run --since <now-20h>` | 1 | 4/6 read | 17 | 4 | one Devin session failed (the model continued the transcript), then the probe failed on prose; fixed in #821 |
+| T20 dry 4 | same, after #821 | 0 | 7/17 read, 20 extracted | 40 | 10 | 0 failed, 9 deferred, lag claude 2.6h |
+| T20b real | `--sweep --since <now-20h>` | 0 | 7/17 read | 40 | 10 | 30 s (cache), gate-ledger line, no repo changed, `--status` prints the report line, `--flush-list` 40 rows |
+| T21 scheduled | `launchctl kickstart gui/<uid>/mini.harvest-sweep` | 0 | 12/1 read | 17 | 5 | log `end rc=0`, report lint clean, heartbeat armed (`ping_count=1`), one flushed row archived |
+
+Hand review (dry 4 and T20b): every Devin-sourced row traces to its `devin/<session>` with evidence from that session. No credential shape reached a ledger, sidecar, or report (one value redacted in `patterns.jsonl`). About a fifth of the learnings are generic or transient, and one (`macos-realpath-git-resolution`) records a mid-build state the code later reversed. Repo attribution follows the session cwd: Devin workers and lead sessions launched from ops-toolkit land in the ops-toolkit ledger even when they worked in a dwarves-kit worktree. Three of ten candidates carry a weak precedent match.
+
+Token measurement (DEC-84): one real extractor call with `--output-format json` on an 11,970-char prompt used 10,052 input tokens (10 + 10,042 cache creation) and 1,521 output tokens. Claude Code's default system prompt is about 6,000 of those. A short `--system-prompt` cut input to 2,300 to 4,700 tokens but tripled output (6,200 to 9,400) and doubled cost on the same sessions, so the default stays. At the caps (20 extractions per run, 4 runs a day) that is about 2,400 calls, 24M input and 5M output tokens a month, twice DEC-68's 12.3M input estimate.
+
+Flush round trip (T23): `--flush-list` listed 40 rows; `negctl-restore-wipes-uncommitted` (source `devin/rotated-freighter`) routed to the existing memory note that already records the lesson (`commit-before-negative-control`), then `--mark-flushed` flipped it (rc 0), a repeat exited 1, and the next scheduled run archived it. Driven by hand with the updated skill, not through a `/kit:wrap distill` session.
+
+Hook stand-down: with the marker present, `harvest.sh --stop-trigger` exits before `harvest.py` (0 extractor calls); with a state dir that has no marker it reaches `harvest.py`. Other hosts carry no marker.
+
+Unverified: the second consecutive scheduled run (T21 AC asks for two), and vps-mon `monitored` state until launchd discovery picks the plist up.
