@@ -551,8 +551,9 @@ mkrepo_remote() {   # mkrepo_remote <default-branch>
 # The base is origin/HEAD, not a local branch: unpushed commits on local master ride the diff.
 case_ship_base_is_origin_head() {
   mkrepo_remote master; new_log
+  _git checkout -q master >/dev/null 2>&1
   mkdir -p "$ROOT/auth"; echo x > "$ROOT/auth/b.ts"; _commit "chore: unpushed auth commit on local master"
-  _git checkout -q -b feat/x >/dev/null 2>&1
+  _git checkout -q -B feat/x >/dev/null 2>&1
   printf 'Lane: normal\n' > "$ROOT/docs/specs/SPEC-001-x.md"; _commit "chore: spec"
   record_gates $NORMAL_GATES; run_hook
   if [ "$HOOK_RC" = 2 ] && printf '%s' "$HOOK_ERR" | grep -qF 'hard path (auth'; then pass ship-base-is-origin-head
