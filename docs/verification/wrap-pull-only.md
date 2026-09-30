@@ -53,6 +53,12 @@ Maps each row of SPEC-359's `## Test plan` to its acceptance criterion and the a
 | 14 | Multi-repo | AC-1 | `pull-only multi-repo:` | none: repo-list building is unchanged |
 | 15 | Regression | AC-9, AC-10 | full suite, exit 0 | not applicable |
 | 16 | Live run on a real remote | AC-1, AC-5 | "Live run" below | not applicable |
+| 17 | N1 negative control: sweep gate | AC-1, AC-5 | 21 of 202 red, see "Negative control" | N1 |
+| 18 | N2 negative control: ahead NOTE gate | AC-3, AC-4 | 2 of 202 red | N2 |
+| 19 | N3 negative control: lock-skip exit | AC-6 | 1 of 202 red | N3 |
+| 20 | N4 negative control: unresolved-default exit | AC-6 | 2 of 202 red | N4 |
+| 21 | N5 negative control: conflict refusals | AC-7 | 11 of 202 red | N5 |
+| 22 | N6 negative control: fetch wording | AC-8 | 2 of 202 red | N6 |
 | S4 | Two sessions pulling one checkout at once | none | none | gap: SPEC-286's `_pull_default`, unchanged here |
 | - | `--pull-only --under <root>` | AC-1 | none | gap: repo-list building does not read `PULL_ONLY` |
 
