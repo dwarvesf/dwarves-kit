@@ -27,7 +27,7 @@ status-no-consume~lib/queue/orca-backend.sh~AC13~status consumes mail~sed~_orca_
 run-lock~lib/queue/orca-backend.sh~AC15~a second runner is allowed~sed~^      return 75$~      :
 version-preflight~lib/queue/orca-backend.sh~AC16~an old Orca passes pre-flight~sed~^  \[ \$((a \* .*$~  true
 prior-dispatch~lib/queue/orca-backend.sh~AC3~a Task with a Dispatch is started again~sed~^    \[ -z "\$(_orca_latest_disp "\$task")" \] || continue$~    :
-blocked-first~lib/queue/orca-backend.sh~rule-order~BLOCKED no longer beats DONE-UNSEEN~sed~^  \[ -n "\$bnote" \] && .*$~  :
+blocked-first~lib/queue/orca-backend.sh~rule-order~BLOCKED no longer beats DONE-UNSEEN~sed~^  if \[ -n "\$bnote" \]; then$~  if false; then
 unknown-stays-unknown~lib/queue/orca-backend.sh~AC5~unverifiable liveness reads RUNNING~sed~else _S_STATE=INDETERMINATE; _S_REASON="liveness-.*"$~else _S_STATE=RUNNING
 CTL
 )
