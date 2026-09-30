@@ -110,7 +110,7 @@ Every command and agent mapped to its V-model arm, grouped so the left side (BUI
 | Entry | Type | V-phase | Arm | Note |
 |---|---|---|---|---|
 | `/kit:test-plan` | command | Test design (write tests) | test | Opt-in; derives the coverage matrix from AC before /execute so the build has a planned target; the kit's single test-design step |
-| `/kit:test-plan-review-team` | command | Test design (review) | test | Opt-in; 6 lenses adversarially critique the `## Test plan` (lens 6 tiering N/A-skips on non-AI plans, SPEC-201) + bounded revise loop, between /test-plan and /execute; report-only |
+| `/kit:test-plan-review-team` | command | Test design (review) | test | Opt-in; 6 lenses adversarially critique the `## Test plan` (lens 6 tiering N/A-skips on non-AI plans, SPEC-201) + bounded revise loop, between /test-plan and /execute; `--floor` runs lenses 1 and 2 in one pass with no revise rounds and is the default unless the spec's `Depth:` names a blind-spot; report-only |
 | `/kit:test-write` | command | Test design (materialize) | test | Opt-in; resolves a SOLID-verdict `## Test plan critique` and dispatches `test-writer` per matrix row to turn it into real, executing test code; never dispatches against a missing/stale/non-SOLID verdict |
 | `test-writer` | agent | Test design (materialize) | test | Turns a reviewed test-plan coverage matrix into runnable test code, one case per matrix row, in the repo's existing framework; write-capable but scope-locked to test files; dispatched by `/kit:test-write` |
 | `task-verifier` | agent | Unit / task test | test | Runs each task's AC + the project suite after each worker; read-only; primary enforcer in the verification pipeline |
