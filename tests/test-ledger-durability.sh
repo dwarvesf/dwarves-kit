@@ -125,7 +125,7 @@ run "$GL" record symrun think ran x >/dev/null 2>&1 || true
 
 # --- B1: lane-classify downgrade writer lands where lane-telemetry reads (no split-brain) ---
 new_env
-run "$LC" check normal "add auth and a data-model migration to the audit-security path" >/dev/null 2>&1 || true
+run "$LC" check tiny "add auth and a data-model migration to the audit-security path" >/dev/null 2>&1 || true
 grep -q "LANE-CHECK" "$DURABLE/completeness.log" 2>/dev/null; assert "B1: lane-classify downgrade writes to the durable completeness.log" $?
 [ ! -f "$LEGACY/completeness.log" ]; assert "B1: downgrade does NOT write the legacy path (no split-brain vs the migrated reader)" $?
 
@@ -163,7 +163,7 @@ unset DWARVES_KIT_LOG_DIR
 # --- SPEC-110: the tokens verb writes an ADDITIVE marker that check() IGNORES ---
 TOKD="$(mktemp -d)/logs"
 DWARVES_KIT_LOG_DIR="$TOKD" bash "$GL" start trun normal normal spec-feature spec-feature rp >/dev/null 2>&1
-for ph in spec build ship; do DWARVES_KIT_LOG_DIR="$TOKD" bash "$GL" record trun "$ph" ran x >/dev/null 2>&1; done
+for ph in spec validate build review ship; do DWARVES_KIT_LOG_DIR="$TOKD" bash "$GL" record trun "$ph" ran x >/dev/null 2>&1; done
 DWARVES_KIT_LOG_DIR="$TOKD" bash "$GL" tokens trun in=1200 out=80 cache_read=4000 cache_create=0 cost=0.05 >/dev/null 2>&1
 grep -q '| TOKENS | in=1200 out=80 cache_read=4000 cache_create=0 cost=0.05' "$TOKD/runs/trun.log"; assert "SPEC-110: tokens verb appends a TOKENS line (cost keeps its decimal)" $?
 DWARVES_KIT_LOG_DIR="$TOKD" bash "$GL" check normal trun >/dev/null 2>&1; assert "SPEC-110: check() PASSES with a TOKENS line present (marker is gate-invisible)" $?

@@ -22,8 +22,13 @@
 # Safety gates (safety-gate.sh, secrets-guard.sh) have no key here on purpose. They stop
 # destructive git and credential leaks, not quality drift, and cannot be switched off.
 #
+# `--at <base>` reads the project layer from `git show <base>:.kit.toml` (absent at the base
+# means no project layer) instead of the working tree. A base copy is committed by definition,
+# so its `false` applies without the clean check. The ship-gate floor uses it so a PR cannot
+# switch off its own floor. Operator and kit-root layers are unchanged.
+#
 # Usage:
-#   gate-policy.sh enabled <key> [project-root]   exit 0 = on, exit 1 = off by config (only 1)
+#   gate-policy.sh enabled <key> [project-root] [--at <base>]   exit 0 = on, exit 1 = off by config (only 1)
 #   gate-policy.sh keys                            the known keys, one per line
 #
 # <key>: proof_of_done | lane_gates | understanding_gate | commit_format | board_row_gate
@@ -33,16 +38,26 @@ KEYS="proof_of_done lane_gates understanding_gate commit_format board_row_gate"
 DEFAULT_ON="board_row_gate"   # the code default when no config file names the key
 
 enabled() {
-  local key="${1:-}" root="${2:-$PWD}" v
+  local key="${1:-}" root="${2:-$PWD}" at="" v
+  if [ "${3:-}" = "--at" ]; then at="${4:-}"; fi
   case " $KEYS " in *" $key "*) ;; *) return 0 ;; esac
   # shellcheck source=lib/config/kit-config.sh
   source "$GATE_DIR/../config/kit-config.sh" 2>/dev/null || return 0
   # What the operator overlay and the kit root say, with the project file out of the picture.
   local def=false; case " $DEFAULT_ON " in *" $key "*) def=true ;; esac
   local rest; rest="$(KIT_PROJECT_ROOT=/nonexistent kit_config_get "gate.$key" "$def" 2>/dev/null)" || return 0
-  case "$(_kit_toml_get "$root/.kit.toml" gate "$key")" in
+  local pfile="$root/.kit.toml" tmp=""
+  if [ -n "$at" ]; then
+    tmp="$(mktemp)"; pfile="$tmp"
+    git -C "$root" show "$at:.kit.toml" > "$tmp" 2>/dev/null || : > "$tmp"
+  fi
+  local pv; pv="$(_kit_toml_get "$pfile" gate "$key")"
+  [ -z "$tmp" ] || rm -f "$tmp"
+  case "$pv" in
     true) return 0 ;;
     false)
+      # At a base, the file is committed by definition: no clean check.
+      [ -n "$at" ] && return 1
       # A project-level off over an operator on: only when the file is tracked and unmodified.
       if git -C "$root" rev-parse --is-inside-work-tree >/dev/null 2>&1 \
          && git -C "$root" ls-files --error-unmatch .kit.toml >/dev/null 2>&1 \

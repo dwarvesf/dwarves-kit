@@ -92,6 +92,51 @@ _gate_on() {  # $1 = [gate] key, $2 = log label
   echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) | OFF-BY-CONFIG | $2 | $SLUG" >> "$LOG_DIR/ship-gate.log" 2>/dev/null || true
   return 1
 }
+# Diff floor (hard paths). The path test lives in lib/classify/lane-classify.sh `floor`; this hook
+# only calls it, as it calls gate-policy.sh, and fails open on a missing lib. A hit means the
+# full lane's gates apply whatever the spec's Lane says.
+LCLS="${CLAUDE_PLUGIN_ROOT:-$HOME/.claude/dwarves-kit}/lib/classify/lane-classify.sh"
+_floor_hit() {  # prints "full <kind>: <path>" for the first hard-path hit, else nothing
+  [ -f "$LCLS" ] || return 0
+  local fb; fb=$(git -C "$ROOT" merge-base HEAD "$(_resolve_base)" 2>/dev/null || true)
+  [ -n "$fb" ] || return 0
+  [ "$fb" != "$(git -C "$ROOT" rev-parse HEAD 2>/dev/null || true)" ] || return 0
+  bash "$LCLS" floor "$ROOT" "$fb" 2>/dev/null || true
+}
+# The floor follows [gate] lane_gates as of the MERGE BASE, never the PR head, so a PR cannot
+# switch off its own floor. Only exit 1 from the reader means off.
+_floor_on() {
+  [ -f "$POLICY" ] || return 0
+  local fb rc=0; fb=$(git -C "$ROOT" merge-base HEAD "$(_resolve_base)" 2>/dev/null || true)
+  [ -n "$fb" ] || return 0
+  bash "$POLICY" enabled lane_gates "$ROOT" --at "$fb" || rc=$?
+  [ "$rc" -eq 1 ] || return 0
+  local LOG_DIR="${DWARVES_KIT_LOG_DIR:-$HOME/.claude/dwarves-kit/logs}"
+  mkdir -p "$LOG_DIR" 2>/dev/null || true
+  echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) | OFF-BY-CONFIG | floor | $SLUG" >> "$LOG_DIR/ship-gate.log" 2>/dev/null || true
+  return 1
+}
+# _floor_check: block (exit 2) when the diff hits a hard path and the full lane's gates, read
+# from the kit and operator layers only, have not all run. Needs the ledger script.
+_floor_check() {
+  local FH FGAPS LEDGERF="${CLAUDE_PLUGIN_ROOT:-$HOME/.claude/dwarves-kit}/lib/gate/gate-ledger.sh"
+  [ -f "$LEDGERF" ] || return 0
+  FH=$(_floor_hit); [ -n "$FH" ] || return 0
+  _floor_on || return 0
+  if ! FGAPS=$(KIT_PROJECT_ROOT="$ROOT" bash "$LEDGERF" check full "$SLUG" --kit-lanes 2>&1); then
+    local LOG_DIR="${DWARVES_KIT_LOG_DIR:-$HOME/.claude/dwarves-kit/logs}" FK="${FH#full }"
+    mkdir -p "$LOG_DIR" 2>/dev/null || true
+    echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) | BLOCKED | ship-gate | $SLUG (hard-path ${FK%%:*})" >> "$LOG_DIR/ship-gate.log" 2>/dev/null || true
+    {
+      echo "BLOCKED: ship-gate. This diff touches a hard path ($FK); the full lane's gates apply whatever the spec's Lane says:"
+      printf '%s\n' "$FGAPS" | sed 's/^/  /'
+      echo "Run the missing gate(s), or log an explicit override (recorded for audit):"
+      echo "  bash \"$LEDGERF\" override $SLUG <phase> \"<reason>\""
+    } >&2
+    exit 2
+  fi
+  return 0
+}
 # OPT-IN: engage only in a repo that adopted the proof-of-done convention. A repo with
 # no docs/verification/README.md never gets gated (the gate is for kit-adopting repos,
 # not every repo the user touches).
@@ -222,7 +267,14 @@ fi
 
 # Resolve the spec for this slug; fail open if there is no spec-driven run.
 SPEC=$(ls "$ROOT"/docs/specs/SPEC-*-"$SLUG".md 2>/dev/null | head -1 || true)
-[ -n "$SPEC" ] || exit 0
+if [ -z "$SPEC" ]; then
+  # No spec means no lane to compare, so the floor cannot block here; it says so (never blocks).
+  if _gate_on lane_gates lane-gate; then
+    NSH=$(_floor_hit)
+    [ -z "$NSH" ] || echo "[advisory] no spec for '$SLUG', and the diff touches a hard path (${NSH#full }); write a spec with a Lane, or record why not" >&2
+  fi
+  exit 0
+fi
 
 # Test-plan coverage advisory (never blocks): the spec carries a ## Test plan, so the proof-of-done owes
 # a ## Test plan coverage map -- each matrix row mapped to the run that exercised it, or an
@@ -264,6 +316,7 @@ if [ -z "$LANE" ]; then
     } >&2
     exit 2
   fi
+  _floor_check
   exit 0
 fi
 
@@ -276,10 +329,11 @@ LEDGER="${CLAUDE_PLUGIN_ROOT:-$HOME/.claude/dwarves-kit}/lib/gate/gate-ledger.sh
 # operator output. caught=true when the check BLOCKS (it caught a missing-gate defect),
 # caught=false on a clean pass. The `outcome` marker keys on $2=="OUTCOME"; check()/_rows()/
 # the ship-gate's own read all ignore it (they key on $2=="GATE").
-_gate_on lane_gates lane-gate || exit 0
+# The floor reads the switch at the merge base, so it still runs when the head switched the gate off.
+if ! _gate_on lane_gates lane-gate; then _floor_check; exit 0; fi
 bash "$LEDGER" outcome "$SLUG" ship start >/dev/null 2>&1 || true
 
-if ! GAPS=$(bash "$LEDGER" check "$LANE" "$SLUG" 2>&1); then
+if ! GAPS=$(KIT_PROJECT_ROOT="$ROOT" bash "$LEDGER" check "$LANE" "$SLUG" 2>&1); then
   bash "$LEDGER" outcome "$SLUG" ship end caught=true >/dev/null 2>&1 || true
   LOG_DIR="${DWARVES_KIT_LOG_DIR:-$HOME/.claude/dwarves-kit/logs}"
   mkdir -p "$LOG_DIR" 2>/dev/null || true
@@ -293,5 +347,12 @@ if ! GAPS=$(bash "$LEDGER" check "$LANE" "$SLUG" 2>&1); then
   } >&2
   exit 2
 fi
+# Hard-path floor: full-lane gates, project lane data ignored (--kit-lanes). Exits 2 on a gap.
+_floor_check
 bash "$LEDGER" outcome "$SLUG" ship end caught=false >/dev/null 2>&1 || true
+# Suggestion not taken: the ledger holds a lane-suggest full action and the run ships lighter.
+if [ "$LANE" != "full" ] && printf '%s' "${RLED:-}" | grep -q '| ACTION | lane-suggest full'; then
+  SUGF=$(printf '%s' "$RLED" | sed -nE 's/.*lane-suggest full flags=([^ ]*).*/\1/p' | tail -1)
+  echo "[advisory] run '$SLUG': the classifier suggested full (${SUGF:-unknown}) and the run ships as $LANE" >&2
+fi
 exit 0

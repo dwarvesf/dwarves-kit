@@ -87,13 +87,13 @@ ROOT=""
 _git() { git -C "$ROOT" -c commit.gpgsign=false -c core.hooksPath=/dev/null "$@"; }
 # _commit <message>: commit everything staged, quietly.
 _commit() { _git add -A -f >/dev/null 2>&1; _git commit -q -m "$1" >/dev/null 2>&1; }
-mkrepo() {
+mkrepo() {   # mkrepo [true|false]: the lane_gates value committed on main (default true)
   ROOT="$(_mk)"
   git init -q -b main "$ROOT" >/dev/null 2>&1
   git -C "$ROOT" config user.email t@t; git -C "$ROOT" config user.name t
   mkdir -p "$ROOT/docs/verification" "$ROOT/docs/specs"
   echo m > "$ROOT/docs/verification/README.md"
-  printf '[gate]\nlane_gates = true\n' > "$ROOT/.kit.toml"
+  printf '[gate]\nlane_gates = %s\n' "${1:-true}" > "$ROOT/.kit.toml"
   echo hi > "$ROOT/README.md"
   _commit "chore: init"
   _git checkout -q -b feat/x >/dev/null 2>&1
@@ -219,13 +219,180 @@ case_floor_invalid_extra_ere() {
 }
 
 # ---------------------------------------------------------------------------
+# Lane data overrides (project layer), the base-pinned gate switch, and the ship-gate wiring.
+# ---------------------------------------------------------------------------
+NORMAL_PHASES='["think", "spec", "validate", "design-record", "test-plan", "build", "review", "docs", "ship"]'
+# commit_kit_toml <content>: write .kit.toml (always keeps the lane_gates switch on) and commit it.
+commit_kit_toml() { printf '[gate]\nlane_gates = true\n%s\n' "$1" > "$ROOT/.kit.toml"; _commit "chore: kit config"; }
+plan_phases() { KIT_PROJECT_ROOT="$ROOT" gl plan "$1" 2>/dev/null | awk '{print $2}' | tr '\n' ' '; }
+
+case_override_drop_review() {
+  mkrepo; new_log
+  commit_kit_toml '[lane.normal]
+phases = ["think", "spec", "validate", "design-record", "test-plan", "build", "ship", "docs"]
+light  = ["think", "design-record", "test-plan", "docs"]'
+  local plan; plan="$(plan_phases normal)"
+  KIT_PROJECT_ROOT="$ROOT" gl start ov-1 normal normal feature >/dev/null 2>&1
+  local led; led="$(gl show ov-1 2>/dev/null)"
+  if ! printf '%s' "$plan" | grep -qw review && printf '%s' "$led" | grep -qF '| GATE | review | skipped | repo lane override (.kit.toml)'; then pass override-drop-review
+  else fail override-drop-review "plan='$plan' ledger='$led'"; fi
+}
+
+case_override_uncommitted() {
+  mkrepo; new_log
+  printf '[gate]\nlane_gates = true\n[lane.normal]\nphases = ["spec", "build", "ship"]\n[lanes]\ndefault = "bug"\n' > "$ROOT/.kit.toml"
+  local plan err cls cerr
+  plan="$(plan_phases normal)"; err="$(KIT_PROJECT_ROOT="$ROOT" gl plan normal 2>&1 >/dev/null)"
+  cls="$(KIT_PROJECT_ROOT="$ROOT" lcx classify "add a users page" 2>/dev/null)"
+  cerr="$(KIT_PROJECT_ROOT="$ROOT" lcx classify "add a users page" 2>&1 >/dev/null)"
+  if printf '%s' "$plan" | grep -qw review && [ "$cls" = normal ] \
+     && printf '%s' "$err" | grep -q 'not committed and clean' && printf '%s' "$cerr" | grep -qF '[lanes] default'; then pass override-uncommitted
+  else fail override-uncommitted "plan='$plan' classify='$cls' err='$err' cerr='$cerr'"; fi
+}
+
+case_override_typo() {
+  mkrepo; new_log
+  commit_kit_toml '[lane.normal]
+phases = ["spec", "reveiw", "build", "ship"]'
+  local kit got err
+  kit="$(KIT_PROJECT_ROOT=/nonexistent gl plan normal 2>/dev/null)"; got="$(KIT_PROJECT_ROOT="$ROOT" gl plan normal 2>/dev/null)"
+  err="$(KIT_PROJECT_ROOT="$ROOT" gl plan normal 2>&1 >/dev/null)"
+  if [ "$kit" = "$got" ] && printf '%s' "$err" | grep -q "reveiw"; then pass override-typo
+  else fail override-typo "plans differ or stderr misses the phase: '$err'"; fi
+}
+
+case_override_no_light() {
+  mkrepo; new_log
+  commit_kit_toml '[lane.normal]
+phases = ["spec", "build", "ship"]'
+  local got; got="$(KIT_PROJECT_ROOT="$ROOT" gl required normal 2>/dev/null | tr '\n' ' ')"
+  [ "$got" = "spec build ship " ] && pass override-no-light || fail override-no-light "required normal = '$got'"
+}
+
+case_pinned_root() {
+  new_log
+  local evil; evil="$(_mk)"
+  printf '[lane.normal]\nphases = ["spec", "build"]\nlight = []\n' > "$evil/kit.toml"
+  local got; got="$(KIT_PROJECT_ROOT=/nonexistent KIT_CONFIG_ROOT="$evil" DWARVES_KIT="$evil" gl required normal 2>/dev/null | tr '\n' ' ')"
+  [ "$got" = "spec validate build review ship " ] && pass pinned-root || fail pinned-root "required normal = '$got'"
+}
+
+case_malformed_array_fails_closed() {
+  mkrepo; new_log
+  commit_kit_toml '[lane.normal]
+phases = ["spec",'
+  local err rc=0
+  err="$(KIT_PROJECT_ROOT="$ROOT" gl check normal mf-1 2>&1)" || rc=$?
+  if [ "$rc" = 1 ] && printf '%s' "$err" | grep -q 'unknown lane'; then pass malformed-array-fails-closed
+  else fail malformed-array-fails-closed "rc=$rc err=$err"; fi
+}
+
+case_policy_at_base() {
+  mkrepo
+  printf '[gate]\nlane_gates = false\n' > "$ROOT/.kit.toml"; _commit "chore: switch off"
+  local at_rc=0 no_at_rc=0
+  env KIT_CONFIG_OPERATOR=/nonexistent KIT_CONFIG_ROOT="$KIT_DIR" bash "$GP" enabled lane_gates "$ROOT" --at main >/dev/null 2>&1 || at_rc=$?
+  env KIT_CONFIG_OPERATOR=/nonexistent KIT_CONFIG_ROOT="$KIT_DIR" bash "$GP" enabled lane_gates "$ROOT" >/dev/null 2>&1 || no_at_rc=$?
+  if [ "$at_rc" = 0 ] && [ "$no_at_rc" = 1 ]; then pass policy-at-base
+  else fail policy-at-base "--at main rc=$at_rc (want 0), no --at rc=$no_at_rc (want 1)"; fi
+}
+
+# ---- ship-gate hook ----
+# ship_fixture <migration|none|dataloss|doc|clean> <spec-lane|none>: repo on feat/x, slug x, ledger in $LOGD.
+ship_fixture() {
+  local what="$1" lane="$2"
+  mkrepo; new_log
+  [ "$lane" = none ] || { printf 'Lane: %s\n' "$lane" > "$ROOT/docs/specs/SPEC-001-x.md"; }
+  case "$what" in
+    migration) mkdir -p "$ROOT/db/migrations"; echo "create table users (id int);" > "$ROOT/db/migrations/0001_users.sql" ;;
+    dataloss)  mkdir -p "$ROOT/app"; echo 'DROP TABLE users;' > "$ROOT/app/db.py" ;;
+    doc)       echo 'DROP TABLE users;' > "$ROOT/docs/notes.md" ;;
+    truncate)  mkdir -p "$ROOT/app"; printf '# truncate long names\nname.truncate(20)\n' > "$ROOT/app/fmt.py" ;;
+    clean)     mkdir -p "$ROOT/src"; echo "x = 1" > "$ROOT/src/app.py" ;;
+  esac
+  _commit "chore: change"
+}
+record_gates() { local p; for p in "$@"; do gl record x "$p" ran "fixture $p" >/dev/null 2>&1; done; }
+# run_hook: pushes feat/x through the real hook in the fixture; sets HOOK_RC and HOOK_ERR.
+run_hook() {
+  HOOK_RC=0
+  HOOK_ERR="$( cd "$ROOT" && echo '{"tool_input":{"command":"git push -u origin feat/x"}}' \
+    | env CLAUDE_PLUGIN_ROOT="$KIT_DIR" DWARVES_KIT_LOG_DIR="$LOGD" KIT_CONFIG_OPERATOR=/nonexistent KIT_CONFIG_ROOT="$KIT_DIR" \
+      bash "$HOOK" 2>&1 >/dev/null )" || HOOK_RC=$?
+}
+NORMAL_GATES="spec validate build review ship"
+
+case_ship_migration_blocks() {
+  ship_fixture migration normal; record_gates $NORMAL_GATES
+  run_hook
+  local blocked_rc="$HOOK_RC" blocked_err="$HOOK_ERR" p
+  for p in think design design-critique design-record test-plan docs reflect; do gl override x "$p" "fixture reason $p" >/dev/null 2>&1; done
+  run_hook
+  if [ "$blocked_rc" = 2 ] && printf '%s' "$blocked_err" | grep -qF 'hard path (migration' && [ "$HOOK_RC" = 0 ]; then pass ship-migration-blocks
+  else fail ship-migration-blocks "blocked rc=$blocked_rc err=$blocked_err; after overrides rc=$HOOK_RC err=$HOOK_ERR"; fi
+}
+
+case_ship_migration_absent_quiet() {
+  ship_fixture clean normal; record_gates $NORMAL_GATES; run_hook
+  [ "$HOOK_RC" = 0 ] && pass ship-migration-absent-quiet || fail ship-migration-absent-quiet "rc=$HOOK_RC err=$HOOK_ERR"
+}
+
+case_ship_switch_off_on_base() {
+  mkrepo false; new_log
+  printf 'Lane: normal\n' > "$ROOT/docs/specs/SPEC-001-x.md"
+  mkdir -p "$ROOT/db/migrations"; echo "create table t (id int);" > "$ROOT/db/migrations/0001_t.sql"; _commit "chore: change"
+  record_gates $NORMAL_GATES; run_hook
+  if [ "$HOOK_RC" = 0 ] && grep -q 'OFF-BY-CONFIG | floor' "$LOGD/ship-gate.log" 2>/dev/null; then pass ship-switch-off-on-base
+  else fail ship-switch-off-on-base "rc=$HOOK_RC err=$HOOK_ERR log=$(cat "$LOGD/ship-gate.log" 2>/dev/null)"; fi
+}
+
+case_ship_flip_gate_in_pr() {
+  ship_fixture migration normal
+  printf '[gate]\nlane_gates = false\n' > "$ROOT/.kit.toml"; _commit "chore: flip the switch in the PR"
+  record_gates $NORMAL_GATES; run_hook
+  [ "$HOOK_RC" = 2 ] && pass ship-flip-gate-in-pr || fail ship-flip-gate-in-pr "rc=$HOOK_RC err=$HOOK_ERR"
+}
+
+case_ship_hollow_full_override() {
+  ship_fixture migration full
+  commit_kit_toml '[lane.full]
+phases = ["build"]'
+  record_gates build; run_hook
+  [ "$HOOK_RC" = 2 ] && pass ship-hollow-full-override || fail ship-hollow-full-override "rc=$HOOK_RC err=$HOOK_ERR"
+}
+
+case_ship_data_loss() {
+  local bad="" w rc
+  for w in dataloss doc truncate; do
+    ship_fixture "$w" normal; record_gates $NORMAL_GATES; run_hook
+    case "$w" in dataloss) want=2 ;; *) want=0 ;; esac
+    [ "$HOOK_RC" = "$want" ] || bad="$bad [$w rc=$HOOK_RC want $want: $HOOK_ERR]"
+  done
+  [ -z "$bad" ] && pass ship-data-loss || fail ship-data-loss "$bad"
+}
+
+case_ship_no_spec_advisory() {
+  ship_fixture migration none; run_hook
+  if [ "$HOOK_RC" = 0 ] && printf '%s' "$HOOK_ERR" | grep -qF "no spec for 'x', and the diff touches a hard path"; then pass ship-no-spec-advisory
+  else fail ship-no-spec-advisory "rc=$HOOK_RC err=$HOOK_ERR"; fi
+}
+
+case_ship_suggest_advisory() {
+  ship_fixture clean normal; record_gates $NORMAL_GATES
+  gl action x "lane-suggest full flags=data-model" >/dev/null 2>&1
+  run_hook
+  if [ "$HOOK_RC" = 0 ] && printf '%s' "$HOOK_ERR" | grep -qF "the classifier suggested full (data-model) and the run ships as normal"; then pass ship-suggest-advisory
+  else fail ship-suggest-advisory "rc=$HOOK_RC err=$HOOK_ERR"; fi
+}
+
+# ---------------------------------------------------------------------------
 run_case() {
   local fn="case_${1//-/_}"
   if declare -F "$fn" >/dev/null; then "$fn"; else fail "$1" "no such case"; fi
 }
 # `parity` (byte-identical against the baseline) holds only at the refactor commit; after the
 # flip the standing check is parity-after-flip.
-ALL="parity-after-flip plan-flip four-false-hits webhook-signature-suggests suggest-records explain-suggest-line classify-files-full escalate-suggest floor-paths floor-rename-counts-both-sides floor-data-loss floor-extra-paths-union floor-invalid-extra-ere"
+ALL="parity-after-flip plan-flip four-false-hits webhook-signature-suggests suggest-records explain-suggest-line classify-files-full escalate-suggest floor-paths floor-rename-counts-both-sides floor-data-loss floor-extra-paths-union floor-invalid-extra-ere override-drop-review override-uncommitted override-typo override-no-light pinned-root malformed-array-fails-closed policy-at-base ship-migration-blocks ship-migration-absent-quiet ship-switch-off-on-base ship-flip-gate-in-pr ship-hollow-full-override ship-data-loss ship-no-spec-advisory ship-suggest-advisory"
 if [ "$#" -eq 0 ]; then set -- $ALL; fi
 for c in "$@"; do run_case "$c"; done
 [ "$FAILS" -eq 0 ]
