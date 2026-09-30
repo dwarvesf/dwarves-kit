@@ -30,7 +30,6 @@ set -f  # no globbing while we word-split segments
 INPUT=$(cat)
 CMD=$(echo "$INPUT" | jq -r '.tool_input.command // empty')
 [ -z "$CMD" ] && exit 0
-
 # Debug logging
 if [ "${DWARVES_KIT_DEBUG:-0}" = "1" ]; then
   echo "[dwarves-kit:safety] checking command (${#CMD} chars)" >&2
