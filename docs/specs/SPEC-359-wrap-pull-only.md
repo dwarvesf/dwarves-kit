@@ -193,7 +193,7 @@ already lives inside; a sibling verb would rebuild all of that for zero new beha
 - [x] TASK-A: Write this spec.
 
 ### Phase 2: Core (`lib/wrap/wrap.sh`)
-- [ ] TASK-B: add a global `PULL_ONLY=0` next to the existing `APPLY=0`/`WORKTREES=0`/
+- [x] TASK-B: add a global `PULL_ONLY=0` next to the existing `APPLY=0`/`WORKTREES=0`/
   `ARCHIVE_UNMERGED=0` declarations (`wrap.sh:387-389`), matching their style, not a parameter
   threaded through a call chain. `cmd_apply` arg parsing gains a `--pull-only` case that sets
   `PULL_ONLY=1`. Immediately after the existing `want_own` bare-flag check, and **before** the
@@ -202,7 +202,7 @@ already lives inside; a sibling verb would rebuild all of that for zero new beha
   `OWN_N -gt 0`, or `TIPS_OVERRIDE` non-empty, print `wrap.sh apply: --pull-only cannot combine
   with <flag>` naming the specific conflicting flag and exit 64, writing nothing. Acceptance:
   Test plan "Flag conflict" rows.
-- [ ] TASK-C: `_apply_repo` gate: read the global `PULL_ONLY` directly inside `_apply_repo`, the
+- [x] TASK-C: `_apply_repo` gate: read the global `PULL_ONLY` directly inside `_apply_repo`, the
   same way `ARCHIVE_UNMERGED` is already read there (`[ "$ARCHIVE_UNMERGED" = 1 ] && ...`), not
   as a parameter passed in from `cmd_apply`'s call site. Wrap the `_apply_worktrees`,
   `_apply_branches`, `_apply_archive_unmerged`, `_apply_origin_branches`, `_carry_stray`, and
@@ -214,13 +214,13 @@ already lives inside; a sibling verb would rebuild all of that for zero new beha
   path", "Scope", "Off default branch", "Fetch-failure wording" rows.
 
 ### Phase 3: Wiring and docs
-- [ ] TASK-D: `commands/wrap.md` step 5 gains one bullet: when the operator wants the pull alone
+- [x] TASK-D: `commands/wrap.md` step 5 gains one bullet: when the operator wants the pull alone
   (a shared checkout, other sessions own the open branches), `bin/wrap apply --pull-only --apply
   <repo>` instead of the full `apply --apply --worktrees` sweep, including the "Stray commits
   interaction" NOTE (a checkout ahead of origin still needs plain `apply` to carry those commits
   before the pull can land). Acceptance: reviewed against this spec's wording; no test asserts
   prose.
-- [ ] TASK-E: three usage strings gain `[--pull-only]` in the flag list: `bin/wrap`'s own usage
+- [x] TASK-E: three usage strings gain `[--pull-only]` in the flag list: `bin/wrap`'s own usage
   header (line 9), `wrap.sh`'s own header comment (line 6, what `_usage()` prints via
   `sed -n '2,31p'`, `wrap.sh:120`), and the inline usage string `cmd_apply` prints on the no-repo
   path (`lib/wrap/wrap.sh` around line 1641, `usage: wrap.sh apply [--apply] [--worktrees]
@@ -228,26 +228,26 @@ already lives inside; a sibling verb would rebuild all of that for zero new beha
   --pull-only` with no repo argument and no other flag exits 64 and its usage line contains
   `--pull-only` (Test plan "Usage line" row); the flag-conflict rows exercise the conflict check
   from TASK-B, not this usage string, and stay separate on purpose.
-- [ ] TASK-F: `docs/consumer-contract.md` line 78 (the `bin/wrap` row's `apply` description)
+- [x] TASK-F: `docs/consumer-contract.md` line 78 (the `bin/wrap` row's `apply` description)
   gains the flag and its one-line behavior. Acceptance: reviewed for accuracy against
   TASK-B/TASK-C; no test.
-- [ ] TASK-G: `docs/CHANGELOG.md` `[Unreleased]` section gains one bullet in the file's existing
+- [x] TASK-G: `docs/CHANGELOG.md` `[Unreleased]` section gains one bullet in the file's existing
   per-surface style, `Command surface (\`wrap apply\`, additive): ...`, citing SPEC-359.
   Acceptance: reviewed against the file's own convention (surface tag, one-paragraph behavior,
   trailing `(SPEC-359)`).
-- [ ] TASK-H: `tests/test-wrap.sh` gains the case block from `## Test plan` below: scope (happy
+- [x] TASK-H: `tests/test-wrap.sh` gains the case block from `## Test plan` below: scope (happy
   path + section-absence), union carry, `pull_past_dirty` on and off, dry run, off-default-branch,
   stray commits ahead-only, stray commits diverged, fetch-failure wording, usage line (no-repo
   path), flag conflicts (all four rejected flags), regression, multi-repo. Acceptance:
   `bash tests/test-wrap.sh` exits 0 with every new `chk`/`chk_has`/`chk_no` passing.
-- [ ] TASK-I: `docs/verification/wrap-pull-only.md`, the negative-control record: remove the
+- [x] TASK-I: `docs/verification/wrap-pull-only.md`, the negative-control record: remove the
   `pull_only` gate around one swept step (for example `_apply_branches`), confirm the "no branch
   delete" assertion from TASK-H goes red, restore, and record the run (green run plus the
   negative control, per this repo's verification-doc shape). Acceptance:
   `bash lib/gate/negctl.sh . 'bash tests/test-wrap.sh' '<mutation>'` reports PASS.
 
 ### Phase 4: Regression
-- [ ] TASK-J: Run the full pre-existing `apply` test block in `tests/test-wrap.sh` (no
+- [x] TASK-J: Run the full pre-existing `apply` test block in `tests/test-wrap.sh` (no
   `--pull-only` anywhere in it) and confirm every assertion in it still passes. Acceptance:
   `bash tests/test-wrap.sh` exits 0 and no pre-existing `chk` line in the file changed its
   pass/fail outcome (diff the PASS/FAIL summary against a pre-change run).
@@ -290,7 +290,9 @@ Each bullet is an acceptance criterion; the `AC-n` ids key the Test plan below.
   the same repo.
 - AC-6: Under `--pull-only --apply`, a pull skipped because `index.lock` stays held, or a repo whose
   default branch does not resolve, exits 2: the pull is the whole job, so a skipped pull is a
-  failed call. Plain `apply` keeps exit 0 in both cases.
+  failed call. Plain `apply` keeps exit 0 in both cases. In a dry run the unresolved default
+  branch still exits 2 (the real run cannot pull either); a held lock does not, since it is
+  transient and the dry run writes nothing.
 - AC-7: `wrap.sh apply --pull-only` combined with `--worktrees`, `--archive-unmerged`, `--own`, or
   `--tips-file` exits 64 and writes nothing.
 - AC-8: The fetch-failure line reads `(fetch failed; the pull below will likely fail too)`
@@ -383,3 +385,74 @@ None.
 - Operability/failure-modes: 7/10
 
 ### Verdict: REVISE
+
+## Test plan critique
+Date: 2026-09-30
+Spec: SPEC-359
+Lenses run: coverage completeness, oracle & falsifiability, feasibility & reproducibility, test-ladder & boundary depth, determinism & maintainability; missing: none. Tiering & floor: N/A, not an AI-in-the-loop plan.
+Rounds: `[[QL-VERDICT round=1 clean=false findings=17]]` (five parallel lenses, deduplicated) · `[[QL-VERDICT round=2 clean=false findings=8]]` (one distinct reviewer, all five lenses; max severity fell CRITICAL to HIGH) · `[[QL-VERDICT round=3 clean=true findings=0]]` (one distinct reviewer). Round 1 was revised by a distinct reviser subagent; round 2's fixes were single-line scale and hand-applied by the lead, then confirmed by the round-3 reviewer.
+
+### Critical findings
+1. One negative control covered only the sweep gate; the NOTE, the skipped-pull exits, the conflict refusals and the fetch wording were green-only. -- found by: oracle -- fix: N1 to N6, one mutation per gate, recorded in `docs/verification/wrap-pull-only.md` -- resolved in round 2
+
+### High findings
+1. Proofs named assertion groups the suite cannot run alone. -- found by: feasibility -- fix: every proof now runs the full suite and names the assertion prefix -- resolved in round 2
+2. No live run on real state. -- found by: ladder -- fix: row 16, a pull-only run on a fresh clone of the real origin -- resolved in round 2
+3. N-row mutation arguments were labels, not commands; N5 left the refusal message printing. -- found by: feasibility, oracle -- fix: `mut.py N#` with exact-once match guards; N5 disables each whole refusal -- resolved in round 3
+4. The stale-lock fixture used a 2026 mtime. -- found by: determinism, feasibility -- fix: `touch -t 200001010000` -- resolved in round 2
+
+### Medium findings
+1. `--own=<path>` form never combined with `--pull-only`. -- found by: ladder -- resolved in round 2
+2. Conflict calls lacked `--apply`, so "no refused call pulled" could not go red. -- found by: oracle -- resolved in round 3
+3. Row 9 Expected named the wrong string. -- found by: coverage -- resolved in round 3
+4. AC-2 knob-off lacked a union file; AC-5 had no stray-line fixture. -- found by: coverage -- resolved in round 3 (the worktree half is unreachable under the flag, named in the coverage notes)
+5. Accepted gaps lived only in the design critique. -- found by: coverage -- resolved in round 2
+
+### Low findings
+1. Ahead count is only ever 1. -- found by: ladder -- accepted
+2. Exact-string assertions, `1 commits` pluralization, gh precondition, fixture registry, single-case runner. -- found by: determinism, feasibility -- rejected with reasons in the coverage notes
+
+### Scores (final round)
+- Coverage completeness: 8/10
+- Oracle & falsifiability: 9/10
+- Feasibility & reproducibility: 9/10
+- Test-ladder & boundary depth: 8/10
+- Determinism & maintainability: 9/10
+- Tiering & floor: N/A, not an AI-in-the-loop plan
+
+### Verdict: SOLID
+
+## Review
+Date: 2026-09-30
+Files reviewed: 11 (`git diff ad1fc35f 96b4e37b`)
+Reviewers: security (opus), architecture (sonnet), test-coverage (sonnet), kit:advisor critique (sonnet). No domain lens: `role-classify` returned `generic`. Coverage-delta: `ok: source + test moved together`.
+
+### Security
+Verdict SECURE, 9/10. Every delete, archive and push call sits inside the `PULL_ONLY` sweep gate. The conflict check runs after the whole argv loop, so flag order, repeats and `--own=` cannot slip past it. One LOW, advisory: `--tips-file=` with an empty value passes the conflict check, but the snapshot is skipped under the flag, so the call does nothing extra (`lib/wrap/wrap.sh:1653`).
+
+### Architecture
+7/10. The sweep gate is one seam; the other `PULL_ONLY` checks each carry a distinct behavior at a pre-existing decision point. MEDIUM `stale-adr: commands/wrap.md:133` said ahead-only commits "stay unreported", contradicting AC-3 and `wrap.sh` NOTE: FIXED in this round. LOW `stale-adr`: CHANGELOG and consumer-contract omit AC-6's exit 2: fixed by the docs gate.
+
+### Test coverage
+9/10. Every observable `PULL_ONLY` branch has an assertion and a named negative control (N1 to N6). LOW, not worth: the snapshot and `gh` skips have no oracle (performance-only).
+
+### Advisor (critique mode)
+1 finding: Test plan row 16 pointed at a "Live run" record that did not exist, and the verification doc still listed a live run under "does not cover". FIXED: the live run ran on a fresh clone of the real origin and is recorded.
+
+### Suppressed
+- Security, confidence 50: the global `FAILURES` baseline in `_pull_default` (`before="$FAILURES"`) hides a later repo's failed pull once an earlier repo failed in the same multi-repo call, so its stash pops and union carry-back run as if the pull landed. Pre-existing, predates this spec; `--pull-only`'s lock-skip is one more trigger. Route manual, reported as a follow-up, not fixed here.
+
+### Previously rejected
+None (`docs/verification/rejected-findings.md` has no matching finding-key).
+
+### Scores
+- Security: 9/10
+- Architecture: 7/10
+- Test coverage: 9/10
+- Combined: 8.3/10
+
+### Verdict: FIX THEN SHIP, fixes applied
+Both MEDIUM-or-higher findings (the stale manual sentence, the missing live-run record) are fixed on this branch. Re-review round 2 over the fix diff: see the ledger `review` record.
+
+### TODOs
+- Follow-up (manual, pre-existing): make `_pull_default` compare against a per-repo failure baseline rather than the global `FAILURES`.
