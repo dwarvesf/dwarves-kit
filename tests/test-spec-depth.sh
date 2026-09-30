@@ -29,6 +29,7 @@ if want level; then
   assert_eq "combined with +"           "research-outside blind-spot"     "$(lvl combined)"
   assert_eq "fenced example is ignored" "standard"                        "$(lvl fenced-example)"
   assert_eq "no header line"            "standard"                        "$(lvl no-depth)"
+  assert_eq "Depth only in a body example is ignored" "standard"            "$(lvl body-only-depth)"
 fi
 
 if want check; then
@@ -70,6 +71,7 @@ if want wants; then
   bash "$H" wants "$FX/combined.md" research-outside;         assert_eq "combined wants research-outside" 0 "$?"
   bash "$H" wants "$FX/combined.md" blind-spot;               assert_eq "combined wants blind-spot" 0 "$?"
   bash "$H" wants "$FX/fenced-example.md" blind-spot;         assert_eq "fenced example does not want blind-spot" 1 "$?"
+  bash "$H" wants "$FX/body-only-depth.md" blind-spot;        assert_eq "body-only example does not want blind-spot" 1 "$?"
   bash "$H" wants "$FX/standard.md" nonsense 2>/dev/null;     assert_eq "unknown level exits 2" 2 "$?"
   assert_eq "spec.sh forwards depth" "standard" "$(bash "$KIT_DIR/lib/spec/spec.sh" depth level "$FX/standard.md" 2>/dev/null)"
 fi
