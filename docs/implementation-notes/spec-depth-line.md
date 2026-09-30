@@ -13,4 +13,4 @@
 | 9 | Coverage gap found | The first negative control on header-only parsing (whole-file read) stayed green because `level` takes the first `Depth:` match. Added the `body-only-depth.md` fixture (Depth only in a body example) so the control goes red. |
 | 10 | Not done | AC7 live `/kit:spec` run: not executed (no live interactive spec run inside a build worker). Covered by the static `spec-md-wiring` section, the ledger verb round-trip in a temp log dir, and the spec's dry trace. |
 | 11 | Floor-pass record | Plans were supplied inline; `docs/verification/test-plan-review-team.md` describes its seeded plan only in prose. See `docs/verification/spec-depth-line/floor-passes.md`. |
-| 12 | Regenerated | `docs/FEATURES.md` changed in 16 rows; the `get-api-docs` row gained the SPEC-372 reference, the rest are the registry's own refresh (stale before this change). |
+| 12 | Regenerated | `docs/FEATURES.md` changed in 16 rows; the `get-api-docs` row gained the SPEC-372 reference, the other rows are the registry's regeneration output, cause not traced. |
