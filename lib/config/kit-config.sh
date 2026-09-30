@@ -59,10 +59,11 @@ _kit_toml_get() {
 }
 
 # kit_config_get <section.key> [default] -- project override, else operator, else kit-root,
-# else default. A missing file at any layer is skipped silently.
+# else default. The dotted key splits at the LAST dot: `lane.normal.phases` reads section
+# `lane.normal`, key `phases`. A missing file at any layer is skipped silently.
 kit_config_get() {
   local dotkey="$1" def="${2:-}" section key v
-  section="${dotkey%%.*}"; key="${dotkey#*.}"
+  section="${dotkey%.*}"; key="${dotkey##*.}"
   v="$(_kit_toml_get "$(kit_config_project)" "$section" "$key")"
   [ -n "$v" ] && { printf '%s' "$v"; return 0; }
   v="$(_kit_toml_get "$(kit_config_operator)" "$section" "$key")"
@@ -81,7 +82,7 @@ kit_config_get() {
 # rides inside a pull request.
 kit_config_get_root() {
   local dotkey="$1" def="${2:-}" section key v
-  section="${dotkey%%.*}"; key="${dotkey#*.}"
+  section="${dotkey%.*}"; key="${dotkey##*.}"
   v="$(_kit_toml_get "$(kit_config_operator)" "$section" "$key")"
   [ -n "$v" ] && { printf '%s' "$v"; return 0; }
   v="$(_kit_toml_get "$(kit_config_root)" "$section" "$key")"
@@ -151,6 +152,11 @@ TOML
     "$(KIT_CONFIG_OPERATOR="$d/op" kit_config_get ledger.location)"                             "isolated"
   chk "project never reaches _root past operator" \
     "$(KIT_CONFIG_OPERATOR="$d/op" kit_config_get_root ledger.location)"                        "operator"
+  printf '[lane.normal]\nphases = ["spec", "build"]\n' >> "$d/root/kit.toml"
+  chk "last-dot split: lane.normal.phases" \
+    "$(KIT_PROJECT_ROOT=/nonexistent kit_config_get lane.normal.phases)"                        '["spec", "build"]'
+  chk "last-dot split on _root" \
+    "$(kit_config_get_root lane.normal.phases)"                                                 '["spec", "build"]'
   chk "missing operator file falls through" \
     "$(KIT_CONFIG_OPERATOR="$d/none" kit_config_get_root mega.wave_cap)"                        "2"
   chk "KIT_CONFIG_OPERATOR redirects the file" \
