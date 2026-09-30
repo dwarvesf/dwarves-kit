@@ -1250,6 +1250,10 @@ RC=0; fhas "$VALIDATE_CMD" "A finding is CRITICAL only if the spec's own tests w
 assert_eq "spec-validate.md: critical only if the spec's own tests would miss it" "0" "$RC"
 RC=0; fhas "$SPEC_CMD_F" 'one reviewer reads only the fold diff' || RC=1
 assert_eq "spec.md step 5: fold-diff check is the default re-check" "0" "$RC"
+RC=0; fhas "$SPEC_CMD_F" 'Validate ran "fold-diff check pass after NEEDS REVISION"' || RC=1
+assert_eq "spec.md step 5: a clean normal-lane fold-diff check records Validate ran" "0" "$RC"
+RC=0; grep -rqE '^\|\|\|\|\|\|\| ' "$KIT_DIR/commands" && RC=1
+assert_eq "commands/: no leftover diff3 conflict-base markers" "0" "$RC"
 RC=0; fhas "$SPEC_CMD_F" 'docs/implementation-notes/<slug>.md` for the builder' && fhas "$VALIDATE_CMD" 'docs/implementation-notes/<slug>.md` for the builder' || RC=1
 assert_eq "spec.md and spec-validate.md route build-catchable warnings to implementation notes" "0" "$RC"
 RC=0; fhas "$KIT_DIR/docs/WORKFLOW.md" 'copies its `Lane:` from `lib/classify/lane-classify.sh`' && fhas "$KIT_DIR/docs/WORKFLOW.md" 'a misroute' || RC=1
