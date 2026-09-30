@@ -904,43 +904,61 @@ _USAGE_KEYS = ("input_tokens", "output_tokens", "cache_read_input_tokens",
 
 
 def _read_subagent_transcript(path: Path):
-    """Parse one `agent-<id>.jsonl`. Returns `(first_ts, last_ts, tokens)` or None when a
-    line is not valid JSON. Reads ONLY `timestamp`, `message.id` and `message.usage.*`; message
-    content is never assigned to anything that outlives the loop iteration. Usage repeats per
-    streamed message (the same `message.id` on several lines, `output_tokens` growing), so the
-    LAST line per id wins. Only the first and last line are parsed for timestamps; every
-    other line is parsed only when it carries a `"usage"` key (the rest of a transcript is
-    large tool output this reader has no use for)."""
-    try:
-        lines = [ln for ln in path.read_text(errors="replace").splitlines() if ln.strip()]
-    except OSError:
-        return None
-    if not lines:
-        return None, None, [0, 0, 0, 0]
+    """Parse one `agent-<id>.jsonl`. Returns `(first_ts, last_ts, tokens)` or None when the
+    file cannot be read or a non-final line is not valid JSON. Reads ONLY `timestamp`,
+    `message.id` and `message.usage.*`; message content is never assigned to anything that
+    outlives the loop iteration. Usage repeats per streamed message (the same id on several
+    lines, `output_tokens` growing), so the LAST line per id wins. The id is `message.id`,
+    else the top-level `requestId`; a usage line with neither shares ONE anonymous slot (last
+    wins), so streamed lines with no id undercount rather than double count. Only the first
+    and last line are parsed for timestamps; every other line is parsed only when it carries a
+    `"usage"` key. The file streams line by line (transcripts are large), and a malformed LAST
+    line is tolerated: an in-flight subagent is still being written."""
     usage_by_id: dict[str, list[int]] = {}
     first_ts = last_ts = None
-    last_i = len(lines) - 1
-    for i, ln in enumerate(lines):
-        if i not in (0, last_i) and '"usage"' not in ln:
-            continue
+    pending = None  # the newest non-blank line, parsed only once we know it is the last
+
+    def take(ln, is_first, is_last):
+        nonlocal first_ts, last_ts
         try:
             d = json.loads(ln)
         except ValueError:
-            return None
+            return is_last  # a bad last line is tolerated, any other is not
         if not isinstance(d, dict):
-            continue
+            return True
         ts = d.get("timestamp")
         if isinstance(ts, str):
-            if i == 0:
+            if is_first:
                 first_ts = ts
-            if i == last_i:
+            if is_last:
                 last_ts = ts
         msg = d.get("message")
         usage = msg.get("usage") if isinstance(msg, dict) else None
         if isinstance(usage, dict):
             mid = msg.get("id")
-            key = mid if isinstance(mid, str) else f"line-{i}"
+            rid = d.get("requestId")
+            key = mid if isinstance(mid, str) else (rid if isinstance(rid, str) else "")
             usage_by_id[key] = [_safe_int(usage.get(k)) for k in _USAGE_KEYS]
+        return True
+
+    seen = 0
+    try:
+        with open(path, errors="replace") as fh:
+            for ln in fh:
+                if not ln.strip():
+                    continue
+                if pending is not None:
+                    prev, prev_first = pending
+                    if (prev_first or '"usage"' in prev) and not take(prev, prev_first, False):
+                        return None
+                pending = (ln, seen == 0)
+                seen += 1
+    except OSError:
+        return None
+    if pending is None:
+        return None, None, [0, 0, 0, 0]
+    if not take(pending[0], pending[1], True):
+        return None
     totals = [sum(v[j] for v in usage_by_id.values()) for j in range(4)]
     return first_ts, last_ts, totals
 
@@ -967,14 +985,19 @@ def read_subagents(root: Path | None = None, since: _dt.datetime | None = None,
     earliest: float | None = None
     rows = []
     for meta in sorted(d.glob("*/*/subagents/agent-*.meta.json")):
+        # never follow a directory symlink out of the root, and never open a non-regular file
+        # (a FIFO named agent-x.jsonl blocks the read forever)
+        if any(q.is_symlink() for q in list(meta.parents)[:3]) or not meta.is_file():
+            continue
         jsonl = meta.with_name(meta.name[: -len(".meta.json")] + ".jsonl")
+        has_jsonl = jsonl.is_file()
         try:
-            mtime = (jsonl if jsonl.exists() else meta).stat().st_mtime
+            mtime = (jsonl if has_jsonl else meta).stat().st_mtime
         except OSError:
             continue
         scan[0] += 1
         earliest = mtime if earliest is None else min(earliest, mtime)
-        if mtime < since_epoch or not jsonl.exists():
+        if mtime < since_epoch or not has_jsonl:
             continue
         try:
             m = json.loads(meta.read_text())
