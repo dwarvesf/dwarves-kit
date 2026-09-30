@@ -588,10 +588,12 @@ tc_env_validate() {
 tc_backoff() {
   case_begin backoff
   mkcase
-  s0=$SECONDS
-  ORCA_POLL_SECS=1 ORCA_ERROR_LIMIT=2 ORCA_STUB_FAIL_VERB=task-list orun >"$W/o.out" 2>&1; rc=$?
+  # A `sleep` shim logs its argument and returns at once, so the assertion reads the waits, not the clock.
+  mkdir -p "$W/shim"
+  printf '#!/bin/sh\necho "$1" >> "%s/sleeps"\n' "$W" > "$W/shim/sleep"; chmod +x "$W/shim/sleep"
+  PATH="$W/shim:$PATH" ORCA_POLL_SECS=5 ORCA_ERROR_LIMIT=3 ORCA_STUB_FAIL_VERB=task-list orun >"$W/o.out" 2>&1; rc=$?
   expect "$rc" 1 "halts at the error limit"
-  [ $((SECONDS - s0)) -ge 2 ] || { cfail=$((cfail + 1)); echo "  [$cname] backoff waited $((SECONDS - s0))s, expected at least 2s (poll 1, doubled)"; }
+  expect "$(tr '\n' ' ' < "$W/sleeps")" "10 20 " "the wait doubles from a nonzero poll: 5 -> 10 -> 20"
   case_end
 }
 
