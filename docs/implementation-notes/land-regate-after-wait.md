@@ -29,5 +29,13 @@ Deltas from SPEC-365. Nothing here repeats what the spec already states.
 - Skipped: the optional StatusContext case on the DATED path (R2 to R5). E1's `forged` entry already is that case, pinned by NC20.
 - Verified live, read-only: a Prow StatusContext has no `detailsUrl` and no `workflowName` key; `gh api --hostname github.com` wins over an exported `GH_HOST`; `workflowName` first shipped in gh v2.14.0; the activity API dates pushes.
 
+## 2026-09-30 Round 4 post-fold check
+- Applied five lead decisions, wording only. D0 now puts `CA_OLD` on every T13, T13b and T13e fixture read (read 1 included), with `url` from read 2, and says to fix the fixture, never the count.
+- `commands/wrap.md` anchors moved after a rebase: the `land` paragraph is line 118 (was 104) and the step-4 sentence is line 337 (was 323). Task E also names the pinned step-10 assert at tests/test-wrap.sh:4794. All three verified by grep.
+- NC19 now names its target: the slug-derived `CI_NEW_SCOPE=` set at the top of the label-on branch, not the entry clear (NC26).
+- C12, the gh older than v2.14.0 row and the Out-of-scope autoland bullet no longer claim a grace hold then the CLEAN rule or fail-closed. They match Boundaries and DEC-AF: a snapshot of `[]` skips the CLEAN clause and `_pr_gate` decides.
+- T20's `GH_STUB_PR_42_15` is stated as the same record as the carry-2 read, `headRefOid: %CARRY_TIP%` included.
+- DEC-AD and DEC-AI still carry the older "grace hold, then the CLEAN rule" phrasing as decision history; left unchanged per the lead's scope.
+
 ## 2026-09-29 Process
 - This worker ran the spec steps the lead named (write, Spec ran, Spec end, commit) and stopped at `VALIDATE PENDING`. The full-lane design-time pass (`/kit:devs-team` plus `kit:advisor` over-suggest) did not run here. That call belongs to the lead.
