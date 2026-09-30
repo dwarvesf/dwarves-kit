@@ -36,6 +36,8 @@ verb grammar and adds no logic. Call any script directly by path too; both work.
 | `gate quiz` | `quiz-gate.sh` | The star-tap NUDGE. Builds 5 diff-grounded questions, routes through the `understand.teach` seam. | no (nudge only) |
 | `gate coverage-delta` | `coverage-delta.sh` | Advisory. Source lines moved but test lines did not? Warn. | no (always exit 0) |
 | `gate mutation-smoke` | `mutation-smoke.sh` | Advisory. Mutates a changed line, re-runs the suite. A surviving mutation means the suite does not bite. | no (always exit 0) |
+| (by path) | `recheck-sample.sh` | `decide <rid> [N]`: should `/kit:execute` recheck this run's end-verifier PASSes? Keyed on the rid, records the decision. | no |
+| (by path) | `check-edit.sh` | `<base> [files]`: did the build edit or weaken its own check? Prints `check-edited:` / `check-weakened:` lines. | no (always exit 0) |
 | `gate proof-table` | `proof-table-gen.{sh,py}` | Generates a run-table from a rid's ledger. Refuses to write `proof-of-done.md`. | no |
 | `gate verify-counts` | `verify-counts.sh` | Regenerates `docs/verification/COUNTS.md` from live suite runs. (`verif-counts`: legacy alias) | no |
 
