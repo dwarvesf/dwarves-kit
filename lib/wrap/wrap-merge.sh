@@ -86,6 +86,26 @@ _pr_detail_settled() {
   printf '%s' "$detail"
 }
 
+# _pr_detail_at_head <url> <number> <tip> -- the detail read after a refused merge, pinned
+# to the pushed tip: GitHub can still serve the pre-push head inside the settle window, and
+# a CONFLICTING verdict against the old head would answer for a branch that no longer
+# exists. It waits until headRefOid is <tip> and mergeable is computed, one read every 2s
+# bounded by KIT_WRAP_SETTLE_SECS, and returns the last read either way. Unlike
+# _pr_detail_settled it does not keep waiting on CONFLICTING: a real conflict is the answer
+# the read exists to find.
+_pr_detail_at_head() {
+  local url="$1" n="$2" tip="$3" waited=0 detail="" m h
+  while :; do
+    detail="$(_pr_detail "$url" "$n")"
+    h="$(printf '%s' "$detail" | jq -r '.headRefOid // ""' 2>/dev/null)"
+    m="$(printf '%s' "$detail" | jq -r '.mergeable // "UNKNOWN"' 2>/dev/null)"
+    [ "$h" = "$tip" ] && [ "$m" != "UNKNOWN" ] && break
+    [ "$waited" -lt "$KIT_WRAP_SETTLE_SECS" ] || break
+    sleep 2; waited=$(( waited + 2 ))
+  done
+  printf '%s' "$detail"
+}
+
 # _branch_worktree <repo> <branch> -- the checkout that holds <branch>, empty when none does.
 # `--porcelain -z` NUL-terminates every attribute, which keeps a path carrying a newline whole.
 _branch_worktree() {
@@ -156,8 +176,8 @@ _scratch_wt_drop() {
 # scratch detached worktree at the PR head, removed afterwards, so no operator checkout
 # is touched and the same merge, abort and dedupe rules apply.
 _union_remerge() {
-  local repo="$1" branch="$2" def="$3" head_oid="$4" wt tip scratch="" rc
-  REMERGE_OID=""
+  local repo="$1" branch="$2" def="$3" head_oid="$4" cmd="${5:-}" wt tip scratch="" rc
+  REMERGE_OID=""; REMERGE_WT=""
   [ -n "$branch" ] && [ -n "$head_oid" ] || { echo "     no branch or head SHA to re-merge"; return 1; }
   if wt="$(_branch_worktree "$repo" "$branch")"; then
     tip="$(git -C "$wt" rev-parse HEAD 2>/dev/null)"
@@ -177,32 +197,38 @@ _union_remerge() {
     scratch=1
     echo "     no local checkout holds ${branch}; re-merging in a scratch worktree"
   fi
-  _remerge_push "$repo" "$wt" "$branch" "$def" "$tip"; rc=$?
-  [ -n "$scratch" ] && _scratch_wt_drop "$repo" "$wt"
+  REMERGE_WT="$wt"
+  _remerge_push "$repo" "$wt" "$branch" "$def" "$tip" "$cmd"; rc=$?
+  # A 2 means the checkout is mid-state for a human to finish, so a scratch worktree
+  # holding it stays; every other outcome is self-contained and the scratch goes.
+  [ -n "$scratch" ] && [ "$rc" -ne 2 ] && _scratch_wt_drop "$repo" "$wt"
   return "$rc"
 }
 
-# _remerge_push <repo> <wt> <branch> <def> <tip> -- the merge and push half of
-# `_union_remerge`, run in whichever checkout it picked.
+# _remerge_push <repo> <wt> <branch> <def> <tip> [<cmd>] -- the merge and push half of
+# `_union_remerge`, run in whichever checkout it picked. The fetch runs here first so the
+# generator decision can compare the two sides: the worktree's own generator runs only
+# when <tip> and origin/<def> carry the same file. `merge` runs unattended under
+# /kit:wrap and wrap.autoland_carry on a branch someone else can push to, so a generator
+# the two sides disagree on (or that only one side has) is never run; a FEATURES conflict
+# is then refused by name. The merge itself is `_merge_verify_push`, the sequence `land`
+# runs; success sets REMERGE_OID to the pushed head.
 _remerge_push() {
-  local repo="$1" wt="$2" branch="$3" def="$4" tip="$5"
+  local repo="$1" wt="$2" branch="$3" def="$4" tip="$5" cmd="${6:-}" gen="" rc
   git -C "$repo" fetch -q origin "$def" 2>/dev/null || { echo "     fetch origin ${def} failed"; return 1; }
-  if git -C "$repo" merge-base --is-ancestor "origin/${def}" "$tip" 2>/dev/null; then
-    echo "     ${branch} already contains origin/${def}, so a re-merge cannot clear the conflict"; return 1
-  fi
-  if ! git -C "$wt" merge --no-edit "origin/${def}" >/dev/null 2>&1; then
-    git -C "$wt" merge --abort >/dev/null 2>&1
-    echo "     merging origin/${def} into ${branch} conflicts beyond the union-marked files, aborted"
-    return 1
-  fi
-  _union_dedupe_rows "$wt" "$tip" || return 1
-  if ! git -C "$wt" push -q origin "HEAD:refs/heads/${branch}" 2>/dev/null; then
-    echo "     push of the re-merged ${branch} failed; origin still holds the PR head"
-    return 1
-  fi
-  REMERGE_OID="$(git -C "$wt" rev-parse HEAD)"
-  echo "     re-merged origin/${def} into ${branch}, pushed $(_short "$REMERGE_OID")"
-  return 0
+  [ -f "$wt/$_RB_GENERATOR" ] \
+    && git -C "$wt" diff --quiet "$tip" "origin/${def}" -- "$_RB_GENERATOR" 2>/dev/null \
+    && gen="$wt/$_RB_GENERATOR"
+  _merge_verify_push "$wt" "$branch" "$def" "$tip" "$gen" ${cmd:+"$cmd"}; rc=$?
+  case "$rc" in
+    0)
+      REMERGE_OID="$MERGED_OID"
+      echo "     re-merged origin/${def} into ${branch}, pushed $(_short "$REMERGE_OID")"
+      return 0 ;;
+    4) echo "     ${branch} already contains origin/${def}, so a re-merge cannot clear the conflict"; return 1 ;;
+    5) echo "     merging origin/${def} into ${branch} conflicts beyond the union-marked files, aborted"; return 1 ;;
+    *) return "$rc" ;;
+  esac
 }
 
 # _squash_fallback <repo> <url> <def> <pr> <branch> <head-oid> <detail-json> -- the second
@@ -341,18 +367,21 @@ _squash_fallback() {
 }
 
 cmd_merge() {
-  local do_apply=0 repo="" count=0 pr_only=""
+  local do_apply=0 repo="" count=0 pr_only="" verify=""
   while [ $# -gt 0 ]; do
     case "$1" in
       --apply) do_apply=1; shift ;;
       --pr) pr_only="${2:-}"; shift 2 ;;
       --with-ci) KIT_WRAP_CI_ON_MERGE=1; shift ;;
+      --verify) [ $# -ge 2 ] || { echo "wrap.sh merge: --verify needs a value" >&2; return 64; }
+                verify="$2"; shift 2 ;;
+      --verify=*) verify="${1#--verify=}"; shift ;;
       -*) echo "wrap.sh merge: unknown flag '$1'" >&2; return 64 ;;
       *) _reject_packed merge "$1" || return 64
          count=$(( count + 1 )); repo="$1"; shift ;;
     esac
   done
-  [ "$count" -eq 1 ] || { echo "usage: wrap.sh merge [--apply] [--pr N] [--with-ci] <repo>" >&2; return 64; }
+  [ "$count" -eq 1 ] || { echo "usage: wrap.sh merge [--apply] [--pr N] [--with-ci] [--verify <cmd>] <repo>" >&2; return 64; }
   case "$pr_only" in
     '') ;;
     *[!0-9]*) echo "wrap.sh merge: --pr wants a PR number" >&2; return 64 ;;
@@ -451,7 +480,17 @@ cmd_merge() {
       echo "note: when ${c_head} already holds origin/${def}, --apply falls back to a squash-equivalent ${c_head}-squash PR"
     else
       echo "retry #${conflict_n}: one re-merge of ${def} into ${c_head}"
-      if _union_remerge "$repo" "$c_head" "$def" "$c_oid"; then
+      _union_remerge "$repo" "$c_head" "$def" "$c_oid" "$verify"; local urc=$?
+      # An interrupted cycle exits as it arrived, and a checkout the re-merge could not
+      # restore is a human's job: both skip the squash fallback, which has no answer for
+      # either.
+      case "$urc" in
+        130) rm -rf "$jsondir"; return 130 ;;
+        2)   rm -rf "$jsondir"
+             echo "FAILED merge #${conflict_n}: the re-merge left ${REMERGE_WT} needing a human" >&2
+             return 2 ;;
+      esac
+      if [ "$urc" -eq 0 ]; then
         # Wait for GitHub to see the pushed head and recompute mergeability, then gate only
         # that head: a head that never arrived or that someone else pushed is refused.
         detail="$(_pr_detail_settled "$url" "$conflict_n" "$REMERGE_OID" "$c_oid")"

@@ -418,6 +418,8 @@ RM_BAD="$TMPD/rm-clone-bad"; RM_BAD_TIP="$(git -C "$RM_BAD" rev-parse feat/union
 out="$(GH_STUB_OPEN_PRS="$(open_one 13)" GH_STUB_PR_13="$(conflict_json 13 "$RM_BAD_TIP")" \
   "$WRAP" merge --apply "$RM_BAD" 2>&1)"; rc=$?
 chk "re-merge with a real conflict exits 0 without merging" "$rc"
+chk_has "re-merge with a real conflict names the refused path" "$out" \
+  "REFUSED feat/union: conflict in a.txt"
 chk_has "re-merge with a real conflict says it aborted" "$out" \
   "conflicts beyond the union-marked files, aborted"
 chk "re-merge with a real conflict left the branch tip alone" \
@@ -985,6 +987,169 @@ echo "=== merge: flags packed into one positional are refused ==="
 out="$("$WRAP" merge " --apply" 2>&1)"; rc=$?
 chk "packed arg to merge exits 64" "$([ "$rc" = 64 ]; echo $?)"
 chk_has "packed arg to merge names the packed-flags refusal" "$out" "wrap.sh merge: argument '"
+
+REAL_GIT_BIN="$(command -v git)"
+
+# build_remerge_reg <name> [--branch-gen] -- the registry layout on the merge fixture's
+# shape: a bare origin, a clone holding feat/union in its main worktree, both sides having
+# regenerated docs/FEATURES.md (a conflict the union driver cannot touch). The stub
+# generator also touches gen-ran.marker, an ignored path, so a cycle that ran it leaves the
+# marker behind even after a restore: its absence proves the generator never ran.
+# --branch-gen edits the generator on feat/union only, which must withhold it from the
+# cycle (the two sides disagree on it).
+build_remerge_reg() {
+  local name="$1" bgen="${2:-}" work="$TMPD/rr-work-$1" clone="$TMPD/rr-clone-$1"
+  mkdir -p "$work/lib/registry" "$work/specs" "$work/docs"
+  git -C "$work" init -q; gitc "$work"
+  git -C "$work" symbolic-ref HEAD refs/heads/main
+  { printf '#!/usr/bin/env bash\nroot="$(cd "$(dirname "$0")/../.." && pwd)"\n'
+    printf 'ls "$root/specs" | LC_ALL=C sort > "$root/docs/FEATURES.md"\n'
+    printf 'touch "$root/gen-ran.marker"\n'
+  } > "$work/lib/registry/feature-registry.sh"
+  chmod +x "$work/lib/registry/feature-registry.sh"
+  echo base > "$work/base.txt"
+  printf 'gen-ran.marker\n' > "$work/.gitignore"
+  echo a > "$work/specs/a.md"
+  ( cd "$work" && bash lib/registry/feature-registry.sh generate )
+  rm -f "$work/gen-ran.marker"
+  git -C "$work" add -A; git -C "$work" commit -qm base
+  git -C "$work" checkout -q -b feat/union
+  echo b > "$work/specs/b.md"
+  ( cd "$work" && bash lib/registry/feature-registry.sh generate )
+  rm -f "$work/gen-ran.marker"
+  if [ "$bgen" = "--branch-gen" ]; then
+    printf 'echo branch >> "$root/gen-ran.marker"\n' >> "$work/lib/registry/feature-registry.sh"
+  fi
+  git -C "$work" add -A; git -C "$work" commit -qm "branch change"
+  git -C "$work" checkout -q main
+  echo o > "$work/specs/o.md"
+  ( cd "$work" && bash lib/registry/feature-registry.sh generate )
+  rm -f "$work/gen-ran.marker"
+  git -C "$work" add -A; git -C "$work" commit -qm "main change"
+  git clone -q --bare "$work" "$TMPD/rr-bare-$name"
+  git clone -q "$TMPD/rr-bare-$name" "$clone"; gitc "$clone"
+  git -C "$clone" remote set-head origin main >/dev/null 2>&1
+  git -C "$clone" checkout -q -b feat/union origin/feat/union
+}
+
+echo "--- merge-cycle: a FEATURES conflict re-merges, pushes and the PR merges"
+# The same cycle land runs, reached through `wrap merge --apply`: today this aborted on
+# the first non-union path. The resolved tree lands a real merge commit on feat/union and
+# the recovered PR then squash-merges as before.
+build_remerge_reg rfeat
+RR="$TMPD/rr-clone-rfeat"; RR_TIP="$(git -C "$RR" rev-parse feat/union)"
+RR_MAIN="$(git -C "$TMPD/rr-bare-rfeat" rev-parse main)"
+: > "$GH_STUB_CALLS"; rm -f "$GH_STUB_CALLS".*
+out="$(GH_STUB_OPEN_PRS="$(open_one 100)" GH_STUB_PR_100="$(conflict_json 100 "$RR_TIP")" \
+  GH_STUB_PR_100_2="$(mergeable_json 100 %REMERGE_TIP% MERGEABLE CLEAN)" \
+  GH_STUB_LAND_REPO="$RR" GH_STUB_LAND_REMOTE="$TMPD/rr-bare-rfeat" \
+  GH_STUB_LAND_BRANCH=feat/union GH_STUB_LAND_DEF=main \
+  "$WRAP" merge --apply "$RR" 2>&1)"; rc=$?
+chk "merge-cycle: FEATURES re-merge exits 0" "$rc"
+chk_has "merge-cycle: FEATURES re-merge reports the push" "$out" \
+  "re-merged origin/main into feat/union, pushed"
+chk_has "merge-cycle: FEATURES re-merge merges the recovered PR" "$out" \
+  "merged #100 ($(git -C "$TMPD/rr-bare-rfeat" rev-parse main)): tree verified"
+chk "merge-cycle: the merge commit has both parents" \
+  "$([ "$(git -C "$RR" rev-parse 'feat/union^1')" = "$RR_TIP" ] \
+    && [ "$(git -C "$RR" rev-parse 'feat/union^2')" = "$RR_MAIN" ]; echo $?)"
+chk_has "merge-cycle: the merge commit carries the conventional subject" \
+  "$(git -C "$RR" log --format=%s -1 feat/union)" "chore(merge): merge origin/main"
+chk "merge-cycle: FEATURES in the pushed head equals a fresh generate" \
+  "$([ "$(git -C "$RR" show feat/union:docs/FEATURES.md)" = "$(printf 'a.md\nb.md\no.md\n')" ]; echo $?)"
+chk "merge-cycle: the generator ran (its ignored marker exists)" \
+  "$([ -f "$RR/gen-ran.marker" ]; echo $?)"
+
+echo "--- merge-cycle: a generator the branch changed is never run"
+build_remerge_reg rgen --branch-gen
+RRG="$TMPD/rr-clone-rgen"; RRG_TIP="$(git -C "$RRG" rev-parse feat/union)"
+: > "$GH_STUB_CALLS"; rm -f "$GH_STUB_CALLS".*
+out="$(GH_STUB_OPEN_PRS="$(open_one 101)" GH_STUB_PR_101="$(conflict_json 101 "$RRG_TIP")" \
+  "$WRAP" merge --apply "$RRG" 2>&1)"; rc=$?
+chk "merge-cycle: a branch-changed generator exits 0 without merging" "$rc"
+chk_has "merge-cycle: FEATURES is refused by name" "$out" \
+  "REFUSED feat/union: conflict in docs/FEATURES.md"
+chk "merge-cycle: the generator never ran (marker absent)" \
+  "$([ ! -e "$RRG/gen-ran.marker" ]; echo $?)"
+chk "merge-cycle: the branch tip is untouched" \
+  "$([ "$(git -C "$RRG" rev-parse feat/union)" = "$RRG_TIP" ]; echo $?)"
+chk "merge-cycle: origin holds only the pre-merge tip" \
+  "$([ "$(git -C "$TMPD/rr-bare-rgen" rev-parse feat/union)" = "$RRG_TIP" ]; echo $?)"
+chk "merge-cycle: a branch-changed generator called no pr merge" \
+  "$(grep -q '^pr merge' "$GH_STUB_CALLS" && echo 1 || echo 0)"
+
+echo "--- merge-cycle: a restore that cannot finish needs a human"
+build_remerge_reg rhuman
+RRH="$TMPD/rr-clone-rhuman"; RRH_TIP="$(git -C "$RRH" rev-parse feat/union)"
+printf 'conflict\n' >> "$RRH/base.txt"; git -C "$RRH" commit -qam "branch edits base.txt"
+git -C "$RRH" push -q origin feat/union
+RRH_TIP="$(git -C "$RRH" rev-parse feat/union)"
+RH_ADV="$TMPD/rr-adv-rhuman"; git clone -q "$TMPD/rr-bare-rhuman" "$RH_ADV"; gitc "$RH_ADV"
+printf 'conflict-other\n' >> "$RH_ADV/base.txt"
+git -C "$RH_ADV" commit -qam "main edits base.txt"; git -C "$RH_ADV" push -q origin main
+git -C "$RRH" fetch -q origin main
+mkdir -p "$TMPD/gshim-noabort"
+cat > "$TMPD/gshim-noabort/git" <<SH
+#!/usr/bin/env bash
+for a in "\$@"; do [ "\$a" = "--abort" ] && exit 1; done
+exec "$REAL_GIT_BIN" "\$@"
+SH
+chmod +x "$TMPD/gshim-noabort/git"
+: > "$GH_STUB_CALLS"; rm -f "$GH_STUB_CALLS".*
+out="$(PATH="$TMPD/gshim-noabort:$PATH" \
+  GH_STUB_OPEN_PRS="$(open_one 102)" GH_STUB_PR_102="$(conflict_json 102 "$RRH_TIP")" \
+  "$WRAP" merge --apply "$RRH" 2>&1)"; rc=$?
+chk "merge-cycle: an unrestored re-merge exits 2" "$([ "$rc" -eq 2 ]; echo $?)"
+chk_has "merge-cycle: ABORT FAILED is named" "$out" "ABORT FAILED feat/union"
+chk_has "merge-cycle: the human-needing checkout is named" "$out" \
+  "FAILED merge #102: the re-merge left $(cd "$RRH" && pwd -P) needing a human"
+chk "merge-cycle: no squash-fallback PR was created" \
+  "$(grep -q '^pr create' "$GH_STUB_CALLS" && echo 1 || echo 0)"
+chk "merge-cycle: the merge is still in progress for the human" \
+  "$([ -e "$RRH/.git/MERGE_HEAD" ]; echo $?)"
+
+echo "--- merge-cycle: --verify red pushes nothing and the PR stays open"
+build_remerge rver
+RRV="$TMPD/rm-clone-rver"; RRV_TIP="$(git -C "$RRV" rev-parse feat/union)"
+: > "$GH_STUB_CALLS"; rm -f "$GH_STUB_CALLS".*
+out="$(GH_STUB_OPEN_PRS="$(open_one 103)" GH_STUB_PR_103="$(conflict_json 103 "$RRV_TIP")" \
+  "$WRAP" merge --apply --verify false "$RRV" 2>&1)"; rc=$?
+chk "merge-cycle: verify red exits 0 without merging" "$rc"
+chk_has "merge-cycle: VERIFY FAILED names the checkout" "$out" \
+  "VERIFY FAILED feat/union: false exited 1 in $(cd "$RRV" && pwd -P)"
+chk "merge-cycle: verify red pushed nothing" \
+  "$([ "$(git -C "$TMPD/rm-bare-rver" rev-parse feat/union)" = "$RRV_TIP" ]; echo $?)"
+chk "merge-cycle: verify red called no pr merge" \
+  "$(grep -q '^pr merge' "$GH_STUB_CALLS" && echo 1 || echo 0)"
+chk "merge-cycle: verify red restored the tip" \
+  "$([ "$(git -C "$RRV" rev-parse feat/union)" = "$RRV_TIP" ]; echo $?)"
+
+echo "--- merge-cycle: TERM inside a scratch-worktree cycle exits 130 and drops it"
+build_remerge rint
+RRI="$TMPD/rm-clone-rint"
+git -C "$RRI" checkout -q main; git -C "$RRI" branch -qD feat/union
+RRI_TIP="$(git -C "$TMPD/rm-bare-rint" rev-parse feat/union)"
+RRI_WT_BEFORE="$(git -C "$RRI" worktree list --porcelain | grep -c '^worktree ')"
+: > "$GH_STUB_CALLS"; rm -f "$GH_STUB_CALLS".*
+out="$(GH_STUB_OPEN_PRS="$(open_one 104)" GH_STUB_PR_104="$(conflict_json 104 "$RRI_TIP")" \
+  GH_STUB_LAND_REPO="$RRI" GH_STUB_LAND_REMOTE="$TMPD/rm-bare-rint" GH_STUB_LAND_BRANCH=origin/feat/union \
+  "$WRAP" merge --apply --verify 'kill -TERM $PPID' "$RRI" 2>&1)"; rc=$?
+chk "merge-cycle: an interrupted scratch cycle exits 130" "$([ "$rc" -eq 130 ]; echo $?)"
+chk "merge-cycle: the scratch worktree and its temp dir are gone" \
+  "$([ "$(git -C "$RRI" worktree list --porcelain | grep -c '^worktree ')" -eq "$RRI_WT_BEFORE" ]; echo $?)"
+chk "merge-cycle: the interrupt pushed nothing" \
+  "$([ "$(git -C "$TMPD/rm-bare-rint" rev-parse feat/union)" = "$RRI_TIP" ]; echo $?)"
+
+echo "--- merge-cycle: --verify with no value exits 64, and --help names the flag"
+out="$("$WRAP" merge --verify 2>&1)"; rc=$?
+chk "merge-cycle: bare --verify exits 64" "$([ "$rc" -eq 64 ]; echo $?)"
+chk_has "merge-cycle: bare --verify names the missing value" "$out" "--verify needs a value"
+out="$("$WRAP" merge "$TMPD" --verify 2>&1)"; rc=$?
+chk "merge-cycle: trailing --verify exits 64" "$([ "$rc" -eq 64 ]; echo $?)"
+chk "merge-cycle: wrap --help names --verify" \
+  "$("$WRAP" --help 2>/dev/null | grep -q -- '--verify'; echo $?)"
+chk "merge-cycle: bin/wrap usage names --verify on both verbs" \
+  "$([ "$(grep -c -- '--verify' "$WRAP")" -ge 2 ]; echo $?)"
 
 
 echo
