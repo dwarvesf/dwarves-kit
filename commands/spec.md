@@ -22,14 +22,14 @@ Check for an existing brief, slugged file first: `docs/briefs/DECISION-BRIEF-<sl
 
 | Level | Header line | Turns on |
 |---|---|---|
-| standard | `Depth: standard (<why nothing deeper is needed>)` | nothing extra: zero research agents, the two-lens floor test-plan review |
+| standard | `Depth: standard (<why nothing deeper is needed>)` | nothing extra: zero research agents, the two-lens light test-plan review |
 | research, repo | `Depth: research (repo: <the unknown>)` | the 4 brownfield research agents (Step 2). The unknown is a fact about this codebase that reading the files or running one command cannot settle |
 | research, outside | `Depth: research (outside: <the unknown>)` | `/kit:get-api-docs` per named API plus one web research pass (Step 2). The unknown is a fact outside the repo |
 | blind-spot | `Depth: blind-spot (failure: <the failure mode>)` | the full 6-lens test-plan review team with revise rounds. The failure mode is one the author expects not to see alone |
 
 Join levels with ` + `. A reason that only says the work matters (important, critical, risky, core, complex, sensitive, big) earns nothing deeper, and `lib/spec/spec-depth.sh check` rejects it. A `standard` spec must have an empty `## Open questions`. The helper reads only the header (before the first `## `).
 
-`lib/spec/spec-depth.sh` reads a file, so write the header stub now: pick NNN as Step 3 describes, create `docs/specs/SPEC-NNN-<slug>.md` holding the title, `Generated:`, `Status: DRAFT`, `Lane:` and the `Depth:` line. Step 3 fills in the rest of the same file.
+`lib/spec/spec-depth.sh` reads a file, so write the header stub now: pick NNN as Step 3 describes, create `docs/specs/SPEC-NNN-<slug>.md` holding the title, `Generated:`, `Status: DRAFT`, `Lane:` and the `Depth:` line. Step 3 fills in the rest of the same file, using the NNN already in the stub; it does not call `spec-next.sh` again.
 
 ### Step 2: Research (by depth)
 
@@ -94,7 +94,7 @@ Source: GSD v1's 4 parallel researchers. Mode A uses formal `.claude/agents/` fi
 
 ### Step 3: Generate the spec
 
-Create `docs/specs/` directory if it doesn't exist. Generate these files (the main spec already exists as the Step 1 header stub; fill it in and keep its `Lane:` and `Depth:` lines):
+Create `docs/specs/` directory if it doesn't exist. The Step 1 stub already holds the NNN: use it and do not call `spec-next.sh` again (the paragraph below is how Step 1 picked it). Generate these files (the main spec already exists as the Step 1 header stub; fill it in and keep its `Lane:` and `Depth:` lines):
 
 **`docs/specs/SPEC-NNN-<slug>.md`** (main spec). Pick NNN with
 `bash lib/spec/spec-next.sh next`, never by eyeballing the specs dir: it also scans branch

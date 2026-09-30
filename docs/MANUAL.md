@@ -120,7 +120,7 @@ Opt-in downstream UI-design loop (downstream-facing; the kit has no UI, so it ca
 
 ### `/kit:test-plan`
 
-Opt-in lane between `/kit:spec-validate` and `/kit:execute`. Reads the active spec's acceptance criteria and writes a `## Test plan` coverage matrix (with a `proof` column naming the command/artifact per case) into the active spec, across happy-path / boundary / failure-injection / security / regression. `/kit:execute` reads that section as its coverage target and uses each case's `proof` as the per-step verify. A coverage target, not exhaustive; not a roundtable. Next comes `/kit:test-plan-review-team --floor` (Coverage and Oracle lenses, one pass), or the full team when the spec's `Depth:` names a blind-spot.
+Opt-in lane between `/kit:spec-validate` and `/kit:execute`. Reads the active spec's acceptance criteria and writes a `## Test plan` coverage matrix (with a `proof` column naming the command/artifact per case) into the active spec, across happy-path / boundary / failure-injection / security / regression. `/kit:execute` reads that section as its coverage target and uses each case's `proof` as the per-step verify. A coverage target, not exhaustive; not a roundtable. Next comes `/kit:test-plan-review-team --light` (Coverage and Oracle lenses, one pass), or the full team when the spec's `Depth:` names a blind-spot.
 
 ### `/kit:test-write`
 

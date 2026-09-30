@@ -109,6 +109,7 @@ if want spec-md-wiring; then
   assert_eq "outside pass writes the -outside file" 0 "$(has "$S" 'docs/research/<date>-<slug>-outside.md')"
   assert_eq "records the depth= action line" 0 "$(has "$S" 'depth=<levels> research_agents=<N>')"
   assert_eq "design pass keyed on gate-ledger plan" 0 "$(has "$S" 'gate-ledger.sh plan <lane>')"
+  assert_eq "step 3 reuses the stub NNN, no second spec-next call" 0 "$(has "$S" 'do not call `spec-next.sh` again')"
   assert_eq "unconditional 4-agent brownfield rule is gone" 0 "$(grep -c 'If modifying existing code, run codebase research before generating the spec' "$S")"
 fi
 
@@ -118,6 +119,9 @@ if want validate-wiring; then
   assert_eq "Reviewer 4 runs spec-depth.sh check" 0 "$(has "$V" 'spec-depth.sh check')"
   assert_eq "importance lens question" 0 "$(has "$V" 'only importance')"
   assert_eq "standard-with-unknown lens question" 0 "$(has "$V" 'an unknown or a failure mode it cannot test alone')"
+  assert_eq "depth rule overrides the Grounding never-critical" 0 "$(has "$V" 'overrides the Grounding addendum')"
+  assert_eq "prefix rule listed among what the script flags" 0 "$(has "$V" 'a missing `repo:` / `outside:` / `failure:` prefix')"
+  assert_eq "None. placeholder counts as empty" 0 "$(has "$V" '`None.` placeholder counts as empty')"
   R4=$(sed -n '/^### Reviewer 4/,/^### Reviewer 5/p' "$V")
   assert_eq "the check sits inside Reviewer 4" 1 "$(printf '%s' "$R4" | grep -c 'spec-depth.sh check' | awk '{print ($1>=1)?1:0}')"
 fi
@@ -126,11 +130,14 @@ if want review-routing; then
   echo "=== review-routing (AC6) ==="
   P="$KIT_DIR/commands/test-plan.md"; T="$KIT_DIR/commands/test-plan-review-team.md"
   STEP4=$(sed -n '/^### Step 4: Hand off/,/^## Source/p' "$P")
-  assert_eq "test-plan step 4 names --floor" 1 "$(printf '%s' "$STEP4" | grep -c -- '--floor' | awk '{print ($1>=1)?1:0}')"
+  assert_eq "test-plan step 4 names --light" 1 "$(printf '%s' "$STEP4" | grep -c -- '--light' | awk '{print ($1>=1)?1:0}')"
   assert_eq "test-plan step 4 routes blind-spot to the full team" 1 "$(printf '%s' "$STEP4" | grep -c 'spec-depth.sh wants <spec> blind-spot' | awk '{print ($1>=1)?1:0}')"
-  assert_eq "team doc documents --floor as lenses 1 and 2, one pass" 0 "$(has "$T" 'lens 1 (Coverage completeness) and lens 2 (Oracle & falsifiability) to the plan in one pass')"
-  assert_eq "team doc writes the Scope: floor line" 0 "$(has "$T" 'Scope: floor (coverage + oracle)')"
-  assert_eq "team doc runs no revise loop under --floor" 0 "$(has "$T" 'no revise round')"
+  assert_eq "team doc documents --light as lenses 1 and 2, one pass" 0 "$(has "$T" 'lens 1 (Coverage completeness) and lens 2 (Oracle & falsifiability) to the plan in one pass')"
+  assert_eq "team doc writes the Scope: light line" 0 "$(has "$T" 'Scope: light (coverage + oracle)')"
+  assert_eq "team doc runs no revise loop under --light" 0 "$(has "$T" 'no revise round')"
+  assert_eq "light pass keeps lens 6 when a Tier column exists" 0 "$(has "$T" 'also applies lens 6 (Tiering & floor)')"
+  assert_eq "light pass is SOLID with no CRITICAL and no HIGH" 0 "$(has "$T" 'SOLID when the pass finds no CRITICAL and no HIGH finding')"
+  assert_eq "no stale floor-mode naming" 0 "$(grep -c -- '--floor' "$T" "$P" "$KIT_DIR/docs/WORKFLOW.md" | awk -F: '{n+=$2} END{print n}')"
   assert_eq "6-lens framing intact" 0 "$(has "$T" 'Dispatch 6 lenses')"
 fi
 
@@ -138,8 +145,8 @@ if want docs; then
   echo "=== docs (TASK-5) ==="
   W="$KIT_DIR/docs/WORKFLOW.md"
   assert_eq "WORKFLOW has a Depth paragraph" 0 "$(has "$W" '**Depth.**')"
-  assert_eq "WORKFLOW says floor pass at every depth" 0 "$(has "$W" 'the floor pass at every depth, the full team at blind-spot')"
-  assert_eq "WORKFLOW command row names --floor" 0 "$(has "$W" '/kit:test-plan-review-team --floor')"
+  assert_eq "WORKFLOW says light pass at every depth" 0 "$(has "$W" 'the light pass at every depth, the full team at blind-spot')"
+  assert_eq "WORKFLOW command row names --light" 0 "$(has "$W" '/kit:test-plan-review-team --light')"
 fi
 
 echo

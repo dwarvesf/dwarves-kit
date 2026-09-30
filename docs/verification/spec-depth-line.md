@@ -17,7 +17,7 @@
 | AC3 | inverse check | PASS | R1 `inverse`: 3 asserts |
 | AC4 | rid-tag phrases survive | PASS | R1 `spec-md-wiring`, R2 (test-meta asserts the phrase) |
 | AC5 | missing line: critical on new, warning on old | PASS | R1 `missing-line`: 6 asserts |
-| AC6 | review routing | PASS | R1 `review-routing`; live floor passes in `spec-depth-line/floor-passes.md` |
+| AC6 | review routing | PASS | R1 `review-routing`; live light passes in `spec-depth-line/light-passes.md` |
 | AC7 | default depth sends zero research agents (live `/kit:spec`) | PARTIAL | no live run; static wiring + ledger verb round-trip + dry trace (notes row 10) |
 | AC8 | `wants` never fires without a header line | PASS | R1 `wants` |
 | AC9 | no regressions | PASS | R2, R3 |
@@ -47,9 +47,9 @@ R2 and R3 ran on the BSD tool set only. The GNU tool set ran the new suite only.
 | Step 2 routes by depth (AC7 dry trace) | `wants <spec> research-repo` line altered | `spec-md-wiring`: 9 passed, 1 failed | 10 passed, 0 failed |
 | Rid phrase kept (AC4) | `include \`rid=<rid>\`` reworded | `spec-md-wiring`: 9 passed, 1 failed | 10 passed, 0 failed |
 | Validator runs the check (TASK-3) | `spec-depth.sh check` removed from Reviewer 4 | `validate-wiring`: 2 passed, 2 failed | 4 passed, 0 failed |
-| Floor routing (AC6) | `--floor` removed from test-plan step 4 | `review-routing`: 5 passed, 1 failed | 6 passed, 0 failed |
-| Docs wording (TASK-5) | floor/full phrase removed from WORKFLOW | `docs`: 2 passed, 1 failed | 3 passed, 0 failed |
-| The floor pass bites (AC6) | seeded-gap plan | 4 CRITICAL, RECONSIDER | good plan: 0 CRITICAL |
+| Light routing (AC6) | `--light` removed from test-plan step 4 | `review-routing`: 5 passed, 1 failed | 6 passed, 0 failed |
+| Docs wording (TASK-5) | light/full phrase removed from WORKFLOW | `docs`: 2 passed, 1 failed | 3 passed, 0 failed |
+| The light pass bites (AC6) | seeded-gap plan | 4 CRITICAL, RECONSIDER | two good plans: 0 CRITICAL, REVISE on HIGH (SOLID not reached live) |
 
 ## 4. Not covered
 
