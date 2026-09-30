@@ -1,6 +1,6 @@
 # ADR-0005: Separate verifier subagent instead of worker self-verification
 
-## Status: accepted (v1.2)
+## Status: accepted (v1.2). Superseded in part by ADR-0038: the separate read-only verifier stands, but its per-task placement ("after a worker subagent completes a task") becomes one pass over every task's criteria at the end of the build.
 
 ## Context
 After a worker subagent completes a task, the orchestrator needs to know if the work meets the spec. Two options: (A) have the worker self-verify, or (B) dispatch a separate read-only verifier.

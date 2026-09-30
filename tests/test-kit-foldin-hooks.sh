@@ -12,6 +12,13 @@ KIT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 TD="$(mktemp -d "${TMPDIR:-/tmp}/kit-foldin-hooks-test.XXXXXX")"
 trap 'rm -rf "${TD:?}"' EXIT
 
+# Pin a neutral operator/kit-root config and a marker-free harvest state dir: the harvest
+# hook stands down when the host's sweep is active, so an ambient kit.toml or installed
+# marker must never reach these tests. Rows that need their own state dir override it inline.
+mkdir -p "$TD/neutral-op" "$TD/neutral-root" "$TD/neutral-harvest-state"
+export KIT_CONFIG_OPERATOR="$TD/neutral-op" KIT_CONFIG_ROOT="$TD/neutral-root"
+export HARVEST_STATE_DIR="$TD/neutral-harvest-state"
+
 PASS=0
 FAIL=0
 TOTAL=0
@@ -759,9 +766,15 @@ if HOME="$INSTALL_HOME" bash "$KIT_DIR/install.sh" --with board,session,advisor 
     assert_exit "install.sh materializes hooks/${NAME}.sh" 0 $RC
     RC=0; [ -x "$DEST/${NAME}.sh" ] || RC=1
     assert_exit "install.sh materializes hooks/${NAME}.sh executable" 0 $RC
+  done
+  # citation-guard.sh is a pure bash+jq port with no .py companion; the other
+  # three still ship one.
+  for NAME in backlog-stage context-hints harvest; do
     RC=0; [ -f "$DEST/${NAME}.py" ] || RC=1
     assert_exit "install.sh materializes hooks/${NAME}.py (companion)" 0 $RC
   done
+  RC=0; [ -f "$DEST/citation-guard.py" ] && RC=1
+  assert_exit "install.sh does NOT materialize a citation-guard.py" 0 $RC
   RC=0; [ -f "$DEST/context-hints-skills-map.json" ] || RC=1
   assert_exit "install.sh materializes context-hints-skills-map.json (companion)" 0 $RC
 
@@ -804,7 +817,7 @@ echo "=== Done gate: no ops-toolkit path leaked into the new files ==="
 # ============================================================
 LEAK=$(grep -rln 'workspace/tieubao' \
   "$KIT_DIR/hooks/backlog-stage.sh" "$KIT_DIR/hooks/backlog-stage.py" \
-  "$KIT_DIR/hooks/citation-guard.sh" "$KIT_DIR/hooks/citation-guard.py" \
+  "$KIT_DIR/hooks/citation-guard.sh" \
   "$KIT_DIR/hooks/context-hints.sh" "$KIT_DIR/hooks/context-hints.py" \
   "$KIT_DIR/hooks/context-hints-skills-map.json" \
   "$KIT_DIR/hooks/harvest.sh" "$KIT_DIR/hooks/harvest.py" 2>/dev/null || true)

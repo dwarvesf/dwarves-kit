@@ -1,0 +1,61 @@
+{"name":"all-resolve","rc":0,"stdout":"","stderr":"","log":"","stray":""}
+{"name":"past-eof","rc":2,"stdout":"","stderr":"citation-guard: unresolved citations: a.md:6 (file has 5 lines); noeol.txt:3 (file has 2 lines); empty.txt:1 (file has 0 lines)","log":"?\ta.md:6 (file has 5 lines); noeol.txt:3 (file has 2 lines); empty.txt:1 (file has 0 lines)","stray":""}
+{"name":"line-zero","rc":0,"stdout":"","stderr":"","log":"","stray":""}
+{"name":"missing-file","rc":2,"stdout":"","stderr":"citation-guard: unresolved citations: nope.md:1 (no such file); sub/none.py:2 (no such file)","log":"?\tnope.md:1 (no such file); sub/none.py:2 (no such file)","stray":""}
+{"name":"logonly-default","rc":0,"stdout":"","stderr":"","log":"?\tnope.md:1 (no such file)","stray":""}
+{"name":"strict-true-is-not-strict","rc":0,"stdout":"","stderr":"","log":"?\tnope.md:1 (no such file)","stray":""}
+{"name":"strict-space","rc":0,"stdout":"","stderr":"","log":"?\tnope.md:1 (no such file)","stray":""}
+{"name":"fenced-ignored","rc":0,"stdout":"","stderr":"","log":"","stray":""}
+{"name":"fence-spans-blocks","rc":0,"stdout":"","stderr":"","log":"","stray":""}
+{"name":"unclosed-fence","rc":2,"stdout":"","stderr":"citation-guard: unresolved citations: nope.md:1 (no such file)","log":"?\tnope.md:1 (no such file)","stray":""}
+{"name":"inline-ignored","rc":0,"stdout":"","stderr":"","log":"","stray":""}
+{"name":"url-ignored","rc":0,"stdout":"","stderr":"","log":"","stray":""}
+{"name":"clock-and-ratio","rc":2,"stdout":"","stderr":"citation-guard: unresolved citations: v1.2:3 (no such file); 1.5:2 (no such file)","log":"?\tv1.2:3 (no such file); 1.5:2 (no such file)","stray":""}
+{"name":"word-boundary","rc":2,"stdout":"","stderr":"citation-guard: unresolved citations: a.md:99 (file has 5 lines)","log":"?\ta.md:99 (file has 5 lines)","stray":""}
+{"name":"dedupe-order","rc":2,"stdout":"","stderr":"citation-guard: unresolved citations: nope.md:2 (no such file); nope.md:1 (no such file)","log":"?\tnope.md:2 (no such file); nope.md:1 (no such file)","stray":""}
+{"name":"abs-path","rc":2,"stdout":"","stderr":"citation-guard: unresolved citations: /definitely/not/here.md:1 (no such file)","log":"?\t/definitely/not/here.md:1 (no such file)","stray":""}
+{"name":"dir-not-file","rc":2,"stdout":"","stderr":"citation-guard: unresolved citations: dir.d:1 (no such file)","log":"?\tdir.d:1 (no such file)","stray":""}
+{"name":"names","rc":2,"stdout":"","stderr":"citation-guard: unresolved citations: dash-name_v2.test.js:2 (file has 1 lines)","log":"?\tdash-name_v2.test.js:2 (file has 1 lines)","stray":""}
+{"name":"huge-line","rc":2,"stdout":"","stderr":"citation-guard: unresolved citations: a.md:99999999999999999999 (file has 5 lines)","log":"?\ta.md:99999999999999999999 (file has 5 lines)","stray":""}
+{"name":"root-override","rc":2,"stdout":"","stderr":"citation-guard: unresolved citations: a.md:1 (no such file)","log":"?\ta.md:1 (no such file)","stray":""}
+{"name":"session-id","rc":2,"stdout":"","stderr":"citation-guard: unresolved citations: nope.md:1 (no such file)","log":"S1\tnope.md:1 (no such file)","stray":""}
+{"name":"session-underscore","rc":2,"stdout":"","stderr":"citation-guard: unresolved citations: nope.md:1 (no such file)","log":"S2\tnope.md:1 (no such file)","stray":""}
+{"name":"no-refs","rc":0,"stdout":"","stderr":"","log":"","stray":""}
+{"name":"multi-block","rc":2,"stdout":"","stderr":"citation-guard: unresolved citations: nope.md:1 (no such file); a.md:9 (file has 5 lines)","log":"?\tnope.md:1 (no such file); a.md:9 (file has 5 lines)","stray":""}
+{"name":"backticks-unbalanced","rc":2,"stdout":"","stderr":"citation-guard: unresolved citations: nope.md:1 (no such file)","log":"?\tnope.md:1 (no such file)","stray":""}
+{"name":"trailing-colon","rc":0,"stdout":"","stderr":"","log":"","stray":""}
+{"name":"no-transcript-path","rc":0,"stdout":"","stderr":"","log":"","stray":""}
+{"name":"missing-transcript","rc":0,"stdout":"","stderr":"","log":"","stray":""}
+{"name":"malformed-stdin","rc":0,"stdout":"","stderr":"","log":"","stray":""}
+{"name":"string-content","rc":0,"stdout":"","stderr":"","log":"","stray":""}
+{"name":"last-has-no-text","rc":2,"stdout":"","stderr":"citation-guard: unresolved citations: nope.md:1 (no such file)","log":"?\tnope.md:1 (no such file)","stray":""}
+{"name":"no-assistant","rc":0,"stdout":"","stderr":"","log":"","stray":""}
+{"name":"unicode-after-digit","rc":2,"stdout":"","stderr":"citation-guard: unresolved citations: a.md:8 (file has 5 lines)","log":"?\ta.md:8 (file has 5 lines)","stray":""}
+{"name":"crlf-lines","rc":2,"stdout":"","stderr":"citation-guard: unresolved citations: crlf.txt:4 (file has 3 lines)","log":"?\tcrlf.txt:4 (file has 3 lines)","stray":""}
+{"name":"root-empty-falls-back","rc":2,"stdout":"","stderr":"citation-guard: unresolved citations: sub/b.py:4 (file has 3 lines)","log":"?\tsub/b.py:4 (file has 3 lines)","stray":""}
+{"name":"session-empty-falls-back","rc":2,"stdout":"","stderr":"citation-guard: unresolved citations: nope.md:1 (no such file)","log":"S3\tnope.md:1 (no such file)","stray":""}
+{"name":"log-set-empty","rc":2,"stdout":"","stderr":"citation-guard: unresolved citations: nope.md:1 (no such file)","log":"","stray":""}
+{"name":"log-relative","rc":2,"stdout":"","stderr":"citation-guard: unresolved citations: nope.md:1 (no such file)","log":"","stray":""}
+{"name":"log-unset-default-home","rc":0,"stdout":"","stderr":"","log":"?\tnope.md:1 (no such file)","stray":""}
+{"name":"cwd-absent-uses-pwd","rc":2,"stdout":"","stderr":"citation-guard: unresolved citations: a.md:6 (file has 5 lines)","log":"?\ta.md:6 (file has 5 lines)","stray":""}
+{"name":"nbsp-url","rc":2,"stdout":"","stderr":"citation-guard: unresolved citations: nope.md:1 (no such file)","log":"?\tnope.md:1 (no such file)","stray":""}
+{"name":"non-object-payload","rc":0,"stdout":"","stderr":"","log":"","stray":""}
+{"name":"inline-multiline-a","rc":0,"stdout":"","stderr":"","log":"","stray":""}
+{"name":"inline-multiline-b","rc":0,"stdout":"","stderr":"","log":"","stray":""}
+{"name":"url-nnbsp","rc":2,"stdout":"","stderr":"citation-guard: unresolved citations: nope.md:1 (no such file)","log":"?\tnope.md:1 (no such file)","stray":""}
+{"name":"url-thin-space","rc":2,"stdout":"","stderr":"citation-guard: unresolved citations: nope.md:2 (no such file)","log":"?\tnope.md:2 (no such file)","stray":""}
+{"name":"url-zwsp","rc":0,"stdout":"","stderr":"","log":"","stray":""}
+{"name":"leading-zeros","rc":2,"stdout":"","stderr":"citation-guard: unresolved citations: nope.md:7 (no such file); a.md:6 (file has 5 lines)","log":"?\tnope.md:7 (no such file); a.md:6 (file has 5 lines)","stray":""}
+{"name":"four-backtick-fence","rc":2,"stdout":"","stderr":"citation-guard: unresolved citations: nope.md:1 (no such file)","log":"?\tnope.md:1 (no such file)","stray":""}
+{"name":"unicode-punct-after","rc":2,"stdout":"","stderr":"citation-guard: unresolved citations: a.md:9 (file has 5 lines); a.md:8 (file has 5 lines); a.md:7 (file has 5 lines)","log":"?\ta.md:9 (file has 5 lines); a.md:8 (file has 5 lines); a.md:7 (file has 5 lines)","stray":""}
+{"name":"cwd-empty-string","rc":2,"stdout":"","stderr":"citation-guard: unresolved citations: a.md:6 (file has 5 lines)","log":"?\ta.md:6 (file has 5 lines)","stray":""}
+{"name":"nonjson-before-final","rc":2,"stdout":"","stderr":"citation-guard: unresolved citations: nope.md:1 (no such file)","log":"?\tnope.md:1 (no such file)","stray":""}
+{"name":"truncated-last-line","rc":2,"stdout":"","stderr":"citation-guard: unresolved citations: nope.md:1 (no such file)","log":"?\tnope.md:1 (no such file)","stray":""}
+{"name":"empty-text-block-last","rc":0,"stdout":"","stderr":"","log":"","stray":""}
+{"name":"text-block-no-key","rc":0,"stdout":"","stderr":"","log":"","stray":""}
+{"name":"crash-nonobject-line","rc":0,"stdout":"","stderr":"","log":"","stray":""}
+{"name":"crash-message-string","rc":0,"stdout":"","stderr":"","log":"","stray":""}
+{"name":"crash-text-null","rc":0,"stdout":"","stderr":"","log":"","stray":""}
+{"name":"line-zero-missing","rc":2,"stdout":"","stderr":"citation-guard: unresolved citations: nope.md:0 (no such file)","log":"?\tnope.md:0 (no such file)","stray":""}
+{"name":"crash-text-null-before-ref","rc":0,"stdout":"","stderr":"","log":"","stray":""}
+{"name":"lone-surrogate-final","rc":0,"stdout":"","stderr":"","log":"","stray":""}

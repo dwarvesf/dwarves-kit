@@ -1,0 +1,5 @@
+{"ts": "2026-09-20T10:00:00Z", "agent": "devin", "mode": "print", "handle": null, "title": "old", "brief": "/w/briefs/alpha.md", "brief_copy": "/w/copies/alpha-1.md", "cwd": "/work/app", "lead_session": "lead-old"}
+this line is not json
+{"ts": "2026-09-20T10:05:00Z", "agent": "devin", "mode": "tui", "handle": null, "title": "near", "brief": "/w/briefs/alpha.md", "brief_copy": "/w/copies/alpha-2.md", "cwd": "/work/app", "lead_session": "lead-near"}
+{"ts": "2026-09-20T10:04:00Z", "agent": "claude", "mode": "print", "handle": null, "title": "other agent", "brief": "/w/briefs/alpha.md", "brief_copy": "/w/copies/alpha-3.md", "cwd": "/work/app", "lead_session": "lead-claude"}
+{"ts": "2026-09-20T10:06:00Z", "agent": "devin", "mode": "print", "handle": null, "title": "copy only", "brief": "/w/briefs/beta.md", "brief_copy": "/w/copies/beta-1.md", "cwd": "/work/app", "lead_session": "lead-beta"}

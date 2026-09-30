@@ -1,0 +1,227 @@
+#!/usr/bin/env bash
+# bin/test-affected -- run only the tests a change touches, and skip the ones already green.
+#
+# Standalone maintainer tool (like bin/activate, bin/release): not a forwarder.
+# Overlaps tests/run-all.sh --changed on purpose-narrow ground: that one picks by a code-line
+# basename match and has no cache; this one picks by path OR basename anywhere in a suite,
+# records a PASS per content key, and can explain each pick (--list).
+#
+# Usage: test-affected [--base <ref>] [--list] [--no-cache]
+#   --base <ref>  diff base (default: origin/<default branch>, resolved like `wrap`)
+#   --list        print the selection and the reason for each (self | references <path> |
+#                 always), plus UNCOVERED files; run nothing
+#   --no-cache    ignore recorded PASSes (a PASS is still recorded)
+# Selection: a changed tests/test-*.sh -> itself; any other changed file -> every
+# tests/test-*.sh naming its repo-relative path. A non-source file (docs, fixtures) matches
+# only a full-path reference, never inside a longer path or a comment; a source (lib/, hooks/,
+# bin/, commands/, skills/, agents/) also matches by basename when that is over 5 chars; tests/test-meta.sh whenever anything changed. A changed file no test
+# names is UNCOVERED (reported, not a failure).
+# Cache: key = sha256(test + every source file it names + VERSION), under
+# <kit log dir>/test-cache/. Only PASS is recorded. An unusable cache dir means run all.
+# Exit: 0 all green, 1 any FAIL, 2 usage or no base.
+set -euo pipefail
+SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+die() { echo "test-affected: $*" >&2; exit 2; }
+
+BASE="" LIST=0 NOCACHE=0
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --base) [ $# -ge 2 ] || die "--base needs a ref"; BASE="$2"; shift 2 ;;
+    --list) LIST=1; shift ;;
+    --no-cache) NOCACHE=1; shift ;;
+    -h|--help) sed -n '2,/^set -euo/p' "$0" | sed '$d;s/^# \{0,1\}//'; exit 0 ;;
+    *) die "unknown argument: $1 (see --help)" ;;
+  esac
+done
+
+ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || die "not inside a git repo"
+cd "$ROOT"
+
+# Same resolution as lib/wrap/wrap.sh _default_branch: origin/HEAD if live, else main, else master.
+default_branch() {
+  local ref name
+  ref="$(git symbolic-ref --quiet refs/remotes/origin/HEAD 2>/dev/null || true)"
+  if [ -n "$ref" ]; then
+    name="${ref#refs/remotes/origin/}"
+    if [ "$name" != "$ref" ] && git show-ref --verify --quiet "refs/remotes/origin/$name"; then
+      printf '%s\n' "$name"; return 0
+    fi
+  fi
+  for name in main master; do
+    if git show-ref --verify --quiet "refs/remotes/origin/$name"; then printf '%s\n' "$name"; return 0; fi
+  done
+  return 1
+}
+if [ -z "$BASE" ]; then
+  name="$(default_branch)" || die "no default branch resolved (origin/HEAD, origin/main, origin/master all absent); pass --base"
+  BASE="origin/$name"
+fi
+git rev-parse --verify --quiet "$BASE^{commit}" >/dev/null || die "base ref not found: $BASE"
+
+TMP="$(mktemp -d "${TMPDIR:-/tmp}/test-affected.XXXXXX")"
+trap 'rm -rf "$TMP"' EXIT
+
+sha() { if command -v shasum >/dev/null 2>&1; then shasum -a 256; else sha256sum; fi | cut -c1-64; }
+
+# --- changed files: committed since the base, staged/unstaged, and untracked ---
+{
+  git -c core.quotepath=off diff --name-only "$BASE...HEAD" 2>/dev/null || true
+  git -c core.quotepath=off diff --name-only HEAD 2>/dev/null || true
+  git -c core.quotepath=off ls-files --others --exclude-standard
+} | grep -v '^$' | sort -u >"$TMP/changed" || true
+
+# --- source universe (for the cache key) and its token map: path and basename -> path ---
+git -c core.quotepath=off ls-files -co --exclude-standard -- 'lib/*.sh' 'tests/lib/*.sh' 'hooks/*' 'bin/*' 'commands/*.md' 'skills/*.md' 'agents/*.md' \
+  | grep -v '/tests/' | sort -u | while IFS= read -r s; do [ -f "$s" ] && printf '%s\n' "$s"; done >"$TMP/sources" || true
+# Basenames of 5 chars or fewer (`board`, `lint`) match half the suite; only the path counts.
+while IFS= read -r s; do
+  b="$(basename "$s")"
+  printf '%s\t%s\n' "$s" "$s"
+  [ "${#b}" -gt 5 ] && printf '%s\t%s\n' "$b" "$s"
+done <"$TMP/sources" >"$TMP/map" || true
+cut -f1 "$TMP/map" | sort -u >"$TMP/pats"
+
+is_source() { case "$1" in lib/*.sh|tests/lib/*.sh|hooks/*|bin/*|commands/*.md|skills/*.md|agents/*.md) return 0 ;; *) return 1 ;; esac; }
+
+# Suites that name a NON-source path as a path: not a comment line, not part of a longer path
+# (docs/README.md is not README.md), and not a longer name. `$KIT_DIR/README.md` counts.
+refs_exact() {
+  perl -e 'my $p = shift;
+FILE: for my $f (@ARGV) {
+  open(my $h, "<", $f) or next;
+  while (<$h>) {
+    next if /^\s*#/;
+    my $pos = 0;
+    while ((my $i = index($_, $p, $pos)) >= 0) {
+      my $end = $i + length($p); $pos = $end;
+      next if substr($_, $end, 1) =~ /[\w-]/;
+      my $pre = substr($_, 0, $i);
+      next if $pre =~ m{[\w.\-]$};
+      next if $pre =~ m{/$} && $pre !~ m{(?:\$\{?\w+\}?|\$\(.*\)|")/$};
+      print "$f\n"; next FILE;
+    }
+  }
+}' "$@"
+}
+
+# Suites naming a SOURCE by path, or by a basename over 5 chars, on a non-comment line.
+refs_any() {
+  perl -e 'my @p = split /\n/, shift;
+FILE: for my $f (@ARGV) {
+  open(my $h, "<", $f) or next;
+  while (<$h>) { next if /^\s*#/; for my $q (@p) { if (index($_, $q) >= 0) { print "$f\n"; next FILE } } }
+}' "$@"
+}
+
+# --- selection: "<test>\t<reason>" pairs and UNCOVERED files ---
+: >"$TMP/pairs"; : >"$TMP/uncovered"
+while IFS= read -r f; do
+  [ -n "$f" ] || continue
+  case "$f" in
+    tests/test-*.sh) [ -f "$f" ] && printf '%s\tself\n' "$f" >>"$TMP/pairs"; continue ;;
+  esac
+  if is_source "$f"; then
+    b="$(basename "$f")"
+    pats="$f"
+    [ "${#b}" -gt 5 ] && pats="$f
+$b"
+    hits="$(refs_any "$pats" tests/test-*.sh || true)"
+  else
+    hits="$(refs_exact "$f" tests/test-*.sh || true)"
+  fi
+  # A lib/<mod>/ change also picks the suites named for the module: tests/test-<mod>*.sh.
+  # lib/wrap/ is split one suite per module: wrap-<stem>.sh -> test-wrap-<stem>.sh only,
+  # report-lint.sh -> test-wrap-report-lint.sh, and the shared wrap.sh / wrap-common.sh
+  # fan out to every standalone suite. The compatibility runner (tests/test-wrap.sh)
+  # matches no `test-wrap-*` glob, so it is never picked here.
+  covered=0
+  case "$f" in
+    lib/wrap/wrap.sh|lib/wrap/wrap-common.sh)
+      for t in tests/test-wrap-*.sh; do
+        [ -f "$t" ] || continue
+        printf '%s\tmodule lib/wrap shared\n' "$t" >>"$TMP/pairs"; covered=1
+      done ;;
+    lib/wrap/wrap-*.sh)
+      t="tests/test-wrap-${f#lib/wrap/wrap-}"
+      if [ -f "$t" ]; then
+        printf '%s\tmodule %s\n' "$t" "${f#lib/}" >>"$TMP/pairs"; covered=1
+      fi ;;
+    lib/wrap/report-lint.sh)
+      if [ -f tests/test-wrap-report-lint.sh ]; then
+        printf 'tests/test-wrap-report-lint.sh\tmodule %s\n' "$f" >>"$TMP/pairs"; covered=1
+      fi ;;
+    lib/*/*)
+      mod="${f#lib/}"; mod="${mod%%/*}"
+      for t in tests/test-"$mod"*.sh; do
+        [ -f "$t" ] || continue
+        printf '%s\tmodule lib/%s\n' "$t" "$mod" >>"$TMP/pairs"; covered=1
+      done ;;
+  esac
+  if [ -n "$hits" ]; then
+    covered=1
+    printf '%s\n' "$hits" | while IFS= read -r t; do printf '%s\treferences %s\n' "$t" "$f"; done >>"$TMP/pairs"
+  fi
+  [ "$covered" = 1 ] || printf '%s\n' "$f" >>"$TMP/uncovered"
+done <"$TMP/changed"
+if [ -s "$TMP/changed" ] && [ -f tests/test-meta.sh ]; then
+  printf 'tests/test-meta.sh\talways\n' >>"$TMP/pairs"
+fi
+sort -u -o "$TMP/pairs" "$TMP/pairs"
+cut -f1 "$TMP/pairs" | sort -u >"$TMP/selected"
+
+if [ ! -s "$TMP/changed" ]; then echo "test-affected: no changes against $BASE"; exit 0; fi
+
+if [ "$LIST" = 1 ]; then
+  echo "test-affected: $(wc -l <"$TMP/changed" | tr -d ' ') changed files against $BASE"
+  while IFS="$(printf '\t')" read -r t why; do printf '  %s  (%s)\n' "$t" "$why"; done <"$TMP/pairs"
+  while IFS= read -r f; do printf '  UNCOVERED %s\n' "$f"; done <"$TMP/uncovered"
+  exit 0
+fi
+
+# --- cache: fail closed. Any trouble with the dir means no reads, so everything runs. ---
+CDIR=""
+if [ "$NOCACHE" = 0 ]; then
+  # shellcheck source=lib/telemetry/kit-log-dir.sh
+  if source "$SELF_DIR/../lib/telemetry/kit-log-dir.sh" 2>/dev/null \
+     && LOGDIR="$(kit_resolve_log_dir 2>/dev/null)" \
+     && mkdir -p "$LOGDIR/test-cache" 2>/dev/null \
+     && [ -r "$LOGDIR/test-cache" ] && [ -w "$LOGDIR/test-cache" ] && [ -x "$LOGDIR/test-cache" ]; then
+    CDIR="$LOGDIR/test-cache"
+  else
+    echo "test-affected: cache unusable; running without it" >&2
+  fi
+fi
+
+# The test, the sources it names (path or basename, the same scan the selector uses), VERSION.
+cache_key() {
+  {
+    printf 'test %s\n' "$(sha <"$1")"
+    printf 'version %s\n' "$(cat VERSION 2>/dev/null || true)"
+    grep -oFf "$TMP/pats" "$1" 2>/dev/null | awk '{print; n=split($0,a,"/"); print a[n]}' | sort -u \
+      | awk -F'\t' 'NR==FNR{m[$1]=m[$1] $2 "\n"; next} ($0 in m){printf "%s", m[$0]}' "$TMP/map" - \
+      | sort -u | while IFS= read -r s; do if [ -n "$s" ]; then printf '%s %s\n' "$s" "$(sha <"$s")"; fi; done || true
+  } | sha
+}
+
+_timeout() { if command -v timeout >/dev/null 2>&1; then timeout "$@"; else shift; "$@"; fi; }
+
+P=0 C=0 F=0 N=0
+while IFS= read -r t; do
+  N=$((N + 1))
+  key="$(cache_key "$t")"
+  if [ -n "$CDIR" ] && grep -q '^PASS ' "$CDIR/$key" 2>/dev/null; then
+    echo "CACHED $t"; C=$((C + 1)); continue
+  fi
+  if _timeout "${TEST_AFFECTED_TIMEOUT_SECS:-300}" bash "$t" >"$TMP/out" 2>&1; then
+    echo "PASS $t"; P=$((P + 1))
+    [ -n "$CDIR" ] && printf 'PASS %s\n' "$t" >"$CDIR/$key" 2>/dev/null || true
+  else
+    echo "FAIL $t"; F=$((F + 1))
+    tail -8 "$TMP/out" | sed 's/^/    | /'
+  fi
+done <"$TMP/selected"
+U="$(wc -l <"$TMP/uncovered" | tr -d ' ')"
+while IFS= read -r f; do echo "UNCOVERED $f"; done <"$TMP/uncovered"
+echo "test-affected: $N selected, $P pass, $C cached, $F fail, $U uncovered"
+[ "$F" -eq 0 ]

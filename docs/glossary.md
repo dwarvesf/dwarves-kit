@@ -20,7 +20,7 @@ Read the plain word; the jargon is what the code still calls it.
 | Jargon (in code) | Plain word | What it means |
 |---|---|---|
 | gate | a check / quality check | A checkpoint at a phase boundary that must pass before the work proceeds (e.g. the ship-gate refuses a push that has no proof of done). "Quality gate" is quasi-standard, so this one may stay. |
-| lane | risk level | How much ceremony a task gets, sized to its risk: `tiny` / `normal` / `full`. A one-line typo fix is a low risk level; an auth change is a high one. |
+| lane | risk level | How much ceremony a task gets, sized to its risk: `tiny` / `normal` / `full`. A one-line typo fix is a low risk level; an auth change is a high one. The default is `normal`; the diff, not the task's words, pushes a change to `full`. |
 | ledger | a log / an append-only history | The append-only record of what the run did (gates run, tokens spent, overrides). Never edited in place, only appended, so it is an audit trail. |
 | mega / mega-goal | a roadmap (multi-goal program) | One destination decomposed into several dependent sub-goals shipped one PR at a time. `bin/mega` drives the reconcile/report/review of such a program. |
 | harness | the kit | The whole machinery of this repo (hooks, commands, gates, agents). "The harness" and "the kit" mean the same thing; prefer "kit". |
@@ -49,6 +49,8 @@ prose, prefer the plain word.
 | stage | one of the five loop stages: Shape / Build / Watch / Check / Reflect |
 | wayfind | plan a big chunk of work as a shared decision map before splitting it |
 | doc-drift | the docs no longer match the code (sibling of spec-drift) |
+| diff floor | the check at push that gives a diff touching a hard path (migration, auth, secrets, CI, kit config, data loss) the full lane's gates |
+| ceremony (lens) | how many gate records and subagent dispatches a run made, next to what it shipped and caught (`stats ceremony`) |
 | topology-drift | the audit of every kit feature against its path map |
 | loop-engineering | designing a new bounded scan-fix loop |
 | audit-scanner | the shared read-only evidence gatherer (reports findings, never fixes) |

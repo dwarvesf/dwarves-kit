@@ -1,5 +1,5 @@
 ---
-description: "Adopt the current (or a target) repo into the dwarves-kit operate-contract: inject AGENTS.md + a CLAUDE.md loader + a WORKFLOW pointer + the proof marker, idempotently, and wire the lane/loop-type/proof classifiers so the ship-gate engages."
+description: "Adopt the current (or a target) repo into the dwarves-kit operate-contract: write a small AGENTS.md pointer (never over a repo's own file) + a CLAUDE.md loader + a WORKFLOW pointer + the proof marker, idempotently, and wire the lane/loop-type/proof classifiers so the ship-gate engages."
 ---
 
 You are adopting a repo into the dwarves-kit operating layer. This installs the operate-contract
@@ -24,7 +24,9 @@ or `--single-source` (see below).
 
 ## What adoption installs
 
-- `AGENTS.md` -- the operate-contract (read-first).
+- `AGENTS.md` -- a small pointer (about 1KB: four rules plus where the full contract lives), not a
+  copy of the 18KB contract. A repo's own `AGENTS.md` is never overwritten; an unmodified old kit
+  copy is replaced only by `--refresh --swap-agents`, and an edited file gets a drift line.
 - a `CLAUDE.md` loader pointer (Claude Code auto-loads CLAUDE.md, not AGENTS.md).
 - `WORKFLOW.md` -- a pointer to the installed kit's lane x phase matrix (not a 49KB copy).
 - `docs/verification/README.md` -- the proof marker that makes the ship-gate engage.

@@ -42,7 +42,7 @@
           {
             "type": "command",
             "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/anchor-root.sh ${CLAUDE_PLUGIN_ROOT}/hooks/ship-gate.sh",
-            "timeout": 5
+            "timeout": 30
           }
         ]
       },

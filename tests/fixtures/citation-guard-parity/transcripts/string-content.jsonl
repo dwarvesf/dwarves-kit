@@ -1,0 +1,3 @@
+not json
+
+{"type":"assistant","message":{"content":"a plain string, nope.md:1"}}

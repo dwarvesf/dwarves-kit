@@ -18,7 +18,7 @@ The kit is intentionally flat. Component dirs sit at the top of the repo, not ne
 
 **`bin/` is the stable consumer interface.** One more top-level dir holds the consumer-facing entrypoints: `bin/board`, `bin/classify`, `bin/gate`, `bin/precedent`, `bin/wrap`, thin forwarders to the corresponding `lib/<subsystem>/` entry. A CONSUMER of the kit (an adopted repo's `_meta/board` / `board-all` shim, or the CLAUDE.md block `lib/adopt.sh` injects) references `$DWARVES_KIT/bin/<name>`, never a deep `$DWARVES_KIT/lib/<subsystem>/<file>.sh` path. This is the durable fix for the board-shim class of bug: when the kit-modularity regroup moved `lib/board.sh` -> `lib/board/board.sh`, every consumer that hard-referenced the old deep path broke silently. With `bin/` as the contract, an internal `lib/` reorg's blast radius is the ONE kit-owned wrapper line inside `bin/<name>`, not every consumer. The pick (per-subsystem shims, NOT a `kit <sub> <verb>` uber-dispatcher) is constrained by AGENTS.md's "there is no `kit` uber-dispatcher" architecture statement; `bin/` merely exposes the existing per-subsystem commands at a stable path. `install.sh` deploys `bin/` next to `lib/` (copy in the bash install, symlink in plugin-compat).
 
-Two dirs hold bash that is not a CC primitive: `tests/` (the suites) and `lib/` (deterministic command-helper bash that a command invokes but that is not event-triggered, so it does not belong in `hooks/`). Today `lib/` holds `dispatch-gate.sh` (the pure-bash disjointness gate + drift guard `/kit:dispatch` runs, ADR-0019), `lane-classify.sh` (the deterministic task-type -> risk-lane classifier `/kit:assign` + `/kit:dispatch` call, plus the advisory `check` floor guard `/kit:assign` runs after a lane is chosen to flag an under-sized choice; warn + log, never block), `backlog.sh` (the Active queue rendered as a kanban board + the mechanical state flips behind `/kit:assign --next`, SPEC-055), and `goal-registry.sh` (the cross-session running-goal registry `/kit:assign` claims into and `/kit:start` lists, ADR-0022; it sources `dispatch-gate.sh` to reuse the one disjointness rule), `task-type-classify.sh` (the deterministic task -> work-type classifier, SPEC-054/057/060), `role-classify.sh` (the deterministic task -> specialist-DOMAIN fast-path hint behind dynamic agent synthesis, a cheap pre-filter to the open-ended meta-agent Mode C, SPEC-089), `gate-ledger.sh` (the per-run gate ledger + START routing record, ADR-0024/SPEC-061; a
+Two dirs hold bash that is not a CC primitive: `tests/` (the suites) and `lib/` (deterministic command-helper bash that a command invokes but that is not event-triggered, so it does not belong in `hooks/`). Today `lib/` holds `dispatch-gate.sh` (the pure-bash disjointness gate + drift guard `/kit:dispatch` runs, ADR-0019), `lane-classify.sh` (the deterministic task-type -> risk-lane classifier `/kit:assign` + `/kit:dispatch` call, plus the advisory `check` floor guard `/kit:assign` runs after a lane is chosen to flag an under-sized choice; warn + log, never block), `backlog.sh` (the Active queue rendered as a kanban board + the mechanical state flips behind `/kit:assign --next`, SPEC-055), and `goal-registry.sh` (the cross-session running-goal registry `/kit:assign` claims into and `/kit:start` lists, ADR-0022; it sources `dispatch-gate.sh` to reuse the one disjointness rule), `task-type-classify.sh` (the deterministic task -> work-type classifier, SPEC-054/057/060), `role-classify.sh` (the deterministic task -> specialist-DOMAIN fast-path hint behind dynamic agent synthesis, the builder lookup `/kit:execute` uses via `agent-for`, SPEC-089), `gate-ledger.sh` (the per-run gate ledger + START routing record, ADR-0024/SPEC-061; a
 `grill`+`skipped` line is write-time validated against a closed `reason=<home-turf|density-low|
 operator-wave>` enum, SPEC-138, so the kit's least-used gate is auditable rather than free text), `proof-gate.sh`/`proof-ledger.sh` (the proof-of-done class + ship-gate ledger, SPEC-016 line), and `lane-telemetry.sh` (the read-side aggregator over the run ledgers: `report` + `misfires`, reviewed at `/kit:retro` Step 1d, SPEC-061). A helper earns a place in `lib/` only when it must be unit-testable in isolation (all are); one-off bash a command runs inline stays inline (kit-health, ship). `board.sh` is the kit's cockpit board command: it wraps `backlog.sh` for the single-repo kanban render, migrates in the `priority` quadrant awk and the cross-repo `priority matrix` pivot that used to live in a consumer's own `_meta/board`/`_meta/board-all` wrapper scripts (byte-identical output is a pinned non-regression), and adds a `queue` subcommand that reads the CONSUMER's `boards.txt` registry (via `--repo-root`/`REPO_ROOT`, never a kit-side personal default) to emit an allow-listed feed for an unattended overnight runner. `parse-board.sh` is the one structured BACKLOG.md parser both `board.sh`'s `queue` and `board-mirror.sh` (below) reuse, rather than each re-parsing the markdown independently. `board-mirror.sh` backs the `board.sh mirror`/`status` subcommands: a git<->Hermes kanban bridge, read-mirror leg only (`board-writeback.sh` owns the reverse writeback leg). It extracts opted-in (`bridge=on` in `boards.txt`) BACKLOG.md rows + active mega-goal roadmaps, diffs them against an incremental NDJSON snapshot via a bash+awk keyed comparison (no DuckDB -- dozens of rows, not analytics), and loads through `hermes kanban` CLI verbs only (ADR-0001 native-first). A load-bearing finding from this sub-goal's live dev-home E2E: two of Hermes v0.18.0's six documented kanban states (`todo`, `running`) have NO durable CLI-only creation path at all (a card lands there for an instant, then a later unrelated CLI call silently auto-promotes it back to `ready`, with no gateway/dispatcher process running); the bridge's reachable target set is therefore `{triage, ready, blocked, done}` only, and `claimed`/`speccing`/`validated`/`executing` all fall back to `ready` honestly rather than claim a distinction the CLI cannot actually hold. `board-writeback.sh` backs `board.sh writeback`: the reverse leg, consuming the mirror snapshot as its bearing surface. It sources `board-mirror.sh` (function-level reuse, not a re-fork) for the extract/hash/native-state machinery, reverse-maps a Hermes-side status move onto its nearest legal `backlog.sh` git state (a documented lossy collapse -- the forward map is many-to-one, so `ready` reverse-maps to `claimed` as the honest nearest "picked up" state, never a guess at which of claimed/speccing/validated/executing the operator meant), and enforces the row_hash CONFLICT RULE (git wins: a Hermes-side edit applies only if the row's current hash still matches the snapshot's recorded value; a missing/corrupt snapshot refuses ALL edits outright rather than degrading to "apply everything"). Every apply lands in an ISOLATED `git worktree` off the CURRENT HEAD (never the caller's own checkout, never a stale ref), as one `actor=hermes`-attributed commit on a fresh `chore/board-sync` branch, pushed and opened as a HELD `gh pr create` PR (argv-only; never auto-merged). Snapshot refresh after a successful apply updates only `hermes_status` (so writeback does not re-diff the same not-yet-merged move); `row_hash` passes through unchanged, since the git SoT itself has not changed until the PR merges -- at which point `board mirror`'s own ordinary idempotence heals the row.
 
@@ -32,7 +32,7 @@ operator-wave>` enum, SPEC-138, so the kit's least-used gate is auditable rather
 /kit:think      reads:  user idea (chat)
                  writes: docs/briefs/DECISION-BRIEF-<slug>.md  (if BUILD; legacy: DECISION-BRIEF.md)
 
-/kit:spec       reads:  docs/briefs/DECISION-BRIEF-<slug>.md, codebase via 4 research agents
+/kit:spec       reads:  docs/briefs/DECISION-BRIEF-<slug>.md, codebase via research agents when Depth asks
                  writes: docs/specs/SPEC-NNN-<slug>.md  (Status: DRAFT)
                          docs/research/YYYY-MM-DD-<slug>-{stack,features,architecture,pitfalls}.md
 
@@ -41,7 +41,7 @@ operator-wave>` enum, SPEC-138, so the kit's least-used gate is auditable rather
 
 /kit:execute    reads:  docs/specs/SPEC-NNN-<slug>.md
                  writes: code, tests, docs/specs/SPEC-NNN-<slug>.md task checkmarks, decision log
-                 dispatches: worker -> task-verifier -> fix-agent (retry max 2)
+                 dispatches: one builder -> end verifiers (task, integration, acceptance) -> fix-agent (retry max 2)
 
 /kit:next       reads:  docs/specs/SPEC-NNN-<slug>.md
                  writes: code, tests; you drive verification
@@ -88,7 +88,7 @@ Every command and agent mapped to its V-model arm, grouped so the left side (BUI
 | `/kit:design` | command | Solution-design | build | Opt-in interactive beat between think and spec; shapes the solution one decision at a time |
 | `/kit:prototype` | command | Solution-design | build | Opt-in throwaway spike answering one design question (logic TUI or UI variants); decision folds into the brief/spec, code survives on a `prototype/<name>` branch |
 | `/kit:wayfind` | command | Requirement (intake) | build | User-invoked decision map for too-foggy-for-one-session efforts; typed tickets route to grill/prototype/research machinery; hands off to spec or a ROADMAP |
-| `/kit:spec` | command | Spec | build | Produces `SPEC-NNN-<slug>.md` (Status: DRAFT); dispatches 4 research agents for brownfield context |
+| `/kit:spec` | command | Spec | build | Produces `SPEC-NNN-<slug>.md` (Status: DRAFT); writes a `Depth:` line under `Lane:`, and dispatches the 4 brownfield research agents only when that line asks for repo research |
 | `/kit:feature-map` | command | Spec (brownfield) | build | Formalizes a feature inventory for any target project: dispatches `research-features` per module (parallel) into `docs/specs/<module>.md` + a top-level checklist; adds a MIGRATE table + parity contract when a port/migration target is named |
 | `/kit:ui-design` | command | UI design | build | Opt-in; writes UI brief, delegates generation, routes through visual-team, auto-revises (bounded) |
 | `research-architecture` | agent | Spec (brownfield) | build | Maps architecture patterns; dispatched by /spec; read-only |
@@ -101,7 +101,7 @@ Every command and agent mapped to its V-model arm, grouped so the left side (BUI
 
 | Entry | Type | V-phase | Arm | Note |
 |---|---|---|---|---|
-| `/kit:execute` | command | Build + test dispatch | code | The vertex; dispatches worker → task-verifier → fix-agent per task (max 2 retries); the test agents it dispatches are listed under the TEST arm |
+| `/kit:execute` | command | Build + test dispatch | code | The vertex; dispatches one builder for the whole spec, then one end verification pass (task-verifier over every task, integration, acceptance), with fix-agent on failure (max 2 retries) and a sampled recheck; the test agents it dispatches are listed under the TEST arm |
 | `/kit:next` | command | Build | code | Manual-drive variant of execute; loads next undone task, lets the human control the loop |
 | `fix-agent` | agent | Build (targeted fix) | code | Applies bounded fixes named by task-verifier; scoped to specific files/issues; no feature additions |
 
@@ -110,15 +110,15 @@ Every command and agent mapped to its V-model arm, grouped so the left side (BUI
 | Entry | Type | V-phase | Arm | Note |
 |---|---|---|---|---|
 | `/kit:test-plan` | command | Test design (write tests) | test | Opt-in; derives the coverage matrix from AC before /execute so the build has a planned target; the kit's single test-design step |
-| `/kit:test-plan-review-team` | command | Test design (review) | test | Opt-in; 6 lenses adversarially critique the `## Test plan` (lens 6 tiering N/A-skips on non-AI plans, SPEC-201) + bounded revise loop, between /test-plan and /execute; report-only |
+| `/kit:test-plan-review-team` | command | Test design (review) | test | Opt-in; 6 lenses adversarially critique the `## Test plan` (lens 6 tiering N/A-skips on non-AI plans, SPEC-201) + bounded revise loop, between /test-plan and /execute; `--light` runs lenses 1 and 2 in one pass with no revise rounds and is the default unless the spec's `Depth:` names a blind-spot; report-only |
 | `/kit:test-write` | command | Test design (materialize) | test | Opt-in; resolves a SOLID-verdict `## Test plan critique` and dispatches `test-writer` per matrix row to turn it into real, executing test code; never dispatches against a missing/stale/non-SOLID verdict |
 | `test-writer` | agent | Test design (materialize) | test | Turns a reviewed test-plan coverage matrix into runnable test code, one case per matrix row, in the repo's existing framework; write-capable but scope-locked to test files; dispatched by `/kit:test-write` |
-| `task-verifier` | agent | Unit / task test | test | Runs each task's AC + the project suite after each worker; read-only; primary enforcer in the verification pipeline |
+| `task-verifier` | agent | Unit / task test | test | Runs each task's AC + the project suite; callers invoke it per task, and `/kit:execute` once over every task at the end of the build; read-only; primary enforcer in the verification pipeline |
 | `integration-verifier` | agent | Integration test | test | Verifies cross-task wiring at /execute Step 4 for multi-task specs; read-only |
 | `/kit:ship` | command | Acceptance test (gate) | test | Executes the acceptance check; blocks on DO-NOT-SHIP; bumps version, writes changelog, cuts PR |
 | `acceptance-verifier` | agent | Acceptance test | test | Executes the spec's own `## Verification` section end to end and maps each AC to a passing check; read-only; fills the right arm's previously agent-less Acceptance row (ADR-0028 right-arm parity) |
 | `system-verifier` | agent | System test | test | Runs the whole assembled project test suite, unscoped, as the dynamic mirror of the design phase; read-only; fills the right arm's previously agent-less System-test row (ADR-0028 right-arm parity) |
-| `recheck-verifier` | agent | Re-audit (fresh-context) | test | Dispatched after a right-arm verifier (task-verifier/integration-verifier/acceptance-verifier/system-verifier) returns PASS; RE-EXECUTES the recorded verification command in a fresh context and re-judges, never a read-back; the ADR-0028 trust metric ("% of done-claims that survive a fresh-context re-audit") made real; advisory + recorded, never a mid-flight hard block |
+| `recheck-verifier` | agent | Re-audit (fresh-context) | test | Dispatched after a right-arm verifier (task-verifier/integration-verifier/acceptance-verifier/system-verifier) returns PASS on a sampled `/kit:execute` run, and on every self-attested row; RE-EXECUTES the recorded verification command in a fresh context and re-judges, never a read-back; the ADR-0028 trust metric ("% of done-claims that survive a fresh-context re-audit") made real; advisory + recorded, never a mid-flight hard block |
 | `/kit:verify` | command | Test re-run (on demand) | test | Read-only re-run of the unit + integration levels (dispatches `task-verifier` + `integration-verifier`) against the active spec; no rebuild, no fix; the right arm on demand |
 | `/kit:battery` | command | Independent verification (finished branch) | test | The full battery: fresh-context acceptance re-execution against a stated baseline + multi-lens review + advisor extra lens, dispatched in parallel at prescribed tiers; findings merged into one verdict, fixes applied by the lead |
 
@@ -151,8 +151,8 @@ Every command and agent mapped to its V-model arm, grouped so the left side (BUI
 | `/kit:wrap` | command | Land (post-ship) | cross-phase | Session-scoped landing step after ship: flips board rows, merges the operator's own green PRs one at a time (`bin/wrap merge`), checks a `workflow_dispatch` deploy's `headSha`, tidies branches and worktrees (`bin/wrap apply`), writes the activity line (`bin/wrap log`), and calls `/kit:retro` when a shipped PR merged this session |
 | `/kit:retro` | command | Reflect | cross-phase | Post-ship narrative mirror of the entire V; captures learnings, not a gate |
 | `/kit:start` | command | Session entry | cross-phase | Detects project state and recommends the right next command; never executes |
-| `/kit:onboard` | command | First-run onboarding | cross-phase | Interactive first-run orchestrator: detects install mode via `lib/onboard-detect.sh`, offers `/kit:adopt`, picks modules (bridging the plugin path's missing `--with`), captures consumer knobs from the SPEC-198 registry, discloses plugin-path gaps, ends with the five-stage tour; CALLS start/adopt/config, reimplements none (ADR-0034 fence); previews + confirms every write |
-| `/kit:adopt` | command | Repo onboarding | cross-phase | Injects the operate-contract + proof marker + a CLAUDE.md pointer into a target repo (idempotent, via `lib/adopt.sh`); wires the classifiers so the ship-gate engages there |
+| `/kit:onboard` | command | First-run onboarding | cross-phase | Interactive first-run orchestrator: detects install mode via `lib/onboard-detect.sh`, offers `/kit:adopt`, picks modules (bridging the plugin path's missing `--with`), captures consumer knobs from the SPEC-198 registry, discloses plugin-path gaps, ends with a two-idea tour (lane, proof of done) plus a menu; CALLS start/adopt/config, reimplements none (ADR-0034 fence); previews + confirms every write |
+| `/kit:adopt` | command | Repo onboarding | cross-phase | Writes a small AGENTS.md pointer (never over a repo's own file) + proof marker + a CLAUDE.md pointer into a target repo (idempotent, via `lib/adopt.sh`); wires the classifiers so the ship-gate engages there |
 | `/kit:kit-health` | command | Maintainer audit | cross-phase | Self-assessment against PHILOSOPHY.md; run before tagging; not part of the normal cycle |
 | `/kit:absorb` | command | Upstream maintenance | cross-phase | Audits Credits drift + seed-rescan; proposal-only; maintainer-only connective tissue |
 | `/kit:debug` | command | Bug lane (off-cycle) | cross-phase | Off-cycle loop: root cause before any fix; evidence ledger; 3-fix architecture wall |
@@ -166,8 +166,8 @@ Every command and agent mapped to its V-model arm, grouped so the left side (BUI
 | `api-reviewer` | agent | Code review | gate | Read-only api-contract-lens reviewer (breaking changes, versioning, schema, error codes, backward compat, idempotency); dispatched by `/kit:review-team` as the api domain lens |
 | `frontend-reviewer` | agent | Code review | gate | Read-only frontend-lens reviewer (a11y/ARIA, semantic HTML, focus/keyboard, state handling, responsive, color-only signaling); dispatched by `/kit:review-team` as the frontend domain lens |
 | `infra-reviewer` | agent | Code review | gate | Read-only infra-lens reviewer (deploy/rollback safety, CI/CD, container/IaC least-privilege, secrets, idempotent provisioning, blast radius); dispatched by `/kit:review-team` as the infra domain lens |
-| `db-migration-worker` | agent | Code (implement) | build | Write-capable schema-migration implementer (up + DOWN/rollback, batched backfill, index changes; guards long locks, no data drop without explicit ask); dispatched by `/kit:execute` 2b-0 as the db-migration domain implementer |
-| `data-etl-worker` | agent | Code (implement) | build | Write-capable data-pipeline implementer (ETL, DuckDB SQL transform, idempotent re-runs, schema validation, no silent row drops); dispatched by `/kit:execute` 2b-0 as the data-etl domain implementer |
+| `db-migration-worker` | agent | Code (implement) | build | Write-capable schema-migration implementer (up + DOWN/rollback, batched backfill, index changes; guards long locks, no data drop without explicit ask); dispatched by `/kit:execute` as the builder for the db-migration domain |
+| `data-etl-worker` | agent | Code (implement) | build | Write-capable data-pipeline implementer (ETL, DuckDB SQL transform, idempotent re-runs, schema validation, no silent row drops); dispatched by `/kit:execute` as the builder for the data-etl domain |
 | `audit-scanner` | agent | Estate audit (Tier 2) | cross-phase | Shared read-only evidence scanner for the audit-loop instances (doc-drift, topology-drift skills): receives target set + contract + evidence class, returns per-item verdicts in the audit-loop grammar with quoted evidence; tools roster has no write path, so the propose/apply split holds mechanically in unattended cadence runs |
 | `claim-verifier` | agent | Claim verification | cross-phase | Read-only adversarial panel over an ARBITRARY free-text claim: N in-context independent skeptics (default N=3, distinct attack angles, default-refute-if-uncertain, fail-closed), majority-vote structured verdict (HOLDS/REFUTED + tally + threshold + per-skeptic reasons); the semantic half of the citation-guard hook; dispatched on a load-bearing assertion (kit-foldin SG-06) |
 | `/kit:greenlight` | command | Post-push CI lane | cross-phase | Snapshots an open PR's checks via gh, classifies each failure real vs flaky, fixes real ones (fix-agent shape, verified locally before push), retries flaky within a bounded budget; opt-in, report-only, never hard-gates ship or merge |
@@ -268,7 +268,7 @@ file count so this table cannot drift):
 | `anchor-root` | every hooks.json/settings.json event except secrets-guard's PreToolUse entry | infrastructure | none (cds to the resolved root before exec'ing the real hook; owns no allow or deny rule) |
 | `safety-gate` | PreToolUse Bash | hard | destructive deletes, push-to-main, force-push under deadline pressure |
 | `secrets-guard` | PreToolUse Read/Edit/Bash | hard | reading secret files "just to check"; transcript is plaintext |
-| `ship-gate` | PreToolUse Bash | hard | shipping without proof of done / recorded gates (ADR-0024 boundary) |
+| `ship-gate` | PreToolUse Bash | hard | shipping without proof of done / recorded gates (ADR-0024 boundary); a hard-path diff owes the full lane's gates whatever the spec's `Lane:` says (when `[gate] lane_gates` is on at the merge base) |
 | `commit-format` | PreToolUse Bash | hard | drifting commit subjects (type, length, ticket-tag leakage) |
 | `board-row-gate` | PreToolUse Bash | hard | a session filing a board row for a follow-up it should do or drop; a new row needs a `board-row-ok: <reason>` line in the commit message; the one `[gate]` key that defaults on (`board_row_gate`) |
 | `anti-rationalization` | Stop | hard | declaring work complete while rationalizing known-incomplete work |
@@ -278,7 +278,7 @@ file count so this table cannot drift):
 | `context-readiness` | SessionStart | advisory | starting blind: injects spec/board state + an intent-first next step |
 | `context-hints` | UserPromptSubmit | convenience | none (temporal + keyword skill-hint injection, sub-ms, never blocks) |
 | `citation-guard` | Stop | advisory | hallucinated `file:line` citations in the final message; log-only by default, opt-in strict mode (`CITATION_GUARD_STRICT=1`) blocks |
-| `harvest` | PreCompact, SessionEnd | convenience | none (stages durable learnings / a LAB_LOG draft to a staging file; never writes a durable home, always exits 0) |
+| `harvest` | PreCompact, SessionEnd | convenience | none (stages durable learnings / a LAB_LOG draft to a staging file; never writes a durable home, always exits 0; its auto modes exit 0 without work on a host where the harvest sweep is active, unless `harvest.hook_when_sweep_on` is true) |
 | `backlog-stage` | SessionEnd | convenience | none (stages forward-looking work-items to a staging file; never writes the board, always exits 0) |
 | `intake-sweep` | SessionStart (invoked by backlog-stage --surface) | convenience | none (sweeps consumer-declared deferred-link sources into the same staging file; config-gated no-op, always exits 0) |
 | `auto-format` | PostToolUse Write/Edit | convenience | none (idempotent formatting) |
@@ -294,6 +294,8 @@ file count so this table cannot drift):
 | `prose-rag` | UserPromptSubmit | convenience | re-deriving what the consumer already wrote; injects prior notes on recall-shaped prompts (dormant unless PROSE_RAG_INJECT=1) |
 | `context-budget` | UserPromptSubmit | advisory | a long session burning most of its spend re-reading the same context from cache unnoticed; warns once per 100k-token band past 200k, never blocks |
 | `tool-policy-guard` | PreToolUse | advisory | drifting to a denied/ask-tier tool the policy file maps per domain (inert until a tool-policy.json exists) |
+
+**The harvest sweep is the second capture path.** The `harvest` hook stages per session at PreCompact and SessionEnd. On a host where the sweep is installed, `hooks/harvest_sweep.py` (reached as `hooks/harvest.py --sweep`) replaces it: a LaunchAgent renders from `deploy/macos/harvest-sweep/` and runs on a `harvest.schedule_hours` interval. Each run reads new claude transcripts (devin when `harvest.sources` lists it) behind a per-source cursor, extracts learnings and pattern sightings, stages them into sweep ledgers, and writes a wrap-shaped report. It builds, pushes, and merges nothing. A host is active only when `harvest.enable` is true and the `<state>/sweep/installed` marker exists. The marker is written by `install --apply` and never syncs. Flags: `--dry-run` (manifest, no cursor or ledger change), `--status`, `--flush-list`, `--mark-flushed`. A 5-hour or weekly usage limit holds the run (exit 0, cursor kept, no failure counted). `wrap.distill = "harvest"` leaves the distill half of `/kit:wrap` to the sweep on those hosts.
 
 **C3 reconciled.** PHILOSOPHY's "Guardrails over guidance" is bounded, not
 blanket: guardrail = the hard subset, where trust fails AND damage is
@@ -457,10 +459,10 @@ exit-criteria proof: `docs/specs/SPEC-106-dag-wavefront-scheduling.md` + `docs/v
 ## Verification pipeline (the load-bearing piece)
 
 ```
-worker subagent completes task
+builder subagent completes the build
   v
-task-verifier (read-only) checks acceptance criteria + tests
-  +--> PASS:  mark done in docs/specs/SPEC-NNN-<slug>.md, continue
+task-verifier (read-only), one pass over every task, checks acceptance criteria + tests
+  +--> PASS:  mark every task done in docs/specs/SPEC-NNN-<slug>.md, continue
   +--> FAIL:fixable:  dispatch fix-agent (write-scoped, retry_count < 2)
   |     |
   |     v
@@ -519,7 +521,7 @@ requirement is mentioned. JWT is simpler for this use case.
 **Step 4: Decision.** Mode-dependent.
 - **Lead mode**: Pause and ask the human. Use AskUserQuestion if available.
 - **Coder mode / subagent**: Orchestrator or verifier picks. If the recommendation aligns with the spec, proceed; if it contradicts, escalate.
-- **Autonomous mode** (/execute): Proceed with the recommendation. Log it. The task-verifier will catch misalignment.
+- **Autonomous mode** (/execute): Proceed with the recommendation. Log it. The end verification pass will catch misalignment.
 
 **Step 5: Record.** Append to `docs/specs/SPEC-NNN-<slug>.md` Decision Log:
 ```
@@ -541,7 +543,7 @@ In a command that dispatches an agent:
 [lead: pause for human approval / autonomous: proceed with recommendation and log]
 ```
 
-The orchestrator in `/execute` defaults to `autonomous` for worker subagents (the verifier catches bad decisions after the fact) and `lead` when the user is running `/next` manually.
+The orchestrator in `/execute` defaults to `autonomous` for the builder subagent (the verifier catches bad decisions after the fact) and `lead` when the user is running `/next` manually.
 
 ## Dependencies
 
@@ -643,7 +645,7 @@ guard), and how do I trigger it.
 | `DESIGNING` | solution exploration (iterative) | full lane, or "let's design" | solution approved |
 | `SPECIFYING` | the spec is being written | `/spec` | spec `DRAFT` exists |
 | `VALIDATING` | adversarial spec review | `/spec-validate` | `VALIDATED` or NEEDS REVISION |
-| `BUILDING` | execution sub-machine (worker -> verifier -> fix -> integration) | `/execute`, `/next` | all tasks + integration PASS |
+| `BUILDING` | execution sub-machine (builder -> end verifiers -> fix) | `/execute`, `/next` | all tasks + integration PASS |
 | `REVIEWING` | code review | `/review`, `/review-team` | verdict recorded |
 | `DOCUMENTING` | doc sync + doc-verifier | `/docs` | docs match code |
 | `SHIPPING` | ship pipeline | `/ship` | tagged/PR; spec `SHIPPED` |
@@ -714,7 +716,7 @@ guard), and how do I trigger it.
 
 ### Sub-machines
 
-- **BUILDING** expands to: `worker -> task-verifier -> {PASS | FAIL:fixable -> fix-agent (<=2) | FAIL:escalate} -> integration-verifier`. The diagram is in `docs/WORKFLOW.md` "## Flow and loop reference" (the execute pipeline), and the read-only contract is in "## Verification pipeline" above.
+- **BUILDING** expands to: `builder -> end verifiers (task-verifier, integration-verifier, acceptance-verifier) -> {PASS | FAIL:fixable -> fix-agent (<=2) | FAIL:escalate}`. The diagram is in `docs/WORKFLOW.md` "## Flow and loop reference" (the execute pipeline), and the read-only contract is in "## Verification pipeline" above.
 - **DEBUGGING** expands to: `Phase 1 Root cause -> Phase 2 Pattern -> Phase 3 Hypothesis -> Phase 4 Implementation`, under the iron law (no fix without a recorded root cause), guarded by the guess-fix guard. The diagram is in `docs/WORKFLOW.md` "## Flow and loop reference" (the debug loop).
 
 ### Hard stops as guards (the only blockers)

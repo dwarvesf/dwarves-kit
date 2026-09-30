@@ -1,8 +1,9 @@
 # Negative-control mutations for SPEC-359 (wrap apply --pull-only), one per PULL_ONLY gate.
-# Run from the repo root: bash lib/gate/negctl.sh "$PWD" "bash tests/test-wrap.sh" "python3 docs/verification/wrap-pull-only-negctl.py N1"
+# Run from the repo root: bash lib/gate/negctl.sh "$PWD" "bash tests/test-wrap-pull.sh" "python3 docs/verification/wrap-pull-only-negctl.py N1"
 # Each target must match exactly once, so a drifted line fails loudly instead of mutating nothing.
+# The gates live in the wrap modules: N3 in wrap-common.sh (run()), the rest in wrap-apply.sh.
 import sys
-n=sys.argv[1]; p='lib/wrap/wrap.sh'; s=open(p).read()
+n=sys.argv[1]; p='lib/wrap/wrap-common.sh' if n=='N3' else 'lib/wrap/wrap-apply.sh'; s=open(p).read()
 M={
  'N1':('if [ "$PULL_ONLY" != 1 ]; then','if [ "$PULL_ONLY" != 99 ]; then',1),
  'N2':('if [ "$PULL_ONLY" = 1 ] && [ "$fetch_ok" = 1 ]; then','if [ "$PULL_ONLY" = 99 ] && [ "$fetch_ok" = 1 ]; then',1),

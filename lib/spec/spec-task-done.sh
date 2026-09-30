@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # spec-task-done.sh -- mark one verified task done in a spec and, optionally, log its run.
 #
-# /kit:execute step 2e checks a task off after each PASS verdict and appends a
-# verification-log entry. Done by hand (sed, python heredocs) per task, both edits drift
+# /kit:execute checks every task off after the end verification PASS and appends a
+# verification-log entry. Done by hand (sed, python heredocs), both edits drift
 # from the documented shape. This makes the two edits and nothing else: it NEVER commits.
 # The caller commits the spec and the log together.
 #
@@ -11,13 +11,13 @@
 #       [--verify-log <path> --command <cmd> --exit <n> --excerpt <text> --verdict <text>
 #        [--reaudit <text>]]
 #
-# The flip:   `- [ ] TASK-3: title`  ->  `- [x] TASK-3 (DONE, commit <sha>, verified): title`
+# The flip:   `- [ ] <ID>: title`  ->  `- [x] <ID> (DONE, commit <sha>, verified): title`
 # It fails with a named error, changing nothing, when the ID has no unchecked line, is
-# already checked, or has more than one unchecked line. TASK-1 never matches TASK-10.
+# already checked, or has more than one unchecked line. An ID never matches a longer ID that starts with it.
 #
 # --verify-log appends this entry (the file is created with a `# Verification log` header
 # when absent); --command, --exit, --excerpt and --verdict are then required:
-#   ## TASK-3 title
+#   ## <ID> title
 #   - Command: `<cmd>`
 #   - Exit: <n>
 #   - Output (excerpt):
@@ -71,7 +71,7 @@ cp -p "$spec" "$tmp"
 
 # One pass: count unchecked and checked lines for the ID, flip the single unchecked one
 # into $tmp, and print its title. Prefix compare with substr, never a regex, so an ID
-# needs no escaping; the char after the ID must end it, so TASK-1 never hits TASK-10.
+# needs no escaping; the char after the ID must end it, so an ID never hits a longer ID that starts with it.
 rc=0
 title="$(awk -v id="$id" -v sha="$sha" -v out="$tmp" '
   function has(line, box,   s, p, c) {

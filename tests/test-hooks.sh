@@ -134,6 +134,177 @@ RC=$(run_hook safety-gate.sh '{"tool_input":{"command":"find . -name \"*.go\" -e
 assert_exit "D4: find -exec without rm is allowed" 0 $RC
 RC=$(run_hook safety-gate.sh '{"tool_input":{"command":"find ~/workspace -name \"*.md\" -type f"}}')
 assert_exit "D5: read-only find is allowed" 0 $RC
+
+# SPEC-332: segments split the way bash does. A quoted or escaped separator, a quoted <<,
+# a continuation line, a single &, or a substitution used to hide the push ref from the rule.
+# jq builds the JSON so the shell quoting under test reaches the hook byte for byte.
+q_hook() {
+  local RC=0
+  jq -n --arg c "$1" '{tool_input:{command:$c}}' | bash "$KIT_DIR/hooks/safety-gate.sh" >/dev/null 2>&1 || RC=$?
+  echo "$RC"
+}
+PUSH="git push"
+assert_exit "Q1: quoted ; in -o before main blocks" 2 "$(q_hook "$PUSH -o 'a;b' origin main")"
+assert_exit "Q2: quoted | in -o before main blocks" 2 "$(q_hook "$PUSH -o 'a|b' origin main")"
+assert_exit "Q3: quoted ; before --force blocks" 2 "$(q_hook "$PUSH -o 'a;b' --force origin feat/x")"
+assert_exit "Q4: double-quoted ; before main blocks" 2 "$(q_hook "$PUSH -o \"a;b\" origin main")"
+assert_exit "Q5: escaped ; before main blocks" 2 "$(q_hook "$PUSH -o a\\;b origin main")"
+assert_exit "Q6: ANSI-C quoted ; before main blocks" 2 "$(q_hook "$PUSH -o \$'a\\';b' origin main")"
+assert_exit "Q7: continuation line before main blocks" 2 "$(q_hook "$PUSH \\
+  origin main")"
+assert_exit "Q8: escaped quotes around a push block" 2 "$(q_hook "echo \\\" ; $PUSH origin main ; echo \\\"")"
+assert_exit "Q9: quoted << opens no heredoc" 2 "$(q_hook "echo \"<<X\"; $PUSH origin main")"
+assert_exit "Q10: quoted << hides no later line" 2 "$(q_hook "echo \"<<X\"
+$PUSH origin main")"
+assert_exit "Q11: the rest of a heredoc line is read" 2 "$(q_hook "cat <<EOF; $PUSH origin main
+body
+EOF")"
+assert_exit "Q12: push after ; inside bash -c blocks" 2 "$(q_hook "bash -c \"cd x; $PUSH origin main\"")"
+assert_exit "Q13: escaped-quoted main inside bash -c blocks" 2 "$(q_hook "bash -c \"cd x && $PUSH origin \\\"main\\\"\"")"
+assert_exit "Q14: push inside \$( ) inside quotes blocks" 2 "$(q_hook "echo \"\$($PUSH -o \"a;b\" origin main)\"")"
+assert_exit "Q15: push inside backticks blocks" 2 "$(q_hook "echo \`$PUSH origin main\`")"
+assert_exit "Q16: push after |& blocks" 2 "$(q_hook "x |& $PUSH origin main")"
+assert_exit "Q17: push after a single & blocks" 2 "$(q_hook "sleep 1 & $PUSH origin main")"
+assert_exit "Q18: push in a subshell with a quoted ; blocks" 2 "$(q_hook "($PUSH -o \"a;b\" origin main)")"
+assert_exit "Q19: quoted ; before a feature ref is allowed" 0 "$(q_hook "$PUSH -o \"a;b\" origin feat/x")"
+assert_exit "Q20: git -C with a quoted dir pushing a feature ref is allowed" 0 "$(q_hook "git -C \"\$WT\" push -u origin fix/x")"
+assert_exit "Q21: commit message with ; and | is allowed" 0 "$(q_hook "git commit -m \"feat(x): a; b | c\"")"
+assert_exit "Q22: heredoc commit message naming a push is allowed" 0 "$(q_hook "git commit -m \"\$(cat <<'EOF'
+fix: never $PUSH origin main; rm -rf /
+EOF
+)\"")"
+assert_exit "Q23: heredoc body naming a push is allowed" 0 "$(q_hook "cat > f <<EOF
+$PUSH origin main
+EOF
+echo done")"
+assert_exit "Q24: quoted parens in a git format are allowed" 0 "$(q_hook "git log --format=\"%(refname) x\"")"
+assert_exit "Q25: quoted non-artifact rm target still blocks" 2 "$(q_hook "rm -rf \"my dir\"")"
+assert_exit "Q26: quoted artifact rm target still allowed" 0 "$(q_hook "rm -rf \"node_modules\"")"
+# SPEC-332 rev 2: fresh-validator and break-it findings. Comments, here-strings, arithmetic,
+# and delimiter quoting used to open a false heredoc that hid every later line.
+assert_exit "Q27: apostrophe in a comment opens no quote" 2 "$(q_hook "echo hi # don't
+$PUSH -o 'a;b' origin main")"
+assert_exit "Q28: << in a comment opens no heredoc" 2 "$(q_hook "cat <<A # see <<B
+body
+A
+$PUSH origin main")"
+assert_exit "Q29: a here-string opens no heredoc" 2 "$(q_hook "cat <<<hello
+$PUSH origin main")"
+assert_exit "Q30: a shift in arithmetic opens no heredoc" 2 "$(q_hook "echo \$((1<<x))
+$PUSH origin main")"
+assert_exit "Q31: a quoted delimiter part reads as bash reads it" 2 "$(q_hook "cat <<'E'OF
+x
+EOF
+$PUSH origin main")"
+assert_exit "Q32: a heredoc body starts after the logical line" 2 "$(q_hook "cat <<A \\
+; $PUSH origin main
+A")"
+assert_exit "Q33: ( inside \$( ) keeps the substitution open" 2 "$(q_hook "echo \"\$( (true) & $PUSH origin main )\"")"
+assert_exit "Q34: backslash-newline inside a ref joins with no space" 2 "$(q_hook "$PUSH origin ma\\
+in")"
+assert_exit "Q35: if/then segment start" 2 "$(q_hook "if true; then $PUSH origin main; fi")"
+assert_exit "Q36: brace group and ! segment start" 2 "$(q_hook "{ ! $PUSH origin main; }")"
+assert_exit "Q37: for/do segment start" 2 "$(q_hook "for x in 1; do $PUSH origin main; done")"
+assert_exit "Q38: timeout and nice wrappers" 2 "$(q_hook "timeout 5m nice -n 10 $PUSH origin main")"
+assert_exit "Q39: sudo -u with an operand" 2 "$(q_hook "sudo -u root $PUSH origin main")"
+assert_exit "Q40: bash -lc wrapper" 2 "$(q_hook "bash -lc \"$PUSH origin main\"")"
+assert_exit "Q41: absolute path to git" 2 "$(q_hook "/usr/bin/git push origin main")"
+assert_exit "Q42: git -c before push" 2 "$(q_hook "git -c a.b=c push origin main")"
+assert_exit "Q43: leading redirection" 2 "$(q_hook "2>/dev/null $PUSH origin main")"
+assert_exit "Q44: bundled short force flags" 2 "$(q_hook "$PUSH -fu origin feat/x")"
+assert_exit "Q45: full ref destination main" 2 "$(q_hook "$PUSH origin HEAD:refs/heads/main")"
+assert_exit "Q46: --mirror push" 2 "$(q_hook "$PUSH --mirror origin")"
+assert_exit "Q47: brace-expanded ref" 2 "$(q_hook "$PUSH origin ma{in,x}")"
+assert_exit "Q48: rm -Rf" 2 "$(q_hook "rm -Rf ~/x")"
+assert_exit "Q49: kubectl -n ns delete" 2 "$(q_hook "kubectl -n prod delete pod x")"
+assert_exit "Q50: DROP TABLE in a psql heredoc" 2 "$(q_hook "psql <<SQL
+DROP TABLE x;
+SQL")"
+assert_exit "Q51: comment apostrophe before a heredoc commit is allowed" 0 "$(q_hook "# don't forget
+git commit -m \"\$(cat <<'EOF'
+rm -rf ~ was the bug
+EOF
+)\"")"
+assert_exit "Q52: sudo -E pushing a feature ref is allowed" 0 "$(q_hook "sudo -E $PUSH -u origin feat/x")"
+assert_exit "Q53: here-string then a feature push is allowed" 0 "$(q_hook "cat <<<hello; $PUSH -u origin feat/x")"
+assert_exit "Q54: continued rm of artifacts is allowed" 0 "$(q_hook "rm -rf \\
+  node_modules dist")"
+# SPEC-332 rev 3: validation round 2.
+assert_exit "Q55: coproc NAME { } names no command" 2 "$(q_hook "coproc NAME { $PUSH origin main; }")"
+assert_exit "Q56: function NAME { } names no command" 2 "$(q_hook "function f { $PUSH origin main; }; f")"
+assert_exit "Q57: caffeinate -u takes no operand" 2 "$(q_hook "caffeinate -u $PUSH origin main")"
+assert_exit "Q58: a shift in \$(( )) queues no delimiter" 2 "$(q_hook "cat <<A; echo \$((1<<B))
+A
+$PUSH origin main
+B")"
+assert_exit "Q59: zsh noglob and repeat wrappers" 2 "$(q_hook "noglob repeat 2 $PUSH origin main")"
+assert_exit "Q60: zsh always block" 2 "$(q_hook "{ true; } always { $PUSH origin main; }")"
+assert_exit "Q61: arithmetic then a feature push is allowed" 0 "$(q_hook "echo \$(( (1<<3) + 2 )); $PUSH -u origin feat/x")"
+# SPEC-332 rev 4: validation round 3.
+assert_exit "Q62: # after an escaped blank is not a comment" 2 "$(q_hook "echo a\\ #b & $PUSH origin main")"
+assert_exit "Q63: # after an escaped ; is not a comment" 2 "$(q_hook "echo a\\;#b \$($PUSH origin main)")"
+assert_exit "Q64: \$( ) inside \$(( )) is read" 2 "$(q_hook "echo \$(( \$($PUSH origin main) + 1 ))")"
+assert_exit "Q65: \$((x)& ...) is a substitution, not arithmetic" 2 "$(q_hook "echo \$((true)& $PUSH origin main)")"
+assert_exit "Q66: a shift in (( )) queues no delimiter" 2 "$(q_hook "cat <<A; (( x = 1<<B ))
+A
+$PUSH origin main
+B")"
+assert_exit "Q67: xargs -d takes an operand" 2 "$(q_hook "xargs -d x $PUSH origin main")"
+assert_exit "Q68: an apostrophe in a trailing comment opens no quote" 0 "$(q_hook "$PUSH -u origin feat/x # don't
+echo done")"
+# SPEC-332 rev 5: validation round 4. Word start and command start are tracked, not
+# guessed from an empty segment.
+assert_exit "Q69: (( after if queues no delimiter" 2 "$(q_hook "cat <<A; if (( x = 1<<B )); then :; fi
+A
+$PUSH origin main
+B")"
+assert_exit "Q70: (( after for queues no delimiter" 2 "$(q_hook "cat <<A; for (( i=0; i<<B; i++ )); do :; done
+A
+$PUSH origin main
+B")"
+assert_exit "Q71: # right after \$( ) is not a comment" 2 "$(q_hook "echo \$(true)# & $PUSH origin main")"
+assert_exit "Q72: # right after a backtick is not a comment" 2 "$(q_hook "echo \`true\`# & $PUSH origin main")"
+assert_exit "Q73: an escape in an earlier segment does not unmake a comment" 2 "$(q_hook "echo a\\ ; echo b #don't
+$PUSH -o 'a;b' origin main")"
+assert_exit "Q74: a lone ) re-reads (( as subshells" 2 "$(q_hook "((true & $PUSH origin main) )")"
+assert_exit "Q75: a lone ) re-reads a quoted ; inside ((" 2 "$(q_hook "((true; $PUSH -o 'a;b' origin main) )")"
+assert_exit "Q76: a lone ) re-reads \$(( as a substitution" 2 "$(q_hook "echo \$((true & $PUSH origin main) )")"
+assert_exit "Q77: arithmetic loop then a feature push is allowed" 0 "$(q_hook "for (( i=0; i<3; i++ )); do echo \$i; done; $PUSH -u origin feat/x")"
+# SPEC-332 rev 6: validation round 5.
+assert_exit "Q78: if(( with no blank queues no delimiter" 2 "$(q_hook "cat <<A; if((x=1<<B)); then :; fi
+A
+$PUSH origin main
+B")"
+assert_exit "Q79: # after a (( )) command is a comment" 2 "$(q_hook "cat <<A; ((1))#<<B
+A
+$PUSH origin main
+B")"
+assert_exit "Q80: a re-walk does not queue a delimiter twice" 2 "$(q_hook "echo \$(( \$(cat <<X) ) )
+body
+X
+$PUSH origin main
+X")"
+DEEP="echo "; for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30; do DEEP="$DEEP\$((a "; done
+DEEP="$DEEP) & $PUSH origin main"
+Q81_START=$(date +%s)
+assert_exit "Q81: nested false (( frames still block" 2 "$(q_hook "$DEEP")"
+Q81_SECS=$(( $(date +%s) - Q81_START ))
+assert_true "Q81b: nested false (( frames re-walk in linear time (${Q81_SECS}s)" "$([ "$Q81_SECS" -lt 5 ]; echo $?)"
+assert_exit "Q82: compact for(( loop then a feature push is allowed" 0 "$(q_hook "for((i=0;i<3;i++)); do echo \$i; done; $PUSH -u origin feat/x")"
+# SPEC-332 rev 7: validation round 6. A substitution keeps the outer argv whole.
+assert_exit "Q83: \$( ) as the -C operand" 2 "$(q_hook "git -C \"\$(git rev-parse --show-toplevel)\" push origin main")"
+assert_exit "Q84: \$( ) inside --git-dir=" 2 "$(q_hook "git --git-dir=\"\$(pwd)/.git\" push origin main")"
+assert_exit "Q85: \$( ) in an assignment prefix" 2 "$(q_hook "GIT_DIR=\$(pwd)/.git $PUSH origin main")"
+assert_exit "Q86: push inside an assigned substitution" 2 "$(q_hook "x=\$(echo a; $PUSH -o 'a;b' origin main)")"
+assert_exit "Q87: coproc before ((" 2 "$(q_hook "cat <<A; coproc ((1<<B))
+A
+$PUSH origin main
+B")"
+assert_exit "Q88: op run and mise exec wrappers" 2 "$(q_hook "op run -- mise exec node@20 -- $PUSH origin main")"
+assert_exit "Q89: \$( ) as the -C operand of a feature push is allowed" 0 "$(q_hook "git -C \"\$(git rev-parse --show-toplevel)\" push -u origin feat/x")"
+assert_exit "Q90: a tag glob is allowed" 0 "$(q_hook "$PUSH origin 'refs/tags/v1.*'")"
+assert_exit "Q91: a << in \${ } that never closes replays" 2 "$(q_hook "echo \${x#<<y}
+$PUSH origin main")"
 # F4: cd-prefix repo resolution parses portably (probe affordance prints the target)
 CDOUT=$(echo '{"tool_input":{"command":"cd /tmp/some-repo && git push -q origin feat/x"}}' | DWARVES_KIT_PRINT_CDDIR=1 bash "$KIT_DIR/hooks/ship-gate.sh" 2>/dev/null)
 assert_output_contains "F4: ship-gate resolves the cd target" "^/tmp/some-repo$" "$CDOUT"
@@ -250,7 +421,7 @@ printf '| ID-002 | the ghost work | shipped [run spec-ghost] |\n' >> "$BD_DIR/re
 assert_output_not_contains "detector: negative control (board row added -> not boardless)" "boardless runs" "$(BDT misfires)"
 # T2 (review): false-positive guard, a COMPLETE shipped run is never flagged
 printf '2026-06-10T07:00:00Z | START | lane=normal classified=normal type=doc repo=%s\n' "$REPO_BASE" > "$BD_DIR/logs/runs/spec-done.log"
-for PH in grill think spec test-plan build review docs ship; do
+for PH in grill think spec validate test-plan build review docs ship; do
   printf '2026-06-10T08:00:00Z | GATE | %s | ran | done\n' "$PH" >> "$BD_DIR/logs/runs/spec-done.log"
 done
 printf '| ID-003 | done work | shipped [run spec-done] |\n' >> "$BD_DIR/repo/_meta/BACKLOG.md"
@@ -1314,24 +1485,26 @@ echo ""
 echo "=== lane-classify: task-type -> risk lane (the 3 sample types + more) ==="
 # ============================================================
 LANE() { bash "$KIT_DIR/lib/classify/lane-classify.sh" classify "$1" 2>/dev/null; }
+# Words never pick full: a hard-flag hit is a suggestion line on explain, and classify stays on the default lane.
+LANE_SUGGEST() { bash "$KIT_DIR/lib/classify/lane-classify.sh" explain "$1" 2>/dev/null; }
 # The three sample types the goal requires, plus normal + backfill for full coverage.
 assert_output_contains "lane: a doc fix -> tiny" "^tiny$" "$(LANE 'fix a typo in the README heading')"
 assert_output_contains "lane: a bug -> bug" "^bug$" "$(LANE 'the CSV parser crashes on empty input, fix the regression')"
-assert_output_contains "lane: a full feature -> full" "^full$" "$(LANE 'add user authentication with a JWT token flow and a users table migration')"
+assert_output_contains "lane: a full feature -> full suggests full" "suggest: full" "$(LANE_SUGGEST 'add user authentication with a JWT token flow and a users table migration')"
 assert_output_contains "lane: a bounded feature -> normal" "^normal$" "$(LANE 'add a --version flag to the CLI')"
 assert_output_contains "lane: brownfield docs -> backfill" "^backfill$" "$(LANE 'review the legacy service and write its AGENTS.md operating-layer docs')"
 
 # SPEC-050: flag-scoring -- the kit-machinery hard-gate catches the 2026-06-10 misses (a change
 # naming the gate machinery is always full, even with no auth/migration keyword).
-assert_output_contains "lane: kit-machinery (classifier) -> full" "^full$" "$(LANE 'rewrite lib/classify/lane-classify.sh into a flag-scoring classifier')"
+assert_output_contains "lane: kit-machinery (classifier) -> full suggests full" "suggest: full" "$(LANE_SUGGEST 'rewrite lib/classify/lane-classify.sh into a flag-scoring classifier')"
 # SPEC-057 review finding: the kit-machinery flag enumerated lib files by name and missed the
 # newer helpers, under-sizing their work to normal. Pin the additions.
-assert_output_contains "lane: task-type-classify work -> full" "^full$" "$(LANE 'expand lib/classify/task-type-classify.sh to 11 types')"
-assert_output_contains "lane: backlog.sh work -> full" "^full$" "$(LANE 'change backlog.sh board rendering')"
-assert_output_contains "lane: kit-machinery (adopt) -> full" "^full$" "$(LANE 'adopt @AGENTS.md import loader plus --dry-run and --refresh flags in lib/adopt.sh')"
-assert_output_contains "lane: kit-machinery (install+gate-ledger) -> full" "^full$" "$(LANE 'ship AGENTS.md + WORKFLOW.md into the install so adopt + gate-ledger work')"
+assert_output_contains "lane: task-type-classify work -> full suggests full" "suggest: full" "$(LANE_SUGGEST 'expand lib/classify/task-type-classify.sh to 11 types')"
+assert_output_contains "lane: backlog.sh work -> full suggests full" "suggest: full" "$(LANE_SUGGEST 'change backlog.sh board rendering')"
+assert_output_contains "lane: kit-machinery (adopt) -> full suggests full" "suggest: full" "$(LANE_SUGGEST 'adopt @AGENTS.md import loader plus --dry-run and --refresh flags in lib/adopt.sh')"
+assert_output_contains "lane: kit-machinery (install+gate-ledger) -> full suggests full" "suggest: full" "$(LANE_SUGGEST 'ship AGENTS.md + WORKFLOW.md into the install so adopt + gate-ledger work')"
 # SPEC-050: soft-flag count -- 4 weak signals with no hard-gate keyword still escalate to full.
-assert_output_contains "lane: 4 soft flags -> full" "^full$" "$(LANE 'a cross-platform change to existing behavior that is untested and spans two domains')"
+assert_output_contains "lane: 4 soft flags -> full suggests full" "suggest: full" "$(LANE_SUGGEST 'a cross-platform change to existing behavior that is untested and spans two domains')"
 # SPEC-050: explain is auditable -- it names the flag that fired, not just the lane.
 EXPLAIN() { bash "$KIT_DIR/lib/classify/lane-classify.sh" explain "$1" 2>/dev/null; }
 assert_output_contains "explain names the kit-machinery flag" "kit-machinery" "$(EXPLAIN 'ship AGENTS.md into the install via install.sh so adopt works')"
@@ -1349,7 +1522,7 @@ assert_output_contains "lane: empty description -> normal" "^normal$" "$(LANE ''
 assert_output_contains "flags subcommand lists kit-machinery" "kit-machinery" "$(bash "$KIT_DIR/lib/classify/lane-classify.sh" flags 2>/dev/null)"
 # SPEC-050 DEC-003: security stays a hard-gate (was bare 'security' in the old full branch); the
 # narrowing was validation-only, so security-relevant work does not silently downgrade.
-assert_output_contains "lane: security middleware -> full" "^full$" "$(LANE 'add security middleware to the request pipeline')"
+assert_output_contains "lane: security middleware -> full suggests full" "suggest: full" "$(LANE_SUGGEST 'add security middleware to the request pipeline')"
 
 # ============================================================
 echo ""
@@ -1358,7 +1531,8 @@ echo "=== lane-classify: floor check (SPEC-053, the under-size guard) ==="
 # CHK merges stderr (the warning is on stderr) so the assertions can read it.
 CHK() { bash "$KIT_DIR/lib/classify/lane-classify.sh" check "$1" "$2" 2>&1; }
 # 1. chose a lighter lane than the text's full floor -> warns.
-assert_output_contains "floor: full text + normal chosen -> LANE-DOWNGRADE" "LANE-DOWNGRADE" "$(CHK normal 'add a hook that touches auth token validation')"
+assert_output_contains "floor: full text + normal chosen -> a full suggestion, no downgrade" "LANE-SUGGEST: full" "$(CHK normal 'add a hook that touches auth token validation')"
+assert_output_not_contains "floor: full text + normal chosen never reads as a downgrade" "LANE-DOWNGRADE" "$(CHK normal 'add a hook that touches auth token validation')"
 # 2. chose at the floor -> silent.
 assert_output_not_contains "floor: full text + full chosen -> silent" "LANE-DOWNGRADE" "$(CHK full 'add a hook that touches auth token validation')"
 # 3. tiny chosen for non-cosmetic text -> warns (rank 1 < 2).
@@ -1518,18 +1692,22 @@ assert_output_contains "plan: normal carries required spec" "3. spec            
 assert_output_contains "plan: normal prepends grill intake" "1. grill" "$(GL plan normal)"
 PLAN_TINY="$(GL plan tiny)"
 assert_output_not_contains "plan: tiny has no grill row" "grill" "$PLAN_TINY"
-# Validate is run-lite on normal and backfill (listed, advisory), absent on tiny and bug,
-# required on full; `required normal` stays spec/build/ship, so a normal ship never waits on it.
-assert_output_contains "plan: normal lists validate lite" "4. validate           lite" "$(GL plan normal)"
+# Validate is required on normal and full, run-lite on backfill (listed, advisory), absent on
+# tiny and bug.
+assert_output_contains "plan: normal lists validate required" "4. validate           required" "$(GL plan normal)"
 assert_output_contains "plan: backfill lists validate lite" "4. validate           lite" "$(GL plan backfill)"
 assert_output_not_contains "plan: tiny has no validate" "validate" "$PLAN_TINY"
 assert_output_not_contains "plan: bug has no validate" "validate" "$(GL plan bug)"
 assert_output_contains "plan: full still requires validate" "validate           required" "$(GL plan full)"
-assert_output_not_contains "required: normal unchanged (no validate)" "validate" "$(GL required normal)"
-# a normal ship with spec, build, ship and no Validate line passes check
+assert_output_contains "required: normal requires validate" "validate" "$(GL required normal)"
+assert_output_contains "required: normal requires review" "review" "$(GL required normal)"
+# a normal ship with spec, build, ship and no Validate or Review line is refused
 GL record val-n spec ran "spec written"; GL record val-n build ran "built"; GL record val-n ship ran "pushed"
 DWARVES_KIT_LOG_DIR="$LT2_DIR" bash "$KIT_DIR/lib/gate/gate-ledger.sh" check normal val-n >/dev/null 2>&1
-assert_exit "check: normal ship without validate exits 0" 0 $?
+assert_exit "check: normal ship without validate or review exits 1" 1 $?
+GL record val-n validate ran "fresh reader"; GL record val-n review ran "reviewed"
+DWARVES_KIT_LOG_DIR="$LT2_DIR" bash "$KIT_DIR/lib/gate/gate-ledger.sh" check normal val-n >/dev/null 2>&1
+assert_exit "check: normal ship with validate and review exits 0" 0 $?
 # a full run with every gate ran except a failed validation (skipped NEEDS REVISION) is refused
 for PH in think design design-critique spec design-record test-plan build review docs ship reflect; do GL record val-f "$PH" ran "done"; done
 GL record val-f validate skipped "NEEDS REVISION: critical=2"
@@ -1882,6 +2060,8 @@ bash "$GL" check normal "$RID" >/dev/null 2>&1; assert_exit "check fails on a mi
 
 # a real run + a logged override clears the gate
 bash "$GL" record "$RID" Build ran "rebuilt" >/dev/null 2>&1
+bash "$GL" record "$RID" Validate ran "fresh reader" >/dev/null 2>&1
+bash "$GL" record "$RID" Review ran "reviewed" >/dev/null 2>&1
 bash "$GL" override "$RID" Ship "maintainer: docs-only" >/dev/null 2>&1
 bash "$GL" check normal "$RID" >/dev/null 2>&1; assert_exit "check passes after ran + logged override" 0 $?
 
@@ -1893,7 +2073,7 @@ SGR="$DWARVES_KIT_LOG_DIR/sg-repo"; mkdir -p "$SGR"
 SG_OUT=$(cd "$SGR" && echo '{"tool_input":{"command":"git push -u origin feat/sg-demo"}}' | CLAUDE_PLUGIN_ROOT="$KIT_DIR" bash "$SG" 2>&1); SG_RC=$?
 assert_exit "ship-gate blocks a feature push with missing gates" 2 "$SG_RC"
 assert_output_contains "ship-gate names the missing gate" "MISSING-GATE" "$SG_OUT"
-for g in Spec Build Ship; do bash "$GL" record sg-demo "$g" ran "x" >/dev/null 2>&1; done
+for g in Spec Validate Build Review Ship; do bash "$GL" record sg-demo "$g" ran "x" >/dev/null 2>&1; done
 SG_RC2=$(cd "$SGR" && echo '{"tool_input":{"command":"git push -u origin feat/sg-demo"}}' | CLAUDE_PLUGIN_ROOT="$KIT_DIR" bash "$SG" >/dev/null 2>&1; echo $?)
 assert_exit "ship-gate allows the push once gates are recorded" 0 "$SG_RC2"
 
@@ -2110,10 +2290,12 @@ assert_output_contains "ID-064 negative companion: code scaffold lands a real la
 assert_output_not_contains "ID-064 negative: code scaffold is not tiny" "tiny" "$OUT"
 
 # review HIGH: the doc-bootstrap anchor must NOT preempt a hard-gate subject
-OUT=$(bash "$LC72" classify "bootstrap a learning track with README covering auth tokens and secrets")
-assert_output_contains "ID-064 hard-gate wins: auth/secrets README bootstrap is full" "full" "$OUT"
-OUT=$(bash "$LC72" classify "bootstrap notes for gate-ledger internals, markdown only")
-assert_output_contains "ID-064 hard-gate wins: kit-machinery notes bootstrap is full" "full" "$OUT"
+OUT=$(bash "$LC72" explain "bootstrap a learning track with README covering auth tokens and secrets" 2>/dev/null)
+assert_output_contains "ID-064 hard-gate wins: auth/secrets README bootstrap suggests full, not tiny" "suggest: full" "$OUT"
+assert_output_not_contains "ID-064 negative: auth/secrets README bootstrap is not the tiny lane" "^tiny$" "$(bash "$LC72" classify "bootstrap a learning track with README covering auth tokens and secrets" 2>/dev/null)"
+OUT=$(bash "$LC72" explain "bootstrap notes for gate-ledger internals, markdown only" 2>/dev/null)
+assert_output_contains "ID-064 hard-gate wins: kit-machinery notes bootstrap suggests full, not tiny" "suggest: full" "$OUT"
+assert_output_not_contains "ID-064 negative: kit-machinery notes bootstrap is not the tiny lane" "^tiny$" "$(bash "$LC72" classify "bootstrap notes for gate-ledger internals, markdown only" 2>/dev/null)"
 
 # review: bare-cli false-positive guard + noun-arm phrasing consistency
 OUT=$(bash "$TTC72" classify "fix the cli help text typo")
@@ -2137,8 +2319,9 @@ OUT=$(bash "$LC74" classify "write its AGENTS.md for the legacy repo")
 assert_output_contains "backfill survives a trailing clause" "backfill" "$OUT"
 # composition fact pins (SPEC-071 order, re-asserted as composition contract):
 # review HIGH: compound backfill phrase with a hard-gate subject must up-lane, the pure case must not
-OUT=$(bash "$LC74" classify "write its AGENTS.md and disable the safety hooks")
-assert_output_contains "backfill + hard-gate subject up-lanes to full" "full" "$OUT"
+OUT=$(bash "$LC74" explain "write its AGENTS.md and disable the safety hooks" 2>/dev/null)
+assert_output_contains "backfill + hard-gate subject suggests full and leaves backfill" "suggest: full" "$OUT"
+assert_output_not_contains "backfill + hard-gate subject is not down-laned to backfill" "^backfill" "$OUT"
 OUT=$(bash "$LC74" classify "write your AGENTS.md")
 assert_output_contains "backfill catches pronoun variants (your)" "backfill" "$OUT"
 OUT=$(bash "$KIT_DIR/lib/gate/proof-gate.sh" contract "fix a typo in the incident runbook" 2>/dev/null | head -1)

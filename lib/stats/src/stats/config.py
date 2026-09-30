@@ -200,3 +200,20 @@ def memory_projects_root() -> Path:
     isolating one source must never silently isolate the other. Host-generic, unaffected by
     the 05K move."""
     return _env_path("STATS_MEMORY_PROJECTS_ROOT", "~/.claude/projects")
+
+
+def exclude_rids() -> list[str]:
+    """Glob patterns of run ids the ceremony lens never counts. Test suites that forget
+    `DWARVES_KIT_LOG_DIR` leave fixture ledgers (`sg-*`, `tier4-fixture*`, `turncap-fixture*`)
+    in the real ledger root; the lens hides them at read time and prints what it hid.
+    Comma-separated env `STATS_EXCLUDE_RIDS` replaces the default list."""
+    raw = os.environ.get("STATS_EXCLUDE_RIDS", "sg-*,tier4-fixture*,turncap-fixture*")
+    return [p.strip() for p in raw.split(",") if p.strip()]
+
+
+def ceremony_progress_phases() -> set[str]:
+    """Gate phases that are progress, not ceremony (every other phase counts as ceremony,
+    so a new gate needs no code change). Comma-separated env
+    `STATS_CEREMONY_PROGRESS_PHASES` replaces the default list."""
+    raw = os.environ.get("STATS_CEREMONY_PROGRESS_PHASES", "build,implement,ship,wrap,wrap-follow")
+    return {p.strip().lower() for p in raw.split(",") if p.strip()}

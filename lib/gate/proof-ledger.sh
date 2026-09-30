@@ -291,7 +291,7 @@ check() {
   [ "$class" = "inert" ] && return 0          # docs/cosmetic: no ritual.
 
   local files f ok=1
-  # near_miss (SPEC-330): one "path<TAB>last_v" line per behavioral file/group that has a
+  # near_miss: one "path<TAB>last_v" line per behavioral file/group that has a
   # NEGATIVE CONTROL and a green run but is rejected solely because its own FINAL Verdict
   # line reads FAIL/INCONCLUSIVE , read only on the BLOCKED path below, never touches ok.
   local near_miss="" has_negctl has_green last_ok
@@ -413,7 +413,7 @@ check() {
     if [ "$class" = "behavioral" ]; then
       echo "  Need: a docs/verification/<slug>.md added by this branch with a green run AND a NEGATIVE CONTROL (revert -> RED -> restore)."
       echo "        ('green run' = a text run-table (Command:/Exit:/Verdict: PASS) OR a committed screenshot/GIF embed for visual/demo work.)"
-      # SPEC-330: a file that IS found and carries a NEGATIVE CONTROL + a green run, but is
+      # A file that IS found and carries a NEGATIVE CONTROL + a green run, but is
       # rejected solely because its own final Verdict line reads FAIL/INCONCLUSIVE, gets named
       # here instead of vanishing into the generic message above.
       if [ -n "$near_miss" ]; then

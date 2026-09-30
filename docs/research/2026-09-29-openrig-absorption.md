@@ -57,7 +57,7 @@ OpenRig default (Part A, P1)
 | Fresh-context spec validator | 19 of 35 validate outcomes caught a problem (M, ledger) | KEEP, load-bearing |
 | Ship-gate / proof-of-done | 15 of 46 ship outcomes caught a problem; 128 proof-gate blocks since July (M) | KEEP the gate; 108 overrides in 4.5 days, ~70% docs/config/inert (M), so the diff classifier over-fires |
 | Security review lens | caught a HIGH key-persist leak the panel, reviewer and verifier missed (`commands/battery.md:68-73`) | KEEP |
-| Per-task recheck-verifier (Opus) | 29 `Re-audit: PASS` records, 0 `Re-audit: FAIL` across kit and ops-toolkit docs (M, lead re-count) | CUT to sampled or opt-in; it has had its real trial |
+| Per-task recheck-verifier (Opus) | 29 `Re-audit: PASS` records; 0 in the `Re-audit: FAIL` format, but 2 recheck FAIL:fixable catches in other formats (loop-09, vps-mon SPEC-133), found by the SPEC-369 validator (M, corrected) | SAMPLE it, do not cut it: it catches rarely, not never |
 | Per-task worker + task-verifier split | OpenRig: "Detailed sequencing instructions were scaffolding when models were weak; today they are a cage" (`docs/reference/wave-sdlc.md:33-35`) | CUT to whole-spec dispatch by default |
 | Persona meta-agent per task | extra dispatch to write a preamble (`commands/execute.md:151-166`) | CUT |
 | Test-plan review team before code exists | 6 lenses up to 3 rounds; test-write refuses without SOLID, so it gates in practice (`commands/test-plan-review-team.md:53,97`) | Move to P3 only |
@@ -134,8 +134,7 @@ dial gets tuned by misses, not taste. Emitter ships with its reader: the lens la
 same change as the field. This is the number that proves or refutes D1 to D3.
 
 **D6. Onboarding to first value.** `/kit:adopt` writes a ~1KB CLAUDE.md pointer to the
-installed AGENTS.md instead of an 18KB copy (also ends the drift: trading's copy is 322
-lines behind). First-run tour teaches two concepts (lane, proof) and lists the rest as an
+installed AGENTS.md instead of an 18KB copy (the "trading's copy is 322 lines behind" figure was wrong: 322 is the sum of changed lines, and trading's AGENTS.md is repo-authored, not a stale kit copy; corrected by the SPEC-371 author). First-run tour teaches two concepts (lane, proof) and lists the rest as an
 opt-in menu. Measure with the existing gauntlet onboarding campaign
 (`docs/verification/gauntlet/2026-09-01-onboarding-campaign/`): turns and tokens to a
 first shipped PR, before and after.
@@ -144,8 +143,9 @@ first shipped PR, before and after.
 
 - 2026-07-04 kit utilization audit (`docs/research/2026-07-04-kit-utilization-audit.md`):
   the operator rejected retire/merge in favor of wire-first, "retire reserved for a wire
-  that proves dead after a real trial". The recheck-verifier has had that trial (29 PASS,
-  0 FAIL). D3 samples it rather than deleting it, which stays inside that rule.
+  that proves dead after a real trial". The recheck-verifier has had that trial: 29 PASS and
+  2 FAIL:fixable catches (corrected; the first count searched one format only). D3 samples it
+  rather than deleting it, which stays inside that rule.
 - SPEC-334 open question 6 answered by D4 with transcript evidence (4 compactions, 0
   re-injects).
 
@@ -212,6 +212,47 @@ OpenRig's `first-project` does), not a concept tour. Over-test. Negative control
 override that drops `review` from `normal` must show the phase skipped in the ledger, and
 the ship-gate hard paths must still block.
 
+### The dashboard (second operator review)
+
+The operator asked about the status dashboard shown in the talk. It is OpenRig's own
+TUI (`rig tui`, package `packages/tui`), not a separate tool. The talk's "graph" means
+the TUI's GRAPH tab and the project, mission, slice link chain, not a product named
+"graph engineering".
+
+| TUI view | What it answers | Source |
+|---|---|---|
+| Topology TABLE | per seat: pod, runtime, model, context %, state (working, idle, unknown, failed), queue count, current work; footer "17 seats, 6 working, 1 need attention, 0 open rows" | README GIF frame; `agent-state-taxonomy.md` |
+| Topology GRAPH | seats grouped by pod, edges show who hands work to whom | `assets/ui/screenshots/tui-topology.png` |
+| `rig view show execution` | Q1 who is on what and where, Q2 sequencing, Q3 care dial, Q4 completion ladder (locked, built, reviewed, folded, adopted), Q5 parked work, Q6 parallelism health; unknown renders INDETERMINATE, never idle or done | `packages/daemon/src/domain/execution-view.ts` (1,205 lines) |
+| `rig view show held` / `escalations` | deliberate holds with an owner and wake; items waiting on a human | release notes v0.5.6 |
+| HEALTH | queue traffic versus outcomes; at 20 transitions a family becomes "needs diagnosis" and an assigned agent counts real outcomes before any warning fires | `docs/reference/health-diagnosis.md` |
+| SPECS, PROJECTS | drill from a slice up to its mission and project | talk 8:09-8:26 |
+
+Every view is computed at read time from stored facts (queue rows, transitions, seat
+evidence, frontmatter). No view stores a status of its own.
+
+What the estate has today:
+
+| Question | Today | Gap |
+|---|---|---|
+| Who is working, idle, stuck right now | `orca worktree ps`: live terminal per worktree, preview line, unread flag | per worktree, not per role; no "idle while owning work" flag |
+| Who owns what | board rows (`_meta/board-all`), mega NOTES | no link from a row to the agent working it |
+| Where each item stands | kit run ledger per rid; `lib/bench/dashboard.py` builds a static control-plane page after the fact | no live completion ladder |
+| Ceremony versus progress | none | D5 |
+
+`precedent find --surface inventory` returned no existing agent-status view.
+
+**D7a. Execution view first, dispatch change second.** Before moving dispatch onto Orca,
+build the read-time join over data that already exists: board rows and mega sub-goal
+files (the work and its worktree or branch), `orca worktree ps` (live terminal state and
+last activity), and the kit run ledger (spec validated, built, reviewed, shipped). Output
+one table: item, owner worktree, agent state, ladder rung, and flags PARKED (item in
+progress, terminal idle past a threshold), DONE-UNSEEN (shipped, no wrap), and
+INDETERMINATE when a join key is missing. A CLI table first, readable from Orca Mobile;
+no new daemon, no TUI. Over-test. Negative control: an in-progress row whose worktree
+terminal is idle past the threshold must render PARKED; a row with no worktree must
+render INDETERMINATE, never idle.
+
 Caveat: OpenRig publishes no measurement that status-driven orchestration beats a single
 orchestrator. Its full RigSpec example is large, and flexibility grows the YAML surface
 the operator maintains. D7 trials on one mega before anything is rebuilt around it.
@@ -226,3 +267,15 @@ change to classification and spec header), then D3 (the big token cut, measured 
 then D6. D1 to D3 together reverse the kit's "when in doubt, heavier" posture, so they
 wait for the operator's go on direction; on go they become one mega with D5 as its first
 sub-goal.
+
+## Corrections (build wave)
+
+Two numbers in this record were wrong and were caught by the spec validators during the build:
+
+| Claim | Correction | Caught by |
+|---|---|---|
+| recheck-verifier: 0 FAIL | 2 FAIL:fixable catches in a different record format; plus per-task task-verifier catches with a green suite (circle TASK-4/5, a 2026-05-22 retro) | SPEC-369 validator |
+| trading's AGENTS.md is 322 lines behind | 322 is changed lines; the file is repo-authored, not a kit copy | SPEC-371 author |
+| "drop the test-plan review team by default" | all 7 critiqued specs had round-1 findings, 5 CRITICAL; the default became a one-pass light review, not none | SPEC-372 validator |
+
+The direction held; each correction changed the design (end-of-build task-verifier pass kept, recheck sampled not cut, a light review kept at standard depth).

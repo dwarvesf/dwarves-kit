@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# board-row-gate.sh -- PreToolUse hook that blocks a git commit adding a new board row unless the message carries a board-row-ok line.
 # board-row-gate.sh, PreToolUse hook, matcher: Bash
 # Blocks a `git commit` that adds a NEW board row unless the commit message carries a
 # `board-row-ok: <reason>` line. Follow-ups are done in the session or dropped into its

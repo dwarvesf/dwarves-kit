@@ -23,4 +23,20 @@ Deltas from `docs/specs/SPEC-359-wrap-pull-only.md`. Nothing here repeats what t
 - Why: the two are equivalent today (the message only ever needs to distinguish "plain apply, deletes happen" from "pull-only, only the pull happens"), and branching on the flag directly is the simpler of two correct implementations, per the flag-over-verb design bias the spec already commits to.
 - Impact: none beyond the spec's own stated behavior; recorded here only because the spec describes the OUTCOME, not this specific implementation shape, and a future reader diffing the two should not expect a derived condition.
 
+## 2026-09-30 Ported onto the wrap modules (the monolith split)
+
+- Context: origin/master split `lib/wrap/wrap.sh` into a 146-line dispatcher plus twelve `lib/wrap/wrap-<module>.sh` files and `tests/test-wrap.sh` into a thin runner plus thirteen suites. Function bodies moved verbatim, so every hunk of this branch had exactly one owner. Merged with `git merge --no-ff` (no rebase), taking master's version of both files and re-applying the branch's hunks by hand.
+- Decision/Change: where each piece landed.
+
+| Piece | Module |
+|---|---|
+| `PULL_ONLY=0` global, the lock-skip `FAILURES=1` in `run()` | `lib/wrap/wrap-common.sh` |
+| `--pull-only` case, the four-flag conflict check, usage string, `_gh_state` skip in `cmd_apply`; the sweep gate, fetch wording, unresolved-default exit, tip-snapshot skip, ahead NOTE in `_apply_repo` | `lib/wrap/wrap-apply.sh` |
+| Header usage lines and `_usage()`'s `sed` range (`2,31p` to `2,32p`) | `lib/wrap/wrap.sh` (dispatcher) |
+| The whole `--pull-only` test block (82 assertions) | `tests/test-wrap-pull.sh` |
+| The negative-control script now edits `wrap-common.sh` for N3 and `wrap-apply.sh` for the rest, and runs `tests/test-wrap-pull.sh` | `docs/verification/wrap-pull-only-negctl.py` |
+
+- Why: `_apply_repo`, `cmd_apply` and the apply globals' consumers live in wrap-apply.sh. The `APPLY`/`WORKTREES`/`ARCHIVE_UNMERGED` globals and `run()` live in wrap-common.sh, so `PULL_ONLY` and the lock-skip belong beside them. The test block reuses `build_pd_repo` and `advance_pd_repo`, which live in test-wrap-pull.sh, so the block goes there and not in test-wrap-apply.sh (the heaviest suite, already serial).
+- Impact: spec text that cites `lib/wrap/wrap.sh` line numbers or `tests/test-wrap.sh` describes the pre-split layout; the behavior contract is unchanged. `docs/FEATURES.md` was regenerated, not merged.
+
 No other deviations. The conflict-check ordering (before the `--tips-file` existence check), the four rejected flags, the ahead-only/diverged split, and the Picture's `gh_state`-before-the-loop placement all match the spec's Decision/Picture sections exactly.

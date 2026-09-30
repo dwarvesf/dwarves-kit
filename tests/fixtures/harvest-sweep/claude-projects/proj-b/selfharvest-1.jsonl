@@ -1,0 +1,6 @@
+{"type": "user", "timestamp": "2026-09-01T12:00:00.000Z", "cwd": "__STATE__/sweep/extract-cwd", "message": {"role": "user", "content": [{"type": "text", "text": "extractor turn 0"}]}}
+{"type": "assistant", "timestamp": "2026-09-01T12:00:10.000Z", "cwd": "__STATE__/sweep/extract-cwd", "message": {"role": "assistant", "content": [{"type": "text", "text": "extractor turn 1"}]}}
+{"type": "user", "timestamp": "2026-09-01T12:00:20.000Z", "cwd": "__STATE__/sweep/extract-cwd", "message": {"role": "user", "content": [{"type": "text", "text": "extractor turn 2"}]}}
+{"type": "assistant", "timestamp": "2026-09-01T12:00:30.000Z", "cwd": "__STATE__/sweep/extract-cwd", "message": {"role": "assistant", "content": [{"type": "text", "text": "extractor turn 3"}]}}
+{"type": "user", "timestamp": "2026-09-01T12:00:40.000Z", "cwd": "__STATE__/sweep/extract-cwd", "message": {"role": "user", "content": [{"type": "text", "text": "extractor turn 4"}]}}
+{"type": "assistant", "timestamp": "2026-09-01T12:00:50.000Z", "cwd": "__STATE__/sweep/extract-cwd", "message": {"role": "assistant", "content": [{"type": "text", "text": "extractor turn 5"}]}}

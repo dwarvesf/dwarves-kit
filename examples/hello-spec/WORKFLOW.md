@@ -20,8 +20,8 @@ Pick a lane before you start. Smaller work skips ceremony.
 | normal | one bounded feature or fix | /spec, /execute, /review, /ship |
 | full   | touches auth, authz, hooks, data model, data loss, audit/security, an external provider, an API contract, a migration, or weakens validation | /think, /spec, /spec-validate, /execute, /review-team, /docs, /ship, /retro |
 
-When in doubt between two lanes, take the heavier one. Anything in the full-lane
-trigger list uses the full lane unless you explicitly narrow the scope and say why.
+Default to `normal`. The classifier only suggests the full lane; the operator assigns it.
+The ship-gate applies the full lane's gates to any diff that touches a hard path.
 
 ## The cycle (phase, exit, enforcer)
 | Phase    | Command | Exit when | Enforced by |

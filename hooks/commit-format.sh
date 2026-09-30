@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# commit-format.sh -- PreToolUse hook that blocks git commit subjects lacking a Conventional Commits type, over 72 chars, or carrying spec markers.
 # commit-format.sh, PreToolUse hook, matcher: Bash
 # Lints the git commit SUBJECT (first -m line only): Conventional Commits type,
 # <=72 chars, and no spec/ticket/phase markers in the subject. Subsequent -m

@@ -1,4 +1,5 @@
 #!/bin/bash
+# notification.sh -- Notification hook that sends an async desktop notification when Claude finishes or needs input.
 # notification.sh — Notification hook
 # Sends a desktop notification when Claude finishes work or needs input.
 # Lets you switch to other tasks without watching the terminal.
