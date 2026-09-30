@@ -125,6 +125,10 @@ today), or Reviewer 5 (growth and coupling); this lens covers slow decay and upk
 bound, or outlive its purpose. A short answer in `## After state` or `## Failure modes` counts;
 do not demand a new section. This reviewer is advisory; Reviewer 6 stays the one blocking check.
 
+## Critical bar
+
+A finding is CRITICAL only if the spec's own tests would miss it: the gap survives the spec's `## Verification` and `## Test plan` and reaches ship. Anything the build's tests would catch is a warning, however sharp, and goes to `docs/implementation-notes/<slug>.md` for the builder, not into the spec. Checks that name their own critical (Reviewer 4's atomicity check and depth line, Reviewer 6's design record) keep it; every other finding takes this bar.
+
 ## Output format
 
 After all 7 reviewers complete, produce a summary:
@@ -146,7 +150,7 @@ Spec: [spec name]
 ## Verdict: APPROVED / NEEDS REVISION
 ```
 
-If NEEDS REVISION, update `docs/specs/SPEC-NNN-<slug>.md` with the fixes and mark the Decision Log with entries for each change made.
+If NEEDS REVISION, update `docs/specs/SPEC-NNN-<slug>.md` with the fixes and mark the Decision Log with entries for each change made. Fold the criticals only: the warnings go to `docs/implementation-notes/<slug>.md` for the builder, so the spec grows by no more than a critical requires.
 
 If APPROVED, update the Status line in SPEC.md to `VALIDATED`. **Exception:** if Reviewer 6 raised a CRITICAL, BLOCKING finding (a design-bearing spec with an empty/missing `## Design` block), the Verdict is NEEDS REVISION regardless of the advisory reviewers' outcome, and Status does NOT flip to `VALIDATED` until the Design block is filled and this reviewer re-runs clean.
 

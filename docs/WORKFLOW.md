@@ -71,6 +71,12 @@ CI workflows, kit config, data loss), whatever the spec's `Lane:` says. With
 `[gate] lane_gates = false` on the base branch none of this runs; a PR cannot switch it off for
 its own push. Moving an assigned lane lighter stays a Pause-if decision.
 
+A kit spec copies its `Lane:` from `lib/classify/lane-classify.sh`. It takes `full` only when the
+floor hits a hard path or a full-lane trigger in the table above applies. Choosing `full` by habit
+is a misroute: it buys the 3-round ceiling and the heaviest review for a change the normal lane
+already guards. The normal lane gets 1 validation round (`/kit:spec` step 5), a fold-diff check
+after any fold, and the critical bar in `/kit:spec-validate`.
+
 `/kit:assign` backs this tree with an **advisory floor check** (`lib/classify/lane-classify.sh
 check`): once a lane is chosen, it re-classifies the task text and warns + logs (to
 `completeness.log`, reviewed at `/kit:ship`) when the choice is lighter than the
