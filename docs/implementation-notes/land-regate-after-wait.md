@@ -2,6 +2,15 @@
 
 Deltas from SPEC-365. Nothing here repeats what the spec already states.
 
+## Build notes: part 1
+
+### Task A
+- `_ci_regate` sits between `_ci_checks_wait` and `_autoland_carry`, keeping the ci-gate cluster together. Call sites resolve it at call time, so placement carries no constraint.
+- The three CLEAN-clause texts are one `if/elif/else` on `CI_WAIT_END` then `CI_NEW_SCOPE`, not a `case`: the unscoped `NONEW` text and the scoped `NONEW` text share the `NONEW` prefix check, and the nesting keeps each text on its own line for the negative-control `sed` passes.
+- The verdict's rc is decided inside the `verdict != OK` block, so the reason prints once regardless of the return code.
+- `reason`/`rrc` are new `cmd_merge` locals beside `rc`; the old `new_head`, `verdict` and `ms` uses in that block are gone and the earlier `local verdict` declaration still serves the eligibility loop.
+- T16's fixtured `not json` wait reads double as the unreadable-last-read shape the spec names; the re-gate read at fixture index 5 is what the CLEAN clause then sees.
+
 ## 2026-09-29 Spec-time decisions
 - The post-wait block moves into `_ci_regate`. It started with two callers and gained the carry as a third in round 1. The block is an enforcement rule, so the extraction lands first (Task A) with no behavior change, and the existing merge ci-wait cases pin it before anything else calls it.
 - `land` settles its re-gate read with the plain form `_pr_detail_settled url n`. The pushed-oid form needs the prior head, and `land` never reads an adopted PR's old head. The head wait in the sync covers the stale-head window instead (see below).

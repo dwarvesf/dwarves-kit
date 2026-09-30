@@ -2071,6 +2071,33 @@ out="$(PATH="$TMPD/nosleep:$PATH" GH_STUB_LABELS='[{"name":"ci"}]' GH_STUB_OPEN_
 chk "ci-wait T12: exits 0" "$rc"
 chk "ci-wait T12: new checks on a shared URL ended the wait at once (4 reads)" "$([ "$(cw_views 71)" -eq 4 ]; echo $?)"
 
+# T14: the re-gate's own read is unreadable. The head the gate pinned cannot be confirmed,
+# so the refusal names the failed re-read rather than a moved head.
+: > "$GH_STUB_CALLS"; rm -f "$GH_STUB_CALLS".*
+out="$(PATH="$TMPD/nosleep:$PATH" GH_STUB_LABELS='[{"name":"ci"}]' GH_STUB_OPEN_PRS="$(cw_open 81)" \
+  GH_STUB_PR_81="$(cw_full 81 CLEAN "$CW_OLD")" \
+  GH_STUB_PR_81_2="{\"number\":81,\"labels\":[],\"statusCheckRollup\":$CW_OLD}" \
+  GH_STUB_PR_81_3="$(cw_full 81 CLEAN "$CW_GREEN")" \
+  GH_STUB_PR_81_4='not json' \
+  "$WRAP" merge --apply "$TMPD/clone-scan-main" 2>&1)"; rc=$?
+chk "ci-wait T14: exits 2" "$([ "$rc" -eq 2 ]; echo $?)"
+chk_has "ci-wait T14: names the unreadable re-read" "$out" "FAILED merge #81: could not re-read #81 after the check wait; left open"
+chk_no "ci-wait T14: never merges" "$(cat "$GH_STUB_CALLS")" "pr merge 81"
+
+# T16: the wait's last read is unreadable. The unreadable end is not NONEW, so the CLEAN
+# clause applies and the refusal says the wait ended unfinished or unreadable.
+: > "$GH_STUB_CALLS"; rm -f "$GH_STUB_CALLS".*
+out="$(PATH="$TMPD/nosleep:$PATH" KIT_WRAP_CARRY_CHECKS_SECS=10 GH_STUB_LABELS='[{"name":"ci"}]' GH_STUB_OPEN_PRS="$(cw_open 85)" \
+  GH_STUB_PR_85="$(cw_full 85 UNSTABLE "$CW_OLD")" \
+  GH_STUB_PR_85_2="{\"number\":85,\"labels\":[],\"statusCheckRollup\":$CW_OLD}" \
+  GH_STUB_PR_85_3='not json' \
+  GH_STUB_PR_85_5="$(cw_full 85 UNSTABLE "$CW_OLD")" \
+  "$WRAP" merge --apply "$TMPD/clone-scan-main" 2>&1)"; rc=$?
+chk "ci-wait T16: exits 2" "$([ "$rc" -eq 2 ]; echo $?)"
+chk_has "ci-wait T16: names the unreadable wait end" "$out" "FAILED merge #85: the check wait ended with checks unfinished or unreadable, and merge state UNSTABLE is not CLEAN; left open"
+chk_no "ci-wait T16: never merges" "$(cat "$GH_STUB_CALLS")" "pr merge 85"
+chk "ci-wait T16: 5 reads" "$([ "$(cw_views 85)" -eq 5 ]; echo $?)"
+
 # ===========================================================================
 echo "=== merge --pr: a named draft is marked ready, then gated and merged ==="
 # ===========================================================================

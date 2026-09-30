@@ -1315,6 +1315,47 @@ _ci_checks_wait() {
   CI_WAIT_END="$state"
 }
 
+# _ci_regate <url> <pr> <def> <pinned-oid> -- the post-wait re-gate every ci-gated merge
+# passes: re-read the PR once, then refuse (the reason on stdout, rc 1) on a head that is
+# no longer the pinned one, on any _pr_gate verdict, or on a wait that ended without a new
+# check on a merge state other than CLEAN. A verdict of exactly `not mergeable
+# (CONFLICTING)` returns 3 instead, so the carry can hand the PR to the union re-merge.
+# Prints the reason and nothing else; the caller composes its own line. Reads CI_WAIT_END,
+# CI_PRELABEL_KEYS and CI_NEW_SCOPE, set by the sync and the wait that just ran in the
+# same shell.
+_ci_regate() {
+  local url="$1" n="$2" def="$3" pinned="$4" detail head verdict ms
+  detail="$(_pr_detail_settled "$url" "$n")"
+  head="$(printf '%s' "$detail" | jq -r '.headRefOid // ""' 2>/dev/null)"
+  if [ -z "$head" ]; then
+    echo "could not re-read #${n} after the check wait"; return 1
+  fi
+  if [ "$head" != "$pinned" ]; then
+    echo "head moved to $(_short "$head") during the check wait"; return 1
+  fi
+  verdict="$(_pr_gate "$detail" "$def")"
+  if [ "$verdict" != "OK" ]; then
+    echo "${verdict#SKIP } once the ci label's checks ran"
+    [ "$verdict" = "SKIP not mergeable (CONFLICTING)" ] && return 3
+    return 1
+  fi
+  # The wait ended without a new check on this head (NONEW past the grace bound, the
+  # pending bound, or an unreadable last read), so the verdict rests on checks that
+  # predate the label. Those pass only on CLEAN, the rule an empty rollup already meets.
+  ms="$(printf '%s' "$detail" | jq -r '.mergeStateStatus // ""' 2>/dev/null)"
+  if [ "${CI_WAIT_END:-}" != "0" ] && [ "${CI_PRELABEL_KEYS:-[]}" != "[]" ] && [ "$ms" != "CLEAN" ]; then
+    if [ "${CI_WAIT_END:-}" = "NONEW" ] && [ -n "${CI_NEW_SCOPE:-}" ]; then
+      echo "no Actions run of this repo reported after the ci label went on, and merge state ${ms:-unknown} is not CLEAN"
+    elif [ "${CI_WAIT_END:-}" = "NONEW" ]; then
+      echo "no check reported after the ci label went on, and merge state ${ms:-unknown} is not CLEAN"
+    else
+      echo "the check wait ended with checks unfinished or unreadable, and merge state ${ms:-unknown} is not CLEAN"
+    fi
+    return 1
+  fi
+  return 0
+}
+
 # _autoland_carry <repo> <def> <branch> <oid> -- lands one carry branch through the door every own PR
 # takes: `cmd_merge --apply --pr` (the own-PR check, `_pr_gate`, the union re-merge, the pinned
 # squash, `_tree_verify`), never a second merge path. It opens the branch's PR when none is
@@ -2256,27 +2297,14 @@ cmd_merge() {
   # the runs it starts, then re-read and re-gate that same head: a check the label reveals
   # failing refuses here. A repo without the label merges as it always did, and a label
   # that will not set refuses rather than merging untested.
-  local rc
+  local rc reason rrc
   _ci_label_sync "$url" "$first_eligible"; rc=$?
   case "$rc" in
     0)
       _ci_checks_wait "$url" "$first_eligible"
-      detail="$(_pr_detail_settled "$url" "$first_eligible")"
-      local new_head; new_head="$(printf '%s' "$detail" | jq -r '.headRefOid // ""' 2>/dev/null)"
-      verdict="$(_pr_gate "$detail" "$def")"
-      if [ "$new_head" != "$head_oid" ]; then
-        echo "FAILED merge #${first_eligible}: head moved to $(_short "$new_head") during the check wait; left open" >&2
-        return 2
-      fi
-      if [ "$verdict" != "OK" ]; then
-        echo "FAILED merge #${first_eligible}: ${verdict#SKIP } once the ci label's checks ran; left open" >&2
-        return 2
-      fi
-      # No new check reported inside the grace hold, so the verdict rests on checks that
-      # predate the label. Those pass only on CLEAN, the rule an empty rollup already meets.
-      local ms; ms="$(printf '%s' "$detail" | jq -r '.mergeStateStatus // ""' 2>/dev/null)"
-      if [ "${CI_WAIT_END:-}" = "NONEW" ] && [ "${CI_PRELABEL_KEYS:-[]}" != "[]" ] && [ "$ms" != "CLEAN" ]; then
-        echo "FAILED merge #${first_eligible}: no check reported after the ci label went on, and merge state ${ms:-unknown} is not CLEAN; left open" >&2
+      reason="$(_ci_regate "$url" "$first_eligible" "$def" "$head_oid")"; rrc=$?
+      if [ "$rrc" -ne 0 ]; then
+        echo "FAILED merge #${first_eligible}: ${reason}; left open" >&2
         return 2
       fi ;;
     1) ;;
