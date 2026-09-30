@@ -24,7 +24,14 @@ check() { if [ "$2" = "$3" ]; then ok "$1"; else bad "$1 (expected '$3', got '$2
 truthy() { if eval "$2"; then ok "$1"; else bad "$1 (condition false: $2)"; fi; }
 
 export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null
-unset KIT_LEDGER_DIR DWARVES_KIT_LOG_DIR ORCA_STUB_MODE ORCA_STUB_LOG ORCA_STUB_PAGE
+unset KIT_LEDGER_DIR DWARVES_KIT_LOG_DIR ORCA_STUB_MODE ORCA_STUB_LOG ORCA_STUB_PAGE GOAL_REGISTRY_SH GOAL_REGISTRY_DIR ORCA_TIMEOUT_S
+
+# GNU-tools pass: the whole suite reruns with coreutils first on PATH (CI runs GNU tr, sed, awk
+# semantics; a BSD-only pass hid a reversed tr range once). Skips visibly when the dir is absent.
+GNUBIN=/opt/homebrew/opt/coreutils/libexec/gnubin
+if [ -z "${BW_GNU:-}" ]; then
+  if [ -d "$GNUBIN" ]; then GNU_RUN=1; else echo "SKIP: GNU-tools pass ($GNUBIN not found)"; GNU_RUN=0; fi
+else GNU_RUN=0; fi
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
@@ -39,6 +46,7 @@ new_case() {
   cp "$FIX/BACKLOG.md" "$REPO/_meta/BACKLOG.md"
   : > "$SLOG"
   page < /dev/null
+  mkdir -p "$W/goalreg"
 }
 g() { git -C "$REPO" "$@"; }
 row() { printf '| %s | title of %s | src | %s |\n' "$1" "$1" "$2" >> "$REPO/_meta/BACKLOG.md"; }
@@ -49,6 +57,9 @@ draft() {  # <id> <slug> [dir under .claude/goals] [repo]
 }
 branch() { g branch "$1"; }
 worktree() { g worktree add -q "$2" "$1" 2>/dev/null || g worktree add -q -b "$1" "$2"; }
+claim() {  # <slug> <lane> <started>: a goal-registry claim, in the case's private registry dir
+  printf 'slug=%s\nlane=%s\nstatus=running\nbranch=master\nstarted=%s\n' "$1" "$2" "$3" > "$W/goalreg/$1.goal"
+}
 ledger() { printf '%s\n' "$2" > "$LOGS/runs/$1.log"; }
 lline() { printf '2026-09-29T13:00:00Z | GATE | %s | %s | note\n' "$1" "$2"; }
 # page: rows on stdin as path|branch|status|live|lastOutputMs|agentState[|hostId]
@@ -60,7 +71,7 @@ page() {
 }
 ms_ago() { echo $(( (NOW - $1) * 1000 )); }
 run_work() {
-  DWARVES_KIT_LOG_DIR="$LOGS" ORCA_BIN="${ORCA_BIN:-$STUB}" ORCA_STUB_PAGE="$PAGE" ORCA_STUB_LOG="$SLOG" \
+  GOAL_REGISTRY_DIR="$W/goalreg" DWARVES_KIT_LOG_DIR="$LOGS" ORCA_BIN="${ORCA_BIN:-$STUB}" ORCA_STUB_PAGE="$PAGE" ORCA_STUB_LOG="$SLOG" \
     bash "$WORK" --repo-root "$REPO" --now "$NOW" "$@"
 }
 J() { run_work --json "$@"; }
@@ -101,7 +112,7 @@ check "parked: idle_s 2700" "$(field "$it" .agent.idle_s)" 2700
 check "parked: flags PARKED only" "$(field "$it" .flags)" '["PARKED"]'
 check "parked: rung none, branch and worktree resolved" "$(field "$it" '[.rung,.branch,(.worktree|type)]')" '["none","feat/alpha","string"]'
 tbl="$(run_work)"
-truthy "parked: table row shows idle 45m and PARKED" "grep -Eq '^ID-100 +wt-alpha +idle 45m +none +PARKED\$' <<< \"\$tbl\""
+truthy "parked: table row shows idle 45m and PARKED" "grep -Eq '^ID-100 +wt-alpha +idle 45m +none +- +PARKED\$' <<< \"\$tbl\""
 
 echo "== not_parked_under_threshold (NEGATIVE CONTROL) =="
 inprog; alpha_page inactive 1 "$(ms_ago 300)"
@@ -149,9 +160,15 @@ it="$(itemof "$(J)" ID-100)"
 check "a row on a remote host is not read in v1: no-orca, unknown" "$(field "$it" '[.reasons,.agent.state]')" '[["no-orca"],"unknown"]'
 
 echo "== branch fallback (path does not match, branch does) =="
-inprog; printf '%s|feat/alpha|inactive|1|%s|-\n' "$W/moved-path" "$(ms_ago 2700)" | page
+inprog; mkdir -p "$REPO/moved-path" "$W/other-repo/wt-alpha"; printf '%s|feat/alpha|inactive|1|%s|-\n' "$REPO/moved-path" "$(ms_ago 2700)" | page
 it="$(itemof "$(J)" ID-100)"
-check "orca row matched by branch when its path differs" "$(field "$it" '[.agent.state,.flags]')" '["idle",["PARKED"]]'
+check "orca row under the repo matched by branch when its path differs" "$(field "$it" '[.agent.state,.flags]')" '["idle",["PARKED"]]'
+inprog; mkdir -p "$W/other-repo/wt-alpha"; printf '%s|feat/alpha|inactive|1|%s|-\n' "$W/other-repo/wt-alpha" "$(ms_ago 2700)" | page
+it="$(itemof "$(J)" ID-100)"
+check "NEGATIVE: an orca row of another repo with the same branch is never borrowed" "$(field "$it" '[.reasons,.agent.state,.flags]')" '[["not-in-orca"],"unknown",["INDETERMINATE"]]'
+inprog; mkdir -p "$REPO/moved-a" "$REPO/moved-b"; { printf '%s|feat/alpha|inactive|1|%s|-\n' "$REPO/moved-a" "$(ms_ago 2700)"; printf '%s|feat/alpha|inactive|1|%s|-\n' "$REPO/moved-b" "$(ms_ago 100)"; } | page
+it="$(itemof "$(J)" ID-100)"
+check "NEGATIVE: two branch matches under the repo is ambiguous, no row is borrowed" "$(field "$it" '[.reasons,.agent.state]')" '[["not-in-orca"],"unknown"]'
 
 echo "== symlinked path is canonicalized =="
 inprog; ln -s "$W/wt-alpha" "$W/link-alpha"
@@ -226,12 +243,15 @@ check "adding wrap ran changes nothing" "$(field "$it" '[.flags,.rung]')" '[["DO
 g worktree remove --force "$W/wt-gamma"; g branch -D feat/gamma -q >/dev/null
 out="$(J)"
 check "worktree and branch removed: the row is gone, even with wrap ran in the ledger" "$(field "$out" '[.items[] | select(.item == "ID-200")] | length')" 0
+check "worktree and branch removed: a shipped-ledger row is finished, not counted unchecked" "$(field "$out" .unchecked_shipped)" 0
 new_case; row ID-200 shipped; draft ID-200 gamma; branch feat/gamma
 cp "$FIX/ledgers/shipped.log" "$LOGS/runs/gamma.log"
 it="$(itemof "$(J)" ID-200)"
 check "branch alone (no worktree) still shows DONE-UNSEEN, no INDETERMINATE for the missing worktree" "$(field "$it" '[.flags,.worktree]')" '[["DONE-UNSEEN"],null]'
 g branch -D feat/gamma -q >/dev/null
-check "branch removed, no wrap record needed: row gone" "$(field "$(J)" '[.items[] | select(.item == "ID-200")] | length')" 0
+out="$(J)"
+check "branch removed, no wrap record needed: row gone" "$(field "$out" '[.items[] | select(.item == "ID-200")] | length')" 0
+check "branch removed: not counted unchecked either" "$(field "$out" .unchecked_shipped)" 0
 
 echo "== rung_ladder =="
 new_case
@@ -259,11 +279,12 @@ printf '%s|feat/x|inactive|1|%s|-\n' "$W/wt-x" "$(ms_ago 2700)" | page
 out="$(J)"; it="$(itemof "$out" m1/SG-01)"
 check "mega SG-01 listed with branch feat/x from the first Branch token" "$(field "$it" '[.origin,.branch,.agent.state,.flags]')" '["mega","feat/x","idle",["PARKED"]]'
 check "checked SG-00 is never listed" "$(field "$out" '[.items[] | select(.item == "m1/SG-00")] | length')" 0
-printf -- '- [ ] 04-legacy-slug , auto\n' >> "$REPO/_meta/megagoals/m1/ROADMAP.md"
+printf -- '- [ ] 04-legacy-slug , auto\n- [ ] 2026-09-30 a dated note, not a sub-goal\n' >> "$REPO/_meta/megagoals/m1/ROADMAP.md"
 printf '**Branch:** feat/legacy\n' > "$REPO/_meta/megagoals/m1/goals/04-legacy-slug.md"
 branch feat/legacy
 out="$(J)"
 check "legacy NN-slug roadmap line resolves goals/<NN-slug>.md" "$(field "$(itemof "$out" m1/04-legacy-slug)" .branch)" '"feat/legacy"'
+check "a date-led roadmap line is not a legacy sub-goal" "$(field "$out" '[.items[] | select(.item | test("2026"))] | length')" 0
 mkdir -p "$W/other-megas/m2/goals"
 printf -- '- [ ] SG-01 elsewhere\n' > "$W/other-megas/m2/ROADMAP.md"
 printf '**Branch:** feat/x\n' > "$W/other-megas/m2/goals/01-a.md"
@@ -292,14 +313,16 @@ check "SG-02 and SG-03 are listed INDETERMINATE(no-branch)" "$(field "$out" '[.i
 check "SG-04 (Branch names a branch that does not exist) is not listed" "$(field "$out" '[.items[] | select(.item == "m1/SG-04")] | length')" 0
 
 echo "== table_footer =="
-inprog; alpha_page inactive 1 "$(ms_ago 2700)"; row ID-101 executing
+inprog; row ID-050 claimed; draft ID-050 early; worktree feat/early "$W/wt-early"
+{ printf '%s|feat/alpha|inactive|1|%s|-\n' "$W/wt-alpha" "$(ms_ago 2700)"; printf '%s|feat/early|working|1|null|working\n' "$W/wt-early"; } | page
+row ID-101 executing
 tbl="$(run_work --idle-min 15)"
-check "table header" "$(head -1 <<< "$tbl" | tr -s ' ')" 'ITEM WORKTREE AGENT RUNG FLAGS'
+check "table header" "$(head -1 <<< "$tbl" | tr -s ' ')" 'ITEM WORKTREE AGENT RUNG LANE FLAGS'
 truthy "footer: threshold" "grep -q '^idle threshold: 15 min' <<< \"\$tbl\""
 truthy "footer: orca scope" "grep -q '^orca: ok (scope: local worktrees' <<< \"\$tbl\""
 truthy "footer: ledger root" "grep -q \"^ledger: $LOGS\$\" <<< \"\$tbl\" || grep -q \"^ledger: $(cd "$LOGS" && pwd -P)\$\" <<< \"\$tbl\""
 truthy "footer: legend" "grep -q '^legend: shipped = the ledger holds a ship record' <<< \"\$tbl\""
-truthy "sorted: flagged rows first, then by item" "[ \"\$(sed -n 2p <<< \"\$tbl\" | cut -d' ' -f1)\" = ID-100 ]"
+check "sorted: an unflagged row that sorts earlier by item still comes after the flagged rows" "$(sed -n '2,4p' <<< "$tbl" | cut -d' ' -f1 | tr '\n' ' ')" 'ID-100 ID-101 ID-050 '
 
 echo "== shipped_unchecked_footer =="
 new_case; row ID-400 shipped; draft ID-400 delta; row ID-401 shipped
@@ -329,13 +352,13 @@ mkdir -p "$REPO/_meta/megagoals/m1/goals"; cp "$FIX/ROADMAP.md" "$REPO/_meta/meg
 printf '**Branch:** feat/x\n' > "$REPO/_meta/megagoals/m1/goals/01-first.md"; worktree feat/x "$W/wt-x"
 { printf '%s|feat/alpha|inactive|1|%s|-\n' "$W/wt-alpha" "$(ms_ago 2700)"; printf '%s|feat/x|working|1|null|working\n' "$W/wt-x"; } | page
 out="$(J)"
-A10='(.schema==1) and (.generated_at|type=="number") and (.orca|IN("ok","absent","error")) and (.truncated|type=="boolean") and (.items|type=="array") and all(.items[]; has("item") and has("branch") and has("worktree") and (.agent|has("state") and has("idle_s")) and (.agent.state|IN("working","idle","unknown")) and (.rung|IN("none","validated","built","reviewed","shipped")) and (.origin|IN("board","mega")) and (.flags|type=="array") and (.reasons|type=="array"))'
+A10='(.schema==1) and (.generated_at|type=="number") and (.orca|IN("ok","absent","error")) and (.truncated|type=="boolean") and (.items|type=="array") and all(.items[]; has("item") and has("branch") and has("worktree") and (.agent|has("state") and has("idle_s")) and (.agent.state|IN("working","idle","unknown")) and (.rung|IN("none","validated","built","reviewed","shipped")) and (.origin|IN("board","mega","worktree")) and (.flags|type=="array") and (.reasons|type=="array"))'
 jq -e "$A10" <<< "$out" > /dev/null; check "AC10 clause 1: schema, enums, types, keys present" "$?" 0
 jq -e 'all(.items[]; ((.agent.state=="idle") == (.agent.idle_s|type=="number")) and (.agent|has("idle_s")))' <<< "$out" > /dev/null; check "AC10 clause 2: idle_s is a number iff idle, key always present" "$?" 0
 jq -r '.items[] | select(.worktree != null) | .worktree' <<< "$out" | while IFS= read -r p; do [ "$p" = "$(cd "$p" && pwd -P)" ] && [ "${p#/}" != "$p" ] || echo BAD; done > "$W/canon.out"
 check "AC10 clause 3: worktree paths are absolute and equal their pwd -P form" "$(wc -c < "$W/canon.out" | tr -d ' ')" 0
 check "top-level keys are exactly the schema-1 set" "$(field "$out" 'keys | join(",")')" '"generated_at,idle_min,items,ledger_root,orca,repo_root,schema,truncated,unchecked_shipped"'
-check "item keys are exactly the schema-1 set, even when null" "$(field "$out" '[.items[] | keys | join(",")] | unique')" '["agent,branch,flags,item,origin,reasons,rung,worktree"]'
+check "item keys are exactly the schema-1 set, even when null" "$(field "$out" '[.items[] | keys | join(",")] | unique')" '["agent,branch,flags,item,lane,origin,reasons,rung,started,worktree"]'
 check "reasons is non-empty exactly when INDETERMINATE" "$(field "$out" 'all(.items[]; ((.reasons|length) > 0) == ((.flags|index("INDETERMINATE")) != null))')" true
 check "generated_at echoes --now, repo_root is canonical" "$(field "$out" '[.generated_at, .repo_root]')" "[$NOW,\"$(cd "$REPO" && pwd -P)\"]"
 check "the fixture holds an idle, a working, an unknown, a null-branch and a null-worktree row" "$(field "$out" '[([.items[].agent.state] | unique | join(",")), any(.items[]; .branch == null), any(.items[]; .worktree == null)]')" '["idle,unknown,working",true,true]'
@@ -345,6 +368,36 @@ check "bin/board work --json reaches the script and matches" "$via_bin" "$out"
 truthy "bin/board work --help shows the verb" "bash '$KIT_DIR/bin/board' work --help | grep -q 'board work'"
 truthy "board.sh help lists the verb" "bash '$KIT_DIR/lib/board/board.sh' --help | grep -q 'board.sh work'"
 
+echo "== worktree_items and claims =="
+new_case
+worktree feat/solo "$W/solo"; worktree feat/lone "$W/lone"
+row ID-100 executing; draft ID-100 alpha; worktree feat/alpha "$W/alpha"
+lline execute ran > "$LOGS/runs/solo.log"
+claim solo normal 2026-09-29T15:00:00Z; claim alpha full 2026-09-29T16:00:00Z; claim ghost normal 2026-09-29T17:00:00Z
+{ printf '%s|feat/solo|inactive|1|%s|-\n' "$W/solo" "$(ms_ago 2700)"; printf '%s|feat/alpha|working|1|null|working\n' "$W/alpha"; } | page
+out="$(J)"
+check "an unjoined live worktree lists as its own item, origin worktree, with agent state and rung" "$(field "$(itemof "$out" solo)" '[.origin,.branch,.agent.state,.rung,.flags]')" '["worktree","feat/solo","idle","built",["PARKED"]]'
+check "a claim joins by slug to the worktree basename: lane and started attach" "$(field "$(itemof "$out" solo)" '[.lane,.started]')" '["normal","2026-09-29T15:00:00Z"]'
+check "a claim also attaches to a worktree joined to a board item" "$(field "$(itemof "$out" ID-100)" '[.origin,.lane,.started]')" '["board","full","2026-09-29T16:00:00Z"]'
+check "the joined worktree is not listed a second time" "$(field "$out" '[.items[] | select(.item == "alpha")] | length')" 0
+check "the main checkout is never listed" "$(field "$out" '[.items[] | select(.worktree == "'"$(cd "$REPO" && pwd -P)"'")] | length')" 0
+check "a worktree missing from the orca page: INDETERMINATE(not-in-orca), never idle, no lane" "$(field "$(itemof "$out" lone)" '[.agent.state,.reasons,.flags,.lane]')" '["unknown",["not-in-orca"],["INDETERMINATE"],null]'
+check "NEGATIVE: a claimed slug with no worktree is INDETERMINATE(no-worktree), agent unknown" "$(field "$(itemof "$out" ghost)" '[.origin,.worktree,.agent.state,.flags,.reasons,.lane]')" '["worktree",null,"unknown",["INDETERMINATE"],["no-worktree"],"normal"]'
+tbl="$(run_work)"
+truthy "table shows the lane" "grep -Eq '^solo +solo +idle 45m +built +normal +PARKED\$' <<< \"\$tbl\""
+new_case; worktree feat/solo "$W/solo"; printf '%s|feat/solo|working|1|null|working\n' "$W/solo" | page
+check "no registry claims: lane and started are null, no error" "$(field "$(itemof "$(J)" solo)" '[.lane,.started]')" '[null,null]'
+check "a worktree's rung with no ledger is none, no flag" "$(field "$(itemof "$(J)" solo)" '[.rung,.flags]')" '["none",[]]'
+
+echo "== orca_timeout =="
+inprog; alpha_page inactive 1 "$(ms_ago 2700)"
+if command -v timeout >/dev/null 2>&1 || command -v gtimeout >/dev/null 2>&1; then
+  out="$(ORCA_STUB_MODE=hang ORCA_TIMEOUT_S=1 J)"; rc=$?
+  check "a hung orca times out: exit 0, orca=error, agents unknown" "$rc $(field "$out" '[.orca, (.items | all(.agent.state == "unknown"))]')" '0 ["error",true]'
+else
+  echo "  SKIP: orca_timeout (no timeout or gtimeout on PATH)"
+fi
+
 echo "== flags and exit codes =="
 new_case
 run_work --bogus > /dev/null 2>&1; check "unknown flag exits 64" "$?" 64
@@ -352,6 +405,14 @@ run_work --idle-min abc > /dev/null 2>&1; check "non-numeric --idle-min exits 64
 run_work --idle-min > /dev/null 2>&1; check "flag missing its value exits 64" "$?" 64
 run_work --backlog-file "$W/nope.md" > /dev/null 2>&1; check "unreadable backlog exits 1" "$?" 1
 run_work > /dev/null 2>&1; check "an empty board renders with exit 0" "$?" 0
+
+if [ "$GNU_RUN" = 1 ]; then
+  echo "== GNU-tools pass (PATH=$GNUBIN first) =="
+  gnu_out="$(BW_GNU=1 PATH="$GNUBIN:$PATH" bash "${BASH_SOURCE[0]}" 2>&1)"; gnu_rc=$?
+  grep -E '^  FAIL' <<< "$gnu_out"
+  tail -1 <<< "$gnu_out"
+  check "GNU-tools pass is green" "$gnu_rc" 0
+fi
 
 echo
 echo "== board work: $PASS passed, $FAIL failed =="

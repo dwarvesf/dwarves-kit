@@ -33,8 +33,9 @@ source "$LIB_ROOT/telemetry/kit-log-dir.sh" || { echo "board work: lib/telemetry
 command -v jq >/dev/null 2>&1 || { echo "board work: jq is required" >&2; exit 1; }
 
 # Same rule as gate-ledger.sh runid(); runid_lines is the same chain over a stream of lines.
+# The dash goes last in the tr set: '._-\n' is a reversed range under GNU tr.
 runid() { printf '%s' "$1" | tr '/ ' '--' | tr -cd '[:alnum:]._-'; }
-runid_lines() { tr '/ ' '--' | tr -cd '[:alnum:]._-\n'; }
+runid_lines() { tr '/ ' '--' | tr -cd '[:alnum:]._\n-'; }
 canon() { local d; if d="$(cd "$1" 2>/dev/null && pwd -P)"; then printf '%s' "$d"; else printf '%s' "$1"; fi; }
 usage() { sed -n '2,/^$/p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
 bad() { echo "board work: $1" >&2; exit 64; }
@@ -121,8 +122,10 @@ src_drafts() {
 }
 
 # src_mega: one JSON line per unchecked roadmap sub-goal, with its goal file's first Branch token.
+# A legacy NN-slug id must start its slug with a letter, so a date-led line is not a sub-goal.
+# A mega branch that is also a board row's branch lists twice (once per origin); both rows are true.
 src_mega() {
-  local rm mslug id gf branch
+  local rm mslug id gf f branch
   : > "$T/mega.json"
   for rm in "$MEGA_ROOT"/*/ROADMAP.md; do
     [ -f "$rm" ] || continue
@@ -137,15 +140,17 @@ src_mega() {
       branch=""
       [ -n "$gf" ] && branch="$(grep -m1 -E '^\*\*Branch:\*\* ' "$gf" 2>/dev/null | sed -E 's/^\*\*Branch:\*\* *//' | awk '{print $1}')"
       jq -cn --arg item "$mslug/$id" --arg b "$branch" '{item: $item, branch: (if $b == "" then null else $b end)}' >> "$T/mega.json"
-    done < <(awk 'match($0, /^- \[ \] (SG-[0-9]+|[0-9]+-[A-Za-z0-9_-]+)/) { print substr($0, 7, RLENGTH - 6) }' "$rm")
+    done < <(awk 'match($0, /^- \[ \] (SG-[0-9]+|[0-9]+-[A-Za-z][A-Za-z0-9_-]*)/) { print substr($0, 7, RLENGTH - 6) }' "$rm")
   done
 }
 
 # src_orca: one `worktree ps` call. orca is ok, absent (no binary) or error (exit, non-JSON, wrong shape).
 src_orca() {
-  local out state=ok
+  local out state=ok tmo=""
+  command -v timeout >/dev/null 2>&1 && tmo=timeout
+  [ -z "$tmo" ] && command -v gtimeout >/dev/null 2>&1 && tmo=gtimeout
   if ! command -v "$ORCA_BIN" >/dev/null 2>&1; then state=absent
-  elif ! out="$("$ORCA_BIN" worktree ps --json --limit 500 2>/dev/null)"; then state=error
+  elif ! out="$(${tmo:+$tmo "${ORCA_TIMEOUT_S:-10}"} "$ORCA_BIN" worktree ps --json --limit 500 2>/dev/null)"; then state=error
   elif ! printf '%s' "$out" | jq -e '(.result.worktrees | type == "array") and all(.result.worktrees[]; (.path | type) == "string")' >/dev/null 2>&1; then state=error
   fi
   if [ "$state" != ok ]; then
@@ -186,6 +191,15 @@ src_ledger() {
   jq -Rn 'reduce inputs as $l ({}; ($l | split("\t")) as $p | .[$p[0]] += [$p[1]])' < "$T/ledger.raw" > "$T/ledger.json"
 }
 
+# src_claims: live goal-registry claims (slug, lane, started), via the registry's own read-only
+# `list` verb run from the repo. Its BRANCH column is unreliable, so only the slug is used: it
+# joins the worktree basename. A missing or failing registry is no claims.
+src_claims() {
+  ( cd "$REPO" && bash "${GOAL_REGISTRY_SH:-$LIB_ROOT/goal/goal-registry.sh}" list 2>/dev/null ) \
+    | awk 'NR > 1 && NF == 5 { print $1 "\t" $2 "\t" $5 }' \
+    | jq -Rn '[inputs | split("\t") | {slug: .[0], lane: .[1], started: .[2]}]' > "$T/claims.json"
+}
+
 src_board
 src_git "$REPO" main
 if [ "$CODE_ROOT" = "$REPO" ]; then cp "$T/main.json" "$T/code.json"; else src_git "$CODE_ROOT" code; fi
@@ -193,6 +207,7 @@ src_drafts
 src_mega
 src_orca
 src_ledger
+src_claims
 
 # ---- join, flags, sort ---------------------------------------------------------------------
 
@@ -203,10 +218,13 @@ def wt_of($g; $b): ([$g.wts[] | select(.branch == $b)] | .[0].path) // null;
 def rung_of($ph):
   if any($ph[]; . == "ship") then "shipped" elif any($ph[]; . == "review") then "reviewed"
   elif any($ph[]; . == "build") then "built" elif any($ph[]; . == "validate") then "validated" else "none" end;
+def under($p; $r): $p == $r or ($p | startswith($r + "/"));
 def agent_of($o; $wt; $br):
   if $o.orca != "ok" then {state: "unknown", idle_s: null, reasons: ["no-orca"]}
   else
-    (([$o.rows[] | select(.cpath == $wt)] | .[0]) // ([$o.rows[] | select(.branch == $br)] | .[0])) as $r
+    (([$o.rows[] | select(.cpath == $wt)] | .[0])
+      // ([$o.rows[] | select($br != "" and .branch == $br and (under(.cpath; $repo) or under(.cpath; $croot)))]
+          | if length == 1 then .[0] else null end)) as $r
     | if $r == null then {state: "unknown", idle_s: null, reasons: ["not-in-orca"]}
       elif $r.hostId != "local" then {state: "unknown", idle_s: null, reasons: ["no-orca"]}
       elif ($r.status | IN("working", "inactive")) | not then {state: "unknown", idle_s: null, reasons: ["no-terminal"]}
@@ -219,7 +237,7 @@ def agent_of($o; $wt; $br):
 def rec($origin; $item; $branch; $wt; $ag; $reasons; $ph; $inprog; $dus):
   ($reasons | unique) as $rs
   | {item: $item, origin: $origin, branch: $branch, worktree: $wt,
-     agent: {state: $ag.state, idle_s: $ag.idle_s},
+     agent: {state: $ag.state, idle_s: $ag.idle_s}, lane: null, started: null,
      rung: rung_of($ph),
      flags: ([(if $inprog and $ag.state == "idle" and $ag.idle_s >= $idle_min * 60 then "PARKED" else empty end),
               (if $dus and any($ph[]; . == "ship") then "DONE-UNSEEN" else empty end),
@@ -244,7 +262,8 @@ def joined($g; $b; $origin; $item; $inprog; $dus; $extra):
            else {br: $bs[0], why: null} end
        end) as $r
     | if $r.br == null then
-        if $shipped and $r.why != "ambiguous" then {unchecked: 1}
+        if $shipped and $r.why != "ambiguous" then
+          (if $d != null and (($ledger[0][$d.norm] // []) | any(. == "ship")) then {dropped: 1} else {unchecked: 1} end)
         else rec("board"; $c.item; null; null; unk; [$r.why] + $dup; []; ($shipped | not); false) end
       else joined($gmain[0]; $r.br; "board"; $c.item; ($shipped | not); true; $dup) end) as $bi
 | [ $mega[] | . as $m
@@ -252,17 +271,35 @@ def joined($g; $b; $origin; $item; $inprog; $dus; $extra):
       else (([$gcode[0].branches[] | select(.name == $m.branch)] | .[0]) // null) as $b
         | if $b == null then empty else joined($gcode[0]; $b; "mega"; $m.item; true; false; []) end
       end ] as $mi
+| ($bi | map(select(.item != null))) + $mi as $named
+| ($named | map(.worktree | select(. != null))) as $joined
+| def wtitem($g; $w):
+    ($w.branch // "") as $bn
+    | (([$g.branches[] | select(.name == $bn)] | .[0].norm) // "") as $norm
+    | agent_of($orca[0]; $w.path; $bn) as $ag
+    | rec("worktree"; ($w.path | split("/") | last); (if $bn == "" then null else $bn end); $w.path;
+          $ag; $ag.reasons; ($ledger[0][$norm] // []); true; false);
+  def wtlist($g): [$g.wts[1:][] | select(.path as $p | $joined | index($p) | not) | wtitem($g; .)];
+  ($named + wtlist($gmain[0]) + (if $repo == $croot then [] else wtlist($gcode[0]) end)) as $all
+| def bname: split("/") | last;
+  ($claims[0]) as $cl
+| ($all | map(.worktree | select(. != null) | bname)) as $live
+| ($all | map(if .worktree != null
+    then (.worktree | bname) as $b | ([$cl[] | select(.slug == $b)] | .[0]) as $c | . + {lane: ($c.lane // null), started: ($c.started // null)}
+    else . end)) as $withclaims
+| [$cl[] | select(.slug as $s | ($live | index($s)) == null)
+    | rec("worktree"; .slug; null; null; unk; ["no-worktree"]; []; false; false) + {lane: .lane, started: .started}] as $orphans
 | {schema: 1, generated_at: $now, idle_min: $idle_min, repo_root: $repo, ledger_root: $lroot,
    orca: $orca[0].orca, truncated: $orca[0].truncated,
-   unchecked_shipped: ($bi | map(select(.unchecked)) | length),
-   items: (($bi | map(select(.unchecked | not))) + $mi | sort_by([(.flags | length == 0), .item]))}
+   unchecked_shipped: ($bi | map(select(.unchecked == 1)) | length),
+   items: (($withclaims + $orphans) | sort_by([(.flags | length == 0), .item]))}
 '
 
 RESULT="$(jq -n \
   --slurpfile board "$T/board.json" --slurpfile drafts "$T/drafts.json" \
   --slurpfile gmain "$T/main.json" --slurpfile gcode "$T/code.json" \
-  --slurpfile orca "$T/orca.json" --slurpfile mega "$T/mega.json" --slurpfile ledger "$T/ledger.json" \
-  --argjson now "$NOW" --argjson idle_min "$OPT_IDLE" --arg repo "$REPO" --arg lroot "$LEDGER_ROOT" \
+  --slurpfile orca "$T/orca.json" --slurpfile mega "$T/mega.json" --slurpfile ledger "$T/ledger.json" --slurpfile claims "$T/claims.json" \
+  --argjson now "$NOW" --argjson idle_min "$OPT_IDLE" --arg repo "$REPO" --arg croot "$CODE_ROOT" --arg lroot "$LEDGER_ROOT" \
   "$JOIN")" || { echo "board work: join failed" >&2; exit 1; }
 
 if [ "$OPT_JSON" = 1 ]; then printf '%s\n' "$RESULT"; exit 0; fi
@@ -270,12 +307,13 @@ if [ "$OPT_JSON" = 1 ]; then printf '%s\n' "$RESULT"; exit 0; fi
 # ---- table ---------------------------------------------------------------------------------
 
 printf '%s\n' "$RESULT" | jq -r '
-  ["ITEM", "WORKTREE", "AGENT", "RUNG", "FLAGS"],
+  ["ITEM", "WORKTREE", "AGENT", "RUNG", "LANE", "FLAGS"],
   (.items[] | . as $i | [
     .item,
     ((.worktree // "-") | split("/") | last),
     (if .agent.state == "idle" then "idle \(.agent.idle_s / 60 | floor)m" else .agent.state end),
     .rung,
+    (.lane // "-"),
     (if (.flags | length) == 0 then "-"
      else [.flags[] | if . == "INDETERMINATE" then "INDETERMINATE(\($i.reasons | join(",")))" else . end] | join(" ") end)
   ]) | @tsv' | awk -F'\t' '
