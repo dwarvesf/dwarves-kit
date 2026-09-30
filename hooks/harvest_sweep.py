@@ -1409,6 +1409,8 @@ def _sweep_one(cursor, plan, item, process, now, max_chars, records, run, quaran
         if isinstance(ok, ExtractFailure):
             _once(out["state_rows"], ok.fallback and
                   "STATE %s: extractor fallback failed: codex" % source)
+            if ok.fallback:
+                log.line("fallback", source, sid, ok.fallback)
         if ok:
             state["done"][sid] = item["last_activity"]
             if text:
@@ -1417,6 +1419,8 @@ def _sweep_one(cursor, plan, item, process, now, max_chars, records, run, quaran
                 run["staged"].extend(ok.get("_staged") or [])
                 _once(out["state_rows"], ok.get("_fallback") and
                       "STATE %s: extractor fallback used: %s" % (source, ok["_fallback"]))
+            if isinstance(ok, dict) and ok.get("_fallback"):
+                log.line("fallback", source, sid, ok["_fallback"])
             out["processed"].append(sid)
             log.line("processed", source, sid)
         elif isinstance(ok, ExtractFailure) and ok.limit:
@@ -2101,6 +2105,11 @@ def main(argv):
                 man = {"run_id": result["run"]["run_id"], "sessions": [],
                        "learnings_staged": 0, "learnings_queued": _queued_learnings(),
                        "candidates": [], "lag": {}}
+            # the dry run's STATE and INCIDENT rows: report.md is thrown away with the
+            # overlay, so this is the operator's only view of a fallback or a hold
+            man["state_rows"] = list(result["run"]["state_rows"]) + [
+                r for s, _, _ in _sources() if s in result for r in result[s]["state_rows"]]
+            man["incidents"] = list(result["run"]["incidents"])
         finally:
             if had is None:
                 os.environ.pop("HARVEST_STATE_DIR", None)

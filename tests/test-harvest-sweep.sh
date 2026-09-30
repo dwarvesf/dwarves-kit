@@ -14,6 +14,10 @@ export HARVEST_STATE_DIR="$TD/state"
 export HARVEST_SWEEP_CLAUDE_ROOT="$TD/claude-root"
 export HARVEST_SWEEP_DEVIN_DB="$TD/devin.db"
 export HARVEST_SWEEP_LAUNCH_RECORD="$TD/launch-record"
+# Neutral operator + kit-root config: never inherit the host's kit.toml (a scenario that
+# wants config sets its own KIT_CONFIG_* and restores nothing, it runs in its own process).
+mkdir -p "$TD/neutral-op" "$TD/neutral-root"
+export KIT_CONFIG_OPERATOR="$TD/neutral-op" KIT_CONFIG_ROOT="$TD/neutral-root"
 # Safety net: no test can reach a real model, even one that forgets to set its own stub.
 export HARVEST_EXTRACTOR="$KIT_DIR/tests/fixtures/harvest-sweep/stub-extractor.sh"
 # The same net for the Codex fallback: a failing `codex` stub first on PATH, so a failed
@@ -1589,6 +1593,36 @@ blob = json.dumps({k: clean[k] for k in ("learnings", "sightings")})
 P("redact_fallback", "%s|%s|%s" % (clean.get("_fallback"), "[redacted]" in blob,
                                    any(s in blob for s in ("ghp_", "sk-", "AKIA"))))
 
+# ---- dry-run shows the fallback STATE row; a real run logs one `fallback` line ----
+import contextlib, io, stat
+base, root = scenario()
+mk(root, "dryfb", NOW - 7200)
+os.environ["STUB_MODE"] = "limit"
+os.environ["CODEX_STUB_MODE"] = "ok"
+os.environ["CODEX_STUB_OUT"] = json.dumps({"learnings": [], "sightings": []})
+buf = io.StringIO()
+with contextlib.redirect_stdout(buf):
+    hs.main(["--sweep", "--dry-run", "--since", str(NOW - 86400)])
+man = json.loads(buf.getvalue())
+P("dry_fb_rows", "STATE claude: extractor fallback used: codex (limit)" in man["state_rows"])
+P("dry_fb_incidents", man["incidents"])
+base, root = scenario()
+mk(root, "logfb", NOW - 7200)
+os.environ["STUB_MODE"] = "limit"
+os.environ["CODEX_STUB_MODE"] = "ok"
+os.environ["CODEX_STUB_OUT"] = json.dumps({"learnings": [], "sightings": []})
+r = run()
+lp = os.path.join(os.environ["HARVEST_STATE_DIR"], "sweep", "runs", r["run"]["run_id"], "stage1.log")
+lines = [l for l in read(lp).split("\n") if l.startswith("fallback")]
+P("log_fb_line", lines)
+P("log_fb_mode", oct(stat.S_IMODE(os.stat(lp).st_mode)))
+base, root = scenario()
+mk(root, "logfail", NOW - 7200)
+os.environ["STUB_MODE"] = "limit"          # CODEX_STUB_MODE stays failing
+r = run()
+lp = os.path.join(os.environ["HARVEST_STATE_DIR"], "sweep", "runs", r["run"]["run_id"], "stage1.log")
+P("log_fbfail_line", [l for l in read(lp).split("\n") if l.startswith("fallback")])
+
 # ---- the probe hitting a limit is a hold, not an auth page ----
 base, root = scenario()
 mk(root, "pl-a", NOW - 7200)
@@ -1631,6 +1665,11 @@ assert_eq "fallback: a limit on both counts no failure" "{}" "$(fb both_fail)"
 assert_eq "fallback: a limit on both reports the limit and the failed fallback" "True" "$(fb both_rows)"
 assert_eq "fallback: a limit on both runs no probe" "1/1" "$(fb both_calls)"
 assert_eq "fallback: a Codex reply with credential shapes is redacted" "codex (limit)|True|False" "$(fb redact_fallback)"
+assert_eq "fallback: the dry-run manifest carries the fallback STATE row" "True" "$(fb dry_fb_rows)"
+assert_eq "fallback: the dry-run manifest carries an empty incidents list" "[]" "$(fb dry_fb_incidents)"
+assert_eq "fallback: stage1.log logs one fallback line, ids and reason only" "['fallback claude logfb codex (limit)']" "$(fb log_fb_line)"
+assert_eq "fallback: stage1.log stays 0600" "0o600" "$(fb log_fb_mode)"
+assert_eq "fallback: a failed fallback logs its line too" "['fallback claude logfail failed']" "$(fb log_fbfail_line)"
 assert_eq "fallback: a limit-shaped probe holds instead of paging" "limit" "$(fb probe_limit_stop)"
 assert_eq "fallback: a limit-shaped probe raises no INCIDENT" "0" "$(fb probe_limit_incidents)"
 assert_eq "fallback: a limit-shaped probe counts no failure" "{}" "$(fb probe_limit_fail)"
