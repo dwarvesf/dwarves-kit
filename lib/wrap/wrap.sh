@@ -4,8 +4,8 @@
 #
 #   wrap.sh scan  [--under <root>]... <repo> [<repo>...]    report only, exit 0
 #   wrap.sh apply [--apply] [--worktrees] [--archive-unmerged] [--own <path>]... [--under <root>]... <repo> [...]  dry-run by default
-#   wrap.sh merge [--apply] [--pr N] [--with-ci] <repo>     merges ONE own green PR (--pr: a named draft)
-#   wrap.sh land  <worktree> [--title T] [--body-file F] [--with-ci]   one hand-made worktree, landed
+#   wrap.sh merge [--apply] [--pr N] [--with-ci] [--verify C] <repo>   merges ONE own green PR (--pr: a named draft)
+#   wrap.sh land  <worktree> [--title T] [--body-file F] [--with-ci] [--verify C]   one hand-made worktree, landed
 #   wrap.sh start <repo> <branch> [--carry [<path>...]]     one hand-made worktree, started
 #   wrap.sh log   "<slug>: <one sentence>" [--date YYYY-MM-DD]
 #   wrap.sh default-branch <repo>                           prints the detected name
@@ -45,9 +45,12 @@
 # worktree remove under
 # --worktrees, pull --ff-only on the default branch and its pull-past-dirty stash, the
 # activity-log prepend, the knowledge-root project directory, the staging-file append, one
-# gh pr merge, one bounded union re-merge push (with its own follow-up commit when the
-# re-merge duplicates a kanban row, and a scratch detached worktree added and removed when
-# no checkout holds the branch), one `gh pr ready` when `merge --pr N` targets a draft,
+# gh pr merge, one bounded re-merge cycle for a conflicting own PR (a `merge --no-ff
+# --no-commit` of origin/<default>, the `chore(merge)` merge commit it lands, one follow-up
+# dedupe commit when the merge duplicates a kanban row, one fast-forward push of the
+# branch, and on the way out the restore of whatever the merge changed or one
+# `reset --keep` of this run's own unpushed commits; a scratch detached worktree is added
+# and removed when no checkout holds the branch), one `gh pr ready` when `merge --pr N` targets a draft,
 # `merge`'s squash-equivalent fallback for a conflicting own PR whose head already holds
 # the base (one commit-tree, one <branch>-squash push with a single scratch-ref delete and
 # repush, one replacement `gh pr create`), `land`'s own named push, PR create, squash
