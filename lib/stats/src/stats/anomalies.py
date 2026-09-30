@@ -30,7 +30,7 @@ import statistics
 import sys
 from dataclasses import dataclass
 
-from . import materialize
+from . import ceremony, materialize
 
 # --- thresholds (open-fork 3: defensible scaffolds, tune via --threshold) ----------------
 # Every key is overridable by the single repeatable `--threshold KEY=VALUE` CLI flag. These
@@ -64,6 +64,12 @@ DEFAULTS: dict[str, float] = {
                                   # n_rejected AND the global raised denominator must clear
                                   # this before the rate means anything -- same convention as
                                   # `review-yield --min-n`'s own low_n floor
+    "ceremony_min_records": 30.0,      # floor: ceremony (ran+override) gate records in the window
+    "ceremony_min_known_caught": 10.0,  # floor: ran+override rows that carry an OUTCOME bracket, so
+                                        # "zero catches" is evidence, not absence of data
+    "ceremony_share_max": 0.70,        # ceremony records / all ran+override records; scaffold, the
+                                       # baseline report sets the shipped default
+    "ceremony_window_days": 14.0,      # window length, ending at the latest GATE timestamp
     "review_fp_rate_max": 0.5,    # >50% of the (approximated) raised total attributed to one
                                   # lens's rejections is disproportionate, signal not noise
 }
@@ -558,10 +564,51 @@ def _detect_review_fp(th: dict) -> Anomaly | None:
     return None
 
 
+def _detect_ceremony_share(th: dict) -> Anomaly | None:
+    """Ceremony share: most gate records in the window sit in ceremony phases and no known
+    gate row caught a problem. Fires only when both floors clear (ceremony records and
+    known-caught rows), so a window with no OUTCOME brackets proposes nothing. Reads the lens
+    through `ceremony.from_lens`, gate rows only; the transcript read (slow) happens only on
+    a fire, to fill the metric string. Progress, dispatch and token figures are context and
+    never gate the fire."""
+    days = int(th["ceremony_window_days"])
+    s = ceremony.from_lens(days, context=False)
+    rec, cat = s["records"], s["catches"]
+    caught_true = cat["caught"]
+    if rec["ceremony"] < th["ceremony_min_records"]:
+        return None
+    if cat["known"] < th["ceremony_min_known_caught"]:
+        return None
+    if caught_true != 0:
+        return None
+    if rec["share"] is None or rec["share"] < th["ceremony_share_max"]:
+        return None
+    full = ceremony.from_lens(days, context=True)
+    prog, dsp = full["progress"], full["dispatch"]
+    tokens = "?" if dsp["tokens_total"] is None else str(dsp["tokens_total"])
+    lines = "?" if prog is None else f"{prog['lines']} prs={prog['prs']}"
+    return Anomaly(
+        key="ceremony_share",
+        title="Feedback: most gate work, no problem caught in the window",
+        intent=(f"Review the gate mix: {rec['ceremony']} of {rec['active']} gate records "
+                f"({rec['share']:.0%}) sit in ceremony phases, and none of {cat['known']} gate rows "
+                f"with a recorded outcome caught a problem, over {full['window']['start']} to "
+                f"{full['window']['end']}."),
+        approach=("Compare against the baseline in docs/verification/ceremony-lens/baseline.md and "
+                  "run `stats ceremony` for the per-run view. Detected via `ledger anomalies`; "
+                  "the share counts gate records, never tokens or time."),
+        tags="#u-mid #f-mid",
+        home="dwarves-kit",
+        metric=(f"ceremony_records={rec['ceremony']} gate_records={rec['active']} "
+                f"share={rec['share']:.2f} known_caught={cat['known']} caught={caught_true} "
+                f"lines={lines} dispatches={dsp['count']} tokens={tokens}"),
+    )
+
+
 DETECTORS = (
     _detect_debt, _detect_cost_spike, _detect_misfire, _detect_unknown_density,
     _detect_ceremony, _detect_token_runaway, _detect_serial_when_parallel,
-    _detect_memory_hygiene, _detect_review_fp,
+    _detect_memory_hygiene, _detect_review_fp, _detect_ceremony_share,
 )
 
 
