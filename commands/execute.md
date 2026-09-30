@@ -175,7 +175,7 @@ while verdict == "FAIL:fixable" AND retry_count < MAX_RETRIES:
 if verdict still != "PASS": apply the PARTIAL rule below
 ```
 
-**Check the attempt state before you re-dispatch anything.** The loop handles a builder that REPORTED a fixable failure. A builder that went SILENT reported nothing, and a re-dispatch races the original on the same files. First: `bash lib/goal/attempt-state.sh status <task-slug>`. An attempt in `disconnected` with grace remaining means **resume it with `SendMessage`** and spend no retry. Only once `lose-attempt` succeeds may a fresh builder take the work, as a new attempt and not a fix cycle. Max 2 retries: if it takes 3+, the issue is a design problem, not a code bug. A fix-agent that reports it cannot fix an issue: escalate at once.
+**Check the attempt state before you re-dispatch anything.** The loop handles a builder that REPORTED a fixable failure. A builder that went SILENT reported nothing, and a re-dispatch races the original on the same files. First: `bash lib/goal/attempt-state.sh status <task-slug>`. An attempt in `disconnected` with grace remaining means **resume it with `SendMessage`** and spend no retry. Only once `lose-attempt` succeeds may a fresh builder take the work, as a new attempt and not a fix cycle. Max 2 retries: if it takes 3+, the issue is a design problem, not a code bug. A `kit:fix-agent` that reports it cannot fix an issue: escalate at once.
 
 **Sampled recheck (`kit:recheck-verifier`).** Right-arm PASSes are unreviewed by default, so a fresh-context re-audit samples them:
 
@@ -183,7 +183,7 @@ if verdict still != "PASS": apply the PARTIAL rule below
 N=$(kit_config_get_root execute.recheck_sample 5)   # 0 = sampling off, 1 = recheck every PASS
 ```
 
-- Key = the HEAD SHA read once at the first end-verifier dispatch (item 2). Later fix-agent commits do not change it. The run is sampled when that SHA piped to `cksum` yields a first field divisible by N. Record `bash lib/gate/gate-ledger.sh action "$RID" "recheck: sampled key=<sha>"` or `"recheck: skipped key=<sha>"` so anyone can recompute the decision.
+- Key = the HEAD SHA read once at the first end-verifier dispatch (item 2). Later `kit:fix-agent` commits do not change it. The run is sampled when that SHA piped to `cksum` yields a first field divisible by N. Record `bash lib/gate/gate-ledger.sh action "$RID" "recheck: sampled key=<sha>"` or `"recheck: skipped key=<sha>"` so anyone can recompute the decision.
 - A sampled run dispatches `kit:recheck-verifier` (rid=<rid>; it pins opus) in a FRESH context on every end-verifier PASS, passing the full verdict block. It RE-EXECUTES the recorded `Command:` and re-judges; it never reads back the recorded `Exit:` text.
 - A criterion the builder reported as `confirmed-by: read <file:line>` that no end verifier executed gets a verification-log row whose Verdict carries the literal tag `(self-attested)`. Every `(self-attested)` row is rechecked on every run, sampled or not.
 - A PASS not rechecked gets `Re-audit: SKIPPED (sampled out, 1 in N)`. A recheck PASS is recorded `Re-audit: PASS`.
