@@ -132,7 +132,7 @@ GENERATED , do not hand-edit. Regenerate: `bash lib/registry/feature-registry.sh
 | `post-compact-reinject.sh` | `[E]` | SessionStart | SessionStart hook, matcher: compact (source=compact) | SPEC-003, SPEC-010, SPEC-034 +2 | test-hooks.sh, test-install-modules.sh |
 | `pre-compact-backup.sh` | `[E]` | PreCompact | PreCompact hook | SPEC-010, SPEC-084, SPEC-334 | test-hooks.sh, test-install-modules.sh |
 | `prose-rag.sh` | `[E]` | UserPromptSubmit | UserPromptSubmit hook shim for the prose-rag recall inject | SPEC-194, SPEC-204, SPEC-249 +5 | test-bin-forwarders.sh, test-config-seams.sh, test-install-clis.sh +3 |
-| `safety-gate.sh` | `[E]` | PreToolUse | PreToolUse hook, matcher: Bash | SPEC-003, SPEC-014, SPEC-019 +14 | proof-loop-09-scenario-b.sh, test-codex-hooks.sh, test-gate-opt-out.sh +4 |
+| `safety-gate.sh` | `[E]` | PreToolUse | PreToolUse hook, matcher: Bash | SPEC-003, SPEC-014, SPEC-019 +14 | proof-loop-09-scenario-b.sh, test-codex-hooks.sh, test-gate-opt-out.sh +5 |
 | `secrets-guard.sh` | `[E]` | PreToolUse | PreToolUse hook, matcher: Read\|Edit\|Bash | SPEC-014, SPEC-084, SPEC-288 +3 | test-codex-hooks.sh, test-hook-anchor.sh, test-hooks.sh +2 |
 | `session-state-save.sh` | `[E]` | Stop+SubagentStop | Stop hook (runs alongside anti-rationalization + slop-cleaner) | SPEC-003, SPEC-010, SPEC-030 +6 | test-hook-anchor.sh, test-hooks.sh, test-install-modules.sh +1 |
 | `ship-gate.sh` | `[E]` | PreToolUse | each matrix row mapped to the run that exercised it, or an | SPEC-006, SPEC-042, SPEC-044 +64 | test-codex-hooks.sh, test-every-step-review.sh, test-gate-opt-in.sh +19 |
