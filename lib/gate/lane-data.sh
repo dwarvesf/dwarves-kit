@@ -156,6 +156,8 @@ lane_default() {
     fi
   fi
   [ -n "$v" ] || v="$(KIT_CONFIG_ROOT="$_LD_KIT_ROOT" kit_config_get_root lanes.default normal)"
+  # tiny is not a default: it would waive the spec for every untagged task.
+  if [ "$v" = tiny ]; then echo "lane-data: [lanes] default = tiny is not allowed; using normal" >&2; v=normal; fi
   case " $LANE_NAMES " in *" $v "*) printf '%s' "$v" ;; *) printf 'normal' ;; esac
 }
 

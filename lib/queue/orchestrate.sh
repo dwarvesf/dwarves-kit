@@ -830,12 +830,14 @@ _emit_start() {  # dir id
   fi
   local title lane type
   title=$(_sg_title "$(_sg_line "$dir/ROADMAP.md" "$id")" "$id")
-  lane=$(bash "$LIB_ROOT/classify/lane-classify.sh" risk "$title" 2>/dev/null | tail -1)
+  lane=$(bash "$LIB_ROOT/classify/lane-classify.sh" classify "$title" 2>/dev/null | tail -1)
   type=$(bash "$LIB_ROOT/classify/task-type-classify.sh" classify "$title" 2>/dev/null | tail -1)
   [ -n "$lane" ] || lane=normal
   [ -n "$type" ] || type=spec-feature
   bash "$LIB_ROOT/gate/gate-ledger.sh" start "$slug" "$lane" "$lane" "$type" "$type" \
     && _say "[orchestrate] [telemetry] $id START recorded (rid=$slug lane=$lane type=$type)."
+  # A full-lane suggestion is logged against the run, not turned into its lane.
+  bash "$LIB_ROOT/classify/lane-classify.sh" classify --rid "$slug" "$title" >/dev/null 2>&1 || true
 }
 
 _build_prompt() {
