@@ -2500,7 +2500,7 @@ cmd_land() {
   [ "$ahead" -gt 0 ] || {
     echo "wrap.sh land: ${branch} has no commits ahead of origin/${def}" >&2; return 1; }
 
-  local tip url rc
+  local tip url rc reason rrc
   tip="$(git -C "$wt" rev-parse HEAD 2>/dev/null)"
   url="$(_origin_url "$wt")"
   [ -n "$title" ] || title="$(_land_feature_title "$wt" "$def")"
@@ -2592,7 +2592,15 @@ cmd_land() {
   # merging untested.
   _ci_label_sync "$url" "$n" "$tip" "$moved"; rc=$?
   case "$rc" in
-    0) _ci_checks_wait "$url" "$n" ;;
+    0)
+      _ci_checks_wait "$url" "$n"
+      # The wait ending is not the merge's green light: the head and every gate are
+      # re-read against the tip that was pushed, so a moved head, a red run or a
+      # grace-expired state refuses here instead of merging untested.
+      reason="$(_ci_regate "$url" "$n" "$def" "$tip")"; rrc=$?
+      if [ "$rrc" -ne 0 ]; then
+        echo "     MERGE FAILED #${n}: ${reason}; left open" >&2; return 2
+      fi ;;
     1) ;;
     3) echo "     MERGE FAILED #${n}: the PR head never showed the pushed $(_short "$tip"); left open" >&2; return 2 ;;
     *) echo "     MERGE FAILED #${n}: the ci label could not be set" >&2; return 2 ;;

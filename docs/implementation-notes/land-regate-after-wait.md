@@ -18,6 +18,13 @@ Deltas from SPEC-365. Nothing here repeats what the spec already states.
 - `cmd_land` runs `git ls-remote` before its push on every repo, gated or not: it sits outside the label check, so the ungated path pays one remote read for the `moved` answer.
 - T15, L10 and L7 went red on the old code; T17, T17b and L11 are guards that pass on both sides of the change (the empty-output path and the `[]` path both mean "no gate" before and after).
 
+### Task B2
+- The re-gate runs only on the sync's rc-0 arm, inside the same `case` block, so a failed re-gate returns before `_gh_merge_retry` with `MERGE FAILED #<n>: <reason>; left open`. The rc-1 ungated path and the rc-3/catch-all arms are untouched.
+- `reason`/`rrc` join `tip`, `url` and `rc` as `cmd_land` locals; the re-gate's rc-3 (`not mergeable (CONFLICTING)`) is treated as an ordinary refusal here, since `land` has no union re-merge to hand it to.
+- `ld_full` prints the same record shape as the stub's own `_pr_detail` answer (number, headRefOid, mergeable, mergeStateStatus, baseRefName, labels, url, statusCheckRollup, commits) with `headRefOid` overridable for moved-head cases.
+- L1-L5 went red on exit, message, no-merge and counts; L8 only red on the read count (3 to 4), the green assert the spec predicts when the re-gate passes.
+- Fixture calls this worker made: T6's "5th read is the full detail read" assert names `headRefOid`/`mergeStateStatus` keys, not just the read index; the ci-gated "waited out" floor moved 3 to 4 reads and its re-gate read is an `ld_full` at the pushed tip.
+
 ## 2026-09-29 Spec-time decisions
 - The post-wait block moves into `_ci_regate`. It started with two callers and gained the carry as a third in round 1. The block is an enforcement rule, so the extraction lands first (Task A) with no behavior change, and the existing merge ci-wait cases pin it before anything else calls it.
 - `land` settles its re-gate read with the plain form `_pr_detail_settled url n`. The pushed-oid form needs the prior head, and `land` never reads an adopted PR's old head. The head wait in the sync covers the stale-head window instead (see below).
