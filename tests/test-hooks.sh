@@ -1692,14 +1692,14 @@ assert_output_contains "plan: normal carries required spec" "3. spec            
 assert_output_contains "plan: normal prepends grill intake" "1. grill" "$(GL plan normal)"
 PLAN_TINY="$(GL plan tiny)"
 assert_output_not_contains "plan: tiny has no grill row" "grill" "$PLAN_TINY"
-# Validate is required on normal and full, run-lite on backfill (listed, advisory), absent on
-# tiny and bug.
-assert_output_contains "plan: normal lists validate required" "4. validate           required" "$(GL plan normal)"
+# Validate is required on full, run-lite on normal and backfill (listed, advisory; a large
+# normal-lane spec still runs it by prose rule), absent on tiny and bug.
+assert_output_contains "plan: normal lists validate lite" "4. validate           lite" "$(GL plan normal)"
 assert_output_contains "plan: backfill lists validate lite" "4. validate           lite" "$(GL plan backfill)"
 assert_output_not_contains "plan: tiny has no validate" "validate" "$PLAN_TINY"
 assert_output_not_contains "plan: bug has no validate" "validate" "$(GL plan bug)"
 assert_output_contains "plan: full still requires validate" "validate           required" "$(GL plan full)"
-assert_output_contains "required: normal requires validate" "validate" "$(GL required normal)"
+assert_output_not_contains "required: normal no longer requires validate" "validate" "$(GL required normal)"
 assert_output_contains "required: normal requires review" "review" "$(GL required normal)"
 # a normal ship with spec, build, ship and no Validate or Review line is refused
 GL record val-n spec ran "spec written"; GL record val-n build ran "built"; GL record val-n ship ran "pushed"
@@ -2076,6 +2076,31 @@ assert_output_contains "ship-gate names the missing gate" "MISSING-GATE" "$SG_OU
 for g in Spec Validate Build Review Ship; do bash "$GL" record sg-demo "$g" ran "x" >/dev/null 2>&1; done
 SG_RC2=$(cd "$SGR" && echo '{"tool_input":{"command":"git push -u origin feat/sg-demo"}}' | CLAUDE_PLUGIN_ROOT="$KIT_DIR" bash "$SG" >/dev/null 2>&1; echo $?)
 assert_exit "ship-gate allows the push once gates are recorded" 0 "$SG_RC2"
+
+# validate by size: the normal lane no longer requires Validate in the ledger, so the hook
+# blocks a LARGE normal-lane spec (4+ tasks or no countable task) that shipped with no
+# validate ran/override line, and lets a SMALL one through.
+_vsz_repo() { # slug task-count -> repo dir with a normal-lane spec of that many tasks
+  local d="$DWARVES_KIT_LOG_DIR/vsz-$1"; mkdir -p "$d"
+  ( cd "$d" && git init -q && git checkout -q -b "feat/$1" && mkdir -p docs/specs \
+    && { printf 'Lane: normal\nDepth: standard (one file)\n\n## Tasks\n\n'; i=0; while [ $((i+=1)) -le "$2" ]; do printf -- '- [ ] TASK-%s: x\n' "$i"; done; } > "docs/specs/SPEC-001-$1.md" \
+    && git add -A && git -c user.email=t@t -c user.name=t commit -qm init ) >/dev/null 2>&1
+  echo "$d"
+}
+_vsz_push() { ( cd "$1" && echo "{\"tool_input\":{\"command\":\"git push -u origin feat/$2\"}}" | CLAUDE_PLUGIN_ROOT="$KIT_DIR" bash "$SG" 2>&1 ); }
+for g in Spec Build Review Ship; do for s in vsz-large vsz-ran vsz-ovr vsz-small vsz-skip; do bash "$GL" record "$s" "$g" ran "x" >/dev/null 2>&1; done; done
+VD=$(_vsz_repo vsz-large 5); VOUT=$(_vsz_push "$VD" vsz-large); VRC=$?
+assert_exit "ship-gate: large normal spec with no validate is blocked" 2 "$VRC"
+assert_output_contains "ship-gate: large-spec block names the validate rule" "validate" "$VOUT"
+assert_output_contains "ship-gate: large-spec block prints the override hint" "gate-ledger.sh\" override" "$VOUT"
+VD=$(_vsz_repo vsz-ran 5); bash "$GL" record vsz-ran Validate ran "fresh reader" >/dev/null 2>&1
+_vsz_push "$VD" vsz-ran >/dev/null; assert_exit "ship-gate: large normal spec with validate ran passes" 0 $?
+VD=$(_vsz_repo vsz-ovr 5); bash "$GL" override vsz-ovr Validate "operator: waived" >/dev/null 2>&1
+_vsz_push "$VD" vsz-ovr >/dev/null; assert_exit "ship-gate: large normal spec with validate override passes" 0 $?
+VD=$(_vsz_repo vsz-small 2)
+_vsz_push "$VD" vsz-small >/dev/null; assert_exit "ship-gate: small normal spec with no validate passes" 0 $?
+VD=$(_vsz_repo vsz-skip 5); bash "$GL" record vsz-skip Validate skipped "NEEDS REVISION: critical=1" >/dev/null 2>&1
+_vsz_push "$VD" vsz-skip >/dev/null; assert_exit "ship-gate: large normal spec whose last validate is skipped is blocked" 2 $?
 
 # ============================================================
 echo ""

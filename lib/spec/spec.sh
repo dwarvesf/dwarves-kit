@@ -8,7 +8,7 @@
 #   spec.sh index [list]        -> spec-index.sh (the grouped spec table)
 #   spec.sh next <args...>      -> spec-next.sh (next|check <NNN>|reserve)
 #   spec.sh task-done <args...> -> spec-task-done.sh (check a task off + log its run; never commits)
-#   spec.sh depth <args...>     -> spec-depth.sh (level|wants|check the header Depth: line)
+#   spec.sh depth <args...>     -> spec-depth.sh (level|wants|check|size the header Depth: line)
 #   spec.sh -h|--help|help      -> this usage
 set -euo pipefail
 

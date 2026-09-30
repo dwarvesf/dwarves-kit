@@ -45,7 +45,7 @@ Print the resolved target as a `## Target` block: path, branch, compare ref, PR 
 | Leg | Agent | Model tier | Job |
 |---|---|---|---|
 | 1. Acceptance verify | kit:acceptance-verifier (or kit:task-verifier for a single task) | mid, or the spec's tier when it carries `Model: opus` | re-execute the spec/branch verification commands VERBATIM in fresh context; check every AC against the actual files |
-| 2. Review | kit:code-reviewer single-pass; escalate domain lenses per the table below | high (Opus-class) | static-read judgment: what re-execution cannot see |
+| 2. Review | kit:code-reviewer single-pass; escalate domain lenses per the table below | Sonnet (mid) on the normal lane, high (Opus-class) on the full lane | static-read judgment: what re-execution cannot see |
 | 3. Advisor | kit:advisor (critique mode) | mid | the uniform extra lens; additive, never replaces leg 2 |
 
 Dispatch legs 1 and 2 IN PARALLEL (one message, multiple Task calls). Leg 3 rides

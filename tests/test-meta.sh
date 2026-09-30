@@ -3342,6 +3342,22 @@ assert_eq "wrap.md carries the inactive-host STATE row (knob resolves as true)" 
 RC=0; grep -qF 'sweep will also see this session' "$WRAPF" || RC=1
 assert_eq "wrap.md carries the explicit-distill override FYI" 0 $RC
 
+# Validate by size: a small normal-lane spec records an override instead of the 7-reviewer round;
+# the battery review leg rides Sonnet on normal and Opus on full.
+BATTERY_CMD_F="$KIT_DIR/commands/battery.md"
+RC=0; fhas "$SPEC_CMD_F" 'spec.sh depth size' && fhas "$SPEC_CMD_F" 'small spec: normal lane, standard depth, N tasks; post-build review covers it' || RC=1
+assert_eq "spec.md step 5: a small spec records a Validate override, sized by the depth size verb" "0" "$RC"
+RC=0; fhas "$EXEC_CMD_F" 'spec.sh depth size' && fhas "$EXEC_CMD_F" 'small spec: normal lane, standard depth, N tasks; post-build review covers it' || RC=1
+assert_eq "execute.md preflight: the same size check and override line" "0" "$RC"
+RC=0; fhas "$BATTERY_CMD_F" 'Sonnet (mid) on the normal lane, high (Opus-class) on the full lane' || RC=1
+assert_eq "battery.md leg 2: Sonnet on normal, Opus on full" "0" "$RC"
+RC=0; fhas "$KIT_DIR/docs/WORKFLOW.md" 'runs on large specs only' || RC=1
+assert_eq "WORKFLOW.md: fresh-context validation no longer runs at every depth" "0" "$RC"
+RC=0; grep -qF 'validator runs at every depth' "$KIT_DIR/docs/WORKFLOW.md" && RC=1
+assert_eq "WORKFLOW.md Depth paragraph: no stale 'validator runs at every depth' claim" "0" "$RC"
+RC=0; fhas "$KIT_DIR/docs/WORKFLOW.md" 'The fresh-context validator runs on every full-lane spec and on large normal-lane specs' || RC=1
+assert_eq "WORKFLOW.md Depth paragraph: validator follows the size rule" "0" "$RC"
+
 RC=0; for F in execute spec; do grep -qF 'include `rid=<rid>`' "$KIT_DIR/commands/$F.md" || RC=1; done
 assert_eq "execute.md and spec.md state the rid=<rid> dispatch-description convention" 0 $RC
 

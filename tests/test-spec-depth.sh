@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # test-spec-depth.sh: the spec header `Depth:` line (helper, command wiring, review routing).
 # Run: bash tests/test-spec-depth.sh [section]
-# Sections: level check inverse missing-line wants spec-md-wiring validate-wiring review-routing docs
+# Sections: level check inverse missing-line wants size spec-md-wiring validate-wiring review-routing docs
 # No section runs all. Exit 0 = every assert green.
 set -uo pipefail
 KIT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
@@ -95,6 +95,68 @@ if want wants; then
   bash "$H" wants "$FX/bold-depth.md" research-repo;          assert_eq "bold line wants research-repo" 0 "$?"
   bash "$H" wants "$FX/standard.md" nonsense 2>/dev/null;     assert_eq "unknown level exits 2" 2 "$?"
   assert_eq "spec.sh forwards depth" "standard" "$(bash "$KIT_DIR/lib/spec/spec.sh" depth level "$FX/standard.md" 2>/dev/null)"
+fi
+
+if want size; then
+  echo "=== size (small = normal lane + standard depth + at most 3 tasks) ==="
+  SZ=$(mktemp -d)
+  # mk <name> <lane> <depth-line-or-empty> <checkbox-tasks> [table-tasks]
+  mk() {
+    { printf '# Spec: size fixture\nGenerated: 2026-10-01\nStatus: DRAFT\nLane: %s\n' "$2"
+      [ -n "$3" ] && printf 'Depth: %s\n' "$3"
+      printf '\n## Tasks\n\n'
+      i=0; while [ $((i+=1)) -le "${4:-0}" ]; do printf -- '- [ ] TASK-%s: do it, done when green\n' "$i"; done
+      i=0; while [ $((i+=1)) -le "${5:-0}" ]; do printf '| T%s | do it | f.sh | green |\n' "$i"; done
+      printf '\n```\n- [ ] TASK-9: fenced example\n```\n'
+    } > "$SZ/$1.md"
+  }
+  sz() { bash "$H" size "$SZ/$1.md" 2>/dev/null | awk '{print $1}'; }
+  mk s3 normal 'standard (one file)' 3;           assert_eq "normal, standard, 3 checkbox tasks is small" small "$(sz s3)"
+  mk s4 normal 'standard (one file)' 4;           assert_eq "4 tasks is large" large "$(sz s4)"
+  mk nodepth normal '' 2;                          assert_eq "absent Depth counts as standard" small "$(sz nodepth)"
+  mk res normal 'research (repo: how x wires y)' 1; assert_eq "deeper Depth is large" large "$(sz res)"
+  mk full full 'standard (one file)' 1;            assert_eq "full lane is large" large "$(sz full)"
+  mk bug bug 'standard (one file)' 1;              assert_eq "bug lane is large" large "$(sz bug)"
+  mk none normal 'standard (one file)' 0;          assert_eq "no countable task is large" large "$(sz none)"
+  mk tbl normal 'standard (one file)' 0 3;         assert_eq "3 table-row tasks is small" small "$(sz tbl)"
+  mk tbl4 normal 'standard (one file)' 2 2;        assert_eq "checkbox plus table tasks add up" large "$(sz tbl4)"
+  assert_eq "fenced task example is not counted" "tasks=3" "$(bash "$H" size "$SZ/s3.md" 2>/dev/null | grep -o 'tasks=[0-9]*')"
+  bash "$H" size "$SZ/s3.md" >/dev/null 2>&1; assert_eq "small exits 0" 0 "$?"
+  bash "$H" size "$SZ/s4.md" >/dev/null 2>&1; assert_eq "large exits 1" 1 "$?"
+  bash "$H" size "$SZ/missing.md" >/dev/null 2>&1; assert_eq "missing spec exits 2" 2 "$?"
+  assert_eq "spec.sh depth size forwards" small "$(bash "$KIT_DIR/lib/spec/spec.sh" depth size "$SZ/s3.md" 2>/dev/null | awk '{print $1}')"
+  # counter formats: each task shape counts, a stray fence cannot hide tasks, CR is stripped
+  hdr() { printf '# Spec: size fixture\nGenerated: 2026-10-01\nStatus: DRAFT\nLane: normal\nDepth: standard (one file)\n\n## Tasks\n\n'; }
+  tn() { bash "$H" size "$SZ/$1.md" 2>/dev/null | grep -o 'tasks=[0-9]*'; }
+  { hdr; for i in 1 2 3 4; do printf '### TASK-%s: do it\n\nbody\n\n' "$i"; done; } > "$SZ/heading.md"
+  assert_eq "### TASK-N headings are counted" "tasks=4" "$(tn heading)"
+  assert_eq "4 heading tasks read large" large "$(sz heading)"
+  { hdr; for i in 1 2 3 4; do printf -- '- [ ] **TASK-%s**: do it\n' "$i"; done; } > "$SZ/bold.md"
+  assert_eq "- [ ] **TASK-N** bold checkboxes are counted" "tasks=4" "$(tn bold)"
+  { hdr; for i in 1 2 3 4; do printf -- '  - [ ] TASK-%s: do it\n' "$i"; done; } > "$SZ/indent.md"
+  assert_eq "indented - [ ] TASK-N is counted" "tasks=4" "$(tn indent)"
+  assert_eq "4 indented tasks read large" large "$(sz indent)"
+  { hdr; printf '```\n- [ ] TASK-9: stray unclosed fence\n\n'; for i in 1 2 3 4; do printf -- '- [ ] TASK-%s: do it\n' "$i"; done; } > "$SZ/unclosed.md"
+  assert_eq "an unclosed fence does not hide tasks (count everything)" "tasks=5" "$(tn unclosed)"
+  assert_eq "unclosed-fence spec reads large" large "$(sz unclosed)"
+  { hdr; printf -- '- [ ] TASK-1: real\n~~~\n- [ ] TASK-8: tilde example\n- [ ] TASK-9: tilde example\n~~~\n- [ ] TASK-2: real\n'; } > "$SZ/tilde.md"
+  assert_eq "~~~ fences hide their example tasks" "tasks=2" "$(tn tilde)"
+  { hdr; printf -- '- [ ] TASK-1: real\n~~~\n```\n- [ ] TASK-8: nested\n```\n~~~\n- [ ] TASK-2: real\n'; } > "$SZ/nested.md"
+  assert_eq "a backtick fence inside a ~~~ fence does not close it" "tasks=2" "$(tn nested)"
+  { hdr; for i in 1 2 3 4; do printf -- '- [ ] TASK-%s: do it\r\n' "$i"; done; printf '```\r\n- [ ] TASK-9: fenced\r\n```\r\n'; } > "$SZ/crlf.md"
+  assert_eq "CRLF file: tasks counted, CRLF fence still hides its example" "tasks=4" "$(tn crlf)"
+  { hdr; printf -- '- [ ] TASK-1: a\n- [ ] TASK-2: b\n\n| # | Task | Files |\n|---|---|---|\n| T3 | c | f |\n| T4 | d | f |\n'; } > "$SZ/mixed.md"
+  assert_eq "mixed: two checkboxes plus a numbered table count 4" "tasks=4" "$(tn mixed)"
+  assert_eq "mixed-format spec reads large" large "$(sz mixed)"
+  { hdr; printf -- '- [ ] TASK-1: a\n### TASK-2: b\n- [ ] **TASK-3**: c\n  - [ ] TASK-4: d\n'; } > "$SZ/mixed2.md"
+  assert_eq "mixed: checkbox, heading, bold, indented count 4" "tasks=4" "$(tn mixed2)"
+  # the kit's own specs write T1 / T2a labels (no TASK- prefix): `| T1: x |` rows and `- [ ] T1a: x` boxes
+  { hdr; printf '| Task | Files |\n|---|---|\n| T1: a | f |\n| T2a: b | f |\n| T2b: c | f |\n'; } > "$SZ/tcolon.md"
+  assert_eq "| T1: x | table rows are counted" "tasks=3" "$(tn tcolon)"
+  assert_eq "3 T-label rows read small" small "$(sz tcolon)"
+  { hdr; printf -- '- [ ] T1a: a\n- [x] T1b: b\n  - [ ] T2: c\n- [ ] T3: d\n'; } > "$SZ/tbox.md"
+  assert_eq "- [ ] T1a: x checkboxes are counted" "tasks=4" "$(tn tbox)"
+  mv -f "$SZ" "${TMPDIR:-/tmp}/spec-depth-size.done" 2>/dev/null
 fi
 
 if want spec-md-wiring; then

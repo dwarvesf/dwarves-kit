@@ -184,7 +184,8 @@ printf '# Fixture\n' > "$SHIP_REPO/README.md"
 git -C "$SHIP_REPO" add .
 git -C "$SHIP_REPO" commit -qm 'test: initialize fixture'
 git -C "$SHIP_REPO" switch -qc feat/ship-case
-printf 'Status: VALIDATED\nLane: normal\n' > "$SHIP_REPO/docs/specs/SPEC-001-ship-case.md"
+# one task: a small normal spec needs no validate gate (a zero-task spec reads large)
+printf 'Status: VALIDATED\nLane: normal\n\n## Tasks\n\n- [ ] TASK-1: fixture\n' > "$SHIP_REPO/docs/specs/SPEC-001-ship-case.md"
 printf '\nchange\n' >> "$SHIP_REPO/README.md"
 git -C "$SHIP_REPO" add .
 git -C "$SHIP_REPO" commit -qm 'test: add fixture change'
@@ -192,7 +193,7 @@ SHIP_PAYLOAD='{"hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"
 RC=$(run_adapter_in "$SHIP_REPO" PreToolUse ship-gate.sh "$SHIP_PAYLOAD")
 assert_equal "incomplete feature push is blocked" "2" "$RC"
 mkdir -p "$DWARVES_KIT_LOG_DIR/runs"
-printf '2026-09-14T00:00:00Z | START | lane=normal classified=normal type=spec-feature repo=%s\n2026-09-14T00:01:00Z | GATE | spec | ran | fixture\n2026-09-14T00:02:00Z | GATE | build | ran | fixture\n2026-09-14T00:03:00Z | GATE | ship | ran | fixture\n' "$SHIP_REPO" > "$DWARVES_KIT_LOG_DIR/runs/ship-case.log"
+printf '2026-09-14T00:00:00Z | START | lane=normal classified=normal type=spec-feature repo=%s\n2026-09-14T00:01:00Z | GATE | spec | ran | fixture\n2026-09-14T00:02:00Z | GATE | build | ran | fixture\n2026-09-14T00:02:30Z | GATE | review | ran | fixture\n2026-09-14T00:03:00Z | GATE | ship | ran | fixture\n' "$SHIP_REPO" > "$DWARVES_KIT_LOG_DIR/runs/ship-case.log"
 RC=$(run_adapter_in "$SHIP_REPO" PreToolUse ship-gate.sh "$SHIP_PAYLOAD")
 assert_equal "complete feature push is allowed" "0" "$RC"
 RC=$(run_adapter PreToolUse ship-gate.sh '{"hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"git status --short"}}')
