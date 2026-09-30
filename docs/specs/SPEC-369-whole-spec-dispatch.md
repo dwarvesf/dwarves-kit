@@ -83,10 +83,10 @@ See `## Picture` above (a flowchart of both control flows).
 
 ### ADR link(s)
 
-A NEW ADR, `docs/decisions/0037-whole-spec-dispatch-sampled-reaudit.md`, partially supersedes:
+A NEW ADR, `docs/decisions/0038-whole-spec-dispatch-sampled-reaudit.md`, partially supersedes:
 - ADR-0028 (`docs/decisions/0028-autonomous-loop-hardening.md:34`, P4 right-arm parity): "a fresh-context re-audit lens over each right-arm PASS" becomes a sampled re-audit plus every self-attested row.
 - ADR-0005 (`docs/decisions/0005-separate-verifier-subagent.md:8-9`): the separate read-only verifier stands; its per-task consequence ("after a worker subagent completes a task") becomes one pass over every task's criteria at the end of the build.
-Both old ADRs keep their bodies and gain a supersede note on the Status line, the convention ADR-0023 records ("the kit supersedes decisions ... it does not erase shipped history", `docs/decisions/0023-goal-draft-lifecycle.md:25`; example `docs/decisions/0011-goal-registry.md:3`). Number 0037 is free on main and on every sibling branch (`git ls-tree` on feat/lanes-as-data, ceremony-lens, execution-view, orca-mega-backend, adopt-pointer-onboarding tops out at 0036); if a sibling lands 0037 first, take the next free number.
+Both old ADRs keep their bodies and gain a supersede note on the Status line, the convention ADR-0023 records ("the kit supersedes decisions ... it does not erase shipped history", `docs/decisions/0023-goal-draft-lifecycle.md:25`; example `docs/decisions/0011-goal-registry.md:3`). Number 0038 is free on main and on every sibling branch (`git ls-tree` on feat/lanes-as-data, ceremony-lens, execution-view, orca-mega-backend, adopt-pointer-onboarding tops out at 0036); if a sibling lands 0038 first, take the next free number.
 
 ### Boundaries & failure modes
 
@@ -165,7 +165,7 @@ R11. **Docs describing the per-task spine.**
 - `commands/review-team.md:44` ("workers dispatch via /kit:execute 2b-0").
 - `lib/classify/role-classify.sh:5, 11, 63`; `lib/spec/spec-task-done.sh:4` (comments).
 - `docs/FEATURES.md`: regenerate with `bash lib/registry/feature-registry.sh generate`.
-- ADR-0037 plus the supersede notes on ADR-0028 and ADR-0005.
+- ADR-0038 plus the supersede notes on ADR-0028 and ADR-0005.
 
 R12. **Dispatch drop as a hypothesis, tested by an A/B run.** The estimate (about 56 to about 15 for a medium full-lane feature, E) stays a hypothesis until the post-ship A/B run (AC-12): ONE fixture spec run through the old spine (master just before SPEC-369 merges, which already carries the rid tag) and the new spine, both with `rid=<rid>`-tagged dispatches, with dispatch counts and tokens per run read by SPEC-367's reader and recorded side by side in `docs/verification/whole-spec-dispatch.md`. No doc claims the drop as fact before that record exists.
 
@@ -180,7 +180,7 @@ R12. **Dispatch drop as a hypothesis, tested by an A/B run.** The estimate (abou
 - [ ] TASK-D: R9 test updates, `tests/test-whole-spec-dispatch.sh`, `tests/fixtures/whole-spec-dispatch/`. AC-9.
 
 ### Phase 3: Docs and decision
-- [ ] TASK-E1: ADR-0037 and the supersede notes on ADR-0028 and ADR-0005. AC-8.
+- [ ] TASK-E1: ADR-0038 and the supersede notes on ADR-0028 and ADR-0005. AC-8.
 - [ ] TASK-E2: R11 doc updates (WORKFLOW sections, workflow-map, workflow-paths, verification README, autonomy guide, MANUAL, architecture, README, CLAUDE.md). AC-8.
 - [ ] TASK-E3: regenerate `docs/FEATURES.md`. AC-8.
 
@@ -194,7 +194,7 @@ R12. **Dispatch drop as a hypothesis, tested by an A/B run.** The estimate (abou
 - [ ] No persona meta-agent dispatch; `agents/meta-agent.md` has no Mode C. (Today: `commands/execute.md:150-162`, `agents/meta-agent.md:35`.)
 - [ ] One task-verifier pass at the end checks every task's criteria; recheck is sampled on the HEAD sha plus every `(self-attested)` row. (Today: per task, recheck on every PASS.)
 - [ ] `wc -c < commands/execute.md` prints 30000 or less. (Today: 36055.)
-- [ ] ADR-0037 exists; ADR-0028 and ADR-0005 carry supersede notes.
+- [ ] ADR-0038 exists; ADR-0028 and ADR-0005 carry supersede notes.
 - [ ] (post-ship) A seeded spec with one unmeetable criterion ends FAIL naming it, with `Result: PARTIAL`.
 
 ## Acceptance Criteria (global)
@@ -208,7 +208,7 @@ Run from the repo root. AC-1 to AC-9 gate the build; AC-10 to AC-12 are post-shi
 - [ ] AC-5 end verification: `test "$(grep -c 'kit:task-verifier' commands/execute.md)" -ge 1 && grep -qi 'every task' commands/execute.md && grep -q 'kit:acceptance-verifier' commands/execute.md && grep -q 'kit:integration-verifier' commands/execute.md && grep -qF 'check-edited:' commands/execute.md && grep -qi 'NEGATIVE CONTROL' commands/execute.md && grep -qF 'rid=<rid>' commands/execute.md`
 - [ ] AC-6 sampled recheck: `grep -qF 'kit_config_get_root execute.recheck_sample 5' commands/execute.md && grep -qF 'recheck: sampled key=' commands/execute.md && grep -qF '(self-attested)' commands/execute.md && grep -qF 'Re-audit: SKIPPED (sampled out' commands/execute.md && bash tests/test-config-registry.sh`
 - [ ] AC-7 PARTIAL: `grep -qF 'Result: PARTIAL' commands/execute.md && grep -qi 'scope creep' commands/execute.md && grep -qF 'file:line' commands/execute.md`
-- [ ] AC-8 docs and decisions: `! grep -nE '2b-0|Mode C' docs/WORKFLOW.md docs/MANUAL.md docs/architecture.md docs/workflow-paths.md docs/workflow-map.md README.md CLAUDE.md commands/review-team.md agents/*.md lib/classify/role-classify.sh && ! grep -nE 'each phase checkpoint|phase checkpoint \(human' docs/workflow-map.md docs/workflow-paths.md docs/verification/README.md && bash lib/registry/feature-registry.sh check && test -f docs/decisions/0037-whole-spec-dispatch-sampled-reaudit.md && grep -q 'Superseded in part by ADR-0037' docs/decisions/0028-autonomous-loop-hardening.md && grep -q 'Superseded in part by ADR-0037' docs/decisions/0005-separate-verifier-subagent.md`
+- [ ] AC-8 docs and decisions: `! grep -nE '2b-0|Mode C' docs/WORKFLOW.md docs/MANUAL.md docs/architecture.md docs/workflow-paths.md docs/workflow-map.md README.md CLAUDE.md commands/review-team.md agents/*.md lib/classify/role-classify.sh && ! grep -nE 'each phase checkpoint|phase checkpoint \(human' docs/workflow-map.md docs/workflow-paths.md docs/verification/README.md && bash lib/registry/feature-registry.sh check && test -f docs/decisions/0038-whole-spec-dispatch-sampled-reaudit.md && grep -q 'Superseded in part by ADR-0038' docs/decisions/0028-autonomous-loop-hardening.md && grep -q 'Superseded in part by ADR-0038' docs/decisions/0005-separate-verifier-subagent.md`
 - [ ] AC-9 suites: `bash tests/test-meta.sh && bash tests/test-hooks.sh && bash tests/test-meta-agent.sh && bash tests/test-right-arm-parity.sh && bash tests/test-role-classify.sh && bash tests/test-kit-contract.sh && bash tests/test-lane-escalation.sh && bash tests/test-outcome-emit-sweep.sh && bash tests/test-gate-vocab-recording.sh && bash tests/test-every-step-review.sh && bash tests/test-spec-task-done.sh && bash tests/test-whole-spec-dispatch.sh`
 - [ ] AC-10 (post-ship) negative control trial: `grep -A12 '^## NEGATIVE CONTROL' docs/verification/whole-spec-dispatch.md | grep -q 'Verdict: FAIL' && grep -A12 '^## NEGATIVE CONTROL' docs/verification/whole-spec-dispatch.md | grep -q 'AC-3' && grep -A12 '^## NEGATIVE CONTROL' docs/verification/whole-spec-dispatch.md | grep -qF 'Result: PARTIAL'`
 - [ ] AC-11 (post-ship) dispatch hypothesis recorded: `grep -q 'Dispatches:' docs/verification/whole-spec-dispatch.md && grep -qi 'hypothesis' docs/verification/whole-spec-dispatch.md`
@@ -315,7 +315,7 @@ A file path is not a `dir/**` prefix, so `lib/gate/dispatch-gate.sh` treats each
 - docs/architecture.md
 - docs/guides/autonomy.md
 - docs/FEATURES.md
-- docs/decisions/0037-whole-spec-dispatch-sampled-reaudit.md
+- docs/decisions/0038-whole-spec-dispatch-sampled-reaudit.md
 - docs/decisions/0028-autonomous-loop-hardening.md
 - docs/decisions/0005-separate-verifier-subagent.md
 - docs/verification/README.md
@@ -346,7 +346,7 @@ Overlap notes: `docs/WORKFLOW.md` sections are listed in R11 and are disjoint fr
 - DEC-5: the sample key is root-only (`lib/config/module-registry.md` "## Root-only keys").
 - DEC-6: `fork-risk` threshold on task count (more than 6), since every executable spec has tasks and `## Touches` is optional.
 - DEC-7: keep `role-classify.sh agent-for` as a zero-dispatch builder lookup; remove only the meta-agent hop and Mode C.
-- DEC-8: a new ADR-0037 partially supersedes ADR-0028 and ADR-0005, per ADR-0023's supersede convention; no in-place rewrite.
+- DEC-8: a new ADR-0038 partially supersedes ADR-0028 and ADR-0005, per ADR-0023's supersede convention; no in-place rewrite.
 - DEC-9: do not widen the acceptance-verifier's allowlist; the lead runs checks outside it and tags them `(lead-run)`, which are not rechecked.
 - DEC-10: integration-verifier keeps today's multi-task condition.
 
