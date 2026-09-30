@@ -2538,7 +2538,7 @@ assert_eq "AC15: a hit records ENHANCE <home>" "ENHANCE tools/retry/bin/retry.sh
 assert_eq "AC18: a code-homed candidate is not prose-only" "False" "$(t11 mixed_prose)"
 assert_eq "T11: the REPORTED bullet carries home, hit, lane, and the phase-1 closure" "- REPORTED mixed-home-pat ENHANCE tools/retry/bin/retry.sh: retries flaky jobs (lane=backfill, reported: phase 1 reports only)" "$(t11 mixed_line)"
 assert_eq "AC23: precedent runs argv-style with the slug words as one arg" "find|--surface|inventory|--json|mixed home pat" "$(t11 argv_prec)"
-assert_eq "AC23: lane-classify gets '<slug words>: <first evidence line>' as one arg" "classify|mixed home pat: did it by hand" "$(t11 argv_lane)"
+assert_eq "AC23: lane-classify risk gets '<slug words>: <first evidence line>' as one arg" "risk|mixed home pat: did it by hand" "$(t11 argv_lane)"
 assert_eq "AC15: the lane comes from lane-classify" "backfill" "$(t11 lane_used)"
 assert_eq "AC18: an all-prose list homes the top prose hit" "memory/notes/proc-a.md" "$(t11 prose_home)"
 assert_eq "AC18: the all-prose candidate is flagged prose-only" "True" "$(t11 prose_flag)"
@@ -2551,7 +2551,7 @@ assert_eq "AC15: the proposed row has the spec's keys" "lane,outcome,pattern,pre
 assert_eq "AC15: a REPORTED candidate is not reported again next run" "" "$(t11 rerun_blocked)"
 assert_eq "AC23: a shell-interpreted ';' would have made a marker; none exists" "False" "$(t11 pwn_marker)"
 assert_eq "AC23: the metachar evidence arrives as one argv element, byte for byte" "True" "$(t11 pwn_argv_one)"
-assert_eq "AC23: the lane call itself is classify plus the one query arg" "classify" "$(t11 pwn_argv_head)"
+assert_eq "AC23: the lane call itself is risk plus the one query arg" "risk" "$(t11 pwn_argv_head)"
 
 # ============================================================
 echo ""

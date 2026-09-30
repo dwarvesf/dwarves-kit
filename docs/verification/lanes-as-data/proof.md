@@ -6,15 +6,18 @@ Spec: `docs/specs/SPEC-368-lanes-as-data.md`. Branch `feat/lanes-as-data`. Every
 
 | Command | Exit | Result | Covers |
 |---|---|---|---|
-| `bash tests/test-lanes-data.sh` | 0 | 29 cases, all `PASS <name>` | AC2, AC4 to AC9, AC11 to AC20, AC23, AC24 |
+| `bash tests/test-lanes-data.sh` | 0 | 48 cases, all `PASS <name>` | AC2, AC4 to AC9, AC11 to AC20, AC23, AC24, review fixes |
 | `bash lib/config/kit-config.sh selftest` | 0 | `PASS kit-config selftest`, includes `ok   last-dot split: lane.normal.phases` | AC10 |
-| `bash tests/test-hooks.sh` | 0 | `Passed: 723 / 723` | AC22 |
-| `bash tests/test-meta.sh` | 0 | `Passed: 886 / 886` | AC22 |
+| `bash tests/test-hooks.sh` | 0 | `Passed: 725 / 725` | AC22 |
+| `bash tests/test-meta.sh` | 0 | `Passed: 887 / 887` | AC22 |
 | `bash tests/test-lane-classify.sh` | 0 | `38/38 passed, 0 failed` | AC22 |
 | `bash tests/test-lane-escalation.sh` | 0 | `24/24 passed, 0 failed` | AC22 |
 | `bash tests/test-lane-deescalate.sh` | 0 | `22/22 passed, 0 failed` | AC22 |
 | `bash tests/test-gate-ledger-plan-record.sh` | 0 | `41/41 passed` | AC22 |
 | `bash tests/test-ship-gate-fail-closed.sh` | 0 | `PASS=7 FAIL=0` | AC22 |
+| `bash tests/test-significance-classify.sh` | 0 | `25/25 passed, 0 failed` | review fix |
+| `bash tests/test-harvest-sweep.sh` | 0 | `Passed: 598 / 598` | review fix |
+| `bash tests/test-ledger-durability.sh` | 0 | `37/37 passed, 0 failed` | review fix |
 | `bash tests/test-config.sh` | 0 | `PASS kit-config selftest` | AC22 |
 | `bash lib/gate/doc-projection-check.sh .` | 0 | no output | AC (TASK-9) |
 | `bash lib/registry/feature-registry.sh check docs/FEATURES.md` | 0 | fresh | AC (TASK-9) |
@@ -51,6 +54,39 @@ Each row: the change was committed first, one file was broken, the named case ra
 | WORKFLOW view drifts from the data | `docs/WORKFLOW.md` | `FAIL workflow-view: [normal: view=...]` | `PASS workflow-view` |
 | last-dot split reverted to first-dot | `lib/config/kit-config.sh` | `FAIL last-dot split: lane.normal.phases: got []` and `SELFTEST FAILED` | `PASS kit-config selftest` |
 | parity, tiny lane gains `docs` in the extracted refactor commit | `kit.toml` in the `git archive` copy | `FAIL parity: reader output differs from the baseline` | `PASS parity` on the untouched archive |
+
+### Review-round controls
+
+Same procedure. The floor timing case runs 1000 changed paths with 20000 added lines and the hard path last: about 0.3 s with the single-pass floor, 25 to 70 s with per-path matching.
+
+| Control | Broken file | Broken run | Restored run |
+|---|---|---|---|
+| per-path matching restored | `lib/classify/lane-classify.sh` | `FAIL floor-timing: elapsed=25325ms (limit 2000ms)` | `PASS floor-timing (176ms for 1000 paths)` |
+| ship-gate hook timeout back to 5s | `hooks/hooks.json` | `FAIL hook-timeout: ship-gate timeout under 30s` | `PASS hook-timeout` |
+| quotePath default (octal names) | `lib/classify/lane-classify.sh` | `FAIL floor-non-ascii: [DROP TABLE in migré.py => 'full data-loss: app/migr\303\251.py']` | `PASS floor-non-ascii` |
+| quoted `+++` header not unquoted | `lib/classify/lane-classify.sh` | `FAIL floor-non-ascii: [... quote => 'full data-loss: "b/app/q\"x.py"']` | `PASS floor-non-ascii` |
+| auth narrowed, .github narrowed, gitlink dropped, one-space SQL, WHERE 1=1, quoted TRUNCATE, infra kind | `lib/classify/lane-classify.sh` | `FAIL floor-paths` / `floor-data-loss` / `floor-submodule` naming each missed case | each `PASS` |
+| empty-phases guard removed | `lib/gate/lane-data.sh` | `FAIL override-empty-phases: required full = ''` | `PASS override-empty-phases` |
+| kit mode reads the operator overlay | `lib/gate/lane-data.sh` | `FAIL ship-operator-hollow-full: rc=0` | `PASS ship-operator-hollow-full` |
+| any lane name accepted | `lib/gate/lane-data.sh` | `FAIL override-unknown-lane-name` | `PASS override-unknown-lane-name` |
+| target = any main or master word again | `hooks/ship-gate.sh` | `FAIL ship-push-forms: [want 2 got 0: gh pr create --base master --fill] ...` | `PASS ship-push-forms` |
+| `--force` matched as a substring | `hooks/ship-gate.sh` | `FAIL ship-push-forms: [want 2 got 0: git push --force-with-lease ...]` | `PASS ship-push-forms` |
+| `git -C dir` ignored | `hooks/ship-gate.sh` | `FAIL ship-push-forms: [git -C <dir> push from elsewhere: rc=0]` | `PASS ship-push-forms` |
+| spec-less push no longer blocks | `hooks/ship-gate.sh` | `FAIL ship-no-spec-blocks: no-spec rc=0` | `PASS ship-no-spec-blocks` |
+| base = local branch | `hooks/ship-gate.sh` | `FAIL ship-base-is-origin-head: rc=0` | `PASS ship-base-is-origin-head` |
+| diff HEAD, not the pushed ref | `hooks/ship-gate.sh` | `FAIL ship-checks-pushed-ref: rc=0` | `PASS ship-checks-pushed-ref` |
+| slug unquoted in the hint | `hooks/ship-gate.sh` | `FAIL ship-slug-quoted` | `PASS ship-slug-quoted` |
+| `risk` drops the suggestion | `lib/classify/lane-classify.sh` | `FAIL risk-verb: [add jwt authentication => normal, want full]` | `PASS risk-verb` |
+| significance back on classify | `lib/classify/significance-classify.sh` | `FAIL significance-uses-risk: not-significant` | `PASS significance-uses-risk` |
+| RETURN trap reintroduced | `lib/classify/lane-classify.sh` | `FAIL floor-no-leaks: RETURN trap left set` | `PASS floor-no-leaks` |
+| tracked-clean helper always true | `lib/config/kit-config.sh` | `FAIL override-uncommitted` | `PASS override-uncommitted` |
+| show_at reads the working tree | `lib/config/kit-config.sh` | `FAIL ship-flip-gate-in-pr: rc=0` | `PASS ship-flip-gate-in-pr` |
+| backslash back in `.kit.toml` | `.kit.toml` | `FAIL toml-valid: Unescaped '\' in a string` | `PASS toml-valid` |
+| merge-base recomputed in the floor | `hooks/ship-gate.sh` | `FAIL ship-merge-base-once: [merge-base ran 2 times, want 1]` | `PASS ship-merge-base-once` |
+| diff scan before the switch check | `hooks/ship-gate.sh` | `FAIL ship-merge-base-once: [switch off but the diff scan ran 1 times]` | `PASS ship-merge-base-once` |
+| operator over project order swapped | `lib/gate/lane-data.sh` | `FAIL override-operator-precedence` | `PASS override-operator-precedence` |
+| project `[lanes] default` ignored, invalid default not validated | `lib/gate/lane-data.sh` | `FAIL default-lane-layers` (both) | `PASS default-lane-layers` |
+| dropped-phase dedupe removed | `lib/gate/gate-ledger.sh` | `FAIL start-no-duplicate-skips: appears 2 times` | `PASS start-no-duplicate-skips` |
 
 ## Reproducible
 
