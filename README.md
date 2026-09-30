@@ -31,7 +31,7 @@ The loop itself is one spec-driven lifecycle, **think → spec → execute → r
 flowchart LR
   goal([goal + gates<br/>set up front]) --> T
   T[think<br/>forcing questions] -->|advisory| S[spec<br/>the contract]
-  S -->|spec-drift guard| X[execute<br/>worker → verifier → fix-agent]
+  S -->|spec-drift guard| X[execute<br/>builder → end verifiers → fix-agent]
   X -->|BLOCKING: verification pipeline| R[review<br/>verdict recorded]
   R -->|advisory| SH[ship<br/>version + PR]
   SH -->|BLOCKING: ship-gate + push-to-main| RE[retro]
@@ -66,7 +66,7 @@ That lifecycle is the middle of a longer arc. A board row becomes a landed PR li
 
 Two gate classes sit on those boundaries: **blocking** (the verification pipeline, the ship-gate, the push-to-main blocker, mechanical, they stop a bad outcome) and **advisory** (think, review, they surface findings, never block). The autonomous-loop hardening adds a fresh-context re-audit of every done-claim, a kit-default cross-cutting advisor lens on top of the specialized reviewers, and a deployable-done proof gate, so a closed loop can run long without drifting into self-graded slop.
 
-Every build task runs a verification pipeline (worker → verifier → fix-agent retry), and hooks enforce safety automatically (`rm -rf`, push-to-main, force-push, and secret-file reads are blocked). The worker is also **specialized per task**: when a task needs a role no built-in agent covers (security, migration, a doc writer, ...), the kit synthesizes one on the fly and dispatches it, or `/kit:draft-agent` installs a reusable named agent ([SPEC-089](docs/specs/SPEC-089-dynamic-agent-synthesis.md)).
+One builder implements the whole spec, then every task runs through one end verification pipeline (verifiers → fix-agent retry), and hooks enforce safety automatically (`rm -rf`, push-to-main, force-push, and secret-file reads are blocked). The builder is a domain specialist when one exists (a migration or data-pipeline worker, picked by a deterministic lookup), and `/kit:draft-agent` installs a reusable named agent ([SPEC-089](docs/specs/SPEC-089-dynamic-agent-synthesis.md)).
 
 **You drive it by intent, not by memorizing commands.** Say what you want; the kit reads your intent, runs the right step, and stops only at the real decisions:
 
@@ -207,7 +207,7 @@ After install, open a Claude Code session in your project and run one full lap. 
 1. `/kit:start` orients you and suggests the next step.
 2. `/kit:think` and describe the change (e.g. "add a `--version` flag to the CLI"). It throws 6 forcing questions at the idea; answer them.
 3. `/kit:spec` writes the contract to `docs/specs/SPEC-NNN-<slug>.md`.
-4. `/kit:execute` runs the autonomous build: a worker implements the spec (specialized on-demand per task, a security/migration/etc. role synthesized and injected when the task warrants it, SPEC-089), a verifier checks it against the acceptance criteria, a fix-agent retries fixable failures (max 2).
+4. `/kit:execute` runs the autonomous build: one builder implements the whole spec from a brief (goal, acceptance, routes, territory), then one end pass checks every task against its acceptance criteria, with integration and acceptance verifiers behind it and a fix-agent retrying fixable failures (max 2).
 5. `/kit:review` then `/kit:ship`: review gate, then version bump, changelog, conventional commit, PR.
 
 That is the whole loop. The spec is the unit of handoff: a contractor running `/kit:execute` reads the same `docs/specs/SPEC-NNN-<slug>.md` you wrote. To see the artifact set without running anything, browse [`examples/hello-spec/`](examples/hello-spec/).
@@ -222,7 +222,7 @@ That is the whole loop. The spec is the unit of handoff: a contractor running `/
 /kit:spec           Generate the spec + 4 parallel researchers (15-30 min)
 /kit:spec-validate  Stress-test the spec (10 min)
                      [hand off to contractor]
-/kit:execute        Autonomous: worker > verifier > fix-agent retry loop
+/kit:execute        Autonomous: builder > end verifiers > fix-agent retry loop
   or
 /kit:next           Manual: pick next task, load context, you drive
                      [hooks enforce during build]
@@ -244,16 +244,16 @@ Work is sized by risk lane before it starts (tiny / normal / full / bug, plus a 
 
 ## Verification pipeline (/execute)
 
-Every task goes through: worker > task-verifier > fix-agent (if needed). The worker never grades its own work; the verifier is a separate read-only agent.
+The whole build goes through: builder > end verifiers (task-verifier over every task, integration, acceptance) > fix-agent (if needed). The builder never grades its own work; the verifiers are separate read-only agents.
 
 ```
             /kit:execute (orchestrator)
             owns the spec's task list,
-            dispatches one task at a time
+            dispatches one builder for the spec
                        |
                        v
               +----------------+
-              | worker         |  implements the task
+              | builder        |  implements the spec
               +----------------+
                        |
                        v
@@ -266,7 +266,7 @@ Every task goes through: worker > task-verifier > fix-agent (if needed). The wor
                  |        |          |
                  v        v          v
             mark done  +-----------+  stop,
-            next task  | fix-agent |  ask the human
+            tasks      | fix-agent |  ask the human
                        +-----------+
                             |
                             +--> back to task-verifier
@@ -347,7 +347,7 @@ Which hooks BLOCK vs warn vs neither is a declared contract: `docs/architecture.
 | /kit:spec-validate | Spec | 7 adversarial reviewers attack the spec (incl. solution-design, design record, sustainability) |
 | /kit:test-plan | Spec | Opt-in: coverage matrix from acceptance criteria into the spec's `## Test plan` section |
 | /kit:feature-map | Spec | Source-cited, agent-checkable feature inventory for ANY target project: per-module spec + a top-level checklist. Standalone (what does this codebase do) or migration source of truth (what needs porting) when a port target is named |
-| /kit:execute | Build | Autonomous: worker > verifier > fix-agent retry loop |
+| /kit:execute | Build | Autonomous: builder > end verifiers > fix-agent retry loop |
 | /kit:next | Build | Lightweight: picks next undone task, loads context, you drive |
 | /kit:verify | Verify | Read-only re-run of task-verifier + integration-verifier, no rebuild; verdict PASS / FAIL / INCONCLUSIVE with the claim restated falsifiably |
 | /kit:battery | Verify | The full independent right arm for a finished branch: fresh-context acceptance verifier + multi-lens review + advisor in parallel at prescribed model tiers, baseline-aware, findings merged, fixes applied by the lead |

@@ -18,7 +18,7 @@
 | 6 | The V-model | left arm builds + statically reviews, right arm dynamically tests; test-plan crossbar at the vertex |
 | 7 | Goal loop | bounded engine: increment -> verify -> done/blocker stops; anti-rationalization backstop |
 | 8 | Debug loop | bounded engine: Phase 0..4 under the iron law (no fix without recorded root cause) |
-| 9 | Execute pipeline | bounded engine: worker -> task-verifier -> fix-agent (max 2) -> integration-verifier |
+| 9 | Execute pipeline | bounded engine: one builder -> end verifiers (task, integration, acceptance) -> fix-agent (max 2) |
 | 10 | Mid-flight amend | the add-only spec amend excursion off the execute pipeline |
 | 11 | 11 opt-in side-flows | trigger -> writes-to -> stop for each advisory flow |
 | 12 | 7 alternate flows | the edges that fire when the happy path does not hold |
@@ -56,7 +56,7 @@
   /kit:spec-validate  Status: VALIDATED
        |
        v
-  /kit:execute ...... verification pipeline (worker -> task-verifier -> fix-agent, max 2)
+  /kit:execute ...... verification pipeline (builder -> end verifiers -> fix-agent, max 2)
        |
        v
   /kit:review ....... review verdict recorded
@@ -161,7 +161,7 @@ Phase 0 is universal: `/kit:grill`, then the done scenario, before any loop runs
         +--- test design: /kit:test-plan writes the tests ---+
                  (vertex: BUILD = code + test code)
 
-   any right-arm PASS -> recheck-verifier (fresh-context re-audit)
+   sampled right-arm PASS -> recheck-verifier (fresh-context re-audit)
    whole assembled work -> advisor (kit-default extra lens)
 ```
 
@@ -204,32 +204,23 @@ Phase 0 is universal: `/kit:grill`, then the done scenario, before any loop runs
 ## 9 · Execute verification pipeline
 
 ```
-   /kit:execute  (record pre-build base ref)
+   /kit:execute  (record pre-build base ref; one human go before the builder)
         |
         v
-   +-- for each task ------------------------------------------------+
-   |   worker subagent (fresh context) --> task-verifier (read-only) |
-   |                +-------------------+-------------------+        |
-   |             PASS             FAIL:fixable        FAIL:escalate  |
-   |                |                  |                    |        |
-   |                |                  v                    |        |
-   |                |           fix-agent (scoped)          |        |
-   |                |           re-verify; retry < 2 --+    |        |
-   |                |           retries == 2 ----------+--> |        |
-   |                v                                  |    v        |
-   |          mark task done <-------------------------+  ESCALATE   |
-   +---------+-------------------------------------------------------+
-             | all tasks PASS
-             v
-   phase checkpoint (human: continue / review / stop)
-             |
-             v
-   integration-verifier (read-only, diffs whole build from base ref)
+   builder subagent (fresh context, whole-spec brief, one commit per task)
+        |
+        v
+   task-verifier: ONE pass over every task's criteria
+   integration-verifier (multi-task)   acceptance-verifier
         +----+---------------+
       PASS  FAIL:fixable  FAIL:escalate
-        |     | (fix-agent)    |
-        v     v                v
-     build complete <-- re-check   ESCALATE
+        |     | (fix-agent, retry < 2;      |
+        |     |  exhausted -> Result: PARTIAL)  v
+        v     v                           ESCALATE
+   check-edit signal; sampled recheck; negative control
+        |
+        v
+     build complete
 ```
 
 ## 10 · Mid-flight amend micro-loop

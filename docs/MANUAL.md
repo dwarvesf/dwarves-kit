@@ -201,9 +201,9 @@ schedules, sequences, or merges. Source: SPEC-036; ADR-0022.
 **Phase:** autonomous build
 **Reads:** `docs/specs/SPEC-NNN-<slug>.md` (must be Status: VALIDATED or APPROVED)
 **Writes:** code, tests, marks SPEC task checkmarks, appends to SPEC Decision Log
-**Dispatches:** worker subagent per task, then task-verifier, then fix-agent on FAIL:fixable (retry max 2)
+**Dispatches:** one builder subagent for the whole spec, then one end `task-verifier` pass over every task, `integration-verifier` (multi-task), `acceptance-verifier`, and `fix-agent` on FAIL:fixable (retry max 2); `recheck-verifier` on a sampled run (`execute.recheck_sample`, default 1 in 5) and on every self-attested row
 **When to invoke:** when handing off to a contractor OR running the kit on yourself end-to-end
-**Common gotcha:** verification adds ~2x token cost per task. Worth it for the FAIL:fixable catch rate; budget accordingly. Each worker first expands its task into bite-sized verify-each-step increments (TDD when a unit test fits; grep/bash/test-suite verify for doc and config tasks) before coding.
+**Common gotcha:** a defect surfaces at the end of the build, not after the task that caused it; per-task commits localize it. A build that cannot meet a criterion after two fix rounds ends `Result: PARTIAL` and names the unmet criterion. A spec with more than 6 tasks splits into slices up front. The builder gets a brief (goal, acceptance, routes, territory) and decides its own build order.
 **Mid-flight amend:** if a build reveals scope that must be added now ("also do Y"), do not silently edit the spec or restart the lane. With your approval, amend at a task checkpoint (append `- [ ]` tasks, record an `## Amendments` entry, Status stays VALIDATED) and resume with `/kit:next`. The canonical rule is WORKFLOW.md "## Mid-flight amend"; the operator card is "## Operator scenarios" Scenario 6 below.
 
 ### `/kit:next`
@@ -220,10 +220,10 @@ schedules, sequences, or merges. Source: SPEC-036; ADR-0022.
 **Reads:** a one-line role description (or a unit-of-work description) from `$ARGUMENTS`
 **Writes:** by default INSTALLS a new subagent, `agents/<name>.md` + the roster rows (MANUAL/architecture/README) + `~/.claude/agents/<name>.md` for runtime; `--draft` stops at a staged draft; `subgoal:` mode drafts a mega-goal sub-goal file (never installed)
 **Dispatches:** the `meta-agent` (drafts to staging; the command promotes/installs)
-**When to invoke:** when a task needs a specialist role no existing agent covers and you want it as a reusable, named kit agent. For a one-off same-run specialist during `/kit:execute`, you do NOT invoke this, 2b-0 role synthesis handles it inline (see below).
+**When to invoke:** when a task needs a specialist role no existing agent covers and you want it as a reusable, named kit agent. `/kit:execute` does not dispatch the meta-agent; it picks a builder with the `role-classify.sh agent-for` lookup (see below).
 **Common gotcha:** a freshly installed agent is dispatchable only NEXT session (Claude Code loads the agent registry at session start); the command prints the granted tools + an `rm` undo. Sharing an installed agent with the team still goes through a reviewed PR. Design: SPEC-089.
 
-Related, **2b-0 role synthesis** (inside `/kit:execute`): each task is classified by `lib/classify/role-classify.sh`; a specialist-worthy task gets a role synthesized by the `meta-agent` (Mode C, open-ended, any role) and injected into the worker THIS run, cached to `~/.claude/agents/` for reuse. Plain tasks fall through to the generic worker. This is automatic; `/kit:draft-agent` is the manual, install-a-named-agent path. Both share the `meta-agent` + `role-classify.sh` primitives.
+Related, **builder lookup** (inside `/kit:execute`): the spec text is classified by `lib/classify/role-classify.sh`, and `agent-for <domain>` names a predefined worker (`db-migration-worker`, `data-etl-worker`) as the builder's `subagent_type`; an empty result runs the general builder. `/kit:draft-agent` is the manual, install-a-named-agent path.
 
 ### `/kit:debug`
 
@@ -373,7 +373,7 @@ The `harvest` hook stages learnings when a session compacts or ends. The harvest
 
 | Agent | Dispatched by | What it does |
 |---|---|---|
-| `task-verifier` | `/execute` | Read-only verification per task |
+| `task-verifier` | `/execute` (one end pass over every task) | Read-only verification of a task's acceptance criteria |
 | `fix-agent` | `/execute` | Targeted fixes on FAIL:fixable (max 2 retries) |
 | `integration-verifier` | `/execute` (Step 4, multi-task) | Read-only: verifies the tasks wire together (each component reaches its activation point + the spec's end-to-end chains) |
 | `doc-verifier` | `/docs` (Step 4.5) | Read-only: fact-checks the just-updated docs against the live code (counts, names, existence, cross-refs); reports drift, `/docs` fixes |
@@ -385,7 +385,7 @@ The `harvest` hook stages learnings when a session compacts or ends. The harvest
 | `brief-reviewer` | (right-arm parity roster; dispatchable on the brief/decision doc) | Read-only static left-arm reviewer of the design brief (`DECISION-BRIEF-<slug>.md` or a spec's Problem/Context) for clarity, completeness, testability |
 | `acceptance-verifier` | (right-arm parity roster; dispatchable at the spec's acceptance boundary) | Read-only dynamic verifier: executes the active spec's `## Verification` section end to end, maps each AC to a passing check |
 | `system-verifier` | (right-arm parity roster; dispatchable as the whole-project check) | Read-only dynamic verifier: runs the full unscoped project test suite, the right-arm mirror of design |
-| `recheck-verifier` | `/execute` (fresh-context re-audit over a right-arm PASS) | Read-only: RE-EXECUTES a right-arm verifier's recorded check in a fresh context and re-judges; never a read-back of recorded evidence; the ADR-0028 trust metric made real |
+| `recheck-verifier` | `/execute` (fresh-context re-audit over a sampled right-arm PASS and every self-attested row) | Read-only: RE-EXECUTES a right-arm verifier's recorded check in a fresh context and re-judges; never a read-back of recorded evidence; the ADR-0028 trust metric made real |
 | `responding-to-review` | `/review-team` (FIX-THEN-SHIP) | Triages findings without sycophancy |
 | `slop-stripper` | `/review-team` (Step 5, opt-in deslop strip) | Behavior-preserving AI-slop strip pass: surgical edits only, never behavior changes unless fixing a real bug |
 | `research-stack` | `/spec` | Brownfield stack mapping |
@@ -398,8 +398,8 @@ The `harvest` hook stages learnings when a session compacts or ends. The harvest
 | `api-reviewer` | `/review-team` | Read-only API-CONTRACT-lens reviewer (breaking changes, versioning, schema, error codes, backward compat, idempotency); severity findings + score |
 | `frontend-reviewer` | `/review-team` | Read-only FRONTEND-lens reviewer (a11y/ARIA, semantic HTML, focus/keyboard, loading/error/empty/disabled states, responsive, color-only signaling); severity findings + score |
 | `infra-reviewer` | `/review-team` | Read-only INFRA-lens reviewer (deploy/rollback safety, CI/CD, container/IaC least-privilege, secret handling, idempotent provisioning, blast radius); severity findings + score |
-| `db-migration-worker` | `/execute` 2b-0 | Write-capable schema-migration implementer; writes up + DOWN/rollback + batched backfill + index changes, guards long locks, never drops data without an explicit ask |
-| `data-etl-worker` | `/execute` 2b-0 | Write-capable data-pipeline implementer; extract/transform/load, DuckDB SQL for the transform, idempotent re-runs, schema validation, no silent row drops |
+| `db-migration-worker` | `/execute` builder lookup | Write-capable schema-migration implementer; writes up + DOWN/rollback + batched backfill + index changes, guards long locks, never drops data without an explicit ask |
+| `data-etl-worker` | `/execute` builder lookup | Write-capable data-pipeline implementer; extract/transform/load, DuckDB SQL for the transform, idempotent re-runs, schema validation, no silent row drops |
 | `claim-verifier` | dispatched on a load-bearing free-text claim | Read-only adversarial panel: runs N in-context independent skeptics (default N=3, distinct attack angles, default-refute-if-uncertain, fail-closed) over an ARBITRARY claim and returns a structured majority-vote verdict (HOLDS/REFUTED + tally + threshold + per-skeptic reasons) |
 | `test-writer` | `/kit:test-write` | Write-capable: turns a reviewed test-plan coverage matrix into runnable test code, one case per matrix row, in the repo's existing test framework; scope-locked to test files, frozen-evaluator on the spec's AC/Verification |
 | `audit-scanner` | doc-drift + topology-drift skills (Tier 2) | Shared read-only evidence scanner for audit-loop instances: receives a target set + contract + evidence class, returns per-item verdicts (audit-loop grammar) with quoted evidence and severity; never fixes, roster has no write path |
@@ -513,7 +513,7 @@ approve-before-allocate, sanitize, atomic-allocate.
 | You say | Autonomy | Claude stops at |
 |---|---|---|
 | "propose it, don't run anything" | none | after planning; waits for go |
-| "run it, check with me at each phase" | low (default) | every advisory phase checkpoint |
+| "run it, check with me at each phase" | low (default) | every advisory phase boundary |
 | "run the lane, only stop at hard stops" | high | the 4 hard stops + the push/PR (outward-facing) |
 | "run it all the way to a PR, your call" | max | only the 4 hard stops + a real blocker |
 

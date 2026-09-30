@@ -329,7 +329,7 @@ hand with `bash lib/gate/proof-gate.sh coverage <spec> <proof.md ...>` (`OK` / `
 
 ## Who writes it
 
-- `/kit:execute` , appends a run record at each phase checkpoint and at completion.
+- `/kit:execute` , appends a run record for the end verification pass and at completion.
 - `/kit:verify` , the read-only on-demand check writes one `runs/<ts>.md` per run, drives the
   quality loop, and produces the negative control. Writing the record is the point, not a
   change to the artifact under test.
