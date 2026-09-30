@@ -117,3 +117,20 @@ printf '# x\n' >> lib/wrap/wrap-rebase.sh; bin/test-affected --base HEAD --list;
 | Negative control | removing `_reject_packed` from the land arg loop turns `packed arg to land names the packed-flags refusal` red (127 of 128); restored |
 
 The 1581 counts above predate the rebase; this section supersedes them.
+
+## Recorded run
+
+```
+Command: bash tests/test-wrap.sh
+Exit: 1
+Summary: test-wrap: 1596 passed, 2 FAILED of 1598
+Verdict: PASS for this change: the two FAILs are the pre-existing master wording asserts ("step 10 re-sizes the real diff before landing", "commands/wrap.md classifies each candidate's lane"), identical on origin/master
+
+Command: bash tests/test-meta.sh
+Exit: 0
+Summary: Passed: 887 / 887
+```
+
+## Rollback
+
+The change moves code and tests without changing behavior, so rollback is `git revert` of the merge commit: `lib/wrap/wrap.sh` and `tests/test-wrap.sh` return to single files, and `bin/test-affected` and `tests/run-all.sh` return to their previous selection. No state, config or ledger format changes, so nothing else needs undoing.
