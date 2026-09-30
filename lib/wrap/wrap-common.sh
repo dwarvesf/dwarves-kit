@@ -211,3 +211,368 @@ _union_marked() {
   esac
   return 1
 }
+
+# ---------------------------------------------------- merge cycle: merge, verify, push
+
+# The recovery `land` (and `merge`) runs when GitHub refuses a PR as CONFLICTING while the
+# branch is already pushed. A rebase would rewrite pushed history and force the push, so
+# the recovery is a merge: origin/<def> into the branch, only the conflict classes
+# `_rb_resolve` owns, one fast-forward push, then the caller's second merge attempt.
+# Return convention for the whole family: 0 success; 1 refused with <branch> back at <tip>,
+# no merge in progress, a clean worktree; 2 when that state could not be restored, the line
+# naming what a human runs; 5 on `_merge_default` for a refused conflict cleanly restored,
+# so a caller can word that case without parsing output; 130 on an interrupted cycle.
+# A caller never downgrades a 2 to a 1.
+MVP_HIT=""   # set by the cycle's signal handler; helpers bail the moment it is set
+MVP_RC=0     # the handler's own cleanup result; 2 turns the cycle's 130 into a 2
+MERGED_OID=""
+_MVP_WT=""; _MVP_BRANCH=""; _MVP_TIP=""; _MVP_PUSH=""
+_MVP_IGNORED=()  # paths ignored under the PRE-merge rules; recorded before the merge runs
+
+# _mvp_ignored <path> -- 0 when <path> equals a recorded pre-merge ignored entry or sits
+# under a recorded ignored directory (those carry a trailing slash). The set is how the
+# cycle tells "work the merge created" from "an operator file origin's .gitignore change
+# just exposed": under the new rules the file is untracked, so it must never be staged or
+# deleted.
+_mvp_ignored() {
+  local p="$1" e
+  for e in ${_MVP_IGNORED[@]+"${_MVP_IGNORED[@]}"}; do
+    [ "$p" = "$e" ] && return 0
+    case "$e" in */) case "$p" in "$e"*) return 0 ;; esac ;; esac
+  done
+  return 1
+}
+
+# _merge_restore <wt> <branch> <tip> -- leave a stopped merge with the branch back at <tip>.
+# Reads the state, never a flag, because the trap calls it too. The worktree copies the
+# merge left changed that are NOT unmerged go back from the index (`merge --abort` owns the
+# unmerged ones), then every new untracked path is removed one `rm` at a time (the checkout
+# started clean, so none of them predates the merge), then `merge --abort`. The order is
+# load-bearing: git 2.55 refuses the abort while an auto-merged staged path has a different
+# worktree copy, which is exactly what the generator or the resolver leaves behind.
+_merge_restore() {
+  local wt="$1" branch="$2" tip="$3" p gd
+  local -a unmerged=() changed=()
+  while IFS= read -r -d '' p; do unmerged+=("$p"); done \
+    < <(git -C "$wt" diff --name-only --diff-filter=U -z 2>/dev/null)
+  while IFS= read -r -d '' p; do
+    _rb_has "$p" ${unmerged[@]+"${unmerged[@]}"} || changed+=("$p")
+  done < <(git -C "$wt" diff --name-only -z 2>/dev/null)
+  [ "${#changed[@]}" -gt 0 ] && git -C "$wt" checkout -q -- "${changed[@]}" 2>/dev/null
+  # A path the pre-merge rules ignored (an operator's .env, a node_modules/) can surface as
+  # untracked once the merge brings origin's .gitignore; it is not this merge's work, so the
+  # sweep skips it and the file survives the abort.
+  while IFS= read -r -d '' p; do _mvp_ignored "$p" || rm -f -- "$wt/$p"; done \
+    < <(git -C "$wt" ls-files -o --exclude-standard -z 2>/dev/null)
+  git -C "$wt" merge --abort >/dev/null 2>&1
+  gd="$(git -C "$wt" rev-parse --path-format=absolute --git-dir 2>/dev/null)"
+  if [ "$(git -C "$wt" rev-parse HEAD 2>/dev/null)" = "$tip" ] \
+     && { [ -z "$gd" ] || [ ! -e "$gd/MERGE_HEAD" ]; } \
+     && [ -z "$(git -C "$wt" status --porcelain --untracked-files=all 2>/dev/null)" ]; then
+    echo "     aborted; ${branch} is back at $(_short "$tip")"
+    return 1
+  fi
+  echo "ABORT FAILED ${branch}: run git merge --abort in ${wt}"
+  return 2
+}
+
+# _merge_default <wt> <branch> <def> <tip> <gen> -- `git merge --no-ff --no-commit
+# origin/<def>` in a checkout that started fully clean, so every change after the merge
+# starts is the merge's or this helper's own: that is what makes the stage set and the
+# restore set exact without a before/after record. Unmerged paths go to `_rb_resolve`; a
+# refusal restores and returns 5 so the caller can word that case. The generator then runs
+# once more, so even a conflict-free merge carries a fresh generated file. The stage set is
+# explicit -- unmerged paths, worktree copies differing from the index, new untracked paths
+# -- marker-scanned, staged by name, committed with a conventional subject, then the union
+# row dedupe lands as its own commit. Every failure after the merge starts runs
+# `_merge_restore`; the dedupe failure runs `_undo_local` after the staged paths are put
+# back from HEAD. Success sets MERGED_OID.
+_merge_default() {
+  local wt="$1" branch="$2" def="$3" tip="$4" gen="$5"
+  local p gd hits rrc rout log
+  local -a unmerged=() set=() staged=()
+  [ "$(git -C "$wt" rev-parse HEAD 2>/dev/null)" = "$tip" ] \
+    || { echo "     ${branch} is not at $(_short "$tip"); nothing merged"; return 1; }
+  [ -z "$(git -C "$wt" status --porcelain --untracked-files=all 2>/dev/null)" ] \
+    || { echo "     ${wt} is dirty; nothing merged"; return 1; }
+  gd="$(git -C "$wt" rev-parse --path-format=absolute --git-dir 2>/dev/null)"
+  { [ -n "$gd" ] && [ ! -e "$gd/MERGE_HEAD" ] && [ ! -e "$gd/CHERRY_PICK_HEAD" ] \
+    && ! _rb_rebasing "$wt"; } \
+    || { echo "     a merge, rebase or cherry-pick is already in progress in ${wt}; nothing merged"; return 1; }
+  _write_guard "$wt" || { echo "     index.lock held by another writer in ${wt}"; return 1; }
+  ! git -C "$wt" merge-base --is-ancestor "origin/${def}" "$tip" 2>/dev/null \
+    || { echo "     ${branch} already contains origin/${def}; nothing to merge"; return 1; }
+
+  # Record what the PRE-merge ignore rules cover before the merge can rewrite .gitignore:
+  # a file ignored today (an operator's .env) becomes "untracked" under origin's rules and
+  # would otherwise be swept into the stage set, or deleted by the restore. --directory
+  # keeps an ignored directory to one entry, matched as a prefix by _mvp_ignored.
+  _MVP_IGNORED=()
+  while IFS= read -r -d '' p; do _MVP_IGNORED+=("$p"); done \
+    < <(git -C "$wt" ls-files -o -i --exclude-standard --directory -z 2>/dev/null)
+
+  # ort merge ignores --no-overwrite-ignore (a known git gap: it still overwrites ignored
+  # files), so the refusal the flag was meant to give runs here by hand: a path the merge
+  # writes that the pre-merge rules ignored is an operator file, and overwriting it loses
+  # data the merge has no right to touch. The flag stays passed for the paths that honor it.
+  local -a clobber=()
+  while IFS= read -r -d '' p; do
+    _mvp_ignored "$p" && clobber+=("$p")
+  done < <(git -C "$wt" diff --name-only -z "$tip" "origin/${def}" 2>/dev/null)
+  # An interrupt that landed inside the preconditions must never start a merge the
+  # caller will not see through: the flag wins over every judgment from here on.
+  [ -n "$MVP_HIT" ] && return 130
+  if [ "${#clobber[@]}" -gt 0 ]; then
+    echo "REFUSED ${branch}: merge origin/${def} would overwrite the ignored ${clobber[*]}"
+    return 1
+  fi
+
+  log="$(mktemp)" || return 1
+  [ -n "$MVP_HIT" ] && { rm -f "$log"; return 130; }
+  _rb_git "$wt" merge --no-ff --no-commit --no-overwrite-ignore "origin/${def}" > "$log" 2>&1
+  if [ -n "$MVP_HIT" ]; then
+    rm -f "$log"
+    # The trap restores on its own, but bash can only run it once the merge command
+    # returns; a MERGE_HEAD still standing here means that restore never ran or could
+    # not finish, and a failed retry is the cycle's 2, not a fresh failure's.
+    if [ -e "$gd/MERGE_HEAD" ]; then
+      _merge_restore "$wt" "$branch" "$tip"; [ "$?" -eq 2 ] && return 2
+    fi
+    return 130
+  fi
+  if [ ! -e "$gd/MERGE_HEAD" ]; then
+    [ -n "$MVP_HIT" ] && { rm -f "$log"; return 130; }
+    echo "FAILED ${branch}: merge origin/${def} did not start: $(grep -m1 -v '^$' "$log" 2>/dev/null)"
+    rm -f "$log"
+    _merge_restore "$wt" "$branch" "$tip"; return $?
+  fi
+  rm -f "$log"
+
+  while IFS= read -r -d '' p; do unmerged+=("$p"); done \
+    < <(git -C "$wt" diff --name-only --diff-filter=U -z 2>/dev/null)
+  if [ "${#unmerged[@]}" -gt 0 ]; then
+    rout="$(_rb_resolve "$wt" "$gen" "${unmerged[@]}")"; rrc=$?
+    # The flag goes first: an interrupted resolver owes its return to the signal, and
+    # the trap already ran the restore -- reporting it as GENERATOR FAILED would be a lie.
+    [ -n "$MVP_HIT" ] && return 130
+    if [ "$rrc" -eq 1 ]; then
+      echo "REFUSED ${branch}: ${rout}"
+      _merge_restore "$wt" "$branch" "$tip"; rrc=$?
+      [ "$rrc" -eq 1 ] && return 5
+      return "$rrc"
+    fi
+    if [ "$rrc" -ne 0 ]; then
+      echo "GENERATOR FAILED ${branch}"
+      _merge_restore "$wt" "$branch" "$tip"; return $?
+    fi
+  fi
+  # A merge with no conflict still regenerates, so a listed file origin added reaches the
+  # generated file through the same run as a resolved conflict.
+  if [ -n "$gen" ] && ! ( cd "$wt" && bash "$gen" generate ) >/dev/null 2>&1; then
+    [ -n "$MVP_HIT" ] && return 130
+    echo "GENERATOR FAILED ${branch}"
+    _merge_restore "$wt" "$branch" "$tip"; return $?
+  fi
+  [ -n "$MVP_HIT" ] && return 130
+  set=(${unmerged[@]+"${unmerged[@]}"})
+  while IFS= read -r -d '' p; do
+    _rb_has "$p" ${set[@]+"${set[@]}"} || set+=("$p")
+  done < <(_rb_changed "$wt")
+  while IFS= read -r -d '' p; do
+    _mvp_ignored "$p" && continue
+    _rb_has "$p" ${set[@]+"${set[@]}"} || set+=("$p")
+  done < <(git -C "$wt" ls-files -o --exclude-standard -z 2>/dev/null)
+  if hits="$(_rb_markers "$wt" ${set[@]+"${set[@]}"})"; then
+    echo "MARKERS ${branch}: $(printf '%s' "$hits" | paste -sd, - | sed 's/,/, /g')"
+    _merge_restore "$wt" "$branch" "$tip"; return $?
+  fi
+  # An empty set means the merge auto-staged everything itself (a pure union or
+  # conflict-free merge), so there is nothing left to name for git add.
+  if [ "${#set[@]}" -gt 0 ] && ! git -C "$wt" add -- "${set[@]}" 2>/dev/null; then
+    echo "FAILED ${branch}: git add of the resolved paths"
+    _merge_restore "$wt" "$branch" "$tip"; return $?
+  fi
+  [ -n "$MVP_HIT" ] && return 130
+  # A conventional subject so a consumer's commit-msg hook accepts the merge commit the
+  # same way it accepts the fixups a rebase stop records.
+  if ! git -C "$wt" commit -q -m "chore(merge): merge origin/${def}"; then
+    echo "FAILED ${branch}: the merge commit was refused"
+    _merge_restore "$wt" "$branch" "$tip"; return $?
+  fi
+  _union_dedupe_rows "$wt" "$tip"; rrc=$?
+  [ -n "$MVP_HIT" ] && return 130
+  if [ "$rrc" -ne 0 ]; then
+    while IFS= read -r -d '' p; do staged+=("$p"); done \
+      < <(git -C "$wt" diff --cached --name-only -z 2>/dev/null)
+    [ "${#staged[@]}" -gt 0 ] \
+      && git -C "$wt" restore -q --staged --worktree --source=HEAD -- "${staged[@]}" 2>/dev/null
+    _undo_local "$wt" "$branch" "$tip"; return $?
+  fi
+  MERGED_OID="$(git -C "$wt" rev-parse HEAD 2>/dev/null)"
+  echo "     merged origin/${def} into ${branch}: ${#unmerged[@]} conflict(s) resolved, head $(_short "$MERGED_OID") (was $(_short "$tip"))"
+  return 0
+}
+
+# _undo_local <wt> <branch> <tip> -- drop the commits this run made that origin does not
+# hold. `reset --keep` keeps a change the verify command made to a file the merge did not
+# touch, and any untracked file it left, which is exactly why the post-reset status is the
+# check: leftovers mean a human owns them. 1 on a clean undo, 2 naming the leftovers or the
+# command a human runs when the reset itself refuses.
+_undo_local() {
+  local wt="$1" branch="$2" tip="$3" left
+  if ! git -C "$wt" reset -q --keep "$tip" 2>/dev/null; then
+    echo "     the local merge commit $(_short "$(git -C "$wt" rev-parse HEAD 2>/dev/null)") stays on ${branch}, not pushed; run git reset --keep ${tip} in ${wt}"
+    return 2
+  fi
+  left="$(git -C "$wt" status --porcelain --untracked-files=all 2>/dev/null)"
+  if [ -z "$left" ]; then
+    echo "     ${branch} is back at $(_short "$tip"); nothing was pushed"
+    return 1
+  fi
+  left="$(printf '%s\n' "$left" | sed 's/^...//; s/.* -> //' | paste -sd, - | sed 's/,/, /g')"
+  echo "     ${branch} is back at $(_short "$tip"), nothing was pushed, but ${wt} holds changes this run did not make: ${left}"
+  return 2
+}
+
+# _verify_or_undo <wt> <branch> <tip> <cmd> -- the caller's `--verify`, run as typed through
+# `bash -c` with <wt> as cwd and its output on the terminal. Green is exit 0 with HEAD still
+# MERGED_OID and no tracked file touched: a verify that commits moves HEAD, and pushing then
+# would land a tree nobody verified. Red undoes the merge commit before any push. The
+# command is trusted operator input -- it only ever arrives through the `--verify` flag --
+# so it is echoed as typed, and a secret belongs in the environment, not in the flag.
+_verify_or_undo() {
+  local wt="$1" branch="$2" tip="$3" cmd="$4" rc def
+  def="$(_default_branch "$wt" 2>/dev/null)"
+  ( cd "$wt" && exec bash -c "$cmd" ); rc=$?
+  [ -n "$MVP_HIT" ] && return 130
+  if [ "$rc" -ne 0 ]; then
+    echo "     VERIFY FAILED ${branch}: ${cmd} exited ${rc} in ${wt} after merging origin/${def}"
+    _undo_local "$wt" "$branch" "$tip"; return $?
+  fi
+  if [ "$(git -C "$wt" rev-parse HEAD 2>/dev/null)" != "$MERGED_OID" ]; then
+    echo "     VERIFY FAILED ${branch}: ${cmd} moved HEAD in ${wt} after merging origin/${def}"
+    _undo_local "$wt" "$branch" "$tip"; return $?
+  fi
+  if [ -n "$(git -C "$wt" status --porcelain --untracked-files=no 2>/dev/null)" ]; then
+    echo "     VERIFY FAILED ${branch}: ${cmd} changed tracked files in ${wt} after merging origin/${def}"
+    _undo_local "$wt" "$branch" "$tip"; return $?
+  fi
+  echo "     verified in ${wt}: ${cmd}"
+  return 0
+}
+
+# _push_ff <wt> <branch> <tip> -- the one push of the cycle, HEAD:refs/heads/<branch> with
+# no force and no `+`: the merge commit descends from <tip>, so origin takes it only as a
+# fast-forward. A non-zero push is judged by what `git ls-remote` answers, never by the
+# exit code alone: a dropped connection can land the update anyway (success), a still-at-tip
+# origin is the plain refusal (undo like a verify failure), a moved one is another writer
+# (undo the same), and an unreadable remote resets nothing, since the commit may be there.
+_push_ff() {
+  local wt="$1" branch="$2" tip="$3" rc remote rrc
+  _MVP_PUSH=1
+  git -C "$wt" push origin "HEAD:refs/heads/${branch}"; rc=$?
+  [ -n "$MVP_HIT" ] && return 130
+  [ "$rc" -eq 0 ] && return 0
+  remote="$(git -C "$wt" ls-remote origin "refs/heads/${branch}" 2>/dev/null)"; rrc=$?
+  remote="${remote%%[!0-9a-f]*}"
+  if [ "$rrc" -ne 0 ] || [ -z "$remote" ]; then
+    echo "     PUSH FAILED: git push exited ${rc} and origin could not be read; the merge commit $(_short "$MERGED_OID") may be on origin, check before re-running"
+    return 2
+  fi
+  case "$remote" in
+    "$MERGED_OID") return 0 ;;
+    "$tip") echo "     PUSH REFUSED: git push exited ${rc}; origin still holds $(_short "$tip")" ;;
+    *)
+      # A push can land and the answer still come back failed (dropped connection,
+      # gateway timeout). A remote head that descends from our merge commit is that
+      # case: the merge is on origin under a later foreign commit. Fetched by sha,
+      # not by ref: ls-remote's answer is the proof, and a named ref could move
+      # again between the two reads.
+      if git -C "$wt" fetch -q origin "$remote" 2>/dev/null \
+         && git -C "$wt" merge-base --is-ancestor "$MERGED_OID" "$remote" 2>/dev/null; then
+        return 0
+      fi
+      echo "     PUSH REFUSED: ${branch} on origin moved to $(_short "$remote")" ;;
+  esac
+  _undo_local "$wt" "$branch" "$tip"
+}
+
+# _mvp_trap -- INT/TERM/HUP inside a merge cycle. The first line ignores all three signals,
+# so a second Ctrl-C cannot re-enter. Then it cleans up by state, never with a network call
+# before the push started: mid-merge is `_merge_restore`; staged dedupe rows go back from
+# HEAD or the reset would refuse; a merge commit whose push never started is `_undo_local`;
+# once the push started, one `ls-remote` answers which way it went, judged by `_push_ff`'s
+# rules. The flag is how the sequence learns it was interrupted: it returns 130, or 2 when
+# this cleanup could not finish. Never `exit` -- the caller removes what it owns first.
+_mvp_trap() {
+  trap '' INT TERM HUP
+  MVP_HIT=1; MVP_RC=0
+  local gd remote rrc p
+  local -a staged=()
+  gd="$(git -C "$_MVP_WT" rev-parse --path-format=absolute --git-dir 2>/dev/null)"
+  if [ -n "$gd" ] && [ -e "$gd/MERGE_HEAD" ]; then
+    _merge_restore "$_MVP_WT" "$_MVP_BRANCH" "$_MVP_TIP"; MVP_RC=$?
+    return
+  fi
+  while IFS= read -r -d '' p; do staged+=("$p"); done \
+    < <(git -C "$_MVP_WT" diff --cached --name-only -z 2>/dev/null)
+  [ "${#staged[@]}" -gt 0 ] \
+    && git -C "$_MVP_WT" restore -q --staged --worktree --source=HEAD -- "${staged[@]}" 2>/dev/null
+  if [ "$_MVP_PUSH" != 1 ]; then
+    if [ "$(git -C "$_MVP_WT" rev-parse HEAD 2>/dev/null)" != "$_MVP_TIP" ]; then
+      _undo_local "$_MVP_WT" "$_MVP_BRANCH" "$_MVP_TIP"; MVP_RC=$?
+    fi
+    return
+  fi
+  remote="$(git -C "$_MVP_WT" ls-remote origin "refs/heads/${_MVP_BRANCH}" 2>/dev/null)"; rrc=$?
+  remote="${remote%%[!0-9a-f]*}"
+  if [ "$rrc" -ne 0 ] || [ -z "$remote" ]; then
+    echo "     PUSH FAILED: the push was interrupted and origin could not be read; the merge commit $(_short "$MERGED_OID") may be on origin, check before re-running"
+    MVP_RC=2
+  elif [ "$remote" = "$_MVP_TIP" ]; then
+    echo "     PUSH REFUSED: the push was interrupted; origin still holds $(_short "$_MVP_TIP")"
+    _undo_local "$_MVP_WT" "$_MVP_BRANCH" "$_MVP_TIP"; MVP_RC=$?
+  elif [ "$remote" != "$MERGED_OID" ]; then
+    echo "     PUSH REFUSED: ${_MVP_BRANCH} on origin moved to $(_short "$remote")"
+    _undo_local "$_MVP_WT" "$_MVP_BRANCH" "$_MVP_TIP"; MVP_RC=$?
+  fi
+}
+
+# _merge_verify_push <wt> <branch> <def> <tip> <gen> [<cmd>] -- the one merge cycle both
+# callers run: fetch, the already-contains route-out (4), then merge, the caller's --verify
+# when given, and push, the first non-zero return ending it. The signal handler covers the
+# merge/verify/push half and the caller's own handlers go back on the way out. One call is
+# at most one cycle: 4 when <tip> already holds origin/<def>, 130 when interrupted, 2 when
+# the cleanup could not restore the pre-cycle state, else the first helper's return.
+_merge_verify_push() {
+  local wt="$1" branch="$2" def="$3" tip="$4" gen="$5" cmd="${6:-}"
+  local rrc ti tt th
+  git -C "$wt" fetch -q origin "$def" 2>/dev/null \
+    || { echo "     fetch origin ${def} failed; nothing merged"; return 1; }
+  git -C "$wt" merge-base --is-ancestor "origin/${def}" "$tip" 2>/dev/null && return 4
+
+  MERGED_OID=""; MVP_HIT=""; MVP_RC=0; _MVP_PUSH=""; _MVP_IGNORED=()
+  _MVP_WT="$wt"; _MVP_BRANCH="$branch"; _MVP_TIP="$tip"
+  ti="$(trap -p INT)"; tt="$(trap -p TERM)"; th="$(trap -p HUP)"
+  trap '_mvp_trap' INT TERM HUP
+
+  _merge_default "$wt" "$branch" "$def" "$tip" "$gen"; rrc=$?
+  if [ -z "$MVP_HIT" ] && [ "$rrc" -eq 0 ] && [ -n "$cmd" ]; then
+    _verify_or_undo "$wt" "$branch" "$tip" "$cmd"; rrc=$?
+  fi
+  if [ -z "$MVP_HIT" ] && [ "$rrc" -eq 0 ]; then
+    _push_ff "$wt" "$branch" "$tip"; rrc=$?
+  fi
+
+  # The caller's handlers go back whatever happened above: a bare `trap -` for a signal it
+  # never trapped, the eval'd `trap -p` text for one it did.
+  if [ -n "$ti" ]; then eval "$ti"; else trap - INT; fi
+  if [ -n "$tt" ]; then eval "$tt"; else trap - TERM; fi
+  if [ -n "$th" ]; then eval "$th"; else trap - HUP; fi
+
+  if [ -n "$MVP_HIT" ]; then
+    [ "$MVP_RC" -eq 2 ] && return 2
+    return 130
+  fi
+  return "$rrc"
+}

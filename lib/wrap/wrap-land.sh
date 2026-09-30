@@ -73,10 +73,10 @@ _land_feature_title() {
 # override: a ship-gate refusal on the push surfaces with the gate's own stderr and exit
 # code, and the run stops there.
 cmd_land() {
-  local wt="" title="" body_file="" arg count=0 want="" flags_given=0
+  local wt="" title="" body_file="" verify="" arg count=0 want="" flags_given=0
   for arg in "$@"; do
     if [ -n "$want" ]; then
-      case "$want" in title) title="$arg" ;; body) body_file="$arg" ;; esac
+      case "$want" in title) title="$arg" ;; body) body_file="$arg" ;; verify) verify="$arg" ;; esac
       want=""; continue
     fi
     case "$arg" in
@@ -84,6 +84,8 @@ cmd_land() {
       --title=*) title="${arg#--title=}"; flags_given=1 ;;
       --body-file) want=body; flags_given=1 ;;
       --body-file=*) body_file="${arg#--body-file=}"; flags_given=1 ;;
+      --verify) want=verify ;;
+      --verify=*) verify="${arg#--verify=}" ;;
       --with-ci) KIT_WRAP_CI_ON_MERGE=1 ;;
       -*) echo "wrap.sh land: unknown flag '$arg'" >&2; return 64 ;;
       *) _reject_packed land "$arg" || return 64
@@ -91,7 +93,7 @@ cmd_land() {
     esac
   done
   [ -z "$want" ] || { echo "wrap.sh land: --${want} needs a value" >&2; return 64; }
-  [ "$count" -eq 1 ] || { echo "usage: wrap.sh land <worktree> [--title T] [--body-file F] [--with-ci]" >&2; return 64; }
+  [ "$count" -eq 1 ] || { echo "usage: wrap.sh land <worktree> [--title T] [--body-file F] [--with-ci] [--verify <cmd>]" >&2; return 64; }
   _is_repo "$wt" || { echo "wrap.sh land: ${wt} is not a git worktree" >&2; return 64; }
   if [ -n "$body_file" ] && [ ! -f "$body_file" ]; then
     echo "wrap.sh land: --body-file '${body_file}' is not an existing file" >&2; return 64
@@ -219,7 +221,124 @@ cmd_land() {
   fi
 
   _gh_merge_retry "$n" "$url" "$tip"; rc=$?
-  if [ "$rc" -ne 0 ]; then echo "     MERGE FAILED #${n}: exit ${rc}" >&2; return 2; fi
+  if [ "$rc" -ne 0 ]; then
+    # A refusal worth answering is CONFLICTING and nothing else: the branch is already
+    # pushed, so one merge of origin/<def> into it (never a rebase) is the only move that
+    # keeps the published history. Any other verdict keeps today's exit.
+    local mdetail mhead m mgen mrc proll pnum pwaited failed_checks
+    mdetail="$(_pr_detail_at_head "$url" "$n" "$tip")"
+    mhead="$(printf '%s' "$mdetail" | jq -r '.headRefOid // ""' 2>/dev/null)"
+    if [ -z "$mdetail" ] || [ -z "$mhead" ]; then
+      echo "     MERGE FAILED #${n}: exit ${rc}; the PR state is unreadable, nothing merged" >&2
+      return 2
+    fi
+    if [ "$mhead" != "$tip" ]; then
+      echo "     MERGE FAILED #${n}: GitHub still shows head $(_short "$mhead"), not the pushed $(_short "$tip")" >&2
+      return 2
+    fi
+    m="$(printf '%s' "$mdetail" | jq -r '.mergeable // "UNKNOWN"' 2>/dev/null)"
+    if [ "$m" != "CONFLICTING" ]; then
+      echo "     MERGE FAILED #${n}: exit ${rc}" >&2; return 2
+    fi
+    echo "     #${n} is CONFLICTING: merging origin/${def} into ${branch}"
+    mgen=""; [ -f "$wt/$_RB_GENERATOR" ] && mgen="$wt/$_RB_GENERATOR"
+    if [ -n "$verify" ]; then
+      _merge_verify_push "$wt" "$branch" "$def" "$tip" "$mgen" "$verify"
+    else
+      _merge_verify_push "$wt" "$branch" "$def" "$tip" "$mgen"
+    fi
+    mrc=$?
+    case "$mrc" in
+      0) ;;
+      4) echo "     ${branch} already contains origin/${def}; GitHub's conflict is the union-blind case, run wrap merge --apply --pr ${n}" >&2
+         return 2 ;;
+      130) return 130 ;;
+      *) echo "     PR #${n} left open" >&2; return 2 ;;
+    esac
+
+    # From here on the merge commit is on origin whatever happens next, so every exit names
+    # it: a rerun that cannot see that sha would merge the wrong head.
+    echo "     waiting for GitHub to see $(_short "$MERGED_OID")"
+    mdetail="$(_pr_detail_settled "$url" "$n" "$MERGED_OID" "$tip")"
+    mhead="$(printf '%s' "$mdetail" | jq -r '.headRefOid // ""' 2>/dev/null)"
+    m="$(printf '%s' "$mdetail" | jq -r '.mergeable // "UNKNOWN"' 2>/dev/null)"
+    if [ -z "$mdetail" ] || [ -z "$mhead" ]; then
+      echo "     #${n} is unreadable after the push; the merge commit $(_short "$MERGED_OID") is on origin" >&2
+      return 2
+    fi
+    if [ "$mhead" = "$tip" ]; then
+      echo "     GitHub has not caught up with $(_short "$MERGED_OID"); run wrap merge --apply --pr ${n}; the merge commit $(_short "$MERGED_OID") is on origin" >&2
+      return 2
+    fi
+    if [ "$mhead" != "$MERGED_OID" ]; then
+      echo "     PR #${n} head is $(_short "$mhead"), another writer pushed; left open; the merge commit $(_short "$MERGED_OID") is on origin" >&2
+      return 2
+    fi
+    if [ "$m" = "CONFLICTING" ]; then
+      echo "     #${n} is still CONFLICTING; run wrap merge --apply --pr ${n}; the merge commit $(_short "$MERGED_OID") is on origin" >&2
+      return 2
+    fi
+    tip="$MERGED_OID"
+
+    if _ci_on_merge; then
+      _ci_label_sync "$url" "$n"; rc=$?
+      case "$rc" in
+        0) _ci_checks_wait "$url" "$n" ;;
+        1) ;;
+        *) echo "     MERGE FAILED #${n}: the ci label could not be set; the merge commit $(_short "$tip") is on origin" >&2
+           return 2 ;;
+      esac
+      proll="$(gh pr view "$n" --repo "$url" --json statusCheckRollup 2>/dev/null)"; rc=$?
+    else
+      # The pending-only wait holds no grace: a push that starts no checks pays nothing.
+      # An unreadable read ends it at once; the single judgment below reads the last
+      # answer either way.
+      pwaited=0
+      while :; do
+        proll="$(gh pr view "$n" --repo "$url" --json statusCheckRollup 2>/dev/null)"; rc=$?
+        [ "$rc" -eq 0 ] && [ -n "$proll" ] || break
+        pnum="$(printf '%s' "$proll" | jq -r "${CI_JQ_DEFS} ([.statusCheckRollup // [] | .[] | select(pending)] | length)" 2>/dev/null)"
+        case "$pnum" in ''|*[!0-9]*) break ;; esac
+        [ "$pnum" -eq 0 ] && break
+        [ "$pwaited" -lt "$KIT_WRAP_CARRY_CHECKS_SECS" ] || break
+        sleep 10; pwaited=$(( pwaited + 10 ))
+      done
+    fi
+    # The merge commit is already on origin, so what the rollup cannot answer is judged
+    # against a state that cannot be taken back: an unreadable read, or checks still
+    # pending when the bound ran out, stop the land naming the commit the same way a red
+    # check does. A readable rollup with nothing pending -- the empty one of a repo that
+    # registered no checks included -- keeps the straight path.
+    if [ "$rc" -ne 0 ] || ! printf '%s' "$proll" | jq -e . >/dev/null 2>&1; then
+      echo "     checks unreadable on the merged head $(_short "$tip"); the merge commit is on origin" >&2
+      return 2
+    fi
+    pnum="$(printf '%s' "$proll" | jq -r "${CI_JQ_DEFS} ([.statusCheckRollup // [] | .[] | select(pending)] | length)" 2>/dev/null)"
+    if [ "$pnum" != "0" ]; then
+      echo "     checks still pending on the merged head $(_short "$tip"); the merge commit is on origin" >&2
+      return 2
+    fi
+    # A red check on the merged head stops the land before the second merge: a clean
+    # textual merge that broke the build must never land. Latest run per name wins, the
+    # same dedupe _pr_gate applies.
+    failed_checks="$(printf '%s' "$proll" | jq -r "${CI_JQ_DEFS}"'
+      def rtime: [.completedAt, .startedAt, .createdAt] | map(real) | .[0] // "";
+      ((.statusCheckRollup // [])
+        | group_by(.name // .context)
+        | map(sort_by([(if pending then 1 else 0 end), rtime]) | last)
+        | map(select(((.conclusion // .state // "") | ascii_upcase) as $c
+              | $c == "FAILURE" or $c == "ERROR" or $c == "CANCELLED" or $c == "TIMED_OUT")
+            | (.name // .context // "check")) | join(", "))' 2>/dev/null)"
+    if [ -n "$failed_checks" ]; then
+      echo "     checks failed on the merged head $(_short "$tip"): ${failed_checks}; the merge commit is on origin" >&2
+      return 2
+    fi
+    _gh_merge_retry "$n" "$url" "$tip"; rc=$?
+    if [ "$rc" -ne 0 ]; then
+      echo "     MERGE FAILED #${n}: exit ${rc} after the merge cycle; once its checks pass, run wrap merge --apply --pr ${n}; the merge commit $(_short "$tip") is on origin" >&2
+      return 2
+    fi
+  fi
 
   local after state sha
   after="$(gh pr view "$n" --repo "$url" --json state,mergeCommit 2>/dev/null)"

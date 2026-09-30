@@ -27,12 +27,17 @@ _rb_rebasing() {
 }
 
 # _rb_markers <wt> <path>... -- prints each path holding a conflict-marker line (the marker
-# plus a space or the line end, so a Markdown `=======` underline never trips it). 0 on a hit.
+# plus a space or the line end, so a Markdown `=======` underline never trips it). The marker
+# length is each path's `conflict-marker-size` attribute, 7 when it is unset: a merge writes
+# exactly that many marker characters, so a longer run (a nested `>` blockquote) stays legal.
+# 0 on a hit.
 _rb_markers() {
-  local wt="$1" p hit=1; shift
+  local wt="$1" p hit=1 n; shift
   for p in "$@"; do
     [ -f "$wt/$p" ] || continue
-    if grep -qE '^(<{7}|>{7}|\|{7})( |$)' "$wt/$p"; then printf '%s\n' "$p"; hit=0; fi
+    n="$(git -C "$wt" check-attr conflict-marker-size -- "$p" 2>/dev/null)"; n="${n##*: }"
+    case "$n" in ''|*[!0-9]*) n=7 ;; esac
+    if grep -qE "^(<{$n}|>{$n}|\|{$n})( |\$)" "$wt/$p"; then printf '%s\n' "$p"; hit=0; fi
   done
   return "$hit"
 }
@@ -92,22 +97,15 @@ _rb_has() {
 # (-z, so a non-ASCII or quoted path reaches `git add` as itself).
 _rb_changed() { git -C "$1" diff --name-only -z 2>/dev/null; }
 
-# _rb_stop <wt> <branch> <old tip> <generator or empty> <git output file> -- one rebase stop.
-# Every unmerged path is classified before anything is written, so a refused stop writes
-# nothing. The stage set is exact: the unmerged paths plus whatever tracked file the resolver
-# or the generator newly changed, marker-scanned, then staged by name. Never `add -u`/`-A`.
-_rb_stop() {
-  local wt="$1" branch="$2" old="$3" gen="$4" log="$5"
-  local p refused="" regen=0 cl_out="" hits
-  local -a unmerged=() before=() set=()
-  while IFS= read -r -d '' p; do unmerged+=("$p"); done \
-    < <(git -C "$wt" diff --name-only --diff-filter=U -z 2>/dev/null)
-  if [ "${#unmerged[@]}" -eq 0 ]; then
-    _rb_abort "$wt" "$branch" "$old" \
-      "STOPPED ${branch} without a conflict: $(grep -m1 -v '^$' "$log" 2>/dev/null)"
-    return 1
-  fi
-  for p in "${unmerged[@]}"; do
+# _rb_resolve <wt> <generator or empty> <unmerged path>... -- classify every unmerged path
+# first, write nothing while any path refuses: a regenerated file when a generator exists,
+# the CHANGELOG union only when both sides purely added lines, a union-declared path still
+# unmerged and anything else a refusal. On refusal it prints `conflict in <paths>` for the
+# caller's own refusal line. Otherwise the CHANGELOG union lands and the generator runs once
+# (a generator failure returns 3 after the CHANGELOG write; 1 on a refused path).
+_rb_resolve() {
+  local wt="$1" gen="$2" p refused="" regen=0 cl_out=""; shift 2
+  for p in "$@"; do
     if [ "$p" = "$_RB_GENERATED" ] && [ -n "$gen" ]; then regen=1
     elif [ "$p" = "$_RB_CHANGELOG" ] && cl_out="$(mktemp)" && _rb_changelog_merge "$wt" "$p" "$cl_out"; then :
     elif _union_marked "$wt" "$p"; then refused="${refused}${refused:+, }${p} (merge=union, delete/rename conflict)"
@@ -116,13 +114,38 @@ _rb_stop() {
   done
   if [ -n "$refused" ]; then
     [ -n "$cl_out" ] && rm -f "$cl_out"
-    _rb_abort "$wt" "$branch" "$old" "REFUSED ${branch}: conflict in ${refused}"; return 1
+    printf 'conflict in %s\n' "$refused"
+    return 1
   fi
-  while IFS= read -r -d '' p; do before+=("$p"); done < <(_rb_changed "$wt")
   if [ -n "$cl_out" ]; then
     cat "$cl_out" > "$wt/$_RB_CHANGELOG"; rm -f "$cl_out"
   fi
   if [ "$regen" = 1 ] && ! ( cd "$wt" && bash "$gen" generate ) >/dev/null 2>&1; then
+    return 3
+  fi
+}
+
+# _rb_stop <wt> <branch> <old tip> <generator or empty> <git output file> -- one rebase stop.
+# The unmerged set goes through `_rb_resolve`, which writes only once every path resolves.
+# The stage set is exact: the unmerged paths plus whatever tracked file the resolver or the
+# generator newly changed, marker-scanned, then staged by name. Never `add -u`/`-A`.
+_rb_stop() {
+  local wt="$1" branch="$2" old="$3" gen="$4" log="$5"
+  local p hits rrc rout
+  local -a unmerged=() before=() set=()
+  while IFS= read -r -d '' p; do unmerged+=("$p"); done \
+    < <(git -C "$wt" diff --name-only --diff-filter=U -z 2>/dev/null)
+  if [ "${#unmerged[@]}" -eq 0 ]; then
+    _rb_abort "$wt" "$branch" "$old" \
+      "STOPPED ${branch} without a conflict: $(grep -m1 -v '^$' "$log" 2>/dev/null)"
+    return 1
+  fi
+  while IFS= read -r -d '' p; do before+=("$p"); done < <(_rb_changed "$wt")
+  rout="$(_rb_resolve "$wt" "$gen" "${unmerged[@]}")"; rrc=$?
+  if [ "$rrc" -eq 1 ]; then
+    _rb_abort "$wt" "$branch" "$old" "REFUSED ${branch}: ${rout}"; return 1
+  fi
+  if [ "$rrc" -ne 0 ]; then
     _rb_abort "$wt" "$branch" "$old" "GENERATOR FAILED ${branch}: ${_RB_GENERATOR} generate exited non-zero"; return 1
   fi
   set=("${unmerged[@]}")

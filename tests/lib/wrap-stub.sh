@@ -125,6 +125,10 @@ case "$sub" in
             # GitHub catches up with the re-merge push.
             cnt_f="${GH_STUB_CALLS:-/dev/null}.view-$n"
             cnt=$(( $(cat "$cnt_f" 2>/dev/null || echo 0) + 1 )); echo "$cnt" > "$cnt_f" 2>/dev/null
+            # GH_STUB_FAIL_VIEW_<n>_<k>: the k-th view of PR <n> fails the way a gh read
+            # failure does -- nothing printed, non-zero exit.
+            eval "vf=\"\${GH_STUB_FAIL_VIEW_${n}_${cnt}:-0}\""
+            [ "$vf" = "1" ] && exit 1
             j="$cnt"
             while [ "$j" -gt 1 ]; do
               key2="GH_STUB_PR_${n}_${j}"; eval "val2=\"\${$key2:-}\""
@@ -142,6 +146,10 @@ case "$sub" in
               val="${val//%REMERGE_TIP%/$real_oid}"
               sq_oid="$(git -C "$GH_STUB_LAND_REPO" rev-parse "${GH_STUB_SQUASH_BRANCH:-feat/union-squash}" 2>/dev/null)"
               val="${val//%SQUASH_TIP%/$sq_oid}"
+              # %REMOTE_HEAD% is the remote's own branch tip: what GitHub reports as the
+              # PR head once a foreign push has landed on the branch behind our merge.
+              rh_oid="$(git -C "${GH_STUB_LAND_REMOTE:-.}" rev-parse "${GH_STUB_LAND_BRANCH:-feat/union}" 2>/dev/null)"
+              val="${val//%REMOTE_HEAD%/$rh_oid}"
             fi
             # %CARRY_TIP% is the newest wrap/stray-* branch (by name, so by stamp) on the
             # carry-autoland fixture's bare origin: that branch exists only once apply pushes it.
