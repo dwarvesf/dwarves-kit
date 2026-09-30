@@ -19,7 +19,7 @@ The lane rules also lived in prose. The gate ledger parsed the markdown table in
 
 ## Consequences
 
-This reverses the "when in doubt, take the heavier one" posture and the earlier call that `validate` on the normal lane stays light. The safety moves from words in a task title to files in the diff, where the risk is.
+This reverses the old "size up when unsure" posture and the earlier call that `validate` on the normal lane stays light. The safety moves from words in a task title to files in the diff, where the risk is.
 
 Repos with `lane_gates = false` on their base branch lose both the automatic full lane and the floor. They keep the proof gate and the safety gates.
 

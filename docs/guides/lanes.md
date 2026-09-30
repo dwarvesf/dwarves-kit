@@ -17,7 +17,7 @@ the intake runs this tree:
                                           ├─ one bounded change ... normal
                                           └─ risk-list match ...... full
 
-        when in doubt between two lanes, take the heavier one
+        default to normal; the diff floor covers hard paths
 ```
 
 What each lane costs and buys:
