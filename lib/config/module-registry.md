@@ -321,6 +321,7 @@ never turns the step off.
 | - | ship.create_changelog | `true` | [impl] | (none) | `commands/ship.md` step 5. `true` creates the changelog file when none exists; `false` offers and skips on a decline. |
 | - | debug.confirm_fix | `false` | [impl] | (none) | `commands/debug.md` Phase 4 step 5. `false` declares the fix done once the phase's own three conditions hold (the new test passes, no other test broke, the symptom is gone) and reports the evidence; `true` holds the verdict for a human yes. A fix missing any of the three is never declared fixed at either setting. |
 | - | review.apply_findings | `true` | [impl] | (none) | `commands/review-team.md` step 5. `true` applies the `gated_auto` findings that `responding-to-review` VERIFIED, via `fix-agent`, leaving the PR as the review surface; `false` proposes them for the operator to apply. A finding that agent pushed back on is never applied at either setting; `manual` and `advisory` findings never route here. |
+| - | execute.recheck_sample | `5` | [impl] | (none) | `commands/execute.md` Step 4. One in N runs rechecks every end-verifier PASS with `kit:recheck-verifier`; the run is sampled when `cksum` of HEAD at the first end-verifier dispatch has a first field divisible by N. `0` turns sampling off, `1` rechecks every PASS. `(self-attested)` rows are rechecked on every run regardless. Resolved with `kit_config_get_root`: a project `.kit.toml` rides inside an untrusted PR and must not lower verification. |
 
 ### adopt (`lib/adopt.sh`, no install module)
 
@@ -485,6 +486,7 @@ exercise the primitive on fixture keys -- `mega.wave_cap`, `gauntlet.runner_host
 |---|
 | adopt.single_source |
 | debug.confirm_fix |
+| execute.recheck_sample |
 | harvest.enable |
 | harvest.hook_when_sweep_on |
 | intake.boards |
