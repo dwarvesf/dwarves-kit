@@ -1,6 +1,6 @@
 # Proof of done: harvest sweep extractor model and Codex fallback (SPEC-357 DEC-92)
 
-Verdict: PASS. The sweep extractor runs `claude -p --model sonnet` with every safety flag. A Claude failure that is not auth-shaped runs the same prompt once through `codex exec --sandbox read-only`. A Claude limit that the fallback cannot cover still holds with rc 0. Feature commit: `1b10c44f`.
+Verdict: PASS. The sweep extractor runs `claude -p --model sonnet` with every safety flag. A Claude failure that is not auth-shaped runs the same prompt once through `codex exec --sandbox read-only`. A Claude limit that the fallback cannot cover still holds with rc 0. Feature commit: `feat(harvest): sonnet sweep extractor with a codex fallback`.
 
 ## Acceptance -> confirmation
 
