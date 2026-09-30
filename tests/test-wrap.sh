@@ -5982,6 +5982,19 @@ chk_has "pinned config: agent2 is proven merged after that fetch" "$out" "delete
 chk "pinned config: agent2 is gone" \
   "$(git -C "$IC" show-ref --verify --quiet refs/heads/agent2 && echo 1 || echo 0)"
 
+echo "=== land-merge: a CONFLICTING land merges origin/<def> in, then retries ==="
+# ===========================================================================
+# A refused `gh pr merge` is the trigger: the branch is already pushed, so the recovery
+# merges origin/<def> into it (never a rebase, never a force push), resolves only the
+# conflict shapes `_rb_resolve` owns, pushes fast-forward, and tries the squash once more.
+# The structural checks run here at the top because the whole block leans on them: the
+# shared resolver is the same classifier rebase stops call, and the marker scan reads
+# each path's configured marker size rather than a fixed seven.
+chk "land-merge: _rb_stop resolves through _rb_resolve" \
+  "$(sed -n '/^_rb_stop()/,/^}/p' "$KIT_DIR/lib/wrap/wrap.sh" | grep -q '_rb_resolve '; echo $?)"
+chk "land-merge: _rb_markers reads conflict-marker-size" \
+  "$(sed -n '/^_rb_markers()/,/^}/p' "$KIT_DIR/lib/wrap/wrap.sh" | grep -q 'check-attr conflict-marker-size'; echo $?)"
+
 echo
 if [ "$FAIL" -gt 0 ]; then echo "test-wrap: $PASS passed, $FAIL FAILED of $TOTAL" >&2; exit 1; fi
 echo "test-wrap: all $PASS passed"
