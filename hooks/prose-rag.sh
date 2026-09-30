@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# prose-rag.sh -- UserPromptSubmit shim that injects prior-note recall when PROSE_RAG_INJECT=1; dormant otherwise.
 # prose-rag.sh -- UserPromptSubmit hook shim for the prose-rag recall inject
 # (kit-foldin port of ops-toolkit tools/prose-rag). Dormant unless the consumer
 # sets PROSE_RAG_INJECT=1 (the engine's own master switch, duplicated here so a

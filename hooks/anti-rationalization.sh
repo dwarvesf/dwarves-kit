@@ -1,4 +1,5 @@
 #!/bin/bash
+# anti-rationalization.sh -- Stop hook that blocks Claude from declaring work done while rationalizing incomplete work or guess-fixes.
 # anti-rationalization.sh — Stop hook
 # Catches Claude declaring work complete while rationalizing incomplete work.
 # Source: Trail of Bits anti-rationalization pattern (command-based v1)

@@ -1,4 +1,5 @@
 #!/bin/bash
+# spec-drift-guard.sh -- PreToolUse hook that warns, never blocks, when a newly written file is not referenced by the active spec.
 # spec-drift-guard.sh — PreToolUse hook, matcher: Write
 # When Claude creates a new file, checks if it's referenced in the spec.
 # Soft warning (allow + additionalContext), not a block.

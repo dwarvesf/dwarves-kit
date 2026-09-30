@@ -1,4 +1,5 @@
 #!/bin/bash
+# context-readiness.sh -- SessionStart hook that checks project readiness and injects spec, board state and the next step into context.
 # context-readiness.sh — SessionStart hook
 # Checks project readiness and injects context into Claude's awareness.
 # stdout from SessionStart becomes Claude's context.

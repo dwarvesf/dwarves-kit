@@ -290,6 +290,7 @@ Off-ramp entries that also land in Shape: `[H] /kit:onboard` (first run, orchest
  [H/I] /kit:review (single-pass inline)   or   [H/I] /kit:review-team:
     |        [D] code-reviewer x2 + security-reviewer + advisor (+ api/frontend/infra/performance
     |            reviewers when the diff touches their domain) + responding-to-review
+    |            + slop-stripper (behavior-preserving strip pass on the branch diff)
     v
  ## Review verdict ──> [H/I] /kit:docs ──> [D] doc-verifier ──> docs match code
     |
@@ -300,12 +301,19 @@ Off-ramp entries that also land in Shape: `[H] /kit:onboard` (first run, orchest
     |                 [E] safety-gate HARD: push-to-main / force-push / destructive Bash
     v
  shipped ──> Reflect (/kit:retro)
+    |
+    +── [H/I] /kit:greenlight ──> snapshot PR checks ──> real failure: [D] fix-agent, flaky: bounded
+    |         retry ──> one terminal state (report-only; the human merges)
+    +── [H/I] /kit:wrap ──> board rows + green merges + deploy check + worktree tidy ──> report
 
  On-demand re-verification, read-only, no rebuild:
  [H/I] /kit:verify ──> [D] task-verifier + integration-verifier
                         + acceptance-verifier + system-verifier ──> verdict only
+ Escalation lens inside /kit:battery: [D] break-it (advisory; hunts an input the green suite misses).
  Ad hoc on any load-bearing claim: [D] claim-verifier ──> HOLDS / REFUTED majority verdict.
+ Ad hoc production alert: [D] devops-triage ──> bounded root-cause verdict (read-only).
  Standing Check hooks: secrets-guard [E, HARD], commit-format [E, HARD],
+ board-row-gate [E, HARD: no new board row without board-row-ok], batch-debt-warn [E, adv],
  anti-rationalization [E, HARD on Stop], citation-guard [E, adv; strict mode blocks],
  money-gate [E, inert until MONEY_GATE_REPOS], tool-policy-guard [E, wired PreToolUse *
  but inert until tool-policy.json exists].
@@ -327,6 +335,9 @@ Off-ramp entries that also land in Shape: `[H] /kit:onboard` (first run, orchest
  [E] Notification ────> notification (desktop notify, async)        [conv]
  [E] PermissionRequest > permission-auto-approve (read-only ops)    [conv]
  [E] StatusLine ──────> statusline (HUD render)                     [conv]
+ [E] UserPromptSubmit > context-budget (warn once per context threshold) [adv]
+ [E] every wired event > anchor-root (cd to repo root, then run the hook) [conv]
+ [E] Codex runtime ───> codex-hook-adapter (normalize input, not in hooks.json) [conv]
  [I] observe skill ───> control-plane dashboards via lib/bench      read-only
  [I] stats skill ─────> ledger queries (kit/tide/learned/debt)      read-only + one staging write
  Every automated Watch path ends at a staging file or a render, never a direct board/ledger write.
@@ -349,7 +360,12 @@ Off-ramp entries that also land in Shape: `[H] /kit:onboard` (first run, orchest
  Reflect-side skills (auto-fire [I] unless noted):
  doc-drift ──> whole-estate doc audit ──> fixes on a branch ──> PR gate
  topology-drift ──> FEATURES.md vs path-index cross-check ──> delta re-placed ──> PR gate
-   (both dispatch [D] audit-scanner for Tier 2: read-only evidence, skill applies)
+ ci-drift ──> workflows, runners, secrets vs live repo ──> fixes on a branch ──> PR gate
+ repo-hygiene ──> decayed or mis-shelved files, evidence inline ──> PR gate (never deletes)
+ web-drift ──> public-site agent-readiness ──> rows filed in the site's own repo
+ gauntlet-proof-audit ──> run records vs their own evidence ──> discrepancy report
+   (all seven audit skills, incl. backlog-reconcile, dispatch [D] audit-scanner for Tier 2:
+    read-only evidence, skill applies)
  memory-tidy ──> evidence-gated memory audit ──> PR-gated merges/deletions
  skill-review [H] ──> reviews staged skill drafts ──> promote or reject
  loop-engineering ──> gate + anatomy walkthrough for a proposed loop ──> design hand-off
@@ -396,7 +412,9 @@ One line per live feature: `entry -> ... -> terminal`. Grouped by kind; every fe
 | `[H] /kit:quiz-gate -> 5 diff-grounded questions -> engage/defer/wave logged (advisory)` |
 | `[H] /kit:pitch <rid> -> assemble buy-in doc from existing sources -> doc (never fabricates)` |
 | `[H/I] /kit:ship -> gate check + version + changelog + PR -> /kit:retro (HARD on DO NOT SHIP)` |
+| `[H/I] /kit:greenlight -> snapshot PR checks via gh -> real vs flaky -> fix-agent (real) / bounded retry (flaky) -> one terminal state (report-only, human merges)` |
 | `[H/I] /kit:retro -> capture learnings -> docs/retro/v<version>.md -> feeds next /kit:think` |
+| `[H/I] /kit:wrap -> flip board rows + merge green PRs + deploy check + worktree tidy -> skim-first report (distill half on by default)` |
 | `[H/I] /kit:draft-agent -> meta-agent -> agent-effectiveness -> install (--draft stops staged)` |
 | `[H] /kit:gauntlet -> preset/slot confirm -> Tier 1 -> clean-room probe rounds (bounded) -> artifact revised on failure -> SOLID / REVISE / RECONSIDER + run record` |
 | `[H] /kit:kit-health -> self-assessment vs PHILOSOPHY -> report (terminal)` |
@@ -416,11 +434,14 @@ One line per live feature: `entry -> ... -> terminal`. Grouped by kind; every fe
 | `[D] data-etl-worker <- /kit:execute (builder, domain=data-etl) -> pipeline build -> end verifiers` |
 | `[D] db-migration-worker <- /kit:execute (builder, domain=db-migration) -> migration + rollback -> end verifiers` |
 | `[D] meta-agent <- /kit:draft-agent -> staged draft -> command promotes` |
+| `[D] break-it <- /kit:battery (behavioral diff with green tests) -> input or call sequence the suite does not constrain -> advisory findings (read-only, never writes a test)` |
+| `[D] slop-stripper <- /kit:review-team -> behavior-preserving AI-slop strip on the branch diff -> surgical edits` |
+| `[D] devops-triage <- on demand, no command dispatches it -> alert + Workers Logs + git around the deploy sha -> bounded root-cause verdict (read-only)` |
 | `[D] task-verifier <- /kit:execute, /kit:verify -> AC check -> PASS / FAIL:fixable / FAIL:escalate` |
 | `[D] fix-agent <- execute, dispatch, debug, test-write, ui-design, verify -> scoped fix -> re-verify` |
 | `[D] integration-verifier <- /kit:execute (multi-task), /kit:verify -> wiring check -> review` |
 | `[D] recheck-verifier <- /kit:execute (sampled) -> fresh-context re-audit of a PASS -> advisory record` |
-| `[D] audit-scanner <- doc-drift, topology-drift skills (Tier 2) -> per-item verdicts with quoted evidence -> findings return (read-only)` |
+| `[D] audit-scanner <- the seven audit-loop skills: backlog-reconcile, ci-drift, doc-drift, gauntlet-proof-audit, repo-hygiene, topology-drift, web-drift (Tier 2) -> per-item verdicts with quoted evidence -> findings return (read-only)` |
 | `[D] claim-verifier <- any command, ad hoc -> N-skeptic panel -> HOLDS / REFUTED verdict` |
 | `[D] code-reviewer <- review-team, devs-team, visual-team -> focused lens -> findings merged` |
 | `[D] security-reviewer <- /kit:review-team -> OWASP-style audit -> findings merged` |
@@ -442,6 +463,10 @@ One line per live feature: `entry -> ... -> terminal`. Grouped by kind; every fe
 | `[I] backlog-reconcile -> refusal guard -> _meta/BACKLOG.md row audit (Target-artifact + Status vs the spec's own Status: header, or git-log for tiny rows) -> fixes on a branch -> PR gate (terminal: merged PR)` |
 | `[I] doc-drift -> whole-estate doc audit -> fixes on a branch -> PR gate (terminal: merged PR)` |
 | `[I] topology-drift -> registry freshness gate -> FEATURES.md vs path index both directions -> delta re-placed on topology -> PR gate` |
+| `[I] ci-drift -> whole-estate CI audit (workflows, runners, secrets, release checks) -> fixes on a branch -> PR gate (terminal: merged PR)` |
+| `[I] repo-hygiene -> whole-repo decay audit -> findings with inline evidence, surfaces never deletes -> PR gate (terminal: merged PR)` |
+| `[I] web-drift -> live public-site agent-readiness audit -> verdicts with evidence -> rows filed in the repo that builds the site (terminal: filed rows)` |
+| `[I] gauntlet-proof-audit -> each gauntlet run record vs its own persisted evidence -> discrepancy report, never re-runs a probe or rewrites a record (terminal: report)` |
 | `[I] get-api-docs -> fetch curated API docs -> grounded coding (terminal: context injected)` |
 | `[I] loop-engineering -> gate + anatomy walkthrough -> design handed to the loop builder` |
 | `[I] memory-tidy -> evidence-gated memory audit -> PR-gated merges/deletions` |
@@ -458,9 +483,12 @@ One line per live feature: `entry -> ... -> terminal`. Grouped by kind; every fe
 | `[E] SessionStart / backlog-stage --surface -> intake-sweep -> staging file (conv, config-gated)` |
 | `[E] UserPromptSubmit -> context-hints -> temporal + keyword skill hints (conv, terminal)` |
 | `[E] UserPromptSubmit -> prose-rag -> prior-note injection, opt-in PROSE_RAG_INJECT=1 (conv)` |
+| `[E] UserPromptSubmit -> context-budget -> warn once per threshold as live context passes a share of the window (adv, terminal)` |
 | `[E] PreToolUse Bash -> safety-gate -> HARD block destructive Bash / push-to-main / force-push` |
 | `[E] PreToolUse Bash -> ship-gate -> HARD block ship without recorded proof/gates` |
 | `[E] PreToolUse Bash -> commit-format -> HARD block non-conventional commit subjects` |
+| `[E] PreToolUse Bash -> board-row-gate -> HARD block a commit that adds a new board row without a board-row-ok line` |
+| `[E] PreToolUse Bash -> batch-debt-warn -> warn on a second PR merge with no lane START in the ledger (adv, terminal)` |
 | `[E] PreToolUse Read/Edit/Bash -> secrets-guard -> HARD block secret-file reads` |
 | `[E] PreToolUse Write -> spec-drift-guard -> warn on files the active spec never mentions (adv)` |
 | `[E] PreToolUse Edit/Write/MultiEdit -> money-gate -> warn on money-file edits (inert by default)` |
@@ -478,6 +506,8 @@ One line per live feature: `entry -> ... -> terminal`. Grouped by kind; every fe
 | `[E] Notification -> notification -> desktop notify, async (conv, terminal)` |
 | `[E] PermissionRequest -> permission-auto-approve -> auto-approve read-only ops (conv, terminal)` |
 | `[E] StatusLine -> statusline -> HUD render (conv, terminal)` |
+| `[E] every wired event, wrapper -> anchor-root -> cd to repo or worktree root, then run the named hook (conv, terminal)` |
+| `[E] Codex runtime hooks, not wired in hooks.json -> codex-hook-adapter -> normalize Codex hook input, invoke shared policies (conv)` |
 
 ## 6 · How to regenerate
 

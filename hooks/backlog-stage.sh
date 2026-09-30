@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# backlog-stage.sh -- SessionEnd hook that stages work-items from the session into a staging file, never onto the board.
 # backlog-stage.sh -- SessionEnd hook, function-named port of ops-toolkit's cc-backlog
 # (kit-foldin design note, was cc-backlog). Thin bash shim; the actual logic is the
 # co-located backlog-stage.py (stdlib-only, no deps to vendor). Always exits 0: a

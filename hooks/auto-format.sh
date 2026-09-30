@@ -1,4 +1,5 @@
 #!/bin/bash
+# auto-format.sh -- PostToolUse hook that runs the matching formatter after every file write or edit, idempotent and never blocking.
 # auto-format.sh — PostToolUse hook, matcher: Write|Edit
 # Runs the appropriate formatter after every file write/edit.
 # Source: Common pattern. Idempotent, zero risk.
