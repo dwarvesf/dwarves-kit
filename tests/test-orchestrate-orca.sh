@@ -71,7 +71,7 @@ EOF
 }
 oenv() {  # run a command with the Orca env
   ORCA_CMD="$STUB" ORCA_STUB_STATE="$STATE" BOARD_WORK_CMD="$TMP/bw" GH_CMD="$TMP/poison/gh" \
-  CLAUDE_CMD="$TMP/poison/claude" POISON_SENTINEL="$W/sentinel" "$@"
+  CLAUDE_CMD="$TMP/poison/claude" POISON_SENTINEL="$W/sentinel" ORCA_PERMISSION_MODE="${ORCA_PERMISSION_MODE-bypass}" "$@"
 }
 orun()  { oenv bash "$ORCH" run "$MEGA" --backend orca "$@"; }
 tick()  { ORCA_MAX_TICKS=1 orun >"$W/tick.out" 2>&1; }
@@ -88,6 +88,14 @@ events() { cat "$MEGA/.orchestrate/events.log" 2>/dev/null; }
 # Finish auto sub-goal N the way a good worker does: push the branch, flip the box, Orca completes the Task.
 finish_auto() {  # NN
   push_branch "feat/orca-sg-$1"; flip "SG-$1"; sset task-status "$(tid "mega SG-$1")" completed
+}
+
+# Two independent sub-goals (no deps) with disjoint Touches; $1 is the first policy.
+mk_indep() {  # policy1
+  printf '# Mega-goal: independent\n## Sub-goals\n- [ ] SG-01 first , %s , PR #__\n- [ ] SG-02 second , auto , PR #__\n' "$1" > "$MEGA/ROADMAP.md"
+  printf '**Branch:** feat/orca-sg-01\nDone = one\n\n## Touches\n- alpha/**\n' > "$MEGA/goals/01-first.md"
+  printf '**Branch:** feat/orca-sg-02\nDone = two\n\n## Touches\n- beta/**\n' > "$MEGA/goals/02-second.md"
+  mv -f "$MEGA/goals/03-third.md" "$W/03-third.md.unused"
 }
 
 # ---- stub-contract ---------------------------------------------------------------------------
@@ -471,8 +479,149 @@ tc_status_and_dry_run() {
   case_end
 }
 
+tc_terminal_halts() {
+  case_begin terminal-halts
+  # start-outcome-unknown: the failed start is remembered; the next runner halts with that reason
+  mkcase
+  ORCA_STUB_FAIL_VERB=worker-start ORCA_MAX_TICKS=1 orun >"$W/o.out" 2>&1
+  orun >"$W/o.out" 2>&1; expect "$?" 1 "start-outcome-unknown halts the run"
+  expect_match "$(cat "$W/o.out")" 'halted: SG-01 INDETERMINATE start-outcome-unknown' "names the SG and reason"
+  # no-map-row: Task creation keeps failing, so no row ever exists
+  mkcase
+  ORCA_STUB_FAIL_VERB=task-create orun >"$W/o.out" 2>&1; expect "$?" 1 "no-map-row halts the run"
+  expect_match "$(cat "$W/o.out")" 'halted: SG-01 INDETERMINATE no-map-row' "names the SG and reason"
+  # completed-and-consumed-but-box-open: the box was checked, consumed, then reopened
+  mkcase
+  tick; finish_auto 01; tick
+  { sed -n '1,2p' "$MEGA/ROADMAP.md"; echo '- [ ] SG-01 first , auto , PR #__'; grep '^- \[.\] SG-0[23]' "$MEGA/ROADMAP.md"; } > "$W/rm2.tmp"
+  cat "$W/rm2.tmp" > "$MEGA/ROADMAP.md"
+  orun >"$W/o.out" 2>&1; expect "$?" 1 "consumed-but-box-open halts the run"
+  expect_match "$(cat "$W/o.out")" 'halted: SG-01 INDETERMINATE completed-and-consumed-but-box-open' "names the SG and reason"
+  case_end
+}
+
+tc_start_guard() {
+  case_begin start-guard
+  mkcase
+  tick; t1=$(tid "mega SG-01"); d1=$(did "mega SG-01")
+  sset dispatch-status "$d1" stopped; sset liveness "$d1" exited; sset task-status "$t1" ready
+  ORCA_STUB_DROP_STOPPED=1 tick
+  expect "$(calls | grep -c "worker-start --task $t1 ")" 1 "a recorded start blocks a restart even when Orca drops the stopped row"
+  case_end
+}
+
+tc_occupied_unknown() {
+  case_begin occupied-unknown
+  mkcase; mk_indep auto
+  WAVE_CAP=1 ORCA_MAX_TICKS=1 orun >"$W/o.out" 2>&1
+  t2=$(tid "mega SG-02")
+  sset liveness "$(did "mega SG-01")" unverifiable
+  expect_match "$(st SG-01)" '^INDETERMINATE' "control: SG-01 is INDETERMINATE"
+  WAVE_CAP=1 ORCA_MAX_TICKS=1 orun >"$W/o.out" 2>&1
+  expect_no_match "$(calls)" "worker-start --task $t2 " "an INDETERMINATE worker still occupies the cap"
+  case_end
+}
+
+tc_gate_bang() {
+  case_begin gate-bang
+  mkcase; mk_indep 'gate!'
+  tick
+  t2=$(tid "mega SG-02")
+  expect_no_match "$(calls)" "worker-start --task $t2 " "a gate! sub-goal starts alone"
+  sset liveness "$(did "mega SG-01")" unverifiable
+  tick
+  expect_no_match "$(calls)" "worker-start --task $t2 " "an INDETERMINATE gate! sub-goal blocks every other start"
+  case_end
+}
+
+tc_gate_per_dispatch() {
+  case_begin gate-per-dispatch
+  to_gate_pending
+  t3=$(tid "mega SG-03"); t3a=$(tid "mega SG-03:accept"); run=$(cat "$MEGA/.orchestrate/orca/run")
+  g1=$(jqs '.gates[0].id'); d3=$(did "mega SG-03")
+  sset gate-resolve "$g1" rework
+  expect "$(st SG-03)" "BLOCKED rework" "rework blocks"
+  ORCA_STUB_STATE="$STATE" "$STUB" orchestration worker-start --task "$t3" --agent claude --run "$run" --retry-of "$d3" --json >/dev/null
+  expect "$(st SG-03)" "RUNNING -" "the retry Dispatch is RUNNING, not still BLOCKED rework"
+  sset task-status "$t3" completed
+  tick
+  expect "$(calls | grep -c "gate-create --task $t3a ")" 2 "the retry is gated again"
+  expect "$(jqs '.gates|length')" 2 "a second gate exists"
+  expect_match "$(st SG-03)" '^HELD gate gate_' "SG-03 is HELD on the new gate"
+  case_end
+}
+
+tc_footer_type() {
+  case_begin footer-type
+  mkcase
+  tick; sset message escalation "$(tid "mega SG-01")" >/dev/null
+  expect_match "$(ostat)" 'oldest unacked delivery: [0-9]+s \(escalation\)' "the footer names the oldest message type"
+  case_end
+}
+
+tc_lock_start() {
+  case_begin lock-start
+  mkcase
+  tail -f /dev/null & live=$!
+  mkdir -p "$MEGA/.orchestrate/orca/run.lock"; echo "$live" > "$MEGA/.orchestrate/orca/run.lock/pid"
+  ps -o lstart= -p "$live" | tr -s ' ' > "$MEGA/.orchestrate/orca/run.lock.start"
+  ORCA_MAX_TICKS=0 orun >"$W/o.out" 2>&1; expect "$?" 75 "live pid with a matching start time holds the lock"
+  echo "Thu Jan  1 00:00:00 1970" > "$MEGA/.orchestrate/orca/run.lock.start"
+  ORCA_MAX_TICKS=0 orun >"$W/o.out" 2>&1; expect "$?" 0 "live pid with a different start time (recycled pid) is reclaimed"
+  kill "$live" 2>/dev/null; wait "$live" 2>/dev/null
+  case_end
+}
+
+tc_env_validate() {
+  case_begin env-validate
+  mkcase
+  ORCA_POLL_SECS=abc ORCA_MAX_TICKS=0 orun >"$W/o.out" 2>&1; expect "$?" 64 "non-numeric ORCA_POLL_SECS"
+  ORCA_ERROR_LIMIT=0 ORCA_MAX_TICKS=0 orun >"$W/o.out" 2>&1; expect "$?" 64 "ORCA_ERROR_LIMIT below 1"
+  ORCA_GATE_TIMEOUT_SECS=-5 ORCA_MAX_TICKS=0 orun >"$W/o.out" 2>&1; expect "$?" 64 "negative ORCA_GATE_TIMEOUT_SECS"
+  ORCA_AGENT=codex ORCA_MAX_TICKS=0 orun >"$W/o.out" 2>&1; expect "$?" 64 "ORCA_AGENT other than claude"
+  expect "$(ls "$STATE/calls.log" 2>/dev/null)" "" "no Orca call for any of them"
+  case_end
+}
+
+tc_backoff() {
+  case_begin backoff
+  mkcase
+  s0=$SECONDS
+  ORCA_POLL_SECS=1 ORCA_ERROR_LIMIT=2 ORCA_STUB_FAIL_VERB=task-list orun >"$W/o.out" 2>&1; rc=$?
+  expect "$rc" 1 "halts at the error limit"
+  [ $((SECONDS - s0)) -ge 2 ] || { cfail=$((cfail + 1)); echo "  [$cname] backoff waited $((SECONDS - s0))s, expected at least 2s (poll 1, doubled)"; }
+  case_end
+}
+
+tc_permission_pin() {
+  case_begin permission-pin
+  mkcase
+  ORCA_PERMISSION_MODE=ask ORCA_MAX_TICKS=0 orun >"$W/o.out" 2>&1; expect "$?" 64 "a non-bypass attestation is refused"
+  expect_match "$(cat "$W/o.out")" 'bypass-permissions' "the refusal tells the operator what to set"
+  ORCA_PERMISSION_MODE= ORCA_MAX_TICKS=0 orun >"$W/o.out" 2>&1; expect "$?" 64 "no attestation is refused"
+  expect "$(ls "$STATE/calls.log" 2>/dev/null)" "" "no Orca call before the refusal"
+  case_end
+}
+
+tc_reset_safety() {
+  case_begin reset-safety
+  mkcase
+  tick; d1=$(did "mega SG-01")
+  # a stop that fails must not be followed by a release
+  ORCA_STUB_FAIL_VERB=worker-stop oenv bash "$ORCH" orca-reset "$MEGA" >"$W/r.out" 2>&1; expect "$?" 1 "a failed stop makes reset exit 1"
+  expect_no_match "$(calls)" "worker-release --dispatch $d1" "no release after a failed stop"
+  # a live runner blocks reset
+  mkcase; tick
+  tail -f /dev/null & live=$!
+  mkdir -p "$MEGA/.orchestrate/orca/run.lock"; echo "$live" > "$MEGA/.orchestrate/orca/run.lock/pid"
+  oenv bash "$ORCH" orca-reset "$MEGA" >"$W/r.out" 2>&1; expect "$?" 75 "reset refuses while a live runner holds the lock"
+  kill "$live" 2>/dev/null; wait "$live" 2>/dev/null
+  expect "$(ls "$MEGA/.orchestrate/orca/map.tsv" 2>/dev/null | wc -l | tr -d ' ')" 1 "the map is untouched"
+  case_end
+}
+
 # ONLY="AC4 AC8" runs just those cases; unset runs every case.
-CASES="stub-contract AC1 AC2 AC3 AC4 AC5 AC6 AC7 AC8 AC9 AC10 AC13 AC15 AC16 rule-order start-failure status-and-dry-run view-fallback mutation-check"
+CASES="stub-contract AC1 AC2 AC3 AC4 AC5 AC6 AC7 AC8 AC9 AC10 AC13 AC15 AC16 rule-order start-failure status-and-dry-run terminal-halts start-guard occupied-unknown gate-bang gate-per-dispatch footer-type lock-start env-validate backoff permission-pin reset-safety view-fallback mutation-check"
 for c in $CASES; do
   if [ -z "${ONLY:-}" ] || printf ' %s ' "$ONLY" | grep -q " $c "; then "tc_${c//-/_}"; fi
 done

@@ -5,6 +5,7 @@
 # Row field names are the documented ones plus assumptions marked below; the live capture in the
 # trial (step 0) replaces the assumptions.
 #   ORCA_STUB_FAIL_VERB=<verb>  makes that verb exit 1 (for every call)
+#   ORCA_STUB_DROP_STOPPED=1    worker-list omits stopped rows
 #   `orca _set <what> ...`      test-only mutators, never logged
 set -uo pipefail
 D="${ORCA_STUB_STATE:?ORCA_STUB_STATE not set}"; mkdir -p "$D"
@@ -84,7 +85,9 @@ case "$verb" in
        | (.tasks[]|select(.id==$t)|.status)="dispatched"'
     remember "{\"dispatchId\":\"$id\",\"outcome\":\"ready\"}" ;;
   worker-list)
-    jq -c --arg r "$(val --run "$@")" '{workers:[.dispatches[]|select(.runId==$r)],counts:{},page:{limit:100,hasMore:false,nextCursor:null}}' "$S" ;;
+    # Deliberately NOT filtered by --run: a real server may return other Runs' rows, so the backend
+    # must scope by its own map. ORCA_STUB_DROP_STOPPED=1 also omits stopped rows.
+    jq -c --arg drop "${ORCA_STUB_DROP_STOPPED:-0}" '{workers:[.dispatches[]|select($drop!="1" or .dispatchStatus!="stopped")],counts:{},page:{limit:100,hasMore:false,nextCursor:null}}' "$S" ;;
   worker-stop)
     upd --arg d "$(val --dispatch "$@")" '(.dispatches[]|select(.dispatchId==$d)) |= (.dispatchStatus="stopped"|.projection.liveness="exited"|.terminalState="reclaimable")'
     echo '{"ok":true}' ;;
