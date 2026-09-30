@@ -23,8 +23,9 @@
 #   --single-source : for a repo that wants to keep exactly one agent guide. Folds an existing
 #               CLAUDE.md into AGENTS.md (`git mv`) and leaves CLAUDE.md as a one-line
 #               `@AGENTS.md` import, then targets the operate-contract block at AGENTS.md instead
-#               of CLAUDE.md. Already single-source: no-op. Both files exist and differ, or
-#               neither exists: refuses (exit 1), writes nothing -- merge by hand. The root-only
+#               of CLAUDE.md. AGENTS.md is the pointer plus the folded notes (neither file: the pointer
+#               alone; the block is skipped when AGENTS.md is the pointer). Already single-source:
+#               no-op. Both files exist and differ: refuses (exit 1), writes nothing -- merge by hand. The root-only
 #               knob `adopt.single_source` (default false) turns this mode on without the flag;
 #               `--single-source` always wins, and `--no-single-source` forces it off over a
 #               `true` knob. Whichever of the flag or the knob turned it on, adopt prints one
@@ -83,6 +84,12 @@ done
 [ "$SWAP" -eq 0 ] || [ "$REFRESH" -eq 1 ] || { echo "adopt: --swap-agents needs --refresh" >&2; usage; }
 TARGET="${1:-}"; [ -n "$TARGET" ] || usage
 [ -d "$TARGET" ] || { echo "adopt: target dir not found: $TARGET" >&2; exit 1; }
+# The kit's own tree is never a target: adopt would write a pointer over the source contract.
+target_real="$(cd "$TARGET" && pwd -P)"
+for kit_dir in "$SRC_ROOT" "$KIT_ROOT"; do
+  [ -d "$kit_dir" ] && [ "$target_real" = "$(cd "$kit_dir" && pwd -P)" ] \
+    && { echo "adopt: refusing to adopt the kit's own tree: $TARGET" >&2; exit 1; }
+done
 
 agents="$TARGET/AGENTS.md"
 workflow="$TARGET/WORKFLOW.md"
@@ -129,12 +136,25 @@ is_adopted() {
   # -qxF: the marker must be its own full line (matches how awk strips the block). A substring
   # grep would mis-detect a marker quoted inside prose and skip the append path (review #6).
   [ -f "$agents" ] && [ -f "$marker" ] && [ -f "$claude" ] \
-    && grep -qxF "$START" "$block_target" 2>/dev/null
+    && { grep -qxF "$START" "$block_target" 2>/dev/null \
+         || { [ "$SINGLE" -eq 1 ] && head -n 1 "$agents" | grep -qF 'kit:agents-pointer'; }; }
 }
 
 if [ "$CHECK" -eq 1 ]; then
   is_adopted && { echo "adopted: $TARGET"; exit 0; } || { echo "not adopted: $TARGET"; exit 1; }
 fi
+
+pointer_tpl="$SELF_DIR/adopt/AGENTS.pointer.md"
+known_list="$SELF_DIR/adopt/agents-known.sha256"
+[ -f "$pointer_tpl" ] || { echo "adopt: pointer template missing: $pointer_tpl" >&2; exit 1; }
+
+# write_pointer <dest> [<notes-file>]: pointer (plus a blank line and the notes) via tmp + mv, so
+# a short copy or a full disk never leaves a truncated AGENTS.md. Exit 1 on any failure.
+write_pointer() {
+  tmp="$(mktemp)" || exit 1
+  { cat "$pointer_tpl" && { [ -z "${2:-}" ] || { printf '\n' && cat "$2"; }; }; } > "$tmp" && mv "$tmp" "$1" \
+    || { echo "adopt: failed to write the pointer to $1" >&2; exit 1; }
+}
 
 git -C "$TARGET" rev-parse --git-dir >/dev/null 2>&1 \
   || echo "adopt: warning: $TARGET is not a git repo (adopting at filesystem level anyway)" >&2
@@ -154,10 +174,13 @@ if [ "$SINGLE" -eq 1 ]; then
     else
       # git mv needs CLAUDE.md tracked; fall back to a plain mv for an untracked file or a
       # non-git target (the WARNING above already covered the latter).
+      notes="$(mktemp)"; cp "$claude" "$notes" || exit 1
       if ! git -C "$TARGET" rev-parse --git-dir >/dev/null 2>&1 \
         || ! git -C "$TARGET" mv CLAUDE.md AGENTS.md 2>/dev/null; then
         mv "$claude" "$agents"
       fi
+      # AGENTS.md becomes the pointer plus the folded repo notes.
+      write_pointer "$agents" "$notes"; rm -f "$notes"
       printf '@AGENTS.md\n' > "$claude"
       did=1
     fi
@@ -174,8 +197,10 @@ if [ "$SINGLE" -eq 1 ]; then
       printf '@AGENTS.md\n' > "$claude"; did=1
     fi
   else
-    echo "adopt: --single-source refuses: neither $claude nor $agents exists in $TARGET" >&2
-    exit 1
+    # Neither exists: the pointer is the single source, CLAUDE.md the one-line import.
+    if [ "$DRY" -eq 1 ]; then note "write AGENTS.md (pointer) and CLAUDE.md as a one-line @AGENTS.md import"; else
+      write_pointer "$agents"; printf '@AGENTS.md\n' > "$claude"; did=1
+    fi
   fi
 fi
 
@@ -215,11 +240,9 @@ diff_lines() { diff "$1" "$2" | grep -c '^[<>]'; }
 # unsure branch leaves the file alone: a local file is never rewritten, merged or deleted. Only
 # an unmodified old kit copy (hash in agents-known.sha256) is replaced, and only on
 # --refresh --swap-agents. --single-source skips this step: AGENTS.md is the folded CLAUDE.md.
-pointer_tpl="$SELF_DIR/adopt/AGENTS.pointer.md"
-known_list="$SELF_DIR/adopt/agents-known.sha256"
 if [ "$SINGLE" -eq 1 ]; then :
 elif [ ! -f "$agents" ]; then
-  if [ "$DRY" -eq 1 ]; then note "create AGENTS.md (pointer)"; else cp "$pointer_tpl" "$agents"; fi
+  if [ "$DRY" -eq 1 ]; then note "create AGENTS.md (pointer)"; else write_pointer "$agents"; fi
   did=1
 else
   have="$(sha256_of "$agents")"
@@ -227,14 +250,16 @@ else
   elif grep -q "^$have " "$known_list" 2>/dev/null; then
     if [ "$SWAP" -eq 1 ]; then
       if [ "$DRY" -eq 1 ]; then note "swap AGENTS.md (known old kit copy) for the pointer"; else
-        tmp="$(mktemp)"; cp "$pointer_tpl" "$tmp"; mv "$tmp" "$agents"; echo "adopt: swapped AGENTS.md (known old kit copy) for the pointer"
+        write_pointer "$agents"; echo "adopt: swapped AGENTS.md (known old kit copy) for the pointer"
       fi
       did=1
     else
       echo "adopt: AGENTS.md: old kit copy, run --refresh --swap-agents to replace"
     fi
   else
-    case "$(head -n 1 "$agents")" in
+    # A CRLF or BOM old copy still matches its first line (and is still left alone).
+    first_line="$(head -n 1 "$agents" | sed "1s/^$(printf '\357\273\277')//" | tr -d '\r')"
+    case "$first_line" in
       "<!-- kit:agents-pointer"*)
         echo "adopt: AGENTS.md differs from the pointer by $(diff_lines "$pointer_tpl" "$agents") lines (left alone)";;
       "# AGENTS.md: the operating layer")
@@ -261,11 +286,14 @@ fi
 # writes it into CLAUDE.md as an @AGENTS.md import; --single-source writes it directly into
 # AGENTS.md (block_target), and the one-line CLAUDE.md pointer is left alone.
 block_mode=""; [ "$SINGLE" -eq 1 ] && block_mode="self"
+pointer_is_block=0
+[ "$SINGLE" -eq 1 ] && head -n 1 "$agents" 2>/dev/null | grep -qF 'kit:agents-pointer' && pointer_is_block=1
 if [ ! -f "$block_target" ] || ! grep -qxF "$START" "$block_target" 2>/dev/null; then
-  if [ "$DRY" -eq 1 ]; then note "append the operate-contract block to $block_target"; else
+  if [ "$pointer_is_block" -eq 1 ]; then :   # the pointer already carries the rules; no block
+  elif [ "$DRY" -eq 1 ]; then note "append the operate-contract block to $block_target"; else
     tmp="$(mktemp)"; { [ -f "$block_target" ] && cat "$block_target"; printf '\n'; claude_block "$block_mode"; } > "$tmp"; mv "$tmp" "$block_target"
   fi
-  did=1
+  [ "$pointer_is_block" -eq 1 ] || did=1
 elif [ "$REFRESH" -eq 1 ]; then
   # Refuse to refresh a block with a START but no END: the awk strip would drop everything from
   # START to EOF and mv would install the truncated file (silent data loss; review CRITICAL #1).

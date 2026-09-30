@@ -278,12 +278,12 @@ rm -rf "$T12" "$KIT_CONFIG_OPERATOR"; export KIT_CONFIG_OPERATOR="$NO_OPERATOR"
 # --- --single-source: one repo, one agent guide (CLAUDE.md folds into AGENTS.md) ---
 
 # 19. CLAUDE.md only -> git mv to AGENTS.md, CLAUDE.md becomes a one-line @AGENTS.md pointer,
-# the operate-contract block lands in AGENTS.md (not the one-liner), original content kept.
+# AGENTS.md is the pointer plus the folded notes (the pointer replaces the block), content kept.
 T13="$(newrepo)"
 printf '# Repo\n\nORIGINAL-CLAUDE-CONTENT\n' > "$T13/CLAUDE.md"
 bash lib/adopt.sh --single-source "$T13" >/dev/null
 if [ "$(cat "$T13/CLAUDE.md")" = "@AGENTS.md" ] && grep -q ORIGINAL-CLAUDE-CONTENT "$T13/AGENTS.md" \
-  && grep -qxF '<!-- kit:adopt -->' "$T13/AGENTS.md" && ! grep -q '^@AGENTS.md$' "$T13/AGENTS.md"; then
+  && head -n 1 "$T13/AGENTS.md" | grep -qF 'kit:agents-pointer' && ! grep -q '^@AGENTS.md$' "$T13/AGENTS.md"; then
   ok "--single-source folds an existing CLAUDE.md into AGENTS.md and leaves a one-line pointer"
 else
   no "--single-source did not fold CLAUDE.md into AGENTS.md correctly"
@@ -315,12 +315,13 @@ else
 fi
 rm -f /tmp/single-source-t14.err
 
-# 22. Neither exists -> refuse, exit 1.
+# 22. Neither exists -> AGENTS.md is the pointer alone, CLAUDE.md the one-line import, exit 0.
 T15="$(newrepo)"
-if bash lib/adopt.sh --single-source "$T15" >/dev/null 2>&1; then
-  no "--single-source should refuse when neither AGENTS.md nor CLAUDE.md exists"
+if bash lib/adopt.sh --single-source "$T15" >/dev/null 2>&1 && cmp -s "$T15/AGENTS.md" lib/adopt/AGENTS.pointer.md \
+  && [ "$(cat "$T15/CLAUDE.md")" = "@AGENTS.md" ]; then
+  ok "--single-source with neither file writes the pointer plus a one-line CLAUDE.md import"
 else
-  ok "--single-source refuses (exit 1) when neither AGENTS.md nor CLAUDE.md exists"
+  no "--single-source with neither file"
 fi
 
 # 23. --single-source already in single-source shape (both exist, CLAUDE.md is exactly
@@ -329,7 +330,7 @@ T16="$(newrepo)"
 bash lib/adopt.sh "$T16" >/dev/null   # normal adopt: block lands in CLAUDE.md
 printf '@AGENTS.md\n' > "$T16/CLAUDE.md"  # hand-fold it into single-source shape
 OUT23="$(bash lib/adopt.sh --single-source "$T16" 2>&1)"
-if [ "$(cat "$T16/CLAUDE.md")" = "@AGENTS.md" ] && grep -qxF '<!-- kit:adopt -->' "$T16/AGENTS.md" \
+if [ "$(cat "$T16/CLAUDE.md")" = "@AGENTS.md" ] && head -n 1 "$T16/AGENTS.md" | grep -qF 'kit:agents-pointer' \
   && echo "$OUT23" | grep -q 'already single-source'; then
   ok "--single-source recognizes an already-single-source repo and reports it"
 else
@@ -342,13 +343,12 @@ fi
 # same lookup as src_agents), ahead of KIT_CONFIG_ROOT -- so exercising the knob means
 # editing this checkout's own kit.toml for the duration of the test, restored after (trap
 # covers a mid-test failure too).
-KIT_TOML_LIVE="kit.toml"
-KIT_TOML_BAK="$(mktemp)"
-cp "$KIT_TOML_LIVE" "$KIT_TOML_BAK"
-trap 'cp "$KIT_TOML_BAK" "$KIT_TOML_LIVE"; rm -f "$KIT_TOML_BAK"' EXIT
-
+# The knob is set in a temp COPY of the kit tree (lib, kit.toml, AGENTS.md): the tracked kit.toml
+# is never edited, so a concurrent run cannot see a flipped knob.
+KT="$(mktemp -d)"; mkdir "$KT/lib"; cp lib/adopt.sh "$KT/lib/"; cp -R lib/adopt lib/config "$KT/lib/"
+cp AGENTS.md "$KT/"; cp kit.toml "$KT/kit.toml.orig"
 set_single_source_knob() {
-  awk -v v="$1" '{ if ($0 ~ /^single_source = /) print "single_source = " v; else print }' "$KIT_TOML_BAK" > "$KIT_TOML_LIVE"
+  awk -v v="$1" '{ if ($0 ~ /^single_source = /) print "single_source = " v; else print }' "$KT/kit.toml.orig" > "$KT/kit.toml"
 }
 
 # 24. Knob true, no flag: adopt.sh folds CLAUDE.md into AGENTS.md as if --single-source
@@ -356,9 +356,9 @@ set_single_source_knob() {
 set_single_source_knob true
 T17="$(newrepo)"
 printf '# Repo\n\nKNOB-TRUE-CONTENT\n' > "$T17/CLAUDE.md"
-OUT24="$(bash lib/adopt.sh "$T17" 2>&1)"
+OUT24="$(bash "$KT/lib/adopt.sh" "$T17" 2>&1)"
 if [ "$(cat "$T17/CLAUDE.md")" = "@AGENTS.md" ] && grep -q KNOB-TRUE-CONTENT "$T17/AGENTS.md" \
-  && grep -qxF '<!-- kit:adopt -->' "$T17/AGENTS.md" \
+  && head -n 1 "$T17/AGENTS.md" | grep -qF 'kit:agents-pointer' \
   && echo "$OUT24" | grep -q 'single-source mode on (adopt.single_source knob)'; then
   ok "adopt.single_source=true with no flag folds CLAUDE.md into AGENTS.md and names the knob"
 else
@@ -369,7 +369,7 @@ fi
 # adopt runs (block lands in CLAUDE.md, CLAUDE.md is not folded, AGENTS.md carries no block).
 T18="$(newrepo)"
 printf '# Repo\n\nKNOB-OVERRIDE-CONTENT\n' > "$T18/CLAUDE.md"
-OUT25="$(bash lib/adopt.sh --no-single-source "$T18" 2>&1)"
+OUT25="$(bash "$KT/lib/adopt.sh" --no-single-source "$T18" 2>&1)"
 agents_untouched=1
 grep -qxF '<!-- kit:adopt -->' "$T18/AGENTS.md" 2>/dev/null && agents_untouched=0
 if grep -q KNOB-OVERRIDE-CONTENT "$T18/CLAUDE.md" && grep -qxF '<!-- kit:adopt -->' "$T18/CLAUDE.md" \
@@ -383,17 +383,15 @@ fi
 set_single_source_knob false
 T19="$(newrepo)"
 printf '# Repo\n\nKNOB-FALSE-FLAG-CONTENT\n' > "$T19/CLAUDE.md"
-OUT26="$(bash lib/adopt.sh --single-source "$T19" 2>&1)"
+OUT26="$(bash "$KT/lib/adopt.sh" --single-source "$T19" 2>&1)"
 if [ "$(cat "$T19/CLAUDE.md")" = "@AGENTS.md" ] && grep -q KNOB-FALSE-FLAG-CONTENT "$T19/AGENTS.md" \
-  && grep -qxF '<!-- kit:adopt -->' "$T19/AGENTS.md" \
+  && head -n 1 "$T19/AGENTS.md" | grep -qF 'kit:agents-pointer' \
   && echo "$OUT26" | grep -q 'single-source mode on (--single-source flag)'; then
   ok "adopt.single_source=false plus --single-source still folds (flag beats a false knob)"
 else
   no "adopt.single_source=false plus --single-source did not fold"
 fi
 
-cp "$KIT_TOML_BAK" "$KIT_TOML_LIVE"; rm -f "$KIT_TOML_BAK"
-trap - EXIT
 
 # ------------------------------------------------------------------------------------------
 # SPEC-371: adopt writes a small pointer AGENTS.md. Decision by hash: absent -> pointer; equals
@@ -524,16 +522,62 @@ else
   no "dry-run swap plans only"
 fi
 
-# T7: --single-source skips the AGENTS.md step entirely, even for a known old copy under --swap-agents.
+# T7: --single-source never swaps or reports on an AGENTS.md that already exists, even a known old
+# copy under --swap-agents (its text stays a byte-identical prefix; only the existing operate-contract
+# block is appended); a CLAUDE.md-only repo gets the pointer plus its folded notes.
 P9="$(newrepo)"; printf '# Repo\n\nSINGLE-SOURCE-CONTENT\n' > "$P9/CLAUDE.md"
-O9="$(bash lib/adopt.sh --single-source "$P9" 2>&1)"
+O9="$(bash lib/adopt.sh --single-source "$P9" 2>&1)"; r9=$?
 P10="$(newrepo)"; old_kit_copy > "$P10/AGENTS.md"; printf '@AGENTS.md\n' > "$P10/CLAUDE.md"; cp "$P10/AGENTS.md" "$P10/AGENTS.before"
-O10="$(bash lib/adopt.sh --single-source --refresh --swap-agents "$P10" 2>&1)"
-if grep -q SINGLE-SOURCE-CONTENT "$P9/AGENTS.md" && ! grep -q 'kit:agents-pointer' "$P9/AGENTS.md" && ! echo "$O9" | grep -q 'AGENTS.md:' \
-  && ! grep -q 'kit:agents-pointer' "$P10/AGENTS.md" && ! echo "$O10" | grep -qE 'old kit copy|swapped|differs|not a kit file'; then
-  ok "--single-source leaves AGENTS.md handling alone (no pointer, no notice, no swap)"
+O10="$(bash lib/adopt.sh --single-source --refresh --swap-agents "$P10" 2>&1)"; r10=$?
+if ! echo "$O10" | grep -qE 'old kit copy|swapped|differs|not a kit file' && ! echo "$O9" | grep -q 'AGENTS.md:' \
+  && head -c "$(wc -c < "$P10/AGENTS.before")" "$P10/AGENTS.md" | cmp -s - "$P10/AGENTS.before" && ! grep -q 'kit:agents-pointer' "$P10/AGENTS.md" \
+  && head -n 1 "$P9/AGENTS.md" | grep -qF 'kit:agents-pointer' && grep -q SINGLE-SOURCE-CONTENT "$P9/AGENTS.md" \
+  && [ "$r9" -eq 0 ] && [ "$r10" -eq 0 ]; then
+  ok "--single-source leaves an existing AGENTS.md alone (no notice, no swap) and folds CLAUDE.md under the pointer"
 else
-  no "--single-source touched AGENTS.md handling"
+  no "--single-source AGENTS.md handling (rc=$r9/$r10)"
+fi
+
+# Operator config with single_source = true: AC-1 and AC-2 still pass (pointer only, no block).
+OPD="$(mktemp -d)"; printf '[adopt]\nsingle_source = true\n' > "$OPD/kit.toml"
+P11="$(newrepo)"; KIT_CONFIG_OPERATOR="$OPD" bash lib/adopt.sh "$P11" >/dev/null 2>&1; r12=$?
+if [ "$r12" -eq 0 ] && [ "$(wc -c < "$P11/AGENTS.md")" -le 1200 ] && grep -qF '~/.claude/dwarves-kit/AGENTS.md' "$P11/AGENTS.md" \
+  && head -n 1 "$P11/AGENTS.md" | grep -qF 'kit:agents-pointer' && [ "$(cat "$P11/CLAUDE.md")" = "@AGENTS.md" ] \
+  && KIT_CONFIG_OPERATOR="$OPD" bash lib/adopt.sh --check "$P11" >/dev/null; then
+  ok "operator single_source=true: fresh adopt succeeds, pointer under the cap, CLAUDE.md one-line import"
+else
+  no "operator single_source=true fresh adopt (rc=$r12)"
+fi
+
+# Missing pointer template: exit 1, an existing AGENTS.md stays byte-identical, nothing is reported swapped.
+MT="$(mktemp -d)"; mkdir "$MT/lib"; cp lib/adopt.sh "$MT/lib/"; cp -R lib/adopt lib/config "$MT/lib/"; rm -f "$MT/lib/adopt/AGENTS.pointer.md"
+P12="$(seed_old)"; cp "$P12/AGENTS.md" "$P12/AGENTS.before"
+E12="$(bash "$MT/lib/adopt.sh" --refresh --swap-agents "$P12" 2>&1)"; r13=$?
+P13="$(newrepo)"; E13="$(bash "$MT/lib/adopt.sh" "$P13" 2>&1)"; r14=$?
+if [ "$r13" -eq 1 ] && [ "$r14" -eq 1 ] && cmp -s "$P12/AGENTS.md" "$P12/AGENTS.before" && [ ! -e "$P13/AGENTS.md" ] \
+  && ! echo "$E12" | grep -q swapped && echo "$E12" | grep -q 'template missing'; then
+  ok "missing pointer template: exit 1, AGENTS.md untouched, nothing reported swapped"
+else
+  no "missing pointer template (rc=$r13/$r14)"
+fi
+
+# Adopting the kit's own tree is refused (source and installed paths).
+KO="$(bash lib/adopt.sh . 2>&1)"; r15=$?
+if [ "$r15" -eq 1 ] && echo "$KO" | grep -q "own tree" && git diff --quiet -- AGENTS.md; then
+  ok "adopt refuses the kit's own tree"
+else
+  no "adopt refuses the kit's own tree (rc=$r15)"
+fi
+
+# CRLF and BOM old copies: not a known hash, so left alone, and the drift line still names the old contract.
+P14="$(newrepo)"; old_kit_copy | sed 's/$/\r/' > "$P14/AGENTS.md"; cp "$P14/AGENTS.md" "$P14/AGENTS.before"
+P15="$(newrepo)"; { printf '\357\273\277'; old_kit_copy; } > "$P15/AGENTS.md"; cp "$P15/AGENTS.md" "$P15/AGENTS.before"
+O14="$(bash lib/adopt.sh --refresh --swap-agents "$P14" 2>&1)"; O15="$(bash lib/adopt.sh --refresh --swap-agents "$P15" 2>&1)"
+if cmp -s "$P14/AGENTS.md" "$P14/AGENTS.before" && cmp -s "$P15/AGENTS.md" "$P15/AGENTS.before" \
+  && echo "$O14" | grep -q 'differs from the old kit contract' && echo "$O15" | grep -q 'differs from the old kit contract'; then
+  ok "CRLF and BOM old copies are left alone with the old-contract drift line"
+else
+  no "CRLF/BOM old copies"; echo "$O14"; echo "$O15"
 fi
 
 # T8 / AC-10: no source AGENTS.md anywhere still adopts and writes the pointer.
