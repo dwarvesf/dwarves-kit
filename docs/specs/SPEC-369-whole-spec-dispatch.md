@@ -1,7 +1,7 @@
 # Spec: whole-spec dispatch for /kit:execute
 
 Generated: 2026-09-29
-Status: VALIDATED (round 2: fresh-context validator, 0 critical, three advisories folded)
+Status: SHIPPED (#847). Validation: round 2: fresh-context validator, 0 critical, three advisories folded
 Lane: full
 Type: spec-feature
 File: `docs/specs/SPEC-369-whole-spec-dispatch.md`

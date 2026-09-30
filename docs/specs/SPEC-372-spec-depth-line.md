@@ -1,6 +1,6 @@
 # Spec: a depth line in the spec header
 Generated: 2026-09-29
-Status: VALIDATED
+Status: SHIPPED (#843)
 Lane: full
 Depth: standard (no outside unknown: every file this spec changes is in this repo and cited below; the one live check is named in AC7)
 References: `docs/research/2026-09-29-openrig-absorption.md:107-112` (design D2); `docs/verification/test-plan-review-team.md:37,54-64` (the seeded-gap run where the Coverage and Oracle lenses went RED); SPEC-368 (lanes as data), from which this spec was split.

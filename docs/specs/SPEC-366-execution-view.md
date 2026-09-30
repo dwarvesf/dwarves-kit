@@ -1,7 +1,7 @@
 # Spec: board work, one table of who is on what and how far along
 
 Generated: 2026-09-29
-Status: VALIDATED (round 2 APPROVED: 0 critical; fresh-context validator, two rounds; Reviewer 6 design-bearing=yes pass)
+Status: SHIPPED (#834). Validation: round 2 APPROVED: 0 critical; fresh-context validator, two rounds; Reviewer 6 design-bearing=yes pass
 Lane: normal
 References: `lib/mega/mega.sh` (`_sub_branch` line 173, `GH_BIN`/`GIT_BIN` env seams lines 131-132: read a branch from a sub-goal file, swap the external binary in tests); `lib/board/parse-board.sh` (`pb_rows` line 60: the one board row parser); `lib/gate/gate-ledger.sh` (`rid` line 750, `normalize_phase` line 109: the branch to run-id rule and the phase names). Research source: `docs/research/2026-09-29-openrig-absorption.md`, section "The dashboard (second operator review)", design D7a.
 

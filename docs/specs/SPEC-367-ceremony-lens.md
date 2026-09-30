@@ -1,7 +1,7 @@
 # Spec: ceremony lens (gate work and subagent dispatches versus progress and catches)
 
 Generated: 2026-09-29
-Status: VALIDATED
+Status: SHIPPED (#831)
 Lane: normal
 References: `lib/stats/src/stats/anomalies.py` (the `_detect_ceremony` floor-and-fire shape, `DEFAULTS`, `--threshold`), `lib/stats/tests/test-anomalies-advisor.sh` (fixture harness: env vars point every source at a temp dir, a real end-to-end rebuild, a negative control per detector)
 Source: `docs/research/2026-09-29-openrig-absorption.md`, design D5 and the "Operator hypothesis, tested" table
