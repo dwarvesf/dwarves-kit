@@ -23,6 +23,8 @@ If no PR resolves, STOP: "No open PR for this branch. Run `/kit:ship` to open on
 
 ### Step 1b: The `ci` label gate
 
+Arm this step only when the operator asked for a CI run; merges trigger no CI by default, so without that ask skip Step 1b entirely and an empty rollup is a legitimate `done`.
+
 Some repos run PR checks only when the PR carries the `ci` label (`pull_request: types: [labeled]`), so an unlabeled PR shows an empty rollup that would read as "no CI configured". Before the snapshot:
 
 - Does the repo carry the label? `gh label list -R <owner>/<repo> --search ci --json name`, exact match on `name == "ci"`. No exact match (or a failed read) -> skip this step entirely; the repo behaves as it always did.
@@ -35,7 +37,7 @@ Some repos run PR checks only when the PR carries the `ci` label (`pull_request:
 Read `gh pr view --json state,mergeable,headRefName,reviewDecision,statusCheckRollup` and `gh pr checks <N> --json <fields>`. Confirm the exact field names against the installed `gh` version first (`gh pr checks --help`, `gh pr view --help` list what that install supports) rather than assuming a fixed list -- a field this prompt might guess (e.g. a specific `bucket` enum value) can differ across `gh` releases, and pinning one that does not exist crashes the snapshot instead of degrading. Read only documented fields.
 
 - PR `state` is `MERGED` or `CLOSED` -> terminal `stop_pr_closed`. Stop.
-- No checks at all reported -> terminal `done` ONLY for a repo Step 1b confirmed has no `ci` label. On a label-gated repo an empty rollup right after labeling is a race, not an absence: re-snapshot after a few seconds; still empty means a `paths:` filter started nothing, which is a legitimate `done`.
+- No checks at all reported -> terminal `done` when Step 1b was skipped (no CI run was asked for) or the repo has no `ci` label. When Step 1b labeled the PR, an empty rollup right after labeling is a race, not an absence: re-snapshot after a few seconds; still empty means a `paths:` filter started nothing, which is a legitimate `done`.
 - Every check `SUCCESS`/passing and none pending -> terminal `done`. Note `reviewDecision` in the summary as an FYI (a pending or CHANGES_REQUESTED review is informational here; acting on review comments is Phase B, not this command).
 
 ### Step 3: Classify each failing check

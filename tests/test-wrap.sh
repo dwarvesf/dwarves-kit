@@ -1857,7 +1857,7 @@ out="$(PATH="$TMPD/nosleep:$PATH" \
   GH_STUB_PR_50_3='{"number":50,"statusCheckRollup":[{"name":"pr-check","status":"IN_PROGRESS"}]}' \
   GH_STUB_PR_50_4='{"number":50,"statusCheckRollup":[{"name":"pr-check","status":"COMPLETED","conclusion":"SUCCESS"}]}' \
   GH_STUB_PR_50_5="$CI_PR_50_GREEN" \
-  "$WRAP" merge --apply "$TMPD/clone-scan-main" 2>&1)"; rc=$?
+  "$WRAP" merge --apply --with-ci "$TMPD/clone-scan-main" 2>&1)"; rc=$?
 CI_CALLS="$(cat "$GH_STUB_CALLS")"
 chk "ci-gated merge: exits 0" "$rc"
 chk_has "ci-gated merge: the empty rollup still gates eligible first" "$out" "eligible #50 ci gated merge [feat/ci-gate]"
@@ -1875,7 +1875,7 @@ echo "--- ci-gated merge: a label that will not set refuses the merge"
 # The eligibility gate passes the untested head; the sync's failed edit is what stands
 # between it and a merge nothing tested.
 : > "$GH_STUB_CALLS"
-out="$(PATH="$TMPD/nosleep:$PATH" \
+out="$(PATH="$TMPD/nosleep:$PATH" KIT_WRAP_CI_ON_MERGE=1 \
   GH_STUB_LABELS='[{"name":"ci"}]' GH_STUB_EDIT_RC=1 \
   GH_STUB_OPEN_PRS='[{"number":51,"title":"ci noset","headRefName":"feat/ci-gate"}]' \
   GH_STUB_PR_51="{\"number\":51,\"title\":\"ci noset\",\"headRefName\":\"feat/ci-gate\",\"headRefOid\":\"$PR50_OID\",\"baseRefName\":\"main\",\"mergeable\":\"MERGEABLE\",\"mergeStateStatus\":\"CLEAN\",\"reviewDecision\":\"APPROVED\",\"statusCheckRollup\":[],\"isDraft\":false}" \
@@ -1889,7 +1889,7 @@ echo "--- ci-gated merge: a check the label revealed failing refuses the merge"
 # The label's run comes back red on the first wait read, and the post-label re-gate is
 # what refuses: the empty-rollup eligible verdict it replaces was read on an untested head.
 : > "$GH_STUB_CALLS"
-out="$(PATH="$TMPD/nosleep:$PATH" \
+out="$(PATH="$TMPD/nosleep:$PATH" KIT_WRAP_CI_ON_MERGE=1 \
   GH_STUB_LABELS='[{"name":"ci"}]' \
   GH_STUB_OPEN_PRS='[{"number":52,"title":"ci red","headRefName":"feat/ci-gate"}]' \
   GH_STUB_PR_52="{\"number\":52,\"title\":\"ci red\",\"headRefName\":\"feat/ci-gate\",\"headRefOid\":\"$PR50_OID\",\"baseRefName\":\"main\",\"mergeable\":\"MERGEABLE\",\"mergeStateStatus\":\"CLEAN\",\"reviewDecision\":\"APPROVED\",\"statusCheckRollup\":[],\"isDraft\":false}" \
@@ -1926,7 +1926,7 @@ cw_views() { cat "$GH_STUB_CALLS.view-$1" 2>/dev/null || echo 0; }
 
 # T1: the wait holds on the pre-label rollup, waits out the new run, then merges green.
 : > "$GH_STUB_CALLS"; rm -f "$GH_STUB_CALLS".*
-out="$(PATH="$TMPD/nosleep:$PATH" GH_STUB_LABELS='[{"name":"ci"}]' GH_STUB_OPEN_PRS="$(cw_open 60)" \
+out="$(PATH="$TMPD/nosleep:$PATH" KIT_WRAP_CI_ON_MERGE=1 GH_STUB_LABELS='[{"name":"ci"}]' GH_STUB_OPEN_PRS="$(cw_open 60)" \
   GH_STUB_PR_60="$(cw_full 60 CLEAN "$CW_OLD")" \
   GH_STUB_PR_60_2="{\"number\":60,\"labels\":[],\"statusCheckRollup\":$CW_OLD}" \
   GH_STUB_PR_60_3="{\"number\":60,\"statusCheckRollup\":$CW_OLD}" \
@@ -1940,7 +1940,7 @@ chk_has "ci-wait T1: merged once the new run read green" "$out" "merged #60 ($(g
 
 # T2: the label's run comes back red after a hold, a pending read, and a red read.
 : > "$GH_STUB_CALLS"; rm -f "$GH_STUB_CALLS".*
-out="$(PATH="$TMPD/nosleep:$PATH" GH_STUB_LABELS='[{"name":"ci"}]' GH_STUB_OPEN_PRS="$(cw_open 61)" \
+out="$(PATH="$TMPD/nosleep:$PATH" KIT_WRAP_CI_ON_MERGE=1 GH_STUB_LABELS='[{"name":"ci"}]' GH_STUB_OPEN_PRS="$(cw_open 61)" \
   GH_STUB_PR_61="$(cw_full 61 CLEAN "$CW_OLD")" \
   GH_STUB_PR_61_2="{\"number\":61,\"labels\":[],\"statusCheckRollup\":$CW_OLD}" \
   GH_STUB_PR_61_3="{\"number\":61,\"statusCheckRollup\":$CW_OLD}" \
@@ -1956,7 +1956,7 @@ chk "ci-wait T2: the wait read until the run completed (7 reads)" "$([ "$(cw_vie
 
 # T3: no new check ever appears (a paths-filtered workflow); the grace bound ends the wait.
 : > "$GH_STUB_CALLS"; rm -f "$GH_STUB_CALLS".*
-out="$(PATH="$TMPD/nosleep:$PATH" KIT_WRAP_CI_GRACE_SECS=20 GH_STUB_LABELS='[{"name":"ci"}]' GH_STUB_OPEN_PRS="$(cw_open 62)" \
+out="$(PATH="$TMPD/nosleep:$PATH" KIT_WRAP_CI_ON_MERGE=1 KIT_WRAP_CI_GRACE_SECS=20 GH_STUB_LABELS='[{"name":"ci"}]' GH_STUB_OPEN_PRS="$(cw_open 62)" \
   GH_STUB_PR_62="$(cw_full 62 CLEAN "$CW_OLD")" \
   GH_STUB_PR_62_2="{\"number\":62,\"labels\":[],\"statusCheckRollup\":$CW_OLD}" \
   GH_STUB_PR_62_3="$(cw_full 62 CLEAN "$CW_OLD")" \
@@ -1967,7 +1967,7 @@ chk_has "ci-wait T3: merged on the pre-label rollup" "$out" "merged #62 ("
 
 # T4: the label is already on and checks exist: no baseline, one wait read, as before.
 : > "$GH_STUB_CALLS"; rm -f "$GH_STUB_CALLS".*
-out="$(PATH="$TMPD/nosleep:$PATH" GH_STUB_LABELS='[{"name":"ci"}]' GH_STUB_OPEN_PRS="$(cw_open 63)" \
+out="$(PATH="$TMPD/nosleep:$PATH" KIT_WRAP_CI_ON_MERGE=1 GH_STUB_LABELS='[{"name":"ci"}]' GH_STUB_OPEN_PRS="$(cw_open 63)" \
   GH_STUB_PR_63="$(cw_full 63 CLEAN "$CW_OLD")" \
   GH_STUB_PR_63_2="{\"number\":63,\"labels\":[{\"name\":\"ci\"}],\"statusCheckRollup\":$CW_OLD}" \
   GH_STUB_PR_63_3="$(cw_full 63 CLEAN "$CW_OLD")" \
@@ -1980,7 +1980,7 @@ chk_has "ci-wait T4: merged" "$out" "merged #63 ("
 # T5: the label's run is still queued at the carry bound; the re-gate must not read the
 # older SKIPPED of the same name as the verdict for `test`.
 : > "$GH_STUB_CALLS"; rm -f "$GH_STUB_CALLS".*
-out="$(PATH="$TMPD/nosleep:$PATH" KIT_WRAP_CARRY_CHECKS_SECS=10 GH_STUB_LABELS='[{"name":"ci"}]' GH_STUB_OPEN_PRS="$(cw_open 64)" \
+out="$(PATH="$TMPD/nosleep:$PATH" KIT_WRAP_CI_ON_MERGE=1 KIT_WRAP_CARRY_CHECKS_SECS=10 GH_STUB_LABELS='[{"name":"ci"}]' GH_STUB_OPEN_PRS="$(cw_open 64)" \
   GH_STUB_PR_64="$(cw_full 64 CLEAN "$CW_OLD")" \
   GH_STUB_PR_64_2="{\"number\":64,\"labels\":[],\"statusCheckRollup\":$CW_OLD}" \
   GH_STUB_PR_64_3="$(cw_full 64 CLEAN "$CW_QUEUED")" \
@@ -1991,7 +1991,7 @@ chk_no "ci-wait T5: a queued head never merges" "$(cat "$GH_STUB_CALLS")" "pr me
 
 # T8: as T5, with a queued entry that has no real time at all (zero start and completion).
 : > "$GH_STUB_CALLS"; rm -f "$GH_STUB_CALLS".*
-out="$(PATH="$TMPD/nosleep:$PATH" KIT_WRAP_CARRY_CHECKS_SECS=10 GH_STUB_LABELS='[{"name":"ci"}]' GH_STUB_OPEN_PRS="$(cw_open 65)" \
+out="$(PATH="$TMPD/nosleep:$PATH" KIT_WRAP_CI_ON_MERGE=1 KIT_WRAP_CARRY_CHECKS_SECS=10 GH_STUB_LABELS='[{"name":"ci"}]' GH_STUB_OPEN_PRS="$(cw_open 65)" \
   GH_STUB_PR_65="$(cw_full 65 CLEAN "$CW_OLD")" \
   GH_STUB_PR_65_2="{\"number\":65,\"labels\":[],\"statusCheckRollup\":$CW_OLD}" \
   GH_STUB_PR_65_3="$(cw_full 65 CLEAN "$CW_QUEUED0")" \
@@ -2010,7 +2010,7 @@ chk_has "ci-wait T7: a conflicting PR with a pending check still verdicts the co
 # T3b: as T3 on an UNSTABLE merge state. No new check reported inside the grace hold, so the
 # verdict would rest on checks that predate the label; those pass only on CLEAN.
 : > "$GH_STUB_CALLS"; rm -f "$GH_STUB_CALLS".*
-out="$(PATH="$TMPD/nosleep:$PATH" KIT_WRAP_CI_GRACE_SECS=20 GH_STUB_LABELS='[{"name":"ci"}]' GH_STUB_OPEN_PRS="$(cw_open 67)" \
+out="$(PATH="$TMPD/nosleep:$PATH" KIT_WRAP_CI_ON_MERGE=1 KIT_WRAP_CI_GRACE_SECS=20 GH_STUB_LABELS='[{"name":"ci"}]' GH_STUB_OPEN_PRS="$(cw_open 67)" \
   GH_STUB_PR_67="$(cw_full 67 UNSTABLE "$CW_OLD")" \
   GH_STUB_PR_67_2="{\"number\":67,\"labels\":[],\"statusCheckRollup\":$CW_OLD}" \
   GH_STUB_PR_67_3="$(cw_full 67 UNSTABLE "$CW_OLD")" \
@@ -2022,7 +2022,7 @@ chk_no "ci-wait T3b: never merges on pre-label checks alone" "$(cat "$GH_STUB_CA
 # T9: the sync's PR read fails on a gating repo. Without it the sync cannot tell which
 # checks predate the label, so the merge refuses and the PR stays open.
 : > "$GH_STUB_CALLS"; rm -f "$GH_STUB_CALLS".*
-out="$(PATH="$TMPD/nosleep:$PATH" GH_STUB_LABELS='[{"name":"ci"}]' GH_STUB_OPEN_PRS="$(cw_open 68)" \
+out="$(PATH="$TMPD/nosleep:$PATH" KIT_WRAP_CI_ON_MERGE=1 GH_STUB_LABELS='[{"name":"ci"}]' GH_STUB_OPEN_PRS="$(cw_open 68)" \
   GH_STUB_PR_68="$(cw_full 68 CLEAN "$CW_OLD")" \
   GH_STUB_PR_68_2='not json' \
   "$WRAP" merge --apply "$TMPD/clone-scan-main" 2>&1)"; rc=$?
@@ -2035,7 +2035,7 @@ chk_no "ci-wait T9: never merges" "$(cat "$GH_STUB_CALLS")" "pr merge 68"
 # hold goes on until the label's own run reports.
 CW_LINT="${CW_OLD%]},{\"name\":\"lint\",\"status\":\"COMPLETED\",\"conclusion\":\"SKIPPED\",\"completedAt\":\"2026-09-29T10:21:57Z\",\"startedAt\":\"2026-09-29T10:21:57Z\",\"detailsUrl\":\"https://gh/job/4\"}]"
 : > "$GH_STUB_CALLS"; rm -f "$GH_STUB_CALLS".*
-out="$(PATH="$TMPD/nosleep:$PATH" GH_STUB_LABELS='[{"name":"ci"}]' GH_STUB_OPEN_PRS="$(cw_open 69)" \
+out="$(PATH="$TMPD/nosleep:$PATH" KIT_WRAP_CI_ON_MERGE=1 GH_STUB_LABELS='[{"name":"ci"}]' GH_STUB_OPEN_PRS="$(cw_open 69)" \
   GH_STUB_PR_69="$(cw_full 69 CLEAN "$CW_OLD")" \
   GH_STUB_PR_69_2="{\"number\":69,\"labels\":[],\"statusCheckRollup\":$CW_OLD}" \
   GH_STUB_PR_69_3="$(cw_full 69 CLEAN "$CW_LINT")" \
@@ -2050,7 +2050,7 @@ chk_has "ci-wait T10: merged once the label's run reported" "$out" "merged #69 (
 CW_PRE_RUN="[{\"name\":\"test\",\"status\":\"IN_PROGRESS\",\"conclusion\":\"\",\"completedAt\":\"0001-01-01T00:00:00Z\",\"startedAt\":\"2026-09-29T10:00:00Z\",\"detailsUrl\":\"https://gh/job/1\"}]"
 CW_PRE_DONE="[{\"name\":\"test\",\"status\":\"COMPLETED\",\"conclusion\":\"SUCCESS\",\"completedAt\":\"2026-09-29T10:05:00Z\",\"startedAt\":\"2026-09-29T10:01:00Z\",\"detailsUrl\":\"https://gh/job/1\"}]"
 : > "$GH_STUB_CALLS"; rm -f "$GH_STUB_CALLS".*
-out="$(PATH="$TMPD/nosleep:$PATH" KIT_WRAP_CI_GRACE_SECS=20 GH_STUB_LABELS='[{"name":"ci"}]' GH_STUB_OPEN_PRS="$(cw_open 70)" \
+out="$(PATH="$TMPD/nosleep:$PATH" KIT_WRAP_CI_ON_MERGE=1 KIT_WRAP_CI_GRACE_SECS=20 GH_STUB_LABELS='[{"name":"ci"}]' GH_STUB_OPEN_PRS="$(cw_open 70)" \
   GH_STUB_PR_70="$(cw_full 70 CLEAN "$CW_PRE_DONE")" \
   GH_STUB_PR_70_2="{\"number\":70,\"labels\":[],\"statusCheckRollup\":$CW_PRE_RUN}" \
   GH_STUB_PR_70_3="$(cw_full 70 CLEAN "$CW_PRE_DONE")" \
@@ -2063,13 +2063,28 @@ chk "ci-wait T11: a pre-label check that completed still held the grace wait (6 
 CW_NL_OLD='[{"name":"netlify/deploy-preview","status":"COMPLETED","conclusion":"SUCCESS","completedAt":"2026-09-28T02:44:01Z","startedAt":"2026-09-28T02:44:01Z","detailsUrl":"https://app.netlify.com/sites/x/deploys/1"}]'
 CW_NL_NEW="${CW_NL_OLD%]},{\"name\":\"netlify/header-rules\",\"status\":\"COMPLETED\",\"conclusion\":\"SUCCESS\",\"completedAt\":\"2026-09-29T10:22:00Z\",\"startedAt\":\"2026-09-29T10:21:58Z\",\"detailsUrl\":\"https://app.netlify.com/sites/x/deploys/1\"},{\"name\":\"netlify/redirect-rules\",\"status\":\"COMPLETED\",\"conclusion\":\"SUCCESS\",\"completedAt\":\"2026-09-29T10:22:00Z\",\"startedAt\":\"2026-09-29T10:21:58Z\",\"detailsUrl\":\"https://app.netlify.com/sites/x/deploys/1\"}]"
 : > "$GH_STUB_CALLS"; rm -f "$GH_STUB_CALLS".*
-out="$(PATH="$TMPD/nosleep:$PATH" GH_STUB_LABELS='[{"name":"ci"}]' GH_STUB_OPEN_PRS="$(cw_open 71)" \
+out="$(PATH="$TMPD/nosleep:$PATH" KIT_WRAP_CI_ON_MERGE=1 GH_STUB_LABELS='[{"name":"ci"}]' GH_STUB_OPEN_PRS="$(cw_open 71)" \
   GH_STUB_PR_71="$(cw_full 71 CLEAN "$CW_NL_OLD")" \
   GH_STUB_PR_71_2="{\"number\":71,\"labels\":[],\"statusCheckRollup\":$CW_NL_OLD}" \
   GH_STUB_PR_71_3="$(cw_full 71 CLEAN "$CW_NL_NEW")" \
   "$WRAP" merge --apply "$TMPD/clone-scan-main" 2>&1)"; rc=$?
 chk "ci-wait T12: exits 0" "$rc"
 chk "ci-wait T12: new checks on a shared URL ended the wait at once (4 reads)" "$([ "$(cw_views 71)" -eq 4 ]; echo $?)"
+
+echo "--- ci gate off by default: merge adds no label and waits for nothing"
+# The same ci-gated fixture as #50, with no --with-ci and no KIT_WRAP_CI_ON_MERGE: the
+# merge runs as before the gate existed. An empty rollup is mergeable again, and the
+# label endpoints are never called.
+: > "$GH_STUB_CALLS"; rm -f "$GH_STUB_CALLS".*
+out="$(PATH="$TMPD/nosleep:$PATH" \
+  GH_STUB_LABELS='[{"name":"ci"}]' \
+  GH_STUB_OPEN_PRS='[{"number":72,"title":"ci off merge","headRefName":"feat/ci-gate"}]' \
+  GH_STUB_PR_72="{\"number\":72,\"title\":\"ci off merge\",\"headRefName\":\"feat/ci-gate\",\"headRefOid\":\"$PR50_OID\",\"baseRefName\":\"main\",\"mergeable\":\"MERGEABLE\",\"mergeStateStatus\":\"CLEAN\",\"reviewDecision\":\"APPROVED\",\"statusCheckRollup\":[],\"isDraft\":false}" \
+  "$WRAP" merge --apply "$TMPD/clone-scan-main" 2>&1)"; rc=$?
+chk "ci-off merge: exits 0" "$rc"
+chk_no "ci-off merge: the repo labels are never probed" "$(cat "$GH_STUB_CALLS")" "label list"
+chk_no "ci-off merge: no pr edit runs" "$(cat "$GH_STUB_CALLS")" "pr edit"
+chk_has "ci-off merge: the empty rollup is mergeable again" "$out" "merged #72 ($(git -C "$TMPD/bare-rmain" rev-parse main)): tree verified"
 
 # ===========================================================================
 echo "=== merge --pr: a named draft is marked ready, then gated and merged ==="
@@ -2882,7 +2897,7 @@ out="$(PATH="$TMPD/nosleep:$PATH" \
   GH_STUB_PR_42_2='{"number":42,"labels":[{"name":"ci"}],"statusCheckRollup":[{"name":"pr-check","status":"IN_PROGRESS"}]}' \
   GH_STUB_PR_42_3='{"number":42,"labels":[{"name":"ci"}],"statusCheckRollup":[{"name":"pr-check","status":"COMPLETED","conclusion":"SUCCESS"}]}' \
   GH_STUB_LAND_REPO="$LWT_CI" GH_STUB_LAND_REMOTE="$TMPD/ld-bare-cigated" \
-  GH_STUB_LAND_BRANCH=feat/land GH_STUB_LAND_DEF=main "$WRAP" land "$LWT_CI" 2>&1)"; rc=$?
+  GH_STUB_LAND_BRANCH=feat/land GH_STUB_LAND_DEF=main "$WRAP" land "$LWT_CI" --with-ci 2>&1)"; rc=$?
 LAND_CALLS="$(cat "$GH_STUB_CALLS")"
 chk "ci-gated land: exits 0" "$rc"
 chk_has "ci-gated land: probed the repo labels" "$LAND_CALLS" "label list"
@@ -2901,7 +2916,7 @@ echo "--- ci-gated land: a fuzzy label hit that is not exactly ci never arms"
 build_land cifuzzy
 LWT_CF="$(cd "$TMPD/ld-repo-cifuzzy/wt" && pwd -P)"
 : > "$GH_STUB_CALLS"; rm -f "$GH_STUB_CALLS".*
-out="$(GH_STUB_LABELS='[{"name":"ci-cd"},{"name":"bug"}]' \
+out="$(KIT_WRAP_CI_ON_MERGE=1 GH_STUB_LABELS='[{"name":"ci-cd"},{"name":"bug"}]' \
   GH_STUB_OPEN_PRS='[]' GH_STUB_CREATE_NUM=42 \
   GH_STUB_LAND_REPO="$LWT_CF" GH_STUB_LAND_REMOTE="$TMPD/ld-bare-cifuzzy" \
   GH_STUB_LAND_BRANCH=feat/land GH_STUB_LAND_DEF=main "$WRAP" land "$LWT_CF" 2>&1)"; rc=$?
@@ -2918,7 +2933,7 @@ echo "--- ci-gated land: checks that predate the label do not end the wait (T6)"
 build_land ciwait
 LWT_CW="$(cd "$TMPD/ld-repo-ciwait/wt" && pwd -P)"
 : > "$GH_STUB_CALLS"; rm -f "$GH_STUB_CALLS".*
-out="$(PATH="$TMPD/nosleep:$PATH" \
+out="$(PATH="$TMPD/nosleep:$PATH" KIT_WRAP_CI_ON_MERGE=1 \
   GH_STUB_LABELS='[{"name":"ci"}]' GH_STUB_OPEN_PRS='[]' GH_STUB_CREATE_NUM=42 \
   GH_STUB_PR_42="{\"number\":42,\"labels\":[],\"statusCheckRollup\":$CW_OLD,\"mergeStateStatus\":\"CLEAN\"}" \
   GH_STUB_PR_42_2="{\"number\":42,\"labels\":[{\"name\":\"ci\"}],\"statusCheckRollup\":$CW_OLD}" \
@@ -2936,7 +2951,7 @@ echo "--- ci-gated land: a label already on with runs on the head is left alone"
 build_land ciarmed
 LWT_CA="$(cd "$TMPD/ld-repo-ciarmed/wt" && pwd -P)"
 : > "$GH_STUB_CALLS"; rm -f "$GH_STUB_CALLS".*
-out="$(PATH="$TMPD/nosleep:$PATH" \
+out="$(PATH="$TMPD/nosleep:$PATH" KIT_WRAP_CI_ON_MERGE=1 \
   GH_STUB_LABELS='[{"name":"ci"}]' \
   GH_STUB_OPEN_PRS='[]' GH_STUB_CREATE_NUM=42 \
   GH_STUB_PR_42='{"number":42,"labels":[{"name":"ci"}],"statusCheckRollup":[{"name":"pr-check","status":"COMPLETED","conclusion":"SUCCESS"}],"mergeStateStatus":"CLEAN"}' \
@@ -2953,7 +2968,7 @@ echo "--- ci-gated land: a label that predates the head is removed and re-added"
 build_land cistale
 LWT_CS="$(cd "$TMPD/ld-repo-cistale/wt" && pwd -P)"
 : > "$GH_STUB_CALLS"; rm -f "$GH_STUB_CALLS".*
-out="$(PATH="$TMPD/nosleep:$PATH" \
+out="$(PATH="$TMPD/nosleep:$PATH" KIT_WRAP_CI_ON_MERGE=1 \
   GH_STUB_LABELS='[{"name":"ci"}]' \
   GH_STUB_OPEN_PRS='[]' GH_STUB_CREATE_NUM=42 \
   GH_STUB_PR_42='{"number":42,"labels":[{"name":"ci"}],"statusCheckRollup":[],"mergeStateStatus":"CLEAN"}' \
@@ -2970,7 +2985,7 @@ echo "--- ci-gated land: a label that will not set refuses the merge"
 build_land cinoset
 LWT_CN="$(cd "$TMPD/ld-repo-cinoset/wt" && pwd -P)"
 : > "$GH_STUB_CALLS"; rm -f "$GH_STUB_CALLS".*
-out="$(GH_STUB_LABELS='[{"name":"ci"}]' GH_STUB_EDIT_RC=1 \
+out="$(KIT_WRAP_CI_ON_MERGE=1 GH_STUB_LABELS='[{"name":"ci"}]' GH_STUB_EDIT_RC=1 \
   GH_STUB_OPEN_PRS='[]' GH_STUB_CREATE_NUM=42 \
   GH_STUB_PR_42='{"number":42,"labels":[],"statusCheckRollup":[],"mergeStateStatus":"CLEAN"}' \
   GH_STUB_LAND_REPO="$LWT_CN" GH_STUB_LAND_REMOTE="$TMPD/ld-bare-cinoset" \
@@ -2979,12 +2994,29 @@ chk "ci-noset land: exits 2" "$([ "$rc" -eq 2 ]; echo $?)"
 chk_has "ci-noset land: names the refusal" "$out" "MERGE FAILED #42: the ci label could not be set"
 chk_no "ci-noset land: untested head never merges" "$(cat "$GH_STUB_CALLS")" "pr merge 42"
 
+echo "--- ci gate off by default: land adds no label and waits for nothing"
+# The same ci-gated fixture as the gated land above, with no --with-ci and no env: the
+# repo labels are never probed, the wait never runs, and the merge lands as before the
+# gate existed.
+build_land cioff
+LWT_CO="$(cd "$TMPD/ld-repo-cioff/wt" && pwd -P)"
+: > "$GH_STUB_CALLS"; rm -f "$GH_STUB_CALLS".*
+out="$(GH_STUB_LABELS='[{"name":"ci"}]' \
+  GH_STUB_OPEN_PRS='[]' GH_STUB_CREATE_NUM=42 \
+  GH_STUB_LAND_REPO="$LWT_CO" GH_STUB_LAND_REMOTE="$TMPD/ld-bare-cioff" \
+  GH_STUB_LAND_BRANCH=feat/land GH_STUB_LAND_DEF=main "$WRAP" land "$LWT_CO" 2>&1)"; rc=$?
+LAND_CALLS="$(cat "$GH_STUB_CALLS")"
+chk "ci-off land: exits 0" "$rc"
+chk_no "ci-off land: the repo labels are never probed" "$LAND_CALLS" "label list"
+chk_no "ci-off land: no pr edit runs" "$LAND_CALLS" "pr edit"
+chk_has "ci-off land: merged as before" "$LAND_CALLS" "pr merge 42"
+
 echo "--- autoland on a ci-gated repo labels the carry PR before the merge"
 build_union_repo alci; al_orphan alci
 ALI="$TMPD/uclone-alci"; ALIB="$TMPD/ubare-alci"
 printf '%s' "$LAB_STRAY" > "$ALI/_meta/LAB_LOG.md"
 AL_PR_CI_2='{"number":42,"title":"carry","headRefName":"wrap/stray","headRefOid":"%CARRY_TIP%","baseRefName":"main","mergeable":"MERGEABLE","mergeStateStatus":"CLEAN","reviewDecision":"","statusCheckRollup":[{"name":"pr-check","status":"COMPLETED","conclusion":"SUCCESS"}],"labels":[{"name":"ci"}],"isDraft":false}'
-out="$(PATH="$TMPD/nosleep:$PATH" AL_WAIT=30 \
+out="$(PATH="$TMPD/nosleep:$PATH" AL_WAIT=30 KIT_WRAP_CI_ON_MERGE=1 \
   GH_STUB_LABELS='[{"name":"ci"}]' GH_STUB_PR_42_2="$AL_PR_CI_2" \
   al_run "$ALIB" "$ALI" --apply)"; rc=$?
 chk "autoland ci-gated: apply exits 0" "$rc"
@@ -3002,7 +3034,7 @@ build_union_repo alcw; al_orphan alcw
 ALW="$TMPD/uclone-alcw"; ALWB="$TMPD/ubare-alcw"
 printf '%s' "$LAB_STRAY" > "$ALW/_meta/LAB_LOG.md"
 AL_CW_PR="{\"number\":42,\"title\":\"carry\",\"headRefName\":\"wrap/stray\",\"headRefOid\":\"%CARRY_TIP%\",\"baseRefName\":\"main\",\"mergeable\":\"MERGEABLE\",\"mergeStateStatus\":\"CLEAN\",\"reviewDecision\":\"\",\"statusCheckRollup\":$CW_OLD,\"labels\":[],\"isDraft\":false}"
-out="$(PATH="$TMPD/nosleep:$PATH" AL_WAIT=30 KIT_WRAP_CI_GRACE_SECS=20 \
+out="$(PATH="$TMPD/nosleep:$PATH" AL_WAIT=30 KIT_WRAP_CI_ON_MERGE=1 KIT_WRAP_CI_GRACE_SECS=20 \
   GH_STUB_LABELS='[{"name":"ci"}]' AL_PR_OVERRIDE="$AL_CW_PR" \
   GH_STUB_PR_42_2="${AL_CW_PR/\"labels\":[]/\"labels\":[{\"name\":\"ci\"}]}" \
   al_run "$ALWB" "$ALW" --apply)"; rc=$?
