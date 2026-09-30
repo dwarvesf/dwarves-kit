@@ -1692,14 +1692,14 @@ assert_output_contains "plan: normal carries required spec" "3. spec            
 assert_output_contains "plan: normal prepends grill intake" "1. grill" "$(GL plan normal)"
 PLAN_TINY="$(GL plan tiny)"
 assert_output_not_contains "plan: tiny has no grill row" "grill" "$PLAN_TINY"
-# Validate is required on normal and full, run-lite on backfill (listed, advisory), absent on
-# tiny and bug.
-assert_output_contains "plan: normal lists validate required" "4. validate           required" "$(GL plan normal)"
+# Validate is required on full, run-lite on normal and backfill (listed, advisory; a large
+# normal-lane spec still runs it by prose rule), absent on tiny and bug.
+assert_output_contains "plan: normal lists validate lite" "4. validate           lite" "$(GL plan normal)"
 assert_output_contains "plan: backfill lists validate lite" "4. validate           lite" "$(GL plan backfill)"
 assert_output_not_contains "plan: tiny has no validate" "validate" "$PLAN_TINY"
 assert_output_not_contains "plan: bug has no validate" "validate" "$(GL plan bug)"
 assert_output_contains "plan: full still requires validate" "validate           required" "$(GL plan full)"
-assert_output_contains "required: normal requires validate" "validate" "$(GL required normal)"
+assert_output_not_contains "required: normal no longer requires validate" "validate" "$(GL required normal)"
 assert_output_contains "required: normal requires review" "review" "$(GL required normal)"
 # a normal ship with spec, build, ship and no Validate or Review line is refused
 GL record val-n spec ran "spec written"; GL record val-n build ran "built"; GL record val-n ship ran "pushed"
