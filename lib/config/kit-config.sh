@@ -90,6 +90,20 @@ kit_config_get_root() {
   printf '%s' "$def"
 }
 
+# kit_config_tracked_clean <file> -- exit 0 when <file> is tracked in its git repo and unmodified
+# against HEAD. The rule for a project file that may weaken a gate: an uncommitted edit leaves no
+# trace in the PR, so it does not count. gate-policy.sh and lane-data.sh both use it.
+kit_config_tracked_clean() {
+  local f="$1" d b; d="$(dirname "$f")"; b="$(basename "$f")"
+  git -C "$d" rev-parse --is-inside-work-tree >/dev/null 2>&1 \
+    && git -C "$d" ls-files --error-unmatch "$b" >/dev/null 2>&1 \
+    && git -C "$d" diff --quiet HEAD -- "$b" 2>/dev/null
+}
+
+# kit_config_show_at <repo-root> <rev> -- the committed .kit.toml at <rev> on stdout; empty when the
+# file is absent there. A copy at a base is committed by definition.
+kit_config_show_at() { git -C "$1" show "$2:.kit.toml" 2>/dev/null; }
+
 # --- self-test: `bash lib/config/kit-config.sh selftest` (ponytail: one runnable check) ---
 # EXECUTED-directly guard: a sourced file inherits the CALLER's "$@". Without this, any
 # verb-taking CLI that sources this lib and is invoked with `selftest` (e.g. `queue.sh

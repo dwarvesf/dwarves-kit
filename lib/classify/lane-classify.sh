@@ -554,7 +554,7 @@ main() {
     escalate)   escalate "$@";;
     floor)      floor "$@";;
     deescalate) deescalate "$@";;
-    lanes)    printf 'tiny\nnormal\nfull\nbug\nbackfill\n';;
+    lanes)    printf '%s\n' $LANE_NAMES;;
     flags)    printf '%s\n' "${_hard_name[@]}" "${_soft_name[@]}";;
     *) echo "usage: lane-classify.sh {classify [--files \"<paths>\"] \"<desc>\"|explain [--files ...] \"<desc>\"|check [--files ...] <chosen-lane> \"<desc>\"|risk [--files "<paths>"] [--rid <rid>] "<desc>"|escalate <current-lane> <spec-file>|floor <root> [<base>]|deescalate <chosen-lane> [--rid <rid>] [--root <path>] [--base <ref>] [--floor <N>]|lanes|flags}" >&2; return 64;;
   esac

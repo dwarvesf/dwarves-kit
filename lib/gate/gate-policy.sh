@@ -49,7 +49,7 @@ enabled() {
   local pfile="$root/.kit.toml" tmp=""
   if [ -n "$at" ]; then
     tmp="$(mktemp)"; pfile="$tmp"
-    git -C "$root" show "$at:.kit.toml" > "$tmp" 2>/dev/null || : > "$tmp"
+    kit_config_show_at "$root" "$at" > "$tmp" || : > "$tmp"
   fi
   local pv; pv="$(_kit_toml_get "$pfile" gate "$key")"
   [ -z "$tmp" ] || rm -f "$tmp"
@@ -59,9 +59,7 @@ enabled() {
       # At a base, the file is committed by definition: no clean check.
       [ -n "$at" ] && return 1
       # A project-level off over an operator on: only when the file is tracked and unmodified.
-      if git -C "$root" rev-parse --is-inside-work-tree >/dev/null 2>&1 \
-         && git -C "$root" ls-files --error-unmatch .kit.toml >/dev/null 2>&1 \
-         && git -C "$root" diff --quiet HEAD -- .kit.toml 2>/dev/null; then
+      if kit_config_tracked_clean "$root/.kit.toml"; then
         return 1
       fi
       [ "$rest" = "true" ] && echo "gate-policy: [gate] $key = false in $root/.kit.toml is not applied until the file is committed and clean" >&2

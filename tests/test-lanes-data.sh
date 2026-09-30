@@ -616,6 +616,18 @@ case_floor_no_leaks() {
   if [ -z "$out" ]; then pass floor-no-leaks; else fail floor-no-leaks "RETURN trap left set: $out"; fi
 }
 
+# Only the five kit lanes exist: a committed [lane.mega] block must not turn `mega` into a lane
+# whose gate check passes (check fails closed on an unknown lane).
+case_override_unknown_lane_name() {
+  mkrepo; new_log
+  commit_kit_toml '[lane.mega]
+phases = ["ship"]'
+  local rc=0 err
+  err="$(KIT_PROJECT_ROOT="$ROOT" gl check mega um-1 2>&1)" || rc=$?
+  if [ "$rc" = 1 ] && printf '%s' "$err" | grep -q 'unknown lane'; then pass override-unknown-lane-name
+  else fail override-unknown-lane-name "check mega rc=$rc err=$err"; fi
+}
+
 # ---------------------------------------------------------------------------
 run_case() {
   local fn="case_${1//-/_}"

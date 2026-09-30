@@ -29,27 +29,28 @@ _ld_operator_file() { kit_config_operator; }
 
 # _ld_array <raw>: one element per line; exit 1 when raw is not a one-line array of names.
 _ld_array() {
-  local raw="$1" inner item
+  local raw="$1" inner item rc=0
   case "$raw" in \[*\]) ;; *) return 1 ;; esac
   inner="${raw#\[}"; inner="${inner%\]}"
   [ -n "${inner//[[:space:]]/}" ] || return 0
   local IFS=','
+  set -f   # a `*` in a value must not glob against the working directory
   # shellcheck disable=SC2086
   for item in $inner; do
     item="${item#"${item%%[![:space:]]*}"}"; item="${item%"${item##*[![:space:]]}"}"
     item="${item#\"}"; item="${item%\"}"
-    printf '%s' "$item" | grep -Eq '^[a-z0-9][a-z0-9-]*$' || return 1
+    printf '%s' "$item" | grep -Eq '^[a-z0-9][a-z0-9-]*$' || { rc=1; break; }
     printf '%s\n' "$item"
   done
+  set +f
+  return "$rc"
 }
 
 # lane_project_applies: 0 when the project .kit.toml is tracked and unmodified.
 lane_project_applies() {
-  local pf d; pf="$(kit_config_project)"; d="$(dirname "$pf")"
+  local pf; pf="$(kit_config_project)"
   [ -f "$pf" ] || return 1
-  git -C "$d" rev-parse --is-inside-work-tree >/dev/null 2>&1 \
-    && git -C "$d" ls-files --error-unmatch .kit.toml >/dev/null 2>&1 \
-    && git -C "$d" diff --quiet HEAD -- .kit.toml 2>/dev/null
+  kit_config_tracked_clean "$pf"
 }
 
 # The set of phase names any kit lane knows (kit root file only).
@@ -79,6 +80,9 @@ _ld_kit_has_required() {
 lane_resolve() {
   local lane="$1" mode="${2:-}" layer f raw lraw ph known applies
   LANE_PHASES=""; LANE_LIGHT=""
+  # Only the five kit lanes exist here. A committed `[lane.mega]` block must not make `mega` a
+  # lane whose gate check passes; drop-in lanes answer `plan` only, through lanes.d.
+  case " $LANE_NAMES " in *" $lane "*) ;; *) return 1 ;; esac
   for layer in project operator kit; do
     case "$layer" in
       project)  [ -n "$mode" ] && continue; f="$(kit_config_project)" ;;
@@ -164,7 +168,7 @@ lane_extra_hard_paths() {
     _kit_toml_get "$pf" lanes extra_hard_paths
     if git -C "$d" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
       local tmp; tmp="$(mktemp)"
-      git -C "$d" show "HEAD:.kit.toml" > "$tmp" 2>/dev/null && _kit_toml_get "$tmp" lanes extra_hard_paths
+      kit_config_show_at "$d" HEAD > "$tmp" && _kit_toml_get "$tmp" lanes extra_hard_paths
       rm -f "$tmp"
     fi
     _kit_toml_get "$(_ld_operator_file)" lanes extra_hard_paths
