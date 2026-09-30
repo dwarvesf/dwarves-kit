@@ -30,7 +30,8 @@ import statistics
 import sys
 from dataclasses import dataclass
 
-from . import ceremony, materialize
+from . import ceremony
+from . import materialize
 
 # --- thresholds (open-fork 3: defensible scaffolds, tune via --threshold) ----------------
 # Every key is overridable by the single repeatable `--threshold KEY=VALUE` CLI flag. These

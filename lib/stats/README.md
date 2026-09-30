@@ -157,6 +157,21 @@ as any other cc-backlog candidate; this tool has no path to a board row. Re-runn
 board and the staging file), so it is safe to call repeatedly, e.g. every time the agent
 checks in.
 
+### The ceremony lens: `stats ceremony`
+
+Answers "is the middle of the pipeline ceremony": gate records against what shipped and what the gates caught, plus subagent dispatches and their tokens per run.
+
+```bash
+uv run stats ceremony                               # per-run table + window summary (last 14 days of ledger time)
+uv run stats ceremony --json                        # the same numbers, machine-readable
+uv run stats ceremony --from 2026-09-01 --to 2026-09-15
+uv run stats ceremony --since-sha <sha>             # window starts at that commit's timestamp
+```
+
+The share is a share of gate RECORDS (`ran`+`override`), never of tokens or time. Every unrecorded value prints `?`, never 0. Fixture rids (`sg-*`, `tier4-fixture*`, `turncap-fixture*`, env `STATS_EXCLUDE_RIDS`) never enter a total and are listed with their START and TOKENS counts. `stats anomalies` can fire `ceremony_share` (records >= 30, known-caught rows >= 10, zero catches, share >= the `ceremony_share_max` threshold).
+
+**Dispatch to rid convention.** The transcript reader (`<STATS_SESSIONS_DIR>/*/*/subagents/`, numbers and meta fields only, never message text) attributes a dispatch to a run by, in order: a `rid=<rid>` token in the Agent dispatch description; else the one `OUTCOME build start..end` bracket that contains the dispatch's first message; else `ambiguous` (two rids) or `none`. It never joins on `gitBranch` or `cwd`. Put `rid=<rid>` in every Agent dispatch description so the join is exact. Claude Code prunes old subagent transcripts, so history before the printed `transcripts: earliest` date is unrecoverable.
+
 ### Install the render skill
 
 The skill's canonical source lives at the repo root, `skills/stats/SKILL.md`
