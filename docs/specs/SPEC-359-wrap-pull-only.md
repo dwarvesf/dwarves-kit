@@ -31,9 +31,8 @@ the checkout is on the default branch, the existing `fetch origin <def>:<def>` f
 otherwise). It does not touch `_pull_default` itself: the union carry and the
 `wrap.pull_past_dirty` stash-and-pop both keep working exactly as SPEC-286 and the union-carry
 sibling spec describe, because `--pull-only` changes what `_apply_repo` calls, never what the
-pull stage does. A read-only remainder (the tip snapshot, the `gh` auth probe) still runs; see
-"What the flag narrows" below for exactly which of those are gated and which are accepted as
-harmless leftovers.
+pull stage does. The design critique (below) also gates the two read-only reads nothing under
+the flag consumes, the tip snapshot and the `gh` auth probe; see "What the flag narrows".
 
 ### Why a flag on `apply`, not a new verb
 
@@ -51,8 +50,8 @@ one call of `apply` touches, on the same repo list, under the same `--apply`/dry
 |---|---|
 | `fetch --prune` | runs, unchanged |
 | default branch resolution | runs, unchanged |
-| tip snapshot (`wrap.sh:1559-1565`, `TIPS_FILE`) | still computed unconditionally, per repo. It exists to compare branch tips right before a delete `_apply_branches`/`_apply_worktrees` would make; under `--pull-only` neither of those runs, so the snapshot is read and thrown away unused. Accepted as a harmless leftover (one `for-each-ref`, no write, removed at the end of the call) rather than threading a second condition through `_apply_repo`'s existing single early-return-free body |
-| `_gh_state` (`cmd_apply`, resolved once before the repo loop) | still runs, unchanged. It is a `gh auth status` read shared across every repo in the call regardless of flags; gating it per-flag would mean resolving it twice under some flag combinations for no behavior change, since nothing under `--pull-only` reads its result. Accepted as a harmless leftover |
+| tip snapshot (`wrap.sh:1559-1565`, `TIPS_FILE`) | skipped. It exists to compare branch tips right before a delete `_apply_branches`/`_apply_worktrees` would make; under `--pull-only` neither runs. The validated spec accepted it as a leftover; the design critique gated it (no `mktemp`, no `for-each-ref`) |
+| `_gh_state` (`cmd_apply`, resolved once before the repo loop) | skipped. Every reader of its result is a sweep `--pull-only` turns off, so the call makes no `gh auth status` round-trip. Gated by the design critique, as above |
 | `--tips-file` | **rejected**: `--pull-only` combined with `--tips-file` exits 64, for the same reason as `--worktrees`/`--archive-unmerged`/`--own` below, a test seam for tip-comparison logic that never runs under this flag is a silent no-op the operator should not be allowed to pass by accident |
 | `_apply_worktrees` (worktree removal, branch delete on merge proof) | does not run |
 | `_apply_branches` (local branch delete on merge proof) | does not run |
@@ -79,9 +78,10 @@ above). Two different outcomes follow, and they are not the same case:
 - **Ahead-only** (the default branch holds a local commit origin lacks, and origin's own tip has
   not moved): origin's tip is still an ancestor of `HEAD`, so `git pull --ff-only` is a true
   no-op here, git reports "Already up to date", exits 0, and `HEAD` does not move. The local
-  commit is not lost, but it is not reported or carried anywhere either: `--pull-only` never runs
-  `_carry_stray_commits`, so nothing pushes it to a `wrap/stray-commits-*` branch, and a plain
-  `apply --apply` (or `apply --pull-only` again) is what eventually surfaces it.
+  commit is not lost and not carried anywhere: `--pull-only` never runs `_carry_stray_commits`,
+  so nothing pushes it to a `wrap/stray-commits-*` branch. It is reported, though: the pull
+  section prints `NOTE: <def> is N commits ahead of origin/<def>; --pull-only never carries them,
+  plain apply --apply does` (see Report shape), so the commits never go silent.
 - **Diverged** (origin's tip has also moved, to a commit that is not an ancestor of `HEAD`):
   `git pull --ff-only` refuses. Its own message here is `fatal: Not possible to fast-forward,
   aborting.`, no file or ref names, unlike the dirty-tracked-file refusal above, which names the
@@ -128,6 +128,14 @@ each, because those sections do not run at all under this flag, and a `SKIPPED` 
 step that considered the repo and declined, which is not what happened. The closing
 `== APPLY complete. ...` / `== DRY-RUN complete. ...` line is unchanged.
 
+One line is added inside `-- pull:` (added by the retroactive `/kit:think` pass, see
+`docs/briefs/DECISION-BRIEF-wrap-pull-only.md`): when the checkout is on the default branch, the
+fetch succeeded, and `git rev-list --count origin/<def>..HEAD` is N > 0, it prints
+`NOTE: <def> is N commits ahead of origin/<def>; --pull-only never carries them, plain apply
+--apply does` before the pull runs. It is read-only and changes no exit code. It prints in both
+the ahead-only and the diverged case, and never without `--pull-only` (plain `apply` reports the
+same commits in its `-- stray commits:` section).
+
 ## Picture
 
 ```
@@ -141,7 +149,7 @@ parse flags (incl. --pull-only -> global PULL_ONLY=1)
       |                                       |
       no                                     yes --> exit 64, nothing written
       v
-gh_state = _gh_state()   -- once, before the repo loop (wrap.sh:1653), unconditional
+gh_state = _gh_state()   -- once, before the repo loop, skipped under PULL_ONLY
       |
       v
 for each repo: _apply_repo(repo, gh_state)
@@ -153,7 +161,7 @@ fetch --prune  (failure message varies under PULL_ONLY, see Report shape)
 resolve def (default branch), cur (checked-out branch)
       |
       v
-tip snapshot    -- read-only, accepted leftover either way (global PULL_ONLY, not gated)
+tip snapshot    -- read-only, skipped under PULL_ONLY
       |
       v
    [PULL_ONLY?] ----------------- no ----------------+
@@ -200,8 +208,8 @@ already lives inside; a sibling verb would rebuild all of that for zero new beha
   `_apply_branches`, `_apply_archive_unmerged`, `_apply_origin_branches`, `_carry_stray`, and
   `_carry_stray_commits` calls (each with its own section-header echo) in
   `if [ "$PULL_ONLY" != 1 ]; then ... fi`, so nothing prints for those sections under the flag.
-  Leave the tip snapshot, `_gh_state`, the fetch call, and the pull section itself unconditional,
-  per "What the flag narrows". Vary the fetch-failure line per "Report shape" (`PULL_ONLY=1` →
+  Leave the fetch call and the pull section itself unconditional; skip the tip snapshot and
+  `_gh_state` (design critique), per "What the flag narrows". Vary the fetch-failure line per "Report shape" (`PULL_ONLY=1` →
   `(fetch failed; the pull below will likely fail too)`). Acceptance: Test plan "Scope, happy
   path", "Scope", "Off default branch", "Fetch-failure wording" rows.
 
@@ -256,59 +264,122 @@ already lives inside; a sibling verb would rebuild all of that for zero new beha
   already work.
 - No change to `cmd_scan`, `cmd_merge`, `cmd_land`, or any other `wrap.sh` verb.
 - No retry, no forced pull, no reset beyond what `_pull_default` already does.
-- No gating of the tip snapshot or `_gh_state`: both are accepted read-only leftovers, per "What
-  the flag narrows".
 
 ## After state
 
-- `wrap.sh apply --pull-only <repo>` (dry run) and `wrap.sh apply --pull-only --apply <repo>`
+Each bullet is an acceptance criterion; the `AC-n` ids key the Test plan below.
+
+- AC-1: `wrap.sh apply --pull-only <repo>` (dry run) and `wrap.sh apply --pull-only --apply <repo>`
   print only the repo header, the fetch line, and the `-- pull:` section; no worktree, branch,
   archive, origin-branch, stray-line, or stray-commit section prints.
-- A repo passed through `--pull-only --apply` ends with the same checkout state
+- AC-2: A repo passed through `--pull-only --apply` ends with the same checkout state
   `_pull_default` alone would produce: `wrap.pull_past_dirty` off and a non-union dirty file
   present leaves the checkout behind with `FAILED pull --ff-only`; on, the blocking file is
   stashed and restored exactly as SPEC-286 describes; a union-marked dirty file is carried
   across either way.
-- A checkout on the default branch, ahead-only (local commits origin lacks, origin's tip
+- AC-3: A checkout on the default branch, ahead-only (local commits origin lacks, origin's tip
   unmoved): `_carry_stray_commits` does not run, so nothing pushes the commits anywhere, but
   `git pull --ff-only` is a genuine no-op, "Already up to date", exit 0, `HEAD` unchanged. The
-  local commits stay unreported until a plain `apply --apply` run carries them.
-- The same checkout, diverged (origin's tip has also moved): `git pull --ff-only` refuses,
+  pull section's `NOTE: <def> is N commits ahead of origin/<def>` line names the commits; a plain
+  `apply --apply` run carries them.
+- AC-4: The same checkout, diverged (origin's tip has also moved): `git pull --ff-only` refuses,
   `FAILED pull --ff-only`, exit 2, nothing pushed, nothing local moves. Plain `apply --apply` is
   the recovery, per the Stray commits interaction NOTE.
-- No worktree is removed, no local or origin branch is deleted, no stray-line or stray-commit
+- AC-5: No worktree is removed, no local or origin branch is deleted, no stray-line or stray-commit
   carry branch is pushed, under `--pull-only`, whatever those steps would otherwise have done on
   the same repo.
-- `wrap.sh apply --pull-only` combined with `--worktrees`, `--archive-unmerged`, `--own`, or
+- AC-6: Under `--pull-only --apply`, a pull skipped because `index.lock` stays held, or a repo whose
+  default branch does not resolve, exits 2: the pull is the whole job, so a skipped pull is a
+  failed call. Plain `apply` keeps exit 0 in both cases.
+- AC-7: `wrap.sh apply --pull-only` combined with `--worktrees`, `--archive-unmerged`, `--own`, or
   `--tips-file` exits 64 and writes nothing.
-- The fetch-failure line reads `(fetch failed; the pull below will likely fail too)`
+- AC-8: The fetch-failure line reads `(fetch failed; the pull below will likely fail too)`
   under `--pull-only`, and `(fetch failed; every delete is skipped)` as before without it.
-- Every pre-existing `apply` assertion in `tests/test-wrap.sh` (no `--pull-only` involved) stays
+- AC-9: Every pre-existing `apply` assertion in `tests/test-wrap.sh` (no `--pull-only` involved) stays
   green, unchanged in outcome.
-- `bash tests/test-wrap.sh` is green.
+- AC-10: `bash tests/test-wrap.sh` is green.
 
 ## Test plan
+Date: 2026-09-30. Revised after /kit:test-plan-review-team rounds 1 and 2. Retroactive: the matrix was re-derived after the build, from the After state above plus the brief's survival scenarios. Every proof below is an assertion group that runs in `tests/test-wrap.sh`.
+Source: this spec's ## After state (AC-1..AC-10) and `docs/briefs/DECISION-BRIEF-wrap-pull-only.md` ## Survival scenarios (S1..S5)
 
-| Category | Case | Where |
-|---|---|---|
-| Scope, happy path | `--pull-only --apply` on a repo with a mergeable branch, a removable worktree, and a clean pull: the pull lands, HEAD moves to the incoming commit, and the branch and the worktree both still exist afterward | `tests/test-wrap.sh` |
-| Scope | same run: no `-- worktrees:`, `-- branches:`, `-- archive unmerged:`, `-- origin branches:`, `-- stray lines:`, or `-- stray commits:` line appears anywhere in the output | same |
-| Union carry still works | `--pull-only --apply` on a repo with a dirty `merge=union` file blocking the ff: the file is saved aside, the pull lands, the local line is carried back, matching plain `apply --apply` on the same fixture | same |
-| `pull_past_dirty` still works | `--pull-only --apply` with the knob on and one non-union dirty tracked file blocking the ff: the file is stashed under the run-named stash, the pull lands, the stash pops back, matching plain `apply --apply` under the same knob | same |
-| `pull_past_dirty` off | `--pull-only --apply` with the knob off and a blocking dirty file: exit 2, `FAILED pull --ff-only`, nothing stashed, matching plain `apply --apply` | same |
-| Dry run | `--pull-only` with no `--apply`: prints the pull section's `NOTE`/`WOULD` lines, executes nothing, HEAD unmoved | same |
-| Off default branch | `--pull-only --apply` on a repo whose checkout is on a non-default branch: prints `SKIP pull:` and runs the `fetch origin <def>:<def>` fallback, same as plain `apply` | same |
-| Stray commits, ahead-only | `--pull-only --apply` on a repo whose default branch holds a local commit origin lacks, with origin's own tip unmoved: exit 0, "Already up to date" (no `FAILED` line), `HEAD` unchanged, no `wrap/stray-commits-*` branch created locally or on origin | same |
-| Stray commits, diverged | same fixture, but origin's default branch has also moved to a different commit: exit 2, `FAILED pull --ff-only` present in the output, no `wrap/stray-commits-*` branch created locally or on origin, default branch left exactly where it was | same |
-| Fetch-failure wording | `--pull-only` on a repo whose fetch fails (origin unreachable): the printed line reads `(fetch failed; the pull below will likely fail too)`, not the plain-`apply` wording, and the run exits 2 with a `FAILED pull` line present | same |
-| Usage line | `wrap.sh apply --pull-only` with no repo argument and no other flag: exit 64, the printed `usage: wrap.sh apply ...` line contains `--pull-only` | same |
-| Flag conflict | `--pull-only --worktrees`, `--pull-only --archive-unmerged`, `--pull-only --own <path>`, and `--pull-only --tips-file <path>` each exit 64 and change nothing in the repo | same |
-| Regression | the existing `apply` assertions already in `tests/test-wrap.sh` (worktree removal, branch delete, the pull, all with no `--pull-only` in the call) stay green, unchanged in outcome | same |
-| Multi-repo | `--pull-only --apply` given two repo args: each gets its own header and pull section, in argument order, matching plain `apply`'s existing multi-repo behavior | same |
-| Negative control | remove the `pull_only` gate around one swept step (for example `_apply_branches`) while leaving the flag parsing in place: the "no branch delete" assertion above goes red, confirming the test actually exercises the gate; restore | `docs/verification/wrap-pull-only.md` |
+`tests/test-wrap.sh` has no group filter. Every Proof below runs the full suite and names the assertion prefix it prints, not a runnable filter.
+
+| # | Case | Category | Covers (AC) | Expected | Proof |
+|---|------|----------|-------------|----------|-------|
+| 1 | `--pull-only --apply` on a repo with a merged local branch and an incoming commit | happy-path | AC-1, AC-5 | exit 0, HEAD at origin's tip, the merged branch survives, `-- pull:` prints | `bash tests/test-wrap.sh`; assertions `pull-only scope: *` |
+| 2 | Same run: no sweep section prints | happy-path | AC-1 | none of `-- worktrees:`, `-- branches:`, `-- archive unmerged:`, `-- origin branches:`, `-- stray lines:`, `-- stray commits:`; no ahead NOTE (not ahead) | `bash tests/test-wrap.sh`; assertions `pull-only scope: no ... section`, `pull-only scope: no ahead NOTE` |
+| 3 | Dirty `merge=union` file plus a non-union blocker, `wrap.pull_past_dirty` on | happy-path | AC-2 | union lines carried, blocker stashed and restored, no stash left, exit 0; the stray log line is not carried to an origin `wrap/stray-*` branch | `bash tests/test-wrap.sh`; assertions `pull-only union+stash: *` |
+| 4 | Non-union blocker, knob off | failure-injection | AC-2 | exit 2, `FAILED pull --ff-only`, nothing stashed, HEAD unmoved; a dirty union file's local line survives the failed pull | `bash tests/test-wrap.sh`; assertions `pull-only knob off: *` |
+| 5 | Dry run (no `--apply`) | boundary/edge | AC-1 | `[DRY-RUN] pull --ff-only`, HEAD unmoved, no sweep section | `bash tests/test-wrap.sh`; assertions `pull-only dry run: *` |
+| 6 | Checkout on a feature branch (S5) | boundary/edge | AC-1 | `SKIP pull:` and the `fetch origin main:main` fallback, no sweep section | `bash tests/test-wrap.sh`; assertions `pull-only off-default: *` |
+| 7 | Default branch ahead, origin unmoved (S1) | boundary/edge | AC-3, AC-5 | exit 0, no `FAILED`, HEAD unchanged, ahead NOTE prints, no `wrap/stray-commits-*` branch locally or on origin | `bash tests/test-wrap.sh`; assertions `pull-only ahead-only: *` |
+| 8 | Default branch ahead, origin also moved | failure-injection | AC-4, AC-5 | exit 2, `FAILED pull --ff-only`, ahead NOTE prints, HEAD unmoved, no carry branch anywhere | `bash tests/test-wrap.sh`; assertions `pull-only diverged: *` |
+| 9 | Origin unreachable (S3) | failure-injection | AC-8 | `(fetch failed; the pull below will likely fail too)`, not `(fetch failed; every delete is skipped)`, exit 2, `FAILED pull`. Plain `apply` keeps the old wording (pre-existing fetch-failure assertions) | `bash tests/test-wrap.sh`; assertions `pull-only fetch failure: *` |
+| 10 | A stale `index.lock` held through the pull, mtime fixed at 2000-01-01 so it is stale on any clock | failure-injection | AC-6 | `--pull-only --apply` prints `SKIP pull --ff-only (checkout on main): index.lock held by another writer` and exits 2; plain `apply --apply` on the same locked repo exits 0 | `bash tests/test-wrap.sh`; assertions `pull-only stale lock: *`, `plain apply stale lock: *` |
+| 11 | A repo with no origin, so no default branch resolves | failure-injection | AC-6 | `--pull-only` exits 2 naming the skip; plain `apply` on the same repo still exits 0 | `bash tests/test-wrap.sh`; assertions `pull-only no default branch: *`, `plain apply no default branch: *` |
+| 12 | Each of `--worktrees`, `--archive-unmerged`, `--own <path>`, `--own=<path>`, `--tips-file` with `--pull-only` (S2) | security/abuse | AC-7 | each call passes `--apply`; exit 64 naming the flag; `--tips-file` refused for the conflict before the missing-path check; HEAD unmoved though origin moved | `bash tests/test-wrap.sh`; assertions `pull-only conflict: *`, `pull-only conflicts: no refused call pulled` |
+| 13 | `apply --pull-only` with no repo | boundary/edge | AC-7 (TASK-E) | exit 64, usage line names `--pull-only` | `bash tests/test-wrap.sh`; assertions `pull-only usage: *` |
+| 14 | Two repo args | boundary/edge | AC-1 | each repo gets its own header and pulls | `bash tests/test-wrap.sh`; assertions `pull-only multi-repo: *` |
+| 15 | Every pre-existing `apply` group, no `--pull-only` | regression | AC-9, AC-10 | unchanged outcome | `bash tests/test-wrap.sh`, exit 0 (full suite) |
+| 16 | A live run against a real remote: `git clone` the dwarves-kit origin into a scratch dir, reset the clone's main back one commit, then `bin/wrap apply --pull-only --apply <clone>` | integration (live remote) | AC-1, AC-5 | exit 0, HEAD back at origin/main, only the header, fetch, and `-- pull:` sections print | the recorded run in `docs/verification/wrap-pull-only.md`, "Live run" |
+| N1 | Negative control: sweep gate. In `lib/wrap/wrap.sh`, change `if [ "$PULL_ONLY" != 1 ]; then` to `!= 99` | regression (negative control) | AC-1, AC-5 | RED: `pull-only scope:` section-absence and branch-survival, the union+stash stray-branch assertion, the ahead-only and diverged carry-branch assertions | `bash lib/gate/negctl.sh "$PWD" 'bash tests/test-wrap.sh' 'python3 <mut.py> N#'`, mutation script and output recorded in `docs/verification/wrap-pull-only.md` |
+| N2 | Negative control: ahead NOTE gate. Change the first `= 1` in `if [ "$PULL_ONLY" = 1 ] && [ "$fetch_ok" = 1 ]; then` to `= 99` | regression (negative control) | AC-3, AC-4 | RED: the ahead-only and diverged NOTE assertions | `bash lib/gate/negctl.sh "$PWD" 'bash tests/test-wrap.sh' 'python3 <mut.py> N#'`, mutation script and output recorded in `docs/verification/wrap-pull-only.md` |
+| N3 | Negative control: skipped-pull exit in `run()`. Change the first `= 1` in `[ "$PULL_ONLY" = 1 ] && [ "$APPLY" = 1 ] && FAILURES=1` to `= 99` | regression (negative control) | AC-6 | RED: `pull-only stale lock: exits 2` | `bash lib/gate/negctl.sh "$PWD" 'bash tests/test-wrap.sh' 'python3 <mut.py> N#'`, mutation script and output recorded in `docs/verification/wrap-pull-only.md` |
+| N4 | Negative control: unresolved default branch exit. Change `[ "$PULL_ONLY" = 1 ] && FAILURES=1` to `= 99` | regression (negative control) | AC-6 | RED: `pull-only no default branch: exits 2` | `bash lib/gate/negctl.sh "$PWD" 'bash tests/test-wrap.sh' 'python3 <mut.py> N#'`, mutation script and output recorded in `docs/verification/wrap-pull-only.md` |
+| N5 | Negative control: conflict refusals. On every line containing `cannot combine with`, change `if [` to `if false && [`, so no refusal fires | regression (negative control) | AC-7 | RED: the `pull-only conflict` exit and names-the-flag assertions, the `--tips-file` not-the-missing-path assertion, and `pull-only conflicts: no refused call pulled` | `bash lib/gate/negctl.sh "$PWD" 'bash tests/test-wrap.sh' 'python3 <mut.py> N#'`, mutation script and output recorded in `docs/verification/wrap-pull-only.md` |
+| N6 | Negative control: fetch wording. Replace the string `(fetch failed; the pull below will likely fail too)` with `(fetch failed; every delete is skipped)` | regression (negative control) | AC-8 | RED: `pull-only fetch failure:` wording assertions | `bash lib/gate/negctl.sh "$PWD" 'bash tests/test-wrap.sh' 'python3 <mut.py> N#'`, mutation script and output recorded in `docs/verification/wrap-pull-only.md` |
+
+The tip-snapshot skip and the `_gh_state` skip under `--pull-only` are performance-only. Neither changes any observable output or exit code, so neither has an oracle and neither carries a negative control.
+
+### Coverage notes
+- Categories skipped: none. Security/abuse is thin by nature: the flag reads no untrusted input beyond argv, so the abuse surface is flag combinations (row 12).
+- Uncovered scenario S4 (design critique Medium finding 6, concurrency): two sessions run `--pull-only --apply` on one checkout under `wrap.pull_past_dirty`. The race lives in `_pull_default`'s stash/pop (SPEC-286), unchanged here. A deterministic two-process fixture would test that spec, not this one. Named as a gap, not a guarantee.
+- AC-5's worktree half has no fixture of its own: worktree removal needs `--worktrees`, which `--pull-only` refuses (row 12), so a worktree could never be removed under the flag. The stray-line and stray-commit halves are rows 3, 7 and 8.
+- Accepted LOW: the ahead count is only ever 1 in fixtures.
+- Uncovered (design critique Low finding 3): `--pull-only` with `--under <root>`. Repo-list building does not read `PULL_ONLY`.
+- Uncovered (design critique Low finding 4): NOTE ordering when the ahead NOTE and `_pull_default`'s own dirty-file NOTE both print. Named as a gap, not a guarantee.
+- This is a coverage TARGET across the enumerated categories, NOT an exhaustive test list. A missing acceptance criterion or an unenumerated category is a gap, surfaced here, not a guarantee.
+- Rejected round-1 findings, with reasons: exact-string assertions stay exact (the report wording is the contract, as everywhere in this suite); the `1 commits` pluralization stays (it matches the file's existing `${ahead} stray commits` style); no gh precondition is added (`_gh_state` never runs under `--pull-only`); fixture-name registry and helper `set -e` are suite-wide conventions, out of scope for this spec; a single-case runner is a suite-wide change, out of scope for this spec.
 
 ## Verification
 
 - `bash tests/test-wrap.sh` exits 0.
 - `bash tests/run-all.sh` fails no suite that does not already fail on `master`.
 - `bash lib/gate/negctl.sh . 'bash tests/test-wrap.sh' '<pull_only gate removed from one step>'` reports PASS.
+
+## Design critique
+Date: 2026-09-30
+Design source: SPEC-359 ## Decision (the spec carries no `## Solution` heading; its Decision section is the solution) plus the `## Solution` of `docs/briefs/DECISION-BRIEF-wrap-pull-only.md`
+Lenses run: simplicity, performance, boundaries/composability, data-model & correctness, operability/failure-modes; missing: none
+Run retroactively on a built change. Every finding marked FIXED became a code or spec change on this branch, re-verified by `tests/test-wrap.sh`.
+
+### Critical findings
+None.
+
+### High findings
+1. Under `--pull-only --apply`, a persistent `index.lock` makes `run()` print `SKIP pull --ff-only: index.lock held by another writer` and return 0, so the one step the flag exists for is skipped with exit 0. -- found by: correctness -- fix: FIXED, `run()` sets `FAILURES=1` on that SKIP when `PULL_ONLY=1` and `APPLY=1`; the call exits 2.
+2. `commands/wrap.md` said ahead-only commits "stay unreported", false once the ahead NOTE landed. -- found by: operability -- fix: FIXED in the docs gate (manual, CHANGELOG, consumer-contract).
+
+### Medium findings
+1. The tip snapshot (`mktemp` + `for-each-ref`) runs per repo under `--pull-only`, where nothing reads it. -- found by: simplicity, performance -- fix: FIXED, skipped when `PULL_ONLY=1`; the "accepted leftover" row in "What the flag narrows" is superseded.
+2. `_gh_state` (`gh auth status`) runs once per call under `--pull-only`, where nothing reads it. -- found by: performance -- fix: FIXED, skipped when `PULL_ONLY=1`.
+3. `bin/wrap`'s usage header lacked `[--pull-only]` (TASK-E named it). -- found by: boundaries -- fix: FIXED.
+4. An unresolved default branch prints `SKIP` and exits 0, so the pull never ran and a script sees success. -- found by: operability -- fix: FIXED under `--pull-only` only (`FAILURES=1`, exit 2); plain `apply` keeps its behavior.
+5. A diverged pull failure printed no recovery at the failure site. -- found by: operability -- fix: FIXED by the ahead NOTE, which prints before the pull and names plain `apply --apply`.
+6. Two concurrent `--pull-only --apply` runs under `wrap.pull_past_dirty` on one checkout can race on the shared working tree. -- found by: correctness -- fix: not changed; the stash/pop mechanics are `_pull_default`'s, owned by SPEC-286, and a Non-goal here. `--pull-only` adds no new race beyond plain `apply`.
+
+### Low findings
+1. The ahead NOTE adds a fifth `rev-list --count origin/<def>..HEAD` copy in `wrap.sh`. -- found by: boundaries, performance -- fix: none; a shared helper earns its place at a sixth caller.
+2. The fetch-failure wording branches on `PULL_ONLY` inline. -- found by: simplicity, boundaries -- fix: none; matches the file's style.
+3. No test combines `--pull-only` with `--under`. -- found by: boundaries -- fix: none; repo-list building is independent of `PULL_ONLY`.
+4. The ahead NOTE and `_pull_default`'s own dirty-file NOTE can both print; their order is unasserted. -- found by: correctness -- fix: none.
+
+### Scores
+- Simplicity: 8/10
+- Performance: 7/10
+- Boundaries/composability: 8/10
+- Data-model & correctness: 7/10
+- Operability/failure-modes: 7/10
+
+### Verdict: REVISE

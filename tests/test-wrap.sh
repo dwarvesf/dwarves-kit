@@ -5557,6 +5557,7 @@ chk_no "pull-only scope: no archive unmerged section" "$out" "-- archive unmerge
 chk_no "pull-only scope: no origin branches section" "$out" "-- origin branches:"
 chk_no "pull-only scope: no stray lines section" "$out" "-- stray lines:"
 chk_no "pull-only scope: no stray commits section" "$out" "-- stray commits:"
+chk_no "pull-only scope: no ahead NOTE when main is not ahead" "$out" "commits ahead of origin/"
 
 echo "--- pull-only: union carry and wrap.pull_past_dirty stash/pop both still work"
 build_pd_repo pulounion; advance_pd_repo pulounion also-lab
@@ -5582,13 +5583,18 @@ chk "pull-only union+stash: the local line in A.md survived" \
   "$(grep -qx 'a10 local' "$PUO/A.md"; echo $?)"
 chk "pull-only union+stash: no stash is left behind" "$([ "$(pd_stash_count "$PUO")" = "0" ]; echo $?)"
 chk_no "pull-only union+stash: no branches section" "$out" "-- branches:"
+chk_no "pull-only union+stash: the stray log line was not carried to an origin branch" \
+  "$(git -C "$TMPD/pdbare-pulounion" for-each-ref --format='%(refname)' refs/heads/)" "wrap/stray-"
 
 echo "--- pull-only: wrap.pull_past_dirty off still aborts and nothing moves"
 build_pd_repo pulooff; advance_pd_repo pulooff
 POF="$TMPD/pdclone-pulooff"
 printf '%s' "$A_LOCAL_FAR" > "$POF/A.md"
+printf '%s' "$LAB_LOCAL" > "$POF/_meta/LAB_LOG.md"
 POF_HEAD="$(git -C "$POF" rev-parse HEAD)"
 out="$("$WRAP" apply --pull-only --apply "$POF" 2>&1)"; rc=$?
+chk "pull-only knob off: the union file's local line survived the failed pull" \
+  "$(grep -qF 'local: the other session line' "$POF/_meta/LAB_LOG.md"; echo $?)"
 chk "pull-only knob off: apply exits 2" "$([ "$rc" -eq 2 ]; echo $?)"
 chk_has "pull-only knob off: the pull failure is still reported" "$out" "FAILED pull --ff-only"
 chk_no "pull-only knob off: nothing was stashed" "$out" "stashed"
@@ -5625,6 +5631,8 @@ out="$("$WRAP" apply --pull-only --apply "$PAH" 2>&1)"; rc=$?
 chk "pull-only ahead-only: exits 0" "$rc"
 chk_no "pull-only ahead-only: no FAILED pull line" "$out" "FAILED pull --ff-only"
 chk "pull-only ahead-only: HEAD unchanged" "$([ "$(git -C "$PAH" rev-parse HEAD)" = "$PAH_HEAD" ]; echo $?)"
+chk_has "pull-only ahead-only: the ahead count is named, not silent" "$out" \
+  "NOTE: main is 1 commits ahead of origin/main; --pull-only never carries them"
 chk_no "pull-only ahead-only: no local stray-commits branch" \
   "$(git -C "$PAH" for-each-ref --format='%(refname)' refs/heads/)" "wrap/stray-commits-"
 chk_no "pull-only ahead-only: no origin stray-commits branch" \
@@ -5640,6 +5648,7 @@ out="$("$WRAP" apply --pull-only --apply "$PDV" 2>&1)"; rc=$?
 chk "pull-only diverged: exits 2" "$([ "$rc" -eq 2 ]; echo $?)"
 chk_has "pull-only diverged: FAILED pull line present" "$out" "FAILED pull --ff-only"
 chk "pull-only diverged: HEAD did not move" "$([ "$(git -C "$PDV" rev-parse HEAD)" = "$PDV_HEAD" ]; echo $?)"
+chk_has "pull-only diverged: the ahead count is named" "$out" "NOTE: main is 1 commits ahead of origin/main"
 chk_no "pull-only diverged: no local stray-commits branch" \
   "$(git -C "$PDV" for-each-ref --format='%(refname)' refs/heads/)" "wrap/stray-commits-"
 chk_no "pull-only diverged: no origin stray-commits branch" \
@@ -5662,25 +5671,31 @@ chk "pull-only usage: exits 64" "$([ "$rc" -eq 64 ]; echo $?)"
 chk_has "pull-only usage: the usage line names --pull-only" "$out" "--pull-only"
 
 echo "--- pull-only: flag conflicts"
-build_pd_repo puloconflict
+build_pd_repo puloconflict; advance_pd_repo puloconflict
 PCFL="$TMPD/pdclone-puloconflict"
-out="$("$WRAP" apply --pull-only --worktrees "$PCFL" 2>&1)"; rc=$?
+PCFL_HEAD="$(git -C "$PCFL" rev-parse HEAD)"
+out="$("$WRAP" apply --pull-only --apply --worktrees "$PCFL" 2>&1)"; rc=$?
 chk "pull-only conflict --worktrees: exits 64" "$([ "$rc" -eq 64 ]; echo $?)"
 chk_has "pull-only conflict --worktrees: names the flag" "$out" "cannot combine with --worktrees"
 
-out="$("$WRAP" apply --pull-only --archive-unmerged "$PCFL" 2>&1)"; rc=$?
+out="$("$WRAP" apply --pull-only --apply --archive-unmerged "$PCFL" 2>&1)"; rc=$?
 chk "pull-only conflict --archive-unmerged: exits 64" "$([ "$rc" -eq 64 ]; echo $?)"
 chk_has "pull-only conflict --archive-unmerged: names the flag" "$out" "cannot combine with --archive-unmerged"
 
-out="$("$WRAP" apply --pull-only --own "$PCFL" "$PCFL" 2>&1)"; rc=$?
+out="$("$WRAP" apply --pull-only --apply --own "$PCFL" "$PCFL" 2>&1)"; rc=$?
 chk "pull-only conflict --own: exits 64" "$([ "$rc" -eq 64 ]; echo $?)"
 chk_has "pull-only conflict --own: names the flag" "$out" "cannot combine with --own"
+out="$("$WRAP" apply --pull-only --apply --own="$PCFL" "$PCFL" 2>&1)"; rc=$?
+chk "pull-only conflict --own=<path>: exits 64" "$([ "$rc" -eq 64 ]; echo $?)"
+chk_has "pull-only conflict --own=<path>: names the flag" "$out" "cannot combine with --own"
 
-out="$("$WRAP" apply --pull-only --tips-file "$TMPD/does-not-exist-tips" "$PCFL" 2>&1)"; rc=$?
+out="$("$WRAP" apply --pull-only --apply --tips-file "$TMPD/does-not-exist-tips" "$PCFL" 2>&1)"; rc=$?
 chk "pull-only conflict --tips-file: exits 64" "$([ "$rc" -eq 64 ]; echo $?)"
 chk_has "pull-only conflict --tips-file: names the flag" "$out" "cannot combine with --tips-file"
 chk_no "pull-only conflict --tips-file: refused for the conflict, not the missing path" "$out" \
   "is not an existing file"
+chk "pull-only conflicts: no refused call pulled, though origin moved" \
+  "$([ "$(git -C "$PCFL" rev-parse HEAD)" = "$PCFL_HEAD" ]; echo $?)"
 
 echo "--- pull-only: multi-repo, each repo gets its own header and pull section"
 build_pd_repo pulomulti1; advance_pd_repo pulomulti1
@@ -5694,6 +5709,30 @@ chk_has "pull-only multi-repo: repo 1 header" "$out" "== $PM1"
 chk_has "pull-only multi-repo: repo 2 header" "$out" "== $PM2"
 chk "pull-only multi-repo: repo 1 pulled" "$([ "$(git -C "$PM1" rev-parse HEAD)" = "$PM1_TIP" ]; echo $?)"
 chk "pull-only multi-repo: repo 2 pulled" "$([ "$(git -C "$PM2" rev-parse HEAD)" = "$PM2_TIP" ]; echo $?)"
+
+echo "--- pull-only: a skipped pull fails the call"
+build_pd_repo pulolock; advance_pd_repo pulolock
+PLK="$TMPD/pdclone-pulolock"
+PLK_HEAD="$(git -C "$PLK" rev-parse HEAD)"
+# A fixed old mtime keeps the lock stale on any clock, so _write_guard refuses without waiting.
+touch -t 200001010000 "$PLK/.git/index.lock"
+out="$("$WRAP" apply --pull-only --apply "$PLK" 2>&1)"; rc=$?
+chk "pull-only stale lock: exits 2" "$([ "$rc" -eq 2 ]; echo $?)"
+chk_has "pull-only stale lock: the skipped pull is named" "$out" \
+  "SKIP pull --ff-only (checkout on main): index.lock held by another writer"
+chk "pull-only stale lock: HEAD unmoved" "$([ "$(git -C "$PLK" rev-parse HEAD)" = "$PLK_HEAD" ]; echo $?)"
+out="$("$WRAP" apply --apply "$PLK" 2>&1)"; rc=$?
+chk "plain apply stale lock: the same skip still exits 0" "$rc"
+chk_has "plain apply stale lock: the pull was skipped the same way" "$out" "index.lock held by another writer"
+rm -f "$PLK/.git/index.lock"
+
+PNO="$TMPD/pulo-no-origin"
+git init -q -b main "$PNO"; gitc "$PNO"; git -C "$PNO" commit -q --allow-empty -m "chore: root"
+out="$("$WRAP" apply --pull-only --apply "$PNO" 2>&1)"; rc=$?
+chk "pull-only no default branch: exits 2" "$([ "$rc" -eq 2 ]; echo $?)"
+chk_has "pull-only no default branch: the skip is named" "$out" "no default branch resolved"
+out="$("$WRAP" apply --apply "$PNO" 2>&1)"; rc=$?
+chk "plain apply no default branch: still exits 0" "$rc"
 
 # Regression (TASK-J): no new fixture here on purpose -- every pre-existing `apply` assertion
 # above this section runs with no --pull-only in the call, so a full run of this file (not a

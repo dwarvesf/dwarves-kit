@@ -42,6 +42,31 @@ Spec: `docs/specs/SPEC-359-wrap-pull-only.md`. No board row filed; the operator 
 
 The fixtures reuse the real-git `build_pd_repo`/`advance_pd_repo` helpers already in the suite (bare origin plus a clone, a `merge=union` `_meta/LAB_LOG.md`, a plain `A.md`/`B.md`): the subject is `git pull --ff-only`'s own exit behavior under ahead-only vs. diverged history, which a stubbed git cannot distinguish.
 
+## Test plan coverage
+
+Maps each row of SPEC-359's `## Test plan` matrix to the acceptance criterion it covers and the assertion group that proves it in `tests/test-wrap.sh`.
+
+| # | Case | AC | Category | Proof (assertion group) | Status |
+|---|---|---|---|---|---|
+| 1 | Scope, happy path | AC-1, AC-5 | happy-path | `pull-only scope:` | covered |
+| 2 | No sweep section, no ahead NOTE | AC-1 | happy-path | `pull-only scope: no ...` | covered |
+| 3 | Union carry + `pull_past_dirty` on | AC-2 | happy-path | `pull-only union+stash:` | covered |
+| 4 | `pull_past_dirty` off | AC-2 | failure-injection | `pull-only knob off:` | covered |
+| 5 | Dry run | AC-1 | boundary/edge | `pull-only dry run:` | covered |
+| 6 | Off default branch | AC-1 | boundary/edge | `pull-only off-default:` | covered |
+| 7 | Ahead-only, NOTE prints | AC-3, AC-5 | boundary/edge | `pull-only ahead-only:` | covered |
+| 8 | Diverged, NOTE prints | AC-4, AC-5 | failure-injection | `pull-only diverged:` | covered |
+| 9 | Fetch failure wording | AC-8 | failure-injection | `pull-only fetch failure:` | covered |
+| 10 | Stale `index.lock` fails the call | AC-6 | failure-injection | `pull-only stale lock:` | covered |
+| 11 | No default branch fails the call | AC-6 | failure-injection | `pull-only no default branch:`, `plain apply no default branch:` | covered |
+| 12 | Four flag conflicts | AC-7 | security/abuse | `pull-only conflict` | covered |
+| 13 | Usage line | AC-7 | boundary/edge | `pull-only usage:` | covered |
+| 14 | Multi-repo | AC-1 | boundary/edge | `pull-only multi-repo:` | covered |
+| 15 | Regression | AC-9, AC-10 | regression | full `bash tests/test-wrap.sh`, exit 0 | covered |
+| 16 | Negative control | AC-1, AC-5 | regression | `lib/gate/negctl.sh`, below | covered |
+| S4 | Two sessions pulling one checkout at once | none | concurrency | none | gap: SPEC-286's `_pull_default`, unchanged here |
+| - | `--pull-only --under <root>` | AC-1 | boundary/edge | none | gap: repo-list building does not read `PULL_ONLY` |
+
 ## Negative control
 
 Produced with `lib/gate/negctl.sh` after the change was committed.

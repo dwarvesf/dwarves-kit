@@ -425,6 +425,8 @@ run() {
   local repo="$1" verdict="$2"; shift 2
   if ! _write_guard "$repo"; then
     echo "     SKIP ${verdict}: index.lock held by another writer"
+    # Under --pull-only the pull is the whole job, so a skipped write is a failed call.
+    [ "$PULL_ONLY" = 1 ] && [ "$APPLY" = 1 ] && FAILURES=1
     return 0
   fi
   echo "     [${MODE}] ${verdict}"
@@ -1559,14 +1561,18 @@ _apply_repo() {
   local def
   def="$(_default_branch "$repo")" || {
     echo "     SKIP ${repo}: no default branch resolved (origin/HEAD, origin/main and origin/master all absent)"
+    [ "$PULL_ONLY" = 1 ] && FAILURES=1
     return 0
   }
   local cur; cur="$(git -C "$repo" branch --show-current 2>/dev/null)"
 
   # Tip snapshot for this repo, taken once, compared right before each delete. --tips-file
   # substitutes a prepared snapshot so a test can stage a tip that moved mid-run.
+  # --pull-only runs no delete, so nothing reads a snapshot.
   local own_snapshot=1
-  if [ -n "$TIPS_OVERRIDE" ]; then
+  if [ "$PULL_ONLY" = 1 ]; then
+    own_snapshot=0
+  elif [ -n "$TIPS_OVERRIDE" ]; then
     TIPS_FILE="$TIPS_OVERRIDE"; own_snapshot=0
   else
     TIPS_FILE="$(mktemp)"
@@ -1612,6 +1618,13 @@ _apply_repo() {
 
   echo "-- pull:"
   if [ "$cur" = "$def" ]; then
+    # --pull-only skips the stray-commits carry, so name what it leaves behind rather than
+    # letting unpushed commits on the default branch go silent run after run.
+    if [ "$PULL_ONLY" = 1 ] && [ "$fetch_ok" = 1 ]; then
+      local ahead; ahead="$(git -C "$repo" rev-list --count "origin/${def}..HEAD" 2>/dev/null)"
+      [ "${ahead:-0}" -gt 0 ] 2>/dev/null && \
+        echo "     NOTE: ${def} is ${ahead} commits ahead of origin/${def}; --pull-only never carries them, plain apply --apply does"
+    fi
     _pull_default "$repo" "$cur"
   else
     echo "     SKIP pull: checkout on '${cur:-<detached>}', not the default branch ${def}"
@@ -1674,7 +1687,8 @@ cmd_apply() {
     i=$(( i + 1 ))
   done
   [ "$APPLY" = 1 ] && MODE="APPLY"
-  local ghs; ghs="$(_gh_state)"
+  # Every gh reader is a sweep --pull-only turns off, so skip the auth probe with them.
+  local ghs=""; [ "$PULL_ONLY" = 1 ] || ghs="$(_gh_state)"
   i=1
   while [ "$i" -le "$count" ]; do _apply_repo "${repos[$i]}" "$ghs"; i=$(( i + 1 )); done
   echo "== ${MODE} complete. PR merges, deploy dispatch and board rows stay with the command."
