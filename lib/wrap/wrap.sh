@@ -3755,6 +3755,160 @@ _merge_default() {
   return 0
 }
 
+# _undo_local <wt> <branch> <tip> -- drop the commits this run made that origin does not
+# hold. `reset --keep` keeps a change the verify command made to a file the merge did not
+# touch, and any untracked file it left, which is exactly why the post-reset status is the
+# check: leftovers mean a human owns them. 1 on a clean undo, 2 naming the leftovers or the
+# command a human runs when the reset itself refuses.
+_undo_local() {
+  local wt="$1" branch="$2" tip="$3" left
+  if ! git -C "$wt" reset -q --keep "$tip" 2>/dev/null; then
+    echo "     the local merge commit $(_short "$(git -C "$wt" rev-parse HEAD 2>/dev/null)") stays on ${branch}, not pushed; run git reset --keep ${tip} in ${wt}"
+    return 2
+  fi
+  left="$(git -C "$wt" status --porcelain --untracked-files=all 2>/dev/null)"
+  if [ -z "$left" ]; then
+    echo "     ${branch} is back at $(_short "$tip"); nothing was pushed"
+    return 1
+  fi
+  left="$(printf '%s\n' "$left" | sed 's/^...//; s/.* -> //' | paste -sd, - | sed 's/,/, /g')"
+  echo "     ${branch} is back at $(_short "$tip"), nothing was pushed, but ${wt} holds changes this run did not make: ${left}"
+  return 2
+}
+
+# _verify_or_undo <wt> <branch> <tip> <cmd> -- the caller's `--verify`, run as typed through
+# `bash -c` with <wt> as cwd and its output on the terminal. Green is exit 0 with HEAD still
+# MERGED_OID and no tracked file touched: a verify that commits moves HEAD, and pushing then
+# would land a tree nobody verified. Red undoes the merge commit before any push. The
+# command is trusted operator input -- it only ever arrives through the `--verify` flag --
+# so it is echoed as typed, and a secret belongs in the environment, not in the flag.
+_verify_or_undo() {
+  local wt="$1" branch="$2" tip="$3" cmd="$4" rc def
+  def="$(_default_branch "$wt" 2>/dev/null)"
+  ( cd "$wt" && exec bash -c "$cmd" ); rc=$?
+  [ -n "$MVP_HIT" ] && return 130
+  if [ "$rc" -ne 0 ]; then
+    echo "     VERIFY FAILED ${branch}: ${cmd} exited ${rc} in ${wt} after merging origin/${def}"
+    _undo_local "$wt" "$branch" "$tip"; return $?
+  fi
+  if [ "$(git -C "$wt" rev-parse HEAD 2>/dev/null)" != "$MERGED_OID" ]; then
+    echo "     VERIFY FAILED ${branch}: ${cmd} moved HEAD in ${wt} after merging origin/${def}"
+    _undo_local "$wt" "$branch" "$tip"; return $?
+  fi
+  if [ -n "$(git -C "$wt" status --porcelain --untracked-files=no 2>/dev/null)" ]; then
+    echo "     VERIFY FAILED ${branch}: ${cmd} changed tracked files in ${wt} after merging origin/${def}"
+    _undo_local "$wt" "$branch" "$tip"; return $?
+  fi
+  echo "     verified in ${wt}: ${cmd}"
+  return 0
+}
+
+# _push_ff <wt> <branch> <tip> -- the one push of the cycle, HEAD:refs/heads/<branch> with
+# no force and no `+`: the merge commit descends from <tip>, so origin takes it only as a
+# fast-forward. A non-zero push is judged by what `git ls-remote` answers, never by the
+# exit code alone: a dropped connection can land the update anyway (success), a still-at-tip
+# origin is the plain refusal (undo like a verify failure), a moved one is another writer
+# (undo the same), and an unreadable remote resets nothing, since the commit may be there.
+_push_ff() {
+  local wt="$1" branch="$2" tip="$3" rc remote rrc
+  _MVP_PUSH=1
+  git -C "$wt" push origin "HEAD:refs/heads/${branch}"; rc=$?
+  [ -n "$MVP_HIT" ] && return 130
+  [ "$rc" -eq 0 ] && return 0
+  remote="$(git -C "$wt" ls-remote origin "refs/heads/${branch}" 2>/dev/null)"; rrc=$?
+  remote="${remote%%[!0-9a-f]*}"
+  if [ "$rrc" -ne 0 ] || [ -z "$remote" ]; then
+    echo "     PUSH FAILED: git push exited ${rc} and origin could not be read; the merge commit $(_short "$MERGED_OID") may be on origin, check before re-running"
+    return 2
+  fi
+  case "$remote" in
+    "$MERGED_OID") return 0 ;;
+    "$tip") echo "     PUSH REFUSED: git push exited ${rc}; origin still holds $(_short "$tip")" ;;
+    *) echo "     PUSH REFUSED: ${branch} on origin moved to $(_short "$remote")" ;;
+  esac
+  _undo_local "$wt" "$branch" "$tip"
+}
+
+# _mvp_trap -- INT/TERM/HUP inside a merge cycle. The first line ignores all three signals,
+# so a second Ctrl-C cannot re-enter. Then it cleans up by state, never with a network call
+# before the push started: mid-merge is `_merge_restore`; staged dedupe rows go back from
+# HEAD or the reset would refuse; a merge commit whose push never started is `_undo_local`;
+# once the push started, one `ls-remote` answers which way it went, judged by `_push_ff`'s
+# rules. The flag is how the sequence learns it was interrupted: it returns 130, or 2 when
+# this cleanup could not finish. Never `exit` -- the caller removes what it owns first.
+_mvp_trap() {
+  trap '' INT TERM HUP
+  MVP_HIT=1; MVP_RC=0
+  local gd remote rrc p
+  local -a staged=()
+  gd="$(git -C "$_MVP_WT" rev-parse --path-format=absolute --git-dir 2>/dev/null)"
+  if [ -n "$gd" ] && [ -e "$gd/MERGE_HEAD" ]; then
+    _merge_restore "$_MVP_WT" "$_MVP_BRANCH" "$_MVP_TIP"; MVP_RC=$?
+    return
+  fi
+  while IFS= read -r -d '' p; do staged+=("$p"); done \
+    < <(git -C "$_MVP_WT" diff --cached --name-only -z 2>/dev/null)
+  [ "${#staged[@]}" -gt 0 ] \
+    && git -C "$_MVP_WT" restore -q --staged --worktree --source=HEAD -- "${staged[@]}" 2>/dev/null
+  if [ "$_MVP_PUSH" != 1 ]; then
+    if [ "$(git -C "$_MVP_WT" rev-parse HEAD 2>/dev/null)" != "$_MVP_TIP" ]; then
+      _undo_local "$_MVP_WT" "$_MVP_BRANCH" "$_MVP_TIP"; MVP_RC=$?
+    fi
+    return
+  fi
+  remote="$(git -C "$_MVP_WT" ls-remote origin "refs/heads/${_MVP_BRANCH}" 2>/dev/null)"; rrc=$?
+  remote="${remote%%[!0-9a-f]*}"
+  if [ "$rrc" -ne 0 ] || [ -z "$remote" ]; then
+    echo "     PUSH FAILED: the push was interrupted and origin could not be read; the merge commit $(_short "$MERGED_OID") may be on origin, check before re-running"
+    MVP_RC=2
+  elif [ "$remote" = "$_MVP_TIP" ]; then
+    echo "     PUSH REFUSED: the push was interrupted; origin still holds $(_short "$_MVP_TIP")"
+    _undo_local "$_MVP_WT" "$_MVP_BRANCH" "$_MVP_TIP"; MVP_RC=$?
+  elif [ "$remote" != "$MERGED_OID" ]; then
+    echo "     PUSH REFUSED: ${_MVP_BRANCH} on origin moved to $(_short "$remote")"
+    _undo_local "$_MVP_WT" "$_MVP_BRANCH" "$_MVP_TIP"; MVP_RC=$?
+  fi
+}
+
+# _merge_verify_push <wt> <branch> <def> <tip> <gen> [<cmd>] -- the one merge cycle both
+# callers run: fetch, the already-contains route-out (4), then merge, the caller's --verify
+# when given, and push, the first non-zero return ending it. The signal handler covers the
+# merge/verify/push half and the caller's own handlers go back on the way out. One call is
+# at most one cycle: 4 when <tip> already holds origin/<def>, 130 when interrupted, 2 when
+# the cleanup could not restore the pre-cycle state, else the first helper's return.
+_merge_verify_push() {
+  local wt="$1" branch="$2" def="$3" tip="$4" gen="$5" cmd="${6:-}"
+  local rrc ti tt th
+  git -C "$wt" fetch -q origin "$def" 2>/dev/null \
+    || { echo "     fetch origin ${def} failed; nothing merged"; return 1; }
+  git -C "$wt" merge-base --is-ancestor "origin/${def}" "$tip" 2>/dev/null && return 4
+
+  MERGED_OID=""; MVP_HIT=""; MVP_RC=0; _MVP_PUSH=""
+  _MVP_WT="$wt"; _MVP_BRANCH="$branch"; _MVP_TIP="$tip"
+  ti="$(trap -p INT)"; tt="$(trap -p TERM)"; th="$(trap -p HUP)"
+  trap '_mvp_trap' INT TERM HUP
+
+  _merge_default "$wt" "$branch" "$def" "$tip" "$gen"; rrc=$?
+  if [ -z "$MVP_HIT" ] && [ "$rrc" -eq 0 ] && [ -n "$cmd" ]; then
+    _verify_or_undo "$wt" "$branch" "$tip" "$cmd"; rrc=$?
+  fi
+  if [ -z "$MVP_HIT" ] && [ "$rrc" -eq 0 ]; then
+    _push_ff "$wt" "$branch" "$tip"; rrc=$?
+  fi
+
+  # The caller's handlers go back whatever happened above: a bare `trap -` for a signal it
+  # never trapped, the eval'd `trap -p` text for one it did.
+  if [ -n "$ti" ]; then eval "$ti"; else trap - INT; fi
+  if [ -n "$tt" ]; then eval "$tt"; else trap - TERM; fi
+  if [ -n "$th" ]; then eval "$th"; else trap - HUP; fi
+
+  if [ -n "$MVP_HIT" ]; then
+    [ "$MVP_RC" -eq 2 ] && return 2
+    return 130
+  fi
+  return "$rrc"
+}
+
 # --------------------------------------------------------------------------- entry
 
 main() {
