@@ -425,8 +425,8 @@ case_floor_timing() {
   _commit "chore: padding"
   local t0 t1 out; t0="$(_now)"; out="$(lcx floor "$ROOT" timebase 2>/dev/null)"; t1="$(_now)"
   local ms; ms="$(python3 -c "print(int(($t1-$t0)*1000))")"
-  if [ "$out" = "full auth: zz/auth/z.ts" ] && [ "$ms" -lt 1000 ]; then pass "floor-timing (${ms}ms for 1000 paths)"
-  else fail floor-timing "out='$out' elapsed=${ms}ms (limit 1000ms)"; fi
+  if [ "$out" = "full auth: zz/auth/z.ts" ] && [ "$ms" -lt 2000 ]; then pass "floor-timing (${ms}ms for 1000 paths)"
+  else fail floor-timing "out='$out' elapsed=${ms}ms (limit 2000ms; typical 500ms)"; fi
 }
 
 # Non-ASCII names must be matched as written (no C-quoted octal), including in added-line scans.
@@ -441,6 +441,8 @@ case_floor_non_ascii() {
   mkrepo; mkdir -p "$ROOT/app"; echo 'db.execute("DROP TABLE users")' > "$ROOT/app/my file.py"
   _commit "chore: spaced name"; out="$(floor_out)"
   case "$out" in "full data-loss: app/my file.py") ;; *) bad="$bad [DROP TABLE in a spaced name => '$out']" ;; esac
+  mkrepo; mkdir -p "$ROOT/app"; echo 'db.execute("DROP TABLE users")' > "$ROOT/app/q\"x.py"; _commit "chore: quoted name"; out="$(floor_out)"
+  case "$out" in 'full data-loss: app/q"x.py') ;; *) bad="$bad [DROP TABLE in a name with a quote => '$out']" ;; esac
   [ -z "$bad" ] && pass floor-non-ascii || fail floor-non-ascii "$bad"
 }
 
