@@ -295,7 +295,7 @@ The ONLY blockers; everything else advises or warns.
   | TABLE, git reset    |  |                     |  | guess-fix while      |  | that did not run    |
   | --hard, kubectl     |  | PreToolUse hook,    |  | ## Root cause empty  |  |                     |
   | delete)             |  | exit 2              |  |                      |  | /execute gate       |
-  | PreToolUse, exit 2  |  |                     |  | Stop hook            |  | (worker->verifier)  |
+  | PreToolUse, exit 2  |  |                     |  | Stop hook            |  | (builder->verifier) |
   +---------------------+  +---------------------+  +----------------------+  +---------------------+
 ```
 

@@ -1,6 +1,6 @@
 # dwarves-kit
 
-> A closed-loop Claude Code workflow: you set the goal and the gates, agents loop until the verifier passes. Worker → verifier → fix-agent retry, by default.
+> A closed-loop Claude Code workflow: you set the goal and the gates, agents loop until the verifier passes. Builder → verifier → fix-agent retry, by default.
 
 [![CI](https://github.com/dwarvesf/dwarves-kit/actions/workflows/test.yml/badge.svg)](https://github.com/dwarvesf/dwarves-kit/actions/workflows/test.yml)
 [![Version](https://img.shields.io/github/v/tag/dwarvesf/dwarves-kit?label=version)](https://github.com/dwarvesf/dwarves-kit/releases)
@@ -380,9 +380,9 @@ Which hooks BLOCK vs warn vs neither is a declared contract: `docs/architecture.
 |-------|--------------|-------------|
 | task-verifier | /execute, /verify | Read-only verification against spec + tests |
 | integration-verifier | /execute, /verify | Read-only cross-task wiring + global acceptance check (multi-task specs) |
-| acceptance-verifier | /verify | Executes the spec's `## Verification` section against the build (read-only) |
+| acceptance-verifier | /execute, /verify | Executes the spec's `## Verification` section against the build (read-only) |
 | system-verifier | /verify | Runs the whole project's test suite end to end (read-only) |
-| recheck-verifier | /execute | Fresh-context re-audit of a verifier PASS: re-executes the recorded command |
+| recheck-verifier | /execute | Fresh-context re-audit of a verifier PASS (sampled, plus every self-attested row): re-executes the recorded command |
 | claim-verifier | any command | Adversarial N-skeptic panel over a load-bearing free-text claim |
 | fix-agent | /execute | Targeted fixes on FAIL:fixable (max 2 retries) |
 | data-etl-worker | /execute | Domain implementer: pipelines/transforms (DuckDB SQL first) |

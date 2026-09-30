@@ -645,7 +645,7 @@ guard), and how do I trigger it.
 | `DESIGNING` | solution exploration (iterative) | full lane, or "let's design" | solution approved |
 | `SPECIFYING` | the spec is being written | `/spec` | spec `DRAFT` exists |
 | `VALIDATING` | adversarial spec review | `/spec-validate` | `VALIDATED` or NEEDS REVISION |
-| `BUILDING` | execution sub-machine (worker -> verifier -> fix -> integration) | `/execute`, `/next` | all tasks + integration PASS |
+| `BUILDING` | execution sub-machine (builder -> end verifiers -> fix) | `/execute`, `/next` | all tasks + integration PASS |
 | `REVIEWING` | code review | `/review`, `/review-team` | verdict recorded |
 | `DOCUMENTING` | doc sync + doc-verifier | `/docs` | docs match code |
 | `SHIPPING` | ship pipeline | `/ship` | tagged/PR; spec `SHIPPED` |
