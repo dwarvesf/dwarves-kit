@@ -1,6 +1,6 @@
-# Whole-spec dispatch: A/B run, arm A (old spine)
+# Whole-spec dispatch: A/B run (arm A old spine, arm B new spine)
 
-Measured 2026-09-30. Arm B (new spine) is not recorded here yet. Dispatches and tokens come from `stats ceremony` (SPEC-367 reader), cross-checked against `stats query` on `subagent_runs` and the subagent `meta.json` descriptions.
+Measured 2026-09-30. Arm A (old spine) and arm B (new spine, ADR-0038 one builder per spec) are both recorded; the side-by-side is under Comparison. Dispatches and tokens come from `stats ceremony` (SPEC-367 reader), cross-checked against `stats query` on `subagent_runs` and the subagent `meta.json` descriptions.
 
 ## Arm A (old spine)
 
@@ -75,3 +75,79 @@ Attempts 1 and 2 show what a full-lane validation round costs in this spine: abo
 3. `gate-ledger.sh start <rid> full normal feature feature ab-medium`, then `gate-ledger.sh override <rid> validate "<reason>"`.
 4. `claude -p "/kit:execute docs/specs/SPEC-001-wordstat.md" --permission-mode bypassPermissions`.
 5. `bash bin/stats ceremony --from <start> --to <end> --json`, then read tag-only rows with `stats query "SELECT ... FROM subagent_runs WHERE rid='<rid>' AND rid_source='tag'"`.
+
+## Arm B (new spine)
+
+| Field | Value |
+|---|---|
+| rid | `ab-new-run1` |
+| Kit | `~/.claude/dwarves-kit` symlinked to the master checkout at `4c690ec855acaa793ac018394e54f332d71b23f0` (includes #847, one builder per spec) |
+| Fixture | Same `tests/fixtures/whole-spec-dispatch/ab-medium` (identical to source commit `4dac4ce0e887fa980f63ebc127638e4b067a1dd2`); SPEC-001-wordstat, 4 tasks, full lane, Status VALIDATED |
+| Setup | Same as Reproduce below: scratch `mktemp -d` outside `~/workspace`, `git init -b main`, branch `feat/ab-new-run1`, `adopt.sh --no-single-source`, `gate-ledger.sh start ab-new-run1 full normal feature feature ab-medium`, `override validate`. Same command, claude 2.1.285 |
+| Wall time | 17m20s (11:18:42Z to 11:36:02Z), exit 0. Ledger: build 590 s, review 289 s (advisor 276 s inside it) |
+| Build verdict | 4/4 tasks verified, 0 retries, 0 escalations; 21 tests pass; task, integration and acceptance verifiers PASS |
+| Review | Round 1 FIX THEN SHIP (6 findings, 3 suppressed). Fix batch `83f4b86` applied (3 of 4; one pushed back). The round 2 re-review was owed and deferred by the lead's context ceiling, so the run ends before ship, as arm A did |
+| Fixture Verification commands on the result | 6 of 6 pass, re-run by hand after the run (plus `bash tests/run.sh`) |
+| Recheck sample | Ledger: `recheck: sampled key=ab-new-run1` (not skipped); 3 `kit:recheck-verifier` dispatches |
+| Tag joins | 15 by `tag`; the reader also joined 5 by `window` (see caveats) |
+
+### Dispatches by agentType (tag joins only, 15)
+
+| agentType | Count | Role |
+|---|---|---|
+| general-purpose | 1 | the single builder for the whole spec |
+| kit:task-verifier | 1 | build-end verification |
+| kit:acceptance-verifier | 1 | executes the Verification section |
+| kit:integration-verifier | 1 | wiring check |
+| kit:recheck-verifier | 3 | sampled fresh-context re-audit of the PASSes |
+| kit:code-reviewer | 2 | architecture and test-coverage lenses |
+| kit:security-reviewer | 1 | security lens |
+| kit:advisor | 1 | extra review lens |
+| kit:fix-agent | 3 | review-fix batch |
+| kit:responding-to-review | 1 | triage of review findings |
+
+### Tokens (subagents only)
+
+| Measure | Tag-only (trusted) | Reader total (20 incl. 5 window joins) |
+|---|---|---|
+| Net (input + output + cache-creation) | 436,168 | 908,181 |
+| Cache-read (separate) | 985,516 | 5,589,357 |
+| Output | 33,382 | 78,288 |
+| Dispatches | 15 | 20 |
+
+## Comparison (tag joins only)
+
+| Measure | Arm A (old, `ab-old-run3`) | Arm B (new, `ab-new-run1`) | B vs A |
+|---|---|---|---|
+| general-purpose (builders) | 4 | 1 | -3 |
+| kit:task-verifier | 4 | 1 | -3 |
+| kit:recheck-verifier | 5 | 3 | -2 |
+| kit:acceptance-verifier | 0 | 1 | +1 |
+| kit:integration-verifier | 1 | 1 | 0 |
+| kit:code-reviewer | 2 | 2 | 0 |
+| kit:security-reviewer | 1 | 1 | 0 |
+| kit:advisor | 1 | 1 | 0 |
+| kit:fix-agent | 0 | 3 | +3 |
+| kit:responding-to-review | 0 | 1 | +1 |
+| Total dispatches | 18 | 15 | -3 (-17%) |
+| Net tokens | 605,367 | 436,168 | -169,199 (-28%) |
+| Cache-read | 1,678,688 | 985,516 | -693,172 (-41%) |
+| Wall time | 16m52s | 17m20s | +28 s |
+| Outcome | 4/4 pass first time, 6/6 Verification pass; review FIX THEN SHIP; fixes not applied; ended at context limit | 4/4 pass first time, 6/6 Verification pass; review FIX THEN SHIP; fixes applied; round 2 re-review deferred at context limit | B did more post-review work |
+
+Build-side dispatches (builders, task verifiers, recheck, integration, acceptance): arm A 14, arm B 7. The review round is the same shape in both (2 code-reviewers, 1 security, 1 advisor). Arm B's fix and triage dispatches (4) are work arm A never reached.
+
+## Caveats (arm B)
+
+| Item | Effect |
+|---|---|
+| n = 1 per arm | No variance estimate; a 3-dispatch difference is inside plausible run-to-run noise |
+| Lead session not counted | Lead (orchestrator) tokens are in neither arm; both leads hit their context ceiling, and the new spine's single long builder may shift work into or out of the lead |
+| Not like-for-like after review | Arm B applied the review fixes (3 fix-agent plus 1 triage dispatch); arm A did not. Excluding those 4, arm B is 11 dispatches against 18 |
+| Concurrent-session contamination | The reader joined 5 extra dispatches (4 general-purpose, 1 task-verifier, 476,933 net, 4,789,362 cache-read) to `ab-new-run1` with `rid_source=window`; other sessions were dispatching untagged during the run. They are excluded above. The reader's row (20 dispatches, 908,181 net) overstates the arm |
+| Kit revision differs | Arm A ran at `148c69239cb26140c5c3cbc1a3348e582e543847`, arm B at `4c690ec855acaa793ac018394e54f332d71b23f0`; besides #847 (the change under test) master moved by other commits |
+| Folded spec text | This doc does not record arm A's hand-folded spec separately. Arm B used the master fixture, which is byte-identical to arm A's recorded source commit and already carries the folds (`## Picture`, `## Design`, task dependencies, edge cases, Status VALIDATED). Whether arm A's on-disk copy differed cannot be checked from this doc |
+| Validate skipped by override | Same as arm A: arm B measures the build and review spine, not validation |
+| Recheck sampling | The new spine samples rechecks; this run drew `sampled`. A `skipped` draw would cut recheck dispatches further, so the recheck count is not a constant |
+| Model tiers | Not compared per dispatch; defaults on both arms |
+| Timing | Wall time includes the headless lead's own turns and any host load from concurrent sessions |
