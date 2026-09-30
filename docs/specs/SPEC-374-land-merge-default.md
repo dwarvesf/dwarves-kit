@@ -1,6 +1,6 @@
 # SPEC-374: wrap land merges the default branch into a conflicting own PR instead of stopping
 
-**Status:** DRAFT
+**Status:** VALIDATED
 Lane: full
 Type: spec-feature
 **Proof:** `docs/verification/land-merge-default.md`; `tests/test-wrap.sh`, the land-merge block.
@@ -16,19 +16,19 @@ In one session this happened four times. Each time the lead ran the same loop by
 
 ## Contract
 
-One sequence, `_merge_verify_push`, owns the merge cycle for both callers, and its trap. It is built from small helpers, each with one job. Every helper returns 0 on success, 1 when it refused and left `<branch>` exactly at `<tip>` with no merge in progress and a clean worktree, and 2 when it could not restore that state (its line names the command a human runs). A caller never turns a 2 into a 1.
+One sequence, `_merge_verify_push`, owns the merge cycle for both callers, and its trap. It is built from small helpers, each with one job. Every helper returns 0 on success, 1 when it refused and left `<branch>` exactly at `<tip>` with no merge in progress and a clean worktree (`status --porcelain --untracked-files=all` empty), and 2 when it could not restore that state (its line names the paths or the command a human runs). `_merge_default` also returns 5 for a refused conflict after a clean restore, so `merge` can word that case without parsing output; 5 carries the same state guarantee as 1. A caller never turns a 2 into a 1.
 
 ### `_rb_resolve <wt> <gen> <unmerged path>...`: classify and resolve (extracted, T1)
 
-- Extracted from `_rb_stop` without a behavior change: every path is classified first with the rebase rules (`docs/FEATURES.md` with a generator present is regenerated; `docs/CHANGELOG.md` is kept both sides only when both sides purely added lines; anything else, including a union-declared path still unmerged, is refused). On any refused path it prints `conflict in <path>, <path>` to its caller and writes nothing (return 1). Else it writes the CHANGELOG union and runs the generator once if FEATURES was unmerged (a generator failure returns 3, having written the CHANGELOG only).
+- Extracted from `_rb_stop` without a behavior change: every path is classified first with the rebase rules (`docs/FEATURES.md` with a generator present is regenerated; `docs/CHANGELOG.md` is kept both sides only when both sides purely added lines; anything else, including a union-declared path still unmerged, is refused). On any refused path it prints the existing per-path text unchanged (`conflict in <path>, <path>`, a union-declared path keeping its ` (merge=union, delete/rename conflict)` suffix) to its caller and writes nothing (return 1). Else it writes the CHANGELOG union and runs the generator once if FEATURES was unmerged (a generator failure returns 3, having written the CHANGELOG only).
 - `_rb_stop` calls it and keeps its own lines, abort and stage set, so `wrap rebase` output stays byte-identical. `_rb_abort` and `_rb_final_regen` are untouched.
-- `_rb_markers` widens its pattern to `^(<{7,}|>{7,}|\|{7,})( |$)`, so a merged-in `conflict-marker-size` above 7 is still caught. This only makes the rebase scan stricter.
+- `_rb_markers` reads each path's `conflict-marker-size` with `git check-attr` (default 7) and matches exactly that many marker characters, `^(<{N}|>{N}|\|{N})( |$)`. For a path with no attribute the pattern is today's, so rebase output is unchanged; a merged-in size of 9 or 5 is still caught.
 
 ### `_merge_default <wt> <branch> <def> <tip> <gen>`: merge, resolve, commit
 
-- Preconditions, each a return 1 with one line and no write: HEAD is `<tip>`; `status --porcelain` is empty (no tracked change, no untracked file); no merge, rebase or cherry-pick in progress; `_write_guard` passes; `origin/<def>` is not an ancestor of `<tip>`. Because the checkout starts fully clean, every change in it after the merge starts is the merge's or the helper's own. That is what makes the stage set and the restore set exact without a before/after record.
+- Preconditions, each a return 1 with one line and no write: HEAD is `<tip>`; `status --porcelain --untracked-files=all` is empty (no tracked change, no untracked file, whatever `status.showUntrackedFiles` says); no merge, rebase or cherry-pick in progress; `_write_guard` passes; `origin/<def>` is not an ancestor of `<tip>`. Because the checkout starts fully clean, every change in it after the merge starts is the merge's or the helper's own. That is what makes the stage set and the restore set exact without a before/after record.
 - It runs `git merge --no-ff --no-commit origin/<def>` through `_rb_git` (`GIT_EDITOR=true`, `-c rerere.enabled=false`). It never runs `git rebase` and never pushes.
-- Unmerged paths go to `_rb_resolve`. Return 1 prints `REFUSED <branch>: conflict in <paths>`; return 3 prints `GENERATOR FAILED <branch>`. Both then run `_merge_restore` (below).
+- Unmerged paths go to `_rb_resolve`. Return 1 prints `REFUSED <branch>: conflict in <paths>`, runs `_merge_restore`, and returns 5 when that restore returned 1; return 3 prints `GENERATOR FAILED <branch>` and runs `_merge_restore`.
 - Then the generator runs once more when `<gen>` is non-empty, so a merge with no conflict still carries a fresh `docs/FEATURES.md`. A failure prints `GENERATOR FAILED <branch>` and runs `_merge_restore`.
 - The stage set: every unmerged path, plus `git diff --name-only -z` (tracked worktree copies that differ from the index), plus `git ls-files -o --exclude-standard -z` (new untracked paths, generator output included). It is marker-scanned with `_rb_markers`; a hit prints `MARKERS <branch>: <paths>` and runs `_merge_restore`. Then `git add -- <set>`, never `add -u`, never `add -A`.
 - `git commit -q -m "chore(merge): merge origin/<def>"`, a conventional subject so a commit-msg hook in a consumer repo accepts it. Parents are `<tip>` then `origin/<def>`. A refused commit prints `FAILED <branch>: the merge commit was refused` and runs `_merge_restore`.
@@ -38,17 +38,17 @@ One sequence, `_merge_verify_push`, owns the merge cycle for both callers, and i
 ### `_merge_restore <wt> <branch> <tip>`: undo a merge still in progress
 
 - Reads the state, never a flag, so the trap can call it too. Every path the merge left changed that is not unmerged is restored from the index (`git checkout -q -- <paths>`), then each new untracked path is removed with `rm -f -- "<wt>/<path>"` (NUL-delimited, never `-r`, never `git clean`; the checkout started with no untracked file, so none of them predates the merge). Then `git merge --abort`. The order matters: git 2.55 refuses `merge --abort` while an auto-merged, staged path has a different worktree copy (Grounding).
-- It checks HEAD is `<tip>`, `MERGE_HEAD` is gone and `status --porcelain` is empty, prints `     aborted; <branch> is back at <sha7>`, returns 1. Otherwise `ABORT FAILED <branch>: run git merge --abort in <wt>`, return 2.
+- It checks HEAD is `<tip>`, `MERGE_HEAD` is gone and `status --porcelain --untracked-files=all` is empty, prints `     aborted; <branch> is back at <sha7>`, returns 1. Otherwise `ABORT FAILED <branch>: run git merge --abort in <wt>`, return 2.
 
 ### `_verify_or_undo <wt> <branch> <tip> <cmd>`: the caller's check
 
 - Runs `bash -c "<cmd>"` with `<wt>` as cwd, output to the terminal. `<cmd>` is trusted operator input: it comes only from the `--verify` flag on the command line, never from PR content, repo config or a `.kit.toml`, and it runs with the operator's own environment, the same as the hand loop it replaces. The string is echoed as typed in the report lines, so a secret belongs in the environment, not in the flag; `bin/wrap` usage says so. The helper sets no timeout; a caller that needs one wraps its command (`--verify 'gtimeout 900 bash tests/test-wrap.sh'`). macOS ships no `timeout`.
-- Exit 0 with no tracked file changed prints `     verified in <wt>: <cmd>`, returns 0.
-- Any other exit, or an exit 0 that left a tracked file changed (the pushed tree would not be the verified tree), prints `     VERIFY FAILED <branch>: <cmd> exited <rc> in <wt> after merging origin/<def>` (or `changed tracked files`) and runs `_undo_local`.
+- Exit 0 with HEAD still `MERGED_OID` and no tracked file changed prints `     verified in <wt>: <cmd>`, returns 0.
+- Any other exit, an exit 0 that left a tracked file changed, or a HEAD that moved (a verify that commits; the pushed tree would not be the verified tree), prints `     VERIFY FAILED <branch>: <cmd> exited <rc> in <wt> after merging origin/<def>` (or `changed tracked files`) and runs `_undo_local`.
 
 ### `_undo_local <wt> <branch> <tip>`: drop commits no remote holds
 
-- Runs `git reset -q --keep <tip>`. It only ever runs on commits this run made and origin does not hold. Success prints `     <branch> is back at <sha7>; nothing was pushed` and returns 1. A refused reset prints `     the local merge commit <sha7> stays on <branch>, not pushed; run git reset --keep <tip> in <wt>` and returns 2.
+- Runs `git reset -q --keep <tip>`. It only ever runs on commits this run made and origin does not hold. `reset --keep` keeps a change the verify command made to a file the merge did not touch, and any untracked file it left, so after the reset the helper checks `status --porcelain --untracked-files=all`: empty prints `     <branch> is back at <sha7>; nothing was pushed` and returns 1; anything left prints `     <branch> is back at <sha7>, nothing was pushed, but <wt> holds changes this run did not make: <paths>` and returns 2. A refused reset prints `     the local merge commit <sha7> stays on <branch>, not pushed; run git reset --keep <tip> in <wt>` and returns 2.
 
 ### `_push_ff <wt> <branch> <tip>`: the one push
 
@@ -57,16 +57,16 @@ One sequence, `_merge_verify_push`, owns the merge cycle for both callers, and i
   - It shows `MERGED_OID`: the push landed (a dropped connection after the update); treated as success.
   - It shows `<tip>`: `     PUSH REFUSED: git push exited <rc>; origin still holds <sha7>`, then `_undo_local`.
   - It shows another commit: `     PUSH REFUSED: <branch> on origin moved to <sha7>`, then `_undo_local`.
-  - The read fails: `     PUSH FAILED: git push exited <rc> and origin could not be read; the merge commit <sha7> may be on origin, check before re-running`, return 2, no reset.
+  - The read fails, or answers nothing (the branch is gone on origin): `     PUSH FAILED: git push exited <rc> and origin could not be read; the merge commit <sha7> may be on origin, check before re-running`, return 2, no reset.
 
 ### `_merge_verify_push <wt> <branch> <def> <tip> <gen> [<cmd>]`: the sequence both callers run
 
 1. `git fetch origin <def>`. A failure prints `     fetch origin <def> failed; nothing merged`, return 1.
 2. When `origin/<def>` is already an ancestor of `<tip>`: return 4 with no write and no line (each caller words its own routing).
 3. `_merge_default`, then `_verify_or_undo` when `<cmd>` is given, then `_push_ff`. The first non-zero return is the sequence's return.
-4. A trap on INT and TERM is set before step 3 and cleared after `_push_ff` returns. It reads the state: `MERGE_HEAD` present runs `_merge_restore`; HEAD not `<tip>` and origin not holding HEAD runs `_undo_local`; then it exits 130. A scratch worktree the caller made is dropped by the caller's own exit path (below).
+4. A handler on INT, TERM and HUP is installed before step 3; the caller's prior handlers are saved with `trap -p` and restored after `_push_ff` returns. The handler's first line ignores the three signals, so a second Ctrl-C cannot re-enter it. It sets a flag and cleans up by state, never with a network call before the push started: `MERGE_HEAD` present runs `_merge_restore`; staged dedupe rows are restored from HEAD first; HEAD not `<tip>` with the push not yet started runs `_undo_local`; with the push started it reads `ls-remote` once and follows `_push_ff`'s rules (a failed read resets nothing and prints the `PUSH FAILED` line). The sequence then returns 130, or 2 when the cleanup returned 2. It never calls `exit` itself: each caller removes what it owns (the scratch worktree in `merge`) and then exits with that code.
 
-### `_pr_detail_at_head <url> <n> <tip>`: the read after a refused merge (new, T2)
+### `_pr_detail_at_head <url> <n> <tip>`: the read after a refused merge (new, T3a)
 
 - Polls `_pr_detail` every 2s until `headRefOid` equals `<tip>` and `mergeable` is not `UNKNOWN`, bounded by `KIT_WRAP_SETTLE_SECS`, and returns the last read. It does not wait while `CONFLICTING`, so a real conflict is seen at once. `_pr_detail_settled` is unchanged.
 
@@ -79,30 +79,31 @@ One sequence, `_merge_verify_push`, owns the merge cycle for both callers, and i
   - head still not `<tip>` at the bound: `     MERGE FAILED #<n>: GitHub still shows head <sha7>, not the pushed <sha7>`, exit 2;
   - `mergeable` other than `CONFLICTING`: today's `MERGE FAILED #<n>: exit <rc>`, exit 2;
   - `CONFLICTING`: `     #<n> is CONFLICTING: merging origin/<def> into <branch>`, then one merge cycle.
+- `--verify` runs only inside a merge cycle; a land that merges on its first call runs no command. `bin/wrap` usage says so.
 - The merge cycle runs at most once per `land` call. `land` calls `_merge_verify_push <wt> <branch> <def> <tip> <gen> [<cmd>]`, where `<gen>` is `<wt>/lib/registry/feature-registry.sh` when it exists (the same trust as `wrap rebase`: the operator's own checkout).
   - Return 4: `     <branch> already contains origin/<def>; GitHub's conflict is the union-blind case, run wrap merge --apply --pr <n>`, exit 2.
-  - Return 1 or 2: `     PR #<n> left open`, exit 2. Return 130 is the trap's exit.
+  - Return 1, 2 or 5: `     PR #<n> left open`, exit 2. Return 130: exit 130.
 - After the push, `land` re-reads with `_pr_detail_settled <url> <n> <MERGED_OID> <tip>` (the existing pinned form, which waits while GitHub still serves the prior head or its old CONFLICTING verdict), printing `     waiting for GitHub to see <sha7>` once. Every exit from here on ends its line with `; the merge commit <sha7> is on origin`:
   - empty read: `     #<n> is unreadable after the push`, exit 2;
   - head still `<tip>`: `     GitHub has not caught up with <sha7>; run wrap merge --apply --pr <n>`, exit 2;
   - any other head but `MERGED_OID`: `     PR #<n> head is <sha7>, another writer pushed; left open`, exit 2;
   - still `CONFLICTING`: `     #<n> is still CONFLICTING; run wrap merge --apply --pr <n>` (its squash fallback owns that case), exit 2.
-- Then `tip=MERGED_OID`. Under `--with-ci` the `ci` label sync runs again for the new head. Then `_ci_checks_wait <url> <n>` runs whether or not `--with-ci` was given, because the push restarted any required checks (bounded by `KIT_WRAP_CARRY_CHECKS_SECS` while checks are pending and `KIT_WRAP_CI_GRACE_SECS` when none report). Then `_gh_merge_retry <n> <url> <tip>`, and every step after it runs as today with that tip: `_tree_verify`, the ship record, the origin branch delete leased to `<tip>`, the pull, the worktree removal, the branch delete. A second merge failure prints `     MERGE FAILED #<n>: exit <rc> after the merge cycle; once its checks pass, run wrap merge --apply --pr <n>; the merge commit <sha7> is on origin`, exit 2, with no second cycle.
+- Then `tip=MERGED_OID`. Under `--with-ci` the `ci` label sync and `_ci_checks_wait` run again for the new head, as today. Without `--with-ci`, a pending-only wait runs instead: it reads the head's check rollup every 10s while any entry is pending, bounded by `KIT_WRAP_CARRY_CHECKS_SECS`, and holds no grace when no check reports, so a repo whose push starts no checks pays nothing. Either way, when any check on `MERGED_OID` concluded `FAILURE`, `ERROR`, `CANCELLED` or `TIMED_OUT`, `land` prints `     checks failed on the merged head <sha7>: <names>; the merge commit is on origin` and exits 2 before the second merge, so a clean textual merge that broke the build never lands. Then `_gh_merge_retry <n> <url> <tip>`, and every step after it runs as today with that tip: `_tree_verify`, the ship record, the origin branch delete leased to `<tip>`, the pull, the worktree removal, the branch delete. A second merge failure prints `     MERGE FAILED #<n>: exit <rc> after the merge cycle; once its checks pass, run wrap merge --apply --pr <n>; the merge commit <sha7> is on origin`, exit 2, with no second cycle.
 
 ### `wrap merge [--apply] [--pr N] [--with-ci] [--verify <cmd>] <repo>`
 
 - New flag `--verify <cmd>`, same parse and 64 rule. It applies only to the one bounded re-merge; a PR that needs no re-merge runs no command.
 - `_union_remerge` keeps its checkout selection, its head checks, and its scratch-worktree creation. `_remerge_push` keeps its "already contains origin/<def>" refusal and its `REMERGE_OID` contract, and calls `_merge_verify_push` in place of its own merge, dedupe and push:
   - return 4: its existing `already contains origin/<def>, so a re-merge cannot clear the conflict` line, return 1 (the squash fallback runs, as today);
-  - return 1 after a `REFUSED` line: its existing `merging origin/<def> into <branch> conflicts beyond the union-marked files, aborted` line, return 1 (the squash fallback's own guard refuses, because the head does not contain origin/<def>);
-  - any other return 1: return 1 with the helper's line only;
-  - return 2: return 2. `cmd_merge` then skips the squash fallback, prints `FAILED merge #<n>: the re-merge left <wt> needing a human`, and exits 2.
-- `<gen>` in the `merge` path is the worktree's generator only when that file matches `origin/<def>`'s copy (`git -C <wt> diff --quiet origin/<def> -- lib/registry/feature-registry.sh` after the merge starts); otherwise `<gen>` is empty and a FEATURES conflict is refused by name. `merge` runs unattended under `/kit:wrap` step 3 and `wrap.autoland_carry`, on a branch someone else can push to, so it never runs a generator the default branch has not reviewed.
-- An interrupt during the re-merge runs the trap, then `_union_remerge` drops its scratch worktree before the exit.
+  - return 5: its existing `merging origin/<def> into <branch> conflicts beyond the union-marked files, aborted` line, return 1 (the squash fallback's own guard refuses, because the head does not contain origin/<def>);
+  - return 1: return 1 with the helper's line only;
+  - return 2: return 2. `cmd_merge` then skips the squash fallback, prints `FAILED merge #<n>: the re-merge left <wt> needing a human`, and exits 2;
+  - return 130: `_union_remerge` drops its scratch worktree when it made one, then `wrap merge` exits 130.
+- `<gen>` in the `merge` path is decided by `_remerge_push` after its own fetch and before the sequence starts: the worktree's generator only when `git -C <wt> diff --quiet <tip> origin/<def> -- lib/registry/feature-registry.sh` holds (the branch and the default branch carry the same generator); otherwise `<gen>` is empty and a FEATURES conflict is refused by name. This is conservative: a generator changed only on origin is refused too, until the branch holds it. `merge` runs unattended under `/kit:wrap` step 3 and `wrap.autoland_carry`, on a branch someone else can push to, so it does not run a generator the two sides disagree on. Git hooks still run on the merge commit and the push exactly as they do today; this rule is about the generator only, not a general guarantee that no branch code runs.
 
 ### Unchanged
 
-`wrap rebase`'s behavior and output are byte-identical (T1 only extracts `_rb_resolve` and widens the marker pattern, which is stricter). `_squash_fallback`, `_pr_gate`, `_pr_detail_settled`, `_tree_verify`, the dependents gate, and every other `land` and `merge` refusal are unchanged. Exit codes keep their meaning: 64 usage, 1 preflight refusal, 2 PR or merge failure, 3 tree mismatch, plus 130 for an interrupted merge cycle. No verb force-pushes.
+`wrap rebase`'s behavior and output are byte-identical for every path without a `conflict-marker-size` attribute (T1 only extracts `_rb_resolve` and makes the marker scan read that attribute). `_squash_fallback`, `_pr_gate`, `_pr_detail_settled`, `_tree_verify`, the dependents gate, and every other `land` and `merge` refusal are unchanged. Exit codes keep their meaning: 64 usage, 1 preflight refusal, 2 PR or merge failure, 3 tree mismatch, plus 130 for an interrupted merge cycle. No verb force-pushes.
 
 ## Picture
 
@@ -130,10 +131,13 @@ One sequence, `_merge_verify_push`, owns the merge cycle for both callers, and i
    |   _push_ff           push HEAD:refs/heads/<branch>, no force   |
    |                      non-zero -> ls-remote decides            |
    +--------------------------------------------------------------+
-          |                                                  |
-   re-read pinned to the merged head                 re-gate (today)
+          |                                   4 -> already contains line -> squash fallback (today)
+          |                                   5 -> REFUSED + old line -> squash fallback refuses
+          |                                   2 -> skip squash fallback, exit 2
+          |                                   0 -> re-gate (today)
+   re-read pinned to the merged head
           |
-   [ci label again] -> _ci_checks_wait -> gh pr merge --match-head-commit <merged>
+   [ci label + wait again | pending-only wait] -> failed check? exit 2 -> gh pr merge --match-head-commit <merged>
           -> _tree_verify -> tidy
 ```
 
@@ -194,7 +198,7 @@ No ADR. The lasting rule, "wrap never forces a push", already stands in `lib/wra
 
 ### Boundaries & failure modes
 
-The helpers write only in the checkout they are given, only on `<branch>`: a merge commit, a dedupe commit, a restore of files the merge itself changed, or a `reset --keep` of those same unpushed commits. They never touch the main checkout, never switch a branch, never rewrite a pushed commit. `merge`'s unattended path never runs a generator the default branch has not reviewed. See `## Failure modes`.
+The helpers write only in the checkout that holds `<branch>` (`land`'s worktree, or `merge`'s selected or scratch checkout, which can be the main checkout when it holds the branch, as today), only on `<branch>`: a merge commit, a dedupe commit, a restore of files the merge itself changed, or a `reset --keep` of those same unpushed commits. They never switch a branch and never rewrite a pushed commit. `merge`'s unattended path does not run a generator the branch and the default branch disagree on; git hooks run as they do today. See `## Failure modes`.
 
 ## Technical Design
 
@@ -226,10 +230,11 @@ None.
 | Task | Depends on | Files | Acceptance |
 |---|---|---|---|
 | T1: extract `_rb_resolve`, widen `_rb_markers` | none | `lib/wrap/wrap.sh` | every existing rebase test green with byte-identical output; `_rb_stop` calls `_rb_resolve` |
-| T2: the helpers | T1 | `lib/wrap/wrap.sh`: `_merge_default`, `_merge_restore`, `_verify_or_undo`, `_undo_local`, `_push_ff`, `_merge_verify_push`, `_pr_detail_at_head` | exercised through the `land` and `merge` rows below; each return code has at least one row |
-| T3a: `land` trigger | T2 | `cmd_land`: `--verify` parse, the refused-merge read and its four exits | the read rows below |
-| T3b: `land` cycle | T3a | `cmd_land`: the cycle call, the re-read and its exits, CI again, the second merge with the merged tip | the cycle rows below |
-| T4: `merge` | T2 | `cmd_merge` `--verify` parse, `_remerge_push` through `_merge_verify_push`, return 2 passed through with the squash fallback skipped, the generator trust rule | the `merge` rows below |
+| T2a: merge and restore | T1 | `lib/wrap/wrap.sh`: `_merge_default`, `_merge_restore` | `bash -n lib/wrap/wrap.sh`; the existing suite green; the T2a rows below once T5a lands |
+| T2b: verify, undo, push, sequence | T2a | `lib/wrap/wrap.sh`: `_verify_or_undo`, `_undo_local`, `_push_ff`, `_merge_verify_push` and its handler | `bash -n`; the existing suite green; the T2b rows below |
+| T3a: `land` trigger | T2b | `cmd_land`: `--verify` parse, `_pr_detail_at_head`, the refused-merge read and its exits | the T3a rows below |
+| T3b: `land` cycle | T3a | `cmd_land`: the cycle call, the re-read and its exits, the waits and the failed-check exit, the second merge with the merged tip | the T3b rows below |
+| T4: `merge` | T2b | `cmd_merge` `--verify` parse; `_remerge_push` through `_merge_verify_push` with the generator decision; `_union_remerge` scratch cleanup on 130; return 2 passed through with the squash fallback skipped | the T4 rows below |
 | T5a: `land` tests | T3b | `tests/test-wrap.sh`, a new `land-merge` block | every `land` row passes |
 | T5b: `merge` tests | T4 | `tests/test-wrap.sh`, the same block | every `merge` row passes |
 | T6: docs | T3b, T4 | `lib/wrap/wrap.sh` header (verb lines, write-set paragraph), `bin/wrap` usage (and the verify-string note), `commands/wrap.md` (the `land` paragraph in step 3; step 10 names `wrap rebase` only for a branch never pushed), `docs/consumer-contract.md` `bin/wrap` row, `docs/CHANGELOG.md`, `docs/FEATURES.md` regenerated, `docs/implementation-notes/land-merge-default.md` | each flag and exit named once; `tests/test-meta.sh` green |
@@ -238,6 +243,8 @@ None.
 ## Test plan
 
 All cases reuse the land fixture (`build_land`: a bare origin, a clone, a worktree on `feat/land`) and the `gh` stub, with `KIT_WRAP_SETTLE_SECS=0`, `KIT_WRAP_CI_GRACE_SECS=0` and `KIT_WRAP_CARRY_CHECKS_SECS=0` so no case waits. Origin's main advances from a second clone after the branch commits. A conflicting case sets `GH_STUB_MERGE_FAILS=1` with a not-mergeable error so the first `pr merge` refuses, `GH_STUB_PR_42` to `{"mergeable":"CONFLICTING","headRefOid":"<old tip>", ...}`, and a later `GH_STUB_PR_42_<j>` to `MERGEABLE` with `headRefOid` `%REMERGE_TIP%`. Every `pr view 42` counts toward `<j>`, including the checks wait's rollup reads, so each case sets its sequence from the reads it actually makes; the `--with-ci` case uses its own PR number so it never shares a sequence with the existing CI-wait cases. The generator is a stub `lib/registry/feature-registry.sh` that writes `docs/FEATURES.md` from a sorted file listing.
+
+Rows map to tasks: T2a covers Real conflict through Dedupe fails; T2b covers Verify green through Fetch fails; T3a covers Unreadable PR after a refused merge, Head not at tip at the bound, Refused but not conflicting and Happy path cost; T3b covers the rest of the `land` rows; T4 covers the `merge` rows. The first four `land` rows exercise T2a through T3b together.
 
 `land` rows:
 
@@ -250,17 +257,21 @@ All cases reuse the land fixture (`build_land`: a bare origin, a clone, a worktr
 | Real conflict | both sides edit the same line of `base.txt` | exit 2; `REFUSED feat/land: conflict in base.txt`; HEAD equals old tip; no `MERGE_HEAD`; worktree clean; origin `feat/land` equals old tip; exactly one `pr merge` call |
 | Mixed conflict | FEATURES and `base.txt` both unmerged | exit 2; names `base.txt` only; old tip restored |
 | Markers left (negative control target) | stub generator is a no-op on a FEATURES conflict | exit 2; `MARKERS` names `docs/FEATURES.md`; old tip; no marker in any commit reachable from the branch or origin |
-| Wide markers | origin's `.gitattributes` sets `conflict-marker-size=9` on FEATURES, no-op generator | exit 2; `MARKERS` names it |
+| Marker size attribute | origin's `.gitattributes` sets `conflict-marker-size=9` on FEATURES, no-op generator; a second case with size 5 | exit 2; `MARKERS` names it in both |
+| Nested blockquote stays legal | a tracked file the generator touches holds a line of eight `>` characters, no attribute | not flagged; exit 0 |
 | Abort after a generator side effect | clean auto-merge of `README.md`; the stub generator rewrites `README.md`, then exits 3 | exit 2; `GENERATOR FAILED`; old tip; no `MERGE_HEAD`; worktree clean |
 | Generator fails on a conflict | stub exits 3 on a FEATURES conflict | exit 2; `GENERATOR FAILED`; old tip; worktree clean |
 | Untracked generator output on a conflict | a FEATURES conflict; the stub also writes a new untracked file on both runs | the file is in the merge commit; worktree clean |
 | Untracked output removed on refusal | the stub writes a new untracked file, then a `base.txt` conflict refuses | exit 2; the file is gone; a file ignored by `.gitignore` is untouched |
+| Untracked file hidden by config | `status.showUntrackedFiles=no` set in the fixture and one untracked file present before land | exit 2 before any merge (the `_merge_default` precondition names the dirty checkout); the file is untouched and never committed |
 | Commit refused | a `commit-msg` hook in the fixture exits 1 | exit 2; `the merge commit was refused`; old tip; clean |
 | Dedupe fails | a union-declared kanban file both sides flipped the same row in; `backlog.sh` shimmed to report a drop, and the dedupe commit refused by a hook | exit 2; HEAD equals old tip; worktree clean |
 | Verify green | `--verify 'test -f docs/FEATURES.md'` | exit 0; `verified in` line before the push |
 | Verify red | `--verify false` | exit 2; `VERIFY FAILED` names the worktree; HEAD equals old tip; origin branch equals old tip; one `pr merge` call |
-| Verify changes a tracked file | `--verify 'echo x >> base.txt'` | exit 2; `changed tracked files`; nothing pushed |
+| Verify changes a tracked file | `--verify 'echo x >> base.txt'` on a file the merge did not touch | exit 2; `changed tracked files`; nothing pushed; the undo reports the leftover `base.txt` and returns 2 |
+| Verify commits | `--verify` makes a commit | exit 2; `VERIFY FAILED`; nothing pushed |
 | Push rejected | the `--verify` command itself commits to origin `feat/land` from a second clone | exit 2; `PUSH REFUSED ... moved`; HEAD back at old tip; origin keeps the other clone's commit; no push in the run carries `--force`, `--force-with-lease` or a `+` refspec |
+| Branch gone on origin | a `git` shim fails the push and `ls-remote` answers nothing | exit 2; `PUSH FAILED`; HEAD still the merge commit (no reset) |
 | Push landed but reported failure | a `git` shim first on PATH performs the push, then exits 1 | exit 0; the land continues with the merged head |
 | Interrupted | a `--verify` that sends TERM to the land process | exit 130; old tip; no `MERGE_HEAD`; clean |
 | Fetch fails | a `git` shim fails `fetch origin main` inside the cycle | exit 2; `fetch origin main failed`; no merge commit |
@@ -272,6 +283,8 @@ All cases reuse the land fixture (`build_land`: a bare origin, a clone, a worktr
 | Unreadable PR after a refused merge | `pr view` prints nothing | exit 2; `unreadable`; no merge commit |
 | Head not at tip at the bound | the read keeps answering an older head | exit 2; `GitHub still shows head` |
 | Refused but not conflicting | the first merge refused, the read answers MERGEABLE | exit 2, today's `MERGE FAILED`; no merge commit |
+| Failed check on the merged head | after the push the rollup shows one check `FAILURE` | exit 2; `checks failed on the merged head`; no second `pr merge` |
+| No checks, no hold | no `--with-ci`, the rollup is empty, `KIT_WRAP_CI_GRACE_SECS=90` with a `sleep` shim that records calls | exit 0; no `sleep` call from the wait |
 | Second merge refused | the merge cycle succeeds, the second `pr merge` refuses | exit 2; names `wrap merge --apply --pr 42` and the merge commit on origin; no third merge call |
 | Happy path cost | not conflicting, first merge succeeds | exit 0, today's output; zero `pr view 42` calls before the merge |
 | Adopted conflicting PR | an open own PR on the branch | the same merge cycle runs on the adopted PR |
@@ -309,7 +322,7 @@ Negative control: `lib/gate/negctl.sh` mutates the `land` trigger so the CONFLIC
 - [ ] `wrap land --verify <cmd>` and `wrap merge --verify <cmd>` run the caller's command after the merge and push nothing on red. Checkable by the Verify red cases.
 - [ ] `wrap merge --apply` resolves a FEATURES conflict in its re-merge instead of aborting. (Today: aborts.)
 - [ ] A land that merges on its first call makes no extra `gh pr view` call. Checkable by the Happy path cost case.
-- [ ] No `git push` added by this spec carries `--force`, `--force-with-lease` or a `+` refspec. Checkable by `git diff origin/master -- lib/wrap/wrap.sh | grep -E '^\+.*push' | grep -E 'force|:\+|origin \+'` printing nothing.
+- [ ] The one push this spec adds carries no `--force`, `--force-with-lease` or `+` refspec. Checkable by `sed -n '/^_push_ff()/,/^}/p' lib/wrap/wrap.sh | grep -E 'force|:\+|origin \+'` printing nothing, plus the Push rejected row.
 - [ ] `docs/verification/land-merge-default.md` holds the green runs, the negctl PASS and the test-plan coverage map.
 
 ## Edge Cases
@@ -487,11 +500,12 @@ Folded above; the revised Contract is what validation reads.
 - DEC-1: merge, never rebase, for a branch that is already on origin. A rebase needs a force-push; a merge commit is flattened by the squash merge anyway.
 - DEC-2: the trigger is GitHub's refusal plus its `mergeable`, not a local `merge-tree`, because git applies `merge=union` and GitHub does not.
 - DEC-3: the read runs after a refused merge, so a land that needs no merge pays nothing.
-- DEC-4: one set of helpers for `land` and `merge`'s re-merge, built on the rebase's `_rb_*` classifier with an explicit operation argument, so the three verbs resolve conflicts by one rule set.
+- DEC-4: one set of helpers for `land` and `merge`'s re-merge, built on the classifier `_rb_resolve` extracted from the rebase code, so the three verbs resolve conflicts by one rule set; `_rb_stop` and `_rb_abort` keep their own abort and staging (approach G, rejected in validation round 1).
 - DEC-5: `--verify` is a flag, not a knob, and wrap does not bound it.
 - DEC-6: a red verify or a rejected push undoes the local merge commit with `reset --keep`. That commit never reached a remote, so no pushed history changes.
 - DEC-7 (validation round 1, NEEDS REVISION, 3 criticals): the proof task T7 was missing (Reviewer 4); a failed dedupe left a merge commit behind a return of 1 (Reviewer 5, Reviewer 6 warning); generator output left untracked on the conflict path was lost (Reviewer 2). Folded: T7; `_merge_default` owns the dedupe cleanup; the checkout must start fully clean, so the stage and restore sets are everything changed or new, tracked and untracked.
 - DEC-8 (round 1 warnings folded): one `_merge_verify_push` sequence and trap for both callers; `_pr_detail_at_head` as its own function; `ls-remote` judges a failed push; fetch, post-push unreadable and second-merge exits named; return 2 passed through `merge` with the squash fallback skipped; a verify that changes a tracked file counts red; a conventional merge subject; `_ci_checks_wait` before the second merge; only the classifier is extracted from the rebase code, so `wrap rebase` stays byte-identical; wider marker pattern; `rm -f --` per untracked path; `merge` runs only a generator that matches `origin/<def>`; the verify string is echoed as typed; tasks split with a Depends column.
+- DEC-9 (validation round 2: APPROVED, 0 critical, 30 warnings, Reviewer 6 pass): folded the handler (INT, TERM, HUP; prior handlers saved; returns 130 or 2, callers exit), `_undo_local` returning 2 when leftovers remain, a verify that commits counts red, a pending-only wait without `--with-ci` plus a failed-check exit before the second merge, the `merge` generator decided before the sequence, return 5 for a refused conflict, marker size read per path, `--untracked-files=all` in every clean check, `ls-remote` answering nothing, `--verify` scoped to a merge cycle, the boundary wording, the push check scoped to `_push_ff`, T2 split, and a row-to-task map.
 
 ## Open questions
 
