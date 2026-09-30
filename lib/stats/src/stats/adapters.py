@@ -17,6 +17,11 @@ missing source (returns its known columns + an empty row list). None writes back
 - memories   : memory-verify sweep over `.claude/memory/` + built-in auto-memory
   stores, via `memory_lens.scan()`; conservative reference extraction, NEVER writes back to a
   memory file -- see `memory_lens.py` for the full contract.
+- git_lines  : `git log --since --numstat` over one repo, one row per non-merge commit with
+  line counts (the ceremony lens's "lines shipped").
+- subagent_runs / subagent_scan : Claude Code subagent transcripts, numbers + `agentType` +
+  model + the `rid=` tag only (ceremony lens dispatch and token reader).
+- ledger_lines : START / TOKENS / GATE line counts per run ledger (ceremony lens fixture hygiene).
 - rejected_findings : per-(repo, lens) aggregate over each configured repo's `docs/
   verification/rejected-findings.md` `## Rows` table, a NUMBERS-ONLY markdown-table
   adapter (like `learned`); the tool's first genuinely multi-repo-in-one-materialization
@@ -34,6 +39,7 @@ import sys
 from pathlib import Path
 
 from . import config, memory_lens, schemas
+from .ceremony import parse_ts
 
 # ---- kit corpus (mandated reuse of lane-telemetry) -------------------------
 
@@ -151,7 +157,7 @@ def read_kit_gates(runs_dir: Path | None = None):
         brackets: dict[str, list[tuple[str | None, str | None, bool | None]]] = {}
         # phase -> FIFO queue of cost values, from `| TOKENS | ... phase=<phase>` lines only.
         costs: dict[str, list[float | None]] = {}
-        gate_lines: list[tuple[str, str, str | None]] = []  # (gate, outcome, reason)
+        gate_lines: list[tuple[str, str, str | None, str | None]] = []  # (gate, outcome, reason, ts)
         for line in text.splitlines():
             parts = line.split(" | ")
             if len(parts) < 2:
@@ -163,7 +169,8 @@ def read_kit_gates(runs_dir: Path | None = None):
                 gate = parts[2].strip()
                 outcome = parts[3].strip()
                 reason = parts[4].strip() if len(parts) > 4 else None
-                gate_lines.append((gate, outcome, reason))
+                raw_ts = parts[0].strip()
+                gate_lines.append((gate, outcome, reason, raw_ts if parse_ts(raw_ts) else None))
             elif marker == "OUTCOME":
                 if len(parts) < 4:
                     continue
@@ -191,14 +198,14 @@ def read_kit_gates(runs_dir: Path | None = None):
                 except ValueError:
                     cost = None  # malformed cost=: excluded from averages, never a fake 0.0
                 costs.setdefault(phase, []).append(cost)
-        for gate, outcome, reason in gate_lines:
+        for gate, outcome, reason, ts in gate_lines:
             queue = brackets.get(gate)
             start_ts = end_ts = caught = None
             if queue:
                 start_ts, end_ts, caught = queue.pop(0)
             cost_queue = costs.get(gate)
             cost = cost_queue.pop(0) if cost_queue else None
-            rows.append([rid, gate, outcome, caught, reason, start_ts, end_ts, cost])
+            rows.append([rid, gate, outcome, caught, reason, start_ts, end_ts, cost, ts])
     return KIT_GATES_COLUMNS, rows
 
 
@@ -820,3 +827,185 @@ def read_memories(repo_dir: Path | None = None, projects_root: Path | None = Non
     now = _dt.datetime.now(tz=_dt.timezone.utc).isoformat()
     rows = [[u.store, u.slug, u.written, now, u.dead_ref_count] for u in units]
     return MEMORY_COLUMNS, rows
+
+
+# ---- ceremony lens readers: git line counts, run-ledger line counts, subagent transcripts ----
+
+GIT_LINES_COLUMNS = schemas.column_names(schemas.GIT_LINES_SCHEMA)
+LEDGER_LINES_COLUMNS = schemas.column_names(schemas.LEDGER_LINES_SCHEMA)
+SUBAGENT_RUNS_COLUMNS = schemas.column_names(schemas.SUBAGENT_RUNS_SCHEMA)
+SUBAGENT_SCAN_COLUMNS = schemas.column_names(schemas.SUBAGENT_SCAN_SCHEMA)
+
+_GIT_LINES_FORMAT = "%x1e%H%x1f%cI%x1f%s"
+
+
+def read_git_lines(repo_path: Path | None = None, since: _dt.datetime | None = None):
+    """One row per non-merge commit committed at or after `since`, with added and deleted line
+    counts from `git log --numstat`. Bounded by `--since` (never full history): the caller
+    passes the window start, and `None` means no window, so the table is empty. A binary file
+    (`-` counts) adds 0 lines and bumps `binary_files`. Skip-safe like `read_git_fixes`."""
+    repo = repo_path or config.git_repo_dir()
+    if since is None or not repo.exists() or not (repo / ".git").exists():
+        return GIT_LINES_COLUMNS, []
+    try:
+        out = subprocess.run(
+            ["git", "-C", str(repo), "log", f"--since=@{int(since.timestamp())}",
+             f"--format={_GIT_LINES_FORMAT}", "--numstat", "--no-merges"],
+            capture_output=True, text=True, timeout=120,
+        ).stdout
+    except (OSError, subprocess.SubprocessError):
+        return GIT_LINES_COLUMNS, []
+    rows = []
+    for block in out.split("\x1e"):
+        if not block.strip():
+            continue
+        lines = block.split("\n")
+        header = lines[0].split("\x1f")
+        if len(header) < 3:
+            continue
+        added = deleted = binary = 0
+        for ln in lines[1:]:
+            f = ln.split("\t")
+            if len(f) < 3:
+                continue
+            if f[0].isdigit() and f[1].isdigit():
+                added += int(f[0])
+                deleted += int(f[1])
+            else:
+                binary += 1
+        rows.append([header[0], header[1], header[2], added, deleted, binary])
+    rows.sort(key=lambda r: (r[1], r[0]))
+    return GIT_LINES_COLUMNS, rows
+
+
+def read_ledger_lines(runs_dir: Path | None = None):
+    """One row per run ledger: how many `START`, `TOKENS` and `GATE` lines it holds."""
+    d = runs_dir or (config.kit_log_dir() / "runs")
+    if not d.exists():
+        return LEDGER_LINES_COLUMNS, []
+    rows = []
+    for f in sorted(d.glob("*.log")):
+        try:
+            text = f.read_text()
+        except OSError:
+            continue
+        n = {"START": 0, "TOKENS": 0, "GATE": 0}
+        for line in text.splitlines():
+            parts = line.split(" | ", 2)
+            if len(parts) >= 2 and parts[1].strip() in n:
+                n[parts[1].strip()] += 1
+        rows.append([f.stem, n["START"], n["TOKENS"], n["GATE"]])
+    return LEDGER_LINES_COLUMNS, rows
+
+
+_RID_TAG_RE = re.compile(r"\brid=([A-Za-z0-9][A-Za-z0-9_-]*(?:\.[A-Za-z0-9_-]+)*)")
+_USAGE_KEYS = ("input_tokens", "output_tokens", "cache_read_input_tokens",
+               "cache_creation_input_tokens")
+
+
+def _read_subagent_transcript(path: Path):
+    """Parse one `agent-<id>.jsonl`. Returns `(first_ts, last_ts, tokens)` or None when a
+    line is not valid JSON. Reads ONLY `timestamp`, `message.id` and `message.usage.*`; message
+    content is never assigned to anything that outlives the loop iteration. Usage repeats per
+    streamed message (the same `message.id` on several lines, `output_tokens` growing), so the
+    LAST line per id wins. Only the first and last line are parsed for timestamps; every
+    other line is parsed only when it carries a `"usage"` key (the rest of a transcript is
+    large tool output this reader has no use for)."""
+    try:
+        lines = [ln for ln in path.read_text(errors="replace").splitlines() if ln.strip()]
+    except OSError:
+        return None
+    if not lines:
+        return None, None, [0, 0, 0, 0]
+    usage_by_id: dict[str, list[int]] = {}
+    first_ts = last_ts = None
+    last_i = len(lines) - 1
+    for i, ln in enumerate(lines):
+        if i not in (0, last_i) and '"usage"' not in ln:
+            continue
+        try:
+            d = json.loads(ln)
+        except ValueError:
+            return None
+        if not isinstance(d, dict):
+            continue
+        ts = d.get("timestamp")
+        if isinstance(ts, str):
+            if i == 0:
+                first_ts = ts
+            if i == last_i:
+                last_ts = ts
+        msg = d.get("message")
+        usage = msg.get("usage") if isinstance(msg, dict) else None
+        if isinstance(usage, dict):
+            mid = msg.get("id")
+            key = mid if isinstance(mid, str) else f"line-{i}"
+            usage_by_id[key] = [_safe_int(usage.get(k)) for k in _USAGE_KEYS]
+    totals = [sum(v[j] for v in usage_by_id.values()) for j in range(4)]
+    return first_ts, last_ts, totals
+
+
+def read_subagents(root: Path | None = None, since: _dt.datetime | None = None,
+                   brackets: list[tuple[str, float, float]] | None = None):
+    """Subagent transcripts under `<root>/<project>/<session>/subagents/`, as two results:
+    `(runs_cols, runs_rows, scan_cols, scan_rows)`.
+
+    Only files whose mtime is at or after `since` are opened (transcripts are large);
+    every file still counts toward `earliest` (oldest mtime on disk, the retention figure). A
+    file with a malformed meta or jsonl line is skipped and counted, never fatal.
+
+    A dispatch joins a rid in this order: (1) a `rid=<rid>` token in the meta `description`
+    (`rid_source=tag`); (2) its first message timestamp inside exactly one rid's build bracket
+    from `brackets` (`(rid, start_epoch, end_epoch)`; `window`, or `ambiguous` when two
+    different rids contain it); (3) `none`. Never `gitBranch` or `cwd`: the lead session often
+    runs from another repo. The description text itself is discarded after the tag match."""
+    d = root or config.sessions_dir()
+    scan = [0, 0, 0, None]
+    if since is None or not d.exists():
+        return SUBAGENT_RUNS_COLUMNS, [], SUBAGENT_SCAN_COLUMNS, [scan]
+    since_epoch = since.timestamp()
+    earliest: float | None = None
+    rows = []
+    for meta in sorted(d.glob("*/*/subagents/agent-*.meta.json")):
+        jsonl = meta.with_name(meta.name[: -len(".meta.json")] + ".jsonl")
+        try:
+            mtime = (jsonl if jsonl.exists() else meta).stat().st_mtime
+        except OSError:
+            continue
+        scan[0] += 1
+        earliest = mtime if earliest is None else min(earliest, mtime)
+        if mtime < since_epoch or not jsonl.exists():
+            continue
+        try:
+            m = json.loads(meta.read_text())
+            agent_type = m.get("agentType")
+            model = m.get("model")
+            desc = m.get("description")
+        except (OSError, ValueError, AttributeError):
+            scan[2] += 1
+            continue
+        parsed = _read_subagent_transcript(jsonl)
+        if parsed is None:
+            scan[2] += 1
+            continue
+        scan[1] += 1
+        first_ts, last_ts, tokens = parsed
+        tag = _RID_TAG_RE.search(desc) if isinstance(desc, str) else None
+        rid = tag.group(1) if tag else None
+        source = "tag" if tag else "none"
+        if not tag and brackets:
+            t = parse_ts(first_ts)
+            hit = sorted({r for r, a, b in brackets if t and a <= t.timestamp() <= b})
+            if len(hit) == 1:
+                rid, source = hit[0], "window"
+            elif len(hit) > 1:
+                source = "ambiguous"
+        rows.append([
+            rid, meta.parent.parent.name, meta.name[len("agent-"):-len(".meta.json")],
+            agent_type if isinstance(agent_type, str) else "?",
+            model if isinstance(model, str) else "?", first_ts, last_ts, *tokens, source,
+        ])
+    if earliest is not None:
+        scan[3] = _dt.datetime.fromtimestamp(earliest, _dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    rows.sort(key=lambda r: (r[5] or "", r[2]))
+    return SUBAGENT_RUNS_COLUMNS, rows, SUBAGENT_SCAN_COLUMNS, [scan]
