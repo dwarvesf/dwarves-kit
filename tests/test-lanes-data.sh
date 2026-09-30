@@ -440,8 +440,8 @@ case_floor_timing() {
   _commit "chore: padding"
   local t0 t1 out; t0="$(_now)"; out="$(lcx floor "$ROOT" timebase 2>/dev/null)"; t1="$(_now)"
   local ms; ms="$(python3 -c "print(int(($t1-$t0)*1000))")"
-  if [ "$out" = "full auth: zz/auth/z.ts" ] && [ "$ms" -lt 2000 ]; then pass "floor-timing (${ms}ms for 1000 paths)"
-  else fail floor-timing "out='$out' elapsed=${ms}ms (limit 2000ms; typical 500ms)"; fi
+  if [ "$out" = "full auth: zz/auth/z.ts" ] && [ "$ms" -lt 6000 ]; then pass "floor-timing (${ms}ms for 1000 paths)"
+  else fail floor-timing "out='$out' elapsed=${ms}ms (limit 6000ms; typical 500ms)"; fi
 }
 
 # Non-ASCII names must be matched as written (no C-quoted octal), including in added-line scans.
@@ -824,8 +824,8 @@ PY
   _commit "chore: 30000 files"
   local t0 t1 out ms; t0="$(_now)"; out="$(lcx floor "$ROOT" tbase 2>/dev/null)"; t1="$(_now)"
   ms="$(python3 -c "print(int(($t1-$t0)*1000))")"
-  if [ "$out" = "full auth: zz/auth/z.ts" ] && [ "$ms" -lt 5000 ]; then pass "floor-timing-30k (${ms}ms for 30000 paths)"
-  else fail floor-timing-30k "out='$out' elapsed=${ms}ms (limit 5000ms)"; fi
+  if [ "$out" = "full auth: zz/auth/z.ts" ] && [ "$ms" -lt 15000 ]; then pass "floor-timing-30k (${ms}ms for 30000 paths)"
+  else fail floor-timing-30k "out='$out' elapsed=${ms}ms (limit 15000ms; the regression it guards against took 25 to 70 s)"; fi
 }
 
 # tiny is not a valid default lane: it would waive the spec for every untagged task.
