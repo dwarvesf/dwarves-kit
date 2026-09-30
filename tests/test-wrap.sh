@@ -63,6 +63,23 @@ case "$sub" in
     [ "${GH_STUB_UNAUTH:-0}" = "1" ] && exit 1
     exit 0 ;;
   api)
+    # A repos/<o>/<r>/issues/<n>/events read answers GH_STUB_EVENTS_<n>: `[]` when unset,
+    # a set-but-empty value prints nothing (a valid empty history), and
+    # GH_STUB_EVENTS_RC fails the call AFTER any print, the way a later --paginate page
+    # errors mid-stream. Any other `gh api` call is the user login.
+    ev_arg=""
+    for a in "$@"; do case "$a" in repos/*/issues/*/events*) ev_arg="$a" ;; esac; done
+    if [ -n "$ev_arg" ]; then
+      ev_n="${ev_arg#repos/*/issues/}"; ev_n="${ev_n%%/*}"
+      key="GH_STUB_EVENTS_$ev_n"; eval "setmark=\"\${$key+x}\""
+      if [ -z "$setmark" ]; then
+        printf '[]\n'
+      else
+        eval "val=\"\${$key}\""
+        [ -n "$val" ] && printf '%s\n' "$val"
+      fi
+      exit "${GH_STUB_EVENTS_RC:-0}"
+    fi
     # Only `user --jq .login` is asked for, so the login is the whole answer. A failing
     # call prints nothing, the way gh answers when the identity read fails.
     [ "${GH_STUB_API_RC:-0}" = "0" ] || exit "${GH_STUB_API_RC}"
@@ -1926,6 +1943,12 @@ EV_CI='[{"event":"labeled","label":{"name":"ci"},"created_at":"2026-09-29T10:21:
 CA_OLD="[{\"name\":\"test\",\"status\":\"COMPLETED\",\"conclusion\":\"SKIPPED\",$CW_T,\"workflowName\":\"ci\",\"detailsUrl\":\"https://github.com/o/r/actions/runs/1/job/1\"},{\"name\":\"preview\",\"status\":\"COMPLETED\",\"conclusion\":\"SUCCESS\",$CW_T,\"workflowName\":\"ci\",\"detailsUrl\":\"https://github.com/o/r/actions/runs/1/job/2\"}]"
 CW_DCO='[{"name":"DCO","status":"COMPLETED","conclusion":"SUCCESS","completedAt":"2026-09-29T11:00:00Z","startedAt":"2026-09-29T11:00:00Z","detailsUrl":"https://github.com/o/r/pull/107/checks"}]'
 CW_DCO_CI="${CW_DCO%]},{\"name\":\"test\",\"status\":\"COMPLETED\",\"conclusion\":\"SUCCESS\",\"completedAt\":\"2026-09-29T11:06:00Z\",\"startedAt\":\"2026-09-29T11:05:00Z\",\"workflowName\":\"ci\",\"detailsUrl\":\"https://github.com/o/r/actions/runs/10/job/10\"}]"
+# CW_PUSH: the rollup a pushed head reports when another workflow answered the push and
+# the label's own ci run has not. CW_PUSH_CI adds that run. CA_GREEN is CA_OLD plus the
+# ci run the re-added label just started.
+CW_PUSH="${CW_OLD%]},{\"name\":\"lint\",\"status\":\"COMPLETED\",\"conclusion\":\"SUCCESS\",\"completedAt\":\"2026-09-29T11:00:30Z\",\"startedAt\":\"2026-09-29T11:00:00Z\",\"workflowName\":\"lint\",\"detailsUrl\":\"https://github.com/o/r/actions/runs/9/job/9\"}]"
+CW_PUSH_CI="${CW_PUSH%]},{\"name\":\"test\",\"status\":\"COMPLETED\",\"conclusion\":\"SUCCESS\",\"completedAt\":\"2026-09-29T11:06:00Z\",\"startedAt\":\"2026-09-29T11:05:00Z\",\"workflowName\":\"ci\",\"detailsUrl\":\"https://github.com/o/r/actions/runs/10/job/10\"}]"
+CA_GREEN="${CA_OLD%]},{\"name\":\"test\",\"status\":\"COMPLETED\",\"conclusion\":\"SUCCESS\",\"completedAt\":\"2026-09-29T10:24:25Z\",\"startedAt\":\"2026-09-29T10:21:58Z\",\"workflowName\":\"ci\",\"detailsUrl\":\"https://github.com/o/r/actions/runs/2/job/3\"}]"
 cw_full() { # cw_full <n> <mergeStateStatus> <rollup> [mergeable]
   printf '{"number":%s,"title":"ci wait","headRefName":"feat/ci-gate","headRefOid":"%s","baseRefName":"main","mergeable":"%s","mergeStateStatus":"%s","reviewDecision":"APPROVED","statusCheckRollup":%s,"labels":[{"name":"ci"}],"isDraft":false}' \
     "$1" "$PR50_OID" "${4:-MERGEABLE}" "$2" "$3"
@@ -1978,16 +2001,20 @@ chk "ci-wait T3: exits 0" "$rc"
 chk "ci-wait T3: the grace bound held three wait reads (6 reads)" "$([ "$(cw_views 62)" -eq 6 ]; echo $?)"
 chk_has "ci-wait T3: merged on the pre-label rollup" "$out" "merged #62 ("
 
-# T4: the label is already on and checks exist: no baseline, one wait read, as before.
+# T4: the label is already on and checks exist, but no `labeled` event dates it: remove
+# and re-add, snapshotting every check already on the rollup so the wait still holds for
+# the grace window. Events unset answers the stub's default `[]`.
 : > "$GH_STUB_CALLS"; rm -f "$GH_STUB_CALLS".*
-out="$(PATH="$TMPD/nosleep:$PATH" GH_STUB_LABELS='[{"name":"ci"}]' GH_STUB_OPEN_PRS="$(cw_open 63)" \
+out="$(PATH="$TMPD/nosleep:$PATH" KIT_WRAP_CI_GRACE_SECS=20 GH_STUB_LABELS='[{"name":"ci"}]' GH_STUB_OPEN_PRS="$(cw_open 63)" \
   GH_STUB_PR_63="$(cw_full 63 CLEAN "$CA_OLD")" \
-  GH_STUB_PR_63_2="{\"number\":63,\"labels\":[{\"name\":\"ci\"}],\"statusCheckRollup\":$CA_OLD,\"url\":\"https://github.com/o/r/pull/63\"}" \
+  GH_STUB_PR_63_2="{\"number\":63,\"labels\":[{\"name\":\"ci\"}],\"statusCheckRollup\":$CA_OLD,\"url\":\"https://github.com/o/r/pull/63\",\"headRefOid\":\"$PR50_OID\",\"commits\":[{\"oid\":\"$PR50_OID\",\"committedDate\":\"2026-09-28T02:40:00Z\"}]}" \
   GH_STUB_PR_63_3="$(cw_full 63 CLEAN "$CA_OLD")" \
   "$WRAP" merge --apply "$TMPD/clone-scan-main" 2>&1)"; rc=$?
 chk "ci-wait T4: exits 0" "$rc"
-chk_no "ci-wait T4: a label already on is not edited" "$(cat "$GH_STUB_CALLS")" "pr edit 63"
-chk "ci-wait T4: one wait read, no extra hold (4 reads)" "$([ "$(cw_views 63)" -eq 4 ]; echo $?)"
+chk_has "ci-wait T4: the undated label is re-added" "$out" "re-labeled #63 ci (no ci labeled event dates the label)"
+chk "ci-wait T4: remove precedes re-add precedes merge" \
+  "$(awk '/^pr edit 63 .*--remove-label ci/{r=NR} /^pr edit 63 .*--add-label ci/{a=NR} /^pr merge 63 /{m=NR} END{exit !(r && a && m && r<a && a<m)}' "$GH_STUB_CALLS"; echo $?)"
+chk "ci-wait T4: the re-add's snapshot holds the grace (6 reads)" "$([ "$(cw_views 63)" -eq 6 ]; echo $?)"
 chk_has "ci-wait T4: merged" "$out" "merged #63 ("
 
 # T5: the label's run is still queued at the carry bound; the re-gate must not read the
@@ -2188,6 +2215,75 @@ chk_no "ci-wait E5b: no label edit" "$(cat "$GH_STUB_CALLS")" "pr edit 101"
 chk_no "ci-wait E5b: never merges" "$(cat "$GH_STUB_CALLS")" "pr merge 101"
 chk "ci-wait E5b: two reads" "$([ "$(cw_views 101)" -eq 2 ]; echo $?)"
 
+# E3: the events read itself fails (a later --paginate page erroring mid-stream): the
+# label state is unreadable, so the sync refuses closed rather than guessing a snapshot.
+: > "$GH_STUB_CALLS"; rm -f "$GH_STUB_CALLS".*
+out="$(PATH="$TMPD/nosleep:$PATH" GH_STUB_LABELS='[{"name":"ci"}]' GH_STUB_OPEN_PRS="$(cw_open 76)" \
+  GH_STUB_PR_76="$(cw_dated 76 UNSTABLE "$CA_OLD")" \
+  GH_STUB_EVENTS_76="$EV_CI" GH_STUB_EVENTS_RC=1 \
+  "$WRAP" merge --apply "$TMPD/clone-scan-main" 2>&1)"; rc=$?
+chk "ci-wait E3: exits 2" "$([ "$rc" -eq 2 ]; echo $?)"
+chk_has "ci-wait E3: names the unreadable events" "$out" "could not read the label events of #76"
+chk_has "ci-wait E3: names the refusal" "$out" "FAILED merge #76: the ci label could not be set"
+chk_no "ci-wait E3: no label edit" "$(cat "$GH_STUB_CALLS")" "pr edit 76"
+chk_no "ci-wait E3: never merges" "$(cat "$GH_STUB_CALLS")" "pr merge 76"
+chk "ci-wait E3: two reads" "$([ "$(cw_views 76)" -eq 2 ]; echo $?)"
+
+# E3b: the events read succeeds but prints unparseable output: same refusal.
+: > "$GH_STUB_CALLS"; rm -f "$GH_STUB_CALLS".*
+out="$(PATH="$TMPD/nosleep:$PATH" GH_STUB_LABELS='[{"name":"ci"}]' GH_STUB_OPEN_PRS="$(cw_open 77)" \
+  GH_STUB_PR_77="$(cw_dated 77 UNSTABLE "$CA_OLD")" \
+  GH_STUB_EVENTS_77='not json' \
+  "$WRAP" merge --apply "$TMPD/clone-scan-main" 2>&1)"; rc=$?
+chk "ci-wait E3b: exits 2" "$([ "$rc" -eq 2 ]; echo $?)"
+chk_has "ci-wait E3b: names the unreadable events" "$out" "could not read the label events of #77"
+chk_has "ci-wait E3b: names the refusal" "$out" "FAILED merge #77: the ci label could not be set"
+chk_no "ci-wait E3b: never merges" "$(cat "$GH_STUB_CALLS")" "pr merge 77"
+
+# E4: a labeled event exists but the head commit is not older than it: the label cannot
+# have gated this head, so re-add it and hold the grace window on the full snapshot.
+# UNSTABLE then refuses at the re-gate with the scoped line.
+: > "$GH_STUB_CALLS"; rm -f "$GH_STUB_CALLS".*
+out="$(PATH="$TMPD/nosleep:$PATH" KIT_WRAP_CI_GRACE_SECS=20 GH_STUB_LABELS='[{"name":"ci"}]' GH_STUB_OPEN_PRS="$(cw_open 78)" \
+  GH_STUB_PR_78="$(cw_dated 78 UNSTABLE "$CW_PUSH" 2026-09-29T11:00:00Z)" \
+  GH_STUB_EVENTS_78="$EV_CI" \
+  "$WRAP" merge --apply "$TMPD/clone-scan-main" 2>&1)"; rc=$?
+chk "ci-wait E4: exits 2" "$([ "$rc" -eq 2 ]; echo $?)"
+chk_has "ci-wait E4: the post-label head forces a re-add" "$out" "re-labeled #78 ci (the head commit is not older than the label)"
+chk_has "ci-wait E4: names the scoped refusal" "$out" "FAILED merge #78: no Actions run of this repo reported after the ci label went on, and merge state UNSTABLE is not CLEAN"
+chk_no "ci-wait E4: never merges" "$(cat "$GH_STUB_CALLS")" "pr merge 78"
+chk "ci-wait E4: six reads" "$([ "$(cw_views 78)" -eq 6 ]; echo $?)"
+
+# E6: the rollup answers a shape jq cannot iterate: the re-add's snapshot build fails
+# closed and no label edit runs.
+: > "$GH_STUB_CALLS"; rm -f "$GH_STUB_CALLS".*
+out="$(PATH="$TMPD/nosleep:$PATH" GH_STUB_LABELS='[{"name":"ci"}]' GH_STUB_OPEN_PRS="$(cw_open 102)" \
+  GH_STUB_PR_102="$(cw_dated 102 CLEAN "$CA_OLD")" \
+  GH_STUB_PR_102_2="$(cw_dated 102 CLEAN '"x"')" \
+  GH_STUB_PR_102_3="$(cw_dated 102 CLEAN "$CA_OLD")" \
+  GH_STUB_EVENTS_102='[]' \
+  "$WRAP" merge --apply "$TMPD/clone-scan-main" 2>&1)"; rc=$?
+chk "ci-wait E6: exits 2" "$([ "$rc" -eq 2 ]; echo $?)"
+chk_has "ci-wait E6: names the snapshot failure" "$out" "could not build the check snapshot of #102"
+chk_has "ci-wait E6: names the refusal" "$out" "FAILED merge #102: the ci label could not be set"
+chk_no "ci-wait E6: no label edit" "$(cat "$GH_STUB_CALLS")" "pr edit 102"
+chk_no "ci-wait E6: never merges" "$(cat "$GH_STUB_CALLS")" "pr merge 102"
+chk "ci-wait E6: two reads" "$([ "$(cw_views 102)" -eq 2 ]; echo $?)"
+
+# E7: the events call succeeds and prints zero bytes (a valid empty page set): no event
+# dates the label, so it is re-added and the grace window holds on the snapshot.
+: > "$GH_STUB_CALLS"; rm -f "$GH_STUB_CALLS".*
+out="$(PATH="$TMPD/nosleep:$PATH" KIT_WRAP_CI_GRACE_SECS=20 GH_STUB_LABELS='[{"name":"ci"}]' GH_STUB_OPEN_PRS="$(cw_open 104)" \
+  GH_STUB_PR_104="$(cw_dated 104 CLEAN "$CA_OLD")" \
+  GH_STUB_EVENTS_104='' \
+  "$WRAP" merge --apply "$TMPD/clone-scan-main" 2>&1)"; rc=$?
+chk "ci-wait E7: exits 0" "$rc"
+chk_has "ci-wait E7: the empty history re-adds the label" "$out" "re-labeled #104 ci (no ci labeled event dates the label)"
+chk "ci-wait E7: remove precedes re-add precedes merge" \
+  "$(awk '/^pr edit 104 .*--remove-label ci/{r=NR} /^pr edit 104 .*--add-label ci/{a=NR} /^pr merge 104 /{m=NR} END{exit !(r && a && m && r<a && a<m)}' "$GH_STUB_CALLS"; echo $?)"
+chk_has "ci-wait E7: merged" "$out" "merged #104 ("
+chk "ci-wait E7: six reads" "$([ "$(cw_views 104)" -eq 6 ]; echo $?)"
+
 # ===========================================================================
 echo "=== merge --pr: a named draft is marked ready, then gated and merged ==="
 # ===========================================================================
@@ -2387,6 +2483,30 @@ out="$(GH_STUB_OPEN_PRS="$(open_one 17)" GH_STUB_PR_17="$(conflict_json 17 "$RM_
 chk_has "a re-gate that refuses after the push names the reason" "$out" \
   "SKIP #17 after the re-merge: changes requested"
 chk "a refused re-gate calls no pr merge" "$(grep -q '^pr merge' "$GH_STUB_CALLS" && echo 1 || echo 0)"
+
+# --- apply on a ci-gated repo: the union re-merge's own push re-adds the label (RM1)
+# The re-merge pushed a head the label never saw, so the moved arm answers READD without
+# the events read; GH_STUB_EVENTS_108 is armed to prove the read never happens. The wait
+# then ends on the ci run the re-added label started.
+build_remerge rmc
+RMC="$TMPD/rm-clone-rmc"; RMC_TIP="$(git -C "$RMC" rev-parse feat/union)"
+RM1_2="{\"number\":108,\"title\":\"log entry\",\"headRefName\":\"feat/union\",\"headRefOid\":\"%REMERGE_TIP%\",\"baseRefName\":\"main\",\"mergeable\":\"MERGEABLE\",\"mergeStateStatus\":\"CLEAN\",\"reviewDecision\":\"APPROVED\",\"statusCheckRollup\":$CA_OLD,\"labels\":[{\"name\":\"ci\"}],\"isDraft\":false,\"url\":\"https://github.com/o/r/pull/108\",\"commits\":[{\"oid\":\"%REMERGE_TIP%\",\"committedDate\":\"2026-09-28T02:40:00Z\"}]}"
+RM1_4="{\"number\":108,\"title\":\"log entry\",\"headRefName\":\"feat/union\",\"headRefOid\":\"%REMERGE_TIP%\",\"baseRefName\":\"main\",\"mergeable\":\"MERGEABLE\",\"mergeStateStatus\":\"CLEAN\",\"reviewDecision\":\"APPROVED\",\"statusCheckRollup\":$CA_GREEN,\"labels\":[{\"name\":\"ci\"}],\"isDraft\":false,\"url\":\"https://github.com/o/r/pull/108\",\"commits\":[{\"oid\":\"%REMERGE_TIP%\",\"committedDate\":\"2026-09-28T02:40:00Z\"}]}"
+: > "$GH_STUB_CALLS"; rm -f "$GH_STUB_CALLS".*
+out="$(PATH="$TMPD/nosleep:$PATH" KIT_WRAP_CI_GRACE_SECS=20 \
+  GH_STUB_LABELS='[{"name":"ci"}]' GH_STUB_EVENTS_108="$EV_CI" \
+  GH_STUB_OPEN_PRS="$(open_one 108)" \
+  GH_STUB_PR_108="$(conflict_json 108 "$RMC_TIP")" \
+  GH_STUB_PR_108_2="$RM1_2" GH_STUB_PR_108_4="$RM1_4" \
+  GH_STUB_LAND_REPO="$RMC" GH_STUB_LAND_REMOTE="$TMPD/rm-bare-rmc" GH_STUB_LAND_BRANCH="feat/union" GH_STUB_LAND_DEF="main" \
+  "$WRAP" merge --apply "$RMC" 2>&1)"; rc=$?
+chk "ci-wait RM1: exits 0" "$rc"
+chk_has "ci-wait RM1: the moved head re-adds the label" "$out" "re-labeled #108 ci (the push moved the head)"
+chk_no "ci-wait RM1: the moved arm never reads events" "$(cat "$GH_STUB_CALLS")" "/events"
+chk "ci-wait RM1: remove precedes re-add precedes merge" \
+  "$(awk '/^pr edit 108 .*--remove-label ci/{r=NR} /^pr edit 108 .*--add-label ci/{a=NR} /^pr merge 108 /{m=NR} END{exit !(r && a && m && r<a && a<m)}' "$GH_STUB_CALLS"; echo $?)"
+chk_has "ci-wait RM1: merged" "$out" "merged #108 ("
+chk "ci-wait RM1: 5 reads" "$([ "$(cw_views 108)" -eq 5 ]; echo $?)"
 
 # ===========================================================================
 echo "=== merge: the re-merge dedupes a union-merged kanban row before pushing ==="
@@ -3067,6 +3187,7 @@ LTIP_CA="$(git -C "$LWT_CA" rev-parse HEAD)"
 out="$(PATH="$TMPD/nosleep:$PATH" \
   GH_STUB_LABELS='[{"name":"ci"}]' \
   GH_STUB_OPEN_PRS='[]' GH_STUB_CREATE_NUM=42 \
+  GH_STUB_EVENTS_42="$EV_CI" \
   GH_STUB_PR_42="$(ld_full "$LTIP_CA" CLEAN '[{"name":"pr-check","status":"COMPLETED","conclusion":"SUCCESS","startedAt":"2026-09-29T10:22:00Z","workflowName":"ci","detailsUrl":"https://github.com/o/r/actions/runs/1/job/9"}]')" \
   GH_STUB_LAND_REPO="$LWT_CA" GH_STUB_LAND_REMOTE="$TMPD/ld-bare-ciarmed" \
   GH_STUB_LAND_BRANCH=feat/land GH_STUB_LAND_DEF=main "$WRAP" land "$LWT_CA" 2>&1)"; rc=$?
@@ -3254,6 +3375,31 @@ chk_has "ci-wait L10 land: names the failed label read" "$out" "could not read t
 chk_has "ci-wait L10 land: names the refusal" "$out" "MERGE FAILED #42: the ci label could not be set"
 chk_no "ci-wait L10 land: never merges" "$(cat "$GH_STUB_CALLS")" "pr merge 42"
 
+echo "--- ci-gated land: the push that moved the head re-adds the label (L9)"
+# origin holds feat/land at the tip's parent, so land's own push moves the head: the
+# label already on the PR cannot have gated it, and the moved arm answers before any
+# events read. GH_STUB_EVENTS_42 stays armed so an events call would show in the log.
+build_land cipush
+LWT_L9="$(cd "$TMPD/ld-repo-cipush/wt" && pwd -P)"
+LTIP_L9="$(git -C "$LWT_L9" rev-parse HEAD)"
+git -C "$LWT_L9" push -q "$TMPD/ld-bare-cipush" "$(git -C "$LWT_L9" rev-parse HEAD^)":refs/heads/feat/land
+: > "$GH_STUB_CALLS"; rm -f "$GH_STUB_CALLS".*
+out="$(PATH="$TMPD/nosleep:$PATH" \
+  GH_STUB_LABELS='[{"name":"ci"}]' \
+  GH_STUB_OPEN_HEAD_feat_land='[{"number":42,"baseRefName":"main","author":{"login":"me"},"isDraft":false}]' \
+  GH_STUB_EVENTS_42="$EV_CI" \
+  GH_STUB_PR_42="$(ld_full "$LTIP_L9" CLEAN "$CW_PUSH")" \
+  GH_STUB_PR_42_3="$(ld_full "$LTIP_L9" CLEAN "$CW_PUSH_CI")" \
+  GH_STUB_LAND_REPO="$LWT_L9" GH_STUB_LAND_REMOTE="$TMPD/ld-bare-cipush" \
+  GH_STUB_LAND_BRANCH=feat/land GH_STUB_LAND_DEF=main "$WRAP" land "$LWT_L9" 2>&1)"; rc=$?
+LAND_CALLS="$(cat "$GH_STUB_CALLS")"
+chk "ci-wait L9 land: exits 0" "$rc"
+chk_has "ci-wait L9 land: the moved head re-adds the label" "$out" "re-labeled #42 ci (the push moved the head)"
+chk "ci-wait L9 land: remove precedes re-add precedes merge" \
+  "$(awk '/^pr edit 42 .*--remove-label ci/{r=NR} /^pr edit 42 .*--add-label ci/{a=NR} /^pr merge 42 /{m=NR} END{exit !(r && a && m && r<a && a<m)}' "$GH_STUB_CALLS"; echo $?)"
+chk_no "ci-wait L9 land: the moved arm never reads events" "$LAND_CALLS" "/events"
+chk "ci-wait L9 land: 4 reads" "$([ "$(cw_views 42)" -eq 4 ]; echo $?)"
+
 echo "--- ci-gated land: gh's empty no-match answer never arms the gate (L11)"
 # `gh label list --search ci` prints zero bytes when no label matches; that is the
 # ungated path, so no PR read, no edit and no events read happen at all.
@@ -3276,9 +3422,9 @@ echo "--- autoland on a ci-gated repo labels the carry PR before the merge"
 build_union_repo alci; al_orphan alci
 ALI="$TMPD/uclone-alci"; ALIB="$TMPD/ubare-alci"
 printf '%s' "$LAB_STRAY" > "$ALI/_meta/LAB_LOG.md"
-AL_PR_CI_2='{"number":42,"title":"carry","headRefName":"wrap/stray","headRefOid":"%CARRY_TIP%","baseRefName":"main","mergeable":"MERGEABLE","mergeStateStatus":"CLEAN","reviewDecision":"","statusCheckRollup":[{"name":"pr-check","status":"COMPLETED","conclusion":"SUCCESS","startedAt":"2026-09-29T10:22:00Z","workflowName":"ci","detailsUrl":"https://github.com/o/r/actions/runs/1/job/9"}],"labels":[{"name":"ci"}],"isDraft":false,"url":"https://github.com/o/r/pull/42"}'
+AL_PR_CI_2='{"number":42,"title":"carry","headRefName":"wrap/stray","headRefOid":"%CARRY_TIP%","baseRefName":"main","mergeable":"MERGEABLE","mergeStateStatus":"CLEAN","reviewDecision":"","statusCheckRollup":[{"name":"pr-check","status":"COMPLETED","conclusion":"SUCCESS","startedAt":"2026-09-29T10:22:00Z","workflowName":"ci","detailsUrl":"https://github.com/o/r/actions/runs/1/job/9"}],"labels":[{"name":"ci"}],"isDraft":false,"url":"https://github.com/o/r/pull/42","commits":[{"oid":"%CARRY_TIP%","committedDate":"2026-09-28T02:40:00Z"}]}'
 out="$(PATH="$TMPD/nosleep:$PATH" AL_WAIT=30 \
-  GH_STUB_LABELS='[{"name":"ci"}]' GH_STUB_PR_42_2="$AL_PR_CI_2" \
+  GH_STUB_LABELS='[{"name":"ci"}]' GH_STUB_EVENTS_42="$EV_CI" GH_STUB_PR_42_2="$AL_PR_CI_2" \
   al_run "$ALIB" "$ALI" --apply)"; rc=$?
 chk "autoland ci-gated: apply exits 0" "$rc"
 chk_has "autoland ci-gated: the label went on the orphan's PR" "$(cat "$GH_STUB_CALLS")" "pr edit 42 --repo $ALIB --add-label ci"
@@ -3296,8 +3442,8 @@ ALW="$TMPD/uclone-alcw"; ALWB="$TMPD/ubare-alcw"
 printf '%s' "$LAB_STRAY" > "$ALW/_meta/LAB_LOG.md"
 AL_CW_PR="{\"number\":42,\"title\":\"carry\",\"headRefName\":\"wrap/stray\",\"headRefOid\":\"%CARRY_TIP%\",\"baseRefName\":\"main\",\"mergeable\":\"MERGEABLE\",\"mergeStateStatus\":\"CLEAN\",\"reviewDecision\":\"\",\"statusCheckRollup\":$CA_OLD,\"labels\":[],\"isDraft\":false}"
 out="$(PATH="$TMPD/nosleep:$PATH" AL_WAIT=30 KIT_WRAP_CI_GRACE_SECS=20 \
-  GH_STUB_LABELS='[{"name":"ci"}]' AL_PR_OVERRIDE="$AL_CW_PR" \
-  GH_STUB_PR_42_2="${AL_CW_PR/\"labels\":[]/\"labels\":[{\"name\":\"ci\"}],\"url\":\"https://github.com/o/r/pull/42\"}" \
+  GH_STUB_LABELS='[{"name":"ci"}]' GH_STUB_EVENTS_42="$EV_CI" AL_PR_OVERRIDE="$AL_CW_PR" \
+  GH_STUB_PR_42_2="${AL_CW_PR/\"labels\":[]/\"labels\":[{\"name\":\"ci\"}],\"url\":\"https://github.com/o/r/pull/42\",\"commits\":[{\"oid\":\"%CARRY_TIP%\",\"committedDate\":\"2026-09-28T02:40:00Z\"}]}" \
   al_run "$ALWB" "$ALW" --apply)"; rc=$?
 chk "autoland ci-wait T13: apply exits 0" "$rc"
 chk_has "autoland ci-wait T13: merge --pr verifies the tree" "$out" "tree verified"
@@ -3311,8 +3457,8 @@ ALU="$TMPD/uclone-alcwu"; ALWBU="$TMPD/ubare-alcwu"
 printf '%s' "$LAB_STRAY" > "$ALU/_meta/LAB_LOG.md"
 AL_CW_PR_U="${AL_CW_PR/\"mergeStateStatus\":\"CLEAN\"/\"mergeStateStatus\":\"UNSTABLE\"}"
 out="$(PATH="$TMPD/nosleep:$PATH" AL_WAIT=30 KIT_WRAP_CI_GRACE_SECS=20 \
-  GH_STUB_LABELS='[{"name":"ci"}]' AL_PR_OVERRIDE="$AL_CW_PR_U" \
-  GH_STUB_PR_42_2="${AL_CW_PR_U/\"labels\":[]/\"labels\":[{\"name\":\"ci\"}],\"url\":\"https://github.com/o/r/pull/42\"}" \
+  GH_STUB_LABELS='[{"name":"ci"}]' GH_STUB_EVENTS_42="$EV_CI" AL_PR_OVERRIDE="$AL_CW_PR_U" \
+  GH_STUB_PR_42_2="${AL_CW_PR_U/\"labels\":[]/\"labels\":[{\"name\":\"ci\"}],\"url\":\"https://github.com/o/r/pull/42\",\"commits\":[{\"oid\":\"%CARRY_TIP%\",\"committedDate\":\"2026-09-28T02:40:00Z\"}]}" \
   al_run "$ALWBU" "$ALU" --apply)"; rc=$?
 chk "autoland ci-wait T13b: apply exits 0" "$rc"
 chk_has "autoland ci-wait T13b: the carry skips with the non-CLEAN line" "$out" "SKIP land wrap/stray-meta-lab-log-md-20260101-0000: PR #42: no check reported after the ci label went on, and merge state UNSTABLE is not CLEAN; left open"
@@ -3323,11 +3469,11 @@ echo "--- autoland on a ci-gated repo: a CONFLICTING carry PR goes to the re-mer
 build_union_repo alcwc; al_orphan alcwc
 ALC2="$TMPD/uclone-alcwc"; ALCB="$TMPD/ubare-alcwc"
 printf '%s' "$LAB_STRAY" > "$ALC2/_meta/LAB_LOG.md"
-AL_CW_PR_C="${AL_CW_PR/\"labels\":[]/\"labels\":[{\"name\":\"ci\"}],\"url\":\"https://github.com/o/r/pull/42\"}"
+AL_CW_PR_C="${AL_CW_PR/\"labels\":[]/\"labels\":[{\"name\":\"ci\"}],\"url\":\"https://github.com/o/r/pull/42\",\"commits\":[{\"oid\":\"%CARRY_TIP%\",\"committedDate\":\"2026-09-28T02:40:00Z\"}]}"
 AL_CW_PR_C="${AL_CW_PR_C/\"mergeable\":\"MERGEABLE\"/\"mergeable\":\"CONFLICTING\"}"
 AL_CW_PR_C="${AL_CW_PR_C/\"mergeStateStatus\":\"CLEAN\"/\"mergeStateStatus\":\"DIRTY\"}"
 out="$(PATH="$TMPD/nosleep:$PATH" AL_WAIT=30 KIT_WRAP_CI_GRACE_SECS=20 \
-  GH_STUB_LABELS='[{"name":"ci"}]' AL_PR_OVERRIDE="$AL_CW_PR" \
+  GH_STUB_LABELS='[{"name":"ci"}]' GH_STUB_EVENTS_42="$EV_CI" AL_PR_OVERRIDE="$AL_CW_PR" \
   GH_STUB_PR_42_2="$AL_CW_PR_C" \
   al_run "$ALCB" "$ALC2" --apply)"; rc=$?
 chk "autoland ci-wait T13e: apply exits 0" "$rc"

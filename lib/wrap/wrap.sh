@@ -1318,9 +1318,54 @@ _ci_label_sync() {
         && gh pr edit "$n" --repo "$url" --add-label ci >/dev/null 2>&1; } || {
         echo "     could not re-add the ci label on #${n}" >&2; return 2; }
       echo "     re-labeled #${n} ci (the label predates the head)"
+    else
+      local verdict dtype dreason
+      verdict="$(_ci_label_date "$CI_NEW_SCOPE" "$n" "$detail" "$moved")" || return 2
+      dtype="${verdict%%$'\t'*}"
+      dreason="${verdict#*$'\t'}"
+      if [ "$dtype" = "READD" ]; then
+        # The label cannot have gated this head, so the snapshot is every check already
+        # on the rollup: the re-added label's own runs then read as NEW, and the wait
+        # holds its grace window for them. An empty snapshot answer is a read failure,
+        # never a silent `[]`.
+        CI_PRELABEL_KEYS="$(printf '%s' "$detail" | jq -c "${CI_JQ_DEFS} [(.statusCheckRollup // [])[] | ckey]" 2>/dev/null)"
+        if [ -z "$CI_PRELABEL_KEYS" ]; then
+          echo "     could not build the check snapshot of #${n}" >&2; return 2
+        fi
+        { gh pr edit "$n" --repo "$url" --remove-label ci >/dev/null 2>&1 \
+          && gh pr edit "$n" --repo "$url" --add-label ci >/dev/null 2>&1; } || {
+          echo "     could not re-add the ci label on #${n}" >&2; return 2; }
+        echo "     re-labeled #${n} ci (${dreason})"
+      fi
+      # DATED <T>: the labeled event postdates the head commit, so the runs above the
+      # snapshot line are the label's. The dated cut itself is a later task; for now the
+      # snapshot stays [] and every entry reads as NEW.
     fi
   fi
   return 0
+}
+
+# _ci_label_date <slug> <pr> <detail> <moved> -- what a `ci` label already on the PR means
+# for the snapshot the wait compares against. Prints one `READD\t<reason>` or
+# `DATED\t<T>` line on stdout and returns 0; a failed events read prints its own stderr
+# line and returns 2. <moved>=1 is the caller saying "my push just moved the head", which
+# answers READD outright without the events read. Otherwise the label's date is the
+# latest `labeled` event named `ci` in the issue events feed, read with --paginate (a
+# failed later page is a failed read, partial output or not), and the label is stale
+# unless the head commit's committedDate is strictly older than it.
+_ci_label_date() {
+  local slug="$1" n="$2" detail="$3" moved="${4:-0}" ev t c
+  [ "$moved" = "1" ] && { printf 'READD\t%s\n' "the push moved the head"; return 0; }
+  ev="$(gh api --hostname github.com --paginate "repos/${slug}/issues/${n}/events?per_page=100" 2>/dev/null)" || {
+    echo "     could not read the label events of #${n}" >&2; return 2; }
+  t="$(printf '%s' "$ev" | jq -rs '[.[][] | select(.event == "labeled" and .label.name == "ci") | .created_at] | max // ""' 2>/dev/null)" || {
+    echo "     could not read the label events of #${n}" >&2; return 2; }
+  [ -n "$t" ] || { printf 'READD\t%s\n' "no ci labeled event dates the label"; return 0; }
+  c="$(printf '%s' "$detail" | jq -r '(.headRefOid // "") as $h | [.commits[]? | select(.oid == $h) | .committedDate] | .[0] // ""' 2>/dev/null)"
+  if [ -z "$c" ] || [[ ! "$c" < "$t" ]]; then
+    printf 'READD\t%s\n' "the head commit is not older than the label"; return 0
+  fi
+  printf 'DATED\t%s\n' "$t"; return 0
 }
 
 # _ci_checks_wait <repo-url> <pr> -- the bounded wait for the runs a `ci` label just
@@ -2257,7 +2302,7 @@ cmd_merge() {
   done
 
   local first_eligible="" verdict title conflict_n="" conflict_count=0
-  local superseded_n="" superseded_branch=""
+  local superseded_n="" superseded_branch="" moved=0
   for n in $numbers; do
     detail="$(cat "${jsondir}/pr-${n}.json" 2>/dev/null)"
     verdict="$(_pr_gate "$detail" "$def")"
@@ -2315,6 +2360,7 @@ cmd_merge() {
         if [ "$verdict" = "OK" ]; then
           first_eligible="$conflict_n"
           head_oid="$(printf '%s' "$detail" | jq -r '.headRefOid // ""' 2>/dev/null)"
+          moved=1
           echo "eligible #${conflict_n} after the re-merge"
         else
           echo "SKIP #${conflict_n} after the re-merge: ${verdict#SKIP }"
@@ -2352,7 +2398,9 @@ cmd_merge() {
   # failing refuses here. A repo without the label merges as it always did, and a label
   # that will not set refuses rather than merging untested.
   local rc reason rrc
-  _ci_label_sync "$url" "$first_eligible"; rc=$?
+  # The settle above already confirmed the re-merged head, so the sync gets no pin; the
+  # moved flag is what tells it a push of ours just moved the head past the label's date.
+  _ci_label_sync "$url" "$first_eligible" "" "$moved"; rc=$?
   case "$rc" in
     0)
       _ci_checks_wait "$url" "$first_eligible"
