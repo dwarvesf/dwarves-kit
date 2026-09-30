@@ -37,10 +37,14 @@ CMD_CODE=$(printf '%s\n' "$CMD" | awk '
     print line
   }')
 
-# Engage only on a ship action: a git push or a gh pr create (in CODE, not prose).
-echo "$CMD_CODE" | grep -qE 'git[[:space:]]+push|gh[[:space:]]+pr[[:space:]]+create' || exit 0
-# Leave push-to-main / force-push to safety-gate; do not double-handle.
-echo "$CMD_CODE" | grep -qE '\b(main|master)\b|--force' && exit 0
+# Engage only on a ship action: a git push or a gh pr create (in CODE, not prose). The push
+# form allows global options before the verb: `git -C <dir> push`, `git -c k=v push`.
+GITPUSH_RE='git([[:space:]]+(-C[[:space:]]+[^[:space:]]+|-c[[:space:]]+[^[:space:]]+|--[a-z][a-z-]*(=[^[:space:]]+)?))*[[:space:]]+push([[:space:]]|$)'
+echo "$CMD_CODE" | grep -qE "$GITPUSH_RE|gh[[:space:]]+pr[[:space:]]+create" || exit 0
+# The push segment: from `git ... push` to the next command separator.
+PUSH_SEG=$(printf '%s' "$CMD_CODE" | grep -oE "${GITPUSH_RE}[^;&|]*" | tail -1 || true)
+# Leave force-push to safety-gate. Match the flag exactly: --force-with-lease is a different flag.
+case " $PUSH_SEG " in *" --force "*|*" -f "*) exit 0 ;; esac
 
 # A command that cd's elsewhere ships THAT repo, not the session cwd (the
 # cross-repo misfire: a `cd other-repo && git push` was gated against the SESSION
@@ -48,6 +52,9 @@ echo "$CMD_CODE" | grep -qE '\b(main|master)\b|--force' && exit 0
 # BSD-sed-portable: grab the cd arg with grep -o, then strip the prefix + quotes.
 CDDIR=$(printf '%s' "$CMD_CODE" | grep -oE '^[[:space:]]*cd[[:space:]]+[^&;|]+' | head -1 \
   | sed -E 's/^[[:space:]]*cd[[:space:]]+//; s/[[:space:]]+$//; s/^"//; s/"$//' || true)
+if [ -z "$CDDIR" ] && [ -n "$PUSH_SEG" ]; then   # `git -C <dir> push` ships that repo
+  CDDIR=$(printf '%s' "$PUSH_SEG" | grep -oE '(^|[[:space:]])-C[[:space:]]+[^[:space:]]+' | head -1 | awk '{print $NF}' || true)
+fi
 case "$CDDIR" in *'$'*) CDDIR="" ;; esac   # variables cannot be resolved: fall back
 CDDIR="${CDDIR/#\~/$HOME}"
 case "$CDDIR" in ""|/*) ;; *) CDDIR="$REAL_CWD/$CDDIR" ;; esac
@@ -61,12 +68,62 @@ fi
 [ -n "$ROOT" ] || exit 0
 BRANCH=$(git -C "$ROOT" rev-parse --abbrev-ref HEAD 2>/dev/null || true)
 [ -n "$BRANCH" ] || exit 0
+CURBRANCH="$BRANCH"
+PHEAD=$(git -C "$ROOT" rev-parse HEAD 2>/dev/null || true)   # the commit being shipped
+# Which ref does this push carry, and where does it land? A push whose TARGET is the default
+# branch is safety-gate's business, so leave it alone. The word main or master elsewhere in the
+# command (`gh pr create --base master`, a commit message) is not a target.
+if [ -n "$PUSH_SEG" ]; then
+  DEFNAME=$(git -C "$ROOT" symbolic-ref -q --short refs/remotes/origin/HEAD 2>/dev/null || true)
+  DEFNAME="${DEFNAME#origin/}"
+  read -ra _TOK <<< "${PUSH_SEG#*push}"
+  _POS=(); _skip=0
+  for _t in ${_TOK[@]+"${_TOK[@]}"}; do
+    if [ "$_skip" = 1 ]; then _skip=0; continue; fi
+    case "$_t" in
+      --repo|-o|--push-option|--receive-pack|--exec) _skip=1 ;;
+      -*) ;;
+      *) _POS+=("$_t") ;;
+    esac
+  done
+  _SPECS=(${_POS[@]+"${_POS[@]:1}"})
+  [ "${#_SPECS[@]}" -gt 0 ] || _SPECS=("$CURBRANCH")
+  PUSH_SRC=""; PUSH_DST=""
+  for _r in "${_SPECS[@]}"; do
+    _r="${_r#+}"
+    case "$_r" in *:*) _src="${_r%%:*}"; _dst="${_r#*:}" ;; *) _src="$_r"; _dst="$_r" ;; esac
+    _src="${_src#refs/heads/}"; _dst="${_dst#refs/heads/}"
+    [ "$_dst" = HEAD ] && _dst="$CURBRANCH"
+    case "$_dst" in main|master) exit 0 ;; esac
+    [ -n "$DEFNAME" ] && [ "$_dst" = "$DEFNAME" ] && exit 0
+    [ -n "$PUSH_SRC" ] || { PUSH_SRC="$_src"; PUSH_DST="$_dst"; }
+  done
+  # Ship the ref being pushed, not whatever HEAD happens to be.
+  if [ -n "$PUSH_SRC" ] && [ "$PUSH_SRC" != "$CURBRANCH" ]; then
+    if [ "$PUSH_SRC" = HEAD ]; then BRANCH="$PUSH_DST"
+    elif _pr=$(git -C "$ROOT" rev-parse --verify -q "refs/heads/$PUSH_SRC" 2>/dev/null); then BRANCH="$PUSH_SRC"; PHEAD="$_pr"
+    fi
+  fi
+fi
 SLUG="${BRANCH#*/}"   # strip the type/ prefix (feat/, docs/, ...)
+SLUG_Q=$(printf '%q' "$SLUG")   # shell-safe form for the commands this hook prints
 
 # One copy of the three-way default-branch fallback (review: was duplicated per block).
+# The base is the REMOTE default branch: origin/HEAD, else origin/main or origin/master. A local
+# branch can carry unpushed commits and would hide them from the diff. Only a repo with no origin
+# at all falls back to local main or master. An origin with no remote-tracking default gives no
+# base, and the callers skip their checks.
 _resolve_base() {
-  git -C "$ROOT" rev-parse --verify -q origin/main >/dev/null 2>&1 && echo origin/main \
-    || { git -C "$ROOT" rev-parse --verify -q main >/dev/null 2>&1 && echo main || echo master; }
+  local ref c
+  ref=$(git -C "$ROOT" symbolic-ref -q --short refs/remotes/origin/HEAD 2>/dev/null || true)
+  [ -z "$ref" ] || { echo "$ref"; return 0; }
+  if git -C "$ROOT" remote get-url origin >/dev/null 2>&1; then
+    for c in origin/main origin/master; do
+      git -C "$ROOT" rev-parse --verify -q "$c" >/dev/null 2>&1 && { echo "$c"; return 0; }
+    done
+    return 0
+  fi
+  git -C "$ROOT" rev-parse --verify -q main >/dev/null 2>&1 && echo main || echo master
 }
 
 # --- Proof-of-done gate (diff-keyed, SPEC-INDEPENDENT). This is the bridge: it fires on
@@ -98,16 +155,16 @@ _gate_on() {  # $1 = [gate] key, $2 = log label
 LCLS="${CLAUDE_PLUGIN_ROOT:-$HOME/.claude/dwarves-kit}/lib/classify/lane-classify.sh"
 _floor_hit() {  # prints "full <kind>: <path>" for the first hard-path hit, else nothing
   [ -f "$LCLS" ] || return 0
-  local fb; fb=$(git -C "$ROOT" merge-base HEAD "$(_resolve_base)" 2>/dev/null || true)
+  local fb; fb=$(git -C "$ROOT" merge-base "$PHEAD" "$(_resolve_base)" 2>/dev/null || true)
   [ -n "$fb" ] || return 0
-  [ "$fb" != "$(git -C "$ROOT" rev-parse HEAD 2>/dev/null || true)" ] || return 0
-  bash "$LCLS" floor "$ROOT" "$fb" 2>/dev/null || true
+  [ "$fb" != "$(git -C "$ROOT" rev-parse "$PHEAD" 2>/dev/null || true)" ] || return 0
+  bash "$LCLS" floor "$ROOT" "$fb" "$PHEAD" 2>/dev/null || true
 }
 # The floor follows [gate] lane_gates as of the MERGE BASE, never the PR head, so a PR cannot
 # switch off its own floor. Only exit 1 from the reader means off.
 _floor_on() {
   [ -f "$POLICY" ] || return 0
-  local fb rc=0; fb=$(git -C "$ROOT" merge-base HEAD "$(_resolve_base)" 2>/dev/null || true)
+  local fb rc=0; fb=$(git -C "$ROOT" merge-base "$PHEAD" "$(_resolve_base)" 2>/dev/null || true)
   [ -n "$fb" ] || return 0
   bash "$POLICY" enabled lane_gates "$ROOT" --at "$fb" || rc=$?
   [ "$rc" -eq 1 ] || return 0
@@ -129,9 +186,10 @@ _floor_check() {
     echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) | BLOCKED | ship-gate | $SLUG (hard-path ${FK%%:*})" >> "$LOG_DIR/ship-gate.log" 2>/dev/null || true
     {
       echo "BLOCKED: ship-gate. This diff touches a hard path ($FK); the full lane's gates apply whatever the spec's Lane says:"
+      [ -n "${SPEC:-}" ] || echo "(no spec found for '$SLUG'; a hard-path diff owes the full lane's gates with or without one)"
       printf '%s\n' "$FGAPS" | sed 's/^/  /'
       echo "Run the missing gate(s), or log an explicit override (recorded for audit):"
-      echo "  bash \"$LEDGERF\" override $SLUG <phase> \"<reason>\""
+      echo "  bash \"$LEDGERF\" override $SLUG_Q <phase> \"<reason>\""
     } >&2
     exit 2
   fi
@@ -142,8 +200,8 @@ _floor_check() {
 # not every repo the user touches).
 if [ -f "$PROOF" ] && [ -f "$ROOT/docs/verification/README.md" ] && _gate_on proof_of_done proof-gate; then
   DEFAULT=$(_resolve_base)
-  BASE=$(git -C "$ROOT" merge-base HEAD "$DEFAULT" 2>/dev/null || true)
-  HEADSHA=$(git -C "$ROOT" rev-parse HEAD 2>/dev/null || true)
+  BASE=$(git -C "$ROOT" merge-base "$PHEAD" "$DEFAULT" 2>/dev/null || true)
+  HEADSHA="$PHEAD"
   if [ -n "$BASE" ] && [ "$BASE" != "$HEADSHA" ]; then
     if ! PMSG=$(bash "$PROOF" check "$ROOT" "$BASE" "$SLUG" 2>&1); then
       LOG_DIR="${DWARVES_KIT_LOG_DIR:-$HOME/.claude/dwarves-kit/logs}"
@@ -179,8 +237,8 @@ fi
 # has neither file). Escape hatch: DWARVES_KIT_SKIP_DOC_PROJECTION=1.
 if [ -f "$ROOT/lib/gate/doc-projection-check.sh" ] && [ -f "$ROOT/tests/test-meta.sh" ] \
    && [ "${DWARVES_KIT_SKIP_DOC_PROJECTION:-0}" != "1" ]; then
-  DPBASE=$(git -C "$ROOT" merge-base HEAD "$(_resolve_base)" 2>/dev/null || true)
-  if [ -n "$DPBASE" ] && git -C "$ROOT" diff --name-only "$DPBASE" HEAD 2>/dev/null \
+  DPBASE=$(git -C "$ROOT" merge-base "$PHEAD" "$(_resolve_base)" 2>/dev/null || true)
+  if [ -n "$DPBASE" ] && git -C "$ROOT" diff --name-only "$DPBASE" "$PHEAD" 2>/dev/null \
        | grep -qE '^(agents/|commands/|AGENTS\.md$|docs/(MANUAL|architecture|WORKFLOW)\.md$)'; then
     if ! DPMSG=$(bash "$ROOT/lib/gate/doc-projection-check.sh" "$ROOT" 2>&1); then
       echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) | BLOCKED | doc-projection | $SLUG" >> "${DWARVES_KIT_LOG_DIR:-$HOME/.claude/dwarves-kit/logs}/ship-gate.log" 2>/dev/null || true
@@ -209,9 +267,9 @@ fi
 # pins in CI. Escape hatch: DWARVES_KIT_SKIP_REGISTRY_FRESHNESS=1.
 if [ -f "$ROOT/lib/registry/feature-registry.sh" ] && [ -f "$ROOT/docs/FEATURES.md" ] \
    && [ "${DWARVES_KIT_SKIP_REGISTRY_FRESHNESS:-0}" != "1" ]; then
-  FRBASE=$(git -C "$ROOT" merge-base HEAD "$(_resolve_base)" 2>/dev/null || true)
+  FRBASE=$(git -C "$ROOT" merge-base "$PHEAD" "$(_resolve_base)" 2>/dev/null || true)
   FRDIFF=""
-  [ -n "$FRBASE" ] && FRDIFF=$(git -C "$ROOT" diff --name-only "$FRBASE" HEAD 2>/dev/null || true)
+  [ -n "$FRBASE" ] && FRDIFF=$(git -C "$ROOT" diff --name-only "$FRBASE" "$PHEAD" 2>/dev/null || true)
   if [ -n "$FRDIFF" ] && ! printf '%s\n' "$FRDIFF" | grep -qx 'docs/FEATURES\.md' \
      && printf '%s\n' "$FRDIFF" | grep -qE '^(commands/[^/]+\.md|agents/[^/]+\.md|skills/[^/]+/SKILL\.md|hooks/[^/]+\.sh|hooks/hooks\.json|settings\.json|tests/test-[^/]+\.sh|docs/specs/SPEC-[^/]+\.md)$'; then
     if ! FRMSG=$(bash "$ROOT/lib/registry/feature-registry.sh" check "$ROOT/docs/FEATURES.md" 2>&1); then
@@ -245,8 +303,8 @@ if [ -f "$LEDGER62" ]; then
     case "$RLANE" in
       normal|full|bug)
         DEF62=$(_resolve_base)
-        BASE62=$(git -C "$ROOT" merge-base HEAD "$DEF62" 2>/dev/null || true)
-        if [ -n "$BASE62" ] && ! git -C "$ROOT" diff --name-only "$BASE62" HEAD 2>/dev/null \
+        BASE62=$(git -C "$ROOT" merge-base "$PHEAD" "$DEF62" 2>/dev/null || true)
+        if [ -n "$BASE62" ] && ! git -C "$ROOT" diff --name-only "$BASE62" "$PHEAD" 2>/dev/null \
             | grep -E '^docs/verification/.+\.md$|(^|/)proof-of-done\.md$' \
             | grep -vq '/README\.md$'; then
           echo "[advisory] run '$SLUG' (lane $RLANE) recorded a build but this branch ships no docs/verification/ record; the session ledger is not committable evidence" >&2
@@ -268,11 +326,9 @@ fi
 # Resolve the spec for this slug; fail open if there is no spec-driven run.
 SPEC=$(ls "$ROOT"/docs/specs/SPEC-*-"$SLUG".md 2>/dev/null | head -1 || true)
 if [ -z "$SPEC" ]; then
-  # No spec means no lane to compare, so the floor cannot block here; it says so (never blocks).
-  if _gate_on lane_gates lane-gate; then
-    NSH=$(_floor_hit)
-    [ -z "$NSH" ] || echo "[advisory] no spec for '$SLUG', and the diff touches a hard path (${NSH#full }); write a spec with a Lane, or record why not" >&2
-  fi
+  # No spec means no lane to compare, but the floor needs no lane: a hard-path diff still owes the
+  # full lane's gates (or an audited override) for this slug. Renaming a branch must not dodge it.
+  _floor_check
   exit 0
 fi
 
@@ -342,7 +398,7 @@ if ! GAPS=$(KIT_PROJECT_ROOT="$ROOT" bash "$LEDGER" check "$LANE" "$SLUG" 2>&1);
     echo "BLOCKED: ship-gate. The '$LANE' lane requires gates that have not run for spec '$SLUG':"
     printf '%s\n' "$GAPS" | sed 's/^/  /'
     echo "Run the missing gate(s), or log an explicit override (recorded for audit):"
-    echo "  bash \"$LEDGER\" override $SLUG <phase> \"<reason>\""
+    echo "  bash \"$LEDGER\" override $SLUG_Q <phase> \"<reason>\""
     echo "Or switch the lane gates off for this repo: [gate] lane_gates = false in the committed project kit config (lib/gate/README.md, 'Switching a gate off')."
   } >&2
   exit 2

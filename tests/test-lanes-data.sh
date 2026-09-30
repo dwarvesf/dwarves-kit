@@ -87,9 +87,9 @@ ROOT=""
 _git() { git -C "$ROOT" -c commit.gpgsign=false -c core.hooksPath=/dev/null "$@"; }
 # _commit <message>: commit everything staged, quietly.
 _commit() { _git add -A -f >/dev/null 2>&1; _git commit -q -m "$1" >/dev/null 2>&1; }
-mkrepo() {   # mkrepo [true|false]: the lane_gates value committed on main (default true)
+mkrepo() {   # mkrepo [true|false] [branch]: the lane_gates value committed on the default branch (default true), and its name (default main)
   ROOT="$(_mk)"
-  git init -q -b main "$ROOT" >/dev/null 2>&1
+  git init -q -b "${2:-main}" "$ROOT" >/dev/null 2>&1
   git -C "$ROOT" config user.email t@t; git -C "$ROOT" config user.name t
   mkdir -p "$ROOT/docs/verification" "$ROOT/docs/specs"
   echo m > "$ROOT/docs/verification/README.md"
@@ -319,9 +319,12 @@ ship_fixture() {
 }
 record_gates() { local p; for p in "$@"; do gl record x "$p" ran "fixture $p" >/dev/null 2>&1; done; }
 # run_hook: pushes feat/x through the real hook in the fixture; sets HOOK_RC and HOOK_ERR.
+# HOOK_CMD overrides the command, HOOK_CWD the directory the hook is invoked from.
 run_hook() {
   HOOK_RC=0
-  HOOK_ERR="$( cd "$ROOT" && echo '{"tool_input":{"command":"git push -u origin feat/x"}}' \
+  local cmd="${HOOK_CMD:-git push -u origin feat/x}" cwd="${HOOK_CWD:-$ROOT}" payload
+  payload="$(jq -cn --arg c "$cmd" --arg d "$cwd" '{tool_input:{command:$c},cwd:$d}')"
+  HOOK_ERR="$( cd "$cwd" && printf '%s' "$payload" \
     | env CLAUDE_PLUGIN_ROOT="$KIT_DIR" DWARVES_KIT_LOG_DIR="$LOGD" KIT_CONFIG_OPERATOR="${HOOK_OPERATOR:-/nonexistent}" KIT_CONFIG_ROOT="$KIT_DIR" \
       bash "$HOOK" 2>&1 >/dev/null )" || HOOK_RC=$?
 }
@@ -376,10 +379,17 @@ case_ship_data_loss() {
   [ -z "$bad" ] && pass ship-data-loss || fail ship-data-loss "$bad"
 }
 
-case_ship_no_spec_advisory() {
+# No spec: the floor needs no lane. A hard-path push still owes the full lane's gates or an audited
+# override for the slug, so renaming a branch cannot dodge it. With the switch off at the base it passes.
+case_ship_no_spec_blocks() {
   ship_fixture migration none; run_hook
-  if [ "$HOOK_RC" = 0 ] && printf '%s' "$HOOK_ERR" | grep -qF "no spec for 'x', and the diff touches a hard path"; then pass ship-no-spec-advisory
-  else fail ship-no-spec-advisory "rc=$HOOK_RC err=$HOOK_ERR"; fi
+  local rc1="$HOOK_RC" err1="$HOOK_ERR" p
+  for p in think design design-critique spec validate design-record test-plan build review docs ship reflect; do gl override x "$p" "no-spec reason $p" >/dev/null 2>&1; done
+  run_hook; local rc2="$HOOK_RC"
+  mkrepo false; new_log; mkdir -p "$ROOT/db/migrations"; echo "create table t (id int);" > "$ROOT/db/migrations/0001_t.sql"; _commit "chore: change"
+  run_hook
+  if [ "$rc1" = 2 ] && printf '%s' "$err1" | grep -qF "no spec found for 'x'" && [ "$rc2" = 0 ] && [ "$HOOK_RC" = 0 ]; then pass ship-no-spec-blocks
+  else fail ship-no-spec-blocks "no-spec rc=$rc1 err=$err1; after overrides rc=$rc2; switch off at base rc=$HOOK_RC"; fi
 }
 
 case_ship_suggest_advisory() {
@@ -503,6 +513,75 @@ case_ship_operator_hollow_full() {
   [ "$HOOK_RC" = 2 ] && pass ship-operator-hollow-full || fail ship-operator-hollow-full "rc=$HOOK_RC err=$HOOK_ERR"
 }
 
+# ---- what counts as a push to the default branch, and which ref is shipped ----
+case_ship_push_forms() {
+  ship_fixture migration normal; record_gates $NORMAL_GATES
+  local bad="" c want other; other="$(_mk)"
+  while IFS='|' read -r want c; do
+    [ -n "$c" ] || continue
+    HOOK_CMD="$c" run_hook
+    [ "$HOOK_RC" = "$want" ] || bad="$bad [want $want got $HOOK_RC: $c]"
+  done <<CASES
+2|gh pr create --base master --fill
+2|git push --force-with-lease origin feat/x
+0|git push --force origin feat/x
+0|git push -f origin feat/x
+2|git commit -m "fix main thing" && git push -u origin feat/x
+2|git -c user.name=x push -u origin feat/x
+0|git push origin feat/x:master
+0|git push origin HEAD:refs/heads/main
+0|git push origin main
+2|git push origin HEAD:refs/heads/feat/x
+CASES
+  HOOK_CWD="$other" HOOK_CMD="git -C $ROOT push -u origin feat/x" run_hook
+  [ "$HOOK_RC" = 2 ] || bad="$bad [git -C <dir> push from elsewhere: rc=$HOOK_RC]"
+  [ -z "$bad" ] && pass ship-push-forms || fail ship-push-forms "$bad"
+}
+
+# A remote fixture: bare origin, default branch <name>, origin/HEAD set, then the working repo pushed to it.
+mkrepo_remote() {   # mkrepo_remote <default-branch>
+  mkrepo true "$1"
+  local bare; bare="$(_mk)/origin.git"
+  git init -q --bare -b "$1" "$bare" >/dev/null 2>&1
+  _git remote add origin "$bare" >/dev/null 2>&1
+  _git push -q origin "$1" >/dev/null 2>&1
+  _git remote set-head origin "$1" >/dev/null 2>&1
+}
+
+# The base is origin/HEAD, not a local branch: unpushed commits on local master ride the diff.
+case_ship_base_is_origin_head() {
+  mkrepo_remote master; new_log
+  mkdir -p "$ROOT/auth"; echo x > "$ROOT/auth/b.ts"; _commit "chore: unpushed auth commit on local master"
+  _git checkout -q -b feat/x >/dev/null 2>&1
+  printf 'Lane: normal\n' > "$ROOT/docs/specs/SPEC-001-x.md"; _commit "chore: spec"
+  record_gates $NORMAL_GATES; run_hook
+  if [ "$HOOK_RC" = 2 ] && printf '%s' "$HOOK_ERR" | grep -qF 'hard path (auth'; then pass ship-base-is-origin-head
+  else fail ship-base-is-origin-head "rc=$HOOK_RC err=$HOOK_ERR"; fi
+}
+
+# The ref being pushed is what gets checked, not the clean HEAD the operator happens to sit on.
+case_ship_checks_pushed_ref() {
+  mkrepo_remote main; new_log
+  _git checkout -q -b feat/x >/dev/null 2>&1
+  printf 'Lane: normal\n' > "$ROOT/docs/specs/SPEC-001-x.md"; _commit "chore: spec"
+  _git checkout -q -b feat/evil main >/dev/null 2>&1
+  mkdir -p "$ROOT/auth"; echo x > "$ROOT/auth/c.ts"; _commit "chore: evil"
+  _git checkout -q feat/x >/dev/null 2>&1
+  record_gates $NORMAL_GATES
+  HOOK_CMD="git push origin feat/evil" run_hook
+  if [ "$HOOK_RC" = 2 ] && printf '%s' "$HOOK_ERR" | grep -qF "no spec found for 'evil'"; then pass ship-checks-pushed-ref
+  else fail ship-checks-pushed-ref "rc=$HOOK_RC err=$HOOK_ERR"; fi
+}
+
+# The suggested override command is shell-quoted, so a slug with a metacharacter stays one word.
+case_ship_slug_quoted() {
+  ship_fixture migration none
+  _git checkout -q -b 'feat/a;b' >/dev/null 2>&1
+  HOOK_CMD="git push -u origin 'feat/a;b'" run_hook
+  if [ "$HOOK_RC" = 2 ] && printf '%s' "$HOOK_ERR" | grep -qF 'override a\;b <phase>'; then pass ship-slug-quoted
+  else fail ship-slug-quoted "rc=$HOOK_RC err=$HOOK_ERR"; fi
+}
+
 # ---------------------------------------------------------------------------
 run_case() {
   local fn="case_${1//-/_}"
@@ -510,7 +589,7 @@ run_case() {
 }
 # `parity` (byte-identical against the baseline) holds only at the refactor commit; after the
 # flip the standing check is parity-after-flip.
-ALL="parity-after-flip plan-flip four-false-hits webhook-signature-suggests suggest-records explain-suggest-line classify-files-full escalate-suggest floor-paths floor-rename-counts-both-sides floor-data-loss floor-extra-paths-union floor-invalid-extra-ere override-drop-review override-uncommitted override-typo override-no-light pinned-root malformed-array-fails-closed policy-at-base ship-migration-blocks ship-migration-absent-quiet ship-switch-off-on-base ship-flip-gate-in-pr ship-hollow-full-override ship-data-loss ship-no-spec-advisory ship-suggest-advisory workflow-view floor-timing floor-non-ascii hook-timeout floor-submodule override-empty-phases ship-operator-hollow-full"
+ALL="parity-after-flip plan-flip four-false-hits webhook-signature-suggests suggest-records explain-suggest-line classify-files-full escalate-suggest floor-paths floor-rename-counts-both-sides floor-data-loss floor-extra-paths-union floor-invalid-extra-ere override-drop-review override-uncommitted override-typo override-no-light pinned-root malformed-array-fails-closed policy-at-base ship-migration-blocks ship-migration-absent-quiet ship-switch-off-on-base ship-flip-gate-in-pr ship-hollow-full-override ship-data-loss ship-no-spec-blocks ship-suggest-advisory workflow-view floor-timing floor-non-ascii hook-timeout floor-submodule override-empty-phases ship-operator-hollow-full ship-push-forms ship-base-is-origin-head ship-checks-pushed-ref ship-slug-quoted"
 if [ "$#" -eq 0 ]; then set -- $ALL; fi
 for c in "$@"; do run_case "$c"; done
 [ "$FAILS" -eq 0 ]
