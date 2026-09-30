@@ -152,6 +152,10 @@ case "$sub" in
               val="${val//%REMERGE_TIP%/$real_oid}"
               sq_oid="$(git -C "$GH_STUB_LAND_REPO" rev-parse "${GH_STUB_SQUASH_BRANCH:-feat/union-squash}" 2>/dev/null)"
               val="${val//%SQUASH_TIP%/$sq_oid}"
+              # %REMOTE_HEAD% is the remote's own branch tip: what GitHub reports as the
+              # PR head once a foreign push has landed on the branch behind our merge.
+              rh_oid="$(git -C "${GH_STUB_LAND_REMOTE:-.}" rev-parse "${GH_STUB_LAND_BRANCH:-feat/union}" 2>/dev/null)"
+              val="${val//%REMOTE_HEAD%/$rh_oid}"
             fi
             # %CARRY_TIP% is the newest wrap/stray-* branch (by name, so by stamp) on the
             # carry-autoland fixture's bare origin: that branch exists only once apply pushes it.
@@ -7176,6 +7180,50 @@ chk "land-merge: still-pending left the merge commit on origin" \
   "$([ "$(git -C "$TMPD/ld-bare-chkpend" rev-parse feat/land)" = "$MOID" ]; echo $?)"
 chk "land-merge: still-pending never merged the PR" \
   "$([ "$(git -C "$TMPD/ld-bare-chkpend" rev-parse main)" != "$MOID" ]; echo $?)"
+
+echo "--- land-merge: a push that landed under a foreign commit reads as landed"
+# The shim lands the real push, lands a foreign commit on top of it, then reports
+# failure -- the dropped-connection case where a second writer raced in. ls-remote
+# shows a head that is neither the merge commit nor the old tip, but the merge commit
+# is its ancestor, so the cycle calls it landed and the PR re-read names the foreign
+# head instead of crying PUSH REFUSED.
+build_land_reg fpush
+LWT="$(cd "$TMPD/ld-repo-fpush/wt" && pwd -P)"
+LTIP="$(git -C "$LWT" rev-parse HEAD)"
+land_adv_regen fpush o
+mkdir -p "$TMPD/gshim-fpush"
+cat > "$TMPD/gshim-fpush/git" <<SH
+#!/usr/bin/env bash
+for a in "\$@"; do case "\$a" in HEAD:refs/heads/*) hit=1 ;; esac; done
+if [ -n "\${hit:-}" ]; then
+  "$REAL_GIT_BIN" "\$@" || exit 1
+  f="$TMPD/fadv-fpush"; rm -rf "\$f"
+  "$REAL_GIT_BIN" clone -q "$TMPD/ld-bare-fpush" "\$f"
+  "$REAL_GIT_BIN" -C "\$f" config user.email t@t; "$REAL_GIT_BIN" -C "\$f" config user.name t; "$REAL_GIT_BIN" -C "\$f" config commit.gpgsign false
+  "$REAL_GIT_BIN" -C "\$f" checkout -q -b feat/land origin/feat/land
+  echo foreign > "\$f/foreign.txt"; "$REAL_GIT_BIN" -C "\$f" add foreign.txt
+  "$REAL_GIT_BIN" -C "\$f" commit -qm "a foreign commit"
+  "$REAL_GIT_BIN" -C "\$f" push -q origin feat/land
+  exit 1
+fi
+exec "$REAL_GIT_BIN" "\$@"
+SH
+chmod +x "$TMPD/gshim-fpush/git"
+: > "$GH_STUB_CALLS"; rm -f "$GH_STUB_CALLS".*
+out="$(PATH="$TMPD/gshim-fpush:$PATH" GH_STUB_OPEN_PRS='[]' GH_STUB_CREATE_NUM=42 \
+  GH_STUB_MERGE_FAILS=1 GH_STUB_MERGE_ERR='Pull Request is not mergeable' \
+  GH_STUB_PR_42="$(lm_conf 42 "$LTIP")" \
+  GH_STUB_PR_42_2='{"number":42,"title":"x","headRefName":"feat/land","baseRefName":"main","mergeable":"MERGEABLE","mergeStateStatus":"CLEAN","statusCheckRollup":[],"headRefOid":"%REMOTE_HEAD%"}' \
+  KIT_WRAP_CI_GRACE_SECS=0 KIT_WRAP_CARRY_CHECKS_SECS=0 \
+  GH_STUB_LAND_REPO="$LWT" GH_STUB_LAND_REMOTE="$TMPD/ld-bare-fpush" \
+  GH_STUB_LAND_BRANCH=feat/land GH_STUB_LAND_DEF=main "$WRAP" land "$LWT" 2>&1)"; rc=$?
+MOID="$(git -C "$LWT" rev-parse HEAD 2>/dev/null)"
+chk "land-merge: landed-under-foreign exits 2" "$([ "$rc" -eq 2 ]; echo $?)"
+chk_has "land-merge: the re-read reports the foreign head" "$out" "another writer pushed"
+chk_no "land-merge: a landed push is no PUSH REFUSED" "$out" "PUSH REFUSED"
+chk "land-merge: the landed merge commit was not undone" \
+  "$([ -n "$MOID" ] && [ "$MOID" != "$LTIP" ] \
+     && git -C "$TMPD/ld-bare-fpush" merge-base --is-ancestor "$MOID" feat/land 2>/dev/null; echo $?)"
 
 echo "--- merge-cycle: a FEATURES conflict re-merges, pushes and the PR merges"
 # The same cycle land runs, reached through `wrap merge --apply`: today this aborted on

@@ -4044,7 +4044,17 @@ _push_ff() {
   case "$remote" in
     "$MERGED_OID") return 0 ;;
     "$tip") echo "     PUSH REFUSED: git push exited ${rc}; origin still holds $(_short "$tip")" ;;
-    *) echo "     PUSH REFUSED: ${branch} on origin moved to $(_short "$remote")" ;;
+    *)
+      # A push can land and the answer still come back failed (dropped connection,
+      # gateway timeout). A remote head that descends from our merge commit is that
+      # case: the merge is on origin under a later foreign commit. Fetched by sha,
+      # not by ref: ls-remote's answer is the proof, and a named ref could move
+      # again between the two reads.
+      if git -C "$wt" fetch -q origin "$remote" 2>/dev/null \
+         && git -C "$wt" merge-base --is-ancestor "$MERGED_OID" "$remote" 2>/dev/null; then
+        return 0
+      fi
+      echo "     PUSH REFUSED: ${branch} on origin moved to $(_short "$remote")" ;;
   esac
   _undo_local "$wt" "$branch" "$tip"
 }
