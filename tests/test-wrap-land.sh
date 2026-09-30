@@ -1526,7 +1526,8 @@ done
 printf '%s\n' "\${sub:-?}" >> "$TMPD/glog-sigp"
 if [ "\$sub" = "merge-base" ]; then
   n=\$(( \$(cat "$TMPD/gcnt-sigp" 2>/dev/null || echo 0) + 1 )); echo "\$n" > "$TMPD/gcnt-sigp"
-  [ "\$n" = "2" ] && kill -TERM "\$PPID" 2>/dev/null
+  # The 1st and 2nd merge-base calls are the landed-branch proof's ancestor and absorbed reads.
+  [ "\$n" = "4" ] && kill -TERM "\$PPID" 2>/dev/null
 fi
 exec "$REAL_GIT_BIN" "\$@"
 SH
@@ -1686,6 +1687,263 @@ chk "land-merge: trailing --verify exits 64" "$([ "$rc" -eq 64 ]; echo $?)"
 chk "land-merge: the usage text documents --verify" \
   "$(sed -n '2,31p' "$WRAP" | grep -q -- '--verify'; echo $?)"
 
+
+
+# ===========================================================================
+echo "=== land: a branch already landed on the default branch is recognized (SPEC-376) ==="
+# ===========================================================================
+# A git shim forces ONE subcommand (matched on an argv substring) to a chosen exit code and
+# execs the real git for everything else, so a read that cannot fail on a local remote
+# (ls-remote, fetch) can be made to fail the way a network or auth error does.
+REAL_GIT="$(command -v git)"; export REAL_GIT
+mkdir -p "$TMPD/gitshim" "$TMPD/gitlate"
+cat > "$TMPD/gitshim/git" <<'SHIM'
+#!/usr/bin/env bash
+args=("$@"); i=0
+while [ "$i" -lt "$#" ]; do
+  case "${args[$i]}" in -C|-c) i=$((i + 2)) ;; -*) i=$((i + 1)) ;; *) break ;; esac
+done
+if [ "${args[$i]:-}" = "${SHIM_SUB:-}" ] && [[ " $* " == *"${SHIM_MATCH:-}"* ]]; then
+  echo "shim: forced ${SHIM_SUB} failure" >&2; exit "${SHIM_RC:-1}"
+fi
+exec "$REAL_GIT" "$@"
+SHIM
+# The late shim commits into $LATE_WT while `pull` runs: after the proof and the origin read,
+# before the removal, which is the window the tidy's own recheck exists for. It also dirties
+# $DIRTY_WT while the proof's ancestor probe runs, the window the first recheck covers.
+cat > "$TMPD/gitlate/git" <<'SHIM'
+#!/usr/bin/env bash
+args=("$@"); i=0
+while [ "$i" -lt "$#" ]; do
+  case "${args[$i]}" in -C|-c) i=$((i + 2)) ;; -*) i=$((i + 1)) ;; *) break ;; esac
+done
+if [ "${args[$i]:-}" = "merge-base" ] && [[ " $* " == *" --is-ancestor "* ]] && [ -n "${DIRTY_WT:-}" ]; then
+  echo x > "$DIRTY_WT/dirty.txt"
+fi
+if [ "${args[$i]:-}" = "pull" ] && [ -n "${LATE_WT:-}" ]; then
+  echo late > "$LATE_WT/late.txt"; "$REAL_GIT" -C "$LATE_WT" add -A
+  "$REAL_GIT" -C "$LATE_WT" commit -qm "late change"
+fi
+exec "$REAL_GIT" "$@"
+SHIM
+chmod +x "$TMPD/gitshim/git" "$TMPD/gitlate/git"
+
+# land_squashed <name> [--gh|--repush] -- a land fixture whose branch is pushed, and whose
+# content reached origin/main as a SQUASH: a new commit with the branch's net change, no
+# ancestry to the branch. Bare mode: nothing else landed since (the absorbed proof holds).
+# --gh: one more commit edits the same path afterwards (absorbed fails; gh's record is the
+# proof). --repush: the branch carries one more commit than what squashed.
+land_squashed() {
+  local name="$1" mode="${2:-}" wt="$TMPD/ld-repo-$1/wt" adv
+  if [ "$mode" = "--repush" ]; then build_land "$name" "" feat/land "feat: b" "feat: c"
+  else build_land "$name"; fi
+  git -C "$wt" push -q origin feat/land
+  land_adv "$name"
+  adv="$TMPD/ld-adv-$name"
+  if [ "$mode" = "--repush" ]; then echo "line 1" > "$adv/multi.txt"
+  else echo "pr change" > "$adv/pr-file.txt"; fi
+  git -C "$adv" add -A; git -C "$adv" commit -qm "squash of the branch"
+  if [ "$mode" = "--gh" ]; then
+    echo "later edit" >> "$adv/pr-file.txt"; git -C "$adv" add -A; git -C "$adv" commit -qm "later change"
+  fi
+  git -C "$adv" push -q origin main
+}
+merged_json() { # merged_json <head oid> -- gh's one merged-PR record into main
+  printf '[{"headRefOid":"%s","baseRefName":"main","mergedAt":"2026-09-30T00:00:00Z"}]' "$1"
+}
+
+echo "--- TA1: a zero-commit worktree still refuses at ahead == 0, untouched"
+build_land tafresh
+LWT_TA1="$(cd "$TMPD/ld-repo-tafresh/wt" && pwd -P)"
+git -C "$LWT_TA1" reset -q --hard origin/main
+out="$("$WRAP" land "$LWT_TA1" 2>&1)"; rc=$?
+chk "TA1: a zero-commit worktree exits 1" "$([ "$rc" -eq 1 ]; echo $?)"
+chk_has "TA1: names the missing commits" "$out" "has no commits ahead of origin/main"
+chk_no "TA1: never reaches the landed path" "$out" "already landed"
+chk "TA1: the worktree is still there" "$([ -d "$LWT_TA1" ]; echo $?)"
+
+echo "--- TA3: ahead reads full refs, so a tag named origin/main cannot fake a zero count"
+build_land tatag
+LWT_TA3="$(cd "$TMPD/ld-repo-tatag/wt" && pwd -P)"
+git -C "$LWT_TA3" tag origin/main HEAD 2>/dev/null
+out="$(GH_STUB_OPEN_PRS='[]' GH_STUB_CREATE_NUM=43 GH_STUB_LAND_REPO="$LWT_TA3" GH_STUB_LAND_REMOTE="$TMPD/ld-bare-tatag" \
+  GH_STUB_LAND_BRANCH=feat/land GH_STUB_LAND_DEF=main "$WRAP" land "$LWT_TA3" 2>&1)"; rc=$?
+chk_no "TA3: a shadowing tag never reads as no commits ahead" "$out" "has no commits ahead"
+chk_has "TA3: the branch is pushed" "$out" "pushed feat/land"
+
+echo "--- TA2: an ancestor-shaped proof is treated as no proof at this call site"
+build_land taanc
+LWT_TA2="$(cd "$TMPD/ld-repo-taanc/wt" && pwd -P)"
+out="$(GH_STUB_OPEN_PRS='[]' GH_STUB_CREATE_NUM=44 GH_STUB_LAND_REPO="$LWT_TA2" GH_STUB_LAND_REMOTE="$TMPD/ld-bare-taanc" \
+  GH_STUB_LAND_BRANCH=feat/land GH_STUB_LAND_DEF=main bash -c \
+  'f="$1"; w="$2"; set --; source "$f"; _merge_proof() { printf "ancestor of origin/main\n"; }; cmd_land "$w"' \
+  _ "$KIT_DIR/lib/wrap/wrap.sh" "$LWT_TA2" 2>&1)"; rc=$?
+chk_no "TA2: an ancestor proof never prints already landed" "$out" "already landed"
+chk_has "TA2: land takes the unchanged path and opens the PR" "$out" "opened PR #44"
+
+echo "--- TB1: the origin ref GitHub already deleted reads as gone, never FAILED delete"
+build_land tb1
+LWT_TB1="$(cd "$TMPD/ld-repo-tb1/wt" && pwd -P)"
+out="$(GH_STUB_OPEN_PRS='[]' GH_STUB_CREATE_NUM=45 GH_STUB_LAND_REPO="$LWT_TB1" GH_STUB_LAND_REMOTE="$TMPD/ld-bare-tb1" \
+  GH_STUB_LAND_BRANCH=feat/land GH_STUB_LAND_DEF=main GH_STUB_MERGE_DELETES_BRANCH=1 "$WRAP" land "$LWT_TB1" 2>&1)"; rc=$?
+chk "TB1: land exits 0" "$rc"
+chk_has "TB1: the missing origin ref is reported gone" "$out" "feat/land already gone from origin"
+chk_no "TB1: never FAILED delete" "$out" "FAILED delete"
+chk "TB1: the worktree is removed" "$([ ! -e "$LWT_TB1" ]; echo $?)"
+
+echo "--- TB2: an ls-remote failure other than exit 2 is never read as gone"
+build_land tb2
+LWT_TB2="$(cd "$TMPD/ld-repo-tb2/wt" && pwd -P)"
+out="$(PATH="$TMPD/gitshim:$PATH" SHIM_SUB=ls-remote SHIM_MATCH="refs/heads/feat/land" SHIM_RC=1 \
+  GH_STUB_OPEN_PRS='[]' GH_STUB_CREATE_NUM=46 GH_STUB_LAND_REPO="$LWT_TB2" GH_STUB_LAND_REMOTE="$TMPD/ld-bare-tb2" \
+  GH_STUB_LAND_BRANCH=feat/land GH_STUB_LAND_DEF=main GH_STUB_MERGE_DELETES_BRANCH=1 "$WRAP" land "$LWT_TB2" 2>&1)"; rc=$?
+chk_has "TB2: the delete is still attempted and reported failed" "$out" "FAILED delete feat/land on origin"
+chk_no "TB2: never called gone" "$out" "already gone from origin"
+
+echo "--- TC1: content already on origin/main, no PR opened, no push, clean tidy"
+land_squashed tc1
+LREPO_TC1="$TMPD/ld-repo-tc1"; LWT_TC1="$(cd "$LREPO_TC1/wt" && pwd -P)"
+: > "$GH_STUB_CALLS"
+out="$("$WRAP" land "$LWT_TC1" 2>&1)"; rc=$?
+CALLS_TC1="$(cat "$GH_STUB_CALLS")"
+chk "TC1: land exits 0" "$rc"
+chk_has "TC1: reports the absorbed proof" "$out" "already landed: content already on origin/main; nothing to push, no PR opened"
+chk_no "TC1: never calls pr create" "$CALLS_TC1" "pr create"
+chk_no "TC1: never pushes the branch" "$out" "pushed feat/land"
+chk_has "TC1: deletes the matching origin branch" "$out" "deleted feat/land on origin"
+chk "TC1: the origin branch is gone" \
+  "$(git -C "$TMPD/ld-bare-tc1" rev-parse --verify feat/land >/dev/null 2>&1 && echo 1 || echo 0)"
+chk "TC1: the worktree is removed" "$([ ! -e "$LWT_TC1" ]; echo $?)"
+chk "TC1: the local branch is deleted" \
+  "$(git -C "$LREPO_TC1" rev-parse --verify feat/land >/dev/null 2>&1 && echo 1 || echo 0)"
+
+echo "--- TC2: a later edit to the same path, gh's squash record is the proof"
+land_squashed tc2 --gh
+LREPO_TC2="$TMPD/ld-repo-tc2"; LWT_TC2="$(cd "$LREPO_TC2/wt" && pwd -P)"
+LTIP_TC2="$(git -C "$LWT_TC2" rev-parse HEAD)"
+: > "$GH_STUB_CALLS"
+out="$(GH_STUB_MERGED_feat_land="$(merged_json "$LTIP_TC2")" "$WRAP" land "$LWT_TC2" 2>&1)"; rc=$?
+chk "TC2: land exits 0" "$rc"
+chk_has "TC2: reports the gh squash proof" "$out" "already landed: squash-merged per gh"
+chk_no "TC2: never calls pr create" "$(cat "$GH_STUB_CALLS")" "pr create"
+chk_has "TC2: deletes the origin branch" "$out" "deleted feat/land on origin"
+chk "TC2: the worktree is removed" "$([ ! -e "$LWT_TC2" ]; echo $?)"
+
+echo "--- TC4: re-pushed with a commit past what merged still opens a fresh PR"
+land_squashed tc4 --repush
+LREPO_TC4="$TMPD/ld-repo-tc4"; LWT_TC4="$(cd "$LREPO_TC4/wt" && pwd -P)"
+OLD_TC4="$(git -C "$LWT_TC4" rev-parse HEAD~1)"
+: > "$GH_STUB_CALLS"
+out="$(GH_STUB_MERGED_feat_land="$(merged_json "$OLD_TC4")" GH_STUB_OPEN_PRS='[]' GH_STUB_CREATE_NUM=47 \
+  GH_STUB_LAND_REPO="$LWT_TC4" GH_STUB_LAND_REMOTE="$TMPD/ld-bare-tc4" GH_STUB_LAND_BRANCH=feat/land GH_STUB_LAND_DEF=main \
+  "$WRAP" land "$LWT_TC4" 2>&1)"; rc=$?
+chk_no "TC4: never claims the branch landed" "$out" "already landed"
+chk_has "TC4: opens a PR for the new commit" "$(cat "$GH_STUB_CALLS")" "pr create"
+chk_has "TC4: reports the new PR" "$out" "opened PR #47"
+
+echo "--- TC5: a failed open-PR lookup refuses BEFORE the branch is pushed"
+build_land tc5
+LWT_TC5="$(cd "$TMPD/ld-repo-tc5/wt" && pwd -P)"
+out="$(GH_STUB_LIST_RC=1 "$WRAP" land "$LWT_TC5" 2>&1)"; rc=$?
+chk "TC5: exits 2" "$([ "$rc" -eq 2 ]; echo $?)"
+chk_has "TC5: names the lookup" "$out" "open-PR lookup for feat/land failed"
+chk "TC5: origin never received the branch" \
+  "$(git -C "$TMPD/ld-bare-tc5" rev-parse --verify feat/land >/dev/null 2>&1 && echo 1 || echo 0)"
+
+echo "--- TD1: the origin branch already gone is fine, no delete attempted"
+land_squashed td1
+LWT_TD1="$(cd "$TMPD/ld-repo-td1/wt" && pwd -P)"
+git -C "$TMPD/ld-bare-td1" update-ref -d refs/heads/feat/land
+out="$("$WRAP" land "$LWT_TD1" 2>&1)"; rc=$?
+chk "TD1: land exits 0" "$rc"
+chk_has "TD1: still reports already landed" "$out" "already landed: content already on origin/main"
+chk_has "TD1: reports the ref gone from origin" "$out" "feat/land already gone from origin"
+chk_no "TD1: never FAILED delete" "$out" "FAILED delete"
+chk "TD1: the worktree is removed" "$([ ! -e "$LWT_TD1" ]; echo $?)"
+
+echo "--- TD2: origin's branch moved past the proven tip: refuse, touch nothing"
+land_squashed td2
+LREPO_TD2="$TMPD/ld-repo-td2"; LWT_TD2="$(cd "$LREPO_TD2/wt" && pwd -P)"
+LTIP_TD2="$(git -C "$LWT_TD2" rev-parse HEAD)"
+git clone -q "$TMPD/ld-bare-td2" "$TMPD/ld-third-td2"; gitc "$TMPD/ld-third-td2"
+git -C "$TMPD/ld-third-td2" checkout -q feat/land
+echo "pushed elsewhere" > "$TMPD/ld-third-td2/extra.txt"
+git -C "$TMPD/ld-third-td2" add -A; git -C "$TMPD/ld-third-td2" commit -qm "someone else"
+git -C "$TMPD/ld-third-td2" push -q origin feat/land
+OTHER_TD2="$(git -C "$TMPD/ld-bare-td2" rev-parse feat/land)"
+out="$("$WRAP" land "$LWT_TD2" 2>&1)"; rc=$?
+chk "TD2: exits 2" "$([ "$rc" -eq 2 ]; echo $?)"
+chk_has "TD2: names the origin sha" "$out" "${OTHER_TD2:0:7}"
+chk_has "TD2: says differs from the proven tip" "$out" "differs from the proven ${LTIP_TD2:0:7}"
+chk_no "TD2: never claims already landed" "$out" "already landed"
+chk "TD2: origin's branch is untouched" "$([ "$(git -C "$TMPD/ld-bare-td2" rev-parse feat/land)" = "$OTHER_TD2" ]; echo $?)"
+chk "TD2: the worktree and branch stay" "$([ -d "$LWT_TD2" ] && git -C "$LREPO_TD2" rev-parse --verify -q feat/land >/dev/null; echo $?)"
+
+echo "--- TD3: a failed origin read fails CLOSED"
+land_squashed td3
+LREPO_TD3="$TMPD/ld-repo-td3"; LWT_TD3="$(cd "$LREPO_TD3/wt" && pwd -P)"
+out="$(PATH="$TMPD/gitshim:$PATH" SHIM_SUB=ls-remote SHIM_MATCH="refs/heads/feat/land" SHIM_RC=1 \
+  "$WRAP" land "$LWT_TD3" 2>&1)"; rc=$?
+chk "TD3: exits 2" "$([ "$rc" -eq 2 ]; echo $?)"
+chk_has "TD3: says the origin branch could not be confirmed" "$out" "origin/feat/land could not be confirmed"
+chk_no "TD3: never claims already landed" "$out" "already landed"
+chk "TD3: origin's branch is untouched" "$(git -C "$TMPD/ld-bare-td3" rev-parse --verify feat/land >/dev/null 2>&1; echo $?)"
+chk "TD3: the worktree and branch stay" "$([ -d "$LWT_TD3" ] && git -C "$LREPO_TD3" rev-parse --verify -q feat/land >/dev/null; echo $?)"
+
+echo "--- TD5: a failed fetch skips the proof check and takes the unchanged path"
+land_squashed td5
+LWT_TD5="$(cd "$TMPD/ld-repo-td5/wt" && pwd -P)"
+# The clone already knows the squash, so a skipped check is the only thing keeping the
+# absorbed proof from firing off cached refs.
+git -C "$TMPD/ld-repo-td5" fetch -q origin
+: > "$GH_STUB_CALLS"
+out="$(PATH="$TMPD/gitshim:$PATH" SHIM_SUB=fetch SHIM_MATCH=" origin main" SHIM_RC=1 GH_STUB_OPEN_PRS='[]' GH_STUB_CREATE_NUM=48 \
+  "$WRAP" land "$LWT_TD5" 2>&1)"; rc=$?
+chk_no "TD5: no already landed line" "$out" "already landed"
+chk_has "TD5: the unchanged path pushes" "$out" "pushed feat/land"
+chk_has "TD5: the unchanged path opens the PR" "$(cat "$GH_STUB_CALLS")" "pr create"
+
+echo "--- TE1: a proof alongside a still-open PR reports both and refuses, touching nothing"
+land_squashed te1
+LREPO_TE1="$TMPD/ld-repo-te1"; LWT_TE1="$(cd "$LREPO_TE1/wt" && pwd -P)"
+: > "$GH_STUB_CALLS"
+out="$(GH_STUB_OPEN_HEAD_feat_land="$(open_pr_json 61 main me)" "$WRAP" land "$LWT_TE1" 2>&1)"; rc=$?
+CALLS_TE1="$(cat "$GH_STUB_CALLS")"
+chk "TE1: exits 2" "$([ "$rc" -eq 2 ]; echo $?)"
+chk_has "TE1: reports the landed proof" "$out" "already landed: content already on origin/main"
+chk_has "TE1: reports the open PR" "$out" "PR #61 still open for feat/land: left untouched"
+chk_no "TE1: never creates a PR" "$CALLS_TE1" "pr create"
+chk_no "TE1: never merges" "$CALLS_TE1" "pr merge"
+chk "TE1: the origin branch is still there" "$(git -C "$TMPD/ld-bare-te1" rev-parse --verify feat/land >/dev/null 2>&1; echo $?)"
+chk "TE1: the worktree and branch stay" "$([ -d "$LWT_TE1" ] && git -C "$LREPO_TE1" rev-parse --verify -q feat/land >/dev/null; echo $?)"
+
+echo "--- TF1: a live Agent-tool lock does not block the already-landed tidy"
+land_squashed tf1
+LREPO_TF1="$TMPD/ld-repo-tf1"; LWT_TF1="$(cd "$LREPO_TF1/wt" && pwd -P)"
+git -C "$LREPO_TF1" worktree lock --reason "claude agent test (pid $$ start x)" "$LWT_TF1"
+out="$("$WRAP" land "$LWT_TF1" 2>&1)"; rc=$?
+chk "TF1: land exits 0 despite the live lock" "$rc"
+chk_has "TF1: reports already landed" "$out" "already landed: content already on origin/main"
+chk "TF1: the locked worktree is removed" "$([ ! -e "$LWT_TF1" ]; echo $?)"
+
+echo "--- TG1: the tidy's own recheck refuses a removal when the tip moved after the proof"
+land_squashed tg1
+LREPO_TG1="$TMPD/ld-repo-tg1"; LWT_TG1="$(cd "$LREPO_TG1/wt" && pwd -P)"
+out="$(PATH="$TMPD/gitlate:$PATH" LATE_WT="$LWT_TG1" "$WRAP" land "$LWT_TG1" 2>&1)"; rc=$?
+chk "TG1: exits 2" "$([ "$rc" -eq 2 ]; echo $?)"
+chk_has "TG1: says the branch changed since it was checked" "$out" "feat/land changed since it was checked; worktree and branch left in place"
+chk "TG1: the worktree survives" "$([ -d "$LWT_TG1" ]; echo $?)"
+chk "TG1: the branch survives" "$(git -C "$LREPO_TG1" rev-parse --verify -q feat/land >/dev/null; echo $?)"
+
+echo "--- TG2: a tree that went dirty while the proof was read refuses before anything moves"
+land_squashed tg2
+LREPO_TG2="$TMPD/ld-repo-tg2"; LWT_TG2="$(cd "$LREPO_TG2/wt" && pwd -P)"
+out="$(PATH="$TMPD/gitlate:$PATH" DIRTY_WT="$LWT_TG2" "$WRAP" land "$LWT_TG2" 2>&1)"; rc=$?
+chk "TG2: exits 2" "$([ "$rc" -eq 2 ]; echo $?)"
+chk_has "TG2: says the branch changed while the proof was read" "$out" "feat/land changed while the merge proof was read"
+chk_no "TG2: never claims already landed" "$out" "already landed"
+chk "TG2: origin's branch is untouched" "$(git -C "$TMPD/ld-bare-tg2" rev-parse --verify feat/land >/dev/null 2>&1; echo $?)"
+chk "TG2: the worktree survives" "$([ -d "$LWT_TG2" ]; echo $?)"
 
 echo
 if [ "$FAIL" -gt 0 ]; then echo "test-wrap-land: $PASS passed, $FAIL FAILED of $TOTAL" >&2; exit 1; fi

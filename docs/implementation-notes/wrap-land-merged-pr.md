@@ -25,3 +25,21 @@ Deltas from SPEC-376. Nothing here repeats what the spec already states.
 - Decision/Change: the Siblings row notes #853 moved those hunks into other modules and that this spec touches only `wrap-land.sh` and `test-wrap-land.sh`. Overlap analysis was not redone.
 - Why: the new files share nothing with that branch's modules.
 - Impact: none for this build.
+
+## 2026-09-30 The removal recheck compares against the tidy's entry state, not "empty"
+- Context: the spec says `_land_tidy` re-reads `git status --porcelain` right before `worktree remove -f -f` and requires it to be empty.
+- Decision/Change: `_land_tidy` records the porcelain output on entry and the recheck requires it unchanged, plus the tip equal to the passed `$tip`. The first recheck in `cmd_land`, right after the proof, still requires an empty tree.
+- Why: the existing merge-cycle case "a merge that un-ignores an operator file" ends with an untracked file the merge just un-ignored. Land removed that worktree before this build, and an "empty" recheck would refuse it. A write made after entry still trips the comparison.
+- Impact: same protection against writes during the origin delete and the pull; no new refusal for the merge cycle's leftover file.
+
+## 2026-09-30 One existing test shim shifted by two git calls
+- Context: the pre-merge signal case in `tests/test-wrap-land.sh` kills land at the 2nd `git merge-base` call.
+- Decision/Change: the trigger moved to the 4th call. The landed-branch proof adds two `merge-base` reads (ancestor and absorbed) ahead of the merge cycle on every land whose fetch succeeds.
+- Why: the case pins "before the merge ran", and the count is the only handle the shim has.
+- Impact: none beyond the number.
+
+## 2026-09-30 Test-plan deltas
+- TC5 uses an unpushed branch, not TC1's pushed shape: with a pushed branch, "origin never received the branch" cannot tell the old push-first order from the new one.
+- TD5 fetches origin into the clone before the shim fails the next fetch, so the cached `origin/main` already holds the squash. Without that, the absorbed proof would not fire either way and the row would prove nothing.
+- Added TA3 (a tag named `origin/main` cannot fake a zero `ahead`, the full-refs fix), TG1 (tip moves during the pull, the tidy's recheck refuses) and TG2 (tree dirtied during the proof read, the first recheck refuses). TA2 runs `cmd_land` from a sourced shell with `_merge_proof` overridden to return an ancestor proof.
+- `tests/lib/wrap-stub.sh` gains `GH_STUB_MERGE_DELETES_BRANCH=1`: the merge stub deletes the head ref on the remote, standing in for GitHub's delete-branch-on-merge (TB1, TB2).
