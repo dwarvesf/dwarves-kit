@@ -3613,6 +3613,148 @@ cmd_rebase() {
   echo "not pushed: the branch history changed, so its push needs --force-with-lease"
 }
 
+# ---------------------------------------------------- merge cycle: merge, verify, push
+
+# The recovery `land` (and `merge`) runs when GitHub refuses a PR as CONFLICTING while the
+# branch is already pushed. A rebase would rewrite pushed history and force the push, so
+# the recovery is a merge: origin/<def> into the branch, only the conflict classes
+# `_rb_resolve` owns, one fast-forward push, then the caller's second merge attempt.
+# Return convention for the whole family: 0 success; 1 refused with <branch> back at <tip>,
+# no merge in progress, a clean worktree; 2 when that state could not be restored, the line
+# naming what a human runs; 5 on `_merge_default` for a refused conflict cleanly restored,
+# so a caller can word that case without parsing output; 130 on an interrupted cycle.
+# A caller never downgrades a 2 to a 1.
+MVP_HIT=""   # set by the cycle's signal handler; helpers bail the moment it is set
+MVP_RC=0     # the handler's own cleanup result; 2 turns the cycle's 130 into a 2
+MERGED_OID=""
+_MVP_WT=""; _MVP_BRANCH=""; _MVP_TIP=""; _MVP_PUSH=""
+
+# _merge_restore <wt> <branch> <tip> -- leave a stopped merge with the branch back at <tip>.
+# Reads the state, never a flag, because the trap calls it too. The worktree copies the
+# merge left changed that are NOT unmerged go back from the index (`merge --abort` owns the
+# unmerged ones), then every new untracked path is removed one `rm` at a time (the checkout
+# started clean, so none of them predates the merge), then `merge --abort`. The order is
+# load-bearing: git 2.55 refuses the abort while an auto-merged staged path has a different
+# worktree copy, which is exactly what the generator or the resolver leaves behind.
+_merge_restore() {
+  local wt="$1" branch="$2" tip="$3" p gd
+  local -a unmerged=() changed=()
+  while IFS= read -r -d '' p; do unmerged+=("$p"); done \
+    < <(git -C "$wt" diff --name-only --diff-filter=U -z 2>/dev/null)
+  while IFS= read -r -d '' p; do
+    _rb_has "$p" ${unmerged[@]+"${unmerged[@]}"} || changed+=("$p")
+  done < <(git -C "$wt" diff --name-only -z 2>/dev/null)
+  [ "${#changed[@]}" -gt 0 ] && git -C "$wt" checkout -q -- "${changed[@]}" 2>/dev/null
+  while IFS= read -r -d '' p; do rm -f -- "$wt/$p"; done \
+    < <(git -C "$wt" ls-files -o --exclude-standard -z 2>/dev/null)
+  git -C "$wt" merge --abort >/dev/null 2>&1
+  gd="$(git -C "$wt" rev-parse --path-format=absolute --git-dir 2>/dev/null)"
+  if [ "$(git -C "$wt" rev-parse HEAD 2>/dev/null)" = "$tip" ] \
+     && { [ -z "$gd" ] || [ ! -e "$gd/MERGE_HEAD" ]; } \
+     && [ -z "$(git -C "$wt" status --porcelain --untracked-files=all 2>/dev/null)" ]; then
+    echo "     aborted; ${branch} is back at $(_short "$tip")"
+    return 1
+  fi
+  echo "ABORT FAILED ${branch}: run git merge --abort in ${wt}"
+  return 2
+}
+
+# _merge_default <wt> <branch> <def> <tip> <gen> -- `git merge --no-ff --no-commit
+# origin/<def>` in a checkout that started fully clean, so every change after the merge
+# starts is the merge's or this helper's own: that is what makes the stage set and the
+# restore set exact without a before/after record. Unmerged paths go to `_rb_resolve`; a
+# refusal restores and returns 5 so the caller can word that case. The generator then runs
+# once more, so even a conflict-free merge carries a fresh generated file. The stage set is
+# explicit -- unmerged paths, worktree copies differing from the index, new untracked paths
+# -- marker-scanned, staged by name, committed with a conventional subject, then the union
+# row dedupe lands as its own commit. Every failure after the merge starts runs
+# `_merge_restore`; the dedupe failure runs `_undo_local` after the staged paths are put
+# back from HEAD. Success sets MERGED_OID.
+_merge_default() {
+  local wt="$1" branch="$2" def="$3" tip="$4" gen="$5"
+  local p gd hits rrc rout log
+  local -a unmerged=() set=() staged=()
+  [ "$(git -C "$wt" rev-parse HEAD 2>/dev/null)" = "$tip" ] \
+    || { echo "     ${branch} is not at $(_short "$tip"); nothing merged"; return 1; }
+  [ -z "$(git -C "$wt" status --porcelain --untracked-files=all 2>/dev/null)" ] \
+    || { echo "     ${wt} is dirty; nothing merged"; return 1; }
+  gd="$(git -C "$wt" rev-parse --path-format=absolute --git-dir 2>/dev/null)"
+  { [ -n "$gd" ] && [ ! -e "$gd/MERGE_HEAD" ] && [ ! -e "$gd/CHERRY_PICK_HEAD" ] \
+    && ! _rb_rebasing "$wt"; } \
+    || { echo "     a merge, rebase or cherry-pick is already in progress in ${wt}; nothing merged"; return 1; }
+  _write_guard "$wt" || { echo "     index.lock held by another writer in ${wt}"; return 1; }
+  ! git -C "$wt" merge-base --is-ancestor "origin/${def}" "$tip" 2>/dev/null \
+    || { echo "     ${branch} already contains origin/${def}; nothing to merge"; return 1; }
+
+  log="$(mktemp)" || return 1
+  _rb_git "$wt" merge --no-ff --no-commit "origin/${def}" > "$log" 2>&1
+  if [ -n "$MVP_HIT" ]; then rm -f "$log"; return 130; fi
+  if [ ! -e "$gd/MERGE_HEAD" ]; then
+    echo "FAILED ${branch}: merge origin/${def} did not start: $(grep -m1 -v '^$' "$log" 2>/dev/null)"
+    rm -f "$log"
+    _merge_restore "$wt" "$branch" "$tip"; return $?
+  fi
+  rm -f "$log"
+
+  while IFS= read -r -d '' p; do unmerged+=("$p"); done \
+    < <(git -C "$wt" diff --name-only --diff-filter=U -z 2>/dev/null)
+  if [ "${#unmerged[@]}" -gt 0 ]; then
+    rout="$(_rb_resolve "$wt" "$gen" "${unmerged[@]}")"; rrc=$?
+    if [ "$rrc" -eq 1 ]; then
+      echo "REFUSED ${branch}: ${rout}"
+      _merge_restore "$wt" "$branch" "$tip"; rrc=$?
+      [ "$rrc" -eq 1 ] && return 5
+      return "$rrc"
+    fi
+    if [ "$rrc" -ne 0 ]; then
+      echo "GENERATOR FAILED ${branch}"
+      _merge_restore "$wt" "$branch" "$tip"; return $?
+    fi
+    [ -n "$MVP_HIT" ] && return 130
+  fi
+  # A merge with no conflict still regenerates, so a listed file origin added reaches the
+  # generated file through the same run as a resolved conflict.
+  if [ -n "$gen" ] && ! ( cd "$wt" && bash "$gen" generate ) >/dev/null 2>&1; then
+    echo "GENERATOR FAILED ${branch}"
+    _merge_restore "$wt" "$branch" "$tip"; return $?
+  fi
+  [ -n "$MVP_HIT" ] && return 130
+  set=("${unmerged[@]}")
+  while IFS= read -r -d '' p; do
+    _rb_has "$p" ${set[@]+"${set[@]}"} || set+=("$p")
+  done < <(_rb_changed "$wt")
+  while IFS= read -r -d '' p; do
+    _rb_has "$p" ${set[@]+"${set[@]}"} || set+=("$p")
+  done < <(git -C "$wt" ls-files -o --exclude-standard -z 2>/dev/null)
+  if hits="$(_rb_markers "$wt" "${set[@]}")"; then
+    echo "MARKERS ${branch}: $(printf '%s' "$hits" | paste -sd, - | sed 's/,/, /g')"
+    _merge_restore "$wt" "$branch" "$tip"; return $?
+  fi
+  if ! git -C "$wt" add -- "${set[@]}" 2>/dev/null; then
+    echo "FAILED ${branch}: git add of the resolved paths"
+    _merge_restore "$wt" "$branch" "$tip"; return $?
+  fi
+  [ -n "$MVP_HIT" ] && return 130
+  # A conventional subject so a consumer's commit-msg hook accepts the merge commit the
+  # same way it accepts the fixups a rebase stop records.
+  if ! git -C "$wt" commit -q -m "chore(merge): merge origin/${def}"; then
+    echo "FAILED ${branch}: the merge commit was refused"
+    _merge_restore "$wt" "$branch" "$tip"; return $?
+  fi
+  _union_dedupe_rows "$wt" "$tip"; rrc=$?
+  [ -n "$MVP_HIT" ] && return 130
+  if [ "$rrc" -ne 0 ]; then
+    while IFS= read -r -d '' p; do staged+=("$p"); done \
+      < <(git -C "$wt" diff --cached --name-only -z 2>/dev/null)
+    [ "${#staged[@]}" -gt 0 ] \
+      && git -C "$wt" restore -q --staged --worktree --source=HEAD -- "${staged[@]}" 2>/dev/null
+    _undo_local "$wt" "$branch" "$tip"; return $?
+  fi
+  MERGED_OID="$(git -C "$wt" rev-parse HEAD 2>/dev/null)"
+  echo "     merged origin/${def} into ${branch}: ${#unmerged[@]} conflict(s) resolved, head $(_short "$MERGED_OID") (was $(_short "$tip"))"
+  return 0
+}
+
 # --------------------------------------------------------------------------- entry
 
 main() {
