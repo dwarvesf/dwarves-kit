@@ -125,6 +125,37 @@ if want size; then
   bash "$H" size "$SZ/s4.md" >/dev/null 2>&1; assert_eq "large exits 1" 1 "$?"
   bash "$H" size "$SZ/missing.md" >/dev/null 2>&1; assert_eq "missing spec exits 2" 2 "$?"
   assert_eq "spec.sh depth size forwards" small "$(bash "$KIT_DIR/lib/spec/spec.sh" depth size "$SZ/s3.md" 2>/dev/null | awk '{print $1}')"
+  # counter formats: each task shape counts, a stray fence cannot hide tasks, CR is stripped
+  hdr() { printf '# Spec: size fixture\nGenerated: 2026-10-01\nStatus: DRAFT\nLane: normal\nDepth: standard (one file)\n\n## Tasks\n\n'; }
+  tn() { bash "$H" size "$SZ/$1.md" 2>/dev/null | grep -o 'tasks=[0-9]*'; }
+  { hdr; for i in 1 2 3 4; do printf '### TASK-%s: do it\n\nbody\n\n' "$i"; done; } > "$SZ/heading.md"
+  assert_eq "### TASK-N headings are counted" "tasks=4" "$(tn heading)"
+  assert_eq "4 heading tasks read large" large "$(sz heading)"
+  { hdr; for i in 1 2 3 4; do printf -- '- [ ] **TASK-%s**: do it\n' "$i"; done; } > "$SZ/bold.md"
+  assert_eq "- [ ] **TASK-N** bold checkboxes are counted" "tasks=4" "$(tn bold)"
+  { hdr; for i in 1 2 3 4; do printf -- '  - [ ] TASK-%s: do it\n' "$i"; done; } > "$SZ/indent.md"
+  assert_eq "indented - [ ] TASK-N is counted" "tasks=4" "$(tn indent)"
+  assert_eq "4 indented tasks read large" large "$(sz indent)"
+  { hdr; printf '```\n- [ ] TASK-9: stray unclosed fence\n\n'; for i in 1 2 3 4; do printf -- '- [ ] TASK-%s: do it\n' "$i"; done; } > "$SZ/unclosed.md"
+  assert_eq "an unclosed fence does not hide tasks (count everything)" "tasks=5" "$(tn unclosed)"
+  assert_eq "unclosed-fence spec reads large" large "$(sz unclosed)"
+  { hdr; printf -- '- [ ] TASK-1: real\n~~~\n- [ ] TASK-8: tilde example\n- [ ] TASK-9: tilde example\n~~~\n- [ ] TASK-2: real\n'; } > "$SZ/tilde.md"
+  assert_eq "~~~ fences hide their example tasks" "tasks=2" "$(tn tilde)"
+  { hdr; printf -- '- [ ] TASK-1: real\n~~~\n```\n- [ ] TASK-8: nested\n```\n~~~\n- [ ] TASK-2: real\n'; } > "$SZ/nested.md"
+  assert_eq "a backtick fence inside a ~~~ fence does not close it" "tasks=2" "$(tn nested)"
+  { hdr; for i in 1 2 3 4; do printf -- '- [ ] TASK-%s: do it\r\n' "$i"; done; printf '```\r\n- [ ] TASK-9: fenced\r\n```\r\n'; } > "$SZ/crlf.md"
+  assert_eq "CRLF file: tasks counted, CRLF fence still hides its example" "tasks=4" "$(tn crlf)"
+  { hdr; printf -- '- [ ] TASK-1: a\n- [ ] TASK-2: b\n\n| # | Task | Files |\n|---|---|---|\n| T3 | c | f |\n| T4 | d | f |\n'; } > "$SZ/mixed.md"
+  assert_eq "mixed: two checkboxes plus a numbered table count 4" "tasks=4" "$(tn mixed)"
+  assert_eq "mixed-format spec reads large" large "$(sz mixed)"
+  { hdr; printf -- '- [ ] TASK-1: a\n### TASK-2: b\n- [ ] **TASK-3**: c\n  - [ ] TASK-4: d\n'; } > "$SZ/mixed2.md"
+  assert_eq "mixed: checkbox, heading, bold, indented count 4" "tasks=4" "$(tn mixed2)"
+  # the kit's own specs write T1 / T2a labels (no TASK- prefix): `| T1: x |` rows and `- [ ] T1a: x` boxes
+  { hdr; printf '| Task | Files |\n|---|---|\n| T1: a | f |\n| T2a: b | f |\n| T2b: c | f |\n'; } > "$SZ/tcolon.md"
+  assert_eq "| T1: x | table rows are counted" "tasks=3" "$(tn tcolon)"
+  assert_eq "3 T-label rows read small" small "$(sz tcolon)"
+  { hdr; printf -- '- [ ] T1a: a\n- [x] T1b: b\n  - [ ] T2: c\n- [ ] T3: d\n'; } > "$SZ/tbox.md"
+  assert_eq "- [ ] T1a: x checkboxes are counted" "tasks=4" "$(tn tbox)"
   mv -f "$SZ" "${TMPDIR:-/tmp}/spec-depth-size.done" 2>/dev/null
 fi
 

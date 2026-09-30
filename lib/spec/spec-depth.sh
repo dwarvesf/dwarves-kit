@@ -144,10 +144,27 @@ cmd_check() {
   return 1
 }
 
-# Tasks outside fenced blocks: a `- [ ] TASK-x` checkbox line or a `| T1 |` / `| TASK-x |` table row.
+# Tasks outside fenced blocks: a `- [ ] TASK-x` / `- [ ] T1a:` checkbox (plain, bold, or indented), a
+# `### TASK-x` heading, or a `| T1 |` / `| T1: x |` / `| TASK-x |` table row. Fences are ``` or ~~~ (a closer matches its opener).
+# An odd number of fence lines means one is unclosed; then fence state is ignored so a stray fence
+# cannot hide real tasks (over-counting only ever makes a spec read large, the safe side).
 count_tasks() {
-  awk '/^```/{f=!f; next} f{next}
-    /^- \[[ xX]\] TASK-/ {n++} /^\| *(TASK-[A-Za-z0-9]+|T[0-9]+) *\|/ {n++} END{print n+0}' "$1"
+  tr -d '\r' < "$1" | awk '
+    { line[NR] = $0; if ($0 ~ /^[[:space:]]*(```|~~~)/) nf++ }
+    END {
+      ignore = (nf % 2 == 1); open = ""
+      for (i = 1; i <= NR; i++) {
+        l = line[i]
+        if (!ignore && l ~ /^[[:space:]]*(```|~~~)/) {
+          m = (l ~ /^[[:space:]]*```/) ? "`" : "~"
+          if (open == "") open = m; else if (open == m) open = ""
+          continue
+        }
+        if (open != "") continue
+        if (l ~ /^[[:space:]]*- \[[ xX]\] (\*\*)?(TASK-|T[0-9]+[a-z]?[: *])/ || l ~ /^#+ (TASK-|T[0-9]+[a-z]?[: ])/ || l ~ /^\| *(TASK-[A-Za-z0-9]+|T[0-9]+[a-z]?) *[:|]/) n++
+      }
+      print n + 0
+    }'
 }
 
 cmd_size() {
