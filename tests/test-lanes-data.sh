@@ -412,6 +412,60 @@ case_workflow_view() {
   [ -z "$bad" ] && pass workflow-view || fail workflow-view "$bad"
 }
 
+# The hook times out fast and fails open, so the floor must stay flat as the diff grows:
+# 1000 changed paths with the hard path LAST, extras configured, run under one second.
+_now() { python3 -c 'import time;print(time.time())'; }
+case_floor_timing() {
+  mkrepo
+  printf '[gate]\nlane_gates = true\n[lanes]\nextra_hard_paths = "^payments/|^ledger/"\n' > "$ROOT/.kit.toml"; _commit "chore: extras"
+  _git branch -q timebase >/dev/null 2>&1
+  mkdir -p "$ROOT/pad" "$ROOT/zz/auth"
+  local i; for i in $(seq 1 1000); do echo "$i" > "$ROOT/pad/f$i.txt"; done
+  echo x > "$ROOT/zz/auth/z.ts"; echo 'x = 1' > "$ROOT/pad/code.py"
+  _commit "chore: padding"
+  local t0 t1 out; t0="$(_now)"; out="$(lcx floor "$ROOT" timebase 2>/dev/null)"; t1="$(_now)"
+  local ms; ms="$(python3 -c "print(int(($t1-$t0)*1000))")"
+  if [ "$out" = "full auth: zz/auth/z.ts" ] && [ "$ms" -lt 1000 ]; then pass "floor-timing (${ms}ms for 1000 paths)"
+  else fail floor-timing "out='$out' elapsed=${ms}ms (limit 1000ms)"; fi
+}
+
+# Non-ASCII names must be matched as written (no C-quoted octal), including in added-line scans.
+case_floor_non_ascii() {
+  local bad="" out p
+  for p in "secrets/naïve.txt" "clé.pem" "migrations/é.sql" "src/auth/prénom.ts"; do
+    mkrepo; addfile "$p" "x"; out="$(floor_out)"
+    case "$out" in "full "*": $p") ;; *) bad="$bad [$p => '$out']" ;; esac
+  done
+  mkrepo; echo more >> "$ROOT/README.md"; mkdir -p "$ROOT/app"; echo 'db.execute("DROP TABLE users")' > "$ROOT/app/migré.py"; _commit "chore: drop"
+  out="$(floor_out)"; case "$out" in "full data-loss: app/migré.py") ;; *) bad="$bad [DROP TABLE in migré.py => '$out']" ;; esac
+  mkrepo; mkdir -p "$ROOT/app"; echo 'db.execute("DROP TABLE users")' > "$ROOT/app/my file.py"
+  _commit "chore: spaced name"; out="$(floor_out)"
+  case "$out" in "full data-loss: app/my file.py") ;; *) bad="$bad [DROP TABLE in a spaced name => '$out']" ;; esac
+  [ -z "$bad" ] && pass floor-non-ascii || fail floor-non-ascii "$bad"
+}
+
+# The ship-gate hook must outlive the floor: a hook timeout fails open.
+case_hook_timeout() {
+  local f bad=""
+  for f in hooks/hooks.json settings.json; do
+    python3 - "$KIT_DIR/$f" <<'PY' || bad="$bad [$f]"
+import json, sys
+d = json.load(open(sys.argv[1]))
+found = []
+def walk(o):
+    if isinstance(o, dict):
+        if "ship-gate.sh" in str(o.get("command", "")):
+            found.append(o.get("timeout", 0))
+        for v in o.values(): walk(v)
+    elif isinstance(o, list):
+        for v in o: walk(v)
+walk(d)
+sys.exit(0 if found and all(t >= 30 for t in found) else 1)
+PY
+  done
+  [ -z "$bad" ] && pass hook-timeout || fail hook-timeout "ship-gate timeout under 30s in:$bad"
+}
+
 # ---------------------------------------------------------------------------
 run_case() {
   local fn="case_${1//-/_}"
@@ -419,7 +473,7 @@ run_case() {
 }
 # `parity` (byte-identical against the baseline) holds only at the refactor commit; after the
 # flip the standing check is parity-after-flip.
-ALL="parity-after-flip plan-flip four-false-hits webhook-signature-suggests suggest-records explain-suggest-line classify-files-full escalate-suggest floor-paths floor-rename-counts-both-sides floor-data-loss floor-extra-paths-union floor-invalid-extra-ere override-drop-review override-uncommitted override-typo override-no-light pinned-root malformed-array-fails-closed policy-at-base ship-migration-blocks ship-migration-absent-quiet ship-switch-off-on-base ship-flip-gate-in-pr ship-hollow-full-override ship-data-loss ship-no-spec-advisory ship-suggest-advisory workflow-view"
+ALL="parity-after-flip plan-flip four-false-hits webhook-signature-suggests suggest-records explain-suggest-line classify-files-full escalate-suggest floor-paths floor-rename-counts-both-sides floor-data-loss floor-extra-paths-union floor-invalid-extra-ere override-drop-review override-uncommitted override-typo override-no-light pinned-root malformed-array-fails-closed policy-at-base ship-migration-blocks ship-migration-absent-quiet ship-switch-off-on-base ship-flip-gate-in-pr ship-hollow-full-override ship-data-loss ship-no-spec-advisory ship-suggest-advisory workflow-view floor-timing floor-non-ascii hook-timeout"
 if [ "$#" -eq 0 ]; then set -- $ALL; fi
 for c in "$@"; do run_case "$c"; done
 [ "$FAILS" -eq 0 ]

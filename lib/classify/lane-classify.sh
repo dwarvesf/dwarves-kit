@@ -104,27 +104,37 @@ _HP_ci='(^|/)\.github/workflows/'
 _HP_kitconfig='(^|/)\.kit\.toml$'
 # Added-line signatures for data loss, checked only in non-doc files. `truncate` counts as SQL:
 # any use in a .sql file, or a statement-shaped `truncate <name>;` elsewhere.
-_HL_common='drop (table|column|database|schema)|deletemany\(\s*\{\s*\}\s*\)'
-_HL_truncate_code='\btruncate\s+(table\s+)?[a-z_."]+\s*;'
-_HL_truncate_sql='\btruncate\s+(table\s+)?[a-z_."]+'
+_HL_common='drop[[:space:]]+(table|column|database|schema)|deletemany\([[:space:]]*\{[[:space:]]*\}[[:space:]]*\)'
+_HL_truncate_code='(truncate[[:space:]]+(table[[:space:]]+)?[a-z_."]+[[:space:]]*;)'
+_HL_truncate_sql='(.*[^a-z_])?truncate[[:space:]]+(table[[:space:]]+)?[a-z_."]+'
+
+# _hp_re <kind> -- the built-in ERE for a hard-path kind.
+_HP_KINDS="migration auth secret ci kit-config"
+_hp_re() {
+  case "$1" in
+    migration) printf '%s' "$_HP_migration" ;; auth) printf '%s' "$_HP_auth" ;;
+    secret) printf '%s' "$_HP_secret" ;; ci) printf '%s' "$_HP_ci" ;;
+    kit-config) printf '%s' "$_HP_kitconfig" ;;
+  esac
+}
+# The extra_hard_paths union, loaded once per process (each load reads config and shells out).
+_EXTRA_LOADED=0; _EXTRA_LIST=""
+_load_extras() {
+  [ "$_EXTRA_LOADED" = 1 ] && return 0
+  _EXTRA_LIST="$(lane_extra_hard_paths)"; _EXTRA_LOADED=1
+}
 
 # _path_kind <path> -- print the hard-path kind a changed path hits (first match), else nothing.
 _path_kind() {
-  local f="$1" k re extra
-  for k in migration auth secret ci kitconfig; do
-    case "$k" in
-      migration) re="$_HP_migration" ;; auth) re="$_HP_auth" ;; secret) re="$_HP_secret" ;;
-      ci) re="$_HP_ci" ;; kitconfig) re="$_HP_kitconfig" ;;
-    esac
-    if printf '%s\n' "$f" | grep -Eiq -- "$re"; then
-      [ "$k" = kitconfig ] && k=kit-config
-      printf '%s' "$k"; return 0
-    fi
+  local f="$1" k extra
+  for k in $_HP_KINDS; do
+    if printf '%s\n' "$f" | grep -Eiq -- "$(_hp_re "$k")"; then printf '%s' "$k"; return 0; fi
   done
+  _load_extras
   while IFS= read -r extra; do
     [ -n "$extra" ] || continue
     if printf '%s\n' "$f" | grep -Eiq -- "$extra"; then printf 'extra'; return 0; fi
-  done < <(lane_extra_hard_paths)
+  done <<< "$_EXTRA_LIST"
   return 0
 }
 
@@ -451,43 +461,74 @@ deescalate() {
   return 0
 }
 
-# floor <root> [<base>] -- the diff floor. Prints `full <kind>: <path>` for the first hit among
-# the base..HEAD changed paths (listed with --no-renames, so both sides of a rename count) and the
-# ADDED lines (data loss), else nothing. Always exits 0. The project's lane data is read from
-# <root>. `--no-renames` mirrors lib/gate/proof-ledger.sh.
-_DOC_RE='\.(md|markdown|txt|rst|adoc)$|(^|/)docs/'
+# floor <root> [<base> [<head>]] -- the diff floor. Prints `full <kind>: <path>` for the first hit
+# among the base..head changed paths and the ADDED lines (data loss), else nothing. Always exits 0.
+# Paths come from `diff -z` with core.quotePath=false, so a non-ASCII name is matched as written and
+# never as a quoted octal string. Renames are listed with --no-renames, so both sides count
+# (as in lib/gate/proof-ledger.sh). Every kind is matched in ONE grep pass over the whole path
+# list and the added lines are scanned in ONE pass, so the cost stays flat as the diff grows (the
+# hook has a short timeout that fails open). The project's lane data is read from <root>.
+_DOC_AWK='cur ~ /\.(md|markdown|txt|rst|adoc)$/ || cur ~ /(^|\/)docs\//'
 floor() {
-  local root="${1:-}" base="${2:-}"
-  [ -n "$root" ] || { echo "usage: lane-classify.sh floor <root> [<base>]" >&2; return 64; }
+  local root="${1:-}" base="${2:-}" head="${3:-HEAD}"
+  [ -n "$root" ] || { echo "usage: lane-classify.sh floor <root> [<base> [<head>]]" >&2; return 64; }
   export KIT_PROJECT_ROOT="$root"
   [ -n "$base" ] || base="$(_deesc_resolve_base "$root")"
   [ -n "$base" ] || return 0
-  local paths f k
-  paths="$(git -C "$root" diff --name-only --no-renames "$base" HEAD 2>/dev/null || true)"
-  while IFS= read -r f; do
-    [ -n "$f" ] || continue
-    k="$(_path_kind "$f")"
-    [ -n "$k" ] && { printf 'full %s: %s\n' "$k" "$f"; return 0; }
-  done <<< "$paths"
-  # Data loss: an ADDED line in a non-doc file.
-  local cur="" line lc hit=""
-  while IFS= read -r line; do
-    case "$line" in
-      "+++ b/"*) cur="${line#+++ b/}"; continue ;;
-      "+++ "*|"--- "*) continue ;;
-      +*) ;;
-      *) continue ;;
-    esac
-    [ -n "$cur" ] || continue
-    printf '%s\n' "$cur" | grep -Eiq -- "$_DOC_RE" && continue
-    lc="${line#+}"
-    if printf '%s\n' "$lc" | grep -Eiq -- "$_HL_common" \
-       || { printf '%s\n' "$lc" | grep -Eiq 'delete from' && ! printf '%s\n' "$lc" | grep -Eiq '\bwhere\b'; } \
-       || { case "$cur" in *.sql|*.SQL) printf '%s\n' "$lc" | grep -Eiq -- "$_HL_truncate_sql" ;; *) printf '%s\n' "$lc" | grep -Eiq -- "$_HL_truncate_code" ;; esac; }; then
-      hit="$cur"; break
-    fi
-  done < <(git -C "$root" diff --no-renames -U0 "$base" HEAD 2>/dev/null || true)
-  [ -n "$hit" ] && printf 'full data-loss: %s\n' "$hit"
+  local tmp; tmp="$(mktemp -d)" || return 0
+  # Both kinds of scan read from $tmp; the trap removes only what this call created.
+  trap 'rm -rf "$tmp"' RETURN
+  git -C "$root" -c core.quotePath=false diff -z --raw --no-renames "$base" "$head" > "$tmp/raw" 2>/dev/null || true
+  local meta path n=0 paths="" links=""
+  while IFS= read -r -d '' meta; do
+    IFS= read -r -d '' path || break
+    n=$((n + 1)); path="${path//$'\n'/?}"
+    paths="$paths$path"$'\n'
+    set -- $meta
+    if [ "${1:-}" = ":160000" ] || [ "${2:-}" = "160000" ]; then links="${links:+$links }$n"; fi
+  done < "$tmp/raw"
+  printf '%s' "$paths" > "$tmp/paths"
+  local best=0 bestkind="" k re hit num
+  for k in $_HP_KINDS; do
+    re="$(_hp_re "$k")"
+    hit="$(grep -Ein -m1 -e "$re" "$tmp/paths" 2>/dev/null | head -1)" || hit=""
+    num="${hit%%:*}"
+    if [ -n "$hit" ] && { [ "$best" = 0 ] || [ "$num" -lt "$best" ]; }; then best="$num"; bestkind="$k"; fi
+  done
+  _load_extras
+  if [ -n "$_EXTRA_LIST" ]; then
+    printf '%s\n' "$_EXTRA_LIST" > "$tmp/extra"
+    hit="$(grep -Ein -m1 -f "$tmp/extra" "$tmp/paths" 2>/dev/null | head -1)" || hit=""
+    num="${hit%%:*}"
+    if [ -n "$hit" ] && { [ "$best" = 0 ] || [ "$num" -lt "$best" ]; }; then best="$num"; bestkind="extra"; fi
+  fi
+  if [ -n "$links" ]; then
+    num="${links%% *}"
+    if [ "$best" = 0 ] || [ "$num" -lt "$best" ]; then best="$num"; bestkind="submodule"; fi
+  fi
+  if [ "$best" != 0 ]; then
+    printf 'full %s: %s\n' "$bestkind" "$(sed -n "${best}p" "$tmp/paths")"
+    return 0
+  fi
+  # Data loss: an ADDED line in a non-doc file. One diff, one awk pass emits "path<TAB>line"
+  # records; a quoted header (`+++ "b/..."`, used for tabs, quotes, backslashes) is unquoted.
+  git -C "$root" -c core.quotePath=false diff --no-renames -U0 "$base" "$head" 2>/dev/null | awk '
+    /^\+\+\+ / { p = substr($0, 5); sub(/\t$/, "", p)
+      if (p == "/dev/null") { cur = ""; skip = 1; next }
+      if (p ~ /^"/) { sub(/^"/, "", p); sub(/"$/, "", p); gsub(/\\"/, "\"", p); gsub(/\\t/, "\t", p); gsub(/\\\\/, "\\", p) }
+      sub(/^b\//, "", p); cur = p
+      skip = ('"$_DOC_AWK"'); next }
+    /^--- / { next }
+    /^\+/ { if (cur != "" && !skip) print cur "\t" substr($0, 2) }
+  ' > "$tmp/added"
+  [ -s "$tmp/added" ] || return 0
+  local T=$'\t' rec=""
+  rec="$(grep -Ei -m1 -e "${T}.*(${_HL_common})" "$tmp/added" | head -1)" || rec=""
+  [ -n "$rec" ] || rec="$(grep -Ei -e "${T}.*delete[[:space:]]+from" "$tmp/added" | grep -Eiv -e 'where' | head -1)" || true
+  [ -n "$rec" ] || rec="$(grep -Ei -e "${T}.*delete[[:space:]]+from.*where[[:space:]]+(1[[:space:]]*=[[:space:]]*1|true)([^a-z0-9_]|\$)" "$tmp/added" | head -1)" || true
+  [ -n "$rec" ] || rec="$(grep -Ei -m1 -e "^[^${T}]*\.sql${T}${_HL_truncate_sql}" "$tmp/added" | head -1)" || true
+  [ -n "$rec" ] || rec="$(grep -Ei -m1 -e "${T}.*${_HL_truncate_code}" "$tmp/added" | head -1)" || true
+  [ -z "$rec" ] || printf 'full data-loss: %s\n' "${rec%%$T*}"
   return 0
 }
 
