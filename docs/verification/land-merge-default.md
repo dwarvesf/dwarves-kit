@@ -1,6 +1,6 @@
 # Proof of done: `wrap land` merges the default branch into a conflicting own PR
 
-2026-09-30. Spec: `docs/specs/SPEC-375-land-merge-default.md` (VALIDATED). Lane: full. Files: `lib/wrap/wrap.sh`, `bin/wrap`, `tests/test-wrap.sh`, `commands/wrap.md`, `docs/consumer-contract.md`, `docs/CHANGELOG.md`, `docs/FEATURES.md` (regenerated), `docs/implementation-notes/land-merge-default.md`, this file.
+2026-09-30. Spec: `docs/specs/SPEC-375-land-merge-default.md` (VALIDATED). Lane: full. Files: `lib/wrap/wrap-common.sh`, `lib/wrap/wrap-land.sh`, `lib/wrap/wrap-merge.sh`, `lib/wrap/wrap-rebase.sh`, `lib/wrap/wrap.sh` (header only), `bin/wrap`, `bin/test-affected`, `tests/test-wrap-land.sh`, `tests/test-wrap-merge.sh`, `tests/lib/wrap-stub.sh`, `commands/wrap.md`, `docs/consumer-contract.md`, `docs/CHANGELOG.md`, `docs/FEATURES.md` (regenerated), `docs/implementation-notes/land-merge-default.md`, this file.
 
 ## What changed
 
@@ -118,14 +118,56 @@ A fresh Opus review of the first build returned FIX THEN SHIP: three CRITICAL fi
 | 38 | green run: `land-merge: adopted-conflict exits 0`, `the PR is adopted, not created` |
 | 39 | green run: `land-merge: with-ci conflict exits 0`, `the label sync ran twice (before the merge and on the merged head)` |
 | 40 | green run: `merge-cycle: FEATURES re-merge exits 0`, `FEATURES re-merge merges the recovered PR`, `the merge commit has both parents` |
-| 41 | green run: the existing re-merge case asserting `conflicts beyond the union-marked files, aborted` (tests/test-wrap.sh line 2290) |
+| 41 | green run: the existing re-merge case asserting `conflicts beyond the union-marked files, aborted` (`tests/test-wrap-merge.sh`) |
 | 42 | green run: `merge-cycle: FEATURES is refused by name`, `the generator never ran (marker absent)` |
 | 43 | green run: `merge-cycle: an unrestored re-merge exits 2`, `ABORT FAILED is named`, `no squash-fallback PR was created` |
 | 44 | green run: `merge-cycle: verify red pushed nothing`, `verify red called no pr merge` |
 | 45 | green run: `merge-cycle: an interrupted scratch cycle exits 130`, `the scratch worktree and its temp dir are gone` |
 | 46 | green run: `land-merge: bare --verify exits 64`, `trailing --verify exits 64`; `merge-cycle: bare --verify exits 64` |
 | 47 | green run: `merge-cycle: wrap --help names --verify`, `bin/wrap usage names --verify on both verbs` |
-| 48 | green run: the whole `tests/test-wrap.sh` (every pre-existing land, merge and rebase case) |
+| 48 | green run: the whole `tests/test-wrap.sh` runner (every pre-existing land, merge and rebase case) |
+
+## Ported onto #853's modules
+
+2026-09-30. The branch was built against the monolithic `lib/wrap/wrap.sh` and `tests/test-wrap.sh`. origin/master then split both into per-verb modules (#853), so the branch merged `origin/master` and re-applied its change to the module that owns each function. Function bodies are byte-identical to the reviewed `2457ed15` text.
+
+| Function or block | Module |
+|---|---|
+| merge cycle: `_merge_default`, `_merge_restore`, `_undo_local`, `_verify_or_undo`, `_push_ff`, `_mvp_trap`, `_mvp_ignored`, `_merge_verify_push`, the `MVP_*` state | `lib/wrap/wrap-common.sh` (both `land` and `merge` call it, and a change there selects every wrap suite) |
+| land's CONFLICTING recovery, `--verify` parsing | `lib/wrap/wrap-land.sh` `cmd_land` |
+| `_pr_detail_at_head`, `_union_remerge`, `_remerge_push`, `merge --verify`, the 130 and 2 exits | `lib/wrap/wrap-merge.sh` |
+| `_rb_resolve` (split out of `_rb_stop`), `_rb_markers` marker size | `lib/wrap/wrap-rebase.sh` (reused, not copied) |
+| usage and write-set header | `lib/wrap/wrap.sh` |
+| `land-merge:` cases and the structural checks | `tests/test-wrap-land.sh` |
+| `merge-cycle:` cases, `build_remerge_reg`, the refused-path assert | `tests/test-wrap-merge.sh` |
+| `GH_STUB_FAIL_VIEW_<n>_<k>` and `%REMOTE_HEAD%` in the `gh` stub | `tests/lib/wrap-stub.sh` |
+| the two `lane-classify.sh risk` wording asserts | `tests/test-wrap-deploy.sh`, `tests/test-wrap-report-lint.sh` |
+
+Two changes beyond a move. `bin/test-affected` now selects `test-wrap-land.sh` and `test-wrap-merge.sh` on a `wrap-rebase.sh` edit, because the cycle calls the rebase resolver. The spec is now SPEC-375, since master's wrap split took 374.
+
+| Check | Result |
+|---|---|
+| every assert label the branch added to `tests/test-wrap.sh` (218) exists in the split suites, `grep -F` | 218 of 218 |
+| `bash tests/test-wrap-land.sh` | `all 314 passed` |
+| `bash tests/test-wrap-merge.sh` | `all 246 passed` |
+| `bash tests/test-wrap.sh` (runner, every suite) | `test-wrap: all 1816 passed`, the count the branch had before the split |
+| `bash tests/test-meta.sh` | `Passed: 887 / 887` |
+
+Negative control on the ported `lib/wrap/wrap-land.sh`, the same mutation as above, against `tests/test-wrap-land.sh`, run on the clean merge commit `e0bd2151`:
+
+```
+## Negative control (negctl)
+Command: perl -e '$SIG{$_}="DEFAULT" for qw(INT TERM HUP); exec @ARGV' bash tests/test-wrap-land.sh
+Exit: 0 (green before mutation)
+Mutation: bash negctl-mutate.sh
+Changed: lib/wrap/wrap-land.sh
+Exit: 1 (under mutation, RED expected)
+Restore: git checkout HEAD -- lib/wrap/wrap-land.sh
+Exit: 0 (green after restore)
+Verdict: PASS
+```
+
+The suite runs: `all 314 passed`, `243 passed, 71 FAILED of 314` (including `land-merge: FEATURES conflict exits 0` and `land-merge: HEAD is a merge of origin/main`), `all 314 passed`.
 
 ## Rollback
 
