@@ -1264,6 +1264,8 @@ CI_JQ_DEFS='
   def pending: ((.status // "COMPLETED") != "COMPLETED")
     or ((.state // "") == "PENDING") or ((.state // "") == "EXPECTED");
   def ckey: (.name // .context // "") + "@" + ([.detailsUrl, .targetUrl, .startedAt, .createdAt] | map(real) | .[0] // "");
+  def actions($s): ((.workflowName // "") != "")
+    and ((.detailsUrl // .targetUrl // "") | startswith("https://github.com/" + $s + "/actions/"));
 '
 _ci_label_sync() {
   local url="$1" n="$2" pinned="${3:-}" moved="${4:-0}"
@@ -1300,11 +1302,23 @@ _ci_label_sync() {
     gh pr edit "$n" --repo "$url" --add-label ci >/dev/null 2>&1 || {
       echo "     could not add the ci label to #${n}" >&2; return 2; }
     echo "     labeled #${n} ci (this repo runs PR checks only on the label)"
-  elif [ "$(printf '%s' "$detail" | jq -r '(.statusCheckRollup // []) | length' 2>/dev/null)" = "0" ]; then
-    { gh pr edit "$n" --repo "$url" --remove-label ci >/dev/null 2>&1 \
-      && gh pr edit "$n" --repo "$url" --add-label ci >/dev/null 2>&1; } || {
-      echo "     could not re-add the ci label on #${n}" >&2; return 2; }
-    echo "     re-labeled #${n} ci (the label predates the head)"
+  else
+    # NEW on a labeled PR means an Actions run of the PR's own repo, so the scope comes
+    # from the PR's url, never the remote's (an ssh alias or a GHES host scopes wrong).
+    local prurl slug="" rname re="^https://github\.com/([A-Za-z0-9-]+/[A-Za-z0-9._-]+)/pull/${n}\$"
+    prurl="$(printf '%s' "$detail" | jq -r '.url // ""' 2>/dev/null)"
+    [[ "$prurl" =~ $re ]] && slug="${BASH_REMATCH[1]}"
+    rname="${slug##*/}"
+    if [ -z "$slug" ] || [ -z "${rname//./}" ]; then
+      echo "     could not resolve the repo of #${n} from its url" >&2; return 2
+    fi
+    CI_NEW_SCOPE="$slug"
+    if [ "$(printf '%s' "$detail" | jq -r '(.statusCheckRollup // []) | length' 2>/dev/null)" = "0" ]; then
+      { gh pr edit "$n" --repo "$url" --remove-label ci >/dev/null 2>&1 \
+        && gh pr edit "$n" --repo "$url" --add-label ci >/dev/null 2>&1; } || {
+        echo "     could not re-add the ci label on #${n}" >&2; return 2; }
+      echo "     re-labeled #${n} ci (the label predates the head)"
+    fi
   fi
   return 0
 }
@@ -1326,11 +1340,12 @@ _ci_checks_wait() {
   local url="$1" n="$2" waited=0 state
   while :; do
     state="$(gh pr view "$n" --repo "$url" --json statusCheckRollup 2>/dev/null \
-      | jq -r --argjson prelabel "${CI_PRELABEL_KEYS:-[]}" "${CI_JQ_DEFS}"'
+      | jq -r --argjson prelabel "${CI_PRELABEL_KEYS:-[]}" --arg scope "${CI_NEW_SCOPE:-}" "${CI_JQ_DEFS}"'
       (.statusCheckRollup // []) as $r
       | ([$r[] | select(pending)] | length) as $p
       | if $p > 0 then $p
         elif ([$r[] | select(((.conclusion // .state // "") | ascii_upcase) != "SKIPPED")
+                    | select($scope == "" or actions($scope))
                     | ckey | select(IN($prelabel[]) | not)] | length) == 0 then "NONEW"
         else 0 end' 2>/dev/null)"
     [ "$state" = "0" ] && break

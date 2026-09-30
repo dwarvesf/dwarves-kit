@@ -69,3 +69,13 @@ Deltas from SPEC-365. Nothing here repeats what the spec already states.
 
 ## 2026-09-29 Process
 - This worker ran the spec steps the lead named (write, Spec ran, Spec end, commit) and stopped at `VALIDATE PENDING`. The full-lane design-time pass (`/kit:devs-team` plus `kit:advisor` over-suggest) did not run here. That call belongs to the lead.
+
+## Build notes: part 2
+
+### Task D0
+- `CI_JQ_DEFS` gained `def actions($s)`: non-empty `workflowName` AND a `detailsUrl`/`targetUrl` under `https://github.com/<slug>/actions/`. Both halves are needed; a third-party status can name an actions URL, and an Actions CheckRun is the only kind gh fills `workflowName` on.
+- `_ci_checks_wait` takes `--arg scope "${CI_NEW_SCOPE:-}"`; an empty scope keeps the absent-label behavior (any non-skipped check outside the snapshot is NEW).
+- `_ci_label_sync` resolves the slug from the PR's own `.url` at the top of the label-on branch, after the label probe and head wait but before either rollup arm. The regex pins `github.com/<owner>/<name>/pull/<n>` and a repo part of all dots is refused, so `o/..` can never yield a scope. The refusal prints the PR number, never the url.
+- Fixture moves: `CA_OLD` is the Actions-shaped twin of `CW_OLD` and `cw_dated` is `cw_full` plus `url` and `commits`. T4, the autoland ci-gated `_2`, and all three T13-family records went Actions-shaped; the T13 `_2` records and `AL_CW_PR_C` carry `url` so the label-on arm can resolve `o/r`.
+- T18, E5 and E5b went red on the pre-D0 code: T18 on the 6-read count (the unscoped wait ended on the DCO status at 4), E5 and E5b on the missing refusal (they merged). The migrated cases (T4, T13 family, ci-armed, ci-stale, autoland ci-gated) stayed green on both sides of the change, as speced.
+- No count assert moved. T18's 6 reads are eligibility + sync + 3 grace-bounded NONEW reads + re-gate.
