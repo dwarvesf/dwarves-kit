@@ -134,6 +134,177 @@ RC=$(run_hook safety-gate.sh '{"tool_input":{"command":"find . -name \"*.go\" -e
 assert_exit "D4: find -exec without rm is allowed" 0 $RC
 RC=$(run_hook safety-gate.sh '{"tool_input":{"command":"find ~/workspace -name \"*.md\" -type f"}}')
 assert_exit "D5: read-only find is allowed" 0 $RC
+
+# SPEC-332: segments split the way bash does. A quoted or escaped separator, a quoted <<,
+# a continuation line, a single &, or a substitution used to hide the push ref from the rule.
+# jq builds the JSON so the shell quoting under test reaches the hook byte for byte.
+q_hook() {
+  local RC=0
+  jq -n --arg c "$1" '{tool_input:{command:$c}}' | bash "$KIT_DIR/hooks/safety-gate.sh" >/dev/null 2>&1 || RC=$?
+  echo "$RC"
+}
+PUSH="git push"
+assert_exit "Q1: quoted ; in -o before main blocks" 2 "$(q_hook "$PUSH -o 'a;b' origin main")"
+assert_exit "Q2: quoted | in -o before main blocks" 2 "$(q_hook "$PUSH -o 'a|b' origin main")"
+assert_exit "Q3: quoted ; before --force blocks" 2 "$(q_hook "$PUSH -o 'a;b' --force origin feat/x")"
+assert_exit "Q4: double-quoted ; before main blocks" 2 "$(q_hook "$PUSH -o \"a;b\" origin main")"
+assert_exit "Q5: escaped ; before main blocks" 2 "$(q_hook "$PUSH -o a\\;b origin main")"
+assert_exit "Q6: ANSI-C quoted ; before main blocks" 2 "$(q_hook "$PUSH -o \$'a\\';b' origin main")"
+assert_exit "Q7: continuation line before main blocks" 2 "$(q_hook "$PUSH \\
+  origin main")"
+assert_exit "Q8: escaped quotes around a push block" 2 "$(q_hook "echo \\\" ; $PUSH origin main ; echo \\\"")"
+assert_exit "Q9: quoted << opens no heredoc" 2 "$(q_hook "echo \"<<X\"; $PUSH origin main")"
+assert_exit "Q10: quoted << hides no later line" 2 "$(q_hook "echo \"<<X\"
+$PUSH origin main")"
+assert_exit "Q11: the rest of a heredoc line is read" 2 "$(q_hook "cat <<EOF; $PUSH origin main
+body
+EOF")"
+assert_exit "Q12: push after ; inside bash -c blocks" 2 "$(q_hook "bash -c \"cd x; $PUSH origin main\"")"
+assert_exit "Q13: escaped-quoted main inside bash -c blocks" 2 "$(q_hook "bash -c \"cd x && $PUSH origin \\\"main\\\"\"")"
+assert_exit "Q14: push inside \$( ) inside quotes blocks" 2 "$(q_hook "echo \"\$($PUSH -o \"a;b\" origin main)\"")"
+assert_exit "Q15: push inside backticks blocks" 2 "$(q_hook "echo \`$PUSH origin main\`")"
+assert_exit "Q16: push after |& blocks" 2 "$(q_hook "x |& $PUSH origin main")"
+assert_exit "Q17: push after a single & blocks" 2 "$(q_hook "sleep 1 & $PUSH origin main")"
+assert_exit "Q18: push in a subshell with a quoted ; blocks" 2 "$(q_hook "($PUSH -o \"a;b\" origin main)")"
+assert_exit "Q19: quoted ; before a feature ref is allowed" 0 "$(q_hook "$PUSH -o \"a;b\" origin feat/x")"
+assert_exit "Q20: git -C with a quoted dir pushing a feature ref is allowed" 0 "$(q_hook "git -C \"\$WT\" push -u origin fix/x")"
+assert_exit "Q21: commit message with ; and | is allowed" 0 "$(q_hook "git commit -m \"feat(x): a; b | c\"")"
+assert_exit "Q22: heredoc commit message naming a push is allowed" 0 "$(q_hook "git commit -m \"\$(cat <<'EOF'
+fix: never $PUSH origin main; rm -rf /
+EOF
+)\"")"
+assert_exit "Q23: heredoc body naming a push is allowed" 0 "$(q_hook "cat > f <<EOF
+$PUSH origin main
+EOF
+echo done")"
+assert_exit "Q24: quoted parens in a git format are allowed" 0 "$(q_hook "git log --format=\"%(refname) x\"")"
+assert_exit "Q25: quoted non-artifact rm target still blocks" 2 "$(q_hook "rm -rf \"my dir\"")"
+assert_exit "Q26: quoted artifact rm target still allowed" 0 "$(q_hook "rm -rf \"node_modules\"")"
+# SPEC-332 rev 2: fresh-validator and break-it findings. Comments, here-strings, arithmetic,
+# and delimiter quoting used to open a false heredoc that hid every later line.
+assert_exit "Q27: apostrophe in a comment opens no quote" 2 "$(q_hook "echo hi # don't
+$PUSH -o 'a;b' origin main")"
+assert_exit "Q28: << in a comment opens no heredoc" 2 "$(q_hook "cat <<A # see <<B
+body
+A
+$PUSH origin main")"
+assert_exit "Q29: a here-string opens no heredoc" 2 "$(q_hook "cat <<<hello
+$PUSH origin main")"
+assert_exit "Q30: a shift in arithmetic opens no heredoc" 2 "$(q_hook "echo \$((1<<x))
+$PUSH origin main")"
+assert_exit "Q31: a quoted delimiter part reads as bash reads it" 2 "$(q_hook "cat <<'E'OF
+x
+EOF
+$PUSH origin main")"
+assert_exit "Q32: a heredoc body starts after the logical line" 2 "$(q_hook "cat <<A \\
+; $PUSH origin main
+A")"
+assert_exit "Q33: ( inside \$( ) keeps the substitution open" 2 "$(q_hook "echo \"\$( (true) & $PUSH origin main )\"")"
+assert_exit "Q34: backslash-newline inside a ref joins with no space" 2 "$(q_hook "$PUSH origin ma\\
+in")"
+assert_exit "Q35: if/then segment start" 2 "$(q_hook "if true; then $PUSH origin main; fi")"
+assert_exit "Q36: brace group and ! segment start" 2 "$(q_hook "{ ! $PUSH origin main; }")"
+assert_exit "Q37: for/do segment start" 2 "$(q_hook "for x in 1; do $PUSH origin main; done")"
+assert_exit "Q38: timeout and nice wrappers" 2 "$(q_hook "timeout 5m nice -n 10 $PUSH origin main")"
+assert_exit "Q39: sudo -u with an operand" 2 "$(q_hook "sudo -u root $PUSH origin main")"
+assert_exit "Q40: bash -lc wrapper" 2 "$(q_hook "bash -lc \"$PUSH origin main\"")"
+assert_exit "Q41: absolute path to git" 2 "$(q_hook "/usr/bin/git push origin main")"
+assert_exit "Q42: git -c before push" 2 "$(q_hook "git -c a.b=c push origin main")"
+assert_exit "Q43: leading redirection" 2 "$(q_hook "2>/dev/null $PUSH origin main")"
+assert_exit "Q44: bundled short force flags" 2 "$(q_hook "$PUSH -fu origin feat/x")"
+assert_exit "Q45: full ref destination main" 2 "$(q_hook "$PUSH origin HEAD:refs/heads/main")"
+assert_exit "Q46: --mirror push" 2 "$(q_hook "$PUSH --mirror origin")"
+assert_exit "Q47: brace-expanded ref" 2 "$(q_hook "$PUSH origin ma{in,x}")"
+assert_exit "Q48: rm -Rf" 2 "$(q_hook "rm -Rf ~/x")"
+assert_exit "Q49: kubectl -n ns delete" 2 "$(q_hook "kubectl -n prod delete pod x")"
+assert_exit "Q50: DROP TABLE in a psql heredoc" 2 "$(q_hook "psql <<SQL
+DROP TABLE x;
+SQL")"
+assert_exit "Q51: comment apostrophe before a heredoc commit is allowed" 0 "$(q_hook "# don't forget
+git commit -m \"\$(cat <<'EOF'
+rm -rf ~ was the bug
+EOF
+)\"")"
+assert_exit "Q52: sudo -E pushing a feature ref is allowed" 0 "$(q_hook "sudo -E $PUSH -u origin feat/x")"
+assert_exit "Q53: here-string then a feature push is allowed" 0 "$(q_hook "cat <<<hello; $PUSH -u origin feat/x")"
+assert_exit "Q54: continued rm of artifacts is allowed" 0 "$(q_hook "rm -rf \\
+  node_modules dist")"
+# SPEC-332 rev 3: validation round 2.
+assert_exit "Q55: coproc NAME { } names no command" 2 "$(q_hook "coproc NAME { $PUSH origin main; }")"
+assert_exit "Q56: function NAME { } names no command" 2 "$(q_hook "function f { $PUSH origin main; }; f")"
+assert_exit "Q57: caffeinate -u takes no operand" 2 "$(q_hook "caffeinate -u $PUSH origin main")"
+assert_exit "Q58: a shift in \$(( )) queues no delimiter" 2 "$(q_hook "cat <<A; echo \$((1<<B))
+A
+$PUSH origin main
+B")"
+assert_exit "Q59: zsh noglob and repeat wrappers" 2 "$(q_hook "noglob repeat 2 $PUSH origin main")"
+assert_exit "Q60: zsh always block" 2 "$(q_hook "{ true; } always { $PUSH origin main; }")"
+assert_exit "Q61: arithmetic then a feature push is allowed" 0 "$(q_hook "echo \$(( (1<<3) + 2 )); $PUSH -u origin feat/x")"
+# SPEC-332 rev 4: validation round 3.
+assert_exit "Q62: # after an escaped blank is not a comment" 2 "$(q_hook "echo a\\ #b & $PUSH origin main")"
+assert_exit "Q63: # after an escaped ; is not a comment" 2 "$(q_hook "echo a\\;#b \$($PUSH origin main)")"
+assert_exit "Q64: \$( ) inside \$(( )) is read" 2 "$(q_hook "echo \$(( \$($PUSH origin main) + 1 ))")"
+assert_exit "Q65: \$((x)& ...) is a substitution, not arithmetic" 2 "$(q_hook "echo \$((true)& $PUSH origin main)")"
+assert_exit "Q66: a shift in (( )) queues no delimiter" 2 "$(q_hook "cat <<A; (( x = 1<<B ))
+A
+$PUSH origin main
+B")"
+assert_exit "Q67: xargs -d takes an operand" 2 "$(q_hook "xargs -d x $PUSH origin main")"
+assert_exit "Q68: an apostrophe in a trailing comment opens no quote" 0 "$(q_hook "$PUSH -u origin feat/x # don't
+echo done")"
+# SPEC-332 rev 5: validation round 4. Word start and command start are tracked, not
+# guessed from an empty segment.
+assert_exit "Q69: (( after if queues no delimiter" 2 "$(q_hook "cat <<A; if (( x = 1<<B )); then :; fi
+A
+$PUSH origin main
+B")"
+assert_exit "Q70: (( after for queues no delimiter" 2 "$(q_hook "cat <<A; for (( i=0; i<<B; i++ )); do :; done
+A
+$PUSH origin main
+B")"
+assert_exit "Q71: # right after \$( ) is not a comment" 2 "$(q_hook "echo \$(true)# & $PUSH origin main")"
+assert_exit "Q72: # right after a backtick is not a comment" 2 "$(q_hook "echo \`true\`# & $PUSH origin main")"
+assert_exit "Q73: an escape in an earlier segment does not unmake a comment" 2 "$(q_hook "echo a\\ ; echo b #don't
+$PUSH -o 'a;b' origin main")"
+assert_exit "Q74: a lone ) re-reads (( as subshells" 2 "$(q_hook "((true & $PUSH origin main) )")"
+assert_exit "Q75: a lone ) re-reads a quoted ; inside ((" 2 "$(q_hook "((true; $PUSH -o 'a;b' origin main) )")"
+assert_exit "Q76: a lone ) re-reads \$(( as a substitution" 2 "$(q_hook "echo \$((true & $PUSH origin main) )")"
+assert_exit "Q77: arithmetic loop then a feature push is allowed" 0 "$(q_hook "for (( i=0; i<3; i++ )); do echo \$i; done; $PUSH -u origin feat/x")"
+# SPEC-332 rev 6: validation round 5.
+assert_exit "Q78: if(( with no blank queues no delimiter" 2 "$(q_hook "cat <<A; if((x=1<<B)); then :; fi
+A
+$PUSH origin main
+B")"
+assert_exit "Q79: # after a (( )) command is a comment" 2 "$(q_hook "cat <<A; ((1))#<<B
+A
+$PUSH origin main
+B")"
+assert_exit "Q80: a re-walk does not queue a delimiter twice" 2 "$(q_hook "echo \$(( \$(cat <<X) ) )
+body
+X
+$PUSH origin main
+X")"
+DEEP="echo "; for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30; do DEEP="$DEEP\$((a "; done
+DEEP="$DEEP) & $PUSH origin main"
+Q81_START=$(date +%s)
+assert_exit "Q81: nested false (( frames still block" 2 "$(q_hook "$DEEP")"
+Q81_SECS=$(( $(date +%s) - Q81_START ))
+assert_true "Q81b: nested false (( frames re-walk in linear time (${Q81_SECS}s)" "$([ "$Q81_SECS" -lt 5 ]; echo $?)"
+assert_exit "Q82: compact for(( loop then a feature push is allowed" 0 "$(q_hook "for((i=0;i<3;i++)); do echo \$i; done; $PUSH -u origin feat/x")"
+# SPEC-332 rev 7: validation round 6. A substitution keeps the outer argv whole.
+assert_exit "Q83: \$( ) as the -C operand" 2 "$(q_hook "git -C \"\$(git rev-parse --show-toplevel)\" push origin main")"
+assert_exit "Q84: \$( ) inside --git-dir=" 2 "$(q_hook "git --git-dir=\"\$(pwd)/.git\" push origin main")"
+assert_exit "Q85: \$( ) in an assignment prefix" 2 "$(q_hook "GIT_DIR=\$(pwd)/.git $PUSH origin main")"
+assert_exit "Q86: push inside an assigned substitution" 2 "$(q_hook "x=\$(echo a; $PUSH -o 'a;b' origin main)")"
+assert_exit "Q87: coproc before ((" 2 "$(q_hook "cat <<A; coproc ((1<<B))
+A
+$PUSH origin main
+B")"
+assert_exit "Q88: op run and mise exec wrappers" 2 "$(q_hook "op run -- mise exec node@20 -- $PUSH origin main")"
+assert_exit "Q89: \$( ) as the -C operand of a feature push is allowed" 0 "$(q_hook "git -C \"\$(git rev-parse --show-toplevel)\" push -u origin feat/x")"
+assert_exit "Q90: a tag glob is allowed" 0 "$(q_hook "$PUSH origin 'refs/tags/v1.*'")"
+assert_exit "Q91: a << in \${ } that never closes replays" 2 "$(q_hook "echo \${x#<<y}
+$PUSH origin main")"
 # F4: cd-prefix repo resolution parses portably (probe affordance prints the target)
 CDOUT=$(echo '{"tool_input":{"command":"cd /tmp/some-repo && git push -q origin feat/x"}}' | DWARVES_KIT_PRINT_CDDIR=1 bash "$KIT_DIR/hooks/ship-gate.sh" 2>/dev/null)
 assert_output_contains "F4: ship-gate resolves the cd target" "^/tmp/some-repo$" "$CDOUT"
