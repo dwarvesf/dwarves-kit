@@ -2963,9 +2963,9 @@ def scenario(active=True, sources="claude"):
     os.environ["KIT_CONFIG_ROOT"] = kroot
     os.environ["KIT_CONFIG_OPERATOR"] = os.path.join(base, "no-operator")
     if active:
-        sd = os.path.join(os.environ["HARVEST_STATE_DIR"], "sweep")
-        os.makedirs(sd)
-        with open(os.path.join(sd, "installed"), "w") as fh:
+        sweep_dir = os.path.join(os.environ["HARVEST_STATE_DIR"], "sweep")
+        os.makedirs(sweep_dir)
+        with open(os.path.join(sweep_dir, "installed"), "w") as fh:
             json.dump({"label": "harvest-sweep", "host": "t", "kit": KIT, "ts": NOW}, fh)
     return base, root
 
@@ -3183,9 +3183,9 @@ def scenario(active=True, sources="claude"):
     os.environ["KIT_CONFIG_ROOT"] = kroot
     os.environ["KIT_CONFIG_OPERATOR"] = os.path.join(base, "no-operator")
     if active:
-        sd = os.path.join(os.environ["HARVEST_STATE_DIR"], "sweep")
-        os.makedirs(sd)
-        with open(os.path.join(sd, "installed"), "w") as fh:
+        sweep_dir = os.path.join(os.environ["HARVEST_STATE_DIR"], "sweep")
+        os.makedirs(sweep_dir)
+        with open(os.path.join(sweep_dir, "installed"), "w") as fh:
             json.dump({"label": "harvest-sweep", "host": "t", "kit": KIT, "ts": NOW}, fh)
     return base, root
 
@@ -3416,9 +3416,9 @@ def scenario(active=True, sources="claude", tag="t22", item="flush-1"):
     os.environ["KIT_CONFIG_ROOT"] = kroot
     os.environ["KIT_CONFIG_OPERATOR"] = os.path.join(base, "no-operator")
     if active:
-        sd = os.path.join(os.environ["HARVEST_STATE_DIR"], "sweep")
-        os.makedirs(sd)
-        with open(os.path.join(sd, "installed"), "w") as fh:
+        sweep_dir = os.path.join(os.environ["HARVEST_STATE_DIR"], "sweep")
+        os.makedirs(sweep_dir)
+        with open(os.path.join(sweep_dir, "installed"), "w") as fh:
             json.dump({"label": "harvest-sweep", "host": "t", "kit": KIT, "ts": NOW}, fh)
     return base, root
 
@@ -3925,7 +3925,7 @@ assert_eq "AC13: the written plist's ProgramArguments[0] is the launcher" \
   "$KIT_DIR/deploy/macos/harvest-sweep/harvest-sweep" \
   "$(/usr/libexec/PlistBuddy -c 'Print :ProgramArguments:0' "$T17_HOME/Library/LaunchAgents/mini.harvest-sweep.plist" 2>/dev/null)"
 assert_eq "AC13: --apply writes the plist world-readable for vps-mon discovery" "644" \
-  "$(stat -f %Lp "$T17_HOME/Library/LaunchAgents/mini.harvest-sweep.plist")"
+  "$(python3 -c 'import os,sys; print(format(os.stat(sys.argv[1]).st_mode & 0o777, "o"))' "$T17_HOME/Library/LaunchAgents/mini.harvest-sweep.plist")"
 assert_eq "AC13: --apply bootstraps the label" "yes" \
   "$(t17_lc | grep -q "bootstrap gui/[0-9]* .*mini.harvest-sweep.plist" && echo yes || echo no)"
 assert_eq "AC13: --apply writes the installed marker" "yes" \

@@ -6,6 +6,12 @@ You are a test-design critique coordinator. Your job is to stress-test a spec's 
 
 Why this lane exists: the spec gets adversarial review (`/kit:spec-validate`) and the code gets it (`/kit:review-team`), but the test design , the bridge between them , was authored once and executed unreviewed. The quality bar (`docs/verification/test-design-standard.md`) existed only as reference. This lane is its executor.
 
+## Light mode (`--light`)
+
+`/kit:test-plan-review-team --light` is the cheap pass every test plan gets unless its spec's `Depth:` line names a `blind-spot` (`bash lib/spec/spec-depth.sh wants <spec> blind-spot`; see `/kit:test-plan` Step 4). Do not confuse the light pass with lens 6, "Tiering & floor": the word floor there is the behavioral-test floor rule, unrelated.
+
+Run Step 1, then dispatch ONE subagent that applies lens 1 (Coverage completeness) and lens 2 (Oracle & falsifiability) to the plan in one pass, using the lens texts in Step 2 below as written. When the plan carries a `Tier` column, the same subagent also applies lens 6 (Tiering & floor), because a mis-tiered behavioral claim is the failure only that lens sees; otherwise skip it. Skip lenses 3 to 5, Step 4 (no revise round), and the bounded loop. Write `## Test plan critique` per Step 5 with `Scope: light (coverage + oracle)` (add `+ tiering` when lens 6 ran) on a line after `Lenses run:`, list the lenses that did not run as `not run (light)`, and score only the lenses that ran. The verdict is SOLID when the pass finds no CRITICAL finding, so `/kit:test-write` accepts a good plan. HIGH findings are advisory: list them in `## Test plan critique`, and the author addresses each or writes one line in that section saying why not. Any CRITICAL gives REVISE (or RECONSIDER per Step 5), and the author fixes the plan and reruns the light pass: there is no automatic loop. Emit one `[[QL-VERDICT round=1 clean=BOOL findings=K]]` line. Record `bash lib/gate/gate-ledger.sh record <rid> test-plan ran "<verdict> rounds=1 findings=<K> scope=light"`. A manual full run of this command, with no flag, is always allowed.
+
 ## Process
 
 Bracket the phase for timing before starting: `bash lib/gate/gate-ledger.sh outcome <rid> test-plan start`.

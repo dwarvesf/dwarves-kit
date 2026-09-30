@@ -59,6 +59,8 @@ Pick a lane before you start. Smaller work skips ceremony.
 | bug    | a defect, regression, or failing test (not a new feature) | /debug (root cause before any fix), then /review |
 | backfill | brownfield: review an existing codebase and write the operating-layer docs (AGENTS.md / CLAUDE.md / specs) | review the code, write the docs. Doc-output only; no app-behavior change, no app-code edits. /spec optional. |
 
+**Depth.** Every spec carries a `Depth:` line under `Lane:`, with a named reason, and planning goes only as deep as the reason earns: `standard` (nothing extra; zero research agents), `research (repo: <unknown>)` (the 4 brownfield agents), `research (outside: <unknown>)` (`/kit:get-api-docs` plus one web pass), `blind-spot (failure: <mode>)` (the full test-plan review team). A reason that only says the work matters earns nothing deeper. `lib/spec/spec-depth.sh` reads and checks the line (`/kit:spec-validate` Reviewer 4 runs it); a spec with no line counts as `standard`, and a new spec without one is a critical. The fresh-context validator runs at every depth, and every test plan gets at least the two-lens light review.
+
 Default to `normal`. The classifier prints a one-line suggestion when the task text matches a
 full-lane trigger and records it in the run ledger when given the run id. The agent may propose
 the full lane in one sentence and continues on the lighter lane until the operator assigns it.
@@ -149,7 +151,7 @@ migration (same dry-run + rollback shape); agent-org config rides spec-feature l
 | UI design (opt-in, downstream) | /kit:ui-design | brief -> generate (frontend-design) -> critique -> revise | advisory (downstream only) |
 | Spec     | /kit:spec | spec exists, Status: DRAFT | spec-drift-guard hook |
 | Validate | /kit:spec-validate (a fresh-context validator /kit:spec and /kit:execute dispatch) | Status: VALIDATED | ship gate (full lane); /kit:execute preflight (normal, full, backfill) |
-| Test plan (default for normal/full) | /kit:test-plan | `## Test plan` written into the spec, in the type's dialect (test-design-standard §5b) | advisory default (normal/full); tiny exempt |
+| Test plan (default for normal/full) | /kit:test-plan, then /kit:test-plan-review-team --light (the full team at blind-spot) | `## Test plan` written into the spec, in the type's dialect (test-design-standard §5b), plus its `## Test plan critique` | advisory default (normal/full); tiny exempt |
 | Build    | /kit:execute or /kit:next | tasks checked, verifier PASS | verification pipeline (worker, verifier, fix; max 2) |
 | Review   | /kit:review or /kit:review-team | review verdict recorded; full lane loops per SPEC-231 | advisory (default-run + bounded loop on full: SPEC-231, docs/patterns/review-fix-loop.md) |
 | Docs     | /kit:docs | README/CHANGELOG match code | advisory |
@@ -343,7 +345,7 @@ that validates it):
 | Think / Brief | `brief-reviewer` (static, dispatched by `/kit:think`) |
 | Design | `/kit:devs-team` (static) · `system-verifier` (dynamic, dispatched by `/kit:verify`) |
 | Spec | `/kit:spec-validate` (static) · `integration-verifier` (dynamic) |
-| Test plan | `/kit:test-plan-review-team` (static) |
+| Test plan | `/kit:test-plan-review-team` (static): the light pass at every depth, the full team at blind-spot |
 | Build / Code | `/kit:review` · `/kit:review-team` (+ `code-reviewer`, deep `security-reviewer`) · `task-verifier` (dynamic) |
 | Review | `advisor` critique (kit-default EXTRA lens, on top of the specialists) |
 | Docs | `/kit:docs` (+ `doc-verifier`) |
@@ -1317,7 +1319,7 @@ later reader and an earlier writer never split across two specs.
 | 3 | `/kit:visual-team` | a visual/UI design exists (downstream) | `## Visual critique` in the active spec (else brief, else inline) | verdict recorded |
 | 4 | `/kit:ui-design` | downstream UI work, after `/design` | `## UI design` in the spec; generates via `frontend-design`; critiques via `/visual-team` | SOLID/RECONSIDER verdict or max-2 revise |
 | 5 | `/kit:test-plan` | before `/execute`; derive a coverage matrix | `## Test plan` in the spec (consumed by `/execute`) | matrix written |
-| 6 | `/kit:test-plan-review-team` | after `/test-plan`; 6 test-design lenses + bounded revise loop (max 3 rounds; findings must strictly fall, by severity not just raw count, or halt honestly) | `## Test plan critique` in the spec (replace-not-stack) | SOLID / REVISE / RECONSIDER verdict recorded; loop exits early at 0 findings |
+| 6 | `/kit:test-plan-review-team` | after `/test-plan`; `--light` (Coverage + Oracle lenses, one pass, no revise rounds) unless the spec's `Depth:` names a blind-spot, then 6 test-design lenses + bounded revise loop (max 3 rounds; findings must strictly fall, by severity not just raw count, or halt honestly) | `## Test plan critique` in the spec (replace-not-stack) | SOLID / REVISE / RECONSIDER verdict recorded; loop exits early at 0 findings |
 | 7 | `/kit:test-write` | after a SOLID `## Test plan critique`; materialize the matrix into test code via `kit:test-writer` (refuses missing/stale/non-SOLID verdicts) | real test files in the repo's own convention | every row covered or reported skipped; written tests execute (assertions passing is `fix-agent`'s job) |
 | 8 | `/kit:review-team` | PR-grade review; 3 lenses (security/architecture/test-coverage) in parallel; confidence anchors + fingerprint dedup + per-finding validators (SPEC-081/082) | `## Review` in the active spec (else inline) | SHIP / FIX THEN SHIP / DO NOT SHIP, unsuppressed findings drive it |
 | 9 | `/kit:absorb` | maintainer-only external-absorption audit | dated report under `docs/absorption/` | proposal-only report (human merge gate) |

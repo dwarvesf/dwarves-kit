@@ -122,6 +122,7 @@ real reader consumes it today (all rows below are, except where noted).
 | MEGA_MERGE_GATE_LEDGER | env-only | `$LIB_ROOT/gate/gate-ledger.sh` | [impl] | mega | Which `gate-ledger.sh` `mega-merge.sh` shells out to. |
 | MEGA_GATE_DISPATCH | env-only | `1` | [impl] | mega | `1` dispatches a `gate` / `gate!` sub-goal like any other (grounded on the PR existing); `0` restores the stop-before-running behavior. |
 | PANE_TAIL_JQ | env-only | `$ORCH_DIR/pane-tail.jq` | [impl] | mega | The jq formatter the multiplexer pane tail reads through; read-only by construction. |
+| MEGA_BACKEND | env-only | `claude` | [impl] | queue | Runtime `orchestrate run` drives each sub-goal on: `claude` (one `claude -p` per sub-goal) or `orca`. The `--backend` flag wins. Any other value exits 64. No kit.toml key on purpose: a committed file must not switch a run onto another runtime. |
 | QUEUE_PUSH_ONLY | env-only | `0` | [impl] | queue | `1` pushes the branch and stops without opening the PR (draft or ready per the run's own rule). |
 | DWARVES_KIT_SKIP_DOC_PROJECTION | env-only | `0` | [impl] | gate | `1` skips the ship-gate's doc-projection check for a repo that has neither projection file; an escape hatch, never a default. |
 | DWARVES_KIT_SKIP_REGISTRY_FRESHNESS | env-only | `0` | [impl] | gate | `1` skips the ship-gate's `docs/FEATURES.md` freshness arm, which regenerates the projection when a push edits one of its inputs; an escape hatch, never a default. |
@@ -348,6 +349,7 @@ never turns the step off.
 | - | wrap.follow_through | `"off"` | [impl] | wrap | Step 10, the follow-through phase, after the step 9 report prints and lints clean. One of `off`, `lanes`, `all`, resolved by `wrap follow-mode [lanes\|all]` (`cmd_follow_mode` in `lib/wrap/wrap.sh`), which prints the mode and the lanes step 10 builds. `off` ends the pass at the first report. `lanes` builds, in background workers each in its own `wrap start` worktree, every `REPORTED` step 7b candidate whose lane is in `wrap.build_lanes` (never `full`, never one reported with `build_candidates off`) and every FYI follow-up the pass can finish in those lanes, merges each green own PR through `wrap merge --apply --pr` after its checks settle, and prints a second `## Follow-through:` report that `report-lint.sh` checks. `all` adds each `REPORTED` full-lane candidate through the home repo's full lane unattended (a spec numbered by `spec-next.sh reserve`, the `kit:spec-validate` lenses with the blocking design-record lens, build, negative control, proof, gate-ledger records); its PR opens as a draft, wrap never merges it, and the second report asks `REVIEW #<pr>` in `Needs you`. The argument `follow` runs `lanes` and `follow all` runs `all` for one call, over the knob. Any other value prints one line naming the knob and the allowed values and runs as `off`. `Needs you` items never run at any setting. Resolved with `kit_config_get_root`, same fence as the knobs above: it authorizes writes in home repos. |
 | KIT_WRAP_SETTLE_SECS | env-only | `60` | [impl] | wrap | `wrap merge`: seconds to wait, one PR read every 2s, for GitHub to recompute mergeability. The wait covers a first read of UNKNOWN, and after wrap's own re-merge push, a head that is still the old one or a verdict of UNKNOWN or CONFLICTING. A head that is neither the old one nor the pushed one ends the wait and is refused. A non-numeric value falls back to 60. (SPEC-306) |
 | KIT_WRAP_CARRY_CHECKS_SECS | env-only | `300` | [impl] | wrap | `wrap apply` under `wrap.autoland_carry`: seconds to wait, one read every 10s, while a carry PR has pending checks before `wrap merge --apply --pr` gates it. A check still pending at the bound leaves the PR open for step 3. A non-numeric value falls back to 300. (SPEC-322) |
+| KIT_WRAP_CI_ON_MERGE | env-only | `0` | [impl] | wrap | `1` arms the `ci` label gate on `wrap merge`/`land`: label the PR, wait for checks, refuse an empty rollup. The only switch `wrap apply`'s autoland reads; `--with-ci` sets it for one `merge`/`land`. `0` merges with no label and no wait. |
 | KIT_WRAP_CI_GRACE_SECS | env-only | `90` | [impl] | wrap | `wrap` CI wait on a label-gated repo: seconds, one read every 10s, to hold while no NEW check has appeared after the label was added. Past it the workflow is a paths-filtered one that started nothing and the wait ends. A non-numeric value falls back to 90. |
 | KIT_SKILL_DIRS | env-only | `$HOME/.claude/skills` plus `${CLAUDE_PLUGIN_ROOT:-}/skills` when set | [consumer] | wrap | Colon-separated list of skill directories `config seams` searches for a `skill` kind row's `SKILL.md` (e.g. `wrap.before`). Entries whose realpath does not sit under `$HOME` are dropped, because a repo `.envrc` can set this. Not read by any code yet; `config seams` is the first consumer. |
 
@@ -433,6 +435,7 @@ against any of these bare tokens as covered without a registry row.
 | KIT_DIR | `lib/plugin-check/tests/smoke.sh`: test-fixture scratch dir. |
 | KIT_KNOWN_MODULES | `install.sh`: a hardcoded bash array literal, never read from the environment. |
 | KIT_LIB | Script-local computed dir in most readers (e.g. `lib/telemetry/lane-telemetry.sh`); the real env-overridable cousin is `DWARVES_KIT_LIB` (Python, `lib/stats/src/stats/config.py`), which the bash-oriented seed regex cannot see (no `$` sigil in Python source) , documented here rather than silently dropped: see `lib/stats/README.md`'s own env table for `DWARVES_KIT_LIB`'s default (this repo's own `lib/`, kit-internal). |
+| MEGA_ROOT | `lib/board/work.sh`: script-local, set from `--megagoals-root` or `$REPO/_meta/megagoals`, never env-read. |
 | MEGA_SH | `lib/board/board.sh`: computed `$BOARD_DIR/../mega/mega.sh`. |
 | QUEUE_SH | `lib/queue/watch-board.sh`: computed `$WATCH_DIR/queue.sh`, script-local sibling path, never env-read (same shape as `MEGA_SH`). |
 | PANE_VIEWER_ALLOWED | `lib/queue/orchestrate.sh`: a hardcoded allowlist string, not itself env-read; it validates `PANE_VIEWER`. |
@@ -489,6 +492,7 @@ exercise the primitive on fixture keys -- `mega.wave_cap`, `gauntlet.runner_host
 | intake.url_ledger |
 | intake.verdicts |
 | knowledge.root |
+| lanes.default |
 | precedent.registry |
 | review.apply_findings |
 | ship.confirm_bump |
