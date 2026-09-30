@@ -1126,13 +1126,13 @@ for CMD in devs-team visual-team test-plan; do
   fi
 done
 
-# SPEC-017: /kit:execute expands tasks into bite-sized steps.
+# /kit:execute hands the builder the standing grant instead of a bite-sized step mandate.
 TOTAL=$((TOTAL + 1))
-if grep -qF 'bite-sized steps' "$KIT_DIR/commands/execute.md" 2>/dev/null; then
-  echo -e "  ${GREEN}PASS${NC} execute.md has the bite-sized step-expansion marker (SPEC-017)"
+if grep -qF 'Navigate the implementation yourself: derive what you need, decide your own build order; ask when stuck.' "$KIT_DIR/commands/execute.md" 2>/dev/null; then
+  echo -e "  ${GREEN}PASS${NC} execute.md carries the builder's standing grant sentence"
   PASS=$((PASS + 1))
 else
-  echo -e "  ${RED}FAIL${NC} execute.md missing the bite-sized step-expansion marker"
+  echo -e "  ${RED}FAIL${NC} execute.md missing the builder's standing grant sentence"
   FAIL=$((FAIL + 1))
 fi
 
@@ -1255,8 +1255,8 @@ E_RECHECK=$(grep -n '^### Spec->build lane re-check' "$EXEC_CMD_F" | cut -d: -f1
 E_PRE=$(grep -n '^### Validation preflight' "$EXEC_CMD_F" | cut -d: -f1)
 RC=0; [ -n "$E_RECHECK" ] && [ -n "$E_PRE" ] && [ "$E_PRE" -gt "$E_RECHECK" ] || RC=1
 assert_eq "execute.md preflight sits after the lane re-check" "0" "$RC"
-RC=0; fhas "$EXEC_CMD_F" 'stops before task 1 with nothing folded' && fhas "$EXEC_CMD_F" 'Execute never builds a spec whose validation did not pass' || RC=1
-assert_eq "execute.md preflight: a critical stops before task 1" "0" "$RC"
+RC=0; fhas "$EXEC_CMD_F" 'stops before the build with nothing folded' && fhas "$EXEC_CMD_F" 'Execute never builds a spec whose validation did not pass' || RC=1
+assert_eq "execute.md preflight: a critical stops before the build" "0" "$RC"
 RC=0; fhas "$EXEC_CMD_F" 'outcome <rid> Validate end caught=true' || RC=1
 assert_eq "execute.md preflight: the stop path records and closes the bracket" "0" "$RC"
 RC=0; fhas "$WRAP_CMD_F" 'stops with `VALIDATE PENDING: <spec path>`' && fhas "$WRAP_CMD_F" 'SendMessage' && fhas "$WRAP_CMD_F" 'fresh builder' || RC=1
