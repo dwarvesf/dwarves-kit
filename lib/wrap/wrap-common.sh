@@ -151,6 +151,7 @@ _squash_verdict() {
 APPLY=0
 WORKTREES=0
 ARCHIVE_UNMERGED=0
+PULL_ONLY=0
 MODE="DRY-RUN"
 FAILURES=0
 TIPS_FILE=""
@@ -187,6 +188,8 @@ run() {
   local repo="$1" verdict="$2"; shift 2
   if ! _write_guard "$repo"; then
     echo "     SKIP ${verdict}: index.lock held by another writer"
+    # Under --pull-only the pull is the whole job, so a skipped write is a failed call.
+    [ "$PULL_ONLY" = 1 ] && [ "$APPLY" = 1 ] && FAILURES=1
     return 0
   fi
   echo "     [${MODE}] ${verdict}"
