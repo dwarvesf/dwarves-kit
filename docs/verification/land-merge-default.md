@@ -127,6 +127,10 @@ A fresh Opus review of the first build returned FIX THEN SHIP: three CRITICAL fi
 | 47 | green run: `merge-cycle: wrap --help names --verify`, `bin/wrap usage names --verify on both verbs` |
 | 48 | green run: the whole `tests/test-wrap.sh` (every pre-existing land, merge and rebase case) |
 
+## Rollback
+
+Revert the PR's squash commit. Nothing persists outside the repo: no config key, no ledger schema, no stored state. A branch this change already merged `origin/<default>` into keeps that merge commit, which the squash merge flattens; a branch left mid-cycle is restored by the helpers themselves or named for a human (`git merge --abort` or `git reset --keep <tip>` in the named worktree).
+
 ## Not proven
 
 - GitHub's real `mergeable` after a pushed merge commit that already contains the base (the union-blind case): routed to `wrap merge --apply --pr <n>`, not sampled.
