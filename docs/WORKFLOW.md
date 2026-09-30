@@ -152,7 +152,7 @@ migration (same dry-run + rollback shape); agent-org config rides spec-feature l
 | Spec     | /kit:spec | spec exists, Status: DRAFT | spec-drift-guard hook |
 | Validate | /kit:spec-validate (a fresh-context validator /kit:spec and /kit:execute dispatch) | Status: VALIDATED | ship gate (full lane); /kit:execute preflight (normal, full, backfill) |
 | Test plan (default for normal/full) | /kit:test-plan, then /kit:test-plan-review-team --light (the full team at blind-spot) | `## Test plan` written into the spec, in the type's dialect (test-design-standard §5b), plus its `## Test plan critique` | advisory default (normal/full); tiny exempt |
-| Build    | /kit:execute or /kit:next | tasks checked, verifier PASS | verification pipeline (worker, verifier, fix; max 2) |
+| Build    | /kit:execute or /kit:next | tasks checked, end verifiers PASS | verification pipeline (one builder, one end verification pass, fix; max 2) |
 | Review   | /kit:review or /kit:review-team | review verdict recorded; full lane loops per SPEC-231 | advisory (default-run + bounded loop on full: SPEC-231, docs/patterns/review-fix-loop.md) |
 | Docs     | /kit:docs | README/CHANGELOG match code | advisory |
 | Ship     | /kit:ship | tagged + PR | ship gate (blocks on DO NOT SHIP), push-to-main blocker |
@@ -174,8 +174,8 @@ thing that enforces the exit:
   Validate --->  Status: VALIDATED  --------------->  execute preflight; ship gate (full)
     |
     v
-  Build  ----->  tasks checked, verifier PASS  ---->  verification pipeline [HARD]
-    |                                                 worker -> verifier -> fix
+  Build  ----->  tasks checked, end verifiers PASS  verification pipeline [HARD]
+    |                                                 builder -> end verifiers -> fix
     v
   Review  ---->  verdict recorded  ---------------->  advisory
     |
@@ -226,7 +226,7 @@ checks: a static review when it is produced (left/vertex) and a dynamic test lat
     build /kit:design  · review /kit:devs-team
      Spec ........................................... Integration test   integration-verifier
      build /kit:spec (+research-*) · review /kit:spec-validate
-      Code ......................................... Unit / task test    task-verifier
+      Code ......................................... Unit / task test    task-verifier (one end pass)
       build /kit:execute · /kit:next                                    (fix-agent repairs)
       review /kit:review · /kit:review-team (deep security: security-reviewer)
        ╲                                            ╱
@@ -248,7 +248,7 @@ review when produced (left/vertex), a dynamic test when executed (right).
 | Solution design | `/kit:design` | `/kit:devs-team` | System test (`system-verifier`, dispatched by `/kit:verify`) |
 | Spec | `/kit:spec` (+ research-* agents) | `/kit:spec-validate` | Integration test (`integration-verifier`) |
 | Code | `/kit:execute`, `/kit:next` (+ `fix-agent`) | `/kit:review`, `/kit:review-team` (+ `code-reviewer`; deep: `security-reviewer`) | Unit / task test (`task-verifier`) |
-| (any right-arm PASS) | -- | -- | Fresh-context re-audit (`recheck-verifier`, re-executes the recorded command) |
+| (sampled right-arm PASS, plus every self-attested row) | -- | -- | Fresh-context re-audit (`recheck-verifier`, re-executes the recorded command) |
 | (whole assembled work) | -- | `advisor` (kit-default extra lens, P5) | -- |
 | UI design (downstream) | `/kit:ui-design` | `/kit:visual-team` | (visual; no dynamic test) |
 | Docs | (written during build) | `/kit:docs` (+ `doc-verifier`) | (doc-verifier confirms vs code) |
@@ -328,7 +328,9 @@ serve >= 2 lifecycle phases) and "no phantom features":
   `system-verifier` by `/kit:verify`, `brief-reviewer` by `/kit:think` (TIER-4
   close-gate wiring).
 - **`recheck-verifier` (SHIPPED, SG-04)** -- a fresh-context re-audit that re-executes
-  any right-arm PASS's recorded command, catching a stale or fabricated PASS.
+  a right-arm PASS's recorded command, catching a stale or fabricated PASS. `/kit:execute`
+  samples it (`execute.recheck_sample`, one run in N) and always rechecks self-attested rows
+  (ADR-0038).
 
 Prior gaps closed 2026-05-23: the `security-reviewer` orphan (wired into
 `/kit:review-team`) and `/kit:verify`. With SG-04, every left AND right
@@ -350,7 +352,7 @@ that validates it):
 | Review | `advisor` critique (kit-default EXTRA lens, on top of the specialists) |
 | Docs | `/kit:docs` (+ `doc-verifier`) |
 | Acceptance / Ship | `acceptance-verifier` (dynamic, dispatched by `/kit:verify`) + `/kit:ship`'s own gate (an inline test-run + spec-lane check, not an `acceptance-verifier` dispatch) |
-| (any right-arm PASS) | `recheck-verifier` fresh-context re-audit |
+| (sampled right-arm PASS) | `recheck-verifier` fresh-context re-audit |
 | Final boundary | `advisor` over-suggest (P6) before the human review |
 
 **Enforcement is at ship, never mid-flight (ADR-0024 + PHILOSOPHY).** Each phase's
@@ -395,13 +397,13 @@ default-run on the full lane and opt-in below it (the scaling gate). Foundation:
 
 The starter domain roster has ONE router with two live dispatch paths, matched to agent
 type: WORKER specialists (write-capable implementers, e.g. `db-migration-worker`,
-`data-etl-worker`) dispatch via `commands/execute.md` step 2b-0's reuse branch, the
-deterministic `role-classify.sh agent-for <domain>` lookup makes the reuse HIT. REVIEWER
+`data-etl-worker`) dispatch as `/kit:execute`'s builder: the deterministic
+`role-classify.sh agent-for <domain>` lookup names the `subagent_type`. REVIEWER
 specialists (read-only judges, e.g. `performance-reviewer`, `api-reviewer`,
 `frontend-reviewer`, `infra-reviewer`) dispatch via `/kit:review-team`'s opt-in domain lens.
-A read-only reviewer is NOT a 2b-0 target (it cannot implement a task). `generic` and any
-unknown domain return empty from `agent-for` and escalate to SPEC-089 Mode-C synthesis (the
-dynamic long tail). 2b-0's reuse-vs-synthesize branch is the single router; no second one.
+A read-only reviewer is never the builder (it cannot implement a task). `generic` and any
+unknown domain return empty from `agent-for`, and `/kit:execute` runs its general builder.
+The lookup is the single router; no second one.
 
 ## The V-model descent contract
 
@@ -747,7 +749,7 @@ The amend is governed by four invariants:
 
 ## Completion contract
 The done-definition is canonical in `AGENTS.md` zone 3 ("Done means"); do not
-restate it here. In the kit, the task-verifier is what proves "done" (self-reported
+restate it here. In the kit, the end verification pass (task-verifier over every task, then integration and acceptance) is what proves "done" (self-reported
 "done" is not proof), and the anti-rationalization hook is the backstop for
 premature completion. The clauses below add kit-specific completeness checks on top
 of that done-definition.
@@ -1249,40 +1251,34 @@ recorded + fix verified. `debug.confirm_fix` ships `false`, so the loop's own th
                                                                              DONE ◀──────┘
 ```
 
-**Execute verification pipeline** (the build engine). `/kit:execute` dispatches one
-worker per task, verifies each in a fresh context, retries fixable failures, and checks
-cross-task wiring at the end. Self-reported "done" is never proof; the verifier is.
-Enforcer: the verification pipeline is itself a hard stop. Stop: every task PASS **and**
-the integration-verifier PASS (multi-task specs). Branches: `PASS` (advance),
-`FAIL:fixable` (retry via fix-agent, **max 2**), `FAIL:escalate` or retries exhausted
-(stop -> human).
+**Execute verification pipeline** (the build engine). `/kit:execute` dispatches ONE
+builder for the whole spec, then verifies once at the end: a single `task-verifier` pass
+over every task's criteria, the integration-verifier (multi-task specs), and the
+acceptance-verifier. Self-reported "done" is never proof; the verifiers are.
+Enforcer: the verification pipeline is itself a hard stop. Stop: the end verifiers PASS.
+Branches: `PASS` (advance), `FAIL:fixable` (retry via fix-agent, **max 2**),
+`FAIL:escalate` (stop -> human), retries exhausted (`Result: PARTIAL`, the unmet
+criterion named). A `recheck-verifier` re-audit samples the PASSes (ADR-0038).
 
 ```text
-   /kit:execute  (record pre-build base ref)
+   /kit:execute  (record pre-build base ref; one human go before the builder)
         │
         ▼
-   ┌── for each task in phase ──────────────────────────────────────────┐
-   │     worker subagent (fresh context) ──▶ task-verifier (read-only)   │
-   │                          ┌───────────────────┼───────────────────┐  │
-   │                       PASS              FAIL:fixable        FAIL:escalate
-   │                          │                   │                    │  │
-   │                          │                   ▼                    │  │
-   │                          │            fix-agent (scoped)          │  │
-   │                          │            re-verify; retry < 2 ─┐     │  │
-   │                          │            retries == 2 ─────────┼────▶│  │
-   │                          ▼                                  │     ▼  │
-   │                   mark task done ◀────────────────────────────  ESCALATE
-   └──────────┬─────────────────────────────────────────────────────────┘
-              │ all tasks PASS
-              ▼
-   phase checkpoint (human: continue / review / stop)
-              ▼
-   integration-verifier (read-only, diffs whole build from base ref)
-        ┌─────┼───────────────┐
-      PASS  FAIL:fixable   FAIL:escalate
-        │     │ (fix-agent)     ▼
-        ▼     ▼            ESCALATE
-      build complete ◀── re-check
+   builder subagent (fresh context, whole-spec brief, one commit per task)
+        │   tasks > 6 -> split up front (fork-risk); near its limit -> PROGRESS: -> continuation
+        ▼
+   task-verifier: ONE pass over every task's criteria
+   integration-verifier (multi-task)   acceptance-verifier (lead runs non-allowlisted commands)
+        ┌─────────────────┼─────────────────┐
+      PASS          FAIL:fixable        FAIL:escalate
+        │                 │                   │
+        │          fix-agent (scoped)         ▼
+        │          re-verify; retry < 2    ESCALATE
+        │          retries == 2 ──▶ Result: PARTIAL
+        ▼
+   check-edit signal; sampled recheck (HEAD sha key, plus every self-attested row)
+        ▼
+   negative control ──▶ build complete
 ```
 
 **Mid-flight amend micro-loop** (a side excursion off the execute pipeline, not a
@@ -1330,7 +1326,7 @@ later reader and an earlier writer never split across two specs.
 
 The edges that fire when the happy path does not hold.
 
-1. **Retry (fixable failure).** A `task-verifier` / `integration-verifier` `FAIL:fixable`
+1. **Retry (fixable failure).** An end-verifier (`task-verifier`, `integration-verifier`, `acceptance-verifier`) `FAIL:fixable`
    dispatches a scoped fix-agent, then re-verifies. Cap: 2 retries. 1-2 cycles catch
    import/assertion/off-by-one bugs; 3+ means a design problem.
 2. **Escalate (unfixable or exhausted).** `FAIL:escalate`, or retries hitting the cap,
@@ -1362,7 +1358,7 @@ mistake is irreversible:
 | safety-gate | destructive Bash (`rm -rf`, `DROP TABLE`, `git reset --hard`, `kubectl delete`; build-artifact allowlist exempt) | PreToolUse hook, exit 2 |
 | push-to-main blocker | a push to `main`/`master`/protected | PreToolUse hook, exit 2 |
 | anti-rationalization | premature "done" claim; phantom-impl stub in the diff; guess-fix while `## Root cause` empty | Stop hook |
-| verification pipeline | a task whose acceptance criteria are unmet or whose tests did not actually run | `/execute` gate (worker -> verifier -> fix -> escalate) |
+| verification pipeline | a task whose acceptance criteria are unmet or whose tests did not actually run | `/execute` gate (builder -> end verifiers -> fix -> escalate) |
 
 ### Quick reference: trigger -> flow -> stop -> enforcer
 
