@@ -88,6 +88,30 @@ Same procedure. The floor timing case runs 1000 changed paths with 20000 added l
 | project `[lanes] default` ignored, invalid default not validated | `lib/gate/lane-data.sh` | `FAIL default-lane-layers` (both) | `PASS default-lane-layers` |
 | dropped-phase dedupe removed | `lib/gate/gate-ledger.sh` | `FAIL start-no-duplicate-skips: appears 2 times` | `PASS start-no-duplicate-skips` |
 
+### Second review round controls
+
+Where two defenses guard one behavior, the control breaks both, so the case cannot pass on the spare.
+
+| Control | Broken file | Broken run | Restored run |
+|---|---|---|---|
+| second push segment dropped from the count | `lib/gate/push-refs.sh` | `FAIL ship-fail-closed-refs: [want 2 got 0: git push origin feat/evil && git push origin feat/x]` | `PASS ship-fail-closed-refs` |
+| several branches allowed | `hooks/ship-gate.sh` | `FAIL ship-fail-closed-refs: [want 2 got 0: git push origin feat/x feat/evil]` | `PASS ship-fail-closed-refs` |
+| gh `--head` ignored | `lib/gate/push-refs.sh` | `FAIL ship-fail-closed-refs: [want 2 got 0: gh pr create --head feat/evil --fill]` | `PASS ship-fail-closed-refs` |
+| `--all` and unknown options accepted | `lib/gate/push-refs.sh` | `FAIL ... [want 2 got 0: git push --all origin]` | `PASS` |
+| unresolvable source accepted, no-answer guard off | `hooks/ship-gate.sh`, `lib/gate/push-refs.sh` | `FAIL ... [want 2 got 0: git push origin nothere]` | `PASS` |
+| wrapper accepted, guard off | same two files | `FAIL ... [want 2 got 0: xargs git push origin]` | `PASS` |
+| `--git-dir path` space form accepted, guard off | same two files | `FAIL ... [want 2 got 0: git --git-dir .git push origin feat/x]` | `PASS` |
+| variables accepted, resolve and guard off | same two files | `FAIL ... [want 2 got 0: git push origin $BRANCH]` | `PASS` |
+| scan without `--text` | `lib/classify/lane-classify.sh` | `FAIL floor-diff-hardening: [attrs => '']` | `PASS floor-diff-hardening` |
+| repo prefix config trusted | `lib/classify/lane-classify.sh` | `FAIL floor-diff-hardening: [dstprefix => '']` | `PASS floor-diff-hardening` |
+| external diff trusted | `lib/classify/lane-classify.sh` | `FAIL floor-diff-hardening: [external => '']` | `PASS floor-diff-hardening` |
+| color not disabled | `lib/classify/lane-classify.sh` | `FAIL floor-diff-hardening: [color => '']` | `PASS floor-diff-hardening` |
+| `+++` always read as a header | `lib/classify/lane-classify.sh` | `FAIL floor-plus-line: got ''` | `PASS floor-plus-line` |
+| where matched in the whole record | `lib/classify/lane-classify.sh` | `FAIL floor-where-boundary: [DELETE FROM users in app/nowhere.py => '']` | `PASS floor-where-boundary` |
+| tiny accepted as default | `lib/gate/lane-data.sh` | `FAIL default-rejects-tiny: classify => 'tiny'` | `PASS default-rejects-tiny` |
+
+The 30000-file case (`floor-timing-30k`) measures about 2 s against a 5 s limit. It has no negative control of its own: the per-path slow-path control on `floor-timing` (1000 paths) covers the same mechanism, and a 30000-path slow run takes many minutes.
+
 ## Reproducible
 
 Run `bash tests/test-lanes-data.sh` from a clean checkout of the branch. It builds its own temp repos and ledger dirs, so the run is repeatable and leaves nothing behind. Cases `parity` and `baseline` are the only ones not in the default run: `parity` holds only at the refactor commit, and `baseline` rewrites the captured baseline file.
