@@ -440,7 +440,10 @@ teach = ""                      # [consumer] name of a skill that PAYS the under
                                  #        instead of teaching badly. Filled by learning-kit's
                                  #        `understand` lane, or the operator directly.
 
-[harvest]                       # the transcript sweep (hooks/harvest_sweep.py), phase 1.
+[harvest]                       # the scheduled transcript sweep (hooks/harvest_sweep.py, run as
+                                #        `hooks/harvest.py --sweep`). Install it per host with
+                                #        `bash deploy/macos/harvest-sweep/install --apply`. A run
+                                #        holds (exit 0, cursor kept) on a 5-hour or weekly usage limit.
                                 #        EVERY key resolves operator `kit.toml` -> this
                                 #        KIT-ROOT file ONLY (kit_config_get_root): a project
                                 #        `.kit.toml` is never read for [harvest], because it
