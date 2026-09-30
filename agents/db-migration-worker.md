@@ -1,6 +1,6 @@
 ---
 name: db-migration-worker
-description: Implements a schema migration task, the up migration plus its reverse/rollback, backfill, and index changes. Write-capable. Dispatched by /kit:execute step 2b-0 as the db-migration domain implementer.
+description: Implements a schema migration task, the up migration plus its reverse/rollback, backfill, and index changes. Write-capable. Dispatched by /kit:execute as the builder when `role-classify.sh agent-for` names it for the db-migration domain.
 tools:
   - Read
   - Write
