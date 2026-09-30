@@ -112,6 +112,18 @@ Where two defenses guard one behavior, the control breaks both, so the case cann
 
 The 30000-file case (`floor-timing-30k`) measures about 2 s against a 5 s limit. It has no negative control of its own: the per-path slow-path control on `floor-timing` (1000 paths) covers the same mechanism, and a 30000-path slow run takes many minutes.
 
+### Final round controls
+
+| Control | Broken file | Broken run | Restored run |
+|---|---|---|---|
+| combined short flags not blocked | `hooks/safety-gate.sh` | `FAIL safety-push-forms: [want 2 got 0: git push -fu origin feat/x] [... -uf ...]` | `PASS safety-push-forms` |
+| destination not normalized | `hooks/safety-gate.sh` | `FAIL safety-push-forms: [want 2 got 0: git push origin feat/x:refs/heads/main] ...` | `PASS safety-push-forms` |
+| continuation join removed (safety-gate) | `hooks/safety-gate.sh` | `FAIL safety-push-forms: [line continuation before -f: rc=0]` | `PASS safety-push-forms` |
+| substring marker match | `hooks/ship-gate.sh` | `FAIL ship-marker-collisions: [want 2 got 0: git push origin feat/DEFAULT-x] ...` | `PASS ship-marker-collisions` |
+| continuation join removed (ship-gate) | `hooks/ship-gate.sh` | `FAIL ship-continuation-and-heredoc: [line continuation: rc=0]` | `PASS ship-continuation-and-heredoc` |
+| shell heredoc not refused | `hooks/ship-gate.sh` | `FAIL ship-continuation-and-heredoc: [bash -s heredoc: rc=0] [sh here-string: rc=0]` | `PASS ship-continuation-and-heredoc` |
+| marker read from the working tree | `hooks/ship-gate.sh` | `FAIL ship-marker-at-base: marker removed from the tree switched the rule off: rc=0` | `PASS ship-marker-at-base` |
+
 ## Reproducible
 
 Run `bash tests/test-lanes-data.sh` from a clean checkout of the branch. It builds its own temp repos and ledger dirs, so the run is repeatable and leaves nothing behind. Cases `parity` and `baseline` are the only ones not in the default run: `parity` holds only at the refactor commit, and `baseline` rewrites the captured baseline file.

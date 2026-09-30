@@ -389,6 +389,23 @@ Single files (the dispatch gate cannot prove these disjoint by prefix, so it ser
 | SPEC-371 adopt-pointer-onboarding | Consumer of `[lane.*]` for starter templates (`SPEC-371:78-80`). Its pointer text should say "default normal; the diff floor applies at push; normal requires validate and review" |
 | SPEC-372 spec-depth-line | Split out of this spec. Owns `commands/spec.md`, `spec-validate.md`, `test-plan*.md`, `test-write.md`, `lib/spec/**`. Depends on this spec for `docs/WORKFLOW.md` (both edit it; land this first) |
 
+## Threat model
+
+The lane gates guard a cooperative agent against skipped steps. They do not stop an adversary. An agent that wants to push a hard-path change without the full lane's gates can, and this spec does not claim otherwise. What the gates do is make the honest path the easy one and make a skipped step loud: a hard-path diff on any pushed ref needs full-lane gates or an audited override, and a command the parser cannot account for is refused rather than guessed at.
+
+The enforcement point is a PreToolUse hook that reads a shell string. That is best-effort by construction. Residual risks a command parser cannot close:
+
+| Risk | Why the parser cannot see it |
+|---|---|
+| Git aliases and wrapper scripts | `git p` or `./push.sh` runs a push the command text never names. A `-c alias.` on the command line is refused; an alias in a config file is not visible |
+| Repo redirection | `GIT_DIR`, `GIT_WORK_TREE`, `pushd`, `cd` chains, and `--git-dir` tricks change which repo is pushed after the parser has looked |
+| Pushes outside Claude Code | A terminal, an IDE, CI, or another tool never passes through the hook |
+| `--no-verify` | Skips every client-side git hook, including a future pre-push hook |
+| Very large diffs | A diff over about 40 MB can exceed the hook timeout, and a timeout fails open |
+| Shell features | Variables, command substitution, `eval`, and encoded commands are refused when seen, but the set of shell tricks is open-ended |
+
+Structural next step: a native git pre-push hook, installed by `adopt`, that runs the same floor against the exact refs git passes on stdin. It removes the parsing problem, because git hands it the real ref list. It still yields to `--no-verify` and to pushes made without the hook installed. Server-side required CI (branch protection with a required check that runs the floor) is the only layer a client cannot bypass. Until both exist, this hook is a guardrail, and its failure mode is to block.
+
 ## Decision Log
 
 - DEC-1: Hard paths are code constants plus an add-only config list, so they hold regardless of overrides. Rejected: a `kit.toml` list (a project layer could replace it).
