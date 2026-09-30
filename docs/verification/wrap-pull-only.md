@@ -14,68 +14,55 @@ Spec: `docs/specs/SPEC-359-wrap-pull-only.md`. No board row filed; the operator 
 | Step 5 bullet: when to reach for `--pull-only`, the ahead-only vs. diverged distinction, the NOTE pointing at plain `apply` | `commands/wrap.md` |
 | `bin/wrap` row description | `docs/consumer-contract.md` |
 | `[Unreleased]` COMPAT bullet | `docs/CHANGELOG.md` |
+| Ahead NOTE in the pull section; exit 2 on a lock-skipped pull (`--apply`) or an unresolved default branch; tip snapshot and `gh auth status` skipped (retroactive think and design-critique gates) | `lib/wrap/wrap.sh` `_apply_repo`, `run()`, `cmd_apply` |
+| `[--pull-only]` in the stable entrypoint's usage header | `bin/wrap` |
 | Real-git fixtures for every row below | `tests/test-wrap.sh` |
+| One mutation per `PULL_ONLY` gate, exact-once match guards | `docs/verification/wrap-pull-only-negctl.py` |
 
 ## Green run
 
 - Command: `bash tests/test-wrap.sh`
+- At: `96b4e37b` (the last commit touching `lib/`, `bin/` or `tests/`; later commits are docs only)
 - Exit: 0
-- Output: `test-wrap: all 1550 passed`
+- Output: `test-wrap: all 1566 passed`, run six times as the green step of each negative control below, and again after each restore
 - Verdict: PASS
 
-| Test plan row (SPEC-359) | Assertion group | Got |
-|---|---|---|
-| Scope, happy path | `pull-only scope: ...` (exits 0, HEAD moved, `old-branch still exists`, `-- pull:` prints) | PASS |
-| Scope | `pull-only scope: no worktrees/branches/archive unmerged/origin branches/stray lines/stray commits section` | PASS |
-| Union carry still works | `pull-only union+stash: ...` (union file carried, incoming and local log lines both present, A.md local line survived) | PASS |
-| `pull_past_dirty` still works | `pull-only union+stash: ...` (non-union blocker stashed and restored, no stash left) | PASS |
-| `pull_past_dirty` off | `pull-only knob off: ...` (exit 2, `FAILED pull --ff-only`, nothing stashed, HEAD unmoved) | PASS |
-| Dry run | `pull-only dry run: ...` (`[DRY-RUN] pull --ff-only` prints, HEAD unmoved, no branches section) | PASS |
-| Off default branch | `pull-only off-default: ...` (`SKIP pull:`, `fetch origin main:main` fallback ran, no branches/worktrees section) | PASS |
-| Stray commits, ahead-only | `pull-only ahead-only: ...` (exit 0, no `FAILED pull`, HEAD unchanged, no `wrap/stray-commits-*` branch locally or on origin) | PASS |
-| Stray commits, diverged | `pull-only diverged: ...` (exit 2, `FAILED pull --ff-only` present, HEAD unmoved, no `wrap/stray-commits-*` branch anywhere) | PASS |
-| Fetch-failure wording | `pull-only fetch failure: ...` (`(fetch failed; the pull below will likely fail too)` present, `every delete is skipped` absent, exit 2, `FAILED pull` follows) | PASS |
-| Usage line | `pull-only usage: ...` (no-repo path, exit 64, usage line names `--pull-only`) | PASS |
-| Flag conflict | `pull-only conflict --worktrees/--archive-unmerged/--own/--tips-file: ...` (all four exit 64, `--tips-file` conflict named ahead of the missing-path wording) | PASS |
-| Regression | every pre-existing `apply` assertion in the file (no `--pull-only` involved), unchanged in outcome across this same run | PASS |
-| Multi-repo | `pull-only multi-repo: ...` (two repos, each with its own header, both pulled) | PASS |
-
-The fixtures reuse the real-git `build_pd_repo`/`advance_pd_repo` helpers already in the suite (bare origin plus a clone, a `merge=union` `_meta/LAB_LOG.md`, a plain `A.md`/`B.md`): the subject is `git pull --ff-only`'s own exit behavior under ahead-only vs. diverged history, which a stubbed git cannot distinguish.
+The fixtures reuse the real-git `build_pd_repo`/`advance_pd_repo` helpers (bare origin plus a clone, a `merge=union` `_meta/LAB_LOG.md`, a plain `A.md`/`B.md`). The subject is `git pull --ff-only`'s own exit behavior under ahead-only vs. diverged history, which a stubbed git cannot distinguish.
 
 ## Test plan coverage
 
-Maps each row of SPEC-359's `## Test plan` matrix to the acceptance criterion it covers and the assertion group that proves it in `tests/test-wrap.sh`.
+Maps each row of SPEC-359's `## Test plan` to its acceptance criterion and the assertions that prove it. Every assertion row passed in the green run above. "Negative control" names the mutation that turns it RED.
 
-| # | Case | AC | Category | Proof (assertion group) | Status |
-|---|---|---|---|---|---|
-| 1 | Scope, happy path | AC-1, AC-5 | happy-path | `pull-only scope:` | covered |
-| 2 | No sweep section, no ahead NOTE | AC-1 | happy-path | `pull-only scope: no ...` | covered |
-| 3 | Union carry + `pull_past_dirty` on | AC-2 | happy-path | `pull-only union+stash:` | covered |
-| 4 | `pull_past_dirty` off | AC-2 | failure-injection | `pull-only knob off:` | covered |
-| 5 | Dry run | AC-1 | boundary/edge | `pull-only dry run:` | covered |
-| 6 | Off default branch | AC-1 | boundary/edge | `pull-only off-default:` | covered |
-| 7 | Ahead-only, NOTE prints | AC-3, AC-5 | boundary/edge | `pull-only ahead-only:` | covered |
-| 8 | Diverged, NOTE prints | AC-4, AC-5 | failure-injection | `pull-only diverged:` | covered |
-| 9 | Fetch failure wording | AC-8 | failure-injection | `pull-only fetch failure:` | covered |
-| 10 | Stale `index.lock` fails the call | AC-6 | failure-injection | `pull-only stale lock:` | covered |
-| 11 | No default branch fails the call | AC-6 | failure-injection | `pull-only no default branch:`, `plain apply no default branch:` | covered |
-| 12 | Four flag conflicts | AC-7 | security/abuse | `pull-only conflict` | covered |
-| 13 | Usage line | AC-7 | boundary/edge | `pull-only usage:` | covered |
-| 14 | Multi-repo | AC-1 | boundary/edge | `pull-only multi-repo:` | covered |
-| 15 | Regression | AC-9, AC-10 | regression | full `bash tests/test-wrap.sh`, exit 0 | covered |
-| 16 | Negative control | AC-1, AC-5 | regression | `lib/gate/negctl.sh`, below | covered |
-| S4 | Two sessions pulling one checkout at once | none | concurrency | none | gap: SPEC-286's `_pull_default`, unchanged here |
-| - | `--pull-only --under <root>` | AC-1 | boundary/edge | none | gap: repo-list building does not read `PULL_ONLY` |
+| # | Case | AC | Proof (assertion prefix) | Negative control |
+|---|---|---|---|---|
+| 1 | Scope, happy path | AC-1, AC-5 | `pull-only scope:` | N1 |
+| 2 | No sweep section, no ahead NOTE | AC-1 | `pull-only scope: no ...` | N1 |
+| 3 | Union carry + `pull_past_dirty` on, stray line not carried | AC-2, AC-5 | `pull-only union+stash:` | N1 (stray-branch assertion) |
+| 4 | `pull_past_dirty` off, union line survives | AC-2 | `pull-only knob off:` | none: `_pull_default` is unchanged (SPEC-286 owns its controls) |
+| 5 | Dry run | AC-1 | `pull-only dry run:` | N1 |
+| 6 | Off default branch | AC-1 | `pull-only off-default:` | N1 |
+| 7 | Ahead-only, NOTE prints | AC-3, AC-5 | `pull-only ahead-only:` | N1, N2 |
+| 8 | Diverged, NOTE prints | AC-4, AC-5 | `pull-only diverged:` | N1, N2 |
+| 9 | Fetch failure wording | AC-8 | `pull-only fetch failure:` | N6 |
+| 10 | Stale `index.lock` fails the call; plain apply still exits 0 | AC-6 | `pull-only stale lock:`, `plain apply stale lock:` | N3 |
+| 11 | No default branch fails the call; plain apply still exits 0 | AC-6 | `pull-only no default branch:`, `plain apply no default branch:` | N4 |
+| 12 | Five flag-conflict forms, `--apply` passed, HEAD unmoved | AC-7 | `pull-only conflict`, `pull-only conflicts:` | N5 |
+| 13 | Usage line | AC-7 | `pull-only usage:` | none: a string check |
+| 14 | Multi-repo | AC-1 | `pull-only multi-repo:` | none: repo-list building is unchanged |
+| 15 | Regression | AC-9, AC-10 | full suite, exit 0 | not applicable |
+| 16 | Live run on a real remote | AC-1, AC-5 | "Live run" below | not applicable |
+| S4 | Two sessions pulling one checkout at once | none | none | gap: SPEC-286's `_pull_default`, unchanged here |
+| - | `--pull-only --under <root>` | AC-1 | none | gap: repo-list building does not read `PULL_ONLY` |
 
 ## Negative control
 
-Produced with `lib/gate/negctl.sh` after the change was committed.
+Six controls, one per independent `PULL_ONLY` gate, each run with `lib/gate/negctl.sh` at `96b4e37b` in its own scratch clone (so they ran in parallel without sharing a working tree). The mutation is `python3 docs/verification/wrap-pull-only-negctl.py N<k>`. N1's block is below; N2 to N6 printed the same lines with their own argument, each `Verdict: PASS`:
 
 ```
 ## Negative control (negctl)
 Command: bash tests/test-wrap.sh
 Exit: 0 (green before mutation)
-Mutation: sed -i '' 's/if \[ "$PULL_ONLY" != 1 \]; then/if [ "$PULL_ONLY" != 99 ]; then/' lib/wrap/wrap.sh
+Mutation: python3 docs/verification/wrap-pull-only-negctl.py N1
 Changed: lib/wrap/wrap.sh
 Exit: 1 (under mutation, RED expected)
 Restore: git checkout HEAD -- lib/wrap/wrap.sh
@@ -83,42 +70,54 @@ Exit: 0 (green after restore)
 Verdict: PASS
 ```
 
-The mutation makes the `PULL_ONLY` gate around `_apply_worktrees`/`_apply_branches`/`_apply_archive_unmerged`/`_apply_origin_branches`/`_carry_stray`/`_carry_stray_commits` always true, so every one of those steps runs whether or not `--pull-only` was given. Re-run by hand (outside `negctl`, output captured this time) to name the exact failures: `1532 passed, 18 FAILED of 1550`.
+The failing assertions under each mutation were captured by a second mutated run in the same clone:
+
+| Control | Gate mutated | RED under mutation | Failing assertions |
+|---|---|---|---|
+| N1 | sweep gate, `!= 1` to `!= 99` | 21 of 1566 | `pull-only scope:` branch survival and the five section-absence checks; `union+stash`: no branches section, stray line not carried; dry run and off-default section checks; ahead-only: HEAD unchanged, NOTE, no local or origin carry branch; diverged: exits 2, FAILED line, HEAD did not move, NOTE, no local or origin carry branch |
+| N2 | ahead NOTE gate, `= 1` to `= 99` | 2 of 1566 | `pull-only ahead-only: the ahead count is named, not silent`; `pull-only diverged: the ahead count is named` |
+| N3 | lock-skip exit in `run()`, `= 1` to `= 99` | 1 of 1566 | `pull-only stale lock: exits 2` |
+| N4 | unresolved-default exit, `= 1` to `= 99` | 1 of 1566 | `pull-only no default branch: exits 2` |
+| N5 | every conflict refusal, `if [` to `if false && [` | 11 of 1566 | the exit-64 and names-the-flag checks for `--worktrees`, `--archive-unmerged`, `--own`, `--own=<path>`; `--tips-file` names the flag and is refused before the missing-path check; `pull-only conflicts: no refused call pulled, though origin moved` |
+| N6 | fetch wording reverted to the plain-apply string | 2 of 1566 | `pull-only fetch failure: the wording names the pull`; `pull-only fetch failure: not the plain-apply wording` |
+
+Under N1 the ahead-only and diverged rows go red for a second reason: `_carry_stray_commits` runs again, pushes the local commit to a `wrap/stray-commits-*` branch, and moves the default branch back with `git reset --keep`. That is the exact behavior the flag exists to turn off. The tip-snapshot and `gh auth status` skips change no output or exit code, so they carry no control.
+
+## Live run
+
+A fresh clone of the real `origin` (GitHub), its `master` moved back one commit with `git reset --keep HEAD~1`, plus a local `old-merged` branch that a plain `apply --apply` would delete:
 
 ```
-  FAIL pull-only scope: old-branch still exists (branch sweep never ran)
-  FAIL pull-only scope: no worktrees section
-  FAIL pull-only scope: no branches section
-  FAIL pull-only scope: no origin branches section
-  FAIL pull-only scope: no stray lines section
-  FAIL pull-only scope: no stray commits section
-  FAIL pull-only union+stash: no branches section
-  FAIL pull-only dry run: no branches section
-  FAIL pull-only off-default: no branches section
-  FAIL pull-only off-default: no worktrees section
-  FAIL pull-only ahead-only: HEAD unchanged
-  FAIL pull-only ahead-only: no local stray-commits branch
-  FAIL pull-only ahead-only: no origin stray-commits branch
-  FAIL pull-only diverged: exits 2
-  FAIL pull-only diverged: FAILED pull line present
-  FAIL pull-only diverged: HEAD did not move
-  FAIL pull-only diverged: no local stray-commits branch
-  FAIL pull-only diverged: no origin stray-commits branch
+before: d2ec4c4 origin: 8385a56
+== <scratch clone>
+-- pull:
+     [APPLY] pull --ff-only (checkout on master)
+Updating d2ec4c4..8385a56
+Fast-forward
+ 8 files changed, 7 insertions(+), 11 deletions(-)
+     HEAD: 8385a56 docs(spec): mark SPEC-366 to SPEC-372 shipped with their PRs (#848)
+== APPLY complete. PR merges, deploy dispatch and board rows stay with the command.
+exit=0
+after: 8385a56
+  old-merged
 ```
 
-The ahead-only and diverged rows go red for a second reason beyond the section-absence checks: with the gate removed, `_carry_stray_commits` runs again, pushes the local commit to a `wrap/stray-commits-*` branch, and moves the default branch back with `git reset --keep`, which changes `HEAD`, the exit code, and the branch set the assertions expect under `--pull-only`. That is the exact behavior difference the flag exists to turn off. The file was restored with `git checkout HEAD -- lib/wrap/wrap.sh` immediately after this run; the tree was confirmed clean before writing this doc.
+Only the header, the fetch (silent on success) and `-- pull:` printed. HEAD reached origin's tip, and `old-merged` survived. The run touched only a scratch clone, never a shared checkout.
 
 ## Reproduce
 
 ```bash
-cd ~/.claude/dwarves-kit   # or this worktree's path
+cd <this worktree>
 bash tests/test-wrap.sh
-bash lib/gate/negctl.sh "$PWD" "bash tests/test-wrap.sh" \
-  'sed -i '"'"''"'"' '"'"'s/if \[ "$PULL_ONLY" != 1 \]; then/if [ "$PULL_ONLY" != 99 ]; then/'"'"' lib/wrap/wrap.sh'
+for k in 1 2 3 4 5 6; do
+  bash lib/gate/negctl.sh "$PWD" "bash tests/test-wrap.sh" "python3 docs/verification/wrap-pull-only-negctl.py N$k"
+done
 ```
 
 ## What this does not cover
 
-A live run against a real shared checkout with another session's dirty file present, as opposed to the synthetic `build_pd_repo` fixtures. The `wrap.pull_past_dirty` mechanics themselves (stash-by-pathspec, pop-by-identity, the union carry) are unchanged from SPEC-286 and carry that spec's own negative controls; this proof only shows `--pull-only` reaches the same `_pull_default` code path, not that path's own correctness a second time.
+Two sessions running `--pull-only --apply` on one shared checkout at once, each with a sibling's dirty file under `wrap.pull_past_dirty`. The stash/pop mechanics are `_pull_default`'s, unchanged here, and carry SPEC-286's own negative controls. The live run above used a scratch clone with no other session present.
 
-The `docs/consumer-contract.md` and `docs/CHANGELOG.md` edits are prose; no test asserts their wording, per the spec's Task Breakdown (TASK-F, TASK-G are "reviewed for accuracy," not test-covered).
+`--pull-only` combined with `--under <root>` has no fixture; repo-list building does not read `PULL_ONLY`.
+
+The `docs/consumer-contract.md`, `docs/CHANGELOG.md` and `commands/wrap.md` edits are prose, checked by `kit:doc-verifier` (PASS in its second round) rather than by a test.
