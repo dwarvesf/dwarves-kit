@@ -475,22 +475,26 @@ deescalate() {
 # hook has a short timeout that fails open). The project's lane data is read from <root>.
 _DOC_AWK='cur ~ /\.(md|markdown|txt|rst|adoc)$/ || cur ~ /(^|\/)docs\//'
 floor() {
-  local root="${1:-}" base="${2:-}" head="${3:-HEAD}"
+  local root="${1:-}" base="${2:-}" head="${3:-HEAD}" tmp
   [ -n "$root" ] || { echo "usage: lane-classify.sh floor <root> [<base> [<head>]]" >&2; return 64; }
   export KIT_PROJECT_ROOT="$root"
   [ -n "$base" ] || base="$(_deesc_resolve_base "$root")"
   [ -n "$base" ] || return 0
-  local tmp; tmp="$(mktemp -d)" || return 0
-  # Both kinds of scan read from $tmp; the trap removes only what this call created.
-  trap 'rm -rf "$tmp"' RETURN
+  tmp="$(mktemp -d)" || return 0
+  _floor_scan "$root" "$base" "$head" "$tmp"
+  rm -rf "$tmp"   # the scratch dir this call made; no RETURN trap, which would outlive the function
+  return 0
+}
+_floor_scan() {
+  local root="$1" base="$2" head="$3" tmp="$4"
   git -C "$root" -c core.quotePath=false diff -z --raw --no-renames "$base" "$head" > "$tmp/raw" 2>/dev/null || true
   local meta path n=0 paths="" links=""
   while IFS= read -r -d '' meta; do
     IFS= read -r -d '' path || break
     n=$((n + 1)); path="${path//$'\n'/?}"
     paths="$paths$path"$'\n'
-    set -- $meta
-    if [ "${1:-}" = ":160000" ] || [ "${2:-}" = "160000" ]; then links="${links:+$links }$n"; fi
+    read -ra _m <<< "$meta"   # split without pathname expansion
+    if [ "${_m[0]:-}" = ":160000" ] || [ "${_m[1]:-}" = "160000" ]; then links="${links:+$links }$n"; fi
   done < "$tmp/raw"
   printf '%s' "$paths" > "$tmp/paths"
   local best=0 bestkind="" k re hit num

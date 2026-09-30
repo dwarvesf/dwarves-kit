@@ -428,14 +428,14 @@ case_workflow_view() {
 }
 
 # The hook times out fast and fails open, so the floor must stay flat as the diff grows:
-# 1000 changed paths with the hard path LAST, extras configured, run under one second.
+# 1000 changed paths and 20000 added lines with the hard path LAST, extras configured, run under one second.
 _now() { python3 -c 'import time;print(time.time())'; }
 case_floor_timing() {
   mkrepo
   printf '[gate]\nlane_gates = true\n[lanes]\nextra_hard_paths = "^payments/|^ledger/"\n' > "$ROOT/.kit.toml"; _commit "chore: extras"
   _git branch -q timebase >/dev/null 2>&1
   mkdir -p "$ROOT/pad" "$ROOT/zz/auth"
-  local i; for i in $(seq 1 1000); do echo "$i" > "$ROOT/pad/f$i.txt"; done
+  local i; for i in $(seq 1 1000); do seq 1 20 > "$ROOT/pad/f$i.txt"; done   # 1000 files, 20000 added lines
   echo x > "$ROOT/zz/auth/z.ts"; echo 'x = 1' > "$ROOT/pad/code.py"
   _commit "chore: padding"
   local t0 t1 out; t0="$(_now)"; out="$(lcx floor "$ROOT" timebase 2>/dev/null)"; t1="$(_now)"
@@ -606,6 +606,14 @@ CASES
 case_significance_uses_risk() {
   local out; out="$(env KIT_PROJECT_ROOT=/nonexistent bash "$KIT_DIR/lib/classify/significance-classify.sh" explain "add a login rate limiter" 2>/dev/null)"
   printf '%s' "$out" | grep -qF 'significance: high (full lane)' && pass significance-uses-risk || fail significance-uses-risk "$out"
+}
+
+# The floor must not leave a RETURN trap behind in a sourcing shell, and a glob character in a
+# path must not expand against the caller's directory.
+case_floor_no_leaks() {
+  mkrepo; addfile 'app/a*b.py' 'x = 1'
+  local out; out="$(cd "$ROOT" && env KIT_CONFIG_OPERATOR=/nonexistent bash -c 'source "$1"; floor "$2" main >/dev/null 2>&1; trap -p RETURN' _ "$LC" "$ROOT")"
+  if [ -z "$out" ]; then pass floor-no-leaks; else fail floor-no-leaks "RETURN trap left set: $out"; fi
 }
 
 # ---------------------------------------------------------------------------
