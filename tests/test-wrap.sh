@@ -4863,7 +4863,7 @@ chk_has "the draft and the removed worktree keep a later wrap from merging it" "
 chk_has "step 10 records its own ledger line" "$WRAP_MD" "gate-ledger.sh record <rid> wrap-follow ran"
 chk_has "step 10 brackets its own timing" "$WRAP_MD" "gate-ledger.sh outcome <rid> wrap-follow start"
 chk_has "LAND-only items skip wrap start" "$WRAP_MD" "it skips \`wrap start\` and the worker and goes straight to the landing below"
-chk_has "step 10 re-sizes the real diff before landing" "$WRAP_MD" "lane-classify.sh classify --files"
+chk_has "step 10 re-sizes the real diff before landing" "$WRAP_MD" "lane-classify.sh risk --files"
 chk_has "step 10 waits for checks before merging" "$WRAP_MD" "gh pr checks <n> --watch"
 chk_has "step 10 merges through the PR gate, never land" "$WRAP_MD" "bin/wrap merge --apply --pr <n> <repo>"
 chk_has "step 10 says why land is not used" "$WRAP_MD" "\`land\` merges right after it opens a PR and never reads the checks"
@@ -5090,7 +5090,7 @@ out="$(printf '✅ **Needs you:** NOTHING\n\n**Built:**\n- BUILT alpha ENHANCE t
 chk "one unclosed lane among good bullets fails" "$([ "$rc" -eq 1 ]; echo $?)"
 chk_has "the finding names the offending bullet by index" "$out" "item 2"
 
-chk_has "commands/wrap.md classifies each candidate's lane" "$(cat "$KIT_DIR/commands/wrap.md")" "lib/classify/lane-classify.sh classify"
+chk_has "commands/wrap.md classifies each candidate's lane" "$(cat "$KIT_DIR/commands/wrap.md")" "lib/classify/lane-classify.sh risk"
 chk_has "commands/wrap.md names the worker model tiers" "$(cat "$KIT_DIR/commands/wrap.md")" "Sonnet is the default worker"
 chk_has "commands/wrap.md reads the build_lanes knob" "$(cat "$KIT_DIR/commands/wrap.md")" "kit_config_get_root wrap.build_lanes"
 chk_has "kit.toml ships build_lanes defaulting to tiny" "$(cat "$KIT_DIR/kit.toml")" 'build_lanes = "tiny"'
