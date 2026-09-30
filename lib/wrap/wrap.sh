@@ -3864,15 +3864,29 @@ _merge_default() {
   while IFS= read -r -d '' p; do
     _mvp_ignored "$p" && clobber+=("$p")
   done < <(git -C "$wt" diff --name-only -z "$tip" "origin/${def}" 2>/dev/null)
+  # An interrupt that landed inside the preconditions must never start a merge the
+  # caller will not see through: the flag wins over every judgment from here on.
+  [ -n "$MVP_HIT" ] && return 130
   if [ "${#clobber[@]}" -gt 0 ]; then
     echo "REFUSED ${branch}: merge origin/${def} would overwrite the ignored ${clobber[*]}"
     return 1
   fi
 
   log="$(mktemp)" || return 1
+  [ -n "$MVP_HIT" ] && { rm -f "$log"; return 130; }
   _rb_git "$wt" merge --no-ff --no-commit --no-overwrite-ignore "origin/${def}" > "$log" 2>&1
-  if [ -n "$MVP_HIT" ]; then rm -f "$log"; return 130; fi
+  if [ -n "$MVP_HIT" ]; then
+    rm -f "$log"
+    # The trap restores on its own, but bash can only run it once the merge command
+    # returns; a MERGE_HEAD still standing here means that restore never ran or could
+    # not finish, and a failed retry is the cycle's 2, not a fresh failure's.
+    if [ -e "$gd/MERGE_HEAD" ]; then
+      _merge_restore "$wt" "$branch" "$tip"; [ "$?" -eq 2 ] && return 2
+    fi
+    return 130
+  fi
   if [ ! -e "$gd/MERGE_HEAD" ]; then
+    [ -n "$MVP_HIT" ] && { rm -f "$log"; return 130; }
     echo "FAILED ${branch}: merge origin/${def} did not start: $(grep -m1 -v '^$' "$log" 2>/dev/null)"
     rm -f "$log"
     _merge_restore "$wt" "$branch" "$tip"; return $?
@@ -3883,6 +3897,9 @@ _merge_default() {
     < <(git -C "$wt" diff --name-only --diff-filter=U -z 2>/dev/null)
   if [ "${#unmerged[@]}" -gt 0 ]; then
     rout="$(_rb_resolve "$wt" "$gen" "${unmerged[@]}")"; rrc=$?
+    # The flag goes first: an interrupted resolver owes its return to the signal, and
+    # the trap already ran the restore -- reporting it as GENERATOR FAILED would be a lie.
+    [ -n "$MVP_HIT" ] && return 130
     if [ "$rrc" -eq 1 ]; then
       echo "REFUSED ${branch}: ${rout}"
       _merge_restore "$wt" "$branch" "$tip"; rrc=$?
@@ -3893,11 +3910,11 @@ _merge_default() {
       echo "GENERATOR FAILED ${branch}"
       _merge_restore "$wt" "$branch" "$tip"; return $?
     fi
-    [ -n "$MVP_HIT" ] && return 130
   fi
   # A merge with no conflict still regenerates, so a listed file origin added reaches the
   # generated file through the same run as a resolved conflict.
   if [ -n "$gen" ] && ! ( cd "$wt" && bash "$gen" generate ) >/dev/null 2>&1; then
+    [ -n "$MVP_HIT" ] && return 130
     echo "GENERATOR FAILED ${branch}"
     _merge_restore "$wt" "$branch" "$tip"; return $?
   fi

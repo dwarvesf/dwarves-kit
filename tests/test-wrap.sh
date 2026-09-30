@@ -7046,6 +7046,83 @@ chk "land-merge: overwrite-ignored pushed nothing" \
   "$([ "$(git -C "$TMPD/ld-bare-igno" rev-parse feat/land 2>/dev/null)" = "$LTIP" ] \
      || ! git -C "$TMPD/ld-bare-igno" rev-parse --verify feat/land >/dev/null 2>&1; echo $?)"
 
+echo "--- land-merge: a signal before the merge starts never runs one"
+# The shim TERM's the wrap process on the cycle's second merge-base call, which is
+# _merge_default's already-contains check -- inside the trap's coverage, before the
+# ignored-path snapshot and the merge itself. Every git subcommand is logged, so a
+# merge that ran anyway shows up by name.
+build_land_reg sigp
+LWT="$(cd "$TMPD/ld-repo-sigp/wt" && pwd -P)"
+LTIP="$(git -C "$LWT" rev-parse HEAD)"
+land_adv_regen sigp o
+mkdir -p "$TMPD/gshim-sigp"
+cat > "$TMPD/gshim-sigp/git" <<SH
+#!/usr/bin/env bash
+prev=""; sub=""
+for a in "\$@"; do
+  case "\$prev" in -C|-c) prev=""; continue ;; esac
+  case "\$a" in -C|-c) prev="\$a"; continue ;; -*) continue ;; *) sub="\$a"; break ;; esac
+done
+printf '%s\n' "\${sub:-?}" >> "$TMPD/glog-sigp"
+if [ "\$sub" = "merge-base" ]; then
+  n=\$(( \$(cat "$TMPD/gcnt-sigp" 2>/dev/null || echo 0) + 1 )); echo "\$n" > "$TMPD/gcnt-sigp"
+  [ "\$n" = "2" ] && kill -TERM "\$PPID" 2>/dev/null
+fi
+exec "$REAL_GIT_BIN" "\$@"
+SH
+chmod +x "$TMPD/gshim-sigp/git"
+: > "$TMPD/glog-sigp"; rm -f "$TMPD/gcnt-sigp"
+: > "$GH_STUB_CALLS"; rm -f "$GH_STUB_CALLS".*
+out="$(PATH="$TMPD/gshim-sigp:$PATH" GH_STUB_OPEN_PRS='[]' GH_STUB_CREATE_NUM=42 \
+  GH_STUB_MERGE_FAILS=1 GH_STUB_MERGE_ERR='Pull Request is not mergeable' \
+  GH_STUB_PR_42="$(lm_conf 42 "$LTIP")" \
+  KIT_WRAP_CI_GRACE_SECS=0 KIT_WRAP_CARRY_CHECKS_SECS=0 \
+  GH_STUB_LAND_REPO="$LWT" GH_STUB_LAND_REMOTE="$TMPD/ld-bare-sigp" \
+  GH_STUB_LAND_BRANCH=feat/land GH_STUB_LAND_DEF=main "$WRAP" land "$LWT" 2>&1)"; rc=$?
+chk "land-merge: a pre-merge signal exits 130" "$([ "$rc" -eq 130 ]; echo $?)"
+chk "land-merge: the merge never ran" "$(grep -c '^merge$' "$TMPD/glog-sigp")"
+chk "land-merge: the pre-merge signal left the tip alone" \
+  "$([ "$(git -C "$LWT" rev-parse HEAD)" = "$LTIP" ]; echo $?)"
+chk "land-merge: the pre-merge signal pushed nothing past the branch push" \
+  "$([ "$(git -C "$TMPD/ld-bare-sigp" rev-parse feat/land)" = "$LTIP" ]; echo $?)"
+chk "land-merge: the pre-merge signal left a clean worktree" \
+  "$([ -z "$(git -C "$LWT" status --porcelain)" ] \
+     && [ ! -e "$(git -C "$LWT" rev-parse --git-dir)/MERGE_HEAD" ]; echo $?)"
+
+echo "--- land-merge: an interrupted resolver is never GENERATOR FAILED"
+# The fixture's generator rendezvouses with the test: it waits on a go file, the test
+# TERM's wrap while it is blocked inside the resolve, then lets the resolver finish
+# red (exit 1). An interrupt judged as a resolver failure would print GENERATOR FAILED
+# or REFUSED before the cycle's 130.
+LGEN='if [ -f "'"$TMPD"'/arm-sigres" ]; then touch "'"$TMPD"'/gen-waiting-sigres"; while [ ! -f "'"$TMPD"'/gen-go-sigres" ]; do sleep 0.05; done; exit 1; fi; ls "$root/specs" | LC_ALL=C sort > "$root/docs/FEATURES.md"'
+build_land_reg sigres
+unset LGEN
+LWT="$(cd "$TMPD/ld-repo-sigres/wt" && pwd -P)"
+LTIP="$(git -C "$LWT" rev-parse HEAD)"
+land_adv_regen sigres o
+: > "$TMPD/arm-sigres"; : > "$GH_STUB_CALLS"; rm -f "$GH_STUB_CALLS".*
+env GH_STUB_OPEN_PRS='[]' GH_STUB_CREATE_NUM=42 \
+  GH_STUB_MERGE_FAILS=1 GH_STUB_MERGE_ERR='Pull Request is not mergeable' \
+  GH_STUB_PR_42="$(lm_conf 42 "$LTIP")" \
+  KIT_WRAP_CI_GRACE_SECS=0 KIT_WRAP_CARRY_CHECKS_SECS=0 \
+  GH_STUB_LAND_REPO="$LWT" GH_STUB_LAND_REMOTE="$TMPD/ld-bare-sigres" \
+  GH_STUB_LAND_BRANCH=feat/land GH_STUB_LAND_DEF=main \
+  "$WRAP" land "$LWT" > "$TMPD/out-sigres" 2>&1 &
+WPID=$!
+w=0; while [ ! -f "$TMPD/gen-waiting-sigres" ] && [ "$w" -lt 400 ]; do sleep 0.05; w=$(( w + 1 )); done
+kill -TERM "$WPID" 2>/dev/null
+: > "$TMPD/gen-go-sigres"
+wait "$WPID"; rc=$?
+out="$(cat "$TMPD/out-sigres")"
+chk "land-merge: an interrupted resolver exits 130" "$([ "$rc" -eq 130 ]; echo $?)"
+chk_no "land-merge: an interrupted resolver is no GENERATOR FAILED" "$out" "GENERATOR FAILED"
+chk_no "land-merge: an interrupted resolver is no REFUSED" "$out" "REFUSED"
+chk "land-merge: the interrupted resolver restored the tip" \
+  "$([ "$(git -C "$LWT" rev-parse HEAD)" = "$LTIP" ]; echo $?)"
+chk "land-merge: the interrupted resolver left a clean worktree" \
+  "$([ -z "$(git -C "$LWT" status --porcelain)" ] \
+     && [ ! -e "$(git -C "$LWT" rev-parse --git-dir)/MERGE_HEAD" ]; echo $?)"
+
 echo "--- merge-cycle: a FEATURES conflict re-merges, pushes and the PR merges"
 # The same cycle land runs, reached through `wrap merge --apply`: today this aborted on
 # the first non-union path. The resolved tree lands a real merge commit on feat/union and
