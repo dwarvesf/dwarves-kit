@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # spec-task-done.sh -- mark one verified task done in a spec and, optionally, log its run.
 #
-# /kit:execute step 2e checks a task off after each PASS verdict and appends a
-# verification-log entry. Done by hand (sed, python heredocs) per task, both edits drift
+# /kit:execute checks every task off after the end verification PASS and appends a
+# verification-log entry. Done by hand (sed, python heredocs), both edits drift
 # from the documented shape. This makes the two edits and nothing else: it NEVER commits.
 # The caller commits the spec and the log together.
 #

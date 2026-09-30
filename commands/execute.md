@@ -1,16 +1,16 @@
 ---
-description: "Autonomous spec execution with verification. Dispatches worker subagents per task, verifies each with kit:task-verifier, retries fixable failures (max 2), escalates the rest."
+description: "Whole-spec execution with verification. Dispatches one builder for the whole spec, verifies every task's criteria once at the end, retries fixable failures (max 2), names what did not ship."
 ---
 
-Self-intro (AGENTS.md "Self-intro" convention): open your first reply with exactly one banner line, `[kit:execute] Execute the approved spec: dispatch workers per task, verify each.`, then proceed.
+Self-intro (AGENTS.md "Self-intro" convention): open your first reply with exactly one banner line, `[kit:execute] Execute the approved spec: one builder for the whole spec, verify every task at the end.`, then proceed.
 
-You are an execution orchestrator. Your job is to take an approved spec and drive it to completion by dispatching subagents for each task, verifying their work, and handling failures.
+You are an execution orchestrator. Take an approved spec, hand it to one builder subagent as a brief, verify the result once at the end, and handle failures.
 
 ## Prerequisites
 
 Before starting, verify:
 1. `docs/specs/SPEC-NNN-<slug>.md` (or `ROADMAP.md`) exists and has status `APPROVED` or `VALIDATED`
-2. The spec has a `## Task Breakdown` section with tasks organized into phases
+2. The spec has acceptance criteria, a `## Verification` section, and a `## Task Breakdown`
 3. Git is on a feature branch (not main/master)
 
 If any prerequisite fails, tell the user what's missing and stop.
@@ -30,10 +30,13 @@ RID=$(bash lib/gate/gate-ledger.sh rid)
 # CURRENT_LANE = the lane already recorded for this run (the spec's `Lane:` header,
 # or the last `gate-ledger.sh start`/`start --amend` line for $RID if the header is
 # missing).
-bash lib/classify/lane-classify.sh escalate "$CURRENT_LANE" docs/specs/SPEC-NNN-<slug>.md
+SUGGEST_FILE=$(mktemp)   # escalate prints one `LANE-SUGGEST: full (...)` line on stderr; keep it
+bash lib/classify/lane-classify.sh escalate "$CURRENT_LANE" docs/specs/SPEC-NNN-<slug>.md 2>"$SUGGEST_FILE"
 ```
 
-- **`ESCALATE <current> -> <heavier>`**: the spec's own text matches a heavier lane
+Spec words never pick `full`: a hard-gate match is only a `LANE-SUGGEST` line, and the operator assigns `full`. Show that line at the Step 1 go checkpoint so the operator can assign it before the build. `ESCALATE` below is for the lighter lanes.
+
+- **`ESCALATE <current> -> <heavier>`**: the spec's own text classifies to a heavier lane
   than the one it carries. Re-plan up-only -- this never stops the run, it only adds
   rigor:
   1. `bash lib/gate/gate-ledger.sh start --amend "$RID" <heavier> <classified-lane> <chosen-type> <ctype> <repo>` -- readers take the LAST START-AMEND, so the ledger's effective lane becomes `<heavier>` and `required <heavier>`'s extra measure-twice gates are now required for this run.
@@ -51,465 +54,207 @@ under-sized lane still surfaces later, the same place every other lane gap does
 
 ### Validation preflight
 
-Runs after the lane re-check above, so an escalation to `full` picks the Opus tier, and before task 1. This covers hand-written specs and specs from any path that skipped `/kit:spec`. Take the effective lane: the same `CURRENT_LANE` the re-check resolved (the spec's `Lane:` header, else the last START or START-AMEND line), after any escalation. On `normal`, `full`, or `backfill`, look for a passing validation under `$RID`, the LAST `validate` GATE line, so a newer failed validation is never masked by an older pass. Read it by field, never by text (a later `action` or `record` line whose free text carries ` | GATE | validate | ran | ` would fool a grep):
+Runs after the lane re-check above, so an escalation to `full` picks the Opus tier, and before the build. This covers hand-written specs and specs from any path that skipped `/kit:spec`. Take the effective lane: the same `CURRENT_LANE` the re-check resolved (the spec's `Lane:` header, else the last START or START-AMEND line), after any escalation. On `normal`, `full`, or `backfill`, look for a passing validation under `$RID`, the LAST `validate` GATE line, so a newer failed validation is never masked by an older pass. Read it by field, never by text (a later `action` or `record` line whose free text carries ` | GATE | validate | ran | ` would fool a grep):
+||||||| parent of edc8990c (feat(execute): dispatch one builder for the whole spec, verify once at the end)
+Runs after the lane re-check above, so an escalation to `full` picks the Opus tier, and before the build. This covers hand-written specs and specs from any path that skipped `/kit:spec`. Take the effective lane: the same `CURRENT_LANE` the re-check resolved (the spec's `Lane:` header, else the last START or START-AMEND line), after any escalation. On `normal`, `full`, or `backfill`, look for a passing validation under `$RID`, the LAST `validate` GATE line, so a newer failed validation is never masked by an older pass:
 
 ```bash
 bash lib/gate/gate-ledger.sh show "$RID" | awk -F' [|] ' '$2=="GATE" && $3=="validate"{s=$4} END{exit !(s=="ran"||s=="override")}'
 ```
 
-A match means the spec passed validation; go on. No match (no `validate` GATE line, or the last one is a `skipped` from a failed validation) means execute dispatches the validator `/kit:spec` step 5 defines (each dispatch description carries `rid=<rid>`): the same fresh-context, read-only `general-purpose` subagent and prompt, Sonnet on normal and backfill, Opus on full. The dispatch is `/kit:spec` step 5's parallel round driven by the verb: `bash lib/gate/gate-ledger.sh validate-round open "$RID" docs/specs/SPEC-NNN-<slug>.md` before the fan-out (it writes both start brackets, binds the rid to the spec, pins the drift snapshot, and prints the round `<token>`), then one `Reviewer N only` subagent per `### Reviewer N:` heading, Reviewer 6 always on Opus, the lead merging by rule, and the single-pass validator only as the fallback. A second re-validation needs `operator_directed_build: true` in this run's own brief. The verb exits per `/kit:spec` step 5. Override: `incomplete ... --stale` here is a stop, never a re-open. An incomplete round stops before task 1 and asks the operator: `bash lib/gate/gate-ledger.sh validate-round incomplete "$RID" <token> "<reason>"`, or `incomplete "$RID" --stale "<reason>"` when the token is lost. On the report:
+A match means the spec passed validation; go on. No match (no `validate` GATE line, or the last one is a `skipped` from a failed validation) means execute dispatches the validator `/kit:spec` step 5 defines (each dispatch description carries `rid=<rid>`): the same fresh-context, read-only `general-purpose` subagent and prompt, Sonnet on normal and backfill, Opus on full. The dispatch is `/kit:spec` step 5's parallel round driven by the verb: `bash lib/gate/gate-ledger.sh validate-round open "$RID" docs/specs/SPEC-NNN-<slug>.md` before the fan-out (it writes both start brackets, binds the rid to the spec, pins the drift snapshot, and prints the round `<token>`), then one `Reviewer N only` subagent per `### Reviewer N:` heading, Reviewer 6 always on Opus, the lead merging by rule, and the single-pass validator only as the fallback. A second re-validation needs `operator_directed_build: true` in this run's own brief. The verb exits per `/kit:spec` step 5. Override: `incomplete ... --stale` here is a stop, never a re-open. An incomplete round stops before the build and asks the operator: `bash lib/gate/gate-ledger.sh validate-round incomplete "$RID" <token> "<reason>"`, or `incomplete "$RID" --stale "<reason>"` when the token is lost. On the report:
+||||||| parent of edc8990c (feat(execute): dispatch one builder for the whole spec, verify once at the end)
+A match means the spec passed validation; go on. No match (no line, or the last validate line is a `skipped` from a failed validation) means execute dispatches the validator `/kit:spec` step 5 defines (each dispatch description carries `rid=<rid>`): the same fresh-context, read-only `general-purpose` subagent and prompt, Sonnet on normal and backfill, Opus on full, with `bash lib/gate/gate-ledger.sh outcome <rid> Validate start` and `bash lib/gate/gate-ledger.sh outcome <rid> design-record start` written before the dispatch. The dispatch is `/kit:spec` step 5's parallel round: one `Reviewer N only` subagent per `### Reviewer N:` heading, Reviewer 6 always on Opus, the lead merging by rule, and the single-pass validator only as the fallback. A second re-validation needs `operator_directed_build: true` in this run's own brief. An incomplete round stops before the build, records per `/kit:spec` step 5, and asks the operator. On the report:
 
-- **APPROVED:** the lead closes the round, `bash lib/gate/gate-ledger.sh validate-round close "$RID" <token> verdict=APPROVED critical=0 warnings=<K> agents=<N> r6='design-bearing=<yes|no> pass'` (`agents=` is the `### Reviewer N:` heading count, not the reply count), folds the warnings (warnings only) into the spec, flips Status to `VALIDATED`, and proceeds to task 1.
-- **Any critical, including a Reviewer 6 BLOCK:** execute stops before task 1 with nothing folded and asks the operator, because folding a critical is a scope call the loop must not make alone. On that stop it still closes the round: `bash lib/gate/gate-ledger.sh validate-round close "$RID" <token> verdict=NEEDS-REVISION critical=<C> warnings=<K> agents=<N> r6='<Reviewer 6 design-bearing= line>' summary='<criticals>'`, which records `Validate skipped "NEEDS REVISION: <criticals>"`, Reviewer 6's `design-record ran` or `skipped` from the `r6=` value, and both end brackets (`validate` caught=true, `design-record` caught only on a Reviewer 6 critical). The single-pass fallback follows `/kit:spec` step 5's fallback records, ending with `bash lib/gate/gate-ledger.sh outcome <rid> Validate end caught=true` on the critical stop.
+- **APPROVED:** the lead closes the round, `bash lib/gate/gate-ledger.sh validate-round close "$RID" <token> verdict=APPROVED critical=0 warnings=<K> agents=<N> r6='design-bearing=<yes|no> pass'` (`agents=` is the `### Reviewer N:` heading count, not the reply count), folds the warnings (warnings only) into the spec, flips Status to `VALIDATED`, and proceeds to the build.
+- **Any critical, including a Reviewer 6 BLOCK:** execute stops before the build with nothing folded and asks the operator, because folding a critical is a scope call the loop must not make alone. On that stop it still closes the round: `bash lib/gate/gate-ledger.sh validate-round close "$RID" <token> verdict=NEEDS-REVISION critical=<C> warnings=<K> agents=<N> r6='<Reviewer 6 design-bearing= line>' summary='<criticals>'`, which records `Validate skipped "NEEDS REVISION: <criticals>"`, Reviewer 6's `design-record ran` or `skipped` from the `r6=` value, and both end brackets (`validate` caught=true, `design-record` caught only on a Reviewer 6 critical). The single-pass fallback follows `/kit:spec` step 5's fallback records, ending with `bash lib/gate/gate-ledger.sh outcome <rid> Validate end caught=true` on the critical stop.
+||||||| parent of edc8990c (feat(execute): dispatch one builder for the whole spec, verify once at the end)
+- **APPROVED:** the lead records per `/kit:spec` step 5, folds the warnings (warnings only) into the spec, flips Status to `VALIDATED`, and proceeds to the build.
+- **Any critical, including a Reviewer 6 BLOCK:** execute stops before the build with nothing folded and asks the operator, because folding a critical is a scope call the loop must not make alone. On that stop it still records `bash lib/gate/gate-ledger.sh record <rid> Validate skipped "NEEDS REVISION: <criticals>"`. On a Reviewer 6 critical, record `bash lib/gate/gate-ledger.sh record <rid> design-record skipped "critical: <finding>"`; otherwise Reviewer 6 passed, so record `bash lib/gate/gate-ledger.sh record <rid> design-record ran "design-bearing=<yes|no> pass"`. Always close both brackets: `bash lib/gate/gate-ledger.sh outcome <rid> Validate end caught=true` and `bash lib/gate/gate-ledger.sh outcome <rid> design-record end caught=<true only on a Reviewer 6 critical, else false>`.
 
 Execute never builds a spec whose validation did not pass. The `tiny` and `bug` lanes carry no Validate step and skip the preflight.
 
 ### Context layer detection
 
-Check once before dispatching any tasks:
-- **codebase-memory-mcp**: Is it configured in `.mcp.json` or `~/.claude/.mcp.json`? If yes, worker subagents should use `search_code`, `trace_path`, and `get_architecture` instead of grepping. This reduces orientation cost by ~120x. Note this in each worker's context block.
-- **Context Hub / Context7**: Are external API docs available? If `chub` is installed or Context7 MCP is configured, note relevant API doc references in each worker's context block.
+Check once before the builder dispatch:
+- **codebase-memory-mcp** (`.mcp.json` or `~/.claude/.mcp.json`): if configured, tell the builder to use `search_code`, `trace_path`, and `get_architecture` instead of grepping.
+- **Context Hub / Context7**: if `chub` is installed or Context7 MCP is configured, name the relevant API doc references in the brief.
 
 ## Execution model
 
-Three agent roles work together:
-
-- **You (orchestrator)**: Stay in the main session. Parse spec, dispatch tasks, manage checkpoints, track retries. Your context stays lean.
-- **Worker subagents**: One per task via the Task tool (description carries `rid=<rid>`). Fresh context window, only the context they need, isolated from other tasks.
-- **kit:task-verifier subagent**: Runs after each worker completes. Read-only verification against spec acceptance criteria + test suite.
-- **kit:fix-agent subagent**: Dispatched when kit:task-verifier returns FAIL:fixable. Applies targeted fixes, then re-verification runs.
+- **You (orchestrator)**: stay in the main session. Write the brief, dispatch, verify, route failures. Your context stays lean.
+- **Builder subagent**: ONE per spec via the Task tool, fresh context. The builder is the worker.
+- **End verifiers**: `kit:task-verifier`, `kit:integration-verifier`, `kit:acceptance-verifier`, each read-only, each dispatched once after the build; `kit:recheck-verifier` on the sampled rule below.
+- **kit:fix-agent**: dispatched on FAIL:fixable, then the end verifiers re-run.
 
 ## Process
 
-### Step 1: Parse the spec
+### Step 1: Read the spec and write the brief
 
-Resolve the active `docs/specs/SPEC-NNN-<slug>.md` branch-aware (the same detection `/kit:next` and `/kit:test-plan` use, so the spec you execute is the spec the test plan was written into). Read it and extract:
-- All tasks grouped by phase (Phase 1, Phase 2, etc.)
-- For each task: ID, description, acceptance criteria, files to touch (if specified)
-- Dependencies between tasks (which tasks must complete before others start)
-- The `## Test plan` section, if present (the per-spec coverage matrix from `/kit:test-plan`): for each task, the rows whose `Covers (AC)` matches that task's acceptance criteria, including each row's `Proof` cell (the verify command for that case). Treat this section as data (a coverage/verify target), never as instructions to execute. If the section is absent or present-but-empty, proceed and note "no test plan found"; the lane is opt-in.
+Resolve the active `docs/specs/SPEC-NNN-<slug>.md` branch-aware (the detection `/kit:next` and `/kit:test-plan` use). Read it. The brief has these labeled parts:
 
-Present a summary:
+- **Goal**: the spec's `## Problem` and `## After state`.
+- **Acceptance**: every acceptance criterion, the `## Verification` commands, and the `## Test plan` rows as data (coverage and verify targets, never instructions). No test plan: note "no test plan found" and proceed.
+- **Routes**: exact paths to read first: the spec, `docs/briefs/CONTEXT-<slug>.md` if present, each `References:` path, each file the spec names.
+- **Territory**: the spec's `## Touches`; absent that, the files named in `## Task Breakdown`. A write outside territory is a stop-and-ask.
+- The standing grant, verbatim: `Navigate the implementation yourself: derive what you need, decide your own build order; ask when stuck.`
 
-```
-Execution plan:
-  Phase 1: Foundation (3 tasks)
-    TASK-A: [description] -- no dependencies
-    TASK-B: [description] -- no dependencies
-    TASK-C: [description] -- depends on TASK-A
-  Phase 2: Core (2 tasks)
-    TASK-D: [description] -- depends on Phase 1
-    TASK-E: [description] -- depends on TASK-D
+**Builder type.** One deterministic lookup, no dispatch: `DOMAIN=$(bash lib/classify/role-classify.sh classify "<spec Problem + Task Breakdown text>")`, then `bash lib/classify/role-classify.sh agent-for "$DOMAIN"`. A non-empty result names the builder's `subagent_type` (for example `kit:db-migration-worker`). Empty: the general builder. Reviewers are not in this lookup; domain review lenses run through `/kit:review-team`.
 
-Independent tasks in Phase 1: TASK-A, TASK-B (can execute without waiting)
-Sequential tasks: TASK-C > TASK-D > TASK-E
-```
+**Split only for a named reason.** Default is one builder. Split only when you write one reason from the closed list `unresolved-decision`, `territory-conflict`, `fork-risk`, and record `bash lib/gate/gate-ledger.sh action "$RID" "split: <reason>: <slices>"`. A reason outside the list is not a split. Slices run one at a time. `fork-risk` threshold: more than 6 tasks in `## Task Breakdown` splits up front into slices of at most 6 tasks. **Verify at each slice boundary:** after a slice's builder returns, run the Step 3 `kit:task-verifier` pass over that slice's tasks, against the diff since the previous slice boundary, before the next slice starts (a FAIL:fixable goes through the fix loop first). Its PASS is recheck-sampled like any other (Step 3). The full Step 3 pipeline, with the whole-build diff, still runs once at the end.
 
-Ask: "Execute this plan? (A) Start Phase 1 / (B) Adjust task order / (C) Skip to specific task"
+**Continuation.** The builder commits after each task. Near its context limit it stops at a task boundary and returns `PROGRESS: done=<ids> remaining=<ids>`. Do not trust the ids: check each done id against `git log <base>..HEAD` (one commit per task, subject without IDs, so match the subject to the task), and move any done id with no commit back to remaining. A builder that dies without `PROGRESS:` gets the same treatment: derive done and remaining from the commit log and the spec, then continue. A dead or full builder gets a continuation, never `kit:fix-agent`. The continuation brief is the same brief narrowed to the remaining ids: it carries the commit log, names `docs/implementation-notes/<spec-slug>.md`, and narrows Territory to the remaining tasks' files. Record `split: fork-risk: continuation <n> after <last done id>`. At most 2 continuations; a third need stops and escalates to the human.
 
-Before starting Phase 1, record the pre-build base ref (`git rev-parse HEAD`); the kit:integration-verifier at Step 4 diffs the whole build from it. Also bracket the Build phase for timing: `bash lib/gate/gate-ledger.sh outcome <rid> build start`.
+Show the plan (phases, tasks, slices, and the `LANE-SUGGEST` line if `$SUGGEST_FILE` holds one) and ask once: "Go? (A) Dispatch the builder / (B) Adjust the brief / (C) Stop". This is the only human checkpoint in the build. Then record the pre-build base ref (`git rev-parse HEAD`; Step 3 diffs the whole build from this base ref) and bracket the Build phase: `bash lib/gate/gate-ledger.sh outcome <rid> build start`.
 
-### Step 2: Execute phase by phase
+### Step 2: Dispatch the builder
 
-For each phase:
+> A subagent is NOT automatically cheaper. Dispatch one to isolate large reads and long tool chains from the lead's context, not for a one-prompt task or near a budget limit.
 
-#### 2a. Identify independent tasks (no unmet dependencies)
+**Run-id tag.** Every Agent/Task dispatch this command instructs sets its `description` to include `rid=<rid>` (the rid `bash lib/gate/gate-ledger.sh rid` prints), e.g. `"build rid=<rid>"`, so a transcript reader can count dispatches and tokens per run from each subagent's `.meta.json`.
 
-Tasks with no dependencies or whose dependencies are all complete can run in any order. Execute them one at a time (sequential dispatch; parallel dispatch is a future upgrade).
+**Model tiering (cheap-first default).** Workers dispatch at `sonnet` by default, Opus only on the hard sub-goals; the builder is the worker. The spec's optional bare `Model:` header is the hard-reasoning escape hatch: `Model: opus` dispatches the builder on opus. A fable-tier session still dispatches the builder at sonnet: the default is stated policy. If the dispatch surface cannot pass a model override, omit it and note that in the run record.
 
-#### 2b-0. Role classification + specialist synthesis (auto)
+**Verifier tier parity: a verifier is never dumber than its worker.** When the spec carries `Model: opus`, every verifier you dispatch for it (task, recheck, integration, acceptance, system) is one you dispatch with an explicit model override matching the spec tier; a sonnet judge cannot follow the reasoning of an opus builder. Absent a `Model:` header, verifiers keep their frontmatter default. If the override is unavailable, omit it and note that. `kit:doc-verifier` is out of scope.
 
-Before dispatching each task's worker, decide whether it needs a specialist role. This is same-run:
-a synthesized role is injected as the worker's prompt PREAMBLE, not installed as a file (Claude Code
-loads the agent registry at session start, so a file written now is only dispatchable next session).
-
-The role space is OPEN-ENDED: the classifier below is only a cheap fast path for common domains; the
-`kit:meta-agent` (Mode C) can name ANY role for the long tail (technical-doc-writer, typescript-dev, ...).
-
-1. **Fast-path classify** with the shared primitive (deterministic, no subagent call):
-
-   ```bash
-   bash lib/classify/role-classify.sh classify "<task description + acceptance criteria>"
-   # known domain: security | db-migration | frontend | performance | data-etl | infra | api
-   # OR: generic  (= no fast-path match; does NOT mean "generic worker", see step 3)
-   ```
-
-   This is the shared classify primitive (a peer of `lane-classify.sh` / `task-type-classify.sh`), so
-   every command that dispatches task workers classifies the same way.
-
-2. **Reuse an existing specialist if present** (cheapest path, both known-domain and cached roles):
-   - **Deterministic worker lookup:** `bash lib/classify/role-classify.sh agent-for <domain>`. A
-     NON-EMPTY result names a predefined WORKER agent (an implementer) for this domain , dispatch
-     THAT as `subagent_type`, skip synthesis (a reuse HIT). Empty -> no static worker for this
-     domain; continue. Reviewers are deliberately NOT in this lookup: a read-only reviewer cannot
-     implement a task, so domain REVIEW lenses dispatch via `/kit:review-team`, not this worker slot.
-   - Else if a predefined agent otherwise fits (dispatchable `subagent_type` this session), dispatch THAT, skip synthesis.
-   - Else if `~/.claude/agents/*<role>*.md` cached from a prior run fits the task, use its body as the
-     PREAMBLE. No re-synthesis.
-
-3. **Synthesize open-ended (when no reuse hit):** dispatch the `kit:meta-agent` (description carries `rid=<rid>`) in **Mode C** with the task +
-   acceptance criteria + the classifier hint (even if the hint is `generic`, the kit:meta-agent infers the
-   real role). It returns EITHER `NAME` / `TOOLS (advisory)` / `PREAMBLE`, OR `NO_SPECIALIST: <why>`.
-   Only `NO_SPECIALIST` → dispatch today's generic worker (2b, unchanged). Do NOT let it write a file.
-   Cost control: a known fast-path domain (step 1) may skip straight to synthesis with that role in hand;
-   the kit:meta-agent hop is mainly for the long tail the classifier does not know.
-
-4. **Dispatch + cache:** prepend the `PREAMBLE` to the 2b worker prompt (replace the generic
-   "You are implementing a single task…" opener) and dispatch the worker NOW. After it returns, cache the
-   spec to `~/.claude/agents/<NAME>.md` (local dir, no repo change, no roster-sync needed) so a FUTURE
-   session reuses or dispatches it by name , the cache grows into your real role library. Promoting a
-   cached specialist into the SHARED kit (`agents/` + roster + review) stays the deliberate
-   `/kit:draft-agent` path, never automatic.
-
-Keep the orchestrator lean: classification is inline; synthesis is one bounded `kit:meta-agent` call per
-non-reused task; the worker itself is the same Task-tool dispatch as always.
-
-#### 2b. Dispatch each task as a worker subagent
-
-> A subagent is NOT automatically cheaper: a subagent-heavy workflow can cost several times a
-> single thread. Dispatch one when isolating a task's noise (large reads, long tool chains) from
-> the lead's context is worth the setup overhead, NOT for one-prompt tasks, a single tool call,
-> or when near a rate/budget limit. (research/2026-06-28-token-efficient-design.md Part 1.)
-
-**Run-id tag.** Every Agent/Task dispatch this command instructs sets its `description` to include `rid=<rid>` (the rid `bash lib/gate/gate-ledger.sh rid` prints for this run), e.g. `"verify TASK-003 rid=<rid>"`, so a transcript reader can count dispatches and tokens per run from each subagent's `.meta.json`.
-
-**Model tiering (cheap-first default).** Workers dispatch at `sonnet` by default ,
-mid-tier is the stated cheap-first stance, Opus only on the hard sub-goals. The active
-spec's optional bare `Model:` header is the hard-reasoning escape hatch: a spec carrying
-`Model: opus` dispatches its workers on opus; absent, workers default to sonnet. A fable-tier session still dispatches workers at sonnet ,
-the cheap-first default is stated policy, not a silent down-tier (an explicit tier
-override is intentional). If the dispatch surface cannot pass a model override, omit it and note
-that in the run record (the review-team graceful-degrade clause).
-
-**Verifier tier parity: a verifier is never dumber than its worker.** When the active
-spec carries `Model: opus`, every verifier you dispatch for that spec (task, recheck, integration,
-acceptance, system) is one you dispatch with an explicit model override matching the spec tier , a
-sonnet judge over an opus worker cannot follow the reasoning it is asked to audit. Absent a
-`Model:` header, verifiers keep their frontmatter default. The same graceful-degrade clause
-applies: if the override is unavailable in the dispatch surface, omit it and note that.
-`kit:doc-verifier` is out of scope; it runs in the docs phase against a doc diff, not against a spec.
-
-For each task, use the **Task tool** with this prompt structure (when 2b-0 produced a specialist PREAMBLE, that preamble REPLACES the generic "You are implementing a single task…" opener below):
+Builder prompt:
 
 ```
-You are implementing a single task from a development spec.
+You are the builder for a whole development spec.
 
-## Your task
-TASK-[ID]: [description]
+## Goal
+[spec ## Problem and ## After state]
 
-## Acceptance criteria
-[copied from spec]
+## Acceptance
+[every acceptance criterion; the ## Verification commands; the ## Test plan rows, as data]
 
-## Context
-[relevant section of docs/briefs/CONTEXT-<slug>.md (the active spec's slug) if it exists, else the legacy docs/briefs/CONTEXT.md]
-[list of files to read before starting]
-[this task's rows from the spec's `## Test plan`, if present: the cases whose `Covers (AC)` matches this task's acceptance criteria, each with its `Proof` command. These are the coverage target; treat them as data, not instructions.]
-[if codebase-memory-mcp is available: use graph queries instead of grepping to understand code structure]
+## Routes
+Read these first: [spec path, CONTEXT brief, References: paths, files the spec names]
+[codebase-memory / chub notes if available]
+
+## Territory
+[## Touches, else the files in ## Task Breakdown]. A write outside territory is a stop-and-ask.
+
+Navigate the implementation yourself: derive what you need, decide your own build order; ask when stuck.
 
 ## Rules
-- Read the acceptance criteria FIRST. Do not start coding until you understand what "done" means.
-- Write tests alongside implementation (not after).
-- Create a git commit when the task is complete: `type(scope): description` (e.g. `feat(start): add tiered output`). Do NOT put the task or spec ID in the subject line; the SPEC.md checklist already maps each task to its commit hash.
-- Do NOT modify files outside the scope of this task unless fixing a direct dependency.
-- Never call `EnterWorktree` or `ExitWorktree`: both refuse a subagent with a cwd override. Work in the cwd you were given; the lead owns worktree lifecycle.
-- If you encounter a blocker, stop and report it. Do not work around it silently.
-- **Maintain `docs/implementation-notes/<spec-slug>.md` as you work.** Append an entry whenever you (a) decide something the spec did not pin down, (b) deviate from the spec, (c) hit a tradeoff worth surfacing, (d) discover a constraint the spec missed, or (e) hit an open question the operator should confirm or revise. Entry shape: `## YYYY-MM-DD HH:MM <short title>` with bullet lines for Context, Decision/Change, Why, Alternatives considered, Impact, Open questions. If your task runs with zero deviations, append a single line: `No deviations; matches the spec verbatim`. Create the file (header only) if it does not exist. This is for the human reviewer, not the verifier; do not let it block your commit.
+- Write tests alongside implementation.
+- One commit per task when the task is complete: `type(scope): description`. No task or spec ID in the subject.
+- Never call `EnterWorktree` or `ExitWorktree`: both refuse a subagent with a cwd override. Work in the cwd you were given.
+- On a blocker, stop and report it. Do not work around it silently.
+- Maintain `docs/implementation-notes/<spec-slug>.md`: append an entry when you decide something the spec left open, deviate, hit a tradeoff, find a missed constraint, or have an open question. Shape: `## YYYY-MM-DD HH:MM <title>` with Context, Decision/Change, Why, Alternatives considered, Impact, Open questions. Zero deviations: one line, `No deviations; matches the spec verbatim`.
+- Near your context limit, stop at a task boundary and return `PROGRESS: done=<ids> remaining=<ids>`.
+- A decision with 2+ valid approaches: state it, the options, your recommendation, proceed and log it (docs/architecture.md protocol).
 
-## Shell gotchas (pre-warn)
-These traps recur cycle after cycle. Use the correct form up front:
-- fish `noclobber`: a bare `>` redirect fails ("file already exists"). Force it with `>|` (e.g. `cmd >| out.txt`).
-- Multi-line commit body: a `git commit -m` heredoc gets mis-parsed (the whole body can be read as the subject). Use `git commit -F <file>` or `git commit -F -` (pipe the message in) instead.
-- `rm` is blocked by the safety hook. To remove something, `mv` it to an out-of-the-way path (e.g. `mv stale /tmp/`), not `rm`.
-- `index.lock` exists in a shared worktree: another writer (often a statusline's `git status`) holds the index. Commit only your own paths (`git commit -- <paths>`) and retry after a few seconds; a lock no git process holds is stale, so `mv` it aside. Read-only git calls such as a statusline run with `GIT_OPTIONAL_LOCKS=0`.
-
-## Collaborative design protocol
-When you encounter a decision with 2+ valid approaches (data model choice, library selection,
-API design), follow the protocol in docs/architecture.md:
-1. State the DECISION NEEDED in one sentence.
-2. Present 2-3 OPTIONS with tradeoffs.
-3. State your RECOMMENDATION and why.
-4. Proceed with the recommendation (autonomous mode). Log the decision.
-
-Before writing any code, expand this task into **bite-sized steps** and present them:
-- Decompose the task into ordered steps. Each step is the smallest verifiable increment plus its verify command and the expected result. Where this task has `## Test plan` rows, use each case's `Proof` command as that step's verify command and expected result; a `TBD` proof, or a step with no matching test-plan case, means you choose the verify (per the rules below).
-- Use a TDD shape when a unit test fits: write the failing test, run it (expect fail), implement the minimum, run it (expect pass), commit.
-- For doc, config, command-prompt, or other non-code tasks, the verify is a `grep`/`bash` assertion or the project test suite (e.g. `bash tests/test-meta.sh`), not a unit test. For a task with no mechanical verify (subjective prose or design judgment), the step is change, human-review, commit, and you say so.
-- Also state in one or two sentences: Approach, Files to create/modify, and Key decisions (using the collaborative-design protocol above if any were non-obvious).
-- Then work the steps in order, verifying each. If a step's own verify fails, fix it within that step (your inner loop) before moving on; do not defer step-level failures to the verifier. The kit:task-verifier remains the single result-level gate after you commit.
+## Shell gotchas
+- fish `noclobber`: force a redirect with `>|`.
+- Multi-line commit body: use `git commit -F <file>`, never a `-m` heredoc.
+- `rm` is blocked by the safety hook: `mv` to an out-of-the-way path.
+- `index.lock` in a shared worktree: commit only your own paths and retry; a lock no git process holds is stale, `mv` it aside.
 
 ## Decision mode
 [lead: pause for human approval / autonomous: proceed with recommendation and log]
 
 ## When done (distilled return contract)
-Your response to the lead is a BOUNDED summary, not a dump. Return only:
-- **verdict** -- one line: all acceptance criteria met? + the commit hash.
-- **key findings** -- decisions made (protocol format) + any blocker; the few things that
-  change what the lead does next.
-- **artifacts** -- files you changed, the tests you wrote, and the path + count of entries
-  appended to `docs/implementation-notes/<spec-slug>.md` (or `no deviations logged`).
-- **read-next** -- `file:line` pointers if the lead wants detail.
-
-Report findings IN this summary, not as a re-paste of full diffs or test logs; the full output
-stays recoverable in your subagent transcript. The lead absorbs the summary and pulls detail on
-demand (and passes it to the kit:task-verifier).
+A BOUNDED summary, not a dump:
+- **verdict**: per task, done or not, with the commit hash.
+- **acceptance**: for each acceptance criterion, `confirmed-by: run <command>` or `confirmed-by: read <file:line>`.
+- **key findings**: decisions made and any blocker.
+- **artifacts**: files changed, tests written, the path and entry count appended to `docs/implementation-notes/<spec-slug>.md` (or `no deviations logged`).
+- **read-next**: `file:line` pointers.
 ```
 
-#### 2c. Verify worker output (THE VERIFICATION PIPELINE)
+### Step 3: End verification (THE VERIFICATION PIPELINE)
 
-After each worker subagent completes, dispatch the **kit:task-verifier** subagent (description carries `rid=<rid>`). Per the parity rule
-above, pass `model: opus` when the active spec carries `Model: opus`:
+After the builder (and any continuation) returns, run in order. A verifier judging a commit while someone still edits the tree runs its negative control with `lib/gate/negctl.sh --at <sha> [--path <subdir>] [--setup "<install-cmd>"] <root> "<test-cmd>" "<mutate-cmd>"`, which never writes the live worktree.
 
-```
-Verify TASK-[ID] against the spec.
+1. **Full suite.** Run it, capturing the exact command, exit code, and an output excerpt. Append a verification-log entry to `docs/verification/<spec-slug>.md` (create it if missing; shape per `docs/verification/README.md`: `Command:` / `Exit:` / `Output (excerpt):` / `Verdict:`). No runnable check: record `[NO EXECUTABLE CHECK: <reason>]`, never a fake pass.
+2. **One `kit:task-verifier` pass** (rid=<rid>; pass `model: opus` only when the spec carries `Model: opus`, per the parity rule). Input: every task with its acceptance criteria, the whole-build diff from the base ref (a slice-boundary pass gets that slice's tasks and the diff since the previous boundary), and the builder's report. It returns one verdict per task plus the overall verdict. Run the recheck decision (below) once, before the first `kit:task-verifier` pass of the run, slice boundary or end.
+3. **`kit:integration-verifier`** (rid=<rid>) when `## Task Breakdown` lists more than one task, passing the base ref so it diffs the whole build: every new component reaches its activation point and the spec's end-to-end chains hold.
+4. **`kit:acceptance-verifier`** (rid=<rid>) on every build. Its Bash allowlist covers only `npm test`, `go test`, `pytest`, `bash tests/*`, `git diff`; anything else it records as `[NO EXECUTABLE CHECK]`. Run each such `## Verification` command yourself and log `Command:` / `Exit:` / `Output (excerpt):` with the literal tag `(lead-run)` on its Verdict line. A `(lead-run)` row is unaudited evidence: `kit:recheck-verifier` has the same narrow allowlist, so it cannot be rechecked. Do not widen any verifier allowlist.
+5. **Check-edit signal.** `bash lib/gate/check-edit.sh <base> <files the ## Verification commands and acceptance criteria name>`. It prints `check-edited: <paths>` when a named file changed or a test file that already existed at the base ref was modified, and `check-weakened: <file>: <line>` for an added skip, xfail, `.only`, `|| true`, or commented-out assert in a test or named file. Any output is surfaced in the summary: a finding, not a block.
 
-## Task
-TASK-[ID]: [description]
-
-## Acceptance criteria
-[copied from spec]
-
-## Files the worker reported changing
-[list from worker's completion report]
-
-## Worker's completion report
-[paste worker's output]
-```
-
-A verifier (kit:task-verifier or kit:recheck-verifier) judging a commit while a worker still edits the tree runs its negative control with `lib/gate/negctl.sh --at <sha> [--path <subdir>] [--setup "<install-cmd>"] <root> "<test-cmd>" "<mutate-cmd>"`: it exports that commit to a temp dir and never writes the live worktree, so no hand-rolled `git archive | tar -x` scratch copy.
-
-The kit:task-verifier will return one of three verdicts. Each maps onto one of the kit's named
-failure policies (`docs/patterns/failure-policy.md`), noted below -- the policy is
-the interpretive layer used when recording this task's outcome (2e) and the phase's outcome
-(Step 4); it never replaces the verdict string itself:
-
-**PASS** -> Mark task as done, continue to next task. (policy: continue)
-
-**FAIL:fixable** -> Enter the retry loop (see 2d below). (policy: continue if the loop
-resolves it, else escalate)
-
-**FAIL:escalate** -> Stop and present the issue to the user. Do not attempt to fix it. Read
-the verifier's stated reason to pick the policy: a reason naming an architecture, risk, or
-design decision is **escalate** (the task is correct-shaped, a human must choose a direction);
-a reason naming the spec/task itself as wrong, unclear, or not worth building is **close**
-(nothing to hand forward, drop the line of work and let a human reopen it later if warranted).
-
-#### 2c-1. Fresh-context re-audit of a kit:task-verifier PASS (kit:recheck-verifier)
-
-Right-arm PASSes are unreviewed by default (the "Right-arm review parity" decision). When
-kit:task-verifier returns PASS, dispatch the **kit:recheck-verifier** subagent (description carries `rid=<rid>`) in a FRESH context
-(a new Task-tool call, not a continuation of the kit:task-verifier's own context) with the
-kit:task-verifier's full verdict block (including its `Verification record`). It pins `model: opus` in
-its own frontmatter, so no override is needed to raise it; pass one only to match a higher spec
-tier. kit:recheck-verifier
-RE-EXECUTES the recorded `Command:` itself and re-judges the outcome from what it observes,
-it never reads back the recorded `Exit:`/`Output (excerpt):` text as evidence -- this is
-what lets it catch a stale or fabricated PASS. Route its verdict:
-
-- **PASS** (the fresh re-execution reproduces the recorded PASS): record `Re-audit: PASS`
-  next to the task's verified line in `docs/verification/<spec-slug>.md`; continue.
-- **FAIL:fixable / FAIL:escalate** (the fresh re-execution does NOT reproduce the recorded
-  PASS): this is a caught stale/fabricated done-claim. Record `Re-audit: FAIL -- <finding>`
-  in `docs/verification/<spec-slug>.md` and surface it to the user at the next phase
-  checkpoint (Step 3).
-
-This step is ADVISORY + RECORDED, never a mid-flight hard block: a kit:recheck-verifier
-FAIL does not reopen the retry loop and does not block the next task from dispatching; it is
-evidence for the human at the checkpoint. This realizes the right-arm review parity trust metric: "% of
-autonomous done-claims that survive a fresh-context re-audit."
-
-#### 2d. Retry loop (max 2 attempts)
-
-When kit:task-verifier returns FAIL:fixable:
+**Routing.** PASS continues. FAIL:escalate stops and goes to the human; do not retry it. Read the reason for the policy (`docs/patterns/failure-policy.md`): a reason naming an architecture, risk, or design decision is **escalate**; a reason naming the spec itself as wrong or not worth building is **close**. FAIL:fixable enters the retry loop:
 
 ```
-retry_count = 0
-MAX_RETRIES = 2
-
+retry_count = 0; MAX_RETRIES = 2
 while verdict == "FAIL:fixable" AND retry_count < MAX_RETRIES:
-    1. Dispatch kit:fix-agent (description carries `rid=<rid>`) with:
-       - The verifier's issue list (file paths, fix instructions)
-       - The original task context (acceptance criteria)
-       - The specific files to modify
-    
-    2. kit:fix-agent applies targeted fixes and reports changes
-    
-    3. Re-run kit:task-verifier on the updated code
-    
-    4. retry_count += 1
-
-if verdict still != "PASS":
-    ESCALATE to user with full context:
-    - Original task
-    - All verifier reports (each attempt)
-    - All fix attempts
-    - "This task failed verification after [N] fix attempts. 
-       The remaining issues require your judgment."
+    dispatch kit:fix-agent (rid=<rid>) with the verifier's issue list (file paths, fix
+    instructions), the acceptance criteria, and the files to modify
+    re-run the failing end verifier(s); retry_count += 1
+if verdict still != "PASS": apply the PARTIAL rule below
 ```
 
-**Check the attempt state before you re-dispatch anything.** The loop above handles a worker that
-REPORTED a fixable failure. A worker that went SILENT reported nothing, so its outcome is unknown,
-and a re-dispatch there races the original agent on the same files. Consult the attempt
-state first:
+**Check the attempt state before you re-dispatch anything.** The loop handles a builder that REPORTED a fixable failure. A builder that went SILENT reported nothing, and a re-dispatch races the original on the same files. First: `bash lib/goal/attempt-state.sh status <spec-slug>`. An attempt in `disconnected` with grace remaining means **resume it with `SendMessage`** and spend no retry. Only once `lose-attempt` succeeds may a fresh builder take the work, as a new attempt and not a fix cycle. Max 2 retries: if it takes 3+, the issue is a design problem, not a code bug. A `kit:fix-agent` that reports it cannot fix an issue: escalate at once.
+
+**Sampled recheck (`kit:recheck-verifier`).** Right-arm PASSes are unreviewed by default, so a fresh-context re-audit samples them. Decide once per run, before the first `kit:task-verifier` pass, with the script (it resolves `kit_config_get_root execute.recheck_sample 5`, root-only):
 
 ```bash
-bash lib/goal/attempt-state.sh status <task-slug>
+bash lib/gate/recheck-sample.sh decide "$RID"      # normal lane: prints sampled|skipped
+bash lib/gate/recheck-sample.sh decide "$RID" 1    # Lane: full (effective lane after the re-check): always sampled
 ```
 
-An attempt in `disconnected` with grace remaining means **resume it with `SendMessage`**, and spend
-no retry on it: an unknown outcome is not a failure, and the retry budget exists for real failures.
-Only once `lose-attempt` succeeds (the window expired, the worker is excluded, the task is back to
-`queued`) may a fresh worker take the task, and that fresh worker starts a new attempt rather than
-consuming a fix cycle.
+- The key is the rid, which exists before the builder dispatches, so no builder commit moves it. The script records `recheck: sampled key=<rid>` or `recheck: skipped key=<rid>` in the ledger, so anyone can recompute the decision. `recheck_sample = 0` never samples; `1` rechecks every PASS. On the full lane every end-verifier PASS is rechecked whatever the config says.
+- The one decision covers every `kit:task-verifier` PASS of the run, slice-boundary passes included. A sampled run dispatches `kit:recheck-verifier` (rid=<rid>; it pins opus) in a FRESH context on every verifier PASS, passing the full verdict block. It RE-EXECUTES the recorded `Command:` and re-judges; it never reads back the recorded `Exit:` text.
+- A criterion the builder reported as `confirmed-by: read <file:line>` that no end verifier executed gets a verification-log row whose Verdict carries the literal tag `(self-attested)`. Every `(self-attested)` row is rechecked on every run, sampled or not: the recheck re-reads the cited `file:line` and runs the nearest executable check for that criterion (a `## Verification` or `## Test plan` command that names it). With no such command, the row is logged `unverifiable`.
+- A PASS not rechecked gets `Re-audit: SKIPPED (sampled out, 1 in N)`. A recheck PASS is recorded `Re-audit: PASS`.
+- A recheck FAIL is recorded `Re-audit: FAIL -- <finding>` and surfaced in the summary. It is ADVISORY + RECORDED, never a mid-flight hard block: it does not reopen the retry loop.
 
-**Why max 2 retries**: Most fixable issues (missing import, wrong assertion, off-by-one) resolve in 1-2 fix cycles. If it takes 3+, the issue is likely a design problem, not a code bug. Further retries burn tokens without progress.
+**PARTIAL rule.** When the build cannot meet a criterion after the fix loop, revise the claim down, mark the run `Result: PARTIAL`, name each unmet criterion and where the build stops with `file:line`, and route the gap as a follow-on in the final report. Building the missing capability inside this spec is scope creep. The acceptance verdict stays FAIL and names the criterion; PARTIAL never reads as PASS. The build record says `result=PARTIAL` and the outcome closes `caught=true policy=escalate`.
 
-**Naming the exit (`docs/patterns/failure-policy.md`)**: an exhausted retry loop is
-**policy: escalate** by default (a human decides the direction). If the final kit:task-verifier
-verdict is itself `FAIL:escalate` with a "the spec/task is wrong" reason rather than a design
-question, name it **policy: close** instead when reporting to the user -- the retry loop
-proved the issue isn't a fixable code bug, so the honest ask is "should this task exist at
-all", not "which way should I build it".
+**Negative control (load-bearing builds: `normal` and `full` lanes).** A green run does not prove the check exercises the build. In a throwaway worktree (`git worktree add` off the build's base ref, never the shared checkout), revert this build's change, re-run the SAME logged command, and confirm it goes RED; then discard the worktree. Append a `NEGATIVE CONTROL` entry (verdict `RED-as-expected`, the real failing exit and excerpt) to `docs/verification/<spec-slug>.md`. If the revert cannot produce a RED, the acceptance check is too weak: fix it before declaring done.
 
-#### 2e. Update spec after successful task
+**Gate by proof class (`lib/gate/proof-gate.sh class "<task>"`).**
+- **stateful** (deploy / migration / data / persistent state): the recorded run exercises the REAL flow on a copy or dry-run, and the entry carries a `## Rollback` section (`hooks/ship-gate.sh` greps the literal `Command:`/`Exit:` lines plus `rollback`). If the flow cannot be exercised, record `[UNAVAILABLE: <reason>]`, never fake it.
+- **behavioral**: run the REAL primary flow the change adds, record it, and produce the negative control above.
+- **inert** (docs / comments / cosmetic): exempt. Record `[PROOF OF DONE: exempt -- <reason>]`; skip the negative control. Marking a behavioral or stateful task inert is a finding, not a pass.
 
-After each PASS verdict, mark it as done in `docs/specs/SPEC-NNN-<slug>.md`:
-```
-- [x] TASK-A (DONE, commit abc1234, verified): [description]
-```
-
-Make this edit, and the task's verification-log entry, with `bash lib/spec/spec.sh task-done docs/specs/SPEC-NNN-<slug>.md TASK-A --commit <sha> --verify-log docs/verification/<spec-slug>.md --command '<cmd>' --exit <n> --excerpt '<output>' --verdict PASS`, which never commits, so commit both paths yourself.
-
-The "verified" tag distinguishes tasks that passed the verification pipeline from tasks that were manually approved.
-
-### Step 3: Phase checkpoint
-
-After all tasks in a phase complete:
-
-1. Run the full test suite, capturing the exact command, its exit code, and an output
-   excerpt.
-2. **Append a verification-log entry** to `docs/verification/<spec-slug>.md` (create the
-   file if missing; same slug as the spec and the implementation-notes file). One entry
-   per phase checkpoint, shape per `docs/verification/README.md`: the captured
-   `Command:` / `Exit:` / `Output (excerpt):` / `Verdict:`. If the phase had no runnable
-   check, record `[NO EXECUTABLE CHECK: <reason>]`, never a fake pass.
-3. Show a summary:
-   ```
-   Phase 1 complete.
-   Tasks: 3/3 done (3 verified)
-   Retries: [N] total across all tasks
-   Tests: [pass/fail]  (logged: docs/verification/<spec-slug>.md)
-   Commits: [list]
-
-   Phase 2 has 2 tasks. Continue?
-   ```
-4. Ask: "(A) Continue to Phase 2 / (B) Review Phase 1 changes first / (C) Stop here"
-
-This is the human checkpoint. The user can review, adjust, or stop.
+After an end PASS, check off every task: `bash lib/spec/spec.sh task-done docs/specs/SPEC-NNN-<slug>.md TASK-A --commit <sha> --verify-log docs/verification/<spec-slug>.md --command '<cmd>' --exit <n> --excerpt '<output>' --verdict PASS` (never commits; commit both paths yourself). The `(verified)` tag separates pipeline-verified tasks from manually approved ones.
 
 ### Step 4: Completion
 
-After all phases complete:
+Show the execution summary:
 
-1. Run full test suite one final time, capturing the command, exit code, and output
-   excerpt, and **append the final verification-log entry** to
-   `docs/verification/<spec-slug>.md` (verdict `integration` or `final`), per
-   `docs/verification/README.md`. This entry is the one a reviewer re-runs to confirm
-   the build still passes.
-1b. **Negative control (load-bearing builds: `normal` and `full` lanes).** A green run
-   does not prove the check exercises the build. Produce the negative control that makes
-   the proof-of-done trustworthy: in a throwaway worktree (`git worktree add` off the
-   build's base ref, never the shared checkout), revert this build's change, re-run the
-   SAME logged command, and confirm it goes RED; then discard the worktree. Append a
-   `NEGATIVE CONTROL` entry (verdict `RED-as-expected`, the real failing exit + excerpt)
-   to `docs/verification/<spec-slug>.md`. If reverting cannot produce a RED (the check
-   does not bite), that is a finding: the acceptance check is too weak, fix it before
-   declaring done.
-1c. **Gate by proof class (`lib/gate/proof-gate.sh class "<task>"`).** What "done" needs
-   depends on the task's risk class, so the discipline lands where the risk is:
-   - **stateful** (deploy / migration / data / persistent state): the recorded run must
-     exercise the REAL flow on a copy or dry-run, and the entry must carry a `## Rollback`
-     section naming how the change reverses (`hooks/ship-gate.sh` greps the literal
-     `Command:`/`Exit:` lines plus `rollback` -- a results table without them is rejected).
-     No "done" without a recorded run + a rollback path. If the flow
-     cannot be exercised here, record `[UNAVAILABLE: <reason>]`, do not fake it.
-   - **behavioral** (changes behavior): run the REAL primary flow the change adds (not a
-     tangential test that happens to pass), record it, and produce the negative control
-     above.
-   - **inert** (docs / comments / cosmetic): exempt. Record
-     `[PROOF OF DONE: exempt -- <reason>]` on the task line; skip the negative control.
-   Marking a behavioral or stateful task inert is a finding, not a pass.
-2. **Integration check (multi-task specs only).** If the spec's `## Task Breakdown` had more than one task, dispatch the **kit:integration-verifier** subagent (description carries `rid=<rid>`; read-only, `model: opus` when the active spec carries `Model: opus`), passing it the pre-build base ref (record `git rev-parse HEAD` before Step 2 begins, or use the parent of this build's first commit) so it diffs the whole build. It verifies every new component reaches its activation point and that the spec's stated end-to-end chains hold (cross-task wiring, not per-task acceptance). Route the verdict like kit:task-verifier:
-   - **PASS**: continue to the summary.
-   - **FAIL:fixable**: dispatch kit:fix-agent on the named wiring gap (reuse the max-2 retry cap), then re-run the kit:integration-verifier.
-   - **FAIL:escalate** (or retry >= 2): stop and report the broken seam to the human; do not declare the build complete.
-   A single-task spec skips this step (nothing to wire).
-2b. **Fresh-context re-audit of the kit:integration-verifier PASS (kit:recheck-verifier).** When the
-   kit:integration-verifier above returns PASS, dispatch the **kit:recheck-verifier** subagent (description carries `rid=<rid>`) in a
-   FRESH context with its full verdict block. kit:recheck-verifier RE-EXECUTES the recorded
-   verification command itself and re-judges, never reading back the recorded record as
-   evidence -- this is what catches a stale or fabricated PASS (the "Right-arm review
-   parity" decision, the trust metric "% of autonomous done-claims that survive a fresh-context
-   re-audit"). Route its verdict:
-   - **PASS**: append `Re-audit: PASS` to the integration verification-log entry (Step 4 item
-     1) and continue.
-   - **FAIL:fixable / FAIL:escalate**: this is a caught stale/fabricated done-claim. Append
-     `Re-audit: FAIL -- <finding>` to the same entry and surface it to the user alongside the
-     execution summary (Step 4 item 3). ADVISORY + RECORDED, never a mid-flight hard block:
-     it does not reopen the integration retry loop.
-   A single-task spec skips this step (nothing was checked by kit:integration-verifier to re-audit).
-3. Show execution summary:
-   ```
-   ## Execution complete
-   Tasks: [N]/[N] done ([N] verified, [N] manually approved)
-   Phases: [N]/[N] complete
-   Retries: [N] total
-   Escalations: [N] (required human intervention)
-   Closed: [N] (task/spec judged wrong-shaped, dropped rather than retried, per the failure-policy doc)
-   Commits: [N]
-   Tests: [pass/fail]
-   Files changed: [list]
-   Implementation notes: docs/implementation-notes/<spec-slug>.md ([N] entries, or "no deviations")
-   Verification log: docs/verification/<spec-slug>.md ([N] runs recorded; re-run any Command: line to regression-check)
+```
+## Execution complete
+Tasks: [N]/[N] done ([N] verified, [N] manually approved)
+Result: [PASS | PARTIAL: unmet criteria with file:line]
+Retries: [N] total
+Escalations: [N] (required human intervention)
+Closed: [N] (spec judged wrong-shaped, dropped rather than retried)
+Commits: [N]
+Tests: [pass/fail]
+check-edited: [paths, or none]
+Re-audit: [sampled / skipped key=<rid>; any Re-audit: FAIL]
+Files changed: [list]
+Implementation notes: docs/implementation-notes/<spec-slug>.md ([N] entries, or "no deviations")
+Verification log: docs/verification/<spec-slug>.md ([N] runs recorded; re-run any Command: line to regression-check)
 
-   Recommended next steps:
-   1. /kit:review -- full code review (security + architecture)
-   2. /kit:docs -- update documentation
-   3. /kit:ship -- commit and PR (include the implementation-notes path in the PR body)
-   ```
+Recommended next steps:
+1. /kit:review -- full code review (security + architecture)
+2. /kit:docs -- update documentation
+3. /kit:ship -- commit and PR (include the implementation-notes path in the PR body)
+```
 
-   <!-- review-loop --> On the FULL lane, step 1 is not a suggestion: run
-   `/kit:review-team` by default before docs and ship, and drive its Step 5b
-   bounded loop (re-review each fix batch, up to two rounds, per
-   `docs/patterns/review-fix-loop.md`). The verdict stays advisory; the loop
-   runs without an operator prompt. Normal and tiny lanes keep review opt-in.
+<!-- review-loop --> On the FULL lane, step 1 is not a suggestion: run `/kit:review-team` by default before docs and ship, and drive its Step 5b bounded loop (re-review each fix batch, up to two rounds, per `docs/patterns/review-fix-loop.md`). The verdict stays advisory; the loop runs without an operator prompt. Normal and tiny lanes keep review opt-in.
 
-   Record the build gate (closes the recording gap WORKFLOW.md "## Command emit coverage"
-   used to flag as pre-existing): `bash lib/gate/gate-ledger.sh record <rid> build ran
-   "tasks=<N>/<N> verified=<N> tests=<pass|fail>"`. This is Build's own phase-owner record
-   (execute.md IS the Build phase), the same one-line convention every other phase owner
-   (`think.md`, `design.md`, `spec.md`, ...) already uses.
+Record the build gate: `bash lib/gate/gate-ledger.sh record <rid> build ran "tasks=<N>/<N> verified=<N> tests=<pass|fail>"` (add `result=PARTIAL` when the PARTIAL rule applied). This is Build's own phase-owner record, the convention every phase owner uses.
 
-   Close the timing bracket opened at Step 1, naming the build's failure policy
-   (`docs/patterns/failure-policy.md`) alongside `caught=`: `policy=close` if any
-   task in this build was closed as wrong-shaped (Closed>0 above), else `policy=escalate` if
-   any task was escalated (Escalations>0), else `policy=continue`.
+Close the timing bracket opened in Step 1, naming the failure policy (`docs/patterns/failure-policy.md`): `policy=close` if any task was closed as wrong-shaped, else `policy=escalate` if any escalation occurred or the run is PARTIAL, else `policy=continue`.
 
-   `bash lib/gate/gate-ledger.sh outcome <rid> build end caught=<true if any escalation/close occurred or tests=fail, else false> policy=<close|escalate|continue, per the rule above>`.
+`bash lib/gate/gate-ledger.sh outcome <rid> build end caught=<true if any escalation/close occurred, the run is PARTIAL, or tests=fail, else false> policy=<close|escalate|continue>`.
 
 ## Error handling
 
-- **Worker fails to complete**: Run kit:task-verifier anyway on whatever exists. The verifier determines if partial work is salvageable (FAIL:fixable) or needs human input (FAIL:escalate).
-- **Tests break during execution**: kit:task-verifier catches this. If fixable, kit:fix-agent handles it. If not, escalate.
-- **Spec ambiguity discovered**: If it is a genuine contradiction (the spec disagrees with itself), stop and ask the user to clarify. Do not guess. Do not dispatch kit:fix-agent for spec problems. If instead the work reveals scope that must be ADDED now ("also do Y"), that is the declared mid-flight amend path, not an ambiguity: confirm the added scope with the user first (adding scope is not the loop's call), then amend at a checkpoint (append `- [ ]` tasks, record an `## Amendments` entry) and resume with `/kit:next` (see WORKFLOW.md "## Mid-flight amend").
-- **Task is too large**: Split it into subtasks. If the split stays within the task's declared scope, confirm with user, then dispatch. If splitting means ADDING scope beyond the spec, confirm the added scope with the user, then route it through the mid-flight amend path (amend at a checkpoint, then resume with `/kit:next`; see WORKFLOW.md "## Mid-flight amend").
-- **kit:fix-agent reports it cannot fix an issue**: Escalate immediately. Don't retry with the same kit:fix-agent.
+- **Builder fails to complete**: run the end verifiers on whatever exists; they decide whether it is salvageable (FAIL:fixable) or needs a human (FAIL:escalate).
+- **Spec ambiguity**: a genuine contradiction (the spec disagrees with itself) means stop and ask; do not guess and do not dispatch kit:fix-agent for spec problems. Scope that must be ADDED now ("also do Y") is the declared mid-flight amend path: confirm it with the user first, then amend at the checkpoint (the stop after the builder or a continuation returns; append `- [ ]` tasks, record an `## Amendments` entry) and resume with `/kit:next` (WORKFLOW.md "## Mid-flight amend").
+- **Task too large**: within the declared scope, the builder splits it itself. Beyond the spec, confirm the added scope with the user and take the amend path.
 
 ## Anti-patterns to avoid
 
-- Do NOT execute tasks in the main session. Always use the Task tool for workers.
-- Do NOT skip verification. Every task goes through kit:task-verifier, even if the worker says "all criteria met."
-- Do NOT skip the phase checkpoint. The user must approve before the next phase.
+- Do NOT build in the main session. Always dispatch the builder through the Task tool.
+- Do NOT skip end verification, even if the builder says "all criteria met."
 - Do NOT auto-fix failing tests without the verification pipeline.
-- Do NOT silently mutate the spec mid-build. An amend is not a silent edit: when the work reveals scope that must be added now, take the declared mid-flight amend path (pause at a task checkpoint, append new `- [ ]` tasks, record an `## Amendments` entry, resume with `/kit:next`). See WORKFLOW.md "## Mid-flight amend". A silent rewrite of done (`- [x]`) tasks is still forbidden.
+- Do NOT silently mutate the spec mid-build. Take the declared amend path: pause at the stop after the builder or a continuation returns, append new `- [ ]` tasks, record an `## Amendments` entry, resume with `/kit:next`. A silent rewrite of done (`- [x]`) tasks is forbidden.
 - Do NOT retry FAIL:escalate verdicts. They need human judgment by definition.
-- Do NOT dispatch kit:fix-agent for more than 2 issues at once. If the verifier found 5+, the task needs re-implementation, not patching. Escalate.
+- Do NOT dispatch kit:fix-agent for more than 2 issues at once. If the verifiers found 5+, the work needs re-implementation, not patching. Escalate.

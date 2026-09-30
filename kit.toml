@@ -275,6 +275,12 @@ confirm_fix      = false        # [impl] false = when Phase 4 has a failing test
                                  #        A fix that does NOT meet all three conditions is never
                                  #        declared fixed, at either setting.
 
+[execute]                       # `/kit:execute` (commands/execute.md)
+recheck_sample   = 5            # [impl] one run in N rechecks every end-verifier PASS with a
+                                 #        fresh-context `kit:recheck-verifier`. 0 = never sample, 1 =
+                                 #        recheck every PASS. A full-lane run always uses 1.
+                                 #        `(self-attested)` rows are always rechecked. Root-only: a project `.kit.toml` cannot lower it.
+
 [review]                        # `/kit:review-team` decision gate (commands/review-team.md)
 apply_findings   = true         # [impl] true = `gated_auto` findings the `responding-to-review`
                                  #        agent VERIFIED are applied on the branch by `fix-agent`,

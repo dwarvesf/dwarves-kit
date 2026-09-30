@@ -16,7 +16,7 @@ how you phrase the ask. Four positions:
 | You say | Position | It stops at |
 |---|---|---|
 | "propose it, don't run anything" | propose | after planning; waits for go |
-| "run it, check with me at each phase" | low (default) | every advisory phase checkpoint |
+| "run it, check with me at each phase" | low (default) | every advisory phase boundary |
 | "run the lane, only stop at hard stops" | high | the 4 hard stops + the push/PR |
 | "run it all the way to a PR, your call" | max | only the 4 hard stops + a real blocker |
 

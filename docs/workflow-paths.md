@@ -114,10 +114,10 @@ Every workflow, lane, loop, side-flow, and alternate path in one connected pictu
  |        v
  |   +- EXECUTE PIPELINE  (the HARD verification pipeline) ----------------------------+
  |   |                                                                                 |
- |   |  per task: [D] worker (data-etl | db-migration | generic | meta-agent synth)    |
+ |   |  [D] builder, one for the spec (data-etl-worker | db-migration-worker | general) |
  |   |       |                                                                         |
  |   |       v                                                                         |
- |   |  [D] task-verifier --PASS--> task done ([D] recheck-verifier may re-audit)      |
+ |   |  [D] task-verifier, ONE pass over every task ([D] recheck-verifier samples)     |
  |   |       |                                                                         |
  |   |       +- FAIL:fixable ==> [D] fix-agent -> re-verify       alt: retry (cap 2)   |
  |   |       |       retries == 2 -------------------+                                 |
@@ -129,7 +129,7 @@ Every workflow, lane, loop, side-flow, and alternate path in one connected pictu
  |   |  |  (Status STAYS VALIDATED) -> /kit:next resumes amended tasks  |              |
  |   |  +---------------------------------------------------------------+              |
  |   |                                                                                 |
- |   |  all tasks PASS -> phase checkpoint (human: continue / review / stop)           |
+ |   |  end PASS -> [D] acceptance-verifier; check-edit signal; negative control       |
  |   |       -> [D] integration-verifier (multi-task, whole-build diff)                |
  |   |            FAIL:fixable ==> fix-agent -> re-check                               |
  |   |            FAIL:escalate -> ESCALATE                                            |
@@ -259,17 +259,17 @@ Off-ramp entries that also land in Shape: `[H] /kit:onboard` (first run, orchest
     v
  [H/I] /kit:execute  (or [H] /kit:next, human-paced, same pipeline)
     |
-    |   per task, HARD pipeline:
-    |   [D] worker (data-etl-worker | db-migration-worker | generic | meta-agent synthesis)
-    |        ──> [D] task-verifier ──PASS──> done   (any PASS may get [D] recheck-verifier)
+    |   whole-spec HARD pipeline:
+    |   [D] builder (data-etl-worker | db-migration-worker | general), one for the spec
+    |        ──> [D] task-verifier, one pass ──PASS──> done   (sampled [D] recheck-verifier)
     |                 └─FAIL:fixable──> [D] fix-agent ──> re-verify (max 2) ──> ESCALATE
-    |   all tasks PASS ──> checkpoint ──> [D] integration-verifier (multi-task)
+    |   end PASS ──> [D] integration-verifier (multi-task) + [D] acceptance-verifier
     v
  build complete ──> Check (review chain)
 
  Alternate engines off the same trunk:
  [H/I] /kit:dispatch ──> N disjoint VALIDATED specs ──> isolated worktree workers
-                          (fix-agent + task-verifier per worker) ──> lead converges ──> /kit:ship
+                          (fix-agent + end verifiers per worker) ──> lead converges ──> /kit:ship
  [H/I] /kit:mega ─────> roadmap of 3-8 sub-goals ──> /goal loop per sub-goal
                           (each runs the spec..ship chain) ──> ship-gate merge per tag
  [H/I] /kit:debug ────> off-cycle: Phase 0..4, iron law (no fix without recorded root cause),
@@ -380,7 +380,7 @@ One line per live feature: `entry -> ... -> terminal`. Grouped by kind; every fe
 | `[H] /kit:test-plan -> coverage matrix -> ## Test plan -> review-team or execute` |
 | `[H] /kit:test-plan-review-team -> 6 lenses + revise loop -> SOLID verdict -> test-write or execute` |
 | `[H] /kit:test-write -> test-writer per matrix row -> runnable tests -> /kit:execute` |
-| `[H/I] /kit:execute -> worker -> task-verifier -> fix-agent (max 2) -> integration-verifier -> review` |
+| `[H/I] /kit:execute -> builder -> end verifiers (task, integration, acceptance) -> fix-agent (max 2) -> review` |
 | `[H] /kit:next -> load next undone task -> human-paced, same verification path` |
 | `[H/I] /kit:dispatch -> N worktree workers behind disjointness gate -> lead converges -> ship` |
 | `[H/I] /kit:mega -> roadmap of 3-8 sub-goals -> /goal loop each -> ship-gate merge per tag` |
@@ -413,13 +413,13 @@ One line per live feature: `entry -> ... -> terminal`. Grouped by kind; every fe
 | `[D] research-features <- /kit:feature-map -> per-module feature inventory (+ parity contract if porting) -> spec file written (read-only)` |
 | `[D] brief-reviewer <- /kit:think -> static brief review -> feedback into the brief` |
 | `[D] test-writer <- /kit:test-write -> one test case per matrix row -> runnable test code` |
-| `[D] data-etl-worker <- /kit:execute (domain=data-etl) -> pipeline build -> task-verifier` |
-| `[D] db-migration-worker <- /kit:execute (domain=db-migration) -> migration + rollback -> task-verifier` |
-| `[D] meta-agent <- /kit:execute (Mode C), /kit:draft-agent -> staged draft -> command promotes` |
+| `[D] data-etl-worker <- /kit:execute (builder, domain=data-etl) -> pipeline build -> end verifiers` |
+| `[D] db-migration-worker <- /kit:execute (builder, domain=db-migration) -> migration + rollback -> end verifiers` |
+| `[D] meta-agent <- /kit:draft-agent -> staged draft -> command promotes` |
 | `[D] task-verifier <- /kit:execute, /kit:verify -> AC check -> PASS / FAIL:fixable / FAIL:escalate` |
 | `[D] fix-agent <- execute, dispatch, debug, test-write, ui-design, verify -> scoped fix -> re-verify` |
 | `[D] integration-verifier <- /kit:execute (multi-task), /kit:verify -> wiring check -> review` |
-| `[D] recheck-verifier <- /kit:execute -> fresh-context re-audit of a PASS -> advisory record` |
+| `[D] recheck-verifier <- /kit:execute (sampled) -> fresh-context re-audit of a PASS -> advisory record` |
 | `[D] audit-scanner <- doc-drift, topology-drift skills (Tier 2) -> per-item verdicts with quoted evidence -> findings return (read-only)` |
 | `[D] claim-verifier <- any command, ad hoc -> N-skeptic panel -> HOLDS / REFUTED verdict` |
 | `[D] code-reviewer <- review-team, devs-team, visual-team -> focused lens -> findings merged` |

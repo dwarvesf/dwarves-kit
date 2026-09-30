@@ -44,9 +44,9 @@ echo "=== agent-for lookup (SPEC-111: worker domains -> workers; reviewers/gener
 TOTAL=$((TOTAL+1)); [ "$(bash "$RC" agent-for db-migration)" = "db-migration-worker" ] && { PASS=$((PASS+1)); echo -e "  ${GREEN}PASS${NC} agent-for db-migration -> db-migration-worker"; } || { FAIL=$((FAIL+1)); echo -e "  ${RED}FAIL${NC} agent-for db-migration"; }
 TOTAL=$((TOTAL+1)); [ "$(bash "$RC" agent-for data-etl)" = "data-etl-worker" ] && { PASS=$((PASS+1)); echo -e "  ${GREEN}PASS${NC} agent-for data-etl -> data-etl-worker"; } || { FAIL=$((FAIL+1)); echo -e "  ${RED}FAIL${NC} agent-for data-etl"; }
 for d in performance api frontend infra security generic; do
-  TOTAL=$((TOTAL+1)); [ -z "$(bash "$RC" agent-for "$d")" ] && { PASS=$((PASS+1)); echo -e "  ${GREEN}PASS${NC} agent-for $d -> empty (reviewer via review-team / Mode-C, not a 2b-0 worker)"; } || { FAIL=$((FAIL+1)); echo -e "  ${RED}FAIL${NC} agent-for $d should be empty"; }
+  TOTAL=$((TOTAL+1)); [ -z "$(bash "$RC" agent-for "$d")" ] && { PASS=$((PASS+1)); echo -e "  ${GREEN}PASS${NC} agent-for $d -> empty (reviewer via review-team, not a builder)"; } || { FAIL=$((FAIL+1)); echo -e "  ${RED}FAIL${NC} agent-for $d should be empty"; }
 done
-# reuse-HIT chain: a worker-domain task classifies then resolves to its worker (the 2b-0 reuse source)
+# reuse-HIT chain: a worker-domain task classifies then resolves to its worker (the builder lookup source)
 TOTAL=$((TOTAL+1)); D=$(bash "$RC" classify "write a migration to add a column and backfill the table"); [ "$(bash "$RC" agent-for "$D")" = "db-migration-worker" ] && { PASS=$((PASS+1)); echo -e "  ${GREEN}PASS${NC} reuse-hit chain: migration task -> db-migration-worker"; } || { FAIL=$((FAIL+1)); echo -e "  ${RED}FAIL${NC} reuse-hit chain (got domain='$D')"; }
 
 echo ""
