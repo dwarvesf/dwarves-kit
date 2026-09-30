@@ -7,3 +7,8 @@ reminders_list       = "Backlog · kit"
 # only high-urgency rows reach the personal Reminders list; everything else
 # waits for a work session on the board itself
 reminders_only_tags  = "u-hi"
+
+# The kit's own enforcement code counts as a hard path, so an edit to it needs the full lane's
+# gates at push. Adds to the built-in hard paths; nothing here can remove one.
+[lanes]
+extra_hard_paths = "^hooks/|^lib/gate/|^lib/classify/|^lib/config/|^kit\.toml$"
