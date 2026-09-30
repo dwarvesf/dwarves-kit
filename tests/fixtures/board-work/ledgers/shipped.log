@@ -1,0 +1,5 @@
+2026-09-29T13:35:20Z | GATE | spec | ran | drafted
+2026-09-29T14:00:30Z | GATE | validate | ran | approved
+2026-09-29T15:00:00Z | GATE | build | ran | built
+2026-09-29T16:00:00Z | GATE | review | ran | reviewed
+2026-09-29T17:00:00Z | GATE | ship | ran | shipping pr=#1

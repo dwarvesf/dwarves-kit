@@ -47,6 +47,7 @@
 #                                                               session itself; --exec composes
 #                                                               the launch. Forwards to
 #                                                               lib/board/board-run.sh verbatim.
+#   board.sh work [--json] [--idle-min N] [--code-root D] [--backlog-file <path>]  who is on what: board x mega x git x orca x ledger, read-only
 #   board.sh priority [counts|brief|overview|full] [all|work|learn] [--backlog-file <path>]
 #                                                               single-repo urgency x fit quadrant
 #   board.sh promote [<n>... | all | reject <n>...]             review + flush backlog-stage's
@@ -1150,7 +1151,7 @@ _legacy_bridge_note() {
   echo "      folded into the sync module; the port is tracked on the kit board." >&2
 }
 
-usage() { sed -n '2,168p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
+usage() { sed -n '2,169p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
 
 main() {
   local first="${1:-}"
@@ -1166,6 +1167,7 @@ main() {
     capture) shift; cmd_capture "$@" ;;
     promote) shift; exec "$BOARD_DIR/bin/add-backlog" "$@" ;;
     run) shift; exec "$BOARD_RUN_SH" "$@" ;;
+    work) shift; exec bash "$BOARD_DIR/work.sh" "$@" ;;
     -h|--help|help) usage ;;
     *) cmd_board_single "$@" ;;
   esac
