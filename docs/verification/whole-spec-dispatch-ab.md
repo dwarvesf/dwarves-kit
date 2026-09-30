@@ -24,7 +24,7 @@ Tokens: 605367
 |---|---|---|
 | general-purpose | 4 | task workers, one per task |
 | kit:task-verifier | 4 | one per task |
-| kit:recheck-verifier | 5 | four per task plus one on integration |
+| kit:recheck-verifier | 5 | one per task plus one on integration |
 | kit:integration-verifier | 1 | wiring check |
 | kit:code-reviewer | 2 | architecture and test-coverage lenses |
 | kit:security-reviewer | 1 | security lens |
