@@ -4,8 +4,8 @@
 #
 #   wrap.sh scan  [--under <root>]... <repo> [<repo>...]    report only, exit 0
 #   wrap.sh apply [--apply] [--worktrees] [--archive-unmerged] [--own <path>]... [--under <root>]... <repo> [...]  dry-run by default
-#   wrap.sh merge [--apply] [--pr N] <repo>                 merges ONE own green PR (--pr: a named draft)
-#   wrap.sh land  <worktree> [--title T] [--body-file F]    one hand-made worktree, landed
+#   wrap.sh merge [--apply] [--pr N] [--with-ci] <repo>     merges ONE own green PR (--pr: a named draft)
+#   wrap.sh land  <worktree> [--title T] [--body-file F] [--with-ci]   one hand-made worktree, landed
 #   wrap.sh start <repo> <branch> [--carry [<path>...]]     one hand-made worktree, started
 #   wrap.sh log   "<slug>: <one sentence>" [--date YYYY-MM-DD]
 #   wrap.sh default-branch <repo>                           prints the detected name
@@ -1246,6 +1246,13 @@ _carry_branch_ours() {
 # predate it; in every other case CI_PRELABEL_KEYS is [] (the re-add branch runs only on an
 # empty rollup).
 #
+# The `ci` label gate is opt-in: merges trigger no CI by default, so `--with-ci` on
+# `merge`/`land` or `KIT_WRAP_CI_ON_MERGE=1` in the environment (the only switch
+# `apply`'s autoland reads) is what arms it. Off, every merge runs as it did before the
+# gate existed: no label, no wait, an empty rollup is mergeable.
+KIT_WRAP_CI_ON_MERGE=${KIT_WRAP_CI_ON_MERGE:-0}
+_ci_on_merge() { [ "$KIT_WRAP_CI_ON_MERGE" = "1" ]; }
+
 # CI_JQ_DEFS is the one jq definition of a rollup entry that the ci wait, the carry wait and
 # `_pr_gate` share. gh emits an absent URL as "" and an absent time as the zero time, never
 # null, so `real` drops all three; `ckey` takes the first real URL or time after the check
@@ -1369,15 +1376,18 @@ _autoland_carry() {
       echo "     adopted PR #${n} for ${branch}" ;;
     *) echo "     SKIP land ${branch}: the open-PR lookup failed or found several"; return 1 ;;
   esac
-  # A label-gated repo runs no checks until the PR carries `ci`, which the plain wait
-  # below would read as "nothing pending" and merge untested; sync the label first, then
-  # wait for the runs it starts. A repo without the label takes the wait it always did,
-  # and a label that could not be set refuses the land rather than landing untested.
-  _ci_label_sync "$url" "$n"; rc=$?
-  case "$rc" in
-    0) _ci_checks_wait "$url" "$n" ;;
-    2) echo "     SKIP land ${branch}: PR #${n} is unlabeled on a ci-gated repo; left open"; return 1 ;;
-  esac
+  # On an opted-in ci-gated repo the label sync arms the checks, which the plain wait
+  # below would otherwise read as "nothing pending" and merge untested; sync the label
+  # first, then wait for the runs it starts. With the gate off (the default) a merge
+  # takes the wait it always did, as does a repo without the label; under the gate, a
+  # label that could not be set refuses the land rather than landing untested.
+  if _ci_on_merge; then
+    _ci_label_sync "$url" "$n"; rc=$?
+    case "$rc" in
+      0) _ci_checks_wait "$url" "$n" ;;
+      2) echo "     SKIP land ${branch}: PR #${n} is unlabeled on a ci-gated repo; left open"; return 1 ;;
+    esac
+  else rc=1; fi
   if [ "$rc" -eq 1 ]; then
   # Pending: a check still running, or no check reported yet on a merge state that is not
   # CLEAN, which is what a PR opened seconds ago shows before its checks register.
@@ -2100,11 +2110,12 @@ cmd_merge() {
     case "$1" in
       --apply) do_apply=1; shift ;;
       --pr) pr_only="${2:-}"; shift 2 ;;
+      --with-ci) KIT_WRAP_CI_ON_MERGE=1; shift ;;
       -*) echo "wrap.sh merge: unknown flag '$1'" >&2; return 64 ;;
       *) count=$(( count + 1 )); repo="$1"; shift ;;
     esac
   done
-  [ "$count" -eq 1 ] || { echo "usage: wrap.sh merge [--apply] [--pr N] <repo>" >&2; return 64; }
+  [ "$count" -eq 1 ] || { echo "usage: wrap.sh merge [--apply] [--pr N] [--with-ci] <repo>" >&2; return 64; }
   case "$pr_only" in
     '') ;;
     *[!0-9]*) echo "wrap.sh merge: --pr wants a PR number" >&2; return 64 ;;
@@ -2251,12 +2262,14 @@ cmd_merge() {
   [ -n "$head_oid" ] || {
     echo "FAILED merge #${first_eligible}: no head SHA to pin the merge to" >&2; return 2; }
 
-  # A label-gated repo runs no checks until the PR carries `ci`, so the gate above read an
-  # empty rollup on an untested head and called it mergeable. Sync the label and wait out
-  # the runs it starts, then re-read and re-gate that same head: a check the label reveals
-  # failing refuses here. A repo without the label merges as it always did, and a label
-  # that will not set refuses rather than merging untested.
-  local rc
+  # Under `--with-ci`/`KIT_WRAP_CI_ON_MERGE=1` a label-gated repo runs no checks until the
+  # PR carries `ci`, so the gate above read an empty rollup on an untested head and called
+  # it mergeable. Sync the label and wait out the runs it starts, then re-read and re-gate
+  # that same head: a check the label reveals failing refuses here. With the gate off (the
+  # default), or on a repo without the label, the merge runs as it always did; under the
+  # gate, a label that will not set refuses rather than merging untested.
+  local rc=1
+  if _ci_on_merge; then
   _ci_label_sync "$url" "$first_eligible"; rc=$?
   case "$rc" in
     0)
@@ -2282,6 +2295,7 @@ cmd_merge() {
     1) ;;
     *) echo "FAILED merge #${first_eligible}: the ci label could not be set" >&2; return 2 ;;
   esac
+  fi
 
   # Squash only, one PR per call, never --delete-branch (a worktree may hold the branch)
   # and never --auto (an armed auto-merge lands a later push).
@@ -2403,12 +2417,13 @@ cmd_land() {
       --title=*) title="${arg#--title=}"; flags_given=1 ;;
       --body-file) want=body; flags_given=1 ;;
       --body-file=*) body_file="${arg#--body-file=}"; flags_given=1 ;;
+      --with-ci) KIT_WRAP_CI_ON_MERGE=1 ;;
       -*) echo "wrap.sh land: unknown flag '$arg'" >&2; return 64 ;;
       *) count=$(( count + 1 )); wt="$arg" ;;
     esac
   done
   [ -z "$want" ] || { echo "wrap.sh land: --${want} needs a value" >&2; return 64; }
-  [ "$count" -eq 1 ] || { echo "usage: wrap.sh land <worktree> [--title T] [--body-file F]" >&2; return 64; }
+  [ "$count" -eq 1 ] || { echo "usage: wrap.sh land <worktree> [--title T] [--body-file F] [--with-ci]" >&2; return 64; }
   _is_repo "$wt" || { echo "wrap.sh land: ${wt} is not a git worktree" >&2; return 64; }
   if [ -n "$body_file" ] && [ ! -f "$body_file" ]; then
     echo "wrap.sh land: --body-file '${body_file}' is not an existing file" >&2; return 64
@@ -2521,16 +2536,19 @@ cmd_land() {
     echo "     opened PR #${n}"
   fi
 
-  # A label-gated repo runs no checks until the PR carries `ci`, so the label goes on
-  # before the merge and the runs it starts get a bounded wait; a repo without the label
-  # merges as it always did, and a label that could not be set refuses rather than
-  # merging untested.
-  _ci_label_sync "$url" "$n"; rc=$?
-  case "$rc" in
-    0) _ci_checks_wait "$url" "$n" ;;
-    1) ;;
-    *) echo "     MERGE FAILED #${n}: the ci label could not be set" >&2; return 2 ;;
-  esac
+  # Under `--with-ci`/`KIT_WRAP_CI_ON_MERGE=1` a label-gated repo runs no checks until the
+  # PR carries `ci`, so the label goes on before the merge and the runs it starts get a
+  # bounded wait. With the gate off (the default), or on a repo without the label, the
+  # merge runs as it always did; under the gate, a label that could not be set refuses
+  # rather than merging untested.
+  if _ci_on_merge; then
+    _ci_label_sync "$url" "$n"; rc=$?
+    case "$rc" in
+      0) _ci_checks_wait "$url" "$n" ;;
+      1) ;;
+      *) echo "     MERGE FAILED #${n}: the ci label could not be set" >&2; return 2 ;;
+    esac
+  fi
 
   _gh_merge_retry "$n" "$url" "$tip"; rc=$?
   if [ "$rc" -ne 0 ]; then echo "     MERGE FAILED #${n}: exit ${rc}" >&2; return 2; fi
