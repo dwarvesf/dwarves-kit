@@ -183,3 +183,38 @@ selection contract names the split files):
 - The runner names the stub and the module list only in comments: enough for
   the raw `grep -oFf` cache key, never a refs-selection, so a stub change
   does not double-run the suites through the runner.
+
+## Port of #850
+
+Rebased onto origin/master 56bab0e5. #850 (b4b99ca9) added the packed-flags guard to the monolith; #849 touched only `lib/wrap/report-lint.sh` comments, which merged clean (master's version).
+
+Resolution, folded into the two conflicting commits so each stays a faithful move of master's code:
+
+- Code split commit: kept the branch's dispatcher `lib/wrap/wrap.sh`. Applied each #850 hunk to its module with `patch`: `_reject_packed` into `wrap-common.sh` after `_default_branch` (its monolith position), call sites into the arg loops of `cmd_scan`, `cmd_apply`, `cmd_merge`, `cmd_land`, `cmd_start` (both the `--carry` loop and the positional arm), `cmd_rebase`. #850 did not touch the dispatcher's own arg parsing. The sorted `+`/`-` lines of the port equal the sorted lines of master's wrap.sh diff (33 lines, `diff` empty). A line-multiset diff of `wrap.sh + wrap-*.sh` against master's wrap.sh adds only the 12 module headers and the source loop.
+- Test split commit: kept the branch's runner. #850 added 17 asserts, not 14, all inside the monolith's `apply --own` section. Placement follows `bin/test-affected` (a `wrap-<m>.sh` edit runs only `test-wrap-<m>.sh`), so each verb's asserts sit in its own suite:
+
+| Suite | Asserts |
+|---|---|
+| apply (after the `--own` no-value asserts) | `packed ' --own <path>' to apply exits 64`, `packed arg: the one-line refusal`, `packed arg: it is never treated as a repo`, `packed arg: nothing removed`, `a repo path containing a space still works, exits 0`, `space path: not flagged as packed`, `space path: seen as a git repo` |
+| scan (new last section; `$TMPD/clone-scan-main` replaces apply's `$OWNREPO`, the guard fires in the arg loop before any repo read) | `an embedded ' --' in a scan positional exits 64`, `scan: the embedded ' --' refusal is the packed-flags one` |
+| land, merge, rebase, start (new last section each, no fixture) | `packed arg to <verb> exits 64`, `packed arg to <verb> names the packed-flags refusal` |
+
+- `docs/FEATURES.md` conflicted (generated): took master's, regenerated with `lib/registry/feature-registry.sh generate`. A regen at the final head leaves no diff.
+
+Checks (final head):
+
+| Check | Result |
+|---|---|
+| Label diff, master monolith vs union of `tests/test-wrap-*.sh` (sorted multiset, `comm` both ways) | empty both ways, 1,532 labels each |
+| Function defs in `lib/wrap/wrap*.sh` | 99, `uniq -d` empty |
+| `grep -nE '^(set \|exit\|#!)' lib/wrap/wrap-*.sh` | no output (rc 1) |
+| `bash -n` (bash 5 and /bin/bash 3.2.57) on every wrap module, suite, stub | ok |
+| `git diff origin/master -- hooks/` | empty |
+| `wrap.sh --help` vs `git archive origin/master` export | identical, 2,207 bytes, rc 0 both |
+| `wrap.sh bogusverb` vs export | identical, 50 bytes, rc 64 both |
+| Standalone suites | cli 22/22, scan 43/43, land 128/128, merge 214/214, rebase 104/104, start 61/61, apply 249/249 |
+| Runner `bash tests/test-wrap.sh`, run alone (4m02s) | `test-wrap: 1596 passed, 2 FAILED of 1598`, the 2 FAILs are the baseline wording ones |
+
+1,598 = 1,581 + 17.
+
+Negative control: deleted `_reject_packed land "$arg" || return 64` from `cmd_land`'s arg loop, ran `tests/test-wrap-land.sh`: `FAIL packed arg to land names the packed-flags refusal`, `test-wrap-land: 127 passed, 1 FAILED of 128`. `packed arg to land exits 64` stays green without the guard: `land " --title x"` also exits 64 on the not-a-worktree path, so only the wording assert discriminates (master's assert design, carried as is). Restored with `git checkout --`; `git status --short` empty.
