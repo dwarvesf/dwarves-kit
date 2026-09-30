@@ -24,8 +24,8 @@ echo "citation-guard parity: $pass passed, $fail failed"
 
 # Latency: a Stop hook reads the whole transcript, and a long session's transcript runs to
 # tens of MB, with multi-MB single lines (tool results). A ~20 MB transcript must check well inside the hook timeout; the budget is
-# 500 ms on an idle machine, and the assertion allows 2 s so a loaded machine does not
-# flake it. (A slurping `jq -s` is fast enough here; NC5 and `nonjson-before-final` catch
+# 500 ms on an idle machine, and the assertion is the hook timeout itself (5 s): at load
+# average 113 to 198 a 2 s bound flaked while the idle run took 232 ms. (A slurping `jq -s` is fast enough here; NC5 and `nonjson-before-final` catch
 # it instead, because it aborts at the first line that is not JSON.)
 T="$(mktemp -d)"
 filler=$(head -c 5000 /dev/zero | tr '\0' 'x')
@@ -41,7 +41,7 @@ err=$(cd "$FIX/root" && printf '{"transcript_path":"%s","cwd":"%s"}' "$T/big.jso
   | env -i PATH="$PATH" HOME="$T" LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8 CITATION_GUARD_LOG="$T/l.log" CITATION_GUARD_STRICT=1 bash "$KIT_DIR/hooks/citation-guard.sh" 2>&1 >/dev/null); rc=$?
 end=$(perl -MTime::HiRes=time -e 'printf "%d", time*1000' 2>/dev/null || date +%s000)
 ms=$((end - start))
-if [ "$ms" -lt 2000 ] && [ "$rc" = 2 ] && printf '%s' "$err" | grep -q 'nope.md:1'; then
+if [ "$ms" -lt 5000 ] && [ "$rc" = 2 ] && printf '%s' "$err" | grep -q 'nope.md:1'; then
   echo "  PASS 20 MB transcript checked in ${ms} ms"
 else
   fail=$((fail + 1)); echo "  FAIL 20 MB transcript: ${ms} ms, rc=$rc"
