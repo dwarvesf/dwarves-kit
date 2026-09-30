@@ -178,7 +178,14 @@ _orca_sg_state() {  # dir sg policy checked   -> _S_STATE _S_REASON _S_TASK _S_D
   esac
   # 4 BLOCKED: a blocked event for the latest Dispatch, or the Task itself is blocked.
   bnote=$(_orca_ev_note "$dir" "$sg" "$_S_DISP" blocked)
-  [ -n "$bnote" ] && { _S_STATE=BLOCKED; _S_REASON="${bnote#*: }"; return 0; }
+  if [ -n "$bnote" ]; then
+    # A worker-start whose outcome is unknown is not a rejection: the Dispatch may exist. Never relaunched.
+    case "$bnote" in
+      *"worker-start exit"*) _S_STATE=INDETERMINATE; _S_REASON="start-outcome-unknown" ;;
+      *) _S_STATE=BLOCKED; _S_REASON="${bnote#*: }" ;;
+    esac
+    return 0
+  fi
   # 5 DONE-UNSEEN: worker finished, the runner has not consumed it yet.
   if [ "$ts" = completed ]; then
     [ -n "$(_orca_ev_note "$dir" "$sg" "$_S_DISP" 'shipped|blocked')" ] || { _S_STATE=DONE-UNSEEN; return 0; }

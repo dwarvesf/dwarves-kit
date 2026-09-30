@@ -450,8 +450,18 @@ tc_mutation_check() {
   case_end
 }
 
+tc_start_failure() {
+  case_begin start-failure
+  mkcase
+  ORCA_STUB_FAIL_VERB=worker-start ORCA_MAX_TICKS=1 orun >"$W/o.out" 2>&1
+  expect "$(st SG-01)" "INDETERMINATE start-outcome-unknown" "a failed worker-start is unknown, not rejected"
+  tick; tick
+  expect "$(calls | grep -c 'worker-start')" 1 "the backend never relaunches a start of unknown outcome"
+  case_end
+}
+
 # ONLY="AC4 AC8" runs just those cases; unset runs every case.
-CASES="stub-contract AC1 AC2 AC3 AC4 AC5 AC6 AC7 AC8 AC9 AC10 AC13 AC15 AC16 rule-order view-fallback mutation-check"
+CASES="stub-contract AC1 AC2 AC3 AC4 AC5 AC6 AC7 AC8 AC9 AC10 AC13 AC15 AC16 rule-order start-failure view-fallback mutation-check"
 for c in $CASES; do
   if [ -z "${ONLY:-}" ] || printf ' %s ' "$ONLY" | grep -q " $c "; then "tc_${c//-/_}"; fi
 done
