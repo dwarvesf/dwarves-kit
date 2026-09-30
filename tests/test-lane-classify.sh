@@ -8,6 +8,7 @@
 
 set -uo pipefail
 KIT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+export KIT_PROJECT_ROOT=/nonexistent   # the kit repo's own .kit.toml adds hard paths; the suite pins the built-in behavior
 export KIT_CONFIG_OPERATOR="$KIT_DIR/tests/fixtures/gates-on"   # quality gates are opt-in; this suite exercises them ON
 LC="$KIT_DIR/lib/classify/lane-classify.sh"
 

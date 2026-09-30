@@ -239,8 +239,8 @@ classify_core() {
   # markdown-only or doc-tree bootstrap work is tiny, but these anchors describe the
   # SUBJECT of the work, not a cosmetic surface, so a README about auth tokens or
   # gate machinery must let the hard-gate win first (review HIGH).
-  if printf '%s' "$lc" | grep -qE 'markdown[ -]only|bootstrap .{0,40}(readme|notes|reading list|learning track)'; then
-    LANE=tiny; REASON="doc bootstrap (markdown-only / doc-tree), no hard-gate subject"; FIRED=doc-bootstrap; SUGGEST=""; return 0
+  if [ -z "$hard" ] && printf '%s' "$lc" | grep -qE 'markdown[ -]only|bootstrap .{0,40}(readme|notes|reading list|learning track)'; then
+    LANE=tiny; REASON="doc bootstrap (markdown-only / doc-tree), no hard-gate subject"; FIRED=doc-bootstrap; return 0
   fi
 
   # 4. bug: a defect, not a new feature.

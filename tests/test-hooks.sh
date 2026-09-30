@@ -1485,24 +1485,26 @@ echo ""
 echo "=== lane-classify: task-type -> risk lane (the 3 sample types + more) ==="
 # ============================================================
 LANE() { bash "$KIT_DIR/lib/classify/lane-classify.sh" classify "$1" 2>/dev/null; }
+# Words never pick full: a hard-flag hit is a suggestion line on explain, and classify stays on the default lane.
+LANE_SUGGEST() { bash "$KIT_DIR/lib/classify/lane-classify.sh" explain "$1" 2>/dev/null; }
 # The three sample types the goal requires, plus normal + backfill for full coverage.
 assert_output_contains "lane: a doc fix -> tiny" "^tiny$" "$(LANE 'fix a typo in the README heading')"
 assert_output_contains "lane: a bug -> bug" "^bug$" "$(LANE 'the CSV parser crashes on empty input, fix the regression')"
-assert_output_contains "lane: a full feature -> full" "^full$" "$(LANE 'add user authentication with a JWT token flow and a users table migration')"
+assert_output_contains "lane: a full feature -> full suggests full" "suggest: full" "$(LANE_SUGGEST 'add user authentication with a JWT token flow and a users table migration')"
 assert_output_contains "lane: a bounded feature -> normal" "^normal$" "$(LANE 'add a --version flag to the CLI')"
 assert_output_contains "lane: brownfield docs -> backfill" "^backfill$" "$(LANE 'review the legacy service and write its AGENTS.md operating-layer docs')"
 
 # SPEC-050: flag-scoring -- the kit-machinery hard-gate catches the 2026-06-10 misses (a change
 # naming the gate machinery is always full, even with no auth/migration keyword).
-assert_output_contains "lane: kit-machinery (classifier) -> full" "^full$" "$(LANE 'rewrite lib/classify/lane-classify.sh into a flag-scoring classifier')"
+assert_output_contains "lane: kit-machinery (classifier) -> full suggests full" "suggest: full" "$(LANE_SUGGEST 'rewrite lib/classify/lane-classify.sh into a flag-scoring classifier')"
 # SPEC-057 review finding: the kit-machinery flag enumerated lib files by name and missed the
 # newer helpers, under-sizing their work to normal. Pin the additions.
-assert_output_contains "lane: task-type-classify work -> full" "^full$" "$(LANE 'expand lib/classify/task-type-classify.sh to 11 types')"
-assert_output_contains "lane: backlog.sh work -> full" "^full$" "$(LANE 'change backlog.sh board rendering')"
-assert_output_contains "lane: kit-machinery (adopt) -> full" "^full$" "$(LANE 'adopt @AGENTS.md import loader plus --dry-run and --refresh flags in lib/adopt.sh')"
-assert_output_contains "lane: kit-machinery (install+gate-ledger) -> full" "^full$" "$(LANE 'ship AGENTS.md + WORKFLOW.md into the install so adopt + gate-ledger work')"
+assert_output_contains "lane: task-type-classify work -> full suggests full" "suggest: full" "$(LANE_SUGGEST 'expand lib/classify/task-type-classify.sh to 11 types')"
+assert_output_contains "lane: backlog.sh work -> full suggests full" "suggest: full" "$(LANE_SUGGEST 'change backlog.sh board rendering')"
+assert_output_contains "lane: kit-machinery (adopt) -> full suggests full" "suggest: full" "$(LANE_SUGGEST 'adopt @AGENTS.md import loader plus --dry-run and --refresh flags in lib/adopt.sh')"
+assert_output_contains "lane: kit-machinery (install+gate-ledger) -> full suggests full" "suggest: full" "$(LANE_SUGGEST 'ship AGENTS.md + WORKFLOW.md into the install so adopt + gate-ledger work')"
 # SPEC-050: soft-flag count -- 4 weak signals with no hard-gate keyword still escalate to full.
-assert_output_contains "lane: 4 soft flags -> full" "^full$" "$(LANE 'a cross-platform change to existing behavior that is untested and spans two domains')"
+assert_output_contains "lane: 4 soft flags -> full suggests full" "suggest: full" "$(LANE_SUGGEST 'a cross-platform change to existing behavior that is untested and spans two domains')"
 # SPEC-050: explain is auditable -- it names the flag that fired, not just the lane.
 EXPLAIN() { bash "$KIT_DIR/lib/classify/lane-classify.sh" explain "$1" 2>/dev/null; }
 assert_output_contains "explain names the kit-machinery flag" "kit-machinery" "$(EXPLAIN 'ship AGENTS.md into the install via install.sh so adopt works')"
@@ -1520,7 +1522,7 @@ assert_output_contains "lane: empty description -> normal" "^normal$" "$(LANE ''
 assert_output_contains "flags subcommand lists kit-machinery" "kit-machinery" "$(bash "$KIT_DIR/lib/classify/lane-classify.sh" flags 2>/dev/null)"
 # SPEC-050 DEC-003: security stays a hard-gate (was bare 'security' in the old full branch); the
 # narrowing was validation-only, so security-relevant work does not silently downgrade.
-assert_output_contains "lane: security middleware -> full" "^full$" "$(LANE 'add security middleware to the request pipeline')"
+assert_output_contains "lane: security middleware -> full suggests full" "suggest: full" "$(LANE_SUGGEST 'add security middleware to the request pipeline')"
 
 # ============================================================
 echo ""
@@ -1529,7 +1531,8 @@ echo "=== lane-classify: floor check (SPEC-053, the under-size guard) ==="
 # CHK merges stderr (the warning is on stderr) so the assertions can read it.
 CHK() { bash "$KIT_DIR/lib/classify/lane-classify.sh" check "$1" "$2" 2>&1; }
 # 1. chose a lighter lane than the text's full floor -> warns.
-assert_output_contains "floor: full text + normal chosen -> LANE-DOWNGRADE" "LANE-DOWNGRADE" "$(CHK normal 'add a hook that touches auth token validation')"
+assert_output_contains "floor: full text + normal chosen -> a full suggestion, no downgrade" "LANE-SUGGEST: full" "$(CHK normal 'add a hook that touches auth token validation')"
+assert_output_not_contains "floor: full text + normal chosen never reads as a downgrade" "LANE-DOWNGRADE" "$(CHK normal 'add a hook that touches auth token validation')"
 # 2. chose at the floor -> silent.
 assert_output_not_contains "floor: full text + full chosen -> silent" "LANE-DOWNGRADE" "$(CHK full 'add a hook that touches auth token validation')"
 # 3. tiny chosen for non-cosmetic text -> warns (rank 1 < 2).
@@ -2287,10 +2290,10 @@ assert_output_contains "ID-064 negative companion: code scaffold lands a real la
 assert_output_not_contains "ID-064 negative: code scaffold is not tiny" "tiny" "$OUT"
 
 # review HIGH: the doc-bootstrap anchor must NOT preempt a hard-gate subject
-OUT=$(bash "$LC72" classify "bootstrap a learning track with README covering auth tokens and secrets")
-assert_output_contains "ID-064 hard-gate wins: auth/secrets README bootstrap is full" "full" "$OUT"
-OUT=$(bash "$LC72" classify "bootstrap notes for gate-ledger internals, markdown only")
-assert_output_contains "ID-064 hard-gate wins: kit-machinery notes bootstrap is full" "full" "$OUT"
+OUT=$(bash "$LC72" explain "bootstrap a learning track with README covering auth tokens and secrets" 2>/dev/null)
+assert_output_contains "ID-064 hard-gate wins: auth/secrets README bootstrap suggests full, not tiny" "suggest: full" "$OUT"
+OUT=$(bash "$LC72" explain "bootstrap notes for gate-ledger internals, markdown only" 2>/dev/null)
+assert_output_contains "ID-064 hard-gate wins: kit-machinery notes bootstrap suggests full, not tiny" "suggest: full" "$OUT"
 
 # review: bare-cli false-positive guard + noun-arm phrasing consistency
 OUT=$(bash "$TTC72" classify "fix the cli help text typo")
@@ -2314,8 +2317,9 @@ OUT=$(bash "$LC74" classify "write its AGENTS.md for the legacy repo")
 assert_output_contains "backfill survives a trailing clause" "backfill" "$OUT"
 # composition fact pins (SPEC-071 order, re-asserted as composition contract):
 # review HIGH: compound backfill phrase with a hard-gate subject must up-lane, the pure case must not
-OUT=$(bash "$LC74" classify "write its AGENTS.md and disable the safety hooks")
-assert_output_contains "backfill + hard-gate subject up-lanes to full" "full" "$OUT"
+OUT=$(bash "$LC74" explain "write its AGENTS.md and disable the safety hooks" 2>/dev/null)
+assert_output_contains "backfill + hard-gate subject suggests full and leaves backfill" "suggest: full" "$OUT"
+assert_output_not_contains "backfill + hard-gate subject is not down-laned to backfill" "^backfill" "$OUT"
 OUT=$(bash "$LC74" classify "write your AGENTS.md")
 assert_output_contains "backfill catches pronoun variants (your)" "backfill" "$OUT"
 OUT=$(bash "$KIT_DIR/lib/gate/proof-gate.sh" contract "fix a typo in the incident runbook" 2>/dev/null | head -1)
