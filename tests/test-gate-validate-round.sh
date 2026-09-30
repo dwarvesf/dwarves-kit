@@ -11,6 +11,11 @@
 #      VR_CASES="C1 C3" bash tests/test-gate-validate-round.sh   (subset)
 
 set -uo pipefail
+# Hermetic git: no inherited repo env (GIT_DIR/GIT_COMMON_DIR/...), no user
+# config, no real HOME -- the suite must behave identically on any host.
+unset $(git rev-parse --local-env-vars)
+VR_HOME="$(mktemp -d)"; HOME="$VR_HOME"; export HOME
+export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
 KIT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 GL="$KIT_DIR/lib/gate/gate-ledger.sh"
 
@@ -18,7 +23,7 @@ PASS=0; FAIL=0; TOTAL=0
 RED='\033[0;31m'; GREEN='\033[0;32m'; NC='\033[0m'
 assert() { TOTAL=$((TOTAL+1)); if [ "$2" -eq 0 ]; then echo -e "  ${GREEN}PASS${NC} $1"; PASS=$((PASS+1)); else echo -e "  ${RED}FAIL${NC} $1"; FAIL=$((FAIL+1)); fi; }
 
-TMPS=()
+TMPS=("$VR_HOME")
 _mk() { local d; d="$(mktemp -d)"; TMPS+=("$d"); printf '%s' "$d"; }
 cleanup() { local d; for d in "${TMPS[@]:-}"; do [ -n "$d" ] && rm -rf "$d" 2>/dev/null; done; }
 trap cleanup EXIT
@@ -46,6 +51,17 @@ mkrepo() {
 # fields-2-onward view of a ledger (timestamps + timing fields masked)
 block() { sed -E 's/^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:]+Z \| //' "$(ledger "$1")" | sed -E 's/at=[0-9]+/at=E/g; s/dur_s=[0-9]+/dur_s=D/g'; }
 tailn() { block "$1" | tail -"$2"; }
+
+# A git shim that exits 128 for exactly one subcommand ($1) and passes every
+# other call through to the real git. Prints the shim dir.
+gitshim() {
+  local d real
+  d="$(_mk)/shim"; mkdir -p "$d"
+  real="$(command -v git)"
+  printf '#!/bin/sh\nfor a in "$@"; do [ "$a" = "%s" ] && exit 128; done\nexec "%s" "$@"\n' "$1" "$real" > "$d/git"
+  chmod +x "$d/git"
+  printf '%s' "$d"
+}
 
 # $1=want rc, $2=desc, $3=rid whose ledger must be unchanged, rest=command
 refuse() {
@@ -116,13 +132,17 @@ if want C1b; then
   SP="$R/docs/specs/SPEC-001-vr-c1b.md"
   SUB="$R/src"; mkdir -p "$SUB"
   WANT_SP="$(cd "$R/docs/specs" && pwd -P)/SPEC-001-vr-c1b.md"
+  # dirty the spec: its blob exists only because `open` wrote it with -w, so
+  # `cat-file -e` in the SPEC repo proves where the pin landed
+  printf 'dirty at open\n' >> "$SP"
   SPECS=""
   i=0
-  for leg in plain outside subdir gitdir gitcommon; do
+  for leg in plain outside otherrepo subdir gitdir gitcommon; do
     i=$((i+1)); new_log
     case "$leg" in
       plain)     T="$(cd "$R" && env DWARVES_KIT_LOG_DIR="$LOGD" bash "$GL" validate-round open vr-c1b "$SP")" ;;
       outside)   T="$(cd "$(_mk)" && env DWARVES_KIT_LOG_DIR="$LOGD" bash "$GL" validate-round open vr-c1b "$SP")" ;;
+      otherrepo) T="$(cd "$OTHER" && env DWARVES_KIT_LOG_DIR="$LOGD" bash "$GL" validate-round open vr-c1b "$SP")" ;;
       subdir)    T="$(cd "$SUB" && env DWARVES_KIT_LOG_DIR="$LOGD" bash "$GL" validate-round open vr-c1b ../docs/specs/SPEC-001-vr-c1b.md)" ;;
       gitdir)    T="$(cd "$R" && env GIT_DIR="$OTHER/.git" DWARVES_KIT_LOG_DIR="$LOGD" bash "$GL" validate-round open vr-c1b "$SP")" ;;
       gitcommon) T="$(cd "$R" && env GIT_COMMON_DIR="$OTHER/.git" DWARVES_KIT_LOG_DIR="$LOGD" bash "$GL" validate-round open vr-c1b "$SP")" ;;
@@ -132,8 +152,10 @@ if want C1b; then
     GOT="$(tail -1 "$(ledger vr-c1b)" | sed -nE 's/.* spec=([^ ]+).*/\1/p')"
     assert "C1b $leg: spec= is the canonical path" "$([ "$GOT" = "$WANT_SP" ]; echo $?)"
     SPECS="$SPECS $GOT"
-    # the blob went to the SPEC repo's object store, never the foreign one
-    if [ "$leg" = gitdir ] || [ "$leg" = gitcommon ]; then
+    # the pinned blob is readable out of the SPEC repo's object store
+    git -C "$R" cat-file -e "${T%%.*}" 2>/dev/null; assert "C1b $leg: pinned blob in the spec repo" "$?"
+    # and never in the foreign repo's store
+    if [ "$leg" = otherrepo ] || [ "$leg" = gitdir ] || [ "$leg" = gitcommon ]; then
       if git -C "$OTHER" cat-file -e "${T%%.*}" 2>/dev/null; then B_RC=1; else B_RC=0; fi
       assert "C1b $leg: pinned blob absent from the foreign repo" "$B_RC"
     fi
@@ -148,9 +170,9 @@ if want C1c; then
   new_log; R="$(mkrepo c1c)"; SP="$R/docs/specs/SPEC-001-vr-c1c.md"
   T1="$(gl validate-round open vr-c1c "$SP")"
   printf '%s | ROUND | void | token=%s why=ledger\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$T1" >> "$(ledger vr-c1c)"
-  T2="$(gl validate-round open vr-c1c "$SP")"
+  T2="$(gl validate-round open vr-c1c "$SP")"; RC=$?
   N1="${T1##*.}"; N2="${T2##*.}"
-  assert "C1c second open succeeds after a void" "$?"
+  assert "C1c second open succeeds after a void" "$([ "$RC" -eq 0 ]; echo $?)"
   assert "C1c tokens differ in .n (1 then 2)" "$([ "$N1" = 1 ] && [ "$N2" = 2 ]; echo $?)"
   assert "C1c both share the pinned spec blob" "$([ "${T1%%.*}" = "${T2%%.*}" ]; echo $?)"
 fi
@@ -235,6 +257,8 @@ if want C11a; then
   refuse 64 "C11a open: missing spec file" vr-c11 gl validate-round open vr-c11 "$R/docs/specs/SPEC-999-vr-c11.md"
   L="$(_mk)/spec-link.md"; ln -s "$SP" "$L"
   refuse 64 "C11a open: spec is a symlink" vr-c11 gl validate-round open vr-c11 "$L"
+  # the files exist, so only the charset rule can produce the 64
+  printf '# w\n' > "$R/docs/specs/a b.md"; printf '# e\n' > "$R/docs/specs/a=b.md"
   refuse 64 "C11a open: spec path holds whitespace" vr-c11 gl validate-round open vr-c11 "$R/docs/specs/a b.md"
   refuse 64 "C11a open: spec path holds '='" vr-c11 gl validate-round open vr-c11 "$R/docs/specs/a=b.md"
   refuse 64 "C11a open: spec directory missing" vr-c11 gl validate-round open vr-c11 "$R/docs/nope/SPEC-001-vr-c11.md"
@@ -259,17 +283,22 @@ if want C11a; then
   git init -q -b main "$RM"; git -C "$RM" config user.email t@t; git -C "$RM" config user.name t
   printf '# m\n' > "$RM/docs/specs/SPEC-001-main.md"; git -C "$RM" add -A; git -C "$RM" commit -qm init
   refuse 1 "C11a open: branch main refused" main gl validate-round open main "$RM/docs/specs/SPEC-001-main.md"
+  # rid IS runid(slug) and the spec is named for the raw slug, so the only check
+  # that can refuse is the raw-slug-vs-runid one
   RB="$(_mk)/repo-badslug"; mkdir -p "$RB/docs/specs"
   git init -q -b 'feat/Vr+C11' "$RB"; git -C "$RB" config user.email t@t; git -C "$RB" config user.name t
-  printf '# b\n' > "$RB/docs/specs/SPEC-001-x.md"; git -C "$RB" add -A; git -C "$RB" commit -qm init
-  refuse 1 "C11a open: raw slug survives normalization" vrc11 gl validate-round open vrc11 "$RB/docs/specs/SPEC-001-x.md"
+  printf '# b\n' > "$RB/docs/specs/SPEC-001-Vr+C11.md"; git -C "$RB" add -A; git -C "$RB" commit -qm init
+  refuse 1 "C11a open: raw slug survives normalization" VrC11 gl validate-round open VrC11 "$RB/docs/specs/SPEC-001-Vr+C11.md"
   RN="$(_mk)/repo-nospec"; mkdir -p "$RN/docs/specs"
   git init -q -b feat/no-such-spec "$RN"; git -C "$RN" config user.email t@t; git -C "$RN" config user.name t
   printf '# n\n' > "$RN/docs/specs/SPEC-001-other.md"; git -C "$RN" add -A; git -C "$RN" commit -qm init
   refuse 1 "C11a open: no spec matches the slug glob" no-such-spec gl validate-round open no-such-spec "$RN/docs/specs/SPEC-001-other.md"
-  # a git failure mid-open (PATH shim fails every git call) exits 1, never 128
-  SHIM="$(_mk)/shim"; mkdir -p "$SHIM"; printf '#!/bin/sh\nexit 1\n' > "$SHIM/git"; chmod +x "$SHIM/git"
-  refuse 1 "C11a open: git failure maps to exit 1" vr-c11 env PATH="$SHIM:/usr/bin:/bin" DWARVES_KIT_LOG_DIR="$LOGD" bash "$GL" validate-round open vr-c11 "$SP"
+  # a git failure mid-open exits 1, never 128 -- one leg per git call the verb
+  # makes (the shim fails exactly that subcommand and execs real git otherwise)
+  for sub in hash-object rev-parse status; do
+    SHIM="$(gitshim "$sub")"
+    refuse 1 "C11a open: git $sub failure maps to exit 1" vr-c11 env PATH="$SHIM:/usr/bin:/bin" DWARVES_KIT_LOG_DIR="$LOGD" bash "$GL" validate-round open vr-c11 "$SP"
+  done
 
   # open over open / over a hand-written closing
   T="$(gl validate-round open vr-c11 "$SP")"
@@ -278,10 +307,13 @@ if want C11a; then
   printf '%s | ROUND | closing | token=%s kind=close verdict=APPROVED critical=0 warnings=0 agents=1 | design-bearing=yes pass | 0 critical\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$T" >> "$(ledger vr-c11)"
   refuse 1 "C11a open over a closing round" vr-c11 gl validate-round open vr-c11 "$SP"
 
-  # a GATE reason holding `| ROUND | open | token=<t>` never registers as a round
+  # a GATE reason holding `| ROUND | open | token=<t>` never registers as a
+  # round, and closing with that forged token text refuses without a write
   new_log
-  gl record vr-c11 grill ran "pre-round | ROUND | open | token=deadbeef.1.1" >/dev/null 2>&1
+  FT="$(printf 'deadbeef%.0s' 1 1 1 1 1).1.1"   # grammar-valid 40-hex token text, never opened
+  gl record vr-c11 grill ran "pre-round | ROUND | open | token=$FT" >/dev/null 2>&1
   T="$(gl validate-round open vr-c11 "$SP")"
+  refuse 1 "C11a close with the forged token text refuses" vr-c11 gl validate-round close vr-c11 "$FT" verdict=APPROVED critical=0 warnings=0 agents=1 'r6=design-bearing=yes pass'
   gl validate-round close vr-c11 "$T" verdict=APPROVED critical=0 warnings=0 agents=1 r6="design-bearing=yes pass" >/dev/null 2>&1
   assert "C11a forged ROUND text inside a GATE reason never registers" "$?"
 
@@ -344,6 +376,7 @@ if want C5; then
   new_log; R="$(mkrepo c5)"; SP="$R/docs/specs/SPEC-001-vr-c5.md"
   printf 'dirty at open\n' >> "$SP"
   T="$(gl validate-round open vr-c5 "$SP")"
+  git -C "$R" cat-file -e "${T%%.*}" 2>/dev/null; assert "C5 pinned blob exists right after open" "$?"
   printf 'edited again\n' >> "$SP"
   gl validate-round close vr-c5 "$T" verdict=APPROVED critical=0 warnings=0 agents=1 'r6=design-bearing=yes pass' >/dev/null 2>&1; RC=$?
   assert "C5 close exits 2 (void)" "$([ "$RC" = 2 ]; echo $?)"
@@ -423,7 +456,7 @@ if want C7b; then
   echo "-- C7b clean-at-open spec edit drifts blob and porcelain"
   new_log; R="$(mkrepo c7b)"; SP="$R/docs/specs/SPEC-001-vr-c7b.md"
   T="$(gl validate-round open vr-c7b "$SP")"   # spec committed and CLEAN at open
-  sed -i '' 's/Status: DRAFT/Status: EDITED/' "$SP"
+  sed 's/Status: DRAFT/Status: EDITED/' "$SP" > "$SP.tmp" && mv "$SP.tmp" "$SP"
   gl validate-round close vr-c7b "$T" verdict=APPROVED critical=0 warnings=0 agents=1 'r6=design-bearing=yes pass' >/dev/null 2>&1; RC=$?
   assert "C7b close exits 2" "$([ "$RC" = 2 ]; echo $?)"
   WY="$(tail -1 "$(ledger vr-c7b)" | sed -nE 's/.*why=([^ ]+).*/\1/p')"
@@ -475,7 +508,8 @@ if want C8b; then
   new_log; R="$(mkrepo c8b)"; SP="$R/docs/specs/SPEC-001-vr-c8b.md"
   T1="$(gl validate-round open vr-c8b "$SP")"
   printf 'edit1\n' >> "$SP"
-  gl validate-round close vr-c8b "$T1" verdict=APPROVED critical=0 warnings=0 agents=1 'r6=design-bearing=yes pass' >/dev/null 2>&1
+  gl validate-round close vr-c8b "$T1" verdict=APPROVED critical=0 warnings=0 agents=1 'r6=design-bearing=yes pass' >/dev/null 2>&1; RC1=$?
+  assert "C8b first close exits 2 (drift void)" "$([ "$RC1" = 2 ]; echo $?)"
   git -C "$R" checkout -q -- docs/specs/SPEC-001-vr-c8b.md
   T2="$(gl validate-round open vr-c8b "$SP")"
   gl validate-round close vr-c8b "$T2" verdict=NEEDS-REVISION critical=1 warnings=0 agents=1 'r6=design-bearing=yes pass' >/dev/null 2>&1; RC2=$?
@@ -494,7 +528,8 @@ if want C9; then
   new_log; R="$(mkrepo c9)"; SP="$R/docs/specs/SPEC-001-vr-c9.md"
   T1="$(gl validate-round open vr-c9 "$SP")"
   printf 'edit\n' >> "$SP"
-  gl validate-round close vr-c9 "$T1" verdict=APPROVED critical=0 warnings=0 agents=1 'r6=design-bearing=yes pass' >/dev/null 2>&1
+  gl validate-round close vr-c9 "$T1" verdict=APPROVED critical=0 warnings=0 agents=1 'r6=design-bearing=yes pass' >/dev/null 2>&1; RC1=$?
+  assert "C9 first close exits 2 (drift void)" "$([ "$RC1" = 2 ]; echo $?)"
   git -C "$R" checkout -q -- docs/specs/SPEC-001-vr-c9.md
   T2="$(gl validate-round open vr-c9 "$SP")"
   gl validate-round close vr-c9 "$T2" verdict=APPROVED critical=0 warnings=2 agents=5 'r6=design-bearing=yes pass' >/dev/null 2>&1; RC=$?
@@ -599,7 +634,13 @@ if want C10c; then
   T="$(gl validate-round open vr-c10c "$SP")"
   gl validate-round incomplete vr-c10c --stale "lead restarted" >/dev/null 2>&1; RC=$?
   assert "C10c --stale over open exits 0" "$([ "$RC" = 0 ]; echo $?)"
-  assert "C10c --stale wrote the incomplete block" "$({ trap '' PIPE; tailn vr-c10c 6 | grep -q 'GATE | validate | skipped | incomplete: lead restarted'; } && echo 0 || echo 1)"
+  EXP="ROUND | closing | token=$T kind=incomplete | lead restarted
+GATE | validate | skipped | incomplete: lead restarted
+OUTCOME | validate | end | at=E caught=false dur_s=D
+GATE | design-record | skipped | incomplete: lead restarted
+OUTCOME | design-record | end | at=E caught=false dur_s=D
+ROUND | incomplete | token=$T"
+  assert "C10c --stale wrote the complete incomplete block" "$([ "$(tailn vr-c10c 6)" = "$EXP" ]; echo $?)"
   # over a void
   new_log
   T="$(gl validate-round open vr-c10c "$SP")"
@@ -607,7 +648,13 @@ if want C10c; then
   gl validate-round close vr-c10c "$T" verdict=APPROVED critical=0 warnings=0 agents=1 'r6=design-bearing=yes pass' >/dev/null 2>&1
   gl validate-round incomplete vr-c10c --stale "why2" >/dev/null 2>&1; RC=$?
   assert "C10c --stale over a void exits 0" "$([ "$RC" = 0 ]; echo $?)"
-  assert "C10c --stale over void wrote the block" "$({ trap '' PIPE; tail -1 "$(ledger vr-c10c)" | grep -q '| ROUND | incomplete | '; } && echo 0 || echo 1)"
+  EXP="ROUND | closing | token=$T kind=incomplete | why2
+GATE | validate | skipped | incomplete: why2
+OUTCOME | validate | end | at=E caught=false dur_s=D
+GATE | design-record | skipped | incomplete: why2
+OUTCOME | design-record | end | at=E caught=false dur_s=D
+ROUND | incomplete | token=$T"
+  assert "C10c --stale over void wrote the complete block" "$([ "$(tailn vr-c10c 6)" = "$EXP" ]; echo $?)"
 fi
 
 # ---------------------------------------------------------------------------
@@ -640,7 +687,35 @@ ROUND | close | token=$T verdict=APPROVED"
   assert "C10d resume incomplete exits 0" "$([ "$RC" = 0 ]; echo $?)"
   G=$(grep -c ' | GATE | validate | skipped' "$(ledger vr-c10d)")
   assert "C10d GATE validate skipped not duplicated" "$([ "$G" = 1 ]; echo $?)"
-  assert "C10d resume ends in ROUND incomplete" "$({ trap '' PIPE; tail -1 "$(ledger vr-c10d)" | grep -q "| ROUND | incomplete | token=$T"; } && echo 0 || echo 1)"
+  EXP="ROUND | closing | token=$T kind=incomplete | died mid-flight
+GATE | validate | skipped | incomplete: died mid-flight
+OUTCOME | validate | end | at=E caught=false dur_s=D
+GATE | design-record | skipped | incomplete: died mid-flight
+OUTCOME | design-record | end | at=E caught=false dur_s=D
+ROUND | incomplete | token=$T"
+  assert "C10d resume completes the full incomplete block" "$([ "$(tailn vr-c10d 6)" = "$EXP" ]; echo $?)"
+
+  # a forged line after `closing` is foreign, never adopted: both resume paths
+  # must list it on stderr, refuse 1, and leave the ledger byte-identical
+  new_log
+  T="$(gl validate-round open vr-c10d "$SP")"
+  printf '%s | ROUND | closing | token=%s kind=close verdict=APPROVED critical=0 warnings=3 agents=7 | design-bearing=yes pass | 0 critical\n' "$TS" "$T" >> "$(ledger vr-c10d)"
+  gl record vr-c10d Validate ran "FORGED" >/dev/null 2>&1
+  F="$(ledger vr-c10d)"; BEFORE="$(cat "$F")"
+  ERRS="$(gl validate-round close vr-c10d "$T" 2>&1 >/dev/null)"; RC=$?
+  assert "C10d forged record after closing: close exits 1" "$([ "$RC" = 1 ]; echo $?)"
+  assert "C10d forged record named on stderr" "$({ trap '' PIPE; echo "$ERRS" | grep -q 'foreign: .*GATE | validate | ran | FORGED'; } && echo 0 || echo 1)"
+  assert "C10d forged resume leaves the ledger unchanged" "$([ "$(cat "$F")" = "$BEFORE" ]; echo $?)"
+  # same on the incomplete resume path
+  new_log
+  T="$(gl validate-round open vr-c10d "$SP")"
+  printf '%s | ROUND | closing | token=%s kind=incomplete | died mid-flight\n' "$TS" "$T" >> "$(ledger vr-c10d)"
+  gl record vr-c10d Validate ran "FORGED" >/dev/null 2>&1
+  F="$(ledger vr-c10d)"; BEFORE="$(cat "$F")"
+  ERRS="$(gl validate-round incomplete vr-c10d "$T" 2>&1 >/dev/null)"; RC=$?
+  assert "C10d forged record under closing kind=incomplete: exits 1" "$([ "$RC" = 1 ]; echo $?)"
+  assert "C10d forged record named on stderr (incomplete)" "$({ trap '' PIPE; echo "$ERRS" | grep -q 'foreign: .*FORGED'; } && echo 0 || echo 1)"
+  assert "C10d forged incomplete-resume leaves ledger unchanged" "$([ "$(cat "$F")" = "$BEFORE" ]; echo $?)"
 fi
 
 # ---------------------------------------------------------------------------
@@ -661,6 +736,8 @@ if want C11b; then
   refuse 1 "C11b close-resume over closing kind=incomplete" vr-c11b gl validate-round close vr-c11b "$T"
   # incomplete reason charset (64)
   new_log; T="$(gl validate-round open vr-c11b "$SP")"
+  refuse 64 "C11b incomplete empty reason" vr-c11b gl validate-round incomplete vr-c11b "$T" ""
+  refuse 64 "C11b --stale empty reason" vr-c11b gl validate-round incomplete vr-c11b --stale ""
   refuse 64 "C11b incomplete reason with pipe" vr-c11b gl validate-round incomplete vr-c11b "$T" 'a | b'
   refuse 64 "C11b incomplete reason with newline" vr-c11b gl validate-round incomplete vr-c11b "$T" "a
 b"
@@ -684,13 +761,16 @@ x" "r"
   assert "C11b --stale resumes a closing kind=incomplete" "$([ "$RC" = 0 ]; echo $?)"
   assert "C11b --stale prints the ignored reason" "$({ trap '' PIPE; echo "$ERRS" | grep -q 'other reason'; } && echo 0 || echo 1)"
   assert "C11b pinned reason kept on the records" "$({ trap '' PIPE; grep -q 'incomplete: pinned reason' "$(ledger vr-c11b)"; } && echo 0 || echo 1)"
-  # git failure in close on a present regular spec -> 1, no void
-  new_log; T="$(gl validate-round open vr-c11b "$SP")"
-  SHIM="$(_mk)/shim"; mkdir -p "$SHIM"; printf '#!/bin/sh\nexit 1\n' > "$SHIM/git"; chmod +x "$SHIM/git"
-  BEFORE="$(cat "$(ledger vr-c11b)")"
-  env PATH="$SHIM:/usr/bin:/bin" DWARVES_KIT_LOG_DIR="$LOGD" bash "$GL" validate-round close vr-c11b "$T" $KEYS 'r6=design-bearing=yes pass' >/dev/null 2>&1; RC=$?
-  assert "C11b git failure in close exits 1 (never 128)" "$([ "$RC" = 1 ]; echo $?)"
-  assert "C11b git failure wrote nothing" "$([ "$(cat "$(ledger vr-c11b)")" = "$BEFORE" ]; echo $?)"
+  # git failure in close on a present regular spec -> 1, no void, never 128 --
+  # one leg per git call the verb makes
+  for sub in hash-object rev-parse status; do
+    new_log; T="$(gl validate-round open vr-c11b "$SP")"
+    SHIM="$(gitshim "$sub")"
+    BEFORE="$(cat "$(ledger vr-c11b)")"
+    env PATH="$SHIM:/usr/bin:/bin" DWARVES_KIT_LOG_DIR="$LOGD" bash "$GL" validate-round close vr-c11b "$T" $KEYS 'r6=design-bearing=yes pass' >/dev/null 2>&1; RC=$?
+    assert "C11b git $sub failure in close exits 1 (never 128)" "$([ "$RC" = 1 ]; echo $?)"
+    assert "C11b git $sub failure wrote nothing" "$([ "$(cat "$(ledger vr-c11b)")" = "$BEFORE" ]; echo $?)"
+  done
 fi
 
 # ---------------------------------------------------------------------------
@@ -702,30 +782,33 @@ if want C12; then
   D1="$(_mk)/with"; D2="$(_mk)/without"; mkdir -p "$D1/runs" "$D2/runs"
   F1="$D1/runs/vr-c12.log"
   # hand-built ledger: the same records either way, plus ROUND lines (last one a
-  # second later than the last record so last-timestamp readers move).
+  # second later than the last record so last-timestamp readers move). Dated
+  # TODAY so `report`'s window includes it -- report has no --period year.
+  TSD="$(date -u +%Y-%m-%d)"
   cat > "$F1" <<EOF
-2026-01-01T00:00:00Z | START | lane=normal classified=normal type=feature repo=vr-c12
-2026-01-01T00:00:01Z | OUTCOME | validate | start | at=1790000001
-2026-01-01T00:00:01Z | OUTCOME | design-record | start | at=1790000001
-2026-01-01T00:00:01Z | ROUND | open | token=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.1790000001.1 top=/tmp/x spec=/tmp/x/docs/specs/SPEC-001-vr-c12.md blob=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa head=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb porcelain=cccccccccccccccccccccccccccccccccccccccc
-2026-01-01T00:00:02Z | ROUND | closing | token=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.1790000001.1 kind=close verdict=APPROVED critical=0 warnings=0 agents=3 | design-bearing=yes pass | 0 critical
-2026-01-01T00:00:02Z | GATE | validate | ran | APPROVED critical=0 warnings=0 fresh agents=3 parallel
-2026-01-01T00:00:02Z | OUTCOME | validate | end | at=1790000002 caught=false dur_s=1
-2026-01-01T00:00:02Z | GATE | design-record | ran | design-bearing=yes pass
-2026-01-01T00:00:02Z | OUTCOME | design-record | end | at=1790000002 caught=false dur_s=1
-2026-01-01T00:00:03Z | GATE | build | ran | ok
-2026-01-01T00:00:03Z | GATE | ship | ran | ok
-2026-01-01T00:00:04Z | ROUND | close | token=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.1790000001.1 verdict=APPROVED
+${TSD}T00:00:00Z | START | lane=full classified=full type=feature repo=vr-c12
+${TSD}T00:00:01Z | OUTCOME | validate | start | at=1790000001
+${TSD}T00:00:01Z | OUTCOME | design-record | start | at=1790000001
+${TSD}T00:00:01Z | ROUND | open | token=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.1790000001.1 top=/tmp/x spec=/tmp/x/docs/specs/SPEC-001-vr-c12.md blob=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa head=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb porcelain=cccccccccccccccccccccccccccccccccccccccc
+${TSD}T00:00:02Z | ROUND | closing | token=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.1790000001.1 kind=close verdict=APPROVED critical=0 warnings=0 agents=3 | design-bearing=yes pass | 0 critical
+${TSD}T00:00:02Z | GATE | validate | ran | APPROVED critical=0 warnings=0 fresh agents=3 parallel
+${TSD}T00:00:02Z | OUTCOME | validate | end | at=1790000002 caught=false dur_s=1
+${TSD}T00:00:02Z | GATE | design-record | ran | design-bearing=yes pass
+${TSD}T00:00:02Z | OUTCOME | design-record | end | at=1790000002 caught=false dur_s=1
+${TSD}T00:00:03Z | GATE | build | ran | ok
+${TSD}T00:00:03Z | GATE | ship | ran | ok
+${TSD}T00:00:04Z | ROUND | close | token=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.1790000001.1 verdict=APPROVED
 EOF
   grep -v ' | ROUND | ' "$F1" > "$D2/runs/vr-c12.log"
   # marker-keyed readers: byte-identical across the two ledgers
-  for v in "check full vr-c12" "progress vr-c12 normal" "outcome-read vr-c12" "outcome-read vr-c12 design-record"; do
+  for v in "check full vr-c12" "progress vr-c12 full" "descent vr-c12 full" "outcome-read vr-c12" "outcome-read vr-c12 design-record"; do
     O1="$(env DWARVES_KIT_LOG_DIR="$D1" bash "$GL" $v 2>/dev/null)"; R1=$?
     O2="$(env DWARVES_KIT_LOG_DIR="$D2" bash "$GL" $v 2>/dev/null)"; R2=$?
     assert "C12 '$v' byte-identical (rc $R1/$R2)" "$([ "$R1" = "$R2" ] && [ "$O1" = "$O2" ]; echo $?)"
   done
   O1="$(env DWARVES_KIT_LOG_DIR="$D1" bash "$GL" report --period month 2>/dev/null)"
   O2="$(env DWARVES_KIT_LOG_DIR="$D2" bash "$GL" report --period month 2>/dev/null)"
+  assert "C12 report --period month non-empty (run inside the window)" "$([ -n "$O1" ] && { trap '' PIPE; echo "$O1" | grep -q 'vr-c12'; } && echo 0 || echo 1)"
   assert "C12 report --period month byte-identical" "$([ "$O1" = "$O2" ]; echo $?)"
   # python marker readers
   A1="$(env DWARVES_KIT_LOG_DIR="$D1" python3 -c "import sys,os;from pathlib import Path;sys.path.insert(0,'$KIT_DIR/lib/stats/src');from stats.adapters import read_kit_gates;print(read_kit_gates(Path(os.environ['DWARVES_KIT_LOG_DIR'])/'runs'))" 2>/dev/null)"
@@ -752,7 +835,7 @@ EOF
   # last-timestamp readers: identical except the moved last ts / derived value
   H1="$(env DWARVES_KIT_LOG_DIR="$D1" bash "$GL" history --json 2>/dev/null | grep vr-c12)"
   H2="$(env DWARVES_KIT_LOG_DIR="$D2" bash "$GL" history --json 2>/dev/null | grep vr-c12)"
-  N1="$(echo "$H1" | sed -E 's/2026-01-01T[0-9:]+Z/TS/g')"; N2="$(echo "$H2" | sed -E 's/2026-01-01T[0-9:]+Z/TS/g')"
+  N1="$(echo "$H1" | sed -E "s/${TSD}T[0-9:]+Z/TS/g")"; N2="$(echo "$H2" | sed -E "s/${TSD}T[0-9:]+Z/TS/g")"
   assert "C12 history identical modulo timestamps" "$([ "$N1" = "$N2" ] && [ "$H1" != "$H2" ]; echo $?)"
   RS1="$(python3 -c "import importlib.util;spec=importlib.util.spec_from_file_location('rp','$KIT_DIR/lib/bench/report.py');m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m);r=m.run_summary('$F1');print({k:v for k,v in r.items() if k!='t1'},r['t1'])" 2>/dev/null)"
   RS2="$(python3 -c "import importlib.util;spec=importlib.util.spec_from_file_location('rp','$KIT_DIR/lib/bench/report.py');m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m);r=m.run_summary('$D2/runs/vr-c12.log');print({k:v for k,v in r.items() if k!='t1'},r['t1'])" 2>/dev/null)"
@@ -764,8 +847,8 @@ EOF
   DSH2="$(python3 -c "import importlib.util;spec=importlib.util.spec_from_file_location('db','$KIT_DIR/lib/bench/dashboard.py');m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m);rows=m.collect_runs('$D2');print([{k:v for k,v in r.items() if k!='t1'} for r in rows],[r['t1'] for r in rows])" 2>/dev/null)"
   assert "C12 dashboard.collect_runs identical modulo t1" "$([ -n "$DSH1" ] && [ "${DSH1% \[*}" = "${DSH2% \[*}" ] && [ "$DSH1" != "$DSH2" ]; echo $?)"
   # lane-telemetry report: same rows modulo the `last` column timestamp
-  T1o="$(env DWARVES_KIT_LOG_DIR="$D1" bash "$KIT_DIR/lib/telemetry/lane-telemetry.sh" report 2>/dev/null | sed -E 's/2026-01-01T[0-9:]+Z/TS/g')"
-  T2o="$(env DWARVES_KIT_LOG_DIR="$D2" bash "$KIT_DIR/lib/telemetry/lane-telemetry.sh" report 2>/dev/null | sed -E 's/2026-01-01T[0-9:]+Z/TS/g')"
+  T1o="$(env DWARVES_KIT_LOG_DIR="$D1" bash "$KIT_DIR/lib/telemetry/lane-telemetry.sh" report 2>/dev/null | sed -E "s/${TSD}T[0-9:]+Z/TS/g")"
+  T2o="$(env DWARVES_KIT_LOG_DIR="$D2" bash "$KIT_DIR/lib/telemetry/lane-telemetry.sh" report 2>/dev/null | sed -E "s/${TSD}T[0-9:]+Z/TS/g")"
   assert "C12 lane-telemetry report identical modulo timestamps" "$([ -n "$T1o" ] && [ "$T1o" = "$T2o" ]; echo $?)"
 fi
 
