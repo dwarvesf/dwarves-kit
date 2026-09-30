@@ -6,8 +6,8 @@ Scope: build only. The J2 and Claude Code measurement runs (AC-7, `RESULT.md`) a
 
 | Command | Exit | Result |
 |---|---|---|
-| `bash tests/test-adopt.sh` | 0 | `PASS=51 FAIL=0` |
-| `bash tests/test-meta.sh` | see note | `Passed: 885 / 886`, `Failed: 1` (failing check named in the test-meta row below) |
+| `bash tests/test-adopt.sh` | 0 | `PASS=55 FAIL=0` |
+| `bash tests/test-meta.sh` | 0 | `Passed: 887 / 887` after the review fixes (earlier 885 / 886 was FEATURES.md drift) |
 | AC-6 grep chain (Lane, Proof of done, kit:dispatch present; `**Check** --` absent) | 0 | `AC6ok` |
 
 ## Negative controls
@@ -22,6 +22,14 @@ Each mutation was applied to the committed file, `bash tests/test-adopt.sh` run,
 | T8 | hard exit restored when no source contract exists | `PASS=50 FAIL=1` | `PASS=51 FAIL=0` |
 | T1 | adopt copies the full 18KB contract again | `PASS=47 FAIL=4` | `PASS=51 FAIL=0` |
 | T5b | shallow-clone check inverted in `known-hashes.sh` | `PASS=50 FAIL=1` | `PASS=51 FAIL=0` |
+
+Review-fix controls (same method; `git status --short` was empty after each restore; suite after all restores `PASS=55 FAIL=0`):
+
+| Case | Mutation | Red run |
+|---|---|---|
+| Template guard | pointer-template-missing check removed | `PASS=54 FAIL=1` (missing pointer template) |
+| Kit self-target | own-tree refusal removed; the test runs on a temp copy of the tree | `PASS=54 FAIL=1` (adopt refuses the kit's own tree) |
+| Single-source pointer | neither-file path reverted to the old refusal | `PASS=53 FAIL=2` (single-source neither file; operator single_source=true fresh adopt) |
 
 ## Acceptance
 
