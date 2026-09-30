@@ -852,6 +852,23 @@ EOF
   assert "C12 lane-telemetry report identical modulo timestamps" "$([ -n "$T1o" ] && [ "$T1o" = "$T2o" ]; echo $?)"
 fi
 
+# C13: the command files drive the round through the verb (wiring pin).
+if want C13; then
+  echo "-- C13 command wiring"
+  CS="$KIT_DIR/commands/spec.md"; CE="$KIT_DIR/commands/execute.md"; CW="$KIT_DIR/commands/wrap.md"
+  has() { grep -qF -- "$2" "$1"; echo $?; }
+  for f in "$CS" "$CE" "$CW"; do
+    assert "C13 $(basename "$f") carries 'validate-round open'" "$(has "$f" 'validate-round open')"
+  done
+  assert "C13 spec.md carries 'validate-round close <rid>'" "$(has "$CS" 'validate-round close <rid>')"
+  assert "C13 spec.md carries 'validate-round incomplete <rid>'" "$(has "$CS" 'validate-round incomplete <rid>')"
+  for f in "$CE" "$CW"; do
+    assert "C13 $(basename "$f") carries 'close'" "$(has "$f" 'close')"
+    assert "C13 $(basename "$f") carries '--stale'" "$(has "$f" '--stale')"
+  done
+  assert "C13 execute.md preflight uses the field parse" "$(has "$CE" '$2=="GATE" && $3=="validate"')"
+fi
+
 echo ""
 echo "=== results: $PASS/$TOTAL pass, $FAIL fail ==="
 [ "$FAIL" -eq 0 ]

@@ -254,7 +254,7 @@ Shared rules for T3a and T3b, stated once here; each command file carries them:
 - AC1: `open`, `close` and `incomplete` write exactly the lines and order in `## Technical Design`, and refuse bad input or wrong state with the named exit code and a byte-identical ledger.
 - AC2: a spec change, a commit, a ledger append or a worktree change during the round voids it (exit 2), and a ledger append lists the new lines on stderr. A second void since the last round-terminal line writes the `restart budget spent` stop (exit 3).
 - AC3: every reader keyed on a marker is byte-identical with `ROUND` lines present versus stripped: `check`, `progress`, `descent`, `outcome-read`, gate-ledger `report`, `read_kit_gates`, `lib/gate/proof-table-gen.py`, `lib/mega/mega-review.py`, `lib/mega/mega-report.py`, `lib/pitch.sh`, and the `commands/execute.md` last-`GATE | validate` grep. The last-timestamp readers (`history`, `lib/bench/report.py`, `lane-telemetry.sh report`, `dashboard.py`, `events.py`) are identical except the last timestamp.
-- AC4: all three command files use the verb; every string `tests/test-meta.sh` pins is unchanged; `tests/test-outcome-emit-sweep.sh`, `tests/test-command-emit-sweep.sh` and `tests/test-wrap.sh` pass.
+- AC4: all three command files use the verb; every string `tests/test-meta.sh` pins is unchanged except the execute.md preflight field parse, the one justified pin change (see `docs/implementation-notes/validate-round-verb.md`); `tests/test-outcome-emit-sweep.sh`, `tests/test-command-emit-sweep.sh` and `tests/test-wrap.sh` pass.
 - AC5: `tests/test-meta.sh` passes in full after T4 (baseline 879/879 on `917a2754`).
 
 ## Verification
