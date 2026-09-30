@@ -278,7 +278,7 @@ file count so this table cannot drift):
 | `context-readiness` | SessionStart | advisory | starting blind: injects spec/board state + an intent-first next step |
 | `context-hints` | UserPromptSubmit | convenience | none (temporal + keyword skill-hint injection, sub-ms, never blocks) |
 | `citation-guard` | Stop | advisory | hallucinated `file:line` citations in the final message; log-only by default, opt-in strict mode (`CITATION_GUARD_STRICT=1`) blocks |
-| `harvest` | PreCompact, SessionEnd | convenience | none (stages durable learnings / a LAB_LOG draft to a staging file; never writes a durable home, always exits 0) |
+| `harvest` | PreCompact, SessionEnd | convenience | none (stages durable learnings / a LAB_LOG draft to a staging file; never writes a durable home, always exits 0; its auto modes exit 0 without work on a host where the harvest sweep is active, unless `harvest.hook_when_sweep_on` is true) |
 | `backlog-stage` | SessionEnd | convenience | none (stages forward-looking work-items to a staging file; never writes the board, always exits 0) |
 | `intake-sweep` | SessionStart (invoked by backlog-stage --surface) | convenience | none (sweeps consumer-declared deferred-link sources into the same staging file; config-gated no-op, always exits 0) |
 | `auto-format` | PostToolUse Write/Edit | convenience | none (idempotent formatting) |
@@ -294,6 +294,8 @@ file count so this table cannot drift):
 | `prose-rag` | UserPromptSubmit | convenience | re-deriving what the consumer already wrote; injects prior notes on recall-shaped prompts (dormant unless PROSE_RAG_INJECT=1) |
 | `context-budget` | UserPromptSubmit | advisory | a long session burning most of its spend re-reading the same context from cache unnoticed; warns once per 100k-token band past 200k, never blocks |
 | `tool-policy-guard` | PreToolUse | advisory | drifting to a denied/ask-tier tool the policy file maps per domain (inert until a tool-policy.json exists) |
+
+**The harvest sweep is the second capture path.** The `harvest` hook stages per session at PreCompact and SessionEnd. On a host where the sweep is installed, `hooks/harvest_sweep.py` (reached as `hooks/harvest.py --sweep`) replaces it: a LaunchAgent renders from `deploy/macos/harvest-sweep/` and runs on a `harvest.schedule_hours` interval. Each run reads new claude transcripts (devin when `harvest.sources` lists it) behind a per-source cursor, extracts learnings and pattern sightings, stages them into sweep ledgers, and writes a wrap-shaped report. It builds, pushes, and merges nothing. A host is active only when `harvest.enable` is true and the `<state>/sweep/installed` marker exists. The marker is written by `install --apply` and never syncs. Flags: `--dry-run` (manifest, no cursor or ledger change), `--status`, `--flush-list`, `--mark-flushed`. A 5-hour or weekly usage limit holds the run (exit 0, cursor kept, no failure counted). `wrap.distill = "harvest"` leaves the distill half of `/kit:wrap` to the sweep on those hosts.
 
 **C3 reconciled.** PHILOSOPHY's "Guardrails over guidance" is bounded, not
 blanket: guardrail = the hard subset, where trust fails AND damage is
