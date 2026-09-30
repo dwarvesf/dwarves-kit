@@ -1,6 +1,6 @@
 # Spec: split wrap.sh and its tests into modules
 Generated: 2026-09-30
-Status: DRAFT (validation round 1 NEEDS REVISION, folded)
+Status: VALIDATED
 Lane: normal
 Depth: research (repo: the function map, the test-section coupling, every reference to the two files)
 
@@ -16,10 +16,10 @@ bin/wrap ──exec──> lib/wrap/wrap.sh   header + set/env/constants + _usag
       └─────────┴───────┼────────┴─────────┴────────┴─────────┘
               land    start     log     deploy   rebase
 
-tests/test-wrap.sh (runner, `# runner:` header) ──> bash tests/test-wrap-<m>.sh, one per module (+ report-lint, cli)
+tests/test-wrap.sh (runner, `# runner:` header) ──> bash tests/test-wrap-<m>.sh: 11 of 12 modules (no test-wrap-common.sh) plus report-lint and cli
 tests/run-all.sh ──skips every `# runner:` file──> runs each tests/test-wrap-<m>.sh once, directly
 tests/test-wrap-<m>.sh ──source──> tests/lib/wrap-stub.sh (chk, TMPD, gh stub, fixture builders)
-bin/test-affected: lib/wrap/wrap-<m>.sh -> tests/test-wrap-<m>.sh ; wrap.sh, wrap-common.sh -> tests/test-wrap.sh
+bin/test-affected: lib/wrap/wrap-<m>.sh -> tests/test-wrap-<m>.sh ; wrap.sh, wrap-common.sh -> every tests/test-wrap-*.sh suite, not the runner
 ```
 
 ## Module map
@@ -46,7 +46,7 @@ Total 98, equal to today's `grep -c '^[a-zA-Z_][a-zA-Z0-9_]*()' lib/wrap/wrap.sh
 ## Design
 The Picture shows the load path, the runner, the run-all skip and the test-affected mapping this section specifies.
 
-**Sourcing.** `wrap.sh` keeps its `SELF_DIR` line (`cd "$(dirname "${BASH_SOURCE[0]}")" && pwd`, valid in bash 3.2) and adds, right after the default-branch-warn source line, one loop in the table's order: `for _m in common scan apply pull carry ci merge land start log deploy rebase; do source "$SELF_DIR/wrap-$_m.sh" || { echo "FATAL: lib/wrap/wrap-$_m.sh missing or unreadable" >&2; exit 1; }; done; unset _m`. The fatal line copies the two existing source guards.
+**Sourcing.** `wrap.sh` keeps its `SELF_DIR` line (`cd "$(dirname "${BASH_SOURCE[0]}")" && pwd`, valid in bash 3.2) and adds, right after the default-branch-warn source line, one loop in the table's order: `for _m in common scan apply pull carry ci merge land start log deploy rebase; do source "$SELF_DIR/wrap-$_m.sh" || { echo "FATAL: lib/wrap/wrap-$_m.sh missing or unreadable" >&2; exit 1; }; done; unset _m`. The fatal line copies the two existing source guards. The order is fixed for a deterministic load, not because one module needs another's assignments first: the module top-levels carry no inter-assignment dependency (Load order, below).
 
 **Globals and options.** Modules are sourced into the dispatcher's shell, so `set -uo pipefail`, the GIT_* scrub, GIT_TERMINAL_PROMPT and every constant apply unchanged. A module holds function bodies plus exactly the top-level statements the table below assigns it: no shebang, no `set`, no `exit`, nothing else that runs at source time. Today's file has 52 non-blank, non-comment lines outside functions (awk in Verification):
 
@@ -62,7 +62,7 @@ The Picture shows the load path, the runner, the run-all skip and the test-affec
 | `wrap-rebase.sh` | _RB_GENERATED, _RB_GENERATOR (3364-3365); _RB_CHANGELOG (3367) |
 | `wrap-scan.sh`, `wrap-pull.sh`, `wrap-land.sh`, `wrap-start.sh`, `wrap-log.sh` | none |
 
-**Load order.** The module top-level statements have no inter-dependency: each right side reads a literal or an environment default `${X:-d}`, where X is its own name, or WRAP_ORIGIN_DELETE_CHUNK for _ORIGIN_DELETE_CHUNK (no `lib/wrap` line assigns it). Each `case` reads only the variable assigned on the line above it. No statement reads a value another module sets at source time. Checked by extracting every `$name` reference from each top-level line past line 119. CI_JQ_DEFS is also read by `_autoland_carry` (line 1395) and `_pr_gate` (line 1803), at call time only. The `wrap.sh` block (81-118) keeps its own order and still runs before every module, as today.
+**Load order.** The module top-level statements have no inter-assignment dependency: each right side reads a literal or an environment default `${X:-d}`, where X is its own name, or WRAP_ORIGIN_DELETE_CHUNK for _ORIGIN_DELETE_CHUNK (no `lib/wrap` line assigns it). Each `case` reads only the variable assigned on the line above it. No statement reads a value another module sets at source time. Checked by extracting every `$name` reference from each top-level line past line 119. CI_JQ_DEFS is also read by `_autoland_carry` (line 1395) and `_pr_gate` (line 1803), at call time only. The `wrap.sh` block (81-118) keeps its own order and still runs before every module, as today.
 
 **`_usage` stays in `wrap.sh`.** It prints lines 2-31 of `${BASH_SOURCE[0]}`. Moved into a module it would print that module's header. The header block keeps its line numbers because the source loop goes below line 118.
 
@@ -92,7 +92,7 @@ The Picture shows the load path, the runner, the run-all skip and the test-affec
 
 **Runner.** `tests/test-wrap.sh` becomes a loop over `tests/test-wrap-*.sh`. It relays each suite's output, sums the counts, prints today's final line (`test-wrap: all N passed` or `test-wrap: P passed, F FAILED of T`), and exits 1 on any failure. It carries a `# runner:` header. `tests/run-all.sh` skips a `# runner:` file in its glob loop (today it would run every wrap assert twice). About 90 docs/verification records cite `bash tests/test-wrap.sh`; they stay reproducible.
 
-**`bin/test-affected`.** Two changes. (1) Selection: for `lib/wrap/<stem>.sh` with `tests/test-wrap-${stem#wrap-}.sh` present, pick that suite (`report-lint.sh` resolves to test-wrap-report-lint.sh by the same rule). For any other `lib/wrap/*.sh`, that is `wrap.sh` and `wrap-common.sh`, pick the runner `tests/test-wrap.sh`. Both replace the `tests/test-wrap*.sh` glob for lib/wrap only; every other module keeps the glob (a generic stem rule would narrow 25 other files, measured). (2) Cache key: add `tests/lib/*.sh` to the source universe, and let `cache_key` also scan each `tests/lib/*.sh` the suite names. The stub carries one comment line naming every `lib/wrap/*.sh`, so a suite's cached PASS dies when any module or the stub changes. The runner names `tests/lib/wrap-stub.sh` in its header, so its key moves the same way. Without (2) a module edit leaves its suite's key unchanged and serves a stale PASS. The `wrap-` prefix keeps basenames unique: `merge.sh` would substring-match `premerge.sh` in refs_any.
+**`bin/test-affected`.** Two changes. (1) Selection: for `lib/wrap/<stem>.sh` with `tests/test-wrap-${stem#wrap-}.sh` present, pick that suite (`report-lint.sh` resolves to test-wrap-report-lint.sh by the same rule). For any other `lib/wrap/*.sh`, that is `wrap.sh` and `wrap-common.sh`, pick every `tests/test-wrap-*.sh` suite, never the runner: `tests/run-all.sh` skips a `# runner:` file, so mapping those two to the runner makes `run-all --changed` run no wrap suite, and the runner takes about 7m40s, over test-affected's 300s timeout. Both replace the `tests/test-wrap*.sh` glob for lib/wrap only; every other module keeps the glob (a generic stem rule would narrow 25 other files, measured). (2) Cache key: add `tests/lib/*.sh` to the source universe, and let `cache_key` also scan each `tests/lib/*.sh` the suite names. The stub carries one comment line naming every `lib/wrap/*.sh`, so a suite's cached PASS dies when any module or the stub changes. The runner names `tests/lib/wrap-stub.sh` in its header, so its key moves the same way. Without (2) a module edit leaves its suite's key unchanged and serves a stale PASS. The `wrap-` prefix keeps basenames unique: `merge.sh` would substring-match `premerge.sh` in refs_any.
 
 A module change runs its own suite only. A regression that reaches another module's asserts through a cross-module call shows in the runner, which T4's proof and CI run.
 
@@ -119,8 +119,8 @@ A module change runs its own suite only. A regression that reaches another modul
 
 ## Task Breakdown
 - [ ] T1 code split: create the 12 modules and the source loop per the Module map, moves only. Done when: the 98-function count holds across `lib/wrap/*.sh` minus report-lint.sh, each name defined once, `bash -n` passes on every module, `grep -nE '^(set |exit|#!)' lib/wrap/wrap-*.sh` prints nothing, the guard grep in Verification prints `guard ci`, `guard carry`, `guard merge`, the top-level diff in Verification shows only the added source loop line, `bin/wrap --help` output is byte-identical to origin/master, and the old monolithic `bash tests/test-wrap.sh` reports 1,579 passed, 2 FAILED of 1,581.
-- [ ] T2 test split: extract `tests/lib/wrap-stub.sh`, the 13 suites per the Suite table with seeds, the runner, the line 5736 path edit, the run-all `# runner:` skip. Done when: each suite passes standalone except the 2 baseline FAILs (in test-wrap-deploy.sh and test-wrap-report-lint.sh), the suite totals sum to 1,581, the runner prints `1579 passed, 2 FAILED of 1581`, and the sorted assert-line diff in Verification is empty. Per suite, the suite loop in Verification prints no `comm` line: every PASS and FAIL line the suite prints standalone appears with the same status in the monolith run. Together with the runner diff this makes each suite's PASS list identical to the same asserts in the monolith. In each suite that holds a `chk_no` (all but start and cli, which hold none), one `chk_no` that depends on seeded state goes red under a deliberate break of that state; the proof records the edit and the red line.
-- [ ] T3 test-affected and references: the selection and cache-key changes, every row of External references. Done when: `bin/test-affected --list` on a one-line change to `lib/wrap/wrap-rebase.sh` lists only tests/test-wrap-rebase.sh and tests/test-meta.sh, the same on `lib/wrap/wrap-common.sh` lists only tests/test-wrap.sh and tests/test-meta.sh, a stub edit lists every suite, and the cache sequence in Verification prints PASS, then CACHED, then PASS again for tests/test-wrap-rebase.sh.
+- [ ] T2 test split: extract `tests/lib/wrap-stub.sh`, the 13 suites per the Suite table with seeds, the runner, the line 5736 path edit, the run-all `# runner:` skip. Done when: each suite passes standalone except the 2 baseline FAILs (in test-wrap-deploy.sh and test-wrap-report-lint.sh), the suite totals sum to 1,581, the runner prints `1579 passed, 2 FAILED of 1581`, and the sorted assert-line diff in Verification is empty. Per suite, the suite loop in Verification prints no `comm` line: every PASS and FAIL line the suite prints standalone appears with the same status in the monolith run. Together with the runner diff this makes each suite's PASS list identical to the same asserts in the monolith. In each suite that holds a `chk_no` (all but start and cli, which hold none), one `chk_no` goes red under a deliberate break of the code under test that makes it print the forbidden string (a `chk_no` fails only when the string appears, so the proof breaks the code, not the seed state); the proof records the edit and the red line in the seeded standalone suite.
+- [ ] T3 test-affected and references: the selection and cache-key changes, every row of External references. Done when: `bin/test-affected --list` on a one-line change to `lib/wrap/wrap-rebase.sh` lists only tests/test-wrap-rebase.sh and tests/test-meta.sh, the same on `lib/wrap/wrap-common.sh` lists every `tests/test-wrap-*.sh` suite plus `tests/test-meta.sh`, never the runner, a stub edit lists every suite, and the cache sequence in Verification prints PASS, then CACHED, then PASS again for tests/test-wrap-rebase.sh.
 - [ ] T4 FEATURES regen and proof: `bash lib/registry/feature-registry.sh check --fix`, then the Verification block, recorded in `docs/verification/wrap-split.md`. Done when: every Verification command matches its expected output.
 
 ## Verification
@@ -140,14 +140,15 @@ bash tests/test-meta.sh && bash tests/test-bin-forwarders.sh && bash tests/test-
 bash lib/registry/feature-registry.sh check                                 # fresh
 git diff --quiet origin/master -- hooks/ && echo hooks-untouched            # repin check
 diff <(bash "$B"/bin/wrap --help) <(bin/wrap --help) && echo help-identical
+# T1's commit lands before every restore below: `git checkout --` fails on an untracked module file.
 printf '# x\n' >> lib/wrap/wrap-rebase.sh; bin/test-affected --list; bin/test-affected  # rebase + meta; PASS tests/test-wrap-rebase.sh
 bin/test-affected                                                            # CACHED tests/test-wrap-rebase.sh
 printf '# y\n' >> lib/wrap/wrap-rebase.sh; bin/test-affected                 # PASS tests/test-wrap-rebase.sh: key moved, re-run
 git checkout -- lib/wrap/wrap-rebase.sh
-printf '# x\n' >> lib/wrap/wrap-common.sh; bin/test-affected --list; git checkout -- lib/wrap/wrap-common.sh  # test-wrap.sh + meta only
+printf '# x\n' >> lib/wrap/wrap-common.sh; bin/test-affected --list; git checkout -- lib/wrap/wrap-common.sh  # every test-wrap-*.sh suite + meta, not the runner
 git worktree remove "$B"
 ```
-Negative control: add `return 1` as the first body line of `_rb_changelog_merge` in `lib/wrap/wrap-rebase.sh`. Run every `tests/test-wrap-*.sh`: only test-wrap-rebase.sh goes red beyond the baseline (assert "rebase: pure-addition CHANGELOG exits 0", today's line 5336), and the runner exits 1. Restore with `git checkout -- lib/wrap/wrap-rebase.sh`.
+Negative control: add `return 1` as the first body line of `_rb_changelog_merge` in `lib/wrap/wrap-rebase.sh`. Run every `tests/test-wrap-*.sh`: only test-wrap-rebase.sh goes red beyond the baseline, on the named assert "rebase: pure-addition CHANGELOG exits 0" (today's line 5336). That red assert is the proof; the runner's exit code does not discriminate, since the baseline already carries 2 FAILs. Restore with `git checkout -- lib/wrap/wrap-rebase.sh`, which works only once the T1 commit has made the module tracked.
 
 ## Grounding
 - Base: worktree at origin/master a9f0c9dc. `wc -l`: wrap.sh 3,616, test-wrap.sh 5,987, bin/test-affected 208.
