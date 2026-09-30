@@ -1,6 +1,6 @@
 # Proof of done: `wrap land` merges the default branch into a conflicting own PR
 
-2026-09-30. Spec: `docs/specs/SPEC-374-land-merge-default.md` (VALIDATED). Lane: full. Files: `lib/wrap/wrap.sh`, `bin/wrap`, `tests/test-wrap.sh`, `commands/wrap.md`, `docs/consumer-contract.md`, `docs/CHANGELOG.md`, `docs/FEATURES.md` (regenerated), `docs/implementation-notes/land-merge-default.md`, this file.
+2026-09-30. Spec: `docs/specs/SPEC-375-land-merge-default.md` (VALIDATED). Lane: full. Files: `lib/wrap/wrap.sh`, `bin/wrap`, `tests/test-wrap.sh`, `commands/wrap.md`, `docs/consumer-contract.md`, `docs/CHANGELOG.md`, `docs/FEATURES.md` (regenerated), `docs/implementation-notes/land-merge-default.md`, this file.
 
 ## What changed
 

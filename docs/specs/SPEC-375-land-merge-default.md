@@ -1,4 +1,4 @@
-# SPEC-374: wrap land merges the default branch into a conflicting own PR instead of stopping
+# SPEC-375: wrap land merges the default branch into a conflicting own PR instead of stopping
 
 **Status:** VALIDATED
 Lane: full
@@ -458,7 +458,7 @@ GitHub's `mergeable` after a push of a merge commit that already contains the ba
 
 ## Design critique
 Date: 2026-09-30
-Design source: SPEC-374 `## Contract` and `## Design` (first draft, commit `bfe47629`)
+Design source: SPEC-375 `## Contract` and `## Design` (first draft, commit `bfe47629`)
 Lenses run: simplicity, performance, boundaries/composability, data-model & correctness, operability/failure-modes, plus `kit:advisor` over-suggest; missing: none
 
 ### High findings

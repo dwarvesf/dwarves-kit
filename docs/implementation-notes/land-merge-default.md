@@ -1,6 +1,6 @@
 # Implementation notes: land/merge default-branch merge cycle
 
-Delta from `docs/specs/SPEC-374-land-merge-default.md` only.
+Delta from `docs/specs/SPEC-375-land-merge-default.md` only.
 
 ## `merge --verify=` parses to no verify command
 
