@@ -16,6 +16,9 @@ assert_eq() { # name expected actual
   else echo -e "  ${RED}FAIL${NC} $1 (expected '$2', got '$3')"; FAIL=$((FAIL+1)); fi
 }
 want() { [ "$SECTION" = all ] || [ "$SECTION" = "$1" ]; }
+CRLF_DIR=$(mktemp -d); trap 'mv -f "$CRLF_DIR" "${TMPDIR:-/tmp}/spec-depth-crlf.done" 2>/dev/null' EXIT
+# Built at run time: a committed CRLF file would be normalized by git attributes.
+printf '# Spec: fixture crlf\r\nGenerated: 2026-10-01\r\nLane: normal\r\nDepth: standard (one file, no unknown)\r\n\r\n## Problem\r\nfixture body\r\n\r\n## Open questions\r\n(none; fixture)\r\n' > "$CRLF_DIR/crlf.md"
 lvl() { bash "$H" level "$FX/$1.md" 2>/dev/null; }
 chk() { bash "$H" check "$FX/$1.md" >/dev/null 2>&1; echo $?; }
 msg() { bash "$H" check "$FX/$1.md" 2>/dev/null | grep -c -- "$2"; }
@@ -32,7 +35,7 @@ if want level; then
   assert_eq "no header line"            "standard"                        "$(lvl no-depth)"
   assert_eq "bold **Depth:** parses"              "research-repo"  "$(lvl bold-depth)"
   assert_eq "bold **Depth**: parses"              "blind-spot"     "$(lvl bold-depth-colon-out)"
-  assert_eq "CRLF header parses"                  "standard"       "$(lvl crlf)"
+  assert_eq "CRLF header parses"                  "standard"       "$(bash "$H" level "$CRLF_DIR/crlf.md" 2>/dev/null)"
   assert_eq "a Depth example fenced in the header is ignored" "standard" "$(lvl fence-in-header)"
   assert_eq "Depth only in a body example is ignored" "standard"            "$(lvl body-only-depth)"
 fi
@@ -49,7 +52,7 @@ if want check; then
   assert_eq "importance reason without prefix does not reach the importance rule" 0 "$(msg bad-importance-noprefix 'only says the work matters')"
   assert_eq "critical core change is named as importance-only" 1 "$(msg bad-critical-core 'only says the work matters')"
   assert_eq "trailing tab and space still checks clean" 0 "$(chk trailing-tab)"
-  assert_eq "CRLF file checks clean" 0 "$(chk crlf)"
+  assert_eq "CRLF file checks clean" 0 "$(bash "$H" check "$CRLF_DIR/crlf.md" >/dev/null 2>&1; echo $?)"
   for f in standard research-repo blind-spot combined fenced-example bold-depth bold-depth-colon-out; do
     assert_eq "$f exits 0" 0 "$(chk $f)"
   done
