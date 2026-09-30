@@ -59,13 +59,27 @@ Each row breaks one line of `lib/wrap/wrap-land.sh`, runs the SPEC-376 section (
 | N15 | the tidy's removal recheck deleted | TG1 | 4 | RED |
 | N16 | the post-proof recheck deleted | TG2 | 5 | RED |
 
+Full-suite control for the headline mutation (N6, proof check removed), run with `lib/gate/negctl.sh` over the whole 385-row suite. The suite runs under a perl wrapper that resets INT, TERM and HUP to default: launched as a background job without it, the eight signal rows in the land-merge section failed on the post-restore run in two separate attempts, while the same rows passed in every direct run.
+
+```
+## Negative control (negctl)
+Command: perl -e '$SIG{$_}="DEFAULT" for qw(INT TERM HUP); exec @ARGV' bash tests/test-wrap-land.sh
+Exit: 0 (green before mutation)
+Mutation: the landed-branch proof call replaced by proof=""
+Changed: lib/wrap/wrap-land.sh
+Exit: 1 (under mutation, RED expected)   [353 passed, 32 FAILED of 385]
+Restore: git checkout HEAD -- lib/wrap/wrap-land.sh
+Exit: 0 (green after restore)
+Verdict: PASS
+```
+
 ## Not proven
 
 - No live GitHub run: `gh` is stubbed throughout, so the real `gh pr list --state merged` shape, GitHub's delete-branch-on-merge, and a real ship-gate push refusal are unexercised.
 - The dropped lock guard (DEC-9) leaves a window: a live agent idle between writes, with a clean tree and an unmoved tip, has its worktree removed. Its committed work is proven landed, so only ignored scratch is at risk. TF1 locks that behavior in; it does not remove the window.
 - The tidy's recheck sits textually right before `worktree remove -f -f`, but no fixture can write into the few microseconds between the recheck and the removal. TG1 proves the recheck fires after the pull; the final gap is by inspection.
 - A local tip stale and behind its own merged PR's recorded head (a GitHub "Update branch" click) is not detected and still opens a new PR (spec Edge case 6).
-- The per-mutation rows above ran the SPEC-376 section alone (harness header, the two helpers it needs, then that section), not the full 385-row suite; the full suite is covered by the official block below for one mutation.
+- The per-mutation rows above ran the SPEC-376 section alone (harness header, the two helpers it needs, then that section), not the full 385-row suite; the full suite is covered by the official block above for one mutation.
 
 ## Reproduce
 
