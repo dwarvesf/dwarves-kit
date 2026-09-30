@@ -11,4 +11,4 @@ reminders_only_tags  = "u-hi"
 # The kit's own enforcement code counts as a hard path, so an edit to it needs the full lane's
 # gates at push. Adds to the built-in hard paths; nothing here can remove one.
 [lanes]
-extra_hard_paths = "^hooks/|^lib/gate/|^lib/classify/|^lib/config/|^kit\.toml$"
+extra_hard_paths = "^hooks/|^lib/gate/|^lib/classify/|^lib/config/|^kit[.]toml$"

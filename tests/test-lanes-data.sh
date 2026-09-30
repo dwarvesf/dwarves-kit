@@ -628,6 +628,30 @@ phases = ["ship"]'
   else fail override-unknown-lane-name "check mega rc=$rc err=$err"; fi
 }
 
+# Both config files must parse as real TOML (a backslash in a basic string is an error that a
+# tolerant reader can swallow), and the kit's own extra_hard_paths must be a valid ERE.
+case_toml_valid() {
+  local out
+  out="$(python3 - "$KIT_DIR" <<'PY' 2>&1
+import re, sys
+try:
+    import tomllib
+except ImportError:
+    print("SKIP no tomllib"); sys.exit(0)
+d = sys.argv[1]
+for f in ("kit.toml", ".kit.toml"):
+    try:
+        data = tomllib.load(open(f"{d}/{f}", "rb"))
+    except Exception as e:
+        print(f"{f}: {e}"); sys.exit(1)
+    extra = data.get("lanes", {}).get("extra_hard_paths", "")
+    if extra:
+        try: re.compile(extra)
+        except re.error as e: print(f"{f}: extra_hard_paths is not a valid regex: {e}"); sys.exit(1)
+PY
+)" && pass toml-valid || fail toml-valid "$out"
+}
+
 # ---------------------------------------------------------------------------
 run_case() {
   local fn="case_${1//-/_}"
