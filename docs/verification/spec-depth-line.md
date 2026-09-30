@@ -26,8 +26,8 @@
 
 | Run | Command | Exit | Result |
 |---|---|---|---|
-| R1 | `bash tests/test-spec-depth.sh` (BSD tools, macOS bash 3.2 path) | 0 | `spec-depth: 65 passed, 0 failed` |
-| R1g | same with `/opt/homebrew/opt/coreutils/libexec/gnubin` first on PATH | 0 | `spec-depth: 65 passed, 0 failed` (63 before the body-only fixture) |
+| R1 | `bash tests/test-spec-depth.sh` (BSD tools, macOS bash 3.2 path) | 0 | `spec-depth: 91 passed, 0 failed` |
+| R1g | same with `/opt/homebrew/opt/coreutils/libexec/gnubin` first on PATH | 0 | `spec-depth: 91 passed, 0 failed` |
 | R2 | `bash tests/test-meta.sh` | 0 | `Passed: 887 / 887` |
 | R3 | `bash tests/test-hooks.sh` | 0 | `Passed: 817 / 817` |
 | R4 | `bash lib/gate/doc-projection-check.sh .` and `feature-registry.sh check docs/FEATURES.md` | 0 | clean, `docs/FEATURES.md is fresh` |
