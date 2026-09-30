@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+# Stub orca for tests/test-board-work.sh: logs argv, then prints the canned page.
+# ORCA_STUB_MODE: ok (default) prints $ORCA_STUB_PAGE; fail exits 1; garbage prints non-JSON.
+[ -n "${ORCA_STUB_LOG:-}" ] && printf '%s\n' "$*" >> "$ORCA_STUB_LOG"
+case "${ORCA_STUB_MODE:-ok}" in
+  fail) exit 1 ;;
+  garbage) echo "not json"; exit 0 ;;
+esac
+cat "$ORCA_STUB_PAGE"
