@@ -21,7 +21,7 @@ Env (tests point these at temp dirs):
   HARVEST_SWEEP_DRIFT_MIN_SCANNED=N  all-trivial reads at or above this count as a failed read (default 10)
   HARVEST_MAXCHARS=N               transcript chars rendered per session (default 12000)
   HARVEST_EXTRACTOR=CMD            extractor command, split with shlex, never a shell (default
-                                   SWEEP_EXTRACTOR); the same seam the hook uses
+                                   sweep_extractor_argv()); the same seam the hook uses
 """
 import datetime
 import fcntl
@@ -409,13 +409,24 @@ def attribute(t, records):
 
 # --tools "" disables every built-in tool, so a hostile transcript cannot make the
 # extractor act (DEC-63). --strict-mcp-config loads no MCP server and
-# --no-session-persistence writes no transcript (DEC-76).
-SWEEP_EXTRACTOR = ('claude -p --model haiku --setting-sources project --tools "" '
-                   '--strict-mcp-config --no-session-persistence')
+# --no-session-persistence writes no transcript (DEC-76). The model comes from
+# harvest.extractor_model (root-only, default sonnet); only the model varies.
+SWEEP_EXTRACTOR_FLAGS = ['--setting-sources', 'project', '--tools', '',
+                         '--strict-mcp-config', '--no-session-persistence']
+# The fallback when the Claude call fails for any reason but auth (DEC-92). Codex cannot
+# turn its shell off: the read-only sandbox blocks writes and network, not reads.
+# --ephemeral persists no session and --ignore-user-config skips ~/.codex/config.toml
+# (auth still loads). The prompt goes on stdin (`-`), the reply comes from -o.
+CODEX_FALLBACK = ['codex', 'exec', '--sandbox', 'read-only', '--skip-git-repo-check',
+                  '--ephemeral', '--ignore-user-config']
 EXTRACT_TIMEOUT = 120  # the hook's extractor timeout
 KNOWN_SLUGS_PER_FILE = 50
 SLUG_RE = re.compile(r"^[a-z0-9-]{1,60}$")
 LIMIT_RE = re.compile(r"usage limit|rate limit|5-hour|weekly limit|limit reached|hit your [a-z0-9 -]{0,20}limit", re.I)
+# Auth-shaped Claude output skips the fallback, so a logged-out Claude still reaches the
+# probe and pages instead of running on Codex unnoticed.
+AUTH_RE = re.compile(r"not logged in|please run /login|invalid api key|oauth token (?:has )?expired"
+                     r"|authentication_error|\b401\b", re.I)
 
 PROMPT_SWEEP = (
     "You read one coding/ops session transcript and extract learnings and sightings.\n"
@@ -475,26 +486,80 @@ def extract_json_object(text):
     return None
 
 
-def run_sweep_extractor(prompt):
-    """(ok, stdout, stderr) of one extractor call. ok is False on a non-zero exit, a
-    timeout, a missing binary, or stdout with no parseable JSON object: a failure is never
-    an empty result. argv comes from shlex, never a shell, and the prompt goes on stdin, so
-    no transcript text is ever interpreted. The cwd sits under the state dir and the child
-    carries HARVEST_SWEEP_CHILD=1, so its own transcripts fall under the self-harvest drop
-    and it cannot re-fire the hook (DEC-44)."""
-    argv = shlex.split(os.environ.get("HARVEST_EXTRACTOR") or SWEEP_EXTRACTOR)
-    cwd = os.path.join(harvest._state_dir(), "sweep", "extract-cwd")
-    os.makedirs(cwd, exist_ok=True)
+def sweep_extractor_argv():
+    """The primary extractor argv: HARVEST_EXTRACTOR split with shlex when set, else
+    `claude -p --model <harvest.extractor_model>` plus every safety flag."""
+    if os.environ.get("HARVEST_EXTRACTOR"):
+        return shlex.split(os.environ["HARVEST_EXTRACTOR"])
+    model = _kit_root("harvest.extractor_model", "sonnet") or "sonnet"
+    return ["claude", "-p", "--model", model] + SWEEP_EXTRACTOR_FLAGS
+
+
+def _spawn(argv, prompt, cwd):
+    """(returncode or None, stdout, stderr) of one child fed the prompt on stdin. argv is
+    a list, never a shell, so no transcript text is ever interpreted. The child carries
+    HARVEST_SWEEP_CHILD=1 so it cannot re-fire the hook (DEC-44)."""
     try:
         r = subprocess.run(argv, input=prompt, capture_output=True, text=True, encoding="utf-8",
                            errors="replace", cwd=cwd, timeout=EXTRACT_TIMEOUT,
                            env=dict(os.environ, HARVEST_SWEEP_CHILD="1"))
     except subprocess.TimeoutExpired as exc:
-        return False, _as_text(exc.stdout), "timeout after %ss" % EXTRACT_TIMEOUT
+        return None, _as_text(exc.stdout), "timeout after %ss" % EXTRACT_TIMEOUT
     except OSError as exc:
-        return False, "", "%s: %s" % (type(exc).__name__, exc)
-    ok = r.returncode == 0 and extract_ok(extract_json_object(r.stdout))
-    return ok, r.stdout, r.stderr
+        return None, "", "%s: %s" % (type(exc).__name__, exc)
+    return r.returncode, r.stdout, r.stderr
+
+
+def run_sweep_extractor(prompt):
+    """(ok, stdout, stderr) of one extractor call. ok is False on a non-zero exit, a
+    timeout, a missing binary, or stdout with no parseable JSON object: a failure is never
+    an empty result. The cwd sits under the state dir, so the child's own transcripts fall
+    under the self-harvest drop."""
+    cwd = os.path.join(harvest._state_dir(), "sweep", "extract-cwd")
+    os.makedirs(cwd, exist_ok=True)
+    rc, out, err = _spawn(sweep_extractor_argv(), prompt, cwd)
+    return rc == 0 and extract_ok(extract_json_object(out)), out, err
+
+
+def run_fallback_extractor(prompt):
+    """(ok, reply, stderr) of one Codex call on the same prompt (DEC-92). The cwd is a
+    fresh empty 0700 dir under the sweep state dir, removed after the call. The reply is
+    the -o last-message file, else stdout; ok follows the same rule as the primary."""
+    base = os.path.join(harvest._state_dir(), "sweep")
+    _private_dir(base)
+    tmp = tempfile.mkdtemp(dir=base, prefix="codex-")
+    try:
+        cwd, last = os.path.join(tmp, "cwd"), os.path.join(tmp, "last.txt")
+        os.mkdir(cwd, 0o700)
+        model = _kit_root("harvest.extractor_fallback_model", "")
+        argv = CODEX_FALLBACK + (["-m", model] if model else []) + ["-o", last, "-"]
+        rc, out, err = _spawn(argv, prompt, cwd)
+        try:
+            with open(last, encoding="utf-8", errors="replace") as fh:
+                out = fh.read() or out
+        except OSError:
+            pass
+        return rc == 0 and extract_ok(extract_json_object(out)), out, err
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def call_extractor(prompt):
+    """(ok, stdout, stderr, note): the primary call, then the Codex fallback once when the
+    primary failed for any reason but auth and harvest.extractor_fallback is `codex`.
+    note is None, "codex (limit|error)" on a fallback success, or "failed" when the
+    fallback also failed. A failure keeps the primary's streams, so the existing failure
+    classes (the DEC-80 limit hold among them) still read the Claude error."""
+    ok, out, err = run_sweep_extractor(prompt)
+    if ok or AUTH_RE.search(err + "\n" + out):
+        return ok, out, err, None
+    if _kit_root("harvest.extractor_fallback", "codex").strip().lower() != "codex":
+        return ok, out, err, None
+    reason = "limit" if ExtractFailure(out, err).limit else "error"
+    f_ok, f_out, f_err = run_fallback_extractor(prompt)
+    if f_ok:
+        return True, f_out, f_err, "codex (%s)" % reason
+    return ok, out, err, "failed"
 
 
 def extract_ok(obj):
@@ -624,7 +689,8 @@ def _write_cache(path, text):
 
 
 def extract_session(t, text):
-    """(ok, obj, stdout, stderr) for one rendered session delta. A parseable cache file for
+    """(ok, obj, stdout, stderr, note) for one rendered session delta, note as in
+    call_extractor. A parseable cache file for
     this key is reused with no call, so a replay never pays or varies the model call twice.
     One that does not hold a valid reply is removed and the session extracted again, which
     is not a failure (DEC-82). Output is cached only on success, before staging."""
@@ -637,13 +703,13 @@ def extract_session(t, text):
     if cached is not None:
         obj = extract_json_object(cached)
         if extract_ok(obj):
-            return True, obj, cached, ""
+            return True, obj, cached, "", None
         os.unlink(path)
-    ok, out, err = run_sweep_extractor(build_prompt(text))
+    ok, out, err, note = call_extractor(build_prompt(text))
     if not ok:
-        return False, None, out, err
+        return False, None, out, err, note
     _write_cache(path, out)
-    return True, extract_json_object(out), out, err
+    return True, extract_json_object(out), out, err, note
 
 
 class ExtractFailure(object):
@@ -651,8 +717,8 @@ class ExtractFailure(object):
     `ok` check treats it as a failure, while `limit` marks the DEC-80 hold class. obj is
     None by construction; stdout/stderr stay available for the failure classes."""
 
-    def __init__(self, out, err):
-        self.out, self.err = out, err
+    def __init__(self, out, err, fallback=None):
+        self.out, self.err, self.fallback = out, err, fallback
 
     def __bool__(self):
         return False
@@ -665,12 +731,13 @@ class ExtractFailure(object):
 
 
 def _extractor_probe():
-    """One extractor call on the fixed probe prompt, made after the run's first
-    non-limit failure (DEC-39). Returns (ok, detail); a failed probe makes the failure
-    auth-shaped, which stops the run."""
+    """One primary extractor call on the fixed probe prompt, made after the run's first
+    non-limit failure (DEC-39). Returns (ok, detail, failure); a failed probe makes the
+    failure auth-shaped, which stops the run, unless the probe itself is limit-shaped:
+    then Claude is at its limit, not logged out, and the run holds (DEC-92)."""
     ok, out, err = run_sweep_extractor(PROBE_PROMPT)
     detail = (err or out).strip().splitlines()[:1]
-    return ok, (detail[0][:120] if detail else "no output")
+    return ok, (detail[0][:120] if detail else "no output"), ExtractFailure(out, err)
 
 
 def limit_state_row(source, failure):
@@ -683,10 +750,11 @@ def sweep_process(t, text):
     (truthy, always a dict with both keys) when the call succeeded, an ExtractFailure
     otherwise. Learnings stage into the session repo's sweep ledger (with the
     rows.jsonl sidecar); sightings record into patterns.jsonl from this object."""
-    ok, obj, out, err = extract_session(t, text)
+    ok, obj, out, err, note = extract_session(t, text)
     if not ok:
-        return ExtractFailure(out, err)
+        return ExtractFailure(out, err, note)
     clean = sanitize_extraction(obj)
+    clean["_fallback"] = note
     staged, ledger = _stage_sweep(t, clean["learnings"])
     clean["_staged"] = [{"slug": r["item"], "kind": r["kind"], "home": r["home"],
                          "ledger": os.path.basename(ledger)} for r in staged]
@@ -1338,12 +1406,17 @@ def _sweep_one(cursor, plan, item, process, now, max_chars, records, run, quaran
         text = render(t, last_ts, max_chars)
         # An empty delta has nothing to read and settles without an extraction.
         ok = process(t, text) if text else True
+        if isinstance(ok, ExtractFailure):
+            _once(out["state_rows"], ok.fallback and
+                  "STATE %s: extractor fallback failed: codex" % source)
         if ok:
             state["done"][sid] = item["last_activity"]
             if text:
                 state["seen"][sid] = {"last_ts": newest_ts(t), "ts": int(now)}
             if isinstance(ok, dict):
                 run["staged"].extend(ok.get("_staged") or [])
+                _once(out["state_rows"], ok.get("_fallback") and
+                      "STATE %s: extractor fallback used: %s" % (source, ok["_fallback"]))
             out["processed"].append(sid)
             log.line("processed", source, sid)
         elif isinstance(ok, ExtractFailure) and ok.limit:
@@ -1351,24 +1424,34 @@ def _sweep_one(cursor, plan, item, process, now, max_chars, records, run, quaran
             run["stop"] = "limit"
             log.line("hold", source, sid, "extractor-limit")
         else:
+            probe = None
+            if not run["fail_seen"]:
+                run["fail_seen"] = True
+                probe = _extractor_probe()
+            if probe and not probe[0] and probe[2].limit:
+                # the probe hit a usage limit: Claude is at its limit, not logged out, so
+                # this session holds like a limit-shaped failure, no fail count (DEC-92)
+                out["state_rows"].append(limit_state_row(source, probe[2]))
+                run["stop"] = "limit"
+                log.line("hold", source, sid, "probe-limit")
+                _advance_hwm(state, plan["scanned"])
+                save_cursor(cursor)
+                return True
             out["failed"].append(sid)
             log.line("failed", source, sid, type(ok).__name__)
-            if run["fail_seen"]:
+            if probe is None:
                 # a second session failing this run is auth-shaped (DEC-39)
                 run["stop"] = "auth"
                 out["state_rows"].append(
                     "STATE %s: extractor-auth: a second session failed this run" % source)
                 log.line("stop", source, sid, "extractor-auth")
-            else:
-                run["fail_seen"] = True
-                ok_p, detail = _extractor_probe()
-                if not ok_p:
-                    run["stop"] = "auth"
-                    run["incidents"].append(
-                        "INCIDENT extractor: probe failed: %s" % detail)
-                    out["state_rows"].append(
-                        "STATE %s: extractor-auth: the probe failed" % source)
-                    log.line("stop", source, sid, "extractor-auth")
+            elif not probe[0]:
+                run["stop"] = "auth"
+                run["incidents"].append(
+                    "INCIDENT extractor: probe failed: %s" % probe[1])
+                out["state_rows"].append(
+                    "STATE %s: extractor-auth: the probe failed" % source)
+                log.line("stop", source, sid, "extractor-auth")
             # every non-limit failure counts, the stop path included (DEC-39)
             state["fail"][sid] = state["fail"].get(sid, 0) + 1
             if state["fail"][sid] >= quarantine_after:
@@ -1382,6 +1465,12 @@ def _sweep_one(cursor, plan, item, process, now, max_chars, records, run, quaran
     _advance_hwm(state, plan["scanned"])
     save_cursor(cursor)
     return not skip
+
+
+def _once(rows, row):
+    """Append row unless it is empty or already present: one STATE row per run."""
+    if row and row not in rows:
+        rows.append(row)
 
 
 def _archive_flushed(leddir=None):

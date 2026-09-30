@@ -464,3 +464,14 @@ hook_when_sweep_on = false      # [impl] true = the per-session PreCompact/Sessi
                                 #        keeps running while the sweep is active. False =
                                 #        harvest.sh's auto modes exit 0 without work, so a
                                 #        session is never staged or paid for twice.
+extractor_model = "sonnet"      # [impl] the Claude model for the sweep extractor
+                                #        (`claude -p --model <this>`); every safety flag
+                                #        stays. Sonnet costs about 3-5x Haiku quota a call.
+extractor_fallback = "codex"    # [impl] `codex` = when the Claude call fails for any reason
+                                #        but auth (a usage limit included), run the same
+                                #        prompt once through `codex exec --sandbox read-only`
+                                #        on the host's ChatGPT login; the report gets a
+                                #        STATE row. `none` disables it. Codex cannot turn its
+                                #        shell off: the sandbox blocks writes and network,
+                                #        not reads (SPEC-357 DEC-92).
+extractor_fallback_model = ""   # [impl] `codex exec -m <this>`; empty = Codex's own default.
