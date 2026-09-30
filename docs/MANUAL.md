@@ -342,7 +342,7 @@ What to remember here: the blocking hooks, everything else advises or warns.
 | Blocker | Event | What it stops |
 |---|---|---|
 | `safety-gate` | PreToolUse(Bash) | `rm -rf` (build-artifact allowlist), push to main, force push, `DROP TABLE`, `git reset --hard`, `kubectl delete`. Override needs explicit user OK. |
-| `ship-gate` | PreToolUse(Bash, on push/PR-create) | Shipping without a recorded proof-of-done / gate-ledger record for the lane. The answer to "why did my push get blocked": run `/kit:verify`, or record the audited override. |
+| `ship-gate` | PreToolUse(Bash, on push/PR-create) | Shipping without a recorded proof-of-done / gate-ledger record for the lane, or a diff that touches a hard path (migration, auth, secrets, CI workflow, kit config, data loss) without the full lane's gates. The answer to "why did my push get blocked": run `/kit:verify`, run the gate it names, or record the audited override. |
 | `secrets-guard` | PreToolUse(Read\|Edit\|Bash) | Reads of secret files (`.env`, `~/.ssh`, `~/.aws`, `.pem`); canonicalizes the path first. Allows `.env.example`. Best-effort on the Bash surface. |
 | `commit-format` | PreToolUse(Bash) | A `git commit -m` subject that is non-conventional, >72 chars, or carries a SPEC-/TASK-/phase marker. Subject only. |
 | `anti-rationalization` | Stop | Premature "done": rationalization phrases, guess-fix during an open `/debug` session, unimplemented-stub markers in the diff. |
@@ -623,7 +623,7 @@ The hook was downloading the formatter via `npx --yes` per edit (v1.0 bug). Fixe
 Compaction sequence:
 1. `pre-compact-backup.sh` writes a snapshot.
 2. Claude Code compacts.
-3. `post-compact-reinject.sh` re-injects critical rules.
+3. `post-compact-reinject.sh` (a SessionStart hook with matcher `compact`, so it fires when the compacted session resumes) re-injects critical rules.
 4. `session-state-save.sh` continues to write to `.claude/session-state/last-state.md` on every Stop.
 
 If state is missing, check in order:

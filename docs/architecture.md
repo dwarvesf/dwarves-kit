@@ -268,7 +268,7 @@ file count so this table cannot drift):
 | `anchor-root` | every hooks.json/settings.json event except secrets-guard's PreToolUse entry | infrastructure | none (cds to the resolved root before exec'ing the real hook; owns no allow or deny rule) |
 | `safety-gate` | PreToolUse Bash | hard | destructive deletes, push-to-main, force-push under deadline pressure |
 | `secrets-guard` | PreToolUse Read/Edit/Bash | hard | reading secret files "just to check"; transcript is plaintext |
-| `ship-gate` | PreToolUse Bash | hard | shipping without proof of done / recorded gates (ADR-0024 boundary) |
+| `ship-gate` | PreToolUse Bash | hard | shipping without proof of done / recorded gates (ADR-0024 boundary); a hard-path diff owes the full lane's gates whatever the spec's `Lane:` says (when `[gate] lane_gates` is on at the merge base) |
 | `commit-format` | PreToolUse Bash | hard | drifting commit subjects (type, length, ticket-tag leakage) |
 | `board-row-gate` | PreToolUse Bash | hard | a session filing a board row for a follow-up it should do or drop; a new row needs a `board-row-ok: <reason>` line in the commit message; the one `[gate]` key that defaults on (`board_row_gate`) |
 | `anti-rationalization` | Stop | hard | declaring work complete while rationalizing known-incomplete work |

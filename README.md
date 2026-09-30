@@ -240,7 +240,7 @@ That is the whole loop. The spec is the unit of handoff: a contractor running `/
 /kit:retro          Retrospective (10 min, after shipping)
 ```
 
-Work is sized by risk lane before it starts (tiny / normal / full / bug, plus a `backfill` lane for reviewing an existing codebase and writing the operating-layer docs without changing behavior). The lanes, the gate at each phase boundary, and the operate-contract the agent follows live in [`AGENTS.md`](AGENTS.md) and [`WORKFLOW.md`](WORKFLOW.md).
+Work is sized by risk lane before it starts (tiny / normal / full / bug, plus a `backfill` lane for reviewing an existing codebase and writing the operating-layer docs without changing behavior). The default is `normal`, and the words of a task never pick `full`: the classifier only suggests it, and the diff floor at push gives any hard-path change the full lane's gates. Each lane's phases are data in `kit.toml` (`[lane.<name>]`), which a repo can override in its own `.kit.toml`. The lanes, the gate at each phase boundary, and the operate-contract the agent follows live in [`AGENTS.md`](AGENTS.md) and [`WORKFLOW.md`](WORKFLOW.md).
 
 ## Verification pipeline (/execute)
 
@@ -287,7 +287,7 @@ Within one spec, tasks run sequentially. Across specs, `/kit:dispatch` fans out 
 | safety-gate | PreToolUse(Bash) | Blocks rm -rf (build-artifact allowlist), push to main, force push, DROP TABLE, git reset --hard, kubectl delete |
 | secrets-guard | PreToolUse(Read\|Edit\|Bash) | Blocks reads of secret files (.env, ~/.ssh, ~/.aws, .pem); canonicalizes the path first |
 | commit-format | PreToolUse(Bash) | Blocks non-conventional / >72-char / spec-ID commit subjects |
-| ship-gate | PreToolUse(Bash) | Blocks push/PR without a proof-of-done record + recorded lane gates (ADR-0024 boundary) |
+| ship-gate | PreToolUse(Bash) | Blocks push/PR without a proof-of-done record + recorded lane gates (ADR-0024 boundary); a diff that touches a hard path (migration, auth, secrets, CI, kit config, data loss) owes the full lane's gates whatever lane the spec names |
 | context-readiness | SessionStart | Detects project + board state (`board:Nq`), suggests the next step intent-first |
 | context-hints | UserPromptSubmit | Injects session elapsed/idle time + keyword-matched skill hints (empty map by default; wire your own via CONTEXT_HINTS_SKILLMAP) |
 | anti-rationalization | Stop | Catches Claude declaring work done prematurely |

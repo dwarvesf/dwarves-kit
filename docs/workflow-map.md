@@ -103,7 +103,7 @@
                                           backfill    how big / how risky ?
                                                       |- trivial edit ....... tiny
                                                       |- one bounded change . normal
-                                                      +- risk-list match .... full
+                                                      +- risk-list match .... full (suggested)
 
   default to normal; the diff floor covers hard paths
 ```
@@ -112,8 +112,8 @@
 
 ```
   Think -> Design -> Design critique -> Spec -> Validate -> Test plan
-  (adv)   (opt-in)     (opt-in)       [HARD:    (full)     (default
-                                       spec-drift          normal/full)
+  (adv)   (opt-in)     (opt-in)       [HARD:    (normal/   (default
+                                       spec-drift  full)     normal/full)
                                        guard]
      -> Build -> Review -> Docs -> Ship -> Reflect
        [HARD:    (adv)     (adv)  [HARD:    (adv)
