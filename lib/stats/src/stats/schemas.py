@@ -81,6 +81,7 @@ KIT_GATES_SCHEMA: list[tuple[str, str]] = [
     ("start_ts", "VARCHAR"),
     ("end_ts", "VARCHAR"),
     ("cost", "DOUBLE"),
+    ("ts", "VARCHAR"),
 ]
 
 # The tool's FIRST git-sourced table. One row per (commit, file-touched) pair
@@ -96,6 +97,57 @@ GIT_FIXES_SCHEMA: list[tuple[str, str]] = [
     ("files", "VARCHAR"),
     ("ts", "VARCHAR"),
     ("subject", "VARCHAR"),
+]
+
+# One row per non-merge commit inside a window, with line counts (`git log --numstat`).
+# `git_fixes` has files and subject but no line counts; the ceremony lens needs "lines shipped".
+# `ts` is the committer date (the date `git log --since` filters on). `binary_files` counts
+# numstat entries with `-` counts, which add 0 lines and are never dropped silently.
+GIT_LINES_SCHEMA: list[tuple[str, str]] = [
+    ("sha", "VARCHAR"),
+    ("ts", "VARCHAR"),
+    ("subject", "VARCHAR"),
+    ("added", "INTEGER"),
+    ("deleted", "INTEGER"),
+    ("binary_files", "INTEGER"),
+]
+
+# One row per Claude Code subagent transcript (`<project>/<session>/subagents/agent-<id>`),
+# NUMBERS, timestamps, `agentType`, model and the extracted `rid=` tag ONLY: no description
+# text and no message content ever reaches a column (same rule as SESSIONS_SCHEMA).
+# `rid_source` is `tag`, `window`, `ambiguous` or `none`; `rid` is NULL unless it is `tag`
+# or `window`.
+SUBAGENT_RUNS_SCHEMA: list[tuple[str, str]] = [
+    ("rid", "VARCHAR"),
+    ("session", "VARCHAR"),
+    ("agent_id", "VARCHAR"),
+    ("agent_type", "VARCHAR"),
+    ("model", "VARCHAR"),
+    ("first_ts", "VARCHAR"),
+    ("last_ts", "VARCHAR"),
+    ("input_tokens", "BIGINT"),
+    ("output_tokens", "BIGINT"),
+    ("cache_read_tokens", "BIGINT"),
+    ("cache_creation_tokens", "BIGINT"),
+    ("rid_source", "VARCHAR"),
+]
+
+# One row per materialization: what the transcript scan saw. `earliest` is the oldest
+# subagent file mtime on disk (ISO, UTC), the honest retention figure.
+SUBAGENT_SCAN_SCHEMA: list[tuple[str, str]] = [
+    ("files_seen", "INTEGER"),
+    ("files_read", "INTEGER"),
+    ("skipped_files", "INTEGER"),
+    ("earliest", "VARCHAR"),
+]
+
+# Per run ledger: how many START, TOKENS and GATE lines it holds. Feeds the ceremony lens's
+# excluded-rid counts and its `suspect fixtures` line (START lines, zero GATE lines).
+LEDGER_LINES_SCHEMA: list[tuple[str, str]] = [
+    ("rid", "VARCHAR"),
+    ("starts", "INTEGER"),
+    ("tokens", "INTEGER"),
+    ("gates", "INTEGER"),
 ]
 
 # The upstream half of the benchmark: one row per hook-enforced
