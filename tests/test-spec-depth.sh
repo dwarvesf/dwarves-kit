@@ -18,6 +18,7 @@ assert_eq() { # name expected actual
 want() { [ "$SECTION" = all ] || [ "$SECTION" = "$1" ]; }
 lvl() { bash "$H" level "$FX/$1.md" 2>/dev/null; }
 chk() { bash "$H" check "$FX/$1.md" >/dev/null 2>&1; echo $?; }
+msg() { bash "$H" check "$FX/$1.md" 2>/dev/null | grep -c -- "$2"; }
 has() { grep -qF -- "$2" "$1" && echo 0 || echo 1; }
 
 if want level; then
@@ -29,6 +30,10 @@ if want level; then
   assert_eq "combined with +"           "research-outside blind-spot"     "$(lvl combined)"
   assert_eq "fenced example is ignored" "standard"                        "$(lvl fenced-example)"
   assert_eq "no header line"            "standard"                        "$(lvl no-depth)"
+  assert_eq "bold **Depth:** parses"              "research-repo"  "$(lvl bold-depth)"
+  assert_eq "bold **Depth**: parses"              "blind-spot"     "$(lvl bold-depth-colon-out)"
+  assert_eq "CRLF header parses"                  "standard"       "$(lvl crlf)"
+  assert_eq "a Depth example fenced in the header is ignored" "standard" "$(lvl fence-in-header)"
   assert_eq "Depth only in a body example is ignored" "standard"            "$(lvl body-only-depth)"
 fi
 
@@ -39,7 +44,13 @@ if want check; then
   done
   assert_eq "honest outside reason exits 0"     0 "$(chk research-outside)"
   assert_eq "mixed importance + real unknown 0" 0 "$(chk mixed-reason)"
-  for f in standard research-repo blind-spot combined fenced-example; do
+  assert_eq "importance-only reason is named as such" 1 "$(msg bad-importance 'only says the work matters')"
+  assert_eq "importance reason without prefix reports the prefix rule" 1 "$(msg bad-importance-noprefix "needs a 'repo:' or 'outside:' prefix")"
+  assert_eq "importance reason without prefix does not reach the importance rule" 0 "$(msg bad-importance-noprefix 'only says the work matters')"
+  assert_eq "critical core change is named as importance-only" 1 "$(msg bad-critical-core 'only says the work matters')"
+  assert_eq "trailing tab and space still checks clean" 0 "$(chk trailing-tab)"
+  assert_eq "CRLF file checks clean" 0 "$(chk crlf)"
+  for f in standard research-repo blind-spot combined fenced-example bold-depth bold-depth-colon-out; do
     assert_eq "$f exits 0" 0 "$(chk $f)"
   done
 fi
@@ -48,6 +59,8 @@ if want inverse; then
   echo "=== inverse (AC3) ==="
   assert_eq "standard + open question exits 1"      1 "$(chk inverse-open-q)"
   assert_eq "standard + (none; ...) exits 0"        0 "$(chk inverse-none)"
+  assert_eq "standard + None. exits 0"              0 "$(chk inverse-none-dot)"
+  assert_eq "## Open Questions matches case-insensitively" 1 "$(chk inverse-mixed-case)"
   assert_eq "standard + cannot be sampled exits 0"  0 "$(chk inverse-grounding)"
 fi
 
@@ -58,6 +71,9 @@ if want missing-line; then
   assert_eq "no Generated line exits 0"                    0 "$(chk no-depth-nogen)"
   assert_eq "older spec warns on stderr" 1 "$(bash "$H" check "$FX/no-depth.md" 2>&1 >/dev/null | grep -c 'warning')"
   assert_eq "no-Generated spec warns on stderr" 1 "$(bash "$H" check "$FX/no-depth-nogen.md" 2>&1 >/dev/null | grep -c 'warning')"
+  assert_eq "SPEC-380 with no Generated line exits 1" 1 "$(bash "$H" check "$FX/SPEC-380-no-generated.md" >/dev/null 2>&1; echo $?)"
+  assert_eq "SPEC-100 with no Generated line exits 0" 0 "$(bash "$H" check "$FX/SPEC-100-no-generated-old.md" >/dev/null 2>&1; echo $?)"
+  assert_eq "DEPTH_REQUIRED_FROM_SPEC is pinned" 1 "$(grep -c '^DEPTH_REQUIRED_FROM_SPEC=372$' "$H")"
   assert_eq "DEPTH_REQUIRED_FROM is pinned" 1 "$(grep -c '^DEPTH_REQUIRED_FROM="2026-09-30"$' "$H")"
 fi
 
@@ -72,6 +88,8 @@ if want wants; then
   bash "$H" wants "$FX/combined.md" blind-spot;               assert_eq "combined wants blind-spot" 0 "$?"
   bash "$H" wants "$FX/fenced-example.md" blind-spot;         assert_eq "fenced example does not want blind-spot" 1 "$?"
   bash "$H" wants "$FX/body-only-depth.md" blind-spot;        assert_eq "body-only example does not want blind-spot" 1 "$?"
+  bash "$H" wants "$FX/fence-in-header.md" blind-spot;        assert_eq "header-fenced example does not want blind-spot" 1 "$?"
+  bash "$H" wants "$FX/bold-depth.md" research-repo;          assert_eq "bold line wants research-repo" 0 "$?"
   bash "$H" wants "$FX/standard.md" nonsense 2>/dev/null;     assert_eq "unknown level exits 2" 2 "$?"
   assert_eq "spec.sh forwards depth" "standard" "$(bash "$KIT_DIR/lib/spec/spec.sh" depth level "$FX/standard.md" 2>/dev/null)"
 fi

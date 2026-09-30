@@ -19,8 +19,11 @@
 #   Levels combine with " + ".
 set -uo pipefail
 
-# Specs generated on or after this date must carry a Depth line; older ones only warn.
+# A spec is new, and must carry a Depth line, when it is generated on or after this date
+# or its number is at or above this one. Older specs only warn. A missing Generated line
+# never grants the grace period on its own: the number decides.
 DEPTH_REQUIRED_FROM="2026-09-30"
+DEPTH_REQUIRED_FROM_SPEC=372
 
 # A reason made only of these (after dropping stop words) earns nothing deeper.
 IMPORTANCE_WORDS=" important critical risky core complex sensitive big "
@@ -32,7 +35,13 @@ LEVELS=""; PROBLEMS=""; HAS_LINE=0
 
 problem() { PROBLEMS="${PROBLEMS}$*"$'\n'; }
 
-header() { awk '/^## /{exit} {print}' "$1"; }
+# Header = lines before the first `## `. Strips CR and trailing blanks; a fenced block inside
+# the header is not header text, so an example there never reads as the Depth line.
+header() { awk '/^## /{exit} /^```/{f=!f; next} f{next} {gsub(/\r/, ""); sub(/[ \t]+$/, ""); print}' "$1"; }
+
+# `Depth:`, `**Depth:**` and `**Depth**:` all parse, like the Lane line in hooks/ship-gate.sh.
+DEPTH_RE='^(\*\*)?Depth(\*\*)?:'
+strip_depth() { sed -E 's/^(\*\*)?Depth(\*\*)?:(\*\*)?[[:space:]]*//'; }
 
 # Split "a (x) + b (y)" into one segment per line. A split point is ") + <name> (".
 segments() {
@@ -66,11 +75,11 @@ parse() {
   local hdr n rest seg name body lvl reason re='^([a-z-]+) \((.*)\)$'
   LEVELS=""; PROBLEMS=""; HAS_LINE=0
   hdr=$(header "$1")
-  n=$(printf '%s\n' "$hdr" | grep -c '^Depth:')
+  n=$(printf '%s\n' "$hdr" | grep -ciE "$DEPTH_RE")
   [ "$n" -eq 0 ] && return 0
   HAS_LINE=1
   [ "$n" -gt 1 ] && problem "two Depth lines in the header ($n found)"
-  rest=$(printf '%s\n' "$hdr" | grep -m1 '^Depth:' | sed 's/^Depth:[[:space:]]*//')
+  rest=$(printf '%s\n' "$hdr" | grep -m1 -iE "$DEPTH_RE" | strip_depth)
   while IFS= read -r seg; do
     if ! [[ $seg =~ $re ]]; then
       problem "malformed Depth segment '$seg' (want: <level> (<reason>))"; continue
@@ -103,23 +112,27 @@ EOF
 
 # Body of the spec's `## Open questions` section (outside fenced blocks).
 open_questions_body() {
-  awk '/^```/{f=!f} !f && /^## Open questions/{on=1; next} on && !f && /^## /{exit} on{print}' "$1"
+  awk '/^```/{f=!f} !f && tolower($0) ~ /^## open questions/{on=1; next} on && !f && /^## /{exit} on{print}' "$1"
 }
 
 cmd_check() {
-  local spec=$1 first gen
+  local spec=$1 first gen num
   parse "$spec"
   if [ "$HAS_LINE" -eq 0 ]; then
     gen=$(header "$spec" | grep -m1 '^Generated:' | grep -o '[0-9]\{4\}-[0-9]\{2\}-[0-9]\{2\}' | head -n1)
+    num=$(basename "$spec" | grep -o '^SPEC-[0-9]*' | head -n1 | sed 's/SPEC-//')
+    [ -n "$num" ] || num=$(header "$spec" | grep -m1 -o '^# SPEC-[0-9]*' | sed 's/# SPEC-//')
     if [ -n "$gen" ] && ! [[ $gen < $DEPTH_REQUIRED_FROM ]]; then
       problem "no Depth line in the header (Generated $gen, required from $DEPTH_REQUIRED_FROM)"
+    elif [ -n "$num" ] && [ "$((10#$num))" -ge "$DEPTH_REQUIRED_FROM_SPEC" ]; then
+      problem "no Depth line in the header (SPEC-$num, required from SPEC-$DEPTH_REQUIRED_FROM_SPEC)"
     else
       echo "spec-depth: warning: no Depth line in $spec (older spec, counts as standard)" >&2
     fi
   elif [ "$LEVELS" = "standard" ]; then
-    first=$(open_questions_body "$spec" | grep -m1 '[^[:space:]]' | sed 's/^[[:space:]]*//')
+    first=$(open_questions_body "$spec" | grep -m1 '[^[:space:]]' | sed 's/^[[:space:]]*//' | tr 'A-Z' 'a-z')
     case $first in
-      ""|"(none"*) ;;
+      ""|"(none"*|"none"|"none."|"none;"*) ;;
       *) problem "standard, but '## Open questions' is not empty: an open question is an unknown only research closes" ;;
     esac
   fi
