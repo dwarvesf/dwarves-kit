@@ -15,3 +15,8 @@ Every cited file and line held at build start (`anomalies.py`, `schemas.py`, `ad
 - Catches and known-caught rows count over every `ran`+`override` row in the window, not only ceremony phases. The spec defines them without a phase filter.
 - A dispatch inside brackets of one rid twice counts as `window`. Only two distinct rids make it `ambiguous`.
 - `query_many` in `materialize.py` runs several read-only queries on one lens build. The CLI needs about five result sets and one build takes minutes on the live corpus.
+- `ceremony_share_max` stays 0.70. Live share is 0.76 and 0.77 per week; the live window has 49 catches in 178 known rows, so the anomaly does not fire on the live corpus.
+- The `anomalies.py` import is two lines (`from . import ceremony`, then `from . import materialize`) because `test-anomalies-advisor.sh` O-one-path greps the literal `from . import materialize`.
+- The `S-per-task` test compares `dispatches_per_task == 2` in jq, since jq prints `2.0` as `2`.
+- Two code commits carry wrong subjects (`feat(board): work verb joins ...`, `docs(spec): ceremony lens round 2 ...`): a stale message file in the scratchpad was reused. Content is right, history cannot be amended here.
+- Pre-existing failures outside Touches: `docs/FEATURES.md` drift in `test-meta.sh`, three skill trigger phrases in `test-docs-wiring.sh`.
