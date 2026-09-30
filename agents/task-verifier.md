@@ -1,6 +1,6 @@
 ---
 name: task-verifier
-description: Verifies a completed task against its spec acceptance criteria. Checks a task's acceptance criteria; callers invoke it per task or, under /kit:execute, once over every task of the build. Read-only -- cannot modify the codebase.
+description: Verifies a completed task against its spec acceptance criteria. Callers invoke it per task or, under /kit:execute, once over every task of the build. Read-only -- cannot modify the codebase.
 tools:
   - Read
   - Grep
