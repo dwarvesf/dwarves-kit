@@ -45,7 +45,7 @@ _orca_get() {  # varname verb args...
   printf -v "$__v" '%s' "$__out"
 }
 
-# The SPEC-366 view, one call. Any failure or a schema other than 1 leaves it empty: rung prints `?`
+# The `board work --json` view, one call. Any failure or a schema other than 1 leaves it empty: rung prints `?`
 # and no idle signal is used.
 _orca_board_work() {  # dir
   local dir="$1" out
