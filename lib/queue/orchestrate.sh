@@ -19,6 +19,12 @@
 #                  detects (backlog.sh present -> both, else roadmap). Event-sourced + derived;
 #                  ROADMAP.md stays canonical, the repo-wide BACKLOG cockpit is never touched.
 #   --step/--stream are opt-in; default behavior is unchanged (Mechanism A).
+#   orchestrate.sh run <dir> --backend orca   OPT-IN trial: Orca Tasks + supervised workers instead of
+#                  one `claude -p` per sub-goal (also MEGA_BACKEND=orca; the flag wins; allowed:
+#                  claude|orca). lib/queue/orca-backend.sh is sourced ONLY then; the default path never
+#                  loads it and never calls $ORCA_CMD.
+#   orchestrate.sh status <dir>       derived per-sub-goal state under the Orca backend (TSV)
+#   orchestrate.sh orca-reset <dir>   stop and release this run's Orca Dispatches, block its Tasks
 #   Env (robustness, advisory): WATCHDOG_STALL_SECS>0 backgrounds each session + flags it
 #   `stalled` after that many seconds with no output (WATCHDOG_POLL_SECS poll interval); never
 #   kills. Default 0 = off (synchronous path unchanged). A dead/incomplete session never advances
@@ -2404,10 +2410,18 @@ _tier4_close() {  # dir roadmap
 }
 # -----------------------------------------------------------------------------------------------
 
+# Load the opt-in Orca backend (ORCA_BACKEND_LIB is a test seam for a mutated copy).
+_orca_load() {
+  # shellcheck source=lib/queue/orca-backend.sh
+  . "${ORCA_BACKEND_LIB:-$ORCH_DIR/orca-backend.sh}" || { echo "orchestrate: cannot load the Orca backend" >&2; return 1; }
+}
+
 cmd_run() {
-  local dir="" dry=0 step=0 stream=0 board_arg="" forced_pick=""
+  local dir="" dry=0 step=0 stream=0 board_arg="" forced_pick="" backend="${MEGA_BACKEND:-claude}"
   while [ $# -gt 0 ]; do
     case "$1" in
+      --backend)  backend="${2:-}"; [ $# -gt 0 ] && shift ;;   # the flag wins over MEGA_BACKEND
+      --backend=*) backend="${1#--backend=}" ;;
       --dry-run)  dry=1 ;;
       --step)     step=1 ;;
       --stream)   stream=1 ;;
@@ -2419,6 +2433,12 @@ cmd_run() {
     esac
     shift
   done
+  # Backend allowlist, exact tokens (no kit.toml key on purpose: a committed file must not switch
+  # a run onto another runtime).
+  case "$backend" in
+    claude|orca) ;;
+    *) echo "orchestrate: backend must be claude|orca (got: '$backend')" >&2; return 64 ;;
+  esac
   [ -d "$dir" ] || { echo "no such megagoal dir: '$dir'" >&2; return 64; }
   local roadmap="$dir/ROADMAP.md"
   [ -f "$roadmap" ] || { echo "no ROADMAP.md in '$dir'" >&2; return 64; }
@@ -2460,6 +2480,13 @@ cmd_run() {
     auto|cmux|kitty|wezterm|ghostty|iterm|terminal|none) ;;
     *) echo "orchestrate: PANE_VIEWER must be one of: ${PANE_VIEWER_ALLOWED// /|} (got: '$PANE_VIEWER')" >&2; return 64 ;;
   esac
+
+  # Orca backend: the ONLY place orca-backend.sh is sourced on the run path. Everything below this
+  # branch is the untouched default path.
+  if [ "$backend" = orca ]; then
+    _orca_load || return 1
+    orca_run "$dir" "$dry"; return $?
+  fi
 
   if [ "$dry" = 1 ]; then
     _say "[plan] mega-goal: $dir"
@@ -2839,6 +2866,8 @@ main() {
     next) cmd_next "$@" ;;
     run)  cmd_run "$@" ;;
     flip) cmd_flip "$@" ;;
+    status) _orca_load && cmd_status "$@" ;;
+    orca-reset) _orca_load && { [ -f "${1:-}/ROADMAP.md" ] || { echo "usage: orchestrate.sh orca-reset <megagoal-dir>" >&2; exit 64; }; orca_reset "$1"; } ;;
     _pane-exec) cmd_pane_exec "$@" ;;
     # Subagent panes: read-only tmux tail windows over background-subagent transcripts.
     # `_pane-tail` is the hidden re-entry the pane's own command line runs, deliberately absent
@@ -2850,7 +2879,7 @@ main() {
     # <src>` == `queue.sh run <src>`. It drives REAL interactive `/goal` sessions via terminal-mux
     # send-keys, NOT the headless `claude -p` per-sub-goal path the rest of this driver uses.
     queue) exec "$ORCH_DIR/queue.sh" run "$@" ;;
-    *) echo "usage: orchestrate.sh {next|run|flip|panes|queue} <megagoal-dir|src> [<SG-NN>] [--dry-run] [--step] [--stream] [--capture-tokens] [--board=roadmap|kanban|both]" >&2; exit 64 ;;
+    *) echo "usage: orchestrate.sh {next|run|flip|panes|queue|status|orca-reset} <megagoal-dir|src> [<SG-NN>] [--dry-run] [--step] [--stream] [--capture-tokens] [--board=roadmap|kanban|both] [--backend claude|orca]" >&2; exit 64 ;;
   esac
 }
 
