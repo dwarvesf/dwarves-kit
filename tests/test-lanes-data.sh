@@ -649,7 +649,9 @@ for f in ("kit.toml", ".kit.toml"):
         try: re.compile(extra)
         except re.error as e: print(f"{f}: extra_hard_paths is not a valid regex: {e}"); sys.exit(1)
 PY
-)" && pass toml-valid || fail toml-valid "$out"
+)"; local rc=$?
+  case "$out" in SKIP*) echo "SKIP toml-valid: ${out#SKIP } (not a pass: install python 3.11 or newer to run it)"; return ;; esac
+  [ "$rc" = 0 ] && pass toml-valid || fail toml-valid "$out"
 }
 
 # The hook computes the merge base once, and skips the diff scan when the floor switch is off.
@@ -760,6 +762,83 @@ CASES
   [ -z "$bad" ] && pass ship-fail-closed-refs || fail ship-fail-closed-refs "$bad"
 }
 
+# Config and attributes a PR controls must not change what the scan sees: a committed `-diff`
+# attribute, color.diff=always, diff.external, and prefix settings that would rename a path.
+case_floor_diff_hardening() {
+  local bad="" out variant
+  for variant in attrs color external dstprefix noprefix; do
+    mkrepo
+    _git branch -q dbase >/dev/null 2>&1
+    case "$variant" in
+      attrs)     echo '*.py -diff' > "$ROOT/.gitattributes" ;;
+      color)     _git config color.diff always ;;
+      external)  _git config diff.external /usr/bin/true ;;
+      dstprefix) _git config diff.dstPrefix docs/ ;;
+      noprefix)  _git config diff.noprefix true ;;
+    esac
+    mkdir -p "$ROOT/app"; echo 'x("DROP TABLE users")' > "$ROOT/app/m.py"; _commit "chore: change"
+    out="$(lcx floor "$ROOT" dbase 2>/dev/null)"
+    [ "$out" = "full data-loss: app/m.py" ] || bad="$bad [$variant => '$out']"
+  done
+  [ -z "$bad" ] && pass floor-diff-hardening || fail floor-diff-hardening "$bad"
+}
+
+# An added line that starts with "++ a.md" prints as "+++ a.md" in the patch. It is content, not a
+# file header, so the DROP TABLE after it is still seen and still belongs to m.py.
+case_floor_plus_line() {
+  mkrepo; _git branch -q pbase >/dev/null 2>&1
+  printf 's = """\n++ a.md\n"""\nx("DROP TABLE users")\n' > "$ROOT/m.py"; _commit "chore: change"
+  local out; out="$(lcx floor "$ROOT" pbase 2>/dev/null)"
+  [ "$out" = "full data-loss: m.py" ] && pass floor-plus-line || fail floor-plus-line "got '$out'"
+}
+
+# The where test reads the code line only, on a word boundary: a path or a word that merely
+# contains "where" must not hide an unbounded delete.
+case_floor_where_boundary() {
+  local bad="" out path content want
+  while IFS='|' read -r path content want; do
+    [ -n "$path" ] || continue
+    mkrepo; _git branch -q wbase >/dev/null 2>&1; addfile "$path" "$content"; out="$(lcx floor "$ROOT" wbase 2>/dev/null)"
+    if [ "$want" = hit ]; then [ "$out" = "full data-loss: $path" ] || bad="$bad [$content in $path => '$out']"
+    else [ -z "$out" ] || bad="$bad [$content in $path should not hit: '$out']"; fi
+  done <<'CASES'
+app/nowhere.py|DELETE FROM users|hit
+app/x.py|DELETE FROM users -- everywhere|hit
+app/x.py|DELETE FROM users WHERE id = 1|miss
+app/x.py|delete from users where 1 = 1|hit
+CASES
+  [ -z "$bad" ] && pass floor-where-boundary || fail floor-where-boundary "$bad"
+}
+
+# 30000 changed files: the -z split is one awk pass, not a shell loop per record.
+case_floor_timing_30k() {
+  mkrepo; _git branch -q tbase >/dev/null 2>&1
+  mkdir -p "$ROOT/pad" "$ROOT/zz/auth"
+  python3 - "$ROOT" <<'PY'
+import os, sys
+r = sys.argv[1]
+for i in range(30000):
+    open(os.path.join(r, "pad", "f%d.txt" % i), "w").write("%d\n" % i)
+open(os.path.join(r, "zz", "auth", "z.ts"), "w").write("x\n")
+PY
+  _commit "chore: 30000 files"
+  local t0 t1 out ms; t0="$(_now)"; out="$(lcx floor "$ROOT" tbase 2>/dev/null)"; t1="$(_now)"
+  ms="$(python3 -c "print(int(($t1-$t0)*1000))")"
+  if [ "$out" = "full auth: zz/auth/z.ts" ] && [ "$ms" -lt 5000 ]; then pass "floor-timing-30k (${ms}ms for 30000 paths)"
+  else fail floor-timing-30k "out='$out' elapsed=${ms}ms (limit 5000ms)"; fi
+}
+
+# tiny is not a valid default lane: it would waive the spec for every untagged task.
+case_default_rejects_tiny() {
+  mkrepo
+  commit_kit_toml '[lanes]
+default = "tiny"'
+  local got err
+  got="$(KIT_PROJECT_ROOT="$ROOT" lcx classify "add a users page" 2>/dev/null)"; err="$(KIT_PROJECT_ROOT="$ROOT" lcx classify "add a users page" 2>&1 >/dev/null)"
+  if [ "$got" = normal ] && printf '%s' "$err" | grep -q 'tiny is not allowed'; then pass default-rejects-tiny
+  else fail default-rejects-tiny "classify => '$got' err='$err'"; fi
+}
+
 # ---------------------------------------------------------------------------
 run_case() {
   local fn="case_${1//-/_}"
@@ -767,7 +846,7 @@ run_case() {
 }
 # `parity` (byte-identical against the baseline) holds only at the refactor commit; after the
 # flip the standing check is parity-after-flip.
-ALL="parity-after-flip plan-flip four-false-hits webhook-signature-suggests suggest-records explain-suggest-line classify-files-full escalate-suggest floor-paths floor-rename-counts-both-sides floor-data-loss floor-extra-paths-union floor-invalid-extra-ere override-drop-review override-uncommitted override-typo override-no-light pinned-root malformed-array-fails-closed policy-at-base ship-migration-blocks ship-migration-absent-quiet ship-switch-off-on-base ship-flip-gate-in-pr ship-hollow-full-override ship-data-loss ship-no-spec-blocks ship-suggest-advisory workflow-view floor-timing floor-non-ascii hook-timeout floor-submodule override-empty-phases ship-operator-hollow-full ship-push-forms ship-base-is-origin-head ship-checks-pushed-ref ship-slug-quoted risk-verb significance-uses-risk floor-no-leaks override-unknown-lane-name toml-valid ship-merge-base-once override-operator-precedence default-lane-layers start-no-duplicate-skips ship-fail-closed-refs"
+ALL="parity-after-flip plan-flip four-false-hits webhook-signature-suggests suggest-records explain-suggest-line classify-files-full escalate-suggest floor-paths floor-rename-counts-both-sides floor-data-loss floor-extra-paths-union floor-invalid-extra-ere override-drop-review override-uncommitted override-typo override-no-light pinned-root malformed-array-fails-closed policy-at-base ship-migration-blocks ship-migration-absent-quiet ship-switch-off-on-base ship-flip-gate-in-pr ship-hollow-full-override ship-data-loss ship-no-spec-blocks ship-suggest-advisory workflow-view floor-timing floor-non-ascii hook-timeout floor-submodule override-empty-phases ship-operator-hollow-full ship-push-forms ship-base-is-origin-head ship-checks-pushed-ref ship-slug-quoted risk-verb significance-uses-risk floor-no-leaks override-unknown-lane-name toml-valid ship-merge-base-once override-operator-precedence default-lane-layers start-no-duplicate-skips ship-fail-closed-refs floor-diff-hardening floor-plus-line floor-where-boundary floor-timing-30k default-rejects-tiny"
 if [ "$#" -eq 0 ]; then set -- $ALL; fi
 for c in "$@"; do run_case "$c"; done
 [ "$FAILS" -eq 0 ]

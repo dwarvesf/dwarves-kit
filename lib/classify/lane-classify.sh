@@ -485,18 +485,31 @@ floor() {
   rm -rf "$tmp"   # the scratch dir this call made; no RETURN trap, which would outlive the function
   return 0
 }
+# Every git call in the scan is pinned against config and attributes an attacker controls: no
+# color codes, no external diff or textconv, `--text` so a committed `-diff` attribute cannot make
+# a file binary, fixed a/ b/ prefixes so `diff.noprefix` and `diff.dstPrefix` cannot rename a path
+# into docs/, and no attributes file.
+_floor_git() {
+  local root="$1"; shift
+  env -u GIT_EXTERNAL_DIFF git -C "$root" -c core.quotePath=false -c color.diff=false -c color.ui=false \
+    -c diff.noprefix=false -c diff.mnemonicPrefix=false -c diff.renames=false -c diff.external= \
+    -c core.attributesFile=/dev/null "$@"
+}
 _floor_scan() {
   local root="$1" base="$2" head="$3" tmp="$4"
-  git -C "$root" -c core.quotePath=false diff -z --raw --no-renames "$base" "$head" > "$tmp/raw" 2>/dev/null || true
-  local meta path n=0 paths="" links=""
-  while IFS= read -r -d '' meta; do
-    IFS= read -r -d '' path || break
-    n=$((n + 1)); path="${path//$'\n'/?}"
-    paths="$paths$path"$'\n'
-    read -ra _m <<< "$meta"   # split without pathname expansion
-    if [ "${_m[0]:-}" = ":160000" ] || [ "${_m[1]:-}" = "160000" ]; then links="${links:+$links }$n"; fi
-  done < "$tmp/raw"
-  printf '%s' "$paths" > "$tmp/paths"
+  _floor_git "$root" diff -z --raw --no-renames --no-ext-diff --no-textconv --text "$base" "$head" > "$tmp/raw" 2>/dev/null || true
+  # One pass over the -z stream: records are ":<modes> ... <status>" then the path. A gitlink has
+  # mode 160000. A newline inside a path shows up as a line that is not a record start; it is
+  # folded into the path as "?".
+  : > "$tmp/paths"; : > "$tmp/links"
+  tr '\0' '\n' < "$tmp/raw" | awk -v pf="$tmp/paths" -v lf="$tmp/links" '
+    function flush() { if (have) { n++; print path > pf; if (link) print n > lf } have = 0 }
+    /^:[0-7][0-7][0-7][0-7][0-7][0-7] [0-7][0-7][0-7][0-7][0-7][0-7] / && state != 1 {
+      flush(); split($0, m, " "); link = (m[1] == ":160000" || m[2] == "160000"); state = 1; next }
+    state == 1 { path = $0; have = 1; state = 2; next }
+    state == 2 { path = path "?" $0; next }
+    END { flush() }'
+  local links; links="$(sed -n 1p "$tmp/links")"
   local best=0 bestkind="" k re hit num
   for k in $_HP_KINDS; do
     re="$(_hp_re "$k")"
@@ -512,7 +525,7 @@ _floor_scan() {
     if [ -n "$hit" ] && { [ "$best" = 0 ] || [ "$num" -lt "$best" ]; }; then best="$num"; bestkind="extra"; fi
   fi
   if [ -n "$links" ]; then
-    num="${links%% *}"
+    num="$links"
     if [ "$best" = 0 ] || [ "$num" -lt "$best" ]; then best="$num"; bestkind="submodule"; fi
   fi
   if [ "$best" != 0 ]; then
@@ -521,19 +534,21 @@ _floor_scan() {
   fi
   # Data loss: an ADDED line in a non-doc file. One diff, one awk pass emits "path<TAB>line"
   # records; a quoted header (`+++ "b/..."`, used for tabs, quotes, backslashes) is unquoted.
-  git -C "$root" -c core.quotePath=false diff --no-renames -U0 "$base" "$head" 2>/dev/null | awk '
-    /^\+\+\+ / { p = substr($0, 5); sub(/\t$/, "", p)
+  _floor_git "$root" diff --no-renames --no-ext-diff --no-textconv --text --no-color -U0 --src-prefix=a/ --dst-prefix=b/ "$base" "$head" 2>/dev/null | awk '
+    /^diff --git / { hdr = 1; cur = ""; skip = 1; next }
+    hdr && /^\+\+\+ / { p = substr($0, 5); sub(/\t$/, "", p)
       if (p == "/dev/null") { cur = ""; skip = 1; next }
       if (p ~ /^"/) { sub(/^"/, "", p); sub(/"$/, "", p); gsub(/\\"/, "\"", p); gsub(/\\t/, "\t", p); gsub(/\\\\/, "\\", p) }
       sub(/^b\//, "", p); cur = p
       skip = ('"$_DOC_AWK"'); next }
-    /^--- / { next }
-    /^\+/ { if (cur != "" && !skip) print cur "\t" substr($0, 2) }
+    hdr && /^--- / { next }
+    /^@@ / { hdr = 0; next }
+    !hdr && /^\+/ { if (cur != "" && !skip) print cur "\t" substr($0, 2) }
   ' > "$tmp/added"
   [ -s "$tmp/added" ] || return 0
   local T=$'\t' rec=""
   rec="$(grep -Ei -m1 -e "${T}.*(${_HL_common})" "$tmp/added" | head -1)" || rec=""
-  [ -n "$rec" ] || rec="$(grep -Ei -e "${T}.*delete[[:space:]]+from" "$tmp/added" | grep -Eiv -e 'where' | head -1)" || true
+  [ -n "$rec" ] || rec="$(grep -Ei -e "${T}.*delete[[:space:]]+from" "$tmp/added" | grep -Eiv -e "${T}.*(^|[^a-z0-9_])where([^a-z0-9_]|\$)" | head -1)" || true
   [ -n "$rec" ] || rec="$(grep -Ei -e "${T}.*delete[[:space:]]+from.*where[[:space:]]+(1[[:space:]]*=[[:space:]]*1|true)([^a-z0-9_]|\$)" "$tmp/added" | head -1)" || true
   [ -n "$rec" ] || rec="$(grep -Ei -m1 -e "^[^${T}]*\.sql${T}${_HL_truncate_sql}" "$tmp/added" | head -1)" || true
   [ -n "$rec" ] || rec="$(grep -Ei -m1 -e "${T}.*${_HL_truncate_code}" "$tmp/added" | head -1)" || true
