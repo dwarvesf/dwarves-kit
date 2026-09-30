@@ -109,9 +109,16 @@ cmd_land() {
     echo "wrap.sh land: ${wt} is the main checkout, not a worktree" >&2; return 1
   fi
 
-  if [ -n "$(git -C "$wt" status --porcelain 2>/dev/null)" ]; then
+  # One read serves both the clean check and the baseline _land_tidy needs: what the
+  # pre-merge ignore rules cover, written as the `??` lines it shows once a merge un-ignores
+  # it. That file is the operator's, not a write made since, and it is the only difference
+  # the pre-removal recheck tolerates on the merge path.
+  local st0 base_ignored
+  st0="$(git -C "$wt" status --porcelain --ignored=matching 2>/dev/null)"
+  if [ -n "$(printf '%s\n' "$st0" | grep -v '^!! ')" ]; then
     echo "wrap.sh land: ${wt} is dirty, so the branch is not what a PR would carry" >&2; return 1
   fi
+  base_ignored="$(printf '%s\n' "$st0" | sed -n 's/^!! /?? /p')"
   local branch; branch="$(git -C "$wt" branch --show-current 2>/dev/null)"
   [ -n "$branch" ] || { echo "wrap.sh land: ${wt} is on a detached HEAD, so there is no branch to land" >&2; return 1; }
   local def; def="$(_default_branch "$wt")" || { echo "wrap.sh land: no default branch resolved for ${wt}" >&2; return 1; }
@@ -122,8 +129,11 @@ cmd_land() {
   local ghs; ghs="$(_gh_state)"
   [ "$ghs" = "ok" ] || { echo "wrap.sh land: gh is ${ghs}" >&2; return 1; }
 
-  git -C "$wt" fetch -q origin "$def" 2>/dev/null
-  local ahead; ahead="$(git -C "$wt" rev-list --count "origin/${def}..${branch}" 2>/dev/null)"
+  # Full refs, as _merge_proof reads them: a tag or local branch named like origin/<def> or
+  # the branch resolves first as a short name, so the count and the proof could disagree.
+  local fetch_ok=0
+  git -C "$wt" fetch -q origin "$def" 2>/dev/null || fetch_ok=1
+  local ahead; ahead="$(git -C "$wt" rev-list --count "refs/remotes/origin/${def}..refs/heads/${branch}" 2>/dev/null)"
   case "$ahead" in ''|*[!0-9]*) ahead=0 ;; esac
   [ "$ahead" -gt 0 ] || {
     echo "wrap.sh land: ${branch} has no commits ahead of origin/${def}" >&2; return 1; }
@@ -134,13 +144,6 @@ cmd_land() {
   [ -n "$title" ] || title="$(_land_feature_title "$wt" "$def")"
 
   echo "land ${branch} -> ${def} (${wt})"
-
-  git -C "$wt" push origin "$branch"; rc=$?
-  if [ "$rc" -ne 0 ]; then
-    echo "     PUSH REFUSED: git push origin ${branch} exited ${rc}" >&2
-    return "$rc"
-  fi
-  echo "     pushed ${branch} ($(_short "$tip"))"
 
   # A full-lane run opens the PR before land runs (evidence, review), so land checks for
   # that PR first: `gh pr create` on an already-open branch just refuses. Fork entries
@@ -159,6 +162,66 @@ cmd_land() {
   case "$open_count" in ''|*[!0-9]*)
     echo "     PR REFUSED: open-PR lookup for ${branch} failed" >&2; return 2 ;;
   esac
+
+  # The branch's content may already be on the default branch by another route: a squash
+  # merge writes a new commit, so `ahead` stays above zero and the branch looks unlanded. The
+  # ancestor route cannot fire here (ahead > 0 above), so an ancestor-shaped proof is dropped
+  # rather than acted on. A failed fetch proves nothing either way, so it skips the check.
+  local proof=""
+  if [ "$fetch_ok" -eq 0 ]; then
+    proof="$(_merge_proof "$repo" "$def" "$ghs" "$branch")" || proof=""
+    case "$proof" in ancestor*) proof="" ;; esac
+  fi
+  if [ -n "$proof" ]; then
+    # The proof can cost a network round trip: the tree and tip it judged must still be the
+    # ones on disk.
+    if [ -n "$(git -C "$wt" status --porcelain 2>/dev/null)" ] \
+       || [ "$(git -C "$wt" rev-parse HEAD 2>/dev/null)" != "$tip" ]; then
+      echo "     LAND REFUSED: ${branch} changed while the merge proof was read" >&2; return 2
+    fi
+    # The proof is about the LOCAL tip. Origin's copy must be absent or the same commit; a
+    # failed read proves nothing, so it refuses (exit 2 of --exit-code is the only "absent").
+    local ls_out ls_rc origin_probe osha
+    ls_out="$(git -C "$wt" ls-remote --exit-code origin "refs/heads/${branch}" 2>&1)"; ls_rc=$?
+    case "$ls_rc" in
+      2) origin_probe=absent ;;
+      0) # ls-remote matches the pattern as a path suffix, so a tag named
+         # refs/tags/refs/heads/<branch> is listed too: only the exact ref counts, and two
+         # lines for it is an answer nothing can trust.
+         local exact nexact
+         exact="$(printf '%s\n' "$ls_out" | awk -F'\t' -v r="refs/heads/${branch}" '$2 == r')"
+         nexact="$(printf '%s\n' "$exact" | grep -c .)"
+         if [ "$nexact" -gt 1 ]; then
+           echo "     LAND REFUSED: origin/${branch} could not be confirmed: ${ls_out}" >&2; return 2
+         elif [ "$nexact" -eq 0 ]; then origin_probe=absent
+         else
+           osha="$(printf '%s' "$exact" | cut -f1)"
+           if [ "$osha" = "$tip" ]; then origin_probe=present
+           else
+             echo "     LAND REFUSED: origin/${branch} ($(_short "$osha")) differs from the proven $(_short "$tip")" >&2
+             return 2
+           fi
+         fi ;;
+      *) echo "     LAND REFUSED: origin/${branch} could not be confirmed: ${ls_out}" >&2; return 2 ;;
+    esac
+    echo "     already landed: ${proof}; nothing to push, no PR opened"
+    # A still-open PR (wrap merge's <branch>-squash fallback leaves the original open on
+    # purpose) is reported, never closed as a side effect of deleting its branch.
+    if [ "$open_count" -ge 1 ]; then
+      echo "     PR #$(printf '%s' "$open_json" | jq -r '.[0].number' 2>/dev/null) still open for ${branch}: left untouched" >&2
+      return 2
+    fi
+    # Nothing ran in the tree since the proof, so the only state the removal accepts is clean.
+    _land_tidy "$repo" "$wt" "$branch" "$def" "$url" "$tip" "$origin_probe" ""
+    return $?
+  fi
+
+  git -C "$wt" push origin "$branch"; rc=$?
+  if [ "$rc" -ne 0 ]; then
+    echo "     PUSH REFUSED: git push origin ${branch} exited ${rc}" >&2
+    return "$rc"
+  fi
+  echo "     pushed ${branch} ($(_short "$tip"))"
 
   local created n
   if [ "$open_count" -gt 1 ]; then
@@ -394,15 +457,40 @@ cmd_land() {
     fi
   fi
 
+  _land_tidy "$repo" "$wt" "$branch" "$def" "$url" "$tip" "" "$base_ignored"
+}
+
+# _land_tidy <repo> <wt> <branch> <def> <url> <tip> [<origin_probe> [<allowed>]] -- the tail both land
+# paths share once the branch is proven on the default branch: retire the origin branch,
+# fast-forward the main checkout, remove the worktree, delete the local branch. <origin_probe>
+# is `absent` or `present` when the caller already read origin's copy of the branch; without
+# one this reads it itself; only `ls-remote --exit-code` exit 2 counts as gone, any other
+# failure falls through to the delete attempt and its own FAILED line. <allowed> is the
+# caller's expected tree state: the `status --porcelain` lines the tree may show at removal.
+# Empty means clean. The caller takes it before the work that could write, never here, so a
+# write made during that work is a difference and not a baseline.
+_land_tidy() {
+  local repo="$1" wt="$2" branch="$3" def="$4" url="$5" tip="$6" probe="${7:-}" allowed="${8:-}"
   # Mirrors _apply_origin_branches: leased to the tip land itself pushed, skipped when an
   # open PR still bases off this branch (deleting it would close that PR), and never fails
   # land, since the merge is already verified.
   if [ "$(kit_config_get_root wrap.delete_merged_remote_branches true)" != "true" ]; then
     echo "     ${branch} left on origin (wrap.delete_merged_remote_branches=false)"
   else
-    local base_open; base_open="$(gh pr list --repo "$url" --state open --json baseRefName 2>/dev/null \
-      | jq -r --arg b "$branch" '[.[] | select(.baseRefName == $b)] | length' 2>/dev/null)"
+    if [ -z "$probe" ]; then
+      git -C "$wt" ls-remote --exit-code origin "refs/heads/${branch}" >/dev/null 2>&1
+      [ "$?" -eq 2 ] && probe=absent
+    fi
+    local base_open
+    if [ "$probe" = "absent" ]; then
+      echo "     ${branch} already gone from origin"
+      base_open=skip
+    else
+      base_open="$(gh pr list --repo "$url" --state open --json baseRefName 2>/dev/null \
+        | jq -r --arg b "$branch" '[.[] | select(.baseRefName == $b)] | length' 2>/dev/null)"
+    fi
     case "$base_open" in
+      skip) ;;
       0)
         if git -C "$wt" push -q origin "--force-with-lease=refs/heads/${branch}:${tip}" ":refs/heads/${branch}" 2>/dev/null; then
           echo "     deleted ${branch} on origin"
@@ -428,6 +516,23 @@ cmd_land() {
   else
     echo "     PULL BLOCKED: pull --ff-only refused in ${repo}, nothing was stashed or reset"
     blocked=1
+  fi
+
+  # The pull and the origin delete above can cost network round trips, and `-f -f` below
+  # discards a dirty tree and `-D` a newer commit, so both are re-read right before the
+  # removal. A mismatch skips only the removal; what already ran stands.
+  # Any status line outside <allowed> refuses and names its path; an unreadable status does too.
+  local st_now st_rc line extra="" detail=""
+  st_now="$(git -C "$wt" status --porcelain 2>/dev/null)"; st_rc=$?
+  [ "$st_rc" -eq 0 ] || detail=" (status unreadable)"
+  while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    case $'\n'"$allowed"$'\n' in *$'\n'"$line"$'\n'*) continue ;; esac
+    extra="${line#???}"; detail=" (${extra})"; break
+  done <<< "$st_now"
+  if [ -n "$detail" ] || [ "$(git -C "$wt" rev-parse HEAD 2>/dev/null)" != "$tip" ]; then
+    echo "     ${branch} changed since it was checked${detail}; worktree and branch left in place" >&2
+    return 2
   fi
 
   # `-f -f` overrides the lock the Agent tool puts on every worktree it creates; the merge

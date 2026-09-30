@@ -205,6 +205,10 @@ case "$sub" in
           git -C "$GH_STUB_LAND_REPO" push -q "${GH_STUB_LAND_REMOTE:-origin}" \
             "${GH_STUB_LAND_BRANCH:-feat/union}:refs/heads/${GH_STUB_LAND_DEF:-main}" 2>/dev/null
         fi
+        # GitHub's delete-branch-on-merge: the merged PR's head ref is gone from the remote.
+        if [ "${GH_STUB_MERGE_DELETES_BRANCH:-0}" = "1" ] && [ -n "${GH_STUB_LAND_REMOTE:-}" ]; then
+          git -C "$GH_STUB_LAND_REMOTE" update-ref -d "refs/heads/${GH_STUB_LAND_BRANCH:-feat/union}" 2>/dev/null
+        fi
         exit "$rc" ;;
     esac
     exit 1 ;;
