@@ -64,7 +64,7 @@ B. A trades away most of the saving. C doubles the surface the operator asked to
  negative control -> summary                     |  exhausted -> Result: PARTIAL
                                                  v
                                                 check-edit signal; recheck sampled on
-                                                HEAD sha, + every (self-attested) row
+                                                rid key, + every (self-attested) row
                                                  v
                                                 negative control -> summary
 ```
@@ -107,7 +107,8 @@ The prerequisite at `commands/execute.md:13` relaxes to: the spec has acceptance
 R2. **Named-reason split and continuation.**
 - A split happens only when the lead writes one reason from the closed list `unresolved-decision`, `territory-conflict`, `fork-risk` and records `bash lib/gate/gate-ledger.sh action "$RID" "split: <reason>: <slices>"`. Slices run one at a time; verification still runs once at the end.
 - `fork-risk` threshold: more than 6 tasks in `## Task Breakdown` splits up front into slices of at most 6 tasks. Task count, not Touches count, because every executable spec has a task list (R1 prerequisite) while `## Touches` is optional (`commands/spec.md:226`), and a task is the unit the builder commits and reports on. 6 is a starting value; the AC-12 A/B run and later tagged runs tune it.
-- Continuation: the builder commits after each task. When it nears its context limit it stops at a task boundary and returns `PROGRESS: done=<ids> remaining=<ids>`. The lead dispatches a continuation builder with the same brief narrowed to the remaining ids and records `split: fork-risk: continuation after <last done id>`.
+- Slice boundary: after each slice's builder returns, the lead runs the `kit:task-verifier` pass over that slice's tasks before the next slice starts.
+- Continuation: the builder commits after each task. When it nears its context limit it stops at a task boundary and returns `PROGRESS: done=<ids> remaining=<ids>`. The lead checks each done id against `git log <base>..HEAD` and moves uncommitted ids back to remaining. A builder that dies without `PROGRESS:` gets the same treatment, never `kit:fix-agent`. The continuation brief carries the commit log and the implementation-notes path and narrows Territory to the remaining tasks. Records `split: fork-risk: continuation <n> after <last done id>`. At most 2 continuations, then escalate.
 
 R3. **Drop the persona dispatch.** Remove step 2b-0 (`commands/execute.md:120-165`) and the "bite-sized steps" mandate (`:231-236`). Keep ONE deterministic line: `bash lib/classify/role-classify.sh agent-for <domain>` on the spec text; a non-empty result names the builder's `subagent_type` (keeps `kit:db-migration-worker` and `kit:data-etl-worker` wired, and `tests/test-kit-contract.sh:324-328` green). Remove `### Mode C` from `agents/meta-agent.md:35-76`, its inline-spec clause in the mode chooser (`:15-17`, which becomes "Two modes"), and its exemption note (`:105`); this change orphans it (CLAUDE.md:47).
 
@@ -116,14 +117,14 @@ R4. **Verify once at the end.** Remove the per-task `kit:task-verifier` dispatch
 2. ONE `kit:task-verifier` pass whose input is every task with its acceptance criteria, the whole-build diff from the base ref, and the builder's report. It returns one verdict per task plus the overall verdict.
 3. `kit:integration-verifier` when `## Task Breakdown` lists more than one task (today's condition, `:439`).
 4. `kit:acceptance-verifier` on every build. Its Bash allowlist (`agents/acceptance-verifier.md:4-12`) covers only `npm test`, `go test`, `pytest`, `bash tests/*`, `git diff`; it records `[NO EXECUTABLE CHECK]` for anything else (`:32`). The lead runs each such `## Verification` command itself and logs `Command:` / `Exit:` / `Output (excerpt):` with the literal tag `(lead-run)` on its Verdict line. A `(lead-run)` row cannot be rechecked: `kit:recheck-verifier` has the same narrow allowlist (`agents/recheck-verifier.md:4-12`), so the tag marks it as unaudited evidence rather than implying a re-audit. The read-only agents' allowlists are not widened.
-5. **Check-edit signal:** `git diff --name-only <base> HEAD` intersected with the files the `## Verification` commands and the acceptance criteria name. A non-empty result is recorded as `check-edited: <paths>` and surfaced in the summary for the human; it is a finding, not a block.
+5. **Check-edit signal:** `lib/gate/check-edit.sh <base> <named files>`: `git diff` against the base ref intersected with the files the `## Verification` commands and acceptance criteria name, plus any modified test file that exists at the base ref. It prints `check-edited: <paths>`, and `check-weakened: <file>: <line>` for an added skip, xfail, `.only`, `|| true`, or commented-out assert in a test or named file. Output is surfaced in the summary for the human; a finding, not a block.
 Any FAIL:fixable routes through the kept fix-agent loop (max 2) and the attempt-state check (`:347-360`). Kept verbatim: verifier tier parity (`:182-188`), negative control (`:416-424`), proof-class gate (`:425-438`), build record and outcome bracket (`:484-495`). After an end PASS the lead checks off every task with `lib/spec/spec.sh task-done`. The human checkpoint moves to one point: before the builder dispatch (show the brief, ask to go).
 
 R5. **Sampled recheck.** Replace both recheck sites (`:294-316`, `:444-457`) with one rule:
-- `N=$(kit_config_get_root execute.recheck_sample 5)`. `0` turns sampling off; `1` rechecks every PASS (today's behavior).
-- Key = HEAD at the FIRST end-verifier dispatch (step 2 of R4), read once with `git rev-parse HEAD` and reused. Fix-agent commits later in the run do not change it. The run is sampled when that SHA piped to `cksum` yields a first field divisible by N. Record `bash lib/gate/gate-ledger.sh action "$RID" "recheck: sampled key=<sha>"` or `"recheck: skipped key=<sha>"`, so anyone can recompute the decision.
+- `lib/gate/recheck-sample.sh decide <rid> [N]` resolves `kit_config_get_root execute.recheck_sample 5` when N is absent. `0` never samples; `1` rechecks every PASS. On `Lane: full` the lead passes N=1, so every end-verifier PASS is rechecked.
+- Key = the rid (the lead creates it before the builder dispatches, so no builder commit moves it), `printf '%s'` piped to `cksum`; sampled when the first field is divisible by N. The script prints `sampled` or `skipped` and records `recheck: sampled key=<rid>` or `recheck: skipped key=<rid>` in the ledger, so anyone can recompute the decision.
 - A sampled run rechecks every end-verifier PASS.
-- Self-attested producer: each criterion the builder reports as `confirmed-by: read <file:line>` (confirmed by reading, not running) that no end verifier executed gets a verification-log row whose Verdict carries the literal tag `(self-attested)`. Every `(self-attested)` row is rechecked on every run, sampled or not.
+- Self-attested producer: each criterion the builder reports as `confirmed-by: read <file:line>` (confirmed by reading, not running) that no end verifier executed gets a verification-log row whose Verdict carries the literal tag `(self-attested)`. Every `(self-attested)` row is rechecked on every run, sampled or not: the recheck re-reads the cited `file:line` and runs the nearest executable check for that criterion, or logs the row `unverifiable`.
 - A PASS not rechecked gets `Re-audit: SKIPPED (sampled out, 1 in N)`.
 - A recheck FAIL is recorded as `Re-audit: FAIL -- <finding>` and surfaced in the summary. It stays advisory + recorded, never a mid-flight hard block (`tests/test-right-arm-parity.sh:101-102` pins the phrase).
 - Root-only key: a project `.kit.toml` rides inside an untrusted PR and must not lower verification. Adds `[execute] recheck_sample = 5` to `kit.toml`, a row in `lib/config/module-registry.md` and its `## Root-only keys` table, the operator-toml heredoc override `[execute]` / `recheck_sample = 1` in `tests/test-config-registry.sh:305-315`, and the KEYS row `execute.recheck_sample|5|1` (`:334-341`).
@@ -192,7 +193,7 @@ R12. **Dispatch drop as a hypothesis, tested by an A/B run.** The estimate (abou
 
 - [ ] `/kit:execute` dispatches one builder with the R1 brief. (Today: one worker per task, `commands/execute.md:190-253`.)
 - [ ] No persona meta-agent dispatch; `agents/meta-agent.md` has no Mode C. (Today: `commands/execute.md:150-162`, `agents/meta-agent.md:35`.)
-- [ ] One task-verifier pass at the end checks every task's criteria; recheck is sampled on the HEAD sha plus every `(self-attested)` row. (Today: per task, recheck on every PASS.)
+- [ ] One task-verifier pass at the end checks every task's criteria; recheck is sampled on the rid plus every `(self-attested)` row. (Today: per task, recheck on every PASS.)
 - [ ] `wc -c < commands/execute.md` prints 30000 or less. (Today: 36055.)
 - [ ] ADR-0038 exists; ADR-0028 and ADR-0005 carry supersede notes.
 - [ ] (post-ship) A seeded spec with one unmeetable criterion ends FAIL naming it, with `Result: PARTIAL`.
@@ -298,6 +299,9 @@ A file path is not a `dir/**` prefix, so `lib/gate/dispatch-gate.sh` treats each
 - agents/db-migration-worker.md
 - lib/classify/role-classify.sh
 - lib/spec/spec-task-done.sh
+- lib/gate/recheck-sample.sh
+- lib/gate/check-edit.sh
+- lib/gate/README.md
 - lib/config/module-registry.md
 - kit.toml
 - tests/test-meta.sh
@@ -342,13 +346,17 @@ Overlap notes: `docs/WORKFLOW.md` sections are listed in R11 and are disjoint fr
 - DEC-1: whole-spec dispatch over trimming the per-task spine; trimming keeps most of the cost (Solution A).
 - DEC-2: keep the criterion-level check as ONE end `kit:task-verifier` pass; it has caught defects a green suite missed, and integration-verifier does not re-check per-task acceptance (`agents/integration-verifier.md:29`).
 - DEC-3: sample the recheck, do not delete it; it has caught two FAIL:fixable, and the wire-first rule applies.
-- DEC-4: sample key is HEAD at the first end-verifier dispatch, recorded in the ledger, so later fix commits cannot move it and the decision is recomputable.
+- DEC-4: sample key is the rid, recorded in the ledger by `recheck-sample.sh`, so no builder or fix commit can move it and the decision is recomputable. (Amended after review: the HEAD sha could be shifted by the builder's own commits.)
 - DEC-5: the sample key is root-only (`lib/config/module-registry.md` "## Root-only keys").
 - DEC-6: `fork-risk` threshold on task count (more than 6), since every executable spec has tasks and `## Touches` is optional.
 - DEC-7: keep `role-classify.sh agent-for` as a zero-dispatch builder lookup; remove only the meta-agent hop and Mode C.
 - DEC-8: a new ADR-0038 partially supersedes ADR-0028 and ADR-0005, per ADR-0023's supersede convention; no in-place rewrite.
 - DEC-9: do not widen the acceptance-verifier's allowlist; the lead runs checks outside it and tags them `(lead-run)`, which are not rechecked.
 - DEC-10: integration-verifier keeps today's multi-task condition.
+
+## Amendments
+
+- AMEND-001 (lead-approved, after review): verification at each fork-risk slice boundary; `Lane: full` rechecks every PASS; `recheck-sample.sh` keyed on the rid; continuation verified against `git log`, capped at 2; `check-edit.sh` also flags modified pre-existing tests and weakened asserts; the `LANE-SUGGEST` line shows at the go checkpoint; self-attested recheck re-reads and runs the nearest check. Touches gains the two scripts and `lib/gate/README.md`.
 
 ## Open questions
 

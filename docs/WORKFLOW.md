@@ -1265,7 +1265,8 @@ criterion named). A `recheck-verifier` re-audit samples the PASSes (ADR-0038).
         │
         ▼
    builder subagent (fresh context, whole-spec brief, one commit per task)
-        │   tasks > 6 -> split up front (fork-risk); near its limit -> PROGRESS: -> continuation
+        │   tasks > 6 -> slices, task-verifier at each boundary; near its limit -> PROGRESS:
+        │   -> lead checks git log -> continuation (max 2)
         ▼
    task-verifier: ONE pass over every task's criteria
    integration-verifier (multi-task)   acceptance-verifier (lead runs non-allowlisted commands)
@@ -1276,7 +1277,7 @@ criterion named). A `recheck-verifier` re-audit samples the PASSes (ADR-0038).
         │          re-verify; retry < 2    ESCALATE
         │          retries == 2 ──▶ Result: PARTIAL
         ▼
-   check-edit signal; sampled recheck (HEAD sha key, plus every self-attested row)
+   check-edit signal; sampled recheck (rid key; every PASS on the full lane; plus every self-attested row)
         ▼
    negative control ──▶ build complete
 ```

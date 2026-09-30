@@ -12,9 +12,9 @@ Two facts constrain the fix. The recheck catches rarely but not never: two recor
 
 ## Decision
 
-1. One builder gets the whole spec as a brief: goal, acceptance, routes, territory, and a standing grant to navigate. A split needs a named reason from a closed list. More than 6 tasks splits up front; a builder near its context limit returns `PROGRESS:` and a continuation builder takes the rest.
+1. One builder gets the whole spec as a brief: goal, acceptance, routes, territory, and a standing grant to navigate. A split needs a named reason from a closed list. More than 6 tasks splits up front, with a task-verifier pass at each slice boundary. A builder near its limit returns `PROGRESS:`; the lead checks the ids against the commit log and dispatches a continuation (at most 2, then escalate).
 2. The per-task `kit:task-verifier` dispatch becomes ONE pass over every task's criteria at the end of the build. Integration and acceptance verifiers follow. The criterion check survives; only its per-task placement goes.
-3. The recheck is sampled, not deleted. The run is sampled when `cksum` of HEAD at the first end-verifier dispatch is divisible by `execute.recheck_sample` (default 5, root-only). Every `(self-attested)` row is rechecked on every run. A `(lead-run)` row cannot be rechecked and is tagged as unaudited.
+3. The recheck is sampled, not deleted. `lib/gate/recheck-sample.sh decide` samples a run when `cksum` of the rid is divisible by `execute.recheck_sample` (default 5, root-only, 0 = never). The rid exists before the builder dispatches, so no builder commit moves the key. A `Lane: full` run rechecks every PASS. Every `(self-attested)` row is rechecked on every run. A `(lead-run)` row cannot be rechecked and is tagged as unaudited.
 4. The persona meta-agent dispatch and meta-agent Mode C are removed. `role-classify.sh agent-for` stays as a zero-dispatch builder lookup.
 5. A build that cannot meet a criterion after the fix loop ends `Result: PARTIAL`, names the unmet criterion with `file:line`, and routes the gap as a follow-on.
 
