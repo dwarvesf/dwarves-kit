@@ -8,10 +8,11 @@
 # and re-implements the one-line `runid`, because gate-ledger.sh and ledger.sh copy files on
 # load (kit_migrate_log_dir); tests/test-board-work.sh pins the copy against the real one.
 #
-# Usage: work.sh [--json] [--idle-min N] [--code-root D] [--megagoals-root D] [--now EPOCH]
+# Usage: work.sh [--json] [--idle-min N] [--since DAYS] [--code-root D] [--megagoals-root D] [--now EPOCH]
 #                [--backlog-file F] [--repo-root D]
 #   --json           the schema-1 contract (see docs/specs/SPEC-366-execution-view.md)
 #   --idle-min N     PARKED threshold in minutes (default 20)
+#   --since DAYS     ship-record window for unchecked_shipped (default 14)
 #   --code-root D    repo whose branches and worktrees a mega's sub-goals point at
 #   --megagoals-root D  overrides <repo-root>/_meta/megagoals
 #   --now EPOCH      fixes the clock (test seam)
@@ -40,13 +41,14 @@ canon() { local d; if d="$(cd "$1" 2>/dev/null && pwd -P)"; then printf '%s' "$d
 usage() { sed -n '2,/^$/p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
 bad() { echo "board work: $1" >&2; exit 64; }
 
-OPT_JSON=0; OPT_IDLE=20; OPT_CODE_ROOT=""; OPT_MEGA_ROOT=""; OPT_NOW=""; OPT_BACKLOG=""; OPT_REPO=""
+OPT_JSON=0; OPT_IDLE=20; OPT_CODE_ROOT=""; OPT_MEGA_ROOT=""; OPT_SINCE=14; OPT_NOW=""; OPT_BACKLOG=""; OPT_REPO=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --json) OPT_JSON=1; shift ;;
     --idle-min) [ $# -ge 2 ] || bad "--idle-min needs a value"; OPT_IDLE="$2"; shift 2 ;;
     --code-root) [ $# -ge 2 ] || bad "--code-root needs a value"; OPT_CODE_ROOT="$2"; shift 2 ;;
     --megagoals-root) [ $# -ge 2 ] || bad "--megagoals-root needs a value"; OPT_MEGA_ROOT="$2"; shift 2 ;;
+    --since) [ $# -ge 2 ] || bad "--since needs a value"; OPT_SINCE="$2"; shift 2 ;;
     --now) [ $# -ge 2 ] || bad "--now needs a value"; OPT_NOW="$2"; shift 2 ;;
     --backlog-file) [ $# -ge 2 ] || bad "--backlog-file needs a value"; OPT_BACKLOG="$2"; shift 2 ;;
     --repo-root) [ $# -ge 2 ] || bad "--repo-root needs a value"; OPT_REPO="$2"; shift 2 ;;
@@ -54,6 +56,7 @@ while [ $# -gt 0 ]; do
     *) bad "unknown flag '$1' (see --help)" ;;
   esac
 done
+case "$OPT_SINCE" in ''|*[!0-9]*) bad "--since must be a whole number of days" ;; esac
 case "$OPT_IDLE" in ''|*[!0-9]*) bad "--idle-min must be a whole number of minutes" ;; esac
 NOW="${OPT_NOW:-$(date +%s)}"
 case "$NOW" in ''|*[!0-9]*) bad "--now must be epoch seconds" ;; esac
@@ -185,10 +188,49 @@ src_ledger() {
         p = tolower($3); gsub(/\([^)]*\)/, "", p); gsub(/^[ \t]+|[ \t]+$/, "", p); gsub(/[ \t]+/, "-", p)
         if (p == "execute") p = "build"; if (p == "battery") p = "review"
         s = FILENAME; sub(/^.*\//, "", s); sub(/\.log$/, "", s)
-        print s "\t" p
+        print s "\t" p "\t" $1
       }' "${logs[@]}" > "$T/ledger.raw"
   fi
   jq -Rn 'reduce inputs as $l ({}; ($l | split("\t")) as $p | .[$p[0]] += [$p[1]])' < "$T/ledger.raw" > "$T/ledger.json"
+  # newest ship record time per rid (epoch seconds), for the unchecked_shipped window
+  jq -Rn 'reduce inputs as $l ({}; ($l | split("\t")) as $p
+      | if $p[1] == "ship" then .[$p[0]] = ([.[$p[0]], (($p[2] | fromdateiso8601?) // 0)] | max) else . end)' \
+    < "$T/ledger.raw" > "$T/ledger.ship.json"
+}
+
+# mtime <path>: file modification epoch. GNU stat first (BSD stat has no -c), then BSD stat -f.
+if stat -c %Y / >/dev/null 2>&1; then mtime() { stat -c %Y "$1" 2>/dev/null; }
+else mtime() { stat -f %m "$1" 2>/dev/null; }; fi
+
+# src_files: last file activity per non-main worktree, for agents no orca row covers (in-process
+# subagents, kit worktrees). Newest mtime among the `git status` paths, and HEAD's commit time when
+# the branch holds commits past the default branch. A clean worktree with no commits of its own
+# has no activity (null): unknown, never a guess. --no-optional-locks keeps git status read-only.
+src_files() {
+  local p e f t last dflt r own
+  : > "$T/files.raw"
+  { jq -r '.wts[1:][].path' "$T/main.json"
+    [ "$CODE_ROOT" != "$REPO" ] && jq -r '.wts[1:][].path' "$T/code.json"; true; } | while IFS= read -r p; do
+    [ -d "$p" ] || continue
+    last=""
+    while IFS= read -r -d '' e; do
+      f="${e:3}"; [ -e "$p/$f" ] || continue
+      t="$(mtime "$p/$f")"; [ -n "$t" ] && [ "$t" -gt "${last:-0}" ] && last="$t"
+    done < <("$GIT_BIN" --no-optional-locks -C "$p" status --porcelain -z -uall 2>/dev/null)
+    dflt=""
+    for r in refs/remotes/origin/HEAD refs/heads/main refs/heads/master; do
+      "$GIT_BIN" -C "$p" rev-parse --verify -q "$r" >/dev/null 2>&1 && { dflt="$r"; break; }
+    done
+    if [ -n "$dflt" ]; then
+      own="$("$GIT_BIN" -C "$p" rev-list --count HEAD --not "$dflt" 2>/dev/null)"
+      if [ "${own:-0}" -gt 0 ]; then
+        t="$("$GIT_BIN" -C "$p" log -1 --format=%ct HEAD 2>/dev/null)"
+        [ -n "$t" ] && [ "$t" -gt "${last:-0}" ] && last="$t"
+      fi
+    fi
+    printf '%s\t%s\n' "$p" "${last:-null}" >> "$T/files.raw"
+  done
+  jq -Rn '[inputs | split("\t") | {(.[0]): (if .[1] == "null" then null else (.[1] | tonumber) end)}] | add // {}' < "$T/files.raw" > "$T/files.json"
 }
 
 # src_claims: live goal-registry claims (slug, lane, started), via the registry's own read-only
@@ -208,44 +250,57 @@ src_mega
 src_orca
 src_ledger
 src_claims
+src_files
 
 # ---- join, flags, sort ---------------------------------------------------------------------
 
 JOIN='
-def unk: {state: "unknown", idle_s: null, reasons: []};
+def unk: {state: "unknown", idle_s: null, source: "none", reasons: []};
 def by_norm($g; $n): if $n == "" then [] else [$g.branches[] | select(.norm == $n)] end;
 def wt_of($g; $b): ([$g.wts[] | select(.branch == $b)] | .[0].path) // null;
 def rung_of($ph):
   if any($ph[]; . == "ship") then "shipped" elif any($ph[]; . == "review") then "reviewed"
   elif any($ph[]; . == "build") then "built" elif any($ph[]; . == "validate") then "validated" else "none" end;
 def under($p; $r): $p == $r or ($p | startswith($r + "/"));
+# No orca row: fall back to file activity (see src_files). null activity stays unknown.
+def files_agent($wt):
+  ($files[0][$wt] // null) as $last
+  | if $last == null then {state: "unknown", idle_s: null, source: "none", reasons: ["not-in-orca"]}
+    else ([0, $now - $last] | max) as $age
+      | if $age < $idle_min * 60 then {state: "working", idle_s: null, source: "files", reasons: []}
+        else {state: "idle", idle_s: $age, source: "files", reasons: []} end
+    end;
 def agent_of($o; $wt; $br):
-  if $o.orca != "ok" then {state: "unknown", idle_s: null, reasons: ["no-orca"]}
+  if $o.orca != "ok" then {state: "unknown", idle_s: null, source: "none", reasons: ["no-orca"]}
   else
     (([$o.rows[] | select(.cpath == $wt)] | .[0])
       // ([$o.rows[] | select($br != "" and .branch == $br and (under(.cpath; $repo) or under(.cpath; $croot)))]
           | if length == 1 then .[0] else null end)) as $r
-    | if $r == null then {state: "unknown", idle_s: null, reasons: ["not-in-orca"]}
-      elif $r.hostId != "local" then {state: "unknown", idle_s: null, reasons: ["no-orca"]}
-      elif ($r.status | IN("working", "inactive")) | not then {state: "unknown", idle_s: null, reasons: ["no-terminal"]}
-      elif $r.status == "working" or $r.working then {state: "working", idle_s: null, reasons: []}
+    | if $r == null then files_agent($wt)
+      elif $r.hostId != "local" then {state: "unknown", idle_s: null, source: "none", reasons: ["no-orca"]}
+      elif ($r.status | IN("working", "inactive")) | not then {state: "unknown", idle_s: null, source: "none", reasons: ["no-terminal"]}
+      elif $r.status == "working" or $r.working then {state: "working", idle_s: null, source: "orca", reasons: []}
       elif ($r.live // 0) > 0 and ($r.last | type) == "number"
-        then {state: "idle", idle_s: ([0, (($now * 1000 - $r.last) / 1000 | floor)] | max), reasons: []}
-      else {state: "unknown", idle_s: null, reasons: ["no-terminal"]}
+        then {state: "idle", idle_s: ([0, (($now * 1000 - $r.last) / 1000 | floor)] | max), source: "orca", reasons: []}
+      else {state: "unknown", idle_s: null, source: "none", reasons: ["no-terminal"]}
       end
   end;
+# PARKED from file activity carries the advisory reason files-idle; it is the one reason that
+# does not make the row INDETERMINATE (the state is derived, not missing).
 def rec($origin; $item; $branch; $wt; $ag; $reasons; $ph; $inprog; $dus):
-  ($reasons | unique) as $rs
+  ($inprog and $ag.state == "idle" and $ag.idle_s >= $idle_min * 60) as $parked
+  | ($reasons | unique) as $base
+  | ($base + (if $parked and $ag.source == "files" then ["files-idle"] else [] end) | unique) as $rs
   | {item: $item, origin: $origin, branch: $branch, worktree: $wt,
-     agent: {state: $ag.state, idle_s: $ag.idle_s}, lane: null, started: null,
+     agent: {state: $ag.state, idle_s: $ag.idle_s, source: $ag.source}, lane: null, started: null,
      rung: rung_of($ph),
-     flags: ([(if $inprog and $ag.state == "idle" and $ag.idle_s >= $idle_min * 60 then "PARKED" else empty end),
+     flags: ([(if $parked then "PARKED" else empty end),
               (if $dus and any($ph[]; . == "ship") then "DONE-UNSEEN" else empty end),
-              (if ($rs | length) > 0 then "INDETERMINATE" else empty end)] | sort),
+              (if ($base | length) > 0 then "INDETERMINATE" else empty end)] | sort),
      reasons: $rs};
 def joined($g; $b; $origin; $item; $inprog; $dus; $extra):
   wt_of($g; $b.name) as $wt
-  | (if $wt == null then {state: "unknown", idle_s: null, reasons: (if $inprog then ["no-worktree"] else [] end)}
+  | (if $wt == null then {state: "unknown", idle_s: null, source: "none", reasons: (if $inprog then ["no-worktree"] else [] end)}
      else agent_of($orca[0]; $wt; $b.name) end) as $ag
   | rec($origin; $item; $b.name; $wt; $ag; $ag.reasons + $extra; ($ledger[0][$b.norm] // []); $inprog; $dus);
 
@@ -263,7 +318,10 @@ def joined($g; $b; $origin; $item; $inprog; $dus; $extra):
        end) as $r
     | if $r.br == null then
         if $shipped and $r.why != "ambiguous" then
-          (if $d != null and (($ledger[0][$d.norm] // []) | any(. == "ship")) then {dropped: 1} else {unchecked: 1} end)
+          (if $d == null then {undated: 1}
+           elif (($ledger[0][$d.norm] // []) | any(. == "ship")) then
+             (if ($now - ($shiptime[0][$d.norm] // 0)) <= $since * 86400 then {unchecked: 1} else {dropped: 1} end)
+           else {undated: 1} end)
         else rec("board"; $c.item; null; null; unk; [$r.why] + $dup; []; ($shipped | not); false) end
       else joined($gmain[0]; $r.br; "board"; $c.item; ($shipped | not); true; $dup) end) as $bi
 | [ $mega[] | . as $m
@@ -291,15 +349,17 @@ def joined($g; $b; $origin; $item; $inprog; $dus; $extra):
     | rec("worktree"; .slug; null; null; unk; ["no-worktree"]; []; false; false) + {lane: .lane, started: .started}] as $orphans
 | {schema: 1, generated_at: $now, idle_min: $idle_min, repo_root: $repo, ledger_root: $lroot,
    orca: $orca[0].orca, truncated: $orca[0].truncated,
+   since_days: $since,
    unchecked_shipped: ($bi | map(select(.unchecked == 1)) | length),
+   undated_shipped: ($bi | map(select(.undated == 1)) | length),
    items: (($withclaims + $orphans) | sort_by([(.flags | length == 0), .item]))}
 '
 
 RESULT="$(jq -n \
   --slurpfile board "$T/board.json" --slurpfile drafts "$T/drafts.json" \
   --slurpfile gmain "$T/main.json" --slurpfile gcode "$T/code.json" \
-  --slurpfile orca "$T/orca.json" --slurpfile mega "$T/mega.json" --slurpfile ledger "$T/ledger.json" --slurpfile claims "$T/claims.json" \
-  --argjson now "$NOW" --argjson idle_min "$OPT_IDLE" --arg repo "$REPO" --arg croot "$CODE_ROOT" --arg lroot "$LEDGER_ROOT" \
+  --slurpfile orca "$T/orca.json" --slurpfile mega "$T/mega.json" --slurpfile ledger "$T/ledger.json" --slurpfile claims "$T/claims.json" --slurpfile files "$T/files.json" --slurpfile shiptime "$T/ledger.ship.json" \
+  --argjson now "$NOW" --argjson idle_min "$OPT_IDLE" --argjson since "$OPT_SINCE" --arg repo "$REPO" --arg croot "$CODE_ROOT" --arg lroot "$LEDGER_ROOT" \
   "$JOIN")" || { echo "board work: join failed" >&2; exit 1; }
 
 if [ "$OPT_JSON" = 1 ]; then printf '%s\n' "$RESULT"; exit 0; fi
@@ -311,7 +371,8 @@ printf '%s\n' "$RESULT" | jq -r '
   (.items[] | . as $i | [
     .item,
     ((.worktree // "-") | split("/") | last),
-    (if .agent.state == "idle" then "idle \(.agent.idle_s / 60 | floor)m" else .agent.state end),
+    ((if .agent.source == "files" then "(files)" else "" end) as $src
+     | if .agent.state == "idle" then "idle\($src) \(.agent.idle_s / 60 | floor)m" else "\(.agent.state)\($src)" end),
     .rung,
     (.lane // "-"),
     (if (.flags | length) == 0 then "-"
@@ -327,5 +388,7 @@ printf '%s\n' "$RESULT" | jq -r '
   "idle threshold: \(.idle_min) min (PARKED needs an in-progress row idle at least that long)",
   "orca: \(.orca) (scope: local worktrees, worktree ps limit 500\(if .truncated then ", TRUNCATED page: rows past it read as not-in-orca" else "" end))",
   "ledger: \(.ledger_root)",
-  "legend: shipped = the ledger holds a ship record (written before the PR merges); unknown = a key is missing, never idle or done; DONE-UNSEEN = shipped but branch or worktree still alive",
-  (if .unchecked_shipped > 0 then "\(.unchecked_shipped) shipped rows unchecked (no draft or no branch to join)" else empty end)'
+  "legend: shipped = the ledger holds a ship record (written before the PR merges); unknown = a key is missing, never idle or done; DONE-UNSEEN = shipped but branch or worktree still alive; (files) = state derived from file activity, no terminal (PARKED there carries files-idle)",
+  "window: ship records from the last \(.since_days) days (--since)",
+  (if .unchecked_shipped > 0 then "\(.unchecked_shipped) shipped rows unchecked (ship record in the window, nothing left to join)" else empty end),
+  (if .undated_shipped > 0 then "\(.undated_shipped) shipped rows undated (no draft or ship record to date them), not counted as unchecked" else empty end)'

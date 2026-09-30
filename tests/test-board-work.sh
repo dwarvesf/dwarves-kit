@@ -60,6 +60,10 @@ worktree() { g worktree add -q "$2" "$1" 2>/dev/null || g worktree add -q -b "$1
 claim() {  # <slug> <lane> <started>: a goal-registry claim, in the case's private registry dir
   printf 'slug=%s\nlane=%s\nstatus=running\nbranch=master\nstarted=%s\n' "$1" "$2" "$3" > "$W/goalreg/$1.goal"
 }
+epoch_fmt() { date -u -d "@$1" "$2" 2>/dev/null || date -u -r "$1" "$2"; }   # GNU date, else BSD date
+touchat() { TZ=UTC touch -t "$(epoch_fmt "$2" +%Y%m%d%H%M.%S)" "$1"; }      # touchat <path> <epoch>
+lline_at() { printf '%s | GATE | %s | %s | note\n' "$(epoch_fmt "$1" +%Y-%m-%dT%H:%M:%SZ)" "$2" "$3"; }
+commit_at() { printf 'chore: work\n' | GIT_AUTHOR_DATE="@$2 +0000" GIT_COMMITTER_DATE="@$2 +0000" git -C "$1" -c user.email=t@t -c user.name=t commit -q --allow-empty -F -; }
 ledger() { printf '%s\n' "$2" > "$LOGS/runs/$1.log"; }
 lline() { printf '2026-09-29T13:00:00Z | GATE | %s | %s | note\n' "$1" "$2"; }
 # page: rows on stdin as path|branch|status|live|lastOutputMs|agentState[|hostId]
@@ -324,11 +328,21 @@ truthy "footer: ledger root" "grep -q \"^ledger: $LOGS\$\" <<< \"\$tbl\" || grep
 truthy "footer: legend" "grep -q '^legend: shipped = the ledger holds a ship record' <<< \"\$tbl\""
 check "sorted: an unflagged row that sorts earlier by item still comes after the flagged rows" "$(sed -n '2,4p' <<< "$tbl" | cut -d' ' -f1 | tr '\n' ' ')" 'ID-100 ID-101 ID-050 '
 
-echo "== shipped_unchecked_footer =="
+echo "== shipped_unchecked_footer and the --since window =="
 new_case; row ID-400 shipped; draft ID-400 delta; row ID-401 shipped
 out="$(J)"; tbl="$(run_work)"
-check "shipped rows with no branch and no draft are not listed, both counted" "$(field "$out" '[(.items | length), .unchecked_shipped]')" '[0,2]'
-truthy "footer counts them" "grep -q '^2 shipped rows unchecked' <<< \"\$tbl\""
+check "shipped rows with no branch and nothing to date them are not listed, counted as undated" "$(field "$out" '[(.items | length), .unchecked_shipped, .undated_shipped, .since_days]')" '[0,0,2,14]'
+truthy "footer names the undated count and the window" "grep -q '^2 shipped rows undated' <<< \"\$tbl\" && grep -q '^window: ship records from the last 14 days' <<< \"\$tbl\""
+new_case; row ID-402 shipped; draft ID-402 eps; lline_at "$((NOW - 86400))" ship ran > "$LOGS/runs/eps.log"
+out="$(J)"; tbl="$(run_work)"
+check "ship record inside the window, nothing left to join: counted unchecked" "$(field "$out" '[.unchecked_shipped, .undated_shipped]')" '[1,0]'
+truthy "footer counts it" "grep -q '^1 shipped rows unchecked' <<< \"\$tbl\""
+out="$(J --since 0)"
+check "NEGATIVE: the same record outside a 0 day window is history, not counted" "$(field "$out" '[.unchecked_shipped, .undated_shipped]')" '[0,0]'
+lline_at "$((NOW - 40 * 86400))" ship ran > "$LOGS/runs/eps.log"
+check "NEGATIVE: a 40 day old ship record is outside the default window" "$(field "$(J)" '[.unchecked_shipped, .undated_shipped]')" '[0,0]'
+check "the window is a real knob: --since 60 brings the 40 day old record back" "$(field "$(J --since 60)" .unchecked_shipped)" 1
+run_work --since x > /dev/null 2>&1; check "non-numeric --since exits 64" "$?" 64
 
 echo "== read_only =="
 new_case
@@ -352,14 +366,14 @@ mkdir -p "$REPO/_meta/megagoals/m1/goals"; cp "$FIX/ROADMAP.md" "$REPO/_meta/meg
 printf '**Branch:** feat/x\n' > "$REPO/_meta/megagoals/m1/goals/01-first.md"; worktree feat/x "$W/wt-x"
 { printf '%s|feat/alpha|inactive|1|%s|-\n' "$W/wt-alpha" "$(ms_ago 2700)"; printf '%s|feat/x|working|1|null|working\n' "$W/wt-x"; } | page
 out="$(J)"
-A10='(.schema==1) and (.generated_at|type=="number") and (.orca|IN("ok","absent","error")) and (.truncated|type=="boolean") and (.items|type=="array") and all(.items[]; has("item") and has("branch") and has("worktree") and (.agent|has("state") and has("idle_s")) and (.agent.state|IN("working","idle","unknown")) and (.rung|IN("none","validated","built","reviewed","shipped")) and (.origin|IN("board","mega","worktree")) and (.flags|type=="array") and (.reasons|type=="array"))'
+A10='(.schema==1) and (.generated_at|type=="number") and (.orca|IN("ok","absent","error")) and (.truncated|type=="boolean") and (.items|type=="array") and all(.items[]; has("item") and has("branch") and has("worktree") and (.agent|has("state") and has("idle_s")) and (.agent.state|IN("working","idle","unknown")) and (.rung|IN("none","validated","built","reviewed","shipped")) and (.origin|IN("board","mega","worktree")) and (.agent|has("source")) and (.agent.source|IN("orca","files","none")) and (.flags|type=="array") and (.reasons|type=="array"))'
 jq -e "$A10" <<< "$out" > /dev/null; check "AC10 clause 1: schema, enums, types, keys present" "$?" 0
 jq -e 'all(.items[]; ((.agent.state=="idle") == (.agent.idle_s|type=="number")) and (.agent|has("idle_s")))' <<< "$out" > /dev/null; check "AC10 clause 2: idle_s is a number iff idle, key always present" "$?" 0
 jq -r '.items[] | select(.worktree != null) | .worktree' <<< "$out" | while IFS= read -r p; do [ "$p" = "$(cd "$p" && pwd -P)" ] && [ "${p#/}" != "$p" ] || echo BAD; done > "$W/canon.out"
 check "AC10 clause 3: worktree paths are absolute and equal their pwd -P form" "$(wc -c < "$W/canon.out" | tr -d ' ')" 0
-check "top-level keys are exactly the schema-1 set" "$(field "$out" 'keys | join(",")')" '"generated_at,idle_min,items,ledger_root,orca,repo_root,schema,truncated,unchecked_shipped"'
+check "top-level keys are exactly the schema-1 set" "$(field "$out" 'keys | join(",")')" '"generated_at,idle_min,items,ledger_root,orca,repo_root,schema,since_days,truncated,unchecked_shipped,undated_shipped"'
 check "item keys are exactly the schema-1 set, even when null" "$(field "$out" '[.items[] | keys | join(",")] | unique')" '["agent,branch,flags,item,lane,origin,reasons,rung,started,worktree"]'
-check "reasons is non-empty exactly when INDETERMINATE" "$(field "$out" 'all(.items[]; ((.reasons|length) > 0) == ((.flags|index("INDETERMINATE")) != null))')" true
+check "INDETERMINATE exactly when a reason other than the advisory files-idle is present" "$(field "$out" 'all(.items[]; ((.reasons - ["files-idle"] | length) > 0) == ((.flags|index("INDETERMINATE")) != null))')" true
 check "generated_at echoes --now, repo_root is canonical" "$(field "$out" '[.generated_at, .repo_root]')" "[$NOW,\"$(cd "$REPO" && pwd -P)\"]"
 check "the fixture holds an idle, a working, an unknown, a null-branch and a null-worktree row" "$(field "$out" '[([.items[].agent.state] | unique | join(",")), any(.items[]; .branch == null), any(.items[]; .worktree == null)]')" '["idle,unknown,working",true,true]'
 # through the stable entrypoints
@@ -397,6 +411,42 @@ if command -v timeout >/dev/null 2>&1 || command -v gtimeout >/dev/null 2>&1; th
 else
   echo "  SKIP: orca_timeout (no timeout or gtimeout on PATH)"
 fi
+
+echo "== file_activity (no orca row) =="
+fa_page() { mkdir -p "$W/elsewhere"; printf '%s|feat/other|inactive|1|%s|-\n' "$W/elsewhere" "$(ms_ago 60)" | page; }   # an orca page that lists none of our worktrees
+inprog; fa_page
+echo x > "$W/wt-alpha/new.txt"; touchat "$W/wt-alpha/new.txt" "$((NOW - 60))"
+it="$(itemof "$(J)" ID-100)"
+check "fresh file mtime: working, source files, no INDETERMINATE, no PARKED" "$(field "$it" '[.agent.state,.agent.source,.agent.idle_s,.flags,.reasons]')" '["working","files",null,[],[]]'
+touchat "$W/wt-alpha/new.txt" "$((NOW - 3600))"
+it="$(itemof "$(J)" ID-100)"
+check "old file mtime, item in progress: idle(files), PARKED with the advisory files-idle, not INDETERMINATE" "$(field "$it" '[.agent.state,.agent.source,.agent.idle_s,.flags,.reasons]')" '["idle","files",3600,["PARKED"],["files-idle"]]'
+tbl="$(run_work)"
+truthy "table shows the source in the agent cell" "grep -Eq '^ID-100 +wt-alpha +idle\\(files\\) 60m +none +- +PARKED\$' <<< \"\$tbl\""
+it="$(itemof "$(J --idle-min 90)" ID-100)"
+check "the same old file under a 90 min threshold is working: --idle-min is the boundary" "$(field "$it" '[.agent.state,.flags]')" '["working",[]]'
+it="$(itemof "$(J --idle-min 60)" ID-100)"
+check "age equal to the threshold is idle and PARKED (inclusive, like orca)" "$(field "$it" '[.agent.state,.flags]')" '["idle",["PARKED"]]'
+rm -f "$W/wt-alpha/new.txt"
+it="$(itemof "$(J)" ID-100)"
+check "NEGATIVE: a clean worktree with no commits of its own stays unknown, never idle" "$(field "$it" '[.agent.state,.agent.source,.agent.idle_s,.reasons,.flags]')" '["unknown","none",null,["not-in-orca"],["INDETERMINATE"]]'
+commit_at "$W/wt-alpha" "$((NOW - 7200))"
+it="$(itemof "$(J)" ID-100)"
+check "HEAD commit time counts once the branch has its own commit: old commit is idle(files) 7200s" "$(field "$it" '[.agent.state,.agent.idle_s,.flags]')" '["idle",7200,["PARKED"]]'
+commit_at "$W/wt-alpha" "$((NOW - 30))"
+it="$(itemof "$(J)" ID-100)"
+check "a fresh commit is working" "$(field "$it" '[.agent.state,.agent.source]')" '["working","files"]'
+alpha_page working 1 null working
+it="$(itemof "$(J)" ID-100)"
+check "an orca row wins over file activity: source orca" "$(field "$it" '[.agent.state,.agent.source]')" '["working","orca"]'
+inprog; fa_page; echo x > "$W/wt-alpha/n.txt"; touchat "$W/wt-alpha/n.txt" "$((NOW - 3600))"
+out="$(ORCA_BIN=/nonexistent J)"
+check "orca absent: no file guess, agent unknown (AC5 holds)" "$(field "$out" '[.orca, (.items | all(.agent.state == "unknown" and .agent.source == "none"))]')" '["absent",true]'
+new_case; worktree feat/solo "$W/solo"; fa_page; echo x > "$W/solo/n.txt"; touchat "$W/solo/n.txt" "$((NOW - 3600))"
+it="$(itemof "$(J)" solo)"
+check "a worktree item (no board row) with old files is PARKED from files too" "$(field "$it" '[.origin,.agent.state,.agent.source,.flags,.reasons]')" '["worktree","idle","files",["PARKED"],["files-idle"]]'
+snap2() { { find "$W/repo" "$W/solo" -type f 2>/dev/null | sort | xargs shasum; git -C "$REPO" status --porcelain; } | shasum; }
+b="$(snap2)"; J > /dev/null; check "file activity reading writes nothing (repo and worktree hashes equal)" "$(snap2)" "$b"
 
 echo "== flags and exit codes =="
 new_case

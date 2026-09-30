@@ -65,11 +65,12 @@ Design-bearing: new module, a five-source join, and a rule about missing data.
 | `origin` | `board`, `mega` or `worktree` | `worktree` = a live git worktree no item joined, or a goal-registry claim with no worktree |
 | `lane`, `started` | goal registry | claim's lane and start time, joined by slug to the worktree basename; null when unclaimed |
 | `branch`, `worktree` | git | worktree may be null |
-| `agent.state` | orca | `working`, `idle`, `unknown` |
-| `agent.idle_s` | orca `lastOutputAt` | present only when `state` is `idle` |
+| `agent.state` | orca, else file activity | `working`, `idle`, `unknown` |
+| `agent.source` | computed | `orca`, `files` or `none` (state `unknown` is always `none`) |
+| `agent.idle_s` | orca `lastOutputAt`, or file activity age | present only when `state` is `idle` |
 | `rung` | ledger | `shipped` > `reviewed` > `built` > `validated`, else `none` |
 | `flags` | computed | any of `PARKED`, `DONE-UNSEEN`, `INDETERMINATE` |
-| `reasons` | computed | one token per missing key, see below |
+| `reasons` | array of string | no | subset of enum `no-draft`, `no-branch`, `ambiguous`, `no-worktree`, `no-orca`, `not-in-orca`, `no-terminal`, `duplicate-id`, `files-idle`; holds `INDETERMINATE` exactly when it has a token other than `files-idle`. `files-idle` is advisory: PARKED came from file activity, not a terminal, so readers can weigh it |
 
 ### Join rules (in order, each step may fail into INDETERMINATE)
 
@@ -93,6 +94,15 @@ status not in {"working","inactive"}                          -> unknown   (chec
 status == "working" or any agents[].state == "working"        -> working
 status == "inactive", liveTerminalCount > 0, lastOutputAt set -> idle, idle_s = max(0, now - lastOutputAt/1000)
 anything else                                                 -> unknown   (never idle, never done)
+
+No orca row for the worktree (`not-in-orca`; in-process subagents and kit worktrees have no terminal)
+  activity = newest mtime among `git status --porcelain -uall` paths, and HEAD's commit time when the
+             branch has commits past the default branch (origin/HEAD, main, master)
+  no activity (clean, no commits of its own)                 -> unknown, source none, reason not-in-orca
+  age < idle_min * 60                                        -> working, source files
+  age >= idle_min * 60                                       -> idle, idle_s = age, source files
+Orca absent or failing (`no-orca`), a remote host, or a row with no live terminal never falls back:
+the view does not guess when orca itself is the missing key.
 ```
 
 ### Flag rules
@@ -103,7 +113,9 @@ anything else                                                 -> unknown   (neve
 | DONE-UNSEEN | ledger has `GATE | ship | ran` AND the item's local branch or worktree still exists (shipped but never tidied) |
 | INDETERMINATE | any join step above failed; the reason token prints beside it |
 
-A shipped item whose branch and worktree are both gone is finished and cleaned up, so it is not listed and the flag drops. When the ledger holds its ship record it is also not counted in `unchecked_shipped`; only shipped rows with no draft (or no ship record and no branch) count. The wrap record plays no part: `/kit:wrap` is session-scoped and most shipped runs never carry one. Board rows that are `queued`, `parked` or `dropped` are not listed. Shipped board rows with no draft or no branch cannot be checked; `unchecked_shipped` and the footer count them so the gap is visible, not hidden.
+A shipped item whose branch and worktree are both gone is finished and cleaned up, so it is not listed and the flag drops. It counts in `unchecked_shipped` only while its ship record is inside the `--since` window (default 14 days), then ages out. Rows with no draft or no ship record cannot be dated, so they go to `undated_shipped`, never to `unchecked_shipped`.
+
+PARKED also fires from file activity (`agent.source` `files`) and then carries the advisory reason `files-idle`. The wrap record plays no part: `/kit:wrap` is session-scoped and most shipped runs never carry one. Board rows that are `queued`, `parked` or `dropped` are not listed. Shipped board rows with no draft or no branch cannot be checked; `unchecked_shipped` and the footer count them so the gap is visible, not hidden.
 
 "shipped" here means the ledger's `Ship ran` record, written at `commands/ship.md:169` before the PR merges. The legend line says so.
 
@@ -122,8 +134,8 @@ See `## Failure modes`. The view never writes: no ledger append, no `kit_migrate
 Command: `board work [--json] [--idle-min N] [--code-root D] [--megagoals-root D] [--now EPOCH] [--backlog-file F] [--repo-root D]`; `bin/board` forwards it, `lib/board/board.sh` gets one dispatch case, the logic lives in `lib/board/work.sh`.
 
 - Inputs: `BACKLOG.md` (via `pb_rows`), `<repo-root>/_meta/megagoals/*/ROADMAP.md` and `goals/*.md`, `.claude/goals/{,done/}*.md` under the repo root and every `git worktree list` path, `git` (branches, worktrees), `orca worktree ps --json --limit 500`, `<ledger root>/runs/<rid>.log` (root from `kit_resolve_log_dir`).
-- Flags: `--idle-min N` sets the PARKED threshold in minutes (default 20). `--code-root D` names the repo whose branches and worktrees a mega's sub-goals point at (default: the repo root). `--megagoals-root D` overrides `<repo-root>/_meta/megagoals`. `--now <epoch-seconds>` is a test seam that fixes the clock. Env `ORCA_BIN` (default `orca`) and `GIT_BIN` (default `git`) swap the binaries; `ORCA_TIMEOUT_S` (default 10) bounds the `worktree ps` call when `timeout` or `gtimeout` exists, and a timeout is `orca=error`; same convention as `GH_BIN`/`GIT_BIN` in `lib/mega/mega.sh:131-132`. No `KIT_*` variable and no `kit.toml` key is added.
-- Table output: one header line, one row per item (`ITEM  WORKTREE  AGENT  RUNG  FLAGS`), then a footer with the threshold, the orca scope, the ledger root, and the legend.
+- Flags: `--since DAYS` (default 14) is the ship-record window for `unchecked_shipped`. `--idle-min N` sets the PARKED threshold in minutes (default 20). `--code-root D` names the repo whose branches and worktrees a mega's sub-goals point at (default: the repo root). `--megagoals-root D` overrides `<repo-root>/_meta/megagoals`. `--now <epoch-seconds>` is a test seam that fixes the clock. Env `ORCA_BIN` (default `orca`) and `GIT_BIN` (default `git`) swap the binaries; `ORCA_TIMEOUT_S` (default 10) bounds the `worktree ps` call when `timeout` or `gtimeout` exists, and a timeout is `orca=error`; same convention as `GH_BIN`/`GIT_BIN` in `lib/mega/mega.sh:131-132`. No `KIT_*` variable and no `kit.toml` key is added.
+- Table output: one header line, one row per item (`ITEM  WORKTREE  AGENT  RUNG  LANE  FLAGS`; the AGENT cell reads `idle(files) 42m` or `working(files)` when the state came from file activity), then a footer with the threshold, the orca scope, the ledger root, and the legend.
 - Exit codes: 0 always after a render (orca absent included). 64 on a bad flag. 1 only when the backlog file is unreadable.
 - Invariants: no writes anywhere; a missing key never renders as `idle` or as a finished rung; output sorted (flagged rows first, then by `item`) so the same inputs give the same bytes.
 
@@ -138,7 +150,9 @@ Command: `board work [--json] [--idle-min N] [--code-root D] [--megagoals-root D
 | `ledger_root` | string | no | absolute path of the runs root actually read (`kit_resolve_log_dir`) |
 | `orca` | string | no | enum: `ok`, `absent`, `error` |
 | `truncated` | boolean | no | orca page was truncated |
-| `unchecked_shipped` | integer | no | shipped board rows with no draft or branch |
+| `unchecked_shipped` | integer | no | shipped board rows with a draft and a ship record dated inside the window, with no branch left to join |
+| `undated_shipped` | integer | no | shipped board rows with no draft or no ship record: nothing dates them, so they are not counted as unchecked |
+| `since_days` | integer | no | the window in effect (`--since`) |
 | `items` | array | no | may be empty |
 
 Each element of `items`, all keys always present (a missing value is `null`, never an omitted key):
@@ -154,6 +168,7 @@ Each element of `items`, all keys always present (a missing value is `null`, nev
 | `agent` | object | no | `{"state": ..., "idle_s": ...}` |
 | `agent.state` | string | no | enum: `working`, `idle`, `unknown` |
 | `agent.idle_s` | integer | yes | key always present; integer when `state` is `idle` (floored at 0), else null |
+| `agent.source` | string | no | enum: `orca`, `files`, `none` |
 | `rung` | string | no | enum: `none`, `validated`, `built`, `reviewed`, `shipped` |
 | `flags` | array of string | no | subset of enum `PARKED`, `DONE-UNSEEN`, `INDETERMINATE`; sorted; may be empty |
 | `reasons` | array of string | no | subset of enum `no-draft`, `no-branch`, `ambiguous`, `no-worktree`, `no-orca`, `not-in-orca`, `no-terminal`, `duplicate-id`; non-empty exactly when `flags` holds `INDETERMINATE` |

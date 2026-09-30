@@ -27,6 +27,14 @@ Only decisions, deviations, tradeoffs and open questions that differ from the sp
 - A worktree item counts as in progress, so it can be PARKED; it has no DONE-UNSEEN.
 - A mega branch that is also a board branch lists twice, once per origin. Documented, not deduplicated.
 
+## Final round: file-activity state and the ship window (lead-approved)
+
+- `agent.source` (`orca`, `files`, `none`) is additive, still schema 1. With no orca row a worktree's state comes from file activity: newest mtime of the `git status -uall` paths plus HEAD's commit time when the branch has its own commits past the default branch. No activity stays `unknown`, and orca absent, remote-host and no-terminal cases never fall back (orca itself is the missing key, so the view does not guess).
+- PARKED from files carries the advisory reason `files-idle`. That breaks the old rule "reasons non-empty exactly when INDETERMINATE": now INDETERMINATE means a reason other than `files-idle`. Test and contract table updated.
+- `stat` is portable by probing GNU `stat -c %Y` first, then BSD `stat -f %m`. The suite's GNU-tools pass covers the GNU branch, the plain pass the BSD one. Tests set mtimes with `touch -t` from a GNU or BSD `date` conversion.
+- `--since` decision, needs the lead's eye: a board row has no date, so only rows linked to a ledger ship record can sit inside a window. A shipped row with a draft and a ship record dated inside the window, with no branch left, counts in `unchecked_shipped` and ages out after N days. Rows with no draft or no ship record cannot be dated and move to a new `undated_shipped` key (plus `since_days`), so the live 206 no longer reads as 206 unchecked. If the lead wanted them counted, undated rows can go back into `unchecked_shipped`.
+- Reading file activity is read-only: `git --no-optional-locks status`, checked by a hash test.
+
 ## Open questions
 
 None.
