@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# kit-verb: board work | one table of who is on what, how far along and who is stuck, joined at call time from board, git, Orca and the run ledger; read-only
 # work.sh -- `board work`: one table of who is on what, how far along, and who is stuck.
 #
 # Joins five sources at call time and stores nothing: the board rows (parse-board.sh), the
@@ -10,7 +11,7 @@
 #
 # Usage: work.sh [--json] [--idle-min N] [--since DAYS] [--code-root D] [--megagoals-root D] [--now EPOCH]
 #                [--backlog-file F] [--repo-root D]
-#   --json           the schema-1 contract (see docs/specs/SPEC-366-execution-view.md)
+#   --json           the schema-1 contract (see the execution-view spec under docs/specs/)
 #   --idle-min N     PARKED threshold in minutes (default 20)
 #   --since DAYS     ship-record window for unchecked_shipped (default 14)
 #   --code-root D    repo whose branches and worktrees a mega's sub-goals point at

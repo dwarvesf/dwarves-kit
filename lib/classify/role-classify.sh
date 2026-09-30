@@ -2,14 +2,9 @@
 # role-classify.sh -- deterministic task description -> SPECIALIST DOMAIN.
 #
 # A cheap FAST-PATH hint for high-frequency specialist domains. It is NOT the role
-# universe: the role space is open-ended, and the meta-agent (Mode C) is the
-# authority that can name ANY role (technical-doc-writer, typescript-dev,
-# ui-designer, solidity-auditor, ...). This classifier only exists to skip the LLM
-# hop for the common domains it DOES know.
-#
-# So a `generic` result does NOT mean "use a generic worker". It means "no fast-path
-# match, escalate to meta-agent Mode C for open-ended role inference"; only Mode C's
-# own NO_SPECIALIST verdict falls through to a plain worker.
+# universe: the role space is open-ended. /kit:execute uses `agent-for` on the result
+# to pick the builder's subagent_type; a `generic` result means no static worker
+# matches and the general builder runs.
 #
 # Pure keyword heuristic: no LLM, no network, deterministic (same desc -> same
 # domain). First clear match wins; order is specificity, not priority. Peer of
@@ -60,11 +55,11 @@ _role_match() {
   echo "generic	(no domain keyword matched)"; return 0
 }
 
-# agent-for <domain>: the predefined WORKER agent for a domain (the execute.md 2b-0 reuse target,
+# agent-for <domain>: the predefined WORKER agent for a domain (the execute.md builder lookup,
 # an IMPLEMENTER), or EMPTY. Reviewers are deliberately NOT here , a read-only reviewer cannot
-# implement a task, so it dispatches via /kit:review-team's domain lenses, not the 2b-0 worker slot
-#. `generic` returns empty so 2b-0 falls through to Mode-C synthesis (the
-# dynamic long tail); a generic->agent map would collapse that escalation.
+# implement a task, so it dispatches via /kit:review-team's domain lenses, not the builder slot.
+# `generic` returns empty so execute runs the general builder; a generic->agent map
+# would collapse that fallback.
 agent_for() {
   case "${1:-}" in
     db-migration) echo "db-migration-worker" ;;

@@ -1,4 +1,5 @@
 #!/bin/bash
+# money-gate.sh -- PreToolUse hook that asks for confirmation on edits touching money or auth terms in MONEY_GATE_REPOS; inert by default.
 # money-gate.sh -- PreToolUse(Edit|Write|MultiEdit) hook, function-named port of
 # ops-toolkit's cc-money-gate (kit-foldin). Asks for confirmation when an edit inside
 # a consumer-named financial repo (MONEY_GATE_REPOS) touches money/auth terms in the

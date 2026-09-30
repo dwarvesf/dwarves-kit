@@ -59,8 +59,17 @@ Pick a lane before you start. Smaller work skips ceremony.
 | bug    | a defect, regression, or failing test (not a new feature) | /debug (root cause before any fix), then /review |
 | backfill | brownfield: review an existing codebase and write the operating-layer docs (AGENTS.md / CLAUDE.md / specs) | review the code, write the docs. Doc-output only; no app-behavior change, no app-code edits. /spec optional. |
 
-When in doubt between two lanes, take the heavier one. Anything in the full-lane
-trigger list uses the full lane unless you explicitly narrow the scope and say why.
+**Depth.** Every spec carries a `Depth:` line under `Lane:`, with a named reason, and planning goes only as deep as the reason earns: `standard` (nothing extra; zero research agents), `research (repo: <unknown>)` (the 4 brownfield agents), `research (outside: <unknown>)` (`/kit:get-api-docs` plus one web pass), `blind-spot (failure: <mode>)` (the full test-plan review team). A reason that only says the work matters earns nothing deeper. `lib/spec/spec-depth.sh` reads and checks the line (`/kit:spec-validate` Reviewer 4 runs it); a spec with no line counts as `standard`, and a new spec without one is a critical. The fresh-context validator runs at every depth, and every test plan gets at least the two-lens light review.
+
+Default to `normal`. The classifier prints a one-line suggestion when the task text matches a
+full-lane trigger and records it in the run ledger when given the run id. The agent may propose
+the full lane in one sentence and continues on the lighter lane until the operator assigns it.
+The normal lane requires a fresh-context validation and a review; those catch the triggers no
+diff can show (authz, API contract, external provider, weakened validation). The ship-gate
+applies the full lane's gates to any diff that touches a hard path (migrations, auth, secrets,
+CI workflows, kit config, data loss), whatever the spec's `Lane:` says. With
+`[gate] lane_gates = false` on the base branch none of this runs; a PR cannot switch it off for
+its own push. Moving an assigned lane lighter stays a Pause-if decision.
 
 `/kit:assign` backs this tree with an **advisory floor check** (`lib/classify/lane-classify.sh
 check`): once a lane is chosen, it re-classifies the task text and warns + logs (to
@@ -141,9 +150,9 @@ migration (same dry-run + rollback shape); agent-org config rides spec-feature l
 | Prototype (opt-in) | /kit:prototype | validated decision folded into the brief/spec + `prototype/<name>` branch pointer on the owning row | advisory (HITL; SPEC-206) |
 | UI design (opt-in, downstream) | /kit:ui-design | brief -> generate (frontend-design) -> critique -> revise | advisory (downstream only) |
 | Spec     | /kit:spec | spec exists, Status: DRAFT | spec-drift-guard hook |
-| Validate | /kit:spec-validate (a fresh-context validator /kit:spec and /kit:execute dispatch) | Status: VALIDATED | ship gate (full lane); /kit:execute preflight (normal, full, backfill) |
-| Test plan (default for normal/full) | /kit:test-plan | `## Test plan` written into the spec, in the type's dialect (test-design-standard §5b) | advisory default (normal/full); tiny exempt |
-| Build    | /kit:execute or /kit:next | tasks checked, verifier PASS | verification pipeline (worker, verifier, fix; max 2) |
+| Validate | /kit:spec-validate (a fresh-context validator /kit:spec and /kit:execute dispatch) | Status: VALIDATED | ship gate (normal and full lanes); /kit:execute preflight (normal, full, backfill) |
+| Test plan (default for normal/full) | /kit:test-plan, then /kit:test-plan-review-team --light (the full team at blind-spot) | `## Test plan` written into the spec, in the type's dialect (test-design-standard §5b), plus its `## Test plan critique` | advisory default (normal/full); tiny exempt |
+| Build    | /kit:execute or /kit:next | tasks checked, end verifiers PASS | verification pipeline (one builder, one end verification pass, fix; max 2) |
 | Review   | /kit:review or /kit:review-team | review verdict recorded; full lane loops per SPEC-231 | advisory (default-run + bounded loop on full: SPEC-231, docs/patterns/review-fix-loop.md) |
 | Docs     | /kit:docs | README/CHANGELOG match code | advisory |
 | Ship     | /kit:ship | tagged + PR | ship gate (blocks on DO NOT SHIP), push-to-main blocker |
@@ -162,11 +171,11 @@ thing that enforces the exit:
   Spec  ------>  spec exists, Status: DRAFT  ------>  spec-drift-guard   [HARD]
     |
     v
-  Validate --->  Status: VALIDATED  --------------->  execute preflight; ship gate (full)
+  Validate --->  Status: VALIDATED  --------------->  execute preflight; ship gate (normal, full)
     |
     v
-  Build  ----->  tasks checked, verifier PASS  ---->  verification pipeline [HARD]
-    |                                                 worker -> verifier -> fix
+  Build  ----->  tasks checked, end verifiers PASS  verification pipeline [HARD]
+    |                                                 builder -> end verifiers -> fix
     v
   Review  ---->  verdict recorded  ---------------->  advisory
     |
@@ -217,7 +226,7 @@ checks: a static review when it is produced (left/vertex) and a dynamic test lat
     build /kit:design  · review /kit:devs-team
      Spec ........................................... Integration test   integration-verifier
      build /kit:spec (+research-*) · review /kit:spec-validate
-      Code ......................................... Unit / task test    task-verifier
+      Code ......................................... Unit / task test    task-verifier (one end pass)
       build /kit:execute · /kit:next                                    (fix-agent repairs)
       review /kit:review · /kit:review-team (deep security: security-reviewer)
        ╲                                            ╱
@@ -239,7 +248,7 @@ review when produced (left/vertex), a dynamic test when executed (right).
 | Solution design | `/kit:design` | `/kit:devs-team` | System test (`system-verifier`, dispatched by `/kit:verify`) |
 | Spec | `/kit:spec` (+ research-* agents) | `/kit:spec-validate` | Integration test (`integration-verifier`) |
 | Code | `/kit:execute`, `/kit:next` (+ `fix-agent`) | `/kit:review`, `/kit:review-team` (+ `code-reviewer`; deep: `security-reviewer`) | Unit / task test (`task-verifier`) |
-| (any right-arm PASS) | -- | -- | Fresh-context re-audit (`recheck-verifier`, re-executes the recorded command) |
+| (sampled right-arm PASS, plus every self-attested row) | -- | -- | Fresh-context re-audit (`recheck-verifier`, re-executes the recorded command) |
 | (whole assembled work) | -- | `advisor` (kit-default extra lens, P5) | -- |
 | UI design (downstream) | `/kit:ui-design` | `/kit:visual-team` | (visual; no dynamic test) |
 | Docs | (written during build) | `/kit:docs` (+ `doc-verifier`) | (doc-verifier confirms vs code) |
@@ -319,7 +328,9 @@ serve >= 2 lifecycle phases) and "no phantom features":
   `system-verifier` by `/kit:verify`, `brief-reviewer` by `/kit:think` (TIER-4
   close-gate wiring).
 - **`recheck-verifier` (SHIPPED, SG-04)** -- a fresh-context re-audit that re-executes
-  any right-arm PASS's recorded command, catching a stale or fabricated PASS.
+  a right-arm PASS's recorded command, catching a stale or fabricated PASS. `/kit:execute`
+  samples it (`execute.recheck_sample`, one run in N) and always rechecks self-attested rows
+  (ADR-0038).
 
 Prior gaps closed 2026-05-23: the `security-reviewer` orphan (wired into
 `/kit:review-team`) and `/kit:verify`. With SG-04, every left AND right
@@ -336,12 +347,12 @@ that validates it):
 | Think / Brief | `brief-reviewer` (static, dispatched by `/kit:think`) |
 | Design | `/kit:devs-team` (static) · `system-verifier` (dynamic, dispatched by `/kit:verify`) |
 | Spec | `/kit:spec-validate` (static) · `integration-verifier` (dynamic) |
-| Test plan | `/kit:test-plan-review-team` (static) |
+| Test plan | `/kit:test-plan-review-team` (static): the light pass at every depth, the full team at blind-spot |
 | Build / Code | `/kit:review` · `/kit:review-team` (+ `code-reviewer`, deep `security-reviewer`) · `task-verifier` (dynamic) |
 | Review | `advisor` critique (kit-default EXTRA lens, on top of the specialists) |
 | Docs | `/kit:docs` (+ `doc-verifier`) |
 | Acceptance / Ship | `acceptance-verifier` (dynamic, dispatched by `/kit:verify`) + `/kit:ship`'s own gate (an inline test-run + spec-lane check, not an `acceptance-verifier` dispatch) |
-| (any right-arm PASS) | `recheck-verifier` fresh-context re-audit |
+| (sampled right-arm PASS) | `recheck-verifier` fresh-context re-audit |
 | Final boundary | `advisor` over-suggest (P6) before the human review |
 
 **Enforcement is at ship, never mid-flight (ADR-0024 + PHILOSOPHY).** Each phase's
@@ -386,13 +397,13 @@ default-run on the full lane and opt-in below it (the scaling gate). Foundation:
 
 The starter domain roster has ONE router with two live dispatch paths, matched to agent
 type: WORKER specialists (write-capable implementers, e.g. `db-migration-worker`,
-`data-etl-worker`) dispatch via `commands/execute.md` step 2b-0's reuse branch, the
-deterministic `role-classify.sh agent-for <domain>` lookup makes the reuse HIT. REVIEWER
+`data-etl-worker`) dispatch as `/kit:execute`'s builder: the deterministic
+`role-classify.sh agent-for <domain>` lookup names the `subagent_type`. REVIEWER
 specialists (read-only judges, e.g. `performance-reviewer`, `api-reviewer`,
 `frontend-reviewer`, `infra-reviewer`) dispatch via `/kit:review-team`'s opt-in domain lens.
-A read-only reviewer is NOT a 2b-0 target (it cannot implement a task). `generic` and any
-unknown domain return empty from `agent-for` and escalate to SPEC-089 Mode-C synthesis (the
-dynamic long tail). 2b-0's reuse-vs-synthesize branch is the single router; no second one.
+A read-only reviewer is never the builder (it cannot implement a task). `generic` and any
+unknown domain return empty from `agent-for`, and `/kit:execute` runs its general builder.
+The lookup is the single router; no second one.
 
 ## The V-model descent contract
 
@@ -408,7 +419,9 @@ shows violations correlate with escaped defects.
 
 ## Lane×phase depth matrix
 
-How much ceremony each lane applies at each phase of the V-model. Rows are the
+How much ceremony each lane applies at each phase of the V-model. This table is the human
+view of the `[lane.<name>]` data in `kit.toml`, which `lib/gate/lane-data.sh` reads;
+`tests/test-lanes-data.sh workflow-view` pins the two equal, so edit `kit.toml` first. Rows are the
 five risk-tier lanes (definitions and task-type mapping in the lane table above
 under "Size the work first"). Columns are the phases from the cycle table and
 the V-model lens above. Every cell is one of:
@@ -424,11 +437,11 @@ the V-model lens above. Every cell is one of:
 | Design critique (default full lane, opt-in normal) | skip | skip | measure-twice | skip | skip |
 | UI design (opt-in) | skip | skip | run-lite | skip | skip |
 | Spec | skip | measure-twice | measure-twice | skip | run-lite |
-| Validate | skip | run-lite | measure-twice | skip | run-lite |
+| Validate | skip | measure-twice | measure-twice | skip | run-lite |
 | Design record (design-bearing, ADR-0031 §1) | skip | run-lite | measure-twice | skip | skip |
 | Test plan (default) | skip | run-lite | measure-twice | run-lite | skip |
 | Build | run-lite | measure-twice | measure-twice | measure-twice | skip |
-| Review | run-lite | run-lite | measure-twice | measure-twice | run-lite |
+| Review | run-lite | measure-twice | measure-twice | measure-twice | run-lite |
 | Docs | skip | run-lite | measure-twice | skip | measure-twice |
 | Ship | skip | measure-twice | measure-twice | run-lite | skip |
 | Reflect | skip | skip | measure-twice | skip | skip |
@@ -448,13 +461,17 @@ the V-model lens above. Every cell is one of:
 - **Review / bug = measure-twice**: a bug fix is a high-stakes narrow change.
   The full lane uses review-team; the bug lane uses `/kit:review`, but the
   scrutiny level for a regression fix should be full, not advisory.
-- **Validate / normal and backfill = run-lite**, not measure-twice: `/kit:spec` and the
-  `/kit:execute` preflight dispatch a fresh-context validator on every normal, full, and
-  backfill spec, and execute refuses to build a spec whose validation did not pass, so the
-  cell only decides the ship gate. A measure-twice cell would refuse every normal-lane push in
-  every adopted repo on the next kit update and mark every past shipped normal run incomplete,
-  while the measured self-validation failures were all full-lane, which already requires it
-  (SPEC-320 Decision Log). The flip stays one cell once the normal-lane `caught=` rate earns it.
+- **Validate / normal = measure-twice**, backfill stays run-lite: the normal lane no
+  longer escalates on keywords, so the diff floor at push covers the triggers a path can
+  show (migration, auth, secrets, CI, kit config, data loss) and a fresh-context reader of
+  the spec covers the rest (authz, API contract, external provider, weakened validation).
+  The coverage table is in `docs/specs/SPEC-368-lanes-as-data.md` under "What the diff floor
+  catches, and what it does not". This reverses the earlier run-lite call, whose cost (a
+  refused push in adopted repos with in-flight normal runs) the spec's migration notes
+  handle: record the gate, or `gate-ledger.sh override <rid> validate "<reason>"`.
+- **Review / normal = measure-twice**: same reason as Validate. The review lens set catches
+  what neither the classifier nor the diff floor can see; the security lens has caught a
+  leak three other stages missed.
 - **backfill / Spec = run-lite**: `/kit:spec` is optional for backfill (the lane
   table says "Doc-output only; no app-behavior change"). run-lite reflects
   "optional but encouraged for non-trivial backfills."
@@ -497,9 +514,9 @@ significance record and the SPEC-140 pitch offer.
 ## Gate ledger and ship enforcement
 
 Every phase gate a run executes is recorded to a per-run ledger, so the run is
-auditable after the fact. The lane×phase matrix above is the single
-source for which gates a lane *requires* (its `measure-twice` cells);
-`lib/gate/gate-ledger.sh` parses it, with no second copy of the mapping.
+auditable after the fact. The `[lane.<name>]` blocks in `kit.toml` are the single
+source for which gates a lane *requires*; `lib/gate/gate-ledger.sh` reads them through
+`lib/gate/lane-data.sh`, and the matrix above is their human view (its `measure-twice` cells).
 
 - **Record each gate as you run it:** `bash lib/gate/gate-ledger.sh record <rid> <Phase> ran "<note>"`, where `<Phase>` is a matrix row name (Spec, Validate, Build, Review, Docs, Ship, ...). Record a deliberate skip as `... <Phase> skipped "<why>"` so the skip is visible, not silent. Log actions with `action <rid> "<what>"`.
 - **The `advisor` emit is fail-open by explicit design; every other emit site is bare.** `commands/review-team.md` Step 2b and `commands/mega.md`'s convergence-gate step both wrap their `advisor ran "mode=P5|P6 ..."` call in `|| echo "WARNING: ..." >&2` (NC2: a ledger-write failure must never fail the surrounding review/dispatch). The ~15 other call sites (`spec.md`, `design.md`, `review.md`, `docs.md`, `explain.md`, `grill.md`, `retro.md`, `test-plan.md`, `verify.md`, `think.md`, `ui-design.md`, `ship.md`, ...) stay bare -- not an oversight, but because `record()` behaves identically at every site (it prints an error and returns nonzero on a write failure, it never crashes the calling agent's turn), and none of those OTHER phases has advisor's specific NC2 contract requiring the failure be silently absorbed with a visible operator-facing warning. A future emit site that wants the same fail-open guarantee copies advisor's `||` idiom explicitly; it is not the ledger's default behavior.
@@ -732,7 +749,7 @@ The amend is governed by four invariants:
 
 ## Completion contract
 The done-definition is canonical in `AGENTS.md` zone 3 ("Done means"); do not
-restate it here. In the kit, the task-verifier is what proves "done" (self-reported
+restate it here. In the kit, the end verification pass (task-verifier over every task, then integration and acceptance) is what proves "done" (self-reported
 "done" is not proof), and the anti-rationalization hook is the backstop for
 premature completion. The clauses below add kit-specific completeness checks on top
 of that done-definition.
@@ -1172,8 +1189,9 @@ ID + BACKLOG row (approve-before-allocate, sanitized) before routing as usual.
                                                             └─ risk-list match .... full
 ```
 
-The `full` trigger list (see the lane table) is a hard tripwire: anything on it uses
-`full` unless you explicitly narrow the scope and say why.
+The `full` trigger list (see the lane table) is a suggestion, not a switch: a match prints one
+`LANE-SUGGEST` line and the operator assigns `full`. The hard tripwire is the diff floor at push,
+which gives a hard-path diff the full lane's gates whatever the spec's `Lane:` says.
 
 ### The three bounded loops (engines)
 
@@ -1234,40 +1252,35 @@ recorded + fix verified. `debug.confirm_fix` ships `false`, so the loop's own th
                                                                              DONE ◀──────┘
 ```
 
-**Execute verification pipeline** (the build engine). `/kit:execute` dispatches one
-worker per task, verifies each in a fresh context, retries fixable failures, and checks
-cross-task wiring at the end. Self-reported "done" is never proof; the verifier is.
-Enforcer: the verification pipeline is itself a hard stop. Stop: every task PASS **and**
-the integration-verifier PASS (multi-task specs). Branches: `PASS` (advance),
-`FAIL:fixable` (retry via fix-agent, **max 2**), `FAIL:escalate` or retries exhausted
-(stop -> human).
+**Execute verification pipeline** (the build engine). `/kit:execute` dispatches ONE
+builder for the whole spec, then verifies once at the end: a single `task-verifier` pass
+over every task's criteria, the integration-verifier (multi-task specs), and the
+acceptance-verifier. Self-reported "done" is never proof; the verifiers are.
+Enforcer: the verification pipeline is itself a hard stop. Stop: the end verifiers PASS.
+Branches: `PASS` (advance), `FAIL:fixable` (retry via fix-agent, **max 2**),
+`FAIL:escalate` (stop -> human), retries exhausted (`Result: PARTIAL`, the unmet
+criterion named). A `recheck-verifier` re-audit samples the PASSes (ADR-0038).
 
 ```text
-   /kit:execute  (record pre-build base ref)
+   /kit:execute  (record pre-build base ref; one human go before the builder)
         │
         ▼
-   ┌── for each task in phase ──────────────────────────────────────────┐
-   │     worker subagent (fresh context) ──▶ task-verifier (read-only)   │
-   │                          ┌───────────────────┼───────────────────┐  │
-   │                       PASS              FAIL:fixable        FAIL:escalate
-   │                          │                   │                    │  │
-   │                          │                   ▼                    │  │
-   │                          │            fix-agent (scoped)          │  │
-   │                          │            re-verify; retry < 2 ─┐     │  │
-   │                          │            retries == 2 ─────────┼────▶│  │
-   │                          ▼                                  │     ▼  │
-   │                   mark task done ◀────────────────────────────  ESCALATE
-   └──────────┬─────────────────────────────────────────────────────────┘
-              │ all tasks PASS
-              ▼
-   phase checkpoint (human: continue / review / stop)
-              ▼
-   integration-verifier (read-only, diffs whole build from base ref)
-        ┌─────┼───────────────┐
-      PASS  FAIL:fixable   FAIL:escalate
-        │     │ (fix-agent)     ▼
-        ▼     ▼            ESCALATE
-      build complete ◀── re-check
+   builder subagent (fresh context, whole-spec brief, one commit per task)
+        │   tasks > 6 -> slices, task-verifier at each boundary; near its limit -> PROGRESS:
+        │   -> lead checks git log -> continuation (max 2)
+        ▼
+   task-verifier: ONE pass over every task's criteria
+   integration-verifier (multi-task)   acceptance-verifier (lead runs non-allowlisted commands)
+        ┌─────────────────┼─────────────────┐
+      PASS          FAIL:fixable        FAIL:escalate
+        │                 │                   │
+        │          fix-agent (scoped)         ▼
+        │          re-verify; retry < 2    ESCALATE
+        │          retries == 2 ──▶ Result: PARTIAL
+        ▼
+   check-edit signal; sampled recheck (rid key; every PASS on the full lane; plus every self-attested row)
+        ▼
+   negative control ──▶ build complete
 ```
 
 **Mid-flight amend micro-loop** (a side excursion off the execute pipeline, not a
@@ -1304,7 +1317,7 @@ later reader and an earlier writer never split across two specs.
 | 3 | `/kit:visual-team` | a visual/UI design exists (downstream) | `## Visual critique` in the active spec (else brief, else inline) | verdict recorded |
 | 4 | `/kit:ui-design` | downstream UI work, after `/design` | `## UI design` in the spec; generates via `frontend-design`; critiques via `/visual-team` | SOLID/RECONSIDER verdict or max-2 revise |
 | 5 | `/kit:test-plan` | before `/execute`; derive a coverage matrix | `## Test plan` in the spec (consumed by `/execute`) | matrix written |
-| 6 | `/kit:test-plan-review-team` | after `/test-plan`; 6 test-design lenses + bounded revise loop (max 3 rounds; findings must strictly fall, by severity not just raw count, or halt honestly) | `## Test plan critique` in the spec (replace-not-stack) | SOLID / REVISE / RECONSIDER verdict recorded; loop exits early at 0 findings |
+| 6 | `/kit:test-plan-review-team` | after `/test-plan`; `--light` (Coverage + Oracle lenses, one pass, no revise rounds) unless the spec's `Depth:` names a blind-spot, then 6 test-design lenses + bounded revise loop (max 3 rounds; findings must strictly fall, by severity not just raw count, or halt honestly) | `## Test plan critique` in the spec (replace-not-stack) | SOLID / REVISE / RECONSIDER verdict recorded; loop exits early at 0 findings |
 | 7 | `/kit:test-write` | after a SOLID `## Test plan critique`; materialize the matrix into test code via `kit:test-writer` (refuses missing/stale/non-SOLID verdicts) | real test files in the repo's own convention | every row covered or reported skipped; written tests execute (assertions passing is `fix-agent`'s job) |
 | 8 | `/kit:review-team` | PR-grade review; 3 lenses (security/architecture/test-coverage) in parallel; confidence anchors + fingerprint dedup + per-finding validators (SPEC-081/082) | `## Review` in the active spec (else inline) | SHIP / FIX THEN SHIP / DO NOT SHIP, unsuppressed findings drive it |
 | 9 | `/kit:absorb` | maintainer-only external-absorption audit | dated report under `docs/absorption/` | proposal-only report (human merge gate) |
@@ -1315,7 +1328,7 @@ later reader and an earlier writer never split across two specs.
 
 The edges that fire when the happy path does not hold.
 
-1. **Retry (fixable failure).** A `task-verifier` / `integration-verifier` `FAIL:fixable`
+1. **Retry (fixable failure).** An end-verifier (`task-verifier`, `integration-verifier`, `acceptance-verifier`) `FAIL:fixable`
    dispatches a scoped fix-agent, then re-verifies. Cap: 2 retries. 1-2 cycles catch
    import/assertion/off-by-one bugs; 3+ means a design problem.
 2. **Escalate (unfixable or exhausted).** `FAIL:escalate`, or retries hitting the cap,
@@ -1347,7 +1360,7 @@ mistake is irreversible:
 | safety-gate | destructive Bash (`rm -rf`, `DROP TABLE`, `git reset --hard`, `kubectl delete`; build-artifact allowlist exempt) | PreToolUse hook, exit 2 |
 | push-to-main blocker | a push to `main`/`master`/protected | PreToolUse hook, exit 2 |
 | anti-rationalization | premature "done" claim; phantom-impl stub in the diff; guess-fix while `## Root cause` empty | Stop hook |
-| verification pipeline | a task whose acceptance criteria are unmet or whose tests did not actually run | `/execute` gate (worker -> verifier -> fix -> escalate) |
+| verification pipeline | a task whose acceptance criteria are unmet or whose tests did not actually run | `/execute` gate (builder -> end verifiers -> fix -> escalate) |
 
 ### Quick reference: trigger -> flow -> stop -> enforcer
 

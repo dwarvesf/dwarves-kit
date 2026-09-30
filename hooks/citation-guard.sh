@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# citation-guard.sh -- Stop hook that flags file:line citations in the final message that do not resolve; strict mode blocks the stop.
 # citation-guard.sh -- Stop hook. Every file:line citation in the final assistant
 # message must resolve: the file exists and has at least that many lines. Fenced
 # code, inline code, and URLs are stripped first so examples do not

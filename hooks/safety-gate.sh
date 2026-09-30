@@ -1,4 +1,5 @@
 #!/bin/bash
+# safety-gate.sh -- PreToolUse hook that blocks destructive deletes, direct pushes to main or master, and force-pushes.
 # safety-gate.sh, PreToolUse hook, matcher: Bash
 # Blocks destructive deletes and direct pushes to main/master.
 # Source: Trail of Bits claude-code-config (adapted for dwarves-kit)
@@ -30,7 +31,6 @@ set -f  # no globbing while we word-split segments
 INPUT=$(cat)
 CMD=$(echo "$INPUT" | jq -r '.tool_input.command // empty')
 [ -z "$CMD" ] && exit 0
-
 # Debug logging
 if [ "${DWARVES_KIT_DEBUG:-0}" = "1" ]; then
   echo "[dwarves-kit:safety] checking command (${#CMD} chars)" >&2

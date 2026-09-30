@@ -1,4 +1,5 @@
 #!/bin/bash
+# pre-compact-backup.sh -- PreCompact hook that saves a structured snapshot of the session before auto-compaction.
 # pre-compact-backup.sh — PreCompact hook
 # Saves a structured snapshot of the current session before auto-compaction.
 # Source: claudefa.st context-recovery-hook pattern (simplified for dwarves-kit)

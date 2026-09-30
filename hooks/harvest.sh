@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# harvest.sh -- PreCompact and SessionEnd hook that stages session learnings and a LAB_LOG draft; always exits 0.
 # harvest.sh -- PreCompact / SessionEnd hook, function-named port of ops-toolkit's
 # cc-harvest (kit-foldin design note, was cc-harvest). Thin bash shim; the actual
 # logic is the co-located harvest.py (stdlib-only, no deps to vendor). Modes (no
@@ -6,14 +7,14 @@
 # settings.json/hooks.json pass the mode as an argv flag. Always exits 0: a harvest
 # never blocks a compaction/session-end/stop.
 #
-# Sweep gate (DEC-3): the AUTO modes -- no-arg, --lab-log, --stop-trigger -- exit 0
+# Sweep gate: the AUTO modes -- no-arg, --lab-log, --stop-trigger -- exit 0
 # without spawning harvest.py when either holds:
 #   * HARVEST_SWEEP_CHILD=1 -- the process tree is the sweep's own extractor, which
 #     must never re-fire the hook (recursion guard);
 #   * the sweep is ACTIVE on this host (its <state>/sweep/installed marker exists AND
 #     harvest.enable resolves true) AND harvest.hook_when_sweep_on is false -- so a
 #     session is never staged or paid for twice while the sweep reads it.
-# [harvest] keys resolve through kit_config_get_root only (DEC-9): a project
+# [harvest] keys resolve through kit_config_get_root only: a project
 # .kit.toml rides inside an untrusted PR and can neither switch the sweep on nor
 # keep the hook running. Explicit verbs (--cleanup, --sweep, --flush-list, ...) are
 # never gated: they are operator actions, not hook fires.

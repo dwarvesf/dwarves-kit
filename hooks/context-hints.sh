@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# context-hints.sh -- UserPromptSubmit hook that injects temporal and keyword skill hints into the prompt context.
 # context-hints.sh, UserPromptSubmit hook, function-named port of ops-toolkit's
 # cc-context-hooks (kit-foldin design note, was cc-context-hooks). Thin bash shim so
 # settings.json/hooks.json can invoke it uniformly with the rest of hooks/*.sh; the

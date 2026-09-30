@@ -95,8 +95,8 @@ grep -qi 'planted' "$RECHECK"; assert "AC4: recheck-verifier prompt names the pl
 
 # --- AC5: commands/execute.md wires the recheck-verifier re-audit over a right-arm PASS ---
 [ -f "$EXEC" ]; assert "AC5: commands/execute.md exists" $?
-RECHECK_HITS=$(grep -c 'recheck-verifier' "$EXEC" 2>/dev/null || echo 0)
-[ "$RECHECK_HITS" -ge 2 ]; assert "AC5: execute.md dispatches recheck-verifier at 2+ sites ($RECHECK_HITS hits: after task-verifier + after integration-verifier)" $?
+grep -q 'recheck-verifier' "$EXEC" && grep -qF 'execute.recheck_sample' "$EXEC" && grep -qF 'recheck: sampled' "$EXEC" && grep -qF '(self-attested)' "$EXEC" && grep -qF 'Re-audit: SKIPPED' "$EXEC"
+assert "AC5: execute.md dispatches recheck-verifier on the sampled rule (execute.recheck_sample, recheck: sampled, (self-attested), Re-audit: SKIPPED)" $?
 grep -qiE 're-execute|re-run|fresh' "$EXEC"; assert "AC5: execute.md's wiring uses re-execute/re-run/fresh vocabulary, not a read-back framing" $?
 grep -qi 'advisory' "$EXEC" && grep -qi 'never a mid-flight hard block' "$EXEC"
 assert "AC5: execute.md states the re-audit is advisory + recorded, never a mid-flight hard block (ADR-0024)" $?

@@ -56,7 +56,7 @@ From the item's Title + Target artifact, craft the goal as a **six-section opera
 5. **Done-when** <- `AGENTS.md` zone 3 ("Done means") + the active spec's `## After state` (the observable bullets). The goal is done only when its AC are met, the check actually ran, review is recorded + a report written, and the final response says what changed and what was not attempted. Quote the spec's `## After state` observable bullets here verbatim as the done-picture. If the spec lacks an `## After state` section, fall back to `AGENTS.md` "Done means" alone.
 6. **Pause-if** <- `AGENTS.md` zone 4 ("Pause if"): stop and ask a human (with a named blocker note, no churn) on architecture direction, source-of-truth hierarchy, validation removal, risk-classification change, or privacy/security. This is where the old termination-on-blocker lives now.
 
-If the repo is spec-driven and the lane is normal/full, the directive is **spec-first**: its opening move is the lane's first command (`/kit:spec`), not building code. This matches the `goal-craft` skill's spec-driven-repo rule.
+If the repo is spec-driven and `gate-ledger.sh plan <lane>` lists `spec`, the directive is **spec-first**: its opening move is the lane's first command (`/kit:spec`), not building code. This matches the `goal-craft` skill's spec-driven-repo rule.
 
 ### Step 4: Write the draft
 
@@ -109,7 +109,7 @@ created: <YYYY-MM-DD>
   bash lib/classify/lane-classify.sh classify "<the item title / crystallized objective>"
   ```
 
-  It applies the WORKFLOW.md "Size the work first" triggers deterministically (precedence: backfill, tiny, full, bug, normal; "when in doubt, heavier"). Use its output as the suggested lane and write it into the BACKLOG row. This SUGGESTS, it does not dictate: if you disagree, override and say why (a heavier lane is always safe). The same classifier seeds the lane for each spec `/kit:dispatch` fans out.
+  It applies the WORKFLOW.md "Size the work first" triggers deterministically (precedence: backfill, tiny, bug, default lane `normal`). Words never pick `full`: a trigger match prints one `LANE-SUGGEST: full (<flags>)` line, and once the branch exists pass `--rid <rid>` so the suggestion is recorded in the run ledger. Use its output as the suggested lane and write it into the BACKLOG row. This SUGGESTS, it does not dictate: propose the full lane in one sentence and continue on the lighter lane until the operator assigns it. The ship-gate applies the full lane's gates to any diff that touches a hard path either way. The same classifier seeds the lane for each spec `/kit:dispatch` fans out.
 
 - **Precedent lookup.** Before sizing, run
   `bash bin/precedent find "<the item title>"`: it covers both the written record (specs,
@@ -124,7 +124,7 @@ created: <YYYY-MM-DD>
   bash lib/classify/lane-classify.sh check "<the chosen lane>" "<the item title / crystallized objective>"
   ```
 
-  If it prints `LANE-DOWNGRADE`, the task text matches a heavier lane than you chose: size up, or state the explicit narrowing reason (per WORKFLOW "anything on the full-trigger list uses full unless you narrow the scope and say why"). It is advisory (exit 0, logged to `completeness.log`, reviewed at `/kit:ship`), never a block ("Detect, don't dictate"). Silence means the choice is at or above the floor. This is the guard for the classify-then-route gap: the classifier suggested, but nothing caught an under-sized choice until now.
+  If it prints `LANE-DOWNGRADE`, the task text matches a heavier lane than you chose: size up, or state the explicit narrowing reason (per WORKFLOW "default to normal; the diff floor covers the hard paths"). It is advisory (exit 0, logged to `completeness.log`, reviewed at `/kit:ship`), never a block ("Detect, don't dictate"). Silence means the choice is at or above the floor. This is the guard for the classify-then-route gap: the classifier suggested, but nothing caught an under-sized choice until now.
 
 - **Record the routing facts.** One line, right after the lane is committed, so lane telemetry has the chosen-vs-classified pair to aggregate:
 
@@ -174,10 +174,10 @@ the registry then sees not just who is running but what each goal has attempted.
 
 ### Step 6: Update status + hand off
 
-- Set the item's `Status` in `_meta/BACKLOG.md`: `queued -> speccing` (normal/full, a spec comes next) or `-> executing` (tiny).
+- Set the item's `Status` in `_meta/BACKLOG.md`: `queued -> speccing` (a spec comes next when `gate-ledger.sh plan <lane>` lists `spec`) or `-> executing` (it does not).
 - Hand off to the lane's first command:
-  - tiny: "edit, verify, done" (no spec).
-  - normal/full: `/kit:spec` (or `/kit:think` first if the item is still fuzzy).
+  - a lane whose plan has no `spec` (tiny): "edit, verify, done" (no spec).
+  - a lane whose plan lists `spec` (normal, full): `/kit:spec` (or `/kit:think` first if the item is still fuzzy).
 - State what you wrote and what to run next. Do NOT run it.
 
 ## Edge cases
@@ -186,7 +186,7 @@ the registry then sees not just who is running but what each goal has attempted.
 - **tiny lane**: craft the draft but route to "edit, verify, done"; no `/spec`.
 - **Re-run for the same id**: re-surface the existing draft; do not duplicate or double-advance status (idempotent).
 - **No activator installed**: the draft still works as a plain file; only one-step activation is lost.
-- **Queued item with no spec, normal/full lane**: hand off to `/kit:spec` first.
+- **Queued item with no spec, on a lane whose plan lists `spec`**: hand off to `/kit:spec` first.
 - **Freeform intent too vague**: `/kit:think` loops until the objective is named; no ID is allocated until the approval gate passes (no half-baked rows).
 - **Duplicate freeform intent**: dedup by slug after crystallize; surface the existing row/draft instead of allocating a second ID, and ask on a near-match rather than silently merge.
 - **Concurrent freeform allocation**: both sessions re-read max in the write step; the post-write equal-ID collision check fails loud and the operator re-runs.

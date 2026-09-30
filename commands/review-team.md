@@ -41,7 +41,7 @@ blocker). A `WARNING` is advisory input to the test-coverage lens, never a stop.
 
 Dispatch these 3 subagents via the Task tool. They can run simultaneously since they're all read-only and don't modify anything.
 
-**Domain lens (opt-in).** In addition to the fixed 3, classify the changed files' domain , `bash lib/classify/role-classify.sh classify "<changed paths + diff summary>"` , and if a domain REVIEWER exists for that domain (`kit:performance-reviewer`, `kit:api-reviewer`, `kit:frontend-reviewer`, `kit:infra-reviewer`), dispatch it too, in the same parallel batch, through its domain lens. This is the live dispatch path for the read-only domain reviewers (workers dispatch via `/kit:execute` 2b-0 instead). Skip when no domain reviewer matches; the fixed 3 lenses are unchanged.
+**Domain lens (opt-in).** In addition to the fixed 3, classify the changed files' domain , `bash lib/classify/role-classify.sh classify "<changed paths + diff summary>"` , and if a domain REVIEWER exists for that domain (`kit:performance-reviewer`, `kit:api-reviewer`, `kit:frontend-reviewer`, `kit:infra-reviewer`), dispatch it too, in the same parallel batch, through its domain lens. This is the live dispatch path for the read-only domain reviewers (workers dispatch via the `/kit:execute` builder lookup instead). Skip when no domain reviewer matches; the fixed 3 lenses are unchanged.
 
 **Model tiering (EveryInc Stage 4 pattern):** dispatch the
 security reviewer with an EXPLICIT model override matching the session model ,

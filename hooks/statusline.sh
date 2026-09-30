@@ -1,4 +1,5 @@
 #!/bin/bash
+# statusline.sh -- StatusLine script that renders model, git branch, context usage percent, session cost and thinking mode.
 # statusline.sh — StatusLine script
 # Shows model, git branch, context usage %, session cost, thinking mode in terminal.
 # Source: oh-my-claudecode HUD + Trail of Bits statusline.sh

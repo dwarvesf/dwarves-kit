@@ -2538,7 +2538,7 @@ assert_eq "AC15: a hit records ENHANCE <home>" "ENHANCE tools/retry/bin/retry.sh
 assert_eq "AC18: a code-homed candidate is not prose-only" "False" "$(t11 mixed_prose)"
 assert_eq "T11: the REPORTED bullet carries home, hit, lane, and the phase-1 closure" "- REPORTED mixed-home-pat ENHANCE tools/retry/bin/retry.sh: retries flaky jobs (lane=backfill, reported: phase 1 reports only)" "$(t11 mixed_line)"
 assert_eq "AC23: precedent runs argv-style with the slug words as one arg" "find|--surface|inventory|--json|mixed home pat" "$(t11 argv_prec)"
-assert_eq "AC23: lane-classify gets '<slug words>: <first evidence line>' as one arg" "classify|mixed home pat: did it by hand" "$(t11 argv_lane)"
+assert_eq "AC23: lane-classify risk gets '<slug words>: <first evidence line>' as one arg" "risk|mixed home pat: did it by hand" "$(t11 argv_lane)"
 assert_eq "AC15: the lane comes from lane-classify" "backfill" "$(t11 lane_used)"
 assert_eq "AC18: an all-prose list homes the top prose hit" "memory/notes/proc-a.md" "$(t11 prose_home)"
 assert_eq "AC18: the all-prose candidate is flagged prose-only" "True" "$(t11 prose_flag)"
@@ -2551,7 +2551,7 @@ assert_eq "AC15: the proposed row has the spec's keys" "lane,outcome,pattern,pre
 assert_eq "AC15: a REPORTED candidate is not reported again next run" "" "$(t11 rerun_blocked)"
 assert_eq "AC23: a shell-interpreted ';' would have made a marker; none exists" "False" "$(t11 pwn_marker)"
 assert_eq "AC23: the metachar evidence arrives as one argv element, byte for byte" "True" "$(t11 pwn_argv_one)"
-assert_eq "AC23: the lane call itself is classify plus the one query arg" "classify" "$(t11 pwn_argv_head)"
+assert_eq "AC23: the lane call itself is risk plus the one query arg" "risk" "$(t11 pwn_argv_head)"
 
 # ============================================================
 echo ""
@@ -2963,9 +2963,9 @@ def scenario(active=True, sources="claude"):
     os.environ["KIT_CONFIG_ROOT"] = kroot
     os.environ["KIT_CONFIG_OPERATOR"] = os.path.join(base, "no-operator")
     if active:
-        sd = os.path.join(os.environ["HARVEST_STATE_DIR"], "sweep")
-        os.makedirs(sd)
-        with open(os.path.join(sd, "installed"), "w") as fh:
+        sweep_dir = os.path.join(os.environ["HARVEST_STATE_DIR"], "sweep")
+        os.makedirs(sweep_dir)
+        with open(os.path.join(sweep_dir, "installed"), "w") as fh:
             json.dump({"label": "harvest-sweep", "host": "t", "kit": KIT, "ts": NOW}, fh)
     return base, root
 
@@ -3183,9 +3183,9 @@ def scenario(active=True, sources="claude"):
     os.environ["KIT_CONFIG_ROOT"] = kroot
     os.environ["KIT_CONFIG_OPERATOR"] = os.path.join(base, "no-operator")
     if active:
-        sd = os.path.join(os.environ["HARVEST_STATE_DIR"], "sweep")
-        os.makedirs(sd)
-        with open(os.path.join(sd, "installed"), "w") as fh:
+        sweep_dir = os.path.join(os.environ["HARVEST_STATE_DIR"], "sweep")
+        os.makedirs(sweep_dir)
+        with open(os.path.join(sweep_dir, "installed"), "w") as fh:
             json.dump({"label": "harvest-sweep", "host": "t", "kit": KIT, "ts": NOW}, fh)
     return base, root
 
@@ -3416,9 +3416,9 @@ def scenario(active=True, sources="claude", tag="t22", item="flush-1"):
     os.environ["KIT_CONFIG_ROOT"] = kroot
     os.environ["KIT_CONFIG_OPERATOR"] = os.path.join(base, "no-operator")
     if active:
-        sd = os.path.join(os.environ["HARVEST_STATE_DIR"], "sweep")
-        os.makedirs(sd)
-        with open(os.path.join(sd, "installed"), "w") as fh:
+        sweep_dir = os.path.join(os.environ["HARVEST_STATE_DIR"], "sweep")
+        os.makedirs(sweep_dir)
+        with open(os.path.join(sweep_dir, "installed"), "w") as fh:
             json.dump({"label": "harvest-sweep", "host": "t", "kit": KIT, "ts": NOW}, fh)
     return base, root
 
@@ -3925,7 +3925,7 @@ assert_eq "AC13: the written plist's ProgramArguments[0] is the launcher" \
   "$KIT_DIR/deploy/macos/harvest-sweep/harvest-sweep" \
   "$(/usr/libexec/PlistBuddy -c 'Print :ProgramArguments:0' "$T17_HOME/Library/LaunchAgents/mini.harvest-sweep.plist" 2>/dev/null)"
 assert_eq "AC13: --apply writes the plist world-readable for vps-mon discovery" "644" \
-  "$(stat -f %Lp "$T17_HOME/Library/LaunchAgents/mini.harvest-sweep.plist")"
+  "$(python3 -c 'import os,sys; print(format(os.stat(sys.argv[1]).st_mode & 0o777, "o"))' "$T17_HOME/Library/LaunchAgents/mini.harvest-sweep.plist")"
 assert_eq "AC13: --apply bootstraps the label" "yes" \
   "$(t17_lc | grep -q "bootstrap gui/[0-9]* .*mini.harvest-sweep.plist" && echo yes || echo no)"
 assert_eq "AC13: --apply writes the installed marker" "yes" \

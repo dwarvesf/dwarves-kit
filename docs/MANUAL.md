@@ -12,6 +12,7 @@ name. Full tour: `/kit:onboard`. Story-name lookup: `docs/glossary.md`.
 - Plugin install path (recommended): commands invoked as `/kit:<name>` (e.g. `/kit:spec`).
 - Bash install path: drop the prefix, commands invoked bare as `/<name>` (e.g. `/spec`).
 - Hooks have no invocation, they fire on Claude Code events.
+- Run-id tag: `/kit:spec` and `/kit:execute` put `rid=<rid>` in the `description` of every subagent they dispatch (`<rid>` is what `bash lib/gate/gate-ledger.sh rid` prints), so a transcript reader can count dispatches and tokens per run. `stats ceremony` reads it.
 - Agents have no invocation, they are dispatched by commands.
 - Self-intro banner: every `/kit:` command opens its first reply with one line, `[kit:<name>] <one-line purpose>` (from its frontmatter description), and every dispatched agent's report opens the same way, so you always see what is running and why (AGENTS.md "Self-intro").
 - Teach on bad input: a command handed a bad or missing input names it, teaches why it matters in one line, and offers the concrete fix, never a dry "invalid input", never proceeding silently. Overrides run but get recorded. Convention + per-command tables: `docs/patterns/teach-on-bad-input.md`.
@@ -32,6 +33,8 @@ You do not memorize commands. Say what you want; the kit reads your intent, runs
 | "fix this bug / it regressed" | `/kit:debug` (bug lane) | guess-fix guard | root cause + fix verified (`debug.confirm_fix` gates the human step, default off) |
 | "review this" / "ship it" | `/kit:review[-team]` / `/kit:ship` | ship gate, push-to-main | DO-NOT-SHIP verdict; the push/PR |
 | "can a cold consumer succeed with this artifact alone" (onboarding docs, a runbook, a spec, an API surface) / "test our onboarding" | `/kit:gauntlet` | clean-room probe rounds, artifact revisions between rounds; onboarding is the reference preset | SOLID / REVISE / RECONSIDER (guide: `docs/guides/gauntlet.md`, tutorial: `docs/guides/gauntlet-tutorial.md`) |
+| "who is working on what / who is stuck" | `bin/board work` (`--json` for the schema-1 form, `--idle-min N` for the PARKED threshold) | read-only join of board rows, mega sub-goals, git branches and worktrees, `orca worktree ps` and the run ledger; writes nothing | one table: item, worktree, agent state (working, idle, unknown), rung reached (none, validated, built, reviewed, shipped), lane, flags such as PARKED and DONE-UNSEEN. A worktree Orca does not list falls back to file activity and is marked `(files)`; with Orca itself missing the state reads unknown, never idle |
+| "is the ceremony paying for itself" | `bin/stats ceremony` (`--from`, `--to`, `--since-sha` bound the window; `--json`) | read-only lens over the gate records, git and subagent transcripts | gate records and subagent dispatches per run and per week next to lines shipped, PRs merged and problems caught; the share is of gate records, never tokens or time, and an unrecorded value prints `?` |
 | "is the gauntlet surface converging / what does a probe round cost" | `bash lib/gauntlet/stats.sh` (`--write` for a dated snapshot) | read-only projection over `docs/verification/gauntlet/` run records | one table: findings trajectory, rounds-to-clean, probe tokens/cost, probe-model deltas |
 
 For the full playbook (every scenario, the autonomy dial, the freeform front door) see `## Operator scenarios`. For a per-command lookup see `## Command reference`. Hooks fire on their own; commands and skills are invoked, by you or by Claude reading your intent.
@@ -70,7 +73,7 @@ Index by loop stage (formerly "leg", ADR-0034; the README's "The five stages" se
 **Reads:** install mode via `lib/onboard-detect.sh` (plugin / bash / both / none); adoption state via `lib/adopt.sh --check`; the module roster + consumer knobs via `bin/config list|explain` (the SPEC-198 registry, never a hardcoded list)
 **Writes:** nothing of its own -- it only ever drives `lib/adopt.sh` (to inject the contract and/or seed `<repo>/.kit.toml` with your module choices), and every such write is previewed (`--dry-run` or a shown plan) and confirmed first; a decline is a strict no-op
 **When to invoke:** the first ten minutes on a new machine or a repo you have not adopted yet. It ties together the four things that have to line up before the loop works: which install mode is live, whether this repo is adopted, which modules are on, and which env knobs make them non-inert.
-**What it does, in order:** (A) detect the install mode and explain it in one line each -- for `both` it discloses the double-hooks hazard and points at the one-path fix but never mutates settings; for `none` it prints the two install paths and stops. (B) offer `/kit:adopt` for the current repo (preview then confirm; an already-adopted repo is reported healthy and nothing is written). (C) pick modules -- the list is generated from the registry, and the choice is written by driving `lib/adopt.sh --with` (this is how the plugin path, which has no `install.sh --with`, still gets per-repo module selection). (D) for the chosen modules only, surface the consumer knobs that make them non-inert -- a `.kit.toml`-keyed knob is offered as a previewed write, an env-only knob (e.g. `PROSE_RAG_INJECT`, `MONEY_GATE_REPOS`) yields printed `export` guidance. (E) on the plugin path, disclose the gaps honestly (no statusLine HUD, a frozen SHA vs `git pull`, the `KIT_FORCE_FULL` escape and its hazard). (F) on the bash path, INSTALL-STAMP staleness is ONE printed line + a `/kit:kit-health` pointer, never an upgrade flow. (G) end with the five-stage loop in five sentences + `/kit:start` as the next step.
+**What it does, in order:** (A) detect the install mode and explain it in one line each -- for `both` it discloses the double-hooks hazard and points at the one-path fix but never mutates settings; for `none` it prints the two install paths and stops. (B) offer `/kit:adopt` for the current repo (preview then confirm; an already-adopted repo is reported healthy and nothing is written). (C) pick modules -- the list is generated from the registry, and the choice is written by driving `lib/adopt.sh --with` (this is how the plugin path, which has no `install.sh --with`, still gets per-repo module selection). (D) for the chosen modules only, surface the consumer knobs that make them non-inert -- a `.kit.toml`-keyed knob is offered as a previewed write, an env-only knob (e.g. `PROSE_RAG_INJECT`, `MONEY_GATE_REPOS`) yields printed `export` guidance. (E) on the plugin path, disclose the gaps honestly (no statusLine HUD, a frozen SHA vs `git pull`, the `KIT_FORCE_FULL` escape and its hazard). (F) on the bash path, INSTALL-STAMP staleness is ONE printed line + a `/kit:kit-health` pointer, never an upgrade flow. (G) end with two ideas (the lane, proof of done) and a one-line menu of opt-in commands, then `/kit:start` as the next step; the five-stage story is offered only to a newer user or on request.
 **Fence (ADR-0034 decision 4):** onboard ORCHESTRATES; it calls start + adopt + config and reimplements none of them. It never changes `install.sh`, `adopt.sh`, or `bin/config`.
 **Common gotcha:** it is not an upgrade wizard. If the kit is already installed and this repo is already adopted, onboard is a read-only health tour that writes nothing; to change modules later you hand-edit `<repo>/.kit.toml [modules]` and re-run `/kit:adopt --refresh`.
 
@@ -120,7 +123,7 @@ Opt-in downstream UI-design loop (downstream-facing; the kit has no UI, so it ca
 
 ### `/kit:test-plan`
 
-Opt-in lane between `/kit:spec-validate` and `/kit:execute`. Reads the active spec's acceptance criteria and writes a `## Test plan` coverage matrix (with a `proof` column naming the command/artifact per case) into the active spec, across happy-path / boundary / failure-injection / security / regression. `/kit:execute` reads that section as its coverage target and uses each case's `proof` as the per-step verify. A coverage target, not exhaustive; not a roundtable.
+Opt-in lane between `/kit:spec-validate` and `/kit:execute`. Reads the active spec's acceptance criteria and writes a `## Test plan` coverage matrix (with a `proof` column naming the command/artifact per case) into the active spec, across happy-path / boundary / failure-injection / security / regression. `/kit:execute` reads that section as its coverage target and uses each case's `proof` as the per-step verify. A coverage target, not exhaustive; not a roundtable. Next comes `/kit:test-plan-review-team --light` (Coverage and Oracle lenses, one pass), or the full team when the spec's `Depth:` names a blind-spot.
 
 ### `/kit:test-write`
 
@@ -132,6 +135,8 @@ Materializes a reviewed test plan into real test code, after `/kit:test-plan-rev
 **Reads:** `$ARGUMENTS` = either an `ID-NNN` (today's path) OR **freeform intent** (anything not matching `^ID-[0-9]+$`, e.g. "apply SDD to X"); `_meta/BACKLOG.md` Active queue, the item's Lane column, `AGENTS.md` zones (the projection source for the six-section goal) + the active spec's `## Verification` / `## After state`. Freeform delegates the crystallize interview to `/kit:think`.
 **Writes:** `.claude/goals/<slug>.md` (the SPEC-005 draft contract; never `.claude/last-goal.md`), a six-section operating directive (Context-to-read / Constraints / Operating rules / Validation loop / Done-when / Pause-if). On the **freeform path** it first writes a new sanitized `_meta/BACKLOG.md` row with a freshly allocated ID (row-before-draft, approve-before-allocate).
 **When to invoke:** you picked an `ID-NNN` from "what's left?", OR you have a freeform feature idea / vague brief with no ID yet, and want it scoped into a goal and routed into the right lane.
+**Suggestion and diff floor:** the classifier defaults to `normal` and never returns `full` from words; a trigger match prints one `LANE-SUGGEST: full (<flags>)` line (recorded in the run ledger with `--rid`). At push, `hooks/ship-gate.sh` runs `bash lib/classify/lane-classify.sh floor <root> <base>`: a diff that touches a migration, auth, secret, CI workflow, `.kit.toml`, or an added data-loss line must carry the full lane's gates whatever the spec's `Lane:` says. Lane phases are data in `kit.toml` `[lane.<name>]`; `docs/WORKFLOW.md` shows them.
+
 **Floor check (advisory):** after the lane is chosen, it runs `bash lib/classify/lane-classify.sh check <chosen> "<title>"`. A `LANE-DOWNGRADE` warning means the task text matches a heavier lane than you chose: size up, or narrow the scope and say why. It warns + logs to `completeness.log` (reviewed at `/kit:ship`); it never blocks ("Detect, don't dictate"). This is the guard for the classify-then-route gap: the classifier suggested a lane, but nothing caught an under-sized choice until now.
 **Common gotcha:** it is a mutator-dispatcher: it sets up the goal and hands off, it does NOT execute. The freeform path **delegates** the interview to `/kit:think` (it does not embed one). It detects the goal-loop activator (built-in `/goal`, `ralph-loop`, or `goal-craft`) and degrades to a plain draft file if none is installed. Idempotent per id (and per slug for freeform). Source: SPEC-006 + ADR-0011; freeform front door SPEC-026; floor check SPEC-053.
 
@@ -149,7 +154,7 @@ Materializes a reviewed test plan into real test code, after `/kit:test-plan-rev
 **Reads:** the conversation's multi-objective intent; `CLAUDE.md` for a `megagoal_root:` / `mega_merge_posture:` hint; each sub-goal's `Done =` + ship-gate ledger via `lib/gate/gate-ledger.sh`; `lib/gate/proof-ledger.sh deployable` (SG-07's classifier) to decide the deploy/UAT terminus.
 **Writes:** the scaffold (`ROADMAP.md`, `goals/NN-*.md`, `POINTER_PROMPT.md`, `HANDOFF.md`, `DECISIONS.md`) at the resolved mega-goal directory (SPEC-034 DEC-002: `.claude/goals/<slug>/` for this repo, never `_meta/`, which is reserved for the BACKLOG cockpit). Nothing else until the loop runs; `/kit:mega` itself opens no PR.
 **When to invoke:** ONE destination reached through 3-8 genuinely DEPENDENT sub-goals (a single chain, no fan-in/fan-out) -- the sequenced complement to `/kit:dispatch`'s independent/parallel case.
-**Common gotcha:** it MIRRORS the ops-toolkit `plan-for-mega-goal` skill's decompose + front-load-checkpoint + per-run-merge-config beats; it does not fork or replace the skill (prefer the skill when installed for anything this command does not cover). Ship-layer auto-merge is real but narrow: only an `auto`-tagged sub-goal's PR can auto-merge, and only once `lib/goal/mega-merge.sh gate` confirms its ship-gate passed (`lib/gate/gate-ledger.sh check`, reused verbatim, never re-implemented); a failing/missing gate REFUSES unconditionally, and the action is dry-run unless `--execute` is passed. `gate`-tagged sub-goals and the final PR under the default `gated-final` posture always stop for a human; the command opens them via `lib/goal/mega-merge.sh mark` (draft + `do-not-merge`) so the `_merge_exclusion` guard always has a mark to catch (SPEC-100 mark half, ID-089). `MEGA_MERGE_POSTURE=per-pr-review` (or `--posture=per-pr-review`) forces dry-run on every PR for a team run, overriding `--execute`. Source: ADR-0028 P2/P3; SPEC-034 (roadmap conventions, ID-037); SPEC-096 (this command + `lib/goal/mega-merge.sh`, kit-hardening SG-08); SPEC-095 / SG-07 (the reused `deployable` classifier).
+**Common gotcha:** it MIRRORS the ops-toolkit `plan-for-mega-goal` skill's decompose + front-load-checkpoint + per-run-merge-config beats; it does not fork or replace the skill (prefer the skill when installed for anything this command does not cover). Ship-layer auto-merge is real but narrow: only an `auto`-tagged sub-goal's PR can auto-merge, and only once `lib/goal/mega-merge.sh gate` confirms its ship-gate passed (`lib/gate/gate-ledger.sh check`, reused verbatim, never re-implemented); a failing/missing gate REFUSES unconditionally, and the action is dry-run unless `--execute` is passed. `gate`-tagged sub-goals and the final PR under the default `gated-final` posture always stop for a human; the command opens them via `lib/goal/mega-merge.sh mark` (draft + `do-not-merge`) so the `_merge_exclusion` guard always has a mark to catch (SPEC-100 mark half, ID-089). `MEGA_MERGE_POSTURE=per-pr-review` (or `--posture=per-pr-review`) forces dry-run on every PR for a team run, overriding `--execute`. **Opt-in Orca backend (trial):** `bash lib/queue/orchestrate.sh run <dir> --backend orca` (or `MEGA_BACKEND=orca`; the flag wins) runs the same ROADMAP through Orca Tasks and supervised Claude workers instead of one `claude -p` per sub-goal. It is off unless asked for and never changes the default run mode. `orchestrate.sh status <dir>` prints one derived state per sub-goal (READY, RUNNING, PARKED, HELD, DONE-UNSEEN, DONE and so on); the ROADMAP box stays the only proof of done; `orchestrate.sh orca-reset <dir>` rolls one run back. Source: ADR-0028 P2/P3; SPEC-034 (roadmap conventions, ID-037); SPEC-096 (this command + `lib/goal/mega-merge.sh`, kit-hardening SG-08); SPEC-095 / SG-07 (the reused `deployable` classifier).
 
 ### Multi-session concurrency (the running-goal registry, `lib/goal/goal-registry.sh`)
 
@@ -179,10 +184,11 @@ schedules, sequences, or merges. Source: SPEC-036; ADR-0022.
 ### `/kit:spec`
 
 **Phase:** generate the development spec
-**Reads:** `docs/briefs/DECISION-BRIEF-<slug>.md` (legacy: `docs/briefs/DECISION-BRIEF.md`) (if present), the codebase via 4 parallel research subagents (brownfield) or chat (greenfield)
+**Reads:** `docs/briefs/DECISION-BRIEF-<slug>.md` (legacy: `docs/briefs/DECISION-BRIEF.md`) (if present), the codebase via the 4 parallel research subagents when the `Depth:` line asks for repo research, or chat (greenfield)
 **Writes:** `docs/specs/SPEC-NNN-<slug>.md` (Status: DRAFT), `docs/research/YYYY-MM-DD-<slug>-{stack,features,architecture,pitfalls}.md`
 **When to invoke:** after `/think`, or directly if the work is well-scoped already
-**Common gotcha:** the research agents are parallel-dispatched via Task tool. If your Claude Code is older than v2.0.60, they fall back to inline research and the run is slower.
+**Depth:** step 1 writes a `Depth:` line under `Lane:` (`standard`, `research (repo|outside: ...)`, `blind-spot (failure: ...)`). Research runs only when the line asks for it, so a `standard` brownfield spec sends zero research agents; `bash lib/spec/spec-depth.sh check <spec>` validates the line.
+**Common gotcha:** the research agents (when the depth asks for them) are parallel-dispatched via Task tool. If your Claude Code is older than v2.0.60, they fall back to inline research and the run is slower.
 **Template sections:** the generated spec scaffolds Solution depth (approaches / chosen + why / extensibility, SPEC-008), plus an optional `### Interfaces (I/O contract)` under Technical Design and an optional `## Failure modes` table. Both optional sections are lane-scoped; Reviewers 2 and 5 check them when present. It also pins `## Verification` (the command(s) that prove the spec done) and `## Open questions` (the blocker landing zone a `/goal` loop appends to), so a validated spec is natively pointer-`/goal`-ready (SPEC-012 P1). An optional, on-demand `## Amendments` section (added only when a mid-flight amend happens, never an empty scaffold) records add-scope provenance during a build.
 
 ### `/kit:spec-validate`
@@ -198,9 +204,9 @@ schedules, sequences, or merges. Source: SPEC-036; ADR-0022.
 **Phase:** autonomous build
 **Reads:** `docs/specs/SPEC-NNN-<slug>.md` (must be Status: VALIDATED or APPROVED)
 **Writes:** code, tests, marks SPEC task checkmarks, appends to SPEC Decision Log
-**Dispatches:** worker subagent per task, then task-verifier, then fix-agent on FAIL:fixable (retry max 2)
+**Dispatches:** one builder subagent for the whole spec, then one end `task-verifier` pass over every task, `integration-verifier` (multi-task), `acceptance-verifier`, and `fix-agent` on FAIL:fixable (retry max 2); `recheck-verifier` on a sampled run (`execute.recheck_sample`, default 1 in 5 keyed on the rid; every PASS on the full lane) and on every self-attested row
 **When to invoke:** when handing off to a contractor OR running the kit on yourself end-to-end
-**Common gotcha:** verification adds ~2x token cost per task. Worth it for the FAIL:fixable catch rate; budget accordingly. Each worker first expands its task into bite-sized verify-each-step increments (TDD when a unit test fits; grep/bash/test-suite verify for doc and config tasks) before coding.
+**Common gotcha:** a defect surfaces at the end of the build, not after the task that caused it; per-task commits localize it. A build that cannot meet a criterion after two fix rounds ends `Result: PARTIAL` and names the unmet criterion. A spec with more than 6 tasks splits into slices up front. The builder gets a brief (goal, acceptance, routes, territory) and decides its own build order.
 **Mid-flight amend:** if a build reveals scope that must be added now ("also do Y"), do not silently edit the spec or restart the lane. With your approval, amend at a task checkpoint (append `- [ ]` tasks, record an `## Amendments` entry, Status stays VALIDATED) and resume with `/kit:next`. The canonical rule is WORKFLOW.md "## Mid-flight amend"; the operator card is "## Operator scenarios" Scenario 6 below.
 
 ### `/kit:next`
@@ -217,10 +223,10 @@ schedules, sequences, or merges. Source: SPEC-036; ADR-0022.
 **Reads:** a one-line role description (or a unit-of-work description) from `$ARGUMENTS`
 **Writes:** by default INSTALLS a new subagent, `agents/<name>.md` + the roster rows (MANUAL/architecture/README) + `~/.claude/agents/<name>.md` for runtime; `--draft` stops at a staged draft; `subgoal:` mode drafts a mega-goal sub-goal file (never installed)
 **Dispatches:** the `meta-agent` (drafts to staging; the command promotes/installs)
-**When to invoke:** when a task needs a specialist role no existing agent covers and you want it as a reusable, named kit agent. For a one-off same-run specialist during `/kit:execute`, you do NOT invoke this, 2b-0 role synthesis handles it inline (see below).
+**When to invoke:** when a task needs a specialist role no existing agent covers and you want it as a reusable, named kit agent. `/kit:execute` does not dispatch the meta-agent; it picks a builder with the `role-classify.sh agent-for` lookup (see below).
 **Common gotcha:** a freshly installed agent is dispatchable only NEXT session (Claude Code loads the agent registry at session start); the command prints the granted tools + an `rm` undo. Sharing an installed agent with the team still goes through a reviewed PR. Design: SPEC-089.
 
-Related, **2b-0 role synthesis** (inside `/kit:execute`): each task is classified by `lib/classify/role-classify.sh`; a specialist-worthy task gets a role synthesized by the `meta-agent` (Mode C, open-ended, any role) and injected into the worker THIS run, cached to `~/.claude/agents/` for reuse. Plain tasks fall through to the generic worker. This is automatic; `/kit:draft-agent` is the manual, install-a-named-agent path. Both share the `meta-agent` + `role-classify.sh` primitives.
+Related, **builder lookup** (inside `/kit:execute`): the spec text is classified by `lib/classify/role-classify.sh`, and `agent-for <domain>` names a predefined worker (`db-migration-worker`, `data-etl-worker`) as the builder's `subagent_type`; an empty result runs the general builder. `/kit:draft-agent` is the manual, install-a-named-agent path.
 
 ### `/kit:debug`
 
@@ -339,7 +345,7 @@ What to remember here: the blocking hooks, everything else advises or warns.
 | Blocker | Event | What it stops |
 |---|---|---|
 | `safety-gate` | PreToolUse(Bash) | `rm -rf` (build-artifact allowlist), push to main, force push, `DROP TABLE`, `git reset --hard`, `kubectl delete`. Override needs explicit user OK. |
-| `ship-gate` | PreToolUse(Bash, on push/PR-create) | Shipping without a recorded proof-of-done / gate-ledger record for the lane. The answer to "why did my push get blocked": run `/kit:verify`, or record the audited override. |
+| `ship-gate` | PreToolUse(Bash, on push/PR-create) | Shipping without a recorded proof-of-done / gate-ledger record for the lane, or a diff that touches a hard path (migration, auth, secrets, CI workflow, kit config, data loss) without the full lane's gates. The answer to "why did my push get blocked": run `/kit:verify`, run the gate it names, or record the audited override. |
 | `secrets-guard` | PreToolUse(Read\|Edit\|Bash) | Reads of secret files (`.env`, `~/.ssh`, `~/.aws`, `.pem`); canonicalizes the path first. Allows `.env.example`. Best-effort on the Bash surface. |
 | `commit-format` | PreToolUse(Bash) | A `git commit -m` subject that is non-conventional, >72 chars, or carries a SPEC-/TASK-/phase marker. Subject only. |
 | `anti-rationalization` | Stop | Premature "done": rationalization phrases, guess-fix during an open `/debug` session, unimplemented-stub markers in the diff. |
@@ -370,7 +376,7 @@ The `harvest` hook stages learnings when a session compacts or ends. The harvest
 
 | Agent | Dispatched by | What it does |
 |---|---|---|
-| `task-verifier` | `/execute` | Read-only verification per task |
+| `task-verifier` | `/execute` (one end pass over every task) | Read-only verification of a task's acceptance criteria |
 | `fix-agent` | `/execute` | Targeted fixes on FAIL:fixable (max 2 retries) |
 | `integration-verifier` | `/execute` (Step 4, multi-task) | Read-only: verifies the tasks wire together (each component reaches its activation point + the spec's end-to-end chains) |
 | `doc-verifier` | `/docs` (Step 4.5) | Read-only: fact-checks the just-updated docs against the live code (counts, names, existence, cross-refs); reports drift, `/docs` fixes |
@@ -382,7 +388,7 @@ The `harvest` hook stages learnings when a session compacts or ends. The harvest
 | `brief-reviewer` | (right-arm parity roster; dispatchable on the brief/decision doc) | Read-only static left-arm reviewer of the design brief (`DECISION-BRIEF-<slug>.md` or a spec's Problem/Context) for clarity, completeness, testability |
 | `acceptance-verifier` | (right-arm parity roster; dispatchable at the spec's acceptance boundary) | Read-only dynamic verifier: executes the active spec's `## Verification` section end to end, maps each AC to a passing check |
 | `system-verifier` | (right-arm parity roster; dispatchable as the whole-project check) | Read-only dynamic verifier: runs the full unscoped project test suite, the right-arm mirror of design |
-| `recheck-verifier` | `/execute` (fresh-context re-audit over a right-arm PASS) | Read-only: RE-EXECUTES a right-arm verifier's recorded check in a fresh context and re-judges; never a read-back of recorded evidence; the ADR-0028 trust metric made real |
+| `recheck-verifier` | `/execute` (fresh-context re-audit over a sampled right-arm PASS and every self-attested row) | Read-only: RE-EXECUTES a right-arm verifier's recorded check in a fresh context and re-judges; never a read-back of recorded evidence; the ADR-0028 trust metric made real |
 | `responding-to-review` | `/review-team` (FIX-THEN-SHIP) | Triages findings without sycophancy |
 | `slop-stripper` | `/review-team` (Step 5, opt-in deslop strip) | Behavior-preserving AI-slop strip pass: surgical edits only, never behavior changes unless fixing a real bug |
 | `research-stack` | `/spec` | Brownfield stack mapping |
@@ -395,8 +401,8 @@ The `harvest` hook stages learnings when a session compacts or ends. The harvest
 | `api-reviewer` | `/review-team` | Read-only API-CONTRACT-lens reviewer (breaking changes, versioning, schema, error codes, backward compat, idempotency); severity findings + score |
 | `frontend-reviewer` | `/review-team` | Read-only FRONTEND-lens reviewer (a11y/ARIA, semantic HTML, focus/keyboard, loading/error/empty/disabled states, responsive, color-only signaling); severity findings + score |
 | `infra-reviewer` | `/review-team` | Read-only INFRA-lens reviewer (deploy/rollback safety, CI/CD, container/IaC least-privilege, secret handling, idempotent provisioning, blast radius); severity findings + score |
-| `db-migration-worker` | `/execute` 2b-0 | Write-capable schema-migration implementer; writes up + DOWN/rollback + batched backfill + index changes, guards long locks, never drops data without an explicit ask |
-| `data-etl-worker` | `/execute` 2b-0 | Write-capable data-pipeline implementer; extract/transform/load, DuckDB SQL for the transform, idempotent re-runs, schema validation, no silent row drops |
+| `db-migration-worker` | `/execute` builder lookup | Write-capable schema-migration implementer; writes up + DOWN/rollback + batched backfill + index changes, guards long locks, never drops data without an explicit ask |
+| `data-etl-worker` | `/execute` builder lookup | Write-capable data-pipeline implementer; extract/transform/load, DuckDB SQL for the transform, idempotent re-runs, schema validation, no silent row drops |
 | `claim-verifier` | dispatched on a load-bearing free-text claim | Read-only adversarial panel: runs N in-context independent skeptics (default N=3, distinct attack angles, default-refute-if-uncertain, fail-closed) over an ARBITRARY claim and returns a structured majority-vote verdict (HOLDS/REFUTED + tally + threshold + per-skeptic reasons) |
 | `test-writer` | `/kit:test-write` | Write-capable: turns a reviewed test-plan coverage matrix into runnable test code, one case per matrix row, in the repo's existing test framework; scope-locked to test files, frozen-evaluator on the spec's AC/Verification |
 | `audit-scanner` | doc-drift + topology-drift skills (Tier 2) | Shared read-only evidence scanner for audit-loop instances: receives a target set + contract + evidence class, returns per-item verdicts (audit-loop grammar) with quoted evidence and severity; never fixes, roster has no write path |
@@ -510,7 +516,7 @@ approve-before-allocate, sanitize, atomic-allocate.
 | You say | Autonomy | Claude stops at |
 |---|---|---|
 | "propose it, don't run anything" | none | after planning; waits for go |
-| "run it, check with me at each phase" | low (default) | every advisory phase checkpoint |
+| "run it, check with me at each phase" | low (default) | every advisory phase boundary |
 | "run the lane, only stop at hard stops" | high | the 4 hard stops + the push/PR (outward-facing) |
 | "run it all the way to a PR, your call" | max | only the 4 hard stops + a real blocker |
 
@@ -620,7 +626,7 @@ The hook was downloading the formatter via `npx --yes` per edit (v1.0 bug). Fixe
 Compaction sequence:
 1. `pre-compact-backup.sh` writes a snapshot.
 2. Claude Code compacts.
-3. `post-compact-reinject.sh` re-injects critical rules.
+3. `post-compact-reinject.sh` (a SessionStart hook with matcher `compact`, so it fires when the compacted session resumes) re-injects critical rules.
 4. `session-state-save.sh` continues to write to `.claude/session-state/last-state.md` on every Stop.
 
 If state is missing, check in order:

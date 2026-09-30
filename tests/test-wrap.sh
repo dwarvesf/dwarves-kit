@@ -521,6 +521,39 @@ out="$("$WRAP" apply --own 2>&1)"; rc=$?
 chk "--own with no value exits 64" "$([ "$rc" = 64 ]; echo $?)"
 chk_has "--own with no value names the missing arg" "$out" "--own needs a worktree path"
 
+# Flags packed into one word (a zsh unsplit `$args`) refuse with 64 and touch nothing, so a
+# lost --own can never widen into a sweep of every merged worktree.
+PACKED=" --own $TMPD/wt-own-dirty"
+out="$("$WRAP" apply --apply --worktrees "$PACKED" "$OWNREPO" 2>&1)"; rc=$?
+chk "packed ' --own <path>' to apply exits 64" "$([ "$rc" = 64 ]; echo $?)"
+chk_has "packed arg: the one-line refusal" "$out" \
+  "wrap.sh apply: argument '$PACKED' looks like flags packed into one word (an unsplit variable?); pass each flag and path as its own argument"
+chk_no "packed arg: it is never treated as a repo" "$out" "not a git repo"
+chk "packed arg: nothing removed" "$([ -d "$TMPD/wt-own-dirty" ] && [ -d "$TMPD/wt-own-det" ]; echo $?)"
+out="$("$WRAP" scan "$OWNREPO" "x --own y" 2>&1)"; rc=$?
+chk "an embedded ' --' in a scan positional exits 64" "$([ "$rc" = 64 ]; echo $?)"
+chk_has "scan: the embedded ' --' refusal is the packed-flags one" "$out" "looks like flags packed into one word"
+out="$("$WRAP" land " --title x" 2>&1)"; rc=$?
+chk "packed arg to land exits 64" "$([ "$rc" = 64 ]; echo $?)"
+chk_has "packed arg to land names the packed-flags refusal" "$out" "wrap.sh land: argument '"
+out="$("$WRAP" rebase " --x" 2>&1)"; rc=$?
+chk "packed arg to rebase exits 64" "$([ "$rc" = 64 ]; echo $?)"
+chk_has "packed arg to rebase names the packed-flags refusal" "$out" "wrap.sh rebase: argument '"
+out="$("$WRAP" merge " --apply" 2>&1)"; rc=$?
+chk "packed arg to merge exits 64" "$([ "$rc" = 64 ]; echo $?)"
+chk_has "packed arg to merge names the packed-flags refusal" "$out" "wrap.sh merge: argument '"
+out="$("$WRAP" start " --carry" br 2>&1)"; rc=$?
+chk "packed arg to start exits 64" "$([ "$rc" = 64 ]; echo $?)"
+chk_has "packed arg to start names the packed-flags refusal" "$out" "wrap.sh start: argument '"
+
+# A real path with a space (and no ' --') is still a repo.
+SPACEREPO="$TMPD/dir with space"
+git init -q "$SPACEREPO" && git -C "$SPACEREPO" -c user.email=t@t -c user.name=t commit -q --allow-empty -m init
+out="$("$WRAP" apply "$SPACEREPO" 2>&1)"; rc=$?
+chk "a repo path containing a space still works, exits 0" "$rc"
+chk_no "space path: not flagged as packed" "$out" "packed into one word"
+chk_no "space path: seen as a git repo" "$out" "not a git repo"
+
 # ===========================================================================
 echo "=== apply --worktrees: a lock naming a live pid is skipped, a dead pid is removed ==="
 # ===========================================================================

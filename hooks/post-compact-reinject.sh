@@ -1,4 +1,5 @@
 #!/bin/bash
+# post-compact-reinject.sh -- SessionStart hook (matcher compact) that re-injects the critical project rules compaction strips from context.
 # post-compact-reinject.sh — SessionStart hook, matcher: compact (source=compact)
 # Re-injects critical project rules after compaction strips them from context.
 # CLAUDE.md gets summarized during compaction and loses precision.

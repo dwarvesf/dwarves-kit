@@ -57,7 +57,7 @@ OpenRig default (Part A, P1)
 | Fresh-context spec validator | 19 of 35 validate outcomes caught a problem (M, ledger) | KEEP, load-bearing |
 | Ship-gate / proof-of-done | 15 of 46 ship outcomes caught a problem; 128 proof-gate blocks since July (M) | KEEP the gate; 108 overrides in 4.5 days, ~70% docs/config/inert (M), so the diff classifier over-fires |
 | Security review lens | caught a HIGH key-persist leak the panel, reviewer and verifier missed (`commands/battery.md:68-73`) | KEEP |
-| Per-task recheck-verifier (Opus) | 29 `Re-audit: PASS` records, 0 `Re-audit: FAIL` across kit and ops-toolkit docs (M, lead re-count) | CUT to sampled or opt-in; it has had its real trial |
+| Per-task recheck-verifier (Opus) | 29 `Re-audit: PASS` records; 0 in the `Re-audit: FAIL` format, but 2 recheck FAIL:fixable catches in other formats (loop-09, vps-mon SPEC-133), found by the SPEC-369 validator (M, corrected) | SAMPLE it, do not cut it: it catches rarely, not never |
 | Per-task worker + task-verifier split | OpenRig: "Detailed sequencing instructions were scaffolding when models were weak; today they are a cage" (`docs/reference/wave-sdlc.md:33-35`) | CUT to whole-spec dispatch by default |
 | Persona meta-agent per task | extra dispatch to write a preamble (`commands/execute.md:151-166`) | CUT |
 | Test-plan review team before code exists | 6 lenses up to 3 rounds; test-write refuses without SOLID, so it gates in practice (`commands/test-plan-review-team.md:53,97`) | Move to P3 only |
@@ -134,8 +134,7 @@ dial gets tuned by misses, not taste. Emitter ships with its reader: the lens la
 same change as the field. This is the number that proves or refutes D1 to D3.
 
 **D6. Onboarding to first value.** `/kit:adopt` writes a ~1KB CLAUDE.md pointer to the
-installed AGENTS.md instead of an 18KB copy (also ends the drift: trading's copy is 322
-lines behind). First-run tour teaches two concepts (lane, proof) and lists the rest as an
+installed AGENTS.md instead of an 18KB copy (the "trading's copy is 322 lines behind" figure was wrong: 322 is the sum of changed lines, and trading's AGENTS.md is repo-authored, not a stale kit copy; corrected by the SPEC-371 author). First-run tour teaches two concepts (lane, proof) and lists the rest as an
 opt-in menu. Measure with the existing gauntlet onboarding campaign
 (`docs/verification/gauntlet/2026-09-01-onboarding-campaign/`): turns and tokens to a
 first shipped PR, before and after.
@@ -144,8 +143,9 @@ first shipped PR, before and after.
 
 - 2026-07-04 kit utilization audit (`docs/research/2026-07-04-kit-utilization-audit.md`):
   the operator rejected retire/merge in favor of wire-first, "retire reserved for a wire
-  that proves dead after a real trial". The recheck-verifier has had that trial (29 PASS,
-  0 FAIL). D3 samples it rather than deleting it, which stays inside that rule.
+  that proves dead after a real trial". The recheck-verifier has had that trial: 29 PASS and
+  2 FAIL:fixable catches (corrected; the first count searched one format only). D3 samples it
+  rather than deleting it, which stays inside that rule.
 - SPEC-334 open question 6 answered by D4 with transcript evidence (4 compactions, 0
   re-injects).
 
@@ -267,3 +267,15 @@ change to classification and spec header), then D3 (the big token cut, measured 
 then D6. D1 to D3 together reverse the kit's "when in doubt, heavier" posture, so they
 wait for the operator's go on direction; on go they become one mega with D5 as its first
 sub-goal.
+
+## Corrections (build wave)
+
+Two numbers in this record were wrong and were caught by the spec validators during the build:
+
+| Claim | Correction | Caught by |
+|---|---|---|
+| recheck-verifier: 0 FAIL | 2 FAIL:fixable catches in a different record format; plus per-task task-verifier catches with a green suite (circle TASK-4/5, a 2026-05-22 retro) | SPEC-369 validator |
+| trading's AGENTS.md is 322 lines behind | 322 is changed lines; the file is repo-authored, not a kit copy | SPEC-371 author |
+| "drop the test-plan review team by default" | all 7 critiqued specs had round-1 findings, 5 CRITICAL; the default became a one-pass light review, not none | SPEC-372 validator |
+
+The direction held; each correction changed the design (end-of-build task-verifier pass kept, recheck sampled not cut, a light review kept at standard depth).

@@ -311,6 +311,8 @@ create_changelog = false
 confirm_fix = true
 [review]
 apply_findings = false
+[execute]
+recheck_sample = 1
 [wrap]
 drain_staged = true
 TOML
@@ -338,6 +340,7 @@ ship.confirm_bump|major|always
 ship.create_changelog|true|false
 debug.confirm_fix|false|true
 review.apply_findings|true|false
+execute.recheck_sample|5|1
 wrap.drain_staged|false|true
 KEYS
 rm -rf "$AUTONOMY_DIR"

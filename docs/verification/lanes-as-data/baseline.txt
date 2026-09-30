@@ -1,0 +1,111 @@
+== plan tiny
+ 1. build              lite
+ 2. review             lite
+== required tiny
+== progress tiny
+fixture-rid · tiny · step 2/2 (review)
+  ✓build ▶review
+== descent tiny
+descent clean
+== plan normal
+ 1. grill              intake (universal)
+ 2. think              lite
+ 3. spec               required
+ 4. validate           lite
+ 5. design-record      lite
+ 6. test-plan          lite
+ 7. build              required
+ 8. review             lite
+ 9. docs               lite
+10. ship               required
+== required normal
+spec
+build
+ship
+== progress normal
+fixture-rid · normal · step 5/10 (design-record)
+  ✓grill ✓think ✓spec ✓validate ▶design-record ·test-plan *build ·review ·docs ·ship
+  (* = disposed out of order)
+== descent normal
+DESCENT: build recorded before spec disposed
+== plan full
+ 1. grill              intake (universal)
+ 2. think              required
+ 3. design             required
+ 4. design-critique    required
+ 5. ui-design          lite
+ 6. spec               required
+ 7. validate           required
+ 8. design-record      required
+ 9. test-plan          required
+10. build              required
+11. review             required
+12. docs               required
+13. ship               required
+14. reflect            required
+== required full
+think
+design
+design-critique
+spec
+validate
+design-record
+test-plan
+build
+review
+docs
+ship
+reflect
+== progress full
+fixture-rid · full · step 3/14 (design)
+  ✓grill ✓think ▶design ·design-critique ·ui-design *spec *validate ·design-record ·test-plan *build ·review ·docs ·ship ·reflect
+  (* = disposed out of order)
+== descent full
+DESCENT: build recorded before think disposed
+DESCENT: build recorded before design disposed
+DESCENT: build recorded before design-critique disposed
+DESCENT: build recorded before spec disposed
+DESCENT: build recorded before validate disposed
+DESCENT: build recorded before design-record disposed
+DESCENT: build recorded before test-plan disposed
+DESCENT: spec recorded before think disposed
+DESCENT: spec recorded before design disposed
+DESCENT: spec recorded before design-critique disposed
+DESCENT: review recorded before design disposed
+DESCENT: review recorded before design-critique disposed
+DESCENT: review recorded before validate disposed
+DESCENT: review recorded before design-record disposed
+DESCENT: review recorded before test-plan disposed
+DESCENT: validate recorded before design disposed
+DESCENT: validate recorded before design-critique disposed
+== plan bug
+ 1. grill              intake (universal)
+ 2. test-plan          lite
+ 3. build              required
+ 4. review             required
+ 5. ship               lite
+ 6. debug              required
+== required bug
+build
+review
+debug
+== progress bug
+fixture-rid · bug · step 2/6 (test-plan)
+  ✓grill ▶test-plan *build ·review ·ship ·debug
+  (* = disposed out of order)
+== descent bug
+descent clean
+== plan backfill
+ 1. grill              intake (universal)
+ 2. think              lite
+ 3. spec               lite
+ 4. validate           lite
+ 5. review             lite
+ 6. docs               required
+== required backfill
+docs
+== progress backfill
+fixture-rid · backfill · step 5/6 (review)
+  ✓grill ✓think ✓spec ✓validate ▶review ·docs
+== descent backfill
+descent clean
