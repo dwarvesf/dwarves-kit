@@ -22,6 +22,8 @@ ok()   { printf 'PASS  %s\n' "$1"; PASS=$((PASS+1)); }
 bad()  { printf 'FAIL  %s\n' "$1"; FAIL=$((FAIL+1)); }
 has()  { case "$3" in *"$2"*) ok "$1";; *) bad "$1 (missing: $2)";; esac; }
 hasnt(){ case "$3" in *"$2"*) bad "$1 (unexpected: $2)";; *) ok "$1";; esac; }
+# nofire <label> <json>: the output must be valid JSON first, so empty output never passes
+nofire() { if printf '%s' "$2" | jq -e . >/dev/null 2>&1; then hasnt "$1" "$FIRES" "$2"; else bad "$1 (output is not JSON)"; fi; }
 eq()   { if [ "$2" = "$3" ]; then ok "$1"; else bad "$1 (want '$3', got '$2')"; fi; }
 
 FIX="$(mktemp -d)"
@@ -62,6 +64,7 @@ mkdir -p "$STATS_TGCLEANUP_DIR" "$KITLOG/runs" "$SESS"
 printf '# Backlog\n| ID | Item | Notes & source | Status |\n|---|---|---|---|\n' > "$CC_BACKLOG_BACKLOG"
 
 R()   { uv run stats "$@" 2>&1; }
+RA()  { uv run stats "$@" 2>/dev/null; }
 RJ()  { uv run stats ceremony --json "$@" 2>/dev/null; }
 reset() { rm -rf "$KITLOG/runs" "$SESS"; mkdir -p "$KITLOG/runs" "$SESS"; git_init; }
 epoch() { python3 -c "import datetime,sys;print(int(datetime.datetime.fromisoformat(sys.argv[1].replace('Z','+00:00')).timestamp()))" "$1"; }
@@ -120,11 +123,11 @@ has "A-fire progress prints ? with no git commits" "lines=?" "$OUT"
 
 echo "== A-one-catch (negative control): one caught=true -> does NOT fire =="
 reset; fire_fixture 1 1
-hasnt "A-one-catch no ceremony_share" "$FIRES" "$(R anomalies --json)"
+nofire "A-one-catch no ceremony_share" "$(RA anomalies --json)"
 
 echo "== A-unknown: same volume, no OUTCOME lines -> does NOT fire; report says ? =="
 reset; fire_fixture 0 0
-hasnt "A-unknown no ceremony_share" "$FIRES" "$(R anomalies --json)"
+nofire "A-unknown no ceremony_share" "$(RA anomalies --json)"
 has   "A-unknown report catches ? (0 known)" "catches: ? (0 known)" "$(R ceremony)"
 
 echo "== A-thin: 20 ceremony records, 12 known, 0 caught -> does NOT fire (records floor) =="
@@ -136,7 +139,7 @@ for r in 1 2 3 4; do
     gl "thin-$r" "$(printf '2026-09-%02dT10:%02d:00Z' $((14 + r)) "$n")" "$gate" ran "$c"
   done
 done
-hasnt "A-thin no ceremony_share" "$FIRES" "$(R anomalies --json)"
+nofire "A-thin no ceremony_share" "$(RA anomalies --json)"
 has   "A-thin control: lowered floor fires" "$FIRES" "$(R anomalies --json --threshold ceremony_min_records=20)"
 
 echo "== A-share-low: 40 records, 25 build/ship, share 0.375, 0 caught -> does NOT fire =="
@@ -153,7 +156,7 @@ for r in 1 2 3 4 5; do
   done
 done
 LOWT="--threshold ceremony_min_records=10"
-hasnt "A-share-low no ceremony_share" "$FIRES" "$(R anomalies --json $LOWT)"
+nofire "A-share-low no ceremony_share" "$(RA anomalies --json $LOWT)"
 has   "A-share-low control: lowered share fires" "$FIRES" "$(R anomalies --json $LOWT --threshold ceremony_share_max=0.3)"
 
 # =============================================================================================
@@ -176,7 +179,7 @@ eq "C-counts ceremony override column" "$(jq '.records.ceremony_override' <<<"$J
 eq "C-counts share 3/5" "$(jq '.records.share' <<<"$J")" 0.6
 
 echo "== C-unknown: a run with no dispatches and no TOKENS prints ? for tokens, not 0 =="
-eq "C-unknown tokens null in json" "$(jq '.runs[0].tokens_total' <<<"$J")" null
+eq "C-unknown tokens null in json" "$(jq '.runs[0].tokens_net' <<<"$J")" null
 eq "C-unknown catches null" "$(jq '.catches.value' <<<"$J")" null
 TXT="$(R ceremony)"
 has "C-unknown text row shows ? cells" "| c1 | 3 | 5 | 1 | 2 | 0.60 | ? | ? | ? | ? | ? | ? | ? | ? |" "$TXT"
@@ -233,10 +236,20 @@ mk_sub() {
     printf '{"type":"assistant","timestamp":"%s","message":{"id":"m-%s","usage":{"input_tokens":10,"output_tokens":290,"cache_read_input_tokens":100,"cache_creation_input_tokens":50},"content":[{"type":"text","text":"SECRET-MSG-TEXT"}]}}\n' "$ts" "$id"
     printf '{"type":"user","timestamp":"%s","message":{"role":"user","content":"SECRET-MSG-TEXT"}}\n' "$ts"
   } > "$d/agent-$id.jsonl"
+  # mtime follows the fixture time, so the retention check sees the transcript inside its window
+  TZ=UTC touch -t "${ts:0:4}${ts:5:2}${ts:8:2}${ts:11:2}${ts:14:2}" "$d/agent-$id.jsonl" "$d/agent-$id.meta.json"
 }
 
 # A late GATE line pins the window end (the default window ends at the latest GATE timestamp).
-clock() { gl clk 2026-09-30T00:00:00Z grill ran -; }
+# It also plants one old transcript (never opened, mtime 2026-01-01): retention must reach back past
+# the window start, or the lens rightly prints ? for every dispatch and token cell.
+clock() {
+  gl clk 2026-09-30T00:00:00Z grill ran -
+  local d="$SESS/anchor-project/sess-anchor/subagents"; mkdir -p "$d"
+  echo '{"agentType":"kit:task-verifier","description":"anchor"}' > "$d/agent-anchor.meta.json"
+  echo '{}' > "$d/agent-anchor.jsonl"
+  TZ=UTC touch -t 202601010000 "$d/agent-anchor.jsonl" "$d/agent-anchor.meta.json"
+}
 
 SLUG="-Users-x-some-other-repo"   # NOT the ledger repo: the join must never use cwd or slug
 
@@ -254,6 +267,9 @@ eq "S-tag r1 general-purpose count" "$(jq '.runs[] | select(.rid=="r1") | .by_ty
 eq "S-tag join source tag=3" "$(jq '.dispatch.rid_source.tag' <<<"$J")" 3
 echo "== S-privacy: no description text and no message text reaches any output =="
 ALL="$(RJ; R ceremony; R show subagent_runs --json)"
+printf '%s' "$J" | jq -e . >/dev/null 2>&1 && ok "S-privacy output is JSON" || bad "S-privacy output is not JSON"
+has "S-privacy output holds the run r1" '"rid": "r1"' "$(jq '.runs[] | select(.rid=="r1")' <<<"$J")"
+has "S-privacy output holds dispatch a1" "a1" "$(R show subagent_runs --json)"
 hasnt "S-privacy no description text" "SECRET-DESC-TEXT" "$ALL"
 hasnt "S-privacy no message text" "SECRET-MSG-TEXT" "$ALL"
 
@@ -289,13 +305,15 @@ gl r5 2026-09-20T09:00:00Z build ran -
 mk_sub "$SLUG" sess3 t1 kit:task-verifier "rid=r5" 2026-09-20T10:00:00.000Z
 J="$(RJ)"
 eq "S-tokens output 290" "$(jq '.runs[] | select(.rid=="r5") | .tokens.output' <<<"$J")" 290
-eq "S-tokens total 450" "$(jq '.runs[] | select(.rid=="r5") | .tokens_total' <<<"$J")" 450
+eq "S-tokens net 350 (in 10 + out 290 + cache-creation 50)" "$(jq '.runs[] | select(.rid=="r5") | .tokens_net' <<<"$J")" 350
+eq "S-tokens cache-read 100 reported apart" "$(jq '.runs[] | select(.rid=="r5") | .tokens_cache_read' <<<"$J")" 100
+has "S-tokens text labels the total incl. cache-read" "total incl. cache-read=450" "$(R ceremony)"
 
 echo "== S-unknown: a run with no attributed dispatch prints ? for dispatches and tokens =="
 gl r8 2026-09-20T09:30:00Z grill ran -
 J="$(RJ)"
 eq "S-unknown dispatches null" "$(jq '.runs[] | select(.rid=="r8") | .dispatches' <<<"$J")" null
-eq "S-unknown tokens null" "$(jq '.runs[] | select(.rid=="r8") | .tokens_total' <<<"$J")" null
+eq "S-unknown tokens null" "$(jq '.runs[] | select(.rid=="r8") | .tokens_net' <<<"$J")" null
 has "S-unknown text ?" "| r8 | 1 | 1 | 0 | 0 | 1.00 | ? | ? | ? | ? | ? | ? | ? | ? |" "$(R ceremony)"
 
 echo "== S-per-task: tasks=4 and 8 dispatches -> 2.0 per task; no tasks= -> ? =="
@@ -344,6 +362,77 @@ eq "W-bounded files read (old one skipped by mtime)" "$(jq '.transcripts.files_r
 eq "W-bounded skipped-files 0 (old file never opened)" "$(jq '.transcripts.skipped_files' <<<"$J")" 0
 has "W-bounded earliest is the old file's date" "2026-01-01" "$(jq -r '.transcripts.earliest' <<<"$J")"
 
+# raw_sub <session> <id> <ts>: meta for a tag-less dispatch of rid=x1; the caller writes the jsonl
+raw_sub() {
+  local d="$SESS/$SLUG/$1/subagents"; mkdir -p "$d"
+  printf '{"agentType":"kit:task-verifier","description":"rid=x1"}\n' > "$d/agent-$2.meta.json"
+  RAWDIR="$d"; RAWID="$2"; RAWTS="$3"
+}
+raw_touch() { TZ=UTC touch -t "${RAWTS:0:4}${RAWTS:5:2}${RAWTS:8:2}${RAWTS:11:2}${RAWTS:14:2}" "$RAWDIR/agent-$RAWID.jsonl" "$RAWDIR/agent-$RAWID.meta.json"; }
+USE='{"type":"assistant","timestamp":"2026-09-20T10:00:00.000Z","message":{"id":"m","usage":{"input_tokens":1,"output_tokens":7,"cache_read_input_tokens":0,"cache_creation_input_tokens":0}}}'
+
+echo "== P-pruned: a window starting before the earliest transcript prints ? for dispatch and token cells =="
+reset
+gl clk 2026-09-30T00:00:00Z grill ran -
+gl p1 2026-09-12T09:00:00Z build ran -
+mk_sub "$SLUG" sessp p1a kit:task-verifier "rid=p1" 2026-09-25T10:00:00.000Z
+J="$(RJ --from 2026-09-10T00:00:00Z)"
+printf '%s' "$J" | jq -e . >/dev/null 2>&1 && ok "P-pruned output is JSON" || bad "P-pruned output is not JSON"
+eq "P-pruned dispatch count null" "$(jq '.dispatch.count' <<<"$J")" null
+eq "P-pruned tokens null" "$(jq '.dispatch.tokens' <<<"$J")" null
+eq "P-pruned run dispatches null" "$(jq '.runs[] | select(.rid=="p1") | .dispatches' <<<"$J")" null
+eq "P-pruned earliest still reported" "$(jq -r '.transcripts.earliest' <<<"$J")" "2026-09-25T10:00:00Z"
+has "P-pruned text says ?" "dispatches: ? (?)" "$(R ceremony --from 2026-09-10T00:00:00Z)"
+J="$(RJ --from 2026-09-25T10:00:00Z)"
+eq "P-pruned control: window inside retention counts the dispatch" "$(jq '.dispatch.count' <<<"$J")" 1
+
+echo "== M-malformed / L-lastline / N-noid: bad transcripts inside the window =="
+reset
+clock
+gl m1 2026-09-20T09:00:00Z build ran -
+mk_sub "$SLUG" sessm good1 kit:task-verifier "rid=m1" 2026-09-20T10:00:00.000Z
+mk_sub "$SLUG" sessm good2 kit:task-verifier "rid=m1" 2026-09-20T10:05:00.000Z
+raw_sub sessm bad1 2026-09-20T10:10:00.000Z
+{ echo "$USE"; echo '{"usage": not json'; echo "$USE"; } > "$RAWDIR/agent-bad1.jsonl"; raw_touch
+raw_sub sessm live1 2026-09-20T10:15:00.000Z
+{ echo "$USE"; printf '{"type":"assistant","timestamp":"2026-09-20T10:15:'; } > "$RAWDIR/agent-live1.jsonl"; raw_touch
+raw_sub sessm noid1 2026-09-20T10:20:00.000Z
+{ echo '{"type":"assistant","timestamp":"2026-09-20T10:20:00.000Z","message":{"usage":{"input_tokens":1,"output_tokens":5,"cache_read_input_tokens":0,"cache_creation_input_tokens":0}}}'
+  echo '{"type":"assistant","timestamp":"2026-09-20T10:20:01.000Z","message":{"usage":{"input_tokens":1,"output_tokens":290,"cache_read_input_tokens":0,"cache_creation_input_tokens":0}}}'
+} > "$RAWDIR/agent-noid1.jsonl"; raw_touch
+J="$(RJ)"
+printf '%s' "$J" | jq -e . >/dev/null 2>&1 && ok "M-malformed output is JSON" || bad "M-malformed output is not JSON"
+eq "M-malformed skipped-files 1" "$(jq '.transcripts.skipped_files' <<<"$J")" 1
+eq "M-malformed files seen 6 (5 + anchor)" "$(jq '.transcripts.files_seen' <<<"$J")" 6
+eq "M-malformed siblings still count" "$(jq '.runs[] | select(.rid=="m1") | .dispatches' <<<"$J")" 2
+eq "L-lastline truncated last line tolerated (live1 read)" "$(jq '.transcripts.files_read' <<<"$J")" 4
+eq "N-noid no id: last line wins, not the sum" \
+   "$(uv run stats query "SELECT output_tokens AS o FROM subagent_runs WHERE agent_id='noid1'" 2>/dev/null | jq '.[0].o')" 290
+
+echo "== Q-fifo / Q-symlink: a FIFO transcript never hangs the scan; a symlinked dir is not followed =="
+reset
+clock
+gl q1 2026-09-20T09:00:00Z build ran -
+mk_sub "$SLUG" sessq q-ok kit:task-verifier "rid=q1" 2026-09-20T10:00:00.000Z
+raw_sub sessq qfifo 2026-09-20T10:05:00.000Z
+mkfifo "$RAWDIR/agent-qfifo.jsonl"
+mkdir -p "$FIX/outside/sessz/subagents"
+cp "$SESS/$SLUG/sessq/subagents/agent-q-ok.meta.json" "$FIX/outside/sessz/subagents/agent-out.meta.json"
+cp "$SESS/$SLUG/sessq/subagents/agent-q-ok.jsonl" "$FIX/outside/sessz/subagents/agent-out.jsonl"
+ln -s "$FIX/outside" "$SESS/linked-project"
+RJ > "$FIX/q.json" &
+QPID=$!
+for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30; do
+  kill -0 "$QPID" 2>/dev/null || break
+  sleep 2
+done
+if kill -0 "$QPID" 2>/dev/null; then kill "$QPID" 2>/dev/null; bad "Q-fifo scan hung on a FIFO"; else ok "Q-fifo scan finished"; fi
+J="$(cat "$FIX/q.json")"
+printf '%s' "$J" | jq -e . >/dev/null 2>&1 && ok "Q-fifo output is JSON" || bad "Q-fifo output is not JSON"
+eq "Q-fifo only the regular file counts" "$(jq '.dispatch.count' <<<"$J")" 1
+eq "Q-symlink linked project not followed (regular + fifo + anchor seen only)" "$(jq '.transcripts.files_seen' <<<"$J")" 3
+rm -f "$RAWDIR/agent-qfifo.jsonl"; rm -f "$SESS/linked-project"
+
 echo "== F-casefold: Ship and ship are one gate; Build is progress, not ceremony =="
 reset
 gl f1 2026-09-20T10:00:00Z Ship ran -
@@ -359,7 +448,7 @@ reset
 OUT="$(R ceremony)"; RC=$?
 eq "E-empty exit 0" "$RC" 0
 has "E-empty says 0 gate records" "of 0 gate records" "$OUT"
-hasnt "E-empty anomaly stays quiet" "$FIRES" "$(R anomalies --json)"
+nofire "E-empty anomaly stays quiet" "$(RA anomalies --json)"
 
 echo
 echo "RESULT: $PASS passed, $FAIL failed"
