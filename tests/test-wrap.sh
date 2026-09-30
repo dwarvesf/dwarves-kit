@@ -5721,6 +5721,8 @@ chk "pull-only stale lock: exits 2" "$([ "$rc" -eq 2 ]; echo $?)"
 chk_has "pull-only stale lock: the skipped pull is named" "$out" \
   "SKIP pull --ff-only (checkout on main): index.lock held by another writer"
 chk "pull-only stale lock: HEAD unmoved" "$([ "$(git -C "$PLK" rev-parse HEAD)" = "$PLK_HEAD" ]; echo $?)"
+out="$("$WRAP" apply --pull-only "$PLK" 2>&1)"; rc=$?
+chk "pull-only stale lock: a dry run still exits 0 (the lock is transient)" "$rc"
 out="$("$WRAP" apply --apply "$PLK" 2>&1)"; rc=$?
 chk "plain apply stale lock: the same skip still exits 0" "$rc"
 chk_has "plain apply stale lock: the pull was skipped the same way" "$out" "index.lock held by another writer"
@@ -5731,6 +5733,8 @@ git init -q -b main "$PNO"; gitc "$PNO"; git -C "$PNO" commit -q --allow-empty -
 out="$("$WRAP" apply --pull-only --apply "$PNO" 2>&1)"; rc=$?
 chk "pull-only no default branch: exits 2" "$([ "$rc" -eq 2 ]; echo $?)"
 chk_has "pull-only no default branch: the skip is named" "$out" "no default branch resolved"
+out="$("$WRAP" apply --pull-only "$PNO" 2>&1)"; rc=$?
+chk "pull-only no default branch: a dry run exits 2 too" "$([ "$rc" -eq 2 ]; echo $?)"
 out="$("$WRAP" apply --apply "$PNO" 2>&1)"; rc=$?
 chk "plain apply no default branch: still exits 0" "$rc"
 
