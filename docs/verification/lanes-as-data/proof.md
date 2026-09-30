@@ -6,7 +6,7 @@ Spec: `docs/specs/SPEC-368-lanes-as-data.md`. Branch `feat/lanes-as-data`. Every
 
 | Command | Exit | Result | Covers |
 |---|---|---|---|
-| `bash tests/test-lanes-data.sh` | 0 | 48 cases, all `PASS <name>` | AC2, AC4 to AC9, AC11 to AC20, AC23, AC24, review fixes |
+| `bash tests/test-lanes-data.sh` | 0 | 54 cases, all `PASS <name>` (`floor-timing-30k`: 1.9 s idle, 4.0 s under load, limit 5 s) | AC2, AC4 to AC9, AC11 to AC20, AC23, AC24, review fixes |
 | `bash lib/config/kit-config.sh selftest` | 0 | `PASS kit-config selftest`, includes `ok   last-dot split: lane.normal.phases` | AC10 |
 | `bash tests/test-hooks.sh` | 0 | `Passed: 725 / 725` | AC22 |
 | `bash tests/test-meta.sh` | 0 | `Passed: 887 / 887` | AC22 |
