@@ -20,11 +20,11 @@ Deltas from SPEC-376. Nothing here repeats what the spec already states.
 - Why: matches the spec's intended behavior (TB1, TB2, TD1) with the code that exists.
 - Impact: the unchanged merge path gains one `ls-remote` call and a new `already gone from origin` line when the ref is absent.
 
-## 2026-09-30 Sibling branch row kept, reframed
-- Context: `feat/wrap-pull-only` is still open; its hunks were measured on the monolith.
-- Decision/Change: the Siblings row notes #853 moved those hunks into other modules and that this spec touches only `wrap-land.sh` and `test-wrap-land.sh`. Overlap analysis was not redone.
-- Why: the new files share nothing with that branch's modules.
-- Impact: none for this build.
+## 2026-09-30 Sibling branch merged during the build
+- Context: `feat/wrap-pull-only` was the spec's one named sibling.
+- Decision/Change: it merged as #857 while this branch was open; the second `origin/master` merge was clean. The Siblings row now says so and drops the rebase ordering rule.
+- Why: nothing remains to order against.
+- Impact: docs only.
 
 ## 2026-09-30 The removal recheck compares against the tidy's entry state, not "empty"
 - Context: the spec says `_land_tidy` re-reads `git status --porcelain` right before `worktree remove -f -f` and requires it to be empty.
