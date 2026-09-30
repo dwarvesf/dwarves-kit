@@ -34,7 +34,7 @@ The full-lane triggers are listed at `docs/WORKFLOW.md:58`. The floor sees file 
 | migration | Yes: migration folders, alembic, drizzle, Liquibase changelogs, schema files |
 | data loss | Partly: added destructive SQL lines and `deleteMany({})` in code files |
 | data model | Partly: through migration and schema files. An ORM model edit with no migration is human-only |
-| auth | Partly: auth, session, login, password, and jwt paths |
+| auth | `(^|/)(auth(entication|orization|orisation|n|z|[_-][a-z_-]*)?|oauth|rbac|permissions?|sessions?)(/|\.[a-z]+$)|(^|/)[^/]*(login|password|passwd|jwt)[^/]*$` |
 | audit/security | Partly: secret files only (`.env`, keys, credentials) |
 | hooks | Partly: `.github/workflows/` and `.kit.toml` everywhere; the kit's own enforcement code through its `extra_hard_paths`. Hook code in adopted repos is human-only |
 | authz | Human-only: role and permission checks live in ordinary handlers |
@@ -96,7 +96,7 @@ Rejected: A keeps the markdown parse as the source of truth. C adds a build step
                  +--> `start`: dropped phases -> | GATE | <p> | skipped | repo lane override
 
  push --> hooks/ship-gate.sh
-            |-- no spec: floor hit -> [advisory] only (no lane to compare)
+            |-- no spec: floor hit -> BLOCKED until full-lane gates or an audited override exist for the slug
             |-- check <spec Lane> <rid>                        (as today)
             |-- floor <root> <base> hit (migration|auth|secret|ci|kit-config|data-loss|extra)
             |        -> check full <rid> --kit-lanes  -> gap: exit 2 BLOCKED
@@ -163,11 +163,12 @@ Out of bounds: the proof gate's `stateful` class (`lib/gate/proof-ledger.sh:77-1
 | Surface | Change |
 |---|---|
 | `gate-ledger.sh required\|plan\|check\|progress\|descent\|plan-record` | Read lane data from the config layers instead of the WORKFLOW.md table |
-| `gate-ledger.sh check <lane> <rid> --kit-lanes` | New flag: ignore the project layer (kit root and operator overlay only). Used by the floor |
+| `gate-ledger.sh check <lane> <rid> --kit-lanes` | New flag: read the kit root lane data only (no project layer, no operator overlay). Used by the floor |
 | `gate-ledger.sh start <rid> <lane> ...` | Also writes one `\| GATE \| <phase> \| skipped \| repo lane override (.kit.toml)` line per phase the project override dropped |
 | `lane-classify.sh classify\|explain\|check [--rid <rid>]` | stdout: never `full` from text alone; returns `[lanes] default`. On a hard flag or 4+ soft flags: one stderr `LANE-SUGGEST: full (<flags>)` line, and an `action <rid> "lane-suggest full flags=<flags>"` ledger line only when `--rid` is given (best effort, never fails the verb; no rid is ever guessed from the branch). `explain` adds `suggest: full (<flags>)`. With `--files`, returns `full` when a file hits a hard path |
 | `lane-classify.sh escalate <cur> <spec>` | Prints `HOLD <cur>` plus the suggestion for text-only full hits; still prints `ESCALATE tiny -> normal\|bug` when that applies. `commands/execute.md:42-45` already treats `HOLD` as "continue" |
-| `lane-classify.sh floor <root> [<base>]` | New verb. Prints `full <kind>: <path>` for the first hit, else nothing. Exit 0 always |
+| `lane-classify.sh risk [--files] [--rid] "<desc>"` | New verb. Prints `full` when the lane is full or a full suggestion fired, else the lane. Callers that read "full" as a risk signal (significance, orchestrate, harvest sweep, wrap) use it, since `classify` alone only suggests |
+| `lane-classify.sh floor <root> [<base> [<head>]]` | New verb. Prints `full <kind>: <path>` for the first hit, else nothing. Exit 0 always |
 | `kit-config.sh kit_config_get\|kit_config_get_root` | Split the dotted key at the LAST dot, so `lane.normal.phases` reads section `lane.normal`, key `phases` |
 
 Built-in hard paths (case-insensitive ERE over changed paths, constants in `lane-classify.sh`, so no config file can remove them):
@@ -175,11 +176,13 @@ Built-in hard paths (case-insensitive ERE over changed paths, constants in `lane
 | Kind | Pattern |
 |---|---|
 | migration | `(^\|/)(migrations?\|migrate)/\|(^\|/)alembic/versions/\|(^\|/)drizzle/\|(^\|/)schema\.(sql\|rb\|prisma)$\|(^\|/)[^/]*changelog[^/]*\.(xml\|ya?ml\|json\|sql)$` |
-| auth | `(^\|/)(auth\|oauth\|authn\|authz\|rbac\|permissions?\|sessions?)(/\|\.[a-z]+$)\|(^\|/)[^/]*(login\|password\|passwd\|jwt)[^/]*$` |
+| auth | `(^|/)(auth(entication|orization|orisation|n|z|[_-][a-z_-]*)?|oauth|rbac|permissions?|sessions?)(/|\.[a-z]+$)|(^|/)[^/]*(login|password|passwd|jwt)[^/]*$` |
 | secret | `(^\|/)\.env(\.(local\|dev\|development\|prod\|production\|staging\|test))?$\|(^\|/)secrets?/\|\.(pem\|key\|p12\|pfx)$\|(^\|/)[^/]*credentials?[^/]*$` |
-| ci | `(^\|/)\.github/workflows/` |
+| ci | `(^|/)\.github/` (all of it: workflows, actions, CODEOWNERS) |
+| infra | `(^|/)Dockerfile[^/]*$`, IAM and policy terraform (`*iam*.tf`, `*role*.tf`, `*polic*.tf`, `iam/` and `policies/` folders) |
+| submodule | a gitlink change (mode 160000) in the diff |
 | kit-config | `(^\|/)\.kit\.toml$` |
-| data-loss | an ADDED line in a non-doc file matching `drop (table\|column\|database\|schema)\|deleteMany\(\s*\{\s*\}\s*\)`, or `delete from` with no `where` on the same line. `truncate` counts only as SQL: in a `.sql` file, or on a line that also holds a quote and ends the statement, pattern `\btruncate\s+(table\s+)?[a-z_."]+\s*;`. A comment such as `# truncate long names` never matches |
+| data-loss | an ADDED line in a non-doc file matching `drop[[:space:]]+(table\|column\|database\|schema)` or `deleteMany({})`, or `delete from` with no `where` (or `where 1=1`) on the same line. `truncate` counts in a `.sql` file, in a quoted SQL string, or as `truncate <name>;`. A comment such as `# truncate long names` never matches |
 
 Paths are listed with `--no-renames`, so both sides of a rename count (same rule as `lib/gate/proof-ledger.sh:63-73`).
 
@@ -212,7 +215,7 @@ New operator-facing lines:
 - `LANE-SUGGEST: full (<flags>); default stays <lane>; the operator assigns full with: gate-ledger.sh start --amend <rid> full ...`
 - `BLOCKED: ship-gate. This diff touches a hard path (<kind>: <path>); the full lane's gates apply whatever the spec's Lane says:`
 - `[advisory] run '<slug>': the classifier suggested full (<flags>) and the run ships as <lane>`
-- `[advisory] no spec for '<slug>', and the diff touches a hard path (<kind>: <path>); write a spec with a Lane, or record why not`
+- `BLOCKED: ship-gate. This diff touches a hard path (<kind>: <path>); ...` plus `(no spec found for '<slug>'; a hard-path diff owes the full lane's gates with or without one)`
 
 ### Infrastructure changes
 
@@ -230,7 +233,7 @@ None. `install.sh` copies every `kit.toml` section except `[modules]` into the i
 
 - [ ] TASK-4: Light default in `lib/classify/lane-classify.sh`. `classify_core` stops returning `full` from text; it sets the suggestion and returns `[lanes] default`. Add `--rid` and the ledger action line. Narrow four regexes: `token` to `(auth|access|refresh|api|bearer|session) token|token (leak|rotation|storage|refresh)`; drop the bare `\bqueue(s)?\b`; `\brole(s)?\b` to `role[s]? (check|permission|grant|assignment)|role-based|rbac`; `webhook` to `webhook (signature|secret|verif[a-z]*|auth[a-z]*|endpoint|handler)`. `escalate` prints `HOLD` plus the suggestion. Update the `lane_rank` comment (`:193-196`). AC: the four false hits classify `normal` and print no `LANE-SUGGEST` line; "add webhook signature check" prints `LANE-SUGGEST: full (external-provider)`.
 - [ ] TASK-5: Add the `floor` verb with the built-in hard paths and the `extra_hard_paths` union. `--files` on `classify` uses the same test, replacing the `lib/|hooks/` rule (`:89-102`) as the path to `full`; a `lib/` or `hooks/` edit becomes a `kit-machinery` suggestion. AC: `floor` prints `full migration: alembic/versions/0001_users.py` on that fixture and nothing on a `src/`-only fixture.
-- [ ] TASK-6: Wire `hooks/ship-gate.sh`. (a) Spec-less push (`:224-225`): if `floor` hits, print the no-spec advisory, then exit 0 as today. (b) After the lane check (`:279-296`): if `floor` hits, run `gate-ledger.sh check full "$SLUG" --kit-lanes` with the project root passed, block on a gap with the hard-path message, and log `BLOCKED | ship-gate | <slug> (hard-path <kind>)`. (c) If the ledger holds a `lane-suggest full` action and the spec lane is not `full`, print the not-taken advisory. (a) and (c) stay under `_gate_on lane_gates` (head, as today); (b) asks `gate-policy.sh enabled lane_gates "$ROOT" --at "$BASE"` instead. Fail open on a missing lib, as today. AC: the migration fixture with only normal-lane gates recorded exits 2; the same fixture without the migration file exits 0; the fixture that commits `lane_gates = false` with the migration exits 2.
+- [ ] TASK-6: Wire `hooks/ship-gate.sh`. (a) Spec-less push (`:224-225`): if `floor` hits and the switch is on at the merge base, run `check full "$SLUG" --kit-lanes` and block on a gap, with the no-spec note in the message. (b) After the lane check (`:279-296`): if `floor` hits, run `gate-ledger.sh check full "$SLUG" --kit-lanes` with the project root passed, block on a gap with the hard-path message, and log `BLOCKED | ship-gate | <slug> (hard-path <kind>)`. (c) If the ledger holds a `lane-suggest full` action and the spec lane is not `full`, print the not-taken advisory. (c) stays under `_gate_on lane_gates` (head, as today); (a) and (b) ask `gate-policy.sh enabled lane_gates "$ROOT" --at "$BASE"` instead. Fail open on a missing lib, as today. AC: the migration fixture with only normal-lane gates recorded exits 2; the same fixture without the migration file exits 0; the fixture that commits `lane_gates = false` with the migration exits 2.
 - [ ] TASK-6b: `lib/gate/gate-policy.sh enabled <key> <root> --at <base>`: the project layer comes from `git show <base>:.kit.toml` (absent at base means no project layer); operator and kit-root layers unchanged. Without `--at`, behavior is byte-identical to today. AC: `bash tests/test-lanes-data.sh policy-at-base` passes.
 
 ### Phase 3: Polish
@@ -276,7 +279,7 @@ Fixture helpers live in `tests/test-lanes-data.sh` (new). Each case prints `PASS
 | AC16 | A project cannot hollow full to pass the floor | `bash tests/test-lanes-data.sh ship-hollow-full-override` | hook exit 2 |
 | AC17 | Data-loss lines block; the same line in a doc does not | `bash tests/test-lanes-data.sh ship-data-loss` | `DROP TABLE`, `db.execute("TRUNCATE users;")`, `deleteMany({})` in code and `TRUNCATE users` in a `.sql` file: exit 2; in `.md`: exit 0; `# truncate long names` and `name.truncate(20)` in code: no hit |
 | AC18 | Widened hard paths | `bash tests/test-lanes-data.sh floor-paths` | hits for `alembic/versions/x.py`, `drizzle/0001.sql`, `db/changelog/db.changelog-master.xml`, `.github/workflows/ci.yml`, `.kit.toml`; no hit for `.env.example`, `CHANGELOG.md` |
-| AC19 | Spec-less push warns, never blocks | `bash tests/test-lanes-data.sh ship-no-spec-advisory` | exit 0; stderr has the no-spec advisory |
+| AC19 | Spec-less push with a hard path blocks until full-lane gates or overrides exist; passes when the switch is off at the merge base | `bash tests/test-lanes-data.sh ship-no-spec-blocks` | exit 2 with the no-spec note; exit 0 after overrides; exit 0 with the switch off at the base |
 | AC20 | Not-taken suggestion advisory | `bash tests/test-lanes-data.sh ship-suggest-advisory` | exit 0 (gates recorded); stderr has the not-taken advisory |
 | AC21 | Rule text replaced | `grep -c 'take the heavier one' docs/WORKFLOW.md AGENTS.md examples/hello-spec/AGENTS.md commands/assign.md` | every count `0` |
 | AC23 | A PR cannot switch off its own floor | `bash tests/test-lanes-data.sh ship-flip-gate-in-pr` | hook exit 2 (base has `lane_gates = true`, head commits `false` plus a migration) |
@@ -316,7 +319,7 @@ Date: 2026-09-29
 | `DROP TABLE users;`, `db.execute("TRUNCATE users;")`, `await db.users.deleteMany({})` in code; `TRUNCATE users` in `db/reset.sql` | negative control | AC17 | exit 2 each |
 | Same lines in `docs/notes.md` only | positive | AC17 | exit 0 |
 | `.env.example`, `CHANGELOG.md` changed | positive (not hard paths) | AC18 | `floor` prints nothing |
-| Spec-less push with a migration file | positive (warn, no block) | AC19 | exit 0 plus the advisory |
+| Spec-less push with a migration file | negative control (a renamed branch must not dodge the floor) | AC19 | exit 2 until every full gate has a ran or override record |
 | Lane value `phases = ["spec",` with no closing bracket | negative control (fail closed) | Invariants | `check normal <rid>` exits 1 with "unknown lane" |
 
 Dry trace for the key negative control (AC15): the fixture commits `db/migrations/0001_users.sql`; `ship-gate.sh` passes `:279`; `check normal` passes because every normal gate is recorded; the new block calls `lane-classify.sh floor <root> <base>`, whose changed-path list includes the file and matches the migration pattern; `gate-ledger.sh check full <rid> --kit-lanes` prints `MISSING-GATE: think` and others; the hook exits 2. Deleting the new block turns this case green, which is the mutation that proves the test.
@@ -325,7 +328,7 @@ Dry trace for the key negative control (AC15): the fixture commits `db/migration
 
 1. A rename out of `migrations/` (`git mv db/migrations/x.sql tests/`): both sides are listed (`--no-renames`), so the floor hits.
 2. A spec already on `Lane: full`: the floor still runs `check full --kit-lanes`, so a project override that hollowed `full` cannot pass.
-3. A branch with no spec: no lane exists to compare, so the ship-gate cannot block on lane gates. When the floor hits it prints the no-spec advisory, then exits 0 as today (`hooks/ship-gate.sh:224-225`). The proof gate still blocks stateful diffs there in adopted repos.
+3. A branch with no spec: the floor needs no lane, so a hard-path diff still owes the full lane's gates (or an audited override) for the slug, and the ship-gate blocks until they exist. Renaming a branch cannot dodge the floor. The switch at the merge base still governs (`lane_gates = false` there turns it off).
 4. No `[lanes] default` in any layer: code default `normal`.
 5. An invalid ERE in `extra_hard_paths`: `grep -E` errors; that layer's extras count as absent, with one stderr line. Built-ins still apply.
 6. `lanes.d` drop-in lanes: unchanged; they answer `plan` only (`lib/gate/gate-ledger.sh:495-505`).
@@ -367,7 +370,7 @@ Dry trace for the key negative control (AC15): the fixture commits `db/migration
 
 ## Touches
 
-Single files (the dispatch gate cannot prove these disjoint by prefix, so it serializes against any sibling that lists them): `kit.toml`, `.kit.toml`, `hooks/ship-gate.sh`, `docs/WORKFLOW.md`, `AGENTS.md`, `examples/hello-spec/AGENTS.md`, `commands/assign.md`, `docs/MANUAL.md`, `docs/architecture.md`, `docs/FEATURES.md`, `tests/test-lanes-data.sh`, `tests/test-lane-classify.sh`, `tests/test-lane-escalation.sh`. Inside `lib/gate/**` this spec edits `lib/gate/gate-ledger.sh` and `lib/gate/gate-policy.sh` (the `--at <base>` flag).
+Single files (the dispatch gate cannot prove these disjoint by prefix, so it serializes against any sibling that lists them): `kit.toml`, `.kit.toml`, `hooks/ship-gate.sh`, `docs/WORKFLOW.md`, `AGENTS.md`, `examples/hello-spec/AGENTS.md`, `commands/assign.md`, `docs/MANUAL.md`, `docs/architecture.md`, `docs/FEATURES.md`, `tests/test-lanes-data.sh`, `tests/test-lane-classify.sh`, `tests/test-lane-escalation.sh`. Added on lead approval after review: `hooks/hooks.json`, `settings.json` (ship-gate timeout 30s), `hooks/harvest_sweep.py`, `lib/classify/significance-classify.sh`, `lib/queue/orchestrate.sh`, `commands/wrap.md` (callers switched to the `risk` verb), `docs/guides/lanes.md`, `docs/workflow-map.md`, `examples/hello-spec/WORKFLOW.md` (rule text), `tests/test-hooks.sh`, `tests/test-ledger-durability.sh` (pins moved to the new behavior). Inside `lib/gate/**` this spec edits `lib/gate/gate-ledger.sh` and `lib/gate/gate-policy.sh` (the `--at <base>` flag).
 
 - lib/classify/**
 - lib/gate/**
@@ -395,7 +398,7 @@ Single files (the dispatch gate cannot prove these disjoint by prefix, so it ser
 - DEC-5: `escalate` prints `HOLD` plus a suggestion instead of a new stdout word, so `commands/execute.md` needs no edit here.
 - DEC-6: Keep the WORKFLOW.md matrix as a pinned human view. Rejected: deleting it (links break) and generating it (a build step for prose).
 - DEC-7: Normal requires `validate` and `review` (operator decision: lighten the middle, keep the edges). This reverses `docs/WORKFLOW.md:451-457`; the refusal cost that note named is handled in the migration notes.
-- DEC-8: Spec-less pushes warn on a floor hit, never block (operator decision).
+- DEC-8: Spec-less pushes BLOCK on a floor hit (amended after the security review; the first decision was warn-only, which let a renamed branch dodge the floor). The slug needs full-lane gates or audited overrides.
 - DEC-9: `webhook` narrowed with `token`, `queue`, and `role` (operator decision).
 - DEC-10: Fix `kit_config_get` at the last dot rather than bypass it; keep per-file reads only for the project layer's committed-and-clean test.
 
