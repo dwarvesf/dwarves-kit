@@ -315,6 +315,14 @@ Related, **2b-0 role synthesis** (inside `/kit:execute`): each task is classifie
 **When to invoke:** maintainer-only, before tagging a release of the kit (the release-hygiene check is exactly the "before tagging" guard)
 **Common gotcha:** the rejection-first verdict will REJECT on real violations. Do not soften the criteria; address them.
 
+### `/kit:wrap`
+
+**Phase:** session close-out (landing + optional distillation)
+**Reads:** board, git state, `kit.toml` knobs (`wrap.*`), the session itself
+**Writes:** commits/merges/tidies per the landing steps, the step-9 report; the distill half writes to home repos (memory notes, in-lane candidate builds)
+**When to invoke:** "wrap up", "close out", "land it". The distill half resolves from `wrap.distill` (root-only): `true` runs it every wrap, `false` lands only, and `"harvest"` hands it to the transcript harvest sweep on hosts where the sweep is installed (the `sweep/installed` marker plus `harvest.enable`); there the report says `SKIPPED: distill runs in the harvest sweep` and carries a `STATE` row from `harvest_sweep.py --status`. On a host with no sweep, `harvest` resolves as `true`. The `distill` word in the invocation wins for one run either way.
+**Common gotcha:** the knob is per-host in effect, not per-repo: a synced operator `kit.toml` that says `harvest` does not switch the mode on a machine the sweep was never installed on, which is what keeps wrap distilling where no sweep exists.
+
 ## Hooks (no invocation)
 
 The full hook inventory (every hook, its event, and its behavior) lives in ONE place:
@@ -335,6 +343,26 @@ What to remember here: the blocking hooks, everything else advises or warns.
 | `secrets-guard` | PreToolUse(Read\|Edit\|Bash) | Reads of secret files (`.env`, `~/.ssh`, `~/.aws`, `.pem`); canonicalizes the path first. Allows `.env.example`. Best-effort on the Bash surface. |
 | `commit-format` | PreToolUse(Bash) | A `git commit -m` subject that is non-conventional, >72 chars, or carries a SPEC-/TASK-/phase marker. Subject only. |
 | `anti-rationalization` | Stop | Premature "done": rationalization phrases, guess-fix during an open `/debug` session, unimplemented-stub markers in the diff. |
+
+### Harvest sweep (scheduled capture)
+
+The `harvest` hook stages learnings when a session compacts or ends. The harvest sweep is the scheduled path beside it. It reads new claude transcripts (plus devin when `harvest.sources` lists it) behind a per-source cursor, extracts learnings, stages them into ledgers, and writes a wrap-shaped report. It builds, pushes, and merges nothing.
+
+| Command | What it does |
+|---|---|
+| `python3 hooks/harvest.py --sweep` | One run. Needs `harvest.enable = true` and the host marker; otherwise it exits 0 without work. |
+| `... --sweep --dry-run` | Prints the manifest a run would produce. Changes no cursor, ledger, or report state (only the raw extract cache is written). |
+| `... --sweep --since <iso\|epoch>` | Reads sessions from that time instead of the cursor. |
+| `... --status` | Prints the newest report path, its candidate count, and the queued learning count, or `none`. |
+| `... --flush-list` | Prints every queued learning as one JSON array. |
+| `... --mark-flushed <row-id> <ref>` | Marks one learning routed to a durable home. |
+| `bash deploy/macos/harvest-sweep/install [--apply\|--uninstall]` | Dry-run by default. `--apply` renders the LaunchAgent and writes the per-host `installed` marker. `--uninstall` removes both and keeps state. |
+
+**Per host, not per repo.** A synced operator `kit.toml` cannot switch the sweep on. Only a host where `install --apply` wrote the marker sweeps. On that host the per-session hook stands down, unless `harvest.hook_when_sweep_on` is true.
+
+**Usage limits.** A 5-hour or weekly limit holds the run: it stops, keeps the cursor, counts no failure, and exits 0. The next scheduled run resumes.
+
+**Reading the result.** Run `--status`, open the report it names, and flush queued learnings with `--flush-list` then `--mark-flushed`. Install detail: `deploy/macos/harvest-sweep/README.md`.
 
 ## Agents (dispatched, not invoked)
 
@@ -596,7 +624,7 @@ Compaction sequence:
 If state is missing, check in order:
 - `.claude/session-state/last-state.md` exists and is current.
 - `.claude/session-state/archive/` for the last 10 rotated snapshots.
-- Bash install only: confirm both PreCompact and PostToolUse(compact) hooks are registered in `settings.json`.
+- Bash install only: confirm both PreCompact and SessionStart(compact) hooks are registered in `settings.json`.
 - Plugin install: same checks against `hooks/hooks.json`.
 
 #### Statusline shows blank or default values

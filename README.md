@@ -303,15 +303,23 @@ Within one spec, tasks run sequentially. Across specs, `/kit:dispatch` fans out 
 | output-offload | PostToolUse(*) | Offloads a >2k-token tool output to a file + leaves a terse pointer |
 | spec-drift-guard | PreToolUse(Write) | Warns when creating files not in the spec |
 | pre-compact-backup | PreCompact | Saves structured session snapshot before compaction |
-| harvest | PreCompact, SessionEnd | Stages durable session learnings to a repo-relative ledger (PreCompact); drafts a LAB_LOG entry (SessionEnd --lab-log). Never writes a durable home; a human flushes |
+| harvest | PreCompact, SessionEnd | Stages durable session learnings to a repo-relative ledger (PreCompact); drafts a LAB_LOG entry (SessionEnd --lab-log). Never writes a durable home; a human flushes. Stands down on a host where the scheduled harvest sweep is installed (see below) |
 | backlog-stage | SessionEnd | Opt-in (`BACKLOG_STAGE_AUTO=1`, default off): stages forward-looking work-items from the session to a repo-relative staging file. Never writes the board directly |
 | intake-sweep | SessionStart (via backlog-stage --surface, same opt-in) | Sweeps consumer-declared deferred-link sources (`_meta/intake-sources.json`: jsonl / command adapters) into the same staging file. Config-gated no-op; never writes the board directly |
-| post-compact-reinject | PostToolUse(compact) | Re-injects critical rules after compaction |
+| post-compact-reinject | SessionStart(compact) | Re-injects critical rules after compaction |
 | notification | Notification | Desktop alert when Claude needs input |
 | permission-auto-approve | PermissionRequest | Auto-approves allowlisted read-only commands; everything else gets the normal prompt |
 | tool-policy-guard | PreToolUse | Enforces the tool-choice policy file (allow/ask/deny per tool domain; the enforcement half of the dashboard's tool-policy page) |
 | statusline | StatusLine | Shows model, branch, context %, cost, thinking mode |
 | codebase-index | SessionStart (opt-in) | Background-indexes the repo into codebase-memory-mcp |
+
+**Harvest sweep (scheduled capture).** The per-session hook only sees a session that ends or compacts cleanly. The sweep reads transcripts on a schedule instead, so a killed or long-running session is still harvested. `python3 hooks/harvest.py --sweep` reads new claude sessions (plus devin when `harvest.sources` lists it) behind a per-source cursor, extracts learnings and pattern sightings, stages them into sweep ledgers, and writes a wrap-shaped report per run. It builds, pushes, and merges nothing.
+
+- `--sweep --dry-run` prints the manifest of what a run would do and changes no cursor, ledger, or report state (only the raw extract cache is written). `--since <iso|epoch>` widens the window. `--status` prints the newest report path, its candidate count, and the queued learning count.
+- `--flush-list` prints every queued learning as one JSON array. `--mark-flushed <row-id> <ref>` marks one routed once a human or the learning-ledger flush has written it to a durable home.
+- `bash deploy/macos/harvest-sweep/install --apply` installs the macOS LaunchAgent and writes the per-host `installed` marker. It refuses unless `harvest.enable` is true. `--uninstall` removes both files and keeps all state. See `deploy/macos/harvest-sweep/README.md`.
+- A run that hits a 5-hour or weekly usage limit holds: it stops, keeps the cursor, counts no failure, and exits 0. The next scheduled run resumes.
+- With the sweep active, `wrap.distill = "harvest"` lets `/kit:wrap` land only and leave distillation to the sweep. Config lives in `[harvest]` in `kit.toml`.
 
 Which hooks BLOCK vs warn vs neither is a declared contract: `docs/architecture.md` "Hook fallback layer" (hard / advisory / convenience, parity-pinned).
 
@@ -447,7 +455,7 @@ dwarves-kit/
   install.sh / settings.json    Bash install path
   .claude-plugin/               Plugin install path (plugin.json, marketplace.json)
   .github/workflows/test.yml    CI: macOS + Ubuntu test matrix, on workflow_dispatch and v* tags only
-  bin/                          STABLE consumer entrypoints (SPEC-184, one `<subsystem> <verb>` grammar per ADR-0034): `audit`/`board`/`classify`/`gate`/`goal`/`reflect`/`mega`/`precedent`/`intake`/`queue`/`session`/`spec`/`stats`/`config`/`plugin-check` thin forwarders to `lib/<subsystem>/`, plus the module CLIs (`prose-rag`, `worktree-provision`, `skill-improve`, `skill-review`) that keep their own names, and two standalone maintainer tools outside the forwarder pattern (`activate`, `release`, licensing and release cutting). `learn` stays for one release as a deprecation forwarder to `reflect` (ADR-0036). A consumer (an adopted repo's board shim, the adopt-injected CLAUDE.md block) references `$DWARVES_KIT/bin/<name>`, NEVER a deep lib path, so an internal lib reorg cannot silently break it (the board-shim class of bug). Deployed by install.sh next to lib/.
+  bin/                          STABLE consumer entrypoints (SPEC-184, one `<subsystem> <verb>` grammar per ADR-0034): `audit`/`board`/`classify`/`gate`/`goal`/`reflect`/`mega`/`precedent`/`intake`/`queue`/`session`/`spec`/`stats`/`config`/`plugin-check` thin forwarders to `lib/<subsystem>/`, plus the module CLIs (`prose-rag`, `worktree-provision`, `skill-improve`, `skill-review`) that keep their own names, and three standalone maintainer tools outside the forwarder pattern (`activate`, `release`, licensing and release cutting; `test-affected`, diff-scoped test runner with a pass cache). `learn` stays for one release as a deprecation forwarder to `reflect` (ADR-0036). A consumer (an adopted repo's board shim, the adopt-injected CLAUDE.md block) references `$DWARVES_KIT/bin/<name>`, NEVER a deep lib path, so an internal lib reorg cannot silently break it (the board-shim class of bug). Deployed by install.sh next to lib/.
   agents/                       Subagents dispatched by commands
   commands/                     Markdown command prompts
   hooks/                        Hook scripts + hooks.json plugin manifest

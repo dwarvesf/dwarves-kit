@@ -317,8 +317,10 @@ Off-ramp entries that also land in Shape: `[H] /kit:onboard` (first run, orchest
  [E] Stop ────────────> session-state-save (persist last-state.md)  [conv]
  [E] SubagentStop ────> session-state-save (same)                   [conv]
  [E] PreCompact ──────> pre-compact-backup + harvest (stage learnings) [conv]
+                        (a host with the harvest sweep active skips the hook; the sweep
+                         reads transcripts on a schedule instead)
  [E] PostToolUse * ───> output-offload (oversized output to file)   [adv]
- [E] PostToolUse compact ─> post-compact-reinject (restore rules)   [conv]
+ [E] SessionStart compact ─> post-compact-reinject (restore rules)   [conv]
  [E] SessionEnd ──────> backlog-stage (stage work-items; --surface runs intake-sweep)
                         + harvest --lab-log (stage LAB_LOG draft)   [conv]
  [E] SessionStart ────> intake-sweep (via backlog-stage --surface; config-gated no-op) [conv]
@@ -465,7 +467,7 @@ One line per live feature: `entry -> ... -> terminal`. Grouped by kind; every fe
 | `[E] PreToolUse * -> tool-policy-guard -> allow/ask/deny per domain (inert until tool-policy.json)` |
 | `[E] PostToolUse Write/Edit -> auto-format -> idempotent formatting (conv, terminal)` |
 | `[E] PostToolUse * -> output-offload -> oversized output to file + nudge (adv, terminal)` |
-| `[E] PostToolUse compact -> post-compact-reinject -> restore stripped rules (conv, terminal)` |
+| `[E] SessionStart compact -> post-compact-reinject -> restore stripped rules (conv, terminal)` |
 | `[E] PreCompact -> pre-compact-backup -> session snapshot (conv, terminal)` |
 | `[E] PreCompact + SessionEnd --lab-log -> harvest -> staged learnings / LAB_LOG draft (conv)` |
 | `[E] Stop -> anti-rationalization -> HARD block premature "done" / guess-fix` |

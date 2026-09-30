@@ -20,13 +20,15 @@ Check for an existing brief, slugged file first: `docs/briefs/DECISION-BRIEF-<sl
 
 ### Step 2: Research (if brownfield)
 
+**Run-id tag.** Every Agent/Task dispatch this command instructs sets its `description` to include `rid=<rid>` (the rid `bash lib/gate/gate-ledger.sh rid` prints for this run), e.g. `"verify TASK-003 rid=<rid>"`, so a transcript reader can count dispatches and tokens per run from each subagent's `.meta.json`. This covers the step 5 validator dispatches too.
+
 If modifying existing code, run codebase research before generating the spec. This keeps the main session's context clean.
 
 Create `docs/research/` directory first.
 
 #### Mode A: Formal agents (preferred)
 
-If the research agents are installed (check: do `.claude/agents/research-stack.md` etc. exist?), dispatch all 4 via the Task tool in parallel, each dispatch prompt carrying `<date>` and `<slug>` from Step 1:
+If the research agents are installed (check: do `.claude/agents/research-stack.md` etc. exist?), dispatch all 4 via the Task tool in parallel, each dispatch description carrying `rid=<rid>` and each prompt carrying `<date>` and `<slug>` from Step 1:
 
 1. **kit:research-stack** agent: "Map the technology stack. Write to `docs/research/<date>-<slug>-stack.md`."
 2. **kit:research-context** agent: "Map existing features related to [user's feature area]. Write to `docs/research/<date>-<slug>-features.md`."
@@ -35,7 +37,7 @@ If the research agents are installed (check: do `.claude/agents/research-stack.m
 
 #### Mode B: Inline fallback
 
-If the formal agents are NOT installed, dispatch 4 Task tool subagents with these inline prompts (`<date>` and `<slug>` from Step 1):
+If the formal agents are NOT installed, dispatch 4 Task tool subagents (descriptions carry `rid=<rid>`) with these inline prompts (`<date>` and `<slug>` from Step 1):
 
 **Stack research:**
 ```
@@ -280,6 +282,8 @@ what breaks at ten times the load, while a fix is still one spec edit
 fold into `## Edge Cases`, `## Failure modes`, and `## Review`. Normal keeps this
 opt-in; tiny skips it.
 
+**Grounding.** Before `Spec ran` is recorded and before a `VALIDATE PENDING` stop, the writer adds a `## Grounding` section. For every external data shape the spec asserts (API or CLI output, file format), cite one read-only live sample: the command and the relevant excerpt, masked where needed. For every negative control, give a dry trace: the mutation, the fixture reads, the code path, and the named test that goes red. A claim that cannot be sampled says so. A missing or unsampled `## Grounding` is a Reviewer 4 warning, never a critical.
+
 After approval, record it for lane telemetry, one line:
 `bash lib/gate/gate-ledger.sh record <rid> Spec ran "SPEC-NNN-<slug> approved, tasks=<N>"`.
 
@@ -289,9 +293,20 @@ Close the timing bracket: `bash lib/gate/gate-ledger.sh outcome <rid> Spec end` 
 
 A spec is never validated by the agent that wrote it; a self-run pass is not validation. After step 4's approval, after the full lane's devs-team and advisor fold, and after `Spec ran` is recorded (so `descent` sees spec before validate), dispatch the validator. Open both timing brackets first, so `dur_s` measures the validation: `bash lib/gate/gate-ledger.sh outcome <rid> Validate start` and `bash lib/gate/gate-ledger.sh outcome <rid> design-record start`.
 
-**The validator** is one fresh-context `general-purpose` subagent (the read-only `kit:*` agent rosters carry no Skill tool), model Sonnet on the normal and backfill lanes, Opus on the full lane. Its prompt:
+**The validator** is one fresh-context `general-purpose` subagent (description carries `rid=<rid>`, e.g. `"spec-validate reviewer 3 rid=<rid>"`; the read-only `kit:*` agent rosters carry no Skill tool), model Sonnet on the normal and backfill lanes, Opus on the full lane. Its prompt:
 
 > Validate `docs/specs/SPEC-NNN-<slug>.md` (this path, not the most recent spec). Invoke `kit:spec-validate` through the Skill tool, or the bare `spec-validate` skill if that is the installed name. Run every reviewer in one pass without pausing for input. READ-ONLY: report only. Do not edit any file, do not flip Status, do not call `gate-ledger.sh`. Return the full Spec Validation Report plus one Reviewer 6 line: `design-bearing=<yes|no> <pass|critical: <finding>>`.
+
+A `## Grounding` section already exists at this point (step 4 requires it; Reviewer 4 warns if it is missing).
+
+**Parallel round (the default, and the only shape that stays inside the lane's model).** The lead, not a validator subagent, fans out, because a subagent may lack the Agent tool. In one message it dispatches one background subagent per `^### Reviewer [0-9]+:` heading in `commands/spec-validate.md` (assert Reviewer 6 is present), each read-only with the brief `Reviewer N only`. Each runs the lane's validator model, Opus on the full lane and Sonnet on the normal and backfill lanes, with Reviewer 6 always on Opus, so normal and backfill pay one Opus call per round. The lead merges by rule: any CRITICAL, including a Reviewer 6 `critical:` line, means NEEDS REVISION; else APPROVED. There is no merge subagent.
+
+- After both start brackets, pin the spec (`git hash-object -w <spec>`) and snapshot the rid's ledger (`bash lib/gate/gate-ledger.sh show <rid>`) plus `git -C <worktree> status --porcelain`; repeat after the round. A changed blob or snapshot voids the round and restarts it once; a second void records `Validate skipped "incomplete: restart budget spent"`, closes both brackets with `caught=false`, and stops.
+- A reviewer counts only from the Agent call's own final completion notification, never an interim one or one that arrives while the agent still has background work. Its final message must hold exactly one `[reviewer N]` head, counted only at the start of a line in the agent's own message and never inside quoted or fenced text, with N equal to the dispatched N, plus findings and a passed list (Reviewer 6 also a `design-bearing=` line that agrees with its Critical list). Anything else is dead: record nothing, re-dispatch it once, and on a second dead return record `Validate skipped "incomplete: reviewer N dead"`, close both brackets with `caught=false`, and stop. An incomplete round records nothing else.
+- The fan-out fallback triggers only when the fan-out could not be issued at all (zero reviewer agents started, or no Agent tool). Then send ONE fresh-context single-pass validator (the prompt above) on Opus on every lane, so Reviewer 6's Opus invariant holds; with no Agent tool, use the `VALIDATE PENDING` stop below. A reviewer that started and then errored or died follows the dead rule above, not the fallback. Never validate inline.
+- A re-validation re-runs every reviewer (all reviewers re-run; the diff is context only). Each also gets the prior report and `git diff <old-blob> <new-blob>`, where `<old-blob>` is the pin of the last complete round, or the first pin, and `<new-blob>` is the current pin, to confirm its own prior criticals cleared. Never a skip.
+- One re-validation after NEEDS REVISION. A second only when the dispatch brief carries `operator_directed_build: true`; `/kit:spec` sets it when the operator asks in this session to continue, and with the field absent there is no extra round. The ceiling is 3 rounds x (N + N re-dispatches) + 1 restart, N being the reviewer count.
+- The lead writes no `Validate ran` and no `design-record ran` until every dispatched agent has reported completion and the post-round pin and snapshot check has run. APPROVED needs one counted block per `^### Reviewer [0-9]+:` heading. The record is `bash lib/gate/gate-ledger.sh record <rid> Validate ran "APPROVED critical=0 warnings=<K> fresh agents=<N> parallel"`, where `<N>` is the heading count, not the reply count; the single-pass fallback keeps the `fresh agent=<id>` form below. Record `design-record` from Reviewer 6's own `design-bearing=` line in the same step as Validate, after a complete round and never before.
 
 **The lead owns every record**, under the rid of the branch the spec lives on (`bash lib/gate/gate-ledger.sh rid` run inside that worktree, never the lead's own branch):
 

@@ -67,9 +67,17 @@ fi
 # ran in the first report, and it is the one report where a full-lane item may close as built:
 # step 10 builds it as a draft PR and never merges it, so the item closes as `#<pr> DRAFT`
 # and must pair with a lettered `REVIEW #<pr>` item in `Needs you`. Every other rule applies to it unchanged.
+#
+# A harvest-sweep report (SPEC-357) opens `## Harvest sweep:`. It is its own flag, not a
+# reuse of follow_report: the sweep's Built list must keep the `**Seam:**` rule that the
+# follow-through exemption drops (DEC-37). In phase 1 the sweep reports candidates and
+# builds none, so every Built item opens with REPORTED; a BUILT or NOTE verdict means the
+# renderer claimed work that never ran (DEC-57).
 follow_report=0
+sweep_report=0
 first_h2="$(printf '%s\n' "$input" | grep -m1 '^## ' || true)"
 case "$first_h2" in '## Follow-through:'*) follow_report=1 ;; esac
+case "$first_h2" in '## Harvest sweep:'*) sweep_report=1 ;; esac
 
 # PR numbers named by `Needs you` items that open with REVIEW, space-separated, filled by the
 # walk below. A full-lane build in a follow-through report must name one of them.
@@ -244,7 +252,12 @@ else
             echo "  - ${_v_item}" >&2
             findings=$((findings + 1)) ;;
         esac ;;
-      BUILT\ *|NOTE\ *) : ;;
+      BUILT\ *|NOTE\ *)
+        if [ "$sweep_report" = 1 ]; then
+          echo "line 0: '**Built:**' item ${_v_idx} claims a build in a sweep report; the sweep builds nothing in phase 1, so every item opens with REPORTED" >&2
+          echo "  - ${_v_item}" >&2
+          findings=$((findings + 1))
+        fi ;;
       STAGED\ *|FILED\ *)
         echo "line 0: '**Built:**' item ${_v_idx} uses a retired verdict; step 7b never stages or files a row, so a candidate not built here is REPORTED" >&2
         echo "  - ${_v_item}" >&2

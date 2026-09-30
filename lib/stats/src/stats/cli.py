@@ -9,7 +9,7 @@ from pathlib import Path
 
 import typer
 
-from . import anomalies as anomalies_mod, materialize, memory_lens as memory_lens_mod, render as render_mod
+from . import anomalies as anomalies_mod, ceremony as ceremony_mod, materialize, memory_lens as memory_lens_mod, render as render_mod
 
 app = typer.Typer(
     add_completion=False,
@@ -445,6 +445,35 @@ def memory_sweep(as_json: bool = _FMT):
             u.dead_ref_count, "; ".join(dead),
         ])
     _emit(cols, rows, as_json)
+
+
+@app.command()
+def ceremony(
+    from_: str = typer.Option(None, "--from", help="window start (ISO 8601); default: window-days before the ledger end"),
+    to: str = typer.Option(None, "--to", help="window end (ISO 8601); default: the latest GATE timestamp"),
+    since_sha: str = typer.Option(None, "--since-sha", help="window start = this commit's committer date"),
+    as_json: bool = typer.Option(False, "--json", help="emit the summary as JSON instead of tables"),
+):
+    """Ceremony lens (READ-ONLY): gate records and subagent dispatches versus lines shipped,
+    PRs merged and problems caught, per run and per window. The share is of gate records,
+    never of tokens or time; an unrecorded value prints `?`. `--from/--to` and `--since-sha`
+    bound the window so a before and an after compare."""
+    frm, end = ceremony_mod.parse_ts(from_), ceremony_mod.parse_ts(to)
+    for flag, raw, val in (("--from", from_, frm), ("--to", to, end)):
+        if raw and val is None:
+            typer.echo(f"error: {flag} is not an ISO 8601 timestamp: {raw!r}", err=True)
+            raise typer.Exit(2)
+    if since_sha:
+        if from_:
+            typer.echo("error: --since-sha and --from both set the window start", err=True)
+            raise typer.Exit(2)
+        frm = ceremony_mod.commit_ts(since_sha)
+        if frm is None:
+            typer.echo(f"error: cannot resolve --since-sha {since_sha!r} in the git repo", err=True)
+            raise typer.Exit(2)
+    summary = ceremony_mod.from_lens(int(anomalies_mod.DEFAULTS["ceremony_window_days"]), frm, end)
+    typer.echo(json.dumps(summary, ensure_ascii=False, indent=2) if as_json
+               else ceremony_mod.render_text(summary))
 
 
 @app.command()

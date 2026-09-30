@@ -102,6 +102,8 @@ The first audit covered only decision points inside the kit and missed the brows
 
 **Verdict: ABSORB, in shadow mode first.** The browser-harness loop calls `decide()` and logs its pick next to the main agent's step; it acts alone only after shadow logs show no accepted-step errors on real flows. Public pages only. Logged-in or client pages never go to the API. Next step: wire shadow logging into the browser harness loop.
 
+**Revised 2026-09-29: PARK.** browser-harness-js has no autonomous step loop to shadow. The driving agent picks every step itself, so the per-step Sonnet cost in the table never gets paid. Most real harness flows run on logged-in pages, which the never-use list excludes. Tripwire: an unattended multi-step loop over public pages ships and pays a model per step. Record: `ops-toolkit research/2026-09-29-jev-tabs-refresh.md`.
+
 ## Where Jev must NOT be used
 
 Verbatim from the coupling audit.

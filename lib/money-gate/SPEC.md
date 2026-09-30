@@ -43,9 +43,9 @@ exits before it does anything at all.
 
 ## Contract
 
-**Where the code lives.** `hooks/money-gate.sh` (a bash shim) and `hooks/money-gate.py`
-(the logic, stdlib-only). `money_gate` is a **hook-only module**: this `lib/money-gate/`
-dir is its doc home and carries no code.
+**Where the code lives.** `hooks/money-gate.sh` (the whole job: bash, jq, and POSIX
+tools). `money_gate` is a **hook-only module**: this `lib/money-gate/` dir is its doc
+home and carries no code.
 
 **Wiring.** `install.sh --with money_gate` installs the one hook (`kit_module_hooks
 money_gate` -> `money-gate.sh`) and records `modules.money_gate` in the consumer's
@@ -59,8 +59,8 @@ code. This is load-bearing, not incidental: a gate that dies must not block an e
 
 | # | Step | Rule |
 |---|---|---|
-| 1 | Shim short-circuit | `MONEY_GATE_REPOS` unset or empty -> `exit 0` before `python3` is spawned |
-| 2 | Parse | stdin must be JSON; a `JSONDecodeError`/`ValueError` returns 0 |
+| 1 | Short-circuit | `MONEY_GATE_REPOS` unset or empty -> `exit 0` before stdin is read |
+| 2 | Parse | stdin must be exactly one JSON object; anything else returns 0 |
 | 3 | Location | `haystack = f"{file_path}\n{cwd}"`; match if any non-empty `r` in `MONEY_GATE_REPOS.split(":")` satisfies `f"/{r}/" in haystack` **or** `haystack.endswith(f"/{r}")` |
 | 4 | Content | `MONEY_RE` over `file_path` plus **every string in `tool_input`**, collected recursively (dict values, list items) |
 | 5 | Decide | no keyword hits -> return 0; hits -> log, and in strict mode also emit the `ask` JSON |
@@ -68,7 +68,7 @@ code. This is load-bearing, not incidental: a gate that dies must not block an e
 `file_path` is read as `tool_input.file_path`, falling back to `tool_input.path`, else `""`.
 `cwd` is read from the payload's top-level `cwd`, else `""`.
 
-**The keyword set** (word-boundary, case-insensitive):
+**The keyword set** (case-insensitive, boundary-aware):
 
 ```
 amount | balance | transfer | payout | payment | payroll | invoice | wallet |
@@ -77,7 +77,9 @@ account[_-]?number | routing | ledger | cashflow | pnl | net[_-]?worth |
 deposit | withdraw | usd | vnd
 ```
 
-Each keyword is `\b`-anchored, which is narrower than it looks: see divergence 3 below.
+A keyword matches when the byte before it is not `[A-Za-z0-9]` (or is the start) and the
+byte after is not `[A-Za-z0-9]` (or is the end), with an optional trailing `s`: `_`,
+`-`, blanks, and punctuation all count as separators. See divergence 3 below.
 
 **The recursive scan is broader than the docstring claims.** The module docstring said the
 gate looks at "the path or the new content". It does not: `collect_strings()` walks the
@@ -91,12 +93,12 @@ change that added this SPEC; the code was not touched.)
 
 | Mode | Condition | Behavior |
 |---|---|---|
-| log-only (default) | `MONEY_GATE_STRICT` != `1` | append one line to the log, print nothing |
-| strict | `MONEY_GATE_STRICT` == `1` | the same log line, **plus** an `ask` JSON on stdout |
+| log-only (default) | `MONEY_GATE_STRICT` not truthy | append one line to the log, print nothing |
+| strict | `MONEY_GATE_STRICT` truthy | the same log line, **plus** an `ask` JSON on stdout |
 
-`MONEY_GATE_STRICT` is compared to the **literal string `"1"`**. Any other truthy-looking
-value (`true`, `yes`, `on`) is log-only. Verified; this is a footgun and is recorded as
-contract, not as a bug to be fixed silently.
+`MONEY_GATE_STRICT` is trimmed (`str.strip()` semantics) and lowercased; `1`, `true`,
+`yes`, `on` arm strict. Any other value is log-only. (Was: the literal `"1"` only, a
+silent footgun fixed 2026-07-15; see divergence 4.)
 
 The strict-mode payload:
 
@@ -126,27 +128,27 @@ blocks an edit.
 | Var | Default | Effect |
 |---|---|---|
 | `MONEY_GATE_REPOS` | unset | Colon-separated repo names treated as financial. **Unset = the gate is inert.** No kit default exists. |
-| `MONEY_GATE_STRICT` | unset | `1` (literal) upgrades log-only to an `ask` decision. |
+| `MONEY_GATE_STRICT` | unset | A truthy spelling (`1`/`true`/`yes`/`on`) upgrades log-only to an `ask` decision. |
 | `MONEY_GATE_LOG` | `~/.claude/logs/money-gate.log` | Log destination. |
 
-**Degrade paths**, every one of them `exit 0` and silent:
+**Degrade paths**, every one of them `exit 0`:
 
-- `MONEY_GATE_REPOS` unset -> shim exits before spawning Python.
-- stdin is not JSON (`{}`, empty, garbage) -> `return 0`.
-- `python3` missing or the script raises -> the shim's `|| true` and trailing `exit 0`
-  swallow it. (Stderr noise from the failed exec is not suppressed; the exit code is
-  still 0, so the edit is never blocked.)
-- The log is unwritable -> `OSError` swallowed, the `ask` still emits.
+- `MONEY_GATE_REPOS` unset -> exits before reading stdin.
+- stdin is not exactly one JSON object (empty, garbage, an array, two values) -> silent.
+- `jq` missing -> `exit 0` with one stderr line naming the missing tool (fail open,
+  but visible).
+- The log is unwritable, or `MONEY_GATE_LOG` is set but empty or slashless -> nothing
+  is written anywhere; the `ask` still emits.
 
 ### Known divergences (recorded, not fixed here)
 
-Two things the code does that no design record ever justified. Both are described because
-this SPEC documents reality; neither is changed by it.
+Things the code does that no design record ever justified. They are described because
+this SPEC documents reality; items 3 and 4 are fixes, the rest stand.
 
 1. **The log does not resolve through `lib/telemetry/kit-log-dir.sh`.** The ledger-durability
    spec (`docs/specs/SPEC-097-ledger-durability.md`) and contract rule C6 make that the
    durable-root resolver for every module that persists
-   state. `money-gate.py` builds `~/.claude/logs/money-gate.log` directly. C6's sweep
+   state. `money-gate.sh` builds `~/.claude/logs/money-gate.log` directly. C6's sweep
    greps `lib` only, so a hook-only module is outside its scope and the divergence is
    invisible to the lint. Whether an append-only audit trail is "state" in C6's sense
    (as opposed to run telemetry) was never decided in writing.
@@ -196,20 +198,21 @@ this SPEC documents reality; neither is changed by it.
 ## Verification
 
 ```bash
-bash tests/test-money-gate.sh   # -> test-money-gate: all 12 passed
+bash tests/test-money-gate.sh   # -> test-money-gate: all 16 passed
 ```
 
-12 assertions: 6 positive, 5 negative controls, 1 characterization test.
+16 assertions (tags `[1]` to `[12]`, plus `[10b]`, `[12b]`, `[12c]`).
 
-- **Fires** `[1][2][3][8][9][11]`: the `ask` emits on a money edit in a named repo, its
-  JSON is valid and names the matched terms; log-only mode logs without asking; the
-  recursive scan reaches the MultiEdit `edits[]` array and `old_string`; the process exits
-  0 even while asking.
-- **Stays silent** (negative controls) `[4][5][6][7][10]`: a non-money edit in a named
-  repo; a money edit outside a named repo; `MONEY_GATE_REPOS` unset (the kit default); a
-  junk payload; `MONEY_GATE_STRICT` set to a non-`1` truthy string. These are what prove
-  the gate discriminates rather than firing on everything.
-- **Characterization** `[12]`: pins divergence 3 (snake_case and plurals do not match), so
-  the blind spot fails loudly if the regex is ever widened.
+- **Fires** `[1][2][3][8][9][10][11][12b]`: the `ask` emits on a money edit in a named
+  repo, its JSON is valid and names the matched terms; log-only mode logs without asking;
+  the recursive scan reaches the MultiEdit `edits[]` array and `old_string`; truthy
+  `MONEY_GATE_STRICT` spellings arm it; the process exits 0 even while asking.
+- **Stays silent** (negative controls) `[4][5][6][7][10b][12c]`: a non-money edit in a
+  named repo; a money edit outside a named repo; `MONEY_GATE_REPOS` unset (the kit
+  default); a junk payload; falsy `MONEY_GATE_STRICT` spellings; terms embedded in a
+  longer word. These are what prove the gate discriminates rather than firing on
+  everything.
+- **Assertion** `[12]`: proves divergence 3 shut (snake_case and plurals DO match), so
+  the fix fails loudly if the boundary logic is ever narrowed back.
 
 Acceptance record: `lib/money-gate/docs/proof-of-done.md`.
