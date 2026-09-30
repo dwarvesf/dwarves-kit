@@ -6967,6 +6967,85 @@ chk "land-merge: the label sync ran twice (before the merge and on the merged he
   "$([ "$(grep -c '^pr edit 88 .*add-label' "$GH_STUB_CALLS")" -eq 2 ]; echo $?)"
 chk_has "land-merge: the merged head still lands under --with-ci" "$out" "merged #88"
 
+echo "--- land-merge: a merge that un-ignores an operator file never commits it"
+# origin drops the .gitignore rule covering the worktree's ignored.bin, so the merge
+# surfaces it as untracked. It was ignored under the pre-merge rules: it is the operator's
+# file, and the stage set must never sweep it into the merge commit that gets pushed.
+build_land_reg ignx
+LWT="$(cd "$TMPD/ld-repo-ignx/wt" && pwd -P)"
+LTIP="$(git -C "$LWT" rev-parse HEAD)"
+echo keep > "$LWT/ignored.bin"
+land_adv ignx
+git -C "$TMPD/ld-adv-ignx" rm -q .gitignore
+echo b > "$TMPD/ld-adv-ignx/b.txt"
+git -C "$TMPD/ld-adv-ignx" add -A; git -C "$TMPD/ld-adv-ignx" commit -qm "origin: drop the ignore rule"
+git -C "$TMPD/ld-adv-ignx" push -q origin main
+: > "$GH_STUB_CALLS"; rm -f "$GH_STUB_CALLS".*
+out="$(GH_STUB_OPEN_PRS='[]' GH_STUB_CREATE_NUM=42 \
+  GH_STUB_MERGE_FAILS=1 GH_STUB_MERGE_ERR='Pull Request is not mergeable' \
+  GH_STUB_PR_42="$(lm_conf 42 "$LTIP")" GH_STUB_PR_42_2="$(lm_ok 42)" \
+  KIT_WRAP_CI_GRACE_SECS=0 KIT_WRAP_CARRY_CHECKS_SECS=0 \
+  GH_STUB_LAND_REPO="$LWT" GH_STUB_LAND_REMOTE="$TMPD/ld-bare-ignx" \
+  GH_STUB_LAND_BRANCH=feat/land GH_STUB_LAND_DEF=main "$WRAP" land "$LWT" 2>&1)"; rc=$?
+chk "land-merge: unignored-operator-file exits 0" "$rc"
+chk "land-merge: the operator file never entered the pushed tree" \
+  "$(git -C "$TMPD/ld-bare-ignx" cat-file -e main:ignored.bin 2>/dev/null && echo 1 || echo 0)"
+chk "land-merge: the operator file never entered the merge commit" \
+  "$(git -C "$TMPD/ld-bare-ignx" ls-tree -r main --name-only | grep -cx ignored.bin)"
+
+echo "--- land-merge: a refusal restores without deleting an un-ignored operator file"
+# Same un-ignore on origin's side, but a real conflict on base.txt: the refusal runs the
+# restore, whose untracked sweep must skip what the pre-merge rules ignored.
+LBRANCH='echo b > specs/b.md && bash lib/registry/feature-registry.sh generate && echo "branch edit" > base.txt' \
+  build_land_reg ignr
+LWT="$(cd "$TMPD/ld-repo-ignr/wt" && pwd -P)"
+LTIP="$(git -C "$LWT" rev-parse HEAD)"
+echo keep > "$LWT/ignored.bin"
+land_adv ignr
+git -C "$TMPD/ld-adv-ignr" rm -q .gitignore
+echo "origin edit" > "$TMPD/ld-adv-ignr/base.txt"
+git -C "$TMPD/ld-adv-ignr" add -A; git -C "$TMPD/ld-adv-ignr" commit -qm "origin: drop ignore, edit base"
+git -C "$TMPD/ld-adv-ignr" push -q origin main
+: > "$GH_STUB_CALLS"; rm -f "$GH_STUB_CALLS".*
+out="$(GH_STUB_OPEN_PRS='[]' GH_STUB_CREATE_NUM=42 \
+  GH_STUB_MERGE_FAILS=1 GH_STUB_MERGE_ERR='Pull Request is not mergeable' \
+  GH_STUB_PR_42="$(lm_conf 42 "$LTIP")" \
+  KIT_WRAP_CI_GRACE_SECS=0 KIT_WRAP_CARRY_CHECKS_SECS=0 \
+  GH_STUB_LAND_REPO="$LWT" GH_STUB_LAND_REMOTE="$TMPD/ld-bare-ignr" \
+  GH_STUB_LAND_BRANCH=feat/land GH_STUB_LAND_DEF=main "$WRAP" land "$LWT" 2>&1)"; rc=$?
+chk "land-merge: refused-unignore exits 2" "$([ "$rc" -eq 2 ]; echo $?)"
+chk_has "land-merge: the refusal names the real conflict" "$out" "conflict in base.txt"
+chk "land-merge: the un-ignored operator file survived the restore" \
+  "$([ "$(cat "$LWT/ignored.bin" 2>/dev/null)" = "keep" ]; echo $?)"
+chk "land-merge: refused-unignore restored the tip" \
+  "$([ "$(git -C "$LWT" rev-parse HEAD)" = "$LTIP" ]; echo $?)"
+
+echo "--- land-merge: a merge that would overwrite an ignored file refuses instead"
+# origin now TRACKS ignored.bin while the worktree holds the operator's ignored copy.
+# A default merge silently overwrites ignored files, so the cycle must refuse the path.
+build_land_reg igno
+LWT="$(cd "$TMPD/ld-repo-igno/wt" && pwd -P)"
+LTIP="$(git -C "$LWT" rev-parse HEAD)"
+echo operator-private > "$LWT/ignored.bin"
+land_adv igno
+echo upstream > "$TMPD/ld-adv-igno/ignored.bin"
+git -C "$TMPD/ld-adv-igno" add -f ignored.bin
+git -C "$TMPD/ld-adv-igno" commit -qm "origin: track the ignored path"
+git -C "$TMPD/ld-adv-igno" push -q origin main
+: > "$GH_STUB_CALLS"; rm -f "$GH_STUB_CALLS".*
+out="$(GH_STUB_OPEN_PRS='[]' GH_STUB_CREATE_NUM=42 \
+  GH_STUB_MERGE_FAILS=1 GH_STUB_MERGE_ERR='Pull Request is not mergeable' \
+  GH_STUB_PR_42="$(lm_conf 42 "$LTIP")" \
+  KIT_WRAP_CI_GRACE_SECS=0 KIT_WRAP_CARRY_CHECKS_SECS=0 \
+  GH_STUB_LAND_REPO="$LWT" GH_STUB_LAND_REMOTE="$TMPD/ld-bare-igno" \
+  GH_STUB_LAND_BRANCH=feat/land GH_STUB_LAND_DEF=main "$WRAP" land "$LWT" 2>&1)"; rc=$?
+chk "land-merge: overwrite-ignored exits 2" "$([ "$rc" -eq 2 ]; echo $?)"
+chk "land-merge: the ignored file kept the operator content" \
+  "$([ "$(cat "$LWT/ignored.bin" 2>/dev/null)" = "operator-private" ]; echo $?)"
+chk "land-merge: overwrite-ignored pushed nothing" \
+  "$([ "$(git -C "$TMPD/ld-bare-igno" rev-parse feat/land 2>/dev/null)" = "$LTIP" ] \
+     || ! git -C "$TMPD/ld-bare-igno" rev-parse --verify feat/land >/dev/null 2>&1; echo $?)"
+
 echo "--- merge-cycle: a FEATURES conflict re-merges, pushes and the PR merges"
 # The same cycle land runs, reached through `wrap merge --apply`: today this aborted on
 # the first non-union path. The resolved tree lands a real merge commit on feat/union and

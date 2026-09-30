@@ -3772,6 +3772,21 @@ MVP_HIT=""   # set by the cycle's signal handler; helpers bail the moment it is 
 MVP_RC=0     # the handler's own cleanup result; 2 turns the cycle's 130 into a 2
 MERGED_OID=""
 _MVP_WT=""; _MVP_BRANCH=""; _MVP_TIP=""; _MVP_PUSH=""
+_MVP_IGNORED=()  # paths ignored under the PRE-merge rules; recorded before the merge runs
+
+# _mvp_ignored <path> -- 0 when <path> equals a recorded pre-merge ignored entry or sits
+# under a recorded ignored directory (those carry a trailing slash). The set is how the
+# cycle tells "work the merge created" from "an operator file origin's .gitignore change
+# just exposed": under the new rules the file is untracked, so it must never be staged or
+# deleted.
+_mvp_ignored() {
+  local p="$1" e
+  for e in ${_MVP_IGNORED[@]+"${_MVP_IGNORED[@]}"}; do
+    [ "$p" = "$e" ] && return 0
+    case "$e" in */) case "$p" in "$e"*) return 0 ;; esac ;; esac
+  done
+  return 1
+}
 
 # _merge_restore <wt> <branch> <tip> -- leave a stopped merge with the branch back at <tip>.
 # Reads the state, never a flag, because the trap calls it too. The worktree copies the
@@ -3789,7 +3804,10 @@ _merge_restore() {
     _rb_has "$p" ${unmerged[@]+"${unmerged[@]}"} || changed+=("$p")
   done < <(git -C "$wt" diff --name-only -z 2>/dev/null)
   [ "${#changed[@]}" -gt 0 ] && git -C "$wt" checkout -q -- "${changed[@]}" 2>/dev/null
-  while IFS= read -r -d '' p; do rm -f -- "$wt/$p"; done \
+  # A path the pre-merge rules ignored (an operator's .env, a node_modules/) can surface as
+  # untracked once the merge brings origin's .gitignore; it is not this merge's work, so the
+  # sweep skips it and the file survives the abort.
+  while IFS= read -r -d '' p; do _mvp_ignored "$p" || rm -f -- "$wt/$p"; done \
     < <(git -C "$wt" ls-files -o --exclude-standard -z 2>/dev/null)
   git -C "$wt" merge --abort >/dev/null 2>&1
   gd="$(git -C "$wt" rev-parse --path-format=absolute --git-dir 2>/dev/null)"
@@ -3830,8 +3848,29 @@ _merge_default() {
   ! git -C "$wt" merge-base --is-ancestor "origin/${def}" "$tip" 2>/dev/null \
     || { echo "     ${branch} already contains origin/${def}; nothing to merge"; return 1; }
 
+  # Record what the PRE-merge ignore rules cover before the merge can rewrite .gitignore:
+  # a file ignored today (an operator's .env) becomes "untracked" under origin's rules and
+  # would otherwise be swept into the stage set, or deleted by the restore. --directory
+  # keeps an ignored directory to one entry, matched as a prefix by _mvp_ignored.
+  _MVP_IGNORED=()
+  while IFS= read -r -d '' p; do _MVP_IGNORED+=("$p"); done \
+    < <(git -C "$wt" ls-files -o -i --exclude-standard --directory -z 2>/dev/null)
+
+  # ort merge ignores --no-overwrite-ignore (a known git gap: it still overwrites ignored
+  # files), so the refusal the flag was meant to give runs here by hand: a path the merge
+  # writes that the pre-merge rules ignored is an operator file, and overwriting it loses
+  # data the merge has no right to touch. The flag stays passed for the paths that honor it.
+  local -a clobber=()
+  while IFS= read -r -d '' p; do
+    _mvp_ignored "$p" && clobber+=("$p")
+  done < <(git -C "$wt" diff --name-only -z "$tip" "origin/${def}" 2>/dev/null)
+  if [ "${#clobber[@]}" -gt 0 ]; then
+    echo "REFUSED ${branch}: merge origin/${def} would overwrite the ignored ${clobber[*]}"
+    return 1
+  fi
+
   log="$(mktemp)" || return 1
-  _rb_git "$wt" merge --no-ff --no-commit "origin/${def}" > "$log" 2>&1
+  _rb_git "$wt" merge --no-ff --no-commit --no-overwrite-ignore "origin/${def}" > "$log" 2>&1
   if [ -n "$MVP_HIT" ]; then rm -f "$log"; return 130; fi
   if [ ! -e "$gd/MERGE_HEAD" ]; then
     echo "FAILED ${branch}: merge origin/${def} did not start: $(grep -m1 -v '^$' "$log" 2>/dev/null)"
@@ -3868,6 +3907,7 @@ _merge_default() {
     _rb_has "$p" ${set[@]+"${set[@]}"} || set+=("$p")
   done < <(_rb_changed "$wt")
   while IFS= read -r -d '' p; do
+    _mvp_ignored "$p" && continue
     _rb_has "$p" ${set[@]+"${set[@]}"} || set+=("$p")
   done < <(git -C "$wt" ls-files -o --exclude-standard -z 2>/dev/null)
   if hits="$(_rb_markers "$wt" ${set[@]+"${set[@]}"})"; then
@@ -4029,7 +4069,7 @@ _merge_verify_push() {
     || { echo "     fetch origin ${def} failed; nothing merged"; return 1; }
   git -C "$wt" merge-base --is-ancestor "origin/${def}" "$tip" 2>/dev/null && return 4
 
-  MERGED_OID=""; MVP_HIT=""; MVP_RC=0; _MVP_PUSH=""
+  MERGED_OID=""; MVP_HIT=""; MVP_RC=0; _MVP_PUSH=""; _MVP_IGNORED=()
   _MVP_WT="$wt"; _MVP_BRANCH="$branch"; _MVP_TIP="$tip"
   ti="$(trap -p INT)"; tt="$(trap -p TERM)"; th="$(trap -p HUP)"
   trap '_mvp_trap' INT TERM HUP
