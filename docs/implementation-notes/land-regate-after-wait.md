@@ -25,6 +25,13 @@ Deltas from SPEC-365. Nothing here repeats what the spec already states.
 - L1-L5 went red on exit, message, no-merge and counts; L8 only red on the read count (3 to 4), the green assert the spec predicts when the re-gate passes.
 - Fixture calls this worker made: T6's "5th read is the full detail read" assert names `headRefOid`/`mergeStateStatus` keys, not just the read index; the ci-gated "waited out" floor moved 3 to 4 reads and its re-gate read is an `ld_full` at the pushed tip.
 
+### Task C
+- The carry's sync `case` is now rc 0 waits, rc 1 falls to the plain pending wait, and the catch-all prints `SKIP land <branch>: PR #<n>: the ci label could not be set or read; left open` for every other rc. The old `2)` arm's "unlabeled" text was dropped rather than kept beside it, per C13/DEC-Y.
+- The carry re-gate sits after the head read and before the `cmd_merge` subshell, gated on `rc -eq 0` so the ungated path pays nothing. rc 3 passes through to `cmd_merge` (the union re-merge keeps ownership of CONFLICTING); every other rc prints `SKIP land ...: <reason>; left open`.
+- `$want`, not the re-read `tip`, pins the re-gate: the head read just proved `tip == want`, and pinning the checked oid is what makes a head that moved again between the two reads refuse.
+- T13's count is 20 here, not the spec matrix's 26: that figure includes D0's dated label-on reads and T13's `EV_CI` events fixture, both deferred to the next brief. Measured under this task's code: carry 1 pays sync 1 + 3 hold + head 1 + re-gate 1 + the inner merge's 5 (draft, eligibility, sync, wait, re-gate) = 11, carry 2's wait ends on one read = 9.
+- T13e stays green on both sides of the change (the inner gate already handed CONFLICTING to the re-merge); it is a guard case, not a red-first case. T19's SKIP line was the only red it could produce: the old rc-2 arm already returned 1 with the wrong text.
+
 ## 2026-09-29 Spec-time decisions
 - The post-wait block moves into `_ci_regate`. It started with two callers and gained the carry as a third in round 1. The block is an enforcement rule, so the extraction lands first (Task A) with no behavior change, and the existing merge ci-wait cases pin it before anything else calls it.
 - `land` settles its re-gate read with the plain form `_pr_detail_settled url n`. The pushed-oid form needs the prior head, and `land` never reads an adopted PR's old head. The head wait in the sync covers the stale-head window instead (see below).

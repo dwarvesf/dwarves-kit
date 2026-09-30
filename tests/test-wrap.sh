@@ -3247,8 +3247,51 @@ out="$(PATH="$TMPD/nosleep:$PATH" AL_WAIT=30 KIT_WRAP_CI_GRACE_SECS=20 \
   al_run "$ALWB" "$ALW" --apply)"; rc=$?
 chk "autoland ci-wait T13: apply exits 0" "$rc"
 chk_has "autoland ci-wait T13: merge --pr verifies the tree" "$out" "tree verified"
-# 18 reads of #42 with one hold, measured; a second hold in the merge's own wait adds reads.
-chk "autoland ci-wait T13: the grace hold ran once (18 reads)" "$([ "$(cw_views 42)" -eq 18 ]; echo $?)"
+# 20 reads of #42, measured: carry 1 pays the grace hold (1 sync + 3 hold + 1 head + 1
+# re-gate + the inner merge's 5), carry 2 finds the label on and waits one read.
+chk "autoland ci-wait T13: the grace hold ran once (20 reads)" "$([ "$(cw_views 42)" -eq 20 ]; echo $?)"
+
+echo "--- autoland on a ci-gated repo: a grace expiry on UNSTABLE skips the carry (T13b)"
+build_union_repo alcwu; al_orphan alcwu
+ALU="$TMPD/uclone-alcwu"; ALWBU="$TMPD/ubare-alcwu"
+printf '%s' "$LAB_STRAY" > "$ALU/_meta/LAB_LOG.md"
+AL_CW_PR_U="${AL_CW_PR/\"mergeStateStatus\":\"CLEAN\"/\"mergeStateStatus\":\"UNSTABLE\"}"
+out="$(PATH="$TMPD/nosleep:$PATH" AL_WAIT=30 KIT_WRAP_CI_GRACE_SECS=20 \
+  GH_STUB_LABELS='[{"name":"ci"}]' AL_PR_OVERRIDE="$AL_CW_PR_U" \
+  GH_STUB_PR_42_2="${AL_CW_PR_U/\"labels\":[]/\"labels\":[{\"name\":\"ci\"}]}" \
+  al_run "$ALWBU" "$ALU" --apply)"; rc=$?
+chk "autoland ci-wait T13b: apply exits 0" "$rc"
+chk_has "autoland ci-wait T13b: the carry skips with the non-CLEAN line" "$out" "SKIP land wrap/stray-meta-lab-log-md-20260101-0000: PR #42: no check reported after the ci label went on, and merge state UNSTABLE is not CLEAN; left open"
+chk_no "autoland ci-wait T13b: never merges" "$(cat "$GH_STUB_CALLS")" "pr merge 42"
+chk "autoland ci-wait T13b: 6 reads" "$([ "$(cw_views 42)" -eq 6 ]; echo $?)"
+
+echo "--- autoland on a ci-gated repo: a CONFLICTING carry PR goes to the re-merge (T13e)"
+build_union_repo alcwc; al_orphan alcwc
+ALC2="$TMPD/uclone-alcwc"; ALCB="$TMPD/ubare-alcwc"
+printf '%s' "$LAB_STRAY" > "$ALC2/_meta/LAB_LOG.md"
+AL_CW_PR_C="${AL_CW_PR/\"labels\":[]/\"labels\":[{\"name\":\"ci\"}]}"
+AL_CW_PR_C="${AL_CW_PR_C/\"mergeable\":\"MERGEABLE\"/\"mergeable\":\"CONFLICTING\"}"
+AL_CW_PR_C="${AL_CW_PR_C/\"mergeStateStatus\":\"CLEAN\"/\"mergeStateStatus\":\"DIRTY\"}"
+out="$(PATH="$TMPD/nosleep:$PATH" AL_WAIT=30 KIT_WRAP_CI_GRACE_SECS=20 \
+  GH_STUB_LABELS='[{"name":"ci"}]' AL_PR_OVERRIDE="$AL_CW_PR" \
+  GH_STUB_PR_42_2="$AL_CW_PR_C" \
+  al_run "$ALCB" "$ALC2" --apply)"; rc=$?
+chk "autoland ci-wait T13e: apply exits 0" "$rc"
+chk_has "autoland ci-wait T13e: the PR goes to the re-merge" "$out" "retry #42: one re-merge of main into"
+chk_no "autoland ci-wait T13e: no CONFLICTING skip" "$out" "SKIP land wrap/stray-meta-lab-log-md-20260101-0000: PR #42: not mergeable (CONFLICTING)"
+
+echo "--- autoland on a ci-gated repo: a failed label probe skips the carry (T19)"
+build_union_repo alprobe; al_orphan alprobe
+ALP="$TMPD/uclone-alprobe"; ALPB="$TMPD/ubare-alprobe"
+printf '%s' "$LAB_STRAY" > "$ALP/_meta/LAB_LOG.md"
+out="$(PATH="$TMPD/nosleep:$PATH" AL_WAIT=30 \
+  GH_STUB_LABEL_RC=1 GH_STUB_LABELS='[{"name":"ci"}]' \
+  al_run "$ALPB" "$ALP" --apply)"; rc=$?
+chk "autoland ci-probe T19: apply exits 0" "$rc"
+chk_has "autoland ci-probe T19: the carry skips on the probe" "$out" "SKIP land wrap/stray-meta-lab-log-md-20260101-0000: PR #42: the ci label could not be set or read; left open"
+chk_no "autoland ci-probe T19: no label edit" "$(cat "$GH_STUB_CALLS")" "pr edit 42"
+chk_no "autoland ci-probe T19: never merges" "$(cat "$GH_STUB_CALLS")" "pr merge 42"
+chk "autoland ci-probe T19: no PR read at all" "$([ "$(cw_views 42)" -eq 0 ]; echo $?)"
 
 echo "--- knob false leaves the merged branch on origin"
 build_land knobkeep

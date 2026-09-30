@@ -1395,7 +1395,7 @@ _ci_regate() {
 KIT_WRAP_CARRY_CHECKS_SECS=${KIT_WRAP_CARRY_CHECKS_SECS:-300}
 case "$KIT_WRAP_CARRY_CHECKS_SECS" in ''|*[!0-9]*) KIT_WRAP_CARRY_CHECKS_SECS=300 ;; esac
 _autoland_carry() {
-  local repo="$1" def="$2" branch="$3" want="$4" ghs url tip open cnt n title created out rc waited=0 pending
+  local repo="$1" def="$2" branch="$3" want="$4" ghs url tip open cnt n title created out rc rrc reason waited=0 pending
   ghs="$(_gh_state)"
   if [ "$ghs" != "ok" ]; then
     echo "     SKIP land ${branch}: $(_gh_note "$ghs")"
@@ -1446,7 +1446,8 @@ _autoland_carry() {
   _ci_label_sync "$url" "$n"; rc=$?
   case "$rc" in
     0) _ci_checks_wait "$url" "$n" ;;
-    2) echo "     SKIP land ${branch}: PR #${n} is unlabeled on a ci-gated repo; left open"; return 1 ;;
+    1) ;;
+    *) echo "     SKIP land ${branch}: PR #${n}: the ci label could not be set or read; left open"; return 1 ;;
   esac
   if [ "$rc" -eq 1 ]; then
   # Pending: a check still running, or no check reported yet on a merge state that is not
@@ -1463,6 +1464,15 @@ _autoland_carry() {
   tip="$(gh pr view "$n" --repo "$url" --json headRefOid 2>/dev/null | jq -r '.headRefOid // ""' 2>/dev/null)"
   if [ "$tip" != "$want" ]; then
     echo "     SKIP land ${branch}: PR #${n} head is $(_short "$tip"), not the checked $(_short "$want"); left open"; return 1
+  fi
+  # On a gated repo the wait's end is not the merge's green light: re-read the head and
+  # every gate against the checked oid. A CONFLICTING verdict (rc 3) is not a refusal
+  # here; cmd_merge hands it to the union re-merge as it always did.
+  if [ "$rc" -eq 0 ]; then
+    reason="$(_ci_regate "$url" "$n" "$def" "$want")"; rrc=$?
+    if [ "$rrc" -ne 0 ] && [ "$rrc" -ne 3 ]; then
+      echo "     SKIP land ${branch}: PR #${n}: ${reason}; left open"; return 1
+    fi
   fi
   # A subshell keeps merge's globals (REMERGE_OID, SQ_PR, SQ_OID) out of this run.
   out="$( (cmd_merge --apply --pr "$n" "$repo") 2>&1)"; rc=$?
