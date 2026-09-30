@@ -1,4 +1,5 @@
 #!/bin/bash
+# session-state-save.sh -- Stop and SubagentStop hook that persists session state to last-state.md so a crash loses nothing.
 # session-state-save.sh — Stop hook (runs alongside anti-rationalization + slop-cleaner)
 # Persists session state to disk on every Stop and SubagentStop event.
 # Catches session crashes that PreCompact backup misses.

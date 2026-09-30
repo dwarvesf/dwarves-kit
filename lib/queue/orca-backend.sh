@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# kit-verb: orchestrate --backend orca | opt-in Orca backend for the mega runner: sub-goals as Orca Tasks with supervised workers, state read live
 # orca-backend.sh -- the opt-in Orca backend for orchestrate.sh (trial). SOURCED by orchestrate.sh
 # only under `run --backend orca` and for the `status` / `orca-reset` verbs; the default path never
 # loads this file and never calls $ORCA_CMD. Not executable on its own.
@@ -45,7 +46,7 @@ _orca_get() {  # varname verb args...
   printf -v "$__v" '%s' "$__out"
 }
 
-# The SPEC-366 view, one call. Any failure or a schema other than 1 leaves it empty: rung prints `?`
+# The `board work --json` view, one call. Any failure or a schema other than 1 leaves it empty: rung prints `?`
 # and no idle signal is used.
 _orca_board_work() {  # dir
   local dir="$1" out

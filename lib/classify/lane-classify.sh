@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# kit-verb: classify floor | the diff floor: full when changed paths hit a hard path, else the size floor for the chosen lane
+# kit-verb: classify risk | risk verdict for a task and its files: full when the lane is full or a full-lane flag fires
 # lane-classify.sh -- deterministic task-type -> risk-lane classifier.
 #
 # Turns a one-line task description into one of the WORKFLOW.md risk lanes

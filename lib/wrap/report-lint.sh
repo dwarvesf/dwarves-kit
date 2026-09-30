@@ -68,11 +68,11 @@ fi
 # step 10 builds it as a draft PR and never merges it, so the item closes as `#<pr> DRAFT`
 # and must pair with a lettered `REVIEW #<pr>` item in `Needs you`. Every other rule applies to it unchanged.
 #
-# A harvest-sweep report (SPEC-357) opens `## Harvest sweep:`. It is its own flag, not a
+# A harvest-sweep report opens `## Harvest sweep:`. It is its own flag, not a
 # reuse of follow_report: the sweep's Built list must keep the `**Seam:**` rule that the
-# follow-through exemption drops (DEC-37). In phase 1 the sweep reports candidates and
+# follow-through exemption drops. In phase 1 the sweep reports candidates and
 # builds none, so every Built item opens with REPORTED; a BUILT or NOTE verdict means the
-# renderer claimed work that never ran (DEC-57).
+# renderer claimed work that never ran.
 follow_report=0
 sweep_report=0
 first_h2="$(printf '%s\n' "$input" | grep -m1 '^## ' || true)"

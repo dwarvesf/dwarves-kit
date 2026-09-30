@@ -1,3 +1,4 @@
+# kit-verb: stats ceremony | ceremony lens: gate work and subagent dispatches versus progress and catches, per gate, from the run ledger
 """Ceremony lens: gate work and subagent dispatches versus progress and catches.
 
 A pure projection over rows the lens already holds: `kit_gates` (with its GATE timestamp),

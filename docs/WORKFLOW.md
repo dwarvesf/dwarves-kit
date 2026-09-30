@@ -150,7 +150,7 @@ migration (same dry-run + rollback shape); agent-org config rides spec-feature l
 | Prototype (opt-in) | /kit:prototype | validated decision folded into the brief/spec + `prototype/<name>` branch pointer on the owning row | advisory (HITL; SPEC-206) |
 | UI design (opt-in, downstream) | /kit:ui-design | brief -> generate (frontend-design) -> critique -> revise | advisory (downstream only) |
 | Spec     | /kit:spec | spec exists, Status: DRAFT | spec-drift-guard hook |
-| Validate | /kit:spec-validate (a fresh-context validator /kit:spec and /kit:execute dispatch) | Status: VALIDATED | ship gate (full lane); /kit:execute preflight (normal, full, backfill) |
+| Validate | /kit:spec-validate (a fresh-context validator /kit:spec and /kit:execute dispatch) | Status: VALIDATED | ship gate (normal and full lanes); /kit:execute preflight (normal, full, backfill) |
 | Test plan (default for normal/full) | /kit:test-plan, then /kit:test-plan-review-team --light (the full team at blind-spot) | `## Test plan` written into the spec, in the type's dialect (test-design-standard §5b), plus its `## Test plan critique` | advisory default (normal/full); tiny exempt |
 | Build    | /kit:execute or /kit:next | tasks checked, end verifiers PASS | verification pipeline (one builder, one end verification pass, fix; max 2) |
 | Review   | /kit:review or /kit:review-team | review verdict recorded; full lane loops per SPEC-231 | advisory (default-run + bounded loop on full: SPEC-231, docs/patterns/review-fix-loop.md) |
@@ -171,7 +171,7 @@ thing that enforces the exit:
   Spec  ------>  spec exists, Status: DRAFT  ------>  spec-drift-guard   [HARD]
     |
     v
-  Validate --->  Status: VALIDATED  --------------->  execute preflight; ship gate (full)
+  Validate --->  Status: VALIDATED  --------------->  execute preflight; ship gate (normal, full)
     |
     v
   Build  ----->  tasks checked, end verifiers PASS  verification pipeline [HARD]
@@ -1189,8 +1189,9 @@ ID + BACKLOG row (approve-before-allocate, sanitized) before routing as usual.
                                                             └─ risk-list match .... full
 ```
 
-The `full` trigger list (see the lane table) is a hard tripwire: anything on it uses
-`full` unless you explicitly narrow the scope and say why.
+The `full` trigger list (see the lane table) is a suggestion, not a switch: a match prints one
+`LANE-SUGGEST` line and the operator assigns `full`. The hard tripwire is the diff floor at push,
+which gives a hard-path diff the full lane's gates whatever the spec's `Lane:` says.
 
 ### The three bounded loops (engines)
 

@@ -72,7 +72,7 @@ sha() { if command -v shasum >/dev/null 2>&1; then shasum -a 256; else sha256sum
 } | grep -v '^$' | sort -u >"$TMP/changed" || true
 
 # --- source universe (for the cache key) and its token map: path and basename -> path ---
-git -c core.quotepath=off ls-files -co --exclude-standard -- 'lib/*.sh' 'hooks/*' 'bin/*' 'commands/*.md' 'skills/*.md' 'agents/*.md' \
+git -c core.quotepath=off ls-files -co --exclude-standard -- 'lib/*.sh' 'tests/lib/*.sh' 'hooks/*' 'bin/*' 'commands/*.md' 'skills/*.md' 'agents/*.md' \
   | grep -v '/tests/' | sort -u | while IFS= read -r s; do [ -f "$s" ] && printf '%s\n' "$s"; done >"$TMP/sources" || true
 # Basenames of 5 chars or fewer (`board`, `lint`) match half the suite; only the path counts.
 while IFS= read -r s; do
@@ -82,7 +82,7 @@ while IFS= read -r s; do
 done <"$TMP/sources" >"$TMP/map" || true
 cut -f1 "$TMP/map" | sort -u >"$TMP/pats"
 
-is_source() { case "$1" in lib/*.sh|hooks/*|bin/*|commands/*.md|skills/*.md|agents/*.md) return 0 ;; *) return 1 ;; esac; }
+is_source() { case "$1" in lib/*.sh|tests/lib/*.sh|hooks/*|bin/*|commands/*.md|skills/*.md|agents/*.md) return 0 ;; *) return 1 ;; esac; }
 
 # Suites that name a NON-source path as a path: not a comment line, not part of a longer path
 # (docs/README.md is not README.md), and not a longer name. `$KIT_DIR/README.md` counts.
@@ -131,13 +131,39 @@ $b"
     hits="$(refs_exact "$f" tests/test-*.sh || true)"
   fi
   # A lib/<mod>/ change also picks the suites named for the module: tests/test-<mod>*.sh.
+  # lib/wrap/ is split one suite per module: wrap-<stem>.sh -> test-wrap-<stem>.sh only,
+  # report-lint.sh -> test-wrap-report-lint.sh, and the shared wrap.sh / wrap-common.sh
+  # fan out to every standalone suite. The compatibility runner (tests/test-wrap.sh)
+  # matches no `test-wrap-*` glob, so it is never picked here.
   covered=0
-  case "$f" in lib/*/*)
-    mod="${f#lib/}"; mod="${mod%%/*}"
-    for t in tests/test-"$mod"*.sh; do
-      [ -f "$t" ] || continue
-      printf '%s\tmodule lib/%s\n' "$t" "$mod" >>"$TMP/pairs"; covered=1
-    done ;;
+  case "$f" in
+    lib/wrap/wrap.sh|lib/wrap/wrap-common.sh)
+      for t in tests/test-wrap-*.sh; do
+        [ -f "$t" ] || continue
+        printf '%s\tmodule lib/wrap shared\n' "$t" >>"$TMP/pairs"; covered=1
+      done ;;
+    lib/wrap/wrap-rebase.sh)
+      # The land and merge cycle calls the rebase resolver (_rb_resolve, _rb_markers), so
+      # a resolver edit also picks the two suites that drive that cycle.
+      for t in tests/test-wrap-rebase.sh tests/test-wrap-land.sh tests/test-wrap-merge.sh; do
+        [ -f "$t" ] || continue
+        printf '%s\tmodule %s\n' "$t" "${f#lib/}" >>"$TMP/pairs"; covered=1
+      done ;;
+    lib/wrap/wrap-*.sh)
+      t="tests/test-wrap-${f#lib/wrap/wrap-}"
+      if [ -f "$t" ]; then
+        printf '%s\tmodule %s\n' "$t" "${f#lib/}" >>"$TMP/pairs"; covered=1
+      fi ;;
+    lib/wrap/report-lint.sh)
+      if [ -f tests/test-wrap-report-lint.sh ]; then
+        printf 'tests/test-wrap-report-lint.sh\tmodule %s\n' "$f" >>"$TMP/pairs"; covered=1
+      fi ;;
+    lib/*/*)
+      mod="${f#lib/}"; mod="${mod%%/*}"
+      for t in tests/test-"$mod"*.sh; do
+        [ -f "$t" ] || continue
+        printf '%s\tmodule lib/%s\n' "$t" "$mod" >>"$TMP/pairs"; covered=1
+      done ;;
   esac
   if [ -n "$hits" ]; then
     covered=1

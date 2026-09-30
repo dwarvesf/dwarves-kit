@@ -1,4 +1,5 @@
 #!/bin/bash
+# ship-gate.sh -- PreToolUse hook that refuses a push or PR when the spec lane has a required gate with no ran or override entry.
 # ship-gate.sh, PreToolUse hook, matcher: Bash
 # Workflow-completeness gate at the ship/push boundary. When a feature
 # branch is pushed or a PR is opened, refuse if the active spec's lane has a

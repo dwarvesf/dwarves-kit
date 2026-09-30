@@ -14,7 +14,7 @@ comes next.
       │
  /kit:spec-validate  adversarial review; Status: VALIDATED
       │
- /kit:execute ..... build: worker per task -> verifier -> bounded retries
+ /kit:execute ..... build: one builder -> end verifiers -> bounded retries
       │
  /kit:review ...... verdict on the diff (SHIP / FIX THEN SHIP / DO NOT SHIP)
       │

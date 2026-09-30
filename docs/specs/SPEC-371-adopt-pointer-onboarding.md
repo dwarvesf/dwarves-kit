@@ -1,6 +1,6 @@
 # Spec: adopt writes a small pointer AGENTS.md, and the first run teaches two ideas
 Generated: 2026-09-29
-Status: VALIDATED (round 1 NEEDS REVISION, round 2 must-fixes resolved, Reviewer 6 design-bearing=yes pass; round-3 items lead-checked)
+Status: SHIPPED (#833). Validation: round 1 NEEDS REVISION, round 2 must-fixes resolved, Reviewer 6 design-bearing=yes pass; round-3 items lead-checked
 Lane: full (kit-machinery: `lib/adopt.sh` writes into every consumer repo; from `bash lib/classify/lane-classify.sh explain`, flag `kit-machinery`)
 References: `lib/adopt.sh:203-207` (the copy this spec replaces); `tests/test-adopt.sh:37-41` and `:86-96` (the never-overwrite tests this spec changes); `docs/research/2026-09-29-openrig-absorption.md:136-141` (design D6); `docs/verification/gauntlet/2026-09-01-onboarding-campaign/J2/` (the baseline run: install, adopt, ship one tiny change)
 

@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# kit-verb: spec-depth | read and check the Depth line of a spec header: level, wants and check verbs
 # spec-depth.sh -- read and check the `Depth:` line in a spec header.
 # The line says how deep planning goes and why; it is read from the header only
 # (the lines before the first `## ` heading), so a fenced example in the body
