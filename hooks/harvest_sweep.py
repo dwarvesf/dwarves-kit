@@ -415,7 +415,7 @@ SWEEP_EXTRACTOR = ('claude -p --model haiku --setting-sources project --tools ""
 EXTRACT_TIMEOUT = 120  # the hook's extractor timeout
 KNOWN_SLUGS_PER_FILE = 50
 SLUG_RE = re.compile(r"^[a-z0-9-]{1,60}$")
-LIMIT_RE = re.compile(r"usage limit|rate limit|5-hour|limit reached", re.I)
+LIMIT_RE = re.compile(r"usage limit|rate limit|5-hour|weekly limit|limit reached|hit your [a-z0-9 -]{0,20}limit", re.I)
 
 PROMPT_SWEEP = (
     "You read one coding/ops session transcript and extract learnings and sightings.\n"
