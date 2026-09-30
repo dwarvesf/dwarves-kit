@@ -1,0 +1,3 @@
+{"type":"user","message":{"content":"hi"}}
+{"type":"assistant","message":{"content":[{"type":"text","text":"old turn cites nope.md:9"}]}}
+{"type":"assistant","message":{"content":[{"type":"text","text":"nope.md:07 and nope.md:7 and a.md:006"}]}}
