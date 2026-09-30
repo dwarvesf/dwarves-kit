@@ -37,14 +37,10 @@ CMD_CODE=$(printf '%s\n' "$CMD" | awk '
     print line
   }')
 
-# Engage only on a ship action: a git push or a gh pr create (in CODE, not prose). The push
-# form allows global options before the verb: `git -C <dir> push`, `git -c k=v push`.
-GITPUSH_RE='git([[:space:]]+(-C[[:space:]]+[^[:space:]]+|-c[[:space:]]+[^[:space:]]+|--[a-z][a-z-]*(=[^[:space:]]+)?))*[[:space:]]+push([[:space:]]|$)'
-echo "$CMD_CODE" | grep -qE "$GITPUSH_RE|gh[[:space:]]+pr[[:space:]]+create" || exit 0
-# The push segment: from `git ... push` to the next command separator.
-PUSH_SEG=$(printf '%s' "$CMD_CODE" | grep -oE "${GITPUSH_RE}[^;&|]*" | tail -1 || true)
-# Leave force-push to safety-gate. Match the flag exactly: --force-with-lease is a different flag.
-case " $PUSH_SEG " in *" --force "*|*" -f "*) exit 0 ;; esac
+# Engage on anything that looks like a ship action: `git ... push` (with any options between) or
+# `gh pr create`, in CODE not prose. What the command actually pushes is decided by
+# lib/gate/push-refs.sh below, which fails closed on anything it cannot account for.
+echo "$CMD_CODE" | grep -qE '(^|[^[:alnum:]_-])git[[:space:]]([^;&|]*[[:space:]])?push([[:space:]]|$)|gh[[:space:]]+pr[[:space:]]+create' || exit 0
 
 # A command that cd's elsewhere ships THAT repo, not the session cwd (the
 # cross-repo misfire: a `cd other-repo && git push` was gated against the SESSION
@@ -52,8 +48,8 @@ case " $PUSH_SEG " in *" --force "*|*" -f "*) exit 0 ;; esac
 # BSD-sed-portable: grab the cd arg with grep -o, then strip the prefix + quotes.
 CDDIR=$(printf '%s' "$CMD_CODE" | grep -oE '^[[:space:]]*cd[[:space:]]+[^&;|]+' | head -1 \
   | sed -E 's/^[[:space:]]*cd[[:space:]]+//; s/[[:space:]]+$//; s/^"//; s/"$//' || true)
-if [ -z "$CDDIR" ] && [ -n "$PUSH_SEG" ]; then   # `git -C <dir> push` ships that repo
-  CDDIR=$(printf '%s' "$PUSH_SEG" | grep -oE '(^|[[:space:]])-C[[:space:]]+[^[:space:]]+' | head -1 | awk '{print $NF}' || true)
+if [ -z "$CDDIR" ]; then   # `git -C <dir> push` ships that repo
+  CDDIR=$(printf '%s' "$CMD_CODE" | grep -oE '(^|[[:space:]])-C[[:space:]]+[^[:space:]]+' | head -1 | awk '{print $NF}' || true)
 fi
 case "$CDDIR" in *'$'*) CDDIR="" ;; esac   # variables cannot be resolved: fall back
 CDDIR="${CDDIR/#\~/$HOME}"
@@ -70,45 +66,6 @@ BRANCH=$(git -C "$ROOT" rev-parse --abbrev-ref HEAD 2>/dev/null || true)
 [ -n "$BRANCH" ] || exit 0
 CURBRANCH="$BRANCH"
 PHEAD=$(git -C "$ROOT" rev-parse HEAD 2>/dev/null || true)   # the commit being shipped
-# Which ref does this push carry, and where does it land? A push whose TARGET is the default
-# branch is safety-gate's business, so leave it alone. The word main or master elsewhere in the
-# command (`gh pr create --base master`, a commit message) is not a target.
-if [ -n "$PUSH_SEG" ]; then
-  DEFNAME=$(git -C "$ROOT" symbolic-ref -q --short refs/remotes/origin/HEAD 2>/dev/null || true)
-  DEFNAME="${DEFNAME#origin/}"
-  read -ra _TOK <<< "${PUSH_SEG#*push}"
-  _POS=(); _skip=0
-  for _t in ${_TOK[@]+"${_TOK[@]}"}; do
-    if [ "$_skip" = 1 ]; then _skip=0; continue; fi
-    case "$_t" in
-      --repo|-o|--push-option|--receive-pack|--exec) _skip=1 ;;
-      -*) ;;
-      *) _POS+=("$_t") ;;
-    esac
-  done
-  _SPECS=(${_POS[@]+"${_POS[@]:1}"})
-  [ "${#_SPECS[@]}" -gt 0 ] || _SPECS=("$CURBRANCH")
-  PUSH_SRC=""; PUSH_DST=""
-  for _r in "${_SPECS[@]}"; do
-    _r="${_r#+}"
-    case "$_r" in *:*) _src="${_r%%:*}"; _dst="${_r#*:}" ;; *) _src="$_r"; _dst="$_r" ;; esac
-    _src="${_src#refs/heads/}"; _dst="${_dst#refs/heads/}"
-    [ "$_dst" = HEAD ] && _dst="$CURBRANCH"
-    case "$_dst" in main|master) exit 0 ;; esac
-    [ -n "$DEFNAME" ] && [ "$_dst" = "$DEFNAME" ] && exit 0
-    [ -n "$PUSH_SRC" ] || { PUSH_SRC="$_src"; PUSH_DST="$_dst"; }
-  done
-  # Ship the ref being pushed, not whatever HEAD happens to be.
-  if [ -n "$PUSH_SRC" ] && [ "$PUSH_SRC" != "$CURBRANCH" ]; then
-    if [ "$PUSH_SRC" = HEAD ]; then BRANCH="$PUSH_DST"
-    elif _pr=$(git -C "$ROOT" rev-parse --verify -q "refs/heads/$PUSH_SRC" 2>/dev/null); then BRANCH="$PUSH_SRC"; PHEAD="$_pr"
-    fi
-  fi
-fi
-SLUG="${BRANCH#*/}"   # strip the type/ prefix (feat/, docs/, ...)
-SLUG_Q=$(printf '%q' "$SLUG")   # shell-safe form for the commands this hook prints
-
-# One copy of the three-way default-branch fallback (review: was duplicated per block).
 # The base is the REMOTE default branch: origin/HEAD, else origin/main or origin/master. A local
 # branch can carry unpushed commits and would hide them from the diff. Only a repo with no origin
 # at all falls back to local main or master. An origin with no remote-tracking default gives no
@@ -126,6 +83,59 @@ _resolve_base() {
   git -C "$ROOT" rev-parse --verify -q main >/dev/null 2>&1 && echo main || echo master
 }
 
+# [gate] toggles. lib/gate/gate-policy.sh resolves them (project config wins, then the
+# operator overlay, then the kit root); this hook never reads the config files itself.
+# Only exit 1 from the reader means off. A missing or broken reader (any other exit) means
+# ON: switching a gate off has to be explicit. A skip logs one line.
+POLICY="${CLAUDE_PLUGIN_ROOT:-$HOME/.claude/dwarves-kit}/lib/gate/gate-policy.sh"
+# Which refs does this command push? lib/gate/push-refs.sh answers, and fails closed: a command it
+# cannot fully account for (--all, --mirror, --tags, an unresolvable source, a variable, a wrapper,
+# more than one directory) is BLOCKED, not guessed at. A push whose target is the default branch,
+# or a force push, is safety-gate's business and is left alone. A native git pre-push hook, which
+# receives the exact refs on stdin, is the structural fix; this parser is best-effort.
+PREFS="${CLAUDE_PLUGIN_ROOT:-$HOME/.claude/dwarves-kit}/lib/gate/push-refs.sh"
+_refs_block() {   # _refs_block <reason>
+  local LOG_DIR="${DWARVES_KIT_LOG_DIR:-$HOME/.claude/dwarves-kit/logs}"
+  mkdir -p "$LOG_DIR" 2>/dev/null || true
+  echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) | BLOCKED | ship-gate | (unaccounted push)" >> "$LOG_DIR/ship-gate.log" 2>/dev/null || true
+  {
+    echo "BLOCKED: ship-gate. This command pushes refs the gate cannot account for: $1."
+    echo "Push one branch at a time with plain refs, for example: git push -u origin <branch>"
+  } >&2
+  exit 2
+}
+# Fail-closed applies only where the gate applies: an adopted repo (proof marker) whose default
+# branch carries [gate] lane_gates = true.
+_fc_applies() {
+  [ -f "$ROOT/docs/verification/README.md" ] || return 1
+  [ -f "$POLICY" ] || return 0
+  local db rc=0; db=$(_resolve_base)
+  if [ -n "$db" ]; then bash "$POLICY" enabled lane_gates "$ROOT" --at "$db" || rc=$?; fi
+  [ "$rc" -ne 1 ]
+}
+if [ -f "$PREFS" ]; then
+  DEFNAME=$(git -C "$ROOT" symbolic-ref -q --short refs/remotes/origin/HEAD 2>/dev/null || true)
+  PUSH_OUT=$(bash "$PREFS" "$ROOT" "$CMD_CODE" "$CURBRANCH" "${DEFNAME#origin/}" 2>/dev/null || true)
+  case "$PUSH_OUT" in
+    *FORCE*|*DEFAULT*) exit 0 ;;
+  esac
+  if printf '%s\n' "$PUSH_OUT" | grep -q '^BLOCK '; then
+    _fc_applies && _refs_block "$(printf '%s\n' "$PUSH_OUT" | grep -m1 '^BLOCK ' | sed 's/^BLOCK //')"
+  elif [ -z "$PUSH_OUT" ]; then
+    _fc_applies && _refs_block "the command parser gave no answer"
+  else
+    _NREF=$(printf '%s\n' "$PUSH_OUT" | grep '^REF ' | sort -u | wc -l | tr -d ' ')
+    if [ "${_NREF:-0}" -gt 1 ]; then
+      _fc_applies && _refs_block "it pushes more than one branch"
+    elif [ "${_NREF:-0}" = 1 ]; then
+      read -r _ PHEAD BRANCH <<< "$(printf '%s\n' "$PUSH_OUT" | grep -m1 '^REF ')"
+    fi
+  fi
+fi
+SLUG="${BRANCH#*/}"   # strip the type/ prefix (feat/, docs/, ...)
+SLUG_Q=$(printf '%q' "$SLUG")   # shell-safe form for the commands this hook prints
+
+# One copy of the three-way default-branch fallback (review: was duplicated per block).
 # The merge base of the shipped commit and the remote default branch, computed once. Empty means
 # no base (no remote default resolved): every diff-keyed check below skips.
 MBASE=$(git -C "$ROOT" merge-base "$PHEAD" "$(_resolve_base)" 2>/dev/null || true)
@@ -139,11 +149,6 @@ MBASE=$(git -C "$ROOT" merge-base "$PHEAD" "$(_resolve_base)" 2>/dev/null || tru
 # $ROOT fallback fails open in every consumer. The stable install path fixes that; plugin
 # mode (CLAUDE_PLUGIN_ROOT set) is unchanged.
 PROOF="${CLAUDE_PLUGIN_ROOT:-$HOME/.claude/dwarves-kit}/lib/gate/proof-ledger.sh"
-# [gate] toggles. lib/gate/gate-policy.sh resolves them (project config wins, then the
-# operator overlay, then the kit root); this hook never reads the config files itself.
-# Only exit 1 from the reader means off. A missing or broken reader (any other exit) means
-# ON: switching a gate off has to be explicit. A skip logs one line.
-POLICY="${CLAUDE_PLUGIN_ROOT:-$HOME/.claude/dwarves-kit}/lib/gate/gate-policy.sh"
 _gate_on() {  # $1 = [gate] key, $2 = log label
   [ -f "$POLICY" ] || return 0
   local rc=0; bash "$POLICY" enabled "$1" "$ROOT" || rc=$?

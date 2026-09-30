@@ -577,9 +577,9 @@ case_ship_checks_pushed_ref() {
 # The suggested override command is shell-quoted, so a slug with a metacharacter stays one word.
 case_ship_slug_quoted() {
   ship_fixture migration none
-  _git checkout -q -b 'feat/a;b' >/dev/null 2>&1
-  HOOK_CMD="git push -u origin 'feat/a;b'" run_hook
-  if [ "$HOOK_RC" = 2 ] && printf '%s' "$HOOK_ERR" | grep -qF 'override a\;b <phase>'; then pass ship-slug-quoted
+  _git checkout -q -b 'feat/a!b' >/dev/null 2>&1
+  HOOK_CMD="git push -u origin feat/a!b" run_hook
+  if [ "$HOOK_RC" = 2 ] && printf '%s' "$HOOK_ERR" | grep -qF 'override a\!b <phase>'; then pass ship-slug-quoted
   else fail ship-slug-quoted "rc=$HOOK_RC err=$HOOK_ERR"; fi
 }
 
@@ -712,6 +712,54 @@ phases = ["think", "spec", "validate", "design-record", "test-plan", "build", "s
   [ "$n" = 1 ] && pass start-no-duplicate-skips || fail start-no-duplicate-skips "review skipped line appears $n times (want 1)"
 }
 
+# Fail-closed ref parsing: every ref the command could push is accounted for, or the push blocks.
+case_ship_fail_closed_refs() {
+  mkrepo_remote main; new_log
+  _git checkout -q -B feat/evil main >/dev/null 2>&1
+  mkdir -p "$ROOT/auth"; echo x > "$ROOT/auth/a.ts"; _commit "chore: evil"
+  local ev; ev="$(git -C "$ROOT" rev-parse HEAD)"; _git tag v1 >/dev/null 2>&1
+  _git checkout -q -B feat/x main >/dev/null 2>&1
+  printf 'Lane: normal\n' > "$ROOT/docs/specs/SPEC-001-x.md"; _commit "chore: spec"
+  record_gates $NORMAL_GATES
+  local bad="" want c
+  while IFS='|' read -r want c; do
+    [ -n "$c" ] || continue
+    HOOK_CMD="$c" run_hook
+    [ "$HOOK_RC" = "$want" ] || bad="$bad [want $want got $HOOK_RC: $c :: $(printf '%s' "$HOOK_ERR" | head -1 | cut -c1-90)]"
+  done <<CASES
+0|git push
+0|git push -u origin feat/x
+0|git push origin HEAD
+0|git log -1 --format="%s about git push" && git push -u origin feat/x
+0|git push -u origin feat/x && gh pr create --fill
+2|git push origin feat/evil
+2|git push origin feat/x feat/evil
+2|git push --all origin
+2|git push --mirror origin
+2|git push --tags origin
+2|git push --follow-tags origin
+2|git push origin $ev:refs/heads/feat/y
+2|git push origin feat/evil~0:feat/y
+2|git push origin feat/evil && git push origin feat/x
+2|git --git-dir .git push origin feat/x
+2|git push origin v1
+2|gh pr create --head feat/evil --fill
+2|git push origin nothere
+2|git push origin \$BRANCH
+2|xargs git push origin
+CASES
+  HOOK_CWD="$(_mk)" HOOK_CMD="git -C $ROOT push -u origin feat/x" run_hook
+  [ "$HOOK_RC" = 0 ] || bad="$bad [git -C <dir> push from elsewhere: rc=$HOOK_RC]"
+  # the fail-closed rule applies only where the gate does: a repo with the switch off at its default branch
+  mkrepo_remote main; new_log
+  _git checkout -q main >/dev/null 2>&1
+  printf '[gate]\nlane_gates = false\n' > "$ROOT/.kit.toml"; _commit "chore: off"; _git push -q origin main >/dev/null 2>&1
+  _git checkout -q -B feat/x >/dev/null 2>&1
+  HOOK_CMD="git push --all origin" run_hook
+  [ "$HOOK_RC" = 0 ] || bad="$bad [switch off: git push --all blocked, rc=$HOOK_RC]"
+  [ -z "$bad" ] && pass ship-fail-closed-refs || fail ship-fail-closed-refs "$bad"
+}
+
 # ---------------------------------------------------------------------------
 run_case() {
   local fn="case_${1//-/_}"
@@ -719,7 +767,7 @@ run_case() {
 }
 # `parity` (byte-identical against the baseline) holds only at the refactor commit; after the
 # flip the standing check is parity-after-flip.
-ALL="parity-after-flip plan-flip four-false-hits webhook-signature-suggests suggest-records explain-suggest-line classify-files-full escalate-suggest floor-paths floor-rename-counts-both-sides floor-data-loss floor-extra-paths-union floor-invalid-extra-ere override-drop-review override-uncommitted override-typo override-no-light pinned-root malformed-array-fails-closed policy-at-base ship-migration-blocks ship-migration-absent-quiet ship-switch-off-on-base ship-flip-gate-in-pr ship-hollow-full-override ship-data-loss ship-no-spec-blocks ship-suggest-advisory workflow-view floor-timing floor-non-ascii hook-timeout floor-submodule override-empty-phases ship-operator-hollow-full ship-push-forms ship-base-is-origin-head ship-checks-pushed-ref ship-slug-quoted risk-verb significance-uses-risk floor-no-leaks override-unknown-lane-name toml-valid ship-merge-base-once override-operator-precedence default-lane-layers start-no-duplicate-skips"
+ALL="parity-after-flip plan-flip four-false-hits webhook-signature-suggests suggest-records explain-suggest-line classify-files-full escalate-suggest floor-paths floor-rename-counts-both-sides floor-data-loss floor-extra-paths-union floor-invalid-extra-ere override-drop-review override-uncommitted override-typo override-no-light pinned-root malformed-array-fails-closed policy-at-base ship-migration-blocks ship-migration-absent-quiet ship-switch-off-on-base ship-flip-gate-in-pr ship-hollow-full-override ship-data-loss ship-no-spec-blocks ship-suggest-advisory workflow-view floor-timing floor-non-ascii hook-timeout floor-submodule override-empty-phases ship-operator-hollow-full ship-push-forms ship-base-is-origin-head ship-checks-pushed-ref ship-slug-quoted risk-verb significance-uses-risk floor-no-leaks override-unknown-lane-name toml-valid ship-merge-base-once override-operator-precedence default-lane-layers start-no-duplicate-skips ship-fail-closed-refs"
 if [ "$#" -eq 0 ]; then set -- $ALL; fi
 for c in "$@"; do run_case "$c"; done
 [ "$FAILS" -eq 0 ]
