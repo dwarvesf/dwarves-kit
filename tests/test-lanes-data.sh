@@ -385,6 +385,33 @@ case_ship_suggest_advisory() {
   else fail ship-suggest-advisory "rc=$HOOK_RC err=$HOOK_ERR"; fi
 }
 
+# The WORKFLOW.md lane x phase matrix is the human view of kit.toml [lane.*]: for every lane the
+# non-skip cells, in order, equal `plan` (minus the grill intake line). LANES_WORKFLOW points the
+# case at a mutated copy for the negative control.
+WORKFLOW_VIEW="${LANES_WORKFLOW:-$KIT_DIR/docs/WORKFLOW.md}"
+_view_rows() {  # <lane> -> "phase level" from the matrix
+  awk -v lane="$1" '
+    /^## Lane.*depth matrix/ {inmx=1; next}
+    inmx && /^## / {exit}
+    inmx && /^\| *Phase *\|/ { n=split($0,h,"|"); for(i=1;i<=n;i++){gsub(/^ +| +$/,"",h[i]); if(h[i]==lane) col=i}; next }
+    inmx && col>0 && /^\|/ {
+      if ($0 ~ /^\| *-+/) next
+      split($0,c,"|"); ph=c[2]; cell=c[col]; gsub(/^ +| +$/,"",ph); gsub(/^ +| +$/,"",cell)
+      sub(/ *\(.*\)/,"",ph); ph=tolower(ph); gsub(/ /,"-",ph)
+      if (cell=="measure-twice") print ph " required"; else if (cell=="run-lite") print ph " lite"
+    }' "$WORKFLOW_VIEW"
+}
+case_workflow_view() {
+  new_log
+  local l want got bad=""
+  for l in $LANES; do
+    want="$(_view_rows "$l")"
+    got="$(gl plan "$l" 2>/dev/null | awk '$2!="grill"{print $2 " " $3}')"
+    [ "$want" = "$got" ] || bad="$bad [$l: view='$(printf '%s' "$want" | tr '\n' ',')' data='$(printf '%s' "$got" | tr '\n' ',')']"
+  done
+  [ -z "$bad" ] && pass workflow-view || fail workflow-view "$bad"
+}
+
 # ---------------------------------------------------------------------------
 run_case() {
   local fn="case_${1//-/_}"
@@ -392,7 +419,7 @@ run_case() {
 }
 # `parity` (byte-identical against the baseline) holds only at the refactor commit; after the
 # flip the standing check is parity-after-flip.
-ALL="parity-after-flip plan-flip four-false-hits webhook-signature-suggests suggest-records explain-suggest-line classify-files-full escalate-suggest floor-paths floor-rename-counts-both-sides floor-data-loss floor-extra-paths-union floor-invalid-extra-ere override-drop-review override-uncommitted override-typo override-no-light pinned-root malformed-array-fails-closed policy-at-base ship-migration-blocks ship-migration-absent-quiet ship-switch-off-on-base ship-flip-gate-in-pr ship-hollow-full-override ship-data-loss ship-no-spec-advisory ship-suggest-advisory"
+ALL="parity-after-flip plan-flip four-false-hits webhook-signature-suggests suggest-records explain-suggest-line classify-files-full escalate-suggest floor-paths floor-rename-counts-both-sides floor-data-loss floor-extra-paths-union floor-invalid-extra-ere override-drop-review override-uncommitted override-typo override-no-light pinned-root malformed-array-fails-closed policy-at-base ship-migration-blocks ship-migration-absent-quiet ship-switch-off-on-base ship-flip-gate-in-pr ship-hollow-full-override ship-data-loss ship-no-spec-advisory ship-suggest-advisory workflow-view"
 if [ "$#" -eq 0 ]; then set -- $ALL; fi
 for c in "$@"; do run_case "$c"; done
 [ "$FAILS" -eq 0 ]

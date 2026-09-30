@@ -59,8 +59,15 @@ Pick a lane before you start. Smaller work skips ceremony.
 | bug    | a defect, regression, or failing test (not a new feature) | /debug (root cause before any fix), then /review |
 | backfill | brownfield: review an existing codebase and write the operating-layer docs (AGENTS.md / CLAUDE.md / specs) | review the code, write the docs. Doc-output only; no app-behavior change, no app-code edits. /spec optional. |
 
-When in doubt between two lanes, take the heavier one. Anything in the full-lane
-trigger list uses the full lane unless you explicitly narrow the scope and say why.
+Default to `normal`. The classifier prints a one-line suggestion when the task text matches a
+full-lane trigger and records it in the run ledger when given the run id. The agent may propose
+the full lane in one sentence and continues on the lighter lane until the operator assigns it.
+The normal lane requires a fresh-context validation and a review; those catch the triggers no
+diff can show (authz, API contract, external provider, weakened validation). The ship-gate
+applies the full lane's gates to any diff that touches a hard path (migrations, auth, secrets,
+CI workflows, kit config, data loss), whatever the spec's `Lane:` says. With
+`[gate] lane_gates = false` on the base branch none of this runs; a PR cannot switch it off for
+its own push. Moving an assigned lane lighter stays a Pause-if decision.
 
 `/kit:assign` backs this tree with an **advisory floor check** (`lib/classify/lane-classify.sh
 check`): once a lane is chosen, it re-classifies the task text and warns + logs (to
@@ -408,7 +415,9 @@ shows violations correlate with escaped defects.
 
 ## Lane×phase depth matrix
 
-How much ceremony each lane applies at each phase of the V-model. Rows are the
+How much ceremony each lane applies at each phase of the V-model. This table is the human
+view of the `[lane.<name>]` data in `kit.toml`, which `lib/gate/lane-data.sh` reads;
+`tests/test-lanes-data.sh workflow-view` pins the two equal, so edit `kit.toml` first. Rows are the
 five risk-tier lanes (definitions and task-type mapping in the lane table above
 under "Size the work first"). Columns are the phases from the cycle table and
 the V-model lens above. Every cell is one of:
@@ -501,9 +510,9 @@ significance record and the SPEC-140 pitch offer.
 ## Gate ledger and ship enforcement
 
 Every phase gate a run executes is recorded to a per-run ledger, so the run is
-auditable after the fact. The lane×phase matrix above is the single
-source for which gates a lane *requires* (its `measure-twice` cells);
-`lib/gate/gate-ledger.sh` parses it, with no second copy of the mapping.
+auditable after the fact. The `[lane.<name>]` blocks in `kit.toml` are the single
+source for which gates a lane *requires*; `lib/gate/gate-ledger.sh` reads them through
+`lib/gate/lane-data.sh`, and the matrix above is their human view (its `measure-twice` cells).
 
 - **Record each gate as you run it:** `bash lib/gate/gate-ledger.sh record <rid> <Phase> ran "<note>"`, where `<Phase>` is a matrix row name (Spec, Validate, Build, Review, Docs, Ship, ...). Record a deliberate skip as `... <Phase> skipped "<why>"` so the skip is visible, not silent. Log actions with `action <rid> "<what>"`.
 - **The `advisor` emit is fail-open by explicit design; every other emit site is bare.** `commands/review-team.md` Step 2b and `commands/mega.md`'s convergence-gate step both wrap their `advisor ran "mode=P5|P6 ..."` call in `|| echo "WARNING: ..." >&2` (NC2: a ledger-write failure must never fail the surrounding review/dispatch). The ~15 other call sites (`spec.md`, `design.md`, `review.md`, `docs.md`, `explain.md`, `grill.md`, `retro.md`, `test-plan.md`, `verify.md`, `think.md`, `ui-design.md`, `ship.md`, ...) stay bare -- not an oversight, but because `record()` behaves identically at every site (it prints an error and returns nonzero on a write failure, it never crashes the calling agent's turn), and none of those OTHER phases has advisor's specific NC2 contract requiring the failure be silently absorbed with a visible operator-facing warning. A future emit site that wants the same fail-open guarantee copies advisor's `||` idiom explicitly; it is not the ledger's default behavior.

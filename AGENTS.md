@@ -63,8 +63,8 @@ ledger and the ship-gate, so route past them.
    `WORKFLOW.md ## Type loops`, with its executor from the registry's `agent` column. The lane
    is STILL sized for every type (it is the evidence contract ship-gate enforces via the spec's
    `Lane:` header; the type is the content contract, `WORKFLOW.md ### Lane x type composition`). For code:
-   pick `tiny` / `normal` / `full` / `bug` / `backfill` per `WORKFLOW.md`; when in doubt between
-   two lanes, take the heavier one. **Between classification and done comes the grill** (`/kit:grill`, or its
+   pick `tiny` / `normal` / `full` / `bug` / `backfill` per `WORKFLOW.md`; default to `normal`; the
+   classifier only suggests `full`, and the diff floor at push applies full-lane gates to hard paths. **Between classification and done comes the grill** (`/kit:grill`, or its
    one-question-at-a-time discipline driven inline): interview until the task is actually
    understood, type-shaped questions, recommended answers, contradictions checked against the
    repo, answers WRITTEN as they resolve (glossary / sparse ADR / the goal draft's Context).
@@ -176,7 +176,7 @@ direction or irreversible cost that a goal loop must not make on its own.
 - **Architecture direction** - a change to how the pieces fit, a new component, an interface or data-model shape.
 - **Source-of-truth hierarchy** - which file or section is canonical when two disagree (for example, moving the operate-contract between `AGENTS.md`, `CLAUDE.md`, and `WORKFLOW.md`).
 - **Validation removal** - weakening, deleting, or bypassing a test, an assertion, a hook, or any guardrail.
-- **Risk-classification change** - moving work to a lighter lane, or narrowing a `full`-lane trigger (auth, authz, hooks, data model, data loss, audit/security, external provider, API contract, migration).
+- **Risk-classification change** - moving an assigned lane lighter, dropping a phase from a lane, or narrowing a hard path or a full-lane trigger. Staying on the default lane after a suggestion is not a lane change; the operator decides whether to assign the heavier one.
 - **Privacy / security** - secrets, credentials, access scope, anything that touches what data leaves the repo or who can reach it.
 
 When you pause: write the named blocker, state the decision you are not making and why, and stop.
