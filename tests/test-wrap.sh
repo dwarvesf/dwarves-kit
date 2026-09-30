@@ -211,9 +211,10 @@ case "$sub" in
     case "$verb" in
       list)
         # GH_STUB_LABELS is the repo's whole fuzzy --search answer: the exact-match on
-        # `ci` is the code under test, so a fixture can hold "ci-cd" without a "ci".
+        # `ci` is the code under test, so a fixture can hold "ci-cd" without a "ci". Real
+        # gh answers a no-match search with exit 0 and zero bytes, so unset prints nothing.
         [ "${GH_STUB_LABEL_RC:-0}" = "0" ] || exit "$GH_STUB_LABEL_RC"
-        printf '%s\n' "${GH_STUB_LABELS:-[]}"
+        [ -n "${GH_STUB_LABELS+x}" ] && printf '%s\n' "$GH_STUB_LABELS"
         exit 0 ;;
     esac
     exit 1 ;;
@@ -2098,6 +2099,41 @@ chk_has "ci-wait T16: names the unreadable wait end" "$out" "FAILED merge #85: t
 chk_no "ci-wait T16: never merges" "$(cat "$GH_STUB_CALLS")" "pr merge 85"
 chk "ci-wait T16: 5 reads" "$([ "$(cw_views 85)" -eq 5 ]; echo $?)"
 
+# T15: the label probe itself exits non-zero. A repo whose label list cannot be read is
+# not "a repo without the gate": the merge refuses rather than running ungated.
+: > "$GH_STUB_CALLS"; rm -f "$GH_STUB_CALLS".*
+out="$(PATH="$TMPD/nosleep:$PATH" GH_STUB_LABEL_RC=1 GH_STUB_OPEN_PRS="$(cw_open 83)" \
+  GH_STUB_PR_83="$(cw_full 83 CLEAN "$CW_GREEN")" \
+  "$WRAP" merge --apply "$TMPD/clone-scan-main" 2>&1)"; rc=$?
+chk "ci-wait T15: exits 2" "$([ "$rc" -eq 2 ]; echo $?)"
+chk_has "ci-wait T15: names the refusal" "$out" "FAILED merge #83: the ci label could not be set"
+chk_has "ci-wait T15: names the failed label read" "$out" "could not read the repo labels for #83"
+chk_no "ci-wait T15: no label edit on a failed probe" "$(cat "$GH_STUB_CALLS")" "pr edit 83"
+chk_no "ci-wait T15: never merges" "$(cat "$GH_STUB_CALLS")" "pr merge 83"
+chk "ci-wait T15: one read of the PR" "$([ "$(cw_views 83)" -eq 1 ]; echo $?)"
+
+# T17: real gh answers a no-match label search with exit 0 and zero bytes, not an empty
+# array. That is the "no ci label" answer, so the merge runs ungated exactly as before.
+: > "$GH_STUB_CALLS"; rm -f "$GH_STUB_CALLS".*
+out="$(GH_STUB_OPEN_PRS="$(cw_open 105)" GH_STUB_PR_105="$(cw_full 105 CLEAN "$CW_GREEN")" \
+  "$WRAP" merge --apply "$TMPD/clone-scan-main" 2>&1)"; rc=$?
+chk "ci-wait T17: exits 0" "$rc"
+chk_has "ci-wait T17: merged ungated" "$out" "merged #105 ("
+chk_no "ci-wait T17: no label edit" "$(cat "$GH_STUB_CALLS")" "pr edit 105"
+chk_no "ci-wait T17: no label-events read" "$(cat "$GH_STUB_CALLS")" "/events"
+chk "ci-wait T17: one read of the PR" "$([ "$(cw_views 105)" -eq 1 ]; echo $?)"
+
+# T17b: the explicit empty array is the same answer by another shape.
+: > "$GH_STUB_CALLS"; rm -f "$GH_STUB_CALLS".*
+out="$(GH_STUB_LABELS='[]' GH_STUB_OPEN_PRS="$(cw_open 106)" \
+  GH_STUB_PR_106="$(cw_full 106 CLEAN "$CW_GREEN")" \
+  "$WRAP" merge --apply "$TMPD/clone-scan-main" 2>&1)"; rc=$?
+chk "ci-wait T17b: exits 0" "$rc"
+chk_has "ci-wait T17b: merged ungated" "$out" "merged #106 ("
+chk_no "ci-wait T17b: no label edit" "$(cat "$GH_STUB_CALLS")" "pr edit 106"
+chk_no "ci-wait T17b: no label-events read" "$(cat "$GH_STUB_CALLS")" "/events"
+chk "ci-wait T17b: one read of the PR" "$([ "$(cw_views 106)" -eq 1 ]; echo $?)"
+
 # ===========================================================================
 echo "=== merge --pr: a named draft is marked ready, then gated and merged ==="
 # ===========================================================================
@@ -2905,7 +2941,7 @@ LTIP_CI="$(git -C "$LWT_CI" rev-parse HEAD)"
 out="$(PATH="$TMPD/nosleep:$PATH" \
   GH_STUB_LABELS='[{"name":"ci-extra"},{"name":"ci"}]' \
   GH_STUB_OPEN_PRS='[]' GH_STUB_CREATE_NUM=42 \
-  GH_STUB_PR_42='{"number":42,"labels":[],"statusCheckRollup":[],"mergeStateStatus":"CLEAN"}' \
+  GH_STUB_PR_42="{\"number\":42,\"labels\":[],\"statusCheckRollup\":[],\"mergeStateStatus\":\"CLEAN\",\"headRefOid\":\"$LTIP_CI\"}" \
   GH_STUB_PR_42_2='{"number":42,"labels":[{"name":"ci"}],"statusCheckRollup":[{"name":"pr-check","status":"IN_PROGRESS"}]}' \
   GH_STUB_PR_42_3='{"number":42,"labels":[{"name":"ci"}],"statusCheckRollup":[{"name":"pr-check","status":"COMPLETED","conclusion":"SUCCESS"}]}' \
   GH_STUB_LAND_REPO="$LWT_CI" GH_STUB_LAND_REMOTE="$TMPD/ld-bare-cigated" \
@@ -2944,10 +2980,11 @@ echo "--- ci-gated land: checks that predate the label do not end the wait (T6)"
 # read 3 the label's run pending, read 4 green. The merge must come after the 4th read.
 build_land ciwait
 LWT_CW="$(cd "$TMPD/ld-repo-ciwait/wt" && pwd -P)"
+LTIP_CW="$(git -C "$LWT_CW" rev-parse HEAD)"
 : > "$GH_STUB_CALLS"; rm -f "$GH_STUB_CALLS".*
 out="$(PATH="$TMPD/nosleep:$PATH" \
   GH_STUB_LABELS='[{"name":"ci"}]' GH_STUB_OPEN_PRS='[]' GH_STUB_CREATE_NUM=42 \
-  GH_STUB_PR_42="{\"number\":42,\"labels\":[],\"statusCheckRollup\":$CW_OLD,\"mergeStateStatus\":\"CLEAN\"}" \
+  GH_STUB_PR_42="{\"number\":42,\"labels\":[],\"statusCheckRollup\":$CW_OLD,\"mergeStateStatus\":\"CLEAN\",\"headRefOid\":\"$LTIP_CW\"}" \
   GH_STUB_PR_42_2="{\"number\":42,\"labels\":[{\"name\":\"ci\"}],\"statusCheckRollup\":$CW_OLD}" \
   GH_STUB_PR_42_3="{\"number\":42,\"labels\":[{\"name\":\"ci\"}],\"statusCheckRollup\":$CW_RUN}" \
   GH_STUB_PR_42_4="{\"number\":42,\"labels\":[{\"name\":\"ci\"}],\"statusCheckRollup\":$CW_GREEN}" \
@@ -2962,11 +2999,12 @@ chk_has "ci-wait T6 land: merged" "$out" "merged #42 ("
 echo "--- ci-gated land: a label already on with runs on the head is left alone"
 build_land ciarmed
 LWT_CA="$(cd "$TMPD/ld-repo-ciarmed/wt" && pwd -P)"
+LTIP_CA="$(git -C "$LWT_CA" rev-parse HEAD)"
 : > "$GH_STUB_CALLS"; rm -f "$GH_STUB_CALLS".*
 out="$(PATH="$TMPD/nosleep:$PATH" \
   GH_STUB_LABELS='[{"name":"ci"}]' \
   GH_STUB_OPEN_PRS='[]' GH_STUB_CREATE_NUM=42 \
-  GH_STUB_PR_42='{"number":42,"labels":[{"name":"ci"}],"statusCheckRollup":[{"name":"pr-check","status":"COMPLETED","conclusion":"SUCCESS"}],"mergeStateStatus":"CLEAN"}' \
+  GH_STUB_PR_42="{\"number\":42,\"labels\":[{\"name\":\"ci\"}],\"statusCheckRollup\":[{\"name\":\"pr-check\",\"status\":\"COMPLETED\",\"conclusion\":\"SUCCESS\"}],\"mergeStateStatus\":\"CLEAN\",\"headRefOid\":\"$LTIP_CA\"}" \
   GH_STUB_LAND_REPO="$LWT_CA" GH_STUB_LAND_REMOTE="$TMPD/ld-bare-ciarmed" \
   GH_STUB_LAND_BRANCH=feat/land GH_STUB_LAND_DEF=main "$WRAP" land "$LWT_CA" 2>&1)"; rc=$?
 LAND_CALLS="$(cat "$GH_STUB_CALLS")"
@@ -2979,11 +3017,12 @@ echo "--- ci-gated land: a label that predates the head is removed and re-added"
 # commits, so the head was never tested. Remove+re-add re-fires the event on it.
 build_land cistale
 LWT_CS="$(cd "$TMPD/ld-repo-cistale/wt" && pwd -P)"
+LTIP_CS="$(git -C "$LWT_CS" rev-parse HEAD)"
 : > "$GH_STUB_CALLS"; rm -f "$GH_STUB_CALLS".*
 out="$(PATH="$TMPD/nosleep:$PATH" \
   GH_STUB_LABELS='[{"name":"ci"}]' \
   GH_STUB_OPEN_PRS='[]' GH_STUB_CREATE_NUM=42 \
-  GH_STUB_PR_42='{"number":42,"labels":[{"name":"ci"}],"statusCheckRollup":[],"mergeStateStatus":"CLEAN"}' \
+  GH_STUB_PR_42="{\"number\":42,\"labels\":[{\"name\":\"ci\"}],\"statusCheckRollup\":[],\"mergeStateStatus\":\"CLEAN\",\"headRefOid\":\"$LTIP_CS\"}" \
   GH_STUB_PR_42_2='{"number":42,"labels":[{"name":"ci"}],"statusCheckRollup":[{"name":"pr-check","status":"COMPLETED","conclusion":"SUCCESS"}]}' \
   GH_STUB_LAND_REPO="$LWT_CS" GH_STUB_LAND_REMOTE="$TMPD/ld-bare-cistale" \
   GH_STUB_LAND_BRANCH=feat/land GH_STUB_LAND_DEF=main "$WRAP" land "$LWT_CS" 2>&1)"; rc=$?
@@ -2996,15 +3035,66 @@ chk "ci-stale land: remove precedes re-add precedes merge" \
 echo "--- ci-gated land: a label that will not set refuses the merge"
 build_land cinoset
 LWT_CN="$(cd "$TMPD/ld-repo-cinoset/wt" && pwd -P)"
+LTIP_CN="$(git -C "$LWT_CN" rev-parse HEAD)"
 : > "$GH_STUB_CALLS"; rm -f "$GH_STUB_CALLS".*
 out="$(GH_STUB_LABELS='[{"name":"ci"}]' GH_STUB_EDIT_RC=1 \
   GH_STUB_OPEN_PRS='[]' GH_STUB_CREATE_NUM=42 \
-  GH_STUB_PR_42='{"number":42,"labels":[],"statusCheckRollup":[],"mergeStateStatus":"CLEAN"}' \
+  GH_STUB_PR_42="{\"number\":42,\"labels\":[],\"statusCheckRollup\":[],\"mergeStateStatus\":\"CLEAN\",\"headRefOid\":\"$LTIP_CN\"}" \
   GH_STUB_LAND_REPO="$LWT_CN" GH_STUB_LAND_REMOTE="$TMPD/ld-bare-cinoset" \
   GH_STUB_LAND_BRANCH=feat/land GH_STUB_LAND_DEF=main "$WRAP" land "$LWT_CN" 2>&1)"; rc=$?
 chk "ci-noset land: exits 2" "$([ "$rc" -eq 2 ]; echo $?)"
 chk_has "ci-noset land: names the refusal" "$out" "MERGE FAILED #42: the ci label could not be set"
 chk_no "ci-noset land: untested head never merges" "$(cat "$GH_STUB_CALLS")" "pr merge 42"
+
+echo "--- ci-gated land: the pushed head never showing refuses before the label (L7)"
+# The push just landed on origin, but the PR read keeps answering with the stale head.
+# The sync holds the bounded head wait, then refuses: the label must never go on a head
+# the gate cannot confirm is the pushed one.
+build_land cinoshow
+LWT_CNS="$(cd "$TMPD/ld-repo-cinoshow/wt" && pwd -P)"
+LTIP_NS="$(git -C "$LWT_CNS" rev-parse HEAD)"
+: > "$GH_STUB_CALLS"; rm -f "$GH_STUB_CALLS".*
+out="$(PATH="$TMPD/nosleep:$PATH" KIT_WRAP_SETTLE_SECS=4 \
+  GH_STUB_LABELS='[{"name":"ci"}]' GH_STUB_OPEN_PRS='[]' GH_STUB_CREATE_NUM=42 \
+  GH_STUB_PR_42="{\"number\":42,\"labels\":[],\"statusCheckRollup\":$CW_OLD,\"headRefOid\":\"3333333333333333333333333333333333333333\"}" \
+  GH_STUB_LAND_REPO="$LWT_CNS" GH_STUB_LAND_REMOTE="$TMPD/ld-bare-cinoshow" \
+  GH_STUB_LAND_BRANCH=feat/land GH_STUB_LAND_DEF=main "$WRAP" land "$LWT_CNS" 2>&1)"; rc=$?
+chk "ci-wait L7 land: exits 2" "$([ "$rc" -eq 2 ]; echo $?)"
+chk_has "ci-wait L7 land: names the head wait" "$out" "MERGE FAILED #42: the PR head never showed the pushed ${LTIP_NS:0:7}; left open"
+chk_no "ci-wait L7 land: never labels" "$(cat "$GH_STUB_CALLS")" "pr edit 42"
+chk_no "ci-wait L7 land: never merges" "$(cat "$GH_STUB_CALLS")" "pr merge 42"
+chk "ci-wait L7 land: the bounded head wait read 3 times" "$([ "$(cw_views 42)" -eq 3 ]; echo $?)"
+
+echo "--- ci-gated land: a label read that is not JSON refuses the merge (L10)"
+build_land cinoprobe
+LWT_CP="$(cd "$TMPD/ld-repo-cinoprobe/wt" && pwd -P)"
+: > "$GH_STUB_CALLS"; rm -f "$GH_STUB_CALLS".*
+out="$(GH_STUB_LABELS='not json' \
+  GH_STUB_OPEN_PRS='[]' GH_STUB_CREATE_NUM=42 \
+  GH_STUB_LAND_REPO="$LWT_CP" GH_STUB_LAND_REMOTE="$TMPD/ld-bare-cinoprobe" \
+  GH_STUB_LAND_BRANCH=feat/land GH_STUB_LAND_DEF=main "$WRAP" land "$LWT_CP" 2>&1)"; rc=$?
+chk "ci-wait L10 land: exits 2" "$([ "$rc" -eq 2 ]; echo $?)"
+chk_has "ci-wait L10 land: names the failed label read" "$out" "could not read the repo labels for #42"
+chk_has "ci-wait L10 land: names the refusal" "$out" "MERGE FAILED #42: the ci label could not be set"
+chk_no "ci-wait L10 land: never merges" "$(cat "$GH_STUB_CALLS")" "pr merge 42"
+
+echo "--- ci-gated land: gh's empty no-match answer never arms the gate (L11)"
+# `gh label list --search ci` prints zero bytes when no label matches; that is the
+# ungated path, so no PR read, no edit and no events read happen at all.
+build_land cinolabel
+LWT_CL="$(cd "$TMPD/ld-repo-cinolabel/wt" && pwd -P)"
+: > "$GH_STUB_CALLS"; rm -f "$GH_STUB_CALLS".*
+out="$(GH_STUB_OPEN_PRS='[]' GH_STUB_CREATE_NUM=42 \
+  GH_STUB_LAND_REPO="$LWT_CL" GH_STUB_LAND_REMOTE="$TMPD/ld-bare-cinolabel" \
+  GH_STUB_LAND_BRANCH=feat/land GH_STUB_LAND_DEF=main "$WRAP" land "$LWT_CL" 2>&1)"; rc=$?
+LAND_CALLS="$(cat "$GH_STUB_CALLS")"
+chk "ci-wait L11 land: exits 0" "$rc"
+chk_has "ci-wait L11 land: probed the labels" "$LAND_CALLS" "label list"
+chk_has "ci-wait L11 land: merged as before" "$LAND_CALLS" "pr merge 42"
+chk_no "ci-wait L11 land: no label edit" "$LAND_CALLS" "pr edit 42"
+chk_no "ci-wait L11 land: no events read" "$LAND_CALLS" "/events"
+chk_no "ci-wait L11 land: no detail re-read" "$LAND_CALLS" "--json number,title,body"
+chk "ci-wait L11 land: no PR read at all" "$([ "$(cw_views 42)" -eq 0 ]; echo $?)"
 
 echo "--- autoland on a ci-gated repo labels the carry PR before the merge"
 build_union_repo alci; al_orphan alci

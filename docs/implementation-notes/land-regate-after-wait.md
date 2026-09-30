@@ -11,6 +11,13 @@ Deltas from SPEC-365. Nothing here repeats what the spec already states.
 - `reason`/`rrc` are new `cmd_merge` locals beside `rc`; the old `new_head`, `verdict` and `ms` uses in that block are gone and the earlier `local verdict` declaration still serves the eligibility loop.
 - T16's fixtured `not json` wait reads double as the unreadable-last-read shape the spec names; the re-gate read at fixture index 5 is what the CLEAN clause then sees.
 
+### Task B1
+- The probe's three-way read is ordered: exit code first, then the empty-or-whitespace test on the captured stdout (gh's real no-match answer), then `jq -e 'type == "array"'`, then the exact-`ci` match. Capturing stdout before any jq run is what lets a non-zero exit refuse while an empty answer still passes.
+- The head wait loops on "not an object OR wrong head" and resolves the two end states after the loop: a non-object last read takes the existing `could not read the labels and checks` refusal, a wrong head takes the rc 3 line. With no pin the loop body reads once and breaks, so `cmd_merge` and the carry keep their single read.
+- `moved` is parsed and stored but read nowhere yet; the label-on arm learns the dating rules in a later task.
+- `cmd_land` runs `git ls-remote` before its push on every repo, gated or not: it sits outside the label check, so the ungated path pays one remote read for the `moved` answer.
+- T15, L10 and L7 went red on the old code; T17, T17b and L11 are guards that pass on both sides of the change (the empty-output path and the `[]` path both mean "no gate" before and after).
+
 ## 2026-09-29 Spec-time decisions
 - The post-wait block moves into `_ci_regate`. It started with two callers and gained the carry as a third in round 1. The block is an enforcement rule, so the extraction lands first (Task A) with no behavior change, and the existing merge ci-wait cases pin it before anything else calls it.
 - `land` settles its re-gate read with the plain form `_pr_detail_settled url n`. The pushed-oid form needs the prior head, and `land` never reads an adopted PR's old head. The head wait in the sync covers the stale-head window instead (see below).

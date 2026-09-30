@@ -1229,22 +1229,30 @@ _carry_branch_ours() {
   rm -rf "$d"
 }
 
-# _ci_label_sync <repo-url> <pr> -- repos whose PR workflows run on `pull_request:
-# types: [labeled]` only test a head when the PR carries the `ci` label, so an unlabeled
-# PR reports an empty rollup and a pending-check wait reads it as "nothing pending" on an
-# untested head. When the repo carries the label this adds it to the PR, or removes and
-# re-adds it when the label predates the head (a `labeled` event fired before the pushed
-# commits starts no run on them, which reads as the label present but an empty rollup on
-# the current head). Returns 0 when the repo gates on `ci` and the PR now carries it, 1
-# when the repo has no such label (a repo without one, or a repo whose label read failed,
-# behaves exactly as before), 2 when the repo gates but the label could not be set: that
-# merge would run untested, so the caller refuses it.
-# A PR read that fails on a gating repo returns 2 as well: without it the sync cannot tell
-# which checks predate the label, and the wait would end on them.
-# When it adds the label it also sets the out-param CI_PRELABEL_KEYS to the keys of the checks
-# already on the PR, so `_ci_checks_wait` can tell the runs the label starts from runs that
-# predate it; in every other case CI_PRELABEL_KEYS is [] (the re-add branch runs only on an
-# empty rollup).
+# _ci_label_sync <repo-url> <pr> [<pinned-oid> [<moved>]] -- repos whose PR workflows run
+# on `pull_request: types: [labeled]` only test a head when the PR carries the `ci`
+# label, so an unlabeled PR reports an empty rollup and a pending-check wait reads it as
+# "nothing pending" on an untested head. When the repo carries the label this adds it to
+# the PR, or removes and re-adds it when the label predates the head (a `labeled` event
+# fired before the pushed commits starts no run on them, which reads as the label present
+# but an empty rollup on the current head). Returns 0 when the repo gates on `ci` and the
+# PR now carries it.
+# The label probe is fail-closed. A `gh label list` that exits non-zero, or whose output
+# is neither empty or whitespace-only nor a JSON array, returns 2: the caller refuses a
+# merge it cannot prove ungated, and the stderr line names the PR number, never the remote
+# url, which can carry userinfo. gh answers a no-match search with exit 0 and zero bytes,
+# so an empty or whitespace-only answer, like an array without an exact `ci`, returns 1,
+# "no gate". A PR read that fails on a gating repo returns 2 as well: without it the sync
+# cannot tell which checks predate the label, and the wait would end on them.
+# <pinned-oid> is the head the caller just pushed. With one, the PR read repeats every 2s
+# up to KIT_WRAP_SETTLE_SECS until it is a JSON object whose headRefOid is the pin: rc 2
+# when the bound runs out on a read that is still not an object, rc 3 on a wrong head.
+# Without one the sync makes one read, as before. <moved> is 1 when the caller's own push
+# moved the head.
+# When it adds the label it also sets the out-param CI_PRELABEL_KEYS to the keys of the
+# checks already on the PR, so `_ci_checks_wait` can tell the runs the label starts from
+# runs that predate it; in every other case CI_PRELABEL_KEYS is [] (the re-add branch runs
+# only on an empty rollup).
 #
 # CI_JQ_DEFS is the one jq definition of a rollup entry that the ci wait, the carry wait and
 # `_pr_gate` share. gh emits an absent URL as "" and an absent time as the zero time, never
@@ -1258,13 +1266,34 @@ CI_JQ_DEFS='
   def ckey: (.name // .context // "") + "@" + ([.detailsUrl, .targetUrl, .startedAt, .createdAt] | map(real) | .[0] // "");
 '
 _ci_label_sync() {
-  local url="$1" n="$2" detail
+  local url="$1" n="$2" pinned="${3:-}" moved="${4:-0}"
+  local labels detail="" waited=0 head
   CI_PRELABEL_KEYS='[]'
-  gh label list --repo "$url" --search ci --limit 200 --json name 2>/dev/null \
-    | jq -e '[.[] | select(.name == "ci")] | length > 0' >/dev/null 2>&1 || return 1
-  detail="$(gh pr view "$n" --repo "$url" --json labels,statusCheckRollup 2>/dev/null)"
+  CI_NEW_SCOPE=''
+  labels="$(gh label list --repo "$url" --search ci --limit 200 --json name 2>/dev/null)" || {
+    echo "     could not read the repo labels for #${n}" >&2; return 2; }
+  # gh's no-match answer is exit 0 and zero bytes, not an empty array.
+  [ -z "$(printf '%s' "$labels" | tr -d '[:space:]')" ] && return 1
+  printf '%s' "$labels" | jq -e 'type == "array"' >/dev/null 2>&1 || {
+    echo "     could not read the repo labels for #${n}" >&2; return 2; }
+  printf '%s' "$labels" | jq -e '[.[] | select(.name == "ci")] | length > 0' >/dev/null 2>&1 || return 1
+  while :; do
+    detail="$(gh pr view "$n" --repo "$url" --json labels,statusCheckRollup,headRefOid,url,commits 2>/dev/null)"
+    [ -n "$pinned" ] || break
+    if printf '%s' "$detail" | jq -e 'type == "object"' >/dev/null 2>&1; then
+      head="$(printf '%s' "$detail" | jq -r '.headRefOid // ""' 2>/dev/null)"
+      [ "$head" = "$pinned" ] && break
+    fi
+    [ "$waited" -lt "$KIT_WRAP_SETTLE_SECS" ] || break
+    sleep 2; waited=$(( waited + 2 ))
+  done
   printf '%s' "$detail" | jq -e 'type == "object"' >/dev/null 2>&1 || {
     echo "     could not read the labels and checks of #${n}" >&2; return 2; }
+  if [ -n "$pinned" ]; then
+    head="$(printf '%s' "$detail" | jq -r '.headRefOid // ""' 2>/dev/null)"
+    [ "$head" = "$pinned" ] || {
+      echo "     PR #${n} never showed the pushed head $(_short "$pinned")" >&2; return 3; }
+  fi
   if ! printf '%s' "$detail" | jq -e '[.labels // [] | .[] | select(.name == "ci")] | length > 0' >/dev/null 2>&1; then
     CI_PRELABEL_KEYS="$(printf '%s' "$detail" | jq -c "${CI_JQ_DEFS} [(.statusCheckRollup // [])[] | ckey]" 2>/dev/null)"
     [ -n "$CI_PRELABEL_KEYS" ] || CI_PRELABEL_KEYS='[]'
@@ -2478,6 +2507,14 @@ cmd_land() {
 
   echo "land ${branch} -> ${def} (${wt})"
 
+  # The sync needs to know whether this push moves the PR head: an adopted PR can already
+  # sit on the branch while origin holds an older tip. A read that fails counts as moved,
+  # the safer of the two answers.
+  local prior="" lsrc=0 moved=0
+  prior="$(git -C "$wt" ls-remote origin "refs/heads/${branch}" 2>/dev/null)"; lsrc=$?
+  prior="${prior%%$'\t'*}"
+  if [ "$lsrc" -ne 0 ] || { [ -n "$prior" ] && [ "$prior" != "$tip" ]; }; then moved=1; fi
+
   git -C "$wt" push origin "$branch"; rc=$?
   if [ "$rc" -ne 0 ]; then
     echo "     PUSH REFUSED: git push origin ${branch} exited ${rc}" >&2
@@ -2553,10 +2590,11 @@ cmd_land() {
   # before the merge and the runs it starts get a bounded wait; a repo without the label
   # merges as it always did, and a label that could not be set refuses rather than
   # merging untested.
-  _ci_label_sync "$url" "$n"; rc=$?
+  _ci_label_sync "$url" "$n" "$tip" "$moved"; rc=$?
   case "$rc" in
     0) _ci_checks_wait "$url" "$n" ;;
     1) ;;
+    3) echo "     MERGE FAILED #${n}: the PR head never showed the pushed $(_short "$tip"); left open" >&2; return 2 ;;
     *) echo "     MERGE FAILED #${n}: the ci label could not be set" >&2; return 2 ;;
   esac
 
