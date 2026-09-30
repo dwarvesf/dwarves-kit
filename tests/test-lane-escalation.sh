@@ -43,11 +43,12 @@ grep -qF 'escalate <current-lane> <spec-file>' "$LC"; assert "AC1: usage string 
 
 # ============================================================
 echo ""
-echo "=== POSITIVE: tiny + emergent-scope spec escalates to full ==="
+echo "=== POSITIVE: tiny + emergent-scope spec escalates to the default lane and suggests full ==="
 # ============================================================
 OUT_POS="$(bash "$LC" escalate tiny "$FIX/heavy-scope-spec.md" 2>&1)"
 EXIT_POS=$?
-assert_contains "AC2: escalate tiny+heavy-scope-spec prints ESCALATE tiny -> full" "ESCALATE tiny -> full" "$OUT_POS"
+assert_contains "AC2: escalate tiny+heavy-scope-spec prints ESCALATE tiny -> normal" "ESCALATE tiny -> normal" "$OUT_POS"
+assert_contains "AC2: the heavy scope leaves a full suggestion, not a lane" "LANE-SUGGEST: full" "$OUT_POS"
 assert "AC2: escalate exits 0 on ESCALATE" $([ "$EXIT_POS" -eq 0 ] && echo 0 || echo 1)
 
 # ============================================================
@@ -128,7 +129,8 @@ echo ""
 echo "=== SCOPE EDGES: classify-time triggers untouched ==="
 # ============================================================
 CLASSIFY_OUT="$(bash "$LC" classify "add jwt authentication and a data-model migration" 2>&1)"
-assert_contains "AC6: classify-time trigger (task text) still lands on full unchanged" "full" "$CLASSIFY_OUT"
+assert_contains "AC6: classify-time trigger (task text) is now a full suggestion on the default lane" "LANE-SUGGEST: full" "$CLASSIFY_OUT"
+assert_contains "AC6: classify-time trigger keeps the default lane on stdout" "normal" "$(bash "$LC" classify "add jwt authentication and a data-model migration" 2>/dev/null)"
 
 echo ""
 echo "=== $PASS/$TOTAL passed, $FAIL failed ==="

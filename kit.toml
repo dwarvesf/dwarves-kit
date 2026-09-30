@@ -118,6 +118,37 @@ board_row_gate     = true       # [impl] hooks/board-row-gate.sh: a commit addin
                                 #        needs a board-row-ok line. Default ON; a repo opts out
                                 #        with `board_row_gate = false` in a committed .kit.toml.
 
+# ---- lanes as data ----------------------------------------------------------
+# One source for which phases each lane runs. `lib/gate/lane-data.sh` reads these blocks; the
+# lane x phase table in docs/WORKFLOW.md is the human view, pinned equal by
+# tests/test-lanes-data.sh. One-line arrays only. A phase in `phases` and not in `light` is
+# required; in both it is light; absent it is skipped. Array order is plan order. A repo may
+# override a lane in a committed .kit.toml; an unknown phase name or a malformed array is
+# never applied silently.
+[lane.tiny]                     # [impl] lib/gate/lane-data.sh
+phases = ["build", "review"]
+light  = ["build", "review"]
+
+[lane.normal]                   # [impl] lib/gate/lane-data.sh
+phases = ["think", "spec", "validate", "design-record", "test-plan", "build", "review", "docs", "ship"]
+light  = ["think", "design-record", "test-plan", "docs"]
+
+[lane.full]                     # [impl] lib/gate/lane-data.sh
+phases = ["think", "design", "design-critique", "ui-design", "spec", "validate", "design-record", "test-plan", "build", "review", "docs", "ship", "reflect"]
+light  = ["ui-design"]
+
+[lane.bug]                      # [impl] lib/gate/lane-data.sh
+phases = ["test-plan", "build", "review", "ship", "debug"]
+light  = ["test-plan", "ship"]
+
+[lane.backfill]                 # [impl] lib/gate/lane-data.sh
+phases = ["think", "spec", "validate", "review", "docs"]
+light  = ["think", "spec", "validate", "review"]
+
+[lanes]                         # [impl] lib/classify/lane-classify.sh, lib/gate/lane-data.sh
+default          = "normal"     #        the lane classify returns when no rule picks another
+extra_hard_paths = ""           #        ERE over changed paths; ADDS to the built-in hard paths, never removes
+
 [adopt]                         # [impl] lib/adopt.sh; read at adopt time, never by a hook
 single_source = false           #        Default for `--single-source` when neither that flag nor
                                  #        `--no-single-source` is passed: folds an existing

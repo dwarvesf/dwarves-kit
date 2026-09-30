@@ -43,7 +43,7 @@
           {
             "type": "command",
             "command": "bash $HOME/.claude/dwarves-kit/hooks/anchor-root.sh $HOME/.claude/dwarves-kit/hooks/ship-gate.sh",
-            "timeout": 5
+            "timeout": 30
           }
         ]
       },

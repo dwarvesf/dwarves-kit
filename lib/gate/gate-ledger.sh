@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 # gate-ledger.sh -- lane-aware gate ledger + action log + ship-completeness check.
 #
-# The single source for "which gates a lane requires" is the WORKFLOW.md lane×phase
-# matrix; this parses it at runtime (no second copy), mirroring lib/gate/dispatch-gate.sh's
-# hands-off extraction. A matrix cell of `measure-twice` => the gate is REQUIRED for
-# that lane. Records are append-only, operator-readable, and redacted (no command
-# bodies). See docs/decisions/0024-gate-ledger-and-ship-enforcement.md.
+# The single source for "which gates a lane requires" is the [lane.<name>] data in
+# kit.toml, read through lib/gate/lane-data.sh (kit root, operator overlay, and a committed
+# project .kit.toml). A phase in `phases` and not in `light` => the gate is REQUIRED for
+# that lane; docs/WORKFLOW.md carries the human view. Records are append-only,
+# operator-readable, and redacted (no command bodies). See docs/decisions/0024-gate-ledger-and-ship-enforcement.md.
 #
 # Subcommands:
-#   required <lane>                     print the lane's required (measure-twice) gate keys
+#   required <lane>                     print the lane's required gate keys
 #   start    <rid> <chosen-lane> <classified-lane> <chosen-type> [classified-type] [repo]   record routing facts
 #   start --amend <same args>           sanctioned correction; readers take the last AMEND
 #   record   <rid> <phase> <ran|skipped> [reason]   append a gate decision (a `grill`+`skipped`
@@ -37,7 +37,8 @@
 #                                       dispose EVERY phase of the lane's plan in one call
 #                                       (`ship` may be omitted: the push records it); refuses
 #                                       and writes NOTHING on any invalid disposition
-#   check    <lane> <rid>              exit 0 if every required gate has a ran|override entry; else 1
+#   check    <lane> <rid> [--kit-lanes]  exit 0 if every required gate has a ran|override entry; else 1
+#                                       (--kit-lanes reads the kit root lane data only)
 #   show     <rid>                     print the run's ledger
 #   plan     <lane>                    the lane's ordered phase checklist
 #   progress <rid> <lane>              plan x ledger -> "step k/n" + checklist
@@ -50,7 +51,10 @@ set -euo pipefail
 GATE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LIB_ROOT="$(cd "$GATE_DIR/.." && pwd)"  # the lib/ dir; cross-subsystem siblings resolve as "$LIB_ROOT/<subsystem>/<file>"
 KIT_ROOT="$(cd "$GATE_DIR/../.." && pwd)"  # repo root = two levels above lib/<subsystem>/
-WORKFLOW="${GATE_LEDGER_WORKFLOW:-$KIT_ROOT/docs/WORKFLOW.md}"  # bulk lives in docs/; root WORKFLOW.md is a thin stub
+# shellcheck source=lib/gate/lane-data.sh
+source "$GATE_DIR/lane-data.sh" || { echo "FATAL: lib/gate/lane-data.sh missing or unreadable" >&2; exit 1; }
+# --kit-lanes (check only): lane reads use the kit root file only (no project, no operator overlay). Set per call, never exported.
+LANES_KIT_ONLY=""
 # Durable run-telemetry root: resolve + one-time additive migration out of the
 # ~/.claude/dwarves-kit reinstall blast zone. One resolver, no hard-coded default here.
 # shellcheck source=lib/telemetry/kit-log-dir.sh
@@ -123,32 +127,14 @@ normalize_phase() {
   printf '%s' "$p"
 }
 
-# print "<rawphase>\t<cell>" for each matrix row under the given lane column.
-# Empty output => the lane column was not found (unknown lane).
-matrix_for_lane() {
-  awk -v lane="$1" '
-    /^## Lane.*depth matrix/ {inmx=1; next}
-    inmx && /^## / {exit}
-    inmx && /^\| *Phase *\|/ {
-      n=split($0, h, "|");
-      for (i=1;i<=n;i++){gsub(/^ +| +$/,"",h[i]); if(h[i]==lane) col=i}
-      next
-    }
-    inmx && col>0 && /^\|/ {
-      if ($0 ~ /^\| *-+/) next;
-      split($0, c, "|");
-      ph=c[2]; gsub(/^ +| +$/,"",ph);
-      cell=c[col]; gsub(/^ +| +$/,"",cell);
-      if (ph!="" && ph!="Phase") print ph "\t" cell;
-    }
-  ' "$WORKFLOW"
-}
+# print "<phase>\t<cell>" for each phase of the lane, in plan order (cell = measure-twice|run-lite).
+# Empty output and nonzero exit => unknown lane (not in the lane data, or malformed).
+lane_cells() { lane_rows "$1" ${LANES_KIT_ONLY:+kit}; }
 
 required() {
   local lane="${1:-}"; [ -n "$lane" ] || { echo "usage: required <lane>" >&2; return 64; }
   local rows ph cell
-  rows="$(matrix_for_lane "$lane")"
-  [ -n "$rows" ] || { echo "unknown lane '$lane' (not a column in the WORKFLOW matrix)" >&2; return 1; }
+  rows="$(lane_cells "$lane")" || { echo "unknown lane '$lane' (no valid [lane.$lane] data in kit.toml)" >&2; return 1; }
   while IFS=$'\t' read -r ph cell; do
     [ "$cell" = "measure-twice" ] && printf '%s\n' "$(normalize_phase "$ph")"
   done <<< "$rows"
@@ -179,6 +165,13 @@ start() {
   line="$(printf '%s | %s | lane=%s classified=%s type=%s' "$(now)" "$marker" "$lane" "$classified" "$type")"
   [ -n "$ctype" ] && line="$line ctype=$ctype"
   append_run_line "$rid" "$(printf '%s repo=%s' "$line" "$repo")"
+  # A committed project override that dropped phases from this lane: say so in the ledger.
+  local dp f; f="$(ledger_file "$rid")"
+  while IFS= read -r dp; do
+    [ -n "$dp" ] || continue
+    grep -qF "| GATE | $dp | skipped | repo lane override (.kit.toml)" "$f" 2>/dev/null && continue
+    record "$rid" "$dp" skipped "repo lane override (.kit.toml)"
+  done < <(lane_dropped "$lane")
 }
 
 record() {
@@ -462,16 +455,17 @@ show() { local f; f="$(ledger_file "${1:-}")"; if [ -f "$f" ]; then cat "$f"; el
 
 # exit 0 if every required (measure-twice) gate has a ran|override entry; else 1 + list gaps.
 check() {
-  local lane="${1:-}" rid="${2:-}"; [ -n "$lane" ] && [ -n "$rid" ] || { echo "usage: check <lane> <rid>" >&2; return 64; }
+  local kl=""; if [ "${3:-}" = "--kit-lanes" ]; then kl=1; fi
+  local lane="${1:-}" rid="${2:-}"; [ -n "$lane" ] && [ -n "$rid" ] || { echo "usage: check <lane> <rid> [--kit-lanes]" >&2; return 64; }
   # FAIL CLOSED on an unknown lane (security review, TIER-4): `required` returns nonzero for a
-  # lane that is not a WORKFLOW matrix column (a typo, or "mega"). Reading its EMPTY stream in
+  # lane with no valid lane data (a typo, or "mega"). Reading its EMPTY stream in
   # the loop below would leave missing=0 and vacuously PASS -- so an unknown lane would let
   # mega-merge auto-merge (and ship-gate pass) with zero gates enforced. Distinguish it from a
   # VALID lane that legitimately has zero measure-twice gates (e.g. `tiny`): `required` exits 0
   # there with empty output, which correctly passes.
   local req
-  if ! req="$(required "$lane" 2>/dev/null)"; then
-    echo "check: unknown lane '$lane' (not a WORKFLOW matrix column: tiny|normal|full|bug|backfill); refusing, fail-closed" >&2
+  if ! req="$(LANES_KIT_ONLY="$kl" required "$lane" 2>/dev/null)"; then
+    echo "check: unknown lane '$lane' (no valid [lane.$lane] data in kit.toml: tiny|normal|full|bug|backfill); refusing, fail-closed" >&2
     return 1
   fi
   local f; f="$(ledger_file "$rid")"
@@ -486,24 +480,24 @@ check() {
   return "$missing"
 }
 
-# plan: the lane's ordered phase checklist, derived from the WORKFLOW matrix (skip cells
-# omitted; measure-twice = required, run-lite = lite). grill is prepended as the universal
+# plan: the lane's ordered phase checklist, derived from the lane data (absent phases
+# omitted; required = required, light = lite). grill is prepended as the universal
 # intake phase (tiny lane exempt). This is what /kit:assign prints right after a
 # lane is committed, so the operator sees the road before the run starts.
 plan() {
   local lane="${1:-}"; [ -n "$lane" ] || { echo "usage: plan <lane>" >&2; return 64; }
   # Overlay lanes: a vertical kit (learning-kit etc.) drops <lane>.plan into
   # ~/.config/dwarves-kit/lanes.d/ ("N. phase level" lines, same shape as this
-  # verb's output). Drop-in wins over "unknown lane", never over a matrix lane.
-  local rows; rows="$(matrix_for_lane "$lane")"
-  if [ -z "$rows" ]; then
+  # verb's output). Drop-in wins over "unknown lane", never over a kit.toml lane.
+  local rows known=1; rows="$(lane_cells "$lane")" || known=0
+  if [ "$known" = 0 ]; then
     local dropin="${DWARVES_KIT_LANES_D:-$HOME/.config/dwarves-kit/lanes.d}/$lane.plan"
     if [ -f "$dropin" ]; then
       grep -E '^[[:space:]]*[0-9]+\.[[:space:]]' "$dropin"
       return 0
     fi
   fi
-  [ -n "$rows" ] || { echo "unknown lane '$lane' (not a column in the WORKFLOW matrix; no lanes.d drop-in)" >&2; return 1; }
+  [ "$known" = 1 ] || { echo "unknown lane '$lane' (no valid [lane.$lane] data in kit.toml; no lanes.d drop-in)" >&2; return 1; }
   local i=0 ph cell mark
   if [ "$lane" != "tiny" ]; then
     i=1; printf '%2d. %-18s %s\n' 1 "grill" "intake (universal)"
