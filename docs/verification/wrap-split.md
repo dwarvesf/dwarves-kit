@@ -105,3 +105,15 @@ bash tests/test-meta.sh
 for t in tests/test-wrap-*.sh; do bash "$t"; done
 printf '# x\n' >> lib/wrap/wrap-rebase.sh; bin/test-affected --base HEAD --list; git checkout -- lib/wrap/wrap-rebase.sh
 ```
+
+## Port of #850 (after rebase onto origin/master 56bab0e5)
+
+| Check | Result |
+|---|---|
+| Label diff, master monolith vs all `tests/test-wrap-*.sh` | empty both ways, 1532 labels each |
+| Function count | 99 (98 plus `_reject_packed` in wrap-common.sh), each defined once |
+| `--help` and unknown verb vs `origin/master` export | byte-identical |
+| Full runner | `test-wrap: 1596 passed, 2 FAILED of 1598` (the two known wording FAILs; master gained 17 asserts) |
+| Negative control | removing `_reject_packed` from the land arg loop turns `packed arg to land names the packed-flags refusal` red (127 of 128); restored |
+
+The 1581 counts above predate the rebase; this section supersedes them.
