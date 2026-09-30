@@ -22,9 +22,9 @@ Spec: `docs/specs/SPEC-359-wrap-pull-only.md`. No board row filed; the operator 
 ## Green run
 
 - Command: `bash tests/test-wrap.sh`
-- At: `96b4e37b` (the last commit touching `lib/`, `bin/` or `tests/`; later commits are docs only)
+- At: `5e4979bc` (the last commit touching `lib/`, `bin/` or `tests/`)
 - Exit: 0
-- Output: `test-wrap: all 1566 passed`, run six times as the green step of each negative control below, and again after each restore
+- Output: exit 0 over 1568 assertions (`test-wrap: all <N> passed` prints only when none fail), run six times as the green step of each negative control below, and again after each restore
 - Verdict: PASS
 
 The fixtures reuse the real-git `build_pd_repo`/`advance_pd_repo` helpers (bare origin plus a clone, a `merge=union` `_meta/LAB_LOG.md`, a plain `A.md`/`B.md`). The subject is `git pull --ff-only`'s own exit behavior under ahead-only vs. diverged history, which a stubbed git cannot distinguish.
@@ -44,8 +44,8 @@ Maps each row of SPEC-359's `## Test plan` to its acceptance criterion and the a
 | 7 | Ahead-only, NOTE prints | AC-3, AC-5 | `pull-only ahead-only:` | N1, N2 |
 | 8 | Diverged, NOTE prints | AC-4, AC-5 | `pull-only diverged:` | N1, N2 |
 | 9 | Fetch failure wording | AC-8 | `pull-only fetch failure:` | N6 |
-| 10 | Stale `index.lock` fails the call; plain apply still exits 0 | AC-6 | `pull-only stale lock:`, `plain apply stale lock:` | N3 |
-| 11 | No default branch fails the call; plain apply still exits 0 | AC-6 | `pull-only no default branch:`, `plain apply no default branch:` | N4 |
+| 10 | Stale `index.lock` fails the `--apply` call; a dry run and plain apply still exit 0 | AC-6 | `pull-only stale lock:`, `plain apply stale lock:` | N3 |
+| 11 | No default branch fails the call, dry run too; plain apply still exits 0 | AC-6 | `pull-only no default branch:`, `plain apply no default branch:` | N4 |
 | 12 | Five flag-conflict forms, `--apply` passed, HEAD unmoved | AC-7 | `pull-only conflict`, `pull-only conflicts:` | N5 |
 | 13 | Usage line | AC-7 | `pull-only usage:` | none: a string check |
 | 14 | Multi-repo | AC-1 | `pull-only multi-repo:` | none: repo-list building is unchanged |
@@ -56,7 +56,7 @@ Maps each row of SPEC-359's `## Test plan` to its acceptance criterion and the a
 
 ## Negative control
 
-Six controls, one per independent `PULL_ONLY` gate, each run with `lib/gate/negctl.sh` at `96b4e37b` in its own scratch clone (so they ran in parallel without sharing a working tree). The mutation is `python3 docs/verification/wrap-pull-only-negctl.py N<k>`. N1's block is below; N2 to N6 printed the same lines with their own argument, each `Verdict: PASS`:
+Six controls, one per independent `PULL_ONLY` gate, each run with `lib/gate/negctl.sh` at `5e4979bc` in its own scratch clone (so they ran in parallel without sharing a working tree). The mutation is `python3 docs/verification/wrap-pull-only-negctl.py N<k>`. N1's block is below; N2 to N6 printed the same lines with their own argument, each `Verdict: PASS`:
 
 ```
 ## Negative control (negctl)
@@ -74,12 +74,12 @@ The failing assertions under each mutation were captured by a second mutated run
 
 | Control | Gate mutated | RED under mutation | Failing assertions |
 |---|---|---|---|
-| N1 | sweep gate, `!= 1` to `!= 99` | 21 of 1566 | `pull-only scope:` branch survival and the five section-absence checks; `union+stash`: no branches section, stray line not carried; dry run and off-default section checks; ahead-only: HEAD unchanged, NOTE, no local or origin carry branch; diverged: exits 2, FAILED line, HEAD did not move, NOTE, no local or origin carry branch |
-| N2 | ahead NOTE gate, `= 1` to `= 99` | 2 of 1566 | `pull-only ahead-only: the ahead count is named, not silent`; `pull-only diverged: the ahead count is named` |
-| N3 | lock-skip exit in `run()`, `= 1` to `= 99` | 1 of 1566 | `pull-only stale lock: exits 2` |
-| N4 | unresolved-default exit, `= 1` to `= 99` | 1 of 1566 | `pull-only no default branch: exits 2` |
-| N5 | every conflict refusal, `if [` to `if false && [` | 11 of 1566 | the exit-64 and names-the-flag checks for `--worktrees`, `--archive-unmerged`, `--own`, `--own=<path>`; `--tips-file` names the flag and is refused before the missing-path check; `pull-only conflicts: no refused call pulled, though origin moved` |
-| N6 | fetch wording reverted to the plain-apply string | 2 of 1566 | `pull-only fetch failure: the wording names the pull`; `pull-only fetch failure: not the plain-apply wording` |
+| N1 | sweep gate, `!= 1` to `!= 99` | 21 of 1568 | `pull-only scope:` branch survival and the five section-absence checks; `union+stash`: no branches section, stray line not carried; dry run and off-default section checks; ahead-only: HEAD unchanged, NOTE, no local or origin carry branch; diverged: exits 2, FAILED line, HEAD did not move, NOTE, no local or origin carry branch |
+| N2 | ahead NOTE gate, `= 1` to `= 99` | 2 of 1568 | `pull-only ahead-only: the ahead count is named, not silent`; `pull-only diverged: the ahead count is named` |
+| N3 | lock-skip exit in `run()`, `= 1` to `= 99` | 1 of 1568 | `pull-only stale lock: exits 2` |
+| N4 | unresolved-default exit, `= 1` to `= 99` | 2 of 1568 | `pull-only no default branch: exits 2`; `pull-only no default branch: a dry run exits 2 too` |
+| N5 | every conflict refusal, `if [` to `if false && [` | 11 of 1568 | the exit-64 and names-the-flag checks for `--worktrees`, `--archive-unmerged`, `--own`, `--own=<path>`; `--tips-file` names the flag and is refused before the missing-path check; `pull-only conflicts: no refused call pulled, though origin moved` |
+| N6 | fetch wording reverted to the plain-apply string | 2 of 1568 | `pull-only fetch failure: the wording names the pull`; `pull-only fetch failure: not the plain-apply wording` |
 
 Under N1 the ahead-only and diverged rows go red for a second reason: `_carry_stray_commits` runs again, pushes the local commit to a `wrap/stray-commits-*` branch, and moves the default branch back with `git reset --keep`. That is the exact behavior the flag exists to turn off. The tip-snapshot and `gh auth status` skips change no output or exit code, so they carry no control.
 
