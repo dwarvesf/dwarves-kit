@@ -2662,18 +2662,35 @@ cmd_land() {
         *) echo "     MERGE FAILED #${n}: the ci label could not be set; the merge commit $(_short "$tip") is on origin" >&2
            return 2 ;;
       esac
-      proll="$(gh pr view "$n" --repo "$url" --json statusCheckRollup 2>/dev/null)"
+      proll="$(gh pr view "$n" --repo "$url" --json statusCheckRollup 2>/dev/null)"; rc=$?
     else
       # The pending-only wait holds no grace: a push that starts no checks pays nothing.
+      # An unreadable read ends it at once; the single judgment below reads the last
+      # answer either way.
       pwaited=0
       while :; do
-        proll="$(gh pr view "$n" --repo "$url" --json statusCheckRollup 2>/dev/null)"
+        proll="$(gh pr view "$n" --repo "$url" --json statusCheckRollup 2>/dev/null)"; rc=$?
+        [ "$rc" -eq 0 ] && [ -n "$proll" ] || break
         pnum="$(printf '%s' "$proll" | jq -r "${CI_JQ_DEFS} ([.statusCheckRollup // [] | .[] | select(pending)] | length)" 2>/dev/null)"
-        case "$pnum" in ''|*[!0-9]*) pnum=0 ;; esac
-        [ "$pnum" -gt 0 ] || break
+        case "$pnum" in ''|*[!0-9]*) break ;; esac
+        [ "$pnum" -eq 0 ] && break
         [ "$pwaited" -lt "$KIT_WRAP_CARRY_CHECKS_SECS" ] || break
         sleep 10; pwaited=$(( pwaited + 10 ))
       done
+    fi
+    # The merge commit is already on origin, so what the rollup cannot answer is judged
+    # against a state that cannot be taken back: an unreadable read, or checks still
+    # pending when the bound ran out, stop the land naming the commit the same way a red
+    # check does. A readable rollup with nothing pending -- the empty one of a repo that
+    # registered no checks included -- keeps the straight path.
+    if [ "$rc" -ne 0 ] || ! printf '%s' "$proll" | jq -e . >/dev/null 2>&1; then
+      echo "     checks unreadable on the merged head $(_short "$tip"); the merge commit is on origin" >&2
+      return 2
+    fi
+    pnum="$(printf '%s' "$proll" | jq -r "${CI_JQ_DEFS} ([.statusCheckRollup // [] | .[] | select(pending)] | length)" 2>/dev/null)"
+    if [ "$pnum" != "0" ]; then
+      echo "     checks still pending on the merged head $(_short "$tip"); the merge commit is on origin" >&2
+      return 2
     fi
     # A red check on the merged head stops the land before the second merge: a clean
     # textual merge that broke the build must never land. Latest run per name wins, the

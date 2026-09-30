@@ -131,6 +131,10 @@ case "$sub" in
             # GitHub catches up with the re-merge push.
             cnt_f="${GH_STUB_CALLS:-/dev/null}.view-$n"
             cnt=$(( $(cat "$cnt_f" 2>/dev/null || echo 0) + 1 )); echo "$cnt" > "$cnt_f" 2>/dev/null
+            # GH_STUB_FAIL_VIEW_<n>_<k>: the k-th view of PR <n> fails the way a gh read
+            # failure does -- nothing printed, non-zero exit.
+            eval "vf=\"\${GH_STUB_FAIL_VIEW_${n}_${cnt}:-0}\""
+            [ "$vf" = "1" ] && exit 1
             j="$cnt"
             while [ "$j" -gt 1 ]; do
               key2="GH_STUB_PR_${n}_${j}"; eval "val2=\"\${$key2:-}\""
@@ -7122,6 +7126,56 @@ chk "land-merge: the interrupted resolver restored the tip" \
 chk "land-merge: the interrupted resolver left a clean worktree" \
   "$([ -z "$(git -C "$LWT" status --porcelain)" ] \
      && [ ! -e "$(git -C "$LWT" rev-parse --git-dir)/MERGE_HEAD" ]; echo $?)"
+
+echo "--- land-merge: an unreadable merged-head rollup fails closed"
+# The merge commit is already pushed when the rollup read returns nothing: an empty
+# answer there is not "no checks", it is a read that failed, and the land must stop
+# naming the commit it left on origin.
+build_land_reg chkun
+LWT="$(cd "$TMPD/ld-repo-chkun/wt" && pwd -P)"
+LTIP="$(git -C "$LWT" rev-parse HEAD)"
+land_adv_regen chkun o
+: > "$GH_STUB_CALLS"; rm -f "$GH_STUB_CALLS".*
+out="$(GH_STUB_OPEN_PRS='[]' GH_STUB_CREATE_NUM=42 \
+  GH_STUB_MERGE_FAILS=1 GH_STUB_MERGE_ERR='Pull Request is not mergeable' \
+  GH_STUB_PR_42="$(lm_conf 42 "$LTIP")" GH_STUB_PR_42_2="$(lm_ok 42)" \
+  GH_STUB_FAIL_VIEW_42_3=1 \
+  KIT_WRAP_CI_GRACE_SECS=0 KIT_WRAP_CARRY_CHECKS_SECS=0 \
+  GH_STUB_LAND_REPO="$LWT" GH_STUB_LAND_REMOTE="$TMPD/ld-bare-chkun" \
+  GH_STUB_LAND_BRANCH=feat/land GH_STUB_LAND_DEF=main "$WRAP" land "$LWT" 2>&1)"; rc=$?
+MOID="$(git -C "$LWT" rev-parse HEAD 2>/dev/null)"
+chk "land-merge: the unreadable rollup exits 2" "$([ "$rc" -eq 2 ]; echo $?)"
+chk_has "land-merge: the unreadable rollup names the merge commit" "$out" \
+  "merged head ${MOID:0:7}"
+chk "land-merge: the unreadable rollup left the merge commit on origin" \
+  "$([ "$(git -C "$TMPD/ld-bare-chkun" rev-parse feat/land)" = "$MOID" ]; echo $?)"
+chk "land-merge: the unreadable rollup never merged the PR" \
+  "$([ "$(git -C "$TMPD/ld-bare-chkun" rev-parse main)" != "$MOID" ]; echo $?)"
+
+echo "--- land-merge: checks still pending at the bound fail closed"
+# A check that never completes is a verdict the land cannot read either: at the wait
+# bound it stops and names the merge commit, the same shape as a red check.
+build_land_reg chkpend
+LWT="$(cd "$TMPD/ld-repo-chkpend/wt" && pwd -P)"
+LTIP="$(git -C "$LWT" rev-parse HEAD)"
+land_adv_regen chkpend o
+PEND='{"name":"build","status":"IN_PROGRESS","conclusion":null,"startedAt":"2026-09-29T10:00:00Z","completedAt":"0001-01-01T00:00:00Z","detailsUrl":"https://gh/job/9"}'
+: > "$GH_STUB_CALLS"; rm -f "$GH_STUB_CALLS".*
+out="$(GH_STUB_OPEN_PRS='[]' GH_STUB_CREATE_NUM=42 \
+  GH_STUB_MERGE_FAILS=1 GH_STUB_MERGE_ERR='Pull Request is not mergeable' \
+  GH_STUB_PR_42="$(lm_conf 42 "$LTIP")" GH_STUB_PR_42_2="$(lm_ok 42)" \
+  GH_STUB_PR_42_3="{\"number\":42,\"title\":\"x\",\"headRefName\":\"feat/land\",\"baseRefName\":\"main\",\"mergeable\":\"MERGEABLE\",\"mergeStateStatus\":\"UNSTABLE\",\"statusCheckRollup\":[${PEND}],\"headRefOid\":\"%REMERGE_TIP%\"}" \
+  KIT_WRAP_CI_GRACE_SECS=0 KIT_WRAP_CARRY_CHECKS_SECS=0 \
+  GH_STUB_LAND_REPO="$LWT" GH_STUB_LAND_REMOTE="$TMPD/ld-bare-chkpend" \
+  GH_STUB_LAND_BRANCH=feat/land GH_STUB_LAND_DEF=main "$WRAP" land "$LWT" 2>&1)"; rc=$?
+MOID="$(git -C "$LWT" rev-parse HEAD 2>/dev/null)"
+chk "land-merge: still-pending exits 2" "$([ "$rc" -eq 2 ]; echo $?)"
+chk_has "land-merge: still-pending names the merge commit" "$out" \
+  "merged head ${MOID:0:7}"
+chk "land-merge: still-pending left the merge commit on origin" \
+  "$([ "$(git -C "$TMPD/ld-bare-chkpend" rev-parse feat/land)" = "$MOID" ]; echo $?)"
+chk "land-merge: still-pending never merged the PR" \
+  "$([ "$(git -C "$TMPD/ld-bare-chkpend" rev-parse main)" != "$MOID" ]; echo $?)"
 
 echo "--- merge-cycle: a FEATURES conflict re-merges, pushes and the PR merges"
 # The same cycle land runs, reached through `wrap merge --apply`: today this aborted on
