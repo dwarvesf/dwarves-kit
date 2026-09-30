@@ -86,7 +86,7 @@ if want spec-md-wiring; then
   assert_eq "outside pass writes the -outside file" 0 "$(has "$S" 'docs/research/<date>-<slug>-outside.md')"
   assert_eq "records the depth= action line" 0 "$(has "$S" 'depth=<levels> research_agents=<N>')"
   assert_eq "design pass keyed on gate-ledger plan" 0 "$(has "$S" 'gate-ledger.sh plan <lane>')"
-  assert_eq "unconditional 4-agent brownfield rule is gone" 1 "$(grep -c 'If modifying existing code, run codebase research before generating the spec' "$S")"
+  assert_eq "unconditional 4-agent brownfield rule is gone" 0 "$(grep -c 'If modifying existing code, run codebase research before generating the spec' "$S")"
 fi
 
 if want validate-wiring; then
