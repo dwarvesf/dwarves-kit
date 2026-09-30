@@ -1,4 +1,5 @@
 #!/bin/bash
+# permission-auto-approve.sh -- PermissionRequest hook that auto-approves a Bash command only when it is confirmed single, simple and read-only.
 # permission-auto-approve.sh, PermissionRequest hook
 #
 # Auto-approves a Bash command only when it can be positively confirmed to be a

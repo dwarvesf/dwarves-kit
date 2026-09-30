@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# kit-verb: board work | one table of who is on what, how far along and who is stuck, joined at call time from board, git, Orca and the run ledger; read-only
 # work.sh -- `board work`: one table of who is on what, how far along, and who is stuck.
 #
 # Joins five sources at call time and stores nothing: the board rows (parse-board.sh), the

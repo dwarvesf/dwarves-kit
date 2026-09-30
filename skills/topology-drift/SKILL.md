@@ -28,7 +28,7 @@ Audit the live feature estate (every command, agent, skill, hook) against the wo
 | Slot | This instance |
 |---|---|
 | Item set | every row of `docs/FEATURES.md` plus every line of `docs/workflow-paths.md` section 5 (both sides enumerate; the diff is the queue) |
-| Contract | (a) FEATURES.md is fresh (regenerating changes nothing); (b) every registry row has exactly one path-index line and vice versa, all four kinds; (c) trigger classes agree between the two (secondary, listed not auto-fixed) |
+| Contract | (a) FEATURES.md is fresh (regenerating changes nothing); (b) every registry row has exactly one path-index line and vice versa, all five kinds (commands, agents, skills, hooks, verbs); (c) trigger classes agree between the two (secondary, listed not auto-fixed) |
 | Evidence class | Tier 1: the repo itself via the generator diff + sed/comm name extraction. Tier 2: a model re-reads only the delta features' definitions to place them on the topology |
 | Apply mechanics | FIX on an isolated branch; new features get a path-index line AND a placement on the section 2/3 diagrams; removed features get their line deleted; PR body lists every verdict; UNSURE never auto-resolved |
 
@@ -55,18 +55,20 @@ Audit the live feature estate (every command, agent, skill, hook) against the wo
    sed -n '/^### Agents/,/^### Skills/p' $W | sed -nE 's/^\| `\[D\] ([a-z0-9-]+).*/\1/p' | sort > w-agt
    sed -n '/^## Skills/,/^## Hooks/p' $F | sed -nE 's/^\| `([a-z0-9-]+)`.*/\1/p' | sort > f-skl
    sed -n '/^### Skills/,/^### Hooks/p' $W | sed -nE 's/^\| `\[[HI]\] ([a-z0-9-]+).*/\1/p' | sort > w-skl
-   sed -n '/^## Hooks/,$p' $F | sed -nE 's/^\| `([a-z0-9._-]+)\.sh`.*/\1/p' | sort > f-hks
+   sed -n '/^## Hooks/,/^## Verbs/p' $F | sed -nE 's/^\| `([a-z0-9._-]+)\.sh`.*/\1/p' | sort > f-hks
    sed -n '/^### Hooks/,/^## 6/p' $W | sed -nE 's/^\| `\[E\] [^>]*-> *([a-z0-9._-]+).*/\1/p' | sort -u > w-hks
-   for k in cmd agt skl hks; do comm -3 f-$k w-$k; done
+   sed -n '/^## Verbs/,$p' $F | sed -nE 's/^\| `([^`]+)` \| `\[V\]`.*/\1/p' | sort > f-vrb
+   sed -n '/^### Verbs/,/^## 6/p' $W | grep -E '^\| `\[V\] ' | sed -E 's/^\| `\[V\] //; s/ ->.*//' | sort > w-vrb
+   for k in cmd agt skl hks vrb; do comm -3 f-$k w-$k; done
    ```
 
-   Empty `comm -3` output for all four kinds = presence parity holds. Any name in column 1 (only in FEATURES) is a NEW/unmapped feature; column 2 (only in the path index) is a REMOVED/ghost feature. Each is a finding with the name as evidence. Secondary pass, same evidence class: compare trigger classes for matched names; a disagreement (e.g. `skill-review` frontmatter-derived `[I]` vs the index's hand-judged `[H]`) is a listed UNSURE for the operator, never auto-flipped, because either side may be the wrong one.
+   Empty `comm -3` output for all five kinds (a verb is a lib script declaring `# kit-verb: <name> | <description>` in its first 40 lines; adding the marker adds the row) = presence parity holds. Any name in column 1 (only in FEATURES) is a NEW/unmapped feature; column 2 (only in the path index) is a REMOVED/ghost feature. Each is a finding with the name as evidence. Secondary pass, same evidence class: compare trigger classes for matched names; a disagreement (e.g. `skill-review` frontmatter-derived `[I]` vs the index's hand-judged `[H]`) is a listed UNSURE for the operator, never auto-flipped, because either side may be the wrong one.
 
 4. **Tier 2, delta only, model-read.** ONLY when step 3 produced deltas: dispatch ONE `kit:audit-scanner` (the shared read-only scanner, preferred: it physically cannot write; fall back to a general-purpose subagent only where the kit agent roster is unavailable, e.g. a frozen plugin snapshot) with the delta list. Its scope, exactly: read each delta feature's definition file and return, per delta, the section 5 path-index line to add/remove (matching the existing line grammar: `entry -> ... -> terminal`, trigger mark from the registry) and the feature's real attach point on the section 2 flow-topology and section 3 system-topology diagrams, with the definition evidence quoted. It must invent no edge the feature's definition does not show (regeneration rule 5 of workflow-paths.md). Apply its returned placements HERE, on the branch (the scanner proposes, this skill applies). Zero deltas = zero dispatch; report CLEAN and stop.
 
 5. **Verdict each finding** with the audit-loop grammar: OK / FIX / REMOVE / UNSURE / DANGER. A ghost line whose feature file is gone is REMOVE with the deletion commit as evidence. A trigger-class disagreement is UNSURE.
 
-6. **Verify.** Re-run steps 1 and 3: freshness green, `comm -3` empty all four kinds. Run `bash tests/test-meta.sh`: green, or the run is not done.
+6. **Verify.** Re-run steps 1 and 3: freshness green, `comm -3` empty all five kinds. Run `bash tests/test-meta.sh`: green, or the run is not done.
 
 7. **Ship.** Commit, push, open a PR whose body lists every verdict with evidence and every UNSURE for the operator. Nothing to change: no branch, report CLEAN with the four counts.
 

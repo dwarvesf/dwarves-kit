@@ -1,4 +1,5 @@
 #!/bin/bash
+# slop-cleaner.sh -- Stop hook that nudges, never blocks, on bloat signals in recently modified source files after long sessions.
 # slop-cleaner.sh — Stop hook
 # After long sessions, Claude produces increasingly bloated code.
 # This hook checks recently modified source files for bloat signals

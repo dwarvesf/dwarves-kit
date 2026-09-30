@@ -1,4 +1,5 @@
 #!/bin/bash
+# safety-gate.sh -- PreToolUse hook that blocks destructive deletes, direct pushes to main or master, and force-pushes.
 # safety-gate.sh, PreToolUse hook, matcher: Bash
 # Blocks destructive deletes and direct pushes to main/master.
 # Source: Trail of Bits claude-code-config (adapted for dwarves-kit)

@@ -2,7 +2,7 @@
 # feature-registry.sh -- deterministic feature-inventory generator.
 #
 # Scans the four live feature kinds (commands/*.md, agents/*.md, skills/*/SKILL.md,
-# hooks/*.sh) and emits docs/FEATURES.md as a GENERATED projection: one table per
+# hooks/*.sh) plus the user-facing lib verbs that declare themselves, and emits docs/FEATURES.md as a GENERATED projection: one table per
 # kind, one row per feature, carrying trigger class, description, spec refs, and
 # test refs. Pure bash + grep/sed/awk/jq (all already required by tests/).
 #
@@ -19,6 +19,9 @@
 #         settings.json statusLine key); wired nowhere -> event `-`
 #   [D]   agent; dispatched-by derived by token-grepping commands/*.md and
 #         skills/*/SKILL.md (skill dispatchers marked `(skill)`)
+#   [V]   lib verb; declared by a header line in the script that owns it, within its first
+#         40 lines: `# kit-verb: <name> | <one-line description>` (a script may carry several).
+#         A verb with no marker is not listed; delete the marker and the row disappears.
 #
 # `generate` also syncs the hand-maintained count strings in README.md and
 # docs/architecture.md (agents/commands/skills/hooks totals) so nobody has to
@@ -107,6 +110,34 @@ hook_desc() { # <file>
   printf '%s' "$d"
 }
 
+# verb_markers: "<file>\t<name>\t<description>" per declared verb, sorted by name.
+verb_markers() {
+  local f rel
+  { grep -rlE '^# kit-verb: ' "$KIT_DIR/lib" --include='*.sh' --include='*.py' 2>/dev/null || true; } \
+    | sort | while IFS= read -r f; do
+      rel="${f#"$KIT_DIR"/}"
+      awk -v rel="$rel" 'NR > 40 { exit }
+        /^# kit-verb: / { line = substr($0, 13); i = index(line, " | ")
+          if (i > 0) printf "%s\t%s\t%s\n", rel, substr(line, 1, i - 1), substr(line, i + 3) }' "$f"
+    done | sort -t"$(printf '\t')" -k2,2
+}
+
+verbs_table() {
+  echo "## Verbs"
+  echo ""
+  echo "| Verb | Trigger | Source | Description | Specs | Tests |"
+  echo "|---|---|---|---|---|---|"
+  local rel name desc base pat
+  while IFS="$(printf '\t')" read -r rel name desc; do
+    [ -n "$rel" ] || continue
+    base="$(basename "$rel")"
+    pat="($(token_pat "$base")|$(token_pat "$name"))"
+    printf '| `%s` | `[V]` | `%s` | %s | %s | %s |\n' \
+      "$name" "$rel" "$(clip "$desc")" "$(spec_refs "$pat")" "$(test_refs "$pat")"
+  done < <(verb_markers)
+  echo ""
+}
+
 commands_table() {
   echo "## Commands"
   echo ""
@@ -191,12 +222,13 @@ generate() {
     echo ""
     echo "# Feature registry"
     echo ""
-    echo "GENERATED , do not hand-edit. Regenerate: \`bash lib/registry/feature-registry.sh generate\`. One row per live feature; freshness pinned by \`tests/test-meta.sh\` and refused pre-push by \`hooks/ship-gate.sh\`, both through \`feature-registry.sh check\`. Trigger classes per \`docs/workflow-paths.md\` section 1: \`[H]\` human-typed, \`[H/I]\` human-or-intent, \`[I]\` intent-read, \`[E]\` event-fired, \`[D]\` dispatched. Refs are exact-token greps: Specs over \`docs/specs/\`, Tests over \`tests/*.sh\`, Dispatched-by over \`commands/*.md\` + \`skills/*/SKILL.md\` (skill dispatchers marked \`(skill)\`); \`-\` means no reference found (a coverage gap, not always a defect: read-only agents may be deliberately untested)."
+    echo "GENERATED , do not hand-edit. Regenerate: \`bash lib/registry/feature-registry.sh generate\`. One row per live feature; freshness pinned by \`tests/test-meta.sh\` and refused pre-push by \`hooks/ship-gate.sh\`, both through \`feature-registry.sh check\`. Trigger classes per \`docs/workflow-paths.md\` section 1: \`[H]\` human-typed, \`[H/I]\` human-or-intent, \`[I]\` intent-read, \`[E]\` event-fired, \`[D]\` dispatched, \`[V]\` lib verb declared by a \`# kit-verb:\` header line. Refs are exact-token greps: Specs over \`docs/specs/\`, Tests over \`tests/*.sh\`, Dispatched-by over \`commands/*.md\` + \`skills/*/SKILL.md\` (skill dispatchers marked \`(skill)\`); \`-\` means no reference found (a coverage gap, not always a defect: read-only agents may be deliberately untested)."
     echo ""
     commands_table
     agents_table
     skills_table
     hooks_table
+    verbs_table
   } > "$tmp"
   mv -f "$tmp" "$out"
 }

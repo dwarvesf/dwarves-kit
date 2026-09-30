@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# kit-verb: adopt pointer | inject the small AGENTS.md pointer, proof marker and CLAUDE.md loader into a target repo, hash-safe and idempotent
 # adopt.sh -- idempotently inject the dwarves-kit operate-contract into a target repo.
 #
 # Adoption = the per-repo trigger that makes an agent classify + pick a lane and that makes the

@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# harvest.sh -- PreCompact and SessionEnd hook that stages session learnings and a LAB_LOG draft; always exits 0.
 # harvest.sh -- PreCompact / SessionEnd hook, function-named port of ops-toolkit's
 # cc-harvest (kit-foldin design note, was cc-harvest). Thin bash shim; the actual
 # logic is the co-located harvest.py (stdlib-only, no deps to vendor). Modes (no
