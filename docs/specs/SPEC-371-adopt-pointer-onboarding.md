@@ -79,7 +79,11 @@ The operator decision: swapping a known old copy needs an explicit flag, `--refr
 | equals the current pointer | silent no-op | silent no-op | silent no-op |
 | known old hash (unmodified kit copy or older pointer) | leave; print notice `old kit copy, run --refresh --swap-agents to replace` | same notice | replace with the current pointer (tmp + mv, as `lib/adopt.sh:213`) |
 | unknown content | leave; print drift line | leave; print drift line | leave; print drift line |
-| `--single-source` mode | skip all (the file is the operator's folded CLAUDE.md, `lib/adopt.sh:139-172`) | skip | skip |
+| `--single-source` mode (flag or the `adopt.single_source` knob) | existing AGENTS.md is never rewritten and never reported on; see the single-source rule below | same | same |
+
+Single-source rule (amendment: the operator's default config sets `adopt.single_source = true`, so adopt must succeed there). In single-source mode `AGENTS.md` is the pointer plus the folded repo notes and `CLAUDE.md` stays the one-line `@AGENTS.md` import. Neither file present: AGENTS.md is the pointer alone. Only `CLAUDE.md` present: it is folded (git mv) and the pointer is written above the old text. An existing `AGENTS.md` is never rewritten. Both files present and differing still refuses. The operate-contract block is not appended when AGENTS.md starts with the pointer marker, because the pointer carries the rules and the cap (1200 bytes) leaves no room for it.
+
+Safety guards (review amendment): adopt exits 1 with AGENTS.md untouched when the pointer template is missing, writes the pointer by tmp then mv so a short copy never leaves an empty file, and refuses when the target is the kit's own tree. The first-line match strips a CR and a BOM, so a CRLF or BOM old copy gets the old-contract drift line and is still left alone.
 
 Drift line, by first line of the file, against the MATCHED template (never blindly the full contract):
 
