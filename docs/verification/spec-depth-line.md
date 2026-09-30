@@ -49,7 +49,7 @@ R2 and R3 ran on the BSD tool set only. The GNU tool set ran the new suite only.
 | Validator runs the check (TASK-3) | `spec-depth.sh check` removed from Reviewer 4 | `validate-wiring`: 2 passed, 2 failed | 4 passed, 0 failed |
 | Light routing (AC6) | `--light` removed from test-plan step 4 | `review-routing`: 5 passed, 1 failed | 6 passed, 0 failed |
 | Docs wording (TASK-5) | light/full phrase removed from WORKFLOW | `docs`: 2 passed, 1 failed | 3 passed, 0 failed |
-| The light pass bites (AC6) | seeded-gap plan | 4 CRITICAL, RECONSIDER | two good plans: 0 CRITICAL, REVISE on HIGH (SOLID not reached live) |
+| The light pass bites (AC6) | seeded-gap plan | 4 CRITICAL, RECONSIDER | two good plans: 0 CRITICAL, SOLID with advisory HIGH (restated under the final rule) |
 
 ## 4. Not covered
 

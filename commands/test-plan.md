@@ -182,7 +182,7 @@ own extra columns if both apply, one matrix, not two):
 
 ### Step 4: Hand off
 
-Pick the review by the spec's depth: `bash lib/spec/spec-depth.sh wants <spec> blind-spot`. Exit 0 means the author named a failure they expect not to see alone: the next step is `/kit:test-plan-review-team` (6 lenses, revise rounds). Any other exit: the next step is `/kit:test-plan-review-team --light` (Coverage and Oracle lenses, plus Tiering when the plan has a `Tier` column, one pass, no revise rounds; SOLID when no CRITICAL or HIGH). Every test plan gets a critique either way, so `/kit:test-write` always has a verdict to read.
+Pick the review by the spec's depth: `bash lib/spec/spec-depth.sh wants <spec> blind-spot`. Exit 0 means the author named a failure they expect not to see alone: the next step is `/kit:test-plan-review-team` (6 lenses, revise rounds). Any other exit: the next step is `/kit:test-plan-review-team --light` (Coverage and Oracle lenses, plus Tiering when the plan has a `Tier` column, one pass, no revise rounds; SOLID when no CRITICAL; HIGH findings are advisory). Every test plan gets a critique either way, so `/kit:test-write` always has a verdict to read.
 
 Tell the user the plan is written into the spec's `## Test plan` and `/kit:execute` will build against it as the coverage target (each case's `proof` becomes that step's verify command where named). Do NOT run `/kit:execute` yourself; this lane only plans the test cases.
 

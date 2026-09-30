@@ -286,6 +286,10 @@ Single files (serialized by the dispatch gate against any sibling that lists the
 - DEC-6: The inverse check (a `standard` spec that names an unknown or an untestable failure is CRITICAL) runs mechanically for a non-empty `## Open questions`, and as a Reviewer 4 lens for everything else, including an unsampled Grounding claim (operator decision).
 - DEC-7: Parse the header only, before the first `## `, so examples in the body never count.
 
+## Amendments
+
+- AMEND-001: 2026-09-30 | the one-pass review is the "light pass" (`--light`, `Scope: light (coverage + oracle)`), replacing every "floor" name above, because lens 6 is already named Tiering & floor; it also runs lens 6 when the plan has a `Tier` column; a light verdict is SOLID when it has no CRITICAL, and HIGH findings are advisory: the author addresses each or writes one line in `## Test plan critique` saying why not, so `/kit:test-write` accepts a good plan | why: no good plan reached SOLID live under a stricter rule | at review | re-validated: lead-approved amendment
+
 ## Grounding
 
 - `commands/spec.md` step 2 today dispatches all 4 research agents on any brownfield spec: `sed -n 21,34p commands/spec.md` ("If modifying existing code, run codebase research before generating the spec ... dispatch all 4").

@@ -136,7 +136,8 @@ if want review-routing; then
   assert_eq "team doc writes the Scope: light line" 0 "$(has "$T" 'Scope: light (coverage + oracle)')"
   assert_eq "team doc runs no revise loop under --light" 0 "$(has "$T" 'no revise round')"
   assert_eq "light pass keeps lens 6 when a Tier column exists" 0 "$(has "$T" 'also applies lens 6 (Tiering & floor)')"
-  assert_eq "light pass is SOLID with no CRITICAL and no HIGH" 0 "$(has "$T" 'SOLID when the pass finds no CRITICAL and no HIGH finding')"
+  assert_eq "light pass is SOLID with no CRITICAL" 0 "$(has "$T" 'SOLID when the pass finds no CRITICAL finding')"
+  assert_eq "light pass treats HIGH as advisory with a one-line why-not" 0 "$(has "$T" 'HIGH findings are advisory')"
   assert_eq "no stale floor-mode naming" 0 "$(grep -c -- '--floor' "$T" "$P" "$KIT_DIR/docs/WORKFLOW.md" | awk -F: '{n+=$2} END{print n}')"
   assert_eq "6-lens framing intact" 0 "$(has "$T" 'Dispatch 6 lenses')"
 fi
