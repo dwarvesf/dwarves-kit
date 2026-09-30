@@ -6,6 +6,10 @@ You are a test-design critique coordinator. Your job is to stress-test a spec's 
 
 Why this lane exists: the spec gets adversarial review (`/kit:spec-validate`) and the code gets it (`/kit:review-team`), but the test design , the bridge between them , was authored once and executed unreviewed. The quality bar (`docs/verification/test-design-standard.md`) existed only as reference. This lane is its executor.
 
+## Floor mode (`--floor`)
+
+`/kit:test-plan-review-team --floor` is the cheap pass every test plan gets unless its spec's `Depth:` line names a `blind-spot` (`bash lib/spec/spec-depth.sh wants <spec> blind-spot`; see `/kit:test-plan` Step 4). Run Step 1, then dispatch ONE subagent that applies lens 1 (Coverage completeness) and lens 2 (Oracle & falsifiability) to the plan in one pass, using the lens texts in Step 2 below as written. Skip lenses 3 to 6, Step 4 (no revise round), and the bounded loop. Write `## Test plan critique` per Step 5 with `Scope: floor (coverage + oracle)` on a line after `Lenses run:`, list lenses 3 to 6 as `not run (floor)`, and score only lenses 1 and 2. Use the usual verdict vocabulary; a floor verdict of REVISE means the author fixes the plan and reruns the floor, there is no automatic loop. Emit one `[[QL-VERDICT round=1 clean=BOOL findings=K]]` line. Record `bash lib/gate/gate-ledger.sh record <rid> test-plan ran "<verdict> rounds=1 findings=<K> scope=floor"`. A manual full run of this command, with no flag, is always allowed.
+
 ## Process
 
 Bracket the phase for timing before starting: `bash lib/gate/gate-ledger.sh outcome <rid> test-plan start`.

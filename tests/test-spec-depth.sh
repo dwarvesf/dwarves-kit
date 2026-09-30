@@ -94,7 +94,7 @@ if want validate-wiring; then
   V="$KIT_DIR/commands/spec-validate.md"
   assert_eq "Reviewer 4 runs spec-depth.sh check" 0 "$(has "$V" 'spec-depth.sh check')"
   assert_eq "importance lens question" 0 "$(has "$V" 'only importance')"
-  assert_eq "standard-with-unknown lens question" 0 "$(has "$V" 'names an unknown or a failure mode it cannot test alone')"
+  assert_eq "standard-with-unknown lens question" 0 "$(has "$V" 'an unknown or a failure mode it cannot test alone')"
   R4=$(sed -n '/^### Reviewer 4/,/^### Reviewer 5/p' "$V")
   assert_eq "the check sits inside Reviewer 4" 1 "$(printf '%s' "$R4" | grep -c 'spec-depth.sh check' | awk '{print ($1>=1)?1:0}')"
 fi
@@ -105,7 +105,7 @@ if want review-routing; then
   STEP4=$(sed -n '/^### Step 4: Hand off/,/^## Source/p' "$P")
   assert_eq "test-plan step 4 names --floor" 1 "$(printf '%s' "$STEP4" | grep -c -- '--floor' | awk '{print ($1>=1)?1:0}')"
   assert_eq "test-plan step 4 routes blind-spot to the full team" 1 "$(printf '%s' "$STEP4" | grep -c 'spec-depth.sh wants <spec> blind-spot' | awk '{print ($1>=1)?1:0}')"
-  assert_eq "team doc documents --floor as lenses 1 and 2, one pass" 0 "$(has "$T" 'lenses 1 and 2 in one pass')"
+  assert_eq "team doc documents --floor as lenses 1 and 2, one pass" 0 "$(has "$T" 'lens 1 (Coverage completeness) and lens 2 (Oracle & falsifiability) to the plan in one pass')"
   assert_eq "team doc writes the Scope: floor line" 0 "$(has "$T" 'Scope: floor (coverage + oracle)')"
   assert_eq "team doc runs no revise loop under --floor" 0 "$(has "$T" 'no revise round')"
   assert_eq "6-lens framing intact" 0 "$(has "$T" 'Dispatch 6 lenses')"
