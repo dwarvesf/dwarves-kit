@@ -1,5 +1,5 @@
 ---
-description: "Adopt the current (or a target) repo into the dwarves-kit operate-contract: inject AGENTS.md + a CLAUDE.md loader + a WORKFLOW pointer + the proof marker, idempotently, and wire the lane/loop-type/proof classifiers so the ship-gate engages."
+description: "Adopt the current (or a target) repo into the dwarves-kit operate-contract: write a small AGENTS.md pointer (never over a repo's own file) + a CLAUDE.md loader + a WORKFLOW pointer + the proof marker, idempotently, and wire the lane/loop-type/proof classifiers so the ship-gate engages."
 ---
 
 You are adopting a repo into the dwarves-kit operating layer. This installs the operate-contract

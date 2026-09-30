@@ -33,7 +33,7 @@ Join levels with ` + `. A reason that only says the work matters (important, cri
 
 ### Step 2: Research (by depth)
 
-**Run-id tag.** Every Agent/Task dispatch this command instructs sets its `description` to include `rid=<rid>` (the rid `bash lib/gate/gate-ledger.sh rid` prints for this run), e.g. `"verify TASK-003 rid=<rid>"`, so a transcript reader can count dispatches and tokens per run from each subagent's `.meta.json`. This covers the step 5 validator dispatches too.
+**Run-id tag.** Every Agent/Task dispatch this command instructs sets its `description` to include `rid=<rid>` (the rid `bash lib/gate/gate-ledger.sh rid` prints for this run), e.g. `"verify <task-id> rid=<rid>"`, so a transcript reader can count dispatches and tokens per run from each subagent's `.meta.json`. This covers the step 5 validator dispatches too.
 
 Route by the header's depth, never by whether the code is brownfield. Ask the helper for each level; a spec with no `Depth:` line answers no to all three, so an older spec dispatches no research:
 

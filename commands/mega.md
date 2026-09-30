@@ -227,8 +227,8 @@ Claude workers instead of one `claude -p` per sub-goal. It is a trial with no me
 unless asked for, and it never changes the default run mode. The conductor reads only
 `bash lib/queue/orchestrate.sh status <dir>` (one derived state per sub-goal: READY, RUNNING,
 PARKED, HELD, DONE-UNSEEN, DONE, and so on) instead of a transcript. The ROADMAP box stays the
-only proof of done; `bash lib/queue/orchestrate.sh orca-reset <dir>` rolls one run back. Spec:
-`docs/specs/SPEC-370-orca-mega-backend.md`.
+only proof of done; `bash lib/queue/orchestrate.sh orca-reset <dir>` rolls one run back. The design record is the
+orca mega backend spec under `docs/specs/`.
 
 The driver emits a
 `gate-ledger start` per dispatched sub-goal (rid derived from the goal file's

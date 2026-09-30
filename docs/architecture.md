@@ -32,7 +32,7 @@ operator-wave>` enum, SPEC-138, so the kit's least-used gate is auditable rather
 /kit:think      reads:  user idea (chat)
                  writes: docs/briefs/DECISION-BRIEF-<slug>.md  (if BUILD; legacy: DECISION-BRIEF.md)
 
-/kit:spec       reads:  docs/briefs/DECISION-BRIEF-<slug>.md, codebase via 4 research agents
+/kit:spec       reads:  docs/briefs/DECISION-BRIEF-<slug>.md, codebase via research agents when Depth asks
                  writes: docs/specs/SPEC-NNN-<slug>.md  (Status: DRAFT)
                          docs/research/YYYY-MM-DD-<slug>-{stack,features,architecture,pitfalls}.md
 
@@ -88,7 +88,7 @@ Every command and agent mapped to its V-model arm, grouped so the left side (BUI
 | `/kit:design` | command | Solution-design | build | Opt-in interactive beat between think and spec; shapes the solution one decision at a time |
 | `/kit:prototype` | command | Solution-design | build | Opt-in throwaway spike answering one design question (logic TUI or UI variants); decision folds into the brief/spec, code survives on a `prototype/<name>` branch |
 | `/kit:wayfind` | command | Requirement (intake) | build | User-invoked decision map for too-foggy-for-one-session efforts; typed tickets route to grill/prototype/research machinery; hands off to spec or a ROADMAP |
-| `/kit:spec` | command | Spec | build | Produces `SPEC-NNN-<slug>.md` (Status: DRAFT); dispatches 4 research agents for brownfield context |
+| `/kit:spec` | command | Spec | build | Produces `SPEC-NNN-<slug>.md` (Status: DRAFT); writes a `Depth:` line under `Lane:`, and dispatches the 4 brownfield research agents only when that line asks for repo research |
 | `/kit:feature-map` | command | Spec (brownfield) | build | Formalizes a feature inventory for any target project: dispatches `research-features` per module (parallel) into `docs/specs/<module>.md` + a top-level checklist; adds a MIGRATE table + parity contract when a port/migration target is named |
 | `/kit:ui-design` | command | UI design | build | Opt-in; writes UI brief, delegates generation, routes through visual-team, auto-revises (bounded) |
 | `research-architecture` | agent | Spec (brownfield) | build | Maps architecture patterns; dispatched by /spec; read-only |
@@ -151,8 +151,8 @@ Every command and agent mapped to its V-model arm, grouped so the left side (BUI
 | `/kit:wrap` | command | Land (post-ship) | cross-phase | Session-scoped landing step after ship: flips board rows, merges the operator's own green PRs one at a time (`bin/wrap merge`), checks a `workflow_dispatch` deploy's `headSha`, tidies branches and worktrees (`bin/wrap apply`), writes the activity line (`bin/wrap log`), and calls `/kit:retro` when a shipped PR merged this session |
 | `/kit:retro` | command | Reflect | cross-phase | Post-ship narrative mirror of the entire V; captures learnings, not a gate |
 | `/kit:start` | command | Session entry | cross-phase | Detects project state and recommends the right next command; never executes |
-| `/kit:onboard` | command | First-run onboarding | cross-phase | Interactive first-run orchestrator: detects install mode via `lib/onboard-detect.sh`, offers `/kit:adopt`, picks modules (bridging the plugin path's missing `--with`), captures consumer knobs from the SPEC-198 registry, discloses plugin-path gaps, ends with the five-stage tour; CALLS start/adopt/config, reimplements none (ADR-0034 fence); previews + confirms every write |
-| `/kit:adopt` | command | Repo onboarding | cross-phase | Injects the operate-contract + proof marker + a CLAUDE.md pointer into a target repo (idempotent, via `lib/adopt.sh`); wires the classifiers so the ship-gate engages there |
+| `/kit:onboard` | command | First-run onboarding | cross-phase | Interactive first-run orchestrator: detects install mode via `lib/onboard-detect.sh`, offers `/kit:adopt`, picks modules (bridging the plugin path's missing `--with`), captures consumer knobs from the SPEC-198 registry, discloses plugin-path gaps, ends with a two-idea tour (lane, proof of done) plus a menu; CALLS start/adopt/config, reimplements none (ADR-0034 fence); previews + confirms every write |
+| `/kit:adopt` | command | Repo onboarding | cross-phase | Writes a small AGENTS.md pointer (never over a repo's own file) + proof marker + a CLAUDE.md pointer into a target repo (idempotent, via `lib/adopt.sh`); wires the classifiers so the ship-gate engages there |
 | `/kit:kit-health` | command | Maintainer audit | cross-phase | Self-assessment against PHILOSOPHY.md; run before tagging; not part of the normal cycle |
 | `/kit:absorb` | command | Upstream maintenance | cross-phase | Audits Credits drift + seed-rescan; proposal-only; maintainer-only connective tissue |
 | `/kit:debug` | command | Bug lane (off-cycle) | cross-phase | Off-cycle loop: root cause before any fix; evidence ledger; 3-fix architecture wall |
@@ -268,7 +268,7 @@ file count so this table cannot drift):
 | `anchor-root` | every hooks.json/settings.json event except secrets-guard's PreToolUse entry | infrastructure | none (cds to the resolved root before exec'ing the real hook; owns no allow or deny rule) |
 | `safety-gate` | PreToolUse Bash | hard | destructive deletes, push-to-main, force-push under deadline pressure |
 | `secrets-guard` | PreToolUse Read/Edit/Bash | hard | reading secret files "just to check"; transcript is plaintext |
-| `ship-gate` | PreToolUse Bash | hard | shipping without proof of done / recorded gates (ADR-0024 boundary) |
+| `ship-gate` | PreToolUse Bash | hard | shipping without proof of done / recorded gates (ADR-0024 boundary); a hard-path diff owes the full lane's gates whatever the spec's `Lane:` says (when `[gate] lane_gates` is on at the merge base) |
 | `commit-format` | PreToolUse Bash | hard | drifting commit subjects (type, length, ticket-tag leakage) |
 | `board-row-gate` | PreToolUse Bash | hard | a session filing a board row for a follow-up it should do or drop; a new row needs a `board-row-ok: <reason>` line in the commit message; the one `[gate]` key that defaults on (`board_row_gate`) |
 | `anti-rationalization` | Stop | hard | declaring work complete while rationalizing known-incomplete work |
@@ -645,7 +645,7 @@ guard), and how do I trigger it.
 | `DESIGNING` | solution exploration (iterative) | full lane, or "let's design" | solution approved |
 | `SPECIFYING` | the spec is being written | `/spec` | spec `DRAFT` exists |
 | `VALIDATING` | adversarial spec review | `/spec-validate` | `VALIDATED` or NEEDS REVISION |
-| `BUILDING` | execution sub-machine (worker -> verifier -> fix -> integration) | `/execute`, `/next` | all tasks + integration PASS |
+| `BUILDING` | execution sub-machine (builder -> end verifiers -> fix) | `/execute`, `/next` | all tasks + integration PASS |
 | `REVIEWING` | code review | `/review`, `/review-team` | verdict recorded |
 | `DOCUMENTING` | doc sync + doc-verifier | `/docs` | docs match code |
 | `SHIPPING` | ship pipeline | `/ship` | tagged/PR; spec `SHIPPED` |

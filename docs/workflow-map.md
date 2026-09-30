@@ -103,7 +103,7 @@
                                           backfill    how big / how risky ?
                                                       |- trivial edit ....... tiny
                                                       |- one bounded change . normal
-                                                      +- risk-list match .... full
+                                                      +- risk-list match .... full (suggested)
 
   default to normal; the diff floor covers hard paths
 ```
@@ -112,8 +112,8 @@
 
 ```
   Think -> Design -> Design critique -> Spec -> Validate -> Test plan
-  (adv)   (opt-in)     (opt-in)       [HARD:    (full)     (default
-                                       spec-drift          normal/full)
+  (adv)   (opt-in)     (opt-in)       [HARD:    (normal/   (default
+                                       spec-drift  full)     normal/full)
                                        guard]
      -> Build -> Review -> Docs -> Ship -> Reflect
        [HARD:    (adv)     (adv)  [HARD:    (adv)
@@ -254,7 +254,8 @@ Advisory, never blocking. Output binds to the active spec (replace-not-stack).
   /kit:visual-team         a visual/UI design exists      ## Visual critique        verdict recorded
   /kit:ui-design           downstream UI, after /design   ## UI design              SOLID / max-2 revise
   /kit:test-plan           before /execute                ## Test plan              matrix written
-  /kit:test-plan-review-team  after /test-plan, 6 lenses  ## Test plan critique     SOLID / REVISE / RECONSIDER
+  /kit:test-plan-review-team  after /test-plan, --light   ## Test plan critique     SOLID / REVISE / RECONSIDER
+                              (6 lenses at blind-spot)
   /kit:test-write          after a SOLID test-plan critique ## test files            rows covered, tests execute
   /kit:review-team         PR-grade review, 3 lenses      ## Review                 SHIP / FIX / DO NOT
   /kit:absorb              maintainer absorption audit    docs/absorption/ report   proposal-only
@@ -295,7 +296,7 @@ The ONLY blockers; everything else advises or warns.
   | TABLE, git reset    |  |                     |  | guess-fix while      |  | that did not run    |
   | --hard, kubectl     |  | PreToolUse hook,    |  | ## Root cause empty  |  |                     |
   | delete)             |  | exit 2              |  |                      |  | /execute gate       |
-  | PreToolUse, exit 2  |  |                     |  | Stop hook            |  | (worker->verifier)  |
+  | PreToolUse, exit 2  |  |                     |  | Stop hook            |  | (builder->verifier) |
   +---------------------+  +---------------------+  +----------------------+  +---------------------+
 ```
 
