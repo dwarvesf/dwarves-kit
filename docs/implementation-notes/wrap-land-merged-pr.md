@@ -43,3 +43,24 @@ Deltas from SPEC-376. Nothing here repeats what the spec already states.
 - TD5 fetches origin into the clone before the shim fails the next fetch, so the cached `origin/main` already holds the squash. Without that, the absorbed proof would not fire either way and the row would prove nothing.
 - Added TA3 (a tag named `origin/main` cannot fake a zero `ahead`, the full-refs fix), TG1 (tip moves during the pull, the tidy's recheck refuses) and TG2 (tree dirtied during the proof read, the first recheck refuses). TA2 runs `cmd_land` from a sourced shell with `_merge_proof` overridden to return an ancestor proof.
 - `tests/lib/wrap-stub.sh` gains `GH_STUB_MERGE_DELETES_BRANCH=1`: the merge stub deletes the head ref on the remote, standing in for GitHub's delete-branch-on-merge (TB1, TB2).
+
+## 2026-10-01 The recheck baseline comes from the caller, not from tidy entry
+- Context: the entry-state baseline (see "The removal recheck compares against the tidy's entry state") absorbed any file written during the origin read, or on the merge path during push, CI wait and merge, and `worktree remove -f -f` then destroyed it. Decision 3 of the spec requires an empty tree.
+- Decision/Change: `_land_tidy` takes the expected state as an 8th argument. The already-landed path passes empty, so any status line refuses. The merge path passes the paths the pre-merge ignore rules covered, read in the same `status --ignored=matching` call as the first clean check and rewritten as `??` lines. Any other line refuses with exit 2 and the message names the path.
+- Why: a merge that un-ignores an operator file still removes cleanly, and a write made after the first clean check is now a difference, not a baseline.
+- Impact: new refusal for a write made during the merge path or the origin read. The ignored-set baseline also means a file inside a newly un-ignored directory is tolerated, which matches what `-f -f` already discards for ignored files.
+
+## 2026-10-01 The origin read matches the exact ref
+- Context: `ls-remote origin refs/heads/<branch>` also lists a tag named `refs/tags/refs/heads/<branch>`, and the code took the first line.
+- Decision/Change: only a line whose column 2 is exactly `refs/heads/<branch>` counts. Two such lines refuse as "could not be confirmed". Exit 0 with no exact line reads as absent.
+- Why: zero exact lines means the branch is not on origin. Refusing would block a legitimate landed branch whose only match is a tag.
+- Impact: none for repos without such a tag.
+
+## 2026-10-01 The pre-merge signal test keys on argv
+- Context: the test fired on the 4th `git merge-base` call by counter (see "One existing test shim shifted by two git calls"), so it could pass or fail for the wrong call if the proof changed.
+- Decision/Change: the shim counts only `merge-base --is-ancestor origin/main` calls and fires on the 2nd, which is `_merge_default`'s check inside the trap. The proof uses other argv. A marker file, asserted by a new row, shows the signal fired from that call.
+- Why: the two matching calls share argv, so the occurrence among matches is the narrowest handle available.
+- Impact: test only. Supersedes the "4th call" number above.
+
+## Open risks
+- Ignored files in the worktree are still discarded by `worktree remove -f -f`: the spec accepts this, so the recheck does not list or guard them.

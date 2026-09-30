@@ -88,3 +88,37 @@ bash tests/test-wrap-land.sh
 bash tests/test-wrap.sh
 bash tests/test-meta.sh
 ```
+
+## Review round: recheck baseline, exact ref match, signal test
+
+Three review findings fixed test-first. The new rows went RED against the unchanged `wrap-land.sh` (387 passed, 21 FAILED of 408), then green after the fix.
+
+| Finding | Rows | Result |
+|---|---|---|
+| a file written after the proof, before the tidy, refuses the removal (already-landed path) | TG3 | PASS |
+| a file written during the merge refuses the removal (merge path) | TG4 | PASS |
+| `ls-remote` matches `refs/heads/<branch>` exactly; a tag named `refs/tags/refs/heads/<branch>` is ignored; duplicate exact lines refuse | TH1, TH2, TH3, TH4 | PASS |
+| pre-merge signal test keyed on argv, with a fired marker row | `land-merge: the signal fired on the already-contains check` | PASS |
+
+| Command | Exit | Counts | Verdict |
+|---|---|---|---|
+| `bash tests/test-wrap-land.sh` | 0 | 408 passed | PASS |
+| `bash tests/test-wrap.sh` | 0 | 1992 passed | PASS |
+| `bash tests/test-meta.sh` | 0 | 896 / 896 passed | PASS |
+
+### Negative control (test-wrap-land.sh only)
+
+Each row breaks one line in a scratch copy of the worktree and runs the whole `tests/test-wrap-land.sh` there under the perl signal wrapper. The real worktree is never mutated, so there is nothing to restore; it stayed byte-identical to the commit.
+
+| # | Mutation | Counts | RED rows | Verdict |
+|---|---|---|---|---|
+| N17 | status half of the pre-removal recheck deleted (tip compare kept) | 396 passed, 12 FAILED | TG3, TG4 | RED |
+| N18 | merge path passes the tidy-entry status as the expected state (old baseline) | 402 passed, 6 FAILED | TG4 | RED |
+| N19 | already-landed path passes the tidy-entry status as the expected state | 402 passed, 6 FAILED | TG3 | RED |
+| N20 | origin read takes the first line, no exact match | 399 passed, 9 FAILED | TH1, TH2, TH3, TH4 | RED |
+| N21 | duplicate exact lines no longer refuse | 407 passed, 1 FAILED | TH4 | RED |
+| N22 | the `_merge_default` already-contains check deleted, so the signal's call never happens | 403 passed, 5 FAILED | signal rows incl. the fired marker | RED |
+
+The un-ignored operator file rows (`ignx`, `ignr`) stay green: the merge path's expected state carries the pre-merge ignored set.
+
+Not proven: a write between the recheck and `worktree remove -f -f`, and ignored files (still discarded by the removal; the spec accepts it).
