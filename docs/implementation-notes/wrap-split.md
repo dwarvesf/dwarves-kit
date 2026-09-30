@@ -69,3 +69,10 @@ Checks (run on this worktree, baseline = detached worktree at a9f0c9dc):
   ("step 10 re-sizes the real diff before landing", "commands/wrap.md
   classifies each candidate's lane").
 
+Deviations:
+
+- The split commit briefly wrote `wrap.sh` at mode 644 (original 755); a
+  follow-up commit restored the bit. Module files stay 644: sourced, never
+  executed, and the spec's "no shebang" matches that mode.
+
+
