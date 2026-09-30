@@ -46,6 +46,18 @@
 #   descent  <rid> <lane>              plan-order timeline check; violations detected, never blocked
 #   history  [--lane L] [--json]       one row per run: lane, repo, ran/skipped counts
 #   report   --period week|month [--lane L]   markdown table of runs in the window + totals
+#   validate-round open <rid> <spec>          pin the spec blob + repo snapshot, open the
+#                                       parallel validation round's OUTCOME brackets
+#   validate-round close <rid> <token> verdict=<APPROVED|NEEDS-REVISION> critical=<n>
+#               warnings=<n> agents=<n> r6=<design-bearing=... pass|critical: ...>
+#               [summary=<text>]              write the round's records + `ROUND close`;
+#                                       bare `close <rid> <token>` resumes a `closing`
+#                                       round; drift voids the round (2; a second void
+#                                       since the last round-terminal exits 3)
+#   validate-round incomplete <rid> <token> <reason>   record a stopped round
+#   validate-round incomplete <rid> --stale <reason>   same, token from the last ROUND
+#                                       (`| ROUND |` lines are additive; marker-keyed
+#                                       readers skip them)
 set -euo pipefail
 
 GATE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -935,6 +947,471 @@ report() {
 }
 
 
+# ---- validate-round -----------------------------------------------------------
+# The parallel validation round's ledger bookkeeping as a single verb. `open` binds
+# the rid to the spec the ship-gate will read, pins the spec blob plus a repo
+# snapshot, and opens both OUTCOME brackets; `close` writes the round's GATE/OUTCOME
+# records in a fixed order; `incomplete` records a stopped round. Round state lives
+# in the rid ledger as additive `| ROUND |` lines; marker-keyed readers skip them.
+# Exits: 0 ok; 1 state/binding/git failure; 2 void on drift; 3 void with the
+# restart budget spent; 64 bad input.
+
+# Token: <spec blob sha>.<epoch>.<n>; the blob is sha1 (40) or sha256 (64) long.
+_VR_TOK_RE='^([0-9a-f]{40}|[0-9a-f]{64})\.[0-9]+\.[0-9]+$'
+
+# The rid's last `| ROUND |` line ($2=="ROUND" on ` | `-split fields), or nothing.
+_vr_last_round() {
+  local f; f="$(ledger_file "$1")"
+  [ -f "$f" ] || return 0
+  awk -F' [|] ' '$2=="ROUND"{l=$0} END{print l}' "$f"
+}
+
+# Field N of a ledger line on ` | ` boundaries.
+_vr_field() { printf '%s' "$1" | awk -F' [|] ' -v n="$2" 'NR==1{print $n}'; }
+
+# k=v lookup inside a ROUND line's field 4 (space-separated k=v; values never carry
+# a space or `=` by construction).
+_vr_kv() {
+  printf '%s' "$1" \
+    | awk -v k="$2" '{n=split($0,w," "); for(i=1;i<=n;i++){split(w[i],kv,"="); if(kv[1]==k) v=kv[2]}} END{print v}'
+}
+
+# Write $6.. as a ledger record unless a line with the same fields 2-4 already sits
+# after line $2 (a partially written round is resumed, never duplicated).
+_vr_w() {
+  local f="$1" clnr="$2" m="$3" p="$4" s="$5"; shift 5
+  if awk -F' [|] ' -v a="$clnr" -v m="$m" -v p="$p" -v s="$s" \
+      'NR>a && $2==m && $3==p && $4==s {f=1} END{exit !f}' "$f"; then
+    return 0
+  fi
+  "$@"
+}
+
+# Refuse (64) a value holding a newline, CR or `|`: it would split or fake the
+# ` | `-split ledger fields. $1 names the field for the message.
+_vr_refuse_ctl() {
+  case "$2" in
+    *$'\n'*|*$'\r'*|*'|'*) echo "validate-round: $1 may not hold newline, CR or '|'" >&2; exit 64 ;;
+  esac
+}
+
+# The repo snapshot pin: porcelain of the tracked+untracked tree minus the
+# hook/cache writers (Grounding item 4), hashed as one blob. Callers assign it
+# unconditionally (`x="$(_vr_porcelain ...)"`) so a git failure hits the ERR trap.
+_vr_porcelain() {
+  git -C "$1" status --porcelain --untracked-files=all -- . ':(exclude)_meta' ':(exclude).claude' ':(exclude,glob)**/.pytest_cache/**' ':(exclude,glob)**/.ruff_cache/**' ':(exclude,glob)**/.mypy_cache/**' ':(exclude,glob)**/.hypothesis/**' | git -C "$1" hash-object --stdin
+}
+
+# Load the rid's ledger state into the _vrL_* globals: the ledger file, the last
+# ROUND line, its state field, its field 4 and the token= key in field 4. One
+# prelude for every sub-verb.
+_vr_load() {
+  _vrL_f="$(ledger_file "$1")"
+  _vrL_last="$(_vr_last_round "$1")"
+  _vrL_state="$(_vr_field "$_vrL_last" 3)"
+  _vrL_f4="$(_vr_field "$_vrL_last" 4)"
+  _vrL_token="$(_vr_kv "$_vrL_f4" token)"
+}
+
+# Normalize a ledger line for plan comparison: drop the field-1 timestamp and
+# mask the volatile at=/dur_s= fields, so only the semantic content compares.
+_vr_norm() {
+  printf '%s' "$1" | sed -E 's/^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:]+Z \| //; s/at=[0-9]+/at=E/g; s/dur_s=[0-9]+/dur_s=D/g'
+}
+
+# Print one foreign ledger line to stderr with a `  foreign: ` prefix, control
+# bytes stripped: the line is untrusted data shown to the lead, never a command.
+_vr_print_foreign() {
+  local clean
+  clean="$(printf '%s' "$1" | LC_ALL=C tr -d '\000-\010\013-\037\177')"
+  printf '  foreign: %s\n' "$clean" >&2
+}
+
+# Resume guard (review MEDIUM): the lines after the round's `ROUND closing` line
+# must be a strict PREFIX of the round's planned records (normalized on the full
+# line minus timestamp, not only fields 2-4). Anything else is forged or foreign
+# -- every offending line is listed on stderr and the resume refuses (exit 1) so
+# a planted `GATE ... ran "FORGED"` is never adopted as the round's own record.
+# $1=ledger file $2=closing line number; $@ = planned lines, normalized, in order.
+_vr_check_resume() {
+  local f="$1" clnr="$2"; shift 2
+  local -a planned=()
+  local p
+  for p in "$@"; do planned+=("$(_vr_norm "$p")"); done
+  local i=0 line bad=0
+  while IFS= read -r line; do
+    i=$((i + 1))
+    if [ "$i" -le "${#planned[@]}" ] && [ "$(_vr_norm "$line")" = "${planned[$((i - 1))]}" ]; then
+      continue
+    fi
+    if [ "$bad" = 0 ]; then
+      printf 'validate-round: lines after the ROUND closing that are not this round'"'"'s planned records:\n' >&2
+    fi
+    bad=1
+    _vr_print_foreign "$line"
+  done < <(tail -n +"$((clnr + 1))" "$f")
+  [ "$bad" = 0 ]
+}
+
+# validate-round open <rid> <spec>: bind rid to the spec the ship-gate will read,
+# pin the blob + repo snapshot, open both OUTCOME brackets. Prints the round token.
+_vr_open() {
+  local rid="${1:-}" spec="${2:-}"
+  [ -n "$rid" ] && [ -n "$spec" ] || { echo "usage: validate-round open <rid> <spec>" >&2; exit 64; }
+  # spec path refusals (all 64) run before any git call and before canonicalization.
+  case "$spec" in
+    *[[:space:]]*|*"="*) echo "validate-round: spec path may not hold whitespace or '='" >&2; exit 64 ;;
+  esac
+  local sdir="${spec%/*}" sbase="${spec##*/}"
+  [ "$sdir" = "$spec" ] && sdir="."
+  [ -d "$sdir" ]   || { echo "validate-round: spec directory '$sdir' does not exist" >&2; exit 64; }
+  [ -f "$spec" ]   || { echo "validate-round: spec '$spec' is not a regular file" >&2; exit 64; }
+  [ ! -L "$spec" ] || { echo "validate-round: spec '$spec' is a symlink" >&2; exit 64; }
+  [ -r "$spec" ]   || { echo "validate-round: spec '$spec' is not readable" >&2; exit 64; }
+  # Canonical path via pwd -P, the only place caller-relative resolution happens.
+  # CDPATH= keeps a set CDPATH from echoing the resolved dir into the value; `--`
+  # keeps a dash-leading directory out of option parsing.
+  local spec_dir spec_abs
+  spec_dir="$(CDPATH= cd -- "$sdir" && pwd -P)"
+  spec_abs="$spec_dir/$sbase"
+  # Re-check the charset: a spaced/`=` ancestor can enter through canonicalization.
+  case "$spec_abs" in
+    *[[:space:]]*|*"="*) echo "validate-round: canonical spec path '$spec_abs' holds whitespace or '='" >&2; exit 64 ;;
+  esac
+  # And re-run the regular-file/not-a-symlink checks on the canonical path, the
+  # path the pin and every later hash actually use.
+  { [ -f "$spec_abs" ] && [ ! -L "$spec_abs" ]; } \
+    || { echo "validate-round: canonical spec '$spec_abs' is not a regular file or is a symlink" >&2; exit 64; }
+  _vr_load "$rid"
+  case "$_vrL_state" in
+    open|closing) echo "validate-round: a round is already $_vrL_state for '$rid'" >&2; exit 1 ;;
+  esac
+  local top branch slug nrid
+  top="$(git -C "$spec_dir" rev-parse --show-toplevel)"
+  branch="$(git -C "$top" rev-parse --abbrev-ref HEAD)"
+  # Same refusal as rid() (`""|HEAD|master|main`), on `git -C <toplevel>`: rid() runs a
+  # bare `git` from the cwd, which would read the caller's repo.
+  case "$branch" in
+    ""|HEAD|master|main) echo "validate-round: '$top' is not on a work branch (got '${branch:-none}')" >&2; exit 1 ;;
+  esac
+  slug="${branch#*/}"
+  nrid="$(runid "$slug")"
+  [ "$slug" = "$nrid" ] || { echo "validate-round: branch slug '$slug' normalizes to '$nrid'; cannot bind a rid" >&2; exit 1; }
+  [ "$nrid" = "$rid" ]  || { echo "validate-round: rid '$rid' is not the branch's slug-derived rid '$nrid'" >&2; exit 1; }
+  # The accepted spec is the file the ship-gate itself will read: the raw-slug glob
+  # `docs/specs/SPEC-*-<slug>.md` (hooks/ship-gate.sh line 64 for the slug transform,
+  # line 224 for the glob; ship-gate is not edited).
+  local match
+  match="$(ls "$top"/docs/specs/SPEC-*-"$slug".md 2>/dev/null | head -1 || true)"
+  [ -n "$match" ]            || { echo "validate-round: no docs/specs/SPEC-*-$slug.md under '$top'" >&2; exit 1; }
+  [ "$match" = "$spec_abs" ] || { echo "validate-round: spec '$spec_abs' is not the ship-gate pick '$match'" >&2; exit 1; }
+  local blob head_sha por n ep token
+  blob="$(git -C "$top" hash-object -w "$spec_abs")"
+  head_sha="$(git -C "$top" rev-parse HEAD)"
+  por="$(_vr_porcelain "$top")"
+  n=1
+  if [ -f "$_vrL_f" ]; then n="$(awk -F' [|] ' '$2=="ROUND" && $3=="open"{c++} END{print c+1}' "$_vrL_f")"; fi
+  ep="$(now_epoch)"
+  token="$blob.$ep.$n"
+  outcome "$rid" Validate start
+  outcome "$rid" design-record start
+  append_run_line "$rid" "$(printf '%s | ROUND | open | token=%s top=%s spec=%s blob=%s head=%s porcelain=%s' "$(now)" "$token" "$top" "$spec_abs" "$blob" "$head_sha" "$por")"
+  printf '%s\n' "$token"
+}
+
+# The GATE/OUTCOME records a close writes, in order, skipping any already present
+# after this round's closing line, then the terminal `ROUND close` line.
+_vr_close_records() {
+  local rid="$1" token="$2" verdict="$3" critical="$4" warnings="$5" agents="$6" r6="$7" summary="$8" clnr="$9"
+  local f; f="$(ledger_file "$rid")"
+  local r6rest="${r6#* }" r6crit=0
+  case "$r6rest" in "critical: "*) r6crit=1 ;; esac
+  # The planned records, normalized for the resume prefix check: the lines after
+  # `closing` must be exactly these, in order, or the resume refuses (a forged
+  # line sharing fields 2-4 must not be adopted as the round's own record).
+  local -a planned
+  local caught_v="" caught_dr=""
+  if [ "$verdict" = "APPROVED" ]; then
+    # DEC-N: each gate's end carries the validation-wide caught rollup.
+    caught_v="$(_vr_caught "$f" "$clnr" validate)"
+    caught_dr="$(_vr_caught "$f" "$clnr" design-record)"
+    planned=(
+      "GATE | validate | ran | APPROVED critical=$critical warnings=$warnings fresh agents=$agents parallel"
+      "OUTCOME | validate | end | at=E caught=$caught_v dur_s=D"
+      "GATE | design-record | ran | $r6"
+      "OUTCOME | design-record | end | at=E caught=$caught_dr dur_s=D"
+    )
+  elif [ "$r6crit" = 1 ]; then
+    planned=(
+      "GATE | validate | skipped | NEEDS REVISION: $summary"
+      "OUTCOME | validate | end | at=E caught=true dur_s=D"
+      "GATE | design-record | skipped | $r6rest"
+      "OUTCOME | design-record | end | at=E caught=true dur_s=D"
+    )
+  else
+    planned=(
+      "GATE | validate | skipped | NEEDS REVISION: $summary"
+      "OUTCOME | validate | end | at=E caught=true dur_s=D"
+      "GATE | design-record | ran | $r6"
+      "OUTCOME | design-record | end | at=E caught=false dur_s=D"
+    )
+  fi
+  _vr_check_resume "$f" "$clnr" "${planned[@]}" || exit 1
+  if [ "$verdict" = "APPROVED" ]; then
+    _vr_w "$f" "$clnr" GATE validate ran          record "$rid" Validate ran "APPROVED critical=$critical warnings=$warnings fresh agents=$agents parallel"
+    _vr_w "$f" "$clnr" OUTCOME validate end       outcome "$rid" Validate end caught="$caught_v"
+    _vr_w "$f" "$clnr" GATE design-record ran     record "$rid" design-record ran "$r6"
+    _vr_w "$f" "$clnr" OUTCOME design-record end  outcome "$rid" design-record end caught="$caught_dr"
+  else
+    _vr_w "$f" "$clnr" GATE validate skipped      record "$rid" Validate skipped "NEEDS REVISION: $summary"
+    _vr_w "$f" "$clnr" OUTCOME validate end       outcome "$rid" Validate end caught=true
+    if [ "$r6crit" = 1 ]; then
+      _vr_w "$f" "$clnr" GATE design-record skipped  record "$rid" design-record skipped "$r6rest"
+      _vr_w "$f" "$clnr" OUTCOME design-record end   outcome "$rid" design-record end caught=true
+    else
+      _vr_w "$f" "$clnr" GATE design-record ran      record "$rid" design-record ran "$r6"
+      _vr_w "$f" "$clnr" OUTCOME design-record end   outcome "$rid" design-record end caught=false
+    fi
+  fi
+  append_run_line "$rid" "$(printf '%s | ROUND | close | token=%s verdict=%s' "$(now)" "$token" "$verdict")"
+}
+
+# validate-round close <rid> <token> verdict=.. critical=.. warnings=.. agents=..
+# r6=.. [summary=..]: write the round's records in a fixed order, then `ROUND close`.
+_vr_close() {
+  local rid="${1:-}" token="${2:-}"
+  [ -n "$rid" ] && [ -n "$token" ] || { echo "usage: validate-round close <rid> <token> [k=v ...]" >&2; exit 64; }
+  shift 2
+  [[ "$token" =~ $_VR_TOK_RE ]] || { echo "validate-round: malformed token" >&2; exit 64; }
+  # `close <rid> <token>` alone resumes a `closing kind=close` round (no drift check).
+  [ "$#" -eq 0 ] && { _vr_close_resume "$rid" "$token"; return; }
+  local verdict="" critical="" warnings="" agents="" r6="" summary="" seen=" " kv k v
+  for kv in "$@"; do
+    case "$kv" in *=*) ;; *) echo "validate-round: '$kv' is not key=value" >&2; exit 64 ;; esac
+    k="${kv%%=*}"; v="${kv#*=}"
+    case "$k" in verdict|critical|warnings|agents|r6|summary) ;; *) echo "validate-round: unknown key '$k'" >&2; exit 64 ;; esac
+    case "$seen" in *" $k "*) echo "validate-round: repeated key '$k'" >&2; exit 64 ;; esac
+    seen="$seen$k "
+    case "$k" in
+      r6|summary) _vr_refuse_ctl "$k" "$v" ;;
+    esac
+    case "$k" in
+      verdict)  case "$v" in APPROVED|NEEDS-REVISION) ;; *) echo "validate-round: verdict must be APPROVED|NEEDS-REVISION" >&2; exit 64 ;; esac; verdict="$v" ;;
+      critical) case "$v" in ''|*[!0-9]*) echo "validate-round: critical must be a non-negative integer" >&2; exit 64 ;; esac; critical="$v" ;;
+      warnings) case "$v" in ''|*[!0-9]*) echo "validate-round: warnings must be a non-negative integer" >&2; exit 64 ;; esac; warnings="$v" ;;
+      agents)   case "$v" in ''|*[!0-9]*) echo "validate-round: agents must be an integer" >&2; exit 64 ;; esac
+                [ "$v" -ge 1 ] || { echo "validate-round: agents must be >= 1" >&2; exit 64; }
+                agents="$v" ;;
+      r6)       r6="$v" ;;
+      summary)  summary="$v" ;;
+    esac
+  done
+  local missing=""
+  [ -n "$verdict" ]  || missing="$missing verdict"
+  [ -n "$critical" ] || missing="$missing critical"
+  [ -n "$warnings" ] || missing="$missing warnings"
+  [ -n "$agents" ]   || missing="$missing agents"
+  [ -n "$r6" ]       || missing="$missing r6"
+  [ -n "$missing" ]  && { echo "validate-round: missing keys:$missing" >&2; exit 64; }
+  # r6 = `design-bearing=<yes|no> pass` | `design-bearing=<yes|no> critical: <finding>`
+  local db r6rest r6crit=0 dbok=0
+  db="${r6%% *}"; r6rest="${r6#* }"
+  case "$db" in design-bearing=yes|design-bearing=no) dbok=1 ;; esac
+  { [ "$r6rest" != "$r6" ] && [ "$dbok" = 1 ]; } \
+    || { echo "validate-round: r6 must be 'design-bearing=<yes|no> pass|critical: <finding>'" >&2; exit 64; }
+  case "$r6rest" in
+    pass) ;;
+    "critical: "?*) r6crit=1 ;;
+    *) echo "validate-round: r6 must end in 'pass' or 'critical: <finding>'" >&2; exit 64 ;;
+  esac
+  # verdict/count consistency: APPROVED wants critical=0 and R6 pass; NEEDS-REVISION
+  # wants critical>=1 (which an R6 `critical:` finding also requires).
+  if [ "$verdict" = "APPROVED" ]; then
+    [ "$critical" = "0" ] || { echo "validate-round: APPROVED needs critical=0" >&2; exit 64; }
+    [ "$r6crit" = 0 ]     || { echo "validate-round: APPROVED needs r6 pass" >&2; exit 64; }
+  else
+    [ "$critical" -ge 1 ] || { echo "validate-round: NEEDS-REVISION needs critical>=1" >&2; exit 64; }
+  fi
+  [ "$r6crit" = 0 ] || { [ "$verdict" = "NEEDS-REVISION" ] && [ "$critical" -ge 1 ]; } \
+    || { echo "validate-round: r6 'critical:' needs NEEDS-REVISION with critical>=1" >&2; exit 64; }
+  [ -n "$summary" ] || summary="$critical critical"
+  _vr_load "$rid"
+  { [ "$_vrL_state" = "open" ] && [ "$_vrL_token" = "$token" ]; } \
+    || { echo "validate-round: last ROUND for '$rid' is not an open carrying this token" >&2; exit 1; }
+  # Drift: compare the ledger tail and the three repo pins against the ROUND open
+  # line. `top` comes from the stored line (the spec's directory may be gone).
+  local f4 top spec_p blob_o head_o por_o drift="" last_line blob_now head_now por_now voids
+  f4="$_vrL_f4"
+  top="$(_vr_kv "$f4" top)";      spec_p="$(_vr_kv "$f4" spec)"
+  blob_o="$(_vr_kv "$f4" blob)";  head_o="$(_vr_kv "$f4" head)"; por_o="$(_vr_kv "$f4" porcelain)"
+  last_line="$(tail -1 "$_vrL_f")"
+  if [ "$last_line" != "$_vrL_last" ]; then
+    drift="ledger"
+    printf 'validate-round: ledger lines after the pinned ROUND open:\n' >&2
+    # the line goes via ENVIRON so backslashes in it are not escape-processed
+    VR_O="$_vrL_last" awk '{buf[NR]=$0; if($0==ENVIRON["VR_O"])m=NR} END{for(i=m+1;i<=NR;i++)print buf[i]}' "$_vrL_f" \
+      | while IFS= read -r line; do _vr_print_foreign "$line"; done
+  fi
+  # A missing, symlinked or unreadable spec is blob drift, never a git failure.
+  blob_now=""
+  if [ -f "$spec_p" ] && [ ! -L "$spec_p" ] && [ -r "$spec_p" ]; then
+    blob_now="$(git -C "$top" hash-object "$spec_p")"
+  fi
+  [ "$blob_now" = "$blob_o" ] || drift="${drift}${drift:+,}blob"
+  head_now="$(git -C "$top" rev-parse HEAD)"
+  [ "$head_now" = "$head_o" ] || drift="${drift}${drift:+,}head"
+  por_now="$(_vr_porcelain "$top")"
+  [ "$por_now" = "$por_o" ] || drift="${drift}${drift:+,}porcelain"
+  if [ -n "$drift" ]; then
+    # restart budget: one void per validation; a second void since the last
+    # round-terminal line stops the round as incomplete instead of retrying.
+    voids="$(awk -F' [|] ' '$2=="ROUND" && ($3=="close"||$3=="incomplete"){v=0} $2=="ROUND" && $3=="void"{v++} END{print v+0}' "$_vrL_f")"
+    append_run_line "$rid" "$(printf '%s | ROUND | void | token=%s why=%s' "$(now)" "$token" "$drift")"
+    if [ "$voids" -ge 1 ]; then
+      _vr_incomplete_block "$rid" "$token" "restart budget spent"
+      exit 3
+    fi
+    exit 2
+  fi
+  append_run_line "$rid" "$(printf '%s | ROUND | closing | token=%s kind=close verdict=%s critical=%s warnings=%s agents=%s | %s | %s' \
+    "$(now)" "$token" "$verdict" "$critical" "$warnings" "$agents" "$r6" "$summary")"
+  local clnr
+  clnr="$(wc -l < "$_vrL_f" | tr -d ' ')"
+  _vr_close_records "$rid" "$token" "$verdict" "$critical" "$warnings" "$agents" "$r6" "$summary" "$clnr"
+  printf 'blob=%s\n' "${token%%.*}"
+}
+
+# The validation-wide caught rollup for one gate (DEC-N): the window opens after
+# the latest of the rid's first `ROUND open`, the previous validation-terminal
+# ROUND (`close` verdict=APPROVED or `incomplete`) and the latest
+# `GATE | validate | ran`; it counts only `OUTCOME <phase> end caught=true` lines
+# the verb wrote itself (inside a closing..ROUND block), and it reads only lines
+# before this round's own `closing` so the round's own `ran` never bounds it.
+_vr_caught() {
+  awk -F' [|] ' -v ph="$3" -v endb="$2" '
+    NR>=endb { exit }
+    $2=="ROUND" {
+      if ($3=="open" && fo==0) fo=NR
+      if (($3=="close" && $4 ~ /(^| )verdict=APPROVED( |$)/) || $3=="incomplete") term=NR
+      inblk = ($3=="closing")
+    }
+    $2=="GATE" && $3=="validate" && $4=="ran" { vran=NR }
+    $2=="OUTCOME" && $3==ph && $4=="end" && inblk && $5 ~ /(^| )caught=true( |$)/ { hit=NR }
+    END { s=fo; if (term>s) s=term; if (vran>s) s=vran; print (hit>s) ? "true" : "false" }
+  ' "$1"
+}
+
+# `close <rid> <token>` resume: last ROUND must be `closing kind=close` carrying
+# the token; the pinned fields rebuild the planned records, and only missing ones
+# are written.
+_vr_close_resume() {
+  local rid="$1" token="$2"
+  _vr_load "$rid"
+  local kind clnr
+  kind="$(_vr_kv "$_vrL_f4" kind)"
+  { [ "$_vrL_state" = "closing" ] && [ "$_vrL_token" = "$token" ] && [ "$kind" = "close" ]; } \
+    || { echo "validate-round: last ROUND for '$rid' is not a closing kind=close with this token" >&2; exit 1; }
+  local verdict critical warnings agents r6 summary
+  verdict="$(_vr_kv "$_vrL_f4" verdict)";  critical="$(_vr_kv "$_vrL_f4" critical)"
+  warnings="$(_vr_kv "$_vrL_f4" warnings)"; agents="$(_vr_kv "$_vrL_f4" agents)"
+  r6="$(_vr_field "$_vrL_last" 5)"; summary="$(_vr_field "$_vrL_last" 6)"
+  clnr="$(awk -F' [|] ' '$2=="ROUND"{n=NR} END{print n+0}' "$_vrL_f")"
+  _vr_close_records "$rid" "$token" "$verdict" "$critical" "$warnings" "$agents" "$r6" "$summary" "$clnr"
+  printf 'blob=%s\n' "${token%%.*}"
+}
+
+# The incomplete stop's writes: `ROUND closing kind=incomplete` (skipped when the
+# closing line already exists, i.e. resume), the paired skipped records, and the
+# terminal `ROUND incomplete`.
+_vr_incomplete_block() {
+  local rid="$1" token="$2" reason="$3" clnr="${4:-}"
+  local f; f="$(ledger_file "$rid")"
+  if [ -z "$clnr" ]; then
+    append_run_line "$rid" "$(printf '%s | ROUND | closing | token=%s kind=incomplete | %s' "$(now)" "$token" "$reason")"
+    clnr="$(wc -l < "$f" | tr -d ' ')"
+  fi
+  _vr_check_resume "$f" "$clnr" \
+    "GATE | validate | skipped | incomplete: $reason" \
+    "OUTCOME | validate | end | at=E caught=false dur_s=D" \
+    "GATE | design-record | skipped | incomplete: $reason" \
+    "OUTCOME | design-record | end | at=E caught=false dur_s=D" \
+    || exit 1
+  _vr_w "$f" "$clnr" GATE validate skipped        record "$rid" Validate skipped "incomplete: $reason"
+  _vr_w "$f" "$clnr" OUTCOME validate end         outcome "$rid" Validate end caught=false
+  _vr_w "$f" "$clnr" GATE design-record skipped   record "$rid" design-record skipped "incomplete: $reason"
+  _vr_w "$f" "$clnr" OUTCOME design-record end    outcome "$rid" design-record end caught=false
+  append_run_line "$rid" "$(printf '%s | ROUND | incomplete | token=%s' "$(now)" "$token")"
+}
+
+# validate-round incomplete: `incomplete <rid> <token> <reason>` records a stopped
+# round over open|void; `incomplete <rid> --stale <reason>` resolves the token from
+# the last ROUND line (open|void, or resume a closing kind=incomplete with its
+# pinned reason); `incomplete <rid> <token>` resumes a closing kind=incomplete.
+_vr_incomplete() {
+  local rid="${1:-}" a2="${2:-}"
+  [ -n "$rid" ] && [ -n "$a2" ] || { echo "usage: validate-round incomplete <rid> (<token> [reason]|--stale <reason>)" >&2; exit 64; }
+  local token reason kind clnr
+  if [ "$a2" = "--stale" ]; then
+    [ $# -eq 3 ] || { echo "usage: validate-round incomplete <rid> --stale <reason>" >&2; exit 64; }
+    reason="$3"
+    [ -n "$reason" ] || { echo "validate-round: reason may not be empty" >&2; exit 64; }
+    _vr_refuse_ctl reason "$reason"
+    _vr_load "$rid"
+    case "$_vrL_state" in
+      open|void)
+        _vr_incomplete_block "$rid" "$_vrL_token" "$reason" ;;
+      closing)
+        kind="$(_vr_kv "$_vrL_f4" kind)"
+        [ "$kind" = "incomplete" ] || { echo "validate-round: --stale cannot resume a closing kind=close" >&2; exit 1; }
+        printf 'validate-round: resuming a closing round; reason ignored: %s\n' "$reason" >&2
+        clnr="$(awk -F' [|] ' '$2=="ROUND"{n=NR} END{print n+0}' "$_vrL_f")"
+        _vr_incomplete_block "$rid" "$_vrL_token" "$(_vr_field "$_vrL_last" 5)" "$clnr" ;;
+      *) echo "validate-round: --stale needs an open, void or closing kind=incomplete round" >&2; exit 1 ;;
+    esac
+    return 0
+  fi
+  token="$a2"
+  [[ "$token" =~ $_VR_TOK_RE ]] || { echo "validate-round: malformed token" >&2; exit 64; }
+  _vr_load "$rid"
+  if [ $# -ge 3 ]; then
+    [ $# -eq 3 ] || { echo "usage: validate-round incomplete <rid> <token> <reason>" >&2; exit 64; }
+    reason="$3"
+    [ -n "$reason" ] || { echo "validate-round: reason may not be empty" >&2; exit 64; }
+    _vr_refuse_ctl reason "$reason"
+    { { [ "$_vrL_state" = "open" ] || [ "$_vrL_state" = "void" ]; } && [ "$_vrL_token" = "$token" ]; } \
+      || { echo "validate-round: last ROUND for '$rid' is not an open/void carrying this token" >&2; exit 1; }
+    _vr_incomplete_block "$rid" "$token" "$reason"
+  else
+    # resume: `closing kind=incomplete` carrying the token; the reason is pinned.
+    kind="$(_vr_kv "$_vrL_f4" kind)"
+    { [ "$_vrL_state" = "closing" ] && [ "$kind" = "incomplete" ] && [ "$_vrL_token" = "$token" ]; } \
+      || { echo "validate-round: last ROUND for '$rid' is not a closing kind=incomplete with this token" >&2; exit 1; }
+    clnr="$(awk -F' [|] ' '$2=="ROUND"{n=NR} END{print n+0}' "$_vrL_f")"
+    _vr_incomplete_block "$rid" "$token" "$(_vr_field "$_vrL_last" 5)" "$clnr"
+  fi
+}
+
+# Scoped wrapper: the ERR trap maps every unplanned failure (a git call dying, a
+# missing tool) to exit 1, while the planned exits above keep their own codes.
+# The subshell keeps file scope clean: other verbs keep `set -euo pipefail` as-is.
+validate_round() {
+  ( set -E; trap 'exit 1' ERR; _vr_dispatch "$@" )
+}
+
+_vr_dispatch() {
+  local sub="${1:-}"
+  case "$sub" in
+    open|close|incomplete) shift ;;
+    *) echo "usage: validate-round {open|close|incomplete} ..." >&2; exit 64 ;;
+  esac
+  # Strip every repo-local git env var once for the verb (an inherited
+  # GIT_DIR/GIT_COMMON_DIR would override `git -C` discovery); the list is
+  # git's own so new vars are covered.
+  unset $(git rev-parse --local-env-vars)
+  "_vr_$sub" "$@"
+}
+
+
 cmd="${1:-}"; shift 2>/dev/null || true
 case "$cmd" in
   required) required "$@" ;;
@@ -958,5 +1435,6 @@ case "$cmd" in
   descent)  descent "$@" ;;
   history) history "$@" ;;
   report)  report "$@" ;;
-  *) echo "usage: gate-ledger.sh {required|start|record|action|tokens|debt|debt-response|outcome|outcome-read|mutation|config|override|plan-record|check|show|plan|progress|rid|descent|history|report} ..." >&2; exit 64 ;;
+  validate-round) validate_round "$@" ;;
+  *) echo "usage: gate-ledger.sh {required|start|record|action|tokens|debt|debt-response|outcome|outcome-read|mutation|config|override|plan-record|check|show|plan|progress|rid|descent|history|report|validate-round} ..." >&2; exit 64 ;;
 esac
