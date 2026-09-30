@@ -182,8 +182,8 @@ Otherwise, for each candidate run `bin/precedent find --surface inventory --json
 **Then size it, and the size decides where the build happens.** A build that lands from inside wrap is still a change in a real repo, so it owes the same lane discipline as any other change; an inline edit-and-commit at session close is how an unreviewed, undocumented change enters an estate:
 
 ```bash
-bash lib/classify/lane-classify.sh classify "<the candidate in one line>"
-bash lib/classify/lane-classify.sh classify --files "<paths>" "<the candidate in one line>"   # when the touched files are known
+bash lib/classify/lane-classify.sh risk "<the candidate in one line>"
+bash lib/classify/lane-classify.sh risk --files "<paths>" "<the candidate in one line>"   # when the touched files are known
 ```
 
 **`wrap.build_lanes` decides which lanes build inline.** Split the classifier's answer against that list:
@@ -310,7 +310,7 @@ Two real sessions ended the same way: the report listed in-lane candidates as `R
 **The work set**, drafted from the first report, never from a fresh recollection:
 
 - (a) BUILD: every `**Built:**` item with verdict `REPORTED` whose `lane=` is in the printed lanes and is not `full`, including one reported because of a step 0 stop. An item reported with `build_candidates off` stays reported: that knob keeps wrap's hand at every mode. LAND only: every step 7b `BUILT` branch with no merged PR yet.
-- (b) FINISH: every `FYI` row that names work this pass left undone in a repo it touched, sized with `bash lib/classify/lane-classify.sh classify "<the row in one line>"` into one of the printed lanes other than `full`. A `STATE` row that says "the doc test now fails on the line this pass renamed" is work; one that says "wrap.pull_past_dirty is false" is a fact, and a fact, a resolved `INCIDENT`, or a `SKIPPED` step is never in the set. A row that needs a credential, a GUI, 2FA, a physical device, or is irreversible or outward-facing is a `Needs you` item under the admission test and never runs here.
+- (b) FINISH: every `FYI` row that names work this pass left undone in a repo it touched, sized with `bash lib/classify/lane-classify.sh risk "<the row in one line>"` into one of the printed lanes other than `full`. A `STATE` row that says "the doc test now fails on the line this pass renamed" is work; one that says "wrap.pull_past_dirty is false" is a fact, and a fact, a resolved `INCIDENT`, or a `SKIPPED` step is never in the set. A row that needs a credential, a GUI, 2FA, a physical device, or is irreversible or outward-facing is a `Needs you` item under the admission test and never runs here.
 - (c) FULL, `all` mode only: every `REPORTED` item with `lane=full`. Under `lanes` those stay `REPORTED` exactly as step 7b left them.
 
 An empty set prints `[kit:wrap] follow-through: nothing in lane` and ends the step, with no second report.
@@ -331,7 +331,7 @@ A worker that cannot be resumed is replaced by a fresh builder on the same workt
 
 **Land, one repo at a time, after the last worker reports.** Per built (a) or (b) branch, one at a time:
 
-1. Size the real diff: `bash lib/classify/lane-classify.sh classify --files "$(git -C <wt> diff --name-only origin/<default>...HEAD)" "<the item>"`. A branch that now sizes `full` (it touched auth, a hook, a data model, a contract) takes the full-lane path above instead: draft PR, worktree removed, `REVIEW #<pr>` in `Needs you`, never merged. This holds in `lanes` mode too.
+1. Size the real diff: `bash lib/classify/lane-classify.sh risk --files "$(git -C <wt> diff --name-only origin/<default>...HEAD)" "<the item>"`. A branch that now sizes `full` (it touched auth, a hook, a data model, a contract) takes the full-lane path above instead: draft PR, worktree removed, `REVIEW #<pr>` in `Needs you`, never merged. This holds in `lanes` mode too.
 2. Run `bin/wrap rebase <wt>` first. It prints `nothing to rebase` when the branch already holds `origin/<default>`. When it prints `rebased ...` instead (HEAD moved), re-run the worker's verification command in `<wt>`. A red re-run keeps the item `REPORTED` with the failing check as its why. So does a refusal: `REFUSED`, `MARKERS`, `GENERATOR FAILED`, `STOP BOUND` or `ABORT FAILED` mean the rebase stopped (the verb restored the old tip, except after `ABORT FAILED`), and a line starting `AFTER REBASE` means the branch is rebased but its final regeneration is not committed. The worktree stays under `Left alone` in every case. Then push and open the PR from inside the worktree, so the home repo's ship-gate judges it: `cd <wt> && git push -u origin HEAD:<branch>`, then `cd <wt> && gh pr create --head <branch> --fill-first`. A ship-gate refusal (a missing proof, a missing gate) is never overridden here: the item stays `REPORTED` with the gate's reason, and the worktree stays under `Left alone`.
 3. Re-run the step 0 check for the repo. Stopped, or `wrap.merge_own_prs` false: stop here; `Shipped` lists the PR `OPEN` and `Left alone` lists the worktree.
 4. Wait for the PR's checks: `gh pr checks <n> --watch`. Then `bin/wrap merge --apply --pr <n> <repo>`: it merges only an own PR that `_pr_gate` calls green, then verifies the default branch holds the PR head. Never `wrap land` here, because `land` merges right after it opens a PR and never reads the checks. A SKIP (checks red, changes requested, not mergeable) or a TREE MISMATCH is reported by name and the PR stays `OPEN`.

@@ -582,6 +582,25 @@ case_ship_slug_quoted() {
   else fail ship-slug-quoted "rc=$HOOK_RC err=$HOOK_ERR"; fi
 }
 
+# `risk` answers callers that read "full" as a risk signal: full when the lane is full OR a full
+# suggestion fired; otherwise the lane. A cosmetic task stays tiny even with a keyword.
+case_risk_verb() {
+  local bad="" got t want
+  while IFS='|' read -r want t; do
+    [ -n "$t" ] || continue
+    got="$(lcx risk "$t" 2>/dev/null)"; [ "$got" = "$want" ] || bad="$bad [$t => $got, want $want]"
+  done <<'CASES'
+full|add jwt authentication
+full|add webhook signature check
+normal|add a date picker to the settings page
+normal|add token count column
+tiny|fix a typo in the auth README
+bug|the parser crashes on empty input, fix the regression
+CASES
+  got="$(lcx risk --files "db/migrations/0001_users.sql" "add a users page" 2>/dev/null)"; [ "$got" = full ] || bad="$bad [hard path in --files => $got]"
+  [ -z "$bad" ] && pass risk-verb || fail risk-verb "$bad"
+}
+
 # ---------------------------------------------------------------------------
 run_case() {
   local fn="case_${1//-/_}"

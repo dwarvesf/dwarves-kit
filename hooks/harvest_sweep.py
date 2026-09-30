@@ -1157,9 +1157,10 @@ def _hit_summary(hit):
 
 
 def _classify_lane(query):
-    """The last stdout line of `lane-classify.sh classify`, or 'normal' when the
-    call gave nothing (the classifier's own default lane)."""
-    _rc, out = _run_argv([_lane_classify_bin(), "classify", query])
+    """The last stdout line of `lane-classify.sh risk` (`full` when a full-lane trigger
+    fired, which classify alone only suggests), or 'normal' when the call gave nothing
+    (the classifier's own default lane)."""
+    _rc, out = _run_argv([_lane_classify_bin(), "risk", query])
     lines = [l.strip() for l in out.splitlines() if l.strip()]
     return lines[-1] if lines else "normal"
 
