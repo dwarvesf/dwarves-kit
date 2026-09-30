@@ -34,7 +34,7 @@ Every workflow, lane, loop, side-flow, and alternate path in one connected pictu
                  [E] session start ........ hooks inject context (Watch, section 4.4)
                           |
                           v
-                 [H] /kit:start ........... read-only board render; recommends, never executes
+                 [H/I] /kit:start ........... read-only board render; recommends, never executes
                           |
                           v
                  [H/I] /kit:assign ........ goal draft + scope fence + lane pick (the ONLY mutator)
@@ -83,18 +83,18 @@ Every workflow, lane, loop, side-flow, and alternate path in one connected pictu
  |   [H/I] /kit:grill ........ typed interview, one question at a time -> phase-0 Done=
  |        |
  |        v                       side-flows attach here (opt-in, advisory):
- |   [H/I] /kit:think -------+--> [H] /kit:design ..... solution, one decision at a time -> brief
- |   -> DECISION-BRIEF.md    +--> [H] /kit:devs-team .. 5 engineering lenses, report-only
- |        |                  +--> [H] /kit:prototype .. spike branch, decision folds back
+ |   [H/I] /kit:think -------+--> [H/I] /kit:design ..... solution, one decision at a time -> brief
+ |   -> DECISION-BRIEF.md    +--> [H/I] /kit:devs-team .. 5 engineering lenses, report-only
+ |        |                  +--> [H/I] /kit:prototype .. spike branch, decision folds back
  |        v
  |   [H/I] /kit:spec ......... [D] 4 research agents (brownfield) -> SPEC-NNN DRAFT
- |        |   +--> downstream UI offshoot: [H] /kit:ui-design -> frontend-design skill ->
- |        |        [H] /kit:visual-team (5 design lenses) -> fix-agent revise (max 2) -> SOLID
+ |        |   +--> downstream UI offshoot: [H/I] /kit:ui-design -> frontend-design skill ->
+ |        |        [H/I] /kit:visual-team (5 design lenses) -> fix-agent revise (max 2) -> SOLID
  |        v
  |   [H/I] /kit:spec-validate  7 lenses (1 HARD on the design record)
  |        |     NEEDS REVISION ==> back to /kit:spec
  |        v  Status: VALIDATED
- |   [H] /kit:test-plan ...... coverage matrix -> ## Test plan (default on normal/full)
+ |   [H/I] /kit:test-plan ...... coverage matrix -> ## Test plan (default on normal/full)
  |        |
  |        v
  |   +- REVISE LOOP  /kit:test-plan-review-team -------------------------------+
@@ -105,11 +105,11 @@ Every workflow, lane, loop, side-flow, and alternate path in one connected pictu
  |   +-------------------------------------------------------------------------+
  |        | SOLID
  |        v
- |   [H] /kit:test-write ..... [D] test-writer, one test per matrix row
+ |   [H/I] /kit:test-write ..... [D] test-writer, one test per matrix row
  |        |                    (the V-model vertex: BUILD = code + test code;
  |        |                     the full V shape: workflow-map.md section 6)
  |        v
- |   [H/I] /kit:execute  (or [H] /kit:next: human-paced, same pipeline)
+ |   [H/I] /kit:execute  (or [H/I] /kit:next: human-paced, same pipeline)
  |        |     alt: 2+ active specs and the slug is ambiguous -> ASK, never guess
  |        v
  |   +- EXECUTE PIPELINE  (the HARD verification pipeline) ----------------------------+
@@ -152,8 +152,8 @@ Every workflow, lane, loop, side-flow, and alternate path in one connected pictu
  +== on ship: ID-NNN drops off the board; CHANGELOG is the canonical shipped record ==============
 
   off-cycle side-flows (attach to the estate, not to one run):
-    maintainer offshoot .... [H] /kit:absorb (Credits drift + seed rescan, proposal-only)
-                             [H] /kit:kit-health (self-assessment vs PHILOSOPHY, report)
+    maintainer offshoot .... [H/I] /kit:absorb (Credits drift + seed rescan, proposal-only)
+                             [H/I] /kit:kit-health (self-assessment vs PHILOSOPHY, report)
     estate cadence ......... [I] doc-drift (whole-estate doc audit -> fixes on a branch -> PR gate)
                              [I] topology-drift (registry vs path-index cross-check -> delta re-place -> PR gate)
                              both Tier 2 ==> [D] audit-scanner (shared read-only evidence pass)
@@ -219,7 +219,7 @@ Commands never hand off in memory; the baton passes through stores on disk.
  [E] UserPromptSubmit ── context-hints + prose-rag (opt-in) inject before every turn
         |
         v
- [H] /kit:start ──> board + telemetry render ──> recommends next command (never executes)
+ [H/I] /kit:start ──> board + telemetry render ──> recommends next command (never executes)
         |
         v
  [H/I] /kit:assign ID-NNN | --next ──> goal draft + scope fence + lane pick
@@ -232,9 +232,9 @@ Commands never hand off in memory; the baton passes through stores on disk.
  [H/I] /kit:grill ──> typed interview, one question at a time ──> phase-0 Done=
         |
         v                                      [D] brief-reviewer + advisor critique
- [H/I] /kit:think ──> DECISION-BRIEF.md ──┬──> [H] /kit:design ──> Solution in brief
-        |                                 |      +── [H] /kit:devs-team (5 lenses, report-only)
-        |                                 +──> [H] /kit:prototype ──> spike branch, folds back
+ [H/I] /kit:think ──> DECISION-BRIEF.md ──┬──> [H/I] /kit:design ──> Solution in brief
+        |                                 |      +── [H/I] /kit:devs-team (5 lenses, report-only)
+        |                                 +──> [H/I] /kit:prototype ──> spike branch, folds back
         v
  [H/I] /kit:spec ──> [D] research-architecture + research-context
         |                + research-pitfalls + research-stack (brownfield, read-only)
@@ -245,7 +245,7 @@ Commands never hand off in memory; the baton passes through stores on disk.
      Status: VALIDATED ──> Build
 ```
 
-Off-ramp entries that also land in Shape: `[H] /kit:onboard` (first run, orchestrates `/kit:adopt` + `/kit:start` + config), `[H/I] /kit:adopt` (injects the operate-contract into a target repo so the ship-gate engages there).
+Off-ramp entries that also land in Shape: `[H/I] /kit:onboard` (first run, orchestrates `/kit:adopt` + `/kit:start` + config), `[H/I] /kit:adopt` (injects the operate-contract into a target repo so the ship-gate engages there).
 
 ### 4.2 · BUILD: test design, execution engines, agent-making
 
@@ -253,11 +253,11 @@ Off-ramp entries that also land in Shape: `[H] /kit:onboard` (first run, orchest
  VALIDATED spec
     |
     v
- [H] /kit:test-plan ──> ## Test plan matrix ──> [H] /kit:test-plan-review-team
+ [H/I] /kit:test-plan ──> ## Test plan matrix ──> [H/I] /kit:test-plan-review-team
     |                                              (6 lenses + bounded revise ──> SOLID)
-    |                                              ──> [H] /kit:test-write ──> [D] test-writer
+    |                                              ──> [H/I] /kit:test-write ──> [D] test-writer
     v
- [H/I] /kit:execute  (or [H] /kit:next, human-paced, same pipeline)
+ [H/I] /kit:execute  (or [H/I] /kit:next, human-paced, same pipeline)
     |
     |   whole-spec HARD pipeline:
     |   [D] builder (data-etl-worker | db-migration-worker | general), one for the spec
@@ -274,7 +274,7 @@ Off-ramp entries that also land in Shape: `[H] /kit:onboard` (first run, orchest
                           (each runs the spec..ship chain) ──> ship-gate merge per tag
  [H/I] /kit:debug ────> off-cycle: Phase 0..4, iron law (no fix without recorded root cause),
                           3-fix architecture wall ──> verified fix ──> resume prior state
- [H] /kit:ui-design ──> UI brief ──> frontend-design skill ──> /kit:visual-team critique
+ [H/I] /kit:ui-design ──> UI brief ──> frontend-design skill ──> /kit:visual-team critique
                           ──> [D] fix-agent revise (bounded) ──> SOLID
  [H/I] /kit:draft-agent ──> [D] meta-agent draft ──> [D] agent-effectiveness ──> install (--draft stops staged)
  Build-support skill: get-api-docs [I] auto-fires before coding against a third-party API.
@@ -351,11 +351,11 @@ Off-ramp entries that also land in Shape: `[H] /kit:onboard` (first run, orchest
     v
  [H/I] /kit:retro ──> docs/retro/v<version>.md ──> feeds the next /kit:think
     |
-    +── [H/I] /kit:explain ──> literate-diff explainer ──> [H] /kit:quiz-gate
+    +── [H/I] /kit:explain ──> literate-diff explainer ──> [H/I] /kit:quiz-gate
     |         (the ★-tap nudge) ──> engage / defer / wave logged (never must-pass)
-    +── [H] /kit:pitch <rid> ──> buy-in doc from spec + proof + notes + ledger
-    +── [H] /kit:kit-health ──> self-assessment vs PHILOSOPHY (report)
-    +── [H] /kit:absorb ──> Credits drift + seed rescan ──> proposal, human merges
+    +── [H/I] /kit:pitch <rid> ──> buy-in doc from spec + proof + notes + ledger
+    +── [H/I] /kit:kit-health ──> self-assessment vs PHILOSOPHY (report)
+    +── [H/I] /kit:absorb ──> Credits drift + seed rescan ──> proposal, human merges
 
  Reflect-side skills (auto-fire [I] unless noted):
  doc-drift ──> whole-estate doc audit ──> fixes on a branch ──> PR gate
@@ -367,7 +367,7 @@ Off-ramp entries that also land in Shape: `[H] /kit:onboard` (first run, orchest
    (all seven audit skills, incl. backlog-reconcile, dispatch [D] audit-scanner for Tier 2:
     read-only evidence, skill applies)
  memory-tidy ──> evidence-gated memory audit ──> PR-gated merges/deletions
- skill-review [H] ──> reviews staged skill drafts ──> promote or reject
+ skill-review [I] ──> reviews staged skill drafts ──> promote or reject
  loop-engineering ──> gate + anatomy walkthrough for a proposed loop ──> design hand-off
  Staged harvest/backlog output re-enters Shape via board promote (the human gate).
 ```
@@ -380,45 +380,45 @@ One line per live feature: `entry -> ... -> terminal`. Grouped by kind; every fe
 
 | Path |
 |---|
-| `[H] /kit:start -> board + telemetry render -> recommendation (never executes)` |
-| `[H] /kit:onboard -> detect install mode -> orchestrate adopt/start/config -> confirmed writes` |
+| `[H/I] /kit:start -> board + telemetry render -> recommendation (never executes)` |
+| `[H/I] /kit:onboard -> detect install mode -> orchestrate adopt/start/config -> confirmed writes` |
 | `[H/I] /kit:adopt -> inject operate-contract into target repo -> ship-gate engaged there` |
 | `[H/I] /kit:assign -> goal draft + lane pick -> grill / think / spec / dispatch / ship per lane` |
 | `[H/I] /kit:grill -> typed interview -> phase-0 Done= -> lane routing` |
 | `[H] /kit:wayfind (human ONLY) -> decision map + tickets -> /kit:spec or ROADMAP` |
 | `[H/I] /kit:think -> brief-reviewer + advisor critique -> DECISION-BRIEF.md -> design or spec` |
-| `[H] /kit:design -> one decision at a time -> Solution in brief -> /kit:spec` |
-| `[H] /kit:prototype -> spike on prototype/<name> branch -> decision folds into brief/spec` |
-| `[H] /kit:devs-team -> 5 engineering lenses -> report-only -> feeds /kit:design` |
+| `[H/I] /kit:design -> one decision at a time -> Solution in brief -> /kit:spec` |
+| `[H/I] /kit:prototype -> spike on prototype/<name> branch -> decision folds into brief/spec` |
+| `[H/I] /kit:devs-team -> 5 engineering lenses -> report-only -> feeds /kit:design` |
 | `[H/I] /kit:spec -> 4 research agents -> SPEC-NNN DRAFT -> spec-validate or ui-design` |
 | `[H/I] /kit:spec-validate -> 7 lenses (1 HARD) -> VALIDATED or back to /kit:spec` |
 | `[H/I] /kit:feature-map -> research-features per module (parallel) -> docs/specs/<module>.md + top-level checklist` |
-| `[H] /kit:test-plan -> coverage matrix -> ## Test plan -> review-team or execute` |
-| `[H] /kit:test-plan-review-team -> 6 lenses + revise loop -> SOLID verdict -> test-write or execute` |
-| `[H] /kit:test-write -> test-writer per matrix row -> runnable tests -> /kit:execute` |
+| `[H/I] /kit:test-plan -> coverage matrix -> ## Test plan -> review-team or execute` |
+| `[H/I] /kit:test-plan-review-team -> 6 lenses + revise loop -> SOLID verdict -> test-write or execute` |
+| `[H/I] /kit:test-write -> test-writer per matrix row -> runnable tests -> /kit:execute` |
 | `[H/I] /kit:execute -> builder -> end verifiers (task, integration, acceptance) -> fix-agent (max 2) -> review` |
-| `[H] /kit:next -> load next undone task -> human-paced, same verification path` |
+| `[H/I] /kit:next -> load next undone task -> human-paced, same verification path` |
 | `[H/I] /kit:dispatch -> N worktree workers behind disjointness gate -> lead converges -> ship` |
 | `[H/I] /kit:mega -> roadmap of 3-8 sub-goals -> /goal loop each -> ship-gate merge per tag` |
 | `[H/I] /kit:debug -> Phase 0..4 under the iron law -> verified fix -> resume prior state` |
 | `[H/I] /kit:review -> single-pass paranoid review -> verdict -> docs or back to execute/spec` |
 | `[H/I] /kit:review-team -> reviewer roster + advisor in parallel -> ## Review -> /kit:docs` |
-| `[H] /kit:visual-team -> 5 design lenses -> report-only verdict` |
-| `[H] /kit:ui-design -> brief -> frontend-design skill -> visual-team -> fix-agent revise -> SOLID` |
+| `[H/I] /kit:visual-team -> 5 design lenses -> report-only verdict` |
+| `[H/I] /kit:ui-design -> brief -> frontend-design skill -> visual-team -> fix-agent revise -> SOLID` |
 | `[H/I] /kit:docs -> diff code vs every doc -> doc-verifier -> /kit:ship` |
 | `[H/I] /kit:verify -> 4 verifiers read-only -> verdict, no rebuild, no fix` |
 | `[H/I] /kit:battery -> acceptance-verifier + reviewer lenses + advisor in parallel (fresh context, baseline-aware) -> merged verdict -> lead applies fixes -> gate-ledger records` |
 | `[H/I] /kit:explain -> literate-diff explainer -> feeds /kit:quiz-gate` |
-| `[H] /kit:quiz-gate -> 5 diff-grounded questions -> engage/defer/wave logged (advisory)` |
-| `[H] /kit:pitch <rid> -> assemble buy-in doc from existing sources -> doc (never fabricates)` |
+| `[H/I] /kit:quiz-gate -> 5 diff-grounded questions -> engage/defer/wave logged (advisory)` |
+| `[H/I] /kit:pitch <rid> -> assemble buy-in doc from existing sources -> doc (never fabricates)` |
 | `[H/I] /kit:ship -> gate check + version + changelog + PR -> /kit:retro (HARD on DO NOT SHIP)` |
 | `[H/I] /kit:greenlight -> snapshot PR checks via gh -> real vs flaky -> fix-agent (real) / bounded retry (flaky) -> one terminal state (report-only, human merges)` |
 | `[H/I] /kit:retro -> capture learnings -> docs/retro/v<version>.md -> feeds next /kit:think` |
 | `[H/I] /kit:wrap -> flip board rows + merge green PRs + deploy check + worktree tidy -> skim-first report (distill half on by default)` |
 | `[H/I] /kit:draft-agent -> meta-agent -> agent-effectiveness -> install (--draft stops staged)` |
-| `[H] /kit:gauntlet -> preset/slot confirm -> Tier 1 -> clean-room probe rounds (bounded) -> artifact revised on failure -> SOLID / REVISE / RECONSIDER + run record` |
-| `[H] /kit:kit-health -> self-assessment vs PHILOSOPHY -> report (terminal)` |
-| `[H] /kit:absorb -> Credits drift + seed rescan -> proposal-only, human merges` |
+| `[H/I] /kit:gauntlet -> preset/slot confirm -> Tier 1 -> clean-room probe rounds (bounded) -> artifact revised on failure -> SOLID / REVISE / RECONSIDER + run record` |
+| `[H/I] /kit:kit-health -> self-assessment vs PHILOSOPHY -> report (terminal)` |
+| `[H/I] /kit:absorb -> Credits drift + seed rescan -> proposal-only, human merges` |
 
 ### Agents
 
@@ -471,7 +471,7 @@ One line per live feature: `entry -> ... -> terminal`. Grouped by kind; every fe
 | `[I] loop-engineering -> gate + anatomy walkthrough -> design handed to the loop builder` |
 | `[I] memory-tidy -> evidence-gated memory audit -> PR-gated merges/deletions` |
 | `[I] observe -> control-plane query/render via lib/bench -> read-only dashboard` |
-| `[H] skill-review -> review staged drafts -> promote to ~/.claude/skills/ or reject` |
+| `[I] skill-review -> review staged drafts -> promote to ~/.claude/skills/ or reject` |
 | `[I] stats -> ledger query -> reply or Artifact; anomalies --propose stages one candidate` |
 
 ### Hooks
