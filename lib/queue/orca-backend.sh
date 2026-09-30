@@ -77,10 +77,22 @@ _orca_ev() {  # dir sg status dispatch task reason
   _emit_event "$1" "$2" "$3" "dispatch=$4 task=$5: $6"
 }
 # Note text of the newest event of one of the statuses (a|b|c) for this sg and dispatch, or empty.
-_orca_ev_note() {  # dir sg dispatch statuses
+_orca_ev_note() {  # dir sg dispatch statuses [task]
   local ef; ef=$(_events_file "$1"); [ -f "$ef" ] || return 0
-  awk -F'\t' -v s="$2" -v d="dispatch=$3 " -v st="$4" \
-    'BEGIN{n=split(st,a,"|")} $2==s && index($4,d)==1 { for(i=1;i<=n;i++) if($3==a[i]) {note=$4; f=1} } END{ if(f) print note }' "$ef"
+  awk -F'\t' -v s="$2" -v d="dispatch=$3 " -v st="$4" -v t="${5:+task=$5:}" \
+    'BEGIN{n=split(st,a,"|")} $2==s && index($4,d)==1 && (t=="" || index($4,t)>0) { for(i=1;i<=n;i++) if($3==a[i]) {note=$4; f=1} } END{ if(f) print note }' "$ef"
+}
+# A start was already recorded for this Task (an `executing` event or a failed start). Keyed by the
+# Task id, so it holds when Orca drops stopped rows, and a new Run (new Task ids) starts clean.
+_orca_start_recorded() {  # dir sg task
+  local ef; ef=$(_events_file "$1"); [ -f "$ef" ] || return 0
+  awk -F'\t' -v s="$2" -v t="$3" '$2==s && (($3=="executing" && index($4,"task=" t " ")==1) || ($3=="blocked" && index($4,"dispatch=- task=" t ":")==1)) {f=1} END{if(f) print "yes"}' "$ef"
+}
+# The gate opened for this Dispatch: "id|status|resolution", or empty when none was opened for it.
+_orca_gate_of() {  # dir sg disp task
+  local hn gid; hn=$(_orca_ev_note "$1" "$2" "$3" held "$4"); [ -n "$hn" ] || return 0
+  gid="${hn##* gate }"
+  _orca_jq "$_O_GL" --arg g "$gid" '[.gates[]|select(.id==$g)][0] // empty | [.id,.status,(.resolution // "")]|join("|")'
 }
 
 # ---- plan -----------------------------------------------------------------------------------
@@ -169,7 +181,7 @@ _orca_sg_state() {  # dir sg policy checked   -> _S_STATE _S_REASON _S_TASK _S_D
   # 3 HELD: a gate sub-goal whose accept Task has a pending gate.
   case "$policy" in gate|'gate!')
     if [ -n "$atask" ]; then
-      gate=$(_orca_jq "$_O_GL" --arg t "$atask" '[.gates[]|select(.taskId==$t)]|last // empty|[.id,.status,(.resolution // "")]|join("|")')
+      gate=$(_orca_gate_of "$dir" "$sg" "$_S_DISP" "$task")
       IFS='|' read -r gid gres q <<<"$gate"
       [ "$gres" = pending ] && { _S_STATE=HELD; _S_REASON="gate $gid"; return 0; }
       # 4 (gate half) the gate resolved rework
@@ -177,7 +189,7 @@ _orca_sg_state() {  # dir sg policy checked   -> _S_STATE _S_REASON _S_TASK _S_D
     fi ;;
   esac
   # 4 BLOCKED: a blocked event for the latest Dispatch, or the Task itself is blocked.
-  bnote=$(_orca_ev_note "$dir" "$sg" "$_S_DISP" blocked)
+  bnote=$(_orca_ev_note "$dir" "$sg" "$_S_DISP" blocked "$task")
   if [ -n "$bnote" ]; then
     # A worker-start whose outcome is unknown is not a rejection: the Dispatch may exist. Never relaunched.
     case "$bnote" in
@@ -188,7 +200,7 @@ _orca_sg_state() {  # dir sg policy checked   -> _S_STATE _S_REASON _S_TASK _S_D
   fi
   # 5 DONE-UNSEEN: worker finished, the runner has not consumed it yet.
   if [ "$ts" = completed ]; then
-    [ -n "$(_orca_ev_note "$dir" "$sg" "$_S_DISP" 'shipped|blocked')" ] || { _S_STATE=DONE-UNSEEN; return 0; }
+    [ -n "$(_orca_ev_note "$dir" "$sg" "$_S_DISP" 'shipped|blocked' "$task")" ] || { _S_STATE=DONE-UNSEEN; return 0; }
     _S_STATE=INDETERMINATE; _S_REASON="completed-and-consumed-but-box-open"; return 0
   fi
   [ "$ts" = blocked ] && { _S_STATE=BLOCKED; _S_REASON="task-blocked"; return 0; }
@@ -243,7 +255,7 @@ _orca_consume() {  # dir sg checked
   task=$(_orca_map_task "$dir" "$sg" work); [ -n "$task" ] || return 0
   [ "$(_orca_task_status "$task")" = completed ] || return 0
   disp=$(_orca_latest_disp "$task"); : "${disp:=-}"
-  [ -z "$(_orca_ev_note "$dir" "$sg" "$disp" 'shipped|blocked|held')" ] || return 0
+  [ -z "$(_orca_ev_note "$dir" "$sg" "$disp" 'shipped|blocked|held' "$task")" ] || return 0
   repo=$(_orca_repo "$dir"); branch=$(_sg_branch "$(_goalfile "$dir" "$sg")" "$sg")
   _TICK_ACTED=$((_TICK_ACTED + 1))
   if [ "$checked" != 1 ]; then
@@ -264,21 +276,30 @@ _orca_consume() {  # dir sg checked
 _orca_dispatch() {  # dir rows
   local dir="$1" rows="$2" roadmap="$1/ROADMAP.md" run repo od gate cap occupied=0 admitted=0
   local sg state reason task disp _r policy gf other deps dep base branch pfile rmodel reffort route_out route_rc out rc line
-  local occ_files=() f ok
+  local occ_files=() f ok started
   run=$(_orca_run_id "$dir"); repo=$(_orca_repo "$dir"); od=$(_orca_dir "$dir")
   gate="$LIB_ROOT/gate/dispatch-gate.sh"; cap="$WAVE_CAP"
-  # A gate! sub-goal that is running, held or waiting to be consumed stops every new start.
+  # Occupied: any sub-goal with a Dispatch or a recorded start counts toward the cap and the Touches
+  # check, INDETERMINATE included (an unknown worker may be live). A gate! sub-goal that has begun and
+  # is not DONE stops every new start.
   while IFS=$'\t' read -r sg state reason task disp _r; do
     policy=$(_subgoals "$roadmap" | awk -F'\t' -v i="$sg" '$1==i{print $2}')
-    case "$state" in RUNNING|PARKED) occupied=$((occupied + 1)); occ_files+=("$(_goalfile "$dir" "$sg")") ;; esac
-    case "$state:$policy" in RUNNING:'gate!'|PARKED:'gate!'|HELD:'gate!'|DONE-UNSEEN:'gate!') return 0 ;; esac
+    started=0
+    case "$state" in
+      RUNNING|PARKED) started=1 ;;
+      INDETERMINATE) { [ "$disp" != "-" ] || [ -n "$(_orca_start_recorded "$dir" "$sg" "$task")" ]; } && started=1 ;;
+    esac
+    if [ "$started" = 1 ]; then occupied=$((occupied + 1)); occ_files+=("$(_goalfile "$dir" "$sg")"); fi
+    if [ "$policy" = 'gate!' ]; then
+      case "$state" in DONE|READY|WAITING) ;; *) return 0 ;; esac
+    fi
   done <<<"$rows"
   while IFS=$'\t' read -r sg state reason task disp _r; do
     [ "$state" = READY ] || continue
     policy=$(_subgoals "$roadmap" | awk -F'\t' -v i="$sg" '$1==i{print $2}')
     # prior-Dispatch guard: any Dispatch at all, or a failed start, is an operator matter.
     [ -z "$(_orca_latest_disp "$task")" ] || continue
-    [ -z "$(_orca_ev_note "$dir" "$sg" "-" 'blocked')" ] || continue
+    [ -z "$(_orca_start_recorded "$dir" "$sg" "$task")" ] || continue
     [ $((occupied + admitted)) -lt "$cap" ] || break
     gf=$(_goalfile "$dir" "$sg")
     if [ $((occupied + admitted)) -gt 0 ]; then
@@ -360,7 +381,7 @@ _orca_msg_acted() {  # dir msg-json
       [ "$(_orca_task_status "$task")" = failed ] && return 0
       [ -n "$disp" ] || disp=$(_orca_latest_disp "$task")
       local sg; sg=$(awk -F'\t' -v t="$task" '$1==t{print $2; exit}' "$(_orca_dir "$dir")/map.tsv")
-      [ -n "$sg" ] && [ -n "$(_orca_ev_note "$dir" "$sg" "${disp:--}" 'shipped|blocked|held')" ] ;;
+      [ -n "$sg" ] && [ -n "$(_orca_ev_note "$dir" "$sg" "${disp:--}" 'shipped|blocked|held' "$task")" ] ;;
     question)
       [ "$(_orca_jq "$_O_IB" --arg i "$id" '[.messages[]|select(.replyTo==$i)]|length')" -gt 0 ] ;;
     escalation)
@@ -378,16 +399,16 @@ orca_gate() {  # dir
     task=$(_orca_map_task "$dir" "$sg" work); atask=$(_orca_map_task "$dir" "$sg" accept)
     [ -n "$task" ] && [ -n "$atask" ] || continue
     branch=$(_sg_branch "$(_goalfile "$dir" "$sg")" "$sg")
-    gate=$(_orca_jq "$_O_GL" --arg t "$atask" '[.gates[]|select(.taskId==$t)]|last // empty|[.id,.status,(.resolution // "")]|join("|")')
-    IFS='|' read -r gid gstat gres <<<"$gate"
-    # Worker finished: open the accept gate once, on the accept Task, when the branch is on origin.
     ts=$(_orca_task_status "$task"); disp=$(_orca_latest_disp "$task"); : "${disp:=-}"
-    if [ "$ts" = completed ] && [ -z "$gate" ] && [ -z "$(_orca_ev_note "$dir" "$sg" "$disp" 'shipped|blocked|held')" ]; then
+    gate=$(_orca_gate_of "$dir" "$sg" "$disp" "$task")
+    IFS='|' read -r gid gstat gres <<<"$gate"
+    # Worker finished: open one accept gate per Dispatch, on the accept Task, when the branch is on origin.
+    if [ "$ts" = completed ] && [ -z "$(_orca_ev_note "$dir" "$sg" "$disp" 'shipped|blocked|held' "$task")" ]; then
       _TICK_ACTED=$((_TICK_ACTED + 1))
       if _orca_pushed "$repo" "$branch"; then
         sha=$(_orca_sha "$repo" "$branch")
         out=$(_orca gate-create --task "$atask" --question "Accept $sg: branch $branch at $sha?" \
-              --options '["accept","rework"]' --retry-request "$run-$sg-accept-gate" --json 2>/dev/null) \
+              --options '["accept","rework"]' --retry-request "$run-$sg-$disp-gate" --json 2>/dev/null) \
           && { gid=$(printf '%s' "$out" | jq -r '.id // .gate.id // empty'); _orca_ev "$dir" "$sg" held "$disp" "$task" "awaiting gate $gid"
                [ "$disp" = "-" ] || _orca worker-release --dispatch "$disp" --json >/dev/null 2>&1 || true; } \
           || echo "[orchestrate] [orca] gate-create for $sg failed; will retry next tick." >&2
@@ -419,6 +440,35 @@ orca_gate() {  # dir
   return 0
 }
 
+# ---- run lock -------------------------------------------------------------------------------
+# mkdir lock holding the runner pid, plus its start time in a sibling file so a recycled pid is not
+# mistaken for the holder. Fail-fast (never the waiting flip lock). Shared by run and orca-reset.
+_orca_pid_start() { ps -o lstart= -p "$1" 2>/dev/null | tr -s ' '; }
+_orca_lock_holder() {  # dir -> prints the pid when a live process with the recorded start holds the lock
+  local od pid rec cur; od=$(_orca_dir "$1")
+  pid=$(tr -dc '0-9' < "$od/run.lock/pid" 2>/dev/null); [ -n "$pid" ] || return 1
+  kill -0 "$pid" 2>/dev/null || return 1
+  rec=$(cat "$od/run.lock.start" 2>/dev/null); cur=$(_orca_pid_start "$pid")
+  [ -z "$rec" ] || [ "$rec" = "$cur" ] || return 1
+  printf '%s' "$pid"
+}
+_orca_lock_take() {  # dir -> 0 taken, 75 held by a live runner
+  local od lockdir; od=$(_orca_dir "$1"); mkdir -p "$od"; lockdir="$od/run.lock"
+  if ! mkdir "$lockdir" 2>/dev/null; then
+    if ! _orca_lock_holder "$1" >/dev/null; then
+      # recorded holder dead or a different process; a lock with no pid yet waits for the age rule
+      if [ -s "$lockdir/pid" ] || _lock_stale "$lockdir"; then _lock_reclaim "$lockdir"; fi
+    fi
+    mkdir "$lockdir" 2>/dev/null || {
+      echo "orchestrate: another runner holds $lockdir (pid $(tr -dc '0-9' < "$lockdir/pid" 2>/dev/null)); exiting" >&2; return 75; }
+  fi
+  printf '%s\n' "$$" > "$lockdir/pid"; _orca_pid_start "$$" > "$od/run.lock.start"
+}
+_orca_lock_release() {  # dir
+  local od; od=$(_orca_dir "$1")
+  _unlock "$od/run.lock"; mv -f "$od/run.lock.start" "${TMPDIR:-/tmp}/orca-lock-start.$$" 2>/dev/null; return 0
+}
+
 # ---- run ------------------------------------------------------------------------------------
 _orca_version_ok() {  # version-text
   local v a b c ma mb mc
@@ -443,11 +493,24 @@ _orca_preflight_files() {  # dir
   return 0
 }
 
+# Numeric knobs are rejected the way WAVE_CAP is. ORCA_AGENT is claude only in the trial.
+_orca_preflight_env() {
+  local v name min
+  for v in ORCA_POLL_SECS:0 ORCA_IDLE_MIN:1 ORCA_GATE_TIMEOUT_SECS:1 ORCA_ERROR_LIMIT:1 ORCA_MAX_TICKS:0; do
+    name="${v%%:*}"; min="${v##*:}"
+    [ "$name" = ORCA_MAX_TICKS ] && [ -z "${ORCA_MAX_TICKS:-}" ] && continue
+    case "${!name}" in ''|*[!0-9]*) echo "orchestrate: $name must be a non-negative integer (got: '${!name}')" >&2; return 64 ;; esac
+    [ "${!name}" -ge "$min" ] || { echo "orchestrate: $name must be >= $min (got: '${!name}')" >&2; return 64; }
+  done
+  [ "$ORCA_AGENT" = claude ] || { echo "orchestrate: ORCA_AGENT must be claude in the trial (got: '$ORCA_AGENT')" >&2; return 64; }
+}
+
 _orca_all_checked() { [ "$(_subgoals "$1/ROADMAP.md" | awk -F'\t' '$3==0{n++} END{print n+0}')" = 0 ]; }
 
 orca_run() {  # dir dry
-  local dir="$1" dry="${2:-0}" od lockdir out ticks=0 errs=0 wait gate_since="" now row_sg row_reason row
+  local dir="$1" dry="${2:-0}" od out ticks=0 errs=0 wait gate_since="" now row_sg row_reason row
   _orca_preflight_files "$dir" || return 64
+  _orca_preflight_env || return 64
   if [ "$dry" = 1 ]; then
     _say "[plan] mega-goal: $dir (--backend orca --dry-run: no Orca call, no lock)"
     local sg policy checked line
@@ -459,28 +522,27 @@ orca_run() {  # dir dry
     done < <(_subgoals "$dir/ROADMAP.md")
     return 0
   fi
+  # Permission mode is pinned to bypass, the mode Arm A uses. `worker-start` has no permission option
+  # and Orca has no read verb for the launch mode, so the operator attests it and the run refuses
+  # without the attestation.
+  [ "${ORCA_PERMISSION_MODE:-}" = bypass ] || {
+    echo "orchestrate: --backend orca needs Orca's Claude agent launch set to bypass-permissions (the mode Arm A pins with CLAUDE_FLAGS). Orca offers no CLI option or read verb for it: set it in Orca, then export ORCA_PERMISSION_MODE=bypass." >&2
+    return 64; }
   out=$("$ORCA_CMD" --version 2>/dev/null) || { echo "orchestrate: orca-unreachable: --version exit $?" >&2; return 1; }
   _orca_version_ok "$out" || { echo "orchestrate: orca-too-old: $(printf '%s' "$out" | head -1) (need $ORCA_MIN_VERSION or later)" >&2; return 64; }
-  od=$(_orca_dir "$dir"); mkdir -p "$od"; lockdir="$od/run.lock"; _TICK_ACTED=0
-  if ! mkdir "$lockdir" 2>/dev/null; then
-    if _lock_stale "$lockdir"; then _lock_reclaim "$lockdir"; fi
-    if ! mkdir "$lockdir" 2>/dev/null; then
-      echo "orchestrate: another runner holds $lockdir (pid $(tr -dc '0-9' < "$lockdir/pid" 2>/dev/null)); exiting" >&2
-      return 75
-    fi
-  fi
-  printf '%s\n' "$$" > "$lockdir/pid"
+  od=$(_orca_dir "$dir"); _TICK_ACTED=0
+  _orca_lock_take "$dir" || return $?
   # shellcheck disable=SC2064
-  trap "_unlock '$lockdir'" EXIT
+  trap "_orca_lock_release $(printf '%q' "$dir")" EXIT
   while :; do
     if _orca_all_checked "$dir"; then
-      _unlock "$lockdir"; trap - EXIT
+      _orca_lock_release "$dir"; trap - EXIT
       if [ "${TIER4_CLOSE:-1}" = 1 ]; then _tier4_close "$dir" "$dir/ROADMAP.md"; return $?; fi
       _say "[orchestrate] all sub-goals checked; done."; return 0
     fi
     if [ -n "${ORCA_MAX_TICKS:-}" ] && [ "$ticks" -ge "$ORCA_MAX_TICKS" ]; then
       [ "$ticks" -gt 0 ] || { orca_plan "$dir" || true; }
-      _unlock "$lockdir"; trap - EXIT; _say "[orchestrate] tick bound reached ($ticks)."; return 0
+      _orca_lock_release "$dir"; trap - EXIT; _say "[orchestrate] tick bound reached ($ticks)."; return 0
     fi
     ticks=$((ticks + 1))
     if orca_tick "$dir"; then
@@ -489,7 +551,7 @@ orca_run() {  # dir dry
       errs=$((errs + 1))
       echo "[orchestrate] [orca] tick read failed ($errs/$ORCA_ERROR_LIMIT): $_ORCA_FAIL" >&2
       if [ "$errs" -ge "$ORCA_ERROR_LIMIT" ]; then
-        _unlock "$lockdir"; trap - EXIT
+        _orca_lock_release "$dir"; trap - EXIT
         echo "[orchestrate] halted: orca-unreachable: $_ORCA_FAIL" >&2; return 1
       fi
       wait=$((ORCA_POLL_SECS * (1 << errs))); [ "$wait" -le 300 ] || wait=300
@@ -501,17 +563,23 @@ orca_run() {  # dir dry
       now=$(date +%s); [ -n "$gate_since" ] || gate_since=$now
       if [ $((now - gate_since)) -ge "$ORCA_GATE_TIMEOUT_SECS" ]; then
         row_reason=$(printf '%s\n' "$_TICK_ROWS" | awk -F'\t' '$2=="HELD"{sub(/^gate /,"",$3); print $3; exit}')
-        _unlock "$lockdir"; trap - EXIT
+        _orca_lock_release "$dir"; trap - EXIT
         _say "held: $row_sg awaiting gate $row_reason"; return 0
       fi
     else
       gate_since=""
     fi
+    # A state Orca cannot resolve and the runner must not guess at: halt with the named reason.
+    row=$(printf '%s\n' "$_TICK_ROWS" | awk -F'\t' '$2=="INDETERMINATE" && ($3=="start-outcome-unknown" || $3=="no-map-row" || $3=="completed-and-consumed-but-box-open"){print $1" "$2" "$3; exit}')
+    if [ -n "$row" ]; then
+      _orca_lock_release "$dir"; trap - EXIT
+      echo "[orchestrate] halted: $row" >&2; return 1
+    fi
     # Nothing runnable, running or held, and this tick changed nothing: halt with the first reason.
     if [ "$_TICK_ACTED" = 0 ] && ! printf '%s\n' "$_TICK_ROWS" | awk -F'\t' '$2 ~ /^(READY|RUNNING|PARKED|HELD|DONE-UNSEEN|INDETERMINATE)$/{f=1} END{exit !f}' \
        && ! _orca_all_checked "$dir"; then
       row=$(printf '%s\n' "$_TICK_ROWS" | awk -F'\t' '$2!="DONE"{print $1" "$2" "$3; exit}')
-      _unlock "$lockdir"; trap - EXIT
+      _orca_lock_release "$dir"; trap - EXIT
       echo "[orchestrate] halted: nothing runnable, running or held ($row)" >&2; return 1
     fi
     sleep "$ORCA_POLL_SECS"
@@ -529,7 +597,7 @@ cmd_status() {  # dir
   printf 'sg\tstate\treason\ttask\tdispatch\trung\n'
   orca_derive "$dir"
   pid=$(tr -dc '0-9' < "$od/run.lock/pid" 2>/dev/null || true)
-  if [ -z "$pid" ]; then alive="no runner"; elif kill -0 "$pid" 2>/dev/null; then alive="runner pid $pid alive"; else alive="runner pid $pid dead"; fi
+  if [ -z "$pid" ]; then alive="no runner"; elif _orca_lock_holder "$dir" >/dev/null; then alive="runner pid $pid alive"; else alive="runner pid $pid dead"; fi
   ck=$(cat "$od/last-tick" 2>/dev/null || true)
   if [ -n "$ck" ]; then age="$(( $(date +%s) - ck ))s ago"; else age="never"; fi
   oldest="?"
@@ -537,7 +605,7 @@ cmd_status() {  # dir
     out=$(_orca check --run "$(_orca_run_id "$dir")" --peek --json 2>/dev/null) || out=""
     if [ -n "$out" ]; then
       oldest=$(printf '%s' "$out" | jq -r 'def secs: if type=="number" then (if .>1e12 then ./1000 else . end) else (sub("\\.[0-9]+";"")|fromdateiso8601) end;
-        [.messages[]?.createdAt] | if length==0 then "none" else ((now - (map(secs)|min))|floor|tostring) + "s" end' 2>/dev/null || echo '?')
+        [.messages[]?] | if length==0 then "none" else (min_by(.createdAt|secs)) as $m | ((now - ($m.createdAt|secs))|floor|tostring) + "s (" + ($m.type // "unknown") + ")" end' 2>/dev/null || echo '?')
     fi
   fi
   printf '# %s; last tick %s; oldest unacked delivery: %s\n' "$alive" "$age" "$oldest"
@@ -547,20 +615,26 @@ cmd_status() {  # dir
 # Rollback for ONE run: stop and release this Run's own Dispatches, block its unfinished Tasks, move
 # the map aside. Never `orchestration reset` (global). Worktrees and branches stay.
 orca_reset() {  # dir
-  local dir="$1" od run wl tl d live dstat tid sg kind bad="" pid ts
+  local rc
+  [ -n "$(_orca_run_id "$1")" ] || { echo "orca-reset: no Orca run for '$1'" >&2; return 1; }
+  _orca_lock_take "$1" || return $?     # held for the whole reset, so no runner re-plans into the moved map
+  _orca_reset_body "$1"; rc=$?
+  _orca_lock_release "$1"; return "$rc"
+}
+_orca_reset_body() {  # dir
+  local dir="$1" od run wl tl d live dstat tid sg kind bad="" ts ids
   od=$(_orca_dir "$dir"); run=$(_orca_run_id "$dir")
-  [ -n "$run" ] || { echo "orca-reset: no Orca run for '$dir'" >&2; return 1; }
-  pid=$(tr -dc '0-9' < "$od/run.lock/pid" 2>/dev/null || true)
-  if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then echo "orca-reset: runner pid $pid is alive; stop it first" >&2; return 75; fi
   _orca_get wl worker-list --run "$run" --json || { echo "orca-reset: $_ORCA_FAIL" >&2; return 1; }
   _orca_get tl task-list --run "$run" --json || { echo "orca-reset: $_ORCA_FAIL" >&2; return 1; }
+  # Only rows whose Task is in this run's map: never trust the server to filter by --run.
+  ids=$(cut -f1 "$od/map.tsv" | jq -R . | jq -sc .)
   while IFS='|' read -r d live dstat; do
     [ -n "$d" ] || continue
     if [ "$live" != exited ] && [ "$dstat" != stopped ]; then
-      _orca worker-stop --dispatch "$d" --json >/dev/null 2>&1 || bad="$bad $d"
+      _orca worker-stop --dispatch "$d" --json >/dev/null 2>&1 || { bad="$bad $d"; continue; }
     fi
     _orca worker-release --dispatch "$d" --json >/dev/null 2>&1 || bad="$bad $d"
-  done < <(printf '%s' "$wl" | jq -r '.workers[] | [.dispatchId, (.projection.liveness // ""), (.dispatchStatus // "")] | join("|")')
+  done < <(printf '%s' "$wl" | jq -r --argjson ids "$ids" '.workers[] | select(.taskId as $t | any($ids[]; . == $t)) | [.dispatchId, (.projection.liveness // ""), (.dispatchStatus // "")] | join("|")')
   while IFS=$'\t' read -r tid sg kind; do
     [ -n "$tid" ] || continue
     ts=$(printf '%s' "$tl" | jq -r --arg t "$tid" '[.tasks[]|select(.id==$t)][0].status // empty')
