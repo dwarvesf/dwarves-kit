@@ -78,7 +78,7 @@ registry, harvest files, or scattered-id lint subjects:
   config files directly (also red in `bin/test-affected` at baseline).
 - `test-kit-contract` -- `tests/test-harvest-sweep.sh` invokes `sd` (non-CI tool).
 - `test-kit-foldin-hooks` -- 12 harvest fold-in hook rows (async/sync seams).
-- `test-no-personal-paths` -- `/Users/tieubao/...` strings in SPEC-333 docs and
+- `test-no-personal-paths` -- `/Users/<name>/...` strings in SPEC-333 docs and
   `docs/verification/land-adds-ci-label.md`.
 - `test-no-scattered-ids` -- pre-existing hits in `hooks/harvest.sh`,
   `commands/{execute,spec}.md`, `lib/gate/proof-ledger.sh`,
@@ -134,3 +134,41 @@ is a fixture invariant, not a drift check.
   2; this proof covers the verb + ledger behavior only.
 - Concurrent-open races across two simultaneous leads; the state machine refuses a
   second open, but no two-writer concurrency test exists.
+
+## Real primary flow (lead, isolated ledger)
+
+The verb run against this worktree and its real spec, with `DWARVES_KIT_LOG_DIR` pointed at a temp dir so the branch's own gate records stay untouched.
+
+```
+$ validate-round open validate-round-verb docs/specs/SPEC-363-validate-round-verb.md
+rc=0 token=144d6f8646e517015de15007910fd069b3ee05ac.1790750897.1
+$ validate-round close validate-round-verb <token> verdict=APPROVED critical=0 warnings=2 agents=7 r6='design-bearing=yes pass'
+blob=144d6f8646e517015de15007910fd069b3ee05ac
+rc=0
+$ validate-round close validate-round-verb <same token> (replay)
+validate-round: last ROUND for 'validate-round-verb' is not an open carrying this token
+rc=1
+$ show validate-round-verb
+2026-09-30T06:48:17Z | OUTCOME | validate | start | at=1790750897
+2026-09-30T06:48:17Z | OUTCOME | design-record | start | at=1790750897
+2026-09-30T06:48:17Z | ROUND | open | token=144d6f8646e517015de15007910fd069b3ee05ac.1790750897.1 top=<kit>/.claude/worktrees/validate-round-verb spec=<kit>/.claude/worktrees/validate-round-verb/docs/
+2026-09-30T06:48:17Z | ROUND | closing | token=144d6f8646e517015de15007910fd069b3ee05ac.1790750897.1 kind=close verdict=APPROVED critical=0 warnings=2 agents=7 | design-bearing=yes pass | 0 critical
+2026-09-30T06:48:17Z | GATE | validate | ran | APPROVED critical=0 warnings=2 fresh agents=7 parallel
+2026-09-30T06:48:18Z | OUTCOME | validate | end | at=1790750897 caught=false dur_s=0
+2026-09-30T06:48:18Z | GATE | design-record | ran | design-bearing=yes pass
+2026-09-30T06:48:18Z | OUTCOME | design-record | end | at=1790750898 caught=false dur_s=1
+2026-09-30T06:48:18Z | ROUND | close | token=144d6f8646e517015de15007910fd069b3ee05ac.1790750897.1 verdict=APPROVED
+```
+
+Negative control on the real flow: a spec edit between `open` and `close` voids the round, writes no GATE line, and the committed spec is restored.
+
+```
+open rc=0
+$ printf '
+' >> docs/specs/SPEC-363-validate-round-verb.md   # a spec edit mid-round
+close rc=2
+restored: porcelain=0
+GATE validate lines: 0
+2026-09-30T06:48:30Z | ROUND | open | token=144d6f8646e517015de15007910fd069b3ee05ac.1790750909.1 top=<kit>/...
+2026-09-30T06:48:30Z | ROUND | void | token=144d6f8646e517015de15007910fd069b3ee05ac.1790750909.1 why=blob,porcelain
+```
