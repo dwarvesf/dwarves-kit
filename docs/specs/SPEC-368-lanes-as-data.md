@@ -1,6 +1,6 @@
 # Spec: lanes as data and a light default lane
 Generated: 2026-09-29
-Status: VALIDATED
+Status: SHIPPED (#840)
 Lane: full
 References: `lib/gate/gate-policy.sh:40-52` (imitate its committed-and-clean rule for a project file that weakens a gate); `lib/classify/lane-classify.sh:86-102` (imitate its file-fact check for the new hard-path floor); `docs/research/2026-09-29-openrig-absorption.md:99-105,206-213` (designs D1 and D8 step one). The depth line (D2) moved to SPEC-372.
 

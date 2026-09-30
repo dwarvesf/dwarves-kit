@@ -1,7 +1,7 @@
 # Spec: an opt-in Orca backend for the mega runner (trial)
 
 Generated: 2026-09-29
-Status: VALIDATED (fresh-context validator, two rounds; round 1 NEEDS REVISION folded, round 2 items folded and lead-checked; Reviewer 6 design-bearing=yes pass)
+Status: SHIPPED (#841). Validation: fresh-context validator, two rounds; round 1 NEEDS REVISION folded, round 2 items folded and lead-checked; Reviewer 6 design-bearing=yes pass
 Lane: full
 Type: spec-feature
 File: `docs/specs/SPEC-370-orca-mega-backend.md`
