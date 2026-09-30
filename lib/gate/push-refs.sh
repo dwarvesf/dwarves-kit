@@ -9,10 +9,12 @@
 # as BLOCK, never guessed at.
 #
 # Output, one line per fact (the exit code is always 0):
-#   REF <commit-sha> <branch-name>   one resolved ref the command would push
-#   DEFAULT                          a refspec targets the default branch (safety-gate's business)
-#   FORCE                            a force push (safety-gate's business)
-#   BLOCK <reason>                   the command cannot be accounted for
+#   @@REF <commit-sha> <branch-name>   one resolved ref the command would push
+#   @@DEFAULT                          a refspec targets the default branch (safety-gate's business)
+#   @@FORCE                            a force push (safety-gate's business)
+#   @@BLOCK <reason>                   the command cannot be accounted for
+# Every line starts with @@ and a ref name appears only inside a REF or BLOCK line, so a branch
+# called DEFAULT or FORCE cannot be mistaken for a marker when the caller matches whole lines.
 #
 # Accounted for: `git [-C dir] [-c k=v] [--git-dir=x ...] push [options] [remote [refspec...]]`
 # and `gh pr create [--head branch]`, each in any number of `;` `&&` `||` `|` segments.
@@ -22,7 +24,7 @@
 set -uo pipefail
 root="${1:-}"; cmd="${2:-}"; cur="${3:-HEAD}"; defname="${4:-}"
 
-block() { printf 'BLOCK %s\n' "$*"; exit 0; }
+block() { printf '@@BLOCK %s\n' "$*"; exit 0; }
 
 # Strip one layer of matching quotes from a token.
 unq() { local t="$1"; t="${t#[\"\']}"; t="${t%[\"\']}"; printf '%s' "$t"; }
@@ -110,7 +112,7 @@ done <<< "$(printf '%s\n' "$cmd" | tr ';&|' '\n\n\n')"
 [ "$sawship" = 1 ] || exit 0
 distinct_c="$(printf '%s' "$cdirs" | sed '/^$/d' | sort -u | wc -l | tr -d ' ')"
 [ "$distinct_c" -le 1 ] || block "the command pushes from more than one directory"
-if [ "$force" = 1 ]; then printf 'FORCE\n'; exit 0; fi
+if [ "$force" = 1 ]; then printf '@@FORCE\n'; exit 0; fi
 
 resolve() {   # resolve <src> <dst>: print REF, or block
   local src="$1" dst="$2" sha br
@@ -118,13 +120,13 @@ resolve() {   # resolve <src> <dst>: print REF, or block
   case "$src$dst" in *'*'*|*'?'*|*'['*) block "refspec '$src:$dst' is a pattern" ;; esac
   src="${src#refs/heads/}"; dst="${dst#refs/heads/}"
   [ "$dst" = HEAD ] && dst="$cur"
-  case "$dst" in main|master) printf 'DEFAULT\n'; exit 0 ;; esac
-  if [ -n "$defname" ] && [ "$dst" = "$defname" ]; then printf 'DEFAULT\n'; exit 0; fi
+  case "$dst" in main|master) printf '@@DEFAULT\n'; exit 0 ;; esac
+  if [ -n "$defname" ] && [ "$dst" = "$defname" ]; then printf '@@DEFAULT\n'; exit 0; fi
   sha="$(git -C "$root" rev-parse --verify -q "${src}^{commit}" 2>/dev/null)" || block "'$src' does not resolve to a commit"
   br="$dst"
   if [ "$src" = HEAD ]; then [ "$cur" = HEAD ] || br="$cur"
   elif git -C "$root" show-ref --verify -q "refs/heads/$src" 2>/dev/null; then br="$src"; fi
-  printf 'REF %s %s\n' "$sha" "$br"
+  printf '@@REF %s %s\n' "$sha" "$br"
 }
 
 while IFS= read -r r; do

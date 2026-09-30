@@ -839,6 +839,91 @@ default = "tiny"'
   else fail default-rejects-tiny "classify => '$got' err='$err'"; fi
 }
 
+# ---- safety-gate: force-push and default-branch pushes in every spelling ----
+SAFETY="$KIT_DIR/hooks/safety-gate.sh"
+run_safety() {   # run_safety <command> -> sets SAFE_RC
+  SAFE_RC=0
+  jq -cn --arg c "$1" '{tool_input:{command:$c}}' | env DWARVES_KIT_LOG_DIR="$(_mk)" bash "$SAFETY" >/dev/null 2>&1 || SAFE_RC=$?
+}
+case_safety_push_forms() {
+  local bad="" want c
+  while IFS='|' read -r want c; do
+    [ -n "$c" ] || continue
+    run_safety "$c"; [ "$SAFE_RC" = "$want" ] || bad="$bad [want $want got $SAFE_RC: $c]"
+  done <<'CASES'
+0|git push -u origin feat/x
+0|git push --force-with-lease origin feat/x
+0|git push origin feat/x:refs/heads/feat/y
+2|git push --force origin feat/x
+2|git push -f origin feat/x
+2|git push -fu origin feat/x
+2|git push -uf origin feat/x
+2|git push origin +feat/x
+2|git push origin main
+2|git push origin feat/x:main
+2|git push origin feat/x:refs/heads/main
+2|git push origin HEAD:refs/heads/master
+2|git push origin :refs/heads/main
+2|git push origin refs/heads/master
+CASES
+  run_safety "$(printf 'git push \\\n  -f origin feat/x')"
+  [ "$SAFE_RC" = 2 ] || bad="$bad [line continuation before -f: rc=$SAFE_RC]"
+  [ -z "$bad" ] && pass safety-push-forms || fail safety-push-forms "$bad"
+}
+
+# ---- ship-gate: marker collisions, continuations, shell heredocs, the adoption marker ----
+# fc_fixture: remote repo (default main) with feat/clean (clean, spec, gates), feat/evil (auth file),
+# and branches named after the parser's old markers. Leaves HEAD on feat/clean.
+fc_fixture() {
+  mkrepo_remote main; new_log
+  _git checkout -q -B feat/evil main >/dev/null 2>&1
+  mkdir -p "$ROOT/auth"; echo x > "$ROOT/auth/a.ts"; _commit "chore: evil"
+  _git branch -q DEFAULT >/dev/null 2>&1; _git branch -q FORCE >/dev/null 2>&1; _git branch -q feat/DEFAULT-x >/dev/null 2>&1
+  _git checkout -q -B feat/x main >/dev/null 2>&1
+  printf 'Lane: normal\n' > "$ROOT/docs/specs/SPEC-001-x.md"; _commit "chore: spec"
+  record_gates $NORMAL_GATES
+}
+case_ship_marker_collisions() {
+  fc_fixture
+  local bad="" want c
+  while IFS='|' read -r want c; do
+    [ -n "$c" ] || continue
+    HOOK_CMD="$c" run_hook; [ "$HOOK_RC" = "$want" ] || bad="$bad [want $want got $HOOK_RC: $c]"
+  done <<'CASES'
+2|git push origin feat/DEFAULT-x
+2|git push origin feat/evil DEFAULT
+2|git push origin feat/evil:feat/y HEAD:DEFAULT
+2|git push origin FORCE
+CASES
+  # the evil commit, pushed under a branch whose NAME holds a marker word
+  _git checkout -q feat/DEFAULT-x >/dev/null 2>&1
+  git -C "$ROOT" reset -q --hard feat/evil >/dev/null 2>&1
+  HOOK_CMD="git push -u origin feat/DEFAULT-x" run_hook
+  [ "$HOOK_RC" = 2 ] || bad="$bad [feat/DEFAULT-x carrying an auth commit: rc=$HOOK_RC]"
+  [ -z "$bad" ] && pass ship-marker-collisions || fail ship-marker-collisions "$bad"
+}
+case_ship_continuation_and_heredoc() {
+  fc_fixture
+  local bad="" out
+  HOOK_CMD="$(printf 'git push \\\n  origin feat/evil')" run_hook
+  [ "$HOOK_RC" = 2 ] || bad="$bad [line continuation: rc=$HOOK_RC]"
+  HOOK_CMD="$(printf "bash -s <<'X'\ngit push origin feat/evil\nX")" run_hook
+  { [ "$HOOK_RC" = 2 ] && printf '%s' "$HOOK_ERR" | grep -q 'heredoc or here-string'; } || bad="$bad [bash -s heredoc: rc=$HOOK_RC]"
+  HOOK_CMD="sh <<< 'git push origin feat/evil'" run_hook
+  [ "$HOOK_RC" = 2 ] || bad="$bad [sh here-string: rc=$HOOK_RC]"
+  HOOK_CMD="$(printf "cat <<'X'\ngit push origin feat/evil\nX")" run_hook
+  [ "$HOOK_RC" = 0 ] || bad="$bad [cat heredoc is data, not a push: rc=$HOOK_RC]"
+  HOOK_CMD="$(printf "bash ./deploy.sh <<'X'\nsome input\nX")" run_hook
+  [ "$HOOK_RC" = 0 ] || bad="$bad [bash heredoc with no push in it: rc=$HOOK_RC]"
+  [ -z "$bad" ] && pass ship-continuation-and-heredoc || fail ship-continuation-and-heredoc "$bad"
+}
+case_ship_marker_at_base() {
+  fc_fixture
+  rm -f "$ROOT/docs/verification/README.md"   # gone from the tree, still committed on the default branch
+  HOOK_CMD="git push --all origin" run_hook
+  [ "$HOOK_RC" = 2 ] && pass ship-marker-at-base || fail ship-marker-at-base "marker removed from the tree switched the rule off: rc=$HOOK_RC"
+}
+
 # ---------------------------------------------------------------------------
 run_case() {
   local fn="case_${1//-/_}"
@@ -846,7 +931,7 @@ run_case() {
 }
 # `parity` (byte-identical against the baseline) holds only at the refactor commit; after the
 # flip the standing check is parity-after-flip.
-ALL="parity-after-flip plan-flip four-false-hits webhook-signature-suggests suggest-records explain-suggest-line classify-files-full escalate-suggest floor-paths floor-rename-counts-both-sides floor-data-loss floor-extra-paths-union floor-invalid-extra-ere override-drop-review override-uncommitted override-typo override-no-light pinned-root malformed-array-fails-closed policy-at-base ship-migration-blocks ship-migration-absent-quiet ship-switch-off-on-base ship-flip-gate-in-pr ship-hollow-full-override ship-data-loss ship-no-spec-blocks ship-suggest-advisory workflow-view floor-timing floor-non-ascii hook-timeout floor-submodule override-empty-phases ship-operator-hollow-full ship-push-forms ship-base-is-origin-head ship-checks-pushed-ref ship-slug-quoted risk-verb significance-uses-risk floor-no-leaks override-unknown-lane-name toml-valid ship-merge-base-once override-operator-precedence default-lane-layers start-no-duplicate-skips ship-fail-closed-refs floor-diff-hardening floor-plus-line floor-where-boundary floor-timing-30k default-rejects-tiny"
+ALL="parity-after-flip plan-flip four-false-hits webhook-signature-suggests suggest-records explain-suggest-line classify-files-full escalate-suggest floor-paths floor-rename-counts-both-sides floor-data-loss floor-extra-paths-union floor-invalid-extra-ere override-drop-review override-uncommitted override-typo override-no-light pinned-root malformed-array-fails-closed policy-at-base ship-migration-blocks ship-migration-absent-quiet ship-switch-off-on-base ship-flip-gate-in-pr ship-hollow-full-override ship-data-loss ship-no-spec-blocks ship-suggest-advisory workflow-view floor-timing floor-non-ascii hook-timeout floor-submodule override-empty-phases ship-operator-hollow-full ship-push-forms ship-base-is-origin-head ship-checks-pushed-ref ship-slug-quoted risk-verb significance-uses-risk floor-no-leaks override-unknown-lane-name toml-valid ship-merge-base-once override-operator-precedence default-lane-layers start-no-duplicate-skips ship-fail-closed-refs floor-diff-hardening floor-plus-line floor-where-boundary floor-timing-30k default-rejects-tiny safety-push-forms ship-marker-collisions ship-continuation-and-heredoc ship-marker-at-base"
 if [ "$#" -eq 0 ]; then set -- $ALL; fi
 for c in "$@"; do run_case "$c"; done
 [ "$FAILS" -eq 0 ]

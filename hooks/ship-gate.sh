@@ -19,6 +19,8 @@ REAL_CWD=$(printf '%s' "$INPUT" | jq -r '.cwd // empty' 2>/dev/null)
 [ -n "$REAL_CWD" ] || REAL_CWD="$PWD"
 CMD=$(printf '%s' "$INPUT" | jq -r '.tool_input.command // empty' 2>/dev/null || true)
 [ -z "$CMD" ] && exit 0
+# Join backslash-newline continuations: the shell reads them as one command line.
+CMD=$(printf '%s\n' "$CMD" | awk '{ while ($0 ~ /\\$/) { sub(/\\$/, ""); if ((getline nxt) > 0) $0 = $0 nxt; else break } print }')
 
 # Strip heredoc bodies BEFORE the engage check, so "git push" appearing in
 # generated prose (PR bodies, test fixtures) never engages the gate. Same normalizer
@@ -40,7 +42,13 @@ CMD_CODE=$(printf '%s\n' "$CMD" | awk '
 # Engage on anything that looks like a ship action: `git ... push` (with any options between) or
 # `gh pr create`, in CODE not prose. What the command actually pushes is decided by
 # lib/gate/push-refs.sh below, which fails closed on anything it cannot account for.
-echo "$CMD_CODE" | grep -qE '(^|[^[:alnum:]_-])git[[:space:]]([^;&|]*[[:space:]])?push([[:space:]]|$)|gh[[:space:]]+pr[[:space:]]+create' || exit 0
+ENGAGE_RE='(^|[^[:alnum:]_-])git[[:space:]]([^;&|]*[[:space:]])?push([[:space:]]|$)|gh[[:space:]]+pr[[:space:]]+create'
+# A heredoc or here-string fed to a shell hides its body from CMD_CODE. If that body pushes, the
+# gate cannot see what is pushed: it is refused below (once the repo is known).
+SHELL_HD=0
+if printf '%s\n' "$CMD" | grep -qE '(^|[^[:alnum:]_.-])(bash|sh|zsh)([[:space:]][^<|;&]*)?<<' \
+   && printf '%s' "$CMD" | grep -qE "$ENGAGE_RE"; then SHELL_HD=1; fi
+[ "$SHELL_HD" = 1 ] || echo "$CMD_CODE" | grep -qE "$ENGAGE_RE" || exit 0
 
 # A command that cd's elsewhere ships THAT repo, not the session cwd (the
 # cross-repo misfire: a `cd other-repo && git push` was gated against the SESSION
@@ -107,28 +115,35 @@ _refs_block() {   # _refs_block <reason>
 # Fail-closed applies only where the gate applies: an adopted repo (proof marker) whose default
 # branch carries [gate] lane_gates = true.
 _fc_applies() {
-  [ -f "$ROOT/docs/verification/README.md" ] || return 1
-  [ -f "$POLICY" ] || return 0
   local db rc=0; db=$(_resolve_base)
+  # The adoption marker is read at the default branch, not the working tree: a marker moved out of
+  # the tree (or a PR that deletes it) must not switch the fail-closed rule off.
+  if [ -n "$db" ]; then git -C "$ROOT" cat-file -e "$db:docs/verification/README.md" 2>/dev/null || return 1
+  else [ -f "$ROOT/docs/verification/README.md" ] || return 1; fi
+  [ -f "$POLICY" ] || return 0
   if [ -n "$db" ]; then bash "$POLICY" enabled lane_gates "$ROOT" --at "$db" || rc=$?; fi
   [ "$rc" -ne 1 ]
 }
+if [ "$SHELL_HD" = 1 ]; then
+  _fc_applies && _refs_block "a heredoc or here-string fed to a shell contains a push"
+  exit 0
+fi
 if [ -f "$PREFS" ]; then
   DEFNAME=$(git -C "$ROOT" symbolic-ref -q --short refs/remotes/origin/HEAD 2>/dev/null || true)
   PUSH_OUT=$(bash "$PREFS" "$ROOT" "$CMD_CODE" "$CURBRANCH" "${DEFNAME#origin/}" 2>/dev/null || true)
-  case "$PUSH_OUT" in
-    *FORCE*|*DEFAULT*) exit 0 ;;
-  esac
-  if printf '%s\n' "$PUSH_OUT" | grep -q '^BLOCK '; then
-    _fc_applies && _refs_block "$(printf '%s\n' "$PUSH_OUT" | grep -m1 '^BLOCK ' | sed 's/^BLOCK //')"
+  # Whole lines only: the parser's markers start with @@ and a ref name appears only inside a
+  # REF or BLOCK line, so `feat/DEFAULT-x` cannot pass for the DEFAULT marker.
+  if printf '%s\n' "$PUSH_OUT" | grep -qxE '@@FORCE|@@DEFAULT'; then exit 0; fi
+  if printf '%s\n' "$PUSH_OUT" | grep -q '^@@BLOCK '; then
+    _fc_applies && _refs_block "$(printf '%s\n' "$PUSH_OUT" | grep -m1 '^@@BLOCK ' | sed 's/^@@BLOCK //')"
   elif [ -z "$PUSH_OUT" ]; then
     _fc_applies && _refs_block "the command parser gave no answer"
   else
-    _NREF=$(printf '%s\n' "$PUSH_OUT" | grep '^REF ' | sort -u | wc -l | tr -d ' ')
+    _NREF=$(printf '%s\n' "$PUSH_OUT" | grep '^@@REF ' | sort -u | wc -l | tr -d ' ')
     if [ "${_NREF:-0}" -gt 1 ]; then
       _fc_applies && _refs_block "it pushes more than one branch"
     elif [ "${_NREF:-0}" = 1 ]; then
-      read -r _ PHEAD BRANCH <<< "$(printf '%s\n' "$PUSH_OUT" | grep -m1 '^REF ')"
+      read -r _ PHEAD BRANCH <<< "$(printf '%s\n' "$PUSH_OUT" | grep -m1 '^@@REF ')"
     fi
   fi
 fi
