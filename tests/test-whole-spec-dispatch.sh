@@ -88,15 +88,20 @@ for c in a b c d e f g h i j k l m n o p; do
 done
 assert "N=2 over 16 rids yields both sampled and skipped" "$([ -n "$SEEN_S" ] && [ -n "$SEEN_K" ] && echo 0 || echo 1)"
 assert "the decision is deterministic for one rid" "$([ "$(d rid-fixed 3)" = "$(d rid-fixed 3)" ] && [ "$(d rid-fixed 3)" = "$(d rid-fixed 3)" ] && echo 0 || echo 1)"
-SUM="$(printf '%s' rid-fixed | cksum | cut -d' ' -f1)"; WANT=skipped; [ $((SUM % 3)) -eq 0 ] && WANT=sampled
-assert "the key is cksum of the rid (printf %s, first field, modulo N)" "$([ "$(d rid-fixed 3)" = "$WANT" ] && echo 0 || echo 1)"
+KEYOK=0
+for c in a b c d e f g h i j k l m n o p; do
+  SUM="$(printf '%s' "rid-$c" | cksum | cut -d' ' -f1)"; WANT=skipped; [ $((SUM % 3)) -eq 0 ] && WANT=sampled
+  [ "$(d "rid-$c" 3)" = "$WANT" ] || KEYOK=1
+done
+assert "the key is cksum of the rid (printf %s, first field, modulo N), over 16 rids" "$KEYOK"
 bash "$RS" decide rid-ledger 0 >/dev/null 2>&1
 assert "the decision is recorded as 'recheck: skipped key=<rid>' in the ledger" "$(bash "$KIT_DIR/lib/gate/gate-ledger.sh" show rid-ledger 2>/dev/null | grep -qF 'recheck: skipped key=rid-ledger' && echo 0 || echo 1)"
 mkdir -p "$WT/root" "$WT/proj" "$WT/noop"
 printf '[execute]\nrecheck_sample = 1\n' >| "$WT/root/kit.toml"
 printf '[execute]\nrecheck_sample = 0\n' >| "$WT/proj/.kit.toml"
-assert "no N arg: the root kit.toml default is read (1 -> sampled)" "$([ "$(KIT_CONFIG_ROOT="$WT/root" KIT_CONFIG_OPERATOR="$WT/noop" d rid-a)" = sampled ] && echo 0 || echo 1)"
-assert "no N arg: a project .kit.toml recheck_sample = 0 is ignored (root-only)" "$([ "$(KIT_CONFIG_ROOT="$WT/root" KIT_CONFIG_OPERATOR="$WT/noop" KIT_PROJECT_ROOT="$WT/proj" d rid-a)" = sampled ] && echo 0 || echo 1)"
+SK=""; for c in a b c d e f g h i j k l m n o p; do [ "$(d "rid-$c" 5)" = skipped ] && { SK="rid-$c"; break; }; done
+assert "no N arg: the root kit.toml default is read (1 -> sampled a rid that N=5 would skip)" "$([ -n "$SK" ] && [ "$(KIT_CONFIG_ROOT="$WT/root" KIT_CONFIG_OPERATOR="$WT/noop" d "$SK")" = sampled ] && echo 0 || echo 1)"
+assert "no N arg: a project .kit.toml recheck_sample = 0 is ignored (root-only)" "$([ -n "$SK" ] && [ "$(KIT_CONFIG_ROOT="$WT/root" KIT_CONFIG_OPERATOR="$WT/noop" KIT_PROJECT_ROOT="$WT/proj" d "$SK")" = sampled ] && echo 0 || echo 1)"
 bash "$RS" decide >/dev/null 2>&1; assert "no rid is a usage error (exit 64)" "$([ $? -eq 64 ] && echo 0 || echo 1)"
 
 echo ""
