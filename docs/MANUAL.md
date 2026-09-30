@@ -120,7 +120,7 @@ Opt-in downstream UI-design loop (downstream-facing; the kit has no UI, so it ca
 
 ### `/kit:test-plan`
 
-Opt-in lane between `/kit:spec-validate` and `/kit:execute`. Reads the active spec's acceptance criteria and writes a `## Test plan` coverage matrix (with a `proof` column naming the command/artifact per case) into the active spec, across happy-path / boundary / failure-injection / security / regression. `/kit:execute` reads that section as its coverage target and uses each case's `proof` as the per-step verify. A coverage target, not exhaustive; not a roundtable.
+Opt-in lane between `/kit:spec-validate` and `/kit:execute`. Reads the active spec's acceptance criteria and writes a `## Test plan` coverage matrix (with a `proof` column naming the command/artifact per case) into the active spec, across happy-path / boundary / failure-injection / security / regression. `/kit:execute` reads that section as its coverage target and uses each case's `proof` as the per-step verify. A coverage target, not exhaustive; not a roundtable. Next comes `/kit:test-plan-review-team --light` (Coverage and Oracle lenses, one pass), or the full team when the spec's `Depth:` names a blind-spot.
 
 ### `/kit:test-write`
 
@@ -184,7 +184,8 @@ schedules, sequences, or merges. Source: SPEC-036; ADR-0022.
 **Reads:** `docs/briefs/DECISION-BRIEF-<slug>.md` (legacy: `docs/briefs/DECISION-BRIEF.md`) (if present), the codebase via 4 parallel research subagents (brownfield) or chat (greenfield)
 **Writes:** `docs/specs/SPEC-NNN-<slug>.md` (Status: DRAFT), `docs/research/YYYY-MM-DD-<slug>-{stack,features,architecture,pitfalls}.md`
 **When to invoke:** after `/think`, or directly if the work is well-scoped already
-**Common gotcha:** the research agents are parallel-dispatched via Task tool. If your Claude Code is older than v2.0.60, they fall back to inline research and the run is slower.
+**Depth:** step 1 writes a `Depth:` line under `Lane:` (`standard`, `research (repo|outside: ...)`, `blind-spot (failure: ...)`). Research runs only when the line asks for it, so a `standard` brownfield spec sends zero research agents; `bash lib/spec/spec-depth.sh check <spec>` validates the line.
+**Common gotcha:** the research agents (when the depth asks for them) are parallel-dispatched via Task tool. If your Claude Code is older than v2.0.60, they fall back to inline research and the run is slower.
 **Template sections:** the generated spec scaffolds Solution depth (approaches / chosen + why / extensibility, SPEC-008), plus an optional `### Interfaces (I/O contract)` under Technical Design and an optional `## Failure modes` table. Both optional sections are lane-scoped; Reviewers 2 and 5 check them when present. It also pins `## Verification` (the command(s) that prove the spec done) and `## Open questions` (the blocker landing zone a `/goal` loop appends to), so a validated spec is natively pointer-`/goal`-ready (SPEC-012 P1). An optional, on-demand `## Amendments` section (added only when a mid-flight amend happens, never an empty scaffold) records add-scope provenance during a build.
 
 ### `/kit:spec-validate`

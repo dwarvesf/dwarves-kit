@@ -18,15 +18,40 @@ Check for an existing brief, slugged file first: `docs/briefs/DECISION-BRIEF-<sl
 - What's the tech stack? (or read from CLAUDE.md / package.json / go.mod)
 - Who implements? (you, a contractor, a team)
 
-### Step 2: Research (if brownfield)
+**Depth line.** Decide how deep planning goes now, before anything is dispatched. Deeper planning is earned by a named reason, never by how important the work feels. Ask once when the level is not obvious: "Is there a fact you cannot settle from the code or one command, or a failure you expect not to see alone? If neither, depth is standard." The answer becomes one header line under `Lane:`:
+
+| Level | Header line | Turns on |
+|---|---|---|
+| standard | `Depth: standard (<why nothing deeper is needed>)` | nothing extra: zero research agents, the two-lens light test-plan review |
+| research, repo | `Depth: research (repo: <the unknown>)` | the 4 brownfield research agents (Step 2). The unknown is a fact about this codebase that reading the files or running one command cannot settle |
+| research, outside | `Depth: research (outside: <the unknown>)` | `/kit:get-api-docs` per named API plus one web research pass (Step 2). The unknown is a fact outside the repo |
+| blind-spot | `Depth: blind-spot (failure: <the failure mode>)` | the full 6-lens test-plan review team with revise rounds. The failure mode is one the author expects not to see alone |
+
+Join levels with ` + `. A reason that only says the work matters (important, critical, risky, core, complex, sensitive, big) earns nothing deeper, and `lib/spec/spec-depth.sh check` rejects it. A `standard` spec must have an empty `## Open questions`. The helper reads only the header (before the first `## `).
+
+`lib/spec/spec-depth.sh` reads a file, so write the header stub now: pick NNN as Step 3 describes, create `docs/specs/SPEC-NNN-<slug>.md` holding the title, `Generated:`, `Status: DRAFT`, `Lane:` and the `Depth:` line. Step 3 fills in the rest of the same file, using the NNN already in the stub; it does not call `spec-next.sh` again.
+
+### Step 2: Research (by depth)
 
 **Run-id tag.** Every Agent/Task dispatch this command instructs sets its `description` to include `rid=<rid>` (the rid `bash lib/gate/gate-ledger.sh rid` prints for this run), e.g. `"verify TASK-003 rid=<rid>"`, so a transcript reader can count dispatches and tokens per run from each subagent's `.meta.json`. This covers the step 5 validator dispatches too.
 
-If modifying existing code, run codebase research before generating the spec. This keeps the main session's context clean.
+Route by the header's depth, never by whether the code is brownfield. Ask the helper for each level; a spec with no `Depth:` line answers no to all three, so an older spec dispatches no research:
 
-Create `docs/research/` directory first.
+```bash
+bash lib/spec/spec-depth.sh wants <spec> research-repo      # exit 0 -> Mode A/B below
+bash lib/spec/spec-depth.sh wants <spec> research-outside   # exit 0 -> the outside pass below
+```
 
-#### Mode A: Formal agents (preferred)
+Neither: dispatch nothing and go to Step 3. Research keeps the main session's context clean, so run what the level asks for as subagents. Create `docs/research/` directory first when anything runs.
+
+Record the routing after this step, one line, with `<levels>` from `bash lib/spec/spec-depth.sh level <spec>` and `<N>` the number of research agents actually dispatched (the outside pass counts as 1; a greenfield spec with `research (repo: ...)` has nothing to research in the repo, so it is 0):
+`bash lib/gate/gate-ledger.sh action <rid> "depth=<levels> research_agents=<N>"`.
+
+#### Outside research (`wants ... research-outside` is 0)
+
+For each API or library the `outside:` reason names, run `/kit:get-api-docs`. Then dispatch one web research subagent (description carries `rid=<rid>`) that answers the named unknown and writes `docs/research/<date>-<slug>-outside.md`. When `/kit:get-api-docs` has no entry for an API, the web pass runs alone and the file says so. The brownfield agents do not run for an outside unknown: they read only this repo.
+
+#### Mode A: Formal agents (preferred; `wants ... research-repo` is 0)
 
 If the research agents are installed (check: do `.claude/agents/research-stack.md` etc. exist?), dispatch all 4 via the Task tool in parallel, each dispatch description carrying `rid=<rid>` and each prompt carrying `<date>` and `<slug>` from Step 1:
 
@@ -61,15 +86,15 @@ Find landmines in [target area]. Look for: deprecated code still referenced, TOD
 
 #### After research (both modes)
 
-Synthesize all 4 reports into `docs/briefs/CONTEXT-<slug>.md`. Read them, extract key facts, organize into the CONTEXT.md format (Stack, Conventions, Key files, External dependencies). The research files stay in `docs/research/` for reference; `CONTEXT-<slug>.md` is the distilled version that worker subagents read.
+Synthesize the reports that ran (all 4 for repo research; plus the `-outside` file when it ran) into `docs/briefs/CONTEXT-<slug>.md`. Read them, extract key facts, organize into the CONTEXT.md format (Stack, Conventions, Key files, External dependencies). The research files stay in `docs/research/` for reference; `CONTEXT-<slug>.md` is the distilled version that worker subagents read.
 
-For **greenfield** projects, skip this step entirely. There's nothing to research.
+For **greenfield** projects, skip the repo agents entirely. There's nothing to research in the repo.
 
 Source: GSD v1's 4 parallel researchers. Mode A uses formal `.claude/agents/` files for reusability and tuning. Mode B embeds the same prompts inline for zero-install usage.
 
 ### Step 3: Generate the spec
 
-Create `docs/specs/` directory if it doesn't exist. Generate these files:
+Create `docs/specs/` directory if it doesn't exist. The Step 1 stub already holds the NNN: use it and do not call `spec-next.sh` again (the paragraph below is how Step 1 picked it). Generate these files (the main spec already exists as the Step 1 header stub; fill it in and keep its `Lane:` and `Depth:` lines):
 
 **`docs/specs/SPEC-NNN-<slug>.md`** (main spec). Pick NNN with
 `bash lib/spec/spec-next.sh next`, never by eyeballing the specs dir: it also scans branch
@@ -86,6 +111,7 @@ Status: DRAFT | APPROVED
 Lane: [tiny | normal | full | bug | backfill , from lib/classify/lane-classify.sh. Write the
 plain `Lane: <lane>` form on its own line; `hooks/ship-gate.sh` reads this header to pick the
 required gate set.]
+Depth: [standard (<why nothing deeper is needed>) | research (repo: <the unknown>) | research (outside: <the unknown>) | blind-spot (failure: <the failure mode>), joined with " + ". On its own line right under `Lane:`, in the header before the first `## `; see Step 1.]
 References: [optional , one or more pointers to source code or docs that already implement the
 wanted semantics, each with one line on what to imitate (the specific behavior, interface
 shape, or algorithm , not "do it like this project" in general). Source beats a from-scratch
@@ -273,14 +299,14 @@ Ask: "Approve this spec, or do you want to adjust anything?"
 
 When approved, update the Status line in SPEC.md to `APPROVED`.
 
-<!-- review-loop --> On the FULL lane, a design-time pass runs by default before
+<!-- review-loop --> When `bash lib/gate/gate-ledger.sh plan <lane>` lists `design-critique` (as `required` or `lite`), a design-time pass runs by default before
 validate, not on request: dispatch `/kit:devs-team` for design critique and the
 `kit:advisor` agent in over-suggest mode over the spec. This catches the class a code
 review cannot, a missing invariant, an unhandled failure mode, a threat surface,
 what breaks at ten times the load, while a fix is still one spec edit
 (`docs/patterns/review-fix-loop.md`, both-arms rule). It never blocks; findings
-fold into `## Edge Cases`, `## Failure modes`, and `## Review`. Normal keeps this
-opt-in; tiny skips it.
+fold into `## Edge Cases`, `## Failure modes`, and `## Review`. A lane whose plan does not list it keeps this
+opt-in.
 
 **Grounding.** Before `Spec ran` is recorded and before a `VALIDATE PENDING` stop, the writer adds a `## Grounding` section. For every external data shape the spec asserts (API or CLI output, file format), cite one read-only live sample: the command and the relevant excerpt, masked where needed. For every negative control, give a dry trace: the mutation, the fixture reads, the code path, and the named test that goes red. A claim that cannot be sampled says so. A missing or unsampled `## Grounding` is a Reviewer 4 warning, never a critical.
 
