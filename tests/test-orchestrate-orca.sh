@@ -460,8 +460,19 @@ tc_start_failure() {
   case_end
 }
 
+tc_status_and_dry_run() {
+  case_begin status-and-dry-run
+  mkcase
+  oenv bash "$ORCH" status "$MEGA" >/dev/null 2>&1; expect "$?" 3 "status with no Orca run exits 3"
+  out=$(orun --dry-run 2>&1); expect "$?" 0 "dry-run exits 0"
+  expect_match "$out" 'task SG-03:accept' "dry-run names the accept Task"
+  expect "$(ls "$STATE/calls.log" 2>/dev/null)" "" "dry-run makes no Orca call"
+  expect "$(ls "$MEGA/.orchestrate/orca/run.lock" 2>/dev/null)" "" "dry-run takes no lock"
+  case_end
+}
+
 # ONLY="AC4 AC8" runs just those cases; unset runs every case.
-CASES="stub-contract AC1 AC2 AC3 AC4 AC5 AC6 AC7 AC8 AC9 AC10 AC13 AC15 AC16 rule-order start-failure view-fallback mutation-check"
+CASES="stub-contract AC1 AC2 AC3 AC4 AC5 AC6 AC7 AC8 AC9 AC10 AC13 AC15 AC16 rule-order start-failure status-and-dry-run view-fallback mutation-check"
 for c in $CASES; do
   if [ -z "${ONLY:-}" ] || printf ' %s ' "$ONLY" | grep -q " $c "; then "tc_${c//-/_}"; fi
 done
