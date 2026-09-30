@@ -317,6 +317,8 @@ Off-ramp entries that also land in Shape: `[H] /kit:onboard` (first run, orchest
  [E] Stop ────────────> session-state-save (persist last-state.md)  [conv]
  [E] SubagentStop ────> session-state-save (same)                   [conv]
  [E] PreCompact ──────> pre-compact-backup + harvest (stage learnings) [conv]
+                        (a host with the harvest sweep active skips the hook; the sweep
+                         reads transcripts on a schedule instead)
  [E] PostToolUse * ───> output-offload (oversized output to file)   [adv]
  [E] SessionStart compact ─> post-compact-reinject (restore rules)   [conv]
  [E] SessionEnd ──────> backlog-stage (stage work-items; --surface runs intake-sweep)

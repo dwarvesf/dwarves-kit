@@ -45,6 +45,8 @@ jobs:
       # Pinned to release SHA to defend against tag-replay supply-chain attack.
       # Update via Dependabot or manually when checkout cuts a new release.
       - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11  # v4.1.1
+        with:
+          fetch-depth: 0   # the known-hash list check walks AGENTS.md history
 
       # uv, scoped to lib/stats (the kit-gates-cost test needs `uv run stats`). Pinned to
       # release SHA per the same supply-chain policy as checkout above. This does not adopt

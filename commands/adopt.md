@@ -24,7 +24,9 @@ or `--single-source` (see below).
 
 ## What adoption installs
 
-- `AGENTS.md` -- the operate-contract (read-first).
+- `AGENTS.md` -- a small pointer (about 1KB: four rules plus where the full contract lives), not a
+  copy of the 18KB contract. A repo's own `AGENTS.md` is never overwritten; an unmodified old kit
+  copy is replaced only by `--refresh --swap-agents`, and an edited file gets a drift line.
 - a `CLAUDE.md` loader pointer (Claude Code auto-loads CLAUDE.md, not AGENTS.md).
 - `WORKFLOW.md` -- a pointer to the installed kit's lane x phase matrix (not a 49KB copy).
 - `docs/verification/README.md` -- the proof marker that makes the ship-gate engage.

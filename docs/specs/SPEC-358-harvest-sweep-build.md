@@ -180,4 +180,8 @@ Round-2 warnings W3, W8, W10, W11, and W12 were folded into SPEC-357.
 
 ## Open questions
 
-(none beyond `## Open from validation round 2`)
+Beyond `## Open from validation round 2`, three items came out of the SPEC-357 rollout on the Mini:
+
+- Repo attribution: SPEC-357 files a learning under the repo of the session's working directory. Workers and leads launched from ops-toolkit therefore land in the ops-toolkit ledger even when they worked in another repo (seen in the first real run). Phase 2 builds into a home repo, so it must attribute by the worktree the session actually edited (the launch record's brief names it; tool calls show it). Decide the rule before stage 2 picks a home.
+- `wrap.distill = "harvest"` stays off on the Mini until this phase ships. Phase 1 builds nothing, so switching earlier would stop wrap's inline builds with no replacement.
+- Cost: one real extractor call measured about 10k input tokens (about 6k is Claude Code's default system prompt), about 24M input and 5M output tokens a month at SPEC-357's caps. A stage-2 Sonnet session adds to that; size its caps against the measured figure, not DEC-68's estimate.

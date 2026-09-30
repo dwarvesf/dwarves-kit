@@ -13,7 +13,7 @@ import re
 
 import duckdb
 
-from . import adapters, config, schemas
+from . import adapters, ceremony, config, schemas
 
 # Python-sourced tables: typed DDL columns, derived from the same `schemas.py`
 # `(name, type)` spec that `adapters.py`'s column-name lists derive from. This
@@ -29,6 +29,24 @@ _SESSIONS_DDL = schemas.ddl(schemas.SESSIONS_SCHEMA)
 _SAFETY_DDL = schemas.ddl(schemas.SAFETY_SCHEMA)
 _MEMORY_DDL = schemas.ddl(schemas.MEMORY_SCHEMA)
 _REJECTED_FINDINGS_DDL = schemas.ddl(schemas.REJECTED_FINDINGS_SCHEMA)
+_GIT_LINES_DDL = schemas.ddl(schemas.GIT_LINES_SCHEMA)
+_SUBAGENT_RUNS_DDL = schemas.ddl(schemas.SUBAGENT_RUNS_SCHEMA)
+_SUBAGENT_SCAN_DDL = schemas.ddl(schemas.SUBAGENT_SCAN_SCHEMA)
+_LEDGER_LINES_DDL = schemas.ddl(schemas.LEDGER_LINES_SCHEMA)
+
+# The transcript tables read about 2 GB of jsonl for a 14-day window on a busy host, so they
+# fill only when a caller asks (the SQL names them, or `rebuild`/`show` names them). Every
+# other query keeps its old cost; an unrequested table exists but is empty.
+_HEAVY_TABLES = ("subagent_runs", "subagent_scan")
+_HEAVY_RE = re.compile(r"\bsubagent_(runs|scan)\b", re.IGNORECASE)
+
+# The ceremony lens window, set by `ceremony.from_lens` around one query and cleared after.
+# `git_lines` and the transcript scan are bounded by its start, never full history.
+_WINDOW: dict = {"frm": None, "to": None, "days": None}
+
+
+def set_window(frm, to, days) -> None:
+    _WINDOW.update(frm=frm, to=to, days=days)
 
 # tide tables materialized (2 of the 5 documented; the rest intentionally omitted, see spec).
 _TIDE_MOVES_COLS = (
@@ -55,6 +73,9 @@ SHOW_ORDER = {
     "safety": "ts, status",
     "memories": "store, slug",
     "rejected_findings": "repo, lens",
+    "git_lines": "ts, sha",
+    "subagent_runs": "first_ts, agent_id",
+    "ledger_lines": "rid",
 }
 
 # Read-only query guard (layer 1). `pragma` is deliberately NOT allowlisted: DuckDB's
@@ -125,18 +146,49 @@ def _load_tide(con):
 _MATERIALIZED_TABLES = (
     "kit_runs", "kit_gates", "git_fixes", "impl_notes", "tide_moves",
     "tide_tier_b_calls", "tg_dialogs", "learned", "sessions", "safety",
-    "memories", "rejected_findings",
+    "memories", "rejected_findings", "git_lines", "subagent_runs", "subagent_scan",
+    "ledger_lines",
 )
 
 
-def _materialize(con) -> None:
+def _build_brackets(gate_rows, cols, exclude):
+    """`(rid, start_epoch, end_epoch)` for every `build` gate row that has an OUTCOME bracket."""
+    i = {c: n for n, c in enumerate(cols)}
+    out = []
+    for r in gate_rows:
+        if (r[i["gate"]] or "").strip().lower() != "build" or ceremony.is_excluded(r[i["rid"]], exclude):
+            continue
+        try:
+            out.append((r[i["rid"]], float(r[i["start_ts"]]), float(r[i["end_ts"]])))
+        except (TypeError, ValueError):
+            continue
+    return out
+
+
+def _materialize(con, heavy: bool = True) -> None:
     """Load every table into the given (in-memory) connection from the canonical files.
     The ONLY write is into this ephemeral catalog; no source ledger and no disk file is
     ever touched. This is the whole projection (: stats is a stateless read plane)."""
     cols, rows = adapters.read_kit()
     _load_python_table(con, "kit_runs", _KIT_DDL, cols, rows)
-    cols, rows = adapters.read_kit_gates()
-    _load_python_table(con, "kit_gates", _KIT_GATES_DDL, cols, rows)
+    gate_cols, gate_rows = adapters.read_kit_gates()
+    _load_python_table(con, "kit_gates", _KIT_GATES_DDL, gate_cols, gate_rows)
+    exclude = config.exclude_rids()
+    ts_i = gate_cols.index("ts")
+    start, _end = ceremony.resolve_window(
+        [(r[0], r[ts_i]) for r in gate_rows],
+        _WINDOW["days"] or ceremony.DEFAULT_WINDOW_DAYS, _WINDOW["frm"], _WINDOW["to"], exclude)
+    cols, rows = adapters.read_git_lines(since=start)
+    _load_python_table(con, "git_lines", _GIT_LINES_DDL, cols, rows)
+    cols, rows = adapters.read_ledger_lines()
+    _load_python_table(con, "ledger_lines", _LEDGER_LINES_DDL, cols, rows)
+    if heavy:
+        rcols, rrows, scols, srows = adapters.read_subagents(
+            since=start, brackets=_build_brackets(gate_rows, gate_cols, exclude))
+    else:
+        rcols, rrows, scols, srows = adapters.SUBAGENT_RUNS_COLUMNS, [], adapters.SUBAGENT_SCAN_COLUMNS, []
+    _load_python_table(con, "subagent_runs", _SUBAGENT_RUNS_DDL, rcols, rrows)
+    _load_python_table(con, "subagent_scan", _SUBAGENT_SCAN_DDL, scols, srows)
     cols, rows = adapters.read_git_fixes()
     _load_python_table(con, "git_fixes", _GIT_FIXES_DDL, cols, rows)
     cols, rows = adapters.read_impl_notes()
@@ -170,7 +222,7 @@ def rebuild() -> dict[str, int]:
         con.close()
 
 
-def _read_conn():
+def _read_conn(heavy: bool = True):
     """A FRESH in-memory connection with every table materialized from the log. There is
     no disk db and no cache: the projection is recomputed on every call, so deleting stats'
     output (there is none) and re-running yields the same answer from the log (the
@@ -182,7 +234,7 @@ def _read_conn():
     `query()` SQL runs, so a query can never COPY TO / read_csv / ATTACH a file. The
     statement guard (`is_read_only`) is the early, explicit refusal on top."""
     con = duckdb.connect(":memory:")
-    _materialize(con)
+    _materialize(con, heavy)
     try:
         con.execute("SET enable_external_access=false")
     except duckdb.Error:
@@ -191,7 +243,7 @@ def _read_conn():
 
 
 def table_names() -> list[str]:
-    con = _read_conn()
+    con = _read_conn(heavy=False)
     try:
         return [r[0] for r in con.execute("SHOW TABLES").fetchall()]
     finally:
@@ -202,7 +254,7 @@ def show(name: str, limit: int | None = None):
     """Return (columns, rows) for a named table, in the pinned deterministic order."""
     if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", name):
         raise ValueError(f"invalid table name: {name!r}")
-    con = _read_conn()
+    con = _read_conn(heavy=name in _HEAVY_TABLES)
     try:
         existing = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
         if name not in existing:
@@ -250,10 +302,27 @@ def query(sql: str):
             "(SELECT/WITH/FROM/DESCRIBE/SHOW/EXPLAIN/SUMMARIZE), no mutating statements, "
             "no PRAGMA, no multi-statement"
         )
-    con = _read_conn()
+    con = _read_conn(heavy=bool(_HEAVY_RE.search(sql)))
     try:
         rel = con.execute(sql)
         cols = [d[0] for d in rel.description]
         return cols, rel.fetchall()
+    finally:
+        con.close()
+
+
+def query_many(sqls: list[str]):
+    """Several read-only queries on ONE lens build (a build costs minutes on a live corpus).
+    Same guards as `query`; returns a `(cols, rows)` pair per statement, in order."""
+    for sql in sqls:
+        if not is_read_only(sql):
+            raise PermissionError("refused: read-only lens accepts only single read queries")
+    con = _read_conn(heavy=any(_HEAVY_RE.search(q) for q in sqls))
+    try:
+        out = []
+        for sql in sqls:
+            rel = con.execute(sql)
+            out.append(([d[0] for d in rel.description], rel.fetchall()))
+        return out
     finally:
         con.close()

@@ -3323,6 +3323,9 @@ assert_eq "wrap.md carries the inactive-host STATE row (knob resolves as true)" 
 RC=0; grep -qF 'sweep will also see this session' "$WRAPF" || RC=1
 assert_eq "wrap.md carries the explicit-distill override FYI" 0 $RC
 
+RC=0; for F in execute spec; do grep -qF 'include `rid=<rid>`' "$KIT_DIR/commands/$F.md" || RC=1; done
+assert_eq "execute.md and spec.md state the rid=<rid> dispatch-description convention" 0 $RC
+
 echo ""
 echo "=== Results ==="
 # ============================================================
