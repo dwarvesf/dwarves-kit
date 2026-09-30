@@ -586,7 +586,7 @@ def _detect_ceremony_share(th: dict) -> Anomaly | None:
         return None
     full = ceremony.from_lens(days, context=True)
     prog, dsp = full["progress"], full["dispatch"]
-    tokens = "?" if dsp["tokens_total"] is None else str(dsp["tokens_total"])
+    tokens = "?" if dsp["tokens_net"] is None else str(dsp["tokens_net"])
     lines = "?" if prog is None else f"{prog['lines']} prs={prog['prs']}"
     return Anomaly(
         key="ceremony_share",
@@ -602,7 +602,7 @@ def _detect_ceremony_share(th: dict) -> Anomaly | None:
         home="dwarves-kit",
         metric=(f"ceremony_records={rec['ceremony']} gate_records={rec['active']} "
                 f"share={rec['share']:.2f} known_caught={cat['known']} caught={caught_true} "
-                f"lines={lines} dispatches={dsp['count']} tokens={tokens}"),
+                f"lines={lines} dispatches={dsp['count']} tokens_net={tokens}"),
     )
 
 

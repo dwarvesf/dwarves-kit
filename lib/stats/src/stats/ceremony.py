@@ -106,8 +106,14 @@ def _sum_tokens(ds):
             "cache_creation": sum(d["cache_creation_tokens"] or 0 for d in ds)}
 
 
-def _total(tok):
-    return sum(tok.values()) if tok else None
+def _net(tok):
+    """Net tokens: input + output + cache-creation. Cache-read is reported apart because it
+    dwarfs the rest (about 93 percent in the live corpus) and misleads as a headline."""
+    return tok["input"] + tok["output"] + tok["cache_creation"] if tok else None
+
+
+def _cache_read(tok):
+    return tok["cache_read"] if tok else None
 
 
 def summarize(gates, git, dispatches, scan, ledger, start, end, *,
@@ -155,6 +161,12 @@ def summarize(gates, git, dispatches, scan, ledger, start, end, *,
             disp_no_ts += 1
         elif _in_window(t, start, end):
             disp.append(d)
+    # transcripts are pruned: a window that starts before the earliest one on disk cannot be
+    # measured, so every dispatch and token cell is unknown, never a partial count
+    earliest = parse_ts(scan[0]["earliest"]) if scan and scan[0]["earliest"] else None
+    pruned = earliest is not None and start is not None and start < earliest
+    if pruned:
+        disp, disp_no_ts = [], None
     attributed = [d for d in disp if d["rid"]]
     tokens = _sum_tokens(attributed) if attributed else None
 
@@ -186,9 +198,10 @@ def summarize(gates, git, dispatches, scan, ledger, start, end, *,
             "prs": len(mine) if mine else None,
             "dispatches": len(ds) if ds else None,
             "by_type": dict(sorted(Counter(d["agent_type"] for d in ds).items())) if ds else None,
-            "tokens": tok, "tokens_total": _total(tok), "tasks": tasks,
+            "tokens": tok, "tokens_net": _net(tok), "tokens_cache_read": _cache_read(tok),
+            "tasks": tasks,
             "dispatches_per_task": len(ds) / tasks if ds and tasks else None,
-            "tokens_per_task": _total(tok) / tasks if tok and tasks else None,
+            "tokens_per_task": _net(tok) / tasks if tok and tasks else None,
         })
 
     excluded = [{"rid": r["rid"], "starts": r["starts"], "tokens": r["tokens"]}
@@ -212,11 +225,13 @@ def summarize(gates, git, dispatches, scan, ledger, start, end, *,
                     "value": caught_true if known else None},
         "progress": progress, "weekly": weekly, "runs": runs,
         "dispatch": {
-            "count": len(disp), "no_ts": disp_no_ts,
+            "count": None if pruned else len(disp), "no_ts": disp_no_ts,
             "by_type": dict(sorted(Counter(d["agent_type"] for d in disp).items())),
-            "rid_source": {s: sum(1 for d in disp if d["rid_source"] == s)
+            "rid_source": {s: None if pruned else sum(1 for d in disp if d["rid_source"] == s)
                            for s in ("tag", "window", "ambiguous", "none")},
-            "attributed": len(attributed), "tokens": tokens, "tokens_total": _total(tokens),
+            "attributed": None if pruned else len(attributed), "pruned": pruned,
+            "tokens": tokens, "tokens_net": _net(tokens),
+            "tokens_cache_read": _cache_read(tokens),
         },
         "transcripts": ({"files_seen": sc["files_seen"], "files_read": sc["files_read"],
                          "skipped_files": sc["skipped_files"], "earliest": sc["earliest"]}
@@ -281,13 +296,15 @@ def render_text(s) -> str:
     out.append("transcripts: " + (f"earliest {_q(tr['earliest'])}, files seen={tr['files_seen']} "
                                   f"read={tr['files_read']} skipped-files={tr['skipped_files']}"
                                   if tr else "?"))
-    out.append(f"dispatches: {dsp['count']} ({_types(dsp['by_type'])}), attributed={dsp['attributed']}, "
-               f"no-ts={dsp['no_ts']}")
-    out.append("join sources: " + " ".join(f"{k}={v}" for k, v in dsp["rid_source"].items()))
+    out.append(f"dispatches: {_q(dsp['count'])} ({_types(dsp['by_type'])}), "
+               f"attributed={_q(dsp['attributed'])}, no-ts={_q(dsp['no_ts'])}"
+               + (" (window starts before the earliest transcript)" if dsp["pruned"] else ""))
+    out.append("join sources: " + " ".join(f"{k}={_q(v)}" for k, v in dsp["rid_source"].items()))
     tok = dsp["tokens"]
     out.append("tokens (attributed dispatches only): " + (
-        f"total={dsp['tokens_total']} in={tok['input']} out={tok['output']} "
-        f"cache-read={tok['cache_read']} cache-creation={tok['cache_creation']} "
+        f"net={dsp['tokens_net']} (in+out+cache-creation) cache-read={tok['cache_read']} "
+        f"(total incl. cache-read={dsp['tokens_net'] + tok['cache_read']}) "
+        f"in={tok['input']} out={tok['output']} cache-creation={tok['cache_creation']} "
         f"({dsp['attributed']} dispatches)" if tok else "?"))
     out.append("excluded rids: " + ("none" if not s["excluded"] else "; ".join(
         f"{e['rid']} (START {e['starts']}, TOKENS {e['tokens']})" for e in s["excluded"])))
@@ -299,11 +316,11 @@ def render_text(s) -> str:
     out += ["", "per run", ""]
     out += _table(
         ["rid", "ceremony", "records", "override", "skipped", "share", "catches", "lines", "prs",
-         "dispatches", "by type", "tokens", "dispatches/task", "tokens/task"],
+         "dispatches", "by type", "net tokens", "dispatches/task", "net tokens/task"],
         [[r["rid"], r["ceremony"], r["records"], r["override"], r["skipped"],
           _q(r["share"], "{:.2f}"),
           f"{r['catches']}/{r['known']}" if r["known"] else "?", _q(r["lines"]), _q(r["prs"]),
           _q(r["dispatches"]), _types(r["by_type"]),
-          _q(r["tokens_total"]), _q(r["dispatches_per_task"], "{:.1f}"),
+          _q(r["tokens_net"]), _q(r["dispatches_per_task"], "{:.1f}"),
           _q(r["tokens_per_task"], "{:.0f}")] for r in s["runs"]])
     return "\n".join(out)
