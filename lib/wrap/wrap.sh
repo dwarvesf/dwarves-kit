@@ -144,6 +144,19 @@ _default_branch() {
   return 1
 }
 
+# _reject_packed <verb> <arg> -- exit 64 (message on stderr) when a positional looks like
+# several flags packed into one word, the shape an unsplit variable (zsh `$args`) produces:
+# " --own /path". Without this the word becomes a "repo" and the --own scope is silently lost.
+# A real path with spaces still passes unless it holds whitespace followed by `--`.
+_reject_packed() {
+  local trimmed="${2#"${2%%[![:space:]]*}"}"
+  case "$trimmed" in -*) ;; *)
+    case "$2" in *[[:space:]]--*) ;; *) return 0 ;; esac ;;
+  esac
+  echo "wrap.sh $1: argument '$2' looks like flags packed into one word (an unsplit variable?); pass each flag and path as its own argument" >&2
+  return 64
+}
+
 # _gh_state -- ok | unavailable | unauthenticated. Read once per verb run.
 _gh_state() {
   command -v gh >/dev/null 2>&1 || { printf 'unavailable\n'; return 0; }
@@ -367,7 +380,8 @@ cmd_scan() {
       --under=*) nu=$(( nu + 1 )); unders[nu]="${arg#--under=}" ;;
       --under) want_under=1 ;;
       -*) echo "wrap.sh scan: unknown flag '$arg'" >&2; return 64 ;;
-      *) if [ "$want_under" = 1 ]; then nu=$(( nu + 1 )); unders[nu]="$arg"; want_under=0
+      *) _reject_packed scan "$arg" || return 64
+         if [ "$want_under" = 1 ]; then nu=$(( nu + 1 )); unders[nu]="$arg"; want_under=0
          else count=$(( count + 1 )); repos[count]="$arg"; fi ;;
     esac
   done
@@ -1732,7 +1746,8 @@ cmd_apply() {
       --tips-file=*) TIPS_OVERRIDE="${arg#--tips-file=}" ;;
       --tips-file) want_tips=1 ;;
       -*) echo "wrap.sh apply: unknown flag '$arg'" >&2; return 64 ;;
-      *) if [ "$want_own" = 1 ]; then OWN_N=$(( OWN_N + 1 )); OWN_PATHS[OWN_N]="$arg"; want_own=0
+      *) _reject_packed apply "$arg" || return 64
+         if [ "$want_own" = 1 ]; then OWN_N=$(( OWN_N + 1 )); OWN_PATHS[OWN_N]="$arg"; want_own=0
          elif [ "$want_under" = 1 ]; then nu=$(( nu + 1 )); unders[nu]="$arg"; want_under=0
          elif [ "$want_tips" = 1 ]; then TIPS_OVERRIDE="$arg"; want_tips=0
          else count=$(( count + 1 )); repos[count]="$arg"; fi ;;
@@ -2112,7 +2127,8 @@ cmd_merge() {
       --pr) pr_only="${2:-}"; shift 2 ;;
       --with-ci) KIT_WRAP_CI_ON_MERGE=1; shift ;;
       -*) echo "wrap.sh merge: unknown flag '$1'" >&2; return 64 ;;
-      *) count=$(( count + 1 )); repo="$1"; shift ;;
+      *) _reject_packed merge "$1" || return 64
+         count=$(( count + 1 )); repo="$1"; shift ;;
     esac
   done
   [ "$count" -eq 1 ] || { echo "usage: wrap.sh merge [--apply] [--pr N] [--with-ci] <repo>" >&2; return 64; }
@@ -2419,7 +2435,8 @@ cmd_land() {
       --body-file=*) body_file="${arg#--body-file=}"; flags_given=1 ;;
       --with-ci) KIT_WRAP_CI_ON_MERGE=1 ;;
       -*) echo "wrap.sh land: unknown flag '$arg'" >&2; return 64 ;;
-      *) count=$(( count + 1 )); wt="$arg" ;;
+      *) _reject_packed land "$arg" || return 64
+         count=$(( count + 1 )); wt="$arg" ;;
     esac
   done
   [ -z "$want" ] || { echo "wrap.sh land: --${want} needs a value" >&2; return 64; }
@@ -2693,10 +2710,14 @@ cmd_start() {
     case "$arg" in
       --carry)
         carry=1; shift
-        while [ $# -gt 0 ]; do ncarry=$(( ncarry + 1 )); carry_paths[ncarry]="$1"; shift; done
+        while [ $# -gt 0 ]; do
+          _reject_packed start "$1" || return 64
+          ncarry=$(( ncarry + 1 )); carry_paths[ncarry]="$1"; shift
+        done
         ;;
       -*) echo "wrap.sh start: unknown flag '${arg}'" >&2; return 64 ;;
       *)
+        _reject_packed start "$arg" || return 64
         if [ "$seen_repo" = 0 ]; then repo="$arg"; seen_repo=1
         elif [ "$seen_branch" = 0 ]; then branch="$arg"; seen_branch=1
         else echo "wrap.sh start: unexpected argument '${arg}'" >&2; return 64
@@ -3528,7 +3549,8 @@ cmd_rebase() {
   for arg in "$@"; do
     case "$arg" in
       -*) echo "wrap.sh rebase: unknown flag '$arg'" >&2; return 64 ;;
-      *) count=$(( count + 1 )); wt="$arg" ;;
+      *) _reject_packed rebase "$arg" || return 64
+         count=$(( count + 1 )); wt="$arg" ;;
     esac
   done
   [ "$count" -eq 1 ] || { echo "usage: wrap.sh rebase <worktree>" >&2; return 64; }
