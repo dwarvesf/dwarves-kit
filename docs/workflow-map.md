@@ -254,7 +254,8 @@ Advisory, never blocking. Output binds to the active spec (replace-not-stack).
   /kit:visual-team         a visual/UI design exists      ## Visual critique        verdict recorded
   /kit:ui-design           downstream UI, after /design   ## UI design              SOLID / max-2 revise
   /kit:test-plan           before /execute                ## Test plan              matrix written
-  /kit:test-plan-review-team  after /test-plan, 6 lenses  ## Test plan critique     SOLID / REVISE / RECONSIDER
+  /kit:test-plan-review-team  after /test-plan, --light   ## Test plan critique     SOLID / REVISE / RECONSIDER
+                              (6 lenses at blind-spot)
   /kit:test-write          after a SOLID test-plan critique ## test files            rows covered, tests execute
   /kit:review-team         PR-grade review, 3 lenses      ## Review                 SHIP / FIX / DO NOT
   /kit:absorb              maintainer absorption audit    docs/absorption/ report   proposal-only

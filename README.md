@@ -216,7 +216,7 @@ That is the whole loop. The spec is the unit of handoff: a contractor running `/
 
 ```
 /kit:start          Detect state, suggest next command (entry point)
-/kit:onboard        Guided first-run: install mode, adopt, module picker, five-stage tour
+/kit:onboard        Guided first-run: install mode, adopt, module picker, two-idea tour
 /kit:think          Challenge the idea (5 min)
 /kit:design         Opt-in: shape the solution with you before /spec
 /kit:spec           Generate the spec + 4 parallel researchers (15-30 min)
@@ -343,7 +343,7 @@ Which hooks BLOCK vs warn vs neither is a declared contract: `docs/architecture.
 | /kit:assign | Orchestrate | Turn a backlog item (ID-NNN) into a scoped goal draft + route it into the lane |
 | /kit:dispatch | Orchestrate | Fire N disjoint VALIDATED specs concurrently, each in its own worktree, behind a disjointness gate; lead-owned merge |
 | /kit:mega | Orchestrate | Mirrors the plan-for-mega-goal skill: decompose 3-8 dependent sub-goals, front-load every clarification once, set the per-run merge config, hand off to the bounded loop; ship-layer auto-merge rides the ship-gate via `lib/goal/mega-merge.sh`, never bypasses it |
-| /kit:spec | Spec | Generate docs/specs/SPEC-NNN-<slug>.md with 4 parallel research agents |
+| /kit:spec | Spec | Generate docs/specs/SPEC-NNN-<slug>.md; a `Depth:` line under `Lane:` decides whether research agents run (none at `standard`) |
 | /kit:spec-validate | Spec | 7 adversarial reviewers attack the spec (incl. solution-design, design record, sustainability) |
 | /kit:test-plan | Spec | Opt-in: coverage matrix from acceptance criteria into the spec's `## Test plan` section |
 | /kit:feature-map | Spec | Source-cited, agent-checkable feature inventory for ANY target project: per-module spec + a top-level checklist. Standalone (what does this codebase do) or migration source of truth (what needs porting) when a port target is named |
@@ -355,10 +355,10 @@ Which hooks BLOCK vs warn vs neither is a declared contract: `docs/architecture.
 | /kit:debug | Bug (off-cycle) | Systematic debug loop: root cause before any fix, evidence ledger, 3-fix wall |
 | /kit:review | Review | Paranoid single-pass code review |
 | /kit:review-team | Review | Parallel 3-lens review (security + architecture + test-coverage); findings confidence-gated, deduped by fingerprint, verdict-driving ones adversarially validated per finding |
-| /kit:test-plan-review-team | Verify | 5-lens adversarial critique of the spec's `## Test plan`, bounded revise loop, report-only |
+| /kit:test-plan-review-team | Verify | Adversarial critique of the spec's `## Test plan`, report-only: a two-lens `--light` pass by default, the full 6-lens team with a bounded revise loop when the spec's `Depth:` names a blind-spot |
 | /kit:test-write | Build | Turns a SOLID-verdict `## Test plan critique` into real, executing test code via test-writer, one case per matrix row |
-| /kit:onboard | Entry | Guided first-run: detect install mode (plugin/bash/both/none), offer /kit:adopt, pick modules, capture consumer knobs, disclose plugin-path gaps, five-stage tour; previews + confirms every write, decline = no-op |
-| /kit:adopt | Entry | Retrofit the operate-contract onto an existing repo (AGENTS.md, loader, proof marker, classifiers), idempotently |
+| /kit:onboard | Entry | Guided first-run: detect install mode (plugin/bash/both/none), offer /kit:adopt, pick modules, capture consumer knobs, disclose plugin-path gaps, a two-idea tour (lane, proof of done) plus a menu; previews + confirms every write, decline = no-op |
+| /kit:adopt | Entry | Retrofit the operate-contract onto an existing repo (a small AGENTS.md pointer that never overwrites a repo's own, loader, proof marker, classifiers), idempotently |
 | /kit:docs | Docs | Cross-reference diff against all doc files, fix drift |
 | /kit:explain | Understand | Literate-diff explainer (background -> intuition -> prose-ordered diff -> diagram); composes narrate-log + svg-knowledge-diagram, grounded in the diff not the agent's narrative |
 | /kit:quiz-gate | Understand | ★-tap nudge before merging a significant+worthy gate PR: 5 diff-grounded quiz questions routed through deep-understand, three logged responses (engage/defer/wave), advisory never must-pass |
