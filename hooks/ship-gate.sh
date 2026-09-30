@@ -126,6 +126,10 @@ _resolve_base() {
   git -C "$ROOT" rev-parse --verify -q main >/dev/null 2>&1 && echo main || echo master
 }
 
+# The merge base of the shipped commit and the remote default branch, computed once. Empty means
+# no base (no remote default resolved): every diff-keyed check below skips.
+MBASE=$(git -C "$ROOT" merge-base "$PHEAD" "$(_resolve_base)" 2>/dev/null || true)
+
 # --- Proof-of-done gate (diff-keyed, SPEC-INDEPENDENT). This is the bridge: it fires on
 # freeform /goal work too, because it classifies the branch DIFF instead of a spec. A
 # load-bearing (behavioral/stateful) change cannot ship without a matching proof-of-done
@@ -155,7 +159,7 @@ _gate_on() {  # $1 = [gate] key, $2 = log label
 LCLS="${CLAUDE_PLUGIN_ROOT:-$HOME/.claude/dwarves-kit}/lib/classify/lane-classify.sh"
 _floor_hit() {  # prints "full <kind>: <path>" for the first hard-path hit, else nothing
   [ -f "$LCLS" ] || return 0
-  local fb; fb=$(git -C "$ROOT" merge-base "$PHEAD" "$(_resolve_base)" 2>/dev/null || true)
+  local fb="$MBASE"
   [ -n "$fb" ] || return 0
   [ "$fb" != "$(git -C "$ROOT" rev-parse "$PHEAD" 2>/dev/null || true)" ] || return 0
   bash "$LCLS" floor "$ROOT" "$fb" "$PHEAD" 2>/dev/null || true
@@ -164,7 +168,7 @@ _floor_hit() {  # prints "full <kind>: <path>" for the first hard-path hit, else
 # switch off its own floor. Only exit 1 from the reader means off.
 _floor_on() {
   [ -f "$POLICY" ] || return 0
-  local fb rc=0; fb=$(git -C "$ROOT" merge-base "$PHEAD" "$(_resolve_base)" 2>/dev/null || true)
+  local fb="$MBASE" rc=0
   [ -n "$fb" ] || return 0
   bash "$POLICY" enabled lane_gates "$ROOT" --at "$fb" || rc=$?
   [ "$rc" -eq 1 ] || return 0
@@ -178,8 +182,8 @@ _floor_on() {
 _floor_check() {
   local FH FGAPS LEDGERF="${CLAUDE_PLUGIN_ROOT:-$HOME/.claude/dwarves-kit}/lib/gate/gate-ledger.sh"
   [ -f "$LEDGERF" ] || return 0
+  _floor_on || return 0   # the cheap switch check first; the diff scan only when it is on
   FH=$(_floor_hit); [ -n "$FH" ] || return 0
-  _floor_on || return 0
   if ! FGAPS=$(KIT_PROJECT_ROOT="$ROOT" bash "$LEDGERF" check full "$SLUG" --kit-lanes 2>&1); then
     local LOG_DIR="${DWARVES_KIT_LOG_DIR:-$HOME/.claude/dwarves-kit/logs}" FK="${FH#full }"
     mkdir -p "$LOG_DIR" 2>/dev/null || true
@@ -199,8 +203,7 @@ _floor_check() {
 # no docs/verification/README.md never gets gated (the gate is for kit-adopting repos,
 # not every repo the user touches).
 if [ -f "$PROOF" ] && [ -f "$ROOT/docs/verification/README.md" ] && _gate_on proof_of_done proof-gate; then
-  DEFAULT=$(_resolve_base)
-  BASE=$(git -C "$ROOT" merge-base "$PHEAD" "$DEFAULT" 2>/dev/null || true)
+  BASE="$MBASE"
   HEADSHA="$PHEAD"
   if [ -n "$BASE" ] && [ "$BASE" != "$HEADSHA" ]; then
     if ! PMSG=$(bash "$PROOF" check "$ROOT" "$BASE" "$SLUG" 2>&1); then
@@ -237,7 +240,7 @@ fi
 # has neither file). Escape hatch: DWARVES_KIT_SKIP_DOC_PROJECTION=1.
 if [ -f "$ROOT/lib/gate/doc-projection-check.sh" ] && [ -f "$ROOT/tests/test-meta.sh" ] \
    && [ "${DWARVES_KIT_SKIP_DOC_PROJECTION:-0}" != "1" ]; then
-  DPBASE=$(git -C "$ROOT" merge-base "$PHEAD" "$(_resolve_base)" 2>/dev/null || true)
+  DPBASE="$MBASE"
   if [ -n "$DPBASE" ] && git -C "$ROOT" diff --name-only "$DPBASE" "$PHEAD" 2>/dev/null \
        | grep -qE '^(agents/|commands/|AGENTS\.md$|docs/(MANUAL|architecture|WORKFLOW)\.md$)'; then
     if ! DPMSG=$(bash "$ROOT/lib/gate/doc-projection-check.sh" "$ROOT" 2>&1); then
@@ -267,7 +270,7 @@ fi
 # pins in CI. Escape hatch: DWARVES_KIT_SKIP_REGISTRY_FRESHNESS=1.
 if [ -f "$ROOT/lib/registry/feature-registry.sh" ] && [ -f "$ROOT/docs/FEATURES.md" ] \
    && [ "${DWARVES_KIT_SKIP_REGISTRY_FRESHNESS:-0}" != "1" ]; then
-  FRBASE=$(git -C "$ROOT" merge-base "$PHEAD" "$(_resolve_base)" 2>/dev/null || true)
+  FRBASE="$MBASE"
   FRDIFF=""
   [ -n "$FRBASE" ] && FRDIFF=$(git -C "$ROOT" diff --name-only "$FRBASE" "$PHEAD" 2>/dev/null || true)
   if [ -n "$FRDIFF" ] && ! printf '%s\n' "$FRDIFF" | grep -qx 'docs/FEATURES\.md' \
@@ -302,8 +305,7 @@ if [ -f "$LEDGER62" ]; then
   if printf '%s' "$RLED" | grep -q '| GATE | build | ran'; then
     case "$RLANE" in
       normal|full|bug)
-        DEF62=$(_resolve_base)
-        BASE62=$(git -C "$ROOT" merge-base "$PHEAD" "$DEF62" 2>/dev/null || true)
+        BASE62="$MBASE"
         if [ -n "$BASE62" ] && ! git -C "$ROOT" diff --name-only "$BASE62" "$PHEAD" 2>/dev/null \
             | grep -E '^docs/verification/.+\.md$|(^|/)proof-of-done\.md$' \
             | grep -vq '/README\.md$'; then

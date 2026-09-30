@@ -652,6 +652,29 @@ PY
 )" && pass toml-valid || fail toml-valid "$out"
 }
 
+# The hook computes the merge base once, and skips the diff scan when the floor switch is off.
+_git_shim() {   # _git_shim <dir> <log>: a git wrapper that logs merge-base and raw-diff calls
+  local real; real="$(command -v git)"
+  printf '#!/bin/bash\ncase " $* " in *" merge-base "*) echo merge-base >> "%s" ;; *" --raw "*) echo raw >> "%s" ;; esac\nexec "%s" "$@"\n' "$2" "$2" "$real" > "$1/git"
+  chmod +x "$1/git"
+}
+case_ship_merge_base_once() {
+  local shim log bad=""; shim="$(_mk)"; log="$shim/calls"; : > "$log"; _git_shim "$shim" "$log"
+  ship_fixture migration normal; record_gates $NORMAL_GATES
+  PATH="$shim:$PATH" run_hook
+  local mb raw; mb="$(grep -c merge-base "$log" || true)"; raw="$(grep -c raw "$log" || true)"
+  [ "$HOOK_RC" = 2 ] || bad="$bad [switch on: rc=$HOOK_RC]"
+  [ "$mb" = 1 ] || bad="$bad [merge-base ran $mb times, want 1]"
+  [ "$raw" -ge 1 ] || bad="$bad [switch on: no diff scan]"
+  : > "$log"
+  mkrepo false; new_log; printf 'Lane: normal\n' > "$ROOT/docs/specs/SPEC-001-x.md"; mkdir -p "$ROOT/db/migrations"; echo "select 1" > "$ROOT/db/migrations/0001_t.sql"; _commit "chore: change"
+  record_gates $NORMAL_GATES; PATH="$shim:$PATH" run_hook
+  raw="$(grep -c raw "$log" || true)"
+  [ "$HOOK_RC" = 0 ] || bad="$bad [switch off: rc=$HOOK_RC]"
+  [ "$raw" = 0 ] || bad="$bad [switch off but the diff scan ran $raw times]"
+  [ -z "$bad" ] && pass ship-merge-base-once || fail ship-merge-base-once "$bad"
+}
+
 # ---------------------------------------------------------------------------
 run_case() {
   local fn="case_${1//-/_}"
