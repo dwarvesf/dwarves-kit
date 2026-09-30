@@ -20,19 +20,34 @@ classify_is() {
   else echo -e "  ${RED}FAIL${NC} $3 -- got '$got', expected '$2'"; FAIL=$((FAIL+1)); fi
 }
 
+# Words never pick `full`: a hard-flag hit returns the default lane and an explain `suggest:` line.
+# suggest_is <desc> <expected-lane> <label>; suggest_files_is <files> <desc> <expected-lane> <label>
+suggest_is() {
+  TOTAL=$((TOTAL+1)); local got sug; got="$(bash "$LC" classify "$1" 2>/dev/null)"
+  sug="$(bash "$LC" explain "$1" 2>/dev/null | grep '^suggest: full')"
+  if [ "$got" = "$2" ] && [ -n "$sug" ]; then echo -e "  ${GREEN}PASS${NC} $3 ($2, $sug)"; PASS=$((PASS+1))
+  else echo -e "  ${RED}FAIL${NC} $3 -- got '$got' suggest='$sug', expected '$2' plus a suggestion"; FAIL=$((FAIL+1)); fi
+}
+suggest_files_is() {
+  TOTAL=$((TOTAL+1)); local got sug; got="$(bash "$LC" classify --files "$1" "$2" 2>/dev/null)"
+  sug="$(bash "$LC" explain --files "$1" "$2" 2>/dev/null | grep '^suggest: full')"
+  if [ "$got" = "$3" ] && [ -n "$sug" ]; then echo -e "  ${GREEN}PASS${NC} $4 ($3, $sug)"; PASS=$((PASS+1))
+  else echo -e "  ${RED}FAIL${NC} $4 -- got '$got' suggest='$sug', expected '$3' plus a suggestion"; FAIL=$((FAIL+1)); fi
+}
+
 echo "=== lane-classify kit-machinery coverage (SPEC-098 AC1-AC6) ==="
 
 # AC1-AC4: the four wave-touched enforcement/telemetry libs escalate to full.
-classify_is "add a render subcommand to lib/telemetry/lane-telemetry.sh" full "AC1 lane-telemetry -> full"
-classify_is "add a code-level guard to lib/goal/mega-merge.sh"      full "AC2 mega-merge -> full"
-classify_is "log overrides in lib/gate/proof-ledger.sh"            full "AC3 proof-ledger -> full"
-classify_is "durable resolver in lib/telemetry/kit-log-dir.sh"          full "AC4 kit-log-dir -> full"
+suggest_is "add a render subcommand to lib/telemetry/lane-telemetry.sh" normal "AC1 lane-telemetry -> full"
+suggest_is "add a code-level guard to lib/goal/mega-merge.sh" normal "AC2 mega-merge -> full"
+suggest_is "log overrides in lib/gate/proof-ledger.sh" normal "AC3 proof-ledger -> full"
+suggest_is "durable resolver in lib/telemetry/kit-log-dir.sh" normal "AC4 kit-log-dir -> full"
 
 # AC1b-AC4b (review completeness): the remaining machinery libs also escalate.
-classify_is "add a subcommand to lib/queue/orchestrate.sh"          full "AC1b orchestrate.sh -> full"
-classify_is "add automation to lib/goal/stack-merge.sh"            full "AC2b stack-merge -> full"
-classify_is "change lib/classify/role-classify.sh"                     full "AC3b role-classify -> full"
-classify_is "change lib/goal/goal-drafts.sh"                       full "AC4b goal-drafts -> full"
+suggest_is "add a subcommand to lib/queue/orchestrate.sh" normal "AC1b orchestrate.sh -> full"
+suggest_is "add automation to lib/goal/stack-merge.sh" normal "AC2b stack-merge -> full"
+suggest_is "change lib/classify/role-classify.sh" normal "AC3b role-classify -> full"
+suggest_is "change lib/goal/goal-drafts.sh" normal "AC4b goal-drafts -> full"
 
 # AC5 [precedence preserved, NEGATIVE CONTROL]: a cosmetic edit to one of these libs is
 # still tiny -- tiny beats the hard-gate, so the fix does not over-gate a typo.
@@ -44,9 +59,9 @@ classify_is "orchestrate the marketing launch next quarter"  normal "AC5b [NC] b
 classify_is "tweak lib/classify/route-suggest.sh output format"       normal "AC5b [NC] read-helper lib stays normal"
 
 # AC6 [no regression]: previously-covered machinery stays full; a plain feature stays normal.
-classify_is "fix the parser in lib/gate/gate-ledger.sh"           full   "AC6 gate-ledger still full"
-classify_is "add a check to lib/classify/lane-classify.sh"            full   "AC6 lane-classify still full"
-classify_is "add user authentication with jwt sessions"      full   "AC6 auth hard-gate still full"
+suggest_is "fix the parser in lib/gate/gate-ledger.sh" bug "AC6 gate-ledger still full"
+suggest_is "add a check to lib/classify/lane-classify.sh" normal "AC6 lane-classify still full"
+suggest_is "add user authentication with jwt sessions" normal "AC6 auth hard-gate still full"
 classify_is "add a date picker to the settings page"         normal "AC6 plain feature still normal"
 classify_is "fix a typo in the README"                       tiny   "AC6 plain typo still tiny"
 
@@ -56,6 +71,7 @@ classify_files_is() {
   if [ "$got" = "$3" ]; then echo -e "  ${GREEN}PASS${NC} $4 ($3)"; PASS=$((PASS+1))
   else echo -e "  ${RED}FAIL${NC} $4 -- got '$got', expected '$3'"; FAIL=$((FAIL+1)); fi
 }
+
 
 echo ""
 echo "=== lane-classify kit-machinery hook-term scoping (bare 'hook' false positive) ==="
@@ -69,13 +85,13 @@ classify_is "add a useEffect hook to the component"              normal "hook-sc
 classify_is "add a pre-commit git hook to run lint"               normal "hook-scope [NC] git hook mention stays normal"
 
 # POSITIVE: a task about the kit's OWN hook/gate machinery still escalates to full.
-classify_is "change the ship-gate PreToolUse hook"                full   "hook-scope ship-gate hook still full"
-classify_is "edit the kit's gate-ledger hook"                     full   "hook-scope kit's gate-ledger hook still full"
-classify_is "add a new hook to hooks/ that blocks force-push"     full   "hook-scope hooks/ directory mention still full"
+suggest_is "change the ship-gate PreToolUse hook" normal "hook-scope ship-gate hook still full"
+suggest_is "edit the kit's gate-ledger hook" normal "hook-scope kit's gate-ledger hook still full"
+suggest_is "add a new hook to hooks/ that blocks force-push" normal "hook-scope hooks/ directory mention still full"
 # NB: deliberately not a real hooks/*.sh basename (avoid tripping the feature-registry's
 # exact-token caller scan across tests/*.sh, SPEC-219) -- this AC is only proving the
 # "the kit ... hook" pattern matches a gate name that is not in the explicit alternation list.
-classify_is "modify the kit's own pre-flight hook to add a new check" full  "hook-scope kit's own (unlisted-gate-name) hook still full"
+suggest_is "modify the kit's own pre-flight hook to add a new check" normal "hook-scope kit's own (unlisted-gate-name) hook still full"
 
 # CI regression (PR #514 review): the first cut of the hook-term scoping was noun-only
 # (kit/machinery/gate-ledger/...) and missed the ADJECTIVE+VERB intent-to-weaken-a-guard
@@ -83,7 +99,7 @@ classify_is "modify the kit's own pre-flight hook to add a new check" full  "hoo
 # backfill + hard-gate-subject pin (tests/test-hooks.sh:1763). "safety hooks" carries no kit
 # noun, so it fell through to backfill. Pinned here too so the coupling is visible from the
 # lane suite, not only the hook suite.
-classify_is "write its AGENTS.md and disable the safety hooks"    full   "hook-scope disable-the-safety-hooks still up-lanes to full"
+suggest_is "write its AGENTS.md and disable the safety hooks" normal "hook-scope disable-the-safety-hooks still up-lanes to full"
 
 echo ""
 echo "=== lane-classify edit-vs-mention (SPEC-105 / ID-088) ==="
@@ -95,14 +111,14 @@ classify_files_is "" "explain mega-merge.sh in the architecture doc" normal "men
 classify_files_is "docs/architecture.md" "document how gate-ledger.sh works" normal "mention: editing a doc that names gate-ledger -> not full"
 # An EDIT to a machinery lib (a touched file under lib/ or hooks/) DOES escalate, even when the
 # description carries no machinery basename.
-classify_files_is "lib/goal/mega-merge.sh" "add a guard clause" full "edit: --files lib/goal/mega-merge.sh -> full"
-classify_files_is "hooks/ship-gate.sh" "tweak a message" full "edit: --files hooks/ship-gate.sh -> full"
+suggest_files_is "lib/goal/mega-merge.sh" "add a guard clause" normal "edit: --files lib/goal/mega-merge.sh -> full"
+suggest_files_is "hooks/ship-gate.sh" "tweak a message" normal "edit: --files hooks/ship-gate.sh -> full"
 # A test-only edit that MENTIONS the machinery does not escalate on the machinery gate.
 classify_files_is "tests/test-x.sh" "extend the lane-telemetry test fixtures" normal "edit a test that names lane-telemetry -> not full"
 # Semantic hard-gates (auth) are subject-risky regardless of files: still full even with a doc file.
-classify_files_is "docs/x.md" "add user authentication with jwt sessions" full "semantic auth hard-gate still full with --files"
+suggest_files_is "docs/x.md" "add user authentication with jwt sessions" normal "semantic auth hard-gate still full with --files"
 # Regression guard: with NO --files, the text-only behavior is UNCHANGED (a mention still escalates).
-classify_is "explain mega-merge.sh in the architecture doc" full "no --files: legacy text-only mention still escalates (regression guard)"
+suggest_is "explain mega-merge.sh in the architecture doc" normal "no --files: legacy text-only mention still escalates (regression guard)"
 
 echo ""
 echo "=== auth hard-gate: the bare word session is not a trigger (SPEC-296) ==="
@@ -111,9 +127,9 @@ classify_is "docs(wrap): scope the Left alone report section to the session by d
 classify_is "wrap report: Left alone lists only the session's own residue by default" normal "SPEC-296 bare 'session's' in report prose -> not full"
 classify_files_is "commands/wrap.md" "docs(wrap): scope the Left alone report section to the session by default" normal "SPEC-296 same with --files commands/wrap.md -> not full"
 # The auth meanings still escalate.
-classify_is "rotate the session token on login" full "SPEC-296 session token -> full"
-classify_is "fix session hijacking in the cookie store" full "SPEC-296 session hijacking -> full"
-classify_is "expire login sessions after an hour" full "SPEC-296 login sessions -> full"
+suggest_is "rotate the session token on login" normal "SPEC-296 session token -> full"
+suggest_is "fix session hijacking in the cookie store" normal "SPEC-296 session hijacking -> full"
+suggest_is "expire login sessions after an hour" normal "SPEC-296 login sessions -> full"
 
 echo ""
 echo "=== $PASS/$TOTAL passed, $FAIL failed ==="

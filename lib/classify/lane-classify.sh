@@ -6,30 +6,39 @@
 # dispatch path (/kit:dispatch) can auto-choose the lane instead of relying on ad-hoc
 # judgment. Pure bash + grep; no binary.
 #
+# Words never pick `full`. A hard-flag hit (or 4+ soft flags) returns the default lane
+# ([lanes] default, normal) and prints one stderr `LANE-SUGGEST: full (<flags>)` line; with
+# `--rid <rid>` it also writes a `lane-suggest` action to the run ledger. The operator assigns
+# full. The floor for risk is the diff: `floor <root> [<base>]` returns `full` from changed
+# file paths and added lines (migrations, auth, secrets, CI, kit config, data loss), and
+# `--files` on classify applies the same path test.
+#
 # Flag-scoring model (absorbed from hoangnb24/repository-harness FEATURE_INTAKE, 2026-06-10;
 # see this module's own flag-scoring design doc + docs/absorption/2026-06-10-repository-harness.md). Named risk flags
 # are matched against the description:
-#   - HARD-gate flags: any one hit -> `full` (mirrors the harness auto-escalate list + the
-#     WORKFLOW full-lane triggers, PLUS a `kit-machinery` flag, the gap that misclassified the
-#     adopt + install PRs as `normal` on 2026-06-10).
-#   - SOFT flags: counted; 4+ -> `full`, 2-3 -> `normal` (noted as near-full).
+#   - HARD-gate flags: any one hit -> a `full` SUGGESTION (mirrors the harness auto-escalate
+#     list + the WORKFLOW full-lane triggers, PLUS a `kit-machinery` flag).
+#   - SOFT flags: counted; 4+ -> a `full` suggestion, 2-3 -> `normal` (noted as near-full).
 # `explain` prints which flags fired so a classification (and any override) is auditable, not a
 # black box. This SUGGESTS a lane; it never blocks ("Detect, don't dictate").
 #
-# Precedence (first match wins): backfill > tiny > hard-gate > bug > soft-count > normal. tiny
-# stays above the hard-gate so "a typo about auth" is still a typo; backfill stays first so a
-# keyword inside a doc task (e.g. "write its AGENTS.md") does not escalate.
+# Precedence (first match wins): backfill > tiny > hard path in --files > bug > soft-count >
+# default lane; hard-gate flags only add the suggestion. tiny stays above them so "a typo about
+# auth" is still a typo; backfill stays first so a keyword inside a doc task (e.g. "write its
+# AGENTS.md") does not escalate.
 #
 # The `check` subcommand adds the floor guard: given the lane actually CHOSEN
 # plus the task text, it warns (advisory, exit 0) when the choice is lighter than the
 # suggestion, so an under-sized full/bug task does not slip through /kit:assign unnoticed.
 #
 # Usage:
-#   lane-classify.sh classify "<desc>"                 -> prints the lane, exit 0
-#   lane-classify.sh explain  "<desc>"                 -> prints the lane + reason + fired flags
-#   lane-classify.sh check <chosen-lane> "<desc>"      -> warn+log if chosen < floor, exit 0
+#   lane-classify.sh classify [--files "<paths>"] [--rid <rid>] "<desc>"  -> prints the lane, exit 0
+#   lane-classify.sh explain  [--files ...] [--rid <rid>] "<desc>"   -> lane + reason + fired flags (+ suggest:)
+#   lane-classify.sh check [--files ...] [--rid <rid>] <chosen-lane> "<desc>"  -> warn+log if chosen < floor, exit 0
 #   lane-classify.sh escalate <current-lane> <spec-file>  -> up-only spec->build re-classify
 #                                                            (ESCALATE <cur> -> <heavier> | HOLD <cur>), exit 0
+#   lane-classify.sh floor <root> [<base>]              -> `full <kind>: <path>` for the first hard-path hit
+#                                                            in the base..HEAD diff, else nothing, exit 0
 #   lane-classify.sh deescalate <chosen-lane> [--rid <rid>] [--root <path>] [--base <ref>] [--floor <N>]
 #                                                        -> down-only SHIP-time size nudge:
 #                                                           advisory line + ledger action, never blocks, exit 0
@@ -47,14 +56,17 @@ LIB_ROOT="$(cd "$LC_DIR/.." && pwd)"  # the lib/ dir; cross-subsystem siblings r
 source "$LIB_ROOT/telemetry/kit-log-dir.sh" || { echo "FATAL: lib/telemetry/kit-log-dir.sh missing or unreadable" >&2; exit 1; }
 # deescalate()'s ledger write only; no other verb in this file touches gate-ledger.
 GATE_LEDGER="$LIB_ROOT/gate/gate-ledger.sh"
+# The default lane and the extra hard paths come from kit.toml through the one lane-data reader.
+# shellcheck source=lib/gate/lane-data.sh
+source "$LIB_ROOT/gate/lane-data.sh" || { echo "FATAL: lib/gate/lane-data.sh missing or unreadable" >&2; exit 1; }
 
 # Hard-gate flags (any hit -> full). name <-> regex, index-aligned.
 _hard_name=(auth data-model audit-security external-provider public-contract weaken-validation kit-machinery)
 _hard_re=(
-  'auth[a-z]*|login|logout|password|jwt|\bsessions? (token|cookie|id|hijack|fixation|store|management|expiry)|(login|auth|user) sessions?\b|refresh token|permission|\brole(s)?\b|tenant'
+  'auth[a-z]*|login|logout|password|jwt|\bsessions? (token|cookie|id|hijack|fixation|store|management|expiry)|(login|auth|user) sessions?\b|refresh token|permission|role[s]? (check|permission|grant|assignment)|role-based|rbac|tenant'
   'migrat|schema|data[ -]model|uniqueness|retention|data loss|delete[s]? .*data|drop (table|column)'
-  'audit|privacy|sensitive data|access log|secret|token|crypto|encrypt|\bsecurity\b|harden|vulnerab|exploit|injection|\bxss\b|\bcsrf\b|rate.?limit'
-  'external (api|provider|service)|payment|billing|webhook|provider sdk|\bqueue(s)?\b|email send'
+  'audit|privacy|sensitive data|access log|secret|(auth|access|refresh|api|bearer|session) token|token (leak|rotation|storage|refresh)|crypto|encrypt|\bsecurity\b|harden|vulnerab|exploit|injection|\bxss\b|\bcsrf\b|rate.?limit'
+  'external (api|provider|service)|payment|billing|webhook (signature|secret|verif[a-z]*|auth[a-z]*|endpoint|handler)|provider sdk|email send'
   'api contract|response envelope|public (api|contract)|client[ -]visible|breaking change'
   'weaken[s]? .*validation|remove[s]? .*validation|disabl[a-z]* .*(check|guard|validation)'
   'hooks/|hooks\.json|\bhook(s)?\b.{0,30}(kit|machinery|enforcement|gate-ledger|ship-gate|lane-classify)|the kit.{0,30}\bhook(s)?\b|(disable|bypass|turn off|skip|remove)[a-z]*\b.{0,20}\bhook(s)?\b|\bhook(s)?\b.{0,20}(disable|bypass|turn off|skip|remove)|\bsafety\b.{0,15}\bhook(s)?\b|\bguard\b.{0,15}\bhook(s)?\b|gate-ledger|ship-gate|lane-classify|lane-telemetry|mega-merge|stack-merge|proof-ledger|kit-log-dir|orchestrate\.sh|role-classify|goal-drafts|proof-gate|task-type-classify|backlog\.sh|goal-registry|dispatch-gate|install\.sh|adopt\.sh|workflow\.md|adopt @|/?kit:adopt|adopt(s|ed|ing)? .{0,30}(agents?\.md|contract|kit|loader|marker|workflow|gate)|gate machinery|the kit.{0,12}(lane|gate|machinery|classifier)'
@@ -74,7 +86,7 @@ _soft_re=(
 [ "${#_hard_name[@]}" -eq "${#_hard_re[@]}" ] && [ "${#_soft_name[@]}" -eq "${#_soft_re[@]}" ] \
   || { echo "lane-classify: flag name/regex arrays are misaligned (bug)" >&2; exit 70; }
 
-LANE=""; REASON=""; FIRED=""
+LANE=""; REASON=""; FIRED=""; SUGGEST=""; RID=""
 
 # Edit-vs-mention signal. FILES = the change's touched files (space-
 # separated); FILES_SET = 1 when the caller passed --files (even empty). Default: no files
@@ -83,14 +95,54 @@ LANE=""; REASON=""; FIRED=""
 # _extract_files below; a fresh CLI process starts at the defaults.
 FILES=""; FILES_SET=0; REMAIN=()
 
-# _files_touch_machinery -- true if any touched file is under lib/ or hooks/, the kit's
-# enforcement layer (this file's own definition of the machinery surface). This is the FILE
-# fact that separates an EDIT to a machinery lib from a mere textual MENTION of its basename.
+# Built-in hard paths (case-insensitive ERE over changed paths). Constants on purpose: no
+# config file can remove one. `[lanes] extra_hard_paths` only adds.
+_HP_migration='(^|/)(migrations?|migrate)/|(^|/)alembic/versions/|(^|/)drizzle/|(^|/)schema\.(sql|rb|prisma)$|(^|/)[^/]*changelog[^/]*\.(xml|ya?ml|json|sql)$'
+_HP_auth='(^|/)(auth|oauth|authn|authz|rbac|permissions?|sessions?)(/|\.[a-z]+$)|(^|/)[^/]*(login|password|passwd|jwt)[^/]*$'
+_HP_secret='(^|/)\.env(\.(local|dev|development|prod|production|staging|test))?$|(^|/)secrets?/|\.(pem|key|p12|pfx)$|(^|/)[^/]*credentials?[^/]*$'
+_HP_ci='(^|/)\.github/workflows/'
+_HP_kitconfig='(^|/)\.kit\.toml$'
+# Added-line signatures for data loss, checked only in non-doc files. `truncate` counts as SQL:
+# any use in a .sql file, or a statement-shaped `truncate <name>;` elsewhere.
+_HL_common='drop (table|column|database|schema)|deletemany\(\s*\{\s*\}\s*\)'
+_HL_truncate_code='\btruncate\s+(table\s+)?[a-z_."]+\s*;'
+_HL_truncate_sql='\btruncate\s+(table\s+)?[a-z_."]+'
+
+# _path_kind <path> -- print the hard-path kind a changed path hits (first match), else nothing.
+_path_kind() {
+  local f="$1" k re extra
+  for k in migration auth secret ci kitconfig; do
+    case "$k" in
+      migration) re="$_HP_migration" ;; auth) re="$_HP_auth" ;; secret) re="$_HP_secret" ;;
+      ci) re="$_HP_ci" ;; kitconfig) re="$_HP_kitconfig" ;;
+    esac
+    if printf '%s\n' "$f" | grep -Eiq -- "$re"; then
+      [ "$k" = kitconfig ] && k=kit-config
+      printf '%s' "$k"; return 0
+    fi
+  done
+  while IFS= read -r extra; do
+    [ -n "$extra" ] || continue
+    if printf '%s\n' "$f" | grep -Eiq -- "$extra"; then printf 'extra'; return 0; fi
+  done < <(lane_extra_hard_paths)
+  return 0
+}
+
+# _files_hard_hit -- first `<kind>: <path>` among the --files paths, else nothing.
+_files_hard_hit() {
+  local f k _files=()
+  IFS=' ' read -ra _files <<< "$FILES"
+  for f in ${_files[@]+"${_files[@]}"}; do
+    k="$(_path_kind "$f")"
+    [ -n "$k" ] && { printf '%s: %s' "$k" "$f"; return 0; }
+  done
+  return 1
+}
+
+# _files_touch_machinery -- true if any touched file is under lib/ or hooks/ (the kit's
+# enforcement layer). A FILE fact that separates an EDIT to a machinery lib from a mere
+# textual MENTION of its basename; it feeds the kit-machinery SUGGESTION, not the lane.
 _files_touch_machinery() {
-  # Quote the split (read -ra, not a bare `for f in $FILES`) so a path with a space or a
-  # literal glob char is not word-split / pathname-expanded (TIER-4 security nit). NOTE for the
-  # future caller that wires --files: source the list from a trusted `git diff --name-only`, not
-  # a model-authored free-text claim, or a curated/incomplete list could under-gate a real edit.
   local f _files=()
   IFS=' ' read -ra _files <<< "$FILES"
   for f in ${_files[@]+"${_files[@]}"}; do
@@ -101,41 +153,59 @@ _files_touch_machinery() {
   return 1
 }
 
-# _extract_files "$@" -- pull an optional `--files <list>` / `--files=<list>` out of the args,
-# set FILES + FILES_SET, and leave the remaining (description) args in REMAIN. Anywhere in the
-# arg list; the value is one shell word (quote a multi-file list at the call site).
+# _extract_files "$@" -- pull optional `--files <list>` / `--files=<list>` and `--rid <rid>` /
+# `--rid=<rid>` out of the args, set FILES + FILES_SET + RID, and leave the remaining
+# (description) args in REMAIN. Anywhere in the arg list; each value is one shell word.
 _extract_files() {
-  FILES=""; FILES_SET=0; REMAIN=()
-  local a skip=0
+  FILES=""; FILES_SET=0; REMAIN=(); RID=""
+  local a skip=""
   for a in "$@"; do
-    if [ "$skip" = 1 ]; then FILES="$a"; skip=0; continue; fi
+    if [ -n "$skip" ]; then
+      case "$skip" in files) FILES="$a" ;; rid) RID="$a" ;; esac
+      skip=""; continue
+    fi
     case "$a" in
-      --files)   FILES_SET=1; skip=1 ;;
+      --files)   FILES_SET=1; skip=files ;;
       --files=*) FILES_SET=1; FILES="${a#--files=}" ;;
+      --rid)     skip=rid ;;
+      --rid=*)   RID="${a#--rid=}" ;;
       *)         REMAIN+=("$a") ;;
     esac
   done
+}
+
+# _emit_suggest -- print the one-line LANE-SUGGEST (stderr) when classify_core set SUGGEST, and
+# record it as a ledger action when a rid was given. Best effort: never fails the verb.
+_emit_suggest() {
+  [ -n "$SUGGEST" ] || return 0
+  echo "LANE-SUGGEST: full ($SUGGEST); default stays $LANE; the operator assigns full with: gate-ledger.sh start --amend ${RID:-<rid>} full ..." >&2
+  if [ -n "$RID" ]; then
+    bash "$GATE_LEDGER" action "$RID" "lane-suggest full flags=$SUGGEST" >/dev/null 2>&1 || true
+  fi
+  return 0
 }
 
 # classify_core "<desc>" -- sets LANE, REASON, FIRED. The single source of truth both
 # `classify` and `explain` read. Reads the FILES/FILES_SET globals for the edit-vs-mention
 # discriminator; callers that don't set them get the legacy text-only path.
 classify_core() {
-  local lc; lc="$(printf '%s' "$*" | tr '[:upper:]' '[:lower:]')"
-  LANE=""; REASON=""; FIRED=""
+  local lc def; lc="$(printf '%s' "$*" | tr '[:upper:]' '[:lower:]')"
+  LANE=""; REASON=""; FIRED=""; SUGGEST=""
+  def="$(lane_default)"
 
   # 1. backfill: brownfield operating-layer documentation (first, so an in-doc keyword like
   #    "write its AGENTS.md" does not pull the task into the kit-machinery hard-gate).
   if printf '%s' "$lc" | grep -qE 'backfill|operating[ -]layer|brownfield|document the existing|writes?\b.{0,12}(agents|claude)\.md'; then
-    # Review HIGH: a backfill phrase that ALSO carries a hard-gate subject
-    # ("write its AGENTS.md and disable the safety hooks") must not be down-laned;
-    # the pure doc case carries no hard keyword and stays backfill.
-    local j
+    # A backfill phrase that ALSO carries a hard-gate subject ("write its AGENTS.md and disable
+    # the safety hooks") must not be down-laned to backfill: it takes the default lane and
+    # carries the full suggestion. The pure doc case carries no hard keyword and stays backfill.
+    local j hb=""
     for j in "${!_hard_re[@]}"; do
-      if printf '%s' "$lc" | grep -qE "${_hard_re[$j]}"; then
-        LANE=full; REASON="backfill phrase + hard-gate subject (${_hard_name[$j]})"; FIRED="${_hard_name[$j]}"; return 0
-      fi
+      if printf '%s' "$lc" | grep -qE "${_hard_re[$j]}"; then hb="${hb:+$hb,}${_hard_name[$j]}"; fi
     done
+    if [ -n "$hb" ]; then
+      LANE="$def"; SUGGEST="$hb"; REASON="backfill phrase + hard-gate subject ($hb)"; FIRED="$hb"; return 0
+    fi
     LANE=backfill; REASON="brownfield operating-layer docs"; FIRED=backfill; return 0
   fi
 
@@ -144,40 +214,38 @@ classify_core() {
     LANE=tiny; REASON="pure cosmetic"; FIRED=tiny; return 0
   fi
 
-  # 3. hard-gate flags -> full.
+  # 3. hard-gate flags -> a full SUGGESTION (never the lane). kit-machinery is a proxy for
+  #    "touches the enforcement surface", a FILE fact: with --files the touched paths decide,
+  #    not a description that merely names a basename; without --files a mention counts.
+  #    A hard PATH in --files (migration, auth, secret, CI, kit config, extra) is a file fact
+  #    too, and it is the one route to `full` from classify.
   local i hard=""
+  if [ "$FILES_SET" = 1 ]; then
+    local hit; hit="$(_files_hard_hit || true)"
+    if [ -n "$hit" ]; then
+      LANE=full; REASON="hard path in --files (${hit})"; FIRED="hard-path"; return 0
+    fi
+  fi
   for i in "${!_hard_re[@]}"; do
-    if [ "${_hard_name[$i]}" = kit-machinery ]; then
-      # Edit-vs-mention: kit-machinery is a proxy for "touches the
-      # enforcement surface", which is a FILE fact, not a semantic one (unlike auth /
-      # data-model, which are risky by subject regardless of files). When the caller supplied
-      # --files, the FILE is authoritative: escalate on an actual EDIT to lib/ or hooks/, NOT
-      # on a description that merely names a basename. No --files -> legacy text-only (a mention
-      # escalates), so nothing regresses.
-      if [ "$FILES_SET" = 1 ]; then
-        _files_touch_machinery && hard="$hard kit-machinery"
-      elif printf '%s' "$lc" | grep -qE "${_hard_re[$i]}"; then
-        hard="$hard kit-machinery"
-      fi
+    if [ "${_hard_name[$i]}" = kit-machinery ] && [ "$FILES_SET" = 1 ]; then
+      _files_touch_machinery && hard="${hard:+$hard,}kit-machinery"
       continue
     fi
-    if printf '%s' "$lc" | grep -qE "${_hard_re[$i]}"; then hard="$hard ${_hard_name[$i]}"; fi
+    if printf '%s' "$lc" | grep -qE "${_hard_re[$i]}"; then hard="${hard:+$hard,}${_hard_name[$i]}"; fi
   done
-  if [ -n "$hard" ]; then
-    LANE=full; REASON="hard-gate flag(s):$hard"; FIRED="${hard# }"; return 0
-  fi
+  SUGGEST="$hard"
 
   # 3b. doc-bootstrap, deliberately AFTER the hard-gate pass:
   # markdown-only or doc-tree bootstrap work is tiny, but these anchors describe the
   # SUBJECT of the work, not a cosmetic surface, so a README about auth tokens or
   # gate machinery must let the hard-gate win first (review HIGH).
   if printf '%s' "$lc" | grep -qE 'markdown[ -]only|bootstrap .{0,40}(readme|notes|reading list|learning track)'; then
-    LANE=tiny; REASON="doc bootstrap (markdown-only / doc-tree), no hard-gate subject"; FIRED=doc-bootstrap; return 0
+    LANE=tiny; REASON="doc bootstrap (markdown-only / doc-tree), no hard-gate subject"; FIRED=doc-bootstrap; SUGGEST=""; return 0
   fi
 
   # 4. bug: a defect, not a new feature.
   if printf '%s' "$lc" | grep -qE '\bbug\b|regression|failing test|broken|crash|defect|hotfix|stack ?trace|exception|fix the|fix a |repro'; then
-    LANE=bug; REASON="defect / regression"; FIRED=bug; return 0
+    LANE=bug; REASON="defect / regression${SUGGEST:+; hard-gate flag(s): $SUGGEST}"; FIRED="bug${SUGGEST:+ $SUGGEST}"; return 0
   fi
 
   # 5. soft-flag count: 4+ -> full, 2-3 -> normal (near-full), else default normal.
@@ -185,15 +253,19 @@ classify_core() {
   for i in "${!_soft_re[@]}"; do
     if printf '%s' "$lc" | grep -qE "${_soft_re[$i]}"; then soft="$soft ${_soft_name[$i]}"; n=$((n + 1)); fi
   done
-  if [ "$n" -ge 4 ]; then LANE=full;   REASON="$n soft flags (>=4):$soft"; FIRED="${soft# }"; return 0; fi
-  if [ "$n" -ge 2 ]; then LANE=normal; REASON="$n soft flags (2-3, near full):$soft"; FIRED="${soft# }"; return 0; fi
-  LANE=normal; REASON="bounded feature/fix (default)"; FIRED="${soft# }"; FIRED="${FIRED:-none}"; return 0
+  local sl; sl="$(printf '%s' "${soft# }" | tr ' ' ',')"
+  if [ "$n" -ge 4 ]; then
+    LANE="$def"; SUGGEST="${SUGGEST:-$sl}"; REASON="$n soft flags (>=4):$soft"; FIRED="${soft# }"; return 0
+  fi
+  if [ "$n" -ge 2 ]; then LANE=normal; REASON="$n soft flags (2-3, near full):$soft"; FIRED="${soft# }"; [ -z "$hard" ] || FIRED="$hard ${soft# }"; return 0; fi
+  if [ -n "$hard" ]; then LANE="$def"; REASON="hard-gate flag(s): $hard; default lane"; FIRED="${hard//,/ }"; return 0; fi
+  LANE="$def"; REASON="bounded feature/fix (default)"; FIRED="${soft# }"; FIRED="${FIRED:-none}"; return 0
 }
 
-# Risk rank for the floor check. Under-sizing (a lighter lane than the text
-# implies) is the only dangerous direction; over-sizing is always safe ("when in doubt,
-# heavier"). normal/bug/backfill share rank 2 (same ceremony weight); full is the headline
-# floor. An unrecognized lane returns -1 so lane_check can flag it distinctly.
+# Risk rank for the check verb and escalate. normal/bug/backfill share rank 2 (same ceremony
+# weight); full is rank 3 and comes only from a hard path in the diff or from the operator
+# assigning it, never from task words. An unrecognized lane returns -1 so lane_check can flag
+# it distinctly.
 lane_rank() {
   case "$1" in
     tiny)                echo 1;;
@@ -223,6 +295,7 @@ lane_check() {
   classify_core "$desc"
   suggested="$LANE"
   sr="$(lane_rank "$suggested")"
+  _emit_suggest
 
   if [ "$cr" -lt "$sr" ]; then
     echo "LANE-DOWNGRADE: chosen=$chosen suggested=$suggested -- the task text matches a heavier lane; size up or say why" >&2
@@ -272,7 +345,9 @@ escalate() {
     printf 'ESCALATE %s -> %s\n' "$current" "$spec_lane"
   else
     printf 'HOLD %s\n' "$current"
+    LANE="$current"
   fi
+  _emit_suggest
   return 0
 }
 
@@ -376,17 +451,60 @@ deescalate() {
   return 0
 }
 
+# floor <root> [<base>] -- the diff floor. Prints `full <kind>: <path>` for the first hit among
+# the base..HEAD changed paths (listed with --no-renames, so both sides of a rename count) and the
+# ADDED lines (data loss), else nothing. Always exits 0. The project's lane data is read from
+# <root>. `--no-renames` mirrors lib/gate/proof-ledger.sh.
+_DOC_RE='\.(md|markdown|txt|rst|adoc)$|(^|/)docs/'
+floor() {
+  local root="${1:-}" base="${2:-}"
+  [ -n "$root" ] || { echo "usage: lane-classify.sh floor <root> [<base>]" >&2; return 64; }
+  export KIT_PROJECT_ROOT="$root"
+  [ -n "$base" ] || base="$(_deesc_resolve_base "$root")"
+  [ -n "$base" ] || return 0
+  local paths f k
+  paths="$(git -C "$root" diff --name-only --no-renames "$base" HEAD 2>/dev/null || true)"
+  while IFS= read -r f; do
+    [ -n "$f" ] || continue
+    k="$(_path_kind "$f")"
+    [ -n "$k" ] && { printf 'full %s: %s\n' "$k" "$f"; return 0; }
+  done <<< "$paths"
+  # Data loss: an ADDED line in a non-doc file.
+  local cur="" line lc hit=""
+  while IFS= read -r line; do
+    case "$line" in
+      "+++ b/"*) cur="${line#+++ b/}"; continue ;;
+      "+++ "*|"--- "*) continue ;;
+      +*) ;;
+      *) continue ;;
+    esac
+    [ -n "$cur" ] || continue
+    printf '%s\n' "$cur" | grep -Eiq -- "$_DOC_RE" && continue
+    lc="${line#+}"
+    if printf '%s\n' "$lc" | grep -Eiq -- "$_HL_common" \
+       || { printf '%s\n' "$lc" | grep -Eiq 'delete from' && ! printf '%s\n' "$lc" | grep -Eiq '\bwhere\b'; } \
+       || { case "$cur" in *.sql|*.SQL) printf '%s\n' "$lc" | grep -Eiq -- "$_HL_truncate_sql" ;; *) printf '%s\n' "$lc" | grep -Eiq -- "$_HL_truncate_code" ;; esac; }; then
+      hit="$cur"; break
+    fi
+  done < <(git -C "$root" diff --no-renames -U0 "$base" HEAD 2>/dev/null || true)
+  [ -n "$hit" ] && printf 'full data-loss: %s\n' "$hit"
+  return 0
+}
+
 main() {
   local sub="${1:-}"; shift || true
   case "$sub" in
-    classify) _extract_files "$@"; classify_core ${REMAIN[@]+"${REMAIN[@]}"}; printf '%s\n' "$LANE";;
-    explain)  _extract_files "$@"; classify_core ${REMAIN[@]+"${REMAIN[@]}"}; printf '%s\nreason: %s\nflags: %s\n' "$LANE" "$REASON" "${FIRED:-none}";;
+    classify) _extract_files "$@"; classify_core ${REMAIN[@]+"${REMAIN[@]}"}; _emit_suggest; printf '%s\n' "$LANE";;
+    explain)  _extract_files "$@"; classify_core ${REMAIN[@]+"${REMAIN[@]}"}; _emit_suggest
+              printf '%s\nreason: %s\nflags: %s\n' "$LANE" "$REASON" "${FIRED:-none}"
+              [ -z "$SUGGEST" ] || printf 'suggest: full (%s)\n' "$SUGGEST";;
     check)    _extract_files "$@"; lane_check ${REMAIN[@]+"${REMAIN[@]}"};;
     escalate)   escalate "$@";;
+    floor)      floor "$@";;
     deescalate) deescalate "$@";;
     lanes)    printf 'tiny\nnormal\nfull\nbug\nbackfill\n';;
     flags)    printf '%s\n' "${_hard_name[@]}" "${_soft_name[@]}";;
-    *) echo "usage: lane-classify.sh {classify [--files \"<paths>\"] \"<desc>\"|explain [--files ...] \"<desc>\"|check [--files ...] <chosen-lane> \"<desc>\"|escalate <current-lane> <spec-file>|deescalate <chosen-lane> [--rid <rid>] [--root <path>] [--base <ref>] [--floor <N>]|lanes|flags}" >&2; return 64;;
+    *) echo "usage: lane-classify.sh {classify [--files \"<paths>\"] \"<desc>\"|explain [--files ...] \"<desc>\"|check [--files ...] <chosen-lane> \"<desc>\"|escalate <current-lane> <spec-file>|floor <root> [<base>]|deescalate <chosen-lane> [--rid <rid>] [--root <path>] [--base <ref>] [--floor <N>]|lanes|flags}" >&2; return 64;;
   esac
 }
 
