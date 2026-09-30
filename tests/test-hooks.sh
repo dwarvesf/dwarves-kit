@@ -421,7 +421,7 @@ printf '| ID-002 | the ghost work | shipped [run spec-ghost] |\n' >> "$BD_DIR/re
 assert_output_not_contains "detector: negative control (board row added -> not boardless)" "boardless runs" "$(BDT misfires)"
 # T2 (review): false-positive guard, a COMPLETE shipped run is never flagged
 printf '2026-06-10T07:00:00Z | START | lane=normal classified=normal type=doc repo=%s\n' "$REPO_BASE" > "$BD_DIR/logs/runs/spec-done.log"
-for PH in grill think spec test-plan build review docs ship; do
+for PH in grill think spec validate test-plan build review docs ship; do
   printf '2026-06-10T08:00:00Z | GATE | %s | ran | done\n' "$PH" >> "$BD_DIR/logs/runs/spec-done.log"
 done
 printf '| ID-003 | done work | shipped [run spec-done] |\n' >> "$BD_DIR/repo/_meta/BACKLOG.md"
@@ -1689,18 +1689,22 @@ assert_output_contains "plan: normal carries required spec" "3. spec            
 assert_output_contains "plan: normal prepends grill intake" "1. grill" "$(GL plan normal)"
 PLAN_TINY="$(GL plan tiny)"
 assert_output_not_contains "plan: tiny has no grill row" "grill" "$PLAN_TINY"
-# Validate is run-lite on normal and backfill (listed, advisory), absent on tiny and bug,
-# required on full; `required normal` stays spec/build/ship, so a normal ship never waits on it.
-assert_output_contains "plan: normal lists validate lite" "4. validate           lite" "$(GL plan normal)"
+# Validate is required on normal and full, run-lite on backfill (listed, advisory), absent on
+# tiny and bug.
+assert_output_contains "plan: normal lists validate required" "4. validate           required" "$(GL plan normal)"
 assert_output_contains "plan: backfill lists validate lite" "4. validate           lite" "$(GL plan backfill)"
 assert_output_not_contains "plan: tiny has no validate" "validate" "$PLAN_TINY"
 assert_output_not_contains "plan: bug has no validate" "validate" "$(GL plan bug)"
 assert_output_contains "plan: full still requires validate" "validate           required" "$(GL plan full)"
-assert_output_not_contains "required: normal unchanged (no validate)" "validate" "$(GL required normal)"
-# a normal ship with spec, build, ship and no Validate line passes check
+assert_output_contains "required: normal requires validate" "validate" "$(GL required normal)"
+assert_output_contains "required: normal requires review" "review" "$(GL required normal)"
+# a normal ship with spec, build, ship and no Validate or Review line is refused
 GL record val-n spec ran "spec written"; GL record val-n build ran "built"; GL record val-n ship ran "pushed"
 DWARVES_KIT_LOG_DIR="$LT2_DIR" bash "$KIT_DIR/lib/gate/gate-ledger.sh" check normal val-n >/dev/null 2>&1
-assert_exit "check: normal ship without validate exits 0" 0 $?
+assert_exit "check: normal ship without validate or review exits 1" 1 $?
+GL record val-n validate ran "fresh reader"; GL record val-n review ran "reviewed"
+DWARVES_KIT_LOG_DIR="$LT2_DIR" bash "$KIT_DIR/lib/gate/gate-ledger.sh" check normal val-n >/dev/null 2>&1
+assert_exit "check: normal ship with validate and review exits 0" 0 $?
 # a full run with every gate ran except a failed validation (skipped NEEDS REVISION) is refused
 for PH in think design design-critique spec design-record test-plan build review docs ship reflect; do GL record val-f "$PH" ran "done"; done
 GL record val-f validate skipped "NEEDS REVISION: critical=2"
@@ -2053,6 +2057,8 @@ bash "$GL" check normal "$RID" >/dev/null 2>&1; assert_exit "check fails on a mi
 
 # a real run + a logged override clears the gate
 bash "$GL" record "$RID" Build ran "rebuilt" >/dev/null 2>&1
+bash "$GL" record "$RID" Validate ran "fresh reader" >/dev/null 2>&1
+bash "$GL" record "$RID" Review ran "reviewed" >/dev/null 2>&1
 bash "$GL" override "$RID" Ship "maintainer: docs-only" >/dev/null 2>&1
 bash "$GL" check normal "$RID" >/dev/null 2>&1; assert_exit "check passes after ran + logged override" 0 $?
 
@@ -2064,7 +2070,7 @@ SGR="$DWARVES_KIT_LOG_DIR/sg-repo"; mkdir -p "$SGR"
 SG_OUT=$(cd "$SGR" && echo '{"tool_input":{"command":"git push -u origin feat/sg-demo"}}' | CLAUDE_PLUGIN_ROOT="$KIT_DIR" bash "$SG" 2>&1); SG_RC=$?
 assert_exit "ship-gate blocks a feature push with missing gates" 2 "$SG_RC"
 assert_output_contains "ship-gate names the missing gate" "MISSING-GATE" "$SG_OUT"
-for g in Spec Build Ship; do bash "$GL" record sg-demo "$g" ran "x" >/dev/null 2>&1; done
+for g in Spec Validate Build Review Ship; do bash "$GL" record sg-demo "$g" ran "x" >/dev/null 2>&1; done
 SG_RC2=$(cd "$SGR" && echo '{"tool_input":{"command":"git push -u origin feat/sg-demo"}}' | CLAUDE_PLUGIN_ROOT="$KIT_DIR" bash "$SG" >/dev/null 2>&1; echo $?)
 assert_exit "ship-gate allows the push once gates are recorded" 0 "$SG_RC2"
 

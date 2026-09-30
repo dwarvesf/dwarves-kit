@@ -131,7 +131,7 @@ light  = ["build", "review"]
 
 [lane.normal]                   # [impl] lib/gate/lane-data.sh
 phases = ["think", "spec", "validate", "design-record", "test-plan", "build", "review", "docs", "ship"]
-light  = ["think", "validate", "design-record", "test-plan", "review", "docs"]
+light  = ["think", "design-record", "test-plan", "docs"]
 
 [lane.full]                     # [impl] lib/gate/lane-data.sh
 phases = ["think", "design", "design-critique", "ui-design", "spec", "validate", "design-record", "test-plan", "build", "review", "docs", "ship", "reflect"]

@@ -61,12 +61,31 @@ case_parity() {
   local d; d="$(diff "$BASELINE" <(capture))" && pass parity || fail parity "reader output differs from the baseline: $(printf '%s' "$d" | head -6 | tr '\n' '~')"
 }
 
+# After the normal-lane flip only normal's validate and review may differ from the baseline.
+# Each output line is prefixed with its section header so a changed line names its lane.
+_annotate() { awk '/^== /{sec=$2" "$3; next} {print sec ": " $0}'; }
+case_parity_after_flip() {
+  local d bad
+  d="$(diff <(_annotate < "$BASELINE") <(capture | _annotate) | grep -E '^[<>]' || true)"
+  [ -n "$d" ] || { fail parity-after-flip "no difference: the flip did not land"; return; }
+  bad="$(printf '%s\n' "$d" | grep -vE '^[<>] (plan|required|progress|descent) normal: .*(validate|review)' || true)"
+  if [ -z "$bad" ]; then pass parity-after-flip
+  else fail parity-after-flip "unexpected changed lines: $(printf '%s' "$bad" | head -4 | tr '\n' '~')"; fi
+}
+case_plan_flip() {
+  local out; new_log
+  out="$(gl required normal | tr '\n' ' ')"
+  [ "$out" = "spec validate build review ship " ] && pass plan-flip || fail plan-flip "required normal = '$out'"
+}
+
 # ---------------------------------------------------------------------------
 run_case() {
   local fn="case_${1//-/_}"
   if declare -F "$fn" >/dev/null; then "$fn"; else fail "$1" "no such case"; fi
 }
-ALL="parity"
+# `parity` (byte-identical against the baseline) holds only at the refactor commit; after the
+# flip the standing check is parity-after-flip.
+ALL="parity-after-flip plan-flip"
 if [ "$#" -eq 0 ]; then set -- $ALL; fi
 for c in "$@"; do run_case "$c"; done
 [ "$FAILS" -eq 0 ]

@@ -424,11 +424,11 @@ the V-model lens above. Every cell is one of:
 | Design critique (default full lane, opt-in normal) | skip | skip | measure-twice | skip | skip |
 | UI design (opt-in) | skip | skip | run-lite | skip | skip |
 | Spec | skip | measure-twice | measure-twice | skip | run-lite |
-| Validate | skip | run-lite | measure-twice | skip | run-lite |
+| Validate | skip | measure-twice | measure-twice | skip | run-lite |
 | Design record (design-bearing, ADR-0031 §1) | skip | run-lite | measure-twice | skip | skip |
 | Test plan (default) | skip | run-lite | measure-twice | run-lite | skip |
 | Build | run-lite | measure-twice | measure-twice | measure-twice | skip |
-| Review | run-lite | run-lite | measure-twice | measure-twice | run-lite |
+| Review | run-lite | measure-twice | measure-twice | measure-twice | run-lite |
 | Docs | skip | run-lite | measure-twice | skip | measure-twice |
 | Ship | skip | measure-twice | measure-twice | run-lite | skip |
 | Reflect | skip | skip | measure-twice | skip | skip |
@@ -448,13 +448,17 @@ the V-model lens above. Every cell is one of:
 - **Review / bug = measure-twice**: a bug fix is a high-stakes narrow change.
   The full lane uses review-team; the bug lane uses `/kit:review`, but the
   scrutiny level for a regression fix should be full, not advisory.
-- **Validate / normal and backfill = run-lite**, not measure-twice: `/kit:spec` and the
-  `/kit:execute` preflight dispatch a fresh-context validator on every normal, full, and
-  backfill spec, and execute refuses to build a spec whose validation did not pass, so the
-  cell only decides the ship gate. A measure-twice cell would refuse every normal-lane push in
-  every adopted repo on the next kit update and mark every past shipped normal run incomplete,
-  while the measured self-validation failures were all full-lane, which already requires it
-  (SPEC-320 Decision Log). The flip stays one cell once the normal-lane `caught=` rate earns it.
+- **Validate / normal = measure-twice**, backfill stays run-lite: the normal lane no
+  longer escalates on keywords, so the diff floor at push covers the triggers a path can
+  show (migration, auth, secrets, CI, kit config, data loss) and a fresh-context reader of
+  the spec covers the rest (authz, API contract, external provider, weakened validation).
+  The coverage table is in `docs/specs/SPEC-368-lanes-as-data.md` under "What the diff floor
+  catches, and what it does not". This reverses the earlier run-lite call, whose cost (a
+  refused push in adopted repos with in-flight normal runs) the spec's migration notes
+  handle: record the gate, or `gate-ledger.sh override <rid> validate "<reason>"`.
+- **Review / normal = measure-twice**: same reason as Validate. The review lens set catches
+  what neither the classifier nor the diff floor can see; the security lens has caught a
+  leak three other stages missed.
 - **backfill / Spec = run-lite**: `/kit:spec` is optional for backfill (the lane
   table says "Doc-output only; no app-behavior change"). run-lite reflects
   "optional but encouraged for non-trivial backfills."
