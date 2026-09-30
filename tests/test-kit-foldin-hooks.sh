@@ -12,6 +12,13 @@ KIT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 TD="$(mktemp -d "${TMPDIR:-/tmp}/kit-foldin-hooks-test.XXXXXX")"
 trap 'rm -rf "${TD:?}"' EXIT
 
+# Pin a neutral operator/kit-root config and a marker-free harvest state dir: the harvest
+# hook stands down when the host's sweep is active, so an ambient kit.toml or installed
+# marker must never reach these tests. Rows that need their own state dir override it inline.
+mkdir -p "$TD/neutral-op" "$TD/neutral-root" "$TD/neutral-harvest-state"
+export KIT_CONFIG_OPERATOR="$TD/neutral-op" KIT_CONFIG_ROOT="$TD/neutral-root"
+export HARVEST_STATE_DIR="$TD/neutral-harvest-state"
+
 PASS=0
 FAIL=0
 TOTAL=0
