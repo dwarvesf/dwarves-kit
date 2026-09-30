@@ -11,7 +11,7 @@
 | Render skill | `cd lib/stats && bash tests/test-render-skill.sh` | 30 passed, 0 failed |
 | Docs wiring | `cd lib/stats && bash tests/test-docs-wiring.sh` | PASS=18 FAIL=0 |
 | 400-char cap | `bash tests/test-command-triggers.sh` | 12/12 (stats is 356 chars) |
-| Structure | `bash tests/test-meta.sh` | no FAIL lines |
+| Structure | `bash tests/test-meta.sh` | Passed 887 / 887 (after FEATURES.md regeneration, d6e282ab) |
 
 | Negative control | Result |
 |---|---|
