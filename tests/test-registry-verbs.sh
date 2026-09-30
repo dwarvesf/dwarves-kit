@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # test-registry-verbs.sh -- the Verbs kind of lib/registry/feature-registry.sh.
 # A lib verb is listed when its script carries `# kit-verb: <name> | <description>` in its
-# first 40 lines. Cases 1-6 drive a COPY of the generator in a throwaway tree (a handful of
+# first 40 lines. Cases 1-6, 8, 9 drive a COPY of the generator in a throwaway tree (a handful of
 # stub files, well under a second); case 7 pins the real kit: every declared verb has one line
 # in docs/workflow-paths.md and vice versa.
 set -uo pipefail
@@ -60,6 +60,29 @@ if [ -s "$D/f-verb" ] && diff -q "$D/f-verb" "$D/w-verb" >/dev/null; then
 else
   no "7 verb parity"; diff "$D/f-verb" "$D/w-verb"
 fi
+
+# 8. per-lib suites count (shell and Python); fixtures and non-invoking tests do not
+printf '#!/usr/bin/env bash\n# kit-verb: foo run | runs the foo thing\n' > "$D/lib/x/foo.sh"
+rm -f "$D/tests/test-foo.sh"
+mkdir -p "$D/lib/x/tests/fixtures"
+printf 'bash lib/x/foo.sh\n' > "$D/lib/x/tests/test-libsh.sh"
+printf 'run("foo run --json")\n' > "$D/lib/x/tests/test_lib.py"
+printf 'echo nothing relevant\n' > "$D/lib/x/tests/test-unrelated.sh"
+printf 'bash lib/x/foo.sh\n' > "$D/lib/x/tests/fixtures/fixture.sh"
+ROW="$(gen | grep -F '| `foo run` |')"
+{ echo "$ROW" | grep -qF 'test-libsh.sh' && echo "$ROW" | grep -qF 'test_lib.py'; } \
+  && ok "8a lib/*/tests shell and Python tests are credited" || { no "8a lib tests credited"; echo "$ROW"; }
+{ echo "$ROW" | grep -qF 'test-unrelated.sh' || echo "$ROW" | grep -qF 'fixture.sh'; } \
+  && { no "8b non-invoking test or fixture credited"; echo "$ROW"; } || ok "8b negative control: non-invoking test and fixture are not credited"
+
+# 9. a test naming a hook that calls the verb script is credited; a hook that does not call it is not
+printf '#!/bin/bash\n# demo-hook.sh -- a stub hook\nbash lib/x/foo.sh\n' > "$D/hooks/demo-hook.sh"
+printf '#!/bin/bash\n# other-hook.sh -- a stub hook\n' > "$D/hooks/other-hook.sh"
+printf 'echo demo-hook.sh fires\n' > "$D/tests/test-viahook.sh"
+printf 'echo other-hook.sh fires\n' > "$D/tests/test-viaother.sh"
+ROW="$(gen | grep -F '| `foo run` |')"
+echo "$ROW" | grep -qF 'test-viahook.sh' && ok "9a test naming a calling hook is credited" || { no "9a hook-mediated credit"; echo "$ROW"; }
+echo "$ROW" | grep -qF 'test-viaother.sh' && no "9b test of a non-calling hook credited" || ok "9b negative control: test of a non-calling hook is not credited"
 
 echo "---"
 echo "PASS=$PASS FAIL=$FAIL"

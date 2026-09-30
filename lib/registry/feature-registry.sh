@@ -70,8 +70,17 @@ spec_refs() { # <token-pattern>
     | sed -E 's|.*/SPEC-([0-9]+)-.*|SPEC-\1|' | sort -uV | cap_list
 }
 
+# Tests live in tests/*.sh and in per-lib suites (lib/*/tests/**, shell and Python; fixtures
+# are inputs, not tests). A lib verb also counts a test that names a hook which calls it.
+TEST_FILES=()
+while IFS= read -r f; do TEST_FILES+=("$f"); done < <(
+  { ls "$KIT_DIR"/tests/*.sh 2>/dev/null || true
+    find "$KIT_DIR/lib" -path '*/tests/*' ! -path '*/fixtures/*' \( -name '*.sh' -o -name '*.py' \) 2>/dev/null
+  } | sort)
+
 test_refs() { # <token-pattern>
-  grep -lE "$1" "$KIT_DIR"/tests/*.sh 2>/dev/null \
+  [ "${#TEST_FILES[@]}" -gt 0 ] || { printf -- '-'; return; }
+  grep -lE "$1" "${TEST_FILES[@]}" 2>/dev/null \
     | sed -E 's|.*/||' | sort -u | cap_list
 }
 
@@ -131,7 +140,11 @@ verbs_table() {
   while IFS="$(printf '\t')" read -r rel name desc; do
     [ -n "$rel" ] || continue
     base="$(basename "$rel")"
-    pat="($(token_pat "$base")|$(token_pat "$name"))"
+    pat="$(token_pat "$base")|$(token_pat "$name")"
+    while IFS= read -r hook; do
+      [ -n "$hook" ] && pat="$pat|$(token_pat "$hook")"
+    done < <(grep -lE "$(token_pat "$base")" "$KIT_DIR"/hooks/*.sh 2>/dev/null | sed -E 's|.*/||')
+    pat="($pat)"
     printf '| `%s` | `[V]` | `%s` | %s | %s | %s |\n' \
       "$name" "$rel" "$(clip "$desc")" "$(spec_refs "$pat")" "$(test_refs "$pat")"
   done < <(verb_markers)
@@ -222,7 +235,7 @@ generate() {
     echo ""
     echo "# Feature registry"
     echo ""
-    echo "GENERATED , do not hand-edit. Regenerate: \`bash lib/registry/feature-registry.sh generate\`. One row per live feature; freshness pinned by \`tests/test-meta.sh\` and refused pre-push by \`hooks/ship-gate.sh\`, both through \`feature-registry.sh check\`. Trigger classes per \`docs/workflow-paths.md\` section 1: \`[H]\` human-typed, \`[H/I]\` human-or-intent, \`[I]\` intent-read, \`[E]\` event-fired, \`[D]\` dispatched, \`[V]\` lib verb declared by a \`# kit-verb:\` header line. Refs are exact-token greps: Specs over \`docs/specs/\`, Tests over \`tests/*.sh\`, Dispatched-by over \`commands/*.md\` + \`skills/*/SKILL.md\` (skill dispatchers marked \`(skill)\`); \`-\` means no reference found (a coverage gap, not always a defect: read-only agents may be deliberately untested)."
+    echo "GENERATED , do not hand-edit. Regenerate: \`bash lib/registry/feature-registry.sh generate\`. One row per live feature; freshness pinned by \`tests/test-meta.sh\` and refused pre-push by \`hooks/ship-gate.sh\`, both through \`feature-registry.sh check\`. Trigger classes per \`docs/workflow-paths.md\` section 1: \`[H]\` human-typed, \`[H/I]\` human-or-intent, \`[I]\` intent-read, \`[E]\` event-fired, \`[D]\` dispatched, \`[V]\` lib verb declared by a \`# kit-verb:\` header line. Refs are exact-token greps: Specs over \`docs/specs/\`, Tests over \`tests/*.sh\` + \`lib/*/tests/**\` (a verb also counts tests naming a hook that calls its script), Dispatched-by over \`commands/*.md\` + \`skills/*/SKILL.md\` (skill dispatchers marked \`(skill)\`); \`-\` means no reference found (a coverage gap, not always a defect: read-only agents may be deliberately untested)."
     echo ""
     commands_table
     agents_table
