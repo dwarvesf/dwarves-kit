@@ -34,11 +34,11 @@ if bash lib/adopt.sh --check "$T1" >/dev/null; then ok "--check exits 0 on an ad
 T2="$(newrepo)"
 if bash lib/adopt.sh --check "$T2" >/dev/null; then no "--check should be 1 on a fresh repo"; else ok "--check exits 1 on a fresh repo"; fi
 
-# 4. no-clobber: a pre-existing AGENTS.md is never overwritten
+# 4. no-clobber: a pre-existing repo-authored AGENTS.md is never overwritten
 T3="$(newrepo)"
 printf 'SENTINEL-DO-NOT-CLOBBER\n' > "$T3/AGENTS.md"
 bash lib/adopt.sh "$T3" >/dev/null
-if grep -q SENTINEL-DO-NOT-CLOBBER "$T3/AGENTS.md"; then ok "existing AGENTS.md is not clobbered"; else no "AGENTS.md was clobbered"; fi
+if grep -q SENTINEL-DO-NOT-CLOBBER "$T3/AGENTS.md"; then ok "existing repo-authored AGENTS.md is not clobbered"; else no "AGENTS.md was clobbered"; fi
 
 # 5. CLAUDE.md loader uses an @AGENTS.md import + paired markers
 if grep -q '@AGENTS.md' "$T1/CLAUDE.md" && grep -q '<!-- /kit:adopt -->' "$T1/CLAUDE.md"; then
@@ -83,14 +83,14 @@ else
   no "--refresh did not re-sync the stale block or lost surrounding content"
 fi
 
-# 10. --refresh never overwrites AGENTS.md or the proof marker (documented invariant).
+# 10. --refresh never overwrites an edited AGENTS.md or the proof marker (documented invariant).
 T7="$(newrepo)"
 bash lib/adopt.sh "$T7" >/dev/null
 printf 'AGENTS-SENTINEL\n' >> "$T7/AGENTS.md"
 printf 'MARKER-SENTINEL\n' >> "$T7/docs/verification/README.md"
 bash lib/adopt.sh --refresh "$T7" >/dev/null
 if grep -q AGENTS-SENTINEL "$T7/AGENTS.md" && grep -q MARKER-SENTINEL "$T7/docs/verification/README.md"; then
-  ok "--refresh preserves AGENTS.md + proof marker (never overwritten)"
+  ok "--refresh preserves an edited AGENTS.md + proof marker (never overwritten)"
 else
   no "--refresh overwrote AGENTS.md or the proof marker"
 fi
@@ -394,6 +394,171 @@ fi
 
 cp "$KIT_TOML_BAK" "$KIT_TOML_LIVE"; rm -f "$KIT_TOML_BAK"
 trap - EXIT
+
+# ------------------------------------------------------------------------------------------
+# SPEC-371: adopt writes a small pointer AGENTS.md. Decision by hash: absent -> pointer; equals
+# the pointer -> silent; known old copy -> notice, swapped only by --refresh --swap-agents;
+# anything else -> left alone with a drift line. Every case runs against temp repos.
+# ------------------------------------------------------------------------------------------
+POINTER="lib/adopt/AGENTS.pointer.md"
+KNOWN="lib/adopt/agents-known.sha256"
+sha_of() { if command -v shasum >/dev/null 2>&1; then shasum -a 256 < "$1"; else sha256sum < "$1"; fi | cut -d' ' -f1; }
+old_kit_copy() { git show "$(git log --format=%H -- AGENTS.md | tail -n 1):AGENTS.md"; }
+dcount() { diff "$1" "$2" | grep -c '^[<>]'; }
+seed_old() { local d; d="$(newrepo)"; old_kit_copy > "$d/AGENTS.md"; echo "$d"; }
+
+# T1 / AC-1 / AC-2: a fresh adopt writes a pointer at or under the cap that names the contract.
+P1="$(newrepo)"; bash lib/adopt.sh "$P1" >/dev/null
+if [ "$(wc -c < "$P1/AGENTS.md")" -le 1200 ] && grep -qF '~/.claude/dwarves-kit/AGENTS.md' "$P1/AGENTS.md" \
+  && head -n 1 "$P1/AGENTS.md" | grep -qF 'kit:agents-pointer' && cmp -s "$P1/AGENTS.md" "$POINTER"; then
+  ok "fresh adopt writes the pointer: at or under 1200 bytes, names the installed contract, has the marker"
+else
+  no "fresh adopt did not write a small pointer that names the contract"
+fi
+
+# T2 / AC-3: an edited AGENTS.md survives --refresh and --refresh --swap-agents byte for byte.
+P2="$(newrepo)"; bash lib/adopt.sh "$P2" >/dev/null
+printf 'LOCAL-EDIT-SENTINEL\n' >> "$P2/AGENTS.md"; cp "$P2/AGENTS.md" "$P2/AGENTS.before"
+bash lib/adopt.sh --refresh "$P2" >/dev/null; c1=1; cmp -s "$P2/AGENTS.md" "$P2/AGENTS.before" && c1=0
+bash lib/adopt.sh --refresh --swap-agents "$P2" >/dev/null; c2=1; cmp -s "$P2/AGENTS.md" "$P2/AGENTS.before" && c2=0
+if [ "$c1" -eq 0 ] && [ "$c2" -eq 0 ] && grep -q LOCAL-EDIT-SENTINEL "$P2/AGENTS.md"; then
+  ok "edited AGENTS.md survives refresh and swap"
+else
+  no "edited AGENTS.md survives refresh and swap (c1=$c1 c2=$c2)"
+fi
+
+# T3 / AC-4: a repo-authored file survives all modes; the line gives its own line count, no diff count.
+P3="$(newrepo)"; printf '# Trading\n\nOur own rules.\nSecond rule.\n' > "$P3/AGENTS.md"; cp "$P3/AGENTS.md" "$P3/AGENTS.before"
+O3="$(bash lib/adopt.sh "$P3" 2>&1; bash lib/adopt.sh --refresh "$P3" 2>&1; bash lib/adopt.sh --refresh --swap-agents "$P3" 2>&1)"
+if cmp -s "$P3/AGENTS.md" "$P3/AGENTS.before" && echo "$O3" | grep -qF 'AGENTS.md is not a kit file, 4 lines (left alone)' \
+  && ! echo "$O3" | grep -q 'AGENTS.md differs'; then
+  ok "not a kit file: left byte-identical, reports its own line count"
+else
+  no "not a kit file case (repo-authored AGENTS.md)"
+fi
+
+# T4 / AC-5: an unmodified old kit copy is swapped only by --refresh --swap-agents.
+P4="$(seed_old)"; cp "$P4/AGENTS.md" "$P4/AGENTS.before"
+O4a="$(bash lib/adopt.sh "$P4" 2>&1)"; a=1; cmp -s "$P4/AGENTS.md" "$P4/AGENTS.before" && a=0
+O4b="$(bash lib/adopt.sh --refresh "$P4" 2>&1)"; b=1; cmp -s "$P4/AGENTS.md" "$P4/AGENTS.before" && b=0
+bash lib/adopt.sh --refresh --swap-agents "$P4" >/dev/null; c=1; cmp -s "$P4/AGENTS.md" "$POINTER" && c=0
+if [ "$a" -eq 0 ] && [ "$b" -eq 0 ] && [ "$c" -eq 0 ] \
+  && echo "$O4a" | grep -qF 'old kit copy, run --refresh --swap-agents to replace' \
+  && echo "$O4b" | grep -qF 'old kit copy, run --refresh --swap-agents to replace'; then
+  ok "old copy swap needs flag"
+else
+  no "old copy swap needs flag (plain=$a refresh=$b swap=$c)"
+fi
+
+# T4b: a file equal to the current pointer is a silent no-op in every mode.
+P4b="$(newrepo)"; bash lib/adopt.sh "$P4b" >/dev/null
+O4c="$(bash lib/adopt.sh "$P4b" 2>&1; bash lib/adopt.sh --refresh "$P4b" 2>&1; bash lib/adopt.sh --refresh --swap-agents "$P4b" 2>&1)"
+if cmp -s "$P4b/AGENTS.md" "$POINTER" && ! echo "$O4c" | grep -q 'AGENTS.md'; then
+  ok "current pointer is a silent no-op"
+else
+  no "current pointer printed something about AGENTS.md or changed"
+fi
+
+# T4c / AC-4: drift is counted against the MATCHED template.
+P5="$(newrepo)"; bash lib/adopt.sh "$P5" >/dev/null; printf 'EDIT-ONE\nEDIT-TWO\n' >> "$P5/AGENTS.md"
+n5="$(dcount "$POINTER" "$P5/AGENTS.md")"
+O5="$(bash lib/adopt.sh --refresh "$P5" 2>&1)"
+if [ "$n5" = 2 ] && echo "$O5" | grep -qF "AGENTS.md differs from the pointer by 2 lines (left alone)"; then
+  ok "drift vs pointer"
+else
+  no "drift vs pointer (expected 2, count=$n5)"
+fi
+P6="$(seed_old)"; printf 'EDIT-ONE\n' >> "$P6/AGENTS.md"; cp "$P6/AGENTS.md" "$P6/AGENTS.before"
+n6="$(dcount AGENTS.md "$P6/AGENTS.md")"
+O6="$(bash lib/adopt.sh --refresh --swap-agents "$P6" 2>&1)"
+if echo "$O6" | grep -qF "AGENTS.md differs from the old kit contract by $n6 lines (left alone)" && cmp -s "$P6/AGENTS.md" "$P6/AGENTS.before"; then
+  ok "drift vs old contract"
+else
+  no "drift vs old contract (expected $n6)"
+fi
+
+# T5 / AC-5: every committed AGENTS.md version is in the known list. A shallow clone cannot say.
+if [ "$(git rev-parse --is-shallow-repository)" != "false" ]; then
+  echo "SKIP: shallow clone, history incomplete (known list complete against git log)"
+else
+  miss=0
+  for c in $(git log --format=%H -- AGENTS.md); do
+    git cat-file -e "$c:AGENTS.md" 2>/dev/null || continue
+    h="$(git show "$c:AGENTS.md" | { if command -v shasum >/dev/null 2>&1; then shasum -a 256; else sha256sum; fi; } | cut -d' ' -f1)"
+    grep -q "^$h " "$KNOWN" || { miss=$((miss + 1)); echo "  missing from list: $c"; }
+  done
+  [ "$miss" -eq 0 ] && ok "known list complete against git log" || no "known list complete against git log ($miss missing; run lib/adopt/known-hashes.sh)"
+fi
+
+# T5b / AC-9: known-hashes.sh refuses in a shallow clone and leaves the list unchanged. The
+# synthetic repo also proves the script works in a full clone, so the refusal is not a broken setup.
+KS="$(mktemp -d)"; mkdir -p "$KS/lib/adopt"; cp lib/adopt/known-hashes.sh "$KS/lib/adopt/"
+printf 'KEEP\n' > "$KS/lib/adopt/agents-known.sha256"
+git -C "$KS" init -q; printf 'one\n' > "$KS/AGENTS.md"; git -C "$KS" add -A
+git -C "$KS" -c user.email=t@t -c user.name=t commit -qm one
+printf 'two\n' >> "$KS/AGENTS.md"; git -C "$KS" -c user.email=t@t -c user.name=t commit -qam two
+KC="$(mktemp -d)/clone"; git clone -q --depth 1 "file://$KS" "$KC" 2>/dev/null
+E5="$(bash "$KC/lib/adopt/known-hashes.sh" 2>&1)"; r5=$?
+KFULL="$(bash "$KS/lib/adopt/known-hashes.sh" 2>&1)"; rf=$?
+if [ "$r5" -ne 0 ] && echo "$E5" | grep -qi 'shallow' && [ "$(cat "$KC/lib/adopt/agents-known.sha256")" = "KEEP" ] \
+  && [ "$rf" -eq 0 ] && [ "$(grep -c '^[0-9a-f]\{64\} agents:' "$KS/lib/adopt/agents-known.sha256")" -eq 2 ]; then
+  ok "known-hashes refuses shallow"
+else
+  no "known-hashes refuses shallow (rc=$r5 full-rc=$rf)"
+fi
+
+# T6b / AC-11: --swap-agents alone is refused, exit non-zero, nothing written.
+P7="$(seed_old)"; cp "$P7/AGENTS.md" "$P7/AGENTS.before"
+E7="$(bash lib/adopt.sh --swap-agents "$P7" 2>&1)"; r7=$?
+if [ "$r7" -ne 0 ] && echo "$E7" | grep -qF -- '--refresh' && cmp -s "$P7/AGENTS.md" "$P7/AGENTS.before" && [ ! -f "$P7/CLAUDE.md" ]; then
+  ok "swap-agents alone refused"
+else
+  no "swap-agents alone refused (rc=$r7)"
+fi
+
+# T6c / AC-11: --dry-run --refresh --swap-agents plans the swap and writes nothing.
+O8="$(bash lib/adopt.sh --dry-run --refresh --swap-agents "$P7" 2>&1)"
+if echo "$O8" | grep -qF 'would swap AGENTS.md' && cmp -s "$P7/AGENTS.md" "$P7/AGENTS.before" && [ ! -f "$P7/CLAUDE.md" ]; then
+  ok "dry-run swap plans only"
+else
+  no "dry-run swap plans only"
+fi
+
+# T7: --single-source skips the AGENTS.md step entirely, even for a known old copy under --swap-agents.
+P9="$(newrepo)"; printf '# Repo\n\nSINGLE-SOURCE-CONTENT\n' > "$P9/CLAUDE.md"
+O9="$(bash lib/adopt.sh --single-source "$P9" 2>&1)"
+P10="$(newrepo)"; old_kit_copy > "$P10/AGENTS.md"; printf '@AGENTS.md\n' > "$P10/CLAUDE.md"; cp "$P10/AGENTS.md" "$P10/AGENTS.before"
+O10="$(bash lib/adopt.sh --single-source --refresh --swap-agents "$P10" 2>&1)"
+if grep -q SINGLE-SOURCE-CONTENT "$P9/AGENTS.md" && ! grep -q 'kit:agents-pointer' "$P9/AGENTS.md" && ! echo "$O9" | grep -q 'AGENTS.md:' \
+  && ! grep -q 'kit:agents-pointer' "$P10/AGENTS.md" && ! echo "$O10" | grep -qE 'old kit copy|swapped|differs|not a kit file'; then
+  ok "--single-source leaves AGENTS.md handling alone (no pointer, no notice, no swap)"
+else
+  no "--single-source touched AGENTS.md handling"
+fi
+
+# T8 / AC-10: no source AGENTS.md anywhere still adopts and writes the pointer.
+NS="$(mktemp -d)"; mkdir -p "$NS/lib"; cp lib/adopt.sh "$NS/lib/"; cp -R lib/adopt lib/config "$NS/lib/"
+NSTARGET="$(newrepo)"; NSEMPTY="$(mktemp -d)"
+CLAUDE_PLUGIN_ROOT="$NSEMPTY" bash "$NS/lib/adopt.sh" "$NSTARGET" >/dev/null 2>&1; r11=$?
+if [ "$r11" -eq 0 ] && cmp -s "$NSTARGET/AGENTS.md" "$POINTER"; then ok "no source contract"; else no "no source contract (rc=$r11)"; fi
+
+# T9: the cost script reads both transcript shapes.
+J2="docs/verification/gauntlet/2026-09-01-onboarding-campaign/J2/transcript.jsonl"
+OJ="$(bash lib/adopt/onboarding-cost.sh "$J2" 2>&1)"
+CCU='"usage":{"input_tokens":10,"output_tokens":5,"cache_read_input_tokens":100,"cache_creation_input_tokens":1}'
+CCY="$(mktemp)"; CCN="$(mktemp)"
+printf '%s\n' "{\"type\":\"assistant\",\"message\":{\"id\":\"m1\",$CCU,\"content\":[{\"type\":\"tool_use\",\"name\":\"Read\",\"input\":{\"file_path\":\"/h/.claude/dwarves-kit/AGENTS.md\"}}]}}" \
+  "{\"type\":\"assistant\",\"message\":{\"id\":\"m1\",$CCU,\"content\":[{\"type\":\"text\",\"text\":\"x\"}]}}" > "$CCY"
+printf '%s\n' "{\"type\":\"assistant\",\"message\":{\"id\":\"m1\",$CCU,\"content\":[{\"type\":\"tool_use\",\"name\":\"Read\",\"input\":{\"file_path\":\"/h/src/main.js\"}}]}}" > "$CCN"
+OY="$(bash lib/adopt/onboarding-cost.sh "$CCY" 2>&1)"; ON="$(bash lib/adopt/onboarding-cost.sh "$CCN" 2>&1)"
+if echo "$OJ" | grep -qx 'turns 47' && echo "$OJ" | grep -qx 'tokens 2971254' && echo "$OJ" | grep -qx 'contract read: yes' \
+  && echo "$OY" | grep -qx 'contract read: yes' && echo "$OY" | grep -qx 'turns 1' && echo "$OY" | grep -qx 'tokens 116' \
+  && echo "$ON" | grep -qx 'contract read: no'; then
+  ok "onboarding-cost reads the omp and Claude Code transcript shapes"
+else
+  no "onboarding-cost transcript shapes"; echo "$OJ"; echo "$OY"; echo "$ON"
+fi
+rm -f "$CCY" "$CCN"
 
 rm -rf "$T1" "$T2" "$T3" "$T4" "$T5" "$T6" "$T7" "$T13" "$T14" "$T15" "$T16" "$T17" "$T18" "$T19"
 echo "---"
