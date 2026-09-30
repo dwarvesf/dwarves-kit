@@ -10,6 +10,7 @@ Spec: `docs/specs/SPEC-370-orca-mega-backend.md`, `## Trial plan`. Fixture: `doc
 |---|---|
 | Orca version | `orca --version` prints 1.4.209 or later |
 | Permission mode pinned | In Orca, set the Claude agent launch to bypass-permissions, the same as Arm A's `CLAUDE_FLAGS=--dangerously-skip-permissions`. Write both settings into the trial record. A run where they differ is void. |
+| Attestation exported | `export ORCA_PERMISSION_MODE=bypass` once the Orca setting is pinned; the backend refuses to run without it |
 | Suite green | `bash tests/test-orchestrate-orca.sh` ends `Results: N passed, 0 failed` |
 
 ## Step 0: live capture on a throwaway copy (SG-01 only)
@@ -72,6 +73,25 @@ Two design checks:
 |---|---|---|
 | Task id on every `worker-list` row (the Dispatch to Task rejoin) | `orca orchestration worker-list --run "$RUN" --json \| jq '.workers[0] \| keys'` | the field name that holds the Task id. The backend reads `.taskId`. If rows carry no Task id, switch `_orca_sg_state` and `_orca_latest_disp` in `lib/queue/orca-backend.sh` to `dispatch-show --task T --json` per map Task before step 1. |
 | Stop then retry | `orca orchestration worker-stop --dispatch "$D" --json`, then `orca orchestration task-list --run "$RUN" --json \| jq '.tasks[0].status'`, then `orca orchestration worker-start --task <T> --retry-of "$D" --agent claude --worktree new-top-level --name feat/orca-trial-sg-01 --repo path:"$SCR/repo" --run "$RUN" --json` | whether Orca accepts the retry and the Task status after each step, as `### capture: stop-retry` |
+
+### Stub assumption checks (all must be confirmed or fixed before step 1)
+
+Every row is an assumption the stub and `lib/queue/orca-backend.sh` make. Run the command on the capture Run (`$RUN`, `$T` a map Task id, `$D` its Dispatch id), record the result under `### capture: assumptions` in the trial record, and fix the stub and backend together on any mismatch.
+
+| # | Assumption | Command to confirm | Backend reads | If it differs |
+|---|---|---|---|---|
+| 1 | `worker-list --run` may return rows of other Runs; the backend must not rely on the filter | `orca orchestration worker-list --run "$RUN" --json \| jq '[.workers[] \| (.runId // .run.id)] \| unique'` | scopes every row by the Task ids in `map.tsv` (`orca-reset` and derive) | none needed if only `$RUN` shows; the scoping stays either way |
+| 2 | Rows are newest first, so the first row per Task is its latest Dispatch | `orca orchestration worker-list --run "$RUN" --json \| jq '[.workers[] \| (.createdAt // .startedAt // .updatedAt)]'` after a stop-then-retry made two rows for one Task | first row per `taskId` | sort by the timestamp field in `_orca_latest_disp` and `_orca_sg_state` |
+| 3 | Paging: a Run's rows fit one page | `orca orchestration worker-list --run "$RUN" --json \| jq '.page'` | reads one page only | follow `page.nextCursor` before a mega above the page size |
+| 4 | Stopped and released rows persist in `worker-list` | after `worker-stop` then `worker-release`: `orca orchestration worker-list --run "$RUN" --json \| jq --arg d "$D" '[.workers[] \| select(.dispatchId==$d)] \| length'`, and again with `--terminal-state released` | the prior-Dispatch guard also reads `executing` events, so a dropped row cannot restart a Task; derive shows INDETERMINATE `no-dispatch-row` for it | none for the guard; note which filter shows released rows |
+| 5 | A `--retry-request` key replays the first result | run `task-create --spec x --task-title x --run "$RUN" --retry-request probe-1 --json` twice; the two ids must match; then `orca orchestration request-show --help` for the lookup verb | `--retry-request` on `task-create`, `worker-start`, `gate-create` | if ids differ, the lost-response rule is unsafe: stop and report |
+| 6 | Task status words | `orca orchestration task-list --run "$RUN" --json \| jq '[.tasks[].status] \| unique'` across a full life (create, dispatch, complete) | `pending ready dispatched completed failed blocked` | map new words in `_orca_sg_state` |
+| 7 | Dispatch fields: status words, liveness words, `agentWait` location | `orca orchestration worker-show --dispatch "$D" --json \| jq 'keys, .projection, .observation'` and `worker-list` row keys | `dispatchStatus` (`stopped`), `projection.liveness` (`live`, `exited`, `unverifiable`), `observation.agentWait` on the list row | if `agentWait` only exists on `worker-show`, add a per-running-Dispatch `worker-show` read |
+| 8 | Message fields and the `type` set | `orca orchestration inbox --run "$RUN" --json \| jq '[.messages[] \| keys] \| add \| unique'` and `jq '[.messages[].type] \| unique'` after a worker asks a question | `id type taskId dispatchId replyTo createdAt`; types `worker_done heartbeat question escalation` | rename in `_orca_msg_acted` and the derive query |
+| 9 | `createdAt` type (seconds, milliseconds or ISO text) | `orca orchestration inbox --run "$RUN" --json \| jq '.messages[0].createdAt \| type'` | the status footer age handles all three | none if it renders a sane age |
+| 10 | Delivery shape and whole-batch replay | `orca orchestration check --run "$RUN" --json \| jq '.delivery \| keys'` twice without `--ack`; the id must repeat | `.delivery.id`, `.delivery.messages[]` | adjust `_O_CK` reads in `orca_gate` |
+| 11 | Gate row fields | `orca orchestration gate-list --run "$RUN" --json \| jq '.gates[0] \| keys'` before and after `gate-resolve` | `id taskId status (pending or resolved) resolution (accept or rework)` | adjust `_orca_gate_of` |
+| 12 | Permission mode: the launched Claude worker really runs in bypass | attach to the SG-01 worker with `orca orchestration worker-read --dispatch "$D"` and confirm no permission prompt appears; `worker-start` has no permission option and Orca has no read verb, so the backend only checks `ORCA_PERMISSION_MODE=bypass` (an attestation, not a probe) | `ORCA_PERMISSION_MODE` at pre-flight | if a prompt appears, the attestation was wrong: fix Orca's setting, do not weaken the check |
 
 Field names that differ from the stub (`tests/fixtures/orca-stub/orca`, assumptions listed in the implementation notes): fix the stub and `lib/queue/orca-backend.sh` together, commit with a subject containing `from live capture`, and re-run `bash tests/test-orchestrate-orca.sh` green before step 1.
 
