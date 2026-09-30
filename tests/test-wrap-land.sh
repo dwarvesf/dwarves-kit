@@ -1507,10 +1507,12 @@ chk "land-merge: overwrite-ignored pushed nothing" \
      || ! git -C "$TMPD/ld-bare-igno" rev-parse --verify feat/land >/dev/null 2>&1; echo $?)"
 
 echo "--- land-merge: a signal before the merge starts never runs one"
-# The shim TERM's the wrap process on the cycle's second merge-base call, which is
-# _merge_default's already-contains check -- inside the trap's coverage, before the
-# ignored-path snapshot and the merge itself. Every git subcommand is logged, so a
-# merge that ran anyway shows up by name.
+# The shim TERM's the wrap process on the second `merge-base --is-ancestor origin/main <sha>`
+# call, which is _merge_default's already-contains check -- inside the trap's coverage,
+# before the ignored-path snapshot and the merge itself. The first such call is the cycle's
+# own route-out, before the trap; the landed-branch proof uses other argv, so skipping the
+# proof cannot move the match. Every git subcommand is logged, so a merge that ran anyway
+# shows up by name, and a fired marker shows the signal really came from that call.
 build_land_reg sigp
 LWT="$(cd "$TMPD/ld-repo-sigp/wt" && pwd -P)"
 LTIP="$(git -C "$LWT" rev-parse HEAD)"
@@ -1524,15 +1526,14 @@ for a in "\$@"; do
   case "\$a" in -C|-c) prev="\$a"; continue ;; -*) continue ;; *) sub="\$a"; break ;; esac
 done
 printf '%s\n' "\${sub:-?}" >> "$TMPD/glog-sigp"
-if [ "\$sub" = "merge-base" ]; then
+if [ "\$sub" = "merge-base" ] && [[ " \$* " == *" --is-ancestor origin/main "* ]]; then
   n=\$(( \$(cat "$TMPD/gcnt-sigp" 2>/dev/null || echo 0) + 1 )); echo "\$n" > "$TMPD/gcnt-sigp"
-  # The 1st and 2nd merge-base calls are the landed-branch proof's ancestor and absorbed reads.
-  [ "\$n" = "4" ] && kill -TERM "\$PPID" 2>/dev/null
+  [ "\$n" = "2" ] && { : > "$TMPD/gfired-sigp"; kill -TERM "\$PPID" 2>/dev/null; }
 fi
 exec "$REAL_GIT_BIN" "\$@"
 SH
 chmod +x "$TMPD/gshim-sigp/git"
-: > "$TMPD/glog-sigp"; rm -f "$TMPD/gcnt-sigp"
+: > "$TMPD/glog-sigp"; rm -f "$TMPD/gcnt-sigp" "$TMPD/gfired-sigp"
 : > "$GH_STUB_CALLS"; rm -f "$GH_STUB_CALLS".*
 out="$(PATH="$TMPD/gshim-sigp:$PATH" GH_STUB_OPEN_PRS='[]' GH_STUB_CREATE_NUM=42 \
   GH_STUB_MERGE_FAILS=1 GH_STUB_MERGE_ERR='Pull Request is not mergeable' \
@@ -1541,6 +1542,7 @@ out="$(PATH="$TMPD/gshim-sigp:$PATH" GH_STUB_OPEN_PRS='[]' GH_STUB_CREATE_NUM=42
   GH_STUB_LAND_REPO="$LWT" GH_STUB_LAND_REMOTE="$TMPD/ld-bare-sigp" \
   GH_STUB_LAND_BRANCH=feat/land GH_STUB_LAND_DEF=main "$WRAP" land "$LWT" 2>&1)"; rc=$?
 chk "land-merge: a pre-merge signal exits 130" "$([ "$rc" -eq 130 ]; echo $?)"
+chk "land-merge: the signal fired on the already-contains check" "$([ -e "$TMPD/gfired-sigp" ]; echo $?)"
 chk "land-merge: the merge never ran" "$(grep -c '^merge$' "$TMPD/glog-sigp")"
 chk "land-merge: the pre-merge signal left the tip alone" \
   "$([ "$(git -C "$LWT" rev-parse HEAD)" = "$LTIP" ]; echo $?)"
@@ -1719,6 +1721,9 @@ while [ "$i" -lt "$#" ]; do
 done
 if [ "${args[$i]:-}" = "merge-base" ] && [[ " $* " == *" --is-ancestor "* ]] && [ -n "${DIRTY_WT:-}" ]; then
   echo x > "$DIRTY_WT/dirty.txt"
+fi
+if [ "${args[$i]:-}" = "ls-remote" ] && [ -n "${LS_WT:-}" ]; then
+  echo x > "$LS_WT/ls-late.txt"
 fi
 if [ "${args[$i]:-}" = "pull" ] && [ -n "${LATE_WT:-}" ]; then
   echo late > "$LATE_WT/late.txt"; "$REAL_GIT" -C "$LATE_WT" add -A
@@ -1944,6 +1949,88 @@ chk_has "TG2: says the branch changed while the proof was read" "$out" "feat/lan
 chk_no "TG2: never claims already landed" "$out" "already landed"
 chk "TG2: origin's branch is untouched" "$(git -C "$TMPD/ld-bare-tg2" rev-parse --verify feat/land >/dev/null 2>&1; echo $?)"
 chk "TG2: the worktree survives" "$([ -d "$LWT_TG2" ]; echo $?)"
+
+echo "--- TG3: a file written after the proof but before the tidy refuses the removal"
+land_squashed tg3
+LREPO_TG3="$TMPD/ld-repo-tg3"; LWT_TG3="$(cd "$LREPO_TG3/wt" && pwd -P)"
+out="$(PATH="$TMPD/gitlate:$PATH" LS_WT="$LWT_TG3" "$WRAP" land "$LWT_TG3" 2>&1)"; rc=$?
+chk "TG3: exits 2" "$([ "$rc" -eq 2 ]; echo $?)"
+chk_has "TG3: says the branch changed since it was checked" "$out" "feat/land changed since it was checked"
+chk_has "TG3: names the new path" "$out" "ls-late.txt"
+chk "TG3: the late file survives" "$([ -f "$LWT_TG3/ls-late.txt" ]; echo $?)"
+chk "TG3: the worktree survives" "$([ -d "$LWT_TG3" ]; echo $?)"
+chk "TG3: the branch survives" "$(git -C "$LREPO_TG3" rev-parse --verify -q feat/land >/dev/null; echo $?)"
+
+echo "--- TG4: a file written during the merge refuses the removal on the merge path"
+mkdir -p "$TMPD/ghlate"
+cat > "$TMPD/ghlate/gh" <<SHIM
+#!/usr/bin/env bash
+if [ "\$1" = "pr" ] && [ "\$2" = "merge" ] && [ -n "\${MERGE_WT:-}" ]; then echo x > "\$MERGE_WT/merge-late.txt"; fi
+exec "$TMPD/stub/gh" "\$@"
+SHIM
+chmod +x "$TMPD/ghlate/gh"
+build_land tg4
+LREPO_TG4="$TMPD/ld-repo-tg4"; LWT_TG4="$(cd "$LREPO_TG4/wt" && pwd -P)"
+out="$(PATH="$TMPD/ghlate:$PATH" MERGE_WT="$LWT_TG4" GH_STUB_OPEN_PRS='[]' GH_STUB_CREATE_NUM=42 \
+  GH_STUB_LAND_REPO="$LWT_TG4" GH_STUB_LAND_REMOTE="$TMPD/ld-bare-tg4" \
+  GH_STUB_LAND_BRANCH=feat/land GH_STUB_LAND_DEF=main "$WRAP" land "$LWT_TG4" 2>&1)"; rc=$?
+chk "TG4: exits 2" "$([ "$rc" -eq 2 ]; echo $?)"
+chk_has "TG4: says the branch changed since it was checked" "$out" "feat/land changed since it was checked"
+chk_has "TG4: names the new path" "$out" "merge-late.txt"
+chk "TG4: the late file survives" "$([ -f "$LWT_TG4/merge-late.txt" ]; echo $?)"
+chk "TG4: the worktree survives" "$([ -d "$LWT_TG4" ]; echo $?)"
+chk "TG4: the branch survives" "$(git -C "$LREPO_TG4" rev-parse --verify -q feat/land >/dev/null; echo $?)"
+
+echo "--- TH: the origin read matches refs/heads/<branch> exactly"
+# A git shim that answers every ls-remote with $LS_OUT, so a tag named like a branch (which
+# ls-remote's tail-matching pattern also lists) can be put in any position.
+mkdir -p "$TMPD/gitls"
+cat > "$TMPD/gitls/git" <<'SHIM'
+#!/usr/bin/env bash
+args=("$@"); i=0
+while [ "$i" -lt "$#" ]; do
+  case "${args[$i]}" in -C|-c) i=$((i + 2)) ;; -*) i=$((i + 1)) ;; *) break ;; esac
+done
+if [ "${args[$i]:-}" = "ls-remote" ] && [ -n "${LS_OUT+x}" ]; then
+  [ -z "$LS_OUT" ] || printf '%b\n' "$LS_OUT"
+  exit "${LS_RC:-0}"
+fi
+exec "$REAL_GIT" "$@"
+SHIM
+chmod +x "$TMPD/gitls/git"
+OTHER_SHA=2222222222222222222222222222222222222222
+
+echo "--- TH1: a tag carrying the tip ahead of a branch that differs still refuses"
+land_squashed th1
+LREPO_TH1="$TMPD/ld-repo-th1"; LWT_TH1="$(cd "$LREPO_TH1/wt" && pwd -P)"; TIP_TH1="$(git -C "$LWT_TH1" rev-parse HEAD)"
+out="$(PATH="$TMPD/gitls:$PATH" LS_OUT="${TIP_TH1}\trefs/tags/refs/heads/feat/land\n${OTHER_SHA}\trefs/heads/feat/land" \
+  "$WRAP" land "$LWT_TH1" 2>&1)"; rc=$?
+chk "TH1: exits 2" "$([ "$rc" -eq 2 ]; echo $?)"
+chk_has "TH1: says the origin branch differs from the proven tip" "$out" "differs from the proven ${TIP_TH1:0:7}"
+chk "TH1: the worktree and branch stay" "$([ -d "$LWT_TH1" ] && git -C "$LREPO_TH1" rev-parse --verify -q feat/land >/dev/null; echo $?)"
+
+echo "--- TH2: a tag with another sha ahead of the matching branch does not refuse"
+land_squashed th2
+LREPO_TH2="$TMPD/ld-repo-th2"; LWT_TH2="$(cd "$LREPO_TH2/wt" && pwd -P)"; TIP_TH2="$(git -C "$LWT_TH2" rev-parse HEAD)"
+out="$(PATH="$TMPD/gitls:$PATH" LS_OUT="${OTHER_SHA}\trefs/tags/refs/heads/feat/land\n${TIP_TH2}\trefs/heads/feat/land" \
+  "$WRAP" land "$LWT_TH2" 2>&1)"; rc=$?
+chk "TH2: exits 0" "$rc"
+chk "TH2: the worktree is removed" "$([ ! -e "$LWT_TH2" ]; echo $?)"
+
+echo "--- TH3: only a tag matches, so the branch reads as absent"
+land_squashed th3
+LREPO_TH3="$TMPD/ld-repo-th3"; LWT_TH3="$(cd "$LREPO_TH3/wt" && pwd -P)"; TIP_TH3="$(git -C "$LWT_TH3" rev-parse HEAD)"
+out="$(PATH="$TMPD/gitls:$PATH" LS_OUT="${TIP_TH3}\trefs/tags/refs/heads/feat/land" "$WRAP" land "$LWT_TH3" 2>&1)"; rc=$?
+chk "TH3: exits 0" "$rc"
+chk_has "TH3: the branch reads as gone from origin" "$out" "feat/land already gone from origin"
+
+echo "--- TH4: two lines for the exact ref refuse"
+land_squashed th4
+LREPO_TH4="$TMPD/ld-repo-th4"; LWT_TH4="$(cd "$LREPO_TH4/wt" && pwd -P)"; TIP_TH4="$(git -C "$LWT_TH4" rev-parse HEAD)"
+out="$(PATH="$TMPD/gitls:$PATH" LS_OUT="${TIP_TH4}\trefs/heads/feat/land\n${TIP_TH4}\trefs/heads/feat/land" "$WRAP" land "$LWT_TH4" 2>&1)"; rc=$?
+chk "TH4: exits 2" "$([ "$rc" -eq 2 ]; echo $?)"
+chk_has "TH4: says the origin branch could not be confirmed" "$out" "origin/feat/land could not be confirmed"
+chk "TH4: the worktree and branch stay" "$([ -d "$LWT_TH4" ] && git -C "$LREPO_TH4" rev-parse --verify -q feat/land >/dev/null; echo $?)"
 
 echo
 if [ "$FAIL" -gt 0 ]; then echo "test-wrap-land: $PASS passed, $FAIL FAILED of $TOTAL" >&2; exit 1; fi

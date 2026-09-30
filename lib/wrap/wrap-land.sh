@@ -109,9 +109,16 @@ cmd_land() {
     echo "wrap.sh land: ${wt} is the main checkout, not a worktree" >&2; return 1
   fi
 
-  if [ -n "$(git -C "$wt" status --porcelain 2>/dev/null)" ]; then
+  # One read serves both the clean check and the baseline _land_tidy needs: what the
+  # pre-merge ignore rules cover, written as the `??` lines it shows once a merge un-ignores
+  # it. That file is the operator's, not a write made since, and it is the only difference
+  # the pre-removal recheck tolerates on the merge path.
+  local st0 base_ignored
+  st0="$(git -C "$wt" status --porcelain --ignored=matching 2>/dev/null)"
+  if [ -n "$(printf '%s\n' "$st0" | grep -v '^!! ')" ]; then
     echo "wrap.sh land: ${wt} is dirty, so the branch is not what a PR would carry" >&2; return 1
   fi
+  base_ignored="$(printf '%s\n' "$st0" | sed -n 's/^!! /?? /p')"
   local branch; branch="$(git -C "$wt" branch --show-current 2>/dev/null)"
   [ -n "$branch" ] || { echo "wrap.sh land: ${wt} is on a detached HEAD, so there is no branch to land" >&2; return 1; }
   local def; def="$(_default_branch "$wt")" || { echo "wrap.sh land: no default branch resolved for ${wt}" >&2; return 1; }
@@ -178,11 +185,22 @@ cmd_land() {
     ls_out="$(git -C "$wt" ls-remote --exit-code origin "refs/heads/${branch}" 2>&1)"; ls_rc=$?
     case "$ls_rc" in
       2) origin_probe=absent ;;
-      0) osha="$(printf '%s' "$ls_out" | head -1 | cut -f1)"
-         if [ "$osha" = "$tip" ]; then origin_probe=present
+      0) # ls-remote matches the pattern as a path suffix, so a tag named
+         # refs/tags/refs/heads/<branch> is listed too: only the exact ref counts, and two
+         # lines for it is an answer nothing can trust.
+         local exact nexact
+         exact="$(printf '%s\n' "$ls_out" | awk -F'\t' -v r="refs/heads/${branch}" '$2 == r')"
+         nexact="$(printf '%s\n' "$exact" | grep -c .)"
+         if [ "$nexact" -gt 1 ]; then
+           echo "     LAND REFUSED: origin/${branch} could not be confirmed: ${ls_out}" >&2; return 2
+         elif [ "$nexact" -eq 0 ]; then origin_probe=absent
          else
-           echo "     LAND REFUSED: origin/${branch} ($(_short "$osha")) differs from the proven $(_short "$tip")" >&2
-           return 2
+           osha="$(printf '%s' "$exact" | cut -f1)"
+           if [ "$osha" = "$tip" ]; then origin_probe=present
+           else
+             echo "     LAND REFUSED: origin/${branch} ($(_short "$osha")) differs from the proven $(_short "$tip")" >&2
+             return 2
+           fi
          fi ;;
       *) echo "     LAND REFUSED: origin/${branch} could not be confirmed: ${ls_out}" >&2; return 2 ;;
     esac
@@ -193,7 +211,8 @@ cmd_land() {
       echo "     PR #$(printf '%s' "$open_json" | jq -r '.[0].number' 2>/dev/null) still open for ${branch}: left untouched" >&2
       return 2
     fi
-    _land_tidy "$repo" "$wt" "$branch" "$def" "$url" "$tip" "$origin_probe"
+    # Nothing ran in the tree since the proof, so the only state the removal accepts is clean.
+    _land_tidy "$repo" "$wt" "$branch" "$def" "$url" "$tip" "$origin_probe" ""
     return $?
   fi
 
@@ -438,20 +457,20 @@ cmd_land() {
     fi
   fi
 
-  _land_tidy "$repo" "$wt" "$branch" "$def" "$url" "$tip"
+  _land_tidy "$repo" "$wt" "$branch" "$def" "$url" "$tip" "" "$base_ignored"
 }
 
-# _land_tidy <repo> <wt> <branch> <def> <url> <tip> [<origin_probe>] -- the tail both land
+# _land_tidy <repo> <wt> <branch> <def> <url> <tip> [<origin_probe> [<allowed>]] -- the tail both land
 # paths share once the branch is proven on the default branch: retire the origin branch,
 # fast-forward the main checkout, remove the worktree, delete the local branch. <origin_probe>
 # is `absent` or `present` when the caller already read origin's copy of the branch; without
 # one this reads it itself; only `ls-remote --exit-code` exit 2 counts as gone, any other
-# failure falls through to the delete attempt and its own FAILED line.
+# failure falls through to the delete attempt and its own FAILED line. <allowed> is the
+# caller's expected tree state: the `status --porcelain` lines the tree may show at removal.
+# Empty means clean. The caller takes it before the work that could write, never here, so a
+# write made during that work is a difference and not a baseline.
 _land_tidy() {
-  local repo="$1" wt="$2" branch="$3" def="$4" url="$5" tip="$6" probe="${7:-}"
-  # What the tree holds on entry. The merge cycle can leave an untracked file the merge just
-  # un-ignored, which is not a write made since; the recheck below compares against this.
-  local entry_state; entry_state="$(git -C "$wt" status --porcelain 2>/dev/null)"
+  local repo="$1" wt="$2" branch="$3" def="$4" url="$5" tip="$6" probe="${7:-}" allowed="${8:-}"
   # Mirrors _apply_origin_branches: leased to the tip land itself pushed, skipped when an
   # open PR still bases off this branch (deleting it would close that PR), and never fails
   # land, since the merge is already verified.
@@ -502,9 +521,17 @@ _land_tidy() {
   # The pull and the origin delete above can cost network round trips, and `-f -f` below
   # discards a dirty tree and `-D` a newer commit, so both are re-read right before the
   # removal. A mismatch skips only the removal; what already ran stands.
-  if [ "$(git -C "$wt" status --porcelain 2>/dev/null)" != "$entry_state" ] \
-     || [ "$(git -C "$wt" rev-parse HEAD 2>/dev/null)" != "$tip" ]; then
-    echo "     ${branch} changed since it was checked; worktree and branch left in place" >&2
+  # Any status line outside <allowed> refuses and names its path; an unreadable status does too.
+  local st_now st_rc line extra="" detail=""
+  st_now="$(git -C "$wt" status --porcelain 2>/dev/null)"; st_rc=$?
+  [ "$st_rc" -eq 0 ] || detail=" (status unreadable)"
+  while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    case $'\n'"$allowed"$'\n' in *$'\n'"$line"$'\n'*) continue ;; esac
+    extra="${line#???}"; detail=" (${extra})"; break
+  done <<< "$st_now"
+  if [ -n "$detail" ] || [ "$(git -C "$wt" rev-parse HEAD 2>/dev/null)" != "$tip" ]; then
+    echo "     ${branch} changed since it was checked${detail}; worktree and branch left in place" >&2
     return 2
   fi
 
