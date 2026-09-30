@@ -30,7 +30,7 @@ structural() {
   rc=0; has 'kit:task-verifier' && hasi 'every task' && has 'kit:acceptance-verifier' && has 'kit:integration-verifier' \
     && has 'check-edited:' && has 'check-edit.sh' && has 'LANE-SUGGEST' && has 'Verify at each slice boundary' && hasi 'NEGATIVE CONTROL' && has 'rid=<rid>' && has '(lead-run)' || rc=1
   echo "T5 one end pass, acceptance, integration, check-edit, negative control, rid|$rc"
-  rc=0; has 'kit_config_get_root execute.recheck_sample 5' && has 'recheck-sample.sh decide' && has 'unverifiable' && has 'recheck: sampled key=' && has '(self-attested)' \
+  rc=0; has 'kit_config_get_root execute.recheck_sample 5' && has 'recheck-sample.sh decide' && has 'decide "$RID" 1' && has 'unverifiable' && has 'recheck: sampled key=' && has '(self-attested)' \
     && has 'Re-audit: SKIPPED (sampled out' || rc=1; echo "T6 sampled recheck wording|$rc"
   rc=0; has 'Result: PARTIAL' && hasi 'scope creep' && has 'file:line' || rc=1; echo "T7 PARTIAL wording|$rc"
 }
