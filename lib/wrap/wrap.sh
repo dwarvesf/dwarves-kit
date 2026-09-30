@@ -1850,6 +1850,26 @@ _pr_detail_settled() {
   printf '%s' "$detail"
 }
 
+# _pr_detail_at_head <url> <number> <tip> -- the detail read after a refused merge, pinned
+# to the pushed tip: GitHub can still serve the pre-push head inside the settle window, and
+# a CONFLICTING verdict against the old head would answer for a branch that no longer
+# exists. It waits until headRefOid is <tip> and mergeable is computed, one read every 2s
+# bounded by KIT_WRAP_SETTLE_SECS, and returns the last read either way. Unlike
+# _pr_detail_settled it does not keep waiting on CONFLICTING: a real conflict is the answer
+# the read exists to find.
+_pr_detail_at_head() {
+  local url="$1" n="$2" tip="$3" waited=0 detail="" m h
+  while :; do
+    detail="$(_pr_detail "$url" "$n")"
+    h="$(printf '%s' "$detail" | jq -r '.headRefOid // ""' 2>/dev/null)"
+    m="$(printf '%s' "$detail" | jq -r '.mergeable // "UNKNOWN"' 2>/dev/null)"
+    [ "$h" = "$tip" ] && [ "$m" != "UNKNOWN" ] && break
+    [ "$waited" -lt "$KIT_WRAP_SETTLE_SECS" ] || break
+    sleep 2; waited=$(( waited + 2 ))
+  done
+  printf '%s' "$detail"
+}
+
 # _branch_worktree <repo> <branch> -- the checkout that holds <branch>, empty when none does.
 # `--porcelain -z` NUL-terminates every attribute, which keeps a path carrying a newline whole.
 _branch_worktree() {
@@ -2406,10 +2426,10 @@ _land_feature_title() {
 # override: a ship-gate refusal on the push surfaces with the gate's own stderr and exit
 # code, and the run stops there.
 cmd_land() {
-  local wt="" title="" body_file="" arg count=0 want="" flags_given=0
+  local wt="" title="" body_file="" verify="" arg count=0 want="" flags_given=0
   for arg in "$@"; do
     if [ -n "$want" ]; then
-      case "$want" in title) title="$arg" ;; body) body_file="$arg" ;; esac
+      case "$want" in title) title="$arg" ;; body) body_file="$arg" ;; verify) verify="$arg" ;; esac
       want=""; continue
     fi
     case "$arg" in
@@ -2417,13 +2437,15 @@ cmd_land() {
       --title=*) title="${arg#--title=}"; flags_given=1 ;;
       --body-file) want=body; flags_given=1 ;;
       --body-file=*) body_file="${arg#--body-file=}"; flags_given=1 ;;
+      --verify) want=verify ;;
+      --verify=*) verify="${arg#--verify=}" ;;
       --with-ci) KIT_WRAP_CI_ON_MERGE=1 ;;
       -*) echo "wrap.sh land: unknown flag '$arg'" >&2; return 64 ;;
       *) count=$(( count + 1 )); wt="$arg" ;;
     esac
   done
   [ -z "$want" ] || { echo "wrap.sh land: --${want} needs a value" >&2; return 64; }
-  [ "$count" -eq 1 ] || { echo "usage: wrap.sh land <worktree> [--title T] [--body-file F] [--with-ci]" >&2; return 64; }
+  [ "$count" -eq 1 ] || { echo "usage: wrap.sh land <worktree> [--title T] [--body-file F] [--with-ci] [--verify <cmd>]" >&2; return 64; }
   _is_repo "$wt" || { echo "wrap.sh land: ${wt} is not a git worktree" >&2; return 64; }
   if [ -n "$body_file" ] && [ ! -f "$body_file" ]; then
     echo "wrap.sh land: --body-file '${body_file}' is not an existing file" >&2; return 64
@@ -2551,7 +2573,107 @@ cmd_land() {
   fi
 
   _gh_merge_retry "$n" "$url" "$tip"; rc=$?
-  if [ "$rc" -ne 0 ]; then echo "     MERGE FAILED #${n}: exit ${rc}" >&2; return 2; fi
+  if [ "$rc" -ne 0 ]; then
+    # A refusal worth answering is CONFLICTING and nothing else: the branch is already
+    # pushed, so one merge of origin/<def> into it (never a rebase) is the only move that
+    # keeps the published history. Any other verdict keeps today's exit.
+    local mdetail mhead m mgen mrc proll pnum pwaited failed_checks
+    mdetail="$(_pr_detail_at_head "$url" "$n" "$tip")"
+    mhead="$(printf '%s' "$mdetail" | jq -r '.headRefOid // ""' 2>/dev/null)"
+    if [ -z "$mdetail" ] || [ -z "$mhead" ]; then
+      echo "     MERGE FAILED #${n}: exit ${rc}; the PR state is unreadable, nothing merged" >&2
+      return 2
+    fi
+    if [ "$mhead" != "$tip" ]; then
+      echo "     MERGE FAILED #${n}: GitHub still shows head $(_short "$mhead"), not the pushed $(_short "$tip")" >&2
+      return 2
+    fi
+    m="$(printf '%s' "$mdetail" | jq -r '.mergeable // "UNKNOWN"' 2>/dev/null)"
+    if [ "$m" != "CONFLICTING" ]; then
+      echo "     MERGE FAILED #${n}: exit ${rc}" >&2; return 2
+    fi
+    echo "     #${n} is CONFLICTING: merging origin/${def} into ${branch}"
+    mgen=""; [ -f "$wt/$_RB_GENERATOR" ] && mgen="$wt/$_RB_GENERATOR"
+    if [ -n "$verify" ]; then
+      _merge_verify_push "$wt" "$branch" "$def" "$tip" "$mgen" "$verify"
+    else
+      _merge_verify_push "$wt" "$branch" "$def" "$tip" "$mgen"
+    fi
+    mrc=$?
+    case "$mrc" in
+      0) ;;
+      4) echo "     ${branch} already contains origin/${def}; GitHub's conflict is the union-blind case, run wrap merge --apply --pr ${n}" >&2
+         return 2 ;;
+      130) return 130 ;;
+      *) echo "     PR #${n} left open" >&2; return 2 ;;
+    esac
+
+    # From here on the merge commit is on origin whatever happens next, so every exit names
+    # it: a rerun that cannot see that sha would merge the wrong head.
+    echo "     waiting for GitHub to see $(_short "$MERGED_OID")"
+    mdetail="$(_pr_detail_settled "$url" "$n" "$MERGED_OID" "$tip")"
+    mhead="$(printf '%s' "$mdetail" | jq -r '.headRefOid // ""' 2>/dev/null)"
+    m="$(printf '%s' "$mdetail" | jq -r '.mergeable // "UNKNOWN"' 2>/dev/null)"
+    if [ -z "$mdetail" ] || [ -z "$mhead" ]; then
+      echo "     #${n} is unreadable after the push; the merge commit $(_short "$MERGED_OID") is on origin" >&2
+      return 2
+    fi
+    if [ "$mhead" = "$tip" ]; then
+      echo "     GitHub has not caught up with $(_short "$MERGED_OID"); run wrap merge --apply --pr ${n}; the merge commit $(_short "$MERGED_OID") is on origin" >&2
+      return 2
+    fi
+    if [ "$mhead" != "$MERGED_OID" ]; then
+      echo "     PR #${n} head is $(_short "$mhead"), another writer pushed; left open; the merge commit $(_short "$MERGED_OID") is on origin" >&2
+      return 2
+    fi
+    if [ "$m" = "CONFLICTING" ]; then
+      echo "     #${n} is still CONFLICTING; run wrap merge --apply --pr ${n}; the merge commit $(_short "$MERGED_OID") is on origin" >&2
+      return 2
+    fi
+    tip="$MERGED_OID"
+
+    if _ci_on_merge; then
+      _ci_label_sync "$url" "$n"; rc=$?
+      case "$rc" in
+        0) _ci_checks_wait "$url" "$n" ;;
+        1) ;;
+        *) echo "     MERGE FAILED #${n}: the ci label could not be set; the merge commit $(_short "$tip") is on origin" >&2
+           return 2 ;;
+      esac
+      proll="$(gh pr view "$n" --repo "$url" --json statusCheckRollup 2>/dev/null)"
+    else
+      # The pending-only wait holds no grace: a push that starts no checks pays nothing.
+      pwaited=0
+      while :; do
+        proll="$(gh pr view "$n" --repo "$url" --json statusCheckRollup 2>/dev/null)"
+        pnum="$(printf '%s' "$proll" | jq -r "${CI_JQ_DEFS} ([.statusCheckRollup // [] | .[] | select(pending)] | length)" 2>/dev/null)"
+        case "$pnum" in ''|*[!0-9]*) pnum=0 ;; esac
+        [ "$pnum" -gt 0 ] || break
+        [ "$pwaited" -lt "$KIT_WRAP_CARRY_CHECKS_SECS" ] || break
+        sleep 10; pwaited=$(( pwaited + 10 ))
+      done
+    fi
+    # A red check on the merged head stops the land before the second merge: a clean
+    # textual merge that broke the build must never land. Latest run per name wins, the
+    # same dedupe _pr_gate applies.
+    failed_checks="$(printf '%s' "$proll" | jq -r "${CI_JQ_DEFS}"'
+      def rtime: [.completedAt, .startedAt, .createdAt] | map(real) | .[0] // "";
+      ((.statusCheckRollup // [])
+        | group_by(.name // .context)
+        | map(sort_by([(if pending then 1 else 0 end), rtime]) | last)
+        | map(select(((.conclusion // .state // "") | ascii_upcase) as $c
+              | $c == "FAILURE" or $c == "ERROR" or $c == "CANCELLED" or $c == "TIMED_OUT")
+            | (.name // .context // "check")) | join(", "))' 2>/dev/null)"
+    if [ -n "$failed_checks" ]; then
+      echo "     checks failed on the merged head $(_short "$tip"): ${failed_checks}; the merge commit is on origin" >&2
+      return 2
+    fi
+    _gh_merge_retry "$n" "$url" "$tip"; rc=$?
+    if [ "$rc" -ne 0 ]; then
+      echo "     MERGE FAILED #${n}: exit ${rc} after the merge cycle; once its checks pass, run wrap merge --apply --pr ${n}; the merge commit $(_short "$tip") is on origin" >&2
+      return 2
+    fi
+  fi
 
   local after state sha
   after="$(gh pr view "$n" --repo "$url" --json state,mergeCommit 2>/dev/null)"
@@ -3719,18 +3841,20 @@ _merge_default() {
     _merge_restore "$wt" "$branch" "$tip"; return $?
   fi
   [ -n "$MVP_HIT" ] && return 130
-  set=("${unmerged[@]}")
+  set=(${unmerged[@]+"${unmerged[@]}"})
   while IFS= read -r -d '' p; do
     _rb_has "$p" ${set[@]+"${set[@]}"} || set+=("$p")
   done < <(_rb_changed "$wt")
   while IFS= read -r -d '' p; do
     _rb_has "$p" ${set[@]+"${set[@]}"} || set+=("$p")
   done < <(git -C "$wt" ls-files -o --exclude-standard -z 2>/dev/null)
-  if hits="$(_rb_markers "$wt" "${set[@]}")"; then
+  if hits="$(_rb_markers "$wt" ${set[@]+"${set[@]}"})"; then
     echo "MARKERS ${branch}: $(printf '%s' "$hits" | paste -sd, - | sed 's/,/, /g')"
     _merge_restore "$wt" "$branch" "$tip"; return $?
   fi
-  if ! git -C "$wt" add -- "${set[@]}" 2>/dev/null; then
+  # An empty set means the merge auto-staged everything itself (a pure union or
+  # conflict-free merge), so there is nothing left to name for git add.
+  if [ "${#set[@]}" -gt 0 ] && ! git -C "$wt" add -- "${set[@]}" 2>/dev/null; then
     echo "FAILED ${branch}: git add of the resolved paths"
     _merge_restore "$wt" "$branch" "$tip"; return $?
   fi
