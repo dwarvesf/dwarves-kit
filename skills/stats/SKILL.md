@@ -1,6 +1,6 @@
 ---
 name: stats
-description: Query or render the state of the scattered kit/tide/tg-cleanup/learned ledgers, and detect + propose backlog rows off anomalies. Use when the operator asks to SEE ledger state -- "show me the ledger state", "my debt", "token cost" -- or to check/propose off it -- "any ledger anomalies". NOT for editing/mutating any ledger. NOT for ad-hoc SQL exploration. NOT a persistent TUI/app.
+description: Query or render ledger state and propose backlog rows off anomalies. Use when asked to SEE it -- "show me the ledger state", "my debt", "understanding debt", "telemetry", "token cost", "kit runs", "render the ledger" -- or to check it -- "any ledger anomalies". NOT for editing/mutating any ledger. NOT for ad-hoc SQL exploration. NOT a persistent TUI/app.
 ---
 
 # stats
