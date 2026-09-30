@@ -12,6 +12,10 @@ There is no tiny tool in this repo that counts lines, words and bytes of a text 
 
 One file, `src/wordstat.py`, run as `python3 src/wordstat.py [--top N] [--json] [FILE]`. It reads FILE, or stdin when FILE is absent or `-`. A word is a maximal run of `[A-Za-z0-9']` characters, compared case-folded; one tokenizer serves both the `words` count and `--top`. Input is read as raw bytes (so `bytes` equals the file size and CRLF is not undercounted) and decoded as UTF-8 with `errors="replace"` for tokenizing. No third-party dependency.
 
+## Picture
+
+The flow diagram under `## Design` below is the picture for this spec.
+
 ## Design
 
 One module, one flow, pure functions for the logic and `main` for I/O:
@@ -37,16 +41,16 @@ Chosen approach: stdlib `re.findall` for tokens, `collections.Counter` for frequ
 
 ### Phase 1: Counts
 
-- [ ] TASK-A: create `src/wordstat.py` with `main(argv=None)` and a `count(text)` function returning lines, words and bytes; the CLI prints `lines=<n> words=<n> bytes=<n>` for FILE or stdin. Lines = number of `\n` bytes; bytes = raw input length; words = number of `[A-Za-z0-9']+` tokens (so `printf 'a,b\n'` is 2 words). AC: `python3 src/wordstat.py tests/data/sample.txt` prints exactly `lines=3 words=11 bytes=52`; `printf 'a b\n' | python3 src/wordstat.py` prints `lines=1 words=2 bytes=4`; `printf 'a,b\n' | python3 src/wordstat.py` prints `lines=1 words=2 bytes=4`; unit tests in `tests/test_counts.py` pass.
+- [ ] TASK-A: create `src/wordstat.py` with `main(argv=None)`, a shared `tokens(text)` helper (the `[A-Za-z0-9']+` tokenizer, used for `words` and later for `--top`) and `count(data: bytes)` returning lines, words and bytes; `main` reads bytes once (`open(FILE,'rb')` or `sys.stdin.buffer`); the CLI prints `lines=<n> words=<n> bytes=<n>` for FILE or stdin. Lines = number of `\n` bytes; bytes = raw input length; words = number of `[A-Za-z0-9']+` tokens (so `printf 'a,b\n'` is 2 words). AC: `python3 src/wordstat.py tests/data/sample.txt` prints exactly `lines=3 words=11 bytes=52`; `printf 'a b\n' | python3 src/wordstat.py` prints `lines=1 words=2 bytes=4`; `printf 'a,b\n' | python3 src/wordstat.py` prints `lines=1 words=2 bytes=4`; `printf 'a b' | python3 src/wordstat.py` prints `lines=0 words=2 bytes=3`; a UTF-8 input of one two-byte character prints `bytes=2`; FILE `-` reads stdin; unit tests in `tests/test_counts.py` (feeding bytes, including stdin as bytes) pass.
 
 ### Phase 2: Top words
 
-- [ ] TASK-B: add `top_words(text, n)` and the `--top N` flag. Words are tokens matching `[A-Za-z0-9']+`, lowercased; sort by count descending, then alphabetically; print `<word> <count>` one per line after the counts line. AC: `python3 src/wordstat.py --top 2 tests/data/sample.txt` prints the counts line, then `the 3`, then `brown 1`; `--top 0` prints no word lines; unit tests in `tests/test_top.py` pass.
-- [ ] TASK-C (depends on TASK-B): add `--json`. Output is one JSON object made with `json.dumps` defaults, keys in the order `lines`, `words`, `bytes`, `top` (the `top` key is present only with `--top`, as a list of `[word, count]` pairs). AC: `python3 src/wordstat.py --json --top 2 tests/data/sample.txt` prints exactly `{"lines": 3, "words": 11, "bytes": 52, "top": [["the", 3], ["brown", 1]]}`; without `--top` the `top` key is absent; unit tests in `tests/test_json.py` pass.
+- [ ] TASK-B (depends on TASK-A): add `top_words(text, n)`, built on `tokens`, and the `--top N` flag with its custom argparse `type` (rejects negative or non-integer values). Words are tokens matching `[A-Za-z0-9']+`, lowercased; sort by count descending, then alphabetically; print `<word> <count>` one per line after the counts line. AC: `python3 src/wordstat.py --top 2 tests/data/sample.txt` prints the counts line, then `the 3`, then `brown 1`; `--top 0` prints no word lines; `--top 50` on the sample prints every distinct word (9 of them); `don't stop` counts `don't` as one word; unit tests in `tests/test_top.py` pass.
+- [ ] TASK-C (depends on TASK-B): add `--json`. Output is one JSON object made with `json.dumps` defaults, keys in the order `lines`, `words`, `bytes`, `top` (the `top` key is present only with `--top`, as a list of `[word, count]` pairs; `--json --top 0` gives `"top": []`). AC: `python3 src/wordstat.py --json --top 2 tests/data/sample.txt` prints exactly `{"lines": 3, "words": 11, "bytes": 52, "top": [["the", 3], ["brown", 1]]}`; without `--top` the `top` key is absent; unit tests in `tests/test_json.py` pass.
 
 ### Phase 3: Errors and docs
 
-- [ ] TASK-D: error handling and usage docs. A FILE that cannot be read for any `OSError` reason (missing, a directory, no permission) prints `wordstat: cannot read <FILE>` to stderr and exits 2; a negative or non-integer `--top` exits 2 with argparse's message; empty input prints `lines=0 words=0 bytes=0` and exits 0. Add `docs/usage.md` with a `## Usage` heading and one example per flag. AC: `python3 src/wordstat.py nope.txt; echo $?` ends with `2`; `printf '' | python3 src/wordstat.py` prints `lines=0 words=0 bytes=0`; `grep -q '^## Usage' docs/usage.md`; unit tests in `tests/test_errors.py` pass.
+- [ ] TASK-D (depends on TASK-B and TASK-C): error handling and usage docs. A FILE that cannot be read for any `OSError` reason (missing, a directory, no permission) prints `wordstat: cannot read <FILE>` to stderr and exits 2; a negative or non-integer `--top` exits 2 with argparse's message; empty input prints `lines=0 words=0 bytes=0` and exits 0. Add `docs/usage.md` with a `## Usage` heading and one example per flag. AC: `python3 src/wordstat.py nope.txt; echo $?` ends with `2`; `printf '' | python3 src/wordstat.py` prints `lines=0 words=0 bytes=0`; `grep -q '^## Usage' docs/usage.md`; unit tests in `tests/test_errors.py` pass (the permission-denied case skips when running as root).
 
 ## After state
 
@@ -84,7 +88,7 @@ grep -q '^## Usage' docs/usage.md
 
 ## Out of Scope
 
-- Unicode-aware word splitting, locale handling, multiple files, packaging.
+- Unicode-aware word splitting, locale handling, multiple files, packaging, `BrokenPipeError` handling, inputs too large for memory.
 
 ## Touches
 
