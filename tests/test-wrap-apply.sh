@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # test-wrap-apply.sh -- the apply cases; split out of tests/test-wrap.sh.
 # Shares the harness in tests/lib/wrap-stub.sh (gh stub, fixtures, chk).
+# serial: the heaviest wrap suite (242 git-fixture asserts); under run-all's
+# four-way parallel batch it crosses the 300s ceiling it fits standalone.
 # modules under test: lib/wrap/wrap.sh lib/wrap/wrap-common.sh lib/wrap/wrap-scan.sh lib/wrap/wrap-apply.sh lib/wrap/wrap-pull.sh lib/wrap/wrap-carry.sh lib/wrap/wrap-ci.sh lib/wrap/wrap-merge.sh lib/wrap/wrap-land.sh lib/wrap/wrap-start.sh lib/wrap/wrap-log.sh lib/wrap/wrap-deploy.sh lib/wrap/wrap-rebase.sh lib/wrap/report-lint.sh
 KIT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 source "$KIT_DIR/tests/lib/wrap-stub.sh"
