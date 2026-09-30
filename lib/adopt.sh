@@ -137,7 +137,7 @@ is_adopted() {
   # grep would mis-detect a marker quoted inside prose and skip the append path (review #6).
   [ -f "$agents" ] && [ -f "$marker" ] && [ -f "$claude" ] \
     && { grep -qxF "$START" "$block_target" 2>/dev/null \
-         || { [ "$SINGLE" -eq 1 ] && head -n 1 "$agents" | grep -qF 'kit:agents-pointer'; }; }
+         || { [ "$SINGLE" -eq 1 ] && head -n 1 "$agents" | grep -q '^<!-- kit:agents-pointer'; }; }
 }
 
 if [ "$CHECK" -eq 1 ]; then
@@ -151,7 +151,9 @@ known_list="$SELF_DIR/adopt/agents-known.sha256"
 # write_pointer <dest> [<notes-file>]: pointer (plus a blank line and the notes) via tmp + mv, so
 # a short copy or a full disk never leaves a truncated AGENTS.md. Exit 1 on any failure.
 write_pointer() {
-  tmp="$(mktemp)" || exit 1
+  # tmp lives beside the target so mv is a same-filesystem atomic rename; mktemp makes it 0600.
+  tmp="$(mktemp "$(dirname "$1")/.AGENTS.md.XXXXXX")" || exit 1
+  chmod 0644 "$tmp" || exit 1
   { cat "$pointer_tpl" && { [ -z "${2:-}" ] || { printf '\n' && cat "$2"; }; }; } > "$tmp" && mv "$tmp" "$1" \
     || { echo "adopt: failed to write the pointer to $1" >&2; exit 1; }
 }
@@ -287,7 +289,7 @@ fi
 # AGENTS.md (block_target), and the one-line CLAUDE.md pointer is left alone.
 block_mode=""; [ "$SINGLE" -eq 1 ] && block_mode="self"
 pointer_is_block=0
-[ "$SINGLE" -eq 1 ] && head -n 1 "$agents" 2>/dev/null | grep -qF 'kit:agents-pointer' && pointer_is_block=1
+[ "$SINGLE" -eq 1 ] && head -n 1 "$agents" 2>/dev/null | grep -q '^<!-- kit:agents-pointer' && pointer_is_block=1
 if [ ! -f "$block_target" ] || ! grep -qxF "$START" "$block_target" 2>/dev/null; then
   if [ "$pointer_is_block" -eq 1 ]; then :   # the pointer already carries the rules; no block
   elif [ "$DRY" -eq 1 ]; then note "append the operate-contract block to $block_target"; else
