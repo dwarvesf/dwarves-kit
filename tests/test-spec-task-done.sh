@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # test-spec-task-done.sh -- `spec.sh task-done` (lib/spec/spec-task-done.sh).
 #
-# Pins the /kit:execute step 2e edits: the verb checks off exactly the named task line,
+# Pins the /kit:execute end-of-build check-off edits: the verb checks off exactly the named task line,
 # refuses a missing or already-checked ID with a named error and no write, and appends a
 # verification-log entry carrying every field, creating the log when absent.
 #

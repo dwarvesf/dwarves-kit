@@ -1,6 +1,6 @@
 ---
 name: data-etl-worker
-description: Implements a data pipeline/transform task, extract/transform/load, parsing, dedup, normalization. Write-capable; prefers DuckDB SQL for the transform per the house stack. Dispatched by /kit:execute step 2b-0 as the data-etl domain implementer.
+description: Implements a data pipeline/transform task, extract/transform/load, parsing, dedup, normalization. Write-capable; prefers DuckDB SQL for the transform per the house stack. Dispatched by /kit:execute as the builder when `role-classify.sh agent-for` names it for the data-etl domain.
 tools:
   - Read
   - Write
