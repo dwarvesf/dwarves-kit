@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# kit-verb: push-refs | fail-closed parser that names which refs a shell command pushes, used by the ship-gate
 # push-refs.sh -- which refs does a shell command push? The ship-gate's fail-closed parser.
 #
 # Usage: push-refs.sh <repo-root> <command> <current-branch> <default-branch-name>

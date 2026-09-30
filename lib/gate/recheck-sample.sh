@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# kit-verb: recheck-sample decide | decide and record whether an execute run rechecks its end-verifier PASSes, keyed on the rid
 # recheck-sample.sh -- decide whether a /kit:execute run rechecks its end-verifier PASSes.
 #
 #   recheck-sample.sh decide <rid> [N]

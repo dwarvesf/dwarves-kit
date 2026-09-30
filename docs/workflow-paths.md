@@ -16,6 +16,7 @@ GENERATED projection. This file enumerates every entry point and where each path
 | human-typed | `[H]` | the operator types the command; nothing else can start it | `/kit:wayfind` (human ONLY), `/kit:start` |
 | intent-read | `[I]` | Claude infers the intent from context and invokes it | `/kit:execute` after a VALIDATED spec; skill auto-fire |
 | event-fired | `[E]` | a harness event fires it; no one invokes it | every hook (PreToolUse, Stop, SessionEnd, ...) |
+| lib verb | `[V]` | a lib script declares itself with a `# kit-verb:` header; commands, hooks, agents or a human call it | `board work`, `classify floor` |
 | dispatched | `[D]` | a command dispatches it as a subagent | every agent (`task-verifier`, `advisor`, ...) |
 
 Enforcement marks: `HARD` = blocking (exit 2 or pipeline gate); `adv` = advisory (warns, logs, never blocks); `conv` = convenience (never blocks, no verdict). The four hard stops are safety-gate, the push-to-main blocker (inside safety-gate + ship-gate), anti-rationalization, and the execute verification pipeline; everything else advises.
@@ -311,6 +312,10 @@ Off-ramp entries that also land in Shape: `[H/I] /kit:onboard` (first run, orche
                         + acceptance-verifier + system-verifier ──> verdict only
  Escalation lens inside /kit:battery: [D] break-it (advisory; hunts an input the green suite misses).
  Ad hoc on any load-bearing claim: [D] claim-verifier ──> HOLDS / REFUTED majority verdict.
+ Lib verbs on this path: [V] classify floor / lane data / push-refs feed ship-gate; [V] recheck-sample
+ decide + check-edit feed /kit:execute; [V] spec-depth feeds /kit:spec; [V] stats ceremony + board work
+ are read-only views; [V] orchestrate --backend orca is the opt-in /kit:mega backend; [V] adopt pointer
+ is /kit:adopt's writer.
  Ad hoc production alert: [D] devops-triage ──> bounded root-cause verdict (read-only).
  Standing Check hooks: secrets-guard [E, HARD], commit-format [E, HARD],
  board-row-gate [E, HARD: no new board row without board-row-ok], batch-debt-warn [E, adv],
@@ -374,7 +379,7 @@ Off-ramp entries that also land in Shape: `[H/I] /kit:onboard` (first run, orche
 
 ## 5 · Complete path index
 
-One line per live feature: `entry -> ... -> terminal`. Grouped by kind; every feature in `commands/`, `agents/`, `skills/`, `hooks/` appears exactly once.
+One line per live feature: `entry -> ... -> terminal`. Grouped by kind; every feature in `commands/`, `agents/`, `skills/`, `hooks/` and every `# kit-verb:` lib verb appears exactly once.
 
 ### Commands
 
@@ -508,6 +513,22 @@ One line per live feature: `entry -> ... -> terminal`. Grouped by kind; every fe
 | `[E] StatusLine -> statusline -> HUD render (conv, terminal)` |
 | `[E] every wired event, wrapper -> anchor-root -> cd to repo or worktree root, then run the named hook (conv, terminal)` |
 | `[E] Codex runtime hooks, not wired in hooks.json -> codex-hook-adapter -> normalize Codex hook input, invoke shared policies (conv)` |
+
+### Verbs
+
+| Path |
+|---|
+| `[V] adopt pointer -> lib/adopt.sh injects AGENTS.md pointer + proof marker + CLAUDE.md loader -> hash-safe, idempotent (terminal: adopted repo)` |
+| `[V] board work -> lib/board/work.sh joins board rows, mega sub-goals, git, Orca terminals, ledger rung -> one table of who is on what (read-only)` |
+| `[V] check-edit -> lib/gate/check-edit.sh diffs the build against a base ref -> did the build weaken the checks the spec names (execute signal)` |
+| `[V] classify floor -> lib/classify/lane-classify.sh reads the diff -> full on a hard path, else the size floor (feeds ship-gate)` |
+| `[V] classify risk -> lib/classify/lane-classify.sh scores task + files -> full or the chosen lane (advisory)` |
+| `[V] lane data -> lib/gate/lane-data.sh reads [lane.<name>] and [lanes] from kit.toml -> lane plan for gate-ledger and classifier` |
+| `[V] orchestrate --backend orca -> lib/queue/orca-backend.sh maps sub-goals to Orca Tasks + supervised workers -> state read live (opt-in mega backend)` |
+| `[V] push-refs -> lib/gate/push-refs.sh parses a shell command -> which refs it pushes (ship-gate fail-closed input)` |
+| `[V] recheck-sample decide -> lib/gate/recheck-sample.sh keys on the rid -> sampled or skipped, recorded in the run ledger (execute recheck)` |
+| `[V] spec-depth -> lib/spec/spec-depth.sh reads the spec's Depth line -> level / wants / check (spec-validate, execute)` |
+| `[V] stats ceremony -> lib/stats ceremony lens over kit_gates -> per-gate ran/override/skipped/caught (read-only via bin/stats)` |
 
 ## 6 · How to regenerate
 

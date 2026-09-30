@@ -6,7 +6,7 @@ generator: lib/registry/feature-registry.sh
 
 # Feature registry
 
-GENERATED , do not hand-edit. Regenerate: `bash lib/registry/feature-registry.sh generate`. One row per live feature; freshness pinned by `tests/test-meta.sh` and refused pre-push by `hooks/ship-gate.sh`, both through `feature-registry.sh check`. Trigger classes per `docs/workflow-paths.md` section 1: `[H]` human-typed, `[H/I]` human-or-intent, `[I]` intent-read, `[E]` event-fired, `[D]` dispatched. Refs are exact-token greps: Specs over `docs/specs/`, Tests over `tests/*.sh`, Dispatched-by over `commands/*.md` + `skills/*/SKILL.md` (skill dispatchers marked `(skill)`); `-` means no reference found (a coverage gap, not always a defect: read-only agents may be deliberately untested).
+GENERATED , do not hand-edit. Regenerate: `bash lib/registry/feature-registry.sh generate`. One row per live feature; freshness pinned by `tests/test-meta.sh` and refused pre-push by `hooks/ship-gate.sh`, both through `feature-registry.sh check`. Trigger classes per `docs/workflow-paths.md` section 1: `[H]` human-typed, `[H/I]` human-or-intent, `[I]` intent-read, `[E]` event-fired, `[D]` dispatched, `[V]` lib verb declared by a `# kit-verb:` header line. Refs are exact-token greps: Specs over `docs/specs/`, Tests over `tests/*.sh`, Dispatched-by over `commands/*.md` + `skills/*/SKILL.md` (skill dispatchers marked `(skill)`); `-` means no reference found (a coverage gap, not always a defect: read-only agents may be deliberately untested).
 
 ## Commands
 
@@ -20,7 +20,7 @@ GENERATED , do not hand-edit. Regenerate: `bash lib/registry/feature-registry.sh
 | `/kit:design` | `[H/I]` | Opt-in interactive solution-design beat between /think and /spec. Use when the operator wants to shape HOW to build after the idea passed /… | SPEC-003, SPEC-004, SPEC-005 +132 | test-command-emit-sweep.sh, test-command-triggers.sh, test-design-record.sh +24 |
 | `/kit:devs-team` | `[H/I]` | Parallel multi-lens critique of a solution design (the active spec if present, else the decision brief). Dispatches 5 engineering lenses, m… | SPEC-016, SPEC-018, SPEC-019 +14 | test-gate-vocab-recording.sh, test-meta.sh, test-outcome-emit-sweep.sh |
 | `/kit:dispatch` | `[H/I]` | Fire several disjoint VALIDATED specs concurrently, each in its own worktree, then converge. Cross-goal fan-out behind a disjointness gate … | SPEC-002, SPEC-016, SPEC-017 +100 | test-advisor.sh, test-agent-effectiveness.sh, test-attempt-state.sh +39 |
-| `/kit:docs` | `[H/I]` | Update all project documentation to match the current codebase. Cross-references the diff against every doc file and fixes drift. | SPEC-001, SPEC-002, SPEC-003 +246 | proof-loop-09-scenario-b.sh, run-all.sh, run-workflow.sh +80 |
+| `/kit:docs` | `[H/I]` | Update all project documentation to match the current codebase. Cross-references the diff against every doc file and fixes drift. | SPEC-001, SPEC-002, SPEC-003 +246 | proof-loop-09-scenario-b.sh, run-all.sh, run-workflow.sh +81 |
 | `/kit:draft-agent` | `[H/I]` | Meta-agent agent-builder. From a one-line description, generates a new subagent definition OR a mega-goal sub-goal file and (by default) in… | SPEC-089, SPEC-108, SPEC-139 +1 | test-agent-effectiveness.sh, test-command-emit-sweep.sh, test-meta-agent.sh +1 |
 | `/kit:execute` | `[H/I]` | Whole-spec execution with verification. Dispatches one builder for the whole spec, verifies every task's criteria once at the end, retries … | SPEC-001, SPEC-003, SPEC-004 +74 | test-board-work.sh, test-break-it.sh, test-config-registry.sh +17 |
 | `/kit:explain` | `[H/I]` | Turn a merged change into a literate-diff explainer a human READS to understand: background -> goal + intuition -> a prose-ordered diff -> … | SPEC-050, SPEC-060, SPEC-094 +23 | proof-loop-09-scenario-b.sh, test-boundary-lint.sh, test-command-emit-sweep.sh +12 |
@@ -40,7 +40,7 @@ GENERATED , do not hand-edit. Regenerate: `bash lib/registry/feature-registry.sh
 | `/kit:review` | `[H/I]` | Paranoid code review. Security, architecture, regressions, missing tests, edge cases. Produces actionable TODOS. | SPEC-001, SPEC-002, SPEC-003 +127 | test-adopt.sh, test-advisor.sh, test-agent-effectiveness.sh +44 |
 | `/kit:ship` | `[H/I]` | Ship: review gate, tests, version bump, changelog, conventional commit, docs update, PR. Complete pipeline from done to merged. | SPEC-001, SPEC-002, SPEC-003 +92 | test-adopt.sh, test-board-mirror.sh, test-board-work.sh +37 |
 | `/kit:spec-validate` | `[H/I]` | Adversarial review of a spec before implementation. 7 specialist lenses attack the spec from different angles (6 advisory, 1 blocking on th… | SPEC-002, SPEC-003, SPEC-004 +69 | test-command-emit-sweep.sh, test-design-record.sh, test-every-step-review.sh +8 |
-| `/kit:spec` | `[H/I]` | Generate a development spec from a feature idea or decision brief. Creates docs/specs/ with structured requirements. | SPEC-001, SPEC-002, SPEC-003 +207 | test-bin-forwarders.sh, test-board-work.sh, test-break-it.sh +56 |
+| `/kit:spec` | `[H/I]` | Generate a development spec from a feature idea or decision brief. Creates docs/specs/ with structured requirements. | SPEC-001, SPEC-002, SPEC-003 +207 | test-bin-forwarders.sh, test-board-work.sh, test-break-it.sh +57 |
 | `/kit:start` | `[H/I]` | Detect project state and suggest the right next command. The entry point for any session. | SPEC-002, SPEC-003, SPEC-004 +68 | test-board-atomic-mint.sh, test-board-work.sh, test-citation-guard-parity.sh +39 |
 | `/kit:test-plan-review-team` | `[H/I]` | Parallel multi-lens adversarial critique of a spec's test plan (the ## Test plan section), with a bounded revise loop that tightens it. Dis… | SPEC-031, SPEC-052, SPEC-062 +13 | test-meta.sh, test-outcome-emit-sweep.sh, test-spec-depth.sh |
 | `/kit:test-plan` | `[H/I]` | Derive a test-case coverage matrix from a spec's acceptance criteria before /kit:execute. Writes a `## Test plan` section into the active s… | SPEC-004, SPEC-016, SPEC-018 +33 | test-e2e.sh, test-gate-ledger-plan-record.sh, test-gate-vocab-recording.sh +7 |
@@ -140,4 +140,20 @@ GENERATED , do not hand-edit. Regenerate: `bash lib/registry/feature-registry.sh
 | `spec-drift-guard.sh` | `[E]` | PreToolUse | PreToolUse hook that warns, never blocks, when a newly written file is not referenced by the active spec. | SPEC-003, SPEC-005, SPEC-006 +5 | test-hooks.sh, test-install-modules.sh |
 | `statusline.sh` | `[E]` | StatusLine | StatusLine script that renders model, git branch, context usage percent, session cost and thinking mode. | SPEC-025, SPEC-084, SPEC-219 +2 | test-context-budget.sh, test-hooks.sh, test-install-modules.sh +1 |
 | `tool-policy-guard.sh` | `[E]` | PreToolUse | PreToolUse hook enforcing the tool-choice policy. | SPEC-212, SPEC-334 | test-install-modules.sh, test-tool-policy-guard.sh |
+
+## Verbs
+
+| Verb | Trigger | Source | Description | Specs | Tests |
+|---|---|---|---|---|---|
+| `adopt pointer` | `[V]` | `lib/adopt.sh` | inject the small AGENTS.md pointer, proof marker and CLAUDE.md loader into a target repo, hash-safe and idempotent | SPEC-047, SPEC-048, SPEC-049 +11 | proof-loop-09-scenario-b.sh, test-adopt.sh, test-gate-opt-in.sh +5 |
+| `board work` | `[V]` | `lib/board/work.sh` | one table of who is on what, how far along and who is stuck, joined at call time from board, git, Orca and the run ledger; read-only | SPEC-366, SPEC-370 | test-board-work.sh, test-orchestrate-orca.sh |
+| `check-edit` | `[V]` | `lib/gate/check-edit.sh` | check-edit signal for execute: did the build weaken the checks the spec names, from a base ref diff | SPEC-369 | test-whole-spec-dispatch.sh |
+| `classify floor` | `[V]` | `lib/classify/lane-classify.sh` | the diff floor: full when changed paths hit a hard path, else the size floor for the chosen lane | SPEC-036, SPEC-044, SPEC-050 +37 | test-e2e.sh, test-hooks.sh, test-install-compat.sh +9 |
+| `classify risk` | `[V]` | `lib/classify/lane-classify.sh` | risk verdict for a task and its files: full when the lane is full or a full-lane flag fires | SPEC-036, SPEC-044, SPEC-050 +37 | test-e2e.sh, test-hooks.sh, test-install-compat.sh +9 |
+| `lane data` | `[V]` | `lib/gate/lane-data.sh` | the one reader of lane data ([lane.<name>] and [lanes] in kit.toml) for the gate ledger and the classifier | SPEC-368, SPEC-370, SPEC-372 | test-lanes-data.sh |
+| `orchestrate --backend orca` | `[V]` | `lib/queue/orca-backend.sh` | opt-in Orca backend for the mega runner: sub-goals as Orca Tasks with supervised workers, state read live | SPEC-370 | test-orchestrate-orca.sh |
+| `push-refs` | `[V]` | `lib/gate/push-refs.sh` | fail-closed parser that names which refs a shell command pushes, used by the ship-gate | - | - |
+| `recheck-sample decide` | `[V]` | `lib/gate/recheck-sample.sh` | decide and record whether an execute run rechecks its end-verifier PASSes, keyed on the rid | SPEC-369 | test-whole-spec-dispatch.sh |
+| `spec-depth` | `[V]` | `lib/spec/spec-depth.sh` | read and check the Depth line of a spec header: level, wants and check verbs | SPEC-372 | test-spec-depth.sh |
+| `stats ceremony` | `[V]` | `lib/stats/src/stats/ceremony.py` | ceremony lens: gate work and subagent dispatches versus progress and catches, per gate, from the run ledger | SPEC-367 | - |
 

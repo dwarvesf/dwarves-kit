@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# kit-verb: orchestrate --backend orca | opt-in Orca backend for the mega runner: sub-goals as Orca Tasks with supervised workers, state read live
 # orca-backend.sh -- the opt-in Orca backend for orchestrate.sh (trial). SOURCED by orchestrate.sh
 # only under `run --backend orca` and for the `status` / `orca-reset` verbs; the default path never
 # loads this file and never calls $ORCA_CMD. Not executable on its own.

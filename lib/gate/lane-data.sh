@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# kit-verb: lane data | the one reader of lane data ([lane.<name>] and [lanes] in kit.toml) for the gate ledger and the classifier
 # lane-data.sh -- the ONE reader of lane data ([lane.<name>] and [lanes] in kit.toml).
 # Sourced by gate-ledger.sh (plan, required, check, start) and lane-classify.sh (default
 # lane, extra hard paths). Prints nothing on load.

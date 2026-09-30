@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# kit-verb: check-edit | check-edit signal for execute: did the build weaken the checks the spec names, from a base ref diff
 # check-edit.sh -- the check-edit signal for /kit:execute: did the build weaken its own check?
 #
 #   check-edit.sh <base-ref> [named-path...]
