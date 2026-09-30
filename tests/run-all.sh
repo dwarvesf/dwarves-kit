@@ -177,6 +177,9 @@ for t in tests/test-*.sh; do
   name="$(basename "$t" .sh)"
   [ -n "$ONLY" ] && case "$name" in *"$ONLY"*) : ;; *) continue ;; esac
   [ -n "$PICKED" ] && ! grep -qxF -- "$t" "$PICKED" && continue
+  # A `# runner:` file only relays sibling suites, which the same glob already
+  # schedules one by one; running it too would count every assert twice.
+  grep -q '^# runner:' "$t" && continue
   reqs="$(sed -n 's/^# requires:[[:space:]]*//p' "$t" | head -1)"
   missing=""
   for r in $reqs; do command -v "$r" >/dev/null 2>&1 || missing="$missing $r"; done
