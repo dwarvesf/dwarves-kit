@@ -38,7 +38,7 @@
 #                                       (`ship` may be omitted: the push records it); refuses
 #                                       and writes NOTHING on any invalid disposition
 #   check    <lane> <rid> [--kit-lanes]  exit 0 if every required gate has a ran|override entry; else 1
-#                                       (--kit-lanes ignores the project .kit.toml lane layer)
+#                                       (--kit-lanes reads the kit root lane data only)
 #   show     <rid>                     print the run's ledger
 #   plan     <lane>                    the lane's ordered phase checklist
 #   progress <rid> <lane>              plan x ledger -> "step k/n" + checklist
@@ -53,7 +53,7 @@ LIB_ROOT="$(cd "$GATE_DIR/.." && pwd)"  # the lib/ dir; cross-subsystem siblings
 KIT_ROOT="$(cd "$GATE_DIR/../.." && pwd)"  # repo root = two levels above lib/<subsystem>/
 # shellcheck source=lib/gate/lane-data.sh
 source "$GATE_DIR/lane-data.sh" || { echo "FATAL: lib/gate/lane-data.sh missing or unreadable" >&2; exit 1; }
-# --kit-lanes (check only): lane reads skip the project layer. Set per call, never exported.
+# --kit-lanes (check only): lane reads use the kit root file only (no project, no operator overlay). Set per call, never exported.
 LANES_KIT_ONLY=""
 # Durable run-telemetry root: resolve + one-time additive migration out of the
 # ~/.claude/dwarves-kit reinstall blast zone. One resolver, no hard-coded default here.
@@ -129,7 +129,7 @@ normalize_phase() {
 
 # print "<phase>\t<cell>" for each phase of the lane, in plan order (cell = measure-twice|run-lite).
 # Empty output and nonzero exit => unknown lane (not in the lane data, or malformed).
-lane_cells() { lane_rows "$1" ${LANES_KIT_ONLY:+kit-only}; }
+lane_cells() { lane_rows "$1" ${LANES_KIT_ONLY:+kit}; }
 
 required() {
   local lane="${1:-}"; [ -n "$lane" ] || { echo "usage: required <lane>" >&2; return 64; }

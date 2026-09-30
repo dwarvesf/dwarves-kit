@@ -322,7 +322,7 @@ record_gates() { local p; for p in "$@"; do gl record x "$p" ran "fixture $p" >/
 run_hook() {
   HOOK_RC=0
   HOOK_ERR="$( cd "$ROOT" && echo '{"tool_input":{"command":"git push -u origin feat/x"}}' \
-    | env CLAUDE_PLUGIN_ROOT="$KIT_DIR" DWARVES_KIT_LOG_DIR="$LOGD" KIT_CONFIG_OPERATOR=/nonexistent KIT_CONFIG_ROOT="$KIT_DIR" \
+    | env CLAUDE_PLUGIN_ROOT="$KIT_DIR" DWARVES_KIT_LOG_DIR="$LOGD" KIT_CONFIG_OPERATOR="${HOOK_OPERATOR:-/nonexistent}" KIT_CONFIG_ROOT="$KIT_DIR" \
       bash "$HOOK" 2>&1 >/dev/null )" || HOOK_RC=$?
 }
 NORMAL_GATES="spec validate build review ship"
@@ -482,6 +482,27 @@ case_floor_submodule() {
   case "$out" in "full submodule: vendor/sub") pass floor-submodule ;; *) fail floor-submodule "got '$out'" ;; esac
 }
 
+# An override that empties a lane with required gates would waive them all: it is ignored.
+case_override_empty_phases() {
+  mkrepo; new_log
+  commit_kit_toml '[lane.full]
+phases = []'
+  local got err
+  got="$(KIT_PROJECT_ROOT="$ROOT" gl required full 2>/dev/null | tr '\n' ' ')"; err="$(KIT_PROJECT_ROOT="$ROOT" gl required full 2>&1 >/dev/null)"
+  if [ "$got" = "think design design-critique spec validate design-record test-plan build review docs ship reflect " ] \
+     && printf '%s' "$err" | grep -q 'sets no phases'; then pass override-empty-phases
+  else fail override-empty-phases "required full = '$got' err='$err'"; fi
+}
+
+# The floor reads the kit root lane data only: an operator overlay that hollows full cannot pass it.
+case_ship_operator_hollow_full() {
+  ship_fixture migration full
+  local op; op="$(_mk)"; printf '[lane.full]\nphases = ["build"]\n' > "$op/kit.toml"
+  record_gates build
+  HOOK_OPERATOR="$op" run_hook
+  [ "$HOOK_RC" = 2 ] && pass ship-operator-hollow-full || fail ship-operator-hollow-full "rc=$HOOK_RC err=$HOOK_ERR"
+}
+
 # ---------------------------------------------------------------------------
 run_case() {
   local fn="case_${1//-/_}"
@@ -489,7 +510,7 @@ run_case() {
 }
 # `parity` (byte-identical against the baseline) holds only at the refactor commit; after the
 # flip the standing check is parity-after-flip.
-ALL="parity-after-flip plan-flip four-false-hits webhook-signature-suggests suggest-records explain-suggest-line classify-files-full escalate-suggest floor-paths floor-rename-counts-both-sides floor-data-loss floor-extra-paths-union floor-invalid-extra-ere override-drop-review override-uncommitted override-typo override-no-light pinned-root malformed-array-fails-closed policy-at-base ship-migration-blocks ship-migration-absent-quiet ship-switch-off-on-base ship-flip-gate-in-pr ship-hollow-full-override ship-data-loss ship-no-spec-advisory ship-suggest-advisory workflow-view floor-timing floor-non-ascii hook-timeout floor-submodule"
+ALL="parity-after-flip plan-flip four-false-hits webhook-signature-suggests suggest-records explain-suggest-line classify-files-full escalate-suggest floor-paths floor-rename-counts-both-sides floor-data-loss floor-extra-paths-union floor-invalid-extra-ere override-drop-review override-uncommitted override-typo override-no-light pinned-root malformed-array-fails-closed policy-at-base ship-migration-blocks ship-migration-absent-quiet ship-switch-off-on-base ship-flip-gate-in-pr ship-hollow-full-override ship-data-loss ship-no-spec-advisory ship-suggest-advisory workflow-view floor-timing floor-non-ascii hook-timeout floor-submodule override-empty-phases ship-operator-hollow-full"
 if [ "$#" -eq 0 ]; then set -- $ALL; fi
 for c in "$@"; do run_case "$c"; done
 [ "$FAILS" -eq 0 ]

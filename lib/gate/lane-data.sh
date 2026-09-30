@@ -61,15 +61,28 @@ _ld_known_phases() {
   done | sort -u
 }
 
-# lane_resolve <lane> [kit-only]: sets LANE_PHASES and LANE_LIGHT (newline lists).
-# Exit 1 when the lane is unknown or its data is malformed. "kit-only" skips the project layer.
+# _ld_kit_has_required <lane>: 0 when the kit root lane has at least one required phase.
+_ld_kit_has_required() {
+  local lane="$1" ph phases light
+  phases="$(_ld_array "$(_kit_toml_get "$(_ld_kit_file)" "lane.$lane" phases)" 2>/dev/null)" || return 1
+  light="$(_ld_array "$(_kit_toml_get "$(_ld_kit_file)" "lane.$lane" light)" 2>/dev/null)" || light=""
+  while IFS= read -r ph; do
+    [ -n "$ph" ] || continue
+    printf '%s\n' "$light" | grep -qxF -- "$ph" || return 0
+  done <<< "$phases"
+  return 1
+}
+
+# lane_resolve <lane> [kit|nopro]: sets LANE_PHASES and LANE_LIGHT (newline lists).
+# Exit 1 when the lane is unknown or its data is malformed. Mode `kit` reads the kit root ONLY
+# (no operator overlay, no project); `nopro` skips just the project layer.
 lane_resolve() {
-  local lane="$1" kitonly="${2:-}" layer f raw lraw ph known applies
+  local lane="$1" mode="${2:-}" layer f raw lraw ph known applies
   LANE_PHASES=""; LANE_LIGHT=""
   for layer in project operator kit; do
     case "$layer" in
-      project)  [ -n "$kitonly" ] && continue; f="$(kit_config_project)" ;;
-      operator) f="$(_ld_operator_file)" ;;
+      project)  [ -n "$mode" ] && continue; f="$(kit_config_project)" ;;
+      operator) [ "$mode" = kit ] && continue; f="$(_ld_operator_file)" ;;
       kit)      f="$(_ld_kit_file)" ;;
     esac
     raw="$(_kit_toml_get "$f" "lane.$lane" phases)"
@@ -82,6 +95,13 @@ lane_resolve() {
     lraw="$(_kit_toml_get "$f" "lane.$lane" light)"
     if [ -n "$lraw" ]; then LANE_LIGHT="$(_ld_array "$lraw")" || { LANE_PHASES=""; LANE_LIGHT=""; return 1; }; fi
     if [ "$layer" != kit ]; then
+      # An override may not empty a lane that carries required gates: `phases = []` would waive
+      # every one of them.
+      if [ -z "$LANE_PHASES" ] && _ld_kit_has_required "$lane"; then
+        echo "lane-data: [lane.$lane] in $f sets no phases but the kit lane has required gates; override ignored, kit lane used" >&2
+        LANE_PHASES=""; LANE_LIGHT=""
+        continue
+      fi
       known="$(_ld_known_phases)"
       while IFS= read -r ph; do
         [ -n "$ph" ] || continue
@@ -97,7 +117,7 @@ lane_resolve() {
   return 1
 }
 
-# lane_rows <lane> [kit-only]: "<phase>\t<measure-twice|run-lite>" in plan order; exit 1 = unknown lane.
+# lane_rows <lane> [kit|nopro]: "<phase>\t<measure-twice|run-lite>" in plan order; exit 1 = unknown lane.
 lane_rows() {
   lane_resolve "$@" || return 1
   local ph
@@ -111,7 +131,7 @@ lane_rows() {
 # lane_dropped <lane>: phases the project override removed relative to the kit and operator lanes.
 lane_dropped() {
   local lane="$1" kit eff ph
-  lane_resolve "$lane" kit-only 2>/dev/null || return 0
+  lane_resolve "$lane" nopro 2>/dev/null || return 0
   kit="$LANE_PHASES"
   lane_resolve "$lane" 2>/dev/null || return 0
   eff="$LANE_PHASES"
