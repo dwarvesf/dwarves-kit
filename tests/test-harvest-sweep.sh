@@ -1364,6 +1364,7 @@ P("limit_class", hs.ExtractFailure("", "usage limit reached").limit)
 P("limit_class_stdout", hs.ExtractFailure("RATE LIMIT tripped", "").limit)
 P("limit_class_five_hour", hs.ExtractFailure("", "Hit your 5-hour cap").limit)
 P("limit_class_plain_fail", hs.ExtractFailure("", "boom").limit)
+P("limit_class_weekly", hs.ExtractFailure("You've hit your weekly limit \u00b7 resets 8am (Asia/Saigon)", "").limit)
 PY
 )
 t7a() { printf '%s\n' "$T7A_OUT" | sed -n "s/^$1=//p"; }
@@ -1415,6 +1416,7 @@ assert_eq "ExtractFailure.limit reads stderr" "True" "$(t7a limit_class)"
 assert_eq "ExtractFailure.limit reads stdout, case-insensitive" "True" "$(t7a limit_class_stdout)"
 assert_eq "ExtractFailure.limit catches the 5-hour shape" "True" "$(t7a limit_class_five_hour)"
 assert_eq "ExtractFailure.limit is False on a plain failure" "False" "$(t7a limit_class_plain_fail)"
+assert_eq "ExtractFailure.limit catches the weekly-limit shape (live Mini run)" "True" "$(t7a limit_class_weekly)"
 
 # ============================================================
 echo "=== T7b quarantine and lift ==="
