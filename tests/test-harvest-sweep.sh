@@ -16,6 +16,12 @@ export HARVEST_SWEEP_DEVIN_DB="$TD/devin.db"
 export HARVEST_SWEEP_LAUNCH_RECORD="$TD/launch-record"
 # Safety net: no test can reach a real model, even one that forgets to set its own stub.
 export HARVEST_EXTRACTOR="$KIT_DIR/tests/fixtures/harvest-sweep/stub-extractor.sh"
+# The same net for the Codex fallback: a failing `codex` stub first on PATH, so a failed
+# primary never reaches a real Codex; a test that wants a fallback success sets
+# CODEX_STUB_MODE=ok.
+mkdir -p "$TD/codex-bin"
+ln -s "$KIT_DIR/tests/fixtures/harvest-sweep/stub-codex.sh" "$TD/codex-bin/codex"
+export PATH="$TD/codex-bin:$PATH"
 
 PASS=0
 FAIL=0
@@ -997,7 +1003,7 @@ P("replay_first_calls", calls())
 P("replay_cache_name", os.path.exists(cache))
 os.replace(hs._cursor_path(), hs._cursor_path() + ".bak")  # a crash before the cursor write
 t = hs.load_claude(hs.list_claude_sessions()[0])
-ok, obj, _, _ = hs.extract_session(t, "anything")
+ok, obj, _, _, _ = hs.extract_session(t, "anything")
 r = run()
 P("replay_calls_after", calls())
 P("replay_processed", ",".join(r["processed"]))
@@ -1338,7 +1344,7 @@ with open(cache_path, "w") as fh:
     fh.write('{"unrelated": 1}')
 os.environ["STUB_OUT"] = '{"learnings": [{"item": "fresh", "kind": "insight", "home": "til", "why": "w", "evidence": "e"}]}'
 n0 = calls()
-ok, obj, _, _ = hs.extract_session(
+ok, obj, _, _, _ = hs.extract_session(
     {"source": "claude", "session_id": "kl", "last_activity": NOW - 7200, "messages": []}, "x")
 with open(cache_path) as fh:
     P("keyless_reextract", "%s|%s|%s" % (calls() - n0, ok and obj["learnings"][0]["item"],
@@ -1417,6 +1423,218 @@ assert_eq "ExtractFailure.limit reads stdout, case-insensitive" "True" "$(t7a li
 assert_eq "ExtractFailure.limit catches the 5-hour shape" "True" "$(t7a limit_class_five_hour)"
 assert_eq "ExtractFailure.limit is False on a plain failure" "False" "$(t7a limit_class_plain_fail)"
 assert_eq "ExtractFailure.limit catches the weekly-limit shape (live Mini run)" "True" "$(t7a limit_class_weekly)"
+
+# ============================================================
+echo "=== extractor model and Codex fallback ==="
+
+FB_OUT=$(KIT_DIR="$KIT_DIR" TD="$TD" T5_NOW="$T5_NOW" python3 - <<'PY'
+import datetime, importlib.util, json, os, shlex
+spec = importlib.util.spec_from_file_location("hs", os.path.join(os.environ["KIT_DIR"], "hooks", "harvest_sweep.py"))
+hs = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(hs)
+TD, NOW = os.environ["TD"], int(os.environ["T5_NOW"])
+STUB = os.path.join(os.environ["KIT_DIR"], "tests", "fixtures", "harvest-sweep", "stub-extractor.sh")
+P = lambda k, v: print("%s=%s" % (k, v))
+n_scn = [0]
+iso = lambda e: datetime.datetime.fromtimestamp(e, datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+def scenario(toml=""):
+    """A fresh state dir, stub primary, failing stub codex, and root-only config holding
+    only `toml` (empty = every [harvest] default)."""
+    n_scn[0] += 1
+    base = os.path.join(TD, "fb-s%d" % n_scn[0])
+    os.environ["HARVEST_STATE_DIR"] = os.path.join(base, "state")
+    os.environ["HARVEST_SWEEP_CLAUDE_ROOT"] = os.path.join(base, "claude")
+    os.makedirs(os.environ["HARVEST_SWEEP_CLAUDE_ROOT"])
+    os.environ["HARVEST_SWEEP_DEVIN_DB"] = os.path.join(base, "none.db")
+    os.environ["HARVEST_SWEEP_NOW"] = str(NOW)
+    os.environ["HARVEST_EXTRACTOR"] = shlex.quote(STUB)
+    os.environ["STUB_CALLS"] = os.path.join(base, "calls")
+    os.environ["CODEX_STUB_CALLS"] = os.path.join(base, "codex-calls")
+    for k in ("STUB_MODE", "STUB_OUT", "STUB_ERR", "STUB_RECORD", "STUB_FAIL_MATCH",
+              "CODEX_STUB_MODE", "CODEX_STUB_OUT", "CODEX_STUB_RECORD"):
+        os.environ.pop(k, None)
+    for d in ("op", "root"):
+        os.makedirs(os.path.join(base, d))
+    with open(os.path.join(base, "op", "kit.toml"), "w") as fh:
+        fh.write("[harvest]\n" + toml)
+    os.environ["KIT_CONFIG_OPERATOR"] = os.path.join(base, "op")
+    os.environ["KIT_CONFIG_ROOT"] = os.path.join(base, "root")
+    return base, os.environ["HARVEST_SWEEP_CLAUDE_ROOT"]
+
+def mk(root, sid, la, n=6):
+    d = os.path.join(root, "p")
+    os.makedirs(d, exist_ok=True)
+    path = os.path.join(d, sid + ".jsonl")
+    with open(path, "w") as fh:
+        for k in range(n):
+            fh.write(json.dumps({"type": "user" if k % 2 == 0 else "assistant", "cwd": "/w/x",
+                                 "timestamp": iso(la - (n - k) * 10),
+                                 "message": {"content": [{"type": "text", "text": "%s msg %d" % (sid, k)}]}}) + "\n")
+    os.utime(path, (la, la))
+
+def count(var):
+    try:
+        with open(os.environ[var]) as fh:
+            return len(fh.readlines())
+    except OSError:
+        return 0
+
+def cursor():
+    with open(hs._cursor_path()) as fh:
+        return json.load(fh)
+
+run = lambda: hs.run_selection(schedule_hours=48)
+rows = lambda res: " | ".join(res["claude"]["state_rows"])
+read = lambda p: open(p).read()
+
+# ---- the default primary: claude -p --model sonnet plus every safety flag ----
+base, root = scenario()
+mk(root, "argv", NOW - 7200)
+bindir = os.path.join(base, "bin")
+os.makedirs(bindir)
+os.symlink(STUB, os.path.join(bindir, "claude"))
+saved_path = os.environ["PATH"]
+os.environ["PATH"] = bindir + os.pathsep + saved_path
+del os.environ["HARVEST_EXTRACTOR"]
+os.environ["STUB_RECORD"] = os.path.join(base, "rec")
+run()
+argv = read(os.path.join(base, "rec", "argv")).split("\n")[:-1]
+P("argv_primary", " ".join(repr(a) if a == "" else a for a in argv))
+with open(os.path.join(base, "op", "kit.toml"), "a") as fh:
+    fh.write('extractor_model = "opus"\n')
+P("argv_model_key", hs.sweep_extractor_argv()[:4])
+os.environ["PATH"] = saved_path
+
+# ---- a limit-shaped primary falls back to Codex once and the session succeeds ----
+base, root = scenario()
+mk(root, "lim", NOW - 7200)
+os.environ["STUB_MODE"] = "limit"
+os.environ["CODEX_STUB_MODE"] = "ok"
+os.environ["CODEX_STUB_OUT"] = json.dumps({"learnings": [{"item": "fb-lesson", "kind": "insight",
+    "home": "til", "why": "w", "evidence": "e"}], "sightings": []})
+os.environ["CODEX_STUB_RECORD"] = os.path.join(base, "crec")
+r = run()
+P("fb_processed", ",".join(r["claude"]["processed"]))
+P("fb_stop", r["run"]["stop"])
+P("fb_row", "STATE claude: extractor fallback used: codex (limit)" in rows(r))
+P("fb_fail", cursor()["claude"]["fail"])
+P("fb_calls", "%d/%d" % (count("STUB_CALLS"), count("CODEX_STUB_CALLS")))
+P("fb_staged", ",".join(s["slug"] for s in r["run"]["staged"]))
+# the codex argv: read-only sandbox, flags, -o file, prompt on stdin, fresh empty 0700 cwd
+cargv = read(os.path.join(base, "crec", "argv")).split("\n")[:-1]
+P("codex_argv_head", " ".join(cargv[:7]))
+P("codex_argv_tail", "%s|%s|%s" % (cargv[-3], os.path.basename(cargv[-2]), cargv[-1]))
+P("codex_prompt_stdin", "lim msg 1" in read(os.path.join(base, "crec", "prompt")))
+P("codex_prompt_not_argv", not any("lim msg" in a for a in cargv))
+ccwd = read(os.path.join(base, "crec", "cwd")).strip()
+sweep_dir = os.path.realpath(os.path.join(os.environ["HARVEST_STATE_DIR"], "sweep"))
+P("codex_cwd_under_state", ccwd.startswith(sweep_dir + os.sep + "codex-"))
+P("codex_cwd_empty_0700", "%r|%s" % (read(os.path.join(base, "crec", "cwd-listing")),
+                                     read(os.path.join(base, "crec", "cwd-mode")).strip()))
+P("codex_cwd_removed", os.path.exists(ccwd))
+
+# ---- a generic primary failure also falls back ----
+base, root = scenario()
+mk(root, "err", NOW - 7200)
+os.environ["STUB_MODE"] = "fail"
+os.environ["CODEX_STUB_MODE"] = "ok"
+r = run()
+P("fb_error_row", "STATE claude: extractor fallback used: codex (error)" in rows(r))
+P("fb_error_processed", ",".join(r["claude"]["processed"]))
+
+# ---- an auth-shaped primary failure never reaches Codex ----
+base, root = scenario()
+mk(root, "auth", NOW - 7200)
+os.environ["STUB_MODE"] = "fail"
+os.environ["STUB_ERR"] = "Invalid API key · Please run /login"
+os.environ["CODEX_STUB_MODE"] = "ok"
+r = run()
+P("auth_codex_calls", count("CODEX_STUB_CALLS"))
+P("auth_stop", r["run"]["stop"])
+
+# ---- extractor_fallback = "none" disables the fallback ----
+base, root = scenario('extractor_fallback = "none"\n')
+mk(root, "off", NOW - 7200)
+os.environ["STUB_MODE"] = "limit"
+os.environ["CODEX_STUB_MODE"] = "ok"
+r = run()
+P("none_codex_calls", count("CODEX_STUB_CALLS"))
+P("none_stop", r["run"]["stop"])
+
+# ---- both limit-shaped: a hold, no fail count, a fallback-failed row ----
+base, root = scenario()
+mk(root, "both", NOW - 7200)
+os.environ["STUB_MODE"] = "limit"
+os.environ["CODEX_STUB_MODE"] = "limit"
+r = run()
+P("both_stop", r["run"]["stop"])
+P("both_fail", cursor()["claude"]["fail"])
+P("both_rows", "extractor-limit" in rows(r) and "extractor fallback failed: codex" in rows(r))
+P("both_calls", "%d/%d" % (count("STUB_CALLS"), count("CODEX_STUB_CALLS")))
+
+# ---- a fallback reply with a credential shape is redacted like the primary's ----
+base, root = scenario()
+os.environ["STUB_MODE"] = "limit"
+os.environ["CODEX_STUB_MODE"] = "ok"
+tok = "ghp_" + "A1b2C3d4E5f6G7h8I9j0K1l2"
+os.environ["CODEX_STUB_OUT"] = json.dumps({
+    "learnings": [{"item": "leaky", "kind": "insight", "home": "til",
+                   "why": "token " + tok, "evidence": "sk-" + "livekey1234567890"}],
+    "sightings": [{"pattern": "leaky-sighting", "kind": "repeat", "count": 1,
+                   "evidence": "AKIA" + "ABCDEFGHIJKLMNOP"}]})
+clean = hs.sweep_process({"source": "claude", "session_id": "red", "last_activity": NOW - 7200,
+                          "messages": [], "cwd": "/nonexistent"}, "x")
+blob = json.dumps({k: clean[k] for k in ("learnings", "sightings")})
+P("redact_fallback", "%s|%s|%s" % (clean.get("_fallback"), "[redacted]" in blob,
+                                   any(s in blob for s in ("ghp_", "sk-", "AKIA"))))
+
+# ---- the probe hitting a limit is a hold, not an auth page ----
+base, root = scenario()
+mk(root, "pl-a", NOW - 7200)
+os.environ["STUB_MODE"] = "limit"          # the probe prompt lands here
+os.environ["STUB_FAIL_MATCH"] = "pl-a"     # the session prompt fails generically
+r = run()
+P("probe_limit_stop", r["run"]["stop"])
+P("probe_limit_incidents", len(r["run"]["incidents"]))
+P("probe_limit_fail", cursor()["claude"]["fail"])
+P("probe_limit_failed", ",".join(r["claude"]["failed"]))
+PY
+)
+fb() { printf '%s\n' "$FB_OUT" | sed -n "s/^$1=//p"; }
+
+assert_eq "fallback: the default primary is sonnet with every safety flag" \
+  "-p --model sonnet --setting-sources project --tools '' --strict-mcp-config --no-session-persistence" "$(fb argv_primary)"
+assert_eq "fallback: harvest.extractor_model sets the primary model" "['claude', '-p', '--model', 'opus']" "$(fb argv_model_key)"
+assert_eq "fallback: a limit-shaped primary succeeds through Codex" "lim" "$(fb fb_processed)"
+assert_eq "fallback: a fallback success does not stop the run" "None" "$(fb fb_stop)"
+assert_eq "fallback: the report carries the fallback STATE row" "True" "$(fb fb_row)"
+assert_eq "fallback: a fallback success counts no failure" "{}" "$(fb fb_fail)"
+assert_eq "fallback: one primary call, one Codex call, no probe" "1/1" "$(fb fb_calls)"
+assert_eq "fallback: the Codex reply stages like the primary's" "fb-lesson" "$(fb fb_staged)"
+assert_eq "fallback: codex argv carries the read-only sandbox and safety flags" \
+  "exec --sandbox read-only --skip-git-repo-check --ephemeral --ignore-user-config -o" "$(fb codex_argv_head)"
+assert_eq "fallback: codex reads the prompt on stdin and writes the reply to -o" "-o|last.txt|-" "$(fb codex_argv_tail)"
+assert_eq "fallback: the transcript reaches codex on stdin" "True" "$(fb codex_prompt_stdin)"
+assert_eq "fallback: the transcript never rides the command line" "True" "$(fb codex_prompt_not_argv)"
+assert_eq "fallback: codex runs in a temp dir under the sweep state dir" "True" "$(fb codex_cwd_under_state)"
+assert_eq "fallback: the codex cwd is empty and 0700" "''|700" "$(fb codex_cwd_empty_0700)"
+assert_eq "fallback: the codex temp dir is removed after the call" "False" "$(fb codex_cwd_removed)"
+assert_eq "fallback: a generic primary failure falls back too" "True" "$(fb fb_error_row)"
+assert_eq "fallback: the generic-failure session completes" "err" "$(fb fb_error_processed)"
+assert_eq "fallback: an auth-shaped primary failure never calls Codex" "0" "$(fb auth_codex_calls)"
+assert_eq "fallback: the auth-shaped failure still stops the run" "auth" "$(fb auth_stop)"
+assert_eq "fallback: extractor_fallback = none makes no Codex call" "0" "$(fb none_codex_calls)"
+assert_eq "fallback: with the fallback off a limit is still a hold" "limit" "$(fb none_stop)"
+assert_eq "fallback: a limit on both is a hold" "limit" "$(fb both_stop)"
+assert_eq "fallback: a limit on both counts no failure" "{}" "$(fb both_fail)"
+assert_eq "fallback: a limit on both reports the limit and the failed fallback" "True" "$(fb both_rows)"
+assert_eq "fallback: a limit on both runs no probe" "1/1" "$(fb both_calls)"
+assert_eq "fallback: a Codex reply with credential shapes is redacted" "codex (limit)|True|False" "$(fb redact_fallback)"
+assert_eq "fallback: a limit-shaped probe holds instead of paging" "limit" "$(fb probe_limit_stop)"
+assert_eq "fallback: a limit-shaped probe raises no INCIDENT" "0" "$(fb probe_limit_incidents)"
+assert_eq "fallback: a limit-shaped probe counts no failure" "{}" "$(fb probe_limit_fail)"
+assert_eq "fallback: a limit-shaped probe reports no failed session" "" "$(fb probe_limit_failed)"
 
 # ============================================================
 echo "=== T7b quarantine and lift ==="
@@ -2582,6 +2800,23 @@ os.environ["STUB_MODE"] = "ok"
 P("s7_rc", rc7)
 P("s7_limit_row", "- STATE claude: extractor-limit: usage limit" in open(path7).read())
 
+# ---- S7b: a limit on both extractors stays rc 0; a fallback success renders its row ----
+base, root = scenario()
+mk(root, "lim2", NOW - 3600)
+os.environ["STUB_MODE"] = "limit"
+os.environ["CODEX_STUB_MODE"] = "limit"
+rc7b, path7b = hs.run_report(hs.run_selection(schedule_hours=48))
+P("s7b_rc", rc7b)
+base, root = scenario()
+mk(root, "lim3", NOW - 3600)
+os.environ["CODEX_STUB_MODE"] = "ok"
+rc7c, path7c = hs.run_report(hs.run_selection(schedule_hours=48))
+os.environ["STUB_MODE"] = "ok"
+del os.environ["CODEX_STUB_MODE"]
+P("s7c_rc", rc7c)
+P("s7c_row", "- STATE claude: extractor fallback used: codex (limit)" in open(path7c).read())
+P("s7c_lint", subprocess.run(["bash", LINT, path7c], capture_output=True).returncode)
+
 # ---- S8: an all-prose candidate lands the PROSE-ONLY bullet and still lints ----
 base, root = scenario()
 for i, sid in enumerate(("p1", "p2", "p3")):
@@ -2626,6 +2861,10 @@ assert_eq "AC12: rc 6 carries the DECIDE item naming the source" "True" "$(t13 s
 assert_eq "AC12: the lag STATE row names count and oldest age" "True" "$(t13 s6_lag_row)"
 assert_eq "AC27: a limit hold stays rc 0 with its STATE row" "0" "$(t13 s7_rc)"
 assert_eq "AC12: the limit hold STATE row renders" "True" "$(t13 s7_limit_row)"
+assert_eq "fallback: a limit on both extractors is a hold, rc 0, no page" "0" "$(t13 s7b_rc)"
+assert_eq "fallback: a fallback success run exits 0" "0" "$(t13 s7c_rc)"
+assert_eq "fallback: the fallback STATE row renders in the report" "True" "$(t13 s7c_row)"
+assert_eq "fallback: the report with the fallback row lints clean" "0" "$(t13 s7c_lint)"
 assert_eq "AC18: an all-prose candidate renders its PROSE-ONLY bullet" "True" "$(t13 s8_prose_bullet)"
 assert_eq "AC18: the rendered all-prose report lints rc 0" "0" "$(t13 s8_lint)"
 

@@ -360,7 +360,9 @@ The `harvest` hook stages learnings when a session compacts or ends. The harvest
 
 **Per host, not per repo.** A synced operator `kit.toml` cannot switch the sweep on. Only a host where `install --apply` wrote the marker sweeps. On that host the per-session hook stands down, unless `harvest.hook_when_sweep_on` is true.
 
-**Usage limits.** A 5-hour or weekly limit holds the run: it stops, keeps the cursor, counts no failure, and exits 0. The next scheduled run resumes.
+**Extractor and fallback.** Each session is one `claude -p --model <harvest.extractor_model>` call (default `sonnet`, about 3 to 5 times Haiku's quota a call) with every tool, MCP server, and session write off. When it fails for any reason but auth, the same prompt runs once through `codex exec --sandbox read-only --ephemeral --ignore-user-config` on the host's ChatGPT login, from an empty 0700 temp dir, prompt on stdin. The reply goes through the same checks and redaction, and the report carries `STATE <source>: extractor fallback used: codex (limit|error)`. `harvest.extractor_fallback = "none"` turns it off; `harvest.extractor_fallback_model` passes `-m`. Codex cannot disable its shell: the sandbox blocks writes and network, not reads (SPEC-357 DEC-92).
+
+**Usage limits.** A 5-hour or weekly limit that the fallback cannot cover holds the run: it stops, keeps the cursor, counts no failure, and exits 0. A probe that hits the limit holds too, so a limit never pages as an auth failure. The next scheduled run resumes.
 
 **Reading the result.** Run `--status`, open the report it names, and flush queued learnings with `--flush-list` then `--mark-flushed`. Install detail: `deploy/macos/harvest-sweep/README.md`.
 
