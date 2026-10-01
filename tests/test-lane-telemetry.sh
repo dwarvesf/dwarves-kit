@@ -110,6 +110,146 @@ has "failure policy" "$OUTP"; ok "ID-398: report has a failure-policy section" $
 OUTNP="$(NO_COLOR=1 bash "$LT" report 2>&1)"   # the seeded corpus at the top of this file has no policy= fields
 if { trap '' PIPE; printf '%s' "$OUTNP" 2>/dev/null || :; } | grep -qF "failure policy"; then ok "ID-398 NC: no policy-carrying runs -> section omitted" 1; else ok "ID-398 NC: no policy-carrying runs -> section omitted" 0; fi
 
+# --- misfires speed: one-awk _rows is byte-identical to the per-file loop it replaced ---
+# The oracle below is the old _rows body (one awk process per ledger). The suite sources a copy
+# of lane-telemetry.sh minus its trailing `main` call, so the real _rows runs against the oracle.
+echo ""
+echo "=== lane-telemetry misfires speed ==="
+TD="$(mktemp -d)"
+cp -R "$KIT_DIR/lib" "$TD/lib"
+sed '$d' "$LT" > "$TD/lib/telemetry/lt-src.sh"
+legacy_rows() {
+  local f rid
+  for f in "$RUNS_DIR"/*.log; do
+    [ -e "$f" ] || continue
+    rid="$(basename "$f" .log)"
+    awk -v rid="$rid" '
+      BEGIN { FS=" \\| " }
+      NR==1 { first=$1 }
+      { last=$1 }
+      $2=="START" && !started {
+        started=1
+        n=split($3, kv, " ")
+        for (i=1; i<=n; i++) { split(kv[i], p, "="); m[p[1]]=p[2] }
+      }
+      $2=="START-AMEND" {
+        started=1
+        n=split($3, kv, " ")
+        for (i=1; i<=n; i++) { split(kv[i], p, "="); m[p[1]]=p[2] }
+      }
+      $2=="GATE" && $4=="ran"      { ran++ }
+      $2=="GATE" && $4=="skipped"  { skip++ }
+      $2=="GATE" && $4=="override" { ovr++ }
+      $2=="GATE" && $3=="review" && $4=="ran" { review=$5; for (i=6; i<=NF; i++) review = review " | " $i }
+      $2=="GATE" && $3=="ship"   && $4=="ran" { ship=1 }
+      END {
+        lane=(m["lane"]==""?"?":m["lane"]); cls=(m["classified"]==""?"?":m["classified"])
+        type=(m["type"]==""?"?":m["type"]); repo=(m["repo"]==""?"?":m["repo"])
+        ctype=(m["ctype"]==""?"?":m["ctype"])
+        mis=(lane!="?" && cls!="?" && lane!=cls) ? 1 : 0
+        tmis=(type!="?" && ctype!="?" && type!=ctype) ? 1 : 0
+        if (review=="") review="-"
+        gsub(/\t/, " ", review)
+        printf "%s\t%s\t%s\t%s\t%s\t%s\t%d\t%d\t%d\t%d\t%d\t%d\t%s\t%s\t%s\n", \
+          rid, repo, lane, cls, type, ctype, ran+0, skip+0, ovr+0, mis, tmis, ship+0, review, first, last
+      }' "$f"
+  done
+}
+rows_src() { ( DWARVES_KIT_LOG_DIR="$1" bash -c 'set -euo pipefail; source "$1"; "$2"' _ "$TD/lib/telemetry/lt-src.sh" "$2" ); }
+
+FX="$TD/fx"; mkdir -p "$FX/runs"
+L() { printf '2026-01-01T00:00:%s | %s\n' "$@"; }   # sec, rest-of-line
+{ L 01Z "START | lane=normal classified=normal type=doc ctype=doc repo=r"
+  L 02Z "GATE | think | ran | x"; L 03Z "GATE | ship | ran | done"; } > "$FX/runs/a-plain.log"
+{ L 01Z "START | lane=full classified=normal type=a ctype=a repo=r"
+  L 02Z "START | lane=tiny classified=tiny type=z ctype=z repo=zz"
+  L 03Z "START-AMEND | lane=normal classified=normal type=a ctype=a repo=r"
+  L 04Z "START-AMEND | lane=bug classified=normal type=b ctype=b repo=r"
+  L 05Z "GATE | build | ran | x"; } > "$FX/runs/b-amend.log"
+{ L 01Z "START | lane=full classified=normal type=doc ctype=eval repo=r2"
+  L 02Z "GATE | review | ran | first | pass"; L 03Z "GATE | review | ran | good | with a$(printf '\t')tab"
+  L 04Z "GATE | think | skipped | n/a"; L 05Z "GATE | spec | override | because"; } > "$FX/runs/c-misfire.log"
+{ L 01Z "GATE | build | ran | x"; L 02Z "ACTION | something"; } > "$FX/runs/d-nostart.log"
+: > "$FX/runs/e-empty.log"
+{ L 01Z "START | lane=normal classified=normal type=doc ctype=doc repo=r"
+  L 02Z "GATE | ship | ran | done"; } > "$FX/runs/f-shipped.log"
+{ L 01Z "START | lane=normal classified=normal type=doc ctype=doc repo=r"
+  L 02Z "GATE | spec | ran | s"; L 03Z "GATE | build | ran | b"; L 04Z "GATE | review | ran | r"
+  L 05Z "GATE | ship | ran | done"; } > "$FX/runs/g-complete.log"
+
+legacy="$(RUNS_DIR="$FX/runs" legacy_rows)"
+new="$(rows_src "$FX" _rows)"
+[ "$new" = "$legacy" ]; ok "single-awk _rows is byte-identical to the per-file loop (fixture, incl. START-AMEND, tab scrub, empty ledger)" $?
+[ "$(printf '%s\n' "$new" | grep -c .)" -eq 7 ]; ok "_rows emits one row per ledger, the empty one included" $?
+echo "$new" | grep -qF "$(printf 'b-amend\tr\tbug\tnormal\tb\tb\t')"; ok "_rows: last START-AMEND wins, the second plain START is ignored" $?
+echo "$new" | grep -qF "$(printf 'good | with a tab')"; ok "_rows: review text joins with ' | ' and the tab is scrubbed" $?
+
+EXP_MIS="$(NO_COLOR=1 DWARVES_KIT_LOG_DIR="$FX" bash "$LT" misfires 2>&1)"
+for want in "routing misfires" "c-misfire: chosen=full classified=normal (type=doc repo=r2)" "b-amend: chosen=bug classified=normal (type=b repo=r)" "type misfires" "c-misfire: type=doc classified-type=eval (lane=full repo=r2)" "f-shipped (normal)"; do
+  has "$want" "$EXP_MIS"; ok "misfires prints: $want" $?
+done
+has "g-complete" "$EXP_MIS" && ok "misfires must not flag a complete shipped run" 1 || ok "misfires must not flag a complete shipped run" 0
+REAL_ROWS_CALLS="$(grep -c '_rows' <(sed -n '/^misfires()/,/^}/p' "$LT"))"
+[ "$REAL_ROWS_CALLS" -eq 1 ]; ok "misfires() computes _rows once ($REAL_ROWS_CALLS call in its body)" $?
+
+# --- shipped-incomplete verdict cache ---
+# A shim kit copy: the real lib tree plus a gate-ledger.sh wrapper that counts every call.
+SH="$TD/shim"; mkdir -p "$SH"
+cp -R "$KIT_DIR/lib" "$SH/lib"; cp "$KIT_DIR/kit.toml" "$SH/kit.toml"
+mv "$SH/lib/gate/gate-ledger.sh" "$SH/lib/gate/gate-ledger-real.sh"
+cat > "$SH/lib/gate/gate-ledger.sh" <<'WRAP'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "${CALLS_FILE:?}"
+exec bash "$(dirname "${BASH_SOURCE[0]}")/gate-ledger-real.sh" "$@"
+WRAP
+SLT="$SH/lib/telemetry/lane-telemetry.sh"
+CW="$TD/cwd"; mkdir -p "$CW"; OPD="$TD/op"; mkdir -p "$OPD"
+CALLS="$TD/calls"; : > "$CALLS"
+CL="$TD/cl"; cp -R "$FX" "$CL"
+CACHE="$CL/.shipped-incomplete.cache"
+mf() { ( cd "$CW" && NO_COLOR=1 CALLS_FILE="$CALLS" KIT_CONFIG_OPERATOR="$OPD" DWARVES_KIT_LOG_DIR="$CL" bash "$SLT" misfires 2>&1 ); }
+ncalls() { grep -c . "$CALLS" || true; }
+
+O1="$(mf)"; C1="$(ncalls)"
+N=3   # shipped runs with a lane: a-plain, f-shipped, g-complete
+[ "$C1" -eq "$N" ]; ok "cold run checks each shipped run live ($N gate-ledger calls, got $C1)" $?
+has "f-shipped (normal)" "$O1"; ok "cold run flags the incomplete shipped run" $?
+[ -s "$CACHE" ]; ok "cold run writes the verdict cache" $?
+O2="$(mf)"; C2="$(ncalls)"
+[ "$C2" -eq "$C1" ]; ok "warm run makes no gate-ledger call (still $C2)" $?
+[ "$O2" = "$O1" ]; ok "warm output is identical to cold output" $?
+
+L 09Z "GATE | build | ran | late" >> "$CL/runs/f-shipped.log"
+O3="$(mf)"; C3="$(ncalls)"
+[ "$C3" -eq "$((C2+1))" ]; ok "a changed ledger re-checks only itself (+1 call, got $((C3-C2)))" $?
+has "f-shipped" "$O3" && ok "re-check sees the new ledger content (still missing review)" 0 || ok "re-check sees the new ledger content (still missing review)" 1
+
+touch -t 202601010000 "$CL/runs/g-complete.log"
+mf >/dev/null; C4="$(ncalls)"
+[ "$C4" -eq "$((C3+1))" ]; ok "an mtime-only change re-checks that ledger (+1 call, got $((C4-C3)))" $?
+
+# corrupt body lines (header kept): garbage, a bad verdict, a truncated line -> live fallback
+{ head -n 1 "$CACHE"; printf 'garbage\n'; printf 'f-shipped\t1\t2\tmaybe\n'; printf 'g-complete\t9\n'; } > "$CACHE.tmp"; mv "$CACHE.tmp" "$CACHE"
+O5="$(mf)"; C5="$(ncalls)"
+[ "$C5" -eq "$((C4+N))" ]; ok "corrupt cache lines fall back to the live check (+$N calls, got $((C5-C4)))" $?
+has "f-shipped" "$O5"; ok "corrupt cache still yields the correct verdict" $?
+printf 'not a header\n' > "$CACHE"
+mf >/dev/null; C6="$(ncalls)"
+[ "$C6" -eq "$((C5+N))" ]; ok "a cache with a bad header is ignored (+$N calls, got $((C6-C5)))" $?
+mv "$CACHE" "$CL/gone.cache"
+mf >/dev/null; C7="$(ncalls)"
+[ "$C7" -eq "$((C6+N))" ]; ok "a missing cache falls back to the live check (+$N calls)" $?
+if ls "$CL"/.shipped-incomplete.cache.* >/dev/null 2>&1; then ok "no temp file is left behind" 1; else ok "no temp file is left behind" 0; fi
+
+mf >/dev/null; C8="$(ncalls)"
+[ "$C8" -eq "$C7" ]; ok "cache rewritten after fallback: warm again, 0 calls" $?
+printf '\n# lane rule change\n' >> "$SH/kit.toml"
+mf >/dev/null; C9="$(ncalls)"
+[ "$C9" -eq "$((C8+N))" ]; ok "a lane-data change invalidates every entry (+$N calls, got $((C9-C8)))" $?
+printf '[lane.normal]\nphases = ["build"]\nlight = []\n' > "$OPD/kit.toml"
+mf >/dev/null; C10="$(ncalls)"
+[ "$C10" -eq "$((C9+N))" ]; ok "an operator lane override invalidates every entry (+$N calls, got $((C10-C9)))" $?
+
 echo ""
 echo "=== $PASS/$TOTAL passed, $FAIL failed ==="
 [ "$FAIL" -eq 0 ]
