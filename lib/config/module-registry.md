@@ -301,6 +301,16 @@ SKIPS that source with a stderr line and a `skipped` row, and never fails the ga
 
 | Env var | kit.toml key | Default | Status | Module | Doc |
 |---|---|---|---|---|---|
+| - | decide.backend | `"none"` | [impl] | decide | `jev`, `openai`, or `none`. `none` sends nothing and leaves every kit step unchanged. `openai` is a stub answering `unsupported` until the vendor publishes its request shape. Resolved with `kit_config_get_root` (a project `.kit.toml` is never read: the block names a credential source and authorizes egress). |
+| - | decide.mode | `"shadow"` | [impl] | decide | `shadow` logs beside the caller's own decision and never acts; `decide` runs as shadow for `wrap-7b`, the only point. Root-only. |
+| - | decide.points | `""` | [impl] | decide | Space-separated enabled decision points. Empty means nothing leaves the host. The one point today is `wrap-7b`. Root-only. |
+| - | decide.timeout_ms | `"1500"` | [impl] | decide | Per-call timeout in milliseconds. Below 1500 clamps up (the vendor trial's security screen), above 10000 clamps down. Root-only. |
+| - | decide.jev_model | `"jev-1.13.0"` | [impl] | decide | Pinned model name, never a `latest` alias. Root-only. |
+| - | decide.openai_model | `""` | [reserved] | decide | Unused while the `openai` backend is a stub. Root-only. |
+| - | decide.jev_token_env | `"JEV_API_TOKEN"` | [impl] | decide | The NAME of the env var holding the Jev token (`^[A-Za-z_][A-Za-z0-9_]*$`). The token never sits in a file, argv, a log, or stdout. Root-only. |
+| - | decide.openai_token_env | `"OPENAI_API_KEY"` | [reserved] | decide | Same rule as `decide.jev_token_env`, unused while the `openai` backend is a stub. Root-only. |
+| - | decide.allow_names | `""` | [impl] | decide | Space-separated extra public tool names the egress guard accepts, exact match, added to the names under the kit's `bin/`, `commands/`, `skills/` and `agents/`. Root-only. |
+| - | decide.deny_words | `""` | [impl] | decide | Space-separated words that block a `wrap-7b` candidate slug (client names, private repo names). Case-folded substring match. Root-only. |
 | - | intake.url_ledger | `""` | [consumer] | intake | Command that answers "have we consumed this URL", executed as `<cmd> check <url>` with exit 0 meaning seen and its stdout parsed as JSON (`date`, `verdict`, `conclusion`). The value is a command name or path, not a ledger file, because the ledger's dedup key is a normalized URL and only its own tool can compute that. Empty skips the `url` source. |
 | - | intake.verdicts | `""` | [consumer] | intake | Absolute or `~`-prefixed path to the operator's verdict ledger, one decided evaluation per line. The gate cites a line containing every word of the subject. Empty skips the `verdict` source. |
 | - | intake.boards | `""` | [consumer] | intake | Absolute or `~`-prefixed path to the boards registry: `<name> <path-to-BACKLOG.md>` rows with `#` comments, the same format the operator's cross-repo board renderer reads. The gate scans every board the registry names and reports each hit's board by name; a row whose file is gone is passed over. Empty skips the `board` source. |
@@ -518,6 +528,9 @@ exercise the primitive on fixture keys -- `mega.wave_cap`, `gauntlet.runner_host
 | wrap.tidy_worktrees |
 
 ## Known gaps (documented, not enforced by this lint , out of this sub-goal's scope)
+
+
+- `decide.*` is root-only but absent from the "Root-only keys" table above. `bin/flick` reads the `[decide]` block with its own one-pass reader (operator `kit.toml`, then kit-root `kit.toml`, never a project `.kit.toml`) because ten `kit_config_get_root` calls cost ten `awk` spawns, which broke its latency budget on a slow-spawn host. AC10 requires the table to equal the literal `kit_config_get_root` call sites, so listing the keys would fail it. Effect: `bin/config get decide.<key>` still shows a project override while `bin/flick` ignores it. `tests/test-flick.sh` pins the flick side.
 
 The seed regex is deliberately the exact reproducible command named in
 `_meta/megagoals/harness-loop/goals/08-config-surface.md` step 2, scoped to a
