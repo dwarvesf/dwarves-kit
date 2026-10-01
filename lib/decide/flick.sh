@@ -17,7 +17,7 @@
 # must not set it. Contract and rationale: docs/specs/SPEC-381-flick.md.
 set -u
 
-FLICK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+case "${BASH_SOURCE[0]}" in */*) FLICK_DIR="$(cd "${BASH_SOURCE[0]%/*}" && pwd)" ;; *) FLICK_DIR="$(pwd)" ;; esac
 # Derived from this script's own path, never the cwd: a repo the operator happens to stand in
 # must not be able to widen the public-name allowlist.
 KIT_ROOT="$(cd "$FLICK_DIR/../.." && pwd)"

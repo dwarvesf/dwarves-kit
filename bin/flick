@@ -5,5 +5,7 @@
 #
 # Usage: flick [decide|body] < request.json     (flick --help for the contract)
 set -euo pipefail
-SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-exec bash "$SELF_DIR/../lib/decide/flick.sh" "$@"
+# exec the engine directly (it has its own bash shebang): one interpreter start, not two.
+SELF="${BASH_SOURCE[0]}"
+case "$SELF" in */*) SELF_DIR="${SELF%/*}" ;; *) SELF_DIR="." ;; esac
+exec "$SELF_DIR/../lib/decide/flick.sh" "$@"
