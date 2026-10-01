@@ -2032,6 +2032,98 @@ chk "TH4: exits 2" "$([ "$rc" -eq 2 ]; echo $?)"
 chk_has "TH4: says the origin branch could not be confirmed" "$out" "origin/feat/land could not be confirmed"
 chk "TH4: the worktree and branch stay" "$([ -d "$LWT_TH4" ] && git -C "$LREPO_TH4" rev-parse --verify -q feat/land >/dev/null; echo $?)"
 
+# ===========================================================================
+echo "=== land: no title-only PR body on a template repo; no merge before the PR's checks report ==="
+# ===========================================================================
+# pg_build <name> [template-path] [workflow-body] -- build_land plus an optional committed PR
+# template and an optional committed .github/workflows/pr.yml, so the branch carries them.
+pg_build() {
+  local name="$1" tpl="${2:-}" wf="${3:-}" wt="$TMPD/ld-repo-$1/wt"
+  build_land "$name"
+  if [ -n "$tpl" ]; then
+    mkdir -p "$wt/$(dirname "$tpl")"; printf '## What and why\n\n## How I verified it\n' > "$wt/$tpl"
+  fi
+  if [ -n "$wf" ]; then
+    mkdir -p "$wt/.github/workflows"; printf '%s\n' "$wf" > "$wt/.github/workflows/pr.yml"
+  fi
+  git -C "$wt" add -A; git -C "$wt" commit -qm "chore: pr gate fixture" >/dev/null 2>&1
+  PG_WT="$(cd "$wt" && pwd -P)"
+}
+# pg_land <name> [extra env as VAR=val ...] -- one land with the standard stub wiring
+pg_land() {
+  local name="$1"; shift
+  : > "$GH_STUB_CALLS"; rm -f "$GH_STUB_CALLS".*
+  env GH_STUB_OPEN_PRS='[]' GH_STUB_CREATE_NUM=42 GH_STUB_LAND_REPO="$PG_WT" GH_STUB_LAND_REMOTE="$TMPD/ld-bare-$name" \
+    GH_STUB_LAND_BRANCH=feat/land GH_STUB_LAND_DEF=main KIT_WRAP_LAND_GRACE_SECS=30 KIT_WRAP_CARRY_CHECKS_SECS=0 \
+    PATH="$TMPD/nosleep:$PATH" "$@" "$WRAP" land "$PG_WT" 2>&1
+}
+PG_WF=$'on:\n  pull_request:\n    branches: [main]\njobs:\n  x:\n    runs-on: [self-hosted]'
+PG_RED='{"number":42,"statusCheckRollup":[{"name":"PR evidence","status":"COMPLETED","conclusion":"FAILURE","completedAt":"2026-01-01T00:00:00Z"}]}'
+PG_GREEN='{"number":42,"statusCheckRollup":[{"name":"PR evidence","status":"COMPLETED","conclusion":"SUCCESS","completedAt":"2026-01-01T00:00:00Z"}]}'
+
+echo "--- PG1: a repo with a PR template and no --body-file refuses before push and before pr create"
+pg_build pg1 .github/PULL_REQUEST_TEMPLATE.md
+out="$(pg_land pg1)"; rc=$?
+chk "PG1: exits 2" "$([ "$rc" -eq 2 ]; echo $?)"
+chk_has "PG1: names the template path" "$out" ".github/PULL_REQUEST_TEMPLATE.md exists"
+chk_has "PG1: tells the operator to pass --body-file" "$out" "pass --body-file"
+chk_no "PG1: never calls pr create" "$(cat "$GH_STUB_CALLS")" "pr create"
+chk "PG1: nothing was pushed" "$(git -C "$TMPD/ld-bare-pg1" rev-parse --verify -q feat/land >/dev/null && echo 1 || echo 0)"
+chk "PG1: the worktree stays" "$([ -d "$PG_WT" ]; echo $?)"
+
+echo "--- PG1b: a lowercase template under docs/ is found too; --body-file is accepted"
+pg_build pg1b docs/pull_request_template.md
+out="$(pg_land pg1b)"; rc=$?
+chk "PG1b: exits 2" "$([ "$rc" -eq 2 ]; echo $?)"
+chk_has "PG1b: names the docs/ template" "$out" "docs/pull_request_template.md exists"
+printf '## What and why\nx\n## How I verified it\ny\n' > "$TMPD/pg1b-body.md"
+: > "$GH_STUB_CALLS"
+out="$(env GH_STUB_OPEN_PRS='[]' GH_STUB_CREATE_NUM=42 GH_STUB_LAND_REPO="$PG_WT" GH_STUB_LAND_REMOTE="$TMPD/ld-bare-pg1b" \
+  GH_STUB_LAND_BRANCH=feat/land GH_STUB_LAND_DEF=main "$WRAP" land "$PG_WT" --body-file "$TMPD/pg1b-body.md" 2>&1)"; rc=$?
+chk "PG1b: with --body-file the land passes" "$rc"
+chk_has "PG1b: pr create carried the body file" "$(cat "$GH_STUB_CALLS")" "--body-file $TMPD/pg1b-body.md"
+
+echo "--- PG2: no template keeps today's title-as-body fallback"
+pg_build pg2
+out="$(pg_land pg2)"; rc=$?
+chk "PG2: exits 0" "$rc"
+chk_has "PG2: pr create used the title as the body" "$(cat "$GH_STUB_CALLS")" "--body feat: the landed change"
+
+echo "--- PG3: a red check refuses the merge and leaves the PR open"
+pg_build pg3 "" "$PG_WF"
+out="$(pg_land pg3 GH_STUB_PR_42="$PG_RED")"; rc=$?
+chk "PG3: exits 2" "$([ "$rc" -eq 2 ]; echo $?)"
+chk_has "PG3: names the failed check" "$out" "MERGE REFUSED #42: checks failed: PR evidence; PR left open"
+chk_no "PG3: never merges" "$(cat "$GH_STUB_CALLS")" "pr merge"
+chk "PG3: the worktree stays" "$([ -d "$PG_WT" ]; echo $?)"
+
+echo "--- PG4: green checks merge"
+pg_build pg4 "" "$PG_WF"
+out="$(pg_land pg4 GH_STUB_PR_42="$PG_GREEN")"; rc=$?
+chk "PG4: exits 0" "$rc"
+chk_has "PG4: merged" "$out" "merged #42 ("
+
+echo "--- PG4b: a check that registers late is waited for, then judged"
+pg_build pg4b "" "$PG_WF"
+out="$(pg_land pg4b GH_STUB_PR_42='{"number":42,"statusCheckRollup":[]}' GH_STUB_PR_42_3="$PG_RED")"; rc=$?
+chk "PG4b: exits 2" "$([ "$rc" -eq 2 ]; echo $?)"
+chk_has "PG4b: the late red check refuses the merge" "$out" "checks failed: PR evidence"
+chk_no "PG4b: never merges" "$(cat "$GH_STUB_CALLS")" "pr merge"
+
+echo "--- PG4c: a check still pending at the bound refuses"
+pg_build pg4c "" "$PG_WF"
+out="$(pg_land pg4c GH_STUB_PR_42='{"number":42,"statusCheckRollup":[{"name":"PR evidence","status":"IN_PROGRESS","conclusion":""}]}')"; rc=$?
+chk "PG4c: exits 2" "$([ "$rc" -eq 2 ]; echo $?)"
+chk_has "PG4c: says still pending" "$out" "checks still pending"
+chk_no "PG4c: never merges" "$(cat "$GH_STUB_CALLS")" "pr merge"
+
+echo "--- PG5: no pull_request workflow pays nothing: no rollup read before the merge"
+pg_build pg5 "" $'on:\n  push:\n    branches: [main]\njobs:\n  x:\n    runs-on: [self-hosted]'
+out="$(pg_land pg5 GH_STUB_PR_42="$PG_RED")"; rc=$?
+chk "PG5: exits 0" "$rc"
+chk "PG5: no statusCheckRollup read" "$(grep -q 'statusCheckRollup' "$GH_STUB_CALLS" && echo 1 || echo 0)"
+chk_has "PG5: merged" "$out" "merged #42 ("
+
 echo
 if [ "$FAIL" -gt 0 ]; then echo "test-wrap-land: $PASS passed, $FAIL FAILED of $TOTAL" >&2; exit 1; fi
 echo "test-wrap-land: all $PASS passed"
