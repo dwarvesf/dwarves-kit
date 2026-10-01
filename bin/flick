@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+# bin/flick -- STABLE consumer entrypoint for the decide subsystem (flick, a fast
+# "pick one of N" decision CLI). Consumers reference THIS path, never a deep
+# `$DWARVES_KIT/lib/decide/flick.sh` path. Forwards to the engine, which owns the verbs.
+#
+# Usage: flick [decide|body] < request.json     (flick --help for the contract)
+set -euo pipefail
+SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+exec bash "$SELF_DIR/../lib/decide/flick.sh" "$@"
