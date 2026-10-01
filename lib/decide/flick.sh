@@ -77,7 +77,7 @@ load_decide_block() {
     [ "$sec" = decide ] || continue
     case "$line" in *=*) ;; *) continue ;; esac
     k="${line%%=*}"; k="${k//[[:space:]]/}"
-    case "$k" in backend|mode|timeout_ms|points|jev_model|openai_model|jev_token_env|openai_token_env|allow_names|deny_words) ;; *) continue ;; esac
+    case "$k" in backend|mode|timeout_ms|points|jev_model|openai_model|jev_token_env|jev_token_cmd|openai_token_env|openai_token_cmd|allow_names|deny_words) ;; *) continue ;; esac
     v="${line#*=}"; v="${v#"${v%%[![:space:]]*}"}"; v="${v%"${v##*[![:space:]]}"}"
     v="${v#\"}"; v="${v%\"}"
     local seen="SEEN_${pre}_${k}"
@@ -115,6 +115,7 @@ load_config() {
   CFG_JEV_MODEL="$(cfgget jev_model jev-1.13.0)"
   [[ "$CFG_JEV_MODEL" =~ ^[A-Za-z0-9._-]{1,64}$ ]] || CFG_JEV_MODEL=jev-1.13.0
   CFG_JEV_TOKEN_ENV="$(cfgget jev_token_env JEV_API_TOKEN)"
+  CFG_JEV_TOKEN_CMD="$(cfgget jev_token_cmd "")"
   CFG_OPENAI_MODEL="$(cfgget openai_model "")"
   CFG_ALLOW_NAMES="$(cfgget allow_names "")"
   CFG_DENY_WORDS="$(cfgget deny_words "")"
@@ -279,6 +280,38 @@ BODY_PROG='
                                                        + (if ($dd[$i] // "") != "" then " (described as: " + ($dd[$i][0:160]) + ")" else "" end)
                                                        + " cover the job of the candidate " + $kept[$i].candidate + "?") } } ]
                    | from_entries ) }'
+
+# ---- token source ------------------------------------------------------------------------------
+# resolve_token <env-name> <cmd>: sets TOKEN. The env var wins; only an empty one falls through
+# to the configured command, for hosts that keep secrets out of the shell env. The command is
+# split on whitespace and run WITHOUT a shell: no glob (set -f), no expansion, no quoting, so a
+# configured string cannot be turned into anything but one argv. stdin is /dev/null, stderr is
+# dropped, its output is held in a variable only (never a file, never printed or logged), and it
+# gets a hard limit by background + poll + kill (bash 3.2 has no `wait -n`, no `timeout`).
+# ponytail: the kill reaches the command and its direct children (pkill -P), not deeper
+# descendants that inherited stdout. Upgrade path: run it in its own process group and kill that.
+resolve_token() {
+  local envname="$1" cmd="$2" limit=10 words cpid deadline raw
+  TOKEN="${!envname:-}"
+  [ -z "$TOKEN" ] || return 0
+  [ -n "$cmd" ] || return 0
+  [ "$CFG_TIMEOUT_MS" -le 10000 ] || limit=$((CFG_TIMEOUT_MS / 1000))
+  set -f; read -ra words <<<"$cmd"; set +f
+  [ "${#words[@]}" -gt 0 ] || return 0
+  deadline=$((SECONDS + limit + 1))   # wall clock, not a loop count: a sleep spawn is slow on a hardened host
+  raw="$(
+    "${words[@]}" </dev/null 2>/dev/null &
+    cpid=$!
+    while kill -0 "$cpid" 2>/dev/null; do
+      [ "$SECONDS" -lt "$deadline" ] || { pkill -P "$cpid" 2>/dev/null; kill "$cpid" 2>/dev/null; wait "$cpid" 2>/dev/null; exit 1; }
+      sleep 0.1
+    done
+    wait "$cpid" || exit 1
+    printf x
+  )" || return 0
+  raw="${raw%x}"
+  TOKEN="${raw%$'\n'}"
+}
 
 # ---- transport ---------------------------------------------------------------------------------
 JEV_URL='https://api.typesafe.ai/v1/systemone'
@@ -502,7 +535,8 @@ main() {
   command -v curl >/dev/null 2>&1 || finalize missing_dep
 
   [[ "$CFG_JEV_TOKEN_ENV" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || finalize no_token
-  local token="${!CFG_JEV_TOKEN_ENV:-}"
+  TOKEN=""; resolve_token "$CFG_JEV_TOKEN_ENV" "$CFG_JEV_TOKEN_CMD"
+  local token="$TOKEN"; TOKEN=""
   [ -n "$token" ] || finalize no_token
   case "$token" in *[[:cntrl:]\"\\]*) finalize no_token ;; esac
 

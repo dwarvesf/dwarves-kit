@@ -19,8 +19,10 @@ The first URL path segment picks the behaviour (FLICK_URL=http://127.0.0.1:<port
 
 Every request is recorded in <state-dir>: `count` (one line per request), `last.json` (the last
 body), `bodies.log` (all bodies, one per line), `auth.log` (whether an Authorization header arrived,
-never its value).
+never its value) and `authsha.log` (a short sha256 of the bearer value, so a test can tell which
+token source was used without the stub keeping the token).
 """
+import hashlib
 import json
 import os
 import sys
@@ -78,6 +80,8 @@ class Handler(BaseHTTPRequestHandler):
             f.write(raw.replace(b"\n", b" ") + b"\n")
         with open(os.path.join(STATE, "auth.log"), "a") as f:
             f.write("bearer\n" if self.headers.get("Authorization", "").startswith("Bearer ") else "none\n")
+        with open(os.path.join(STATE, "authsha.log"), "a") as f:
+            f.write(hashlib.sha256(self.headers.get("Authorization", "").removeprefix("Bearer ").encode()).hexdigest()[:12] + "\n")
         mode = self.path.strip("/").split("/")[0].split("?")[0] or "ok"
         if mode in ("401", "500"):
             return self.send(int(mode), b'{"error":"stub"}')

@@ -472,7 +472,17 @@ jev_model = "jev-1.13.0"        # [impl] pinned, never a `latest` alias.
 openai_model = ""               # [reserved] unused while the openai backend is a stub.
 jev_token_env = "JEV_API_TOKEN" # [impl] the NAME of the env var holding the token. The token itself
                                  #        never sits in a file, argv, a log, or stdout.
+jev_token_cmd = ""              # [impl] optional second token source for a host that keeps secrets out of
+                                 #        the shell env. Used only when the env var above is empty. A
+                                 #        command line split on whitespace and run WITHOUT a shell (no
+                                 #        quotes, globs or expansion; a `#` starts a comment), stdin from
+                                 #        /dev/null, stderr dropped, killed after 10 s. Its stdout, minus
+                                 #        one trailing newline, is the token; a failure, timeout, empty
+                                 #        output or a token with a quote, backslash or control character
+                                 #        gives `no_token`. The output is never logged or printed.
+                                 #        Example: "/usr/local/bin/read-secret jev-token".
 openai_token_env = "OPENAI_API_KEY" # [reserved] same rule, unused while the backend is a stub.
+openai_token_cmd = ""           # [reserved] same rule as jev_token_cmd, unused while the backend is a stub.
 allow_names = ""                # [impl] extra public tool names the egress guard accepts, exact match,
                                  #        added to the names under this kit's bin/, commands/, skills/,
                                  #        agents/.
