@@ -53,7 +53,7 @@ cfg() {
 # flick_run <mode> <stdin-json> [extra env KEY=VAL...]: run bin/flick against the stub with a clean env.
 flick_run() {
   local mode="$1" input="$2"; shift 2
-  ( cd "$T/cwd" && printf '%s' "$input" | env -i PATH="$PATH" HOME="$T/home" \
+  ( cd "${FLICK_CWD:-$T/cwd}" && printf '%s' "$input" | env -i PATH="$PATH" HOME="$T/home" \
       KIT_CONFIG_ROOT="$T/root" KIT_CONFIG_OPERATOR="$T/op" KIT_PROJECT_ROOT="$T/cwd" \
       DWARVES_KIT_LOG_DIR="$T/log" FLICK_URL="http://127.0.0.1:${PORT}/${mode}" \
       JEV_API_TOKEN="$CANARY_TOKEN" "$@" "$FLICK" "${FLICK_ARGS:-decide}" 2>/dev/null )
@@ -161,6 +161,95 @@ check "garbage config executed nothing" "$([ ! -e "$T/pwned" ]; echo $?)"
 cfg backend=jev points=wrap-7b timeout_ms=-5 mode=decide
 fuzz "negative timeout, mode decide" x "$IN1"
 check "every fuzz case exits 0 with a valid envelope ($fuzz_ok of $fuzz_n)" "$([ "$fuzz_ok" = "$fuzz_n" ]; echo $?)"
+cfg backend=jev points=wrap-7b
+
+# body_run <stdin-json> [env...]: run `flick body` (the guarded request body, no network).
+body_run() { local in="$1"; shift; FLICK_ARGS=body flick_run ok "$in" "$@"; }
+q() { # q <id> <candidate> <hit> : one question object
+  jq -nc --arg id "$1" --arg c "$2" --arg h "$3" '{id:$id,candidate:$c,hit:$h}'
+}
+req() { # req <question-json>... : a wrap-7b request around those questions
+  local joined; joined="$(printf '%s\n' "$@" | jq -sc .)"
+  jq -nc --argjson qs "$joined" '{point:"wrap-7b",questions:$qs}'
+}
+
+echo "== TASK-3: input contract (slots, id remap, existing filter, extra fields) =="
+cfg backend=jev points=wrap-7b
+out="$(body_run "$IN1")"
+jqt "body: one question becomes q1 with the point's template text" "$out" '(.questions|keys) == ["q1"] and .questions.q1.instructions == "Does the existing tool board cover the job of the candidate backlog-flip-script?" and .model == "jev-1.13.0" and .questions.q1.type == "choice"'
+jqt "body: criteria come from the registry, three choices" "$out" '(.questions.q1.criteria|keys) == ["enhance","new","none"] and (.questions.q1.criteria|map(type=="string" and length > 10)|all)'
+jqt "body: a fixed state preamble, no caller text" "$out" '(.state|type=="string") and (.state|length) > 20'
+out="$(body_run '{"point":"wrap-7b","questions":[{"id":"CANARYID99","candidate":"backlog-flip-script","hit":"board","existing":"CANARYEXIST77"}]}')"
+check "caller id and existing never reach the request body" "$(grep -q 'CANARYID99\|CANARYEXIST77' <<<"$out"; [ $? -ne 0 ]; echo $?)"
+jqt "body for that request is still a normal q1 body" "$out" '(.questions|keys) == ["q1"]'
+out="$(body_run "$(req "$(q p1 backlog-flip-script board)" "$(q p2 discord-poster wrap)")")"
+jqt "ids p1 p2 go to the provider as q1 q2" "$out" '(.questions|keys) == ["q1","q2"] and (.questions.q2.instructions|test("tool wrap cover"))'
+for payload in \
+  '{"point":"wrap-7b","questions":[{"id":"p1","candidate":"backlog-flip-script","hit":"board"}],"extra":1}' \
+  '{"point":"wrap-7b","questions":[{"id":"p1","candidate":"backlog-flip-script","hit":"board","context":"hello"}]}' \
+  '{"point":"wrap-7b","questions":[{"id":"p1","candidate":"backlog-flip-script","hit":"board","question":"free text"}]}' \
+  '{"point":"wrap-7b","questions":[{"id":"p1","candidate":"backlog-flip-script"}]}' \
+  '{"point":"wrap-7b","questions":[]}' \
+  '{"point":"wrap-7b","questions":[{"id":"p 1","candidate":"backlog-flip-script","hit":"board"}]}' \
+  '{"point":"wrap-7b","questions":[{"id":"p1","candidate":"backlog-flip-script","hit":"board","existing":5}]}' \
+  '{"point":"wrap-7b","questions":[{"id":"p1","candidate":"a\nb-script","hit":"board"}]}' \
+  '{"point":"wrap-7b","questions":[{"id":"p1","candidate":"backlog-flip-script","hit":"board\u0001"}]}' \
+  '{"point":"wrap-7b","questions":[{"id":"p1","candidate":"backlog-flip-script","hit":"board","existing":"en\thance"}]}' \
+  '{"point":"wrap-7b","questions":[{"id":"p1","candidate":"backlog-flip-script","hit":"board"},{"id":"p1","candidate":"discord-poster","hit":"wrap"}]}' ; do
+  out="$(body_run "$payload")"
+  jqt "bad input is refused whole: $(printf '%s' "$payload" | head -c 60)" "$out" '.error == "bad_input" and .counts == {"answered":0,"denied":0,"error":0}'
+done
+over="$(jq -nc '{point:"wrap-7b",questions:[range(0;51)|{id:"p\(.)",candidate:"backlog-flip-script",hit:"board"}]}')"
+out="$(body_run "$over")"
+jqt "more than 50 questions is bad_input" "$out" '.error == "bad_input"'
+out="$(body_run "$IN1
+")"
+jqt "a trailing newline after the JSON document is fine" "$out" '(.questions|keys) == ["q1"]'
+
+echo "== TASK-4: egress guard (kit root, exact match, deny_words, mixed batch) =="
+mkdir -p "$T/foreign/bin" "$T/foreign/commands"
+: > "$T/foreign/bin/acme-client-tool"; chmod +x "$T/foreign/bin/acme-client-tool"
+: > "$T/foreign/commands/client-secret-cmd.md"
+out="$(FLICK_CWD="$T/foreign" body_run "$(req "$(q p1 backlog-flip-script acme-client-tool)")")"
+jqt "a foreign cwd bin/ holding a client-style name does not widen the allowlist" "$out" '.error == "egress_denied" and .counts == {"answered":0,"denied":1,"error":0}'
+out="$(FLICK_CWD="$T/foreign" body_run "$(req "$(q p1 backlog-flip-script client-secret-cmd)")")"
+jqt "a foreign cwd commands/ name is denied too" "$out" '.error == "egress_denied"'
+out="$(FLICK_CWD="$T/foreign" body_run "$(req "$(q p1 backlog-flip-script board)")")"
+jqt "a public name from the kit root still passes from a foreign cwd" "$out" '(.questions|keys) == ["q1"]'
+for hit in boardx xboard boar Board BOARD "board " " board" "board-" "bo ard" 'bo*' 'b?ard' 'board;ls' '../bin/board' board.md bin/board; do
+  out="$(body_run "$(req "$(q p1 backlog-flip-script "$hit")")")"
+  jqt "hit '$hit' is not an exact public name: egress_denied, no body" "$out" '.error == "egress_denied" and .answers == {}'
+done
+out="$(body_run "$(req "$(jq -nc '{id:"p1",candidate:"backlog-flip-script",hit:"board\n"}')")")"
+jqt "a hit with a trailing newline is refused (bad_input), never matched as 'board'" "$out" '.error == "bad_input"'
+for sk in skills agents; do :; done
+pub_skill="$(ls "$KIT_DIR/skills" | head -1)"; pub_agent="$(ls "$KIT_DIR/agents" | head -1)"; pub_agent="${pub_agent%.md}"
+out="$(body_run "$(req "$(q p1 backlog-flip-script "$pub_skill")" "$(q p2 backlog-flip-script "$pub_agent")")")"
+jqt "skills/ dirs and agents/ files count as public names" "$out" '(.questions|keys) == ["q1","q2"]'
+for cand in Backlog-Flip ab 'has space' "$(printf 'a%.0s' $(seq 1 41))" 'under_score' 'dot.name'; do
+  out="$(body_run "$(req "$(q p1 "$cand" board)")")"
+  jqt "candidate '$cand' fails the slug rule: egress_denied" "$out" '.error == "egress_denied"'
+done
+cfg backend=jev points=wrap-7b deny_words="Acme foo"
+for cand in acme-sync sync-acme-x fooz xfoo-bar; do
+  out="$(body_run "$(req "$(q p1 "$cand" board)")")"
+  jqt "deny_words (case-folded substring) blocks candidate $cand" "$out" '.error == "egress_denied" and .answers == {}'
+  check "the denied candidate $cand is absent from the output" "$(grep -q "$cand" <<<"$out"; [ $? -ne 0 ]; echo $?)"
+done
+out="$(body_run "$(req "$(q p1 backlog-flip-script board)")")"
+jqt "a candidate with no deny word still passes" "$out" '(.questions|keys) == ["q1"]'
+cfg backend=jev points=wrap-7b allow_names="extra-public"
+out="$(body_run "$(req "$(q p1 backlog-flip-script extra-public)" "$(q p2 backlog-flip-script extra-publ)")")"
+jqt "allow_names adds an exact name only" "$out" '(.questions|keys) == ["q1"] and (.questions.q1.instructions|test("extra-public cover"))'
+cfg backend=jev points=wrap-7b deny_words="acme"
+mixed="$(req "$(q p1 backlog-flip-script board)" "$(q p2 acme-secret-plan board)" "$(q p3 build-thing secret-client-tool)" "$(q p4 discord-poster wrap)")"
+out="$(body_run "$mixed")"
+jqt "mixed batch: the body holds only the allowed questions, renumbered q1 q2" "$out" '(.questions|keys) == ["q1","q2"] and (.questions.q1.instructions|test("board cover")) and (.questions.q2.instructions|test("tool wrap cover"))'
+check "mixed batch: no denied text in the body" "$(grep -q 'acme-secret-plan\|secret-client-tool\|build-thing' <<<"$out"; [ $? -ne 0 ]; echo $?)"
+stub_reset
+out="$(body_run "$IN1" "JEV_API_TOKEN=$CANARY_TOKEN")"
+check "flick body prints no token" "$(grep -q "$CANARY_TOKEN" <<<"$out"; [ $? -ne 0 ]; echo $?)"
+check "flick body makes zero stub requests" "$([ "$(stub_count)" = 0 ]; echo $?)"
 cfg backend=jev points=wrap-7b
 
 # --- sections above; summary below ---

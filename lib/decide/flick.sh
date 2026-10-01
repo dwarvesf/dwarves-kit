@@ -36,26 +36,26 @@ usage() { sed -n '2,16p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; EMITTED=1; 
 
 # Output state, set as the run learns it.
 BACKEND=""; MODEL=""; LATENCY_MS=0; MODE_OUT="shadow"
-PARSED=0; DENIED=0
+NORM=""; PARSED=0; DENIED=0; KEEP=""; DENY_IDX=""
 
-# envelope <error> <answers-json> <answered> <denied> <errored>
-envelope() {
-  jq -nc --arg backend "$BACKEND" --arg model "$MODEL" --argjson lat "${LATENCY_MS:-0}" \
-    --arg mode "$MODE_OUT" --arg err "$1" --argjson answers "$2" \
-    --argjson a "$3" --argjson d "$4" --argjson e "$5" \
-    '{backend:$backend,model:$model,latency_ms:$lat,mode:$mode,answers:$answers,error:$err,counts:{answered:$a,denied:$d,error:$e}}'
-}
-
-finish() {
-  local out; out="$(envelope "$@")" || exit 0
+# Nothing parsed, so nothing to count. The error comes from the closed set, never from input.
+fail_input() {
+  local out
+  out="$(jq -nc --arg err "${1:-bad_input}" '{backend:"",model:"",latency_ms:0,mode:"shadow",answers:{},error:$err,counts:{answered:0,denied:0,error:0}}')" || exit 0
   [ -n "$out" ] || exit 0
   printf '%s\n' "$out"; EMITTED=1; exit 0
 }
 
-# A whole-call failure: no answers, every parsed question that the guard did not deny counts as error.
-fail_all() { finish "$1" '{}' 0 "$DENIED" "$((PARSED - DENIED))"; }
-# Nothing parsed, so nothing to count.
-fail_input() { finish "${1:-bad_input}" '{}' 0 0 0; }
+# A whole-call failure after parsing: no answers; every parsed question the guard did not
+# deny counts as error (denied ones stay denied).
+fail_all() {
+  local out
+  out="$(jq -nc --arg backend "$BACKEND" --arg model "$MODEL" --argjson lat "${LATENCY_MS:-0}" \
+    --arg mode "$MODE_OUT" --arg err "$1" --argjson p "$PARSED" --argjson d "$DENIED" \
+    '{backend:$backend,model:$model,latency_ms:$lat,mode:$mode,answers:{},error:$err,counts:{answered:0,denied:$d,error:($p-$d)}}')" || exit 0
+  [ -n "$out" ] || exit 0
+  printf '%s\n' "$out"; EMITTED=1; exit 0
+}
 
 # ---- config ------------------------------------------------------------------------------------
 # Root-only read: operator kit.toml, else kit-root kit.toml, else the default. The project
@@ -128,12 +128,78 @@ point_enabled() { # <point>: exact word match in the space-separated list, no gl
   return $found
 }
 
+# ---- the decision point registry ---------------------------------------------------------------
+# A point is a closed entry: its slots, its template, its choices and their criteria text. A
+# caller supplies slots, never question text, and per-choice text comes only from here. A new
+# point needs its own spec.
+POINT_WRAP_7B_STATE='A kit workflow step is deciding whether work it is about to build duplicates an existing tool. Each question names one existing tool and one candidate job, by name only.'
+POINT_WRAP_7B_CRITERIA='{"enhance":"The existing tool already covers, or partly covers, the job of the candidate, so the candidate should extend it.","new":"The existing tool is unrelated to the job of the candidate, so the candidate is new work.","none":"The two names give no basis to decide."}'
+RS=$'\037'
+
 # ---- input -------------------------------------------------------------------------------------
-# Stage one: shape only. A caller supplies slots, never question text.
+# Stage one: shape and character checks only. It prints, one per line: the normalized request as
+# compact JSON, the point, then one record per question (id, candidate, hit, existing) joined by
+# the ASCII unit separator, which no accepted value can hold (control characters are refused).
 PARSE_PROG='
-  if type == "object" and (.point | type == "string") and (.questions | type == "array")
-     and (.questions | length) >= 1 and (.questions | length) <= 50
-  then . else error("bad_input") end'
+  def ctl: explode | any(.[]; . < 32 or . == 127);
+  def okstr: type == "string" and length <= 200 and (ctl | not);
+  if type == "object" and ((keys - ["point","questions"]) == [])
+     and (.point | okstr) and (.questions | type == "array")
+     and ((.questions | length) >= 1 and (.questions | length) <= 50)
+     and all(.questions[];
+           type == "object" and ((keys - ["id","candidate","hit","existing"]) == [])
+           and has("id") and has("candidate") and has("hit")
+           and (.id | type == "string" and test("\\A[A-Za-z0-9_-]{1,40}\\z"))
+           and (.candidate | okstr) and (.hit | okstr)
+           and ((has("existing") | not) or (.existing | okstr)))
+     and (([.questions[].id] | length) == ([.questions[].id] | unique | length))
+  then (tojson, .point, (.questions[] | [.id, .candidate, .hit, (.existing // "")] | join("\u001f")))
+  else error("bad_input") end'
+
+# ---- the egress guard --------------------------------------------------------------------------
+# PUBLIC is the space-delimited set of names this kit publishes, read from the kit root that
+# holds THIS script, plus the operator's allow_names. A hit passes by whole-name equality only.
+build_public() {
+  local f n w
+  PUBLIC=" "
+  for f in "$KIT_ROOT"/bin/*; do [ -e "$f" ] || continue; n="${f##*/}"; PUBLIC="$PUBLIC$n "; done
+  for f in "$KIT_ROOT"/commands/*.md "$KIT_ROOT"/agents/*.md; do [ -e "$f" ] || continue; n="${f##*/}"; PUBLIC="$PUBLIC${n%.md} "; done
+  for f in "$KIT_ROOT"/skills/*/; do [ -d "$f" ] || continue; f="${f%/}"; PUBLIC="$PUBLIC${f##*/} "; done
+  set -f
+  for w in $CFG_ALLOW_NAMES; do PUBLIC="$PUBLIC$w "; done
+  set +f
+}
+
+# guard_ok <candidate> <hit>: exit 0 when the pair may leave the host (wrap-7b rules).
+guard_ok() {
+  local cand="$1" hit="$2" w re_cand='^[a-z0-9-]{3,40}$' re_hit='^[A-Za-z0-9._-]{1,64}$' bad=0
+  [[ "$cand" =~ $re_cand ]] || return 1
+  [[ "$hit" =~ $re_hit ]] || return 1
+  # deny_words: case-folded substring, so a word errs toward denial. Folding happens in the
+  # match itself, with no extra process.
+  shopt -s nocasematch
+  set -f
+  for w in $CFG_DENY_WORDS; do
+    if [[ "$cand" == *"$w"* ]]; then bad=1; break; fi
+  done
+  set +f
+  shopt -u nocasematch
+  [ "$bad" = 0 ] || return 1
+  case "$PUBLIC" in *" $hit "*) return 0 ;; esac
+  return 1
+}
+
+# BODY_PROG: the provider request body for the questions the guard kept. The question text is
+# REBUILT from the template and the matched slots; nothing the caller typed is forwarded.
+BODY_PROG='
+  ($idx | split(" ") | map(select(. != "") | tonumber)) as $keep
+  | [ .questions | to_entries[] | select(.key as $k | any($keep[]; . == $k)) | .value ] as $kept
+  | { model: $model, state: $state,
+      questions: ( [ range(0; ($kept | length)) as $i
+                     | { key: ("q" + (($i + 1) | tostring)),
+                         value: { type: "choice", criteria: $criteria,
+                                  instructions: ("Does the existing tool " + $kept[$i].hit + " cover the job of the candidate " + $kept[$i].candidate + "?") } } ]
+                   | from_entries ) }'
 
 # ---- main --------------------------------------------------------------------------------------
 main() {
@@ -141,7 +207,7 @@ main() {
   case "$verb" in
     -h|--help|help) usage ;;
     decide|body) ;;
-    *) command -v jq >/dev/null 2>&1 || true; fail_input bad_input ;;
+    *) fail_input bad_input ;;
   esac
 
   if ! command -v jq >/dev/null 2>&1; then
@@ -160,21 +226,43 @@ main() {
     FLICK_URL_OK="$FLICK_URL"
   fi
 
-  local input norm point
+  local input parsed point line n=0 id cand hit ex
   IFS= read -r -d '' input || true
   [ "${#input}" -le 262144 ] || fail_input bad_input
-  norm="$(printf '%s' "$input" | jq -c "$PARSE_PROG" 2>/dev/null)" || fail_input bad_input
-  PARSED="$(printf '%s' "$norm" | jq '.questions | length')"
-  point="$(printf '%s' "$norm" | jq -r '.point')"
+  parsed="$(printf '%s' "$input" | jq -r "$PARSE_PROG" 2>/dev/null)" || fail_input bad_input
+  Q_CAND=(); Q_HIT=()
+  while IFS= read -r line; do
+    case "$n" in
+      0) NORM="$line" ;;
+      1) point="$line" ;;
+      *) IFS="$RS" read -r id cand hit ex <<<"$line"; Q_CAND[$((n-2))]="$cand"; Q_HIT[$((n-2))]="$hit" ;;
+    esac
+    n=$((n+1))
+  done <<<"$parsed"
+  PARSED=$((n-2))
+  [ "$PARSED" -ge 1 ] || fail_input bad_input
   [ "$point" = "wrap-7b" ] || fail_input bad_input
 
   BACKEND="$CFG_BACKEND"
   [ "$BACKEND" != none ] || fail_all backend_none
   point_enabled "$point" || fail_all point_disabled
-  if [ "$BACKEND" = openai ]; then MODEL="$(cfgget decide.openai_model "")"; fail_all unsupported; fi
+  if [ "$BACKEND" = openai ]; then MODEL="$CFG_OPENAI_MODEL"; fail_all unsupported; fi
   MODEL="$CFG_JEV_MODEL"
+  [ "$CFG_MODE" != decide ] || MODE_NOTE=1
 
-  if [ "$verb" = body ]; then finish bad_input '{}' 0 0 0; fi
+  # Guard: drop every denied question BEFORE any body exists.
+  build_public
+  local i=0
+  while [ "$i" -lt "$PARSED" ]; do
+    if guard_ok "${Q_CAND[$i]}" "${Q_HIT[$i]}"; then KEEP="$KEEP $i"; else DENY_IDX="$DENY_IDX $i"; DENIED=$((DENIED+1)); fi
+    i=$((i+1))
+  done
+  [ -n "$KEEP" ] || fail_all egress_denied
+
+  local body
+  body="$(printf '%s' "$NORM" | jq -c --arg idx "${KEEP# }" --arg model "$MODEL" \
+    --arg state "$POINT_WRAP_7B_STATE" --argjson criteria "$POINT_WRAP_7B_CRITERIA" "$BODY_PROG")" || fail_all bad_input
+  if [ "$verb" = body ]; then printf '%s\n' "$body"; EMITTED=1; exit 0; fi
 
   command -v curl >/dev/null 2>&1 || fail_all missing_dep
 
