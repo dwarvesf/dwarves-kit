@@ -500,11 +500,13 @@ out="$(printf '%s' "$IN1" | "$T/orphan/bin/flick" 2>/dev/null)"; rc=$?
 check "bin/flick with the engine missing: exit 0" "$([ "$rc" = 0 ]; echo $?)"
 jqt "bin/flick with the engine missing: valid empty-answer JSON" "$out" "$EMPTYJSON and (.error|type==\"string\") and .error != \"\""
 stub_reset
+mkdir -p "$T/home/.config/dwarves-kit"; command cp -f "$T/op/kit.toml" "$T/home/.config/dwarves-kit/kit.toml"
 out="$(decide_run ok "$IN1" FLICK_TEST= HTTPS_PROXY=http://127.0.0.1:1 https_proxy=http://127.0.0.1:1)"
 check "FLICK_URL without FLICK_TEST=1 is ignored: the stub saw nothing" "$([ "$(stub_count)" = 0 ]; echo $?)"
 jqt "FLICK_URL without FLICK_TEST=1: the call went to the production path (dead proxy, network)" "$out" '.error == "network"'
 out="$(decide_run ok "$IN1" FLICK_TEST=0 HTTPS_PROXY=http://127.0.0.1:1 https_proxy=http://127.0.0.1:1)"
 jqt "FLICK_TEST=0 is not enough either" "$out" '.error == "network"'
+command rm -f "$T/home/.config/dwarves-kit/kit.toml"
 rm -f "$LOG"
 ( umask 022; decide_run ok "$IN1" >/dev/null )
 check "the decision log is created owner-only (0600)" "$([ "$(python3 -c 'import os,sys;print(oct(os.stat(sys.argv[1]).st_mode & 0o777))' "$LOG")" = 0o600 ]; echo $?)"
@@ -752,6 +754,64 @@ for _ in $(seq 1 25); do
   jq -e '(.questions|keys) == ["q1"]' >/dev/null 2>&1 <<<"$out" || flaky=$((flaky+1))
 done
 check "25 repeated runs agree: the dictionary pass never crashes into word_gate_no_dict" "$([ "$flaky" = 0 ]; echo $?)" "$flaky of 25 differed"
+
+echo "-- short segments never pass by dictionary (single letters are dictionary words) --"
+printf '%s\n' a b c e i m o r x z sync Widget > "$T/letters-words"
+wg_cfg dict_file="$T/letters-words"
+for slug in z-o-r-b-i-x-sync a-c-m-e-sync; do
+  stub_reset
+  out="$(decide_run ok "$(req "$(q p1 "$slug" board)")")"
+  jqt "spelled-out slug $slug is egress_denied" "$out" '.error == "egress_denied" and .answers == {}'
+  check "spelled-out slug $slug: zero requests" "$([ "$(stub_count)" = 0 ]; echo $?)"
+  out="$(body_run "$(req "$(q p1 "$slug" board)")")"
+  check "spelled-out slug $slug is absent from the body" "$(grep -q "$slug" <<<"$out"; [ $? -ne 0 ]; echo $?)"
+done
+out="$(body_run "$(req "$(q p1 pr-ci-db-ai-id board)" "$(q p2 ab-sync board)")")"
+jqt "two-letter dev words still pass; a two-letter non-dev segment is denied" "$out" '(.questions|keys) == ["q1"]'
+wg_cfg allow_names=zq
+out="$(body_run "$(req "$(q p1 zq-sync board)")")"
+jqt "a short segment that is a kit-public name still passes" "$out" '.questions|keys == ["q1"]'
+
+echo "-- dict_file must be an absolute path to a regular file under 16 MB --"
+mkdir -p "$T/dictcwd"; command cp -f "$WG_DICT" "$T/dictcwd/rel-words"
+python3 -c 'import sys;open(sys.argv[1],"wb").truncate(17*1024*1024)' "$T/huge-words"
+for df in "rel-words" "./rel-words" "$T/huge-words" "$T/dictcwd/../dictcwd/missing"; do
+  wg_cfg dict_file="$df"
+  stub_reset; rm -f "$LOG"
+  out="$(FLICK_CWD="$T/dictcwd" decide_run ok "$(req "$(q p1 backlog-flip-script board)")")"
+  jqt "dict_file '${df##*/}' (relative, oversize or missing): egress_denied" "$out" '.error == "egress_denied" and .answers == {}'
+  check "dict_file '${df##*/}': zero requests, reason word_gate_no_dict" "$([ "$(stub_count)" = 0 ] && [ "$(jq -r .reason "$LOG" | sort -u)" = word_gate_no_dict ]; echo $?)"
+done
+wg_cfg dict_file="$T/dictcwd/rel-words"
+out="$(FLICK_CWD="$T/dictcwd" body_run "$(req "$(q p1 backlog-flip-script board)")")"
+jqt "the same file by absolute path works" "$out" '(.questions|keys) == ["q1"]'
+
+echo "-- config location: env cannot choose the config files without FLICK_TEST=1 --"
+mkdir -p "$T/envop" "$T/envroot" "$T/xdg/dwarves-kit" "$T/home/.config/dwarves-kit" "$T/dwk"
+EVIL='[decide]
+backend = "jev"
+points = "wrap-7b"
+word_gate = "off"
+deny_words = "zzother"
+'
+printf '%s' "$EVIL" > "$T/envop/kit.toml"; printf '%s' "$EVIL" > "$T/envroot/kit.toml"
+printf '%s' "$EVIL" > "$T/xdg/dwarves-kit/kit.toml"; printf '%s' "$EVIL" > "$T/dwk/kit.toml"
+rm -f "$T/op/kit.toml" "$T/root/kit.toml" "$T/home/.config/dwarves-kit/kit.toml"
+for pair in "KIT_CONFIG_OPERATOR=$T/envop" "KIT_CONFIG_ROOT=$T/envroot" "XDG_CONFIG_HOME=$T/xdg" "DWARVES_KIT=$T/dwk"; do
+  stub_reset
+  out="$(decide_run ok "$(req "$(q p1 "$WGNAME-sync" board)")" FLICK_TEST= KIT_CONFIG_OPERATOR= KIT_CONFIG_ROOT= "$pair")"
+  jqt "${pair%%=*} without FLICK_TEST=1 changes nothing (backend stays none)" "$out" '.error == "backend_none"'
+  check "${pair%%=*} without FLICK_TEST=1: nothing was sent" "$([ "$(stub_count)" = 0 ]; echo $?)"
+done
+out="$(decide_run ok "$(req "$(q p1 "$WGNAME-sync" board)")" FLICK_TEST= KIT_CONFIG_OPERATOR="$T/envop" KIT_CONFIG_ROOT="$T/envroot" XDG_CONFIG_HOME="$T/xdg" DWARVES_KIT="$T/dwk")"
+jqt "all four together: still backend_none" "$out" '.error == "backend_none"'
+printf '[decide]\nbackend = "jev"\npoints = "wrap-7b"\ndeny_words = "zzprivatecorp"\ndict_file = "%s"\n' "$WG_DICT" > "$T/home/.config/dwarves-kit/kit.toml"
+out="$(FLICK_ARGS=body flick_run ok "$(req "$(q p1 "$WGNAME-sync" board)" "$(q p2 backlog-flip-script board)")" FLICK_TEST= KIT_CONFIG_OPERATOR="$T/envop" KIT_CONFIG_ROOT="$T/envroot")"
+jqt "production reads \$HOME/.config/dwarves-kit/kit.toml, gate on, env ignored" "$out" '(.questions|keys) == ["q1"]'
+out="$(FLICK_ARGS=body flick_run ok "$(req "$(q p1 "$WGNAME-sync" board)" "$(q p2 backlog-flip-script board)")" KIT_CONFIG_OPERATOR="$T/envop" KIT_CONFIG_ROOT="$T/envroot")"
+jqt "with FLICK_TEST=1 the env does choose the files (the test hook works)" "$out" '(.questions|keys) == ["q1","q2"]'
+command rm -f "$T/home/.config/dwarves-kit/kit.toml"
+cfg backend=jev points=wrap-7b
 
 echo "-- deny_words still applies on top --"
 wg_cfg deny_words=loft

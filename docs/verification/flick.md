@@ -89,8 +89,8 @@ Scope: each hyphen segment of a `wrap-7b` candidate must be a dictionary word (c
 
 | Command | Exit | Result |
 |---------|------|--------|
-| `bash tests/test-flick.sh` (bash 5) | 0 | 270 passed, 0 failed |
-| `/bin/bash tests/test-flick.sh` (bash 3.2) | 0 | 270 passed, 0 failed |
+| `bash tests/test-flick.sh` (bash 5) | 0 | 298 passed, 0 failed |
+| `/bin/bash tests/test-flick.sh` (bash 3.2) | 0 | 298 passed, 0 failed |
 | `bash tests/test-meta.sh` | 0 | 902/902 |
 | `bash tests/test-hooks.sh` | 0 | 826/826 |
 
@@ -108,6 +108,15 @@ New section in `tests/test-flick.sh` ("word gate"), red before the engine change
 | Zero-word slug allowed | `a slug with no word at all is denied` |
 | `LC_ALL=C` prefix put back on the `awk` call | `a kit-public name segment passes` (macOS `awk` exited 139 on about 1 run in 10, which reads as `word_gate_no_dict`); the 25-run repeat test catches it with high probability |
 
-The mutations ran in eight parallel copies of the kit tree, not by editing the worktree. Extra red lines about leftover token temp dirs and process groups in those runs come from sharing `/tmp` and `pgrep` across parallel runs; the serial runs above are clean.
+Security-lens fixes, same section: segments under 3 characters never pass by dictionary (`z-o-r-b-i-x-sync` and `a-c-m-e-sync` are denied with zero requests); `dict_file` must be an absolute path to a regular file under 16 MB; flick no longer reads `KIT_CONFIG_OPERATOR`, `KIT_CONFIG_ROOT`, `XDG_CONFIG_HOME` or `DWARVES_KIT` unless `FLICK_TEST=1` (the two test overrides), and reads `$HOME/.config/dwarves-kit/kit.toml` plus the kit root's own `kit.toml`. Known limit, documented in the spec and `kit.toml`: a name that is an English word passes the gate, so `deny_words` still matters.
+
+| Fix | Mutation that went red |
+|-----|------------------------|
+| Short-segment rule | Rule removed: both spelled-out slug tests |
+| Absolute dictionary path | Check removed: relative-path tests |
+| 16 MB bound | Check removed: oversize test (reason `word_gate_no_dict`) |
+| Config env needs `FLICK_TEST=1` | Switch made unconditional: `KIT_CONFIG_OPERATOR` and `KIT_CONFIG_ROOT` without `FLICK_TEST=1` tests |
+
+The mutations ran in parallel copies of the kit tree, not by editing the worktree. Extra red lines about leftover token temp dirs and process groups in those runs come from sharing `/tmp` and `pgrep` across parallel runs; the serial runs above are clean.
 
 Measured cost on the build host (macOS, 236k-line system dictionary, `flick body`, 20 questions, mean of 10): about 70 ms with the gate off, about 160 to 210 ms with it on, so the gate adds roughly 80 to 140 ms. The first design, one `grep -Fixf` pass, took over 500 ms on BSD grep, so the engine reads the dictionary with one `awk` pass. The 20 ms target is NOT met on macOS; on this host a bare process spawn already costs about 14 ms. A `look` binary-search fast path would fit the budget but needs a sorted dictionary file.

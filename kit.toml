@@ -496,11 +496,16 @@ word_gate = "on"                # [impl] "on" (default) or "off". While on, ever
                                  #        line), a built-in dev word (pr, ci, api, json, ...), or a name
                                  #        this kit publishes; any other segment denies that question
                                  #        (log reason `word_gate`). Catches client names a deny list
-                                 #        misses. deny_words still applies on top. Any value but "off"
-                                 #        counts as on. Root-only.
-dict_file = "/usr/share/dict/words" # [impl] one word per line. A missing or unreadable file denies every
-                                 #        candidate (log reason `word_gate_no_dict`); egress fails closed.
-                                 #        Root-only.
+                                 #        misses. A segment under 3 characters passes only as a dev
+                                 #        word or a public name (a dictionary lists every letter, so
+                                 #        `z-o-r-b-i-x` would pass otherwise). deny_words still applies
+                                 #        on top and still matters: the gate cannot see a name that is
+                                 #        an English word (stripe, notion, slack, linear, apple, loft),
+                                 #        so list those. Any value but "off" counts as on. Root-only.
+dict_file = "/usr/share/dict/words" # [impl] one word per line. Must be an absolute path to a regular file
+                                 #        under 16 MB. Anything else (missing, unreadable, relative,
+                                 #        oversize) denies every candidate (log reason
+                                 #        `word_gate_no_dict`); egress fails closed. Root-only.
 
 [knowledge]                     # context tree root for repo knowledge notes (context-kit fills this)
 root = ""                       # [consumer] absolute or ~-prefixed path to the context tree

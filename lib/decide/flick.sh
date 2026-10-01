@@ -63,6 +63,19 @@ fail_all() {
 # calls (one awk exec each): a process spawn is the dominant cost on a hardened macOS host.
 # Same rules as lib/config/kit-config.sh _kit_toml_get: section header, '#' comments, one layer
 # of double quotes, first match wins, an empty value counts as unset.
+# Which files: exactly two, fixed by paths the operator owns, never by the caller's environment. A
+# direnv .envrc or a project shell must not be able to point KIT_CONFIG_*, XDG_CONFIG_HOME or
+# DWARVES_KIT at a file that switches the word gate off, edits deny_words, or names a token command.
+# The kit root is this script's own root; the operator file is $HOME/.config/dwarves-kit/kit.toml.
+# Only FLICK_TEST=1 (the same switch as FLICK_URL) honours KIT_CONFIG_OPERATOR and KIT_CONFIG_ROOT.
+if [ "${FLICK_TEST:-}" = 1 ]; then
+  KIT_CONFIG_OPERATOR="${KIT_CONFIG_OPERATOR:-${HOME:-}/.config/dwarves-kit}"
+  KIT_CONFIG_ROOT="${KIT_CONFIG_ROOT:-$KIT_ROOT}"
+else
+  KIT_CONFIG_OPERATOR="${HOME:-}/.config/dwarves-kit"
+  KIT_CONFIG_ROOT="$KIT_ROOT"
+fi
+export KIT_CONFIG_OPERATOR KIT_CONFIG_ROOT
 if [ -f "$KIT_ROOT/lib/config/kit-config.sh" ]; then . "$KIT_ROOT/lib/config/kit-config.sh" 2>/dev/null || true; fi
 
 # load_decide_block <file> <prefix>: set <prefix>_<key> for every [decide] key found.
@@ -205,18 +218,30 @@ guard_ok() {
 # batch: one awk pass over every segment the other two sets did not already cover.
 DEV_WORDS=" pr ci cd api cli json yaml toml md sql db git gh repo env url http https ssh tls jwt oauth sdk ui ux pdf csv tsv cron kv llm ai id ids sha diff lint todo wip config auth regex stdin stdout async "
 
+dict_usable() {
+  local size
+  case "$CFG_DICT_FILE" in /*) ;; *) return 1 ;; esac
+  [ -f "$CFG_DICT_FILE" ] && [ -r "$CFG_DICT_FILE" ] || return 1
+  size="$(wc -c < "$CFG_DICT_FILE" 2>/dev/null)" || return 1
+  size="${size//[[:space:]]/}"
+  case "$size" in ''|*[!0-9]*) return 1 ;; esac
+  [ "$size" -lt 16777216 ]
+}
+
 # word_gate_apply: drop every kept question whose candidate holds an unknown segment, or all of
 # them when the dictionary is unusable (egress fails closed). Rewrites KEEP, DENY_IDX, DENIED.
 word_gate_apply() {
   local k seg need="" matched="" rc=0 newkeep="" ok n
   [ "$CFG_WORD_GATE" = off ] && return 0
-  if [ ! -f "$CFG_DICT_FILE" ] || [ ! -r "$CFG_DICT_FILE" ]; then
+  # The dictionary must be an absolute path (never cwd-relative) to a readable regular file under 16 MB.
+  if ! dict_usable; then
     WG_REASON=word_gate_no_dict
   else
     # A slug holds only [a-z0-9-] (guard_ok), so splitting on the hyphens by word splitting is safe.
     for k in $KEEP; do
       for seg in ${Q_CAND[$k]//-/ }; do
         case "$DEV_WORDS$PUBLIC" in *" $seg "*) continue ;; esac
+        [ "${#seg}" -ge 3 ] || continue   # never a dictionary word: a dictionary lists every letter
         case " $need " in *" $seg "*) ;; *) need="$need$seg " ;; esac
       done
     done
