@@ -43,6 +43,20 @@ else
   C_RED=""; C_BOLD=""; C_OFF=""
 fi
 
+# _ledger_files: fill LEDGERS with the regular, readable run ledgers in glob order. A dangling
+# *.log symlink (or a directory) would make macOS awk abort the whole pass, so the one-process
+# callers (_rows, the grep prefilters) take this list, never the raw glob.
+# ARG_MAX ceiling: every ledger rides one argv; macOS allows about 12,000 paths of this length
+# (about 60x today's count). Past that, switch the callers to `xargs -0`.
+LEDGERS=()
+_ledger_files() {
+  local f; LEDGERS=()
+  for f in "$RUNS_DIR"/*.log; do
+    [ -f "$f" ] && [ -r "$f" ] && LEDGERS[${#LEDGERS[@]}]="$f"
+  done
+  return 0
+}
+
 # Boardless runs: a run ledger whose repo matches the cwd repo but whose rid
 # the board never mentions. Detection only; the board file is the repo's own.
 _boardless() {
@@ -55,7 +69,9 @@ _boardless() {
   board="$root/_meta/BACKLOG.md"; [ -f "$board" ] || return 0
   myrepo="$(basename "$root")"
   # one grep over every ledger instead of one per file; -l keeps the glob order
-  local cand; cand="$(grep -lF -- "repo=$myrepo" "$RUNS_DIR"/*.log 2>/dev/null || true)"
+  _ledger_files
+  [ "${#LEDGERS[@]}" -gt 0 ] || return 0
+  local cand; cand="$(grep -lF -- "repo=$myrepo" "${LEDGERS[@]}" 2>/dev/null || true)"
   while IFS= read -r f; do
     [ -n "$f" ] && [ -e "$f" ] || continue
     rid="$(basename "$f" .log)"
@@ -82,7 +98,7 @@ _boardless() {
 #
 # Each `check` spawn costs seconds, so verdicts are cached in $LOG_DIR/.shipped-incomplete.cache:
 #   line 1   #fp=<cksum of the lane data + gate scripts>   (a mismatch drops every entry)
-#   then     rid<TAB>size<TAB>mtime<TAB>pass|fail          (the ledger file's identity)
+#   then     rid<TAB>size<TAB>mtime<TAB>inode<TAB>pass|fail  (the ledger file's identity)
 # A missing, unreadable or corrupt cache only means a live check. The rewrite is temp + mv.
 _lane_fp() {
   local pf="${KIT_PROJECT_ROOT:-$PWD}/.kit.toml"
@@ -95,9 +111,11 @@ _lane_fp() {
     echo "clean=$clean"; } | cksum | cut -d' ' -f1
 }
 
-# _file_id <file>: "<size> <mtime>"; GNU stat first (BSD stat rejects -c, GNU stat -f means filesystem).
+# _file_id <file>: "<size><TAB><mtime><TAB><inode>"; GNU stat first (BSD stat rejects -c, GNU stat -f
+# means filesystem). The inode catches a same-size, same-second file swapped in place.
 _file_id() {
-  stat -c '%s %Y' "$1" 2>/dev/null || stat -f '%z %m' "$1" 2>/dev/null || true
+  local o; o="$(stat -c '%s %Y %i' "$1" 2>/dev/null || stat -f '%z %m %i' "$1" 2>/dev/null)" || return 0
+  printf '%s' "${o// /$'\t'}"
 }
 
 _shipped_incomplete() {
@@ -108,7 +126,9 @@ _shipped_incomplete() {
     line="$(head -n 1 "$cache_file" 2>/dev/null || true)"
     [ "$line" = "#fp=$fp" ] && cache="$nl$(tail -n +2 "$cache_file" 2>/dev/null || true)$nl"
   fi
-  local shipped; shipped="$(grep -l '| GATE | ship | ran' "$RUNS_DIR"/*.log 2>/dev/null || true)"
+  _ledger_files
+  [ "${#LEDGERS[@]}" -gt 0 ] || return 0
+  local shipped; shipped="$(grep -l '| GATE | ship | ran' "${LEDGERS[@]}" 2>/dev/null || true)"
   [ -n "$shipped" ] || return 0
   # one awk over the shipped ledgers: "<path>\t<lane>" (last START-AMEND, else first START), skipping a run with no lane
   local lanes
@@ -129,7 +149,7 @@ _shipped_incomplete() {
     rid="${f##*/}"; rid="${rid%.log}"
     id="$(_file_id "$f")"; verdict=""
     if [ -n "$id" ]; then
-      line="$rid$tab${id% *}$tab${id#* }$tab"
+      line="$rid$tab$id$tab"
       case "$cache" in
         *"$nl$line"pass"$nl"*) verdict=pass ;;
         *"$nl$line"fail"$nl"*) verdict=fail ;;
@@ -139,14 +159,22 @@ _shipped_incomplete() {
       dirty=1
       if bash "$LIB_ROOT/gate/gate-ledger.sh" check "$lane" "$rid" >/dev/null 2>&1; then verdict=pass; else verdict=fail; fi
     fi
-    [ -z "$id" ] || want_cache="$want_cache$rid$tab${id% *}$tab${id#* }$tab$verdict$nl"
+    [ -z "$id" ] || want_cache="$want_cache$rid$tab$id$tab$verdict$nl"
     [ "$verdict" = pass ] || printf '%s (%s)\n' "$rid" "$lane"
   done <<< "$lanes"
-  # Persist only when something was re-checked; failure to write is never fatal.
+  # Persist only when something was re-checked; failure to write is never fatal. The temp file is
+  # removed on any exit path, including INT and TERM, so an interrupted run leaves nothing behind.
   if [ "$dirty" -eq 1 ] && [ -d "$LOG_DIR" ]; then
-    local tmp; tmp="$(mktemp "$cache_file.XXXXXX" 2>/dev/null)" || return 0
-    { printf '#fp=%s\n' "$fp"; printf '%s' "$want_cache"; } > "$tmp" 2>/dev/null \
-      && mv -f "$tmp" "$cache_file" 2>/dev/null || command rm -f "$tmp" 2>/dev/null || true
+    _SI_TMP=""
+    trap 'command rm -f "$_SI_TMP"' EXIT
+    trap 'command rm -f "$_SI_TMP"; exit 143' TERM
+    trap 'command rm -f "$_SI_TMP"; exit 130' INT
+    _SI_TMP="$(mktemp "$cache_file.XXXXXX" 2>/dev/null)" || _SI_TMP=""
+    if [ -n "$_SI_TMP" ]; then
+      { printf '#fp=%s\n' "$fp"; printf '%s' "$want_cache"; } > "$_SI_TMP" 2>/dev/null \
+        && mv -f "$_SI_TMP" "$cache_file" 2>/dev/null || command rm -f "$_SI_TMP" 2>/dev/null || true
+    fi
+    trap - EXIT TERM INT
   fi
   return 0
 }
@@ -155,8 +183,8 @@ _shipped_incomplete() {
 # One awk process over every ledger (glob order). Per-file state resets at FNR==1; an empty
 # ledger has no record, so it is tracked by ARGV position and still emits its all-"?" row.
 _rows() {
-  local files=("$RUNS_DIR"/*.log)
-  [ -e "${files[0]}" ] || return 0
+  _ledger_files
+  [ "${#LEDGERS[@]}" -gt 0 ] || return 0
   awk '
     BEGIN {
       FS=" \\| "
@@ -203,7 +231,7 @@ _rows() {
     END {
       if (cur!="") flush(rid_of(cur))
       while (idx<=nf) { flush(rid_of(fl[idx])); idx++ }
-    }' "${files[@]}"
+    }' "${LEDGERS[@]}"
 }
 
 # _review_agg: review-economics counters over runs that recorded at least one review round

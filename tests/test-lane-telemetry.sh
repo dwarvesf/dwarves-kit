@@ -176,16 +176,24 @@ L() { printf '2026-01-01T00:00:%s | %s\n' "$@"; }   # sec, rest-of-line
 { L 01Z "START | lane=normal classified=normal type=doc ctype=doc repo=r"
   L 02Z "GATE | spec | ran | s"; L 03Z "GATE | build | ran | b"; L 04Z "GATE | review | ran | r"
   L 05Z "GATE | ship | ran | done"; } > "$FX/runs/g-complete.log"
+{ L 01Z "START | lane=tiny classified=tiny type=doc ctype=doc repo=r"
+  L 02Z "GATE | ship | ran | done"
+  L 03Z "START-AMEND | lane=normal classified=normal type=doc ctype=doc repo=r"; } > "$FX/runs/h-amended.log"
+: > "$FX/runs/z-empty.log"                          # a trailing empty ledger must still emit its row
+ln -s "$FX/runs/does-not-exist" "$FX/runs/y-dangling.log"   # a dangling symlink ledger is skipped, never fatal
 
 legacy="$(RUNS_DIR="$FX/runs" legacy_rows)"
 new="$(rows_src "$FX" _rows)"
 [ "$new" = "$legacy" ]; ok "single-awk _rows is byte-identical to the per-file loop (fixture, incl. START-AMEND, tab scrub, empty ledger)" $?
-[ "$(printf '%s\n' "$new" | grep -c .)" -eq 7 ]; ok "_rows emits one row per ledger, the empty one included" $?
+[ "$(printf '%s\n' "$new" | grep -c .)" -eq 9 ]; ok "_rows emits one row per regular ledger, empty ones included, the dangling symlink skipped" $?
+printf '%s\n' "$new" | tail -n 1 | grep -q '^z-empty'; ok "_rows: a trailing empty ledger is still emitted last" $?
+NC=0; NO_COLOR=1 DWARVES_KIT_LOG_DIR="$FX" bash "$LT" misfires >/dev/null 2>&1 || NC=$?
+[ "$NC" -eq 0 ]; ok "misfires exits 0 with a dangling symlink ledger present (rc=$NC)" $?
 echo "$new" | grep -qF "$(printf 'b-amend\tr\tbug\tnormal\tb\tb\t')"; ok "_rows: last START-AMEND wins, the second plain START is ignored" $?
 echo "$new" | grep -qF "$(printf 'good | with a tab')"; ok "_rows: review text joins with ' | ' and the tab is scrubbed" $?
 
 EXP_MIS="$(NO_COLOR=1 DWARVES_KIT_LOG_DIR="$FX" bash "$LT" misfires 2>&1)"
-for want in "routing misfires" "c-misfire: chosen=full classified=normal (type=doc repo=r2)" "b-amend: chosen=bug classified=normal (type=b repo=r)" "type misfires" "c-misfire: type=doc classified-type=eval (lane=full repo=r2)" "f-shipped (normal)"; do
+for want in "routing misfires" "c-misfire: chosen=full classified=normal (type=doc repo=r2)" "b-amend: chosen=bug classified=normal (type=b repo=r)" "type misfires" "c-misfire: type=doc classified-type=eval (lane=full repo=r2)" "f-shipped (normal)" "h-amended (normal)"; do
   has "$want" "$EXP_MIS"; ok "misfires prints: $want" $?
 done
 has "g-complete" "$EXP_MIS" && ok "misfires must not flag a complete shipped run" 1 || ok "misfires must not flag a complete shipped run" 0
@@ -211,7 +219,7 @@ mf() { ( cd "$CW" && NO_COLOR=1 CALLS_FILE="$CALLS" KIT_CONFIG_OPERATOR="$OPD" D
 ncalls() { grep -c . "$CALLS" || true; }
 
 O1="$(mf)"; C1="$(ncalls)"
-N=3   # shipped runs with a lane: a-plain, f-shipped, g-complete
+N=4   # shipped runs with a lane: a-plain, f-shipped, g-complete, h-amended
 [ "$C1" -eq "$N" ]; ok "cold run checks each shipped run live ($N gate-ledger calls, got $C1)" $?
 has "f-shipped (normal)" "$O1"; ok "cold run flags the incomplete shipped run" $?
 [ -s "$CACHE" ]; ok "cold run writes the verdict cache" $?
@@ -249,6 +257,43 @@ mf >/dev/null; C9="$(ncalls)"
 printf '[lane.normal]\nphases = ["build"]\nlight = []\n' > "$OPD/kit.toml"
 mf >/dev/null; C10="$(ncalls)"
 [ "$C10" -eq "$((C9+N))" ]; ok "an operator lane override invalidates every entry (+$N calls, got $((C10-C9)))" $?
+
+# --- review follow-ups: inode key, gate-script and project-config invalidation, temp cleanup ---
+delta_run() { local b; b="$(ncalls)"; mf >/dev/null; echo $(( $(ncalls) - b )); }
+: > "$OPD/kit.toml"; mf >/dev/null                 # drop the operator override, re-warm
+[ "$(delta_run)" -eq 0 ]; ok "warm again after resetting the operator override" $?
+
+sed 's/late/lete/' "$CL/runs/f-shipped.log" > "$TD/f.swap"
+touch -r "$CL/runs/f-shipped.log" "$TD/f.swap"
+mv -f "$TD/f.swap" "$CL/runs/f-shipped.log"        # same size, same mtime, new inode
+D="$(delta_run)"; [ "$D" -eq 1 ]; ok "a ledger swapped for a same-size same-mtime file re-checks (inode in the key, +$D call)" $?
+
+printf '\n# edited\n' >> "$SH/lib/gate/lane-data.sh"
+D="$(delta_run)"; [ "$D" -eq "$N" ]; ok "editing a lib/gate script invalidates every entry (+$D calls)" $?
+
+CP="$TD/proj"; mkdir -p "$CP"; printf '# project config\n' > "$CP/.kit.toml"
+( unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE; cd "$CP" && git init -q . )
+mfp() { ( cd "$CP" && NO_COLOR=1 CALLS_FILE="$CALLS" KIT_CONFIG_OPERATOR="$OPD" DWARVES_KIT_LOG_DIR="$CL" bash "$SLT" misfires 2>&1 ); }
+delta_p() { local b; b="$(ncalls)"; mfp >/dev/null; echo $(( $(ncalls) - b )); }
+delta_p >/dev/null                                  # cold for this cwd: untracked project file
+[ "$(delta_p)" -eq 0 ]; ok "untracked project .kit.toml: warm run makes no calls" $?
+( unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE; cd "$CP" && git add .kit.toml && git -c user.name=t -c user.email=t@t commit -qm cfg )
+D="$(delta_p)"; [ "$D" -eq "$N" ]; ok "committing the same project .kit.toml (clean flag only) invalidates (+$D calls)" $?
+printf '# edit\n' >> "$CP/.kit.toml"
+D="$(delta_p)"; [ "$D" -eq "$N" ]; ok "a dirty tracked project .kit.toml invalidates (+$D calls)" $?
+
+# SIGTERM while the cache temp file exists must not leave it behind (mv is stubbed to hang)
+mkdir -p "$TD/bin"; printf '#!/bin/bash\nsleep 20\n' > "$TD/bin/mv"; chmod +x "$TD/bin/mv"
+touch -t 202601020000 "$CL/runs/g-complete.log"    # force one live re-check so a temp file gets written
+set -m
+( cd "$CW" && PATH="$TD/bin:$PATH" NO_COLOR=1 CALLS_FILE="$CALLS" KIT_CONFIG_OPERATOR="$OPD" DWARVES_KIT_LOG_DIR="$CL" bash "$SLT" misfires >/dev/null 2>&1 ) &
+BG=$!
+set +m
+i=0; while [ "$i" -lt 150 ] && ! ls "$CL"/.shipped-incomplete.cache.* >/dev/null 2>&1; do sleep 0.2; i=$((i+1)); done
+kill -TERM -- "-$BG" 2>/dev/null || true
+wait "$BG" 2>/dev/null || true
+i=0; while [ "$i" -lt 25 ] && ls "$CL"/.shipped-incomplete.cache.* >/dev/null 2>&1; do sleep 0.2; i=$((i+1)); done   # the trap runs in a child that outlives the wait
+if ls "$CL"/.shipped-incomplete.cache.* >/dev/null 2>&1; then ok "SIGTERM mid-write leaves no cache temp file" 1; else ok "SIGTERM mid-write leaves no cache temp file" 0; fi
 
 echo ""
 echo "=== $PASS/$TOTAL passed, $FAIL failed ==="
