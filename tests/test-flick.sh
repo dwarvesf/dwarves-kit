@@ -42,7 +42,7 @@ start_stub() {
   while [ ! -s "$STUB_DIR/port" ] && [ "$i" -lt 100 ]; do sleep 0.05; i=$((i+1)); done
   PORT="$(cat "$STUB_DIR/port" 2>/dev/null)"
 }
-stub_reset() { : > "$STUB_DIR/count"; : > "$STUB_DIR/bodies.log"; : > "$STUB_DIR/auth.log"; : > "$STUB_DIR/last.json"; }
+stub_reset() { : > "$STUB_DIR/count"; : > "$STUB_DIR/bodies.log"; : > "$STUB_DIR/auth.log"; : > "$STUB_DIR/authsha.log"; : > "$STUB_DIR/last.json"; }
 stub_count() { local n; n="$(wc -l < "$STUB_DIR/count" 2>/dev/null | tr -d ' ')"; echo "${n:-0}"; }
 
 # cfg <key=value>...: write the operator [decide] block (the only config layer flick reads here).
@@ -505,6 +505,172 @@ jqt "FLICK_TEST=0 is not enough either" "$out" '.error == "network"'
 rm -f "$LOG"
 ( umask 022; decide_run ok "$IN1" >/dev/null )
 check "the decision log is created owner-only (0600)" "$([ "$(python3 -c 'import os,sys;print(oct(os.stat(sys.argv[1]).st_mode & 0o777))' "$LOG")" = 0o600 ]; echo $?)"
+
+echo "== token_cmd: a second, root-only token source for hosts with no ambient secrets =="
+# Helper commands live in $T (no spaces in the path). Each one touches a marker so a test can tell
+# whether it ran, and prints a canary that must never show up in stdout, the log or ps.
+CMD_TOKEN="CMDTOKEN5e21b9d4"
+sha12() { printf '%s' "$1" | python3 -c 'import hashlib,sys;print(hashlib.sha256(sys.stdin.buffer.read()).hexdigest()[:12])'; }
+mkcmd() { # mkcmd <name> <script-body>
+  printf '#!/bin/sh\n: > "%s/ran-%s"\n%s\n' "$T" "$1" "$2" > "$T/cmd-$1"; chmod +x "$T/cmd-$1"
+}
+mkcmd ok "printf '%s\\n' $CMD_TOKEN"
+mkcmd fail "printf '%s\\n' $CMD_TOKEN; exit 3"
+mkcmd empty "exit 0"
+mkcmd quote "printf '%s\\n' 'abc\"def'"
+mkcmd newline "printf 'abc\\ndef\\n'"
+mkcmd twonl "printf '%s\\n\\n' $CMD_TOKEN"
+mkcmd slow "sleep 40; printf '%s\\n' $CMD_TOKEN"
+mkcmd stdin "cat > \"$T/stdin-seen\"; printf '%s\\n' $CMD_TOKEN"
+mkcmd argv "printf '%s\\n' \"\$#\" > \"$T/argv-count\"; printf '%s\\n' $CMD_TOKEN"
+ran() { [ -e "$T/ran-$1" ]; }
+reset_ran() { rm -f "$T"/ran-* "$T/stdin-seen" "$T/argv-count"; }
+WANT_SHA="$(sha12 "$CMD_TOKEN")"; ENV_SHA="$(sha12 "$CANARY_TOKEN")"
+
+cfg backend=jev points=wrap-7b jev_token_cmd="$T/cmd-ok"
+stub_reset; reset_ran
+out="$(decide_run ok "$IN1" JEV_API_TOKEN=)"
+jqt "env empty: the token comes from the command and the call is answered" "$out" '.error == "" and .answers.p1.choice == "enhance"'
+check "the stub saw the command's token, not another" "$([ "$(cat "$STUB_DIR/authsha.log")" = "$WANT_SHA" ]; echo $?)"
+stub_reset; reset_ran
+out="$(decide_run ok "$IN1")"
+check "env set: the env token is used" "$([ "$(cat "$STUB_DIR/authsha.log")" = "$ENV_SHA" ]; echo $?)"
+check "env set: the command never runs" "$(! ran ok; echo $?)"
+jqt "env set: answered" "$out" '.error == "" and .answers.p1.choice == "enhance"'
+
+stub_reset; reset_ran
+cfg backend=jev points=wrap-7b jev_token_cmd="$T/cmd-fail"
+out="$(decide_run ok "$IN1" JEV_API_TOKEN=)"
+jqt "a failing command: no_token, counts error" "$out" '.error == "no_token" and .counts.error == 1 and .answers == {}'
+check "a failing command that printed a token sends nothing" "$([ "$(stub_count)" = 0 ] && ran fail; echo $?)"
+cfg backend=jev points=wrap-7b jev_token_cmd="$T/cmd-empty"
+out="$(decide_run ok "$IN1" JEV_API_TOKEN=)"
+jqt "a command that prints nothing: no_token" "$out" '.error == "no_token"'
+cfg backend=jev points=wrap-7b jev_token_cmd="$T/cmd-no-such-file"
+out="$(decide_run ok "$IN1" JEV_API_TOKEN=)"
+jqt "a command that does not exist: no_token, exit 0" "$out" '.error == "no_token"'
+for c in quote newline twonl; do
+  cfg backend=jev points=wrap-7b jev_token_cmd="$T/cmd-$c"
+  stub_reset
+  out="$(decide_run ok "$IN1" JEV_API_TOKEN=)"
+  jqt "command output failing the shape check ($c): no_token" "$out" '.error == "no_token"'
+  check "shape-check failure ($c) sent nothing" "$([ "$(stub_count)" = 0 ]; echo $?)"
+done
+
+echo "-- the command is bounded, shell-free and silent --"
+cfg backend=jev points=wrap-7b jev_token_cmd="$T/cmd-slow"
+stub_reset
+t0="$(ms_now)"; out="$(decide_run ok "$IN1" JEV_API_TOKEN=)"; t1="$(ms_now)"
+jqt "a slow command: no_token" "$out" '.error == "no_token"'
+check "the slow command was cut off at about 10 s (not 40)" "$([ $((t1-t0)) -ge 9500 ] && [ $((t1-t0)) -lt 15000 ]; echo $?)" "took $((t1-t0)) ms"
+cfg backend=jev points=wrap-7b jev_token_cmd="$T/cmd-stdin"
+reset_ran; echo "stdin-should-not-be-read" > "$T/feed"
+out="$(printf '%s' "$IN1" | ( cd "$T/cwd" && env -i PATH="$PATH" HOME="$T/home" KIT_CONFIG_ROOT="$T/root" KIT_CONFIG_OPERATOR="$T/op" KIT_PROJECT_ROOT="$T/cwd" DWARVES_KIT_LOG_DIR="$T/log" FLICK_TEST=1 FLICK_URL="http://127.0.0.1:${PORT}/ok" "$FLICK" decide 2>/dev/null ))"
+jqt "the command reads stdin from /dev/null, not flick's request" "$out" '.error == ""'
+check "the command saw an empty stdin" "$([ -f "$T/stdin-seen" ] && [ ! -s "$T/stdin-seen" ]; echo $?)"
+echo "-- no expansion: glob, command substitution, quotes --"
+mkdir -p "$T/globdir"; : > "$T/globdir/a" ; : > "$T/globdir/b"
+cfg backend=jev points=wrap-7b jev_token_cmd="$T/cmd-argv $T/globdir/* \$(touch $T/subst-ran) \`touch $T/bt-ran\` ;touch $T/semi-ran"
+reset_ran
+out="$(decide_run ok "$IN1" JEV_API_TOKEN=)"
+check "the glob was passed literally: argv count is the 7 literal words" "$([ "$(cat "$T/argv-count" 2>/dev/null)" = 7 ]; echo $?)" "argc=$(cat "$T/argv-count" 2>/dev/null)"
+check "no command substitution, backtick or semicolon ran anything" "$([ ! -e "$T/subst-ran" ] && [ ! -e "$T/bt-ran" ] && [ ! -e "$T/semi-ran" ]; echo $?)"
+echo "-- the output never leaks --"
+cfg backend=jev points=wrap-7b jev_token_cmd="$T/cmd-ok"
+rm -f "$LOG"; stub_reset
+out="$(decide_run ok "$IN1" JEV_API_TOKEN=)"
+check "the command's token is not in stdout, the log or the stub body" "$(grep -q "$CMD_TOKEN" "$LOG" "$STUB_DIR/bodies.log" <<<"$out"; [ $? -ne 0 ] && ! grep -q "$CMD_TOKEN" "$LOG" "$STUB_DIR/bodies.log"; echo $?)"
+cfg backend=jev points=wrap-7b jev_token_cmd="$T/cmd-ok"
+( decide_run slow "$IN1" JEV_API_TOKEN= >/dev/null ) &
+SLOWPID=$!
+ps_all=""; ps_n=0
+while [ "$ps_n" -lt 60 ]; do
+  ps_all="$ps_all
+$(ps -A -o args= 2>/dev/null)"
+  grep -q 'curl .*--config' <<<"$ps_all" && break
+  sleep 0.1; ps_n=$((ps_n+1))
+done
+check "ps shows no command token while curl is in flight" "$(grep -q "$CMD_TOKEN" <<<"$ps_all"; [ $? -ne 0 ]; echo $?)"
+check "ps shows curl really was in flight (the check is not vacuous)" "$(grep -q 'curl .*--config' <<<"$ps_all"; echo $?)"
+wait "$SLOWPID"
+
+echo "-- token_cmd is root-only --"
+cfg backend=jev points=wrap-7b
+printf '[decide]\njev_token_cmd = "%s/cmd-ok"\n' "$T" > "$T/cwd/.kit.toml"
+reset_ran; stub_reset
+out="$(decide_run ok "$IN1" JEV_API_TOKEN=)"
+jqt "a project .kit.toml token_cmd is ignored: no_token" "$out" '.error == "no_token"'
+check "the project command never ran and nothing was sent" "$(! ran ok && [ "$(stub_count)" = 0 ]; echo $?)"
+rm -f "$T/cwd/.kit.toml"
+printf '[decide]\nbackend = "jev"\npoints = "wrap-7b"\ndeny_words = "zzprivatecorp"\njev_token_cmd = "%s/cmd-ok"\n' "$T" > "$T/root/kit.toml"
+rm -f "$T/op/kit.toml"
+out="$(decide_run ok "$IN1" JEV_API_TOKEN=)"
+jqt "the kit-root kit.toml token_cmd is read when no operator file exists" "$out" '.error == ""'
+rm -f "$T/root/kit.toml"
+cfg backend=jev points=wrap-7b
+
+echo "== token_cmd hardening: env injection, TERM-proof, descendants, output cap, absolute path =="
+mkcmd trapterm "trap '' TERM; while :; do :; done"
+mkcmd orphan "printf '%s\\n' $CMD_TOKEN; (sleep 27) >/dev/null 2>&1 &"
+mkcmd bigfinite "head -c 5000 /dev/zero | tr '\\0' a"
+mkcmd bigforever "exec yes aaaaaaaaaaaaaaaa"
+echo "-- env vars cannot inject config (the engine's own variable namespaces) --"
+cfg backend=jev points=wrap-7b
+reset_ran; stub_reset
+out="$(decide_run ok "$IN1" JEV_API_TOKEN= "OP_jev_token_cmd=$T/cmd-ok")"
+jqt "env OP_jev_token_cmd has no effect: no_token" "$out" '.error == "no_token"'
+check "env OP_jev_token_cmd never ran a command" "$(! ran ok; echo $?)"
+out="$(decide_run ok "$IN1" JEV_API_TOKEN= "RT_jev_token_cmd=$T/cmd-ok")"
+check "env RT_jev_token_cmd never ran a command" "$(! ran ok; echo $?)"
+out="$(decide_run ok "$IN1" JEV_API_TOKEN= "FLKC_OP_jev_token_cmd=$T/cmd-ok" "FLKC_RT_jev_token_cmd=$T/cmd-ok")"
+check "env under the engine's private prefix never ran a command" "$(! ran ok; echo $?)"
+rm -f "$T/op/kit.toml"
+out="$(decide_run ok "$IN1" RT_backend=jev OP_backend=jev)"
+jqt "env RT_backend and OP_backend cannot switch the backend on" "$out" '.error == "backend_none"'
+cfg backend=jev points="" deny_words=zzprivatecorp
+out="$(decide_run ok "$IN1" OP_points=wrap-7b RT_points=wrap-7b)"
+jqt "env OP_points cannot enable a point" "$out" '.error == "point_disabled"'
+cfg backend=jev points=wrap-7b deny_words=
+stub_reset
+out="$(decide_run ok "$IN1" OP_deny_words=zzprivatecorp RT_deny_words=zzprivatecorp)"
+jqt "env OP_deny_words cannot fill an empty deny list" "$out" '.error == "egress_denied"'
+check "and nothing was sent" "$([ "$(stub_count)" = 0 ]; echo $?)"
+cfg backend=jev points=wrap-7b
+out="$(body_run "$(req "$(q p1 backlog-flip-script evil-tool)")" OP_allow_names=evil-tool RT_allow_names=evil-tool)"
+jqt "env OP_allow_names cannot widen the allowlist" "$out" '.error == "egress_denied"'
+
+echo "-- a command that ignores TERM, leaves descendants, or floods output --"
+cfg backend=jev points=wrap-7b jev_token_cmd="$T/cmd-trapterm"
+t0="$(ms_now)"; out="$(decide_run ok "$IN1" JEV_API_TOKEN=)"; t1="$(ms_now)"
+jqt "a TERM-ignoring command: no_token, valid JSON, exit 0" "$out" '.error == "no_token" and .counts.error == 1'
+check "a TERM-ignoring command was escalated and flick returned inside the limit plus grace" "$([ $((t1-t0)) -ge 9500 ] && [ $((t1-t0)) -lt 16000 ]; echo $?)" "took $((t1-t0)) ms"
+check "no spinning command is left behind" "$(! pgrep -f "$T/cmd-trapterm" >/dev/null; echo $?)"
+cfg backend=jev points=wrap-7b jev_token_cmd="$T/cmd-orphan"
+stub_reset
+t0="$(ms_now)"; out="$(decide_run ok "$IN1" JEV_API_TOKEN=)"; t1="$(ms_now)"
+jqt "a command that leaves a background child: the token is still used" "$out" '.error == "" and .answers.p1.choice == "enhance"'
+check "a lingering descendant did not hold flick open (returned well inside 27 s)" "$([ $((t1-t0)) -lt 12000 ]; echo $?)" "took $((t1-t0)) ms"
+check "the descendant was killed with its group" "$(! pgrep -f 'sleep 27' >/dev/null; echo $?)"
+for big in bigfinite bigforever; do
+  cfg backend=jev points=wrap-7b jev_token_cmd="$T/cmd-$big"
+  stub_reset
+  t0="$(ms_now)"; out="$(decide_run ok "$IN1" JEV_API_TOKEN=)"; t1="$(ms_now)"
+  jqt "oversized command output ($big): no_token" "$out" '.error == "no_token"'
+  check "oversized output ($big) sent nothing and finished in bounded time" "$([ "$(stub_count)" = 0 ] && [ $((t1-t0)) -lt 16000 ]; echo $?)" "took $((t1-t0)) ms"
+done
+check "no token temp dir is left behind" "$(! ls -d /tmp/flick.* >/dev/null 2>&1; echo $?)"
+
+echo "-- the command's first word must be an absolute path --"
+reset_ran
+cfg backend=jev points=wrap-7b jev_token_cmd="cmd-ok"
+out="$(FLICK_CWD="$T" decide_run ok "$IN1" JEV_API_TOKEN= "PATH=$T:$PATH")"
+jqt "a bare command name is refused: no_token" "$out" '.error == "no_token"'
+check "the bare-name command never ran" "$(! ran ok; echo $?)"
+cfg backend=jev points=wrap-7b jev_token_cmd="./cmd-ok"
+out="$(FLICK_CWD="$T" decide_run ok "$IN1" JEV_API_TOKEN=)"
+jqt "a relative path is refused: no_token" "$out" '.error == "no_token"'
+check "the relative-path command never ran" "$(! ran ok; echo $?)"
+cfg backend=jev points=wrap-7b
 
 # --- sections above; summary below ---
 echo

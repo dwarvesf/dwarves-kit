@@ -28,7 +28,7 @@ KIT_ROOT="$(cd "$FLICK_DIR/../.." && pwd)"
 # The EXIT trap is the guarantee: whatever breaks below, the caller gets valid JSON and exit 0.
 EMITTED=0
 FALLBACK_JSON='{"backend":"","model":"","latency_ms":0,"mode":"shadow","answers":{},"error":"bad_input","counts":{"answered":0,"denied":0,"error":0}}'
-_flick_exit() { [ "$EMITTED" = 1 ] || printf '%s\n' "$FALLBACK_JSON"; exit 0; }
+_flick_exit() { tok_cleanup 2>/dev/null; [ "$EMITTED" = 1 ] || printf '%s\n' "$FALLBACK_JSON"; exit 0; }
 trap _flick_exit EXIT
 trap 'exit 0' HUP INT TERM
 
@@ -77,10 +77,10 @@ load_decide_block() {
     [ "$sec" = decide ] || continue
     case "$line" in *=*) ;; *) continue ;; esac
     k="${line%%=*}"; k="${k//[[:space:]]/}"
-    case "$k" in backend|mode|timeout_ms|points|jev_model|openai_model|jev_token_env|openai_token_env|allow_names|deny_words) ;; *) continue ;; esac
+    case "$k" in backend|mode|timeout_ms|points|jev_model|openai_model|jev_token_env|jev_token_cmd|openai_token_env|openai_token_cmd|allow_names|deny_words) ;; *) continue ;; esac
     v="${line#*=}"; v="${v#"${v%%[![:space:]]*}"}"; v="${v%"${v##*[![:space:]]}"}"
     v="${v#\"}"; v="${v%\"}"
-    local seen="SEEN_${pre}_${k}"
+    local seen="FLKC_SEEN_${pre}_${k}"
     [ -z "${!seen:-}" ] || continue
     printf -v "$seen" '%s' 1
     printf -v "${pre}_${k}" '%s' "$v"
@@ -89,7 +89,7 @@ load_decide_block() {
 
 # cfgget <key> <default>: operator value, else kit-root value, else the default.
 cfgget() {
-  local op="OP_$1" rt="RT_$1"
+  local op="FLKC_OP_$1" rt="FLKC_RT_$1"
   if [ -n "${!op:-}" ]; then printf '%s' "${!op}"; return; fi
   if [ -n "${!rt:-}" ]; then printf '%s' "${!rt}"; return; fi
   printf '%s' "$2"
@@ -97,9 +97,12 @@ cfgget() {
 
 load_config() {
   local v op_file rt_file
+  # The config variables live in one private namespace and are cleared first: an inherited
+  # environment variable of that shape must never stand in for a config file.
+  for v in $(compgen -v FLKC_); do unset "$v"; done
   op_file="$(kit_config_operator 2>/dev/null)"; rt_file="$(kit_config_root 2>/dev/null)"
-  load_decide_block "$op_file" OP
-  load_decide_block "$rt_file" RT
+  load_decide_block "$op_file" FLKC_OP
+  load_decide_block "$rt_file" FLKC_RT
   CFG_BACKEND="$(cfgget backend none)"
   case "$CFG_BACKEND" in none|jev|openai) ;; *) CFG_BACKEND=none ;; esac
   CFG_MODE="$(cfgget mode shadow)"
@@ -115,6 +118,7 @@ load_config() {
   CFG_JEV_MODEL="$(cfgget jev_model jev-1.13.0)"
   [[ "$CFG_JEV_MODEL" =~ ^[A-Za-z0-9._-]{1,64}$ ]] || CFG_JEV_MODEL=jev-1.13.0
   CFG_JEV_TOKEN_ENV="$(cfgget jev_token_env JEV_API_TOKEN)"
+  CFG_JEV_TOKEN_CMD="$(cfgget jev_token_cmd "")"
   CFG_OPENAI_MODEL="$(cfgget openai_model "")"
   CFG_ALLOW_NAMES="$(cfgget allow_names "")"
   CFG_DENY_WORDS="$(cfgget deny_words "")"
@@ -279,6 +283,67 @@ BODY_PROG='
                                                        + (if ($dd[$i] // "") != "" then " (described as: " + ($dd[$i][0:160]) + ")" else "" end)
                                                        + " cover the job of the candidate " + $kept[$i].candidate + "?") } } ]
                    | from_entries ) }'
+
+# ---- token source ------------------------------------------------------------------------------
+# resolve_token <env-name> <cmd>: sets TOKEN. The env var wins; only an empty one falls through
+# to the configured command, for hosts that keep secrets out of the shell env. The command is
+# split on whitespace and run WITHOUT a shell: no glob (set -f), no expansion, no quoting, and
+# its first word must be an absolute path (a bare name would search the caller's PATH). stdin is
+# /dev/null, stderr is dropped, and its stdout goes to a file in a 0700 temp dir that is removed
+# before this returns; the output is never printed or logged. The file is capped by `ulimit -f`
+# and the read by head -c. The command runs in its own process group (set -m), and the hard limit
+# is background + poll + TERM to the group, then KILL after a short grace; flick never blocks on
+# a command that ignores TERM. Bash 3.2 has no `wait -n`, no `timeout`.
+# ponytail: a descendant that calls setsid/setpgid leaves the group and survives the kill.
+TOK_DIR=""; TOK_PGID=""
+
+tok_cleanup() {
+  [ -z "$TOK_PGID" ] || kill -s KILL -- "-$TOK_PGID" 2>/dev/null
+  TOK_PGID=""
+  [ -z "$TOK_DIR" ] || rm -rf "$TOK_DIR" 2>/dev/null
+  TOK_DIR=""
+}
+
+resolve_token() {
+  local envname="$1" cmd="$2" limit=10 words cpid deadline raw rc=1
+  TOKEN="${!envname:-}"
+  [ -z "$TOKEN" ] || return 0
+  [ -n "$cmd" ] || return 0
+  [ "$CFG_TIMEOUT_MS" -le 10000 ] || limit=$((CFG_TIMEOUT_MS / 1000))
+  set -f; read -ra words <<<"$cmd"; set +f
+  [ "${#words[@]}" -gt 0 ] || return 0
+  [ "${words[0]:0:1}" = / ] || return 0
+  TOK_DIR="$(umask 077; mktemp -d "${TMPDIR:-/tmp}/flick.XXXXXX" 2>/dev/null)" || { TOK_DIR=""; return 0; }
+  [ -d "$TOK_DIR" ] || { TOK_DIR=""; return 0; }
+  set -m
+  ( ulimit -S -f 64 2>/dev/null; umask 077; exec "${words[@]}" ) </dev/null >"$TOK_DIR/out" 2>/dev/null &
+  cpid=$!
+  set +m
+  TOK_PGID="$cpid"
+  deadline=$((SECONDS + limit + 1))   # wall clock, not a loop count: a sleep spawn is slow on a hardened host
+  while kill -0 "$cpid" 2>/dev/null; do
+    if [ "$SECONDS" -ge "$deadline" ]; then
+      kill -s TERM -- "-$cpid" 2>/dev/null; kill -s TERM "$cpid" 2>/dev/null
+      deadline=$((SECONDS + 1))
+      while kill -0 "$cpid" 2>/dev/null && [ "$SECONDS" -lt "$deadline" ]; do sleep 0.1; done
+      break
+    fi
+    sleep 0.1
+  done
+  if kill -0 "$cpid" 2>/dev/null; then
+    kill -s KILL -- "-$cpid" 2>/dev/null; kill -s KILL "$cpid" 2>/dev/null
+    tok_cleanup; return 0   # timed out: no wait, no output read
+  fi
+  wait "$cpid"; rc=$?
+  # Stragglers the command left behind die with its group before the file is read.
+  kill -s KILL -- "-$cpid" 2>/dev/null; TOK_PGID=""
+  if [ "$rc" = 0 ]; then
+    raw="$(head -c 4097 "$TOK_DIR/out" 2>/dev/null; printf x)"
+    raw="${raw%x}"
+    if [ "${#raw}" -le 4096 ]; then TOKEN="${raw%$'\n'}"; fi
+  fi
+  tok_cleanup
+}
 
 # ---- transport ---------------------------------------------------------------------------------
 JEV_URL='https://api.typesafe.ai/v1/systemone'
@@ -502,7 +567,8 @@ main() {
   command -v curl >/dev/null 2>&1 || finalize missing_dep
 
   [[ "$CFG_JEV_TOKEN_ENV" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || finalize no_token
-  local token="${!CFG_JEV_TOKEN_ENV:-}"
+  TOKEN=""; resolve_token "$CFG_JEV_TOKEN_ENV" "$CFG_JEV_TOKEN_CMD"
+  local token="$TOKEN"; TOKEN=""
   [ -n "$token" ] || finalize no_token
   case "$token" in *[[:cntrl:]\"\\]*) finalize no_token ;; esac
 
