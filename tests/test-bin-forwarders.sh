@@ -35,7 +35,7 @@ echo "== census: bin/ is exactly the ADR-0034 SG-04 target set =="
 # SPEC-184 forwarders; the census names them because the DISPATCH block below proves each
 # answers with its own contract. A bin/ entry with no such block is still the drift this
 # census exists to catch.
-EXPECTED="activate audit board classify config gate goal intake learn lint mega plugin-check precedent prose-rag queue reflect release session skill-improve skill-review spec stats test-affected worktree-provision wrap"
+EXPECTED="activate audit board classify config flick gate goal intake learn lint mega plugin-check precedent prose-rag queue reflect release session skill-improve skill-review spec stats test-affected worktree-provision wrap"
 ACTUAL="$(ls -1 "$KIT_DIR/bin" | sort | tr '\n' ' ' | sed 's/ $//')"
 EXPECTED_SORTED="$(printf '%s\n' $EXPECTED | sort | tr '\n' ' ' | sed 's/ $//')"
 if [ "$ACTUAL" = "$EXPECTED_SORTED" ]; then

@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+# bin/flick -- STABLE consumer entrypoint for the decide subsystem (flick, a fast
+# "pick one of N" decision CLI). Consumers reference THIS path, never a deep
+# `$DWARVES_KIT/lib/decide/flick.sh` path. Forwards to the engine, which owns the verbs.
+#
+# Usage: flick [decide|body] < request.json     (flick --help for the contract)
+set -euo pipefail
+# exec the engine directly (it has its own bash shebang): one interpreter start, not two.
+SELF="${BASH_SOURCE[0]}"
+case "$SELF" in */*) SELF_DIR="${SELF%/*}" ;; *) SELF_DIR="." ;; esac
+ENGINE="$SELF_DIR/../lib/decide/flick.sh"
+# Fail open like the engine: a missing or unrunnable engine still answers with valid JSON, exit 0.
+shopt -s execfail
+[ ! -x "$ENGINE" ] || exec "$ENGINE" "$@" || true
+printf '%s\n' '{"backend":"","model":"","latency_ms":0,"mode":"shadow","answers":{},"error":"missing_dep","counts":{"answered":0,"denied":0,"error":0}}'

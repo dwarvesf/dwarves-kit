@@ -2968,6 +2968,16 @@ done
 
 # ============================================================
 echo ""
+echo "=== flick: a command-layer tool, never called from a hook (no LLM API call in a hook) ==="
+# ============================================================
+FLICK_HITS="$(grep -rIl -e 'bin/flick' -e 'lib/decide' -e 'flick\.sh' "$KIT_DIR/hooks" 2>/dev/null | grep -v '/tests/' || true)"
+assert_true "no file under hooks/ references flick" "$([ -z "$FLICK_HITS" ] && echo 0 || echo 1)"
+FLICK_PLANT="$(mktemp -d)"; echo 'bash "$DWARVES_KIT/bin/flick" < x' > "$FLICK_PLANT/h.sh"
+assert_true "the flick pin is not vacuous: a planted reference is found" "$(grep -rIl -e 'bin/flick' "$FLICK_PLANT" >/dev/null 2>&1 && echo 0 || echo 1)"
+rm -r "$FLICK_PLANT"
+
+# ============================================================
+echo ""
 echo "=== Results ==="
 # ============================================================
 echo -e "Passed: ${GREEN}${PASS}${NC} / ${TOTAL}"

@@ -453,6 +453,32 @@ follow_through = "off"          # [impl] step 10, after the step 9 report. One o
                                  #        Any other value prints one line and runs as off.
                                  #        Needs-you items never run at any setting.
 
+[decide]                        # `flick` (bin/flick), the fast "pick one of N" decision CLI. Every key
+                                 #        resolves ROOT-ONLY (kit_config_get_root: the operator kit.toml or
+                                 #        this file, never a project .kit.toml), because the block names a
+                                 #        credential source and authorizes egress. Lists are space-separated
+                                 #        strings (the resolver reads single-line scalars). Hooks never read
+                                 #        or call it. Contract: docs/specs/SPEC-381-flick.md.
+backend = "none"                # [impl] jev | openai | none. none leaves every kit step unchanged and
+                                 #        sends nothing. openai is a stub that answers `unsupported` until
+                                 #        the vendor publishes its request shape.
+mode = "shadow"                 # [impl] shadow logs beside the caller's own decision and never acts.
+                                 #        decide is accepted and runs as shadow for wrap-7b, the only point.
+points = ""                     # [impl] space-separated enabled decision points. Empty means nothing
+                                 #        leaves the host. The one point today: wrap-7b.
+timeout_ms = "1500"             # [impl] per call. Values under 1500 clamp up (the vendor trial's screen),
+                                 #        values over 10000 clamp down.
+jev_model = "jev-1.13.0"        # [impl] pinned, never a `latest` alias.
+openai_model = ""               # [reserved] unused while the openai backend is a stub.
+jev_token_env = "JEV_API_TOKEN" # [impl] the NAME of the env var holding the token. The token itself
+                                 #        never sits in a file, argv, a log, or stdout.
+openai_token_env = "OPENAI_API_KEY" # [reserved] same rule, unused while the backend is a stub.
+allow_names = ""                # [impl] extra public tool names the egress guard accepts, exact match,
+                                 #        added to the names under this kit's bin/, commands/, skills/,
+                                 #        agents/.
+deny_words = ""                 # [impl] space-separated words that block a candidate slug (client names,
+                                 #        private repo names). Case-folded substring match.
+
 [knowledge]                     # context tree root for repo knowledge notes (context-kit fills this)
 root = ""                       # [consumer] absolute or ~-prefixed path to the context tree
                                  #        root. Read from the operator `kit.toml` or the
