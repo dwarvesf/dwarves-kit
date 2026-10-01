@@ -1,6 +1,6 @@
 # Proof of done: `wrap land` merges the default branch into a conflicting own PR
 
-2026-09-30. Spec: `docs/specs/SPEC-375-land-merge-default.md` (VALIDATED). Lane: full. Files: `lib/wrap/wrap-common.sh`, `lib/wrap/wrap-land.sh`, `lib/wrap/wrap-merge.sh`, `lib/wrap/wrap-rebase.sh`, `lib/wrap/wrap.sh` (header only), `bin/wrap`, `bin/test-affected`, `tests/test-wrap-land.sh`, `tests/test-wrap-merge.sh`, `tests/lib/wrap-stub.sh`, `commands/wrap.md`, `docs/consumer-contract.md`, `docs/CHANGELOG.md`, `docs/FEATURES.md` (regenerated), `docs/implementation-notes/land-merge-default.md`, this file.
+2026-09-30. Spec: `docs/specs/SPEC-378-land-merge-default.md` (VALIDATED). Lane: full. Files: `lib/wrap/wrap-common.sh`, `lib/wrap/wrap-land.sh`, `lib/wrap/wrap-merge.sh`, `lib/wrap/wrap-rebase.sh`, `lib/wrap/wrap.sh` (header only), `bin/wrap`, `bin/test-affected`, `tests/test-wrap-land.sh`, `tests/test-wrap-merge.sh`, `tests/lib/wrap-stub.sh`, `commands/wrap.md`, `docs/consumer-contract.md`, `docs/CHANGELOG.md`, `docs/FEATURES.md` (regenerated), `docs/implementation-notes/land-merge-default.md`, this file.
 
 ## What changed
 
@@ -143,7 +143,7 @@ A fresh Opus review of the first build returned FIX THEN SHIP: three CRITICAL fi
 | `GH_STUB_FAIL_VIEW_<n>_<k>` and `%REMOTE_HEAD%` in the `gh` stub | `tests/lib/wrap-stub.sh` |
 | the two `lane-classify.sh risk` wording asserts | `tests/test-wrap-deploy.sh`, `tests/test-wrap-report-lint.sh` |
 
-Two changes beyond a move. `bin/test-affected` now selects `test-wrap-land.sh` and `test-wrap-merge.sh` on a `wrap-rebase.sh` edit, because the cycle calls the rebase resolver. The spec is now SPEC-375, since master's wrap split took 374.
+Two changes beyond a move. `bin/test-affected` now selects `test-wrap-land.sh` and `test-wrap-merge.sh` on a `wrap-rebase.sh` edit, because the cycle calls the rebase resolver. The spec is now SPEC-378, since master's wrap split took 374.
 
 | Check | Result |
 |---|---|
