@@ -366,6 +366,28 @@ check "ps shows no token while curl is in flight" "$(grep -q "$CANARY_TOKEN" <<<
 check "ps shows curl really was in flight (the check is not vacuous)" "$(grep -q 'curl .*--config' <<<"$ps_all"; echo $?)"
 wait "$SLOWPID"
 
+echo "== TASK-9: [decide] is root-only (a project .kit.toml changes nothing) =="
+rm -f "$T/op/kit.toml"
+printf '[decide]\nbackend = "jev"\npoints = "wrap-7b"\nallow_names = "evil-tool"\ndeny_words = ""\n' > "$T/cwd/.kit.toml"
+stub_reset
+out="$(decide_run ok "$IN1")"
+jqt "a project .kit.toml cannot switch the backend on" "$out" '.error == "backend_none"'
+check "and nothing was sent" "$([ "$(stub_count)" = 0 ]; echo $?)"
+cfg backend=jev points=wrap-7b
+out="$(body_run "$(req "$(q p1 backlog-flip-script evil-tool)")")"
+jqt "a project .kit.toml cannot widen the allowlist" "$out" '.error == "egress_denied"'
+printf '[decide]\ndeny_words = "x"\nbackend = "none"\n' > "$T/cwd/.kit.toml"
+out="$(decide_run ok "$IN1")"
+jqt "a project .kit.toml cannot switch the backend off or add deny words either (operator wins)" "$out" '.error == "" and .answers.p1.choice == "enhance"'
+rm -f "$T/cwd/.kit.toml"
+printf '[decide]\nbackend = "jev"\npoints = "wrap-7b"\n' > "$T/root/kit.toml"
+rm -f "$T/op/kit.toml"
+out="$(decide_run ok "$IN1")"
+jqt "the kit-root kit.toml is read when no operator file exists" "$out" '.error == "" and .backend == "jev"'
+rm -f "$T/root/kit.toml"
+cfg backend=jev points=wrap-7b
+check "the shipped kit.toml has a [decide] block defaulting to backend none" "$(awk '/^\[decide\]/{s=1;next} /^\[/{s=0} s && /^backend *= *"none"/{f=1} END{exit !f}' "$KIT_DIR/kit.toml"; echo $?)"
+
 # --- sections above; summary below ---
 echo
 echo "flick: $PASS passed, $FAIL failed"

@@ -245,7 +245,7 @@ call_jev() {
 # operator can audit exactly what left the host; a denied one logs its index and reason only.
 # The caller's id, any denied text, and the token never reach the log. `existing` is kept only
 # when it is one of the point's choices. A failure to log never changes the answer.
-LOG_PROG='
+LOG_BODY='(
   ["enhance","new","none"] as $choices
   | ($keep | split(" ") | map(select(. != "") | tonumber)) as $kidx
   | ($deny | split(" ") | map(select(. != "") | tonumber)) as $didx
@@ -259,20 +259,17 @@ LOG_PROG='
     ( $didx[] as $i
       | {ts: (now | todate), backend: $backend, model: $model, point: $point, index: $i,
          latency_ms: $lat, chosen: "", error: "egress_denied", mode: $mode, mode_downgraded: $note} ) ]
-  | sort_by(.index) | .[]'
+  | sort_by(.index) | .[] | tojson )'
 
-log_lines() { # <envelope-json>
-  local dir lines
+# log_target: print the decide.jsonl path, or nothing when the log dir cannot be resolved.
+log_target() {
+  local dir
   [ -f "$KIT_ROOT/lib/telemetry/kit-log-dir.sh" ] || return 0
   . "$KIT_ROOT/lib/telemetry/kit-log-dir.sh" 2>/dev/null || return 0
   dir="$(kit_resolve_log_dir 2>/dev/null)" || return 0
   [ -n "$dir" ] || return 0
-  lines="$(jq -nc --argjson norm "$NORM" --argjson out "$1" --arg keep "${KEEP# }" --arg deny "${DENY_IDX# }" \
-    --arg backend "$BACKEND" --arg model "$MODEL" --arg point "wrap-7b" --argjson lat "${LATENCY_MS:-0}" \
-    --arg mode "$MODE_OUT" --argjson note "${MODE_NOTE:-false}" "$LOG_PROG" 2>/dev/null)" || return 0
-  [ -n "$lines" ] || return 0
   mkdir -p "$dir" 2>/dev/null || return 0
-  printf '%s\n' "$lines" >> "$dir/decide.jsonl" 2>/dev/null || true
+  printf '%s/decide.jsonl' "$dir"
 }
 
 # ---- validation and output -----------------------------------------------------------------------
@@ -305,7 +302,7 @@ FINAL_PROG='
       else ( [ range(0; ($kept | length)) as $i | ($r.answers[$qids[$i]] | judged($cs)) ] ) as $j
            | if ($j | all(. != null)) then {ok: $j} else {err: "bad_probs"} end
       end ) as $res
-  | if $res.ok then
+  | ( if $res.ok then
       { backend: $backend, model: $model, latency_ms: $lat, mode: $mode,
         answers: ( [ range(0; ($kept | length)) as $i | {key: $kept[$i].id, value: $res.ok[$i]} ]
                    + [ $didx[] | {key: $all[.].id, value: {choice: "", error: "egress_denied"}} ] | from_entries ),
@@ -315,18 +312,23 @@ FINAL_PROG='
       { backend: $backend, model: $model, latency_ms: $lat, mode: $mode, answers: {},
         error: $res.err,
         counts: {answered: 0, denied: ($didx | length), error: (($all | length) - ($didx | length))} }
-    end'
+    end ) as $out
+  | ($out | tojson),
+'
 
 # finalize <error>: the post-guard exit. <error> is empty after a 2xx answer; the program decides
 # whether that answer is acceptable.
 finalize() {
-  local out
-  out="$(jq -nc --argjson norm "$NORM" --arg keep "${KEEP# }" --arg deny "${DENY_IDX# }" \
+  local all out target
+  target="$(log_target)"
+  all="$(jq -r --argjson norm "$NORM" --arg keep "${KEEP# }" --arg deny "${DENY_IDX# }" \
     --arg err "$1" --arg resp "${RESP:-}" --arg backend "$BACKEND" --arg model "$MODEL" \
-    --argjson lat "${LATENCY_MS:-0}" --arg mode "$MODE_OUT" \
-    --argjson criteria "$POINT_WRAP_7B_CRITERIA" "$FINAL_PROG")" || exit 0
+    --argjson lat "${LATENCY_MS:-0}" --arg mode "$MODE_OUT" --arg point "wrap-7b" \
+    --argjson note "${MODE_NOTE:-false}" --argjson criteria "$POINT_WRAP_7B_CRITERIA" \
+    -n "$FINAL_PROG$LOG_BODY")" || exit 0
+  out="${all%%$'\n'*}"
   [ -n "$out" ] || exit 0
-  log_lines "$out" || true
+  if [ -n "$target" ] && [ "$all" != "$out" ]; then printf '%s\n' "${all#*$'\n'}" >> "$target" 2>/dev/null || true; fi
   printf '%s\n' "$out"; EMITTED=1; exit 0
 }
 
