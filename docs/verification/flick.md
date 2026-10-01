@@ -82,3 +82,41 @@ Security-lens fixes, same section of `tests/test-flick.sh` (the TERM-ignoring te
 | First word must be an absolute path | Rule removed: bare-name and relative-path tests |
 
 Not controlled: the stdin test. flick has already read its own stdin to EOF before the command runs, so removing `</dev/null` changes nothing observable; the redirect stays as defense in depth. Limit: a descendant that calls `setsid` or `setpgid` leaves the command's process group and survives the kill.
+
+## Follow-up: `decide.word_gate` and `decide.dict_file` (allow-by-dictionary egress rule)
+
+Scope: each hyphen segment of a `wrap-7b` candidate must be a dictionary word (case-insensitive, whole line), a built-in dev word, or a kit-public name, else the question is `egress_denied` with log reason `word_gate`. A missing or unreadable dictionary denies every candidate (`word_gate_no_dict`). `deny_words` still applies on top. Both keys are root-only; the gate is on by default.
+
+| Command | Exit | Result |
+|---------|------|--------|
+| `bash tests/test-flick.sh` (bash 5) | 0 | 298 passed, 0 failed |
+| `/bin/bash tests/test-flick.sh` (bash 3.2) | 0 | 298 passed, 0 failed |
+| `bash tests/test-meta.sh` | 0 | 902/902 |
+| `bash tests/test-hooks.sh` | 0 | 826/826 |
+
+New section in `tests/test-flick.sh` ("word gate"), red before the engine change (23 failures on the old code): generic slug passes; a made-up segment is denied with zero stub requests, absent from `flick body`, logged as `word_gate`; dev words pass; a kit-public name and an `allow_names` entry pass as segments; missing dictionary file and a directory in its place deny every candidate (`word_gate_no_dict`); an empty dictionary denies; `word_gate = "off"` restores the old behaviour; an unrecognised value counts as on; a project `.kit.toml` cannot turn the gate off or swap the dictionary; a mixed batch keeps the allowed question and drops the denied one (renumbered, counts right, per-question log reason); case-insensitive match against a capitalized fixture word; `deny_words` still blocks a dictionary word; a 50-question batch uses exactly one dictionary pass (an `awk` shim counts calls); `---` is denied; one test against the host dictionary, skipped when `/usr/share/dict/words` is absent. All other tests use a fixture dictionary, and the older sections run with `word_gate = "off"` so they stay host-independent.
+
+| Mutation (code file restored by copying a saved file back) | Test that went red |
+|------------------------------------------------------------|--------------------|
+| Gate disabled | made-up segment denied, absent from body, zero requests, log reason, mixed batch, 50-question batch (about 23 word-gate tests) |
+| Missing dictionary falls open | both `dict_file` unusable cases, `allow_names` segment test |
+| Match made case-sensitive | `dictionary match is case-insensitive` |
+| Dev-word list emptied | `built-in dev words pass without being in the dictionary` |
+| Public set ignored for segments | `a kit-public name segment passes`, `allow_names` segment test |
+| Unrecognised value treated as off | `an unrecognised word_gate value is treated as on`, 50-question batch |
+| Per-question log reason lost | `the log reason is word_gate`, both `word_gate_no_dict` log checks |
+| Zero-word slug allowed | `a slug with no word at all is denied` |
+| `LC_ALL=C` prefix put back on the `awk` call | `a kit-public name segment passes` (macOS `awk` exited 139 on about 1 run in 10, which reads as `word_gate_no_dict`); the 25-run repeat test catches it with high probability |
+
+Security-lens fixes, same section: segments under 3 characters never pass by dictionary (`z-o-r-b-i-x-sync` and `a-c-m-e-sync` are denied with zero requests); `dict_file` must be an absolute path to a regular file under 16 MB; flick no longer reads `KIT_CONFIG_OPERATOR`, `KIT_CONFIG_ROOT`, `XDG_CONFIG_HOME` or `DWARVES_KIT` unless `FLICK_TEST=1` (the two test overrides), and reads `$HOME/.config/dwarves-kit/kit.toml` plus the kit root's own `kit.toml`. Known limit, documented in the spec and `kit.toml`: a name that is an English word passes the gate, so `deny_words` still matters.
+
+| Fix | Mutation that went red |
+|-----|------------------------|
+| Short-segment rule | Rule removed: both spelled-out slug tests |
+| Absolute dictionary path | Check removed: relative-path tests |
+| 16 MB bound | Check removed: oversize test (reason `word_gate_no_dict`) |
+| Config env needs `FLICK_TEST=1` | Switch made unconditional: `KIT_CONFIG_OPERATOR` and `KIT_CONFIG_ROOT` without `FLICK_TEST=1` tests |
+
+The mutations ran in parallel copies of the kit tree, not by editing the worktree. Extra red lines about leftover token temp dirs and process groups in those runs come from sharing `/tmp` and `pgrep` across parallel runs; the serial runs above are clean.
+
+Measured cost on the build host (macOS, 236k-line system dictionary, `flick body`, 20 questions, mean of 10): about 70 ms with the gate off, about 160 to 210 ms with it on, so the gate adds roughly 80 to 140 ms. The first design, one `grep -Fixf` pass, took over 500 ms on BSD grep, so the engine reads the dictionary with one `awk` pass. The 20 ms target is NOT met on macOS; on this host a bare process spawn already costs about 14 ms. A `look` binary-search fast path would fit the budget but needs a sorted dictionary file.

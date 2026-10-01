@@ -47,11 +47,14 @@ stub_count() { local n; n="$(wc -l < "$STUB_DIR/count" 2>/dev/null | tr -d ' ')"
 
 # cfg <key=value>...: write the operator [decide] block (the only config layer flick reads here).
 # deny_words defaults to a harmless word: flick refuses to send anything while the list is empty,
-# so a test that wants an empty list passes deny_words= explicitly.
+# so a test that wants an empty list passes deny_words= explicitly. word_gate defaults to off so the
+# older sections (made-up slugs, host-independent) keep testing what they test; the word-gate section
+# uses wg_cfg, which omits the key to get the shipped default (on).
 cfg() {
-  local kv hasdeny=0
-  { echo "[decide]"; for kv in "$@"; do case "$kv" in deny_words=*) hasdeny=1 ;; esac; echo "${kv%%=*} = \"${kv#*=}\""; done
-    [ "$hasdeny" = 1 ] || echo 'deny_words = "zzprivatecorp"'; } > "$T/op/kit.toml"
+  local kv hasdeny=0 haswg=0
+  { echo "[decide]"; for kv in "$@"; do case "$kv" in deny_words=*) hasdeny=1 ;; word_gate=*) haswg=1 ;; esac; echo "${kv%%=*} = \"${kv#*=}\""; done
+    [ "$hasdeny" = 1 ] || echo 'deny_words = "zzprivatecorp"'
+    [ "$haswg" = 1 ] || echo 'word_gate = "off"'; } > "$T/op/kit.toml"
 }
 
 # flick_run <mode> <stdin-json> [extra env KEY=VAL...]: run bin/flick against the stub with a clean env.
@@ -390,7 +393,7 @@ printf '[decide]\ndeny_words = "x"\nbackend = "none"\n' > "$T/cwd/.kit.toml"
 out="$(decide_run ok "$IN1")"
 jqt "a project .kit.toml cannot switch the backend off or add deny words either (operator wins)" "$out" '.error == "" and .answers.p1.choice == "enhance"'
 rm -f "$T/cwd/.kit.toml"
-printf '[decide]\nbackend = "jev"\npoints = "wrap-7b"\ndeny_words = "zzprivatecorp"\n' > "$T/root/kit.toml"
+printf '[decide]\nbackend = "jev"\npoints = "wrap-7b"\ndeny_words = "zzprivatecorp"\nword_gate = "off"\n' > "$T/root/kit.toml"
 rm -f "$T/op/kit.toml"
 out="$(decide_run ok "$IN1")"
 jqt "the kit-root kit.toml is read when no operator file exists" "$out" '.error == "" and .backend == "jev"'
@@ -482,7 +485,7 @@ out="$(decide_run ok "$IN1" DWARVES_KIT_LOG_DIR=)"
 check "a project [ledger] location does not move decide.jsonl" "$([ ! -e "$T/projlog/decide.jsonl" ]; echo $?)"
 check "the log lands in the default dir instead" "$([ -s "$LOGHOME/decide.jsonl" ]; echo $?)"
 rm -f "$T/cwd/.kit.toml" "$LOGHOME/decide.jsonl"
-{ echo "[decide]"; echo 'backend = "jev"'; echo 'points = "wrap-7b"'; echo 'deny_words = "zzprivatecorp"'; echo "[ledger]"; echo "location = \"$T/oplog\""; } > "$T/op/kit.toml"
+{ echo "[decide]"; echo 'backend = "jev"'; echo 'points = "wrap-7b"'; echo 'deny_words = "zzprivatecorp"'; echo 'word_gate = "off"'; echo "[ledger]"; echo "location = \"$T/oplog\""; } > "$T/op/kit.toml"
 out="$(decide_run ok "$IN1" DWARVES_KIT_LOG_DIR=)"
 check "an operator [ledger] location does move it" "$([ -s "$T/oplog/decide.jsonl" ] && [ ! -e "$LOGHOME/decide.jsonl" ]; echo $?)"
 cfg backend=jev points=wrap-7b
@@ -497,11 +500,13 @@ out="$(printf '%s' "$IN1" | "$T/orphan/bin/flick" 2>/dev/null)"; rc=$?
 check "bin/flick with the engine missing: exit 0" "$([ "$rc" = 0 ]; echo $?)"
 jqt "bin/flick with the engine missing: valid empty-answer JSON" "$out" "$EMPTYJSON and (.error|type==\"string\") and .error != \"\""
 stub_reset
+mkdir -p "$T/home/.config/dwarves-kit"; command cp -f "$T/op/kit.toml" "$T/home/.config/dwarves-kit/kit.toml"
 out="$(decide_run ok "$IN1" FLICK_TEST= HTTPS_PROXY=http://127.0.0.1:1 https_proxy=http://127.0.0.1:1)"
 check "FLICK_URL without FLICK_TEST=1 is ignored: the stub saw nothing" "$([ "$(stub_count)" = 0 ]; echo $?)"
 jqt "FLICK_URL without FLICK_TEST=1: the call went to the production path (dead proxy, network)" "$out" '.error == "network"'
 out="$(decide_run ok "$IN1" FLICK_TEST=0 HTTPS_PROXY=http://127.0.0.1:1 https_proxy=http://127.0.0.1:1)"
 jqt "FLICK_TEST=0 is not enough either" "$out" '.error == "network"'
+command rm -f "$T/home/.config/dwarves-kit/kit.toml"
 rm -f "$LOG"
 ( umask 022; decide_run ok "$IN1" >/dev/null )
 check "the decision log is created owner-only (0600)" "$([ "$(python3 -c 'import os,sys;print(oct(os.stat(sys.argv[1]).st_mode & 0o777))' "$LOG")" = 0o600 ]; echo $?)"
@@ -602,7 +607,7 @@ out="$(decide_run ok "$IN1" JEV_API_TOKEN=)"
 jqt "a project .kit.toml token_cmd is ignored: no_token" "$out" '.error == "no_token"'
 check "the project command never ran and nothing was sent" "$(! ran ok && [ "$(stub_count)" = 0 ]; echo $?)"
 rm -f "$T/cwd/.kit.toml"
-printf '[decide]\nbackend = "jev"\npoints = "wrap-7b"\ndeny_words = "zzprivatecorp"\njev_token_cmd = "%s/cmd-ok"\n' "$T" > "$T/root/kit.toml"
+printf '[decide]\nbackend = "jev"\npoints = "wrap-7b"\ndeny_words = "zzprivatecorp"\nword_gate = "off"\njev_token_cmd = "%s/cmd-ok"\n' "$T" > "$T/root/kit.toml"
 rm -f "$T/op/kit.toml"
 out="$(decide_run ok "$IN1" JEV_API_TOKEN=)"
 jqt "the kit-root kit.toml token_cmd is read when no operator file exists" "$out" '.error == ""'
@@ -670,6 +675,194 @@ cfg backend=jev points=wrap-7b jev_token_cmd="./cmd-ok"
 out="$(FLICK_CWD="$T" decide_run ok "$IN1" JEV_API_TOKEN=)"
 jqt "a relative path is refused: no_token" "$out" '.error == "no_token"'
 check "the relative-path command never ran" "$(! ran ok; echo $?)"
+cfg backend=jev points=wrap-7b
+
+echo "== word gate: each hyphen segment of a candidate must be a dictionary word, a dev word, or a public name =="
+# A small fixture dictionary, so the tests never depend on the host's. "Widget" is capitalized on
+# purpose: the match is case-insensitive.
+WG_DICT="$T/fixture-words"
+printf '%s\n' backlog flip script Widget sync helper loft > "$WG_DICT"
+# wg_cfg <key=value>...: operator [decide] block WITHOUT a word_gate key (the shipped default),
+# pointing the dictionary at the fixture unless the caller passes dict_file=.
+wg_cfg() {
+  local kv hasdict=0
+  { echo "[decide]"; echo 'backend = "jev"'; echo 'points = "wrap-7b"'
+    for kv in "$@"; do case "$kv" in dict_file=*) hasdict=1 ;; esac; echo "${kv%%=*} = \"${kv#*=}\""; done
+    [ "$hasdict" = 1 ] || echo "dict_file = \"$WG_DICT\""
+    case " $* " in *" deny_words="*) ;; *) echo 'deny_words = "zzprivatecorp"' ;; esac; } > "$T/op/kit.toml"
+}
+WGNAME=zorbix   # a made-up name: in no dictionary, no dev-word list, no public set
+
+wg_cfg
+out="$(body_run "$(req "$(q p1 backlog-flip-script board)")")"
+jqt "generic slug (every segment a dictionary word) passes" "$out" '(.questions|keys) == ["q1"]'
+out="$(body_run "$(req "$(q p1 "$WGNAME-sync" board)")")"
+jqt "a made-up name segment is denied (the shipped default is on)" "$out" '.error == "egress_denied" and .answers == {} and .counts == {"answered":0,"denied":1,"error":0}'
+check "the made-up name is absent from the flick body output" "$(grep -q "$WGNAME" <<<"$out"; [ $? -ne 0 ]; echo $?)"
+stub_reset; rm -f "$LOG"
+out="$(decide_run ok "$(req "$(q p1 "$WGNAME-sync" board)")")"
+jqt "decide: the made-up name is egress_denied" "$out" '.error == "egress_denied" and .answers == {}'
+check "decide: zero requests reach the provider" "$([ "$(stub_count)" = 0 ]; echo $?)"
+check "the log reason is word_gate and the name is not logged" "$([ "$(jq -r .reason "$LOG")" = word_gate ] && ! grep -q "$WGNAME" "$LOG"; echo $?)"
+
+out="$(body_run "$(req "$(q p1 pr-ci-api-cli-json-yaml board)" "$(q p2 git-gh-repo-env-url-sdk wrap)" "$(q p3 todo-wip-config-auth-regex board)" "$(q p4 stdin-stdout-async-diff-lint board)")")"
+jqt "built-in dev words pass without being in the dictionary" "$out" '(.questions|keys) == ["q1","q2","q3","q4"]'
+
+out="$(body_run "$(req "$(q p1 board-sync board)" "$(q p2 wrap-script board)")")"
+jqt "a kit-public name segment passes without being in the dictionary" "$out" '(.questions|keys) == ["q1","q2"]'
+wg_cfg allow_names=extrapub
+out="$(body_run "$(req "$(q p1 extrapub-sync board)" "$(q p2 extrap-sync board)")")"
+jqt "an allow_names entry counts as public for a segment, a partial one does not" "$out" '(.questions|keys) == ["q1"]'
+
+wg_cfg
+out="$(body_run "$(req "$(q p1 widget-sync board)")")"
+jqt "dictionary match is case-insensitive (fixture holds Widget)" "$out" '(.questions|keys) == ["q1"]'
+out="$(body_run "$(req "$(q p1 "$WGNAME" board)" "$(q p2 "backlog-$WGNAME" board)" "$(q p3 "$WGNAME-flip" board)")")"
+jqt "denied wherever the unknown segment sits: alone, last, first" "$out" '.error == "egress_denied" and .counts.denied == 3'
+out="$(body_run "$(req "$(q p1 backlog--flip board)")")"
+jqt "an empty segment (double hyphen) is not a word, and not a failure" "$out" '(.questions|keys) == ["q1"]'
+
+out="$(body_run "$(req "$(q p1 --- board)")")"
+jqt "a slug with no word at all is denied" "$out" '.error == "egress_denied"'
+
+echo "-- dictionary file failures fail closed --"
+for df in "$T/no-such-words" "$T"; do
+  wg_cfg dict_file="$df"
+  stub_reset; rm -f "$LOG"
+  out="$(decide_run ok "$(req "$(q p1 backlog-flip-script board)" "$(q p2 pr-ci board)")")"
+  jqt "dict_file '${df##*/}' unusable: every candidate egress_denied, even all-dictionary ones" "$out" '.error == "egress_denied" and .answers == {} and .counts == {"answered":0,"denied":2,"error":0}'
+  check "dict_file '${df##*/}' unusable: zero requests, log reason word_gate_no_dict" "$([ "$(stub_count)" = 0 ] && [ "$(jq -r .reason "$LOG" | sort -u)" = word_gate_no_dict ]; echo $?)"
+done
+: > "$T/empty-words"
+wg_cfg dict_file="$T/empty-words"
+out="$(body_run "$(req "$(q p1 backlog-flip-script board)")")"
+jqt "an empty dictionary denies every non-dev, non-public segment" "$out" '.error == "egress_denied"'
+
+echo "-- one dictionary pass per batch --"
+mkdir -p "$T/shim"
+printf '#!/bin/sh\necho x >> "%s/awk-calls"\nexec "%s" "$@"\n' "$T" "$(command -v awk)" > "$T/shim/awk"; chmod +x "$T/shim/awk"
+wg_cfg
+: > "$T/awk-calls"
+big="$(jq -nc '{point:"wrap-7b",questions:[range(0;50)|{id:"p\(.)",candidate:(if . % 2 == 0 then "backlog-flip-script" else "zorbix-sync" end),hit:"board"}]}')"
+out="$(body_run "$big" "PATH=$T/shim:$PATH")"
+jqt "a 50-question batch: the 25 dictionary slugs pass, the 25 made-up ones drop" "$out" '(.questions|length) == 25'
+check "the whole batch used exactly one dictionary pass" "$([ "$(wc -l < "$T/awk-calls" | tr -d ' ')" = 1 ]; echo $?)"
+
+out=""; flaky=0
+for _ in $(seq 1 25); do
+  out="$(body_run "$(req "$(q p1 backlog-flip-script board)")")"
+  jq -e '(.questions|keys) == ["q1"]' >/dev/null 2>&1 <<<"$out" || flaky=$((flaky+1))
+done
+check "25 repeated runs agree: the dictionary pass never crashes into word_gate_no_dict" "$([ "$flaky" = 0 ]; echo $?)" "$flaky of 25 differed"
+
+echo "-- short segments never pass by dictionary (single letters are dictionary words) --"
+printf '%s\n' a b c e i m o r x z sync Widget > "$T/letters-words"
+wg_cfg dict_file="$T/letters-words"
+for slug in z-o-r-b-i-x-sync a-c-m-e-sync; do
+  stub_reset
+  out="$(decide_run ok "$(req "$(q p1 "$slug" board)")")"
+  jqt "spelled-out slug $slug is egress_denied" "$out" '.error == "egress_denied" and .answers == {}'
+  check "spelled-out slug $slug: zero requests" "$([ "$(stub_count)" = 0 ]; echo $?)"
+  out="$(body_run "$(req "$(q p1 "$slug" board)")")"
+  check "spelled-out slug $slug is absent from the body" "$(grep -q "$slug" <<<"$out"; [ $? -ne 0 ]; echo $?)"
+done
+out="$(body_run "$(req "$(q p1 pr-ci-db-ai-id board)" "$(q p2 ab-sync board)")")"
+jqt "two-letter dev words still pass; a two-letter non-dev segment is denied" "$out" '(.questions|keys) == ["q1"]'
+wg_cfg allow_names=zq
+out="$(body_run "$(req "$(q p1 zq-sync board)")")"
+jqt "a short segment that is a kit-public name still passes" "$out" '.questions|keys == ["q1"]'
+
+echo "-- dict_file must be an absolute path to a regular file under 16 MB --"
+mkdir -p "$T/dictcwd"; command cp -f "$WG_DICT" "$T/dictcwd/rel-words"
+python3 -c 'import sys;open(sys.argv[1],"wb").truncate(17*1024*1024)' "$T/huge-words"
+for df in "rel-words" "./rel-words" "$T/huge-words" "$T/dictcwd/../dictcwd/missing"; do
+  wg_cfg dict_file="$df"
+  stub_reset; rm -f "$LOG"
+  out="$(FLICK_CWD="$T/dictcwd" decide_run ok "$(req "$(q p1 backlog-flip-script board)")")"
+  jqt "dict_file '${df##*/}' (relative, oversize or missing): egress_denied" "$out" '.error == "egress_denied" and .answers == {}'
+  check "dict_file '${df##*/}': zero requests, reason word_gate_no_dict" "$([ "$(stub_count)" = 0 ] && [ "$(jq -r .reason "$LOG" | sort -u)" = word_gate_no_dict ]; echo $?)"
+done
+wg_cfg dict_file="$T/dictcwd/rel-words"
+out="$(FLICK_CWD="$T/dictcwd" body_run "$(req "$(q p1 backlog-flip-script board)")")"
+jqt "the same file by absolute path works" "$out" '(.questions|keys) == ["q1"]'
+
+echo "-- config location: env cannot choose the config files without FLICK_TEST=1 --"
+mkdir -p "$T/envop" "$T/envroot" "$T/xdg/dwarves-kit" "$T/home/.config/dwarves-kit" "$T/dwk"
+EVIL='[decide]
+backend = "jev"
+points = "wrap-7b"
+word_gate = "off"
+deny_words = "zzother"
+'
+printf '%s' "$EVIL" > "$T/envop/kit.toml"; printf '%s' "$EVIL" > "$T/envroot/kit.toml"
+printf '%s' "$EVIL" > "$T/xdg/dwarves-kit/kit.toml"; printf '%s' "$EVIL" > "$T/dwk/kit.toml"
+rm -f "$T/op/kit.toml" "$T/root/kit.toml" "$T/home/.config/dwarves-kit/kit.toml"
+for pair in "KIT_CONFIG_OPERATOR=$T/envop" "KIT_CONFIG_ROOT=$T/envroot" "XDG_CONFIG_HOME=$T/xdg" "DWARVES_KIT=$T/dwk"; do
+  stub_reset
+  out="$(decide_run ok "$(req "$(q p1 "$WGNAME-sync" board)")" FLICK_TEST= KIT_CONFIG_OPERATOR= KIT_CONFIG_ROOT= "$pair")"
+  jqt "${pair%%=*} without FLICK_TEST=1 changes nothing (backend stays none)" "$out" '.error == "backend_none"'
+  check "${pair%%=*} without FLICK_TEST=1: nothing was sent" "$([ "$(stub_count)" = 0 ]; echo $?)"
+done
+out="$(decide_run ok "$(req "$(q p1 "$WGNAME-sync" board)")" FLICK_TEST= KIT_CONFIG_OPERATOR="$T/envop" KIT_CONFIG_ROOT="$T/envroot" XDG_CONFIG_HOME="$T/xdg" DWARVES_KIT="$T/dwk")"
+jqt "all four together: still backend_none" "$out" '.error == "backend_none"'
+printf '[decide]\nbackend = "jev"\npoints = "wrap-7b"\ndeny_words = "zzprivatecorp"\ndict_file = "%s"\n' "$WG_DICT" > "$T/home/.config/dwarves-kit/kit.toml"
+out="$(FLICK_ARGS=body flick_run ok "$(req "$(q p1 "$WGNAME-sync" board)" "$(q p2 backlog-flip-script board)")" FLICK_TEST= KIT_CONFIG_OPERATOR="$T/envop" KIT_CONFIG_ROOT="$T/envroot")"
+jqt "production reads \$HOME/.config/dwarves-kit/kit.toml, gate on, env ignored" "$out" '(.questions|keys) == ["q1"]'
+out="$(FLICK_ARGS=body flick_run ok "$(req "$(q p1 "$WGNAME-sync" board)" "$(q p2 backlog-flip-script board)")" KIT_CONFIG_OPERATOR="$T/envop" KIT_CONFIG_ROOT="$T/envroot")"
+jqt "with FLICK_TEST=1 the env does choose the files (the test hook works)" "$out" '(.questions|keys) == ["q1","q2"]'
+command rm -f "$T/home/.config/dwarves-kit/kit.toml"
+cfg backend=jev points=wrap-7b
+
+echo "-- deny_words still applies on top --"
+wg_cfg deny_words=loft
+out="$(body_run "$(req "$(q p1 loft-script board)" "$(q p2 backlog-script board)")")"
+jqt "a dictionary word on the deny list is still denied" "$out" '(.questions|keys) == ["q1"] and (.questions.q1.instructions|test("candidate backlog-script"))'
+
+echo "-- mixed batch --"
+wg_cfg
+stub_reset; rm -f "$LOG"
+out="$(body_run "$(req "$(q p1 backlog-flip-script board)" "$(q p2 "$WGNAME-plan" board)" "$(q p3 sync-helper wrap)")")"
+jqt "mixed batch: the allowed questions stay, renumbered q1 q2" "$out" '(.questions|keys) == ["q1","q2"] and (.questions.q1.instructions|test("candidate backlog-flip-script")) and (.questions.q2.instructions|test("candidate sync-helper"))'
+check "mixed batch: the denied name is absent from the body" "$(grep -q "$WGNAME" <<<"$out"; [ $? -ne 0 ]; echo $?)"
+out="$(decide_run ok "$(req "$(q p1 backlog-flip-script board)" "$(q p2 "$WGNAME-plan" board)" "$(q p3 sync-helper wrap)")")"
+jqt "mixed batch: decide counts 2 answered, 1 denied, and answers the allowed ids" "$out" '.error == "" and .counts == {"answered":2,"denied":1,"error":0} and (.answers.p1.choice == "enhance") and (.answers.p2.error == "egress_denied") and (.answers.p3.choice != "")'
+check "mixed batch: one request, the log marks the denied row word_gate" "$([ "$(stub_count)" = 1 ] && [ "$(jq -r 'select(.index == 1) | .reason' "$LOG")" = word_gate ]; echo $?)"
+
+echo "-- word_gate = off restores the old behaviour --"
+wg_cfg word_gate=off
+out="$(body_run "$(req "$(q p1 "$WGNAME-sync" board)")")"
+jqt "word_gate off: the made-up name passes the word gate (deny_words still applies)" "$out" '(.questions|keys) == ["q1"]'
+wg_cfg word_gate=off dict_file="$T/no-such-words"
+out="$(body_run "$(req "$(q p1 "$WGNAME-sync" board)")")"
+jqt "word_gate off: a missing dictionary does not matter" "$out" '(.questions|keys) == ["q1"]'
+wg_cfg word_gate=maybe
+out="$(body_run "$(req "$(q p1 "$WGNAME-sync" board)")")"
+jqt "an unrecognised word_gate value is treated as on" "$out" '.error == "egress_denied"'
+
+echo "-- root-only: a project .kit.toml cannot weaken the gate --"
+wg_cfg
+printf '[decide]\nword_gate = "off"\ndict_file = "%s"\n' "$T/project-words" > "$T/cwd/.kit.toml"
+printf '%s\n' "$WGNAME" sync > "$T/project-words"
+out="$(body_run "$(req "$(q p1 "$WGNAME-sync" board)")")"
+jqt "a project .kit.toml cannot turn word_gate off or swap the dictionary" "$out" '.error == "egress_denied"'
+rm -f "$T/cwd/.kit.toml"
+printf '[decide]\nbackend = "jev"\npoints = "wrap-7b"\ndeny_words = "zzprivatecorp"\ndict_file = "%s"\n' "$WG_DICT" > "$T/root/kit.toml"
+rm -f "$T/op/kit.toml"
+out="$(body_run "$(req "$(q p1 "$WGNAME-sync" board)" "$(q p2 backlog-flip-script board)")")"
+jqt "the kit-root kit.toml supplies dict_file and the default-on gate" "$out" '(.questions|keys) == ["q1"]'
+rm -f "$T/root/kit.toml"
+
+echo "-- the host dictionary (skipped when absent) --"
+if [ -r /usr/share/dict/words ]; then
+  wg_cfg dict_file=/usr/share/dict/words
+  out="$(body_run "$(req "$(q p1 backlog-flip-script board)" "$(q p2 merge-loop-helper board)" "$(q p3 "$WGNAME-sync" board)")")"
+  jqt "host dictionary: generic slugs pass, the made-up name is denied" "$out" '(.questions|keys) == ["q1","q2"]'
+  printf '[decide]\nbackend = "jev"\npoints = "wrap-7b"\ndeny_words = "zzprivatecorp"\n' > "$T/op/kit.toml"
+  out="$(body_run "$(req "$(q p1 backlog-flip-script board)")")"
+  jqt "dict_file defaults to /usr/share/dict/words" "$out" '(.questions|keys) == ["q1"]'
+else
+  echo "  SKIP: /usr/share/dict/words not present"
+fi
 cfg backend=jev points=wrap-7b
 
 # --- sections above; summary below ---
