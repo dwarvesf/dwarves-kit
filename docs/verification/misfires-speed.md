@@ -12,8 +12,8 @@ Measured from the ops-toolkit checkout against the real runs dir (198 ledgers at
 |---|---|---|
 | origin/master | none (run 1) | 92.09 |
 | origin/master | none (run 2) | 99.99 |
-| this branch | cold (no cache file) | 49.69 |
-| this branch | warm | 3.38 |
+| this branch | cold (no cache file) | 48.10 |
+| this branch | warm | 3.47 |
 
 Cold is bound by the 22 live `gate-ledger.sh check` spawns (about 2.2 s each). Per function on the warm run: `_rows` under 1 s, `_shipped_incomplete` 2 s, `_boardless` 1 s (was 12 s).
 
@@ -26,19 +26,26 @@ Cold is bound by the 22 live `gate-ledger.sh check` spawns (about 2.2 s each). P
 | `_boardless` output is identical | `cmp` of master's `_boardless` against this branch over the real runs dir: identical (9 runs) |
 | a cache hit skips the gate-ledger call | `tests/test-lane-telemetry.sh`: warm run adds 0 calls, output equals cold |
 | a touched ledger re-checks only itself | append (size change) and `touch -t` (mtime only) each add exactly 1 call |
-| a corrupt, headerless or missing cache falls back to the live check | three asserts, each adds 3 calls and keeps the right verdict |
-| a lane-data change invalidates every entry | edit to the shim `kit.toml` and an operator `kit.toml` override each add 3 calls |
+| a ledger swapped for a same-size, same-mtime file re-checks | the inode is part of the cache key; the swap adds exactly 1 call |
+| a dangling `*.log` symlink cannot abort the pass | `_ledger_files` keeps regular readable files for `_rows` and both greps; `misfires` exits 0 with the output unchanged |
+| an amended shipped ledger takes its START-AMEND lane | `h-amended` (START tiny, amend normal) is flagged `(normal)` |
+| editing a `lib/gate/*.sh` file invalidates the cache | one edit adds 4 calls |
+| a project `.kit.toml` going tracked-clean or dirty invalidates the cache | the clean flag alone (same content, committed) adds 4 calls; a dirty edit adds 4 |
+| a trailing empty ledger still emits its row | `z-empty.log` is the last row |
+| an interrupted run leaves no cache temp file | SIGTERM mid-write (mv stubbed to hang) leaves nothing behind |
+| a corrupt, headerless or missing cache falls back to the live check | three asserts, each adds 4 calls and keeps the right verdict |
+| a lane-data change invalidates every entry | edit to the shim `kit.toml` and an operator `kit.toml` override each add 4 calls |
 | the cache write is atomic | temp file plus `mv`; no `.shipped-incomplete.cache.*` file is left behind |
 
 ## Run table
 
 | Command | Result |
 |---|---|
-| `bash tests/test-lane-telemetry.sh` | 57 of 57 (was 29; 28 new) |
-| `bash tests/test-meta.sh` | 902 of 902 (clean origin/master export: 902 of 902) |
+| `bash tests/test-lane-telemetry.sh` | 67 of 67 (was 29; 38 new) |
+| `bash tests/test-meta.sh` | 902 of 902 after regenerating `docs/FEATURES.md` (its suite counts drifted once more; clean origin/master export: 902 of 902) |
 | `bin/test-affected --base origin/master` | 2 suites failed: `test-gate-validate-round` (1 FAIL, `C12 report --period month`, fails the same on a clean origin/master export) and `test-hooks` (failed under load while other suites ran in parallel; re-run alone: all passed). `test-lane-telemetry`, `test-meta`, `test-e2e`, `test-gate-outcome`, `test-ledger-durability`, `test-lane-classify`, `test-config-stamp` pass |
 
-New asserts were written first and run against the old script: 7 of the 28 failed (rows computed once, cache written, warm run, re-check count, temp file, warm-after-fallback). The identity and fallback asserts passed there by design, because the old script already behaves that way and the change must keep it.
+New asserts were written first and run against the old script: 7 of the first 28 failed (rows computed once, cache written, warm run, re-check count, temp file, warm-after-fallback). The follow-up cases (dangling symlink, inode, trap) were red against the previous commit: the dangling symlink made `misfires` exit 2. The identity and fallback asserts passed there by design, because the old script already behaves that way and the change must keep it.
 
 ## Negative controls
 
@@ -49,6 +56,19 @@ Each mutation was applied, the suite run, and the file restored by copying the s
 | drop the per-file state reset in `_rows` | 7 (identity, misfire lines, filter, mermaid) |
 | make the cache lookup never hit | 3 (warm run, changed-ledger count, warm after fallback) |
 | drop the lane-data header check | 2 (lane-data change, operator override) |
+| drop the ledger file filter | 27 (rc 2 on the dangling symlink, then everything downstream) |
+| ignore START-AMEND in the shipped lane read | 1 (amended shipped ledger) |
+| drop `lib/gate/*.sh` from the cache header | 1 (gate-script edit) |
+| drop the clean flag from the cache header | 1 (committed project config) |
+| drop the trailing-empty flush in `_rows` | 3 (identity, row count, empty last) |
+| drop the inode from the BSD `stat` key | 1 (swapped ledger) |
+| drop every trap | 1 (SIGTERM temp file) |
+
+Dropping only the TERM and INT traps stays green on bash 5, because bash runs the EXIT trap on a fatal signal. The explicit INT and TERM traps are kept for shells that do not.
+
+## Known limits
+
+All ledgers ride one argv. macOS allows about 12,000 paths of this length, about 60 times today's count; past that, `_ledger_files` callers need `xargs -0`. A ledger deleted between the glob and awk can still abort the pass.
 
 ## Not changed
 
