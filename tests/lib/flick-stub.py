@@ -15,6 +15,7 @@ The first URL path segment picks the behaviour (FLICK_URL=http://127.0.0.1:<port
   extrakey    an answer for an id that was never requested
   missingkey  drops the first requested id
   extraprob   a probability for a choice that was never offered
+  wrongchoice the stated choice is not the highest-probability one
 
 Every request is recorded in <state-dir>: `count` (one line per request), `last.json` (the last
 body), `bodies.log` (all bodies, one per line), `auth.log` (whether an Authorization header arrived,
@@ -52,6 +53,8 @@ def answers_for(body, mode):
         if mode == "extraprob":
             probs["zz-extra"] = 0.0
         choice = max(probs, key=probs.get)
+        if mode == "wrongchoice":
+            choice = keys[-1]
         out[qid] = {"type": "choice", "choice": choice, "probabilities": probs}
     if mode == "extrakey":
         out["q99"] = {"type": "choice", "choice": "none", "probabilities": {"none": 1.0}}

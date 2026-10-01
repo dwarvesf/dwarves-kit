@@ -252,6 +252,83 @@ check "flick body prints no token" "$(grep -q "$CANARY_TOKEN" <<<"$out"; [ $? -n
 check "flick body makes zero stub requests" "$([ "$(stub_count)" = 0 ]; echo $?)"
 cfg backend=jev points=wrap-7b
 
+# decide_run <mode> <stdin-json> [env...]: run `flick decide` against the stub.
+decide_run() { local m="$1" in="$2"; shift 2; FLICK_ARGS=decide flick_run "$m" "$in" "$@"; }
+ms_now() { python3 -c 'import time;print(int(time.monotonic()*1000))'; }
+IN3="$(req "$(q p1 backlog-flip-script board)" "$(q p2 discord-poster wrap)" "$(q p3 sync-helper precedent)")"
+
+echo "== TASK-5: Jev transport (one request per batch, curl hygiene, timeouts, HTTP errors) =="
+cfg backend=jev points=wrap-7b
+stub_reset
+out="$(decide_run ok "$IN3")"
+check "a 3-question batch is ONE request" "$([ "$(stub_count)" = 1 ]; echo $?)"
+jqt "the stub received q1 q2 q3 only, rebuilt from the template" "$(cat "$STUB_DIR/last.json")" '(.questions|keys) == ["q1","q2","q3"] and (.questions.q1.instructions == "Does the existing tool board cover the job of the candidate backlog-flip-script?")'
+check "the Bearer header reached the stub" "$([ "$(cat "$STUB_DIR/auth.log")" = bearer ]; echo $?)"
+check "the token is nowhere in the request body or stdout" "$(grep -q "$CANARY_TOKEN" "$STUB_DIR/bodies.log" <<<"$out"; [ $? -ne 0 ] && ! grep -q "$CANARY_TOKEN" "$STUB_DIR/bodies.log"; echo $?)"
+jqt "envelope: backend jev, pinned model, mode shadow, integer latency" "$out" '.backend == "jev" and .model == "jev-1.13.0" and .mode == "shadow" and (.latency_ms|type=="number") and .latency_ms >= 0'
+stub_reset
+t0="$(ms_now)"; out="$(decide_run slow "$IN3")"; t1="$(ms_now)"
+jqt "slow stub: timeout, all three counted as error" "$out" '.error == "timeout" and .answers == {} and .counts == {"answered":0,"denied":0,"error":3}'
+check "the 1500 ms floor held: the call waited at least 1.4 s and gave up before the stub's 4 s" "$([ $((t1-t0)) -ge 1400 ] && [ $((t1-t0)) -lt 3800 ]; echo $?)" "took $((t1-t0)) ms"
+for code in 401 500; do
+  out="$(decide_run "$code" "$IN3")"
+  jqt "HTTP $code: http_$code, empty answers, all error" "$out" ".error == \"http_$code\" and .answers == {} and .counts == {\"answered\":0,\"denied\":0,\"error\":3}"
+done
+out="$(PORT=1 decide_run ok "$IN3")"
+jqt "connection refused: network" "$out" '.error == "network" and .counts.error == 3'
+stub_reset
+for url in 'http://127.0.0.1@evil.example/' 'http://localhost.evil.example/' 'http://127.0.0.1.evil.example/' 'http://user:pw@127.0.0.1/' 'https://127.0.0.1/' 'http://127.0.0.1:80@evil.example/' 'http://localhost:8080evil/' 'ftp://127.0.0.1/' 'http://127.0.0.1/ok x' 'http://127.0.0.1/ok
+http://evil.example/'; do
+  out="$(decide_run ok "$IN3" "FLICK_URL=$url")"
+  jqt "FLICK_URL $(printf '%s' "$url" | tr '\n' ' ') is refused: bad_input" "$out" '.error == "bad_input" and .counts == {"answered":0,"denied":0,"error":0}'
+done
+check "no refused FLICK_URL produced a request" "$([ "$(stub_count)" = 0 ]; echo $?)"
+echo "-- curl hygiene --"
+mkdir -p "$T/curlhome"
+printf 'trace = "%s/canary.trace"\n' "$T/curlhome" > "$T/curlhome/.curlrc"
+env -u CURL_HOME -u XDG_CONFIG_HOME HOME="$T/curlhome" curl -s -o /dev/null -X POST --data x "http://127.0.0.1:${PORT}/ok"
+check "the canary .curlrc really fires for a plain curl (so the test below is not vacuous)" "$([ -s "$T/curlhome/canary.trace" ]; echo $?)"
+mv -f "$T/curlhome/canary.trace" "$T/canary.fired"
+stub_reset
+out="$(decide_run ok "$IN3" HOME="$T/curlhome")"
+jqt "flick still answers with a hostile HOME" "$out" '.error == ""'
+check "the canary .curlrc had no effect on flick (-q is curl's first argument)" "$([ ! -e "$T/curlhome/canary.trace" ]; echo $?)"
+check "no Bearer header or token reached disk under that HOME" "$(grep -rq "Bearer\|$CANARY_TOKEN" "$T/curlhome"; [ $? -ne 0 ]; echo $?)"
+check "source pin: -q is the first curl argument, production proto is =https, no -L" "$(grep -q 'local args=(-q ' "$KIT_DIR/lib/decide/flick.sh" && grep -q -- "JEV_URL='https://" "$KIT_DIR/lib/decide/flick.sh" && grep -q -- '--proto "\$proto"' "$KIT_DIR/lib/decide/flick.sh" && grep -q "proto='=https'" "$KIT_DIR/lib/decide/flick.sh" && ! grep -E 'args(\[|=\()' "$KIT_DIR/lib/decide/flick.sh" | grep -Eq -- '-L|--location'; echo $?)"
+
+echo "== TASK-6: Jev response validation (exact key sets, sum, unique argmax, margin) =="
+out="$(decide_run ok "$IN3")"
+jqt "valid answers, keyed by the caller's ids, with choice, probs and margin" "$out" '.error == "" and (.answers|keys) == ["p1","p2","p3"] and .answers.p1.choice == "enhance" and (.answers.p1.probs|keys) == ["enhance","new","none"] and (((.answers.p1.margin) - 0.55) | (if . < 0 then -. else . end)) < 0.0001'
+jqt "counts for a clean batch" "$out" '.counts == {"answered":3,"denied":0,"error":0}'
+cfg backend=jev points=wrap-7b deny_words=acme
+out="$(decide_run ok "$(req "$(q p1 backlog-flip-script board)" "$(q p2 acme-secret-plan board)")")"
+jqt "a denied question is reported per id, the allowed one answered" "$out" '.answers.p1.choice == "enhance" and .answers.p2 == {"choice":"","error":"egress_denied"} and .counts == {"answered":1,"denied":1,"error":0} and .error == ""'
+cfg backend=jev points=wrap-7b deny_words=acme
+stub_reset
+out="$(decide_run ok "$(req "$(q p1 acme-secret-plan board)")")"
+jqt "all denied: egress_denied, counts denied only" "$out" '.error == "egress_denied" and .answers == {} and .counts == {"answered":0,"denied":1,"error":0}'
+check "a denied candidate (deny_words) produced zero stub requests" "$([ "$(stub_count)" = 0 ]; echo $?)"
+stub_reset
+out="$(decide_run ok "$(req "$(q p1 backlog-flip-script board)" "$(q p2 secret-thing no-such-public-tool)")")"
+jqt "a non-public hit is egress_denied in a mixed batch, body holds one question" "$out" '.counts == {"answered":1,"denied":1,"error":0}'
+check "the stub body held only the allowed question and none of the denied text" "$(jq -e '(.questions|keys)==["q1"]' "$STUB_DIR/last.json" >/dev/null && ! grep -q 'secret-thing\|no-such-public-tool' "$STUB_DIR/last.json"; echo $?)"
+cfg backend=jev points=wrap-7b deny_words=acme
+for m in malformed:malformed noanswers:malformed badprobs:bad_probs tie:bad_probs extrakey:bad_probs missingkey:bad_probs extraprob:bad_probs wrongchoice:bad_probs; do
+  mode="${m%%:*}"; want="${m##*:}"
+  out="$(decide_run "$mode" "$(req "$(q p1 backlog-flip-script board)" "$(q p2 acme-secret-plan board)" "$(q p3 discord-poster wrap)")")"
+  jqt "stub $mode: $want, no answers, denied stays denied, the rest count as error" "$out" ".error == \"$want\" and .answers == {} and .counts == {\"answered\":0,\"denied\":1,\"error\":2}"
+done
+cfg backend=jev points=wrap-7b
+cfg backend=jev points=wrap-7b mode=decide
+out="$(decide_run ok "$IN1")"
+jqt "mode decide is downgraded to shadow for wrap-7b" "$out" '.mode == "shadow" and .answers.p1.choice == "enhance"'
+cfg backend=jev points=wrap-7b jev_model=jev-9.9.9
+stub_reset
+out="$(decide_run ok "$IN1")"
+jqt "the pinned model comes from config and rides in the envelope and the request" "$out" '.model == "jev-9.9.9"'
+check "request carried the pinned model" "$(jq -e '.model == "jev-9.9.9"' "$STUB_DIR/last.json" >/dev/null; echo $?)"
+cfg backend=jev points=wrap-7b
+
 # --- sections above; summary below ---
 echo
 echo "flick: $PASS passed, $FAIL failed"

@@ -201,6 +201,99 @@ BODY_PROG='
                                   instructions: ("Does the existing tool " + $kept[$i].hit + " cover the job of the candidate " + $kept[$i].candidate + "?") } } ]
                    | from_entries ) }'
 
+# ---- transport ---------------------------------------------------------------------------------
+JEV_URL='https://api.typesafe.ai/v1/systemone'
+RESP=""; CALL_ERR=""
+
+# run_curl <url> <proto> <secs> <body> <token> <with-http2>: one request. Sets OUT and CURL_RC.
+# -q must be curl's FIRST argument: only there does it mean "skip ~/.curlrc". The token and the
+# body ride a curl config on stdin (printf is a builtin, so ps never shows either), nothing
+# touches disk, and there is no -L, so a redirect cannot carry the header elsewhere.
+run_curl() {
+  local url="$1" proto="$2" secs="$3" body="$4" token="$5" h2="$6" esc
+  local args=(-q --config - --silent --max-time "$secs" --proto "$proto" -w '\n%{http_code} %{time_total}')
+  [ "$h2" = 1 ] && args[${#args[@]}]=--http2
+  if [ "$proto" = '=http' ]; then args[${#args[@]}]=--noproxy; args[${#args[@]}]='*'; fi
+  esc="${body//\\/\\\\}"; esc="${esc//\"/\\\"}"
+  OUT="$(printf 'header = "Authorization: Bearer %s"\nheader = "Content-Type: application/json"\ndata-raw = "%s"\n' "$token" "$esc" | curl "${args[@]}" "$url")"
+  CURL_RC=$?
+}
+
+# call_jev <body> <token>: sets RESP, LATENCY_MS and CALL_ERR (empty on a 2xx answer).
+call_jev() {
+  local body="$1" token="$2" url proto secs tail code tt ip fp h2=0
+  if [ -n "$FLICK_URL_OK" ]; then url="$FLICK_URL_OK"; proto='=http'; else url="$JEV_URL"; proto='=https'; h2=1; fi
+  secs="$(printf '%d.%03d' $((CFG_TIMEOUT_MS / 1000)) $((CFG_TIMEOUT_MS % 1000)))"
+  run_curl "$url" "$proto" "$secs" "$body" "$token" "$h2"
+  # A curl built without HTTP/2 refuses the flag (exit 4): retry once without it.
+  if [ "$CURL_RC" = 4 ] && [ "$h2" = 1 ]; then run_curl "$url" "$proto" "$secs" "$body" "$token" 0; fi
+  tail="${OUT##*$'\n'}"; RESP="${OUT%$'\n'*}"
+  code="${tail%% *}"; tt="${tail#* }"
+  if [[ "$tt" =~ ^[0-9]+(\.[0-9]*)?$ ]]; then
+    ip="${tt%%.*}"; fp="000"; case "$tt" in *.*) fp="${tt#*.}000" ;; esac
+    LATENCY_MS=$((10#$ip * 1000 + 10#${fp:0:3}))
+  fi
+  if [ "$CURL_RC" = 28 ]; then CALL_ERR=timeout
+  elif [ "$CURL_RC" != 0 ]; then CALL_ERR=network
+  elif ! [[ "$code" =~ ^[0-9]{3}$ ]] || [ "$code" = 000 ]; then CALL_ERR=network
+  elif [ "${code:0:1}" != 2 ]; then CALL_ERR="http_$code"
+  else CALL_ERR=""; fi
+}
+
+# ---- validation and output -----------------------------------------------------------------------
+# FINAL_PROG builds the envelope. An answer set counts only when the provider answered exactly
+# the requested ids, each with exactly the offered choices, probabilities summing to about 1,
+# and a stated choice equal to the unique argmax. Anything else is bad_probs; a body that is
+# not a JSON object holding answers is malformed. One bad answer voids the whole call.
+FINAL_PROG='
+  def abs: if . < 0 then -. else . end;
+  def judged($cs):
+    if type == "object" and ((.probabilities | type) == "object")
+       and ((.probabilities | keys) == $cs)
+       and (.probabilities | all(.[]; type == "number" and . >= 0 and . <= 1))
+       and ((((.probabilities | add) - 1) | abs) <= 0.03)
+    then (.probabilities | to_entries | sort_by(-.value)) as $s
+         | if ($s[0].value > $s[1].value) and (.choice == $s[0].key)
+           then {choice: .choice, probs: .probabilities, margin: ($s[0].value - $s[1].value)}
+           else null end
+    else null end;
+  ($keep | split(" ") | map(select(. != "") | tonumber)) as $kidx
+  | ($deny | split(" ") | map(select(. != "") | tonumber)) as $didx
+  | $norm.questions as $all
+  | [ $kidx[] | $all[.] ] as $kept
+  | ($criteria | keys) as $cs
+  | [ range(0; ($kept | length)) | "q\(. + 1)" ] as $qids
+  | (try ($resp | fromjson) catch null) as $r
+  | ( if $err != "" then {err: $err}
+      elif (($r | type) != "object") or (($r.answers | type) != "object") then {err: "malformed"}
+      elif (($r.answers | keys) != ($qids | sort)) then {err: "bad_probs"}
+      else ( [ range(0; ($kept | length)) as $i | ($r.answers[$qids[$i]] | judged($cs)) ] ) as $j
+           | if ($j | all(. != null)) then {ok: $j} else {err: "bad_probs"} end
+      end ) as $res
+  | if $res.ok then
+      { backend: $backend, model: $model, latency_ms: $lat, mode: $mode,
+        answers: ( [ range(0; ($kept | length)) as $i | {key: $kept[$i].id, value: $res.ok[$i]} ]
+                   + [ $didx[] | {key: $all[.].id, value: {choice: "", error: "egress_denied"}} ] | from_entries ),
+        error: "",
+        counts: {answered: ($kept | length), denied: ($didx | length), error: 0} }
+    else
+      { backend: $backend, model: $model, latency_ms: $lat, mode: $mode, answers: {},
+        error: $res.err,
+        counts: {answered: 0, denied: ($didx | length), error: (($all | length) - ($didx | length))} }
+    end'
+
+# finalize <error>: the post-guard exit. <error> is empty after a 2xx answer; the program decides
+# whether that answer is acceptable.
+finalize() {
+  local out
+  out="$(jq -nc --argjson norm "$NORM" --arg keep "${KEEP# }" --arg deny "${DENY_IDX# }" \
+    --arg err "$1" --arg resp "${RESP:-}" --arg backend "$BACKEND" --arg model "$MODEL" \
+    --argjson lat "${LATENCY_MS:-0}" --arg mode "$MODE_OUT" \
+    --argjson criteria "$POINT_WRAP_7B_CRITERIA" "$FINAL_PROG")" || exit 0
+  [ -n "$out" ] || exit 0
+  printf '%s\n' "$out"; EMITTED=1; exit 0
+}
+
 # ---- main --------------------------------------------------------------------------------------
 main() {
   local verb="${1:-decide}"
@@ -257,21 +350,22 @@ main() {
     if guard_ok "${Q_CAND[$i]}" "${Q_HIT[$i]}"; then KEEP="$KEEP $i"; else DENY_IDX="$DENY_IDX $i"; DENIED=$((DENIED+1)); fi
     i=$((i+1))
   done
-  [ -n "$KEEP" ] || fail_all egress_denied
+  [ -n "$KEEP" ] || finalize egress_denied
 
   local body
   body="$(printf '%s' "$NORM" | jq -c --arg idx "${KEEP# }" --arg model "$MODEL" \
     --arg state "$POINT_WRAP_7B_STATE" --argjson criteria "$POINT_WRAP_7B_CRITERIA" "$BODY_PROG")" || fail_all bad_input
   if [ "$verb" = body ]; then printf '%s\n' "$body"; EMITTED=1; exit 0; fi
 
-  command -v curl >/dev/null 2>&1 || fail_all missing_dep
+  command -v curl >/dev/null 2>&1 || finalize missing_dep
 
-  [[ "$CFG_JEV_TOKEN_ENV" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || fail_all no_token
+  [[ "$CFG_JEV_TOKEN_ENV" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || finalize no_token
   local token="${!CFG_JEV_TOKEN_ENV:-}"
-  [ -n "$token" ] || fail_all no_token
-  case "$token" in *[[:cntrl:]\"\\]*) fail_all no_token ;; esac
+  [ -n "$token" ] || finalize no_token
+  case "$token" in *[[:cntrl:]\"\\]*) finalize no_token ;; esac
 
-  fail_all network
+  call_jev "$body" "$token"
+  finalize "$CALL_ERR"
 }
 
 main "$@"
