@@ -1,6 +1,6 @@
 # Implementation notes: land/merge default-branch merge cycle
 
-Delta from `docs/specs/SPEC-375-land-merge-default.md` only.
+Delta from `docs/specs/SPEC-378-land-merge-default.md` only.
 
 ## `merge --verify=` parses to no verify command
 
@@ -18,4 +18,4 @@ The review asked for `git merge --no-overwrite-ignore` so a merge that would clo
 
 The branch was written against the monolithic `wrap.sh` and `test-wrap.sh`. After origin/master split both (#853), the change was re-applied by moving each function to its owning module with the reviewed body unchanged. The merge cycle went to `wrap-common.sh` because `land` and `merge` both call it, and that file already selects every wrap suite in `bin/test-affected`. `wrap-rebase.sh` keeps `_rb_resolve`. A `wrap-rebase.sh` edit now also selects the land and merge suites, since the cycle depends on the resolver.
 
-The spec is renumbered to SPEC-375: #853 took 374. The spec body still names the monolith paths (`lib/wrap/wrap.sh`, `tests/test-wrap.sh`) in its design record and grounding, left as the reviewed text.
+The spec is renumbered to SPEC-378: #853 took 374. The spec body still names the monolith paths (`lib/wrap/wrap.sh`, `tests/test-wrap.sh`) in its design record and grounding, left as the reviewed text.
