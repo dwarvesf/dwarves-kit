@@ -491,6 +491,16 @@ allow_names = ""                # [impl] extra public tool names the egress guar
                                  #        agents/.
 deny_words = ""                 # [impl] space-separated words that block a candidate slug (client names,
                                  #        private repo names). Case-folded substring match.
+word_gate = "on"                # [impl] "on" (default) or "off". While on, every hyphen segment of a
+                                 #        candidate slug must be a dictionary word (case-insensitive, whole
+                                 #        line), a built-in dev word (pr, ci, api, json, ...), or a name
+                                 #        this kit publishes; any other segment denies that question
+                                 #        (log reason `word_gate`). Catches client names a deny list
+                                 #        misses. deny_words still applies on top. Any value but "off"
+                                 #        counts as on. Root-only.
+dict_file = "/usr/share/dict/words" # [impl] one word per line. A missing or unreadable file denies every
+                                 #        candidate (log reason `word_gate_no_dict`); egress fails closed.
+                                 #        Root-only.
 
 [knowledge]                     # context tree root for repo knowledge notes (context-kit fills this)
 root = ""                       # [consumer] absolute or ~-prefixed path to the context tree

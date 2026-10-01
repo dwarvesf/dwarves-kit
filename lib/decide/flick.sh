@@ -36,7 +36,7 @@ usage() { sed -n '2,16p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; EMITTED=1; 
 
 # Output state, set as the run learns it.
 BACKEND=""; MODEL=""; LATENCY_MS=0; MODE_OUT="shadow"
-NORM=""; PARSED=0; DENIED=0; KEEP=""; DENY_IDX=""; DENY_REASON="guard"
+NORM=""; PARSED=0; DENIED=0; KEEP=""; DENY_IDX=""; DENY_REASON="guard"; WG_IDX=""; WG_REASON=word_gate
 
 # Nothing parsed, so nothing to count. The error comes from the closed set, never from input.
 fail_input() {
@@ -77,7 +77,7 @@ load_decide_block() {
     [ "$sec" = decide ] || continue
     case "$line" in *=*) ;; *) continue ;; esac
     k="${line%%=*}"; k="${k//[[:space:]]/}"
-    case "$k" in backend|mode|timeout_ms|points|jev_model|openai_model|jev_token_env|jev_token_cmd|openai_token_env|openai_token_cmd|allow_names|deny_words) ;; *) continue ;; esac
+    case "$k" in backend|mode|timeout_ms|points|jev_model|openai_model|jev_token_env|jev_token_cmd|openai_token_env|openai_token_cmd|allow_names|deny_words|word_gate|dict_file) ;; *) continue ;; esac
     v="${line#*=}"; v="${v#"${v%%[![:space:]]*}"}"; v="${v%"${v##*[![:space:]]}"}"
     v="${v#\"}"; v="${v%\"}"
     local seen="FLKC_SEEN_${pre}_${k}"
@@ -122,6 +122,10 @@ load_config() {
   CFG_OPENAI_MODEL="$(cfgget openai_model "")"
   CFG_ALLOW_NAMES="$(cfgget allow_names "")"
   CFG_DENY_WORDS="$(cfgget deny_words "")"
+  # Word gate: anything but an exact "off" is on, so a typo cannot open egress.
+  CFG_WORD_GATE="$(cfgget word_gate on)"
+  [ "$CFG_WORD_GATE" = off ] || CFG_WORD_GATE=on
+  CFG_DICT_FILE="$(cfgget dict_file /usr/share/dict/words)"
 }
 
 point_enabled() { # <point>: exact word match in the space-separated list, no globbing
@@ -191,6 +195,55 @@ guard_ok() {
   [ "$bad" = 0 ] || return 1
   case "$PUBLIC" in *" $hit "*) return 0 ;; esac
   return 1
+}
+
+# ---- the word gate -----------------------------------------------------------------------------
+# A deny list can never be complete, so the candidate slot also needs an allow rule: every
+# hyphen segment of a candidate must be a dictionary word (case-insensitive, whole line), a
+# built-in dev word, or a name the kit publishes (whole-name equality). Generic slugs are made of
+# common words; a client or project name is not in any dictionary. The dictionary is read once per
+# batch: one awk pass over every segment the other two sets did not already cover.
+DEV_WORDS=" pr ci cd api cli json yaml toml md sql db git gh repo env url http https ssh tls jwt oauth sdk ui ux pdf csv tsv cron kv llm ai id ids sha diff lint todo wip config auth regex stdin stdout async "
+
+# word_gate_apply: drop every kept question whose candidate holds an unknown segment, or all of
+# them when the dictionary is unusable (egress fails closed). Rewrites KEEP, DENY_IDX, DENIED.
+word_gate_apply() {
+  local k seg need="" matched="" rc=0 newkeep="" ok n
+  [ "$CFG_WORD_GATE" = off ] && return 0
+  if [ ! -f "$CFG_DICT_FILE" ] || [ ! -r "$CFG_DICT_FILE" ]; then
+    WG_REASON=word_gate_no_dict
+  else
+    # A slug holds only [a-z0-9-] (guard_ok), so splitting on the hyphens by word splitting is safe.
+    for k in $KEEP; do
+      for seg in ${Q_CAND[$k]//-/ }; do
+        case "$DEV_WORDS$PUBLIC" in *" $seg "*) continue ;; esac
+        case " $need " in *" $seg "*) ;; *) need="$need$seg " ;; esac
+      done
+    done
+    if [ -n "$need" ]; then
+      # ponytail: awk, not `grep -Fixf`: BSD grep takes over 500 ms on a 236k-line dictionary, awk
+      # about 100 ms. `look` (binary search) is faster still but needs a sorted file; add it as a
+      # fast path if this overhead ever matters. No `LC_ALL=C` prefix on the awk call: with it,
+      # macOS awk crashed (exit 139) on about 1 run in 10; a crash reads as word_gate_no_dict.
+      matched="$(awk -v w="$need" 'BEGIN { n = split(w, a, " "); for (i = 1; i <= n; i++) want[a[i]] } { l = tolower($0); if (l in want) print l }' "$CFG_DICT_FILE" 2>/dev/null)" || rc=$?
+      [ "$rc" = 0 ] || WG_REASON=word_gate_no_dict
+    fi
+  fi
+  shopt -s nocasematch
+  for k in $KEEP; do
+    ok=1; n=0
+    if [ "$WG_REASON" = word_gate_no_dict ]; then ok=0; else
+      for seg in ${Q_CAND[$k]//-/ }; do
+        n=$((n+1))
+        case "$DEV_WORDS$PUBLIC" in *" $seg "*) continue ;; esac
+        [[ $'\n'"$matched"$'\n' == *$'\n'"$seg"$'\n'* ]] || { ok=0; break; }
+      done
+      [ "$n" -gt 0 ] || ok=0   # "---" has no word at all
+    fi
+    if [ "$ok" = 1 ]; then newkeep="$newkeep $k"; else DENY_IDX="$DENY_IDX $k"; WG_IDX="$WG_IDX $k"; DENIED=$((DENIED+1)); fi
+  done
+  shopt -u nocasematch
+  KEEP="$newkeep"
 }
 
 # ---- hit descriptions --------------------------------------------------------------------------
@@ -394,6 +447,7 @@ LOG_BODY='(
   ["enhance","new","none"] as $choices
   | ($keep | split(" ") | map(select(. != "") | tonumber)) as $kidx
   | ($deny | split(" ") | map(select(. != "") | tonumber)) as $didx
+  | ($wgidx | split(" ") | map(select(. != "") | tonumber)) as $wgi
   | $norm.questions as $all
   | [ ( $kidx[] as $i | $all[$i] as $q
       | ($out.answers[$q.id] // {}) as $a
@@ -403,7 +457,8 @@ LOG_BODY='(
          margin: ($a.margin // null), error: ($out.error), mode: $mode, mode_downgraded: $note} ),
     ( $didx[] as $i
       | {ts: (now | todate), backend: $backend, model: $model, point: $point, index: $i,
-         latency_ms: $lat, chosen: "", error: "egress_denied", reason: $dreason, mode: $mode, mode_downgraded: $note} ) ]
+         latency_ms: $lat, chosen: "", error: "egress_denied",
+         reason: (if ($wgi | index($i)) != null then $wgreason else $dreason end), mode: $mode, mode_downgraded: $note} ) ]
   | sort_by(.index) | .[] | tojson )'
 
 # log_target: print the decide.jsonl path, or nothing when the log dir cannot be resolved.
@@ -476,7 +531,7 @@ finalize() {
   local all out target
   target="$(log_target)"
   all="$(jq -r --argjson norm "$NORM" --arg keep "${KEEP# }" --arg deny "${DENY_IDX# }" \
-    --arg err "$1" --arg resp "${RESP:-}" --arg dreason "$DENY_REASON" --arg backend "$BACKEND" --arg model "$MODEL" \
+    --arg err "$1" --arg resp "${RESP:-}" --arg dreason "$DENY_REASON" --arg wgidx "${WG_IDX# }" --arg wgreason "$WG_REASON" --arg backend "$BACKEND" --arg model "$MODEL" \
     --argjson lat "${LATENCY_MS:-0}" --arg mode "$MODE_OUT" --arg point "wrap-7b" \
     --argjson note "${MODE_NOTE:-false}" --argjson criteria "$POINT_WRAP_7B_CRITERIA" \
     -n "$FINAL_PROG$LOG_BODY")" || exit 0
@@ -553,6 +608,8 @@ main() {
     if guard_ok "${Q_CAND[$i]}" "${Q_HIT[$i]}"; then KEEP="$KEEP $i"; else DENY_IDX="$DENY_IDX $i"; DENIED=$((DENIED+1)); fi
     i=$((i+1))
   done
+  [ -n "$KEEP" ] || finalize egress_denied
+  word_gate_apply
   [ -n "$KEEP" ] || finalize egress_denied
 
   # Descriptions only for kept (allowlisted) hits, in kept order, joined by the unit separator.
