@@ -12,13 +12,14 @@ A kit step that needs a "pick one of N" judgment pays 20 to 60 s for an in-sessi
 `flick` reads JSON on stdin and writes one JSON object on stdout. It always exits 0. A decision point defines its own slots, so a caller never supplies free question text.
 
 ```
-stdin : {"point":"wrap-7b","questions":[{"id":"p1","candidate":"discord-poster","hit":"discord-pull","existing":"enhance"}]}
+stdin : {"point":"wrap-7b","questions":[{"id":"p1","candidate":"backlog-flip-script","hit":"board","existing":"enhance"}]}
 stdout: {"backend":"jev","model":"jev-1.13.0","latency_ms":412,"mode":"shadow",
          "answers":{"p1":{"choice":"enhance","probs":{"enhance":0.7,"new":0.2,"none":0.1},"margin":0.5}},"error":"",
          "counts":{"answered":1,"denied":0,"error":0}}
 ```
 
 - Caller fields: `id` matches `^[A-Za-z0-9_-]{1,40}$` and is echoed on stdout only. flick sends `q1..qN` to the provider and maps back. `existing` is optional and kept only when it is one of the point's choices, else treated as empty. Any other stdin field is `bad_input`. Control characters and newlines in any value are `bad_input`.
+- `counts` covers every question that parsed: `answered + denied + error` equals that number. Denied questions count as `denied` before any request. When the whole call fails (timeout, HTTP error, malformed, `bad_probs`, `no_token`, `unsupported`, `backend_none`), every non-denied question counts as `error`. On `bad_input` nothing parsed, so all three are 0.
 - Fail-open: any failure prints `"answers":{}` and a reason in `error`, exit 0. An EXIT trap guarantees valid empty-answer JSON and exit 0 even on a crash or garbage config. A refused question gets `answers.<id> = {"choice":"","error":"egress_denied"}` and the rest still run.
 - `error` is a closed set: `backend_none`, `missing_dep`, `no_token`, `timeout`, `http_<status>`, `network`, `malformed`, `bad_probs`, `egress_denied`, `point_disabled`, `bad_input`, `unsupported`.
 - Config, read root-only with `kit_config_get_root` (operator file or kit root, never a project `.kit.toml`, because the block names a credential source and authorizes egress). The kit reader returns single-line scalars, so lists are space-separated strings, as in `wrap.build_lanes`:
@@ -55,15 +56,15 @@ stdout: {"backend":"jev","model":"jev-1.13.0","latency_ms":412,"mode":"shadow",
 ## Design
 Diagram: see ## Picture.
 
-**Layout.** `lib/decide/flick.sh` is the engine; `bin/flick` is the stable forwarder, the same shape as `bin/spec`. Bash 3.2 safe. Dependencies are `curl` and `jq` only, no perl, no compiled code, no build step. A missing one gives `missing_dep`.
+**Layout.** `lib/decide/flick.sh` is the engine; `bin/flick` is the stable forwarder, the same shape as `bin/spec`. A second verb, `flick body`, reads the same stdin, runs the guard, and prints the provider request body it would send, with no token and no network, so the guard is testable before the transport exists. Bash 3.2 safe. Dependencies are `curl` and `jq` only, no perl, no compiled code, no build step. A missing one gives `missing_dep`.
 
 **Kit root.** The engine derives `KIT_ROOT` from its own path (`dirname "${BASH_SOURCE[0]}"/../..`), never from the current directory. The public-name set is the basenames of `$KIT_ROOT/bin/*`, `commands/*.md`, `skills/*/` and `agents/*.md`, plus `decide.allow_names`.
 
 **Matching and rebuild.** A name matches by exact fixed-string equality (`grep -Fx` against the set), never a regex or substring. flick rebuilds the question text from the point's template and the matched slots, and never forwards caller text. Per-choice `criteria` text comes only from the point registry. A mixed batch drops each denied question before the request is built, so denied text never reaches the body.
 
-**`wrap-7b` point.** Slots: `candidate` is a lead-written slug `^[a-z0-9-]{3,40}$` containing no `decide.deny_words` entry; `hit` must be an exact kit-public name, and any other hit is `egress_denied` and counted. Template: `Does the existing tool <hit> cover the job of the candidate <candidate>?`. Choices map to wrap's own verdicts: `enhance` (the hit covers or partly covers the job), `new` (unrelated), `none` (no basis to decide). Context is not accepted.
+**`wrap-7b` point.** Slots: `candidate` is a lead-written slug `^[a-z0-9-]{3,40}$` containing no `decide.deny_words` entry. The match is a case-folded substring test (both sides lowercased, so `Acme` blocks `acme-sync` and `sync-acme-x`), chosen over segment matching because it errs toward denial; `hit` must be an exact kit-public name, and any other hit is `egress_denied` and counted. Template: `Does the existing tool <hit> cover the job of the candidate <candidate>?`. Choices map to wrap's own verdicts: `enhance` (the hit covers or partly covers the job), `new` (unrelated), `none` (no basis to decide). Context is not accepted.
 
-**JSON and secrets.** Every JSON value is built with `jq -n --arg` or `--argjson`, never concatenation. The body goes to a `mktemp` file (no secret in it) via `--data-binary @file`. The token reaches curl through `curl --config -` on stdin (`printf` is a builtin, so `ps` never shows it). A token containing `"`, `\`, or a control character is `no_token`. Production calls use `curl -q` (ignore `~/.curlrc`), `--proto =https`, and no `-L`.
+**JSON and secrets.** Every JSON value is built with `jq -n --arg` or `--argjson`, never concatenation. The body goes to a `mktemp` file (no secret in it) via `--data-binary @file`. The token reaches curl through `curl --config -` on stdin (`printf` is a builtin, so `ps` never shows it). A token containing `"`, `\`, or a control character is `no_token`. Production calls use `--proto =https` and no `-L`, with `-q` as curl's FIRST argument (curl reads `-q` as "skip `~/.curlrc`" only in that position).
 
 **`FLICK_URL`.** Honoured only when it matches `^http://(127\.0\.0\.1|localhost)(:[0-9]+)?(/|$)` with no userinfo, for the test stub. Any other value is `bad_input` with zero requests, never a fallback to production. A valid one switches to `--proto =http`.
 
@@ -84,14 +85,14 @@ Diagram: see ## Picture.
 **Exit criterion.** Shadow runs until 50 labelled `wrap-7b` pairs exist. Promotion to any acting mode needs agreement with the lead's verdict of at least 90% and zero private names in the log's sent slugs. A later spec decides promotion.
 
 ## Task Breakdown
-Strict order: TASK-1 first (tests exist before code), then 2 to 12 in sequence. TASK-5 builds only from questions TASK-3 and TASK-4 let through.
+Strict order: TASK-1 first (tests exist before code), then 2 to 12 in sequence. TASK-3 and TASK-4 assert on the output of `flick body` (the guarded request body, no network), so each step passes before the transport exists. TASK-5 builds the real request only from what that guard lets through and repeats the body assertions against the stub.
 ### Phase 1: Foundation
 - [ ] TASK-1: Create `tests/lib/flick-stub.py` (test-only, python3, modes: ok, 401, 500, slow, malformed, badprobs, tie, extra-key, counts requests, records the last body) and the `tests/test-flick.sh` skeleton with `SKIP: <why>` when curl, jq or python3 is missing. Done when the skeleton runs and skips cleanly.
 - [ ] TASK-2: `lib/decide/flick.sh` plus `bin/flick`: stdin parse, contract, closed error set, EXIT trap, `backend_none`, `missing_dep`, env-name and token-shape checks, `flick` added to `EXPECTED` in `tests/test-bin-forwarders.sh`. Done when tests cover backend none, no token, bad env name, a token with a quote, and a garbage-config and garbage-stdin fuzz case that always yields valid JSON and exit 0.
-- [ ] TASK-3: Input contract: `id` remap to `q1..qN`, `existing` filtering, extra-field and control-character rejection. Done when a canary string in `id` and in `existing` is absent from the stub's request body and from the log, and an extra field returns `bad_input`.
-- [ ] TASK-4: Egress guard and `wrap-7b` registry: kit root from the script path, exact `-Fx` matching, template rebuild, `deny_words`, mixed-batch drop. Done when: a foreign cwd whose `bin/` holds a client-style name is denied; a trailing-newline payload and a name containing a public name as a substring are denied; a mixed batch's stub body holds only allowed ids and none of the denied text.
+- [ ] TASK-3: Input contract: `id` remap to `q1..qN`, `existing` filtering, extra-field and control-character rejection. Done when a canary string in `id` and in `existing` is absent from the `flick body` output and from the log, and an extra field returns `bad_input`.
+- [ ] TASK-4: Egress guard and `wrap-7b` registry: kit root from the script path, exact `-Fx` matching, template rebuild, `deny_words`, mixed-batch drop. Done when: a candidate matching a `deny_words` entry is `egress_denied` with zero requests and is absent from the `flick body` output, and the match is case-folded (`Acme` in `deny_words` blocks `acme-sync`); `counts` equal the real answered, denied and error numbers for a mixed batch; a foreign cwd whose `bin/` holds a client-style name is denied; a trailing-newline payload and a name containing a public name as a substring are denied; a mixed batch's `flick body` output holds only allowed ids and none of the denied text.
 ### Phase 2: Core
-- [ ] TASK-5: Jev request and transport: `jq -n` body, one curl per batch, token on stdin, `-q --proto =https`, no `-L`, `FLICK_URL` rule, timeout and HTTP-status mapping. Done when `http://127.0.0.1@evil.example/`, `http://localhost.evil.example/` and `http://127.0.0.1.evil.example/` each yield `bad_input` and zero stub requests, and tests cover a 3-question single-request batch, timeout, 401 and 5xx.
+- [ ] TASK-5: Jev request and transport: `jq -n` body, one curl per batch, token on stdin, `-q --proto =https`, no `-L`, `FLICK_URL` rule, timeout and HTTP-status mapping. Done when the TASK-3 and TASK-4 body assertions also hold against the stub's received body; a test with `HOME` pointing at a temp dir whose `.curlrc` holds a canary `trace` directive shows the canary has no effect and no Bearer header reaches disk; `counts` read all-`error` for each whole-batch failure; `http://127.0.0.1@evil.example/`, `http://localhost.evil.example/` and `http://127.0.0.1.evil.example/` each yield `bad_input` and zero stub requests, and tests cover a 3-question single-request batch, timeout, 401 and 5xx.
 - [ ] TASK-6: Jev response validation: exact key sets, sum, unique argmax, margin. Done when malformed JSON, probabilities off by more than 0.03, an argmax tie, a missing key and an extra key each map to `malformed` or `bad_probs`.
 - [ ] TASK-7: OpenAI stub. Done when `backend = "openai"` returns `unsupported` and the stub saw zero requests.
 - [ ] TASK-8: Decision log. Done when a test greps the log, stdout and the process list during a slow stub call and finds no token, no denied text and no caller id, and a failing `kit_resolve_log_dir` still returns the answer.
@@ -129,11 +130,11 @@ Strict order: TASK-1 first (tests exist before code), then 2 to 12 in sequence. 
 |---|---|---|
 | Provider outage or auth failure | `http_5xx`, `http_401`, `timeout` in `error` | Empty answer, exit 0; one call per wrap caps the cost at one timeout |
 | Overconfident wrong answer | shadow log: `chosen` differs from `existing` at high margin | Stays shadow. No act path exists |
-| Private name leaves the host | none by design | Exact-match public hits, `deny_words` on candidates, guard drops before the body is built |
+| Private name leaves the host | deny_words test (TASK-4) | Exact-match public hits, case-folded substring `deny_words` on candidates, guard drops before the body is built |
 | cwd-planted name widens the allowlist | foreign-cwd test | Kit root comes from the script path |
 | Caller text smuggled via `id` or `existing` | canary test | `q1..qN` to the provider, `existing` filtered to choices |
 | Token visible to `ps` or logs | TASK-8 test | Curl config on stdin, env var name only |
-| `FLICK_URL` or `~/.curlrc` redirects egress | three-URL test | Strict URL regex, `bad_input` not fallback, `curl -q`, `--proto =https` |
+| `FLICK_URL` or `~/.curlrc` redirects egress or traces the token | three-URL test, canary `.curlrc` test | Strict URL regex, `bad_input` not fallback, `-q` as first argument, `--proto =https` |
 | Provider answers extra or missing keys | TASK-6 test | Exact key-set match, else `bad_probs` |
 | Project PR sets `[decide]` | test case | Root-only read ignores it |
 
