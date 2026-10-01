@@ -1,6 +1,6 @@
 # Spec: flick, a fast decision CLI for kit steps
 Generated: 2026-10-01
-Status: DRAFT
+Status: VALIDATED
 Lane: full (external provider, new component, egress)
 Depth: research (outside: the OpenAI Decisions API shape is preview-only and unpublished)
 References: `docs/research/2026-09-23-jev-absorption.md` (never-use list and "Security / trust screens" bind this spec); `lib/config/kit-config.sh` `kit_config_get_root` (root-only read to imitate); `lib/telemetry/kit-log-dir.sh` (log dir resolver to reuse); `bin/spec` and `lib/spec/spec.sh` (the `<subsystem> <verb>` forwarder shape to match)
