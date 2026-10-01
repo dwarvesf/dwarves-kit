@@ -46,8 +46,12 @@ stub_reset() { : > "$STUB_DIR/count"; : > "$STUB_DIR/bodies.log"; : > "$STUB_DIR
 stub_count() { local n; n="$(wc -l < "$STUB_DIR/count" 2>/dev/null | tr -d ' ')"; echo "${n:-0}"; }
 
 # cfg <key=value>...: write the operator [decide] block (the only config layer flick reads here).
+# deny_words defaults to a harmless word: flick refuses to send anything while the list is empty,
+# so a test that wants an empty list passes deny_words= explicitly.
 cfg() {
-  { echo "[decide]"; local kv; for kv in "$@"; do echo "${kv%%=*} = \"${kv#*=}\""; done; } > "$T/op/kit.toml"
+  local kv hasdeny=0
+  { echo "[decide]"; for kv in "$@"; do case "$kv" in deny_words=*) hasdeny=1 ;; esac; echo "${kv%%=*} = \"${kv#*=}\""; done
+    [ "$hasdeny" = 1 ] || echo 'deny_words = "zzprivatecorp"'; } > "$T/op/kit.toml"
 }
 
 # flick_run <mode> <stdin-json> [extra env KEY=VAL...]: run bin/flick against the stub with a clean env.
@@ -55,8 +59,8 @@ flick_run() {
   local mode="$1" input="$2"; shift 2
   ( cd "${FLICK_CWD:-$T/cwd}" && printf '%s' "$input" | env -i PATH="$PATH" HOME="$T/home" \
       KIT_CONFIG_ROOT="$T/root" KIT_CONFIG_OPERATOR="$T/op" KIT_PROJECT_ROOT="$T/cwd" \
-      DWARVES_KIT_LOG_DIR="$T/log" FLICK_URL="http://127.0.0.1:${PORT}/${mode}" \
-      JEV_API_TOKEN="$CANARY_TOKEN" "$@" "$FLICK" "${FLICK_ARGS:-decide}" 2>/dev/null )
+      DWARVES_KIT_LOG_DIR="$T/log" FLICK_TEST=1 FLICK_URL="http://127.0.0.1:${PORT}/${mode}" \
+      JEV_API_TOKEN="$CANARY_TOKEN" "$@" "${FLICK_BIN:-$FLICK}" "${FLICK_ARGS:-decide}" 2>/dev/null )
 }
 
 echo "== TASK-1: the stub itself behaves (tests are only as good as their stub) =="
@@ -176,14 +180,14 @@ req() { # req <question-json>... : a wrap-7b request around those questions
 echo "== TASK-3: input contract (slots, id remap, existing filter, extra fields) =="
 cfg backend=jev points=wrap-7b
 out="$(body_run "$IN1")"
-jqt "body: one question becomes q1 with the point's template text" "$out" '(.questions|keys) == ["q1"] and .questions.q1.instructions == "Does the existing tool board cover the job of the candidate backlog-flip-script?" and .model == "jev-1.13.0" and .questions.q1.type == "choice"'
+jqt "body: one question becomes q1 with the point's template text" "$out" '(.questions|keys) == ["q1"] and (.questions.q1.instructions | test("^Does the existing tool board( \\(described as: [^)]+\\))? cover the job of the candidate backlog-flip-script[?]$")) and .model == "jev-1.13.0" and .questions.q1.type == "choice"'
 jqt "body: criteria come from the registry, three choices" "$out" '(.questions.q1.criteria|keys) == ["enhance","new","none"] and (.questions.q1.criteria|map(type=="string" and length > 10)|all)'
 jqt "body: a fixed state preamble, no caller text" "$out" '(.state|type=="string") and (.state|length) > 20'
 out="$(body_run '{"point":"wrap-7b","questions":[{"id":"CANARYID99","candidate":"backlog-flip-script","hit":"board","existing":"CANARYEXIST77"}]}')"
 check "caller id and existing never reach the request body" "$(grep -q 'CANARYID99\|CANARYEXIST77' <<<"$out"; [ $? -ne 0 ]; echo $?)"
 jqt "body for that request is still a normal q1 body" "$out" '(.questions|keys) == ["q1"]'
 out="$(body_run "$(req "$(q p1 backlog-flip-script board)" "$(q p2 discord-poster wrap)")")"
-jqt "ids p1 p2 go to the provider as q1 q2" "$out" '(.questions|keys) == ["q1","q2"] and (.questions.q2.instructions|test("tool wrap cover"))'
+jqt "ids p1 p2 go to the provider as q1 q2" "$out" '(.questions|keys) == ["q1","q2"] and (.questions.q2.instructions|test("tool wrap( \\(.*\\))? cover"))'
 for payload in \
   '{"point":"wrap-7b","questions":[{"id":"p1","candidate":"backlog-flip-script","hit":"board"}],"extra":1}' \
   '{"point":"wrap-7b","questions":[{"id":"p1","candidate":"backlog-flip-script","hit":"board","context":"hello"}]}' \
@@ -244,7 +248,7 @@ jqt "allow_names adds an exact name only" "$out" '(.questions|keys) == ["q1"] an
 cfg backend=jev points=wrap-7b deny_words="acme"
 mixed="$(req "$(q p1 backlog-flip-script board)" "$(q p2 acme-secret-plan board)" "$(q p3 build-thing secret-client-tool)" "$(q p4 discord-poster wrap)")"
 out="$(body_run "$mixed")"
-jqt "mixed batch: the body holds only the allowed questions, renumbered q1 q2" "$out" '(.questions|keys) == ["q1","q2"] and (.questions.q1.instructions|test("board cover")) and (.questions.q2.instructions|test("tool wrap cover"))'
+jqt "mixed batch: the body holds only the allowed questions, renumbered q1 q2" "$out" '(.questions|keys) == ["q1","q2"] and (.questions.q1.instructions|test("board( \\(.*\\))? cover")) and (.questions.q2.instructions|test("tool wrap( \\(.*\\))? cover"))'
 check "mixed batch: no denied text in the body" "$(grep -q 'acme-secret-plan\|secret-client-tool\|build-thing' <<<"$out"; [ $? -ne 0 ]; echo $?)"
 stub_reset
 out="$(body_run "$IN1" "JEV_API_TOKEN=$CANARY_TOKEN")"
@@ -262,7 +266,7 @@ cfg backend=jev points=wrap-7b
 stub_reset
 out="$(decide_run ok "$IN3")"
 check "a 3-question batch is ONE request" "$([ "$(stub_count)" = 1 ]; echo $?)"
-jqt "the stub received q1 q2 q3 only, rebuilt from the template" "$(cat "$STUB_DIR/last.json")" '(.questions|keys) == ["q1","q2","q3"] and (.questions.q1.instructions == "Does the existing tool board cover the job of the candidate backlog-flip-script?")'
+jqt "the stub received q1 q2 q3 only, rebuilt from the template" "$(cat "$STUB_DIR/last.json")" '(.questions|keys) == ["q1","q2","q3"] and (.questions.q1.instructions | test("^Does the existing tool board( \\(.*\\))? cover the job of the candidate backlog-flip-script[?]$"))'
 check "the Bearer header reached the stub" "$([ "$(cat "$STUB_DIR/auth.log")" = bearer ]; echo $?)"
 check "the token is nowhere in the request body or stdout" "$(grep -q "$CANARY_TOKEN" "$STUB_DIR/bodies.log" <<<"$out"; [ $? -ne 0 ] && ! grep -q "$CANARY_TOKEN" "$STUB_DIR/bodies.log"; echo $?)"
 jqt "envelope: backend jev, pinned model, mode shadow, integer latency" "$out" '.backend == "jev" and .model == "jev-1.13.0" and .mode == "shadow" and (.latency_ms|type=="number") and .latency_ms >= 0'
@@ -360,8 +364,14 @@ cfg backend=jev points=wrap-7b
 echo "-- the token is not in the process list during a slow call --"
 ( decide_run slow "$IN1" >/dev/null ) &
 SLOWPID=$!
-sleep 1
-ps_all="$(ps -A -o args= 2>/dev/null)"
+# Poll: on a slow host curl starts well after the background run does, and lives only the 1.5 s timeout.
+ps_all=""; ps_n=0
+while [ "$ps_n" -lt 40 ]; do
+  ps_all="$ps_all
+$(ps -A -o args= 2>/dev/null)"
+  grep -q 'curl .*--config' <<<"$ps_all" && break
+  sleep 0.1; ps_n=$((ps_n+1))
+done
 check "ps shows no token while curl is in flight" "$(grep -q "$CANARY_TOKEN" <<<"$ps_all"; [ $? -ne 0 ]; echo $?)"
 check "ps shows curl really was in flight (the check is not vacuous)" "$(grep -q 'curl .*--config' <<<"$ps_all"; echo $?)"
 wait "$SLOWPID"
@@ -380,13 +390,121 @@ printf '[decide]\ndeny_words = "x"\nbackend = "none"\n' > "$T/cwd/.kit.toml"
 out="$(decide_run ok "$IN1")"
 jqt "a project .kit.toml cannot switch the backend off or add deny words either (operator wins)" "$out" '.error == "" and .answers.p1.choice == "enhance"'
 rm -f "$T/cwd/.kit.toml"
-printf '[decide]\nbackend = "jev"\npoints = "wrap-7b"\n' > "$T/root/kit.toml"
+printf '[decide]\nbackend = "jev"\npoints = "wrap-7b"\ndeny_words = "zzprivatecorp"\n' > "$T/root/kit.toml"
 rm -f "$T/op/kit.toml"
 out="$(decide_run ok "$IN1")"
 jqt "the kit-root kit.toml is read when no operator file exists" "$out" '.error == "" and .backend == "jev"'
 rm -f "$T/root/kit.toml"
 cfg backend=jev points=wrap-7b
 check "the shipped kit.toml has a [decide] block defaulting to backend none" "$(awk '/^\[decide\]/{s=1;next} /^\[/{s=0} s && /^backend *= *"none"/{f=1} END{exit !f}' "$KIT_DIR/kit.toml"; echo $?)"
+
+echo "== post-build fold: hit description in the question text =="
+# A fixture kit root: the engine derives KIT_ROOT from its own path, so a copied tree with a
+# controlled bin/, commands/ and skills/ pins the description rules without leaning on real kit files.
+FX="$T/fxkit"
+mkdir -p "$FX/bin" "$FX/lib/decide" "$FX/lib/config" "$FX/lib/alpha" "$FX/commands" "$FX/skills/eps-skill" "$FX/agents"
+cp "$KIT_DIR/bin/flick" "$FX/bin/flick"; cp "$KIT_DIR/lib/decide/flick.sh" "$FX/lib/decide/flick.sh"
+cp "$KIT_DIR/lib/config/kit-config.sh" "$FX/lib/config/"
+printf '#!/usr/bin/env bash\n# bin/alpha-tool -- STABLE consumer entrypoint, never the description\nexec bash "$(dirname "$0")/../lib/alpha/alpha.sh" "$@"\n' > "$FX/bin/alpha-tool"
+printf '#!/usr/bin/env bash\n# alpha.sh -- flips backlog rows from a script in one pass.\n# second line must not be used\n' > "$FX/lib/alpha/alpha.sh"
+printf '#!/usr/bin/env bash\n#\n# shellcheck disable=SC2034\n# beta-tool lists open pull requests for triage.\necho hi\n' > "$FX/bin/beta-tool"
+printf '#!/usr/bin/env bash\nset -e\necho no comment here\n' > "$FX/bin/gamma-tool"
+printf -- '---\nname: delta-cmd\ndescription: "Lands the session after the build: merges green PRs."\n---\nbody\n' > "$FX/commands/delta-cmd.md"
+printf -- '---\nname: eps-skill\ndescription: Use when auditing manuals against code.\n---\nbody\n' > "$FX/skills/eps-skill/SKILL.md"
+printf -- '---\nname: zeta-agent\ndescription: Reviews a diff.\n---\n' > "$FX/agents/zeta-agent.md"
+printf '#!/usr/bin/env bash\n# long-tool %s\n' "$(printf 'x%.0s' $(seq 1 300))" > "$FX/bin/long-tool"
+printf '#!/usr/bin/env bash\n# ctl-tool: bell\a esc\033[31m tab\there end\r\n' > "$FX/bin/ctl-tool"
+chmod +x "$FX/bin/"* "$FX/lib/decide/flick.sh"
+cfg backend=jev points=wrap-7b
+fxbody() { FLICK_BIN="$FX/bin/flick" FLICK_ARGS=body flick_run ok "$(req "$(q p1 backlog-flip-script "$1")")"; }
+out="$(fxbody alpha-tool)"
+jqt "bin hit that forwards to lib: the lib header line is the description" "$out" '.questions.q1.instructions | test("flips backlog rows from a script in one pass")'
+check "the forwarder's own banner line is not used as the description" "$(grep -q 'STABLE consumer' <<<"$out"; [ $? -ne 0 ]; echo $?)"
+out="$(fxbody beta-tool)"
+jqt "bin hit without a forward: its first descriptive comment line (shebang and bare # skipped)" "$out" '.questions.q1.instructions | test("beta-tool lists open pull requests for triage")'
+check "a shellcheck directive is not a description" "$(grep -q 'shellcheck' <<<"$out"; [ $? -ne 0 ]; echo $?)"
+out="$(fxbody delta-cmd)"
+jqt "commands hit: description frontmatter, quotes stripped" "$out" '.questions.q1.instructions | test("Lands the session after the build: merges green PRs[.]") and (test("\"") | not)'
+out="$(fxbody eps-skill)"
+jqt "skills hit: description frontmatter" "$out" '.questions.q1.instructions | test("Use when auditing manuals against code")'
+out="$(fxbody zeta-agent)"
+jqt "agents hit: description frontmatter" "$out" '.questions.q1.instructions | test("Reviews a diff")'
+out="$(fxbody long-tool)"
+jqt "description is capped at 160 characters" "$out" '(.questions.q1.instructions | capture("\\(described as: (?<d>.*)\\) cover").d | length) <= 160 and (.questions.q1.instructions | test("xxxx"))'
+out="$(fxbody ctl-tool)"
+jqt "control characters are stripped from the description" "$out" '(.questions.q1.instructions | explode | any(.[]; . < 32 or . == 127) | not) and (.questions.q1.instructions | test("bell"))'
+out="$(fxbody gamma-tool)"
+jqt "a hit with no description still works, plain template" "$out" '.questions.q1.instructions == "Does the existing tool gamma-tool cover the job of the candidate backlog-flip-script?"'
+cfg backend=jev points=wrap-7b allow_names="extra-public"
+out="$(FLICK_BIN="$FX/bin/flick" FLICK_ARGS=body flick_run ok "$(req "$(q p1 backlog-flip-script alpha-tool)" "$(q p2 backlog-flip-script extra-public)")")"
+jqt "mixed batch: the described hit carries its text, the allow_names hit has none, both are sent" "$out" '(.questions|keys) == ["q1","q2"] and (.questions.q1.instructions|test("flips backlog rows")) and .questions.q2.instructions == "Does the existing tool extra-public cover the job of the candidate backlog-flip-script?"'
+cfg backend=jev points=wrap-7b
+echo "-- a description is read from the kit root, never the cwd --"
+mkdir -p "$T/plant/bin" "$T/plant/commands" "$T/plant/lib/alpha"
+printf '#!/usr/bin/env bash\n# PLANTEDDESC from the cwd bin\n' > "$T/plant/bin/alpha-tool"
+printf -- '---\ndescription: PLANTEDDESC from the cwd commands\n---\n' > "$T/plant/commands/delta-cmd.md"
+printf '#!/usr/bin/env bash\n# PLANTEDDESC from the cwd lib\n' > "$T/plant/lib/alpha/alpha.sh"
+out="$(FLICK_CWD="$T/plant" fxbody alpha-tool)"
+jqt "kit-root description is used from a planted cwd" "$out" '.questions.q1.instructions | test("flips backlog rows")'
+check "the cwd bin/ lib/ description never reaches the body" "$(grep -q 'PLANTEDDESC' <<<"$out"; [ $? -ne 0 ]; echo $?)"
+out="$(FLICK_CWD="$T/plant" fxbody delta-cmd)"
+jqt "kit-root commands description is used from a planted cwd" "$out" '.questions.q1.instructions | test("Lands the session after the build")'
+check "the cwd commands/ description never reaches the body" "$(grep -q 'PLANTEDDESC' <<<"$out"; [ $? -ne 0 ]; echo $?)"
+out="$(body_run "$(req "$(q p1 backlog-flip-script board)" "$(q p2 merge-own-pr-loop wrap)")")"
+jqt "real kit: board and wrap each carry a non-empty public description" "$out" '(.questions.q1.instructions|test("tool board \\(described as: .+\\) cover")) and (.questions.q2.instructions|test("tool wrap \\(described as: .+\\) cover"))'
+echo "-- per-choice criteria --"
+out="$(body_run "$IN1")"
+jqt "enhance means the tool already does or could own the job" "$out" '.questions.q1.criteria.enhance | test("already does") and test("could own")'
+jqt "new means an unrelated job" "$out" '.questions.q1.criteria.new | test("unrelated job")'
+
+echo "== post-build fold: no egress with an empty deny list =="
+cfg backend=jev points=wrap-7b deny_words=
+stub_reset; rm -f "$LOG"
+out="$(decide_run ok "$IN3")"
+jqt "empty deny_words: every question is egress_denied, counted as denied" "$out" '.error == "egress_denied" and .answers == {} and .counts == {"answered":0,"denied":3,"error":0}'
+check "empty deny_words: zero requests reach the provider" "$([ "$(stub_count)" = 0 ]; echo $?)"
+check "empty deny_words: the log says why (deny_words_empty), one line per question" "$([ "$(wc -l < "$LOG" | tr -d ' ')" = 3 ] && [ "$(jq -r .reason "$LOG" | sort -u)" = deny_words_empty ]; echo $?)"
+out="$(body_run "$IN1")"
+jqt "empty deny_words: flick body refuses too" "$out" '.error == "egress_denied"'
+cfg backend=jev points=wrap-7b deny_words="   "
+out="$(decide_run ok "$IN1")"
+jqt "a blank deny_words value counts as empty" "$out" '.error == "egress_denied"'
+cfg backend=jev points=wrap-7b
+out="$(decide_run ok "$IN1")"
+jqt "a non-empty deny list sends as before" "$out" '.error == "" and .answers.p1.choice == "enhance"'
+
+echo "== post-build fold: the log dir is root-only =="
+LOGHOME="$T/home/.local/state/dwarves-kit/logs"
+mkdir -p "$T/projlog" "$T/oplog"
+printf '[ledger]\nlocation = "%s"\n' "$T/projlog" > "$T/cwd/.kit.toml"
+rm -f "$LOGHOME/decide.jsonl" "$T/projlog/decide.jsonl"
+out="$(decide_run ok "$IN1" DWARVES_KIT_LOG_DIR=)"
+check "a project [ledger] location does not move decide.jsonl" "$([ ! -e "$T/projlog/decide.jsonl" ]; echo $?)"
+check "the log lands in the default dir instead" "$([ -s "$LOGHOME/decide.jsonl" ]; echo $?)"
+rm -f "$T/cwd/.kit.toml" "$LOGHOME/decide.jsonl"
+{ echo "[decide]"; echo 'backend = "jev"'; echo 'points = "wrap-7b"'; echo 'deny_words = "zzprivatecorp"'; echo "[ledger]"; echo "location = \"$T/oplog\""; } > "$T/op/kit.toml"
+out="$(decide_run ok "$IN1" DWARVES_KIT_LOG_DIR=)"
+check "an operator [ledger] location does move it" "$([ -s "$T/oplog/decide.jsonl" ] && [ ! -e "$LOGHOME/decide.jsonl" ]; echo $?)"
+cfg backend=jev points=wrap-7b
+
+echo "== post-build fold: low-severity hardening =="
+cfg backend=jev points=wrap-7b timeout_ms=08000
+out="$(decide_run ok "$IN1")"
+jqt "a zero-padded timeout_ms is read as decimal, not octal" "$out" '.error == "" and .answers.p1.choice == "enhance"'
+cfg backend=jev points=wrap-7b
+mkdir -p "$T/orphan/bin"; cp "$KIT_DIR/bin/flick" "$T/orphan/bin/flick"
+out="$(printf '%s' "$IN1" | "$T/orphan/bin/flick" 2>/dev/null)"; rc=$?
+check "bin/flick with the engine missing: exit 0" "$([ "$rc" = 0 ]; echo $?)"
+jqt "bin/flick with the engine missing: valid empty-answer JSON" "$out" "$EMPTYJSON and (.error|type==\"string\") and .error != \"\""
+stub_reset
+out="$(decide_run ok "$IN1" FLICK_TEST= HTTPS_PROXY=http://127.0.0.1:1 https_proxy=http://127.0.0.1:1)"
+check "FLICK_URL without FLICK_TEST=1 is ignored: the stub saw nothing" "$([ "$(stub_count)" = 0 ]; echo $?)"
+jqt "FLICK_URL without FLICK_TEST=1: the call went to the production path (dead proxy, network)" "$out" '.error == "network"'
+out="$(decide_run ok "$IN1" FLICK_TEST=0 HTTPS_PROXY=http://127.0.0.1:1 https_proxy=http://127.0.0.1:1)"
+jqt "FLICK_TEST=0 is not enough either" "$out" '.error == "network"'
+rm -f "$LOG"
+( umask 022; decide_run ok "$IN1" >/dev/null )
+check "the decision log is created owner-only (0600)" "$([ "$(python3 -c 'import os,sys;print(oct(os.stat(sys.argv[1]).st_mode & 0o777))' "$LOG")" = 0o600 ]; echo $?)"
 
 # --- sections above; summary below ---
 echo

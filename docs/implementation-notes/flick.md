@@ -25,6 +25,8 @@ Delta from the spec. Only off-spec calls and review warnings live here. The buil
 
 ## Entries
 
+- Post-build review fold (see DEC-12): descriptions come from builtin reads (`first_comment`, `fm_description`), so a described hit adds no process spawn. When a description runs past 160 characters it ends at the last whole sentence that fits, else the last word. A denied log line gained a `reason` field. `FLICK_URL` without `FLICK_TEST=1` is ignored, not `bad_input`, so a stray variable cannot break production calls; the test pins that with a dead HTTPS proxy so nothing leaves the host. The ps-in-flight test now polls for curl instead of sleeping 1 s, because curl starts late on a slow host.
+
 - Deviation: config is read in one builtin pass (`load_decide_block`) instead of ten `kit_config_get_root` calls. A process spawn costs several milliseconds on a hardened macOS host, and ten awk runs would break the overhead budget. It follows the same rules as `_kit_toml_get` (section header, `#` comments, one quote layer, first match wins, empty is unset) and reads only the operator file, then the kit-root file, never the project `.kit.toml`. A test pins that.
 - Deviation: the log carries `mode_downgraded` (true when `decide.mode` is `decide`) as its own field, while `mode` stays `shadow`.
 - Deviation: `decide.timeout_ms` also clamps at 10000, so a typo cannot hang a wrap. The spec set only the floor.

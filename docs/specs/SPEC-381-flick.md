@@ -3,7 +3,7 @@ Generated: 2026-10-01
 Status: VALIDATED
 Lane: full (external provider, new component, egress)
 Depth: research (outside: the OpenAI Decisions API shape is preview-only and unpublished)
-References: `docs/research/2026-09-23-jev-absorption.md` (never-use list and "Security / trust screens" bind this spec); `lib/config/kit-config.sh` `kit_config_get_root` (root-only read to imitate); `lib/telemetry/kit-log-dir.sh` (log dir resolver to reuse); `bin/spec` and `lib/spec/spec.sh` (the `<subsystem> <verb>` forwarder shape to match)
+References: `docs/research/2026-09-23-jev-absorption.md` (never-use list and "Security / trust screens" bind this spec); `lib/config/kit-config.sh` `kit_config_get_root` (root-only read to imitate); `lib/telemetry/kit-log-dir.sh` (log dir precedence to mirror, minus its project overlay); `bin/spec` and `lib/spec/spec.sh` (the `<subsystem> <verb>` forwarder shape to match)
 
 ## Problem
 A kit step that needs a "pick one of N" judgment pays 20 to 60 s for an in-session model call. A decision API answers in about 0.5 s. The kit cannot yet measure whether an API decider matches the in-session judgment, so the swap is untested. A script with no interpreter start and one network call per batch reaches sub-second.
@@ -33,7 +33,7 @@ stdout: {"backend":"jev","model":"jev-1.13.0","latency_ms":412,"mode":"shadow",
 | `decide.points` | `""` | Space-separated enabled decision points. Empty means nothing leaves the host |
 | `decide.jev_token_env`, `decide.openai_token_env` | `JEV_API_TOKEN`, `OPENAI_API_KEY` | Env var NAME only, matching `^[A-Za-z_][A-Za-z0-9_]*$`. The token never sits in a file, argv, a log, or stdout |
 | `decide.allow_names` | `""` | Extra public tool names, exact match, added to the kit-public set |
-| `decide.deny_words` | `""` | Space-separated words that block a candidate slug (client names, private repo names) |
+| `decide.deny_words` | `""` | Space-separated words that block a candidate slug (client names, private repo names). While `wrap-7b` is enabled and this is empty, flick sends nothing: every question is `egress_denied` and the log reason is `deny_words_empty` |
 
 ## Picture
 ```
@@ -47,7 +47,7 @@ stdout: {"backend":"jev","model":"jev-1.13.0","latency_ms":412,"mode":"shadow",
   egress guard: slots checked, text REBUILT from the template
        |-- denied questions dropped BEFORE the body is built (counted, logged without text)
        v
-  jq builds ONE body (ids q1..qN) --> curl -q --proto =https --max-time --> provider
+  jq builds ONE body (ids q1..qN, hit description from the kit root) --> curl -q --proto =https --max-time --> provider
        |   token: curl config on stdin, never argv
        v  jq validates key sets, probs sum ~1, argmax unique, margin
   stdout JSON  +  <log dir>/decide.jsonl line (sent slugs only, no token)
@@ -60,13 +60,15 @@ Diagram: see ## Picture.
 
 **Kit root.** The engine derives `KIT_ROOT` from its own path (`dirname "${BASH_SOURCE[0]}"/../..`), never from the current directory. The public-name set is the basenames of `$KIT_ROOT/bin/*`, `commands/*.md`, `skills/*/` and `agents/*.md`, plus `decide.allow_names`.
 
-**Matching and rebuild.** A name matches by exact fixed-string equality (`grep -Fx` against the set), never a regex or substring. flick rebuilds the question text from the point's template and the matched slots, and never forwards caller text. Per-choice `criteria` text comes only from the point registry. A mixed batch drops each denied question before the request is built, so denied text never reaches the body.
+**Matching and rebuild.** A name matches by exact fixed-string equality (`grep -Fx` against the set), never a regex or substring. flick rebuilds the question text from the point's template, the matched slots and the hit's public description, and never forwards caller text.
 
-**`wrap-7b` point.** Slots: `candidate` is a lead-written slug `^[a-z0-9-]{3,40}$` containing no `decide.deny_words` entry. The match is a case-folded substring test (both sides lowercased, so `Acme` blocks `acme-sync` and `sync-acme-x`), chosen over segment matching because it errs toward denial; `hit` must be an exact kit-public name, and any other hit is `egress_denied` and counted. Template: `Does the existing tool <hit> cover the job of the candidate <candidate>?`. Choices map to wrap's own verdicts: `enhance` (the hit covers or partly covers the job), `new` (unrelated), `none` (no basis to decide). Context is not accepted.
+**Hit description.** A hit that passed the allowlist carries its own one-line description, read from the kit root and never the cwd. Sources in order: `bin/<hit>` (the header of the `lib/<subsystem>/*.sh` it forwards to, else its own first descriptive comment lines), then the `description:` frontmatter of `commands/<hit>.md`, `skills/<hit>/SKILL.md`, `agents/<hit>.md`. Comment lines are joined up to the first bare `#` line. Control characters are stripped and the text is capped at 160 characters, ending at the last whole sentence that fits. A hit with no readable description (an `allow_names` entry with no kit file) is sent with the plain template. Per-choice `criteria` text comes only from the point registry. A mixed batch drops each denied question before the request is built, so denied text never reaches the body.
+
+**`wrap-7b` point.** Slots: `candidate` is a lead-written slug `^[a-z0-9-]{3,40}$` containing no `decide.deny_words` entry. The match is a case-folded substring test (both sides lowercased, so `Acme` blocks `acme-sync` and `sync-acme-x`), chosen over segment matching because it errs toward denial; `hit` must be an exact kit-public name, and any other hit is `egress_denied` and counted. Template: `Does the existing tool <hit> (described as: <description>) cover the job of the candidate <candidate>?`, with the parenthesis left out when the hit has no description. Choices map to wrap's own verdicts, and the registry's per-choice criteria say so: `enhance` (the existing tool already does, or could own, the job), `new` (the existing tool does an unrelated job), `none` (the names and description give no basis to decide). Context is not accepted. A live run on slugs alone answered `none` at margin 0.76 to 0.89 for two obvious matches, so the description and the criteria wording carry the accuracy fix.
 
 **JSON and secrets.** Every JSON value is built with `jq -n --arg` or `--argjson`, never concatenation. The body goes to a `mktemp` file (no secret in it) via `--data-binary @file`. The token reaches curl through `curl --config -` on stdin (`printf` is a builtin, so `ps` never shows it). A token containing `"`, `\`, or a control character is `no_token`. Production calls use `--proto =https` and no `-L`, with `-q` as curl's FIRST argument (curl reads `-q` as "skip `~/.curlrc`" only in that position).
 
-**`FLICK_URL`.** Honoured only when it matches `^http://(127\.0\.0\.1|localhost)(:[0-9]+)?(/|$)` with no userinfo, for the test stub. Any other value is `bad_input` with zero requests, never a fallback to production. A valid one switches to `--proto =http`.
+**`FLICK_URL`.** Read only when `FLICK_TEST=1` is also set, so a stray variable in an operator shell cannot move egress; without it the variable is ignored and production stays https. With it set, `FLICK_URL` must match `^http://(127\.0\.0\.1|localhost)(:[0-9]+)?(/|$)` with no userinfo, for the test stub. Any other value is `bad_input` with zero requests, never a fallback to production. A valid one switches to `--proto =http`.
 
 **Request and time.** One `curl` per batch, `--max-time` from `timeout_ms`, `--http2` when `curl -V` lists HTTP2, status read with `-w '%{http_code}'`. `latency_ms` is curl `time_total` x 1000. Overhead is measured by the test with python3 (test-only) as wall time minus that figure.
 
@@ -78,7 +80,7 @@ Diagram: see ## Picture.
 
 **Mode.** `wrap-7b` supports `shadow` only. With `mode = "decide"` it runs as shadow and the log records `mode_downgraded`. Nothing writes a decision into a live gate.
 
-**Decision log.** One JSON line per question in `$(kit_resolve_log_dir)/decide.jsonl` (the call is guarded with `|| true`, and a failure skips logging, never the answer): `ts, backend, model, point, index, latency_ms, candidate, hit, chosen, existing, margin, error, mode`. Sent slugs are logged so an operator can audit what left the host. A denied question logs the reason and index only. Caller `id`, denied text, and the token never appear.
+**Decision log.** One JSON line per question in `<log dir>/decide.jsonl` (a failure skips logging, never the answer): `ts, backend, model, point, index, latency_ms, candidate, hit, chosen, existing, margin, error, mode`. The file is created owner-only (`umask 077` around the append). The log dir follows `kit_resolve_log_dir`'s precedence (`KIT_LEDGER_DIR`, then `DWARVES_KIT_LOG_DIR`, then `[ledger] location`, then the XDG default), but the `[ledger] location` read is root-only (operator file or kit root), never a project `.kit.toml`: the log holds the slugs that left the host, so a project must not move it. Sent slugs are logged so an operator can audit what left the host. A denied question logs the index and a `reason` (`guard`, or `deny_words_empty`) only. Caller `id`, denied text, and the token never appear.
 
 **`/kit:wrap` step 7b.** After the session judges its precedent hits, and only when `kit_config_get_root decide.points` lists `wrap-7b`, wrap sends ALL (candidate, hit) pairs in ONE `bin/flick` call, so an outage costs at most one timeout, with `existing` set to its own verdict. It ignores the answers except one FYI `STATE` row: `answered / denied / error` counts and the backend. With the point absent, step 7b is byte-for-byte today's behaviour.
 
@@ -163,6 +165,7 @@ Strict order: TASK-1 first (tests exist before code), then 2 to 12 in sequence. 
 - DEC-9: This spec opens one shadow point despite the standing SKIP verdict in the Jev absorption research, on the operator's 2026-10-01 approval. Shadow mode and the 50-pair exit criterion are the guard against that verdict being right.
 - DEC-10: Points define slots instead of taking free question text, a deliberate change from the first interface sketch. Free text cannot be allowlisted; slots can.
 - DEC-11: Latency comes from curl `time_total`, not a perl clock, to keep the dependency set at curl and jq.
+- DEC-12: post-build review fold. (a) A live Jev run on slugs alone answered `none` for all three pairs, so the question text now carries the hit's public description from the kit root, and the criteria say `enhance` = the tool already does or could own the job. (b) No deny list, no egress: `deny_words_empty` denies every question. (c) The log dir is resolved root-only. (d) `FLICK_URL` needs `FLICK_TEST=1`; `timeout_ms` is read as base 10; `bin/flick` prints valid empty-answer JSON when the engine is missing; the log append runs under `umask 077`.
 
 ## Open questions
 (none)

@@ -8,4 +8,8 @@ set -euo pipefail
 # exec the engine directly (it has its own bash shebang): one interpreter start, not two.
 SELF="${BASH_SOURCE[0]}"
 case "$SELF" in */*) SELF_DIR="${SELF%/*}" ;; *) SELF_DIR="." ;; esac
-exec "$SELF_DIR/../lib/decide/flick.sh" "$@"
+ENGINE="$SELF_DIR/../lib/decide/flick.sh"
+# Fail open like the engine: a missing or unrunnable engine still answers with valid JSON, exit 0.
+shopt -s execfail
+[ ! -x "$ENGINE" ] || exec "$ENGINE" "$@" || true
+printf '%s\n' '{"backend":"","model":"","latency_ms":0,"mode":"shadow","answers":{},"error":"missing_dep","counts":{"answered":0,"denied":0,"error":0}}'

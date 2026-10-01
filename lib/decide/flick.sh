@@ -36,7 +36,7 @@ usage() { sed -n '2,16p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; EMITTED=1; 
 
 # Output state, set as the run learns it.
 BACKEND=""; MODEL=""; LATENCY_MS=0; MODE_OUT="shadow"
-NORM=""; PARSED=0; DENIED=0; KEEP=""; DENY_IDX=""
+NORM=""; PARSED=0; DENIED=0; KEEP=""; DENY_IDX=""; DENY_REASON="guard"
 
 # Nothing parsed, so nothing to count. The error comes from the closed set, never from input.
 fail_input() {
@@ -132,8 +132,8 @@ point_enabled() { # <point>: exact word match in the space-separated list, no gl
 # A point is a closed entry: its slots, its template, its choices and their criteria text. A
 # caller supplies slots, never question text, and per-choice text comes only from here. A new
 # point needs its own spec.
-POINT_WRAP_7B_STATE='A kit workflow step is deciding whether work it is about to build duplicates an existing tool. Each question names one existing tool and one candidate job, by name only.'
-POINT_WRAP_7B_CRITERIA='{"enhance":"The existing tool already covers, or partly covers, the job of the candidate, so the candidate should extend it.","new":"The existing tool is unrelated to the job of the candidate, so the candidate is new work.","none":"The two names give no basis to decide."}'
+POINT_WRAP_7B_STATE='A kit workflow step is deciding whether work it is about to build duplicates an existing tool. Each question names one existing tool, with its own public one-line description when known, and one candidate job by name only.'
+POINT_WRAP_7B_CRITERIA='{"enhance":"The existing tool already does, or could own, the job of the candidate, so the candidate should extend that tool.","new":"The existing tool does an unrelated job, so the candidate is new work.","none":"The names and description give no basis to decide."}'
 RS=$'\037'
 
 # ---- input -------------------------------------------------------------------------------------
@@ -189,16 +189,95 @@ guard_ok() {
   return 1
 }
 
+# ---- hit descriptions --------------------------------------------------------------------------
+# DESC is the public one-line description of a kit-public hit, read from the kit root (never the
+# cwd) and only for a hit that already passed the allowlist. Builtins only: no process spawn per hit.
+DESC=""
+
+# first_comment <file>: DESC = the first descriptive comment line (shebang, shellcheck and
+# kit-verb lines skipped; a leading "name.sh -- " label dropped), continued over the following
+# comment lines up to the first bare '#' line or 160 characters. 20 lines at most.
+first_comment() {
+  local f="$1" line n=0
+  DESC=""
+  [ -f "$f" ] || return 0
+  while [ "$n" -lt 20 ] && IFS= read -r line; do
+    n=$((n+1))
+    case "$line" in
+      '#!'*|'# shellcheck'*|'# kit-verb:'*) continue ;;
+      ''|'#'*) line="${line#\#}"; line="${line#"${line%%[![:space:]]*}"}"
+            if [ -z "$line" ]; then [ -z "$DESC" ] && continue; return 0; fi
+            if [ -z "$DESC" ]; then
+              case "${line%% -- *}" in *[[:space:]]*|"$line") ;; *) line="${line#* -- }" ;; esac
+              DESC="$line"
+            else DESC="$DESC $line"; fi
+            [ "${#DESC}" -lt 160 ] || return 0 ;;
+      *) return 0 ;;
+    esac
+  done < "$f"
+}
+
+# fm_description <file>: DESC = the one-line `description:` of the YAML frontmatter, quotes dropped.
+fm_description() {
+  local f="$1" line n=0 v
+  DESC=""
+  [ -f "$f" ] || return 0
+  while [ "$n" -lt 30 ] && IFS= read -r line; do
+    n=$((n+1)); line="${line%$'\r'}"
+    if [ "$n" = 1 ]; then [ "$line" = '---' ] || return 0; continue; fi
+    [ "$line" != '---' ] || return 0
+    case "$line" in
+      description:*)
+        v="${line#description:}"; v="${v#"${v%%[![:space:]]*}"}"; v="${v%"${v##*[![:space:]]}"}"
+        case "$v" in ''|'>'*|'|'*) return 0 ;; esac
+        case "$v" in \"*\") v="${v#\"}"; v="${v%\"}" ;; \'*\') v="${v#\'}"; v="${v%\'}" ;; esac
+        DESC="$v"; return 0 ;;
+    esac
+  done < "$f"
+}
+
+# describe_hit <name>: DESC for a public name, else empty. bin/<name> first (its forwarded
+# lib/<subsystem>/*.sh header wins over the forwarder's own banner), then commands, skills, agents.
+describe_hit() {
+  local h="$1" line fwd="" cut
+  DESC=""
+  if [ -f "$KIT_ROOT/bin/$h" ]; then
+    while IFS= read -r line; do
+      case "$line" in '#'*) continue ;; esac
+      if [[ "$line" =~ (lib/[A-Za-z0-9_-]+/[A-Za-z0-9_.-]+\.sh) ]]; then fwd="${BASH_REMATCH[1]}"; break; fi
+    done < "$KIT_ROOT/bin/$h"
+    [ -z "$fwd" ] || first_comment "$KIT_ROOT/$fwd"
+    [ -n "$DESC" ] || first_comment "$KIT_ROOT/bin/$h"
+  fi
+  [ -n "$DESC" ] || fm_description "$KIT_ROOT/commands/$h.md"
+  [ -n "$DESC" ] || fm_description "$KIT_ROOT/skills/$h/SKILL.md"
+  [ -n "$DESC" ] || fm_description "$KIT_ROOT/agents/$h.md"
+  DESC="${DESC//[[:cntrl:]]/}"
+  if [ "${#DESC}" -gt 160 ]; then
+    # Over the cap: end at the last whole sentence that fits, else the last word, else hard cut.
+    DESC="${DESC:0:160}"
+    case "$DESC" in
+      *'. '*) DESC="${DESC%. *}." ;;
+      *) cut="${DESC% *}"; [ "${#cut}" -lt 100 ] || DESC="$cut" ;;
+    esac
+  fi
+  DESC="${DESC%:}"   # a byte bound only; the jq program caps at 160 characters
+}
+
 # BODY_PROG: the provider request body for the questions the guard kept. The question text is
-# REBUILT from the template and the matched slots; nothing the caller typed is forwarded.
+# REBUILT from the template, the matched slots and the hit's own public description (kit files,
+# never caller text); nothing the caller typed is forwarded.
 BODY_PROG='
   ($idx | split(" ") | map(select(. != "") | tonumber)) as $keep
+  | ($descs | split("\u001f")) as $dd
   | [ .questions | to_entries[] | select(.key as $k | any($keep[]; . == $k)) | .value ] as $kept
   | { model: $model, state: $state,
       questions: ( [ range(0; ($kept | length)) as $i
                      | { key: ("q" + (($i + 1) | tostring)),
                          value: { type: "choice", criteria: $criteria,
-                                  instructions: ("Does the existing tool " + $kept[$i].hit + " cover the job of the candidate " + $kept[$i].candidate + "?") } } ]
+                                  instructions: ("Does the existing tool " + $kept[$i].hit
+                                                       + (if ($dd[$i] // "") != "" then " (described as: " + ($dd[$i][0:160]) + ")" else "" end)
+                                                       + " cover the job of the candidate " + $kept[$i].candidate + "?") } } ]
                    | from_entries ) }'
 
 # ---- transport ---------------------------------------------------------------------------------
@@ -221,9 +300,10 @@ run_curl() {
 
 # call_jev <body> <token>: sets RESP, LATENCY_MS and CALL_ERR (empty on a 2xx answer).
 call_jev() {
-  local body="$1" token="$2" url proto secs tail code tt ip fp h2=0
+  local body="$1" token="$2" url proto secs tail code tt ip fp ms h2=0
   if [ -n "$FLICK_URL_OK" ]; then url="$FLICK_URL_OK"; proto='=http'; else url="$JEV_URL"; proto='=https'; h2=1; fi
-  secs="$(printf '%d.%03d' $((CFG_TIMEOUT_MS / 1000)) $((CFG_TIMEOUT_MS % 1000)))"
+  ms=$((10#$CFG_TIMEOUT_MS))  # base 10: a zero-padded value must not read as octal
+  secs="$(printf '%d.%03d' $((ms / 1000)) $((ms % 1000)))"
   run_curl "$url" "$proto" "$secs" "$body" "$token" "$h2"
   # A curl built without HTTP/2 refuses the flag (exit 4): retry once without it.
   if [ "$CURL_RC" = 4 ] && [ "$h2" = 1 ]; then run_curl "$url" "$proto" "$secs" "$body" "$token" 0; fi
@@ -258,15 +338,24 @@ LOG_BODY='(
          margin: ($a.margin // null), error: ($out.error), mode: $mode, mode_downgraded: $note} ),
     ( $didx[] as $i
       | {ts: (now | todate), backend: $backend, model: $model, point: $point, index: $i,
-         latency_ms: $lat, chosen: "", error: "egress_denied", mode: $mode, mode_downgraded: $note} ) ]
+         latency_ms: $lat, chosen: "", error: "egress_denied", reason: $dreason, mode: $mode, mode_downgraded: $note} ) ]
   | sort_by(.index) | .[] | tojson )'
 
 # log_target: print the decide.jsonl path, or nothing when the log dir cannot be resolved.
+# Same precedence as kit_resolve_log_dir, but the [ledger] location read is root-only: the log
+# holds the slugs that left the host, so a project .kit.toml must not be able to move it.
 log_target() {
-  local dir
-  [ -f "$KIT_ROOT/lib/telemetry/kit-log-dir.sh" ] || return 0
-  . "$KIT_ROOT/lib/telemetry/kit-log-dir.sh" 2>/dev/null || return 0
-  dir="$(kit_resolve_log_dir 2>/dev/null)" || return 0
+  local dir loc
+  if [ "${KIT_LEDGER_DIR+set}" = set ]; then dir="$KIT_LEDGER_DIR"
+  elif [ -n "${DWARVES_KIT_LOG_DIR:-}" ]; then dir="$DWARVES_KIT_LOG_DIR"
+  else
+    loc="$(kit_config_get_root ledger.location shared 2>/dev/null)"
+    case "$loc" in
+      isolated) dir="$PWD/.kit/logs" ;;
+      shared|"") dir="${XDG_STATE_HOME:-$HOME/.local/state}/dwarves-kit/logs" ;;
+      *) dir="$loc" ;;
+    esac
+  fi
   [ -n "$dir" ] || return 0
   mkdir -p "$dir" 2>/dev/null || return 0
   printf '%s/decide.jsonl' "$dir"
@@ -322,13 +411,13 @@ finalize() {
   local all out target
   target="$(log_target)"
   all="$(jq -r --argjson norm "$NORM" --arg keep "${KEEP# }" --arg deny "${DENY_IDX# }" \
-    --arg err "$1" --arg resp "${RESP:-}" --arg backend "$BACKEND" --arg model "$MODEL" \
+    --arg err "$1" --arg resp "${RESP:-}" --arg dreason "$DENY_REASON" --arg backend "$BACKEND" --arg model "$MODEL" \
     --argjson lat "${LATENCY_MS:-0}" --arg mode "$MODE_OUT" --arg point "wrap-7b" \
     --argjson note "${MODE_NOTE:-false}" --argjson criteria "$POINT_WRAP_7B_CRITERIA" \
     -n "$FINAL_PROG$LOG_BODY")" || exit 0
   out="${all%%$'\n'*}"
   [ -n "$out" ] || exit 0
-  if [ -n "$target" ] && [ "$all" != "$out" ]; then printf '%s\n' "${all#*$'\n'}" >> "$target" 2>/dev/null || true; fi
+  if [ -n "$target" ] && [ "$all" != "$out" ]; then ( umask 077; printf '%s\n' "${all#*$'\n'}" >> "$target" ) 2>/dev/null || true; fi
   printf '%s\n' "$out"; EMITTED=1; exit 0
 }
 
@@ -348,9 +437,10 @@ main() {
 
   load_config
 
-  # A test-only URL override: honoured only for a loopback http URL with no userinfo.
+  # A test-only URL override: honoured only with FLICK_TEST=1, and then only for a loopback http
+  # URL with no userinfo. Without FLICK_TEST=1 the variable is ignored and production stays https.
   FLICK_URL_OK=""
-  if [ -n "${FLICK_URL:-}" ]; then
+  if [ "${FLICK_TEST:-}" = 1 ] && [ -n "${FLICK_URL:-}" ]; then
     local re='^http://(127\.0\.0\.1|localhost)(:[0-9]+)?(/|$)'
     case "$FLICK_URL" in *[[:space:][:cntrl:]]*) fail_input bad_input ;; esac
     [[ "$FLICK_URL" =~ $re ]] || fail_input bad_input
@@ -381,6 +471,16 @@ main() {
   MODEL="$CFG_JEV_MODEL"
   MODE_NOTE=false; [ "$CFG_MODE" != decide ] || MODE_NOTE=true
 
+  # No deny list, no egress: an operator who enables the point must also name what to block.
+  local w dw_empty=1
+  set -f; for w in $CFG_DENY_WORDS; do dw_empty=0; done; set +f
+  if [ "$dw_empty" = 1 ]; then
+    local j=0
+    while [ "$j" -lt "$PARSED" ]; do DENY_IDX="$DENY_IDX $j"; j=$((j+1)); done
+    DENIED="$PARSED"; DENY_REASON=deny_words_empty
+    finalize egress_denied
+  fi
+
   # Guard: drop every denied question BEFORE any body exists.
   build_public
   local i=0
@@ -390,8 +490,12 @@ main() {
   done
   [ -n "$KEEP" ] || finalize egress_denied
 
+  # Descriptions only for kept (allowlisted) hits, in kept order, joined by the unit separator.
+  local descs="" k
+  for k in $KEEP; do describe_hit "${Q_HIT[$k]}"; descs="$descs$DESC$RS"; done
+
   local body
-  body="$(printf '%s' "$NORM" | jq -c --arg idx "${KEEP# }" --arg model "$MODEL" \
+  body="$(printf '%s' "$NORM" | jq -c --arg idx "${KEEP# }" --arg model "$MODEL" --arg descs "$descs" \
     --arg state "$POINT_WRAP_7B_STATE" --argjson criteria "$POINT_WRAP_7B_CRITERIA" "$BODY_PROG")" || fail_all bad_input
   if [ "$verb" = body ]; then printf '%s\n' "$body"; EMITTED=1; exit 0; fi
 
