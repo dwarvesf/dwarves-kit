@@ -59,6 +59,63 @@ _land_feature_title() {
   git -C "$wt" log --no-merges --topo-order --format=%s --reverse "origin/${def}..HEAD" 2>/dev/null | head -1
 }
 
+# _pr_template <wt> -- the repo's GitHub PR template (path relative to <wt>), empty when it
+# has none. File names match case-insensitively, as GitHub reads them.
+_pr_template() {
+  local wt="$1" d f
+  for d in .github . docs; do
+    f="$(find "$wt/$d" -maxdepth 1 -type f -iname 'pull_request_template.md' 2>/dev/null | sed -n 1p)"
+    [ -n "$f" ] && { printf '%s\n' "${f#"$wt"/}"; return 0; }
+  done
+  return 1
+}
+
+# _rollup_failed_checks <statusCheckRollup json> -- the names of the checks whose latest run
+# ended red, comma-joined, empty when none did. Latest run per name wins, the same dedupe
+# _pr_gate applies.
+_rollup_failed_checks() {
+  printf '%s' "$1" | jq -r "${CI_JQ_DEFS}"'
+    def rtime: [.completedAt, .startedAt, .createdAt] | map(real) | .[0] // "";
+    ((.statusCheckRollup // [])
+      | group_by(.name // .context)
+      | map(sort_by([(if pending then 1 else 0 end), rtime]) | last)
+      | map(select(((.conclusion // .state // "") | ascii_upcase) as $c
+            | $c == "FAILURE" or $c == "ERROR" or $c == "CANCELLED" or $c == "TIMED_OUT")
+          | (.name // .context // "check")) | join(", "))' 2>/dev/null
+}
+
+# _land_pr_checks_gate <wt> <repo-url> <pr> -- before the first merge, let the PR's checks
+# report and refuse a red one. A check opened seconds ago has not registered yet, and
+# `gh pr merge` does not wait for it, so the merge beat the check and the failure only
+# emailed afterwards. A repo with no `pull_request` workflow pays nothing. The wait is the
+# ci wait with a short registration grace (KIT_WRAP_LAND_GRACE_SECS) and the usual completion
+# bound (KIT_WRAP_CARRY_CHECKS_SECS). Under `--with-ci` that wait already ran, so only the
+# verdict is read. Returns 2 with the PR left open.
+# ponytail: the workflow test is a plain grep, so a commented-out trigger still arms the wait
+# (costs one grace); parse the `on:` block if that ever matters.
+KIT_WRAP_LAND_GRACE_SECS=${KIT_WRAP_LAND_GRACE_SECS:-30}
+case "$KIT_WRAP_LAND_GRACE_SECS" in ''|*[!0-9]*) KIT_WRAP_LAND_GRACE_SECS=30 ;; esac
+_land_pr_checks_gate() {
+  local wt="$1" url="$2" n="$3" proll pnum failed
+  grep -rqE 'pull_request' "$wt/.github/workflows" 2>/dev/null || return 0
+  if ! _ci_on_merge; then
+    CI_PRELABEL_KEYS='[]'
+    local KIT_WRAP_CI_GRACE_SECS="$KIT_WRAP_LAND_GRACE_SECS"
+    _ci_checks_wait "$url" "$n"
+  fi
+  proll="$(gh pr view "$n" --repo "$url" --json statusCheckRollup 2>/dev/null)" \
+    && printf '%s' "$proll" | jq -e . >/dev/null 2>&1 || {
+    echo "     MERGE REFUSED #${n}: its checks are unreadable; PR left open" >&2; return 2; }
+  pnum="$(printf '%s' "$proll" | jq -r "${CI_JQ_DEFS} ([.statusCheckRollup // [] | .[] | select(pending)] | length)" 2>/dev/null)"
+  if [ "$pnum" != "0" ]; then
+    echo "     MERGE REFUSED #${n}: checks still pending after ${KIT_WRAP_CARRY_CHECKS_SECS}s; PR left open" >&2; return 2
+  fi
+  failed="$(_rollup_failed_checks "$proll")"
+  if [ -n "$failed" ]; then
+    echo "     MERGE REFUSED #${n}: checks failed: ${failed}; PR left open" >&2; return 2
+  fi
+}
+
 # --------------------------------------------------------------------------- land
 
 # cmd_land <worktree> [--title T] [--body-file F] -- the landing loop for ONE committed
@@ -216,6 +273,16 @@ cmd_land() {
     return $?
   fi
 
+  # A title-only body skips the repo's PR template (and any check that reads it), so a NEW
+  # PR with no --body-file refuses before anything is pushed. An adopted PR keeps its body.
+  if [ "$open_count" -eq 0 ] && [ -z "$body_file" ]; then
+    local tpl; tpl="$(_pr_template "$wt")"
+    if [ -n "$tpl" ]; then
+      echo "     PR REFUSED: ${tpl} exists, so a title-only PR body is not allowed; fill it in and pass --body-file <file>" >&2
+      return 2
+    fi
+  fi
+
   git -C "$wt" push origin "$branch"; rc=$?
   if [ "$rc" -ne 0 ]; then
     echo "     PUSH REFUSED: git push origin ${branch} exited ${rc}" >&2
@@ -282,6 +349,8 @@ cmd_land() {
       *) echo "     MERGE FAILED #${n}: the ci label could not be set" >&2; return 2 ;;
     esac
   fi
+
+  _land_pr_checks_gate "$wt" "$url" "$n" || return 2
 
   _gh_merge_retry "$n" "$url" "$tip"; rc=$?
   if [ "$rc" -ne 0 ]; then
@@ -384,14 +453,7 @@ cmd_land() {
     # A red check on the merged head stops the land before the second merge: a clean
     # textual merge that broke the build must never land. Latest run per name wins, the
     # same dedupe _pr_gate applies.
-    failed_checks="$(printf '%s' "$proll" | jq -r "${CI_JQ_DEFS}"'
-      def rtime: [.completedAt, .startedAt, .createdAt] | map(real) | .[0] // "";
-      ((.statusCheckRollup // [])
-        | group_by(.name // .context)
-        | map(sort_by([(if pending then 1 else 0 end), rtime]) | last)
-        | map(select(((.conclusion // .state // "") | ascii_upcase) as $c
-              | $c == "FAILURE" or $c == "ERROR" or $c == "CANCELLED" or $c == "TIMED_OUT")
-            | (.name // .context // "check")) | join(", "))' 2>/dev/null)"
+    failed_checks="$(_rollup_failed_checks "$proll")"
     if [ -n "$failed_checks" ]; then
       echo "     checks failed on the merged head $(_short "$tip"): ${failed_checks}; the merge commit is on origin" >&2
       return 2
