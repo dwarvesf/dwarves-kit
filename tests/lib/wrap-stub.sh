@@ -38,6 +38,10 @@ KIT_CONFIG_OPERATOR="$TMPD/no-operator-config"; export KIT_CONFIG_OPERATOR
 KIT_LEDGER_DIR="$TMPD/ledger"; export KIT_LEDGER_DIR
 GATE_LEDGER="$KIT_DIR/lib/gate/gate-ledger.sh"
 
+# Pin git's init template at an empty dir: the operator's init.templateDir may point nowhere (one
+# warning per init and clone) and must never seed a fixture repo.
+GIT_TEMPLATE_DIR="$TMPD/no-git-template"; export GIT_TEMPLATE_DIR; mkdir -p "$GIT_TEMPLATE_DIR"
+
 # --------------------------------------------------------------------------- gh stub
 mkdir -p "$TMPD/stub"
 cat > "$TMPD/stub/gh" <<'STUB'
@@ -352,7 +356,21 @@ printf '[wrap]\npull_past_dirty = true\n' > "$PD_ON/kit.toml"
 PD_PROJ="$TMPD/pd-knob-project"; mkdir -p "$PD_PROJ"
 printf '[wrap]\npull_past_dirty = true\n' > "$PD_PROJ/.kit.toml"
 
-build_land() { # build_land <name> [--modify-base|--union-log] [branch] [commit-subject...]
+# Each land fixture SHAPE (builder + args + the LGEN/LBRANCH/LBASE_ATTR knobs) is built once under a
+# private name, then every case gets its own `cp -R` of the bare remote and the clone. The copy keeps
+# two absolute paths pointing at the template, so both are repaired: the clone's origin url and the
+# linked worktree's gitdir links. Cases never touch the template, so none sees another's mutations.
+land_cached() { # land_cached <raw builder> <name> [builder args...]
+  local fn="$1" name="$2"; shift 2
+  local tag="_c$(printf '%s\0' "$fn" "$@" "${LGEN:-}" "${LBRANCH:-}" "${LBASE_ATTR:-}" | cksum | cut -d' ' -f1)"
+  [ -d "$TMPD/ld-repo-$tag" ] || "$fn" "$tag" "$@" || return 1
+  [ ! -e "$TMPD/ld-repo-$name" ] || return 1   # a reused name would nest the copy, never overlay it
+  cp -R "$TMPD/ld-bare-$tag" "$TMPD/ld-bare-$name" && cp -R "$TMPD/ld-repo-$tag" "$TMPD/ld-repo-$name" || return 1
+  git -C "$TMPD/ld-repo-$name" remote set-url origin "$TMPD/ld-bare-$name"
+  git -C "$TMPD/ld-repo-$name" worktree repair "$TMPD/ld-repo-$name/wt" >/dev/null 2>&1
+}
+
+_build_land() { # _build_land <name> [--modify-base|--union-log] [branch] [commit-subject...]
   local name="$1" mode="${2:-}" branch="${3:-feat/land}" work="$TMPD/ld-work-$1" repo="$TMPD/ld-repo-$1"
   local nshift=$#; [ "$nshift" -gt 3 ] && nshift=3
   shift "$nshift"
@@ -390,3 +408,4 @@ build_land() { # build_land <name> [--modify-base|--union-log] [branch] [commit-
     git -C "$repo/wt" add -A; git -C "$repo/wt" commit -qm "feat: the landed change"
   fi
 }
+build_land() { land_cached _build_land "$@"; }   # build_land <name> [--modify-base|--union-log] [branch] [commit-subject...]

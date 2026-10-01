@@ -507,7 +507,7 @@ chk "land-merge: _rb_markers reads conflict-marker-size" \
 # MERGEABLE at the re-merge head (%REMERGE_TIP% resolves to whatever feat/land
 # points at when the read happens -- the old tip before the push, the merge
 # commit after it).
-build_land_reg() { # build_land_reg <name>
+_build_land_reg() {
   local name="$1" work="$TMPD/ld-work-$1" repo="$TMPD/ld-repo-$1"
   mkdir -p "$work/lib/registry" "$work/specs" "$work/docs"
   git -C "$work" init -q; gitc "$work"
@@ -536,6 +536,7 @@ build_land_reg() { # build_land_reg <name>
   fi
   git -C "$repo/wt" add -A; git -C "$repo/wt" commit -qm "feat: the landed change"
 }
+build_land_reg() { land_cached _build_land_reg "$@"; }   # build_land_reg <name>
 land_adv() { git clone -q "$TMPD/ld-bare-$1" "$TMPD/ld-adv-$1" && gitc "$TMPD/ld-adv-$1"; }
 land_adv_regen() { # land_adv_regen <name> <spec> -- origin gains specs/<s> + a regen
   land_adv "$1" || return 1
@@ -912,7 +913,7 @@ echo "--- land-merge: a refused dedupe commit undoes the merge commit"
 # The union-marked board duplicates the flipped row on merge, so dedupe-all
 # rewrites the file and the follow-up commit is refused by the hook; the staged
 # paths go back from HEAD and the merge commit is reset away.
-build_land_board() { # build_land_board <name>
+_build_land_board() {
   local name="$1" work="$TMPD/ld-work-$1" repo="$TMPD/ld-repo-$1"
   mkdir -p "$work/_meta"; git -C "$work" init -q; gitc "$work"
   git -C "$work" symbolic-ref HEAD refs/heads/main
@@ -929,6 +930,7 @@ build_land_board() { # build_land_board <name>
   rm -f "$repo/wt/_meta/BACKLOG.md.bak"
   git -C "$repo/wt" commit -qam "branch flips ID-1"
 }
+build_land_board() { land_cached _build_land_board "$@"; }   # build_land_board <name>
 build_land_board ddup
 LWT="$(cd "$TMPD/ld-repo-ddup/wt" && pwd -P)"
 LTIP="$(git -C "$LWT" rev-parse HEAD)"
