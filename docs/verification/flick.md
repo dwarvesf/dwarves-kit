@@ -58,8 +58,8 @@ Scope: when the env var named by `jev_token_env` is empty, flick runs the config
 
 | Command | Exit | Result |
 |---------|------|--------|
-| `bash tests/test-flick.sh` | 0 | 213 passed, 0 failed |
-| `/bin/bash tests/test-flick.sh` (bash 3.2) | 0 | 213 passed, 0 failed |
+| `bash tests/test-flick.sh` | 0 | 237 passed, 0 failed |
+| `/bin/bash tests/test-flick.sh` (bash 3.2) | 0 | 237 passed, 0 failed |
 | `bash tests/test-meta.sh` | 0 | 902/902 |
 | `bash tests/test-hooks.sh` | 0 | 826/826 |
 | `bash tests/test-config-registry.sh` | 1 | 58/59: AC10 (`ledger.location` is a real `kit_config_get_root` call site in flick and is not in the Root-only keys table). Fails identically on a clean export of the base commit; the gap is already noted in the registry's known gaps. |
@@ -71,4 +71,14 @@ Scope: when the env var named by `jev_token_env` is empty, flick runs the config
 | Time limit removed | `a slow command: no_token`, `cut off at about 10 s` |
 | Shape check skipped | quote, newline and trailing-newline command outputs, plus the env-token shape tests |
 
-Not controlled: the stdin test. flick has already read its own stdin to EOF before the command runs, so removing `</dev/null` changes nothing observable; the redirect stays as defense in depth. Limit: the kill reaches the command and its direct children, not deeper descendants that hold the output pipe open.
+Security-lens fixes, same section of `tests/test-flick.sh` (the TERM-ignoring test hung forever on the old code):
+
+| Fix | Mutation that went red |
+|-----|------------------------|
+| Config variables moved to a private `FLKC_` namespace cleared before load (env `OP_*`, `RT_*`, `SEEN_*` no longer inject `points`, `deny_words`, `allow_names`, `backend`, `jev_token_cmd`) | Namespace not cleared: the private-prefix env test |
+| TERM to the group, then KILL after a 1 s grace; never a blocking `wait` on a live command | KILL branch removed: the TERM-ignoring command hangs flick (alarm fired) |
+| Output goes to a file in a 0700 temp dir, removed on every path; the group is killed before the read | Group kill removed: `the descendant was killed with its group` |
+| Output capped (`ulimit -f` on the command, `head -c 4097` on the read, over 4096 is `no_token`) | Length check removed: `oversized command output (bigfinite)` |
+| First word must be an absolute path | Rule removed: bare-name and relative-path tests |
+
+Not controlled: the stdin test. flick has already read its own stdin to EOF before the command runs, so removing `</dev/null` changes nothing observable; the redirect stays as defense in depth. Limit: a descendant that calls `setsid` or `setpgid` leaves the command's process group and survives the kill.

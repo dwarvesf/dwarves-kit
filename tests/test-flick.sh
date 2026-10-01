@@ -609,6 +609,69 @@ jqt "the kit-root kit.toml token_cmd is read when no operator file exists" "$out
 rm -f "$T/root/kit.toml"
 cfg backend=jev points=wrap-7b
 
+echo "== token_cmd hardening: env injection, TERM-proof, descendants, output cap, absolute path =="
+mkcmd trapterm "trap '' TERM; while :; do :; done"
+mkcmd orphan "printf '%s\\n' $CMD_TOKEN; (sleep 27) >/dev/null 2>&1 &"
+mkcmd bigfinite "head -c 5000 /dev/zero | tr '\\0' a"
+mkcmd bigforever "exec yes aaaaaaaaaaaaaaaa"
+echo "-- env vars cannot inject config (the engine's own variable namespaces) --"
+cfg backend=jev points=wrap-7b
+reset_ran; stub_reset
+out="$(decide_run ok "$IN1" JEV_API_TOKEN= "OP_jev_token_cmd=$T/cmd-ok")"
+jqt "env OP_jev_token_cmd has no effect: no_token" "$out" '.error == "no_token"'
+check "env OP_jev_token_cmd never ran a command" "$(! ran ok; echo $?)"
+out="$(decide_run ok "$IN1" JEV_API_TOKEN= "RT_jev_token_cmd=$T/cmd-ok")"
+check "env RT_jev_token_cmd never ran a command" "$(! ran ok; echo $?)"
+out="$(decide_run ok "$IN1" JEV_API_TOKEN= "FLKC_OP_jev_token_cmd=$T/cmd-ok" "FLKC_RT_jev_token_cmd=$T/cmd-ok")"
+check "env under the engine's private prefix never ran a command" "$(! ran ok; echo $?)"
+rm -f "$T/op/kit.toml"
+out="$(decide_run ok "$IN1" RT_backend=jev OP_backend=jev)"
+jqt "env RT_backend and OP_backend cannot switch the backend on" "$out" '.error == "backend_none"'
+cfg backend=jev points="" deny_words=zzprivatecorp
+out="$(decide_run ok "$IN1" OP_points=wrap-7b RT_points=wrap-7b)"
+jqt "env OP_points cannot enable a point" "$out" '.error == "point_disabled"'
+cfg backend=jev points=wrap-7b deny_words=
+stub_reset
+out="$(decide_run ok "$IN1" OP_deny_words=zzprivatecorp RT_deny_words=zzprivatecorp)"
+jqt "env OP_deny_words cannot fill an empty deny list" "$out" '.error == "egress_denied"'
+check "and nothing was sent" "$([ "$(stub_count)" = 0 ]; echo $?)"
+cfg backend=jev points=wrap-7b
+out="$(body_run "$(req "$(q p1 backlog-flip-script evil-tool)")" OP_allow_names=evil-tool RT_allow_names=evil-tool)"
+jqt "env OP_allow_names cannot widen the allowlist" "$out" '.error == "egress_denied"'
+
+echo "-- a command that ignores TERM, leaves descendants, or floods output --"
+cfg backend=jev points=wrap-7b jev_token_cmd="$T/cmd-trapterm"
+t0="$(ms_now)"; out="$(decide_run ok "$IN1" JEV_API_TOKEN=)"; t1="$(ms_now)"
+jqt "a TERM-ignoring command: no_token, valid JSON, exit 0" "$out" '.error == "no_token" and .counts.error == 1'
+check "a TERM-ignoring command was escalated and flick returned inside the limit plus grace" "$([ $((t1-t0)) -ge 9500 ] && [ $((t1-t0)) -lt 16000 ]; echo $?)" "took $((t1-t0)) ms"
+check "no spinning command is left behind" "$(! pgrep -f "$T/cmd-trapterm" >/dev/null; echo $?)"
+cfg backend=jev points=wrap-7b jev_token_cmd="$T/cmd-orphan"
+stub_reset
+t0="$(ms_now)"; out="$(decide_run ok "$IN1" JEV_API_TOKEN=)"; t1="$(ms_now)"
+jqt "a command that leaves a background child: the token is still used" "$out" '.error == "" and .answers.p1.choice == "enhance"'
+check "a lingering descendant did not hold flick open (returned well inside 27 s)" "$([ $((t1-t0)) -lt 12000 ]; echo $?)" "took $((t1-t0)) ms"
+check "the descendant was killed with its group" "$(! pgrep -f 'sleep 27' >/dev/null; echo $?)"
+for big in bigfinite bigforever; do
+  cfg backend=jev points=wrap-7b jev_token_cmd="$T/cmd-$big"
+  stub_reset
+  t0="$(ms_now)"; out="$(decide_run ok "$IN1" JEV_API_TOKEN=)"; t1="$(ms_now)"
+  jqt "oversized command output ($big): no_token" "$out" '.error == "no_token"'
+  check "oversized output ($big) sent nothing and finished in bounded time" "$([ "$(stub_count)" = 0 ] && [ $((t1-t0)) -lt 16000 ]; echo $?)" "took $((t1-t0)) ms"
+done
+check "no token temp dir is left behind" "$(! ls -d /tmp/flick.* >/dev/null 2>&1; echo $?)"
+
+echo "-- the command's first word must be an absolute path --"
+reset_ran
+cfg backend=jev points=wrap-7b jev_token_cmd="cmd-ok"
+out="$(FLICK_CWD="$T" decide_run ok "$IN1" JEV_API_TOKEN= "PATH=$T:$PATH")"
+jqt "a bare command name is refused: no_token" "$out" '.error == "no_token"'
+check "the bare-name command never ran" "$(! ran ok; echo $?)"
+cfg backend=jev points=wrap-7b jev_token_cmd="./cmd-ok"
+out="$(FLICK_CWD="$T" decide_run ok "$IN1" JEV_API_TOKEN=)"
+jqt "a relative path is refused: no_token" "$out" '.error == "no_token"'
+check "the relative-path command never ran" "$(! ran ok; echo $?)"
+cfg backend=jev points=wrap-7b
+
 # --- sections above; summary below ---
 echo
 echo "flick: $PASS passed, $FAIL failed"
