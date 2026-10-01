@@ -240,6 +240,41 @@ call_jev() {
   else CALL_ERR=""; fi
 }
 
+# ---- decision log --------------------------------------------------------------------------------
+# One JSON line per question in <log dir>/decide.jsonl. A sent question logs its slugs, so an
+# operator can audit exactly what left the host; a denied one logs its index and reason only.
+# The caller's id, any denied text, and the token never reach the log. `existing` is kept only
+# when it is one of the point's choices. A failure to log never changes the answer.
+LOG_PROG='
+  ["enhance","new","none"] as $choices
+  | ($keep | split(" ") | map(select(. != "") | tonumber)) as $kidx
+  | ($deny | split(" ") | map(select(. != "") | tonumber)) as $didx
+  | $norm.questions as $all
+  | [ ( $kidx[] as $i | $all[$i] as $q
+      | ($out.answers[$q.id] // {}) as $a
+      | {ts: (now | todate), backend: $backend, model: $model, point: $point, index: $i,
+         latency_ms: $lat, candidate: $q.candidate, hit: $q.hit,
+         chosen: ($a.choice // ""), existing: (if ($q.existing // "") as $e | $choices | index($e) then $q.existing else "" end),
+         margin: ($a.margin // null), error: ($out.error), mode: $mode, mode_downgraded: $note} ),
+    ( $didx[] as $i
+      | {ts: (now | todate), backend: $backend, model: $model, point: $point, index: $i,
+         latency_ms: $lat, chosen: "", error: "egress_denied", mode: $mode, mode_downgraded: $note} ) ]
+  | sort_by(.index) | .[]'
+
+log_lines() { # <envelope-json>
+  local dir lines
+  [ -f "$KIT_ROOT/lib/telemetry/kit-log-dir.sh" ] || return 0
+  . "$KIT_ROOT/lib/telemetry/kit-log-dir.sh" 2>/dev/null || return 0
+  dir="$(kit_resolve_log_dir 2>/dev/null)" || return 0
+  [ -n "$dir" ] || return 0
+  lines="$(jq -nc --argjson norm "$NORM" --argjson out "$1" --arg keep "${KEEP# }" --arg deny "${DENY_IDX# }" \
+    --arg backend "$BACKEND" --arg model "$MODEL" --arg point "wrap-7b" --argjson lat "${LATENCY_MS:-0}" \
+    --arg mode "$MODE_OUT" --argjson note "${MODE_NOTE:-false}" "$LOG_PROG" 2>/dev/null)" || return 0
+  [ -n "$lines" ] || return 0
+  mkdir -p "$dir" 2>/dev/null || return 0
+  printf '%s\n' "$lines" >> "$dir/decide.jsonl" 2>/dev/null || true
+}
+
 # ---- validation and output -----------------------------------------------------------------------
 # FINAL_PROG builds the envelope. An answer set counts only when the provider answered exactly
 # the requested ids, each with exactly the offered choices, probabilities summing to about 1,
@@ -291,6 +326,7 @@ finalize() {
     --argjson lat "${LATENCY_MS:-0}" --arg mode "$MODE_OUT" \
     --argjson criteria "$POINT_WRAP_7B_CRITERIA" "$FINAL_PROG")" || exit 0
   [ -n "$out" ] || exit 0
+  log_lines "$out" || true
   printf '%s\n' "$out"; EMITTED=1; exit 0
 }
 
@@ -341,7 +377,7 @@ main() {
   point_enabled "$point" || fail_all point_disabled
   if [ "$BACKEND" = openai ]; then MODEL="$CFG_OPENAI_MODEL"; fail_all unsupported; fi
   MODEL="$CFG_JEV_MODEL"
-  [ "$CFG_MODE" != decide ] || MODE_NOTE=1
+  MODE_NOTE=false; [ "$CFG_MODE" != decide ] || MODE_NOTE=true
 
   # Guard: drop every denied question BEFORE any body exists.
   build_public

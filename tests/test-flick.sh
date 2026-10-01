@@ -329,6 +329,43 @@ jqt "the pinned model comes from config and rides in the envelope and the reques
 check "request carried the pinned model" "$(jq -e '.model == "jev-9.9.9"' "$STUB_DIR/last.json" >/dev/null; echo $?)"
 cfg backend=jev points=wrap-7b
 
+echo "== TASK-8: decision log (sent slugs only, no token, no caller id, no denied text) =="
+LOG="$T/log/decide.jsonl"
+rm -f "$LOG"
+cfg backend=none points=wrap-7b
+out="$(decide_run ok "$IN1")"
+check "backend none writes no log" "$([ ! -e "$LOG" ]; echo $?)"
+cfg backend=jev points=wrap-7b deny_words=acme
+stub_reset
+mixed="$(jq -nc '{point:"wrap-7b",questions:[{id:"CANARYID55",candidate:"backlog-flip-script",hit:"board",existing:"CANARYEXIST66"},{id:"p2",candidate:"acme-secret-plan",hit:"board"},{id:"p3",candidate:"discord-poster",hit:"wrap",existing:"new"}]}')"
+out="$(decide_run ok "$mixed")"
+check "one log line per question (3)" "$([ "$(wc -l < "$LOG" | tr -d ' ')" = 3 ]; echo $?)"
+check "every log line is a JSON object" "$(jq -e . "$LOG" >/dev/null 2>&1; echo $?)"
+jqt "sent question 0: slugs, chosen, margin, filtered existing, shadow" "$(sed -n 1p "$LOG")" '.backend == "jev" and .model == "jev-1.13.0" and .point == "wrap-7b" and .index == 0 and .candidate == "backlog-flip-script" and .hit == "board" and .chosen == "enhance" and (.margin|type=="number") and .existing == "" and .error == "" and .mode == "shadow" and (.ts|test("^[0-9]{4}-[0-9]{2}-[0-9]{2}T")) and (.latency_ms|type=="number")'
+jqt "denied question: index and reason only, no slugs" "$(sed -n 2p "$LOG")" '.index == 1 and .error == "egress_denied" and (has("candidate")|not) and (has("hit")|not) and .chosen == ""'
+jqt "an existing that IS a choice is kept" "$(sed -n 3p "$LOG")" '.existing == "new" and .candidate == "discord-poster"'
+check "no token, caller id, canary existing or denied text in the log" "$(grep -q "$CANARY_TOKEN\|CANARYID55\|CANARYEXIST66\|acme-secret-plan\|\"p2\"\|\"p3\"" "$LOG"; [ $? -ne 0 ]; echo $?)"
+rm -f "$LOG"
+out="$(decide_run 500 "$IN1")"
+jqt "a failed call logs the error against the sent slug" "$(cat "$LOG")" '.error == "http_500" and .chosen == "" and .candidate == "backlog-flip-script"'
+rm -f "$LOG"
+out="$(decide_run ok "$IN1" KIT_LEDGER_DIR=)"
+jqt "an unresolvable log dir never changes the answer" "$out" '.error == "" and .answers.p1.choice == "enhance"'
+check "and nothing was written" "$([ ! -e "$LOG" ]; echo $?)"
+cfg backend=jev points=wrap-7b mode=decide
+rm -f "$LOG"
+out="$(decide_run ok "$IN1")"
+jqt "mode decide logs the downgrade" "$(cat "$LOG")" '.mode == "shadow" and .mode_downgraded == true'
+cfg backend=jev points=wrap-7b
+echo "-- the token is not in the process list during a slow call --"
+( decide_run slow "$IN1" >/dev/null ) &
+SLOWPID=$!
+sleep 1
+ps_all="$(ps -A -o args= 2>/dev/null)"
+check "ps shows no token while curl is in flight" "$(grep -q "$CANARY_TOKEN" <<<"$ps_all"; [ $? -ne 0 ]; echo $?)"
+check "ps shows curl really was in flight (the check is not vacuous)" "$(grep -q 'curl .*--config' <<<"$ps_all"; echo $?)"
+wait "$SLOWPID"
+
 # --- sections above; summary below ---
 echo
 echo "flick: $PASS passed, $FAIL failed"
