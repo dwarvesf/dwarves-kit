@@ -53,7 +53,7 @@ Verdict: PASS
 ```
 Command: bash tests/test-install-mods.sh
 Exit: 0
-PASS=24 FAIL=0
+PASS=27 FAIL=0
 Verdict: PASS
 ```
 
@@ -194,3 +194,17 @@ Verdict: RED as expected
 ```
 
 Restored: 55 pass, 0 fail.
+
+## Negative control: full install over compat
+
+A compat install leaves `kit.toml` as a link into the checkout; the full install now unlinks it before writing. Dropped that unlink from `install.sh`.
+
+```
+Command: bash tests/test-install-mods.sh
+  FAIL  the full install leaves the checkout's kit.toml byte for byte
+  FAIL  the full install writes its own kit.toml, not a link
+PASS=25 FAIL=2
+Verdict: RED as expected
+```
+
+Restored: PASS=27 FAIL=0, and the checkout's `kit.toml` is unchanged.
