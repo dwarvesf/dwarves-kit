@@ -3,8 +3,9 @@
 # touched, with twelve verbs:
 #
 #   wrap.sh scan  [--under <root>]... <repo> [<repo>...]    report only, exit 0
-#   wrap.sh apply [--apply] [--worktrees] [--archive-unmerged] [--pull-only] [--own <path>]... [--under <root>]... <repo> [...]  dry-run by default
+#   wrap.sh apply [--apply] [--worktrees] [--archive-unmerged] [--pull-only|--no-pull] [--own <path>]... [--under <root>]... <repo> [...]  dry-run by default
 #   wrap.sh apply --pull-only [--apply] <repo> [...]        fetch + pull stage alone, no worktree/branch/stray write
+#   wrap.sh apply --no-pull [--apply] [--own <path>]... <repo> [...]  tidy without the pull or the stray-commits move (a step 0 stop)
 #   wrap.sh merge [--apply] [--pr N] [--with-ci] [--verify C] <repo>   merges ONE own green PR (--pr: a named draft)
 #   wrap.sh land  <worktree> [--title T] [--body-file F] [--with-ci] [--verify C]   one hand-made worktree, landed
 #   wrap.sh start <repo> <branch> [--carry [<path>...]]     one hand-made worktree, started
@@ -122,7 +123,7 @@ source "$LIB_ROOT/config/kit-config.sh" || { echo "FATAL: lib/config/kit-config.
 source "$LIB_ROOT/gate/default-branch-warn.sh" || { echo "FATAL: lib/gate/default-branch-warn.sh missing or unreadable" >&2; exit 1; }
 for _m in common scan apply pull carry ci merge land start log deploy rebase; do source "$SELF_DIR/wrap-$_m.sh" || { echo "FATAL: lib/wrap/wrap-$_m.sh missing or unreadable" >&2; exit 1; }; done; unset _m
 
-_usage() { sed -n '2,32p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
+_usage() { sed -n '2,33p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
 
 # --------------------------------------------------------------------------- entry
 

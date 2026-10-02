@@ -6,7 +6,7 @@
 #
 # Usage:
 #   wrap scan <repo> [<repo>...]                        report only
-#   wrap apply [--apply] [--worktrees] [--archive-unmerged] [--pull-only] [--own <path>]... <repo> [...]     gated writes, dry-run by default
+#   wrap apply [--apply] [--worktrees] [--archive-unmerged] [--pull-only|--no-pull] [--own <path>]... <repo> [...]     gated writes, dry-run by default
 #   wrap merge [--apply] [--pr N] [--verify C] <repo>   one own green PR (--pr: a named PR, a draft marked ready)
 #   wrap land <worktree> [--title T] [--body-file F] [--with-ci] [--verify C]  one hand-made worktree, landed
 #     --verify C runs inside a re-merge of a CONFLICTING PR (land runs it only inside that merge cycle) and is echoed as typed, so a secret belongs in the environment, not the flag

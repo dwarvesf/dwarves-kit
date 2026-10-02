@@ -31,7 +31,10 @@ _stray_board_rows() {
 # _autoland_on -- 0 when the operator authorized `apply` to open and merge its own carry PRs.
 # Root-only for the same reason as the carry itself: it authorizes a write to origin/<def>.
 # wrap.merge_own_prs false wins: an operator who holds back their own PRs holds these too.
+# --no-pull is a step 0 stop: the checkout's dirty lines may be another live session's, so
+# the branch is pushed and its PR command printed, never merged.
 _autoland_on() {
+  [ "$NO_PULL" != 1 ] || return 1
   [ "$(kit_config_get_root wrap.autoland_carry false)" = "true" ] \
     && [ "$(kit_config_get_root wrap.merge_own_prs true)" = "true" ]
 }

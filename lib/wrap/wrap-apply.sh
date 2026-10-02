@@ -473,7 +473,10 @@ _apply_repo() {
       echo "     SKIP stray lines: fetch failed, origin/${def} may be stale"
     fi
     # Before the pull, which a default branch ahead of origin can never fast-forward.
-    if [ "$fetch_ok" != 1 ]; then
+    if [ "$NO_PULL" = 1 ]; then
+      echo "-- stray commits:"
+      echo "     SKIP stray commits: --no-pull"
+    elif [ "$fetch_ok" != 1 ]; then
       echo "-- stray commits:"
       echo "     SKIP stray commits: fetch failed, origin/${def} may be stale"
     elif [ "$cur" = "$def" ]; then
@@ -482,7 +485,11 @@ _apply_repo() {
   fi
 
   echo "-- pull:"
-  if [ "$cur" = "$def" ]; then
+  if [ "$NO_PULL" = 1 ]; then
+    # --no-pull is a step 0 stop: the pull and the stray-commits move write HEAD and the
+    # working tree of a checkout another session is writing.
+    echo "     SKIP pull: --no-pull"
+  elif [ "$cur" = "$def" ]; then
     # --pull-only skips the stray-commits carry, so name what it leaves behind rather than
     # letting unpushed commits on the default branch go silent run after run.
     if [ "$PULL_ONLY" = 1 ] && [ "$fetch_ok" = 1 ]; then
@@ -511,6 +518,7 @@ cmd_apply() {
       --worktrees) WORKTREES=1 ;;
       --archive-unmerged) ARCHIVE_UNMERGED=1 ;;
       --pull-only) PULL_ONLY=1 ;;
+      --no-pull) NO_PULL=1 ;;
       --under=*) nu=$(( nu + 1 )); unders[nu]="${arg#--under=}" ;;
       --under) want_under=1 ;;
       --own=*) OWN_N=$(( OWN_N + 1 )); OWN_PATHS[OWN_N]="${arg#--own=}" ;;
@@ -531,6 +539,9 @@ cmd_apply() {
   # conflict rather than a silent no-op. Checked before the --tips-file existence check just
   # below: a combination with --tips-file is refused for the conflict, not for whether the
   # path exists.
+  if [ "$PULL_ONLY" = 1 ] && [ "$NO_PULL" = 1 ]; then
+    echo "wrap.sh apply: --no-pull cannot combine with --pull-only" >&2; return 64
+  fi
   if [ "$PULL_ONLY" = 1 ]; then
     if [ "$WORKTREES" = 1 ]; then echo "wrap.sh apply: --pull-only cannot combine with --worktrees" >&2; return 64; fi
     if [ "$ARCHIVE_UNMERGED" = 1 ]; then echo "wrap.sh apply: --pull-only cannot combine with --archive-unmerged" >&2; return 64; fi
@@ -541,7 +552,7 @@ cmd_apply() {
     echo "wrap.sh apply: --tips-file '${TIPS_OVERRIDE}' is not an existing file" >&2; return 64
   fi
   if [ "$want_under" = 1 ]; then _expand_bare_under apply || return 64; fi
-  [ "$count" -ge 1 ] || [ "$nu" -ge 1 ] || { echo "usage: wrap.sh apply [--apply] [--worktrees] [--archive-unmerged] [--pull-only] [--own <path>]... [--under <root>]... <repo> [<repo>...]" >&2; return 64; }
+  [ "$count" -ge 1 ] || [ "$nu" -ge 1 ] || { echo "usage: wrap.sh apply [--apply] [--worktrees] [--archive-unmerged] [--pull-only|--no-pull] [--own <path>]... [--under <root>]... <repo> [<repo>...]" >&2; return 64; }
   while [ "$i" -le "$nu" ]; do _add_under "${unders[$i]}"; i=$(( i + 1 )); done
   # Canonicalise the own set once: the worktree loop compares against `pwd -P`
   # paths, so the same normalisation must apply to the names the operator typed.

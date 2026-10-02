@@ -291,6 +291,24 @@ chk_no "autoland adopt: nothing failed" "$out" "FAILED"
 out="$(al_run "$ALB" "$ALC" --apply)"
 chk_has "autoland rerun: no stray lines left" "$(printf '%s' "$out" | grep -A1 -- '-- stray lines:')" "none"
 
+echo "--- autoland: --no-pull (a step 0 stop) pushes the carry branch and merges nothing"
+build_union_repo alnp
+ALN="$TMPD/uclone-alnp"; ALNB="$TMPD/ubare-alnp"
+printf '%s' "$LAB_STRAY" > "$ALN/_meta/LAB_LOG.md"
+ALN_HEAD="$(git -C "$ALN" rev-parse HEAD)"; ALN_BYTES="$(cksum < "$ALN/_meta/LAB_LOG.md")"
+out="$(al_run "$ALNB" "$ALN" --apply --no-pull)"; rc=$?
+chk "autoland --no-pull: apply exits 0" "$rc"
+chk_has "autoland --no-pull: the carry branch is pushed" "$out" "carried 2 stray lines in _meta/LAB_LOG.md to origin/wrap/stray-meta-lab-log-md-"
+chk_has "autoland --no-pull: the PR command is printed, as with the knob off" "$out" "open its PR with: gh pr create --head wrap/stray-meta-lab-log-md-"
+chk_no "autoland --no-pull: no PR was opened" "$(cat "$GH_STUB_CALLS")" "pr create"
+chk_no "autoland --no-pull: no PR was merged" "$(cat "$GH_STUB_CALLS")" "pr merge"
+chk "autoland --no-pull: the carry branch reached origin" \
+  "$([ -n "$(git -C "$ALNB" for-each-ref --format='%(refname:short)' 'refs/heads/wrap/stray-*')" ]; echo $?)"
+chk "autoland --no-pull: HEAD and the dirty file are untouched" \
+  "$([ "$(git -C "$ALN" rev-parse HEAD)" = "$ALN_HEAD" ] && [ "$(cksum < "$ALN/_meta/LAB_LOG.md")" = "$ALN_BYTES" ]; echo $?)"
+out="$(al_run "$ALNB" "$ALN" --no-pull)"
+chk_no "autoland --no-pull dry run: no WOULD-merge line" "$out" "WOULD open and merge its PR"
+
 echo "--- autoland: a gate refusal leaves the PR open, exit 0"
 build_union_repo algate
 ALG="$TMPD/uclone-algate"; ALGB="$TMPD/ubare-algate"
