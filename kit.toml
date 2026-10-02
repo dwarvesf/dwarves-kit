@@ -283,6 +283,9 @@ recheck_sample   = 5            # [impl] one run in N rechecks every end-verifie
                                  #        recheck every PASS. A full-lane run always uses 1.
                                  #        `(self-attested)` rows are always rechecked. Root-only: a project `.kit.toml` cannot lower it.
 
+[test]                          # the dev-loop test scope (commands/execute.md, verify.md, ship.md)
+suite            = "full"       # [impl] "full" (default) = run the whole suite in the dev loop. "affected" = run only the tests the change touches (bin/test-affected in this repo); the full suite runs on the schedule.
+
 [review]                        # `/kit:review-team` decision gate (commands/review-team.md)
 apply_findings   = true         # [impl] true = `gated_auto` findings the `responding-to-review`
                                  #        agent VERIFIED are applied on the branch by `fix-agent`,

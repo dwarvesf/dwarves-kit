@@ -48,7 +48,7 @@ Dispatch the **kit:acceptance-verifier** subagent (read-only, at the spec tier p
 
 ### Step 6: Dispatch the system level (read-only)
 
-Dispatch the **kit:system-verifier** subagent (read-only, at the spec tier per Step 1) to run the whole project's test/build suite, UNSCOPED -- not filtered to this spec's files -- as the dynamic mirror of the design phase. If the project defines no suite runnable in this environment, note "no executable project suite" and continue; do not invent a substitute check.
+When `kit_config_get test.suite full` (`lib/config/kit-config.sh`) is `affected`, do not dispatch it: record `SKIPPED: full suite runs on the schedule (test.suite=affected)` under the System level and continue. Otherwise dispatch the **kit:system-verifier** subagent (read-only, at the spec tier per Step 1) to run the whole project's test/build suite, UNSCOPED -- not filtered to this spec's files -- as the dynamic mirror of the design phase. If the project defines no suite runnable in this environment, note "no executable project suite" and continue; do not invent a substitute check.
 
 ### Step 6b: Advisory mutation smoke (warn-only, never a verdict downgrade)
 
