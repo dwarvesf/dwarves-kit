@@ -23,13 +23,21 @@ Real session, `session-observe cost --file <finished 28 MB main transcript> --js
 ```
 Command: bash lib/session/observe/tests/smoke.sh   (keep_best_usage key forced to object(): no dedup)
 Exit: 1
-Verdict: FAIL (as intended)
+Result: RED as expected
   FAIL: session A reqs wrong
   FAIL: session A rollup wrong
   FAIL: dedup wrong   (cost output 1308 / cache_read 9000, expected 800 / 3000; burn reqs 6, expected 2)
   smoke: 109 passed, 3 FAILED
 ```
-The key line in `keep_best_usage` was replaced with `key = object()`, the run went RED (new test plus two existing burn dedup cases), then `git checkout --` restored it and the run returned to 112 passed.
+The key line in `keep_best_usage` was replaced with `key = object()`, the run went RED (new test plus two existing burn dedup cases), then `git checkout --` restored it.
+
+Restored run:
+```
+Command: bash lib/session/observe/tests/smoke.sh
+Exit: 0
+Verdict: PASS
+  smoke: all 112 passed
+```
 
 ## Not proven
 - Only `cost` and `burn` read through `keep_best_usage`; the entry-fee scan reads one message and only gains the synthetic skip.
