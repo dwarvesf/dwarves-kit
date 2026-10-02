@@ -99,6 +99,7 @@ export const register: Register = on => {
           )
         })}
         <Button key="refresh" label="Refresh" hotkey="r" onPress={() => refresh($, mode)} />
+        <Button key="close" label="Close" hotkey="q" role="dismiss" onPress={() => $.ui.close({ id: PANE })} />
       </Box>
     )
   })

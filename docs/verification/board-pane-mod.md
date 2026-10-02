@@ -23,7 +23,7 @@ The pane parses the CLI output into rows. An item row is a button: digits 1 to 9
 ```
 Command: claude plugin test integrations/claude-code/board-pane
 Exit: 0
-11 pass, 0 fail
+12 pass, 0 fail
 Verdict: PASS
 ```
 
@@ -42,11 +42,11 @@ Removed the `' ?'` stale marker from the all-mode row builder in `hooks/parse.ts
 Command: claude plugin test integrations/claude-code/board-pane
 (fail) all mode shows the refresh time, dims stale rows with ?, drops the trailer, folds idle repos
 (fail) all rows parse items, stale tags and idle repos
-9 pass, 2 fail
+10 pass, 2 fail
 Verdict: RED as expected
 ```
 
-Restored with `git checkout -- integrations/claude-code/board-pane/hooks/parse.ts`: 11 pass, 0 fail.
+Restored with `git checkout -- integrations/claude-code/board-pane/hooks/parse.ts`: 12 pass, 0 fail.
 
 ## Reproduce
 

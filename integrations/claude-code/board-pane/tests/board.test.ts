@@ -55,12 +55,17 @@ const setup = async (
   })
   on('ui.open', () => ({ value: { isPlaced: true as const } }))
   on('ui.panes', () => ({ value: [...panes] }))
+  const closed: string[] = []
+  on('ui.close', (_$, e) => {
+    closed.push(e.id)
+    return { value: undefined }
+  })
   on('prompt.submit', (_$, e) => {
     submitted.push(e.text)
     return { text: e.text }
   })
   await $.session.start({ cwd: '/work/app-one', surface: 'terminal', isInteractive: true })
-  return { argvs, submitted, panes, clock }
+  return { argvs, submitted, panes, clock, closed }
 }
 
 test('/board runs the single-repo render in the session cwd', async ($, on) => {
@@ -168,4 +173,14 @@ test('all rows parse items, stale tags and idle repos', () => {
     { kind: 'item', id: 'ID-2', repo: 'app-two', text: 'app-two  ID-2 ?', isDim: true },
     { kind: 'text', text: '+2 idle: app-three, app-four', isDim: true, isBold: false },
   ])
+})
+
+test('Close shuts the pane and carries the q hotkey', async ($, on) => {
+  const { closed } = await setup($, on, { exitCode: 0, stdout: REPO_OUT, stderr: '' })
+  await $.command.run(runInput(''))
+  const ui = await mountPane($)
+  expect((await ui.find({ key: 'close' }))?.props).toMatchObject({ hotkey: 'q', role: 'dismiss' })
+  await ui.press({ key: 'close' })
+  expect(closed).toEqual(['board'])
+  await ui.unmount()
 })
