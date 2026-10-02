@@ -799,6 +799,11 @@ rm -f "$KIT_SETTINGS_FILTERED"
 # default -> install render -> resolver read chain stays coherent (the resolver,
 # lib/config/kit-config.sh, reads this same file in a prod install).
 mkdir -p "$(dirname "$KIT_TOML")"
+# A compat install leaves kit.toml as a symlink into the checkout. Writing through it
+# would rewrite the checkout's own kit.toml, so the full install drops that link first.
+if [ -L "$KIT_TOML" ]; then
+  rm -f "$KIT_TOML"
+fi
 if [ -f "$KIT_DIR/kit.toml" ]; then
   kit_render_install_toml "$KIT_DIR/kit.toml" "$KIT_TOML"
 else

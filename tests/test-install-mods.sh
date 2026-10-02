@@ -102,6 +102,18 @@ assert_true "compat with no settings file creates one holding the checkout path"
 HOME="$H6" bash "$KIT_DIR/install.sh" --uninstall >"$H6/uninstall.log" 2>&1
 assert_true "uninstall drops the key when the checkout path was the only entry" "$([ "$(dirs_of "$H6")" = "<unset>" ]; echo $?)"
 
+echo "== a full install over a compat install never writes into the checkout's kit.toml =="
+H8="$(compat_home)"
+TOML_SAVED="$(mktemp)"
+cp "$KIT_DIR/kit.toml" "$TOML_SAVED"
+HOME="$H8" bash "$KIT_DIR/install.sh" >"$H8/install.log" 2>&1
+assert_true "compat leaves kit.toml as a link into the checkout" "$([ -L "$H8/.claude/dwarves-kit/kit.toml" ]; echo $?)"
+HOME="$H8" KIT_FORCE_FULL=1 bash "$KIT_DIR/install.sh" >"$H8/install-full.log" 2>&1
+assert_true "the full install leaves the checkout's kit.toml byte for byte" "$(cmp -s "$TOML_SAVED" "$KIT_DIR/kit.toml"; echo $?)"
+assert_true "the full install writes its own kit.toml, not a link" "$([ -f "$H8/.claude/dwarves-kit/kit.toml" ] && [ ! -L "$H8/.claude/dwarves-kit/kit.toml" ]; echo $?)"
+# A failing run must not leave the checkout dirty for the next suite.
+cmp -s "$TOML_SAVED" "$KIT_DIR/kit.toml" || cp "$TOML_SAVED" "$KIT_DIR/kit.toml"
+
 echo "---"
 echo "PASS=$PASS FAIL=$FAIL"
 [ "$FAIL" -eq 0 ]
