@@ -22,6 +22,16 @@ The delta from `docs/specs/SPEC-384-gate-false-positive-relief.md`. Decisions in
 | Fold: the telemetry counter prints only when n > 0 | Keeps every existing `report` pin byte-stable. |
 | Fold: tasks split into five (knob, classifier, override-lane, counter, docs) with declared dependencies | Round 1 C2 and R4 W6. |
 | Fold: AC8's empty-rid case uses `@@@`, not `///` | `runid` maps `/` to `-`, so `///` becomes `---`, a valid rid. |
+| Fold 2 supersedes two fold-1 rows: entries are host-qualified (`github.com/dwarvesf/dwarves-kit:lib/session/`), and the layers are a UNION of overlay and pinned kit root, not first-non-empty | Lead's fold 2 brief (C1, R5 W2). Edge 5 now says the overlay never needs to restate the kit entry. |
+| Fold 2, not settled by the brief: the repo id needs exactly three components after normalization (scheme, userinfo, port, `.git`, trailing `/` stripped; scp form converted); GitLab subgroup URLs get no id | "Reject ids with extra path components" taken literally; such a repo gets no exemption, the safe side. |
+| Fold 2, not settled by the brief: `EXEMPT` lines are written for every path floor exempts, not only when the exemption flipped the verdict | Deciding "changed the result" needs a second floor pass; the superset costs one log line per exempted path and hides nothing. |
+| Fold 2, refines the brief's "any later ran/override disposes": any ran/override line disposes a gate whatever its position in the ledger | The same bullet says "matching `check()`", and `check()` ignores order. A later-only rule would refuse runs `check()` already passes. |
+| Fold 2: the `.kit.toml` skip is exempt only for a gate in the kit-root set and absent from the project-resolved set | R2 W5, made checkable: that is exactly the set `start()` writes the string for. AC13 seeds the string on `build` to show it refuses elsewhere. |
+| Fold 2: an operator overlay counts as "tracked" when `git ls-files --error-unmatch` succeeds from the file's own directory, in addition to the realpath-inside-`<root>` test | Covers an overlay committed in some other repo the agent controls, not only the repo under check. |
+| Fold 2 (optional item taken): a one-segment prefix (`lib/`) is accepted with one warning | Cheap, and it flags the broadest entries without blocking a deliberate one. |
+| Fold 2: round 2's TASK-3a and TASK-3b are TASK-2 and TASK-4; every task is renumbered so numbers follow the phase order | C3 and the brief's renumbering line. |
+| Fold 2: the kit repo's `.kit.toml` comment ("nothing here can remove one") stays true for the project file; TASK-7 rewords it to name `not_hard_paths` as root-only rather than deleting the claim | The project file still cannot remove a hard path; only the root layers can. |
+| Fold 2: the spec is marked not dispatch-eligible | `gate_touches` marks root files (`kit.toml`, `.kit.toml`, `hooks/ship-gate.sh`, ADR files) as unprovable `?` entries. |
 
 ## Open questions for the operator
 
