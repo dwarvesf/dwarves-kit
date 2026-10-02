@@ -34,7 +34,11 @@ A one-line summary band above the prompt counts queued and executing tasks, hand
 | pressing `tasks` opens the pane, and a second press closes it; the button carries hotkey `b` | band tests 8 and 9 |
 | install registers the mod path, appends to an existing value, never duplicates, keeps other keys | installer tests 1 to 8, installer negative control |
 | uninstall removes only our path and the copied files, and drops an emptied key | installer tests 9 to 12 |
-| `--no-mods` skips the mod | installer tests 13 and 14 |
+| `--no-mods` skips the mod | installer tests 13 and 14, and the compat `--no-mods` case |
+| plugin-compat install registers the checkout path with no copy, once, keeps other entries, and a full install and a compat run swap one path for the other | installer compat cases, compat negative control |
+| the band's `ho`, `wt` and `pr` are buttons (`h`, `w`, `p`) that fill fixed prompts and never submit | band test 10, fourth negative control |
+| the worktree segment counts stale worktrees (merged, old, detached-old, main excluded) and drops only that part on a git failure | band tests 11 to 15, parse tests, fifth negative control |
+| NEXT lists DO NOW then URGENT then QUICK WINS, at most five, hides when empty, survives a priority failure, and bumps the hotkeys | pane tests 20 to 26, parse tests, sixth negative control |
 | the manifest and module load as the engine reads them | validate run below |
 
 ## Run table
@@ -42,14 +46,14 @@ A one-line summary band above the prompt counts queued and executing tasks, hand
 ```
 Command: claude plugin test integrations/claude-code/board-pane
 Exit: 0
-32 pass, 0 fail
+54 pass, 0 fail
 Verdict: PASS
 ```
 
 ```
 Command: bash tests/test-install-mods.sh
 Exit: 0
-PASS=14 FAIL=0
+PASS=24 FAIL=0
 Verdict: PASS
 ```
 
@@ -124,3 +128,56 @@ Verdict: RED as expected
 ```
 
 Restored: PASS=14 FAIL=0.
+
+## Negative control: band buttons fill, never submit
+
+Changed the band's press handler from `$.prompt.fill` to `$.prompt.submit`.
+
+```
+Command: claude plugin test integrations/claude-code/board-pane
+(fail) ho, wt and pr are buttons with hotkeys h, w, p; each press fills the prompt and never submits
+53 pass, 1 fail
+Verdict: RED as expected
+```
+
+## Negative control: worktree staleness
+
+Made the merged-branch check in `countStaleWorktrees` always false.
+
+```
+Command: claude plugin test integrations/claude-code/board-pane
+(fail) the worktree segment shows how many are stale: merged, old, detached-old, never the main checkout
+(fail) a repo whose default branch is master is found by the second guess
+(fail) a branch merged into the default branch is stale however fresh its tip
+51 pass, 3 fail
+Verdict: RED as expected
+```
+
+## Negative control: NEXT ordering
+
+Reversed the NEXT order to quick wins, urgent, do now.
+
+```
+Command: claude plugin test integrations/claude-code/board-pane
+(fail) NEXT lists DO NOW, then URGENT, then QUICK WINS, capped at five, above the repos
+(fail) pressing a NEXT row fills the prompt, with the repo named unless it is the current one, never submits
+(fail) the priority view parses into ranked picks and drops in-flight and the rest
+51 pass, 3 fail
+Verdict: RED as expected
+```
+
+## Negative control: plugin-compat install
+
+Disabled the compat branch's call to `kit_register_mod_dir`.
+
+```
+Command: bash tests/test-install-mods.sh
+  FAIL  compat appends the checkout path after the existing entry
+  FAIL  compat re-run lists the checkout path once
+  FAIL  a compat run after it swaps the copy for the checkout path
+  FAIL  compat with no settings file creates one holding the checkout path
+PASS=20 FAIL=4
+Verdict: RED as expected
+```
+
+Each control was restored: 54 plugin tests pass and PASS=24 for the installer.

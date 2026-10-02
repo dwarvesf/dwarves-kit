@@ -211,8 +211,10 @@ Be honest about what the plugin path cannot do, in short bullets:
   is specifically the adopt-wired per-repo module entries. Say this at adopt time too, not only here:
   on a plugin machine, never claim the module hooks are live after adopt.
 - **Board pane mod:** the bash installer loads the Claude Code board pane in every session by adding its
-  path to `env.CLAUDE_CODE_PLUGIN_DIRS`. A plugin install cannot register a second plugin dir, so on a
-  plugin-only machine the pane does not load. Manual enable: add
+  path to `env.CLAUDE_CODE_PLUGIN_DIRS`. On a plugin machine that also has a kit checkout, running
+  `bash install.sh` (compat mode) registers the checkout's `integrations/claude-code/board-pane` the same
+  way, so the gap is closed for anyone who runs `install.sh` from a checkout. A pure marketplace install
+  with no checkout cannot register a second plugin dir, so the pane does not load. Manual enable: add
   `"CLAUDE_CODE_PLUGIN_DIRS": "<kit checkout>/integrations/claude-code/board-pane"` under `env` in
   `~/.claude/settings.json`, or start with `claude --plugin-dir <that path>`.
 - **`KIT_FORCE_FULL=1` escape:** `KIT_FORCE_FULL=1 bash install.sh` forces the full bash install even

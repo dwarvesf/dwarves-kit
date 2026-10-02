@@ -28,7 +28,9 @@ out="$(HOME="$HOME_SB1" CLAUDE_DIR="$TMP" bash "$KIT_DIR/install.sh" 2>&1)"
 # ~/.claude/dwarves-kit by default, so the farm must carry both.
 [ -L "$TMP/dwarves-kit/kit.toml" ];    chk "kit.toml symlink created" $?
 [ -L "$TMP/dwarves-kit/VERSION" ];     chk "VERSION symlink created" $?
-[ ! -e "$TMP/settings.json" ];         chk "settings.json NOT written (no double hooks)" $?
+# Compat mode registers the board pane mod through env.CLAUDE_CODE_PLUGIN_DIRS, so the file may
+# exist now; what must never appear is a hooks block (that would double-register the plugin's hooks).
+{ [ ! -e "$TMP/settings.json" ] || ! jq -e 'has("hooks")' "$TMP/settings.json" >/dev/null; }; chk "settings.json carries no hooks (no double hooks)" $?
 [ -e "$TMP/dwarves-kit/lib/classify/lane-classify.sh" ]; chk "compat lib resolves to a real script" $?
 
 # --- compat branch retires a stale bare agent copy, keeps unowned ones ---
