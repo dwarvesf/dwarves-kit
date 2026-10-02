@@ -11,6 +11,7 @@
 
 set -uo pipefail
 KIT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+source "$KIT_DIR/tests/lib/run-lock.sh"; run_lock_exec "$KIT_DIR/tests/test-wrap.sh" "$@"
 
 # Suites run concurrently (WRAP_JOBS at a time, largest file first so the slow ones start early).
 # Each suite's output and exit code land in its own temp file; printing follows glob order.
