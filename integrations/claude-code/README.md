@@ -27,6 +27,8 @@ Or load it every session through `~/.claude/settings.json`:
 
 Press an item row (or its digit hotkey, 1 to 9) to put `Work on <ID>` (`Work on <ID> in <repo>` in `all` mode) in the prompt box; nothing runs until you press Enter. `Esc` returns focus to the prompt, `q` closes the pane, `r` refreshes, and the pane re-renders itself every 60 seconds while it is open. In `all` mode a repo whose checkout lags upstream is dimmed with a trailing `?`, repos with nothing queued fold into one `+N idle` row, and a header shows the refresh time. In repo mode `executing:` items carry a cyan marker and `claimed:` items a yellow one.
 
+A one-line summary band sits above the prompt: `tasks 14 queued · 3 executing  ·  9 handoffs  ·  15 worktrees  ·  1 PR open`, all for the session's repo. Counts come from `bin/board board`, the `.claude/handoffs/` folder, `git worktree list` and `gh pr list --author @me`. A segment whose source is missing or fails is skipped, and the band disappears when every one is. It refreshes on session start and after each main-loop turn; the PR count is cached for five minutes. Press `tasks` to open the pane.
+
 The CLI resolves as `$DWARVES_KIT/bin/board`, falling back to `~/.claude/dwarves-kit/bin/board`. A non-zero exit shows the CLI's stderr, dimmed, in the pane.
 
 ## Develop

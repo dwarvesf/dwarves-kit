@@ -70,6 +70,7 @@ const setup = async (
     return { isFilled: true }
   })
   await $.session.start({ cwd: '/work/app-one', surface: 'terminal', isInteractive: true })
+  argvs.length = 0 // session.start refreshes the summary band; these tests count the pane's own runs
   return { argvs, submitted, filled, panes, clock, closed }
 }
 

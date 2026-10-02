@@ -6,6 +6,8 @@
 
 The pane parses the CLI output into rows. An item row is a button: digits 1 to 9 press it, and a press puts `Work on <ID>` (or `Work on <ID> in <repo>`) in the prompt box without submitting it, so a stray key never starts a turn. Refresh and Close sit at the top, and item labels are cut to the pane width. A stale repo shows dimmed with a trailing `?` in place of the `[STALE: ...]` tag. Repos with no queued item fold into one `+N idle` row. `r` refreshes, and a 60 second timer refreshes while the pane stays open.
 
+A one-line summary band above the prompt counts queued and executing tasks, handoff files, worktrees and open PRs for the session's repo. It refreshes on session start and after each main-loop turn, caches the PR count for five minutes, and drops any segment whose source fails.
+
 ## Gate table
 
 | Claim | Evidence |
@@ -16,6 +18,12 @@ The pane parses the CLI output into rows. An item row is a button: digits 1 to 9
 | Close shuts the pane | test 12 |
 | stale rows, the refresh time, the dropped trailer and the idle fold render | test 7 |
 | the timer stops once the pane closes | test 9 |
+| the band shows task, handoff, worktree and PR counts from their sources | band tests 1 |
+| a failing source drops only its own segment, and an all-failing band draws nothing | band tests 2 to 4 |
+| a survey takes the row and the band steps aside | band test 5 |
+| the PR lookup runs once per five minutes | band test 6, third negative control |
+| a subagent turn does not refresh the band | band test 7 |
+| pressing `tasks` opens the pane in repo mode | band test 8 |
 | the stale marker is load-bearing | negative control below |
 | the manifest and module load as the engine reads them | validate run below |
 
@@ -24,7 +32,7 @@ The pane parses the CLI output into rows. An item row is a button: digits 1 to 9
 ```
 Command: claude plugin test integrations/claude-code/board-pane
 Exit: 0
-12 pass, 0 fail
+20 pass, 0 fail
 Verdict: PASS
 ```
 
@@ -70,3 +78,18 @@ Verdict: RED as expected
 ```
 
 Restored: 12 pass, 0 fail.
+
+## Negative control: PR cache
+
+Forced the PR staleness check in `hooks/register.tsx` to always true, so every refresh calls `gh`.
+
+```
+Command: claude plugin test integrations/claude-code/board-pane
+(fail) the PR lookup is cached for five minutes across turns
+  Expected: 1
+  Received: 3
+19 pass, 1 fail
+Verdict: RED as expected
+```
+
+Restored: 20 pass, 0 fail.

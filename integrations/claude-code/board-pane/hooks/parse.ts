@@ -1,4 +1,4 @@
-import type { BoardMode, BoardRow, BoardTone } from '../types'
+import type { BoardMode, BoardRow, BoardTasks, BoardTone } from '../types'
 
 const ITEM_ID = /[A-Z]+-\d+/
 const STALE_TAG = /\s*\[STALE: \d+ behind upstream\]/
@@ -63,4 +63,27 @@ export const clockText = (ms: number) => {
   const at = new Date(ms)
   const pad = (n: number) => String(n).padStart(2, '0')
   return `${pad(at.getHours())}:${pad(at.getMinutes())}`
+}
+
+// Counts the item rows under the `queued:` and `executing:` headers of parseRepoRows output.
+export const countTasks = (rows: readonly BoardRow[]): BoardTasks => {
+  const tasks: BoardTasks = { queued: 0, executing: 0 }
+  let section = ''
+  for (const row of rows) {
+    if (row.kind === 'text' && row.isBold) section = row.text.replace(/:\s*$/, '')
+    else if (row.kind === 'item' && (section === 'queued' || section === 'executing')) tasks[section] += 1
+  }
+  return tasks
+}
+
+export const countWorktrees = (porcelain: string) =>
+  Math.max(0, porcelain.split('\n').filter(line => line.startsWith('worktree ')).length - 1)
+
+export const countPrs = (json: string): number | undefined => {
+  try {
+    const parsed: unknown = JSON.parse(json)
+    return Array.isArray(parsed) ? parsed.length : undefined
+  } catch {
+    return undefined
+  }
 }
