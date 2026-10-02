@@ -494,7 +494,7 @@ already read them root-only. `tests/test-config-registry.sh` AC10 asserts this t
 EXACTLY the set of keys actually passed to `kit_config_get_root` across `lib/` (excluding
 `lib/config/kit-config.sh`, the accessor's own definition + self-test, whose demo calls
 exercise the primitive on fixture keys -- `mega.wave_cap`, `gauntlet.runner_host`,
-`gauntlet.nope`, `ledger.location` -- that are not themselves root-only rows), `commands/`,
+`gauntlet.nope` -- that are not themselves root-only rows; `lib/decide/flick.sh` also reads `ledger.location` root-only, so it is listed), `commands/`,
 `hooks/`, and `bin/`.
 
 | Key |
@@ -509,6 +509,7 @@ exercise the primitive on fixture keys -- `mega.wave_cap`, `gauntlet.runner_host
 | intake.url_ledger |
 | intake.verdicts |
 | knowledge.root |
+| ledger.location |
 | lanes.default |
 | precedent.registry |
 | review.apply_findings |

@@ -20,7 +20,7 @@ Spec: `docs/specs/SPEC-370-orca-mega-backend.md`, `## Trial plan`. Fixture: `doc
 Build a scratch repo with a local bare origin (no GitHub) and a copy of the full fixture. The copy keeps all three sub-goals so `SG-03` and its never-dispatched `SG-03:accept` Task exist for the gate capture. Only SG-01 is meant to run: the runner is killed before SG-02 starts, and `orca-reset` cleans up whatever did start.
 
 ```bash
-KIT=/Users/tieubao/workspace/dwarvesf/dwarves-kit          # or the worktree holding this branch
+KIT=/path/to/dwarves-kit          # or the worktree holding this branch
 SCR=$(mktemp -d)                                            # keep the path, the capture reads it
 git init -q --bare -b master "$SCR/origin.git"
 git clone -q "$SCR/origin.git" "$SCR/repo"

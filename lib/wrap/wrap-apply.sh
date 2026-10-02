@@ -445,7 +445,7 @@ _apply_repo() {
   fi
 
   # --pull-only runs the fetch + pull stage alone: no worktree, branch, archive, origin-branch,
-  # stray-line, or stray-commit write. See SPEC-359 "What the flag narrows".
+  # stray-line, or stray-commit write.
   if [ "$PULL_ONLY" != 1 ]; then
     _apply_worktrees "$repo" "$def" "$cur" "$fetch_ok" "$ghs"
     if [ -n "$OWN_SET" ]; then

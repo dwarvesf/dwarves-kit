@@ -79,7 +79,7 @@ handoff is deleted OR moved into any subdirectory, either marks it consumed.
    `old/`, anything not on the list), silently reporting those files as still-open again, the
    exact failure mode this spec exists to close. A subdirectory convention needs no list at
    all: any file not sitting directly in the scan root is, by construction, not a live
-   top-level handoff. Verified before choosing approach 4: no repo under `~/workspace/tieubao`
+   top-level handoff. Verified before choosing approach 4: no repo under the operator workspace root
    keeps a live (unconsumed) handoff in a subdirectory of either scan root, so "any subdir
    means consumed" costs nothing today and is immune to every future naming choice.
 4. **One-level scan: `find "$d" -maxdepth 1 -type f -name '*.md'`.** Chosen. No exclusion list
@@ -208,7 +208,7 @@ then reverted back to confirm GREEN:
   one-level (`-maxdepth 1`) scan. A denylist breaks the next time a repo archives into a new
   folder name; a subdirectory convention needs no list, and structurally also carries forward
   DEC-A's ancestor-path fix (a one-level scan never tests a substring of the full path either).
-  Verified before this change: no repo under `~/workspace/tieubao` keeps a live handoff in a
+  Verified before this change: no repo under the operator workspace root keeps a live handoff in a
   subdirectory of either scan root. Consequence: a handoff is one top-level `.md` file; a
   multi-file bundle needs a top-level index `.md`, since a subdirectory counts as consumed
   regardless of its contents (Contract item 6). The `handoff` skill that writes bundles is
