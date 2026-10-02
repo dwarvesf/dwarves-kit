@@ -3,7 +3,7 @@ Generated: 2026-10-02
 Status: DRAFT
 Lane: full (kit machinery: `lib/wrap/`, the `wrap` command contract)
 Type: spec-feature
-Depth: standard (the stop's reason is stated in the doc already; the one new verb flag reuses the existing `PULL_ONLY` gate shape)
+Depth: blind-spot (failure: the model skips the dry-run protocol and a CONFLICTING re-merge writes the main working tree, or names a draft with --pr and merges it unreviewed)
 File: `docs/specs/SPEC-383-wrap-step0-scope.md`
 References: `docs/specs/SPEC-310-wrap-follow-through.md` (its Design record narrowed step 0 once, for isolated-worktree builds; this spec narrows it a second time); `docs/specs/SPEC-359-wrap-pull-only.md` (the `PULL_ONLY` gate this flag mirrors); `commands/wrap.md` (step 0, 3, 5, 7b, 10); `lib/wrap/wrap-apply.sh` (`_apply_repo`, `cmd_apply`); `lib/wrap/wrap-common.sh` (apply globals); `lib/wrap/wrap-merge.sh` (`_union_remerge`, `_branch_worktree`); `lib/wrap/wrap-land.sh` (`_land_tidy`); `lib/wrap/wrap.sh` (header usage); `bin/wrap`; `docs/consumer-contract.md`; `tests/test-wrap-apply.sh`; `tests/test-wrap-deploy.sh`
 
@@ -53,21 +53,22 @@ Design-bearing: yes (a narrower safety rule in a command contract, plus one verb
 
 **What keeps running under a stop:**
 
-- Step 3 still merges with `wrap merge --apply`: server-side, verified by fetch. Under a stop the lead names each PR with `--pr <n>` and never runs a bare `--apply`, because a bare `--apply` with no eligible PR re-merges the one conflicting PR on its own. Before the first `--apply`, a dry run of `bin/wrap merge <repo>` prints `note: #<n> conflicts; --apply would try one re-merge of <def> into <head>`. When `<head>` is the branch the main checkout has checked out (`git -C <repo> branch --show-current`), that re-merge would write the main working tree, so that PR is skipped and stays `OPEN`. A clean PR whose head the main checkout holds still merges: the merge is server-side.
+- Step 3 still merges with `wrap merge --apply`: server-side, verified by fetch. Under a stop the lead runs the dry run `bin/wrap merge <repo>` first and applies per PR with `--apply --pr <n>`, never a bare `--apply`. `--pr <n>` names only a PR the dry run prints as `eligible #<n>`. It never names a draft (`--pr` on a draft runs `gh pr ready` and merges it, which would land a full-lane draft with no design review), and it never names a PR the dry run lists as `SKIP ... (CONFLICTING)` without the check below.
+- The re-merge check. `--pr <n>` does not prevent a re-merge: on a CONFLICTING PR it takes the same re-merge path as a bare `--apply`, and `_union_remerge` runs in the main checkout when the main checkout holds the head branch. So before naming a CONFLICTING PR the lead reads its head (`gh pr view <n> --json headRefName`) and compares it with `git -C <repo> branch --show-current`. A match: skip it, it stays `OPEN`. No match: `bin/wrap merge --pr <n> <repo>` as a dry run, then `--apply --pr <n>`. A clean PR whose head the main checkout holds still merges: the merge is server-side. The guard is the lead never naming that PR, not a verb gate.
 - A branch in a hand-made worktree normally lands through `bin/wrap land`. Under a stop `land` does not run. The worktree and branch go under `Left alone`, with `bin/wrap land <wt>` as the retry once the writer clears.
-- Step 5 tidy runs as `bin/wrap apply --apply --own <wt>... --no-pull <repo>`, dry run first. It removes the session's own worktrees and branches, runs the origin merged-branch sweep, and carries stray lines through a scratch worktree. With no session worktree to name, `--own` has nothing to take, so the tidy is skipped under a stop and `Left alone` says so.
+- Step 5 first removes the session's own `EnterWorktree` worktree (`ExitWorktree remove`, then `git branch -D`): it writes no main-checkout state, so it runs under a stop. Then the tidy runs as `bin/wrap apply --apply --own <wt>... --no-pull <repo>`, dry run first. It removes the other own worktrees and branches, runs the origin merged-branch sweep, and carries stray lines through a scratch worktree. `<wt>` may be the path the first step already removed: `apply` prints `SKIP <path>: not a registered worktree`, skips the all-branches sweep as `--own` always does, and still runs the origin sweep and the carry. The tidy is skipped only when the session never had a worktree at all, and `Left alone` says so.
 - Step 7b and step 10 builds are unchanged from SPEC-310, except step 10's landing: its step 3 no longer stops at `OPEN` and its step 5 passes `--no-pull` when stopped.
 
 **Limits the doc names, not hides.**
 
 - A held `index.lock` (the second signal) still makes `apply` skip every removal: `_write_guard` guards each worktree removal and branch delete on that lock. So the tidy runs past the reflog signal only; under a persisting lock it prints `SKIP ...: index.lock held by another writer` and removes nothing. That fails safe.
-- The stray-line carry stays on under a stop. It reads the shared checkout's dirty `merge=union` lines, which may include another live session's, and pushes them to a `wrap/stray-*` branch. That is what the carry already does on every unstopped wrap. The push is recoverable (a branch, not a merge), the kanban dedupe handles a duplicate id, and `wrap.autoland_carry` ships `false`. The doc keeps the line "Do not touch a dirty file this session did not write": the carry never writes the working copy.
+- The stray-line carry stays on under a stop, without autoland. It reads the shared checkout's dirty `merge=union` lines, which may include another live session's, and pushes them to a `wrap/stray-*` branch. The operator's own overlay sets `wrap.autoland_carry = true`, which would open and merge a PR for those lines with no human gate. So `--no-pull` suppresses the autoland leg: the branch is pushed and the `gh pr create --head <branch>` line prints, as with the knob off, and the carry's own `NO_PULL` line says why. The push is recoverable (a branch, not a merge), and the kanban dedupe handles a duplicate id. The doc keeps the line "Do not touch a dirty file this session did not write": the carry never writes the working copy.
 - The re-merge exception (a CONFLICTING PR whose head branch the main checkout holds) is a doc protocol, not a verb gate. `wrap merge` has no stop input. This is accepted residue; a verb-level refusal is a separate change.
-- A skipped pull appears in the step 9 report as a `Left alone` row reading `PULL BLOCKED`, with the reason `step 0 stop`. `apply --no-pull` itself prints `SKIP pull: --no-pull`; the model derives the row from that line.
+- A skipped pull appears in the step 9 report as a `Left alone` row reading `PULL BLOCKED`, with the reason `step 0 stop`. `Left alone` is still derived from step 5's closing `bin/wrap scan` (its `behind=` count shows the checkout stayed behind); the `SKIP pull: --no-pull` line from `apply` supplies the reason, so the two agree.
 
 **The verb.** `apply --no-pull` skips two sections and prints exactly one line for each, whatever the fetch result or checked-out branch: under the `-- stray commits:` header `SKIP stray commits: --no-pull`, and under the `-- pull:` header `SKIP pull: --no-pull`. The pull section includes the off-default `fetch origin <default>:<default>`, so a checkout on a feature branch skips it too. The worktree and branch tidy, the origin sweep, and the stray-line carry run as without the flag. `--no-pull` refuses `--pull-only` (exit 64, naming `--no-pull`), the same way `--pull-only` refuses its conflicting flags, before any fetch or write. The entry `fetch --prune` still runs: it writes remote-tracking refs only, the same stated exception SPEC-310 recorded for `wrap start`.
 
-**Re-checks.** The step 0 check still runs before steps 3, 5, and 6. A repo that goes foreign between checks drops out only of the stopped writes.
+**Re-checks.** The step 0 check still runs before steps 3, 5, and 6. A repo that goes foreign between checks drops out only of the stopped writes. Step 10's landing keeps its `wrap.merge_own_prs` false stop at `OPEN`; only the foreign-activity stop no longer ends it, and its step 5 passes `--no-pull` under a stop.
 
 **Refinement of SPEC-310.** SPEC-310 kept the merge (step 3) and the tidy and pull (step 5) in the stop list and left a build's PR `OPEN`. Its reason, "its merge is a step 3 write", is wrong for `merge`: it writes no checkout state. This spec removes that line and the stop for `merge` and the own-worktree tidy, and keeps `land` and the pull stopped.
 
@@ -101,7 +102,7 @@ One flag, one global (`NO_PULL`), two gated sections, one doc rewrite. No daemon
 
 ## After state
 
-On a shared checkout where other sessions write the reflog, `/kit:wrap` still merges the session's green own PRs through `wrap merge` and removes the session's own merged worktrees and branches. It reports the pull it skipped as `PULL BLOCKED` under `Left alone`. A hand-made worktree waits for `bin/wrap land`, and a PR stays `OPEN` only when its re-merge would write the main checkout.
+On a shared checkout where other sessions write the reflog, `/kit:wrap` still merges the session's green own PRs through `wrap merge` and removes the session's own merged worktrees and branches. It reports the pull it skipped as `PULL BLOCKED` under `Left alone`. A hand-made worktree waits for `bin/wrap land`, and a PR stays `OPEN` only when its re-merge would write the main checkout or it is a draft. The stray-line carry pushes its branch and never merges it during a stop.
 
 ## Task Breakdown
 
@@ -120,9 +121,10 @@ On a shared checkout where other sessions write the reflog, `/kit:wrap` still me
 - AC4: `apply --no-pull --pull-only` exits 64 in either flag order and the stderr names `--no-pull`; nothing is written.
 - AC5: on a checkout on a feature branch, `apply --apply --no-pull` does not move the local default ref (the off-default `fetch origin <default>:<default>` is skipped) and prints `SKIP pull: --no-pull`; without the flag the same call moves it.
 - AC6: `apply --apply` without `--no-pull` still pulls (existing cases stay green).
-- AC7: `commands/wrap.md` step 0 keeps the literal `STOP every write to that repo's MAIN CHECKOUT`, lists the stopped writes (board flip, commit, `land`, pull with stash and pop, stray-commits move, activity line, seam write), says step 3 still merges with `--pr <n>` after a dry run and skips a CONFLICTING PR whose head the main checkout holds, says `land` does not run under a stop, says step 5 runs `bin/wrap apply --apply --own <wt>... --no-pull <repo>` (dry run first), names the index.lock limit and the stray-line carry decision, and no longer says a build's PR "stays `OPEN`, because its merge is a step 3 write".
-- AC8: the dependent sentences agree: the re-check bullet, step 3's opening, step 5's opening, the `--pull-only` bullet (its refused-flag list names `--no-pull` for the reverse), step 10 landing steps 3 and 5; `commands/wrap.md` carries no text that says a stop covers `wrap merge` or the own-worktree tidy.
-- AC9: `tests/test-wrap-apply.sh`, `tests/test-wrap-deploy.sh`, `tests/test-wrap-pull.sh`, `tests/test-wrap-cli.sh` pass, and `bin/wrap --help` still prints its last header line.
+- AC7: `commands/wrap.md` step 0 keeps the literal `STOP every write to that repo's MAIN CHECKOUT`, lists the stopped writes (board flip, commit, `land`, pull with stash and pop, stray-commits move, activity line, seam write), says step 3 still merges with `--apply --pr <n>` only for a PR the dry run prints as `eligible #<n>`, never a draft, and skips a CONFLICTING PR whose head the main checkout holds (the check by `gh pr view` and `branch --show-current`), says `land` does not run under a stop, says step 5 runs `bin/wrap apply --apply --own <wt>... --no-pull <repo>` (dry run first), names the index.lock limit, the carry running without autoland, the `EnterWorktree` removal running under a stop, and the `Left alone` derivation from the closing scan, and no longer says a build's PR "stays `OPEN`, because its merge is a step 3 write".
+- AC8: the dependent sentences agree: the re-check bullet, step 3's opening, step 5's opening, the `--pull-only` bullet (its refused-flag list names `--no-pull` for the reverse), step 10 landing steps 3 and 5 (the `merge_own_prs` false stop kept); `commands/wrap.md` carries no text that says a stop covers `wrap merge` or the own-worktree tidy.
+- AC9: with `wrap.autoland_carry` true and a dirty `merge=union` file, `apply --apply --no-pull --own <wt>` pushes the `wrap/stray-*` branch, prints the `gh pr create --head` line, opens and merges no PR, and leaves HEAD, the index and the working-tree bytes of the dirty file unchanged; without `--no-pull` the autoland path is unchanged.
+- AC10: `tests/test-wrap-apply.sh`, `tests/test-wrap-deploy.sh`, `tests/test-wrap-pull.sh`, `tests/test-wrap-cli.sh` pass, and `bin/wrap --help` still prints its last header line.
 
 ## Test plan
 
@@ -133,10 +135,11 @@ On a shared checkout where other sessions write the reflog, `/kit:wrap` still me
 | own merged worktree, `apply --apply --own <wt> --no-pull` on a behind checkout: worktree dir and branch gone, HEAD unchanged | AC3 | unit (real git) |
 | `apply --no-pull --pull-only` and `--pull-only --no-pull`: exit 64, stderr names `--no-pull` | AC4 | unit |
 | feature-branch checkout with origin default advanced: `--no-pull` leaves the local default ref; plain apply moves it | AC5 | unit (real git) |
+| dirty union file, `wrap.autoland_carry=true`: `--no-pull --own` pushes the carry branch and merges nothing; dirty file bytes and HEAD unchanged | AC9 | unit (real git) |
 | existing pull and `--own` cases | AC6 | regression |
 | doc literals: kept stop literal, stopped-write list, `land` stopped, `--pr <n>` and the re-merge skip, step 5 command, absence of the old sentence; step 10 landing literals | AC7, AC8 | doc contract |
-| `bin/wrap --help` last header line present | AC9 | unit |
-| negative controls NC1 to NC3 below | AC1, AC2, AC4 | negative control |
+| `bin/wrap --help` last header line present | AC10 | unit |
+| negative controls NC1 to NC4 below | AC1, AC2, AC4, AC9 | negative control |
 
 ## Verification
 
@@ -153,6 +156,8 @@ Negative controls, each after the change is committed, `T="bash tests/test-wrap-
 - NC2 the stray-commits move still runs under `--no-pull`: mutate the stray-commits gate. The AC2 case goes red.
 - NC3 the `--pull-only` conflict is dropped: delete the refusal. The AC4 case goes red.
 
+- NC4 autoland still runs under `--no-pull`: mutate the carry's autoland guard. The AC9 case goes red.
+
 Each runs through `bash lib/gate/negctl.sh "$PWD" "$T" "<sed mutation>"`. The exact `sed` lines are fixed in the proof file against the committed code, and each carries an exact-once match guard.
 
 Proof of done: `docs/verification/wrap-step0-scope.md`. The command prose (the stop, the dry-run protocol, the `land` hold) is model-executed; the proof names it unproven until a real `/kit:wrap` run meets a foreign signal.
@@ -164,6 +169,8 @@ Proof of done: `docs/verification/wrap-step0-scope.md`. The command prose (the s
 - **`land` writes the main checkout** (read, `lib/wrap/wrap-land.sh` `_land_tidy` calls `_land_ff_pull`, which runs `git pull --ff-only` and carries union files). `lib/wrap` has no reflog check; only `_write_guard` reads `index.lock`.
 - **Re-merge location** (read, `lib/wrap/wrap-merge.sh`): `_union_remerge` calls `_branch_worktree`, which returns the main checkout when it holds the head branch. The dry run prints `note: #<n> conflicts; --apply would try one re-merge of <def> into <head>`.
 - **Dry trace of NC1:** mutation = make the pull gate never fire. The AC1 test runs `apply --apply --no-pull` on a clone behind origin, then asserts HEAD equals the pre-run sha. With the mutation the pull fast-forwards, HEAD moves, and the assertion fails.
+- **Dry trace of NC3:** mutation = delete the `--no-pull` and `--pull-only` conflict refusal. The AC4 case runs both flag orders and asserts exit 64 plus the flag name on stderr. With the refusal gone the call exits 0 and the assertion fails.
+- **Dry trace of NC4:** mutation = drop the `NO_PULL` guard on the autoland leg. The AC9 case sets `autoland_carry=true` through the root config, builds a dirty union file, runs `apply --apply --no-pull --own`, and asserts the stub `gh` saw no `pr merge`. With the mutation the carry autolands and the stub records one.
 - **Dry trace of NC2:** mutation = make the stray-commits gate never fire. The AC2 test builds a default branch ahead of origin, runs `apply --apply --no-pull`, and asserts no `wrap/stray-commits-*` branch exists. With the mutation the carry creates one and the assertion fails.
 
 ## Failure modes
@@ -178,14 +185,15 @@ Proof of done: `docs/verification/wrap-step0-scope.md`. The command prose (the s
 | the stop signal is a held `index.lock` | `apply` skips every removal | fails safe; the doc names the limit, the next wrap tidies |
 | `apply --no-pull` without `--own` on a shared repo | the all-branches sweep deletes other sessions' proven-merged local branches | the doc pairs `--no-pull` with `--own` under a stop; with no own worktree the tidy is skipped; each delete keeps its merge proof |
 | two stopped wraps race the origin sweep or the carry | one gets `FAILED delete` or a skipped carry branch | each push is leased; the loser reports `FAILED`, exit 2, nothing is lost |
-| the carry ships another live session's dirty union lines | a duplicate row on a branch | recoverable branch, dedupe by id, `autoland_carry` off by default |
+| the carry ships another live session's dirty union lines | a duplicate row on a pushed branch | recoverable branch, dedupe by id; `--no-pull` suppresses autoland so nothing merges |
+| `--pr <n>` names a draft | `gh pr ready` plus a merge of a full-lane draft | the doc limits `--pr` to `eligible #<n>` lines; drafts stay with the operator |
 
 ## Edge Cases
 
 - Default branch not resolved: `apply` skips the repo as before; `--no-pull` changes nothing there.
 - Checkout on a feature branch: the `--no-pull` pull line prints and the `fetch origin <default>:<default>` is skipped with it.
 - Fetch failed: with `--no-pull` the stray-commits section prints only `SKIP stray commits: --no-pull`, replacing the fetch-failed line; stray lines keep their fetch-failed line.
-- No `--own` worktree to name: under a stop the tidy is skipped, not widened.
+- The session's own worktree is already removed by step 5's first action: pass its path as `--own`; `apply` reports it as not registered and still runs the origin sweep and the carry. The tidy is skipped only when the session never had a worktree.
 
 ## Out of Scope
 
@@ -202,7 +210,8 @@ Proof of done: `docs/verification/wrap-step0-scope.md`. The command prose (the s
 - The fetch stays: remote-tracking refs only, the same exception SPEC-310 stated for `wrap start`.
 - The re-merge exception is a doc protocol (dry run, `--pr <n>`, skip) because the verb has no stop input; a mechanical gate is a separate change.
 - `land` stays stopped rather than getting a no-pull path: it writes the checkout by design, and a worktree can wait for the next wrap.
-- The stray-line carry stays on under a stop: it never writes the working copy, it is the operator-requested scope, and the push is recoverable.
+- The stray-line carry stays on under a stop but never autolands there: it never writes the working copy and the push is recoverable, and the operator's own overlay turns autoland on, so the verb suppresses it under `--no-pull`.
+- The depth rises to `blind-spot` because the command prose, the dry-run protocol, and the draft rule are model-executed and unprovable here; the proof file says so.
 - The `_usage` sed window widens by one line, the same fix SPEC-359 used.
 
 ## Open questions
@@ -230,3 +239,18 @@ Validate round 1 ran seven reviewers (R6 on Opus). Verdict NEEDS REVISION, 3 cri
 | squash fallback missing from the table (R6) | folded: row added |
 | a self-detecting verb dismissed thinly (R5) | folded: Approach 4 with the real reason |
 | concurrent-wrap race on origin sweep and carry (R2) | folded: failure row |
+
+Validate round 2 ran seven reviewers (R6 on Opus). Verdict NEEDS REVISION, 3 critical, R6 design-bearing pass. This is the full-lane re-validation; the criticals are folded and the round-ceiling rule leaves the decision to the operator.
+
+| Finding | Disposition |
+|---|---|
+| carry autolands a foreign session's lines under a stop, `autoland_carry` is true in the operator overlay (R3, R4, R5) | folded: `--no-pull` suppresses the autoland leg; AC9, NC4, test case |
+| `--pr <n>` readies and merges a draft (R6) | folded: `--pr` only for `eligible #<n>`, never a draft; failure row |
+| `standard` depth with an unprovable failure mode (R4) | folded: `Depth: blind-spot (failure: ...)` |
+| dry-run note rarely prints; `--pr` is not the re-merge guard (R1, R2, R3, R6) | folded: the lead compares the PR head with `branch --show-current` before naming it; per-PR dry run |
+| the `EnterWorktree` removal and the "tidy skipped" rule (R2, R3, R4, R5, R6) | folded: it runs under a stop; `--own` may name the removed path |
+| `PULL BLOCKED` derivation conflicts with `Left alone` from the closing scan (R3, R4, R5) | folded: scan supplies the state, the SKIP line the reason |
+| step 10 `merge_own_prs` false stop (R5) | folded: Design names it kept |
+| index.lock prose overstated (R1) | noted: the build words it as local removals |
+| NC3 dry trace, the carry invariant case, AC7 granularity (R4, R5) | folded: NC3 trace, AC9; AC7 literals split by the builder into separate assertions |
+| verb-level gate for the main-checkout re-merge (R2) | noted: accepted residue, out of scope |
