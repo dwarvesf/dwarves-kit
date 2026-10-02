@@ -447,8 +447,18 @@ _apply_repo() {
   # --pull-only runs the fetch + pull stage alone: no worktree, branch, archive, origin-branch,
   # stray-line, or stray-commit write.
   if [ "$PULL_ONLY" != 1 ]; then
-    _apply_worktrees "$repo" "$def" "$cur" "$fetch_ok" "$ghs"
-    if [ -n "$OWN_SET" ]; then
+    if [ "$NO_PULL" = 1 ] && [ -z "$OWN_SET" ]; then
+      # A step 0 stop tidies the session's own worktrees only: an unscoped sweep would
+      # delete other live sessions' merged worktrees and branches.
+      echo "-- worktrees:"
+      echo "     SKIP worktree sweep: --no-pull needs --own (the session's own worktrees only)"
+    else
+      _apply_worktrees "$repo" "$def" "$cur" "$fetch_ok" "$ghs"
+    fi
+    if [ "$NO_PULL" = 1 ] && [ -z "$OWN_SET" ]; then
+      echo "-- branches:"
+      echo "     SKIP branch sweep: --no-pull needs --own (the all-branches sweep reaches other sessions' branches)"
+    elif [ -n "$OWN_SET" ]; then
       # The named worktrees' branches were deleted by the worktree step itself; the
       # all-branches sweep would reach past the session's scope into other sessions'.
       echo "-- branches:"

@@ -253,6 +253,24 @@ chk "no-pull ahead: no stray-commits branch reached origin" \
   "$([ -z "$(git -C "$NPAB" for-each-ref --format='%(refname:short)' 'refs/heads/wrap/stray-commits-*')" ]; echo $?)"
 chk "no-pull ahead: the default branch did not move" "$([ "$(git -C "$NPA" rev-parse HEAD)" = "$NPA_HEAD" ]; echo $?)"
 
+echo "--- no-pull without --own: the local sweeps are skipped, nothing outside the session is a candidate"
+make_clone npb rnp main main
+set_stub rnp main
+NPB="$TMPD/clone-npb"
+out="$("$WRAP" apply --apply --worktrees --no-pull "$NPB" 2>&1)"; rc=$?
+chk "no-pull, no --own: apply exits 0" "$rc"
+chk_has "no-pull, no --own: the worktree sweep is skipped by name" "$out" \
+  "SKIP worktree sweep: --no-pull needs --own"
+chk_has "no-pull, no --own: the branch sweep is skipped by name" "$out" \
+  "SKIP branch sweep: --no-pull needs --own"
+chk "no-pull, no --own: a proven-merged local branch survives" \
+  "$(git -C "$NPB" show-ref --verify --quiet refs/heads/merged-ancestor; echo $?)"
+chk "no-pull, no --own: a proven-merged worktree survives, even under --worktrees" "$([ -d "$TMPD/wt-npb-clean" ]; echo $?)"
+chk_has "no-pull, no --own: the pull is still skipped" "$out" "SKIP pull: --no-pull"
+out="$("$WRAP" apply --apply "$NPB" 2>&1)"
+chk "control, without --no-pull: the same branch is swept" \
+  "$(git -C "$NPB" show-ref --verify --quiet refs/heads/merged-ancestor && echo 1 || echo 0)"
+
 # ===========================================================================
 echo "=== apply --worktrees: a lock naming a live pid is skipped, a dead pid is removed ==="
 # ===========================================================================
@@ -531,6 +549,18 @@ chk "origin --own exits 0" "$rc"
 chk_has "origin --own still reports the count" "$out" "deleted 3 of 3 merged branches on origin"
 chk "origin --own deleted gone" "$(os_has own gone && echo 1 || echo 0)"
 chk "origin --own kept moved" "$(os_has own moved; echo $?)"
+echo "--- no-pull --own: the origin sweep still runs (it touches no local state)"
+build_os_repo npo
+out="$(os_run apply --apply --no-pull --own "$TMPD/no-such-wt" "$TMPD/osclone-npo")"; rc=$?
+chk "origin --no-pull --own exits 0" "$rc"
+chk_has "origin --no-pull --own still reports the count" "$out" "deleted 3 of 3 merged branches on origin"
+chk "origin --no-pull --own deleted gone" "$(os_has npo gone && echo 1 || echo 0)"
+chk "origin --no-pull --own kept moved" "$(os_has npo moved; echo $?)"
+chk_has "origin --no-pull --own skips the pull by name" "$out" "SKIP pull: --no-pull"
+build_os_repo npn
+out="$(os_run apply --apply --no-pull "$TMPD/osclone-npn")"
+chk_has "origin --no-pull, no --own: the origin sweep still reports the count" "$out" "deleted 3 of 3 merged branches on origin"
+chk_has "origin --no-pull, no --own: the local branch sweep is skipped" "$out" "SKIP branch sweep: --no-pull needs --own"
 echo "--- a failed PR read skips the sweep and deletes nothing"
 build_os_repo nolist
 out="$(GH_STUB_MERGED_ALL_RC=1 os_run apply --apply "$TMPD/osclone-nolist")"; rc=$?

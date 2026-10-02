@@ -31,10 +31,7 @@ _stray_board_rows() {
 # _autoland_on -- 0 when the operator authorized `apply` to open and merge its own carry PRs.
 # Root-only for the same reason as the carry itself: it authorizes a write to origin/<def>.
 # wrap.merge_own_prs false wins: an operator who holds back their own PRs holds these too.
-# --no-pull is a step 0 stop: the checkout's dirty lines may be another live session's, so
-# the branch is pushed and its PR command printed, never merged.
 _autoland_on() {
-  [ "$NO_PULL" != 1 ] || return 1
   [ "$(kit_config_get_root wrap.autoland_carry false)" = "true" ] \
     && [ "$(kit_config_get_root wrap.merge_own_prs true)" = "true" ]
 }
@@ -256,10 +253,16 @@ _carry_stray() {
     n="$(grep -c '' "$add")"
     if [ "$n" -gt 0 ] 2>/dev/null; then
       found=1
-      _carry_stray_file "$repo" "$def" "$f" "$add" "$n"
+      if [ "$NO_PULL" = 1 ]; then
+        # A step 0 stop: these lines may be another live session's in-flight work, so
+        # nothing is pushed and no branch is made; the next unstopped wrap carries them.
+        echo "     SKIP stray lines: --no-pull (${n} lines in ${f} stay local)"
+      else
+        _carry_stray_file "$repo" "$def" "$f" "$add" "$n"
+      fi
     fi
     rm -f "$add"
-  done < <(git -C "$repo" diff HEAD --name-only -z 2>/dev/null)
+  done < <(git -C "$repo" diff-index --name-only -z HEAD 2>/dev/null)
   [ "$found" = 1 ] || echo "     none"
 }
 
