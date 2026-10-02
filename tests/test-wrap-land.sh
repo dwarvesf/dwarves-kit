@@ -18,6 +18,10 @@ if [ -z "${LAND_SECTION:-}" ]; then
 fi
 source "$KIT_DIR/tests/lib/wrap-stub.sh"
 
+# A fixture commit can spawn a detached `git maintenance`, which creates and removes
+# objects/maintenance.lock while land_cached's `cp -R` copies the template (a flake under load).
+export GIT_CONFIG_COUNT=2 GIT_CONFIG_KEY_0=maintenance.auto GIT_CONFIG_VALUE_0=false GIT_CONFIG_KEY_1=gc.auto GIT_CONFIG_VALUE_1=0
+
 # Helpers more than one section uses. Everything else a section needs is defined inside it.
 open_pr_json() { # open_pr_json <number> <base> <author> [isDraft] [isCrossRepo]
   printf '[{"number":%s,"baseRefName":"%s","author":{"login":"%s"},"isDraft":%s,"isCrossRepository":%s}]' \
