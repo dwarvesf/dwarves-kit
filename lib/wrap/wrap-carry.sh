@@ -253,10 +253,16 @@ _carry_stray() {
     n="$(grep -c '' "$add")"
     if [ "$n" -gt 0 ] 2>/dev/null; then
       found=1
-      _carry_stray_file "$repo" "$def" "$f" "$add" "$n"
+      if [ "$NO_PULL" = 1 ]; then
+        # A step 0 stop: these lines may be another live session's in-flight work, so
+        # nothing is pushed and no branch is made; the next unstopped wrap carries them.
+        echo "     SKIP stray lines: --no-pull (${n} lines in ${f} stay local)"
+      else
+        _carry_stray_file "$repo" "$def" "$f" "$add" "$n"
+      fi
     fi
     rm -f "$add"
-  done < <(git -C "$repo" diff HEAD --name-only -z 2>/dev/null)
+  done < <(git -C "$repo" diff-index --name-only -z HEAD 2>/dev/null)
   [ "$found" = 1 ] || echo "     none"
 }
 

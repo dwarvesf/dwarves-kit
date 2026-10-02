@@ -119,6 +119,17 @@ _branch_worktree() {
   return 1
 }
 
+# _main_holds_branch <repo> <branch> -- 0 when the MAIN checkout (not another worktree) has
+# <branch> checked out. Under --no-pull such a PR is some live session's branch, and a
+# re-merge of it would write the main checkout's HEAD and working tree.
+_main_holds_branch() {
+  local repo="$1" branch="$2" held main
+  held="$(_branch_worktree "$repo" "$branch")" || return 1
+  main="$(git -C "$repo" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)"
+  main="${main%/.git}"; main="${main%/}"
+  [ "$(cd "$held" 2>/dev/null && pwd -P)" = "$(cd "$main" 2>/dev/null && pwd -P)" ]
+}
+
 # _union_remerge <repo> <branch> <def> <head-oid> -- the one bounded recovery from a conflict
 # GitHub invented. A squash merge resolves on GitHub's side, which never reads .gitattributes,
 # so two branches that both appended to a merge=union log conflict on the PR while a local
@@ -367,10 +378,11 @@ _squash_fallback() {
 }
 
 cmd_merge() {
-  local do_apply=0 repo="" count=0 pr_only="" verify=""
+  local do_apply=0 repo="" count=0 pr_only="" verify="" pr_head=""
   while [ $# -gt 0 ]; do
     case "$1" in
       --apply) do_apply=1; shift ;;
+      --no-pull) NO_PULL=1; shift ;;
       --pr) pr_only="${2:-}"; shift 2 ;;
       --with-ci) KIT_WRAP_CI_ON_MERGE=1; shift ;;
       --verify) [ $# -ge 2 ] || { echo "wrap.sh merge: --verify needs a value" >&2; return 64; }
@@ -381,7 +393,7 @@ cmd_merge() {
          count=$(( count + 1 )); repo="$1"; shift ;;
     esac
   done
-  [ "$count" -eq 1 ] || { echo "usage: wrap.sh merge [--apply] [--pr N] [--with-ci] [--verify <cmd>] <repo>" >&2; return 64; }
+  [ "$count" -eq 1 ] || { echo "usage: wrap.sh merge [--apply] [--no-pull] [--pr N] [--with-ci] [--verify <cmd>] <repo>" >&2; return 64; }
   case "$pr_only" in
     '') ;;
     *[!0-9]*) echo "wrap.sh merge: --pr wants a PR number" >&2; return 64 ;;
@@ -412,6 +424,13 @@ cmd_merge() {
       return 1
     fi
     numbers="$pr_only"
+    if [ "$NO_PULL" = 1 ]; then
+      pr_head="$(printf '%s' "$(_pr_detail "$url" "$pr_only")" | jq -r '.headRefName // ""' 2>/dev/null)"
+      if [ -n "$pr_head" ] && _main_holds_branch "$repo" "$pr_head"; then
+        echo "SKIP #${pr_only}: head ${pr_head} is checked out in the main checkout (--no-pull)"
+        return 0
+      fi
+    fi
     if [ "$(printf '%s' "$(_pr_detail "$url" "$pr_only")" | jq -r '.isDraft // false' 2>/dev/null)" = "true" ]; then
       if [ "$do_apply" != 1 ]; then
         echo "note: #${pr_only} is a draft; --apply would run \`gh pr ready\` before merging"
@@ -449,6 +468,10 @@ cmd_merge() {
     fi
     title="$(printf '%s' "$detail" | jq -r '.title // ""' 2>/dev/null)"
     head="$(printf '%s' "$detail" | jq -r '.headRefName // ""' 2>/dev/null)"
+    if [ "$NO_PULL" = 1 ] && [ -n "$head" ] && _main_holds_branch "$repo" "$head"; then
+      echo "SKIP #${n}: head ${head} is checked out in the main checkout (--no-pull)"
+      continue
+    fi
     if [ "$verdict" = "OK" ] && awk -F'\t' -v h="$head" -v n="$n" '$3 == h && $1 != n { found = 1 } END { exit !found }' "$cache"; then
       verdict="SKIP dependents open, retarget them first"
     fi

@@ -291,6 +291,31 @@ chk_no "autoland adopt: nothing failed" "$out" "FAILED"
 out="$(al_run "$ALB" "$ALC" --apply)"
 chk_has "autoland rerun: no stray lines left" "$(printf '%s' "$out" | grep -A1 -- '-- stray lines:')" "none"
 
+echo "--- --no-pull (a step 0 stop): the stray-line carry pushes nothing, even with autoland on"
+build_union_repo alnp
+ALN="$TMPD/uclone-alnp"; ALNB="$TMPD/ubare-alnp"
+printf '%s' "$LAB_STRAY" > "$ALN/_meta/LAB_LOG.md"
+# A tracked file with an old mtime and unchanged content: `git diff HEAD` refreshes the index
+# entry (a write), `git diff-index` does not, so the index checksum below tells them apart.
+touch -t 202001010000 "$ALN/README.md"
+ALN_INDEX="$(cksum < "$ALN/.git/index")"; ALN_HEAD="$(git -C "$ALN" rev-parse HEAD)"; ALN_BYTES="$(cksum < "$ALN/_meta/LAB_LOG.md")"
+out="$(al_run "$ALNB" "$ALN" --apply --no-pull)"; rc=$?
+chk "stray --no-pull: apply exits 0" "$rc"
+chk_has "stray --no-pull: the skip names the count and the file" "$out" \
+  "SKIP stray lines: --no-pull (2 lines in _meta/LAB_LOG.md stay local)"
+chk_no "stray --no-pull: nothing is reported as carried" "$out" "carried 2 stray lines"
+chk "stray --no-pull: no wrap/stray-* branch reached origin" \
+  "$([ -z "$(git -C "$ALNB" for-each-ref --format='%(refname:short)' 'refs/heads/wrap/stray-*')" ]; echo $?)"
+chk_no "stray --no-pull: no PR was opened" "$(cat "$GH_STUB_CALLS")" "pr create"
+chk_no "stray --no-pull: no PR was merged" "$(cat "$GH_STUB_CALLS")" "pr merge"
+chk "stray --no-pull: HEAD and the dirty file are untouched" \
+  "$([ "$(git -C "$ALN" rev-parse HEAD)" = "$ALN_HEAD" ] && [ "$(cksum < "$ALN/_meta/LAB_LOG.md")" = "$ALN_BYTES" ]; echo $?)"
+out="$(al_run "$ALNB" "$ALN" --no-pull)"
+chk_has "stray --no-pull dry run: the same skip line" "$out" "SKIP stray lines: --no-pull (2 lines in _meta/LAB_LOG.md stay local)"
+chk_no "stray --no-pull dry run: no WOULD carry line" "$out" "WOULD carry"
+chk "stray --no-pull: the index file is not rewritten by the scan" \
+  "$([ "$(cksum < "$ALN/.git/index")" = "$ALN_INDEX" ]; echo $?)"
+
 echo "--- autoland: a gate refusal leaves the PR open, exit 0"
 build_union_repo algate
 ALG="$TMPD/uclone-algate"; ALGB="$TMPD/ubare-algate"
