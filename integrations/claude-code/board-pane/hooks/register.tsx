@@ -1,13 +1,38 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register, Timer } from 'claude-code'
 
-import type { BoardMode, BoardRow, BoardState, BoardSummary } from '../types'
-import { clockText, countPrs, countTasks, countWorktrees, errorRows, parseRepoRows, parseRows, promptFor, stripAnsi } from './parse'
+import type { BoardRepo, BoardState, BoardSummary } from '../types'
+import {
+  QUEUED_SHOWN,
+  WIDE_COLUMNS,
+  buildOverview,
+  clockText,
+  countPrs,
+  countTasks,
+  countWorktrees,
+  expandHome,
+  filterItems,
+  fit,
+  inFlightItems,
+  isIdle,
+  itemLabel,
+  itemTone,
+  mergeRepos,
+  parseAllBoard,
+  parseRegistry,
+  parseRepoRows,
+  parseSingleBoard,
+  promptFor,
+  queuedItems,
+  repoLabel,
+  stripAnsi,
+  totals,
+} from './parse'
 
 const PANE = 'board'
 const REFRESH_MS = 60_000
 const PR_TTL_MS = 5 * 60_000
-const initial: BoardState = { rows: [], mode: 'repo', refreshedAt: '' }
+const initial: BoardState = { repos: [], filter: '', isExpanded: false, isFallback: false, errorLines: [], refreshedAt: '' }
 const state = atom({ plugin: 'board-pane', key: 'state' } as const, initial)
 const emptySummary: BoardSummary = {}
 const summary = atom({ plugin: 'board-pane', key: 'summary' } as const, emptySummary)
@@ -20,27 +45,41 @@ const resolveBoard = async ($: EngineInterface) => {
   return `${home ?? '~'}/.claude/dwarves-kit/bin/board`
 }
 
-// Argv forms are the ones documented in `bin/board --help`: `board` needs an explicit
-// --backlog-file, `all next` takes --repo-root and reads the consumer's boards.txt.
-const argvFor = (board: string, mode: BoardMode, cwd: string) =>
-  mode === 'all'
-    ? [board, 'all', 'next', '--repo-root', cwd]
-    : [board, 'board', '--backlog-file', `${cwd}/_meta/BACKLOG.md`]
+// `board` needs an explicit --backlog-file; this is the single-repo form `bin/board --help` documents.
+const singleArgv = (board: string, cwd: string) => [board, 'board', '--backlog-file', `${cwd}/_meta/BACKLOG.md`]
 
-const fit = (text: string, width: number) => (text.length <= width ? text : `${text.slice(0, width - 1)}…`)
+const lastSegment = (path: string) => path.split('/').filter(Boolean).pop() ?? 'repo'
 
-const refresh = async ($: EngineInterface, mode: BoardMode) => {
-  const cwd = await $.session.cwd()
+type Loaded = Pick<BoardState, 'repos' | 'isFallback' | 'errorLines'>
+
+// One call feeds both views: `all board` over the registry. Anything short of a clean answer
+// falls back to the session repo alone, so the pane is never empty for want of a registry.
+const loadRepos = async ($: EngineInterface, cwd: string): Promise<Loaded> => {
   const board = await resolveBoard($)
-  let rows: BoardRow[]
+  const home = await $.env.get('HOME')
+  const registryFile = expandHome((await $.env.get('BOARD_REGISTRY')) || `${cwd}/_meta/boards.txt`, home)
   try {
-    const run = await $.process.run(argvFor(board, mode, cwd), { env: { NO_COLOR: '1' } })
-    rows = run.exitCode === 0 ? parseRows(mode, run.stdout) : errorRows(run.stderr || `board exited ${run.exitCode}`)
-  } catch (err) {
-    rows = errorRows(`board could not start: ${String(err)}`)
+    const registry = parseRegistry(await $.fs.read(registryFile), home)
+    const run = await $.process.run([board, 'all', 'board', '--registry', registryFile, '--repo-root', cwd], { env: { NO_COLOR: '1' } })
+    const parsed = run.exitCode === 0 ? parseAllBoard(run.stdout) : []
+    if (parsed.length > 0) return { repos: mergeRepos(parsed, registry, cwd), isFallback: false, errorLines: [] }
+  } catch {
+    // no readable registry: fall through to the single-repo view
   }
+  try {
+    const run = await $.process.run(singleArgv(board, cwd), { env: { NO_COLOR: '1' } })
+    if (run.exitCode !== 0) return { repos: [], isFallback: true, errorLines: stripAnsi(run.stderr || `board exited ${run.exitCode}`).trimEnd().split('\n') }
+    const repo: BoardRepo = { ...parseSingleBoard(run.stdout, lastSegment(cwd)), isCurrent: true }
+    return { repos: [repo], isFallback: true, errorLines: [] }
+  } catch (err) {
+    return { repos: [], isFallback: true, errorLines: [`board could not start: ${String(err)}`] }
+  }
+}
+
+const refresh = async ($: EngineInterface) => {
+  const loaded = await loadRepos($, await $.session.cwd())
   const refreshedAt = clockText(await $.clock.now())
-  await update($, state, () => ({ rows, mode, refreshedAt }))
+  await update($, state, prev => ({ ...prev, ...loaded, refreshedAt }))
 }
 
 // One timer per module load. Each tick re-checks the pane, so a closed pane ends the timer.
@@ -54,20 +93,27 @@ const autoRefresh = ($: EngineInterface) => {
       timer = undefined
       return
     }
-    await refresh($, (await read($, state)).mode)
+    await refresh($)
   })
 }
 
-const openBoard = async ($: EngineInterface, mode: BoardMode) => {
-  await refresh($, mode)
-  await $.ui.open({ id: PANE, title: mode === 'all' ? 'Board: all repos' : 'Board' })
+type Target = { kind: 'overview' } | { kind: 'here' } | { kind: 'repo'; name: string }
+
+const openBoard = async ($: EngineInterface, target: Target) => {
+  await refresh($)
+  const { repos, isFallback } = await read($, state)
+  const named = target.kind === 'repo' ? repos.find(repo => repo.name === target.name) : undefined
+  const here = repos.find(repo => repo.isCurrent)
+  const repo = isFallback ? here : target.kind === 'here' ? here : named
+  await update($, state, prev => ({ ...prev, repo: repo?.name, filter: '', isExpanded: false }))
+  await $.ui.open({ id: PANE, title: 'Board' })
   autoRefresh($)
 }
 
 // Each source is independent: a failing one drops its own segment and nothing else.
 const taskCounts = async ($: EngineInterface, cwd: string) => {
   try {
-    const run = await $.process.run(argvFor(await resolveBoard($), 'repo', cwd), { env: { NO_COLOR: '1' } })
+    const run = await $.process.run(singleArgv(await resolveBoard($), cwd), { env: { NO_COLOR: '1' } })
     return run.exitCode === 0 ? countTasks(parseRepoRows(stripAnsi(run.stdout).trimEnd().split('\n'))) : undefined
   } catch {
     return undefined
@@ -114,7 +160,7 @@ const refreshSummary = async ($: EngineInterface) => {
 
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
-    await $.command.register({ name: 'board', description: 'Open the kit board in a pane (/board all for the cross-repo view)' })
+    await $.command.register({ name: 'board', description: 'Open the kit board in a pane (/board here or /board <repo> for one repo)' })
     await refreshSummary($)
     return next(e)
   })
@@ -125,50 +171,134 @@ export const register: Register = on => {
   })
 
   on('command.run', { command: 'board' }, async ($, e) => {
-    const mode: BoardMode = e.args.trim() === 'all' ? 'all' : 'repo'
-    await openBoard($, mode)
+    const arg = e.args.trim()
+    const target: Target =
+      arg === '' || arg === 'all' ? { kind: 'overview' } : arg === 'here' ? { kind: 'here' } : { kind: 'repo', name: arg }
+    await openBoard($, target)
     return { text: 'Board pane opened.' }
   })
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
-    const { Box, Text, Button } = $.ui.resolve(e)
-    const { rows, mode, refreshedAt } = await read($, state)
-    // Digit label and bullet take about 6 cells; the rest is the row.
+    const ui = $.ui.resolve(e)
+    const { Box, Text, Button } = ui
+    // Not every surface draws an Input; where it is missing the filter is skipped.
+    const Input = 'Input' in ui ? ui.Input : undefined
+    const board = await read($, state)
+    const { repos, filter, isExpanded, isFallback, errorLines, refreshedAt } = board
+    const isWide = e.props.bodyColumns >= WIDE_COLUMNS
+    // The hotkey label and a tone bullet take about 6 cells; the rest is the row.
     const room = Math.max(12, e.props.bodyColumns - 6)
-    let itemNo = 0
+    const open = repos.find(repo => repo.name === board.repo)
+    const back = () => update($, state, prev => ({ ...prev, repo: undefined, filter: '', isExpanded: false }))
+    const setFilter = (value: string) => update($, state, prev => ({ ...prev, filter: value }))
+
+    const controls = (
+      <Box flexDirection="row">
+        {open && !isFallback && <Button key="back" label="‹ back" hotkey="b" onPress={back} />}
+        <Button key="refresh" label="Refresh" hotkey="r" onPress={() => refresh($)} />
+        <Button key="close" label="Close" hotkey="q" role="dismiss" onPress={() => $.ui.close({ id: PANE })} />
+      </Box>
+    )
+    const filterInput = Input && (
+      <Input key="filter" placeholder="filter repos, IDs, titles" value={filter} onInput={setFilter} onSubmit={setFilter} />
+    )
+    const notes = (
+      <Box flexDirection="column">
+        {isFallback && <Text dimColor>no registry: set BOARD_REGISTRY for the cross-repo view</Text>}
+        {errorLines.map(line => (
+          <Text dimColor wrap="truncate-end">
+            {line}
+          </Text>
+        ))}
+      </Box>
+    )
+    const stamp = refreshedAt ? ` · ${refreshedAt}` : ''
+
+    if (open) {
+      const flying = filterItems(inFlightItems(open), filter)
+      const queued = filterItems(queuedItems(open), filter)
+      const shown = isExpanded ? queued : queued.slice(0, QUEUED_SHOWN)
+      let itemNo = 0
+      const row = (item: BoardRepo['items'][number]) => {
+        itemNo += 1
+        const tone = itemTone(item.state)
+        // Button has no color prop, so the state tone rides on a bullet beside it.
+        // A press fills the prompt instead of submitting: a stray key must never start a turn.
+        return (
+          <Box flexDirection="row">
+            {tone && <Text color={tone}>* </Text>}
+            <Button
+              key={`item-${itemNo}`}
+              plain
+              label={itemLabel(item, room, isWide)}
+              hotkey={itemNo <= 9 ? String(itemNo) : undefined}
+              onPress={() => $.prompt.fill({ text: promptFor(item, open) })}
+            />
+          </Box>
+        )
+      }
+      return (
+        <Box flexDirection="column">
+          {controls}
+          <Box key="repo-title" flexDirection="row">
+            <Text bold>{open.name}</Text>
+            {open.behind > 0 && <Text dimColor>{`   ↓${open.behind} behind upstream`}</Text>}
+          </Box>
+          {filterInput}
+          {notes}
+          {flying.length > 0 && <Text bold>{`IN FLIGHT ${flying.length}`}</Text>}
+          {flying.map(row)}
+          {queued.length > 0 && <Text bold>{`QUEUED ${queued.length}`}</Text>}
+          {shown.map(row)}
+          {!isExpanded && queued.length > shown.length && (
+            <Button
+              key="more"
+              plain
+              dimColor
+              label={`+ ${queued.length - shown.length} more`}
+              onPress={() => update($, state, prev => ({ ...prev, isExpanded: true }))}
+            />
+          )}
+          <Text dimColor>{`press an item to put it in the prompt · Esc back${stamp}`}</Text>
+        </Box>
+      )
+    }
+
+    const sum = totals(repos)
+    const overview = buildOverview(repos, filter)
+    const nameWidth = Math.min(16, Math.max(0, ...repos.map(repo => repo.name.length)))
+    let repoNo = 0
     return (
       <Box flexDirection="column">
-        {/* Controls first: a narrow pane must not scroll them out of reach. */}
-        <Box flexDirection="row">
-          <Button key="refresh" label="Refresh" hotkey="r" onPress={() => refresh($, mode)} />
-          <Button key="close" label="Close" hotkey="q" role="dismiss" onPress={() => $.ui.close({ id: PANE })} />
+        {controls}
+        <Box key="header" flexDirection="row">
+          <Text bold>{`Board · ${sum.repos} repos · ${sum.active} in flight · ${sum.queued} queued`}</Text>
         </Box>
-        <Text dimColor>{`press an item to put it in the prompt · Esc back${refreshedAt ? ` · ${refreshedAt}` : ''}`}</Text>
-        {rows.map(row => {
-          if (row.kind === 'text') {
-            return (
-              <Text bold={row.isBold} dimColor={row.isDim} wrap="truncate-end">
-                {row.text}
-              </Text>
-            )
-          }
-          itemNo += 1
-          // Button has no color prop, so the state tone rides on a bullet beside it.
-          // A press fills the prompt instead of submitting: a stray key must never start a turn.
-          return (
-            <Box flexDirection="row">
-              {row.tone && <Text color={row.tone}>* </Text>}
-              <Button
-                key={`item-${itemNo}`}
-                plain
-                label={fit(row.text, room)}
-                hotkey={itemNo <= 9 ? String(itemNo) : undefined}
-                dimColor={row.isDim}
-                onPress={() => $.prompt.fill({ text: promptFor(row) })}
-              />
-            </Box>
-          )
-        })}
+        {filterInput}
+        {notes}
+        {overview.groups.map(group => (
+          <Box key={`rail-${group.rail}`} flexDirection="column">
+            <Text dimColor>{group.rail}</Text>
+            {group.repos.map(repo => {
+              repoNo += 1
+              return (
+                <Button
+                  key={`repo-${repo.name}`}
+                  plain
+                  label={fit(repoLabel(repo, nameWidth, isWide), room)}
+                  hotkey={repoNo <= 9 ? String(repoNo) : undefined}
+                  onPress={() => update($, state, prev => ({ ...prev, repo: repo.name, filter: '', isExpanded: false }))}
+                />
+              )
+            })}
+          </Box>
+        ))}
+        {overview.idle.length > 0 && (
+          <Box key="idle" flexDirection="row">
+            <Text dimColor wrap="truncate-end">{`idle  ${overview.idle.join(' · ')}`}</Text>
+          </Box>
+        )}
+        <Text dimColor>{`press a repo to open it · Esc back${stamp}`}</Text>
       </Box>
     )
   })
@@ -181,7 +311,7 @@ export const register: Register = on => {
     if (tasks) {
       segments.push(
         <Box key="seg-tasks" flexDirection="row">
-          <Button key="band-tasks" plain dimColor label="tasks" onPress={() => openBoard($, 'repo')} />
+          <Button key="band-tasks" plain dimColor label="tasks" onPress={() => openBoard($, { kind: 'here' })} />
           <Text color="cyan"> {tasks.queued}</Text>
           <Text dimColor> queued · </Text>
           <Text color={tasks.executing > 0 ? 'yellow' : undefined}>{tasks.executing}</Text>

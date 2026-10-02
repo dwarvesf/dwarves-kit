@@ -2,7 +2,7 @@
 
 Opt-in mod for Claude Code. Display only: it shells out to the kit's `bin/board` and draws the output in a side pane. It writes nothing and installs nothing.
 
-- `board-pane/` , a function-hook plugin that adds `/board`. The pane has a Refresh button that re-runs the same view.
+- `board-pane/` , a function-hook plugin that adds `/board`: a side pane over every repo in your board registry, plus a one-line summary band above the prompt.
 
 ## Enable
 
@@ -20,14 +20,26 @@ Or load it every session through `~/.claude/settings.json`:
 
 ## Use
 
-| Command | Runs | Shows |
-|---|---|---|
-| `/board` | `bin/board board --backlog-file <cwd>/_meta/BACKLOG.md` | the kanban of the session's repo |
-| `/board all` | `bin/board all next --repo-root <cwd>` | the cross-repo view, from the `boards.txt` registry in that repo |
+One call feeds the pane: `bin/board all board --registry <registry> --repo-root <cwd>`. The registry is `$BOARD_REGISTRY` (an absolute path, `~` expanded) or else `<cwd>/_meta/boards.txt`. Each registry row is `<name> <BACKLOG path> ...`, and an optional `rail=<x>` token in any column groups the repo.
 
-Press an item row (or its digit hotkey, 1 to 9) to put `Work on <ID>` (`Work on <ID> in <repo>` in `all` mode) in the prompt box; nothing runs until you press Enter. `Esc` returns focus to the prompt, `q` closes the pane, `r` refreshes, and the pane re-renders itself every 60 seconds while it is open. In `all` mode a repo whose checkout lags upstream is dimmed with a trailing `?`, repos with nothing queued fold into one `+N idle` row, and a header shows the refresh time. In repo mode `executing:` items carry a cyan marker and `claimed:` items a yellow one.
+| Command | Opens |
+|---|---|
+| `/board` | the overview: repos grouped by rail, the current repo first and marked `◉` |
+| `/board here` | the view of the repo you are in |
+| `/board <name>` | the view of that registry repo |
 
-A one-line summary band sits above the prompt: `tasks 14 queued · 3 executing  ·  9 handoffs  ·  15 worktrees  ·  1 PR open`, all for the session's repo. Counts come from `bin/board board`, the `.claude/handoffs/` folder, `git worktree list` and `gh pr list --author @me`. A segment whose source is missing or fails is skipped, and the band disappears when every one is. It refreshes on session start and after each main-loop turn; the PR count is cached for five minutes. Press `tasks` to open the pane.
+The overview header counts repos, in-flight and queued items. Each repo row shows its active and queued counts, `↓N` when its checkout is behind upstream, and its first in-flight (else first queued) item when the pane is 70 columns or wider. Repos with nothing in flight or queued fold into one dim `idle` row. A repo view lists in-flight work first (executing, validated, speccing, claimed), then the first eight queued items with a `+ N more` button for the rest. Shipped, parked and dropped items are hidden.
+
+| Key | Does |
+|---|---|
+| `1` to `9` | open that repo (overview) or fill the prompt for that item (repo view) |
+| `b` | back to the overview |
+| `r` | refresh now; the pane also re-runs itself every 60 seconds while open |
+| `q` | close the pane |
+
+Pressing an item puts `Work on <ID> in <repo>` in the prompt box (`Work on <ID>` for the current repo). Nothing runs until you press Enter. The filter box narrows repos or items as you type. With no readable registry, or when `all board` fails, the pane falls back to the current repo alone with a dim hint to set `BOARD_REGISTRY`.
+
+A one-line summary band sits above the prompt: `tasks 14 queued · 3 executing  ·  9 handoffs  ·  15 worktrees  ·  1 PR open`, all for the session's repo. Counts come from `bin/board board`, the `.claude/handoffs/` folder, `git worktree list` and `gh pr list --author @me`. A segment whose source is missing or fails is skipped, and the band disappears when every one is. It refreshes on session start and after each main-loop turn; the PR count is cached for five minutes. Press `tasks` to open the current repo's view.
 
 The CLI resolves as `$DWARVES_KIT/bin/board`, falling back to `~/.claude/dwarves-kit/bin/board`. A non-zero exit shows the CLI's stderr, dimmed, in the pane.
 
