@@ -6,7 +6,9 @@
 
 The overview groups repos by rail, marks and leads with the current repo, shows active and queued counts and `↓N` for a stale checkout, and folds idle repos into one row. Pressing a repo opens its view: in-flight work first with glyphs, then the first eight queued items and `+ N more`. A press on an item puts `Work on <ID> in <repo>` in the prompt box without submitting, so a stray key never starts a turn. Digits 1 to 9, `b`, `r` and `q` are hotkeys, a filter box narrows repos or items, and a 60 second timer refreshes while the pane stays open. Without a readable registry the pane falls back to the current repo alone. `/board here` and `/board <name>` open a repo view directly.
 
-A one-line summary band above the prompt counts queued and executing tasks, handoff files, worktrees and open PRs for the session's repo. It refreshes on session start and after each main-loop turn, caches the PR count for five minutes, and drops any segment whose source fails. Pressing `tasks` opens the current repo's view.
+A one-line summary band above the prompt counts queued and executing tasks, handoff files, worktrees and open PRs for the session's repo. It refreshes on session start and after each main-loop turn, caches the PR count for five minutes, and drops any segment whose source fails. Pressing `tasks`, hotkey `b`, opens the current repo's view, and a second press closes the pane.
+
+`install.sh` loads the mod by default: it copies the mod into the install dir and appends its path to `env.CLAUDE_CODE_PLUGIN_DIRS` in `settings.json`. `--no-mods` skips it and `--uninstall` removes only that path and the copied files.
 
 ## Gate table
 
@@ -29,7 +31,10 @@ A one-line summary band above the prompt counts queued and executing tasks, hand
 | a survey takes the row and the band steps aside | band test 5 |
 | the PR lookup runs once per five minutes | band test 6, third negative control |
 | a subagent turn does not refresh the band | band test 7 |
-| pressing `tasks` opens the pane | band test 8 |
+| pressing `tasks` opens the pane, and a second press closes it; the button carries hotkey `b` | band tests 8 and 9 |
+| install registers the mod path, appends to an existing value, never duplicates, keeps other keys | installer tests 1 to 8, installer negative control |
+| uninstall removes only our path and the copied files, and drops an emptied key | installer tests 9 to 12 |
+| `--no-mods` skips the mod | installer tests 13 and 14 |
 | the manifest and module load as the engine reads them | validate run below |
 
 ## Run table
@@ -37,7 +42,14 @@ A one-line summary band above the prompt counts queued and executing tasks, hand
 ```
 Command: claude plugin test integrations/claude-code/board-pane
 Exit: 0
-31 pass, 0 fail
+32 pass, 0 fail
+Verdict: PASS
+```
+
+```
+Command: bash tests/test-install-mods.sh
+Exit: 0
+PASS=14 FAIL=0
 Verdict: PASS
 ```
 
@@ -96,4 +108,19 @@ Command: claude plugin test integrations/claude-code/board-pane
 Verdict: RED as expected
 ```
 
-Restored: 31 pass, 0 fail.
+Restored: 32 pass, 0 fail.
+
+## Negative control: installer dedupe
+
+Made the install.sh merge always append the mod path, with no check for an existing entry.
+
+```
+Command: bash tests/test-install-mods.sh
+  FAIL  second run keeps exactly one entry
+  FAIL  second run leaves the value unchanged
+  FAIL  re-run over a shared value still lists ours once
+PASS=11 FAIL=3
+Verdict: RED as expected
+```
+
+Restored: PASS=14 FAIL=0.

@@ -198,7 +198,7 @@ A repo that declines any step stays fully functional; the board is additive.
 
 ## E. Disclose the plugin-path gaps (only for mode `plugin` or `both`)
 
-Be honest about what the plugin path cannot do, in four short bullets:
+Be honest about what the plugin path cannot do, in short bullets:
 - **statusLine HUD:** the v1 plugin schema has no `statusLine` field, so the status-line HUD is
   bash-install-only. If they want it, that is the one reason to run the bash install.
 - **Frozen SHA vs `git pull`:** a plugin install is pinned to the version you installed; it moves only
@@ -210,6 +210,11 @@ Be honest about what the plugin path cannot do, in four short bullets:
   (registered via `hooks/hooks.json` at `${CLAUDE_PLUGIN_ROOT}`) are unaffected and do fire; this gap
   is specifically the adopt-wired per-repo module entries. Say this at adopt time too, not only here:
   on a plugin machine, never claim the module hooks are live after adopt.
+- **Board pane mod:** the bash installer loads the Claude Code board pane in every session by adding its
+  path to `env.CLAUDE_CODE_PLUGIN_DIRS`. A plugin install cannot register a second plugin dir, so on a
+  plugin-only machine the pane does not load. Manual enable: add
+  `"CLAUDE_CODE_PLUGIN_DIRS": "<kit checkout>/integrations/claude-code/board-pane"` under `env` in
+  `~/.claude/settings.json`, or start with `claude --plugin-dir <that path>`.
 - **`KIT_FORCE_FULL=1` escape:** `KIT_FORCE_FULL=1 bash install.sh` forces the full bash install even
   on a plugin machine, but that is exactly what creates the double-hooks hazard from step A -- only do
   it if you are deliberately switching paths, and remove the plugin first.

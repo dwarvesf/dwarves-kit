@@ -110,6 +110,13 @@ const openBoard = async ($: EngineInterface, target: Target) => {
   autoRefresh($)
 }
 
+// The band's tasks button: a second press closes the pane, a first opens the current repo's view.
+const toggleBoard = async ($: EngineInterface) => {
+  const isOpen = (await $.ui.panes()).some(pane => pane.id === PANE)
+  if (isOpen) await $.ui.close({ id: PANE })
+  else await openBoard($, { kind: 'here' })
+}
+
 // Each source is independent: a failing one drops its own segment and nothing else.
 const taskCounts = async ($: EngineInterface, cwd: string) => {
   try {
@@ -311,7 +318,7 @@ export const register: Register = on => {
     if (tasks) {
       segments.push(
         <Box key="seg-tasks" flexDirection="row">
-          <Button key="band-tasks" plain dimColor label="tasks" onPress={() => openBoard($, { kind: 'here' })} />
+          <Button key="band-tasks" plain dimColor label="tasks" hotkey="b" onPress={() => toggleBoard($)} />
           <Text color="cyan"> {tasks.queued}</Text>
           <Text dimColor> queued · </Text>
           <Text color={tasks.executing > 0 ? 'yellow' : undefined}>{tasks.executing}</Text>

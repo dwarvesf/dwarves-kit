@@ -31,6 +31,8 @@ const result = (exitCode: number, stdout: string) => ({
 const setup = async ($: Params[0], on: Params[1], failing: readonly Failing[] = []) => {
   const calls: string[] = []
   const opened: string[] = []
+  const closed: string[] = []
+  const panes: { id: string; title: string; isShown: boolean; isFocused: boolean; isPlaced: boolean }[] = []
   const clock = mock.clock(on, { now: 0 })
   mock.env(on, { DWARVES_KIT: '/opt/kit' })
   on('command.register', (_$, e) => ({ value: { command: e.name } }))
@@ -52,14 +54,18 @@ const setup = async ($: Params[0], on: Params[1], failing: readonly Failing[] = 
     opened.push(e.id)
     return { value: { isPlaced: true as const } }
   })
-  on('ui.panes', () => ({ value: [] }))
+  on('ui.panes', () => ({ value: [...panes] }))
+  on('ui.close', (_$, e) => {
+    closed.push(e.id)
+    return { value: undefined }
+  })
   // The engine's own band, beneath the plugin: what next(e) reaches when the mod draws nothing.
   on('ui.render', ($$, e) => {
     const { Box } = $$.ui.resolve(e)
     return <Box />
   })
   await $.session.start({ cwd: '/work/app-one', surface: 'terminal', isInteractive: true })
-  return { calls, opened, clock }
+  return { calls, opened, closed, panes, clock }
 }
 
 const mountBand = ($: Params[0], props = BAND) =>
@@ -133,12 +139,23 @@ test('a subagent turn does not refresh the band', async ($, on) => {
   expect(calls.length).toBeGreaterThan(before)
 })
 
-test('pressing tasks opens the pane in repo mode', async ($, on) => {
+test('pressing tasks opens the pane in repo mode, hotkey b', async ($, on) => {
   const { opened, calls } = await setup($, on)
   const ui = await mountBand($)
   const before = calls.filter(name => name === 'board').length
   await ui.press({ key: 'band-tasks' })
   expect(opened).toEqual(['board'])
   expect(calls.filter(name => name === 'board').length).toBe(before + 1)
+  await ui.unmount()
+})
+
+test('pressing tasks again while the pane is open closes it', async ($, on) => {
+  const { opened, closed, panes } = await setup($, on)
+  const ui = await mountBand($)
+  expect((await ui.find({ key: 'band-tasks' }))?.props).toMatchObject({ hotkey: 'b' })
+  panes.push({ id: 'board', title: 'Board', isShown: true, isFocused: false, isPlaced: true })
+  await ui.press({ key: 'band-tasks' })
+  expect(closed).toEqual(['board'])
+  expect(opened).toEqual([])
   await ui.unmount()
 })
