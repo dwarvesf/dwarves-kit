@@ -322,7 +322,7 @@ export const register: Register = on => {
           <Text color="cyan"> {tasks.queued}</Text>
           <Text dimColor> queued · </Text>
           <Text color={tasks.executing > 0 ? 'yellow' : undefined}>{tasks.executing}</Text>
-          <Text dimColor> executing</Text>
+          <Text dimColor> active</Text>
         </Box>,
       )
     }
@@ -346,7 +346,7 @@ export const register: Register = on => {
       segments.push(
         <Box key="seg-prs" flexDirection="row">
           <Text>{prs}</Text>
-          <Text dimColor>{prs === 1 ? ' PR open' : ' PRs open'}</Text>
+          <Text dimColor>{prs === 1 ? ' PR' : ' PRs'}</Text>
         </Box>,
       )
     }

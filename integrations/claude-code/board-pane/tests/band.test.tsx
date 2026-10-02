@@ -77,10 +77,10 @@ const turnComplete = ($: Params[0], agentId?: string) =>
 test('the band shows every segment with the right counts', async ($, on) => {
   await setup($, on)
   const ui = await mountBand($)
-  expect((await ui.find({ key: 'seg-tasks' }))?.text).toBe('tasks 2 queued · 1 executing')
+  expect((await ui.find({ key: 'seg-tasks' }))?.text).toBe('tasks 2 queued · 1 active')
   expect((await ui.find({ key: 'seg-handoffs' }))?.text).toBe('2 handoffs')
   expect((await ui.find({ key: 'seg-worktrees' }))?.text).toBe('2 worktrees')
-  expect((await ui.find({ key: 'seg-prs' }))?.text).toBe('2 PRs open')
+  expect((await ui.find({ key: 'seg-prs' }))?.text).toBe('2 PRs')
   await ui.unmount()
 })
 
