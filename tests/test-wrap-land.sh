@@ -2,10 +2,87 @@
 # test-wrap-land.sh -- the land cases; split out of tests/test-wrap.sh.
 # Shares the harness in tests/lib/wrap-stub.sh (gh stub, fixtures, chk).
 # modules under test: lib/wrap/wrap.sh lib/wrap/wrap-common.sh lib/wrap/wrap-scan.sh lib/wrap/wrap-apply.sh lib/wrap/wrap-pull.sh lib/wrap/wrap-carry.sh lib/wrap/wrap-ci.sh lib/wrap/wrap-merge.sh lib/wrap/wrap-land.sh lib/wrap/wrap-start.sh lib/wrap/wrap-log.sh lib/wrap/wrap-deploy.sh lib/wrap/wrap-rebase.sh lib/wrap/report-lint.sh
+#
+# Sections: every `sec_*` function below is one `=== ... ===` block. With no LAND_SECTION set
+# this file is a driver (tests/lib/land-sections.sh): it runs the sections as parallel child
+# processes (LAND_JOBS, default 4), each with its own TMPD, skips a section whose inputs are
+# unchanged since its last pass (LAND_CACHE=0 or CI turns that off), and prints the same
+# final line the serial file printed.
+#   LAND_ONLY=<ERE> bash tests/test-wrap-land.sh   only sections whose id or title matches
+#   bash tests/test-wrap-land.sh --list            the section ids and titles
+#   LAND_SECTION=sec_<id> bash tests/test-wrap-land.sh   one section in this process (what a child runs)
 KIT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+if [ -z "${LAND_SECTION:-}" ]; then
+  source "$KIT_DIR/tests/lib/land-sections.sh"
+  land_drive "$KIT_DIR/tests/$(basename "${BASH_SOURCE[0]}")" "$@"; exit $?
+fi
 source "$KIT_DIR/tests/lib/wrap-stub.sh"
 
+# A fixture commit can spawn a detached `git maintenance`, which creates and removes
+# objects/maintenance.lock while land_cached's `cp -R` copies the template (a flake under load).
+export GIT_CONFIG_COUNT=2 GIT_CONFIG_KEY_0=maintenance.auto GIT_CONFIG_VALUE_0=false GIT_CONFIG_KEY_1=gc.auto GIT_CONFIG_VALUE_1=0
+
+# Helpers more than one section uses. Everything else a section needs is defined inside it.
+open_pr_json() { # open_pr_json <number> <base> <author> [isDraft] [isCrossRepo]
+  printf '[{"number":%s,"baseRefName":"%s","author":{"login":"%s"},"isDraft":%s,"isCrossRepository":%s}]' \
+    "$1" "$2" "$3" "${4:-false}" "${5:-false}"
+}
+two_open_pr_json() {
+  printf '[{"number":%s,"baseRefName":"main","author":{"login":"me"},"isDraft":false,"isCrossRepository":false},{"number":%s,"baseRefName":"main","author":{"login":"me"},"isDraft":false,"isCrossRepository":false}]' "$1" "$2"
+}
+# ---------------------------------------------------------------------------
+# land-merge fixtures: the registry layout (the generator is a stub listing
+# specs/), a clone on feat/land in its own worktree, and a second clone that
+# advances origin/main. Every conflicting case fails the first `pr merge` with a
+# non-transient refusal, then answers CONFLICTING at the pushed head and
+# MERGEABLE at the re-merge head (%REMERGE_TIP% resolves to whatever feat/land
+# points at when the read happens -- the old tip before the push, the merge
+# commit after it).
+_build_land_reg() {
+  local name="$1" work="$TMPD/ld-work-$1" repo="$TMPD/ld-repo-$1"
+  mkdir -p "$work/lib/registry" "$work/specs" "$work/docs"
+  git -C "$work" init -q; gitc "$work"
+  git -C "$work" symbolic-ref HEAD refs/heads/main
+  { printf '#!/usr/bin/env bash\nroot="$(cd "$(dirname "$0")/../.." && pwd)"\n'
+    printf '%s\n' "${LGEN:-ls \"\$root/specs\" | LC_ALL=C sort > \"\$root/docs/FEATURES.md\"}"
+  } > "$work/lib/registry/feature-registry.sh"
+  chmod +x "$work/lib/registry/feature-registry.sh"
+  echo base > "$work/base.txt"
+  printf 'ignored.bin\n' > "$work/.gitignore"
+  [ -z "${LBASE_ATTR:-}" ] || printf '%s\n' "$LBASE_ATTR" > "$work/.gitattributes"
+  echo a > "$work/specs/a.md"
+  printf '# Changelog\n\n- base\n' > "$work/docs/CHANGELOG.md"
+  ( cd "$work" && bash lib/registry/feature-registry.sh generate )
+  rm -f "$work/docs/GEN_OUT.txt"   # generator side output never enters history
+  git -C "$work" add -A; git -C "$work" commit -qm base
+  git clone -q --bare "$work" "$TMPD/ld-bare-$name"
+  git clone -q "$TMPD/ld-bare-$name" "$repo"; gitc "$repo"
+  git -C "$repo" remote set-head origin main >/dev/null 2>&1
+  git -C "$repo" worktree add -q -b feat/land "$repo/wt" main >/dev/null 2>&1
+  if [ -n "${LBRANCH:-}" ]; then
+    ( cd "$repo/wt" && eval "$LBRANCH" )
+  else
+    echo b > "$repo/wt/specs/b.md"
+    ( cd "$repo/wt" && bash lib/registry/feature-registry.sh generate )
+  fi
+  git -C "$repo/wt" add -A; git -C "$repo/wt" commit -qm "feat: the landed change"
+}
+build_land_reg() { land_cached _build_land_reg "$@"; }   # build_land_reg <name>
+land_adv() { git clone -q "$TMPD/ld-bare-$1" "$TMPD/ld-adv-$1" && gitc "$TMPD/ld-adv-$1"; }
+land_adv_regen() { # land_adv_regen <name> <spec> -- origin gains specs/<s> + a regen
+  land_adv "$1" || return 1
+  echo "$2" > "$TMPD/ld-adv-$1/specs/$2.md"
+  ( cd "$TMPD/ld-adv-$1" && bash lib/registry/feature-registry.sh generate )
+  rm -f "$TMPD/ld-adv-$1/docs/GEN_OUT.txt"
+  git -C "$TMPD/ld-adv-$1" add -A; git -C "$TMPD/ld-adv-$1" commit -qm "origin: another feature"
+  git -C "$TMPD/ld-adv-$1" push -q origin main
+}
+lm_conf() { printf '{"number":%s,"title":"x","headRefName":"feat/land","baseRefName":"main","mergeable":"CONFLICTING","mergeStateStatus":"DIRTY","statusCheckRollup":[],"headRefOid":"%s"}' "$1" "$2"; }
+lm_ok() { printf '{"number":%s,"title":"x","headRefName":"feat/land","baseRefName":"main","mergeable":"MERGEABLE","mergeStateStatus":"CLEAN","statusCheckRollup":[],"headRefOid":"%%REMERGE_TIP%%"}' "$1"; }
+REAL_GIT_BIN="$(command -v git)"
+
 # ===========================================================================
+sec_happy() {
 echo "=== land: one hand-made worktree, from a committed branch to landed ==="
 # ===========================================================================
 # Real git throughout, `gh` stubbed: the push, the fast-forward, the worktree removal and
@@ -41,8 +118,10 @@ chk_has "land reports the delete" "$out" "deleted feat/land"
 chk "land deleted the branch on origin too" \
   "$(git -C "$TMPD/ld-bare-ok" rev-parse --verify feat/land >/dev/null 2>&1 && echo 1 || echo 0)"
 chk_has "land reports the origin delete" "$out" "deleted feat/land on origin"
+} # end sec_happy
 
 # ===========================================================================
+sec_title() {
 echo "=== land: no-flag title picks the feature commit, not the tip (SPEC-326) ==="
 # ===========================================================================
 echo "--- feature commit in the middle: the doc bookends are skipped"
@@ -208,7 +287,12 @@ echo "--- the usage text and the command doc name the verb"
 chk_has "wrap --help names land" "$("$WRAP" --help 2>&1)" "wrap.sh land  <worktree>"
 chk_has "commands/wrap.md names land for a hand-made worktree" "$(cat "$KIT_DIR/commands/wrap.md")" \
   "bin/wrap land <worktree>"
+} # end sec_title
 
+# ===========================================================================
+sec_shiprec() {
+echo "=== land: the ship-gate record a land writes ==="
+# ===========================================================================
 echo "--- ship-gate record: a rid with a prior ledger gets the Ship gate recorded"
 build_land shiprec "" feat/shiprec
 LWT_SR="$(cd "$TMPD/ld-repo-shiprec/wt" && pwd -P)"
@@ -326,18 +410,12 @@ chk_has "ship-gate record: the reused-slug ledger still names the original PR" \
   "$(cat "$KIT_LEDGER_DIR/runs/typo.log")" "pr=#80"
 chk_no "ship-gate record: the reused-slug ledger never gained the new PR" \
   "$(cat "$KIT_LEDGER_DIR/runs/typo.log")" "pr=#81"
+} # end sec_shiprec
 
 # ===========================================================================
+sec_adopt() {
 echo "=== land: adopting an operator-owned open PR for the branch (SPEC-299) ==="
 # ===========================================================================
-open_pr_json() { # open_pr_json <number> <base> <author> [isDraft] [isCrossRepo]
-  printf '[{"number":%s,"baseRefName":"%s","author":{"login":"%s"},"isDraft":%s,"isCrossRepository":%s}]' \
-    "$1" "$2" "$3" "${4:-false}" "${5:-false}"
-}
-two_open_pr_json() {
-  printf '[{"number":%s,"baseRefName":"main","author":{"login":"me"},"isDraft":false,"isCrossRepository":false},{"number":%s,"baseRefName":"main","author":{"login":"me"},"isDraft":false,"isCrossRepository":false}]' "$1" "$2"
-}
-
 echo "--- own PR on the default branch is adopted, no create, merge runs on it"
 build_land adopt-own
 LREPO_AO="$TMPD/ld-repo-adopt-own"; LWT_AO="$(cd "$LREPO_AO/wt" && pwd -P)"
@@ -485,8 +563,10 @@ echo "=== land: flags packed into one positional are refused ==="
 out="$("$WRAP" land " --title x" 2>&1)"; rc=$?
 chk "packed arg to land exits 64" "$([ "$rc" = 64 ]; echo $?)"
 chk_has "packed arg to land names the packed-flags refusal" "$out" "wrap.sh land: argument '"
+} # end sec_adopt
 
-echo "=== land-merge: a CONFLICTING land merges origin/<def> in, then retries ==="
+sec_merge1() {
+echo "=== land-merge: a CONFLICTING land merges origin/<def> in, then retries (part 1 of 4) ==="
 # ===========================================================================
 # A refused `gh pr merge` is the trigger: the branch is already pushed, so the recovery
 # merges origin/<def> into it (never a rebase, never a force push), resolves only the
@@ -498,57 +578,6 @@ chk "land-merge: _rb_stop resolves through _rb_resolve" \
   "$(sed -n '/^_rb_stop()/,/^}/p' "$KIT_DIR/lib/wrap/wrap-rebase.sh" | grep -q '_rb_resolve '; echo $?)"
 chk "land-merge: _rb_markers reads conflict-marker-size" \
   "$(sed -n '/^_rb_markers()/,/^}/p' "$KIT_DIR/lib/wrap/wrap-rebase.sh" | grep -q 'check-attr conflict-marker-size'; echo $?)"
-
-# ---------------------------------------------------------------------------
-# land-merge fixtures: the registry layout (the generator is a stub listing
-# specs/), a clone on feat/land in its own worktree, and a second clone that
-# advances origin/main. Every conflicting case fails the first `pr merge` with a
-# non-transient refusal, then answers CONFLICTING at the pushed head and
-# MERGEABLE at the re-merge head (%REMERGE_TIP% resolves to whatever feat/land
-# points at when the read happens -- the old tip before the push, the merge
-# commit after it).
-_build_land_reg() {
-  local name="$1" work="$TMPD/ld-work-$1" repo="$TMPD/ld-repo-$1"
-  mkdir -p "$work/lib/registry" "$work/specs" "$work/docs"
-  git -C "$work" init -q; gitc "$work"
-  git -C "$work" symbolic-ref HEAD refs/heads/main
-  { printf '#!/usr/bin/env bash\nroot="$(cd "$(dirname "$0")/../.." && pwd)"\n'
-    printf '%s\n' "${LGEN:-ls \"\$root/specs\" | LC_ALL=C sort > \"\$root/docs/FEATURES.md\"}"
-  } > "$work/lib/registry/feature-registry.sh"
-  chmod +x "$work/lib/registry/feature-registry.sh"
-  echo base > "$work/base.txt"
-  printf 'ignored.bin\n' > "$work/.gitignore"
-  [ -z "${LBASE_ATTR:-}" ] || printf '%s\n' "$LBASE_ATTR" > "$work/.gitattributes"
-  echo a > "$work/specs/a.md"
-  printf '# Changelog\n\n- base\n' > "$work/docs/CHANGELOG.md"
-  ( cd "$work" && bash lib/registry/feature-registry.sh generate )
-  rm -f "$work/docs/GEN_OUT.txt"   # generator side output never enters history
-  git -C "$work" add -A; git -C "$work" commit -qm base
-  git clone -q --bare "$work" "$TMPD/ld-bare-$name"
-  git clone -q "$TMPD/ld-bare-$name" "$repo"; gitc "$repo"
-  git -C "$repo" remote set-head origin main >/dev/null 2>&1
-  git -C "$repo" worktree add -q -b feat/land "$repo/wt" main >/dev/null 2>&1
-  if [ -n "${LBRANCH:-}" ]; then
-    ( cd "$repo/wt" && eval "$LBRANCH" )
-  else
-    echo b > "$repo/wt/specs/b.md"
-    ( cd "$repo/wt" && bash lib/registry/feature-registry.sh generate )
-  fi
-  git -C "$repo/wt" add -A; git -C "$repo/wt" commit -qm "feat: the landed change"
-}
-build_land_reg() { land_cached _build_land_reg "$@"; }   # build_land_reg <name>
-land_adv() { git clone -q "$TMPD/ld-bare-$1" "$TMPD/ld-adv-$1" && gitc "$TMPD/ld-adv-$1"; }
-land_adv_regen() { # land_adv_regen <name> <spec> -- origin gains specs/<s> + a regen
-  land_adv "$1" || return 1
-  echo "$2" > "$TMPD/ld-adv-$1/specs/$2.md"
-  ( cd "$TMPD/ld-adv-$1" && bash lib/registry/feature-registry.sh generate )
-  rm -f "$TMPD/ld-adv-$1/docs/GEN_OUT.txt"
-  git -C "$TMPD/ld-adv-$1" add -A; git -C "$TMPD/ld-adv-$1" commit -qm "origin: another feature"
-  git -C "$TMPD/ld-adv-$1" push -q origin main
-}
-lm_conf() { printf '{"number":%s,"title":"x","headRefName":"feat/land","baseRefName":"main","mergeable":"CONFLICTING","mergeStateStatus":"DIRTY","statusCheckRollup":[],"headRefOid":"%s"}' "$1" "$2"; }
-lm_ok() { printf '{"number":%s,"title":"x","headRefName":"feat/land","baseRefName":"main","mergeable":"MERGEABLE","mergeStateStatus":"CLEAN","statusCheckRollup":[],"headRefOid":"%%REMERGE_TIP%%"}' "$1"; }
-REAL_GIT_BIN="$(command -v git)"
 
 echo "--- land-merge: a FEATURES conflict merges origin/main in, then lands"
 build_land_reg featx
@@ -754,6 +783,12 @@ for LMS in 9 5; do
   chk_has "land-merge: MARKERS names FEATURES at size $LMS" "$out" "MARKERS feat/land: docs/FEATURES.md"
 done
 
+} # end sec_merge1
+
+# ===========================================================================
+sec_merge2() {
+echo "=== land-merge: a CONFLICTING land merges origin/<def> in, then retries (part 2 of 4) ==="
+# ===========================================================================
 echo "--- land-merge: an eight-> blockquote line stays legal at the default size"
 LGEN='{ ls "$root/specs" | LC_ALL=C sort; printf ">>>>>>>>\n"; } > "$root/docs/FEATURES.md"' \
   build_land_reg bq
@@ -1043,6 +1078,12 @@ chk "land-merge: committing verify restored the tip" \
 chk "land-merge: committing verify pushed nothing" \
   "$([ "$(git -C "$LWT" ls-remote origin refs/heads/feat/land | cut -f1)" = "$LTIP" ]; echo $?)"
 
+} # end sec_merge2
+
+# ===========================================================================
+sec_merge3() {
+echo "=== land-merge: a CONFLICTING land merges origin/<def> in, then retries (part 3 of 4) ==="
+# ===========================================================================
 echo "--- land-merge: a push rejected by another writer is undone, never forced"
 build_land_reg prace
 LWT="$(cd "$TMPD/ld-repo-prace/wt" && pwd -P)"
@@ -1341,6 +1382,12 @@ chk_has "land-merge: the failed check names the merged head" "$out" "checks fail
 chk "land-merge: failed check made exactly one pr merge call" \
   "$([ "$(grep -c '^pr merge 42 ' "$GH_STUB_CALLS")" -eq 1 ]; echo $?)"
 
+} # end sec_merge3
+
+# ===========================================================================
+sec_merge4() {
+echo "=== land-merge: a CONFLICTING land merges origin/<def> in, then retries (part 4 of 4) ==="
+# ===========================================================================
 echo "--- land-merge: no checks pending pays no hold, even with a long grace"
 build_land_reg nocheck
 LWT="$(cd "$TMPD/ld-repo-nocheck/wt" && pwd -P)"
@@ -1692,8 +1739,10 @@ chk "land-merge: the usage text documents --verify" \
   "$(sed -n '2,31p' "$WRAP" | grep -q -- '--verify'; echo $?)"
 
 
+} # end sec_merge4
 
 # ===========================================================================
+sec_landed() {
 echo "=== land: a branch already landed on the default branch is recognized (SPEC-376) ==="
 # ===========================================================================
 # A git shim forces ONE subcommand (matched on an argv substring) to a chosen exit code and
@@ -2034,7 +2083,10 @@ chk "TH4: exits 2" "$([ "$rc" -eq 2 ]; echo $?)"
 chk_has "TH4: says the origin branch could not be confirmed" "$out" "origin/feat/land could not be confirmed"
 chk "TH4: the worktree and branch stay" "$([ -d "$LWT_TH4" ] && git -C "$LREPO_TH4" rev-parse --verify -q feat/land >/dev/null; echo $?)"
 
+} # end sec_landed
+
 # ===========================================================================
+sec_prgate() {
 echo "=== land: no title-only PR body on a template repo; no merge before the PR's checks report ==="
 # ===========================================================================
 # pg_build <name> [template-path] [workflow-body] -- build_land plus an optional committed PR
@@ -2125,7 +2177,11 @@ out="$(pg_land pg5 GH_STUB_PR_42="$PG_RED")"; rc=$?
 chk "PG5: exits 0" "$rc"
 chk "PG5: no statusCheckRollup read" "$(grep -q 'statusCheckRollup' "$GH_STUB_CALLS" && echo 1 || echo 0)"
 chk_has "PG5: merged" "$out" "merged #42 ("
+} # end sec_prgate
 
-echo
-if [ "$FAIL" -gt 0 ]; then echo "test-wrap-land: $PASS passed, $FAIL FAILED of $TOTAL" >&2; exit 1; fi
-echo "test-wrap-land: all $PASS passed"
+# One section, in this process. The driver sets LAND_SECTION per child; the last line is the
+# child's result for the driver to sum (it is not the suite's final line).
+[ "$(type -t "$LAND_SECTION")" = function ] || { echo "test-wrap-land: no such section: $LAND_SECTION" >&2; exit 64; }
+"$LAND_SECTION"
+echo "land-section-result: $PASS $FAIL $TOTAL"
+[ "$FAIL" -eq 0 ]

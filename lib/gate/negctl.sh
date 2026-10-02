@@ -90,6 +90,8 @@
 #   reads the object store only. The export is kept and printed as `Export:` for inspection.
 set -uo pipefail
 
+# A proof run executes the suite for real: tests/test-wrap-land.sh skips cached sections otherwise.
+export LAND_CACHE=0
 at_sha=""; at_path=""; at_setup=""
 at_usage() { echo "usage: negctl.sh --at <sha> [--path <subdir>] [--setup <cmd>] <root> <test-cmd> <mutate-cmd>" >&2; exit 64; }
 while [ $# -gt 0 ]; do

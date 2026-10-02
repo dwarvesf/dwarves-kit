@@ -39,6 +39,8 @@
 #   MUTATION_SMOKE_RID       run id for the ledger marker (default: gate-ledger.sh rid)
 
 set -uo pipefail   # NB: no -e; the whole point is to run a suite that may fail and keep going.
+# A mutation run executes the suite for real: tests/test-wrap-land.sh skips cached sections otherwise.
+export LAND_CACHE=0
 
 MS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 MAX="${MUTATION_SMOKE_MAX:-5}"

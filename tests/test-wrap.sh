@@ -14,7 +14,8 @@ KIT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 PASS=0; FAIL=0; RC=0
 for t in "$KIT_DIR"/tests/test-wrap-*.sh; do
-  out="$(bash "$t" 2>&1)"; rc=$?
+  # test-wrap counts the PASS lines of each suite; a cached land section prints none, so it runs fresh here.
+  out="$(LAND_CACHE=0 bash "$t" 2>&1)"; rc=$?
   printf '%s\n' "$out"
   [ "$rc" -eq 0 ] || RC=1
   PASS=$((PASS + $(printf '%s\n' "$out" | grep -acE '^  .\[0;32mPASS')))

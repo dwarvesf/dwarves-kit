@@ -61,3 +61,6 @@ lib/**/bin/*-rs
 state/
 logs/
 INSTALL-STAMP
+
+# Per-section pass cache for tests/test-wrap-land.sh (tests/lib/land-sections.sh)
+tests/.cache/
