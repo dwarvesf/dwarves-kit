@@ -14,6 +14,8 @@ self-heals any title whose tag suffix drifted from its body.
 import json
 import subprocess
 import sys
+import time
+from pathlib import Path
 
 from sync_core import ACTIVE_STATUSES, extract_tags, strip_tags, title_for
 
@@ -68,9 +70,60 @@ function run(argv) {
 """
 
 
+# Fail-fast guard. Each board is its own `board sync` process, and a
+# Reminders.app that never answers (2026-10-02: a wedged LaunchServices meant
+# no app could launch) used to cost the full 600s timeout per board, about
+# 2h15m per hourly sweep. One short probe per process instead; a probe or
+# call that times out drops a marker, and every later process inside
+# WEDGE_TTL skips at once, so a wedged host costs one probe per sweep.
+PROBE_TIMEOUT = 30          # a healthy launch + answer takes seconds
+WEDGE_TTL = 30 * 60         # under the hourly sweep: each tick probes afresh
+WEDGE_MARKER = Path.home() / ".cache" / "backlog-sync" / "reminders-unresponsive"
+JXA_PROBE = "Application('Reminders').lists.name().length"
+WEDGE_HINT = ("Usual cause: macOS cannot launch apps (LaunchServices wedged; "
+              "`open -g -b com.apple.TextEdit` hangs too). Reboot the host.")
+_probed = False
+
+
+def _mark_wedged(why: str):
+    WEDGE_MARKER.parent.mkdir(parents=True, exist_ok=True)
+    WEDGE_MARKER.touch()
+    sys.exit(f"reminders: Reminders.app did not answer {why}; skipping "
+             f"reminders for {WEDGE_TTL // 60} min (marker {WEDGE_MARKER}). "
+             + WEDGE_HINT)
+
+
+def _ensure_responsive():
+    global _probed
+    if _probed:
+        return
+    try:
+        age = time.time() - WEDGE_MARKER.stat().st_mtime
+    except FileNotFoundError:
+        age = None
+    if age is not None and age < WEDGE_TTL:
+        sys.exit(f"reminders: skipped, Reminders.app did not answer "
+                 f"{int(age // 60)} min ago (marker {WEDGE_MARKER}); next "
+                 f"probe after {WEDGE_TTL // 60} min. " + WEDGE_HINT)
+    try:
+        subprocess.run(["osascript", "-l", "JavaScript", "-e", JXA_PROBE],
+                       capture_output=True, text=True, timeout=PROBE_TIMEOUT)
+    except subprocess.TimeoutExpired:
+        _mark_wedged(f"a {PROBE_TIMEOUT}s probe")
+    # a probe that errors (say -1743) is not a hang: the real call below
+    # reports it with the precise message
+    WEDGE_MARKER.unlink(missing_ok=True)
+    _probed = True
+
+
 def _osascript(script: str, *args: str) -> str:
-    r = subprocess.run(["osascript", "-l", "JavaScript", "-e", script, *args],
-                       capture_output=True, text=True, timeout=600)
+    _ensure_responsive()
+    try:
+        r = subprocess.run(["osascript", "-l", "JavaScript", "-e", script,
+                            *args], capture_output=True, text=True,
+                           timeout=600)
+    except subprocess.TimeoutExpired:
+        _mark_wedged("within 600s")
     if r.returncode != 0:
         err = r.stderr.strip()
         if "-1743" in err or "not allowed" in err.lower():
