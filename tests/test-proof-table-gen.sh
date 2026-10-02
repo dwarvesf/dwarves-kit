@@ -26,6 +26,10 @@ assert_eq() { if [ "$2" = "$3" ]; then ok "$1"; else bad "$1 (expected '$3', got
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/kit-proof-table-gen.XXXXXX")"
 trap 'rm -rf "$WORK"' EXIT
 export DWARVES_KIT_LOG_DIR="$WORK/logs"
+# Lane data (which gates a lane requires) layers the operator overlay over kit.toml. Pin the
+# overlay to a dir with no kit.toml so the expected Covered/Uncovered sets are the kit
+# defaults on every machine, not whatever the operator loosened locally (e.g. review light).
+export KIT_CONFIG_OPERATOR="$WORK/no-operator"
 mkdir -p "$DWARVES_KIT_LOG_DIR/runs"
 # SPEC-134/goal-11: the generator now confines its output under
 # realpath(KIT_ROOT/docs/verification/generated). Point KIT_ROOT at a throwaway root so
@@ -54,7 +58,7 @@ expect "T1: confirmation row for build" "| 2 | build | 2026-07-04T09:00:02Z | ra
 expect "T1: confirmation row for ship (skipped state preserved)" "| 3 | ship | 2026-07-04T09:00:03Z | skipped | held for review |" "$BODY1"
 refute "T1 (implies T3): no Caught/Duration columns when zero OUTCOME lines exist" "Duration (s)" "$BODY1"
 expect "T6: coverage-delta covers spec+build" "Covered: build, spec" "$BODY1"
-expect "T6: coverage-delta names ship as uncovered (required, only skipped)" "Uncovered: ship" "$BODY1"
+expect "T6: coverage-delta names review (never run) and ship (only skipped) as uncovered" "Uncovered: review, ship" "$BODY1"
 expect "T6: acceptance row reflects lane=normal" "lane \`normal\`" "$BODY1"
 
 # ============================================================
