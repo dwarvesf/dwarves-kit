@@ -10,6 +10,7 @@ only; nothing here installs itself.
 - `raycast/` , a Raycast extension manifest + commands for the same four verbs. Open the folder
   with `ray develop` (Raycast CLI, `npm install -g @raycast/api`) to run it locally, or `ray build`
   before submitting to the Raycast Store.
+- `claude-code/` , an opt-in Claude Code mod (`/board`) that draws `bin/board` output in a side pane with a Refresh button. Enable per `claude-code/README.md`.
 
 `board` and `spec` shell out straight to `$DWARVES_KIT/bin/<verb>` (falls back to
 `~/.claude/dwarves-kit`, the default bash-install path). `start` and `ship` are Claude Code slash
