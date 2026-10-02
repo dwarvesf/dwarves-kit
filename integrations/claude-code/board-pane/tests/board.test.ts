@@ -65,6 +65,34 @@ const ALL_BOARD = [
   '',
 ].join('\n')
 
+const PRIORITY_OUT = [
+  '',
+  '=== app-one ===',
+  'IN FLIGHT        1',
+  '  ID-5     fifth thing  [executing]',
+  '',
+  'DO NOW           (u-hi  f-hi)         2',
+  '  ID-1     first thing #u-hi #f-hi  #ship',
+  '  ID-2     second thing #u-hi #f-hi',
+  'URGENT, HARDER   (u-hi  f-mid|lo)     1',
+  '  ID-3     third thing  [deadline]',
+  'QUICK WINS       (u-lo|mid  f-hi)     2',
+  '  ID-4     fourth thing',
+  '  ID-12    twelfth thing',
+  'THE REST         (other queued)       1',
+  '  ID-6     sixth thing',
+  '',
+  '=== app-two [STALE: 3 behind upstream] ===',
+  'DO NOW           (u-hi  f-hi)         1',
+  '  ID-7     seventh thing',
+  'URGENT, HARDER   (u-hi  f-mid|lo)     1',
+  '  ID-8     eighth thing',
+  'QUICK WINS       (u-lo|mid  f-hi)     1',
+  '  ID-9     ninth thing',
+  'THE REST         (other queued)       0',
+  '',
+].join('\n')
+
 const SINGLE_BOARD = 'queued:\n  ID-1  first thing\nexecuting:\n  ID-2  second thing\n'
 
 const runInput = (args: string) => ({
@@ -82,14 +110,18 @@ type Options = {
   registry?: string
   allBoard?: string
   allExit?: number
+  priority?: string
+  priorityExit?: number
   singleExit?: number
   singleStderr?: string
   env?: Record<string, string>
 }
 
 const setup = async ($: Params[0], on: Params[1], options: Options = {}) => {
-  const { registry, allBoard = ALL_BOARD, allExit = 0, singleExit = 0, singleStderr = '', env = {} } = options
+  const { registry, allBoard = ALL_BOARD, allExit = 0, priority = '', priorityExit = 0, singleExit = 0, singleStderr = '', env = {} } = options
   const argvs: string[][] = []
+  // The priority call rides every refresh beside `all board`; tests of the pane's own runs count `argvs` only.
+  const priorities: string[][] = []
   const reads: string[] = []
   const submitted: string[] = []
   const filled: string[] = []
@@ -106,10 +138,11 @@ const setup = async ($: Params[0], on: Params[1], options: Options = {}) => {
     return { value: registry }
   })
   on('process.run', (_$, e) => {
-    argvs.push([...e.argv])
+    ;(e.argv[2] === 'priority' ? priorities : argvs).push([...e.argv])
     const done = (exitCode: number, stdout: string, stderr = '') => ({
       value: { exitCode, stdout, stderr, isStdoutTruncated: false, isStderrTruncated: false },
     })
+    if (e.argv[1] === 'all' && e.argv[2] === 'priority') return done(priorityExit, priorityExit === 0 ? priority : '', priorityExit === 0 ? '' : 'board: priority failed')
     if (e.argv[1] === 'all') return done(allExit, allExit === 0 ? allBoard : '', allExit === 0 ? '' : 'board: all failed')
     if (e.argv[1] === 'board') return done(singleExit, singleExit === 0 ? SINGLE_BOARD : '', singleStderr)
     return done(1, '')
@@ -129,9 +162,10 @@ const setup = async ($: Params[0], on: Params[1], options: Options = {}) => {
     return { isFilled: true }
   })
   await $.session.start({ cwd: '/work/app-two', surface: 'terminal', isInteractive: true })
+  priorities.length = 0
   argvs.length = 0 // session.start refreshes the summary band; these tests count the pane's own runs
   reads.length = 0
-  return { argvs, reads, submitted, filled, closed, panes, clock }
+  return { argvs, priorities, reads, submitted, filled, closed, panes, clock }
 }
 
 test('/board runs `all board` over the registry in the session cwd', async ($, on) => {
@@ -411,4 +445,83 @@ test('the overview builder groups, orders and folds idle repos', () => {
   ])
   expect(overview.idle).toEqual(['app-four', 'app-five'])
   expect(buildOverview(repos, 'home').groups.map(group => group.rail)).toEqual(['HOME'])
+})
+
+const NEXT_ORDER = [
+  '! ID-1 first thing  app-one',
+  '! ID-2 second thing  app-one',
+  '! ID-7 seventh thing  app-two',
+  '▲ ID-3 third thing  app-one',
+  '▲ ID-8 eighth thing  app-two',
+]
+
+test('NEXT runs the priority view beside `all board`', async ($, on) => {
+  const { priorities } = await setup($, on, { registry: REGISTRY, priority: PRIORITY_OUT })
+  await $.command.run(runInput(''))
+  expect(priorities[0]).toEqual([
+    '/opt/kit/bin/board', 'all', 'priority', 'overview', '--registry', '/work/app-two/_meta/boards.txt', '--repo-root', '/work/app-two',
+  ])
+})
+
+test('NEXT lists DO NOW, then URGENT, then QUICK WINS, capped at five, above the repos', async ($, on) => {
+  await setup($, on, { registry: REGISTRY, priority: PRIORITY_OUT })
+  await $.command.run(runInput(''))
+  const ui = await mountPane($)
+  expect((await ui.find({ key: 'next' }))?.text).toMatch(/^NEXT/)
+  const labels = await Promise.all([1, 2, 3, 4, 5].map(async k => (await ui.find({ key: `next-${k}` }))?.props))
+  expect(labels.map(props => props?.label)).toEqual(NEXT_ORDER)
+  expect(labels.map(props => props?.hotkey)).toEqual(['1', '2', '3', '4', '5'])
+  expect(await ui.find({ key: 'next-6' })).toBeUndefined()
+  await ui.unmount()
+})
+
+test('NEXT rows take the first hotkeys and the repo rows follow in order', async ($, on) => {
+  await setup($, on, { registry: REGISTRY, priority: PRIORITY_OUT })
+  await $.command.run(runInput(''))
+  const ui = await mountPane($)
+  expect((await ui.find({ key: 'repo-app-two' }))?.props).toMatchObject({ hotkey: '6' })
+  expect((await ui.find({ key: 'repo-app-one' }))?.props).toMatchObject({ hotkey: '7' })
+  expect((await ui.find({ key: 'repo-app-three' }))?.props).toMatchObject({ hotkey: '8' })
+  expect((await ui.find({ key: 'repo-app-six' }))?.props).toMatchObject({ hotkey: '9' })
+  await ui.unmount()
+})
+
+test('pressing a NEXT row fills the prompt, with the repo named unless it is the current one, never submits', async ($, on) => {
+  const { filled, submitted } = await setup($, on, { registry: REGISTRY, priority: PRIORITY_OUT })
+  await $.command.run(runInput(''))
+  const ui = await mountPane($)
+  await ui.press({ key: 'next-1' })
+  await ui.press({ key: 'next-3' })
+  expect(filled).toEqual(['Work on ID-1 in app-one', 'Work on ID-7'])
+  expect(submitted).toEqual([])
+  await ui.unmount()
+})
+
+test('NEXT is hidden when the priority view has no rows', async ($, on) => {
+  await setup($, on, { registry: REGISTRY, priority: 'DO NOW  0\n' })
+  await $.command.run(runInput(''))
+  const ui = await mountPane($)
+  expect(await ui.find({ key: 'next' })).toBeUndefined()
+  expect(await ui.find({ key: 'repo-app-two' })).toBeDefined()
+  await ui.unmount()
+})
+
+test('a failing priority view keeps the pane, minus NEXT', async ($, on) => {
+  await setup($, on, { registry: REGISTRY, priority: PRIORITY_OUT, priorityExit: 1 })
+  await $.command.run(runInput(''))
+  const ui = await mountPane($)
+  expect(await ui.find({ key: 'next' })).toBeUndefined()
+  expect((await ui.find({ key: 'header' }))?.text).toBe('Board · 6 repos · 4 in flight · 5 queued')
+  expect((await ui.find({ key: 'repo-app-two' }))?.props).toMatchObject({ hotkey: '1' })
+  await ui.unmount()
+})
+
+test('the filter narrows NEXT too', async ($, on) => {
+  await setup($, on, { registry: REGISTRY, priority: PRIORITY_OUT })
+  await $.command.run(runInput(''))
+  const ui = await mountPane($)
+  await ui.input({ key: 'filter', text: 'eighth', kind: 'change' })
+  expect((await ui.find({ key: 'next-1' }))?.props).toMatchObject({ label: '▲ ID-8 eighth thing  app-two' })
+  expect(await ui.find({ key: 'next-2' })).toBeUndefined()
+  await ui.unmount()
 })

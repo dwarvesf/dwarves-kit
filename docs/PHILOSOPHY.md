@@ -157,7 +157,7 @@ We believe the kit should detect the user's current state and suggest the right 
 
 We believe a doc describing an alternate or degraded path should state exactly what it cannot do, in short bullets, right where that path is offered. A silent gap surfaces later as a confused bug report; a disclosed gap lets the user route around it up front.
 
-**Decision this already made:** `/kit:onboard` section E states the plugin-path gaps (no statusLine HUD, a frozen SHA vs `git pull`, project hook wiring that points at the bash path, the `KIT_FORCE_FULL=1` escape, the board pane mod that only the bash installer loads) as short bullets, at the exact moment the plugin path is offered, not buried in a troubleshooting doc.
+**Decision this already made:** `/kit:onboard` section E states the plugin-path gaps (no statusLine HUD, a frozen SHA vs `git pull`, project hook wiring that points at the bash path, the `KIT_FORCE_FULL=1` escape, the board pane mod, which loads only through `install.sh` run from a checkout) as short bullets, at the exact moment the plugin path is offered, not buried in a troubleshooting doc.
 
 **Decision this would reject:** "Just skip mentioning the gap; most people will not hit it." Every doc offering a path with a known limit generalizes this convention, README included.
 

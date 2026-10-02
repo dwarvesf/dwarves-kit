@@ -1,4 +1,4 @@
-import type { BoardItem, BoardRepo, BoardRow, BoardTasks, BoardTone } from '../types'
+import type { BoardItem, BoardNext, BoardRepo, BoardRow, BoardTasks, BoardTone } from '../types'
 
 const ITEM_ID = /[A-Z]+-\d+/
 const STATE_TONE: Record<string, BoardTone> = { executing: 'cyan', claimed: 'yellow', speccing: 'magenta', validated: 'magenta' }
@@ -54,9 +54,7 @@ export const countPrs = (json: string): number | undefined => {
 
 export const fit = (value: string, width: number) => (value.length <= width ? value : `${value.slice(0, Math.max(0, width - 1))}…`)
 
-// ---------------------------------------------------------------------------
 // Multi-repo board: registry, `bin/board all board` output, and what each view draws.
-// ---------------------------------------------------------------------------
 
 // In-flight states in the order the repo view lists them.
 export const IN_FLIGHT = ['executing', 'validated', 'speccing', 'claimed'] as const
@@ -195,3 +193,116 @@ export const itemLabel = (item: BoardItem, room: number, isWide: boolean) => {
 
 export const promptFor = (item: BoardItem, repo: BoardRepo) =>
   repo.isCurrent ? `Work on ${item.id}` : `Work on ${item.id} in ${repo.name}`
+
+// Worktree staleness: a worktree is stale when its branch is merged into the default branch
+// or its tip is older than STALE_DAYS. A detached worktree counts by its HEAD commit age only.
+// The main checkout (the first porcelain entry) is never counted.
+
+export const STALE_DAYS = 14
+export type Worktree = { path: string; head?: string; branch?: string }
+
+export const parseWorktrees = (porcelain: string): Worktree[] =>
+  porcelain
+    .split(/\n\s*\n/)
+    .map(block => block.split('\n'))
+    .flatMap((lines): Worktree[] => {
+      const path = lines.find(line => line.startsWith('worktree '))?.slice('worktree '.length)
+      if (path === undefined || lines.includes('bare')) return []
+      const head = lines.find(line => line.startsWith('HEAD '))?.slice('HEAD '.length)
+      const branch = lines.find(line => line.startsWith('branch '))?.slice('branch '.length).replace(/^refs\/heads\//, '')
+      return [{ path, head, branch }]
+    })
+
+// Linked worktrees on a detached HEAD: the shas whose commit age the caller must look up.
+export const detachedHeads = (porcelain: string): string[] =>
+  parseWorktrees(porcelain)
+    .slice(1)
+    .flatMap(worktree => (worktree.branch === undefined && worktree.head ? [worktree.head] : []))
+
+// `origin/main` becomes `main`; empty or unusable output is undefined so the caller falls back.
+export const parseDefaultBranch = (output: string): string | undefined => {
+  const name = output.trim().replace(/^origin\//, '')
+  return name === '' || name === 'HEAD' ? undefined : name
+}
+
+export const parseRefList = (output: string): string[] => output.split('\n').map(line => line.trim()).filter(Boolean)
+
+// `<branch> <unix seconds>` per line.
+export const parseRefAges = (output: string): Map<string, number> => {
+  const ages = new Map<string, number>()
+  for (const line of output.split('\n')) {
+    const found = /^(\S+)\s+(\d+)$/.exec(line.trim())
+    if (found?.[1] && found[2]) ages.set(found[1], Number(found[2]))
+  }
+  return ages
+}
+
+export const countStaleWorktrees = (
+  porcelain: string,
+  merged: readonly string[],
+  tipAges: ReadonlyMap<string, number>,
+  detachedAges: ReadonlyMap<string, number>,
+  nowMs: number,
+  // The default branch tip: a worktree sitting exactly on it was just created, not finished.
+  baseHead?: string,
+): number => {
+  const cutoff = nowMs / 1000 - STALE_DAYS * 86_400
+  return parseWorktrees(porcelain)
+    .slice(1)
+    .filter(worktree => {
+      if (worktree.branch !== undefined) {
+        const tip = tipAges.get(worktree.branch)
+        const isMergedWork = merged.includes(worktree.branch) && worktree.head !== baseHead
+        return isMergedWork || (tip !== undefined && tip < cutoff)
+      }
+      const age = worktree.head ? detachedAges.get(worktree.head) : undefined
+      return age !== undefined && age < cutoff
+    }).length
+}
+
+// NEXT: the ranked picks from `bin/board all priority overview`.
+
+export const NEXT_MAX = 5
+const NEXT_SECTIONS: { pattern: RegExp; kind: BoardNext['kind'] | undefined }[] = [
+  { pattern: /^DO NOW\b/, kind: 'now' },
+  { pattern: /^URGENT, HARDER\b/, kind: 'urgent' },
+  { pattern: /^QUICK WINS\b/, kind: 'quick' },
+  { pattern: /^(IN FLIGHT|THE REST)\b/, kind: undefined },
+]
+const NEXT_GLYPH: Record<BoardNext['kind'], string> = { now: '!', urgent: '▲', quick: '+' }
+const NEXT_ORDER: BoardNext['kind'][] = ['now', 'urgent', 'quick']
+
+const cleanTitle = (title: string) => title.replace(/\[deadline\]/g, '').replace(/#[a-z][a-z0-9-]*/g, '').replace(/\s+/g, ' ').trim()
+
+export const parseNext = (output: string): BoardNext[] => {
+  const rows: BoardNext[] = []
+  let repo = ''
+  let kind: BoardNext['kind'] | undefined
+  for (const line of stripAnsi(output).split('\n')) {
+    const header = /^=== (\S+?)(?: \[STALE: \d+ behind upstream\])? ===$/.exec(line)
+    if (header?.[1]) {
+      repo = header[1]
+      kind = undefined
+      continue
+    }
+    const section = NEXT_SECTIONS.find(candidate => candidate.pattern.test(line))
+    if (section) {
+      kind = section.kind
+      continue
+    }
+    const item = new RegExp(`^\\s+(${ITEM_ID.source})\\s+(.*)$`).exec(line)
+    if (item?.[1] && kind && repo) rows.push({ kind, id: item[1], title: cleanTitle(item[2] ?? ''), repo })
+  }
+  return rows
+}
+
+// DO NOW first, then URGENT, then QUICK WINS, registry order inside each, at most NEXT_MAX rows.
+export const rankNext = (rows: readonly BoardNext[], filter: string): BoardNext[] =>
+  NEXT_ORDER.flatMap(kind => rows.filter(row => row.kind === kind))
+    .filter(row => matches(`${row.id} ${row.title} ${row.repo}`, filter))
+    .slice(0, NEXT_MAX)
+
+export const nextLabel = (row: BoardNext) => `${NEXT_GLYPH[row.kind]} ${row.id} ${row.title}  ${row.repo}`
+
+export const nextPrompt = (row: BoardNext, repos: readonly BoardRepo[]) =>
+  repos.find(repo => repo.name === row.repo)?.isCurrent ? `Work on ${row.id}` : `Work on ${row.id} in ${row.repo}`
