@@ -636,5 +636,25 @@ d = json.load(sys.stdin)
 assert any(h["hook"] == "headless-stop-hook.sh" for h in d["hooks"]), d["hooks"]
 '; then ok "per-file Stop scoping holds on both fixtures"; else no "AC10 scoping wrong: $hjson / $sdkjson"; fi
 
+DEDUP="${DIR}/tests/dedup-edge"   # synthetic: msg_main split over 3 identical records, msg_sub streamed 8 -> 300 -> 700, one <synthetic> record
+
+echo "[111] cost + burn dedup one API message split across records, keep the final chunk, skip <synthetic> (in 30 / out 800 / cache-rd 3000 / cache-wr 50)"
+cjson="$("$CC" cost --root "$DEDUP" --json)"
+bjson="$(SESSION_OBSERVE_NOW="$BURNNOW" "$CC" burn --root "$DEDUP" --since 60 --json)"
+if echo "$cjson" | python3 -c '
+import json, sys
+t = json.load(sys.stdin)["cost"]["by_model"]
+assert len(t) == 1, t  # the <synthetic> model has no row
+t = t[0]
+assert (t["input"], t["output"], t["cache_read"], t["cache_create"]) == (30, 800, 3000, 50), t
+' && echo "$bjson" | python3 -c '
+import json, sys
+s = json.load(sys.stdin)["sessions"]
+assert len(s) == 1, s
+s = s[0]
+assert s["reqs"] == 2, s  # two API messages, not four records
+assert (s["input"], s["output"], s["cache_read"], s["cache_create"]) == (30, 800, 3000, 50), s
+'; then ok "cost and burn both report 2 messages, output 800 (100 + 700), no synthetic"; else no "dedup wrong: $cjson / $bjson"; fi
+
 if [[ $fail -gt 0 ]]; then echo "smoke: $pass passed, $fail FAILED" >&2; exit 1; fi
 echo "smoke: all $pass passed"
