@@ -133,11 +133,17 @@ We believe every task output should be verified by a dedicated agent before the 
 
 We believe every hook should be a readable shell script, not a compiled binary or a Node.js project. A contractor should be able to open any .sh file, read it in 30 seconds, and understand what it does. When a hook misbehaves, `bash -x hooks/safety-gate.sh` is the entire debugging workflow.
 
-**Decision this already made:** All 9 hooks are bash scripts using jq for JSON parsing. No Python, no Node, no compiled code. Auto-format detects formatters with `command -v` and runs them directly.
+**Decision this already made:** Every hook (gates, safety, lifecycle) is a bash script using jq for JSON parsing. No Python, no Node, no compiled code in a hook. Auto-format detects formatters with `command -v` and runs them directly. The two display surfaces, the statusline and the board pane mod, follow the scoped rule below.
 
 **Decision this would reject:** "Let's rewrite hooks in Python for better JSON handling." Adds a runtime dependency, slows startup, and makes debugging harder. The only exception is upgrading anti-rationalization to a prompt-type hook (which delegates to the LLM, not Python).
 
-**Carve-out:** The HUD/statusline script may use Node.js (via mjs) because StatusLine runs per-turn and needs fast JSON parsing that bash+jq struggles with at scale. This is the only exception. If a second exception is proposed, the principle should be revisited entirely, not bent again.
+**Display surfaces (scoped rule):** The statusline and Claude Code mods under `integrations/claude-code/` may use the runtime the host gives them: Node for the statusline, the mod runtime's TypeScript for mods. A statusline runs per turn and needs fast JSON parsing that bash and jq struggle with at scale. A mod can only draw through the host's plugin API. Three conditions hold, or the surface is rejected:
+
+1. It shows data and takes input. It never gates, blocks, or writes kit state.
+2. Kit data (backlogs, ledgers, gate state) is read only through a kit bash CLI (`bin/board` and its siblings); the surface never parses a ledger or backlog file itself. Any other read is read-only and outside the kit: `git`, `gh`, a directory listing, or the consumer's own config such as its board registry.
+3. It keeps no state beyond a cache it can rebuild from those CLIs.
+
+Hooks stay bash. A third kind of exception means revisiting this rule, not bending it.
 
 ### "Detect, don't dictate"
 
@@ -151,7 +157,7 @@ We believe the kit should detect the user's current state and suggest the right 
 
 We believe a doc describing an alternate or degraded path should state exactly what it cannot do, in short bullets, right where that path is offered. A silent gap surfaces later as a confused bug report; a disclosed gap lets the user route around it up front.
 
-**Decision this already made:** `/kit:onboard` section E states the plugin-path gaps (no statusLine HUD, a frozen SHA vs `git pull`, project hook wiring that points at the bash path, the `KIT_FORCE_FULL=1` escape) as four short bullets, at the exact moment the plugin path is offered, not buried in a troubleshooting doc.
+**Decision this already made:** `/kit:onboard` section E states the plugin-path gaps (no statusLine HUD, a frozen SHA vs `git pull`, project hook wiring that points at the bash path, the `KIT_FORCE_FULL=1` escape, the board pane mod that only the bash installer loads) as short bullets, at the exact moment the plugin path is offered, not buried in a troubleshooting doc.
 
 **Decision this would reject:** "Just skip mentioning the gap; most people will not hit it." Every doc offering a path with a known limit generalizes this convention, README included.
 
@@ -282,7 +288,7 @@ The 2026-05-20 upstream audit (the 10 source repos checked at their then-current
 2. **UI-shell creep.** Growing a statusline/HUD into a stateful UI layer with caches, themes, and its own config surface.
    - Observed: oh-my-claudecode (`Yeachan-Heo/oh-my-claudecode`, HEAD @ 2026-05-20 audit), whose HUD accumulates cache-GC and theming concerns.
    - Violates: "Bash over binaries" and "every script readable in 30 seconds"; a UI shell is a product, not glue.
-   - Caught by: the statusline carve-out is display-only; any cache, persisted state, or theme engine in a hook is rejected.
+   - Caught by: a display surface shows and takes input only, reads kit data through a kit bash CLI, and keeps nothing it cannot rebuild; a persisted state, a theme engine, or a direct ledger or backlog read in a statusline or mod is rejected, and any such logic in a hook is rejected.
 
 3. **Agent-persona theater.** Wrapping agents in role-play personas (a "studio", an "agent company", named characters) to imply capability the mechanism does not have.
    - Observed: the "agent-company OS" framing associated with the OMC name (`1mancompany/OneManCompany`, HEAD @ 2026-05-20 audit).
