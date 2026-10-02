@@ -25,6 +25,9 @@ set -uo pipefail
 KIT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$KIT_DIR" || exit 1
 
+# One heavy run at a time per host (tests/lib/run-lock.sh); re-execs this script under the lock.
+source "$KIT_DIR/tests/lib/run-lock.sh"; run_lock_exec "$KIT_DIR/tests/run-all.sh" "$@"
+
 # --time is order-free, so it is pulled out of the argument list before the positional
 # parsing below ($1 is the mode, $2 is --only's pattern or --changed's base) rather than
 # being threaded through it.

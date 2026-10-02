@@ -13,6 +13,10 @@
 #   LAND_SECTION=sec_<id> bash tests/test-wrap-land.sh   one section in this process (what a child runs)
 KIT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 if [ -z "${LAND_SECTION:-}" ]; then
+  # A section run (LAND_ONLY) or --list is light: no lock.
+  if [ -z "${LAND_ONLY:-}" ] && [ "${1:-}" != "--list" ]; then
+    source "$KIT_DIR/tests/lib/run-lock.sh"; run_lock_exec "$KIT_DIR/tests/$(basename "${BASH_SOURCE[0]}")" "$@"
+  fi
   source "$KIT_DIR/tests/lib/land-sections.sh"
   land_drive "$KIT_DIR/tests/$(basename "${BASH_SOURCE[0]}")" "$@"; exit $?
 fi
