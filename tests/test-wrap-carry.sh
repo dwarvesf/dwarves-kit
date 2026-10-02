@@ -295,6 +295,9 @@ echo "--- --no-pull (a step 0 stop): the stray-line carry pushes nothing, even w
 build_union_repo alnp
 ALN="$TMPD/uclone-alnp"; ALNB="$TMPD/ubare-alnp"
 printf '%s' "$LAB_STRAY" > "$ALN/_meta/LAB_LOG.md"
+# A tracked file with an old mtime and unchanged content: `git diff HEAD` refreshes the index
+# entry (a write), `git diff-index` does not, so the index checksum below tells them apart.
+touch -t 202001010000 "$ALN/README.md"
 ALN_INDEX="$(cksum < "$ALN/.git/index")"; ALN_HEAD="$(git -C "$ALN" rev-parse HEAD)"; ALN_BYTES="$(cksum < "$ALN/_meta/LAB_LOG.md")"
 out="$(al_run "$ALNB" "$ALN" --apply --no-pull)"; rc=$?
 chk "stray --no-pull: apply exits 0" "$rc"

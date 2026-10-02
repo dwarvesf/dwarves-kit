@@ -1180,6 +1180,14 @@ out="$(GH_STUB_OPEN_PRS="$(open_one 63)" GH_STUB_PR_63="$(clean_json 63 "$NPM_TI
 chk_has "merge --no-pull --pr: the named PR is skipped by name" "$out" \
   "SKIP #63: head feat/union is checked out in the main checkout (--no-pull)"
 chk "merge --no-pull --pr: no pr merge" "$(grep -q '^pr merge' "$GH_STUB_CALLS" && echo 1 || echo 0)"
+: > "$GH_STUB_CALLS"
+DRAFT_JSON="$(clean_json 66 "$NPM_TIP" | sed 's/"statusCheckRollup"/"isDraft":true,"statusCheckRollup"/')"
+out="$(GH_STUB_OPEN_PRS="$(open_one 66)" GH_STUB_PR_66="$DRAFT_JSON" \
+  "$WRAP" merge --apply --no-pull --pr 66 "$NPM" 2>&1)"
+chk_has "merge --no-pull --pr: a draft held by main is skipped by name" "$out" \
+  "SKIP #66: head feat/union is checked out in the main checkout (--no-pull)"
+chk "merge --no-pull --pr: a draft held by main is never marked ready" "$(grep -q '^pr ready' "$GH_STUB_CALLS" && echo 1 || echo 0)"
+chk "merge --no-pull --pr: a draft held by main is never merged" "$(grep -q '^pr merge' "$GH_STUB_CALLS" && echo 1 || echo 0)"
 out="$(GH_STUB_OPEN_PRS="$(open_one 64)" GH_STUB_PR_64="$(clean_json 64 "$NPM_TIP")" \
   "$WRAP" merge "$NPM" 2>&1)"
 chk_has "control, without --no-pull: the same held PR is eligible" "$out" "eligible #64"
