@@ -110,6 +110,8 @@ turn_cap_segments  = 10         # [impl] TURN_CAP_SEGMENTS. Max segments per sub
                                 #        secrets-guard) have no key here and are always on.
 proof_of_done      = false      # [impl] hooks/ship-gate.sh proof-of-done check (ADR-0025). Also needs
                                 #        the docs/verification/README.md marker (adopt writes it).
+negative_control   = "always"   # [impl] lib/gate/proof-ledger.sh: "always" = every behavioral proof needs a NEGATIVE
+                                #        CONTROL; "full" = only a hard-path diff or a full-lane spec does.
 lane_gates         = false      # [impl] hooks/ship-gate.sh lane x phase required-gate check plus
                                 #        the no-Lane refusal in adopted repos (ADR-0024)
 understanding_gate = false      # [impl] hooks/anti-rationalization.sh (ADR-0031)

@@ -12,7 +12,9 @@
 #                 Pass = a fresh verification entry with a recorded run AND a rollback
 #                 note (or [UNAVAILABLE: reason]).
 #   behavioral -- changes behavior (code/lib/commands/agents/hooks/tests).
-#                 Pass = a fresh verification entry with a green run AND a NEGATIVE CONTROL.
+#                 Pass = a fresh verification entry with a green run AND a NEGATIVE CONTROL
+#                 ([gate] negative_control = full drops the control unless a hard path or a
+#                 full-lane spec is involved; default `always`).
 #   inert      -- docs / comments / cosmetic (markdown-only diff). Pass (no ritual).
 #
 # "Fresh" = the branch diff itself added/modified the docs/verification/*.md entry, so an
@@ -281,6 +283,34 @@ _has_committed_image() {
   return 1
 }
 
+# _negctl_required <root> <base> <slug>: prints yes|no, whether a behavioral proof must carry a
+# NEGATIVE CONTROL. [gate] negative_control = always (default, every behavioral change) | full
+# (only a hard-path diff per lane-classify, or a spec whose Lane: is full). A project-level
+# `full` weakens the gate, so like gate-policy.sh it counts only when .kit.toml is tracked and
+# clean; the operator and kit-root layers apply as-is. Anything unreadable or unknown means yes.
+_negctl_required() {
+  local root="$1" base="$2" slug="$3" mode pv spec lane changed
+  mode="$(KIT_PROJECT_ROOT=/nonexistent kit_config_get gate.negative_control always 2>/dev/null)" || mode=always
+  pv="$(_kit_toml_get "$root/.kit.toml" gate negative_control)"
+  case "$pv" in
+    always) mode=always ;;
+    full) kit_config_tracked_clean "$root/.kit.toml" && mode=full ;;
+  esac
+  [ "$mode" = full ] || { echo yes; return 0; }
+  [ -z "$slug" ] || spec="$(ls "$root"/docs/specs/SPEC-*-"$slug".md 2>/dev/null | head -1)"
+  if [ -n "${spec:-}" ]; then
+    lane="$(grep -m1 -iE '^(\*\*)?Lane(\*\*)?:' "$spec" 2>/dev/null | sed -E 's/^(\*\*)?[Ll]ane(\*\*)?:(\*\*)?[[:space:]]*//; s/[[:space:]].*$//')"
+    [ "$lane" = full ] && { echo yes; return 0; }
+  fi
+  local LC="$LIB_ROOT/classify/lane-classify.sh"
+  [ -f "$LC" ] || { echo yes; return 0; }
+  [ -z "$(KIT_PROJECT_ROOT="$root" bash "$LC" floor "$root" "$base" 2>/dev/null)" ] || { echo yes; return 0; }
+  changed="$(_changed "$root" "$base" | tr '\n' ' ')"
+  KIT_PROJECT_ROOT="$root" bash "$LC" explain --files "$changed" "negative control check" 2>/dev/null \
+    | grep -qx 'flags: hard-path' && { echo yes; return 0; }
+  echo no
+}
+
 check() {
   local root="${1:-}" base="${2:-}" slug="${3:-}"
   [ -n "$root" ] && [ -n "$base" ] || { echo "usage: check <root> <base> [slug]" >&2; return 64; }
@@ -289,6 +319,8 @@ check() {
 
   local class last_v; class="$(classify "$root" "$base")"
   [ "$class" = "inert" ] && return 0          # docs/cosmetic: no ritual.
+  local negctl_req=yes
+  [ "$class" = "behavioral" ] && negctl_req="$(_negctl_required "$root" "$base" "$slug")"
 
   local files f ok=1
   # near_miss: one "path<TAB>last_v" line per behavioral file/group that has a
@@ -311,7 +343,7 @@ check() {
         # LAST-verdict-wins (review lens 2): the documented append shape retries after a
         # noisy run, so only the most recent Verdict: line in the file decides.
         last_v="$(grep -iE '^[[:space:]]*Verdict:' "$p" | tail -1)"
-        has_negctl=1; grep -qi 'NEGATIVE CONTROL' "$p" && has_negctl=0
+        has_negctl=1; { [ "$negctl_req" = no ] || grep -qi 'NEGATIVE CONTROL' "$p"; } && has_negctl=0
         has_green=1; { grep -qE 'Exit:[[:space:]]*0|VERDICT: PASS|Verdict: PASS|PASS' "$p" || _has_committed_image "$p" "$root"; } && has_green=0
         last_ok=1; ! printf '%s' "$last_v" | grep -qiE 'Verdict:[[:space:]]*(INCONCLUSIVE|FAIL)' && last_ok=0
         if [ "$has_negctl" -eq 0 ] && [ "$has_green" -eq 0 ] && [ "$last_ok" -eq 0 ]; then
@@ -343,7 +375,7 @@ check() {
         # Last-verdict-wins, set-wise: files concatenate in sorted (= chronological)
         # order, so the union's final Verdict: line is the latest run's.
         last_v="$(printf '%s' "$content" | grep -iE '^[[:space:]]*Verdict:' | tail -1)"
-        has_negctl=1; printf '%s' "$content" | grep -qi 'NEGATIVE CONTROL' && has_negctl=0
+        has_negctl=1; { [ "$negctl_req" = no ] || printf '%s' "$content" | grep -qi 'NEGATIVE CONTROL'; } && has_negctl=0
         has_green=1; { printf '%s' "$content" | grep -qE 'Exit:[[:space:]]*0|VERDICT: PASS|Verdict: PASS|PASS' || [ "$grp_img" -eq 0 ]; } && has_green=0
         last_ok=1; ! printf '%s' "$last_v" | grep -qiE 'Verdict:[[:space:]]*(INCONCLUSIVE|FAIL)' && last_ok=0
         if [ "$has_negctl" -eq 0 ] && [ "$has_green" -eq 0 ] && [ "$last_ok" -eq 0 ]; then
@@ -411,7 +443,11 @@ check() {
   {
     echo "BLOCKED: proof of done. This is a '$class' change; it cannot ship/merge without a matching proof-of-done entry in docs/verification/."
     if [ "$class" = "behavioral" ]; then
-      echo "  Need: a docs/verification/<slug>.md added by this branch with a green run AND a NEGATIVE CONTROL (revert -> RED -> restore)."
+      if [ "$negctl_req" = no ]; then
+        echo "  Need: a docs/verification/<slug>.md added by this branch with a green run ([gate] negative_control = full: no NEGATIVE CONTROL owed for this non-hard-path diff)."
+      else
+        echo "  Need: a docs/verification/<slug>.md added by this branch with a green run AND a NEGATIVE CONTROL (revert -> RED -> restore)."
+      fi
       echo "        ('green run' = a text run-table (Command:/Exit:/Verdict: PASS) OR a committed screenshot/GIF embed for visual/demo work.)"
       # A file that IS found and carries a NEGATIVE CONTROL + a green run, but is
       # rejected solely because its own final Verdict line reads FAIL/INCONCLUSIVE, gets named
