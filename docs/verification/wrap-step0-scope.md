@@ -91,3 +91,7 @@ Verdict: PASS
 The command prose (the stop, the dry-run protocol, the `land` hold, the `--pr` eligible-only rule) is model-executed. The doc tests pin the sentences, not the behavior. No live `/kit:wrap` run has met a foreign signal yet. The re-merge of a CONFLICTING PR held by the main checkout has no verb gate (accepted residue, named in the spec).
 
 Validate round 2 ended NEEDS REVISION with its three criticals folded and no third round; the gate ledger holds the `validate` override.
+
+## Rollback
+
+The change is additive code plus a prose rewrite, with no persistent state, migration, or deploy. Roll back with `git revert 38fb8b9b` (the code, tests, and `commands/wrap.md`). Reverting restores the old step 0 stop, under which the merge and own-worktree tidy stay stopped on a foreign signal.
