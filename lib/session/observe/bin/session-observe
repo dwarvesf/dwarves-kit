@@ -25,6 +25,9 @@ Three views, all derived from the JSONL transcripts under ~/.claude/projects/:
               `model share` splits each row by model (priced, so an Opus fan-out is
               visible at a glance); not part of `report` (report is the weekly digest,
               burn is a live check)
+  timing    - per transcript: wall time, tool execution time (tool_use -> tool_result),
+              model time (gap before each tool_use), call count, and sleep-poll time
+              (Bash `sleep N`, N >= 10) plus the 5 slowest tool calls; not part of `report`
   report    - all of the above, the weekly self-observability digest
 
 The subagents view answers "is my subagent mix drifting?" that a raw tool count
@@ -1441,6 +1444,92 @@ def run_entry_fee(args):
     print()
 
 
+# A Bash call is a sleep-poll when any chained segment is `sleep N` with N >= SLEEP_POLL_MIN.
+SLEEP_POLL_MIN = 10
+_SLEEP_RE = re.compile(r"(?:^|[;&|\n])\s*sleep\s+(\d+(?:\.\d+)?)")
+
+
+def is_sleep_poll(name, inp):
+    if name != "Bash" or not isinstance(inp, dict):
+        return False
+    cmd = inp.get("command")
+    return isinstance(cmd, str) and any(float(n) >= SLEEP_POLL_MIN for n in _SLEEP_RE.findall(cmd))
+
+
+def timing_session(path):
+    """One transcript -> wall/tool/model seconds, call count, sleep-poll totals, per-call durations.
+
+    tool  = tool_use ts -> matching tool_result ts (by tool_use_id).
+    model = last tool_result or user message ts -> next assistant tool_use ts.
+    Sidechain entries are skipped so a subagent's calls are not double counted."""
+    first = last = ready = None
+    model = 0.0
+    uses, calls = {}, []
+    for e in iter_entries(path):
+        if e.get("isSidechain"):
+            continue
+        ts = parse_ts(e.get("timestamp"))
+        if ts is None:
+            continue
+        first = first or ts
+        last = ts
+        for b in blocks(e):
+            if not isinstance(b, dict):
+                continue
+            if e.get("type") == "assistant" and b.get("type") == "tool_use" and b.get("id") not in uses:
+                if ready is not None:
+                    model += (ts - ready).total_seconds()
+                    ready = None
+                inp = b.get("input") if isinstance(b.get("input"), dict) else {}
+                target = inp.get("command") or inp.get("file_path") or ""
+                uses[b.get("id")] = (ts, b.get("name") or "?", str(target).replace("\n", " ")[:80], is_sleep_poll(b.get("name"), inp))
+            elif e.get("type") == "user" and b.get("type") == "tool_result":
+                u = uses.pop(b.get("tool_use_id"), None)
+                if u:
+                    calls.append({"tool": u[1], "duration_s": (ts - u[0]).total_seconds(), "target": u[2], "sleep_poll": u[3]})
+        if e.get("type") == "user":
+            ready = ts
+    if first is None:
+        return None
+    sleeps = [c for c in calls if c["sleep_poll"]]
+    return {"file": path, "wall_s": (last - first).total_seconds(),
+            "tool_s": sum(c["duration_s"] for c in calls), "model_s": model, "calls": len(calls),
+            "sleep_poll_calls": len(sleeps), "sleep_poll_s": sum(c["duration_s"] for c in sleeps),
+            "_calls": calls}
+
+
+def _num(x):
+    return int(x) if float(x).is_integer() else round(x, 1)
+
+
+def run_timing(args):
+    """The `timing` view: where a session's wall clock went (tools vs model vs sleep-polls).
+    Own I/O path like entry-fee/burn; not part of `report`."""
+    sessions = [s for s in (timing_session(p) for p in iter_files(args)) if s]
+    slowest = sorted((dict(c, file=s["file"]) for s in sessions for c in s["_calls"]),
+                     key=lambda c: -c["duration_s"])[:5]
+    keys = ("wall_s", "tool_s", "model_s", "sleep_poll_s")
+    rows = [{**{k: v for k, v in s.items() if k != "_calls"}} for s in sessions]
+    for r in rows:
+        for k in keys:
+            r[k] = _num(r[k])
+    for c in slowest:
+        c["duration_s"] = _num(c["duration_s"])
+        del c["sleep_poll"]
+    if args.top:
+        rows = rows[:args.top]
+    if args.json:
+        print(json.dumps({"timing": {"files": len(sessions), "transcripts": rows, "slowest": slowest}}, indent=2))
+        return
+    print(f"# timing  ({len(sessions)} transcripts; seconds; sleep-poll = Bash sleep >= {SLEEP_POLL_MIN}s)")
+    print_table(["transcript", "wall", "tool", "model", "calls", "sleep-polls", "sleep-poll s"],
+                [[short_project(os.path.basename(r["file"])), r["wall_s"], r["tool_s"], r["model_s"], r["calls"],
+                  r["sleep_poll_calls"], r["sleep_poll_s"]] for r in rows])
+    print()
+    print("# slowest tool calls")
+    print_table(["tool", "seconds", "target"], [[c["tool"], c["duration_s"], c["target"]] for c in slowest])
+
+
 def emit(args, data):
     if args.json:
         out = {
@@ -1560,7 +1649,7 @@ def emit(args, data):
 
 def main(argv=None):
     p = argparse.ArgumentParser(prog="session-observe", description="Report Claude Code skill/tool/hook usage from session transcripts.")
-    p.add_argument("cmd", choices=["skills", "tools", "hooks", "subagents", "friction", "sessions", "cost", "burn", "entry-fee", "report"], help="which view")
+    p.add_argument("cmd", choices=["skills", "tools", "hooks", "subagents", "friction", "sessions", "cost", "burn", "entry-fee", "timing", "report"], help="which view")
     src = p.add_mutually_exclusive_group()
     src.add_argument("--file", help="parse a single transcript file (used by tests)")
     src.add_argument("--project", help="project slug under ~/.claude/projects/")
@@ -1588,6 +1677,10 @@ def main(argv=None):
 
     if args.cmd == "entry-fee":
         run_entry_fee(args)
+        return 0
+
+    if args.cmd == "timing":
+        run_timing(args)
         return 0
 
     data = collect(args)

@@ -656,5 +656,19 @@ assert s["reqs"] == 2, s  # two API messages, not four records
 assert (s["input"], s["output"], s["cache_read"], s["cache_create"]) == (30, 800, 3000, 50), s
 '; then ok "cost and burn both report 2 messages, output 800 (100 + 700), no synthetic"; else no "dedup wrong: $cjson / $bjson"; fi
 
+TFIX="${DIR}/tests/fixtures/timing-sample.jsonl"  # wall 81s; tools Read 2 + sleep chain 60 + short sleep 6 = 68; model 5+3+4 = 12 (gap before each tool_use); sleep-poll 1 call / 60s (the 5s sleep is under the 10s floor)
+
+echo "[112] timing: tool 68s, model 12s, wall 81s, 3 calls, sleep-poll 1 call / 60s, slowest = the sleep chain"
+tjson="$("$CC" timing --file "$TFIX" --json)"
+if echo "$tjson" | python3 -c '
+import json, sys
+d = json.load(sys.stdin)["timing"]
+t = d["transcripts"][0]
+assert (t["wall_s"], t["tool_s"], t["model_s"], t["calls"]) == (81, 68, 12, 3), t
+assert (t["sleep_poll_calls"], t["sleep_poll_s"]) == (1, 60), t
+top = d["slowest"][0]
+assert (top["tool"], top["duration_s"], top["target"]) == ("Bash", 60, "sleep 30; sleep 30"), top
+' && "$CC" timing --file "$TFIX" | grep -q 'sleep 30; sleep 30'; then ok "timing numbers and text view match"; else no "timing wrong: $tjson"; fi
+
 if [[ $fail -gt 0 ]]; then echo "smoke: $pass passed, $fail FAILED" >&2; exit 1; fi
 echo "smoke: all $pass passed"
