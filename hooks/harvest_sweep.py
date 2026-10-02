@@ -1670,7 +1670,7 @@ def run_selection(process=None, schedule_hours=6, max_sessions=20, since=None,
         # flags (--tools "", --strict-mcp-config, --no-session-persistence) do not apply
         run["state_rows"].append(
             "STATE run: extractor override active, safety flags not enforced")
-    # sources (the kit.toml [harvest] sources list) narrows which adapters run;
+    # sources (the [harvest] sources config list) narrows which adapters run;
     # None means every adapter, which is what the library-level tests exercise
     src_list = [t for t in _sources() if sources is None or t[0] in sources]
     for source, lister, loader in src_list:
@@ -1933,46 +1933,19 @@ def run_report(result):
 _DRY_RUN = False  # set by main() under --dry-run; the two real-state writes it guards
 
 
-def _kit_toml_get(path, section, key):
-    """_kit_toml_get in Python: the raw value of [section].key in one kit.toml, or "".
-    Line-oriented like the bash resolver (full-line and inline comments, surrounding
-    whitespace, one layer of double quotes), so a value either side reads the same."""
-    try:
-        fh = open(path, encoding="utf-8", errors="replace")
-    except OSError:
-        return ""
-    insec = False
-    with fh:
-        for line in fh:
-            if line.lstrip().startswith("#"):
-                continue
-            if line.lstrip().startswith("["):
-                insec = re.sub(r"[\[\]\s]", "", re.sub(r"#.*", "", line)) == section
-                continue
-            if not insec:
-                continue
-            m = re.match(r"^\s*%s\s*=\s*(.*)$" % re.escape(key),
-                         re.sub(r"#.*", "", line))
-            if m:
-                return m.group(1).strip().strip('"')
-    return ""
-
-
 def _kit_root(dotkey, default=""):
-    """kit_config_get_root in Python: operator kit.toml, else kit-root kit.toml, else
-    default. A project .kit.toml is never read for [harvest] keys -- it rides inside
-    an untrusted PR and cannot switch the sweep on or off (DEC-27, AC8's control)."""
-    section, _, key = dotkey.partition(".")
-    op_dir = os.environ.get("KIT_CONFIG_OPERATOR") or os.path.join(
-        os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config"),
-        "dwarves-kit")
-    root_dir = os.environ.get("KIT_CONFIG_ROOT") or os.environ.get("DWARVES_KIT") \
-        or os.path.expanduser("~/.claude/dwarves-kit")
-    for path in (os.path.join(op_dir, "kit.toml"), os.path.join(root_dir, "kit.toml")):
-        v = _kit_toml_get(path, section, key)
-        if v != "":
-            return v
-    return default
+    """kit_config_get_root through lib/config/kit-config.sh, the one TOML reader: operator
+    file, else kit-root file, else default. A project config file is never read
+    for [harvest] keys: it rides inside an untrusted PR and cannot switch the sweep on or
+    off (DEC-27, AC8's control)."""
+    try:
+        r = subprocess.run(
+            ["bash", "-c", 'source "$1" && kit_config_get_root "$2" "$3"', "_",
+             os.path.join(_HERE, "..", "lib", "config", "kit-config.sh"), dotkey, default],
+            capture_output=True, text=True, timeout=10)
+    except (OSError, subprocess.SubprocessError):
+        return default
+    return r.stdout if r.returncode == 0 else default
 
 
 def _sweep_active():
