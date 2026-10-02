@@ -6,7 +6,7 @@ Usage: wrap-step0-scope-negctl.py <nc1|nc2|nc3|nc4|nc5|nc6|nc7|nc8>
 Run through negctl, from the repo root, after the change is committed:
   bash lib/gate/negctl.sh "$PWD" "bash tests/test-wrap-apply.sh" \
     "python3 docs/verification/wrap-step0-scope-negctl.py nc1"
-nc4 and nc8 pair with tests/test-wrap-carry.sh, nc5 and nc6 with tests/test-wrap-merge.sh, nc1 to nc3 and nc7 with tests/test-wrap-apply.sh. Each mutation must match exactly once.
+nc4 and nc8 pair with tests/test-wrap-carry.sh, nc5 and nc6 with tests/test-wrap-merge-nopull.sh, nc1 to nc3 and nc7 with tests/test-wrap-apply.sh. Each mutation must match exactly once.
 """
 import sys
 
