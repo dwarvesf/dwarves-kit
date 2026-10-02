@@ -25,6 +25,8 @@ Or load it every session through `~/.claude/settings.json`:
 | `/board` | `bin/board board --backlog-file <cwd>/_meta/BACKLOG.md` | the kanban of the session's repo |
 | `/board all` | `bin/board all next --repo-root <cwd>` | the cross-repo view, from the `boards.txt` registry in that repo |
 
+Press an item row (or its digit hotkey, 1 to 9) to submit `Work on <ID>` (`Work on <ID> in <repo>` in `all` mode) as a prompt. `r` refreshes, and the pane re-renders itself every 60 seconds while it is open. In `all` mode a repo whose checkout lags upstream is dimmed with a trailing `?`, repos with nothing queued fold into one `+N idle` row, and a header shows the refresh time. In repo mode `executing:` items carry a cyan marker and `claimed:` items a yellow one.
+
 The CLI resolves as `$DWARVES_KIT/bin/board`, falling back to `~/.claude/dwarves-kit/bin/board`. A non-zero exit shows the CLI's stderr, dimmed, in the pane.
 
 ## Develop

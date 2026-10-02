@@ -1,13 +1,13 @@
 import { atom, read, update } from 'claude-code'
-import type { EngineInterface, Register } from 'claude-code'
+import type { EngineInterface, Register, Timer } from 'claude-code'
 
-import type { BoardMode } from '../types'
+import type { BoardMode, BoardRow, BoardState } from '../types'
+import { clockText, errorRows, parseRows, promptFor } from './parse'
 
 const PANE = 'board'
-const state = atom(
-  { plugin: 'board-pane', key: 'state' } as const,
-  { lines: [] as string[], mode: 'repo' as BoardMode, isError: false },
-)
+const REFRESH_MS = 60_000
+const initial: BoardState = { rows: [], mode: 'repo', refreshedAt: '' }
+const state = atom({ plugin: 'board-pane', key: 'state' } as const, initial)
 
 // Same resolution the kit's other wrappers use: $DWARVES_KIT, else the bash-install path.
 const resolveBoard = async ($: EngineInterface) => {
@@ -24,23 +24,33 @@ const argvFor = (board: string, mode: BoardMode, cwd: string) =>
     ? [board, 'all', 'next', '--repo-root', cwd]
     : [board, 'board', '--backlog-file', `${cwd}/_meta/BACKLOG.md`]
 
-const stripAnsi = (text: string) => text.replace(/\x1b\[[0-9;]*m/g, '')
-
 const refresh = async ($: EngineInterface, mode: BoardMode) => {
   const cwd = await $.session.cwd()
   const board = await resolveBoard($)
-  let text: string
-  let isError = false
+  let rows: BoardRow[]
   try {
     const run = await $.process.run(argvFor(board, mode, cwd), { env: { NO_COLOR: '1' } })
-    isError = run.exitCode !== 0
-    text = isError ? run.stderr || `board exited ${run.exitCode}` : run.stdout
+    rows = run.exitCode === 0 ? parseRows(mode, run.stdout) : errorRows(run.stderr || `board exited ${run.exitCode}`)
   } catch (err) {
-    isError = true
-    text = `board could not start: ${String(err)}`
+    rows = errorRows(`board could not start: ${String(err)}`)
   }
-  const lines = stripAnsi(text).trimEnd().split('\n')
-  await update($, state, () => ({ lines, mode, isError }))
+  const refreshedAt = clockText(await $.clock.now())
+  await update($, state, () => ({ rows, mode, refreshedAt }))
+}
+
+// One timer per module load. Each tick re-checks the pane, so a closed pane ends the timer.
+let timer: Timer | undefined
+const autoRefresh = ($: EngineInterface) => {
+  timer?.cancel()
+  timer = $.clock.every(REFRESH_MS, async () => {
+    const isOpen = (await $.ui.panes()).some(pane => pane.id === PANE)
+    if (!isOpen) {
+      timer?.cancel()
+      timer = undefined
+      return
+    }
+    await refresh($, (await read($, state)).mode)
+  })
 }
 
 export const register: Register = on => {
@@ -53,18 +63,42 @@ export const register: Register = on => {
     const mode: BoardMode = e.args.trim() === 'all' ? 'all' : 'repo'
     await refresh($, mode)
     await $.ui.open({ id: PANE, title: mode === 'all' ? 'Board: all repos' : 'Board' })
+    autoRefresh($)
     return { text: 'Board pane opened.' }
   })
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
     const { Box, Text, Button } = $.ui.resolve(e)
-    const { lines, mode, isError } = await read($, state)
+    const { rows, mode, refreshedAt } = await read($, state)
+    let itemNo = 0
     return (
       <Box flexDirection="column">
-        {lines.map(row => (
-          <Text dimColor={isError}>{row}</Text>
-        ))}
-        <Button key="refresh" label="Refresh" onPress={() => refresh($, mode)} />
+        {refreshedAt && <Text dimColor>refreshed {refreshedAt}</Text>}
+        {rows.map(row => {
+          if (row.kind === 'text') {
+            return (
+              <Text bold={row.isBold} dimColor={row.isDim}>
+                {row.text}
+              </Text>
+            )
+          }
+          itemNo += 1
+          // Button has no color prop, so the state tone rides on a bullet beside it.
+          return (
+            <Box flexDirection="row">
+              {row.tone && <Text color={row.tone}>* </Text>}
+              <Button
+                key={`item-${itemNo}`}
+                plain
+                label={row.text}
+                hotkey={itemNo <= 9 ? String(itemNo) : undefined}
+                dimColor={row.isDim}
+                onPress={() => $.prompt.submit({ text: promptFor(row) })}
+              />
+            </Box>
+          )
+        })}
+        <Button key="refresh" label="Refresh" hotkey="r" onPress={() => refresh($, mode)} />
       </Box>
     )
   })
