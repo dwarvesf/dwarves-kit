@@ -22,7 +22,7 @@ from pathlib import Path
 ACTIVE_STATUSES = {"queued", "claimed", "speccing", "validated", "executing"}
 # Status keywords an archive row may carry for its spoke card to be closed,
 # and the extraction that reads one. Both match the archive tooling
-# (`_meta/board-archive`), which moves a row on the LEADING ALPHA RUN of its
+# (`_meta/scripts/board-archive`), which moves a row on the LEADING ALPHA RUN of its
 # status cell, so `shipped:` and `shipped/dropped` archive like `shipped`. A
 # keyword outside this set, malformed or simply still open, is NOT evidence.
 ARCHIVED_CLOSED = {"shipped", "dropped", "done", "resolved"}
