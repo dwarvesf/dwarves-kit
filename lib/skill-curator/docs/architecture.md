@@ -85,7 +85,7 @@ from the testable reviewer unit. (b) The model's answer is wrapped twice: the `c
    ~/.claude/skill-proposals/<slug>/SKILL.md     ◄── reviewer stages here. Claude Code does NOT
             │                                          auto-load this path. The gate IS the path.
             │  /skill-review  (bin/skill-review, the ONLY writer of ~/.claude/skills/)
-            │    list → you read + vet against superpowers:writing-skills → promote | reject
+            │    list → you read + vet against the skill-review quality bar → promote | reject
             ├── promote ──▶ ~/.claude/skills/<name>/      (mv; refuses overwrite w/o --force;
             │                                              --force backs the old up to _replaced/)
             └── reject  ──▶ ~/.claude/skill-proposals/_rejected/<slug>/   (move, never rm)
@@ -188,8 +188,8 @@ the bare file never exists.
 
 - **Memory capture** , owned by cc-harvest (`tools/cc-harvest/`). A per-turn memory cadence is
   cc-harvest's `--stop-trigger`, not this tool.
-- **The skill quality bar** , delegated to `superpowers:writing-skills` at promote time; this tool
-  does not reimplement it.
+- **The skill quality bar** , inlined in `skills/skill-review/SKILL.md` and applied at promote time; this tool
+  does not enforce it in code.
 - **Auto-activation of skills** (Hermes `guard_agent_created:false`) , explicitly rejected; see
   `docs/decisions/0002-propose-and-stage.md`.
 - **A daemon** , the reviewer is hook-triggered and detached; only the optional weekly curator is a
