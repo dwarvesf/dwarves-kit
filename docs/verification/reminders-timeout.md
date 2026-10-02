@@ -7,7 +7,7 @@ Change under proof: `lib/sync/sources/reminders.py` `_osascript` probes Reminder
 | # | Check | Command | Result | Verdict |
 |---|---|---|---|---|
 | 1 | New cases + whole sync suite | `bash tests/test-sync.sh` | 294 passed in 1.03s | PASS |
-| 2 | Live, wedged Mini, first board | `python3 lib/sync/backlog_sync.py --apps reminders --list "Backlog · books" --backlog ~/workspace/tieubao/books/BACKLOG.md --state-root <tmp> --dry-run` | `did not answer a 30s probe; skipping reminders for 30 min`, rc=1, 30s | PASS |
+| 2 | Live, wedged Mini, first board | `python3 lib/sync/backlog_sync.py --apps reminders --list "Backlog · books" --backlog <books-backlog>/BACKLOG.md --state-root <tmp> --dry-run` | `did not answer a 30s probe; skipping reminders for 30 min`, rc=1, 30s | PASS |
 | 3 | Live, same command again | same | `skipped, Reminders.app did not answer 0 min ago`, rc=1, 0s | PASS |
 
 Before the fix the same call blocked 600s per board (sweep log `board-sync-all.log`, 48 `TimeoutExpired` tracebacks since the 00:11 tick).
