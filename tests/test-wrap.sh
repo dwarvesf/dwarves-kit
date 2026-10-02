@@ -12,12 +12,23 @@
 set -uo pipefail
 KIT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
+# Suites run concurrently (WRAP_JOBS at a time, largest file first so the slow ones start early).
+# Each suite's output and exit code land in its own temp file; printing follows glob order.
+WRAP_JOBS="${WRAP_JOBS:-4}"
+export OUT_DIR="$(mktemp -d "${TMPDIR:-/tmp}/test-wrap.XXXXXX")"
+trap 'rm -rf "$OUT_DIR"' EXIT
+
+# test-wrap counts the PASS lines of each suite; a cached land section prints none, so it runs fresh here.
+ls -S "$KIT_DIR"/tests/test-wrap-*.sh | xargs -n1 -P "$WRAP_JOBS" bash -c \
+  'n="$(basename "$1")"; LAND_CACHE=0 bash "$1" >"$OUT_DIR/$n.out" 2>&1; echo $? >"$OUT_DIR/$n.rc"' _ >/dev/null
+# the xargs call only dispatches: a suite's rc is read from its own file below.
+
 PASS=0; FAIL=0; RC=0
 for t in "$KIT_DIR"/tests/test-wrap-*.sh; do
-  # test-wrap counts the PASS lines of each suite; a cached land section prints none, so it runs fresh here.
-  out="$(LAND_CACHE=0 bash "$t" 2>&1)"; rc=$?
+  n="$(basename "$t")"
+  out="$(cat "$OUT_DIR/$n.out")"
   printf '%s\n' "$out"
-  [ "$rc" -eq 0 ] || RC=1
+  [ "$(cat "$OUT_DIR/$n.rc" 2>/dev/null || echo 1)" -eq 0 ] || RC=1
   PASS=$((PASS + $(printf '%s\n' "$out" | grep -acE '^  .\[0;32mPASS')))
   FAIL=$((FAIL + $(printf '%s\n' "$out" | grep -acE '^  .\[0;31mFAIL')))
 done
