@@ -1,6 +1,6 @@
 # Spec: wrap step 0 stops main-checkout writes only, so merges and tidy still land
 Generated: 2026-10-02
-Status: DRAFT
+Status: IMPLEMENTED, pending merge (branch `fix/wrap-step0-scope`); validate round 2 criticals folded, override logged
 Lane: full (kit machinery: `lib/wrap/`, the `wrap` command contract)
 Type: spec-feature
 Depth: blind-spot (failure: the model skips the dry-run protocol and a CONFLICTING re-merge writes the main working tree, or names a draft with --pr and merges it unreviewed)
