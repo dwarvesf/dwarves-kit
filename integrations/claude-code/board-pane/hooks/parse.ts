@@ -54,9 +54,7 @@ export const countPrs = (json: string): number | undefined => {
 
 export const fit = (value: string, width: number) => (value.length <= width ? value : `${value.slice(0, Math.max(0, width - 1))}…`)
 
-// ---------------------------------------------------------------------------
 // Multi-repo board: registry, `bin/board all board` output, and what each view draws.
-// ---------------------------------------------------------------------------
 
 // In-flight states in the order the repo view lists them.
 export const IN_FLIGHT = ['executing', 'validated', 'speccing', 'claimed'] as const
@@ -196,11 +194,9 @@ export const itemLabel = (item: BoardItem, room: number, isWide: boolean) => {
 export const promptFor = (item: BoardItem, repo: BoardRepo) =>
   repo.isCurrent ? `Work on ${item.id}` : `Work on ${item.id} in ${repo.name}`
 
-// ---------------------------------------------------------------------------
 // Worktree staleness: a worktree is stale when its branch is merged into the default branch
 // or its tip is older than STALE_DAYS. A detached worktree counts by its HEAD commit age only.
 // The main checkout (the first porcelain entry) is never counted.
-// ---------------------------------------------------------------------------
 
 export const STALE_DAYS = 14
 export type Worktree = { path: string; head?: string; branch?: string }
@@ -247,6 +243,8 @@ export const countStaleWorktrees = (
   tipAges: ReadonlyMap<string, number>,
   detachedAges: ReadonlyMap<string, number>,
   nowMs: number,
+  // The default branch tip: a worktree sitting exactly on it was just created, not finished.
+  baseHead?: string,
 ): number => {
   const cutoff = nowMs / 1000 - STALE_DAYS * 86_400
   return parseWorktrees(porcelain)
@@ -254,16 +252,15 @@ export const countStaleWorktrees = (
     .filter(worktree => {
       if (worktree.branch !== undefined) {
         const tip = tipAges.get(worktree.branch)
-        return merged.includes(worktree.branch) || (tip !== undefined && tip < cutoff)
+        const isMergedWork = merged.includes(worktree.branch) && worktree.head !== baseHead
+        return isMergedWork || (tip !== undefined && tip < cutoff)
       }
       const age = worktree.head ? detachedAges.get(worktree.head) : undefined
       return age !== undefined && age < cutoff
     }).length
 }
 
-// ---------------------------------------------------------------------------
 // NEXT: the ranked picks from `bin/board all priority overview`.
-// ---------------------------------------------------------------------------
 
 export const NEXT_MAX = 5
 const NEXT_SECTIONS: { pattern: RegExp; kind: BoardNext['kind'] | undefined }[] = [

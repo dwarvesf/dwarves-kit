@@ -39,6 +39,15 @@ test('a branch merged into the default branch is stale however fresh its tip', (
   expect(countStaleWorktrees(porcelain(MAIN, linked('x', 'feat/x')), ['feat/x'], ages, new Map(), NOW_MS)).toBe(1)
 })
 
+test('a worktree just created on the default branch tip is not stale, merged work past it is', () => {
+  const ages = new Map([
+    ['feat/fresh', NOW_S - DAY],
+    ['feat/done', NOW_S - DAY],
+  ])
+  const out = porcelain(MAIN, linked('fresh', 'feat/fresh', 'a1'), linked('done', 'feat/done', 'd4'))
+  expect(countStaleWorktrees(out, ['feat/fresh', 'feat/done'], ages, new Map(), NOW_MS, 'a1')).toBe(1)
+})
+
 test('an unmerged branch is stale only past the age limit', () => {
   const ages = new Map([
     ['feat/old', NOW_S - (STALE_DAYS + 1) * DAY],

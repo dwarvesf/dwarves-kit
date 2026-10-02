@@ -46,7 +46,7 @@ A one-line summary band above the prompt counts queued and executing tasks, hand
 ```
 Command: claude plugin test integrations/claude-code/board-pane
 Exit: 0
-54 pass, 0 fail
+55 pass, 0 fail
 Verdict: PASS
 ```
 
@@ -181,3 +181,16 @@ Verdict: RED as expected
 ```
 
 Each control was restored: 54 plugin tests pass and PASS=24 for the installer.
+
+## Negative control: a fresh worktree is not stale
+
+A worktree whose branch sits exactly on the default branch tip was just created, so it does not count as merged work. Dropped the tip comparison from `countStaleWorktrees` in `hooks/parse.ts`.
+
+```
+Command: claude plugin test integrations/claude-code/board-pane
+(fail) a worktree just created on the default branch tip is not stale, merged work past it is
+54 pass, 1 fail
+Verdict: RED as expected
+```
+
+Restored: 55 pass, 0 fail.

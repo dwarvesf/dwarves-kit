@@ -189,7 +189,8 @@ const staleWorktrees = async ($: EngineInterface, cwd: string, porcelain: string
       if (!Number.isFinite(age)) throw new Error('bad commit age')
       detachedAges.set(sha, age)
     }
-    return countStaleWorktrees(porcelain, merged, tips, detachedAges, now)
+    const baseHead = base ? (await gitOut($, cwd, ['rev-parse', base]).catch(() => '')).trim() || undefined : undefined
+    return countStaleWorktrees(porcelain, merged, tips, detachedAges, now, baseHead)
   } catch {
     return undefined
   }
