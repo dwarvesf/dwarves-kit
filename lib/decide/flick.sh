@@ -14,7 +14,7 @@
 # A command-layer tool. Hooks never call it (the hook budget and the no-LLM-in-hooks rule),
 # and a test pins that. Config is read root-only (kit-config.sh kit_config_get_root): the
 # [decide] block names a credential source and authorizes egress, so a project .kit.toml
-# must not set it. Contract and rationale: docs/specs/SPEC-381-flick.md.
+# must not set it. Contract and rationale: the flick spec under docs/specs/.
 set -u
 
 case "${BASH_SOURCE[0]}" in */*) FLICK_DIR="$(cd "${BASH_SOURCE[0]%/*}" && pwd)" ;; *) FLICK_DIR="$(pwd)" ;; esac

@@ -73,7 +73,7 @@ archives into a fifth convention, and a subdirectory rule needs no list at all. 
 counts as consumed, regardless of the subdirectory's name. This also carries forward the
 ancestor-path fix for free, a one-level scan performs no path-substring match at all, so an
 ancestor segment above the scan root is structurally never examined. Verified before the
-change: no repo under `~/workspace/tieubao` keeps a live handoff in a subdirectory of either
+change: no repo under the operator workspace root keeps a live handoff in a subdirectory of either
 scan root. Spec DEC-A moved to rejected (approach 3), DEC-B added, Status reset to APPROVED.
 Test suite cases `[16]`-`[19]` (built around the four-name fixture) replaced with cases
 proving the design generalizes: an arbitrarily-named subdirectory (`old/`, not on any list)

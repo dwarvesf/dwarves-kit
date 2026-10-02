@@ -51,7 +51,7 @@ land docs/ci-label-land-proof -> main
      opened PR #20
      labeled #20 ci (this repo runs PR checks only on the label)
      merged #20 (d14e530290050e04ac53a7b84016c7dc32838cd6): tree verified
-     pulled /Users/tieubao/workspace/consolelabs/content
+     pulled <consumer-repo>/content
      removed worktree .../ci-label-land-proof
 ```
 
