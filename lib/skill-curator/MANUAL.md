@@ -50,13 +50,13 @@ draft into the live library; reject sets it aside (recoverable).
 
 ```bash
 skill-review list                 # pick a slug
-# read ~/.claude/skill-proposals/<slug>/SKILL.md and vet it against superpowers:writing-skills
+# read ~/.claude/skill-proposals/<slug>/SKILL.md and vet it against the skill-review quality bar
 skill-review promote <slug>       # mv into ~/.claude/skills/<slug>/
 skill-review promote <slug> --force   # only if a live skill of that name already exists
 skill-review reject <slug>        # mv to skill-proposals/_rejected/<slug>/ (recoverable, not deleted)
 ```
 
-Or run the `/skill-review` skill for the guided, vet-each-draft flow (it runs the writing-skills
+Or run the `/skill-review` skill for the guided, vet-each-draft flow (it runs the quality-bar
 checklist for you, then calls these commands).
 
 **Gotcha:** exit codes tell you why a promote refused: `2` no such draft, `3` the draft still

@@ -36,7 +36,7 @@ A sub-goal file (Mode B) is NOT installable (it is project content, not an agent
 
 ## When NOT to use
 
-- Writing a skill (use `superpowers:writing-skills` / `extract-workflow`); this builds kit subagents + sub-goal files, not skills.
+- Writing a skill (use `extract-workflow`, then vet the draft with `/skill-review`'s quality bar: baseline-first pressure test without the skill, rationalizations recorded verbatim and closed in a table, description states triggers only); this builds kit subagents + sub-goal files, not skills.
 - Unattended fleet generation: each run installs a live agent locally, so run it deliberately, not in a loop.
 
 ## Cleanup
