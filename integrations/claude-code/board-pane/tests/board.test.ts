@@ -64,8 +64,13 @@ const setup = async (
     submitted.push(e.text)
     return { text: e.text }
   })
+  const filled: string[] = []
+  on('prompt.fill', (_$, e) => {
+    filled.push(e.text)
+    return { isFilled: true }
+  })
   await $.session.start({ cwd: '/work/app-one', surface: 'terminal', isInteractive: true })
-  return { argvs, submitted, panes, clock, closed }
+  return { argvs, submitted, filled, panes, clock, closed }
 }
 
 test('/board runs the single-repo render in the session cwd', async ($, on) => {
@@ -106,22 +111,24 @@ test('Refresh re-runs the same mode and carries the r hotkey', async ($, on) => 
   await ui.unmount()
 })
 
-test('pressing an item submits Work on <ID> in repo mode', async ($, on) => {
-  const { submitted } = await setup($, on, { exitCode: 0, stdout: REPO_OUT, stderr: '' })
+test('pressing an item fills the prompt with Work on <ID> in repo mode, never submits', async ($, on) => {
+  const { submitted, filled } = await setup($, on, { exitCode: 0, stdout: REPO_OUT, stderr: '' })
   await $.command.run(runInput(''))
   const ui = await mountPane($)
   expect((await ui.find({ key: 'item-1' }))?.props).toMatchObject({ plain: true, hotkey: '1' })
   await ui.press({ key: 'item-1' })
-  expect(submitted).toEqual(['Work on ID-1'])
+  expect(filled).toEqual(['Work on ID-1'])
+  expect(submitted).toEqual([])
   await ui.unmount()
 })
 
-test('pressing an item submits Work on <ID> in <repo> in all mode', async ($, on) => {
-  const { submitted } = await setup($, on, { exitCode: 0, stdout: ALL_OUT, stderr: '' })
+test('pressing an item fills the prompt with Work on <ID> in <repo> in all mode', async ($, on) => {
+  const { submitted, filled } = await setup($, on, { exitCode: 0, stdout: ALL_OUT, stderr: '' })
   await $.command.run(runInput('all'))
   const ui = await mountPane($)
   await ui.press({ key: 'item-2' })
-  expect(submitted).toEqual(['Work on ID-2 in app-two'])
+  expect(filled).toEqual(['Work on ID-2 in app-two'])
+  expect(submitted).toEqual([])
   await ui.unmount()
 })
 
@@ -129,7 +136,7 @@ test('all mode shows the refresh time, dims stale rows with ?, drops the trailer
   await setup($, on, { exitCode: 0, stdout: ALL_OUT, stderr: '' })
   await $.command.run(runInput('all'))
   const ui = await mountPane($)
-  expect(await ui.find({ type: 'Text', text: /^refreshed \d\d:\d\d$/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /· \d\d:\d\d$/ })).toBeDefined()
   expect((await ui.find({ key: 'item-2' }))?.props).toMatchObject({ label: 'app-two  ID-2 ?', dimColor: true })
   expect((await ui.find({ key: 'item-1' }))?.props).toMatchObject({ dimColor: false })
   expect(await ui.find({ type: 'Text', text: /STALE/ })).toBeUndefined()

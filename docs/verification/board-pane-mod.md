@@ -4,7 +4,7 @@
 
 `integrations/claude-code/board-pane/` is an opt-in Claude Code mod (a function-hook plugin). `/board` opens a side pane with `bin/board board` for the session's repo. `/board all` shows `bin/board all next` across the consumer's registry. It is a display-only wrapper over the CLI, the same role as the Raycast and Warp integrations, and nothing installs it.
 
-The pane parses the CLI output into rows. An item row is a button: digits 1 to 9 press it, and a press submits `Work on <ID>` (or `Work on <ID> in <repo>`) as a prompt. A stale repo shows dimmed with a trailing `?` in place of the `[STALE: ...]` tag. Repos with no queued item fold into one `+N idle` row. `r` refreshes, and a 60 second timer refreshes while the pane stays open.
+The pane parses the CLI output into rows. An item row is a button: digits 1 to 9 press it, and a press puts `Work on <ID>` (or `Work on <ID> in <repo>`) in the prompt box without submitting it, so a stray key never starts a turn. Refresh and Close sit at the top, and item labels are cut to the pane width. A stale repo shows dimmed with a trailing `?` in place of the `[STALE: ...]` tag. Repos with no queued item fold into one `+N idle` row. `r` refreshes, and a 60 second timer refreshes while the pane stays open.
 
 ## Gate table
 
@@ -12,7 +12,8 @@ The pane parses the CLI output into rows. An item row is a button: digits 1 to 9
 |---|---|
 | `/board` and `/board all` run the argv that `bin/board --help` documents | tests 1 and 2, run table below |
 | a failing CLI shows its stderr, dimmed | test 3 |
-| a press submits the right prompt in both modes | tests 5 and 6 |
+| a press fills the prompt and never submits, in both modes | tests 5 and 6, second negative control |
+| Close shuts the pane | test 12 |
 | stale rows, the refresh time, the dropped trailer and the idle fold render | test 7 |
 | the timer stops once the pane closes | test 9 |
 | the stale marker is load-bearing | negative control below |
@@ -55,3 +56,17 @@ claude plugin test integrations/claude-code/board-pane
 ```
 
 `tests/test-meta.sh` carries one failure, `docs/FEATURES.md is fresh`, that main also shows at the base of this branch. This change does not touch it.
+
+## Negative control: fill, never submit
+
+Switched the item press from `$.prompt.fill` back to `$.prompt.submit` in `hooks/register.tsx`.
+
+```
+Command: claude plugin test integrations/claude-code/board-pane
+(fail) pressing an item fills the prompt with Work on <ID> in repo mode, never submits
+(fail) pressing an item fills the prompt with Work on <ID> in <repo> in all mode
+10 pass, 2 fail
+Verdict: RED as expected
+```
+
+Restored: 12 pass, 0 fail.

@@ -24,6 +24,8 @@ const argvFor = (board: string, mode: BoardMode, cwd: string) =>
     ? [board, 'all', 'next', '--repo-root', cwd]
     : [board, 'board', '--backlog-file', `${cwd}/_meta/BACKLOG.md`]
 
+const fit = (text: string, width: number) => (text.length <= width ? text : `${text.slice(0, width - 1)}…`)
+
 const refresh = async ($: EngineInterface, mode: BoardMode) => {
   const cwd = await $.session.cwd()
   const board = await resolveBoard($)
@@ -70,36 +72,42 @@ export const register: Register = on => {
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
     const { Box, Text, Button } = $.ui.resolve(e)
     const { rows, mode, refreshedAt } = await read($, state)
+    // Digit label and bullet take about 6 cells; the rest is the row.
+    const room = Math.max(12, e.props.bodyColumns - 6)
     let itemNo = 0
     return (
       <Box flexDirection="column">
-        {refreshedAt && <Text dimColor>refreshed {refreshedAt}</Text>}
+        {/* Controls first: a narrow pane must not scroll them out of reach. */}
+        <Box flexDirection="row">
+          <Button key="refresh" label="Refresh" hotkey="r" onPress={() => refresh($, mode)} />
+          <Button key="close" label="Close" hotkey="q" role="dismiss" onPress={() => $.ui.close({ id: PANE })} />
+        </Box>
+        <Text dimColor>{`press an item to put it in the prompt · Esc back${refreshedAt ? ` · ${refreshedAt}` : ''}`}</Text>
         {rows.map(row => {
           if (row.kind === 'text') {
             return (
-              <Text bold={row.isBold} dimColor={row.isDim}>
+              <Text bold={row.isBold} dimColor={row.isDim} wrap="truncate-end">
                 {row.text}
               </Text>
             )
           }
           itemNo += 1
           // Button has no color prop, so the state tone rides on a bullet beside it.
+          // A press fills the prompt instead of submitting: a stray key must never start a turn.
           return (
             <Box flexDirection="row">
               {row.tone && <Text color={row.tone}>* </Text>}
               <Button
                 key={`item-${itemNo}`}
                 plain
-                label={row.text}
+                label={fit(row.text, room)}
                 hotkey={itemNo <= 9 ? String(itemNo) : undefined}
                 dimColor={row.isDim}
-                onPress={() => $.prompt.submit({ text: promptFor(row) })}
+                onPress={() => $.prompt.fill({ text: promptFor(row) })}
               />
             </Box>
           )
         })}
-        <Button key="refresh" label="Refresh" hotkey="r" onPress={() => refresh($, mode)} />
-        <Button key="close" label="Close" hotkey="q" role="dismiss" onPress={() => $.ui.close({ id: PANE })} />
       </Box>
     )
   })
