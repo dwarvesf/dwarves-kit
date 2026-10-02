@@ -39,7 +39,7 @@ The overview header counts repos, in-flight and queued items. Each repo row show
 
 Pressing an item puts `Work on <ID> in <repo>` in the prompt box (`Work on <ID>` for the current repo). Nothing runs until you press Enter. The filter box narrows repos or items as you type. With no readable registry, or when `all board` fails, the pane falls back to the current repo alone with a dim hint to set `BOARD_REGISTRY`.
 
-A one-line summary band sits above the prompt: `tasks 14 queued · 3 active  ·  9 handoffs  ·  15 worktrees  ·  1 PR`, all for the session's repo. Counts come from `bin/board board`, the `.claude/handoffs/` folder, `git worktree list` and `gh pr list --author @me`. A segment whose source is missing or fails is skipped, and the band disappears when every one is. It refreshes on session start and after each main-loop turn; the PR count is cached for five minutes. Press `tasks` (or `ctrl+x tab`, then `b`) to open the current repo's view, and press it again to close the pane.
+A one-line summary band sits above the prompt: `tasks 14q 3act · 9ho · 15wt · 1pr` (q queued, act in flight, ho handoff files, wt worktrees, pr open PRs), all for the session's repo. Counts come from `bin/board board`, the `.claude/handoffs/` folder, `git worktree list` and `gh pr list --author @me`. A segment whose source is missing or fails is skipped, and the band disappears when every one is. It refreshes on session start and after each main-loop turn; the PR count is cached for five minutes. Press `tasks` (or `ctrl+x tab`, then `b`) to open the current repo's view, and press it again to close the pane.
 
 The CLI resolves as `$DWARVES_KIT/bin/board`, falling back to `~/.claude/dwarves-kit/bin/board`. A non-zero exit shows the CLI's stderr, dimmed, in the pane.
 
