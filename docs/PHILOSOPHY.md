@@ -140,7 +140,7 @@ We believe every hook should be a readable shell script, not a compiled binary o
 **Display surfaces (scoped rule):** The statusline and Claude Code mods under `integrations/claude-code/` may use the runtime the host gives them: Node for the statusline, the mod runtime's TypeScript for mods. A statusline runs per turn and needs fast JSON parsing that bash and jq struggle with at scale. A mod can only draw through the host's plugin API. Three conditions hold, or the surface is rejected:
 
 1. It shows data and takes input. It never gates, blocks, or writes kit state.
-2. Every data read goes through a kit bash CLI (`bin/board` and its siblings). The surface never parses a ledger or backlog file itself.
+2. Kit data (backlogs, ledgers, gate state) is read only through a kit bash CLI (`bin/board` and its siblings); the surface never parses a ledger or backlog file itself. Any other read is read-only and outside the kit: `git`, `gh`, a directory listing, or the consumer's own config such as its board registry.
 3. It keeps no state beyond a cache it can rebuild from those CLIs.
 
 Hooks stay bash. A third kind of exception means revisiting this rule, not bending it.
@@ -288,7 +288,7 @@ The 2026-05-20 upstream audit (the 10 source repos checked at their then-current
 2. **UI-shell creep.** Growing a statusline/HUD into a stateful UI layer with caches, themes, and its own config surface.
    - Observed: oh-my-claudecode (`Yeachan-Heo/oh-my-claudecode`, HEAD @ 2026-05-20 audit), whose HUD accumulates cache-GC and theming concerns.
    - Violates: "Bash over binaries" and "every script readable in 30 seconds"; a UI shell is a product, not glue.
-   - Caught by: a display surface shows and takes input only, reads through a kit bash CLI, and keeps nothing it cannot rebuild; a persisted state, a theme engine, or a direct data read in a statusline or mod is rejected, and any such logic in a hook is rejected.
+   - Caught by: a display surface shows and takes input only, reads kit data through a kit bash CLI, and keeps nothing it cannot rebuild; a persisted state, a theme engine, or a direct ledger or backlog read in a statusline or mod is rejected, and any such logic in a hook is rejected.
 
 3. **Agent-persona theater.** Wrapping agents in role-play personas (a "studio", an "agent company", named characters) to imply capability the mechanism does not have.
    - Observed: the "agent-company OS" framing associated with the OMC name (`1mancompany/OneManCompany`, HEAD @ 2026-05-20 audit).
