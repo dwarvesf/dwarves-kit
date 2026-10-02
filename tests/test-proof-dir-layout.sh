@@ -9,6 +9,9 @@
 set -uo pipefail
 KIT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 LIB="$KIT/lib/gate/proof-ledger.sh"
+# Pin the operator overlay: a developer's own [gate] negative_control = "full" waives the control these
+# fixtures assert is required (the suite then reads green-only as passing). gates-on is the shared fixture.
+export KIT_CONFIG_OPERATOR="$KIT/tests/fixtures/gates-on"
 fails=0
 pass(){ echo "PASS $*"; }
 fail(){ echo "FAIL $*"; fails=$((fails+1)); }
