@@ -39,9 +39,10 @@ For COMPARATIVE claims (faster/smaller/fewer), add the optional evidence pair
    picture of the thing running counts as "it ran". Pick the form that fits the work-type; non-visual
    logic still owes a run-table.
    **The run-table must hold the output itself.** The gate reads the lines under an `Output:`
-   slot (`Output:`, `Output (excerpt):` or `Output (tail):`; on the same line, on the lines
-   below, or in the fenced block below). A typed `Exit: 0` or `Verdict: PASS` with no such lines
-   is a claim, and the gate refuses it; so is a slot left empty or holding only a `<placeholder>`.
+   slot (`Output:`, `Output (<anything>):` or a `### Output` heading; on the same line, on the
+   lines below, or in the fenced block below), or the raw lines after `Exit:` inside a fenced run
+   block. A typed `Exit: 0` or `Verdict: PASS` with no such lines is a claim, and the gate refuses
+   it; so is a slot left empty or holding only a `<placeholder>`, `none` or `see above`.
    A video or a demo flow is linked beside the output or the image, it does not replace them.
    The captured output also reaches the reader twice more: `wrap land` builds the PR body from
    the proof file and prints the output lines in its closing `PROOF OF DONE` block.
