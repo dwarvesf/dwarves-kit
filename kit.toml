@@ -120,6 +120,23 @@ board_row_gate     = true       # [impl] hooks/board-row-gate.sh: a commit addin
                                 #        needs a board-row-ok line. Default ON; a repo opts out
                                 #        with `board_row_gate = false` in a committed .kit.toml.
 
+[proof]                         # the proof-of-done image rule, OPT-IN: everything below is inert
+                                #        while `visual` is false (the push gate is then byte-identical
+                                #        to before). Read by lib/gate/proof-ledger.sh check (visual)
+                                #        and bin/proof-asset (assets, asset_bucket). A repo turns the
+                                #        rule on with `visual = true` in its .kit.toml. The owner
+                                #        routing keys (account_<owner>, base_url_<owner>) live ONLY in
+                                #        the operator kit.toml and resolve root-only, so a project
+                                #        file can never redirect the upload bucket.
+visual         = false          # [impl] R1: on, a behavioral diff touching a UI file
+                                #        (.tsx .jsx .vue .svelte .css .scss .html) owes one
+                                #        qualifying image on top of every existing proof rule.
+assets         = "r2"           # [impl] r2 = upload to the proof bucket via bin/proof-asset;
+                                #        local = keep bytes under .kit/proof-assets/ (counts only
+                                #        when set in a tracked, clean project .kit.toml).
+asset_bucket   = "kit-proof-assets"  # [impl] the R2 bucket name; the account id comes from the
+                                #        operator file's proof.account_<owner> routing.
+
 # ---- lanes as data ----------------------------------------------------------
 # One source for which phases each lane runs. `lib/gate/lane-data.sh` reads these blocks; the
 # lane x phase table in docs/WORKFLOW.md is the human view, pinned equal by

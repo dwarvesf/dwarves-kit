@@ -46,6 +46,14 @@ For COMPARATIVE claims (faster/smaller/fewer), add the optional evidence pair
    A video or a demo flow is linked beside the output or the image, it does not replace them.
    The captured output also reaches the reader twice more: `wrap land` builds the PR body from
    the proof file and prints the output lines in its closing `PROOF OF DONE` block.
+   **Visual proof (opt-in, `[proof] visual = true`).** A behavioral diff that touches a UI file
+   (`.tsx .jsx .vue .svelte .css .scss .html`) also needs one image: an upload made with
+   `bin/proof-asset put <slug> <file>` (it prints the `![name](url)` line to paste; the image goes
+   to the owner's R2 bucket and expires after 90 days, never into git), a committed tracked image,
+   or, with `assets = "local"` in a tracked `.kit.toml`, a cached local copy. Offline, `put`
+   queues the upload and `wrap land` flushes it. `proof-gate.sh contract "<task>"` names the
+   artifact each task type owes (SPEC-385). Off by default: nothing changes until a repo or the
+   operator file turns it on.
 2. **A negative control.** The same check shown to go RED when the work is reverted, so the
    green is not trivially green. A check that passes no matter what proves nothing. Produce
    it with `bash lib/gate/negctl.sh <root> "<test-cmd>" "<mutate-cmd>"` (or

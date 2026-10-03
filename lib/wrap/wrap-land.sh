@@ -156,6 +156,14 @@ _land_proof_body() {
     if [ -n "$web" ]; then
       while IFS=$'\t' read -r link path; do
         [ -n "$link" ] || continue
+        case "$path" in
+          .kit/proof-assets/*)
+            # A local-mode cache link resolves to a file that exists only in the
+            # worktree: rewriting it to a blob URL would link a page that can never
+            # exist, so the body names it instead.
+            text="$(printf '%s\n' "$text" | sed -E "s/!\[[^]]*\]\($(printf '%s' "$link" | sed -E 's/[][(){}|&*+.^$?\\/]/\\&/g')\)/_(local image, not uploaded: ${path##*/})_/g")"
+            continue ;;
+        esac
         link="](${link})"; path="](${web}/blob/${sha}/${path}?raw=true)"
         text=${text//"$link"/"$path"}
       done < <(bash "$PROOF_LEDGER_SH" images "$wt/$f" "$wt" 2>/dev/null)
@@ -239,6 +247,22 @@ cmd_land() {
   repo="$(cd "$repo" 2>/dev/null && pwd -P)" || { echo "wrap.sh land: the main checkout does not resolve" >&2; return 64; }
   if [ "$repo" = "$wt" ]; then
     echo "wrap.sh land: ${wt} is the main checkout, not a worktree" >&2; return 1
+  fi
+
+  # The visual-proof flush (opt-in via proof.visual): the branch's proof-asset manifests can
+  # hold entries an offline `put` left pending, so they flush here, inside the worktree
+  # being landed, before the dirty check and before the push. The flag reads from the
+  # worktree's own .kit.toml because the manifests it governs live on this branch. The
+  # flush commits nothing; a non-zero exit stops the land on the flush's own message.
+  if [ "$(KIT_PROJECT_ROOT="$wt" kit_config_get proof.visual false)" = "true" ]; then
+    local flush_out flush_rc
+    flush_out="$(cd "$wt" && "${PROOF_ASSET_BIN:-$LIB_ROOT/../bin/proof-asset}" flush 2>&1)" \
+      && flush_rc=0 || flush_rc=$?
+    [ -z "$flush_out" ] || printf '%s\n' "$flush_out"
+    if [ "$flush_rc" -ne 0 ]; then
+      echo "     LAND REFUSED: proof-asset flush exited ${flush_rc}" >&2
+      return "$flush_rc"
+    fi
   fi
 
   # One read serves both the clean check and the baseline _land_tidy needs: what the

@@ -64,3 +64,8 @@ INSTALL-STAMP
 
 # Per-section pass cache for tests/test-wrap-land.sh (tests/lib/land-sections.sh)
 tests/.cache/
+
+# Proof-asset local cache (bin/proof-asset put): image bytes live here until an upload
+# lands, or forever under assets = "local". Never committed, the kit keeps only the
+# manifest at docs/verification/<slug>/assets.json.
+.kit/proof-assets/

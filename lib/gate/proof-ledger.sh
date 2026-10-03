@@ -372,6 +372,173 @@ _negctl_required() {
   echo no
 }
 
+# --- the opt-in image rule (a [proof] visual = true diff owes one qualifying image) ------
+# Everything below is dead code while proof.visual resolves false. When on, a behavioral
+# diff touching a UI extension needs ONE of, checked after every existing rule passes:
+#   R3a uploaded -- a changed docs/verification/<dir>/assets.json entry whose url sits
+#     under <base>/<owner>/<repo>/ (base from the owner routing, ROOT-ONLY so a project
+#     file can never redirect it), whose exact ![..](url) embed appears in a proof file the
+#     branch changed, and whose fetched bytes hash to the entry's sha256.
+#   R3b committed -- an image link in a changed proof file whose target git ls-files lists.
+#   R3c local    -- a `status: local` entry whose cached file exists under
+#     .kit/proof-assets/<slug>/, allowed only when a TRACKED, CLEAN project .kit.toml sets
+#     assets = "local" (an uncommitted edit or an operator-level value is not opt-in).
+# The gate never holds a fetched body: it pipes the fetch straight into the hasher.
+# PROOF_ASSET_FETCH is the test seam (no check may touch the network but the default one).
+# -q comes first: an operator's ~/.curlrc (proxy, output, header tricks) must never
+# change what the gate fetches.
+PROOF_ASSET_FETCH="${PROOF_ASSET_FETCH:-curl -q -fsS --proto =https --max-time 15 --max-filesize 3000000}"
+
+# The trust rules for fields a committed manifest rides into the gate (the same shapes
+# bin/proof-asset enforces at write time): a manifest ships in the PR, so its slug and
+# file are validated before either is joined into a filesystem path.
+_visual_slug_ok() { printf '%s' "$1" | grep -qE '^[a-z0-9][a-z0-9._-]*$'; }
+_visual_file_ok() { printf '%s' "$1" | grep -qE '^[a-z0-9][a-z0-9._-]*\.(webp|png|gif|jpg)$'; }
+
+# _visual_owner_repo <root>: "owner/repo" lowercased from the origin remote, empty when the
+# remote is absent. `git@github.com:o/r.git` and `https://github.com/o/r` resolve the same.
+_visual_owner_repo() {
+  local u; u="$(git -C "$1" remote get-url origin 2>/dev/null)" || return 0
+  u="${u%/}"; u="${u%.git}"
+  printf '%s' "$u" | tr ':' '/' | tr 'A-Z' 'a-z' | awk -F/ 'NF>1{print $(NF-1)"/"$NF}'
+}
+
+# _md_image_targets <file>: the raw (...) target of every ![..](...) link, one per line.
+_md_image_targets() {
+  [ -f "$1" ] || return 0
+  grep -oiE '!\[[^]]*\]\([^)]*\.(png|gif|jpe?g|svg|webp)\)' "$1" 2>/dev/null \
+    | sed -E 's/^.*\(([^)]*)\)$/\1/'
+}
+
+# _proofs_link_url <root> <proof-list> <url>: exit 0 when the exact ![..](url) embed appears
+# in one of the branch's changed proof files.
+_proofs_link_url() {
+  local root="$1" plist="$2" url="$3" pf t
+  while IFS= read -r pf; do
+    [ -n "$pf" ] || continue
+    while IFS= read -r t; do
+      [ "$t" = "$url" ] && return 0
+    done < <(_md_image_targets "$root/$pf")
+  done <<< "$plist"
+  return 1
+}
+
+# _visual_proof <root> <base>: exit 0 when one qualifying image exists; else print the R4
+# block message (naming the case) on stderr and exit 1.
+_visual_proof() {
+  local root="$1" base="$2"
+  local proofs manifests changed
+  proofs="$(_fresh_proof_files "$root" "$base")"
+  changed="$(_changed "$root" "$base")"
+  manifests="$(printf '%s\n' "$changed" | grep -E '(^|/)docs/verification/[^/]+/assets\.json$' || true)"
+
+  # R3b first (cheapest): a tracked image linked from a changed proof file, AND one the
+  # branch itself changed. _committed_images resolves the link to a repo-relative
+  # existing path; git ls-files decides tracked (a gitignored or untracked file, the
+  # .kit/proof-assets/ cache, never counts), and membership in the branch's changed
+  # files stops an old tracked public/logo.png from excusing a new UI diff forever.
+  local pf ilink ipath
+  while IFS= read -r pf; do
+    [ -n "$pf" ] || continue
+    while IFS=$'\t' read -r ilink ipath; do
+      [ -n "$ipath" ] || continue
+      git -C "$root" ls-files --error-unmatch "$ipath" >/dev/null 2>&1 \
+        && printf '%s\n' "$changed" | grep -qxF "$ipath" && return 0
+    done < <(_committed_images "$root/$pf" "$root")
+  done <<< "$proofs"
+
+  local owner_repo="" baseurl="" bkey
+  owner_repo="$(_visual_owner_repo "$root")"
+  if [ -n "$owner_repo" ]; then
+    # the routing key is parameterized (proof.base_url_<owner>), so it goes through a
+    # variable: the config-registry lint enumerates literal kit_config_get_root call sites.
+    bkey="proof.base_url_${owner_repo%%/*}"
+    baseurl="$(kit_config_get_root "$bkey" 2>/dev/null)"
+  fi
+  baseurl="${baseurl%/}"
+
+  local assets_local=no
+  if kit_config_tracked_clean "$root/.kit.toml" \
+     && [ "$(_kit_toml_get "$root/.kit.toml" proof assets)" = "local" ]; then
+    assets_local=yes
+  fi
+
+  local reasons="" pending=0 fetches=0 m mfile mslug n st url sha f by got
+  while IFS= read -r m; do
+    [ -n "$m" ] || continue
+    mfile="$root/$m"; [ -f "$mfile" ] || continue
+    if ! command -v jq >/dev/null 2>&1 || ! jq -e . "$mfile" >/dev/null 2>&1; then
+      reasons="${reasons}manifest unreadable (jq missing or invalid json): $m"$'\n'; continue
+    fi
+    mslug="$(jq -r '.slug // empty' "$mfile" 2>/dev/null)"
+    [ -n "$mslug" ] || mslug="$(basename "$(dirname "$m")")"
+    # Upload progress is the gitignored queue file, never the manifest: a leftover
+    # .pending line (or a legacy pending status) is what the flush hint points at.
+    n="$(jq '[.assets[]? | select(.status == "pending")] | length' "$mfile" 2>/dev/null)"
+    [ "${n:-0}" -gt 0 ] 2>/dev/null && pending=1
+    _visual_slug_ok "$mslug" && [ -s "$root/.kit/proof-assets/$mslug/.pending" ] && pending=1
+    # fields joined on \x1f, never \t: read collapses consecutive IFS whitespace, so an
+    # empty url/sha256 would shift the file field into url's slot.
+    while IFS=$'\x1f' read -r st url sha f by; do
+      [ -n "$st$url$sha$f$by" ] || continue
+      # R3c local: the manifest entry's status is a local hint; only a tracked, clean
+      # project opt-in plus a real cached file counts. slug and file are validated
+      # before they join a path, so a crafted manifest can never read outside the cache.
+      if [ "$assets_local" = yes ] && [ "$st" = "local" ] && [ -n "$f" ]; then
+        if _visual_slug_ok "$mslug" && _visual_file_ok "$f" \
+           && [ -f "$root/.kit/proof-assets/$mslug/$f" ]; then
+          return 0
+        fi
+        reasons="${reasons}unsafe local entry (slug/file): $mslug/$f"$'\n'; continue
+      fi
+      # R3a uploaded: prefix, then url hygiene, the declared size, and the embed; only
+      # then fetch + hash. A missing base url or owner/repo makes EVERY entry outside
+      # the bucket.
+      if [ -z "$baseurl" ] || [ -z "$owner_repo" ] || [ "${url#"$baseurl/$owner_repo/"}" = "$url" ]; then
+        reasons="${reasons}url outside the proof bucket: ${url:-<unset>}"$'\n'; continue
+      fi
+      # curl normalizes '..' and decodes '%': either in the key could walk to another
+      # repo's object under the same prefix and still hash-match.
+      case "$url" in
+        *..*|*%*) reasons="${reasons}unsafe url: $url"$'\n'; continue ;;
+      esac
+      # The declared size is checked before a byte is fetched (the fetch itself is
+      # also capped by --max-filesize as the second line).
+      if [ "${by:-0}" -gt 3000000 ] 2>/dev/null; then
+        reasons="${reasons}declared size over the 3000000-byte cap: $url"$'\n'; continue
+      fi
+      if ! _proofs_link_url "$root" "$proofs" "$url"; then
+        reasons="${reasons}image link not in a changed proof file: $url"$'\n'; continue
+      fi
+      # A check verifies at most 5 entries against the network: a long manifest can
+      # never turn the gate into a fetch loop.
+      if [ "$fetches" -ge 5 ]; then
+        reasons="${reasons}fetch cap (5) reached; further entries unverified: $url"$'\n'; continue
+      fi
+      fetches=$((fetches+1))
+      # The query string is part of the edge cache key: a 404 cached before the upload
+      # (Cloudflare keeps it for hours) must not fail the check after it.
+      if ! got="$($PROOF_ASSET_FETCH "$url?kit-check=$(date +%s)" 2>/dev/null | shasum -a 256 | awk '{print $1}')"; then
+        reasons="${reasons}fetch failed: $url"$'\n'; continue
+      fi
+      [ "$got" = "$sha" ] && return 0
+      reasons="${reasons}hash mismatch: $url"$'\n'
+    done < <(jq -r '.assets[]? | [(.status // ""), (.url // ""), (.sha256 // ""), (.file // ""), (.bytes // "")] | join("\u001f")' "$mfile" 2>/dev/null)
+  done <<< "$manifests"
+
+  {
+    echo "BLOCKED: visual proof of done. The branch changes UI files; its proof needs one qualifying image:"
+    if [ -n "$reasons" ]; then
+      printf '%s' "$reasons" | awk '!seen[$0]++' | sed 's/^/  /'
+    else
+      echo "  no image: no committed image link, no verified uploaded asset, no cached local asset."
+    fi
+    [ "$pending" -eq 1 ] && echo "  run \`bin/proof-asset flush\` to upload pending entries, then re-push."
+    echo "  Add one: 'bin/proof-asset put <slug> <image>' prints the ![name](url) line to paste into the proof file, or commit the image and embed it."
+  } >&2
+  return 1
+}
+
 check() {
   local root="${1:-}" base="${2:-}" slug="${3:-}"
   [ -n "$root" ] && [ -n "$base" ] || { echo "usage: check <root> <base> [slug]" >&2; return 64; }
@@ -382,6 +549,23 @@ check() {
   [ "$class" = "inert" ] && return 0          # docs/cosmetic: no ritual.
   local negctl_req=yes
   [ "$class" = "behavioral" ] && negctl_req="$(_negctl_required "$root" "$base" "$slug")"
+
+  # The image rule (R1/R2): a separate yes/no, never folded into classify()'s output.
+  # visual=yes needs all three: proof.visual resolves true, the class is behavioral,
+  # and a changed file carries a UI extension. stateful and inert diffs never get the
+  # image rule; visual=no leaves every line below byte-identical to master.
+  # The project layer counts only when .kit.toml is tracked and clean: an uncommitted
+  # edit leaves no trace in the PR, so it can neither arm the rule for an attacker
+  # nor disarm an operator's own opt-in. Otherwise only operator/kit-root files count.
+  local visual=no
+  if [ "$class" = "behavioral" ] \
+     && [ -n "$(_changed "$root" "$base" | grep -E '\.(tsx|jsx|vue|svelte|css|scss|html)$')" ]; then
+    if kit_config_tracked_clean "$root/.kit.toml"; then
+      [ "$(KIT_PROJECT_ROOT="$root" kit_config_get proof.visual false 2>/dev/null)" = "true" ] && visual=yes
+    else
+      [ "$(kit_config_get_root proof.visual false 2>/dev/null)" = "true" ] && visual=yes
+    fi
+  fi
 
   local files f ok=1
   # near_miss: one "path<TAB>last_v" line per behavioral file/group that has a
@@ -467,6 +651,17 @@ check() {
       fi
     done <<< "$groups"
   fi
+  # R3: a visual=yes diff owes one qualifying image on top of every existing rule, so the
+  # pass below is gated on it. _visual_proof prints the block message itself when nothing
+  # qualifies. A failed visual check downgrades ok to 1 rather than returning, so the
+  # logged-override fallback below clears a visual block the same way it clears an
+  # unproven diff (with the same docs/deploy-inert-only restriction). With the rule off
+  # (visual=no) this check is inert; the return line keeps its exact form because
+  # test-proof-override-order.sh builds its pre-fix lib by deleting it.
+  local visual_block=0
+  if [ "$ok" -eq 0 ] && [ "$visual" = yes ] && ! _visual_proof "$root" "$base"; then
+    visual_block=1; ok=1
+  fi
   [ "$ok" -eq 0 ] && return 0
 
   # A real proof (checked above) always wins outright. Only fall back to an override
@@ -510,6 +705,13 @@ check() {
     fi
     echo "proof-of-done: OVERRIDDEN for '$slug' (docs/deploy-inert remainder; logged, see $OVERRIDE_LOG)" >&2
     return 0
+  fi
+
+  # A visual block already printed its own named reasons; only the escape route remains.
+  if [ "$visual_block" -eq 1 ]; then
+    echo "  Or clear it with an audited override (docs/deploy-inert remainder only):" >&2
+    echo "    bash lib/gate/proof-ledger.sh override '${slug:-<branch-slug>}' \"<reason>\"" >&2
+    return 1
   fi
 
   # blocked: name exactly what is missing.
