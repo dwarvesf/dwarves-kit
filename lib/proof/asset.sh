@@ -93,6 +93,9 @@ _convert() {
   /bin/cp -f "$in" "$out"
 }
 
+# _ref_tag <op-ref> -- 8 hex chars that name one ref's Keychain cache entry.
+_ref_tag() { printf '%s' "$1" | shasum -a 256 | cut -c1-8; }
+
 # _upload <local-file> <key> <account-id> -- the seam owns the whole call when set.
 # Default: wrangler against the configured bucket, the token pulled at call time from
 # the operator-level proof.asset_token_ref via secret-cache-read (Keychain-cached),
@@ -106,8 +109,16 @@ _upload() {
   command -v wrangler >/dev/null 2>&1 || return 1
   bucket="$(kit_config_get_root proof.asset_bucket kit-proof-assets)"
   tokref="$(kit_config_get_root proof.asset_token_ref "")"
+  # An operator file may hold the account as an op:// ref, so no account id sits in a repo.
+  # The Keychain cache keys by name, so each ref gets its own name: a generic name would
+  # return a value another tool cached under a different ref.
+  case "$acct" in
+    op://*) command -v secret-cache-read >/dev/null 2>&1 || return 1
+            acct="$(secret-cache-read --ttl 86400 "PROOF_ASSET_ACCT_$(_ref_tag "$acct")" "$acct" 2>/dev/null)"
+            [ -n "$acct" ] || return 1 ;;
+  esac
   if [ -n "$tokref" ] && command -v secret-cache-read >/dev/null 2>&1; then
-    CLOUDFLARE_API_TOKEN="$(secret-cache-read --ttl 3600 CLOUDFLARE_API_TOKEN "$tokref")"
+    CLOUDFLARE_API_TOKEN="$(secret-cache-read --ttl 3600 "PROOF_ASSET_TOKEN_$(_ref_tag "$tokref")" "$tokref" 2>/dev/null)"
     export CLOUDFLARE_API_TOKEN
   fi
   CLOUDFLARE_ACCOUNT_ID="$acct" wrangler r2 object put "$bucket/$key" --file "$f" --remote >/dev/null
