@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+# bin/proof-asset -- consumer entrypoint for the proof-asset pipeline: put converts,
+# caps, hashes, caches and manifests an image, then uploads it or queues it pending;
+# flush retries the queue. The engine is lib/proof/asset.sh.
+#
+# Usage: proof-asset put <slug> <file> [--name N]
+#        proof-asset flush [<slug>]
+set -euo pipefail
+SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+exec bash "$SELF_DIR/../lib/proof/asset.sh" "$@"
