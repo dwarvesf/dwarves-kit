@@ -156,6 +156,14 @@ _land_proof_body() {
     if [ -n "$web" ]; then
       while IFS=$'\t' read -r link path; do
         [ -n "$link" ] || continue
+        case "$path" in
+          .kit/proof-assets/*)
+            # A local-mode cache link resolves to a file that exists only in the
+            # worktree: rewriting it to a blob URL would link a page that can never
+            # exist, so the body names it instead.
+            text="$(printf '%s\n' "$text" | sed -E "s/!\[[^]]*\]\($(printf '%s' "$link" | sed -E 's/[][(){}|&*+.^$?\\/]/\\&/g')\)/_(local image, not uploaded: ${path##*/})_/g")"
+            continue ;;
+        esac
         link="](${link})"; path="](${web}/blob/${sha}/${path}?raw=true)"
         text=${text//"$link"/"$path"}
       done < <(bash "$PROOF_LEDGER_SH" images "$wt/$f" "$wt" 2>/dev/null)

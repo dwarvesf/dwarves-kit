@@ -2257,6 +2257,30 @@ chk "PB5: exits 0" "$rc"
 chk "PB5: pr create used the title alone as the body" \
   "$(grep -qx -- '.*pr create .* --body feat: the landed change' "$GH_STUB_CALLS"; echo $?)"
 chk_no "PB5: no block" "$out" "PROOF OF DONE"
+
+echo "--- PB6: a local cache link becomes a named marker; a committed image still hotlinks"
+# The body-builder runs with a github-shaped origin arg, so _land_web_url yields a web
+# base and the rewrite loop actually runs (the fixture remotes are local paths).
+pb_build pb6
+PB6_WT="$TMPD/ld-repo-pb6/wt"
+mkdir -p "$PB6_WT/.kit/proof-assets/ui"
+printf '*\n' > "$PB6_WT/.kit/proof-assets/.gitignore"     # the put-written ignore: cache stays untracked
+printf 'local-bytes' > "$PB6_WT/.kit/proof-assets/ui/shot-abc12345.webp"
+printf 'PNG89a' > "$PB6_WT/docs/verification/after.png"
+printf '![shot](.kit/proof-assets/ui/shot-abc12345.webp)\n\n![after](after.png)\n' \
+  >> "$PB6_WT/docs/verification/land.md"
+git -C "$PB6_WT" add -A; git -C "$PB6_WT" commit -qm "docs: images" >/dev/null 2>&1
+PB6_BASE="$(git -C "$PB6_WT" rev-parse origin/main)"
+PB6_SHA="$(git -C "$PB6_WT" rev-parse HEAD)"
+PB6_BODY="$(PROOF_LEDGER_SH="$KIT_DIR/lib/gate/proof-ledger.sh" bash -c \
+  'source "$1"; shift; _land_proof_body "$@"' _ \
+  "$KIT_DIR/lib/wrap/wrap-land.sh" "$PB6_WT" "$PB6_BASE" "feat: the landed change" "$PB6_SHA" "git@github.com:o/r.git")"
+chk_has "PB6: the local cache link is named, not hotlinked" \
+  "$PB6_BODY" "_(local image, not uploaded: shot-abc12345.webp)_"
+chk "PB6: no blob URL was minted for the cache file" \
+  "$(printf '%s' "$PB6_BODY" | grep -c 'proof-assets.*raw=true')"
+chk_has "PB6: the committed image still becomes a blob url" \
+  "$PB6_BODY" "blob/${PB6_SHA}/docs/verification/after.png?raw=true"
 } # end sec_proofbody
 
 # ===========================================================================
@@ -2341,6 +2365,58 @@ out="$(fl_land foff "$FL_WT_FOFF" FL_RC=1 FL_SAYS="must not run")"; rc=$?
 chk "flush: an opted-out land still exits 0" "$rc"
 chk "flush: the seam was never called" "$([ ! -s "$FL_CALLS" ]; echo $?)"
 chk_has "flush: the land still pushed" "$out" "pushed feat/land"
+
+echo "--- flush: a real offline put drains through the real flush inside land"
+# No PROOF_ASSET_BIN here: the land runs the shipped bin/proof-asset. The origin is a
+# symlinked copy of the fixture's bare remote under <tmp>/acme/widgets.git, so
+# owner/repo derive as acme/widgets (the real remote's tmp-dir name holds dots, which
+# the dotted-key config split cannot read back) while fetch/push stay hermetic.
+fl_build frt
+RT_WT="$TMPD/ld-repo-frt/wt"; RT_WT_P="$(cd "$RT_WT" && pwd -P)"
+mkdir -p "$TMPD/acme"
+ln -sfn "$TMPD/ld-bare-frt" "$TMPD/acme/widgets.git"
+git -C "$RT_WT" remote set-url origin "$TMPD/acme/widgets.git"
+FL_OP="$TMPD/op-proof"; mkdir -p "$FL_OP"
+cat > "$FL_OP/kit.toml" <<EOF
+[proof]
+account_acme = "acct-test-123"
+base_url_acme = "https://proof.test"
+EOF
+RT_UP="$TMPD/rt-uploader"; RT_CONV="$TMPD/rt-conv"; RT_FAIL="$TMPD/rt-up.fail"
+cat > "$RT_UP" <<'STUB'
+#!/usr/bin/env bash
+[ -f "$RT_FAIL" ] && exit 1
+exit 0
+STUB
+cat > "$RT_CONV" <<'STUB'
+#!/usr/bin/env bash
+{ printf 'RIFF\x00\x00\x00\x00WEBPVP8L'; head -c 256 /dev/zero; } > "$2"
+STUB
+chmod +x "$RT_UP" "$RT_CONV"
+{ printf '\x89PNG\r\n\x1a\n'; head -c 2000 /dev/zero; } > "$TMPD/rt-shot.png"
+: > "$RT_FAIL"
+out="$(cd "$RT_WT" && KIT_CONFIG_OPERATOR="$FL_OP" KIT_CONFIG_ROOT="$FL_CFG" \
+  RT_FAIL="$RT_FAIL" PROOF_ASSET_UPLOADER="$RT_UP" PROOF_ASSET_CONVERT="$RT_CONV" \
+  bash "$KIT_DIR/bin/proof-asset" put land "$TMPD/rt-shot.png" --name shot 2>&1)"; rc=$?
+chk "round-trip: the offline put still exits 0" "$rc"
+chk_has "round-trip: its stderr reports the queue" "$out" "queued:"
+chk "round-trip: the queue file holds the pending file" \
+  "$(test -s "$RT_WT/.kit/proof-assets/land/.pending"; echo $?)"
+git -C "$RT_WT" add -A; git -C "$RT_WT" commit -qm "docs: proof" >/dev/null 2>&1
+chk "round-trip: the committed tree is clean (the cache ignores itself)" \
+  "$(test -z "$(git -C "$RT_WT" status --porcelain)"; echo $?)"
+chk "round-trip: land's dirty check would pass already" \
+  "$(test -z "$(git -C "$RT_WT" status --porcelain --ignored=matching | grep -v '^!! ')"; echo $?)"
+rm -f "$RT_FAIL"
+: > "$GH_STUB_CALLS"; rm -f "$GH_STUB_CALLS".*
+out="$(env GH_STUB_OPEN_PRS='[]' GH_STUB_CREATE_NUM=42 GH_STUB_LAND_REPO="$RT_WT_P" \
+  GH_STUB_LAND_REMOTE="$TMPD/ld-bare-frt" GH_STUB_LAND_BRANCH=feat/land GH_STUB_LAND_DEF=main \
+  KIT_CONFIG_ROOT="$FL_CFG" KIT_CONFIG_OPERATOR="$FL_OP" \
+  RT_FAIL="$RT_FAIL" PROOF_ASSET_UPLOADER="$RT_UP" "$WRAP" land "$RT_WT_P" 2>&1)"; rc=$?
+chk "round-trip: the real land exits 0" "$rc"
+chk_has "round-trip: the real flush printed the paste line" "$out" "![shot](https://proof.test/"
+chk_has "round-trip: the land still pushed" "$out" "pushed feat/land"
+chk_has "round-trip: the land still merged" "$out" "merged #42 ("
 } # end sec_flush
 
 # One section, in this process. The driver sets LAND_SECTION per child; the last line is the
