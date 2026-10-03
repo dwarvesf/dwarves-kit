@@ -3,33 +3,48 @@
 #
 # WHY: a visual proof needs an image a reviewer can open. Committing images grows the
 # repo forever, so assets go to a bucket behind an unguessable key: <owner>/<repo>/
-# <slug>/<rand>/<name>.<ext>, where <rand> is 32 hex chars generated once per slug and
-# stored in the manifest. The repo keeps only the committed manifest
-# (docs/verification/<slug>/assets.json); the bytes sit in the gitignored local cache
-# (.kit/proof-assets/<slug>/).
+# <slug>/<rand>/<name>-<sha8>.<ext>, where <rand> is 32 hex chars generated once per
+# slug and stored in the manifest and <sha8> is the first 8 hex of the asset's own
+# sha256, so a re-put under one name can never serve stale edge-cached bytes. The repo
+# keeps only the committed manifest (docs/verification/<slug>/assets.json); the bytes
+# sit in the gitignored local cache (.kit/proof-assets/<slug>/), where a self-written
+# .gitignore ("*") keeps the cache untracked in any repo, kit or not.
+#
+# The committed manifest never records upload state: put writes each entry's final
+# url, sha256, bytes, and status = "r2" or "local" (the DESTINATION, not progress).
+# Upload progress lives only in the gitignored queue .kit/proof-assets/<slug>/.pending
+# (one file name per line): a failed or impossible put appends its file name there,
+# flush uploads each queued file, drops the line on success, and exits 1 while any
+# line remains. A successful flush therefore leaves the worktree clean enough for
+# `wrap land`, which refuses on a dirty tree.
 #
 # put: convert + cap (a still becomes WebP, or an optimized PNG when no WebP encoder
-# answers, at most 300 KB; a GIF stays GIF, at most 2 MB), sha256, cache, manifest
-# upsert keyed by entry name, upload when proof.assets resolves to "r2". A failed or
-# impossible upload leaves the entry pending: exit is still 0 and one stderr line says
-# "queued". flush retries every pending entry later, re-hashing the cached bytes, and
-# exits 1 while any entry stays pending. With proof.assets = "local" nothing ever
-# uploads: put writes status "local" and flush heals stale pending entries the same way.
+# answers -- sips on macOS is the last encoder, and a still no encoder can convert
+# refuses with exit 2 rather than landing a raw copy -- at most 300 KB; a GIF stays
+# GIF, at most 2 MB), sha256, cache, manifest upsert keyed by entry name, upload when
+# proof.assets resolves to "r2". With proof.assets = "local" nothing ever uploads.
+# With assets = "r2" and no usable route (no origin remote, no proof.base_url_<owner>
+# in the operator kit.toml) put refuses with exit 1 and writes nothing, because the
+# embed it would print could never verify at the gate.
+#
+# The manifest and the queue are untrusted input (a committed manifest rides a PR):
+# slug, rand, .assets, and every file name are validated before they touch the
+# filesystem or an upload, so a crafted file field can never read outside the cache.
 #
 # The credential never reaches stdout, stderr, a file, or a commit. The uploader reads
 # it at call time: wrangler's own login, or proof.asset_token_ref (a root-only key)
-# resolved through secret-cache-read into the wrangler environment.
+# resolved through secret-cache-read into the wrangler call's own environment.
 #
 # Seams (tests set these; nothing here touches the network by itself):
 #   PROOF_ASSET_UPLOADER   <cmd> <local-file> <key> <account-id>
 #                          default: CLOUDFLARE_ACCOUNT_ID=<id> wrangler r2 object put
 #                          "<bucket>/<key>" --file <local-file> --remote
 #   PROOF_ASSET_CONVERT    <cmd> <in> <out>
-#                          default: cwebp -q 80, else pngquant, else a copy
+#                          default: cwebp -q 80, else pngquant, else sips ->png
 #
 # Exit codes: 0 done or queued; 1 flush with entries still pending, or operational
-# error; 2 over the byte cap after conversion (the message names the measured size);
-# 64 usage.
+# error; 2 over the byte cap after conversion or no working encoder (the message
+# names the measured size); 64 usage.
 set -euo pipefail
 KIT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 source "$KIT_DIR/lib/config/kit-config.sh"
@@ -40,7 +55,12 @@ usage() {
   exit 64
 }
 
-_slugify() { printf '%s' "$1" | tr '/ ' '--' | tr -cd '[:alnum:]._-'; }
+_slugify() { printf '%s' "$1" | tr '[:upper:]' '[:lower:]' | tr '/ ' '--' | tr -cd 'a-z0-9._-'; }
+
+# The trust rules for everything read back out of a committed manifest or a queue file.
+_valid_slug() { printf '%s' "$1" | grep -qE '^[a-z0-9][a-z0-9._-]*$'; }
+_valid_rand() { printf '%s' "$1" | grep -qE '^[0-9a-f]{32}$'; }
+_valid_file() { printf '%s' "$1" | grep -qE '^[a-z0-9][a-z0-9._-]*\.(webp|png|gif|jpg)$'; }
 
 _repo_root() {
   local r
@@ -78,9 +98,11 @@ _sniff_ext() {
   esac
 }
 
-# _convert <in> <out> -- seam first, then cwebp, then pngquant (PNG input only), else a
-# straight copy. A converter that errors falls through to the copy: the byte cap, not
-# the encoder, is what a too-big image dies on.
+# _convert <in> <out> -- seam first, then cwebp, then pngquant (PNG input only), then
+# sips ->png (the macOS encoder of last resort). An input that already sniffs webp or
+# png still satisfies R8 as a straight copy. Anything else (a JPEG no encoder can
+# read) fails: the caller exits 2, because a still must land as WebP or PNG, never a
+# raw pass-through.
 _convert() {
   local in="$1" out="$2"
   if [ -n "${PROOF_ASSET_CONVERT:-}" ]; then
@@ -90,7 +112,13 @@ _convert() {
   elif command -v pngquant >/dev/null 2>&1 && [ "$(_sniff_ext "$in")" = png ]; then
     pngquant --force --output "$out" "$in" >/dev/null 2>&1 && [ -s "$out" ] && return 0
   fi
-  /bin/cp -f "$in" "$out"
+  if command -v sips >/dev/null 2>&1; then
+    sips -s format png "$in" --out "$out" >/dev/null 2>&1 && [ -s "$out" ] && return 0
+  fi
+  case "$(_sniff_ext "$in")" in
+    webp|png) /bin/cp -f "$in" "$out"; return 0 ;;
+  esac
+  return 1
 }
 
 # _ref_tag <op-ref> -- 8 hex chars that name one ref's Keychain cache entry.
@@ -99,9 +127,10 @@ _ref_tag() { printf '%s' "$1" | shasum -a 256 | cut -c1-8; }
 # _upload <local-file> <key> <account-id> -- the seam owns the whole call when set.
 # Default: wrangler against the configured bucket, the token pulled at call time from
 # the operator-level proof.asset_token_ref via secret-cache-read (Keychain-cached),
-# falling back to wrangler's own login when no ref is configured.
+# falling back to wrangler's own login when no ref is configured. The token is passed
+# INLINE on the wrangler call only, never exported into the process environment.
 _upload() {
-  local f="$1" key="$2" acct="$3" bucket tokref
+  local f="$1" key="$2" acct="$3" bucket tokref tok=""
   if [ -n "${PROOF_ASSET_UPLOADER:-}" ]; then
     $PROOF_ASSET_UPLOADER "$f" "$key" "$acct"
     return
@@ -118,10 +147,15 @@ _upload() {
             [ -n "$acct" ] || return 1 ;;
   esac
   if [ -n "$tokref" ] && command -v secret-cache-read >/dev/null 2>&1; then
-    CLOUDFLARE_API_TOKEN="$(secret-cache-read --ttl 3600 "PROOF_ASSET_TOKEN_$(_ref_tag "$tokref")" "$tokref" 2>/dev/null)"
-    export CLOUDFLARE_API_TOKEN
+    tok="$(secret-cache-read --ttl 3600 "PROOF_ASSET_TOKEN_$(_ref_tag "$tokref")" "$tokref" 2>/dev/null)"
   fi
-  CLOUDFLARE_ACCOUNT_ID="$acct" wrangler r2 object put "$bucket/$key" --file "$f" --remote >/dev/null
+  if [ -n "$tok" ]; then
+    CLOUDFLARE_API_TOKEN="$tok" CLOUDFLARE_ACCOUNT_ID="$acct" \
+      wrangler r2 object put "$bucket/$key" --file "$f" --remote >/dev/null
+  else
+    CLOUDFLARE_ACCOUNT_ID="$acct" \
+      wrangler r2 object put "$bucket/$key" --file "$f" --remote >/dev/null
+  fi
 }
 
 # _manifest_put <mfile> <slug> <rand> <name> <file> <status> <url> <sha> <bytes> --
@@ -147,13 +181,12 @@ _manifest_put() {
   /bin/mv -f "$t" "$m"
 }
 
-# _manifest_update <mfile> <idx> <status> <url> <sha> <bytes>
-_manifest_update() {
-  local m="$1" t="$1.tmp.$$"
-  jq --argjson i "$2" --arg st "$3" --arg u "$4" --arg sha "$5" --argjson by "$6" \
-    '.assets[$i].status = $st | .assets[$i].url = $u
-     | .assets[$i].sha256 = $sha | .assets[$i].bytes = $by' \
-    "$m" > "$t" && /bin/mv -f "$t" "$m"
+# The upload queue: <cache-dir>/.pending holds one file name per line.
+_queue_add() { grep -qxF "$2" "$1/.pending" 2>/dev/null || printf '%s\n' "$2" >> "$1/.pending"; }
+_queue_drop() {
+  local q="$1" t="$1.tmp.$$"
+  grep -vxF "$2" "$q" >| "$t" 2>/dev/null || :
+  if [ -s "$t" ]; then /bin/mv -f "$t" "$q"; else rm -f "$t" "$q"; fi
 }
 
 cmd_put() {
@@ -170,10 +203,33 @@ cmd_put() {
   [ -f "$file" ] || { echo "proof-asset: no such file: $file" >&2; exit 1; }
   export KIT_PROJECT_ROOT="$root"
   slug="$(_slugify "$slug")"
-  [ -n "$slug" ] || usage
-  [ -n "$name" ] || name="${file##*/}"
-  name="$(_slugify "${name%.*}")"
+  _valid_slug "$slug" || { echo "proof-asset: invalid slug: $slug" >&2; exit 1; }
+  # An explicit --name is kept verbatim (settings.v2 stays settings.v2); only the
+  # default, file-derived name loses its last extension.
+  if [ -z "$name" ]; then name="${file##*/}"; name="${name%.*}"; fi
+  name="$(_slugify "$name")"
   [ -n "$name" ] || { echo "proof-asset: empty asset name" >&2; exit 64; }
+
+  local mode; mode="$(kit_config_get proof.assets r2)"
+
+  # The r2 route is resolved before anything is written: an upload that can never
+  # route (no origin remote, no base url for the owner) exits 1 and leaves no files,
+  # because the embed it would print could never verify at the gate.
+  local or owner="" repo="" base="" acct=""
+  or="$(_owner_repo "$root" || true)"
+  owner="${or%% *}"; repo="${or##* }"
+  [ "$or" = "$owner" ] && repo=""
+  if [ "$mode" != local ]; then
+    if [ -z "$owner" ] || [ -z "$repo" ]; then
+      echo "proof-asset: no origin remote, cannot derive <owner>/<repo> for the upload route" >&2; exit 1
+    fi
+    base="$(kit_config_get_root "proof.base_url_$owner" "")"
+    base="${base%/}"
+    acct="$(kit_config_get_root "proof.account_$owner" "")"
+    if [ -z "$base" ]; then
+      echo "proof-asset: no proof.base_url_$owner in the operator kit.toml" >&2; exit 1
+    fi
+  fi
 
   local tmpd; tmpd="$(mktemp -d)"; trap "rm -rf '$tmpd'" EXIT
 
@@ -184,7 +240,9 @@ cmd_put() {
   if [ "$kind" = gif ]; then
     work="$file"; ext=gif; cap=2097152
   else
-    work="$tmpd/conv"; _convert "$file" "$work"
+    work="$tmpd/conv"
+    _convert "$file" "$work" \
+      || { echo "proof-asset: cannot convert $file to webp/png (no working encoder)" >&2; exit 2; }
     ext="$(_sniff_ext "$work")"
     [ "$ext" = bin ] && ext="$kind"
     cap=307200
@@ -194,47 +252,55 @@ cmd_put() {
     echo "proof-asset: over cap: $bytes bytes (limit $cap)" >&2; exit 2
   fi
 
-  local cache_dir="$root/.kit/proof-assets/$slug" fname="$name.$ext"
+  local sha fname
+  sha="$(shasum -a 256 "$work" | awk '{print $1}')"
+  fname="$name-${sha:0:8}.$ext"
+  _valid_file "$fname" || { echo "proof-asset: invalid asset name: $name" >&2; exit 1; }
+
+  local cache_root="$root/.kit/proof-assets" cache_dir
+  cache_dir="$cache_root/$slug"
   mkdir -p "$cache_dir" "$root/docs/verification/$slug"
+  # The cache carries its own ignore rule: in a repo whose .gitignore never heard of
+  # .kit, `git add -A` must still never pick up the image bytes or the queue.
+  [ -f "$cache_root/.gitignore" ] || printf '*\n' > "$cache_root/.gitignore"
   /bin/cp -f "$work" "$cache_dir/$fname"
-  local sha; sha="$(shasum -a 256 "$cache_dir/$fname" | awk '{print $1}')"
 
   local manifest="$root/docs/verification/$slug/assets.json" rand=""
-  [ -f "$manifest" ] && rand="$(jq -r '.rand // empty' "$manifest" 2>/dev/null || true)"
+  if [ -f "$manifest" ]; then
+    rand="$(jq -r '.rand // empty' "$manifest" 2>/dev/null || true)"
+    if [ -n "$rand" ] && ! _valid_rand "$rand"; then
+      echo "proof-asset: ignoring invalid rand in $manifest; minting a fresh one" >&2
+      rand=""
+    fi
+    if ! jq -e '.assets == null or (.assets | type) == "array"' "$manifest" >/dev/null 2>&1; then
+      echo "proof-asset: manifest unreadable or .assets is not an array: $manifest" >&2; exit 1
+    fi
+  fi
   [ -n "$rand" ] || rand="$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')"
 
-  local or owner="" repo="" base="" acct="" key="" url=""
-  or="$(_owner_repo "$root" || true)"
-  owner="${or%% *}"; repo="${or##* }"
-  [ "$or" = "$owner" ] && repo=""
-  [ -n "$owner" ] && base="$(kit_config_get_root "proof.base_url_$owner" "")"
-  [ -n "$owner" ] && acct="$(kit_config_get_root "proof.account_$owner" "")"
-  [ -n "$owner" ] && [ -n "$repo" ] && key="$owner/$repo/$slug/$rand/$fname"
-  [ -n "$base" ] && [ -n "$key" ] && url="$base/$key"
-
-  local mode status=pending why=""
-  mode="$(kit_config_get proof.assets r2)"
+  local status queued=0 why="" key="" url=""
   if [ "$mode" = local ]; then
     status=local
-  elif [ -z "$key" ]; then
-    why="no origin remote, cannot derive <owner>/<repo>"
-  elif [ -z "$base" ]; then
-    why="no proof.base_url_$owner in the operator kit.toml"
-  elif [ -z "$acct" ]; then
-    why="no proof.account_$owner in the operator kit.toml"
-  elif _upload "$cache_dir/$fname" "$key" "$acct"; then
-    status=uploaded
   else
-    why="upload failed or offline"
+    status=r2
+    key="$owner/$repo/$slug/$rand/$fname"; url="$base/$key"
+    if [ -z "$acct" ]; then
+      why="no proof.account_$owner in the operator kit.toml"
+    elif _upload "$cache_dir/$fname" "$key" "$acct"; then
+      :
+    else
+      why="upload failed or offline"
+    fi
+    if [ -n "$why" ]; then queued=1; _queue_add "$cache_dir" "$fname"; fi
   fi
 
   _manifest_put "$manifest" "$slug" "$rand" "$name" "$fname" "$status" "$url" "$sha" "$bytes"
-  [ "$status" = pending ] \
+  [ "$queued" -eq 1 ] \
     && printf 'queued: %s/%s (%s); run bin/proof-asset flush\n' "$slug" "$name" "$why" >&2
-  if [ -n "$url" ] && [ "$status" != local ]; then
-    printf '![%s](%s)\n' "$name" "$url"
-  else
+  if [ "$status" = local ]; then
     printf '![%s](.kit/proof-assets/%s/%s)\n' "$name" "$slug" "$fname"
+  else
+    printf '![%s](%s)\n' "$name" "$url"
   fi
 }
 
@@ -250,46 +316,64 @@ cmd_flush() {
   [ "$or" = "$owner" ] && repo=""
   [ -n "$owner" ] && base="$(kit_config_get_root "proof.base_url_$owner" "")"
   [ -n "$owner" ] && acct="$(kit_config_get_root "proof.account_$owner" "")"
+  base="${base%/}"
 
-  local pending=0 failed=0 manifest mslug rand idxs i name file cache sha bytes key url
-  for manifest in "$root"/docs/verification/*/assets.json; do
-    [ -f "$manifest" ] || continue
-    mslug="$(basename "$(dirname "$manifest")")"
+  # The queue files are the whole story: the manifest is only ever READ (for rand and
+  # the entry's name), never written, so a flush cannot dirty the worktree.
+  local saw=0 failed=0 qdir queue mslug manifest rand mslug_json f name key url
+  for qdir in "$root"/.kit/proof-assets/*/; do
+    [ -d "$qdir" ] || continue
+    queue="${qdir}.pending"
+    [ -f "$queue" ] || continue
+    mslug="$(basename "$qdir")"
     [ -n "$want" ] && [ "$mslug" != "$want" ] && continue
+    saw=1
+    if ! _valid_slug "$mslug"; then
+      echo "flush: skipping unsafe cache dir name: $mslug" >&2; failed=1; continue
+    fi
+    manifest="$root/docs/verification/$mslug/assets.json"
+    if [ ! -f "$manifest" ]; then
+      echo "flush: $mslug: no manifest at docs/verification/$mslug/assets.json" >&2
+      failed=1; continue
+    fi
     rand="$(jq -r '.rand // empty' "$manifest" 2>/dev/null || true)"
-    idxs="$(jq -r '.assets | to_entries[]? | select(.value.status == "pending") | .key' "$manifest" 2>/dev/null || true)"
-    for i in $idxs; do
-      pending=1
-      name="$(jq -r ".assets[$i].name" "$manifest")"
-      file="$(jq -r ".assets[$i].file" "$manifest")"
-      cache="$root/.kit/proof-assets/$mslug/$file"
-      if [ ! -f "$cache" ]; then
-        echo "still pending: $mslug/$name (no cached file at .kit/proof-assets/$mslug/$file)" >&2
-        failed=1; continue
+    mslug_json="$(jq -r '.slug // empty' "$manifest" 2>/dev/null || true)"
+    if [ "$mslug_json" != "$mslug" ] || ! _valid_rand "$rand" \
+       || ! jq -e '.assets | type == "array"' "$manifest" >/dev/null 2>&1; then
+      echo "flush: $mslug: manifest slug/rand/assets invalid; queue left pending" >&2
+      failed=1; continue
+    fi
+    while IFS= read -r f; do
+      [ -n "$f" ] || continue
+      if ! _valid_file "$f"; then
+        echo "flush: $mslug: refusing unsafe queue entry: $f" >&2
+        _queue_drop "$queue" "$f"; continue
       fi
-      sha="$(shasum -a 256 "$cache" | awk '{print $1}')"
-      bytes="$(wc -c < "$cache" | tr -d ' ')"
+      if [ ! -f "$qdir$f" ]; then
+        echo "still pending: $mslug/$f (no cached file)" >&2; failed=1; continue
+      fi
       if [ "$mode" = local ]; then
-        _manifest_update "$manifest" "$i" local "" "$sha" "$bytes"
-        continue
+        echo "flush: $mslug/$f: assets = \"local\" does not upload; re-run bin/proof-asset put" >&2
+        _queue_drop "$queue" "$f"; continue
       fi
-      key=""; url=""
-      [ -n "$owner" ] && [ -n "$repo" ] && [ -n "$rand" ] && key="$owner/$repo/$mslug/$rand/$file"
-      [ -n "$key" ] && [ -n "$base" ] && url="$base/$key"
-      if [ -z "$key" ] || [ -z "$base" ] || [ -z "$acct" ]; then
-        echo "still pending: $mslug/$name (no upload route: owner/base/account missing)" >&2
+      if [ -z "$owner" ] || [ -z "$repo" ] || [ -z "$base" ] || [ -z "$acct" ]; then
+        echo "still pending: $mslug/$f (no upload route: owner/base/account missing)" >&2
         failed=1; continue
       fi
-      if _upload "$cache" "$key" "$acct"; then
-        _manifest_update "$manifest" "$i" uploaded "$url" "$sha" "$bytes"
-        echo "uploaded $mslug/$name"
+      key="$owner/$repo/$mslug/$rand/$f"; url="$base/$key"
+      if _upload "$qdir$f" "$key" "$acct"; then
+        _queue_drop "$queue" "$f"
+        name="$(jq -r --arg f "$f" '[.assets[]? | select(.file == $f) | .name] | first // empty' \
+                "$manifest" 2>/dev/null)"
+        if [ -z "$name" ]; then name="${f%.*}"; name="${name%-*}"; fi
+        printf '![%s](%s)\n' "$name" "$url"
       else
-        echo "still pending: $mslug/$name (upload failed)" >&2
+        echo "still pending: $mslug/$f (upload failed)" >&2
         failed=1
       fi
-    done
+    done < <(cat "$queue")   # snapshot: _queue_drop rewrites the file mid-loop
   done
-  [ "$pending" -eq 0 ] && exit 0
+  [ "$saw" -eq 0 ] && exit 0
   [ "$failed" -gt 0 ] && exit 1
   exit 0
 }
