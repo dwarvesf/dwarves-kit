@@ -13,11 +13,11 @@ it the battery.
 The multi-lens review runs single-pass minimum, with domain lenses on escalation. This battery exists because independent arms catch DISJOINT defect classes: on one measured diff the panel, the reviewer, the verifier, and a late security lens each found a defect the other three missed.
 
 
-Bracket the phase for timing before dispatching any arm: `bash lib/gate/gate-ledger.sh outcome <rid> battery start` (rid = the branch slug, the same key the ship-gate reads; the ledger counts `battery` as the review gate). For a foreign target the ledger writes under the run dir of the cwd repo, not the target repo. Run the two `gate-ledger.sh` calls from the target repo's primary checkout root in a subshell (`(cd <repo> && bash ...)`), or accept the record landing under the session repo.
+Bracket the phase for timing, after the Size gate below passes and before dispatching any arm: `bash lib/gate/gate-ledger.sh outcome <rid> battery start` (rid = the branch slug, the same key the ship-gate reads; the ledger counts `battery` as the review gate). For a foreign target the ledger writes under the run dir of the cwd repo, not the target repo. Run the two `gate-ledger.sh` calls from the target repo's primary checkout root in a subshell (`(cd <repo> && bash ...)`), or accept the record landing under the session repo.
 
 ## Target (optional argument)
 
-Resolve the target FIRST, before the bracket and before any dispatch.
+Resolve the target FIRST, before the size gate, the bracket and any dispatch.
 
 | Argument | Resolves to |
 |---|---|
@@ -31,13 +31,24 @@ For a PR target, find a local checkout of that repo under `~/workspace/<owner>/<
 
 Print the resolved target as a `## Target` block: path, branch, compare ref, PR number when one exists.
 
+## Size gate (before the timing bracket and any dispatch)
+
+After the Target block, run `bash lib/gate/battery-gate.sh <path> <compare ref>` (path and compare ref from `## Target`). It counts changed lines (markdown and `docs/verification/**` excluded) and checks for a hard path.
+
+- `RUN`: go on.
+- `SKIP: ...`: STOP. Print the SKIP line. Dispatch nothing and open no timing bracket. Name the alternative: `/kit:verify`, or a `docs/verification/<slug>.md` with a green run, a negative control and captured output. A small single-purpose change owes a proof of done, gets wired, and gets shown to the operator.
+- The only override: the operator explicitly asked for the battery on this change. A lane name, "normal lane", or a finished `/kit:execute` is not an override.
+
+Floor: 150 changed lines by default; `BATTERY_SMALL_FLOOR` or `[battery] size_floor` in `.kit.toml` overrides it. A hard path always means `RUN`.
+
 ## When this runs
 
 - The operator says "run the battery" / "overtest this" / "full check before merge".
-- At the end of any normal/full-lane cycle where /kit:execute's pipeline ran but no
-  fresh-context review/verify did.
-- NOT for tiny-lane one-line changes (verify inline or skip with a stated reason),
-  and NOT a replacement for the ship-gate (this battery FEEDS it: record its legs in
+- At the end of a full-lane cycle, or a LARGE or hard-path normal-lane change, where /kit:execute's
+  pipeline ran but no fresh-context review/verify did. The Size gate decides; the lane name alone
+  never triggers it.
+- NOT for a SMALL change (the Size gate prints SKIP) and NOT for tiny-lane one-line changes
+  (verify inline or skip with a stated reason), and NOT a replacement for the ship-gate (this battery FEEDS it: record its legs in
   the gate ledger under the branch slug).
 
 ## The three legs
