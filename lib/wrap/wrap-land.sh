@@ -241,6 +241,22 @@ cmd_land() {
     echo "wrap.sh land: ${wt} is the main checkout, not a worktree" >&2; return 1
   fi
 
+  # The visual-proof flush (opt-in via proof.visual): the branch's proof-asset manifests can
+  # hold entries an offline `put` left pending, so they flush here, inside the worktree
+  # being landed, before the dirty check and before the push. The flag reads from the
+  # worktree's own .kit.toml because the manifests it governs live on this branch. The
+  # flush commits nothing; a non-zero exit stops the land on the flush's own message.
+  if [ "$(KIT_PROJECT_ROOT="$wt" kit_config_get proof.visual false)" = "true" ]; then
+    local flush_out flush_rc
+    flush_out="$(cd "$wt" && "${PROOF_ASSET_BIN:-$LIB_ROOT/../bin/proof-asset}" flush 2>&1)" \
+      && flush_rc=0 || flush_rc=$?
+    [ -z "$flush_out" ] || printf '%s\n' "$flush_out"
+    if [ "$flush_rc" -ne 0 ]; then
+      echo "     LAND REFUSED: proof-asset flush exited ${flush_rc}" >&2
+      return "$flush_rc"
+    fi
+  fi
+
   # One read serves both the clean check and the baseline _land_tidy needs: what the
   # pre-merge ignore rules cover, written as the `??` lines it shows once a merge un-ignores
   # it. That file is the operator's, not a write made since, and it is the only difference

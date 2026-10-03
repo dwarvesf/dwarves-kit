@@ -2259,6 +2259,90 @@ chk "PB5: pr create used the title alone as the body" \
 chk_no "PB5: no block" "$out" "PROOF OF DONE"
 } # end sec_proofbody
 
+# ===========================================================================
+sec_flush() {
+echo "=== land: the visual-proof flush runs before the dirty check and the push ==="
+# ===========================================================================
+# The flush seam: land calls `bin/proof-asset flush` inside the landed worktree when the
+# worktree's .kit.toml opts the project into visual proof. The stub logs each call and its
+# cwd, prints a marker line the ordering checks can place, and exits FL_RC.
+FL_BIN="$TMPD/proof-asset-stub"
+cat > "$FL_BIN" <<'STUB'
+#!/usr/bin/env bash
+{ printf '%s\n' "$*"; pwd; } >> "${FL_CALLS:-/dev/null}"
+printf 'flush says: %s\n' "${FL_SAYS:-ok}"
+exit "${FL_RC:-0}"
+STUB
+chmod +x "$FL_BIN"
+FL_CALLS="$TMPD/fl-calls.log"; export FL_CALLS
+# The kit-root layer is pinned at an empty dir, so the real installed kit.toml can never
+# flip the flag mid-suite either way.
+FL_CFG="$TMPD/no-kit-root"; mkdir -p "$FL_CFG"
+
+# fl_build <name> -- build_land plus a committed .kit.toml opting the branch's worktree
+# into visual proof.
+fl_build() {
+  build_land "$1"
+  printf '[proof]\nvisual = true\n' > "$TMPD/ld-repo-$1/wt/.kit.toml"
+  git -C "$TMPD/ld-repo-$1/wt" add -A
+  git -C "$TMPD/ld-repo-$1/wt" commit -qm "chore: opt into visual proof" >/dev/null 2>&1
+}
+# fl_land <name> <wt> [VAR=val ...] -- one land with the standard stub wiring
+fl_land() {
+  local name="$1" wt="$2"; shift 2
+  : > "$GH_STUB_CALLS"; rm -f "$GH_STUB_CALLS".*
+  : > "$FL_CALLS"
+  env GH_STUB_OPEN_PRS='[]' GH_STUB_CREATE_NUM=42 GH_STUB_LAND_REPO="$wt" GH_STUB_LAND_REMOTE="$TMPD/ld-bare-$name" \
+    GH_STUB_LAND_BRANCH=feat/land GH_STUB_LAND_DEF=main KIT_CONFIG_ROOT="$FL_CFG" \
+    PROOF_ASSET_BIN="$FL_BIN" "$@" "$WRAP" land "$wt" 2>&1
+}
+
+echo "--- flush: opted in, the flush runs before the dirty check"
+fl_build fok
+FL_WT_FOK="$(cd "$TMPD/ld-repo-fok/wt" && pwd -P)"
+echo dirt > "$TMPD/ld-repo-fok/wt/dirt.txt"
+out="$(fl_land fok "$FL_WT_FOK")"; rc=$?
+chk "flush: a dirty worktree still refuses with 1" "$([ "$rc" -eq 1 ]; echo $?)"
+chk_has "flush: the dirty refusal still names the cause" "$out" "is dirty"
+chk "flush: the flush ran even though the tree is dirty" \
+  "$(grep -qx 'flush' "$FL_CALLS"; echo $?)"
+chk_has "flush: its output landed ahead of the dirty refusal" \
+  "$(printf '%s\n' "$out" | sed '/is dirty/q')" "flush says: ok"
+chk "flush: it ran inside the landed worktree" \
+  "$(sed -n 2p "$FL_CALLS" | grep -qxF "$FL_WT_FOK"; echo $?)"
+
+echo "--- flush: opted in, a clean land flushes before the push"
+rm -f "$TMPD/ld-repo-fok/wt/dirt.txt"
+out="$(fl_land fok "$FL_WT_FOK")"; rc=$?
+chk "flush: the opted-in land still exits 0" "$rc"
+chk "flush: the flush was called once, with the flush verb" \
+  "$([ "$(grep -cx 'flush' "$FL_CALLS")" -eq 1 ]; echo $?)"
+chk_has "flush: its output precedes the push report" \
+  "$(printf '%s\n' "$out" | sed '/pushed feat\/land/q')" "flush says: ok"
+chk_has "flush: the land still pushed" "$out" "pushed feat/land"
+chk_has "flush: the land still merged" "$out" "merged #42 ("
+
+echo "--- flush: opted in, a failing flush stops the land before the push"
+fl_build fbad
+FL_WT_FBAD="$(cd "$TMPD/ld-repo-fbad/wt" && pwd -P)"
+out="$(fl_land fbad "$FL_WT_FBAD" FL_RC=1 FL_SAYS="still pending: 1 asset")"; rc=$?
+chk "flush: a failed flush exits non-zero" "$([ "$rc" -ne 0 ]; echo $?)"
+chk_has "flush: the flush's own message surfaces" "$out" "still pending: 1 asset"
+chk_has "flush: the refusal names the flush" "$out" "LAND REFUSED: proof-asset flush exited 1"
+chk "flush: nothing was pushed" \
+  "$(git -C "$TMPD/ld-bare-fbad" rev-parse --verify -q feat/land >/dev/null && echo 1 || echo 0)"
+chk_no "flush: no PR was opened" "$(cat "$GH_STUB_CALLS")" "pr create"
+chk "flush: the worktree stays" "$([ -d "$FL_WT_FBAD" ]; echo $?)"
+
+echo "--- flush: opted out, land never calls the seam"
+build_land foff
+FL_WT_FOFF="$(cd "$TMPD/ld-repo-foff/wt" && pwd -P)"
+out="$(fl_land foff "$FL_WT_FOFF" FL_RC=1 FL_SAYS="must not run")"; rc=$?
+chk "flush: an opted-out land still exits 0" "$rc"
+chk "flush: the seam was never called" "$([ ! -s "$FL_CALLS" ]; echo $?)"
+chk_has "flush: the land still pushed" "$out" "pushed feat/land"
+} # end sec_flush
+
 # One section, in this process. The driver sets LAND_SECTION per child; the last line is the
 # child's result for the driver to sum (it is not the suite's final line).
 [ "$(type -t "$LAND_SECTION")" = function ] || { echo "test-wrap-land: no such section: $LAND_SECTION" >&2; exit 64; }
