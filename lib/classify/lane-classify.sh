@@ -403,14 +403,16 @@ _deesc_resolve_base() {
 # That double-count is harmless for those two gates (it biases them toward MORE warnings,
 # their safe direction); it would bias THIS gate the wrong way (under-nudging a genuinely
 # small diff). See this module's own design doc for the full note.
+# Optional extra args are git pathspecs appended after `.` (battery-gate.sh passes excludes).
 _deesc_changed_lines() {
   local root="$1" base="$2" total=0 a d
+  shift 2
   while IFS=$'\t' read -r a d _rest; do
     [ "$a" = "-" ] && a=0; [ "$d" = "-" ] && d=0
     total=$((total + a + d))
   done < <(
-    { git -C "$root" diff --numstat "$base"..HEAD -- . 2>/dev/null
-      git -C "$root" diff --numstat HEAD -- . 2>/dev/null
+    { git -C "$root" diff --numstat "$base"..HEAD -- . "$@" 2>/dev/null
+      git -C "$root" diff --numstat HEAD -- . "$@" 2>/dev/null
     } 2>/dev/null
   )
   printf '%s' "$total"

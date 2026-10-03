@@ -570,6 +570,8 @@ those surfaces alone would not know either ran, or was skipped, this run).
 | `lib/gate/coverage-delta.sh` | a behavioral diff moved source with no matching test change | `commands/review-team.md` Step 1, the Build->Review boundary | PROSE-INVOKED (inside `/kit:review-team`'s own markdown, off the push blocker); records `\| GATE \| coverage-delta \| ran \|`, ALWAYS exits 0 | a diff-LINE HEURISTIC (changed non-test lines vs changed test lines), NOT a real %-coverage delta; `COVERAGE_DELTA_RUNNER` hooks in a real runner but is unset by default |
 | `lib/gate/mutation-smoke.sh` | a suite that stays green when a changed line is mutated (a false proof of correctness) | `commands/verify.md` Step 6b, inside `/kit:verify` | PROSE-INVOKED (inside `/kit:verify`'s own markdown, off the push blocker); records `\| MUTATION \|`, ALWAYS exits 0, `MUTATION_SMOKE_MAX` (default 5) bounds the run | a small FIXED mutation-operator set on the CHANGED HUNKS only, first-survivor-stops -- NOT a full mutation-testing sweep |
 
+**Size gate.** `/kit:battery` first runs `lib/gate/battery-gate.sh`: a diff under 150 changed lines (markdown and `docs/verification/**` excluded) with no hard path prints `SKIP` and the change owes a proof of done instead of the battery. A normal lane alone never triggers the battery; only an explicit operator ask overrides.
+
 **The three-rung ladder.** The rungs run in this order: **coverage** (the green
 suite, `/kit:battery` leg 1 plus `coverage-delta` above), then **probe** (`break-it`, the
 escalation lens dispatched from `/kit:battery` when the diff carries behavioral code with
