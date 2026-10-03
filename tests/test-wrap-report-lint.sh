@@ -383,6 +383,37 @@ chk "exactly one finding for the unpaired item" "$([ "$(printf '%s\n' "$out" | g
 out="$(_fyi '- STATE wrap.follow_through is off, 3 in-lane items stay REPORTED; /kit:wrap follow builds them' | bash "$LINT" 2>&1)"; rc=$?
 chk "the off-mode FYI row passes the ask rule" "$([ "$rc" -eq 0 ]; echo $?)"
 
+# ------------------------------------------------------------- STE-lite prose
+# commands/wrap.md step 9 "Prose is STE-lite": no semicolon, no sentence over 20 words,
+# counted outside backtick spans, in Needs you, What happened, the FYI Fact cell, and the
+# Left alone Why cell. A contraction only warns.
+_ste() { printf '## Wrap: t\n\n✅ **Needs you:** NOTHING\n\n**Left alone:**\n| Repo | Item | Owner | Why |\n|---|---|---|---|\n| r | wt | this pass | %s |\n\n**Built:** NOTHING: no candidates\n\n**Seam:** NOTHING: no seam configured\n\n**What happened**\n- %s\n\n**FYI:**\n| Tag | Fact | Home |\n|---|---|---|\n| STATE | %s | |\n' "${2:-kept for review}" "$1" "${3:-the knob is false}"; }
+W20="one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen sixteen seventeen eighteen nineteen twenty"
+
+out="$(_ste "Fixed the lint. It now fails a long sentence. Version v1.2.3 shipped in abc1234." | bash "$LINT" 2>&1)"; rc=$?
+chk "an STE report passes" "$([ "$rc" -eq 0 ]; echo $?)"
+out="$(_ste "$W20" | bash "$LINT" 2>&1)"; rc=$?
+chk "a 20-word sentence passes" "$([ "$rc" -eq 0 ]; echo $?)"
+out="$(_ste "Fixed the bug; it now passes." | bash "$LINT" 2>&1)"; rc=$?
+chk "a semicolon in What happened fails" "$([ "$rc" -eq 1 ]; echo $?)"
+chk_has "the semicolon finding names the line" "$out" "line 15: semicolon in prose"
+out="$(_ste "$W20 twentyone" | bash "$LINT" 2>&1)"; rc=$?
+chk "a 21-word sentence fails" "$([ "$rc" -eq 1 ]; echo $?)"
+chk_has "the long-sentence finding names the count" "$out" "sentence of 21 words"
+out="$(_ste 'Ran `a; b` and `one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen sixteen seventeen eighteen` clean.' | bash "$LINT" 2>&1)"; rc=$?
+chk "a semicolon and long text inside backticks pass" "$([ "$rc" -eq 0 ]; echo $?)"
+out="$(_ste "Fixed. $W20. Done." | bash "$LINT" 2>&1)"; rc=$?
+chk "sentences are split on a period and a space" "$([ "$rc" -eq 0 ]; echo $?)"
+out="$(_ste "ok" "kept; for review" | bash "$LINT" 2>&1)"; rc=$?
+chk "a semicolon in a Left alone Why cell fails" "$([ "$rc" -eq 1 ]; echo $?)"
+out="$(_ste "ok" "ok" "$W20 twentyone" | bash "$LINT" 2>&1)"; rc=$?
+chk "a 21-word FYI Fact cell fails" "$([ "$rc" -eq 1 ]; echo $?)"
+out="$(printf '## Wrap: t\n\n🔴 **Needs you:**\na. RUN the deploy; it needs your 2FA.\n\n**Built:** NOTHING: no candidates\n\n**Seam:** NOTHING: no seam configured\n' | bash "$LINT" 2>&1)"; rc=$?
+chk "a semicolon in a Needs you item fails" "$([ "$rc" -eq 1 ]; echo $?)"
+out="$(_ste "It doesn't break." | bash "$LINT" 2>&1)"; rc=$?
+chk "a contraction warns and still passes" "$([ "$rc" -eq 0 ]; echo $?)"
+chk_has "the contraction warning names the line" "$out" "warn line 15: contraction"
+
 
 
 echo

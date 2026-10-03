@@ -1808,7 +1808,7 @@ def _report_text(result, cursor, cands, prose_only, queued):
               sum(len(result[s]["failed"]) for s in sources),
               sum(len(result[s]["deferred"]) for s in sources))
     lines += ["**What happened**",
-              "- read %d sessions (%s), staged %d learnings, found %d candidates; "
+              "- read %d sessions (%s), staged %d learnings, found %d candidates. "
               "%d trivial, %d filtered, %d failed, %d deferred." % ((total, per) + counts),
               ""]
     lines += ["**Shipped**", "- NOTHING", "",
