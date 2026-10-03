@@ -3,11 +3,14 @@
 # Off by default: with [proof] visual unset/false every case is byte-identical to master.
 # On, a behavioral diff touching a UI extension (.tsx .jsx .vue .svelte .css .scss .html)
 # owes ONE qualifying image on top of every existing rule:
-#   R3a  a changed docs/verification/<dir>/assets.json entry whose bucket-prefixed url is
+#   R3a  a changed docs/verification/<dir>/assets.json entry whose bucket-prefixed url
+#        (no '..' / '%', declared bytes under the cap, at most 5 fetches per check) is
 #        embedded in a changed proof file and whose fetched bytes hash to its sha256
-#   R3b  an image link in a changed proof file whose target git ls-files lists
+#   R3b  an image link in a changed proof file whose target git ls-files lists AND is
+#        in the branch's own changed files
 #   R3c  a `status: local` entry whose cached file exists -- only when a TRACKED, CLEAN
-#        project .kit.toml sets assets = "local"
+#        project .kit.toml sets assets = "local" (and slug/file pass the write-time
+#        regexes before either joins a path)
 # Block messages name the case: no image / fetch failed / hash mismatch /
 # url outside the proof bucket / run `bin/proof-asset flush` for pending entries.
 #
@@ -70,14 +73,16 @@ proof_ok() {
     cat
   } > "$1/docs/verification/vf.md"
 }
-# manifest <repo> <status> <url> <sha> -- a changed docs/verification/ui/assets.json
+# manifest <repo> <status> <url> <sha> [bytes] -- a changed docs/verification/ui/assets.json
 manifest() {
   mkdir -p "$1/docs/verification/ui"
   cat > "$1/docs/verification/ui/assets.json" <<EOF
-{"slug":"ui","rand":"0123456789abcdef0123456789abcdef","assets":[{"name":"shot","file":"shot.webp","status":"$2","url":"$3","sha256":"$4","bytes":12}]}
+{"slug":"ui","rand":"0123456789abcdef0123456789abcdef","assets":[{"name":"shot","file":"shot.webp","status":"$2","url":"$3","sha256":"$4","bytes":${5:-12}}]}
 EOF
 }
-visual_on() { printf '[proof]\nvisual = true\n' > "$1/.kit.toml"; }
+# The project layer only counts when .kit.toml is tracked and clean, so the fixtures
+# commit the opt-in; cases that exercise an uncommitted file write it raw instead.
+visual_on() { printf '[proof]\nvisual = true\n' > "$1/.kit.toml"; git -C "$1" add .kit.toml; git -C "$1" commit -qm "config: visual on"; }
 local_on()  { printf '[proof]\nvisual = true\nassets = "local"\n' > "$1/.kit.toml"; }
 
 gate(){ bash "$LIB" check "$1" "$(git -C "$1" rev-parse HEAD)" vf 2>&1; }
@@ -117,11 +122,12 @@ printf '#!/bin/sh\nprintf "different-bytes"\n' > "$TMPD/fetch-bad4"; chmod +x "$
 if OUT="$(PROOF_ASSET_FETCH="$TMPD/fetch-bad4" gate "$D")"; then fail "case 4 (ACCEPTED, want BLOCK)"; else pass "case 4: mismatched bytes blocked"; fi
 case "$OUT" in *"hash mismatch: $URL"*) pass "case 4: the block names 'hash mismatch: <url>'" ;; *) fail "case 4 message: $OUT" ;; esac
 
-echo "=== case 5: pending entry + fetch fails -> 'fetch failed' AND 'bin/proof-asset flush' ==="
+echo "=== case 5: queued entry (the .pending file) + fetch fails -> 'fetch failed' AND 'bin/proof-asset flush' ==="
 D="$(new_repo c5)"; visual_on "$D"; ui_diff "$D"
-manifest "$D" pending "$URL" "$SHA"
+manifest "$D" r2 "$URL" "$SHA"
+mkdir -p "$D/.kit/proof-assets/ui"; printf 'shot.webp\n' > "$D/.kit/proof-assets/ui/.pending"
 printf '![shot](%s)\n' "$URL" | proof_ok "$D"
-blocks "case 5: pending entry whose fetch fails" "$D"
+blocks "case 5: queued entry whose fetch fails" "$D"
 msg_has "case 5: the block names 'fetch failed: <url>'" "$D" "fetch failed: $URL"
 msg_has "case 5: the block says to run 'bin/proof-asset flush'" "$D" 'bin/proof-asset flush'
 
@@ -150,11 +156,23 @@ mkdir -p "$D/deploy"; echo "rollout v2" > "$D/deploy/rollout.sh"
 accepts "case 8: stateful + UI file, text-only proof passes" "$D"
 
 echo "=== case 9: assets=local only in an UNCOMMITTED .kit.toml -> R3c refused ==="
+# visual = true rides the operator layer here, so the rule is on while the project's
+# local opt-in stays untracked (tracked_clean fails): the local path must not unlock.
+mkdir -p "$TMPD/op-visual"
+cat > "$TMPD/op-visual/kit.toml" <<'TOML'
+[proof]
+visual = true
+base_url_tieubao = "https://proof.han.ws"
+TOML
 D="$(new_repo c9)"; local_on "$D"; ui_diff "$D"   # .kit.toml stays untracked
 mkdir -p "$D/.kit/proof-assets/ui"; printf 'local-bytes' > "$D/.kit/proof-assets/ui/shot.webp"
 manifest "$D" local "" ""
 proof_ok "$D" </dev/null
-blocks "case 9: untracked .kit.toml cannot unlock the local path" "$D"
+if KIT_CONFIG_OPERATOR="$TMPD/op-visual" gate "$D" >/dev/null 2>&1; then
+  fail "case 9: untracked .kit.toml unlocked the local path (ACCEPTED, want BLOCK)"
+else
+  pass "case 9: untracked .kit.toml cannot unlock the local path"
+fi
 
 echo "=== case 10: entry url outside <base>/<owner>/<repo>/ -> named so ==="
 D="$(new_repo c10)"; visual_on "$D"; ui_diff "$D"
@@ -176,6 +194,125 @@ D="$(new_repo c12)"; visual_on "$D"
 mkdir -p "$D/app/models"; echo "class User; end" > "$D/app/models/user.rb"
 proof_ok "$D" </dev/null
 accepts "case 12: app/models/user.rb only, text-only proof passes" "$D"
+
+echo "=== case 13: an R3a url holding '..' or '%' is refused, prefix or not ==="
+D="$(new_repo c13a)"; visual_on "$D"; ui_diff "$D"
+BAD="https://proof.han.ws/tieubao/widget/../other/ui/$RAND/shot.webp"
+manifest "$D" r2 "$BAD" "$SHA"
+printf '![shot](%s)\n' "$BAD" | proof_ok "$D"
+blocks "case 13a: '..' inside a bucket-prefixed url" "$D"
+msg_has "case 13a: the block names the unsafe url" "$D" "unsafe url: $BAD"
+D="$(new_repo c13b)"; visual_on "$D"; ui_diff "$D"
+BAD="https://proof.han.ws/tieubao/widget/ui/$RAND/%2e%2e/shot.webp"
+manifest "$D" r2 "$BAD" "$SHA"
+printf '![shot](%s)\n' "$BAD" | proof_ok "$D"
+blocks "case 13b: '%' inside the url" "$D"
+msg_has "case 13b: the block names the unsafe url" "$D" "unsafe url: $BAD"
+
+echo "=== case 14: declared bytes over the 3 MB cap is refused before any fetch ==="
+D="$(new_repo c14)"; visual_on "$D"; ui_diff "$D"
+manifest "$D" r2 "$URL" "$SHA" 4000000
+printf '![shot](%s)\n' "$URL" | proof_ok "$D"
+FETCHLOG="$TMPD/fetch-calls-14"; : > "$FETCHLOG"
+printf '#!/bin/sh\necho called >> "%s"\nexit 1\n' "$FETCHLOG" > "$TMPD/fetch-spy"; chmod +x "$TMPD/fetch-spy"
+if PROOF_ASSET_FETCH="$TMPD/fetch-spy" gate "$D" >/dev/null 2>&1; then
+  fail "case 14: over-cap entry (ACCEPTED, want BLOCK)"
+elif [ -s "$FETCHLOG" ]; then
+  fail "case 14: the entry was fetched despite a declared size over the cap"
+else
+  pass "case 14: over-cap entry refused with no fetch"
+fi
+
+echo "=== case 15: at most 5 fetches per check ==="
+D="$(new_repo c15)"; visual_on "$D"; ui_diff "$D"
+FETCHLOG="$TMPD/fetch-calls-15"; : > "$FETCHLOG"
+printf '#!/bin/sh\necho called >> "%s"\nexit 1\n' "$FETCHLOG" > "$TMPD/fetch-spy-15"; chmod +x "$TMPD/fetch-spy-15"
+mkdir -p "$D/docs/verification/ui"
+{ printf '{"slug":"ui","rand":"%s","assets":[' "$RAND"
+  for i in 1 2 3 4 5 6 7; do
+    [ "$i" -gt 1 ] && printf ','
+    printf '{"name":"s%s","file":"s%s.webp","status":"r2","url":"%s","sha256":"%s","bytes":12}' \
+      "$i" "$i" "https://proof.han.ws/tieubao/widget/ui/$RAND/s$i.webp" "$SHA"
+  done
+  printf ']}' ; } > "$D/docs/verification/ui/assets.json"
+{ for i in 1 2 3 4 5 6 7; do printf '![s%s](https://proof.han.ws/tieubao/widget/ui/%s/s%s.webp)\n' "$i" "$RAND" "$i"; done; } | proof_ok "$D"
+if PROOF_ASSET_FETCH="$TMPD/fetch-spy-15" gate "$D" >/dev/null 2>&1; then
+  fail "case 15: seven unverifiable entries (ACCEPTED, want BLOCK)"
+else
+  N="$(wc -l < "$FETCHLOG" | tr -d ' ')"
+  [ "$N" -le 5 ] && pass "case 15: fetch count capped at 5 (saw $N)" || fail "case 15: $N fetches, cap is 5"
+fi
+
+echo "=== case 16: an old tracked image unchanged by the branch is not R3b ==="
+D="$(new_repo c16)"; visual_on "$D"
+mkdir -p "$D/public"; printf 'GIF89a' > "$D/public/logo.png"
+git -C "$D" add -A; git -C "$D" commit -qm "add logo"      # tracked at base, not in this diff
+ui_diff "$D"
+printf '![logo](public/logo.png)\n' | proof_ok "$D"
+blocks "case 16: a tracked image the branch did not change does not count" "$D"
+
+echo "=== case 17: R3c refuses a traversal slug or file before the -f test ==="
+D="$(new_repo c17a)"; local_on "$D"
+git -C "$D" add .kit.toml; git -C "$D" commit -qm "config: local opt-in"
+ui_diff "$D"
+mkdir -p "$D/.kit/proof-assets" "$D/docs/verification/ui"
+printf 'local-bytes' > "$D/.kit/proof-assets/escape.webp"
+cat > "$D/docs/verification/ui/assets.json" <<EOF
+{"slug":"ui","rand":"$RAND","assets":[{"name":"shot","file":"../escape.webp","status":"local","url":"","sha256":"","bytes":12}]}
+EOF
+proof_ok "$D" </dev/null
+blocks "case 17a: file '../escape.webp' must not resolve outside the cache" "$D"
+D="$(new_repo c17b)"; local_on "$D"
+git -C "$D" add .kit.toml; git -C "$D" commit -qm "config: local opt-in"
+ui_diff "$D"
+mkdir -p "$D/.kit" "$D/docs/verification/x"
+printf 'local-bytes' > "$D/.kit/escape.webp"
+cat > "$D/docs/verification/x/assets.json" <<EOF
+{"slug":"..","rand":"$RAND","assets":[{"name":"shot","file":"escape.webp","status":"local","url":"","sha256":"","bytes":12}]}
+EOF
+proof_ok "$D" </dev/null
+blocks "case 17b: slug '..' must not resolve outside the cache" "$D"
+
+echo "=== case 18: an uncommitted .kit.toml cannot disarm an operator opt-in ==="
+mkdir -p "$TMPD/op-visual"
+cat > "$TMPD/op-visual/kit.toml" <<'TOML'
+[proof]
+visual = true
+base_url_tieubao = "https://proof.han.ws"
+TOML
+D="$(new_repo c18)"
+printf '[proof]\nvisual = false\n' > "$D/.kit.toml"    # untracked: tracked_clean fails
+ui_diff "$D"; proof_ok "$D" </dev/null
+if KIT_CONFIG_OPERATOR="$TMPD/op-visual" gate "$D" >/dev/null 2>&1; then
+  fail "case 18: an untracked .kit.toml disarmed the operator's visual = true"
+else
+  pass "case 18: an untracked .kit.toml cannot disarm the operator opt-in"
+fi
+D="$(new_repo c18b)"
+printf '[proof]\nvisual = false\n' > "$D/.kit.toml"
+git -C "$D" add .kit.toml; git -C "$D" commit -qm "config: opt out"
+ui_diff "$D"; proof_ok "$D" </dev/null
+if KIT_CONFIG_OPERATOR="$TMPD/op-visual" gate "$D" >/dev/null 2>&1; then
+  pass "case 18b: a committed clean .kit.toml still disarms (auditable opt-out)"
+else
+  fail "case 18b: a committed opt-out should hold (BLOCKED, want ACCEPT)"
+fi
+
+echo "=== case 19: an audited override clears the visual block like the proof block ==="
+D="$(new_repo c19)"; visual_on "$D"
+echo "body { color: red }" > "$D/app/site.css"       # .css: not a source-code remainder
+proof_ok "$D" </dev/null
+blocks "case 19: no image, no override -> blocked" "$D"
+( cd "$D" && bash "$LIB" override vf "battery: audited visual override" >/dev/null 2>&1 )
+if gate "$D" >/dev/null 2>&1; then
+  pass "case 19: a logged override clears the visual block"
+else
+  fail "case 19: the override should clear the visual block (BLOCKED, want ACCEPT)"
+fi
+D="$(new_repo c19b)"; visual_on "$D"
+ui_diff "$D"; proof_ok "$D" </dev/null               # .tsx IS a source-code remainder
+( cd "$D" && bash "$LIB" override vf "battery: audited visual override" >/dev/null 2>&1 )
+blocks "case 19b: the override still rejects a source remainder (.tsx)" "$D"
 
 echo
 [ "$fails" -eq 0 ] && { echo "test-proof-visual-gate: all $total passed"; exit 0; } \
