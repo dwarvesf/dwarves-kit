@@ -4,7 +4,7 @@
 # AND fix #1 (the embedded image must actually EXIST). Four cases, both directions:
 #   - a behavioral proof whose only evidence is a REAL committed image  -> ACCEPT
 #   - a dangling ![x](missing.gif) reference (no file)                   -> BLOCK  (fix #1)
-#   - a text run-table (Exit: 0)                                        -> ACCEPT (regression)
+#   - a text run-table (Exit: 0 + captured Output:)                     -> ACCEPT (regression)
 #   - the NEGATIVE CONTROL marker but no evidence at all               -> BLOCK  (not pass-anything)
 set -uo pipefail
 KIT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -30,7 +30,7 @@ make_fixture() {
     case "$ev" in
       image-real)     echo '![demo](vf-vis-demo.gif)' ;;
       image-dangling) echo '![demo](vf-vis-missing.gif)' ;;   # deliberately create NO file
-      text)           echo '- Command: `bash lib/thing.sh`'; echo '- Exit: 0'; echo '- Verdict: PASS' ;;
+      text)           echo '- Command: `bash lib/thing.sh`'; echo '- Exit: 0'; echo '- Output (tail): `thing: all 3 passed`'; echo '- Verdict: PASS' ;;
       none)           echo 'no captured run here.' ;;
     esac
   } > "$proof"

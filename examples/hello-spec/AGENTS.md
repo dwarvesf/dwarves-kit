@@ -55,6 +55,14 @@ what changed and what was not attempted.** If you could not run the check, repor
 that plainly; under Claude Code the anti-rationalization hook is the backstop for
 premature completion, but the honesty obligation is yours under any runtime.
 
+**Show the proof, never only describe it.** A proof of done carries what the run
+really printed: the test recap or the tail of the run under an `Output:` line, or a
+committed screenshot or GIF for visual work (a video or a demo flow is linked beside
+it). The ship-gate refuses a proof whose green run is typed words alone. The same
+captured output goes in the final response, with the PR link, and in the PR body
+(`wrap land` builds the body from the proof file). A final response that says only
+"tests pass" has shown nothing.
+
 ## 4. Pause if (ask a human)
 
 Stop and ask a human before acting on any of these. These are decisions with

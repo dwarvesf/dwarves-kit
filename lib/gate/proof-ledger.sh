@@ -31,6 +31,9 @@
 #                                     or inert); else exit 1 + what is missing
 #   override <slug> <reason>          log a human override for this branch (leaves a trace)
 #   is-overridden <slug>              exit 0 if an override is logged
+#   proof-files <root> <base>         the proof files the branch added or changed, one per line
+#   captured-output <proof-file>      the real lines under the file's Output: slots
+#   images <proof-file> <root>        "link<TAB>repo path" per embedded image that exists
 #   negctl   <root> <test-cmd> <mutate-cmd>
 #   negctl   --base-ref <ref> <root> <test-cmd>
 #   negctl   --at <sha> [--path <subdir>] [--setup <cmd>] <root> <test-cmd> <mutate-cmd>
@@ -264,24 +267,82 @@ override() {
   echo "proof-of-done override logged for slug '$slug' in repo '$repo' (trace: $OVERRIDE_LOG)"
 }
 
-# _has_committed_image <proof-file> <root>: 0 iff the file embeds an image whose target
-# actually EXISTS in the tree (resolved relative to the proof file's dir, then the repo root).
-# Closes the fabrication hole: a bare `![x](missing.gif)` string must not count as "it ran" ,
-# the picture has to really be there. A committed proof image satisfies this at push time; a
-# dangling or typo'd reference does not.
-_has_committed_image() {
-  local pf="$1" root="$2" path
-  [ -f "$pf" ] || return 1
-  while IFS= read -r path; do
-    [ -n "$path" ] || continue
-    path="${path%%[#?]*}"          # strip #anchor / ?query
+# _committed_images <proof-file> <root>: one "link<TAB>repo-relative path" line per embedded
+# image whose target actually EXISTS in the tree (resolved relative to the proof file's dir,
+# then the repo root). Closes the fabrication hole: a bare `![x](missing.gif)` string must not
+# count as "it ran", the picture has to really be there. A committed proof image satisfies this
+# at push time; a dangling or typo'd reference prints nothing.
+_committed_images() {
+  local pf="$1" root="$2" link path rel
+  [ -f "$pf" ] || return 0
+  rel="$(dirname "${pf#"$root"/}")"
+  while IFS= read -r link; do
+    [ -n "$link" ] || continue
+    path="${link%%[#?]*}"          # strip #anchor / ?query
     path="${path#./}"
-    [ -f "$(dirname "$pf")/$path" ] && return 0
-    [ -f "$root/$path" ] && return 0
+    if [ -f "$(dirname "$pf")/$path" ]; then
+      [ "$rel" = . ] || path="$rel/$path"
+      printf '%s\t%s\n' "$link" "$path"
+    elif [ -f "$root/$path" ]; then
+      printf '%s\t%s\n' "$link" "$path"
+    fi
   done < <(grep -oiE '!\[[^]]*\]\([^)]*\.(png|gif|jpe?g|svg|webp)\)' "$pf" 2>/dev/null \
             | sed -E 's/^.*\(([^)]*)\)$/\1/')
-  return 1
 }
+_has_committed_image() { [ -n "$(_committed_images "$1" "$2")" ]; }
+
+# _captured_output: stdin is proof text; prints the REAL lines held by its `Output` slots.
+# A slot is a line `Output:` or `Output (<anything>):` (any case; a list bullet or bold is
+# fine), or a heading `### Output`. Its lines are the text after the colon, then the lines
+# below it, up to the first of:
+#   - a run-table field at the start of a line or bullet (Command:/Exit:/Verdict:/Result:);
+#     an INDENTED line never ends a slot, so a test that prints `Results: 12` stays output
+#   - the next heading
+#   - the end of the fenced block the slot opened (the fence must come before any content)
+#     or sits in; a later, unrelated fence ends the slot instead of joining it
+#   - a blank line once the slot has content (a heading slot runs to the next heading)
+#   - an unindented paragraph after a blank line when the slot is still empty
+# A fenced run block needs no label: inside a fence, the lines after an `Exit:` line, up to
+# the fence's end, are output (field lines there are skipped, never counted). So a block of
+# Command:/Exit:/Verdict: lines alone still holds nothing.
+# Blank lines, fence lines, a bare `<placeholder>` and filler (`none`, `n/a`, `...`,
+# `see ...`, `(see above)`) are not output, so a slot left empty prints nothing. This is
+# what makes a green run CAPTURED: `Exit: 0` is a claim, the lines under `Output:` are what
+# the run printed. It cannot judge whether pasted lines are true; that stays with review.
+_captured_output() {
+  awk '
+    function real(s,   t) {
+      gsub(/^[ \t>*]+|[ \t*]+$/, "", s); t = tolower(s)
+      if (s ~ /^<[^>]*>$/ || t ~ /^(none|n\/a|na|tbd|todo|-+|\.\.\.+)$/ \
+          || t ~ /^\((see|none|n\/a|tbd|omitted)[^)]*\)$/ || t ~ /^see[ \t]/) return ""
+      return s
+    }
+    function emit(s,   r) { r = real(s); if (r != "") { print r; got = 1 } }
+    # isout: an Output slot label (sets RSTART/RLENGTH); isfield: a run-table field line.
+    function isout(x) { return match(x, /^[ \t>]*([-*+][ \t]+)?[*_]*output[ \t]*(\([^)]*\))?[*_]*:/) }
+    function isfield(x) { return x ~ /^>?([-*+][ \t]+)?[*_]*(command|exit|verdict|result)[*_]*:/ }
+    function open_slot(h) { slot = 1; own = 0; got = 0; gap = 0; hd = h; imp = 0 }
+    { l = tolower($0) }
+    /^[ \t>]*(```|~~~)/ {
+      if (slot && !fence && !got && !hd) own = 1
+      else if (slot && !hd) slot = 0
+      fence = !fence; next
+    }
+    slot && own && imp && isout(l) { emit(substr($0, RSTART + RLENGTH)); next }
+    slot && own && imp && isfield(l) { next }
+    slot && own { emit($0); next }
+    isout(l) { open_slot(0); emit(substr($0, RSTART + RLENGTH)); next }
+    fence && l ~ /^[ \t>]*([-*+][ \t]+)?[*_]*exit[*_]*:/ { open_slot(0); own = 1; imp = 1; next }
+    !fence && l ~ /^#+[ \t]+output([ \t(:].*)?$/ { open_slot(1); next }
+    !slot { next }
+    !fence && /^#/ { slot = 0; next }
+    isfield(l) { slot = 0; next }
+    /^[ \t]*$/ { if (got && !hd) slot = 0; else gap = 1; next }
+    gap && !got && !hd && !fence && $0 !~ /^(  |\t)/ { slot = 0; next }
+    { emit($0) }
+  ' 2>/dev/null
+}
+_has_captured_output() { [ -n "$(_captured_output)" ]; }
 
 # _negctl_required <root> <base> <slug>: prints yes|no, whether a behavioral proof must carry a
 # NEGATIVE CONTROL. [gate] negative_control = always (default, every behavioral change) | full
@@ -326,7 +387,11 @@ check() {
   # near_miss: one "path<TAB>last_v" line per behavioral file/group that has a
   # NEGATIVE CONTROL and a green run but is rejected solely because its own FINAL Verdict
   # line reads FAIL/INCONCLUSIVE , read only on the BLOCKED path below, never touches ok.
-  local near_miss="" has_negctl has_green last_ok
+  # no_output: one path per file/group with no captured output and no committed image; read
+  # only on the BLOCKED path, which names what to add.
+  local near_miss="" no_output="" has_negctl has_green has_out last_ok
+  # A run counts only with its CAPTURED OUTPUT: a green marker (Exit: 0 / Verdict: PASS) is a
+  # typed claim, so it needs real lines under an `Output:` slot (see _captured_output).
   # A committed screenshot/GIF embed counts as captured run-evidence too (visual/demo work
   # proves "it actually ran" with a picture, not only a text run-table). The semantic marker
   # (NEGATIVE CONTROL / rollback) is still required, and the image must actually EXIST , see
@@ -338,13 +403,15 @@ check() {
     while IFS= read -r f; do
       [ -n "$f" ] || continue
       local p="$root/$f"; [ -f "$p" ] || continue
+      has_out=1; { _has_captured_output < "$p" || _has_committed_image "$p" "$root"; } && has_out=0
+      [ "$has_out" -eq 0 ] || no_output="${no_output}${f}"$'\n'
       if [ "$class" = "behavioral" ]; then
         # An INCONCLUSIVE verdict never satisfies the gate, even with Exit: 0.
         # LAST-verdict-wins (review lens 2): the documented append shape retries after a
         # noisy run, so only the most recent Verdict: line in the file decides.
         last_v="$(grep -iE '^[[:space:]]*Verdict:' "$p" | tail -1)"
         has_negctl=1; { [ "$negctl_req" = no ] || grep -qi 'NEGATIVE CONTROL' "$p"; } && has_negctl=0
-        has_green=1; { grep -qE 'Exit:[[:space:]]*0|VERDICT: PASS|Verdict: PASS|PASS' "$p" || _has_committed_image "$p" "$root"; } && has_green=0
+        has_green=1; [ "$has_out" -eq 0 ] && { grep -qE 'Exit:[[:space:]]*0|VERDICT: PASS|Verdict: PASS|PASS' "$p" || _has_committed_image "$p" "$root"; } && has_green=0
         last_ok=1; ! printf '%s' "$last_v" | grep -qiE 'Verdict:[[:space:]]*(INCONCLUSIVE|FAIL)' && last_ok=0
         if [ "$has_negctl" -eq 0 ] && [ "$has_green" -eq 0 ] && [ "$last_ok" -eq 0 ]; then
           ok=0; break
@@ -353,7 +420,9 @@ check() {
           near_miss="${near_miss}${f}$(printf '\t')${last_v}"$'\n'
         fi
       else # stateful
-        grep -qiE 'rollback|\[UNAVAILABLE' "$p" && { grep -qE 'Command:|Exit:' "$p" || _has_committed_image "$p" "$root"; } && ok=0 && break
+        # [UNAVAILABLE: reason] says no run was possible, so it owes no output.
+        grep -qiE 'rollback|\[UNAVAILABLE' "$p" && { [ "$has_out" -eq 0 ] || grep -qi '\[UNAVAILABLE' "$p"; } \
+          && { grep -qE 'Command:|Exit:' "$p" || _has_committed_image "$p" "$root"; } && ok=0 && break
       fi
     done <<< "$files"
   fi
@@ -371,12 +440,15 @@ check() {
           "$g"*) [ -f "$root/$f" ] && { content+="$(cat "$root/$f")"$'\n'; _has_committed_image "$root/$f" "$root" && grp_img=0; } ;;
         esac
       done <<< "$(printf '%s\n' "$files" | sort)"
+      has_out=1; { printf '%s' "$content" | _has_captured_output || [ "$grp_img" -eq 0 ]; } && has_out=0
+      # A group's union can hold the output its single files lack, so the group replaces them.
+      [ "$has_out" -eq 0 ] && no_output="$(printf '%s' "$no_output" | awk -v g="$g" 'index($0, g) != 1')"$'\n'
       if [ "$class" = "behavioral" ]; then
         # Last-verdict-wins, set-wise: files concatenate in sorted (= chronological)
         # order, so the union's final Verdict: line is the latest run's.
         last_v="$(printf '%s' "$content" | grep -iE '^[[:space:]]*Verdict:' | tail -1)"
         has_negctl=1; { [ "$negctl_req" = no ] || printf '%s' "$content" | grep -qi 'NEGATIVE CONTROL'; } && has_negctl=0
-        has_green=1; { printf '%s' "$content" | grep -qE 'Exit:[[:space:]]*0|VERDICT: PASS|Verdict: PASS|PASS' || [ "$grp_img" -eq 0 ]; } && has_green=0
+        has_green=1; [ "$has_out" -eq 0 ] && { printf '%s' "$content" | grep -qE 'Exit:[[:space:]]*0|VERDICT: PASS|Verdict: PASS|PASS' || [ "$grp_img" -eq 0 ]; } && has_green=0
         last_ok=1; ! printf '%s' "$last_v" | grep -qiE 'Verdict:[[:space:]]*(INCONCLUSIVE|FAIL)' && last_ok=0
         if [ "$has_negctl" -eq 0 ] && [ "$has_green" -eq 0 ] && [ "$last_ok" -eq 0 ]; then
           ok=0; break
@@ -389,6 +461,7 @@ check() {
         fi
       else # stateful
         printf '%s' "$content" | grep -qiE 'rollback|\[UNAVAILABLE' \
+          && { [ "$has_out" -eq 0 ] || printf '%s' "$content" | grep -qi '\[UNAVAILABLE'; } \
           && { printf '%s' "$content" | grep -qE 'Command:|Exit:' || [ "$grp_img" -eq 0 ]; } \
           && ok=0 && break
       fi
@@ -448,7 +521,7 @@ check() {
       else
         echo "  Need: a docs/verification/<slug>.md added by this branch with a green run AND a NEGATIVE CONTROL (revert -> RED -> restore)."
       fi
-      echo "        ('green run' = a text run-table (Command:/Exit:/Verdict: PASS) OR a committed screenshot/GIF embed for visual/demo work.)"
+      echo "        ('green run' = a text run-table (Command:/Exit:/Output:/Verdict: PASS) with the run's real output under Output:, OR a committed screenshot/GIF embed for visual/demo work.)"
       # A file that IS found and carries a NEGATIVE CONTROL + a green run, but is
       # rejected solely because its own final Verdict line reads FAIL/INCONCLUSIVE, gets named
       # here instead of vanishing into the generic message above.
@@ -461,7 +534,15 @@ check() {
       fi
     else
       echo "  Need: a docs/verification/<slug>.md added by this branch with a recorded run AND a rollback note, or [UNAVAILABLE: reason] if no such flow exists here."
-      echo "        ('recorded run' = Command:/Exit: text OR a committed screenshot/GIF embed for visual/demo work.)"
+      echo "        ('recorded run' = Command:/Exit:/Output: text with the run's real output under Output:, OR a committed screenshot/GIF embed for visual/demo work.)"
+    fi
+    # A proof file that IS found but shows nothing the run printed: name the slot to add.
+    if [ -n "$no_output" ]; then
+      local no_f
+      while IFS= read -r no_f; do
+        [ -n "$no_f" ] || continue
+        echo "  Hint: $no_f has no captured output: a typed Exit: 0 or Verdict: PASS is a claim, not evidence. Add an \`Output:\` line to the run block and paste under it what the run really printed (the test recap, the tail of the run); a slot left empty or holding only a <placeholder> does not count. For visual work embed a committed screenshot or GIF instead: \`![after](shot.png)\`."
+      done <<< "$no_output"
     fi
     echo "  Type-specific shape: run 'bash lib/gate/proof-gate.sh contract \"<your task>\"' for the exact artifact this work-type owes + the skill that owns it (e.g. a data/CLI tool owes a recorded live run; an eval owes a TEST-REPORT)."
     echo "  Produce it via /kit:verify (or record it), or log an explicit override (audited):"
@@ -484,8 +565,11 @@ case "$cmd" in
   check)         check "$@" ;;
   override)      override "$@" ;;
   is-overridden) is_overridden "$@" ;;
+  proof-files)   [ $# -ge 2 ] || { echo "usage: proof-files <root> <base>" >&2; exit 64; }; _fresh_proof_files "$@" ;;
+  captured-output) [ -f "${1:-}" ] || { echo "usage: captured-output <proof-file>" >&2; exit 64; }; _captured_output < "$1" ;;
+  images)        [ $# -ge 2 ] || { echo "usage: images <proof-file> <root>" >&2; exit 64; }; _committed_images "$@" ;;
   deployable)    deployable "$@" ;;
   delivery-ratio) delivery_ratio "$@" ;;
   negctl)        negctl "$@" ;;
-  *) echo "usage: proof-ledger.sh {classify|check|override|is-overridden|deployable|delivery-ratio|negctl} ..." >&2; exit 64 ;;
+  *) echo "usage: proof-ledger.sh {classify|check|override|is-overridden|proof-files|captured-output|images|deployable|delivery-ratio|negctl} ..." >&2; exit 64 ;;
 esac

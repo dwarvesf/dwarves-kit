@@ -117,6 +117,9 @@ BACKLOG_SH="$LIB_ROOT/board/backlog.sh"
 # `land`'s ship-gate record shells out to this rather than reimplementing the
 # rid/ledger rules -- see cmd_land's use below.
 GATE_LEDGER_SH="$LIB_ROOT/gate/gate-ledger.sh"
+# `land` reads the branch's proof of done through the gate's own verbs (proof-files,
+# captured-output, images), so the lookup the ship-gate judges is the one the PR shows.
+PROOF_LEDGER_SH="$LIB_ROOT/gate/proof-ledger.sh"
 # shellcheck source=lib/config/kit-config.sh
 source "$LIB_ROOT/config/kit-config.sh" || { echo "FATAL: lib/config/kit-config.sh missing or unreadable" >&2; exit 1; }
 # shellcheck source=lib/gate/default-branch-warn.sh

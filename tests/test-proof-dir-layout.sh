@@ -30,6 +30,7 @@ make_fixture() {  # $1 = dir ; $2 = include negative-control run (1/0)
 ## 2026-06-09 10:00 PASS -- vf-fix [green]
 - Command: `bash lib/thing.sh`
 - Exit: 0
+- Output (tail): `thing: all 3 passed`
 - Verdict: PASS
 EOF
   if [ "$negctl" = "1" ]; then

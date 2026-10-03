@@ -147,6 +147,14 @@ that plainly; the anti-rationalization hook is the backstop for premature
 completion under Claude Code, but the honesty obligation is yours under any
 runtime.
 
+**Show the proof, never only describe it.** A proof of done carries what the run
+really printed: the test recap or the tail of the run under an `Output:` line, or a
+committed screenshot or GIF for visual work (a video or a demo flow is linked beside
+it). The ship-gate refuses a proof whose green run is typed words alone. The same
+captured output goes in the final response, with the PR link, and in the PR body
+(`wrap land` builds the body from the proof file). A final response that says only
+"tests pass" has shown nothing.
+
 **Deployable-done (ADR-0028, reusing ADR-0025).** DEPLOYABLE work is anything that runs
 somewhere, a service, a daemon, a feature behind a flag, or any change `lib/gate/proof-ledger.sh
 classify` puts in its `stateful` class (deploy / rollout / production / migration / schema /

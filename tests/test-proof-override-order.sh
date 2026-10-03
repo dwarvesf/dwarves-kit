@@ -64,6 +64,7 @@ cat > "$F/docs/verification/$SLUG.md" <<'EOF'
 ## 2026-08-06 10:00 PASS -- vf-override-fix [green]
 - Command: `bash lib/thing.sh`
 - Exit: 0
+- Output (tail): `thing: all 3 passed`
 - Verdict: PASS
 
 ## 2026-08-06 10:01 RED-as-expected -- vf-override-fix [negative control]
