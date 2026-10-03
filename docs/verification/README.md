@@ -38,6 +38,13 @@ For COMPARATIVE claims (faster/smaller/fewer), add the optional evidence pair
    or GIF** embedded in the proof (`![...](path.png|gif|...)`). The gate accepts either form , a
    picture of the thing running counts as "it ran". Pick the form that fits the work-type; non-visual
    logic still owes a run-table.
+   **The run-table must hold the output itself.** The gate reads the lines under an `Output:`
+   slot (`Output:`, `Output (excerpt):` or `Output (tail):`; on the same line, on the lines
+   below, or in the fenced block below). A typed `Exit: 0` or `Verdict: PASS` with no such lines
+   is a claim, and the gate refuses it; so is a slot left empty or holding only a `<placeholder>`.
+   A video or a demo flow is linked beside the output or the image, it does not replace them.
+   The captured output also reaches the reader twice more: `wrap land` builds the PR body from
+   the proof file and prints the output lines in its closing `PROOF OF DONE` block.
 2. **A negative control.** The same check shown to go RED when the work is reverted, so the
    green is not trivially green. A check that passes no matter what proves nothing. Produce
    it with `bash lib/gate/negctl.sh <root> "<test-cmd>" "<mutate-cmd>"` (or
@@ -151,7 +158,8 @@ enforcement" states this scope alongside the marker's own convention.
 
 Any proof (either home) MAY use a **table-first** layout optimized for a reviewer scanning top-down,
 instead of the run-log shape below. The tables are the human surface; the run-detail section keeps the
-literal markers, so the gate is unaffected:
+literal markers and each run's `Output:` lines (a table cell that says PASS is not captured output), so
+the gate is unaffected:
 
 ```markdown
 # Proof of done: <name>

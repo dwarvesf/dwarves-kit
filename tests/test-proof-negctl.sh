@@ -49,6 +49,7 @@ mk_naive_negctl() {  # $1 = output path
   head -n $((open_ln - 1)) "$NC" > "$1"
   cat >> "$1" <<'NAIVE'
 restore() {
+  rm -f "$out_file"
   [ "$restore_done" -eq 1 ] && return 0
   restore_done=1
   _beyond_mutate_set
@@ -117,7 +118,7 @@ PR="$TMP/p"; mkrepo "$PR"
 BASE="$(git -C "$PR" symbolic-ref --short HEAD)"
 git -C "$PR" checkout -q -b feat
 printf 'x\n' >> "$PR/lib.sh"; mkdir -p "$PR/docs/verification"
-{ echo "# proof"; echo "Command: bash test.sh"; echo "Exit: 0 (green before mutation)"; echo "## Negative control (negctl)"; echo "Verdict: FAIL: test stayed green under the mutation (the check is vacuous)"; } > "$PR/docs/verification/x.md"
+{ echo "# proof"; echo "Command: bash test.sh"; echo "Exit: 0 (green before mutation)"; echo "Output:"; echo "  test: all 1 passed"; echo "## Negative control (negctl)"; echo "Verdict: FAIL: test stayed green under the mutation (the check is vacuous)"; } > "$PR/docs/verification/x.md"
 git -C "$PR" add -A && git -C "$PR" -c user.name=t -c user.email=t@t commit -q -m "feat: change"
 bash "$PL" check "$PR" "$BASE" >/dev/null 2>&1; RC_FAIL=$?
 sed -i.bak 's/^Verdict: FAIL.*/Verdict: PASS/' "$PR/docs/verification/x.md" && rm -f "$PR/docs/verification/x.md.bak"
@@ -474,7 +475,7 @@ nc_fixture() {  # $1 = dir, $2 = changed path; a behavioral diff plus a green-ru
   echo "# Verification log" > "$1/docs/verification/README.md"; echo base > "$1/$2"
   git -C "$1" add -A; git -C "$1" commit -qm base
   echo changed >> "$1/$2"
-  printf '## green run\nCommand: `bash test.sh`\nExit: 0\nVerdict: PASS\n' > "$1/docs/verification/p.md"
+  printf '## green run\nCommand: `bash test.sh`\nExit: 0\nOutput: test: all 1 passed\nVerdict: PASS\n' > "$1/docs/verification/p.md"
   git -C "$1" add -A
 }
 nc_check() { ( cd "$1" && KIT_CONFIG_OPERATOR="$2" bash "$PL" check "$1" "$(git -C "$1" rev-parse HEAD)" p >/dev/null 2>&1 ); echo $?; }

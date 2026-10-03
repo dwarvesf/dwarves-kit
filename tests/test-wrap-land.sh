@@ -2183,6 +2183,82 @@ chk "PG5: no statusCheckRollup read" "$(grep -q 'statusCheckRollup' "$GH_STUB_CA
 chk_has "PG5: merged" "$out" "merged #42 ("
 } # end sec_prgate
 
+sec_proofbody() {
+echo "=== land: the proof of done reaches the PR body and the closing block ==="
+# ===========================================================================
+# pb_build <name> -- build_land plus a committed proof file that holds captured output
+pb_build() {
+  local wt="$TMPD/ld-repo-$1/wt"
+  build_land "$1"
+  mkdir -p "$wt/docs/verification"
+  printf '# Verification\nNEGATIVE CONTROL\nCommand: `bash t.sh`\nExit: 0\nOutput:\nt: all 3 passed\nVerdict: PASS\n' \
+    > "$wt/docs/verification/land.md"
+  git -C "$wt" add -A; git -C "$wt" commit -qm "docs: proof of done" >/dev/null 2>&1
+  PB_WT="$(cd "$wt" && pwd -P)"
+}
+# pb_land <name> [VAR=val ...] [-- land flags] -- one land with the standard stub wiring
+pb_land() {
+  local name="$1"; shift
+  : > "$GH_STUB_CALLS"; rm -f "$GH_STUB_CALLS".*
+  env GH_STUB_CREATE_NUM=42 GH_STUB_LAND_REPO="$PB_WT" GH_STUB_LAND_REMOTE="$TMPD/ld-bare-$name" \
+    GH_STUB_LAND_BRANCH=feat/land GH_STUB_LAND_DEF=main "$@" "$WRAP" land "$PB_WT" ${PB_FLAGS:-} 2>&1
+}
+pb_open() { # pb_open <number> <body> -- an open own PR titled like the branch's feature commit
+  jq -cn --argjson n "$1" --arg b "$2" '[{number:$n,baseRefName:"main",author:{login:"me"},isDraft:false,
+    isCrossRepository:false,title:"feat: the landed change",body:$b,url:("https://github.com/o/r/pull/"+($n|tostring))}]'
+}
+
+echo "--- PB1: a new PR with no --body-file takes its body from the proof file"
+pb_build pb1
+out="$(pb_land pb1)"; rc=$?
+calls="$(cat "$GH_STUB_CALLS")"
+chk "PB1: exits 0" "$rc"
+chk_has "PB1: the body opens with the title as the summary" "$calls" "--body feat: the landed change"
+chk_has "PB1: the body carries the proof section" "$calls" "## Proof of done"
+chk_has "PB1: the body carries the captured output" "$calls" "t: all 3 passed"
+chk_has "PB1: the land ends on the PROOF OF DONE block" "$(printf '%s\n' "$out" | tail -4)" "PROOF OF DONE"
+chk_has "PB1: the block names the proof file" "$out" "  proof: docs/verification/land.md"
+chk_has "PB1: the block names the PR" "$out" "  PR:    https://github.com/o/r/pull/42"
+chk_has "PB1: the block shows the captured output" "$out" "    | t: all 3 passed"
+
+echo "--- PB2: an adopted PR whose body is only its title takes the proof body"
+pb_build pb2
+out="$(pb_land pb2 GH_STUB_OPEN_HEAD_feat_land="$(pb_open 18 "feat: the landed change")")"; rc=$?
+calls="$(cat "$GH_STUB_CALLS")"
+chk "PB2: exits 0" "$rc"
+chk_has "PB2: the body is set on the adopted PR" "$calls" "pr edit 18"
+chk_has "PB2: the set body carries the proof section" "$calls" "## Proof of done"
+chk_has "PB2: says the body was set" "$out" "PR #18 body set from the proof of done"
+chk_has "PB2: the block names the adopted PR" "$out" "  PR:    https://github.com/o/r/pull/18"
+
+echo "--- PB3: an adopted PR with a body of its own keeps it"
+pb_build pb3
+out="$(pb_land pb3 GH_STUB_OPEN_HEAD_feat_land="$(pb_open 19 "What changed and why, written by hand.")")"; rc=$?
+calls="$(cat "$GH_STUB_CALLS")"
+chk "PB3: exits 0" "$rc"
+chk_no "PB3: the body is not replaced" "$calls" "## Proof of done"
+chk_has "PB3: the block is still printed" "$out" "PROOF OF DONE"
+
+echo "--- PB4: --body-file wins over the proof body; the block is still printed"
+pb_build pb4
+printf 'A hand-written body.\n' > "$TMPD/pb4-body.md"
+out="$(PB_FLAGS="--body-file $TMPD/pb4-body.md" pb_land pb4)"; rc=$?
+calls="$(cat "$GH_STUB_CALLS")"
+chk "PB4: exits 0" "$rc"
+chk_has "PB4: pr create carried the body file" "$calls" "--body-file $TMPD/pb4-body.md"
+chk_no "PB4: the proof body is not sent" "$calls" "## Proof of done"
+chk_has "PB4: the block is still printed" "$out" "PROOF OF DONE"
+
+echo "--- PB5: a branch with no proof file lands as before: title as the body, no block"
+build_land pb5
+PB_WT="$(cd "$TMPD/ld-repo-pb5/wt" && pwd -P)"
+out="$(pb_land pb5)"; rc=$?
+chk "PB5: exits 0" "$rc"
+chk "PB5: pr create used the title alone as the body" \
+  "$(grep -qx -- '.*pr create .* --body feat: the landed change' "$GH_STUB_CALLS"; echo $?)"
+chk_no "PB5: no block" "$out" "PROOF OF DONE"
+} # end sec_proofbody
+
 # One section, in this process. The driver sets LAND_SECTION per child; the last line is the
 # child's result for the driver to sum (it is not the suite's final line).
 [ "$(type -t "$LAND_SECTION")" = function ] || { echo "test-wrap-land: no such section: $LAND_SECTION" >&2; exit 64; }

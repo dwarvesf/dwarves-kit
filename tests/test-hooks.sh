@@ -1809,7 +1809,7 @@ git -C "$ROOT" add -A; git -C "$ROOT" commit -q -m "feat(x): add a behavior chan
 assert_output_contains "ledger: behavioral diff -> behavioral" "^behavioral$" "$(bash "$PL" classify "$ROOT" "$BASE" 2>/dev/null)"
 bash "$PL" check "$ROOT" "$BASE" x >/dev/null 2>&1; assert_exit "ledger: behavioral, no proof -> BLOCK" 1 "$?"
 # add a green + NEGATIVE CONTROL proof -> check passes (exit 0).
-mkdir -p "$ROOT/docs/verification"; printf '## PASS\n- Exit: 0\n## NEGATIVE CONTROL\n- Exit: 1\n' > "$ROOT/docs/verification/x.md"
+mkdir -p "$ROOT/docs/verification"; printf '## PASS\n- Exit: 0\n- Output: f: all 1 passed\n## NEGATIVE CONTROL\n- Exit: 1\n' > "$ROOT/docs/verification/x.md"
 git -C "$ROOT" add -A; git -C "$ROOT" commit -q -m "test(x): proof of done"
 bash "$PL" check "$ROOT" "$BASE" x >/dev/null 2>&1; assert_exit "ledger: behavioral, with proof -> PASS" 0 "$?"
 # inert (doc-only) diff -> classify inert + pass with no proof (no ritual).
@@ -1921,7 +1921,7 @@ git -C "$ROOT" switch -q -c feat/w; mkdir -p "$ROOT/lib"; echo w > "$ROOT/lib/w.
 git -C "$ROOT" add -A; git -C "$ROOT" commit -q -m "feat(w): a behavior change"
 ( cd "$ROOT" && CLAUDE_PLUGIN_ROOT="$KIT_DIR" bash "$KIT_DIR/hooks/ship-gate.sh" <<< '{"tool_input":{"command":"git push origin feat/w"}}' >/dev/null 2>&1 )
 assert_exit "ship-gate hook: behavioral + no proof + no spec -> BLOCK (exit 2)" 2 "$?"
-printf '## PASS\n- Exit: 0\n## NEGATIVE CONTROL\n- Exit: 1\n' > "$ROOT/docs/verification/w.md"
+printf '## PASS\n- Exit: 0\n- Output: w: all 1 passed\n## NEGATIVE CONTROL\n- Exit: 1\n' > "$ROOT/docs/verification/w.md"
 git -C "$ROOT" add -A; git -C "$ROOT" commit -q -m "test(w): proof of done"
 ( cd "$ROOT" && CLAUDE_PLUGIN_ROOT="$KIT_DIR" bash "$KIT_DIR/hooks/ship-gate.sh" <<< '{"tool_input":{"command":"git push origin feat/w"}}' >/dev/null 2>&1 )
 assert_exit "ship-gate hook: proof present -> PASS (exit 0)" 0 "$?"
@@ -2573,7 +2573,7 @@ PR80=$(mktemp -d "${TMPDIR:-/tmp}/dk-pr80.XXXXXX")
   && mkdir -p docs/verification && printf 'convention\n' > docs/verification/README.md \
   && printf 'x\n' > app.sh && git add -A && git commit -qm base \
   && git switch -q -c feat/incl && printf 'y\n' >> app.sh \
-  && printf 'Command: run\nExit: 0\nNEGATIVE CONTROL\nVerdict: INCONCLUSIVE\n' > docs/verification/incl.md \
+  && printf 'Command: run\nExit: 0\nOutput: run: all 2 passed\nNEGATIVE CONTROL\nVerdict: INCONCLUSIVE\n' > docs/verification/incl.md \
   && git add -A && git commit -qm change )
 BASE80=$( cd "$PR80" && git merge-base feat/incl main )
 RC=0; ( cd "$PR80" && bash "$PL80" check "$PR80" "$BASE80" incl >/dev/null 2>&1 ) || RC=$?
@@ -2584,7 +2584,7 @@ open('docs/verification/incl.md','w').write(s)" && git add -A && git commit -qm 
 RC=0; ( cd "$PR80" && bash "$PL80" check "$PR80" "$BASE80" incl >/dev/null 2>&1 ) || RC=$?
 assert_exit "the same record with Verdict: PASS satisfies the gate (control)" 0 $RC
 # retry workflow (lens 2): an OLD INCONCLUSIVE run + a NEW appended PASS run passes
-( cd "$PR80" && printf 'Command: run\nExit: 0\nNEGATIVE CONTROL\nVerdict: INCONCLUSIVE\nCommand: rerun\nExit: 0\nVerdict: PASS\n' > docs/verification/incl.md \
+( cd "$PR80" && printf 'Command: run\nExit: 0\nNEGATIVE CONTROL\nVerdict: INCONCLUSIVE\nCommand: rerun\nExit: 0\nOutput: rerun: all 2 passed\nVerdict: PASS\n' > docs/verification/incl.md \
   && git add -A && git commit -qm retry )
 RC=0; ( cd "$PR80" && bash "$PL80" check "$PR80" "$BASE80" incl >/dev/null 2>&1 ) || RC=$?
 assert_exit "append-shape retry: old INCONCLUSIVE + new PASS satisfies the gate" 0 $RC

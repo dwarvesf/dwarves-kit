@@ -45,6 +45,7 @@ EOF
 ## 2026-06-08 18:00 PASS -- $profile [green]
 - Command: \`bash src/code.sh\`
 - Exit: 0
+- Output (tail): \`code: all 3 passed\`
 - Verdict: PASS
 EOF
   if [ "$negctl" = "1" ]; then
