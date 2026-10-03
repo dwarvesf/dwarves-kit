@@ -110,6 +110,26 @@ concurrent change) breaks attribution. Name the cause. INCONCLUSIVE is NOT a
 pass: the proof-of-done gate still demands a green run; an INCONCLUSIVE verify
 means design a better measurement, not ship.
 
+### Step 7b: Visual capture (only when `proof.visual` is on)
+
+Skip this step entirely unless `kit_config_get proof.visual false`
+(`lib/config/kit-config.sh`, read for the project repo) resolves `true`. When it
+does not, nothing below exists.
+
+By lane, once per verify run:
+
+- **tiny**: nothing.
+- **normal**: one capture per changed screen, or the text output when the diff
+  touched no visible surface.
+- **full**: the set the task's `visual:` line names (`bash lib/gate/proof-gate.sh
+  contract "<task>"` prints it under the same flag).
+
+Every image goes through `bin/proof-asset put <slug> <file>`: it converts and caps
+the image, caches it under `.kit/proof-assets/`, writes the
+`docs/verification/<slug>/assets.json` entry, and prints the `![name](url)` line
+to paste into the proof Step 8 records. Capture needs no network; an offline
+`put` queues the entry and `wrap land` flushes it later.
+
 ### Step 8: Record the run (the only write)
 
 Append one entry to `docs/verification/<spec-slug>.md` (create the file if missing),
