@@ -12,3 +12,4 @@ The delta from `docs/specs/SPEC-385-visual-proof-upgrade.md`. Decisions, changes
 
 - **The Mini cannot upload yet:** its wrangler is not logged in. Captures made there queue until a flush runs on the Air. Fix: mint an R2-scoped API token, store it in 1Password, and set `asset_token_ref`.
 - **Implementation workers:** Sonnet is at its weekly limit until Oct 8, so Devin builds T1 to T4 and Opus reviews.
+- **Account ids stay out of every repo.** The operator file holds `account_<owner> = "op://Toolkit/kit-proof-assets/account_<owner>"`, and `base_url_<owner>` as plain text (dotfiles #665). The frozen interface says the key holds an account id, so the lead adds one rule at integration: a value starting with `op://` resolves through `secret-cache-read` before the uploader call. T1 did not get this rule; it lands as a lead patch to `lib/proof/asset.sh`.
