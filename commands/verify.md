@@ -79,6 +79,8 @@ command, data, and environment.
 
 Print a verdict. **Never dispatch `kit:fix-agent`; never write code.** A FAIL is reported, not repaired.
 
+**Show the captured output.** Under each level, quote the decisive lines its run printed (the pass and fail counts, the failing assertion), and give the PR link when the branch has one. The final reply built on this report shows that output and that link, never only "tests pass".
+
 ```markdown
 # Verify Report
 Spec: SPEC-NNN-<slug>
@@ -112,7 +114,10 @@ means design a better measurement, not ship.
 
 Append one entry to `docs/verification/<spec-slug>.md` (create the file if missing),
 shape per `docs/verification/README.md`: the captured `Command:` the verifiers ran, its
-`Exit:` code, an `Output (excerpt):`, and the `Verdict:`. If nothing runnable existed,
+`Exit:` code, an `Output (excerpt):`, and the `Verdict:`. The `Output (excerpt):` slot holds
+real lines the run printed: the proof-of-done gate refuses a run recorded as a typed
+`Exit: 0` or `Verdict: PASS` with nothing under it (a committed screenshot or GIF embed is
+the alternative for visual work). If nothing runnable existed,
 record `[NO EXECUTABLE CHECK: <reason>]` rather than a fake pass. This append (plus the
 lane-telemetry ledger line below) is the only thing `/kit:verify` writes; it never touches
 the code under test. The recorded `Command:` line is what a later reader re-runs to

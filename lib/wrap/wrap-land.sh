@@ -116,12 +116,87 @@ _land_pr_checks_gate() {
   fi
 }
 
+# _land_proof_files <wt> <base> -- the proof-of-done files the branch added or changed that
+# are still in the tree, one repo-relative path per line. The lookup is the ship-gate's own
+# (proof-ledger.sh proof-files); any failure reads as "no proof file".
+_land_proof_files() {
+  local f
+  bash "$PROOF_LEDGER_SH" proof-files "$1" "$2" 2>/dev/null | while IFS= read -r f; do
+    [ -f "$1/$f" ] && printf '%s\n' "$f"
+  done
+}
+
+# _land_web_url <origin url> -- the repository's https page, empty when origin is not a
+# hosted remote (a local path has no page to link).
+_land_web_url() {
+  local u="${1%.git}"
+  case "$u" in
+    https://*) printf '%s\n' "$u" ;;
+    ssh://git@*) printf 'https://%s\n' "${u#ssh://git@}" ;;
+    git@*:*) u="${u#git@}"; printf 'https://%s/%s\n' "${u%%:*}" "${u#*:}" ;;
+  esac
+}
+
+# _land_proof_body <wt> <base> <title> <head sha> <origin url> -- the PR body `land` writes
+# when the caller gave none: the title as a one-line summary, then `## Proof of done` with
+# each proof file's content, so the captured output is in the PR and not only in the tree.
+# A relative image link that resolves in the tree becomes an absolute URL pinned to the head
+# sha, because a PR body renders no repo-relative path. Prints nothing when the branch has
+# no proof file. Cut at _LAND_BODY_MAX characters (GitHub refuses a body over 65536), ending
+# on a pointer to the file.
+_LAND_BODY_MAX=40000
+_land_proof_body() {
+  local wt="$1" base="$2" title="$3" sha="$4" web files f text link path body
+  web="$(_land_web_url "$5")"
+  files="$(_land_proof_files "$wt" "$base")"
+  [ -n "$files" ] || return 0
+  body="${title}"$'\n\n'"## Proof of done"
+  while IFS= read -r f; do
+    text="$(cat "$wt/$f")"
+    if [ -n "$web" ]; then
+      while IFS=$'\t' read -r link path; do
+        [ -n "$link" ] || continue
+        link="](${link})"; path="](${web}/blob/${sha}/${path}?raw=true)"
+        text=${text//"$link"/"$path"}
+      done < <(bash "$PROOF_LEDGER_SH" images "$wt/$f" "$wt" 2>/dev/null)
+    fi
+    body="${body}"$'\n\n'"From \`${f}\`:"$'\n\n'"${text}"
+  done <<< "$files"
+  if [ "${#body}" -gt "$_LAND_BODY_MAX" ]; then
+    body="${body:0:$_LAND_BODY_MAX}"
+    # A cut inside a fenced block would render the pointer as code: close the fence first.
+    [ $(( $(printf '%s\n' "$body" | grep -cE '^[[:space:]]*(```|~~~)') % 2 )) -eq 0 ] || body="${body}"$'\n''```'
+    body="${body}"$'\n\n'"[cut at ${_LAND_BODY_MAX} characters; the full proof is in $(printf '%s\n' "$files" | sed "s|^|${web:+${web}/blob/${sha}/}|" | paste -sd ' ' -)]"
+  fi
+  printf '%s\n' "$body"
+}
+
+# _land_proof_block <wt> <base> <pr> -- the operator's view of the proof, printed last by a
+# successful land: the proof file, the PR, and what the run printed (the `Output:` lines, at
+# most _LAND_BLOCK_LINES per file), or the committed images when the proof is a capture.
+# Prints nothing when the branch has no proof file.
+_LAND_BLOCK_LINES=15
+_land_proof_block() {
+  local wt="$1" base="$2" pr="$3" files f out
+  files="$(_land_proof_files "$wt" "$base")"
+  [ -n "$files" ] || return 0
+  echo "PROOF OF DONE"
+  printf '%s\n' "$files" | sed 's/^/  proof: /'
+  echo "  PR:    ${pr}"
+  while IFS= read -r f; do
+    out="$(bash "$PROOF_LEDGER_SH" captured-output "$wt/$f" 2>/dev/null | head -n "$_LAND_BLOCK_LINES")"
+    [ -z "$out" ] || printf '%s\n' "$out" | sed 's/^/    | /'
+    bash "$PROOF_LEDGER_SH" images "$wt/$f" "$wt" 2>/dev/null | cut -f2 | sed 's/^/    image: /'
+  done <<< "$files"
+}
+
 # --------------------------------------------------------------------------- land
 
 # cmd_land <worktree> [--title T] [--body-file F] -- the landing loop for ONE committed
 # branch in a hand-made worktree: push, open the PR, squash-merge, verify the tree, fast
 # forward the main checkout, remove the worktree, delete the branch. Each step prints one
-# line with its sha or its refusal.
+# line with its sha or its refusal. With no --body-file the PR body is the branch's proof of
+# done (_land_proof_body), and a land that merged ends on a PROOF OF DONE block.
 #
 # The composition is deliberate. The push names its branch, because a bare push takes
 # whatever the upstream config points at. The merge is its own command, because chaining a
@@ -199,6 +274,11 @@ cmd_land() {
   tip="$(git -C "$wt" rev-parse HEAD 2>/dev/null)"
   url="$(_origin_url "$wt")"
   [ -n "$title" ] || title="$(_land_feature_title "$wt" "$def")"
+  # The branch's proof of done, for the PR body and the closing block. Read once, before the
+  # push: the tidy removes the worktree. No proof file leaves both empty and land as it was.
+  local proof_base proof_body=""
+  proof_base="$(git -C "$wt" merge-base "refs/remotes/origin/${def}" "refs/heads/${branch}" 2>/dev/null)"
+  [ -z "$proof_base" ] || [ -n "$body_file" ] || proof_body="$(_land_proof_body "$wt" "$proof_base" "$title" "$tip" "$url")"
 
   echo "land ${branch} -> ${def} (${wt})"
 
@@ -208,7 +288,7 @@ cmd_land() {
   # counts as the operator's own open PR.
   local open_json openrc
   open_json="$(gh pr list --repo "$url" --head "$branch" --state open \
-    --json number,baseRefName,author,isDraft,isCrossRepository 2>/dev/null)"; openrc=$?
+    --json number,baseRefName,author,isDraft,isCrossRepository,title,body,url 2>/dev/null)"; openrc=$?
   if [ "$openrc" -ne 0 ]; then
     echo "     PR REFUSED: open-PR lookup for ${branch} failed" >&2; return 2
   fi
@@ -290,7 +370,7 @@ cmd_land() {
   fi
   echo "     pushed ${branch} ($(_short "$tip"))"
 
-  local created n
+  local created n pr_ref=""
   if [ "$open_count" -gt 1 ]; then
     echo "     PR REFUSED: ${open_count} open PRs for ${branch}" >&2; return 2
   elif [ "$open_count" -eq 1 ]; then
@@ -318,18 +398,31 @@ cmd_land() {
     fi
     echo "     adopted PR #${n}"
     [ "$flags_given" -eq 1 ] && echo "     note: adopted PR #${n} keeps its own title and body" >&2
+    pr_ref="$(printf '%s' "$open_json" | jq -r '.[0].url // ""' 2>/dev/null)"
+    # An adopted PR keeps the body its author wrote. One that has none (empty, or only its
+    # own title, which is what a title-only create leaves) takes the proof body.
+    if [ -n "$proof_body" ]; then
+      local open_body; open_body="$(printf '%s' "$open_json" | jq -r '.[0] | if ((.body // "") == "" or .body == .title) then "none" else "own" end' 2>/dev/null)"
+      if [ "$open_body" = "none" ]; then
+        if gh pr edit "$n" --repo "$url" --body "$proof_body" >/dev/null 2>&1; then
+          echo "     PR #${n} body set from the proof of done"
+        else
+          echo "     note: PR #${n} body could not be set from the proof of done" >&2
+        fi
+      fi
+    fi
   else
     # `--head`, never `--base`: a base the caller names is the way a PR ends up targeting
     # another feature branch. With --repo, gh targets the repository's own default branch.
     if [ -n "$body_file" ]; then
       created="$(gh pr create --repo "$url" --head "$branch" --title "$title" --body-file "$body_file" 2>&1)"; rc=$?
     else
-      created="$(gh pr create --repo "$url" --head "$branch" --title "$title" --body "$title" 2>&1)"; rc=$?
+      created="$(gh pr create --repo "$url" --head "$branch" --title "$title" --body "${proof_body:-$title}" 2>&1)"; rc=$?
     fi
     if [ "$rc" -ne 0 ]; then
       echo "     PR REFUSED: gh pr create exited ${rc}: ${created}" >&2; return 2
     fi
-    n="$(printf '%s\n' "$created" | tail -1)"; n="${n##*/}"
+    pr_ref="$(printf '%s\n' "$created" | tail -1)"; n="${pr_ref##*/}"
     case "$n" in
       ''|*[!0-9]*) echo "     PR REFUSED: gh pr create named no PR number: ${created}" >&2; return 2 ;;
     esac
@@ -519,7 +612,13 @@ cmd_land() {
     fi
   fi
 
-  _land_tidy "$repo" "$wt" "$branch" "$def" "$url" "$tip" "" "$base_ignored"
+  # The proof block is read before the tidy removes the worktree and printed after it, so it
+  # is the last thing the operator (and the agent's final report) sees.
+  local proof_block=""
+  [ -z "$proof_base" ] || proof_block="$(_land_proof_block "$wt" "$proof_base" "${pr_ref:-#${n}}")"
+  _land_tidy "$repo" "$wt" "$branch" "$def" "$url" "$tip" "" "$base_ignored"; rc=$?
+  [ -z "$proof_block" ] || printf '%s\n' "$proof_block"
+  return "$rc"
 }
 
 # _land_tidy <repo> <wt> <branch> <def> <url> <tip> [<origin_probe> [<allowed>]] -- the tail both land

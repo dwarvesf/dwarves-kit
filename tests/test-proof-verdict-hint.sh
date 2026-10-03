@@ -47,6 +47,7 @@ near_miss_block() {  # a full green run + a NEGATIVE CONTROL block whose own lin
 ## green run
 Command: `bash lib/thing.sh`
 Exit: 0
+Output: thing: all 3 passed
 Verdict: PASS
 
 ## negative control
@@ -62,6 +63,7 @@ pass_block() {  # the fixed shape: the control's own outcome is `Result:`, never
 ## green run
 Command: `bash lib/thing.sh`
 Exit: 0
+Output: thing: all 3 passed
 Verdict: PASS
 
 ## negative control
@@ -77,6 +79,7 @@ unrelated_fail_block() {  # a plain failed run: no control ever attempted
 ## run
 Command: `bash lib/thing.sh`
 Exit: 0
+Output: thing: all 3 passed
 Verdict: FAIL
 EOF
 }
@@ -102,6 +105,7 @@ cat > "$F/docs/verification/case2a/01-green.md" <<'EOF'
 ## green run
 Command: `bash lib/thing.sh`
 Exit: 0
+Output: thing: all 3 passed
 EOF
 cat > "$F/docs/verification/case2a/02-control.md" <<'EOF'
 ## negative control

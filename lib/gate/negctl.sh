@@ -5,7 +5,9 @@
 # every session re-derives the same five steps by hand: mutate a line, run the suite,
 # `git checkout --`, run again. Two hazards live there: the restore wipes UNCOMMITTED work,
 # and a control that never went red is still recorded as PASS. This script runs the sequence
-# and prints the block proof-ledger.sh check() reads (Command:/Exit:/Verdict:).
+# and prints the block proof-ledger.sh check() reads (Command:/Exit:/Output:/Verdict:). The
+# `Output:` slot holds the tail of what <test-cmd> really printed: the gate takes a typed
+# `Exit:` or `Verdict:` only together with captured output.
 #
 # It lives beside proof-ledger.sh, not inside it: the gate FAILS OPEN on ambiguity so a gate
 # bug never blocks unrelated work, while a tool that mutates the working tree must FAIL
@@ -92,6 +94,17 @@ set -uo pipefail
 
 # A proof run executes the suite for real: tests/test-wrap-land.sh skips cached sections otherwise.
 export LAND_CACHE=0
+# What <test-cmd> last printed (stdout and stderr), and the `Output:` slot that shows its tail.
+# A file, never a command substitution: a test that leaves a background child holding stdout
+# would hang a pipe. A silent run prints `<no output>`, which the gate does not count.
+NEGCTL_OUTPUT_LINES=10
+out_file=""
+new_out_file() { out_file="$(mktemp "${TMPDIR:-/tmp}/negctl-out.XXXXXX")" || { echo "negctl: mktemp failed" >&2; exit 1; }; }
+show_output() {
+  echo "Output:"
+  if [ -s "$out_file" ]; then tail -n "$NEGCTL_OUTPUT_LINES" "$out_file" | sed 's/^/  /'; else echo "  <no output>"; fi
+  echo   # a blank line closes the slot, so the next negctl line is never read as output
+}
 at_sha=""; at_path=""; at_setup=""
 at_usage() { echo "usage: negctl.sh --at <sha> [--path <subdir>] [--setup <cmd>] <root> <test-cmd> <mutate-cmd>" >&2; exit 64; }
 while [ $# -gt 0 ]; do
@@ -117,9 +130,10 @@ if [ "${1:-}" = "--base-ref" ]; then
   git -C "$root" rev-parse --verify "${base_ref}^{commit}" >/dev/null 2>&1 \
     || { echo "negctl: base ref '$base_ref' does not resolve to a commit in $root" >&2; exit 64; }
 
-  extract="$(mktemp -d)"
-  cleanup() { rm -rf "$extract"; }
+  extract=""
+  cleanup() { rm -rf ${extract:+"$extract"} ${out_file:+"$out_file"}; }
   trap cleanup EXIT
+  extract="$(mktemp -d)"; new_out_file
 
   # git archive reads from the object store, never the working tree, so it cannot refuse or
   # damage a dirty checkout; that is the entire reason this mode exists.
@@ -131,9 +145,10 @@ if [ "${1:-}" = "--base-ref" ]; then
   echo "## Negative control (negctl, base-ref mode)"
   echo "Base ref: $base_ref"
   echo "Command: $test_cmd"
-  (cd "$extract" && bash -c "$test_cmd") >/dev/null 2>&1
+  (cd "$extract" && bash -c "$test_cmd") >"$out_file" 2>&1
   rc=$?
   echo "Exit: $rc (base ref, RED expected)"
+  show_output
   if [ "$rc" -ne 0 ]; then
     echo "Verdict: PASS"
     exit 0
@@ -188,7 +203,7 @@ fi
 
 verdict="PASS"
 fail() { [ "$verdict" = "PASS" ] && verdict="FAIL: $1"; return 0; }
-run_test() { (cd "$root" && bash -c "$test_cmd") >/dev/null 2>&1; }
+run_test() { (cd "$root" && bash -c "$test_cmd") >"$out_file" 2>&1; }
 snapshot() { git -C "$root" status --porcelain --untracked-files=all 2>/dev/null; }
 
 # $1 = needle path; remaining args (may be none) = haystack. bash 3.2 (macOS's /bin/bash)
@@ -226,6 +241,7 @@ restore() {
   # restore_done guard below), so re-entering it is always safe; the disposition is process-wide
   # and deliberately never restored, since restore() is the last thing this script ever does.
   trap '' INT TERM HUP
+  rm -f "$out_file"   # every exit path calls restore; a later run_test writes it afresh
   [ "$restore_done" -eq 1 ] && return 0
   restore_done=1
   # No early return here even when restore_files is empty: the recompute below must always
@@ -272,6 +288,7 @@ restore() {
   fi
 }
 trap restore EXIT
+new_out_file
 
 echo "## Negative control (negctl)"
 if [ -n "$at_sha" ]; then
@@ -283,6 +300,7 @@ before="$(snapshot)"
 echo "Command: $test_cmd"
 run_test; rc_before=$?
 echo "Exit: $rc_before (green before mutation)"
+show_output
 [ "$rc_before" -eq 0 ] || fail "test was not green before the mutation"
 
 baseline_diff=()
@@ -330,6 +348,7 @@ if [ "$red_attempts" -gt 1 ]; then
 else
   echo "Exit: $rc_red (under mutation, RED expected)"
 fi
+show_output
 if [ "$rc_red" -eq 0 ]; then
   # The single-attempt wording is unchanged on purpose: the default path must stay
   # byte-identical, and two dated proof records quote this exact line.

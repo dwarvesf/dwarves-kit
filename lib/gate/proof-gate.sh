@@ -145,13 +145,18 @@ proof_skeleton() {
   echo '```'
   echo "Command:"
   echo "Exit:"
+  echo "Output:"
+  echo "<paste what the run really printed: the test recap, the tail of the run>"
   echo "Verdict:"
   echo '```'
+  echo "<visual work: a committed screenshot or GIF embed replaces the Output: lines, ![after](<path>.png)>"
   echo
   echo "## Negative control"
   echo '```'
   echo "Command:"
   echo "Exit:"
+  echo "Output:"
+  echo "<paste the failing lines>"
   echo "Verdict:"
   echo '```'
   echo "<what was broken, and confirmation it was restored>"
