@@ -75,6 +75,16 @@ Result: RED as expected
 
 The security reviewer's exploit (a manifest whose `file` is `../../../../outside.txt`) re-run against the branch: `flush: x: manifest slug/rand/assets invalid; queue left pending`, and no upload call.
 
+## Test plan coverage
+
+| Spec rows | Run |
+|---|---|
+| 1 to 12 | `tests/test-proof-visual-gate.sh`, one labelled case each (31 checks after fix round 1) |
+| 13 to 20 | `tests/test-proof-asset.sh` |
+| 21, 22 | `tests/test-proof-contract-visual.sh` |
+| 23 to 25 | `tests/test-wrap-land.sh`, section `sec_flush`, plus the real offline round trip test added in fix round 1 |
+| T0 | the live smoke above: public GET 200 with matching bytes on both domains, 90-day rule read back |
+
 ## Battery
 
 | Leg | Model | Verdict | Caught |
