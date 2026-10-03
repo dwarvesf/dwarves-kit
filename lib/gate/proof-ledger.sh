@@ -516,7 +516,9 @@ _visual_proof() {
         reasons="${reasons}fetch cap (5) reached; further entries unverified: $url"$'\n'; continue
       fi
       fetches=$((fetches+1))
-      if ! got="$($PROOF_ASSET_FETCH "$url" 2>/dev/null | shasum -a 256 | awk '{print $1}')"; then
+      # The query string is part of the edge cache key: a 404 cached before the upload
+      # (Cloudflare keeps it for hours) must not fail the check after it.
+      if ! got="$($PROOF_ASSET_FETCH "$url?kit-check=$(date +%s)" 2>/dev/null | shasum -a 256 | awk '{print $1}')"; then
         reasons="${reasons}fetch failed: $url"$'\n'; continue
       fi
       [ "$got" = "$sha" ] && return 0
