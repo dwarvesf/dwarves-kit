@@ -521,7 +521,7 @@ check() {
       else
         echo "  Need: a docs/verification/<slug>.md added by this branch with a green run AND a NEGATIVE CONTROL (revert -> RED -> restore)."
       fi
-      echo "        ('green run' = a text run-table (Command:/Exit:/Output:/Verdict: PASS) with the run's real output under Output:, OR a committed screenshot/GIF embed for visual/demo work.)"
+      echo "        ('green run' = a text run-table (Command:/Exit:/Output:/Verdict: PASS) with the run's real output under Output: (or after Exit: inside the run's fenced block), OR a committed screenshot/GIF embed for visual/demo work.)"
       # A file that IS found and carries a NEGATIVE CONTROL + a green run, but is
       # rejected solely because its own final Verdict line reads FAIL/INCONCLUSIVE, gets named
       # here instead of vanishing into the generic message above.
