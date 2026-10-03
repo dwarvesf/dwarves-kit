@@ -7,34 +7,45 @@ file) after all existing proof rules pass. With the flag off the gate is
 byte-identical to before, and `classify` output is unchanged. Spec:
 `docs/specs/SPEC-385-visual-proof-upgrade.md`, task T2.
 
-## Green run: the new gate suite, cases 1 to 12
+Battery round 1 hardened the rule: manifest `slug`/`rand`/`file` are validated
+before any path is joined, entry URLs holding `..` or `%` are refused, declared
+bytes over 3 MB refuse before any fetch, verified fetches cap at five per check,
+the default fetch adds `-q` against `~/.curlrc`, a committed image counts only
+when the branch changed the image itself, the project `.kit.toml` is read only
+when `kit_config_tracked_clean` holds, and an audited override clears a
+visual-only block (never a source-code change) exactly like the proof block.
+
+## Green run: the gate suite, cases 1 to 19
 
 Command: `bash tests/test-proof-visual-gate.sh`
 Exit: 0
 Output (tail):
 ```
-PASS case 4: the block names 'hash mismatch: <url>'
-=== case 5: pending entry + fetch fails -> 'fetch failed' AND 'bin/proof-asset flush' ===
-PASS case 5: pending entry whose fetch fails
-PASS case 5: the block names 'fetch failed: <url>'
-PASS case 5: the block says to run 'bin/proof-asset flush'
-=== case 6: assets=local from a tracked, clean .kit.toml + cached file -> passes ===
-PASS case 6: local asset with cached file passes
-=== case 7: a committed (ls-files-listed) image linked in the proof -> passes ===
-PASS case 7: tracked image embed passes
-=== case 8: stateful diff touching a UI file gets no image rule ===
-PASS case 8: stateful + UI file, text-only proof passes
-=== case 9: assets=local only in an UNCOMMITTED .kit.toml -> R3c refused ===
-PASS case 9: untracked .kit.toml cannot unlock the local path
-=== case 10: entry url outside <base>/<owner>/<repo>/ -> named so ===
-PASS case 10: url outside the proof bucket
-PASS case 10: the block names 'url outside the proof bucket: <url>'
-=== case 11: image link to a gitignored file under .kit/proof-assets/ is not R3b ===
-PASS case 11: a gitignored target does not count
 === case 12: a non-UI code file alone is not visual ===
 PASS case 12: app/models/user.rb only, text-only proof passes
+=== case 13: an R3a url holding '..' or '%' is refused, prefix or not ===
+PASS case 13a: '..' inside a bucket-prefixed url
+PASS case 13a: the block names the unsafe url
+PASS case 13b: '%' inside the url
+PASS case 13b: the block names the unsafe url
+=== case 14: declared bytes over the 3 MB cap is refused before any fetch ===
+PASS case 14: over-cap entry refused with no fetch
+=== case 15: at most 5 fetches per check ===
+PASS case 15: fetch count capped at 5 (saw 5)
+=== case 16: an old tracked image unchanged by the branch is not R3b ===
+PASS case 16: a tracked image the branch did not change does not count
+=== case 17: R3c refuses a traversal slug or file before the -f test ===
+PASS case 17a: file '../escape.webp' must not resolve outside the cache
+PASS case 17b: slug '..' must not resolve outside the cache
+=== case 18: an uncommitted .kit.toml cannot disarm an operator opt-in ===
+PASS case 18: an untracked .kit.toml cannot disarm the operator opt-in
+PASS case 18b: a committed clean .kit.toml still disarms (auditable opt-out)
+=== case 19: an audited override clears the visual block like the proof block ===
+PASS case 19: no image, no override -> blocked
+PASS case 19: a logged override clears the visual block
+PASS case 19b: the override still rejects a source remainder (.tsx)
 
-test-proof-visual-gate: all 17 passed
+test-proof-visual-gate: all 31 passed
 ```
 Verdict: PASS
 
@@ -80,22 +91,30 @@ Command: `git archive origin/master | tar -x -C <tmp>; cp tests/test-proof-visua
 Exit: 1
 Output (tail):
 ```
-=== case 9: assets=local only in an UNCOMMITTED .kit.toml -> R3c refused ===
-FAIL case 9: untracked .kit.toml cannot unlock the local path (ACCEPTED, want BLOCK)
-=== case 10: entry url outside <base>/<owner>/<repo>/ -> named so ===
-FAIL case 10: url outside the proof bucket (ACCEPTED, want BLOCK)
-FAIL case 10: the block names 'url outside the proof bucket: <url>' (missing 'url outside the proof bucket: https://proof.han.ws/tieubao/other/ui/0123456789abcdef0123456789abcdef/shot.webp' in: )
-=== case 11: image link to a gitignored file under .kit/proof-assets/ is not R3b ===
-FAIL case 11: a gitignored target does not count (ACCEPTED, want BLOCK)
-=== case 12: a non-UI code file alone is not visual ===
-PASS case 12: app/models/user.rb only, text-only proof passes
+=== case 14: declared bytes over the 3 MB cap is refused before any fetch ===
+FAIL case 14: over-cap entry (ACCEPTED, want BLOCK)
+=== case 15: at most 5 fetches per check ===
+FAIL case 15: seven unverifiable entries (ACCEPTED, want BLOCK)
+=== case 16: an old tracked image unchanged by the branch is not R3b ===
+FAIL case 16: a tracked image the branch did not change does not count (ACCEPTED, want BLOCK)
+=== case 17: R3c refuses a traversal slug or file before the -f test ===
+FAIL case 17a: file '../escape.webp' must not resolve outside the cache (ACCEPTED, want BLOCK)
+FAIL case 17b: slug '..' must not resolve outside the cache (ACCEPTED, want BLOCK)
+=== case 18: an uncommitted .kit.toml cannot disarm an operator opt-in ===
+FAIL case 18: an untracked .kit.toml disarmed the operator's visual = true
+PASS case 18b: a committed clean .kit.toml still disarms (auditable opt-out)
+=== case 19: an audited override clears the visual block like the proof block ===
+FAIL case 19: no image, no override -> blocked (ACCEPTED, want BLOCK)
+PASS case 19: a logged override clears the visual block
+FAIL case 19b: the override still rejects a source remainder (.tsx) (ACCEPTED, want BLOCK)
 
-test-proof-visual-gate: 11 FAILED of 17
+test-proof-visual-gate: 23 FAILED of 31
 ```
-Result: RED as expected. All 11 block-expecting assertions fail on master
-(cases 2, 4, 5, 9, 10, 11 including the 'no image', 'hash mismatch',
-'fetch failed', 'flush', and 'outside the proof bucket' message pins) because
-master's gate never refuses a visual diff; the six accept-expecting cases still
-pass because a gate with no image rule accepts everything.
+Result: RED as expected. 23 assertions fail on master (every block-expecting
+check across cases 2, 4, 5, 9, 10, 11, 13-17, 18, and 19) because master's gate
+never refuses a visual diff and validates nothing inside the manifest or its
+URLs; the accept-expecting cases still pass because a gate with no image rule
+accepts everything, including case 19's "a logged override clears the visual
+block" (with no visual rule there is nothing to clear).
 
 Verdict: PASS

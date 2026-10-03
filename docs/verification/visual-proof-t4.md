@@ -4,15 +4,25 @@
 `.kit.toml`, runs `bin/proof-asset flush` inside that worktree before the
 dirty-tree check and before the push. A non-zero flush stops the land on the
 flush's own message. With the flag off the seam is never called and the run is
-unchanged. Tests stub the `PROOF_ASSET_BIN` seam; nothing touches the network.
+unchanged. Battery round 1 additions: `_land_proof_body` renders a
+`.kit/proof-assets/` image link as `_(local image, not uploaded: <file>)_`
+instead of a broken blob URL, the harness pins `KIT_CONFIG_OPERATOR` to an empty
+dir so a real operator opt-in cannot fire a live flush, and a real round-trip
+test puts offline, commits, then drains the queue through an unstubbed
+`wrap land`. Tests stub the `PROOF_ASSET_BIN` seam where noted; nothing touches
+the network.
 
 ## Green run
 
 Command: `LAND_CACHE=0 bash tests/test-wrap-land.sh`
 Exit: 0
-Output:
+Output (tail):
 
 ```
+--- PB6: a local cache link becomes a named marker; a committed image still hotlinks
+  PASS PB6: the local cache link is named, not hotlinked
+  PASS PB6: no blob URL was minted for the cache file
+  PASS PB6: the committed image still becomes a blob url
 === land: the visual-proof flush runs before the dirty check and the push ===
 --- flush: opted in, the flush runs before the dirty check
   PASS flush: a dirty worktree still refuses with 1
@@ -37,9 +47,19 @@ Output:
   PASS flush: an opted-out land still exits 0
   PASS flush: the seam was never called
   PASS flush: the land still pushed
+--- flush: a real offline put drains through the real flush inside land
+  PASS round-trip: the offline put still exits 0
+  PASS round-trip: its stderr reports the queue
+  PASS round-trip: the queue file holds the pending file
+  PASS round-trip: the committed tree is clean (the cache ignores itself)
+  PASS round-trip: land's dirty check would pass already
+  PASS round-trip: the real land exits 0
+  PASS round-trip: the real flush printed the paste line
+  PASS round-trip: the land still pushed
+  PASS round-trip: the land still merged
 
 test-wrap-land: 12 sections, 12 ran, 0 cached (0 checks credited)
-test-wrap-land: all 477 passed
+test-wrap-land: all 489 passed
 ```
 
 Verdict: PASS
@@ -49,7 +69,8 @@ Verdict: PASS
 The new `sec_flush` section ran against `origin/master`'s
 `lib/wrap/wrap-land.sh`: master's tree from `git archive origin/master` in a
 temp dir, the branch's `tests/test-wrap-land.sh` overlaid. Master's
-`wrap-land.sh` carries no `PROOF_ASSET_BIN` call (`grep -c` returns 0).
+`wrap-land.sh` carries no `PROOF_ASSET_BIN` call (`grep -c` returns 0) and no
+`bin/proof-asset` exists there.
 
 Command: `LAND_SECTION=sec_flush bash tests/test-wrap-land.sh` (in the master copy)
 Output:
@@ -65,7 +86,11 @@ Output:
   FAIL flush: the refusal names the flush
   FAIL flush: no PR was opened
   FAIL flush: the worktree stays
-land-section-result: 9 10 19
+  FAIL round-trip: the offline put still exits 0
+  FAIL round-trip: its stderr reports the queue
+  FAIL round-trip: the queue file holds the pending file
+  FAIL round-trip: the real flush printed the paste line
+land-section-result: 14 14 28
 ```
 
 Result: RED as expected
@@ -77,5 +102,6 @@ Result: RED as expected
 | 23 | "opted in, the flush runs before the dirty check" and "a clean land flushes before the push" |
 | 24 | "a failing flush stops the land before the push" |
 | 25 | "opted out, land never calls the seam" |
+| battery | PB6 local-link marker, "a real offline put drains through the real flush inside land" |
 
 Verdict: PASS

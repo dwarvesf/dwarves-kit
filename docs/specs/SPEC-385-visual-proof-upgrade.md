@@ -54,37 +54,39 @@ account_dwarvesf = "<cloudflare account id>"
 base_url_dwarvesf = "https://proof.d.foundation"
 ```
 
-The key suffix is the lowercased GitHub owner. A missing base URL for the owner: `put` queues with a stderr warning, and the gate treats every R3a entry as `url outside the proof bucket`.
+The key suffix is the lowercased GitHub owner. A missing base URL for the owner under `assets = "r2"`: `put` exits 1, names the missing `proof.base_url_<owner>` operator key on stderr, and writes nothing; the gate treats every R3a entry as `url outside the proof bucket`.
 
 **Owner and repo.** From `git remote get-url origin`: the last two path parts, `.git` stripped, lowercased. Both forms `git@github.com:o/r.git` and `https://github.com/o/r` resolve the same.
 
 **UI files.** A changed file with extension `.tsx .jsx .vue .svelte .css .scss .html`. A path segment alone (`app/`, `pages/`) never makes a file visual.
 
-**Manifest.** `docs/verification/<slug>/assets.json`, committed, written by `put` with `jq`:
+**Manifest.** `docs/verification/<slug>/assets.json`, committed, written by `put` with `jq`. It records the final destination only, never upload progress: `status` is `r2` or `local`, and the stored `file` carries the first 8 hex chars of the asset's sha256 so a re-put of changed bytes mints a fresh key:
 
 ```json
 {
   "slug": "<slug>",
   "rand": "<32 hex>",
   "assets": [
-    {"name": "settings-desktop", "file": "settings-desktop.webp", "status": "pending|uploaded|local",
-     "url": "<base>/<owner>/<repo>/<slug>/<rand>/settings-desktop.webp",
+    {"name": "settings-desktop", "file": "settings-desktop-<sha8>.webp", "status": "r2|local",
+     "url": "<base>/<owner>/<repo>/<slug>/<rand>/settings-desktop-<sha8>.webp",
      "sha256": "<hex>", "bytes": 123456}
   ]
 }
 ```
 
+Upload progress lives only in the gitignored queue `.kit/proof-assets/<slug>/.pending` (one cached file name per line); `flush` drains it and never writes the manifest.
+
 The gate does not use its slug argument for manifests. It reads every changed path matching `(^|/)docs/verification/[^/]+/assets\.json`.
 
-**Local cache.** `<repo root>/.kit/proof-assets/<slug>/<file>`. T1 adds `.kit/proof-assets/` to this repo's `.gitignore`.
+**Local cache.** `<repo root>/.kit/proof-assets/<slug>/<file>`. `put` writes `.kit/proof-assets/.gitignore` containing `*` when missing, so the cache ignores itself in any repo.
 
 **Seams** (tests set them; no test touches the network):
 
 | Var | Called as | Default |
 |---|---|---|
 | `PROOF_ASSET_UPLOADER` | `<cmd> <local-file> <key> <account-id>` | `CLOUDFLARE_ACCOUNT_ID=<id> wrangler r2 object put "<bucket>/<key>" --file <local-file> --remote` |
-| `PROOF_ASSET_FETCH` | `<cmd> <url>`, body on stdout | `curl -fsS --proto =https --max-time 15 --max-filesize 3000000` |
-| `PROOF_ASSET_CONVERT` | `<cmd> <in> <out>` | `cwebp -q 80`, else `pngquant`, else copy |
+| `PROOF_ASSET_FETCH` | `<cmd> <url>`, body on stdout | `curl -q -fsS --proto =https --max-time 15 --max-filesize 3000000` |
+| `PROOF_ASSET_CONVERT` | `<cmd> <in> <out>` | `cwebp -q 80`, else `pngquant`, else `sips -s format png`, else refuse (exit 2) |
 | `PROOF_ASSET_BIN` | `<bin> flush` | `$KIT/bin/proof-asset` |
 
 **Hashing.** `shasum -a 256`. The gate pipes the fetch straight into the hasher and never holds the body in a variable.
