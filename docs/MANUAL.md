@@ -60,7 +60,7 @@ Index by loop stage (formerly "leg", ADR-0034; the README's "The five stages" se
 **Writes:** nothing; advises in chat which command to run next
 **When to invoke:** opening a fresh session and you do not remember where you left off
 **Common gotcha:** the router suggests a next step but does not run it. You decide.
-**Spec resolution (dual-mode, SPEC-005):** the active spec is the lone non-SHIPPED/PARKED `docs/specs/SPEC-*.md`; with several live, the one whose slug matches the git branch; if zero or several match, it reports `spec:ambiguous(...)` and asks rather than guessing. `docs/specs/` is the sole spec location. The same rule drives the `context-readiness` hook, `spec-drift-guard` (which greps the union of active specs), and `/kit:next`.
+**Spec resolution (dual-mode, SPEC-005):** the active spec is the lone non-SHIPPED/PARKED `docs/specs/SPEC-*.md`; with several live, the one whose slug matches the git branch; if zero or several match, it reports `spec:ambiguous(...)` and asks rather than guessing. Active-spec lookup is root only: `docs/specs/` is the sole location. Spec-number allocation (`spec-next.sh`), `validate-round` and the ship-gate also find co-located `<dir>/docs/specs/` specs via `lib/spec/spec-find.sh`. The same rule drives the `context-readiness` hook, `spec-drift-guard` (which greps the union of active specs), and `/kit:next`.
 
 **Modes (`$ARGUMENTS`):**
 - `/kit:start --brief` -- one line, max 120 chars: state + suggested command + `[branch | N dirty | spec]`. For returning users who want a cue, not a report. Example: `Spec VALIDATED, 3/8 tasks -> /kit:execute. [master | 2 dirty | VALIDATED]`

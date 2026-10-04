@@ -97,7 +97,8 @@ Source: GSD v1's 4 parallel researchers. Mode A uses formal `.claude/agents/` fi
 Create `docs/specs/` directory if it doesn't exist. The Step 1 stub already holds the NNN: use it and do not call `spec-next.sh` again (the paragraph below is how Step 1 picked it). Generate these files (the main spec already exists as the Step 1 header stub; fill it in and keep its `Lane:` and `Depth:` lines):
 
 **`docs/specs/SPEC-NNN-<slug>.md`** (main spec). Pick NNN with
-`bash lib/spec/spec-next.sh next`, never by eyeballing the specs dir: it also scans branch
+`bash lib/spec/spec-next.sh next`, never by eyeballing the specs dir: it also scans co-located
+`<dir>/docs/specs/` specs (via `lib/spec/spec-find.sh`), branch
 names and recent commit subjects, the two surfaces where a number ages invisibly inside
 an unmerged PR (two collisions in one week before this guard). If a
 wavefront dispatch already RESERVED a number for you (a `RESERVED SPEC NUMBER` block in
