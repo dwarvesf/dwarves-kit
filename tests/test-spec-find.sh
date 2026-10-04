@@ -188,13 +188,10 @@ gate "$E9" >/dev/null; eq "EC9 ship-gate: only the decoy present exits 0" "$?" 0
 OUT="$(gate "$RS")"; RC=$?
 eq "row14 ship-gate: root Lane: full still exits 2" "$RC" 2
 
-# Row 11: ship-gate on a stale install (no spec-find.sh; old libs that never sourced it)
+# Row 11: ship-gate on a stale install (no spec-find.sh; the libs fall back to the root-only lookup)
 STALE="$TMP/stale-kit"; mkdir -p "$STALE"
 cp -R "$KIT_DIR/lib" "$KIT_DIR/hooks" "$KIT_DIR/kit.toml" "$KIT_DIR/VERSION" "$STALE/"
 rm "$STALE/lib/spec/spec-find.sh"
-for f in gate/gate-ledger.sh gate/proof-ledger.sh spec/spec-next.sh pitch.sh; do
-  sed -i.bak '/spec-find\.sh/d' "$STALE/lib/$f" && rm "$STALE/lib/$f.bak"
-done
 K="$STALE"
 OUT="$(gate "$RS")"; RC=$?
 eq "row11 stale install: root full-lane spec still found (exit 2)" "$RC" 2
