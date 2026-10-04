@@ -8,6 +8,9 @@
 set -uo pipefail
 KIT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 LIB="$KIT/lib/gate/proof-ledger.sh"   # this worktree's own copy, never ~/.claude/dwarves-kit
+# Pin the operator overlay: a developer's own [gate] negative_control = "full" waives the control these
+# fixtures assert is required (the suite then reads green-only as passing). gates-on is the shared fixture.
+export KIT_CONFIG_OPERATOR="$KIT/tests/fixtures/gates-on"
 fails=0
 pass(){ echo "PASS $*"; }
 fail(){ echo "FAIL $*"; fails=$((fails+1)); }
@@ -44,6 +47,7 @@ near_miss_block() {  # a full green run + a NEGATIVE CONTROL block whose own lin
 ## green run
 Command: `bash lib/thing.sh`
 Exit: 0
+Output: thing: all 3 passed
 Verdict: PASS
 
 ## negative control
@@ -59,6 +63,7 @@ pass_block() {  # the fixed shape: the control's own outcome is `Result:`, never
 ## green run
 Command: `bash lib/thing.sh`
 Exit: 0
+Output: thing: all 3 passed
 Verdict: PASS
 
 ## negative control
@@ -74,6 +79,7 @@ unrelated_fail_block() {  # a plain failed run: no control ever attempted
 ## run
 Command: `bash lib/thing.sh`
 Exit: 0
+Output: thing: all 3 passed
 Verdict: FAIL
 EOF
 }
@@ -99,6 +105,7 @@ cat > "$F/docs/verification/case2a/01-green.md" <<'EOF'
 ## green run
 Command: `bash lib/thing.sh`
 Exit: 0
+Output: thing: all 3 passed
 EOF
 cat > "$F/docs/verification/case2a/02-control.md" <<'EOF'
 ## negative control

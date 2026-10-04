@@ -15,7 +15,7 @@
 #     harvest.enable resolves true) AND harvest.hook_when_sweep_on is false -- so a
 #     session is never staged or paid for twice while the sweep reads it.
 # [harvest] keys resolve through kit_config_get_root only: a project
-# .kit.toml rides inside an untrusted PR and can neither switch the sweep on nor
+# config file rides inside an untrusted PR and can neither switch the sweep on nor
 # keep the hook running. Explicit verbs (--cleanup, --sweep, --flush-list, ...) are
 # never gated: they are operator actions, not hook fires.
 set -euo pipefail

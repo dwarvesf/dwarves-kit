@@ -1692,14 +1692,14 @@ assert_output_contains "plan: normal carries required spec" "3. spec            
 assert_output_contains "plan: normal prepends grill intake" "1. grill" "$(GL plan normal)"
 PLAN_TINY="$(GL plan tiny)"
 assert_output_not_contains "plan: tiny has no grill row" "grill" "$PLAN_TINY"
-# Validate is required on normal and full, run-lite on backfill (listed, advisory), absent on
-# tiny and bug.
-assert_output_contains "plan: normal lists validate required" "4. validate           required" "$(GL plan normal)"
+# Validate is required on full, run-lite on normal and backfill (listed, advisory; a large
+# normal-lane spec still runs it by prose rule), absent on tiny and bug.
+assert_output_contains "plan: normal lists validate lite" "4. validate           lite" "$(GL plan normal)"
 assert_output_contains "plan: backfill lists validate lite" "4. validate           lite" "$(GL plan backfill)"
 assert_output_not_contains "plan: tiny has no validate" "validate" "$PLAN_TINY"
 assert_output_not_contains "plan: bug has no validate" "validate" "$(GL plan bug)"
 assert_output_contains "plan: full still requires validate" "validate           required" "$(GL plan full)"
-assert_output_contains "required: normal requires validate" "validate" "$(GL required normal)"
+assert_output_not_contains "required: normal no longer requires validate" "validate" "$(GL required normal)"
 assert_output_contains "required: normal requires review" "review" "$(GL required normal)"
 # a normal ship with spec, build, ship and no Validate or Review line is refused
 GL record val-n spec ran "spec written"; GL record val-n build ran "built"; GL record val-n ship ran "pushed"
@@ -1809,7 +1809,7 @@ git -C "$ROOT" add -A; git -C "$ROOT" commit -q -m "feat(x): add a behavior chan
 assert_output_contains "ledger: behavioral diff -> behavioral" "^behavioral$" "$(bash "$PL" classify "$ROOT" "$BASE" 2>/dev/null)"
 bash "$PL" check "$ROOT" "$BASE" x >/dev/null 2>&1; assert_exit "ledger: behavioral, no proof -> BLOCK" 1 "$?"
 # add a green + NEGATIVE CONTROL proof -> check passes (exit 0).
-mkdir -p "$ROOT/docs/verification"; printf '## PASS\n- Exit: 0\n## NEGATIVE CONTROL\n- Exit: 1\n' > "$ROOT/docs/verification/x.md"
+mkdir -p "$ROOT/docs/verification"; printf '## PASS\n- Exit: 0\n- Output: f: all 1 passed\n## NEGATIVE CONTROL\n- Exit: 1\n' > "$ROOT/docs/verification/x.md"
 git -C "$ROOT" add -A; git -C "$ROOT" commit -q -m "test(x): proof of done"
 bash "$PL" check "$ROOT" "$BASE" x >/dev/null 2>&1; assert_exit "ledger: behavioral, with proof -> PASS" 0 "$?"
 # inert (doc-only) diff -> classify inert + pass with no proof (no ritual).
@@ -1921,7 +1921,7 @@ git -C "$ROOT" switch -q -c feat/w; mkdir -p "$ROOT/lib"; echo w > "$ROOT/lib/w.
 git -C "$ROOT" add -A; git -C "$ROOT" commit -q -m "feat(w): a behavior change"
 ( cd "$ROOT" && CLAUDE_PLUGIN_ROOT="$KIT_DIR" bash "$KIT_DIR/hooks/ship-gate.sh" <<< '{"tool_input":{"command":"git push origin feat/w"}}' >/dev/null 2>&1 )
 assert_exit "ship-gate hook: behavioral + no proof + no spec -> BLOCK (exit 2)" 2 "$?"
-printf '## PASS\n- Exit: 0\n## NEGATIVE CONTROL\n- Exit: 1\n' > "$ROOT/docs/verification/w.md"
+printf '## PASS\n- Exit: 0\n- Output: w: all 1 passed\n## NEGATIVE CONTROL\n- Exit: 1\n' > "$ROOT/docs/verification/w.md"
 git -C "$ROOT" add -A; git -C "$ROOT" commit -q -m "test(w): proof of done"
 ( cd "$ROOT" && CLAUDE_PLUGIN_ROOT="$KIT_DIR" bash "$KIT_DIR/hooks/ship-gate.sh" <<< '{"tool_input":{"command":"git push origin feat/w"}}' >/dev/null 2>&1 )
 assert_exit "ship-gate hook: proof present -> PASS (exit 0)" 0 "$?"
@@ -2076,6 +2076,31 @@ assert_output_contains "ship-gate names the missing gate" "MISSING-GATE" "$SG_OU
 for g in Spec Validate Build Review Ship; do bash "$GL" record sg-demo "$g" ran "x" >/dev/null 2>&1; done
 SG_RC2=$(cd "$SGR" && echo '{"tool_input":{"command":"git push -u origin feat/sg-demo"}}' | CLAUDE_PLUGIN_ROOT="$KIT_DIR" bash "$SG" >/dev/null 2>&1; echo $?)
 assert_exit "ship-gate allows the push once gates are recorded" 0 "$SG_RC2"
+
+# validate by size: the normal lane no longer requires Validate in the ledger, so the hook
+# blocks a LARGE normal-lane spec (4+ tasks or no countable task) that shipped with no
+# validate ran/override line, and lets a SMALL one through.
+_vsz_repo() { # slug task-count -> repo dir with a normal-lane spec of that many tasks
+  local d="$DWARVES_KIT_LOG_DIR/vsz-$1"; mkdir -p "$d"
+  ( cd "$d" && git init -q && git checkout -q -b "feat/$1" && mkdir -p docs/specs \
+    && { printf 'Lane: normal\nDepth: standard (one file)\n\n## Tasks\n\n'; i=0; while [ $((i+=1)) -le "$2" ]; do printf -- '- [ ] TASK-%s: x\n' "$i"; done; } > "docs/specs/SPEC-001-$1.md" \
+    && git add -A && git -c user.email=t@t -c user.name=t commit -qm init ) >/dev/null 2>&1
+  echo "$d"
+}
+_vsz_push() { ( cd "$1" && echo "{\"tool_input\":{\"command\":\"git push -u origin feat/$2\"}}" | CLAUDE_PLUGIN_ROOT="$KIT_DIR" bash "$SG" 2>&1 ); }
+for g in Spec Build Review Ship; do for s in vsz-large vsz-ran vsz-ovr vsz-small vsz-skip; do bash "$GL" record "$s" "$g" ran "x" >/dev/null 2>&1; done; done
+VD=$(_vsz_repo vsz-large 5); VOUT=$(_vsz_push "$VD" vsz-large); VRC=$?
+assert_exit "ship-gate: large normal spec with no validate is blocked" 2 "$VRC"
+assert_output_contains "ship-gate: large-spec block names the validate rule" "validate" "$VOUT"
+assert_output_contains "ship-gate: large-spec block prints the override hint" "gate-ledger.sh\" override" "$VOUT"
+VD=$(_vsz_repo vsz-ran 5); bash "$GL" record vsz-ran Validate ran "fresh reader" >/dev/null 2>&1
+_vsz_push "$VD" vsz-ran >/dev/null; assert_exit "ship-gate: large normal spec with validate ran passes" 0 $?
+VD=$(_vsz_repo vsz-ovr 5); bash "$GL" override vsz-ovr Validate "operator: waived" >/dev/null 2>&1
+_vsz_push "$VD" vsz-ovr >/dev/null; assert_exit "ship-gate: large normal spec with validate override passes" 0 $?
+VD=$(_vsz_repo vsz-small 2)
+_vsz_push "$VD" vsz-small >/dev/null; assert_exit "ship-gate: small normal spec with no validate passes" 0 $?
+VD=$(_vsz_repo vsz-skip 5); bash "$GL" record vsz-skip Validate skipped "NEEDS REVISION: critical=1" >/dev/null 2>&1
+_vsz_push "$VD" vsz-skip >/dev/null; assert_exit "ship-gate: large normal spec whose last validate is skipped is blocked" 2 $?
 
 # ============================================================
 echo ""
@@ -2548,7 +2573,7 @@ PR80=$(mktemp -d "${TMPDIR:-/tmp}/dk-pr80.XXXXXX")
   && mkdir -p docs/verification && printf 'convention\n' > docs/verification/README.md \
   && printf 'x\n' > app.sh && git add -A && git commit -qm base \
   && git switch -q -c feat/incl && printf 'y\n' >> app.sh \
-  && printf 'Command: run\nExit: 0\nNEGATIVE CONTROL\nVerdict: INCONCLUSIVE\n' > docs/verification/incl.md \
+  && printf 'Command: run\nExit: 0\nOutput: run: all 2 passed\nNEGATIVE CONTROL\nVerdict: INCONCLUSIVE\n' > docs/verification/incl.md \
   && git add -A && git commit -qm change )
 BASE80=$( cd "$PR80" && git merge-base feat/incl main )
 RC=0; ( cd "$PR80" && bash "$PL80" check "$PR80" "$BASE80" incl >/dev/null 2>&1 ) || RC=$?
@@ -2559,7 +2584,7 @@ open('docs/verification/incl.md','w').write(s)" && git add -A && git commit -qm 
 RC=0; ( cd "$PR80" && bash "$PL80" check "$PR80" "$BASE80" incl >/dev/null 2>&1 ) || RC=$?
 assert_exit "the same record with Verdict: PASS satisfies the gate (control)" 0 $RC
 # retry workflow (lens 2): an OLD INCONCLUSIVE run + a NEW appended PASS run passes
-( cd "$PR80" && printf 'Command: run\nExit: 0\nNEGATIVE CONTROL\nVerdict: INCONCLUSIVE\nCommand: rerun\nExit: 0\nVerdict: PASS\n' > docs/verification/incl.md \
+( cd "$PR80" && printf 'Command: run\nExit: 0\nNEGATIVE CONTROL\nVerdict: INCONCLUSIVE\nCommand: rerun\nExit: 0\nOutput: rerun: all 2 passed\nVerdict: PASS\n' > docs/verification/incl.md \
   && git add -A && git commit -qm retry )
 RC=0; ( cd "$PR80" && bash "$PL80" check "$PR80" "$BASE80" incl >/dev/null 2>&1 ) || RC=$?
 assert_exit "append-shape retry: old INCONCLUSIVE + new PASS satisfies the gate" 0 $RC
@@ -2940,6 +2965,16 @@ for TBL in settings.json hooks/hooks.json; do
   jq -e '[.hooks.PostToolUse[]?.hooks[].command | select(contains("post-compact-reinject.sh"))] | length == 0' "$KIT_DIR/$TBL" >/dev/null 2>&1
   assert_true "reinject: $TBL does not wire post-compact-reinject under PostToolUse" $?
 done
+
+# ============================================================
+echo ""
+echo "=== flick: a command-layer tool, never called from a hook (no LLM API call in a hook) ==="
+# ============================================================
+FLICK_HITS="$(grep -rIl -e 'bin/flick' -e 'lib/decide' -e 'flick\.sh' "$KIT_DIR/hooks" 2>/dev/null | grep -v '/tests/' || true)"
+assert_true "no file under hooks/ references flick" "$([ -z "$FLICK_HITS" ] && echo 0 || echo 1)"
+FLICK_PLANT="$(mktemp -d)"; echo 'bash "$DWARVES_KIT/bin/flick" < x' > "$FLICK_PLANT/h.sh"
+assert_true "the flick pin is not vacuous: a planted reference is found" "$(grep -rIl -e 'bin/flick' "$FLICK_PLANT" >/dev/null 2>&1 && echo 0 || echo 1)"
+rm -r "$FLICK_PLANT"
 
 # ============================================================
 echo ""

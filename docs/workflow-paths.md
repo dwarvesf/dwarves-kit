@@ -523,6 +523,7 @@ One line per live feature: `entry -> ... -> terminal`. Grouped by kind; every fe
 | `[V] check-edit -> lib/gate/check-edit.sh diffs the build against a base ref -> did the build weaken the checks the spec names (execute signal)` |
 | `[V] classify floor -> lib/classify/lane-classify.sh reads the diff -> full on a hard path, else the size floor (feeds ship-gate)` |
 | `[V] classify risk -> lib/classify/lane-classify.sh scores task + files -> full or the chosen lane (advisory)` |
+| `[V] flick -> lib/decide/flick.sh sends a pick-one-of-N request to a decision API -> JSON answers, shadow-only, fails open, always exit 0 (wrap step 7b candidate slugs)` |
 | `[V] lane data -> lib/gate/lane-data.sh reads [lane.<name>] and [lanes] from kit.toml -> lane plan for gate-ledger and classifier` |
 | `[V] orchestrate --backend orca -> lib/queue/orca-backend.sh maps sub-goals to Orca Tasks + supervised workers -> state read live (opt-in mega backend)` |
 | `[V] push-refs -> lib/gate/push-refs.sh parses a shell command -> which refs it pushes (ship-gate fail-closed input)` |

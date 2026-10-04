@@ -31,6 +31,7 @@ make_fixture() {
     echo "reverting the change turns this RED."
     echo '- Command: `bash lib/thing.sh`'
     echo '- Exit: 0'
+    echo '- Output (tail): `thing: all 3 passed`'
     echo '- Verdict: PASS'
   } > "$proof"
   git -C "$d" add -A

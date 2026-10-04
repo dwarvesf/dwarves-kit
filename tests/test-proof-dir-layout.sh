@@ -9,6 +9,9 @@
 set -uo pipefail
 KIT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 LIB="$KIT/lib/gate/proof-ledger.sh"
+# Pin the operator overlay: a developer's own [gate] negative_control = "full" waives the control these
+# fixtures assert is required (the suite then reads green-only as passing). gates-on is the shared fixture.
+export KIT_CONFIG_OPERATOR="$KIT/tests/fixtures/gates-on"
 fails=0
 pass(){ echo "PASS $*"; }
 fail(){ echo "FAIL $*"; fails=$((fails+1)); }
@@ -27,6 +30,7 @@ make_fixture() {  # $1 = dir ; $2 = include negative-control run (1/0)
 ## 2026-06-09 10:00 PASS -- vf-fix [green]
 - Command: `bash lib/thing.sh`
 - Exit: 0
+- Output (tail): `thing: all 3 passed`
 - Verdict: PASS
 EOF
   if [ "$negctl" = "1" ]; then

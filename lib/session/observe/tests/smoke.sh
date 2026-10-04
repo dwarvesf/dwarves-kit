@@ -636,5 +636,39 @@ d = json.load(sys.stdin)
 assert any(h["hook"] == "headless-stop-hook.sh" for h in d["hooks"]), d["hooks"]
 '; then ok "per-file Stop scoping holds on both fixtures"; else no "AC10 scoping wrong: $hjson / $sdkjson"; fi
 
+DEDUP="${DIR}/tests/dedup-edge"   # synthetic: msg_main split over 3 identical records, msg_sub streamed 8 -> 300 -> 700, one <synthetic> record
+
+echo "[111] cost + burn dedup one API message split across records, keep the final chunk, skip <synthetic> (in 30 / out 800 / cache-rd 3000 / cache-wr 50)"
+cjson="$("$CC" cost --root "$DEDUP" --json)"
+bjson="$(SESSION_OBSERVE_NOW="$BURNNOW" "$CC" burn --root "$DEDUP" --since 60 --json)"
+if echo "$cjson" | python3 -c '
+import json, sys
+t = json.load(sys.stdin)["cost"]["by_model"]
+assert len(t) == 1, t  # the <synthetic> model has no row
+t = t[0]
+assert (t["input"], t["output"], t["cache_read"], t["cache_create"]) == (30, 800, 3000, 50), t
+' && echo "$bjson" | python3 -c '
+import json, sys
+s = json.load(sys.stdin)["sessions"]
+assert len(s) == 1, s
+s = s[0]
+assert s["reqs"] == 2, s  # two API messages, not four records
+assert (s["input"], s["output"], s["cache_read"], s["cache_create"]) == (30, 800, 3000, 50), s
+'; then ok "cost and burn both report 2 messages, output 800 (100 + 700), no synthetic"; else no "dedup wrong: $cjson / $bjson"; fi
+
+TFIX="${DIR}/tests/fixtures/timing-sample.jsonl"  # wall 81s; tools Read 2 + sleep chain 60 + short sleep 6 = 68; model 5+3+4 = 12 (gap before each tool_use); sleep-poll 1 call / 60s (the 5s sleep is under the 10s floor)
+
+echo "[112] timing: tool 68s, model 12s, wall 81s, 3 calls, sleep-poll 1 call / 60s, slowest = the sleep chain"
+tjson="$("$CC" timing --file "$TFIX" --json)"
+if echo "$tjson" | python3 -c '
+import json, sys
+d = json.load(sys.stdin)["timing"]
+t = d["transcripts"][0]
+assert (t["wall_s"], t["tool_s"], t["model_s"], t["calls"]) == (81, 68, 12, 3), t
+assert (t["sleep_poll_calls"], t["sleep_poll_s"]) == (1, 60), t
+top = d["slowest"][0]
+assert (top["tool"], top["duration_s"], top["target"]) == ("Bash", 60, "sleep 30; sleep 30"), top
+' && "$CC" timing --file "$TFIX" | grep -q 'sleep 30; sleep 30'; then ok "timing numbers and text view match"; else no "timing wrong: $tjson"; fi
+
 if [[ $fail -gt 0 ]]; then echo "smoke: $pass passed, $fail FAILED" >&2; exit 1; fi
 echo "smoke: all $pass passed"

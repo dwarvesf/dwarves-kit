@@ -30,6 +30,11 @@ repo() { # $1 dir: adopted repo (proof marker) on feat/x, no proof
 }
 write_off() { printf '[gate]\n%s = false\n' "$2" > "$1/.kit.toml"; }
 off() { write_off "$1" "$2"; git -C "$1" add .kit.toml; git -C "$1" commit -qm "chore: gate config"; }
+# off_base <dir> <key>: the opt-out lands on main (the merge base) and the feature branch is rebased
+# onto it. The hard-path floor reads lane_gates at the merge base so a PR cannot switch off its own
+# floor; a .kit.toml committed on the branch itself is a hard-path diff, covered by its own NC below.
+off_base() { local b; b="$(git -C "$1" rev-parse --abbrev-ref HEAD)"
+  git -C "$1" checkout -q main; off "$1" "$2"; git -C "$1" checkout -q "$b"; git -C "$1" rebase -q main; }
 PUSH='{"tool_input":{"command":"git push origin feat/x"}}'
 
 echo "== proof_of_done =="
@@ -41,6 +46,9 @@ write_off "$R" proof_of_done
 hook ship-gate.sh "$R" "$PUSH"; rc=$?
 { [ $rc -eq 2 ] && printf '%s' "$ERR" | grep -q "not applied until the file is committed"; } && pass "NC: uncommitted .kit.toml false -> still BLOCKS, with the commit hint" || fail "uncommitted opt-out applied or no hint (rc=$rc): $ERR"
 git -C "$R" add .kit.toml; git -C "$R" commit -qm "chore: gate config"
+hook ship-gate.sh "$R" "$PUSH"; rc=$?
+{ [ $rc -eq 2 ] && printf '%s' "$ERR" | grep -q "hard path (kit-config: .kit.toml)"; } && pass "NC: opt-out committed on the branch itself is a hard-path diff -> floor BLOCKS" || fail "branch-level .kit.toml skipped the floor (rc=$rc): $ERR"
+git -C "$R" reset -q --mixed HEAD~1; rm -f "$R/.kit.toml"; off_base "$R" proof_of_done
 hook ship-gate.sh "$R" "$PUSH"; rc=$?
 [ $rc -eq 0 ] && pass "committed proof_of_done = false -> ship-gate ALLOWS the same push" || fail "proof_of_done=false still blocked (rc=$rc): $ERR"
 grep -q 'OFF-BY-CONFIG | proof-gate | x' "$DWARVES_KIT_LOG_DIR/ship-gate.log" && pass "the skip leaves an OFF-BY-CONFIG line in ship-gate.log" || fail "no OFF-BY-CONFIG log line"
@@ -62,13 +70,13 @@ printf '# SPEC-001 x\n\nno lane header here\n' > "$L/docs/specs/SPEC-001-x.md"
 git -C "$L" add -A; git -C "$L" commit -qm "docs: spec without lane"
 hook ship-gate.sh "$L" "$PUSH"; rc=$?
 { [ $rc -eq 2 ] && printf '%s' "$ERR" | grep -q "no 'Lane:' header" && printf '%s' "$ERR" | grep -q "lane_gates = false"; } && pass "NC: spec with no Lane, no config -> BLOCKS on the lane gate, message names lane_gates" || fail "NC lane: rc=$rc: $ERR"
-off "$L" lane_gates
+off_base "$L" lane_gates
 hook ship-gate.sh "$L" "$PUSH"; rc=$?
 [ $rc -eq 0 ] && pass "committed lane_gates = false (proof gate still on) -> ship-gate ALLOWS the lane-less spec" || fail "lane_gates=false still blocked (rc=$rc): $ERR"
 [ "$(grep -c 'OFF-BY-CONFIG | lane-gate | x' "$DWARVES_KIT_LOG_DIR/ship-gate.log")" -eq 1 ] && pass "exactly one lane-gate OFF-BY-CONFIG line per push" || fail "lane-gate skip logged $(grep -c 'lane-gate' "$DWARVES_KIT_LOG_DIR/ship-gate.log") times"
 
 echo "== proof classifier: .kit.toml is harness config =="
-PL="$KIT_DIR/lib/gate/proof-ledger.sh"; BASE="$(git -C "$L" merge-base HEAD main)"
+PL="$KIT_DIR/lib/gate/proof-ledger.sh"; BASE="$(git -C "$L" rev-parse main~1)"
 [ "$(bash "$PL" classify "$L" "$BASE")" = inert ] && pass "spec.md + .kit.toml diff -> inert" || fail "docs + .kit.toml diff classified $(bash "$PL" classify "$L" "$BASE")"
 echo change >> "$L/src/code.sh"; git -C "$L" commit -qam "feat: code too"
 [ "$(bash "$PL" classify "$L" "$BASE")" = behavioral ] && pass "add a code change -> behavioral again" || fail "code + .kit.toml classified $(bash "$PL" classify "$L" "$BASE")"

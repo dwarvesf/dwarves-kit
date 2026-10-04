@@ -85,6 +85,17 @@ Do all of this before forming any fix.
    ```
 5. **Trace the bad value backward.** Where does it originate? What passed it in? Keep going up until you reach the source. Fix at the source, not the symptom.
 
+6. **Wait on the real condition, never a guess.** A flaky test or race often hides behind `sleep N`. Poll the actual condition with a timeout and fail loudly on expiry:
+   ```
+   for i in $(seq 1 50); do <check-command> && break; sleep 0.1; done; <check-command> || { echo "timeout waiting for <condition>"; exit 1; }
+   ```
+   Use an arbitrary sleep only to test a documented timing behavior, and comment why.
+7. **Find the test that pollutes state.** When a test passes alone but fails in the suite, or leaves stray files, dirs, env, or DB rows, bisect the suite. Check the polluted artifact before and after each test file, one at a time:
+   ```
+   for t in $(find . -path './tests/*' -name '*test*' | sort); do [ -e "$ARTIFACT" ] && { echo "already polluted before $t"; continue; }; <run-one-test> "$t" >/dev/null 2>&1; [ -e "$ARTIFACT" ] && { echo "POLLUTER: $t"; break; }; done
+   ```
+   Then run that polluter with its partner test to confirm the pair, and treat the leak as the root cause.
+
 Record findings in `## Evidence` as you go. When you can name the cause and point to its origin, write it in `## Root cause`.
 
 ## Phase 2: Pattern analysis
@@ -104,6 +115,7 @@ Record findings in `## Evidence` as you go. When you can name the cause and poin
 1. **Write the failing test first** (or promote the Phase-0 loop: if the feedback loop you built is already a failing automated test at the right seam, that IS this test; otherwise convert the loop's signal into one now). The simplest reproduction, automated. This is the concrete pass/fail signal; it feeds the existing verification pipeline (worker -> kit:task-verifier -> kit:fix-agent) the same way `/execute` tasks do. No test, no fix.
 2. **One fix, at the root cause.** No "while I'm here" changes, no bundled refactoring.
 3. **Verify.** The new test passes; no other test broke; the original symptom is gone.
+   **Defense in depth.** Once the root cause is fixed, list each layer the bad value crossed (entry point, business logic, environment guard, debug instrumentation) and add a cheap validation at each one that makes the same bug structurally impossible, not just fixed at the source. Skip layers that would only add speculative checks.
 4. **Clean up.** Remove all instrumentation in one pass over the region markers (`sed '/# #region DEBUG/,/# #endregion/d'` or equivalent). Confirm `git bisect reset` ran if you bisected.
 5. **Declare it fixed on the loop's own evidence.** Increment `## Fix attempts`. Write the result in `## Resolution`. Then read `kit_config_get_root debug.confirm_fix false`. False, the default: step 3 already proved it (the new test passes, no other test broke, the symptom is gone), so declare it fixed and report those three results as the evidence. True: hold the verdict and ask the human to confirm. Either way, a fix missing any of step 3's three conditions is NEVER declared fixed, and the ledger is stripped only after the verdict stands.
 

@@ -1237,8 +1237,27 @@ RC=0; fhas "$SPEC_CMD_F" 'fresh-context `general-purpose` subagent' || RC=1
 assert_eq "spec.md dispatches a fresh general-purpose validator" "0" "$RC"
 RC=0; fhas "$SPEC_CMD_F" 'Invoke `kit:spec-validate` through the Skill tool' && fhas "$SPEC_CMD_F" 'READ-ONLY' || RC=1
 assert_eq "spec.md validator prompt: Skill kit:spec-validate, read-only" "0" "$RC"
-RC=0; fhas "$SPEC_CMD_F" 'Sonnet on the normal and backfill lanes, Opus on the full lane' || RC=1
-assert_eq "spec.md validator tier: Sonnet normal/backfill, Opus full" "0" "$RC"
+RC=0; fhas "$SPEC_CMD_F" 'Sonnet for Reviewers 1 to 5 and 7 on every lane, Reviewer 6 on Opus' || RC=1
+assert_eq "spec.md validator tier: Sonnet for Reviewers 1-5 and 7 on every lane, Reviewer 6 on Opus" "0" "$RC"
+RC=0; fhas "$SPEC_CMD_F" 'Opus on the full lane' && RC=1
+assert_eq "spec.md: no reviewer tier rides the lane any more (old Opus-on-full wording gone)" "0" "$RC"
+RC=0; fhas "$EXEC_CMD_F" 'Sonnet for Reviewers 1 to 5 and 7 on every lane, Reviewer 6 on Opus' || RC=1
+assert_eq "execute.md preflight dispatches the same tiers as spec.md step 5" "0" "$RC"
+# Review diet: round cap, critical bar, fold-diff check, warning routing, lane rule.
+RC=0; fhas "$SPEC_CMD_F" 'The normal lane gets 1 validation round' && fhas "$SPEC_CMD_F" 'The full lane keeps its ceiling of 3 rounds' || RC=1
+assert_eq "spec.md step 5: normal lane gets 1 validation round, full lane keeps ceiling 3" "0" "$RC"
+RC=0; fhas "$VALIDATE_CMD" "A finding is CRITICAL only if the spec's own tests would miss it" || RC=1
+assert_eq "spec-validate.md: critical only if the spec's own tests would miss it" "0" "$RC"
+RC=0; fhas "$SPEC_CMD_F" 'one reviewer reads only the fold diff' || RC=1
+assert_eq "spec.md step 5: fold-diff check is the default re-check" "0" "$RC"
+RC=0; fhas "$SPEC_CMD_F" 'Validate ran "fold-diff check pass after NEEDS REVISION"' || RC=1
+assert_eq "spec.md step 5: a clean normal-lane fold-diff check records Validate ran" "0" "$RC"
+RC=0; grep -rqE '^\|\|\|\|\|\|\| ' "$KIT_DIR/commands" && RC=1
+assert_eq "commands/: no leftover diff3 conflict-base markers" "0" "$RC"
+RC=0; fhas "$SPEC_CMD_F" 'docs/implementation-notes/<slug>.md` for the builder' && fhas "$VALIDATE_CMD" 'docs/implementation-notes/<slug>.md` for the builder' || RC=1
+assert_eq "spec.md and spec-validate.md route build-catchable warnings to implementation notes" "0" "$RC"
+RC=0; fhas "$KIT_DIR/docs/WORKFLOW.md" 'copies its `Lane:` from `lib/classify/lane-classify.sh`' && fhas "$KIT_DIR/docs/WORKFLOW.md" 'a misroute' || RC=1
+assert_eq "WORKFLOW.md: a kit spec copies its lane from the classifier; full by habit is a misroute" "0" "$RC"
 RC=0; fhas "$SPEC_CMD_F" 'Validate ran "APPROVED critical=0 warnings=<K> fresh agent=<id>"' && fhas "$SPEC_CMD_F" 'Validate skipped "NEEDS REVISION: <criticals>"' || RC=1
 assert_eq "spec.md: the lead records ran on APPROVED, skipped otherwise" "0" "$RC"
 RC=0; fhas "$SPEC_CMD_F" 'VALIDATE PENDING: <spec path>' || RC=1
@@ -3322,6 +3341,22 @@ RC=0; grep -qF 'not installed on this host' "$WRAPF" || RC=1
 assert_eq "wrap.md carries the inactive-host STATE row (knob resolves as true)" 0 $RC
 RC=0; grep -qF 'sweep will also see this session' "$WRAPF" || RC=1
 assert_eq "wrap.md carries the explicit-distill override FYI" 0 $RC
+
+# Validate by size: a small normal-lane spec records an override instead of the 7-reviewer round;
+# the battery review leg rides Sonnet on normal and Opus on full.
+BATTERY_CMD_F="$KIT_DIR/commands/battery.md"
+RC=0; fhas "$SPEC_CMD_F" 'spec.sh depth size' && fhas "$SPEC_CMD_F" 'small spec: normal lane, standard depth, N tasks; post-build review covers it' || RC=1
+assert_eq "spec.md step 5: a small spec records a Validate override, sized by the depth size verb" "0" "$RC"
+RC=0; fhas "$EXEC_CMD_F" 'spec.sh depth size' && fhas "$EXEC_CMD_F" 'small spec: normal lane, standard depth, N tasks; post-build review covers it' || RC=1
+assert_eq "execute.md preflight: the same size check and override line" "0" "$RC"
+RC=0; fhas "$BATTERY_CMD_F" 'Sonnet (mid) on the normal lane, high (Opus-class) on the full lane' || RC=1
+assert_eq "battery.md leg 2: Sonnet on normal, Opus on full" "0" "$RC"
+RC=0; fhas "$KIT_DIR/docs/WORKFLOW.md" 'runs on large specs only' || RC=1
+assert_eq "WORKFLOW.md: fresh-context validation no longer runs at every depth" "0" "$RC"
+RC=0; grep -qF 'validator runs at every depth' "$KIT_DIR/docs/WORKFLOW.md" && RC=1
+assert_eq "WORKFLOW.md Depth paragraph: no stale 'validator runs at every depth' claim" "0" "$RC"
+RC=0; fhas "$KIT_DIR/docs/WORKFLOW.md" 'The fresh-context validator runs on every full-lane spec and on large normal-lane specs' || RC=1
+assert_eq "WORKFLOW.md Depth paragraph: validator follows the size rule" "0" "$RC"
 
 RC=0; for F in execute spec; do grep -qF 'include `rid=<rid>`' "$KIT_DIR/commands/$F.md" || RC=1; done
 assert_eq "execute.md and spec.md state the rid=<rid> dispatch-description convention" 0 $RC

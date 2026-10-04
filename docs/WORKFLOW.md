@@ -54,22 +54,31 @@ Pick a lane before you start. Smaller work skips ceremony.
 | Lane   | When | Path |
 |--------|------|------|
 | tiny   | typo, copy, comment, one obvious edit | edit, verify, done. No spec. |
-| normal | one bounded feature or fix | /spec (+ fresh-context /spec-validate), /execute, /review, /ship |
+| normal | one bounded feature or fix | /spec (+ fresh-context /spec-validate on large specs only), /execute, /review, /ship |
 | full   | touches auth, authz, hooks, data model, data loss, audit/security, an external provider, an API contract, a migration, or weakens validation | /think, /spec (+ fresh-context /spec-validate), /execute, /review-team, /docs, /ship, /retro |
 | bug    | a defect, regression, or failing test (not a new feature) | /debug (root cause before any fix), then /review |
 | backfill | brownfield: review an existing codebase and write the operating-layer docs (AGENTS.md / CLAUDE.md / specs) | review the code, write the docs. Doc-output only; no app-behavior change, no app-code edits. /spec optional. |
 
-**Depth.** Every spec carries a `Depth:` line under `Lane:`, with a named reason, and planning goes only as deep as the reason earns: `standard` (nothing extra; zero research agents), `research (repo: <unknown>)` (the 4 brownfield agents), `research (outside: <unknown>)` (`/kit:get-api-docs` plus one web pass), `blind-spot (failure: <mode>)` (the full test-plan review team). A reason that only says the work matters earns nothing deeper. `lib/spec/spec-depth.sh` reads and checks the line (`/kit:spec-validate` Reviewer 4 runs it); a spec with no line counts as `standard`, and a new spec without one is a critical. The fresh-context validator runs at every depth, and every test plan gets at least the two-lens light review.
+**Depth.** Every spec carries a `Depth:` line under `Lane:`, with a named reason, and planning goes only as deep as the reason earns: `standard` (nothing extra; zero research agents), `research (repo: <unknown>)` (the 4 brownfield agents), `research (outside: <unknown>)` (`/kit:get-api-docs` plus one web pass), `blind-spot (failure: <mode>)` (the full test-plan review team). A reason that only says the work matters earns nothing deeper. `lib/spec/spec-depth.sh` reads and checks the line (`/kit:spec-validate` Reviewer 4 runs it); a spec with no line counts as `standard`, and a new spec without one is a critical. The fresh-context validator runs on every full-lane spec and on large normal-lane specs (the size rule below), whatever the depth; every test plan gets at least the two-lens light review.
 
 Default to `normal`. The classifier prints a one-line suggestion when the task text matches a
 full-lane trigger and records it in the run ledger when given the run id. The agent may propose
 the full lane in one sentence and continues on the lighter lane until the operator assigns it.
-The normal lane requires a fresh-context validation and a review; those catch the triggers no
+The normal lane requires a review, and a fresh-context validation on large specs only: a spec
+is small when its lane is `normal`, its `Depth:` is `standard` (or absent), and it has at most 3
+tasks (`lib/spec/spec.sh depth size <spec>`). A small spec records a Validate override and relies on the
+post-build review; the review and the validation of large specs catch the triggers no
 diff can show (authz, API contract, external provider, weakened validation). The ship-gate
 applies the full lane's gates to any diff that touches a hard path (migrations, auth, secrets,
 CI workflows, kit config, data loss), whatever the spec's `Lane:` says. With
 `[gate] lane_gates = false` on the base branch none of this runs; a PR cannot switch it off for
 its own push. Moving an assigned lane lighter stays a Pause-if decision.
+
+A kit spec copies its `Lane:` from `lib/classify/lane-classify.sh`. It takes `full` only when the
+floor hits a hard path or a full-lane trigger in the table above applies. Choosing `full` by habit
+is a misroute: it buys the 3-round ceiling and the heaviest review for a change the normal lane
+already guards. A large normal-lane spec gets 1 validation round (`/kit:spec` step 5), a fold-diff check
+after any fold, and the critical bar in `/kit:spec-validate`.
 
 `/kit:assign` backs this tree with an **advisory floor check** (`lib/classify/lane-classify.sh
 check`): once a lane is chosen, it re-classifies the task text and warns + logs (to
@@ -150,7 +159,7 @@ migration (same dry-run + rollback shape); agent-org config rides spec-feature l
 | Prototype (opt-in) | /kit:prototype | validated decision folded into the brief/spec + `prototype/<name>` branch pointer on the owning row | advisory (HITL; SPEC-206) |
 | UI design (opt-in, downstream) | /kit:ui-design | brief -> generate (frontend-design) -> critique -> revise | advisory (downstream only) |
 | Spec     | /kit:spec | spec exists, Status: DRAFT | spec-drift-guard hook |
-| Validate | /kit:spec-validate (a fresh-context validator /kit:spec and /kit:execute dispatch) | Status: VALIDATED | ship gate (normal and full lanes); /kit:execute preflight (normal, full, backfill) |
+| Validate | /kit:spec-validate (a fresh-context validator /kit:spec and /kit:execute dispatch; runs on large specs only, a small normal-lane spec records an override) | Status: VALIDATED | ship gate (full lane); /kit:execute preflight (normal, full, backfill) |
 | Test plan (default for normal/full) | /kit:test-plan, then /kit:test-plan-review-team --light (the full team at blind-spot) | `## Test plan` written into the spec, in the type's dialect (test-design-standard §5b), plus its `## Test plan critique` | advisory default (normal/full); tiny exempt |
 | Build    | /kit:execute or /kit:next | tasks checked, end verifiers PASS | verification pipeline (one builder, one end verification pass, fix; max 2) |
 | Review   | /kit:review or /kit:review-team | review verdict recorded; full lane loops per SPEC-231 | advisory (default-run + bounded loop on full: SPEC-231, docs/patterns/review-fix-loop.md) |
@@ -171,7 +180,7 @@ thing that enforces the exit:
   Spec  ------>  spec exists, Status: DRAFT  ------>  spec-drift-guard   [HARD]
     |
     v
-  Validate --->  Status: VALIDATED  --------------->  execute preflight; ship gate (normal, full)
+  Validate --->  Status: VALIDATED  --------------->  execute preflight; ship gate (full)
     |
     v
   Build  ----->  tasks checked, end verifiers PASS  verification pipeline [HARD]
@@ -437,7 +446,7 @@ the V-model lens above. Every cell is one of:
 | Design critique (default full lane, opt-in normal) | skip | skip | measure-twice | skip | skip |
 | UI design (opt-in) | skip | skip | run-lite | skip | skip |
 | Spec | skip | measure-twice | measure-twice | skip | run-lite |
-| Validate | skip | measure-twice | measure-twice | skip | run-lite |
+| Validate | skip | run-lite | measure-twice | skip | run-lite |
 | Design record (design-bearing, ADR-0031 §1) | skip | run-lite | measure-twice | skip | skip |
 | Test plan (default) | skip | run-lite | measure-twice | run-lite | skip |
 | Build | run-lite | measure-twice | measure-twice | measure-twice | skip |
@@ -461,15 +470,15 @@ the V-model lens above. Every cell is one of:
 - **Review / bug = measure-twice**: a bug fix is a high-stakes narrow change.
   The full lane uses review-team; the bug lane uses `/kit:review`, but the
   scrutiny level for a regression fix should be full, not advisory.
-- **Validate / normal = measure-twice**, backfill stays run-lite: the normal lane no
-  longer escalates on keywords, so the diff floor at push covers the triggers a path can
-  show (migration, auth, secrets, CI, kit config, data loss) and a fresh-context reader of
-  the spec covers the rest (authz, API contract, external provider, weakened validation).
-  The coverage table is in `docs/specs/SPEC-368-lanes-as-data.md` under "What the diff floor
-  catches, and what it does not". This reverses the earlier run-lite call, whose cost (a
-  refused push in adopted repos with in-flight normal runs) the spec's migration notes
-  handle: record the gate, or `gate-ledger.sh override <rid> validate "<reason>"`.
-- **Review / normal = measure-twice**: same reason as Validate. The review lens set catches
+- **Validate / normal = run-lite**, backfill stays run-lite: the ship-gate no longer requires
+  `validate` on the normal lane. The 7-reviewer round runs on large specs only (more than 3
+  tasks, or a deeper `Depth:`), by the prose rule in `/kit:spec` step 5 and the `/kit:execute`
+  preflight; a small spec records a Validate override and the post-build review covers it. The
+  diff floor at push still covers the triggers a path can show (migration, auth, secrets, CI,
+  kit config, data loss). Evidence: in the 2026-09-30 wrap wave every HIGH defect came from the
+  post-build review lens, and the validation criticals worth having came from large full-lane
+  specs. This reverses the earlier measure-twice call.
+- **Review / normal = measure-twice**: the review lens set catches
   what neither the classifier nor the diff floor can see; the security lens has caught a
   leak three other stages missed.
 - **backfill / Spec = run-lite**: `/kit:spec` is optional for backfill (the lane
@@ -560,6 +569,8 @@ those surfaces alone would not know either ran, or was skipped, this run).
 |---|---|---|---|---|
 | `lib/gate/coverage-delta.sh` | a behavioral diff moved source with no matching test change | `commands/review-team.md` Step 1, the Build->Review boundary | PROSE-INVOKED (inside `/kit:review-team`'s own markdown, off the push blocker); records `\| GATE \| coverage-delta \| ran \|`, ALWAYS exits 0 | a diff-LINE HEURISTIC (changed non-test lines vs changed test lines), NOT a real %-coverage delta; `COVERAGE_DELTA_RUNNER` hooks in a real runner but is unset by default |
 | `lib/gate/mutation-smoke.sh` | a suite that stays green when a changed line is mutated (a false proof of correctness) | `commands/verify.md` Step 6b, inside `/kit:verify` | PROSE-INVOKED (inside `/kit:verify`'s own markdown, off the push blocker); records `\| MUTATION \|`, ALWAYS exits 0, `MUTATION_SMOKE_MAX` (default 5) bounds the run | a small FIXED mutation-operator set on the CHANGED HUNKS only, first-survivor-stops -- NOT a full mutation-testing sweep |
+
+**Size gate.** `/kit:battery` first runs `lib/gate/battery-gate.sh`: a diff under 150 changed lines (markdown and `docs/verification/**` excluded) with no hard path prints `SKIP` and the change owes a proof of done instead of the battery. A normal lane alone never triggers the battery; only an explicit operator ask overrides.
 
 **The three-rung ladder.** The rungs run in this order: **coverage** (the green
 suite, `/kit:battery` leg 1 plus `coverage-delta` above), then **probe** (`break-it`, the

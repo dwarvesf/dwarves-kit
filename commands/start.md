@@ -16,7 +16,7 @@ You are a project state detector. If `_meta/BACKLOG.md` exists, `bash lib/board/
 
 ## Process
 
-**Resolving the active spec (the dual-mode rule the hooks also use):** among `docs/specs/SPEC-*.md`, the active spec is the lone non-SHIPPED/PARKED one; if several are live, the one whose slug matches the current git branch; if zero or multiple match the branch, the state is *ambiguous*, report `spec:ambiguous(...)` and ask which spec, never guess. `docs/specs/SPEC-NNN-<slug>.md` is the sole spec location. States 3-8 below operate on that resolved active spec.
+**Resolving the active spec (the dual-mode rule the hooks also use):** among `docs/specs/SPEC-*.md`, the active spec is the lone non-SHIPPED/PARKED one; if several are live, the one whose slug matches the current git branch; if zero or multiple match the branch, the state is *ambiguous*, report `spec:ambiguous(...)` and ask which spec, never guess. `docs/specs/SPEC-NNN-<slug>.md` is the sole active-spec location (root only; co-located specs are found by spec-next, validate-round and ship-gate via `lib/spec/spec-find.sh`). States 3-8 below operate on that resolved active spec.
 
 Check these signals in order and recommend the FIRST matching action:
 
@@ -128,7 +128,7 @@ When `$ARGUMENTS` is `--full`, append these blocks after the standard output:
 2c. **Pick up (what should this session do?)** -- synthesize the board, the open handoffs, and any mega-goals into one line per bucket, so a new session can start without a hand-written start prompt. **Every bucket is capped at 5 lines, extras collapsed to a `+N more` line**: this block enters the session's context on every start, so it is a menu, never a dump.
    - **Executing** -- board rows with `executing` status, from `bash lib/board/backlog.sh board`: `<ID> <title> -- <note's first clause>`, capped at 5 + `+N more`.
    - **Top queued** -- the first five `queued` rows in `backlog.sh board` file order (file order is priority; this bucket is already capped at the source).
-   - **Waits on Han** -- rows whose Status or Notes cell carries a waits-on-human marker, capped at 5 + `+N more`. The marker vocabulary (same one `_meta/board-decisions.py` reads in ops-toolkit, named here rather than tied to one person): `Han's call`, `HELD on Han`, `waits on Han`.
+   - **Waits on Han** -- rows whose Status or Notes cell carries a waits-on-human marker, capped at 5 + `+N more`. The marker vocabulary (same one `_meta/scripts/board-decisions.py` reads in ops-toolkit, named here rather than tied to one person): `Han's call`, `HELD on Han`, `waits on Han`.
    - **LIVE handoffs** -- `bash lib/session/handoffs.sh list --limit 5` rows tagged `LIVE`, with their open row IDs (the verb caps and appends `+N more` itself; the uncapped total still prints on its own last line).
    - **DEAD handoffs** -- rows tagged `DEAD`, same capped `list --limit 5` call: name the file and recommend deleting it (git history keeps the content).
    - **Mega-goals** -- `bash lib/goal/megagoals.sh list --repo "$(git rev-parse --show-toplevel)" --limit 5`: every mega-goal folder (a `ROADMAP.md` under `_meta/megagoals/*/`, `experiments/*/megagoals/*/`, `tools/*/docs/megagoals/*/`, or `docs/megagoals/*/`) that still has an open sub-goal, as `<slug> <done>/<total> HANDOFF:<yes|no> POINTER:<path or ->`; already capped at the source (default `--limit 5`). If none, print "Mega-goals: none".

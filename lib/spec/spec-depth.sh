@@ -12,6 +12,8 @@
 #                                                 research-repo|research-outside|blind-spot; 1 otherwise
 #                                                 (including no header line)
 #   spec-depth.sh check <spec>                 -> one line per problem; exit 1 on any
+#   spec-depth.sh size <spec>                  -> "small|large tasks=N lane=L depth=D"; exit 0 small, 1 large.
+#                                                 small = Lane normal + Depth standard (or absent) + 1 to 3 tasks
 #   spec-depth.sh -h|--help|help               -> this usage
 #
 # Header forms:
@@ -30,7 +32,7 @@ DEPTH_REQUIRED_FROM_SPEC=372
 IMPORTANCE_WORDS=" important critical risky core complex sensitive big "
 STOP_WORDS=" a an the this that these those is are was be it its of to and or very so too really change work "
 
-usage() { sed -n '2,19p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
+usage() { sed -n '2,21p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
 
 LEVELS=""; PROBLEMS=""; HAS_LINE=0
 
@@ -142,11 +144,45 @@ cmd_check() {
   return 1
 }
 
+# Tasks outside fenced blocks: a `- [ ] TASK-x` / `- [ ] T1a:` checkbox (plain, bold, or indented), a
+# `### TASK-x` heading, or a `| T1 |` / `| T1: x |` / `| TASK-x |` table row. Fences are ``` or ~~~ (a closer matches its opener).
+# An odd number of fence lines means one is unclosed; then fence state is ignored so a stray fence
+# cannot hide real tasks (over-counting only ever makes a spec read large, the safe side).
+count_tasks() {
+  tr -d '\r' < "$1" | awk '
+    { line[NR] = $0; if ($0 ~ /^[[:space:]]*(```|~~~)/) nf++ }
+    END {
+      ignore = (nf % 2 == 1); open = ""
+      for (i = 1; i <= NR; i++) {
+        l = line[i]
+        if (!ignore && l ~ /^[[:space:]]*(```|~~~)/) {
+          m = (l ~ /^[[:space:]]*```/) ? "`" : "~"
+          if (open == "") open = m; else if (open == m) open = ""
+          continue
+        }
+        if (open != "") continue
+        if (l ~ /^[[:space:]]*- \[[ xX]\] (\*\*)?(TASK-|T[0-9]+[a-z]?[: *])/ || l ~ /^#+ (TASK-|T[0-9]+[a-z]?[: ])/ || l ~ /^\| *(TASK-[A-Za-z0-9]+|T[0-9]+[a-z]?) *[:|]/) n++
+      }
+      print n + 0
+    }'
+}
+
+cmd_size() {
+  local spec=$1 lane n depth size=large
+  lane=$(header "$spec" | grep -m1 -iE '^(\*\*)?Lane(\*\*)?:' | sed -E 's/^(\*\*)?[Ll]ane(\*\*)?:(\*\*)?[[:space:]]*//; s/[[:space:]].*$//' | tr 'A-Z' 'a-z')
+  n=$(count_tasks "$spec")
+  parse "$spec"
+  depth=${LEVELS:-standard}
+  [ "$lane" = normal ] && [ "$depth" = standard ] && [ "$n" -ge 1 ] && [ "$n" -le 3 ] && size=small
+  echo "$size tasks=$n lane=${lane:-none} depth=${depth// /+}"
+  [ "$size" = small ]
+}
+
 main() {
   local verb="${1:-}"; [ $# -gt 0 ] && shift || true
   case "$verb" in
     -h|--help|help|"") usage; return 0 ;;
-    level|wants|check) ;;
+    level|wants|check|size) ;;
     *) echo "spec-depth: unknown verb '$verb' (try: spec-depth --help)" >&2; return 2 ;;
   esac
   local spec="${1:-}"
@@ -166,6 +202,7 @@ main() {
       parse "$spec"
       case " $LEVELS " in *" $2 "*) return 0 ;; *) return 1 ;; esac ;;
     check) cmd_check "$spec" ;;
+    size) cmd_size "$spec" ;;
   esac
 }
 

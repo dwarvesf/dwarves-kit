@@ -18,7 +18,7 @@ If any prerequisite fails, say what is missing and stop.
 
 ### Step 1: Collect the dispatch-eligible specs
 
-Take the specs named in the command argument, or if none given, list `docs/specs/SPEC-*.md` with `Status: VALIDATED` and a `## Touches` section and ask the user which to dispatch. Show the set before going further.
+Take the specs named in the command argument, or if none given, list `docs/specs/SPEC-*.md` (root only) with `Status: VALIDATED` and a `## Touches` section and ask the user which to dispatch. Show the set before going further.
 
 ### Step 2: Run the disjointness gate (the moat)
 

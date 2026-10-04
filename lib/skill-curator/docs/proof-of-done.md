@@ -142,7 +142,7 @@ is the ONLY writer of `~/.claude/skills/`; the background reviewer never is.
 |---|---|---|
 | Promote core | list / promote (refuse-overwrite, secret-refuse, force-backup) / reject (-> `_rejected/`) | `lib/promote.sh` |
 | Promote CLI | the only writer of `~/.claude/skills/` | `bin/skill-review` |
-| Promote skill | human slash-command; delegates the quality bar to `superpowers:writing-skills` | `skills/skill-review/SKILL.md` |
+| Promote skill | human slash-command; applies the inline quality bar | `skills/skill-review/SKILL.md` |
 | Surfacing | line = cc-harvest queued-memory count + draft count + 7-day spend | `lib/surface.sh` + `hooks/sessionstart-surface.sh` |
 | Install | idempotent jq read-merge-write (PreCompact+SessionEnd+SessionStart, async), backup-first, atomic | `deploy/install.sh` / `uninstall.sh` |
 | auto_promote | OFF by default; references-add-to-existing-umbrella only (never new skill / body edit) | `lib/promote.sh:auto_promote_eligible` |

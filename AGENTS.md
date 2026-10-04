@@ -125,7 +125,7 @@ entry, print where the run stands: `bash "${DWARVES_KIT:-$HOME/.claude/dwarves-k
 full story of a past or in-flight run: `bash "${DWARVES_KIT:-$HOME/.claude/dwarves-kit}/lib/telemetry/lane-telemetry.sh" trace <rid>`.
 
 **Escalate the review for enforcement surfaces.** A run touching `lib/` or
-`hooks/` uses `/kit:review-team` (multi-lens), not a single reviewer.
+`hooks/` uses `/kit:review-team` (multi-lens), not a single reviewer. `/kit:battery` is gated by size: a SMALL change (`lib/gate/battery-gate.sh` prints `SKIP`) owes a proof of done instead.
 
 **Record your gates.** When you run a phase gate (`/kit:spec`, `/kit:spec-validate`, `/kit:execute`, `/kit:review`, `/kit:docs`, `/kit:ship`, ...), record it so the run is auditable: `bash "${DWARVES_KIT:-$HOME/.claude/dwarves-kit}/lib/gate/gate-ledger.sh" record <rid> <Phase> ran`; record a deliberate skip as `skipped "<why>"`. The `ship-gate` hook refuses a push whose lane has a required gate with no `ran`/`override` entry. Phase ORDER matters too: the lane plan is the V-model descent order; `bash "${DWARVES_KIT:-$HOME/.claude/dwarves-kit}/lib/gate/gate-ledger.sh" descent <rid> <lane>` names out-of-order records, surfaced at ship as an advisory. Full convention + the logged-override path: WORKFLOW.md "## Gate ledger and ship enforcement".
 
@@ -146,6 +146,15 @@ what changed and what was not attempted.** If you could not run the check, repor
 that plainly; the anti-rationalization hook is the backstop for premature
 completion under Claude Code, but the honesty obligation is yours under any
 runtime.
+
+**Show the proof, never only describe it.** A proof of done carries what the run
+really printed: the test recap or the tail of the run under an `Output:` line, or a
+committed screenshot or GIF for visual work (a video or a demo flow is linked beside
+it). The ship-gate refuses a proof whose green run is typed words alone. The same
+captured output goes in the final response, with the PR link, and in the PR body
+(`wrap land` builds the body from the proof file). A final response that says only
+"tests pass" has shown nothing. With `[proof] visual = true`, a UI change also owes an
+image through `bin/proof-asset put`; `proof-gate.sh contract` names what each task type owes.
 
 **Deployable-done (ADR-0028, reusing ADR-0025).** DEPLOYABLE work is anything that runs
 somewhere, a service, a daemon, a feature behind a flag, or any change `lib/gate/proof-ledger.sh

@@ -346,8 +346,16 @@ if [ -f "$LEDGER62" ] && [ -n "${RLANE:-}" ]; then
   fi
 fi
 
-# Resolve the spec for this slug; fail open if there is no spec-driven run.
-SPEC=$(ls "$ROOT"/docs/specs/SPEC-*-"$SLUG".md 2>/dev/null | head -1 || true)
+# Resolve the spec for this slug; fail open if there is no spec-driven run. spec_for_slug is the
+# pick validate-round also binds to (root docs/specs, then co-located */docs/specs). A stale
+# install without spec-find.sh keeps the old root-only glob, so the hook never breaks on it.
+SPEC=""
+SFIND="${CLAUDE_PLUGIN_ROOT:-$HOME/.claude/dwarves-kit}/lib/spec/spec-find.sh"
+if [ -r "$SFIND" ] && source "$SFIND" 2>/dev/null; then
+  SPEC=$(spec_for_slug "$ROOT" "$SLUG")
+else
+  SPEC=$(ls "$ROOT"/docs/specs/SPEC-*-"$SLUG".md 2>/dev/null | head -1 || true)
+fi
 if [ -z "$SPEC" ]; then
   # No spec means no lane to compare, but the floor needs no lane: a hard-path diff still owes the
   # full lane's gates (or an audited override) for this slug. Renaming a branch must not dodge it.
@@ -425,6 +433,27 @@ if ! GAPS=$(KIT_PROJECT_ROOT="$ROOT" bash "$LEDGER" check "$LANE" "$SLUG" 2>&1);
     echo "Or switch the lane gates off for this repo: [gate] lane_gates = false in the committed project kit config (lib/gate/README.md, 'Switching a gate off')."
   } >&2
   exit 2
+fi
+# Validate by size: the normal lane lists validate as lite (not required), so nothing in the ledger
+# check stops a LARGE normal-lane spec from shipping unvalidated. `spec.sh depth size` exits 1 on a
+# large spec; only that exact code engages. A missing spec.sh or an unreadable spec (exit 2) fails open.
+SPEC_SH="${CLAUDE_PLUGIN_ROOT:-$HOME/.claude/dwarves-kit}/lib/spec/spec.sh"
+if [ "$LANE" = normal ] && [ -f "$SPEC_SH" ]; then
+  bash "$SPEC_SH" depth size "$SPEC" >/dev/null 2>&1; SIZE_RC=$?
+  if [ "$SIZE_RC" -eq 1 ] \
+     && ! bash "$LEDGER" show "$SLUG" 2>/dev/null | awk -F' [|] ' '$2=="GATE" && $3=="validate"{s=$4} END{exit !(s=="ran"||s=="override")}'; then
+    bash "$LEDGER" outcome "$SLUG" ship end caught=true >/dev/null 2>&1 || true
+    LOG_DIR="${DWARVES_KIT_LOG_DIR:-$HOME/.claude/dwarves-kit/logs}"
+    mkdir -p "$LOG_DIR" 2>/dev/null || true
+    echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) | BLOCKED | ship-gate | $SLUG ($LANE, large, no validate)" >> "$LOG_DIR/ship-gate.log" 2>/dev/null || true
+    {
+      echo "BLOCKED: ship-gate. Spec '$SLUG' is large (4+ tasks, a deeper Depth, or no countable task) and has no validate gate that ran or was overridden."
+      echo "Rule: a large normal-lane spec needs the fresh-context validation before it ships (\`bash <kit>/lib/spec/spec.sh depth size $SPEC\`). Run /kit:spec-validate, or log an explicit override (recorded for audit):"
+      echo "  bash \"$LEDGER\" override $SLUG_Q validate \"<reason>\""
+      echo "Or switch the lane gates off for this repo: [gate] lane_gates = false in the committed project kit config (lib/gate/README.md, 'Switching a gate off')."
+    } >&2
+    exit 2
+  fi
 fi
 # Hard-path floor: full-lane gates, project lane data ignored (--kit-lanes). Exits 2 on a gap.
 _floor_check

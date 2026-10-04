@@ -75,7 +75,7 @@ case_parity_after_flip() {
 case_plan_flip() {
   local out; new_log
   out="$(gl required normal | tr '\n' ' ')"
-  [ "$out" = "spec validate build review ship " ] && pass plan-flip || fail plan-flip "required normal = '$out'"
+  [ "$out" = "spec build review ship " ] && pass plan-flip || fail plan-flip "required normal = '$out'"
 }
 
 # ---------------------------------------------------------------------------
@@ -279,7 +279,7 @@ case_pinned_root() {
   local evil; evil="$(_mk)"
   printf '[lane.normal]\nphases = ["spec", "build"]\nlight = []\n' > "$evil/kit.toml"
   local got; got="$(KIT_PROJECT_ROOT=/nonexistent KIT_CONFIG_ROOT="$evil" DWARVES_KIT="$evil" gl required normal 2>/dev/null | tr '\n' ' ')"
-  [ "$got" = "spec validate build review ship " ] && pass pinned-root || fail pinned-root "required normal = '$got'"
+  [ "$got" = "spec build review ship " ] && pass pinned-root || fail pinned-root "required normal = '$got'"
 }
 
 case_malformed_array_fails_closed() {

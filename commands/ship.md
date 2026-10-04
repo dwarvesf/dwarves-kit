@@ -41,6 +41,7 @@ Detect the test runner and execute:
 - Python: `pytest` or `python -m pytest`
 - Rust: `cargo test`
 
+If `kit_config_get test.suite full` (`lib/config/kit-config.sh`) is `affected`, run only the narrowest tests that cover the change (in the kit repo `bin/test-affected`) and note that the full suite runs on the schedule.
 If tests fail: STOP. Show the failures. Ask if the user wants to fix them first.
 If no test runner found: WARN but continue.
 

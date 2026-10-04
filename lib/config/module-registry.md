@@ -301,6 +301,24 @@ SKIPS that source with a stderr line and a `skipped` row, and never fails the ga
 
 | Env var | kit.toml key | Default | Status | Module | Doc |
 |---|---|---|---|---|---|
+| - | decide.backend | `"none"` | [impl] | decide | `jev`, `openai`, `clef`, or `none`. `none` sends nothing and leaves every kit step unchanged. `openai` is a stub answering `unsupported` until the vendor publishes its request shape. `clef` is the Cloudflare Workers AI fallback; it needs `decide.clef_account` and the token named by `decide.clef_token_env`. Resolved with `kit_config_get_root` (a project `.kit.toml` is never read: the block names a credential source and authorizes egress). |
+| - | decide.mode | `"shadow"` | [impl] | decide | `shadow` logs beside the caller's own decision and never acts; `decide` runs as shadow for `wrap-7b`, the only point. Root-only. |
+| - | decide.points | `""` | [impl] | decide | Space-separated enabled decision points. Empty means nothing leaves the host. The one point today is `wrap-7b`. Root-only. |
+| - | decide.timeout_ms | `"1500"` | [impl] | decide | Per-call timeout in milliseconds. Unset defaults to 1500, or 3000 when the backend is `clef` (Clef's p50 is about 1.1 s with a heavier tail). Below 1500 clamps up (the vendor trial's security screen), above 10000 clamps down. Root-only. |
+| - | decide.jev_model | `"jev-1.13.0"` | [impl] | decide | Pinned model name, never a `latest` alias. Root-only. |
+| - | decide.openai_model | `""` | [reserved] | decide | Unused while the `openai` backend is a stub. Root-only. |
+| - | decide.jev_token_env | `"JEV_API_TOKEN"` | [impl] | decide | The NAME of the env var holding the Jev token (`^[A-Za-z_][A-Za-z0-9_]*$`). The token never sits in a file, argv, a log, or stdout. Root-only. |
+| - | decide.jev_token_cmd | `""` | [impl] | decide | Optional command that prints the Jev token, used only when the env var named by `decide.jev_token_env` is empty, for hosts that keep secrets out of the shell env. Split on whitespace and run without a shell (no quotes, globs or expansion); the first word must be an absolute path. stdin from `/dev/null`, stderr dropped, own process group killed (TERM, then KILL) after 10 s, output capped at 4096 bytes; stdout minus one trailing newline is the token. A failure, timeout, empty or oversized output or a token that fails the shape check gives `no_token`. The output is never logged or printed. Root-only. |
+| - | decide.openai_token_env | `"OPENAI_API_KEY"` | [reserved] | decide | Same rule as `decide.jev_token_env`, unused while the `openai` backend is a stub. Root-only. |
+| - | decide.openai_token_cmd | `""` | [reserved] | decide | Same rule as `decide.jev_token_cmd`, unused while the `openai` backend is a stub. Root-only. |
+| - | decide.clef_model | `"clef"` | [impl] | decide | `clef` or `clef-flash`; any other value falls back to `clef`. Root-only. |
+| - | decide.clef_account | `""` | [impl] | decide | The Cloudflare account id (`^[A-Za-z0-9_-]{1,64}$`), or an `op://` ref resolved through `secret-cache-read` from PATH, else `~/.local/bin` (Keychain-cached, name `FLICK_CLEF_ACCT_<sha256(ref) first 8 hex>`, under the same bound a token command gets). A missing or unresolvable value is `no_account`. Billing-tied: never logged or printed. Root-only. |
+| - | decide.clef_token_env | `"FLICK_CLEF_TOKEN"` | [impl] | decide | Same rule as `decide.jev_token_env`. The Jev token env var is never consulted for clef; neither is the broad `CLOUDFLARE_API_TOKEN` unless the operator names it here. Root-only. |
+| - | decide.clef_token_cmd | `""` | [impl] | decide | Same rule as `decide.jev_token_cmd`. Root-only. |
+| - | decide.allow_names | `""` | [impl] | decide | Space-separated extra public tool names the egress guard accepts, exact match, added to the names under the kit's `bin/`, `commands/`, `skills/` and `agents/`. Root-only. |
+| - | decide.deny_words | `""` | [impl] | decide | Space-separated words that block a `wrap-7b` candidate slug (client names, private repo names). Case-folded substring match. Root-only. |
+| - | decide.word_gate | `"on"` | [impl] | decide | `on` or `off`. While on, each hyphen segment of a `wrap-7b` candidate must be a dictionary word (case-insensitive whole line), a built-in dev word, or a kit-public name; any other segment denies that question (log reason `word_gate`). Segments under 3 characters pass only as a dev word or public name. Does not catch a name that is an English word, so `decide.deny_words` still matters. Any value but `off` counts as on. Root-only. |
+| - | decide.dict_file | `"/usr/share/dict/words"` | [impl] | decide | Dictionary for the word gate, one word per line. Must be an absolute path to a regular file under 16 MB; anything else denies every candidate (log reason `word_gate_no_dict`). Root-only. |
 | - | intake.url_ledger | `""` | [consumer] | intake | Command that answers "have we consumed this URL", executed as `<cmd> check <url>` with exit 0 meaning seen and its stdout parsed as JSON (`date`, `verdict`, `conclusion`). The value is a command name or path, not a ledger file, because the ledger's dedup key is a normalized URL and only its own tool can compute that. Empty skips the `url` source. |
 | - | intake.verdicts | `""` | [consumer] | intake | Absolute or `~`-prefixed path to the operator's verdict ledger, one decided evaluation per line. The gate cites a line containing every word of the subject. Empty skips the `verdict` source. |
 | - | intake.boards | `""` | [consumer] | intake | Absolute or `~`-prefixed path to the boards registry: `<name> <path-to-BACKLOG.md>` rows with `#` comments, the same format the operator's cross-repo board renderer reads. The gate scans every board the registry names and reports each hit's board by name; a row whose file is gone is passed over. Empty skips the `board` source. |
@@ -352,6 +370,7 @@ never turns the step off.
 | KIT_WRAP_CARRY_CHECKS_SECS | env-only | `300` | [impl] | wrap | `wrap apply` under `wrap.autoland_carry`: seconds to wait, one read every 10s, while a carry PR has pending checks before `wrap merge --apply --pr` gates it. A check still pending at the bound leaves the PR open for step 3. A non-numeric value falls back to 300. (SPEC-322) |
 | KIT_WRAP_CI_ON_MERGE | env-only | `0` | [impl] | wrap | `1` arms the `ci` label gate on `wrap merge`/`land`: label the PR, wait for checks, refuse an empty rollup. The only switch `wrap apply`'s autoland reads; `--with-ci` sets it for one `merge`/`land`. `0` merges with no label and no wait. |
 | KIT_WRAP_CI_GRACE_SECS | env-only | `90` | [impl] | wrap | `wrap` CI wait on a label-gated repo: seconds, one read every 10s, to hold while no NEW check has appeared after the label was added. Past it the workflow is a paths-filtered one that started nothing and the wait ends. A non-numeric value falls back to 90. |
+| KIT_WRAP_LAND_GRACE_SECS | env-only | `30` | [impl] | wrap | `wrap land`, before the first merge, on a repo with a `pull_request` workflow: seconds, one read every 10s, to hold while no check has registered on the PR yet. Pending checks then wait to `KIT_WRAP_CARRY_CHECKS_SECS`. A non-numeric value falls back to 30. |
 | KIT_SKILL_DIRS | env-only | `$HOME/.claude/skills` plus `${CLAUDE_PLUGIN_ROOT:-}/skills` when set | [consumer] | wrap | Colon-separated list of skill directories `config seams` searches for a `skill` kind row's `SKILL.md` (e.g. `wrap.before`). Entries whose realpath does not sit under `$HOME` are dropped, because a repo `.envrc` can set this. Not read by any code yet; `config seams` is the first consumer. |
 
 ### knowledge (context tree root, no install module)
@@ -479,7 +498,7 @@ already read them root-only. `tests/test-config-registry.sh` AC10 asserts this t
 EXACTLY the set of keys actually passed to `kit_config_get_root` across `lib/` (excluding
 `lib/config/kit-config.sh`, the accessor's own definition + self-test, whose demo calls
 exercise the primitive on fixture keys -- `mega.wave_cap`, `gauntlet.runner_host`,
-`gauntlet.nope`, `ledger.location` -- that are not themselves root-only rows), `commands/`,
+`gauntlet.nope` -- that are not themselves root-only rows; `lib/decide/flick.sh` also reads `ledger.location` root-only, so it is listed), `commands/`,
 `hooks/`, and `bin/`.
 
 | Key |
@@ -494,8 +513,14 @@ exercise the primitive on fixture keys -- `mega.wave_cap`, `gauntlet.runner_host
 | intake.url_ledger |
 | intake.verdicts |
 | knowledge.root |
+| ledger.location |
 | lanes.default |
 | precedent.registry |
+| proof.account_ |
+| proof.asset_bucket |
+| proof.asset_token_ref |
+| proof.base_url_ |
+| proof.visual |
 | review.apply_findings |
 | ship.confirm_bump |
 | ship.confirm_commit |
@@ -518,6 +543,10 @@ exercise the primitive on fixture keys -- `mega.wave_cap`, `gauntlet.runner_host
 | wrap.tidy_worktrees |
 
 ## Known gaps (documented, not enforced by this lint , out of this sub-goal's scope)
+
+
+- `decide.*` is root-only but absent from the "Root-only keys" table above. `bin/flick` reads the `[decide]` block with its own one-pass reader (operator `kit.toml`, then kit-root `kit.toml`, never a project `.kit.toml`) because ten `kit_config_get_root` calls cost ten `awk` spawns, which broke its latency budget on a slow-spawn host. AC10 requires the table to equal the literal `kit_config_get_root` call sites, so listing the keys would fail it. Effect: `bin/config get decide.<key>` still shows a project override while `bin/flick` ignores it. `tests/test-flick.sh` pins the flick side.
+- `proof.account_` and `proof.base_url_` are prefix rows. `lib/proof/asset.sh` reads `proof.account_<owner>` and `proof.base_url_<owner>` root-only, and AC10 captures the literal prefix before the variable. `bin/config get proof.account_<owner>` matches no row, so it does not fence a project override; `asset.sh` itself still reads root-only.
 
 The seed regex is deliberately the exact reproducible command named in
 `_meta/megagoals/harness-loop/goals/08-config-surface.md` step 2, scoped to a

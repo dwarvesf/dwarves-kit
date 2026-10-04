@@ -18,12 +18,16 @@
 #        slowest-10 block after the report. It may appear before or after the mode
 #        argument, and combines with --all, --only and --changed.
 # Env:   RUN_ALL_JOBS=<n>          parallel suites (default: auto on macOS, 1 elsewhere)
-#        RUN_ALL_TIMEOUT_SECS=<n>  per-suite ceiling (default: 300)
+#        RUN_ALL_TIMEOUT_SECS=<n>  per-suite ceiling (default: 300). When set it applies to every
+#                                  suite and overrides the per-suite table (suite_timeout below).
 # Exit:  0 all green, 1 one or more failed (every failure is listed at the end).
 
 set -uo pipefail
 KIT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$KIT_DIR" || exit 1
+
+# One heavy run at a time per host (tests/lib/run-lock.sh); re-execs this script under the lock.
+source "$KIT_DIR/tests/lib/run-lock.sh"; run_lock_exec "$KIT_DIR/tests/run-all.sh" "$@"
 
 # --time is order-free, so it is pulled out of the argument list before the positional
 # parsing below ($1 is the mode, $2 is --only's pattern or --changed's base) rather than
@@ -37,6 +41,17 @@ set -- ${_args[@]+"${_args[@]}"}
 
 # Per-suite ceiling. One hung suite must not burn the whole CI job's budget.
 TIMEOUT_SECS="${RUN_ALL_TIMEOUT_SECS:-300}"
+# Heavy suites that legitimately outrun the default under a parallel run get their own ceiling here,
+# one case arm each, so the global ceiling stays tight for the other suites. test-meta takes ~130s
+# alone and passes 900 assertions, but crosses 300s when the whole run does four suites at a time.
+# An explicit RUN_ALL_TIMEOUT_SECS wins for every suite (it is the operator's override).
+suite_timeout() {
+  if [ -n "${RUN_ALL_TIMEOUT_SECS:-}" ]; then echo "$RUN_ALL_TIMEOUT_SECS"; return; fi
+  case "$1" in
+    test-meta) echo 900 ;;
+    *) echo "$TIMEOUT_SECS" ;;
+  esac
+}
 _timeout() { if command -v timeout >/dev/null 2>&1; then timeout "$@"; else shift; "$@"; fi; }
 
 # --- worker mode -------------------------------------------------------------
@@ -51,7 +66,9 @@ if [ "${1:-}" = "--run-one" ]; then
   # that variable nor the arithmetic to make sub-second numbers worth the trouble. The
   # stamp is written unconditionally; only the collate loop cares whether --time was given.
   _t0="$(date +%s)"
-  if _timeout "$TIMEOUT_SECS" bash "$suite" >"$outdir/$name.log" 2>&1; then
+  _limit="$(suite_timeout "$name")"
+  echo "$_limit" >"$outdir/$name.limit"
+  if _timeout "$_limit" bash "$suite" >"$outdir/$name.log" 2>&1; then
     echo "ok" >"$outdir/$name.status"
     mark="."
   else
@@ -177,6 +194,9 @@ for t in tests/test-*.sh; do
   name="$(basename "$t" .sh)"
   [ -n "$ONLY" ] && case "$name" in *"$ONLY"*) : ;; *) continue ;; esac
   [ -n "$PICKED" ] && ! grep -qxF -- "$t" "$PICKED" && continue
+  # A `# runner:` file only relays sibling suites, which the same glob already
+  # schedules one by one; running it too would count every assert twice.
+  grep -q '^# runner:' "$t" && continue
   reqs="$(sed -n 's/^# requires:[[:space:]]*//p' "$t" | head -1)"
   missing=""
   for r in $reqs; do command -v "$r" >/dev/null 2>&1 || missing="$missing $r"; done
@@ -239,11 +259,13 @@ while IFS= read -r t; do
       echo "ok$secs"
       ;;
     124)
-      echo "TIMEOUT (${TIMEOUT_SECS}s)$secs"
+      limit="$(cat "$OUTDIR/$name.limit" 2>/dev/null || echo "$TIMEOUT_SECS")"
+      echo "TIMEOUT (${limit}s)$secs"
       timedout="$timedout $name"
+      [ "$limit" = "$TIMEOUT_SECS" ] || timedout="${timedout}(${limit}s)"
       # A killed suite printed no assertion, so the FAIL grep below would show nothing and
       # read as "failed for no reason". Say what actually happened and skip it.
-      echo "      ! killed at ${TIMEOUT_SECS}s; no assertion failed, the suite ran out of time"
+      echo "      ! killed at ${limit}s; no assertion failed, the suite ran out of time"
       sed 's/^/      | /' "$log" | tail -8
       ;;
     missing)

@@ -110,6 +110,8 @@ turn_cap_segments  = 10         # [impl] TURN_CAP_SEGMENTS. Max segments per sub
                                 #        secrets-guard) have no key here and are always on.
 proof_of_done      = false      # [impl] hooks/ship-gate.sh proof-of-done check (ADR-0025). Also needs
                                 #        the docs/verification/README.md marker (adopt writes it).
+negative_control   = "always"   # [impl] lib/gate/proof-ledger.sh: "always" = every behavioral proof needs a NEGATIVE
+                                #        CONTROL; "full" = only a hard-path diff or a full-lane spec does.
 lane_gates         = false      # [impl] hooks/ship-gate.sh lane x phase required-gate check plus
                                 #        the no-Lane refusal in adopted repos (ADR-0024)
 understanding_gate = false      # [impl] hooks/anti-rationalization.sh (ADR-0031)
@@ -117,6 +119,23 @@ commit_format      = false      # [impl] hooks/commit-format.sh commit-subject l
 board_row_gate     = true       # [impl] hooks/board-row-gate.sh: a commit adding a new board row
                                 #        needs a board-row-ok line. Default ON; a repo opts out
                                 #        with `board_row_gate = false` in a committed .kit.toml.
+
+[proof]                         # the proof-of-done image rule, OPT-IN: everything below is inert
+                                #        while `visual` is false (the push gate is then byte-identical
+                                #        to before). Read by lib/gate/proof-ledger.sh check (visual)
+                                #        and bin/proof-asset (assets, asset_bucket). A repo turns the
+                                #        rule on with `visual = true` in its .kit.toml. The owner
+                                #        routing keys (account_<owner>, base_url_<owner>) live ONLY in
+                                #        the operator kit.toml and resolve root-only, so a project
+                                #        file can never redirect the upload bucket.
+visual         = false          # [impl] R1: on, a behavioral diff touching a UI file
+                                #        (.tsx .jsx .vue .svelte .css .scss .html) owes one
+                                #        qualifying image on top of every existing proof rule.
+assets         = "r2"           # [impl] r2 = upload to the proof bucket via bin/proof-asset;
+                                #        local = keep bytes under .kit/proof-assets/ (counts only
+                                #        when set in a tracked, clean project .kit.toml).
+asset_bucket   = "kit-proof-assets"  # [impl] the R2 bucket name; the account id comes from the
+                                #        operator file's proof.account_<owner> routing.
 
 # ---- lanes as data ----------------------------------------------------------
 # One source for which phases each lane runs. `lib/gate/lane-data.sh` reads these blocks; the
@@ -131,7 +150,7 @@ light  = ["build", "review"]
 
 [lane.normal]                   # [impl] lib/gate/lane-data.sh
 phases = ["think", "spec", "validate", "design-record", "test-plan", "build", "review", "docs", "ship"]
-light  = ["think", "design-record", "test-plan", "docs"]
+light  = ["think", "validate", "design-record", "test-plan", "docs"]
 
 [lane.full]                     # [impl] lib/gate/lane-data.sh
 phases = ["think", "design", "design-critique", "ui-design", "spec", "validate", "design-record", "test-plan", "build", "review", "docs", "ship", "reflect"]
@@ -280,6 +299,9 @@ recheck_sample   = 5            # [impl] one run in N rechecks every end-verifie
                                  #        fresh-context `kit:recheck-verifier`. 0 = never sample, 1 =
                                  #        recheck every PASS. A full-lane run always uses 1.
                                  #        `(self-attested)` rows are always rechecked. Root-only: a project `.kit.toml` cannot lower it.
+
+[test]                          # the dev-loop test scope (commands/execute.md, verify.md, ship.md)
+suite            = "full"       # [impl] "full" (default) = run the whole suite in the dev loop. "affected" = run only the tests the change touches (bin/test-affected in this repo); the full suite runs on the schedule.
 
 [review]                        # `/kit:review-team` decision gate (commands/review-team.md)
 apply_findings   = true         # [impl] true = `gated_auto` findings the `responding-to-review`
@@ -452,6 +474,79 @@ follow_through = "off"          # [impl] step 10, after the step 9 report. One o
                                  #        `follow` runs lanes, `follow all` runs all, for one run.
                                  #        Any other value prints one line and runs as off.
                                  #        Needs-you items never run at any setting.
+
+[decide]                        # `flick` (bin/flick), the fast "pick one of N" decision CLI. Every key
+                                 #        resolves ROOT-ONLY (kit_config_get_root: the operator kit.toml or
+                                 #        this file, never a project .kit.toml), because the block names a
+                                 #        credential source and authorizes egress. Lists are space-separated
+                                 #        strings (the resolver reads single-line scalars). Hooks never read
+                                 #        or call it. Contract: docs/specs/SPEC-381-flick.md.
+                                 #        The default an operator runs stays `jev`; clef is the opt-in
+                                 #        Cloudflare Workers AI fallback. To switch, the operator
+                                 #        kit.toml sets exactly these lines:
+                                 #          backend = "clef"
+                                 #          clef_account = "op://<vault>/<item>/<field>"   (or a literal account id)
+                                 #          clef_token_cmd = "/abs/path/print-clef-token"  (or export FLICK_CLEF_TOKEN)
+backend = "none"                # [impl] jev | openai | clef | none. none leaves every kit step unchanged and
+                                 #        sends nothing. openai is a stub that answers `unsupported` until
+                                 #        the vendor publishes its request shape. clef is the Cloudflare
+                                 #        Workers AI fallback: it needs clef_account and the token named by
+                                 #        clef_token_env, and answers `no_token` until the token resolves
+                                 #        and `no_account` until the account does.
+mode = "shadow"                 # [impl] shadow logs beside the caller's own decision and never acts.
+                                 #        decide is accepted and runs as shadow for wrap-7b, the only point.
+points = ""                     # [impl] space-separated enabled decision points. Empty means nothing
+                                 #        leaves the host. The one point today: wrap-7b.
+# timeout_ms: unset, per call. Default is 1500, or 3000 when backend is clef (Clef's p50 is about
+# 1.1 s from Da Nang with a heavier tail). Values under 1500 clamp up (the vendor trial's screen),
+# over 10000 clamp down.
+jev_model = "jev-1.13.0"        # [impl] pinned, never a `latest` alias.
+openai_model = ""               # [reserved] unused while the openai backend is a stub.
+clef_model = "clef"             # [impl] clef or clef-flash; anything else falls back to clef.
+clef_account = ""               # [impl] the Cloudflare account id, or an op:// ref resolved through
+                                 #        secret-cache-read from PATH, else ~/.local/bin (cache name
+                                 #        FLICK_CLEF_ACCT_<sha8 of ref>). Billing-tied: never logged,
+                                 #        never printed. A missing or unresolvable value is no_account.
+clef_token_env = "FLICK_CLEF_TOKEN" # [impl] same rule as jev_token_env. A token scoped to Workers
+                                 #        AI; the broad, directory-dependent CLOUDFLARE_API_TOKEN is
+                                 #        not the default (set this key explicitly to use it).
+clef_token_cmd = ""             # [impl] same rule as jev_token_cmd.
+jev_token_env = "JEV_API_TOKEN" # [impl] the NAME of the env var holding the token. The token itself
+                                 #        never sits in a file, argv, a log, or stdout.
+jev_token_cmd = ""              # [impl] optional second token source for a host that keeps secrets out of
+                                 #        the shell env. Used only when the env var above is empty. A
+                                 #        command line split on whitespace and run WITHOUT a shell (no
+                                 #        quotes, globs or expansion; a `#` starts a comment). The first
+                                 #        word must be an absolute path. stdin is /dev/null, stderr is
+                                 #        dropped, and the command runs in its own process group, killed
+                                 #        (TERM, then KILL) after 10 s. Output is capped at 4096 bytes.
+                                 #        Its stdout, minus one trailing newline, is the token; a failure,
+                                 #        timeout, empty or oversized output, or a token with a quote,
+                                 #        backslash or control character gives `no_token`. The output is
+                                 #        never logged or printed.
+                                 #        Example: "/usr/local/bin/read-secret jev-token".
+openai_token_env = "OPENAI_API_KEY" # [reserved] same rule, unused while the backend is a stub.
+openai_token_cmd = ""           # [reserved] same rule as jev_token_cmd, unused while the backend is a stub.
+allow_names = ""                # [impl] extra public tool names the egress guard accepts, exact match,
+                                 #        added to the names under this kit's bin/, commands/, skills/,
+                                 #        agents/.
+deny_words = ""                 # [impl] space-separated words that block a candidate slug (client names,
+                                 #        private repo names). Case-folded substring match.
+word_gate = "on"                # [impl] "on" (default) or "off". While on, every hyphen segment of a
+                                 #        candidate slug must be a dictionary word (case-insensitive, whole
+                                 #        line), a built-in dev word (pr, ci, api, json, ...), or a name
+                                 #        this kit publishes; any other segment denies that question
+                                 #        (log reason `word_gate`). Catches client names a deny list
+                                 #        misses. A segment under 3 characters passes only as a dev
+                                 #        word or a public name (a dictionary lists every letter, so
+                                 #        `z-o-r-b-i-x` would pass otherwise). deny_words still applies
+                                 #        on top and still matters: the gate cannot see a name that is
+                                 #        an English word (stripe, notion, slack, linear, apple, loft),
+                                 #        so list those. Any value but "off" counts as on. Root-only.
+dict_file = "/usr/share/dict/words" # [impl] one word per line. Must be an absolute path to a regular file
+                                 #        under 16 MB. Anything else (missing, unreadable, relative,
+                                 #        oversize) denies every candidate (log reason
+                                 #        `word_gate_no_dict`); egress fails closed. Root-only.
 
 [knowledge]                     # context tree root for repo knowledge notes (context-kit fills this)
 root = ""                       # [consumer] absolute or ~-prefixed path to the context tree
