@@ -327,7 +327,8 @@ What an ordinary change in this repo runs, from edit to landed.
                                tidy, activity line, retro
 
   before a release tag only:
-    bash tests/run-all.sh --all ... the full glob, 13-15 minutes
+    KIT_RUN_ALL=1 bash tests/run-all.sh --all ... the full glob, 13-15 minutes
+                                    (refuses, exit 64, without CI or KIT_RUN_ALL=1)
     gh workflow run test .......... the macOS + Ubuntu matrix in CI
     git push origin v<x.y.z> ...... the same workflow, fired by the tag
 ```

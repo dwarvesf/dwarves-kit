@@ -13,6 +13,8 @@ RA="$DIR/tests/run-all.sh"
 pass=0; fail=0
 ok(){ echo "  ok: $*"; pass=$((pass+1)); }
 no(){ echo "  FAIL: $*" >&2; fail=$((fail+1)); }
+# These cases drive --all on fixture kits; outside CI it refuses without this.
+export KIT_RUN_ALL=1
 
 # run-all.sh times a suite with whole-second `date +%s` ticks, so a `sleep 2` fixture reads 2s on an
 # idle box and 3s when the run crosses a second boundary or the box is loaded (the full suite runs 4
