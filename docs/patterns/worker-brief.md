@@ -25,6 +25,14 @@ dispatcher runs through and writes into the prompt in its own words.
   command>`, `Exit: <n>`, and `Verdict:` lines per verification command; a `NEGATIVE
   CONTROL` entry for a behavioral change; a `## Rollback` section (or `[UNAVAILABLE:
   <reason>]`) for a stateful one; and `## Not proven` throughout.
+- State a test budget. Checks and negative controls run on the affected suites only
+  (`bin/test-affected`, `bash tests/run-all.sh --changed`), never `--all`, never
+  `KIT_RUN_ALL=1`, never a loop over every suite. A negative control hands `lib/gate/negctl.sh`
+  the one affected suite as its test command, never the full runner. A timing question ("how long does X take")
+  is answered from the suite history (`bash tests/run-all.sh --times p95`), never by a fresh
+  full run. The brief names a wall-clock budget in minutes; past it the worker stops, commits
+  what is green, and reports. A goal file never prescribes N full-suite runs, and a brief that
+  quotes one is a defect in the brief, not an instruction.
 - Require an activity-log line (the repo's LAB_LOG or equivalent).
 - Commit, but never push.
 - Report in N lines or fewer.
@@ -56,6 +64,11 @@ dispatcher runs through and writes into the prompt in its own words.
   `## Rollback` section is the stateful case's extra: a stateful change without a named
   undo path is not reversible by anyone reading the record later. `## Not proven` is the
   convention's honesty clause, not a gate marker.
+- **Test budget**: the 2026-10-04 kit-speed run spent about 90 minutes on five full `--all`
+  runs. Two causes: no stored per-suite timings, so tuning a timeout meant re-measuring
+  everything, and briefs that prescribed full runs, so a worker set `KIT_RUN_ALL=1` and walked
+  past the `--all` refusal. A 2026-10-01 wave also ran full-suite negative controls at load 11
+  to 19. The affected-only rule, the history lookup and a stated wall-clock budget close all three.
 - **Activity-log line**: the log is the index across every worker's output; a change with no
   log line is invisible to anyone scanning what happened this session.
 - **Commit but never push**: a worker's commit is reviewable before it becomes a push the

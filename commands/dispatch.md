@@ -28,7 +28,7 @@ bash lib/gate/dispatch-gate.sh plan <spec1> <spec2> ...
 
 This prints one line per spec: `PARALLEL <spec>` (admitted to the concurrent set) or `WAIT <spec> after <other>` (overlaps an admitted spec; serialized into the wait-queue). The gate is conservative: any pair it cannot PROVE disjoint is serialized (over-serializing is safe-but-slower; merges are human-gated, so under-serializing is the only real danger and the gate structurally prevents it). A spec with no `## Touches` makes the gate exit non-zero with a REJECT message; fix the spec, do not bypass the gate.
 
-Present the parallel-safe set + the wait-queue to the user. Cap concurrent workers at a small max (default **4**); queue the rest even if disjoint (rate-limit / quota protection).
+Specs that touch the same module (the same `lib/<module>/` or file) also wait for each other, even when their `## Touches` globs differ by a suffix: they run serially inside the wave, and the first merges before the next worker starts. Present the parallel-safe set + the wait-queue to the user. Cap concurrent workers at a small max (default **4**); queue the rest even if disjoint (rate-limit / quota protection).
 
 ### Step 3: Fan out one background worktree worker per parallel-safe spec
 
@@ -58,6 +58,7 @@ rules in the prompt itself instead:
 - Never call `EnterWorktree` or `ExitWorktree`: both refuse a subagent with a cwd override,
   and your worktree already exists. Work in your cwd; the lead owns worktree lifecycle.
 - Never merge your own PR. The lead merges.
+- Test budget: run checks and negative controls on the affected suites only (`bin/test-affected`, `bash tests/run-all.sh --changed`), never `--all`, never `KIT_RUN_ALL=1`. Timing questions read `bash tests/run-all.sh --times p95`, never a fresh full run. Stay inside the wall-clock budget the lead names; past it, commit what is green and report.
 - Commit before any negative control you run.
 - No em dash or en dash characters anywhere you write, code or prose; use a comma, colon,
   parens, or a plain hyphen instead.

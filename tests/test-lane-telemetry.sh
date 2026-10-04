@@ -10,6 +10,7 @@ set -uo pipefail
 KIT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 LT="$KIT_DIR/lib/telemetry/lane-telemetry.sh"
 GL="$KIT_DIR/lib/gate/gate-ledger.sh"
+: "lib/gate/ledger-key.sh"   # the ledger-key lib is named on a code line so bin/test-affected picks this suite when it changes (its reference scan skips comments)
 
 PASS=0; FAIL=0; TOTAL=0
 RED='\033[0;31m'; GREEN='\033[0;32m'; NC='\033[0m'

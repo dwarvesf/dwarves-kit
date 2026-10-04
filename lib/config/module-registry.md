@@ -373,6 +373,14 @@ never turns the step off.
 | KIT_WRAP_LAND_GRACE_SECS | env-only | `30` | [impl] | wrap | `wrap land`, before the first merge, on a repo with a `pull_request` workflow: seconds, one read every 10s, to hold while no check has registered on the PR yet. Pending checks then wait to `KIT_WRAP_CARRY_CHECKS_SECS`. A non-numeric value falls back to 30. |
 | KIT_SKILL_DIRS | env-only | `$HOME/.claude/skills` plus `${CLAUDE_PLUGIN_ROOT:-}/skills` when set | [consumer] | wrap | Colon-separated list of skill directories `config seams` searches for a `skill` kind row's `SKILL.md` (e.g. `wrap.before`). Entries whose realpath does not sit under `$HOME` are dropped, because a repo `.envrc` can set this. Not read by any code yet; `config seams` is the first consumer. |
 
+### test (dev-loop host-load warning and suite timing history, no install module)
+
+| Env var | kit.toml key | Default | Status | Module | Doc |
+|---|---|---|---|---|---|
+| KIT_LOAD_WARN | test.load_warn | `16` | [impl] | (none) | `lib/host/load-warn.sh`, called by `bin/test-affected` runs and `lib/queue/orchestrate.sh run`. When the 1-minute load average is over this number it prints one warning line suggesting Devin or self-hosted CI. Warning only, exit code never changes. A non-numeric value prints nothing. |
+| KIT_SUITE_TIMES_FILE | env-only | `${XDG_STATE_HOME:-$HOME/.local/state}/dwarves-kit/suite-times.tsv` | [impl] | (none) | `tests/lib/suite-times.sh`: the per-host log every `tests/run-all.sh` run appends one line per suite to (UTC time, git sha, suite, seconds, exit, 1-min load). A write failure never changes run-all's exit code. |
+| KIT_SUITE_TIMES_CAP | env-only | `20000` | [impl] | (none) | `tests/lib/suite-times.sh`: lines the log keeps after an append. A non-numeric value falls back to 20000. |
+
 ### knowledge (context tree root, no install module)
 
 | Env var | kit.toml key | Default | Status | Module | Doc |
@@ -438,6 +446,7 @@ against any of these bare tokens as covered without a registry row.
 | Token | Why excluded |
 | KIT_LOG_DIR | the RESOLVED ledger root, exported by `lib/telemetry/kit-log-dir.sh` for child tools (`mega review`/`mega report` read it); operators configure `KIT_LEDGER_DIR` / `[ledger].location`, never this |
 |---|---|
+| KIT_LOAD_STUB | `lib/host/load-warn.sh` test seam: a number that replaces the real load average so `tests/test-host-load-warn.sh` runs on any host. Never set outside tests. |
 | BACKLOG_DIR | `lib/board/backlog.sh`: computed via `pwd`, script-local. |
 | KIT_REF | `lib/adopt.sh`: the literal `~/.claude/dwarves-kit` string written into a consumer's AGENTS.md for its own shell to expand; assigned, never env-read. |
 | BACKLOG_SH | `lib/board/board.sh`: computed path, not env-overridable. |
