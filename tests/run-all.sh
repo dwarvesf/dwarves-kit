@@ -20,8 +20,8 @@
 #        argument, and combines with --all, --only and --changed.
 # Env:   KIT_RUN_ALL=1             allow --all outside CI (the nightly job sets it)
 #        RUN_ALL_JOBS=<n>         parallel suites (default: auto on macOS, 1 elsewhere)
-#        RUN_ALL_TIMEOUT_SECS=<n>  per-suite ceiling (default: 300). When set it applies to every
-#                                  suite and overrides the per-suite table (suite_timeout below).
+#        RUN_ALL_TIMEOUT_SECS=<n>  per-suite ceiling (default: 300; bin/test-affected.timeouts lists the
+#                                  per-suite values). When set it applies to every suite.
 # Exit:  0 all green, 1 one or more failed (every failure is listed at the end).
 
 set -uo pipefail
@@ -54,17 +54,17 @@ set -- ${_args[@]+"${_args[@]}"}
 
 # Per-suite ceiling. One hung suite must not burn the whole CI job's budget.
 TIMEOUT_SECS="${RUN_ALL_TIMEOUT_SECS:-300}"
-# Heavy suites that legitimately outrun the default under a parallel run get their own ceiling here,
-# one case arm each, so the global ceiling stays tight for the other suites. test-meta takes ~130s
-# alone and passes 900 assertions, but crosses 300s when the whole run does four suites at a time.
-# The test-meta-* arm covers the per-area suites the monolith split into.
+# Per-suite ceilings live in ONE data file, bin/test-affected.timeouts (`<suite> <seconds>`, 2 x the
+# measured p95 wall time under a parallel run, floor 60; the header there says how and when). bin/test-affected
+# reads the same file. A suite with no line gets the default above.
 # An explicit RUN_ALL_TIMEOUT_SECS wins for every suite (it is the operator's override).
 suite_timeout() {
   if [ -n "${RUN_ALL_TIMEOUT_SECS:-}" ]; then echo "$RUN_ALL_TIMEOUT_SECS"; return; fi
-  case "$1" in
-    test-meta*) echo 900 ;;
-    *) echo "$TIMEOUT_SECS" ;;
-  esac
+  local listed=""
+  if [ -r "$KIT_DIR/bin/test-affected.timeouts" ]; then
+    listed="$(awk -v n="$1" '$1 == n && $2 ~ /^[0-9]+$/ { print $2; exit }' "$KIT_DIR/bin/test-affected.timeouts")"
+  fi
+  echo "${listed:-$TIMEOUT_SECS}"
 }
 _timeout() { if command -v timeout >/dev/null 2>&1; then timeout "$@"; else shift; "$@"; fi; }
 

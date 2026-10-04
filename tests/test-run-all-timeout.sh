@@ -74,19 +74,28 @@ if [ "$RC4" -eq 0 ] \
   ok "green path byte-identical"
 else no "rc=$RC4 out=$OUT4"; fi
 
-echo "[7] a heavy suite keeps its own ceiling; every other suite and an explicit env keep the global one"
-K5="$TMP/k5"; mkkit "$K5"
-printf '#!/usr/bin/env bash\nexit 0\n' > "$K5/tests/test-meta.sh"; green "$K5"
+echo "[7] a listed suite takes its ceiling from bin/test-affected.timeouts; unlisted suites and an explicit env keep the global one"
+K5="$TMP/k5"; mkkit "$K5"; mkdir -p "$K5/bin"
+printf '#!/usr/bin/env bash\nexit 0\n' > "$K5/tests/test-heavy.sh"; green "$K5"
+printf '# header\ntest-heavy 900\n' > "$K5/bin/test-affected.timeouts"
 lim() { # $1 = suite ; $2 = RUN_ALL_TIMEOUT_SECS or empty ; prints the ceiling the worker applied
   local od; od="$(mktemp -d "$TMP/od.XXXXXX")"
   ( cd "$K5" && if [ -n "$2" ]; then RUN_ALL_TIMEOUT_SECS="$2"; export RUN_ALL_TIMEOUT_SECS; else unset RUN_ALL_TIMEOUT_SECS; fi
     bash tests/run-all.sh --run-one "tests/$1.sh" "$od" >/dev/null 2>&1 )
   cat "$od/$1.limit" 2>/dev/null
 }
-if [ "$(lim test-meta "")" = 900 ] && [ "$(lim test-allgood "")" = 300 ] \
-   && [ "$(lim test-meta 7)" = 7 ] && [ "$(lim test-allgood 7)" = 7 ]; then
-  ok "test-meta 900, others 300, explicit RUN_ALL_TIMEOUT_SECS wins for all"
-else no "test-meta=$(lim test-meta "") allgood=$(lim test-allgood "") meta+env=$(lim test-meta 7) allgood+env=$(lim test-allgood 7)"; fi
+if [ "$(lim test-heavy "")" = 900 ] && [ "$(lim test-allgood "")" = 300 ] \
+   && [ "$(lim test-heavy 7)" = 7 ] && [ "$(lim test-allgood 7)" = 7 ]; then
+  ok "listed suite 900, unlisted 300, explicit RUN_ALL_TIMEOUT_SECS wins for all"
+else no "heavy=$(lim test-heavy "") allgood=$(lim test-allgood "") heavy+env=$(lim test-heavy 7) allgood+env=$(lim test-allgood 7)"; fi
+
+echo "[8] a suite over its listed ceiling prints TIMEOUT with that limit, not the global one"
+K6="$TMP/k6"; mkkit "$K6"; mkdir -p "$K6/bin"; slow "$K6"
+printf '# header\ntest-slowpoke 1\n' > "$K6/bin/test-affected.timeouts"
+OUT6="$(env -u RUN_ALL_TIMEOUT_SECS bash "$K6/tests/run-all.sh" --only slowpoke 2>&1)"; RC6=$?
+if [ "$RC6" -eq 1 ] && grep -q 'test-slowpoke.*TIMEOUT (1s)' <<<"$OUT6" && ! grep -q '^run-all: FAILED ->' <<<"$OUT6"; then
+  ok "TIMEOUT (1s) from the data file, no FAILED line"
+else no "rc=$RC6 out=$OUT6"; fi
 
 if [ "$fail" -gt 0 ]; then echo "test-run-all-timeout: $pass passed, $fail FAILED" >&2; exit 1; fi
 echo "test-run-all-timeout: all $pass passed"
