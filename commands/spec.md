@@ -231,7 +231,7 @@ Rule: observable, not narrated. If a bullet cannot be verified by reading a file
 - [ ] No regressions in existing functionality
 
 ## Verification
-The exact command(s) that prove this spec done, so a pointer-/goal and the loop can check it. Name real commands, not "tests pass". Example: `bash tests/test-meta.sh && bash tests/test-hooks.sh`.
+The exact command(s) that prove this spec done, so a pointer-/goal and the loop can check it. Name real commands, not "tests pass". Name the suites this spec's code touches, plus the changed-only run. Example: `bash tests/test-spec-find.sh && bash tests/run-all.sh --changed origin/master`. Never list a whole-kit suite by hand (`test-meta`, `test-hooks`): the nightly regression runs the full glob, and a hand-listed one costs 10 to 15 minutes per run.
 
 ## Edge Cases
 <!-- scenario-gen: seed from the brief's Survival scenarios block, then extend
