@@ -333,6 +333,9 @@ suite_timeout() {
   fi
 }
 
+# One warning line on a loaded host (warning only; it exits 0 and changes nothing here).
+bash "$SELF_DIR/../lib/host/load-warn.sh" "this test-affected run" || true
+
 P=0 C=0 F=0 T=0 N=0
 while IFS= read -r t; do
   N=$((N + 1))

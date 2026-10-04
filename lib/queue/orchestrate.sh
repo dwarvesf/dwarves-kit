@@ -2445,6 +2445,9 @@ cmd_run() {
   # Age-cap sweep at the start of every REAL run, not just `next`. Skipped under --dry-run
   # (dry=1): a preview must stay non-mutating, it never touches disk beyond reading.
   [ "$dry" = 1 ] || _prune_streams "$dir"
+  # One warning line when the host is loaded (lib/host/load-warn.sh): warning only, never
+  # reroutes or blocks, and a real run only (a dry-run preview stays quiet).
+  [ "$dry" = 1 ] || bash "$LIB_ROOT/host/load-warn.sh" "this mega run" || true
   local board_mode; board_mode=$(_resolve_board_mode "$board_arg")
   case "$board_mode" in roadmap|kanban|both) ;; *) echo "unknown --board mode: '$board_mode' (want roadmap|kanban|both)" >&2; return 64 ;; esac
 

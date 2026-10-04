@@ -302,6 +302,7 @@ recheck_sample   = 5            # [impl] one run in N rechecks every end-verifie
 
 [test]                          # the dev-loop test scope (commands/execute.md, verify.md, ship.md)
 suite            = "full"       # [impl] "full" (default) = run the whole suite in the dev loop. "affected" = run only the tests the change touches (bin/test-affected in this repo); the full suite runs on the schedule.
+load_warn        = 16           # [impl] KIT_LOAD_WARN. 1-minute load average over which bin/test-affected runs and the mega dispatch print one warning line (lib/host/load-warn.sh). Warning only: nothing is rerouted or blocked.
 
 [review]                        # `/kit:review-team` decision gate (commands/review-team.md)
 apply_findings   = true         # [impl] true = `gated_auto` findings the `responding-to-review`
