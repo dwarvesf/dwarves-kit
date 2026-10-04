@@ -46,8 +46,8 @@ One kit verb, `wrap adopt [--apply] <repo>...`, replaces the hand loop that adop
 ## Also open (operator only)
 
 - [RESOLVED: R2 token minted to Toolkit/kit-proof-assets-r2-token, dotfiles #670, Mini upload returned 200] Mini proof uploads.
-- The Mini's live operator `kit.toml` holds four hand-set settings dotfiles lacks (`negative_control`, `[lane.normal]`, `[lane.bug]`, `[test]`); its `chezmoi apply` prompts and would erase them. The `[proof]` block was appended by hand there.
-- dotfiles adoption: the untracked root `AGENTS.md` is a stale Codex copy of `CLAUDE.md`; waits on the operator saying "move it".
+- The Mini's live operator `kit.toml` holds four hand-set settings dotfiles lacks (`negative_control`, `[lane.normal]`, `[lane.bug]`, `[test]`); its `chezmoi apply` prompts and would erase them. [RESOLVED: dotfiles #671 carries those settings; the Mini now applies cleanly with 0 diff lines.]
+- [RESOLVED: stale copy trashed, dotfiles adopted single-source as #672] dotfiles adoption.
 
 ## Start prompt
 
