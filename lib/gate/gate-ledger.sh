@@ -37,6 +37,10 @@
 #                                       dispose EVERY phase of the lane's plan in one call
 #                                       (`ship` may be omitted: the push records it); refuses
 #                                       and writes NOTHING on any invalid disposition
+#   inherit  <rid> full --from <parent-rid>
+#                                       write one override line per spec-level gate (think..test-plan)
+#                                       whose LAST state in the parent ledger is ran; refuses and
+#                                       writes nothing otherwise; never build/review/docs/ship/reflect
 #   check    <lane> <rid> [--kit-lanes]  exit 0 if every required gate has a ran|override entry; else 1
 #                                       (--kit-lanes reads the kit root lane data only)
 #   show     <rid>                     print the run's ledger
@@ -754,6 +758,99 @@ plan_record() {
     printf '%s\n' "$gaps" >&2
     printf 'check: gaps remain for lane %s (listed above)\n' "$lane"
   fi
+  return 0
+}
+
+# inherit: a task branch built under an approved multi-task spec carries that spec's
+# spec-level gates instead of re-running them. The verb writes one `override` line per phase,
+# its reason built from evidence: the parent rid's ledger must hold `ran` as the LAST GATE line
+# for every inherited phase (the ship-gate's own last-state read of validate). It attests only
+# that fact, on this host's ledger: not approval, not task membership. Lead-only, no command
+# calls it. build, review, docs, ship and reflect are never inherited.
+#
+# Every match against an existing reason uses the exact token "inherited from <parent>: " via
+# awk index(), never a regex built from a rid, so `watch-hub` never matches `watch-hub-spec`.
+# A refusal writes nothing. A write that fails partway stops and returns override()'s code;
+# re-running the same call skips the lines already written and finishes.
+# Usage: inherit <rid> full --from <parent-rid>
+INHERITABLE="think design design-critique spec validate design-record test-plan"
+inherit() {
+  if [ "$#" -ne 4 ] || [ "$3" != "--from" ]; then
+    echo "usage: inherit <rid> full --from <parent-rid>" >&2; return 64
+  fi
+  local rid parent lane="$2"
+  rid="$(runid "$1")"; parent="$(runid "$4")"
+  if [ -z "$rid" ] || [ -z "$parent" ]; then
+    echo "inherit: the rid or the parent normalizes to an empty id" >&2; return 64
+  fi
+  [ "$parent" != "$rid" ] || { echo "inherit: parent '$parent' is the child rid itself; name the spec's rid" >&2; return 64; }
+  [ "$lane" = full ] || { echo "inherit: v1 inherits spec-level gates for the full lane only (got '$lane')" >&2; return 64; }
+
+  # Kit-root lane data, the same read as the ship-gate's hard-path floor (check --kit-lanes),
+  # so a project overlay cannot shrink the set below what the floor demands. Fail closed.
+  local req set="" ph
+  req="$(LANES_KIT_ONLY=1 required full 2>/dev/null)" || { echo "inherit: the kit-root lane data for 'full' is unreadable; refusing, fail-closed" >&2; return 1; }
+  for ph in $INHERITABLE; do
+    if printf '%s\n' "$req" | grep -qxF -- "$ph"; then set="$set $ph"; fi
+  done
+  [ -n "$set" ] || { echo "inherit: the kit-root lane 'full' requires none of: $INHERITABLE; refusing, fail-closed" >&2; return 1; }
+
+  local pf cf
+  pf="$(ledger_file "$parent")"; cf="$(ledger_file "$rid")"
+  [ -f "$pf" ] || { echo "inherit: no ledger for parent '$parent' under $RUNS_DIR (run ledgers are host-local; run this on the host that recorded the spec)" >&2; return 1; }
+  local TOK="inherited from $parent: "
+
+  # Judge: one row per phase, "<phase>\t<last state>\t<its ts>\t<its reason>".
+  local judge
+  judge="$(awk -F' [|] ' -v set="$set" '
+    BEGIN { n=split(set, S, " "); for (i=1; i<=n; i++) want[S[i]]=1 }
+    $2=="GATE" && ($3 in want) { st[$3]=$4; ts[$3]=$1; r=$5; for (i=6; i<=NF; i++) r=r " | " $i; rs[$3]=r }
+    END { for (i=1; i<=n; i++) { p=S[i]; printf "%s\t%s\t%s\t%s\n", p, ((p in st) ? st[p] : "none"), ts[p], rs[p] } }' "$pf")"
+  local fails="" st ts r g nl=$'\n'
+  while IFS=$'\t' read -r ph st ts r; do
+    case "$st" in
+      ran) printf '%s' "$ts" | grep -qE '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$' \
+             || fails="$fails$nl  $ph: last state ran, but its timestamp is malformed" ;;
+      none) fails="$fails$nl  $ph: no GATE line in the parent" ;;
+      override)
+        case "$r" in
+          "inherited from "*) g="${r#inherited from }"; g="$(runid "${g%%: *}")"
+                              fails="$fails$nl  $ph: the parent inherited it from '$g'; inherit from '$g' directly" ;;
+          *) fails="$fails$nl  $ph: last state override, not ran" ;;
+        esac ;;
+      *) fails="$fails$nl  $ph: last state $(runid "$st"), not ran" ;;
+    esac
+  done <<< "$judge"
+  if [ -n "$fails" ]; then
+    echo "inherit: parent '$parent' does not hold last state ran for every spec-level gate; nothing written:$fails" >&2
+    return 1
+  fi
+
+  # Conflict: an inherited line for one of these phases from a DIFFERENT parent (a reused slug).
+  local conflict=""
+  if [ -f "$cf" ]; then
+    conflict="$(awk -F' [|] ' -v set="$set" -v tok="$TOK" '
+      BEGIN { n=split(set, S, " "); for (i=1; i<=n; i++) want[S[i]]=1 }
+      $2=="GATE" && ($3 in want) && $4=="override" {
+        r=$5; for (i=6; i<=NF; i++) r=r " | " $i
+        if (index(r, "inherited from ")==1 && index(r, tok)!=1) { print $3; exit }
+      }' "$cf")"
+  fi
+  if [ -n "$conflict" ]; then
+    echo "inherit: child '$rid' already inherited $conflict from another parent (a reused slug?); refusing to mix parents, nothing written" >&2
+    return 65
+  fi
+
+  local rc
+  while IFS=$'\t' read -r ph st ts r; do
+    if [ -f "$cf" ] && awk -F' [|] ' -v p="$ph" -v tok="$TOK" '
+         $2=="GATE" && $3==p && $4=="override" { r=$5; for (i=6; i<=NF; i++) r=r " | " $i; if (index(r, tok)==1) f=1 }
+         END { exit !f }' "$cf"; then
+      printf '%s already inherited from %s\n' "$ph" "$parent"; continue
+    fi
+    override "$rid" "$ph" "${TOK}$ph ran there at $ts" || { rc=$?; echo "inherit: override() refused the $ph write (exit $rc); earlier lines stay, re-run the same call to finish" >&2; return "$rc"; }
+    printf '%s inherited from %s\n' "$ph" "$parent"
+  done <<< "$judge"
   return 0
 }
 
@@ -1512,6 +1609,7 @@ case "$cmd" in
   config)   config_stamp "$@" ;;
   override) override "$@" ;;
   plan-record) plan_record "$@" ;;
+  inherit)  inherit "$@" ;;
   check)    check "$@" ;;
   show)     show "$@" ;;
   plan)     plan "$@" ;;
@@ -1521,5 +1619,5 @@ case "$cmd" in
   history) history "$@" ;;
   report)  report "$@" ;;
   validate-round) validate_round "$@" ;;
-  *) echo "usage: gate-ledger.sh {required|start|record|action|tokens|debt|debt-response|outcome|outcome-read|mutation|config|override|plan-record|check|show|plan|progress|rid|descent|history|report|validate-round} ..." >&2; exit 64 ;;
+  *) echo "usage: gate-ledger.sh {required|start|record|action|tokens|debt|debt-response|outcome|outcome-read|mutation|config|override|plan-record|inherit|check|show|plan|progress|rid|descent|history|report|validate-round} ..." >&2; exit 64 ;;
 esac
