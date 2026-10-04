@@ -156,6 +156,8 @@ captured output goes in the final response, with the PR link, and in the PR body
 "tests pass" has shown nothing. With `[proof] visual = true`, a UI change also owes an
 image through `bin/proof-asset put`; `proof-gate.sh contract` names what each task type owes.
 
+**Run tests the fast way.** Iterate on one suite (`bash tests/test-<name>.sh`). Check regressions once, with `bash tests/run-all.sh --changed --time`: it runs only the suites the diff against `origin/master` touches, in parallel. Never loop over suites one by one, and never clone master to compare a baseline. The full `--all` glob takes about 25 minutes, and a nightly job runs it on the operator's host, so a session or worker never runs it. A spec line such as "no regression in every `tests/test-wrap*.sh`" means `--changed`, which selects those suites when the diff touches their modules.
+
 **Deployable-done (ADR-0028, reusing ADR-0025).** DEPLOYABLE work is anything that runs
 somewhere, a service, a daemon, a feature behind a flag, or any change `lib/gate/proof-ledger.sh
 classify` puts in its `stateful` class (deploy / rollout / production / migration / schema /
