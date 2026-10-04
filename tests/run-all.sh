@@ -18,6 +18,10 @@
 #        --time appends each suite's elapsed seconds to its report line and prints a
 #        slowest-10 block after the report. It may appear before or after the mode
 #        argument, and combines with --all, --only and --changed.
+#        --times <verb> reads the suite timing history instead of running anything: p95 (per-suite
+#        p95), expected (wall of a full run), tune [--write] (bin/test-affected.timeouts from the
+#        p95s, D4's rule). Every run appends one line per suite to that history, see
+#        tests/lib/suite-times.sh. A write failure there never changes this script's exit code.
 # Env:   KIT_RUN_ALL=1             allow --all outside CI (the nightly job sets it)
 #        RUN_ALL_JOBS=<n>         parallel suites (default: auto on macOS, 1 elsewhere)
 #        RUN_ALL_TIMEOUT_SECS=<n>  per-suite ceiling (default: 300; bin/test-affected.timeouts lists the
@@ -27,6 +31,11 @@
 set -uo pipefail
 KIT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$KIT_DIR" || exit 1
+
+# History verbs read a log and run no suite: no refusal, no lock.
+if [ "${1:-}" = "--times" ]; then
+  shift; exec bash "$KIT_DIR/tests/lib/suite-times.sh" "${@:-p95}"
+fi
 
 # --all is the ~25 minute full glob, and it holds the per-host test lock below for all of it,
 # so one session's --all queued every other session's run behind it. A README line saying
@@ -251,6 +260,15 @@ n_serial=$(wc -l <"$seriallist" | tr -d ' ')
 
 # --- phase 2: run them, JOBS at a time ---------------------------------------
 echo "run-all: $count suites, $JOBS at a time${n_serial:+, $n_serial serial}"
+# --all outside CI is the expensive run; say how long the history expects it to take.
+# Silent without a history (or without the helper), never a failure.
+if [ "$MODE" = "--all" ] && [ -z "${CI:-}" ] && [ "${KIT_RUN_ALL:-}" = "1" ] && [ -f "$KIT_DIR/tests/lib/suite-times.sh" ]; then
+  sed 's|.*/||; s|\.sh$||' "$runlist" | bash "$KIT_DIR/tests/lib/suite-times.sh" expected "$JOBS" 2>/dev/null || true
+fi
+_load_start="$(sysctl -n vm.loadavg 2>/dev/null | tr -d '{}' | awk '{print $1}')"
+[ -n "$_load_start" ] || _load_start="$(awk '{print $1}' /proc/loadavg 2>/dev/null)"
+[ -n "$_load_start" ] || _load_start=0
+: >"$OUTDIR/times.tsv"
 # Longest-first. With a few heavy suites among many trivial ones, the wall clock
 # is decided by when the heaviest one STARTS: pick it up last and every worker
 # waits on it alone at the end. Real per-suite cost is not known up front, so
@@ -280,6 +298,9 @@ while IFS= read -r t; do
   name="$(basename "$t" .sh)"
   log="$OUTDIR/$name.log"
   rc="$(cat "$OUTDIR/$name.status" 2>/dev/null || echo "missing")"
+  # One history row per suite (suite, seconds, exit); suite-times.sh adds the time, sha and load.
+  _trc="$rc"; case "$rc" in ok) _trc=0 ;; missing) _trc=255 ;; esac
+  printf '%s\t%s\t%s\n' "$name" "$(cat "$OUTDIR/$name.time" 2>/dev/null || echo 0)" "$_trc" >>"$OUTDIR/times.tsv" 2>/dev/null
   secs=""
   [ "$TIME" = 1 ] && secs=" ($(cat "$OUTDIR/$name.time" 2>/dev/null || echo 0)s)"
   printf '%-46s ' "$name"
@@ -318,6 +339,12 @@ while IFS= read -r t; do
       ;;
   esac
 done <"$runlist"
+
+# Append this run to the per-host timing history. Best effort: any failure is swallowed so the
+# exit code below stays the suites' verdict.
+if [ -f "$KIT_DIR/tests/lib/suite-times.sh" ]; then
+  bash "$KIT_DIR/tests/lib/suite-times.sh" append "$OUTDIR/times.tsv" "$(git rev-parse --short HEAD 2>/dev/null || echo unknown)" "$_load_start" >/dev/null 2>&1 || true
+fi
 
 # The ten worst offenders, so a slow run says where the time went without reading the
 # whole report. Ten, not all of them: the tail is a long list of sub-second suites.

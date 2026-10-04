@@ -17,7 +17,7 @@
 test-lanes-data 692
 test-meta-docs-registry 682
 test-hooks 660
-test-wrap-land 600
+test-wrap-land 600  # hand-set: a cold run passed 152 s on a loaded host; re-measure with LAND_CACHE=0 before tightening
 test-orchestrate-orca 572
 test-config-seams 398
 test-wrap-adopt 382
