@@ -285,8 +285,8 @@ fi
 # and byte-diff via the registry's own check verb, so the gate and the pin can
 # never disagree about what fresh means.
 #
-# The regen costs ~20s, so it runs only on the shape of that incident: an input
-# moved and docs/FEATURES.md did NOT. A push that carries the regenerated file
+# The regen costs ~4s (one awk pass over specs and tests), so it runs only on the
+# shape of that incident: an input moved and docs/FEATURES.md did NOT. A push that carries the regenerated file
 # skips it; whether that regeneration was CORRECT is what tests/test-meta.sh
 # pins in CI. Escape hatch: DWARVES_KIT_SKIP_REGISTRY_FRESHNESS=1.
 if [ -f "$ROOT/lib/registry/feature-registry.sh" ] && [ -f "$ROOT/docs/FEATURES.md" ] \

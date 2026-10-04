@@ -306,10 +306,11 @@ echo "=== Feature-registry freshness pin (SPEC-219) ==="
 # The regenerate-and-diff is the registry's own `check` verb, not a hand-rolled
 # copy of it: hooks/ship-gate.sh refuses a push on the same verb, and two
 # definitions of "fresh" would eventually disagree.
-bash "$KIT_DIR/lib/registry/feature-registry.sh" check "$KIT_DIR/docs/FEATURES.md" >/dev/null 2>&1
-assert_true "docs/FEATURES.md is fresh (check verb, SPEC-219)" $?
+# `check` keeps the bytes of its own generator run (FEATURE_REGISTRY_KEEP), which is the
+# first run of the determinism pin below: two runs total, not three.
 REG_TMP=$(mktemp)
-bash "$KIT_DIR/lib/registry/feature-registry.sh" generate "$REG_TMP" 2>/dev/null
+FEATURE_REGISTRY_KEEP="$REG_TMP" bash "$KIT_DIR/lib/registry/feature-registry.sh" check "$KIT_DIR/docs/FEATURES.md" >/dev/null 2>&1
+assert_true "docs/FEATURES.md is fresh (check verb, SPEC-219)" $?
 # AC-1 determinism pin (review finding): a second run must be byte-identical, so a
 # future edit that reintroduces nondeterminism (locale, glob order, a timestamp)
 # fails HERE even when the committed file was regenerated in the same PR.
