@@ -22,7 +22,7 @@ No assertion was edited, deleted or weakened. The codex change wraps the existin
 ## Decisions the spec did not make
 
 - The five-suite list in the goal was stale; four of the five were fixed by #875, #886, #887 and #901 before this branch. Each got one recorded run and no change, per the goal.
-- The branch base is master 144c2279. Master moved to 408ddacd (a backlog-tagging commit) while this ran; it touches no `AGENTS.md` or `lib/adopt/` file, so the regenerated list stays complete on rebase.
+- The branch was written on master 144c2279 and rebased onto a7301653. The rebase needed two follow-ups: the `docs/FEATURES.md` citation counts, and one more known-hash regeneration (#899 changed `AGENTS.md`). A parallel merge (#907) also took spec number 387, so this spec is 388.
 - Measured both shapes on purpose: a `git archive` export (the goal's literal form) and a full-history `git clone` (the shape CI checks out with `fetch-depth: 0`). The export shape is red for seven suites by construction; the clone shape is the honest signal.
 
 ## Decided by the lead
