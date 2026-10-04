@@ -57,6 +57,8 @@ source "$LIB_ROOT/ledger/ledger.sh" || { echo "FATAL: lib/ledger/ledger.sh missi
 # dependency on kit-config.sh is explicit, not incidental to another lib's internals.
 # shellcheck source=lib/config/kit-config.sh
 source "$LIB_ROOT/config/kit-config.sh" || { echo "FATAL: lib/config/kit-config.sh missing or unreadable" >&2; exit 1; }
+# shellcheck source=lib/spec/spec-find.sh
+source "$LIB_ROOT/spec/spec-find.sh" || { echo "FATAL: lib/spec/spec-find.sh missing or unreadable" >&2; exit 1; }
 kit_migrate_log_dir || true
 LOG_DIR="$(kit_resolve_log_dir)" || exit 1
 OVERRIDE_LOG="$LOG_DIR/proof-overrides.log"
@@ -358,7 +360,7 @@ _negctl_required() {
     full) kit_config_tracked_clean "$root/.kit.toml" && mode=full ;;
   esac
   [ "$mode" = full ] || { echo yes; return 0; }
-  [ -z "$slug" ] || spec="$(ls "$root"/docs/specs/SPEC-*-"$slug".md 2>/dev/null | head -1)"
+  [ -z "$slug" ] || spec="$(spec_for_slug "$root" "$slug")"
   if [ -n "${spec:-}" ]; then
     lane="$(grep -m1 -iE '^(\*\*)?Lane(\*\*)?:' "$spec" 2>/dev/null | sed -E 's/^(\*\*)?[Ll]ane(\*\*)?:(\*\*)?[[:space:]]*//; s/[[:space:]].*$//')"
     [ "$lane" = full ] && { echo yes; return 0; }
