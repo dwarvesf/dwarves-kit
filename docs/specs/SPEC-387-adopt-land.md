@@ -4,7 +4,7 @@ Status: DRAFT
 Lane: full (kit machinery: `lib/wrap/`, the `wrap` command contract; the verb pushes and squash-merges onto other repos' default branches)
 Depth: standard (every fact this spec rests on was sampled live; see ## Grounding)
 Type: spec-feature
-File: `docs/specs/SPEC-387-wrap-adopt.md`
+File: `docs/specs/SPEC-387-adopt-land.md`
 References: the operator's hand loop `adopt-one.sh` (session scratch, quoted in ## Problem: the exact sequence this verb replaces); `lib/wrap/wrap-start.sh` (`cmd_start`, its refusals, the worktree path on stdout); `lib/wrap/wrap-land.sh` (`cmd_land`, `_land_tidy`, the `PULL BLOCKED` lines, `_pr_template`); `lib/wrap/wrap-scan.sh` (`_add_under`, the multi-repo arg shape); `lib/adopt.sh` (`--check`, `--dry-run`, the files it writes); `lib/gate/proof-ledger.sh` (`override`, `check`'s override path and its source-remainder rule); `hooks/ship-gate.sh` (line 151: `SLUG="${BRANCH#*/}"`, the slug an override must match)
 
 ## Problem
