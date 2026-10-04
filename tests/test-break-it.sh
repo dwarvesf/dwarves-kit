@@ -31,7 +31,7 @@ KIT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 A="$KIT_DIR/agents/break-it.md"
 BAT="$KIT_DIR/commands/battery.md"
 WF="$KIT_DIR/docs/WORKFLOW.md"
-META="$KIT_DIR/tests/test-meta.sh"
+META="$KIT_DIR/tests/test-meta-review-verifiers.sh"
 FIX="$KIT_DIR/tests/fixtures/break-it"
 PASS=0; FAIL=0; TOTAL=0
 RED='\033[0;31m'; GREEN='\033[0;32m'; NC='\033[0m'

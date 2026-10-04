@@ -57,11 +57,12 @@ TIMEOUT_SECS="${RUN_ALL_TIMEOUT_SECS:-300}"
 # Heavy suites that legitimately outrun the default under a parallel run get their own ceiling here,
 # one case arm each, so the global ceiling stays tight for the other suites. test-meta takes ~130s
 # alone and passes 900 assertions, but crosses 300s when the whole run does four suites at a time.
+# The test-meta-* arm covers the per-area suites the monolith split into.
 # An explicit RUN_ALL_TIMEOUT_SECS wins for every suite (it is the operator's override).
 suite_timeout() {
   if [ -n "${RUN_ALL_TIMEOUT_SECS:-}" ]; then echo "$RUN_ALL_TIMEOUT_SECS"; return; fi
   case "$1" in
-    test-meta) echo 900 ;;
+    test-meta*) echo 900 ;;
     *) echo "$TIMEOUT_SECS" ;;
   esac
 }
@@ -181,6 +182,20 @@ if [ "$MODE" = "--changed" ]; then
     nchanged=$(sed -n 's/^test-affected: \([0-9]*\) changed files.*/\1/p' "$listing")
     grep -l '^# always:' tests/test-*.sh >>"$PICKED" 2>/dev/null
     sort -u -o "$PICKED" "$PICKED"
+    # A picked `# runner:` file only relays sibling suites; the runner itself is
+    # skipped below, so a pick naming it (bin/test-affected's meta_input picks
+    # tests/test-meta.sh) would silently drop the whole group. Expand it into the
+    # suites its `# runner-suites:` line names (sibling glob when it has none).
+    # Done here, before the glob loop, because the runners' siblings sort before
+    # the runner in glob order ('-' < '.'), too late for in-loop expansion.
+    while IFS= read -r t; do
+      [ -f "$t" ] && grep -q '^# runner:' "$t" || continue
+      _sibs="$(sed -n 's/^# runner-suites: //p' "$t" | tr ' ' '\n' \
+        | sed -n "s/^\\(..*\\)$/tests\\/$(basename "$t" .sh)-\\1.sh/p")"
+      if [ -n "$_sibs" ]; then printf '%s\n' "$_sibs" >>"$PICKED"
+      else printf '%s\n' "${t%.sh}"-*.sh >>"$PICKED"; fi
+      sort -u -o "$PICKED" "$PICKED"
+    done <"$PICKED"
     echo "run-all: --changed against $(git rev-parse --short "$base"): ${nchanged:-0} changed files -> $(wc -l <"$PICKED" | tr -d ' ') suites ($named named, the rest always-on)"
     sed 's/^/  /' "$PICKED"
     if [ "$named" -eq 0 ]; then
