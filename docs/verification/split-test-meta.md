@@ -91,3 +91,19 @@ Verdict: restored byte-identical file (git diff clean), suite green, runner gree
 Command: `bin/test-affected --base origin/master --list | grep test-meta`
 Exit: 0
 Verdict: the branch's own diff already demonstrates the pick path: meta_input changes (docs/*.md) pick `tests/test-meta.sh` (the runner), and run-all's runner-suites expansion maps it to the eight area suites; area suites are also picked directly via `tests/lib/meta-stub.sh` references and self-matches. No suite is scheduled twice (the `# runner:` file is skipped in the glob loop).
+
+## Recorded run (runner exit-code fix, lead)
+
+An independent verifier found the runner ignored a non-zero suite exit: a suite that died before its Results block printed no FAIL line, so the runner reported green. Fixed in `tests/test-meta.sh` (exit code now fails the runner and names the suite).
+
+Command: `exit 3` inserted before the KIT_DIR line of `tests/test-meta-goal-ledger.sh` (saved copy kept), then `bash tests/test-meta.sh`
+Exit: 1
+Verdict: NEGATIVE CONTROL red as expected: `SUITE EXIT 3: test-meta-goal-ledger.sh`, `Passed: 862 / 862`.
+
+Command: `command cp -f <saved> tests/test-meta-goal-ledger.sh; bash tests/test-meta.sh`
+Exit: 0
+Verdict: PASS, tree clean, `Passed: 902 / 902`.
+
+Command: `bash tests/test-break-it.sh`
+Exit: 0
+Verdict: PASS, 68/68 (T1-AC3 label now names tests/test-meta-review-verifiers.sh).
