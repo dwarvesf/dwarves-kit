@@ -106,3 +106,17 @@ One critical (R3f printing `resume:` over a leftover that failed R6b) and three 
 - `GH_STUB_MERGED_HEAD_RC` models a failed `--head` merged read (empty stdout, non-zero exit), beside `GH_STUB_MERGED_ALL_RC`.
 - `bin/wrap` gains the `adopt` usage line too: the stable entrypoint's verb list would otherwise miss the verb.
 - Case 5's collapse assertion greps `?? .claude/ ` with a trailing space: `?? .claude/` alone is a substring of `?? .claude/settings.json`.
+
+## T1b build
+
+- The spec's `KIT_HOOK_RE` constant is named `ADOPT_HOOK_RE` in code: `test-config-registry`'s drift lint treats every `$KIT_*` expansion in `lib/` as an unregistered env surface (`ORPHAN: KIT_HOOK_RE`), and this is a compile-time constant, not an env knob.
+- `WRAP_ADOPT_SH` swaps the file writer only when `WRAP_ADOPT_TEST=1` AND the variable is non-empty; an unflagged inherited value can never replace the writer that runs before the override and merge.
+- R6 narrows `.claude/output-styles/` to the one file the staged settings' `outputStyle` names (read from the index blob, never the worktree file); any other style file is a miss.
+- The R6a norm-compare dedups each side's entries (`sort | unique`, the `unique_by(tostring)` shape the guidance asked for) and drops base entries whose command contains `dwarves-kit/hooks/` (adopt's own strip rule), so a stale kit hook already on base does not refuse. Every jq read fails closed: an unreadable staged or base blob is a refusal, not a pass.
+- The `tee -i` capture sets `land_rc=${PIPESTATUS[0]}` unconditionally after the pipeline; the `||` form misses exit 130/143 because `tee -i` swallows the signal and exits 0.
+- R8 counts a merge only on land's exact `merged #<n> (<sha>): tree verified` line; on `adopted` any `FAILED ` line land printed (a `_land_tidy` exit-2 arm) is appended to the row per the fold guidance.
+- R6b also refuses a commit hook that leaves unstaged output: a non-empty `status --porcelain` after the commit names its first path the same `the commit differs from the guarded set` way.
+- R3f's leftover judgment and R6b share `_adopt_commit_guard <repo> <tip> <base>` (R6 path list plus R6a on `merge-base..tip`); a leftover whose committed diff misses reads `read <wt>` and never prints `resume:`.
+- `ADOPT_PR` is the first `#<n>` in the captured land log (`opened PR #7`, `adopted PR #7`, or a `MERGE FAILED #7`), so the `result:` column names the PR on every outcome that got far enough to have one.
+- The override runs `cd "$wt" && proof-ledger.sh override kit-adopt` so the ledger keys the target repo, not the caller's cwd; a failed log stops before land with a `resume:` row.
+- Test helper `adopt_apply` defaults every `GH_STUB_*` via `${VAR:-...}` so a case can override `GH_STUB_LAND_REMOTE` with a throwaway bare: the stub pushes `chore/kit-adopt:refs/heads/main` on every `pr merge` call, even a failed one, and a failed-merge case that must resume later needs the real origin's main untouched.

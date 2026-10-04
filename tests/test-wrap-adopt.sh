@@ -38,6 +38,31 @@ adopt_leftover() {
   printf '%s\n' "$c"
 }
 
+# adopt_apply <clone> <bare> [--body-file F] -- `wrap adopt --apply` with the gh
+# stub wired for the create/merge/verify flow: no open PR for the head, #7 as
+# the created number, and `pr merge` pushing the local chore/kit-adopt to
+# GH_STUB_LAND_REMOTE's main the way a real squash would. Each stub env can be
+# overridden by exporting it before the call (a throwaway LAND_REMOTE keeps a
+# failed-merge fixture's real origin clean).
+adopt_apply() {
+  local c="$1" b="$2"; shift 2
+  GH_STUB_OPEN_HEAD_chore_kit_adopt="${GH_STUB_OPEN_HEAD_chore_kit_adopt:-[]}" \
+  GH_STUB_CREATE_NUM="${GH_STUB_CREATE_NUM:-7}" \
+  GH_STUB_LAND_REPO="${GH_STUB_LAND_REPO:-$c/.claude/worktrees/kit-adopt}" \
+  GH_STUB_LAND_REMOTE="${GH_STUB_LAND_REMOTE:-$b}" \
+  GH_STUB_LAND_BRANCH="${GH_STUB_LAND_BRANCH:-chore/kit-adopt}" \
+  GH_STUB_LAND_DEF="${GH_STUB_LAND_DEF:-main}" \
+  "$WRAP" adopt --apply "$@" "$c" 2>&1
+}
+
+# adopt_stub <file> <body> -- a WRAP_ADOPT_SH driver: runs the real adopt.sh,
+# then <body>, inside the worktree named by $1.
+adopt_stub() {
+  printf '#!/usr/bin/env bash\nbash "%s/lib/adopt.sh" "$1" || exit $?\n%s\n' \
+    "$KIT_DIR" "$2" > "$1"
+  chmod +x "$1"
+}
+
 # ===========================================================================
 echo "=== adopt: a clean unadopted repo dry-runs and writes nothing (1) ==="
 # ===========================================================================
@@ -188,6 +213,98 @@ chk "16: both rows refuse" \
 chk "16: no worktree in a" "$([ ! -e "$C16A/.claude/worktrees/kit-adopt" ]; echo $?)"
 chk "16: no worktree in b" "$([ ! -e "$C16B/.claude/worktrees/kit-adopt" ]; echo $?)"
 
+echo "=== adopt: --apply lands a clean adoption end to end (17, 18) ==="
+C17="$(adopt_clone c17)"
+: > "$GH_STUB_CALLS"
+out="$(adopt_apply "$C17" "$TMPD/abare-c17")"; rc=$?
+chk "17: exits 0" "$rc"
+chk_has "17: streams opened PR" "$out" "opened PR #7"
+chk_has "17: streams the verified merge" "$out" "merged #7"
+chk_has "17: result row names the PR" "$out" "result: #7 adopted"
+chk "17: worktree gone" "$([ ! -e "$C17/.claude/worktrees/kit-adopt" ]; echo $?)"
+chk "17: branch gone locally" "$(git -C "$C17" show-ref --verify --quiet refs/heads/chore/kit-adopt && echo 1 || echo 0)"
+chk "17: branch gone on origin" \
+  "$(git -C "$C17" ls-remote --exit-code --heads origin chore/kit-adopt >/dev/null 2>&1; [ $? -eq 2 ]; echo $?)"
+chk "17: HEAD equals origin/main" \
+  "$([ "$(git -C "$C17" rev-parse HEAD)" = "$(git -C "$C17" rev-parse origin/main)" ]; echo $?)"
+bash "$KIT_DIR/lib/adopt.sh" --check "$C17" >/dev/null 2>&1
+chk "17: adopt --check exit 0" "$?"
+chk "17: merged commit subject" \
+  "$([ "$(git -C "$C17" log -1 --format=%s origin/main)" = "chore: adopt the dwarves-kit operate-contract" ]; echo $?)"
+
+OVLOG="$KIT_LEDGER_DIR/proof-overrides.log"
+C17P="$(cd "$C17" && pwd -P)"
+chk "18: exactly one override line" "$([ "$(wc -l < "$OVLOG" | tr -d ' ')" = 1 ]; echo $?)"
+chk_has "18: names this repo" "$(cat "$OVLOG")" "$C17P"
+chk_has "18: the kit-adopt slug" "$(cat "$OVLOG")" "kit-adopt"
+chk_has "18: OVERRIDE kind" "$(cat "$OVLOG")" "OVERRIDE"
+chk_has "18: the fixed reason" "$(cat "$OVLOG")" "adoption scaffold only"
+
+echo "=== adopt: a driver write outside ADOPT_PATHS fails before commit (19) ==="
+adopt_stub "$TMPD/adopt-stub19.sh" 'mkdir -p "$1/src"; echo x > "$1/src/x.sh"'
+C19="$(adopt_clone c19)"
+: > "$GH_STUB_CALLS"
+out="$(WRAP_ADOPT_TEST=1 WRAP_ADOPT_SH="$TMPD/adopt-stub19.sh" \
+  adopt_apply "$C19" "$TMPD/abare-c19")"; rc=$?
+chk "19: exits 1" "$([ "$rc" -eq 1 ]; echo $?)"
+chk_has "19: names the path" "$out" "failed: adoption wrote src/x.sh, outside the scaffold set"
+chk_has "19: names the worktree" "$out" "worktree left at"
+chk "19: worktree on disk" "$([ -e "$C19/.claude/worktrees/kit-adopt" ]; echo $?)"
+chk "19: no commit on the branch" \
+  "$([ "$(git -C "$C19" rev-list --count origin/main..chore/kit-adopt)" = 0 ]; echo $?)"
+chk "19: no new override line" "$([ "$(wc -l < "$OVLOG" | tr -d ' ')" = 1 ]; echo $?)"
+chk "19: gh log has no create" "$([ -z "$(grep 'pr create' "$GH_STUB_CALLS")" ]; echo $?)"
+
+echo "=== adopt: a driver that writes nothing reports no change (20) ==="
+printf '#!/usr/bin/env bash\nexit 0\n' > "$TMPD/adopt-stub20.sh"; chmod +x "$TMPD/adopt-stub20.sh"
+C20="$(adopt_clone c20)"
+out="$(WRAP_ADOPT_TEST=1 WRAP_ADOPT_SH="$TMPD/adopt-stub20.sh" \
+  adopt_apply "$C20" "$TMPD/abare-c20")"; rc=$?
+chk "20: exits 1" "$([ "$rc" -eq 1 ]; echo $?)"
+chk_has "20: no change row" "$out" "no change: origin/main already carries the adoption; worktree left at"
+chk "20: no commit on the branch" \
+  "$([ "$(git -C "$C20" rev-list --count origin/main..chore/kit-adopt)" = 0 ]; echo $?)"
+chk "20: no new override line" "$([ "$(wc -l < "$OVLOG" | tr -d ' ')" = 1 ]; echo $?)"
+
+echo "=== adopt: a merge that cannot pull reports merged-not-adopted (21) ==="
+C21="$(adopt_clone c21)"
+echo local > "$C21/local.txt"; git -C "$C21" add -A; git -C "$C21" commit -qm local
+out="$(adopt_apply "$C21" "$TMPD/abare-c21")"; rc=$?
+chk "21: exits 1" "$([ "$rc" -eq 1 ]; echo $?)"
+chk_has "21: PULL BLOCKED streamed" "$out" "PULL BLOCKED"
+chk_has "21: the row names the block" \
+  "$out" "merged, not adopted on the main checkout: PULL BLOCKED: pull --ff-only refused"
+chk "21: origin carries the merge" \
+  "$([ "$(git -C "$C21" log -1 --format=%s origin/main)" = "chore: adopt the dwarves-kit operate-contract" ]; echo $?)"
+
+echo "=== adopt: drift guard, widest write set and single-source (22) ==="
+C22A="$(adopt_clone c22a)"
+mkdir -p "$C22A/.claude"
+printf '%s\n' \
+  '{"hooks":{"PreToolUse":[{"hooks":[{"type":"command","command":"bash /opt/mine/hook.sh"},' \
+  '{"type":"command","command":"bash $HOME/.claude/dwarves-kit/hooks/old-hook.sh"}]}]},"model":"opus"}' \
+  > "$C22A/.claude/settings.json"
+printf '[modules]\nboard = true\nsession = true\nadvisor = true\ncosmetic = true\n\n[output]\nstyle = "adhd"\n' \
+  > "$C22A/.kit.toml"
+git -C "$C22A" add -A; git -C "$C22A" commit -qm cfg; git -C "$C22A" push -q origin main
+out="$(adopt_apply "$C22A" "$TMPD/abare-c22a")"; rc=$?
+chk "22a: exits 0" "$rc"
+chk_has "22a: adopted" "$out" "result: #7 adopted"
+chk "22a: style file landed" \
+  "$(git -C "$C22A" cat-file -e origin/main:.claude/output-styles/adhd.md 2>/dev/null; echo $?)"
+chk "22a: user hook kept" \
+  "$(git -C "$C22A" show origin/main:.claude/settings.json | grep -q '/opt/mine/hook.sh'; echo $?)"
+
+C22B="$(adopt_clone c22b)"
+echo claude > "$C22B/CLAUDE.md"
+git -C "$C22B" add -A; git -C "$C22B" commit -qm claude; git -C "$C22B" push -q origin main
+op22="$TMPD/op-singlesrc-22"; mkdir -p "$op22"; printf '[adopt]\nsingle_source = true\n' > "$op22/kit.toml"
+out="$(KIT_CONFIG_OPERATOR="$op22" adopt_apply "$C22B" "$TMPD/abare-c22b")"; rc=$?
+chk "22b: exits 0" "$rc"
+chk_has "22b: adopted" "$out" "result: #7 adopted"
+chk "22b: both source files landed" \
+  "$(git -C "$C22B" cat-file -e origin/main:AGENTS.md 2>/dev/null && git -C "$C22B" cat-file -e origin/main:CLAUDE.md 2>/dev/null; echo $?)"
+
 echo "=== adopt: usage errors exit 64 (24) ==="
 C24="$(adopt_clone c24)"
 echo body > "$TMPD/adopt-body-24.md"
@@ -207,6 +324,89 @@ out="$("$WRAP" adopt " --apply" "$C24" 2>&1)"; rc=$?
 chk "24: a packed repo argument exits 64" "$([ "$rc" -eq 64 ]; echo $?)"
 chk "24: nothing written" \
   "$([ ! -e "$C24/.claude/worktrees/kit-adopt" ] && ! git -C "$C24" show-ref --verify --quiet refs/heads/chore/kit-adopt; echo $?)"
+
+echo "=== adopt: a staged non-kit hook entry refuses the settings diff (25) ==="
+adopt_stub "$TMPD/adopt-stub25a.sh" \
+  'jq ".hooks.PreToolUse = ((.hooks.PreToolUse // []) + [{\"matcher\":\"Bash\",\"hooks\":[{\"type\":\"command\",\"command\":\"bash /tmp/evil.sh\"}]}])" "$1/.claude/settings.json" > "$1/.s.json" && mv "$1/.s.json" "$1/.claude/settings.json"'
+adopt_stub "$TMPD/adopt-stub25b.sh" \
+  'jq ".hooks.PreToolUse = ((.hooks.PreToolUse // []) + [{\"matcher\":\"Bash\",\"hooks\":[{\"type\":\"command\",\"command\":\"bash $HOME/.claude/dwarves-kit/hooks/x.sh\nbash /tmp/evil.sh\"}]}])" "$1/.claude/settings.json" > "$1/.s.json" && mv "$1/.s.json" "$1/.claude/settings.json"'
+adopt_stub "$TMPD/adopt-stub25c.sh" \
+  'jq ".hooks.PreToolUse = ((.hooks.PreToolUse // []) + [{\"matcher\":\"Bash\",\"hooks\":[{\"type\":\"command\",\"command\":\"bash $HOME/.claude/dwarves-kit/hooks/x.sh\",\"env\":\"x\"}]}])" "$1/.claude/settings.json" > "$1/.s.json" && mv "$1/.s.json" "$1/.claude/settings.json"'
+for v in a b c; do
+  C25="$(adopt_clone "c25$v")"
+  : > "$GH_STUB_CALLS"
+  out="$(WRAP_ADOPT_TEST=1 WRAP_ADOPT_SH="$TMPD/adopt-stub25$v.sh" \
+    adopt_apply "$C25" "$TMPD/abare-c25$v")"; rc=$?
+  chk "25$v: exits 1" "$([ "$rc" -eq 1 ]; echo $?)"
+  chk_has "25$v: names event, matcher and index" \
+    "$out" "failed: adoption changed .claude/settings.json beyond kit hooks: PreToolUse Bash #"
+  chk_no "25$v: never the command text" "$out" "evil.sh"
+  chk "25$v: no commit on the branch" \
+    "$([ "$(git -C "$C25" rev-list --count origin/main..chore/kit-adopt)" = 0 ]; echo $?)"
+  chk "25$v: worktree left" "$([ -e "$C25/.claude/worktrees/kit-adopt" ]; echo $?)"
+  chk "25$v: gh log has no create" "$([ -z "$(grep 'pr create' "$GH_STUB_CALLS")" ]; echo $?)"
+done
+chk "25: no new override line" "$([ "$(wc -l < "$OVLOG" | tr -d ' ')" = 4 ]; echo $?)"
+
+echo "=== adopt: a staged non-hook settings key refuses (26) ==="
+adopt_stub "$TMPD/adopt-stub26.sh" \
+  'jq ".permissions.allow = [\"Bash(x)\"]" "$1/.claude/settings.json" > "$1/.s.json" && mv "$1/.s.json" "$1/.claude/settings.json"'
+C26="$(adopt_clone c26)"
+out="$(WRAP_ADOPT_TEST=1 WRAP_ADOPT_SH="$TMPD/adopt-stub26.sh" \
+  adopt_apply "$C26" "$TMPD/abare-c26")"; rc=$?
+chk "26: exits 1" "$([ "$rc" -eq 1 ]; echo $?)"
+chk_has "26: names the key" "$out" "beyond kit hooks: key permissions"
+chk "26: no commit on the branch" \
+  "$([ "$(git -C "$C26" rev-list --count origin/main..chore/kit-adopt)" = 0 ]; echo $?)"
+chk "26: no new override line" "$([ "$(wc -l < "$OVLOG" | tr -d ' ')" = 4 ]; echo $?)"
+
+echo "=== adopt: a refused merge leaves a resumable worktree (27) ==="
+C27="$(adopt_clone c27)"
+WT27="$C27/.claude/worktrees/kit-adopt"
+git init -q --bare "$TMPD/throw-27"
+out="$(GH_STUB_MERGE_RC=1 GH_STUB_MERGE_ERR='not mergeable' \
+  GH_STUB_LAND_REMOTE="$TMPD/throw-27" \
+  GH_STUB_PR_7='{"number":7,"headRefOid":"%REMERGE_TIP%","mergeable":"MERGEABLE","mergeStateStatus":"CLEAN","statusCheckRollup":[]}' \
+  adopt_apply "$C27" "$TMPD/abare-c27")"; rc=$?
+WT27P="$(cd "$WT27" && pwd -P)"
+chk "27: exits 1" "$([ "$rc" -eq 1 ]; echo $?)"
+chk_has "27: the row" "$out" "failed: land exit 2: MERGE FAILED #7: exit 1; resume: wrap land $WT27P"
+chk "27: worktree kept" "$([ -e "$WT27" ]; echo $?)"
+chk "27: branch kept" "$(git -C "$C27" show-ref --verify --quiet refs/heads/chore/kit-adopt; echo $?)"
+out="$(GH_STUB_OPEN_HEAD_chore_kit_adopt='[{"number":7,"title":"t","headRefName":"chore/kit-adopt","baseRefName":"main","isDraft":false,"isCrossRepository":false,"author":{"login":"me"}}]' \
+  GH_STUB_LAND_REPO="$WT27" GH_STUB_LAND_REMOTE="$TMPD/abare-c27" \
+  GH_STUB_LAND_BRANCH=chore/kit-adopt GH_STUB_LAND_DEF=main \
+  "$WRAP" land "$WT27" 2>&1)"; rc=$?
+chk "27: resume land exits 0" "$rc"
+chk_has "27: adopted the open PR" "$out" "adopted PR #7"
+chk_has "27: merged verified" "$out" "merged #7"
+bash "$KIT_DIR/lib/adopt.sh" --check "$C27" >/dev/null 2>&1
+chk "27: adopt --check exit 0" "$?"
+
+echo "=== adopt: single-source adoption lands (28) ==="
+C28="$(adopt_clone c28)"
+echo claude > "$C28/CLAUDE.md"
+git -C "$C28" add -A; git -C "$C28" commit -qm claude; git -C "$C28" push -q origin main
+op28="$TMPD/op-singlesrc-28"; mkdir -p "$op28"; printf '[adopt]\nsingle_source = true\n' > "$op28/kit.toml"
+out="$(KIT_CONFIG_OPERATOR="$op28" adopt_apply "$C28" "$TMPD/abare-c28")"; rc=$?
+chk "28: exits 0" "$rc"
+chk_has "28: adopted" "$out" "result: #7 adopted"
+chk "28: AGENTS.md and CLAUDE.md both landed" \
+  "$(git -C "$C28" cat-file -e origin/main:AGENTS.md 2>/dev/null && git -C "$C28" cat-file -e origin/main:CLAUDE.md 2>/dev/null; echo $?)"
+
+echo "=== adopt: a mismatched merge tree leaves the worktree for reading (29) ==="
+C29="$(adopt_clone c29)"
+p29="$TMPD/apush-c29"; git clone -q "$TMPD/abare-c29" "$p29"; gitc "$p29"
+echo stale > "$p29/stale.txt"; git -C "$p29" add -A; git -C "$p29" commit -qm stale
+git -C "$p29" push -q origin main
+MM29="$(git -C "$p29" rev-parse HEAD)"
+out="$(GH_STUB_VIEW_STATE="{\"state\":\"MERGED\",\"mergeCommit\":{\"oid\":\"$MM29\"}}" \
+  adopt_apply "$C29" "$TMPD/abare-c29")"; rc=$?
+chk "29: exits 1" "$([ "$rc" -eq 1 ]; echo $?)"
+chk_has "29: the row" "$out" "failed: land exit 3: merged #7 ($MM29): TREE MISMATCH"
+chk_has "29: worktree named" "$out" "worktree left at"
+chk_no "29: no resume" "$out" "resume:"
+chk "29: worktree on disk" "$([ -e "$C29/.claude/worktrees/kit-adopt" ]; echo $?)"
 
 echo "=== adopt: a clean leftover prints resume: (30) ==="
 C30="$(adopt_leftover 30)"
@@ -264,6 +464,74 @@ op32="$TMPD/op-style"; mkdir -p "$op32"; printf '[output]\nstyle = "x"\n' > "$op
 out="$(KIT_CONFIG_OPERATOR="$op32" "$WRAP" adopt "$C32C" 2>&1)"; rc=$?
 chk "32c: exits 1" "$([ "$rc" -eq 1 ]; echo $?)"
 chk_has "32c: the ignored style file refuses" "$out" ".claude/output-styles/x.md is gitignored"
+
+echo "=== adopt: a commit hook that adds files fails the commit recheck (33) ==="
+C33="$(adopt_clone c33)"
+mkdir -p "$C33/.git/hooks"
+cat > "$C33/.git/hooks/pre-commit" <<'EOF'
+#!/bin/sh
+mkdir -p src && echo hooked > src/hooked.txt && git add src/hooked.txt
+EOF
+chmod +x "$C33/.git/hooks/pre-commit"
+: > "$GH_STUB_CALLS"
+out="$(adopt_apply "$C33" "$TMPD/abare-c33")"; rc=$?
+chk "33: exits 1" "$([ "$rc" -eq 1 ]; echo $?)"
+chk_has "33: names the hook-written path" \
+  "$out" "failed: the commit differs from the guarded set: src/hooked.txt"
+chk "33: the commit exists with the hooked file" \
+  "$(git -C "$C33" cat-file -e chore/kit-adopt:src/hooked.txt 2>/dev/null; echo $?)"
+chk "33: no new override line" "$([ "$(wc -l < "$OVLOG" | tr -d ' ')" = 7 ]; echo $?)"
+chk "33: gh log has no create" "$([ -z "$(grep 'pr create' "$GH_STUB_CALLS")" ]; echo $?)"
+chk "33: worktree left" "$([ -e "$C33/.claude/worktrees/kit-adopt" ]; echo $?)"
+
+echo "=== adopt: a CONFLICTING merge quotes land's wrap-merge advice (35) ==="
+C35="$(adopt_clone c35)"
+git init -q --bare "$TMPD/throw-35"
+out="$(GH_STUB_MERGE_RC=1 GH_STUB_MERGE_ERR='Pull Request is not mergeable' \
+  GH_STUB_LAND_REMOTE="$TMPD/throw-35" \
+  GH_STUB_PR_7='{"number":7,"headRefOid":"%REMERGE_TIP%","mergeable":"CONFLICTING","mergeStateStatus":"DIRTY","statusCheckRollup":[]}' \
+  adopt_apply "$C35" "$TMPD/abare-c35")"; rc=$?
+chk "35: exits 1" "$([ "$rc" -eq 1 ]; echo $?)"
+chk_has "35: quotes the wrap-merge line" \
+  "$out" "failed: land exit 2: chore/kit-adopt already contains origin/main; GitHub's conflict is the union-blind case, run wrap merge --apply --pr 7"
+chk_no "35: no resume" "$out" "resume:"
+
+echo "=== adopt: a foreign output-style file refuses the path guard (36) ==="
+adopt_stub "$TMPD/adopt-stub36.sh" \
+  'mkdir -p "$1/.claude/output-styles"; echo y > "$1/.claude/output-styles/y.md"'
+C36="$(adopt_clone c36)"
+op36="$TMPD/op-style-36"; mkdir -p "$op36"; printf '[output]\nstyle = "x"\n' > "$op36/kit.toml"
+out="$(KIT_CONFIG_OPERATOR="$op36" WRAP_ADOPT_TEST=1 WRAP_ADOPT_SH="$TMPD/adopt-stub36.sh" \
+  adopt_apply "$C36" "$TMPD/abare-c36")"; rc=$?
+chk "36: exits 1" "$([ "$rc" -eq 1 ]; echo $?)"
+chk_has "36: names the foreign file" \
+  "$out" "failed: adoption wrote .claude/output-styles/y.md, outside the scaffold set"
+chk "36: no commit on the branch" \
+  "$([ "$(git -C "$C36" rev-list --count origin/main..chore/kit-adopt)" = 0 ]; echo $?)"
+
+echo "=== adopt: a hook-contaminated leftover prints read: (37) ==="
+WT33P="$(cd "$C33/.claude/worktrees/kit-adopt" && pwd -P)"
+tip37="$(git -C "$C33" rev-parse chore/kit-adopt)"
+out="$("$WRAP" adopt "$C33" 2>&1)"; rc=$?
+chk "37: exits 1" "$([ "$rc" -eq 1 ]; echo $?)"
+chk_has "37: refused" "$out" "refused:"
+chk_has "37: exists locally" "$out" "chore/kit-adopt exists locally"
+chk_has "37: read row" "$out" "read $WT33P"
+chk_no "37: no resume" "$out" "resume:"
+chk "37: nothing written" "$([ "$(git -C "$C33" rev-parse chore/kit-adopt)" = "$tip37" ]; echo $?)"
+
+echo "=== adopt: an ignored .claude on fresh origin refuses the apply (38) ==="
+C38="$(adopt_clone c38)"
+p38="$TMPD/apush-c38"; git clone -q "$TMPD/abare-c38" "$p38"; gitc "$p38"
+printf '.claude/\n' > "$p38/.gitignore"
+git -C "$p38" add -A; git -C "$p38" commit -qm ig; git -C "$p38" push -q origin main
+out="$(adopt_apply "$C38" "$TMPD/abare-c38")"; rc=$?
+chk "38: exits 1" "$([ "$rc" -eq 1 ]; echo $?)"
+chk_has "38: names the ignored path" "$out" "is gitignored in origin/main"
+chk "38: no commit on the branch" \
+  "$([ "$(git -C "$C38" rev-list --count origin/main..chore/kit-adopt)" = 0 ]; echo $?)"
+chk "38: no new override line" "$([ "$(wc -l < "$OVLOG" | tr -d ' ')" = 8 ]; echo $?)"
+chk "38: worktree left" "$([ -e "$C38/.claude/worktrees/kit-adopt" ]; echo $?)"
 
 echo "=== adopt: an unreadable PR state refuses the leftover (39) ==="
 C39="$(adopt_leftover 39)"
