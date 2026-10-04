@@ -1,7 +1,7 @@
 # Spec: spec helpers resolve co-located specs
 
 Generated: 2026-10-04
-Status: APPROVED
+Status: VALIDATED
 Lane: full
 Depth: standard (every fact settles by reading the five callers and sampling two repos' spec trees)
 Type: spec-feature
@@ -231,6 +231,31 @@ bash tests/test-meta.sh && bash tests/test-hooks.sh
 - ship-gate's block text `The '$LANE' lane requires gates`: `ship-gate.sh:421`, read directly.
 - Negative-control dry trace. Mutation: the test copies `lib/`, `hooks/` and `kit.toml` to a temp kit and replaces `spec_files` with the root `ls` alone. Fixture reads: a repo on `feat/cs` with only `tools/x/docs/specs/SPEC-147-cs.md` (`Lane: full`) plus root `docs/specs/SPEC-005-old.md`. Code paths: mutant `spec-next next` takes `_scan_numbers` and prints `006`; mutant `validate-round open` hits the empty `match` at the new line and exits 1; mutant ship-gate gets an empty `SPEC`, takes `_floor_check` and exits 0. Named test: the `mutant:` block of `tests/test-spec-find.sh` asserts each of those three outcomes, so the real-kit cases (`148`, exit 0, exit 2) and the mutant cases cannot both pass unless the walk is what changed them.
 - Cannot be sampled: the original ops-toolkit session that recorded three rounds by hand. Taken from the brief.
+
+## Test plan
+Date: 2026-10-04
+Source: this spec's ## Acceptance Criteria, ## After state and ## Edge Cases
+
+| # | Case | Category | Covers (AC) | Expected | Proof |
+|---|------|----------|-------------|----------|-------|
+| 1 | `spec_files` on a fixture with root + co-located specs | happy-path | TASK-1 | root first, then co-located by depth, then C order; every line `<root>/<rel>`, no `./` | `bash tests/test-spec-find.sh` |
+| 2 | `spec_files` skips depth-5 namespace, dot-dir, `node_modules`, `vendor`, `build` | boundary/edge | TASK-1, EC 4, EC 5 | none of those paths listed | `bash tests/test-spec-find.sh` |
+| 3 | Decoy `tools/y/docs/specs/SPEC-147-foo-cs.md`, slug `cs` | security/abuse | TASK-1, EC 9 | `spec_for_slug` prints nothing | `bash tests/test-spec-find.sh` |
+| 4 | Root and co-located share a slug | regression | EC 1, invariant | root path wins | `bash tests/test-spec-find.sh` |
+| 5 | Two co-located at different depths; two at the same depth | boundary/edge | EC 2, EC 3 | shallower wins; C-smaller wins | `bash tests/test-spec-find.sh` |
+| 6 | Spec path with a space; root that is a `.claude/worktrees/x` dir | boundary/edge | EC 6, EC 7 | found; root not pruned | `bash tests/test-spec-find.sh` |
+| 7 | Unreadable subdirectory in the walk | failure-injection | Interfaces (exit 0) | exit 0, other specs still listed | `bash tests/test-spec-find.sh` |
+| 8 | `spec-next next` / `reserve` with root SPEC-005 + co-located SPEC-147 | happy-path | After state 1, 2 | `148`, then `148`, `149` | `bash tests/test-spec-find.sh` |
+| 9 | `validate-round open` on a co-located spec | happy-path | After state 3 | exit 0, token printed | `bash tests/test-spec-find.sh` |
+| 10 | ship-gate, co-located `Lane: full`, empty ledger | happy-path | After state 4 | exit 2, `The 'full' lane requires gates` | `bash tests/test-spec-find.sh` |
+| 11 | ship-gate with `spec-find.sh` missing from the kit copy | failure-injection | Failure modes row 2 | root spec still found (exit 2 on a root full-lane spec) | `bash tests/test-spec-find.sh` |
+| 12 | `_negctl_required` and `pitch.sh _find_spec` on a co-located spec | happy-path | TASK-2 | `yes`; the co-located path | `bash tests/test-spec-find.sh` |
+| 13 | Mutant kit, root-only `spec_files`: cases 8, 9, 10 | regression | After state 5, DEC-6 | `006`; exit 1; exit 0 | `bash tests/test-spec-find.sh` (mutant block) |
+| 14 | Root-only repos unchanged | regression | global AC | existing suites green | `bash tests/test-gate-validate-round.sh`, `bash tests/test-spec-reserve.sh`, `bash tests/test-ship-gate-profiles.sh` |
+
+### Coverage notes
+- Categories skipped: none.
+- This is a coverage TARGET across the enumerated categories, NOT an exhaustive test list. A missing acceptance criterion or an unenumerated category is a gap, surfaced here, not a guarantee.
 
 ## Open questions
 

@@ -28,4 +28,18 @@ The critical folded into the spec as `### Co-located name match`, Edge Case 9 an
 
 ### Rejected warning
 
-- "Status must be DRAFT, VALIDATED or SHIPPED, not APPROVED." `commands/spec.md` step 4 sets `APPROVED` before validation; 11 specs carry it. Status stays `APPROVED` until round 2 returns.
+- "Status must be DRAFT, VALIDATED or SHIPPED, not APPROVED." `commands/spec.md` step 4 sets `APPROVED` before validation; 11 specs carry it. Round 2 flipped it to `VALIDATED`.
+
+## Round 2: APPROVED, 0 critical, 35 warnings, 7 of 7 reviewers
+
+Build decisions taken from the warnings (APPROVED means no spec fold):
+
+- The walk filters on `-name 'SPEC-*.md'`, then keeps a line only when its parent dirs are exactly `docs/specs`. A `-path` glob alone lets `*` span slashes.
+- Prune list: dot-dirs, `node_modules`, `vendor`, `target`, `dist`, `build`. `tests/fixtures` stays walked (Edge Case 10 accepts it).
+- A path with a newline is dropped in the walk. validate-round already refuses whitespace in the spec path.
+- `find` stderr goes to `/dev/null`; both functions end `return 0`.
+- Every caller except ship-gate sources the resolver with the `source ... || FATAL` shape its file already uses. ship-gate keeps the root-glob fallback: the hook must fail open on a stale install. That fallback is the one bounded copy of the old glob.
+- `spec_for_slug` iterates `spec_files`; it never calls `find` itself, so the mutant reaches every caller.
+- spec-next counts root numbers twice (old `ls` plus `spec_files`). Harmless for max+1; kept for the additive change the spec asks for.
+- Symlinked co-located specs are invisible (`-type f`, no `-L`). Accepted.
+- Not done: the Picture box label and the Grounding histogram prefix (cosmetic, spec frozen at VALIDATED); a deep-namespace warning.
