@@ -249,9 +249,23 @@ Source: this spec's ## Acceptance Criteria, ## After state and ## Edge Cases
 | 9 | `validate-round open` on a co-located spec | happy-path | After state 3 | exit 0, token printed | `bash tests/test-spec-find.sh` |
 | 10 | ship-gate, co-located `Lane: full`, empty ledger | happy-path | After state 4 | exit 2, `The 'full' lane requires gates` | `bash tests/test-spec-find.sh` |
 | 11 | ship-gate with `spec-find.sh` missing from the kit copy | failure-injection | Failure modes row 2 | root spec still found (exit 2 on a root full-lane spec) | `bash tests/test-spec-find.sh` |
-| 12 | `_negctl_required` and `pitch.sh _find_spec` on a co-located spec | happy-path | TASK-2 | `yes`; the co-located path | `bash tests/test-spec-find.sh` |
-| 13 | Mutant kit, root-only `spec_files`: cases 8, 9, 10 | regression | After state 5, DEC-6 | `006`; exit 1; exit 0 | `bash tests/test-spec-find.sh` (mutant block) |
-| 14 | Root-only repos unchanged | regression | global AC | existing suites green | `bash tests/test-gate-validate-round.sh`, `bash tests/test-spec-reserve.sh`, `bash tests/test-ship-gate-profiles.sh` |
+| 12 | `_negctl_required` (via `proof-ledger.sh check`, `negative_control = "full"` overlay) and `pitch.sh _find_spec` (via `pitch.sh ask`) on a co-located spec; no-spec control | happy-path | TASK-2 | check exits 1 (yes); pitch prints `tools/x/docs/specs/SPEC-147-cs.md`; no spec: check exits 0 | `bash tests/test-spec-find.sh` |
+| 13 | Mutant kit, root-only `spec_files`, all five callers; a root-spec positive control per caller in the same mutant kit | regression | After state 5, DEC-6 | flips: next `006`; validate-round exit 1 `no SPEC-*-cs.md under`; ship-gate exit 0; check exit 0; pitch `no spec or PR reference found`. Controls: `002`, exit 0, exit 2, exit 1, root path | `bash tests/test-spec-find.sh` (mutant block) |
+| 14 | Root-only repos unchanged | regression | global AC | existing suites green; in-suite root controls for validate-round, ship-gate, pitch | `bash tests/run-all.sh --changed origin/master`, then every `## Verification` line (`test-gate-validate-round`, `test-spec-reserve`, `test-spec-next-pr-scan`, `test-spec-index`, `test-ship-gate-profiles`, `test-meta`, `test-hooks`) |
+| 15 | Root and co-located twins share slug `cs` at the callers | regression | EC 1 | `validate-round open <co-located>` exits 1, `is not the ship-gate pick '<root>'`; ship-gate reads the root twin (exit 2, `has no 'Lane:' header`) | `bash tests/test-spec-find.sh` |
+| 16 | Only the decoy `tools/y/docs/specs/SPEC-147-foo-cs.md` (`Lane: full`) on branch `feat/cs` | security/abuse | EC 9 | ship-gate exits 0 | `bash tests/test-spec-find.sh` |
+| 17 | Real `git worktree add` sibling holds co-located SPEC-200 | boundary/edge | EC 5 | `next` prints 201; main walk never picks `.claude/worktrees` | `bash tests/test-spec-find.sh` |
+| 18 | Co-located `SPEC-001` under root SPEC-005 | boundary/edge | EC 8 | `check 001` exits 1 (taken); `next` stays `006` | `bash tests/test-spec-find.sh` |
+| 19 | Docs no longer claim root-only lookup for spec-next, validate-round, ship-gate | regression | TASK-4 | every hit of the `rg` reads as co-located-aware or as an active-spec lookup marked root-only (Out of Scope) | `rg -n 'docs/specs/SPEC-\*' docs commands lib hooks`, read by `kit:doc-verifier`. [NO EXECUTABLE CHECK: prose meaning; the oracle is the doc-verifier verdict] |
+
+Negative controls, each a mutant of `lib/spec/spec-find.sh` run against `bash tests/test-spec-find.sh`:
+
+- Root-only `spec_files`: 20 of 55 red (rows 1, 2, 3, 5 to 10, 12, 17, 18). In-suite as row 13.
+- DEC-7 numeric-prefix check removed from `spec_for_slug`: rows 3 and 16 red.
+- Root `ls` emitted after the walk: rows 1, 4 and 15 red.
+- Depth key dropped from the sort: row 5 red.
+
+Row 7 skips the unreadable-dir case when euid is 0. Each `reserve` case uses its own state file. Walk speed (Failure modes row 1) is measured, not tested.
 
 ### Coverage notes
 - Categories skipped: none.
