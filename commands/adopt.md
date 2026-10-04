@@ -44,6 +44,8 @@ or `--single-source` (see below).
   Command/skill modules (`queue`, `stats`, `quiz_gate`, `weekend_batch`, `bridge`) need no
   settings.json entry.
 
+To adopt several repos at once, use `bin/wrap adopt <repo>...` instead of running the driver per repo. It dry-runs by default, and with `--apply` it opens and lands one adoption PR per repo. See the `adopt` bullet in `commands/wrap.md`.
+
 The classifiers (`lane-classify`, `task-type-classify`, `proof-gate`) run from the installed kit;
 adoption wires the contract to reference them. It never copies the engine.
 

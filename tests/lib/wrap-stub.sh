@@ -5,7 +5,7 @@
 # builders more than one suite uses. Sourced, never executed: a suite sets KIT_DIR,
 # then sources this file.
 # modules under test (the test-affected cache key greps this line):
-# lib/wrap/wrap.sh lib/wrap/wrap-common.sh lib/wrap/wrap-scan.sh lib/wrap/wrap-apply.sh lib/wrap/wrap-pull.sh lib/wrap/wrap-carry.sh lib/wrap/wrap-ci.sh lib/wrap/wrap-merge.sh lib/wrap/wrap-land.sh lib/wrap/wrap-start.sh lib/wrap/wrap-log.sh lib/wrap/wrap-deploy.sh lib/wrap/wrap-rebase.sh lib/wrap/report-lint.sh
+# lib/wrap/wrap.sh lib/wrap/wrap-common.sh lib/wrap/wrap-scan.sh lib/wrap/wrap-apply.sh lib/wrap/wrap-pull.sh lib/wrap/wrap-carry.sh lib/wrap/wrap-ci.sh lib/wrap/wrap-merge.sh lib/wrap/wrap-land.sh lib/wrap/wrap-start.sh lib/wrap/wrap-log.sh lib/wrap/wrap-deploy.sh lib/wrap/wrap-rebase.sh lib/wrap/report-lint.sh lib/wrap/wrap-adopt.sh
 
 set -uo pipefail
 WRAP="$KIT_DIR/bin/wrap"
@@ -86,6 +86,9 @@ case "$sub" in
           printf '%s\n' "$val"
           exit "${GH_STUB_LIST_RC:-0}"
         elif [ -n "$head" ]; then
+          # GH_STUB_MERGED_HEAD_RC models a failed merged-head read: gh prints nothing
+          # and exits non-zero.
+          [ "${GH_STUB_MERGED_HEAD_RC:-0}" = "0" ] || exit "$GH_STUB_MERGED_HEAD_RC"
           key="GH_STUB_MERGED_$(printf '%s' "$head" | tr -c 'A-Za-z0-9' '_')"
           eval "val=\"\${$key:-}\""
           [ -n "$val" ] || val="[]"
