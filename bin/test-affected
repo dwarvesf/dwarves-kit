@@ -6,7 +6,7 @@
 # basename match and has no cache; this one picks by path OR basename anywhere in a suite,
 # records a PASS per content key, and can explain each pick (--list).
 #
-# Usage: test-affected [--base <ref>] [--list] [--no-cache]
+# Usage: test-affected [--base <ref>] [--list] [--no-cache]   (env: TEST_AFFECTED_JOBS, see Parallel)
 #   --base <ref>  diff base (default: origin/<default branch>, resolved like `wrap`)
 #   --list        print the selection and the reason for each (self | references <path> |
 #                 module <mod> | reads <path>), plus UNCOVERED files; run nothing
@@ -23,11 +23,39 @@
 # Timeout: a suite runs under TEST_AFFECTED_TIMEOUT_SECS when set, else its line in
 # bin/test-affected.timeouts (`<suite> <seconds>`, 2 x measured p95, floor 60), else 300. A suite
 # killed at its limit prints `TIMEOUT <suite> (limit Ns)`, never FAIL.
+# Parallel: the suites that are not CACHED run JOBS at a time (xargs -P, the tests/run-all.sh worker
+# pattern), longest first by their bin/test-affected.timeouts line (unlisted = 300). A suite with a
+# `# serial:` header runs alone after the batch drains. JOBS = TEST_AFFECTED_JOBS when it is a number
+# (used as is), else the shared default of tests/lib/job-count.sh (macOS: cores capped at 4; elsewhere
+# 1), halved (minimum 1) when `lib/host/load-warn.sh --over` says the 1-minute load is over its
+# threshold. Output is collated afterwards, one line per suite in selection order, so it never depends
+# on which suite finished first.
 # Exit: 0 all green, 1 any FAIL or TIMEOUT, 2 usage or no base.
 set -euo pipefail
 SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 die() { echo "test-affected: $*" >&2; exit 2; }
+
+_timeout() { if command -v timeout >/dev/null 2>&1; then timeout "$@"; else shift; "$@"; fi; }
+
+# Worker mode: the script re-invokes itself, as tests/run-all.sh does, so the batch needs no second
+# file. `--run-one <outdir> <suite> <limit> <key>`: run one suite under its limit with its own log,
+# seconds and exit status, and record the PASS cache entry the moment it passes (an interrupted run
+# keeps what finished). It always exits 0; the status file carries the verdict and is written last.
+if [ "${1:-}" = "--run-one" ]; then
+  out="$2"; suite="$3"; limit="$4"; key="${5:-}"
+  name="$(basename "$suite" .sh)"
+  t0="$(date +%s)"; rc=0
+  _timeout "$limit" bash "$suite" >"$out/$name.log" 2>&1 || rc=$?
+  echo "$(( $(date +%s) - t0 ))" >"$out/$name.secs"
+  if [ "$rc" -eq 0 ] && [ -n "${TA_CDIR:-}" ] && [ -n "$key" ]; then
+    printf 'PASS %s\n' "$suite" >"$TA_CDIR/$key" 2>/dev/null || true
+  fi
+  echo "$rc" >"$out/$name.rc"
+  if [ -t 2 ]; then printf '.' >&2; fi
+  exit 0
+fi
+
 
 BASE="" LIST=0 NOCACHE=0
 while [ $# -gt 0 ]; do
@@ -362,42 +390,101 @@ cache_key() {
   } | sha
 }
 
-_timeout() { if command -v timeout >/dev/null 2>&1; then timeout "$@"; else shift; "$@"; fi; }
-
-# Per-suite limit: TEST_AFFECTED_TIMEOUT_SECS when set (it wins for every suite), else the suite's
-# line in bin/test-affected.timeouts (tests/run-all.sh reads the same file), else 300.
-suite_timeout() {
+# The suite's own line in bin/test-affected.timeouts (tests/run-all.sh reads the same file); empty when unlisted.
+listed_timeout() {
   local name; name="$(basename "$1" .sh)"
-  if [ -n "${TEST_AFFECTED_TIMEOUT_SECS:-}" ]; then echo "$TEST_AFFECTED_TIMEOUT_SECS"; return; fi
   if [ -r "$SELF_DIR/test-affected.timeouts" ]; then
     awk -v n="$name" '$1 == n && $2 ~ /^[0-9]+$/ { print $2; exit }' "$SELF_DIR/test-affected.timeouts"
   fi
 }
 
+# Per-suite limit: TEST_AFFECTED_TIMEOUT_SECS when set (it wins for every suite), else the suite's
+# line in bin/test-affected.timeouts, else 300.
+suite_timeout() {
+  if [ -n "${TEST_AFFECTED_TIMEOUT_SECS:-}" ]; then echo "$TEST_AFFECTED_TIMEOUT_SECS"; return; fi
+  listed_timeout "$1"
+}
+
 # One warning line on a loaded host (warning only; it exits 0 and changes nothing here).
 [ -f "$SELF_DIR/../lib/host/load-warn.sh" ] && { bash "$SELF_DIR/../lib/host/load-warn.sh" "this test-affected run" || true; }
 
+# Job count: an explicit TEST_AFFECTED_JOBS number wins as is. Otherwise the shared default, halved
+# (minimum 1) when load-warn's threshold says the host is loaded. No helper on disk means one at a time.
+JOBS=1 HALVED=0
+if [ -f "$SELF_DIR/../tests/lib/job-count.sh" ]; then
+  # shellcheck source=tests/lib/job-count.sh
+  . "$SELF_DIR/../tests/lib/job-count.sh"
+  REQ="${TEST_AFFECTED_JOBS:-}"
+  JOBS="$(job_count "$REQ")"
+  case "$REQ" in
+    ''|auto)
+      if [ "$JOBS" -gt 1 ] 2>/dev/null && [ -f "$SELF_DIR/../lib/host/load-warn.sh" ] \
+         && bash "$SELF_DIR/../lib/host/load-warn.sh" --over 2>/dev/null; then
+        JOBS=$((JOBS / 2)); HALVED=1
+      fi ;;
+  esac
+fi
+case "$JOBS" in ''|*[!0-9]*|0) JOBS=1 ;; esac
+
+# --- plan: cache lookups first (cheap, sequential), then the schedule for what must run ---
+RES="$TMP/res"; mkdir -p "$RES"
+export TA_CDIR="$CDIR"
+SELF="$SELF_DIR/$(basename "${BASH_SOURCE[0]}")"
+: >"$TMP/rank.par"; : >"$TMP/rank.ser"; : >"$TMP/times.tsv"
 P=0 C=0 F=0 T=0 N=0
-RUN_T0="$(date +%s)"; : >"$TMP/times.tsv"
+RUN_T0="$(date +%s)"
 while IFS= read -r t; do
   N=$((N + 1))
+  name="$(basename "$t" .sh)"
   key="$(cache_key "$t")"
   if [ -n "$CDIR" ] && grep -q '^PASS ' "$CDIR/$key" 2>/dev/null; then
-    echo "CACHED $t"; C=$((C + 1)); continue
+    : >"$RES/$name.cached"; continue
   fi
   limit="$(suite_timeout "$t")"; limit="${limit:-300}"
-  t0="$(date +%s)"
-  rc=0; _timeout "$limit" bash "$t" >"$TMP/out" 2>&1 || rc=$?
-  printf '%s\t%s\t%s\n' "$(basename "$t" .sh)" "$(( $(date +%s) - t0 ))" "$rc" >>"$TMP/times.tsv"
-  if [ "$rc" -eq 0 ]; then
+  echo "$limit" >"$RES/$name.limit"
+  rank="$(listed_timeout "$t")"; rank="${rank:-300}"
+  # A suite that measures wall-clock behaviour cannot share the host: it runs alone, after the batch.
+  dest="$TMP/rank.par"
+  if sed -n 's/^# serial:[[:space:]]*//p' "$t" | head -1 | grep -q .; then dest="$TMP/rank.ser"; fi
+  printf '%s\t%s\t%s\t%s\n' "$rank" "$t" "$limit" "$key" >>"$dest"
+done <"$TMP/selected"
+
+# Longest listed limit first, then name: the slow suites start early and the order is reproducible.
+run_batch() {  # $1 = rank file, $2 = jobs
+  [ -s "$1" ] || return 0
+  sort -t "$TAB" -k1,1nr -k2,2 "$1" | awk -F'\t' '{ print $2, $3, $4 }' \
+    | xargs -n 3 -P "$2" "$BASH" "$SELF" --run-one "$RES" || true
+}
+NPAR="$(wc -l <"$TMP/rank.par" | tr -d ' ')"; NSER="$(wc -l <"$TMP/rank.ser" | tr -d ' ')"
+if [ $((NPAR + NSER)) -gt 0 ]; then
+  note="$((NPAR + NSER)) to run, $JOBS at a time"
+  [ "$HALVED" = 1 ] && note="$note (halved: host load is over the load-warn threshold)"
+  [ "$NSER" -gt 0 ] && note="$note, $NSER serial"
+  echo "test-affected: $note" >&2
+fi
+run_batch "$TMP/rank.par" "$JOBS"
+run_batch "$TMP/rank.ser" 1
+if [ -t 2 ] && [ $((NPAR + NSER)) -gt 0 ]; then echo >&2; fi
+
+# --- collate in selection order, so the report never depends on the finish order ---
+while IFS= read -r t; do
+  name="$(basename "$t" .sh)"
+  if [ -f "$RES/$name.cached" ]; then echo "CACHED $t"; C=$((C + 1)); continue; fi
+  limit="$(cat "$RES/$name.limit")"
+  rc="$(cat "$RES/$name.rc" 2>/dev/null || echo missing)"
+  trc="$rc"; [ "$rc" = missing ] && trc=255
+  printf '%s\t%s\t%s\n' "$name" "$(cat "$RES/$name.secs" 2>/dev/null || echo 0)" "$trc" >>"$TMP/times.tsv"
+  if [ "$rc" = missing ]; then
+    echo "FAIL $t"; F=$((F + 1))
+    echo "    | no status written; the worker died"
+  elif [ "$rc" -eq 0 ]; then
     echo "PASS $t"; P=$((P + 1))
-    [ -n "$CDIR" ] && printf 'PASS %s\n' "$t" >"$CDIR/$key" 2>/dev/null || true
   elif [ "$rc" -eq 124 ] && command -v timeout >/dev/null 2>&1; then
     echo "TIMEOUT $t (limit ${limit}s)"; T=$((T + 1))
     echo "    | killed at ${limit}s; no assertion failed, the suite ran out of time (re-run it alone, or TEST_AFFECTED_TIMEOUT_SECS=<n>)"
   else
     echo "FAIL $t"; F=$((F + 1))
-    tail -8 "$TMP/out" | sed 's/^/    | /'
+    tail -8 "$RES/$name.log" | sed 's/^/    | /'
   fi
 done <"$TMP/selected"
 U="$(wc -l <"$TMP/uncovered" | tr -d ' ')"

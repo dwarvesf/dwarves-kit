@@ -20,6 +20,7 @@ mkkit() {  # $1 = dir: a kit-shaped tree with the REAL run-all.sh and the REAL h
   cp "$DIR/tests/run-all.sh" "$1/tests/run-all.sh"
   cp "$DIR/tests/lib/suite-times.sh" "$1/tests/lib/suite-times.sh"
   cp "$DIR/tests/lib/run-lock.sh" "$1/tests/lib/run-lock.sh"
+  cp "$DIR/tests/lib/job-count.sh" "$1/tests/lib/job-count.sh"
   printf '#!/usr/bin/env bash\nexit 0\n' >"$1/tests/test-alpha.sh"
   printf '#!/usr/bin/env bash\nexit 0\n' >"$1/tests/test-beta.sh"
 }
@@ -146,7 +147,7 @@ if [ "$RCG" -eq 0 ] && grep -q '^run-all: all 2 suites passed' "$TMP/green.out";
 [ -f "$BLOCK" ] && [ ! -d "$BLOCK" ] && ok "the blocker is untouched (nothing was written there)" || no "blocker changed"
 
 echo "[9] a kit without the helper (older fixtures) runs exactly as before"
-K2="$TMP/kit2"; mkdir -p "$K2/tests/lib"; cp "$DIR/tests/run-all.sh" "$K2/tests/run-all.sh"; cp "$DIR/tests/lib/run-lock.sh" "$K2/tests/lib/"
+K2="$TMP/kit2"; mkdir -p "$K2/tests/lib"; cp "$DIR/tests/run-all.sh" "$K2/tests/run-all.sh"; cp "$DIR/tests/lib/run-lock.sh" "$DIR/tests/lib/job-count.sh" "$K2/tests/lib/"
 printf '#!/usr/bin/env bash\nexit 0\n' >"$K2/tests/test-solo.sh"
 OUT="$(KIT_SUITE_TIMES_FILE="$TMP/k2/log.tsv" KIT_RUN_ALL=1 RA "$K2" --all 2>&1 </dev/null)"; RC=$?
 if [ "$RC" -eq 0 ] && [ ! -e "$TMP/k2/log.tsv" ] && grep -q '^run-all: all 1 suites passed' <<<"$OUT"; then ok "no helper, no log, same result"; else no "rc=$RC out=$OUT"; fi

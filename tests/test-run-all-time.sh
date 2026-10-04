@@ -25,8 +25,8 @@ TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
 mkkit() {  # $1 = dir ; $2 = the run-all.sh to install ; plus the two fixture suites
-  mkdir -p "$1/tests"
-  cp "$2" "$1/tests/run-all.sh"
+  mkdir -p "$1/tests/lib"
+  cp "$2" "$1/tests/run-all.sh"; cp "$DIR/tests/lib/job-count.sh" "$1/tests/lib/"
   printf '#!/usr/bin/env bash\nsleep 2\nexit 0\n' > "$1/tests/test-slowfixture.sh"
   printf '#!/usr/bin/env bash\nsleep 0\nexit 0\n' > "$1/tests/test-quickfixture.sh"
 }

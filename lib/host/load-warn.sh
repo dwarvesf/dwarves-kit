@@ -5,9 +5,13 @@
 #
 # The 1-minute load average is compared with a threshold: KIT_LOAD_WARN (env), else
 # kit.toml [test].load_warn, else 16. Over it, one line goes to stderr suggesting Devin or
-# self-hosted CI. This only warns: it never reroutes, never blocks, and ALWAYS exits 0, so a
-# caller's exit code is never its doing. An unreadable load or a non-numeric threshold prints
+# self-hosted CI. This only warns: it never reroutes, never blocks, and the warning mode ALWAYS
+# exits 0, so a caller's exit code is never its doing. An unreadable load or a non-numeric threshold prints
 # nothing.
+#   load-warn.sh --over        silent: exit 0 when the load is over the threshold, 1 when it is not
+#                              or cannot be read. For a caller that scales its work down on a loaded host
+#                              (bin/test-affected halves its job count); the one place that reads the
+#                              threshold, so no caller copies the config lookup.
 # Test seam: KIT_LOAD_STUB=<number> replaces the real load average.
 set -u
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -31,16 +35,22 @@ _threshold() {
   printf '16'
 }
 
+# Sets LOAD and LIMIT; returns 0 when the load is over the limit, 1 when it is not or cannot be read.
+_over() {
+  LOAD="$(_load1 2>/dev/null)"; LIMIT="$(_threshold 2>/dev/null)"
+  case "$LOAD" in ''|*[!0-9.]*) return 1 ;; esac
+  case "$LIMIT" in ''|*[!0-9.]*) return 1 ;; esac
+  awk -v l="$LOAD" -v t="$LIMIT" 'BEGIN { exit !(l + 0 > t + 0) }'
+}
+
 main() {
-  local what="${1:-this run}" load limit
-  load="$(_load1 2>/dev/null)"; limit="$(_threshold 2>/dev/null)"
-  case "$load" in ''|*[!0-9.]*) return 0 ;; esac
-  case "$limit" in ''|*[!0-9.]*) return 0 ;; esac
-  awk -v l="$load" -v t="$limit" 'BEGIN { exit !(l + 0 > t + 0) }' || return 0
+  local what="${1:-this run}"
+  _over || return 0
   printf 'load-warn: 1-min load %s is over %s; %s will be slow and flaky here, consider Devin or self-hosted CI (warning only, nothing rerouted)\n' \
-    "$load" "$limit" "$what" >&2
+    "$LOAD" "$LIMIT" "$what" >&2
   return 0
 }
 
+if [ "${1:-}" = "--over" ]; then _over; exit $?; fi
 main "$@"
 exit 0
