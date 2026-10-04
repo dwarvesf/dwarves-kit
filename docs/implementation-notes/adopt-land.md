@@ -94,3 +94,15 @@ One critical (R3f printing `resume:` over a leftover that failed R6b) and three 
 
 - Case 34b: signal the process group (`kill -<SIG> -<pgid>`), never the verb's PID alone. A PID-only signal on `/bin/bash` 3.2.57 lets land finish and merge before the trap row prints, over a worktree land already tidied. The pgrp form matches a real Ctrl-C.
 - Case 34a: the stub signals itself too (`kill -INT $PPID; kill -INT $$`). Bash defers SIGINT while it waits on a child that exits 0, so 130 shows up reliably only when the child also dies of the signal.
+
+## T1a build
+
+- `--apply` on a repo that passes preflight prints `failed: apply not built yet; nothing was written` (the not-yet-built refusal; smallest of the two options). Refusals under `--apply` report the same `refused:` row as the dry run. T1b replaces the row with `_adopt_one`.
+- The `result:` line (`  result: - <row>`) already ships in T1a; the summary table stays T1c.
+- R3g's upstream half is built (`main checkout tracks <up>, not origin/<def>`); it is skipped when R3b fired, since "main checkout is on ..." presumes a main checkout exists. `no default branch resolved` names the `_default_branch` failure both R3f and R3g depend on.
+- The stale-read `note:` from the guidance is built: `note: main checkout differs from origin/<def> as last fetched`, printed as an indented line inside the repo block when HEAD disagrees with `refs/remotes/origin/<def>`.
+- R3f's `ls-remote` exit-2-only-absent rule and `origin unreachable` are built; the tracking ref is checked first so a fetched remote never hits `ls-remote`.
+- The open-PR-without-local-branch R3f hint (round-1 note) is NOT built: no spec row or case names its shape.
+- `GH_STUB_MERGED_HEAD_RC` models a failed `--head` merged read (empty stdout, non-zero exit), beside `GH_STUB_MERGED_ALL_RC`.
+- `bin/wrap` gains the `adopt` usage line too: the stable entrypoint's verb list would otherwise miss the verb.
+- Case 5's collapse assertion greps `?? .claude/ ` with a trailing space: `?? .claude/` alone is a substring of `?? .claude/settings.json`.

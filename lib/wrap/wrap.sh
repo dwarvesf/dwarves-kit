@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # wrap.sh -- the landing step after ship. One pass over every repo a session
-# touched, with twelve verbs:
+# touched, with thirteen verbs:
 #
 #   wrap.sh scan  [--under <root>]... <repo> [<repo>...]    report only, exit 0
 #   wrap.sh apply [--apply] [--worktrees] [--archive-unmerged] [--pull-only|--no-pull] [--own <path>]... [--under <root>]... <repo> [...]  dry-run by default
@@ -16,6 +16,7 @@
 #   wrap.sh deploy-wait <owner>/<name> <sha> [--check S]... [--timeout N]  step 4's push-deploy wait
 #   wrap.sh stage "<title>" "<intent>" "<home>" [--repo <repo>]  stage a candidate
 #   wrap.sh rebase <worktree>                               onto origin/<default>, safe conflicts only
+#   wrap.sh adopt [--apply] [--body-file F] <repo> [<repo>...]    adopt into the kit contract and land; dry run default
 #   wrap.sh --help
 #
 #   --under <root> (scan and apply, repeatable) appends every immediate child of <root> that
@@ -70,6 +71,9 @@
 # `start`'s one worktree add under `.claude/worktrees` on a new local branch, and `start
 # --carry`'s one named `git stash push -u` in the main checkout, one `stash apply` in the
 # new worktree, and, on a clean apply, one `stash drop` of that same named entry.
+# `adopt`'s one `git add -A` and one commit in the worktree `start` created, one
+# override log append per repo, and every write `start` and `land` own; `adopt.sh`'s
+# own file writes happen in that worktree.
 # `rebase` rewrites its worktree's own local branch (one `git rebase origin/<default>`,
 # `--continue` per resolved stop, `--abort` on any refusal) and, once no rebase is stopped,
 # at most one regenerate commit there; it never pushes.
@@ -124,9 +128,9 @@ PROOF_LEDGER_SH="$LIB_ROOT/gate/proof-ledger.sh"
 source "$LIB_ROOT/config/kit-config.sh" || { echo "FATAL: lib/config/kit-config.sh missing or unreadable" >&2; exit 1; }
 # shellcheck source=lib/gate/default-branch-warn.sh
 source "$LIB_ROOT/gate/default-branch-warn.sh" || { echo "FATAL: lib/gate/default-branch-warn.sh missing or unreadable" >&2; exit 1; }
-for _m in common scan apply pull carry ci merge land start log deploy rebase; do source "$SELF_DIR/wrap-$_m.sh" || { echo "FATAL: lib/wrap/wrap-$_m.sh missing or unreadable" >&2; exit 1; }; done; unset _m
+for _m in common scan apply pull carry ci merge land start log deploy rebase adopt; do source "$SELF_DIR/wrap-$_m.sh" || { echo "FATAL: lib/wrap/wrap-$_m.sh missing or unreadable" >&2; exit 1; }; done; unset _m
 
-_usage() { sed -n '2,33p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
+_usage() { sed -n '2,34p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
 
 # --------------------------------------------------------------------------- entry
 
@@ -146,6 +150,7 @@ main() {
     deploy-wait)    cmd_deploy_wait "$@" ;;
     stage)          cmd_stage "$@" ;;
     rebase)         cmd_rebase "$@" ;;
+    adopt)          cmd_adopt "$@" ;;
     -h|--help|help|"") _usage; return 0 ;;
     *) echo "wrap: unknown verb '$verb' (try: wrap --help)" >&2; return 64 ;;
   esac

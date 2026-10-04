@@ -86,6 +86,9 @@ case "$sub" in
           printf '%s\n' "$val"
           exit "${GH_STUB_LIST_RC:-0}"
         elif [ -n "$head" ]; then
+          # GH_STUB_MERGED_HEAD_RC models a failed merged-head read: gh prints nothing
+          # and exits non-zero.
+          [ "${GH_STUB_MERGED_HEAD_RC:-0}" = "0" ] || exit "$GH_STUB_MERGED_HEAD_RC"
           key="GH_STUB_MERGED_$(printf '%s' "$head" | tr -c 'A-Za-z0-9' '_')"
           eval "val=\"\${$key:-}\""
           [ -n "$val" ] || val="[]"

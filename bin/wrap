@@ -17,6 +17,7 @@
 #   wrap knowledge-root <repo>                          fenced knowledge dir
 #   wrap stage "<title>" "<intent>" "<home>" [--repo R] stage a candidate
 #   wrap rebase <worktree>                              the branch onto origin/<default>; regenerates FEATURES, keeps pure-add CHANGELOG sides, aborts on any other conflict
+#   wrap adopt [--apply] [--body-file F] <repo> [<repo>...]  adopt repos into the kit contract and land them; dry run default
 set -euo pipefail
 SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 exec bash "$SELF_DIR/../lib/wrap/wrap.sh" "$@"
