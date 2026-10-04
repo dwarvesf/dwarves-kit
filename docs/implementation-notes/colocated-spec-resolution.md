@@ -74,4 +74,11 @@ The build's `tests/test-spec-find.sh` covers these on top of the matrix:
 ## Build state
 
 - Done: TASK-1 `lib/spec/spec-find.sh`. TASK-2, the five callers. TASK-3 `tests/test-spec-find.sh`, 55 cases with the mutant block.
-- Next: docs (TASK-4), `/kit:battery`, draft PR.
+- Ledger: validate (round 2 APPROVED), design-record, test-plan and build are recorded. Test-plan critique (light) returned NEEDS WORK; the build covers every item, but no critique re-run is recorded.
+- Stopped here: the session context passed 70 percent.
+- Resume in this order:
+  1. TASK-4 docs: `lib/spec/spec-index.sh` header lines 8-9, `commands/start.md:19`, `commands/next.md:11`, `commands/dispatch.md:21`, then any doc on spec-next, validate-round or ship-gate spec lookup. Dispatch `kit:doc-verifier`, then record `docs ran`.
+  2. `/kit:battery`, then record `review ran` with the merged verdict.
+  3. `gh pr create --draft`. ship-gate engages on it, so every full-lane gate up to `docs` must be in the ledger first.
+- Known red, not from this branch: `test-config-registry` fails on a clean `origin/master` export too. `test-gate-validate-round` failed 1 of 196 once, then passed 12 runs in a row; the failing case was not captured.
+- Test runs under Claude Code need a `# branch-guard: allow: <reason>` comment on the command line. The ship-gate tests send `git push` text to the hook.
