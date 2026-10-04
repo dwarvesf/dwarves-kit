@@ -346,8 +346,16 @@ if [ -f "$LEDGER62" ] && [ -n "${RLANE:-}" ]; then
   fi
 fi
 
-# Resolve the spec for this slug; fail open if there is no spec-driven run.
-SPEC=$(ls "$ROOT"/docs/specs/SPEC-*-"$SLUG".md 2>/dev/null | head -1 || true)
+# Resolve the spec for this slug; fail open if there is no spec-driven run. spec_for_slug is the
+# pick validate-round also binds to (root docs/specs, then co-located */docs/specs). A stale
+# install without spec-find.sh keeps the old root-only glob, so the hook never breaks on it.
+SPEC=""
+SFIND="${CLAUDE_PLUGIN_ROOT:-$HOME/.claude/dwarves-kit}/lib/spec/spec-find.sh"
+if [ -r "$SFIND" ] && source "$SFIND" 2>/dev/null; then
+  SPEC=$(spec_for_slug "$ROOT" "$SLUG")
+else
+  SPEC=$(ls "$ROOT"/docs/specs/SPEC-*-"$SLUG".md 2>/dev/null | head -1 || true)
+fi
 if [ -z "$SPEC" ]; then
   # No spec means no lane to compare, but the floor needs no lane: a hard-path diff still owes the
   # full lane's gates (or an audited override) for this slug. Renaming a branch must not dodge it.

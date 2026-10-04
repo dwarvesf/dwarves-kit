@@ -63,6 +63,12 @@ if [ -r "$LIB_ROOT/telemetry/kit-log-dir.sh" ]; then
   # shellcheck source=lib/telemetry/kit-log-dir.sh
   source "$LIB_ROOT/telemetry/kit-log-dir.sh" 2>/dev/null || true
 fi
+# shellcheck source=lib/spec/spec-find.sh
+# A stale install without spec-find.sh keeps the root-only lookup (mirrors hooks/ship-gate.sh).
+if ! source "$LIB_ROOT/spec/spec-find.sh" 2>/dev/null; then
+  spec_files() { ls "$1"/docs/specs/SPEC-*.md 2>/dev/null; return 0; }
+  spec_for_slug() { [ -n "$2" ] || return 0; ls "$1"/docs/specs/SPEC-*-"$2".md 2>/dev/null | head -1 || true; return 0; }
+fi
 if command -v kit_resolve_log_dir >/dev/null 2>&1; then
   RES_DIR="$(kit_resolve_log_dir)"
 else
@@ -89,12 +95,15 @@ _iso_to_epoch() {
 _scan_numbers() {
   {
     # docs/specs of EVERY worktree, so a sibling's uncommitted spec file reads as taken.
+    # spec_files adds co-located <ns>/docs/specs (tools/<x>/...), so their numbers count too.
+    # Basenames only: a spec-shaped directory name in the path must not leak a number.
     # Branches and commit subjects below already come from the refs all worktrees share.
     local wts wt
     wts="$(git -C "$ROOT" worktree list --porcelain 2>/dev/null | sed -n 's/^worktree //p')" || wts=""
     [ -n "$wts" ] || wts="$ROOT"
     while IFS= read -r wt; do
       ls "$wt/docs/specs" 2>/dev/null | grep -oE 'SPEC-[0-9]+' || true
+      spec_files "$wt" | sed 's|.*/||' | grep -oE '^SPEC-[0-9]+' || true
     done <<< "$wts"
     git -C "$ROOT" branch -a --format='%(refname:short)' 2>/dev/null | grep -oE 'SPEC-[0-9]+' || true
     git -C "$ROOT" log --all --format='%s' -200 2>/dev/null | grep -oE 'SPEC-[0-9]+' || true

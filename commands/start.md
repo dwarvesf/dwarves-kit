@@ -16,7 +16,7 @@ You are a project state detector. If `_meta/BACKLOG.md` exists, `bash lib/board/
 
 ## Process
 
-**Resolving the active spec (the dual-mode rule the hooks also use):** among `docs/specs/SPEC-*.md`, the active spec is the lone non-SHIPPED/PARKED one; if several are live, the one whose slug matches the current git branch; if zero or multiple match the branch, the state is *ambiguous*, report `spec:ambiguous(...)` and ask which spec, never guess. `docs/specs/SPEC-NNN-<slug>.md` is the sole spec location. States 3-8 below operate on that resolved active spec.
+**Resolving the active spec (the dual-mode rule the hooks also use):** among `docs/specs/SPEC-*.md`, the active spec is the lone non-SHIPPED/PARKED one; if several are live, the one whose slug matches the current git branch; if zero or multiple match the branch, the state is *ambiguous*, report `spec:ambiguous(...)` and ask which spec, never guess. `docs/specs/SPEC-NNN-<slug>.md` is the sole active-spec location (root only; co-located specs are found by spec-next, validate-round and ship-gate via `lib/spec/spec-find.sh`). States 3-8 below operate on that resolved active spec.
 
 Check these signals in order and recommend the FIRST matching action:
 

@@ -6,7 +6,7 @@
 # _meta/megagoals/<prog>/docs/specs/). Numbering is deliberately PER-NAMESPACE and
 # LOCAL: each namespace owns its own SPEC-NNN.. sequence, so the same number can
 # (and does) recur across namespaces. This command does NOT change that, and is NOT
-# wired into spec-next / goal-drafts / precedent -- those stay namespace-scoped.
+# wired into goal-drafts / precedent; spec-next, validate-round and ship-gate also find co-located specs via lib/spec/spec-find.sh.
 #
 # This is purely the "show me every spec in one place" READ view: it scans every
 # `*/docs/specs/SPEC-*.md` in the repo and prints them grouped by namespace, each

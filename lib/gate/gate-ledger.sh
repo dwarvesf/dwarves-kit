@@ -75,6 +75,13 @@ source "$LIB_ROOT/telemetry/kit-log-dir.sh" || { echo "FATAL: lib/telemetry/kit-
 # below. gate-ledger's writes route through ledger_append; reads still use ledger_file()'s path.
 # shellcheck source=lib/ledger/ledger.sh
 source "$LIB_ROOT/ledger/ledger.sh" || { echo "FATAL: lib/ledger/ledger.sh missing or unreadable" >&2; exit 1; }
+# The slug -> spec pick that ship-gate also uses (root docs/specs, then co-located */docs/specs).
+# shellcheck source=lib/spec/spec-find.sh
+# A stale install without spec-find.sh keeps the root-only lookup (mirrors hooks/ship-gate.sh).
+if ! source "$LIB_ROOT/spec/spec-find.sh" 2>/dev/null; then
+  spec_files() { ls "$1"/docs/specs/SPEC-*.md 2>/dev/null; return 0; }
+  spec_for_slug() { [ -n "$2" ] || return 0; ls "$1"/docs/specs/SPEC-*-"$2".md 2>/dev/null | head -1 || true; return 0; }
+fi
 kit_migrate_log_dir || true
 LOG_DIR="$(kit_resolve_log_dir)" || exit 1
 RUNS_DIR="$LOG_DIR/runs"
@@ -1098,12 +1105,12 @@ _vr_open() {
   nrid="$(runid "$slug")"
   [ "$slug" = "$nrid" ] || { echo "validate-round: branch slug '$slug' normalizes to '$nrid'; cannot bind a rid" >&2; exit 1; }
   [ "$nrid" = "$rid" ]  || { echo "validate-round: rid '$rid' is not the branch's slug-derived rid '$nrid'" >&2; exit 1; }
-  # The accepted spec is the file the ship-gate itself will read: the raw-slug glob
-  # `docs/specs/SPEC-*-<slug>.md` (hooks/ship-gate.sh line 64 for the slug transform,
-  # line 224 for the glob; ship-gate is not edited).
+  # The accepted spec is the file the ship-gate itself will read: spec_for_slug from
+  # lib/spec/spec-find.sh, the one pick both share (root docs/specs first, then a co-located
+  # <ns>/docs/specs/SPEC-<digits>-<slug>.md, shallow first).
   local match
-  match="$(ls "$top"/docs/specs/SPEC-*-"$slug".md 2>/dev/null | head -1 || true)"
-  [ -n "$match" ]            || { echo "validate-round: no docs/specs/SPEC-*-$slug.md under '$top'" >&2; exit 1; }
+  match="$(spec_for_slug "$top" "$slug")"
+  [ -n "$match" ]            || { echo "validate-round: no SPEC-*-$slug.md under '$top' (docs/specs or a co-located */docs/specs)" >&2; exit 1; }
   [ "$match" = "$spec_abs" ] || { echo "validate-round: spec '$spec_abs' is not the ship-gate pick '$match'" >&2; exit 1; }
   local blob head_sha por n ep token
   blob="$(git -C "$top" hash-object -w "$spec_abs")"
