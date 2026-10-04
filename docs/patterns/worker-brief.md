@@ -27,7 +27,8 @@ dispatcher runs through and writes into the prompt in its own words.
   <reason>]`) for a stateful one; and `## Not proven` throughout.
 - State a test budget. Checks and negative controls run on the affected suites only
   (`bin/test-affected`, `bash tests/run-all.sh --changed`), never `--all`, never
-  `KIT_RUN_ALL=1`, never a loop over every suite. A timing question ("how long does X take")
+  `KIT_RUN_ALL=1`, never a loop over every suite. A negative control hands `lib/gate/negctl.sh`
+  the one affected suite as its test command, never the full runner. A timing question ("how long does X take")
   is answered from the suite history (`bash tests/run-all.sh --times p95`), never by a fresh
   full run. The brief names a wall-clock budget in minutes; past it the worker stops, commits
   what is green, and reports. A goal file never prescribes N full-suite runs, and a brief that
