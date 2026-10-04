@@ -13,15 +13,19 @@ A second session wrote an untracked `docs/specs/SPEC-388-colocated-spec-resoluti
 
 ## Round 1 findings (5 of 7 reviewers returned; 5 and 6 stopped)
 
-Critical (reviewer 3): `SPEC-*-<slug>.md` lets `*` span dashes. Branch `feat/cs` matches a co-located `SPEC-147-foo-cs.md`, so ship-gate can read an unrelated spec's `Lane:`. Fix: match the basename `SPEC-<digits>-<slug>.md` exactly for co-located files; add a decoy fixture.
+The critical folded into the spec as `### Co-located name match`, Edge Case 9 and DEC-7. Root files keep the glob on purpose: the spec's invariant says a root-only repo keeps today's pick.
 
-Warnings to fold:
+### Warnings for the build
 
-- Path form: `spec_files` must print `<root>/<rel>` with no `./`; pin it in TASK-1's AC (validate-round compares strings).
-- Prune `vendor`, `target`, `dist`, `build` too, or record the ceiling; fixture and vendored specs can raise `next`.
-- TASK-4's `rg` check misses the real root-only prose (`commands/start.md:19`, `commands/next.md:11`, `commands/dispatch.md:21`); name files and say active-spec lookup stays root-only.
-- Declare task dependencies; add a test for ship-gate's missing-resolver fallback.
-- Status must be DRAFT, VALIDATED or SHIPPED, not APPROVED.
-- `spec-next check 001` now reports taken in repos with per-namespace `SPEC-001`; add an edge case.
-- A nested git repo under the root gives validate-round a different `top` than ship-gate's `ROOT`.
-- Hostile names: `cd --` (done in the draft), a spaced filename test, `-type f` stated in Design.
+- Path form: `spec_files` prints `<root>/<rel>`, never `<root>/./<rel>`. A test pins the string, because validate-round compares paths.
+- Prune `vendor`, `target`, `dist` and `build` with the dot-dirs and `node_modules`. Vendored or built specs must not raise `next`.
+- TASK-4: the `rg` AC misses the real root-only prose. Check `commands/start.md`, `commands/next.md` and `commands/dispatch.md` by hand. Active-spec lookup there stays root-only (Out of Scope); say so where the prose could mislead.
+- Task order: TASK-1, then TASK-2, then TASK-3, then TASK-4.
+- Test ship-gate's fallback: with `spec-find.sh` unreadable, ship-gate still finds a root spec.
+- Test `spec-next check 001` in a repo with a co-located `SPEC-001`: it reports taken. Accepted by design (Edge Case 8 covers `next`; `check` now sees every namespace).
+- Nested git repo under the root: validate-round's `top` and ship-gate's `ROOT` both come from the outer checkout here. Note any gap the build finds.
+- Hostile names: `cd --` before the walk, `-type f`, and one test with a space in a spec path.
+
+### Rejected warning
+
+- "Status must be DRAFT, VALIDATED or SHIPPED, not APPROVED." `commands/spec.md` step 4 sets `APPROVED` before validation; 11 specs carry it. Status stays `APPROVED` until round 2 returns.

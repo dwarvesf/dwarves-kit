@@ -37,7 +37,7 @@ Approach 1. `validate-round` refuses unless its pick equals ship-gate's pick, so
 ### Extensibility & boundaries
 
 - Load-bearing dimension: the number of directories under the root. The walk stops at depth 7 (a `docs/specs` dir at most 4 directories below the root) and prunes every dot-directory and `node_modules`. Measured: 56 ms on ops-toolkit (256 co-located specs), 34 ms on this repo.
-- `spec_files <root>`: lists spec files in pick order. `spec_for_slug <root> <slug>`: the first listed file whose name matches `SPEC-*-<slug>.md`. Each is testable alone by sourcing the file.
+- `spec_files <root>`: lists spec files in pick order. `spec_for_slug <root> <slug>`: the first listed file whose name matches. A root file matches today's glob `SPEC-*-<slug>.md`. A co-located file matches only the exact basename `SPEC-<digits>-<slug>.md`. Each function is testable alone by sourcing the file.
 
 ## Picture
 
@@ -56,7 +56,7 @@ Approach 1. `validate-round` refuses unless its pick equals ship-gate's pick, so
  │ proof-ledger _negctl_required│──┤      │  spec_for_slug <root> <s>│
  └──────────────────────────────┘  │      │   first SPEC-*-<s>.md    │
  ┌──────────────────────────────┐  │      └──────────────────────────┘
- │ pitch.sh _find_spec          │──┘ spec_for_slug
+ │ pitch.sh _find_spec          │──┘ spec_for_slug (co-located: exact SPEC-<digits>-<s>.md)
  └──────────────────────────────┘
  validate-round pick == ship-gate pick, because both call spec_for_slug
 ```
@@ -79,7 +79,9 @@ Flowchart of `spec_for_slug <root> <slug>`:
    keep:  */docs/specs/SPEC-*.md, not ./docs/specs/*
    sort:  path depth asc, then LC_ALL=C path
         │
- walk the list; first basename matching SPEC-*-<slug>.md wins
+ walk the list; first match wins:
+   root file:       basename glob SPEC-*-<slug>.md   (today's rule)
+   co-located file: basename exactly SPEC-<digits>-<slug>.md
         │
  none ──▶ empty output, exit 0 (callers keep their "no spec" path)
 ```
@@ -91,6 +93,10 @@ Flowchart of `spec_for_slug <root> <slug>`:
 | 1 | Root `docs/specs/` beats any co-located match | Every repo that works today keeps the exact same pick |
 | 2 | Shallower co-located path beats deeper | The nearer namespace is the more general one; `tools/circle` beats `tools/circle/collectors/social` |
 | 3 | Same depth: `LC_ALL=C` byte order of the path | Stable on every host and locale |
+
+### Co-located name match
+
+A co-located basename must equal `SPEC-<digits>-<slug>.md`. The glob `SPEC-*-<slug>.md` lets `*` span dashes. Branch `feat/cs` would then match an unrelated `tools/y/docs/specs/SPEC-147-foo-cs.md`, and ship-gate would read that spec's `Lane:`. Root files keep the glob, so every repo that works today keeps its pick. The test suite carries this decoy as a fixture.
 
 ### Depth
 
@@ -136,7 +142,7 @@ None.
 ## Task Breakdown
 
 ### Phase 1: Foundation
-- [ ] TASK-1: `lib/spec/spec-find.sh` with `spec_files` and `spec_for_slug` per `## Design`. AC: sourcing it in a fixture repo lists root first, then co-located by depth and C order; a depth-5 namespace, a dot-dir and `node_modules` are absent.
+- [ ] TASK-1: `lib/spec/spec-find.sh` with `spec_files` and `spec_for_slug` per `## Design`. AC: sourcing it in a fixture repo lists root first, then co-located by depth and C order; a depth-5 namespace, a dot-dir and `node_modules` are absent; the decoy of Edge Case 9 resolves to nothing.
 
 ### Phase 2: Core
 - [ ] TASK-2: Wire the five callers per `### Caller changes`. AC: each caller finds a co-located spec in a fixture repo; a root-only repo behaves exactly as before.
@@ -179,7 +185,8 @@ bash tests/test-meta.sh && bash tests/test-hooks.sh
 6. The root itself sits inside `.claude/worktrees/<x>` (a kit worktree): the walk starts at `.`, so the prune does not drop the root.
 7. Root path holds a space: callers already refuse or quote it. The resolver quotes every expansion.
 8. Low per-namespace numbers (`SPEC-001` in ten tools): they never raise the max, so `next` is unaffected. Only a higher co-located number moves it.
-9. A test fixture spec under `tests/fixtures/**/docs/specs/` whose slug equals a branch slug with no root spec: it resolves. Accepted; root still wins whenever it exists.
+9. Decoy: branch `feat/cs`, only `tools/y/docs/specs/SPEC-147-foo-cs.md` co-located. `spec_for_slug` prints nothing; ship-gate takes its no-spec path.
+10. A test fixture spec under `tests/fixtures/**/docs/specs/` whose slug equals a branch slug with no root spec: it resolves. Accepted; root still wins whenever it exists.
 
 ## Failure modes
 
@@ -212,6 +219,7 @@ bash tests/test-meta.sh && bash tests/test-hooks.sh
 - DEC-4: prune every dot-directory. Covers `.git` and `.claude/worktrees` in one rule.
 - DEC-5: fix `proof-ledger` and `pitch` too. Same glob, same bug, one-line swap each.
 - DEC-6: negative control as an in-suite mutant copy. A manual revert proves it once; the mutant proves it every run.
+- DEC-7: co-located files match the exact basename `SPEC-<digits>-<slug>.md`; root files keep the glob. A wide co-located walk turns a dash-spanning glob into a cross-namespace mismatch. Root keeps its glob so no working pick changes.
 
 ## Grounding
 
