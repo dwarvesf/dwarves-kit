@@ -37,6 +37,8 @@ lane_header_case() { # $1=slug  $2=header line
   local d; d="$(mktemp -d)"; mkrepo "$d" yes
   git -C "$d" switch -qc "feat/$1"
   printf '# Spec: x\nStatus: DRAFT\n%s\n' "$2" > "$d/docs/specs/SPEC-001-$1.md"
+  mkdir -p "$d/docs/implementation-notes"   # a full-lane push needs its notes file
+  printf '# Notes\nNo deviations; matches the spec verbatim\n' > "$d/docs/implementation-notes/$1.md"
   git -C "$d" add -A; git -C "$d" commit -qm spec
   while read -r g; do
     DWARVES_KIT_LOG_DIR="$LOGDIR" bash "$KIT/lib/gate/gate-ledger.sh" record "$1" "$g" ran "test" >/dev/null 2>&1
