@@ -196,6 +196,7 @@ Every row runs `wrap land` from inside the worktree with `GIT_CONFIG_GLOBAL` and
 | 21 | An open PR already exists for the branch (adopted path), ignored fixture present | edge | Edge 13 | exit 1, no push, no `pr ready`/`pr edit`/`pr merge` |
 | 22 | Ignored `tools/x/data/` (a collapsed directory) with no allow entry, then with an operator entry `tools/x/data` | edge | Edge 14 | first exit 1 naming `tools/x/data/`; then exit 0 |
 | 23 | Branch already landed (a squash on origin), ignored fixture present | edge: order | Edge 16 | the `already landed` path runs, with no refusal |
+| 24 | Branch touches `tools/a<LF>b/t.sh`; ignored `tools/a<LF>b/fixtures/a.raw.json` | fail closed: newline in a touched path | Decision 8 | exit 1, names the newline, no push |
 
 ## Verification
 

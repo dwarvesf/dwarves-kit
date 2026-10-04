@@ -276,6 +276,10 @@ _land_ignored_guard() {
   local -a specs=()
   while IFS= read -r -d $'\001' path; do
     [ -n "$path" ] || continue
+    # The scope list is newline-separated, so a newline in a name would split its scope.
+    case "$path" in *$'\n'*)
+      echo "     LAND REFUSED: a touched path holds a newline, so the ignored-file check cannot scope it; nothing pushed" >&2; return 1 ;;
+    esac
     case "$path" in
       */*/*) dir="${path%%/*}"; rest="${path#*/}"; dir="${dir}/${rest%%/*}"
              case "$scopes" in *$'\n'"s:${dir}"$'\n'*) ;; *) scopes="${scopes}s:${dir}"$'\n'; specs+=(":(literal)${dir}") ;; esac ;;

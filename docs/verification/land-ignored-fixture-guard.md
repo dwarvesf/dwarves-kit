@@ -8,7 +8,7 @@
 
 | Claim | Evidence |
 |---|---|
-| every Test plan row passes (1 to 23, with row 4 split into 4 and 4b) | `LAND_ONLY=ignored` run below: 66 checks green |
+| every Test plan row passes (1 to 24, with row 4 split into 4 and 4b) | `LAND_ONLY=ignored` run below: 70 checks green |
 | the full land suite stays green, including the four `ignored.bin` sections | full run below |
 | the knob sits in the registry's Root-only table and `kit.toml` carries it once | `test-config-registry` below (AC10) |
 | the guard is load-bearing | five negative controls below, each red under its mutation and green after restore |
@@ -25,7 +25,7 @@ Output:
   PASS 23: reports already landed
   PASS 23: no refusal
 test-wrap-land: LAND_ONLY='ignored' selected 1 of 13 sections
-test-wrap-land: all 66 passed
+test-wrap-land: all 70 passed
 Verdict: PASS
 ```
 
@@ -138,6 +138,7 @@ Each ran after the feature commit, with `LAND_CACHE=0 LAND_ONLY=ignored bash tes
 | 3 | swallow the status read's exit code (`st_rc=0`) | 17 (`exits 1`, `names git status`, `no PR create`) | 63 passed, 3 FAILED of 66 | all 66 passed |
 | 4 | skip the scope filter and the pathspec narrowing | 3, 13, 14 | 63 passed, 3 FAILED of 66 | all 66 passed |
 | 5 | match slash-free entries against every component | 6 (`exits 1`, `names the path under dist`) | 64 passed, 2 FAILED of 66 | all 66 passed |
+| 6 | drop the newline refusal in the diff loop | 24 (`names the newline`, `no PR create`) | 67 passed, 3 FAILED of 70 | all 70 passed |
 
 NC4 as the spec words it (skip the scope filter only) turned rows 13 and 14 red but not row 3: the status call already narrows to `:(literal)tools/x`, so git never reports `other/far.raw.json`. Removing the pathspec narrowing as well, which is what "scope every ignored entry" means in this code, turns row 3 red too. Both runs are recorded in the notes; the table row is the combined mutation.
 

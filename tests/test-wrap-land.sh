@@ -2678,6 +2678,14 @@ mkdir -p "$IG_WT/tools/x/fixtures"; echo '{}' > "$IG_WT/tools/x/fixtures/a.raw.j
 ig_land ig23
 chk_has "23: reports already landed" "$out" "already landed"
 chk_no "23: no refusal" "$out" "LAND REFUSED"
+
+echo "--- 24: a touched path with a newline refuses, never scoped open"
+_ig_build ig24 "$IG_GI" 'd="tools/$(printf "a\nb")"; mkdir -p "$d" && echo t > "$d/t.sh"'
+mkdir -p "$IG_WT/tools/$(printf 'a\nb')/fixtures"; echo '{}' > "$IG_WT/tools/$(printf 'a\nb')/fixtures/a.raw.json"
+ig_land ig24
+chk "24: exits 1" "$([ "$rc" -eq 1 ]; echo $?)"
+chk_has "24: names the newline" "$out" "a touched path holds a newline"
+ig_nopush "24" ig24
 } # end sec_ignored
 
 # One section, in this process. The driver sets LAND_SECTION per child; the last line is the
