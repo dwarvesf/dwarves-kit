@@ -65,6 +65,24 @@ echo "[9] bin/test-affected calls the helper on a run, not on --list"
 grep -q 'lib/host/load-warn.sh' "$DIR/bin/test-affected" && ok "bin/test-affected references it" || no "no reference"
 grep -q 'host/load-warn.sh' "$DIR/lib/queue/orchestrate.sh" && ok "orchestrate.sh references it" || no "no reference"
 
+echo "[10] bin/test-affected on a loaded host warns once and keeps the suite verdict (green 0, red 1); --list stays silent"
+F="$TMP/fx"; mkdir -p "$F/bin" "$F/lib/host" "$F/tests" "$F/lib/thing"
+cp "$DIR/bin/test-affected" "$F/bin/test-affected"; cp "$DIR/lib/host/load-warn.sh" "$F/lib/host/load-warn.sh"
+mkdir -p "$F/lib/config"; cp "$DIR/lib/config/kit-config.sh" "$F/lib/config/kit-config.sh"
+printf 'echo one\n' >"$F/lib/thing/engine.sh"
+printf '#!/usr/bin/env bash\n# names lib/thing/engine.sh\necho lib/thing/engine.sh >/dev/null\nexit 0\n' >"$F/tests/test-thing.sh"
+git -C "$F" init -q . 2>/dev/null && git -C "$F" add -A && git -C "$F" -c user.name=t -c user.email=t@example.com commit -q -m base
+printf 'echo two\n' >"$F/lib/thing/engine.sh"
+OUT="$(cd "$F" && KIT_LOAD_STUB=50 bash bin/test-affected --base HEAD --no-cache 2>&1 >/dev/null)"; RC=$?
+if [ "$RC" -eq 0 ] && [ "$(grep -c '^load-warn:' <<<"$OUT")" = 1 ]; then ok "green suite: one warning, exit 0"; else no "rc=$RC out=$OUT"; fi
+printf '#!/usr/bin/env bash\n# names lib/thing/engine.sh\necho lib/thing/engine.sh >/dev/null\nexit 1\n' >"$F/tests/test-thing.sh"
+OUT="$(cd "$F" && KIT_LOAD_STUB=50 bash bin/test-affected --base HEAD --no-cache 2>&1 >/dev/null)"; RC=$?
+if [ "$RC" -eq 1 ] && [ "$(grep -c '^load-warn:' <<<"$OUT")" = 1 ]; then ok "red suite: one warning, exit still 1"; else no "rc=$RC out=$OUT"; fi
+OUT="$(cd "$F" && KIT_LOAD_STUB=50 bash bin/test-affected --base HEAD --list 2>&1)"
+if ! grep -q '^load-warn:' <<<"$OUT"; then ok "--list runs nothing and warns nothing"; else no "out=$OUT"; fi
+OUT="$(cd "$F" && KIT_LOAD_STUB=2 bash bin/test-affected --base HEAD --no-cache 2>&1)"
+if ! grep -q '^load-warn:' <<<"$OUT"; then ok "quiet host: no warning line"; else no "out=$OUT"; fi
+
 echo
 echo "load-warn: $pass passed, $fail failed"
 [ "$fail" -eq 0 ]
