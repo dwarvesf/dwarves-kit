@@ -214,3 +214,15 @@ Load average about 27 (over the default load_warn of 16).
 Command: `bash tests/test-orchestrate.sh; bash tests/test-orchestrate-gate-dispatch.sh; bash tests/test-orchestrate-hardening.sh; bash tests/test-orchestrate-orca.sh` (each under its bin/test-affected.timeouts limit)
 Exit: 0
 Verdict: PASS, all four green (97 s, 23 s, 12 s, 146 s); the load warning goes to stderr and changes no verdict.
+
+## Recorded run (lead: kill rule doubles)
+
+A kill at N seconds means p95 is at least N, so D4 gives a limit of at least 2N; the first cut set exactly N, which kills the suite again.
+
+Command: `bash tests/test-run-all-times.sh` with the pre-fix tests/lib/suite-times.sh copied in (NEGATIVE CONTROL)
+Exit: 1
+Verdict: 27 passed, 2 failed, as expected.
+
+Command: `command cp -f <saved fixed copy> tests/lib/suite-times.sh; bash tests/test-run-all-times.sh`
+Exit: 0
+Verdict: PASS, 29 passed, 0 failed, tree clean.
