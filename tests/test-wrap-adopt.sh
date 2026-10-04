@@ -209,7 +209,7 @@ C16A="$(adopt_clone c16a)"; C16B="$(adopt_clone c16b)"
 out="$(GH_STUB_UNAUTH=1 "$WRAP" adopt "$C16A" "$C16B" 2>&1)"; rc=$?
 chk "16: exits 1" "$([ "$rc" -eq 1 ]; echo $?)"
 chk "16: both rows refuse" \
-  "$([ "$(printf '%s' "$out" | grep -c 'refused: gh is unauthenticated')" -eq 2 ]; echo $?)"
+  "$([ "$(printf '%s' "$out" | grep -c 'result: - refused: gh is unauthenticated')" -eq 2 ]; echo $?)"
 chk "16: no worktree in a" "$([ ! -e "$C16A/.claude/worktrees/kit-adopt" ]; echo $?)"
 chk "16: no worktree in b" "$([ ! -e "$C16B/.claude/worktrees/kit-adopt" ]; echo $?)"
 
@@ -542,6 +542,96 @@ chk_no "39: no resume:" "$out" "resume:"
 out="$(GH_STUB_MERGED_chore_kit_adopt='not json' "$WRAP" adopt "$C39" 2>&1)"
 chk_has "39: unparseable JSON is unreadable" "$out" "PR state unreadable; read $WT39P"
 chk_no "39: still no resume:" "$out" "resume:"
+
+echo "=== adopt: a batch runs in argument order and ends with the summary (23) ==="
+C23A="$(adopt_clone c23a)"; echo x > "$C23A/AGENTS.md"
+C23B="$(adopt_clone c23b)"
+C23C="$(adopt_clone c23c)"
+bash "$KIT_DIR/lib/adopt.sh" "$C23C" >/dev/null 2>&1
+git -C "$C23C" add -A; git -C "$C23C" commit -qm adopt; git -C "$C23C" push -q origin main
+# adopt_apply puts its own clone last, so B's land wiring rides the overrides and
+# the call reads `adopt --apply A B C`.
+out="$(GH_STUB_LAND_REPO="$C23B/.claude/worktrees/kit-adopt" GH_STUB_LAND_REMOTE="$TMPD/abare-c23b" \
+  adopt_apply "$C23C" "$TMPD/abare-c23c" "$C23A" "$C23B")"; rc=$?
+chk "23: exits 1" "$([ "$rc" -eq 1 ]; echo $?)"
+chk "23: repos run in argument order" "$(printf '%s\n' "$out" | grep '^== ' | sed 's/^== //' \
+  | diff -q - <(printf '%s\n' "$(cd "$C23A" && pwd -P)" "$(cd "$C23B" && pwd -P)" "$(cd "$C23C" && pwd -P)") >/dev/null; echo $?)"
+sum23="$(printf '%s\n' "$out" | sed -n '/^ADOPT SUMMARY$/,$p')"
+chk "23: summary rows in order" "$(printf '%s\n' "$sum23" | sed 1d | tr -s ' ' | diff -q - <(printf '%s\n' \
+  ' aclone-c23a - refused: ?? AGENTS.md in the main checkout would block the post-land pull' \
+  ' aclone-c23b #7 adopted' ' aclone-c23c - skip: already adopted') >/dev/null; echo $?)"
+chk "23: B adopted on origin" \
+  "$([ "$(git -C "$C23B" log -1 --format=%s origin/main)" = "chore: adopt the dwarves-kit operate-contract" ]; echo $?)"
+
+# adopt_kill_gh -- a gh in front of the stub whose first `pr merge` raises
+# $ADOPT_KILL_SIG instead of merging: mode `sub` signals land's pipeline
+# subshell and itself, never the verb; mode `pg` signals its whole process group.
+KILLBIN="$TMPD/killbin"; mkdir -p "$KILLBIN"
+cat > "$KILLBIN/gh" <<'EOF'
+#!/usr/bin/env bash
+if [ "${1:-} ${2:-}" = "pr merge" ] && [ ! -e "$ADOPT_KILL_ONCE" ]; then
+  : > "$ADOPT_KILL_ONCE"
+  if [ "$ADOPT_KILL_MODE" = pg ]; then
+    kill "-$ADOPT_KILL_SIG" -- "-$(ps -o pgid= -p $$ | tr -d ' ')"
+  else
+    # Every forked `wrap.sh adopt` ancestor below the topmost one (the verb):
+    # land's pipeline subshell and the $(gh ...) subshell between it and us.
+    chain=""; p=$PPID
+    while [ "${p:-1}" -gt 1 ]; do
+      case "$(ps -o args= -p "$p")" in *"wrap.sh adopt"*) chain="$chain $p" ;; *) break ;; esac
+      p="$(ps -o ppid= -p "$p" | tr -d ' ')"
+    done
+    set -- $chain
+    while [ $# -gt 1 ]; do kill "-$ADOPT_KILL_SIG" "$1"; shift; done
+    kill "-$ADOPT_KILL_SIG" $$
+  fi
+  sleep 5; exit 1
+fi
+exec "$(dirname "$0")/../stub/gh" "$@"
+EOF
+chmod +x "$KILLBIN/gh"
+
+# adopt_kill <mode> <sig> <tag> -- batch [A, B] (two case-17 fixtures) under the
+# killing gh. `pg` runs the verb as a set -m job, its own process group, so the
+# signal never reaches this runner. Sets KA, KB, KOUT, KRC.
+adopt_kill() {
+  local mode="$1" sig="$2" t="$3"
+  KA="$(adopt_clone "k${t}a")"; KB="$(adopt_clone "k${t}b")"
+  set -- env PATH="$KILLBIN:$PATH" ADOPT_KILL_MODE="$mode" ADOPT_KILL_SIG="$sig" \
+    ADOPT_KILL_ONCE="$TMPD/kill-$t.once" GH_STUB_OPEN_HEAD_chore_kit_adopt='[]' GH_STUB_CREATE_NUM=7 \
+    GH_STUB_LAND_REPO="$KA/.claude/worktrees/kit-adopt" GH_STUB_LAND_REMOTE="$TMPD/abare-k${t}a" \
+    GH_STUB_LAND_BRANCH=chore/kit-adopt GH_STUB_LAND_DEF=main "$WRAP" adopt --apply "$KA" "$KB"
+  if [ "$mode" = pg ]; then
+    set -m
+    "$@" > "$TMPD/kill-$t.out" 2>&1 &
+    wait $!; KRC=$?
+    set +m
+    KOUT="$(cat "$TMPD/kill-$t.out")"
+  else
+    KOUT="$("$@" 2>&1)"; KRC=$?
+  fi
+}
+
+# adopt_kill_chk <tag> <A's row> -- the assertions 34a and 34b share.
+adopt_kill_chk() {
+  local t="$1" row="$2" wta sum
+  wta="$(cd "$KA/.claude/worktrees/kit-adopt" 2>/dev/null && pwd -P)"
+  sum="$(printf '%s\n' "$KOUT" | sed -n '/^ADOPT SUMMARY$/,$p' | tr -s ' ')"
+  chk "$t: exits 1" "$([ "$KRC" -eq 1 ]; echo $?)"
+  chk_has "$t: A's result line" "$(printf '%s\n' "$KOUT" | grep 'result:')" "${row}; read ${wta}"
+  chk_has "$t: summary carries A's row" "$sum" "${row}; read ${wta}"
+  chk_has "$t: summary carries B's not run" "$sum" "$(basename "$KB") - not run"
+  chk "$t: B has no worktree" "$([ ! -e "$KB/.claude/worktrees/kit-adopt" ]; echo $?)"
+  chk "$t: B has no branch" "$(git -C "$KB" show-ref --verify --quiet refs/heads/chore/kit-adopt && echo 1 || echo 0)"
+}
+
+echo "=== adopt: a signal to land's subshell stops the batch via R8 (34a) ==="
+adopt_kill sub INT 34ai;  adopt_kill_chk 34a-INT  "interrupted: land exit 130"
+adopt_kill sub TERM 34at; adopt_kill_chk 34a-TERM "interrupted: land exit 143"
+
+echo "=== adopt: a signal to the verb's process group hits the trap (34b) ==="
+adopt_kill pg INT 34bi;  adopt_kill_chk 34b-INT  "interrupted: INT"
+adopt_kill pg TERM 34bt; adopt_kill_chk 34b-TERM "interrupted: TERM"
 
 
 echo

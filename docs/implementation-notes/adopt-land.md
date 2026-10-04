@@ -120,3 +120,9 @@ One critical (R3f printing `resume:` over a leftover that failed R6b) and three 
 - `ADOPT_PR` is the first `#<n>` in the captured land log (`opened PR #7`, `adopted PR #7`, or a `MERGE FAILED #7`), so the `result:` column names the PR on every outcome that got far enough to have one.
 - The override runs `cd "$wt" && proof-ledger.sh override kit-adopt` so the ledger keys the target repo, not the caller's cwd; a failed log stops before land with a `resume:` row.
 - Test helper `adopt_apply` defaults every `GH_STUB_*` via `${VAR:-...}` so a case can override `GH_STUB_LAND_REMOTE` with a throwaway bare: the stub pushes `chore/kit-adopt:refs/heads/main` on every `pr merge` call, even a failed one, and a failed-merge case that must resume later needs the real origin's main untouched.
+
+## T1c build
+
+- The `ADOPT SUMMARY` table prints at the end of every run, dry runs included ("The run ends with"); case 16 now counts the `result:` lines, since the summary repeats each row.
+- The trap row prints its own `  result:` line before the summary, the way every finished repo does; later repos get no `== <repo>` block, only their `not run` summary row.
+- Case 34a's stub signals every forked `wrap.sh adopt` ancestor below the verb, not just `$PPID`: land runs `gh pr merge` inside `$(...)`, so the stub's parent is that comsub subshell, and a TERM there never reaches land's pipeline subshell (land exits 2, the batch runs on).

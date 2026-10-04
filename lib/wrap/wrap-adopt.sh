@@ -34,6 +34,11 @@ ADOPT_SH="$LIB_ROOT/adopt.sh"
 # parses). cmd_adopt creates it once and the verb's EXIT trap removes it.
 ADOPT_TMP=""
 ADOPT_ROW=""; ADOPT_PR="-"; ADOPT_STOP=0
+# The batch (R10): repos in argument order, each one's summary name, PR column
+# and row, the running index, and the worktree once cmd_start printed one. The
+# INT/TERM trap reads them, so they are globals.
+ADOPT_N=0; ADOPT_I=1; ADOPT_WT=""
+ADOPT_REPOS=(); ADOPT_NAMES=(); ADOPT_PRS=(); ADOPT_ROWS=()
 
 # _adopt_blob <repo> <revspec> -- a blob's text (empty when absent), never an error.
 _adopt_blob() { git -C "$1" show "$2" 2>/dev/null; }
@@ -360,6 +365,7 @@ _adopt_one() {
     ADOPT_ROW="failed: start: $(tail -n 1 "$ADOPT_TMP/start.err" 2>/dev/null)"
     return 0
   fi
+  ADOPT_WT="$wt"
 
   driver="$ADOPT_SH"
   if [ "${WRAP_ADOPT_TEST:-0}" = "1" ] && [ -n "${WRAP_ADOPT_SH:-}" ]; then
@@ -494,8 +500,46 @@ _adopt_one() {
 
 # --------------------------------------------------------------------------- adopt
 
-# cmd_adopt [--apply] [--body-file F] <repo> [<repo>...] -- R1/R4/R11. The dry-run
-# loop is T1a's; the apply batch (order, interrupt trap, summary) is T1c's.
+# _adopt_summary -- R10's closing table, one row per repo in argument order:
+# basename, PR (`#<n>` or `-`), result.
+_adopt_summary() {
+  local i=0 nw=0 pw=1
+  while [ "$i" -lt "$ADOPT_N" ]; do
+    i=$(( i + 1 ))
+    [ "${#ADOPT_NAMES[$i]}" -gt "$nw" ] && nw=${#ADOPT_NAMES[$i]}
+    [ "${#ADOPT_PRS[$i]}" -gt "$pw" ] && pw=${#ADOPT_PRS[$i]}
+  done
+  echo "ADOPT SUMMARY"
+  i=0
+  while [ "$i" -lt "$ADOPT_N" ]; do
+    i=$(( i + 1 ))
+    printf '  %-*s  %-*s  %s\n' "$nw" "${ADOPT_NAMES[$i]}" "$pw" "${ADOPT_PRS[$i]}" "${ADOPT_ROWS[$i]}"
+  done
+}
+
+# _adopt_trap <INT|TERM> -- R10: a signal to the verb's own process. bash defers
+# it until the running foreground command ends, so it lands here between
+# commands; the running repo reads interrupted, every later repo `not run`,
+# then the summary and R11's exit 1. A signal that reaches only land's
+# pipeline subshell never gets here (traps reset in a subshell); R8 rows it.
+_adopt_trap() {
+  local j="$ADOPT_I"
+  ADOPT_ROWS[$j]="interrupted"
+  [ -n "$ADOPT_WT" ] && ADOPT_ROWS[$j]="interrupted: $1; read $ADOPT_WT"
+  ADOPT_PRS[$j]="-"
+  printf '  result: - %s\n' "${ADOPT_ROWS[$j]}"
+  while [ "$j" -lt "$ADOPT_N" ]; do
+    j=$(( j + 1 ))
+    ADOPT_ROWS[$j]="not run"; ADOPT_PRS[$j]="-"
+  done
+  _adopt_summary
+  exit 1
+}
+
+# cmd_adopt [--apply] [--body-file F] <repo> [<repo>...] -- R1/R4/R10/R11: repos
+# run one at a time in argument order, a refusal or failure never stops the
+# next, an interrupt (R8's land-pipeline row, or the INT/TERM trap) stops the
+# batch with `not run` rows, and the run ends with the ADOPT SUMMARY table.
 cmd_adopt() {
   local apply=0 bodyfile="" nrepos=0 arg i crepo row gh_state
   local -a repos=()
@@ -531,10 +575,21 @@ cmd_adopt() {
   trap '[ -n "${ADOPT_TMP:-}" ] && rm -rf "$ADOPT_TMP"' EXIT
 
   local failed=0 stopped=0 prcol="-"
+  ADOPT_N="$nrepos"; ADOPT_I=1
   i=0
   while [ "$i" -lt "$nrepos" ]; do
     i=$(( i + 1 ))
     crepo="$(cd "${repos[$i]}" 2>/dev/null && pwd -P)" || crepo="${repos[$i]}"
+    ADOPT_REPOS[$i]="$crepo"; ADOPT_NAMES[$i]="$(basename "$crepo")"
+  done
+  trap '_adopt_trap INT' INT
+  trap '_adopt_trap TERM' TERM
+
+  i=0
+  while [ "$i" -lt "$nrepos" ]; do
+    i=$(( i + 1 ))
+    ADOPT_I="$i"; ADOPT_WT=""
+    crepo="${ADOPT_REPOS[$i]}"
     printf '== %s\n' "$crepo"
     prcol="-"
     if [ "$stopped" = 1 ]; then
@@ -562,7 +617,9 @@ cmd_adopt() {
       "would adopt"|"skip: already adopted"|"adopted") ;;
       *) failed=1 ;;
     esac
+    ADOPT_ROWS[$i]="$row"; ADOPT_PRS[$i]="$prcol"
     printf '  result: %s %s\n' "$prcol" "$row"
   done
+  _adopt_summary
   return "$failed"
 }
