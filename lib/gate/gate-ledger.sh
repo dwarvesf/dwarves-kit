@@ -82,6 +82,9 @@ if ! source "$LIB_ROOT/spec/spec-find.sh" 2>/dev/null; then
   spec_files() { ls "$1"/docs/specs/SPEC-*.md 2>/dev/null; return 0; }
   spec_for_slug() { [ -n "$2" ] || return 0; ls "$1"/docs/specs/SPEC-*-"$2".md 2>/dev/null | head -1 || true; return 0; }
 fi
+# The ledger-verdict cache keys (_lane_fp, _file_id), shared with lane-telemetry's cache.
+# shellcheck source=lib/gate/ledger-key.sh
+source "$GATE_DIR/ledger-key.sh" || { echo "FATAL: lib/gate/ledger-key.sh missing or unreadable" >&2; exit 1; }
 kit_migrate_log_dir || true
 LOG_DIR="$(kit_resolve_log_dir)" || exit 1
 RUNS_DIR="$LOG_DIR/runs"
@@ -134,8 +137,12 @@ normalize_phase() {
   # newline would otherwise emit a second physical ledger line. Unreachable today (all callers
   # pass a hardcoded phase literal), but the guard is one tr and matches oneline()'s intent.
   local p
-  p="$(printf '%s' "$1" | tr '\n\r' '  ' | sed -E 's/\([^)]*\)//g' | tr 'A-Z' 'a-z' \
-    | sed -E 's/^[[:space:]]+|[[:space:]]+$//g; s/[[:space:]]+/-/g')"
+  if [[ "$1" =~ ^[[:lower:][:digit:]][[:lower:][:digit:]-]*$ ]]; then
+    p="$1"   # already a stable key (every lane-data phase is): the pipeline below returns it unchanged, minus five spawns
+  else
+    p="$(printf '%s' "$1" | tr '\n\r' '  ' | sed -E 's/\([^)]*\)//g' | tr 'A-Z' 'a-z' \
+      | sed -E 's/^[[:space:]]+|[[:space:]]+$//g; s/[[:space:]]+/-/g')"
+  fi
   # Alias command-name drift: agents recording ad-hoc sometimes use the command name
   # ("execute") instead of the matrix gate it owns ("build"), leaving check() blind to a
   # build that ran (seen 2026-07-21, finance-warehouse run). "verify" is NOT aliased to
@@ -472,10 +479,76 @@ override() {
 
 show() { local f; f="$(ledger_file "${1:-}")"; if [ -f "$f" ]; then cat "$f"; else echo "(no ledger for '${1:-}')" >&2; return 1; fi; }
 
+# `check` verdict cache: $LOG_DIR/.gate-check.cache, the same key scheme as lane-telemetry's
+# .shipped-incomplete.cache (ledger-key.sh), so a check on an unchanged ledger skips the lane
+# derivation (about 40 process spawns).
+#   line 1   #fp=<cksum of the lane data + gate scripts>   (a mismatch drops every entry)
+#   then     lane<TAB>rid<TAB>kit-lanes<TAB>size<TAB>mtime<TAB>inode<TAB>ctime<TAB>pass|fail:<phase>,<phase>
+# Any miss, unreadable or malformed entry runs the full check. An entry is written only for a ledger
+# whose ctime is at least 2 s old (a user can set mtime, never ctime): a same-size rewrite inside the
+# timestamp second would otherwise be invisible to the key. An unreadable ledger is never cached. The rewrite is temp + mv; a write failure is never fatal.
+_CHECK_RES_RE='^(pass|fail:[a-z0-9-]+(,[a-z0-9-]+)*)$'
+_check_cache_get() {  # <prefix> <fp>: prints the cached result, or nothing on a miss
+  local prefix="$1" fp="$2" nl=$'\n' file="$LOG_DIR/.gate-check.cache" cache rest res
+  [ -r "$file" ] || return 0
+  cache="$(<"$file")" || return 0
+  case "$cache" in "#fp=$fp$nl"*) ;; *) return 0 ;; esac
+  cache="$nl$cache$nl"
+  case "$cache" in *"$nl$prefix"*) ;; *) return 0 ;; esac
+  rest="${cache#*"$nl$prefix"}"; res="${rest%%"$nl"*}"
+  [[ "$res" =~ $_CHECK_RES_RE ]] && printf '%s' "$res"
+  return 0
+}
+
+_check_cache_put() {  # <prefix> <fp> <ctime> <result>
+  local prefix="$1" fp="$2" ctime="$3" result="$4" nl=$'\n' file="$LOG_DIR/.gate-check.cache" keep=""
+  [ -d "$LOG_DIR" ] || return 0
+  [ "$(( $(now_epoch) - ctime ))" -ge 2 ] 2>/dev/null || return 0
+  if [ -r "$file" ] && [ "$(head -n 1 "$file" 2>/dev/null || true)" = "#fp=$fp" ]; then
+    # keep the newest 400 other entries; a fresh result replaces any earlier one for its key
+    keep="$(tail -n +2 "$file" 2>/dev/null | grep -vF -- "$prefix" | tail -n 400 || true)"
+  fi
+  _CC_TMP="$(mktemp "$file.XXXXXX" 2>/dev/null)" || { _CC_TMP=""; return 0; }
+  trap 'command rm -f "$_CC_TMP"' EXIT
+  trap 'command rm -f "$_CC_TMP"; exit 143' TERM
+  trap 'command rm -f "$_CC_TMP"; exit 130' INT
+  { printf '#fp=%s\n' "$fp"; [ -z "$keep" ] || printf '%s\n' "$keep"; printf '%s%s\n' "$prefix" "$result"; } > "$_CC_TMP" 2>/dev/null \
+    && mv -f "$_CC_TMP" "$file" 2>/dev/null || command rm -f "$_CC_TMP" 2>/dev/null || true
+  trap - EXIT TERM INT
+  return 0
+}
+
 # exit 0 if every required (measure-twice) gate has a ran|override entry; else 1 + list gaps.
 check() {
   local kl=""; if [ "${3:-}" = "--kit-lanes" ]; then kl=1; fi
   local lane="${1:-}" rid="${2:-}"; [ -n "$lane" ] && [ -n "$rid" ] || { echo "usage: check <lane> <rid> [--kit-lanes]" >&2; return 64; }
+  # Cache lookup first. Only a known lane with a usable rid and a stat-able ledger is ever cached,
+  # so an unknown lane, an empty rid name or a missing ledger always takes the full path below.
+  local tab=$'\t' safe ck_id="" ck_fp="" ck_prefix="" ck_res="" ck_phases="" ck_phase="" ck_ctime="" ck_f=""
+  case " $LANE_NAMES " in
+    *" $lane "*)
+      safe="$(runid "$rid")"
+      if [ -n "$safe" ]; then
+        ck_f="$(ledger_file "$rid")"
+        [ -r "$ck_f" ] && ck_id="$(_file_id "$ck_f")"
+        if [ -n "$ck_id" ]; then
+          ck_fp="$(_lane_fp)"
+          ck_prefix="$lane$tab$safe$tab${kl:-0}$tab$ck_id$tab"
+          ck_res="$(_check_cache_get "$ck_prefix" "$ck_fp")"
+        fi
+      fi ;;
+  esac
+  case "$ck_res" in
+    pass) return 0 ;;
+    fail:*)
+      ck_phases="${ck_res#fail:}"
+      while [ -n "$ck_phases" ]; do
+        ck_phase="${ck_phases%%,*}"
+        echo "MISSING-GATE: $ck_phase (required for lane '$lane'; no ran/override entry in the ledger)" >&2
+        case "$ck_phases" in *,*) ck_phases="${ck_phases#*,}" ;; *) ck_phases="" ;; esac
+      done
+      return 1 ;;
+  esac
   # FAIL CLOSED on an unknown lane (security review, TIER-4): `required` returns nonzero for a
   # lane with no valid lane data (a typo, or "mega"). Reading its EMPTY stream in
   # the loop below would leave missing=0 and vacuously PASS -- so an unknown lane would let
@@ -488,14 +561,19 @@ check() {
     return 1
   fi
   local f; f="$(ledger_file "$rid")"
-  local missing=0 phase
+  local missing=0 phase missing_phases=""
   while IFS= read -r phase; do
     [ -n "$phase" ] || continue
     if [ ! -f "$f" ] || ! awk -F' [|] ' -v p="$phase" '$2=="GATE" && $3==p && ($4=="ran"||$4=="override"){f=1} END{exit !f}' "$f"; then
       echo "MISSING-GATE: $phase (required for lane '$lane'; no ran/override entry in the ledger)" >&2
-      missing=1
+      missing=1; missing_phases="$missing_phases${missing_phases:+,}$phase"
     fi
   done <<< "$req"
+  if [ -n "$ck_prefix" ]; then
+    if [ "$missing" -eq 0 ]; then ck_res=pass; else ck_res="fail:$missing_phases"; fi
+    ck_ctime="${ck_id##*"$tab"}"
+    [[ "$ck_res" =~ $_CHECK_RES_RE ]] && _check_cache_put "$ck_prefix" "$ck_fp" "$ck_ctime" "$ck_res"
+  fi
   return "$missing"
 }
 
