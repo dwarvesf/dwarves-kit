@@ -200,6 +200,152 @@ _land_proof_block() {
 
 # --------------------------------------------------------------------------- land
 
+# _LAND_IGNORED_BUILTIN -- ignored entries the guard always allows: build output, tool caches,
+# local config that must never be committed, and the kit's own state. Space-separated, three
+# forms (see _land_ignored_allowed). `*` in a path form crosses `/`, which is fine here.
+_LAND_IGNORED_BUILTIN="node_modules .wrangler dist *.tsbuildinfo __pycache__ target .pytest_cache/ .venv/ .mypy_cache/ .ruff_cache/ .env .env.* .envrc .dev.vars .DS_Store .claude/session-state tests/.cache lib/*/bin/*-rs"
+
+# _land_ignored_allowed <path> -- 0 when the built-in list or the operator's
+# wrap.land_ignored_allow covers <path> (a `git status` entry, trailing `/` already
+# stripped). Forms: no `/` globs the LAST component only, never an ancestor; a trailing `/`
+# allows the whole subtree under any directory of that name; any other entry with a `/`
+# globs the whole path or a leading run of its components. Split under set -f so an entry
+# such as `*.json` never expands against the cwd.
+_land_ignored_allowed() {
+  local p="$1" entries entry name last prefix part comp rest restore="" hit=1
+  case "$-" in *f*) ;; *) restore=1; set -f ;; esac
+  entries="${_LAND_IGNORED_BUILTIN} $(kit_config_get_root wrap.land_ignored_allow "")"
+  last="${p##*/}"
+  for entry in $entries; do
+    case "$entry" in
+      */)
+        name="${entry%/}"
+        case "$name" in
+          */*) entry="$name" ;;
+          *) rest="$p"
+             while :; do
+               comp="${rest%%/*}"
+               # shellcheck disable=SC2254
+               case "$comp" in $name) hit=0; break ;; esac
+               case "$rest" in */*) rest="${rest#*/}" ;; *) break ;; esac
+             done
+             [ "$hit" -eq 0 ] && break
+             continue ;;
+        esac ;;
+      */*) ;;
+      *) # shellcheck disable=SC2254
+         case "$last" in $entry) hit=0; break ;; esac
+         continue ;;
+    esac
+    prefix=""; rest="$p"
+    while :; do
+      part="${rest%%/*}"
+      prefix="${prefix:+${prefix}/}${part}"
+      # shellcheck disable=SC2254
+      case "$prefix" in $entry) hit=0; break ;; esac
+      case "$rest" in */*) rest="${rest#*/}" ;; *) break ;; esac
+    done
+    [ "$hit" -eq 0 ] && break
+  done
+  [ -z "$restore" ] || set +f
+  return "$hit"
+}
+
+# _land_ignored_guard <wt> <base> <branch> -- refuse (return 1, print the paths) when the
+# worktree holds a gitignored file under a directory the branch touches: tests that read it
+# pass here and fail on a clean checkout, and git does not count an ignored file as dirty.
+# Scope per touched path: a root file scopes the root's direct children; a depth-1 file
+# (_meta/x) scopes that directory's direct children; depth 2 or more (tools/x/t/a) scopes the
+# first two components' whole subtree. Every read fails closed. Writes nothing.
+# ponytail: a fixture outside every scope (a root-level test reading testdata/x, a depth-1
+# test reading a grandchild) is not seen; the scope rule is a heuristic, not a dependency scan.
+_land_ignored_guard() {
+  local wt="$1" base="$2" branch="$3"
+  local fail="     LAND REFUSED: the ignored-file check could not read"
+  if [ -z "$base" ]; then
+    echo "${fail} the merge base; nothing pushed" >&2; return 1
+  fi
+  local diff_out diff_rc
+  diff_out="$(git -C "$wt" diff --name-only -z --no-renames "$base" HEAD 2>/dev/null \
+    | tr '\0' '\001'; exit "${PIPESTATUS[0]}")"; diff_rc=$?
+  if [ "$diff_rc" -ne 0 ]; then
+    echo "${fail} git diff; nothing pushed" >&2; return 1
+  fi
+
+  local scopes=$'\n' root_scope=0 path dir rest
+  local -a specs=()
+  while IFS= read -r -d $'\001' path; do
+    [ -n "$path" ] || continue
+    # The scope list is newline-separated, so a newline in a name would split its scope.
+    case "$path" in *$'\n'*)
+      echo "     LAND REFUSED: a touched path holds a newline, so the ignored-file check cannot scope it; nothing pushed" >&2; return 1 ;;
+    esac
+    case "$path" in
+      */*/*) dir="${path%%/*}"; rest="${path#*/}"; dir="${dir}/${rest%%/*}"
+             case "$scopes" in *$'\n'"s:${dir}"$'\n'*) ;; *) scopes="${scopes}s:${dir}"$'\n'; specs+=(":(literal)${dir}") ;; esac ;;
+      */*)   dir="${path%%/*}"
+             case "$scopes" in *$'\n'"d:${dir}"$'\n'*) ;; *) scopes="${scopes}d:${dir}"$'\n'; specs+=(":(literal)${dir}") ;; esac ;;
+      *)     root_scope=1 ;;
+    esac
+  done <<< "$diff_out"
+  if [ "$root_scope" -eq 0 ] && [ "${#specs[@]}" -eq 0 ]; then return 0; fi
+  # A root scope cannot be named by a pathspec, so it reads the whole tree; the prefix
+  # filter below is the authority either way.
+  [ "$root_scope" -eq 0 ] || specs=()
+
+  local st st_rc
+  st="$(git -C "$wt" status --porcelain -z --ignored=matching --untracked-files=normal \
+    ${specs[@]+-- "${specs[@]}"} 2>/dev/null | tr '\0' '\001'; exit "${PIPESTATUS[0]}")"; st_rc=$?
+  if [ "$st_rc" -ne 0 ]; then
+    echo "${fail} git status; nothing pushed" >&2; return 1
+  fi
+
+  local ent e p rel sc found lines="" n=0 marked=0 base_name safe
+  while IFS= read -r -d $'\001' ent; do
+    case "$ent" in '!! '*) ;; *) continue ;; esac
+    e="${ent#!! }"
+    p="${e%/}"
+    found=0
+    # Literal prefix compare, never a glob or regex.
+    if [ "$root_scope" -eq 1 ]; then
+      case "$p" in */*) ;; *) found=1 ;; esac
+    fi
+    if [ "$found" -eq 0 ]; then
+      while IFS= read -r sc; do
+        [ -n "$sc" ] || continue
+        dir="${sc#?:}"
+        case "$p" in "${dir}/"*) ;; *) continue ;; esac
+        rel="${p#"${dir}"/}"
+        case "${sc%%:*}" in
+          s) found=1 ;;
+          d) case "$rel" in */*) ;; *) found=1 ;; esac ;;
+        esac
+        [ "$found" -eq 0 ] || break
+      done <<< "$scopes"
+    fi
+    [ "$found" -eq 1 ] || continue
+    ! _land_ignored_allowed "$p" || continue
+    safe="$(printf '%s' "$e" | tr '[:cntrl:]' '?')"
+    base_name="$(printf '%s' "${p##*/}" | tr 'A-Z' 'a-z')"
+    case "$base_name" in
+      .env*|*.pem|*.key|*secret*|*credential*|*token*)
+        safe="${safe}  (looks like a secret: never commit; move or delete it, or allow it)"
+        marked=$(( marked + 1 )) ;;
+    esac
+    lines="${lines}${safe}"$'\n'
+    n=$(( n + 1 ))
+  done <<< "$st"
+  [ "$n" -gt 0 ] || return 0
+
+  echo "     LAND REFUSED: ${n} ignored path$([ "$n" -eq 1 ] || echo s) under what ${branch} touches; a clean checkout will not have $([ "$n" -eq 1 ] && echo it || echo them)" >&2
+  printf '%s' "$lines" | LC_ALL=C sort | head -n 20 | sed 's/^/       /' >&2
+  [ "$n" -le 20 ] || echo "       and $(( n - 20 )) more" >&2
+  if [ "$marked" -lt "$n" ]; then
+    echo "     a human decides for each unmarked path: commit it (git add -f), delete it, or allow it in [wrap] land_ignored_allow in the operator kit.toml" >&2
+  fi
+  return 1
+}
+
 # cmd_land <worktree> [--title T] [--body-file F] -- the landing loop for ONE committed
 # branch in a hand-made worktree: push, open the PR, squash-merge, verify the tree, fast
 # forward the main checkout, remove the worktree, delete the branch. Each step prints one
@@ -376,6 +522,10 @@ cmd_land() {
     _land_tidy "$repo" "$wt" "$branch" "$def" "$url" "$tip" "$origin_probe" ""
     return $?
   fi
+
+  # A gitignored file under what the branch touches is invisible to the dirty check and to a
+  # clean checkout alike: refuse before anything is pushed or opened.
+  _land_ignored_guard "$wt" "$proof_base" "$branch" || return 1
 
   # A title-only body skips the repo's PR template (and any check that reads it), so a NEW
   # PR with no --body-file refuses before anything is pushed. An adopted PR keeps its body.

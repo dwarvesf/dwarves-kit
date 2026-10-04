@@ -365,6 +365,21 @@ roots = ""                      # [impl] space-separated list of directories (no
                                  #        reason as the knobs below: it decides what a bare flag
                                  #        sweeps across every project on the machine.
 
+land_ignored_allow = ""         # [impl] space-separated allow entries for `wrap land`'s ignored-file
+                                 #        guard. The guard refuses a land when the worktree holds a
+                                 #        gitignored file under a directory the branch touches, since
+                                 #        a clean checkout will not have it. Build output, caches,
+                                 #        and local config (node_modules, dist, .venv/, .env, ...)
+                                 #        are always allowed in code; this list adds to them. An
+                                 #        entry with no `/` globs the last path component; ending in
+                                 #        `/` it allows that directory's whole subtree at any depth;
+                                 #        any other entry with a `/` globs the repo-relative path.
+                                 #        Read from the operator `kit.toml` or the KIT-ROOT
+                                 #        `kit.toml` ONLY; a project `.kit.toml` is never read for
+                                 #        this key, because it loosens a refusal and a project file
+                                 #        rides inside a PR. A value cannot contain `#`. Empty = the
+                                 #        built-in list only.
+
 distill = true                  # [impl] the distill half. true = every wrap runs the distill half
                                  #        (the pre-step-0 candidate scan, both seams (`before`/
                                  #        `after`), and all of step 7: DEBT marker, candidates,

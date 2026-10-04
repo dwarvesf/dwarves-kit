@@ -84,6 +84,11 @@ land_adv_regen() { # land_adv_regen <name> <spec> -- origin gains specs/<s> + a 
 lm_conf() { printf '{"number":%s,"title":"x","headRefName":"feat/land","baseRefName":"main","mergeable":"CONFLICTING","mergeStateStatus":"DIRTY","statusCheckRollup":[],"headRefOid":"%s"}' "$1" "$2"; }
 lm_ok() { printf '{"number":%s,"title":"x","headRefName":"feat/land","baseRefName":"main","mergeable":"MERGEABLE","mergeStateStatus":"CLEAN","statusCheckRollup":[],"headRefOid":"%%REMERGE_TIP%%"}' "$1"; }
 REAL_GIT_BIN="$(command -v git)"
+# The land-merge sections that plant an operator-private ignored.bin at the worktree root
+# (utref, ignx, ignr, igno) land under an operator kit.toml that allows it: those cases prove
+# the file survives the merge cycle, so it stays where it is and the guard is told it is fine.
+IGN_BIN_OP="$TMPD/ign-bin-operator"; mkdir -p "$IGN_BIN_OP"
+printf '[wrap]\nland_ignored_allow = "ignored.bin"\n' > "$IGN_BIN_OP/kit.toml"
 
 # ===========================================================================
 sec_happy() {
@@ -897,7 +902,7 @@ out="$(GH_STUB_OPEN_PRS='[]' GH_STUB_CREATE_NUM=42 \
   GH_STUB_PR_42="$(lm_conf 42 "$LTIP")" \
   KIT_WRAP_CI_GRACE_SECS=0 KIT_WRAP_CARRY_CHECKS_SECS=0 \
   GH_STUB_LAND_REPO="$LWT" GH_STUB_LAND_REMOTE="$TMPD/ld-bare-utref" \
-  GH_STUB_LAND_BRANCH=feat/land GH_STUB_LAND_DEF=main "$WRAP" land "$LWT" 2>&1)"; rc=$?
+  GH_STUB_LAND_BRANCH=feat/land GH_STUB_LAND_DEF=main KIT_CONFIG_OPERATOR="$IGN_BIN_OP" "$WRAP" land "$LWT" 2>&1)"; rc=$?
 chk "land-merge: refused-with-output exits 2" "$([ "$rc" -eq 2 ]; echo $?)"
 chk "land-merge: the untracked output is gone" "$([ ! -e "$LWT/docs/GEN_OUT.txt" ]; echo $?)"
 chk "land-merge: the gitignored file is untouched" \
@@ -1499,7 +1504,7 @@ out="$(GH_STUB_OPEN_PRS='[]' GH_STUB_CREATE_NUM=42 \
   GH_STUB_PR_42="$(lm_conf 42 "$LTIP")" GH_STUB_PR_42_2="$(lm_ok 42)" \
   KIT_WRAP_CI_GRACE_SECS=0 KIT_WRAP_CARRY_CHECKS_SECS=0 \
   GH_STUB_LAND_REPO="$LWT" GH_STUB_LAND_REMOTE="$TMPD/ld-bare-ignx" \
-  GH_STUB_LAND_BRANCH=feat/land GH_STUB_LAND_DEF=main "$WRAP" land "$LWT" 2>&1)"; rc=$?
+  GH_STUB_LAND_BRANCH=feat/land GH_STUB_LAND_DEF=main KIT_CONFIG_OPERATOR="$IGN_BIN_OP" "$WRAP" land "$LWT" 2>&1)"; rc=$?
 chk "land-merge: unignored-operator-file exits 0" "$rc"
 chk "land-merge: the operator file never entered the pushed tree" \
   "$(git -C "$TMPD/ld-bare-ignx" cat-file -e main:ignored.bin 2>/dev/null && echo 1 || echo 0)"
@@ -1525,7 +1530,7 @@ out="$(GH_STUB_OPEN_PRS='[]' GH_STUB_CREATE_NUM=42 \
   GH_STUB_PR_42="$(lm_conf 42 "$LTIP")" \
   KIT_WRAP_CI_GRACE_SECS=0 KIT_WRAP_CARRY_CHECKS_SECS=0 \
   GH_STUB_LAND_REPO="$LWT" GH_STUB_LAND_REMOTE="$TMPD/ld-bare-ignr" \
-  GH_STUB_LAND_BRANCH=feat/land GH_STUB_LAND_DEF=main "$WRAP" land "$LWT" 2>&1)"; rc=$?
+  GH_STUB_LAND_BRANCH=feat/land GH_STUB_LAND_DEF=main KIT_CONFIG_OPERATOR="$IGN_BIN_OP" "$WRAP" land "$LWT" 2>&1)"; rc=$?
 chk "land-merge: refused-unignore exits 2" "$([ "$rc" -eq 2 ]; echo $?)"
 chk_has "land-merge: the refusal names the real conflict" "$out" "conflict in base.txt"
 chk "land-merge: the un-ignored operator file survived the restore" \
@@ -1551,7 +1556,7 @@ out="$(GH_STUB_OPEN_PRS='[]' GH_STUB_CREATE_NUM=42 \
   GH_STUB_PR_42="$(lm_conf 42 "$LTIP")" \
   KIT_WRAP_CI_GRACE_SECS=0 KIT_WRAP_CARRY_CHECKS_SECS=0 \
   GH_STUB_LAND_REPO="$LWT" GH_STUB_LAND_REMOTE="$TMPD/ld-bare-igno" \
-  GH_STUB_LAND_BRANCH=feat/land GH_STUB_LAND_DEF=main "$WRAP" land "$LWT" 2>&1)"; rc=$?
+  GH_STUB_LAND_BRANCH=feat/land GH_STUB_LAND_DEF=main KIT_CONFIG_OPERATOR="$IGN_BIN_OP" "$WRAP" land "$LWT" 2>&1)"; rc=$?
 chk "land-merge: overwrite-ignored exits 2" "$([ "$rc" -eq 2 ]; echo $?)"
 chk "land-merge: the ignored file kept the operator content" \
   "$([ "$(cat "$LWT/ignored.bin" 2>/dev/null)" = "operator-private" ]; echo $?)"
@@ -2418,6 +2423,270 @@ chk_has "round-trip: the real flush printed the paste line" "$out" "![shot](http
 chk_has "round-trip: the land still pushed" "$out" "pushed feat/land"
 chk_has "round-trip: the land still merged" "$out" "merged #42 ("
 } # end sec_flush
+
+# ===========================================================================
+sec_ignored() {
+echo "=== land: a branch whose touched paths hold ignored files is refused (ignored-file guard) ==="
+# ===========================================================================
+# Real git, `gh` stubbed. The operator's global excludes and gitconfig are pinned to empty
+# fixture paths: git falls back to $XDG_CONFIG_HOME/git/ignore, so a real ~/.gitignore would
+# turn an untracked fixture into an ignored one.
+export GIT_CONFIG_GLOBAL="$TMPD/ig-gitconfig" XDG_CONFIG_HOME="$TMPD/ig-xdg"
+: > "$GIT_CONFIG_GLOBAL"; mkdir -p "$XDG_CONFIG_HOME"
+
+# _ig_build <name> <gitignore text, printf %b> <branch setup> [base setup]: a bare origin on
+# main, a clone with the worktree on feat/land, and one commit of <branch setup> (run inside
+# the worktree) on the branch. The default setup touches tools/x/test_x.sh.
+_ig_build() {
+  local name="$1" gi="$2" setup="$3" bsetup="${4:-}" work="$TMPD/ld-work-$1" repo="$TMPD/ld-repo-$1"
+  mkdir -p "$work"; git -C "$work" init -q; gitc "$work"
+  git -C "$work" symbolic-ref HEAD refs/heads/main
+  echo base > "$work/base.txt"
+  [ -z "$gi" ] || printf '%b' "$gi" > "$work/.gitignore"
+  [ -z "$bsetup" ] || ( cd "$work" && eval "$bsetup" )
+  git -C "$work" add -A; git -C "$work" commit -qm base
+  git clone -q --bare "$work" "$TMPD/ld-bare-$name"
+  git clone -q "$TMPD/ld-bare-$name" "$repo"; gitc "$repo"
+  git -C "$repo" remote set-head origin main >/dev/null 2>&1
+  git -C "$repo" worktree add -q -b feat/land "$repo/wt" main >/dev/null 2>&1
+  ( cd "$repo/wt" && eval "${setup:-mkdir -p tools/x && echo t > tools/x/test_x.sh}" )
+  git -C "$repo/wt" add -A; git -C "$repo/wt" commit -qm "feat: the landed change"
+  IG_WT="$(cd "$repo/wt" && pwd -P)"
+}
+# ig_land <name> [VAR=val ...]: one land from inside the worktree; sets $out and $rc.
+ig_land() {
+  local name="$1"; shift
+  : > "$GH_STUB_CALLS"; rm -f "$GH_STUB_CALLS".*
+  out="$(cd "$IG_WT" && env GH_STUB_OPEN_PRS='[]' GH_STUB_CREATE_NUM=42 GH_STUB_LAND_REPO="$IG_WT" \
+    GH_STUB_LAND_REMOTE="$TMPD/ld-bare-$name" GH_STUB_LAND_BRANCH=feat/land GH_STUB_LAND_DEF=main \
+    "$@" "$WRAP" land "$IG_WT" 2>&1)"; rc=$?
+}
+# ig_nopush <label> <name>: origin has no feat/land and the stub saw no PR write.
+ig_nopush() {
+  chk "$1: no push" "$(git -C "$TMPD/ld-bare-$2" rev-parse --verify feat/land >/dev/null 2>&1 && echo 1 || echo 0)"
+  chk "$1: no PR create, edit, ready or merge" "$(grep -cE '^pr (create|edit|ready|merge)' "$GH_STUB_CALLS")"
+}
+# ig_op <value>: an operator config dir whose [wrap] land_ignored_allow is <value>.
+ig_op() { local d; d="$(mktemp -d "$TMPD/ig-op.XXXXXX")"; printf '[wrap]\nland_ignored_allow = "%s"\n' "$1" > "$d/kit.toml"; printf '%s' "$d"; }
+# ig_shim <sub> <match>: a git shim dir that fails one subcommand whose argv holds <match>.
+ig_shim() {
+  local d; d="$(mktemp -d "$TMPD/ig-shim.XXXXXX")"
+  cat > "$d/git" <<SH
+#!/usr/bin/env bash
+args=("\$@"); i=0
+while [ "\$i" -lt "\$#" ]; do
+  case "\${args[\$i]}" in -C|-c) i=\$((i + 2)) ;; -*) i=\$((i + 1)) ;; *) break ;; esac
+done
+if [ "\${args[\$i]:-}" = "$1" ] && [[ " \$* " == *"$2"* ]]; then echo "shim: forced $1 failure" >&2; exit 1; fi
+exec "$REAL_GIT_BIN" "\$@"
+SH
+  chmod +x "$d/git"; printf '%s' "$d"
+}
+IG_GI='*.raw.json\n'
+
+echo "--- 1: an ignored fixture under a touched unit refuses, nothing pushed"
+_ig_build ig1 "$IG_GI" ""
+mkdir -p "$IG_WT/tools/x/fixtures"; echo '{}' > "$IG_WT/tools/x/fixtures/a.raw.json"
+ig_land ig1
+chk "1: exits 1" "$([ "$rc" -eq 1 ]; echo $?)"
+chk_has "1: LAND REFUSED" "$out" "LAND REFUSED: 1 ignored path under what feat/land touches"
+chk_has "1: names the path" "$out" "tools/x/fixtures/a.raw.json"
+chk_has "1: closes with the human-decides line" "$out" "a human decides for each unmarked path"
+ig_nopush "1" ig1
+
+echo "--- 2: the same fixture committed through git add -f lands"
+_ig_build ig2 "$IG_GI" 'mkdir -p tools/x/fixtures && echo t > tools/x/test_x.sh && echo "{}" > tools/x/fixtures/a.raw.json && git add -f tools/x/fixtures/a.raw.json'
+ig_land ig2
+chk "2: exits 0" "$rc"
+chk_has "2: merged" "$out" "merged #"
+
+echo "--- 3: an ignored file outside every scope passes"
+_ig_build ig3 "$IG_GI" ""
+mkdir -p "$IG_WT/other"; echo '{}' > "$IG_WT/other/far.raw.json"
+ig_land ig3
+chk "3: exits 0" "$rc"
+
+echo "--- 4: the built-in list passes (build output, tool caches, local config)"
+_ig_build ig4 'node_modules/\ndist/\n*.tsbuildinfo\n.wrangler/\n__pycache__/\n.env\n.env.*\n.envrc\n.dev.vars\n.DS_Store\n' ""
+( cd "$IG_WT/tools/x" && mkdir -p node_modules/pkg dist .wrangler __pycache__ .venv/bin .pytest_cache/v .mypy_cache .ruff_cache
+  for i in 1 2 3 4 5 6 7 8 9 10; do echo x > "node_modules/pkg/f$i.js"; done
+  echo x > dist/o.js; echo x > a.tsbuildinfo; echo x > .wrangler/s; echo x > __pycache__/m.pyc
+  for c in .venv .pytest_cache .mypy_cache .ruff_cache; do printf '*\n' > "$c/.gitignore"; echo x > "$c/data"; done
+  echo x > .venv/bin/python; echo x > .pytest_cache/v/c
+  echo x > .env; echo x > .env.local; echo x > .envrc; echo x > .dev.vars; echo x > .DS_Store )
+chk_has "4: fixture check: git lists a tool cache's children one by one" \
+  "$(git -C "$IG_WT" status --porcelain --ignored=matching)" "!! tools/x/.venv/.gitignore"
+ig_land ig4
+chk "4: exits 0" "$rc"
+chk_no "4: no refusal" "$out" "LAND REFUSED"
+
+echo "--- 4b: the path-form built-ins pass (the kit's own test cache and built Rust binaries)"
+_ig_build ig4b '*-rs\n.cache/\n' 'mkdir -p lib/x tests && echo a > lib/x/a.sh && echo t > tests/t.sh'
+mkdir -p "$IG_WT/lib/x/bin" "$IG_WT/tests/.cache"; echo x > "$IG_WT/lib/x/bin/prose-rs"; echo x > "$IG_WT/tests/.cache/k"
+chk_has "4b: fixture check: the binary and the cache are both ignored" \
+  "$(git -C "$IG_WT" status --porcelain --ignored=matching)" "!! lib/x/bin/prose-rs"
+ig_land ig4b
+chk "4b: exits 0" "$rc"
+chk_no "4b: no refusal" "$out" "LAND REFUSED"
+
+echo "--- 5: a nested .gitignore match refuses with its full path"
+_ig_build ig5 "" 'mkdir -p tools/x && echo t > tools/x/test_x.sh && echo notes.txt > tools/x/.gitignore'
+echo n > "$IG_WT/tools/x/notes.txt"
+ig_land ig5
+chk "5: exits 1" "$([ "$rc" -eq 1 ]; echo $?)"
+chk_has "5: names tools/x/notes.txt" "$out" "tools/x/notes.txt"
+
+echo "--- 6: a slash-free allow entry never matches an ancestor"
+_ig_build ig6 "$IG_GI" ""
+mkdir -p "$IG_WT/tools/x/dist/fixtures"; echo '{}' > "$IG_WT/tools/x/dist/fixtures/a.raw.json"
+ig_land ig6
+chk "6: exits 1" "$([ "$rc" -eq 1 ]; echo $?)"
+chk_has "6: names the path under dist" "$out" "tools/x/dist/fixtures/a.raw.json"
+
+echo "--- 7: an operator path-form entry allows the fixture"
+_ig_build ig7 "$IG_GI" ""
+mkdir -p "$IG_WT/tools/x/fixtures"; echo '{}' > "$IG_WT/tools/x/fixtures/a.raw.json"
+ig_land ig7 KIT_CONFIG_OPERATOR="$(ig_op 'tools/x/fixtures')"
+chk "7: exits 0" "$rc"
+
+echo "--- 8: an allow entry with a glob never expands against the cwd"
+_ig_build ig8 '*.raw.json\na.json\n' ""
+echo '{}' > "$IG_WT/a.json"; mkdir -p "$IG_WT/tools/x/fixtures"; echo '{}' > "$IG_WT/tools/x/fixtures/x.raw.json"
+ig_land ig8 KIT_CONFIG_OPERATOR="$(ig_op '*.json')"
+chk "8: exits 0 with a.json in the cwd" "$rc"
+
+echo "--- 9: the kit-root layer allows when no operator file exists"
+_ig_build ig9 "$IG_GI" ""
+mkdir -p "$IG_WT/tools/x/fixtures"; echo '{}' > "$IG_WT/tools/x/fixtures/a.raw.json"
+IG_ROOT="$(ig_op '*.raw.json')"
+ig_land ig9 KIT_CONFIG_ROOT="$IG_ROOT"
+chk "9: exits 0" "$rc"
+
+echo "--- 10: a project .kit.toml never allows, even committed on both sides"
+_ig_build ig10 "$IG_GI" 'mkdir -p tools/x && echo t > tools/x/test_x.sh && echo "# branch" >> .kit.toml' \
+  'printf "[wrap]\nland_ignored_allow = \"*.raw.json\"\n" > .kit.toml'
+mkdir -p "$IG_WT/tools/x/fixtures"; echo '{}' > "$IG_WT/tools/x/fixtures/a.raw.json"
+chk_has "10: fixture check: the project file is committed on origin's default branch" \
+  "$(git -C "$TMPD/ld-bare-ig10" show main:.kit.toml)" 'land_ignored_allow = "*.raw.json"'
+ig_land ig10
+chk "10: exits 1" "$([ "$rc" -eq 1 ]; echo $?)"
+chk_has "10: names the fixture" "$out" "tools/x/fixtures/a.raw.json"
+
+echo "--- 11: a file both tracked and matching an ignore pattern passes"
+_ig_build ig11 "$IG_GI" "" 'mkdir -p tools/x/fixtures && echo "{}" > tools/x/fixtures/keep.raw.json && git add -f tools/x/fixtures/keep.raw.json'
+ig_land ig11
+chk "11: exits 0" "$rc"
+
+echo "--- 12: a .git/info/exclude match counts the same as a .gitignore match"
+_ig_build ig12 "" ""
+mkdir -p "$TMPD/ld-repo-ig12/.git/info"; printf 'fixture.bin\n' >> "$TMPD/ld-repo-ig12/.git/info/exclude"
+echo x > "$IG_WT/tools/x/fixture.bin"
+ig_land ig12
+chk "12: exits 1" "$([ "$rc" -eq 1 ]; echo $?)"
+chk_has "12: names tools/x/fixture.bin" "$out" "tools/x/fixture.bin"
+
+echo "--- 13: a root file in the diff scopes the root's direct children only"
+_ig_build ig13 "$IG_GI" 'echo r > README.md'
+echo '{}' > "$IG_WT/notes.raw.json"; mkdir -p "$IG_WT/deep"; echo '{}' > "$IG_WT/deep/x.raw.json"
+ig_land ig13
+chk "13: exits 1" "$([ "$rc" -eq 1 ]; echo $?)"
+chk_has "13: names the root file" "$out" "notes.raw.json"
+chk_no "13: never names the deeper one" "$out" "deep/x.raw.json"
+
+echo "--- 14: a depth-1 file in the diff scopes that directory's direct children only"
+_ig_build ig14 "$IG_GI" 'mkdir -p _meta && echo l > _meta/LAB_LOG.md'
+echo '{}' > "$IG_WT/_meta/cache.raw.json"; mkdir -p "$IG_WT/_meta/sub"; echo '{}' > "$IG_WT/_meta/sub/y.raw.json"
+ig_land ig14
+chk "14: exits 1" "$([ "$rc" -eq 1 ]; echo $?)"
+chk_has "14: names the direct child" "$out" "_meta/cache.raw.json"
+chk_no "14: never names the grandchild" "$out" "_meta/sub/y.raw.json"
+
+echo "--- 15: a space prints raw, a control byte prints as ?"
+_ig_build ig15 "$IG_GI" ""
+mkdir -p "$IG_WT/tools/x/fixtures"; echo '{}' > "$IG_WT/tools/x/fixtures/with space.raw.json"
+echo '{}' > "$IG_WT/tools/x/fixtures/$(printf 'tab\tx.raw.json')"
+ig_land ig15
+chk "15: exits 1" "$([ "$rc" -eq 1 ]; echo $?)"
+chk_has "15: the space path prints raw" "$out" "tools/x/fixtures/with space.raw.json"
+chk_no "15: no git C-quoting" "$out" '"tools/x/fixtures/with space'
+chk_has "15: the tab prints as ?" "$out" "tools/x/fixtures/tab?x.raw.json"
+
+echo "--- 16: a secret-shaped path gets the marker and no commit hint"
+_ig_build ig16 '*.key\n*credentials*\n' ""
+echo x > "$IG_WT/tools/x/api.key"; echo x > "$IG_WT/tools/x/db-credentials.json"
+ig_land ig16
+chk "16: exits 1" "$([ "$rc" -eq 1 ]; echo $?)"
+chk_has "16: the key file carries the marker" "$out" "tools/x/api.key  (looks like a secret: never commit"
+chk_has "16: the credentials file carries the marker" "$out" "tools/x/db-credentials.json  (looks like a secret: never commit"
+chk_no "16: no git add -f hint" "$out" "git add -f"
+
+echo "--- 17: a failed git status refuses"
+_ig_build ig17 "$IG_GI" ""
+ig_land ig17 PATH="$(ig_shim status '--untracked-files=normal'):$PATH"
+chk "17: exits 1" "$([ "$rc" -eq 1 ]; echo $?)"
+chk_has "17: names git status" "$out" "could not read git status"
+ig_nopush "17" ig17
+
+echo "--- 18: a failed git diff refuses"
+_ig_build ig18 "$IG_GI" ""
+ig_land ig18 PATH="$(ig_shim diff '--name-only -z'):$PATH"
+chk "18: exits 1" "$([ "$rc" -eq 1 ]; echo $?)"
+chk_has "18: names git diff" "$out" "could not read git diff"
+ig_nopush "18" ig18
+
+echo "--- 19: a failed merge base refuses"
+_ig_build ig19 "$IG_GI" ""
+ig_land ig19 PATH="$(ig_shim merge-base 'merge-base refs/remotes/origin/main refs/heads/'):$PATH"
+chk "19: exits 1" "$([ "$rc" -eq 1 ]; echo $?)"
+chk_has "19: names the merge base" "$out" "could not read the merge base"
+ig_nopush "19" ig19
+
+echo "--- 20: status.showUntrackedFiles=no does not blind the guard"
+_ig_build ig20 "$IG_GI" ""
+mkdir -p "$IG_WT/tools/x/fixtures"; echo '{}' > "$IG_WT/tools/x/fixtures/a.raw.json"
+git -C "$IG_WT" config status.showUntrackedFiles no
+ig_land ig20
+chk "20: exits 1" "$([ "$rc" -eq 1 ]; echo $?)"
+chk_has "20: names the fixture" "$out" "tools/x/fixtures/a.raw.json"
+chk_no "20: not a read failure" "$out" "could not read"
+
+echo "--- 21: an adopted PR (already open) refuses before the re-push"
+_ig_build ig21 "$IG_GI" ""
+mkdir -p "$IG_WT/tools/x/fixtures"; echo '{}' > "$IG_WT/tools/x/fixtures/a.raw.json"
+ig_land ig21 GH_STUB_OPEN_PRS="$(open_pr_json 42 main me)"
+chk "21: exits 1" "$([ "$rc" -eq 1 ]; echo $?)"
+chk_has "21: refused" "$out" "LAND REFUSED"
+ig_nopush "21" ig21
+
+echo "--- 22: a collapsed ignored directory is named with its slash, then allowed"
+_ig_build ig22 'data/\n' ""
+mkdir -p "$IG_WT/tools/x/data"; echo x > "$IG_WT/tools/x/data/f.txt"
+ig_land ig22
+chk "22: exits 1" "$([ "$rc" -eq 1 ]; echo $?)"
+chk_has "22: names tools/x/data/" "$out" "tools/x/data/"
+ig_land ig22 KIT_CONFIG_OPERATOR="$(ig_op 'tools/x/data')"
+chk "22: exits 0 with the operator entry" "$rc"
+
+echo "--- 23: an already-landed branch takes the landed path, the guard never runs"
+_ig_build ig23 "$IG_GI" ""
+git -C "$IG_WT" push -q origin feat/land
+land_adv ig23
+mkdir -p "$TMPD/ld-adv-ig23/tools/x"; echo t > "$TMPD/ld-adv-ig23/tools/x/test_x.sh"
+git -C "$TMPD/ld-adv-ig23" add -A; git -C "$TMPD/ld-adv-ig23" commit -qm "squash of the branch"
+git -C "$TMPD/ld-adv-ig23" push -q origin main
+mkdir -p "$IG_WT/tools/x/fixtures"; echo '{}' > "$IG_WT/tools/x/fixtures/a.raw.json"
+ig_land ig23
+chk_has "23: reports already landed" "$out" "already landed"
+chk_no "23: no refusal" "$out" "LAND REFUSED"
+
+echo "--- 24: a touched path with a newline refuses, never scoped open"
+_ig_build ig24 "$IG_GI" 'd="tools/$(printf "a\nb")"; mkdir -p "$d" && echo t > "$d/t.sh"'
+mkdir -p "$IG_WT/tools/$(printf 'a\nb')/fixtures"; echo '{}' > "$IG_WT/tools/$(printf 'a\nb')/fixtures/a.raw.json"
+ig_land ig24
+chk "24: exits 1" "$([ "$rc" -eq 1 ]; echo $?)"
+chk_has "24: names the newline" "$out" "a touched path holds a newline"
+ig_nopush "24" ig24
+} # end sec_ignored
 
 # One section, in this process. The driver sets LAND_SECTION per child; the last line is the
 # child's result for the driver to sum (it is not the suite's final line).
