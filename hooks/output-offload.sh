@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# output-offload.sh -- PostToolUse hook that writes oversized tool output to a file and injects a terse pointer into context.
 # output-offload.sh -- PostToolUse. When a tool returns more than ~OFFLOAD_MAX_TOKENS tokens,
 # write the FULL payload to a recoverable file and inject a TERSE pointer into context, nudging
 # the agent to read the file / narrow scope instead of re-requesting the whole output.

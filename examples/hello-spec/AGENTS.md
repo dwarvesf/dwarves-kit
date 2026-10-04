@@ -35,7 +35,7 @@ Orient before you touch anything. Read top to bottom; stop when you have enough.
 
 How to do one unit of work. The smallest verifiable increment, verified, committed.
 
-1. **Size the lane.** Pick `tiny` / `normal` / `full` / `bug` / `backfill` per `WORKFLOW.md`. When in doubt between two lanes, take the heavier one.
+1. **Size the lane.** Pick `tiny` / `normal` / `full` / `bug` / `backfill` per `WORKFLOW.md`. Default to `normal`; the classifier suggests `full` and the operator assigns it.
 2. **Read the spec and its acceptance criteria.** For a spec-driven task: the active spec's task row, its AC, its `## Verification`, and its `## After state`. No spec (tiny lane): the one obvious edit.
 3. **Implement the smallest verifiable increment.** One logical change. No speculative features (`spm` does install/freeze/list; new subcommands need a spec), no premature abstraction (no `BaseCommand` until there are 6 commands); clarity over cleverness.
 4. **Verify.** Run the spec's `## Verification` command, or the lane's check: `uv run pytest && uv run ruff check .`. Do not claim a result you did not run.
@@ -54,6 +54,14 @@ just asserted), review recorded + report written, and the final response says
 what changed and what was not attempted.** If you could not run the check, report
 that plainly; under Claude Code the anti-rationalization hook is the backstop for
 premature completion, but the honesty obligation is yours under any runtime.
+
+**Show the proof, never only describe it.** A proof of done carries what the run
+really printed: the test recap or the tail of the run under an `Output:` line, or a
+committed screenshot or GIF for visual work (a video or a demo flow is linked beside
+it). The ship-gate refuses a proof whose green run is typed words alone. The same
+captured output goes in the final response, with the PR link, and in the PR body
+(`wrap land` builds the body from the proof file). A final response that says only
+"tests pass" has shown nothing.
 
 ## 4. Pause if (ask a human)
 

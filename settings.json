@@ -3,10 +3,11 @@
   "hooks": {
     "SessionStart": [
       {
+        "matcher": "compact",
         "hooks": [
           {
             "type": "command",
-            "command": "bash $HOME/.claude/dwarves-kit/hooks/context-readiness.sh",
+            "command": "bash $HOME/.claude/dwarves-kit/hooks/anchor-root.sh $HOME/.claude/dwarves-kit/hooks/post-compact-reinject.sh",
             "timeout": 10
           }
         ]
@@ -15,7 +16,16 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash $HOME/.claude/dwarves-kit/hooks/codebase-index.sh",
+            "command": "bash $HOME/.claude/dwarves-kit/hooks/anchor-root.sh $HOME/.claude/dwarves-kit/hooks/context-readiness.sh",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash $HOME/.claude/dwarves-kit/hooks/anchor-root.sh $HOME/.claude/dwarves-kit/hooks/codebase-index.sh",
             "timeout": 10
           }
         ]
@@ -27,13 +37,13 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash $HOME/.claude/dwarves-kit/hooks/safety-gate.sh",
+            "command": "bash $HOME/.claude/dwarves-kit/hooks/anchor-root.sh $HOME/.claude/dwarves-kit/hooks/safety-gate.sh",
             "timeout": 5
           },
           {
             "type": "command",
-            "command": "bash $HOME/.claude/dwarves-kit/hooks/ship-gate.sh",
-            "timeout": 5
+            "command": "bash $HOME/.claude/dwarves-kit/hooks/anchor-root.sh $HOME/.claude/dwarves-kit/hooks/ship-gate.sh",
+            "timeout": 30
           }
         ]
       },
@@ -42,7 +52,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash $HOME/.claude/dwarves-kit/hooks/spec-drift-guard.sh",
+            "command": "bash $HOME/.claude/dwarves-kit/hooks/anchor-root.sh $HOME/.claude/dwarves-kit/hooks/spec-drift-guard.sh",
             "timeout": 5
           }
         ]
@@ -62,7 +72,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash $HOME/.claude/dwarves-kit/hooks/commit-format.sh",
+            "command": "bash $HOME/.claude/dwarves-kit/hooks/anchor-root.sh $HOME/.claude/dwarves-kit/hooks/commit-format.sh",
             "timeout": 5
           }
         ]
@@ -72,7 +82,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash $HOME/.claude/dwarves-kit/hooks/board-row-gate.sh",
+            "command": "bash $HOME/.claude/dwarves-kit/hooks/anchor-root.sh $HOME/.claude/dwarves-kit/hooks/board-row-gate.sh",
             "timeout": 5
           }
         ]
@@ -82,7 +92,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash $HOME/.claude/dwarves-kit/hooks/batch-debt-warn.sh",
+            "command": "bash $HOME/.claude/dwarves-kit/hooks/anchor-root.sh $HOME/.claude/dwarves-kit/hooks/batch-debt-warn.sh",
             "timeout": 5
           }
         ]
@@ -92,7 +102,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash $HOME/.claude/dwarves-kit/hooks/money-gate.sh",
+            "command": "bash $HOME/.claude/dwarves-kit/hooks/anchor-root.sh $HOME/.claude/dwarves-kit/hooks/money-gate.sh",
             "timeout": 5
           }
         ]
@@ -102,7 +112,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash $HOME/.claude/dwarves-kit/hooks/tool-policy-guard.sh",
+            "command": "bash $HOME/.claude/dwarves-kit/hooks/anchor-root.sh $HOME/.claude/dwarves-kit/hooks/tool-policy-guard.sh",
             "timeout": 5
           }
         ]
@@ -114,7 +124,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash $HOME/.claude/dwarves-kit/hooks/auto-format.sh",
+            "command": "bash $HOME/.claude/dwarves-kit/hooks/anchor-root.sh $HOME/.claude/dwarves-kit/hooks/auto-format.sh",
             "timeout": 15
           }
         ]
@@ -124,17 +134,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash $HOME/.claude/dwarves-kit/hooks/output-offload.sh",
-            "timeout": 10
-          }
-        ]
-      },
-      {
-        "matcher": "compact",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bash $HOME/.claude/dwarves-kit/hooks/post-compact-reinject.sh",
+            "command": "bash $HOME/.claude/dwarves-kit/hooks/anchor-root.sh $HOME/.claude/dwarves-kit/hooks/output-offload.sh",
             "timeout": 10
           }
         ]
@@ -145,12 +145,12 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash $HOME/.claude/dwarves-kit/hooks/pre-compact-backup.sh",
+            "command": "bash $HOME/.claude/dwarves-kit/hooks/anchor-root.sh $HOME/.claude/dwarves-kit/hooks/pre-compact-backup.sh",
             "timeout": 15
           },
           {
             "type": "command",
-            "command": "bash $HOME/.claude/dwarves-kit/hooks/harvest.sh",
+            "command": "bash $HOME/.claude/dwarves-kit/hooks/anchor-root.sh $HOME/.claude/dwarves-kit/hooks/harvest.sh",
             "timeout": 30
           }
         ]
@@ -161,22 +161,22 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash $HOME/.claude/dwarves-kit/hooks/anti-rationalization.sh",
+            "command": "bash $HOME/.claude/dwarves-kit/hooks/anchor-root.sh $HOME/.claude/dwarves-kit/hooks/anti-rationalization.sh",
             "timeout": 5
           },
           {
             "type": "command",
-            "command": "bash $HOME/.claude/dwarves-kit/hooks/slop-cleaner.sh",
+            "command": "bash $HOME/.claude/dwarves-kit/hooks/anchor-root.sh $HOME/.claude/dwarves-kit/hooks/slop-cleaner.sh",
             "timeout": 10
           },
           {
             "type": "command",
-            "command": "bash $HOME/.claude/dwarves-kit/hooks/session-state-save.sh",
+            "command": "bash $HOME/.claude/dwarves-kit/hooks/anchor-root.sh $HOME/.claude/dwarves-kit/hooks/session-state-save.sh",
             "timeout": 5
           },
           {
             "type": "command",
-            "command": "bash $HOME/.claude/dwarves-kit/hooks/citation-guard.sh",
+            "command": "bash $HOME/.claude/dwarves-kit/hooks/anchor-root.sh $HOME/.claude/dwarves-kit/hooks/citation-guard.sh",
             "timeout": 5
           }
         ]
@@ -187,12 +187,12 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash $HOME/.claude/dwarves-kit/hooks/backlog-stage.sh",
+            "command": "bash $HOME/.claude/dwarves-kit/hooks/anchor-root.sh $HOME/.claude/dwarves-kit/hooks/backlog-stage.sh",
             "timeout": 30
           },
           {
             "type": "command",
-            "command": "bash $HOME/.claude/dwarves-kit/hooks/harvest.sh --lab-log",
+            "command": "bash $HOME/.claude/dwarves-kit/hooks/anchor-root.sh $HOME/.claude/dwarves-kit/hooks/harvest.sh --lab-log",
             "timeout": 30
           }
         ]
@@ -203,7 +203,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash $HOME/.claude/dwarves-kit/hooks/context-hints.sh",
+            "command": "bash $HOME/.claude/dwarves-kit/hooks/anchor-root.sh $HOME/.claude/dwarves-kit/hooks/context-hints.sh",
             "timeout": 5
           }
         ]
@@ -212,7 +212,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash $HOME/.claude/dwarves-kit/hooks/prose-rag.sh",
+            "command": "bash $HOME/.claude/dwarves-kit/hooks/anchor-root.sh $HOME/.claude/dwarves-kit/hooks/prose-rag.sh",
             "timeout": 10
           }
         ]
@@ -221,7 +221,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash $HOME/.claude/dwarves-kit/hooks/context-budget.sh",
+            "command": "bash $HOME/.claude/dwarves-kit/hooks/anchor-root.sh $HOME/.claude/dwarves-kit/hooks/context-budget.sh",
             "timeout": 5
           }
         ]
@@ -232,7 +232,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash $HOME/.claude/dwarves-kit/hooks/session-state-save.sh",
+            "command": "bash $HOME/.claude/dwarves-kit/hooks/anchor-root.sh $HOME/.claude/dwarves-kit/hooks/session-state-save.sh",
             "timeout": 5
           }
         ]
@@ -243,7 +243,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash $HOME/.claude/dwarves-kit/hooks/notification.sh",
+            "command": "bash $HOME/.claude/dwarves-kit/hooks/anchor-root.sh $HOME/.claude/dwarves-kit/hooks/notification.sh",
             "timeout": 5,
             "async": true
           }
@@ -255,7 +255,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash $HOME/.claude/dwarves-kit/hooks/permission-auto-approve.sh",
+            "command": "bash $HOME/.claude/dwarves-kit/hooks/anchor-root.sh $HOME/.claude/dwarves-kit/hooks/permission-auto-approve.sh",
             "timeout": 5
           }
         ]

@@ -67,9 +67,17 @@ fi
 # ran in the first report, and it is the one report where a full-lane item may close as built:
 # step 10 builds it as a draft PR and never merges it, so the item closes as `#<pr> DRAFT`
 # and must pair with a lettered `REVIEW #<pr>` item in `Needs you`. Every other rule applies to it unchanged.
+#
+# A harvest-sweep report opens `## Harvest sweep:`. It is its own flag, not a
+# reuse of follow_report: the sweep's Built list must keep the `**Seam:**` rule that the
+# follow-through exemption drops. In phase 1 the sweep reports candidates and
+# builds none, so every Built item opens with REPORTED; a BUILT or NOTE verdict means the
+# renderer claimed work that never ran.
 follow_report=0
+sweep_report=0
 first_h2="$(printf '%s\n' "$input" | grep -m1 '^## ' || true)"
 case "$first_h2" in '## Follow-through:'*) follow_report=1 ;; esac
+case "$first_h2" in '## Harvest sweep:'*) sweep_report=1 ;; esac
 
 # PR numbers named by `Needs you` items that open with REVIEW, space-separated, filled by the
 # walk below. A full-lane build in a follow-through report must name one of them.
@@ -233,7 +241,23 @@ else
   for _v_item in "${built_items[@]}"; do
     _v_idx=$((_v_idx + 1))
     case "$_v_item" in
-      BUILT\ *|REPORTED\ *|NOTE\ *) : ;;
+      REPORTED\ *)
+        # A tool that already does the whole job leaves nothing to build, so REPORTED hands
+        # step 10 an empty item and the next session hand-rolls the same code. The missing
+        # piece is the path to the tool: NOTE, with the pointer written this session.
+        _v_why="$(printf '%s' "$_v_item" | sed -nE 's/.*[(,][[:space:]]*reported:(.*)$/\1/p' | tr '[:upper:]' '[:lower:]')"
+        case "$_v_why" in
+          *'already covers'*|*'nothing missing'*)
+            echo "line 0: '**Built:**' item ${_v_idx} is REPORTED but its tool already covers it; close it as NOTE with the pointer written (a skill trigger, the tool's README or quick-ref entry, or a memory note) and name that file" >&2
+            echo "  - ${_v_item}" >&2
+            findings=$((findings + 1)) ;;
+        esac ;;
+      BUILT\ *|NOTE\ *)
+        if [ "$sweep_report" = 1 ]; then
+          echo "line 0: '**Built:**' item ${_v_idx} claims a build in a sweep report; the sweep builds nothing in phase 1, so every item opens with REPORTED" >&2
+          echo "  - ${_v_item}" >&2
+          findings=$((findings + 1))
+        fi ;;
       STAGED\ *|FILED\ *)
         echo "line 0: '**Built:**' item ${_v_idx} uses a retired verdict; step 7b never stages or files a row, so a candidate not built here is REPORTED" >&2
         echo "  - ${_v_item}" >&2
@@ -419,6 +443,62 @@ while IFS= read -r _f_line; do
     echo "  - ${_f_item}" >&2
     findings=$((findings + 1))
   fi
+done <<< "$input"
+
+# STE-lite prose rules (commands/wrap.md step 9, "Prose rule"). Only the mechanical parts are
+# enforced: no semicolon and no sentence over STE_MAX_WORDS words, counted outside backtick
+# spans. Contractions only WARN. Passive voice is too fuzzy for a regex and stays a prose rule.
+STE_MAX_WORDS=20
+
+# _ste_check <lineno> <region text> <the whole line to echo on a finding>
+_ste_check() {
+  local _n="$1" _t="$2" _l="$3" _res _r
+  _res="$(printf '%s\n' "$_t" | sed -E 's/`[^`]*`//g; s/\*\*//g' | awk -v max="$STE_MAX_WORDS" '
+    /;/ { print "SEMI" }
+    /[A-Za-z]'"'"'(t|re|ll|ve)([^A-Za-z]|$)/ { print "CONTR" }
+    { gsub(/[.?!]+[ \t]+/, "\n"); k = split($0, s, "\n")
+      for (i = 1; i <= k; i++) { w = 0; m = split(s[i], tok, /[ \t]+/)
+        for (j = 1; j <= m; j++) if (tok[j] ~ /[A-Za-z0-9]/) w++
+        if (w > max) print "LONG " w } }')"
+  while IFS= read -r _r; do
+    case "$_r" in
+      SEMI) echo "line ${_n}: semicolon in prose; STE-lite splits it into two sentences" >&2
+            echo "  ${_l}" >&2; findings=$((findings + 1)) ;;
+      LONG*) echo "line ${_n}: sentence of ${_r#LONG } words; STE-lite caps a sentence at ${STE_MAX_WORDS}" >&2
+             echo "  ${_l}" >&2; findings=$((findings + 1)) ;;
+      CONTR) echo "warn line ${_n}: contraction; STE-lite writes it out" >&2
+             echo "  ${_l}" >&2; warns=$((warns + 1)) ;;
+    esac
+  done <<< "$_res"
+}
+
+# Walk the prose regions: Needs you items, What happened bullets, the FYI Fact column, the
+# Left alone Why column, and the reason after `reported:` in a Built item. Fenced blocks and
+# inline code are exempt.
+_p_sect=""
+_p_fence=0
+_p_lineno=0
+while IFS= read -r _p_line; do
+  _p_lineno=$((_p_lineno + 1))
+  case "$_p_line" in '```'*) _p_fence=$((1 - _p_fence)); continue ;; esac
+  [ "$_p_fence" = 1 ] && continue
+  case "$_p_line" in
+    *'**Needs you:**'*) _p_sect=needs; continue ;;
+    '**What happened**'*) _p_sect=what; continue ;;
+    '**Left alone:**'*) _p_sect=left; continue ;;
+    '**FYI:**'*) _p_sect=fyi; continue ;;
+    '**Built:**'*) _p_sect=built ;;
+    '**'*'**'*) _p_sect=""; continue ;;
+  esac
+  _p_text=""
+  case "$_p_sect" in
+    needs) case "$_p_line" in [a-z].\ *) _p_text="${_p_line#[a-z]. }" ;; esac ;;
+    what) case "$_p_line" in '- '*) _p_text="${_p_line#- }" ;; esac ;;
+    left) case "$_p_line" in '|'*) _p_text="$(printf '%s' "$_p_line" | awk -F'|' '$2 !~ /^ *(Repo|-+) *$/ { print $5 }')" ;; esac ;;
+    fyi) case "$_p_line" in '|'*) _p_text="$(printf '%s' "$_p_line" | awk -F'|' '$2 !~ /^ *(Tag|-+) *$/ { print $3 }')" ;; esac ;;
+    built) _p_text="$(printf '%s' "$_p_line" | sed -nE 's/.*[(,][[:space:]]*reported:([^)]*).*/\1/p')" ;;
+  esac
+  [ -n "$_p_text" ] && _ste_check "$_p_lineno" "$_p_text" "$_p_line"
 done <<< "$input"
 
 if [ "$findings" -gt 0 ]; then

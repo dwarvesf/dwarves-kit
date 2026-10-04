@@ -74,6 +74,13 @@ writing its own box, or for a `gate` sub-goal on a real PR existing. A wave admi
 greedily in roadmap order, but only where each declares its own `## Touches` and proves
 disjoint against every already-admitted member.
 
+An opt-in trial backend runs the same roadmap through Orca instead: `run <dir> --backend orca`
+(or `MEGA_BACKEND=orca`, the flag wins) maps each sub-goal to an Orca Task and starts supervised
+Claude workers. The runner stays non-LLM, and each sub-goal's state is derived from Orca plus
+the ROADMAP box each time it is read, never stored. `status <dir>` prints those states and
+`orca-reset <dir>` rolls a run back. An Orca `completed` never advances a sub-goal: the box is
+still the only proof of done. The default path never loads the backend.
+
 **Queue.** Runs one prepared pointer at a time, overnight. It opens a tmux window, launches a
 real interactive session, and types `/goal <pointer body>` into it. The header states why this
 beats a headless worker: a headless token can expire or be killed independently, and the run

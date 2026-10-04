@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# secrets-guard.sh -- PreToolUse hook that blocks the agent from reading secret files, with the path canonicalized first.
 # secrets-guard.sh, PreToolUse hook, matcher: Read|Edit|Bash
 # Blocks the agent from READING secret files. safety-gate covers write/exec
 # destruction; this covers the read side. The path is canonicalized first

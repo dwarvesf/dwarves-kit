@@ -122,6 +122,7 @@ real reader consumes it today (all rows below are, except where noted).
 | MEGA_MERGE_GATE_LEDGER | env-only | `$LIB_ROOT/gate/gate-ledger.sh` | [impl] | mega | Which `gate-ledger.sh` `mega-merge.sh` shells out to. |
 | MEGA_GATE_DISPATCH | env-only | `1` | [impl] | mega | `1` dispatches a `gate` / `gate!` sub-goal like any other (grounded on the PR existing); `0` restores the stop-before-running behavior. |
 | PANE_TAIL_JQ | env-only | `$ORCH_DIR/pane-tail.jq` | [impl] | mega | The jq formatter the multiplexer pane tail reads through; read-only by construction. |
+| MEGA_BACKEND | env-only | `claude` | [impl] | queue | Runtime `orchestrate run` drives each sub-goal on: `claude` (one `claude -p` per sub-goal) or `orca`. The `--backend` flag wins. Any other value exits 64. No kit.toml key on purpose: a committed file must not switch a run onto another runtime. |
 | QUEUE_PUSH_ONLY | env-only | `0` | [impl] | queue | `1` pushes the branch and stops without opening the PR (draft or ready per the run's own rule). |
 | DWARVES_KIT_SKIP_DOC_PROJECTION | env-only | `0` | [impl] | gate | `1` skips the ship-gate's doc-projection check for a repo that has neither projection file; an escape hatch, never a default. |
 | DWARVES_KIT_SKIP_REGISTRY_FRESHNESS | env-only | `0` | [impl] | gate | `1` skips the ship-gate's `docs/FEATURES.md` freshness arm, which regenerates the projection when a push edits one of its inputs; an escape hatch, never a default. |
@@ -229,6 +230,7 @@ single-reader fence). No env vars; per-repo values live in `.kit.toml [sync]`.
 
 | Env var | kit.toml key | Default | Status | Module | Doc |
 |---|---|---|---|---|---|
+| HARVEST_STATE_DIR | env-only | `$HOME/.claude/dwarves-kit/state/harvest` | [impl] | session | Harvest state dir: the `--stop-trigger` counter and lock, the detached-child payload handoff, and the sweep's cursor, ledgers and patterns. `--dry-run` points it at a throwaway overlay. |
 | SKILL_CURATOR_STATE_DIR | env-only | `$HOME/.claude/skill-curator` | [impl] | session | Root of the skill-curator tool's state (ledger, lock, log, config). |
 | SKILL_CURATOR_PROPOSALS_DIR | env-only | `$HOME/.claude/skill-proposals` | [impl] | session | Where drafted skill proposals land. |
 | SKILL_CURATOR_SKILLS_DIR | env-only | `$HOME/.claude/skills` | [impl] | session | Where curated/promoted skills are written. |
@@ -238,8 +240,9 @@ single-reader fence). No env vars; per-repo values live in `.kit.toml [sync]`.
 | SKILL_CURATOR_CURATOR_CMD | env-only | (real `claude -p`) | [impl] | session | Override the curator's model-invocation command (test injection point). |
 | SKILL_CURATOR_REVIEWER_CMD | env-only | (real `claude -p`) | [impl] | session | Override the async reviewer's model-invocation command. |
 | DWARVES_KIT_SESSION_MARKER | env-only | `/tmp/.dwarves-kit-session-start` | [impl] | session | Path of the session-start marker file. |
-| KIT_CTX_WARN | env-only | `200000` | [impl] | session | Live-context token budget the context-budget hook warns at (SPEC-255). |
-| KIT_CTX_STEP | env-only | `100000` | [impl] | session | Band width above the budget; the context-budget hook warns once per band (SPEC-255). |
+| KIT_CTX_WARN_PCT | env-only | `65` | [impl] | session | Percent of the context window at which the context-budget hook's advisory notice fires (SPEC-255). |
+| KIT_CTX_STRONG_PCT | env-only | `70` | [impl] | session | Percent of the context window at which the context-budget hook escalates to a directive notice (SPEC-255). |
+| KIT_CTX_WINDOW | env-only | auto (`200000`, or `1000000` for a `1m`-marked model) | [impl] | session | Context window size the context-budget hook computes percentages against (SPEC-255). |
 | SESSION_AUDIT_CMD | env-only | `claude -p --model <M> --allowedTools Bash,Read,Grep,Glob --output-format json` | [impl] | session | Agent runtime `session audit run` pipes its rendered prompt to; tests inject fixtures here. |
 | SESSION_AUDIT_DATE | env-only | (today) | [impl] | session | Report-date override (YYYY-MM-DD) for deterministic tests. |
 
@@ -252,8 +255,21 @@ single-reader fence). No env vars; per-repo values live in `.kit.toml [sync]`.
 | - | gate.understanding_gate | `false` | [impl] | gate | `hooks/anti-rationalization.sh` (ADR-0031). Off, the Stop hook logs `OFF-BY-CONFIG` and exits 0 before matching; resolved through `lib/gate/gate-policy.sh` against the session repo root. |
 | - | gate.commit_format | `false` | [impl] | gate | `hooks/commit-format.sh` commit-subject lint. Off, the hook logs `OFF-BY-CONFIG` and exits 0 before linting; resolved through `lib/gate/gate-policy.sh` against the session repo root. |
 | - | gate.board_row_gate | `true` | [impl] | gate | `hooks/board-row-gate.sh` new-board-row check. The one `[gate]` key that defaults ON (`DEFAULT_ON` in `lib/gate/gate-policy.sh`, plus the kit-root `kit.toml`). A repo opts out with `false` in its `.kit.toml`, applied once the file is committed and clean; off, the hook logs `OFF-BY-CONFIG` and passes. Resolved through `lib/gate/gate-policy.sh` against the commit's repo root, asked only when the commit adds a new row. |
+| - | lane.tiny.phases | `["build", "review"]` | [impl] | gate | Phases the `tiny` lane plans, in plan order, read by `lib/gate/lane-data.sh`. One-line array; a malformed value makes the lane unknown (fail closed). A committed project `.kit.toml` may override it; an unknown phase name is ignored with a stderr line. |
+| - | lane.tiny.light | `["build", "review"]` | [impl] | gate | Phases of `tiny` that run light instead of required. A phase in `phases` and not in `light` is required. An override that sets `phases` without `light` has no light phases. |
+| - | lane.normal.phases | `["think", "spec", "validate", "design-record", "test-plan", "build", "review", "docs", "ship"]` | [impl] | gate | Phases the `normal` lane plans, in plan order, read by `lib/gate/lane-data.sh`. One-line array; a malformed value makes the lane unknown (fail closed). A committed project `.kit.toml` may override it; an unknown phase name is ignored with a stderr line. |
+| - | lane.normal.light | `["think", "design-record", "test-plan", "docs"]` | [impl] | gate | Phases of `normal` that run light instead of required. A phase in `phases` and not in `light` is required. An override that sets `phases` without `light` has no light phases. |
+| - | lane.full.phases | `["think", "design", "design-critique", "ui-design", "spec", "validate", "design-record", "test-plan", "build", "review", "docs", "ship", "reflect"]` | [impl] | gate | Phases the `full` lane plans, in plan order, read by `lib/gate/lane-data.sh`. One-line array; a malformed value makes the lane unknown (fail closed). A committed project `.kit.toml` may override it; an unknown phase name is ignored with a stderr line. |
+| - | lane.full.light | `["ui-design"]` | [impl] | gate | Phases of `full` that run light instead of required. A phase in `phases` and not in `light` is required. An override that sets `phases` without `light` has no light phases. |
+| - | lane.bug.phases | `["test-plan", "build", "review", "ship", "debug"]` | [impl] | gate | Phases the `bug` lane plans, in plan order, read by `lib/gate/lane-data.sh`. One-line array; a malformed value makes the lane unknown (fail closed). A committed project `.kit.toml` may override it; an unknown phase name is ignored with a stderr line. |
+| - | lane.bug.light | `["test-plan", "ship"]` | [impl] | gate | Phases of `bug` that run light instead of required. A phase in `phases` and not in `light` is required. An override that sets `phases` without `light` has no light phases. |
+| - | lane.backfill.phases | `["think", "spec", "validate", "review", "docs"]` | [impl] | gate | Phases the `backfill` lane plans, in plan order, read by `lib/gate/lane-data.sh`. One-line array; a malformed value makes the lane unknown (fail closed). A committed project `.kit.toml` may override it; an unknown phase name is ignored with a stderr line. |
+| - | lane.backfill.light | `["think", "spec", "validate", "review"]` | [impl] | gate | Phases of `backfill` that run light instead of required. A phase in `phases` and not in `light` is required. An override that sets `phases` without `light` has no light phases. |
+| - | lanes.default | `"normal"` | [impl] | gate | The lane `lib/classify/lane-classify.sh` returns when no rule picks another. A project value applies only when `.kit.toml` is committed and clean. |
+| - | lanes.extra_hard_paths | `""` | [impl] | gate | ERE over changed paths that ADDS to the built-in hard paths the ship-gate floor checks; never removes one. Read as the union of every layer, including the HEAD copy of the project file. |
 | DWARVES_KIT_SKIP_BOARD_ROW_GATE | env-only | `0` | [impl] | gate | `1` switches off `hooks/board-row-gate.sh`, the PreToolUse check that blocks a commit adding a new board row without a `board-row-ok: <reason>` line. Read from the session environment, so an inline command prefix cannot set it; an operator escape hatch, never a default. |
 | DWARVES_KIT_PRINT_CDDIR | env-only | `0` | [impl] | gate | Debug: print the resolved cwd/repo-root and exit. |
+| DWARVES_KIT_INVOCATION_CWD | env-only | (unset; `hooks/anchor-root.sh` exports it) | [impl] | gate | The hook's true invocation cwd, saved by `hooks/anchor-root.sh` before it cds to the repo root. `hooks/ship-gate.sh` reads it when the payload carries no `.cwd`, to resolve a relative embedded `cd`. Set by the wrapper, never by an operator. |
 | KIT_ROOT | env-only | `$SCRIPT_ROOT` | [impl] | gate | Mixed usage: most files compute this internally from `BASH_SOURCE`, not the environment; `lib/gate/proof-table-gen.sh` alone treats it as an operator-settable override, defaulting to `$SCRIPT_ROOT`. |
 
 ### prose_rag / money_gate
@@ -263,6 +279,8 @@ single-reader fence). No env vars; per-repo values live in `.kit.toml [sync]`.
 | PROSE_RAG_INJECT | env-only | unset (hook inert) | [impl] | prose_rag | The engine's own opt-in master switch for the recall-inject hook , deliberately NOT `modules.prose_rag` (that toggle only gates hook *install*, this gates whether the installed hook actually fires). |
 | PROSE_RAG_CORPUS | env-only | unset (index skips clean) | [impl] | prose_rag | Colon-separated corpus dirs/files for `prose-rag index` (adapter-default invariant: no personal path in the kit). Unset with no `--corpus` = unconfigured consumer -> `index` exits 0, db untouched (the shipped kit-weekly `prose-rag-index` job stays silent-green). Under launchd, supplied via `~/.config/kit-weekly/env`. |
 | MONEY_GATE_REPOS | env-only | (unset) | [impl] | money_gate | Colon-separated list of repo names the guard treats as financial; hook is inert (exits 0) without it. |
+| MONEY_GATE_STRICT | env-only | (unset) | [impl] | money_gate | A truthy spelling (`1`/`true`/`yes`/`on`, trimmed, case-insensitive) upgrades the guard from log-only to a PreToolUse `ask`; anything else stays log-only. |
+| MONEY_GATE_LOG | env-only | `~/.claude/logs/money-gate.log` | [impl] | money_gate | Log destination for every fired edit. The default applies only when the var is unset; a set-but-empty or slashless value writes no log. |
 | PROSE_RAG_BIN | env-only | `ctx` on PATH, else `prose-rag` | [consumer] | prose_rag | Path to the recall engine (context-kit fills this: `cargo install --path src/ctx`; the engine folded into `ctx` and `prose-rag` is the kept-forever alias, same `index|query|hook` argv). `bin/prose-rag` is an adapter and resolves the same order `config seams` reports for the `binary` kind: `${PROSE_RAG_BIN:-}` if set must be an executable regular file, else `ctx` on PATH, else `prose-rag` on PATH. Unset with nothing on PATH means the overlay is not installed, not an error. |
 | PROSE_RAG_SHIM_ACTIVE | env-only | (unset) | [impl] | prose_rag | Recursion guard set by `bin/prose-rag` before it execs the resolved engine. The kit installer puts a PATH wrapper named `prose-rag` that execs this shim, so without the marker `command -v prose-rag` would resolve to the shim itself. Internal: nothing sets it by hand. |
 
@@ -283,6 +301,24 @@ SKIPS that source with a stderr line and a `skipped` row, and never fails the ga
 
 | Env var | kit.toml key | Default | Status | Module | Doc |
 |---|---|---|---|---|---|
+| - | decide.backend | `"none"` | [impl] | decide | `jev`, `openai`, `clef`, or `none`. `none` sends nothing and leaves every kit step unchanged. `openai` is a stub answering `unsupported` until the vendor publishes its request shape. `clef` is the Cloudflare Workers AI fallback; it needs `decide.clef_account` and the token named by `decide.clef_token_env`. Resolved with `kit_config_get_root` (a project `.kit.toml` is never read: the block names a credential source and authorizes egress). |
+| - | decide.mode | `"shadow"` | [impl] | decide | `shadow` logs beside the caller's own decision and never acts; `decide` runs as shadow for `wrap-7b`, the only point. Root-only. |
+| - | decide.points | `""` | [impl] | decide | Space-separated enabled decision points. Empty means nothing leaves the host. The one point today is `wrap-7b`. Root-only. |
+| - | decide.timeout_ms | `"1500"` | [impl] | decide | Per-call timeout in milliseconds. Unset defaults to 1500, or 3000 when the backend is `clef` (Clef's p50 is about 1.1 s with a heavier tail). Below 1500 clamps up (the vendor trial's security screen), above 10000 clamps down. Root-only. |
+| - | decide.jev_model | `"jev-1.13.0"` | [impl] | decide | Pinned model name, never a `latest` alias. Root-only. |
+| - | decide.openai_model | `""` | [reserved] | decide | Unused while the `openai` backend is a stub. Root-only. |
+| - | decide.jev_token_env | `"JEV_API_TOKEN"` | [impl] | decide | The NAME of the env var holding the Jev token (`^[A-Za-z_][A-Za-z0-9_]*$`). The token never sits in a file, argv, a log, or stdout. Root-only. |
+| - | decide.jev_token_cmd | `""` | [impl] | decide | Optional command that prints the Jev token, used only when the env var named by `decide.jev_token_env` is empty, for hosts that keep secrets out of the shell env. Split on whitespace and run without a shell (no quotes, globs or expansion); the first word must be an absolute path. stdin from `/dev/null`, stderr dropped, own process group killed (TERM, then KILL) after 10 s, output capped at 4096 bytes; stdout minus one trailing newline is the token. A failure, timeout, empty or oversized output or a token that fails the shape check gives `no_token`. The output is never logged or printed. Root-only. |
+| - | decide.openai_token_env | `"OPENAI_API_KEY"` | [reserved] | decide | Same rule as `decide.jev_token_env`, unused while the `openai` backend is a stub. Root-only. |
+| - | decide.openai_token_cmd | `""` | [reserved] | decide | Same rule as `decide.jev_token_cmd`, unused while the `openai` backend is a stub. Root-only. |
+| - | decide.clef_model | `"clef"` | [impl] | decide | `clef` or `clef-flash`; any other value falls back to `clef`. Root-only. |
+| - | decide.clef_account | `""` | [impl] | decide | The Cloudflare account id (`^[A-Za-z0-9_-]{1,64}$`), or an `op://` ref resolved through `secret-cache-read` from PATH, else `~/.local/bin` (Keychain-cached, name `FLICK_CLEF_ACCT_<sha256(ref) first 8 hex>`, under the same bound a token command gets). A missing or unresolvable value is `no_account`. Billing-tied: never logged or printed. Root-only. |
+| - | decide.clef_token_env | `"FLICK_CLEF_TOKEN"` | [impl] | decide | Same rule as `decide.jev_token_env`. The Jev token env var is never consulted for clef; neither is the broad `CLOUDFLARE_API_TOKEN` unless the operator names it here. Root-only. |
+| - | decide.clef_token_cmd | `""` | [impl] | decide | Same rule as `decide.jev_token_cmd`. Root-only. |
+| - | decide.allow_names | `""` | [impl] | decide | Space-separated extra public tool names the egress guard accepts, exact match, added to the names under the kit's `bin/`, `commands/`, `skills/` and `agents/`. Root-only. |
+| - | decide.deny_words | `""` | [impl] | decide | Space-separated words that block a `wrap-7b` candidate slug (client names, private repo names). Case-folded substring match. Root-only. |
+| - | decide.word_gate | `"on"` | [impl] | decide | `on` or `off`. While on, each hyphen segment of a `wrap-7b` candidate must be a dictionary word (case-insensitive whole line), a built-in dev word, or a kit-public name; any other segment denies that question (log reason `word_gate`). Segments under 3 characters pass only as a dev word or public name. Does not catch a name that is an English word, so `decide.deny_words` still matters. Any value but `off` counts as on. Root-only. |
+| - | decide.dict_file | `"/usr/share/dict/words"` | [impl] | decide | Dictionary for the word gate, one word per line. Must be an absolute path to a regular file under 16 MB; anything else denies every candidate (log reason `word_gate_no_dict`). Root-only. |
 | - | intake.url_ledger | `""` | [consumer] | intake | Command that answers "have we consumed this URL", executed as `<cmd> check <url>` with exit 0 meaning seen and its stdout parsed as JSON (`date`, `verdict`, `conclusion`). The value is a command name or path, not a ledger file, because the ledger's dedup key is a normalized URL and only its own tool can compute that. Empty skips the `url` source. |
 | - | intake.verdicts | `""` | [consumer] | intake | Absolute or `~`-prefixed path to the operator's verdict ledger, one decided evaluation per line. The gate cites a line containing every word of the subject. Empty skips the `verdict` source. |
 | - | intake.boards | `""` | [consumer] | intake | Absolute or `~`-prefixed path to the boards registry: `<name> <path-to-BACKLOG.md>` rows with `#` comments, the same format the operator's cross-repo board renderer reads. The gate scans every board the registry names and reports each hit's board by name; a row whose file is gone is passed over. Empty skips the `board` source. |
@@ -303,6 +339,7 @@ never turns the step off.
 | - | ship.create_changelog | `true` | [impl] | (none) | `commands/ship.md` step 5. `true` creates the changelog file when none exists; `false` offers and skips on a decline. |
 | - | debug.confirm_fix | `false` | [impl] | (none) | `commands/debug.md` Phase 4 step 5. `false` declares the fix done once the phase's own three conditions hold (the new test passes, no other test broke, the symptom is gone) and reports the evidence; `true` holds the verdict for a human yes. A fix missing any of the three is never declared fixed at either setting. |
 | - | review.apply_findings | `true` | [impl] | (none) | `commands/review-team.md` step 5. `true` applies the `gated_auto` findings that `responding-to-review` VERIFIED, via `fix-agent`, leaving the PR as the review surface; `false` proposes them for the operator to apply. A finding that agent pushed back on is never applied at either setting; `manual` and `advisory` findings never route here. |
+| - | execute.recheck_sample | `5` | [impl] | (none) | `commands/execute.md` Step 3, read by `lib/gate/recheck-sample.sh decide`. One in N runs rechecks every end-verifier PASS with `kit:recheck-verifier`; the run is sampled when `cksum` of the rid has a first field divisible by N. `0` turns sampling off, `1` rechecks every PASS. A `Lane: full` run is always sampled (N=1). `(self-attested)` rows are rechecked on every run regardless. Resolved with `kit_config_get_root`: a project `.kit.toml` rides inside an untrusted PR and must not lower verification. |
 
 ### adopt (`lib/adopt.sh`, no install module)
 
@@ -325,10 +362,15 @@ never turns the step off.
 | - | wrap.build_candidates | `true` | [impl] | wrap | Step 7b autonomy. `true` wires a precedent hit into the tool it named and builds a clear-shaped miss, each committed in its home repo; `false` reports every candidate in the wrap report. Neither setting writes a board row or a staging block. Resolved with `kit_config_get_root`, same fence and reason as the two rows above. |
 | - | wrap.build_lanes | `"tiny"` | [impl] | wrap | Step 7b sizing. A space-separated list of the lanes `lib/classify/lane-classify.sh` can return that step 7b builds INLINE; every other lane is REPORTED in the wrap report with a one-line why, never filed as a board row and never staged. `full` never builds inline even when listed, because that lane owes a spec and a review; wrap reports `(lane=full, reported: <why>)`. An inline build of a non-`tiny` lane runs in a worktree on its own branch in the home repo, quotes one verification command, and opens a PR that step 3 merges only when green, so the home repo's ship-gate proof still applies. Resolved with `kit_config_get_root`, same fence and reason as the rows above: widening it widens what wrap writes. Ignored when `build_candidates` is `false`, which reports every candidate. Step 10 (`wrap.follow_through`, through `wrap follow-mode`) builds the same list minus `full` after the report. |
 | - | wrap.pull_past_dirty | `false` | [impl] | wrap | Step 5 pull. `false` keeps the behavior before this key existed: an ff pull git refuses over dirty TRACKED files reports `FAILED` and the checkout stays behind. `true` stashes exactly the files that block the fast-forward under a name carrying the run's timestamp and pid, pulls, and pops that stash BY REF, because a bare `git stash pop` on a shared checkout takes another session's stash. Every other dirty file, every untracked file, and every pre-existing stash is left alone, and a dirty index skips the path because a pop cannot restore an index it did not stash. A pop conflict keeps the stash, leaves the markers in place, and reports `PULLED, POP CONFLICT: <files>, stash <name> kept` with exit 2. Resolved with `kit_config_get_root` (the operator `kit.toml` or the kit-root `kit.toml` ONLY; a project `.kit.toml` is never read for this key because it authorizes a write to a checkout other sessions share and a project toml rides inside an untrusted PR, `kit-config.sh:75-90`). |
-| - | wrap.carry_stray_lines | `true` | [impl] | wrap | Step 5 stray lines, before the pull, on the main checkout whatever branch it has checked out. For each dirty `merge=union` tracked file, the non-blank lines the working copy holds and neither origin/<default>'s version nor HEAD's version holds are stray: a session wrote them into the shared checkout and no commit carries them. The dry run prints `WOULD carry N stray lines in <file> onto a branch`. `true` with `--apply` commits origin's version plus those lines (below the `---` anchor when the file has one, else at the end; on a kanban board a flipped row replaces origin's row of the same id in place and `backlog.sh dedupe-all` runs after) on a new `wrap/stray-<file-slug>-<YYYYMMDD-HHMM>` branch in a scratch detached worktree, pushes it, and prints the `gh pr create --head <branch>` command; it opens no PR and never touches the working copy. An existing origin `wrap/stray-<file-slug>-*` branch skips the file so a rerun does not duplicate the carry. `false` prints the count and carries nothing. Resolved with `kit_config_get_root`, same fence and reason as the `merge_own_prs` row: it authorizes a write to origin. |
+| - | wrap.carry_stray_lines | `true` | [impl] | wrap | Step 5 stray lines, before the pull, on the main checkout whatever branch it has checked out. For each dirty `merge=union` tracked file, the non-blank lines the working copy holds and neither origin/<default>'s version nor HEAD's version holds are stray: a session wrote them into the shared checkout and no commit carries them. The dry run prints `WOULD carry N stray lines in <file> onto a branch`. `true` with `--apply` commits origin's version plus those lines (below the `---` anchor when the file has one, else at the end; on a kanban board a flipped row replaces origin's row of the same id in place and `backlog.sh dedupe-all` runs after) on a new `wrap/stray-<file-slug>-<YYYYMMDD-HHMM>` branch in a scratch detached worktree, pushes it, and prints the `gh pr create --head <branch>` command; it opens no PR and never touches the working copy. An existing origin `wrap/stray-<file-slug>-*` branch skips the file so a rerun does not duplicate the carry. `false` prints the count and carries nothing. It also governs the stray COMMITS on the same step: the main checkout on the default branch and ahead of origin/<default> prints `WOULD carry N stray commits on <default> onto a branch:` and the commits in the dry run; `true` with `--apply` creates and pushes `wrap/stray-commits-<YYYYMMDD-HHMM>` at HEAD, prints the `gh pr create --head <branch>` command, and moves the default branch back with `git reset --keep` to where it left origin/<default>, only when every dirty tracked file is an unstaged `merge=union` file the commits do not change and origin holds the commits (on the carry branch, or squash-merged into origin/<default>, found by patch id, in which case nothing is pushed); the pull then fast-forwards. `false` prints `N stray commits on <default> stay local` and touches nothing. Resolved with `kit_config_get_root`, same fence and reason as the `merge_own_prs` row: it authorizes a write to origin. |
+| - | wrap.autoland_carry | `false` | [impl] | wrap | Step 5, with `wrap.carry_stray_lines`. `true` with `--apply` lands every carry branch the stray-lines or stray-commits carry pushes or reuses, and adopts an origin `wrap/stray-<file-slug>-*` branch an earlier run left orphaned for a file that still has stray lines: a PR already merged at the tip counts as landed, one open non-draft PR is adopted, none opens one with `gh pr create --head`, pending checks get a bounded wait (`KIT_WRAP_CARRY_CHECKS_SECS`, default 300), then `wrap merge --apply --pr <n>` merges it through the same own-PR gate, union re-merge, pinned squash and tree verify every own PR passes. A gate refusal leaves the PR open and exit 0; a failed merge or TREE MISMATCH exits 2. After an orphan lands, the file's stray lines are recomputed and any remainder carries and lands too. `false` prints the `gh pr create --head <branch>` command and opens nothing. Resolved with `kit_config_get_root`, same fence and reason as the `merge_own_prs` row: it authorizes a merge into the default branch. (SPEC-322) |
 | - | wrap.drain_staged | `false` | [impl] | wrap | Step 7b tail. Step 7b stages nothing, so a wrap owns no staged rows and the drain is inert by default. `true` hands only rows the operator staged by hand this session with `wrap stage`, each carrying a goal pointer, to `queue run`; `false` does nothing. The only `[wrap]` knob whose default does not act: `queue run` drives a real interactive claude in a tmux window under `QUEUE_CLAUDE_FLAGS` (default `--dangerously-skip-permissions`) for up to `QUEUE_TIMEOUT_SECS` per row. Scoped to a session-authored tsv passed with `--sanitize-prompt`, never `--from-boards`. Resolved with `kit_config_get_root`, same fence as the knobs above and for a stronger reason: this one starts an unattended agent. |
 | - | wrap.follow_through | `"off"` | [impl] | wrap | Step 10, the follow-through phase, after the step 9 report prints and lints clean. One of `off`, `lanes`, `all`, resolved by `wrap follow-mode [lanes\|all]` (`cmd_follow_mode` in `lib/wrap/wrap.sh`), which prints the mode and the lanes step 10 builds. `off` ends the pass at the first report. `lanes` builds, in background workers each in its own `wrap start` worktree, every `REPORTED` step 7b candidate whose lane is in `wrap.build_lanes` (never `full`, never one reported with `build_candidates off`) and every FYI follow-up the pass can finish in those lanes, merges each green own PR through `wrap merge --apply --pr` after its checks settle, and prints a second `## Follow-through:` report that `report-lint.sh` checks. `all` adds each `REPORTED` full-lane candidate through the home repo's full lane unattended (a spec numbered by `spec-next.sh reserve`, the `kit:spec-validate` lenses with the blocking design-record lens, build, negative control, proof, gate-ledger records); its PR opens as a draft, wrap never merges it, and the second report asks `REVIEW #<pr>` in `Needs you`. The argument `follow` runs `lanes` and `follow all` runs `all` for one call, over the knob. Any other value prints one line naming the knob and the allowed values and runs as `off`. `Needs you` items never run at any setting. Resolved with `kit_config_get_root`, same fence as the knobs above: it authorizes writes in home repos. |
 | KIT_WRAP_SETTLE_SECS | env-only | `60` | [impl] | wrap | `wrap merge`: seconds to wait, one PR read every 2s, for GitHub to recompute mergeability. The wait covers a first read of UNKNOWN, and after wrap's own re-merge push, a head that is still the old one or a verdict of UNKNOWN or CONFLICTING. A head that is neither the old one nor the pushed one ends the wait and is refused. A non-numeric value falls back to 60. (SPEC-306) |
+| KIT_WRAP_CARRY_CHECKS_SECS | env-only | `300` | [impl] | wrap | `wrap apply` under `wrap.autoland_carry`: seconds to wait, one read every 10s, while a carry PR has pending checks before `wrap merge --apply --pr` gates it. A check still pending at the bound leaves the PR open for step 3. A non-numeric value falls back to 300. (SPEC-322) |
+| KIT_WRAP_CI_ON_MERGE | env-only | `0` | [impl] | wrap | `1` arms the `ci` label gate on `wrap merge`/`land`: label the PR, wait for checks, refuse an empty rollup. The only switch `wrap apply`'s autoland reads; `--with-ci` sets it for one `merge`/`land`. `0` merges with no label and no wait. |
+| KIT_WRAP_CI_GRACE_SECS | env-only | `90` | [impl] | wrap | `wrap` CI wait on a label-gated repo: seconds, one read every 10s, to hold while no NEW check has appeared after the label was added. Past it the workflow is a paths-filtered one that started nothing and the wait ends. A non-numeric value falls back to 90. |
+| KIT_WRAP_LAND_GRACE_SECS | env-only | `30` | [impl] | wrap | `wrap land`, before the first merge, on a repo with a `pull_request` workflow: seconds, one read every 10s, to hold while no check has registered on the PR yet. Pending checks then wait to `KIT_WRAP_CARRY_CHECKS_SECS`. A non-numeric value falls back to 30. |
 | KIT_SKILL_DIRS | env-only | `$HOME/.claude/skills` plus `${CLAUDE_PLUGIN_ROOT:-}/skills` when set | [consumer] | wrap | Colon-separated list of skill directories `config seams` searches for a `skill` kind row's `SKILL.md` (e.g. `wrap.before`). Entries whose realpath does not sit under `$HOME` are dropped, because a repo `.envrc` can set this. Not read by any code yet; `config seams` is the first consumer. |
 
 ### knowledge (context tree root, no install module)
@@ -399,6 +441,7 @@ against any of these bare tokens as covered without a registry row.
 | BACKLOG_DIR | `lib/board/backlog.sh`: computed via `pwd`, script-local. |
 | KIT_REF | `lib/adopt.sh`: the literal `~/.claude/dwarves-kit` string written into a consumer's AGENTS.md for its own shell to expand; assigned, never env-read. |
 | BACKLOG_SH | `lib/board/board.sh`: computed path, not env-overridable. |
+| HARVEST_SWEEP_CHILD | `hooks/harvest_sweep.py` sets `=1` on its own extractor child; `hooks/harvest.sh` exits 0 on it so the sweep's own transcripts are not self-harvested. A parent-to-child marker, never operator-set. |
 | BACKLOG_LOCK_HELD | `lib/board/backlog.sh` `_board_locked`: reentrancy marker the parent sets on the child it re-execs under the shared flock, never read from the ambient environment. |
 | CC_BACKLOG_BACKLOG_FIX | `lib/stats/tests/test-deviation-rate.sh`: test-fixture-local, assigned then used in the same file, never read as inherited env. |
 | SKILL_CURATOR_LEDGER | `lib/skill-curator/lib/common.sh`: derived from `SKILL_CURATOR_STATE_DIR`, not independently env-read. |
@@ -412,6 +455,7 @@ against any of these bare tokens as covered without a registry row.
 | KIT_DIR | `lib/plugin-check/tests/smoke.sh`: test-fixture scratch dir. |
 | KIT_KNOWN_MODULES | `install.sh`: a hardcoded bash array literal, never read from the environment. |
 | KIT_LIB | Script-local computed dir in most readers (e.g. `lib/telemetry/lane-telemetry.sh`); the real env-overridable cousin is `DWARVES_KIT_LIB` (Python, `lib/stats/src/stats/config.py`), which the bash-oriented seed regex cannot see (no `$` sigil in Python source) , documented here rather than silently dropped: see `lib/stats/README.md`'s own env table for `DWARVES_KIT_LIB`'s default (this repo's own `lib/`, kit-internal). |
+| MEGA_ROOT | `lib/board/work.sh`: script-local, set from `--megagoals-root` or `$REPO/_meta/megagoals`, never env-read. |
 | MEGA_SH | `lib/board/board.sh`: computed `$BOARD_DIR/../mega/mega.sh`. |
 | QUEUE_SH | `lib/queue/watch-board.sh`: computed `$WATCH_DIR/queue.sh`, script-local sibling path, never env-read (same shape as `MEGA_SH`). |
 | PANE_VIEWER_ALLOWED | `lib/queue/orchestrate.sh`: a hardcoded allowlist string, not itself env-read; it validates `PANE_VIEWER`. |
@@ -454,19 +498,29 @@ already read them root-only. `tests/test-config-registry.sh` AC10 asserts this t
 EXACTLY the set of keys actually passed to `kit_config_get_root` across `lib/` (excluding
 `lib/config/kit-config.sh`, the accessor's own definition + self-test, whose demo calls
 exercise the primitive on fixture keys -- `mega.wave_cap`, `gauntlet.runner_host`,
-`gauntlet.nope`, `ledger.location` -- that are not themselves root-only rows), `commands/`,
+`gauntlet.nope` -- that are not themselves root-only rows; `lib/decide/flick.sh` also reads `ledger.location` root-only, so it is listed), `commands/`,
 `hooks/`, and `bin/`.
 
 | Key |
 |---|
 | adopt.single_source |
 | debug.confirm_fix |
+| execute.recheck_sample |
+| harvest.enable |
+| harvest.hook_when_sweep_on |
 | intake.boards |
 | intake.notes |
 | intake.url_ledger |
 | intake.verdicts |
 | knowledge.root |
+| ledger.location |
+| lanes.default |
 | precedent.registry |
+| proof.account_ |
+| proof.asset_bucket |
+| proof.asset_token_ref |
+| proof.base_url_ |
+| proof.visual |
 | review.apply_findings |
 | ship.confirm_bump |
 | ship.confirm_commit |
@@ -474,6 +528,7 @@ exercise the primitive on fixture keys -- `mega.wave_cap`, `gauntlet.runner_host
 | understand.teach |
 | wrap.activity_log |
 | wrap.after |
+| wrap.autoland_carry |
 | wrap.before |
 | wrap.build_candidates |
 | wrap.build_lanes |
@@ -489,6 +544,10 @@ exercise the primitive on fixture keys -- `mega.wave_cap`, `gauntlet.runner_host
 
 ## Known gaps (documented, not enforced by this lint , out of this sub-goal's scope)
 
+
+- `decide.*` is root-only but absent from the "Root-only keys" table above. `bin/flick` reads the `[decide]` block with its own one-pass reader (operator `kit.toml`, then kit-root `kit.toml`, never a project `.kit.toml`) because ten `kit_config_get_root` calls cost ten `awk` spawns, which broke its latency budget on a slow-spawn host. AC10 requires the table to equal the literal `kit_config_get_root` call sites, so listing the keys would fail it. Effect: `bin/config get decide.<key>` still shows a project override while `bin/flick` ignores it. `tests/test-flick.sh` pins the flick side.
+- `proof.account_` and `proof.base_url_` are prefix rows. `lib/proof/asset.sh` reads `proof.account_<owner>` and `proof.base_url_<owner>` root-only, and AC10 captures the literal prefix before the variable. `bin/config get proof.account_<owner>` matches no row, so it does not fence a project override; `asset.sh` itself still reads root-only.
+
 The seed regex is deliberately the exact reproducible command named in
 `_meta/megagoals/harness-loop/goals/08-config-surface.md` step 2, scoped to a
 fixed prefix family (`KIT|WAVE|QUEUE|MEGA|CC_SI|PROSE_RAG|MONEY_GATE|TIER4|MUX|TMUX|PANE|TERMINAL|STATS|CC_BACKLOG|HARVEST|BACKLOG|DWARVES`)
@@ -497,8 +556,7 @@ vars were found OUTSIDE that family; they are NOT covered by the drift lint
 (a future sub-goal widening the prefix family, or switching the lint's detection
 to the structural `${VAR:-`/`[ -n "${VAR:-}" ]` pattern instead of a prefix
 allowlist, would close this), but are named here so they are not lost:
-`LANE_DEESCALATE_FLOOR` (`lib/classify/lane-classify.sh`), `MONEY_GATE_STRICT`
-(`hooks/money-gate.py`, Python-only, no `$` token), `MUTATION_SMOKE_BASE` /
+`LANE_DEESCALATE_FLOOR` (`lib/classify/lane-classify.sh`), `MUTATION_SMOKE_BASE` /
 `MUTATION_SMOKE_TEST_CMD` / `MUTATION_SMOKE_RID` / `MUTATION_SMOKE_MAX`
 (`lib/gate/mutation-smoke.sh`), `HANDOFF_MAX_LINES` / `WATCHDOG_STALL_SECS` /
 `WATCHDOG_POLL_SECS` / `FLIP_LOCK_STALE_SECS` / `FLIP_LOCK_POLL_SECS` /

@@ -20,7 +20,8 @@ mkrepo() { # $1=dir $2=slug $3=lane [$4=nomarker] -> repo on feat/<slug> with a 
   if [ "${4:-}" != nomarker ]; then mkdir -p "$1/docs/verification"; echo marker > "$1/docs/verification/README.md"; fi
   : > "$1/.keep"; git -C "$1" add -A; git -C "$1" commit -qm init
   git -C "$1" switch -qc "feat/$2"
-  printf '# Spec: x\nStatus: DRAFT\nLane: %s\n' "$3" > "$1/docs/specs/SPEC-001-$2.md"
+  # One task keeps the spec small, so the normal lane's validate-by-size rule stays out of these cases.
+  printf '# Spec: x\nStatus: DRAFT\nLane: %s\n\n- [ ] TASK-1: x\n' "$3" > "$1/docs/specs/SPEC-001-$2.md"
   git -C "$1" add -A; git -C "$1" commit -qm spec
 }
 notes() { # $1=repo $2=file-basename $3=content -> commit it

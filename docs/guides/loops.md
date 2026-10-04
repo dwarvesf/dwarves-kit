@@ -20,7 +20,7 @@ guide is what that means for you.
 |---|---|---|---|
 | Goal (`/goal`) | one objective until its verification command passes | your stated stop | done, or a named blocker |
 | Debug (`/kit:debug`) | root cause before any fix | 3 fixes = architecture wall | evidence ledger; a confirmed cause, then the fix |
-| Execute (`/kit:execute`) | each spec task through verify | 2 retries per task | per-task verdicts; escalations, not silent retries |
+| Execute (`/kit:execute`) | one builder for the whole spec, then every task through one end verification pass | 2 fix rounds | a verdict per task at the end; an unmet criterion is named (`Result: PARTIAL`), not silently retried |
 | Revise engines (`/kit:test-plan-review-team`, `/kit:gauntlet`) | one artifact until findings clear | 3 rounds | SOLID / REVISE / RECONSIDER |
 
 ## What you do at each outcome

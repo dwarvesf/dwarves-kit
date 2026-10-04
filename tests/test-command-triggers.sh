@@ -22,6 +22,7 @@ check_desc() {  # file phrase1 phrase2
   grep -qF -- "$2" <<<"$line"; assert "$1: description carries '$2'" $?
   grep -qF -- "$3" <<<"$line"; assert "$1: description carries '$3'" $?
   [ "${#line}" -gt 200 ]; assert "$1: description is longer than 200 characters" $?
+  [ "${#line}" -le 415 ]; assert "$1: description value fits the 400-char cap (#700)" $?
 }
 
 check_desc think.md "thiết kế X" "superpowers:brainstorming"

@@ -49,10 +49,10 @@ session-observe hooks --project=<project-slug> --days 7
 
 ## What it reads
 
-Each transcript entry already carries `hookInfos: [{command, durationMs}]`, `hookErrors`, and the `tool_use` / `tool_result` blocks. session-observe tallies them:
+Each transcript entry already carries `hookInfos: [{command, durationMs}]` (Stop hooks only, via a `stop_hook_summary` system entry), `hookErrors`, an `attachment` record per hook fired under every other event, and the `tool_use` / `tool_result` blocks. session-observe tallies them:
 
 - **skills / tools**: count `tool_use` by name (Skill by `input.skill`); attribute `is_error` results back via `tool_use_id`. `tools --errors <tool>` groups one tool's error results by message prefix (first 160 chars, whitespace-collapsed), so the count table's "why" is one flag away.
-- **hooks**: group `hookInfos[].durationMs` by a normalized hook label; count `hookErrors`.
+- **hooks**: group `durationMs` by `(hook label, event)`. Stop comes from `hookInfos[]`; every other event (SessionStart, PreToolUse, PostToolUse, PostToolUseFailure, UserPromptSubmit, SubagentStart, SubagentStop) comes from an `attachment` record (`hook_success`, `hook_cancelled`, `hook_non_blocking_error`, or any type carrying `command` + `durationMs`). A headless `claude -p` transcript has no `hookInfos` at all, so its Stop hooks are read from the `attachment` copy instead (per file: a Stop attachment is discarded only when that same file already has `hookInfos`). Counts `hookErrors`.
 - **subagents**: count `tool_use` named `Agent`/`Task` by day and by `input.subagent_type`, normalized by user-prompt turns (`per100` = spawns per 100 prompts). Sidechain entries (`isSidechain`) are the subagents' own runs, so they are excluded to avoid double-counting. Answers "is my subagent mix drifting?" (e.g. Explore -> general-purpose) which a raw tool count hides.
 - **friction**: four deterministic working-pattern signals. **thrash** = a file edited `>= THRASH_MIN` (3) times in one session (rework/debug spiral). **permission-friction** = `tool_result` content matching a real permission marker (capital-P `"Permission to use "`, `"doesn't want to proceed"`, `"denied by your permission"`), attributed to the tool (Bash by command). **context-pressure** = `isCompactSummary` entries per day (the window collapsing). **skill-precision** = skills that mis-fired (errored), ranked by inert-rate, surfaced from the skill-error data the `skills` view buries.
 - **sessions**: per-transcript shape. **archetype** = each session bucketed quick / standard / deep / marathon / automation from wall-clock (first->last `timestamp`) + tool-use volume + whether a human prompted; subagent transcripts (`isSidechain`) are excluded so they do not inflate `automation`. **circadian** = prompt-turns + tool-uses by UTC hour-of-day. **interruption rate** = user turns carrying `"[Request interrupted"`, as a count + per-100-turns.
@@ -72,13 +72,14 @@ Each transcript entry already carries `hookInfos: [{command, durationMs}]`, `hoo
   Read    1457     124    9%
 
 # hooks
-  hook              runs  p50ms  p95ms  maxms
-  slop-cleaner.sh   1072   2967   6211  10303
+  hook              event         runs  p50ms  p95ms  maxms
+  slop-cleaner.sh   Stop          1072   2967   6211  10303
+  tool-first.sh     SessionStart    56     42     58     61
 ```
 
 ## Limits
 
-- Script hooks (`*.sh`/`*.py`) label cleanly by basename. Long-text inline/condition hooks (e.g. the `/goal` Stop-hook) fragment by first word. The actionable latency is in the script hooks.
+- Script hooks (`*.sh`/`*.py`) label cleanly by basename. A long-text inline/condition hook (e.g. the `/goal` Stop-hook) hashes to a stable `inline-echo:<hash>` row per unique command; it does not fragment by first word (each distinct goal gets its own row, not a shared one keyed on a leading word like "Drive").
 - `--days` is a coarse file-mtime window.
 - Read-only by contract: session-observe never writes anything.
 

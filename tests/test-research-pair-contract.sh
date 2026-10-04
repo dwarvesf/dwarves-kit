@@ -123,10 +123,10 @@ assert "row 25: stack distilled return contract (heading + fields + bounds)" $?
 echo ""
 echo "=== AC-3: dispatch deltas, both sides ==="
 
-grep -qF '**research-pitfalls** agent: "Find landmines in [target area / target files]. Write to `docs/research/<date>-<slug>-pitfalls.md`."' "$C"
+grep -qF '**kit:research-pitfalls** agent: "Find landmines in [target area / target files]. Write to `docs/research/<date>-<slug>-pitfalls.md`."' "$C"
 assert "row 26: Mode A pitfalls dispatch line names agent + exact write target" $?
 
-grep -qF '**research-stack** agent: "Map the technology stack. Write to `docs/research/<date>-<slug>-stack.md`."' "$C" && grep -qF '`.claude/agents/research-stack.md`' "$C"
+grep -qF '**kit:research-stack** agent: "Map the technology stack. Write to `docs/research/<date>-<slug>-stack.md`."' "$C" && grep -qF '`.claude/agents/research-stack.md`' "$C"
 assert "row 27: Mode A stack dispatch line + gate example filename" $?
 
 grep -qF 'Find landmines in [target area]. Look for: deprecated code still referenced, TODO/FIXME comments, test gaps, circular dependencies, files over 500 lines, missing env/config values the new feature will need. Max 40 lines. Write to docs/research/<date>-<slug>-pitfalls.md.' "$C"

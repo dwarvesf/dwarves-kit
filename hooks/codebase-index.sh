@@ -1,4 +1,5 @@
 #!/bin/bash
+# codebase-index.sh -- Opt-in SessionStart hook that keeps the current repo indexed in codebase-memory-mcp for structural queries.
 # codebase-index.sh , SessionStart hook (OPT-IN), dwarves-kit
 #
 # Keeps the current repo indexed in codebase-memory-mcp so kit commands can query a

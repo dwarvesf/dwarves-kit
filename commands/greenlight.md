@@ -21,12 +21,23 @@ If `$ARGUMENTS` names a PR number (`42` or `#42`), use it. Otherwise resolve the
 
 If no PR resolves, STOP: "No open PR for this branch. Run `/kit:ship` to open one first." Do not open a PR yourself.
 
+### Step 1b: The `ci` label gate
+
+Arm this step only when the operator asked for a CI run; merges trigger no CI by default, so without that ask skip Step 1b entirely and an empty rollup is a legitimate `done`.
+
+Some repos run PR checks only when the PR carries the `ci` label (`pull_request: types: [labeled]`), so an unlabeled PR shows an empty rollup that would read as "no CI configured". Before the snapshot:
+
+- Does the repo carry the label? `gh label list -R <owner>/<repo> --search ci --json name`, exact match on `name == "ci"`. No exact match (or a failed read) -> skip this step entirely; the repo behaves as it always did.
+- Repo has the label, PR does not -> `gh pr edit <N> -R <owner>/<repo> --add-label ci`, then wait a few seconds before the snapshot: the `labeled` event registers its runs a beat after the edit.
+- PR already carries `ci` but the head has no runs (new commits after labeling) -> remove and re-add the label, same wait.
+- A PR can carry completed checks from before the label went on (an earlier plain `pull_request` run, or another label's `labeled` event whose jobs all skipped). Note their `detailsUrl`s before the edit. Right after it, none of them is pending and the label's own runs have not registered, so a snapshot that holds only those checks is the same race as an empty rollup: re-snapshot until a check that was not on the list appears, or a few polls pass with none (a `paths:` filter started nothing).
+
 ### Step 2: Snapshot
 
 Read `gh pr view --json state,mergeable,headRefName,reviewDecision,statusCheckRollup` and `gh pr checks <N> --json <fields>`. Confirm the exact field names against the installed `gh` version first (`gh pr checks --help`, `gh pr view --help` list what that install supports) rather than assuming a fixed list -- a field this prompt might guess (e.g. a specific `bucket` enum value) can differ across `gh` releases, and pinning one that does not exist crashes the snapshot instead of degrading. Read only documented fields.
 
 - PR `state` is `MERGED` or `CLOSED` -> terminal `stop_pr_closed`. Stop.
-- No checks at all reported -> terminal `done` ("nothing to drive, PR has no CI configured").
+- No checks at all reported -> terminal `done` when Step 1b was skipped (no CI run was asked for) or the repo has no `ci` label. When Step 1b labeled the PR, an empty rollup right after labeling is a race, not an absence: re-snapshot after a few seconds; still empty means a `paths:` filter started nothing, which is a legitimate `done`.
 - Every check `SUCCESS`/passing and none pending -> terminal `done`. Note `reviewDecision` in the summary as an FYI (a pending or CHANGES_REQUESTED review is informational here; acting on review comments is Phase B, not this command).
 
 ### Step 3: Classify each failing check
@@ -113,7 +124,7 @@ In a `bypassPermissions` session, the push in Step 6 is auto-approved with no pe
 5. **A flaky check that is actually real.** Retried to the 3-per-commit budget, still failing -> reclassified real, routed to Step 4 or escalated. The budget bounds the waste.
 6. **`gh` not authenticated, or the GitHub API errors.** `stop_error` immediately.
 7. **The PR head advanced under us.** Push rejected -> re-fetch, re-snapshot, re-evaluate. Never force. Unrecoverable resync -> `stop_error`.
-8. **The PR has no checks configured.** Terminal `done` -- nothing to drive.
+8. **The PR has no checks configured.** Terminal `done` -- nothing to drive, but only after Step 1b ruled out the `ci` label gate: on a gated repo an unlabeled head IS the "no checks" state.
 9. **A fix passes locally but CI still fails it after push.** Re-classified and re-attempted on the next snapshot within the budget, then surfaced if it keeps failing. Local verify reduces, does not eliminate, environment divergence.
 
 Record the beat when the lane ends, green or escalated: `bash lib/gate/gate-ledger.sh record <rid> Greenlight ran "<green|escalated> iterations=<n> fixed=<n> flaky=<n>"`, then close the timing bracket: `bash lib/gate/gate-ledger.sh outcome <rid> Greenlight end caught=<true if a real failure was fixed, else false>`.

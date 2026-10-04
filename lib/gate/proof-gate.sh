@@ -41,6 +41,11 @@ set -euo pipefail
 PROOF_GATE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 LIB_ROOT="$(cd "$PROOF_GATE_DIR/.." && pwd -P)"  # the lib/ dir; cross-subsystem siblings resolve as "$LIB_ROOT/<subsystem>/<file>"
 
+# The [proof] visual opt-in resolves through the one TOML reader, same
+# as proof-ledger.sh: the dependency on kit-config.sh is explicit, not incidental.
+# shellcheck source=lib/config/kit-config.sh
+source "$LIB_ROOT/config/kit-config.sh" || { echo "FATAL: lib/config/kit-config.sh missing or unreadable" >&2; exit 1; }
+
 # Single source for the type derivation (review: proof_contract + proof_class each
 # forked their own classify; one helper, one fork per caller, zero divergence risk).
 _classify_type() { bash "$LIB_ROOT/classify/task-type-classify.sh" classify "$@" 2>/dev/null || true; }
@@ -83,7 +88,7 @@ proof_requirement() {
     stateful)
       echo "stateful: exercise the REAL flow on a copy or dry-run, record the run (command + output + verdict) in docs/verification/<spec-slug>.md, and note rollback/reversibility. No 'done' without a recorded run AND a rollback path." ;;
     behavioral)
-      echo "behavioral: run the REAL primary flow end-to-end (not a proxy test), record the run in docs/verification/<spec-slug>.md, and include a negative control (revert -> RED -> restore)." ;;
+      echo "behavioral: run the REAL primary flow end-to-end (not a proxy test), record the run in docs/verification/<spec-slug>.md, and include a negative control (revert -> RED -> restore; lib/gate/negctl.sh runs this)." ;;
     inert)
       echo "inert: exempt. Record [PROOF OF DONE: exempt -- <reason>] in the log or the task line. No run required." ;;
   esac
@@ -104,6 +109,47 @@ _registry_field() {
     }' "$TASK_TYPE_REGISTRY" 2>/dev/null
 }
 
+# --- opt-in visual contract (R9) ---------------------------------------------
+# When [proof] visual resolves true, `contract` adds one `visual:` line naming the
+# artifact the task owes. The keyword table below is FROZEN by the spec (the
+# DECISION-BRIEF "What each task type owes" mapping): first match wins, `none` when
+# no row hits. With the flag off `contract` output stays byte-identical to before.
+
+_proof_visual_enabled() {
+  # R1's read: KIT_PROJECT_ROOT=<project root> kit_config_get proof.visual false.
+  # An explicit KIT_PROJECT_ROOT wins (tests, callers naming the project); else the
+  # git root of cwd, else cwd itself (contract runs before a repo may even exist).
+  local root="${KIT_PROJECT_ROOT:-}"
+  [ -n "$root" ] || root="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+  KIT_PROJECT_ROOT="$root" kit_config_get proof.visual false
+}
+
+_proof_visual_row() {
+  local lc="$1"
+  if   printf '%s' "$lc" | grep -qE '\b(ui|page|component|screen|layout|front-?end|stylesheet|css|html|dashboard)\b'; then echo "ui page"
+  elif printf '%s' "$lc" | grep -qE '\b(flow|wizard|onboarding|journey|walkthrough)\b';   then echo "ui flow"
+  elif printf '%s' "$lc" | grep -qE '\b(bot|chat|discord|telegram|slack)\b';              then echo "bot message"
+  elif printf '%s' "$lc" | grep -qE '\b(tui|vhs)\b';                                       then echo "tui"
+  elif printf '%s' "$lc" | grep -qE '\b(report|chart|pipeline)\b';                         then echo "report"
+  elif printf '%s' "$lc" | grep -qE '\b(docx|xlsx|pptx|pdf|spreadsheet|workbook)\b';       then echo "generated file"
+  else echo "none"; fi
+}
+
+# The artifact text mirrors the DECISION-BRIEF table verbatim, so this line and the
+# /kit:verify capture step (which captures "the set the visual: line names" on the
+# full lane) can never drift apart.
+_proof_visual_artifact() {
+  case "$1" in
+    "ui page")        echo "before + after screenshots, desktop and 400px" ;;
+    "ui flow")        echo "GIF of the whole flow" ;;
+    "bot message")    echo "screenshot of the real message in a test channel, plus read-back text" ;;
+    "tui")            echo "GIF of a session (VHS)" ;;
+    "report")         echo "sample rows, counts, diff vs previous run; chart PNG" ;;
+    "generated file") echo "first pages rendered to PNG" ;;
+    *)                echo "none" ;;
+  esac
+}
+
 proof_contract() {
   local desc class type artifact skill
   desc="$*"
@@ -112,12 +158,15 @@ proof_contract() {
   type="$(_classify_type "$desc")"; [ -n "$type" ] || type=spec-feature
   artifact="$(_registry_field "$type" 3)"
   skill="$(_registry_field "$type" 4)"
-  [ -n "$artifact" ] || artifact="(no registry row for type '$type'; default: run the real primary flow + a negative control)"
+  [ -n "$artifact" ] || artifact="(no registry row for type '$type'; default: run the real primary flow + a negative control via lib/gate/negctl.sh)"
   [ -n "$skill" ] || skill="(none)"
   echo "type=$type class=$class"
   echo "proof: $artifact"
   echo "owner: $skill"
   echo "rigor: $(proof_requirement "$desc")"
+  if [ "$(_proof_visual_enabled)" = "true" ]; then
+    echo "visual: $(_proof_visual_artifact "$(_proof_visual_row "$(printf '%s' "$desc" | tr '[:upper:]' '[:lower:]')")")"
+  fi
   echo "hint: run 'proof-gate.sh skeleton <slug>' for a fillable verification file"
 }
 
@@ -145,13 +194,18 @@ proof_skeleton() {
   echo '```'
   echo "Command:"
   echo "Exit:"
+  echo "Output:"
+  echo "<paste what the run really printed: the test recap, the tail of the run>"
   echo "Verdict:"
   echo '```'
+  echo "<visual work: a committed screenshot or GIF embed replaces the Output: lines, ![after](<path>.png)>"
   echo
   echo "## Negative control"
   echo '```'
   echo "Command:"
   echo "Exit:"
+  echo "Output:"
+  echo "<paste the failing lines>"
   echo "Verdict:"
   echo '```'
   echo "<what was broken, and confirmation it was restored>"

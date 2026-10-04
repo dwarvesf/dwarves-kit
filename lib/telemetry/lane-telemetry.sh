@@ -43,6 +43,20 @@ else
   C_RED=""; C_BOLD=""; C_OFF=""
 fi
 
+# _ledger_files: fill LEDGERS with the regular, readable run ledgers in glob order. A dangling
+# *.log symlink (or a directory) would make macOS awk abort the whole pass, so the one-process
+# callers (_rows, the grep prefilters) take this list, never the raw glob.
+# ARG_MAX ceiling: every ledger rides one argv; macOS allows about 12,000 paths of this length
+# (about 60x today's count). Past that, switch the callers to `xargs -0`.
+LEDGERS=()
+_ledger_files() {
+  local f; LEDGERS=()
+  for f in "$RUNS_DIR"/*.log; do
+    [ -f "$f" ] && [ -r "$f" ] && LEDGERS[${#LEDGERS[@]}]="$f"
+  done
+  return 0
+}
+
 # Boardless runs: a run ledger whose repo matches the cwd repo but whose rid
 # the board never mentions. Detection only; the board file is the repo's own.
 _boardless() {
@@ -54,10 +68,13 @@ _boardless() {
   root="$(cd "$(dirname "$common")" 2>/dev/null && pwd)" || return 0
   board="$root/_meta/BACKLOG.md"; [ -f "$board" ] || return 0
   myrepo="$(basename "$root")"
-  for f in "$RUNS_DIR"/*.log; do
-    [ -e "$f" ] || continue
+  # one grep over every ledger instead of one per file; -l keeps the glob order
+  _ledger_files
+  [ "${#LEDGERS[@]}" -gt 0 ] || return 0
+  local cand; cand="$(grep -lF -- "repo=$myrepo" "${LEDGERS[@]}" 2>/dev/null || true)"
+  while IFS= read -r f; do
+    [ -n "$f" ] && [ -e "$f" ] || continue
     rid="$(basename "$f" .log)"
-    grep -qF -- "repo=$myrepo" "$f" 2>/dev/null || continue
     # On-board if the board names the run by rid (the `[run <rid>]` convention), OR by any
     # ID-NNN / PR #N token the run's own ledger carries (metric 9a: real board rows
     # key on ID/PR, not the raw rid, so a raw-rid-only match false-flagged tracked runs).
@@ -68,7 +85,7 @@ _boardless() {
       grep -qF -- "$tok" "$board" 2>/dev/null && { matched=1; break; }
     done < <(grep -oE 'ID-[0-9]+|PR #[0-9]+' "$f" 2>/dev/null | sort -u)
     [ -n "$matched" ] || printf '%s\n' "$rid"
-  done
+  done <<< "$cand"
 }
 
 # Shipped-incomplete: a shipped run that would NOT pass its own ship-gate, i.e.
@@ -78,56 +95,143 @@ _boardless() {
 # parsing). It uses `check` (the same required-gate contract hooks/ship-gate.sh enforces), so
 # run-lite phases -- e.g. `ui-design` on a non-UI full-lane run -- never trip it (metric 9b);
 # a test pin asserts the detector calls `check` so a rename breaks the build.
+#
+# Each `check` spawn costs seconds, so verdicts are cached in $LOG_DIR/.shipped-incomplete.cache:
+#   line 1   #fp=<cksum of the lane data + gate scripts>   (a mismatch drops every entry)
+#   then     rid<TAB>size<TAB>mtime<TAB>inode<TAB>pass|fail  (the ledger file's identity)
+# A missing, unreadable or corrupt cache only means a live check. The rewrite is temp + mv.
+_lane_fp() {
+  local pf="${KIT_PROJECT_ROOT:-$PWD}/.kit.toml"
+  local op="${KIT_CONFIG_OPERATOR:-${XDG_CONFIG_HOME:-$HOME/.config}/dwarves-kit}/kit.toml"
+  local clean=0 d; d="$(dirname "$pf")"
+  # lane-data.sh honours the project file only when it is tracked and clean against HEAD
+  if [ -f "$pf" ] && git -C "$d" ls-files --error-unmatch .kit.toml >/dev/null 2>&1 \
+     && git -C "$d" diff --quiet HEAD -- .kit.toml 2>/dev/null; then clean=1; fi
+  { cat "$LIB_ROOT/../kit.toml" "$op" "$pf" "$LIB_ROOT"/gate/*.sh "$LIB_ROOT/config/kit-config.sh" 2>/dev/null || true
+    echo "clean=$clean"; } | cksum | cut -d' ' -f1
+}
+
+# _file_id <file>: "<size><TAB><mtime><TAB><inode>"; GNU stat first (BSD stat rejects -c, GNU stat -f
+# means filesystem). The inode catches a same-size, same-second file swapped in place.
+_file_id() {
+  local o; o="$(stat -c '%s %Y %i' "$1" 2>/dev/null || stat -f '%z %m %i' "$1" 2>/dev/null)" || return 0
+  printf '%s' "${o// /$'\t'}"
+}
+
 _shipped_incomplete() {
-  local f rid lane
-  for f in "$RUNS_DIR"/*.log; do
-    [ -e "$f" ] || continue
-    grep -q '| GATE | ship | ran' "$f" 2>/dev/null || continue
-    rid="$(basename "$f" .log)"
-    lane="$( { grep '| START-AMEND |' "$f" 2>/dev/null | tail -1; grep -m1 '| START |' "$f" 2>/dev/null; } | head -1 | grep -oE 'lane=[^ ]+' | head -1 | cut -d= -f2 || true)"
-    [ -n "$lane" ] || continue
-    bash "$LIB_ROOT/gate/gate-ledger.sh" check "$lane" "$rid" >/dev/null 2>&1 \
-      || printf '%s (%s)\n' "$rid" "$lane"
-  done
+  local f rid lane id verdict cache_file="$LOG_DIR/.shipped-incomplete.cache"
+  local fp cache="" want_cache="" dirty=0 nl=$'\n' tab=$'\t' line
+  fp="$(_lane_fp)"
+  if [ -r "$cache_file" ]; then
+    line="$(head -n 1 "$cache_file" 2>/dev/null || true)"
+    [ "$line" = "#fp=$fp" ] && cache="$nl$(tail -n +2 "$cache_file" 2>/dev/null || true)$nl"
+  fi
+  _ledger_files
+  [ "${#LEDGERS[@]}" -gt 0 ] || return 0
+  local shipped; shipped="$(grep -l '| GATE | ship | ran' "${LEDGERS[@]}" 2>/dev/null || true)"
+  [ -n "$shipped" ] || return 0
+  # one awk over the shipped ledgers: "<path>\t<lane>" (last START-AMEND, else first START), skipping a run with no lane
+  local lanes
+  lanes="$(printf '%s\n' "$shipped" | tr '\n' '\0' | xargs -0 awk '
+    function flush(   l, a) {
+      if (cur!="") {
+        l=(amend!="" ? amend : start)
+        if (match(l, /lane=[^ ]+/)) { split(substr(l, RSTART, RLENGTH), a, "="); if (a[2]!="") print cur "\t" a[2] }
+      }
+      amend=""; start=""
+    }
+    FNR==1 { flush(); cur=FILENAME }
+    index($0, "| START-AMEND |") { amend=$0 }
+    start=="" && index($0, "| START |") { start=$0 }
+    END { flush() }' 2>/dev/null || true)"
+  while IFS="$tab" read -r f lane; do
+    [ -n "$f" ] && [ -n "$lane" ] || continue
+    rid="${f##*/}"; rid="${rid%.log}"
+    id="$(_file_id "$f")"; verdict=""
+    if [ -n "$id" ]; then
+      line="$rid$tab$id$tab"
+      case "$cache" in
+        *"$nl$line"pass"$nl"*) verdict=pass ;;
+        *"$nl$line"fail"$nl"*) verdict=fail ;;
+      esac
+    fi
+    if [ -z "$verdict" ]; then
+      dirty=1
+      if bash "$LIB_ROOT/gate/gate-ledger.sh" check "$lane" "$rid" >/dev/null 2>&1; then verdict=pass; else verdict=fail; fi
+    fi
+    [ -z "$id" ] || want_cache="$want_cache$rid$tab$id$tab$verdict$nl"
+    [ "$verdict" = pass ] || printf '%s (%s)\n' "$rid" "$lane"
+  done <<< "$lanes"
+  # Persist only when something was re-checked; failure to write is never fatal. The temp file is
+  # removed on any exit path, including INT and TERM, so an interrupted run leaves nothing behind.
+  if [ "$dirty" -eq 1 ] && [ -d "$LOG_DIR" ]; then
+    _SI_TMP=""
+    trap 'command rm -f "$_SI_TMP"' EXIT
+    trap 'command rm -f "$_SI_TMP"; exit 143' TERM
+    trap 'command rm -f "$_SI_TMP"; exit 130' INT
+    _SI_TMP="$(mktemp "$cache_file.XXXXXX" 2>/dev/null)" || _SI_TMP=""
+    if [ -n "$_SI_TMP" ]; then
+      { printf '#fp=%s\n' "$fp"; printf '%s' "$want_cache"; } > "$_SI_TMP" 2>/dev/null \
+        && mv -f "$_SI_TMP" "$cache_file" 2>/dev/null || command rm -f "$_SI_TMP" 2>/dev/null || true
+    fi
+    trap - EXIT TERM INT
+  fi
+  return 0
 }
 
 # one TSV row per run: rid repo lane classified type ctype ran skip ovr mis tmis ship review first last
+# One awk process over every ledger (glob order). Per-file state resets at FNR==1; an empty
+# ledger has no record, so it is tracked by ARGV position and still emits its all-"?" row.
 _rows() {
-  local f rid
-  for f in "$RUNS_DIR"/*.log; do
-    [ -e "$f" ] || continue
-    rid="$(basename "$f" .log)"
-    awk -v rid="$rid" '
-      BEGIN { FS=" \\| " }
-      NR==1 { first=$1 }
-      { last=$1 }
-      $2=="START" && !started {
-        started=1
-        n=split($3, kv, " ")
-        for (i=1; i<=n; i++) { split(kv[i], p, "="); m[p[1]]=p[2] }
-      }
-      $2=="START-AMEND" {   # sanctioned correction: last amend wins
-        started=1   # review F1: an amend also closes the plain-START first-wins window
-        n=split($3, kv, " ")
-        for (i=1; i<=n; i++) { split(kv[i], p, "="); m[p[1]]=p[2] }
-      }
-      $2=="GATE" && $4=="ran"      { ran++ }
-      $2=="GATE" && $4=="skipped"  { skip++ }
-      $2=="GATE" && $4=="override" { ovr++ }
-      $2=="GATE" && $3=="review" && $4=="ran" { review=$5; for (i=6; i<=NF; i++) review = review " | " $i }
-      $2=="GATE" && $3=="ship"   && $4=="ran" { ship=1 }
-      END {
-        lane=(m["lane"]==""?"?":m["lane"]); cls=(m["classified"]==""?"?":m["classified"])
-        type=(m["type"]==""?"?":m["type"]); repo=(m["repo"]==""?"?":m["repo"])
-        ctype=(m["ctype"]==""?"?":m["ctype"])
-        mis=(lane!="?" && cls!="?" && lane!=cls) ? 1 : 0
-        tmis=(type!="?" && ctype!="?" && type!=ctype) ? 1 : 0
-        if (review=="") review="-"
-        gsub(/\t/, " ", review)
-        printf "%s\t%s\t%s\t%s\t%s\t%s\t%d\t%d\t%d\t%d\t%d\t%d\t%s\t%s\t%s\n", \
-          rid, repo, lane, cls, type, ctype, ran+0, skip+0, ovr+0, mis, tmis, ship+0, review, first, last
-      }' "$f"
-  done
+  _ledger_files
+  [ "${#LEDGERS[@]}" -gt 0 ] || return 0
+  awk '
+    BEGIN {
+      FS=" \\| "
+      for (i=1; i<ARGC; i++) fl[i]=ARGV[i]
+      nf=ARGC-1; idx=1; cur=""
+    }
+    function rid_of(path,   n, parts, b) {
+      n=split(path, parts, "/"); b=parts[n]; sub(/\.log$/, "", b); return b
+    }
+    function flush(rid,   lane, cls, type, repo, ctype, mis, tmis, rv) {
+      lane=(m["lane"]==""?"?":m["lane"]); cls=(m["classified"]==""?"?":m["classified"])
+      type=(m["type"]==""?"?":m["type"]); repo=(m["repo"]==""?"?":m["repo"])
+      ctype=(m["ctype"]==""?"?":m["ctype"])
+      mis=(lane!="?" && cls!="?" && lane!=cls) ? 1 : 0
+      tmis=(type!="?" && ctype!="?" && type!=ctype) ? 1 : 0
+      rv=review; if (rv=="") rv="-"
+      gsub(/\t/, " ", rv)
+      printf "%s\t%s\t%s\t%s\t%s\t%s\t%d\t%d\t%d\t%d\t%d\t%d\t%s\t%s\t%s\n", \
+        rid, repo, lane, cls, type, ctype, ran+0, skip+0, ovr+0, mis, tmis, ship+0, rv, first, last
+      split("", m); started=0; ran=skip=ovr=ship=0; review=""; first=last=""
+    }
+    FNR==1 {
+      if (cur!="") flush(rid_of(cur))
+      while (idx<=nf && fl[idx]!=FILENAME) { flush(rid_of(fl[idx])); idx++ }   # empty ledgers skipped over
+      idx++; cur=FILENAME
+      first=$1
+    }
+    { last=$1 }
+    $2=="START" && !started {
+      started=1
+      n=split($3, kv, " ")
+      for (i=1; i<=n; i++) { split(kv[i], p, "="); m[p[1]]=p[2] }
+    }
+    $2=="START-AMEND" {   # sanctioned correction: last amend wins
+      started=1   # review F1: an amend also closes the plain-START first-wins window
+      n=split($3, kv, " ")
+      for (i=1; i<=n; i++) { split(kv[i], p, "="); m[p[1]]=p[2] }
+    }
+    $2=="GATE" && $4=="ran"      { ran++ }
+    $2=="GATE" && $4=="skipped"  { skip++ }
+    $2=="GATE" && $4=="override" { ovr++ }
+    $2=="GATE" && $3=="review" && $4=="ran" { review=$5; for (i=6; i<=NF; i++) review = review " | " $i }
+    $2=="GATE" && $3=="ship"   && $4=="ran" { ship=1 }
+    END {
+      if (cur!="") flush(rid_of(cur))
+      while (idx<=nf) { flush(rid_of(fl[idx])); idx++ }
+    }' "${LEDGERS[@]}"
 }
 
 # _review_agg: review-economics counters over runs that recorded at least one review round
@@ -316,13 +420,14 @@ report() {
 misfires() {
   local any=0
   if [ -d "$RUNS_DIR" ]; then
-    local lines
-    lines="$(_rows | awk 'BEGIN{FS="\t"} $10==1 { printf "  %s: chosen=%s classified=%s (type=%s repo=%s)\n", $1, $3, $4, $5, $2 }')"
+    local lines rows
+    rows="$(_rows)"
+    lines="$(printf '%s\n' "$rows" | awk 'BEGIN{FS="\t"} $10==1 { printf "  %s: chosen=%s classified=%s (type=%s repo=%s)\n", $1, $3, $4, $5, $2 }')"
     if [ -n "$lines" ]; then
       echo "routing misfires (chosen lane != classified):"
       printf '%s\n' "$lines"; any=1
     fi
-    lines="$(_rows | awk 'BEGIN{FS="\t"} $11==1 { printf "  %s: type=%s classified-type=%s (lane=%s repo=%s)\n", $1, $5, $6, $3, $2 }')"
+    lines="$(printf '%s\n' "$rows" | awk 'BEGIN{FS="\t"} $11==1 { printf "  %s: type=%s classified-type=%s (lane=%s repo=%s)\n", $1, $5, $6, $3, $2 }')"
     if [ -n "$lines" ]; then
       echo "type misfires (chosen type != classified):"
       printf '%s\n' "$lines"; any=1

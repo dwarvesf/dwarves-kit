@@ -28,7 +28,8 @@ new_log() { LOGD="$(_mk)/logs"; mkdir -p "$LOGD/runs"; }
 ledger_of() { cat "$LOGD/runs/$1.log" 2>/dev/null; }
 
 # The full normal-lane set minus grill, reused by the cases that vary only one disposition.
-NORMAL_TAIL=(--ran think:"traced it" --ran spec:"wrote it" --ran design-record:"in the spec"
+NORMAL_TAIL=(--ran think:"traced it" --ran spec:"wrote it" --ran validate:"APPROVED fresh agent=t"
+             --ran design-record:"in the spec"
              --skipped test-plan:"prose only" --ran build --ran review --ran docs)
 
 echo "=== gate-ledger plan-record (ID-877) ==="
@@ -42,21 +43,21 @@ OUT="$(gl plan-record r1 normal --skipped grill:"reason=home-turf: known area" \
 [ "$RC" -eq 0 ] && assert "C1 plan-record exits 0" 0 || assert "C1 plan-record exits 0 (got $RC: $OUT)" 1
 printf '%s\n' "$OUT" | grep -q '^check: clean for lane normal$' \
   && assert "C1 prints check's clean verdict" 0 || assert "C1 prints check's clean verdict (got: $OUT)" 1
-[ "$(printf '%s\n' "$OUT" | grep -c '^[a-z-]* *\(ran\|skipped\|override\)$')" -eq 9 ] \
+[ "$(printf '%s\n' "$OUT" | grep -c '^[a-z-]* *\(ran\|skipped\|override\)$')" -eq 10 ] \
   && assert "C1 one printed line per phase written" 0 || assert "C1 one printed line per phase written (got: $OUT)" 1
 gl check normal r1 >/dev/null 2>&1 \
   && assert "C1 check passes with no further calls" 0 || assert "C1 check passes with no further calls" 1
 # the lines are byte-identical to what record()/override() write by hand
 ledger_of r1 | grep -q '| GATE | grill | skipped | reason=home-turf: known area$' \
   && assert "C1 grill line keeps the record() format" 0 || assert "C1 grill line keeps the record() format (got: $(ledger_of r1))" 1
-[ "$(ledger_of r1 | grep -c '| GATE | ')" -eq 9 ] \
-  && assert "C1 exactly 9 GATE lines written" 0 || assert "C1 exactly 9 GATE lines written (got: $(ledger_of r1 | grep -c '| GATE | '))" 1
+[ "$(ledger_of r1 | grep -c '| GATE | ')" -eq 10 ] \
+  && assert "C1 exactly 10 GATE lines written" 0 || assert "C1 exactly 10 GATE lines written (got: $(ledger_of r1 | grep -c '| GATE | '))" 1
 
 # ---------------------------------------------------------------------------
 # C2: a required plan phase with no disposition refuses, and writes nothing.
 # ---------------------------------------------------------------------------
 new_log
-OUT="$(gl plan-record r2 normal --skipped grill:"reason=home-turf: x" --ran think \
+OUT="$(gl plan-record r2 normal --skipped grill:"reason=home-turf: x" --ran think --ran validate \
          --ran design-record --skipped test-plan:"prose" --ran build --ran review --ran docs 2>&1)"; RC=$?
 [ "$RC" -eq 64 ] && assert "C2 missing 'spec' exits 64" 0 || assert "C2 missing 'spec' exits 64 (got $RC)" 1
 printf '%s\n' "$OUT" | grep -q 'no disposition' \
@@ -67,7 +68,7 @@ printf '%s\n' "$OUT" | grep -q 'no disposition' \
 # C3: a lite phase with no disposition refuses too -- the operator names every plan phase.
 # ---------------------------------------------------------------------------
 new_log
-OUT="$(gl plan-record r3 normal --skipped grill:"reason=home-turf: x" --ran spec --ran design-record \
+OUT="$(gl plan-record r3 normal --skipped grill:"reason=home-turf: x" --ran spec --ran validate --ran design-record \
          --skipped test-plan:"prose" --ran build --ran review --ran docs --ran ship 2>&1)"; RC=$?
 [ "$RC" -eq 64 ] && assert "C3 missing lite phase 'think' exits 64" 0 || assert "C3 missing lite phase 'think' exits 64 (got $RC)" 1
 [ -z "$(ledger_of r3)" ] && assert "C3 writes nothing" 0 || assert "C3 writes nothing" 1
@@ -99,7 +100,7 @@ printf '%s\n' "$OUT" | grep -q "phase 'build' given twice" \
 # ---------------------------------------------------------------------------
 new_log
 OUT="$(gl plan-record r6 normal --skipped grill:"reason=home-turf: x" --ran think --ran spec \
-         --ran design-record --skipped test-plan --ran build --ran review --ran docs --ran ship 2>&1)"; RC=$?
+         --ran validate --ran design-record --skipped test-plan --ran build --ran review --ran docs --ran ship 2>&1)"; RC=$?
 [ "$RC" -eq 64 ] && assert "C6 --skipped without a reason exits 64" 0 || assert "C6 --skipped without a reason exits 64 (got $RC)" 1
 printf '%s\n' "$OUT" | grep -q 'needs a reason' \
   && assert "C6 asks for the reason" 0 || assert "C6 asks for the reason (got: $OUT)" 1
@@ -110,7 +111,7 @@ printf '%s\n' "$OUT" | grep -q 'needs a reason' \
 # ---------------------------------------------------------------------------
 new_log
 OUT="$(gl plan-record r7 normal --skipped grill:"reason=home-turf: x" --ran think --override spec \
-         --ran design-record --skipped test-plan:"prose" --ran build --ran review --ran docs 2>&1)"; RC=$?
+         --ran validate --ran design-record --skipped test-plan:"prose" --ran build --ran review --ran docs 2>&1)"; RC=$?
 [ "$RC" -eq 64 ] && assert "C7 --override without a reason exits 64" 0 || assert "C7 --override without a reason exits 64 (got $RC)" 1
 [ -z "$(ledger_of r7)" ] && assert "C7 writes nothing" 0 || assert "C7 writes nothing" 1
 
@@ -130,7 +131,7 @@ printf '%s\n' "$OUT" | grep -q 'a grill skip needs reason=' \
 new_log
 OUT="$(gl plan-record r9 normal --skipped grill:"reason=home-turf: x" --ran think \
          --override spec:"same reason twice" --override design-record:"same reason twice" \
-         --skipped test-plan:"prose" --ran build --ran review --ran docs 2>&1)"; RC=$?
+         --ran validate --skipped test-plan:"prose" --ran build --ran review --ran docs 2>&1)"; RC=$?
 [ "$RC" -eq 65 ] && assert "C9 duplicate override reason exits 65" 0 || assert "C9 duplicate override reason exits 65 (got $RC)" 1
 printf '%s\n' "$OUT" | grep -q 'each gate override needs its own reason' \
   && assert "C9 the override guard speaks for itself" 0 || assert "C9 the override guard speaks for itself (got: $OUT)" 1
@@ -144,7 +145,7 @@ new_log
 gl record r10 spec ran >/dev/null 2>&1
 gl override r10 build "one pasted reason" >/dev/null 2>&1
 OUT="$(gl plan-record r10 normal --skipped grill:"reason=home-turf: x" --ran think --ran spec \
-         --override design-record:"one pasted reason" --skipped test-plan:"prose" --ran build \
+         --ran validate --override design-record:"one pasted reason" --skipped test-plan:"prose" --ran build \
          --ran review --ran docs 2>&1)"; RC=$?
 [ "$RC" -eq 65 ] && assert "C10 reason reused from an earlier call exits 65" 0 || assert "C10 reason reused from an earlier call exits 65 (got $RC)" 1
 [ "$(ledger_of r10 | grep -c '| GATE | ')" -eq 2 ] \
@@ -156,8 +157,8 @@ OUT="$(gl plan-record r10 normal --skipped grill:"reason=home-turf: x" --ran thi
 new_log
 OUT="$(gl plan-record r11 normal --skipped grill:"reason=home-turf: x" "${NORMAL_TAIL[@]}" 2>&1)"; RC=$?
 [ "$RC" -eq 0 ] && assert "C11 ship omitted exits 0" 0 || assert "C11 ship omitted exits 0 (got $RC: $OUT)" 1
-[ "$(ledger_of r11 | grep -c '| GATE | ')" -eq 8 ] \
-  && assert "C11 the other 8 phases were written" 0 || assert "C11 the other 8 phases were written" 1
+[ "$(ledger_of r11 | grep -c '| GATE | ')" -eq 9 ] \
+  && assert "C11 the other 9 phases were written" 0 || assert "C11 the other 9 phases were written" 1
 printf '%s\n' "$OUT" | grep -q 'MISSING-GATE: ship' \
   && assert "C11 check's open-gate verdict is surfaced" 0 || assert "C11 check's open-gate verdict is surfaced (got: $OUT)" 1
 
@@ -181,6 +182,23 @@ OUT="$(gl plan-record r13 normal --skipped grill:"reason=home-turf: known area" 
 [ "$RC" -eq 0 ] && assert "C13 plan-record exits 0 after start" 0 || assert "C13 plan-record exits 0 after start (got $RC: $OUT)" 1
 gl check normal r13 >/dev/null 2>&1 \
   && assert "C13 check passes after start plus one call" 0 || assert "C13 check passes after start plus one call" 1
+
+# ---------------------------------------------------------------------------
+# C14: validate is a normal-lane plan phase (run-lite), so plan-record refuses without its
+# disposition and names it; with one, the same call exits 0.
+# ---------------------------------------------------------------------------
+new_log
+OUT="$(gl plan-record r14 normal --skipped grill:"reason=home-turf: x" --ran think --ran spec \
+         --ran design-record --skipped test-plan:"prose" --ran build --ran review --ran docs --ran ship 2>&1)"; RC=$?
+[ "$RC" -eq 64 ] && assert "C14 missing validate exits 64" 0 || assert "C14 missing validate exits 64 (got $RC)" 1
+printf '%s\n' "$OUT" | grep -q 'no disposition:.*validate' \
+  && assert "C14 names validate as undisposed" 0 || assert "C14 names validate as undisposed (got: $OUT)" 1
+[ -z "$(ledger_of r14)" ] && assert "C14 writes nothing" 0 || assert "C14 writes nothing" 1
+new_log
+OUT="$(gl plan-record r14 normal --skipped grill:"reason=home-turf: x" --ran think --ran spec \
+         --skipped validate:"NEEDS REVISION: critical=1" --ran design-record --skipped test-plan:"prose" \
+         --ran build --ran review --ran docs --ran ship 2>&1)"; RC=$?
+[ "$RC" -eq 0 ] && assert "C14 with a validate disposition exits 0" 0 || assert "C14 with a validate disposition exits 0 (got $RC: $OUT)" 1
 
 echo "=== $PASS/$TOTAL passed ==="
 [ "$FAIL" -eq 0 ] || exit 1

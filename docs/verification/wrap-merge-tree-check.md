@@ -107,3 +107,74 @@ bash tests/run-all.sh            # no regression across 140 suites
 bash lib/gate/negctl.sh . 'bash tests/test-wrap.sh' \
   'perl -i -pe '\''s/^_tree_verify\(\) \{/_tree_verify() { echo OK; return; #NEGCTL/'\'' lib/wrap/wrap.sh'
 ```
+
+## Amendment: judge the merge on the PR's own diff
+
+2026-09-26. Supersedes "What the check does" above. The scoped-path fallback still
+false-alarmed when another PR edited one of this PR's files: ops-toolkit #3422 squash-merged
+as `1fcca02` on top of #3420, both PRs added a line to `_meta/LAB_LOG.md`, and main's copy
+(both lines) never equals the head's copy (one line). `wrap merge` printed `TREE MISMATCH, 1
+paths differ` and exited 3 on a merge that landed correctly.
+
+`_tree_verify <repo> <def> <head_oid> <merge_oid>` now works from the merge commit gh names:
+
+| Step | Check | Result on failure |
+|---|---|---|
+| 1 | the head and the merge commit are local objects after the fetch | `UNVERIFIABLE` |
+| 2 | the merge commit is an ancestor of `origin/<def>` | `UNVERIFIABLE ... is not on origin/<def>` |
+| 3 | fast path: the merge commit's tree equals the head's tree | (falls through) |
+| 4 | for every path in `diff(base, head)` or `diff(merge^1, merge)`, the zero-context patch (index and `@@` lines dropped) is equal, `base = merge-base(head, merge^1)` | `MISMATCH <paths that differ>` |
+
+Blob equality per path was rejected: it fails the shared-file case, which is the observed
+bug. The patch comparison passes a concurrent edit elsewhere in a shared file, and still
+flags a squash of a stale head, an altered line (a conflict resolution that rewrote the PR's
+line), a missing change, and an unlanded deletion. `--no-renames` makes a rename a delete
+plus an add on both sides. Replayed on the real objects, `_meta/LAB_LOG.md` for #3422
+compares equal.
+
+The gh stub now answers the fixture remote's HEAD as the merge commit, so the merged-sha
+assertions name real commits instead of `1a2b3c4d5e6f`.
+
+| Case | Before | After |
+|---|---|---|
+| concurrent PR on another path (existing "scoped match") | OK | OK |
+| concurrent PR on the same file | MISMATCH 1 (red) | OK |
+| squash altered the PR's line in a shared file | MISMATCH | MISMATCH 1 |
+| squash of a stale head | MISMATCH 1 | MISMATCH 1 |
+| main only got someone else's commit | MISMATCH 1 | MISMATCH 2 (extra path + absent path) |
+| gh names a commit that is not on main | not checked | UNVERIFIABLE |
+| PR deletes and renames, concurrent PR lands first | OK | OK |
+| deletion never landed | MISMATCH | MISMATCH |
+
+### Green run
+
+Command: `bash tests/test-wrap.sh`
+Exit: 0
+Output: `test-wrap: all 1163 passed`
+Before the fix, the same file: `test-wrap: 1159 passed, 4 FAILED of 1163` (the shared-file
+case twice, the two-path count, the off-main merge commit).
+
+Command: `bash tests/run-all.sh --all`
+Exit: 1
+Output: `run-all: FAILED -> test-advisor test-command-triggers test-research-arch-contract test-research-pair-contract`
+Verdict: no regression. All four fail identically on the unmodified base `0f75025c`, and none
+reads a file this change touched.
+
+### Negative control
+
+```
+## Negative control (negctl)
+Command: bash tests/test-wrap.sh >> <scratch>/negctl.log 2>&1
+Exit: 0 (green before mutation)
+Mutation: perl ... inserts `merge_oid="$tip"` and a whole-tree `tip == head` check that returns `MISMATCH 1`
+Changed: lib/wrap/wrap.sh
+Exit: 1 (under mutation, RED expected)
+Restore: git checkout HEAD -- lib/wrap/wrap.sh
+Exit: 0 (green after restore)
+Verdict: PASS
+```
+
+Seven assertions go red under whole-tree comparison: the two-path count, the disjoint scoped
+match (twice), the shared-file case (twice), and the deletion and rename case (twice). A first
+negctl attempt went red after the restore; the cause is the timing-bound `deploy-wait counts
+gh time` assertion, which failed once in four later clean runs, not this check.

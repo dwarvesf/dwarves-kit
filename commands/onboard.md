@@ -1,5 +1,5 @@
 ---
-description: "Guided first-run: detect the install mode, offer /kit:adopt for this repo, pick modules, capture the consumer knobs that make them work, disclose the plugin-path gaps honestly, and end with a five-sentence tour of the loop. Previews and confirms every write; a decline is a no-op."
+description: "Guided first-run: detect the install mode, offer /kit:adopt for this repo, pick modules, capture the consumer knobs that make them work, disclose the plugin-path gaps honestly, and end with a two-idea tour (lane, proof of done) plus a menu. Previews and confirms every write; a decline is a no-op."
 ---
 
 You are running `/kit:onboard`: the kit introducing itself. This is a guided first-run, not a form.
@@ -198,7 +198,7 @@ A repo that declines any step stays fully functional; the board is additive.
 
 ## E. Disclose the plugin-path gaps (only for mode `plugin` or `both`)
 
-Be honest about what the plugin path cannot do, in four short bullets:
+Be honest about what the plugin path cannot do, in short bullets:
 - **statusLine HUD:** the v1 plugin schema has no `statusLine` field, so the status-line HUD is
   bash-install-only. If they want it, that is the one reason to run the bash install.
 - **Frozen SHA vs `git pull`:** a plugin install is pinned to the version you installed; it moves only
@@ -210,6 +210,13 @@ Be honest about what the plugin path cannot do, in four short bullets:
   (registered via `hooks/hooks.json` at `${CLAUDE_PLUGIN_ROOT}`) are unaffected and do fire; this gap
   is specifically the adopt-wired per-repo module entries. Say this at adopt time too, not only here:
   on a plugin machine, never claim the module hooks are live after adopt.
+- **Board pane mod:** the bash installer loads the Claude Code board pane in every session by adding its
+  path to `env.CLAUDE_CODE_PLUGIN_DIRS`. On a plugin machine that also has a kit checkout, running
+  `bash install.sh` (compat mode) registers the checkout's `integrations/claude-code/board-pane` the same
+  way, so the gap is closed for anyone who runs `install.sh` from a checkout. A pure marketplace install
+  with no checkout cannot register a second plugin dir, so the pane does not load. Manual enable: add
+  `"CLAUDE_CODE_PLUGIN_DIRS": "<kit checkout>/integrations/claude-code/board-pane"` under `env` in
+  `~/.claude/settings.json`, or start with `claude --plugin-dir <that path>`.
 - **`KIT_FORCE_FULL=1` escape:** `KIT_FORCE_FULL=1 bash install.sh` forces the full bash install even
   on a plugin machine, but that is exactly what creates the double-hooks hazard from step A -- only do
   it if you are deliberately switching paths, and remove the plugin first.
@@ -224,20 +231,17 @@ HEAD. If they differ, print exactly ONE line: "Your bash install (sha `<short>`)
 staleness surface -- it is a pointer, never an upgrade wizard. If the stamp is absent or current, say
 nothing.
 
-## G. The welcome tour: the loop in five sentences
+## G. The welcome tour: two ideas and a menu
 
-Close with the five-stage loop, one sentence per stage, then the next step. Keep it to five sentences:
+Close with two ideas, one sentence each, then a menu, then the next step. Teach nothing else.
 
-1. **Shape** -- you turn an intent into a spec (`/kit:spec`) and a lane, so the work has a written,
-   testable contract before any code.
-2. **Build** -- the build runs against that spec (`/kit:execute`), worker then verifier then a
-   bounded fix retry, the smallest verifiable increment at a time.
-3. **Watch** -- every run leaves an append-only trail that `stats` projects on demand, so you can
-   see what actually happened without a second source of truth.
-4. **Check** -- the ship-gate blocks a push whose lane skipped a required gate or a stateful change
-   with no recorded proof, so "done" means proven, not claimed.
-5. **Learn** -- retros and the Learn stage distill each run's lessons back into the backlog, closing the
-   loop so the next cycle starts smarter.
+1. **Lane** -- the work is sized `tiny`, `normal` or `full`, so small changes stay light and
+   risky ones get the full gates.
+2. **Proof of done** -- a change that alters behavior is not done until a recorded run shows it
+   works; the ship-gate checks this at push.
+
+Then the menu, opt-in, one line, none required: `/kit:spec`, `/kit:execute`, `/kit:review`,
+`/kit:wrap`, `/kit:dispatch`, `/kit:mega`, `/kit:observe`, `/kit:retro`.
 
 Then: **"Next: run `/kit:start` -- it detects where this repo stands and hands you the single right
 command to run first."** End the run there.
@@ -252,9 +256,9 @@ command to run first."** End the run there.
 
 ## Optional: tell it as the workshop story
 
-If the user seems newer, or asks why the stage names are what they are, you may retell the
-closing five-sentence tour of the loop using the story below instead of the plain version. Same
-five stages, same one sentence each, just voiced as a role plus what it hands you. Never use
+If the user seems newer, or asks why the stage names are what they are, you may add a
+retelling of the five-stage loop using the story below after the two-idea tour. One sentence
+per stage, voiced as a role plus what it hands you. Never use
 these story names as command or file names; they are prose only, and the code still calls the
 stages Shape/Build/Watch/Check/Learn. Full mapping: `docs/glossary.md`.
 

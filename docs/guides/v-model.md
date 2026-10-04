@@ -17,7 +17,7 @@ makes sense at that altitude:
 ```
 
 The kit walks the left arm down as you shape work (think, design, spec, execute)
-and the right arm up as it verifies (task-verifier per task, then integration,
+and the right arm up as it verifies (task-verifier over every task, then integration,
 then system, then acceptance). `/kit:verify` re-runs the whole right arm on
 demand without rebuilding anything.
 

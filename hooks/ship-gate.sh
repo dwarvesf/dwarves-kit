@@ -1,4 +1,5 @@
 #!/bin/bash
+# ship-gate.sh -- PreToolUse hook that refuses a push or PR when the spec lane has a required gate with no ran or override entry.
 # ship-gate.sh, PreToolUse hook, matcher: Bash
 # Workflow-completeness gate at the ship/push boundary. When a feature
 # branch is pushed or a PR is opened, refuse if the active spec's lane has a
@@ -12,8 +13,15 @@ set -uo pipefail
 # fallback below uses $HOME, so default it to empty rather than error-exit.
 HOME="${HOME:-}"
 INPUT=$(cat)
+# The tool's real cwd: the payload .cwd, else the cwd anchor-root.sh saved before it cd'd
+# to the repo root, else $PWD (a direct invocation). A relative `cd` resolves against this.
+REAL_CWD=$(printf '%s' "$INPUT" | jq -r '.cwd // empty' 2>/dev/null)
+[ -n "$REAL_CWD" ] || REAL_CWD="${DWARVES_KIT_INVOCATION_CWD:-}"
+[ -n "$REAL_CWD" ] || REAL_CWD="$PWD"
 CMD=$(printf '%s' "$INPUT" | jq -r '.tool_input.command // empty' 2>/dev/null || true)
 [ -z "$CMD" ] && exit 0
+# Join backslash-newline continuations: the shell reads them as one command line.
+CMD=$(printf '%s\n' "$CMD" | awk '{ while ($0 ~ /\\$/) { sub(/\\$/, ""); if ((getline nxt) > 0) $0 = $0 nxt; else break } print }')
 
 # Strip heredoc bodies BEFORE the engage check, so "git push" appearing in
 # generated prose (PR bodies, test fixtures) never engages the gate. Same normalizer
@@ -32,10 +40,16 @@ CMD_CODE=$(printf '%s\n' "$CMD" | awk '
     print line
   }')
 
-# Engage only on a ship action: a git push or a gh pr create (in CODE, not prose).
-echo "$CMD_CODE" | grep -qE 'git[[:space:]]+push|gh[[:space:]]+pr[[:space:]]+create' || exit 0
-# Leave push-to-main / force-push to safety-gate; do not double-handle.
-echo "$CMD_CODE" | grep -qE '\b(main|master)\b|--force' && exit 0
+# Engage on anything that looks like a ship action: `git ... push` (with any options between) or
+# `gh pr create`, in CODE not prose. What the command actually pushes is decided by
+# lib/gate/push-refs.sh below, which fails closed on anything it cannot account for.
+ENGAGE_RE='(^|[^[:alnum:]_-])git[[:space:]]([^;&|]*[[:space:]])?push([[:space:]]|$)|gh[[:space:]]+pr[[:space:]]+create'
+# A heredoc or here-string fed to a shell hides its body from CMD_CODE. If that body pushes, the
+# gate cannot see what is pushed: it is refused below (once the repo is known).
+SHELL_HD=0
+if printf '%s\n' "$CMD" | grep -qE '(^|[^[:alnum:]_.-])(bash|sh|zsh)([[:space:]][^<|;&]*)?<<' \
+   && printf '%s' "$CMD" | grep -qE "$ENGAGE_RE"; then SHELL_HD=1; fi
+[ "$SHELL_HD" = 1 ] || echo "$CMD_CODE" | grep -qE "$ENGAGE_RE" || exit 0
 
 # A command that cd's elsewhere ships THAT repo, not the session cwd (the
 # cross-repo misfire: a `cd other-repo && git push` was gated against the SESSION
@@ -43,25 +57,104 @@ echo "$CMD_CODE" | grep -qE '\b(main|master)\b|--force' && exit 0
 # BSD-sed-portable: grab the cd arg with grep -o, then strip the prefix + quotes.
 CDDIR=$(printf '%s' "$CMD_CODE" | grep -oE '^[[:space:]]*cd[[:space:]]+[^&;|]+' | head -1 \
   | sed -E 's/^[[:space:]]*cd[[:space:]]+//; s/[[:space:]]+$//; s/^"//; s/"$//' || true)
+if [ -z "$CDDIR" ]; then   # `git -C <dir> push` ships that repo
+  CDDIR=$(printf '%s' "$CMD_CODE" | grep -oE '(^|[[:space:]])-C[[:space:]]+[^[:space:]]+' | head -1 | awk '{print $NF}' || true)
+fi
 case "$CDDIR" in *'$'*) CDDIR="" ;; esac   # variables cannot be resolved: fall back
 CDDIR="${CDDIR/#\~/$HOME}"
+case "$CDDIR" in ""|/*) ;; *) CDDIR="$REAL_CWD/$CDDIR" ;; esac
 # Test affordance: print the resolved cd-target and exit (never set outside tests).
 if [ "${DWARVES_KIT_PRINT_CDDIR:-0}" = "1" ]; then printf '%s\n' "$CDDIR"; exit 0; fi
 if [ -n "$CDDIR" ] && [ -d "$CDDIR" ]; then
   ROOT=$(git -C "$CDDIR" rev-parse --show-toplevel 2>/dev/null || true)
 else
-  ROOT=$(git rev-parse --show-toplevel 2>/dev/null || true)
+  ROOT=$(git -C "$REAL_CWD" rev-parse --show-toplevel 2>/dev/null || true)
 fi
 [ -n "$ROOT" ] || exit 0
 BRANCH=$(git -C "$ROOT" rev-parse --abbrev-ref HEAD 2>/dev/null || true)
 [ -n "$BRANCH" ] || exit 0
+CURBRANCH="$BRANCH"
+PHEAD=$(git -C "$ROOT" rev-parse HEAD 2>/dev/null || true)   # the commit being shipped
+# The base is the REMOTE default branch: origin/HEAD, else origin/main or origin/master. A local
+# branch can carry unpushed commits and would hide them from the diff. Only a repo with no origin
+# at all falls back to local main or master. An origin with no remote-tracking default gives no
+# base, and the callers skip their checks.
+_resolve_base() {
+  local ref c
+  ref=$(git -C "$ROOT" symbolic-ref -q --short refs/remotes/origin/HEAD 2>/dev/null || true)
+  [ -z "$ref" ] || { echo "$ref"; return 0; }
+  if git -C "$ROOT" remote get-url origin >/dev/null 2>&1; then
+    for c in origin/main origin/master; do
+      git -C "$ROOT" rev-parse --verify -q "$c" >/dev/null 2>&1 && { echo "$c"; return 0; }
+    done
+    return 0
+  fi
+  git -C "$ROOT" rev-parse --verify -q main >/dev/null 2>&1 && echo main || echo master
+}
+
+# [gate] toggles. lib/gate/gate-policy.sh resolves them (project config wins, then the
+# operator overlay, then the kit root); this hook never reads the config files itself.
+# Only exit 1 from the reader means off. A missing or broken reader (any other exit) means
+# ON: switching a gate off has to be explicit. A skip logs one line.
+POLICY="${CLAUDE_PLUGIN_ROOT:-$HOME/.claude/dwarves-kit}/lib/gate/gate-policy.sh"
+# Which refs does this command push? lib/gate/push-refs.sh answers, and fails closed: a command it
+# cannot fully account for (--all, --mirror, --tags, an unresolvable source, a variable, a wrapper,
+# more than one directory) is BLOCKED, not guessed at. A push whose target is the default branch,
+# or a force push, is safety-gate's business and is left alone. A native git pre-push hook, which
+# receives the exact refs on stdin, is the structural fix; this parser is best-effort.
+PREFS="${CLAUDE_PLUGIN_ROOT:-$HOME/.claude/dwarves-kit}/lib/gate/push-refs.sh"
+_refs_block() {   # _refs_block <reason>
+  local LOG_DIR="${DWARVES_KIT_LOG_DIR:-$HOME/.claude/dwarves-kit/logs}"
+  mkdir -p "$LOG_DIR" 2>/dev/null || true
+  echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) | BLOCKED | ship-gate | (unaccounted push)" >> "$LOG_DIR/ship-gate.log" 2>/dev/null || true
+  {
+    echo "BLOCKED: ship-gate. This command pushes refs the gate cannot account for: $1."
+    echo "Push one branch at a time with plain refs, for example: git push -u origin <branch>"
+  } >&2
+  exit 2
+}
+# Fail-closed applies only where the gate applies: an adopted repo (proof marker) whose default
+# branch carries [gate] lane_gates = true.
+_fc_applies() {
+  local db rc=0; db=$(_resolve_base)
+  # The adoption marker is read at the default branch, not the working tree: a marker moved out of
+  # the tree (or a PR that deletes it) must not switch the fail-closed rule off.
+  if [ -n "$db" ]; then git -C "$ROOT" cat-file -e "$db:docs/verification/README.md" 2>/dev/null || return 1
+  else [ -f "$ROOT/docs/verification/README.md" ] || return 1; fi
+  [ -f "$POLICY" ] || return 0
+  if [ -n "$db" ]; then bash "$POLICY" enabled lane_gates "$ROOT" --at "$db" || rc=$?; fi
+  [ "$rc" -ne 1 ]
+}
+if [ "$SHELL_HD" = 1 ]; then
+  _fc_applies && _refs_block "a heredoc or here-string fed to a shell contains a push"
+  exit 0
+fi
+if [ -f "$PREFS" ]; then
+  DEFNAME=$(git -C "$ROOT" symbolic-ref -q --short refs/remotes/origin/HEAD 2>/dev/null || true)
+  PUSH_OUT=$(bash "$PREFS" "$ROOT" "$CMD_CODE" "$CURBRANCH" "${DEFNAME#origin/}" 2>/dev/null || true)
+  # Whole lines only: the parser's markers start with @@ and a ref name appears only inside a
+  # REF or BLOCK line, so `feat/DEFAULT-x` cannot pass for the DEFAULT marker.
+  if printf '%s\n' "$PUSH_OUT" | grep -qxE '@@FORCE|@@DEFAULT'; then exit 0; fi
+  if printf '%s\n' "$PUSH_OUT" | grep -q '^@@BLOCK '; then
+    _fc_applies && _refs_block "$(printf '%s\n' "$PUSH_OUT" | grep -m1 '^@@BLOCK ' | sed 's/^@@BLOCK //')"
+  elif [ -z "$PUSH_OUT" ]; then
+    _fc_applies && _refs_block "the command parser gave no answer"
+  else
+    _NREF=$(printf '%s\n' "$PUSH_OUT" | grep '^@@REF ' | sort -u | wc -l | tr -d ' ')
+    if [ "${_NREF:-0}" -gt 1 ]; then
+      _fc_applies && _refs_block "it pushes more than one branch"
+    elif [ "${_NREF:-0}" = 1 ]; then
+      read -r _ PHEAD BRANCH <<< "$(printf '%s\n' "$PUSH_OUT" | grep -m1 '^@@REF ')"
+    fi
+  fi
+fi
 SLUG="${BRANCH#*/}"   # strip the type/ prefix (feat/, docs/, ...)
+SLUG_Q=$(printf '%q' "$SLUG")   # shell-safe form for the commands this hook prints
 
 # One copy of the three-way default-branch fallback (review: was duplicated per block).
-_resolve_base() {
-  git -C "$ROOT" rev-parse --verify -q origin/main >/dev/null 2>&1 && echo origin/main \
-    || { git -C "$ROOT" rev-parse --verify -q main >/dev/null 2>&1 && echo main || echo master; }
-}
+# The merge base of the shipped commit and the remote default branch, computed once. Empty means
+# no base (no remote default resolved): every diff-keyed check below skips.
+MBASE=$(git -C "$ROOT" merge-base "$PHEAD" "$(_resolve_base)" 2>/dev/null || true)
 
 # --- Proof-of-done gate (diff-keyed, SPEC-INDEPENDENT). This is the bridge: it fires on
 # freeform /goal work too, because it classifies the branch DIFF instead of a spec. A
@@ -72,11 +165,6 @@ _resolve_base() {
 # $ROOT fallback fails open in every consumer. The stable install path fixes that; plugin
 # mode (CLAUDE_PLUGIN_ROOT set) is unchanged.
 PROOF="${CLAUDE_PLUGIN_ROOT:-$HOME/.claude/dwarves-kit}/lib/gate/proof-ledger.sh"
-# [gate] toggles. lib/gate/gate-policy.sh resolves them (project config wins, then the
-# operator overlay, then the kit root); this hook never reads the config files itself.
-# Only exit 1 from the reader means off. A missing or broken reader (any other exit) means
-# ON: switching a gate off has to be explicit. A skip logs one line.
-POLICY="${CLAUDE_PLUGIN_ROOT:-$HOME/.claude/dwarves-kit}/lib/gate/gate-policy.sh"
 _gate_on() {  # $1 = [gate] key, $2 = log label
   [ -f "$POLICY" ] || return 0
   local rc=0; bash "$POLICY" enabled "$1" "$ROOT" || rc=$?
@@ -86,13 +174,58 @@ _gate_on() {  # $1 = [gate] key, $2 = log label
   echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) | OFF-BY-CONFIG | $2 | $SLUG" >> "$LOG_DIR/ship-gate.log" 2>/dev/null || true
   return 1
 }
+# Diff floor (hard paths). The path test lives in lib/classify/lane-classify.sh `floor`; this hook
+# only calls it, as it calls gate-policy.sh, and fails open on a missing lib. A hit means the
+# full lane's gates apply whatever the spec's Lane says.
+LCLS="${CLAUDE_PLUGIN_ROOT:-$HOME/.claude/dwarves-kit}/lib/classify/lane-classify.sh"
+_floor_hit() {  # prints "full <kind>: <path>" for the first hard-path hit, else nothing
+  [ -f "$LCLS" ] || return 0
+  local fb="$MBASE"
+  [ -n "$fb" ] || return 0
+  [ "$fb" != "$(git -C "$ROOT" rev-parse "$PHEAD" 2>/dev/null || true)" ] || return 0
+  bash "$LCLS" floor "$ROOT" "$fb" "$PHEAD" 2>/dev/null || true
+}
+# The floor follows [gate] lane_gates as of the MERGE BASE, never the PR head, so a PR cannot
+# switch off its own floor. Only exit 1 from the reader means off.
+_floor_on() {
+  [ -f "$POLICY" ] || return 0
+  local fb="$MBASE" rc=0
+  [ -n "$fb" ] || return 0
+  bash "$POLICY" enabled lane_gates "$ROOT" --at "$fb" || rc=$?
+  [ "$rc" -eq 1 ] || return 0
+  local LOG_DIR="${DWARVES_KIT_LOG_DIR:-$HOME/.claude/dwarves-kit/logs}"
+  mkdir -p "$LOG_DIR" 2>/dev/null || true
+  echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) | OFF-BY-CONFIG | floor | $SLUG" >> "$LOG_DIR/ship-gate.log" 2>/dev/null || true
+  return 1
+}
+# _floor_check: block (exit 2) when the diff hits a hard path and the full lane's gates, read
+# from the kit and operator layers only, have not all run. Needs the ledger script.
+_floor_check() {
+  local FH FGAPS LEDGERF="${CLAUDE_PLUGIN_ROOT:-$HOME/.claude/dwarves-kit}/lib/gate/gate-ledger.sh"
+  [ -f "$LEDGERF" ] || return 0
+  _floor_on || return 0   # the cheap switch check first; the diff scan only when it is on
+  FH=$(_floor_hit); [ -n "$FH" ] || return 0
+  if ! FGAPS=$(KIT_PROJECT_ROOT="$ROOT" bash "$LEDGERF" check full "$SLUG" --kit-lanes 2>&1); then
+    local LOG_DIR="${DWARVES_KIT_LOG_DIR:-$HOME/.claude/dwarves-kit/logs}" FK="${FH#full }"
+    mkdir -p "$LOG_DIR" 2>/dev/null || true
+    echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) | BLOCKED | ship-gate | $SLUG (hard-path ${FK%%:*})" >> "$LOG_DIR/ship-gate.log" 2>/dev/null || true
+    {
+      echo "BLOCKED: ship-gate. This diff touches a hard path ($FK); the full lane's gates apply whatever the spec's Lane says:"
+      [ -n "${SPEC:-}" ] || echo "(no spec found for '$SLUG'; a hard-path diff owes the full lane's gates with or without one)"
+      printf '%s\n' "$FGAPS" | sed 's/^/  /'
+      echo "Run the missing gate(s), or log an explicit override (recorded for audit):"
+      echo "  bash \"$LEDGERF\" override $SLUG_Q <phase> \"<reason>\""
+    } >&2
+    exit 2
+  fi
+  return 0
+}
 # OPT-IN: engage only in a repo that adopted the proof-of-done convention. A repo with
 # no docs/verification/README.md never gets gated (the gate is for kit-adopting repos,
 # not every repo the user touches).
 if [ -f "$PROOF" ] && [ -f "$ROOT/docs/verification/README.md" ] && _gate_on proof_of_done proof-gate; then
-  DEFAULT=$(_resolve_base)
-  BASE=$(git -C "$ROOT" merge-base HEAD "$DEFAULT" 2>/dev/null || true)
-  HEADSHA=$(git -C "$ROOT" rev-parse HEAD 2>/dev/null || true)
+  BASE="$MBASE"
+  HEADSHA="$PHEAD"
   if [ -n "$BASE" ] && [ "$BASE" != "$HEADSHA" ]; then
     if ! PMSG=$(bash "$PROOF" check "$ROOT" "$BASE" "$SLUG" 2>&1); then
       LOG_DIR="${DWARVES_KIT_LOG_DIR:-$HOME/.claude/dwarves-kit/logs}"
@@ -128,8 +261,8 @@ fi
 # has neither file). Escape hatch: DWARVES_KIT_SKIP_DOC_PROJECTION=1.
 if [ -f "$ROOT/lib/gate/doc-projection-check.sh" ] && [ -f "$ROOT/tests/test-meta.sh" ] \
    && [ "${DWARVES_KIT_SKIP_DOC_PROJECTION:-0}" != "1" ]; then
-  DPBASE=$(git -C "$ROOT" merge-base HEAD "$(_resolve_base)" 2>/dev/null || true)
-  if [ -n "$DPBASE" ] && git -C "$ROOT" diff --name-only "$DPBASE" HEAD 2>/dev/null \
+  DPBASE="$MBASE"
+  if [ -n "$DPBASE" ] && git -C "$ROOT" diff --name-only "$DPBASE" "$PHEAD" 2>/dev/null \
        | grep -qE '^(agents/|commands/|AGENTS\.md$|docs/(MANUAL|architecture|WORKFLOW)\.md$)'; then
     if ! DPMSG=$(bash "$ROOT/lib/gate/doc-projection-check.sh" "$ROOT" 2>&1); then
       echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) | BLOCKED | doc-projection | $SLUG" >> "${DWARVES_KIT_LOG_DIR:-$HOME/.claude/dwarves-kit/logs}/ship-gate.log" 2>/dev/null || true
@@ -158,9 +291,9 @@ fi
 # pins in CI. Escape hatch: DWARVES_KIT_SKIP_REGISTRY_FRESHNESS=1.
 if [ -f "$ROOT/lib/registry/feature-registry.sh" ] && [ -f "$ROOT/docs/FEATURES.md" ] \
    && [ "${DWARVES_KIT_SKIP_REGISTRY_FRESHNESS:-0}" != "1" ]; then
-  FRBASE=$(git -C "$ROOT" merge-base HEAD "$(_resolve_base)" 2>/dev/null || true)
+  FRBASE="$MBASE"
   FRDIFF=""
-  [ -n "$FRBASE" ] && FRDIFF=$(git -C "$ROOT" diff --name-only "$FRBASE" HEAD 2>/dev/null || true)
+  [ -n "$FRBASE" ] && FRDIFF=$(git -C "$ROOT" diff --name-only "$FRBASE" "$PHEAD" 2>/dev/null || true)
   if [ -n "$FRDIFF" ] && ! printf '%s\n' "$FRDIFF" | grep -qx 'docs/FEATURES\.md' \
      && printf '%s\n' "$FRDIFF" | grep -qE '^(commands/[^/]+\.md|agents/[^/]+\.md|skills/[^/]+/SKILL\.md|hooks/[^/]+\.sh|hooks/hooks\.json|settings\.json|tests/test-[^/]+\.sh|docs/specs/SPEC-[^/]+\.md)$'; then
     if ! FRMSG=$(bash "$ROOT/lib/registry/feature-registry.sh" check "$ROOT/docs/FEATURES.md" 2>&1); then
@@ -193,9 +326,8 @@ if [ -f "$LEDGER62" ]; then
   if printf '%s' "$RLED" | grep -q '| GATE | build | ran'; then
     case "$RLANE" in
       normal|full|bug)
-        DEF62=$(_resolve_base)
-        BASE62=$(git -C "$ROOT" merge-base HEAD "$DEF62" 2>/dev/null || true)
-        if [ -n "$BASE62" ] && ! git -C "$ROOT" diff --name-only "$BASE62" HEAD 2>/dev/null \
+        BASE62="$MBASE"
+        if [ -n "$BASE62" ] && ! git -C "$ROOT" diff --name-only "$BASE62" "$PHEAD" 2>/dev/null \
             | grep -E '^docs/verification/.+\.md$|(^|/)proof-of-done\.md$' \
             | grep -vq '/README\.md$'; then
           echo "[advisory] run '$SLUG' (lane $RLANE) recorded a build but this branch ships no docs/verification/ record; the session ledger is not committable evidence" >&2
@@ -214,9 +346,22 @@ if [ -f "$LEDGER62" ] && [ -n "${RLANE:-}" ]; then
   fi
 fi
 
-# Resolve the spec for this slug; fail open if there is no spec-driven run.
-SPEC=$(ls "$ROOT"/docs/specs/SPEC-*-"$SLUG".md 2>/dev/null | head -1 || true)
-[ -n "$SPEC" ] || exit 0
+# Resolve the spec for this slug; fail open if there is no spec-driven run. spec_for_slug is the
+# pick validate-round also binds to (root docs/specs, then co-located */docs/specs). A stale
+# install without spec-find.sh keeps the old root-only glob, so the hook never breaks on it.
+SPEC=""
+SFIND="${CLAUDE_PLUGIN_ROOT:-$HOME/.claude/dwarves-kit}/lib/spec/spec-find.sh"
+if [ -r "$SFIND" ] && source "$SFIND" 2>/dev/null; then
+  SPEC=$(spec_for_slug "$ROOT" "$SLUG")
+else
+  SPEC=$(ls "$ROOT"/docs/specs/SPEC-*-"$SLUG".md 2>/dev/null | head -1 || true)
+fi
+if [ -z "$SPEC" ]; then
+  # No spec means no lane to compare, but the floor needs no lane: a hard-path diff still owes the
+  # full lane's gates (or an audited override) for this slug. Renaming a branch must not dodge it.
+  _floor_check
+  exit 0
+fi
 
 # Test-plan coverage advisory (never blocks): the spec carries a ## Test plan, so the proof-of-done owes
 # a ## Test plan coverage map -- each matrix row mapped to the run that exercised it, or an
@@ -258,6 +403,7 @@ if [ -z "$LANE" ]; then
     } >&2
     exit 2
   fi
+  _floor_check
   exit 0
 fi
 
@@ -270,7 +416,8 @@ LEDGER="${CLAUDE_PLUGIN_ROOT:-$HOME/.claude/dwarves-kit}/lib/gate/gate-ledger.sh
 # operator output. caught=true when the check BLOCKS (it caught a missing-gate defect),
 # caught=false on a clean pass. The `outcome` marker keys on $2=="OUTCOME"; check()/_rows()/
 # the ship-gate's own read all ignore it (they key on $2=="GATE").
-_gate_on lane_gates lane-gate || exit 0
+# The floor reads the switch at the merge base, so it still runs when the head switched the gate off.
+if ! _gate_on lane_gates lane-gate; then _floor_check; exit 0; fi
 bash "$LEDGER" outcome "$SLUG" ship start >/dev/null 2>&1 || true
 
 # Full-lane implementation-notes rule. A subagent-run full lane never sees the
@@ -296,7 +443,7 @@ if [ "$LANE" = "full" ] \
   fi
 fi
 
-GAPS=$(bash "$LEDGER" check "$LANE" "$SLUG" 2>&1); GRC=$?
+GAPS=$(KIT_PROJECT_ROOT="$ROOT" bash "$LEDGER" check "$LANE" "$SLUG" 2>&1); GRC=$?
 if [ -n "$NOTES_GAP" ]; then GAPS="${GAPS:+$GAPS$'\n'}$NOTES_GAP"; GRC=1; fi
 if [ "$GRC" -ne 0 ]; then
   bash "$LEDGER" outcome "$SLUG" ship end caught=true >/dev/null 2>&1 || true
@@ -307,15 +454,43 @@ if [ "$GRC" -ne 0 ]; then
     echo "BLOCKED: ship-gate. The '$LANE' lane requires gates that have not run for spec '$SLUG':"
     printf '%s\n' "$GAPS" | sed 's/^/  /'
     echo "Run the missing gate(s), or log an explicit override (recorded for audit):"
-    echo "  bash \"$LEDGER\" override $SLUG <phase> \"<reason>\""
+    echo "  bash \"$LEDGER\" override $SLUG_Q <phase> \"<reason>\""
     if [ -n "$NOTES_GAP" ]; then
       echo "For MISSING-NOTES: commit the implementation-notes file with its entries; a change with no deviations records one line:"
       echo "  No deviations; matches the spec verbatim"
-      echo "  (or override the rule for this run: bash \"$LEDGER\" override $SLUG impl-notes \"<reason>\")"
+      echo "  (or override the rule for this run: bash \"$LEDGER\" override $SLUG_Q impl-notes \"<reason>\")"
     fi
     echo "Or switch the lane gates off for this repo: [gate] lane_gates = false in the committed project kit config (lib/gate/README.md, 'Switching a gate off')."
   } >&2
   exit 2
 fi
+# Validate by size: the normal lane lists validate as lite (not required), so nothing in the ledger
+# check stops a LARGE normal-lane spec from shipping unvalidated. `spec.sh depth size` exits 1 on a
+# large spec; only that exact code engages. A missing spec.sh or an unreadable spec (exit 2) fails open.
+SPEC_SH="${CLAUDE_PLUGIN_ROOT:-$HOME/.claude/dwarves-kit}/lib/spec/spec.sh"
+if [ "$LANE" = normal ] && [ -f "$SPEC_SH" ]; then
+  bash "$SPEC_SH" depth size "$SPEC" >/dev/null 2>&1; SIZE_RC=$?
+  if [ "$SIZE_RC" -eq 1 ] \
+     && ! bash "$LEDGER" show "$SLUG" 2>/dev/null | awk -F' [|] ' '$2=="GATE" && $3=="validate"{s=$4} END{exit !(s=="ran"||s=="override")}'; then
+    bash "$LEDGER" outcome "$SLUG" ship end caught=true >/dev/null 2>&1 || true
+    LOG_DIR="${DWARVES_KIT_LOG_DIR:-$HOME/.claude/dwarves-kit/logs}"
+    mkdir -p "$LOG_DIR" 2>/dev/null || true
+    echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) | BLOCKED | ship-gate | $SLUG ($LANE, large, no validate)" >> "$LOG_DIR/ship-gate.log" 2>/dev/null || true
+    {
+      echo "BLOCKED: ship-gate. Spec '$SLUG' is large (4+ tasks, a deeper Depth, or no countable task) and has no validate gate that ran or was overridden."
+      echo "Rule: a large normal-lane spec needs the fresh-context validation before it ships (\`bash <kit>/lib/spec/spec.sh depth size $SPEC\`). Run /kit:spec-validate, or log an explicit override (recorded for audit):"
+      echo "  bash \"$LEDGER\" override $SLUG_Q validate \"<reason>\""
+      echo "Or switch the lane gates off for this repo: [gate] lane_gates = false in the committed project kit config (lib/gate/README.md, 'Switching a gate off')."
+    } >&2
+    exit 2
+  fi
+fi
+# Hard-path floor: full-lane gates, project lane data ignored (--kit-lanes). Exits 2 on a gap.
+_floor_check
 bash "$LEDGER" outcome "$SLUG" ship end caught=false >/dev/null 2>&1 || true
+# Suggestion not taken: the ledger holds a lane-suggest full action and the run ships lighter.
+if [ "$LANE" != "full" ] && printf '%s' "${RLED:-}" | grep -q '| ACTION | lane-suggest full'; then
+  SUGF=$(printf '%s' "$RLED" | sed -nE 's/.*lane-suggest full flags=([^ ]*).*/\1/p' | tail -1)
+  echo "[advisory] run '$SLUG': the classifier suggested full (${SUGF:-unknown}) and the run ships as $LANE" >&2
+fi
 exit 0

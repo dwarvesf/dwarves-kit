@@ -24,7 +24,13 @@ out="$(HOME="$HOME_SB1" CLAUDE_DIR="$TMP" bash "$KIT_DIR/install.sh" 2>&1)"
 [ -L "$TMP/dwarves-kit/WORKFLOW.md" ]; chk "WORKFLOW.md symlink created" $?
 [ -L "$TMP/dwarves-kit/docs/WORKFLOW.md" ]; chk "docs/WORKFLOW.md symlink created (SPEC-185 bulk)" $?
 [ -L "$TMP/dwarves-kit/AGENTS.md" ];   chk "AGENTS.md symlink created" $?
-[ ! -e "$TMP/settings.json" ];         chk "settings.json NOT written (no double hooks)" $?
+# kit-config.sh reads the kit-root kit.toml and gate-ledger reads VERSION from
+# ~/.claude/dwarves-kit by default, so the farm must carry both.
+[ -L "$TMP/dwarves-kit/kit.toml" ];    chk "kit.toml symlink created" $?
+[ -L "$TMP/dwarves-kit/VERSION" ];     chk "VERSION symlink created" $?
+# Compat mode registers the board pane mod through env.CLAUDE_CODE_PLUGIN_DIRS, so the file may
+# exist now; what must never appear is a hooks block (that would double-register the plugin's hooks).
+{ [ ! -e "$TMP/settings.json" ] || ! jq -e 'has("hooks")' "$TMP/settings.json" >/dev/null; }; chk "settings.json carries no hooks (no double hooks)" $?
 [ -e "$TMP/dwarves-kit/lib/classify/lane-classify.sh" ]; chk "compat lib resolves to a real script" $?
 
 # --- compat branch retires a stale bare agent copy, keeps unowned ones ---

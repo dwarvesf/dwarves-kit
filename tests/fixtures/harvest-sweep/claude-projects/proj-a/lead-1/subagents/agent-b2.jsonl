@@ -1,0 +1,2 @@
+{"type":"user","timestamp":"2026-09-01T10:00:25.000Z","cwd":"/work/app","message":{"role":"user","content":"Check CI history"}}
+{"type":"assistant","timestamp":"2026-09-01T10:00:45.000Z","cwd":"/work/app","message":{"role":"assistant","content":[{"type":"text","text":"CI failed twice last week."}]}}

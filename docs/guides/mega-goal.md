@@ -45,6 +45,11 @@ loop, each ending in its own PR.
 - **"Can it fan out and run things in parallel?"** Dependent-sequenced is this
   lane; independent-parallel is `/kit:dispatch`. A real dependency GRAPH (waves,
   fan-in) is neither, and the kit will say so rather than grow a scheduler.
+- **"Can I run it in Orca instead of headless sessions?"** There is an opt-in
+  trial, `--backend orca` on the runner. It is off unless you ask, the default
+  path is unchanged, and the roadmap box is still the only proof of done. Its
+  `status` verb shows one state per sub-goal (running, parked, held, done)
+  so you read that instead of a transcript.
 - **"Something new came up mid-program."** New scope is a new sub-goal appended
   to the roadmap (or a new mega), never a silent widening of the current one.
 - **"Where is the state?"** On disk in the roadmap files and the specs/PRs it

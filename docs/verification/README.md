@@ -38,6 +38,22 @@ For COMPARATIVE claims (faster/smaller/fewer), add the optional evidence pair
    or GIF** embedded in the proof (`![...](path.png|gif|...)`). The gate accepts either form , a
    picture of the thing running counts as "it ran". Pick the form that fits the work-type; non-visual
    logic still owes a run-table.
+   **The run-table must hold the output itself.** The gate reads the lines under an `Output:`
+   slot (`Output:`, `Output (<anything>):` or a `### Output` heading; on the same line, on the
+   lines below, or in the fenced block below), or the raw lines after `Exit:` inside a fenced run
+   block. A typed `Exit: 0` or `Verdict: PASS` with no such lines is a claim, and the gate refuses
+   it; so is a slot left empty or holding only a `<placeholder>`, `none` or `see above`.
+   A video or a demo flow is linked beside the output or the image, it does not replace them.
+   The captured output also reaches the reader twice more: `wrap land` builds the PR body from
+   the proof file and prints the output lines in its closing `PROOF OF DONE` block.
+   **Visual proof (opt-in, `[proof] visual = true`).** A behavioral diff that touches a UI file
+   (`.tsx .jsx .vue .svelte .css .scss .html`) also needs one image: an upload made with
+   `bin/proof-asset put <slug> <file>` (it prints the `![name](url)` line to paste; the image goes
+   to the owner's R2 bucket and expires after 90 days, never into git), a committed tracked image,
+   or, with `assets = "local"` in a tracked `.kit.toml`, a cached local copy. Offline, `put`
+   queues the upload and `wrap land` flushes it. `proof-gate.sh contract "<task>"` names the
+   artifact each task type owes (SPEC-385). Off by default: nothing changes until a repo or the
+   operator file turns it on.
 2. **A negative control.** The same check shown to go RED when the work is reverted, so the
    green is not trivially green. A check that passes no matter what proves nothing. Produce
    it with `bash lib/gate/negctl.sh <root> "<test-cmd>" "<mutate-cmd>"` (or
@@ -151,7 +167,8 @@ enforcement" states this scope alongside the marker's own convention.
 
 Any proof (either home) MAY use a **table-first** layout optimized for a reviewer scanning top-down,
 instead of the run-log shape below. The tables are the human surface; the run-detail section keeps the
-literal markers, so the gate is unaffected:
+literal markers and each run's `Output:` lines (a table cell that says PASS is not captured output), so
+the gate is unaffected:
 
 ```markdown
 # Proof of done: <name>
@@ -329,7 +346,7 @@ hand with `bash lib/gate/proof-gate.sh coverage <spec> <proof.md ...>` (`OK` / `
 
 ## Who writes it
 
-- `/kit:execute` , appends a run record at each phase checkpoint and at completion.
+- `/kit:execute` , appends a run record for the end verification pass and at completion.
 - `/kit:verify` , the read-only on-demand check writes one `runs/<ts>.md` per run, drives the
   quality loop, and produces the negative control. Writing the record is the point, not a
   change to the artifact under test.

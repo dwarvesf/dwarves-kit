@@ -188,7 +188,7 @@ gout="$(bash "$HO" list --repo "$GREPO")"
 
 echo "[10] DEAD: all cited rows closed on origin (local copy says the opposite)"
 dead_line="$(printf '%s\n' "$gout" | grep 'dead-one.md')"
-if [[ "$dead_line" == *"DEAD (all 1 cited rows closed, delete it)"* ]]; then
+if [[ "$dead_line" == *"DEAD (all 1 cited rows closed, delete it or move it into any subdirectory)"* ]]; then
   ok "dead-one.md verdict: $dead_line"
 else
   no "expected DEAD verdict, got: $dead_line"
@@ -252,6 +252,142 @@ echo "[15] --limit overrides the default"
 limout="$(bash "$HO" list --repo "$CAPREPO" --limit 2)"
 limshown=$(printf '%s\n' "$limout" | grep -c '^[0-9]\+d ')
 if [[ "$limshown" -eq 2 && "$limout" == *"+5 more"* ]]; then ok "--limit 2: $limshown shown, +5 more"; else no "wrong --limit output: $limout"; fi
+
+# --- one-level scan: any subdirectory is consumed, plus the ancestor-path fix ----
+# Own fixture repos throughout: $REPO above backs the exact-count assertions
+# in [1]/[4]/[6], so new files never land there.
+
+echo "[16] an arbitrarily-named subdirectory (not on any list) is excluded"
+ARCREPO="$(mktemp -d)"
+mkdir -p "$ARCREPO/_meta/handoffs/old" \
+         "$ARCREPO/.claude/handoffs/archive" \
+         "$ARCREPO/.claude/handoffs/.claude/session-state" \
+         "$ARCREPO/_meta/handoffs/_archive"
+cat > "$ARCREPO/_meta/handoffs/old/x.md" <<'EOF'
+# Handoff: nested under an arbitrary name, not done/_archive/archive/.claude
+
+## Next
+This must never show up: a one-level scan excludes any subdirectory, not
+just the four names an earlier denylist design would have picked.
+EOF
+cat > "$ARCREPO/.claude/handoffs/archive/old.md" <<'EOF'
+# Handoff: archived under .claude/handoffs/archive
+
+## Next
+This must never show up: archived.
+EOF
+cat > "$ARCREPO/.claude/handoffs/.claude/session-state/foo.md" <<'EOF'
+# Handoff: stray nested .claude/session-state
+
+## Next
+This must never show up: nested .claude/.
+EOF
+cat > "$ARCREPO/_meta/handoffs/_archive/old.md" <<'EOF'
+# Handoff: archived under _archive/
+
+## Next
+This must never show up: _archive/.
+EOF
+cat > "$ARCREPO/.claude/handoffs/live.md" <<'EOF'
+# Handoff: live under .claude/handoffs
+
+## Next
+Still open.
+EOF
+cat > "$ARCREPO/_meta/handoffs/live.md" <<'EOF'
+# Handoff: live under _meta/handoffs
+
+## Next
+Still open.
+EOF
+
+arcout="$(bash "$HO" list --repo "$ARCREPO")"
+if [[ "$arcout" != *"old/x.md"* && "$arcout" != *"archive/old.md"* && "$arcout" != *"session-state/foo.md"* ]]; then
+  ok "arbitrary and named subdirectory paths excluded: $arcout"
+else
+  no "a nested path leaked: $arcout"
+fi
+
+echo "[17] live files under both scan roots present, exact count 2"
+if [[ "$arcout" == *".claude/handoffs/live.md"* && "$arcout" == *"_meta/handoffs/live.md"* ]]; then
+  ok "both live files listed"
+else
+  no "expected both live files listed, got: $arcout"
+fi
+arc_last="$(printf '%s\n' "$arcout" | tail -1)"
+if [[ "$arc_last" == "2 open handoffs" ]]; then ok "count: $arc_last"; else no "expected '2 open handoffs', got: $arc_last"; fi
+
+echo "[18] a .claude/ ancestor above the repo root blanks neither scan root"
+CREPO="$(mktemp -d)/.claude/worktrees/x/repo"
+mkdir -p "$CREPO/_meta/handoffs" "$CREPO/.claude/handoffs"
+cat > "$CREPO/_meta/handoffs/live.md" <<'EOF'
+# Handoff: live under _meta/handoffs, repo nested under .claude/
+
+## Next
+Still open.
+EOF
+cat > "$CREPO/.claude/handoffs/live.md" <<'EOF'
+# Handoff: live under .claude/handoffs, repo nested under .claude/
+
+## Next
+Still open.
+EOF
+cout="$(bash "$HO" list --repo "$CREPO")"
+if [[ "$cout" == *"_meta/handoffs/live.md"* && "$cout" == *".claude/handoffs/live.md"* ]]; then
+  ok "both scan roots survive a .claude/ ancestor: $cout"
+else
+  no "a .claude/ ancestor blanked a scan root: $cout"
+fi
+c_last="$(printf '%s\n' "$cout" | tail -1)"
+if [[ "$c_last" == "2 open handoffs" ]]; then ok "count: $c_last"; else no "expected '2 open handoffs', got: $c_last"; fi
+
+echo "[19] only-excluded repo (arbitrary + named subdirectories): honest 'no handoffs'"
+EXREPO="$(mktemp -d)"
+mkdir -p "$EXREPO/.claude/handoffs/archive" "$EXREPO/_meta/handoffs/_archive" "$EXREPO/_meta/handoffs/old"
+cat > "$EXREPO/.claude/handoffs/archive/old.md" <<'EOF'
+# Handoff: archived
+
+## Next
+Never shows up.
+EOF
+cat > "$EXREPO/_meta/handoffs/_archive/old.md" <<'EOF'
+# Handoff: archived
+
+## Next
+Never shows up.
+EOF
+cat > "$EXREPO/_meta/handoffs/old/x.md" <<'EOF'
+# Handoff: arbitrary subdirectory
+
+## Next
+Never shows up.
+EOF
+exout="$(bash "$HO" list --repo "$EXREPO")"
+if [[ "$exout" == "no handoffs" ]]; then ok "no handoffs for only-excluded repo"; else no "expected 'no handoffs', got: $exout"; fi
+
+echo "[20] a done/ ancestor above the repo root blanks neither scan root"
+DREPO="$(mktemp -d)/done/repo"
+mkdir -p "$DREPO/_meta/handoffs" "$DREPO/.claude/handoffs"
+cat > "$DREPO/_meta/handoffs/live.md" <<'EOF'
+# Handoff: live under _meta/handoffs, repo nested under done/
+
+## Next
+Still open.
+EOF
+cat > "$DREPO/.claude/handoffs/live.md" <<'EOF'
+# Handoff: live under .claude/handoffs, repo nested under done/
+
+## Next
+Still open.
+EOF
+dout="$(bash "$HO" list --repo "$DREPO")"
+if [[ "$dout" == *"_meta/handoffs/live.md"* && "$dout" == *".claude/handoffs/live.md"* ]]; then
+  ok "both scan roots survive a done/ ancestor: $dout"
+else
+  no "a done/ ancestor blanked a scan root: $dout"
+fi
+d_last="$(printf '%s\n' "$dout" | tail -1)"
+if [[ "$d_last" == "2 open handoffs" ]]; then ok "count: $d_last"; else no "expected '2 open handoffs', got: $d_last"; fi
 
 echo
 if [[ $fail -eq 0 ]]; then

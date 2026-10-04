@@ -88,3 +88,25 @@ fixture files; `lib/pitch.sh`, `commands/pitch.md`, and every other AC are untou
 human-facing `docs/verification/pitch-command/sample-pitch.md` artifact keeps being regenerated
 against the live `kit-emit-sweep` rid on every local run (still genuinely real evidence on a
 machine that has the ledger); it is simply no longer a CI-verified input.
+
+## 2026-09-26 the "regenerated on every local run" decision above is revised: a test must not dirty the tree (SPEC-324)
+
+**Decision:** AC1's live render now writes to a scratch temp path, never to the tracked
+`docs/verification/pitch-command/sample-pitch.md`. The tracked file's freshness is preserved
+by running the same command by hand instead of as a side effect of the test:
+
+```
+bash lib/pitch.sh render kit-emit-sweep --out docs/verification/pitch-command/sample-pitch.md
+```
+
+**Why:** the entry directly above kept the tracked file auto-refreshing on purpose, reasoning
+it stays "genuinely real evidence on a machine that has the ledger." That reasoning holds for
+the artifact but not for the test that produces the side effect: every `bash
+tests/test-pitch.sh` run (direct or via `tests/run-all.sh`) left `git status --porcelain`
+dirty, and a session had to restore the file by hand four times in one day. A green test run
+must never leave the tree dirty; freshness now comes from running the command above
+explicitly, when the real `kit-emit-sweep` ledger content actually moves on.
+
+**Impact:** none outside `tests/test-pitch.sh`; `lib/pitch.sh`, `commands/pitch.md`, the
+frozen-fixture path (`tests/fixtures/pitch/real-sample/`, `_render_with_origin`), and every
+other AC are untouched. See `docs/specs/SPEC-324-pitch-test-tmp-out.md`.

@@ -1,0 +1,168 @@
+#!/usr/bin/env bash
+# deploy/macos/harvest-sweep/install -- render + (with --apply) load the
+# harvest-sweep LaunchAgent and write the host-local `installed` marker that
+# ACTIVATES the sweep on this host (DEC-27).
+#
+# Ownership split (DEC-67, the board-sync-cron precedent): the kit owns the
+# plist template, the launcher, and this installer; the operator runs it ON
+# the target host to instantiate their own LaunchAgent. The consumer owns the
+# instance plus the ~/.config/harvest-sweep/bridge heartbeat endpoint.
+#
+# One host, one job, one label. This is a SECOND LaunchAgent beside kit-weekly
+# (T19 amends ADR-0034 decisions 6 and 9): the sweep runs every
+# harvest.schedule_hours (default 6h), a fixed cadence kit-weekly's single
+# weekly slot cannot carry, and per-job intervals inside kit-weekly were the
+# fragmentation decision 9 rejected. The Mini installs --label
+# mini.harvest-sweep, a prefix already in vps-mon's OWNED_PREFIXES (DEC-13).
+#
+# The marker is the whole point: a synced operator kit.toml can carry
+# `enable = true` to every host, but only a host where THIS script wrote
+# <state>/sweep/installed actually sweeps -- every other host keeps the
+# session-end hook and wrap's inline distill. `install --uninstall` removes
+# exactly the two files this script wrote (the plist and the marker) and
+# leaves every piece of sweep state, so a re-install resumes from the same
+# cursor and nothing queued is lost (DEC-47).
+#
+# Repo-side by design: this script only RENDERS + (with --apply) LOADS on THIS
+# host. Default is a dry run (prints the rendered plist and the exact
+# commands); --apply writes and bootstraps. It never runs a sweep itself.
+#
+# Usage:
+#   bash deploy/macos/harvest-sweep/install [--label L] [--apply]
+#   bash deploy/macos/harvest-sweep/install [--label L] --uninstall
+#
+#   --label L     LaunchAgent label (default: harvest-sweep; the Mini uses
+#                 mini.harvest-sweep)
+#   --apply       actually write the plist + marker and launchctl bootstrap
+#                 (default: dry-run)
+#   --uninstall   launchctl bootout the label and remove ONLY the plist and
+#                 the installed marker; sweep state (cursor.json, ledger/,
+#                 patterns.jsonl, proposed.jsonl, extract/, runs/) stays and
+#                 is reported, with a purge command for extract/ that is
+#                 printed, never run (DEC-69)
+#
+# Status:   launchctl print gui/$(id -u)/<label>
+# Run now:  launchctl kickstart -k gui/$(id -u)/<label>
+set -euo pipefail
+
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+KIT="$(cd "$HERE/../../.." && pwd)"
+
+LABEL="harvest-sweep" APPLY=0 UNINSTALL=0
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --label) LABEL="${2:?--label needs a value}"; shift 2 ;;
+    --apply) APPLY=1; shift ;;
+    --dry-run) APPLY=0; shift ;;
+    --uninstall) UNINSTALL=1; shift ;;
+    -h|--help) sed -n '2,44p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    *) echo "install: unknown flag $1" >&2; exit 2 ;;
+  esac
+done
+
+case "$LABEL" in
+  ''|*[/]*)
+    echo "install: --label must be a bare launchd label (no '/'), got '$LABEL'" >&2
+    exit 2
+    ;;
+esac
+
+STATE="${HARVEST_STATE_DIR:-$HOME/.claude/dwarves-kit/state/harvest}"
+plist="$HOME/Library/LaunchAgents/$LABEL.plist"
+marker="$STATE/sweep/installed"
+
+# Uninstall is deliberately NOT gated on harvest.enable: the operator may have
+# already flipped the switch off. It removes only what --apply wrote and
+# leaves all sweep state, so the host returns to hook + wrap-distill behavior
+# at once while nothing queued is lost (AC13, DEC-47).
+if [ "$UNINSTALL" -eq 1 ]; then
+  launchctl bootout "gui/$(id -u)/$LABEL" 2>/dev/null || true
+  rm -f "$plist" "$marker"
+  queued=0
+  for f in "$STATE"/sweep/ledger/*.md; do
+    [ -f "$f" ] || continue
+    n="$(awk '/\| queued \|$/ {n++} END {print n+0}' "$f")"
+    queued=$((queued + n))
+  done
+  exsize="$(du -sh "$STATE/sweep/extract" 2>/dev/null | awk '{print $1}')"
+  echo "uninstalled $LABEL: removed $plist and $marker"
+  echo "the host is back to hook + wrap distill behavior immediately."
+  echo "sweep state left in place at $STATE/sweep (a re-install resumes from it):"
+  echo "  queued learnings: $queued  (flush path: python3 $KIT/hooks/harvest.py --flush-list)"
+  echo "  extract/ size: ${exsize:-0}"
+  echo "  also left: cursor.json, ledger/, patterns.jsonl, proposed.jsonl, runs/"
+  echo "to purge the raw transcript cache when you are done with it (not run):"
+  echo "  rm -rf '$STATE/sweep/extract'"
+  exit 0
+fi
+
+# shellcheck source=../../../lib/config/kit-config.sh
+. "$KIT/lib/config/kit-config.sh"
+
+# Gate: a LaunchAgent that harvests transcripts must never get installed on a
+# host that has not opted in at the operator level. The project .kit.toml is
+# never consulted (kit_config_get_root): it rides inside an untrusted PR and
+# must not be able to switch the sweep on (DEC-9).
+en="$(kit_config_get_root harvest.enable false | tr 'A-Z' 'a-z')"
+case "$en" in
+  true|1|yes|on) ;;
+  *)
+    echo "install: harvest.enable is not true in the operator or kit-root kit.toml; set:" >&2
+    printf '  [harvest]\n  enable = true\n' >&2
+    exit 2
+    ;;
+esac
+
+hours="$(kit_config_get_root harvest.schedule_hours 6)"
+case "$hours" in
+  ''|*[!0-9]*)
+    echo "install: harvest.schedule_hours must be a positive integer, got '$hours'" >&2
+    exit 2
+    ;;
+esac
+INTERVAL=$((hours * 3600))
+
+# Portable mktemp: BSD's "-t NAME" form is not accepted by GNU mktemp.
+rendered="$(mktemp "${TMPDIR:-/tmp}/harvest-sweep-plist.XXXXXX")"
+trap 'rm -f "$rendered"' EXIT
+
+sed -e "s#__LABEL__#$LABEL#g" -e "s#__KIT__#$KIT#g" -e "s#__HOME__#$HOME#g" \
+    -e "s#__INTERVAL__#$INTERVAL#g" \
+    "$HERE/harvest-sweep.plist.tmpl" > "$rendered"
+
+if [ "$APPLY" -eq 0 ]; then
+  echo "dry-run: harvest.enable=true confirmed (label $LABEL, every ${hours}h = ${INTERVAL}s)"
+  echo "dry-run: would write $plist:"
+  echo "---"
+  cat "$rendered"
+  echo "---"
+  echo "dry-run: would write the host marker $marker (activates the sweep on THIS host only)"
+  echo "dry-run: would then run:"
+  echo "  mkdir -p \"$HOME/Library/LaunchAgents\" \"$HOME/Library/Logs/dwarves-kit\" \"$STATE/sweep\""
+  echo "  launchctl bootout \"gui/\$(id -u)/$LABEL\" 2>/dev/null || true"
+  echo "  launchctl bootstrap \"gui/\$(id -u)\" \"$plist\""
+  echo "re-run with --apply on the target host to actually install."
+  exit 0
+fi
+
+mkdir -p "$HOME/Library/LaunchAgents" "$HOME/Library/Logs/dwarves-kit" "$STATE/sweep"
+cp "$rendered" "$plist"
+# 0644, not mktemp's 0600: vps-mon's launchd discovery reads LaunchAgents as another
+# user and silently drops a plist it cannot read, so the job would never show monitored.
+# The plist carries no secret.
+chmod 644 "$plist"
+# The marker is what flips THIS host into sweep-active: label for the launcher's
+# log line, host and kit for audit, ts for when the host opted in (DEC-27).
+printf '{"label":"%s","host":"%s","kit":"%s","ts":%s}\n' \
+  "$LABEL" "$(hostname 2>/dev/null || echo unknown)" "$KIT" "$(date +%s)" > "$marker"
+launchctl bootout "gui/$(id -u)/$LABEL" 2>/dev/null || true
+launchctl bootstrap "gui/$(id -u)" "$plist"
+# Best-effort confirmation only: bootstrap above already succeeded (or `set -e`
+# would have stopped the script), so a failed confirmation is a WARNING, never
+# a reason to report install failure after the job is actually loaded.
+if launchctl print "gui/$(id -u)/$LABEL" 2>/dev/null | grep -q "$LABEL"; then
+  echo "[ok] $LABEL installed (every ${hours}h; marker at $marker)"
+else
+  echo "[warn] $LABEL bootstrapped but could not be confirmed via launchctl print; check:" >&2
+  echo "       launchctl print gui/\$(id -u)/$LABEL" >&2
+fi

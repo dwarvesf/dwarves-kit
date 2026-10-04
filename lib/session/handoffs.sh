@@ -3,7 +3,10 @@
 # entry instead of them piling up unread. A handoff (written by the `handoff`
 # skill) is a one-off note, not a lifecycle-managed draft like .claude/goals/
 # (see lib/goal/goal-drafts.sh): there is no archive/ship flow here, only a
-# `done/` or `_archive/` convention a repo may use to mark one consumed.
+# one-level scan. A file sitting directly in a scan root is open; a file a
+# repo moves into ANY subdirectory (done/, _archive/, archive/, a nested
+# .claude/, or any other name a repo invents) counts as consumed. No name
+# list is maintained anywhere; depth alone decides.
 #
 # Read-only. Pure bash + find/awk/sed, no python (same shape as
 # lib/session/parse-transcript.sh's sibling test, lib/session/tests/).
@@ -17,8 +20,10 @@
 #     --limit N    max handoff lines to print before collapsing the rest to
 #                  "+N more" (default: 5; 0 means unlimited)
 #
-#   Scans <repo>/_meta/handoffs/ and <repo>/.claude/handoffs/ for *.md files,
-#   skipping anything under a done/ or _archive/ subdirectory. One line per
+#   Scans <repo>/_meta/handoffs/ and <repo>/.claude/handoffs/ for *.md files
+#   sitting directly in either directory, one level deep, no recursion: a
+#   file moved into any subdirectory, whatever it is named, is treated as
+#   consumed. One line per
 #   file, oldest first:
 #     <age>d  <repo-relative path>  next: <excerpt>  <liveness>
 #   <excerpt> is the first non-empty line under a heading matching
@@ -33,13 +38,14 @@
 #   origin/<default-branch>), falling back to the working tree with a
 #   "(local)" suffix when there is no origin remote:
 #     LIVE (n open: ID-a, ID-b)   -- at least one cited row is still open
-#     DEAD (all n cited rows closed, delete it)  -- every cited row shipped/
-#       dropped/done/resolved
+#     DEAD (all n cited rows closed, delete it or move it into any
+#       subdirectory)  -- every cited row shipped/dropped/done/resolved
 #     UNCITED (no row IDs; read it)  -- the file names no board row
 #   A row ID this repo's board cannot resolve counts as open (unproven, not
 #   confirmed closed). The board owns the work; the handoff owns only the
 #   context (see AGENTS.md's handoff rule). A DEAD handoff is deleted by the
-#   session that finds it, git history keeps it.
+#   session that finds it, or moved into any subdirectory; either marks it
+#   consumed and git history keeps it.
 set -euo pipefail
 shopt -s nullglob
 
@@ -134,7 +140,7 @@ handoff_liveness() { # <file>
   local suffix=""
   [ "$BOARD_SOURCE" = "local" ] && suffix=" (local)"
   if [ "${#open[@]}" -eq 0 ]; then
-    echo "DEAD (all $n cited rows closed, delete it)$suffix"
+    echo "DEAD (all $n cited rows closed, delete it or move it into any subdirectory)$suffix"
   else
     local joined; joined="$(IFS=,; echo "${open[*]}")"
     joined="$(printf '%s' "$joined" | sed 's/,/, /g')"
@@ -165,8 +171,7 @@ cmd_list() {
     [ -d "$d" ] || continue
     while IFS= read -r f; do
       files+=("$f")
-    done < <(find "$d" -type f -name '*.md' \
-      -not -path '*/done/*' -not -path '*/_archive/*' 2>/dev/null)
+    done < <(find "$d" -maxdepth 1 -type f -name '*.md' 2>/dev/null)
   done
 
   if [ "${#files[@]}" -eq 0 ]; then

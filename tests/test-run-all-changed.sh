@@ -3,15 +3,16 @@
 #
 # The full glob is 13-15 minutes sequential on a Mac. A branch that touches one lib file
 # needs the handful of suites that name it, and the pre-push check was paying for all of
-# them. Selection: a suite whose CODE lines name a changed file's basename, a changed suite
-# itself, tests/test-<mod>*.sh for lib/<mod>/, plus every suite with an `# always:` header
-# (the tree-wide lints, which a diff-derived pick can never reach).
+# them. Selection is bin/test-affected --list (code lines naming a changed path, a changed
+# suite itself, tests/test-<mod>*.sh for lib/<mod>/), plus every suite with an `# always:`
+# header (the tree-wide lints, which a diff-derived pick can never reach).
 #
 # Each case builds a throwaway kit-shaped git repo (tests/run-all.sh plus fixture suites)
 # and runs the REAL script against it, so nothing here touches the repo's own tests/.
 set -uo pipefail
 DIR="$(cd "$(dirname "$0")/.." && pwd)"
 RA="$DIR/tests/run-all.sh"
+TA="$DIR/bin/test-affected"
 pass=0; fail=0
 ok(){ echo "  ok: $*"; pass=$((pass+1)); }
 no(){ echo "  FAIL: $*" >&2; fail=$((fail+1)); }
@@ -22,8 +23,8 @@ export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null
 g() { git -c user.name=t -c user.email=t@t "$@"; }
 
 mkkit() {  # $1 = dir ; a committed kit-shaped repo holding the real run-all.sh
-  mkdir -p "$1/tests" "$1/lib/foo" "$1/lib/baz" "$1/docs"
-  cp "$RA" "$1/tests/run-all.sh"
+  mkdir -p "$1/tests" "$1/bin" "$1/lib/foo" "$1/lib/baz" "$1/docs"
+  cp "$RA" "$1/tests/run-all.sh"; cp "$TA" "$1/bin/test-affected"
   printf '#!/usr/bin/env bash\nf=lib/foo/foo.sh\nexit 0\n' > "$1/tests/test-foo.sh"
   printf '#!/usr/bin/env bash\n# a comment naming foo.sh is not a dependency\nexit 0\n' > "$1/tests/test-bar.sh"
   printf '#!/usr/bin/env bash\nexit 0\n' > "$1/tests/test-baz.sh"
@@ -76,7 +77,7 @@ else no "rc=$RC out=$OUT"; fi
 echo "[5b] a bare invocation is --changed, and --all is the full glob"
 K="$TMP/k5b"; mkkit "$K"; echo 'x=2' > "$K/lib/foo/foo.sh"
 OUT="$(bash "$K/tests/run-all.sh" 2>&1)"; RC=$?
-OUT2="$(bash "$K/tests/run-all.sh" --all 2>&1)"; RC2=$?
+OUT2="$(KIT_RUN_ALL=1 bash "$K/tests/run-all.sh" --all 2>&1)"; RC2=$?
 if [ "$RC" -eq 0 ] && grep -q -- '--changed against' <<<"$OUT" && ! ran test-bar "$OUT" \
    && [ "$RC2" -eq 0 ] && grep -q '^run-all: all 4 suites passed' <<<"$OUT2"; then
   ok "bare picks, --all runs everything"
@@ -96,6 +97,28 @@ OUT="$(bash "$K/tests/run-all.sh" --changed 2>&1)"; RC=$?
 if [ "$RC" -eq 1 ] && grep -q '^run-all: FAILED ->.*test-lint' <<<"$OUT"; then
   ok "the pinned lint is not skippable"
 else no "rc=$RC out=$OUT"; fi
+
+echo "[8] --all refuses outside CI unless KIT_RUN_ALL=1, and runs under either"
+# One session's --all held the per-host test lock for ~25 minutes and queued every other
+# session behind it. The refusal is the mechanism; CI=true (GitHub) and KIT_RUN_ALL=1 (nightly)
+# are the two ways through.
+K="$TMP/k8"; mkkit "$K"
+OUT="$(unset CI KIT_RUN_ALL; bash "$K/tests/run-all.sh" --all 2>&1)"; RC=$?
+if [ "$RC" -eq 64 ] && [ "$(printf '%s\n' "$OUT" | wc -l | tr -d ' ')" = 1 ] \
+   && grep -qF 'bash tests/run-all.sh --changed --time' <<<"$OUT" && grep -q 'nightly' <<<"$OUT" \
+   && ! grep -q 'suites' <<<"$OUT"; then
+  ok "refused with exit 64 and one line naming --changed --time and the nightly job"
+else no "refusal: rc=$RC out=$OUT"; fi
+OUT="$(unset CI KIT_RUN_ALL; bash "$K/tests/run-all.sh" --time --all 2>&1)"; RC=$?
+[ "$RC" -eq 64 ] && ok "refused when --all follows --time" || no "--time --all: rc=$RC out=$OUT"
+OUT="$(unset KIT_RUN_ALL; CI=true bash "$K/tests/run-all.sh" --all 2>&1)"; RC=$?
+if [ "$RC" -eq 0 ] && grep -q '^run-all: all 4 suites passed' <<<"$OUT"; then
+  ok "CI=true runs the full glob"
+else no "CI path: rc=$RC out=$OUT"; fi
+OUT="$(unset CI; KIT_RUN_ALL=1 bash "$K/tests/run-all.sh" --all 2>&1)"; RC=$?
+if [ "$RC" -eq 0 ] && grep -q '^run-all: all 4 suites passed' <<<"$OUT"; then
+  ok "KIT_RUN_ALL=1 runs the full glob"
+else no "KIT_RUN_ALL path: rc=$RC out=$OUT"; fi
 
 if [ "$fail" -gt 0 ]; then echo "test-run-all-changed: $pass passed, $fail FAILED" >&2; exit 1; fi
 echo "test-run-all-changed: all $pass passed"

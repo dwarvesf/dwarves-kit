@@ -41,6 +41,7 @@ Detect the test runner and execute:
 - Python: `pytest` or `python -m pytest`
 - Rust: `cargo test`
 
+If `kit_config_get test.suite full` (`lib/config/kit-config.sh`) is `affected`, run only the narrowest tests that cover the change (in the kit repo `bin/test-affected`) and note that the full suite runs on the schedule.
 If tests fail: STOP. Show the failures. Ask if the user wants to fix them first.
 If no test runner found: WARN but continue.
 
@@ -169,7 +170,7 @@ If the current branch is not main/master:
 - **Record the ship gate:** `bash lib/gate/gate-ledger.sh record <rid> Ship ran "shipping pr=#<N>"` (carry the PR number once it exists; lane telemetry reads it as the run outcome). The `ship-gate` hook will refuse the push below if the active spec's lane still has a `measure-twice` gate with no `ran`/`override` entry; it names the missing gate(s). Run the missing gate, or log a reason: `bash lib/gate/gate-ledger.sh override <rid> <Phase> "<reason>"` (recorded in the audit trail). See WORKFLOW.md "## Gate ledger and ship enforcement".
 - **Pre-PR merge:** `bash lib/gate/premerge.sh check`. GitHub's squash-merge ignores the repo's `merge=union` `.gitattributes` markers, so a branch that touched an append-only log after the default branch moved can show CONFLICTING on GitHub even though a plain local merge resolves cleanly; this catches that here, where it is cheap to fix. It fetches the default branch and merges it in only when the branch is behind (silent, no output, when already current); a real conflict exits non-zero with unmerged paths left for you to resolve by hand, never auto-picked, and Step 8 stops until it is resolved. Never force-pushes, never rewrites history.
 - Run `git push origin [branch]`
-- Generate a PR description from the commits:
+- Generate a PR description from the commits. If the repo has `.github/PULL_REQUEST_TEMPLATE.md` (or `pull_request_template.md`), use ITS section headings verbatim instead of the fallback below; otherwise:
   ```
   ## What
   [summary of changes]
@@ -180,14 +181,19 @@ If the current branch is not main/master:
   ## Review
   [review verdict from the spec's ## Review section, or "not reviewed"]
 
-  ## Testing
-  [what was tested, test results]
+  ## How I verified it
+  [what was tested, in a fenced code block with the command(s) actually run and their output]
 
   ## Checklist
   - [x] Tests pass
   - [x] Docs updated
   - [x] Review: [SHIP / skipped]
   - [ ] No regressions
+  ```
+- **Verification section, whatever it is headed** (a repo template's own name, or the fallback's `## How I verified it`): put the command and its output inside a fenced ``` code block, one command per line prefixed with `$ `, and end with the result (`exit 0`, `passed`, or the failing line). Prose alone ("ran the tests, they passed") or a 4-space indented block, even when a repo's own template example shows one, reads as ungrounded to an automated evidence check and silently converts the PR to draft. Example:
+  ```
+  $ npm test
+  Tests: 42 passed, 0 failed
   ```
 - If the spec references issue numbers, link them in the PR.
 - Tell the user the PR is ready.

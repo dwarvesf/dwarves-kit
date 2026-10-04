@@ -23,7 +23,7 @@ INTERPRETATION layer: "your data is free forever; our reading of it is the produ
 | Portable repo adopt (4 files, machine-independent) | adopt | shipped (ID-408) |
 | Workflow gallery (generated ASCII flows per work type) | onboard | queued ID-407 |
 | Intake interview `/grill` (one question at a time, facts vs decisions) | grill | shipped (+ID-404) |
-| Spec pipeline: think / spec / spec-validate (adversarial, 6 lenses) / execute / review / ship | commands | shipped |
+| Spec pipeline: think / spec / spec-validate (adversarial, 7 lenses) / execute / review / ship | commands | shipped |
 | Verifier chain: task, integration, acceptance, system + recheck (fresh-context re-audit) | gate/agents | shipped |
 | Review teams (security / architecture / test-coverage lenses) + advisor extra lens | agents | shipped |
 | Debug loop (root cause before any fix) | commands | shipped |

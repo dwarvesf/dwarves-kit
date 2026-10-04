@@ -1,0 +1,31 @@
+# Implementation notes: SPEC-320 spec auto-validate
+
+Delta from `docs/specs/SPEC-320-spec-autovalidate.md`. The spec's own decisions are not repeated here.
+
+## Deviations and decisions
+
+- The operator asked to "require" validation. The design critique showed the hard ship-gate on the normal lane lands estate-wide and reclassifies history, so the spec executes validation automatically at every entry point, blocks the build in `/kit:execute`, and keeps the normal-lane ship-gate cell `run-lite`. The flip to `measure-twice` stays one cell if the operator still wants it.
+- The spec took four fresh validation passes (NEEDS REVISION 3 critical, 3 critical, 2 critical, then APPROVED). Each pass found real defects the author missed, including a preflight grep that would have matched a failed validation.
+
+## Build deltas
+
+- `tests/test-wrap.sh` pinned the old step-10 literal `reported: spec-validate BLOCK: <finding>`. T2 does not list it; the pin moved to item 6's literal `reported: spec-validate BLOCK|NEEDS REVISION: <criticals>` so the suite stays green.
+- `commands/spec-validate.md` gained two lines item 1 implies: it reads the spec path the caller names (else the most recent non-shipped spec), and a READ-ONLY dispatch skips every edit, Status flip, and record. Without them the skill text contradicts the validator prompt.
+- `/kit:spec`'s dispatch is a new `### Step 5: fresh-context validation` after step 4's `Spec ran` record, so the order check in `tests/test-meta.sh` reads line numbers, not prose.
+- `commands/wrap.md` step 10's "Wrap never merges" paragraph said an unattended validate pass "checks the spec against itself"; that is no longer true, so the clause now says the validator checks the spec, not the direction.
+- `tests/test-gate-ledger-plan-record.sh` cases C2, C3, C6, C7, C9, C10 each gained `--ran validate`, so each still fails for its own reason and not for the new missing disposition (C9 and C10 would otherwise exit 64 before the override guard runs).
+- The red runs for `tests/test-e2e.sh` and `tests/test-gate-ledger-plan-record.sh` used `GATE_LEDGER_WORKFLOW` pointed at the pre-change matrix, because the matrix edit landed while the first red run was in flight.
+- `docs/FEATURES.md` was regenerated before the first commit (test-meta's freshness check reads the WORKFLOW edit) and again last, after the T4 prose.
+- `tests/test-outcome-emit-sweep.sh` requires every `record <rid> <phase> ran` site in `commands/*.md` to carry its own `outcome start`/`end` bracket. The step-10 worker's new `Spec ran` record therefore opens and closes a `Spec` bracket in `commands/wrap.md`, the same pair `/kit:spec` writes.
+- `tests/run-all.sh --changed` rewrites the tracked `docs/verification/pitch-command/sample-pitch.md` as a side effect; the file was restored with `git checkout --` and is not part of this change.
+
+## Review-fix deltas (fresh review, FIX THEN SHIP)
+
+- `commands/execute.md`'s preflight grep matched ANY `validate` GATE line (`ran` or `override` anywhere), so `ran` followed by a later `skipped` still passed. Fixed to read the LAST `validate` GATE line only: `grep -Ei '\| GATE \| validate \| ' | tail -1 | grep -Eq '\| (ran|override) \|'`. Confirmed the old regex's false positive directly against a real ledger (`ran` then `skipped`: old exit 0, new exit 1) before editing. `tests/test-hooks.sh` gained three order-dependent cases (ran-then-skipped, skipped-then-ran, ran-only); `tests/test-meta.sh`'s literal pin updated to the new grep text.
+- Adding a literal `design-record ran` site to `commands/execute.md`'s stop path (fix 2, Reviewer 6 passed but a different reviewer's critical still stops execute) tripped `tests/test-outcome-emit-sweep.sh`'s no-orphan sweep: a `record ... ran` site needs a paired `outcome ... start`/`end` bracket in the SAME file. `execute.md` already had a literal `design-record end` bracket but only PROSE for `start` ("the `Validate start` and `design-record start` brackets written before the dispatch"). Converted that prose to the literal `bash lib/gate/gate-ledger.sh outcome <rid> Validate start` / `... design-record start` calls, matching `commands/spec.md` step 5's own style.
+- `commands/execute.md`'s stop path previously closed `design-record end` only "on a Reviewer 6 critical" and never recorded `design-record ran` at all, so a non-R6 critical that stopped execute left Reviewer 6's actual pass unrecorded and its bracket unclosed. Now: `design-record ran "design-bearing=<..> pass"` records when R6 passed, `design-record skipped "critical: ..."` when R6 is the critical, and the `design-record end` bracket always closes (`caught=` true only when R6 was the critical reviewer).
+- `docs/specs/SPEC-320-spec-autovalidate.md` Contract item 3 and the Decision Log gained one sentence/line each for fix 1 (last-line-wins) and fix 5 (operator re-approval in `/kit:spec` only); `commands/spec.md` step 5's NEEDS REVISION bullet now says warnings fold silently while criticals are shown to the operator for re-approval before the re-dispatch, since `/kit:spec` (unlike execute's preflight or a wrap step-10 worker) has an operator present. The kept literal `Validate skipped "NEEDS REVISION: <criticals>"` was not touched, so `test-meta.sh`'s pin stays green.
+- `commands/wrap.md` step 10 now states the lead opens `Validate start`/`design-record start` under the WORKER's rid (not the lead's own) before dispatching the validator, closing the ambiguity between "the lead dispatches" and "whose rid the brackets live under".
+- `commands/spec-validate.md` gained "(skip when dispatched READ-ONLY)" at the per-reviewer pause-and-ask sentence, and at the pre-Reviewer-1 timing-bracket instruction (the lead already opens both brackets before a READ-ONLY dispatch, per `commands/spec.md` step 5 / `commands/wrap.md` step 10).
+- `docs/CHANGELOG.md` gained a NOTE bullet: on normal/backfill, a `Validate skipped "NEEDS REVISION: ..."` line still reads as disposed (✓) in `gate-ledger.sh progress`, because lite phases count any disposition (ran or skipped), not just a pass.
+- The Live row in `docs/verification/spec-autovalidate.md` was PENDING; replaced with the lead's recorded scratch-repo run (branch `feat/live-probe`, rid `live-probe`) plus a fresh re-run of the NEW last-line preflight grep against an equivalent temp ledger (exit 0, matches).

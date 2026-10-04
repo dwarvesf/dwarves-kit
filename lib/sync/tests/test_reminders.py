@@ -88,3 +88,82 @@ def test_apply_noop_skips_osascript():
     fake = FakeJxa()
     assert RemindersSource(runner=fake).apply(Plan(), {}, {}) == {}
     assert fake.calls == []
+
+
+# -- fail-fast transport: a Reminders.app that never answers (2026-10-02: a
+# wedged LaunchServices meant no app could launch) must cost one short probe
+# per sweep, not 600s per board.
+
+import subprocess  # noqa: E402
+
+import pytest  # noqa: E402
+
+from sources import reminders  # noqa: E402
+
+
+class FakeRun:
+    """subprocess.run stand-in: answers each call from a queue of outcomes."""
+
+    def __init__(self, *outcomes):
+        self.outcomes = list(outcomes)
+        self.calls = []
+
+    def __call__(self, cmd, **kw):
+        self.calls.append((cmd, kw))
+        out = self.outcomes.pop(0)
+        if out == "hang":
+            raise subprocess.TimeoutExpired(cmd, kw.get("timeout"))
+        return subprocess.CompletedProcess(cmd, 0, stdout=out, stderr="")
+
+
+@pytest.fixture
+def transport(monkeypatch, tmp_path):
+    marker = tmp_path / "reminders-unresponsive"
+    monkeypatch.setattr(reminders, "WEDGE_MARKER", marker)
+    monkeypatch.setattr(reminders, "_probed", False)
+
+    def install(*outcomes):
+        fake = FakeRun(*outcomes)
+        monkeypatch.setattr(reminders.subprocess, "run", fake)
+        return fake
+    return marker, install
+
+
+def test_unanswered_probe_fails_fast_and_marks(transport):
+    marker, install = transport
+    fake = install("hang")
+    with pytest.raises(SystemExit, match="did not answer"):
+        reminders._osascript(reminders.JXA_READ, "Backlog")
+    assert len(fake.calls) == 1  # never reached the 600s bulk read
+    assert fake.calls[0][1]["timeout"] <= 60
+    assert marker.exists()
+
+
+def test_fresh_marker_skips_without_calling_osascript(transport):
+    marker, install = transport
+    marker.touch()
+    fake = install()
+    with pytest.raises(SystemExit, match="skipped"):
+        reminders._osascript(reminders.JXA_READ, "Backlog")
+    assert fake.calls == []
+
+
+def test_healthy_probe_clears_stale_marker_and_probes_once(transport):
+    marker, install = transport
+    marker.touch()
+    old = marker.stat().st_mtime - reminders.WEDGE_TTL - 1
+    import os
+    os.utime(marker, (old, old))
+    fake = install("3", "[]", '{"created":{}}')
+    assert reminders._osascript(reminders.JXA_READ, "Backlog") == "[]"
+    assert reminders._osascript(reminders.JXA_APPLY, "Backlog", "{}")
+    assert len(fake.calls) == 3  # one probe for the whole process
+    assert not marker.exists()
+
+
+def test_bulk_call_timeout_marks_and_exits_cleanly(transport):
+    marker, install = transport
+    install("3", "hang")
+    with pytest.raises(SystemExit, match="did not answer"):
+        reminders._osascript(reminders.JXA_READ, "Backlog")
+    assert marker.exists()

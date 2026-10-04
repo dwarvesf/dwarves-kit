@@ -1,0 +1,1 @@
+{ "name": "board-pane", "version": "0.1.0", "description": "/board opens a pane with the kit's board output and a Refresh button", "types": "./types/index.d.ts" }

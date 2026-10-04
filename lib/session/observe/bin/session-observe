@@ -6,7 +6,10 @@ Three views, all derived from the JSONL transcripts under ~/.claude/projects/:
               (--latency adds a per-skill total wall-time table, ranked by summed ms)
   tools     - which tools (Bash/Read/Edit/Agent/...) fired, with error rate
               (--errors TOOL groups that tool's error results by message prefix)
-  hooks     - per-hook execution latency (count/p50/p95/max) + hook errors
+  hooks     - per (hook, event) execution latency (count/p50/p95/max) + hook errors:
+              Stop comes from hookInfos (or, for a headless claude -p file with no
+              hookInfos, from its attachment copy); every other event comes from
+              attachment records (hook_success, hook_cancelled, hook_non_blocking_error)
   subagents - subagent (Agent/Task) spawns per day + by type, normalized per prompt
   friction  - deterministic friction: thrash (rework), permission-prompts, context
               pressure (compactions), skill mis-fires
@@ -22,6 +25,9 @@ Three views, all derived from the JSONL transcripts under ~/.claude/projects/:
               `model share` splits each row by model (priced, so an Opus fan-out is
               visible at a glance); not part of `report` (report is the weekly digest,
               burn is a live check)
+  timing    - per transcript: wall time, tool execution time (tool_use -> tool_result),
+              model time (gap before each tool_use), call count, and sleep-poll time
+              (Bash `sleep N`, N >= 10) plus the 5 slowest tool calls; not part of `report`
   report    - all of the above, the weekly self-observability digest
 
 The subagents view answers "is my subagent mix drifting?" that a raw tool count
@@ -31,8 +37,11 @@ busy day and a quiet day are comparable. Sidechain entries (the subagents' own
 transcripts) are excluded, so each spawn is counted once from the main session.
 
 Why JSONL and not a hook wrapper: the transcript already records, per entry,
-`hookInfos: [{command, durationMs}]` and `hookErrors`, plus every `tool_use`
-and `tool_result` block. So hook latency AND tool/skill usage come from one
+`hookInfos: [{command, durationMs}]` (Stop hooks only, via a stop_hook_summary
+system entry) and `hookErrors`, plus an `attachment` record per hook for every
+other event (SessionStart, PreToolUse, PostToolUse, PostToolUseFailure,
+UserPromptSubmit, SubagentStart, SubagentStop), plus every `tool_use` and
+`tool_result` block. So hook latency AND tool/skill usage come from one
 source with zero instrumentation, no dotfiles change, no always-on daemon.
 
 Stdlib only (no external deps) so it can run anywhere, including from a hook.
@@ -258,6 +267,17 @@ def hook_label(command):
     return toks[0].rsplit("/", 1)[-1][:40] or "?"
 
 
+def _hook_duration(x):
+    """A usable hook duration: int or float, excluding bool (bool is an int
+    subclass in Python, so a naive isinstance check would accept True/False
+    as a duration). Returns the value, or None if not usable."""
+    if isinstance(x, bool):
+        return None
+    if isinstance(x, (int, float)):
+        return x
+    return None
+
+
 def _rank_index(n, p):
     """Nearest-rank index into a sorted list of n values for percentile p.
 
@@ -274,6 +294,34 @@ def pctl(vals, p):
         return 0
     s = sorted(vals)
     return int(s[_rank_index(len(s), p)])
+
+
+SYNTHETIC_MODEL = "<synthetic>"
+
+
+def keep_best_usage(best, entry):
+    """Fold one transcript entry into `best`, one assistant API message per key.
+
+    Claude Code writes one API message as several records (one per content
+    block, or one per streamed chunk) that share message.id and requestId and
+    repeat the usage block. Summing every record over-counts (~2x on a real
+    session). A streamed chunk's output_tokens grows, so the first record can
+    undercount: keep the record with the largest output_tokens (ties go to the
+    later one). Key: message.id, else requestId, else the record uuid; a record
+    with none of the three cannot be deduped and always counts. Synthetic
+    records (model "<synthetic>") are local placeholders, never billed: skipped.
+    `best` is insertion-ordered, so callers iterate it in first-seen order."""
+    if entry.get("type") != "assistant":
+        return
+    msg = entry.get("message")
+    if not isinstance(msg, dict) or not isinstance(msg.get("usage"), dict):
+        return  # untrusted transcript: e.g. message: "oops"
+    if msg.get("model") == SYNTHETIC_MODEL:
+        return
+    key = msg.get("id") or entry.get("requestId") or entry.get("uuid") or object()
+    prev = best.get(key)
+    if prev is None or (msg["usage"].get("output_tokens") or 0) >= (prev["message"]["usage"].get("output_tokens") or 0):
+        best[key] = entry
 
 
 def collect(args):
@@ -311,7 +359,13 @@ def collect(args):
         f_first = f_last = None  # session wall-clock bounds
         f_tools = f_turns = 0    # session tool + prompt volume (for archetype)
         f_interrupted = False
+        f_usage = {}             # deduped assistant usage records, tallied into tok at end of file
         f_sidechain = False      # a subagent's own transcript, not a session Han ran
+        stop_buffer = []          # buffered (key, durationMs, sample) from Stop attachments,
+                                   # committed only if this file has no hookInfos at all
+                                   # (a headless claude -p transcript has no stop_hook_summary
+                                   # system entry, so its attachment copy is the only record)
+        file_has_hookinfos = False
         for entry in iter_entries(path):
             # day + sidechain are needed by both the prompt-turn count and the
             # subagent-spawn count; a spawn in a sidechain file is the subagent's
@@ -326,19 +380,14 @@ def collect(args):
                 if f_first is None:
                     f_first = ts
                 f_last = ts
-            # token economy: the usage block rides on assistant messages.
-            # message/usage are untrusted transcript fields (e.g. message: "oops");
+            # token economy: the usage block rides on assistant messages, deduped
+            # per API message and tallied at end of file (see keep_best_usage).
+            # message is an untrusted transcript field (e.g. message: "oops");
             # a non-dict here must not crash the .get() calls below.
+            keep_best_usage(f_usage, entry)
             msg = entry.get("message")
             if not isinstance(msg, dict):
                 msg = {}
-            u = msg.get("usage")
-            if isinstance(u, dict):
-                t = tok[msg.get("model") or "?"]
-                t[0] += u.get("input_tokens") or 0
-                t[1] += u.get("output_tokens") or 0
-                t[2] += u.get("cache_read_input_tokens") or 0
-                t[3] += u.get("cache_creation_input_tokens") or 0
             # A prompt turn is a real user message (text), not a tool_result carrier.
             if entry.get("type") == "user" and not side and day:
                 c = msg.get("content")
@@ -361,18 +410,49 @@ def collect(args):
             if entry.get("isCompactSummary") and day:
                 compact_day[day] += 1
 
-            # hookInfos/hookErrors ride on (mostly) system entries.
+            # hookInfos/hookErrors ride on (mostly) system entries: a
+            # stop_hook_summary entry, the only observed source of
+            # hookInfos, so every hookInfos entry is a Stop hook.
             hi = entry.get("hookInfos")
             if isinstance(hi, list):
+                # the field's presence, not any one entry's duration, is what
+                # marks this file as having the hookInfos Stop source
+                file_has_hookinfos = True
                 for h in hi:
                     if not isinstance(h, dict):
                         continue
+                    dur = _hook_duration(h.get("durationMs"))
+                    if dur is None:
+                        continue  # no usable duration: skip, don't count as zero
                     lab = hook_label(str(h.get("command", "?")))
-                    hook_durs[lab].append(h.get("durationMs") or 0)
-                    hook_sample.setdefault(lab, str(h.get("command", ""))[:60])
+                    key = (lab, "Stop")
+                    hook_durs[key].append(dur)
+                    hook_sample.setdefault(key, str(h.get("command", ""))[:60])
             he = entry.get("hookErrors")
             if isinstance(he, list):
                 hook_errors += len(he)
+
+            # attachment records: hook_success (and any other attachment type
+            # carrying command + durationMs, e.g. hook_cancelled, hook_non_blocking_error)
+            # cover every hook event other than what hookInfos already counts.
+            # A cancelled/failed hook still cost turn time, so it is counted too.
+            if entry.get("type") == "attachment":
+                att = entry.get("attachment")
+                if isinstance(att, dict):
+                    cmd = att.get("command")
+                    dur = _hook_duration(att.get("durationMs"))
+                    if isinstance(cmd, str) and cmd and dur is not None:
+                        event = att.get("hookEvent")
+                        event = event if isinstance(event, str) and event else "?"
+                        lab = hook_label(cmd)
+                        key = (lab, event)
+                        if event == "Stop":
+                            # buffered: committed only if this file has no
+                            # hookInfos at all (see stop_buffer comment above)
+                            stop_buffer.append((key, dur, cmd[:60]))
+                        else:
+                            hook_durs[key].append(dur)
+                            hook_sample.setdefault(key, cmd[:60])
 
             for b in blocks(entry):
                 if not isinstance(b, dict):
@@ -438,7 +518,25 @@ def collect(args):
                             label = "Bash:" + id_cmd[tid]
                         perm[label] += 1
 
-        # end of transcript (= one session): fold per-session edit counts into thrash
+        for e in f_usage.values():
+            m = e["message"]
+            u = m["usage"]
+            t = tok[m.get("model") or "?"]
+            t[0] += u.get("input_tokens") or 0
+            t[1] += u.get("output_tokens") or 0
+            t[2] += u.get("cache_read_input_tokens") or 0
+            t[3] += u.get("cache_creation_input_tokens") or 0
+
+        # end of transcript (= one session): reconcile buffered Stop attachments.
+        # A file with hookInfos already counted every Stop hook in it via that
+        # branch, so its buffered attachment copies are discarded (double-counting
+        # rule). A headless (claude -p) file has no hookInfos at all, so its
+        # buffered Stop attachments are the only record and are committed.
+        if not file_has_hookinfos:
+            for key, dur, sample in stop_buffer:
+                hook_durs[key].append(dur)
+                hook_sample.setdefault(key, sample)
+        # fold per-session edit counts into thrash
         for fp, n in file_edits.items():
             if n >= THRASH_MIN:
                 thrash[fp] += 1
@@ -519,12 +617,16 @@ def skill_usage_rows(counts, errs, last, recent, top):
 
 
 def hook_rows(durs, sample, top):
+    """One row per (hook label, event) key. --top caps the number of these
+    rows, not the number of distinct hook labels: a hook firing under N
+    events can occupy up to N of the top slots."""
     rows = []
     ranked = sorted(durs.items(), key=lambda kv: max(kv[1]) if kv[1] else 0, reverse=True)
     if top:
         ranked = ranked[:top]
-    for lab, vals in ranked:
-        rows.append([lab, len(vals), pctl(vals, 50), pctl(vals, 95), max(vals) if vals else 0, sample.get(lab, "")])
+    for key, vals in ranked:
+        lab, event = key
+        rows.append([lab, event, len(vals), pctl(vals, 50), pctl(vals, 95), max(vals) if vals else 0, sample.get(key, "")])
     return rows
 
 
@@ -708,7 +810,7 @@ def burn_collect(args, now, cutoff):
             "cwd": None, "reqs": 0, "input": 0, "cache_create": 0,
             "cache_read": 0, "output": 0, "sub_active": set(), "by_model": {},
             "title": None, "last_ts": None, "ctx": 0,
-            "seen_keys": set(),
+            "best": {},
         })
 
     # main files before subagent files, so "the first entry carrying cwd" (per
@@ -740,29 +842,35 @@ def burn_collect(args, now, cutoff):
             if not isinstance(msg, dict):
                 continue  # e.g. message: "oops" (untrusted transcript)
             u = msg.get("usage")
-            if not isinstance(u, dict):
+            if not isinstance(u, dict) or msg.get("model") == SYNTHETIC_MODEL:
                 continue
             side = bool(entry.get("isSidechain"))
-            inp = u.get("input_tokens") or 0
-            cc = u.get("cache_creation_input_tokens") or 0
-            cr = u.get("cache_read_input_tokens") or 0
-            out = u.get("output_tokens") or 0
 
             # ctx: live context = the LAST main-chain usage in FILE ITERATION
             # ORDER (spec), independent of timestamp -- a trailing main-chain
             # entry with no timestamp must still win over an earlier one.
             if not side:
-                r["ctx"] = inp + cc + cr
+                r["ctx"] = ((u.get("input_tokens") or 0)
+                            + (u.get("cache_creation_input_tokens") or 0)
+                            + (u.get("cache_read_input_tokens") or 0))
 
-            if not active:
+            keep_best_usage(r["best"], entry)
+
+    # window + tally after dedup: the kept record is the message's final chunk,
+    # so its timestamp decides whether the message falls inside [cutoff, now].
+    for r in sess.values():
+        for entry in r.pop("best").values():
+            ts = entry.get("timestamp")
+            dt = parse_ts(ts) if isinstance(ts, str) else None
+            epoch = dt.timestamp() if dt else None
+            if epoch is None or epoch < cutoff:
                 continue  # older than --since: not counted
-
-            key = (msg.get("id"), entry.get("requestId"))
-            if key != (None, None):
-                if key in r["seen_keys"]:
-                    continue  # a streamed chunk repeating the same usage block
-                r["seen_keys"].add(key)
-            # else: neither id present, nothing to dedup on; count every such entry
+            msg = entry["message"]
+            u = msg["usage"]
+            inp = u.get("input_tokens") or 0
+            cc = u.get("cache_creation_input_tokens") or 0
+            cr = u.get("cache_read_input_tokens") or 0
+            out = u.get("output_tokens") or 0
             r["reqs"] += 1
             r["input"] += inp
             r["cache_create"] += cc
@@ -1135,7 +1243,7 @@ def entry_fee_session(path):
             continue
         msg = entry.get("message")
         u = msg.get("usage") if isinstance(msg, dict) else None
-        if not isinstance(u, dict):
+        if not isinstance(u, dict) or msg.get("model") == SYNTHETIC_MODEL:
             continue
         fee = ((u.get("input_tokens") or 0)
                + (u.get("cache_creation_input_tokens") or 0)
@@ -1336,6 +1444,92 @@ def run_entry_fee(args):
     print()
 
 
+# A Bash call is a sleep-poll when any chained segment is `sleep N` with N >= SLEEP_POLL_MIN.
+SLEEP_POLL_MIN = 10
+_SLEEP_RE = re.compile(r"(?:^|[;&|\n])\s*sleep\s+(\d+(?:\.\d+)?)")
+
+
+def is_sleep_poll(name, inp):
+    if name != "Bash" or not isinstance(inp, dict):
+        return False
+    cmd = inp.get("command")
+    return isinstance(cmd, str) and any(float(n) >= SLEEP_POLL_MIN for n in _SLEEP_RE.findall(cmd))
+
+
+def timing_session(path):
+    """One transcript -> wall/tool/model seconds, call count, sleep-poll totals, per-call durations.
+
+    tool  = tool_use ts -> matching tool_result ts (by tool_use_id).
+    model = last tool_result or user message ts -> next assistant tool_use ts.
+    Sidechain entries are skipped so a subagent's calls are not double counted."""
+    first = last = ready = None
+    model = 0.0
+    uses, calls = {}, []
+    for e in iter_entries(path):
+        if e.get("isSidechain"):
+            continue
+        ts = parse_ts(e.get("timestamp"))
+        if ts is None:
+            continue
+        first = first or ts
+        last = ts
+        for b in blocks(e):
+            if not isinstance(b, dict):
+                continue
+            if e.get("type") == "assistant" and b.get("type") == "tool_use" and b.get("id") not in uses:
+                if ready is not None:
+                    model += (ts - ready).total_seconds()
+                    ready = None
+                inp = b.get("input") if isinstance(b.get("input"), dict) else {}
+                target = inp.get("command") or inp.get("file_path") or ""
+                uses[b.get("id")] = (ts, b.get("name") or "?", str(target).replace("\n", " ")[:80], is_sleep_poll(b.get("name"), inp))
+            elif e.get("type") == "user" and b.get("type") == "tool_result":
+                u = uses.pop(b.get("tool_use_id"), None)
+                if u:
+                    calls.append({"tool": u[1], "duration_s": (ts - u[0]).total_seconds(), "target": u[2], "sleep_poll": u[3]})
+        if e.get("type") == "user":
+            ready = ts
+    if first is None:
+        return None
+    sleeps = [c for c in calls if c["sleep_poll"]]
+    return {"file": path, "wall_s": (last - first).total_seconds(),
+            "tool_s": sum(c["duration_s"] for c in calls), "model_s": model, "calls": len(calls),
+            "sleep_poll_calls": len(sleeps), "sleep_poll_s": sum(c["duration_s"] for c in sleeps),
+            "_calls": calls}
+
+
+def _num(x):
+    return int(x) if float(x).is_integer() else round(x, 1)
+
+
+def run_timing(args):
+    """The `timing` view: where a session's wall clock went (tools vs model vs sleep-polls).
+    Own I/O path like entry-fee/burn; not part of `report`."""
+    sessions = [s for s in (timing_session(p) for p in iter_files(args)) if s]
+    slowest = sorted((dict(c, file=s["file"]) for s in sessions for c in s["_calls"]),
+                     key=lambda c: -c["duration_s"])[:5]
+    keys = ("wall_s", "tool_s", "model_s", "sleep_poll_s")
+    rows = [{**{k: v for k, v in s.items() if k != "_calls"}} for s in sessions]
+    for r in rows:
+        for k in keys:
+            r[k] = _num(r[k])
+    for c in slowest:
+        c["duration_s"] = _num(c["duration_s"])
+        del c["sleep_poll"]
+    if args.top:
+        rows = rows[:args.top]
+    if args.json:
+        print(json.dumps({"timing": {"files": len(sessions), "transcripts": rows, "slowest": slowest}}, indent=2))
+        return
+    print(f"# timing  ({len(sessions)} transcripts; seconds; sleep-poll = Bash sleep >= {SLEEP_POLL_MIN}s)")
+    print_table(["transcript", "wall", "tool", "model", "calls", "sleep-polls", "sleep-poll s"],
+                [[short_project(os.path.basename(r["file"])), r["wall_s"], r["tool_s"], r["model_s"], r["calls"],
+                  r["sleep_poll_calls"], r["sleep_poll_s"]] for r in rows])
+    print()
+    print("# slowest tool calls")
+    print_table(["tool", "seconds", "target"], [[c["tool"], c["duration_s"], c["target"]] for c in slowest])
+
+
 def emit(args, data):
     if args.json:
         out = {
@@ -1346,7 +1540,7 @@ def emit(args, data):
                        for k, v in data["skills"].most_common()],
             "skill_latency": [{"skill": r[0], "fires": r[1], "total_ms": r[2], "p50_ms": r[3], "p95_ms": r[4], "max_ms": r[5]} for r in skill_latency_rows(data["skill_durs"], 0)],
             "tools": [{"tool": k, "count": v, "errors": data["tool_err"].get(k, 0)} for k, v in data["tools"].most_common()],
-            "hooks": [{"hook": lab, "count": len(v), "p50_ms": pctl(v, 50), "p95_ms": pctl(v, 95), "max_ms": max(v) if v else 0} for lab, v in data["hook_durs"].items()],
+            "hooks": [{"hook": lab, "event": event, "count": len(v), "p50_ms": pctl(v, 50), "p95_ms": pctl(v, 95), "max_ms": max(v) if v else 0} for (lab, event), v in data["hook_durs"].items()],
             "hook_errors": data["hook_errors"],
             "subagents": {
                 "by_day": [{"day": d, "spawns": data["sub_day"][d], "prompts": data["turns_day"].get(d, 0)} for d in sorted(data["sub_day"], reverse=True)],
@@ -1412,7 +1606,7 @@ def emit(args, data):
             print()
     if want in ("hooks", "report"):
         print(f"# hooks  ({data['hook_errors']} hook errors across {data['files']} transcripts)")
-        print_table(["hook", "runs", "p50ms", "p95ms", "maxms", "sample"], hook_rows(data["hook_durs"], data["hook_sample"], args.top))
+        print_table(["hook", "event", "runs", "p50ms", "p95ms", "maxms", "sample"], hook_rows(data["hook_durs"], data["hook_sample"], args.top))
         print()
     if want in ("subagents", "report"):
         total_sub = sum(data["sub_type"].values())
@@ -1455,7 +1649,7 @@ def emit(args, data):
 
 def main(argv=None):
     p = argparse.ArgumentParser(prog="session-observe", description="Report Claude Code skill/tool/hook usage from session transcripts.")
-    p.add_argument("cmd", choices=["skills", "tools", "hooks", "subagents", "friction", "sessions", "cost", "burn", "entry-fee", "report"], help="which view")
+    p.add_argument("cmd", choices=["skills", "tools", "hooks", "subagents", "friction", "sessions", "cost", "burn", "entry-fee", "timing", "report"], help="which view")
     src = p.add_mutually_exclusive_group()
     src.add_argument("--file", help="parse a single transcript file (used by tests)")
     src.add_argument("--project", help="project slug under ~/.claude/projects/")
@@ -1483,6 +1677,10 @@ def main(argv=None):
 
     if args.cmd == "entry-fee":
         run_entry_fee(args)
+        return 0
+
+    if args.cmd == "timing":
+        run_timing(args)
         return 0
 
     data = collect(args)

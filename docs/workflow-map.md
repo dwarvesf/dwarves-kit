@@ -18,7 +18,7 @@
 | 6 | The V-model | left arm builds + statically reviews, right arm dynamically tests; test-plan crossbar at the vertex |
 | 7 | Goal loop | bounded engine: increment -> verify -> done/blocker stops; anti-rationalization backstop |
 | 8 | Debug loop | bounded engine: Phase 0..4 under the iron law (no fix without recorded root cause) |
-| 9 | Execute pipeline | bounded engine: worker -> task-verifier -> fix-agent (max 2) -> integration-verifier |
+| 9 | Execute pipeline | bounded engine: one builder -> end verifiers (task, integration, acceptance) -> fix-agent (max 2) |
 | 10 | Mid-flight amend | the add-only spec amend excursion off the execute pipeline |
 | 11 | 11 opt-in side-flows | trigger -> writes-to -> stop for each advisory flow |
 | 12 | 7 alternate flows | the edges that fire when the happy path does not hold |
@@ -56,7 +56,7 @@
   /kit:spec-validate  Status: VALIDATED
        |
        v
-  /kit:execute ...... verification pipeline (worker -> task-verifier -> fix-agent, max 2)
+  /kit:execute ...... verification pipeline (builder -> end verifiers -> fix-agent, max 2)
        |
        v
   /kit:review ....... review verdict recorded
@@ -103,17 +103,17 @@
                                           backfill    how big / how risky ?
                                                       |- trivial edit ....... tiny
                                                       |- one bounded change . normal
-                                                      +- risk-list match .... full
+                                                      +- risk-list match .... full (suggested)
 
-  when in doubt between two lanes, take the heavier one
+  default to normal; the diff floor covers hard paths
 ```
 
 ## 4 · The cycle
 
 ```
   Think -> Design -> Design critique -> Spec -> Validate -> Test plan
-  (adv)   (opt-in)     (opt-in)       [HARD:    (full)     (default
-                                       spec-drift          normal/full)
+  (adv)   (opt-in)     (opt-in)       [HARD:    (normal/   (default
+                                       spec-drift  full)     normal/full)
                                        guard]
      -> Build -> Review -> Docs -> Ship -> Reflect
        [HARD:    (adv)     (adv)  [HARD:    (adv)
@@ -161,7 +161,7 @@ Phase 0 is universal: `/kit:grill`, then the done scenario, before any loop runs
         +--- test design: /kit:test-plan writes the tests ---+
                  (vertex: BUILD = code + test code)
 
-   any right-arm PASS -> recheck-verifier (fresh-context re-audit)
+   sampled right-arm PASS -> recheck-verifier (fresh-context re-audit)
    whole assembled work -> advisor (kit-default extra lens)
 ```
 
@@ -204,32 +204,23 @@ Phase 0 is universal: `/kit:grill`, then the done scenario, before any loop runs
 ## 9 · Execute verification pipeline
 
 ```
-   /kit:execute  (record pre-build base ref)
+   /kit:execute  (record pre-build base ref; one human go before the builder)
         |
         v
-   +-- for each task ------------------------------------------------+
-   |   worker subagent (fresh context) --> task-verifier (read-only) |
-   |                +-------------------+-------------------+        |
-   |             PASS             FAIL:fixable        FAIL:escalate  |
-   |                |                  |                    |        |
-   |                |                  v                    |        |
-   |                |           fix-agent (scoped)          |        |
-   |                |           re-verify; retry < 2 --+    |        |
-   |                |           retries == 2 ----------+--> |        |
-   |                v                                  |    v        |
-   |          mark task done <-------------------------+  ESCALATE   |
-   +---------+-------------------------------------------------------+
-             | all tasks PASS
-             v
-   phase checkpoint (human: continue / review / stop)
-             |
-             v
-   integration-verifier (read-only, diffs whole build from base ref)
+   builder subagent (fresh context, whole-spec brief, one commit per task)
+        |
+        v
+   task-verifier: ONE pass over every task's criteria
+   integration-verifier (multi-task)   acceptance-verifier
         +----+---------------+
       PASS  FAIL:fixable  FAIL:escalate
-        |     | (fix-agent)    |
-        v     v                v
-     build complete <-- re-check   ESCALATE
+        |     | (fix-agent, retry < 2;      |
+        |     |  exhausted -> Result: PARTIAL)  v
+        v     v                           ESCALATE
+   check-edit signal; sampled recheck; negative control
+        |
+        v
+     build complete
 ```
 
 ## 10 · Mid-flight amend micro-loop
@@ -263,7 +254,8 @@ Advisory, never blocking. Output binds to the active spec (replace-not-stack).
   /kit:visual-team         a visual/UI design exists      ## Visual critique        verdict recorded
   /kit:ui-design           downstream UI, after /design   ## UI design              SOLID / max-2 revise
   /kit:test-plan           before /execute                ## Test plan              matrix written
-  /kit:test-plan-review-team  after /test-plan, 6 lenses  ## Test plan critique     SOLID / REVISE / RECONSIDER
+  /kit:test-plan-review-team  after /test-plan, --light   ## Test plan critique     SOLID / REVISE / RECONSIDER
+                              (6 lenses at blind-spot)
   /kit:test-write          after a SOLID test-plan critique ## test files            rows covered, tests execute
   /kit:review-team         PR-grade review, 3 lenses      ## Review                 SHIP / FIX / DO NOT
   /kit:absorb              maintainer absorption audit    docs/absorption/ report   proposal-only
@@ -304,7 +296,7 @@ The ONLY blockers; everything else advises or warns.
   | TABLE, git reset    |  |                     |  | guess-fix while      |  | that did not run    |
   | --hard, kubectl     |  | PreToolUse hook,    |  | ## Root cause empty  |  |                     |
   | delete)             |  | exit 2              |  |                      |  | /execute gate       |
-  | PreToolUse, exit 2  |  |                     |  | Stop hook            |  | (worker->verifier)  |
+  | PreToolUse, exit 2  |  |                     |  | Stop hook            |  | (builder->verifier) |
   +---------------------+  +---------------------+  +----------------------+  +---------------------+
 ```
 
@@ -316,10 +308,11 @@ What an ordinary change in this repo runs, from edit to landed.
   edit
     |
     v
-  bash tests/run-all.sh ...... the suites the diff touches, plus the six
+  bash tests/run-all.sh ...... the suites the diff touches, plus the five
     |                          always-on tree-wide lints (kit-contract,
     |                          config-registry, no-personal-paths,
-    |                          no-scattered-ids, boundary-lint, meta).
+    |                          no-scattered-ids, boundary-lint); meta only
+    |                          when the diff touches a path it reads.
     |                          About 1-2 minutes on a Mac.
     v
   commit ..................... commit-format hook [HARD]
@@ -335,7 +328,8 @@ What an ordinary change in this repo runs, from edit to landed.
                                tidy, activity line, retro
 
   before a release tag only:
-    bash tests/run-all.sh --all ... the full glob, 13-15 minutes
+    KIT_RUN_ALL=1 bash tests/run-all.sh --all ... the full glob, 13-15 minutes
+                                    (refuses, exit 64, without CI or KIT_RUN_ALL=1)
     gh workflow run test .......... the macOS + Ubuntu matrix in CI
     git push origin v<x.y.z> ...... the same workflow, fired by the tag
 ```

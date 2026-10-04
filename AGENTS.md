@@ -63,8 +63,8 @@ ledger and the ship-gate, so route past them.
    `WORKFLOW.md ## Type loops`, with its executor from the registry's `agent` column. The lane
    is STILL sized for every type (it is the evidence contract ship-gate enforces via the spec's
    `Lane:` header; the type is the content contract, `WORKFLOW.md ### Lane x type composition`). For code:
-   pick `tiny` / `normal` / `full` / `bug` / `backfill` per `WORKFLOW.md`; when in doubt between
-   two lanes, take the heavier one. **Between classification and done comes the grill** (`/kit:grill`, or its
+   pick `tiny` / `normal` / `full` / `bug` / `backfill` per `WORKFLOW.md`; default to `normal`; the
+   classifier only suggests `full`, and the diff floor at push applies full-lane gates to hard paths. **Between classification and done comes the grill** (`/kit:grill`, or its
    one-question-at-a-time discipline driven inline): interview until the task is actually
    understood, type-shaped questions, recommended answers, contradictions checked against the
    repo, answers WRITTEN as they resolve (glossary / sparse ADR / the goal draft's Context).
@@ -125,7 +125,7 @@ entry, print where the run stands: `bash "${DWARVES_KIT:-$HOME/.claude/dwarves-k
 full story of a past or in-flight run: `bash "${DWARVES_KIT:-$HOME/.claude/dwarves-kit}/lib/telemetry/lane-telemetry.sh" trace <rid>`.
 
 **Escalate the review for enforcement surfaces.** A run touching `lib/` or
-`hooks/` uses `/kit:review-team` (multi-lens), not a single reviewer.
+`hooks/` uses `/kit:review-team` (multi-lens), not a single reviewer. `/kit:battery` is gated by size: a SMALL change (`lib/gate/battery-gate.sh` prints `SKIP`) owes a proof of done instead.
 
 **Record your gates.** When you run a phase gate (`/kit:spec`, `/kit:spec-validate`, `/kit:execute`, `/kit:review`, `/kit:docs`, `/kit:ship`, ...), record it so the run is auditable: `bash "${DWARVES_KIT:-$HOME/.claude/dwarves-kit}/lib/gate/gate-ledger.sh" record <rid> <Phase> ran`; record a deliberate skip as `skipped "<why>"`. The `ship-gate` hook refuses a push whose lane has a required gate with no `ran`/`override` entry. Phase ORDER matters too: the lane plan is the V-model descent order; `bash "${DWARVES_KIT:-$HOME/.claude/dwarves-kit}/lib/gate/gate-ledger.sh" descent <rid> <lane>` names out-of-order records, surfaced at ship as an advisory. Full convention + the logged-override path: WORKFLOW.md "## Gate ledger and ship enforcement".
 
@@ -146,6 +146,17 @@ what changed and what was not attempted.** If you could not run the check, repor
 that plainly; the anti-rationalization hook is the backstop for premature
 completion under Claude Code, but the honesty obligation is yours under any
 runtime.
+
+**Show the proof, never only describe it.** A proof of done carries what the run
+really printed: the test recap or the tail of the run under an `Output:` line, or a
+committed screenshot or GIF for visual work (a video or a demo flow is linked beside
+it). The ship-gate refuses a proof whose green run is typed words alone. The same
+captured output goes in the final response, with the PR link, and in the PR body
+(`wrap land` builds the body from the proof file). A final response that says only
+"tests pass" has shown nothing. With `[proof] visual = true`, a UI change also owes an
+image through `bin/proof-asset put`; `proof-gate.sh contract` names what each task type owes.
+
+**Run tests the fast way.** Iterate on one suite (`bash tests/test-<name>.sh`). Check regressions once, with `bash tests/run-all.sh --changed --time`: it runs only the suites the diff against `origin/master` touches, in parallel. Never loop over suites one by one, and never clone master to compare a baseline. The full `--all` glob takes about 25 minutes, and a nightly job runs it on the operator's host, so a session or worker never runs it. A spec line such as "no regression in every `tests/test-wrap*.sh`" means `--changed`, which selects those suites when the diff touches their modules.
 
 **Deployable-done (ADR-0028, reusing ADR-0025).** DEPLOYABLE work is anything that runs
 somewhere, a service, a daemon, a feature behind a flag, or any change `lib/gate/proof-ledger.sh
@@ -176,7 +187,7 @@ direction or irreversible cost that a goal loop must not make on its own.
 - **Architecture direction** - a change to how the pieces fit, a new component, an interface or data-model shape.
 - **Source-of-truth hierarchy** - which file or section is canonical when two disagree (for example, moving the operate-contract between `AGENTS.md`, `CLAUDE.md`, and `WORKFLOW.md`).
 - **Validation removal** - weakening, deleting, or bypassing a test, an assertion, a hook, or any guardrail.
-- **Risk-classification change** - moving work to a lighter lane, or narrowing a `full`-lane trigger (auth, authz, hooks, data model, data loss, audit/security, external provider, API contract, migration).
+- **Risk-classification change** - moving an assigned lane lighter, dropping a phase from a lane, or narrowing a hard path or a full-lane trigger. Staying on the default lane after a suggestion is not a lane change; the operator decides whether to assign the heavier one.
 - **Privacy / security** - secrets, credentials, access scope, anything that touches what data leaves the repo or who can reach it.
 
 When you pause: write the named blocker, state the decision you are not making and why, and stop.

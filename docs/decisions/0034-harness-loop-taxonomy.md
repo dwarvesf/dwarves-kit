@@ -197,6 +197,30 @@ class explicitly and adds `onboard-detect.sh`, which the census left off that li
 suggest a subsystem boundary that does not exist. No taxonomy or module-registry change follows
 from this amendment.
 
+## Amendment (2026-09-30, SPEC-357): a second LaunchAgent for the harvest sweep
+
+Decisions 6 and 9 are amended, not overturned: the harvest sweep gets its own LaunchAgent beside
+`kit-weekly`, named `harvest-sweep` (the Mini's instance is `mini.harvest-sweep`, a prefix already
+in vps-mon's `OWNED_PREFIXES`), running every `harvest.schedule_hours` (default 6h) on
+`StartInterval`.
+
+Why kit-weekly does not carry it: decision 9's ONE scheduler is a fixed weekly slot walking a
+declarative jobs list, and its rejected alternative was N plists fragmenting one shared, kit-owned
+jobs list. The sweep needs a fixed six-hour cadence, not a weekly slot, and a per-job interval
+inside kit-weekly is exactly the fragmentation decision 9 rejected. The cadence mismatch, not a
+new job, is what makes this a second LaunchAgent rather than a jobs-list line.
+
+The ownership split stays the decision-6 fence, applied the way `lib/sync/deploy/macos/`
+(board-sync-cron) already applies it: the kit owns the plist template, the launcher
+(`deploy/macos/harvest-sweep/harvest-sweep`), and the installer (`deploy/macos/harvest-sweep/install`);
+the consumer instantiates the LaunchAgent on their own host and owns the instance plus the
+heartbeat bridge (`~/.config/harvest-sweep/bridge`). The kit ships no endpoint and no secret.
+
+Rejected: a kit-weekly jobs-list entry (fixed slot cannot express a 6h cadence); a per-job
+interval knob inside kit-weekly (the plist-per-job fragmentation decision 9 rejected, one level
+down); a kit-side installed marker (the `sweep/installed` file is per-host consumer state, the
+same fence as the LaunchAgent instance).
+
 ## Consequences
 
 - SG-04 executes the census target state in one wave (moves, collapses, new bin entries, skill relocation, call-site repoints incl. the dotfiles companion PR); SG-05/06 build `learn propose`/`drain` in the decision-1 home; SG-08 builds `bin/config` (decision 4) + the one module-metadata registry at `lib/config/module-registry.md` (decision 3); SG-09 builds `/kit:onboard` inside the decision-4 fences; SG-10 retires the per-job plist per decision 9.

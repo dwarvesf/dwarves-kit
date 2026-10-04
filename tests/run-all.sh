@@ -13,17 +13,34 @@
 # Usage: bash tests/run-all.sh [--all | --only <pattern> | --changed [<base>]] [--time]
 #        Bare (no argument) is --changed: only the suites the diff against <base> touches
 #        (default base: the merge-base with origin/master), plus the always-on lints. The
-#        local check. --all is the full glob, what CI runs.
+#        local check. --all is the full glob, what CI and the nightly job run; it refuses
+#        (exit 64) unless CI is non-empty or KIT_RUN_ALL=1.
 #        --time appends each suite's elapsed seconds to its report line and prints a
 #        slowest-10 block after the report. It may appear before or after the mode
 #        argument, and combines with --all, --only and --changed.
-# Env:   RUN_ALL_JOBS=<n>          parallel suites (default: auto on macOS, 1 elsewhere)
-#        RUN_ALL_TIMEOUT_SECS=<n>  per-suite ceiling (default: 300)
+# Env:   KIT_RUN_ALL=1             allow --all outside CI (the nightly job sets it)
+#        RUN_ALL_JOBS=<n>         parallel suites (default: auto on macOS, 1 elsewhere)
+#        RUN_ALL_TIMEOUT_SECS=<n>  per-suite ceiling (default: 300). When set it applies to every
+#                                  suite and overrides the per-suite table (suite_timeout below).
 # Exit:  0 all green, 1 one or more failed (every failure is listed at the end).
 
 set -uo pipefail
 KIT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$KIT_DIR" || exit 1
+
+# --all is the ~25 minute full glob, and it holds the per-host test lock below for all of it,
+# so one session's --all queued every other session's run behind it. A README line saying
+# "release only" did not stop that; this refusal does. GitHub Actions sets CI=true, the
+# nightly job sets KIT_RUN_ALL=1. Checked before the lock, so a refused run never waits on it.
+for _a in "$@"; do
+  if [ "$_a" = "--all" ] && [ -z "${CI:-}" ] && [ "${KIT_RUN_ALL:-}" != "1" ]; then
+    echo "run-all: --all is for CI and the nightly job (KIT_RUN_ALL=1); locally run: bash tests/run-all.sh --changed --time" >&2
+    exit 64
+  fi
+done
+
+# One heavy run at a time per host (tests/lib/run-lock.sh); re-execs this script under the lock.
+source "$KIT_DIR/tests/lib/run-lock.sh"; run_lock_exec "$KIT_DIR/tests/run-all.sh" "$@"
 
 # --time is order-free, so it is pulled out of the argument list before the positional
 # parsing below ($1 is the mode, $2 is --only's pattern or --changed's base) rather than
@@ -37,6 +54,17 @@ set -- ${_args[@]+"${_args[@]}"}
 
 # Per-suite ceiling. One hung suite must not burn the whole CI job's budget.
 TIMEOUT_SECS="${RUN_ALL_TIMEOUT_SECS:-300}"
+# Heavy suites that legitimately outrun the default under a parallel run get their own ceiling here,
+# one case arm each, so the global ceiling stays tight for the other suites. test-meta takes ~130s
+# alone and passes 900 assertions, but crosses 300s when the whole run does four suites at a time.
+# An explicit RUN_ALL_TIMEOUT_SECS wins for every suite (it is the operator's override).
+suite_timeout() {
+  if [ -n "${RUN_ALL_TIMEOUT_SECS:-}" ]; then echo "$RUN_ALL_TIMEOUT_SECS"; return; fi
+  case "$1" in
+    test-meta) echo 900 ;;
+    *) echo "$TIMEOUT_SECS" ;;
+  esac
+}
 _timeout() { if command -v timeout >/dev/null 2>&1; then timeout "$@"; else shift; "$@"; fi; }
 
 # --- worker mode -------------------------------------------------------------
@@ -51,7 +79,9 @@ if [ "${1:-}" = "--run-one" ]; then
   # that variable nor the arithmetic to make sub-second numbers worth the trouble. The
   # stamp is written unconditionally; only the collate loop cares whether --time was given.
   _t0="$(date +%s)"
-  if _timeout "$TIMEOUT_SECS" bash "$suite" >"$outdir/$name.log" 2>&1; then
+  _limit="$(suite_timeout "$name")"
+  echo "$_limit" >"$outdir/$name.limit"
+  if _timeout "$_limit" bash "$suite" >"$outdir/$name.log" 2>&1; then
     echo "ok" >"$outdir/$name.status"
     mark="."
   else
@@ -119,19 +149,17 @@ trap 'rm -rf "$OUTDIR"' EXIT
 
 # --- --changed: pick suites by the diff ---------------------------------------
 # The full glob is 13-15 minutes sequential on a Mac, and a branch that touches one lib
-# file needs a handful of those suites. Selection is a text match, on purpose: a suite is
-# picked when a CODE line of it names the basename of a changed file (a comment naming a
-# file is documentation, not a dependency: the wavefront suite's header mentions this
-# runner and cost a 300s timeout on the first dogfood run), when it is itself changed,
-# or when it is tests/test-<mod>*.sh for a changed lib/<mod>/ file.
+# file needs a handful of those suites. The selection rule lives in ONE place,
+# bin/test-affected --list (path or long-basename references, changed suites, lib/<mod>
+# suites, tests/test-meta.sh when the diff touches what it reads); this runner only executes
+# what it names, in parallel.
 #
-# A suite may declare that it must run on every diff:
+# A suite may also declare that it must run on every diff:
 #   # always: lints every KIT_* env read in the tree against the module registry
 # Those are the tree-wide lints (naming contract, config registry, personal paths,
 # scattered ids, engine boundary, the registry pin). They fail on a file you ADDED while
 # naming no file you touched, so no diff-derived pick can reach them.
 # Over-picking is fine; a suite this misses is one the changed file never appears in.
-# ponytail: basename grep, no dependency graph; add one if over-picking starts to cost.
 PICKED=""
 if [ "$MODE" = "--changed" ]; then
   base="${2:-}"
@@ -140,31 +168,24 @@ if [ "$MODE" = "--changed" ]; then
          || git merge-base HEAD master 2>/dev/null \
          || echo HEAD)"
   fi
-  changedlist="$OUTDIR/changed"
-  { git diff --name-only "$base" -- . 2>/dev/null; git ls-files --others --exclude-standard; } \
-    | grep -v '^$' | sort -u >"$changedlist"
-  if [ ! -s "$changedlist" ]; then
+  listing="$OUTDIR/listing"
+  if ! bash "$KIT_DIR/bin/test-affected" --base "$base" --list >"$listing" 2>&1; then
+    echo "run-all: bin/test-affected --list failed; running everything"
+    sed 's/^/  /' "$listing"
+  elif grep -q '^test-affected: no changes' "$listing"; then
     echo "run-all: --changed found no diff against $(git rev-parse --short "$base"); running everything"
   else
-    PICKED="$OUTDIR/picked"; : >"$PICKED"
-    while IFS= read -r f; do
-      case "$f" in
-        tests/test-*.sh) [ -f "$f" ] && printf '%s\n' "$f" >>"$PICKED" ;;
-        lib/*/*) mod="${f#lib/}"; mod="${mod%%/*}"; ls tests/test-"$mod"*.sh >>"$PICKED" 2>/dev/null ;;
-      esac
-      b="$(basename "$f")"
-      for s in tests/test-*.sh; do
-        grep -v '^[[:space:]]*#' "$s" | grep -qF -- "$b" && printf '%s\n' "$s" >>"$PICKED"
-      done
-    done <"$changedlist"
-    named=$(sort -u "$PICKED" | wc -l | tr -d ' ')
+    PICKED="$OUTDIR/picked"
+    awk '$1 ~ /^tests\/test-.*\.sh$/ {print $1}' "$listing" | sort -u >"$PICKED"
+    named=$(awk '$1 ~ /^tests\/test-.*\.sh$/ && $0 !~ /\(always\)/ {print $1}' "$listing" | sort -u | wc -l | tr -d ' ')
+    nchanged=$(sed -n 's/^test-affected: \([0-9]*\) changed files.*/\1/p' "$listing")
     grep -l '^# always:' tests/test-*.sh >>"$PICKED" 2>/dev/null
     sort -u -o "$PICKED" "$PICKED"
-    echo "run-all: --changed against $(git rev-parse --short "$base"): $(wc -l <"$changedlist" | tr -d ' ') changed files -> $(wc -l <"$PICKED" | tr -d ' ') suites ($named named, the rest always-on)"
+    echo "run-all: --changed against $(git rev-parse --short "$base"): ${nchanged:-0} changed files -> $(wc -l <"$PICKED" | tr -d ' ') suites ($named named, the rest always-on)"
     sed 's/^/  /' "$PICKED"
     if [ "$named" -eq 0 ]; then
       echo "run-all: no suite names any of the changed files; only the always-on lints run"
-      sed 's/^/  /' "$changedlist"
+      sed -n 's/^  UNCOVERED //p' "$listing" | sed 's/^/  /'
     fi
     [ -s "$PICKED" ] || exit 0
   fi
@@ -187,6 +208,9 @@ for t in tests/test-*.sh; do
   name="$(basename "$t" .sh)"
   [ -n "$ONLY" ] && case "$name" in *"$ONLY"*) : ;; *) continue ;; esac
   [ -n "$PICKED" ] && ! grep -qxF -- "$t" "$PICKED" && continue
+  # A `# runner:` file only relays sibling suites, which the same glob already
+  # schedules one by one; running it too would count every assert twice.
+  grep -q '^# runner:' "$t" && continue
   reqs="$(sed -n 's/^# requires:[[:space:]]*//p' "$t" | head -1)"
   missing=""
   for r in $reqs; do command -v "$r" >/dev/null 2>&1 || missing="$missing $r"; done
@@ -249,11 +273,13 @@ while IFS= read -r t; do
       echo "ok$secs"
       ;;
     124)
-      echo "TIMEOUT (${TIMEOUT_SECS}s)$secs"
+      limit="$(cat "$OUTDIR/$name.limit" 2>/dev/null || echo "$TIMEOUT_SECS")"
+      echo "TIMEOUT (${limit}s)$secs"
       timedout="$timedout $name"
+      [ "$limit" = "$TIMEOUT_SECS" ] || timedout="${timedout}(${limit}s)"
       # A killed suite printed no assertion, so the FAIL grep below would show nothing and
       # read as "failed for no reason". Say what actually happened and skip it.
-      echo "      ! killed at ${TIMEOUT_SECS}s; no assertion failed, the suite ran out of time"
+      echo "      ! killed at ${limit}s; no assertion failed, the suite ran out of time"
       sed 's/^/      | /' "$log" | tail -8
       ;;
     missing)

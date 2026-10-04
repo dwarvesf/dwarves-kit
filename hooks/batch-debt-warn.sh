@@ -1,4 +1,5 @@
 #!/bin/bash
+# batch-debt-warn.sh -- Advisory PreToolUse hook that warns when a session merges a second PR with no lane START in the gate ledger.
 # batch-debt-warn.sh, PreToolUse hook, matcher: Bash
 # Warn when a session merges a second PR and the gate ledger recorded no lane
 # START inside that window: a batch-shaped session whose understanding debt

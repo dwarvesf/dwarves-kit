@@ -221,6 +221,15 @@ record. After dispatching background subagents, the conductor MAY run
 `bash lib/queue/orchestrate.sh panes <dir> --latest` to grow a read-only tmux pane
 per worker transcript for the operator to watch.
 
+**Opt-in trial: `--backend orca`.** `bash lib/queue/orchestrate.sh run <dir> --backend orca`
+(or `MEGA_BACKEND=orca`; the flag wins) runs the same ROADMAP through Orca Tasks and supervised
+Claude workers instead of one `claude -p` per sub-goal. It is a trial with no measured win yet, off
+unless asked for, and it never changes the default run mode. The conductor reads only
+`bash lib/queue/orchestrate.sh status <dir>` (one derived state per sub-goal: READY, RUNNING,
+PARKED, HELD, DONE-UNSEEN, DONE, and so on) instead of a transcript. The ROADMAP box stays the
+only proof of done; `bash lib/queue/orchestrate.sh orca-reset <dir>` rolls one run back. The design record is the
+orca mega backend spec under `docs/specs/`.
+
 The driver emits a
 `gate-ledger start` per dispatched sub-goal (rid derived from the goal file's
 `**Branch:**`), the automated mirror of the START `commands/assign.md` makes, so

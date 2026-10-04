@@ -1,0 +1,217 @@
+#!/usr/bin/env bash
+# test-spec-depth.sh: the spec header `Depth:` line (helper, command wiring, review routing).
+# Run: bash tests/test-spec-depth.sh [section]
+# Sections: level check inverse missing-line wants size spec-md-wiring validate-wiring review-routing docs
+# No section runs all. Exit 0 = every assert green.
+set -uo pipefail
+KIT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+H="$KIT_DIR/lib/spec/spec-depth.sh"
+FX="$KIT_DIR/tests/fixtures/spec-depth"
+SECTION="${1:-all}"
+PASS=0; FAIL=0
+RED='\033[0;31m'; GREEN='\033[0;32m'; NC='\033[0m'
+
+assert_eq() { # name expected actual
+  if [ "$2" = "$3" ]; then echo -e "  ${GREEN}PASS${NC} $1"; PASS=$((PASS+1))
+  else echo -e "  ${RED}FAIL${NC} $1 (expected '$2', got '$3')"; FAIL=$((FAIL+1)); fi
+}
+want() { [ "$SECTION" = all ] || [ "$SECTION" = "$1" ]; }
+CRLF_DIR=$(mktemp -d); trap 'mv -f "$CRLF_DIR" "${TMPDIR:-/tmp}/spec-depth-crlf.done" 2>/dev/null' EXIT
+# Built at run time: a committed CRLF file would be normalized by git attributes.
+printf '# Spec: fixture crlf\r\nGenerated: 2026-10-01\r\nLane: normal\r\nDepth: standard (one file, no unknown)\r\n\r\n## Problem\r\nfixture body\r\n\r\n## Open questions\r\n(none; fixture)\r\n' > "$CRLF_DIR/crlf.md"
+lvl() { bash "$H" level "$FX/$1.md" 2>/dev/null; }
+chk() { bash "$H" check "$FX/$1.md" >/dev/null 2>&1; echo $?; }
+msg() { bash "$H" check "$FX/$1.md" 2>/dev/null | grep -c -- "$2"; }
+has() { grep -qF -- "$2" "$1" && echo 0 || echo 1; }
+
+if want level; then
+  echo "=== level (AC1) ==="
+  assert_eq "standard"                  "standard"                        "$(lvl standard)"
+  assert_eq "research (repo:)"          "research-repo"                   "$(lvl research-repo)"
+  assert_eq "research (outside:)"       "research-outside"                "$(lvl research-outside)"
+  assert_eq "blind-spot"                "blind-spot"                      "$(lvl blind-spot)"
+  assert_eq "combined with +"           "research-outside blind-spot"     "$(lvl combined)"
+  assert_eq "fenced example is ignored" "standard"                        "$(lvl fenced-example)"
+  assert_eq "no header line"            "standard"                        "$(lvl no-depth)"
+  assert_eq "bold **Depth:** parses"              "research-repo"  "$(lvl bold-depth)"
+  assert_eq "bold **Depth**: parses"              "blind-spot"     "$(lvl bold-depth-colon-out)"
+  assert_eq "CRLF header parses"                  "standard"       "$(bash "$H" level "$CRLF_DIR/crlf.md" 2>/dev/null)"
+  assert_eq "a Depth example fenced in the header is ignored" "standard" "$(lvl fence-in-header)"
+  assert_eq "Depth only in a body example is ignored" "standard"            "$(lvl body-only-depth)"
+fi
+
+if want check; then
+  echo "=== check (AC2) ==="
+  for f in bad-empty bad-importance bad-importance-noprefix bad-critical-core bad-noprefix bad-unknown bad-two; do
+    assert_eq "$f exits 1" 1 "$(chk $f)"
+  done
+  assert_eq "honest outside reason exits 0"     0 "$(chk research-outside)"
+  assert_eq "mixed importance + real unknown 0" 0 "$(chk mixed-reason)"
+  assert_eq "importance-only reason is named as such" 1 "$(msg bad-importance 'only says the work matters')"
+  assert_eq "importance reason without prefix reports the prefix rule" 1 "$(msg bad-importance-noprefix "needs a 'repo:' or 'outside:' prefix")"
+  assert_eq "importance reason without prefix does not reach the importance rule" 0 "$(msg bad-importance-noprefix 'only says the work matters')"
+  assert_eq "critical core change is named as importance-only" 1 "$(msg bad-critical-core 'only says the work matters')"
+  assert_eq "trailing tab and space still checks clean" 0 "$(chk trailing-tab)"
+  assert_eq "CRLF file checks clean" 0 "$(bash "$H" check "$CRLF_DIR/crlf.md" >/dev/null 2>&1; echo $?)"
+  for f in standard research-repo blind-spot combined fenced-example bold-depth bold-depth-colon-out; do
+    assert_eq "$f exits 0" 0 "$(chk $f)"
+  done
+fi
+
+if want inverse; then
+  echo "=== inverse (AC3) ==="
+  assert_eq "standard + open question exits 1"      1 "$(chk inverse-open-q)"
+  assert_eq "standard + (none; ...) exits 0"        0 "$(chk inverse-none)"
+  assert_eq "standard + None. exits 0"              0 "$(chk inverse-none-dot)"
+  assert_eq "## Open Questions matches case-insensitively" 1 "$(chk inverse-mixed-case)"
+  assert_eq "standard + cannot be sampled exits 0"  0 "$(chk inverse-grounding)"
+fi
+
+if want missing-line; then
+  echo "=== missing-line (AC5) ==="
+  assert_eq "new spec (Generated on the pin date) exits 1" 1 "$(chk no-depth-new)"
+  assert_eq "older spec exits 0"                           0 "$(chk no-depth)"
+  assert_eq "no Generated line exits 0"                    0 "$(chk no-depth-nogen)"
+  assert_eq "older spec warns on stderr" 1 "$(bash "$H" check "$FX/no-depth.md" 2>&1 >/dev/null | grep -c 'warning')"
+  assert_eq "no-Generated spec warns on stderr" 1 "$(bash "$H" check "$FX/no-depth-nogen.md" 2>&1 >/dev/null | grep -c 'warning')"
+  assert_eq "SPEC-380 with no Generated line exits 1" 1 "$(bash "$H" check "$FX/SPEC-380-no-generated.md" >/dev/null 2>&1; echo $?)"
+  assert_eq "SPEC-100 with no Generated line exits 0" 0 "$(bash "$H" check "$FX/SPEC-100-no-generated-old.md" >/dev/null 2>&1; echo $?)"
+  assert_eq "DEPTH_REQUIRED_FROM_SPEC is pinned" 1 "$(grep -c '^DEPTH_REQUIRED_FROM_SPEC=372$' "$H")"
+  assert_eq "DEPTH_REQUIRED_FROM is pinned" 1 "$(grep -c '^DEPTH_REQUIRED_FROM="2026-09-30"$' "$H")"
+fi
+
+if want wants; then
+  echo "=== wants (AC8) ==="
+  bash "$H" wants "$FX/no-depth.md" research-repo; assert_eq "no header line: research-repo exits 1" 1 "$?"
+  bash "$H" wants "$FX/no-depth.md" blind-spot;    assert_eq "no header line: blind-spot exits 1" 1 "$?"
+  bash "$H" wants "$FX/standard.md" research-repo; assert_eq "standard wants nothing" 1 "$?"
+  bash "$H" wants "$FX/research-repo.md" research-repo;       assert_eq "research-repo wants research-repo" 0 "$?"
+  bash "$H" wants "$FX/research-repo.md" research-outside;    assert_eq "research-repo does not want outside" 1 "$?"
+  bash "$H" wants "$FX/combined.md" research-outside;         assert_eq "combined wants research-outside" 0 "$?"
+  bash "$H" wants "$FX/combined.md" blind-spot;               assert_eq "combined wants blind-spot" 0 "$?"
+  bash "$H" wants "$FX/fenced-example.md" blind-spot;         assert_eq "fenced example does not want blind-spot" 1 "$?"
+  bash "$H" wants "$FX/body-only-depth.md" blind-spot;        assert_eq "body-only example does not want blind-spot" 1 "$?"
+  bash "$H" wants "$FX/fence-in-header.md" blind-spot;        assert_eq "header-fenced example does not want blind-spot" 1 "$?"
+  bash "$H" wants "$FX/bold-depth.md" research-repo;          assert_eq "bold line wants research-repo" 0 "$?"
+  bash "$H" wants "$FX/standard.md" nonsense 2>/dev/null;     assert_eq "unknown level exits 2" 2 "$?"
+  assert_eq "spec.sh forwards depth" "standard" "$(bash "$KIT_DIR/lib/spec/spec.sh" depth level "$FX/standard.md" 2>/dev/null)"
+fi
+
+if want size; then
+  echo "=== size (small = normal lane + standard depth + at most 3 tasks) ==="
+  SZ=$(mktemp -d)
+  # mk <name> <lane> <depth-line-or-empty> <checkbox-tasks> [table-tasks]
+  mk() {
+    { printf '# Spec: size fixture\nGenerated: 2026-10-01\nStatus: DRAFT\nLane: %s\n' "$2"
+      [ -n "$3" ] && printf 'Depth: %s\n' "$3"
+      printf '\n## Tasks\n\n'
+      i=0; while [ $((i+=1)) -le "${4:-0}" ]; do printf -- '- [ ] TASK-%s: do it, done when green\n' "$i"; done
+      i=0; while [ $((i+=1)) -le "${5:-0}" ]; do printf '| T%s | do it | f.sh | green |\n' "$i"; done
+      printf '\n```\n- [ ] TASK-9: fenced example\n```\n'
+    } > "$SZ/$1.md"
+  }
+  sz() { bash "$H" size "$SZ/$1.md" 2>/dev/null | awk '{print $1}'; }
+  mk s3 normal 'standard (one file)' 3;           assert_eq "normal, standard, 3 checkbox tasks is small" small "$(sz s3)"
+  mk s4 normal 'standard (one file)' 4;           assert_eq "4 tasks is large" large "$(sz s4)"
+  mk nodepth normal '' 2;                          assert_eq "absent Depth counts as standard" small "$(sz nodepth)"
+  mk res normal 'research (repo: how x wires y)' 1; assert_eq "deeper Depth is large" large "$(sz res)"
+  mk full full 'standard (one file)' 1;            assert_eq "full lane is large" large "$(sz full)"
+  mk bug bug 'standard (one file)' 1;              assert_eq "bug lane is large" large "$(sz bug)"
+  mk none normal 'standard (one file)' 0;          assert_eq "no countable task is large" large "$(sz none)"
+  mk tbl normal 'standard (one file)' 0 3;         assert_eq "3 table-row tasks is small" small "$(sz tbl)"
+  mk tbl4 normal 'standard (one file)' 2 2;        assert_eq "checkbox plus table tasks add up" large "$(sz tbl4)"
+  assert_eq "fenced task example is not counted" "tasks=3" "$(bash "$H" size "$SZ/s3.md" 2>/dev/null | grep -o 'tasks=[0-9]*')"
+  bash "$H" size "$SZ/s3.md" >/dev/null 2>&1; assert_eq "small exits 0" 0 "$?"
+  bash "$H" size "$SZ/s4.md" >/dev/null 2>&1; assert_eq "large exits 1" 1 "$?"
+  bash "$H" size "$SZ/missing.md" >/dev/null 2>&1; assert_eq "missing spec exits 2" 2 "$?"
+  assert_eq "spec.sh depth size forwards" small "$(bash "$KIT_DIR/lib/spec/spec.sh" depth size "$SZ/s3.md" 2>/dev/null | awk '{print $1}')"
+  # counter formats: each task shape counts, a stray fence cannot hide tasks, CR is stripped
+  hdr() { printf '# Spec: size fixture\nGenerated: 2026-10-01\nStatus: DRAFT\nLane: normal\nDepth: standard (one file)\n\n## Tasks\n\n'; }
+  tn() { bash "$H" size "$SZ/$1.md" 2>/dev/null | grep -o 'tasks=[0-9]*'; }
+  { hdr; for i in 1 2 3 4; do printf '### TASK-%s: do it\n\nbody\n\n' "$i"; done; } > "$SZ/heading.md"
+  assert_eq "### TASK-N headings are counted" "tasks=4" "$(tn heading)"
+  assert_eq "4 heading tasks read large" large "$(sz heading)"
+  { hdr; for i in 1 2 3 4; do printf -- '- [ ] **TASK-%s**: do it\n' "$i"; done; } > "$SZ/bold.md"
+  assert_eq "- [ ] **TASK-N** bold checkboxes are counted" "tasks=4" "$(tn bold)"
+  { hdr; for i in 1 2 3 4; do printf -- '  - [ ] TASK-%s: do it\n' "$i"; done; } > "$SZ/indent.md"
+  assert_eq "indented - [ ] TASK-N is counted" "tasks=4" "$(tn indent)"
+  assert_eq "4 indented tasks read large" large "$(sz indent)"
+  { hdr; printf '```\n- [ ] TASK-9: stray unclosed fence\n\n'; for i in 1 2 3 4; do printf -- '- [ ] TASK-%s: do it\n' "$i"; done; } > "$SZ/unclosed.md"
+  assert_eq "an unclosed fence does not hide tasks (count everything)" "tasks=5" "$(tn unclosed)"
+  assert_eq "unclosed-fence spec reads large" large "$(sz unclosed)"
+  { hdr; printf -- '- [ ] TASK-1: real\n~~~\n- [ ] TASK-8: tilde example\n- [ ] TASK-9: tilde example\n~~~\n- [ ] TASK-2: real\n'; } > "$SZ/tilde.md"
+  assert_eq "~~~ fences hide their example tasks" "tasks=2" "$(tn tilde)"
+  { hdr; printf -- '- [ ] TASK-1: real\n~~~\n```\n- [ ] TASK-8: nested\n```\n~~~\n- [ ] TASK-2: real\n'; } > "$SZ/nested.md"
+  assert_eq "a backtick fence inside a ~~~ fence does not close it" "tasks=2" "$(tn nested)"
+  { hdr; for i in 1 2 3 4; do printf -- '- [ ] TASK-%s: do it\r\n' "$i"; done; printf '```\r\n- [ ] TASK-9: fenced\r\n```\r\n'; } > "$SZ/crlf.md"
+  assert_eq "CRLF file: tasks counted, CRLF fence still hides its example" "tasks=4" "$(tn crlf)"
+  { hdr; printf -- '- [ ] TASK-1: a\n- [ ] TASK-2: b\n\n| # | Task | Files |\n|---|---|---|\n| T3 | c | f |\n| T4 | d | f |\n'; } > "$SZ/mixed.md"
+  assert_eq "mixed: two checkboxes plus a numbered table count 4" "tasks=4" "$(tn mixed)"
+  assert_eq "mixed-format spec reads large" large "$(sz mixed)"
+  { hdr; printf -- '- [ ] TASK-1: a\n### TASK-2: b\n- [ ] **TASK-3**: c\n  - [ ] TASK-4: d\n'; } > "$SZ/mixed2.md"
+  assert_eq "mixed: checkbox, heading, bold, indented count 4" "tasks=4" "$(tn mixed2)"
+  # the kit's own specs write T1 / T2a labels (no TASK- prefix): `| T1: x |` rows and `- [ ] T1a: x` boxes
+  { hdr; printf '| Task | Files |\n|---|---|\n| T1: a | f |\n| T2a: b | f |\n| T2b: c | f |\n'; } > "$SZ/tcolon.md"
+  assert_eq "| T1: x | table rows are counted" "tasks=3" "$(tn tcolon)"
+  assert_eq "3 T-label rows read small" small "$(sz tcolon)"
+  { hdr; printf -- '- [ ] T1a: a\n- [x] T1b: b\n  - [ ] T2: c\n- [ ] T3: d\n'; } > "$SZ/tbox.md"
+  assert_eq "- [ ] T1a: x checkboxes are counted" "tasks=4" "$(tn tbox)"
+  mv -f "$SZ" "${TMPDIR:-/tmp}/spec-depth-size.done" 2>/dev/null
+fi
+
+if want spec-md-wiring; then
+  echo "=== spec-md-wiring (TASK-2, AC4) ==="
+  S="$KIT_DIR/commands/spec.md"
+  assert_eq "AC4 include \`rid=<rid>\` phrase kept" 0 "$(has "$S" 'include `rid=<rid>`')"
+  assert_eq "AC4 step 2 keeps rid=<rid>" 1 "$(sed -n '/^### Step 2/,/^### Step 3/p' "$S" | grep -c 'rid=<rid>' | awk '{print ($1>=1)?1:0}')"
+  assert_eq "template carries the Depth: line under Lane" 0 "$(has "$S" '**Depth line.**')"
+  assert_eq "step 1 asks the one question" 0 "$(has "$S" 'a fact you cannot settle from the code or one command')"
+  assert_eq "step 2 routes research-repo" 0 "$(has "$S" 'spec-depth.sh wants <spec> research-repo')"
+  assert_eq "step 2 routes research-outside" 0 "$(has "$S" 'spec-depth.sh wants <spec> research-outside')"
+  assert_eq "outside pass writes the -outside file" 0 "$(has "$S" 'docs/research/<date>-<slug>-outside.md')"
+  assert_eq "records the depth= action line" 0 "$(has "$S" 'depth=<levels> research_agents=<N>')"
+  assert_eq "design pass keyed on gate-ledger plan" 0 "$(has "$S" 'gate-ledger.sh plan <lane>')"
+  assert_eq "step 3 reuses the stub NNN, no second spec-next call" 0 "$(has "$S" 'do not call `spec-next.sh` again')"
+  assert_eq "unconditional 4-agent brownfield rule is gone" 0 "$(grep -c 'If modifying existing code, run codebase research before generating the spec' "$S")"
+fi
+
+if want validate-wiring; then
+  echo "=== validate-wiring (TASK-3) ==="
+  V="$KIT_DIR/commands/spec-validate.md"
+  assert_eq "Reviewer 4 runs spec-depth.sh check" 0 "$(has "$V" 'spec-depth.sh check')"
+  assert_eq "importance lens question" 0 "$(has "$V" 'only importance')"
+  assert_eq "standard-with-unknown lens question" 0 "$(has "$V" 'an unknown or a failure mode it cannot test alone')"
+  assert_eq "depth rule overrides the Grounding never-critical" 0 "$(has "$V" 'overrides the Grounding addendum')"
+  assert_eq "prefix rule listed among what the script flags" 0 "$(has "$V" 'a missing `repo:` / `outside:` / `failure:` prefix')"
+  assert_eq "None. placeholder counts as empty" 0 "$(has "$V" '`None.` placeholder counts as empty')"
+  R4=$(sed -n '/^### Reviewer 4/,/^### Reviewer 5/p' "$V")
+  assert_eq "the check sits inside Reviewer 4" 1 "$(printf '%s' "$R4" | grep -c 'spec-depth.sh check' | awk '{print ($1>=1)?1:0}')"
+fi
+
+if want review-routing; then
+  echo "=== review-routing (AC6) ==="
+  P="$KIT_DIR/commands/test-plan.md"; T="$KIT_DIR/commands/test-plan-review-team.md"
+  STEP4=$(sed -n '/^### Step 4: Hand off/,/^## Source/p' "$P")
+  assert_eq "test-plan step 4 names --light" 1 "$(printf '%s' "$STEP4" | grep -c -- '--light' | awk '{print ($1>=1)?1:0}')"
+  assert_eq "test-plan step 4 routes blind-spot to the full team" 1 "$(printf '%s' "$STEP4" | grep -c 'spec-depth.sh wants <spec> blind-spot' | awk '{print ($1>=1)?1:0}')"
+  assert_eq "team doc documents --light as lenses 1 and 2, one pass" 0 "$(has "$T" 'lens 1 (Coverage completeness) and lens 2 (Oracle & falsifiability) to the plan in one pass')"
+  assert_eq "team doc writes the Scope: light line" 0 "$(has "$T" 'Scope: light (coverage + oracle)')"
+  assert_eq "team doc runs no revise loop under --light" 0 "$(has "$T" 'no revise round')"
+  assert_eq "light pass keeps lens 6 when a Tier column exists" 0 "$(has "$T" 'also applies lens 6 (Tiering & floor)')"
+  assert_eq "light pass is SOLID with no CRITICAL" 0 "$(has "$T" 'SOLID when the pass finds no CRITICAL finding')"
+  assert_eq "light pass treats HIGH as advisory with a one-line why-not" 0 "$(has "$T" 'HIGH findings are advisory')"
+  assert_eq "no stale floor-mode naming" 0 "$(grep -c -- '--floor' "$T" "$P" "$KIT_DIR/docs/WORKFLOW.md" | awk -F: '{n+=$2} END{print n}')"
+  assert_eq "6-lens framing intact" 0 "$(has "$T" 'Dispatch 6 lenses')"
+fi
+
+if want docs; then
+  echo "=== docs (TASK-5) ==="
+  W="$KIT_DIR/docs/WORKFLOW.md"
+  assert_eq "WORKFLOW has a Depth paragraph" 0 "$(has "$W" '**Depth.**')"
+  assert_eq "WORKFLOW says light pass at every depth" 0 "$(has "$W" 'the light pass at every depth, the full team at blind-spot')"
+  assert_eq "WORKFLOW command row names --light" 0 "$(has "$W" '/kit:test-plan-review-team --light')"
+fi
+
+echo
+echo "spec-depth: $PASS passed, $FAIL failed"
+[ "$FAIL" -eq 0 ]

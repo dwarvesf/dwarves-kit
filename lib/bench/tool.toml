@@ -5,6 +5,14 @@ summary = "Standalone comparative benchmark runner: frozen suites x config matri
 entry = "bench.py"
 language = "python-stdlib"
 
+# A second, unrelated tool shares this directory and README only: it imports no bench.py
+# code, reads no suite, and writes no JSONL row.
+[lens-eval]
+status = "prototype"
+summary = "Treatment-vs-control keyword eval of a prompt-only lens through headless claude -p; spends model calls only with --live"
+entry = "lens-eval.sh"
+language = "bash, jq, claude CLI"
+
 [links]
 brief = "docs/briefs/DECISION-BRIEF-bench-plane.md"
 metrics = "lib/bench/docs/METRICS.md"

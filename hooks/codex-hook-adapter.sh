@@ -3,6 +3,10 @@
 # shellcheck disable=SC2016,SC2088
 
 set -uo pipefail
+# The Claude Code anchor (hooks/anchor-root.sh) exports the real cwd for ship-gate.sh. The
+# Codex path never runs through it, so a value inherited from an outer process must not steer
+# ship-gate's repo resolution here.
+unset DWARVES_KIT_INVOCATION_CWD
 
 EVENT="${1:-}"
 POLICY_NAME="${2:-}"

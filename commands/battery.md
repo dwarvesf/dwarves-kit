@@ -13,11 +13,11 @@ it the battery.
 The multi-lens review runs single-pass minimum, with domain lenses on escalation. This battery exists because independent arms catch DISJOINT defect classes: on one measured diff the panel, the reviewer, the verifier, and a late security lens each found a defect the other three missed.
 
 
-Bracket the phase for timing before dispatching any arm: `bash lib/gate/gate-ledger.sh outcome <rid> battery start` (rid = the branch slug, the same key the ship-gate reads; the ledger counts `battery` as the review gate). For a foreign target the ledger writes under the run dir of the cwd repo, not the target repo. Run the two `gate-ledger.sh` calls from the target repo's primary checkout root in a subshell (`(cd <repo> && bash ...)`), or accept the record landing under the session repo.
+Bracket the phase for timing, after the Size gate below passes and before dispatching any arm: `bash lib/gate/gate-ledger.sh outcome <rid> battery start` (rid = the branch slug, the same key the ship-gate reads; the ledger counts `battery` as the review gate). For a foreign target the ledger writes under the run dir of the cwd repo, not the target repo. Run the two `gate-ledger.sh` calls from the target repo's primary checkout root in a subshell (`(cd <repo> && bash ...)`), or accept the record landing under the session repo.
 
 ## Target (optional argument)
 
-Resolve the target FIRST, before the bracket and before any dispatch.
+Resolve the target FIRST, before the size gate, the bracket and any dispatch.
 
 | Argument | Resolves to |
 |---|---|
@@ -31,13 +31,24 @@ For a PR target, find a local checkout of that repo under `~/workspace/<owner>/<
 
 Print the resolved target as a `## Target` block: path, branch, compare ref, PR number when one exists.
 
+## Size gate (before the timing bracket and any dispatch)
+
+After the Target block, run `bash lib/gate/battery-gate.sh <path> <compare ref>` (path and compare ref from `## Target`). It counts changed lines (markdown and `docs/verification/**` excluded) and checks for a hard path.
+
+- `RUN`: go on.
+- `SKIP: ...`: STOP. Print the SKIP line. Dispatch nothing and open no timing bracket. Name the alternative: `/kit:verify`, or a `docs/verification/<slug>.md` with a green run, a negative control and captured output. A small single-purpose change owes a proof of done, gets wired, and gets shown to the operator.
+- The only override: the operator explicitly asked for the battery on this change. A lane name, "normal lane", or a finished `/kit:execute` is not an override.
+
+Floor: 150 changed lines by default; `BATTERY_SMALL_FLOOR` or `[battery] size_floor` in `.kit.toml` overrides it. A hard path always means `RUN`.
+
 ## When this runs
 
 - The operator says "run the battery" / "overtest this" / "full check before merge".
-- At the end of any normal/full-lane cycle where /kit:execute's pipeline ran but no
-  fresh-context review/verify did.
-- NOT for tiny-lane one-line changes (verify inline or skip with a stated reason),
-  and NOT a replacement for the ship-gate (this battery FEEDS it: record its legs in
+- At the end of a full-lane cycle, or a LARGE or hard-path normal-lane change, where /kit:execute's
+  pipeline ran but no fresh-context review/verify did. The Size gate decides; the lane name alone
+  never triggers it.
+- NOT for a SMALL change (the Size gate prints SKIP) and NOT for tiny-lane one-line changes
+  (verify inline or skip with a stated reason), and NOT a replacement for the ship-gate (this battery FEEDS it: record its legs in
   the gate ledger under the branch slug).
 
 ## The three legs
@@ -45,7 +56,7 @@ Print the resolved target as a `## Target` block: path, branch, compare ref, PR 
 | Leg | Agent | Model tier | Job |
 |---|---|---|---|
 | 1. Acceptance verify | kit:acceptance-verifier (or kit:task-verifier for a single task) | mid, or the spec's tier when it carries `Model: opus` | re-execute the spec/branch verification commands VERBATIM in fresh context; check every AC against the actual files |
-| 2. Review | kit:code-reviewer single-pass; escalate domain lenses per the table below | high (Opus-class) | static-read judgment: what re-execution cannot see |
+| 2. Review | kit:code-reviewer single-pass; escalate domain lenses per the table below | Sonnet (mid) on the normal lane, high (Opus-class) on the full lane | static-read judgment: what re-execution cannot see |
 | 3. Advisor | kit:advisor (critique mode) | mid | the uniform extra lens; additive, never replaces leg 2 |
 
 Dispatch legs 1 and 2 IN PARALLEL (one message, multiple Task calls). Leg 3 rides
@@ -111,6 +122,71 @@ probe and mutation; report that inversion in one line and re-run nothing.
    grammar (SHIP / FIX THEN SHIP / DO NOT SHIP), a line cap, default-skeptical
    framing ("try to refute").
 5. Read-only instruction: report, never edit.
+
+## Brief skeletons
+
+Fill the `<...>` slots; every skeleton carries the five ingredients above (Target block, baseline, read-only), so they are not restated per leg. A line marked `(if X)` drops out when X does not apply.
+
+Leg 1, verifier (kit:acceptance-verifier):
+
+```
+<## Target block verbatim>
+Baseline: <N known failures, named>; FAIL only on NEW failures.
+Spec section: <path>#<## Verification or the AC list>
+Job: re-run the proof's commands VERBATIM in fresh context and quote actual output. Then run ONE
+independent real-data check the proof did not (a recorded input, a live read, a different path
+to the same claim) and say what it was.
+(if port or old-vs-new parity) Run parity on REAL recorded data in STRICT mode: broad
+"explained" classes disabled, every difference counted as a difference. Report the strict count.
+Fixtures to build: <list or none>. Scratchpad: write any commit message or temp file to a fresh
+`mktemp`, never a fixed name shared with other workers.
+Verdict: VERDICT: PASS | FAIL:fixable | FAIL:escalate, plus the Verification record block.
+Cap: <300> words. Read-only.
+```
+
+Leg 2, reviewer (kit:code-reviewer, or a lens from the escalation table):
+
+```
+<## Target block verbatim>
+Baseline: <N known failures, named>.
+Spec section: <path>#<the ACs and non-goals the diff must honor>
+Lens: <security | architecture | test-coverage | ...>. Try to refute: find what re-execution
+cannot see. Findings by severity, each with a file:line quote.
+(if a parity or proof instrument exists) Also review the instrument: does the classifier,
+allowlist, or "explained" class over-explain, passing a deliberately wrong output? Name the
+class and the input that would slip through.
+(if re-review after a fix round) Scope to `git diff <first-review-head>..HEAD` plus your own
+prior probe script <path>; re-run that script, do not re-review untouched files.
+Verdict: SHIP | FIX THEN SHIP | DO NOT SHIP.
+Cap: <400> words. Read-only.
+```
+
+Leg 3, the extra lens (kit:advisor, critique mode):
+
+```
+<## Target block verbatim>
+Baseline: <N known failures, named>.
+Spec section: <path>#<the goal or problem statement>
+Job: the uniform extra lens over the whole work, additive to leg 2. Surface only what the
+other legs' lenses would not: wrong goal, missing case, scope drift, a claim the proof does
+not support. Do not repeat leg 2's findings; skip what leg 2 already holds.
+Verdict: ADVISORY: clean | ADVISORY: N finding(s), numbered, each with file:line.
+Cap: <250> words. Read-only.
+```
+
+Break-it (kit:break-it, dispatched only after leg 1 returns green):
+
+```
+<## Target block verbatim>
+Baseline: <N known failures, named>; leg 1 returned green at <head sha>.
+Spec section: <path>#<the input, state-machine, or numeric/format contract under test>
+Job: find ONE concrete input or call sequence the green suite does not constrain, one that
+changes behavior without failing any test. Run it against the code, quote the output.
+(if re-probe after a fix round) Scope to `git diff <first-probe-head>..HEAD` plus your own
+prior probe script <path>.
+Verdict: PROBE: <N> with the input and the unconstrained line, or NO-PROBE naming what was tried.
+Cap: <250> words. Read-only; never write the test.
+```
 
 ## After the legs return
 

@@ -34,6 +34,12 @@ set -uo pipefail
 PITCH_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LIB_ROOT="$PITCH_DIR"  # this is a bare root-level module; the lib/ dir IS its own dir. Cross-subsystem siblings resolve as "$LIB_ROOT/<subsystem>/<file>"
 GATE_LEDGER="$LIB_ROOT/gate/gate-ledger.sh"
+# shellcheck source=lib/spec/spec-find.sh
+# A stale install without spec-find.sh keeps the root-only lookup (mirrors hooks/ship-gate.sh).
+if ! source "$LIB_ROOT/spec/spec-find.sh" 2>/dev/null; then
+  spec_files() { ls "$1"/docs/specs/SPEC-*.md 2>/dev/null; return 0; }
+  spec_for_slug() { [ -n "$2" ] || return 0; ls "$1"/docs/specs/SPEC-*-"$2".md 2>/dev/null | head -1 || true; return 0; }
+fi
 
 # _safe_slug <slug> -- refuse a slug that could escape the intended docs/ subtree via the
 # filesystem globs below (review finding, self spec-validate Reviewer 1: a crafted rid like
@@ -52,7 +58,8 @@ _safe_slug() {
 _find_spec() {
   local slug="$1" f
   _safe_slug "$slug" || return 1
-  f="$(ls docs/specs/SPEC-*-"$slug".md 2>/dev/null | head -1)"
+  # Root docs/specs first, then co-located */docs/specs; `./` stripped so paths print as docs/specs/...
+  f="$(spec_for_slug . "$slug")"; f="${f#./}"
   [ -n "$f" ] && [ -f "$f" ] && printf '%s' "$f"
 }
 

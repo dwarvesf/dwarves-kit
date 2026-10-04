@@ -158,7 +158,7 @@ Total direct time recovered if both RETIRE-CANDIDATE timeouts are fixed or moved
 | `test-lane-classify.sh` | 1 | 0 | 32 | git-mechanics | KEEP | Exercises real git/board/queue fixtures, not mocked prose. kit-telemetry. |
 | `test-lane-escalation.sh` | 1 | 0 | 22 | gate | KEEP | Guards a live blocking/safety gate. kit-hardening. |
 | `test-lint-scattered-ids.sh` | 1 | 0 | 9 | config-lint | KEEP | Standing tree-wide lint; cheap, catches drift a single-file review misses. serial: stages a fixture into the REAL repo index, because the enumerator under test reads `git ls-files` and would never see an untracked... |
-| `test-money-gate.sh` | 1 | 0 | 0 | gate | KEEP | Guards a live blocking/safety gate. money-gate hook (hooks/money-gate.sh + money-gate.py): fires only for money-touching edits inside a CONSUMER-NAMED financial repo... |
+| `test-money-gate.sh` | 1 | 0 | 0 | gate | KEEP | Guards a live blocking/safety gate. money-gate hook (hooks/money-gate.sh): fires only for money-touching edits inside a CONSUMER-NAMED financial repo... |
 | `test-onboard-detect.sh` | 1 | 0 | 19 | git-mechanics | KEEP | Exercises real git/board/queue fixtures, not mocked prose. harness-loop sub-goal 09. |
 | `test-picture-section.sh` | 1 | 0 | 21 | doc-structure | THIN | Greps a markdown/command file for a phrase or section; proves the prose exists, not that the behavior runs. Proves the `## Picture` presence check (spec's PRE-build twin of 's post-build visual proof). |
 | `test-premerge.sh` | 1 | 0 | 20 | git-mechanics | KEEP | Exercises real git/board/queue fixtures, not mocked prose. merge the default branch into the working branch before a PR opens, so a GitHub squash-merge never disagrees with a union-mergeable |

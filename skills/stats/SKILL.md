@@ -1,6 +1,6 @@
 ---
 name: stats
-description: Query or render the state of the scattered kit/tide/tg-cleanup/learned ledgers, and detect + propose backlog rows off anomalies. Use when the operator asks to SEE ledger state -- "show me the ledger state", "my debt", "token cost" -- or to check/propose off it -- "any ledger anomalies". NOT for editing/mutating any ledger. NOT for ad-hoc SQL exploration. NOT a persistent TUI/app.
+description: Query or render ledger state and propose backlog rows off anomalies. Use when asked to SEE it -- "show me the ledger state", "my debt", "understanding debt", "telemetry", "token cost", "kit runs", "render the ledger" -- or to check it -- "any ledger anomalies". NOT for editing/mutating any ledger. NOT for ad-hoc SQL exploration. NOT a persistent TUI/app.
 ---
 
 # stats
@@ -33,6 +33,7 @@ source and breaks the whole point of the lens (the understanding-gate work alrea
 | "show me the ledger state" / "kit runs" / "kit lane telemetry" | `stats render kit_runs --surface terminal` |
 | "my debt" / "understanding debt" | `stats anomalies` (checks `SUM(kit_runs.gates_ovr)` against threshold; this is the current debt signal, superseding a raw grep over `\| DEBT \|` lines). For the raw numbers behind it, `stats query "SELECT rid, gates_ovr FROM kit_runs WHERE gates_ovr > 0" --surface terminal` |
 | "any ledger anomalies" / "should I propose anything" | `stats anomalies` (report only) or `stats anomalies --propose` (stage a candidate row per fired anomaly into the cc-backlog staging buffer; never files a board row) |
+| "is the pipeline ceremony" / "gate work vs what shipped" / "dispatches and tokens per run" | `stats ceremony` (add `--json`, `--from/--to` or `--since-sha` to compare windows); the `ceremony_share` anomaly shows in `stats anomalies` |
 | "telemetry" (tide moves) | `stats render tide_moves --surface terminal` |
 | "token cost" / "how much am I spending on tokens" | `stats render tide_tier_b_calls --surface terminal` (per-call cost/token rows); for a spike check specifically, `stats anomalies` |
 | "ledger status" / a quick glance at everything | `stats tables` first (row counts per table), then render the table the operator actually cares about |

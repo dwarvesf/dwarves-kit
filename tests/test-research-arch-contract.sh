@@ -48,10 +48,14 @@ assert "row 6: no write-capable tool in the frontmatter grant" $?
 echo ""
 echo "=== AC-3: dispatch contract, both sides ==="
 
-grep -qF '### Step 2: Research (if brownfield)' "$C"
-assert "row 7: dispatcher Step 2 is brownfield-gated" $?
+# Gate moved from "brownfield" to the spec's Depth line in d6dfb6de: Step 2 routes by depth, never by
+# whether the code is brownfield, and the repo-research agents run only when `wants ... research-repo`.
+grep -qF '### Step 2: Research (by depth)' "$C" \
+  && grep -qF 'Route by the header'"'"'s depth, never by whether the code is brownfield.' "$C" \
+  && grep -qF 'bash lib/spec/spec-depth.sh wants <spec> research-repo' "$C"
+assert "row 7: dispatcher Step 2 is depth-gated (research-repo)" $?
 
-grep -qF '**research-architecture** agent: "Map architecture patterns and conventions. Write to `docs/research/<date>-<slug>-architecture.md`."' "$C"
+grep -qF '**kit:research-architecture** agent: "Map architecture patterns and conventions. Write to `docs/research/<date>-<slug>-architecture.md`."' "$C"
 assert "row 8: Mode A dispatch line names agent + exact write target" $?
 
 grep -qF 'dispatch all 4 via the Task tool in parallel' "$C"

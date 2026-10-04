@@ -1,0 +1,117 @@
+#!/usr/bin/env bash
+# Stub `orca` for tests/test-orchestrate-orca.sh. State lives in $ORCA_STUB_STATE/state.json,
+# every call appends its argv to $ORCA_STUB_STATE/calls.log. It answers only the verbs the Orca
+# backend uses; any other verb (`orchestration reset` included) logs and exits 99.
+# Row field names are the documented ones plus assumptions marked below; the live capture in the
+# trial (step 0) replaces the assumptions.
+#   ORCA_STUB_FAIL_VERB=<verb>  makes that verb exit 1 (for every call)
+#   ORCA_STUB_DROP_STOPPED=1    worker-list omits stopped rows
+#   `orca _set <what> ...`      test-only mutators, never logged
+set -uo pipefail
+D="${ORCA_STUB_STATE:?ORCA_STUB_STATE not set}"; mkdir -p "$D"
+S="$D/state.json"
+[ -f "$S" ] || echo '{"seq":0,"version":"1.4.209","runs":[],"tasks":[],"dispatches":[],"gates":[],"messages":[],"pending":null,"keys":{}}' > "$S"
+
+upd() { jq "$@" "$S" > "$S.tmp" && mv -f "$S.tmp" "$S"; }
+val() { local k="$1"; shift; while [ $# -gt 0 ]; do [ "$1" = "$k" ] && { printf '%s' "${2:-}"; return; }; shift; done; }
+has() { local k="$1"; shift; local a; for a in "$@"; do [ "$a" = "$k" ] && return 0; done; return 1; }
+nid() { upd '.seq += 1'; printf '%s_%s' "$1" "$(jq -r .seq "$S")"; }
+now() { date +%s; }
+# a pending Task whose deps are all completed becomes ready
+recompute() { upd '. as $r | .tasks |= map(if .status=="pending" and all(.deps[]?; . as $d | any($r.tasks[]; .id==$d and .status=="completed")) then .status="ready" else . end)'; }
+
+if [ "${1:-}" = _set ]; then
+  shift; what="${1:-}"; shift || true
+  case "$what" in
+    task-status) upd --arg t "$1" --arg s "$2" '(.tasks[]|select(.id==$t)|.status)=$s'; recompute ;;
+    liveness) upd --arg d "$1" --arg l "$2" '(.dispatches[]|select(.dispatchId==$d)|.projection.liveness)=$l' ;;
+    dispatch-status) upd --arg d "$1" --arg l "$2" '(.dispatches[]|select(.dispatchId==$d)|.dispatchStatus)=$l' ;;
+    agentwait) upd --arg d "$1" --argjson w "$2" '(.dispatches[]|select(.dispatchId==$d)|.observation.agentWait)=$w' ;;
+    message)  # type task
+      id=$(nid msg)
+      upd --arg id "$id" --arg ty "$1" --arg t "$2" --argjson n "$(now)" \
+        '.messages += [{id:$id,type:$ty,taskId:$t,dispatchId:([.dispatches[]|select(.taskId==$t)][0].dispatchId // null),replyTo:null,createdAt:$n,acked:false}]'
+      printf '%s\n' "$id" ;;
+    reply)  # message id
+      id=$(nid msg)
+      upd --arg id "$id" --arg r "$1" --argjson n "$(now)" \
+        '.messages += [{id:$id,type:"reply",taskId:null,dispatchId:null,replyTo:$r,createdAt:$n,acked:true}]' ;;
+    gate-resolve) upd --arg g "$1" --arg r "$2" '(.gates[]|select(.id==$g)) |= (.status="resolved" | .resolution=$r)' ;;
+    version) upd --arg v "$1" '.version=$v' ;;
+    *) echo "stub: unknown _set $what" >&2; exit 2 ;;
+  esac
+  exit 0
+fi
+
+printf '%s\n' "${*//$'\n'/ }" >> "$D/calls.log"
+
+if [ "${1:-}" = --version ]; then jq -r .version "$S"; exit 0; fi
+if [ "${1:-}" = worktree ] && [ "${2:-}" = ps ]; then echo '{"result":{"worktrees":[]}}'; exit 0; fi
+if [ "${1:-}" != orchestration ]; then exit 99; fi
+shift; verb="${1:-}"; shift || true
+[ -n "${ORCA_STUB_FAIL_VERB:-}" ] && [ "$ORCA_STUB_FAIL_VERB" = "$verb" ] && { echo "stub: forced failure of $verb" >&2; exit 1; }
+
+# a retry key replays the first result (safe replay of a lost response)
+key=$(val --retry-request "$@")
+if [ -n "$key" ] && [ "$(jq -r --arg k "$key" '.keys[$k] // empty' "$S")" != "" ]; then
+  jq -c --arg k "$key" '.keys[$k]' "$S"; exit 0
+fi
+remember() { [ -n "$key" ] && upd --arg k "$key" --argjson v "$1" '.keys[$k]=$v'; printf '%s\n' "$1"; }
+
+case "$verb" in
+  run-create)
+    id=$(nid run)
+    upd --arg id "$id" --arg o "$(val --objective "$@")" '.runs += [{id:$id,objective:$o}]'
+    jq -c --arg id "$id" '.runs[]|select(.id==$id)' "$S" ;;
+  task-create)
+    id=$(nid task); deps=$(val --deps "$@"); [ -n "$deps" ] || deps='[]'
+    upd --arg id "$id" --arg t "$(val --task-title "$@")" --arg sp "$(val --spec "$@")" --arg r "$(val --run "$@")" --argjson deps "$deps" \
+      '.tasks += [{id:$id,runId:$r,title:$t,spec:$sp,deps:$deps,status:(if ($deps|length)==0 then "ready" else "pending" end)}]'
+    remember "$(jq -c --arg id "$id" '.tasks[]|select(.id==$id)' "$S")" ;;
+  task-list)
+    jq -c --arg r "$(val --run "$@")" '{runId:$r,tasks:[.tasks[]|select(.runId==$r)],count:([.tasks[]|select(.runId==$r)]|length)}' "$S" ;;
+  task-update)
+    upd --arg t "$(val --id "$@")" --arg s "$(val --status "$@")" '(.tasks[]|select(.id==$t)|.status)=$s'
+    recompute
+    echo '{"ok":true}' ;;
+  worker-start)
+    t=$(val --task "$@"); retry=$(val --retry-of "$@")
+    st=$(jq -r --arg t "$t" '[.tasks[]|select(.id==$t)][0].status // "missing"' "$S")
+    has --agent "$@" || { echo "stub: --agent required" >&2; exit 2; }
+    if [ "$st" != ready ] && [ -z "$retry" ]; then echo "stub: task $t is $st, not ready" >&2; exit 1; fi
+    id=$(nid disp)
+    upd --arg id "$id" --arg t "$t" --arg r "$(val --run "$@")" --arg b "$(val --name "$@")" --arg base "$(val --base-branch "$@")" \
+      '.dispatches = [{dispatchId:$id,taskId:$t,runId:$r,dispatchStatus:"active",terminalState:"active",branch:$b,baseBranch:$base,projection:{liveness:"live",attention:"none",nextAction:"wait"},observation:{agentWait:null}}] + .dispatches
+       | (.tasks[]|select(.id==$t)|.status)="dispatched"'
+    remember "{\"dispatchId\":\"$id\",\"outcome\":\"ready\"}" ;;
+  worker-list)
+    # Deliberately NOT filtered by --run: a real server may return other Runs' rows, so the backend
+    # must scope by its own map. ORCA_STUB_DROP_STOPPED=1 also omits stopped rows.
+    jq -c --arg drop "${ORCA_STUB_DROP_STOPPED:-0}" '{workers:[.dispatches[]|select($drop!="1" or .dispatchStatus!="stopped")],counts:{},page:{limit:100,hasMore:false,nextCursor:null}}' "$S" ;;
+  worker-stop)
+    upd --arg d "$(val --dispatch "$@")" '(.dispatches[]|select(.dispatchId==$d)) |= (.dispatchStatus="stopped"|.projection.liveness="exited"|.terminalState="reclaimable")'
+    echo '{"ok":true}' ;;
+  worker-release)
+    upd --arg d "$(val --dispatch "$@")" '(.dispatches[]|select(.dispatchId==$d)) |= (.terminalState="released")'
+    echo '{"ok":true}' ;;
+  gate-create)
+    id=$(nid gate)
+    upd --arg id "$id" --arg t "$(val --task "$@")" --arg q "$(val --question "$@")" --arg o "$(val --options "$@")" \
+      '.gates += [{id:$id,taskId:$t,question:$q,options:$o,status:"pending",resolution:null}]'
+    remember "$(jq -c --arg id "$id" '.gates[]|select(.id==$id)' "$S")" ;;
+  gate-list)
+    jq -c --arg r "$(val --run "$@")" '. as $s | {runId:$r,gates:[.gates[]|select(.taskId as $t | any($s.tasks[]; .id==$t and .runId==$r))],count:([.gates[]]|length)}' "$S" ;;
+  inbox)
+    jq -c '{messages:.messages}' "$S" ;;
+  check)
+    ack=$(val --ack "$@")
+    if [ -n "$ack" ]; then
+      upd --arg a "$ack" 'if .pending != null and .pending.id==$a then (.pending.messages|map(.id)) as $ids | .messages |= map(if (.id as $i | $ids|index($i)) then .acked=true else . end) | .pending=null else . end'
+    fi
+    if has --peek "$@"; then jq -c '{messages:[.messages[]|select(.acked|not)]}' "$S"; exit 0; fi
+    if [ "$(jq -r '.pending==null' "$S")" = true ] && [ "$(jq '[.messages[]|select(.acked|not)]|length' "$S")" != 0 ]; then
+      id=$(nid dlv); upd --arg id "$id" '.pending={id:$id,messages:[.messages[]|select(.acked|not)]}'
+    fi
+    jq -c '{delivery:.pending}' "$S" ;;
+  *) echo "stub: verb not supported: $verb" >&2; exit 99 ;;
+esac

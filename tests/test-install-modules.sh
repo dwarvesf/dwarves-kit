@@ -18,7 +18,7 @@ assert_true() { if [ "$2" -eq 0 ]; then ok "$1"; else bad "$1"; fi; }
 
 wired_hooks() { # $1 = settings.json path
   jq -r '[.hooks // {} | to_entries[]? | .value[]? | .hooks[]? | .command] | .[]' "$1" 2>/dev/null \
-    | grep -oE 'hooks/[A-Za-z0-9._-]+\.sh' | sed 's#hooks/##' | sort -u
+    | grep -oE 'hooks/[A-Za-z0-9._-]+\.sh' | sed 's#hooks/##' | grep -v '^anchor-root\.sh$' | sort -u
 }
 
 # modules_section_true <toml-file> -- bare keys set `= true` WITHIN [modules] only
@@ -153,7 +153,10 @@ assert_true "post-install smoke: all $SMOKE_N wired hooks exit 0 on a no-op even
 # ============================================================
 echo "== STANDING ANTI-DRIFT LINT: no hook reads kit.toml at runtime (record, not registry) =="
 # ============================================================
-LEAK="$(grep -rl 'kit\.toml' "$KIT_DIR/hooks" 2>/dev/null || true)"
+# Scope: source files only (.sh/.py), non-comment kit.toml references only.
+# harvest_sweep.py is allowlisted: its [harvest] keys resolve root-only through
+# the kit.toml port by design (DEC-9), so a runtime read there is intentional.
+LEAK="$(grep -rlE '^[^#]*kit\.toml' --include='*.sh' --include='*.py' "$KIT_DIR/hooks" 2>/dev/null | grep -v '/harvest_sweep\.py$' || true)"
 assert_true "no hooks/*.sh reads kit.toml (leaked: ${LEAK:-none})" "$([ -z "$LEAK" ]; echo $?)"
 
 # ============================================================
@@ -171,7 +174,7 @@ cat > "$NC_HOOKS_DIR/fake-config-reader.sh" <<'FAKEHOOK'
 source "$(dirname "$0")/../lib/config/kit-config.sh" 2>/dev/null || true
 grep -q board "$HOME/.claude/dwarves-kit/kit.toml" 2>/dev/null
 FAKEHOOK
-NC_LEAK="$(grep -rl 'kit\.toml' "$NC_HOOKS_DIR" 2>/dev/null || true)"
+NC_LEAK="$(grep -rlE '^[^#]*kit\.toml' --include='*.sh' --include='*.py' "$NC_HOOKS_DIR" 2>/dev/null | grep -v '/harvest_sweep\.py$' || true)"
 assert_true "NC: lint catches a planted hook reading kit.toml (caught: ${NC_LEAK:-NONE-BUG})" "$({ trap '' PIPE; printf '%s' "$NC_LEAK" 2>/dev/null || :; } | grep -q 'fake-config-reader.sh'; echo $?)"
 if { trap '' PIPE; printf '%s' "$NC_LEAK" 2>/dev/null || :; } | grep -qx "$NC_HOOKS_DIR/safety-gate.sh"; then FP_RC=1; else FP_RC=0; fi
 assert_true "NC: lint does not false-positive the untouched real hook" "$FP_RC"

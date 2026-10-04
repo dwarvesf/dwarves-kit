@@ -1,0 +1,24 @@
+{
+  "cases": [
+    {
+      "name": "long-lived",
+      "fixture": "long-lived-gaps.md",
+      "signals": [
+        { "name": "liveness-r7", "reviewer": "Reviewer 7|R7|Sustainab", "pattern": "heartbeat|liveness|silent|health.?check", "treatment": "hit" },
+        { "name": "liveness-any", "pattern": "heartbeat|liveness|dies silently|die silently|stops silently", "treatment": "hit", "control": "fewer" },
+        { "name": "retirement-r7", "reviewer": "Reviewer 7|R7|Sustainab", "pattern": "retire|decommission|orphan|teardown|tear down|unload|turn(ed)? off", "treatment": "hit" },
+        { "name": "retirement-any", "pattern": "retire|decommission|orphan|teardown|tear down", "treatment": "hit", "control": "fewer" },
+        { "name": "rotation-r7", "reviewer": "Reviewer 7|R7|Sustainab", "pattern": "rotat|expir", "treatment": "hit" },
+        { "name": "rotation-any", "pattern": "rotat|expir", "treatment": "hit", "control": "fewer" },
+        { "name": "cost-r7", "reviewer": "Reviewer 7|R7|Sustainab", "pattern": "cost|spend|budget|per.?email|unbounded", "treatment": "hit" }
+      ]
+    },
+    {
+      "name": "short-lived",
+      "fixture": "short-lived.md",
+      "signals": [
+        { "name": "quiet-no-findings", "reviewer": "Reviewer 7|R7|Sustainab", "pattern": "^[0-9]+[.)] ", "treatment": "miss" }
+      ]
+    }
+  ]
+}

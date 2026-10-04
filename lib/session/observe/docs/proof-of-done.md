@@ -920,3 +920,123 @@ bash lib/session/observe/tests/smoke.sh                          # -> smoke: all
 bash bin/session observe tools --errors EnterWorktree --days 14  # live group table
 bash bin/session observe tools --errors Bash --days 7 --json     # tool_error_groups
 ```
+
+## SPEC-353 `hooks` counts every hook event, not just Stop
+
+**Feature:** `session observe hooks` used to read durations only from `hookInfos` (Stop hooks only, via `stop_hook_summary` system entries). It now also aggregates `attachment` records (`hook_success`, `hook_cancelled`, `hook_non_blocking_error`, or any type carrying `command` + `durationMs`) for every other event, keyed `(hook label, event)` so an event column shows which event a hook is slow under. A headless (`claude -p`) transcript has no `hookInfos` at all; its Stop hooks are read from the per-file-buffered `attachment` copy instead of being silently zeroed. Spec: `docs/specs/SPEC-353-observe-hooks-all-events.md`.
+**Date:** 2026-09-28 · **Lane:** normal · **Host:** dev laptop (macOS 27.0)
+
+### Acceptance criteria
+
+| # | Criterion | Source |
+|---|---|---|
+| H1 | Stop comes only from `hookInfos`; a duplicate Stop `attachment` in the same file adds nothing | SPEC-353 AC1 |
+| H2 | A SessionStart `attachment` hook (previously invisible) now surfaces | SPEC-353 AC2 |
+| H3 | Same command under different events splits into separate `(label, event)` rows | SPEC-353 AC3/AC4 |
+| H4 | `hook_cancelled` (timed-out) attachments are counted, not filtered | SPEC-353 AC5 |
+| H5 | An `attachment` with no `command`/`durationMs`, and a `hookInfos` entry with no `durationMs`, produce no row (not a zero-ms row) | SPEC-353 AC6 |
+| H6 | Text table gains an `event` column; `--json` gains `event` per row, one row per `(hook, event)` | SPEC-353 AC7 |
+| H7 | A headless (`entrypoint: sdk-cli`) transcript with no `hookInfos` still counts its Stop hook from the attachment | SPEC-353 AC10, "headless gap" |
+| H8 | The per-file Stop reconciliation is scoped per file: a headless file's Stop attachment commits while a non-headless file's duplicate is still discarded | SPEC-353 AC10 negative control |
+
+### Run table
+
+| Check | Command | Expected | Result |
+|---|---|---|---|
+| Module suite green | `bash lib/session/observe/tests/smoke.sh \| tail -1` | all cases pass | PASS, `smoke: all 111 passed` |
+| Stop from hookInfos only (H1) | smoke 102 | `stop-hook.sh`/`Stop` runs=1; `nodur-hook.sh` absent | PASS |
+| SessionStart surfaces (H2) | smoke 103 | `tool-first.sh`/`SessionStart` runs=1, maxms>=1500 | PASS |
+| PreToolUse two samples (H3) | smoke 104 | `pre-hook.sh`/`PreToolUse` runs=2, max=44 | PASS |
+| (label, event) split (H3) | smoke 105 | `pre-hook.sh`/`PostToolUse` runs=1 maxms=70, separate from PreToolUse row | PASS |
+| Cancelled hook counted (H4) | smoke 106 | `repo-memory.sh`/`SessionStart` (cancelled) runs=1 maxms>=3500 | PASS |
+| No-duration/no-command skipped (H5) | smoke 107 | exactly 5 `(hook, event)` rows total | PASS |
+| Event column, json cardinality (H6) | smoke 108 | header carries `event`; every json row carries `event` | PASS |
+| Headless gap (H7) | smoke 109 | `headless-stop-hook.sh`/`Stop` runs=1 maxms=25, from the attachment alone | PASS |
+| Per-file scoping (H8) | smoke 110 | headless file's Stop row present; non-headless file's duplicate still absent | PASS |
+| Regression: existing hook cases | smoke 4, 5, 6 | slow/fast/error cases still pass under the shifted `$6` column | PASS |
+| Regression: /goal Stop-hook collapse | smoke 36 | alpha goal still one `inline-echo:<hash>` row, count 3 | PASS |
+| vps-report suite green | `bash lib/session/observe/tests/test-vps-report.sh \| tail -1` | all cases pass | PASS, `vps-report: all 6 passed` |
+| Live, real data, before/after (H2 H6 H7) | see below | SessionStart/PreToolUse/PostToolUse rows appear only in the fixed build | PASS, run below |
+
+### Live run (2026-09-28, real transcript, before/after)
+
+Same real ops-toolkit transcript used to ground the spec's Problem section (294 `hook_success` attachments, 22 `stop_hook_summary` entries).
+
+Before this change (pre-fix `bin/session-observe`, `git show 77aea8e9:...` swapped in, then restored):
+
+```
+Command: session-observe hooks --file <ops-toolkit transcript> --top 8
+# hooks  (2 hook errors across 1 transcripts)
+  hook                       runs  p50ms  p95ms  maxms                                     sample
+  anchor-root.sh               60    102    866    901  bash ${CLAUDE_PLUGIN_ROOT}/hooks/anchor-root.sh ...
+  em-dash-fix.sh                15    135    184    186  ~/.claude/hooks/style-guard/em-dash-fix.sh
+  handoff-guard.sh              15    125    158    180  ~/.claude/hooks/style-guard/handoff-guard.sh
+  show-without-run-guard.sh     15    127    176    177  ~/.claude/hooks/style-guard/show-without-run-guard.sh
+  verification-evidence.sh      15    114    163    165  ~/.claude/hooks/verification-evidence/verification-evidence...
+  secret-guard-stop.sh          15     85    124    140  ~/.claude/hooks/secret-guard/secret-guard-stop.sh
+  on-stop.sh                    15     21    100    105  ${CLAUDE_PLUGIN_ROOT}/scripts/on-stop.sh
+  inline-echo:f632d15a          15     40     48     51  if [ -z "${HOME-}" ]; ...
+```
+
+Every row is a Stop hook (no `event` column at all; SessionStart/PreToolUse/PostToolUse never appear).
+
+After this change:
+
+```
+Command: session-observe hooks --file <ops-toolkit transcript> --top 8
+# hooks  (2 hook errors across 1 transcripts)
+  hook                         event  runs  p50ms  p95ms  maxms                                sample
+  anchor-root.sh         PostToolUse     6     78   2215   2215  bash ${CLAUDE_PLUGIN_ROOT}/hooks/anchor-root.sh ...
+  repo-memory.sh        SessionStart     1   1770   1770   1770  ~/.claude/hooks/repo-memory/repo-memory.sh
+  anchor-root.sh                Stop    60    102    866    901  bash ${CLAUDE_PLUGIN_ROOT}/hooks/anchor-root.sh ...
+  anchor-root.sh        SessionStart     1    643    643    643  bash ${CLAUDE_PLUGIN_ROOT}/hooks/anchor-root.sh ...
+  branch-guard.sh         PreToolUse     5    149    278    278  ~/.claude/hooks/branch-guard/branch-guard.sh
+  Loading               SessionStart     1    244    244    244  Loading ponytail mode...
+  inline-echo:f632d15a    PreToolUse   143     59    130    238  if [ -z "${HOME-}" ]; ...
+  anchor-root.sh          PreToolUse     1    191    191    191  bash ${CLAUDE_PLUGIN_ROOT}/hooks/anchor-root.sh ...
+```
+
+`repo-memory.sh`/`SessionStart` at 1770ms is exactly the class of blind spot the item named (a slow SessionStart hook delaying every new session, invisible before this change). `anchor-root.sh`'s Stop row still reads runs=60 (unchanged by the fix, as it should: this file has `hookInfos`, so its duplicate Stop attachment is discarded).
+
+### Negative control
+
+`bash lib/gate/negctl.sh . "bash lib/session/observe/tests/smoke.sh" "git show 77aea8e9:lib/session/observe/bin/session-observe > lib/session/observe/bin/session-observe"`:
+
+```
+Command: bash lib/session/observe/tests/smoke.sh
+Exit: 0 (green before mutation)
+Mutation: git show 77aea8e9:lib/session/observe/bin/session-observe > lib/session/observe/bin/session-observe
+Changed: lib/session/observe/bin/session-observe
+Exit: 1 (under mutation, RED expected)
+Restore: git checkout HEAD -- lib/session/observe/bin/session-observe
+Exit: 0 (green after restore)
+Verdict: PASS
+```
+
+### Test plan coverage
+
+| Spec row | Run |
+|---|---|
+| AC1 Stop from hookInfos only | smoke 102 |
+| AC2 SessionStart surfaces | smoke 103 |
+| AC3 PreToolUse two samples | smoke 104 |
+| AC4 (label, event) split | smoke 105 |
+| AC5 cancelled hook counted | smoke 106 |
+| AC6 no-duration/no-command skipped, exact row count | smoke 107 |
+| AC7 event column + json cardinality | smoke 108 |
+| AC8 smoke column shift | smoke 4, 5 (updated) |
+| AC9 negative control | `lib/gate/negctl.sh`, this section |
+| AC10 headless gap + per-file scoping | smoke 109, 110 |
+| AC11 docs | `README.md`, `SPEC.md`, module docstring (this commit) |
+
+### Rollback
+
+`git revert` the feature commit. The `(label, event)` keying, the attachment branch, the per-file Stop buffer, and the fixture/tests leave together; a repo with only `hookInfos`-sourced Stop hooks would fall back to the pre-fix Stop-only view.
+
+### Reproduce
+
+```bash
+bash lib/session/observe/tests/smoke.sh                                      # -> smoke: all 111 passed
+bash lib/session/observe/tests/test-vps-report.sh                            # -> vps-report: all 6 passed
+python3 lib/session/observe/bin/session-observe hooks --file <transcript> --top 8   # live, real data
+```
