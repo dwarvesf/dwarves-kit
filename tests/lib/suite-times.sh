@@ -27,7 +27,7 @@
 # hand-set and kept as is):
 #   - candidate = max(60, 2 x p95 of the exit-0 runs), used only with at least 5 such samples;
 #   - the candidate replaces an existing line only when it is not lower, unless --allow-lower;
-#   - an exit-124 row (a kill) is a lower bound: the limit ends up at least the seconds it was
+#   - an exit-124 row (a kill) is a lower bound on p95: the limit ends up at least twice the seconds it was
 #     killed at, with or without enough samples.
 # A missing, empty or unreadable log is not an error: read verbs say so on stderr and exit 0,
 # and `tune` leaves the timeouts file untouched. Every failure to WRITE the log is swallowed
@@ -199,11 +199,11 @@ tuned_file() {
         if (cand >= 0 && cand < 60) cand = 60
         nw = cur
         if (cand >= 0 && (cur < 0 || cand >= cur || lower == 1)) nw = cand
-        if ((s in kill) && kill[s] > nw) nw = kill[s]
+        if ((s in kill) && 2 * kill[s] > nw) nw = 2 * kill[s]   # a kill at N means p95 >= N, so D4 gives at least 2N
         if (nw >= 0) out[s] = nw
       }
       gen = "# Rule: seconds = max(60, 2 x p95 of the exit-0 runs), set only from " min " or more samples and never below the current line unless tune ran with --allow-lower.\n"
-      gen = gen "# An exit-124 (killed) row is a lower bound: the limit is at least the seconds it was killed at. A line with a # comment is hand-set and kept.\n"
+      gen = gen "# An exit-124 (killed) row is a lower bound on p95: the limit is at least twice the seconds it was killed at. A line with a # comment is hand-set and kept.\n"
       gen = gen "# Source: suite-times history, " nsamp " exit-0 samples across " nsuites " suites, runs " d1 " to " d2 " (tuned " today ").\n"
       if (!genpos) head = head "@@GEN@@\n"
       i = index(head, "@@GEN@@\n")

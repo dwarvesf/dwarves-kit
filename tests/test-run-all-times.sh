@@ -91,9 +91,9 @@ for sec in 10 10 10; do row test-few "$sec" 0; done                 # 3 samples:
 row test-hand 5 0
 for sec in 40 38 39 40 37; do row test-newcomer "$sec" 0; done      # no line yet, 5 samples: added at 80
 row test-thin 40 0; row test-thin 41 0                              # no line yet, 2 samples: not added
-row test-killed 120 124; row test-killed 100 124                    # only kills: at least 120
-for sec in 20 20 20 20 20; do row test-killedmany "$sec" 0; done; row test-killedmany 250 124   # kill 250 beats candidate 60
-row test-wedged 90 124                                              # no line yet, a kill: 90
+row test-killed 120 124; row test-killed 100 124                    # only kills: at least 2 x 120
+for sec in 20 20 20 20 20; do row test-killedmany "$sec" 0; done; row test-killedmany 250 124   # kill 250 gives 500, beats candidate 60
+row test-wedged 90 124                                              # no line yet, a kill at 90: 180
 OUT="$(KIT_SUITE_TIMES_FILE="$FIX" RA "$K" --times tune 2>&1)"; RC=$?
 if [ "$RC" -eq 0 ] \
    && grep -qx 'test-heavy 900' <<<"$OUT" \
@@ -102,15 +102,15 @@ if [ "$RC" -eq 0 ] \
    && grep -qx 'test-newcomer 80' <<<"$OUT" \
    && ! grep -q 'test-thin' <<<"$OUT" \
    && grep -qx 'test-silent 123' <<<"$OUT" \
-   && grep -qx 'test-killed 120' <<<"$OUT" \
-   && grep -qx 'test-killedmany 250' <<<"$OUT" \
-   && grep -qx 'test-wedged 90' <<<"$OUT" \
+   && grep -qx 'test-killed 240' <<<"$OUT" \
+   && grep -qx 'test-killedmany 500' <<<"$OUT" \
+   && grep -qx 'test-wedged 180' <<<"$OUT" \
    && grep -qx 'test-hand 777  # hand-set: cold run is slow' <<<"$OUT"; then ok "each rule shows in the dry run"
 else no "rc=$RC out=$OUT"; fi
 OUT2="$(KIT_SUITE_TIMES_FILE="$FIX" RA "$K" --times tune --allow-lower 2>&1)"
 grep -qx 'test-heavy 200' <<<"$OUT2" && ok "--allow-lower lets the candidate replace a higher line" || no "out=$OUT2"
 grep -qx 'test-few 500' <<<"$OUT2" && ok "--allow-lower still needs 5 samples" || no "out=$OUT2"
-grep -qx 'test-killed 120' <<<"$OUT2" && ok "--allow-lower keeps a kill as a floor" || no "out=$OUT2"
+grep -qx 'test-killed 240' <<<"$OUT2" && ok "--allow-lower keeps a kill as a floor" || no "out=$OUT2"
 RA "$K" --times tune --nonsense >/dev/null 2>&1; [ "$?" -eq 64 ] && ok "an unknown tune flag exits 64" || no "unknown flag accepted"
 UNCHANGED="$(grep -c '^test-heavy 900$' "$K/bin/test-affected.timeouts")"
 [ "$UNCHANGED" = 1 ] && ok "the dry run did not touch the file" || no "dry run wrote the file"
