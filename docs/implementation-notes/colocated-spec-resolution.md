@@ -82,3 +82,12 @@ The build's `tests/test-spec-find.sh` covers these on top of the matrix:
   3. `gh pr create --draft`. ship-gate engages on it, so every full-lane gate up to `docs` must be in the ledger first.
 - Known red, not from this branch: `test-config-registry` fails on a clean `origin/master` export too. `test-gate-validate-round` failed 1 of 196 once, then passed 12 runs in a row; the failing case was not captured.
 - Test runs under Claude Code need a `# branch-guard: allow: <reason>` comment on the command line. The ship-gate tests send `git push` text to the hook.
+
+## Review (light, two lenses in parallel)
+
+Verdict FIX THEN SHIP. Left open for the operator design review on the draft PR:
+
+- Medium: a missing `spec-find.sh` makes gate-ledger, proof-ledger, pitch and spec-next exit 1 at source time, while ship-gate falls back to root-only. ship-gate then blocks on their FATAL. Fail-closed, not a bypass. Fix needs a ship-gate edit and a new codex-hooks hash pin.
+- Low: a root glob hit beats an exact co-located match (kept as today).
+- Low: the walk runs in full even after a root hit. Try root first, walk on a miss.
+- Low: an unrelated co-located spec with the branch slug over-blocks a push. Never under-blocks.
