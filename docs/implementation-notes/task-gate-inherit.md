@@ -24,3 +24,10 @@ The lead picked these warnings to apply in the build. Each one changes code or a
 - **Explicit propagation.** The write loop calls `override ... || return $?`. NC-8 mutates exactly that line.
 - **Usage.** `inherit` joins the bottom `usage:` string.
 - **Wording.** Refusals read "last state ran", never "passed". The no-ledger message says the ledger is host-local and names the root.
+
+## Review fix: judge rows split on \037, not a tab
+
+Context: the fresh-context review (Opus, correctness and forgery lens) found that `IFS=$'\t'` treats a tab as whitespace. An empty state field collapsed, so a hand-edited parent line `ran | GATE | validate |  | <iso>` read as state `ran` at that time, and the verb wrote an inherited line for it.
+Decision: the judge awk prints rows split by `\037`, and both read loops split on `\037`. An empty state now reports `last state empty, not ran`.
+Why: `\037` is not IFS whitespace, so empty fields survive the read. It works in bash 3.2.
+Impact: two tests beyond the spec. EMPTYSTATE pins the forgery shape. AC-3, AC-4 and AC-5 also assert that the parent ledger stays byte-identical on refusal. NC-9 (split on a tab again) turns EMPTYSTATE red, and under that mutation the verb exits 0 and writes the line.
