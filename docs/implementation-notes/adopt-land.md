@@ -89,3 +89,8 @@ One critical (R3f printing `resume:` over a leftover that failed R6b) and three 
 ## 2026-10-04 Fold-diff check
 
 - An interrupted run keeps exit 1 under R11 (lead decision): the verb is operator-only, and the row already says `interrupted`, so no 130 or 143 exit code is needed.
+
+## Fold-diff check outcome (clean, operator-approved path past the round ceiling)
+
+- Case 34b: signal the process group (`kill -<SIG> -<pgid>`), never the verb's PID alone. A PID-only signal on `/bin/bash` 3.2.57 lets land finish and merge before the trap row prints, over a worktree land already tidied. The pgrp form matches a real Ctrl-C.
+- Case 34a: the stub signals itself too (`kill -INT $PPID; kill -INT $$`). Bash defers SIGINT while it waits on a child that exits 0, so 130 shows up reliably only when the child also dies of the signal.

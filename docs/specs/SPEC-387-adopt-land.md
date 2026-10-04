@@ -1,6 +1,6 @@
 # Spec: wrap adopt, one call that adopts a repo and lands the adoption
 Generated: 2026-10-04
-Status: DRAFT
+Status: VALIDATED
 Lane: full (kit machinery: `lib/wrap/`, the `wrap` command contract; the verb pushes and squash-merges onto other repos' default branches)
 Depth: standard (every fact this spec rests on was sampled live; see ## Grounding)
 Type: spec-feature
