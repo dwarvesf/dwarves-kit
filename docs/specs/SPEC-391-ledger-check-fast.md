@@ -14,7 +14,7 @@ Source: kit-speed mega-goal, sub-goal 04 (D3: reuse the #863 cache key; target a
 
 ### Approaches considered
 
-1. **Cache the verdict per ledger.** Key: the ledger's size, mtime and inode, plus a hash of the lane data and the gate scripts. The same key `_shipped_incomplete` uses (#863). A hit skips the lane derivation entirely.
+1. **Cache the verdict per ledger.** Key: the ledger's size, mtime, inode and ctime, plus a hash of the lane data and the gate scripts. The same key `_shipped_incomplete` uses (#863). A hit skips the lane derivation entirely.
 2. **Rewrite the derivation without spawns** (`lane_resolve`, `_ld_array`, `lane_rows` in pure bash). Fixes the cost at the source and helps the first call too. A bigger diff in `lane-data.sh`, which the classifier also reads, so a parity risk far beyond `check`.
 3. **Both.** Cache the verdict (approach 1) and remove the one spawn-heavy step that has a trivially safe fast path (`normalize_phase`, 48 of the 103 spawns).
 
@@ -40,13 +40,13 @@ The two key helpers (`_lane_fp`, `_file_id`) move to `lib/gate/ledger-key.sh`, s
         +--------------------+-------------------------+
                              v
         $LOG_DIR/.gate-check.cache  line 1 "#fp=..." must equal fp
-        entry "lane  rid  kit-lanes  size mtime inode  pass|fail:p1,p2"
+        entry "lane  rid  kit-lanes  size mtime inode ctime  pass|fail:p1,p2"
                  |hit                                  |miss, bad header, bad entry
                  v                                      v
         replay: exit 0, or the MISSING-GATE      required (lane derivation) + awk per phase
         lines for the stored phases, exit 1               |
                                                           v
-                                       write the entry (temp + mv) when the ledger mtime is >= 2 s old
+                                       write the entry (temp + mv) when the ledger ctime is >= 2 s old
 ```
 
 ## Design
@@ -80,12 +80,12 @@ Finding: the cost is process spawns, not a slow algorithm, and the derivation re
 ### Cache contract
 
 - File: `$LOG_DIR/.gate-check.cache`, beside `.shipped-incomplete.cache`.
-- Line 1: `#fp=<cksum>` from `_lane_fp` (kit root, operator and project `kit.toml`, the project file's tracked-and-clean state, every `lib/gate/*.sh`, `kit-config.sh`). A mismatch ignores the whole file.
-- Entry: `lane<TAB>rid<TAB>kit-lanes<TAB>size<TAB>mtime<TAB>inode<TAB>result`. `rid` is the normalized file name (`runid`), `kit-lanes` is `0` or `1`, `result` is `pass` or `fail:<phase>,<phase>` and must match `^(pass|fail:[a-z0-9-]+(,[a-z0-9-]+)*)$`.
+- Line 1: `#fp=<cksum>` from `_lane_fp` (kit root, operator and project `kit.toml`, the project file's tracked-and-clean state, every `lib/gate/*.sh`, `kit-config.sh`). Each file is hashed on its own and labelled by role, so bytes moved between layers change it. A mismatch ignores the whole file.
+- Entry: `lane<TAB>rid<TAB>kit-lanes<TAB>size<TAB>mtime<TAB>inode<TAB>ctime<TAB>result`. `rid` is the normalized file name (`runid`), `kit-lanes` is `0` or `1`, `result` is `pass` or `fail:<phase>,<phase>` and must match `^(pass|fail:[a-z0-9-]+(,[a-z0-9-]+)*)$`.
 - Hit: replay the stored answer. `pass` exits 0 silent. `fail:` prints one `MISSING-GATE: <phase> (required for lane '<lane>'; no ran/override entry in the ledger)` line per phase, in plan order, to stderr and exits 1. Output is byte-identical to the full path.
 - Miss, unreadable file, bad header, malformed entry or any other doubt: the full computation runs, and its result is written back.
-- Write: only for a ledger whose mtime is at least 2 s old (a same-size rewrite inside the mtime second would be invisible to the key), as temp file plus `mv`, newest 400 other entries kept, failure never fatal, temp removed on EXIT, TERM and INT.
-- Never cached: an unknown lane (stays fail-closed), an empty `runid`, a ledger `stat` cannot read (including a missing ledger).
+- Write: only for a readable ledger whose ctime is at least 2 s old (a user can set mtime, never ctime; a same-size rewrite inside the timestamp second would be invisible to the key), as temp file plus `mv`, newest 400 other entries kept, failure never fatal, temp removed on EXIT, TERM and INT.
+- Never cached: an unknown lane (stays fail-closed), an empty `runid`, an unreadable ledger, a ledger `stat` cannot read (including a missing ledger).
 
 ### ADR link(s)
 
@@ -93,7 +93,7 @@ None. `docs/decisions/0024-gate-ledger-and-ship-enforcement.md` stays accurate: 
 
 ### Boundaries & failure modes
 
-- The key trusts the filesystem's size, mtime (1 s resolution on macOS) and inode. A same-size, same-inode, same-second in-place rewrite is invisible to it, which is why a fresh ledger is not cached. A deliberate forgery that also restores the mtime can forge a `ran` line anyway, so the cache adds no attack surface.
+- The key trusts the filesystem's size, mtime, inode and ctime. ctime moves on every write and cannot be set by a user, so a rewrite that restores size, mtime and inode (`cp -p`, `touch -r`) is still seen. A same-size, same-inode rewrite inside one timestamp second is invisible to the key, which is why a ledger changed under 2 s ago is not cached.
 - A concurrent writer can lose another writer's entry (last `mv` wins). The loser re-derives once.
 - The cache directory is the ledger root, so anyone who can write a cache entry can already write the ledger.
 
@@ -152,14 +152,16 @@ bash lib/gate/proof-gate.sh contract "cache gate-ledger check"
 1. A project `.kit.toml` that is dirty against HEAD: the fingerprint carries the tracked-and-clean flag, so the cached verdict is dropped when the file flips.
 2. `--kit-lanes`: its own key field; an operator override makes the two answers differ and both stay correct warm.
 3. A read-only log dir: the write fails quietly and every call runs the full path.
-4. A ledger written less than 2 s ago: never cached, so a same-size rewrite in that second is seen.
+4. A ledger changed less than 2 s ago: never cached, so a same-size rewrite in that second is seen.
 
 ## Failure modes
 
 | Failure class | Detection signal | Mitigation / recovery |
 |---|---|---|
 | Stale verdict served after a lane or script edit | `tests/test-gate-ledger-check-cache.sh` N2, N3 | the fingerprint covers `kit.toml`, the operator file and every `lib/gate/*.sh` |
-| Stale verdict served after a ledger rewrite | N1, N4, N5 | size, mtime and inode key; the 2 s write guard |
+| Stale verdict served after a ledger rewrite | N1, N4, N5, N7 | size, mtime, inode and ctime key; the 2 s write guard on ctime |
+| Failure cached for an unreadable ledger | N8 | an unreadable ledger is never cached |
+| Bytes moved between kit.toml layers | N9 | per-file, role-labelled hashes in `_lane_fp` |
 | Corrupt or hostile cache content | C1 to C8 | a strict result regex; any doubt falls through to the full path |
 | Cache write interrupted | C10 | temp file removed on EXIT, TERM and INT |
 
@@ -167,6 +169,7 @@ bash lib/gate/proof-gate.sh contract "cache gate-ledger check"
 
 - Rewriting `lane-data.sh` without spawns (approach 2). The lane arrays still cost about 55 spawns on a miss.
 - A single awk over the ledger for all required phases. About 11 spawns on a miss, not needed to reach the target.
+- Filesystems whose timestamps are coarser than 2 s (FAT keeps a 2 s mtime, some network mounts more). The 2 s guard holds on 1 s and 2 s filesystems, not coarser ones; there a same-size rewrite inside the timestamp window can serve a stale entry. Not guarded: the ledger root is the user's own state directory on a local disk.
 - Speeding the fixed startup (log-dir resolve and migrate run `kit_config_get` twice, about 12 spawns).
 
 ## Touches
@@ -180,7 +183,7 @@ bash lib/gate/proof-gate.sh contract "cache gate-ledger check"
 ## Decision Log
 
 - DEC-1: reuse the #863 key and move its two helpers into one shared file rather than copy them. Two copies would let the two caches drift apart. Cost: a four-line edit in `lane-telemetry.sh`, outside the listed `Touches`; flagged for the lead.
-- DEC-2: add a 2 s write guard on top of the #863 key. The #863 key cannot see a same-size, same-inode rewrite in the same mtime second. The guard costs nothing on a ledger that has aged.
+- DEC-2: add ctime to the key and a 2 s write guard on ctime on top of the #863 key. That key cannot see a same-size, same-inode rewrite in the same mtime second, and mtime can be set by the user while ctime cannot. The guard costs nothing on a ledger that has aged.
 - DEC-3: cache `fail` verdicts with their phase list so a hit prints the exact `MISSING-GATE` lines. Caching only `pass` would leave the failing case, which a push hits again and again, slow.
 - DEC-4: no off switch. A cache that cannot be trusted is removed by deleting one dotfile in the log dir, and every miss path is the original code.
 
@@ -201,6 +204,9 @@ bash lib/gate/proof-gate.sh contract "cache gate-ledger check"
 | 5 | Edit `gate-ledger.sh` changes the result | negative control | After state 3 | N3 |
 | 6 | Same size and mtime, new inode flips fail to pass | negative control | After state 3 | N4 |
 | 7 | A fresh ledger is not cached; in-place same-size rewrite is seen | negative control | Edge case 4 | N5 |
+| 7b | Same-size rewrite with the mtime restored is seen | negative control | After state 3 | N7 |
+| 7c | An unreadable ledger is not cached and recovers | negative control | After state 3 | N8 |
+| 7d | A block moved between operator and project kit.toml invalidates | negative control | After state 3 | N9 |
 | 8 | `--kit-lanes` keyed apart | regression | Edge case 2 | N6 |
 | 9 | Garbage, bad-identity, malformed, truncated, empty and directory cache all answer correctly | robustness | After state 4 | C1 to C8 |
 | 10 | Warm call under 200 ms against master's median | timing | After state 1 | `docs/verification/ledger-check-fast.md` |

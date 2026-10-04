@@ -31,6 +31,8 @@ OLD=202601010000                       # an mtime well past the 2 s write guard
 chk() { OUT="$(cd "$CW" && env KIT_CONFIG_OPERATOR="$OPD" DWARVES_KIT_LOG_DIR="$LOGD" bash "$GLS" check "$@" 2>&1)"; RC=$?; }
 req() { (cd "$CW" && env KIT_CONFIG_OPERATOR="$OPD" DWARVES_KIT_LOG_DIR="$LOGD" bash "$GLS" required "$1"); }
 ageit() { touch -t "$OLD" "$@"; }
+# An entry is written only when the ledger's ctime is 2 s old, and ctime cannot be set: wait it out.
+settle() { sleep 2.1; }
 START() { printf '2026-01-01T00:00:00Z | START | lane=%s classified=%s type=t ctype=t repo=r\n' "$1" "$1"; }
 # mk <rid> <lane> <all-ran|all-override|missing-last|none|all-skipped>
 mk() {
@@ -62,8 +64,12 @@ echo "=== gate-ledger check cache ==="
 # ---------------------------------------------------------------------------
 PARITY_BAD=0; HIT_BAD=0; CASES=0
 for lane in tiny normal full bug backfill; do
+  for kind in all-ran all-override missing-last none all-skipped; do mk "p-$lane-$kind" "$lane" "$kind"; done
+done
+settle
+for lane in tiny normal full bug backfill; do
   for kind in all-ran all-override missing-last none all-skipped; do
-    rid="p-$lane-$kind"; mk "$rid" "$lane" "$kind"
+    rid="p-$lane-$kind"
     command rm -f "$CACHE"
     chk "$lane" "$rid"; COLD_RC=$RC; COLD_OUT="$OUT"
     n1="$(cache_lines)"
@@ -97,14 +103,14 @@ chk full; { [ "$RC" -eq 64 ] && printf '%s' "$OUT" | grep -q '^usage: check'; };
 # N: negative controls. Each warms a verdict, changes ONE key input, and the result must flip.
 # ---------------------------------------------------------------------------
 # N1: append a ledger line
-mk n1 full missing-last
+mk n1 full missing-last; settle
 chk full n1; chk full n1; B="$RC"
 printf '2026-01-01T00:00:09Z | GATE | reflect | ran | late\n' >> "$LOGD/runs/n1.log"; ageit "$LOGD/runs/n1.log"
 chk full n1
 { [ "$B" -eq 1 ] && [ "$RC" -eq 0 ] && [ -z "$OUT" ]; }; ok "N1 appending the missing gate flips fail -> pass" $?
 
 # N2: edit [lane.normal] in the (shim) kit.toml
-mk n2 normal all-ran
+mk n2 normal all-ran; settle
 chk normal n2; chk normal n2; B="$RC"
 sed -E '/^\[lane\.normal\]/,/^\[/ s/^phases = \[/phases = ["reflect", /' "$SH/kit.toml" > "$SH/kit.toml.new" && command mv -f "$SH/kit.toml.new" "$SH/kit.toml"
 chk normal n2
@@ -113,7 +119,7 @@ command cp -f "$KIT_DIR/kit.toml" "$SH/kit.toml"
 chk normal n2; [ "$RC" -eq 0 ]; ok "N2 restoring kit.toml flips it back" $?
 
 # N3: edit gate-ledger.sh itself
-mk n3 full missing-last
+mk n3 full missing-last; settle
 chk full n3; chk full n3; B_OUT="$OUT"
 command cp -f "$GLS" "$TD/gate-ledger.saved"
 sed -E "s/MISSING-GATE: \\\$phase \\(required for lane '\\\$lane'; no ran/GATE-GAP: \$phase (required for lane '\$lane'; no ran/" "$GLS" > "$GLS.new" && command mv -f "$GLS.new" "$GLS"
@@ -125,7 +131,7 @@ chk full n3; [ "$OUT" = "$B_OUT" ]; ok "N3 restoring gate-ledger.sh restores the
 
 # N4: same size, same mtime, new inode
 mk n4 full missing-last
-printf '2026-01-01T00:00:09Z | GATE | reflect | skipped | xx\n' >> "$LOGD/runs/n4.log"; ageit "$LOGD/runs/n4.log"
+printf '2026-01-01T00:00:09Z | GATE | reflect | skipped | xx\n' >> "$LOGD/runs/n4.log"; ageit "$LOGD/runs/n4.log"; settle
 chk full n4; chk full n4; B="$RC"
 L="$LOGD/runs/n4.log"
 sed 's/| skipped | xx/| override | x/' "$L" > "$L.new"      # 7+2 chars -> 8+1 chars: same byte count
@@ -138,13 +144,13 @@ INO_B="$(ls -i "$L" | awk '{print $1}')"
 chk full n4
 { [ "$B" -eq 1 ] && [ "$RC" -eq 0 ]; }; ok "N4 an inode swap at the same size and mtime flips fail -> pass" $?
 
-# N5: a fresh ledger (mtime inside the 2 s guard) is not cached, so an in-place same-size rewrite shows
+# N5: a fresh ledger (ctime inside the 2 s guard) is not cached, so an in-place same-size rewrite shows
 mk n5 full missing-last
 printf '2026-01-01T00:00:09Z | GATE | reflect | skipped | xx\n' >> "$LOGD/runs/n5.log"
 touch "$LOGD/runs/n5.log"
 n_before="$(cache_lines)"
 chk full n5; B="$RC"
-[ "$(cache_lines)" -eq "$n_before" ]; ok "N5 a ledger touched under 2 s ago is not cached" $?
+[ "$(cache_lines)" -eq "$n_before" ]; ok "N5 a ledger changed under 2 s ago is not cached" $?
 printf '%s\n' "$(sed 's/| skipped | xx/| override | x/' "$LOGD/runs/n5.log")" > "$LOGD/runs/n5.log"
 touch "$LOGD/runs/n5.log"
 chk full n5
@@ -153,23 +159,65 @@ chk full n5
 # N6: --kit-lanes is its own key; an operator lane override makes the two answers differ
 printf '[lane.normal]\nphases = ["spec"]\nlight = []\n' > "$OPD/kit.toml"
 mk n6 normal all-ran
-{ START normal; echo '2026-01-01T00:00:01Z | GATE | spec | ran | e'; } > "$LOGD/runs/n6.log"; ageit "$LOGD/runs/n6.log"
+{ START normal; echo '2026-01-01T00:00:01Z | GATE | spec | ran | e'; } > "$LOGD/runs/n6.log"; ageit "$LOGD/runs/n6.log"; settle
 chk normal n6; A1="$RC"; chk normal n6 --kit-lanes; B1="$RC"
 chk normal n6; A2="$RC"; chk normal n6 --kit-lanes; B2="$RC"
 { [ "$A1" -eq 0 ] && [ "$B1" -eq 1 ] && [ "$A2" -eq "$A1" ] && [ "$B2" -eq "$B1" ]; }; ok "N6 --kit-lanes and the overlay answer differently, cold and warm" $?
 command rm -f "$OPD/kit.toml"
 chk normal n6; { [ "$RC" -eq 1 ]; }; ok "N6 removing the operator overlay invalidates the entry" $?
 
+# N7: a same-size in-place rewrite that restores the old mtime (cp -p / touch -r): size, mtime and inode all
+# match the cached entry, only ctime moved
+mk n7 full missing-last
+printf '2026-01-01T00:00:09Z | GATE | reflect | skipped | xx\n' >> "$LOGD/runs/n7.log"; ageit "$LOGD/runs/n7.log"; settle
+chk full n7; chk full n7; B="$RC"
+L="$LOGD/runs/n7.log"
+command cp -p "$L" "$TD/n7.ref"
+SZ_A="$(wc -c < "$L" | tr -d ' ')"; INO_A="$(ls -i "$L" | awk '{print $1}')"
+sed 's/| skipped | xx/| override | x/' "$L" > "$TD/n7.new"
+cat "$TD/n7.new" > "$L"; touch -r "$TD/n7.ref" "$L"
+{ [ "$SZ_A" = "$(wc -c < "$L" | tr -d ' ')" ] && [ "$INO_A" = "$(ls -i "$L" | awk '{print $1}')" ] \
+  && [ "$(mtime_of "$L")" = "$(mtime_of "$TD/n7.ref")" ]; }; ok "N7 precondition: same size, same inode, same mtime" $?
+chk full n7
+{ [ "$B" -eq 1 ] && [ "$RC" -eq 0 ]; }; ok "N7 a same-size rewrite with the mtime restored flips fail -> pass" $?
+
+# N8: an unreadable ledger is never cached, and becomes readable again with master's answer
+mk n8 full all-ran; settle
+chk full n8; B="$RC"
+chmod 000 "$LOGD/runs/n8.log"
+if [ -r "$LOGD/runs/n8.log" ]; then
+  ok "N8 skipped: this user can read a mode-000 file" 0
+else
+  settle
+  n_before="$(cache_lines)"
+  chk full n8; U_RC="$RC"
+  { [ "$B" -eq 0 ] && [ "$U_RC" -eq 1 ] && printf '%s' "$OUT" | grep -q '^MISSING-GATE: think'; }; ok "N8 an unreadable ledger fails every gate, as master does" $?
+  [ "$(cache_lines)" -eq "$n_before" ]; ok "N8 an unreadable ledger is not cached, even once its ctime is old" $?
+  chmod 644 "$LOGD/runs/n8.log"
+  chk full n8; R1="$RC"; settle; chk full n8; R2="$RC"
+  { [ "$R1" -eq 0 ] && [ "$R2" -eq 0 ] && [ -z "$OUT" ]; }; ok "N8 after chmod 644 the answer is master's PASS, now and 2 s later" $?
+fi
+
+# N9: bytes moved between the operator and project layers (same concatenation) change the fingerprint
+mk n9 full all-ran; settle
+printf '# a\n# b\n' > "$OPD/kit.toml"; : > "$CW/.kit.toml"
+chk full n9; FP_A="$(head -n 1 "$CACHE")"
+printf '# a\n' > "$OPD/kit.toml"; printf '# b\n' > "$CW/.kit.toml"
+chk full n9; FP_B="$(head -n 1 "$CACHE")"
+[ "$(cat "$OPD/kit.toml" "$CW/.kit.toml")" = "$(printf '# a\n# b')" ] && [ "$FP_A" != "$FP_B" ]; ok "N9 moving a block between operator and project kit.toml invalidates the cache" $?
+chk full n9; [ "$(head -n 1 "$CACHE")" = "$FP_B" ]; ok "N9 the same layers again keep the fingerprint" $?
+command mv -f "$OPD/kit.toml" "$TD/op.moved"; command mv -f "$CW/.kit.toml" "$TD/proj.moved"
+
 # ---------------------------------------------------------------------------
 # C: corrupt cache. The answer never changes; nothing is left behind.
 # ---------------------------------------------------------------------------
-mk c1 full missing-last
+mk c1 full missing-last; settle
 chk full c1; GOOD_RC="$RC"; GOOD_OUT="$OUT"
 FP="$(head -n 1 "$CACHE")"
 same() { [ "$RC" = "$GOOD_RC" ] && [ "$OUT" = "$GOOD_OUT" ]; }
 printf 'garbage\n\001\002\n' > "$CACHE"; chk full c1; same; ok "C1 garbage cache: correct answer" $?
-printf '%s\nfull\tc1\t0\t1\t2\t3\tpass\n' "$FP" > "$CACHE"; chk full c1; same; ok "C2 entry with the wrong identity: correct answer" $?
-KEY="$(cd "$CW" && env DWARVES_KIT_LOG_DIR="$LOGD" bash -c 'stat -f "%z	%m	%i" "$1" 2>/dev/null || stat -c "%s	%Y	%i" "$1"' _ "$LOGD/runs/c1.log")"
+printf '%s\nfull\tc1\t0\t1\t2\t3\t4\tpass\n' "$FP" > "$CACHE"; chk full c1; same; ok "C2 entry with the wrong identity: correct answer" $?
+KEY="$(cd "$CW" && env DWARVES_KIT_LOG_DIR="$LOGD" bash -c 'stat -f "%z	%m	%i	%c" "$1" 2>/dev/null || stat -c "%s	%Y	%i	%Z" "$1"' _ "$LOGD/runs/c1.log")"
 printf '%s\nfull\tc1\t0\t%s\tmaybe\n' "$FP" "$KEY" > "$CACHE"; chk full c1; same; ok "C3 matching key, malformed result: correct answer" $?
 printf '%s\nfull\tc1\t0\t%s\tfail:\n' "$FP" "$KEY" > "$CACHE"; chk full c1; same; ok "C4 matching key, empty phase list: correct answer" $?
 printf '%s\nfull\tc1\t0\t%s\tfail:think;rm -rf x\n' "$FP" "$KEY" > "$CACHE"; chk full c1; same; ok "C5 matching key, junk in the phase list: correct answer" $?

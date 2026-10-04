@@ -483,10 +483,10 @@ show() { local f; f="$(ledger_file "${1:-}")"; if [ -f "$f" ]; then cat "$f"; el
 # .shipped-incomplete.cache (ledger-key.sh), so a check on an unchanged ledger skips the lane
 # derivation (about 40 process spawns).
 #   line 1   #fp=<cksum of the lane data + gate scripts>   (a mismatch drops every entry)
-#   then     lane<TAB>rid<TAB>kit-lanes<TAB>size<TAB>mtime<TAB>inode<TAB>pass|fail:<phase>,<phase>
+#   then     lane<TAB>rid<TAB>kit-lanes<TAB>size<TAB>mtime<TAB>inode<TAB>ctime<TAB>pass|fail:<phase>,<phase>
 # Any miss, unreadable or malformed entry runs the full check. An entry is written only for a ledger
-# whose mtime is at least 2 s old: a same-size rewrite inside the mtime second would otherwise be
-# invisible to the key. The rewrite is temp + mv; a write failure is never fatal.
+# whose ctime is at least 2 s old (a user can set mtime, never ctime): a same-size rewrite inside the
+# timestamp second would otherwise be invisible to the key. An unreadable ledger is never cached. The rewrite is temp + mv; a write failure is never fatal.
 _CHECK_RES_RE='^(pass|fail:[a-z0-9-]+(,[a-z0-9-]+)*)$'
 _check_cache_get() {  # <prefix> <fp>: prints the cached result, or nothing on a miss
   local prefix="$1" fp="$2" nl=$'\n' file="$LOG_DIR/.gate-check.cache" cache rest res
@@ -500,10 +500,10 @@ _check_cache_get() {  # <prefix> <fp>: prints the cached result, or nothing on a
   return 0
 }
 
-_check_cache_put() {  # <prefix> <fp> <mtime> <result>
-  local prefix="$1" fp="$2" mtime="$3" result="$4" nl=$'\n' file="$LOG_DIR/.gate-check.cache" keep=""
+_check_cache_put() {  # <prefix> <fp> <ctime> <result>
+  local prefix="$1" fp="$2" ctime="$3" result="$4" nl=$'\n' file="$LOG_DIR/.gate-check.cache" keep=""
   [ -d "$LOG_DIR" ] || return 0
-  [ "$(( $(now_epoch) - mtime ))" -ge 2 ] 2>/dev/null || return 0
+  [ "$(( $(now_epoch) - ctime ))" -ge 2 ] 2>/dev/null || return 0
   if [ -r "$file" ] && [ "$(head -n 1 "$file" 2>/dev/null || true)" = "#fp=$fp" ]; then
     # keep the newest 400 other entries; a fresh result replaces any earlier one for its key
     keep="$(tail -n +2 "$file" 2>/dev/null | grep -vF -- "$prefix" | tail -n 400 || true)"
@@ -524,12 +524,13 @@ check() {
   local lane="${1:-}" rid="${2:-}"; [ -n "$lane" ] && [ -n "$rid" ] || { echo "usage: check <lane> <rid> [--kit-lanes]" >&2; return 64; }
   # Cache lookup first. Only a known lane with a usable rid and a stat-able ledger is ever cached,
   # so an unknown lane, an empty rid name or a missing ledger always takes the full path below.
-  local tab=$'\t' safe ck_id="" ck_fp="" ck_prefix="" ck_res="" ck_phases="" ck_phase="" ck_mtime=""
+  local tab=$'\t' safe ck_id="" ck_fp="" ck_prefix="" ck_res="" ck_phases="" ck_phase="" ck_ctime="" ck_f=""
   case " $LANE_NAMES " in
     *" $lane "*)
       safe="$(runid "$rid")"
       if [ -n "$safe" ]; then
-        ck_id="$(_file_id "$(ledger_file "$rid")")"
+        ck_f="$(ledger_file "$rid")"
+        [ -r "$ck_f" ] && ck_id="$(_file_id "$ck_f")"
         if [ -n "$ck_id" ]; then
           ck_fp="$(_lane_fp)"
           ck_prefix="$lane$tab$safe$tab${kl:-0}$tab$ck_id$tab"
@@ -570,8 +571,8 @@ check() {
   done <<< "$req"
   if [ -n "$ck_prefix" ]; then
     if [ "$missing" -eq 0 ]; then ck_res=pass; else ck_res="fail:$missing_phases"; fi
-    ck_mtime="${ck_id#*"$tab"}"; ck_mtime="${ck_mtime%%"$tab"*}"
-    [[ "$ck_res" =~ $_CHECK_RES_RE ]] && _check_cache_put "$ck_prefix" "$ck_fp" "$ck_mtime" "$ck_res"
+    ck_ctime="${ck_id##*"$tab"}"
+    [[ "$ck_res" =~ $_CHECK_RES_RE ]] && _check_cache_put "$ck_prefix" "$ck_fp" "$ck_ctime" "$ck_res"
   fi
   return "$missing"
 }
