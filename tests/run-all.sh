@@ -19,8 +19,8 @@
 #        slowest-10 block after the report. It may appear before or after the mode
 #        argument, and combines with --all, --only and --changed.
 #        --times <verb> reads the suite timing history instead of running anything: p95 (per-suite
-#        p95), expected (wall of a full run), tune [--write] (bin/test-affected.timeouts from the
-#        p95s, D4's rule). Every run appends one line per suite to that history, see
+#        p95), runs (the last 20 runs, p50 and p95 wall per entry point), expected (wall of a full
+#        run), tune [--write] [--allow-lower] (bin/test-affected.timeouts from the p95s, D4's rule). Every run appends one line per suite to that history, see
 #        tests/lib/suite-times.sh. A write failure there never changes this script's exit code.
 # Env:   KIT_RUN_ALL=1             allow --all outside CI (the nightly job sets it)
 #        RUN_ALL_JOBS=<n>         parallel suites (default: auto on macOS, 1 elsewhere)
@@ -258,7 +258,11 @@ done
 count=$(wc -l <"$runlist" | tr -d ' ')
 n_serial=$(wc -l <"$seriallist" | tr -d ' ')
 
+# One warning line on a loaded host, once, before the parallel phase (warning only; it exits 0).
+[ -f "$KIT_DIR/lib/host/load-warn.sh" ] && { bash "$KIT_DIR/lib/host/load-warn.sh" "this run-all run" || true; }
+
 # --- phase 2: run them, JOBS at a time ---------------------------------------
+_run_t0="$(date +%s)"
 echo "run-all: $count suites, $JOBS at a time${n_serial:+, $n_serial serial}"
 # --all outside CI is the expensive run; say how long the history expects it to take.
 # Silent without a history (or without the helper), never a failure.
@@ -343,7 +347,10 @@ done <"$runlist"
 # Append this run to the per-host timing history. Best effort: any failure is swallowed so the
 # exit code below stays the suites' verdict.
 if [ -f "$KIT_DIR/tests/lib/suite-times.sh" ]; then
-  bash "$KIT_DIR/tests/lib/suite-times.sh" append "$OUTDIR/times.tsv" "$(git rev-parse --short HEAD 2>/dev/null || echo unknown)" "$_load_start" >/dev/null 2>&1 || true
+  _hist_sha="$(git rev-parse --short HEAD 2>/dev/null || echo unknown)"
+  _hist_rc=0; { [ -z "$failed" ] && [ -z "$timedout" ]; } || _hist_rc=1
+  bash "$KIT_DIR/tests/lib/suite-times.sh" append "$OUTDIR/times.tsv" "$_hist_sha" "$_load_start" >/dev/null 2>&1 || true
+  bash "$KIT_DIR/tests/lib/suite-times.sh" append-run run-all "$count" "$(( $(date +%s) - _run_t0 ))" "$_hist_rc" "$_hist_sha" "$_load_start" >/dev/null 2>&1 || true
 fi
 
 # The ten worst offenders, so a slow run says where the time went without reading the
