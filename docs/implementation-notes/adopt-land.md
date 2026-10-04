@@ -85,3 +85,7 @@ One critical (R3f printing `resume:` over a leftover that failed R6b) and three 
 - A drift test asserting every shipped `.hooks` entry in the kit's `settings.json` is a kit entry under R6a's definition (type, key set, `KIT_HOOK_RE`). A new shipped hook shape then fails that test before it fails a real adoption.
 - R6a's `outputStyle` pattern (`\A[A-Za-z0-9_.-]+\z`, no `..`) is stricter than `adopt.sh` step 6b, which rejects only `*/*` and `*..*`. A style name with another character fails closed: R6a refuses, nothing lands.
 - T1b is the heaviest task. The builder may split the R6a cases (22, 25, 26, 36) into their own sub-task if T1b runs long.
+
+## 2026-10-04 Fold-diff check
+
+- An interrupted run keeps exit 1 under R11 (lead decision): the verb is operator-only, and the row already says `interrupted`, so no 130 or 143 exit code is needed.
