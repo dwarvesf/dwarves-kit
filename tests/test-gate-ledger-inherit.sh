@@ -108,9 +108,9 @@ new_log; full_parent mid; gate_line mid "2026-10-01T00:00:40Z" spec override 'in
 run inherit c full --from mid
 ok "AC-6 grandparent name passes through runid" 'printf "%s\n" "$ERR" | grep -q "inherited it from '"'"'gid-x'"'"'" && ! printf "%s\n" "$ERR" | grep -qF "\$("'
 
-# Empty state: a hand-edited last line with an empty state field must not shift its ts into the
-# state slot and read as ran (a tab-split row would collapse the empty field).
-new_log; full_parent p; printf '%s | GATE | validate |  | 2026-10-01T09:09:09Z\n' "2026-10-01T00:00:50Z" >> "$LOGD/runs/p.log"
+# Empty state, the forgery shape: a hand-edited last line whose first field is "ran", state empty,
+# reason an ISO time. A tab-split row collapses the empty state and reads it as ran at that time.
+new_log; full_parent p; printf 'ran | GATE | validate |  | 2026-10-01T09:09:09Z\n' >> "$LOGD/runs/p.log"
 run inherit c full --from p
 ok "EMPTYSTATE exits 1 naming validate" '[ "$RC" -eq 1 ] && printf "%s\n" "$ERR" | grep -q "  validate: last state empty, not ran"'
 ok "EMPTYSTATE nothing written" '[ ! -e "$LOGD/runs/c.log" ]'
