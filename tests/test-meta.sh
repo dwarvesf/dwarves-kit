@@ -39,7 +39,10 @@ for _a in $SUITES; do
   n="test-meta-$_a.sh"
   out="$(cat "$OUT_DIR/$n.out")"
   printf '%s\n' "$out"
-  [ "$(cat "$OUT_DIR/$n.rc" 2>/dev/null || echo 1)" -eq 0 ] || RC=1
+  # a suite that dies before its Results block (crash, missing file) prints no FAIL
+  # line, so its exit code is the only signal and must fail the runner.
+  rc="$(cat "$OUT_DIR/$n.rc" 2>/dev/null || echo 1)"
+  [ "$rc" -eq 0 ] || { RC=1; echo -e "${RED}SUITE EXIT $rc: $n${NC}"; }
   PASS=$((PASS + $(printf '%s\n' "$out" | grep -acE '^  .\[0;32mPASS')))
   FAIL=$((FAIL + $(printf '%s\n' "$out" | grep -acE '^  .\[0;31mFAIL')))
 done
@@ -48,7 +51,7 @@ TOTAL=$((PASS + FAIL))
 echo ""
 echo "=== Results ==="
 echo -e "Passed: ${GREEN}${PASS}${NC} / ${TOTAL}"
-if [ "$FAIL" -gt 0 ]; then
+if [ "$FAIL" -gt 0 ] || [ "$RC" -ne 0 ]; then
   echo -e "Failed: ${RED}${FAIL}${NC}"
   exit 1
 else

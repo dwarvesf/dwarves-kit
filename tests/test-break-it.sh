@@ -75,13 +75,13 @@ assert "T1-DEC-007: the tool roster is exactly the read-only set (no runner gran
 assert "T1-DEC-007 [NEGATIVE CONTROL]: no test-runner grant executes branch code" $([ $? -eq 0 ] && echo 1 || echo 0)
 
 # --- TASK-001 AC4 [NEGATIVE CONTROL]: the naming-axis arm is load-bearing -----
-# Extract is_on_review_axis() from the live tests/test-meta.sh and exercise it
+# Extract is_on_review_axis() from the live tests/test-meta-review-verifiers.sh and exercise it
 # twice: as shipped, and with the `break-it)` arm stripped. A full test-meta.sh
 # run takes minutes; this exercises the SAME function the roster scan calls.
 echo ""
 echo "--- naming axis (ADR-0029) ---"
 AXIS_SRC=$(awk '/^is_on_review_axis\(\) \{/,/^\}/' "$META")
-[ -n "$AXIS_SRC" ]; assert "T1-AC3: is_on_review_axis() extracted from tests/test-meta.sh" $?
+[ -n "$AXIS_SRC" ]; assert "T1-AC3: is_on_review_axis() extracted from tests/test-meta-review-verifiers.sh" $?
 ( eval "$AXIS_SRC"; is_on_review_axis break-it ) >/dev/null 2>&1
 assert "T1-AC3: the shipped axis ACCEPTS 'break-it'" $?
 AXIS_STRIPPED=$(printf '%s\n' "$AXIS_SRC" | grep -v 'break-it) return 0 ;;')
