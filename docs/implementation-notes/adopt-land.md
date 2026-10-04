@@ -2,6 +2,13 @@
 
 Deltas from SPEC-387. Nothing here repeats what the spec already states.
 
+## 2026-10-04 Lead decisions on the validation process
+
+- The round 1 reviewers read blob `a7b2ee75` (ledger round 2). That round closed `void why=head` because handoff commits moved HEAD, so the ledger holds no NEEDS-REVISION close. Its findings live only here and in the handoff. The re-validation diffs against `a7b2ee75`, the blob the reviewers actually saw, not the first pin `ba485ee0`.
+- All seven re-validation reviewers run on Opus, not Sonnet. Sonnet sits at its weekly limit until Oct 8.
+- The full lane's separate fold-diff check is skipped. The re-validation round re-runs all seven lenses with the fold diff as context, which covers the same ground.
+- The handoff said to fold every finding into the spec. `commands/spec-validate.md` folds criticals only, so warnings and notes went to this file instead.
+
 ## 2026-10-04 Validation round 1: warnings and notes for the builder
 
 The criticals and the design-record warnings are in the spec (DEC-H to DEC-N). Two warnings were folded with a critical because its fix needs them: land's exit code first plus the exact `tree verified` line (R8), and the `2>&1 | tee` capture read through `PIPESTATUS[0]` (R9). Everything below is builder guidance, one bullet per finding, with the source quote where it was checked.
