@@ -17,6 +17,9 @@ The first URL path segment picks the behaviour (FLICK_URL=http://127.0.0.1:<port
   extraprob   a probability for a choice that was never offered
   wrongchoice the stated choice is not the highest-probability one
   fail        200 with a Cloudflare-style failure body, success false
+  failobj     200 with a Cloudflare-style failure body, success false, whose
+              `result` still holds a perfectly valid answer object (the unwrap
+              must refuse it, not take it)
   cf<mode>    wraps the mode's body in the Cloudflare envelope
               ({"success":true,"errors":[],"messages":[],"result":<body>});
               e.g. cfok, cfslow, cfbadprobs
@@ -105,7 +108,9 @@ class Handler(BaseHTTPRequestHandler):
         except ValueError:
             return self.send(422, b'{"error":"bad body"}')
         result = answers_for(body, mode)
-        if cf:
+        if mode == "failobj":
+            result = {"success": False, "errors": [{"code": 3000, "message": "inference failed"}], "result": result}
+        elif cf:
             result = {"success": True, "errors": [], "messages": [], "result": result}
         self.send(200, json.dumps(result).encode())
 

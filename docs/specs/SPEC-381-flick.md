@@ -19,9 +19,9 @@ stdout: {"backend":"jev","model":"jev-1.13.0","latency_ms":412,"mode":"shadow",
 ```
 
 - Caller fields: `id` matches `^[A-Za-z0-9_-]{1,40}$` and is echoed on stdout only. flick sends `q1..qN` to the provider and maps back. `existing` is optional and kept only when it is one of the point's choices, else treated as empty. Any other stdin field is `bad_input`. Control characters and newlines in any value are `bad_input`.
-- `counts` covers every question that parsed: `answered + denied + error` equals that number. Denied questions count as `denied` before any request. When the whole call fails (timeout, HTTP error, malformed, `bad_probs`, `no_token`, `unsupported`, `backend_none`), every non-denied question counts as `error`. On `bad_input` nothing parsed, so all three are 0.
+- `counts` covers every question that parsed: `answered + denied + error` equals that number. Denied questions count as `denied` before any request. When the whole call fails (timeout, HTTP error, malformed, `bad_probs`, `no_token`, `no_account`, `unsupported`, `backend_none`), every non-denied question counts as `error`. On `bad_input` nothing parsed, so all three are 0.
 - Fail-open: any failure prints `"answers":{}` and a reason in `error`, exit 0. An EXIT trap guarantees valid empty-answer JSON and exit 0 even on a crash or garbage config. A refused question gets `answers.<id> = {"choice":"","error":"egress_denied"}` and the rest still run.
-- `error` is a closed set: `backend_none`, `missing_dep`, `no_token`, `timeout`, `http_<status>`, `network`, `malformed`, `bad_probs`, `egress_denied`, `point_disabled`, `bad_input`, `unsupported`.
+- `error` is a closed set: `backend_none`, `missing_dep`, `no_token`, `no_account`, `timeout`, `http_<status>`, `network`, `malformed`, `bad_probs`, `egress_denied`, `point_disabled`, `bad_input`, `unsupported`.
 - Config, read root-only with `kit_config_get_root` (operator file or kit root, never a project `.kit.toml`, because the block names a credential source and authorizes egress). The kit reader returns single-line scalars, so lists are space-separated strings, as in `wrap.build_lanes`:
 
 | Key | Default | Meaning |
@@ -29,8 +29,8 @@ stdout: {"backend":"jev","model":"jev-1.13.0","latency_ms":412,"mode":"shadow",
 | `decide.backend` | `"none"` | `jev`, `openai`, `clef`, or `none`. `none` leaves kit behaviour unchanged. `clef` is the Cloudflare Workers AI fallback |
 | `decide.jev_model`, `decide.openai_model` | `jev-1.13.0`, `""` | Pinned, never a `latest` alias |
 | `decide.clef_model` | `clef` | `clef` or `clef-flash`; anything else falls back to `clef` |
-| `decide.clef_account` | `""` | Cloudflare account id, or an `op://` ref resolved through `secret-cache-read`. Billing-tied, never logged |
-| `decide.clef_token_env`, `decide.clef_token_cmd` | `CLOUDFLARE_API_TOKEN`, `""` | Same rules as the jev pair |
+| `decide.clef_account` | `""` | Cloudflare account id, or an `op://` ref resolved through `secret-cache-read` (PATH, else `~/.local/bin`, under the same bound a token command gets). Billing-tied, never logged. A missing or unresolvable account is `no_account`, never `no_token` |
+| `decide.clef_token_env`, `decide.clef_token_cmd` | `FLICK_CLEF_TOKEN`, `""` | Same rules as the jev pair. `FLICK_CLEF_TOKEN` is meant for a token scoped to Workers AI only; an operator names the broad `CLOUDFLARE_API_TOKEN` explicitly if wanted |
 | `decide.timeout_ms` | `1500` | Floor 1500: lower values clamp up (research doc screen). Unset defaults to 3000 under `clef` |
 | `decide.mode` | `"shadow"` | `shadow` logs beside the existing decision and never acts. `decide` returns the answer for the caller to use |
 | `decide.points` | `""` | Space-separated enabled decision points. Empty means nothing leaves the host |

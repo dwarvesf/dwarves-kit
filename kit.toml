@@ -481,11 +481,18 @@ follow_through = "off"          # [impl] step 10, after the step 9 report. One o
                                  #        credential source and authorizes egress. Lists are space-separated
                                  #        strings (the resolver reads single-line scalars). Hooks never read
                                  #        or call it. Contract: docs/specs/SPEC-381-flick.md.
+                                 #        The default an operator runs stays `jev`; clef is the opt-in
+                                 #        Cloudflare Workers AI fallback. To switch, the operator
+                                 #        kit.toml sets exactly these lines:
+                                 #          backend = "clef"
+                                 #          clef_account = "op://<vault>/<item>/<field>"   (or a literal account id)
+                                 #          clef_token_cmd = "/abs/path/print-clef-token"  (or export FLICK_CLEF_TOKEN)
 backend = "none"                # [impl] jev | openai | clef | none. none leaves every kit step unchanged and
                                  #        sends nothing. openai is a stub that answers `unsupported` until
                                  #        the vendor publishes its request shape. clef is the Cloudflare
                                  #        Workers AI fallback: it needs clef_account and the token named by
-                                 #        clef_token_env, and answers `no_token` until both resolve.
+                                 #        clef_token_env, and answers `no_token` until the token resolves
+                                 #        and `no_account` until the account does.
 mode = "shadow"                 # [impl] shadow logs beside the caller's own decision and never acts.
                                  #        decide is accepted and runs as shadow for wrap-7b, the only point.
 points = ""                     # [impl] space-separated enabled decision points. Empty means nothing
@@ -497,9 +504,12 @@ jev_model = "jev-1.13.0"        # [impl] pinned, never a `latest` alias.
 openai_model = ""               # [reserved] unused while the openai backend is a stub.
 clef_model = "clef"             # [impl] clef or clef-flash; anything else falls back to clef.
 clef_account = ""               # [impl] the Cloudflare account id, or an op:// ref resolved through
-                                 #        secret-cache-read (cache name FLICK_CLEF_ACCT_<sha8 of ref>).
-                                 #        Billing-tied: never logged, never printed.
-clef_token_env = "CLOUDFLARE_API_TOKEN" # [impl] same rule as jev_token_env.
+                                 #        secret-cache-read from PATH, else ~/.local/bin (cache name
+                                 #        FLICK_CLEF_ACCT_<sha8 of ref>). Billing-tied: never logged,
+                                 #        never printed. A missing or unresolvable value is no_account.
+clef_token_env = "FLICK_CLEF_TOKEN" # [impl] same rule as jev_token_env. A token scoped to Workers
+                                 #        AI; the broad, directory-dependent CLOUDFLARE_API_TOKEN is
+                                 #        not the default (set this key explicitly to use it).
 clef_token_cmd = ""             # [impl] same rule as jev_token_cmd.
 jev_token_env = "JEV_API_TOKEN" # [impl] the NAME of the env var holding the token. The token itself
                                  #        never sits in a file, argv, a log, or stdout.

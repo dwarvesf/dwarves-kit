@@ -866,76 +866,126 @@ fi
 cfg backend=jev points=wrap-7b
 
 echo "== clef backend: Cloudflare envelope, account source, model, timeout =="
-# A second canary proves clef reads clef_token_env (default CLOUDFLARE_API_TOKEN), never the
+# A second canary proves clef reads clef_token_env (default FLICK_CLEF_TOKEN), never the
 # Jev var flick_run always exports. A stub secret-cache-read on PATH records its argv and prints
-# a fixture account id, so op:// clef_account resolution is testable without 1Password.
+# a fixture account id, so op:// clef_account resolution is testable without 1Password; a
+# second stub under the fake HOME's .local/bin pins the PATH fallback, and stubs in their own
+# dirs pin the failure codes (no_account, missing_dep).
 CF_TOKEN="CFTOKENc1e700aa"
 CF_ACCT="0123456789abcdef0123456789abcdef"
-mkdir -p "$T/cfbin"
+mkdir -p "$T/cfbin" "$T/home/.local/bin" "$T/home-noscr"
 printf '#!/bin/sh\nprintf "%%s\\n" "$*" > "%s/scr-argv"\nprintf "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6\\n"\n' "$T" > "$T/cfbin/secret-cache-read"
 chmod +x "$T/cfbin/secret-cache-read"
+printf '#!/bin/sh\nprintf "%%s\\n" "$*" > "%s/scr-argv-home"\nprintf "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6\\n"\n' "$T" > "$T/home/.local/bin/secret-cache-read"
+chmod +x "$T/home/.local/bin/secret-cache-read"
+# scr_stub <dir> <body>: a secret-cache-read stand-in in $T/<dir>, for the failure cases.
+scr_stub() { mkdir -p "$T/$1"; printf '#!/bin/sh\n%s\n' "$2" > "$T/$1/secret-cache-read"; chmod +x "$T/$1/secret-cache-read"; }
+scr_stub cfbin-fail 'exit 3'
+scr_stub cfbin-bad 'printf "not-an!!account\n"'
+scr_stub cfbin-slow 'sleep 40'
+# min_path: a PATH dir holding every tool the engine spawns except secret-cache-read, so the
+# ~/.local/bin fallback and the missing_dep case are real, not simulated.
+min_path() {
+  local d="$T/path-min" c
+  if [ ! -d "$d" ]; then
+    mkdir -p "$d"
+    for c in env bash sh jq awk sed grep cat tr cut head tail wc shasum mktemp mkdir rm sleep curl dirname basename ps sort date uname; do
+      command -v "$c" >/dev/null 2>&1 && ln -sf "$(command -v "$c")" "$d/$c"
+    done
+  fi
+  printf '%s' "$d"
+}
 sha8() { printf '%s' "$1" | python3 -c 'import hashlib,sys;print(hashlib.sha256(sys.stdin.buffer.read()).hexdigest()[:8])'; }
 
 cfg backend=clef points=wrap-7b clef_account="$CF_ACCT"
 stub_reset
-out="$(decide_run cfok "$IN3" "CLOUDFLARE_API_TOKEN=$CF_TOKEN")"
+out="$(decide_run cfok "$IN3" "FLICK_CLEF_TOKEN=$CF_TOKEN")"
 jqt "clef happy path: the envelope is unwrapped, answers keyed by caller ids" "$out" '.error == "" and .backend == "clef" and .model == "clef" and (.answers|keys) == ["p1","p2","p3"] and .answers.p1.choice == "enhance" and .counts == {"answered":3,"denied":0,"error":0}'
 check "clef: one request for the whole batch" "$([ "$(stub_count)" = 1 ]; echo $?)"
-check "clef: the CLOUDFLARE_API_TOKEN value was used, not the Jev one" "$([ "$(cat "$STUB_DIR/authsha.log")" = "$(sha12 "$CF_TOKEN")" ]; echo $?)"
+check "clef: the FLICK_CLEF_TOKEN value was used, not the Jev one" "$([ "$(cat "$STUB_DIR/authsha.log")" = "$(sha12 "$CF_TOKEN")" ]; echo $?)"
 jqt "clef: the request body carried model clef" "$(cat "$STUB_DIR/last.json")" '.model == "clef" and (.questions|keys) == ["q1","q2","q3"]'
-check "a literal clef_account never calls secret-cache-read" "$([ ! -e "$T/scr-argv" ]; echo $?)"
+check "a literal clef_account never calls secret-cache-read" "$([ ! -e "$T/scr-argv" ] && [ ! -e "$T/scr-argv-home" ]; echo $?)"
 
 stub_reset
-out="$(decide_run cffail "$IN1" "CLOUDFLARE_API_TOKEN=$CF_TOKEN")"
+out="$(decide_run cffail "$IN1" "FLICK_CLEF_TOKEN=$CF_TOKEN")"
 jqt "clef success:false on a 200 is an error, no answers" "$out" '.error == "malformed" and .answers == {} and .counts == {"answered":0,"denied":0,"error":1}'
+out="$(decide_run cffailobj "$IN3" "FLICK_CLEF_TOKEN=$CF_TOKEN")"
+jqt "clef success:false holding a valid-looking result still unwraps to malformed" "$out" '.error == "malformed" and .answers == {} and .counts == {"answered":0,"denied":0,"error":3}'
 for code in 429 529; do
-  out="$(decide_run "$code" "$IN1" "CLOUDFLARE_API_TOKEN=$CF_TOKEN")"
+  out="$(decide_run "$code" "$IN1" "FLICK_CLEF_TOKEN=$CF_TOKEN")"
   jqt "clef HTTP $code maps to the same class as a Jev HTTP error" "$out" ".error == \"http_$code\" and .answers == {} and .counts.error == 1"
 done
-out="$(decide_run cfbadprobs "$IN3" "CLOUDFLARE_API_TOKEN=$CF_TOKEN")"
+out="$(decide_run cfbadprobs "$IN3" "FLICK_CLEF_TOKEN=$CF_TOKEN")"
 jqt "clef wrapped bad probabilities: bad_probs after the unwrap" "$out" '.error == "bad_probs" and .answers == {} and .counts == {"answered":0,"denied":0,"error":3}'
 
 OPREF="op://TestVault/flick-clef/account"
 rm -f "$T/scr-argv"; stub_reset
 cfg backend=clef points=wrap-7b clef_account="$OPREF"
-out="$(decide_run cfok "$IN1" "CLOUDFLARE_API_TOKEN=$CF_TOKEN" "PATH=$T/cfbin:$PATH")"
+out="$(decide_run cfok "$IN1" "FLICK_CLEF_TOKEN=$CF_TOKEN" "PATH=$T/cfbin:$PATH")"
 jqt "clef_account as an op:// ref resolves through secret-cache-read" "$out" '.error == "" and .answers.p1.choice == "enhance"'
 check "secret-cache-read got cache name FLICK_CLEF_ACCT_<sha8 of ref> plus the raw ref" "$(grep -q "FLICK_CLEF_ACCT_$(sha8 "$OPREF")" "$T/scr-argv" && grep -qF "$OPREF" "$T/scr-argv"; echo $?)"
 
+rm -f "$T/scr-argv-home"; stub_reset
+out="$(decide_run cfok "$IN1" "FLICK_CLEF_TOKEN=$CF_TOKEN" "PATH=$(min_path)")"
+jqt "op:// resolves through ~/.local/bin when PATH has no secret-cache-read" "$out" '.error == "" and .answers.p1.choice == "enhance"'
+check "the ~/.local/bin stub ran with the cache name and the raw ref" "$(grep -q "FLICK_CLEF_ACCT_$(sha8 "$OPREF")" "$T/scr-argv-home" && grep -qF "$OPREF" "$T/scr-argv-home"; echo $?)"
+stub_reset
+out="$(decide_run cfok "$IN1" "FLICK_CLEF_TOKEN=$CF_TOKEN" "PATH=$(min_path)" "HOME=$T/home-noscr")"
+jqt "no secret-cache-read on PATH or in ~/.local/bin: missing_dep" "$out" '.error == "missing_dep" and .answers == {}'
+check "missing_dep sends nothing" "$([ "$(stub_count)" = 0 ]; echo $?)"
+stub_reset
+out="$(decide_run cfok "$IN1" "FLICK_CLEF_TOKEN=$CF_TOKEN" "PATH=$T/cfbin-fail:$(min_path)")"
+jqt "a failing secret-cache-read: no_account, not no_token" "$out" '.error == "no_account" and .answers == {}'
+check "a failed lookup sends nothing" "$([ "$(stub_count)" = 0 ]; echo $?)"
+out="$(decide_run cfok "$IN1" "FLICK_CLEF_TOKEN=$CF_TOKEN" "PATH=$T/cfbin-bad:$(min_path)")"
+jqt "a lookup that prints a non-account: no_account" "$out" '.error == "no_account" and .answers == {}'
+stub_reset
+t0="$(ms_now)"; out="$(decide_run cfok "$IN1" "FLICK_CLEF_TOKEN=$CF_TOKEN" "PATH=$T/cfbin-slow:$(min_path)")"; t1="$(ms_now)"
+jqt "a hanging secret-cache-read: no_account" "$out" '.error == "no_account"'
+check "the lookup is cut at the same bound a token command gets (about 10 s, not 40)" "$([ $((t1-t0)) -ge 9500 ] && [ $((t1-t0)) -lt 16000 ]; echo $?)" "took $((t1-t0)) ms"
+check "and a hung lookup sends nothing" "$([ "$(stub_count)" = 0 ]; echo $?)"
+
 cfg backend=clef points=wrap-7b clef_account="$CF_ACCT" clef_model=clef-flash
 stub_reset
-out="$(decide_run cfok "$IN1" "CLOUDFLARE_API_TOKEN=$CF_TOKEN")"
+out="$(decide_run cfok "$IN1" "FLICK_CLEF_TOKEN=$CF_TOKEN")"
 jqt "clef_model clef-flash rides the envelope" "$out" '.model == "clef-flash" and .error == ""'
 jqt "and the request body" "$(cat "$STUB_DIR/last.json")" '.model == "clef-flash"'
 cfg backend=clef points=wrap-7b clef_account="$CF_ACCT" clef_model=bogus
 out="$(body_run "$IN1")"
 jqt "an unknown clef_model falls back to clef in the body" "$out" '.model == "clef"'
-out="$(decide_run cfok "$IN1" "CLOUDFLARE_API_TOKEN=$CF_TOKEN")"
+out="$(decide_run cfok "$IN1" "FLICK_CLEF_TOKEN=$CF_TOKEN")"
 jqt "and in the envelope" "$out" '.model == "clef" and .error == ""'
 
 cfg backend=clef points=wrap-7b
 stub_reset
-out="$(decide_run cfok "$IN1" "CLOUDFLARE_API_TOKEN=$CF_TOKEN")"
-jqt "no clef_account: no_token, the question counts as error" "$out" '.error == "no_token" and .counts.error == 1'
+out="$(decide_run cfok "$IN1" "FLICK_CLEF_TOKEN=$CF_TOKEN")"
+jqt "no clef_account: no_account, the question counts as error" "$out" '.error == "no_account" and .counts.error == 1'
 check "nothing was sent without an account" "$([ "$(stub_count)" = 0 ]; echo $?)"
-out="$(decide_run cfok "$IN1" "CLOUDFLARE_API_TOKEN=")"
-jqt "an empty CLOUDFLARE_API_TOKEN: no_token (the Jev env var does not substitute)" "$out" '.error == "no_token"'
+out="$(decide_run cfok "$IN1" "FLICK_CLEF_TOKEN=")"
+jqt "an empty FLICK_CLEF_TOKEN: no_token (the Jev env var does not substitute)" "$out" '.error == "no_token"'
 check "nothing was sent without a token either" "$([ "$(stub_count)" = 0 ]; echo $?)"
 
 mkcmd cf "printf '%s\\n' $CF_TOKEN"
 cfg backend=clef points=wrap-7b clef_account="$CF_ACCT" clef_token_cmd="$T/cmd-cf"
 stub_reset
-out="$(decide_run cfok "$IN1" "CLOUDFLARE_API_TOKEN=")"
+out="$(decide_run cfok "$IN1" "FLICK_CLEF_TOKEN=")"
 jqt "clef_token_cmd supplies the token when the env is empty" "$out" '.error == "" and .answers.p1.choice == "enhance"'
 check "the stub saw the command's clef token" "$([ "$(cat "$STUB_DIR/authsha.log")" = "$(sha12 "$CF_TOKEN")" ]; echo $?)"
 
+cfg backend=clef points=wrap-7b clef_account="$CF_ACCT" clef_token_env=CLOUDFLARE_API_TOKEN
+stub_reset
+out="$(decide_run cfok "$IN1" "CLOUDFLARE_API_TOKEN=$CF_TOKEN")"
+jqt "clef_token_env can still name the ambient Cloudflare var" "$out" '.error == "" and .answers.p1.choice == "enhance"'
+check "the override var's value was used" "$([ "$(cat "$STUB_DIR/authsha.log")" = "$(sha12 "$CF_TOKEN")" ]; echo $?)"
+cfg backend=clef points=wrap-7b clef_account="$CF_ACCT"
+
 cfg backend=clef points=wrap-7b clef_account="$CF_ACCT"
 stub_reset
-t0="$(ms_now)"; out="$(decide_run cfslow "$IN1" "CLOUDFLARE_API_TOKEN=$CF_TOKEN")"; t1="$(ms_now)"
+t0="$(ms_now)"; out="$(decide_run cfslow "$IN1" "FLICK_CLEF_TOKEN=$CF_TOKEN")"; t1="$(ms_now)"
 jqt "clef timeout: the 4 s stub is cut" "$out" '.error == "timeout" and .counts.error == 1'
 check "the clef default timeout is about 3000 ms, not jev's 1500" "$([ $((t1-t0)) -ge 2800 ] && [ $((t1-t0)) -lt 3900 ]; echo $?)" "took $((t1-t0)) ms"
 cfg backend=clef points=wrap-7b clef_account="$CF_ACCT" timeout_ms=1500
-t0="$(ms_now)"; out="$(decide_run cfslow "$IN1" "CLOUDFLARE_API_TOKEN=$CF_TOKEN")"; t1="$(ms_now)"
+t0="$(ms_now)"; out="$(decide_run cfslow "$IN1" "FLICK_CLEF_TOKEN=$CF_TOKEN")"; t1="$(ms_now)"
 jqt "an explicit timeout_ms still wins for clef" "$out" '.error == "timeout"'
 check "the explicit 1500 fired at about 1.5 s" "$([ $((t1-t0)) -ge 1400 ] && [ $((t1-t0)) -lt 2800 ]; echo $?)" "took $((t1-t0)) ms"
 

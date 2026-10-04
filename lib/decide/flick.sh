@@ -140,7 +140,7 @@ load_config() {
   CFG_CLEF_MODEL="$(cfgget clef_model clef)"
   case "$CFG_CLEF_MODEL" in clef|clef-flash) ;; *) CFG_CLEF_MODEL=clef ;; esac
   CFG_CLEF_ACCOUNT="$(cfgget clef_account "")"
-  CFG_CLEF_TOKEN_ENV="$(cfgget clef_token_env CLOUDFLARE_API_TOKEN)"
+  CFG_CLEF_TOKEN_ENV="$(cfgget clef_token_env FLICK_CLEF_TOKEN)"
   CFG_CLEF_TOKEN_CMD="$(cfgget clef_token_cmd "")"
   CFG_ALLOW_NAMES="$(cfgget allow_names "")"
   CFG_DENY_WORDS="$(cfgget deny_words "")"
@@ -371,17 +371,9 @@ BODY_PROG='
                                                        + " cover the job of the candidate " + $kept[$i].candidate + "?") } } ]
                    | from_entries ) }'
 
-# ---- token source ------------------------------------------------------------------------------
-# resolve_token <env-name> <cmd>: sets TOKEN. The env var wins; only an empty one falls through
-# to the configured command, for hosts that keep secrets out of the shell env. The command is
-# split on whitespace and run WITHOUT a shell: no glob (set -f), no expansion, no quoting, and
-# its first word must be an absolute path (a bare name would search the caller's PATH). stdin is
-# /dev/null, stderr is dropped, and its stdout goes to a file in a 0700 temp dir that is removed
-# before this returns; the output is never printed or logged. The file is capped by `ulimit -f`
-# and the read by head -c. The command runs in its own process group (set -m), and the hard limit
-# is background + poll + TERM to the group, then KILL after a short grace; flick never blocks on
-# a command that ignores TERM. Bash 3.2 has no `wait -n`, no `timeout`.
-# ponytail: a descendant that calls setsid/setpgid leaves the group and survives the kill.
+# ---- bounded command output --------------------------------------------------------------------
+# TOK_DIR and TOK_PGID back tok_cleanup, so the EXIT trap kills a live group and removes the
+# temp dir however flick leaves.
 TOK_DIR=""; TOK_PGID=""
 
 tok_cleanup() {
@@ -391,19 +383,24 @@ tok_cleanup() {
   TOK_DIR=""
 }
 
-resolve_token() {
-  local envname="$1" cmd="$2" limit=10 words cpid deadline raw rc=1
-  TOKEN="${!envname:-}"
-  [ -z "$TOKEN" ] || return 0
-  [ -n "$cmd" ] || return 0
+# bounded_out <var> <argv...>: run argv WITHOUT a shell (no glob, no expansion, no quoting: the
+# caller splits the words) under one hard limit. stdin is /dev/null, stderr is dropped, and
+# stdout goes to a file in a 0700 temp dir that is removed before this returns; the output is
+# never printed or logged. The file is capped by `ulimit -f` and the read by head -c. The
+# command runs in its own process group (set -m), and the hard limit is background + poll +
+# TERM to the group, then KILL after a short grace; flick never blocks on a command that
+# ignores TERM. Bash 3.2 has no `wait -n`, no `timeout`.
+# ponytail: a descendant that calls setsid/setpgid leaves the group and survives the kill.
+# On a clean exit with at most 4096 bytes of stdout, <var> gets it minus one trailing newline
+# and the return is 0; anything else leaves <var> empty and returns nonzero.
+bounded_out() {
+  local rv="$1"; shift
+  local limit=10 cpid deadline raw rc=1
   [ "$CFG_TIMEOUT_MS" -le 10000 ] || limit=$((CFG_TIMEOUT_MS / 1000))
-  set -f; read -ra words <<<"$cmd"; set +f
-  [ "${#words[@]}" -gt 0 ] || return 0
-  [ "${words[0]:0:1}" = / ] || return 0
-  TOK_DIR="$(umask 077; mktemp -d "${TMPDIR:-/tmp}/flick.XXXXXX" 2>/dev/null)" || { TOK_DIR=""; return 0; }
-  [ -d "$TOK_DIR" ] || { TOK_DIR=""; return 0; }
+  TOK_DIR="$(umask 077; mktemp -d "${TMPDIR:-/tmp}/flick.XXXXXX" 2>/dev/null)" || { TOK_DIR=""; printf -v "$rv" '%s' ""; return 1; }
+  [ -d "$TOK_DIR" ] || { TOK_DIR=""; printf -v "$rv" '%s' ""; return 1; }
   set -m
-  ( ulimit -S -f 64 2>/dev/null; umask 077; exec "${words[@]}" ) </dev/null >"$TOK_DIR/out" 2>/dev/null &
+  ( ulimit -S -f 64 2>/dev/null; umask 077; exec "$@" ) </dev/null >"$TOK_DIR/out" 2>/dev/null &
   cpid=$!
   set +m
   TOK_PGID="$cpid"
@@ -419,17 +416,36 @@ resolve_token() {
   done
   if kill -0 "$cpid" 2>/dev/null; then
     kill -s KILL -- "-$cpid" 2>/dev/null; kill -s KILL "$cpid" 2>/dev/null
-    tok_cleanup; return 0   # timed out: no wait, no output read
+    tok_cleanup; printf -v "$rv" '%s' ""; return 1   # timed out: no wait, no output read
   fi
   wait "$cpid"; rc=$?
   # Stragglers the command left behind die with its group before the file is read.
   kill -s KILL -- "-$cpid" 2>/dev/null; TOK_PGID=""
+  printf -v "$rv" '%s' ""
   if [ "$rc" = 0 ]; then
     raw="$(head -c 4097 "$TOK_DIR/out" 2>/dev/null; printf x)"
     raw="${raw%x}"
-    if [ "${#raw}" -le 4096 ]; then TOKEN="${raw%$'\n'}"; fi
+    if [ "${#raw}" -le 4096 ]; then printf -v "$rv" '%s' "${raw%$'\n'}"; else rc=1; fi
   fi
   tok_cleanup
+  return "$rc"
+}
+
+# ---- token source ------------------------------------------------------------------------------
+# resolve_token <env-name> <cmd>: sets TOKEN. The env var wins; only an empty one falls through
+# to the configured command, for hosts that keep secrets out of the shell env. The command is
+# split on whitespace and run WITHOUT a shell: no glob (set -f), no expansion, no quoting, and
+# its first word must be an absolute path (a bare name would search the caller's PATH). The run
+# itself, and its hard limit, is bounded_out's above.
+resolve_token() {
+  local envname="$1" cmd="$2" words
+  TOKEN="${!envname:-}"
+  [ -z "$TOKEN" ] || return 0
+  [ -n "$cmd" ] || return 0
+  set -f; read -ra words <<<"$cmd"; set +f
+  [ "${#words[@]}" -gt 0 ] || return 0
+  [ "${words[0]:0:1}" = / ] || return 0
+  bounded_out TOKEN "${words[@]}" || true
 }
 
 # ---- transport ---------------------------------------------------------------------------------
@@ -479,10 +495,10 @@ call_jev() {
 
 # call_clef <body> <token> <account>: same transport rules as call_jev (the FLICK_URL_OK test
 # seam, one curl, the HTTP/2 retry), with the account id and model in the URL path. On a 2xx the
-# Cloudflare envelope is unwrapped (.result) so the answer validation below sees the same shape
-# Jev returns; a `success:false` envelope or a non-envelope body keeps nothing answer-shaped,
-# which the validator reports as malformed. The account id and the ref it came from are never
-# logged or printed.
+# Cloudflare envelope is unwrapped only when `success` is true and `.result` is an object, so
+# the answer validation below sees the same shape Jev returns; a `success:false` envelope or a
+# non-envelope body unwraps to an empty object, which the validator reports as malformed. The
+# account id and the ref it came from are never logged or printed.
 call_clef() {
   local body="$1" token="$2" account="$3" url proto secs tail code tt ip fp ms h2=0
   if [ -n "$FLICK_URL_OK" ]; then url="$FLICK_URL_OK"; proto='=http'; else url="$CLEF_API/$account/ai/run/@cf/cloudflare/$MODEL"; proto='=https'; h2=1; fi
@@ -502,7 +518,7 @@ call_clef() {
   elif [ "${code:0:1}" != 2 ]; then CALL_ERR="http_$code"
   else
     CALL_ERR=""
-    RESP="$(printf '%s' "$RESP" | jq -c 'if (.result | type) == "object" then .result else . end' 2>/dev/null)"
+    RESP="$(printf '%s' "$RESP" | jq -c 'if .success == true and (.result|type) == "object" then .result else {} end' 2>/dev/null)"
   fi
 }
 
@@ -703,14 +719,21 @@ main() {
   if [ "$BACKEND" = clef ]; then
     # The account id is billing-tied: a literal value or an op:// ref resolved through
     # secret-cache-read (Keychain-cached), one cache name per ref like proof-asset's.
-    local acct="$CFG_CLEF_ACCOUNT" tag
+    # secret-cache-read comes from PATH, else the user's ~/.local/bin install, and the lookup
+    # gets the same hard bound a token command gets (bounded_out). A missing or unresolvable
+    # account is no_account, distinct from no_token: the token already resolved by this point.
+    local acct="$CFG_CLEF_ACCOUNT" tag scr=""
     case "$acct" in
       op://*)
-        command -v secret-cache-read >/dev/null 2>&1 || finalize missing_dep
+        scr="$(command -v secret-cache-read 2>/dev/null)"
+        if [ -z "$scr" ] && [ -x "${HOME:-}/.local/bin/secret-cache-read" ]; then
+          scr="${HOME}/.local/bin/secret-cache-read"
+        fi
+        [ -n "$scr" ] || finalize missing_dep
         tag="$(printf '%s' "$acct" | shasum -a 256 2>/dev/null | cut -c1-8)"
-        acct="$(secret-cache-read --ttl 86400 "FLICK_CLEF_ACCT_$tag" "$acct" 2>/dev/null)" ;;
+        bounded_out acct "$scr" --ttl 86400 "FLICK_CLEF_ACCT_$tag" "$acct" ;;
     esac
-    [[ "$acct" =~ ^[A-Za-z0-9_-]{1,64}$ ]] || finalize no_token
+    [[ "$acct" =~ ^[A-Za-z0-9_-]{1,64}$ ]] || finalize no_account
     call_clef "$body" "$token" "$acct"
   else
     call_jev "$body" "$token"

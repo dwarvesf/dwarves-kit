@@ -312,8 +312,8 @@ SKIPS that source with a stderr line and a `skipped` row, and never fails the ga
 | - | decide.openai_token_env | `"OPENAI_API_KEY"` | [reserved] | decide | Same rule as `decide.jev_token_env`, unused while the `openai` backend is a stub. Root-only. |
 | - | decide.openai_token_cmd | `""` | [reserved] | decide | Same rule as `decide.jev_token_cmd`, unused while the `openai` backend is a stub. Root-only. |
 | - | decide.clef_model | `"clef"` | [impl] | decide | `clef` or `clef-flash`; any other value falls back to `clef`. Root-only. |
-| - | decide.clef_account | `""` | [impl] | decide | The Cloudflare account id (`^[A-Za-z0-9_-]{1,64}$`), or an `op://` ref resolved through `secret-cache-read` (Keychain-cached, name `FLICK_CLEF_ACCT_<sha256(ref) first 8 hex>`). Billing-tied: never logged or printed. Root-only. |
-| - | decide.clef_token_env | `"CLOUDFLARE_API_TOKEN"` | [impl] | decide | Same rule as `decide.jev_token_env`. The Jev token env var is never consulted for clef. Root-only. |
+| - | decide.clef_account | `""` | [impl] | decide | The Cloudflare account id (`^[A-Za-z0-9_-]{1,64}$`), or an `op://` ref resolved through `secret-cache-read` from PATH, else `~/.local/bin` (Keychain-cached, name `FLICK_CLEF_ACCT_<sha256(ref) first 8 hex>`, under the same bound a token command gets). A missing or unresolvable value is `no_account`. Billing-tied: never logged or printed. Root-only. |
+| - | decide.clef_token_env | `"FLICK_CLEF_TOKEN"` | [impl] | decide | Same rule as `decide.jev_token_env`. The Jev token env var is never consulted for clef; neither is the broad `CLOUDFLARE_API_TOKEN` unless the operator names it here. Root-only. |
 | - | decide.clef_token_cmd | `""` | [impl] | decide | Same rule as `decide.jev_token_cmd`. Root-only. |
 | - | decide.allow_names | `""` | [impl] | decide | Space-separated extra public tool names the egress guard accepts, exact match, added to the names under the kit's `bin/`, `commands/`, `skills/` and `agents/`. Root-only. |
 | - | decide.deny_words | `""` | [impl] | decide | Space-separated words that block a `wrap-7b` candidate slug (client names, private repo names). Case-folded substring match. Root-only. |
