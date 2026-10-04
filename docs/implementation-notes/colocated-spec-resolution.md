@@ -43,3 +43,20 @@ Build decisions taken from the warnings (APPROVED means no spec fold):
 - spec-next counts root numbers twice (old `ls` plus `spec_files`). Harmless for max+1; kept for the additive change the spec asks for.
 - Symlinked co-located specs are invisible (`-type f`, no `-L`). Accepted.
 - Not done: the Picture box label and the Grounding histogram prefix (cosmetic, spec frozen at VALIDATED); a deep-namespace warning.
+
+## Test-plan critique (light): NEEDS WORK, 1 critical, 7 high
+
+The build's `tests/test-spec-find.sh` covers these on top of the matrix:
+
+- Critical: the mutant block also turns `_negctl_required` (not `yes`) and `pitch.sh _find_spec` (no spec) red, so all five callers carry a negative control.
+- Edge Case 1 at the callers: `validate-round open <co-located>` refuses `is not the ship-gate pick` when a root spec shares the slug; ship-gate reads the root spec's `Lane:`.
+- Edge Case 9 at ship-gate: only the decoy present, ship-gate exits 0.
+- Edge Case 5: a real `git worktree add` sibling holding SPEC-200 makes `next` print 201.
+- Edge Case 8: a co-located `SPEC-001` makes `check 001` report taken and leaves `next` alone.
+- Row 7: skip the unreadable-dir case when euid is 0.
+- Each `reserve` case gets its own state dir.
+
+## Build state
+
+- Done: `lib/spec/spec-find.sh` (smoke: 321 specs listed on this repo in 24 ms; ops-toolkit `circle` resolves to `tools/circle/docs/specs/SPEC-141-circle.md`).
+- Next: wire the five callers, write `tests/test-spec-find.sh`, docs (TASK-4), `/kit:battery`, draft PR.
