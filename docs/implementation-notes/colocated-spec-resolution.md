@@ -91,3 +91,5 @@ Verdict FIX THEN SHIP. Left open for the operator design review on the draft PR:
 - Low: a root glob hit beats an exact co-located match (kept as today).
 - Low: the walk runs in full even after a root hit. Try root first, walk on a miss.
 - Low: an unrelated co-located spec with the branch slug over-blocks a push. Never under-blocks.
+- Applied (b3246c14, 1f2a1657): callers fall back to a root-only lookup when spec-find.sh is missing, like ship-gate; the fallback is pipefail-safe and the stale-install fixture now runs fresh libs against the fallback.
+- Applied (6a5aad74): spec_for_slug checks the root docs/specs glob first and walks only on a miss.
