@@ -11,9 +11,13 @@
 # shared with other sessions and the last run was far above normal load, so each p95 is a
 # conservative upper bound and these ceilings are generous. Re-measure on a quiet host to tighten.
 # Sub-second suites measure 0 s and take the 60 s floor.
+# One hand-set exception: test-wrap-land caches passed sections, so its three samples (76, 1, 1) are one
+# cold and two warm runs. A later cold run on a loaded host ran past 152 s and was killed, so it
+# holds 600 instead of 2 x 76. Re-measure it cold (LAND_CACHE=0) before tightening.
 test-lanes-data 692
 test-meta-docs-registry 682
 test-hooks 660
+test-wrap-land 600
 test-orchestrate-orca 572
 test-config-seams 398
 test-wrap-adopt 382
@@ -26,7 +30,6 @@ test-board-work 238
 test-wrap-apply 236
 test-wrap-ci 186
 test-config-registry 164
-test-wrap-land 152
 test-wrap-pull 152
 test-wrap-carry 148
 test-install-modules 126
