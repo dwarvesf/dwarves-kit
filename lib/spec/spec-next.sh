@@ -64,7 +64,11 @@ if [ -r "$LIB_ROOT/telemetry/kit-log-dir.sh" ]; then
   source "$LIB_ROOT/telemetry/kit-log-dir.sh" 2>/dev/null || true
 fi
 # shellcheck source=lib/spec/spec-find.sh
-source "$LIB_ROOT/spec/spec-find.sh" || { echo "FATAL: lib/spec/spec-find.sh missing or unreadable" >&2; exit 1; }
+# A stale install without spec-find.sh keeps the root-only lookup (mirrors hooks/ship-gate.sh).
+if ! source "$LIB_ROOT/spec/spec-find.sh" 2>/dev/null; then
+  spec_files() { ls "$1"/docs/specs/SPEC-*.md 2>/dev/null; return 0; }
+  spec_for_slug() { [ -n "$2" ] || return 0; ls "$1"/docs/specs/SPEC-*-"$2".md 2>/dev/null | head -1; return 0; }
+fi
 if command -v kit_resolve_log_dir >/dev/null 2>&1; then
   RES_DIR="$(kit_resolve_log_dir)"
 else
