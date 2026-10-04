@@ -12,7 +12,7 @@ A list of five red suites went stale. The goal named `test-gate-opt-out`, `test-
 
 The re-measure found one suite that is red for a real reason: `tests/test-adopt.sh` assertion "known list complete against git log". `lib/adopt/agents-known.sha256` must hold the sha256 of every committed `AGENTS.md` version, so `adopt` can tell an unmodified old kit copy from an operator edit. Three `AGENTS.md` edits (#890, #892, #894) landed without regenerating the list. The test is the only guard, and CI runs on demand only, so the gap went unseen.
 
-Two more findings are host or environment effects, not code bugs (see `## Design`).
+One more finding is a host effect: the installed `codex` binary hangs, and `tests/test-codex-hooks.sh` called it with no time bound. That suite is red on master on this host, so it joins this spec (see `## Design`). The rest are environment effects of a `.git`-less export.
 
 ## Solution
 
@@ -65,7 +65,7 @@ See `## Picture`.
 | test-research-arch-contract | 0 | 0 | already green |
 | test-adopt | 1 | 1 | real: stale known-hash list, fixed here |
 | test-gauntlet-proof-audit, test-gitattributes-union, test-hooks, test-ledger-durability, test-lint-scattered-ids, test-proof-contract-visual, test-run-all-time | 1 | 0 | environment: a `git archive` export has no `.git`; each suite reads git state (tracked files, `origin/master`, `git status`, a git log). Green on a full-history clone, which is what CI checks out. Not changed. |
-| test-codex-hooks | timeout at 300 s | timeout at 300 s | host: the installed `codex` binary hangs on `codex --version` and `codex --help` on this host, and the suite calls it with no time bound. Not changed. |
+| test-codex-hooks | timeout at 300 s | timeout at 300 s | host: the installed `codex` binary hangs on `codex --version` and `codex --help`, and the suite called it with no time bound. Fixed: a bounded liveness probe skips the loader proof when codex hangs; the two `codex plugin` calls are bounded so a hang fails the assert. |
 
 ### ADR link(s)
 
@@ -95,6 +95,7 @@ Three added lines in `lib/adopt/agents-known.sha256`. Nothing else in the shippe
 - [x] TASK-2: Regenerate `lib/adopt/agents-known.sha256`. AC: `bash tests/test-adopt.sh` exits 0 on a full-history clone of the branch head; the diff against the previous list has no removed line.
 
 ### Phase 3: Polish
+- [x] TASK-4: Bound the codex probe in `tests/test-codex-hooks.sh`. AC: the suite exits 0 with the hanging codex on PATH, and with the pre-fix file it exits 124 under a 120 s bound.
 - [x] TASK-3: Implementation note with one root-cause line per red suite; proof of done with a recorded run per suite and a negative control for the fixed suite. AC: `docs/verification/master-green.md` carries a `## Recorded run` section and a negative control block.
 
 ## After state
@@ -102,12 +103,13 @@ Three added lines in `lib/adopt/agents-known.sha256`. Nothing else in the shippe
 - [x] `bash tests/test-adopt.sh` exits 0 on a full-history clone of the branch head. (Before: exit 1, "3 missing".)
 - [x] The five named suites exit 0 on a clean export of the branch head. (Before: already 0.)
 - [x] Restoring the old list turns `tests/test-adopt.sh` red again (negative control).
+- [x] `bash tests/test-codex-hooks.sh` exits 0 in about 16 s with the hanging codex on PATH, printing a SKIP line. (Before: exit 124 at the ceiling.) With the pre-fix file it exits 124 under a 120 s bound.
 
 ## Acceptance Criteria (global)
 
 - [x] All tasks pass their individual acceptance criteria.
 - [x] No assertion deleted or weakened.
-- [x] No regressions: the full suite list on a full-history clone of the branch head shows only the host-hang suite `test-codex-hooks`.
+- [x] No regressions: the full suite list on a full-history clone of the branch head shows no red suite.
 
 ## Verification
 
@@ -137,7 +139,7 @@ bash tests/run-all.sh --all
 ## Out of Scope
 
 - A hook or CI step that regenerates the list on every `AGENTS.md` change.
-- A time bound or a skip for the `codex` loader probe in `tests/test-codex-hooks.sh`. The hang is a host fault today; whether the suite should bound its own probe is the lead's call.
+- Auto-regenerating the known-hash list. Decided by the lead: `test-adopt` stays the guard.
 - Making the seven git-reading suites pass on a `.git`-less export. They test git behavior; an export cannot satisfy them.
 - Splitting `test-meta` and any speed work (later sub-goals).
 
@@ -153,13 +155,15 @@ bash tests/run-all.sh --all
 
 - DEC-1: regenerate the list, never relax the assertion. The test guards a real contract: a missing version reads as "edited" and is never swapped.
 - DEC-2: leave the seven `.git`-dependent suites alone. They are correct; the export is the wrong shape for them. The proof records both shapes.
-- DEC-3: report `test-codex-hooks` rather than patch it. The failure is a hung host binary, and a skip would hide a broken host.
+- DEC-3: bound the codex probe in `tests/test-codex-hooks.sh` (lead decision). A hang counts as codex unavailable, like a missing binary, with a visible SKIP line. The loader assertion is kept and still fails when a live codex rejects the package or hangs inside a plugin call.
+- DEC-4: no auto-regeneration of the known-hash list (lead decision).
 
 ## Grounding
 
 - Environment proof: the same four suites (`test-ledger-durability`, `test-lint-scattered-ids`, `test-gauntlet-proof-audit`, `test-gitattributes-union`) exit 0 on the export after `git init` and one commit.
 - Re-measure commands and exits: `docs/verification/master-green.md`, `## Recorded run`.
 - Missing versions: `bash tests/test-adopt.sh` on a clone of 144c2279 printed `missing from list: e2d9133927bc943a9ae1f21700264f35ff91f895`, `1b449c068821bad13717f01e7ecf09616f517f7e`, `f215bf115f4b83d0897caf29c45b66704de2d9ae`.
+- Rebase: master advanced to a7301653; #899 changed `AGENTS.md`, so the list needed one more regeneration after the rebase (`test-adopt` named `3ab0bd17915e`).
 - Hang evidence: `timeout 15 codex --version` exits 124 on this host, with or without the sandbox and with a fresh `CODEX_HOME`.
 
 ## Test plan
@@ -169,4 +173,5 @@ bash tests/run-all.sh --all
 | 1 | Known list covers every committed AGENTS.md version | regression | After state 1 | `bash tests/test-adopt.sh` exits 0 on a full-history clone |
 | 2 | Five named suites still green | regression | After state 2 | each `bash tests/<suite>.sh` exits 0 on an export |
 | 3 | Old list turns the suite red | negative control | After state 3 | copy the saved old list in, `bash tests/test-adopt.sh` exits 1, copy the fixed list back |
-| 4 | Full list shows no new red | regression | global AC 3 | `bash tests/run-all.sh --all` on a clone |
+| 4 | Hung codex skips, not hangs | negative control | After state 4 | pre-fix `tests/test-codex-hooks.sh` under `timeout 120` exits 124; fixed file exits 0 | `timeout 120 bash tests/test-codex-hooks.sh` |
+| 5 | Full list shows no new red | regression | global AC 3 | `bash tests/run-all.sh --all` on a clone |
