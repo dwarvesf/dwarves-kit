@@ -84,11 +84,10 @@ E7="$(mktemp)"; RC7="$(gate "$R" 'git push -u origin HEAD' "$E7")"
   && ok "7 ledger gap and notes gap share one BLOCKED message" \
   || no "7 want one BLOCKED with both gaps; got rc=$RC7: $(tr '\n' ' ' < "$E7")"
 
-# 8 gate-ledger.sh itself is untouched by this rule
-if git -C "$KIT" rev-parse --verify -q origin/master >/dev/null; then
-  git -C "$KIT" diff --quiet origin/master -- lib/gate/gate-ledger.sh \
-    && ok "8 gate-ledger.sh byte-identical to origin/master" || no "8 gate-ledger.sh changed"
-else ok "8 skipped: no origin/master ref"; fi
+# 8 gate-ledger.sh itself carries no part of this rule (it lives in hooks/ship-gate.sh). The pin used to
+# be "byte-identical to origin/master", which any later gate-ledger.sh change broke without touching the rule.
+grep -qE 'MISSING-NOTES|implementation-notes' "$KIT/lib/gate/gate-ledger.sh" \
+  && no "8 gate-ledger.sh names the implementation-notes rule" || ok "8 gate-ledger.sh does not carry the implementation-notes rule"
 
 # 10 docs name the rule; execute.md drops the contradicting clauses
 grep -q 'implementation-notes' "$KIT/docs/WORKFLOW.md" && grep -q 'MISSING-NOTES\|impl-notes' "$KIT/docs/WORKFLOW.md" \
