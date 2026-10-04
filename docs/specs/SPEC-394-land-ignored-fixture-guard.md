@@ -1,6 +1,6 @@
 # Spec: land refuses a branch whose touched paths hold ignored files
 Generated: 2026-10-04
-Status: DRAFT (revision 1: validate round 1 NEEDS REVISION folded, 3 criticals + lead rulings a to k)
+Status: DRAFT (revision 2: validate round 2 folded, lead rulings a to c)
 Lane: full (`lib/wrap/` is kit machinery; the guard decides whether `wrap land` pushes and squash-merges onto a default branch)
 Depth: standard (every git output shape this spec rests on was sampled live; see ## Grounding)
 Type: spec-feature
@@ -92,7 +92,7 @@ See `## Picture`.
    - ending in `/` (`.pytest_cache/`): the whole subtree under any directory of that name, at any depth. This is an explicit opt-in for caches that write their own `*` ignore rule, which makes git list their children one by one (Grounding);
    - any other entry with a `/` (`tools/circle/data`, `.claude/session-state`): a glob matched against the whole repo-relative path or a leading run of its components.
    The value is split on spaces under `set -f`, so an entry such as `*.json` never expands against the cwd.
-5. **The built-in list.** `node_modules`, `.wrangler`, `dist`, `*.tsbuildinfo` (the brief's build output), `__pycache__`, `.venv`, `target`, `.pytest_cache/` (Python and Rust build output and caches), `.env`, `.env.*`, `.envrc`, `.dev.vars` (local config that must never be committed), `.DS_Store`, and `.claude/session-state` (written by the kit's own `hooks/session-state-save.sh`). Live samples show `__pycache__/`, `.pytest_cache/` children, `node_modules/`, and `.claude/session-state/` in real post-test worktrees (Grounding).
+5. **The built-in list.** `node_modules`, `.wrangler`, `dist`, `*.tsbuildinfo` (the brief's build output), `__pycache__`, `target` (Python and Rust build output), `.pytest_cache/`, `.venv/`, `.mypy_cache/`, `.ruff_cache/` (tool caches in the subtree form: each writes its own `*` ignore rule, so git lists the children one by one), `.env`, `.env.*`, `.envrc`, `.dev.vars` (local config that must never be committed; an ignored env file is correctly ignored, so allowing it is right), `.DS_Store`, `.claude/session-state` (written by the kit's own `hooks/session-state-save.sh`), and two path-form entries for dwarves-kit's own state: `tests/.cache` (the test cache) and `lib/*/bin/*-rs` (built Rust binaries; a case-pattern `*` crosses `/`, which is fine here). Live samples show `__pycache__/`, `.pytest_cache/` children, `node_modules/`, and `.claude/session-state/` in real post-test worktrees (Grounding).
 6. **The refusal text.** It prints one line per path. A path whose basename looks like a secret gets the marker `looks like a secret: never commit; move or delete it, or allow it`, and the commit hint never appears beside it. Secret-shaped means a case-insensitive basename match on `.env*`, `*.pem`, `*.key`, `*secret*`, `*credential*`, or `*token*`. When at least one path has no marker, a closing line asks a human to choose: commit, delete, or allow. Control bytes in a path print as `?`.
 7. **The exit and the loop rule.** The guard returns 1, the code `cmd_land` uses for the other local-state refusals (dirty tree, detached HEAD). Nothing is pushed, and no PR is opened, edited, readied, or merged. An unattended loop (a wrap step 10 worker, a `/goal` loop, a mega-goal wave) must stop on this refusal and report it to a human. It must never retry, commit the file, delete it, or add an allow entry by itself. The `commands/wrap.md` land paragraph says so.
 8. **Fail closed on every read.** A failed `git diff`, a failed `git status`, or an empty merge base refuses with exit 1 and a line naming the failed read. An unreadable tree is never treated as clean. The status call passes `--untracked-files=normal` explicitly, because `status.showUntrackedFiles=no` makes `--ignored=matching` fatal (rc 128).
@@ -145,7 +145,7 @@ None.
 - [ ] TASK-1: the knob. Add the `land_ignored_allow = ""` line under `[wrap]` in the kit-root `kit.toml`, a `wrap.land_ignored_allow` row in `lib/config/module-registry.md`, and a row in its "Root-only keys" table. AC: `awk '/^\[wrap\]/{s=1;next} /^\[/{s=0} s && /^land_ignored_allow[[:space:]]*=/' kit.toml` prints exactly one line; `bash tests/test-config-registry.sh` exits 0.
 
 ### Phase 2: Core
-- [ ] TASK-2 (depends on TASK-1): `_land_ignored_guard` in `lib/wrap/wrap-land.sh`, and its call in `cmd_land` after the already-landed block and before the PR-template check. It covers the scope rule, the literal compare, the three allow forms, the built-in list, the refusal text, and fail-closed reads. AC: Test plan rows 1 to 22 pass; each negative control goes red under its mutation.
+- [ ] TASK-2 (depends on TASK-1): `_land_ignored_guard` in `lib/wrap/wrap-land.sh`, and its call in `cmd_land` after the already-landed block and before the PR-template check. It covers the scope rule, the literal compare, the three allow forms, the built-in list, the refusal text, and fail-closed reads. AC: Test plan rows 1 to 23 pass; each negative control goes red under its mutation.
 - [ ] TASK-3: a `sec_ignored_guard` section in `tests/test-wrap-land.sh`, one case per Test plan row. It pins `GIT_CONFIG_GLOBAL` and `XDG_CONFIG_HOME` to fixture paths and runs `wrap land` from inside the worktree. The land-merge sections that plant `ignored.bin` run with an operator `kit.toml` that allows `ignored.bin` (see Acceptance Criteria). AC: `LAND_ONLY=ignored bash tests/test-wrap-land.sh` exits 0, and so does the full `bash tests/test-wrap-land.sh`.
 
 ### Phase 3: Polish
@@ -155,7 +155,7 @@ None.
 
 - [ ] `wrap land` on a branch whose touched unit holds an ignored `*.raw.json` exits 1, prints `LAND REFUSED` and the path, and pushes nothing. (Today: it pushes and merges.)
 - [ ] The same land, with the fixture committed through `git add -f`, exits 0.
-- [ ] An ignored `node_modules/`, `dist/`, `__pycache__/`, `.pytest_cache/` child, `.env`, or `.claude/session-state/` under a touched scope does not refuse.
+- [ ] An ignored `node_modules/`, `dist/`, `__pycache__/`, `.pytest_cache/`, `.venv/`, `.mypy_cache/`, or `.ruff_cache/` child, `.env`, `.claude/session-state/`, `tests/.cache`, or `lib/*/bin/*-rs` under a touched scope does not refuse.
 - [ ] A failed `git status`, a failed `git diff`, or an empty merge base refuses with exit 1 and pushes nothing.
 - [ ] `kit.toml` carries `land_ignored_allow = ""` under `[wrap]`, and the key sits in the registry's "Root-only keys" table.
 - [ ] `LAND_ONLY=ignored bash tests/test-wrap-land.sh` exits 0.
@@ -176,7 +176,7 @@ Every row runs `wrap land` from inside the worktree with `GIT_CONFIG_GLOBAL` and
 | 1 | Ignored `tools/x/fixtures/a.raw.json`; branch touches `tools/x/test_x.sh` | happy refusal | After state 1 | exit 1; `LAND REFUSED` and the path; the closing human-decides line; no push |
 | 2 | Same fixture committed through `git add -f` | happy pass | After state 2 | exit 0, a `merged #` line |
 | 3 | Ignored `other/far.raw.json`; branch touches only `tools/x/` | edge | Edge 1 | exit 0 |
-| 4 | Under `tools/x/`: an ignored `node_modules/` with many files, `dist/`, `a.tsbuildinfo`, `.wrangler/`, `__pycache__/`, `.venv/`, `.pytest_cache/` with its own `*` rule, `.env`, `.env.local`, `.envrc`, `.dev.vars`, `.DS_Store` | edge: built-in list | Edge 2, After state 3 | exit 0 |
+| 4 | Under `tools/x/`: an ignored `node_modules/` with many files, `dist/`, `a.tsbuildinfo`, `.wrangler/`, `__pycache__/`, `.venv/` with uv's own `*` rule (children list one by one), `.pytest_cache/`, `.mypy_cache/`, and `.ruff_cache/` each with its own `*` rule, `.env`, `.env.local`, `.envrc`, `.dev.vars`, `.DS_Store`; and, in a second case under a touched `lib/x` scope, an ignored `lib/x/bin/prose-rs` and `tests/.cache/k` | edge: built-in list | Edge 2, After state 3 | exit 0 |
 | 5 | Nested `tools/x/.gitignore` ignores `notes.txt`; the file exists | edge | Edge 3 | exit 1, names `tools/x/notes.txt` |
 | 6 | Ignored `tools/x/dist/fixtures/a.raw.json` (dist not wholly ignored: the pattern matched the file) | negative: no ancestor match | Edge 9 | exit 1, names the path |
 | 7 | Operator `kit.toml` allows `tools/x/fixtures` | knob, path form | Decision 4 | exit 0 |
@@ -188,7 +188,7 @@ Every row runs `wrap land` from inside the worktree with `GIT_CONFIG_GLOBAL` and
 | 13 | Branch touches root `README.md`; ignored root `notes.raw.json` and ignored `deep/x.raw.json` | edge: root scope | Edge 6 | exit 1, names `notes.raw.json` only |
 | 14 | Branch touches `_meta/LAB_LOG.md`; ignored `_meta/cache.raw.json` and `_meta/sub/y.raw.json` | edge: depth-1 scope | Edge 7 | exit 1, names `_meta/cache.raw.json` only |
 | 15 | Ignored `tools/x/fixtures/with space.raw.json` and one with a tab in its name | edge: quoting, control bytes | Edge 8 | the space path prints raw and unquoted; the tab prints as `?` |
-| 16 | Ignored `tools/x/api.key` and `tools/x/.env.prod.bak`, nothing else | secret hint | Decision 6 | both lines carry `looks like a secret: never commit`; the output has no `git add -f` |
+| 16 | Ignored `tools/x/api.key` and `tools/x/db-credentials.json`, nothing else (secret-shaped, not built-in) | secret hint | Decision 6 | both lines carry `looks like a secret: never commit`; the output has no `git add -f` |
 | 17 | A `git` shim fails `status` | fail closed | Edge 11 | exit 1, names `git status`, no push |
 | 18 | A `git` shim fails `diff --name-only` | fail closed | Edge 11 | exit 1, names `git diff`, no push |
 | 19 | A `git` shim fails `merge-base`, so the base is empty | fail closed | Edge 12 | exit 1, names the merge base, no push |
@@ -244,6 +244,7 @@ bash tests/run-all.sh --changed --time
 - A project-level knob. v1 reads only the operator and kit-root layers.
 - Detecting whether a test actually reads a given file. The guard judges presence in scope, not use.
 - A per-run bypass flag.
+- A hand `git push` followed by `gh pr create` stays unguarded. The incident that motivated this spec shipped that way. Scope stays `wrap land` only.
 
 ## Touches
 
@@ -267,6 +268,7 @@ bash tests/run-all.sh --changed --time
 - DEC-6: no bypass flag. The knob is the only way past, and it leaves a trace in an operator-owned file.
 - DEC-7 (critical 2, revision 1): every read fails closed. `--untracked-files=normal` is passed explicitly.
 - DEC-8 (lead ruling g, revision 1): the existing `ignored.bin` fixtures get an operator allow entry and are not moved.
+- DEC-9 (validate round 2, lead rulings a to c, revision 2): `.env.*` stays built in, because an ignored env file is correctly ignored; row 16 changes to the secret-shaped, non-built-in fixtures `tools/x/api.key` and `tools/x/db-credentials.json` and keeps its expected result. The built-in list takes `.venv/` (subtree form, replacing `.venv`), `.mypy_cache/`, `.ruff_cache/` (subtree form: they write their own `*` rule, so children list one by one), plus the path forms `tests/.cache` and `lib/*/bin/*-rs` for dwarves-kit's own test cache and built Rust binaries. Scope stays `wrap land` only; a hand `git push` plus `gh pr create` is recorded as Out of Scope.
 
 ## Grounding
 
