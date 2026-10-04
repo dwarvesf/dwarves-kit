@@ -106,7 +106,7 @@ Verdict: FAIL on master as well, so it is not this change
 | 1 | ignored `a.raw.json` under a touched unit refuses, nothing pushed | `sec_ignored` case 1 |
 | 2 | the same fixture committed through `git add -f` lands | case 2 |
 | 3 | an ignored file outside every scope passes | case 3 |
-| 4, 4b | the built-in list passes: caches, build output, local config; `tests/.cache` and `lib/*/bin/*-rs` | cases 4 and 4b |
+| 4 | the built-in list passes: caches, build output, local config; `tests/.cache` and `lib/*/bin/*-rs` | cases 4 and 4b |
 | 5 | nested `.gitignore` match refuses with its full path | case 5 |
 | 6 | a slash-free allow entry never matches an ancestor | case 6 |
 | 7 | operator path-form entry allows | case 7 |
@@ -126,6 +126,7 @@ Verdict: FAIL on master as well, so it is not this change
 | 21 | an adopted (already open) PR refuses before the re-push | case 21 |
 | 22 | a collapsed ignored directory is named with `/`, then allowed | case 22 |
 | 23 | an already-landed branch takes the landed path | case 23 |
+| 24 | a touched path holding a newline refuses | case 24 |
 
 ## Negative controls
 
