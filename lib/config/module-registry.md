@@ -516,6 +516,11 @@ exercise the primitive on fixture keys -- `mega.wave_cap`, `gauntlet.runner_host
 | ledger.location |
 | lanes.default |
 | precedent.registry |
+| proof.account_ |
+| proof.asset_bucket |
+| proof.asset_token_ref |
+| proof.base_url_ |
+| proof.visual |
 | review.apply_findings |
 | ship.confirm_bump |
 | ship.confirm_commit |
@@ -541,6 +546,7 @@ exercise the primitive on fixture keys -- `mega.wave_cap`, `gauntlet.runner_host
 
 
 - `decide.*` is root-only but absent from the "Root-only keys" table above. `bin/flick` reads the `[decide]` block with its own one-pass reader (operator `kit.toml`, then kit-root `kit.toml`, never a project `.kit.toml`) because ten `kit_config_get_root` calls cost ten `awk` spawns, which broke its latency budget on a slow-spawn host. AC10 requires the table to equal the literal `kit_config_get_root` call sites, so listing the keys would fail it. Effect: `bin/config get decide.<key>` still shows a project override while `bin/flick` ignores it. `tests/test-flick.sh` pins the flick side.
+- `proof.account_` and `proof.base_url_` are prefix rows. `lib/proof/asset.sh` reads `proof.account_<owner>` and `proof.base_url_<owner>` root-only, and AC10 captures the literal prefix before the variable. `bin/config get proof.account_<owner>` matches no row, so it does not fence a project override; `asset.sh` itself still reads root-only.
 
 The seed regex is deliberately the exact reproducible command named in
 `_meta/megagoals/harness-loop/goals/08-config-surface.md` step 2, scoped to a
