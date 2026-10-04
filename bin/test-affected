@@ -14,11 +14,16 @@
 # Selection: a changed tests/test-*.sh -> itself; any other changed file -> every
 # tests/test-*.sh naming its repo-relative path. A non-source file (docs, fixtures) matches
 # only a full-path reference, never inside a longer path or a comment; a source (lib/, hooks/,
-# bin/, commands/, skills/, agents/) also matches by basename when that is over 5 chars; tests/test-meta.sh when a changed path is one it reads (meta_input). A changed file no test
-# names is UNCOVERED (reported, not a failure).
+# bin/, commands/, skills/, agents/) also matches by basename when that is over 5 chars. A path
+# the test-meta area suites read by glob or scan (meta_input) picks the area suites that read it
+# (meta_areas), else the tests/test-meta.sh runner. A changed file no test names is UNCOVERED
+# (reported, not a failure).
 # Cache: key = sha256(test + every source file it names + VERSION), under
 # <kit log dir>/test-cache/. Only PASS is recorded. An unusable cache dir means run all.
-# Exit: 0 all green, 1 any FAIL, 2 usage or no base.
+# Timeout: a suite runs under TEST_AFFECTED_TIMEOUT_SECS when set, else its line in
+# bin/test-affected.timeouts (`<suite> <seconds>`, 2 x measured p95, floor 60), else 300. A suite
+# killed at its limit prints `TIMEOUT <suite> (limit Ns)`, never FAIL.
+# Exit: 0 all green, 1 any FAIL or TIMEOUT, 2 usage or no base.
 set -euo pipefail
 SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
@@ -114,12 +119,118 @@ FILE: for my $f (@ARGV) {
 }' "$@"
 }
 
+# --- test-meta: the area suites ---------------------------------------------------------------
+# tests/test-meta.sh is a runner over eight area suites (tests/test-meta-<area>.sh), the heaviest
+# group (~145s for docs-registry alone), so a diff picks only the areas that read a changed path,
+# not the group. The nightly --all runs every area daily, so no input loses coverage overall.
+#
+# Two attribution paths, both deterministic:
+#   1. A suite that NAMES the path (the reference scan above) is picked like any other suite, so
+#      `commands/assign.md` or `lib/gate/proof-gate.sh` reach the areas that cite them.
+#   2. meta_areas below lists what the areas read by GLOB or SCAN, which no reference scan sees:
+#      the file loops, the git ls-files scans, the installer run, the registry inputs.
+# A meta input that neither path attributes picks the tests/test-meta.sh runner (run-all.sh
+# expands it to every area), never nothing. A path every area scan excludes picks no area.
+#
+# No area suite is always-run. The registry freshness pin lives in docs-registry and is mapped by
+# its inputs; hooks/ship-gate.sh already refuses a push that moves one without a fresh
+# docs/FEATURES.md. The tree-wide lints that guard every diff carry their own `# always:` header,
+# which run-all.sh --changed adds.
+#
+# What each area reads by glob or scan (derived from the suites' own paths):
+#   plugin-hooks     .claude-plugin/ VERSION tool.toml (three version surfaces, manifests), settings.json
+#                    hooks/* install.sh (executability, hooks.json parity, the install runs), every live
+#                    *.md (the /user: scan), the libs gate-ledger.sh sources (the installed run)
+#   contract         install.sh (settings merge run), examples/hello-spec/AGENTS.md
+#   agents-commands  agents/*.md commands/*.md skills/*/*.md (file loops, bare-agent-name scan)
+#   review-verifiers agents/ commands/ skills/ (frontmatter loops, generated-by scan)
+#   vmodel-dispatch  commands/*.md agents/*.md skills/*/SKILL.md hooks/*.sh (file counts against the
+#                    README tables), live docs (stale-phase scan over docs/
+#                    commands/ and the root docs), the libs gate-ledger.sh sources
+#   goal-ledger      the libs gate-ledger.sh sources (it runs gate-ledger.sh)
+#   spec-depth       nothing by glob; every path it reads is named, so the reference scan covers it
+#   docs-registry    hooks/ commands/ agents/ skills/ lib kit-verb files and lib/*/tests/ (registry
+#                    inputs), docs/specs docs/decisions (collision guard, Specs column), docs/FEATURES.md
+#                    (freshness pin; also a live doc for the two scans above), examples/ .github/workflows/ (demo project, workflow pins), settings.json
+# Excluded by every scan (the dated archives): docs/{verification,retro,handoff,research}/,
+# docs/CHANGELOG.md, CHANGELOG.md, _meta/. A named path there still picks by reference.
+META_ALL="plugin-hooks contract agents-commands spec-depth review-verifiers vmodel-dispatch goal-ledger docs-registry"
+
+# A lib file that declares a kit-verb feeds the registry; so does one that just dropped the header,
+# so the base copy counts too.
+kit_verb_file() {
+  [ "$(head -40 "$1" 2>/dev/null | grep -c '^# kit-verb: ')" != 0 ] \
+    || [ "$(git show "$BASE:$1" 2>/dev/null | head -40 | grep -c '^# kit-verb: ')" != 0 ]
+}
+
+meta_input() {
+  case "$1" in
+    *.md|commands/*|agents/*|skills/*|hooks/*|install.sh|settings.json|VERSION|tool.toml) return 0 ;;
+    .claude-plugin/*|.github/workflows/*|examples/*|bin/learn|bin/precedent) return 0 ;;
+    lib/board/*|lib/classify/*|lib/config/*|lib/gate/*|lib/goal/*|lib/ledger/*) return 0 ;;
+    lib/registry/*|lib/spec/*|lib/telemetry/*|lib/*/tests/*) return 0 ;;
+    tests/fixtures/gates-on*|tests/test-hooks.sh|tests/test-e2e.sh) return 0 ;;
+    lib/*) kit_verb_file "$1" ;;
+    *) return 1 ;;
+  esac
+}
+
+# Area names (the part after tests/test-meta-) that read $1 by glob or scan; `none` when every
+# scan excludes it; empty when this table cannot say.
+meta_areas() {
+  case "$1" in
+    docs/verification/*|docs/retro/*|docs/handoff/*|docs/research/*|docs/CHANGELOG.md|CHANGELOG.md|_meta/*) echo none ;;
+    docs/specs/*|docs/decisions/*) echo "docs-registry" ;;
+    docs/FEATURES.md) echo "docs-registry plugin-hooks vmodel-dispatch" ;;
+    commands/*|agents/*) echo "agents-commands review-verifiers vmodel-dispatch plugin-hooks docs-registry" ;;
+    skills/*) echo "agents-commands review-verifiers vmodel-dispatch plugin-hooks docs-registry" ;;
+    hooks/*) echo "plugin-hooks vmodel-dispatch docs-registry" ;;
+    settings.json) echo "plugin-hooks contract docs-registry" ;;
+    install.sh) echo "plugin-hooks contract" ;;
+    .claude-plugin/*|VERSION|tool.toml) echo "plugin-hooks" ;;
+    .github/workflows/*) echo "docs-registry" ;;
+    examples/*) echo "contract docs-registry" ;;
+    tests/fixtures/gates-on*) echo "$META_ALL" ;;
+    tests/test-hooks.sh) echo "docs-registry" ;;
+    tests/test-e2e.sh) echo "vmodel-dispatch" ;;
+    lib/ledger/*|lib/spec/*|lib/gate/lane-data.sh|lib/telemetry/kit-log-dir.sh) echo "plugin-hooks goal-ledger vmodel-dispatch" ;;
+    lib/*.md) echo "plugin-hooks" ;;
+    lib/*/tests/*) echo "docs-registry" ;;
+    lib/*) kit_verb_file "$1" && echo "docs-registry" || true ;;
+    docs/*.md|docs/*/*.md|WORKFLOW.md|README.md|MANUAL.md|AGENTS.md) echo "plugin-hooks vmodel-dispatch" ;;
+    *.md) echo "plugin-hooks" ;;
+  esac
+}
+
+# Print the pairs for changed path $1 ($2 = the suites that name it). Returns 0 when an area or the
+# runner is picked, 1 when $1 is not a meta input, 2 when every scan excludes it.
+meta_pick() {
+  local f="$1" hits="$2" a t areas picked=0 none=0
+  [ -f tests/test-meta.sh ] || return 1
+  meta_input "$f" || return 1
+  areas="$(meta_areas "$f")"
+  for a in $areas; do
+    if [ "$a" = none ]; then none=1; continue; fi
+    t="tests/test-meta-$a.sh"
+    if [ -f "$t" ]; then printf '%s\treads %s\n' "$t" "$f"; picked=1; fi
+  done
+  [ "$picked" = 1 ] && return 0
+  [ "$none" = 1 ] && return 2
+  for a in $META_ALL; do
+    case "$hits" in *"tests/test-meta-$a.sh"*) return 0 ;; esac
+  done
+  printf 'tests/test-meta.sh\treads %s (no area attributed)\n' "$f"
+}
+
 # --- selection: "<test>\t<reason>" pairs and UNCOVERED files ---
 : >"$TMP/pairs"; : >"$TMP/uncovered"
 while IFS= read -r f; do
   [ -n "$f" ] || continue
   case "$f" in
-    tests/test-*.sh) [ -f "$f" ] && printf '%s\tself\n' "$f" >>"$TMP/pairs"; continue ;;
+    tests/test-*.sh)
+      [ -f "$f" ] && printf '%s\tself\n' "$f" >>"$TMP/pairs"
+      meta_pick "$f" "" >>"$TMP/pairs" || true
+      continue ;;
   esac
   if is_source "$f"; then
     b="$(basename "$f")"
@@ -169,40 +280,10 @@ $b"
     covered=1
     printf '%s\n' "$hits" | while IFS= read -r t; do printf '%s\treferences %s\n' "$t" "$f"; done >>"$TMP/pairs"
   fi
+  mrc=0; meta_pick "$f" "$hits" >>"$TMP/pairs" || mrc=$?
+  [ "$mrc" = 0 ] && covered=1
   [ "$covered" = 1 ] || printf '%s\n' "$f" >>"$TMP/uncovered"
 done <"$TMP/changed"
-# tests/test-meta.sh is the heaviest suite (~200s of a 253s --changed run on a lib/wrap diff), so
-# it is picked only when a changed path is one it reads, not on every diff. The nightly --all
-# runs it every day regardless, so no input loses coverage overall. What it reads:
-#   *.md                     the /user: and stale-phase scans over every tracked doc, plus
-#                            commands/agents/skills frontmatter, AGENTS/WORKFLOW/README pins,
-#                            docs/FEATURES.md, docs/specs (registry Specs column)
-#   commands/ agents/ skills/ file loops and the bare-agent-name scan
-#   hooks/ install.sh settings.json   executability, hooks.json parity, the install run
-#   VERSION tool.toml .claude-plugin/ the three version surfaces and the manifests
-#   .github/workflows/ examples/      workflow pins, the hello-spec demo
-#   lib/{board,classify,config,gate,goal,registry,telemetry}/ content pins; lib/{ledger,spec}/
-#                            are sourced by the gate-ledger.sh it executes
-#   bin/learn bin/precedent tests/fixtures/gates-on tests/test-{hooks,e2e}.sh   named directly
-#   lib/*/tests/* and any lib file with a `# kit-verb:` header   registry Tests and [V] rows
-# tests/test-*.sh also feed the registry Tests column, but hooks/ship-gate.sh's freshness check
-# already refuses a push that edits one without a fresh docs/FEATURES.md, so they do not pick it.
-meta_input() {
-  case "$1" in
-    *.md|commands/*|agents/*|skills/*|hooks/*|install.sh|settings.json|VERSION|tool.toml) return 0 ;;
-    .claude-plugin/*|.github/workflows/*|examples/*|bin/learn|bin/precedent) return 0 ;;
-    lib/board/*|lib/classify/*|lib/config/*|lib/gate/*|lib/goal/*|lib/ledger/*) return 0 ;;
-    lib/registry/*|lib/spec/*|lib/telemetry/*|lib/*/tests/*) return 0 ;;
-    tests/fixtures/gates-on*|tests/test-hooks.sh|tests/test-e2e.sh) return 0 ;;
-    lib/*) [ "$(head -40 "$1" 2>/dev/null | grep -c '^# kit-verb: ')" != 0 ] ;;
-    *) return 1 ;;
-  esac
-}
-if [ -f tests/test-meta.sh ]; then
-  while IFS= read -r f; do
-    if meta_input "$f"; then printf 'tests/test-meta.sh\treads %s\n' "$f" >>"$TMP/pairs"; break; fi
-  done <"$TMP/changed"
-fi
 sort -u -o "$TMP/pairs" "$TMP/pairs"
 cut -f1 "$TMP/pairs" | sort -u >"$TMP/selected"
 
@@ -242,16 +323,31 @@ cache_key() {
 
 _timeout() { if command -v timeout >/dev/null 2>&1; then timeout "$@"; else shift; "$@"; fi; }
 
-P=0 C=0 F=0 N=0
+# Per-suite limit: TEST_AFFECTED_TIMEOUT_SECS when set (it wins for every suite), else the suite's
+# line in bin/test-affected.timeouts (tests/run-all.sh reads the same file), else 300.
+suite_timeout() {
+  local name; name="$(basename "$1" .sh)"
+  if [ -n "${TEST_AFFECTED_TIMEOUT_SECS:-}" ]; then echo "$TEST_AFFECTED_TIMEOUT_SECS"; return; fi
+  if [ -r "$SELF_DIR/test-affected.timeouts" ]; then
+    awk -v n="$name" '$1 == n && $2 ~ /^[0-9]+$/ { print $2; exit }' "$SELF_DIR/test-affected.timeouts"
+  fi
+}
+
+P=0 C=0 F=0 T=0 N=0
 while IFS= read -r t; do
   N=$((N + 1))
   key="$(cache_key "$t")"
   if [ -n "$CDIR" ] && grep -q '^PASS ' "$CDIR/$key" 2>/dev/null; then
     echo "CACHED $t"; C=$((C + 1)); continue
   fi
-  if _timeout "${TEST_AFFECTED_TIMEOUT_SECS:-300}" bash "$t" >"$TMP/out" 2>&1; then
+  limit="$(suite_timeout "$t")"; limit="${limit:-300}"
+  rc=0; _timeout "$limit" bash "$t" >"$TMP/out" 2>&1 || rc=$?
+  if [ "$rc" -eq 0 ]; then
     echo "PASS $t"; P=$((P + 1))
     [ -n "$CDIR" ] && printf 'PASS %s\n' "$t" >"$CDIR/$key" 2>/dev/null || true
+  elif [ "$rc" -eq 124 ] && command -v timeout >/dev/null 2>&1; then
+    echo "TIMEOUT $t (limit ${limit}s)"; T=$((T + 1))
+    echo "    | killed at ${limit}s; no assertion failed, the suite ran out of time (re-run it alone, or TEST_AFFECTED_TIMEOUT_SECS=<n>)"
   else
     echo "FAIL $t"; F=$((F + 1))
     tail -8 "$TMP/out" | sed 's/^/    | /'
@@ -259,5 +355,5 @@ while IFS= read -r t; do
 done <"$TMP/selected"
 U="$(wc -l <"$TMP/uncovered" | tr -d ' ')"
 while IFS= read -r f; do echo "UNCOVERED $f"; done <"$TMP/uncovered"
-echo "test-affected: $N selected, $P pass, $C cached, $F fail, $U uncovered"
-[ "$F" -eq 0 ]
+echo "test-affected: $N selected, $P pass, $C cached, $F fail, $T timeout, $U uncovered"
+[ "$F" -eq 0 ] && [ "$T" -eq 0 ]

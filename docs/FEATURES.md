@@ -155,6 +155,6 @@ GENERATED , do not hand-edit. Regenerate: `bash lib/registry/feature-registry.sh
 | `orchestrate --backend orca` | `[V]` | `lib/queue/orca-backend.sh` | opt-in Orca backend for the mega runner: sub-goals as Orca Tasks with supervised workers, state read live | SPEC-370 | test-orchestrate-orca.sh |
 | `push-refs` | `[V]` | `lib/gate/push-refs.sh` | fail-closed parser that names which refs a shell command pushes, used by the ship-gate | SPEC-044, SPEC-045, SPEC-048 +31 | test-codex-hooks.sh, test-gate-opt-in.sh, test-gate-opt-out.sh +19 |
 | `recheck-sample decide` | `[V]` | `lib/gate/recheck-sample.sh` | decide and record whether an execute run rechecks its end-verifier PASSes, keyed on the rid | SPEC-369 | test-whole-spec-dispatch.sh |
-| `spec-depth` | `[V]` | `lib/spec/spec-depth.sh` | read and check the Depth line of a spec header: level, wants and check verbs | SPEC-372, SPEC-379 | test-meta-spec-depth.sh, test-meta.sh, test-research-arch-contract.sh +1 |
+| `spec-depth` | `[V]` | `lib/spec/spec-depth.sh` | read and check the Depth line of a spec header: level, wants and check verbs | SPEC-372, SPEC-379 | test-meta-spec-depth.sh, test-meta.sh, test-research-arch-contract.sh +2 |
 | `stats ceremony` | `[V]` | `lib/stats/src/stats/ceremony.py` | ceremony lens: gate work and subagent dispatches versus progress and catches, per gate, from the run ledger | SPEC-367 | test-ceremony-lens.sh |
 

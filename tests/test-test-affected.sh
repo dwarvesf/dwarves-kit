@@ -79,32 +79,73 @@ has   "$out" "tests/test-b.sh  (references lib/x/b.sh)" "a code mention still se
 git checkout -q -- lib/x/b.sh
 git stash pop -q 2>/dev/null || true
 
-echo "== test-meta: picked only by a path it reads =="
-# It used to ride every diff (~200s of a 253s run). A lib/wrap + test-wrap diff is not one of
-# its inputs; commands/, docs/FEATURES.md and a `# kit-verb:` lib file are.
+echo "== test-meta: area suites picked by the path they read =="
+# The group used to ride one runner pick (all eight areas, ~200s of a 253s run). A path now picks
+# only the areas that read it by glob or scan (meta_areas), plus any suite that names it; a meta
+# input no area is attributed falls back to the runner, never to nothing.
 git stash -q -u
-mkdir -p lib/wrap commands docs lib/z
+mkdir -p lib/wrap commands docs lib/z lib/board docs/verification
 printf 'echo w\n' > lib/wrap/wrap.sh; printf '#!/bin/bash\nbash lib/wrap/wrap.sh\n' > tests/test-wrap-x.sh
 printf -- '---\nname: c\n---\n' > commands/c.md; printf '# F\n' > docs/FEATURES.md
 printf '#!/bin/bash\n# kit-verb: zz | a verb\necho z\n' > lib/z/verb.sh
+printf '#!/bin/bash\n# kit-verb: dd | goes away\necho d\n' > lib/z/dropped.sh
+printf 'echo u\n' > lib/board/unnamed.sh; printf 'echo n\n' > lib/board/named.sh
+printf '# proof\n' > docs/verification/p.md; printf '# reg\n' > lib/board/notes.md
+for a in plugin-hooks contract agents-commands spec-depth review-verifiers vmodel-dispatch goal-ledger docs-registry; do
+  printf '#!/bin/bash\necho run-%s >> "$TA_MARK"\nexit 0\n' "$a" > "tests/test-meta-$a.sh"
+done
+printf '#!/bin/bash\necho run-goal >> "$TA_MARK"\nbash lib/board/named.sh\n' > tests/test-meta-goal-ledger.sh
 git add -A && git commit -qm meta-fixtures && git update-ref refs/remotes/origin/main HEAD
 echo "# edit" >> lib/wrap/wrap.sh; echo "# edit" >> tests/test-wrap-x.sh
 out="$(bash "$TA" --list 2>&1)"
-hasnt "$out" "tests/test-meta.sh" "lib/wrap/*.sh + tests/test-wrap*.sh diff does not pick test-meta"
+hasnt "$out" "tests/test-meta" "lib/wrap/*.sh + tests/test-wrap*.sh diff picks no test-meta suite"
 has   "$out" "tests/test-wrap-x.sh  (self)" "the wrap diff still picks its own suite"
 git checkout -q -- lib/wrap/wrap.sh tests/test-wrap-x.sh
 echo "# edit" >> commands/c.md
 out="$(bash "$TA" --list 2>&1)"
-has   "$out" "tests/test-meta.sh  (reads commands/c.md)" "a commands/ change picks test-meta"
+has   "$out" "tests/test-meta-agents-commands.sh  (reads commands/c.md)" "a commands/ change picks the agents-commands area"
+has   "$out" "tests/test-meta-docs-registry.sh  (reads commands/c.md)" "a commands/ change picks docs-registry (registry input)"
+hasnt "$out" "tests/test-meta-spec-depth.sh" "a commands/ change does not pick an area that names no command by glob"
+hasnt "$out" "tests/test-meta-goal-ledger.sh" "a commands/ change does not pick goal-ledger"
+hasnt "$out" "tests/test-meta.sh" "an attributed path does not pick the runner"
 git checkout -q -- commands/c.md
 echo "# edit" >> docs/FEATURES.md
 out="$(bash "$TA" --list 2>&1)"
-has   "$out" "tests/test-meta.sh  (reads docs/FEATURES.md)" "a docs/FEATURES.md change picks test-meta"
+has   "$out" "tests/test-meta-docs-registry.sh  (reads docs/FEATURES.md)" "a docs/FEATURES.md change picks docs-registry"
+hasnt "$out" "tests/test-meta-contract.sh" "a docs/FEATURES.md change does not pick contract"
 git checkout -q -- docs/FEATURES.md
 echo "# edit" >> lib/z/verb.sh
 out="$(bash "$TA" --list 2>&1)"
-has   "$out" "tests/test-meta.sh  (reads lib/z/verb.sh)" "a lib file declaring a kit-verb picks test-meta"
+has   "$out" "tests/test-meta-docs-registry.sh  (reads lib/z/verb.sh)" "a lib file declaring a kit-verb picks docs-registry"
+hasnt "$out" "tests/test-meta-plugin-hooks.sh" "a kit-verb lib file does not pick plugin-hooks"
 git checkout -q -- lib/z/verb.sh
+printf '#!/bin/bash\necho d\n' > lib/z/dropped.sh
+out="$(bash "$TA" --list 2>&1)"
+has   "$out" "tests/test-meta-docs-registry.sh  (reads lib/z/dropped.sh)" "a lib file that dropped its kit-verb header still picks docs-registry (base copy counts)"
+git checkout -q -- lib/z/dropped.sh
+echo "# edit" >> lib/board/unnamed.sh
+out="$(bash "$TA" --list 2>&1)"
+has   "$out" "tests/test-meta.sh  (reads lib/board/unnamed.sh (no area attributed))" "a meta input no area is attributed falls back to the runner"
+git checkout -q -- lib/board/unnamed.sh
+echo "# edit" >> lib/board/named.sh
+out="$(bash "$TA" --list 2>&1)"
+has   "$out" "tests/test-meta-goal-ledger.sh  (references lib/board/named.sh)" "an area suite naming the path is picked by reference"
+hasnt "$out" "tests/test-meta.sh" "a path an area names does not pick the runner"
+git checkout -q -- lib/board/named.sh
+echo "# edit" >> lib/board/notes.md
+out="$(bash "$TA" --list 2>&1)"
+has   "$out" "tests/test-meta-plugin-hooks.sh  (reads lib/board/notes.md)" "a markdown file under lib/ is read by the *.md scan (plugin-hooks)"
+hasnt "$out" "tests/test-meta-docs-registry.sh" "a lib markdown file does not pick docs-registry"
+git checkout -q -- lib/board/notes.md
+echo "# edit" >> docs/verification/p.md
+out="$(bash "$TA" --list 2>&1)"
+hasnt "$out" "tests/test-meta" "a dated archive doc (docs/verification/) is read by no area scan"
+has   "$out" "UNCOVERED docs/verification/p.md" "an archive doc nobody names is UNCOVERED, not forced onto the runner"
+git checkout -q -- docs/verification/p.md
+printf '#!/bin/bash\nexit 0\n' > tests/test-hooks.sh
+out="$(bash "$TA" --list 2>&1)"
+has   "$out" "tests/test-meta-docs-registry.sh  (reads tests/test-hooks.sh)" "a changed tests/test-hooks.sh (named by docs-registry) picks docs-registry"
+rm -f tests/test-hooks.sh
 git stash pop -q 2>/dev/null || true
 
 echo "== changed test maps to itself; UNCOVERED is not a failure =="
@@ -153,6 +194,33 @@ out="$(bash "$TA" 2>&1)"; rc=$?
 chmod 755 "$W/logs/test-cache"
 has   "$out" "PASS tests/test-a.sh" "unreadable cache runs the test"
 hasnt "$out" "CACHED" "unreadable cache skips nothing"
+
+echo "== timeouts: per-suite data file, env override, TIMEOUT is not FAIL =="
+mkdir -p "$W/tabin" "$W/lib/telemetry"
+cp "$TA" "$W/tabin/test-affected"; cp "$KIT_DIR/lib/telemetry/kit-log-dir.sh" "$W/lib/telemetry/" 2>/dev/null || true
+TA2="$W/tabin/test-affected"
+git checkout -q -- . 2>/dev/null || true
+git stash -q -u 2>/dev/null || true
+printf '#!/bin/bash\nsleep 6\nbash lib/x/a.sh\n' > tests/test-a.sh
+echo "# edit4" >> lib/x/a.sh
+printf '# header\ntest-a 1\ntest-b 99\n' > "$W/tabin/test-affected.timeouts"
+out="$(bash "$TA2" --no-cache 2>&1)"; rc=$?
+has   "$out" "TIMEOUT tests/test-a.sh (limit 1s)" "a suite over its listed limit prints TIMEOUT with the limit"
+hasnt "$out" "FAIL tests/test-a.sh" "a timeout is never reported as FAIL"
+has   "$out" "1 timeout" "the summary counts the timeout"
+[ "$rc" != 0 ] && ok "a timeout exits non-zero" || bad "exit 0 despite TIMEOUT"
+out="$(TEST_AFFECTED_TIMEOUT_SECS=30 bash "$TA2" --no-cache 2>&1)"; rc=$?
+has   "$out" "PASS tests/test-a.sh" "TEST_AFFECTED_TIMEOUT_SECS overrides the data file"
+printf '# header\ntest-b 99\n' > "$W/tabin/test-affected.timeouts"
+out="$(bash "$TA2" --no-cache 2>&1)"
+has   "$out" "PASS tests/test-a.sh" "a suite with no entry gets the 300s default"
+printf '#!/bin/bash\nexit 1\n' > tests/test-a.sh
+printf '# header\ntest-a 1\n' > "$W/tabin/test-affected.timeouts"
+out="$(bash "$TA2" --no-cache 2>&1)"
+has   "$out" "FAIL tests/test-a.sh" "a red suite inside its limit is still FAIL"
+hasnt "$out" "TIMEOUT" "a red suite is not reported as TIMEOUT"
+git checkout -q -- . 2>/dev/null || true
+git stash pop -q 2>/dev/null || true
 
 echo ""; echo "test-test-affected: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]
