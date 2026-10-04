@@ -377,29 +377,29 @@ The second line prints no `FAIL` line that master does not also print. Precondit
 **G1. `adopt.sh --check` and the preflight reads, live, read-only.** The probe ran `adopt.sh --check`, `git status --porcelain -- AGENTS.md CLAUDE.md WORKFLOW.md .kit.toml docs/verification/README.md`, each sequencer path through `git rev-parse --git-path`, `git ls-files -u`, the local `chore/kit-adopt` ref, and `ls-remote --exit-code --heads origin chore/kit-adopt` against four local repos. Actual output:
 
 ```
-== /Users/tieubao/workspace/dwarvesf/spacedown
-adopted: /Users/tieubao/workspace/dwarvesf/spacedown
+== <workspace>/spacedown
+adopted: <workspace>/spacedown
    check exit=0
    collide:
    unmerged paths:
    local chore/kit-adopt: no
    origin chore/kit-adopt ls-remote exit=2 (2 = absent)
-== /Users/tieubao/workspace/tieubao/dotfiles
-not adopted: /Users/tieubao/workspace/tieubao/dotfiles
+== <workspace>/dotfiles
+not adopted: <workspace>/dotfiles
    check exit=1
    collide: ?? AGENTS.md;
    unmerged paths:
    local chore/kit-adopt: no
    origin chore/kit-adopt ls-remote exit=2 (2 = absent)
-== /Users/tieubao/workspace/dwarvesf/memo.d.foundation
-not adopted: /Users/tieubao/workspace/dwarvesf/memo.d.foundation
+== <workspace>/memo.d.foundation
+not adopted: <workspace>/memo.d.foundation
    check exit=1
    collide: UU CLAUDE.md;
    unmerged paths: CLAUDE.md
    local chore/kit-adopt: no
    origin chore/kit-adopt ls-remote exit=2 (2 = absent)
-== /Users/tieubao/workspace/dwarvesf/foundation-workers
-not adopted: /Users/tieubao/workspace/dwarvesf/foundation-workers
+== <workspace>/foundation-workers
+not adopted: <workspace>/foundation-workers
    check exit=1
    collide:
    unmerged paths:
@@ -407,7 +407,7 @@ not adopted: /Users/tieubao/workspace/dwarvesf/foundation-workers
    origin chore/kit-adopt ls-remote exit=2 (2 = absent)
 ```
 
-What it settles: `--check` prints `adopted: <path>` / `not adopted: <path>` with exit 0 / 1 (R3a). `dotfiles` is the session's untracked-`AGENTS.md` shape (R3c, case 3). `memo.d.foundation` shows an unmerged `CLAUDE.md` with no `MERGE_HEAD`, `rebase-*`, `CHERRY_PICK_HEAD` or `REVERT_HEAD` present (no `in-progress:` line printed), so R3e must stand apart from R3d (case 9). `ls-remote` exits 2 for an absent branch (R3f). A sweep of every repo under `~/workspace/tieubao` and `~/workspace/dwarvesf` found 5 adopted and the rest not.
+What it settles: `--check` prints `adopted: <path>` / `not adopted: <path>` with exit 0 / 1 (R3a). `dotfiles` is the session's untracked-`AGENTS.md` shape (R3c, case 3). `memo.d.foundation` shows an unmerged `CLAUDE.md` with no `MERGE_HEAD`, `rebase-*`, `CHERRY_PICK_HEAD` or `REVERT_HEAD` present (no `in-progress:` line printed), so R3e must stand apart from R3d (case 9). `ls-remote` exits 2 for an absent branch (R3f). A sweep of every repo under both operator workspace roots found 5 adopted and the rest not.
 
 **G2. What a real adoption writes, and how `classify` reads it.** In a throwaway repo under the session scratchpad (`git init`, one empty base commit), `lib/adopt.sh <scratch>` then `git add -A && git commit`:
 

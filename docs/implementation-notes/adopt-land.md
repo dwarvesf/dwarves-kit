@@ -126,3 +126,9 @@ One critical (R3f printing `resume:` over a leftover that failed R6b) and three 
 - The `ADOPT SUMMARY` table prints at the end of every run, dry runs included ("The run ends with"); case 16 now counts the `result:` lines, since the summary repeats each row.
 - The trap row prints its own `  result:` line before the summary, the way every finished repo does; later repos get no `== <repo>` block, only their `not run` summary row.
 - Case 34a's stub signals every forked `wrap.sh adopt` ancestor below the verb, not just `$PPID`: land runs `gh pr merge` inside `$(...)`, so the stub's parent is that comsub subshell, and a TERM there never reaches land's pipeline subshell (land exits 2, the batch runs on).
+
+## Integration (lead)
+
+- Cases 34a/34b INT failed under `run-all.sh` only: run-all starts each suite as a background job, so SIGINT arrives ignored and bash cannot un-ignore it. `adopt_kill` now launches the verb through `perl -e '$SIG{INT} = $SIG{TERM} = "DEFAULT"; exec @ARGV'`. A skip (the `test-proof-negctl.sh` pattern) would leave the INT path untested in the nightly run.
+- The spec's Grounding samples now read `<workspace>/<repo>`: `test-no-personal-paths` refuses the operator's home and username in tracked files.
+- The session handoff under `.claude/handoffs/` is untracked on this branch; master tracks no handoffs, and it carried an absolute path.

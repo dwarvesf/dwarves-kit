@@ -597,7 +597,10 @@ chmod +x "$KILLBIN/gh"
 adopt_kill() {
   local mode="$1" sig="$2" t="$3"
   KA="$(adopt_clone "k${t}a")"; KB="$(adopt_clone "k${t}b")"
-  set -- env PATH="$KILLBIN:$PATH" ADOPT_KILL_MODE="$mode" ADOPT_KILL_SIG="$sig" \
+  # run-all starts a suite as a background job, so SIGINT arrives ignored, and bash
+  # can never un-ignore an inherited ignore. perl resets it to default before exec.
+  set -- perl -e '$SIG{INT} = $SIG{TERM} = "DEFAULT"; exec @ARGV' \
+    env PATH="$KILLBIN:$PATH" ADOPT_KILL_MODE="$mode" ADOPT_KILL_SIG="$sig" \
     ADOPT_KILL_ONCE="$TMPD/kill-$t.once" GH_STUB_OPEN_HEAD_chore_kit_adopt='[]' GH_STUB_CREATE_NUM=7 \
     GH_STUB_LAND_REPO="$KA/.claude/worktrees/kit-adopt" GH_STUB_LAND_REMOTE="$TMPD/abare-k${t}a" \
     GH_STUB_LAND_BRANCH=chore/kit-adopt GH_STUB_LAND_DEF=main "$WRAP" adopt --apply "$KA" "$KB"
