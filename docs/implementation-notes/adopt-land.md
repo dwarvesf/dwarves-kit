@@ -64,3 +64,24 @@ Two criticals and the lead's decisions on the open warnings went into the spec. 
 - Case 22 runs with every hook-bearing module on: `board`, `session`, `advisor`, `cosmetic` all `true` in the fixture's `[modules]`. That wires the widest hook set `adopt.sh` can write (its header: "wires the currently-enabled HOOK-bearing modules (board, session, advisor, cosmetic)"), so R6a sees every shipped command shape.
 - A counted merge where land then exits 2 on its tidy (`FAILED remove worktree ...` or `FAILED delete <branch>`, the last two `return 2` arms of `_land_tidy`): R8 runs the check and may read `adopted`. Append land's `FAILED` line to that row, so a stranded worktree or branch stays visible.
 - A `no change` row leaves an empty worktree and a `chore/kit-adopt` branch with no commit ahead. Note it in the row text the spec already gives; the verb does no cleanup (R12), and R3f names both on a re-run.
+
+## 2026-10-04 Final fold outcome
+
+One critical (R3f printing `resume:` over a leftover that failed R6b) and three spec warnings went into the spec as DEC-V to DEC-Y, plus the wording corrections as DEC-Z. The operator approved this fold with a fold-diff check only, no new round.
+
+### Into the spec
+
+- C3, R3f re-runs R6/R6a on a leftover's committed diff before `resume:` (DEC-V, case 37).
+- S1, R3k is plain `check-ignore` as the early refusal, and R6 fails on any `!!` line inside the worktree; the style file joins only when a style is reported (DEC-W, cases 32, 38). DEC-P's rationale is corrected: `add -A` drops only untracked ignored paths.
+- S2, R3f matches a merged PR on head oid and base, with zero, one, and two-or-more outcomes and an unreadable state that never resumes (DEC-X, cases 30 (b), 31 (b), 39).
+- S3, the INT/TERM trap in `cmd_adopt` (DEC-Y, case 34 with its `kill` mechanism).
+- Wording: R8's `wrap merge` scan and last-line fallback, R6b `-z` over `merge-base..HEAD`, DEC-Q, the standing-pass override row, `WRAP_ADOPT_TEST=1`, `[--body-file F]` on every `resume:`, the Picture's exit-3 arm, T1c's scope, hand-built fixtures for cases 30 and 31, the gh precondition in Verification, Grounding G6, the T1d header check (DEC-Z).
+
+### Builder guidance
+
+- R6a base side: dedup hook entries with `unique_by(tostring)` before the compare, as `adopt.sh`'s merge does (`[.[].value[]] | unique_by(tostring) | sort_by(tostring)`). Add a case 22 variant whose base `.claude/settings.json` already holds one user hook and one stale kit hook; the guard must pass it.
+- Read the staged `outputStyle` from the index blob `:.claude/settings.json` every time, never from the worktree file, so R6 and R6a judge the same bytes the commit takes.
+- The `wrap merge` re-run path: when land leaves an open CONFLICTING PR, a later R3f could read that PR and quote land's `wrap merge --apply --pr <n>` line instead of `resume:`. Not in the spec; worth one case if it is built.
+- A drift test asserting every shipped `.hooks` entry in the kit's `settings.json` is a kit entry under R6a's definition (type, key set, `KIT_HOOK_RE`). A new shipped hook shape then fails that test before it fails a real adoption.
+- R6a's `outputStyle` pattern (`\A[A-Za-z0-9_.-]+\z`, no `..`) is stricter than `adopt.sh` step 6b, which rejects only `*/*` and `*..*`. A style name with another character fails closed: R6a refuses, nothing lands.
+- T1b is the heaviest task. The builder may split the R6a cases (22, 25, 26, 36) into their own sub-task if T1b runs long.
