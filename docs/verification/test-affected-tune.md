@@ -151,3 +151,15 @@ Verdict: PASS (restored, picked again; `git status` clean for bin/)
 - The limits are 2 x p95 from three samples on a host at load up to 228, so they are generous upper bounds, not tight ones. Five samples at normal load were not collected.
 - The replay driver and raw timings live in the run's scratch directory and are not committed; the replay builds synthetic commits (a path deleted by a PR and gone from the tree is modelled as an added stub), and its "area suites the PR reads" scan is a second implementation, not an execution trace.
 - A path in a dated archive dir (`docs/verification/` and similar) now picks no area suite by design; only a direct mention picks one.
+
+## Recorded run (lead re-check of the flagged suites)
+
+Load average about 67 (a parallel worker on the host).
+
+Command: `gtimeout 600 bash tests/test-wrap-land.sh` (limit from bin/test-affected.timeouts)
+Exit: 0
+Verdict: PASS in 144 s, under the hand-set 600 s limit.
+
+Command: `gtimeout 682 bash tests/test-meta-docs-registry.sh`
+Exit: 0
+Verdict: PASS in 215 s, 120/120. The run-2 FAIL did not reproduce; treated as host contention.
