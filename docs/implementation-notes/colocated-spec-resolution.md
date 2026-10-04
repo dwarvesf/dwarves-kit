@@ -9,7 +9,7 @@ Spec: `docs/specs/SPEC-386-colocated-spec-resolution.md`. This file holds the de
 
 ## Stop: two sessions in one worktree
 
-A second session wrote an untracked `docs/specs/SPEC-388-colocated-spec-resolution.md` into this worktree mid-round. It covers the same brief with a different design (`SPEC_FIND_MAX_PREFIX`, `tests/test-spec-colocated.sh`). Both sessions share the rid `colocated-spec-resolution`, so they also write one gate ledger. Validation round 1 was closed `incomplete`; no code was written. The operator picks one spec and one session before any build.
+A second session wrote an untracked `docs/specs/SPEC-388-colocated-spec-resolution.md` into this worktree mid-round. It covers the same brief with a different design (`SPEC_FIND_MAX_PREFIX`, `tests/test-spec-colocated.sh`). Both sessions share the rid `colocated-spec-resolution`, so they also write one gate ledger. Validation round 1 was closed `incomplete`; no code was written. Resolved: the other session backed out, removed its SPEC-388 file, and stopped. SPEC-386 is the canonical spec. Its ledger lines (a second START with `classified=normal`, a grill skip, three overrides, a ui-design skip) stay, because the ledger is append-only. A `START-AMEND` now pins `lane=full classified=full repo=dwarves-kit`. Its spec-next reservation for 388 lapses after 24h.
 
 ## Round 1 findings (5 of 7 reviewers returned; 5 and 6 stopped)
 
