@@ -186,6 +186,13 @@ so the existing driver can walk it unmodified):
   without it; omit to default `obvious`) and, for UI sub-goals ONLY, a
   **`Done-mode:` line** (`proof | over-test | quiescence`, consumed as
   a `/kit:ui-design` `$ARGUMENTS` flag; omit for non-UI work).
+  **Every goal file carries a test budget** (the `docs/patterns/worker-brief.md` rule, and the
+  goal file lands in the worker's prompt verbatim): checks and negative controls run on the
+  affected suites only (`bin/test-affected`, `bash tests/run-all.sh --changed`), never
+  `--all` or `KIT_RUN_ALL=1`; a timing question reads the suite history
+  (`bash tests/run-all.sh --times p95`), never a fresh full run; and a `Wall budget:` line
+  states the worker's minutes. A goal file never prescribes N full-suite runs: a measurement
+  that seems to need one is a history query, or a sub-goal for the nightly job.
   **Include a `## Touches` section** listing the directory-prefix globs this sub-goal
   will write, one per line, form `dir/**` (or `dir/sub/**`) -- the SAME shape
   `lib/gate/dispatch-gate.sh` proves disjointness over. This is what makes the sub-goal
@@ -194,7 +201,12 @@ so the existing driver can walk it unmodified):
   Derive the globs from the sub-goal's scope edges you already decided in Step 1 --
   each sub-goal should own a distinct slice of the tree so waves can form. A sub-goal
   with NO `## Touches` (or one that overlaps a wave-mate) simply runs serially -- the
-  conservative default, never wrong, just not parallel. Do NOT list lead-owned shared
+  conservative default, never wrong, just not parallel. **Branches that touch the same
+  module run serially inside a wave**: two sub-goals that write the same `lib/<module>/` (or
+  the same file) never share a wave even when their globs differ by a suffix, and the first
+  merges before the next worker starts, so the second builds on the merged tree instead of
+  re-merging a moved master (`/kit:dispatch` Step 2 holds the same rule for spec fan-out).
+  Do NOT list lead-owned shared
   surfaces (CHANGELOG, VERSION, plugin.json); the convergence step writes those once.
 - `<dir>/POINTER_PROMPT.md` -- the raw prompt for whatever activator is present;
   encodes the hard constraints in "Step 5" below.
@@ -209,7 +221,15 @@ reserved for the BACKLOG cockpit, never a working roadmap).
 ### Step 5: Hand off, then enforce at ship (never bypass)
 
 Hand the pointer to the activator (paste into `/goal`, or drive it
-non-interactively via `lib/queue/orchestrate.sh run <dir>`).
+non-interactively via `lib/queue/orchestrate.sh run <dir>`). Before a heavy dispatch run
+`bash lib/host/load-warn.sh`: it prints one line when the 1-minute load average is over
+`[test].load_warn` (default 16) and suggests Devin or self-hosted CI. It only warns, never
+reroutes, never blocks; `orchestrate.sh run` calls it itself.
+
+**Landing a kit PR by hand.** Outside the auto-merge path below, a branch built in a
+worktree lands with `bin/wrap land <worktree>` (publish, PR, checks, squash merge, one
+command), never a hand-typed publish, PR create and merge loop. A `gate` PR is the exception:
+it opens as a draft by hand because it must not merge.
 
 **Run mode (mirrors the skill's knob).** The conductor dispatches ready sub-goals
 as parallel background SUBAGENTS by default (workers keep the kit's internal

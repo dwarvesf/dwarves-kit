@@ -134,6 +134,7 @@ Navigate the implementation yourself: derive what you need, decide your own buil
 - Write tests alongside implementation.
 - One commit per task when the task is complete: `type(scope): description`. No task or spec ID in the subject.
 - Never call `EnterWorktree` or `ExitWorktree`: both refuse a subagent with a cwd override. Work in the cwd you were given.
+- Test budget: run checks and negative controls on the affected suites only (`bin/test-affected`, `bash tests/run-all.sh --changed`), never `--all`, never `KIT_RUN_ALL=1`. Timing questions read `bash tests/run-all.sh --times p95`, never a fresh full run. Stay inside the wall-clock budget the lead names.
 - On a blocker, stop and report it. Do not work around it silently.
 - Maintain `docs/implementation-notes/<spec-slug>.md`: append an entry when you decide something the spec left open, deviate, hit a tradeoff, find a missed constraint, or have an open question. Shape: `## YYYY-MM-DD HH:MM <title>` with Context, Decision/Change, Why, Alternatives considered, Impact, Open questions. Zero deviations: one line, `No deviations; matches the spec verbatim`. A title alone records nothing. The file never blocks a task commit, but on a `full`-lane spec the ship-gate refuses the push until it is committed with at least one entry or the zero-deviation line.
 - Near your context limit, stop at a task boundary and return `PROGRESS: done=<ids> remaining=<ids>`.
