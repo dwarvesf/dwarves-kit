@@ -49,6 +49,11 @@ One kit verb, `wrap adopt [--apply] <repo>...`, replaces the hand loop that adop
 - The Mini's live operator `kit.toml` holds four hand-set settings dotfiles lacks (`negative_control`, `[lane.normal]`, `[lane.bug]`, `[test]`); its `chezmoi apply` prompts and would erase them. [RESOLVED: dotfiles #671 carries those settings; the Mini now applies cleanly with 0 diff lines.]
 - [RESOLVED: stale copy trashed, dotfiles adopted single-source as #672] dotfiles adoption.
 
+## Queue after SPEC-387 (operator asked to proceed with all built items)
+
+- cf-token-mint, full lane, ops-toolkit: turn the session's hand-written dashboard mint (CDP fetch to `/api/v4/user/tokens`, roll via `PUT .../value`, store with an `op item create --template` file, verify one R2 put per account) into a tool. Prose precedent: `ops-toolkit/research/2026-08-17-cf-dashboard-token-mint-via-cdp.md`. Needs a spec and a review; ends as a draft PR. Landmine: the 1Password API_CREDENTIAL template refuses a second password-purpose field.
+- FYI rows from the second wrap need no action: retro skipped (no spec cycle), the Air now uses `negative_control = "full"`, the old dotfiles `AGENTS.md` sits in the Trash.
+
 ## Start prompt
 
 ```
