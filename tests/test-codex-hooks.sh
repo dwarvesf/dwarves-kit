@@ -96,11 +96,22 @@ if [ -f "$CODEX_MANIFEST" ] && [ -f "$CODEX_HOOKS_FILE" ]; then
   assert_equal "every policy target exists and is executable" "0" "$MISSING"
   if [ -x "$ADAPTER" ]; then pass "adapter command target is executable"; else fail "adapter command target is executable"; fi
 
-  if command -v codex >/dev/null 2>&1; then
+  # A codex binary that never returns must not eat the runner ceiling. Bound a cheap liveness
+  # probe first; a hang or a failure counts as "codex unavailable", like a missing binary.
+  # With neither timeout nor gtimeout installed the calls run unbounded, as before.
+  CODEX_TMO=""
+  command -v timeout >/dev/null 2>&1 && CODEX_TMO=timeout
+  [ -z "$CODEX_TMO" ] && command -v gtimeout >/dev/null 2>&1 && CODEX_TMO=gtimeout
+  codex_bounded() { local secs="$1"; shift; ${CODEX_TMO:+$CODEX_TMO -k 2 "$secs"} "$@"; }
+  if ! command -v codex >/dev/null 2>&1; then
+    :
+  elif ! codex_bounded "${CODEX_PROBE_TIMEOUT_S:-10}" codex --version >/dev/null 2>&1; then
+    echo "SKIP Codex loader proof: codex --version did not return within ${CODEX_PROBE_TIMEOUT_S:-10}s (host binary unavailable)"
+  else
     LOADER_HOME="$TEST_DIR/codex-home"
     mkdir -p "$LOADER_HOME"
-    if CODEX_HOME="$LOADER_HOME" codex plugin marketplace add "$KIT_DIR" --json >/dev/null 2>&1 \
-      && CODEX_HOME="$LOADER_HOME" codex plugin add kit@dwarves-marketplace --json >/dev/null 2>&1; then
+    if CODEX_HOME="$LOADER_HOME" codex_bounded "${CODEX_LOADER_TIMEOUT_S:-60}" codex plugin marketplace add "$KIT_DIR" --json >/dev/null 2>&1 \
+      && CODEX_HOME="$LOADER_HOME" codex_bounded "${CODEX_LOADER_TIMEOUT_S:-60}" codex plugin add kit@dwarves-marketplace --json >/dev/null 2>&1; then
       pass "Codex loader accepts and installs the package"
     else
       fail "Codex loader accepts and installs the package"
