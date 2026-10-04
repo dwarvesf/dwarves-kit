@@ -24,10 +24,10 @@ Sprint: 2026-09-30 to 2026-10-01
 - The lead hand-rolled push, PR create, mergeable poll and squash merge six times while `bin/wrap land` does all of it.
 
 ## Action items
-- [x] Serialize branches that touch the same module inside a wave; merge one before the next worker starts -- owner: @tieubao -- deadline: 2026-10-08 (kit-speed SG-05)
-- [x] Worker briefs pass the affected suite to `negctl.sh`, never the full runner -- owner: @tieubao -- deadline: 2026-10-08 (kit-speed SG-05)
+- [x] Serialize branches that touch the same module inside a wave; merge one before the next worker starts -- owner: @tieubao -- deadline: 2026-10-08 (kit-speed SG-05, #913)
+- [x] Worker briefs pass the affected suite to `negctl.sh`, never the full runner -- owner: @tieubao -- deadline: 2026-10-08 (kit-speed SG-05, #913)
 - [ ] Split `tests/test-meta.sh` (about 6 minutes a run, 902 asserts) the way SPEC-374 split test-wrap -- owner: @tieubao -- deadline: 2026-10-14
-- [x] Land own kit PRs with `bin/wrap land <worktree>` instead of the hand-rolled push and merge loop -- owner: @tieubao -- deadline: 2026-10-08 (kit-speed SG-05)
+- [x] Land own kit PRs with `bin/wrap land <worktree>` instead of the hand-rolled push and merge loop -- owner: @tieubao -- deadline: 2026-10-08 (kit-speed SG-05, #913)
 
 ## Kit feedback
 - The ship-gate refuses a compound command that contains `git push` anywhere, including the text of a `printf`, and refuses `git push --delete`; remote branch cleanup went through the GitHub API.
