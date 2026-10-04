@@ -77,7 +77,7 @@ else no "rc=$RC out=$OUT"; fi
 echo "[5b] a bare invocation is --changed, and --all is the full glob"
 K="$TMP/k5b"; mkkit "$K"; echo 'x=2' > "$K/lib/foo/foo.sh"
 OUT="$(bash "$K/tests/run-all.sh" 2>&1)"; RC=$?
-OUT2="$(bash "$K/tests/run-all.sh" --all 2>&1)"; RC2=$?
+OUT2="$(KIT_RUN_ALL=1 bash "$K/tests/run-all.sh" --all 2>&1)"; RC2=$?
 if [ "$RC" -eq 0 ] && grep -q -- '--changed against' <<<"$OUT" && ! ran test-bar "$OUT" \
    && [ "$RC2" -eq 0 ] && grep -q '^run-all: all 4 suites passed' <<<"$OUT2"; then
   ok "bare picks, --all runs everything"
@@ -97,6 +97,28 @@ OUT="$(bash "$K/tests/run-all.sh" --changed 2>&1)"; RC=$?
 if [ "$RC" -eq 1 ] && grep -q '^run-all: FAILED ->.*test-lint' <<<"$OUT"; then
   ok "the pinned lint is not skippable"
 else no "rc=$RC out=$OUT"; fi
+
+echo "[8] --all refuses outside CI unless KIT_RUN_ALL=1, and runs under either"
+# One session's --all held the per-host test lock for ~25 minutes and queued every other
+# session behind it. The refusal is the mechanism; CI=true (GitHub) and KIT_RUN_ALL=1 (nightly)
+# are the two ways through.
+K="$TMP/k8"; mkkit "$K"
+OUT="$(unset CI KIT_RUN_ALL; bash "$K/tests/run-all.sh" --all 2>&1)"; RC=$?
+if [ "$RC" -eq 64 ] && [ "$(printf '%s\n' "$OUT" | wc -l | tr -d ' ')" = 1 ] \
+   && grep -qF 'bash tests/run-all.sh --changed --time' <<<"$OUT" && grep -q 'nightly' <<<"$OUT" \
+   && ! grep -q 'suites' <<<"$OUT"; then
+  ok "refused with exit 64 and one line naming --changed --time and the nightly job"
+else no "refusal: rc=$RC out=$OUT"; fi
+OUT="$(unset CI KIT_RUN_ALL; bash "$K/tests/run-all.sh" --time --all 2>&1)"; RC=$?
+[ "$RC" -eq 64 ] && ok "refused when --all follows --time" || no "--time --all: rc=$RC out=$OUT"
+OUT="$(unset KIT_RUN_ALL; CI=true bash "$K/tests/run-all.sh" --all 2>&1)"; RC=$?
+if [ "$RC" -eq 0 ] && grep -q '^run-all: all 4 suites passed' <<<"$OUT"; then
+  ok "CI=true runs the full glob"
+else no "CI path: rc=$RC out=$OUT"; fi
+OUT="$(unset CI; KIT_RUN_ALL=1 bash "$K/tests/run-all.sh" --all 2>&1)"; RC=$?
+if [ "$RC" -eq 0 ] && grep -q '^run-all: all 4 suites passed' <<<"$OUT"; then
+  ok "KIT_RUN_ALL=1 runs the full glob"
+else no "KIT_RUN_ALL path: rc=$RC out=$OUT"; fi
 
 if [ "$fail" -gt 0 ]; then echo "test-run-all-changed: $pass passed, $fail FAILED" >&2; exit 1; fi
 echo "test-run-all-changed: all $pass passed"

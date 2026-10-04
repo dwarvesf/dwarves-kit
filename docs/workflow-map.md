@@ -308,10 +308,11 @@ What an ordinary change in this repo runs, from edit to landed.
   edit
     |
     v
-  bash tests/run-all.sh ...... the suites the diff touches, plus the six
+  bash tests/run-all.sh ...... the suites the diff touches, plus the five
     |                          always-on tree-wide lints (kit-contract,
     |                          config-registry, no-personal-paths,
-    |                          no-scattered-ids, boundary-lint, meta).
+    |                          no-scattered-ids, boundary-lint); meta only
+    |                          when the diff touches a path it reads.
     |                          About 1-2 minutes on a Mac.
     v
   commit ..................... commit-format hook [HARD]
@@ -327,7 +328,8 @@ What an ordinary change in this repo runs, from edit to landed.
                                tidy, activity line, retro
 
   before a release tag only:
-    bash tests/run-all.sh --all ... the full glob, 13-15 minutes
+    KIT_RUN_ALL=1 bash tests/run-all.sh --all ... the full glob, 13-15 minutes
+                                    (refuses, exit 64, without CI or KIT_RUN_ALL=1)
     gh workflow run test .......... the macOS + Ubuntu matrix in CI
     git push origin v<x.y.z> ...... the same workflow, fired by the tag
 ```

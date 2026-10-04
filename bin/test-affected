@@ -9,12 +9,12 @@
 # Usage: test-affected [--base <ref>] [--list] [--no-cache]
 #   --base <ref>  diff base (default: origin/<default branch>, resolved like `wrap`)
 #   --list        print the selection and the reason for each (self | references <path> |
-#                 always), plus UNCOVERED files; run nothing
+#                 module <mod> | reads <path>), plus UNCOVERED files; run nothing
 #   --no-cache    ignore recorded PASSes (a PASS is still recorded)
 # Selection: a changed tests/test-*.sh -> itself; any other changed file -> every
 # tests/test-*.sh naming its repo-relative path. A non-source file (docs, fixtures) matches
 # only a full-path reference, never inside a longer path or a comment; a source (lib/, hooks/,
-# bin/, commands/, skills/, agents/) also matches by basename when that is over 5 chars; tests/test-meta.sh whenever anything changed. A changed file no test
+# bin/, commands/, skills/, agents/) also matches by basename when that is over 5 chars; tests/test-meta.sh when a changed path is one it reads (meta_input). A changed file no test
 # names is UNCOVERED (reported, not a failure).
 # Cache: key = sha256(test + every source file it names + VERSION), under
 # <kit log dir>/test-cache/. Only PASS is recorded. An unusable cache dir means run all.
@@ -171,8 +171,37 @@ $b"
   fi
   [ "$covered" = 1 ] || printf '%s\n' "$f" >>"$TMP/uncovered"
 done <"$TMP/changed"
-if [ -s "$TMP/changed" ] && [ -f tests/test-meta.sh ]; then
-  printf 'tests/test-meta.sh\talways\n' >>"$TMP/pairs"
+# tests/test-meta.sh is the heaviest suite (~200s of a 253s --changed run on a lib/wrap diff), so
+# it is picked only when a changed path is one it reads, not on every diff. The nightly --all
+# runs it every day regardless, so no input loses coverage overall. What it reads:
+#   *.md                     the /user: and stale-phase scans over every tracked doc, plus
+#                            commands/agents/skills frontmatter, AGENTS/WORKFLOW/README pins,
+#                            docs/FEATURES.md, docs/specs (registry Specs column)
+#   commands/ agents/ skills/ file loops and the bare-agent-name scan
+#   hooks/ install.sh settings.json   executability, hooks.json parity, the install run
+#   VERSION tool.toml .claude-plugin/ the three version surfaces and the manifests
+#   .github/workflows/ examples/      workflow pins, the hello-spec demo
+#   lib/{board,classify,config,gate,goal,registry,telemetry}/ content pins; lib/{ledger,spec}/
+#                            are sourced by the gate-ledger.sh it executes
+#   bin/learn bin/precedent tests/fixtures/gates-on tests/test-{hooks,e2e}.sh   named directly
+#   lib/*/tests/* and any lib file with a `# kit-verb:` header   registry Tests and [V] rows
+# tests/test-*.sh also feed the registry Tests column, but hooks/ship-gate.sh's freshness check
+# already refuses a push that edits one without a fresh docs/FEATURES.md, so they do not pick it.
+meta_input() {
+  case "$1" in
+    *.md|commands/*|agents/*|skills/*|hooks/*|install.sh|settings.json|VERSION|tool.toml) return 0 ;;
+    .claude-plugin/*|.github/workflows/*|examples/*|bin/learn|bin/precedent) return 0 ;;
+    lib/board/*|lib/classify/*|lib/config/*|lib/gate/*|lib/goal/*|lib/ledger/*) return 0 ;;
+    lib/registry/*|lib/spec/*|lib/telemetry/*|lib/*/tests/*) return 0 ;;
+    tests/fixtures/gates-on*|tests/test-hooks.sh|tests/test-e2e.sh) return 0 ;;
+    lib/*) [ "$(head -40 "$1" 2>/dev/null | grep -c '^# kit-verb: ')" != 0 ] ;;
+    *) return 1 ;;
+  esac
+}
+if [ -f tests/test-meta.sh ]; then
+  while IFS= read -r f; do
+    if meta_input "$f"; then printf 'tests/test-meta.sh\treads %s\n' "$f" >>"$TMP/pairs"; break; fi
+  done <"$TMP/changed"
 fi
 sort -u -o "$TMP/pairs" "$TMP/pairs"
 cut -f1 "$TMP/pairs" | sort -u >"$TMP/selected"

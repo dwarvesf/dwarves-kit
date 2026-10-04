@@ -13,11 +13,13 @@
 # Usage: bash tests/run-all.sh [--all | --only <pattern> | --changed [<base>]] [--time]
 #        Bare (no argument) is --changed: only the suites the diff against <base> touches
 #        (default base: the merge-base with origin/master), plus the always-on lints. The
-#        local check. --all is the full glob, what CI runs.
+#        local check. --all is the full glob, what CI and the nightly job run; it refuses
+#        (exit 64) unless CI is non-empty or KIT_RUN_ALL=1.
 #        --time appends each suite's elapsed seconds to its report line and prints a
 #        slowest-10 block after the report. It may appear before or after the mode
 #        argument, and combines with --all, --only and --changed.
-# Env:   RUN_ALL_JOBS=<n>          parallel suites (default: auto on macOS, 1 elsewhere)
+# Env:   KIT_RUN_ALL=1             allow --all outside CI (the nightly job sets it)
+#        RUN_ALL_JOBS=<n>         parallel suites (default: auto on macOS, 1 elsewhere)
 #        RUN_ALL_TIMEOUT_SECS=<n>  per-suite ceiling (default: 300). When set it applies to every
 #                                  suite and overrides the per-suite table (suite_timeout below).
 # Exit:  0 all green, 1 one or more failed (every failure is listed at the end).
@@ -25,6 +27,17 @@
 set -uo pipefail
 KIT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$KIT_DIR" || exit 1
+
+# --all is the ~25 minute full glob, and it holds the per-host test lock below for all of it,
+# so one session's --all queued every other session's run behind it. A README line saying
+# "release only" did not stop that; this refusal does. GitHub Actions sets CI=true, the
+# nightly job sets KIT_RUN_ALL=1. Checked before the lock, so a refused run never waits on it.
+for _a in "$@"; do
+  if [ "$_a" = "--all" ] && [ -z "${CI:-}" ] && [ "${KIT_RUN_ALL:-}" != "1" ]; then
+    echo "run-all: --all is for CI and the nightly job (KIT_RUN_ALL=1); locally run: bash tests/run-all.sh --changed --time" >&2
+    exit 64
+  fi
+done
 
 # One heavy run at a time per host (tests/lib/run-lock.sh); re-execs this script under the lock.
 source "$KIT_DIR/tests/lib/run-lock.sh"; run_lock_exec "$KIT_DIR/tests/run-all.sh" "$@"
@@ -138,7 +151,8 @@ trap 'rm -rf "$OUTDIR"' EXIT
 # The full glob is 13-15 minutes sequential on a Mac, and a branch that touches one lib
 # file needs a handful of those suites. The selection rule lives in ONE place,
 # bin/test-affected --list (path or long-basename references, changed suites, lib/<mod>
-# suites, tests/test-meta.sh always); this runner only executes what it names, in parallel.
+# suites, tests/test-meta.sh when the diff touches what it reads); this runner only executes
+# what it names, in parallel.
 #
 # A suite may also declare that it must run on every diff:
 #   # always: lints every KIT_* env read in the tree against the module registry

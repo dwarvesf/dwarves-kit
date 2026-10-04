@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # test-test-affected.sh -- bin/test-affected in a throwaway git repo: the selection mapping,
-# the always-meta rule, UNCOVERED, the pass cache (hit, miss after a source edit, FAIL never
+# the test-meta input rule, UNCOVERED, the pass cache (hit, miss after a source edit, FAIL never
 # cached, --no-cache, unusable cache fails closed).
 set -uo pipefail
 KIT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
@@ -48,7 +48,7 @@ echo "# edit" >> lib/x/a.sh
 out="$(bash "$TA" --list 2>&1)"
 has   "$out" "tests/test-a.sh  (references lib/x/a.sh)" "changed lib file maps to the test naming it"
 hasnt "$out" "tests/test-b.sh" "unrelated test not selected"
-has   "$out" "tests/test-meta.sh  (always)" "test-meta always selected when anything changed"
+hasnt "$out" "tests/test-meta.sh" "test-meta not picked by a change to a path it does not read"
 [ ! -e "$TA_MARK" ] && ok "--list runs nothing" || bad "--list ran a test"
 
 echo "== narrowed selection =="
@@ -79,6 +79,34 @@ has   "$out" "tests/test-b.sh  (references lib/x/b.sh)" "a code mention still se
 git checkout -q -- lib/x/b.sh
 git stash pop -q 2>/dev/null || true
 
+echo "== test-meta: picked only by a path it reads =="
+# It used to ride every diff (~200s of a 253s run). A lib/wrap + test-wrap diff is not one of
+# its inputs; commands/, docs/FEATURES.md and a `# kit-verb:` lib file are.
+git stash -q -u
+mkdir -p lib/wrap commands docs lib/z
+printf 'echo w\n' > lib/wrap/wrap.sh; printf '#!/bin/bash\nbash lib/wrap/wrap.sh\n' > tests/test-wrap-x.sh
+printf -- '---\nname: c\n---\n' > commands/c.md; printf '# F\n' > docs/FEATURES.md
+printf '#!/bin/bash\n# kit-verb: zz | a verb\necho z\n' > lib/z/verb.sh
+git add -A && git commit -qm meta-fixtures && git update-ref refs/remotes/origin/main HEAD
+echo "# edit" >> lib/wrap/wrap.sh; echo "# edit" >> tests/test-wrap-x.sh
+out="$(bash "$TA" --list 2>&1)"
+hasnt "$out" "tests/test-meta.sh" "lib/wrap/*.sh + tests/test-wrap*.sh diff does not pick test-meta"
+has   "$out" "tests/test-wrap-x.sh  (self)" "the wrap diff still picks its own suite"
+git checkout -q -- lib/wrap/wrap.sh tests/test-wrap-x.sh
+echo "# edit" >> commands/c.md
+out="$(bash "$TA" --list 2>&1)"
+has   "$out" "tests/test-meta.sh  (reads commands/c.md)" "a commands/ change picks test-meta"
+git checkout -q -- commands/c.md
+echo "# edit" >> docs/FEATURES.md
+out="$(bash "$TA" --list 2>&1)"
+has   "$out" "tests/test-meta.sh  (reads docs/FEATURES.md)" "a docs/FEATURES.md change picks test-meta"
+git checkout -q -- docs/FEATURES.md
+echo "# edit" >> lib/z/verb.sh
+out="$(bash "$TA" --list 2>&1)"
+has   "$out" "tests/test-meta.sh  (reads lib/z/verb.sh)" "a lib file declaring a kit-verb picks test-meta"
+git checkout -q -- lib/z/verb.sh
+git stash pop -q 2>/dev/null || true
+
 echo "== changed test maps to itself; UNCOVERED is not a failure =="
 echo "# edit" >> tests/test-b.sh
 echo "# edit" >> lib/y/orphan.sh
@@ -96,7 +124,6 @@ out="$(bash "$TA" 2>&1)"
 has "$out" "PASS tests/test-a.sh" "first run executes"
 out="$(bash "$TA" 2>&1)"
 has   "$out" "CACHED tests/test-a.sh" "second run is a cache hit"
-has   "$out" "CACHED tests/test-meta.sh" "meta is cached too"
 echo "# edit2" >> lib/x/a.sh
 out="$(bash "$TA" 2>&1)"
 has   "$out" "PASS tests/test-a.sh" "edited referenced source misses the cache"
