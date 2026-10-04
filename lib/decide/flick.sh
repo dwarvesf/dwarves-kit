@@ -90,7 +90,7 @@ load_decide_block() {
     [ "$sec" = decide ] || continue
     case "$line" in *=*) ;; *) continue ;; esac
     k="${line%%=*}"; k="${k//[[:space:]]/}"
-    case "$k" in backend|mode|timeout_ms|points|jev_model|openai_model|jev_token_env|jev_token_cmd|openai_token_env|openai_token_cmd|allow_names|deny_words|word_gate|dict_file) ;; *) continue ;; esac
+    case "$k" in backend|mode|timeout_ms|points|jev_model|openai_model|jev_token_env|jev_token_cmd|openai_token_env|openai_token_cmd|clef_model|clef_account|clef_token_env|clef_token_cmd|allow_names|deny_words|word_gate|dict_file) ;; *) continue ;; esac
     v="${line#*=}"; v="${v#"${v%%[![:space:]]*}"}"; v="${v%"${v##*[![:space:]]}"}"
     v="${v#\"}"; v="${v%\"}"
     local seen="FLKC_SEEN_${pre}_${k}"
@@ -117,11 +117,15 @@ load_config() {
   load_decide_block "$op_file" FLKC_OP
   load_decide_block "$rt_file" FLKC_RT
   CFG_BACKEND="$(cfgget backend none)"
-  case "$CFG_BACKEND" in none|jev|openai) ;; *) CFG_BACKEND=none ;; esac
+  case "$CFG_BACKEND" in none|jev|openai|clef) ;; *) CFG_BACKEND=none ;; esac
   CFG_MODE="$(cfgget mode shadow)"
   case "$CFG_MODE" in shadow|decide) ;; *) CFG_MODE=shadow ;; esac
-  v="$(cfgget timeout_ms 1500)"
-  case "$v" in ''|*[!0-9]*) v=1500 ;; esac
+  # Clef is slower than Jev (p50 about 1.1 s, tail past 1.5 s), so its unset-timeout default
+  # is 3000; an explicit timeout_ms always wins.
+  local tdef=1500
+  [ "$CFG_BACKEND" = clef ] && tdef=3000
+  v="$(cfgget timeout_ms "$tdef")"
+  case "$v" in ''|*[!0-9]*) v="$tdef" ;; esac
   [ "${#v}" -le 6 ] || v=10000
   # Floor 1500 (the vendor trial's security screen), ceiling 10000 so a typo cannot hang a wrap.
   [ "$v" -ge 1500 ] || v=1500
@@ -133,6 +137,11 @@ load_config() {
   CFG_JEV_TOKEN_ENV="$(cfgget jev_token_env JEV_API_TOKEN)"
   CFG_JEV_TOKEN_CMD="$(cfgget jev_token_cmd "")"
   CFG_OPENAI_MODEL="$(cfgget openai_model "")"
+  CFG_CLEF_MODEL="$(cfgget clef_model clef)"
+  case "$CFG_CLEF_MODEL" in clef|clef-flash) ;; *) CFG_CLEF_MODEL=clef ;; esac
+  CFG_CLEF_ACCOUNT="$(cfgget clef_account "")"
+  CFG_CLEF_TOKEN_ENV="$(cfgget clef_token_env CLOUDFLARE_API_TOKEN)"
+  CFG_CLEF_TOKEN_CMD="$(cfgget clef_token_cmd "")"
   CFG_ALLOW_NAMES="$(cfgget allow_names "")"
   CFG_DENY_WORDS="$(cfgget deny_words "")"
   # Word gate: anything but an exact "off" is on, so a typo cannot open egress.
@@ -425,19 +434,24 @@ resolve_token() {
 
 # ---- transport ---------------------------------------------------------------------------------
 JEV_URL='https://api.typesafe.ai/v1/systemone'
+# Clef is Cloudflare Workers AI: same body Jev gets, answers arrive wrapped in the Cloudflare
+# envelope ({"success":true,"errors":[],"result":<the Jev-shape object>}).
+CLEF_API='https://api.cloudflare.com/client/v4/accounts'
 RESP=""; CALL_ERR=""
 
 # run_curl <url> <proto> <secs> <body> <token> <with-http2>: one request. Sets OUT and CURL_RC.
-# -q must be curl's FIRST argument: only there does it mean "skip ~/.curlrc". The token and the
-# body ride a curl config on stdin (printf is a builtin, so ps never shows either), nothing
-# touches disk, and there is no -L, so a redirect cannot carry the header elsewhere.
+# -q must be curl's FIRST argument: only there does it mean "skip ~/.curlrc". The token, the
+# body and the URL ride a curl config on stdin (printf is a builtin, so ps never shows any of
+# them; the Clef URL carries the billing-tied account id), nothing touches disk, and there is
+# no -L, so a redirect cannot carry the header elsewhere.
 run_curl() {
-  local url="$1" proto="$2" secs="$3" body="$4" token="$5" h2="$6" esc
+  local url="$1" proto="$2" secs="$3" body="$4" token="$5" h2="$6" esc uesc
   local args=(-q --config - --silent --max-time "$secs" --proto "$proto" -w '\n%{http_code} %{time_total}')
   [ "$h2" = 1 ] && args[${#args[@]}]=--http2
   if [ "$proto" = '=http' ]; then args[${#args[@]}]=--noproxy; args[${#args[@]}]='*'; fi
   esc="${body//\\/\\\\}"; esc="${esc//\"/\\\"}"
-  OUT="$(printf 'header = "Authorization: Bearer %s"\nheader = "Content-Type: application/json"\ndata-raw = "%s"\n' "$token" "$esc" | curl "${args[@]}" "$url")"
+  uesc="${url//\\/\\\\}"; uesc="${uesc//\"/\\\"}"
+  OUT="$(printf 'header = "Authorization: Bearer %s"\nheader = "Content-Type: application/json"\ndata-raw = "%s"\nurl = "%s"\n' "$token" "$esc" "$uesc" | curl "${args[@]}")"
   CURL_RC=$?
 }
 
@@ -461,6 +475,35 @@ call_jev() {
   elif ! [[ "$code" =~ ^[0-9]{3}$ ]] || [ "$code" = 000 ]; then CALL_ERR=network
   elif [ "${code:0:1}" != 2 ]; then CALL_ERR="http_$code"
   else CALL_ERR=""; fi
+}
+
+# call_clef <body> <token> <account>: same transport rules as call_jev (the FLICK_URL_OK test
+# seam, one curl, the HTTP/2 retry), with the account id and model in the URL path. On a 2xx the
+# Cloudflare envelope is unwrapped (.result) so the answer validation below sees the same shape
+# Jev returns; a `success:false` envelope or a non-envelope body keeps nothing answer-shaped,
+# which the validator reports as malformed. The account id and the ref it came from are never
+# logged or printed.
+call_clef() {
+  local body="$1" token="$2" account="$3" url proto secs tail code tt ip fp ms h2=0
+  if [ -n "$FLICK_URL_OK" ]; then url="$FLICK_URL_OK"; proto='=http'; else url="$CLEF_API/$account/ai/run/@cf/cloudflare/$MODEL"; proto='=https'; h2=1; fi
+  ms=$((10#$CFG_TIMEOUT_MS))
+  secs="$(printf '%d.%03d' $((ms / 1000)) $((ms % 1000)))"
+  run_curl "$url" "$proto" "$secs" "$body" "$token" "$h2"
+  if [ "$CURL_RC" = 4 ] && [ "$h2" = 1 ]; then run_curl "$url" "$proto" "$secs" "$body" "$token" 0; fi
+  tail="${OUT##*$'\n'}"; RESP="${OUT%$'\n'*}"
+  code="${tail%% *}"; tt="${tail#* }"
+  if [[ "$tt" =~ ^[0-9]+(\.[0-9]*)?$ ]]; then
+    ip="${tt%%.*}"; fp="000"; case "$tt" in *.*) fp="${tt#*.}000" ;; esac
+    LATENCY_MS=$((10#$ip * 1000 + 10#${fp:0:3}))
+  fi
+  if [ "$CURL_RC" = 28 ]; then CALL_ERR=timeout
+  elif [ "$CURL_RC" != 0 ]; then CALL_ERR=network
+  elif ! [[ "$code" =~ ^[0-9]{3}$ ]] || [ "$code" = 000 ]; then CALL_ERR=network
+  elif [ "${code:0:1}" != 2 ]; then CALL_ERR="http_$code"
+  else
+    CALL_ERR=""
+    RESP="$(printf '%s' "$RESP" | jq -c 'if (.result | type) == "object" then .result else . end' 2>/dev/null)"
+  fi
 }
 
 # ---- decision log --------------------------------------------------------------------------------
@@ -614,6 +657,7 @@ main() {
   point_enabled "$point" || fail_all point_disabled
   if [ "$BACKEND" = openai ]; then MODEL="$CFG_OPENAI_MODEL"; fail_all unsupported; fi
   MODEL="$CFG_JEV_MODEL"
+  [ "$BACKEND" = clef ] && MODEL="$CFG_CLEF_MODEL"
   MODE_NOTE=false; [ "$CFG_MODE" != decide ] || MODE_NOTE=true
 
   # No deny list, no egress: an operator who enables the point must also name what to block.
@@ -648,13 +692,29 @@ main() {
 
   command -v curl >/dev/null 2>&1 || finalize missing_dep
 
-  [[ "$CFG_JEV_TOKEN_ENV" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || finalize no_token
-  TOKEN=""; resolve_token "$CFG_JEV_TOKEN_ENV" "$CFG_JEV_TOKEN_CMD"
+  local tok_env="$CFG_JEV_TOKEN_ENV" tok_cmd="$CFG_JEV_TOKEN_CMD"
+  if [ "$BACKEND" = clef ]; then tok_env="$CFG_CLEF_TOKEN_ENV"; tok_cmd="$CFG_CLEF_TOKEN_CMD"; fi
+  [[ "$tok_env" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || finalize no_token
+  TOKEN=""; resolve_token "$tok_env" "$tok_cmd"
   local token="$TOKEN"; TOKEN=""
   [ -n "$token" ] || finalize no_token
   case "$token" in *[[:cntrl:]\"\\]*) finalize no_token ;; esac
 
-  call_jev "$body" "$token"
+  if [ "$BACKEND" = clef ]; then
+    # The account id is billing-tied: a literal value or an op:// ref resolved through
+    # secret-cache-read (Keychain-cached), one cache name per ref like proof-asset's.
+    local acct="$CFG_CLEF_ACCOUNT" tag
+    case "$acct" in
+      op://*)
+        command -v secret-cache-read >/dev/null 2>&1 || finalize missing_dep
+        tag="$(printf '%s' "$acct" | shasum -a 256 2>/dev/null | cut -c1-8)"
+        acct="$(secret-cache-read --ttl 86400 "FLICK_CLEF_ACCT_$tag" "$acct" 2>/dev/null)" ;;
+    esac
+    [[ "$acct" =~ ^[A-Za-z0-9_-]{1,64}$ ]] || finalize no_token
+    call_clef "$body" "$token" "$acct"
+  else
+    call_jev "$body" "$token"
+  fi
   finalize "$CALL_ERR"
 }
 

@@ -6,7 +6,7 @@ Binds 127.0.0.1 on a free port and writes the port to <state-dir>/port once it l
 The first URL path segment picks the behaviour (FLICK_URL=http://127.0.0.1:<port>/<mode>):
 
   ok          valid answer for every question id in the request body
-  401, 500    that HTTP status with a small body
+  401, 500, 429, 529  that HTTP status with a small body
   slow        sleeps 4 s, then answers like ok
   malformed   200 with a body that is not JSON
   noanswers   200 with JSON that has no answers object
@@ -16,6 +16,10 @@ The first URL path segment picks the behaviour (FLICK_URL=http://127.0.0.1:<port
   missingkey  drops the first requested id
   extraprob   a probability for a choice that was never offered
   wrongchoice the stated choice is not the highest-probability one
+  fail        200 with a Cloudflare-style failure body, success false
+  cf<mode>    wraps the mode's body in the Cloudflare envelope
+              ({"success":true,"errors":[],"messages":[],"result":<body>});
+              e.g. cfok, cfslow, cfbadprobs
 
 Every request is recorded in <state-dir>: `count` (one line per request), `last.json` (the last
 body), `bodies.log` (all bodies, one per line), `auth.log` (whether an Authorization header arrived,
@@ -83,8 +87,13 @@ class Handler(BaseHTTPRequestHandler):
         with open(os.path.join(STATE, "authsha.log"), "a") as f:
             f.write(hashlib.sha256(self.headers.get("Authorization", "").removeprefix("Bearer ").encode()).hexdigest()[:12] + "\n")
         mode = self.path.strip("/").split("/")[0].split("?")[0] or "ok"
-        if mode in ("401", "500"):
-            return self.send(int(mode), b'{"error":"stub"}')
+        cf = mode.startswith("cf") and len(mode) > 2
+        if cf:
+            mode = mode[2:] or "ok"
+        if mode in ("401", "500", "429", "529"):
+            return self.send(int(mode), b'{"success":false,"errors":[{"message":"stub"}],"result":null}')
+        if mode == "fail":
+            return self.send(200, b'{"success":false,"errors":[{"code":3000,"message":"inference failed"}],"result":null}')
         if mode == "malformed":
             return self.send(200, b"this is not json {")
         if mode == "noanswers":
@@ -95,7 +104,10 @@ class Handler(BaseHTTPRequestHandler):
             body = json.loads(raw)
         except ValueError:
             return self.send(422, b'{"error":"bad body"}')
-        self.send(200, json.dumps(answers_for(body, mode)).encode())
+        result = answers_for(body, mode)
+        if cf:
+            result = {"success": True, "errors": [], "messages": [], "result": result}
+        self.send(200, json.dumps(result).encode())
 
     def send(self, status, payload):
         try:

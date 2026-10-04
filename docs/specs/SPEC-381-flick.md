@@ -26,9 +26,12 @@ stdout: {"backend":"jev","model":"jev-1.13.0","latency_ms":412,"mode":"shadow",
 
 | Key | Default | Meaning |
 |---|---|---|
-| `decide.backend` | `"none"` | `jev`, `openai`, or `none`. `none` leaves kit behaviour unchanged |
+| `decide.backend` | `"none"` | `jev`, `openai`, `clef`, or `none`. `none` leaves kit behaviour unchanged. `clef` is the Cloudflare Workers AI fallback |
 | `decide.jev_model`, `decide.openai_model` | `jev-1.13.0`, `""` | Pinned, never a `latest` alias |
-| `decide.timeout_ms` | `1500` | Floor 1500: lower values clamp up (research doc screen) |
+| `decide.clef_model` | `clef` | `clef` or `clef-flash`; anything else falls back to `clef` |
+| `decide.clef_account` | `""` | Cloudflare account id, or an `op://` ref resolved through `secret-cache-read`. Billing-tied, never logged |
+| `decide.clef_token_env`, `decide.clef_token_cmd` | `CLOUDFLARE_API_TOKEN`, `""` | Same rules as the jev pair |
+| `decide.timeout_ms` | `1500` | Floor 1500: lower values clamp up (research doc screen). Unset defaults to 3000 under `clef` |
 | `decide.mode` | `"shadow"` | `shadow` logs beside the existing decision and never acts. `decide` returns the answer for the caller to use |
 | `decide.points` | `""` | Space-separated enabled decision points. Empty means nothing leaves the host |
 | `decide.jev_token_env`, `decide.openai_token_env` | `JEV_API_TOKEN`, `OPENAI_API_KEY` | Env var NAME only, matching `^[A-Za-z_][A-Za-z0-9_]*$`. The token never sits in a file, argv, a log, or stdout |

@@ -865,6 +865,90 @@ else
 fi
 cfg backend=jev points=wrap-7b
 
+echo "== clef backend: Cloudflare envelope, account source, model, timeout =="
+# A second canary proves clef reads clef_token_env (default CLOUDFLARE_API_TOKEN), never the
+# Jev var flick_run always exports. A stub secret-cache-read on PATH records its argv and prints
+# a fixture account id, so op:// clef_account resolution is testable without 1Password.
+CF_TOKEN="CFTOKENc1e700aa"
+CF_ACCT="0123456789abcdef0123456789abcdef"
+mkdir -p "$T/cfbin"
+printf '#!/bin/sh\nprintf "%%s\\n" "$*" > "%s/scr-argv"\nprintf "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6\\n"\n' "$T" > "$T/cfbin/secret-cache-read"
+chmod +x "$T/cfbin/secret-cache-read"
+sha8() { printf '%s' "$1" | python3 -c 'import hashlib,sys;print(hashlib.sha256(sys.stdin.buffer.read()).hexdigest()[:8])'; }
+
+cfg backend=clef points=wrap-7b clef_account="$CF_ACCT"
+stub_reset
+out="$(decide_run cfok "$IN3" "CLOUDFLARE_API_TOKEN=$CF_TOKEN")"
+jqt "clef happy path: the envelope is unwrapped, answers keyed by caller ids" "$out" '.error == "" and .backend == "clef" and .model == "clef" and (.answers|keys) == ["p1","p2","p3"] and .answers.p1.choice == "enhance" and .counts == {"answered":3,"denied":0,"error":0}'
+check "clef: one request for the whole batch" "$([ "$(stub_count)" = 1 ]; echo $?)"
+check "clef: the CLOUDFLARE_API_TOKEN value was used, not the Jev one" "$([ "$(cat "$STUB_DIR/authsha.log")" = "$(sha12 "$CF_TOKEN")" ]; echo $?)"
+jqt "clef: the request body carried model clef" "$(cat "$STUB_DIR/last.json")" '.model == "clef" and (.questions|keys) == ["q1","q2","q3"]'
+check "a literal clef_account never calls secret-cache-read" "$([ ! -e "$T/scr-argv" ]; echo $?)"
+
+stub_reset
+out="$(decide_run cffail "$IN1" "CLOUDFLARE_API_TOKEN=$CF_TOKEN")"
+jqt "clef success:false on a 200 is an error, no answers" "$out" '.error == "malformed" and .answers == {} and .counts == {"answered":0,"denied":0,"error":1}'
+for code in 429 529; do
+  out="$(decide_run "$code" "$IN1" "CLOUDFLARE_API_TOKEN=$CF_TOKEN")"
+  jqt "clef HTTP $code maps to the same class as a Jev HTTP error" "$out" ".error == \"http_$code\" and .answers == {} and .counts.error == 1"
+done
+out="$(decide_run cfbadprobs "$IN3" "CLOUDFLARE_API_TOKEN=$CF_TOKEN")"
+jqt "clef wrapped bad probabilities: bad_probs after the unwrap" "$out" '.error == "bad_probs" and .answers == {} and .counts == {"answered":0,"denied":0,"error":3}'
+
+OPREF="op://TestVault/flick-clef/account"
+rm -f "$T/scr-argv"; stub_reset
+cfg backend=clef points=wrap-7b clef_account="$OPREF"
+out="$(decide_run cfok "$IN1" "CLOUDFLARE_API_TOKEN=$CF_TOKEN" "PATH=$T/cfbin:$PATH")"
+jqt "clef_account as an op:// ref resolves through secret-cache-read" "$out" '.error == "" and .answers.p1.choice == "enhance"'
+check "secret-cache-read got cache name FLICK_CLEF_ACCT_<sha8 of ref> plus the raw ref" "$(grep -q "FLICK_CLEF_ACCT_$(sha8 "$OPREF")" "$T/scr-argv" && grep -qF "$OPREF" "$T/scr-argv"; echo $?)"
+
+cfg backend=clef points=wrap-7b clef_account="$CF_ACCT" clef_model=clef-flash
+stub_reset
+out="$(decide_run cfok "$IN1" "CLOUDFLARE_API_TOKEN=$CF_TOKEN")"
+jqt "clef_model clef-flash rides the envelope" "$out" '.model == "clef-flash" and .error == ""'
+jqt "and the request body" "$(cat "$STUB_DIR/last.json")" '.model == "clef-flash"'
+cfg backend=clef points=wrap-7b clef_account="$CF_ACCT" clef_model=bogus
+out="$(body_run "$IN1")"
+jqt "an unknown clef_model falls back to clef in the body" "$out" '.model == "clef"'
+out="$(decide_run cfok "$IN1" "CLOUDFLARE_API_TOKEN=$CF_TOKEN")"
+jqt "and in the envelope" "$out" '.model == "clef" and .error == ""'
+
+cfg backend=clef points=wrap-7b
+stub_reset
+out="$(decide_run cfok "$IN1" "CLOUDFLARE_API_TOKEN=$CF_TOKEN")"
+jqt "no clef_account: no_token, the question counts as error" "$out" '.error == "no_token" and .counts.error == 1'
+check "nothing was sent without an account" "$([ "$(stub_count)" = 0 ]; echo $?)"
+out="$(decide_run cfok "$IN1" "CLOUDFLARE_API_TOKEN=")"
+jqt "an empty CLOUDFLARE_API_TOKEN: no_token (the Jev env var does not substitute)" "$out" '.error == "no_token"'
+check "nothing was sent without a token either" "$([ "$(stub_count)" = 0 ]; echo $?)"
+
+mkcmd cf "printf '%s\\n' $CF_TOKEN"
+cfg backend=clef points=wrap-7b clef_account="$CF_ACCT" clef_token_cmd="$T/cmd-cf"
+stub_reset
+out="$(decide_run cfok "$IN1" "CLOUDFLARE_API_TOKEN=")"
+jqt "clef_token_cmd supplies the token when the env is empty" "$out" '.error == "" and .answers.p1.choice == "enhance"'
+check "the stub saw the command's clef token" "$([ "$(cat "$STUB_DIR/authsha.log")" = "$(sha12 "$CF_TOKEN")" ]; echo $?)"
+
+cfg backend=clef points=wrap-7b clef_account="$CF_ACCT"
+stub_reset
+t0="$(ms_now)"; out="$(decide_run cfslow "$IN1" "CLOUDFLARE_API_TOKEN=$CF_TOKEN")"; t1="$(ms_now)"
+jqt "clef timeout: the 4 s stub is cut" "$out" '.error == "timeout" and .counts.error == 1'
+check "the clef default timeout is about 3000 ms, not jev's 1500" "$([ $((t1-t0)) -ge 2800 ] && [ $((t1-t0)) -lt 3900 ]; echo $?)" "took $((t1-t0)) ms"
+cfg backend=clef points=wrap-7b clef_account="$CF_ACCT" timeout_ms=1500
+t0="$(ms_now)"; out="$(decide_run cfslow "$IN1" "CLOUDFLARE_API_TOKEN=$CF_TOKEN")"; t1="$(ms_now)"
+jqt "an explicit timeout_ms still wins for clef" "$out" '.error == "timeout"'
+check "the explicit 1500 fired at about 1.5 s" "$([ $((t1-t0)) -ge 1400 ] && [ $((t1-t0)) -lt 2800 ]; echo $?)" "took $((t1-t0)) ms"
+
+echo "-- backend jev is byte-for-byte the same run --"
+cfg backend=jev points=wrap-7b
+stub_reset
+out="$(decide_run ok "$IN3")"
+jqt "jev: the TASK-6 assertions, unchanged" "$out" '.error == "" and .backend == "jev" and .model == "jev-1.13.0" and .mode == "shadow" and (.answers|keys) == ["p1","p2","p3"] and .answers.p1.choice == "enhance" and (((.answers.p1.margin) - 0.55) | (if . < 0 then -. else . end)) < 0.0001 and .counts == {"answered":3,"denied":0,"error":0}'
+jqt "jev: the request body, unchanged" "$(cat "$STUB_DIR/last.json")" '.model == "jev-1.13.0" and (.questions|keys) == ["q1","q2","q3"]'
+out="$(body_run "$IN1")"
+jqt "jev: flick body output, unchanged" "$out" '(.questions|keys) == ["q1"] and .model == "jev-1.13.0"'
+cfg backend=jev points=wrap-7b
+
 # --- sections above; summary below ---
 echo
 echo "flick: $PASS passed, $FAIL failed"
