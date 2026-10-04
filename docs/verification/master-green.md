@@ -1,6 +1,6 @@
 # Proof of done: master green
 
-Branch `fix/master-green`, base master 144c2279. Spec: `docs/specs/SPEC-387-master-green.md`. Notes: `docs/implementation-notes/master-green.md`.
+Branch `fix/master-green`, base master 144c2279. Spec: `docs/specs/SPEC-388-master-green.md`. Notes: `docs/implementation-notes/master-green.md`.
 
 Recorded runs below ran on a clean export of branch head `ed3e1d51` (the fix commit is `06693125`; the two later commits touch only docs). Two export shapes were used on purpose. A `git archive` export has no `.git`, so seven suites that read git state cannot pass on it by construction; `test-adopt` reads the git log and needs a full-history clone. Both shapes are labelled per block.
 

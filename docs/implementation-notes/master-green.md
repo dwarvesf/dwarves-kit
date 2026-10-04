@@ -1,6 +1,6 @@
 # Implementation notes: master green
 
-Delta from `docs/specs/SPEC-387-master-green.md` only: root causes, one line per suite, and the assertion rationale. The spec is the contract.
+Delta from `docs/specs/SPEC-388-master-green.md` only: root causes, one line per suite, and the assertion rationale. The spec is the contract.
 
 ## Root cause per suite
 
