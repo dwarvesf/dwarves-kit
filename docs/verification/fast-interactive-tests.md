@@ -21,21 +21,35 @@ Sessions ran `tests/run-all.sh --all` mid-work. The host-wide test lock (`tests/
 
 ```
 Command: bash tests/test-run-all-changed.sh
+Exit: 0
+Output:
   ok: CI=true runs the full glob
   ok: KIT_RUN_ALL=1 runs the full glob
 test-run-all-changed: all 12 passed
+Verdict: PASS
+```
 
+```
 Command: bash tests/test-test-affected.sh
+Exit: 0
+Output:
 test-test-affected: 35 passed, 0 failed
+Verdict: PASS
+```
 
+```
 Command: bash tests/test-run-all-time.sh
+Exit: 0
+Output:
 test-run-all-time: all 4 passed
+Verdict: PASS
 ```
 
 ## Negative control
 
 ```
 Command: bash lib/gate/negctl.sh . "bash tests/test-run-all-changed.sh" "<line 36: match --never instead of --all>"
+Output:
   test-run-all-changed: 10 passed, 2 FAILED
 Restore: git checkout HEAD -- tests/run-all.sh
 Exit: 0 (green after restore)
