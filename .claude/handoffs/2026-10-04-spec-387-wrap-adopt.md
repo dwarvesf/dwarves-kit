@@ -45,7 +45,8 @@ One kit verb, `wrap adopt [--apply] <repo>...`, replaces the hand loop that adop
 
 ## Also open (operator only)
 
-- Mini cannot upload proof images: needs a Cloudflare dashboard login in Helium, then mint an R2-scoped token, set `asset_token_ref`.
+- [RESOLVED: R2 token minted to Toolkit/kit-proof-assets-r2-token, dotfiles #670, Mini upload returned 200] Mini proof uploads.
+- The Mini's live operator `kit.toml` holds four hand-set settings dotfiles lacks (`negative_control`, `[lane.normal]`, `[lane.bug]`, `[test]`); its `chezmoi apply` prompts and would erase them. The `[proof]` block was appended by hand there.
 - dotfiles adoption: the untracked root `AGENTS.md` is a stale Codex copy of `CLAUDE.md`; waits on the operator saying "move it".
 
 ## Start prompt
