@@ -151,7 +151,8 @@ trap 'rm -rf "$OUTDIR"' EXIT
 # The full glob is 13-15 minutes sequential on a Mac, and a branch that touches one lib
 # file needs a handful of those suites. The selection rule lives in ONE place,
 # bin/test-affected --list (path or long-basename references, changed suites, lib/<mod>
-# suites, tests/test-meta.sh always); this runner only executes what it names, in parallel.
+# suites, tests/test-meta.sh when the diff touches what it reads); this runner only executes
+# what it names, in parallel.
 #
 # A suite may also declare that it must run on every diff:
 #   # always: lints every KIT_* env read in the tree against the module registry

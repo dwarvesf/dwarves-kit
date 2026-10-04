@@ -1,5 +1,6 @@
 #!/bin/bash
-# always: the registry pin and structural lints cover every kit artifact
+# Not always-on: bin/test-affected picks this suite when a diff touches a path it reads
+# (meta_input there). The nightly --all runs it daily, CI --all before a release.
 # test-meta.sh -- Structural integrity tests for kit artifacts.
 # Catches drift the unit tests can't see: version mismatches, missing
 # frontmatter, stale references between files, schema violations.

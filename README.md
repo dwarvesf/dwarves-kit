@@ -504,7 +504,7 @@ For the full file listing including individual agent/hook/command names, run `gi
 
 **Weekly scheduler.** The kit ships ONE weekly LaunchAgent: a dispatcher over a declarative jobs list (session-intel digest, `reflect propose`, print-only unless `BACKLOG_STAGE_AUTO=1` is set in `~/.config/kit-weekly/env`; adding a job = one line, never a new plist). Consumer instantiates it: `bash deploy/macos/install`; runbook at [`deploy/macos/README.md`](deploy/macos/README.md).
 
-**Testing.** `bash tests/run-all.sh` with no argument runs only the suites the diff touches, plus six always-on tree-wide lints (kit-contract, config-registry, no-personal-paths, no-scattered-ids, boundary-lint, meta), about 1 to 2 minutes on a Mac. `--all` is the full glob, 13 to 15 minutes, for CI and the nightly job only: it refuses (exit 64) unless `CI` is set or `KIT_RUN_ALL=1`. `RUN_ALL_JOBS` defaults to `auto` on macOS and `1` on Linux. Single suites still run on their own: `bash tests/test-hooks.sh` covers hook behavior, `bash tests/test-meta.sh` covers structural integrity (manifests, frontmatter, cross-links), `bash tests/run-workflow.sh` walks the CI workflow's steps locally and prints only the red ones.
+**Testing.** `bash tests/run-all.sh` with no argument runs only the suites the diff touches, plus five always-on tree-wide lints (kit-contract, config-registry, no-personal-paths, no-scattered-ids, boundary-lint), about 1 to 2 minutes on a Mac. `test-meta` (about 200 seconds) joins only when the diff touches a path it reads (`meta_input` in `bin/test-affected`). `--all` is the full glob, 13 to 15 minutes, for CI and the nightly job only: it refuses (exit 64) unless `CI` is set or `KIT_RUN_ALL=1`. `RUN_ALL_JOBS` defaults to `auto` on macOS and `1` on Linux. Single suites still run on their own: `bash tests/test-hooks.sh` covers hook behavior, `bash tests/test-meta.sh` covers structural integrity (manifests, frontmatter, cross-links), `bash tests/run-workflow.sh` walks the CI workflow's steps locally and prints only the red ones.
 
 **CI.** `.github/workflows/test.yml` runs on `workflow_dispatch` and on a `v*` tag push, nothing else. A push or a pull request starts no run, and merging a PR waits on no check. Run `gh workflow run test` before cutting a release tag. The local check is what catches a regression:
 
@@ -512,7 +512,7 @@ For the full file listing including individual agent/hook/command names, run `gi
   edit on a branch
        |
        v
-  bash tests/run-all.sh ....... diff-scoped suites + the six always-on lints
+  bash tests/run-all.sh ....... diff-scoped suites + the five always-on lints
        |                        (about 1-2 min on a Mac)
        v
   commit --> push --> PR --> merge      no CI run fires anywhere on this line

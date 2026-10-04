@@ -308,10 +308,11 @@ What an ordinary change in this repo runs, from edit to landed.
   edit
     |
     v
-  bash tests/run-all.sh ...... the suites the diff touches, plus the six
+  bash tests/run-all.sh ...... the suites the diff touches, plus the five
     |                          always-on tree-wide lints (kit-contract,
     |                          config-registry, no-personal-paths,
-    |                          no-scattered-ids, boundary-lint, meta).
+    |                          no-scattered-ids, boundary-lint); meta only
+    |                          when the diff touches a path it reads.
     |                          About 1-2 minutes on a Mac.
     v
   commit ..................... commit-format hook [HARD]
