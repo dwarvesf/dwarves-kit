@@ -31,29 +31,30 @@ Each failure leaves a repo adopted on origin and not adopted locally, found only
 
 | # | Rule | Lands in |
 |---|---|---|
-| R1 | `wrap adopt [--apply] [--title T] [--body-file F] <repo> [<repo>...]`. Without `--apply` it is a dry run: it runs every preflight read (R3) and `adopt.sh --dry-run <repo>`, prints `would adopt` or the refusal, and writes nothing (no fetch, no worktree, no branch, no ledger line). | T1 |
-| R2 | The branch is always `chore/kit-adopt`. The override slug is `kit-adopt`, derived as `${branch#*/}`, the same rule as `hooks/ship-gate.sh` line 151 and `gate-ledger.sh rid`. | T1 |
-| R3 | Preflight, per repo, reads only, before any write. The first check short-circuits; the rest are all collected and the row names every reason found, joined by `; `. | T1 |
-| R3a | `adopt.sh --check <repo>` exits 0: row `skip: already adopted`, no other check runs. | T1 |
-| R3b | `<repo>` is not a main checkout (its git dir differs from its common dir, or it is not a repo): `refused: not a main checkout`. | T1 |
-| R3c | A collision path (Interfaces: `ADOPT_PATHS`) shows any `git status --porcelain` line in the main checkout (untracked, modified, staged, or unmerged): `refused: <XY> <path> in the main checkout would block the post-land pull`, one per path. | T1 |
-| R3d | A sequencer operation is in progress (`MERGE_HEAD`, `rebase-merge`, `rebase-apply`, `CHERRY_PICK_HEAD`, `REVERT_HEAD`, each read with `git rev-parse --git-path`): `refused: mid-merge` / `mid-rebase` / `mid-cherry-pick` / `mid-revert`. | T1 |
-| R3e | `git ls-files -u` lists any path, whatever R3d found: `refused: unmerged paths: <paths>`. | T1 |
-| R3f | `refs/heads/chore/kit-adopt` exists, or `ls-remote --exit-code --heads origin chore/kit-adopt` exits 0, or `<repo>/.claude/worktrees/kit-adopt` exists: `refused: chore/kit-adopt exists locally` / `on origin` / `worktree path exists`. | T1 |
-| R3g | The main checkout is not on its detected default branch (`_default_branch`): `refused: main checkout is on <branch>, not <def>`, because land's pull would report `PULL BLOCKED`. | T1 |
-| R3h | `_pr_template <repo>` names a template and no `--body-file` was given: `refused: <template> exists; pass --body-file`, because land refuses a title-only body there. | T1 |
-| R3i | `adopt.sh --dry-run <repo>` exits non-zero (the kit's own tree, a `--single-source` both-files refusal, a missing template): `refused: adopt --dry-run: <its last stderr line>`. | T1 |
-| R4 | `gh` state is read once per batch with `_gh_state`, before the first repo. Not `ok`: every repo's row is `refused: gh is <state>`, and no repo reaches a write. | T1 |
-| R5 | Under `--apply`, a repo that passed R3 runs, in order and stopping at the first failure: `cmd_start <repo> chore/kit-adopt` (its stdout line is the worktree); `"${WRAP_ADOPT_SH:-$LIB_ROOT/adopt.sh}" <wt>`; the path guard (R6); one `git add -A` and one commit with the fixed message (Interfaces), target repo hooks honored, never `--no-verify`; the override (R7); `cmd_land <wt> --title <T> [--body-file F]`; `adopt.sh --check <repo>` (R8). start and land are called as functions in the same process. The verb never reimplements their pushes, PR, merge, pull, or tidy. | T1 |
-| R6 | Path guard: every path in `git -C <wt> status --porcelain` must match `ADOPT_PATHS`. Any other path: row `failed: adoption wrote <path>, outside the scaffold set; worktree left at <wt>`, no commit, no override, no push. An empty status: row `no change: origin/<def> already carries the adoption; worktree left at <wt>`. | T1 |
-| R7 | The override is logged only after R6 passes, from inside `<wt>`: `bash "$PROOF_LEDGER_SH" override kit-adopt "<OVERRIDE_REASON>"`, the fixed text in Interfaces. It never passes a source file: `check`'s own source-remainder rule refuses an override for any `.sh`/`.py`/... path, and R6 keeps such a path out of the commit. A failed override log (exit non-zero): row `failed: override: <stderr>; worktree left at <wt>`, no land. | T1 |
-| R8 | After land, whatever land's exit, if land printed `merged #<n>`, run `adopt.sh --check <repo>` on the main checkout. Exit 0: row `adopted`. Exit 1: row `merged, not adopted on the main checkout: <land's first PULL BLOCKED line, trimmed>`, or `: adopt --check exit 1` when land printed none. Land never printed `merged`: row `failed: land: <land's first REFUSED/FAILED line>`. | T1 |
-| R9 | Land's output streams to the terminal as it runs (a check wait can last minutes) and a copy is kept in a temp file for R8's parse; the temp file is removed by the verb's EXIT trap. | T1 |
-| R10 | Batch: repos run one at a time in argument order. A refusal or failure on one repo never stops the next. The run ends with an `ADOPT SUMMARY` table, one row per repo in argument order: repo basename, PR (`#<n>` or `-`), result. | T1 |
-| R11 | Exit: 64 on usage (no repo, unknown flag, a flag missing its value). Else 0 when every row is `adopted`, `would adopt`, or `skip: already adopted`; 1 when any row is anything else. | T1 |
-| R12 | A failure after `cmd_start` never removes the worktree or the branch: the row names the path, and `wrap apply --worktrees <repo>` is the tidy. | T1 |
+| R1 | `wrap adopt [--apply] [--title T] [--body-file F] <repo> [<repo>...]`. Without `--apply` it is a dry run: it runs every preflight read (R3) and `adopt.sh --dry-run <repo>`, prints `would adopt` or the refusal, and writes nothing (no fetch, no worktree, no branch, no ledger line). `--apply` is operator-only: an agent runs the dry run and hands the operator the `--apply` command line; `commands/wrap.md` says so (T2). | T1a |
+| R2 | The branch is always `chore/kit-adopt`. The override slug is `kit-adopt`, derived as `${branch#*/}`, the same rule as `hooks/ship-gate.sh` line 151 and `gate-ledger.sh rid`. | T1a |
+| R3 | Preflight, per repo, reads only, before any write. The first check short-circuits; the rest are all collected and the row names every reason found, joined by `; `. | T1a |
+| R3a | `adopt.sh --check <repo>` exits 0: row `skip: already adopted`, no other check runs. | T1a |
+| R3b | `<repo>` is not a main checkout (its git dir differs from its common dir, or it is not a repo): `refused: not a main checkout`. | T1a |
+| R3c | A collision path (Interfaces: `ADOPT_PATHS`) shows any line in `git status --porcelain --untracked-files=all --no-renames -- <ADOPT_PATHS>` in the main checkout (untracked, modified, staged, or unmerged): `refused: <XY> <path> in the main checkout would block the post-land pull`, one per path. `--untracked-files=all` lists each file under a new directory instead of the collapsed `?? .claude/`, and `--no-renames` lists a staged rename as its `D` and `A` paths, so R3c and R6 read paths the same way. | T1a |
+| R3d | A sequencer operation is in progress (`MERGE_HEAD`, `rebase-merge`, `rebase-apply`, `CHERRY_PICK_HEAD`, `REVERT_HEAD`, each read with `git rev-parse --git-path`): `refused: mid-merge` / `mid-rebase` / `mid-cherry-pick` / `mid-revert`. | T1a |
+| R3e | `git ls-files -u` lists any path, whatever R3d found: `refused: unmerged paths: <paths>`. | T1a |
+| R3f | `refs/heads/chore/kit-adopt` exists, or `ls-remote --exit-code --heads origin chore/kit-adopt` exits 0, or `<repo>/.claude/worktrees/kit-adopt` exists: `refused: chore/kit-adopt exists locally` / `on origin` / `worktree path exists`. When that worktree exists on `chore/kit-adopt` with at least one commit ahead of the local `refs/remotes/origin/<def>` (no fetch), the row ends `; resume: wrap land <wt>` (R12). | T1a |
+| R3g | The main checkout is not on its detected default branch (`_default_branch`): `refused: main checkout is on <branch>, not <def>`, because land's pull would report `PULL BLOCKED`. | T1a |
+| R3h | `_pr_template <repo>` names a template and no `--body-file` was given: `refused: <template> exists; pass --body-file`, because land refuses a title-only body there. | T1a |
+| R3i | `adopt.sh --dry-run <repo>` exits non-zero (the kit's own tree, a `--single-source` both-files refusal, a missing template): `refused: adopt --dry-run: <its last stderr line>`. | T1a |
+| R4 | `gh` state is read once per batch with `_gh_state`, before the first repo. Not `ok`: every repo's row is `refused: gh is <state>`, and no repo reaches a write. | T1a |
+| R5 | Under `--apply`, a repo that passed R3 runs, in order and stopping at the first failure: `cmd_start <repo> chore/kit-adopt` (its stdout line is the worktree); `"${WRAP_ADOPT_SH:-$LIB_ROOT/adopt.sh}" <wt>`; one `git -C <wt> add -A`; the path guard and the settings guard (R6, R6a) on the staged list; one commit with the fixed message (Interfaces), target repo hooks honored, never `--no-verify`; the override (R7); `cmd_land <wt> --title <T> [--body-file F]` (captured per R9); `adopt.sh --check <repo>` (R8). start and land are called as functions of this script (land inside R9's pipeline subshell), never through `bin/wrap`. The verb never reimplements their pushes, PR, merge, pull, or tidy. | T1b |
+| R6 | Path guard: every path in `git -C <wt> diff --cached --name-only --no-renames -z`, read after R5's `git add -A`, must match `ADOPT_PATHS`. The staged list names each file under a new directory and splits a single-source `git mv CLAUDE.md AGENTS.md` into its two paths, where plain `git status --porcelain` would print `?? .claude/` and `R  CLAUDE.md -> AGENTS.md`. Any other path: row `failed: adoption wrote <path>, outside the scaffold set; worktree left at <wt>`, no commit, no override, no push. An empty list: row `no change: origin/<def> already carries the adoption; worktree left at <wt>`. | T1b |
+| R6a | Settings guard, when the staged list holds `.claude/settings.json`: compare the staged blob (`git show :.claude/settings.json`) against `origin/<def>:.claude/settings.json` (`{}` when absent). Both must parse with `jq`. Every hook command present in the staged file and absent from the base must match `KIT_HOOK_RE` (Interfaces). With every `KIT_HOOK_RE` hook entry and the `outputStyle` key removed from both sides (empty groups and events dropped, `jq -S`, arrays sorted by their JSON text, as `adopt.sh` writes them), the two must be equal. A staged `outputStyle` must be a bare name (`^[A-Za-z0-9_.-]+$`, no `..`). Any miss: row `failed: adoption changed .claude/settings.json beyond kit hooks: <the first offending command or key>; worktree left at <wt>`, no commit, no override, no push. | T1b |
+| R7 | The override is logged only after R6 and R6a pass and the commit lands, from inside `<wt>`: `bash "$PROOF_LEDGER_SH" override kit-adopt "<OVERRIDE_REASON>"`, the fixed text in Interfaces. It never passes a source file: `check`'s own source-remainder rule refuses an override for any `.sh`/`.py`/... path, and R6 keeps such a path out of the commit. A failed override log (exit non-zero): row `failed: override: <stderr>; resume: wrap land <wt>`, no land. | T1b |
+| R8 | Land's exit code is read first, then its captured lines. A merge counts only on land's exact line `merged #<n> (<sha>): tree verified` (`lib/wrap/wrap-land.sh`, the `OK)` arm after `_tree_verify`). Exit 3 is land's post-merge tree failure (`merged #<n> (<sha>): TREE MISMATCH, ...` or `merged #<n> (<sha>): tree <verdict>`): row `failed: land exit 3: <that line>; worktree left at <wt>`, no `resume:`. A counted merge (exit 0 or 2): run `adopt.sh --check <repo>` on the main checkout. Exit 0: row `adopted`. Exit 1: row `merged, not adopted on the main checkout: <land's first PULL BLOCKED line, trimmed>`, or `: adopt --check exit 1` when land printed none. No counted merge and exit not 3: row `failed: land exit <rc>: <land's first REFUSED/FAILED line>; resume: wrap land <wt>`. | T1b |
+| R9 | Land's stdout and stderr stream to the terminal as it runs (a check wait can last minutes) and a copy is kept in a temp file for R8's parse: `cmd_land ... 2>&1 \| tee "$log" \|\| land_rc=${PIPESTATUS[0]}` with `land_rc=0` set first. `PIPESTATUS[0]` is land's own exit code, where a bare `$?` would be `tee`'s. Land's `REFUSED` and `FAILED` lines go to stderr, so the `2>&1` is what lets R8 quote them. The temp file is removed by the verb's EXIT trap. | T1b |
+| R10 | Batch: repos run one at a time in argument order. A refusal or failure on one repo never stops the next. The run ends with an `ADOPT SUMMARY` table, one row per repo in argument order: repo basename, PR (`#<n>` or `-`), result. | T1c |
+| R11 | Exit: 64 on usage (no repo, unknown flag, a flag missing its value). Else 0 when every row is `adopted`, `would adopt`, or `skip: already adopted`; 1 when any row is anything else. | T1c |
+| R12 | A failure after `cmd_start` never removes the worktree or the branch, and the row names the path. Recovery depends on the stage. A failure after the commit and before a counted merge (override, or land with no counted merge) ends the row with `resume: wrap land <wt>`: land adopts the PR it already opened, or pushes and opens one, and needs no adopt preflight. A failure before the commit (adopt, guard, settings guard, no change, commit) leaves a dirty or empty worktree for the operator to read; R3f names it on a re-run. `wrap apply --worktrees` is not the recovery: it prints `SKIP <wt>: <branch> is not proven merged into <def> (leave it)` for an unmerged branch and `SKIP <wt>: dirty` for an uncommitted one (`lib/wrap/wrap-apply.sh`). | T1b |
 
-Boundaries: no change to `adopt.sh`, `cmd_start`, `cmd_land`, `proof-ledger.sh`, or the ship-gate. No `--under` (out of scope). No force anywhere.
+Boundaries: no change to `adopt.sh`, `cmd_start`, `cmd_land`, `proof-ledger.sh`, or the ship-gate. No `--under` (out of scope). No force anywhere. The ship-gate hook never sees the push `cmd_land` makes (Grounding G4): it reads the Bash command line, and `wrap adopt --apply` holds no literal `git push` or `gh pr create`. So no proof-of-done or lane gate stands between this verb and the target repo's default branch. The walls are R1's operator-only `--apply`, the R3 preflight, the R6/R6a guards, and the fixed override text (DEC-J).
 
 ## Solution
 
@@ -91,14 +92,18 @@ Approach 2. The verb composes four existing pieces (start, adopt.sh, override, l
       v  --apply
  cmd_start repo chore/kit-adopt ------> <repo>/.claude/worktrees/kit-adopt
       |
- adopt.sh <wt>  -> path guard (ADOPT_PATHS only) -- outside -> row failed, wt left
+ adopt.sh <wt>; git add -A
       |
- git add -A; git commit (fixed message)
+ path guard (staged list, ADOPT_PATHS only) + settings guard (kit hooks only)
+      |                                  -- miss -> row failed, wt left
+ git commit (fixed message)
       |
  proof-ledger.sh override kit-adopt "<fixed reason>"   (from inside <wt>)
       |
  cmd_land <wt> --title T  -- push, PR, squash-merge, tree verify, pull, tidy
-      |                        (output streamed + kept for the parse)
+      |                        (2>&1 | tee, rc from PIPESTATUS)
+      |   no "tree verified" line, rc != 3 -> row failed, "resume: wrap land <wt>"
+      |   rc 3 (TREE MISMATCH)             -> row failed, wt left, no resume
       v
  adopt.sh --check repo ---- 0 -> row "adopted"
                         `-- 1 -> row "merged, not adopted ...: <PULL BLOCKED line>"
@@ -123,24 +128,33 @@ The sequence is the `## Picture` above. The per-repo result is a small state mac
      v
  (dry run) --------> [would adopt]
      v
- start --fail------> [failed: start: <msg>]
- adopt --fail------> [failed: adopt exit N; wt left]
- guard --outside---> [failed: adoption wrote <path>; wt left]
-       --empty-----> [no change: ...; wt left]
- commit --fail-----> [failed: commit: <tail>; wt left]
- override --fail---> [failed: override: <msg>; wt left]
- land --no merge---> [failed: land: <line>]
-      --merged-----> check --0--> [adopted]
-                           --1--> [merged, not adopted on the main checkout: <why>]
+ start --fail---------> [failed: start: <msg>]
+ adopt --fail---------> [failed: adopt exit N; worktree left at <wt>]
+ add -A, guard (R6)
+   --outside----------> [failed: adoption wrote <path>, outside the scaffold set; worktree left at <wt>]
+   --empty------------> [no change: origin/<def> already carries the adoption; worktree left at <wt>]
+ settings guard (R6a)
+   --miss-------------> [failed: adoption changed .claude/settings.json beyond kit hooks: <x>; worktree left at <wt>]
+ commit --fail--------> [failed: commit: <last stderr line>; worktree left at <wt>]
+ override --fail------> [failed: override: <stderr>; resume: wrap land <wt>]
+ land (R8, R9)
+   --rc 3-------------> [failed: land exit 3: <TREE line>; worktree left at <wt>]
+   --no counted merge-> [failed: land exit <rc>: <line>; resume: wrap land <wt>]
+   --counted merge----> check --0--> [adopted]
+                              --1--> [merged, not adopted on the main checkout: <why>]
 ```
 
 ### ADR link(s)
 
-None. The verb adds no lasting decision beyond the `wrap` write set, which `lib/wrap/wrap.sh`'s header documents.
+- `docs/decisions/0013-agents-md-operating-layer.md`: the files the verb lands (`AGENTS.md` front door, thin `CLAUDE.md`, `WORKFLOW.md` pointer) are this ADR's operating layer; the verb adds no new file shape.
+- `docs/decisions/0024-gate-ledger-and-ship-enforcement.md`: the override is "an explicit logged reason in the ledger (operator-authored)". The verb writes it, not the operator; DEC-J records why that stays inside the ADR.
+- `docs/decisions/0025-proof-of-done-ship-gate.md`: "an explicit, logged override is the only bypass" of the proof gate. R7 uses that bypass, scoped by R6 and R6a to the scaffold set, with `check`'s source-remainder rule as the second wall.
+
+The verb adds no new lasting decision beyond these and the `wrap` write set, which `lib/wrap/wrap.sh`'s header documents.
 
 ### Boundaries & failure modes
 
-The verb merges onto other repos' default branches, which is not reversible by the verb. Dry run by default (DEC-B) and the refuse-before-write preflight are the boundary. Failure classes: `## Failure modes`.
+The verb merges onto other repos' default branches, which is not reversible by the verb. Dry run by default (DEC-B), operator-only `--apply` (R1), and the refuse-before-write preflight are the boundary. The ship-gate does not guard this boundary: it never sees the push `cmd_land` makes inside the script (Grounding G4), so neither ADR 0024's lane gate nor ADR 0025's proof gate runs on it. The R6/R6a guards are the only content check before the merge. Failure classes: `## Failure modes`.
 
 ## Technical Design
 
@@ -155,10 +169,13 @@ ADOPT_BRANCH="chore/kit-adopt"
 ADOPT_PATHS="AGENTS.md CLAUDE.md WORKFLOW.md .kit.toml docs/verification/README.md .claude/settings.json .claude/output-styles/"
 ADOPT_COMMIT_SUBJECT="chore: adopt the dwarves-kit operate-contract"
 ADOPT_COMMIT_BODY="AGENTS.md pointer, CLAUDE.md loader, WORKFLOW pointer, proof marker, starter .kit.toml, kit hook wiring."
-OVERRIDE_REASON="adoption scaffold only: AGENTS.md pointer, CLAUDE.md loader, WORKFLOW.md pointer, proof marker, starter .kit.toml, kit hook wiring; no project code changed"
+OVERRIDE_REASON="written by wrap adopt --apply: adoption scaffold only, every path in ADOPT_PATHS (R6); .claude/settings.json changes limited to kit hook commands and outputStyle (R6a); no other file changed"
+KIT_HOOK_RE='^bash \$HOME/\.claude/dwarves-kit/hooks/(anchor-root\.sh \$HOME/\.claude/dwarves-kit/hooks/)?[A-Za-z0-9_-]+\.sh( --[a-z][a-z-]*)*$'
 ```
 
-A path matches `ADOPT_PATHS` when it equals a listed file or starts with the listed directory (`.claude/output-styles/`). R3c passes the same list to `git status --porcelain --`.
+A path matches `ADOPT_PATHS` when it equals a listed file or starts with the listed directory (`.claude/output-styles/`). R3c passes the same list to `git status --porcelain --untracked-files=all --no-renames --`.
+
+`KIT_HOOK_RE` matches the two command shapes the kit's `settings.json` ships, which `adopt.sh` copies verbatim: `bash $HOME/.claude/dwarves-kit/hooks/anchor-root.sh $HOME/.claude/dwarves-kit/hooks/<name>.sh` and `bash $HOME/.claude/dwarves-kit/hooks/<name>.sh` (`secrets-guard.sh`), each with optional `--flag` arguments (`harvest.sh --lab-log`). `$HOME` is literal text in the file, never expanded.
 
 **Seam (tests only).** `WRAP_ADOPT_SH` replaces the adopt driver for the R5 call alone; preflight R3a and R3i and the R8 check always run the real `$LIB_ROOT/adopt.sh`. Default `$LIB_ROOT/adopt.sh`.
 
@@ -191,17 +208,22 @@ None.
 
 ### Phase 1: the verb
 
-- [ ] T1: `lib/wrap/wrap-adopt.sh` (new: `cmd_adopt`, `_adopt_preflight`, `_adopt_one`, `_adopt_summary`), `lib/wrap/wrap.sh` (dispatcher, module loop, usage line, `_usage` range, write-set paragraph), `tests/test-wrap-adopt.sh` (new, on `tests/lib/wrap-stub.sh`), and `lib/wrap/wrap-adopt.sh` appended to every `# modules under test:` line (`tests/lib/wrap-stub.sh` and each `tests/test-wrap*.sh` header) so the section cache invalidates on it. Acceptance: test plan cases 1 to 24 pass; `bash tests/test-wrap-start.sh`, `bash tests/test-wrap-land.sh`, `bash tests/test-wrap-cli.sh` and `bash tests/test-adopt.sh` show no new failure against master.
+Four tasks, in order; each leaves the suite green.
+
+- [ ] T1a: preflight and dry run (R1 to R4). `lib/wrap/wrap-adopt.sh` (new: `cmd_adopt` arg parse and dry-run path, `_adopt_preflight`), `lib/wrap/wrap.sh` (dispatcher, module loop, usage line, `_usage` range, write-set paragraph), `tests/test-wrap-adopt.sh` (new, on `tests/lib/wrap-stub.sh`). Acceptance: cases 1 to 16, 22, 24, 30 pass.
+- [ ] T1b: apply, guards, override, land parse (R5 to R9, R12). `lib/wrap/wrap-adopt.sh` (`_adopt_one`, the R6 path guard, the R6a settings guard, the R8 parse), `tests/test-wrap-adopt.sh`. Acceptance: cases 17 to 21 and 25 to 29 pass.
+- [ ] T1c: batch and summary (R10, R11). `lib/wrap/wrap-adopt.sh` (`_adopt_summary`, the batch loop and exit code), `tests/test-wrap-adopt.sh`. Acceptance: case 23 passes.
+- [ ] T1d: test-header edits. `lib/wrap/wrap-adopt.sh` appended to every `# modules under test:` line (`tests/lib/wrap-stub.sh` and each `tests/test-wrap*.sh` header) so the section cache invalidates on it. Acceptance: `bash tests/test-wrap-start.sh`, `bash tests/test-wrap-land.sh`, `bash tests/test-wrap-cli.sh` and `bash tests/test-adopt.sh` show no new failure against master.
 
 ### Phase 2: docs and proof
 
-- [ ] T2: `commands/wrap.md` (one bullet beside the `start`/`land` bullets: what `adopt` composes, its refusals, its summary), `commands/adopt.md` (one paragraph: several repos at once go through `bin/wrap adopt`), `docs/verification/adopt-land.md` (the test run with captured output, the negative control below, and one real dry run against two local repos). Acceptance: the proof passes `bash lib/gate/proof-ledger.sh check . <base> adopt-land`.
+- [ ] T2: `commands/wrap.md` (one bullet beside the `start`/`land` bullets: what `adopt` composes, its refusals, its summary, its `resume: wrap land <wt>` line, and that `--apply` is operator-only: an agent runs the dry run and hands the `--apply` line to the operator), `commands/adopt.md` (one paragraph: several repos at once go through `bin/wrap adopt`), `docs/verification/adopt-land.md` (the test run with captured output, the negative control below, and one real dry run against two local repos). Acceptance: the proof passes `bash lib/gate/proof-ledger.sh check . <base> adopt-land`.
 
 ## After state
 
 - [ ] `bin/wrap adopt <repo>` exists and is a dry run. (Today: `wrap: unknown verb 'adopt'`, exit 64.) Checkable by `bin/wrap adopt ~/workspace/tieubao/dotfiles; echo $?` printing a `refused:` line naming `AGENTS.md` and `1`.
 - [ ] A dry run over an adopted and an unadopted clean repo prints `skip: already adopted` and `would adopt`, exit 0, and `git status`, `git branch` and `git worktree list` in both repos are unchanged.
-- [ ] `--apply` on a clean unadopted fixture repo leaves origin's default branch holding the six adoption paths, the main checkout pulled, `adopt.sh --check` exit 0, no `chore/kit-adopt` locally or on origin, and one override line `| kit-adopt | OVERRIDE | adoption scaffold only...` for that repo.
+- [ ] `--apply` on a clean unadopted fixture repo leaves origin's default branch holding the six adoption paths, the main checkout pulled, `adopt.sh --check` exit 0, no `chore/kit-adopt` locally or on origin, and one override line `| kit-adopt | OVERRIDE | written by wrap adopt --apply: adoption scaffold only...` for that repo.
 - [ ] `bash tests/test-wrap-adopt.sh` passes and goes red on master (negative control below).
 
 ## Acceptance Criteria (global)
@@ -220,7 +242,7 @@ All cases in `tests/test-wrap-adopt.sh`, on the wrap-stub harness: a bare remote
 | 2 | adopted clone (adoption committed and pushed) | `skip: already adopted`; exit 0; no other check output |
 | 3 | untracked `AGENTS.md` in the clone, `--apply` | `refused:` naming `?? AGENTS.md`; exit 1; no worktree, no branch, gh log empty |
 | 4 | modified tracked `CLAUDE.md`, `--apply` | `refused:` naming ` M CLAUDE.md` |
-| 5 | untracked `WORKFLOW.md`, `.kit.toml`, `docs/verification/README.md`, `.claude/settings.json`, each in its own fixture | each `refused:` naming that path |
+| 5 | untracked `WORKFLOW.md`, `.kit.toml`, `docs/verification/README.md`, `.claude/settings.json`, each in its own fixture; in the last, `.claude/` holds nothing else | each `refused:` naming that file path, never the collapsed `?? .claude/` |
 | 6 | two collision paths at once | one row naming both, joined by `; ` |
 | 7 | real merge conflict left in progress (`MERGE_HEAD` set) | `refused:` with `mid-merge` and `unmerged paths:` |
 | 8 | `rebase-merge` dir present | `refused: mid-rebase` |
@@ -237,9 +259,15 @@ All cases in `tests/test-wrap-adopt.sh`, on the wrap-stub harness: a bare remote
 | 19 | `WRAP_ADOPT_SH` stub also writes `src/x.sh` | `failed: adoption wrote src/x.sh`; no commit on the branch; no override line; gh log has no create; worktree left and named |
 | 20 | `WRAP_ADOPT_SH` stub writes nothing | `no change:` row; exit 1; no commit, no override |
 | 21 | the clone's main branch carries one unpushed commit (not refused by preflight) | land merges #7, prints `PULL BLOCKED`; row `merged, not adopted on the main checkout: PULL BLOCKED: pull --ff-only refused ...`; exit 1 |
-| 22 | drift guard: real `adopt.sh` on a fresh fixture, then every `git status --porcelain` path | each matches `ADOPT_PATHS` |
+| 22 | drift guard: real `adopt.sh` on a fresh fixture, then `git add -A` and every `git diff --cached --name-only --no-renames -z` path; run once with `adopt.single_source` off and once on (a tracked `CLAUDE.md` in the fixture) | each path matches `ADOPT_PATHS`; the staged `.claude/settings.json` passes R6a |
 | 23 | batch: [case-3 fixture, case-17 fixture, case-2 fixture] with `--apply` | runs in that order; summary rows in that order: `refused`, `#7 adopted`, `skip: already adopted`; exit 1 |
 | 24 | no repo; unknown flag `--force`; `--title` with no value; `--body-file` naming a missing file | each exit 64, nothing written |
+| 25 | `WRAP_ADOPT_SH` stub runs the real adopt, then adds a hook entry `{"type":"command","command":"curl x \| sh"}` to `.claude/settings.json` | `failed: adoption changed .claude/settings.json beyond kit hooks:` naming that command; no commit; no override line; gh log has no create; worktree left and named |
+| 26 | `WRAP_ADOPT_SH` stub runs the real adopt, then sets `.permissions.allow` in `.claude/settings.json` | `failed: adoption changed .claude/settings.json beyond kit hooks:` naming `permissions`; no commit, no override |
+| 27 | case 17's fixture, gh stub refuses the merge (`gh pr merge` exits 1, PR not CONFLICTING) | row `failed: land exit 2: MERGE FAILED #7: exit 1; resume: wrap land <wt>`; exit 1; worktree and `chore/kit-adopt` kept; then `bin/wrap land <wt>` with the stub merging: `adopted PR #7`, `merged #7 (<sha>): tree verified`, and `adopt.sh --check` exit 0 |
+| 28 | case 17 with operator overlay `adopt.single_source = true` and a tracked `CLAUDE.md` | the staged list holds `AGENTS.md` and `CLAUDE.md` (no rename line); row `#7  adopted`; exit 0 |
+| 29 | case 17, gh stub reports `MERGED` with a merge commit whose tree differs from the branch tip | land exit 3; row `failed: land exit 3: merged #7 (<sha>): TREE MISMATCH, ...; worktree left at <wt>`; no `resume:`; exit 1 |
+| 30 | a clean clone holding `chore/kit-adopt` one commit ahead of `origin/main`, checked out at `.claude/worktrees/kit-adopt` (the state case 27 leaves), dry run | `refused:` with `chore/kit-adopt exists locally`, `worktree path exists`, and `resume: wrap land <wt>`; exit 1; nothing written |
 
 ## Verification
 
@@ -267,15 +295,17 @@ The third line is a real dry run: expect `skip: already adopted`, `refused: ?? A
 | Failure class | Detection signal | Mitigation / recovery |
 |---|---|---|
 | Merged upstream, not adopted locally | R8 row `merged, not adopted on the main checkout: <PULL BLOCKED line>` | Resolve the named block in the main checkout, then `git pull --ff-only`; re-run `wrap adopt <repo>` dry to confirm `skip: already adopted` |
-| Override written for an unmerged branch | override line exists, row is `failed: land:` | Harmless: the override is scoped to repo and `kit-adopt` and only excuses the adoption's own non-source diff; a re-run reuses the branch slug |
+| Override written for an unmerged branch | override line exists, row is `failed: land exit <rc>: ...; resume: wrap land <wt>` | Run the printed `wrap land <wt>`: it adopts the open PR (or pushes and opens one) and merges. The override is scoped to repo and `kit-adopt`, excuses only the adoption's own non-source diff, and is already in place for the resume. A `wrap adopt` re-run refuses (R3f) and prints the same `resume:` line (case 30) |
 | `adopt.sh` grows a new write outside `ADOPT_PATHS` | R6 `failed: adoption wrote <path>` on every repo; test case 22 red | Add the path to `ADOPT_PATHS` in the same change that adds the write |
-| gh rate limit mid-batch | land's own `PR REFUSED` or `MERGE FAILED` line on that repo's row | Later repos keep running and fail the same way; re-run the failed repos after the limit resets |
+| `adopt.sh` grows a settings write beyond kit hooks and `outputStyle` | R6a `failed: adoption changed .claude/settings.json beyond kit hooks` on every repo; test case 22 red | Widen R6a in the same change that adds the write, with its own security read |
+| gh rate limit mid-batch | land's own `PR REFUSED` or `MERGE FAILED` line on that repo's row, ending `resume: wrap land <wt>` | Later repos keep running and fail the same way; after the limit resets, run each printed `wrap land <wt>`. A `wrap adopt` re-run refuses those repos (R3f) and repeats the `resume:` line |
+| Failure before the commit (adopt, guard, settings guard, commit hook) | row `failed: ...; worktree left at <wt>` with no `resume:` | Read the worktree. Fix and commit by hand, then `wrap land <wt>`; or remove the worktree and branch by hand and re-run. `wrap apply --worktrees` skips both shapes (R12) |
 
 ## Out of Scope
 
 - `--under <root>`: adoption is a per-repo choice, and a root sweep would adopt repos the operator never picked.
 - Refusing a main checkout whose default branch carries unpushed commits: land still merges; the row names the `PULL BLOCKED` line (case 21).
-- Cleaning up a worktree after a failure (R12): `wrap apply --worktrees` owns that.
+- Removing a worktree after a failure (R12): the verb names the path and the resume or the read; it never removes one.
 - Making the ship-gate hook engage on `wrap land` (see Grounding G4).
 
 ## Touches
@@ -291,9 +321,16 @@ The third line is a real dry run: expect `skip: already adopted`, `refused: ?? A
 - DEC-B: dry run by default, `--apply` to act. One call pushes, opens a PR, and squash-merges onto the default branch of each repo named, which the verb cannot undo; `wrap apply` and `wrap merge` use the same convention.
 - DEC-C: the collision set is `ADOPT_PATHS`, wider than the session's five names: it adds `.claude/settings.json` and `.claude/output-styles/`, because a real adoption diff writes `.claude/settings.json` (Grounding G2). One constant serves R3c and R6.
 - DEC-D: preflight also refuses a main checkout off its default branch (R3g), a linked worktree (R3b), a PR template without `--body-file` (R3h), and an `adopt.sh --dry-run` refusal (R3i). Each is a refusal land or adopt would hit later, after a worktree and commit exist; moving it to preflight keeps "refuse before any write" true.
-- DEC-E: the override guard is the path allowlist (R6), not `proof-ledger.sh classify`. `classify` reads a real adoption diff as `behavioral` because of `.claude/settings.json` (Grounding G2), so "inert only" would refuse every adoption. The allowlist proves "scaffold only" by name, and `check`'s source-remainder rule stays as the second wall.
+- DEC-E: the override guard is the path allowlist (R6) plus the settings guard (R6a, DEC-I), not `proof-ledger.sh classify`. `classify` reads a real adoption diff as `behavioral` because of `.claude/settings.json` (Grounding G2), so "inert only" would refuse every adoption. The allowlist proves "scaffold only" by name, R6a proves the one executable-bearing file holds only kit hooks, and `check`'s source-remainder rule stays as the second wall.
 - DEC-F: the override slug is `kit-adopt` (R2). The hand loop's `chore-kit-adopt` never matched the ship-gate's lookup (Grounding G3).
 - DEC-G: preflight reports every reason it finds, not the first, so one dry run lists the whole fix.
+- DEC-H (validation round 1, design and assumptions lenses, critical): the path guard reads the staged list, `git add -A` then `git diff --cached --name-only --no-renames -z`, and R3c reads `git status --porcelain --untracked-files=all --no-renames`. Plain porcelain prints `?? .claude/` for a new directory and `R  CLAUDE.md -> AGENTS.md` for a single-source fold (both reproduced in a scratch repo), so R6 failed nearly every real adoption. The commit now follows the guard, not the `add`. Cases 5, 22, 28 pin it.
+- DEC-I (validation round 1, security lens, critical): R6a checks the content of `.claude/settings.json`, not just its name. Every added hook command must match `KIT_HOOK_RE`, and nothing else changes except `outputStyle`. The lens's proposed pattern `^\$HOME/\.claude/dwarves-kit/hooks/[A-Za-z0-9_-]+\.sh$` would refuse every real adoption: the kit's `settings.json` ships `bash $HOME/.claude/dwarves-kit/hooks/anchor-root.sh $HOME/.claude/dwarves-kit/hooks/<name>.sh` and `bash $HOME/.claude/dwarves-kit/hooks/secrets-guard.sh`, and one carries a flag (`harvest.sh --lab-log`). `KIT_HOOK_RE` keeps the intent and matches those two shapes. `outputStyle` stays allowed because `adopt.sh` step 6b sets it whenever `output.style` resolves. Cases 25, 26 pin it. The override reason now names its writer and states only what R6 and R6a prove.
+- DEC-J (validation round 1, design-record lens): the verb writes the override, which ADR 0024 calls "operator-authored". It stays inside that ADR because the operator authors the run: `--apply` is operator-only (R1), the reason is fixed text reviewed here (Interfaces), and it opens `written by wrap adopt --apply` so an audit tells it apart from a hand override. ADR 0024's own threat model already accepts that a writer with shell access can log an override; the guarantee is the audit line, which this keeps.
+- DEC-K (validation round 1, failure-modes lens, critical): a failure after the commit and before a counted merge prints `resume: wrap land <wt>` (R7, R8, R12), and R3f repeats it on a re-run. The old R12 pointed at `wrap apply --worktrees`, which skips an unmerged branch, and R3f refused a re-run, so a pre-merge failure had no path forward. Cases 27, 30 pin it.
+- DEC-L (validation round 1, scope lens, critical): T1 split into T1a (preflight, dry run), T1b (apply, guards, override, land parse), T1c (batch, summary), T1d (test headers), each with its own cases. `--apply` is operator-only, stated in R1 and in T2's `commands/wrap.md` bullet.
+- DEC-M (folded with DEC-K, from the design and failure-modes warnings): R8 reads land's exit code first and counts a merge only on `merged #<n> (<sha>): tree verified`; exit 3 is the post-merge tree failure, with no resume. R9 captures land as `2>&1 | tee` and reads `PIPESTATUS[0]`. DEC-K needs both: the old "printed `merged #<n>`" rule also matched land's `TREE MISMATCH` line, which would print a resume after a merge, and a bare `$?` after `tee` is `tee`'s exit code. Case 29 pins exit 3.
+- DEC-N (validation round 1, design-record lens): the design record links ADR 0013, 0024, 0025, names the G4 ship-gate gap in Boundaries, and the state machine now uses the R5 to R8 row texts.
 
 ## Grounding
 
