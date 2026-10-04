@@ -131,3 +131,11 @@ Revert the branch. The one durable side effect is the per-host log `${XDG_STATE_
 - The orchestrate suites (`test-orchestrate*`, picked because `lib/queue/orchestrate.sh` changed) were not run (test budget). The driver change is one `|| true` call, covered by a grep only.
 - The p95 and tune verbs ran on fixture history, not on weeks of real runs. The `expected` wall is an estimate, since the log keeps no per-run wall time.
 - Other suites that reference `kit.toml` or `commands/*.md` were not run, only the ones named above.
+
+## Recorded run (lead: orchestrate suites the worker skipped)
+
+Load average about 27 (over the default load_warn of 16).
+
+Command: `bash tests/test-orchestrate.sh; bash tests/test-orchestrate-gate-dispatch.sh; bash tests/test-orchestrate-hardening.sh; bash tests/test-orchestrate-orca.sh` (each under its bin/test-affected.timeouts limit)
+Exit: 0
+Verdict: PASS, all four green (97 s, 23 s, 12 s, 146 s); the load warning goes to stderr and changes no verdict.
