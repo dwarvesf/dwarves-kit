@@ -42,6 +42,52 @@ Verdict: PASS
 
 The interrupt cases launch the verb through a perl exec that resets SIGINT to default, because `run-all.sh` starts each suite as a background job and SIGINT arrives ignored. Without it, 34a-INT and 34b-INT went red under `run-all.sh` only.
 
+## Test plan coverage
+
+Every row runs in `tests/test-wrap-adopt.sh` (run table above), and each assertion is labelled with its row number.
+
+| Row | Run / skip reason |
+|---|---|
+| 1 | test-wrap-adopt.sh case 1 |
+| 2 | test-wrap-adopt.sh case 2 |
+| 3 | test-wrap-adopt.sh case 3 |
+| 4 | test-wrap-adopt.sh case 4 |
+| 5 | test-wrap-adopt.sh case 5 |
+| 6 | test-wrap-adopt.sh case 6 |
+| 7 | test-wrap-adopt.sh case 7 |
+| 8 | test-wrap-adopt.sh case 8 |
+| 9 | test-wrap-adopt.sh case 9 |
+| 10 | test-wrap-adopt.sh case 10 |
+| 11 | test-wrap-adopt.sh case 11 |
+| 12 | test-wrap-adopt.sh case 12 |
+| 13 | test-wrap-adopt.sh case 13 |
+| 14 | test-wrap-adopt.sh case 14 |
+| 15 | test-wrap-adopt.sh case 15 |
+| 16 | test-wrap-adopt.sh case 16 |
+| 17 | test-wrap-adopt.sh case 17 |
+| 18 | test-wrap-adopt.sh case 18 |
+| 19 | test-wrap-adopt.sh case 19 |
+| 20 | test-wrap-adopt.sh case 20 |
+| 21 | test-wrap-adopt.sh case 21 |
+| 22 | test-wrap-adopt.sh case 22a and its variants |
+| 23 | test-wrap-adopt.sh case 23 |
+| 24 | test-wrap-adopt.sh case 24 |
+| 25 | test-wrap-adopt.sh case 25a and its variants |
+| 26 | test-wrap-adopt.sh case 26 |
+| 27 | test-wrap-adopt.sh case 27 |
+| 28 | test-wrap-adopt.sh case 28 |
+| 29 | test-wrap-adopt.sh case 29 |
+| 30 | test-wrap-adopt.sh case 30 |
+| 31 | test-wrap-adopt.sh case 31 |
+| 32 | test-wrap-adopt.sh case 32a and its variants |
+| 33 | test-wrap-adopt.sh case 33 |
+| 34a, 34b | test-wrap-adopt.sh cases 34a and 34b, INT and TERM each, also green under `run-all.sh` |
+| 35 | test-wrap-adopt.sh case 35 |
+| 36 | test-wrap-adopt.sh case 36 |
+| 37 | test-wrap-adopt.sh case 37 |
+| 38 | test-wrap-adopt.sh case 38 |
+| 39 | test-wrap-adopt.sh case 39 |
+
 ## Negative control
 
 ```
