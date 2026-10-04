@@ -5,6 +5,8 @@
 set -uo pipefail
 KIT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 TA="$KIT_DIR/bin/test-affected"
+# bin/test-affected appends to the per-host timing history and may warn on load: keep both off the real host.
+HIST_TMP="$(mktemp -d)"; export KIT_SUITE_TIMES_FILE="$HIST_TMP/suite-times.tsv" KIT_LOAD_WARN=100000
 PASS=0; FAIL=0
 ok()  { echo "  ok: $1"; PASS=$((PASS+1)); }
 bad() { echo "  FAIL: $1" >&2; FAIL=$((FAIL+1)); }

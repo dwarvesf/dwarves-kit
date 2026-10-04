@@ -223,13 +223,21 @@ meta_pick() {
 }
 
 # --- selection: "<test>\t<reason>" pairs and UNCOVERED files ---
-: >"$TMP/pairs"; : >"$TMP/uncovered"
+# $TMP/pickers: "<suite>\t<changed path>" for every changed path that picked a suite. The cache
+# key hashes each one, so a suite picked because it READS a path by glob or scan (a meta area, the
+# runner fallback) cannot come back CACHED after that path changed.
+record_pickers() {  # $1 = the changed path, $2 = pairs line count before it was processed
+  tail -n +"$(($2 + 1))" "$TMP/pairs" | cut -f1 | awk -v p="$1" '{ printf "%s\t%s\n", $0, p }' >>"$TMP/pickers"
+}
+: >"$TMP/pairs"; : >"$TMP/uncovered"; : >"$TMP/pickers"
 while IFS= read -r f; do
   [ -n "$f" ] || continue
+  n0="$(wc -l <"$TMP/pairs" | tr -d ' ')"
   case "$f" in
     tests/test-*.sh)
       [ -f "$f" ] && printf '%s\tself\n' "$f" >>"$TMP/pairs"
       meta_pick "$f" "" >>"$TMP/pairs" || true
+      record_pickers "$f" "$n0"
       continue ;;
   esac
   if is_source "$f"; then
@@ -283,7 +291,34 @@ $b"
   mrc=0; meta_pick "$f" "$hits" >>"$TMP/pairs" || mrc=$?
   [ "$mrc" = 0 ] && covered=1
   [ "$covered" = 1 ] || printf '%s\n' "$f" >>"$TMP/uncovered"
+  record_pickers "$f" "$n0"
 done <"$TMP/changed"
+
+# A `# runner:` suite only relays sibling suites (tests/test-meta.sh -> the area suites). Run as one
+# suite it took the 300 s default, kept one cache entry for all of them, and never reached the
+# timing history (tests/run-all.sh skips runners). Expand it exactly as tests/run-all.sh does:
+# the names on its `# runner-suites:` line, else the sibling glob. Each area then runs, caches and
+# times out on its own.
+expand_runner() {
+  local t="$1" sibs s
+  if [ -f "$t" ] && grep -q '^# runner:' "$t"; then
+    sibs="$(sed -n 's/^# runner-suites: //p' "$t" | tr ' ' '\n' | sed -n "s|^\\(..*\\)\$|${t%.sh}-\\1.sh|p")"
+    if [ -n "$sibs" ]; then printf '%s\n' "$sibs"
+    else for s in "${t%.sh}"-*.sh; do [ -f "$s" ] && printf '%s\n' "$s"; done; fi
+  else
+    printf '%s\n' "$t"
+  fi
+}
+TAB="$(printf '\t')"
+for kind in pairs pickers; do
+  : >"$TMP/$kind.exp"
+  while IFS="$TAB" read -r t rest; do
+    expand_runner "$t" | while IFS= read -r e; do
+      if [ "$e" = "$t" ] || [ "$kind" = pickers ]; then printf '%s\t%s\n' "$e" "$rest"; else printf '%s\t%s\n' "$e" "runner $t: $rest"; fi
+    done >>"$TMP/$kind.exp"
+  done <"$TMP/$kind"
+  mv -f "$TMP/$kind.exp" "$TMP/$kind"
+done
 sort -u -o "$TMP/pairs" "$TMP/pairs"
 cut -f1 "$TMP/pairs" | sort -u >"$TMP/selected"
 
@@ -315,6 +350,12 @@ cache_key() {
   {
     printf 'test %s\n' "$(sha <"$1")"
     printf 'version %s\n' "$(cat VERSION 2>/dev/null || true)"
+    # Every changed path that picked this suite, by content: a path the suite reads by glob or
+    # scan is never named in its text, so the lines below cannot see it.
+    awk -F'\t' -v t="$1" '$1 == t { print $2 }' "$TMP/pickers" | sort -u \
+      | while IFS= read -r pk; do
+          if [ -f "$pk" ]; then printf 'picked %s %s\n' "$pk" "$(sha <"$pk")"; else printf 'picked %s gone\n' "$pk"; fi
+        done
     grep -oFf "$TMP/pats" "$1" 2>/dev/null | awk '{print; n=split($0,a,"/"); print a[n]}' | sort -u \
       | awk -F'\t' 'NR==FNR{m[$1]=m[$1] $2 "\n"; next} ($0 in m){printf "%s", m[$0]}' "$TMP/map" - \
       | sort -u | while IFS= read -r s; do if [ -n "$s" ]; then printf '%s %s\n' "$s" "$(sha <"$s")"; fi; done || true
@@ -334,9 +375,10 @@ suite_timeout() {
 }
 
 # One warning line on a loaded host (warning only; it exits 0 and changes nothing here).
-bash "$SELF_DIR/../lib/host/load-warn.sh" "this test-affected run" || true
+[ -f "$SELF_DIR/../lib/host/load-warn.sh" ] && { bash "$SELF_DIR/../lib/host/load-warn.sh" "this test-affected run" || true; }
 
 P=0 C=0 F=0 T=0 N=0
+RUN_T0="$(date +%s)"; : >"$TMP/times.tsv"
 while IFS= read -r t; do
   N=$((N + 1))
   key="$(cache_key "$t")"
@@ -344,7 +386,9 @@ while IFS= read -r t; do
     echo "CACHED $t"; C=$((C + 1)); continue
   fi
   limit="$(suite_timeout "$t")"; limit="${limit:-300}"
+  t0="$(date +%s)"
   rc=0; _timeout "$limit" bash "$t" >"$TMP/out" 2>&1 || rc=$?
+  printf '%s\t%s\t%s\n' "$(basename "$t" .sh)" "$(( $(date +%s) - t0 ))" "$rc" >>"$TMP/times.tsv"
   if [ "$rc" -eq 0 ]; then
     echo "PASS $t"; P=$((P + 1))
     [ -n "$CDIR" ] && printf 'PASS %s\n' "$t" >"$CDIR/$key" 2>/dev/null || true
@@ -359,4 +403,11 @@ done <"$TMP/selected"
 U="$(wc -l <"$TMP/uncovered" | tr -d ' ')"
 while IFS= read -r f; do echo "UNCOVERED $f"; done <"$TMP/uncovered"
 echo "test-affected: $N selected, $P pass, $C cached, $F fail, $T timeout, $U uncovered"
-[ "$F" -eq 0 ] && [ "$T" -eq 0 ]
+FINAL=0; { [ "$F" -eq 0 ] && [ "$T" -eq 0 ]; } || FINAL=1
+# Timing history: one row per suite that actually ran (cached ones did not), then one run row. Best
+# effort through the shared helper; a failure here never changes the exit code.
+if [ -f "$SELF_DIR/../tests/lib/suite-times.sh" ]; then
+  bash "$SELF_DIR/../tests/lib/suite-times.sh" append "$TMP/times.tsv" >/dev/null 2>&1 || true
+  bash "$SELF_DIR/../tests/lib/suite-times.sh" append-run test-affected "$N" "$(( $(date +%s) - RUN_T0 ))" "$FINAL" >/dev/null 2>&1 || true
+fi
+exit "$FINAL"
