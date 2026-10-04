@@ -35,6 +35,9 @@ spec_files() {
 spec_for_slug() {
   local root="$1" slug="$2" f base num
   [ -n "$slug" ] || return 0
+  # Root wins in spec_files order, so a root match returns before the walk.
+  f=$(ls "$root"/docs/specs/SPEC-*-"$slug".md 2>/dev/null | head -1 || true)
+  if [ -n "$f" ]; then printf '%s\n' "$f"; return 0; fi
   while IFS= read -r f; do
     base="${f##*/}"
     case "$base" in SPEC-*-"$slug".md) ;; *) continue ;; esac
