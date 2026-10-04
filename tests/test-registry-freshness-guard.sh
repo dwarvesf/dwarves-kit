@@ -7,7 +7,7 @@
 # Every fixture is a throwaway repo carrying a COPY of the generator, so the
 # generator's KIT_DIR resolves to the fixture and it scans a handful of stub files
 # instead of the whole kit. That keeps each case well under a second; the real
-# ~20s regen is exercised once by tests/test-meta.sh's freshness pin.
+# ~4s regen is exercised once by tests/test-meta.sh's freshness pin.
 set -uo pipefail
 KIT="$(cd "$(dirname "$0")/.." && pwd)"
 export KIT_CONFIG_OPERATOR="$KIT/tests/fixtures/gates-on"

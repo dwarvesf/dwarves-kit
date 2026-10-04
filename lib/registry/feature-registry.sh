@@ -31,6 +31,7 @@
 #
 # Usage:
 #   feature-registry.sh generate [outfile]   # default: docs/FEATURES.md
+#   feature-registry.sh check [--fix] [outfile]
 
 set -euo pipefail
 export LC_ALL=C
@@ -57,19 +58,6 @@ clip() { # <text>
 # inside `review-team`
 token_pat() { printf '(^|[^A-Za-z0-9_-])%s([^A-Za-z0-9_-]|$)' "$1"; }
 
-# stdin: one item per line -> "a, b, c" or "a, b, c +N" or "-"
-cap_list() {
-  awk 'NR<=3 { if (NR>1) printf ", "; printf "%s", $0 } END {
-    if (NR==0) printf "-";
-    if (NR>3) printf " +%d", NR-3;
-    print "" }'
-}
-
-spec_refs() { # <token-pattern>
-  grep -lE "$1" "$KIT_DIR"/docs/specs/SPEC-*.md 2>/dev/null \
-    | sed -E 's|.*/SPEC-([0-9]+)-.*|SPEC-\1|' | sort -uV | cap_list
-}
-
 # Tests live in tests/*.sh and in per-lib suites (lib/*/tests/**, shell and Python; fixtures
 # are inputs, not tests). A lib verb also counts a test that names a hook which calls it.
 TEST_FILES=()
@@ -78,19 +66,163 @@ while IFS= read -r f; do TEST_FILES+=("$f"); done < <(
     find "$KIT_DIR/lib" -path '*/tests/*' ! -path '*/fixtures/*' \( -name '*.sh' -o -name '*.py' \) 2>/dev/null
   } | sort)
 
-test_refs() { # <token-pattern>
-  [ "${#TEST_FILES[@]}" -gt 0 ] || { printf -- '-'; return; }
-  grep -lE "$1" "${TEST_FILES[@]}" 2>/dev/null \
-    | sed -E 's|.*/||' | sort -u | cap_list
+# One-pass reference index. The old generator ran one `grep -lE` per feature over every
+# spec and every test (about 124 features x 7 MB, ~46 s of CPU). Now ONE awk reads each
+# corpus file once and answers every feature at once.
+#
+# Matching semantics are the old grep's, unchanged: a file matches a token when some line
+# matches `(^|[^A-Za-z0-9_-])TOKEN([^A-Za-z0-9_-]|$)`, TOKEN read as an ERE.
+#   - A TOKEN made only of [A-Za-z0-9_-] can match only as a whole maximal run of those
+#     characters (both neighbours are outside the class), so the awk splits each line on
+#     the complement class and looks the runs up in a set. Exact, and no per-token scan.
+#   - Any other TOKEN (a `.sh` basename, a verb name with a space) keeps its regex: a
+#     line is tested with the same pattern, behind a cheap prefilter on the token's
+#     leading literal run (a match must contain it).
+# The awk also formats the Specs, Tests and Dispatched-by cells (cap_list, `sort -uV` of
+# SPEC numbers, bytewise `sort -u` of names), so the shell spawns no pipeline per row.
+# Query lines in: `<key> TAB <D|-> TAB <token> [TAB <token>...]`; lines out: `<key> TAB <specs>
+# TAB <tests> TAB <dispatched-by>`. Only POSIX awk is assumed (macOS awk is the one-true-awk).
+REF_AWK='
+function cap(arr, n,   i, s) {
+  if (n == 0) return "-"
+  s = ""
+  for (i = 1; i <= n && i <= 3; i++) s = s (i > 1 ? ", " : "") arr[i]
+  if (n > 3) s = s " +" (n - 3)
+  return s
+}
+function sort_str(arr, n,   i, j, v) {
+  for (i = 2; i <= n; i++) {
+    v = arr[i]
+    for (j = i - 1; j >= 1 && arr[j] > v; j--) arr[j + 1] = arr[j]
+    arr[j + 1] = v
+  }
+}
+function sort_spec(arr, n,   i, j, v, nv) {
+  for (i = 2; i <= n; i++) {
+    v = arr[i]; nv = specnum[v]
+    for (j = i - 1; j >= 1 && (specnum[arr[j]] > nv || (specnum[arr[j]] == nv && arr[j] > v)); j--) arr[j + 1] = arr[j]
+    arr[j + 1] = v
+  }
+}
+function base_of(p,   i) { i = match(p, /[^\/]*$/); return substr(p, i) }
+function note_hit(t, f) {
+  if (hit[t, f] != 1) { hit[t, f] = 1; tfc[t]++; tf[t, tfc[t]] = f }
+}
+BEGIN { cls = "[^A-Za-z0-9_-]" }
+G == "Q" {
+  nq++
+  m = split($0, part, "\t")
+  qkey[nq] = part[1]; qd[nq] = part[2]; qtc[nq] = m - 2
+  for (k = 3; k <= m; k++) {
+    tok = part[k]; qtok[nq, k - 2] = tok
+    if (tok in tid) continue
+    nt++; tid[tok] = nt
+    if (tok ~ /^[A-Za-z0-9_-]+$/) pure[tok] = nt
+    else {
+      nnp++; npt[nnp] = nt
+      nprx[nnp] = "(^|" cls ")" tok "(" cls "|$)"
+      lead = tok; sub(/[^A-Za-z0-9_-].*$/, "", lead)
+      if (lead == "") nopre = 1
+      else npre = npre (npre == "" ? "" : "|") lead
+    }
+  }
+  next
+}
+FNR == 1 { fid++; fgrp[fid] = G; fname[fid] = FILENAME }
+{
+  n = split($0, w, cls "+")
+  for (i = 1; i <= n; i++) if (w[i] in pure) note_hit(pure[w[i]], fid)
+  if (nnp > 0 && (nopre || $0 ~ npre))
+    for (j = 1; j <= nnp; j++)
+      if (hit[npt[j], fid] != 1 && $0 ~ nprx[j]) note_hit(npt[j], fid)
+}
+END {
+  for (q = 1; q <= nq; q++) {
+    nsp = 0; ntn = 0; ndn = 0
+    for (k = 1; k <= qtc[q]; k++) {
+      t = tid[qtok[q, k]]
+      for (i = 1; i <= tfc[t]; i++) {
+        f = tf[t, i]
+        if (seen[f] == q) continue
+        seen[f] = q
+        g = fgrp[f]; p = fname[f]
+        if (g == "S") {
+          b = base_of(p)
+          if (match(b, /^SPEC-[0-9]+-/)) { v = substr(b, 1, RLENGTH - 1); specnum[v] = substr(v, 6) + 0 }
+          else { v = p; specnum[v] = 0 }
+          if (sdup[q, v] != 1) { sdup[q, v] = 1; sp[++nsp] = v }
+        } else if (g == "T") {
+          v = base_of(p)
+          if (tdup[q, v] != 1) { tdup[q, v] = 1; tn[++ntn] = v }
+        } else if (qd[q] == "D") {
+          if (g == "C") { v = base_of(p); sub(/\.md$/, "", v) }
+          else { v = p; sub(/\/SKILL\.md$/, "", v); v = base_of(v) " (skill)" }
+          if (ddup[q, v] != 1) { ddup[q, v] = 1; dn[++ndn] = v }
+        }
+      }
+    }
+    sort_spec(sp, nsp); sort_str(tn, ntn); sort_str(dn, ndn)
+    printf "%s\t%s\t%s\t%s\n", qkey[q], cap(sp, nsp), cap(tn, ntn), cap(dn, ndn)
+  }
+}'
+
+# Fills REF_KEYS / REF_SPEC / REF_TEST / REF_DISP (parallel arrays; bash 3.2 has no
+# associative arrays) with one awk pass over every spec, test, command, and skill file.
+REF_KEYS=(); REF_SPEC=(); REF_TEST=(); REF_DISP=()
+build_queries() { # stdout: one query line per feature
+  local f name rel desc base hook tab pat_tokens
+  tab="$(printf '\t')"
+  for f in "$KIT_DIR"/commands/*.md; do
+    name="$(basename "$f" .md)"; printf 'c:%s\t-\t%s\n' "$name" "$name"
+  done
+  for f in "$KIT_DIR"/agents/*.md; do
+    name="$(basename "$f" .md)"; printf 'a:%s\tD\t%s\n' "$name" "$name"
+  done
+  for f in "$KIT_DIR"/skills/*/SKILL.md; do
+    name="$(basename "$(dirname "$f")")"; printf 's:%s\t-\t%s\n' "$name" "$name"
+  done
+  for f in "$KIT_DIR"/hooks/*.sh; do
+    name="$(basename "$f" .sh)"; printf 'h:%s\t-\t%s\n' "$name" "$name"
+  done
+  while IFS="$tab" read -r rel name desc; do
+    [ -n "$rel" ] || continue
+    base="$(basename "$rel")"
+    pat_tokens="$base$tab$name"
+    # a verb also counts tests (and specs) naming a hook that calls its script
+    while IFS= read -r hook; do
+      [ -n "$hook" ] && pat_tokens="$pat_tokens$tab$hook"
+    done < <(grep -lE "$(token_pat "$base")" "$KIT_DIR"/hooks/*.sh 2>/dev/null | sed -E 's|.*/||')
+    printf 'v:%s:%s\t-\t%s\n' "$rel" "$name" "$pat_tokens"
+  done < <(verb_markers)
 }
 
-dispatched_by() { # <token-pattern>
-  {
-    grep -lE "$1" "$KIT_DIR"/commands/*.md 2>/dev/null \
-      | sed -E 's|.*/||; s|\.md$||'
-    grep -lE "$1" "$KIT_DIR"/skills/*/SKILL.md 2>/dev/null \
-      | sed -E 's|/SKILL\.md$||; s|.*/||; s|$| (skill)|'
-  } | sort -u | cap_list
+load_refs() {
+  local qfile="$1" rfile="$2" key spec tst disp f
+  local specs=() cmds=() skills=()
+  for f in "$KIT_DIR"/docs/specs/SPEC-*.md; do [ -f "$f" ] && specs+=("$f"); done
+  for f in "$KIT_DIR"/commands/*.md; do [ -f "$f" ] && cmds+=("$f"); done
+  for f in "$KIT_DIR"/skills/*/SKILL.md; do [ -f "$f" ] && skills+=("$f"); done
+  build_queries > "$qfile"
+  awk "$REF_AWK" G=Q "$qfile" \
+    G=S ${specs[@]+"${specs[@]}"} \
+    G=T ${TEST_FILES[@]+"${TEST_FILES[@]}"} \
+    G=C ${cmds[@]+"${cmds[@]}"} \
+    G=K ${skills[@]+"${skills[@]}"} > "$rfile"
+  while IFS="$(printf '\t')" read -r key spec tst disp; do
+    REF_KEYS+=("$key"); REF_SPEC+=("$spec"); REF_TEST+=("$tst"); REF_DISP+=("$disp")
+  done < "$rfile"
+}
+
+ref_lookup() { # <key> -> sets R_SPEC R_TEST R_DISP
+  local i=0 n="${#REF_KEYS[@]}"
+  R_SPEC="-"; R_TEST="-"; R_DISP="-"
+  while [ "$i" -lt "$n" ]; do
+    if [ "${REF_KEYS[$i]}" = "$1" ]; then
+      R_SPEC="${REF_SPEC[$i]}"; R_TEST="${REF_TEST[$i]}"; R_DISP="${REF_DISP[$i]}"
+      return
+    fi
+    i=$((i + 1))
+  done
 }
 
 hook_events() { # <basename.sh>
@@ -136,17 +268,12 @@ verbs_table() {
   echo ""
   echo "| Verb | Trigger | Source | Description | Specs | Tests |"
   echo "|---|---|---|---|---|---|"
-  local rel name desc base pat
+  local rel name desc
   while IFS="$(printf '\t')" read -r rel name desc; do
     [ -n "$rel" ] || continue
-    base="$(basename "$rel")"
-    pat="$(token_pat "$base")|$(token_pat "$name")"
-    while IFS= read -r hook; do
-      [ -n "$hook" ] && pat="$pat|$(token_pat "$hook")"
-    done < <(grep -lE "$(token_pat "$base")" "$KIT_DIR"/hooks/*.sh 2>/dev/null | sed -E 's|.*/||')
-    pat="($pat)"
+    ref_lookup "v:$rel:$name"
     printf '| `%s` | `[V]` | `%s` | %s | %s | %s |\n' \
-      "$name" "$rel" "$(clip "$desc")" "$(spec_refs "$pat")" "$(test_refs "$pat")"
+      "$name" "$rel" "$(clip "$desc")" "$R_SPEC" "$R_TEST"
   done < <(verb_markers)
   echo ""
 }
@@ -156,15 +283,15 @@ commands_table() {
   echo ""
   echo "| Command | Trigger | Description | Specs | Tests |"
   echo "|---|---|---|---|---|"
-  local f name dmi trig pat
+  local f name dmi trig
   for f in "$KIT_DIR"/commands/*.md; do
     name="$(basename "$f" .md)"
     dmi="$(fm_field "$f" disable-model-invocation)"
     trig='[H/I]'; [ "$dmi" = "true" ] && trig='[H]'
-    pat="$(token_pat "$name")"
+    ref_lookup "c:$name"
     printf '| `/kit:%s` | `%s` | %s | %s | %s |\n' \
       "$name" "$trig" "$(clip "$(fm_field "$f" description)")" \
-      "$(spec_refs "$pat")" "$(test_refs "$pat")"
+      "$R_SPEC" "$R_TEST"
   done
   echo ""
 }
@@ -174,14 +301,14 @@ agents_table() {
   echo ""
   echo "| Agent | Trigger | Dispatched by | Description | Specs | Tests |"
   echo "|---|---|---|---|---|---|"
-  local f name pat
+  local f name
   for f in "$KIT_DIR"/agents/*.md; do
     name="$(basename "$f" .md)"
-    pat="$(token_pat "$name")"
+    ref_lookup "a:$name"
     printf '| `%s` | `[D]` | %s | %s | %s | %s |\n' \
-      "$name" "$(dispatched_by "$pat")" \
+      "$name" "$R_DISP" \
       "$(clip "$(fm_field "$f" description)")" \
-      "$(spec_refs "$pat")" "$(test_refs "$pat")"
+      "$R_SPEC" "$R_TEST"
   done
   echo ""
 }
@@ -191,15 +318,15 @@ skills_table() {
   echo ""
   echo "| Skill | Trigger | Description | Specs | Tests |"
   echo "|---|---|---|---|---|"
-  local f name dmi trig pat
+  local f name dmi trig
   for f in "$KIT_DIR"/skills/*/SKILL.md; do
     name="$(basename "$(dirname "$f")")"
     dmi="$(fm_field "$f" disable-model-invocation)"
     trig='[I]'; [ "$dmi" = "true" ] && trig='[H]'
-    pat="$(token_pat "$name")"
+    ref_lookup "s:$name"
     printf '| `%s` | `%s` | %s | %s | %s |\n' \
       "$name" "$trig" "$(clip "$(fm_field "$f" description)")" \
-      "$(spec_refs "$pat")" "$(test_refs "$pat")"
+      "$R_SPEC" "$R_TEST"
   done
   echo ""
 }
@@ -209,23 +336,25 @@ hooks_table() {
   echo ""
   echo "| Hook | Trigger | Event | Description | Specs | Tests |"
   echo "|---|---|---|---|---|---|"
-  local f base name pat
+  local f base name
   for f in "$KIT_DIR"/hooks/*.sh; do
     base="$(basename "$f")"
     name="$(basename "$f" .sh)"
-    pat="$(token_pat "$name")"
+    ref_lookup "h:$name"
     printf '| `%s` | `[E]` | %s | %s | %s | %s |\n' \
       "$base" "$(hook_events "$base")" "$(clip "$(hook_desc "$f")")" \
-      "$(spec_refs "$pat")" "$(test_refs "$pat")"
+      "$R_SPEC" "$R_TEST"
   done
   echo ""
 }
 
 generate() {
   local out="${1:-$KIT_DIR/docs/FEATURES.md}"
-  local tmp="$out.tmp.$$"
-  # expand $tmp NOW: the trap fires at script exit, after the local is gone
-  trap "rm -f '$tmp'" EXIT
+  local tmp="$out.tmp.$$" qfile rfile
+  qfile="$(mktemp)"; rfile="$(mktemp)"
+  # expand the paths NOW: the trap fires at script exit, after the locals are gone
+  trap "rm -f '$tmp' '$qfile' '$rfile'" EXIT
+  load_refs "$qfile" "$rfile"
   {
     echo "---"
     echo "title: Feature registry"
@@ -247,6 +376,9 @@ generate() {
 }
 
 # check [file] -- is the committed projection current? Exit 0 fresh, 1 drifted.
+# FEATURE_REGISTRY_KEEP=<path> also copies the freshly generated bytes there, so a caller
+# that needs both the verdict and a second copy (tests/test-meta-docs-registry.sh pins
+# determinism that way) pays for one generator run, not two.
 #
 # tests/test-meta.sh pins freshness by regenerating to a temp file and diffing, and
 # every caller who wanted that answer outside the suite rebuilt the same three lines
@@ -267,6 +399,7 @@ check() {
   fi
   tmp="$(mktemp)"
   generate "$tmp"
+  [ -z "${FEATURE_REGISTRY_KEEP:-}" ] || cp -f "$tmp" "$FEATURE_REGISTRY_KEEP"
   if diff -q "$tmp" "$out" >/dev/null 2>&1; then
     echo "feature-registry: $out is fresh"
   else
