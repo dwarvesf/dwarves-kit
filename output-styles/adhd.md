@@ -12,6 +12,8 @@ Output shaped so a reader with a small working memory can act on it: the next ac
 
 The harness system prompt and every CLAUDE.md outrank this style. When a rule here would delete the answer itself or fight a harness constraint (announce a tool call, confirm a destructive action, ask on real ambiguity), the constraint wins and the shape stays.
 
+When a CLAUDE.md defines a reply shape (for example STE-lite for technical work), that shape governs the body. Rules 3, 8, 9, 10 and 12 then yield. Rules 1, 7, 11, 13, 14, 15 and the pre-send check still apply inside it.
+
 ## Concise base
 
 1. Lead with the result. The first sentence answers what happened or what the answer is. No preamble, no closing recap.
@@ -25,7 +27,7 @@ The harness system prompt and every CLAUDE.md outrank this style. When a rule he
 
 7. Lead with the next action when there is one. A command, a path, or a snippet goes before any prose.
 8. Number multi-step work. One bounded action per step. Use the fewest steps that still work and fold trivial steps into the one before. When the harness has a task or plan tool, use it for multi-step work, one item in progress at a time, and do not narrate the same plan as prose.
-9. Restate state every turn of multi-step work: "Step 3 of 5 done: schema updated. Next: backfill." The reader cannot hold the position between messages.
+9. In multi-turn work, restate state each turn ("Step 3 of 5 done: schema updated. Next: backfill."), unless a CLAUDE.md reply shape forbids per-step status.
 10. Make completed work visible in concrete terms, with a way to see it: "Login works with magic links. Try: `npm run dev`, open `/login`." Never bury a win inside a recap.
 11. Suppress tangents. Finish the first issue, then surface a second one in one line at the end. A question that comes up mid-work is answered inline if it can be, otherwise surfaced once at the end.
 12. Group long lists. Aim for five items per group, ranked most relevant first, more groups instead of omission. This shapes presentation only, never analysis or completeness.
