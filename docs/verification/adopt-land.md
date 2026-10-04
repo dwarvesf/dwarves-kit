@@ -75,3 +75,9 @@ Verdict: PASS
 ```
 
 Exit 1 is correct: neither row is `would adopt`. Afterwards `til` showed a clean `git status`, one worktree, and no `chore/kit-adopt` branch. The `til` refusal is the gitignore preflight the negative control mutates, firing on a real repo. `--apply` was not run live: it opens and merges a PR, and it is operator-only.
+
+## Rollback
+
+The verb: revert its squash commit on master. Nothing else depends on it, and `adopt.sh`, `wrap start` and `wrap land` are unchanged.
+
+One adoption `--apply` landed: it is one squash commit on the target repo's default branch, subject `ADOPT_COMMIT_SUBJECT`. Revert that commit with `git revert <sha>` through a normal PR. A failed run leaves its `chore/kit-adopt` worktree and branch for `resume: wrap land <wt>`; to abandon it instead, remove that worktree and branch by hand.
