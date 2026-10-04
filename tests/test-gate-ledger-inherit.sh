@@ -70,24 +70,27 @@ ok "AC-2 child holds no per-branch line" '! ledger_of c | grep -qE "\| GATE \| (
 
 # AC-3: a missing parent gate refuses and writes nothing (first and last phase in order).
 for miss in think test-plan; do
-  new_log; parent_without p "$miss"
+  new_log; parent_without p "$miss"; PBEFORE="$(ledger_of p)"
   run inherit c full --from p
+  ok "AC-3 ($miss missing) parent ledger untouched" '[ "$(ledger_of p)" = "$PBEFORE" ]'
   ok "AC-3 ($miss missing) exits 1" '[ "$RC" -eq 1 ]'
   ok "AC-3 ($miss missing) names it" 'printf "%s\n" "$ERR" | grep -q "  $miss: no GATE line in the parent"'
   ok "AC-3 ($miss missing) child ledger stays absent" '[ ! -e "$LOGD/runs/c.log" ]'
 done
 
 # AC-4: a hand-overridden parent gate refuses.
-new_log; full_parent p; gate_line p "2026-10-01T00:00:20Z" design override "operator waived it"
+new_log; full_parent p; gate_line p "2026-10-01T00:00:20Z" design override "operator waived it"; PBEFORE="$(ledger_of p)"
 run inherit c full --from p
+ok "AC-4 parent ledger untouched" '[ "$(ledger_of p)" = "$PBEFORE" ]'
 ok "AC-4 exits 1" '[ "$RC" -eq 1 ]'
 ok "AC-4 names design as overridden" 'printf "%s\n" "$ERR" | grep -q "  design: last state override, not ran"'
 ok "AC-4 wording says last state ran" 'printf "%s\n" "$ERR" | grep -q "does not hold last state ran"'
 ok "AC-4 nothing written" '[ ! -e "$LOGD/runs/c.log" ]'
 
 # AC-5: the last GATE line wins.
-new_log; full_parent p; gate_line p "2026-10-01T00:00:30Z" validate skipped "NEEDS REVISION round 2"
+new_log; full_parent p; gate_line p "2026-10-01T00:00:30Z" validate skipped "NEEDS REVISION round 2"; PBEFORE="$(ledger_of p)"
 run inherit c full --from p
+ok "AC-5 parent ledger untouched" '[ "$(ledger_of p)" = "$PBEFORE" ]'
 ok "AC-5 ran then skipped exits 1" '[ "$RC" -eq 1 ]'
 ok "AC-5 names validate" 'printf "%s\n" "$ERR" | grep -q "  validate: last state skipped, not ran"'
 ok "AC-5 nothing written" '[ ! -e "$LOGD/runs/c.log" ]'
@@ -104,6 +107,13 @@ ok "AC-6 nothing written" '[ ! -e "$LOGD/runs/c.log" ]'
 new_log; full_parent mid; gate_line mid "2026-10-01T00:00:40Z" spec override 'inherited from g$(id)/x: spec ran there at 2026-10-01T00:00:04Z'
 run inherit c full --from mid
 ok "AC-6 grandparent name passes through runid" 'printf "%s\n" "$ERR" | grep -q "inherited it from '"'"'gid-x'"'"'" && ! printf "%s\n" "$ERR" | grep -qF "\$("'
+
+# Empty state: a hand-edited last line with an empty state field must not shift its ts into the
+# state slot and read as ran (a tab-split row would collapse the empty field).
+new_log; full_parent p; printf '%s | GATE | validate |  | 2026-10-01T09:09:09Z\n' "2026-10-01T00:00:50Z" >> "$LOGD/runs/p.log"
+run inherit c full --from p
+ok "EMPTYSTATE exits 1 naming validate" '[ "$RC" -eq 1 ] && printf "%s\n" "$ERR" | grep -q "  validate: last state empty, not ran"'
+ok "EMPTYSTATE nothing written" '[ ! -e "$LOGD/runs/c.log" ]'
 
 # Timestamp shape: a ran line with a malformed ts refuses.
 new_log; full_parent p; gate_line p "yesterday" think ran "bad clock"

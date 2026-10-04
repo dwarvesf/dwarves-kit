@@ -800,14 +800,15 @@ inherit() {
   [ -f "$pf" ] || { echo "inherit: no ledger for parent '$parent' under $RUNS_DIR (run ledgers are host-local; run this on the host that recorded the spec)" >&2; return 1; }
   local TOK="inherited from $parent: "
 
-  # Judge: one row per phase, "<phase>\t<last state>\t<its ts>\t<its reason>".
+  # Judge: one row per phase, "<phase> <last state> <its ts> <its reason>", split on \037 (a
+  # tab is IFS whitespace, so an empty field would collapse and shift the next one into place).
   local judge
   judge="$(awk -F' [|] ' -v set="$set" '
     BEGIN { n=split(set, S, " "); for (i=1; i<=n; i++) want[S[i]]=1 }
     $2=="GATE" && ($3 in want) { st[$3]=$4; ts[$3]=$1; r=$5; for (i=6; i<=NF; i++) r=r " | " $i; rs[$3]=r }
-    END { for (i=1; i<=n; i++) { p=S[i]; printf "%s\t%s\t%s\t%s\n", p, ((p in st) ? st[p] : "none"), ts[p], rs[p] } }' "$pf")"
+    END { for (i=1; i<=n; i++) { p=S[i]; printf "%s\037%s\037%s\037%s\n", p, ((p in st) ? st[p] : "none"), ts[p], rs[p] } }' "$pf")"
   local fails="" st ts r g nl=$'\n'
-  while IFS=$'\t' read -r ph st ts r; do
+  while IFS=$'\037' read -r ph st ts r; do
     case "$st" in
       ran) printf '%s' "$ts" | grep -qE '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$' \
              || fails="$fails$nl  $ph: last state ran, but its timestamp is malformed" ;;
@@ -818,7 +819,7 @@ inherit() {
                               fails="$fails$nl  $ph: the parent inherited it from '$g'; inherit from '$g' directly" ;;
           *) fails="$fails$nl  $ph: last state override, not ran" ;;
         esac ;;
-      *) fails="$fails$nl  $ph: last state $(runid "$st"), not ran" ;;
+      *) fails="$fails$nl  $ph: last state $(runid "${st:-empty}"), not ran" ;;
     esac
   done <<< "$judge"
   if [ -n "$fails" ]; then
@@ -842,7 +843,7 @@ inherit() {
   fi
 
   local rc
-  while IFS=$'\t' read -r ph st ts r; do
+  while IFS=$'\037' read -r ph st ts r; do
     if [ -f "$cf" ] && awk -F' [|] ' -v p="$ph" -v tok="$TOK" '
          $2=="GATE" && $3==p && $4=="override" { r=$5; for (i=6; i<=NF; i++) r=r " | " $i; if (index(r, tok)==1) f=1 }
          END { exit !f }' "$cf"; then
