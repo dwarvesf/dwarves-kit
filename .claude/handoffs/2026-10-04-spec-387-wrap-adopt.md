@@ -30,7 +30,7 @@ One kit verb, `wrap adopt [--apply] <repo>...`, replaces the hand loop that adop
 
 ## Next step
 
-1. Close round 1: `bash lib/gate/gate-ledger.sh validate-round close adopt-land <token> verdict=NEEDS-REVISION critical=5 warnings=<n> agents=7 r6='design-bearing=yes pass' summary='R1 settings.json content, R2 resume path, R3 R5 porcelain parse, R4 split T1'`.
+1. Round 1 is CLOSED (NEEDS-REVISION, 5 critical, 15 warnings). Start by folding the findings.
 2. Fold every finding into the spec, commit.
 3. Re-open, re-validate once (all seven, Reviewer 6 on Opus), close.
 4. Build T1a to T1d with Devin workers (`tools/worker-launch/worker-launch devin <brief> --cwd <wt>`, it now auto-accepts the trust prompt), serially or on disjoint files.
@@ -53,7 +53,7 @@ One kit verb, `wrap adopt [--apply] <repo>...`, replaces the hand loop that adop
 ```
 Repo: dwarves-kit, cwd /Users/tieubao/workspace/dwarvesf/dwarves-kit/.claude/worktrees/adopt-land.
 Read .claude/handoffs/2026-10-04-spec-387-wrap-adopt.md first.
-Next: close validation round 1 as NEEDS-REVISION (command in Next step 1), then fold the findings into docs/specs/SPEC-387-adopt-land.md.
+Next: round 1 is closed; fold the findings into docs/specs/SPEC-387-adopt-land.md.
 Verify: bash lib/gate/gate-ledger.sh show adopt-land shows the closed round; bash lib/spec/spec-depth.sh check passes on the revised spec.
 Scope: SPEC-387 only, full lane, ends as a DRAFT PR plus REVIEW item; never merge it. Leave other worktrees and sessions alone.
 Check origin + open PRs before minting an ID. Close with /kit:wrap.
