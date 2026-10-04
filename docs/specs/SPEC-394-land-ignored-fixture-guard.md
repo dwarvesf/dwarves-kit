@@ -255,6 +255,7 @@ bash tests/run-all.sh --changed --time
 - docs/specs/**
 - docs/implementation-notes/**
 - docs/verification/**
+- docs/MANUAL.md
 - kit.toml
 - MANUAL.md
 
