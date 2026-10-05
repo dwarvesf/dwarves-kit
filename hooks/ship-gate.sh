@@ -81,7 +81,19 @@ PHEAD=$(git -C "$ROOT" rev-parse HEAD 2>/dev/null || true)   # the commit being 
 SHIP_RULES="${CLAUDE_PLUGIN_ROOT:-$HOME/.claude/dwarves-kit}/lib/gate/ship-rules.sh"
 [ -r "$SHIP_RULES" ] || SHIP_RULES="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/gate/ship-rules.sh"
 # shellcheck source=lib/gate/ship-rules.sh
-source "$SHIP_RULES" 2>/dev/null || exit 0
+if ! source "$SHIP_RULES" 2>/dev/null; then
+  # A helper that is missing or broken must not open every gate. With a kit lib/ present, block; only a
+  # tree with no kit lib/ at all (master's behavior without the helper) passes.
+  if [ -f "${CLAUDE_PLUGIN_ROOT:-$HOME/.claude/dwarves-kit}/lib/gate/gate-ledger.sh" ] \
+     || [ -f "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/gate/gate-ledger.sh" ]; then
+    _SR_LOG_DIR="${DWARVES_KIT_LOG_DIR:-$HOME/.claude/dwarves-kit/logs}"
+    mkdir -p "$_SR_LOG_DIR" 2>/dev/null || true
+    echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) | FAIL-OPEN | ship-rules unavailable | $SHIP_RULES" >> "$_SR_LOG_DIR/ship-gate.log" 2>/dev/null || true
+    echo "BLOCKED: ship-gate. lib/gate/ship-rules.sh failed to load; reinstall or fix the kit" >&2
+    exit 2
+  fi
+  exit 0
+fi
 SHIP_RULES_LOG=1
 _resolve_base() { ship_rules_resolve_base "$ROOT"; }
 
@@ -158,8 +170,8 @@ MBASE=$(ship_rules_merge_base "$ROOT" "$PHEAD")
 # $ROOT fallback fails open in every consumer. The stable install path fixes that; plugin
 # mode (CLAUDE_PLUGIN_ROOT set) is unchanged.
 PROOF="${CLAUDE_PLUGIN_ROOT:-$HOME/.claude/dwarves-kit}/lib/gate/proof-ledger.sh"
-_gate_on() {  # $1 = [gate] key, $2 = log label
-  ship_rules_switch_on "$1" "$ROOT" && return 0
+_gate_on() {  # $1 = [gate] key, $2 = log label, $3 = optional rev to read the switch at
+  ship_rules_switch_on "$1" "$ROOT" "${3:-}" && return 0
   local LOG_DIR="${DWARVES_KIT_LOG_DIR:-$HOME/.claude/dwarves-kit/logs}"
   mkdir -p "$LOG_DIR" 2>/dev/null || true
   echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) | OFF-BY-CONFIG | $2 | $SLUG" >> "$LOG_DIR/ship-gate.log" 2>/dev/null || true
@@ -341,7 +353,7 @@ if [ -z "$LANE" ]; then
   # Spec exists but declares no lane. In an ADOPTED repo (proof marker present) this is a gap,
   # not a pass: fail CLOSED so a spec-driven change cannot ship lane-less (the growatt-tui hole).
   # Everywhere else (no marker) stay fail-open: the gate never blocks unrelated work.
-  if [ -f "$ROOT/docs/verification/README.md" ] && _gate_on lane_gates lane-gate; then
+  if [ -f "$ROOT/docs/verification/README.md" ] && _gate_on lane_gates lane-gate "$MBASE"; then
     LOG_DIR="${DWARVES_KIT_LOG_DIR:-$HOME/.claude/dwarves-kit/logs}"
     mkdir -p "$LOG_DIR" 2>/dev/null || true
     echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) | BLOCKED | ship-gate | $SLUG (no-lane)" >> "$LOG_DIR/ship-gate.log" 2>/dev/null || true
@@ -379,7 +391,7 @@ fi
 # caught=false on a clean pass. The `outcome` marker keys on $2=="OUTCOME"; check()/_rows()/
 # the ship-gate's own read all ignore it (they key on $2=="GATE").
 # The floor reads the switch at the merge base, so it still runs when the head switched the gate off.
-if ! _gate_on lane_gates lane-gate; then _floor_check; exit 0; fi
+if ! _gate_on lane_gates lane-gate "$MBASE"; then _floor_check; exit 0; fi
 bash "$LEDGER" outcome "$SLUG" ship start >/dev/null 2>&1 || true
 
 # Full-lane implementation-notes rule. A subagent-run full lane never sees the
@@ -405,7 +417,7 @@ if [ "$LANE" = "full" ] \
   fi
 fi
 
-GAPS=$(ship_rules_ledger_check "$ROOT" "$LANE" "$SLUG" "$LEDGER" 2>&1); GRC=$?
+GAPS=$(ship_rules_ledger_check "$ROOT" "$LANE" "$SLUG" "$LEDGER" "$MBASE" 2>&1); GRC=$?
 if [ -n "$NOTES_GAP" ]; then GAPS="${GAPS:+$GAPS$'\n'}$NOTES_GAP"; GRC=1; fi
 if [ "$GRC" -ne 0 ]; then
   bash "$LEDGER" outcome "$SLUG" ship end caught=true >/dev/null 2>&1 || true

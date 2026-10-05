@@ -91,5 +91,42 @@ rsg="$(ship "$R" "$eg")"; rmg="$(mega "$R" pg normal "$em" sub)"
 if [ "$rsg" = 2 ] && [ "$rmg" = 1 ] && grep -q 'MISSING-GATE: docs' "$eg" && grep -q 'MISSING-GATE: docs' "$em"; then ok "g project lane override: ship gate exit $rsg, mega gate exit $rmg, both name docs"
 else no "g want ship 2 / mega 1 / MISSING-GATE: docs; got ship $rsg, mega $rmg; ship: $(tr '\n' ' ' < "$eg"); mega: $(tr '\n' ' ' < "$em")"; fi
 
+# h: a PR that adds a .kit.toml switching lane_gates off and dropping build from the normal lane still
+# gets the lane check at the MERGE BASE (where neither exists): both gates block on the normal lane's
+# ledger gap, not only on the hard-path floor the .kit.toml diff itself trips.
+R="$(mktemp -d)"; mkrepo "$R" ph 1; gates ph normal build
+printf '[gate]\nlane_gates = false\n[lane.normal]\nphases = ["spec", "review", "ship"]\nlight = []\n' > "$R/.kit.toml"
+git -C "$R" add -A; git -C "$R" commit -q -m "own lanes"
+eh="$(mktemp)"; emh="$(mktemp)"
+rsh="$(ship "$R" "$eh")"; rmh="$(mega "$R" ph normal "$emh")"
+if [ "$rsh" = 2 ] && [ "$rmh" = 1 ] && grep -q "The 'normal' lane requires gates" "$eh" && grep -q 'MISSING-GATE: build' "$emh" && ! grep -q 'hard path' "$emh"; then
+  ok "h PR-head .kit.toml cannot switch off or reshape its own lane: ship gate exit $rsh, mega gate exit $rmh"
+else no "h want ship 2 (normal lane gap) / mega 1 (MISSING-GATE: build, no floor message); got ship $rsh, mega $rmh; ship: $(tr '\n' ' ' < "$eh"); mega: $(tr '\n' ' ' < "$emh")"; fi
+
+# i: a helper that fails to load must not open the gates. A fixture copy of the kit with a syntax error
+# appended to the helper: the hook blocks (exit 2) on the plain MISSING-GATE repo of case g, the mega
+# gate fails (exit 1), and both name the helper.
+KC="$(mktemp -d)"; cp -R "$KIT/lib" "$KIT/hooks" "$KIT/kit.toml" "$KC/"
+printf 'if then fi )\n' >> "$KC/lib/gate/ship-rules.sh"
+R="$(mktemp -d)"; mkrepo "$R" pi 1 "" kittoml; gates pi normal
+ei="$(mktemp)"; emi="$(mktemp)"
+rsi="$( ( cd "$R" && printf '{"tool_input":{"command":"git push -u origin HEAD"}}' \
+  | CLAUDE_PLUGIN_ROOT="$KC" DWARVES_KIT_LOG_DIR="$LOGDIR" bash "$KC/hooks/ship-gate.sh" >/dev/null 2>"$ei"; echo $? ) )"
+rmi="$( ( cd "$R" && DWARVES_KIT_LOG_DIR="$LOGDIR" bash "$KC/lib/goal/mega-merge.sh" gate pi normal >/dev/null 2>"$emi"; echo $? ) )"
+if [ "$rsi" = 2 ] && [ "$rmi" = 1 ] && grep -q 'ship-rules.sh failed to load' "$ei" && grep -q 'ship-rules.sh failed to load' "$emi" && grep -q 'FAIL-OPEN | ship-rules unavailable' "$emi"; then
+  ok "i broken helper: ship gate exit $rsi, mega gate exit $rmi, both name the helper"
+else no "i want ship 2 / mega 1 naming the helper; got ship $rsi, mega $rmi; ship: $(tr '\n' ' ' < "$ei"); mega: $(tr '\n' ' ' < "$emi")"; fi
+grep -q 'FAIL-OPEN | ship-rules unavailable' "$LOGDIR/ship-gate.log" 2>/dev/null && ok "i the hook logged FAIL-OPEN | ship-rules unavailable" || no "i no FAIL-OPEN line in ship-gate.log"
+
+# j: no kit lib/ at all (master's behavior without the helper): the hook alone, empty plugin root, exits 0.
+KH="$(mktemp -d)"; mkdir "$KH/hooks" "$KH/empty"; cp "$KIT/hooks/ship-gate.sh" "$KH/hooks/"
+ej="$(mktemp)"
+rsj="$( ( cd "$R" && printf '{"tool_input":{"command":"git push -u origin HEAD"}}' \
+  | CLAUDE_PLUGIN_ROOT="$KH/empty" DWARVES_KIT_LOG_DIR="$LOGDIR" bash "$KH/hooks/ship-gate.sh" >/dev/null 2>"$ej"; echo $? ) )"
+[ "$rsj" = 0 ] && ok "j no kit lib/ at all: the hook exits $rsj" || no "j want 0, got $rsj: $(tr '\n' ' ' < "$ej")"
+
+# k: the helper parses.
+bash -n "$KIT/lib/gate/ship-rules.sh" && ok "k bash -n lib/gate/ship-rules.sh" || no "k lib/gate/ship-rules.sh has a syntax error"
+
 echo "---"; echo "PASS=$PASS FAIL=$FAIL"
 [ "$FAIL" -eq 0 ]

@@ -91,36 +91,35 @@ _log() {  # rid text
 # are skipped, the same fail-open the hook has. The hook's lane is the ledger START-AMEND over
 # the spec header; here the caller's <lane> argument is that lane.
 gate() {
-  local rid="${1:-}" lane="${2:-}" rc=0 root=""
+  local rid="${1:-}" lane="${2:-}" rc=0 root="" head="" base=""
   [ -n "$rid" ] && [ -n "$lane" ] || { echo "usage: gate <rid> <lane>" >&2; return 64; }
   [ -f "$GATE_LEDGER" ] || { echo "gate: gate-ledger.sh not found at $GATE_LEDGER" >&2; return 1; }
-  # The repo and the shared rules helper. With no repo or no helper the ledger check runs bare and
-  # the diff rules are skipped, the same fail-open the hook has.
-  if [ -f "$SHIP_RULES" ]; then
-    root="${MEGA_MERGE_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null || true)}"
-    # shellcheck source=lib/gate/ship-rules.sh
-    [ -n "$root" ] && { source "$SHIP_RULES" 2>/dev/null || root=""; }
+  root="${MEGA_MERGE_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null || true)}"
+  # No repo: the ledger check runs bare and the diff rules are skipped, the same fail-open the hook has.
+  [ -n "$root" ] || { bash "$GATE_LEDGER" check "$lane" "$rid"; return; }
+  # A helper that fails to load fails the gate (the hook blocks too), never a silent bare check.
+  # shellcheck source=lib/gate/ship-rules.sh
+  if ! { [ -f "$SHIP_RULES" ] && source "$SHIP_RULES" 2>/dev/null; }; then
+    echo "$(now) | FAIL-OPEN | ship-rules unavailable | $SHIP_RULES" >&2
+    echo "BLOCKED: ship-gate. lib/gate/ship-rules.sh failed to load; reinstall or fix the kit" >&2
+    return 1
   fi
-  if [ -n "$root" ]; then
-    # Same call as the hook, so a project .kit.toml lane override reads the same in both gates.
-    ship_rules_ledger_check "$root" "$lane" "$rid" "$GATE_LEDGER" || rc=$?
-    [ "$rc" -eq 0 ] || return "$rc"
-    _ship_rules_gate "$rid" "$lane" "$root"
-  else
-    bash "$GATE_LEDGER" check "$lane" "$rid"
-  fi
+  head="$(git -C "$root" rev-parse HEAD 2>/dev/null || true)"
+  [ -z "$head" ] || base="$(ship_rules_merge_base "$root" "$head")"
+  # Same call as the hook: the project .kit.toml lanes come from the merge base, so a project lane
+  # override reads the same in both gates and a change under review cannot rewrite its own lanes.
+  ship_rules_ledger_check "$root" "$lane" "$rid" "$GATE_LEDGER" "$base" || rc=$?
+  [ "$rc" -eq 0 ] || return "$rc"
+  _ship_rules_gate "$rid" "$lane" "$root" "$head" "$base"
 }
 
 _ship_rules_gate() {
-  local rid="$1" lane="$2" root="$3" head base spec
-  head="$(git -C "$root" rev-parse HEAD 2>/dev/null || true)"
+  local rid="$1" lane="$2" root="$3" head="$4" base="$5" spec=""
   [ -n "$head" ] || return 0
-  base="$(ship_rules_merge_base "$root" "$head")"
-  spec=""
   # shellcheck source=lib/spec/spec-find.sh
   if [ -r "$SPEC_FIND" ] && source "$SPEC_FIND" 2>/dev/null; then spec="$(spec_for_slug "$root" "$rid")"; fi
-  # The hook runs the large-spec rule only with a spec and only while [gate] lane_gates is on.
-  if [ -n "$spec" ] && ship_rules_switch_on lane_gates "$root"; then
+  # The hook runs the large-spec rule only with a spec and only while [gate] lane_gates is on at the merge base.
+  if [ -n "$spec" ] && ship_rules_switch_on lane_gates "$root" "$base"; then
     ship_rule_large_spec "$spec" "$rid" "$lane" "$GATE_LEDGER" || return 1
   fi
   ship_rule_floor "$root" "$base" "$head" "$rid" "$spec" "$GATE_LEDGER" || return 1
