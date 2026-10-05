@@ -2529,6 +2529,30 @@ ig_land ig4b
 chk "4b: exits 0" "$rc"
 chk_no "4b: no refusal" "$out" "LAND REFUSED"
 
+echo "--- 4c: a symlink pointing outside the worktree (a worktree-setup link) passes"
+_ig_build ig4c 'out\n' ""
+IG_EXT="$(mktemp -d "$TMPD/ig-ext.XXXXXX")"; echo x > "$IG_EXT/oracle.json"
+ln -s "$IG_EXT" "$IG_WT/tools/x/out"
+chk_has "4c: fixture check: git lists the symlink as ignored" \
+  "$(git -C "$IG_WT" status --porcelain --ignored=matching)" "!! tools/x/out"
+ig_land ig4c
+chk "4c: exits 0" "$rc"
+chk_no "4c: no refusal" "$out" "LAND REFUSED"
+chk "4c: the link target survived the land" "$([ -f "$IG_EXT/oracle.json" ]; echo $?)"
+
+echo "--- 4d: a real ignored dir, and a symlink that stays inside the worktree, still refuse"
+_ig_build ig4d 'out\n' ""
+mkdir -p "$IG_WT/tools/x/out"; echo x > "$IG_WT/tools/x/out/a.json"
+ig_land ig4d
+chk "4d: real ignored dir exits 1" "$([ "$rc" -eq 1 ]; echo $?)"
+chk_has "4d: real ignored dir names the path" "$out" "tools/x/out"
+ig_nopush "4d" ig4d
+_ig_build ig4e 'out\n' ""
+ln -s "$IG_WT/base.txt" "$IG_WT/tools/x/out"
+ig_land ig4e
+chk "4e: an in-tree symlink exits 1" "$([ "$rc" -eq 1 ]; echo $?)"
+chk_has "4e: an in-tree symlink names the path" "$out" "tools/x/out"
+
 echo "--- 5: a nested .gitignore match refuses with its full path"
 _ig_build ig5 "" 'mkdir -p tools/x && echo t > tools/x/test_x.sh && echo notes.txt > tools/x/.gitignore'
 echo n > "$IG_WT/tools/x/notes.txt"
