@@ -169,7 +169,7 @@ FILE: for my $f (@ARGV) {
 # suites naming it (bare, `section.key`, KIT_<KEY>); every changed line also picks the suites naming
 # its section (`[section]`, `kit_config_get section ...`). Any line outside a section, or no hunk
 # at all, keeps every suite given. The candidates come from refs_exact, so this only ever narrows.
-KIT_NARROW_PL='
+NARROW_PL='
 my ($old, $new, $diff, @suites) = @ARGV;
 sub scan {
   my ($f) = @_; my (@sec, @key); my ($cs, $ck) = ("", "");
@@ -217,7 +217,7 @@ kit_toml_narrow() {  # args: the suites naming kit.toml; prints the ones that re
   mb="$(git merge-base "$BASE" HEAD 2>/dev/null)" || mb=""
   if [ -z "$mb" ] || [ ! -f kit.toml ] || ! git show "$mb:kit.toml" >"$TMP/kit.old" 2>/dev/null; then printf '%s\n' "$@"; return 0; fi
   git diff -U0 "$mb" -- kit.toml >"$TMP/kit.diff" 2>/dev/null || { printf '%s\n' "$@"; return 0; }
-  perl -e "$KIT_NARROW_PL" "$TMP/kit.old" kit.toml "$TMP/kit.diff" "$@" || printf '%s\n' "$@"
+  perl -e "$NARROW_PL" "$TMP/kit.old" kit.toml "$TMP/kit.diff" "$@" || printf '%s\n' "$@"
 }
 
 # --- test-meta: the area suites ---------------------------------------------------------------
