@@ -146,6 +146,8 @@ WIRING_EXEMPT='session-observe|session-report|session-semantic|session-intel|ses
 unwired=""
 while IFS= read -r exe; do
   base="$(basename "$exe")"
+  # A gitignored build artifact (a local compiled binary) is not shipped, so it owes no wiring.
+  git check-ignore -q "$exe" 2>/dev/null && continue
   { trap '' PIPE; echo "$base" 2>/dev/null || :; } | grep -qE "^($WIRING_EXEMPT)$" && continue
   # A deprecated-alias shim (it warns and execs the canonical name) is reachable BY DEFINITION:
   # it exists so an old call-site keeps working. Requiring a bin/ shim for the shim is silly.

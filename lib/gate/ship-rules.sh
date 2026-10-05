@@ -30,10 +30,11 @@ _SR_LCLS="$_SR_DIR/../classify/lane-classify.sh"
 _SR_SPEC_SH="$_SR_DIR/../spec/spec.sh"
 
 _sr_log() {  # _sr_log <log-line-tail>
-  [ "${SHIP_RULES_LOG:-0}" = 1 ] || return 0
-  local log_dir="${DWARVES_KIT_LOG_DIR:-$HOME/.claude/dwarves-kit/logs}"
-  mkdir -p "$log_dir" 2>/dev/null || true
-  echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) | $1" >> "$log_dir/ship-gate.log" 2>/dev/null || true
+  # The caller that owns the audit log (the hook) sets SHIP_RULES_LOG=1 and names its log dir in
+  # SHIP_RULES_LOG_DIR, so these lines land in the same ship-gate.log as the hook's own.
+  [ "${SHIP_RULES_LOG:-0}" = 1 ] && [ -n "${SHIP_RULES_LOG_DIR:-}" ] || return 0
+  mkdir -p "$SHIP_RULES_LOG_DIR" 2>/dev/null || true
+  echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) | $1" >> "$SHIP_RULES_LOG_DIR/ship-gate.log" 2>/dev/null || true
 }
 
 # The base is the REMOTE default branch: origin/HEAD, else origin/main or origin/master. A local
