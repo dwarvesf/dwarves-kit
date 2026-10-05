@@ -48,6 +48,7 @@ test-turn-cap 82
 test-money-gate-parity 68
 test-repohygiene 68
 test-install-clis 66
+test-gate-ledger-inherit 60
 test-gate-ledger-plan-record 64
 test-wrap-report-lint 64
 test-tier4-close 62

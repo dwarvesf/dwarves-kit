@@ -67,6 +67,33 @@ echo x > "$T4/foo.txt"; git -C "$T4" add -A; git -C "$T4" commit -qm c
 # 5. non-push command -> exit 0 (gate not engaged)
 [ "$(gate "$T1" 'git status')" = 0 ] && ok "non-push command -> exit 0" || no "non-push should exit 0"
 
+# 6. START-AMEND lane resolution: the last amend wins over the spec header; a plain START never does.
+# $1=slug $2=spec header lane $3=gates to record (lane name) $4=ledger verb line ("" | amend <lane> | start <lane>)
+amend_case() {
+  local d; d="$(mktemp -d)"; mkrepo "$d" yes
+  git -C "$d" switch -qc "feat/$1"
+  printf '# Spec: x\nStatus: DRAFT\nLane: %s\n' "$2" > "$d/docs/specs/SPEC-001-$1.md"
+  mkdir -p "$d/docs/implementation-notes"
+  printf '# Notes\nNo deviations; matches the spec verbatim\n' > "$d/docs/implementation-notes/$1.md"
+  git -C "$d" add -A; git -C "$d" commit -qm spec
+  local GL="$KIT/lib/gate/gate-ledger.sh"
+  DWARVES_KIT_LOG_DIR="$LOGDIR" bash "$GL" start "$1" "$2" "$2" spec-feature spec-feature r >/dev/null 2>&1
+  case "$4" in
+    amend\ *) DWARVES_KIT_LOG_DIR="$LOGDIR" bash "$GL" start --amend "$1" "${4#amend }" full spec-feature spec-feature r >/dev/null 2>&1 ;;
+    start\ *) DWARVES_KIT_LOG_DIR="$LOGDIR" bash "$GL" start "$1" "${4#start }" full spec-feature spec-feature r >/dev/null 2>&1 ;;
+  esac
+  while read -r g; do
+    DWARVES_KIT_LOG_DIR="$LOGDIR" bash "$GL" record "$1" "$g" ran "test" >/dev/null 2>&1
+  done < <(DWARVES_KIT_LOG_DIR="$LOGDIR" bash "$GL" required "$3")
+  # a task-less spec counts as large on the normal lane, so it owes a validate disposition
+  DWARVES_KIT_LOG_DIR="$LOGDIR" bash "$GL" record "$1" validate ran "test" >/dev/null 2>&1
+  gate "$d" 'git push -u origin HEAD'
+}
+[ "$(amend_case amdone full normal 'amend normal')" = 0 ] && ok "spec full + amend normal + normal gates -> pass (amend clears full-only gates)" || no "amend to normal should clear full-only gates"
+[ "$(amend_case amdtwo full normal '')" = 2 ] && ok "spec full + no amend + normal gates -> blocked (full kept)" || no "no amend should keep the full lane"
+[ "$(amend_case amdthree normal normal 'amend full')" = 2 ] && ok "spec normal + amend full + normal gates -> blocked (amend raises)" || no "amend to full should raise a normal run"
+[ "$(amend_case amdfour full normal 'start normal')" = 2 ] && ok "spec full + second plain START normal -> blocked (plain START never lowers)" || no "a plain START must not override the spec lane"
+
 echo "---"
 echo "PASS=$PASS FAIL=$FAIL"
 [ "$FAIL" -eq 0 ]

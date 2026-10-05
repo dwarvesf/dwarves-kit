@@ -376,6 +376,28 @@ while IFS= read -r built_new_line; do
   fi
 done <<< "$input"
 
+# Step 7b's flick shadow row. While `decide.points` lists wrap-7b, a report that reached step
+# 7b owes one `flick wrap-7b:` row (the text `bin/wrap flick-7b` prints). The call was prose
+# inside step 7b, and twenty-odd real wraps in five days read the paragraph and never ran it:
+# the shadow log held smoke rows only and nothing in any report said so. A skip now fails the
+# lint, so it is visible. Not owed: a follow-through or sweep report (they never run 7b), and a
+# report whose `**Built:**` is `SKIPPED:` (7b did not run, and that line already says so).
+if [ "$follow_report" = 0 ] && [ "$sweep_report" = 0 ]; then
+  _fl_skip=0
+  case "$(printf '%s' "${built_inline:-}" | tr '[:upper:]' '[:lower:]')" in skipped:*) _fl_skip=1 ;; esac
+  if [ "$_fl_skip" = 0 ]; then
+    # shellcheck source=lib/config/kit-config.sh
+    source "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/config/kit-config.sh" 2>/dev/null || true
+    case " $(kit_config_get_root decide.points "" 2>/dev/null) " in
+      *' wrap-7b '*)
+        if ! printf '%s' "$input" | grep -qF 'flick wrap-7b:'; then
+          echo "line 0: decide.points lists wrap-7b but the report has no 'flick wrap-7b:' row; run 'bin/wrap flick-7b' at step 7b and put its line in FYI as a STATE row" >&2
+          findings=$((findings + 1))
+        fi ;;
+    esac
+  fi
+fi
+
 # Step -1 coverage, the same three-state rule as `Built:` above. A seam that was never
 # configured and a seam that was silently dropped read identically without this line, and the
 # seam is where an operator's whole distill half lives: `wrap.before`/`wrap.after` name a
