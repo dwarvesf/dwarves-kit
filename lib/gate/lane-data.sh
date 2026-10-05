@@ -79,6 +79,18 @@ _ld_kit_has_required() {
 # Exit 1 when the lane is unknown or its data is malformed. Mode `kit` reads the kit root ONLY
 # (no operator overlay, no project); `nopro` skips just the project layer.
 lane_resolve() {
+  # KIT_LANE_PROJECT_AT=<rev>: read the project layer from the .kit.toml committed at <rev> (the merge
+  # base at ship time), never the working tree, so a change under review cannot rewrite its own lanes.
+  local _ld_at_file="" _ld_rc=0
+  if [ -n "${KIT_LANE_PROJECT_AT:-}" ]; then
+    _ld_at_file="$(mktemp)" || return 1
+    kit_config_show_at "$(dirname "$(kit_config_project)")" "$KIT_LANE_PROJECT_AT" > "$_ld_at_file" 2>/dev/null || : > "$_ld_at_file"
+  fi
+  _ld_at_file="$_ld_at_file" _lane_resolve_layers "$@" || _ld_rc=$?
+  [ -z "$_ld_at_file" ] || command rm -f "$_ld_at_file"
+  return "$_ld_rc"
+}
+_lane_resolve_layers() {
   local lane="$1" mode="${2:-}" layer f raw lraw ph known applies
   LANE_PHASES=""; LANE_LIGHT=""
   # Only the five kit lanes exist here. A committed `[lane.mega]` block must not make `mega` a
@@ -86,13 +98,13 @@ lane_resolve() {
   case " $LANE_NAMES " in *" $lane "*) ;; *) return 1 ;; esac
   for layer in project operator kit; do
     case "$layer" in
-      project)  [ -n "$mode" ] && continue; f="$(kit_config_project)" ;;
+      project)  [ -n "$mode" ] && continue; f="$(kit_config_project)"; [ -z "${_ld_at_file:-}" ] || f="$_ld_at_file" ;;
       operator) [ "$mode" = kit ] && continue; f="$(_ld_operator_file)" ;;
       kit)      f="$(_ld_kit_file)" ;;
     esac
     raw="$(_kit_toml_get "$f" "lane.$lane" phases)"
     [ -n "$raw" ] || continue
-    if [ "$layer" = project ] && ! lane_project_applies; then
+    if [ "$layer" = project ] && [ -z "${_ld_at_file:-}" ] && ! lane_project_applies; then
       echo "lane-data: [lane.$lane] in $f is ignored: the file is not committed and clean" >&2
       continue
     fi

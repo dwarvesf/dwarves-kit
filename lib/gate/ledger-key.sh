@@ -17,14 +17,17 @@ _LEDGER_KEY_SOURCED=1
 source "${BASH_SOURCE[0]%/*}/../config/kit-config.sh"
 
 _lane_fp() {
-  local pf op clean=0 sums
+  local pf op clean=0 sums at
   pf="$(kit_config_project)"; op="$(kit_config_operator)"
   # lane-data.sh honours the project file only when it is tracked and clean against HEAD
   if [ -f "$pf" ] && kit_config_tracked_clean "$pf"; then clean=1; fi
   # one cksum process, one line per file (crc size path); a missing file has no line
   sums="$(cksum "$LIB_ROOT/../kit.toml" "$op" "$pf" "$LIB_ROOT"/gate/*.sh "$LIB_ROOT/config/kit-config.sh" 2>/dev/null || true)"
   sums="${sums//"$LIB_ROOT/"/}"; sums="${sums//"$op"/operator}"; sums="${sums//"$pf"/project}"
-  printf '%s\nclean=%s\n' "$sums" "$clean" | cksum | cut -d' ' -f1
+  # A project layer read at a rev (KIT_LANE_PROJECT_AT) is keyed on the committed blob, not the working tree.
+  at=""
+  if [ -n "${KIT_LANE_PROJECT_AT:-}" ]; then at="$(kit_config_show_at "$(dirname "$pf")" "$KIT_LANE_PROJECT_AT" | cksum)"; fi
+  printf '%s\nclean=%s\nat=%s\n' "$sums" "$clean" "$at" | cksum | cut -d' ' -f1
 }
 
 # _file_id <file>: "<size><TAB><mtime><TAB><inode><TAB><ctime>"; GNU stat first (BSD stat rejects -c, GNU
