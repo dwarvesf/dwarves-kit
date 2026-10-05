@@ -251,6 +251,20 @@ _land_ignored_allowed() {
   return "$hit"
 }
 
+# _land_symlink_outside <wt> <path> -- 0 when <wt>/<path> is a symlink whose resolved target
+# lies outside the worktree. A worktree-setup step links shared build output (an `out/`) in
+# from the main checkout; removing the worktree drops the link and leaves the target alone,
+# so the guard has nothing to protect. A real file or dir, an in-tree link, and a link that
+# cannot be resolved all return 1 (fail closed).
+_land_symlink_outside() {
+  local wt="$1" p="$2" wt_real tgt
+  [ -L "$wt/$p" ] || return 1
+  wt_real="$(cd "$wt" 2>/dev/null && pwd -P)" || return 1
+  tgt="$(_realpath_f "$wt/$p")" || return 1
+  case "$tgt" in "$wt_real"|"$wt_real"/*) return 1 ;; esac
+  return 0
+}
+
 # _land_ignored_guard <wt> <base> <branch> -- refuse (return 1, print the paths) when the
 # worktree holds a gitignored file under a directory the branch touches: tests that read it
 # pass here and fail on a clean checkout, and git does not count an ignored file as dirty.
@@ -325,6 +339,7 @@ _land_ignored_guard() {
     fi
     [ "$found" -eq 1 ] || continue
     ! _land_ignored_allowed "$p" || continue
+    ! _land_symlink_outside "$wt" "$p" || continue
     safe="$(printf '%s' "$e" | tr '[:cntrl:]' '?')"
     base_name="$(printf '%s' "${p##*/}" | tr 'A-Z' 'a-z')"
     case "$base_name" in
