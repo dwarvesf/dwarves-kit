@@ -95,6 +95,7 @@ if ! source "$SHIP_RULES" 2>/dev/null; then
   exit 0
 fi
 SHIP_RULES_LOG=1
+SHIP_RULES_LOG_DIR="${DWARVES_KIT_LOG_DIR:-$HOME/.claude/dwarves-kit/logs}"
 _resolve_base() { ship_rules_resolve_base "$ROOT"; }
 
 # [gate] toggles. lib/gate/gate-policy.sh resolves them (project config wins, then the
