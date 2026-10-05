@@ -28,9 +28,9 @@ The same run against master's own file instead of the frozen copy (`git show ori
 
 ```
 Command: KIT_CONFIG_REFERENCE=<master copy> bash tests/test-config-cache.sh
-Exit: MASTER_EXIT
-Output: MASTER_OUT
-Verdict: MASTER_VERDICT
+Exit: 0
+Output: config-cache: 11 passed, 0 failed (same 3382 cases, zero diffs on bash 3.2 and 5.3; wall 296 s at load 30 to 47)
+Verdict: PASS (the frozen copy and master's file agree on every case)
 ```
 
 ## Timing
