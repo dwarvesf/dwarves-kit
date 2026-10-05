@@ -1594,6 +1594,24 @@ _vr_dispatch() {
   "_vr_$sub" "$@"
 }
 
+# The bare or unknown-verb text: the verb list, then the argument signatures of the verbs
+# sessions reach for most. The other verbs print their own `usage:` line when called bare.
+usage() {
+  cat <<'EOF'
+usage: gate-ledger.sh {required|start|record|action|tokens|debt|debt-response|outcome|outcome-read|mutation|config|override|plan-record|inherit|check|show|plan|progress|rid|descent|history|report|validate-round} ...
+
+  start [--amend] <rid> <chosen-lane> <classified-lane> <chosen-type> [classified-type] [repo]
+  record <rid> <phase> <ran|skipped> [reason]
+  override <rid> <phase> <reason>
+  debt <rid> significance=<low|high> worthiness=<low|high> verdict=<tap|wave|not-significant> [response=<engage|defer|wave>] [reason=...]
+  check <lane> <rid> [--kit-lanes]
+  plan <lane>
+  progress <rid> <lane>
+  rid                                  prints the rid derived from the current branch
+
+<rid> is the branch slug with its type/ prefix stripped; run `rid` on the work branch.
+EOF
+}
 
 cmd="${1:-}"; shift 2>/dev/null || true
 case "$cmd" in
@@ -1620,5 +1638,5 @@ case "$cmd" in
   history) history "$@" ;;
   report)  report "$@" ;;
   validate-round) validate_round "$@" ;;
-  *) echo "usage: gate-ledger.sh {required|start|record|action|tokens|debt|debt-response|outcome|outcome-read|mutation|config|override|plan-record|inherit|check|show|plan|progress|rid|descent|history|report|validate-round} ..." >&2; exit 64 ;;
+  *) usage >&2; exit 64 ;;
 esac
