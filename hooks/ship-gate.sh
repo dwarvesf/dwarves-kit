@@ -410,6 +410,18 @@ fi
 LEDGER="${CLAUDE_PLUGIN_ROOT:-$HOME/.claude/dwarves-kit}/lib/gate/gate-ledger.sh"
 [ -f "$LEDGER" ] || exit 0
 
+# A sanctioned `start --amend` correction wins over the spec header: every reader takes the LAST
+# START-AMEND as canonical (gate-ledger.sh start, lane-telemetry.sh), and the push gate must agree,
+# else a re-laned run keeps owing the lane it left. A plain START never overrides the header.
+# Trust: gate-ledger.sh has no operator/agent split on this verb, so any ledger writer can amend.
+# The diff floor (_floor_check) still applies full-lane gates to hard paths whatever the lane says.
+AMEND_LANE=$(bash "$LEDGER" show "$SLUG" 2>/dev/null | grep '| START-AMEND |' | tail -1 \
+  | sed -nE 's/.*\| lane=([a-z-]+).*/\1/p')
+if [ -n "$AMEND_LANE" ] && [ "$AMEND_LANE" != "$LANE" ]; then
+  echo "[advisory] run '$SLUG': ledger START-AMEND lane=$AMEND_LANE overrides the spec's Lane: $LANE" >&2
+  LANE="$AMEND_LANE"
+fi
+
 # Bracket the ship gate with an OUTCOME emit (caught= + START/END timing). This is
 # the live invocation path for the additive OUTCOME marker. It is BEST-EFFORT and writes ONLY
 # to the rid ledger, so it can never change this hook's fail-open contract, exit code, or
