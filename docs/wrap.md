@@ -31,7 +31,7 @@ Each row below was read from the verb's source in `lib/wrap/`. A verb with no ro
 | Report repo state, change nothing | `wrap scan <repo> [<repo>...]` | Report only. Prints ahead and behind counts, dirty files, worktrees, local branches, and my open PRs. |
 | Tidy a repo, preview first | `wrap apply <repo>` | Dry run by default. Prints `WOULD ...` lines. Add `--apply` to write. |
 | Remove merged worktrees, all sessions | `wrap apply --apply --worktrees <repo>` | Removes every clean, non-detached worktree whose branch is proven merged, then deletes the branch. Other sessions' worktrees qualify too. |
-| Remove only my own worktrees | `wrap apply --apply --own <worktree> <repo>` | `--own` is repeatable and implies the worktree opt-in, so `--worktrees` is not needed. Unnamed worktrees are skipped. The all-branches sweep and `--archive-unmerged` are skipped. |
+| Remove only my own worktrees | `wrap apply --apply --own <worktree> <repo>` | `--own` is repeatable and implies the worktree opt-in, so `--worktrees` is not needed. Unnamed worktrees are skipped. The local all-branches sweep and `--archive-unmerged` are skipped. The origin merged-branch sweep, stray carry and pull still run. |
 | Tidy without pulling the shared checkout | `wrap apply --apply --no-pull --own <worktree> <repo>` | `--no-pull` without `--own` skips both the worktree sweep and the branch sweep. |
 | Pull the default branch and nothing else | `wrap apply --apply --pull-only <repo>` | Cannot combine with `--worktrees`, `--own`, `--archive-unmerged`, `--tips-file`, or `--no-pull`. |
 | Adopt a repo into the kit contract | `wrap adopt [--apply] <repo> [<repo>...]` | Dry run by default. `--body-file` takes exactly one repo. |
