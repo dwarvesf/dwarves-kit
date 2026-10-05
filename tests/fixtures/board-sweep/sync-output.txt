@@ -1,0 +1,151 @@
+WARNING: duplicate board rows for AB-629; first occurrence wins, fix the board
+WARNING: malformed board rows (not 4 cells, invisible to sync) for AB-564; fix the board
+dry-run reminders: 45 spoke items, 572 board rows
+  ~ spoke     rid-0001 -> shipped
+  ~ spoke     rid-0002 -> dropped
+  ~ spoke     rid-0003 -> shipped
+  ~ spoke     rid-0004 -> shipped
+  ⏸ tombstone AB-275
+  · note      orphan item (no board row): 'AB-424 · Synthetic row title 01'
+  · note      orphan item (no board row): 'AB-412 · Synthetic row title 02'
+  · note      orphan item (no board row): 'AB-421 · Synthetic row title 03'
+  · note      duplicate item for AB-592: 'AB-592 · Synthetic row title 04' ignored
+  · note      AB-275: item deleted on the spoke; stopped mirroring (board row untouched)
+dry-run notion: 338 spoke items, 572 board rows
+  + spoke     AB-629 · Synthetic row title 05
+  + spoke     AB-630 · Synthetic row title 06
+  ~ spoke     rid-0005 -> shipped
+  ~ spoke     rid-0006 -> shipped
+  ~ spoke     rid-0007 -> shipped
+  ~ spoke     rid-0008 -> shipped
+  ~ spoke     rid-0009 -> shipped
+  ~ spoke     rid-0010 -> shipped
+  ~ spoke     rid-0011 -> shipped
+  ~ spoke     rid-0012 -> shipped
+  ~ spoke     rid-0013 -> shipped
+  ~ spoke     rid-0014 -> dropped
+  ~ spoke     rid-0015 -> shipped
+  ~ spoke     rid-0016 -> parked
+  ~ spoke     rid-0017 -> shipped
+  ~ spoke     rid-0018 -> shipped
+  ~ spoke     rid-0019 -> shipped
+  ~ spoke     rid-0020 -> shipped
+  ~ spoke     rid-0021 -> shipped
+  ~ spoke     rid-0022 -> shipped
+  ~ spoke     rid-0023 -> shipped
+  ~ spoke     rid-0024 -> shipped
+  ~ spoke     rid-0025 -> shipped
+  ~ spoke     rid-0026 -> shipped
+  ~ spoke     rid-0027 -> parked
+  ~ spoke     rid-0028 -> shipped
+  ~ spoke     rid-0029 -> parked
+  ~ spoke     rid-0030 -> shipped
+  ~ spoke     rid-0031 -> shipped
+  ~ spoke     rid-0032 -> shipped
+  ~ spoke     rid-0033 -> shipped
+  ~ spoke     rid-0034 -> dropped
+  ~ spoke     rid-0035 -> shipped
+  ~ spoke     rid-0036 -> shipped
+  ~ spoke     rid-0037 -> shipped
+  ~ spoke     rid-0038 -> shipped
+  ~ spoke     rid-0039 -> dropped
+  ~ spoke     rid-0040 -> shipped
+  ~ spoke     rid-0041 -> dropped
+  ~ spoke     rid-0042 -> shipped
+  ~ spoke     rid-0043 -> deferred
+  ~ spoke     rid-0044 -> shipped
+  ~ spoke     rid-0045 -> shipped
+  ~ spoke     rid-0046 -> parked
+  ~ spoke     rid-0047 -> shipped
+  ~ spoke     rid-0048 -> dropped
+  ~ spoke     rid-0049 notes updated from board
+  ~ spoke     rid-0050 notes updated from board
+  ~ spoke     rid-0051 notes updated from board
+  ~ spoke     rid-0052 notes updated from board
+  ~ spoke     rid-0053 notes updated from board
+  ~ spoke     rid-0054 notes updated from board
+  ~ spoke     rid-0055 notes updated from board
+  ~ spoke     rid-0056 notes updated from board
+  ~ spoke     rid-0057 notes updated from board
+  ~ spoke     rid-0058 notes updated from board
+  ~ spoke     rid-0059 notes updated from board
+  ~ spoke     rid-0060 notes updated from board
+  ~ spoke     rid-0061 notes updated from board
+  ~ spoke     rid-0062 notes updated from board
+  ~ spoke     rid-0063 notes updated from board
+  ~ spoke     rid-0064 notes updated from board
+  ~ spoke     rid-0065 notes updated from board
+  ~ spoke     rid-0066 notes updated from board
+  ~ spoke     rid-0067 notes updated from board
+  ~ spoke     rid-0068 notes updated from board
+  ~ spoke     rid-0069 notes updated from board
+  ~ spoke     rid-0070 notes updated from board
+  ~ spoke     rid-0071 notes updated from board
+  ✓ board     AB-275 -> shipped
+  ! conflict  AB-517: status changed on both sides; board wins (board=parked spoke=dropped)
+  ! conflict  AB-400: status changed on both sides; board wins (board=parked spoke=dropped)
+  ! conflict  AB-363: status changed on both sides; board wins (board=parked spoke=dropped)
+  ! conflict  AB-556: status changed on both sides; board wins (board=parked spoke=dropped)
+  · note      id collision: AB-588 title mismatch, not linked (board='board title' spoke='spoke title')
+  · note      id collision: AB-558 title mismatch, not linked (board='board title' spoke='spoke title')
+dry-run hermes: 0 spoke items, 572 board rows
+  + spoke     AB-629 · Synthetic row title 07
+  + spoke     AB-630 · Synthetic row title 08
+  + spoke     AB-625 · Synthetic row title 09
+  + spoke     AB-626 · Synthetic row title 10
+  + spoke     AB-627 · Synthetic row title 11
+  + spoke     AB-628 · Synthetic row title 12
+  + spoke     AB-601 · Synthetic row title 13
+  + spoke     AB-617 · Synthetic row title 14
+  + spoke     AB-587 · Synthetic row title 15
+  + spoke     AB-616 · Synthetic row title 16
+  + spoke     AB-615 · Synthetic row title 17
+  + spoke     AB-598 · Synthetic row title 18
+  + spoke     AB-589 · Synthetic row title 19
+  + spoke     AB-578 · Synthetic row title 20
+  + spoke     AB-579 · Synthetic row title 21
+  + spoke     AB-580 · Synthetic row title 22
+  + spoke     AB-581 · Synthetic row title 23
+  + spoke     AB-583 · Synthetic row title 24
+  + spoke     AB-584 · Synthetic row title 25
+  + spoke     AB-586 · Synthetic row title 26
+  + spoke     AB-574 · Synthetic row title 27
+  + spoke     AB-575 · Synthetic row title 28
+  ⏸ tombstone AB-538
+  ⏸ tombstone AB-515
+  ⏸ tombstone AB-524
+  ⏸ tombstone AB-525
+  ⏸ tombstone AB-510
+  ⏸ tombstone AB-271
+  ⏸ tombstone AB-275
+  ⏸ tombstone AB-208
+  ⏸ tombstone AB-505
+  · note      AB-538: item deleted on the spoke; stopped mirroring (board row untouched)
+  · note      AB-515: item deleted on the spoke; stopped mirroring (board row untouched)
+  · note      AB-524: item deleted on the spoke; stopped mirroring (board row untouched)
+  · note      AB-525: item deleted on the spoke; stopped mirroring (board row untouched)
+  · note      AB-510: item deleted on the spoke; stopped mirroring (board row untouched)
+  · note      AB-271: item deleted on the spoke; stopped mirroring (board row untouched)
+  · note      AB-275: item deleted on the spoke; stopped mirroring (board row untouched)
+  · note      AB-208: item deleted on the spoke; stopped mirroring (board row untouched)
+  · note      AB-505: item deleted on the spoke; stopped mirroring (board row untouched)
+
+# --- synthesized examples (exact format strings from sync_core.py describe(); these action
+# --- kinds did not occur in the live capture above but the parser MUST handle them ---
+dry-run hermes: 12 spoke items, 572 board rows
+  ✓ board     AB-123 -> shipped
+  ~ board     AB-124 item -> 'Retitled item text'
+  + board     AB-633 (queued) <- 'incident: worker host heartbeat lost'
+  ⤫ app       AB-125 leaves this app's scope (filtered)
+  ~ spoke     rid-0072 title -> 'AB-633 · incident: worker host heartbeat lost'
+  ~ spoke     rid-0072 notes updated from board
+
+# --- a title containing an apostrophe flips Python
+# --- repr() to double-quote form; the parser must decode both forms ---
+dry-run reminders: 1 spoke items, 1 board rows
+  + board     AB-634 (queued) <- "AB-634 · The board's title with an apostrophe"
+
+# --- scope-reenter (↩ app): the mirror of ⤫ app's scope-exit above, a row
+# --- that was previously filtered out re-enters this app's scope ---
+dry-run reminders: 1 spoke items, 1 board rows
+  ↩ app       AB-125 rejoins this app's scope (unfiltered)

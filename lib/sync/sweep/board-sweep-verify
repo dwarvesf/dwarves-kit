@@ -1,0 +1,184 @@
+#!/bin/bash
+# board sweep verify: run one sweep and prove it wrote to no board, or read
+# what the newest sweep tick did.
+#
+# Why this exists. `board sync` is TWO-WAY: it writes status back from the
+# spoke into BACKLOG.md. A misconfigured spoke can therefore silently flip live
+# rows to `shipped`, and the sweep still reports rc=0 with every board "synced".
+# A shared Reminders list did exactly that to 30 rows across four repos, and the
+# only signal was a `git diff` nobody had run.
+#
+# So the real check is not the exit code. It is: after a full sweep, is every
+# board byte-identical to what it was before? This runs that check.
+#
+# Usage:
+#   board sweep verify --registry F --run CMD     run CMD (the sweep), then diff every board
+#   board sweep verify --registry F --no-run      diff only: snapshot twice with no sweep between
+#   board sweep verify --last-tick [repo]         read-only: what did the newest sweep tick do
+#                                                 (to one repo, or a per-repo summary of all)
+# Options:
+#   --name LABEL   the sweep's label, as in its `LABEL: start` log lines (default board-sweep)
+#   --log FILE     the sweep's log (default ~/Library/Logs/dwarves-kit/<LABEL>.log)
+#
+# A hand-run `board sync --dry-run` over ssh can die on a spoke's local
+# permission (an Apple Reminders Automation prompt, say), and that exit 1 is not
+# a sync refusal. For a no-write proof over ssh, run a sweep whose syncs avoid
+# that spoke.
+set -u
+
+REGISTRY=""
+RUN_CMD=""
+RUN=1
+NAME="board-sweep"
+LOG=""
+LAST_TICK=0
+LAST_TICK_REPO=""
+
+while [ $# -gt 0 ]; do case "$1" in
+  --registry) REGISTRY="${2:-}"; shift 2;;
+  --run) RUN_CMD="${2:-}"; shift 2;;
+  --no-run) RUN=0; shift;;
+  --name) NAME="${2:-}"; shift 2;;
+  --log) LOG="${2:-}"; shift 2;;
+  --last-tick)
+    LAST_TICK=1; shift
+    case "${1:-}" in ''|--*) ;; *) LAST_TICK_REPO="$1"; shift;; esac;;
+  -h|--help) sed -n '2,/^set -u/p' "$0" | sed '$d' | sed 's/^# \{0,1\}//'; exit 0;;
+  *) echo "unknown flag: $1" >&2; exit 2;;
+esac; done
+
+[ -n "$LOG" ] || LOG="$HOME/Library/Logs/dwarves-kit/$NAME.log"
+
+# ---- --last-tick: read-only, never sweeps -----------------------------------
+last_tick_mode() {
+  local repo="$1"
+  if [ ! -s "$LOG" ]; then
+    echo "board sweep verify --last-tick: no log at $LOG" >&2
+    return 2
+  fi
+  local start_ln
+  start_ln=$(grep -nF "$NAME: start" "$LOG" | tail -1 | cut -d: -f1)
+  if [ -z "$start_ln" ]; then
+    echo "board sweep verify --last-tick: no tick start found in $LOG" >&2
+    return 2
+  fi
+  local tick start_line end_line
+  tick=$(tail -n +"$start_ln" "$LOG")
+  start_line=$(printf '%s\n' "$tick" | head -1)
+  end_line=$(printf '%s\n' "$tick" | grep -F "$NAME: end" | tail -1)
+  echo "$start_line"
+  if [ -n "$end_line" ]; then
+    echo "$end_line"
+  else
+    echo "(still running)"
+  fi
+  echo
+
+  if [ -z "$repo" ]; then
+    printf '%s\n' "$tick" | awk '
+      function flush() {
+        if (name != "") {
+          flag = blocked ? " [BLOCKED]" : ""
+          printf "%s rc=%s board=%d refused=%d%s\n", name, rc, board, refused, flag
+        }
+      }
+      /^  [A-Za-z0-9_.-]+ rc=/ {
+        flush()
+        line=$0; sub(/^  /,"",line); split(line,parts," ")
+        name=parts[1]; rc=parts[2]; sub(/^rc=/,"",rc); gsub(/[^0-9-].*$/,"",rc)
+        board=0; refused=0; blocked=0
+        next
+      }
+      name != "" && /✓ board/ { board++ }
+      name != "" && /refused/ { refused++ }
+      name != "" && (/BLOCKED/ || /commit failed/) { blocked=1 }
+      END { flush() }
+    '
+    return 0
+  fi
+
+  local block rc
+  block=$(printf '%s\n' "$tick" | awk -v want="$repo" '
+    BEGIN{capturing=0; found=0}
+    /^  [A-Za-z0-9_.-]+ rc=/ {
+      if (capturing) exit
+      line=$0; sub(/^  /,"",line); split(line,parts," "); name=parts[1]
+      if (name==want) { capturing=1; found=1; print; next }
+      next
+    }
+    capturing { print }
+    END { if (!found) exit 3 }
+  ')
+  rc=$?
+  if [ "$rc" -ne 0 ] || [ -z "$block" ]; then
+    echo "board sweep verify --last-tick: unknown repo '$repo' in this tick" >&2
+    return 1
+  fi
+
+  printf '%s\n' "$block" | grep -v -e 'orphan item (no board row)' -e 'board-mirror: skip'
+  echo
+  printf '%s\n' "$block" | awk -v want="$repo" '
+    NR==1 {
+      line=$0; sub(/^  /,"",line); split(line,parts," "); rc=parts[2]
+      sub(/^rc=/,"",rc); gsub(/[^0-9-].*$/,"",rc)
+    }
+    /✓ board/ { board++ }
+    /refused/ { refused++ }
+    /BLOCKED/ || /commit failed/ { blocked=1 }
+    END {
+      flag = blocked ? " [BLOCKED]" : ""
+      printf "%s rc=%s board=%d refused=%d%s\n", want, rc, board, refused, flag
+    }
+  '
+  return 0
+}
+
+if [ "$LAST_TICK" -eq 1 ]; then
+  last_tick_mode "$LAST_TICK_REPO"
+  exit $?
+fi
+
+[ -n "$REGISTRY" ] || { echo "board sweep verify: need --registry <file>" >&2; exit 2; }
+[ -f "$REGISTRY" ] || { echo "board sweep verify: no registry at $REGISTRY" >&2; exit 2; }
+if [ "$RUN" -eq 1 ] && [ -z "$RUN_CMD" ]; then
+  echo "board sweep verify: need --run <command> (or --no-run for a diff-only check)" >&2
+  exit 2
+fi
+
+# ---- capture the pre-sweep state -------------------------------------------
+# A digest per board, not a `git diff`, so an unrelated edit already in the
+# working tree does not read as damage from this sweep.
+snapshot() {
+  local out="$1" name path
+  : >| "$out"
+  while read -r name path _rest <&3; do
+    case "$name" in ''|\#*) continue;; esac
+    path="${path/#\~/$HOME}"
+    [ -f "$path" ] || continue
+    printf '%s %s\n' "$name" "$(shasum -a 256 "$path" | cut -d' ' -f1)" >> "$out"
+  done 3< "$REGISTRY"
+}
+
+BEFORE=$(mktemp); AFTER=$(mktemp)
+
+snapshot "$BEFORE"
+if [ "$RUN" -eq 1 ]; then
+  echo "sweeping..."
+  "$RUN_CMD" > /dev/null 2>&1
+  echo "  sweep rc=$?"
+fi
+snapshot "$AFTER"
+
+if diff -q "$BEFORE" "$AFTER" >/dev/null; then
+  echo "VERIFIED: every board byte-identical after the sweep"
+  rc=0
+else
+  echo "DAMAGE: these boards changed during the sweep"
+  diff "$BEFORE" "$AFTER" | grep '^[<>]' | sort -u | sed 's/^/    /'
+  echo
+  echo "A two-way spoke wrote back. Check each board's .kit.toml for a spoke list"
+  echo "shared with another board, then 'git diff' the named repos."
+  rc=1
+fi
+rm -f "$BEFORE" "$AFTER"
+exit "$rc"
