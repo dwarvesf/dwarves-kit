@@ -1,51 +1,185 @@
-# Proof of done: `board sweep`, `board sweep verify`, `board mirror-cleanup`
+# Verification -- board sweep, board sweep verify, board mirror-cleanup
 
 An operator with many boards on one host ran a private sweeper around the kit's per-repo `board sync`: the registry loop, the publish gate, the origin-fed Hermes mirror, a change-only digest with its poster, a no-write verifier, and a card-cleanup tool. Everything in it was generic except where it posts and how the host authenticates. This change moves the generic parts into the kit as three verbs and leaves two seams: a `--poster` command and the `--preflight` and `--on-clean` hooks. The operator's tool shrinks to config and one poster adapter.
 
+## Gate table
+
+| Claim | Evidence |
+|---|---|
+| the digest parses every `describe()` line kind, dedupes, tracks flapping, and carries a failed post forward | digest run below |
+| the poster contract holds: exit 0 is delivered, stderr is the redacted reason, state is 0600 | poster run below |
+| the sweep loop, hooks, token handoff, publish gate, and dry run behave | sweep run below |
+| the mirror leg reads origin and refuses a tick with an unresolved repo | mirror run below |
+| the verifier proves a sweep wrote no board, and reads the newest tick | verify run below |
+| the cleanup classifies, archives, and never deletes | cleanup run below |
+| nothing else in board or sync regressed | board and sync suites below |
+| the guards are load-bearing | negative controls below |
+| the new engine does what the private sweeper did, on live data | parity section below |
+
 ## Green run
 
-| # | Command | Exit | Verdict |
-|---|---|---|---|
-| 1 | `bash tests/test-board-digest.sh` | 0 | PASS 63/63 (parse grammar, merge, flapping, carry-forward, field cap, ticket links, clusters, state lock) |
-| 2 | `bash tests/test-board-sweep-post.sh` | 0 | PASS 32/32 (poster contract, redaction, 0600 state, carried reason, embed budget) |
-| 3 | `bash tests/test-board-sweep.sh` | 0 | PASS 55/55 (loop, hooks, token handoff, publish gate, poster wiring, dry run) |
-| 4 | `bash tests/test-board-sweep-mirror.sh` | 0 | PASS 43/43 (origin-fed registry, unresolved-repo gate, kill-safe cleanup) |
-| 5 | `bash tests/test-board-sweep-verify.sh` | 0 | PASS 29/29 (byte-identical proof, damage detection, last-tick reader) |
-| 6 | `bash tests/test-board-mirror-cleanup.sh` | 0 | PASS 31/31 (classes a to e, idempotent apply, rule list) |
-| 7 | `bash tests/run-all.sh --only test-board` and `--only test-sync` | 0 | every existing board and sync suite still green |
-| 8 | `/bin/bash -n` on every new script, digest exercised under Apple bash 3.2 | 0 | PASS |
+```
+Command: bash tests/test-board-digest.sh
+Exit: 0
+Output:
+case rc-passthrough (the digest never signals a data problem through its exit code):
+  ok   unmapped/bad-rail/unknown-line/corrupt-state all exit 0
+PASS=63 FAIL=0
+Verdict: PASS
+```
+
+```
+Command: bash tests/test-board-sweep-post.sh
+Exit: 0
+Output:
+case usage (missing flags are a usage error, 64):
+  ok   no --cluster -> 64
+  ok   no --poster (and no --dry-run) -> 64
+PASS=32 FAIL=0
+Verdict: PASS
+```
+
+```
+Command: bash tests/test-board-sweep.sh
+Exit: 0
+Output:
+case usage (bad invocations):
+  ok   no --registry -> 64
+  ok   missing registry file -> 2
+  ok   unknown flag -> 64
+  ok   --help prints the usage
+PASS=55 FAIL=0
+Verdict: PASS
+```
+
+```
+Command: bash tests/test-board-sweep-mirror.sh
+Exit: 0
+Output:
+case trap (a killed run still moves every temp artifact out of the repo root):
+  ok   trap block extracted
+  ok   SIGTERM handler exits 143 (killed, not swallowed)
+  ok   trap moved the per-repo snapshot into the discard dir
+  ok   trap left nothing behind at the repo root
+PASS=43 FAIL=0
+Verdict: PASS
+```
+
+```
+Command: bash tests/test-board-sweep-verify.sh
+Exit: 0
+Output:
+ok   a sweep that writes back is DAMAGE
+ok   a damaging sweep exits 1
+ok   --no-run with no sweep between snapshots is VERIFIED
+ok   no --run and no --no-run is refused
+29 ok lines, 0 FAIL
+Verdict: PASS
+```
+
+```
+Command: bash tests/test-board-mirror-cleanup.sh
+Exit: 0
+Output:
+  ok   first matching rule wins: a decomposer child on the chatter board is a decomposer-child
+  ok   no --kinds-file: only the decomposer rule is built in
+  ok   a malformed --kinds-file fails loudly
+  TOTAL: 31   PASS: 31   FAIL: 0
+Verdict: PASS
+```
+
+```
+Command: bash tests/run-all.sh --only test-board --time
+Exit: 0
+Output:
+run-all: 19 suites, 4 at a time, 0 serial
+test-board-digest                              ok (13s)
+test-board-mirror-cleanup                      ok (3s)
+test-board-sweep-mirror                        ok (2s)
+test-board-sweep-post                          ok (6s)
+test-board-sweep-verify                        ok (1s)
+test-board-sweep                               ok (6s)
+test-board-publish                             ok (2s)
+test-board-mirror                              ok (14s)
+run-all: all 19 suites passed, 0 skipped for missing tooling
+Verdict: PASS
+```
+
+```
+Command: bash tests/run-all.sh --only test-sync --time
+Exit: 0
+Output:
+test-sync-cron-install                         ok (1s)
+test-sync-cron-launcher                        ok (0s)
+test-sync-dispatch                             ok (2s)
+test-sync                                      ok (2s)
+run-all: all 4 suites passed, 0 skipped for missing tooling
+Verdict: PASS
+```
 
 ## Negative control
 
-Each fault was injected into the committed code, the suite re-run, and the file restored from the commit.
+Each fault was injected into the committed code, the suite re-run, and the file restored with `git checkout --`.
 
-| Fault injected | Suite | Result |
-|---|---|---|
-| `unset BOARD_SWEEP_TOKEN` removed from `board-sweep` | `test-board-sweep.sh` | 2 FAIL (the token reached a child; publish saw it) |
-| mirror gate `[ -s "$MIRROR_FAILED" ]` replaced by `false` | `test-board-sweep-mirror.sh` | 2 FAIL (no tick-skip line; `board mirror` ran with an unresolved repo) |
-| `valid_rail` made always true in `board-digest.sh` | `test-board-digest.sh` | 1 FAIL (a rail outside the map was accepted) |
+```
+Command: bash tests/test-board-sweep.sh, with `unset BOARD_SWEEP_TOKEN` removed from lib/sync/sweep/board-sweep
+Exit: 1
+Output:
+  FAIL BOARD_SWEEP_TOKEN itself reached a child
+  FAIL publish env:   env [r-alpha/publish] GH_TOKEN=UNSET GIT_ASKPASS=board-git-askpass GIT_TOKEN=tok-123 SWEEP_TOKEN=tok-123 PROMPT=0
+PASS=53 FAIL=2
+Verdict: RED as expected
+```
+
+```
+Command: bash tests/test-board-sweep-mirror.sh, with the mirror gate `[ -s "$MIRROR_FAILED" ]` replaced by `false`
+Exit: 1
+Output:
+  FAIL no tick-skip summary line: [2026-10-05 13:39:25] board-sweep: start
+  FAIL board mirror was invoked despite an unresolved repo (would archive its live cards)
+PASS=41 FAIL=2
+Verdict: RED as expected
+```
+
+```
+Command: bash tests/test-board-digest.sh, with `valid_rail` made always true in lib/sync/sweep/board-digest.sh
+Exit: 1
+Output:
+  FAIL no ERROR(no rail line for bad rail
+PASS=62 FAIL=1
+Verdict: RED as expected
+```
+
+All three files were restored from the commit and the suites re-run green (rows above).
 
 ## Parity with the private sweeper
 
-The old sweeper ran against live boards, a live Hermes store, and live spoke state in dry-run, then the new `board sweep` ran the same way. Same registry, same starting digest state, same `board` shim recording every call, poster stubs standing in for the rails.
+The old sweeper ran against live boards, a live Hermes store, and live spoke state in dry-run, then the new `board sweep` ran the same way. Same registry, same starting digest state, a `board` shim that records every call and forces dry-run, and stubs standing in for the rails. The harness lives with the operator's tool, where the old sweeper's source is.
 
-| Check | Result |
-|---|---|
-| Every `board sync` and `board mirror` call: cwd, argv, token and askpass presence, Hermes home, Notion pin, the rewritten mirror registry | identical across all calls |
-| Whole sweep log, planned writes and digest log lines included | identical except the three tail lines that a dry run changes by design |
-| Digest payload, 15 cluster comparisons over 5 scenarios (live capture, a recorded fixture with an adopted incident and a long title, flapping, carry-forward, field cap) | identical, byte for byte, through the operator's poster adapter |
-| Bytes handed to the rail stubs (argv, headers, HMAC signature, body) | identical |
-| `board mirror-cleanup` against the live store, four modes | identical output and exit code |
-
-The harness has its own negative control: dropping `--crit-prefix` on the new side turned one payload from `crit` to `info` and the comparison reported the difference.
-
-## Reproduce
-
-```bash
-bash tests/run-all.sh --only test-board
-bash tests/run-all.sh --only test-sync
+```
+Command: compare the two runs' recorded calls, their sweep logs, and the bytes each handed to the rail stubs
+Exit: 0
+Output:
+CALLS IDENTICAL: 20 calls (19 sync, 1 mirror)
+sweep log: 645 of 646 lines identical, the 3 tail lines differ by design (the old run posted to a stub, the dry run prints the payload)
+digest: 15 cluster comparisons over 5 scenarios, same=15 diff=0
+POSTED BYTES IDENTICAL (curl argv, headers, HMAC signature, body): 574 bytes
+mirror-cleanup, 4 modes against the live store: same
+Verdict: PASS
 ```
 
-## What did not move
+```
+Command: the same digest comparison with --crit-prefix dropped on the new side
+Exit: 1
+Output:
+NC ok: broken input is caught
+  old severity=crit  new severity=info
+Verdict: RED as expected
+```
 
-The chat service, the credentials, the host bootstrap, the list of checkouts that must be kept fresh, the heartbeat, and the names of the bots whose Hermes cards the mirror never owns stay with the operator. They reach the kit as the `--poster`, `--preflight` and `--on-clean` commands, the `--repo-arg` and `--sync-token-repo` flags, and a `--kinds-file` rule list.
+## Not proven
+
+- The publish leg was not exercised live: the parity tick wrote no board, so nothing triggered it. The gate and the token handoff are covered by `tests/test-board-sweep.sh` only.
+- No sweep ran under launchd from this branch, and the live schedule is unchanged.
+- The state lock uses `lockf` on macOS and `flock` on Linux; only the macOS path ran here. With neither, the write is unguarded.
+- `tests/test-config-registry.sh` shows two failures on `master` as well (orphan-env drift lint, root-only key count); this change touches neither (the lint's seed prefixes do not include `BOARD_`).
