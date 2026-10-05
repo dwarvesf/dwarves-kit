@@ -120,7 +120,7 @@ classify() {
   blob="$(printf '%s\n%s' "$changed" "$subjects" | tr 'A-Z' 'a-z')"
   # stateful: deploy / migration / data / persistent-state signals (only reached when the diff
   # touches non-doc files, so a docs-only commit can no longer be misclassified by its subject).
-  if printf '%s' "$blob" | grep -qE 'deploy|rollout|production|migrat|schema|data[ -]model|database|/db/|\bseed\b|backup|restore|persistent|drop .*(table|column)|alter table|data loss'; then
+  if grep -qE 'deploy|rollout|production|migrat|schema|data[ -]model|database|/db/|\bseed\b|backup|restore|persistent|drop .*(table|column)|alter table|data loss' < <(printf '%s' "$blob"); then
     echo stateful; return 0
   fi
   echo behavioral
@@ -373,8 +373,8 @@ _negctl_required() {
   [ -f "$LC" ] || { echo yes; return 0; }
   [ -z "$(KIT_PROJECT_ROOT="$root" bash "$LC" floor "$root" "$base" 2>/dev/null)" ] || { echo yes; return 0; }
   changed="$(_changed "$root" "$base" | tr '\n' ' ')"
-  KIT_PROJECT_ROOT="$root" bash "$LC" explain --files "$changed" "negative control check" 2>/dev/null \
-    | grep -qx 'flags: hard-path' && { echo yes; return 0; }
+  grep -qx 'flags: hard-path' < <(KIT_PROJECT_ROOT="$root" bash "$LC" explain --files "$changed" "negative control check" 2>/dev/null) \
+    && { echo yes; return 0; }
   echo no
 }
 
@@ -449,7 +449,7 @@ _visual_proof() {
     while IFS=$'\t' read -r ilink ipath; do
       [ -n "$ipath" ] || continue
       git -C "$root" ls-files --error-unmatch "$ipath" >/dev/null 2>&1 \
-        && printf '%s\n' "$changed" | grep -qxF "$ipath" && return 0
+        && grep -qxF "$ipath" < <(printf '%s\n' "$changed") && return 0
     done < <(_committed_images "$root/$pf" "$root")
   done <<< "$proofs"
 
@@ -637,8 +637,8 @@ check() {
         # Last-verdict-wins, set-wise: files concatenate in sorted (= chronological)
         # order, so the union's final Verdict: line is the latest run's.
         last_v="$(printf '%s' "$content" | grep -iE '^[[:space:]]*Verdict:' | tail -1)"
-        has_negctl=1; { [ "$negctl_req" = no ] || printf '%s' "$content" | grep -qi 'NEGATIVE CONTROL'; } && has_negctl=0
-        has_green=1; [ "$has_out" -eq 0 ] && { printf '%s' "$content" | grep -qE 'Exit:[[:space:]]*0|VERDICT: PASS|Verdict: PASS|PASS' || [ "$grp_img" -eq 0 ]; } && has_green=0
+        has_negctl=1; { [ "$negctl_req" = no ] || grep -qi 'NEGATIVE CONTROL' < <(printf '%s' "$content"); } && has_negctl=0
+        has_green=1; [ "$has_out" -eq 0 ] && { grep -qE 'Exit:[[:space:]]*0|VERDICT: PASS|Verdict: PASS|PASS' < <(printf '%s' "$content") || [ "$grp_img" -eq 0 ]; } && has_green=0
         last_ok=1; ! printf '%s' "$last_v" | grep -qiE 'Verdict:[[:space:]]*(INCONCLUSIVE|FAIL)' && last_ok=0
         if [ "$has_negctl" -eq 0 ] && [ "$has_green" -eq 0 ] && [ "$last_ok" -eq 0 ]; then
           ok=0; break
@@ -650,9 +650,9 @@ check() {
           near_miss="${near_miss}${g}$(printf '\t')${last_v}"$'\n'
         fi
       else # stateful
-        printf '%s' "$content" | grep -qiE 'rollback|\[UNAVAILABLE' \
-          && { [ "$has_out" -eq 0 ] || printf '%s' "$content" | grep -qi '\[UNAVAILABLE'; } \
-          && { printf '%s' "$content" | grep -qE 'Command:|Exit:' || [ "$grp_img" -eq 0 ]; } \
+        grep -qiE 'rollback|\[UNAVAILABLE' < <(printf '%s' "$content") \
+          && { [ "$has_out" -eq 0 ] || grep -qi '\[UNAVAILABLE' < <(printf '%s' "$content"); } \
+          && { grep -qE 'Command:|Exit:' < <(printf '%s' "$content") || [ "$grp_img" -eq 0 ]; } \
           && ok=0 && break
       fi
     done <<< "$groups"

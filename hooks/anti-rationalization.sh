@@ -52,7 +52,7 @@ PATTERNS=(
 )
 
 for PATTERN in "${PATTERNS[@]}"; do
-  if echo "$RESPONSE" | grep -qi "$PATTERN"; then
+  if grep -qi "$PATTERN" < <(echo "$RESPONSE"); then
     # Log for future eval corpus
     LOG_DIR="${DWARVES_KIT_LOG_DIR:-$HOME/.claude/dwarves-kit/logs}"
     mkdir -p "$LOG_DIR"
@@ -97,7 +97,7 @@ if [ -d ".claude/debug" ]; then
 
   if [ "$UNDIAGNOSED" = "1" ]; then
     for PATTERN in "${GUESS_FIX_PATTERNS[@]}"; do
-      if echo "$RESPONSE" | grep -qi "$PATTERN"; then
+      if grep -qi "$PATTERN" < <(echo "$RESPONSE"); then
         LOG_DIR="${DWARVES_KIT_LOG_DIR:-$HOME/.claude/dwarves-kit/logs}"
         mkdir -p "$LOG_DIR"
         echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) | BLOCKED-GUESSFIX | $PATTERN | ${DWARVES_KIT_INVOCATION_CWD:-$(pwd)}" >> "$LOG_DIR/anti-rationalization.log"
@@ -115,7 +115,7 @@ fi
 # uncommitted diff's ADDED lines contain a strong "not implemented" stub marker.
 # Scoped tight (completion claim + added lines + strong markers only) so bare
 # TODO/FIXME and mid-work states never trip it. Source: claudekit self-review.
-if echo "$RESPONSE" | grep -qiE '\b(all done|done\b|complete|completed|finished|ready for review|ready to ship|all set|implemented (it|the))' \
+if grep -qiE '\b(all done|done\b|complete|completed|finished|ready for review|ready to ship|all set|implemented (it|the))' < <(echo "$RESPONSE") \
    && command -v git >/dev/null 2>&1 && git rev-parse --git-dir >/dev/null 2>&1; then
   # Anchor to lines that ARE a stub statement, not lines that merely mention the
   # token (so code that defines/tests these markers does not self-trigger).
