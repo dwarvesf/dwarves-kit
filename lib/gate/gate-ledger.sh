@@ -512,12 +512,12 @@ _check_cache_put() {  # <prefix> <fp> <ctime> <result>
     # keep the newest 400 other entries; a fresh result replaces any earlier one for its key
     keep="$(tail -n +2 "$file" 2>/dev/null | grep -vF -- "$prefix" | tail -n 400 || true)"
   fi
-  _CC_TMP="$(mktemp "$file.XXXXXX" 2>/dev/null)" || { _CC_TMP=""; return 0; }
-  trap 'command rm -f "$_CC_TMP"' EXIT
-  trap 'command rm -f "$_CC_TMP"; exit 143' TERM
-  trap 'command rm -f "$_CC_TMP"; exit 130' INT
-  { printf '#fp=%s\n' "$fp"; [ -z "$keep" ] || printf '%s\n' "$keep"; printf '%s%s\n' "$prefix" "$result"; } > "$_CC_TMP" 2>/dev/null \
-    && mv -f "$_CC_TMP" "$file" 2>/dev/null || command rm -f "$_CC_TMP" 2>/dev/null || true
+  _cc_tmp="$(mktemp "$file.XXXXXX" 2>/dev/null)" || { _cc_tmp=""; return 0; }
+  trap 'command rm -f "$_cc_tmp"' EXIT
+  trap 'command rm -f "$_cc_tmp"; exit 143' TERM
+  trap 'command rm -f "$_cc_tmp"; exit 130' INT
+  { printf '#fp=%s\n' "$fp"; [ -z "$keep" ] || printf '%s\n' "$keep"; printf '%s%s\n' "$prefix" "$result"; } > "$_cc_tmp" 2>/dev/null \
+    && mv -f "$_cc_tmp" "$file" 2>/dev/null || command rm -f "$_cc_tmp" 2>/dev/null || true
   trap - EXIT TERM INT
   return 0
 }
