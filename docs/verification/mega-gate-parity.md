@@ -183,3 +183,15 @@ Negative controls, each from the committed tree and restored with `command cp -f
 | mega gate falls back to the bare ledger check | case i red (PASS=11 FAIL=1) |
 | project lanes read at head (`KIT_LANE_PROJECT_AT` emptied) | case h red: hook shows the floor message, not the normal lane gap |
 | `lane_gates` switch read at head in the hook | case h red, same message |
+
+## Recorded run (lead: register the two new env vars)
+
+After merging master, `tests/test-config-registry.sh` flagged `MEGA_MERGE_ROOT` and `KIT_LANE_PROJECT_AT` as unregistered env vars (AC1 orphans). Both now have env-only rows in `lib/config/module-registry.md`.
+
+Command: `bash tests/test-config-registry.sh` before the rows (NEGATIVE CONTROL)
+Exit: 1
+Verdict: 58/59 then 57/59, one ORPHAN per missing row, as expected.
+
+Command: `bash tests/test-config-registry.sh` with both rows
+Exit: 0
+Verdict: PASS, 59/59. Gate, hook, lanes and cache suites also green on the merged head.

@@ -120,11 +120,13 @@ real reader consumes it today (all rows below are, except where noted).
 | MEGAGOALS_ROOT | env-only | (none) | [impl] | mega | Root dir where mega-goal folders live; unset falls through to further path resolution in `lib/mega/mega.sh`. |
 | MEGA_MERGE_PR_INFO_CMD | env-only | (none) | [impl] | mega | Override the command used to fetch PR info at merge time; called directly when set. |
 | MEGA_MERGE_GATE_LEDGER | env-only | `$LIB_ROOT/gate/gate-ledger.sh` | [impl] | mega | Which `gate-ledger.sh` `mega-merge.sh` shells out to. |
+| MEGA_MERGE_ROOT | env-only | the cwd's repo | [impl] | mega | Which repo `mega-merge.sh gate` reads for the ship-gate diff rules (HEAD against the default-branch merge base). |
 | MEGA_GATE_DISPATCH | env-only | `1` | [impl] | mega | `1` dispatches a `gate` / `gate!` sub-goal like any other (grounded on the PR existing); `0` restores the stop-before-running behavior. |
 | PANE_TAIL_JQ | env-only | `$ORCH_DIR/pane-tail.jq` | [impl] | mega | The jq formatter the multiplexer pane tail reads through; read-only by construction. |
 | MEGA_BACKEND | env-only | `claude` | [impl] | queue | Runtime `orchestrate run` drives each sub-goal on: `claude` (one `claude -p` per sub-goal) or `orca`. The `--backend` flag wins. Any other value exits 64. No kit.toml key on purpose: a committed file must not switch a run onto another runtime. |
 | QUEUE_PUSH_ONLY | env-only | `0` | [impl] | queue | `1` pushes the branch and stops without opening the PR (draft or ready per the run's own rule). |
 | DWARVES_KIT_SKIP_DOC_PROJECTION | env-only | `0` | [impl] | gate | `1` skips the ship-gate's doc-projection check for a repo that has neither projection file; an escape hatch, never a default. |
+| KIT_LANE_PROJECT_AT | env-only | (unset) | [impl] | gate | A git rev; when set, `lane-data.sh` reads the project `.kit.toml` lanes from the blob committed at that rev. The ship gate and `mega-merge.sh gate` set it to the merge base so a PR cannot switch its own lane gates. |
 | DWARVES_KIT_SKIP_REGISTRY_FRESHNESS | env-only | `0` | [impl] | gate | `1` skips the ship-gate's `docs/FEATURES.md` freshness arm, which regenerates the projection when a push edits one of its inputs; an escape hatch, never a default. |
 | MEGA_MERGE_GH | env-only | `gh` | [impl] | mega | Override the `gh` binary/wrapper used for PR ops at merge. |
 | BACKLOG_LIB | env-only | `$LIB_ROOT/board/backlog.sh` | [impl] | mega | Which `backlog.sh` `orchestrate.sh` shells out to for wave admission reads. |
