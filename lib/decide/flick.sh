@@ -76,7 +76,8 @@ else
   KIT_CONFIG_ROOT="$KIT_ROOT"
 fi
 export KIT_CONFIG_OPERATOR KIT_CONFIG_ROOT
-if [ -f "$KIT_ROOT/lib/config/kit-config.sh" ]; then . "$KIT_ROOT/lib/config/kit-config.sh" 2>/dev/null || true; fi
+# KIT_CONFIG_NO_PRIME: this hot path reads config with its own reader and a test pins its awk spawn count.
+if [ -f "$KIT_ROOT/lib/config/kit-config.sh" ]; then KIT_CONFIG_NO_PRIME=1 . "$KIT_ROOT/lib/config/kit-config.sh" 2>/dev/null || true; fi
 
 # load_decide_block <file> <prefix>: set <prefix>_<key> for every [decide] key found.
 load_decide_block() {

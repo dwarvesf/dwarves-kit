@@ -215,10 +215,13 @@ kit_config_get_root() {
 # Prime the cache at source time. Callers read keys as `v="$(kit_config_get ...)"`, and a
 # subshell's cache dies with it, so only a cache filled in the SOURCING shell is inherited by
 # those subshells. A layer that is absent costs nothing; a changed path or content later just
-# re-parses. Never fatal, never prints.
-_kit_toml_load "${KIT_PROJECT_ROOT:-$PWD}/.kit.toml" || true
-_kit_toml_load "${KIT_CONFIG_OPERATOR:-${XDG_CONFIG_HOME:-${HOME:-}/.config}/dwarves-kit}/kit.toml" || true
-_kit_toml_load "${KIT_CONFIG_ROOT:-${DWARVES_KIT:-${HOME:-}/.claude/dwarves-kit}}/kit.toml" || true
+# re-parses. Never fatal, never prints. A sourcing script that spends its own awk budget and
+# reads no key (lib/decide/flick.sh) sets KIT_CONFIG_NO_PRIME=1 so the source forks nothing.
+if [ -z "${KIT_CONFIG_NO_PRIME:-}" ]; then
+  _kit_toml_load "${KIT_PROJECT_ROOT:-$PWD}/.kit.toml" || true
+  _kit_toml_load "${KIT_CONFIG_OPERATOR:-${XDG_CONFIG_HOME:-${HOME:-}/.config}/dwarves-kit}/kit.toml" || true
+  _kit_toml_load "${KIT_CONFIG_ROOT:-${DWARVES_KIT:-${HOME:-}/.claude/dwarves-kit}}/kit.toml" || true
+fi
 
 # kit_config_tracked_clean <file> -- exit 0 when <file> is tracked in its git repo and unmodified
 # against HEAD. The rule for a project file that may weaken a gate: an uncommitted edit leaves no

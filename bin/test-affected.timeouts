@@ -18,6 +18,7 @@ test-lanes-data 692
 test-meta-docs-registry 682
 test-hooks 660
 test-wrap-land 600  # hand-set: a cold run passed 152 s on a loaded host; re-measure with LAND_CACHE=0 before tightening
+test-config-cache 900  # hand-set: runs the pre-cache resolver as the oracle (3382 cases, 3 awk forks each); 133 s at load 15, 296 s at load 40
 test-orchestrate-orca 572
 test-config-seams 398
 test-wrap-adopt 382

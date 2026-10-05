@@ -350,6 +350,18 @@ chk "awk runs after source / after 150 lookups / after one edit and 3 lookups" "
 OLDRES="$(cd "$T/aw/proj" && PATH="$T/shim:$PATH" /bin/bash "$T/aw/run.sh" "$REF" 2>&1 | tail -1)"
 echo "  info reference resolver, same script: awk runs = $OLDRES (so many, per lookup)"
 
+# KIT_CONFIG_NO_PRIME: a script that only sources the lib spawns no awk, and its first lookup still answers
+cat > "$T/aw/np.sh" <<'EOF'
+export KIT_CONFIG_ROOT="$T/aw/root" KIT_CONFIG_OPERATOR="$T/aw/none" KIT_PROJECT_ROOT="$T/aw/none"
+: > "$T/awk.count"
+KIT_CONFIG_NO_PRIME=1 . "$1"
+a1="$(wc -l < "$T/awk.count" | tr -d ' ')"
+kit_config_get mega.wave_cap > "$T/np.out"
+echo "$a1 $(cat "$T/np.out") $(wc -l < "$T/awk.count" | tr -d ' ')"
+EOF
+res="$(cd "$T/aw/proj" && PATH="$T/shim:$PATH" /bin/bash "$T/aw/np.sh" "$LIB" 2>&1 | tail -1)"
+chk "KIT_CONFIG_NO_PRIME: 0 awk at source, value still read, then 1 parse" "$res" "0 3 1"
+
 # no output on load, and a missing HOME under set -u does not abort a caller
 out="$(cd "$T/aw/proj" && /bin/bash -c ". '$LIB'" 2>&1)"; chk "sourcing prints nothing" "$out" ""
 out="$(cd "$T/aw/proj" && env -u HOME -u XDG_CONFIG_HOME -u DWARVES_KIT -u KIT_CONFIG_ROOT /bin/bash -c "set -euo pipefail; . '$LIB'; kit_config_get a.b dflt" 2>&1)"

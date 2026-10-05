@@ -20,7 +20,8 @@ Output: === config-cache: 3382 parity cases over 214 keys, 20 fixtures ===
           PASS bash 3.2 cache: mid-process edit, other root, delete, operator edit, slot recycling
           PASS bash 5.3 cache: mid-process edit, other root, delete, operator edit, slot recycling
           PASS awk runs after source / after 150 lookups / after one edit and 3 lookups
-          config-cache: 11 passed, 0 failed       (wall 133 s at load 10 to 20)
+          PASS KIT_CONFIG_NO_PRIME: 0 awk at source, value still read, then 1 parse
+          config-cache: 12 passed, 0 failed       (after the flick fix below; the first run, 11 passed, took 133 s at load 10 to 20)
 Verdict: PASS (3382 cases, zero diffs)
 ```
 
@@ -29,7 +30,7 @@ The same run against master's own file instead of the frozen copy (`git show ori
 ```
 Command: KIT_CONFIG_REFERENCE=<master copy> bash tests/test-config-cache.sh
 Exit: 0
-Output: config-cache: 11 passed, 0 failed (same 3382 cases, zero diffs on bash 3.2 and 5.3; wall 296 s at load 30 to 47)
+Output: config-cache: 11 passed, 0 failed, run before the NO_PRIME case existed (same 3382 cases, zero diffs on bash 3.2 and 5.3; wall 296 s at load 30 to 47)
 Verdict: PASS (the frozen copy and master's file agree on every case)
 ```
 
@@ -102,4 +103,27 @@ Verdict: PASS (restored)
 
 ## Affected suites
 
-TEST_AFFECTED_PLACEHOLDER
+One run of `bin/test-affected --base origin/master --no-cache` for the whole diff (36 suites, 2 at a time because load was 30 to 47, 14 m 50 s). It found two things, both handled:
+
+```
+Command: bin/test-affected --base origin/master --no-cache
+Exit: 1
+Output: test-affected: 36 selected, 33 pass, 0 cached, 2 fail, 1 timeout, 1 uncovered
+        FAIL tests/test-config-registry.sh   57/59: the same two assertions that fail on master (see Suites)
+        FAIL tests/test-flick.sh             338 passed, 1 failed: "the whole batch used exactly one dictionary pass"
+        TIMEOUT tests/test-config-cache.sh   killed at 300 s, no assertion failed (296 s alone at load 30 to 47)
+        UNCOVERED docs/verification/config-read-once.md   (a doc, no suite owns it)
+Verdict: two real findings, fixed below; test-config-registry is existing master drift
+```
+
+1. **flick regression, real.** The source-time prime added one awk run per existing layer to every script that sources kit-config.sh. `lib/decide/flick.sh` sources it but reads config with its own reader, and its test pins one awk spawn per dictionary batch. Fix: `KIT_CONFIG_NO_PRIME=1` skips the prime; flick.sh sets it on its source line (the one caller edit); a new case in `tests/test-config-cache.sh` pins the opt-out.
+2. **Timeout.** The parity oracle forks three awk per case, so the suite needs more than the 300 s default on a busy host. `bin/test-affected.timeouts` now lists `test-config-cache 900`.
+
+```
+Command: bash tests/test-flick.sh ; bash tests/test-config-cache.sh ; bash tests/test-run-all-times.sh ; bash tests/test-test-affected-cache.sh ; bash tests/test-test-affected.sh
+Exit: 0 ; 0 ; 0 ; 0 ; 0
+Output: flick: 339 passed, 0 failed ; config-cache: 12 passed, 0 failed ; run-all-times: 29 passed, 0 failed ; test-affected-cache: 17 passed, 0 failed ; test-test-affected: 74 passed, 0 failed
+Verdict: PASS
+```
+
+The other 32 selected suites passed in the run above (adopt, config, config-seams, config-stamp, harvest-sweep, host-load-warn, install-modules, model-routing, orchestrate, precedent, registry-freshness-guard, registry-verbs, reserved-config-guard, suite-knob, sync-cron-launcher, test-affected-parallel, turn-cap, wrap-carry, wrap-deploy, wrap-land, wrap-merge, wrap-rebase, and the test-meta suites). They ran before the NO_PRIME edit, which touches only the prime line and flick.sh; flick and config-cache were re-run after it.

@@ -20,6 +20,10 @@ Per-lookup string work on the 53 KB content and the records ran twice as slow un
 
 Every caller uses `v="$(kit_config_get ...)"`. A cache filled inside that subshell is lost. Without priming at source time the change gains nothing for the 158 call sites. The lib now parses its three layers when sourced. A script that sources it and reads no key pays one awk run per existing layer.
 
+## Prime has a cost for scripts that never read a key
+
+`bin/test-affected` caught it: `tests/test-flick.sh` pins one awk spawn per dictionary batch, and `lib/decide/flick.sh` sources kit-config.sh without reading a key through it (it has its own reader). The prime added one awk per existing layer to every flick run, on a hot path where a spawn is the dominant cost. Fix: `KIT_CONFIG_NO_PRIME=1` skips the prime, and flick.sh sets it on its source line. This is the one caller edit, forced by a real regression. Other sourcers that read nothing would pay the same; none other is known, and the opt-out is one word.
+
 ## Not exported
 
 An exported cache would let child scripts skip the parse, but it would put about 100 KB into the environment of every process the kit starts. Rejected.
