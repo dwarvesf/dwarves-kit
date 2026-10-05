@@ -90,6 +90,23 @@
 #   --frozen-lockfile`; its output goes to stderr), then runs steps 1-6 above against the
 #   export. Commands run from the export root. The source worktree is never written: archive
 #   reads the object store only. The export is kept and printed as `Export:` for inspection.
+#
+# Usage: negctl.sh --parallel <N> [--slot-env VAR=start:step]... <root> <test-cmd> <mutate-cmd>...
+#   One control per <mutate-cmd>, each a full run of steps 1-6, N at a time instead of one after
+#   another. A batch that re-runs a slow suite once per control otherwise pays for every control
+#   in sequence. Each control runs in its own throwaway `git worktree add --detach` copy of
+#   <root> at HEAD under $TMPDIR/negctl-par.XXXXXX, so controls never touch <root> and never
+#   race each other; every copy is removed on exit, interrupt included (only dirs negctl made).
+#   Tracked changes in <root> are REFUSED as in mutate mode (the copies are HEAD, so they would
+#   be silently ignored); untracked and ignored files are not in a copy.
+#   N workers each take every Nth control in order. Worker k gets VAR=start+k*step for each
+#   --slot-env, so a suite that binds TCP ports can give each concurrent slot a disjoint range:
+#   `--slot-env SHARE_TEST_PORT_BASE=18787:10010` (a suite using up to base+10009 per run; the
+#   base must stay <= 55526, so at most 4 slots). The kit knows no variable; the caller names it.
+#   Output is the serial block of each control, printed in control order, not finish order. The
+#   exit is 0 only when every control PASSed, 1 when any did not, 2 REFUSED, 64 usage. Without
+#   --parallel nothing above applies and a second <mutate-cmd> is a usage error. --parallel
+#   does not combine with --at or --base-ref.
 set -uo pipefail
 
 # A proof run executes the suite for real: tests/test-wrap-land.sh skips cached sections otherwise.
@@ -106,21 +123,32 @@ show_output() {
   echo   # a blank line closes the slot, so the next negctl line is never read as output
 }
 at_sha=""; at_path=""; at_setup=""
+par_n=0; par_slots=()
+par_usage() { echo "usage: negctl.sh --parallel <N> [--slot-env VAR=start:step]... <root> <test-cmd> <mutate-cmd>..." >&2; exit 64; }
 at_usage() { echo "usage: negctl.sh --at <sha> [--path <subdir>] [--setup <cmd>] <root> <test-cmd> <mutate-cmd>" >&2; exit 64; }
 while [ $# -gt 0 ]; do
   case "$1" in
     --at|--path|--setup) { [ $# -ge 2 ] && [ -n "$2" ]; } || at_usage ;;
+    --parallel|--slot-env) { [ $# -ge 2 ] && [ -n "$2" ]; } || par_usage ;;
   esac
   case "$1" in
     --at) at_sha="$2" ;;
     --path) at_path="$2" ;;
     --setup) at_setup="$2" ;;
+    --parallel)
+      case "$2" in ''|*[!0-9]*|0|0[0-9]*) par_usage ;; esac
+      par_n="$2" ;;
+    --slot-env)
+      [[ "$2" =~ ^[A-Za-z_][A-Za-z0-9_]*=[0-9]+:[0-9]+$ ]] || par_usage
+      par_slots+=("$2") ;;
     *) break ;;
   esac
   shift 2
 done
 [ -z "$at_path$at_setup" ] || [ -n "$at_sha" ] || at_usage
 [ -z "$at_sha" ] || [ "${1:-}" != "--base-ref" ] || at_usage
+[ "$par_n" -gt 0 ] || [ "${#par_slots[@]}" -eq 0 ] || par_usage
+[ "$par_n" -eq 0 ] || { [ -z "$at_sha" ] && [ "${1:-}" != "--base-ref" ]; } || par_usage
 
 if [ "${1:-}" = "--base-ref" ]; then
   base_ref="${2:-}"; root="${3:-}"; test_cmd="${4:-}"
@@ -160,6 +188,8 @@ fi
 root="${1:-}"; test_cmd="${2:-}"; mutate_cmd="${3:-}"
 [ -n "$root" ] && [ -n "$test_cmd" ] && [ -n "$mutate_cmd" ] \
   || { echo "usage: negctl.sh <root> <test-cmd> <mutate-cmd>" >&2; exit 64; }
+[ "$par_n" -gt 0 ] || [ $# -le 3 ] \
+  || { echo "negctl: a second <mutate-cmd> needs --parallel <N> (N=1 runs the controls one at a time)" >&2; exit 64; }
 git -C "$root" rev-parse --git-dir >/dev/null 2>&1 || { echo "negctl: $root is not a git repo" >&2; exit 64; }
 
 if [ -n "$at_sha" ]; then
@@ -199,6 +229,65 @@ esac
 if [ -n "$(git -C "$root" status --porcelain --untracked-files=no 2>/dev/null)" ]; then
   echo "negctl: REFUSED -- tracked files are modified or staged in $root; commit first (the restore step is 'git checkout HEAD --', it would wipe them)" >&2
   exit 2
+fi
+
+if [ "$par_n" -gt 0 ]; then
+  self="${BASH_SOURCE[0]}"
+  controls=("${@:3}")
+  total="${#controls[@]}"
+  workers="$par_n"; [ "$workers" -le "$total" ] || workers="$total"
+  par_tmp=""; par_pids=()
+  par_cleanup() {
+    trap '' INT TERM HUP
+    local p d
+    for p in ${par_pids[@]+"${par_pids[@]}"}; do kill -TERM -- "-$p" 2>/dev/null; done
+    wait 2>/dev/null
+    case "$par_tmp" in
+      */negctl-par.*)
+        for d in "$par_tmp"/c[0-9]*; do [ -d "$d" ] && git -C "$root" worktree remove --force "$d" >/dev/null 2>&1; done
+        rm -rf "$par_tmp"
+        git -C "$root" worktree prune >/dev/null 2>&1 ;;
+    esac
+  }
+  trap 'exit 130' INT; trap 'exit 143' TERM; trap 'exit 129' HUP
+  trap par_cleanup EXIT
+  tmp_base="${TMPDIR:-/tmp}"
+  par_tmp="$(mktemp -d "${tmp_base%/}/negctl-par.XXXXXX")" || { echo "negctl: mktemp failed" >&2; exit 1; }
+  for ((i = 0; i < total; i++)); do
+    git -C "$root" -c core.hooksPath=/dev/null worktree add -q --detach "$par_tmp/c$i" HEAD >/dev/null \
+      || { echo "negctl: git worktree add failed for control $i in $par_tmp" >&2; exit 1; }
+  done
+
+  # Worker k runs controls k, k+N, k+2N, ... one after another, in the env of slot k.
+  par_worker() {
+    local slot="$1" i="$1" spec rest
+    for spec in ${par_slots[@]+"${par_slots[@]}"}; do
+      rest="${spec#*=}"
+      export "${spec%%=*}=$(( 10#${rest%%:*} + slot * 10#${rest#*:} ))"
+    done
+    while [ "$i" -lt "$total" ]; do
+      bash "$self" "$par_tmp/c$i" "$test_cmd" "${controls[$i]}" >"$par_tmp/out.$i" 2>&1 </dev/null
+      echo "$?" >"$par_tmp/rc.$i"
+      i=$(( i + workers ))
+    done
+  }
+  # Job control gives each worker its own process group, so an interrupt can kill the worker,
+  # its negctl and the suite under it together; a bare TERM would wait out a minutes-long suite.
+  set -m
+  for ((k = 0; k < workers; k++)); do
+    par_worker "$k" </dev/null &
+    par_pids+=("$!")
+  done
+  set +m
+  wait
+  par_pids=()
+
+  par_rc=0
+  for ((i = 0; i < total; i++)); do
+    cat "$par_tmp/out.$i" 2>/dev/null
+    [ "$(cat "$par_tmp/rc.$i" 2>/dev/null)" = 0 ] || par_rc=1
+  done
+  exit "$par_rc"
 fi
 
 verdict="PASS"

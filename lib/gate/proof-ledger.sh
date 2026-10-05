@@ -37,11 +37,13 @@
 #   negctl   <root> <test-cmd> <mutate-cmd>
 #   negctl   --base-ref <ref> <root> <test-cmd>
 #   negctl   --at <sha> [--path <subdir>] [--setup <cmd>] <root> <test-cmd> <mutate-cmd>
+#   negctl   --parallel <N> [--slot-env VAR=start:step]... <root> <test-cmd> <mutate-cmd>...
 #                                     forwards to lib/gate/negctl.sh (the mechanised negative
 #                                     control; FAILS CLOSED, prints the block check() reads.
 #                                     --base-ref mode proves the control against a git ref
 #                                     instead of mutating the tree, so it works on a dirty
-#                                     shared checkout)
+#                                     shared checkout; --parallel runs several controls N at
+#                                     a time, each in its own throwaway worktree copy)
 set -uo pipefail
 
 PROOF_LEDGER_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
