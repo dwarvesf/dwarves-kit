@@ -53,7 +53,14 @@ gate ledger required full                    # the lane's required gate keys
 gate ledger record "$rid" Build ran "note"   # a gate decision
 gate ledger check full "$rid"                # exit 0 iff every required gate has ran|override
 gate ledger progress "$rid" full             # step k/n + checklist
+gate ledger inherit "$rid" full --from <spec-rid>   # a task branch carries its spec's gates
 ```
+
+### Task branches under a validated spec
+
+A multi-task spec passes think, design, design-critique, spec, validate, design-record and test-plan once, on its own rid. Each task branch is its own rid, and the ship-gate checks the full lane on it. `inherit <rid> full --from <spec-rid>` writes one `override` line per spec-level gate, with the reason `inherited from <spec-rid>: <phase> ran there at <ts>`. It refuses, and writes nothing, unless the LAST GATE line for every one of those phases in the spec rid's ledger is `ran`. Build, review, docs, ship and reflect are never inherited.
+
+What it attests: a `ran` line is the last line for that phase in the named parent's ledger on this host. It does not attest approval, or that the task belongs to that spec. The verb is lead-only; no command, hook or skill calls it. A parent that itself inherited is refused, with the real spec rid named. A child that already inherited from a different parent exits 65. Re-running the same call is a no-op per phase already written. v1 serves the `full` lane only and reads the kit-root lane data, the same as the ship-gate's hard-path floor.
 
 Records are append-only, redacted (no command bodies), and one physical line per call
 (`oneline()` collapses newlines, because a forged `| ran |` line would otherwise make
