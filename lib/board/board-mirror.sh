@@ -627,7 +627,7 @@ cmd_apply_plan() {
       # An `archive` refusal means the Hermes card is already archived or gone (deleted, or
       # archived by some other path). There is nothing left to archive, so this is not a real
       # error: report it as satisfied so the caller's snapshot-upsert drops the origin line
-      # instead of re-planning the same archive forever (ops-toolkit ID-727: 55 errors an hour).
+      # instead of re-planning the same archive forever (the Mini logged 55 errors an hour from this).
       if [ "$op" = "archive" ] && printf '%s' "$out" | grep -qi 'cannot archive'; then
         hermes_id="$(printf '%s' "$line" | jq -r '.hermes_id')"
         echo "board-mirror: archive ${origin} (${hermes_id}): card gone or already archived, recording archived" >&2
