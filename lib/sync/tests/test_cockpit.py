@@ -21,7 +21,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from cockpit import (  # noqa: E402
     Item, SnapEntry, board_for, describe_plan, extract_from_registry,
-    extract_megas, extract_rows, parse_registry, plan_cockpit, plan_to_json,
+    extract_megas, extract_rows, move_for, parse_registry, plan_cockpit, plan_to_json,
     read_snapshot, row_hash, strip_routing_tags, target_native,
 )
 
@@ -308,7 +308,7 @@ def test_plan_all_create_on_empty_snapshot():
     cur = [_item("repo:ID-1", "h1"), _item("repo:ID-2", "h2")]
     p = plan_cockpit(cur, {})
     assert len(p.create) == 2
-    assert p.change == [] and p.complete == [] and p.unchanged == 0
+    assert p.change == [] and p.move == [] and p.archive == [] and p.unchanged == 0
 
 
 def test_plan_idempotent_second_run_is_empty():
@@ -329,19 +329,61 @@ def test_plan_change_on_hash_drift():
     assert it.hash == "hNEW" and prior.hermes_id == "t_1"
 
 
-def test_plan_complete_on_disappeared_row():
-    # NC: a row gone from the extract (shipped/deleted) -> COMPLETE, never stale.
-    snap = {"repo:ID-1": _snap("repo:ID-1", "h1", status="ready")}
+def test_plan_archive_on_disappeared_row():
+    # NC: a row gone from the extract (shipped/deleted) -> ARCHIVE, never stale.
+    # Archive, not complete: hermes refuses to complete a triage card.
+    snap = {"repo:ID-1": _snap("repo:ID-1", "h1", status="triage")}
     p = plan_cockpit([], snap)
-    assert len(p.complete) == 1
-    assert p.complete[0].origin == "repo:ID-1"
+    assert len(p.archive) == 1
+    assert p.archive[0].origin == "repo:ID-1"
 
 
-def test_plan_does_not_recomplete_a_done_row():
-    # NC: a prior row already `done` is not re-completed (dropped from live state).
+def test_plan_does_not_rearchive_a_done_row():
+    # NC: a prior row already `done` (legacy terminal state) is left alone.
     snap = {"repo:ID-1": _snap("repo:ID-1", "h1", status="done")}
     p = plan_cockpit([], snap)
-    assert p.complete == []
+    assert p.archive == []
+
+
+def _parked(h):
+    return Item(origin="repo:ID-1", repo="repo", id="ID-1", item="x", notes="n",
+                status="parked", target="blocked", hash=h)
+
+
+def test_move_for_matrix():
+    # Only ready<->blocked have a verb; everything touching triage is a replace.
+    assert move_for("ready", "ready") == "none"
+    assert move_for("ready", "blocked") == "block"
+    assert move_for("blocked", "ready") == "promote"
+    assert move_for("triage", "blocked") == "replace"
+    assert move_for("triage", "ready") == "replace"
+    assert move_for("ready", "triage") == "replace"
+    assert move_for("blocked", "triage") == "replace"
+
+
+def test_plan_move_on_status_drift_same_hash():
+    # A recorded status that differs from the row target is planned again even
+    # when the content hash did not change (a failed move, or a pre-fix snapshot).
+    snap = {"repo:ID-1": _snap("repo:ID-1", "h1", status="ready")}
+    p = plan_cockpit([_parked("h1")], snap)
+    assert [(m[2]) for m in p.move] == ["block"]
+    assert p.change == [] and p.unchanged == 0
+
+
+def test_plan_replace_swallows_the_comment():
+    # triage card, row now parked, content also changed: archive+create only,
+    # no comment on a card that is about to be archived.
+    snap = {"repo:ID-1": _snap("repo:ID-1", "hOLD", status="triage")}
+    p = plan_cockpit([_parked("hNEW")], snap)
+    assert [(m[2]) for m in p.move] == ["replace"]
+    assert p.change == []
+
+
+def test_plan_change_and_move_both_when_a_verb_exists():
+    snap = {"repo:ID-1": _snap("repo:ID-1", "hOLD", status="ready")}
+    p = plan_cockpit([_parked("hNEW")], snap)
+    assert len(p.change) == 1
+    assert [(m[2]) for m in p.move] == ["block"]
 
 
 # --- board_for ---------------------------------------------------------------
@@ -439,7 +481,7 @@ def test_extract_from_registry_opted_out_repo_absent(tmp_path):
 
 def test_describe_plan_summary_line():
     p = plan_cockpit([_item("repo:ID-1", "h1")], {})
-    assert "plan 1 ops (1 create, 0 change, 0 complete), 0 unchanged" in describe_plan(p)
+    assert "plan 1 ops (1 create, 0 change, 0 move, 0 archive), 0 unchanged" in describe_plan(p)
 
 
 def test_plan_to_json_shapes():
@@ -459,7 +501,7 @@ def test_describe_plan_lists_each_op():
     text = describe_plan(plan_cockpit(cur, snap))
     assert "+ create   repo:ID-2" in text
     assert "~ change   repo:ID-1" in text
-    assert "x complete repo:ID-3" in text
+    assert "x archive  repo:ID-3" in text
 
 
 # --- CLI (main entrypoint) ---------------------------------------------------
@@ -493,7 +535,7 @@ def test_cli_plan_summary(tmp_path, capsys):
     out = capsys.readouterr().out
     assert rc == 0
     # 3 bridgeable rows + 1 active mega, all new -> 4 creates.
-    assert "plan 4 ops (4 create, 0 change, 0 complete)" in out
+    assert "plan 4 ops (4 create, 0 change, 0 move, 0 archive)" in out
 
 
 def test_cli_plan_json(tmp_path, capsys):

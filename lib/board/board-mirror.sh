@@ -16,9 +16,11 @@
 #             below, never re-created fresh).
 #   TRANSFORM a keyed diff (bash + awk, NOT DuckDB -- dozens of rows, not analytics) between the
 #             current extract and the prior snapshot (by `origin`, matching row_hash): unseen
-#             origin -> CREATE, same hash -> UNCHANGED (no-op, the idempotence guarantee), changed
-#             hash -> CHANGE (status transition + a content comment), a prior origin missing from
-#             the current extract -> COMPLETE (done + "origin removed", Hermes has no delete verb).
+#             origin -> CREATE, same hash AND same status -> UNCHANGED (no-op, the idempotence
+#             guarantee), changed hash -> CHANGE (a content comment), a card whose recorded status
+#             differs from the row's target -> MOVE (see "Reachable moves" below), a prior origin
+#             missing from the current extract -> ARCHIVE (Hermes has no delete verb; archive is
+#             the one terminal verb that works from every state).
 #   LOAD      `hermes kanban` CLI verbs ONLY (native-first; no SQLite ATTACH, ever) via
 #             argv vectors, never a templated shell string (card title/body/notes are opaque
 #             values passed as literal argv elements to `${HERMES_BIN:-hermes}`).
@@ -53,24 +55,37 @@
 #   ready   <- `create` (default landing status; also the honest fallback for `claimed` and the
 #             would-be `todo`/`running` targets, since those have no durable synthetic path)
 #   blocked <- `create` (bare) THEN `block <id> "<reason>" --kind needs_input`
-#   done    <- `complete <id> --result "<reason>"` (never a create target; only reached via the
-#             DISAPPEARED-row path)
-# A CHANGE (content differs, origin unchanged) can only ADD a `comment` (title/body cannot be
-# rewritten); this is a genuine CLI limitation, not a design choice, and is called out explicitly
-# in the spec so writeback does not assume a richer update primitive exists.
+#   (a card leaves the board through `archive <id>`, never `complete`: `complete` refuses a `triage`
+#   card with "unknown id or terminal state" and a card with unfinished parents, and the old
+#   mirror read that message as "already terminal", dropped the snapshot line, and left the card
+#   open forever -- the board-mirror-drift incident. `archive` works from triage/ready/blocked/
+#   todo/scheduled alike and frees the idempotency key for a later re-create.)
+#
+# Reachable moves (prior card status -> row target), probed live against the same CLI:
+#   ready   -> blocked   `block <id> "<reason>" --kind needs_input`
+#   blocked -> ready     `promote <id> "<reason>"`
+#   triage  -> anything, anything -> triage: NO verb exists (`promote` and `block` both refuse a
+#             triage card; nothing re-triages). The move is a REPLACE: archive the old card, then
+#             create the new one in the target state (history stays on the archived card).
+# A CHANGE (content differs, origin unchanged) only ADDS a `comment`: the card title and body
+# stay frozen at create (`kanban edit` exists in newer CLIs but the mirror does not use it, so a
+# card's body can lag its row). A CHANGE never moves a card by itself; the status move is its own
+# MOVE op, planned from the snapshot's recorded status, so a failed move is retried every tick
+# until it lands instead of being forgotten (the pre-fix CHANGE recorded the new status without
+# moving anything, which is how 20 live cards drifted).
 #
 # Snapshot (the writeback "bearing" interface): NDJSON (one JSON object per line), one line per
 # mirrored origin:
 #   {"origin":"...", "repo":"...", "id":"...", "board":"...", "hermes_id":"t_...",
-#    "row_hash":"...", "hermes_status":"triage|ready|blocked|done", "seen_at":"<ISO8601Z>"}
+#    "row_hash":"...", "hermes_status":"triage|ready|blocked", "seen_at":"<ISO8601Z>"}
 #   (this bridge only ever WRITES one of those four; `todo`/`running` have no durable synthetic
 #   path -- see the Hermes CLI reality note below -- but the field is a plain string, not a
 #   closed enum, so a future writeback leg or a manual Hermes-side edit reflecting `todo` back
 #   is not structurally precluded)
 # Rewritten (all lines) after EACH successfully-applied op, not batched at the run's end, so a
 # mid-sync crash never leaves the snapshot claiming un-applied state (a re-run heals the
-# remainder via the same idempotent diff). A row is DROPPED from the snapshot once it reaches
-# `done` via the disappeared-row path (Hermes card itself stays done forever; our own snapshot's
+# remainder via the same idempotent diff). A row is DROPPED from the snapshot once its card is
+# archived via the disappeared-row path (the archived card stays in Hermes; our own snapshot's
 # job is only "what's the CURRENT active mirror state", so a later reappearance of the same
 # origin is treated as a fresh CREATE, never a resurrection of the old card).
 #
@@ -198,12 +213,16 @@ _target_native() {
 # ---------------------------------------------------------------------------
 extract_rows() {
   local file="$1" repo="$2" root="$3"
-  local id status line item notes target hash
+  local id status line item notes target hash skipped=0
   while IFS=$'\t' read -r id status line; do
     [ -n "$id" ] || continue
     target="$(_target_native "$status")"
     if [ -z "$target" ]; then
-      echo "board-mirror: skip $id ($repo): status '$status' not bridged (shipped/dropped/unrecognized)" >&2
+      # A terminal row is correctly absent from the extract: its card, if any, leaves through the
+      # disappeared-row ARCHIVE path. One line per row flooded the sweep log (about 19k lines),
+      # so the per-row line is opt-in and a per-repo count is the default.
+      [ "${BOARD_MIRROR_VERBOSE:-0}" = "1" ] && echo "board-mirror: skip $id ($repo): status '$status' not bridged (shipped/dropped/unrecognized)" >&2
+      skipped=$((skipped+1))
       continue
     fi
     item="$(printf '%s' "$line" | awk -F'|' '{gsub(/^[ \t]+|[ \t]+$/,"",$3); print $3}')"
@@ -228,6 +247,8 @@ extract_rows() {
     hash="$(_row_hash "$repo" "$id" "$item" "$notes" "$status")"
     printf '%s:%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$repo" "$id" "$repo" "$id" "$item" "$notes" "$status" "$target" "$hash"
   done < <(pb_rows "$file")
+  [ "$skipped" -eq 0 ] || echo "board-mirror: skipped $skipped terminal rows ($repo): shipped/dropped/unrecognized, not bridged" >&2
+  return 0
 }
 
 # ---------------------------------------------------------------------------
@@ -333,6 +354,20 @@ _followup_for() {
   esac
 }
 
+# _move_for <prior-hermes-status> <target-native> -- how a card in <prior> reaches <target>:
+# "none" | "block" | "promote" | "replace". Only ready->blocked and blocked->ready have a CLI verb;
+# every move out of or into `triage` is a replace (archive the old card, create the new one),
+# because `promote` and `block` both refuse a triage card and nothing re-triages. See the header's
+# "Reachable moves" note (probed live, not assumed).
+_move_for() {
+  if [ "$1" = "$2" ] || [ "$1" = "done" ]; then printf 'none\n'; return 0; fi
+  case "$1:$2" in
+    ready:blocked) printf 'block\n' ;;
+    blocked:ready) printf 'promote\n' ;;
+    *)             printf 'replace\n' ;;
+  esac
+}
+
 # ---------------------------------------------------------------------------
 # plan -- the keyed diff (bash + awk) between the current extract and the prior snapshot,
 # rendered as an NDJSON plan on stdout. Never touches Hermes; never touches the snapshot file.
@@ -383,7 +418,7 @@ cmd_plan() {
   snapshot_read "$snapshot" > "$prior_tsv"
 
   local seen_at; seen_at="$(_now_iso)"
-  local n_create=0 n_unchanged=0 n_change=0 n_complete=0 total=0
+  local n_create=0 n_unchanged=0 n_change=0 n_move=0 n_archive=0 total=0
 
   # Keyed diff via awk (portable, no bash assoc arrays -- see header). Identifies the "prior
   # snapshot" pass by FILENAME (not the classic `FNR==NR` idiom): FNR==NR silently breaks when
@@ -413,7 +448,13 @@ cmd_plan() {
       if (!(origin in p_hash)) {
         print "CREATE", origin, repo, id, item, notes, status, target, hash, "", ""
       } else if (p_hash[origin]==hash) {
-        n_unchanged++
+        # Same content. A recorded status that differs from the row target is drift (a move that
+        # failed last tick, or a snapshot written by the pre-fix mirror): plan the move again.
+        if (p_status[origin] != target && p_status[origin] != "done") {
+          print "MOVE", origin, repo, id, item, notes, status, target, hash, p_hid[origin], p_status[origin]
+        } else {
+          n_unchanged++
+        }
       } else {
         print "CHANGE", origin, repo, id, item, notes, status, target, hash, p_hid[origin], p_status[origin]
       }
@@ -425,7 +466,7 @@ cmd_plan() {
           # name to re-derive from: a disappeared row has no current-repo context (it may have
           # been extracted under a different --board-prefix), and the snapshot-recorded board is
           # the authoritative "where does this card actually live" answer.
-          print "COMPLETE", o, p_board[o], "", "", "", "", "", "", p_hid[o], p_status[o]
+          print "ARCHIVE", o, p_board[o], "", "", "", "", "", "", p_hid[o], p_status[o]
         }
       }
       print "UNCHANGED_COUNT", n_unchanged+0 > "/dev/stderr"
@@ -435,18 +476,54 @@ cmd_plan() {
   # `|| true`: under `set -e` + `pipefail`, a `grep` with no match exits 1 and would otherwise
   # abort this whole function mid-assignment (the same command-substitution gotcha fixed in
   # `cmd_apply_plan`); a missing UNCHANGED_COUNT line is treated as "0", not a script-ending error.
-  n_unchanged="$(grep -o 'UNCHANGED_COUNT[[:space:]][0-9]*' "${decisions}.stderr" 2>/dev/null | awk '{print $2}')" || true
+  # (OFS is the unit separator here, so the count is split off by any non-digit run, not a space)
+  n_unchanged="$(sed -n 's/^UNCHANGED_COUNT[^0-9]*\([0-9][0-9]*\).*/\1/p' "${decisions}.stderr" 2>/dev/null)" || true
   n_unchanged="${n_unchanged:-0}"
   rm -f "${decisions}.stderr"
 
   local kind origin repo id item notes status target hash phid pstatus
-  local flags followup board reason argv_json
+  local flags followup board reason argv_json move after
+  # _emit_create <board> <origin> <repo> <id> <item> <notes> <target> <hash> -- one CREATE op line.
+  _emit_create() {
+    local c_board="$1" c_origin="$2" c_repo="$3" c_id="$4" c_item="$5" c_notes="$6" c_target="$7" c_hash="$8"
+    local c_flags=() c_followup c_argv f
+    while IFS= read -r f; do [ -n "$f" ] && c_flags+=("$f"); done < <(_create_flags_for "$c_target")
+    c_followup="$(_followup_for "$c_target")"
+    c_argv="$(jq -nc --arg board "$c_board" --arg title "${MIRROR_UNTRUSTED_TITLE_TAG}${c_item}" \
+      --arg body "$(printf '%s\norigin: %s\nnotes: %s\nsynced: %s' "$MIRROR_UNTRUSTED_PREFIX" "$c_origin" "$c_notes" "$seen_at")" \
+      --arg idem "board-mirror:${c_origin}" \
+      --argjson flags "$(printf '%s\n' "${c_flags[@]:-}" | jq -R -s -c 'split("\n") | map(select(length>0))')" \
+      '["kanban","--board",$board,"create",$title,"--body",$body,"--idempotency-key",$idem] + $flags + ["--json"]')"
+    jq -nc --arg op create --arg origin "$c_origin" --arg repo "$c_repo" --arg id "$c_id" --arg board "$c_board" \
+      --arg hash "$c_hash" --arg target "$c_target" --arg followup "$c_followup" --argjson argv "$c_argv" \
+      '{op:$op, origin:$origin, repo:$repo, id:$id, board:$board, row_hash:$hash, target_native:$target, followup:$followup, argv:$argv}'
+  }
+  # _emit_archive <board> <origin> <hermes_id> <reason> -- one ARCHIVE op line. `target_native` is
+  # "archived": the card leaves the live board, and the snapshot drops the origin.
+  _emit_archive() {
+    local a_argv
+    a_argv="$(jq -nc --arg board "$1" --arg hid "$3" '["kanban","--board",$board,"archive",$hid]')"
+    jq -nc --arg origin "$2" --arg board "$1" --arg hermes_id "$3" --arg reason "$4" --argjson argv "$a_argv" \
+      '{op:"archive", origin:$origin, board:$board, hermes_id:$hermes_id, row_hash:null, target_native:"archived", reason:$reason, argv:$argv}'
+  }
+  # _emit_move <board> <origin> <repo> <id> <hermes_id> <hash> <target> <prior> <how> -- a block or
+  # promote op. `how` is the _move_for verdict; the result records `target` as the card's status.
+  _emit_move() {
+    local m_argv
+    case "$9" in
+      block)   m_argv="$(jq -nc --arg board "$1" --arg hid "$5" '["kanban","--board",$board,"block",$hid,"board-mirror: parked","--kind","needs_input"]')" ;;
+      promote) m_argv="$(jq -nc --arg board "$1" --arg hid "$5" '["kanban","--board",$board,"promote",$hid,"board-mirror: row moved"]')" ;;
+    esac
+    jq -nc --arg origin "$2" --arg repo "$3" --arg id "$4" --arg board "$1" --arg hermes_id "$5" \
+      --arg hash "$6" --arg target "$7" --arg prior_status "$8" --arg how "$9" --argjson argv "$m_argv" \
+      '{op:"move", how:$how, origin:$origin, repo:$repo, id:$id, board:$board, hermes_id:$hermes_id, row_hash:$hash, target_native:$target, prior_hermes_status:$prior_status, argv:$argv}'
+  }
   while IFS="$us" read -r kind origin repo id item notes status target hash phid pstatus; do
     [ -n "$kind" ] || continue
     total=$((total+1))
-    if [ "$kind" = "COMPLETE" ]; then
-      # The "repo" slot for a COMPLETE row carries the snapshot's own recorded board name
-      # verbatim (see the awk COMPLETE print above), not a repo name to re-derive a board from.
+    if [ "$kind" = "ARCHIVE" ]; then
+      # The "repo" slot for an ARCHIVE row carries the snapshot's own recorded board name
+      # verbatim (see the awk ARCHIVE print above), not a repo name to re-derive a board from.
       board="$repo"
     else
       case "$repo" in
@@ -457,44 +534,49 @@ cmd_plan() {
     case "$kind" in
       CREATE)
         n_create=$((n_create+1))
-        flags=()
-        while IFS= read -r f; do [ -n "$f" ] && flags+=("$f"); done < <(_create_flags_for "$target")
-        followup="$(_followup_for "$target")"
-        argv_json="$(jq -nc --arg board "$board" --arg title "${MIRROR_UNTRUSTED_TITLE_TAG}${item}" \
-          --arg body "$(printf '%s\norigin: %s\nnotes: %s\nsynced: %s' "$MIRROR_UNTRUSTED_PREFIX" "$origin" "$notes" "$seen_at")" \
-          --arg idem "board-mirror:${origin}" \
-          --argjson flags "$(printf '%s\n' "${flags[@]:-}" | jq -R -s -c 'split("\n") | map(select(length>0))')" \
-          '["kanban","--board",$board,"create",$title,"--body",$body,"--idempotency-key",$idem] + $flags + ["--json"]')"
-        jq -nc --arg op create --arg origin "$origin" --arg repo "$repo" --arg id "$id" --arg board "$board" \
-          --arg hash "$hash" --arg target "$target" --arg followup "$followup" --argjson argv "$argv_json" \
-          '{op:$op, origin:$origin, repo:$repo, id:$id, board:$board, row_hash:$hash, target_native:$target, followup:$followup, argv:$argv}'
+        _emit_create "$board" "$origin" "$repo" "$id" "$item" "$notes" "$target" "$hash"
         ;;
-      CHANGE)
-        n_change=$((n_change+1))
-        # A hash change can mean the STATUS moved, the CONTENT moved, or both. Content can only
-        # ever be surfaced via a comment (Hermes has no rename); a status move that requires a
-        # transition call is layered on top, keyed off the PRIOR hermes_status vs the new target.
-        reason="${MIRROR_UNTRUSTED_PREFIX} board-mirror: content updated -> item=\"${item}\" notes=\"${notes}\" status=${status}"
-        argv_json="$(jq -nc --arg board "$board" --arg hid "$phid" --arg reason "$reason" \
-          '["kanban","--board",$board,"comment",$hid,$reason]')"
-        jq -nc --arg op change --arg origin "$origin" --arg repo "$repo" --arg id "$id" --arg board "$board" \
-          --arg hash "$hash" --arg target "$target" --arg prior_status "$pstatus" --arg hermes_id "$phid" \
-          --argjson argv "$argv_json" \
-          '{op:$op, origin:$origin, repo:$repo, id:$id, board:$board, hermes_id:$hermes_id, row_hash:$hash, target_native:$target, prior_hermes_status:$prior_status, argv:$argv}'
+      CHANGE|MOVE)
+        # A hash change means the CONTENT moved (a comment, the only update the mirror makes); the
+        # STATUS is judged separately, from the snapshot's recorded card status against the row's
+        # target. MOVE is the same status check on a row whose content did not change.
+        move="$(_move_for "$pstatus" "$target")"
+        if [ "$kind" = "CHANGE" ] && [ "$move" != "replace" ]; then
+          n_change=$((n_change+1))
+          reason="${MIRROR_UNTRUSTED_PREFIX} board-mirror: content updated -> item=\"${item}\" notes=\"${notes}\" status=${status}"
+          argv_json="$(jq -nc --arg board "$board" --arg hid "$phid" --arg reason "$reason" \
+            '["kanban","--board",$board,"comment",$hid,$reason]')"
+          # While a move is still pending the card keeps its prior status; the snapshot must say so
+          # (new hash, old status), so a move that fails is planned again next tick.
+          after="$target"; [ "$move" = "none" ] || after="$pstatus"
+          jq -nc --arg op change --arg origin "$origin" --arg repo "$repo" --arg id "$id" --arg board "$board" \
+            --arg hash "$hash" --arg target "$after" --arg prior_status "$pstatus" --arg hermes_id "$phid" \
+            --argjson argv "$argv_json" \
+            '{op:$op, origin:$origin, repo:$repo, id:$id, board:$board, hermes_id:$hermes_id, row_hash:$hash, target_native:$target, prior_hermes_status:$prior_status, argv:$argv}'
+        fi
+        case "$move" in
+          block|promote)
+            n_move=$((n_move+1))
+            _emit_move "$board" "$origin" "$repo" "$id" "$phid" "$hash" "$target" "$pstatus" "$move"
+            ;;
+          replace)
+            # No verb reaches the target from here: archive the old card, create the new one. The
+            # create is idempotent on the freed key, so a crash between the two heals next tick.
+            n_move=$((n_move+1))
+            _emit_archive "$board" "$origin" "$phid" "board-mirror: replaced, ${pstatus} cannot reach ${target}"
+            _emit_create "$board" "$origin" "$repo" "$id" "$item" "$notes" "$target" "$hash"
+            ;;
+        esac
         ;;
-      COMPLETE)
-        n_complete=$((n_complete+1))
-        reason="board-mirror: origin removed from ${origin%%:*} board"
-        argv_json="$(jq -nc --arg board "$board" --arg hid "$phid" --arg reason "$reason" \
-          '["kanban","--board",$board,"complete",$hid,"--result",$reason]')"
-        jq -nc --arg op complete --arg origin "$origin" --arg board "$board" --arg hermes_id "$phid" \
-          --argjson argv "$argv_json" \
-          '{op:$op, origin:$origin, board:$board, hermes_id:$hermes_id, row_hash:null, target_native:"done", argv:$argv}'
+      ARCHIVE)
+        n_archive=$((n_archive+1))
+        _emit_archive "$board" "$origin" "$phid" "board-mirror: origin removed from ${origin%%:*} board"
         ;;
     esac
   done < "$decisions"
 
-  echo "mirror: plan ${total} ops (${n_create} create, ${n_change} change, ${n_complete} complete), ${n_unchanged} unchanged" >&2
+  total=$((n_create+n_change+n_move+n_archive))
+  echo "mirror: plan ${total} ops (${n_create} create, ${n_change} change, ${n_move} move, ${n_archive} archive), ${n_unchanged} unchanged" >&2
   rm -f "$cur_tsv" "$prior_tsv" "$decisions"
 }
 
@@ -505,9 +587,12 @@ cmd_plan() {
 # "per successfully-loaded row" even across the network boundary. A single op's failure is
 # reported (status=error) and does NOT abort the remaining ops (one bad row must not block the
 # rest of the batch, same posture `board.sh queue` already takes for a bad Notes cell). Exception:
-# a `complete` op that fails with "unknown id or terminal state" means the card is already gone
-# or already done, so it is reported status=ok/hermes_status=done instead of status=error, letting
-# the snapshot drop the origin rather than re-planning the same complete on every future run.
+# an `archive` op that fails with "cannot archive" means the card is already archived or gone
+# (archive works from every live state, so a refusal can only mean there is nothing left to
+# archive), so it is reported status=ok/hermes_status=archived instead of status=error, letting
+# the snapshot drop the origin rather than re-planning the same archive on every future run.
+# The same message shape on a `complete` is NOT safe to read that way: the pre-fix mirror did,
+# and a triage card (which `complete` refuses) was dropped from the snapshot while still open.
 # ---------------------------------------------------------------------------
 cmd_apply_plan() {
   local line op origin board hermes_id target followup argv_json new_id out rc
@@ -539,16 +624,15 @@ cmd_apply_plan() {
     # promises.
     if out="$("$HERMES_BIN" "${argv[@]}" 2>&1)"; then rc=0; else rc=$?; fi
     if [ "$rc" -ne 0 ]; then
-      # A `complete` op failing with "unknown id or terminal state" means the Hermes card is
-      # already gone or already terminal (deleted, or completed by some other path). There is
-      # nothing left to complete, so this is not a real error: report it as satisfied (status
-      # "ok", hermes_status "done") the same as a successful complete, so the caller's
-      # snapshot-upsert drops the origin line instead of re-planning the same complete forever.
-      if [ "$op" = "complete" ] && printf '%s' "$out" | grep -qi 'unknown id or terminal state'; then
+      # An `archive` refusal means the Hermes card is already archived or gone (deleted, or
+      # archived by some other path). There is nothing left to archive, so this is not a real
+      # error: report it as satisfied so the caller's snapshot-upsert drops the origin line
+      # instead of re-planning the same archive forever (the Mini logged 55 errors an hour from this).
+      if [ "$op" = "archive" ] && printf '%s' "$out" | grep -qi 'cannot archive'; then
         hermes_id="$(printf '%s' "$line" | jq -r '.hermes_id')"
-        echo "board-mirror: complete ${origin} (${hermes_id}): card gone or already terminal, recording done" >&2
+        echo "board-mirror: archive ${origin} (${hermes_id}): card gone or already archived, recording archived" >&2
         jq -nc --arg origin "$origin" --arg op "$op" --arg board "$board" --arg hermes_id "$hermes_id" \
-          '{origin:$origin, op:$op, board:$board, hermes_id:$hermes_id, row_hash:null, hermes_status:"done", status:"ok"}'
+          '{origin:$origin, op:$op, board:$board, hermes_id:$hermes_id, row_hash:null, hermes_status:"archived", status:"ok"}'
         continue
       fi
       jq -nc --arg origin "$origin" --arg op "$op" --arg board "$board" --arg err "$out" \
@@ -560,6 +644,21 @@ cmd_apply_plan() {
       create)
         new_id="$(printf '%s' "$out" | jq -r '.id // empty' 2>/dev/null)"
         followup="$(printf '%s' "$line" | jq -r '.followup // "none"')"
+        target="$(printf '%s' "$line" | jq -r '.target_native')"
+        # NO RESURRECTION: the idempotency key still maps to a card an older mirror COMPLETED, so
+        # `create` hands back that done card instead of a live one. Archive it (frees the key) and
+        # create again once; otherwise the snapshot would claim a live card that is really done.
+        if [ -n "$new_id" ] && [ "$(printf '%s' "$out" | jq -r '.status // empty' 2>/dev/null)" = "done" ]; then
+          echo "board-mirror: create ${origin}: key maps to done card ${new_id}, archiving it and creating a fresh one" >&2
+          "$HERMES_BIN" kanban --board "$board" archive "$new_id" >/dev/null 2>&1 || true
+          if out="$("$HERMES_BIN" "${argv[@]}" 2>&1)"; then
+            new_id="$(printf '%s' "$out" | jq -r '.id // empty' 2>/dev/null)"
+          else
+            jq -nc --arg origin "$origin" --arg op "$op" --arg board "$board" --arg err "$out" \
+              '{origin:$origin, op:$op, board:$board, status:"error", error:$err}'
+            continue
+          fi
+        fi
         # Followup failures are LOGGED (stderr), never silently swallowed: a `create` that
         # succeeded but whose followup transition failed still needs the card to be findable in
         # the snapshot (it exists, just possibly in the wrong native status) -- a masked followup
@@ -572,14 +671,16 @@ cmd_apply_plan() {
               # ~15-20s with no gateway/dispatcher running at all. `block ... --kind needs_input`
               # as a post-create followup was confirmed durable across 20+ seconds and repeated
               # CLI calls -- see `_create_flags_for`'s header note.
+              # A failed followup leaves the card in `ready`: record THAT (not the intended
+              # `blocked`), so the next tick sees drift and plans the block again.
               "$HERMES_BIN" kanban --board "$board" block "$new_id" "board-mirror: parked" --kind needs_input >/dev/null \
-                || echo "board-mirror: WARNING followup block-needs-input failed for $origin ($new_id)" >&2
+                || { echo "board-mirror: WARNING followup block-needs-input failed for $origin ($new_id), recording ready" >&2; target="ready"; }
               ;;
           esac
         fi
         jq -nc --arg origin "$origin" --arg op "$op" --arg board "$board" --arg hermes_id "${new_id:-}" \
           --arg hash "$(printf '%s' "$line" | jq -r '.row_hash')" \
-          --arg target "$(printf '%s' "$line" | jq -r '.target_native')" \
+          --arg target "$target" \
           '{origin:$origin, op:$op, board:$board, hermes_id:$hermes_id, row_hash:$hash, hermes_status:$target, status:"ok"}'
         ;;
       change)
@@ -589,10 +690,17 @@ cmd_apply_plan() {
           --arg target "$(printf '%s' "$line" | jq -r '.target_native')" \
           '{origin:$origin, op:$op, board:$board, hermes_id:$hermes_id, row_hash:$hash, hermes_status:$target, status:"ok"}'
         ;;
-      complete)
+      move)
         hermes_id="$(printf '%s' "$line" | jq -r '.hermes_id')"
         jq -nc --arg origin "$origin" --arg op "$op" --arg board "$board" --arg hermes_id "$hermes_id" \
-          '{origin:$origin, op:$op, board:$board, hermes_id:$hermes_id, row_hash:null, hermes_status:"done", status:"ok"}'
+          --arg hash "$(printf '%s' "$line" | jq -r '.row_hash')" \
+          --arg target "$(printf '%s' "$line" | jq -r '.target_native')" \
+          '{origin:$origin, op:$op, board:$board, hermes_id:$hermes_id, row_hash:$hash, hermes_status:$target, status:"ok"}'
+        ;;
+      archive)
+        hermes_id="$(printf '%s' "$line" | jq -r '.hermes_id')"
+        jq -nc --arg origin "$origin" --arg op "$op" --arg board "$board" --arg hermes_id "$hermes_id" \
+          '{origin:$origin, op:$op, board:$board, hermes_id:$hermes_id, row_hash:null, hermes_status:"archived", status:"ok"}'
         ;;
     esac
   done
@@ -601,8 +709,8 @@ cmd_apply_plan() {
 # ---------------------------------------------------------------------------
 # snapshot-upsert <snapshot-file> -- reads ONE result-line JSON (cmd_apply_plan's stdout shape)
 # from stdin and rewrites the snapshot file: an `ok` create/change UPSERTS that origin's line
-# (replacing any prior line for the same origin); an `ok` complete REMOVES the origin's line
-# entirely (Hermes keeps the card as `done` forever; our snapshot's job is only "current active
+# (replacing any prior line for the same origin); an `ok` archive REMOVES the origin's line
+# entirely (Hermes keeps the card as `archived`; our snapshot's job is only "current active
 # mirror state", so a later reappearance of the same origin is a fresh CREATE, never a
 # resurrection); a `status:"error"` result touches nothing (the snapshot must never claim an
 # unapplied change succeeded). Called ONCE PER RESULT LINE by the caller (`board.sh mirror`), so
@@ -631,7 +739,7 @@ cmd_snapshot_upsert() {
   else
     : > "$tmp"
   fi
-  if [ "$op" != "complete" ]; then
+  if [ "$op" != "archive" ] && [ "$op" != "complete" ]; then
     jq -nc --arg origin "$origin" --arg repo "$repo" --arg id "$id" --arg board "$board" \
       --arg hermes_id "$hermes_id" --arg row_hash "$row_hash" --arg hermes_status "$hermes_status" \
       --arg seen_at "$seen_at" \
