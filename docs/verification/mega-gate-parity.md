@@ -146,3 +146,40 @@ Verdict: RED, as required
 ```
 
 Restored with `command cp -f`; the same command exits 0 again (PASS=7).
+
+## Security review fixes
+
+Three findings from a security review, fixed in cb5bc514 (committed before the negative controls).
+
+| Finding | Fix | Case |
+|---|---|---|
+| MEDIUM: a helper that fails to load opened every gate | the hook logs `FAIL-OPEN \| ship-rules unavailable`, prints `BLOCKED: ship-gate. lib/gate/ship-rules.sh failed to load; reinstall or fix the kit` and exits 2 when a kit lib/ exists; exit 0 only with no kit lib/ | i, j, k |
+| LOW 1: the mega gate dropped the diff rules when the helper failed to load | same two lines on stderr, exit 1 | i |
+| LOW 2: lane_gates and the project lanes were read from the PR head | `[gate] lane_gates` read `--at` the merge base; the project `.kit.toml` lanes read from the blob at the merge base (`KIT_LANE_PROJECT_AT`) | h |
+
+```
+Command: bash tests/test-mega-gate-parity.sh
+Exit: 0
+ok - h PR-head .kit.toml cannot switch off or reshape its own lane: ship gate exit 2, mega gate exit 1
+ok - i broken helper: ship gate exit 2, mega gate exit 1, both name the helper
+ok - i the hook logged FAIL-OPEN | ship-rules unavailable
+ok - j no kit lib/ at all: the hook exits 0
+ok - k bash -n lib/gate/ship-rules.sh
+PASS=12 FAIL=0
+Verdict: PASS
+```
+
+```
+Command: bash tests/test-mega-merge.sh; tests/test-ship-gate-{fail-closed,impl-notes,coverage-map,profiles}.sh; tests/test-hooks.sh; tests/test-lanes-data.sh; tests/test-gate-ledger-check-cache.sh
+Exit: 0 for each (30/30, 11/11, 19/19, 10/10, all pass, 826/826, 58 PASS 0 FAIL, all pass)
+Verdict: PASS
+```
+
+Negative controls, each from the committed tree and restored with `command cp -f` (tree clean, parity test back to PASS=12):
+
+| Control | Result |
+|---|---|
+| hook `exit 0` when the helper fails to load | case i red: ship 0, no FAIL-OPEN log line (PASS=10 FAIL=2) |
+| mega gate falls back to the bare ledger check | case i red (PASS=11 FAIL=1) |
+| project lanes read at head (`KIT_LANE_PROJECT_AT` emptied) | case h red: hook shows the floor message, not the normal lane gap |
+| `lane_gates` switch read at head in the hook | case h red, same message |

@@ -29,3 +29,10 @@ Deltas from `docs/specs/SPEC-399-mega-gate-parity.md`. Nothing here repeats what
 - Decision/Change: `ship_rules_ledger_check <root> <lane> <rid> <ledger>` sets it. The hook and `gate` both call it.
 - Why: the same class of seam this change removes; one caller-independent resolver.
 - Impact: with no repo or no helper, `gate` still runs the bare check.
+
+## A broken helper blocks; lanes and the lane_gates switch read at the merge base
+
+- Context: a security review found that `source ship-rules.sh || exit 0` opened every gate, including the proof and plain ledger checks master enforced without the helper. It also found the lane check and the `lane_gates` switch read the PR head.
+- Decision/Change: the hook and `gate` block (exit 2 and 1) when the helper fails to load and a kit lib/ exists; the hook exits 0 only with no kit lib/ at all. `KIT_LANE_PROJECT_AT=<rev>` makes `lane_resolve` read the project layer from the `.kit.toml` committed at `<rev>`, and `_lane_fp` keys the check cache on that blob. `ship_rules_ledger_check` takes the merge base; `_gate_on lane_gates` takes it too.
+- Why: a PR must not switch off its own gates or rewrite its own lanes (the floor already read at the merge base). No existing test encoded head-read behavior.
+- Impact: a project `.kit.toml` lane override takes effect at ship only once it is on the default branch. The `proof_of_done` switch is still read from the head; left for a separate change.
