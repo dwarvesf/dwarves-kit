@@ -50,7 +50,7 @@ GENERATED , do not hand-edit. Regenerate: `bash lib/registry/feature-registry.sh
 | `/kit:verify` | `[H/I]` | Re-run the test levels (kit:task-verifier + kit:integration-verifier + kit:acceptance-verifier + kit:system-verifier) on the current spec/b… | SPEC-002, SPEC-003, SPEC-006 +50 | test-break-it.sh, test-ceremony-lens.sh, test-codex-hooks.sh +21 |
 | `/kit:visual-team` | `[H/I]` | Parallel multi-lens critique of a visual/UI design. Dispatches 5 design lenses, merges findings, reports a verdict. Report-only, downstream… | SPEC-016, SPEC-018, SPEC-019 +12 | test-command-emit-sweep.sh, test-meta-review-verifiers.sh, test-meta-spec-depth.sh |
 | `/kit:wayfind` | `[H]` | Plan a chunk of work too big for one agent session as a shared decision map: map.md + typed decision tickets in the mega-goal folder, resol… | SPEC-206, SPEC-207, SPEC-217 +2 | - |
-| `/kit:wrap` | `[H/I]` | The session-scoped landing step after ship: flips board rows, merges green PRs, checks deploys, tidies worktrees, prints the skim-first rep… | SPEC-020, SPEC-060, SPEC-072 +60 | test-bin-forwarders.sh, test-board-work.sh, test-boundary-lint.sh +31 |
+| `/kit:wrap` | `[H/I]` | The session-scoped landing step after ship: flips board rows, merges green PRs, checks deploys, tidies worktrees, prints the skim-first rep… | SPEC-020, SPEC-060, SPEC-072 +60 | test-bin-forwarders.sh, test-board-work.sh, test-boundary-lint.sh +32 |
 
 ## Agents
 
@@ -150,7 +150,7 @@ GENERATED , do not hand-edit. Regenerate: `bash lib/registry/feature-registry.sh
 | `check-edit` | `[V]` | `lib/gate/check-edit.sh` | check-edit signal for execute: did the build weaken the checks the spec names, from a base ref diff | SPEC-369 | test-whole-spec-dispatch.sh |
 | `classify floor` | `[V]` | `lib/classify/lane-classify.sh` | the diff floor: full when changed paths hit a hard path, else the size floor for the chosen lane | SPEC-036, SPEC-044, SPEC-045 +67 | test-codex-hooks.sh, test-e2e.sh, test-gate-opt-in.sh +29 |
 | `classify risk` | `[V]` | `lib/classify/lane-classify.sh` | risk verdict for a task and its files: full when the lane is full or a full-lane flag fires | SPEC-036, SPEC-044, SPEC-045 +67 | test-codex-hooks.sh, test-e2e.sh, test-gate-opt-in.sh +29 |
-| `flick` | `[V]` | `lib/decide/flick.sh` | pick one of N through a decision API; shadow-only, fails open, always exit 0 | SPEC-381 | test-bin-forwarders.sh, test-flick.sh, test-hooks.sh |
+| `flick` | `[V]` | `lib/decide/flick.sh` | pick one of N through a decision API; shadow-only, fails open, always exit 0 | SPEC-381 | test-bin-forwarders.sh, test-flick.sh, test-hooks.sh +2 |
 | `lane data` | `[V]` | `lib/gate/lane-data.sh` | the one reader of lane data ([lane.<name>] and [lanes] in kit.toml) for the gate ledger and the classifier | SPEC-368, SPEC-370, SPEC-372 +4 | test-install-contract.sh, test-lane-telemetry.sh, test-lanes-data.sh |
 | `orchestrate --backend orca` | `[V]` | `lib/queue/orca-backend.sh` | opt-in Orca backend for the mega runner: sub-goals as Orca Tasks with supervised workers, state read live | SPEC-370 | test-orchestrate-orca.sh |
 | `push-refs` | `[V]` | `lib/gate/push-refs.sh` | fail-closed parser that names which refs a shell command pushes, used by the ship-gate | SPEC-044, SPEC-045, SPEC-048 +35 | test-codex-hooks.sh, test-gate-opt-in.sh, test-gate-opt-out.sh +19 |

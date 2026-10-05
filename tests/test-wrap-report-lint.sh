@@ -415,6 +415,34 @@ chk "a contraction warns and still passes" "$([ "$rc" -eq 0 ]; echo $?)"
 chk_has "the contraction warning names the line" "$out" "warn line 15: contraction"
 
 
+# Step 7b's flick shadow row. While `decide.points` lists wrap-7b, a report that reached 7b owes a
+# `flick wrap-7b:` row, so a session that skips the call reads as a lint finding and not as nothing.
+# Twenty-odd real wraps skipped it in five days before this rule existed. The operator config is
+# pinned to a scratch dir per case, so the real machine's [decide] block never reaches the others.
+FLICK_ON="$TMPD/flick-on"; mkdir -p "$FLICK_ON"; printf '[decide]\npoints = "wrap-7b"\n' > "$FLICK_ON/kit.toml"
+FLICK_OFF="$TMPD/flick-off"; mkdir -p "$FLICK_OFF"; printf '[decide]\npoints = ""\n' > "$FLICK_OFF/kit.toml"
+_fyi_row() { printf '%s\n\n**FYI:**\n| Tag | Fact | Home |\n|---|---|---|\n| STATE | %s | |\n' "$(_report '✅ **Needs you:** NOTHING')" "$1"; }
+
+out="$(_report '✅ **Needs you:** NOTHING' | KIT_CONFIG_OPERATOR="$FLICK_ON" bash "$LINT" 2>&1)"; rc=$?
+chk "flick on, no flick row: the lint fails" "$([ "$rc" -eq 1 ]; echo $?)"
+chk_has "the finding names the flick row" "$out" "no 'flick wrap-7b:' row"
+
+out="$(_fyi_row 'flick wrap-7b: 2 answered, 0 denied, 0 error (jev)' | KIT_CONFIG_OPERATOR="$FLICK_ON" bash "$LINT" 2>&1)"; rc=$?
+chk "flick on, a flick row: clean" "$([ "$rc" -eq 0 ]; echo $?)"
+
+out="$(_fyi_row 'flick wrap-7b: no pairs (jev)' | KIT_CONFIG_OPERATOR="$FLICK_ON" bash "$LINT" 2>&1)"; rc=$?
+chk "flick on, the no-pairs row: clean" "$([ "$rc" -eq 0 ]; echo $?)"
+
+out="$(_report '✅ **Needs you:** NOTHING' | KIT_CONFIG_OPERATOR="$FLICK_OFF" bash "$LINT" 2>&1)"; rc=$?
+chk "flick off, no flick row: clean" "$([ "$rc" -eq 0 ]; echo $?)"
+
+out="$(printf 'x\n\n**Built:** SKIPPED: distill is off\n\n**Seam:** NOTHING: no seam configured\n' | KIT_CONFIG_OPERATOR="$FLICK_ON" bash "$LINT" 2>&1)"; rc=$?
+chk "flick on, step 7b skipped with a reason: no flick row owed" "$([ "$rc" -eq 0 ]; echo $?)"
+
+out="$(printf '## Follow-through: t\n\n**Built:** NOTHING: no candidates\n' | KIT_CONFIG_OPERATOR="$FLICK_ON" bash "$LINT" 2>&1)"; rc=$?
+chk "flick on, a follow-through report owes no flick row" "$([ "$rc" -eq 0 ]; echo $?)"
+
+
 
 echo
 if [ "$FAIL" -gt 0 ]; then echo "test-wrap-report-lint: $PASS passed, $FAIL FAILED of $TOTAL" >&2; exit 1; fi

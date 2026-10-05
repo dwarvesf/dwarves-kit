@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # wrap.sh -- the landing step after ship. One pass over every repo a session
-# touched, with thirteen verbs:
+# touched, with fourteen verbs:
 #
 #   wrap.sh scan  [--under <root>]... <repo> [<repo>...]    report only, exit 0
 #   wrap.sh apply [--apply] [--worktrees] [--archive-unmerged] [--pull-only|--no-pull] [--own <path>]... [--under <root>]... <repo> [...]  dry-run by default
@@ -17,6 +17,7 @@
 #   wrap.sh stage "<title>" "<intent>" "<home>" [--repo <repo>]  stage a candidate
 #   wrap.sh rebase <worktree>                               onto origin/<default>, safe conflicts only
 #   wrap.sh adopt [--apply] [--body-file F] <repo> [<repo>...]    adopt into the kit contract and land; dry run default
+#   wrap.sh flick-7b < pairs                                step 7b's flick shadow call; prints the FYI STATE row text
 #   wrap.sh --help
 #
 #   --under <root> (scan and apply, repeatable) appends every immediate child of <root> that
@@ -128,9 +129,9 @@ PROOF_LEDGER_SH="$LIB_ROOT/gate/proof-ledger.sh"
 source "$LIB_ROOT/config/kit-config.sh" || { echo "FATAL: lib/config/kit-config.sh missing or unreadable" >&2; exit 1; }
 # shellcheck source=lib/gate/default-branch-warn.sh
 source "$LIB_ROOT/gate/default-branch-warn.sh" || { echo "FATAL: lib/gate/default-branch-warn.sh missing or unreadable" >&2; exit 1; }
-for _m in common scan apply pull carry ci merge land start log deploy rebase adopt; do source "$SELF_DIR/wrap-$_m.sh" || { echo "FATAL: lib/wrap/wrap-$_m.sh missing or unreadable" >&2; exit 1; }; done; unset _m
+for _m in common scan apply pull carry ci merge land start log deploy rebase adopt flick; do source "$SELF_DIR/wrap-$_m.sh" || { echo "FATAL: lib/wrap/wrap-$_m.sh missing or unreadable" >&2; exit 1; }; done; unset _m
 
-_usage() { sed -n '2,34p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
+_usage() { sed -n '2,35p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
 
 # --------------------------------------------------------------------------- entry
 
@@ -151,6 +152,7 @@ main() {
     stage)          cmd_stage "$@" ;;
     rebase)         cmd_rebase "$@" ;;
     adopt)          cmd_adopt "$@" ;;
+    flick-7b)       cmd_flick_7b "$@" ;;
     -h|--help|help|"") _usage; return 0 ;;
     *) echo "wrap: unknown verb '$verb' (try: wrap --help)" >&2; return 64 ;;
   esac
