@@ -394,7 +394,7 @@ else
 
   echo "[32] negative control: without the signal block, the same SIGINT leaves lib.sh dirty"
   NC_T2SIG="$TMP/negctl-t2sig.sh"
-  ln=$(grep -Fn "  trap '' INT TERM HUP" "$NC" | head -1 | cut -d: -f1)
+  ln=$(grep -n "^  trap '' INT TERM HUP" "$NC" | head -1 | cut -d: -f1)
   sed "${ln}s/.*/  :/" "$NC" > "$NC_T2SIG"
   SIGREPO2="$TMP/sigrepo2"; mkrepo "$SIGREPO2"
   (
@@ -487,6 +487,104 @@ C="$(nc_check "$NCR" "$NCO")"
 if [ "$A" = 0 ] && [ "$B" = 1 ] && [ "$C" = 1 ]; then
   ok "small diff: full passes (0), always blocks (1); hard-path diff under full blocks (1)"
 else no "full/small=$A always/small=$B full/hard-path=$C (want 0 1 1)"; fi
+
+echo
+# --- --parallel N: controls in throwaway worktree copies, N at once, ordered output ---------
+# The suite under test is isolated per run except for ports, so each control runs in its own
+# `git worktree add --detach` copy at HEAD and a per-slot env knob hands each concurrent slot a
+# disjoint value. Output must equal what the controls print one after another.
+PREPO="$TMP/par"; mkrepo "$PREPO"
+printf '#!/usr/bin/env bash\nsource ./lib.sh\nsource "./sub dir/lib file.sh"\n[ -z "${REC:-}" ] || echo "${SLOT_PORT:-none} ${OTHER:-none}" >> "$REC/ports"\nif [ -n "${RDV:-}" ] && [ ! -e "$RDV/seen.$SLOT_PORT" ]; then\n  touch "$RDV/up.$SLOT_PORT"\n  for _ in $(seq 30); do [ "$(ls "$RDV" | grep -c "^up")" -ge 3 ] && break; sleep 0.1; done\n  ls "$RDV" | grep -c "^up" > "$RDV/seen.$SLOT_PORT"\nfi\n[ "$(add 2 2)" = "4" ] && [ "$(mul 2 3)" = "6" ]\n' > "$PREPO/slow.sh"
+printf '#!/usr/bin/env bash\nsleep 2\ntouch "$REC/survivor"\n' > "$PREPO/sleepy.sh"
+git -C "$PREPO" add -A && git -C "$PREPO" -c user.name=t -c user.email=t@t commit -q -m slow
+M1="sed -i.bak 's/+/-/' lib.sh && rm -f lib.sh.bak"
+M2="sed -i.bak 's/\\*/+/' 'sub dir/lib file.sh' && rm -f 'sub dir/lib file.sh.bak'"
+M3="echo 'add() { echo 0; }' > lib.sh"
+PTMP="$TMP/par-tmp"; mkdir -p "$PTMP"
+copies_left() { ls "$PTMP" | grep -c '^negctl-par\.'; }
+
+echo "[39] --parallel 3 prints what three serial controls print, in control order, tree clean"
+SER="$(for m in "$M1" "$M2" "$M3"; do bash "$NC" "$PREPO" "bash test.sh" "$m" 2>&1; done)"
+PAR3="$(TMPDIR="$PTMP" bash "$NC" --parallel 3 "$PREPO" "bash test.sh" "$M1" "$M2" "$M3" 2>&1)"; RC3=$?
+PAR1="$(TMPDIR="$PTMP" bash "$NC" --parallel 1 "$PREPO" "bash test.sh" "$M1" "$M2" "$M3" 2>&1)"; RC1=$?
+if [ "$RC3" -eq 0 ] && [ "$RC1" -eq 0 ] && [ "$PAR3" = "$SER" ] && [ "$PAR1" = "$SER" ] \
+   && [ "$(grep -c '^Verdict: PASS$' <<<"$PAR3")" -eq 3 ] && clean "$PREPO"; then
+  ok "parallel 3 and parallel 1 output equals the serial blocks, 3 PASS, live tree clean"
+else no "rc3=$RC3 rc1=$RC1 serial=[$SER] par3=[$PAR3]"; fi
+
+echo "[40] --slot-env hands each concurrent slot its own value, and the slots really run at once"
+RDV="$TMP/rdv"; REC="$TMP/rec"; mkdir -p "$RDV" "$REC"
+OUT="$(TMPDIR="$PTMP" RDV="$RDV" REC="$REC" bash "$NC" --parallel 3 --slot-env SLOT_PORT=100:10 --slot-env OTHER=07:0 "$PREPO" "bash slow.sh" "$M1" "$M2" "$M3" 2>&1)"; RC=$?
+PORTS="$(sort -u "$REC/ports" | tr '\n' ';')"
+SEEN="$(cat "$RDV"/seen.* 2>/dev/null | sort -u | tr '\n' ';')"
+if [ "$RC" -eq 0 ] && [ "$PORTS" = "100 7;110 7;120 7;" ] && [ "$SEEN" = "3;" ] && [ "$(ls "$RDV" | grep -c '^seen')" -eq 3 ]; then
+  ok "slots 100/110/120 (step applied, OTHER=7 base 10), all three met at the rendezvous"
+else no "rc=$RC ports=[$PORTS] seen=[$SEEN] out=$OUT"; fi
+
+echo "[41] --parallel 2 over 3 controls never exceeds 2 slot values"
+rm -f "$REC/ports"
+OUT="$(TMPDIR="$PTMP" REC="$REC" bash "$NC" --parallel 2 --slot-env SLOT_PORT=100:10 "$PREPO" "bash slow.sh" "$M1" "$M2" "$M3" 2>&1)"; RC=$?
+PORTS="$(awk '{print $1}' "$REC/ports" | sort -u | tr '\n' ';')"
+if [ "$RC" -eq 0 ] && [ "$PORTS" = "100;110;" ] && [ "$(grep -c '^Verdict: PASS$' <<<"$OUT")" -eq 3 ]; then
+  ok "two workers, values 100 and 110, three PASS blocks"
+else no "rc=$RC ports=[$PORTS] out=$OUT"; fi
+
+echo "[42] a failing control still reports in parallel: FAIL named, the others PASS, order kept, exit 1"
+VAC="printf '\n# comment\n' >> lib.sh"
+OUT="$(TMPDIR="$PTMP" bash "$NC" --parallel 3 "$PREPO" "bash test.sh" "$M1" "$VAC" "$M2" 2>&1)"; RC=$?
+SER2="$(for m in "$M1" "$VAC" "$M2"; do bash "$NC" "$PREPO" "bash test.sh" "$m" 2>&1; done)"
+if [ "$RC" -eq 1 ] && [ "$(grep -c '^Verdict: PASS$' <<<"$OUT")" -eq 2 ] \
+   && [ "$(grep -c 'Verdict: FAIL: test stayed green' <<<"$OUT")" -eq 1 ] \
+   && [ "$(grep -cE '^Exit: [1-9][0-9]* \(under mutation' <<<"$OUT")" -eq 2 ] \
+   && [ "$OUT" = "$SER2" ] && clean "$PREPO"; then
+  ok "one FAIL, two PASS with RED under mutation, blocks in control order, exit 1"
+else no "rc=$RC out=$OUT serial=$SER2"; fi
+
+echo "[43] no throwaway copy survives a finished run, a refused run, or a worktree registration"
+OUT="$(TMPDIR="$PTMP" bash "$NC" --parallel 3 "$PREPO" "bash test.sh" "$M1" "$M2" "$M3" 2>&1)"
+echo "# wip" >> "$PREPO/lib.sh"
+OUT2="$(TMPDIR="$PTMP" bash "$NC" --parallel 3 "$PREPO" "bash test.sh" "$M1" 2>&1)"; RC2=$?
+git -C "$PREPO" checkout -q -- lib.sh
+if [ "$(copies_left)" -eq 0 ] && [ "$RC2" -eq 2 ] && grep -q 'REFUSED' <<<"$OUT2" \
+   && [ "$(git -C "$PREPO" worktree list | wc -l | tr -d ' ')" = 1 ]; then
+  ok "temp dir gone and worktree registry back to one entry after both runs"
+else no "left=$(copies_left) rc2=$RC2 wt=$(git -C "$PREPO" worktree list) out2=$OUT2"; fi
+
+echo "[44] --parallel usage: zero or non-numeric N, a bad --slot-env, --slot-env alone, extra controls without --parallel, --at, --base-ref all exit 64"
+R=""
+for args in "--parallel 0" "--parallel x" "--parallel 2 --slot-env NOPE" "--parallel 2 --slot-env 1A=1:1" "--slot-env A=1:1" "--parallel 2 --at HEAD" "--parallel 2 --base-ref HEAD"; do
+  # shellcheck disable=SC2086
+  bash "$NC" $args "$PREPO" "bash test.sh" "$M1" >/dev/null 2>&1; R="$R$? "
+done
+bash "$NC" "$PREPO" "bash test.sh" "$M1" "$M2" >/dev/null 2>&1; R="$R$?"
+if [ "$R" = "64 64 64 64 64 64 64 64" ] && clean "$PREPO" && [ "$(copies_left)" -eq 0 ]; then
+  ok "all eight misuses exit 64 before anything runs"
+else no "exit codes: $R"; fi
+
+if [ -f "$SIGCHECK" ]; then
+  echo "[45] an interrupted --parallel run removes every copy, kills the suites, leaves the live tree clean"
+  REC2="$TMP/rec2"; mkdir -p "$REC2"
+  SAW=0
+  (
+    set -m
+    TMPDIR="$PTMP" REC="$REC2" bash "$NC" --parallel 3 "$PREPO" "bash sleepy.sh" "$M1" "$M2" "$M3" > "$TMP/par-int.out" 2>&1 &
+    PID=$!
+    for _ in $(seq 100); do ls -d "$PTMP"/negctl-par.*/c2 >/dev/null 2>&1 && break; sleep 0.1; done
+    ls -d "$PTMP"/negctl-par.*/c2 >/dev/null 2>&1 && touch "$REC2/saw-copies"
+    sleep 0.5
+    kill -INT -$PID 2>/dev/null
+    wait $PID
+  )
+  sleep 2.5   # past the suite's own 2s nap: a surviving suite would have touched survivor by now
+  [ -f "$REC2/saw-copies" ] && SAW=1
+  if [ "$SAW" -eq 1 ] && [ "$(copies_left)" -eq 0 ] && [ ! -e "$REC2/survivor" ] && clean "$PREPO" \
+     && [ "$(git -C "$PREPO" worktree list | wc -l | tr -d ' ')" = 1 ]; then
+    ok "copies existed mid-run; after SIGINT none remain, no suite outlived it, worktree registry clean"
+  else no "saw=$SAW left=$(copies_left) survivor=$([ -e "$REC2/survivor" ] && echo yes || echo no) wt=$(git -C "$PREPO" worktree list)"; fi
+else
+  echo "[45] skipped: SIGINT is already ignored in this process tree (see [31]/[32])"
+  pass=$((pass+1))
+fi
 
 if [ "$fail" -gt 0 ]; then echo "test-proof-negctl: $pass passed, $fail FAILED" >&2; exit 1; fi
 echo "test-proof-negctl: all $pass passed"
