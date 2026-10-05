@@ -83,6 +83,8 @@ FAKE_OUT="$WORK/out"
 STATE="$WORK/state.json"
 
 run_sweep() {  # extra sweep args...
+  # An ambient GH_TOKEN (the nightly regression pins a placeholder) must not read as a leak to a child.
+  env -u GH_TOKEN -u GITHUB_TOKEN -u GIT_ASKPASS -u BOARD_SYNC_GIT_TOKEN \
   HOME="$WORK" PATH="/usr/bin:/bin:/opt/homebrew/bin:/usr/local/bin" \
     "$SWEEP" --registry "$WORK/boards.txt" --board-cmd "$WORK/board" --state-file "$STATE" "$@"
 }
