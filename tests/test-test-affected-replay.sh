@@ -32,7 +32,7 @@ RP="$R/tests/lib/test-affected-replay.sh"
 
 echo "== a correct selection has no MISS =="
 out="$(bash "$RP" --n 1 --ta "$R/bin/test-affected" 2>&1)"; rc=$?
-has "$out" ", 0 MISS" "path and basename runs are both selected"
+has "$out" "1 PRs, picked 2, 0 MISS" "the path run and the basename run are selected, the bare mention is not"
 [ "$rc" = 0 ] && ok "exit 0" || bad "exit $rc, want 0 ($out)"
 
 echo "== a selection that omits a suite that runs the file is a MISS =="

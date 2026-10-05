@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # test-test-affected.sh -- bin/test-affected in a throwaway git repo: the selection mapping,
+# run/source versus mention for a source basename, kit.toml picked by changed section or key,
 # the test-meta input rule, UNCOVERED, the pass cache (hit, miss after a source edit, FAIL never
 # cached, --no-cache, unusable cache fails closed).
 set -uo pipefail
@@ -34,6 +35,7 @@ printf '#!/bin/bash\ngrep -q readme README.md\n'      > tests/test-readme.sh
 printf '#!/bin/bash\ngrep -q dr docs/README.md\n'     > tests/test-docsreadme.sh
 printf '#!/bin/bash\necho ab.sh\n' > tests/test-short.sh
 printf '#!/bin/bash\necho longname.sh\n'               > tests/test-long.sh
+printf '#!/bin/bash\ncd lib/x && bash longname.sh\n'  > tests/test-longrun.sh
 mkdir -p lib/mod; printf 'echo m\n' > lib/mod/mm.sh
 printf '#!/bin/bash\nexit 0\n' > tests/test-mod-thing.sh
 printf '#!/bin/bash\n# lib/x/b.sh appears only in this comment\nexit 0\n' > tests/test-cmt.sh
@@ -67,7 +69,8 @@ has   "$out" "UNCOVERED lib/x/ab.sh" "short-basename source with no path referen
 git checkout -q -- lib/x/ab.sh
 echo "# edit" >> lib/x/longname.sh
 out="$(bash "$TA" --list 2>&1)"
-has   "$out" "tests/test-long.sh  (references lib/x/longname.sh)" "long basename still selects by basename"
+has   "$out" "tests/test-longrun.sh  (references lib/x/longname.sh)" "a suite that runs a long basename (bash longname.sh) selects"
+hasnt "$out" "tests/test-long.sh" "a suite that only echoes the basename does not select"
 git checkout -q -- lib/x/longname.sh
 echo "# edit" >> lib/mod/mm.sh
 out="$(bash "$TA" --list 2>&1)"
@@ -148,6 +151,57 @@ printf '#!/bin/bash\nexit 0\n' > tests/test-hooks.sh
 out="$(bash "$TA" --list 2>&1)"
 has   "$out" "tests/test-meta-docs-registry.sh  (reads tests/test-hooks.sh)" "a changed tests/test-hooks.sh (named by docs-registry) picks docs-registry"
 rm -f tests/test-hooks.sh
+git stash pop -q 2>/dev/null || true
+
+echo "== source basename: run or source picks, a mention does not =="
+git stash -q -u
+mkdir -p lib/p
+printf 'echo h\n' > lib/p/helper-lib.sh
+printf '#!/bin/bash\ngrep -q helper-lib.sh docs/notes.txt\n'           > tests/test-greps.sh
+printf '#!/bin/bash\ncd lib/p && source helper-lib.sh\n'                > tests/test-sources.sh
+printf '#!/bin/bash\n. "$LIBDIR/helper-lib.sh"\n'                       > tests/test-dotvar.sh
+printf '#!/bin/bash\ncd lib/p && ./helper-lib.sh\n'                     > tests/test-calls.sh
+printf '#!/bin/bash\nbash "$KIT_DIR/lib/p/helper-lib.sh"\n'             > tests/test-bypath.sh
+printf '#!/bin/bash\ngrep -q "lib/p/helper-lib.sh" docs/notes.txt\n'    > tests/test-pathgrep.sh
+printf '#!/bin/bash\n# source helper-lib.sh\nexit 0\n'                  > tests/test-comment.sh
+git add -A && git commit -qm run-fixtures && git update-ref refs/remotes/origin/main HEAD
+echo "# edit" >> lib/p/helper-lib.sh
+out="$(bash "$TA" --list 2>&1)"
+hasnt "$out" "tests/test-greps.sh" "a suite that only greps the basename is not picked"
+hasnt "$out" "tests/test-comment.sh" "a comment that sources the basename is not picked"
+has   "$out" "tests/test-sources.sh  (references lib/p/helper-lib.sh)" "a suite that sources the basename is picked"
+has   "$out" "tests/test-dotvar.sh  (references lib/p/helper-lib.sh)" "a suite that dot-sources \$VAR/<basename> is picked"
+has   "$out" "tests/test-calls.sh  (references lib/p/helper-lib.sh)" "a suite that calls the basename directly is picked"
+has   "$out" "tests/test-bypath.sh  (references lib/p/helper-lib.sh)" "a suite that runs the full path is picked"
+has   "$out" "tests/test-pathgrep.sh  (references lib/p/helper-lib.sh)" "a suite that names the full repo path is picked even in a grep"
+git checkout -q -- lib/p/helper-lib.sh
+git stash pop -q 2>/dev/null || true
+
+echo "== kit.toml: picked by the changed section or key =="
+git stash -q -u
+printf '# preamble\n\n[test]\nsuite = "full"\nload_warn = 16\n\n[review]\napply_findings = true\n' > kit.toml
+printf '#!/bin/bash\ngrep -q load_warn "$KIT_DIR/kit.toml"\n'            > tests/test-kt-loadwarn.sh
+printf '#!/bin/bash\nsed -n "/^[review]/,/^$/p" "$KIT_DIR/kit.toml"\n'     > tests/test-kt-review.sh
+printf '#!/bin/bash\ncp "$KIT_DIR/kit.toml" "$TMPD/kit.toml"\n'          > tests/test-kt-copy.sh
+printf '#!/bin/bash\nKIT_LOAD_WARN=5 bash lib/x/a.sh # no kit.toml here\n' > tests/test-kt-env.sh
+git add -A && git commit -qm kit-fixtures && git update-ref refs/remotes/origin/main HEAD
+sed -i.bak 's/^load_warn = 16/load_warn = 17/' kit.toml && rm -f kit.toml.bak
+out="$(bash "$TA" --list 2>&1)"
+has   "$out" "tests/test-kt-loadwarn.sh  (references kit.toml)" "a [test] load_warn hunk picks the suite naming load_warn"
+hasnt "$out" "tests/test-kt-review.sh" "a [test] hunk does not pick a suite naming only [review]"
+hasnt "$out" "tests/test-kt-copy.sh" "a [test] hunk does not pick a suite that only copies kit.toml"
+git checkout -q -- kit.toml
+sed -i.bak 's/^apply_findings = true/apply_findings = false/' kit.toml && rm -f kit.toml.bak
+out="$(bash "$TA" --list 2>&1)"
+has   "$out" "tests/test-kt-review.sh  (references kit.toml)" "a [review] key hunk picks the suite naming [review]"
+hasnt "$out" "tests/test-kt-loadwarn.sh" "a [review] hunk does not pick a [test] suite"
+git checkout -q -- kit.toml
+printf '# extra preamble line\n' | cat - kit.toml > kit.toml.new && mv -f kit.toml.new kit.toml
+out="$(bash "$TA" --list 2>&1)"
+has   "$out" "tests/test-kt-loadwarn.sh  (references kit.toml)" "an unattributable hunk (above every section) falls back: suite one"
+has   "$out" "tests/test-kt-review.sh  (references kit.toml)" "an unattributable hunk falls back: suite two"
+has   "$out" "tests/test-kt-copy.sh  (references kit.toml)" "an unattributable hunk falls back: a copy-only suite"
+git checkout -q -- kit.toml
 git stash pop -q 2>/dev/null || true
 
 echo "== changed test maps to itself; UNCOVERED is not a failure =="

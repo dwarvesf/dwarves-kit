@@ -13,11 +13,17 @@
 #   --no-cache    ignore recorded PASSes (a PASS is still recorded)
 # Selection: a changed tests/test-*.sh -> itself; any other changed file -> every
 # tests/test-*.sh naming its repo-relative path. A non-source file (docs, fixtures) matches
-# only a full-path reference, never inside a longer path or a comment; a source (lib/, hooks/,
-# bin/, commands/, skills/, agents/) also matches by basename when that is over 5 chars. A path
+# only a full-path reference, never inside a longer path or a comment. A source (lib/, hooks/,
+# bin/, commands/, skills/, agents/) matches by full path, or by a basename over 5 chars only
+# where the suite runs or sources it (`bash|sh|source|. <name>`, `$VAR/<name>`, a direct call);
+# a basename in a string, an echo, a comment or a grep pattern does not pick. A kit.toml change
+# picks only the suites naming kit.toml and a changed key or its [section] (bare key, `section.key`,
+# KIT_<KEY>, `[section]`, `kit_config_get section`), attributed from the diff hunks; a hunk no section owns picks every
+# suite naming kit.toml. A path
 # the test-meta area suites read by glob or scan (meta_input) picks the area suites that read it
 # (meta_areas), else the tests/test-meta.sh runner. A changed file no test names is UNCOVERED
-# (reported, not a failure).
+# (reported, not a failure). tests/lib/test-affected-replay.sh replays merged PRs against this
+# selection and reports any suite it should have picked and did not (MISS).
 # Cache: key = sha256(test + every source file it names + VERSION), under
 # <kit log dir>/test-cache/. Only PASS is recorded. An unusable cache dir means run all.
 # Timeout: a suite runs under TEST_AFFECTED_TIMEOUT_SECS when set, else its line in
@@ -138,13 +144,80 @@ FILE: for my $f (@ARGV) {
 }' "$@"
 }
 
-# Suites naming a SOURCE by path, or by a basename over 5 chars, on a non-comment line.
-refs_any() {
-  perl -e 'my @p = split /\n/, shift;
+# Suites that RUN or SOURCE a source file: its full path on a non-comment line, or its basename
+# (over 5 chars; $2 empty otherwise) in a run form: `bash|sh|source|. <name>`, `$VAR/<name>`, or a
+# direct call at command position. A basename in a string, echo or grep pattern does not count.
+refs_run() {  # $1 = repo path, $2 = basename to match ("" for none), then the suite files
+  perl -e 'my ($p, $b) = (shift, shift); my $q = quotemeta($b);
+my $cmd = qr{(?:bash|sh|source|\.|exec)};
 FILE: for my $f (@ARGV) {
   open(my $h, "<", $f) or next;
-  while (<$h>) { next if /^\s*#/; for my $q (@p) { if (index($_, $q) >= 0) { print "$f\n"; next FILE } } }
+  while (<$h>) {
+    next if /^\s*#/;
+    if (index($_, $p) >= 0) { print "$f\n"; next FILE }
+    next unless length $b;
+    if (/(?:^|[\s;&|(`"=])$cmd\s+(?:-\w+\s+)*["\x27]?(?:[^\s"\x27]*\/)?$q(?![\w.-])/
+     || /\$\{?\w+\}?["\x27]?\/(?:[\w.-]+\/)*$q(?![\w.-])/
+     || /(?:^\s*|[;&|(]\s*|\bthen\s+|\bdo\s+)["\x27]?(?:\S*\/)?$q["\x27]?(?:\s|$|[;&|)])/) { print "$f\n"; next FILE }
+  }
 }' "$@"
+}
+
+# --- kit.toml: pick by changed section or key ---------------------------------------------------
+# Each changed line (old side for removals, new side for additions) is attributed to the [section]
+# in scope and, on a `key =` line or the comment lines under one, to that key. A key picks the
+# suites naming it (bare, `section.key`, KIT_<KEY>); every changed line also picks the suites naming
+# its section (`[section]`, `kit_config_get section ...`). Any line outside a section, or no hunk
+# at all, keeps every suite given. The candidates come from refs_exact, so this only ever narrows.
+KIT_NARROW_PL='
+my ($old, $new, $diff, @suites) = @ARGV;
+sub scan {
+  my ($f) = @_; my (@sec, @key); my ($cs, $ck) = ("", "");
+  open(my $h, "<", $f) or return (\@sec, \@key);
+  my $i = 0;
+  while (<$h>) {
+    $i++;
+    if (/^\s*\[([^\]\n]+)\]/) { $cs = $1; $ck = ""; $sec[$i] = $cs; $key[$i] = ""; next }
+    if (/^\s*#?\s{0,2}([A-Za-z_][\w-]*)\s*=/) { $ck = $1; }
+    $sec[$i] = $cs; $key[$i] = $ck;
+  }
+  return (\@sec, \@key);
+}
+my %side = (old => [scan($old)], new => [scan($new)]);
+my (@tok, $unattr, $hunks);
+open(my $dh, "<", $diff) or do { print "$_\n" for @suites; exit 0 };
+while (<$dh>) {
+  next unless /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/;
+  my ($a, $b, $c, $d) = ($1, defined $2 ? $2 : 1, $3, defined $4 ? $4 : 1);
+  $hunks = 1;
+  for my $pair ([old => $a, $b], [new => $c, $d]) {
+    my ($w, $st, $n) = @$pair;
+    next if $n == 0;
+    for my $ln ($st .. $st + $n - 1) {
+      my ($sec, $key) = ($side{$w}[0][$ln], $side{$w}[1][$ln]);
+      if (!defined $sec || $sec eq "") { $unattr = 1; next }
+      if (defined $key && length $key) {
+        (my $u = uc $key) =~ s/-/_/g;
+        push @tok, qr{(?<![\w-])\Q$key\E(?![\w-])}, qr{\bKIT_\Q$u\E\b};
+      }
+      push @tok, qr{\[\Q$sec\E\]}, qr{\bkit_config_get\w*\s+["\x27]?\Q$sec\E\b};
+    }
+  }
+}
+if ($unattr || !$hunks || !@tok) { print "$_\n" for @suites; exit 0 }
+FILE: for my $f (@suites) {
+  open(my $h, "<", $f) or next;
+  my $text = join("", grep { !/^\s*#/ } <$h>); close $h;
+  for my $re (@tok) { if ($text =~ $re) { print "$f\n"; next FILE } }
+}
+'
+kit_toml_narrow() {  # args: the suites naming kit.toml; prints the ones that read a changed section or key
+  local mb
+  [ "$#" -gt 0 ] || return 0
+  mb="$(git merge-base "$BASE" HEAD 2>/dev/null)" || mb=""
+  if [ -z "$mb" ] || [ ! -f kit.toml ] || ! git show "$mb:kit.toml" >"$TMP/kit.old" 2>/dev/null; then printf '%s\n' "$@"; return 0; fi
+  git diff -U0 "$mb" -- kit.toml >"$TMP/kit.diff" 2>/dev/null || { printf '%s\n' "$@"; return 0; }
+  perl -e "$KIT_NARROW_PL" "$TMP/kit.old" kit.toml "$TMP/kit.diff" "$@" || printf '%s\n' "$@"
 }
 
 # --- test-meta: the area suites ---------------------------------------------------------------
@@ -270,12 +343,14 @@ while IFS= read -r f; do
   esac
   if is_source "$f"; then
     b="$(basename "$f")"
-    pats="$f"
-    [ "${#b}" -gt 5 ] && pats="$f
-$b"
-    hits="$(refs_any "$pats" tests/test-*.sh || true)"
+    [ "${#b}" -gt 5 ] || b=""
+    hits="$(refs_run "$f" "$b" tests/test-*.sh || true)"
   else
     hits="$(refs_exact "$f" tests/test-*.sh || true)"
+    if [ "$f" = kit.toml ] && [ -n "$hits" ]; then
+      # shellcheck disable=SC2046
+      hits="$(kit_toml_narrow $hits || true)"
+    fi
   fi
   # A lib/<mod>/ change also picks the suites named for the module: tests/test-<mod>*.sh.
   # lib/wrap/ is split one suite per module: wrap-<stem>.sh -> test-wrap-<stem>.sh only,

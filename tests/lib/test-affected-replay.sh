@@ -12,7 +12,7 @@
 #   - a non-comment line of the suite runs or sources a changed source file: `bash|sh|source|. <path>`,
 #     `$VAR/<path>`, a direct call, by repo path or by a basename over 5 chars;
 #   - a changed non-source file (docs, fixtures) is named by its full repo path;
-#   - kit.toml changed and the suite names kit.toml and a changed section or key (a hunk that no
+#   - kit.toml changed and the suite names kit.toml and a changed key or its section (a hunk that no
 #     section owns touches every suite naming kit.toml).
 #
 # Usage: test-affected-replay.sh [--n N] [--ta PATH] [--compare PATH] [--repo OWNER/NAME]
@@ -78,9 +78,11 @@ my %changed = map { $_ => 1 } @paths;
 sub is_src { my $p = shift; return $p =~ m{^(?:lib/.*\.sh|tests/lib/.*\.sh|hooks/|bin/|commands/.*\.md|skills/.*\.md|agents/.*\.md)} }
 my $cmd = qr{(?:bash|sh|source|\.|exec)};
 SUITE: for my $s (@ARGV) {
-  if ($changed{$s}) { print "$s\n"; next }
   open(my $h, "<", $s) or next;
-  my @lines = grep { !/^\s*#/ } <$h>; close $h;
+  my @all = <$h>; close $h;
+  next if grep { /^# runner:/ } @all;
+  if ($changed{$s}) { print "$s\n"; next }
+  my @lines = grep { !/^\s*#/ } @all;
   my $text = join("", @lines);
   for my $p (@paths) {
     next if $p =~ m{^tests/test-[^/]*\.sh$};
@@ -92,14 +94,20 @@ SUITE: for my $s (@ARGV) {
         my $re = $t eq "k" ? qr{(?<![\w-])$q(?![\w-])}
                : $t eq "u" ? qr{$q}
                : $t eq "b" ? qr{\[$q\]}
-               :             qr{(?<![\w.-])$q\.\w};
+               :             qr{\bkit_config_get\w*\s+["\x27]?$q\b};
         if ($text =~ $re) { print "$s\n"; next SUITE }
       }
       next;
     }
     my $qp = quotemeta($p);
     if (!is_src($p)) {
-      if ($text =~ m{(?<![\w.-])$qp(?![\w-])}) { print "$s\n"; next SUITE }
+      for my $l (@lines) {
+        while ($l =~ m{(?<![\w.-])$qp(?![\w-])}g) {
+          my $pre = substr($l, 0, $-[0]);
+          next if $pre =~ m{/$} && $pre !~ m{(?:\$\{?\w+\}?|\$\(.*\)|")/$};
+          print "$s\n"; next SUITE;
+        }
+      }
       next;
     }
     (my $b = $p) =~ s{.*/}{};
@@ -119,7 +127,8 @@ PERL
 
 # kit.toml tokens for one PR: an independent reimplementation of the section/key attribution.
 # args: <old kit.toml> <new kit.toml> on files; the unified -U0 diff on stdin. Prints "k\t<key>",
-# "u\tKIT_<KEY>", "b\t<section>", "d\t<section>", or "?" when a hunk has no section.
+# "u\tKIT_<KEY>", "b\t<section>" ([section]), "d\t<section>" (kit_config_get section), or "?" when
+# a hunk has no section. Every changed line yields its section tokens; a key line also its key.
 read -r -d '' KTOK_PL <<'PERL' || true
 my ($old, $new) = @ARGV;
 sub scan {
@@ -148,7 +157,7 @@ while (<STDIN>) {
       my ($sec, $key) = ($side{$w}[0][$ln], $side{$w}[1][$ln]);
       if (!defined $sec || $sec eq "") { $unattr = 1; next }
       if (defined $key && length $key) { $out{"k\t$key"} = 1; (my $u = uc $key) =~ s/-/_/g; $out{"u\tKIT_$u"} = 1; }
-      else { $out{"b\t$sec"} = 1; $out{"d\t$sec"} = 1; }
+      $out{"b\t$sec"} = 1; $out{"d\t$sec"} = 1;
     }
   }
 }
@@ -157,8 +166,8 @@ print "$_\n" for sort keys %out;
 PERL
 
 mkdir -p "$WORK/o"
-total_before=0 total_after=0 total_miss=0 nprs=0
-printf '%-6s %5s %7s %6s %7s %5s\n' PR files before after touched MISS >"$WORK/table"
+total_before=0 total_after=0 total_miss=0 total_missb=0 nprs=0
+printf '%-6s %5s %7s %6s %7s %9s %5s\n' PR files before after touched MISS-bef MISS >"$WORK/table"
 : >"$WORK/missdetail"
 while IFS=' ' read -r pr sha; do
   [ -n "$pr" ] || continue
@@ -200,9 +209,11 @@ while IFS=' ' read -r pr sha; do
   # Only suites that still exist at the merge commit can be required.
   while IFS= read -r t; do [ -f "$SCR/$t" ] && echo "$t"; done <"$WORK/touched" >"$WORK/touched.ok"
   comm -23 "$WORK/touched.ok" "$WORK/after.sel" >"$WORK/miss"
+  missb="-"
+  if [ -n "$CMP" ]; then missb="$(comm -23 "$WORK/touched.ok" "$WORK/before.sel" | wc -l | tr -d ' ')"; total_missb=$((total_missb + missb)); fi
   nmiss="$(wc -l <"$WORK/miss" | tr -d ' ')"; ntouched="$(wc -l <"$WORK/touched.ok" | tr -d ' ')"
   total_after=$((total_after + after)); total_miss=$((total_miss + nmiss)); nprs=$((nprs + 1))
-  printf '%-6s %5s %7s %6s %7s %5s\n' "#$pr" "$nfiles" "$before" "$after" "$ntouched" "$nmiss" >>"$WORK/table"
+  printf '%-6s %5s %7s %6s %7s %9s %5s\n' "#$pr" "$nfiles" "$before" "$after" "$ntouched" "$missb" "$nmiss" >>"$WORK/table"
   if [ "$nmiss" -gt 0 ]; then sed "s|^|  MISS #$pr |" "$WORK/miss" >>"$WORK/missdetail"; fi
 done <"$WORK/prs"
 
@@ -210,7 +221,7 @@ cat "$WORK/table"
 if [ -s "$WORK/missdetail" ]; then echo; cat "$WORK/missdetail"; fi
 echo
 if [ -n "$CMP" ]; then
-  echo "test-affected-replay: $nprs PRs, picked $total_before before, $total_after after, $total_miss MISS"
+  echo "test-affected-replay: $nprs PRs, picked $total_before before, $total_after after, $total_missb MISS before, $total_miss MISS"
 else
   echo "test-affected-replay: $nprs PRs, picked $total_after, $total_miss MISS"
 fi
