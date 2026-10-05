@@ -119,6 +119,80 @@ See `lib/sync/deploy/macos/README.md` for the gate (`mode` must be exactly
 `cron`, refused otherwise), the service graph, log shape, and BTM/TCC
 details.
 
+### Sweep: many boards, one scheduled run
+
+The cron installer renders one LaunchAgent per repo. An operator with many
+boards on one host wants one job instead. `board sweep` is that job: one pass
+over a registry (the `boards.txt` that `board all` renders from), all in
+`lib/sync/sweep/`.
+
+```
+board sweep --registry boards.txt --poster ./post --mirror-hermes-home <dir>
+board sweep --registry boards.txt --dry-run          # plan the whole sweep, write nothing
+board sweep verify --registry boards.txt --run "board sweep ..."    # prove no board changed
+board sweep verify --last-tick [repo]                # read the newest tick from the log
+```
+
+```
+registry row ──▶ board sync (own [sync] config) ──▶ digest parse ──▶ board publish
+                       (per repo, in order)          (state file)     (only if the sync wrote)
+                                │
+                                ▼  after the loop
+   board mirror (origin copy of every bridge=on board) ──▶ one digest post per cluster ──▶ on-clean hook
+                                                                     │
+                                                         your --poster command
+```
+
+Each repo's own `.kit.toml [sync]` still decides whether it syncs; a repo with
+none logs a skip. The kit does not know your chat service, your host auth, or
+which checkouts you keep fresh, so those arrive as hooks, never as defaults:
+
+| Flag | Contract |
+|---|---|
+| `--preflight CMD` | Runs once as `CMD <registry>` before the loop. A nonzero exit marks the sweep failed. |
+| `--poster CMD` | Delivers one digest payload: JSON on stdin, exit 0 means delivered, stderr is the failure reason. |
+| `--on-clean CMD` | Runs only when the sweep ended clean and was not a dry run (a liveness ping, say). |
+| `--repo-arg NAME=ARG` | One extra argv item for NAME's `board sync`, repeatable. |
+| `--sync-token-repo NAME` | NAME's `board sync` receives `GH_TOKEN` from `BOARD_SWEEP_TOKEN`. |
+
+`BOARD_SWEEP_TOKEN` is the one credential handoff. The sweep reads it once,
+removes it from its environment, and passes it per call to exactly two legs:
+the `--sync-token-repo` syncs, and every `board publish` through a
+`GIT_ASKPASS` helper, so it never rides argv and no spoke plugin sees it.
+
+**Digest.** Each repo's `board sync` output is parsed into a change set (the
+grammar is `sync_core.describe()`'s). Repos that share a `rail=<name>` column
+merge into one cluster and post once. `--cluster-map cluster=rail,...` names
+the clusters and limits the valid rails; without it every rail in the registry
+is a cluster named after itself. A post fires only when something changed, its
+key is a hash of the plain change tuples, and a failed post carries the change
+forward: the next payload merges it, shows the redacted reason as
+`carried_error`, and raises severity to `warn`. The payload is neutral:
+
+```
+{cluster, rail, key, severity: info|warn|crit, title, fields: [{name, value}], carried_error?}
+```
+
+`--crit-prefix P` makes a payload `crit` when an adopted row's title starts
+with P. The poster maps severity to its own marks and colors.
+
+**Mirror leg.** With `--mirror-hermes-home`, the sweep feeds `board mirror` from
+`git show origin/<default>:<board>` per repo, not the working tree, so a stale
+or mid-branch checkout cannot leak rows into the kanban. If any repo's origin
+cannot be resolved, the whole mirror call is skipped for that tick: the
+planner archives any card whose row is missing from the extract, so a partial
+registry would close that repo's live cards.
+
+**Exit code.** 0 when every sync, publish, and preflight leg was clean. The
+digest and mirror legs are observational and never flip it.
+
+`board mirror-cleanup` reconciles the open Hermes cards against the boards (dry
+run by default, never deletes). `--kinds-file` takes a JSON rule list that
+sorts the bot-made cards the mirror never owns; without it only the Hermes
+decomposer rule is built in. Design notes and tests:
+`tests/test-board-sweep*.sh`, `tests/test-board-digest.sh`,
+`tests/test-board-mirror-cleanup.sh`.
+
 ### Bootstrap per app
 
 - **Reminders**: list auto-created on first run.

@@ -1,0 +1,59 @@
+#!/usr/bin/env python3
+"""A tiny stateful stand-in for `hermes kanban`, for board-mirror-cleanup tests.
+
+State lives in $STUB_DIR: boards.json (the board list), <board>.json (the cards),
+show-<id>.json (a card's `show --json` document). `archive` flips a card to
+archived and, like the real CLI, refuses a card that is already archived or
+unknown. Every call is appended to $STUB_DIR/calls.log. $STUB_FAIL_ARCHIVE is a
+comma list of card ids whose archive is refused.
+"""
+import json
+import os
+import sys
+
+d = os.environ["STUB_DIR"]
+argv = sys.argv[1:]
+with open(os.path.join(d, "calls.log"), "a") as log:
+    log.write(" ".join(argv) + "\n")
+
+if not argv or argv[0] != "kanban":
+    sys.exit("stub: expected kanban")
+argv = argv[1:]
+board = None
+if argv[:1] == ["--board"]:
+    board, argv = argv[1], argv[2:]
+verb = argv[0]
+
+
+def load(b):
+    with open(os.path.join(d, f"{b}.json")) as f:
+        return json.load(f)
+
+
+if verb == "boards":
+    print(open(os.path.join(d, "boards.json")).read())
+elif verb == "list":
+    status = argv[argv.index("--status") + 1] if "--status" in argv else None
+    cards = load(board)
+    keep = [c for c in cards if (c["status"] == status if status else c["status"] != "archived")]
+    print(json.dumps(keep))
+elif verb == "show":
+    p = os.path.join(d, f"show-{argv[1]}.json")
+    print(open(p).read() if os.path.exists(p) else json.dumps({"parents": []}))
+elif verb == "archive":
+    cards = load(board)
+    cid = argv[1]
+    if cid in os.environ.get("STUB_FAIL_ARCHIVE", "").split(","):
+        print(f"cannot archive {cid}", file=sys.stderr)
+        sys.exit(1)
+    hit = [c for c in cards if c["id"] == cid and c["status"] != "archived"]
+    if not hit:
+        print(f"cannot archive {cid}", file=sys.stderr)
+        sys.exit(1)
+    hit[0]["status"] = "archived"
+    with open(os.path.join(d, f"{board}.json"), "w") as f:
+        json.dump(cards, f)
+    print(f"Archived {cid}")
+else:
+    print(f"stub: unhandled verb {verb}", file=sys.stderr)
+    sys.exit(1)
