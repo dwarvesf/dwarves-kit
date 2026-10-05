@@ -515,6 +515,8 @@ exercise the primitive on fixture keys -- `mega.wave_cap`, `gauntlet.runner_host
 |---|
 | adopt.single_source |
 | debug.confirm_fix |
+| decide.backend |
+| decide.points |
 | execute.recheck_sample |
 | harvest.enable |
 | harvest.hook_when_sweep_on |
