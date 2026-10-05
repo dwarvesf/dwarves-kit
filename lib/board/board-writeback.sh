@@ -161,7 +161,8 @@ _created_native() {
 }
 
 # _mirror_terminal <show-json> -- exit 0 when the card's terminal state was produced by the
-# MIRROR ITSELF, not by a human. The mirror's only path to `done` is its COMPLETE op, which runs
+# MIRROR ITSELF, not by a human. The mirror's only path to `done` was its old COMPLETE op (it now
+# archives instead, so this guard only matters for cards completed before that change), which ran
 # `kanban complete <id> --result "board-mirror: origin removed from <repo> board"`
 # (board-mirror.sh's cmd_plan); hermes stores that --result verbatim on the task (.task.result)
 # and stamps its first line on the `completed` event's payload.summary. A `done` card carrying

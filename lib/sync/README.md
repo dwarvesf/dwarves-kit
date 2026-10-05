@@ -256,7 +256,19 @@ without ID collisions. It honors the legacy `[A-Z]+-[0-9]+` id pattern
 (`BACKLOG_ID_RE` override), so prefixed boards (`BK-`, `DS-`, `DF-`, ...) pool
 correctly, NOT just bare `ID-`. The diff is `row_hash`-keyed and the board
 always wins (the git-wins conflict rule); the git board keyword maps to the
-Hermes reachable-state set `{triage, ready, blocked, done}`.
+Hermes reachable-state set `{triage, ready, blocked}`, and a card leaves the
+board by archive:
+
+| Row status | Card state | When the card is elsewhere |
+|---|---|---|
+| `queued` | `triage` | replace (archive, then create) |
+| `claimed`, `speccing`, `validated`, `executing` | `ready` | from `blocked`: `promote`; from `triage`: replace |
+| `parked` | `blocked` | from `ready`: `block`; from `triage`: replace |
+| `shipped`, `dropped`, row gone | archived | `archive` from any live state, so a card with unfinished parents or in `triage` still closes |
+
+`complete` is never used: hermes refuses it on a `triage` card, and the old
+mirror read that refusal as "already terminal" and orphaned the card. A move
+whose verb fails is recorded as not moved and planned again next tick.
 
 This slice ports the two DETERMINISTIC legs (multi-source extract + the keyed
 diff/plan) and is reachable in dry-run:

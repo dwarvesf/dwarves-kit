@@ -21,9 +21,11 @@
 #   NC4  every executed write is a recorded `hermes kanban` CLI invocation (assert on the stub's
 #        call log) + a static source audit that neither board-mirror.sh nor board.sh ever
 #        references a `.db`/sqlite path (no direct DB access, ADR-0001 native-first)
-#   NC5  a row that disappears from git (flips to `shipped`, or is deleted outright) flips its
-#        Hermes card to `done` with an "origin removed" note -- never left stale, never silently
-#        dropped
+#   NC5  a row that disappears from git (flips to `shipped`, or is deleted outright) archives its
+#        Hermes card -- never left stale, never silently dropped (`complete` refuses a triage card)
+#   NC8  archive refusals ("cannot archive") record ok/archived; a refused `complete` is an ERROR
+#   NC9  drift moves (block/promote), REPLACE across triage, failed-move retry, idempotence, no
+#        resurrection (shipped rows never re-create; a create that hits an old done card archives it)
 #   NC6  REGISTRY NON-REGRESSION: `board board|next|priority|states|queue` against a
 #        boards.txt-shaped fixture that NOW carries the 3rd `bridge` column render/behave exactly
 #        as they did pre-SG-07 (adding the column costs SG-04 zero code changes)
@@ -114,6 +116,8 @@ if [ "$1" = "kanban" ]; then
       printf '{"id":"t_stub%03d","title":"stub"}\n' "$n"
       ;;
     block)    echo "moved (stub)" ;;
+    promote)  echo "Promoted (stub)" ;;
+    archive)  echo "Archived (stub)" ;;
     complete) echo "Completed (stub)" ;;
     comment)  echo "commented (stub)" ;;
     *) echo "stub: unhandled verb $4" >&2; exit 1 ;;
@@ -138,7 +142,7 @@ assert "row-hash is content-sensitive (changed item -> different hash)" "$([ "$H
 echo ""
 echo "=== AC2: extract-rows STATE MAPPING + shipped/dropped exclusion ==="
 ROWS="$(bash "$BOARD_MIRROR" extract-rows "$FIXR/_meta/BACKLOG.md" fixR "$FIXR" 2>/dev/null)"
-ERRS="$(bash "$BOARD_MIRROR" extract-rows "$FIXR/_meta/BACKLOG.md" fixR "$FIXR" 2>&1 >/dev/null)"
+ERRS="$(BOARD_MIRROR_VERBOSE=1 bash "$BOARD_MIRROR" extract-rows "$FIXR/_meta/BACKLOG.md" fixR "$FIXR" 2>&1 >/dev/null)"
 tnative() { printf '%s\n' "$ROWS" | awk -F'\t' -v id="$1" '$3==id{print $7}'; }
 assert "ID-001 (queued) -> target triage"    "$([ "$(tnative ID-001)" = "triage" ] && echo 0 || echo 1)"
 assert "ID-002 (claimed) -> target ready (todo has no durable synthetic path, see lib/board/board-mirror.sh)" \
@@ -149,8 +153,8 @@ assert "ID-005 (executing) -> target ready"  "$([ "$(tnative ID-005)" = "ready" 
 assert "ID-006 (parked) -> target blocked"   "$([ "$(tnative ID-006)" = "blocked" ] && echo 0 || echo 1)"
 assert "ID-007 (shipped) is EXCLUDED from extraction" "$({ trap '' PIPE; printf '%s\n' "$ROWS" 2>/dev/null || :; } | grep -q 'ID-007' && echo 1 || echo 0)"
 assert "ID-008 (dropped) is EXCLUDED from extraction" "$({ trap '' PIPE; printf '%s\n' "$ROWS" 2>/dev/null || :; } | grep -q 'ID-008' && echo 1 || echo 0)"
-assert "ID-007's skip reason is logged" "$({ trap '' PIPE; printf '%s\n' "$ERRS" 2>/dev/null || :; } | grep -q 'skip ID-007' && echo 0 || echo 1)"
-assert "ID-008's skip reason is logged" "$({ trap '' PIPE; printf '%s\n' "$ERRS" 2>/dev/null || :; } | grep -q 'skip ID-008' && echo 0 || echo 1)"
+assert "ID-007's skip reason is logged (verbose)" "$({ trap '' PIPE; printf '%s\n' "$ERRS" 2>/dev/null || :; } | grep -q 'skip ID-007' && echo 0 || echo 1)"
+assert "ID-008's skip reason is logged (verbose)" "$({ trap '' PIPE; printf '%s\n' "$ERRS" 2>/dev/null || :; } | grep -q 'skip ID-008' && echo 0 || echo 1)"
 assert "extract-rows emits exactly the 6 bridgeable rows (001-006), not 8" \
   "$([ "$(printf '%s\n' "$ROWS" | grep -c . )" -eq 6 ] && echo 0 || echo 1)"
 
@@ -198,7 +202,7 @@ echo ""
 echo "=== Apply the AC4 plan for real (against the stub), building the golden snapshot for NC2 ==="
 : > "$CALLS"; echo 0 > "$IDCTR"; : > "$SNAP"
 APPLY1_ERR="$(STUB_CALL_LOG="$CALLS" STUB_ID_COUNTER="$IDCTR" HERMES_BIN="$STUB" bash "$BOARD" mirror --repo-root "$TMPDIR_T" --registry "$REGISTRY" --snapshot "$SNAP" 2>&1 >/dev/null)"
-assert "run 1 applies with 0 errors" "$({ trap '' PIPE; printf '%s\n' "$APPLY1_ERR" 2>/dev/null || :; } | grep -q '7 create, 0 change, 0 complete, 0 error' && echo 0 || echo 1)"
+assert "run 1 applies with 0 errors" "$({ trap '' PIPE; printf '%s\n' "$APPLY1_ERR" 2>/dev/null || :; } | grep -q '7 create, 0 change, 0 move, 0 archive, 0 error' && echo 0 || echo 1)"
 assert "run 1 writes 7 rows to the snapshot" "$([ "$(wc -l < "$SNAP" | tr -d ' ')" -eq 7 ] && echo 0 || echo 1)"
 assert "run 1 makes real stub calls (create + the ID-006 block-needs-input followup)" \
   "$(grep -q 'create \[untrusted\] Do the thing' "$CALLS" && grep -q 'block .* --kind needs_input' "$CALLS" && echo 0 || echo 1)"
@@ -242,7 +246,7 @@ echo "=== NC2: IDEMPOTENCE (load-bearing) -- second run on an unchanged board is
 : > "$TMPDIR_T/nc2-calls.log"
 PLAN2="$(STUB_CALL_LOG="$TMPDIR_T/nc2-calls.log" HERMES_BIN="$STUB" bash "$BOARD" mirror --repo-root "$TMPDIR_T" --registry "$REGISTRY" --snapshot "$SNAP" --dry-run 2>"$TMPDIR_T/nc2.err")"
 assert "NC2: second dry-run's plan is EMPTY (0 bytes)" "$([ -z "$PLAN2" ] && echo 0 || echo 1)"
-assert "NC2: second run reports 0 create/change/complete" "$(grep -q '0 ops (0 create, 0 change, 0 complete)' "$TMPDIR_T/nc2.err" && echo 0 || echo 1)"
+assert "NC2: second run reports 0 create/change/move/archive" "$(grep -q '0 ops (0 create, 0 change, 0 move, 0 archive)' "$TMPDIR_T/nc2.err" && echo 0 || echo 1)"
 STUB_CALL_LOG="$TMPDIR_T/nc2-calls.log" HERMES_BIN="$STUB" bash "$BOARD" mirror --repo-root "$TMPDIR_T" --registry "$REGISTRY" --snapshot "$SNAP" >/dev/null 2>&1
 assert "NC2: second (real, non-dry-run) run makes ZERO stub-hermes calls" "$([ ! -s "$TMPDIR_T/nc2-calls.log" ] && echo 0 || echo 1)"
 
@@ -275,18 +279,19 @@ done
 assert "NC4: static audit -- neither file ever eval/sh-c's a parsed variable (card text never templated into a shell string)" "$([ "$STATIC_RC2" -eq 0 ] && echo 0 || echo 1)"
 
 echo ""
-echo "=== NC5: a disappeared row (flips to shipped) -> done + 'origin removed', never stale ==="
+echo "=== NC5: a disappeared row (flips to shipped) -> its card is ARCHIVED, never stale ==="
 sed -i.bak 's/| ID-003 | Speccing thing | notes3 | speccing |/| ID-003 | Speccing thing | notes3 | shipped |/' "$FIXR/_meta/BACKLOG.md"
 git -C "$FIXR" add -A && git -C "$FIXR" commit -q -m "test: ship ID-003"
 NC5_PLAN="$(STUB_CALL_LOG="$TMPDIR_T/nc5-calls.log" HERMES_BIN="$STUB" bash "$BOARD" mirror --repo-root "$TMPDIR_T" --registry "$REGISTRY" --snapshot "$SNAP" --dry-run 2>/dev/null)"
-NC5_COMPLETE="$(printf '%s\n' "$NC5_PLAN" | jq -c 'select(.origin=="fixR:ID-003")')"
-assert "NC5: the disappeared ID-003 plans a 'complete' op, not silence" "$([ -n "$NC5_COMPLETE" ] && echo 0 || echo 1)"
-assert "NC5: the complete op's reason names 'origin removed'" "$(printf '%s' "$NC5_COMPLETE" | jq -r '.argv[]' | grep -qi 'origin removed' && echo 0 || echo 1)"
-assert "NC5: the complete op targets 'done'" "$([ "$(printf '%s' "$NC5_COMPLETE" | jq -r '.target_native')" = "done" ] && echo 0 || echo 1)"
+NC5_ARCHIVE="$(printf '%s\n' "$NC5_PLAN" | jq -c 'select(.origin=="fixR:ID-003")')"
+assert "NC5: the disappeared ID-003 plans an 'archive' op, not silence" "$([ "$(printf '%s' "$NC5_ARCHIVE" | jq -r '.op')" = "archive" ] && echo 0 || echo 1)"
+assert "NC5: the archive op's reason names 'origin removed'" "$(printf '%s' "$NC5_ARCHIVE" | jq -r '.reason' | grep -qi 'origin removed' && echo 0 || echo 1)"
+assert "NC5: the archive op targets 'archived'" "$([ "$(printf '%s' "$NC5_ARCHIVE" | jq -r '.target_native')" = "archived" ] && echo 0 || echo 1)"
+assert "NC5: the archive op argv is the archive verb (works from every live state, unlike complete)" "$(printf '%s' "$NC5_ARCHIVE" | jq -e '.argv | index("archive")' >/dev/null 2>&1 && echo 0 || echo 1)"
 STUB_CALL_LOG="$TMPDIR_T/nc5-calls.log" HERMES_BIN="$STUB" bash "$BOARD" mirror --repo-root "$TMPDIR_T" --registry "$REGISTRY" --snapshot "$SNAP" >/dev/null 2>&1
-assert "NC5: after applying, the completed row is DROPPED from the snapshot (never re-touched)" "$(grep -q 'fixR:ID-003' "$SNAP" && echo 1 || echo 0)"
+assert "NC5: after applying, the archived row is DROPPED from the snapshot (never re-touched)" "$(grep -q 'fixR:ID-003' "$SNAP" && echo 1 || echo 0)"
 NC5_PLAN2="$(HERMES_BIN="$STUB" bash "$BOARD" mirror --repo-root "$TMPDIR_T" --registry "$REGISTRY" --snapshot "$SNAP" --dry-run 2>/dev/null)"
-assert "NC5: re-running the plan does NOT re-complete ID-003 (idempotent even for disappeared rows)" "$({ trap '' PIPE; printf '%s\n' "$NC5_PLAN2" 2>/dev/null || :; } | grep -q 'ID-003' && echo 1 || echo 0)"
+assert "NC5: re-running the plan does NOT re-archive ID-003 (idempotent even for disappeared rows)" "$({ trap '' PIPE; printf '%s\n' "$NC5_PLAN2" 2>/dev/null || :; } | grep -q 'ID-003' && echo 1 || echo 0)"
 
 echo ""
 echo "=== NC6: REGISTRY NON-REGRESSION -- board/next/priority/states/queue unaffected by the bridge column ==="
@@ -381,14 +386,18 @@ assert "NC7c: the CHANGE comment carries the untrusted marker" "$({ trap '' PIPE
 assert "NC7c: the CHANGE comment strips the #queue{} token" "$({ trap '' PIPE; printf '%s' "$CH_COMMENT" 2>/dev/null || :; } | grep -q '#queue{' && echo 1 || echo 0)"
 
 echo ""
-echo "=== NC8: a 'complete' op failing with 'unknown id or terminal state' records ok/done, not error ==="
+echo "=== NC8: an 'archive' op refused with 'cannot archive' records ok/archived, not error ==="
 # The Mini incident (ops-toolkit ID-727): a snapshot maps an origin to a hermes_id whose card was
-# deleted or otherwise reached a terminal state outside the mirror's control. `hermes kanban
-# complete` on that id fails, and without this handling the op is reported status:error forever
-# (the snapshot line never clears, so the same complete is replanned on every future run).
+# deleted or already archived outside the mirror's control. Without this handling the op is
+# reported status:error forever (the snapshot line never clears, so the same archive is replanned
+# on every future run). The same message on `complete` is deliberately NOT swallowed (NC9).
 STUB_DEAD="$TMPDIR_T/stub-hermes-dead"
 cat > "$STUB_DEAD" <<'STUBDEADEOF'
 #!/usr/bin/env bash
+if [ "$1" = "kanban" ] && [ "$4" = "archive" ]; then
+  echo "cannot archive $5" >&2
+  exit 1
+fi
 if [ "$1" = "kanban" ] && [ "$4" = "complete" ]; then
   echo "cannot complete $5 (unknown id or terminal state)" >&2
   exit 1
@@ -398,11 +407,11 @@ exit 1
 STUBDEADEOF
 chmod +x "$STUB_DEAD"
 
-COMPLETE_PLAN="$(jq -nc '{op:"complete", origin:"fixR:ID-999", board:"fixR", hermes_id:"t_dead1234", row_hash:null, argv:["kanban","--board","fixR","complete","t_dead1234","--result","board-mirror: origin removed from fixR board"]}')"
-COMPLETE_RESULT="$(printf '%s\n' "$COMPLETE_PLAN" | HERMES_BIN="$STUB_DEAD" bash "$BOARD_MIRROR" apply-plan)"
-assert "NC8: a dead-card complete is reported status:ok" "$(printf '%s' "$COMPLETE_RESULT" | jq -e '.status=="ok"' >/dev/null 2>&1 && echo 0 || echo 1)"
-assert "NC8: a dead-card complete is reported hermes_status:done" "$(printf '%s' "$COMPLETE_RESULT" | jq -e '.hermes_status=="done"' >/dev/null 2>&1 && echo 0 || echo 1)"
-assert "NC8: a dead-card complete preserves the origin" "$([ "$(printf '%s' "$COMPLETE_RESULT" | jq -r '.origin')" = "fixR:ID-999" ] && echo 0 || echo 1)"
+ARCHIVE_PLAN="$(jq -nc '{op:"archive", origin:"fixR:ID-999", board:"fixR", hermes_id:"t_dead1234", row_hash:null, argv:["kanban","--board","fixR","archive","t_dead1234"]}')"
+ARCHIVE_RESULT="$(printf '%s\n' "$ARCHIVE_PLAN" | HERMES_BIN="$STUB_DEAD" bash "$BOARD_MIRROR" apply-plan 2>/dev/null)"
+assert "NC8: a dead-card archive is reported status:ok" "$(printf '%s' "$ARCHIVE_RESULT" | jq -e '.status=="ok"' >/dev/null 2>&1 && echo 0 || echo 1)"
+assert "NC8: a dead-card archive is reported hermes_status:archived" "$(printf '%s' "$ARCHIVE_RESULT" | jq -e '.hermes_status=="archived"' >/dev/null 2>&1 && echo 0 || echo 1)"
+assert "NC8: a dead-card archive preserves the origin" "$([ "$(printf '%s' "$ARCHIVE_RESULT" | jq -r '.origin')" = "fixR:ID-999" ] && echo 0 || echo 1)"
 
 STUB_OTHERERR="$TMPDIR_T/stub-hermes-othererr"
 cat > "$STUB_OTHERERR" <<'STUBERREOF'
@@ -411,8 +420,141 @@ echo "some other hermes failure, not the dead-card shape" >&2
 exit 1
 STUBERREOF
 chmod +x "$STUB_OTHERERR"
-OTHERERR_RESULT="$(printf '%s\n' "$COMPLETE_PLAN" | HERMES_BIN="$STUB_OTHERERR" bash "$BOARD_MIRROR" apply-plan)"
-assert "NC8: any OTHER complete failure still reports status:error" "$(printf '%s' "$OTHERERR_RESULT" | jq -e '.status=="error"' >/dev/null 2>&1 && echo 0 || echo 1)"
+OTHERERR_RESULT="$(printf '%s\n' "$ARCHIVE_PLAN" | HERMES_BIN="$STUB_OTHERERR" bash "$BOARD_MIRROR" apply-plan 2>/dev/null)"
+assert "NC8: any OTHER archive failure still reports status:error" "$(printf '%s' "$OTHERERR_RESULT" | jq -e '.status=="error"' >/dev/null 2>&1 && echo 0 || echo 1)"
+
+OLD_COMPLETE_PLAN="$(jq -nc '{op:"complete", origin:"fixR:ID-998", board:"fixR", hermes_id:"t_triage01", row_hash:null, argv:["kanban","--board","fixR","complete","t_triage01","--result","x"]}')"
+OLD_COMPLETE_RESULT="$(printf '%s\n' "$OLD_COMPLETE_PLAN" | HERMES_BIN="$STUB_DEAD" bash "$BOARD_MIRROR" apply-plan 2>/dev/null)"
+assert "NC8: a refused complete is an ERROR, never read as already-terminal (the drift root cause: hermes refuses to complete a triage card with this exact message)" \
+  "$(printf '%s' "$OLD_COMPLETE_RESULT" | jq -e '.status=="error"' >/dev/null 2>&1 && echo 0 || echo 1)"
+
+echo ""
+echo "=== NC9: drift moves, replace, retry, no resurrection (the board-mirror-drift fix) ==="
+# One fixture repo, one hand-built snapshot per scenario. Row hashes come from `row-hash` so a
+# same-content row reads UNCHANGED and only the recorded card status differs.
+FIXMV="$TMPDIR_T/fixMv"
+mkdir -p "$FIXMV/_meta"
+git init -q "$FIXMV"; git -C "$FIXMV" config user.email t@t; git -C "$FIXMV" config user.name t
+cat > "$FIXMV/_meta/BACKLOG.md" <<'BOARD_MV'
+# Backlog
+## Active queue
+| ID | Item | Notes & source | Status |
+|----|------|-----------------|--------|
+| MV-1 | Queued stays | n1 | queued |
+| MV-2 | Parked but in triage | n2 | parked |
+| MV-3 | Claimed and ready | n3 | claimed |
+| MV-4 | Parked but ready | n4 | parked |
+| MV-5 | Claimed but blocked | n5 | claimed |
+| MV-6 | Shipped with a card | n6 | shipped |
+| MV-7 | Queued became parked | n7 | parked |
+| MV-8 | Dropped with a card | n8 | dropped |
+BOARD_MV
+git -C "$FIXMV" add -A && git -C "$FIXMV" commit -q -m "test: seed fixMv"
+MV_REG="$TMPDIR_T/boards-mv.txt"
+printf 'fixMv  %s/_meta/BACKLOG.md  on\n' "$FIXMV" > "$MV_REG"
+
+mvhash() { bash "$BOARD_MIRROR" row-hash fixMv "$1" "$2" "$3" "$4"; }
+snapline() { # origin-id hermes_id hash hermes_status
+  jq -nc --arg o "fixMv:$1" --arg id "$1" --arg h "$2" --arg hash "$3" --arg st "$4" \
+    '{origin:$o,repo:"fixMv",id:$id,board:"fixMv",hermes_id:$h,row_hash:$hash,hermes_status:$st,seen_at:"2026-09-01T00:00:00Z"}'
+}
+MV_SNAP="$TMPDIR_T/snap-mv.jsonl"
+{
+  snapline MV-1 t_mv1 "$(mvhash MV-1 'Queued stays' n1 queued)" triage
+  snapline MV-2 t_mv2 "$(mvhash MV-2 'Parked but in triage' n2 parked)" triage
+  snapline MV-3 t_mv3 "$(mvhash MV-3 'Claimed and ready' n3 claimed)" ready
+  snapline MV-4 t_mv4 "$(mvhash MV-4 'Parked but ready' n4 parked)" ready
+  snapline MV-5 t_mv5 "$(mvhash MV-5 'Claimed but blocked' n5 claimed)" blocked
+  snapline MV-6 t_mv6 "$(mvhash MV-6 'Shipped with a card' n6 shipped)" triage
+  snapline MV-7 t_mv7 "deadbeef" triage
+  snapline MV-8 t_mv8 "$(mvhash MV-8 'Dropped with a card' n8 dropped)" blocked
+} > "$MV_SNAP"
+cp "$MV_SNAP" "$TMPDIR_T/snap-mv.orig"
+
+MV_PLAN="$(HERMES_BIN="$STUB" bash "$BOARD" mirror --repo-root "$FIXMV" --registry "$MV_REG" --snapshot "$MV_SNAP" --dry-run 2>"$TMPDIR_T/mv-plan.err")"
+mvops() { printf '%s\n' "$MV_PLAN" | jq -r --arg o "fixMv:$1" 'select(.origin==$o) | .op + (if .how then ":" + .how else "" end)' | paste -sd, -; }
+assert "NC9: MV-1 (queued, card in triage) plans nothing" "$([ -z "$(mvops MV-1)" ] && echo 0 || echo 1)"
+assert "NC9: MV-2 (parked, card in triage) is a REPLACE: archive then create (triage has no verb to blocked)" "$([ "$(mvops MV-2)" = "archive,create" ] && echo 0 || echo 1)"
+assert "NC9: MV-3 (claimed, card ready) plans nothing" "$([ -z "$(mvops MV-3)" ] && echo 0 || echo 1)"
+assert "NC9: MV-4 (parked, card ready) is a block move" "$([ "$(mvops MV-4)" = "move:block" ] && echo 0 || echo 1)"
+assert "NC9: MV-5 (claimed, card blocked) is a promote move" "$([ "$(mvops MV-5)" = "move:promote" ] && echo 0 || echo 1)"
+assert "NC9: MV-6 (shipped, card in snapshot) is an ARCHIVE, never a complete" "$([ "$(mvops MV-6)" = "archive" ] && echo 0 || echo 1)"
+assert "NC9: MV-7 (content AND status moved, card in triage) is archive then create, no comment on a card about to be archived" "$([ "$(mvops MV-7)" = "archive,create" ] && echo 0 || echo 1)"
+assert "NC9: MV-8 (dropped, card blocked) is an ARCHIVE" "$([ "$(mvops MV-8)" = "archive" ] && echo 0 || echo 1)"
+assert "NC9: the plan never emits a complete op" "$(printf '%s\n' "$MV_PLAN" | jq -e 'select(.op=="complete")' >/dev/null 2>&1 && echo 1 || echo 0)"
+assert "NC9: the MV-2 replacement create carries the block-needs-input followup (parked)" \
+  "$([ "$(printf '%s\n' "$MV_PLAN" | jq -r 'select(.origin=="fixMv:MV-2" and .op=="create") | .followup')" = "block-needs-input" ] && echo 0 || echo 1)"
+assert "NC9: the plan summary counts moves and archives" "$(grep -q 'plan 6 ops (0 create, 0 change, 4 move, 2 archive), 2 unchanged' "$TMPDIR_T/mv-plan.err" && echo 0 || echo 1)"
+
+# Apply for real against a stub that logs verbs; then the second pass must be empty (idempotent),
+# the archived rows must not come back (no resurrection), and the snapshot must tell the truth.
+STUB_MV="$TMPDIR_T/stub-hermes-mv"
+cat > "$STUB_MV" <<'STUBMVEOF'
+#!/usr/bin/env bash
+echo "$*" >> "${STUB_CALL_LOG:?}"
+verb="$4"
+case ",${STUB_FAIL_VERBS:-}," in *",$verb,"*) echo "stub: $verb refused" >&2; exit 1 ;; esac
+case "$verb" in
+  create)
+    n=$(( $(cat "${STUB_ID_COUNTER}" 2>/dev/null || echo 0) + 1 )); echo "$n" > "${STUB_ID_COUNTER}"
+    if [ -n "${STUB_GHOST_ONCE:-}" ] && [ ! -e "$STUB_GHOST_ONCE" ]; then
+      : > "$STUB_GHOST_ONCE"; printf '{"id":"t_ghost","status":"done"}\n'
+    else
+      printf '{"id":"t_new%03d","status":"triage"}\n' "$n"
+    fi ;;
+  block|promote|archive|comment) echo "ok (stub)" ;;
+  *) echo "stub: unhandled verb $verb" >&2; exit 1 ;;
+esac
+STUBMVEOF
+chmod +x "$STUB_MV"
+MV_CALLS="$TMPDIR_T/mv-calls.log"; : > "$MV_CALLS"; echo 0 > "$TMPDIR_T/mv-idctr"
+MV_APPLY_ERR="$(STUB_CALL_LOG="$MV_CALLS" STUB_ID_COUNTER="$TMPDIR_T/mv-idctr" HERMES_BIN="$STUB_MV" bash "$BOARD" mirror --repo-root "$FIXMV" --registry "$MV_REG" --snapshot "$MV_SNAP" 2>&1 >/dev/null)"
+assert "NC9: apply runs with 0 errors" "$(printf '%s\n' "$MV_APPLY_ERR" | grep -q ' 0 error' && echo 0 || echo 1)"
+assert "NC9: apply archives MV-2, MV-6, MV-7 and MV-8 cards" \
+  "$(for c in t_mv2 t_mv6 t_mv7 t_mv8; do grep -q "archive $c\$" "$MV_CALLS" || exit 1; done; echo 0)"
+assert "NC9: apply blocks MV-4's card and promotes MV-5's" \
+  "$(grep -q 'block t_mv4 .* --kind needs_input' "$MV_CALLS" && grep -q 'promote t_mv5 ' "$MV_CALLS" && echo 0 || echo 1)"
+assert "NC9: apply never calls complete" "$(grep -q ' complete ' "$MV_CALLS" && echo 1 || echo 0)"
+snap_status() { jq -r --arg o "fixMv:$1" 'select(.origin==$o) | .hermes_status' "$MV_SNAP"; }
+assert "NC9: snapshot tells the truth after apply (MV-4 blocked, MV-5 ready)" "$([ "$(snap_status MV-4)" = "blocked" ] && [ "$(snap_status MV-5)" = "ready" ] && echo 0 || echo 1)"
+assert "NC9: snapshot drops the archived rows (MV-6, MV-8)" "$(grep -q 'fixMv:MV-6\|fixMv:MV-8' "$MV_SNAP" && echo 1 || echo 0)"
+assert "NC9: replaced rows come back as fresh live cards (MV-2 blocked, MV-7 blocked, new ids)" \
+  "$([ "$(snap_status MV-2)" = "blocked" ] && [ "$(snap_status MV-7)" = "blocked" ] && jq -e 'select(.origin=="fixMv:MV-2") | .hermes_id | startswith("t_new")' "$MV_SNAP" >/dev/null && echo 0 || echo 1)"
+MV_PLAN2="$(HERMES_BIN="$STUB_MV" bash "$BOARD" mirror --repo-root "$FIXMV" --registry "$MV_REG" --snapshot "$MV_SNAP" --dry-run 2>/dev/null)"
+assert "NC9: IDEMPOTENT, the second plan is empty" "$([ -z "$MV_PLAN2" ] && echo 0 || echo 1)"
+assert "NC9: NO RESURRECTION, shipped and dropped rows never plan a create" "$(printf '%s\n' "$MV_PLAN2" | grep -q 'MV-6\|MV-8' && echo 1 || echo 0)"
+
+echo ""
+echo "--- NC9b: a move that fails is recorded as NOT moved, then retried next tick ---"
+cp "$TMPDIR_T/snap-mv.orig" "$MV_SNAP"
+: > "$MV_CALLS"
+STUB_CALL_LOG="$MV_CALLS" STUB_ID_COUNTER="$TMPDIR_T/mv-idctr" STUB_FAIL_VERBS="block,promote" HERMES_BIN="$STUB_MV" \
+  bash "$BOARD" mirror --repo-root "$FIXMV" --registry "$MV_REG" --snapshot "$MV_SNAP" >/dev/null 2>&1
+assert "NC9b: a refused block leaves MV-4 recorded as ready (the card did not move)" "$([ "$(snap_status MV-4)" = "ready" ] && echo 0 || echo 1)"
+MV_PLAN3="$(HERMES_BIN="$STUB_MV" bash "$BOARD" mirror --repo-root "$FIXMV" --registry "$MV_REG" --snapshot "$MV_SNAP" --dry-run 2>/dev/null)"
+assert "NC9b: the next tick plans the block for MV-4 again" "$(printf '%s\n' "$MV_PLAN3" | jq -e 'select(.origin=="fixMv:MV-4" and .op=="move" and .how=="block")' >/dev/null 2>&1 && echo 0 || echo 1)"
+assert "NC9b: the replacement create for MV-2 lands blocked-then-refused as ready, and is retried as a block move" \
+  "$([ "$(snap_status MV-2)" = "ready" ] && printf '%s\n' "$MV_PLAN3" | jq -e 'select(.origin=="fixMv:MV-2" and .op=="move" and .how=="block")' >/dev/null 2>&1 && echo 0 || echo 1)"
+
+echo ""
+echo "--- NC9c: a create that hits an old done card (same idempotency key) archives it and creates fresh ---"
+GH_SNAP="$TMPDIR_T/snap-ghost.jsonl"; : > "$GH_SNAP"
+GH_REG="$TMPDIR_T/boards-gh.txt"
+printf 'fixMv  %s/_meta/BACKLOG.md  on\n' "$FIXMV" > "$GH_REG"
+: > "$MV_CALLS"; rm -f "$TMPDIR_T/ghost-once"
+STUB_CALL_LOG="$MV_CALLS" STUB_ID_COUNTER="$TMPDIR_T/mv-idctr" STUB_GHOST_ONCE="$TMPDIR_T/ghost-once" HERMES_BIN="$STUB_MV" \
+  bash "$BOARD" mirror --repo-root "$FIXMV" --registry "$GH_REG" --snapshot "$GH_SNAP" >/dev/null 2>&1
+assert "NC9c: the done ghost card was archived" "$(grep -q 'archive t_ghost' "$MV_CALLS" && echo 0 || echo 1)"
+assert "NC9c: no snapshot line points at the done ghost" "$(grep -q 't_ghost' "$GH_SNAP" && echo 1 || echo 0)"
+assert "NC9c: the origin that hit the ghost still got a live card in the snapshot" "$([ "$(jq -r 'select(.origin=="fixMv:MV-1") | .hermes_id' "$GH_SNAP" | grep -c '^t_new')" -eq 1 ] && echo 0 || echo 1)"
+
+echo ""
+echo "--- NC9d: terminal rows default to one summary line, per-row lines are opt-in ---"
+QUIET_ERR="$(bash "$BOARD_MIRROR" extract-rows "$FIXMV/_meta/BACKLOG.md" fixMv "$FIXMV" 2>&1 >/dev/null)"
+VERBOSE_ERR="$(BOARD_MIRROR_VERBOSE=1 bash "$BOARD_MIRROR" extract-rows "$FIXMV/_meta/BACKLOG.md" fixMv "$FIXMV" 2>&1 >/dev/null)"
+assert "NC9d: default log has no per-row skip line" "$(printf '%s\n' "$QUIET_ERR" | grep -q 'skip MV-6' && echo 1 || echo 0)"
+assert "NC9d: default log has a per-repo count of skipped terminal rows" "$(printf '%s\n' "$QUIET_ERR" | grep -q 'skipped 2 terminal rows (fixMv)' && echo 0 || echo 1)"
+assert "NC9d: BOARD_MIRROR_VERBOSE=1 restores the per-row lines" "$(printf '%s\n' "$VERBOSE_ERR" | grep -q 'skip MV-6' && echo 0 || echo 1)"
 
 echo ""
 echo "=== Coverage delta ==="

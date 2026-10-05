@@ -55,10 +55,11 @@ DEFAULT_ID_RE = r"[A-Z]+-[0-9]+"
 # State mapping: git board keyword -> the Hermes native state the bridge can
 # durably reach. Empty string = "not bridged" (shipped/dropped/unrecognized are
 # excluded from the extract entirely). The reachable set is {triage, ready,
-# blocked, done}; `todo`/`running` have no CLI-only durable path (see the
+# blocked}; `todo`/`running` have no CLI-only durable path (see the
 # board-mirror.sh header's Hermes-CLI-reality note), so `claimed`/`speccing`/
-# `executing` honestly fall back to `ready`. This map is the second asset
-# this port was required to carry over.
+# `executing` honestly fall back to `ready`. A card leaves the board by
+# ARCHIVE, never `complete` (`complete` refuses a triage card). This map is the
+# second asset this port was required to carry over.
 TARGET_NATIVE = {
     "queued": "triage",
     "claimed": "ready",
@@ -76,6 +77,18 @@ _ROUTING_RE = re.compile(r"#queue\{[^}]*\}")
 def target_native(status_kw: str) -> str:
     """The reachable Hermes native state for a git board keyword, or ""."""
     return TARGET_NATIVE.get(status_kw, "")
+
+
+def move_for(prior: str, target: str) -> str:
+    """How a card in `prior` reaches `target`: "none" | "block" | "promote" |
+    "replace". Only ready->blocked and blocked->ready have a CLI verb; every
+    move into or out of `triage` is a replace (archive the old card, create the
+    new one), because `promote` and `block` both refuse a triage card. Ports
+    board-mirror.sh's `_move_for`."""
+    if prior == target:
+        return "none"
+    return {("ready", "blocked"): "block",
+            ("blocked", "ready"): "promote"}.get((prior, target), "replace")
 
 
 def strip_routing_tags(text: str) -> str:
@@ -347,11 +360,13 @@ def read_snapshot(ndjson_text: str) -> dict[str, SnapEntry]:
 class Plan:
     create: list = field(default_factory=list)    # [Item]
     change: list = field(default_factory=list)     # [(Item, SnapEntry)]
-    complete: list = field(default_factory=list)   # [SnapEntry]
+    move: list = field(default_factory=list)       # [(Item, SnapEntry, how)]
+    archive: list = field(default_factory=list)    # [SnapEntry]
     unchanged: int = 0
 
     def total_ops(self) -> int:
-        return len(self.create) + len(self.change) + len(self.complete)
+        return (len(self.create) + len(self.change) + len(self.move)
+                + len(self.archive))
 
     def empty(self) -> bool:
         return self.total_ops() == 0
@@ -361,14 +376,17 @@ def plan_cockpit(current: list[Item], snapshot: dict[str, SnapEntry]) -> Plan:
     """Keyed diff between the current extract and the prior snapshot, matched on
     `origin` + `row_hash`. The board always wins (the hash is git-owned content),
     which is the row_hash git-wins conflict rule this port requires. Mirror-out
-    only: the snapshot's Hermes-side fields feed CHANGE/COMPLETE targeting; no
-    reverse-status path here (that is the deferred writeback leg).
+    only: the snapshot's Hermes-side fields feed CHANGE/MOVE/ARCHIVE targeting;
+    no reverse-status path here (that is the deferred writeback leg).
 
-    Ports board-mirror.sh's `cmd_plan` awk diff, including its two edge rules:
-    a same-hash origin is UNCHANGED (no-op), and a prior origin absent from the
-    current extract is COMPLETE only when its recorded status is not already
-    `done` (a done card stays done; it is dropped from the live-state snapshot,
-    so a later reappearance is a fresh CREATE, never a resurrection)."""
+    Ports board-mirror.sh's `cmd_plan` awk diff, including its edge rules: a
+    same-hash same-status origin is UNCHANGED (no-op); a recorded card status
+    that differs from the row target is a MOVE (a CHANGE only adds a comment, so
+    status is judged separately, and a `replace` move swallows the comment); a
+    prior origin absent from the current extract is ARCHIVED unless its recorded
+    status is already `done` (the legacy terminal state; dropped from the
+    live-state snapshot, so a later reappearance is a fresh CREATE, never a
+    resurrection)."""
     p = Plan()
     seen: set[str] = set()
     for it in current:
@@ -376,13 +394,18 @@ def plan_cockpit(current: list[Item], snapshot: dict[str, SnapEntry]) -> Plan:
         prior = snapshot.get(it.origin)
         if prior is None:
             p.create.append(it)
+            continue
+        how = ("none" if prior.hermes_status == "done"
+               else move_for(prior.hermes_status, it.target))
+        if prior.row_hash != it.hash and how != "replace":
+            p.change.append((it, prior))
+        if how != "none":
+            p.move.append((it, prior, how))
         elif prior.row_hash == it.hash:
             p.unchanged += 1
-        else:
-            p.change.append((it, prior))
     for origin, prior in snapshot.items():
         if origin not in seen and prior.hermes_status != "done":
-            p.complete.append(prior)
+            p.archive.append(prior)
     return p
 
 
@@ -449,11 +472,14 @@ def describe_plan(plan: Plan, mega_board: str = "megagoals",
         lines.append(f"  + create   {it.origin} -> {board_for(it, mega_board, board_prefix)} ({it.target})")
     for it, prior in plan.change:
         lines.append(f"  ~ change   {it.origin} (was {prior.hermes_id or '?'}) content updated")
-    for prior in plan.complete:
-        lines.append(f"  x complete {prior.origin} -> {prior.board} (origin removed)")
+    for it, prior, how in plan.move:
+        lines.append(f"  > move     {it.origin} ({prior.hermes_status} -> {it.target}, {how})")
+    for prior in plan.archive:
+        lines.append(f"  x archive  {prior.origin} -> {prior.board} (origin removed)")
     head = (f"cockpit: plan {plan.total_ops()} ops "
             f"({len(plan.create)} create, {len(plan.change)} change, "
-            f"{len(plan.complete)} complete), {plan.unchanged} unchanged")
+            f"{len(plan.move)} move, {len(plan.archive)} archive), "
+            f"{plan.unchanged} unchanged")
     return head + ("\n" + "\n".join(lines) if lines else "")
 
 
@@ -473,10 +499,17 @@ def plan_to_json(plan: Plan, mega_board: str = "megagoals",
                     "row_hash": it.hash, "hermes_id": prior.hermes_id,
                     "prior_hermes_status": prior.hermes_status,
                     "board": board_for(it, mega_board, board_prefix)})
-    for prior in plan.complete:
-        ops.append({"op": "complete", "origin": prior.origin,
+    for it, prior, how in plan.move:
+        ops.append({"op": "move", "how": how, "origin": it.origin,
+                    "repo": it.repo, "id": it.id, "row_hash": it.hash,
+                    "hermes_id": prior.hermes_id,
+                    "prior_hermes_status": prior.hermes_status,
+                    "target_native": it.target,
+                    "board": board_for(it, mega_board, board_prefix)})
+    for prior in plan.archive:
+        ops.append({"op": "archive", "origin": prior.origin,
                     "board": prior.board, "hermes_id": prior.hermes_id,
-                    "target_native": "done"})
+                    "target_native": "archived"})
     return "\n".join(json.dumps(o) for o in ops)
 
 

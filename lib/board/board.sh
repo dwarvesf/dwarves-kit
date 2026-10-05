@@ -676,7 +676,7 @@ cmd_mirror() {
   fi
   rm -f "$plan"
 
-  local created=0 changed=0 completed=0 errors=0
+  local created=0 changed=0 moved=0 archived=0 errors=0
   local rline op origin hermes_id hermes_status status err
   while IFS= read -r rline; do
     [ -n "$rline" ] || continue
@@ -690,9 +690,10 @@ cmd_mirror() {
       continue
     fi
     case "$op" in
-      create)   created=$((created+1)) ;;
-      change)   changed=$((changed+1)) ;;
-      complete) completed=$((completed+1)) ;;
+      create)  created=$((created+1)) ;;
+      change)  changed=$((changed+1)) ;;
+      move)    moved=$((moved+1)) ;;
+      archive) archived=$((archived+1)) ;;
     esac
     hermes_id="$(printf '%s' "$rline" | jq -r '.hermes_id')"
     hermes_status="$(printf '%s' "$rline" | jq -r '.hermes_status')"
@@ -701,7 +702,7 @@ cmd_mirror() {
     printf '%s' "$rline" | bash "$BOARD_MIRROR_SH" snapshot-upsert "$snapshot"
   done <<< "$results"
 
-  echo "mirror: applied ${created} create, ${changed} change, ${completed} complete, ${errors} error(s)" >&2
+  echo "mirror: applied ${created} create, ${changed} change, ${moved} move, ${archived} archive, ${errors} error(s)" >&2
   [ "$errors" -eq 0 ]
 }
 
