@@ -221,14 +221,14 @@ Dry traces for the negative controls (mutation, code path, red test):
 - [ ] TASK-E: update `commands/adopt.md` ("What adoption installs", first bullet) and replace `commands/onboard.md` section G; acceptance: AC-6.
 
 ### Phase 3: Measure
-- [ ] TASK-F: add `lib/adopt/onboarding-cost.sh <transcript.jsonl>` printing turns, tokens and contract read; run the J2 pass and the Claude Code Pause-if session after the change; write `docs/verification/onboarding-pointer/RESULT.md` with both columns; acceptance: AC-7.
+- [x] TASK-F: add `lib/adopt/onboarding-cost.sh <transcript.jsonl>` printing turns, tokens and contract read; run the J2 pass and the Claude Code Pause-if session after the change; write `docs/verification/onboarding-pointer/RESULT.md` with both columns; acceptance: AC-7.
 
 ## After state
 - [ ] A fresh adopt writes an `AGENTS.md` of 1200 bytes or less that names the installed contract path. (Today: 18033 bytes, a full copy.)
 - [ ] A locally edited `AGENTS.md` is byte-identical after `--refresh` and adopt prints its drift in lines. (Today: never touched, never reported.)
 - [ ] An unmodified old kit copy becomes the pointer on `--refresh --swap-agents`; plain `--refresh` only prints a notice. (Today: stays forever, silently.)
 - [ ] The tour teaches two ideas and lists the rest as a menu. (Today: five stages.)
-- [ ] A recorded before and after exists for turns and tokens on J2. (Today: baseline only, in the transcript.)
+- [x] A recorded before and after exists for turns and tokens on J2. (`docs/verification/onboarding-pointer/RESULT.md`, paired Claude Code sessions.)
 
 ## Acceptance Criteria (global)
 

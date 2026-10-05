@@ -1,6 +1,6 @@
 # Proof of done: adopt pointer and two-idea tour (SPEC-371)
 
-Scope: build only. The J2 and Claude Code measurement runs (AC-7, `RESULT.md`) are post-build and PARTIAL.
+Scope: build, plus the AC-7 measurement in `RESULT.md` (added after the build).
 
 ## Green run
 
@@ -39,4 +39,4 @@ Review-fix controls (same method; `git status --short` was empty after each rest
 | AC-3, AC-4 | "edited AGENTS.md survives refresh and swap", "drift vs pointer", "drift vs old contract", "not a kit file" |
 | AC-5, AC-9, AC-10, AC-11 | "old copy swap needs flag", "known list complete against git log", "known-hashes refuses shallow", "no source contract", "swap-agents alone refused", "dry-run swap plans only" |
 | AC-6 | grep chain above |
-| AC-7 | PARTIAL, post-build measurement (`lib/adopt/onboarding-cost.sh` is built and tested) |
+| AC-7 | `docs/verification/onboarding-pointer/RESULT.md` (measured 2026-10-05; `grep -c 'contract read'` returns 5) |
