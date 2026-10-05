@@ -47,9 +47,9 @@ ENGAGE_RE='(^|[^[:alnum:]_-])git[[:space:]]([^;&|]*[[:space:]])?push([[:space:]]
 # A heredoc or here-string fed to a shell hides its body from CMD_CODE. If that body pushes, the
 # gate cannot see what is pushed: it is refused below (once the repo is known).
 SHELL_HD=0
-if printf '%s\n' "$CMD" | grep -qE '(^|[^[:alnum:]_.-])(bash|sh|zsh)([[:space:]][^<|;&]*)?<<' \
-   && printf '%s' "$CMD" | grep -qE "$ENGAGE_RE"; then SHELL_HD=1; fi
-[ "$SHELL_HD" = 1 ] || echo "$CMD_CODE" | grep -qE "$ENGAGE_RE" || exit 0
+if grep -qE '(^|[^[:alnum:]_.-])(bash|sh|zsh)([[:space:]][^<|;&]*)?<<' < <(printf '%s\n' "$CMD") \
+   && grep -qE "$ENGAGE_RE" < <(printf '%s' "$CMD"); then SHELL_HD=1; fi
+[ "$SHELL_HD" = 1 ] || grep -qE "$ENGAGE_RE" < <(echo "$CMD_CODE") || exit 0
 
 # A command that cd's elsewhere ships THAT repo, not the session cwd (the
 # cross-repo misfire: a `cd other-repo && git push` was gated against the SESSION
@@ -134,8 +134,8 @@ if [ -f "$PREFS" ]; then
   PUSH_OUT=$(bash "$PREFS" "$ROOT" "$CMD_CODE" "$CURBRANCH" "${DEFNAME#origin/}" 2>/dev/null || true)
   # Whole lines only: the parser's markers start with @@ and a ref name appears only inside a
   # REF or BLOCK line, so `feat/DEFAULT-x` cannot pass for the DEFAULT marker.
-  if printf '%s\n' "$PUSH_OUT" | grep -qxE '@@FORCE|@@DEFAULT'; then exit 0; fi
-  if printf '%s\n' "$PUSH_OUT" | grep -q '^@@BLOCK '; then
+  if grep -qxE '@@FORCE|@@DEFAULT' < <(printf '%s\n' "$PUSH_OUT"); then exit 0; fi
+  if grep -q '^@@BLOCK ' < <(printf '%s\n' "$PUSH_OUT"); then
     _fc_applies && _refs_block "$(printf '%s\n' "$PUSH_OUT" | grep -m1 '^@@BLOCK ' | sed 's/^@@BLOCK //')"
   elif [ -z "$PUSH_OUT" ]; then
     _fc_applies && _refs_block "the command parser gave no answer"
@@ -249,7 +249,7 @@ fi
 # Board-registration advisory (never blocks), relocated ABOVE the spec check:
 # spec-less freeform pushes are exactly the work most likely to be un-boarded, and the
 # old placement exited before the nudge could fire.
-if [ -f "$ROOT/_meta/BACKLOG.md" ] && ! grep -E '^\|' "$ROOT/_meta/BACKLOG.md" 2>/dev/null | grep -qF -- "$SLUG"; then
+if [ -f "$ROOT/_meta/BACKLOG.md" ] && ! grep -qF -- "$SLUG" < <(grep -E '^\|' "$ROOT/_meta/BACKLOG.md" 2>/dev/null); then
   echo "[advisory] branch slug '$SLUG' appears nowhere in _meta/BACKLOG.md; if this is real work, give it a board row" >&2
 fi
 
@@ -262,8 +262,8 @@ fi
 if [ -f "$ROOT/lib/gate/doc-projection-check.sh" ] && [ -f "$ROOT/tests/test-meta.sh" ] \
    && [ "${DWARVES_KIT_SKIP_DOC_PROJECTION:-0}" != "1" ]; then
   DPBASE="$MBASE"
-  if [ -n "$DPBASE" ] && git -C "$ROOT" diff --name-only "$DPBASE" "$PHEAD" 2>/dev/null \
-       | grep -qE '^(agents/|commands/|AGENTS\.md$|docs/(MANUAL|architecture|WORKFLOW)\.md$)'; then
+  if [ -n "$DPBASE" ] && grep -qE '^(agents/|commands/|AGENTS\.md$|docs/(MANUAL|architecture|WORKFLOW)\.md$)' \
+       < <(git -C "$ROOT" diff --name-only "$DPBASE" "$PHEAD" 2>/dev/null); then
     if ! DPMSG=$(bash "$ROOT/lib/gate/doc-projection-check.sh" "$ROOT" 2>&1); then
       echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) | BLOCKED | doc-projection | $SLUG" >> "${DWARVES_KIT_LOG_DIR:-$HOME/.claude/dwarves-kit/logs}/ship-gate.log" 2>/dev/null || true
       {
@@ -294,8 +294,8 @@ if [ -f "$ROOT/lib/registry/feature-registry.sh" ] && [ -f "$ROOT/docs/FEATURES.
   FRBASE="$MBASE"
   FRDIFF=""
   [ -n "$FRBASE" ] && FRDIFF=$(git -C "$ROOT" diff --name-only "$FRBASE" "$PHEAD" 2>/dev/null || true)
-  if [ -n "$FRDIFF" ] && ! printf '%s\n' "$FRDIFF" | grep -qx 'docs/FEATURES\.md' \
-     && printf '%s\n' "$FRDIFF" | grep -qE '^(commands/[^/]+\.md|agents/[^/]+\.md|skills/[^/]+/SKILL\.md|hooks/[^/]+\.sh|hooks/hooks\.json|settings\.json|tests/test-[^/]+\.sh|docs/specs/SPEC-[^/]+\.md)$'; then
+  if [ -n "$FRDIFF" ] && ! grep -qx 'docs/FEATURES\.md' < <(printf '%s\n' "$FRDIFF") \
+     && grep -qE '^(commands/[^/]+\.md|agents/[^/]+\.md|skills/[^/]+/SKILL\.md|hooks/[^/]+\.sh|hooks/hooks\.json|settings\.json|tests/test-[^/]+\.sh|docs/specs/SPEC-[^/]+\.md)$' < <(printf '%s\n' "$FRDIFF"); then
     if ! FRMSG=$(bash "$ROOT/lib/registry/feature-registry.sh" check "$ROOT/docs/FEATURES.md" 2>&1); then
       echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) | BLOCKED | registry-freshness | $SLUG" >> "${DWARVES_KIT_LOG_DIR:-$HOME/.claude/dwarves-kit/logs}/ship-gate.log" 2>/dev/null || true
       {
@@ -323,13 +323,12 @@ if [ -f "$LEDGER62" ]; then
   # RLANE derived from START unconditionally (review: descent must not depend on the
   # build-ran gate; a run can violate order without ever recording build).
   RLANE=$( { printf '%s' "$RLED" | grep '| START-AMEND |' | tail -1; printf '%s' "$RLED" | grep '| START |' | head -1; } | head -1 | sed -nE 's/.*\| lane=([a-z-]+).*/\1/p')
-  if printf '%s' "$RLED" | grep -q '| GATE | build | ran'; then
+  if grep -q '| GATE | build | ran' < <(printf '%s' "$RLED"); then
     case "$RLANE" in
       normal|full|bug)
         BASE62="$MBASE"
-        if [ -n "$BASE62" ] && ! git -C "$ROOT" diff --name-only "$BASE62" "$PHEAD" 2>/dev/null \
-            | grep -E '^docs/verification/.+\.md$|(^|/)proof-of-done\.md$' \
-            | grep -vq '/README\.md$'; then
+        if [ -n "$BASE62" ] && ! grep -vq '/README\.md$' < <(git -C "$ROOT" diff --name-only "$BASE62" "$PHEAD" 2>/dev/null \
+            | grep -E '^docs/verification/.+\.md$|(^|/)proof-of-done\.md$'); then
           echo "[advisory] run '$SLUG' (lane $RLANE) recorded a build but this branch ships no docs/verification/ record; the session ledger is not committable evidence" >&2
         fi ;;
     esac
@@ -439,12 +438,12 @@ bash "$LEDGER" outcome "$SLUG" ship start >/dev/null 2>&1 || true
 # clears it. Blocks only in an adopted repo (proof marker); elsewhere it is an advisory.
 NOTES_GAP=""
 if [ "$LANE" = "full" ] \
-   && ! bash "$LEDGER" show "$SLUG" 2>/dev/null | grep -q '| GATE | impl-notes | override |'; then
+   && ! grep -q '| GATE | impl-notes | override |' < <(bash "$LEDGER" show "$SLUG" 2>/dev/null); then
   NOTES_A="docs/implementation-notes/$SLUG.md"
   NOTES_B="docs/implementation-notes/$(basename "$SPEC")"
   NOTES_OK=0
   for NP in "$NOTES_A" "$NOTES_B"; do
-    git -C "$ROOT" show "HEAD:$NP" 2>/dev/null | grep -v '^# ' | grep -q '[^[:space:]]' && { NOTES_OK=1; break; }
+    grep -q '[^[:space:]]' < <(git -C "$ROOT" show "HEAD:$NP" 2>/dev/null | grep -v '^# ') && { NOTES_OK=1; break; }
   done
   if [ "$NOTES_OK" = 0 ]; then
     if [ -f "$ROOT/docs/verification/README.md" ]; then
@@ -501,7 +500,7 @@ fi
 _floor_check
 bash "$LEDGER" outcome "$SLUG" ship end caught=false >/dev/null 2>&1 || true
 # Suggestion not taken: the ledger holds a lane-suggest full action and the run ships lighter.
-if [ "$LANE" != "full" ] && printf '%s' "${RLED:-}" | grep -q '| ACTION | lane-suggest full'; then
+if [ "$LANE" != "full" ] && grep -q '| ACTION | lane-suggest full' < <(printf '%s' "${RLED:-}"); then
   SUGF=$(printf '%s' "$RLED" | sed -nE 's/.*lane-suggest full flags=([^ ]*).*/\1/p' | tail -1)
   echo "[advisory] run '$SLUG': the classifier suggested full (${SUGF:-unknown}) and the run ships as $LANE" >&2
 fi

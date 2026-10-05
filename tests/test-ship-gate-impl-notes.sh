@@ -116,6 +116,38 @@ case_push "13 unadopted repo gets an advisory, not a block" "$R" 0 '\[advisory\]
 R="$(mktemp -d)"; mkrepo "$R" n14 full; gates n14 full
 case_push "14 cd <repo> && git push checks the target repo" "$R" 2 'MISSING-NOTES' "$(mktemp -d)" "cd $R && git push -u origin HEAD"
 
+# 15-17 big producers under pipefail: grep -q exits on its first match, the producer
+# (git show, cat, grep) is still writing, takes SIGPIPE, and pipefail reports the whole
+# pipeline failed. Each input below is far past the pipe buffer with its match on line 1.
+bigfill() { # $1=file $2=line -> ~300KB of repeated lines appended
+  local i; for i in $(seq 1 4000); do printf '%s\n' "$2"; done >> "$1"
+}
+# 15 a large notes file with an entry on its first line -> pass
+R="$(mktemp -d)"; mkrepo "$R" n15 full; gates n15 full
+printf '%s\n' '- Why: the entry is on the first body line' > "$R/docs/implementation-notes/n15.md"
+bigfill "$R/docs/implementation-notes/n15.md" '- filler line that pads the notes file well past the pipe buffer size so the producer is still writing'
+git -C "$R" add -A; git -C "$R" commit -qm notes
+case_push "15 large notes file passes (no SIGPIPE false MISSING-NOTES)" "$R" 0 ''
+
+# 16 a large ledger whose impl-notes override is the first line -> the override is seen
+R="$(mktemp -d)"; mkrepo "$R" n16 full
+DWARVES_KIT_LOG_DIR="$LOGDIR" bash "$LEDGER" override n16 impl-notes "test: notes waived" >/dev/null 2>&1
+gates n16 full
+LEDGER16="$LOGDIR/runs/n16.log"
+bigfill "$LEDGER16" '2026-09-24T00:00:00Z | ACTION | filler line that pads the ledger well past the pipe buffer size so cat is still writing'
+case_push "16 override at the head of a large ledger clears the gap" "$R" 0 ''
+
+# 17 a large BACKLOG.md whose first row names the slug -> no "appears nowhere" advisory
+R="$(mktemp -d)"; mkrepo "$R" n17 full; gates n17 full
+notes "$R" n17.md '# Notes\n\n## entry\n'
+mkdir -p "$R/_meta"; printf '| n17 | row naming the slug |\n' > "$R/_meta/BACKLOG.md"
+bigfill "$R/_meta/BACKLOG.md" '| X-1 | filler row that pads the backlog well past the pipe buffer size so the first grep keeps writing |'
+git -C "$R" add -A; git -C "$R" commit -qm backlog
+E17="$(mktemp)"; RC17="$(gate "$R" 'git push -u origin HEAD' "$E17")"
+[ "$RC17" = 0 ] && ! grep -q 'appears nowhere in _meta/BACKLOG.md' "$E17" \
+  && ok "17 large BACKLOG naming the slug raises no false advisory" \
+  || no "17 want rc=0 and no advisory; got rc=$RC17: $(tr '\n' ' ' < "$E17")"
+
 echo "---"
 echo "PASS=$PASS FAIL=$FAIL"
 [ "$FAIL" -eq 0 ]
