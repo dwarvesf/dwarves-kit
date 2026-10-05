@@ -1,17 +1,30 @@
 #!/usr/bin/env bash
 # handoffs.sh -- list open handoff files so kit:start surfaces them at session
-# entry instead of them piling up unread. A handoff (written by the `handoff`
-# skill) is a one-off note, not a lifecycle-managed draft like .claude/goals/
-# (see lib/goal/goal-drafts.sh): there is no archive/ship flow here, only a
-# one-level scan. A file sitting directly in a scan root is open; a file a
-# repo moves into ANY subdirectory (done/, _archive/, archive/, a nested
-# .claude/, or any other name a repo invents) counts as consumed. No name
-# list is maintained anywhere; depth alone decides.
+# entry instead of them piling up unread, and archive a finished one. A handoff
+# (written by the `handoff` skill) is a one-off note, not a lifecycle-managed
+# draft like .claude/goals/ (see lib/goal/goal-drafts.sh): the scan is one level
+# deep. A file sitting directly in a scan root is open; a file a repo moves into
+# ANY subdirectory (done/, _archive/, archive/, a nested .claude/, or any other
+# name a repo invents) counts as consumed. No name list is maintained anywhere;
+# depth alone decides. `archive` is the one writer: it moves a file to archive/.
 #
-# Read-only. Pure bash + find/awk/sed, no python (same shape as
+# `list` is read-only; `archive` writes (one git mv or mv, never a delete).
+# Pure bash + find/awk/sed, no python (same shape as
 # lib/session/parse-transcript.sh's sibling test, lib/session/tests/).
 #
 # Usage:
+#   handoffs.sh archive [--repo DIR] <file>
+#     --repo DIR   repo whose checkout holds the file (default as for list). For
+#                  a tracked file pass the worktree of the session's branch.
+#     <file>       a top-level *.md file of <repo>/_meta/handoffs/ or
+#                  <repo>/.claude/handoffs/, absolute or repo-relative. Moves it
+#                  into <dir>/archive/ (created): `git mv` when tracked, `mv -n`
+#                  when untracked. One outcome line, `archived (git mv|mv): ...`
+#                  or `REFUSED: <reason>` (exit 1). Refuses a nested file, a
+#                  symlink, an existing target, and a tracked file while the
+#                  checkout is on the default branch (the move belongs on a
+#                  branch). Never deletes anything.
+#
 #   handoffs.sh list [--repo DIR] [--days N] [--limit N]
 #     --repo DIR   repo to scan (default: git rev-parse --show-toplevel of
 #                  cwd, else cwd itself)
@@ -38,18 +51,18 @@
 #   origin/<default-branch>), falling back to the working tree with a
 #   "(local)" suffix when there is no origin remote:
 #     LIVE (n open: ID-a, ID-b)   -- at least one cited row is still open
-#     DEAD (all n cited rows closed, delete it or move it into any
-#       subdirectory)  -- every cited row shipped/dropped/done/resolved
+#     DEAD (all n cited rows closed, move it to archive/)  -- every cited
+#       row shipped/dropped/done/resolved
 #     UNCITED (no row IDs; read it)  -- the file names no board row
 #   A row ID this repo's board cannot resolve counts as open (unproven, not
 #   confirmed closed). The board owns the work; the handoff owns only the
-#   context (see AGENTS.md's handoff rule). A DEAD handoff is deleted by the
-#   session that finds it, or moved into any subdirectory; either marks it
-#   consumed and git history keeps it.
+#   context (see AGENTS.md's handoff rule). A DEAD handoff is moved to
+#   archive/ (`handoffs.sh archive`) by the session that finds it, never
+#   deleted.
 set -euo pipefail
 shopt -s nullglob
 
-usage() { sed -n '2,38p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
+usage() { sed -n '2,/^[^#]/p' "${BASH_SOURCE[0]}" | sed '$d; s/^# \{0,1\}//'; }
 
 repo_root() {
   git rev-parse --show-toplevel 2>/dev/null || pwd
@@ -140,7 +153,7 @@ handoff_liveness() { # <file>
   local suffix=""
   [ "$BOARD_SOURCE" = "local" ] && suffix=" (local)"
   if [ "${#open[@]}" -eq 0 ]; then
-    echo "DEAD (all $n cited rows closed, delete it or move it into any subdirectory)$suffix"
+    echo "DEAD (all $n cited rows closed, move it to archive/)$suffix"
   else
     local joined; joined="$(IFS=,; echo "${open[*]}")"
     joined="$(printf '%s' "$joined" | sed 's/,/, /g')"
@@ -213,10 +226,64 @@ cmd_list() {
   echo "$total_n open handoffs"
 }
 
+# Archive one finished handoff. The one writer in this file: a git mv (tracked)
+# or mv -n (untracked) into <dir>/archive/, never a delete. Prints one line.
+_archive_refuse() { echo "REFUSED: $*" >&2; return 1; }
+
+cmd_archive() {
+  local repo="" file=""
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --repo) [ $# -ge 2 ] || { echo "handoffs archive: --repo needs a value" >&2; return 64; }; repo="$2"; shift 2 ;;
+      -*) echo "handoffs archive: unknown arg '$1'" >&2; return 64 ;;
+      *) [ -z "$file" ] || { echo "handoffs archive: one file only" >&2; return 64; }; file="$1"; shift ;;
+    esac
+  done
+  [ -n "$file" ] || { echo "handoffs archive: needs a <file>" >&2; return 64; }
+  [ -n "$repo" ] || repo="$(repo_root)"
+  repo="$(cd "$repo" 2>/dev/null && pwd -P || true)"
+  [ -n "$repo" ] || { echo "handoffs archive: repo not found" >&2; return 1; }
+
+  case "$file" in /*) ;; *) file="$repo/$file" ;; esac
+  [ -L "$file" ] && { _archive_refuse "$file is a symlink"; return 1; }
+  [ -f "$file" ] || { _archive_refuse "$file is not a file"; return 1; }
+  local dir base
+  dir="$(cd "$(dirname "$file")" && pwd -P)"
+  base="$(basename "$file")"
+  case "$base" in *.md) ;; *) _archive_refuse "$base is not a .md file"; return 1 ;; esac
+  case "$dir" in
+    "$repo/_meta/handoffs"|"$repo/.claude/handoffs") ;;
+    *) _archive_refuse "$base is not a top-level file of _meta/handoffs/ or .claude/handoffs/ in $repo"; return 1 ;;
+  esac
+
+  local src="$dir/$base" dest="$dir/archive/$base" rel_src rel_dest
+  rel_src="${src#"$repo"/}"; rel_dest="${dest#"$repo"/}"
+  [ ! -e "$dest" ] && [ ! -L "$dest" ] || { _archive_refuse "$rel_dest already exists"; return 1; }
+
+  if git -C "$repo" ls-files --error-unmatch -- "$rel_src" >/dev/null 2>&1; then
+    local cur def
+    cur="$(git -C "$repo" symbolic-ref --short -q HEAD || true)"
+    def="$(_origin_default_branch "$repo" || true)"
+    if [ -z "$cur" ] || [ "$cur" = "$def" ] || { [ -z "$def" ] && { [ "$cur" = master ] || [ "$cur" = main ]; }; }; then
+      _archive_refuse "$rel_src is tracked and $repo is on '${cur:-detached HEAD}'; move it on a branch in a worktree"
+      return 1
+    fi
+    mkdir -p "$dir/archive"
+    git -C "$repo" mv -- "$rel_src" "$rel_dest" >/dev/null || { _archive_refuse "git mv failed for $rel_src"; return 1; }
+    echo "archived (git mv): $rel_src -> $rel_dest"
+  else
+    mkdir -p "$dir/archive"
+    command mv -n "$src" "$dest" || { _archive_refuse "mv failed for $rel_src"; return 1; }
+    [ ! -e "$src" ] || { _archive_refuse "mv left $rel_src in place"; return 1; }
+    echo "archived (mv): $rel_src -> $rel_dest"
+  fi
+}
+
 main() {
   local sub="${1:-}"; [ $# -gt 0 ] && shift || true
   case "$sub" in
     list) cmd_list "$@" ;;
+    archive) cmd_archive "$@" ;;
     -h|--help|help|"") usage ;;
     *) echo "handoffs: unknown subcommand '$sub' (try: handoffs.sh --help)" >&2; return 64 ;;
   esac

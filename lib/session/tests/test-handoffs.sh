@@ -188,7 +188,7 @@ gout="$(bash "$HO" list --repo "$GREPO")"
 
 echo "[10] DEAD: all cited rows closed on origin (local copy says the opposite)"
 dead_line="$(printf '%s\n' "$gout" | grep 'dead-one.md')"
-if [[ "$dead_line" == *"DEAD (all 1 cited rows closed, delete it or move it into any subdirectory)"* ]]; then
+if [[ "$dead_line" == *"DEAD (all 1 cited rows closed, move it to archive/)"* ]]; then
   ok "dead-one.md verdict: $dead_line"
 else
   no "expected DEAD verdict, got: $dead_line"
@@ -388,6 +388,86 @@ else
 fi
 d_last="$(printf '%s\n' "$dout" | tail -1)"
 if [[ "$d_last" == "2 open handoffs" ]]; then ok "count: $d_last"; else no "expected '2 open handoffs', got: $d_last"; fi
+
+# --- archive verb: git mv when tracked, mv -n when untracked, refusals ----------
+# Fixture: a clone of the bare origin above (default branch main), with a
+# tracked handoff committed on main and a feature branch checked out after it.
+
+# [8] above turns errexit on for the rest of the file; refusals here exit 1 by design.
+set +e
+
+echo "[21] archive: tracked file on a feature branch moves with git mv"
+AROOT="$(mktemp -d)"
+git clone -q "$GBARE/origin.git" "$AROOT/repo"
+AREPO="$AROOT/repo"
+mkdir -p "$AREPO/_meta/handoffs" "$AREPO/.claude/handoffs"
+printf '# Handoff: tracked\n\n## Next\nDone.\n' > "$AREPO/_meta/handoffs/tracked.md"
+git -C "$AREPO" add _meta/handoffs/tracked.md
+git -C "$AREPO" -c user.email=t@t -c user.name=t commit -q -m "chore: add tracked handoff"
+git -C "$AREPO" checkout -q -b feat/close
+tout="$(bash "$HO" archive --repo "$AREPO" _meta/handoffs/tracked.md 2>&1)"; trc=$?
+if [[ $trc -eq 0 && "$tout" == "archived (git mv): _meta/handoffs/tracked.md -> _meta/handoffs/archive/tracked.md" ]]; then
+  ok "outcome line: $tout"
+else
+  no "unexpected tracked outcome (rc=$trc): $tout"
+fi
+if [[ ! -e "$AREPO/_meta/handoffs/tracked.md" && -f "$AREPO/_meta/handoffs/archive/tracked.md" ]] \
+   && git -C "$AREPO" status --porcelain | grep -q '^R  _meta/handoffs/tracked.md -> _meta/handoffs/archive/tracked.md'; then
+  ok "file moved and the index records a rename"
+else
+  no "tracked file not staged as a rename: $(git -C "$AREPO" status --porcelain)"
+fi
+
+echo "[22] archive: untracked file moves with plain mv"
+printf '# Handoff: untracked\n\n## Next\nDone.\n' > "$AREPO/.claude/handoffs/loose.md"
+uout="$(bash "$HO" archive --repo "$AREPO" "$AREPO/.claude/handoffs/loose.md" 2>&1)"; urc2=$?
+if [[ $urc2 -eq 0 && "$uout" == "archived (mv): .claude/handoffs/loose.md -> .claude/handoffs/archive/loose.md" \
+      && ! -e "$AREPO/.claude/handoffs/loose.md" && -f "$AREPO/.claude/handoffs/archive/loose.md" ]]; then
+  ok "untracked moved: $uout"
+else
+  no "untracked move wrong (rc=$urc2): $uout"
+fi
+
+echo "[23] archive: an existing target refuses and touches nothing"
+printf 'original archived copy\n' > "$AREPO/_meta/handoffs/archive/clash.md"
+printf '# Handoff: clash\n' > "$AREPO/_meta/handoffs/clash.md"
+cout2="$(bash "$HO" archive --repo "$AREPO" _meta/handoffs/clash.md 2>&1)"; crc=$?
+if [[ $crc -eq 1 && "$cout2" == *"REFUSED: _meta/handoffs/archive/clash.md already exists"* \
+      && -f "$AREPO/_meta/handoffs/clash.md" && "$(cat "$AREPO/_meta/handoffs/archive/clash.md")" == "original archived copy" ]]; then
+  ok "refused, both files intact: $cout2"
+else
+  no "existing target not refused cleanly (rc=$crc): $cout2"
+fi
+
+echo "[24] archive: a nested file refuses"
+printf '# Handoff: nested\n' > "$AREPO/_meta/handoffs/archive/nested.md"
+mkdir -p "$AREPO/_meta/handoffs/sub"; printf '# Handoff: sub\n' > "$AREPO/_meta/handoffs/sub/deep.md"
+nout="$(bash "$HO" archive --repo "$AREPO" _meta/handoffs/archive/nested.md 2>&1)"; nrc=$?
+nout2="$(bash "$HO" archive --repo "$AREPO" _meta/handoffs/sub/deep.md 2>&1)"; nrc2=$?
+if [[ $nrc -eq 1 && $nrc2 -eq 1 && "$nout" == *"REFUSED"* && "$nout2" == *"REFUSED"* \
+      && -f "$AREPO/_meta/handoffs/archive/nested.md" && -f "$AREPO/_meta/handoffs/sub/deep.md" \
+      && ! -e "$AREPO/_meta/handoffs/archive/archive/nested.md" ]]; then
+  ok "nested files refused and left in place"
+else
+  no "nested file not refused (rc=$nrc/$nrc2): $nout / $nout2"
+fi
+
+echo "[25] archive: a tracked file refuses while the checkout is on the default branch"
+git -C "$AREPO" -c user.email=t@t -c user.name=t commit -q -am "chore: stage archive move" 2>/dev/null || true
+git -C "$AREPO" checkout -q main
+printf '# Handoff: on main\n' > "$AREPO/_meta/handoffs/onmain.md"
+git -C "$AREPO" add _meta/handoffs/onmain.md
+git -C "$AREPO" -c user.email=t@t -c user.name=t commit -q -m "chore: tracked on main"
+mout="$(bash "$HO" archive --repo "$AREPO" _meta/handoffs/onmain.md 2>&1)"; mrc=$?
+if [[ $mrc -eq 1 && "$mout" == *"REFUSED"*"on a branch"* && -f "$AREPO/_meta/handoffs/onmain.md" ]]; then
+  ok "default-branch move refused: $mout"
+else
+  no "tracked file on the default branch not refused (rc=$mrc): $mout"
+fi
+
+echo "[26] archive: a missing <file> is a usage error, exit 64"
+bash "$HO" archive --repo "$AREPO" >/dev/null 2>&1; arc=$?
+if [[ $arc -eq 64 ]]; then ok "exit 64 without a file"; else no "expected exit 64, got rc=$arc"; fi
 
 echo
 if [[ $fail -eq 0 ]]; then
