@@ -405,7 +405,7 @@ if [ "$LANE" = "full" ] \
   fi
 fi
 
-GAPS=$(KIT_PROJECT_ROOT="$ROOT" bash "$LEDGER" check "$LANE" "$SLUG" 2>&1); GRC=$?
+GAPS=$(ship_rules_ledger_check "$ROOT" "$LANE" "$SLUG" "$LEDGER" 2>&1); GRC=$?
 if [ -n "$NOTES_GAP" ]; then GAPS="${GAPS:+$GAPS$'\n'}$NOTES_GAP"; GRC=1; fi
 if [ "$GRC" -ne 0 ]; then
   bash "$LEDGER" outcome "$SLUG" ship end caught=true >/dev/null 2>&1 || true

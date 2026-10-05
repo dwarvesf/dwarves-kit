@@ -19,7 +19,12 @@ mkrepo() { # $1=dir $2=slug $3=tasks $4=nomarker-or-empty -> repo on feat/<slug>
   git -C "$1" config user.email t@t; git -C "$1" config user.name t
   mkdir -p "$1/docs/specs"
   if [ "${4:-}" != nomarker ]; then mkdir -p "$1/docs/verification"; echo marker > "$1/docs/verification/README.md"; fi
-  : > "$1/.keep"; git -C "$1" add -A; git -C "$1" commit -qm init
+  : > "$1/.keep"
+  # A tracked, clean project lane override: normal makes docs required (it is light in the kit default).
+  if [ "${5:-}" = kittoml ]; then
+    printf '[lane.normal]\nphases = ["think", "spec", "validate", "design-record", "test-plan", "build", "review", "docs", "ship"]\nlight  = ["think", "validate", "design-record", "test-plan"]\n' > "$1/.kit.toml"
+  fi
+  git -C "$1" add -A; git -C "$1" commit -qm init
   git -C "$1" switch -qc "feat/$2"
   { printf '# Spec: x\nStatus: DRAFT\nLane: normal\n\n'; local i; for i in $(seq 1 "$3"); do printf -- '- [ ] TASK-%s: x\n' "$i"; done; } > "$1/docs/specs/SPEC-001-$2.md"
   git -C "$1" add -A; git -C "$1" commit -qm spec
@@ -35,8 +40,8 @@ ship() { # $1=repo $2=stderr-file -> exit code of the push gate
   ( cd "$1" && printf '{"tool_input":{"command":"git push -u origin HEAD"}}' \
       | CLAUDE_PLUGIN_ROOT="$KIT" DWARVES_KIT_LOG_DIR="$LOGDIR" bash "$KIT/hooks/ship-gate.sh" >/dev/null 2>"$2"; echo $? )
 }
-mega() { # $1=repo $2=rid $3=lane $4=stderr-file -> exit code of the mega gate
-  ( cd "$1" && DWARVES_KIT_LOG_DIR="$LOGDIR" bash "$MM" gate "$2" "$3" >/dev/null 2>"$4"; echo $? )
+mega() { # $1=repo $2=rid $3=lane $4=stderr-file [$5=subdir to run from] -> exit code of the mega gate
+  ( cd "$1/${5:-}" && DWARVES_KIT_LOG_DIR="$LOGDIR" bash "$MM" gate "$2" "$3" >/dev/null 2>"$4"; echo $? )
 }
 # case <label> <repo> <slug> <expect-block 0|1> <message-pattern>
 parity() {
@@ -77,6 +82,14 @@ parity "e small spec, no hard path" "$R" pe 0 ''
 R="$(mktemp -d)"; mkrepo "$R" pf 1 nomarker; gates pf normal; git -C "$R" rm -q "docs/specs/SPEC-001-pf.md"; git -C "$R" commit -qm nospec
 mkdir -p "$R/.github/workflows"; printf 'name: x\n' > "$R/.github/workflows/ci.yml"; git -C "$R" add -A; git -C "$R" commit -qm ci
 parity "f hard path, no spec, no ledger" "$R" pf 1 'no spec found'
+
+# g: a project .kit.toml lane override makes docs required. The hook reads it from the repo root; the
+# mega gate runs from a subdirectory, where the cwd fallback finds no .kit.toml. Both must block.
+R="$(mktemp -d)"; mkrepo "$R" pg 1 "" kittoml; gates pg normal; mkdir -p "$R/sub"
+eg="$(mktemp)"; em="$(mktemp)"
+rsg="$(ship "$R" "$eg")"; rmg="$(mega "$R" pg normal "$em" sub)"
+if [ "$rsg" = 2 ] && [ "$rmg" = 1 ] && grep -q 'MISSING-GATE: docs' "$eg" && grep -q 'MISSING-GATE: docs' "$em"; then ok "g project lane override: ship gate exit $rsg, mega gate exit $rmg, both name docs"
+else no "g want ship 2 / mega 1 / MISSING-GATE: docs; got ship $rsg, mega $rmg; ship: $(tr '\n' ' ' < "$eg"); mega: $(tr '\n' ' ' < "$em")"; fi
 
 echo "---"; echo "PASS=$PASS FAIL=$FAIL"
 [ "$FAIL" -eq 0 ]

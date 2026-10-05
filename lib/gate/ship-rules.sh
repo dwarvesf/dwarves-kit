@@ -7,6 +7,10 @@
 #   ship_rules_resolve_base <root>                 the remote default branch ref, else empty
 #   ship_rules_merge_base <root> <head>            merge base of <head> and the default branch
 #   ship_rules_switch_on <key> <root> [<ref>]      0 unless [gate] <key> is explicitly off (reader exit 1)
+#   ship_rules_ledger_check <root> <lane> <rid> <ledger>
+#                                                  the lane's ledger check with the repo's project config
+#                                                  (KIT_PROJECT_ROOT=<root>), so a project lane override
+#                                                  reads the same for every caller
 #   ship_rule_large_spec <spec> <rid> <lane> <ledger>
 #                                                  a large normal-lane spec needs a validate ran/override
 #   ship_rule_floor <root> <base> <head> <rid> <spec> <ledger>
@@ -61,6 +65,10 @@ ship_rules_switch_on() {
   else bash "$_SR_POLICY" enabled "$key" "$root" || rc=$?; fi
   [ "$rc" -eq 1 ] || return 0
   return 1
+}
+
+ship_rules_ledger_check() {
+  KIT_PROJECT_ROOT="$1" bash "$4" check "$2" "$3"
 }
 
 # Validate by size: the normal lane lists validate as lite (not required), so nothing in the ledger
