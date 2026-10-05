@@ -75,22 +75,15 @@ BRANCH=$(git -C "$ROOT" rev-parse --abbrev-ref HEAD 2>/dev/null || true)
 [ -n "$BRANCH" ] || exit 0
 CURBRANCH="$BRANCH"
 PHEAD=$(git -C "$ROOT" rev-parse HEAD 2>/dev/null || true)   # the commit being shipped
-# The base is the REMOTE default branch: origin/HEAD, else origin/main or origin/master. A local
-# branch can carry unpushed commits and would hide them from the diff. Only a repo with no origin
-# at all falls back to local main or master. An origin with no remote-tracking default gives no
-# base, and the callers skip their checks.
-_resolve_base() {
-  local ref c
-  ref=$(git -C "$ROOT" symbolic-ref -q --short refs/remotes/origin/HEAD 2>/dev/null || true)
-  [ -z "$ref" ] || { echo "$ref"; return 0; }
-  if git -C "$ROOT" remote get-url origin >/dev/null 2>&1; then
-    for c in origin/main origin/master; do
-      git -C "$ROOT" rev-parse --verify -q "$c" >/dev/null 2>&1 && { echo "$c"; return 0; }
-    done
-    return 0
-  fi
-  git -C "$ROOT" rev-parse --verify -q main >/dev/null 2>&1 && echo main || echo master
-}
+# The diff-reading rules (default-branch base, large-spec validate, hard-path floor) live in
+# lib/gate/ship-rules.sh, shared with lib/goal/mega-merge.sh gate. Resolved from the install
+# location, else from this hook's own checkout (a plugin root without lib/ still has the helper).
+SHIP_RULES="${CLAUDE_PLUGIN_ROOT:-$HOME/.claude/dwarves-kit}/lib/gate/ship-rules.sh"
+[ -r "$SHIP_RULES" ] || SHIP_RULES="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/gate/ship-rules.sh"
+# shellcheck source=lib/gate/ship-rules.sh
+source "$SHIP_RULES" 2>/dev/null || exit 0
+SHIP_RULES_LOG=1
+_resolve_base() { ship_rules_resolve_base "$ROOT"; }
 
 # [gate] toggles. lib/gate/gate-policy.sh resolves them (project config wins, then the
 # operator overlay, then the kit root); this hook never reads the config files itself.
@@ -154,7 +147,7 @@ SLUG_Q=$(printf '%q' "$SLUG")   # shell-safe form for the commands this hook pri
 # One copy of the three-way default-branch fallback (review: was duplicated per block).
 # The merge base of the shipped commit and the remote default branch, computed once. Empty means
 # no base (no remote default resolved): every diff-keyed check below skips.
-MBASE=$(git -C "$ROOT" merge-base "$PHEAD" "$(_resolve_base)" 2>/dev/null || true)
+MBASE=$(ship_rules_merge_base "$ROOT" "$PHEAD")
 
 # --- Proof-of-done gate (diff-keyed, SPEC-INDEPENDENT). This is the bridge: it fires on
 # freeform /goal work too, because it classifies the branch DIFF instead of a spec. A
@@ -166,58 +159,16 @@ MBASE=$(git -C "$ROOT" merge-base "$PHEAD" "$(_resolve_base)" 2>/dev/null || tru
 # mode (CLAUDE_PLUGIN_ROOT set) is unchanged.
 PROOF="${CLAUDE_PLUGIN_ROOT:-$HOME/.claude/dwarves-kit}/lib/gate/proof-ledger.sh"
 _gate_on() {  # $1 = [gate] key, $2 = log label
-  [ -f "$POLICY" ] || return 0
-  local rc=0; bash "$POLICY" enabled "$1" "$ROOT" || rc=$?
-  [ "$rc" -eq 1 ] || return 0
+  ship_rules_switch_on "$1" "$ROOT" && return 0
   local LOG_DIR="${DWARVES_KIT_LOG_DIR:-$HOME/.claude/dwarves-kit/logs}"
   mkdir -p "$LOG_DIR" 2>/dev/null || true
   echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) | OFF-BY-CONFIG | $2 | $SLUG" >> "$LOG_DIR/ship-gate.log" 2>/dev/null || true
   return 1
 }
-# Diff floor (hard paths). The path test lives in lib/classify/lane-classify.sh `floor`; this hook
-# only calls it, as it calls gate-policy.sh, and fails open on a missing lib. A hit means the
-# full lane's gates apply whatever the spec's Lane says.
-LCLS="${CLAUDE_PLUGIN_ROOT:-$HOME/.claude/dwarves-kit}/lib/classify/lane-classify.sh"
-_floor_hit() {  # prints "full <kind>: <path>" for the first hard-path hit, else nothing
-  [ -f "$LCLS" ] || return 0
-  local fb="$MBASE"
-  [ -n "$fb" ] || return 0
-  [ "$fb" != "$(git -C "$ROOT" rev-parse "$PHEAD" 2>/dev/null || true)" ] || return 0
-  bash "$LCLS" floor "$ROOT" "$fb" "$PHEAD" 2>/dev/null || true
-}
-# The floor follows [gate] lane_gates as of the MERGE BASE, never the PR head, so a PR cannot
-# switch off its own floor. Only exit 1 from the reader means off.
-_floor_on() {
-  [ -f "$POLICY" ] || return 0
-  local fb="$MBASE" rc=0
-  [ -n "$fb" ] || return 0
-  bash "$POLICY" enabled lane_gates "$ROOT" --at "$fb" || rc=$?
-  [ "$rc" -eq 1 ] || return 0
-  local LOG_DIR="${DWARVES_KIT_LOG_DIR:-$HOME/.claude/dwarves-kit/logs}"
-  mkdir -p "$LOG_DIR" 2>/dev/null || true
-  echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) | OFF-BY-CONFIG | floor | $SLUG" >> "$LOG_DIR/ship-gate.log" 2>/dev/null || true
-  return 1
-}
-# _floor_check: block (exit 2) when the diff hits a hard path and the full lane's gates, read
-# from the kit and operator layers only, have not all run. Needs the ledger script.
+# _floor_check: block (exit 2) when the diff hits a hard path and the full lane's gates have not all
+# run. The rule lives in ship-rules.sh (ship_rule_floor); it prints the message and returns 2.
 _floor_check() {
-  local FH FGAPS LEDGERF="${CLAUDE_PLUGIN_ROOT:-$HOME/.claude/dwarves-kit}/lib/gate/gate-ledger.sh"
-  [ -f "$LEDGERF" ] || return 0
-  _floor_on || return 0   # the cheap switch check first; the diff scan only when it is on
-  FH=$(_floor_hit); [ -n "$FH" ] || return 0
-  if ! FGAPS=$(KIT_PROJECT_ROOT="$ROOT" bash "$LEDGERF" check full "$SLUG" --kit-lanes 2>&1); then
-    local LOG_DIR="${DWARVES_KIT_LOG_DIR:-$HOME/.claude/dwarves-kit/logs}" FK="${FH#full }"
-    mkdir -p "$LOG_DIR" 2>/dev/null || true
-    echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) | BLOCKED | ship-gate | $SLUG (hard-path ${FK%%:*})" >> "$LOG_DIR/ship-gate.log" 2>/dev/null || true
-    {
-      echo "BLOCKED: ship-gate. This diff touches a hard path ($FK); the full lane's gates apply whatever the spec's Lane says:"
-      [ -n "${SPEC:-}" ] || echo "(no spec found for '$SLUG'; a hard-path diff owes the full lane's gates with or without one)"
-      printf '%s\n' "$FGAPS" | sed 's/^/  /'
-      echo "Run the missing gate(s), or log an explicit override (recorded for audit):"
-      echo "  bash \"$LEDGERF\" override $SLUG_Q <phase> \"<reason>\""
-    } >&2
-    exit 2
-  fi
+  ship_rule_floor "$ROOT" "$MBASE" "$PHEAD" "$SLUG" "${SPEC:-}" "${CLAUDE_PLUGIN_ROOT:-$HOME/.claude/dwarves-kit}/lib/gate/gate-ledger.sh" || exit 2
   return 0
 }
 # OPT-IN: engage only in a repo that adopted the proof-of-done convention. A repo with
@@ -475,26 +426,10 @@ if [ "$GRC" -ne 0 ]; then
   } >&2
   exit 2
 fi
-# Validate by size: the normal lane lists validate as lite (not required), so nothing in the ledger
-# check stops a LARGE normal-lane spec from shipping unvalidated. `spec.sh depth size` exits 1 on a
-# large spec; only that exact code engages. A missing spec.sh or an unreadable spec (exit 2) fails open.
-SPEC_SH="${CLAUDE_PLUGIN_ROOT:-$HOME/.claude/dwarves-kit}/lib/spec/spec.sh"
-if [ "$LANE" = normal ] && [ -f "$SPEC_SH" ]; then
-  bash "$SPEC_SH" depth size "$SPEC" >/dev/null 2>&1; SIZE_RC=$?
-  if [ "$SIZE_RC" -eq 1 ] \
-     && ! bash "$LEDGER" show "$SLUG" 2>/dev/null | awk -F' [|] ' '$2=="GATE" && $3=="validate"{s=$4} END{exit !(s=="ran"||s=="override")}'; then
-    bash "$LEDGER" outcome "$SLUG" ship end caught=true >/dev/null 2>&1 || true
-    LOG_DIR="${DWARVES_KIT_LOG_DIR:-$HOME/.claude/dwarves-kit/logs}"
-    mkdir -p "$LOG_DIR" 2>/dev/null || true
-    echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) | BLOCKED | ship-gate | $SLUG ($LANE, large, no validate)" >> "$LOG_DIR/ship-gate.log" 2>/dev/null || true
-    {
-      echo "BLOCKED: ship-gate. Spec '$SLUG' is large (4+ tasks, a deeper Depth, or no countable task) and has no validate gate that ran or was overridden."
-      echo "Rule: a large normal-lane spec needs the fresh-context validation before it ships (\`bash <kit>/lib/spec/spec.sh depth size $SPEC\`). Run /kit:spec-validate, or log an explicit override (recorded for audit):"
-      echo "  bash \"$LEDGER\" override $SLUG_Q validate \"<reason>\""
-      echo "Or switch the lane gates off for this repo: [gate] lane_gates = false in the committed project kit config (lib/gate/README.md, 'Switching a gate off')."
-    } >&2
-    exit 2
-  fi
+# Validate by size (ship-rules.sh): a large normal-lane spec needs a validate ran/override record.
+if ! ship_rule_large_spec "$SPEC" "$SLUG" "$LANE" "$LEDGER"; then
+  bash "$LEDGER" outcome "$SLUG" ship end caught=true >/dev/null 2>&1 || true
+  exit 2
 fi
 # Hard-path floor: full-lane gates, project lane data ignored (--kit-lanes). Exits 2 on a gap.
 _floor_check
