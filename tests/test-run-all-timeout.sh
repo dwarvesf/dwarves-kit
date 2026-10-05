@@ -20,8 +20,8 @@ TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
 mkkit() {  # $1 = dir ; a kit-shaped tree holding the real run-all.sh
-  mkdir -p "$1/tests"
-  cp "$RA" "$1/tests/run-all.sh"
+  mkdir -p "$1/tests/lib"
+  cp "$RA" "$1/tests/run-all.sh"; cp "$DIR/tests/lib/job-count.sh" "$1/tests/lib/"
 }
 slow() { printf '#!/usr/bin/env bash\nsleep 30\n' > "$1/tests/test-slowpoke.sh"; }
 red()  { printf '#!/usr/bin/env bash\necho "FAIL: a real assertion"\nexit 1\n' > "$1/tests/test-redherring.sh"; }

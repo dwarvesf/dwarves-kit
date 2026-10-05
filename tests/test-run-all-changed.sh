@@ -23,8 +23,8 @@ export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null
 g() { git -c user.name=t -c user.email=t@t "$@"; }
 
 mkkit() {  # $1 = dir ; a committed kit-shaped repo holding the real run-all.sh
-  mkdir -p "$1/tests" "$1/bin" "$1/lib/foo" "$1/lib/baz" "$1/docs"
-  cp "$RA" "$1/tests/run-all.sh"; cp "$TA" "$1/bin/test-affected"
+  mkdir -p "$1/tests/lib" "$1/bin" "$1/lib/foo" "$1/lib/baz" "$1/docs"
+  cp "$RA" "$1/tests/run-all.sh"; cp "$TA" "$1/bin/test-affected"; cp "$DIR/tests/lib/job-count.sh" "$1/tests/lib/"
   printf '#!/usr/bin/env bash\nf=lib/foo/foo.sh\nexit 0\n' > "$1/tests/test-foo.sh"
   printf '#!/usr/bin/env bash\n# a comment naming foo.sh is not a dependency\nexit 0\n' > "$1/tests/test-bar.sh"
   printf '#!/usr/bin/env bash\nexit 0\n' > "$1/tests/test-baz.sh"

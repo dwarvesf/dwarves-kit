@@ -83,6 +83,16 @@ if ! grep -q '^load-warn:' <<<"$OUT"; then ok "--list runs nothing and warns not
 OUT="$(cd "$F" && KIT_LOAD_STUB=2 bash bin/test-affected --base HEAD --no-cache 2>&1)"
 if ! grep -q '^load-warn:' <<<"$OUT"; then ok "quiet host: no warning line"; else no "out=$OUT"; fi
 
+echo "[11] --over is the silent threshold check: exit 0 over it, 1 at or under it, 1 on junk, never any output"
+OUT="$(KIT_LOAD_STUB=40 KIT_LOAD_WARN=16 bash "$LW" --over 2>&1)"; RC=$?
+[ "$RC" -eq 0 ] && [ -z "$OUT" ] && ok "over: exit 0, silent" || no "rc=$RC out=$OUT"
+OUT="$(KIT_LOAD_STUB=16 KIT_LOAD_WARN=16 bash "$LW" --over 2>&1)"; RC=$?
+[ "$RC" -eq 1 ] && [ -z "$OUT" ] && ok "exactly at the threshold: exit 1" || no "rc=$RC out=$OUT"
+OUT="$(KIT_LOAD_STUB=abc bash "$LW" --over 2>&1)"; RC=$?
+[ "$RC" -eq 1 ] && [ -z "$OUT" ] && ok "junk load: exit 1" || no "rc=$RC out=$OUT"
+OUT="$(KIT_LOAD_STUB=50 KIT_LOAD_WARN=lots bash "$LW" --over 2>&1)"; RC=$?
+[ "$RC" -eq 1 ] && [ -z "$OUT" ] && ok "junk threshold: exit 1" || no "rc=$RC out=$OUT"
+
 echo
 echo "load-warn: $pass passed, $fail failed"
 [ "$fail" -eq 0 ]
