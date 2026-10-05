@@ -23,9 +23,9 @@ Deltas from `docs/specs/SPEC-399-mega-gate-parity.md`. Nothing here repeats what
 - Why: the mega gate must not write `ship-gate.log` or an OUTCOME bracket it never opened.
 - Impact: the order of the log line and the outcome write changed (helper log, then outcome); both are audit-only.
 
-## The mega gate's ledger check still omits `KIT_PROJECT_ROOT`
+## The mega gate's ledger check passes `KIT_PROJECT_ROOT` through the helper
 
-- Context: the hook runs `check <lane>` with `KIT_PROJECT_ROOT` set; `gate` does not.
-- Decision/Change: left as is. The floor call passes it (the helper sets it); the lane check is outside this change.
-- Why: surgical scope. A project lane override could still make the two ledger arms disagree.
-- Impact: open; named in the report.
+- Context: the hook ran `check <lane>` with `KIT_PROJECT_ROOT=<repo>`; `gate` did not, so a project `.kit.toml` lane override applied only when the cwd was the repo root.
+- Decision/Change: `ship_rules_ledger_check <root> <lane> <rid> <ledger>` sets it. The hook and `gate` both call it.
+- Why: the same class of seam this change removes; one caller-independent resolver.
+- Impact: with no repo or no helper, `gate` still runs the bare check.

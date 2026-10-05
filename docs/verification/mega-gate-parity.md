@@ -116,3 +116,33 @@ Exit: 0
 PASS=6 FAIL=0
 Verdict: PASS
 ```
+
+## Project lane config (case g)
+
+`gate` now runs the lane ledger check through `ship_rules_ledger_check`, which sets `KIT_PROJECT_ROOT` to the repo, as the hook does. Before, the check read `$PWD/.kit.toml`, so a mega gate run from a subdirectory ignored a project lane override. Case g commits a clean `.kit.toml` that makes `docs` required for the normal lane and runs the mega gate from `sub/`.
+
+```
+Command: bash tests/test-mega-gate-parity.sh
+Exit: 0
+ok - g project lane override: ship gate exit 2, mega gate exit 1, both name docs
+PASS=7 FAIL=0
+Verdict: PASS
+```
+
+```
+Command: bash tests/test-mega-merge.sh; bash tests/test-ship-gate-fail-closed.sh; bash tests/test-ship-gate-impl-notes.sh; bash tests/test-ship-gate-coverage-map.sh; bash tests/test-ship-gate-profiles.sh; bash tests/test-hooks.sh
+Exit: 0 for each (30/30, 11/11, 19/19, 10/10, all pass, 826/826)
+Verdict: PASS
+```
+
+Negative control (committed first, 7ba3552e): in `mega-merge.sh` the `ship_rules_ledger_check` call was replaced with the bare `bash "$GATE_LEDGER" check`.
+
+```
+Command: bash tests/test-mega-gate-parity.sh   (KIT_PROJECT_ROOT dropped from the mega gate)
+Exit: 1
+NOT ok - g want ship 2 / mega 1 / MISSING-GATE: docs; got ship 2, mega 0
+PASS=6 FAIL=1
+Verdict: RED, as required
+```
+
+Restored with `command cp -f`; the same command exits 0 again (PASS=7).
