@@ -1,0 +1,365 @@
+#!/bin/bash
+# board-sweep: one scheduled sweep over every board in a registry, instead of
+# one `board sync` plist per repo.
+#
+# Per repo (registry order, then any --extra-board):
+#   1. `board sync` for the repo's own [sync] config (a repo without one is a skip)
+#   2. the change-only digest parse of that sync's output (when --poster is set)
+#   3. `board publish`, only when the sync itself wrote the board
+# After the loop:
+#   4. the mirror leg: `board mirror` onto a Hermes kanban, fed from each
+#      repo's origin copy of the board (only with --mirror-hermes-home)
+#   5. one digest post per cluster, through the --poster command
+#   6. the --on-clean hook, only when every leg above came back clean
+#
+# The registry is the one `board all` renders from: `<name> <path-to-BACKLOG.md>
+# [bridge] [rail=<rail>]`. Each repo's own .kit.toml decides whether it syncs at
+# all; a repo with no [sync] block is refused by `board sync` and logs a skip.
+#
+# What the kit does NOT know: which chat service the digest goes to, how the
+# host authenticates, or which checkouts are kept fresh. Those arrive as hooks:
+#   --preflight CMD   run once before the loop as `CMD <registry>`; a nonzero
+#                     exit marks the sweep failed, so the on-clean hook is held
+#   --poster CMD      delivers one digest payload (see board-sweep-post.sh)
+#   --on-clean CMD    run when the sweep ends clean (a liveness ping, say)
+#
+# Usage: board sweep --registry F [options]
+#   --name LABEL            label in the start/end log lines (default board-sweep)
+#   --board-cmd CMD         the board entrypoint to call (default: this kit's bin/board)
+#   --extra-board PATH      one more BACKLOG.md to sweep after the registry (repeatable)
+#   --repo-arg NAME=ARG     one extra argv item for NAME's `board sync` (repeatable,
+#                           split on the first `=`, so a filter is two --repo-arg flags)
+#   --sync-token-repo NAME  NAME's `board sync` receives GH_TOKEN (repeatable)
+#   --preflight CMD | --poster CMD | --on-clean CMD     the hooks above
+#   --cluster-map M         `cluster=rail,cluster=rail` for the digest (see board-digest.sh)
+#   --crit-prefix P         adopted rows titled P... make a digest `crit`
+#   --field-cap N           digest field cap
+#   --state-file F          digest state (default ~/.cache/backlog-sync/digest-state.json)
+#   --mirror-hermes-home D  turn the mirror leg on, against the kanban store at D
+#   --mirror-snapshot F     mirror snapshot (default <repo-root>/_meta/.board-mirror-snapshot.jsonl)
+#   --repo-root D           repo root handed to `board mirror` (default: the cwd's git root)
+#   --dry-run               plan only: `board sync --dry-run`, no publish, `board mirror
+#                           --dry-run`, digests printed instead of posted, the real digest
+#                           state untouched, no on-clean hook
+#
+# The one credential handoff is the BOARD_SWEEP_TOKEN env var: a GitHub token the
+# operator resolved. It is read once, removed from the environment, and passed
+# per call to exactly two legs (the --sync-token-repo syncs, and every publish,
+# through a GIT_ASKPASS helper so it never rides argv). Arbitrary spoke plugins
+# never see it.
+#
+# Exit: 0 clean, 1 when any sync, publish, or preflight leg failed. The digest and
+# mirror legs are observational: they log, they never flip the exit code.
+set -u
+
+# launchd hands a bare PATH (/usr/bin:/bin:...); board sync shells out to op,
+# python3, gh and ntn, so widen it exactly as board-sync-cron does.
+export PATH="$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"
+
+BIN="$(cd "$(dirname "$0")" && pwd)"
+KIT_DIR="$(cd "$BIN/../../.." && pwd)"
+
+NAME="board-sweep"
+BOARDS=""
+BOARD_CMD="$KIT_DIR/bin/board"
+EXTRA_BOARDS=()
+REPO_ARGS=()
+SYNC_TOKEN_REPOS=()
+PREFLIGHT=""
+POSTER=""
+ON_CLEAN=""
+STATE_FILE="${HOME}/.cache/backlog-sync/digest-state.json"
+MIRROR_HERMES_HOME=""
+MIRROR_SNAPSHOT=""
+REPO_ROOT=""
+DRY_RUN=0
+digest_flags=()
+
+usage() { sed -n '2,/^set -u/p' "${BASH_SOURCE[0]}" | sed '$d' | sed 's/^# \{0,1\}//'; }
+
+while [ $# -gt 0 ]; do case "$1" in
+  --registry) BOARDS="${2:-}"; shift 2;;
+  --name) NAME="${2:-}"; shift 2;;
+  --board-cmd) BOARD_CMD="${2:-}"; shift 2;;
+  --extra-board) EXTRA_BOARDS+=("${2:-}"); shift 2;;
+  --repo-arg) REPO_ARGS+=("${2:-}"); shift 2;;
+  --sync-token-repo) SYNC_TOKEN_REPOS+=("${2:-}"); shift 2;;
+  --preflight) PREFLIGHT="${2:-}"; shift 2;;
+  --poster) POSTER="${2:-}"; shift 2;;
+  --on-clean) ON_CLEAN="${2:-}"; shift 2;;
+  --cluster-map|--crit-prefix|--field-cap) digest_flags+=("$1" "${2:-}"); shift 2;;
+  --state-file) STATE_FILE="${2:-}"; shift 2;;
+  --mirror-hermes-home) MIRROR_HERMES_HOME="${2:-}"; shift 2;;
+  --mirror-snapshot) MIRROR_SNAPSHOT="${2:-}"; shift 2;;
+  --repo-root) REPO_ROOT="${2:-}"; shift 2;;
+  --dry-run) DRY_RUN=1; shift;;
+  -h|--help) usage; exit 0;;
+  *) echo "board sweep: unknown arg: $1" >&2; exit 64;;
+esac; done
+
+[ -n "$BOARDS" ] || { echo "board sweep: need --registry <file>" >&2; exit 64; }
+[ -f "$BOARDS" ] || { echo "board sweep: no registry at $BOARDS" >&2; exit 2; }
+[ -n "$REPO_ROOT" ] || REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+[ -n "$MIRROR_SNAPSHOT" ] || MIRROR_SNAPSHOT="$REPO_ROOT/_meta/.board-mirror-snapshot.jsonl"
+
+# The token is captured and dropped from the environment before any child runs.
+SWEEP_TOKEN="${BOARD_SWEEP_TOKEN:-}"
+unset BOARD_SWEEP_TOKEN
+
+DIGEST="$BIN/board-digest.sh"
+POST="$BIN/board-sweep-post.sh"
+GIT_ASKPASS_HELPER="$BIN/board-git-askpass"
+
+# A dry run reads the real digest state but writes a scratch copy, so planned
+# lines never reach flap tracking or the carried-forward set.
+if [ "$DRY_RUN" -eq 1 ]; then
+  DRY_STATE="$(mktemp "${TMPDIR:-/tmp}/board-sweep-state.XXXXXX")"
+  [ -f "$STATE_FILE" ] && cp "$STATE_FILE" "$DRY_STATE"
+  STATE_FILE="$DRY_STATE"
+fi
+digest_common=(--registry "$BOARDS" --state-file "$STATE_FILE" ${digest_flags[@]+"${digest_flags[@]}"})
+
+ts() { date '+%Y-%m-%d %H:%M:%S'; }
+echo "[$(ts)] $NAME: start"
+
+rc_any=0
+
+if [ -n "$PREFLIGHT" ]; then
+  "$PREFLIGHT" "$BOARDS" || rc_any=1
+fi
+
+in_list() {  # <needle> <list-items...>
+  local needle="$1" item; shift
+  for item in "$@"; do [ "$item" = "$needle" ] && return 0; done
+  return 1
+}
+
+sync_one() {
+  local path="$1" name="$2" root out rc spec
+  local -a extra=() sync_flags=()
+  [ -f "$path" ] || { echo "  skip $name (no board at $path)"; return; }
+  root="${path%/_meta/BACKLOG.md}"; root="${root%/BACKLOG.md}"
+  for spec in ${REPO_ARGS[@]+"${REPO_ARGS[@]}"}; do
+    [ "${spec%%=*}" = "$name" ] && extra+=("${spec#*=}")
+  done
+  [ "$DRY_RUN" -eq 1 ] && sync_flags+=(--dry-run)
+  # the token reaches ONLY the legs named by --sync-token-repo, never the
+  # generic sync env (least privilege)
+  if [ -n "$SWEEP_TOKEN" ] && in_list "$name" ${SYNC_TOKEN_REPOS[@]+"${SYNC_TOKEN_REPOS[@]}"}; then
+    out="$(cd "$root" && GH_TOKEN="$SWEEP_TOKEN" "$BOARD_CMD" sync --backlog-file "$path" ${sync_flags[@]+"${sync_flags[@]}"} ${extra[@]+"${extra[@]}"} 2>&1 </dev/null)"; rc=$?
+  else
+    out="$(cd "$root" && "$BOARD_CMD" sync --backlog-file "$path" ${sync_flags[@]+"${sync_flags[@]}"} ${extra[@]+"${extra[@]}"} 2>&1 </dev/null)"; rc=$?
+  fi
+  if [ "$rc" -ne 0 ]; then
+    # a repo with no [sync] block exits 2; that is a skip, not a failure
+    case "$out" in
+      *"no [sync] apps configured"*) echo "  skip $name (no [sync] block)"; return;;
+    esac
+    rc_any=1
+  fi
+  echo "  $name rc=$rc"
+  printf '%s\n' "$out" | sed 's/^/    /'
+  [ -n "$POSTER" ] && printf '%s\n' "$out" | bash "$DIGEST" --repo "$name" "${digest_common[@]}" 2>&1 | sed 's/^/    /'
+  # publish leg (`board publish`): ONLY when this sync itself wrote the board (a
+  # ✓/~/+ board action line). The gate keeps a no-write run from publishing,
+  # but when the sync DID write, any human edits already sitting in the same
+  # file ride the commit; board edits belong in git either way. rc 3 =
+  # committed-but-not-on-remote; any nonzero publish rc flips rc_any so the
+  # withheld on-clean hook surfaces it instead of rotting silently.
+  if printf '%s\n' "$out" | grep -q -e '~ board ' -e '+ board ' -e '✓ board '; then
+    local pout prc
+    if [ "$DRY_RUN" -eq 1 ]; then
+      echo "    board publish: skipped (dry-run)"
+      return
+    fi
+    if [ -n "$SWEEP_TOKEN" ]; then
+      pout="$(GIT_ASKPASS="$GIT_ASKPASS_HELPER" BOARD_SYNC_GIT_TOKEN="$SWEEP_TOKEN" GIT_TERMINAL_PROMPT=0 \
+        "$BOARD_CMD" publish --backlog-file "$path" 2>&1)"; prc=$?
+    else
+      pout="$("$BOARD_CMD" publish --backlog-file "$path" 2>&1)"; prc=$?
+    fi
+    printf '%s\n' "$pout" | sed 's/^/    /'
+    [ "$prc" -ne 0 ] && rc_any=1
+  fi
+}
+
+# fd 3, not stdin: the sync engine reads stdin and would eat the rest of the
+# registry, silently syncing only the first few repos
+while read -r name path _rest <&3; do
+  case "$name" in ''|\#*) continue;; esac
+  sync_one "${path/#\~/$HOME}" "$name"
+done 3< "$BOARDS"
+
+for extra_board in ${EXTRA_BOARDS[@]+"${EXTRA_BOARDS[@]}"}; do
+  sync_one "$extra_board" "$(basename "$(dirname "$(dirname "$extra_board")")")"
+done
+
+# Feeds the mirror leg below. `board mirror` reads each registry row's
+# BACKLOG.md straight off disk, so a checkout that lags origin or sits dirty
+# mid-branch leaks stale rows into the Hermes board. This rewrites a temp copy
+# of the registry so every bridge=on row points at a fresh
+# `git show origin/<default>:<path>` snapshot instead of the working-tree file.
+# The snapshot is written INSIDE the repo's own root (never an external tmpdir)
+# so _repo_root_for still resolves the real repo root and mega-goal extraction
+# (_meta/megagoals/*/ROADMAP.md) keeps working; every path written is appended
+# to snap_list so the caller can move it back out after the mirror run.
+#
+# Dropping an unresolved repo's row from the registry does NOT "hold its cards":
+# board-mirror.sh's own `plan` treats any prior origin missing from the CURRENT
+# extract as removed and ARCHIVEs its card, so one failed fetch would close
+# every active card from that repo, and a later good tick would re-create them
+# from scratch. This function still records every unresolvable repo's name in
+# `failed_list` (4th arg) and drops only that repo's OWN row from `out`, but the
+# row-drop is not the safety mechanism: the caller refuses to invoke `board
+# mirror` at all for a tick where `failed_list` is non-empty, so a partial
+# registry is never fed to the planner. Every drop is a `>&2` line so it lands
+# in the sweep's own log, once per repo per tick.
+build_origin_mirror_registry() {
+  local src="$1" out="$2" snap_list="$3" failed_list="$4"
+  : > "$out"
+  local line name path bridge rest root relpath prefix base dir branch snap n
+  while IFS= read -r line; do
+    set -- $line
+    name="${1:-}"; path="${2:-}"; bridge="${3:-}"
+    case "$name" in ''|\#*) printf '%s\n' "$line" >> "$out"; continue ;; esac
+    if [ "$bridge" != "on" ]; then
+      printf '%s\n' "$line" >> "$out"
+      continue
+    fi
+    n=$#
+    if [ "$n" -gt 3 ]; then shift 3; else shift "$n"; fi
+    rest="$*"
+    path="${path/#\~/$HOME}"
+    dir="$(dirname "$path")"
+    root="$(cd "$dir" 2>/dev/null && git rev-parse --show-toplevel 2>/dev/null)"
+    if [ -z "$root" ]; then
+      echo "  mirror-origin: drop $name (not a git repo at $path)" >&2
+      printf '%s\n' "$name" >> "$failed_list"
+      continue
+    fi
+    # show-prefix (not string-stripping $root off $path): macOS resolves
+    # $TMPDIR-style paths through a /private symlink, so --show-toplevel's
+    # resolved root and the registry's un-resolved $path never share a
+    # literal prefix to strip, and letting git compute the repo-relative path
+    # from the same cwd sidesteps that entirely.
+    prefix="$(cd "$dir" 2>/dev/null && git rev-parse --show-prefix 2>/dev/null)"
+    base="$(basename "$path")"
+    relpath="${prefix}${base}"
+    if ! git -C "$root" fetch origin --quiet 2>/dev/null; then
+      echo "  mirror-origin: drop $name (git fetch origin failed, common under launchd on an ssh remote -- kept out of this tick rather than serving a stale ref)" >&2
+      printf '%s\n' "$name" >> "$failed_list"
+      continue
+    fi
+    git -C "$root" remote set-head origin -a >/dev/null 2>&1
+    branch="$(git -C "$root" symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null)"
+    branch="${branch#origin/}"
+    if [ -z "$branch" ]; then
+      git -C "$root" rev-parse --verify -q origin/main >/dev/null 2>&1 && branch=main
+    fi
+    if [ -z "$branch" ]; then
+      git -C "$root" rev-parse --verify -q origin/master >/dev/null 2>&1 && branch=master
+    fi
+    if [ -z "$branch" ]; then
+      echo "  mirror-origin: drop $name (no resolvable default branch)" >&2
+      printf '%s\n' "$name" >> "$failed_list"
+      continue
+    fi
+    snap="$root/.board-mirror-origin.$name.$$.md"
+    # register for cleanup BEFORE the attempt: `> "$snap"` creates the file
+    # the instant the redirection opens, even when `git show` itself fails,
+    # so an unreadable blob must not leave a stray empty file at repo root
+    printf '%s\n' "$snap" >> "$snap_list"
+    if git -C "$root" show "origin/$branch:$relpath" > "$snap" 2>/dev/null; then
+      printf '%s %s %s %s\n' "$name" "$snap" "$bridge" "$rest" >> "$out"
+    else
+      echo "  mirror-origin: drop $name (origin/$branch:$relpath unreadable)" >&2
+      printf '%s\n' "$name" >> "$failed_list"
+      continue
+    fi
+  done < "$src"
+}
+
+# mirror leg: the git->Hermes kanban bridge rides every sweep tick instead of
+# getting its own timer. It is one-way (git->Hermes) and idempotent (an
+# unchanged row is a no-op), so re-running it on a cadence costs nothing extra.
+# `--registry`/`--snapshot` are passed explicitly so the leg is correct under
+# launchd's arbitrary cwd, not just an interactive shell. Observational: a
+# mirror failure never flips rc_any. Skips cleanly when the `hermes` CLI is
+# absent.
+#
+# HERMES_HOME is pinned by --mirror-hermes-home. Left unset, the kit's
+# env-agnostic `hermes kanban` calls fall back to the CLI's default `~/.hermes`,
+# a home no running agent binds to. The snapshot is keyed per store: switching
+# homes with the old snapshot would read every row as already-mirrored and mint
+# nothing.
+if [ -n "$MIRROR_HERMES_HOME" ]; then
+  if command -v hermes >/dev/null 2>&1; then
+    MIRROR_REGISTRY="$(mktemp "${TMPDIR:-/tmp}/board-mirror-registry.XXXXXX")"
+    MIRROR_SNAP_LIST="$(mktemp "${TMPDIR:-/tmp}/board-mirror-snaps.XXXXXX")"
+    MIRROR_FAILED="$(mktemp "${TMPDIR:-/tmp}/board-mirror-failed.XXXXXX")"
+    MIRROR_DISCARD="$(mktemp -d "${TMPDIR:-/tmp}/board-mirror-discard.XXXXXX")"
+    # BEGIN mirror-cleanup-trap (extracted verbatim by
+    # tests/test-board-sweep-mirror.sh's trap case)
+    #
+    # A killed run (launchd timeout, a crash mid `git show`) must not leave an
+    # origin-BACKLOG.md copy sitting untracked at a repo root, where a later
+    # `git add -A` on that checkout could commit it. mirror_cleanup moves every
+    # path build_origin_mirror_registry recorded (per-repo snapshots), plus this
+    # tick's own registry/snap-list/failed temp files, into MIRROR_DISCARD; it
+    # is idempotent (a file already moved is just a no-op `[ -f ]` miss on the
+    # retry), so wiring it to both the normal path and EXIT/INT/TERM is safe to
+    # double-fire.
+    mirror_cleanup() {
+      local f
+      if [ -f "${MIRROR_SNAP_LIST:-}" ]; then
+        while IFS= read -r f; do
+          [ -n "$f" ] && [ -f "$f" ] && mv -f "$f" "$MIRROR_DISCARD/" 2>/dev/null
+        done < "$MIRROR_SNAP_LIST"
+        mv -f "$MIRROR_SNAP_LIST" "$MIRROR_DISCARD/" 2>/dev/null
+      fi
+      [ -f "${MIRROR_REGISTRY:-}" ] && mv -f "$MIRROR_REGISTRY" "$MIRROR_DISCARD/" 2>/dev/null
+      [ -f "${MIRROR_FAILED:-}" ] && mv -f "$MIRROR_FAILED" "$MIRROR_DISCARD/" 2>/dev/null
+    }
+    trap 'mirror_cleanup' EXIT
+    trap 'mirror_cleanup; exit 130' INT
+    trap 'mirror_cleanup; exit 143' TERM
+    # END mirror-cleanup-trap
+    build_origin_mirror_registry "$BOARDS" "$MIRROR_REGISTRY" "$MIRROR_SNAP_LIST" "$MIRROR_FAILED"
+    if [ -s "$MIRROR_FAILED" ]; then
+      # board-mirror.sh's `plan` ARCHIVEs any prior origin missing from the
+      # CURRENT extract, so feeding it a registry with even one repo silently
+      # dropped would close every one of that repo's active cards in Hermes,
+      # then a later good tick would re-create them from scratch. Refuse the
+      # whole `board mirror` call for this tick instead: every OTHER leg (sync,
+      # digest, publish, preflight) keeps running unaffected, and the next tick
+      # retries the mirror from scratch once the repo resolves again.
+      failed_names="$(tr '\n' ',' < "$MIRROR_FAILED" | sed 's/,$//')"
+      echo "  mirror skipped this tick: $failed_names unresolved -- retrying next tick"
+    else
+      mirror_flags=()
+      [ "$DRY_RUN" -eq 1 ] && mirror_flags+=(--dry-run)
+      mout="$(HERMES_HOME="$MIRROR_HERMES_HOME" "$BOARD_CMD" mirror --repo-root "$REPO_ROOT" --registry "$MIRROR_REGISTRY" --snapshot "$MIRROR_SNAPSHOT" ${mirror_flags[@]+"${mirror_flags[@]}"} 2>&1)"; mrc=$?
+      echo "  mirror rc=$mrc (home=$MIRROR_HERMES_HOME)"
+      printf '%s\n' "$mout" | sed 's/^/    /'
+    fi
+    mirror_cleanup
+  else
+    echo "  mirror skipped: hermes CLI not on PATH"
+  fi
+fi
+
+if [ -n "$POSTER" ]; then
+  post_flags=()
+  [ "$DRY_RUN" -eq 1 ] && post_flags+=(--dry-run)
+  while IFS= read -r cluster; do
+    [ -n "$cluster" ] || continue
+    bash "$POST" --cluster "$cluster" --poster "$POSTER" "${digest_common[@]}" ${post_flags[@]+"${post_flags[@]}"} 2>&1 | sed 's/^/  /'
+  done < <(bash "$DIGEST" --list-clusters "${digest_common[@]}")
+fi
+
+if [ "$rc_any" -eq 0 ] && [ "$DRY_RUN" -eq 0 ] && [ -n "$ON_CLEAN" ]; then
+  "$ON_CLEAN" || echo "  on-clean hook failed (non-fatal)"
+fi
+[ -n "${DRY_STATE:-}" ] && rm -f "$DRY_STATE"
+echo "[$(ts)] $NAME: end rc=$rc_any"
+exit "$rc_any"

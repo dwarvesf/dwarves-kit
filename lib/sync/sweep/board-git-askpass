@@ -1,0 +1,9 @@
+#!/bin/bash
+# GIT_ASKPASS helper for the sweep's publish leg: git asks for a username, then
+# a password, on HTTPS. The token arrives through the environment, never argv.
+# A username request gets the literal `x-access-token` marker, per GitHub's
+# PAT-over-HTTPS convention.
+case "$1" in
+  Username*) echo "x-access-token" ;;
+  *) echo "${BOARD_SYNC_GIT_TOKEN:-}" ;;
+esac

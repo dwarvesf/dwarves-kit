@@ -182,6 +182,27 @@
 #                                                               mapping, conflict rule, snapshot
 #                                                               refresh semantics).
 #
+#   board.sh sweep --registry <path> [--poster <cmd>] [--preflight <cmd>] [--on-clean <cmd>]
+#                   [--mirror-hermes-home <dir>] [--dry-run] ...
+#                                                               one scheduled pass over every
+#                                                               registry board: per-repo
+#                                                               `sync`, change-only digest,
+#                                                               `publish`, the Hermes mirror leg
+#                                                               fed from origin, one digest post
+#                                                               per cluster through the operator's
+#                                                               --poster. Forwards to
+#                                                               lib/sync/sweep/board-sweep; every
+#                                                               flag is documented there.
+#   board.sh sweep verify --registry <path> --run <cmd> | --last-tick [<repo>]
+#                                                               prove a sweep wrote no board, or
+#                                                               read what the newest tick did.
+#   board.sh mirror-cleanup [--registry <path>] [--snapshot <path>] [--hermes-home <dir>]
+#                            [--kinds-file <path>] [--apply]
+#                                                               reconcile the open Hermes cards
+#                                                               against the boards (dry run by
+#                                                               default; never deletes). Forwards
+#                                                               to lib/board/board-mirror-cleanup.py.
+#
 # Registry format (`boards.txt`): whitespace-delimited `<name> <path-to-BACKLOG.md> [bridge]`
 # rows, `#` comments, `~` expands to $HOME. A THIRD field, `bridge`, opts a repo into `mirror`:
 # exactly the literal token `on` opts in; absent, `off`, or any other value stays OUT (default
@@ -207,6 +228,9 @@ PARSE_BOARD_SH="$BOARD_DIR/parse-board.sh"
 BOARD_MIRROR_SH="$BOARD_DIR/board-mirror.sh"
 BOARD_WRITEBACK_SH="$BOARD_DIR/board-writeback.sh"
 BOARD_RUN_SH="$BOARD_DIR/board-run.sh"
+BOARD_SWEEP_SH="$(cd "$BOARD_DIR/.." && pwd)/sync/sweep/board-sweep"                  # lib/sync/sweep/
+BOARD_SWEEP_VERIFY_SH="$(cd "$BOARD_DIR/.." && pwd)/sync/sweep/board-sweep-verify"
+BOARD_MIRROR_CLEANUP_PY="$BOARD_DIR/board-mirror-cleanup.py"
 COCKPIT_PY="$(cd "$BOARD_DIR/.." && pwd)/sync/cockpit.py"  # lib/sync/, the P2 sync-engine port
 MEGA_SH="$(cd "$BOARD_DIR/.." && pwd)/mega/mega.sh"  # lib/mega/mega.sh, one level up from lib/board/
 
@@ -1152,7 +1176,7 @@ _legacy_bridge_note() {
   echo "      folded into the sync module; the port is tracked on the kit board." >&2
 }
 
-usage() { sed -n '2,169p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
+usage() { sed -n '2,/^set -euo pipefail$/p' "${BASH_SOURCE[0]}" | sed '$d' | sed 's/^# \{0,1\}//'; }
 
 main() {
   local first="${1:-}"
@@ -1164,6 +1188,11 @@ main() {
     writeback) shift; cmd_writeback "$@" ;;
     sync) shift; cmd_sync "$@" ;;
     publish) shift; cmd_publish "$@" ;;
+    sweep)
+      shift
+      if [ "${1:-}" = "verify" ]; then shift; exec bash "$BOARD_SWEEP_VERIFY_SH" "$@"; fi
+      exec bash "$BOARD_SWEEP_SH" "$@" ;;
+    mirror-cleanup) shift; exec python3 "$BOARD_MIRROR_CLEANUP_PY" "$@" ;;
     init) shift; cmd_init "$@" ;;
     capture) shift; cmd_capture "$@" ;;
     promote) shift; exec "$BOARD_DIR/bin/add-backlog" "$@" ;;
