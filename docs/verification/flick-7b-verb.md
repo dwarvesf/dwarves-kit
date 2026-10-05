@@ -4,11 +4,11 @@
 
 ## Green run
 ```
-Command: bash tests/test-wrap-report-lint.sh; bash tests/test-wrap-flick7b.sh; bash tests/test-flick.sh
+Command: bash tests/test-wrap-report-lint.sh; bash tests/test-wrap-flick.sh; bash tests/test-flick.sh
 Exit: 0
 Output:
   test-wrap-report-lint: all 155 passed
-  test-wrap-flick7b: all 12 passed
+  test-wrap-flick: all 12 passed
   flick: 339 passed, 0 failed
 Verdict: PASS
 ```
@@ -42,17 +42,17 @@ Restore: git checkout HEAD -- lib/wrap/report-lint.sh
 Exit: 0 (green after restore)
 Verdict: PASS
 
-Command: set -o pipefail; bash tests/test-wrap-flick7b.sh 2>&1 | grep -aE 'FAIL|all [0-9]+ passed'
+Command: set -o pipefail; bash tests/test-wrap-flick.sh 2>&1 | grep -aE 'FAIL|all [0-9]+ passed'
 Exit: 0 (green before mutation)
 Output:
-  test-wrap-flick7b: all 12 passed
+  test-wrap-flick: all 12 passed
 
 Mutation: sed -i.bak 's/--arg id "p$n"/--arg id "x$n"/' lib/wrap/wrap-flick.sh && rm -f lib/wrap/wrap-flick.sh.bak
 Changed: lib/wrap/wrap-flick.sh
 Exit: 1 (under mutation, RED expected)
 Output:
     FAIL flick got ONE request holding all three pairs
-  test-wrap-flick7b: 11 passed, 1 FAILED of 12
+  test-wrap-flick: 11 passed, 1 FAILED of 12
 
 Restore: git checkout HEAD -- lib/wrap/wrap-flick.sh
 Exit: 0 (green after restore)

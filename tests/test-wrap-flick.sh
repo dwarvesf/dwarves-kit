@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# test-wrap-flick7b.sh -- `wrap flick-7b`, the mechanical call behind step 7b's shadow second opinion.
+# test-wrap-flick.sh -- `wrap flick-7b`, the mechanical call behind step 7b's shadow second opinion.
 # Shares the harness in tests/lib/wrap-stub.sh (chk, TMPD, the operator-config pin).
 # modules under test: lib/wrap/wrap.sh lib/wrap/wrap-flick.sh lib/wrap/report-lint.sh lib/decide/flick.sh
 KIT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -54,5 +54,5 @@ out="$(printf '%s\n' "$report" | KIT_CONFIG_OPERATOR="$CFG_ON" bash "$KIT_DIR/li
 chk "the printed row satisfies report-lint" "$([ "$rc" -eq 0 ]; echo $?)"
 
 echo
-if [ "$FAIL" -gt 0 ]; then echo "test-wrap-flick7b: $PASS passed, $FAIL FAILED of $TOTAL" >&2; exit 1; fi
-echo "test-wrap-flick7b: all $PASS passed"
+if [ "$FAIL" -gt 0 ]; then echo "test-wrap-flick: $PASS passed, $FAIL FAILED of $TOTAL" >&2; exit 1; fi
+echo "test-wrap-flick: all $PASS passed"
