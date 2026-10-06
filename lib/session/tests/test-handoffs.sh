@@ -469,6 +469,97 @@ echo "[26] archive: a missing <file> is a usage error, exit 64"
 bash "$HO" archive --repo "$AREPO" >/dev/null 2>&1; arc=$?
 if [[ $arc -eq 64 ]]; then ok "exit 64 without a file"; else no "expected exit 64, got rc=$arc"; fi
 
+echo "[27] --repo output is unchanged: no header, per-repo count line"
+want="$(printf '%s\n' \
+  "10d  _meta/handoffs/with-next.md  next: Flip the DNS record and verify the health check before EOD.  UNCITED (no row IDs; read it)" \
+  "2d  .claude/handoffs/no-next.md  next: (no Next section)  UNCITED (no row IDs; read it)" \
+  "2 open handoffs")"
+got="$(bash "$HO" list --repo "$REPO")"
+if [[ "$got" == "$want" ]]; then ok "--repo output byte-identical to the pre-change shape"; else no "--repo output drifted: $got"; fi
+
+# Fixture root: alpha (2 handoffs), zeta (1), beta (none), plain (handoff but no .git).
+UROOT="$(mktemp -d)"
+for r in alpha beta zeta; do mkdir -p "$UROOT/$r"; git -C "$UROOT/$r" init -q; done
+mkdir -p "$UROOT/alpha/.claude/handoffs" "$UROOT/zeta/_meta/handoffs" "$UROOT/plain/.claude/handoffs"
+printf '# H\n\n## Next\nalpha old.\n' > "$UROOT/alpha/.claude/handoffs/old.md"
+printf '# H\n\n## Next\nalpha new.\n' > "$UROOT/alpha/.claude/handoffs/new.md"
+printf '# H\n\n## Next\nzeta only.\n' > "$UROOT/zeta/_meta/handoffs/only.md"
+printf '# H\n\n## Next\nnot a repo.\n' > "$UROOT/plain/.claude/handoffs/skip.md"
+touch -t "$(stamp_days_ago 9)" "$UROOT/alpha/.claude/handoffs/old.md"
+touch -t "$(stamp_days_ago 1)" "$UROOT/alpha/.claude/handoffs/new.md" "$UROOT/zeta/_meta/handoffs/only.md"
+
+echo "[28] --under <root>: header per repo with handoffs, sorted, silent repos, total line"
+uout="$(bash "$HO" list --under "$UROOT" 2>&1)"; urc=$?
+uwant="$(printf '%s\n' \
+  "## $UROOT/alpha" \
+  "9d  .claude/handoffs/old.md  next: alpha old.  UNCITED (no row IDs; read it)" \
+  "1d  .claude/handoffs/new.md  next: alpha new.  UNCITED (no row IDs; read it)" \
+  "## $UROOT/zeta" \
+  "1d  _meta/handoffs/only.md  next: zeta only.  UNCITED (no row IDs; read it)" \
+  "3 open handoffs in 2 repos")"
+if [[ $urc -eq 0 && "$uout" == "$uwant" ]]; then ok "grouped output exact"; else no "grouped output wrong (rc=$urc): $uout"; fi
+if [[ "$uout" != *"beta"* && "$uout" != *"plain"* ]]; then ok "repo with none and non-git dir are silent"; else no "beta/plain leaked: $uout"; fi
+
+echo "[29] --under=<root> form and a trailing slash give the same output"
+u2="$(bash "$HO" list --under="$UROOT/" 2>&1)"
+if [[ "$u2" == "$uwant" ]]; then ok "--under=<root>/ matches"; else no "--under=<root>/ differs: $u2"; fi
+
+echo "[30] --days and --limit apply per repo"
+dl="$(bash "$HO" list --under "$UROOT" --days 5 2>&1)"
+dlwant="$(printf '%s\n' "## $UROOT/alpha" \
+  "9d  .claude/handoffs/old.md  next: alpha old.  UNCITED (no row IDs; read it)" \
+  "1 open handoffs in 1 repos")"
+if [[ "$dl" == "$dlwant" ]]; then ok "--days drops zeta and alpha's new one: repos with none vanish"; else no "--days wrong: $dl"; fi
+ll="$(bash "$HO" list --under "$UROOT" --limit 1 2>&1)"
+llwant="$(printf '%s\n' "## $UROOT/alpha" \
+  "9d  .claude/handoffs/old.md  next: alpha old.  UNCITED (no row IDs; read it)" \
+  "+1 more" \
+  "## $UROOT/zeta" \
+  "1d  _meta/handoffs/only.md  next: zeta only.  UNCITED (no row IDs; read it)" \
+  "3 open handoffs in 2 repos")"
+if [[ "$ll" == "$llwant" ]]; then ok "--limit caps each repo, total stays uncapped"; else no "--limit wrong: $ll"; fi
+
+echo "[31] repeatable --under: two roots, in the order given"
+UROOT2="$(mktemp -d)"; mkdir -p "$UROOT2/omega/_meta/handoffs"; git -C "$UROOT2/omega" init -q
+printf '# H\n\n## Next\nomega.\n' > "$UROOT2/omega/_meta/handoffs/o.md"
+rout="$(bash "$HO" list --under "$UROOT2" --under "$UROOT" 2>&1)"
+if [[ "$(printf '%s\n' "$rout" | grep '^## ')" == "$(printf '## %s\n' "$UROOT2/omega" "$UROOT/alpha" "$UROOT/zeta")" \
+      && "$(printf '%s\n' "$rout" | tail -1)" == "4 open handoffs in 3 repos" ]]; then
+  ok "two roots, given order, one total"
+else
+  no "repeatable --under wrong: $rout"
+fi
+
+echo "[32] bare --under expands the wrap.roots knob (stubbed), root-only"
+KCFG="$(mktemp -d)"; KOP="$(mktemp -d)"
+printf '[wrap]\nroots = "%s %s"\n' "$UROOT" "$UROOT2" > "$KCFG/kit.toml"
+bout="$(KIT_CONFIG_ROOT="$KCFG" KIT_CONFIG_OPERATOR="$KOP" bash "$HO" list --under 2>&1)"; brc=$?
+if [[ $brc -eq 0 && "$(printf '%s\n' "$bout" | grep '^## ')" == "$(printf '## %s\n' "$UROOT/alpha" "$UROOT/zeta" "$UROOT2/omega")" \
+      && "$(printf '%s\n' "$bout" | tail -1)" == "4 open handoffs in 3 repos" ]]; then
+  ok "bare --under walks both knob roots in listed order"
+else
+  no "bare --under wrong (rc=$brc): $bout"
+fi
+bout2="$(KIT_CONFIG_ROOT="$KCFG" KIT_CONFIG_OPERATOR="$KOP" bash "$HO" list --under --days 5 2>&1)"
+if [[ "$bout2" == *"## $UROOT/alpha"* && "$bout2" != *"zeta"* && "$(printf '%s\n' "$bout2" | tail -1)" == "1 open handoffs in 1 repos" ]]; then
+  ok "bare --under followed by a flag still expands the knob"
+else
+  no "bare --under before a flag wrong: $bout2"
+fi
+
+echo "[33] NC bare --under with an empty knob: usage error naming wrap.roots, exit 64"
+printf '[wrap]\nroots = ""\n' > "$KCFG/kit.toml"
+eerr="$(KIT_CONFIG_ROOT="$KCFG" KIT_CONFIG_OPERATOR="$KOP" bash "$HO" list --under 2>&1)"; errc=$?
+if [[ $errc -eq 64 && "$eerr" == *"wrap.roots is empty"* ]]; then ok "exit 64: $eerr"; else no "empty knob not refused (rc=$errc): $eerr"; fi
+
+echo "[34] NC a root with no git repos: stderr note, zero total, exit 0"
+nrout="$(bash "$HO" list --under "$EMPTY" 2>&1)"; nrrc=$?
+if [[ $nrrc -eq 0 && "$nrout" == *"found no git repos"* && "$(printf '%s\n' "$nrout" | tail -1)" == "0 open handoffs in 0 repos" ]]; then
+  ok "empty root reported, not silent"
+else
+  no "empty root wrong (rc=$nrrc): $nrout"
+fi
+
 echo
 if [[ $fail -eq 0 ]]; then
   echo "smoke: all $pass passed"
