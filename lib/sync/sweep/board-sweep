@@ -10,7 +10,9 @@
 #   4. the mirror leg: `board mirror` onto a Hermes kanban, fed from each
 #      repo's origin copy of the board (only with --mirror-hermes-home)
 #   5. one digest post per cluster, through the --poster command
-#   6. the --on-clean hook, only when every leg above came back clean
+#   6. the health leg (only with --health): one health digest per cluster on a
+#      slow clock, through the same poster (see board-health)
+#   7. the --on-clean hook, only when every leg above came back clean
 #
 # The registry is the one `board all` renders from: `<name> <path-to-BACKLOG.md>
 # [bridge] [rail=<rail>]`. Each repo's own .kit.toml decides whether it syncs at
@@ -38,9 +40,18 @@
 #   --mirror-hermes-home D  turn the mirror leg on, against the kanban store at D
 #   --mirror-snapshot F     mirror snapshot (default <repo-root>/_meta/.board-mirror-snapshot.jsonl)
 #   --repo-root D           repo root handed to `board mirror` (default: the cwd's git root)
+#   --health                add the health leg: `board-health run` after the digests, due
+#                           every --health-every-days (default 3) per cluster. Without it the
+#                           sweep only RECORDS each leg's outcome, so a later `board health`
+#                           has data. The poster gets the payload with `"kind":"health"`.
+#   --health-every-days N | --health-stale-days N | --health-force
+#   --health-kanban C=CMD   kanban reader for cluster C (a `hermes kanban` wrapper; repeatable)
+#   --health-line C=CMD     extra digest lines for cluster C, one per stdout line (repeatable)
+#   --health-quiet C        post nothing for cluster C while it is clean (repeatable)
+#   --health-state-file F   health state (default ~/.cache/backlog-sync/health-state.json)
 #   --dry-run               plan only: `board sync --dry-run`, no publish, `board mirror
 #                           --dry-run`, digests printed instead of posted, the real digest
-#                           state untouched, no on-clean hook
+#                           state untouched (health state too), no on-clean hook
 #
 # The one credential handoff is the BOARD_SWEEP_TOKEN env var: a GitHub token the
 # operator resolved. It is read once, removed from the environment, and passed
@@ -74,6 +85,10 @@ MIRROR_SNAPSHOT=""
 REPO_ROOT=""
 DRY_RUN=0
 digest_flags=()
+HEALTH=0
+HEALTH_STATE="${HOME}/.cache/backlog-sync/health-state.json"
+health_flags=()
+HEALTH_MAP=""
 
 usage() { sed -n '2,/^set -u/p' "${BASH_SOURCE[0]}" | sed '$d' | sed 's/^# \{0,1\}//'; }
 
@@ -87,7 +102,16 @@ while [ $# -gt 0 ]; do case "$1" in
   --preflight) PREFLIGHT="${2:-}"; shift 2;;
   --poster) POSTER="${2:-}"; shift 2;;
   --on-clean) ON_CLEAN="${2:-}"; shift 2;;
-  --cluster-map|--crit-prefix|--field-cap) digest_flags+=("$1" "${2:-}"); shift 2;;
+  --cluster-map) HEALTH_MAP="${2:-}"; digest_flags+=("$1" "${2:-}"); shift 2;;
+  --crit-prefix|--field-cap) digest_flags+=("$1" "${2:-}"); shift 2;;
+  --health) HEALTH=1; shift;;
+  --health-force) health_flags+=(--force); shift;;
+  --health-every-days) health_flags+=(--every-days "${2:-}"); shift 2;;
+  --health-stale-days) health_flags+=(--stale-days "${2:-}"); shift 2;;
+  --health-kanban) health_flags+=(--kanban "${2:-}"); shift 2;;
+  --health-line) health_flags+=(--line "${2:-}"); shift 2;;
+  --health-quiet) health_flags+=(--quiet "${2:-}"); shift 2;;
+  --health-state-file) HEALTH_STATE="${2:-}"; shift 2;;
   --state-file) STATE_FILE="${2:-}"; shift 2;;
   --mirror-hermes-home) MIRROR_HERMES_HOME="${2:-}"; shift 2;;
   --mirror-snapshot) MIRROR_SNAPSHOT="${2:-}"; shift 2;;
@@ -109,6 +133,7 @@ unset BOARD_SWEEP_TOKEN
 DIGEST="$BIN/board-digest.sh"
 POST="$BIN/board-sweep-post.sh"
 GIT_ASKPASS_HELPER="$BIN/board-git-askpass"
+HEALTH_BIN="$BIN/board-health"
 
 # A dry run reads the real digest state but writes a scratch copy, so planned
 # lines never reach flap tracking or the carried-forward set.
@@ -116,6 +141,9 @@ if [ "$DRY_RUN" -eq 1 ]; then
   DRY_STATE="$(mktemp "${TMPDIR:-/tmp}/board-sweep-state.XXXXXX")"
   [ -f "$STATE_FILE" ] && cp "$STATE_FILE" "$DRY_STATE"
   STATE_FILE="$DRY_STATE"
+  DRY_HEALTH_STATE="$(mktemp "${TMPDIR:-/tmp}/board-sweep-health.XXXXXX")"
+  [ -f "$HEALTH_STATE" ] && cp "$HEALTH_STATE" "$DRY_HEALTH_STATE"
+  HEALTH_STATE="$DRY_HEALTH_STATE"
 fi
 digest_common=(--registry "$BOARDS" --state-file "$STATE_FILE" ${digest_flags[@]+"${digest_flags[@]}"})
 
@@ -159,6 +187,8 @@ sync_one() {
   fi
   echo "  $name rc=$rc"
   printf '%s\n' "$out" | sed 's/^/    /'
+  # the health leg reads these records; a record failure never fails the sweep
+  printf '%s\n' "$out" | python3 "$HEALTH_BIN" record --repo "$name" --rc "$rc" --health-state-file "$HEALTH_STATE" 2>&1 | sed 's/^/    /'
   [ -n "$POSTER" ] && printf '%s\n' "$out" | bash "$DIGEST" --repo "$name" "${digest_common[@]}" 2>&1 | sed 's/^/    /'
   # publish leg (`board publish`): ONLY when this sync itself wrote the board (a
   # ✓/~/+ board action line). The gate keeps a no-write run from publishing,
@@ -335,12 +365,14 @@ if [ -n "$MIRROR_HERMES_HOME" ]; then
       # retries the mirror from scratch once the repo resolves again.
       failed_names="$(tr '\n' ',' < "$MIRROR_FAILED" | sed 's/,$//')"
       echo "  mirror skipped this tick: $failed_names unresolved -- retrying next tick"
+      echo "mirror skipped: $failed_names unresolved" | python3 "$HEALTH_BIN" record --leg mirror --rc 0 --health-state-file "$HEALTH_STATE" 2>&1 | sed 's/^/    /'
     else
       mirror_flags=()
       [ "$DRY_RUN" -eq 1 ] && mirror_flags+=(--dry-run)
       mout="$(HERMES_HOME="$MIRROR_HERMES_HOME" "$BOARD_CMD" mirror --repo-root "$REPO_ROOT" --registry "$MIRROR_REGISTRY" --snapshot "$MIRROR_SNAPSHOT" ${mirror_flags[@]+"${mirror_flags[@]}"} 2>&1)"; mrc=$?
       echo "  mirror rc=$mrc (home=$MIRROR_HERMES_HOME)"
       printf '%s\n' "$mout" | sed 's/^/    /'
+      printf '%s\n' "$mout" | python3 "$HEALTH_BIN" record --leg mirror --rc "$mrc" --health-state-file "$HEALTH_STATE" 2>&1 | sed 's/^/    /'
     fi
     mirror_cleanup
   else
@@ -357,9 +389,19 @@ if [ -n "$POSTER" ]; then
   done < <(bash "$DIGEST" --list-clusters "${digest_common[@]}")
 fi
 
+# health leg: observational like the digest, never flips the exit code
+if [ "$HEALTH" -eq 1 ]; then
+  hflags=(--registry "$BOARDS" --state-file "$STATE_FILE" --health-state-file "$HEALTH_STATE")
+  [ -n "$HEALTH_MAP" ] && hflags+=(--cluster-map "$HEALTH_MAP")
+  [ -n "$POSTER" ] && hflags+=(--poster "$POSTER")
+  [ "$DRY_RUN" -eq 1 ] && hflags+=(--dry-run)
+  python3 "$HEALTH_BIN" run "${hflags[@]}" ${health_flags[@]+"${health_flags[@]}"} 2>&1 | sed 's/^/  /'
+fi
+
 if [ "$rc_any" -eq 0 ] && [ "$DRY_RUN" -eq 0 ] && [ -n "$ON_CLEAN" ]; then
   "$ON_CLEAN" || echo "  on-clean hook failed (non-fatal)"
 fi
 [ -n "${DRY_STATE:-}" ] && rm -f "$DRY_STATE"
+[ -n "${DRY_HEALTH_STATE:-}" ] && rm -f "$DRY_HEALTH_STATE"
 echo "[$(ts)] $NAME: end rc=$rc_any"
 exit "$rc_any"

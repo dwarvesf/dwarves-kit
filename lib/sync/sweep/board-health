@@ -1,0 +1,556 @@
+#!/usr/bin/env python3
+"""board health: a periodic health digest per cluster, built from the sweep's own state.
+
+The change digest (board-digest.sh) says what moved. This one says whether the
+boards and their sync legs are healthy, on a slow clock (default every 3 days),
+through the same poster contract. Per cluster it reports:
+
+  hubs     per repo on the cluster's rail: active rows, parked rows, and stale
+           rows (an active row whose line has not changed in --stale-days,
+           read from `git blame` on the origin copy of the board file)
+  kanban   per kanban board (the reader named by --kanban CLUSTER=CMD): open
+           cards, stale cards (latest of created, started, completed older
+           than --stale-days), and cards archived since the last health run
+  sync     per spoke and for the mirror leg: ok or failed, from the records
+           `board-health record` took on every sweep tick, plus FLAPPING ids
+           and a carried post failure from the digest state
+
+Modes:
+  record --repo NAME --rc N | --leg mirror --rc N   (the leg's stdout on stdin)
+      Called by `board sweep` after each sync and mirror leg. Writes the leg's
+      outcome into the health state. Never fails the sweep.
+  run    Build one payload per cluster, hand it to --poster, stamp the run.
+
+The payload (one JSON line per cluster, stdout under --dry-run), the digest
+payload shape plus `kind: health`:
+  {kind, cluster, rail, key, severity: info|warn, title, period_days, next_due,
+   attention: bool, fields: [{name, value}], data: {...}}
+Each field value is one display line. `attention` is true when something needs
+a human: a failed leg, a FLAPPING id, a carried post failure, an unreadable
+kanban reader, or a sweep that has not run lately. A cluster named by --quiet
+posts nothing when `attention` is false (the run is still stamped).
+
+Run flags:
+  --registry F          boards registry (name path [bridge] [rail=<rail>])
+  --cluster-map M       cluster=rail,cluster=rail (as for the digest)
+  --state-file F        the digest state, read for FLAPPING ids and carried errors
+  --health-state-file F health state (default ~/.cache/backlog-sync/health-state.json)
+  --every-days N        cadence (default 3); a failed post is not stamped, so it stays due and retries
+  --stale-days N        staleness threshold (default 7)
+  --sync-stale-hours N  a sweep record older than this is itself a problem (default 6)
+  --kanban C=CMD        reader for cluster C: CMD is run as `CMD boards list --json`
+                        and `CMD --board SLUG list --json` (a `hermes kanban` wrapper)
+  --line C=CMD          extra lines for cluster C: each stdout line of CMD is added
+  --quiet C             post nothing for cluster C while it is clean
+  --poster CMD          delivers one payload on stdin; exit 0 means delivered
+  --cluster C           only this cluster
+  --force               ignore the cadence
+  --dry-run             print payloads, post nothing, write nothing
+  --no-state            post for real but write no stamp or baseline (a live test)
+  --now EPOCH           pin the clock (tests)
+
+stderr: `health: ...` log lines. Exit 0 on a normal run; only a usage error is nonzero.
+"""
+
+import argparse
+import hashlib
+import json
+import os
+import re
+import shlex
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+ACTIVE = ("queued", "claimed", "speccing", "validated", "executing")
+ID_RE = re.compile(r"^\|\s*([A-Z]+-[0-9]+)\s*\|")
+SPOKE_RE = re.compile(r"^\s*(?:synced|dry-run)\s+([A-Za-z0-9_-]+):")
+ROW_ID_RE = re.compile(r"^[A-Z]+-[0-9]+$")
+ERR_WORD_RE = re.compile(r"\b(ERROR|FAILED|Traceback)\b")
+DAY = 86400
+
+DEFAULT_HEALTH_STATE = os.path.expanduser("~/.cache/backlog-sync/health-state.json")
+DEFAULT_DIGEST_STATE = os.path.expanduser("~/.cache/backlog-sync/digest-state.json")
+
+
+def log(msg):
+    print(f"health: {msg}", file=sys.stderr)
+
+
+def redact(text, cap=160):
+    """Printable, one line, no webhook URLs or token-shaped strings."""
+    text = "".join(c if c.isprintable() else " " for c in text)
+    text = re.sub(r"https://discord(app)?\.com/api/webhooks/\S+", "[webhook-redacted]", text)
+    text = re.sub(r"op://\S+", "[ref-redacted]", text)
+    text = re.sub(r"[A-Za-z0-9_-]{24,}", "[redacted]", text)
+    return re.sub(r"\s+", " ", text).strip()[:cap]
+
+
+# --- state -------------------------------------------------------------------
+
+def read_json(path, default):
+    try:
+        data = json.loads(Path(path).read_text())
+        return data if isinstance(data, type(default)) else default
+    except (OSError, ValueError):
+        return default
+
+
+def write_state(path, state):
+    """tmp + rename under umask 077: the state carries upstream error text."""
+    p = Path(path)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    tmp = p.with_name(p.name + f".tmp{os.getpid()}")
+    old = os.umask(0o077)
+    try:
+        tmp.write_text(json.dumps(state, indent=1, sort_keys=True))
+        os.replace(tmp, p)
+        os.chmod(p, 0o600)
+    finally:
+        os.umask(old)
+
+
+# --- registry and clusters (same reading rules as board-digest.sh) -----------
+
+def parse_registry(path):
+    rows = []
+    try:
+        lines = Path(path).read_text().splitlines()
+    except OSError:
+        return rows
+    for line in lines:
+        parts = line.split()
+        if not parts or parts[0].startswith("#") or len(parts) < 2:
+            continue
+        rail = next((t[5:] for t in parts[2:] if t.startswith("rail=")), "")
+        rows.append({"name": parts[0], "path": os.path.expanduser(parts[1]), "rail": rail,
+                     "bridge": len(parts) > 2 and parts[2] == "on"})
+    return rows
+
+
+def parse_map(text):
+    pairs = []
+    for item in (text or "").split(","):
+        if "=" in item:
+            c, r = item.split("=", 1)
+            pairs.append((c.strip(), r.strip()))
+    return pairs
+
+
+def clusters_of(registry_rows, cluster_map):
+    """[(cluster, rail)] in sweep order: the map when given, else each distinct rail."""
+    pairs = parse_map(cluster_map)
+    if pairs:
+        return pairs
+    seen, out = set(), []
+    for r in registry_rows:
+        if r["rail"] and r["rail"] not in seen:
+            seen.add(r["rail"])
+            out.append((r["rail"], r["rail"]))
+    return out
+
+
+def per_cluster_flags(items):
+    """['C=CMD', ...] -> {C: [CMD, ...]}"""
+    out = {}
+    for item in items or []:
+        if "=" in item:
+            c, cmd = item.split("=", 1)
+            out.setdefault(c, []).append(cmd)
+    return out
+
+
+# --- record: one sweep leg's outcome -----------------------------------------
+
+def cmd_record(args):
+    text = sys.stdin.read()
+    now = int(args.now or time.time())
+    lines = text.splitlines()
+    warnings = [l for l in lines if l.startswith("WARNING:")]
+    errors = []
+    if args.rc != 0 or args.leg == "mirror":
+        for l in lines:
+            if l.strip() and (ERR_WORD_RE.search(l) or (args.rc != 0 and not l.startswith("WARNING:"))):
+                errors.append(redact(l))
+    errors = errors[-3:]
+    if args.leg == "mirror":
+        rec = {"ts": now, "rc": args.rc, "skipped": "mirror skipped" in text, "errors": errors}
+        key = "mirror"
+    else:
+        if not args.repo:
+            print("board health record: need --repo or --leg mirror", file=sys.stderr)
+            return 64
+        spokes = sorted({m.group(1) for l in lines if (m := SPOKE_RE.match(l))})
+        rec = {"ts": now, "rc": args.rc, "spokes": spokes, "warnings": len(warnings),
+               "conflicts": sum(1 for l in lines if l.lstrip().startswith("! conflict")),
+               "errors": errors}
+        key = ("sync", args.repo)
+    state = read_json(args.health_state_file, {})
+    if isinstance(key, tuple):
+        state.setdefault("sync", {})[key[1]] = rec
+    else:
+        state[key] = rec
+    write_state(args.health_state_file, state)
+    return 0
+
+
+# --- hubs: BACKLOG.md rows with last-change times from git blame -------------
+
+def git(root, *a):
+    return subprocess.run(["git", "-C", str(root), *a], capture_output=True, text=True)
+
+
+def origin_ref(root):
+    r = git(root, "symbolic-ref", "--short", "refs/remotes/origin/HEAD")
+    cands = ([r.stdout.strip()] if r.returncode == 0 and r.stdout.strip() else []) + ["origin/main", "origin/master"]
+    for c in cands:
+        if git(root, "rev-parse", "--verify", "-q", c).returncode == 0:
+            return c
+    return None
+
+
+def blame_rows(root, rel, ref):
+    """{row id: (state, last-change epoch)}. The newest line wins when an id repeats."""
+    cmd = ["blame", "--line-porcelain", "-w"] + ([ref] if ref else []) + ["--", rel]
+    r = git(root, *cmd)
+    if r.returncode != 0:
+        return None
+    rows, ctime = {}, 0
+    for line in r.stdout.splitlines():
+        if line.startswith("committer-time "):
+            ctime = int(line.split()[1])
+        elif line.startswith("\t"):
+            m = ID_RE.match(line[1:])
+            if not m:
+                continue
+            cells = line[1:].split("|")
+            status = cells[-2].strip() if len(cells) >= 3 else ""
+            st = re.split(r"[ \[(]", status, maxsplit=1)[0].lower()
+            prev = rows.get(m.group(1))
+            if prev is None:
+                rows[m.group(1)] = (st, ctime)
+            else:
+                best = st if (st in ACTIVE or prev[0] not in ACTIVE) else prev[0]
+                rows[m.group(1)] = (best, max(prev[1], ctime))
+    return rows
+
+
+def hub_stats(path, stale_days, now):
+    p = Path(path)
+    if not p.is_file():
+        return {"missing": True}
+    top = git(p.parent, "rev-parse", "--show-toplevel")
+    if top.returncode != 0 or not top.stdout.strip():
+        return {"missing": True}
+    root = top.stdout.strip()
+    rel = os.path.relpath(os.path.realpath(p), os.path.realpath(root))
+    ref = origin_ref(root)
+    rows = blame_rows(root, rel, ref)
+    if rows is None and ref:
+        rows = blame_rows(root, rel, None)
+    if rows is None:
+        return {"missing": True}
+    cutoff = now - stale_days * DAY
+    active = [(i, t) for i, (st, t) in rows.items() if st in ACTIVE]
+    return {"open": len(active),
+            "parked": sum(1 for st, _ in rows.values() if st == "parked"),
+            "stale": sum(1 for _, t in active if t < cutoff)}
+
+
+# --- kanban: open, stale, archived-since -------------------------------------
+
+class KanbanError(Exception):
+    pass
+
+
+def kanban_json(cmd, args):
+    r = subprocess.run(shlex.split(cmd) + args, capture_output=True, text=True, timeout=120)
+    if r.returncode != 0:
+        raise KanbanError(redact((r.stderr or r.stdout) or f"exit {r.returncode}"))
+    try:
+        return json.loads(r.stdout or "[]")
+    except ValueError:
+        raise KanbanError("reader printed no JSON")
+
+
+def kanban_stats(cmd, stale_days, now):
+    boards = {}
+    for b in kanban_json(cmd, ["boards", "list", "--json"]):
+        if b.get("archived"):
+            continue
+        counts = b.get("counts") or {}
+        open_n = sum(n for st, n in counts.items() if st not in ("done", "archived"))
+        stale, oldest = 0, 0
+        if open_n:
+            for c in kanban_json(cmd, ["--board", b["slug"], "list", "--json"]):
+                if c.get("status") in ("done", "archived"):
+                    continue
+                last = max(c.get("created_at") or 0, c.get("started_at") or 0, c.get("completed_at") or 0)
+                age = max(0, int((now - last) // DAY))
+                oldest = max(oldest, age)
+                if now - last > stale_days * DAY:
+                    stale += 1
+        boards[b["slug"]] = {"open": open_n, "stale": stale, "oldest_days": oldest,
+                             "archived_total": counts.get("archived", 0)}
+    return boards
+
+
+# --- one cluster's payload ----------------------------------------------------
+
+def day_stamp(epoch):
+    return time.strftime("%Y-%m-%d", time.localtime(epoch))
+
+
+def top_list(items, fmt, cap=8, budget=240):
+    """The first items that fit one line, then `+N more`. A line is cut by whole items, never mid-word."""
+    shown, used = [], 0
+    for n, v in items[:cap]:
+        text = fmt(n, v)
+        if shown and used + len(text) + 3 > budget:
+            break
+        shown.append(text)
+        used += len(text) + 3
+    if len(items) > len(shown):
+        shown.append(f"+{len(items) - len(shown)} more")
+    return " · ".join(shown)
+
+
+def build_payload(cluster, rail, args, registry_rows, health, digest, last_run, prev_archived, now):
+    repos = [r for r in registry_rows if r["rail"] == rail]
+    attention = []
+    fields = []
+
+    # the operator's own lines lead: facts only the operator knows
+    for cmd in args.line_map.get(cluster, []):
+        try:
+            r = subprocess.run(shlex.split(cmd), capture_output=True, text=True, timeout=120)
+            extra = [redact(l, 400) for l in r.stdout.splitlines() if l.strip()] if r.returncode == 0 else []
+            if r.returncode != 0:
+                log(f"WARN line hook exited {r.returncode} for {cluster}")
+        except (OSError, subprocess.TimeoutExpired):
+            extra = []
+            log(f"WARN line hook failed for {cluster}")
+        for l in extra:
+            fields.append({"name": "extra", "value": l})
+
+    # hubs
+    hubs = {}
+    for r in repos:
+        st = hub_stats(r["path"], args.stale_days, now)
+        if not st.get("missing"):
+            hubs[r["name"]] = st
+    hub_open = sorted(((n, s) for n, s in hubs.items() if s["open"] > 0), key=lambda kv: (-kv[1]["open"], kv[0]))
+
+    def hub_fmt(n, s):
+        return f"{n} {s['open']} open" + (f" ({s['stale']} stale)" if s["stale"] else "")
+
+    if hub_open or any(s["parked"] for s in hubs.values()):
+        parked = sum(s["parked"] for s in hubs.values())
+        icon = "⚠️" if sum(s["stale"] for s in hubs.values()) else "🗂️"
+        line = f"{icon} hubs: " + (top_list(hub_open, hub_fmt) if hub_open else "nothing open")
+        if parked:
+            line += f" · {parked} parked"
+        fields.append({"name": "hubs", "value": line})
+
+    # kanban
+    kanban, archived_delta = {}, {}
+    reader = args.kanban_map.get(cluster, [None])[0]
+    if reader:
+        try:
+            kanban = kanban_stats(reader, args.stale_days, now)
+        except (KanbanError, OSError, subprocess.TimeoutExpired) as e:
+            attention.append(f"⚠️ kanban unreadable for {cluster}: {redact(str(e), 100)}")
+        for slug, b in kanban.items():
+            if slug in prev_archived:
+                d = b["archived_total"] - prev_archived[slug]
+                if d > 0:
+                    archived_delta[slug] = d
+        live = sorted(((s, b) for s, b in kanban.items() if b["open"] > 0), key=lambda kv: (-kv[1]["open"], kv[0]))
+        if live:
+            def kb_fmt(n, b):
+                tail = f" ({b['stale']} stale, oldest {b['oldest_days']}d)" if b["stale"] else ""
+                return f"{n} {b['open']} open{tail}"
+            stale_total = sum(b["stale"] for _, b in live)
+            fields.append({"name": "kanban", "value": ("⚠️ " if stale_total else "🗂️ ") + "kanban: " + top_list(live, kb_fmt)})
+        elif kanban:
+            fields.append({"name": "kanban", "value": "🗂️ kanban: nothing open"})
+        if archived_delta:
+            items = sorted(archived_delta.items(), key=lambda kv: (-kv[1], kv[0]))
+            fields.append({"name": "archived", "value": "🧹 archived this period: " + top_list(items, lambda n, v: f"{n} {v}")})
+
+    # sync health, from the records the sweep took each tick
+    recs = {r["name"]: health.get("sync", {}).get(r["name"]) for r in repos}
+    recs = {n: v for n, v in recs.items() if v}
+    spokes = {}
+    for n, v in recs.items():
+        for sp in v.get("spokes", []):
+            spokes.setdefault(sp, []).append(v["rc"] == 0)
+    failed = sorted(n for n, v in recs.items() if v["rc"] != 0)
+    old_after = args.sync_stale_hours * 3600
+    lagging = sorted(n for n, v in recs.items() if now - v["ts"] > old_after)
+    mirror = health.get("mirror") if any(r["bridge"] for r in repos) else None
+    mirror_bad = bool(mirror) and (mirror["rc"] != 0 or bool(mirror.get("errors")))
+
+    parts = []
+    for sp in sorted(spokes):
+        parts.append(f"{sp} " + ("✅" if all(spokes[sp]) else "❌"))
+    if mirror:
+        parts.append("hermes mirror " + ("❌" if mirror_bad else ("⏸" if mirror.get("skipped") else "✅")))
+    n_err = len(failed) + (1 if mirror_bad else 0)
+    if recs:
+        fields.append({"name": "sync", "value": "🔄 sync: " + (" · ".join(parts) + " · " if parts else "")
+                       + f"last sweep {n_err} error" + ("" if n_err == 1 else "s")})
+    else:
+        attention.append("⚠️ no sweep record yet: nothing to report on sync")
+    for n in failed:
+        first = (recs[n].get("errors") or ["no detail"])[-1]
+        attention.append(f"❌ sync failed: {n} · {first}")
+    if mirror_bad:
+        attention.append("❌ hermes mirror failed: " + ((mirror.get("errors") or ["no detail"])[-1]))
+    if lagging:
+        newest = max(recs[n]["ts"] for n in recs)
+        attention.append(f"⚠️ sweep record is {int((now - newest) // 3600)}h old: the sweep may not be running")
+    flaps = sorted({f"{r['name']} {i}" for r in repos
+                    for i in (digest.get(r["name"], {}).get("pending", {}).get("flapping_ids") or [])})
+    for item in flaps:
+        repo, rid = item.split(" ", 1)
+        # a spoke-side id (a reminder URL, a page id) is not a board row id
+        label = rid if ROW_ID_RE.match(rid) else f"spoke item …{rid[-6:]}"
+        attention.append(f"⚠️ {label} flapping between the board and a spoke ({repo})")
+    carried = (digest.get("_cluster_errors") or {}).get(cluster)
+    if carried:
+        attention.append("⚠️ last change digest failed to post: " + redact(carried, 120))
+
+    for a in attention:
+        fields.append({"name": "attention", "value": a})
+
+    period = int(args.every_days) if float(args.every_days).is_integer() else args.every_days
+    next_due = day_stamp(now + period * DAY)
+    key = hashlib.sha256(f"health|{cluster}|{day_stamp(now)}".encode()).hexdigest()[:32]
+    payload = {
+        "kind": "health", "cluster": cluster, "rail": rail, "key": key,
+        "severity": "warn" if attention else "info",
+        "title": f"Board health · {cluster}", "period_days": period, "next_due": next_due,
+        "attention": bool(attention), "fields": fields,
+        "data": {"hubs": hubs, "kanban": kanban, "archived_since": archived_delta,
+                 "sync_failed": failed, "flapping": flaps},
+    }
+    carried_health = health.get("errors", {}).get(cluster)
+    if carried_health:
+        payload["carried_error"] = carried_health
+        payload["severity"] = "warn"
+        payload["fields"].append({"name": "retry", "value": "↻ retry: carried forward after a failed post"})
+    return payload, kanban
+
+
+def is_due(cluster, last_run, args, now):
+    if args.force:
+        return True
+    last = last_run.get(cluster)
+    # a half hour of grace keeps an hourly tick from slipping a whole extra hour
+    return last is None or now - last >= args.every_days * DAY - 1800
+
+
+# --- run ----------------------------------------------------------------------
+
+def cmd_run(args):
+    now = int(args.now or time.time())
+    rows = parse_registry(args.registry)
+    if not rows:
+        print("board health run: empty or missing --registry", file=sys.stderr)
+        return 64
+    args.kanban_map = per_cluster_flags(args.kanban)
+    args.line_map = per_cluster_flags(args.line)
+    quiet = set(args.quiet or [])
+    write = not (args.dry_run or args.no_state)
+    health = read_json(args.health_state_file, {})
+    digest = read_json(args.state_file, {})
+    last_run = health.get("last_run", {})
+
+    for cluster, rail in clusters_of(rows, args.cluster_map):
+        if args.cluster and cluster != args.cluster:
+            continue
+        if not is_due(cluster, last_run, args, now):
+            nxt = day_stamp(last_run[cluster] + args.every_days * DAY)
+            log(f"skipped(not-due) {cluster} next={nxt}")
+            continue
+        prev_archived = health.get("archived", {}).get(cluster, {})
+        payload, kanban = build_payload(cluster, rail, args, rows, health, digest, last_run, prev_archived, now)
+        baseline = {s: b["archived_total"] for s, b in kanban.items()}
+
+        def stamp(error=None):
+            if not write:
+                return
+            st = read_json(args.health_state_file, {})
+            st.setdefault("last_run", {})
+            st.setdefault("archived", {})
+            st.setdefault("errors", {})
+            if error is None:
+                st["last_run"][cluster] = now
+                if baseline:
+                    st["archived"][cluster] = baseline
+                st["errors"].pop(cluster, None)
+            else:
+                st["errors"][cluster] = error
+            write_state(args.health_state_file, st)
+
+        if not payload["attention"] and cluster in quiet:
+            log(f"skipped(quiet) {cluster}")
+            stamp()
+            continue
+        line = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+        if args.dry_run:
+            print(line)
+            log(f"{cluster} dry-run (not posted)")
+            continue
+        if not args.poster:
+            print("board health run: need --poster (or --dry-run)", file=sys.stderr)
+            return 64
+        try:
+            r = subprocess.run(shlex.split(args.poster), input=line, capture_output=True, text=True, timeout=180)
+            ok, detail = r.returncode == 0, (r.stderr or "").strip()[-400:] or f"poster exit {r.returncode}"
+        except (OSError, subprocess.TimeoutExpired) as e:
+            ok, detail = False, str(e)
+        if ok:
+            stamp()
+            log(f"{cluster} posted key={payload['key']}")
+        else:
+            reason = redact(detail, 400)
+            stamp(reason)
+            log(f"ERROR({reason}) {cluster}")
+    return 0
+
+
+def main(argv=None):
+    ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
+    sub = ap.add_subparsers(dest="mode", required=True)
+    for name in ("record", "run"):
+        p = sub.add_parser(name)
+        p.add_argument("--health-state-file", default=DEFAULT_HEALTH_STATE)
+        p.add_argument("--now", type=int)
+        if name == "record":
+            p.add_argument("--repo")
+            p.add_argument("--leg", choices=("sync", "mirror"), default="sync")
+            p.add_argument("--rc", type=int, default=0)
+        else:
+            p.add_argument("--registry", required=True)
+            p.add_argument("--cluster-map", default="")
+            p.add_argument("--state-file", default=DEFAULT_DIGEST_STATE)
+            p.add_argument("--every-days", type=float, default=3)
+            p.add_argument("--stale-days", type=float, default=7)
+            p.add_argument("--sync-stale-hours", type=float, default=6)
+            p.add_argument("--kanban", action="append")
+            p.add_argument("--line", action="append")
+            p.add_argument("--quiet", action="append")
+            p.add_argument("--poster")
+            p.add_argument("--cluster")
+            p.add_argument("--force", action="store_true")
+            p.add_argument("--dry-run", action="store_true")
+            p.add_argument("--no-state", action="store_true")
+    args = ap.parse_args(argv)
+    return cmd_record(args) if args.mode == "record" else cmd_run(args)
+
+
+if __name__ == "__main__":
+    sys.exit(main())
