@@ -202,6 +202,12 @@
 #                                                               against the boards (dry run by
 #                                                               default; never deletes). Forwards
 #                                                               to lib/board/board-mirror-cleanup.py.
+#   board.sh health run --registry <path> [--poster <cmd>] [--dry-run] [--force] ...
+#   board.sh health record --repo <name> --rc <n>               the periodic board health digest per
+#                                                               cluster (open, stale, archived since
+#                                                               the last run, sync health per spoke);
+#                                                               `sweep --health` runs it every tick.
+#                                                               Forwards to lib/sync/sweep/board-health.
 #
 # Registry format (`boards.txt`): whitespace-delimited `<name> <path-to-BACKLOG.md> [bridge]`
 # rows, `#` comments, `~` expands to $HOME. A THIRD field, `bridge`, opts a repo into `mirror`:
@@ -231,6 +237,7 @@ BOARD_RUN_SH="$BOARD_DIR/board-run.sh"
 BOARD_SWEEP_SH="$(cd "$BOARD_DIR/.." && pwd)/sync/sweep/board-sweep"                  # lib/sync/sweep/
 BOARD_SWEEP_VERIFY_SH="$(cd "$BOARD_DIR/.." && pwd)/sync/sweep/board-sweep-verify"
 BOARD_MIRROR_CLEANUP_PY="$BOARD_DIR/board-mirror-cleanup.py"
+BOARD_HEALTH_PY="$(cd "$BOARD_DIR/.." && pwd)/sync/sweep/board-health"
 COCKPIT_PY="$(cd "$BOARD_DIR/.." && pwd)/sync/cockpit.py"  # lib/sync/, the P2 sync-engine port
 MEGA_SH="$(cd "$BOARD_DIR/.." && pwd)/mega/mega.sh"  # lib/mega/mega.sh, one level up from lib/board/
 
@@ -1193,6 +1200,7 @@ main() {
       if [ "${1:-}" = "verify" ]; then shift; exec bash "$BOARD_SWEEP_VERIFY_SH" "$@"; fi
       exec bash "$BOARD_SWEEP_SH" "$@" ;;
     mirror-cleanup) shift; exec python3 "$BOARD_MIRROR_CLEANUP_PY" "$@" ;;
+    health) shift; exec python3 "$BOARD_HEALTH_PY" "$@" ;;
     init) shift; cmd_init "$@" ;;
     capture) shift; cmd_capture "$@" ;;
     promote) shift; exec "$BOARD_DIR/bin/add-backlog" "$@" ;;
