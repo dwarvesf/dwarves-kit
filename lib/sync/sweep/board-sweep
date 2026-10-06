@@ -48,6 +48,8 @@
 #   --health-kanban C=CMD   kanban reader for cluster C (a `hermes kanban` wrapper; repeatable)
 #   --health-line C=CMD     extra digest lines for cluster C, one per stdout line (repeatable)
 #   --health-quiet C        post nothing for cluster C while it is clean (repeatable)
+#   --health-hub C=NAME | --health-board C=SLUG | --health-faults-only C
+#   --health-triage-open N | --health-triage-days N     which lines a cluster shows (see board-health)
 #   --health-state-file F   health state (default ~/.cache/backlog-sync/health-state.json)
 #   --dry-run               plan only: `board sync --dry-run`, no publish, `board mirror
 #                           --dry-run`, digests printed instead of posted, the real digest
@@ -111,6 +113,11 @@ while [ $# -gt 0 ]; do case "$1" in
   --health-kanban) health_flags+=(--kanban "${2:-}"); shift 2;;
   --health-line) health_flags+=(--line "${2:-}"); shift 2;;
   --health-quiet) health_flags+=(--quiet "${2:-}"); shift 2;;
+  --health-hub) health_flags+=(--hub "${2:-}"); shift 2;;
+  --health-board) health_flags+=(--board "${2:-}"); shift 2;;
+  --health-faults-only) health_flags+=(--faults-only "${2:-}"); shift 2;;
+  --health-triage-open) health_flags+=(--triage-open "${2:-}"); shift 2;;
+  --health-triage-days) health_flags+=(--triage-days "${2:-}"); shift 2;;
   --health-state-file) HEALTH_STATE="${2:-}"; shift 2;;
   --state-file) STATE_FILE="${2:-}"; shift 2;;
   --mirror-hermes-home) MIRROR_HERMES_HOME="${2:-}"; shift 2;;
@@ -397,6 +404,10 @@ if [ "$HEALTH" -eq 1 ]; then
   [ "$DRY_RUN" -eq 1 ] && hflags+=(--dry-run)
   python3 "$HEALTH_BIN" run "${hflags[@]}" ${health_flags[@]+"${health_flags[@]}"} 2>&1 | sed 's/^/  /'
 fi
+
+# hermes link drift: compare each linked profile's skill stamp with this kit and record it for the
+# brief; observational, a failure here never fails the sweep
+python3 "$BIN/board-hermes" check --record --health-state-file "$HEALTH_STATE" >/dev/null 2>&1 || echo "  hermes link check failed (non-fatal)"
 
 if [ "$rc_any" -eq 0 ] && [ "$DRY_RUN" -eq 0 ] && [ -n "$ON_CLEAN" ]; then
   "$ON_CLEAN" || echo "  on-clean hook failed (non-fatal)"

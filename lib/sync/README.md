@@ -192,12 +192,20 @@ per cluster once `--health-every-days` (default 3) has passed since its last
 delivered post. A failed post is not stamped, so it retries next tick and
 rides `carried_error`.
 
-| Section | Source |
+| Line | Source |
 |---|---|
-| hubs | per repo on the cluster's rail: active rows, parked rows, stale rows (an active row whose line did not change in `--health-stale-days`, default 7, from `git blame` on the origin copy of the board) |
-| kanban | per board of the `--health-kanban CLUSTER=CMD` reader (a `hermes kanban` wrapper): open cards, stale cards, cards archived since the last delivered run |
-| sync | per spoke and the mirror leg, ok or failed, from the tick records; FLAPPING ids and a carried change-digest failure from the digest state; a sweep record older than six hours |
-| extra | each stdout line of `--health-line CLUSTER=CMD`, for facts only the operator knows |
+| extra | each stdout line of `--health-line CLUSTER=CMD`, for facts only the operator knows; a line that opens with the warning mark counts as a fault |
+| hub | the one hub named by `--health-hub CLUSTER=NAME`: `NAME: <active> active, <parked> parked · Hermes mirror <n> open = hub`. Rows come from `git blame` on the origin copy of the board; the mirror count is the open cards of kanban board NAME whose body says `origin: NAME:`. A mismatch is a fault line instead. |
+| board | each kanban board named by `--health-board CLUSTER=SLUG` (reader: `--health-kanban CLUSTER=CMD`, a `hermes kanban` wrapper): open cards with their status, stale cards, tickets created since the last delivered run |
+| archived | cards archived since the last delivered run, one total; omitted on a baseline run |
+| fault | one line per kanban board over the triage threshold (`--health-triage-open`, default 20 cards, or `--health-triage-days`, default 14 days for the oldest), three at most, then `+N more boards over threshold` |
+| sync | per spoke and the mirror leg, ok or failed, from the tick records |
+| attention | failed legs, FLAPPING ids, a carried change-digest failure, a sweep record older than six hours |
+
+One short line per item. Only real faults carry the warning mark; other repos'
+hubs and boards get no line unless they trip the triage threshold, and their
+counts stay in the payload's `data`. `--health-faults-only C` keeps only the
+fault and attention lines for cluster C.
 
 The payload is the digest payload plus `kind: "health"`, `period_days`,
 `next_due`, `attention`, and one display line per field:
@@ -208,12 +216,74 @@ The payload is the digest payload plus `kind: "health"`, `period_days`,
 ```
 
 `attention` is true when something needs a human: a failed sync or mirror leg,
-a FLAPPING id, a carried post failure, an unreadable kanban reader, a stale
+a FLAPPING id, a carried post failure, an unreadable kanban reader, a hub
+that differs from its mirror, a board over the triage threshold, a stale
 sweep record. A cluster named by `--health-quiet C` posts nothing while
 `attention` is false; the run is still stamped. Two limits: a kanban card has
 no updated-at field, so "stale" there means the latest of created, started and
 completed is older than the threshold, and the first run has no archived
 baseline, so it reports no archived count. Tests: `tests/test-board-health.sh`.
+
+**Daily brief.** `board brief run` is the one message an operator reads each
+day, built on the health engine above (its source flags, its `--config` file,
+its health state). Per cluster, in this order, each section left out when empty:
+
+| Section | Source |
+|---|---|
+| needs your decision | hub rows whose state and mirror card disagree in a way the mirror cannot settle (`ID hub/mirror drift: board says shipped, the Hermes card is still open. Ship or reopen?`), plus incident rows the hook marks `needs_you`, plus the hook's explicit `decisions`. Three lines, then `+N more in details`. With none and no fault, one line says nothing needs the operator. |
+| open incidents | the `--incidents C=CMD` hook: count, three rows, the hook's fault lines. An unreadable hook is a fault line, never an all-clear. |
+| boards | the health lines (hub, board, fault, sync, extra, attention). Shown when a decision exists or `--boards-every-days` (default 3) has passed; otherwise they ride the details. A sync failure does not bring them back: the bots line counts it, and instant alerts stay on their own rails. |
+| bots | one line: the hook's bot counts, cards archived since the last delivered brief, sync errors |
+
+The incident hook prints one JSON object, every key optional, so any operator's
+incident source fits:
+
+```
+{"open": [{"id", "label", "host", "url", "age", "firing": bool, "needs_you": bool, "question"}],
+ "decisions": [{"id", "url", "question"}], "bots": {"auto-resolved": 3},
+ "faults": ["line"], "details": ["line"]}
+```
+
+Format: each section sits under a Discord small heading (`### 🙋 Needs your decision (2)`, `### 🔥 Open
+incidents (5)`, `### 🗂️ Boards`, `### 🔄 Sync · 🤖 Bots`) with a blank line between sections. Ids are masked links with
+the preview suppressed (`[ID-538](<url>)`): a board row links to its line in the GitHub copy of the board (from the repo's
+origin remote), a hook row or decision links to the hook's `url`; an id with no URL is inline code. The question in a
+decision line and the closing sentence ending in `?` are bold; a host after `@` is inline code; the details message
+uses the same headings. `--main-chars N` (default 1250) keeps the main message under the poster's cap: over it the boards
+block moves to the details, then the incident rows past the first.
+
+The payload is `kind: "brief"`: the health payload shape with `date`, one
+display line per field for the main message, and `details` (a list of lines)
+for the follow-up message. The poster decides how the follow-up lands (a thread
+reply where the rail has threads, else a second short message); a failed details
+post never fails the main one. Under `--dry-run` and `--no-state` the hook runs with
+`BOARD_BRIEF_READ_ONLY=1` and must write nothing. `--decisions-only C` makes cluster C post only
+when a decision exists, and then only the decision lines. A failed post is not
+stamped, so it stays due and rides `carried_error`. Brief state lives in the
+health state file under `brief`.
+
+`board health run` and `board brief run` read their flags from `--config FILE`,
+else `$DWARVES_BOARD_CONFIG`, else `~/.config/dwarves-kit/board.json`: JSON with
+`common`, `health`, and `brief` sections, each key a long flag with `-` as `_`
+(a list repeats the flag, `true` is a bare flag). Command-line flags come
+after the file. This is what lets an agent run `board health run --dry-run`
+with no flags of its own. Tests: `tests/test-board-brief.sh`. Where the kit's
+Hermes skills sit on top: `docs/hermes-layering.md`.
+
+**Hermes link.** `board hermes link [--home DIR] [--profile NAME] [--cluster C] [--dry-run] [--yes]
+[--no-verify]` links one Hermes agent profile to the kit: it detects Hermes homes (`--home`,
+`$HERMES_HOME`, `hermes config path`, `~/hermes-*/home`, `~/.hermes`), picks the profile that speaks for
+the operator, installs `adapters/hermes/skills/*` into that profile's skills dir with a stamp file
+(`.dwarves-kit-skills.json`: a digest of the skill files, the kit version and sha), records the link in
+`~/.config/dwarves-kit/hermes-links.json` (with the cluster's rail, hub, and boards read from the kit flag
+file), and verifies with one real agent turn: the agent must run `board health run --dry-run --force` and
+answer a nonce, then the command prints `linked`. It previews the plan and asks on a terminal; without
+one it writes only with `--yes`. A profile in another account's home uses `--sudo-user`. No Hermes found
+is a skip line and exit 0. `board hermes check [--record]` compares each recorded link's stamp with this
+kit (stale: no stamp, a different digest, a missing skill); `board sweep` records it every tick under
+`hermes_links` in the health state, and `board brief` turns a stale link into one decision line, `kit
+skills on <label> are stale: re-run board hermes link`, for the link's cluster (the first cluster when
+none is named). Tests: `tests/test-board-hermes.sh`.
 
 **Exit code.** 0 when every sync, publish, and preflight leg was clean. The
 digest, mirror, and health legs are observational and never flip it.

@@ -3,17 +3,29 @@
 
 The change digest (board-digest.sh) says what moved. This one says whether the
 boards and their sync legs are healthy, on a slow clock (default every 3 days),
-through the same poster contract. Per cluster it reports:
+through the same poster contract. One short line per item, in this order:
 
-  hubs     per repo on the cluster's rail: active rows, parked rows, and stale
-           rows (an active row whose line has not changed in --stale-days,
-           read from `git blame` on the origin copy of the board file)
-  kanban   per kanban board (the reader named by --kanban CLUSTER=CMD): open
-           cards, stale cards (latest of created, started, completed older
-           than --stale-days), and cards archived since the last health run
+  extra    each stdout line of --line C=CMD (facts only the operator knows)
+  hub      the one hub named by --hub C=NAME: `NAME: <active> active, <parked>
+           parked · Hermes mirror <n> open = hub`, where <n> counts the open
+           cards of the kanban board NAME whose body names `origin: NAME:`. A
+           mismatch is a fault line instead. Active and parked rows are read
+           from `git blame` on the origin copy of the board file.
+  board    each kanban board named by --board C=SLUG (reader: --kanban C=CMD):
+           open cards with their status, stale cards (latest of created,
+           started, completed older than --stale-days), and tickets created
+           since the last delivered run
+  archived cards archived since the last delivered run (omitted on a baseline run)
+  fault    one line per kanban board over the triage threshold (more than
+           --triage-open cards in triage, or the oldest older than
+           --triage-days), at most three, then `+N more boards over threshold`
   sync     per spoke and for the mirror leg: ok or failed, from the records
-           `board-health record` took on every sweep tick, plus FLAPPING ids
-           and a carried post failure from the digest state
+           `board-health record` took on every sweep tick
+  attention failed legs, FLAPPING ids, a carried post failure, a stale sweep record
+
+Only real faults carry the warning mark. Other repos' hubs and boards get no
+line unless they trip the triage threshold; their counts stay in `data`.
+--faults-only C keeps only the fault and attention lines for cluster C.
 
 Modes:
   record --repo NAME --rc N | --leg mirror --rc N   (the leg's stdout on stdin)
@@ -27,7 +39,8 @@ payload shape plus `kind: health`:
    attention: bool, fields: [{name, value}], data: {...}}
 Each field value is one display line. `attention` is true when something needs
 a human: a failed leg, a FLAPPING id, a carried post failure, an unreadable
-kanban reader, or a sweep that has not run lately. A cluster named by --quiet
+kanban reader, a hub that differs from its mirror, a board over the triage
+threshold, or a sweep that has not run lately. A cluster named by --quiet
 posts nothing when `attention` is false (the run is still stamped).
 
 Run flags:
@@ -40,7 +53,13 @@ Run flags:
   --sync-stale-hours N  a sweep record older than this is itself a problem (default 6)
   --kanban C=CMD        reader for cluster C: CMD is run as `CMD boards list --json`
                         and `CMD --board SLUG list --json` (a `hermes kanban` wrapper)
-  --line C=CMD          extra lines for cluster C: each stdout line of CMD is added
+  --line C=CMD          extra lines for cluster C: each stdout line of CMD is added;
+                        a line that opens with the warning mark counts as a fault
+  --hub C=NAME          the one hub that gets a line for cluster C (see above)
+  --board C=SLUG        a kanban board that always gets a line for cluster C (repeatable)
+  --faults-only C       cluster C shows fault and attention lines only
+  --triage-open N       triage threshold, cards (default 20)
+  --triage-days N       triage threshold, age of the oldest card in days (default 14)
   --quiet C             post nothing for cluster C while it is clean
   --poster CMD          delivers one payload on stdin; exit 0 means delivered
   --cluster C           only this cluster
@@ -236,19 +255,26 @@ def blame_rows(root, rel, ref):
     return rows
 
 
-def hub_stats(path, stale_days, now):
+def hub_rows(path):
+    """{row id: (state, last-change epoch)} for one board file, from the origin
+    copy when there is one; None when the file is not readable or not in git."""
     p = Path(path)
     if not p.is_file():
-        return {"missing": True}
+        return None
     top = git(p.parent, "rev-parse", "--show-toplevel")
     if top.returncode != 0 or not top.stdout.strip():
-        return {"missing": True}
+        return None
     root = top.stdout.strip()
     rel = os.path.relpath(os.path.realpath(p), os.path.realpath(root))
     ref = origin_ref(root)
     rows = blame_rows(root, rel, ref)
     if rows is None and ref:
         rows = blame_rows(root, rel, None)
+    return rows
+
+
+def hub_stats(path, stale_days, now):
+    rows = hub_rows(path)
     if rows is None:
         return {"missing": True}
     cutoff = now - stale_days * DAY
@@ -274,25 +300,42 @@ def kanban_json(cmd, args):
         raise KanbanError("reader printed no JSON")
 
 
-def kanban_stats(cmd, stale_days, now):
+ORIGIN_RE = re.compile(r"^origin:\s*([^\s:]+):", re.M)
+
+
+def kanban_stats(cmd, stale_days, now, last_run=None, detail=()):
+    """Per board: open, stale, triage, status mix, mirror cards per origin repo, and
+    tickets created since `last_run`. Cards are listed only for boards with open
+    cards, or named in `detail`."""
     boards = {}
     for b in kanban_json(cmd, ["boards", "list", "--json"]):
         if b.get("archived"):
             continue
         counts = b.get("counts") or {}
         open_n = sum(n for st, n in counts.items() if st not in ("done", "archived"))
-        stale, oldest = 0, 0
-        if open_n:
+        info = {"open": open_n, "stale": 0, "oldest_days": 0, "triage": 0, "triage_oldest_days": 0,
+                "by_status": {}, "origins": {}, "new_since": 0,
+                "done": counts.get("done", 0), "archived_total": counts.get("archived", 0)}
+        if open_n or b["slug"] in detail:
             for c in kanban_json(cmd, ["--board", b["slug"], "list", "--json"]):
-                if c.get("status") in ("done", "archived"):
+                if last_run and (c.get("created_at") or 0) > last_run:
+                    info["new_since"] += 1
+                st = c.get("status")
+                if st in ("done", "archived"):
                     continue
                 last = max(c.get("created_at") or 0, c.get("started_at") or 0, c.get("completed_at") or 0)
                 age = max(0, int((now - last) // DAY))
-                oldest = max(oldest, age)
+                info["oldest_days"] = max(info["oldest_days"], age)
+                info["by_status"][st] = info["by_status"].get(st, 0) + 1
                 if now - last > stale_days * DAY:
-                    stale += 1
-        boards[b["slug"]] = {"open": open_n, "stale": stale, "oldest_days": oldest,
-                             "archived_total": counts.get("archived", 0)}
+                    info["stale"] += 1
+                if st == "triage":
+                    info["triage"] += 1
+                    info["triage_oldest_days"] = max(info["triage_oldest_days"], age)
+                m = ORIGIN_RE.search(c.get("body") or "")
+                if m:
+                    info["origins"][m.group(1)] = info["origins"].get(m.group(1), 0) + 1
+        boards[b["slug"]] = info
     return boards
 
 
@@ -300,20 +343,6 @@ def kanban_stats(cmd, stale_days, now):
 
 def day_stamp(epoch):
     return time.strftime("%Y-%m-%d", time.localtime(epoch))
-
-
-def top_list(items, fmt, cap=8, budget=240):
-    """The first items that fit one line, then `+N more`. A line is cut by whole items, never mid-word."""
-    shown, used = [], 0
-    for n, v in items[:cap]:
-        text = fmt(n, v)
-        if shown and used + len(text) + 3 > budget:
-            break
-        shown.append(text)
-        used += len(text) + 3
-    if len(items) > len(shown):
-        shown.append(f"+{len(items) - len(shown)} more")
-    return " · ".join(shown)
 
 
 def build_payload(cluster, rail, args, registry_rows, health, digest, last_run, prev_archived, now):
@@ -334,31 +363,23 @@ def build_payload(cluster, rail, args, registry_rows, health, digest, last_run, 
         for l in extra:
             fields.append({"name": "extra", "value": l})
 
-    # hubs
+    # hubs: stats for every repo on the rail (kept in `data`); only the named hub gets a line
     hubs = {}
     for r in repos:
         st = hub_stats(r["path"], args.stale_days, now)
         if not st.get("missing"):
             hubs[r["name"]] = st
-    hub_open = sorted(((n, s) for n, s in hubs.items() if s["open"] > 0), key=lambda kv: (-kv[1]["open"], kv[0]))
-
-    def hub_fmt(n, s):
-        return f"{n} {s['open']} open" + (f" ({s['stale']} stale)" if s["stale"] else "")
-
-    if hub_open or any(s["parked"] for s in hubs.values()):
-        parked = sum(s["parked"] for s in hubs.values())
-        icon = "⚠️" if sum(s["stale"] for s in hubs.values()) else "🗂️"
-        line = f"{icon} hubs: " + (top_list(hub_open, hub_fmt) if hub_open else "nothing open")
-        if parked:
-            line += f" · {parked} parked"
-        fields.append({"name": "hubs", "value": line})
 
     # kanban
     kanban, archived_delta = {}, {}
+    faults = []   # fault lines that are not sync errors: mirror drift, boards over threshold
+    hub_name = (args.hub_map.get(cluster) or [None])[0]
+    show_boards = args.board_map.get(cluster, [])
     reader = args.kanban_map.get(cluster, [None])[0]
     if reader:
         try:
-            kanban = kanban_stats(reader, args.stale_days, now)
+            kanban = kanban_stats(reader, args.stale_days, now, last_run.get(cluster),
+                                  set(show_boards) | ({hub_name} if hub_name else set()))
         except (KanbanError, OSError, subprocess.TimeoutExpired) as e:
             attention.append(f"⚠️ kanban unreadable for {cluster}: {redact(str(e), 100)}")
         for slug, b in kanban.items():
@@ -366,18 +387,49 @@ def build_payload(cluster, rail, args, registry_rows, health, digest, last_run, 
                 d = b["archived_total"] - prev_archived[slug]
                 if d > 0:
                     archived_delta[slug] = d
-        live = sorted(((s, b) for s, b in kanban.items() if b["open"] > 0), key=lambda kv: (-kv[1]["open"], kv[0]))
-        if live:
-            def kb_fmt(n, b):
-                tail = f" ({b['stale']} stale, oldest {b['oldest_days']}d)" if b["stale"] else ""
-                return f"{n} {b['open']} open{tail}"
-            stale_total = sum(b["stale"] for _, b in live)
-            fields.append({"name": "kanban", "value": ("⚠️ " if stale_total else "🗂️ ") + "kanban: " + top_list(live, kb_fmt)})
-        elif kanban:
-            fields.append({"name": "kanban", "value": "🗂️ kanban: nothing open"})
-        if archived_delta:
-            items = sorted(archived_delta.items(), key=lambda kv: (-kv[1], kv[0]))
-            fields.append({"name": "archived", "value": "🧹 archived this period: " + top_list(items, lambda n, v: f"{n} {v}")})
+
+    if hub_name and hub_name in hubs:
+        h = hubs[hub_name]
+        line, kind = f"🗂️ {hub_name}: {h['open']} active, {h['parked']} parked", "hub"
+        if hub_name in kanban:
+            mirrored = kanban[hub_name]["origins"].get(hub_name, 0)
+            if mirrored == h["open"] + h["parked"]:
+                line += f" · Hermes mirror {mirrored} open = hub ✅"
+            else:
+                line, kind = "⚠️" + line[len("🗂️"):] + f" · Hermes mirror {mirrored} open ≠ hub", "fault"
+                faults.append(line)
+        fields.append({"name": kind, "value": line})
+
+    for slug in show_boards:
+        b = kanban.get(slug)
+        if not b:
+            continue
+        if b["open"]:
+            mix = b["by_status"]
+            kinds = next(iter(mix)) if len(mix) == 1 else ", ".join(f"{k} {v}" for k, v in sorted(mix.items(), key=lambda kv: -kv[1]))
+            text = f"🗂️ {slug}: {b['open']} open ({kinds}) · {b['stale']} stale"
+        else:
+            text = f"🗂️ {slug}: {b['done']} done, 0 open"
+        if b["new_since"]:
+            text += f" · {b['new_since']} new ticket" + ("" if b["new_since"] == 1 else "s") + " this period"
+        fields.append({"name": "board", "value": text})
+
+    if archived_delta:
+        fields.append({"name": "archived", "value": f"🧹 archived this period: {sum(archived_delta.values())}"})
+
+    over = sorted(((s, b) for s, b in kanban.items()
+                   if b["triage"] > 0 and (b["triage"] > args.triage_open or b["triage_oldest_days"] > args.triage_days)),
+                  key=lambda kv: (-kv[1]["triage"], kv[0]))
+    over_lines = [f"⚠️ {slug}: {b['triage']} waiting in triage, oldest {b['triage_oldest_days']}d" for slug, b in over[:3]]
+    if len(over) > 3:
+        over_lines.append(f"+{len(over) - 3} more boards over threshold")
+    for text in over_lines:
+        fields.append({"name": "fault", "value": text})
+    faults.extend(over_lines)
+    # an operator line that opens with the warning mark is a fault too
+    for f in fields:
+        if f["name"] == "extra" and f["value"].startswith("⚠️"):
+            faults.append(f["value"])
 
     # sync health, from the records the sweep took each tick
     recs = {r["name"]: health.get("sync", {}).get(r["name"]) for r in repos}
@@ -424,15 +476,19 @@ def build_payload(cluster, rail, args, registry_rows, health, digest, last_run, 
 
     for a in attention:
         fields.append({"name": "attention", "value": a})
+    flagged = bool(attention or faults)
+    if cluster in set(args.faults_only or []):
+        fields = [f for f in fields if f["name"] in ("fault", "attention")
+                  or (f["name"] == "extra" and f["value"].startswith("⚠️"))]
 
     period = int(args.every_days) if float(args.every_days).is_integer() else args.every_days
     next_due = day_stamp(now + period * DAY)
     key = hashlib.sha256(f"health|{cluster}|{day_stamp(now)}".encode()).hexdigest()[:32]
     payload = {
         "kind": "health", "cluster": cluster, "rail": rail, "key": key,
-        "severity": "warn" if attention else "info",
+        "severity": "warn" if flagged else "info",
         "title": f"Board health · {cluster}", "period_days": period, "next_due": next_due,
-        "attention": bool(attention), "fields": fields,
+        "attention": flagged, "fields": fields,
         "data": {"hubs": hubs, "kanban": kanban, "archived_since": archived_delta,
                  "sync_failed": failed, "flapping": flaps},
     }
@@ -460,8 +516,7 @@ def cmd_run(args):
     if not rows:
         print("board health run: empty or missing --registry", file=sys.stderr)
         return 64
-    args.kanban_map = per_cluster_flags(args.kanban)
-    args.line_map = per_cluster_flags(args.line)
+    prepare_run_args(args)
     quiet = set(args.quiet or [])
     write = not (args.dry_run or args.no_state)
     health = read_json(args.health_state_file, {})
@@ -522,7 +577,78 @@ def cmd_run(args):
     return 0
 
 
+def add_source_flags(p):
+    """The flags that say WHAT to read: shared by `run` here and by `board brief`."""
+    p.add_argument("--registry", required=True)
+    p.add_argument("--cluster-map", default="")
+    p.add_argument("--state-file", default=DEFAULT_DIGEST_STATE)
+    p.add_argument("--stale-days", type=float, default=7)
+    p.add_argument("--sync-stale-hours", type=float, default=6)
+    p.add_argument("--kanban", action="append")
+    p.add_argument("--line", action="append")
+    p.add_argument("--hub", action="append")
+    p.add_argument("--board", action="append")
+    p.add_argument("--triage-open", type=int, default=20)
+    p.add_argument("--triage-days", type=int, default=14)
+
+
+def prepare_run_args(args):
+    """Turn the repeatable C=VALUE flags into per-cluster maps on `args`."""
+    args.kanban_map = per_cluster_flags(args.kanban)
+    args.line_map = per_cluster_flags(args.line)
+    args.hub_map = per_cluster_flags(args.hub)
+    args.board_map = per_cluster_flags(args.board)
+
+
+DEFAULT_CONFIG = os.path.expanduser("~/.config/dwarves-kit/board.json")
+
+
+def expand_config(argv, mode):
+    """Flags from the operator's config file, ahead of the command line.
+
+    The file is JSON: {"common": {...}, "<mode>": {...}}, each key a long flag
+    name with `-` as `_` (a flat top-level key counts as common). A list repeats
+    the flag, `true` is a bare flag, and the mode section overrides common. The
+    file is `--config F`, else $DWARVES_BOARD_CONFIG, else the default path when
+    it exists. Flags on the command line come after, so they win for a single
+    flag and add to a repeatable one. A bad file is a usage error, never ignored.
+    """
+    argv = list(argv)
+    path = os.environ.get("DWARVES_BOARD_CONFIG", "")
+    if "--config" in argv:
+        i = argv.index("--config")
+        if i + 1 >= len(argv):
+            raise SystemExit("--config needs a file")
+        path = argv[i + 1]
+        del argv[i:i + 2]
+    elif not path and os.path.isfile(DEFAULT_CONFIG):
+        path = DEFAULT_CONFIG
+    if not path:
+        return argv
+    try:
+        cfg = json.loads(Path(path).read_text())
+        if not isinstance(cfg, dict):
+            raise ValueError("top level must be an object")
+    except (OSError, ValueError) as e:
+        raise SystemExit(f"board {mode}: cannot read config {path}: {e}")
+    merged = {k: v for k, v in cfg.items() if k not in ("common", "health", "brief")}
+    merged.update(cfg.get("common") or {})
+    merged.update(cfg.get(mode) or {})
+    out = []
+    for key, val in merged.items():
+        flag = "--" + key.replace("_", "-")
+        if val is True:
+            out.append(flag)
+        elif val is False or val is None:
+            continue
+        else:
+            for item in (val if isinstance(val, list) else [val]):
+                out += [flag, os.path.expanduser(str(item)) if str(item).startswith("~") else str(item)]
+    return out + argv
+
+
 def main(argv=None):
+    argv = list(sys.argv[1:] if argv is None else argv)
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     sub = ap.add_subparsers(dest="mode", required=True)
     for name in ("record", "run"):
@@ -534,20 +660,18 @@ def main(argv=None):
             p.add_argument("--leg", choices=("sync", "mirror"), default="sync")
             p.add_argument("--rc", type=int, default=0)
         else:
-            p.add_argument("--registry", required=True)
-            p.add_argument("--cluster-map", default="")
-            p.add_argument("--state-file", default=DEFAULT_DIGEST_STATE)
+            p.add_argument("--config")
+            add_source_flags(p)
             p.add_argument("--every-days", type=float, default=3)
-            p.add_argument("--stale-days", type=float, default=7)
-            p.add_argument("--sync-stale-hours", type=float, default=6)
-            p.add_argument("--kanban", action="append")
-            p.add_argument("--line", action="append")
+            p.add_argument("--faults-only", action="append")
             p.add_argument("--quiet", action="append")
             p.add_argument("--poster")
             p.add_argument("--cluster")
             p.add_argument("--force", action="store_true")
             p.add_argument("--dry-run", action="store_true")
             p.add_argument("--no-state", action="store_true")
+    if argv and argv[0] == "run":
+        argv = ["run"] + expand_config(argv[1:], "health")
     args = ap.parse_args(argv)
     return cmd_record(args) if args.mode == "record" else cmd_run(args)
 

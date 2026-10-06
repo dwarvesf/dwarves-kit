@@ -299,6 +299,69 @@ chk "livepid apply kept the live-pid worktree's branch" \
   "$(git -C "$MTX" show-ref --verify --quiet refs/heads/mtx-live-branch; echo $?)"
 
 # ===========================================================================
+echo "=== apply --worktrees: a worktree a live process holds is skipped, then removed once it exits ==="
+# ===========================================================================
+# A subagent can report done while a browser, a blocked `cp -i` or a test loop still runs with
+# its cwd or an open file in the worktree. Removing the directory under it loses its writes.
+BUSY_SECS=120
+git -C "$MTX" branch mtx-busy-branch origin/merged-ancestor >/dev/null 2>&1
+git -C "$MTX" worktree add "$TMPD/mtx-busy" mtx-busy-branch >/dev/null 2>&1
+BUSY_FILE="$(git -C "$TMPD/mtx-busy" ls-files | head -1)"
+( cd "$TMPD/mtx-busy" && exec sleep "$BUSY_SECS" ) & BUSY_CWD_PID=$!
+( cd / && exec sleep "$BUSY_SECS" < "$TMPD/mtx-busy/$BUSY_FILE" ) & BUSY_FD_PID=$!
+sleep 1
+
+out="$("$WRAP" apply --worktrees "$MTX" 2>&1)"
+chk_has "busy dry-run: the held worktree is a busy SKIP naming a holder" "$out" "SKIP $TMPD_P/mtx-busy: busy, held by pid "
+chk_has "busy dry-run: the SKIP names the command and the other holder" "$out" "(sleep) and 1 more"
+chk_no "busy dry-run: no WOULD remove for the held worktree" "$out" "WOULD remove worktree $TMPD_P/mtx-busy "
+
+out="$("$WRAP" apply --apply --worktrees "$MTX" 2>&1)"; rc=$?
+chk "busy apply exits 0" "$rc"
+chk_has "busy apply: the held worktree is a busy SKIP" "$out" "SKIP $TMPD_P/mtx-busy: busy, held by pid "
+chk "busy apply kept the worktree" "$([ -d "$TMPD/mtx-busy" ]; echo $?)"
+chk "busy apply kept the branch" "$(git -C "$MTX" show-ref --verify --quiet refs/heads/mtx-busy-branch; echo $?)"
+
+out="$(KIT_WRAP_SKIP_BUSY_CHECK=1 "$WRAP" apply --worktrees "$MTX" 2>&1)"
+chk_has "busy escape hatch: KIT_WRAP_SKIP_BUSY_CHECK=1 reads the worktree as a WOULD remove" "$out" "WOULD remove worktree $TMPD_P/mtx-busy "
+
+kill "$BUSY_CWD_PID" 2>/dev/null; wait "$BUSY_CWD_PID" 2>/dev/null
+out="$("$WRAP" apply --apply --worktrees "$MTX" 2>&1)"
+chk_has "busy: the open-file holder alone still blocks" "$out" "SKIP $TMPD_P/mtx-busy: busy, held by pid ${BUSY_FD_PID} (sleep)"
+chk_no "busy: a lone holder prints no 'more' tail" "$out" "(sleep) and"
+chk "busy: the worktree survives while the open-file holder runs" "$([ -d "$TMPD/mtx-busy" ]; echo $?)"
+
+kill "$BUSY_FD_PID" 2>/dev/null; wait "$BUSY_FD_PID" 2>/dev/null
+out="$("$WRAP" apply --apply --worktrees "$MTX" 2>&1)"; rc=$?
+chk "busy: after the holders exit, apply exits 0" "$rc"
+chk "busy: after the holders exit, the worktree is removed" "$([ ! -e "$TMPD/mtx-busy" ]; echo $?)"
+chk "busy: after the holders exit, the branch is deleted" \
+  "$(git -C "$MTX" show-ref --verify --quiet refs/heads/mtx-busy-branch && echo 1 || echo 0)"
+
+echo "--- busy: a wrap run from inside the worktree is its own holder, never busy"
+git -C "$MTX" branch mtx-self-branch origin/merged-ancestor >/dev/null 2>&1
+git -C "$MTX" worktree add "$TMPD/mtx-self" mtx-self-branch >/dev/null 2>&1
+out="$(cd "$TMPD/mtx-self" && "$WRAP" apply --apply --own "$TMPD/mtx-self" "$MTX" 2>&1)"
+chk_no "own-cwd: the run's own cwd is not a busy holder" "$out" "busy, held by"
+chk "own-cwd: the worktree is removed" "$([ ! -e "$TMPD/mtx-self" ]; echo $?)"
+
+echo "--- busy: without lsof, one NOTE and today's removal"
+git -C "$MTX" branch mtx-nolsof-branch origin/merged-ancestor >/dev/null 2>&1
+git -C "$MTX" worktree add "$TMPD/mtx-nolsof" mtx-nolsof-branch >/dev/null 2>&1
+NOLSOF_PATH=""; NOLSOF_OLDIFS="$IFS"; IFS=:
+for d in $PATH; do [ -x "$d/lsof" ] || NOLSOF_PATH="${NOLSOF_PATH:+$NOLSOF_PATH:}$d"; done
+IFS="$NOLSOF_OLDIFS"
+if PATH="$NOLSOF_PATH" command -v lsof >/dev/null 2>&1; then
+  echo "  (skipped: lsof shares a directory with a needed tool)"
+else
+  out="$(PATH="$NOLSOF_PATH" "$WRAP" apply --apply --worktrees "$MTX" 2>&1)"; rc=$?
+  chk "no-lsof apply exits 0" "$rc"
+  chk_has "no-lsof: the NOTE names the missing check" "$out" "NOTE: busy check unavailable (no lsof)"
+  chk "no-lsof: the NOTE prints once" "$([ "$(printf '%s\n' "$out" | grep -c 'busy check unavailable')" -eq 1 ]; echo $?)"
+  chk "no-lsof: the worktree is removed as before" "$([ ! -e "$TMPD/mtx-nolsof" ]; echo $?)"
+fi
+
+# ===========================================================================
 echo "=== apply --worktrees: the default branch and the main checkout's branch are off limits ==="
 # ===========================================================================
 # git allows a second worktree on an already-checked-out branch under --force, which is the only

@@ -91,17 +91,37 @@ _rollup_failed_checks() {
 # ci wait with a short registration grace (KIT_WRAP_LAND_GRACE_SECS) and the usual completion
 # bound (KIT_WRAP_CARRY_CHECKS_SECS). Under `--with-ci` that wait already ran, so only the
 # verdict is read. Returns 2 with the PR left open.
+# The registration grace has two sizes. GitHub queued the `pull_request` run of share#47 190s
+# after the PR opened, so 30s merged ahead of it. A workflow that is sure to run on every PR
+# (a `pull_request` trigger key, not the word inside an `if:`, with no `paths`/`labeled` filter) holds to
+# KIT_WRAP_LAND_REGISTER_SECS; a filtered one may legitimately start nothing, so it keeps
+# the short KIT_WRAP_LAND_GRACE_SECS. The wait ends at the first check that appears, so the
+# long bound costs nothing when GitHub is quick.
 # ponytail: the workflow test is a plain grep, so a commented-out trigger still arms the wait
-# (costs one grace); parse the `on:` block if that ever matters.
+# and a `paths:` under `push:` reads as a filter on the PR; parse the `on:` block if it matters.
 KIT_WRAP_LAND_GRACE_SECS=${KIT_WRAP_LAND_GRACE_SECS:-30}
 case "$KIT_WRAP_LAND_GRACE_SECS" in ''|*[!0-9]*) KIT_WRAP_LAND_GRACE_SECS=30 ;; esac
+KIT_WRAP_LAND_REGISTER_SECS=${KIT_WRAP_LAND_REGISTER_SECS:-300}
+case "$KIT_WRAP_LAND_REGISTER_SECS" in ''|*[!0-9]*) KIT_WRAP_LAND_REGISTER_SECS=300 ;; esac
+_land_unfiltered_pr_workflow() {
+  local f
+  for f in "$1"/.github/workflows/*.y*ml; do
+    [ -f "$f" ] || continue
+    grep -qE '^[[:space:]]*(pull_request(_target)?:|-[[:space:]]*pull_request)|^on:.*pull_request' "$f" || continue
+    grep -qE '^[[:space:]]*paths(-ignore)?:|labeled' "$f" || return 0
+  done
+  return 1
+}
 _land_pr_checks_gate() {
   local wt="$1" url="$2" n="$3" proll pnum failed
   grep -rqE 'pull_request' "$wt/.github/workflows" 2>/dev/null || return 0
   if ! _ci_on_merge; then
     CI_PRELABEL_KEYS='[]'
     local KIT_WRAP_CI_GRACE_SECS="$KIT_WRAP_LAND_GRACE_SECS"
+    _land_unfiltered_pr_workflow "$wt" && KIT_WRAP_CI_GRACE_SECS="$KIT_WRAP_LAND_REGISTER_SECS"
     _ci_checks_wait "$url" "$n"
+    [ "${CI_WAIT_END:-}" = "NONEW" ] && [ "$KIT_WRAP_CI_GRACE_SECS" = "$KIT_WRAP_LAND_REGISTER_SECS" ] \
+      && echo "     no checks registered on #${n} after ${KIT_WRAP_CI_GRACE_SECS}s; merging with none" >&2
   fi
   proll="$(gh pr view "$n" --repo "$url" --json statusCheckRollup 2>/dev/null)" \
     && printf '%s' "$proll" | jq -e . >/dev/null 2>&1 || {
@@ -883,6 +903,15 @@ _land_tidy() {
   if [ -n "$detail" ] || [ "$(git -C "$wt" rev-parse HEAD 2>/dev/null)" != "$tip" ]; then
     echo "     ${branch} changed since it was checked${detail}; worktree and branch left in place" >&2
     return 2
+  fi
+
+  # A live process holding the worktree (its cwd or an open file) would keep writing into a
+  # deleted path, so the merge stands and the worktree and branch stay.
+  if _wt_busy "$wt"; then
+    echo "     ${BUSY_MSG}"
+    echo "     ${branch} is merged; worktree ${wt} and ${branch} stay until the holder exits"
+    [ "$blocked" = 0 ] || return 2
+    return 0
   fi
 
   # `-f -f` overrides the lock the Agent tool puts on every worktree it creates; the merge

@@ -2173,6 +2173,39 @@ chk "PG4b: exits 2" "$([ "$rc" -eq 2 ]; echo $?)"
 chk_has "PG4b: the late red check refuses the merge" "$out" "checks failed: PR evidence"
 chk_no "PG4b: never merges" "$(cat "$GH_STUB_CALLS")" "pr merge"
 
+echo "--- PG4d: a check GitHub registers minutes late (an unfiltered pull_request workflow) is still waited for"
+pg_build pg4d "" "$PG_WF"
+out="$(pg_land pg4d GH_STUB_PR_42='{"number":42,"statusCheckRollup":[]}' GH_STUB_PR_42_21="$PG_RED")"; rc=$?
+chk "PG4d: exits 2" "$([ "$rc" -eq 2 ]; echo $?)"
+chk_has "PG4d: the check that registered after 200s refuses the merge" "$out" "checks failed: PR evidence"
+chk_no "PG4d: never merges" "$(cat "$GH_STUB_CALLS")" "pr merge"
+
+echo "--- PG4e: a paths-filtered workflow that starts nothing pays only the short grace"
+pg_build pg4e "" $'on:\n  pull_request:\n    paths: [src/**]\njobs:\n  x:\n    runs-on: [self-hosted]'
+out="$(pg_land pg4e GH_STUB_PR_42='{"number":42,"statusCheckRollup":[]}')"; rc=$?
+chk "PG4e: exits 0" "$rc"
+chk "PG4e: no more than 5 rollup reads" "$([ "$(grep -c 'statusCheckRollup' "$GH_STUB_CALLS")" -le 5 ]; echo $?)"
+chk_has "PG4e: merged" "$out" "merged #42 ("
+
+echo "--- PG4g: pull_request named only inside an if: (kit test.yml shape) pays the short grace"
+pg_build pg4g "" $'on:\n  workflow_dispatch:\njobs:\n  x:\n    if: github.event_name != \'pull_request\'\n    runs-on: [self-hosted]'
+out="$(pg_land pg4g GH_STUB_PR_42='{"number":42,"statusCheckRollup":[]}')"; rc=$?
+chk "PG4g: exits 0" "$rc"
+chk "PG4g: no more than 5 rollup reads" "$([ "$(grep -c 'statusCheckRollup' "$GH_STUB_CALLS")" -le 5 ]; echo $?)"
+chk_no "PG4g: no long-wait notice" "$out" "no checks registered"
+
+echo "--- PG4h: the inline trigger forms still get the long hold"
+pg_build pg4h "" $'on: [push, pull_request]\njobs:\n  x:\n    runs-on: [self-hosted]'
+out="$(pg_land pg4h GH_STUB_PR_42='{"number":42,"statusCheckRollup":[]}' GH_STUB_PR_42_21="$PG_RED")"; rc=$?
+chk "PG4h: exits 2" "$([ "$rc" -eq 2 ]; echo $?)"
+
+echo "--- PG4f: an unfiltered workflow whose checks never register says so, then merges as before"
+pg_build pg4f "" "$PG_WF"
+out="$(pg_land pg4f GH_STUB_PR_42='{"number":42,"statusCheckRollup":[]}')"; rc=$?
+chk "PG4f: exits 0" "$rc"
+chk_has "PG4f: names the unregistered gate" "$out" "no checks registered on #42 after"
+chk_has "PG4f: merged" "$out" "merged #42 ("
+
 echo "--- PG4c: a check still pending at the bound refuses"
 pg_build pg4c "" "$PG_WF"
 out="$(pg_land pg4c GH_STUB_PR_42='{"number":42,"statusCheckRollup":[{"name":"PR evidence","status":"IN_PROGRESS","conclusion":""}]}')"; rc=$?
@@ -2711,6 +2744,38 @@ chk "24: exits 1" "$([ "$rc" -eq 1 ]; echo $?)"
 chk_has "24: names the newline" "$out" "a touched path holds a newline"
 ig_nopush "24" ig24
 } # end sec_ignored
+
+# ===========================================================================
+sec_busy() {
+echo "=== land: a worktree a live process holds stays, the merge still lands ==="
+# ===========================================================================
+# A background subagent's browser or test loop can outlive its "done" report. Removing the
+# worktree under it loses its writes, so land keeps the worktree and branch and says so.
+echo "--- busy holder: merge reported, worktree and branch stay, exit 0"
+build_land busy
+LREPO="$TMPD/ld-repo-busy"; LWT="$(cd "$LREPO/wt" && pwd -P)"
+LTIP="$(git -C "$LWT" rev-parse HEAD)"
+BUSY_SECS=120
+( cd "$LWT" && exec sleep "$BUSY_SECS" ) & BUSY_PID=$!
+sleep 1
+out="$(GH_STUB_OPEN_PRS='[]' GH_STUB_CREATE_NUM=42 GH_STUB_LAND_REPO="$LWT" GH_STUB_LAND_REMOTE="$TMPD/ld-bare-busy" \
+  GH_STUB_LAND_BRANCH=feat/land GH_STUB_LAND_DEF=main "$WRAP" land "$LWT" 2>&1)"; rc=$?
+chk "busy land exits 0" "$rc"
+chk_has "busy land still reports the merge" "$out" "merged #42"
+chk_has "busy land prints the busy SKIP with the holder" "$out" "SKIP $LWT: busy, held by pid ${BUSY_PID} (sleep)"
+chk_has "busy land says the worktree stayed" "$out" "worktree $LWT and feat/land stay"
+chk_no "busy land never reports a removal" "$out" "removed worktree"
+chk "busy land kept the worktree" "$([ -d "$LWT" ]; echo $?)"
+chk "busy land kept the local branch" "$(git -C "$LREPO" rev-parse --verify feat/land >/dev/null 2>&1; echo $?)"
+
+echo "--- holder gone: the follow-up apply removes the worktree and deletes the branch"
+kill "$BUSY_PID" 2>/dev/null; wait "$BUSY_PID" 2>/dev/null
+out="$(GH_STUB_UNAUTH=1 "$WRAP" apply --apply --own "$LWT" "$LREPO" 2>&1)"; rc=$?
+chk "after the holder exits, apply exits 0" "$rc"
+chk_no "after the holder exits, no busy SKIP" "$out" "busy, held by"
+chk "after the holder exits, the worktree is removed" "$([ ! -e "$LWT" ]; echo $?)"
+chk "after the holder exits, the branch is deleted" "$(git -C "$LREPO" rev-parse --verify feat/land >/dev/null 2>&1 && echo 1 || echo 0)"
+} # end sec_busy
 
 # One section, in this process. The driver sets LAND_SECTION per child; the last line is the
 # child's result for the driver to sum (it is not the suite's final line).

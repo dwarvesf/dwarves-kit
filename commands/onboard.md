@@ -196,6 +196,30 @@ this sequence, calling the real surfaces (`bin/board`, the sync installer), neve
 
 A repo that declines any step stays fully functional; the board is additive.
 
+## D3. Link a Hermes agent (offer, never assume)
+
+The kit ships thin Hermes skills (`adapters/hermes/skills/`) that tell an agent which kit command answers
+which question. If this machine runs Hermes, offer to link ONE profile (the one that speaks for the
+operator: the master or the spokesperson). Call the real surface, never copy skills by hand:
+
+1. `bash "$KIT/bin/board" hermes link --dry-run` prints the plan: the Hermes home, the profile, the skills it
+   would install, the stamp, the record, the verify turn. Nothing is written. If it prints
+   `skip: no Hermes home found`, say that in one line and go on to E; that is a finished step, not an error.
+2. With several homes or profiles it exits 64 and lists them: ask which one, **recommended default: the root
+   profile of the home the operator talks to most**, then re-run the dry-run with `--home` and `--profile`.
+   Add `--cluster <name>` when this profile speaks for one board cluster, so the link records that cluster's
+   rail, hub, and boards from the kit flag file.
+3. Ask, **Y as the recommended default**: "Link this profile now? It installs the kit's Hermes skills into it
+   and proves it with one agent turn. [Y/n]". **Y**: run the same command with `--yes` and show its output; it
+   ends in `linked` when the agent loaded `kit-board`, ran `board health run --dry-run --force`, and answered.
+   **decline**: skip, nothing is written.
+4. If it prints `installed, not verified: ...`, report the reason as a failure of that one step (the skills
+   are installed; the agent turn did not prove them) and continue the tour.
+
+Linking is idempotent: running it again refreshes the skills and the stamp. `board sweep` then compares each
+linked profile's stamp with the installed kit every tick, and `board brief` raises one decision line, `kit
+skills on <label> are stale: re-run board hermes link`, when they differ. Layering: `docs/hermes-layering.md`.
+
 ## E. Disclose the plugin-path gaps (only for mode `plugin` or `both`)
 
 Be honest about what the plugin path cannot do, in short bullets:
@@ -248,7 +272,7 @@ command to run first."** End the run there.
 
 ## Do NOT
 
-- Reimplement detection, injection, or config parsing (call the three surfaces above instead).
+- Reimplement detection, injection, or config parsing (call the three surfaces above instead), or copy Hermes skills by hand (`board hermes link` does it).
 - Change `install.sh` or `adopt.sh`, or add a flag to `bin/config`. onboard is a consumer of them.
 - Write anything without a preview + an explicit yes. A decline changes nothing.
 - Auto-fix the `both` double-hooks hazard, or edit the user's shell profile. Disclose and point.
