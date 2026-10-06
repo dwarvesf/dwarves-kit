@@ -6,7 +6,7 @@ note: no host-agent prefix). Two small, pure-string additions, both sub-millisec
 
   temporal   how long this session has run + how long since the last prompt
              (helps time/deadline reasoning); past NUDGE_THRESHOLD_SECONDS elapsed,
-             adds a cache-hygiene nudge (suggest /clear or a handoff split) reusing
+             adds a cache-hygiene nudge (suggest /clear or /dcompact) reusing
              the same elapsed value, no extra data collection. A compaction-count
              leg was in-scope per the source row but is not implemented: this hook's
              inputs (stdin payload + its own per-session {start, last} state) carry
@@ -84,7 +84,7 @@ def temporal_line(session_id):
         return None  # first prompt of the session: nothing useful yet
     line = f"Session time: {humanize(elapsed)} elapsed, {humanize(idle)} since your last prompt."
     if elapsed > NUDGE_THRESHOLD_SECONDS:
-        line += "\nconsider /clear or a handoff split (cache-hygiene rule)"
+        line += "\nconsider /clear or /dcompact (cache-hygiene rule)"
     return line
 
 

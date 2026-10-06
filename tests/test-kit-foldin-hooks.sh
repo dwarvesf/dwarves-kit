@@ -142,7 +142,7 @@ CONTEXT_HINTS_STATE="$NUDGE_STATE" CONTEXT_HINTS_NOW=3000 \
 OUT=$(CONTEXT_HINTS_STATE="$NUDGE_STATE" CONTEXT_HINTS_NOW=$((3000 + NUDGE_THRESHOLD + 5)) \
   bash -c "echo '{\"prompt\":\"hi\",\"session_id\":\"nudge-just-over\"}' | bash '$KIT_DIR/hooks/context-hints.sh'")
 assert_contains "row 5c: 5s over threshold, nudge fires" \
-  "consider /clear or a handoff split (cache-hygiene rule)" "$OUT"
+  "consider /clear or /dcompact (cache-hygiene rule)" "$OUT"
 
 # ============================================================
 echo ""
