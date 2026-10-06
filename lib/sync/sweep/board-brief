@@ -1,0 +1,390 @@
+#!/usr/bin/env python3
+"""board brief: ONE message per cluster per day, built on `board health`.
+
+The brief tells the operator what needs a decision, then what is broken, then
+(on a slower clock) how the boards look, then one line of what the bots did.
+Everything else goes to a details message that follows. Instant alerts stay on
+their own rails; the brief never replaces them.
+
+Message order, each section omitted when empty:
+
+  needs your decision   one line per item, each a clear question: hub rows whose
+                        state differs from their Hermes mirror card in a way the
+                        mirror cannot settle (`ID hub/mirror drift: ... Ship or
+                        reopen?`), and incident rows the --incidents hook marks
+                        `needs_you`. Three at most, then `+N more in details`.
+                        With none, one line says nothing needs the operator.
+  open incidents        from the --incidents hook (see below): the count, up to
+                        three rows, the hook's own fault lines
+  boards                the `board health` lines (hub, board, fault, sync, extra,
+                        attention). Shown only when a decision item exists, a
+                        fault exists, or --boards-every-days (default 3) has
+                        passed since they last posted; otherwise they ride the
+                        details message.
+  bots                  one count line: the hook's bot counts, cards archived
+                        since the last delivered brief, and sync errors
+
+Incident hook (--incidents C=CMD): CMD prints one JSON object on stdout, so any
+operator's incident source fits. Every key is optional:
+
+  {"open":    [{"id","label","age","firing":bool,"needs_you":bool,"question"}],
+   "decisions": [{"id","question"}],      explicit decision lines
+   "bots":    {"auto-resolved": 3},      counts of what bots did, shown as given
+   "faults":  ["line", ...],             fault lines for the incidents section
+   "details": ["line", ...]}             extra lines for the details message
+
+A hook that fails, or prints something that is not that object, becomes a fault
+line: the brief never claims "all clear" over an unreadable feed.
+
+The payload (one JSON line per cluster, stdout under --dry-run), handed to
+--poster on stdin; exit 0 means the main message was delivered:
+  {kind: "brief", cluster, rail, key, severity: info|warn, title, date,
+   period_days: 1, next_due, attention: bool (a decision item exists),
+   fields: [{name, value}]  the main message, one line per field
+   details: [line, ...]     the follow-up message, absent when empty
+   carried_error?, data: {...}}
+The poster delivers the details as a second message (a thread reply where the
+rail supports one). A failed details post never fails the main post.
+
+Flags (the source flags are `board health run`'s: --registry --cluster-map
+--state-file --health-state-file --stale-days --sync-stale-hours --kanban --line
+--hub --board --triage-open --triage-days):
+  --config F            flags from a JSON file, see `board health run`; the
+                        section name is `brief`
+  --incidents C=CMD     incident hook for cluster C (repeatable)
+  --decisions-only C    cluster C posts only when a decision item exists, and the
+                        message is the decision lines alone
+  --every-days N        cadence (default 1); a failed post is not stamped, so it
+                        stays due and rides `carried_error`
+  --boards-every-days N how often the boards section shows without a reason (default 3)
+  --show-boards         always show the boards section (a preview)
+  --poster CMD          delivers one payload on stdin
+  --cluster C           only this cluster
+  --force               ignore the cadence
+  --dry-run             print payloads, post nothing, write nothing
+  --no-state            post for real but write no stamp or baseline (a live test)
+  --now EPOCH           pin the clock (tests)
+
+State lives in the health state file under `brief`, beside the sweep's records.
+stderr: `brief: ...` log lines. Exit 0 on a normal run; only a usage error is nonzero.
+"""
+
+import argparse
+import hashlib
+import importlib.machinery
+import importlib.util
+import json
+import re
+import shlex
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+HERE = Path(__file__).resolve().parent
+
+
+def _load_health():
+    path = str(HERE / "board-health")
+    loader = importlib.machinery.SourceFileLoader("board_health", path)
+    spec = importlib.util.spec_from_loader("board_health", loader)
+    mod = importlib.util.module_from_spec(spec)
+    loader.exec_module(mod)
+    return mod
+
+
+H = _load_health()
+DAY = H.DAY
+ORIGIN_ID_RE = re.compile(r"^origin:\s*([^\s:]+):(\S+)", re.M)
+TERMINAL_ROW = ("shipped", "dropped", "done", "closed")
+MAX_DECISIONS = 3
+MAX_INCIDENTS = 3
+
+
+def log(msg):
+    print(f"brief: {msg}", file=sys.stderr)
+
+
+# --- the incident hook ---------------------------------------------------------
+
+def _text(value, cap=200):
+    return H.redact(str(value), cap) if value is not None else ""
+
+
+def read_incidents(cmd):
+    """(data, error): the hook's JSON object, cleaned; error is one short reason."""
+    try:
+        r = subprocess.run(shlex.split(cmd), capture_output=True, text=True, timeout=300)
+    except (OSError, subprocess.TimeoutExpired) as e:
+        return None, H.redact(str(e), 100)
+    if r.returncode != 0:
+        return None, H.redact(r.stderr or f"exit {r.returncode}", 100)
+    try:
+        raw = json.loads(r.stdout)
+    except ValueError:
+        return None, "hook printed no JSON"
+    if not isinstance(raw, dict):
+        return None, "hook JSON is not an object"
+    rows = []
+    for o in raw.get("open") or []:
+        if isinstance(o, dict):
+            rows.append({"id": _text(o.get("id"), 40), "label": _text(o.get("label"), 120),
+                         "age": _text(o.get("age"), 20), "firing": bool(o.get("firing")),
+                         "needs_you": bool(o.get("needs_you")), "question": _text(o.get("question"), 160)})
+    decisions = [{"id": _text(d.get("id"), 40), "question": _text(d.get("question"), 200)}
+                 for d in raw.get("decisions") or [] if isinstance(d, dict) and d.get("question")]
+    bots = {str(k)[:40]: v for k, v in (raw.get("bots") or {}).items()
+            if isinstance(v, int) and not isinstance(v, bool) and v >= 0} if isinstance(raw.get("bots"), dict) else {}
+    return {"open": rows, "decisions": decisions, "bots": bots,
+            "faults": [_text(x, 240) for x in raw.get("faults") or [] if x],
+            "details": [_text(x, 300) for x in raw.get("details") or [] if x]}, None
+
+
+def incident_line(o):
+    parts = [p for p in (o["age"], o["id"], o["label"]) if p]
+    return " ".join(parts) + (" · firing" if o["firing"] else "")
+
+
+# --- hub/mirror drift ------------------------------------------------------------
+
+def mirror_drift(reader, hub_name, hub_path):
+    """Rows whose hub state and mirror card disagree in a way the mirror cannot
+    settle by itself: the board says finished and the card is open, or the card is
+    done and the board still says live. [{id, board, card, text}], sorted by id."""
+    rows = H.hub_rows(hub_path)
+    if rows is None:
+        return []
+    try:
+        cards = H.kanban_json(reader, ["--board", hub_name, "list", "--json"])
+    except (H.KanbanError, OSError, subprocess.TimeoutExpired):
+        return []
+    status_of = {}
+    for c in cards:
+        m = ORIGIN_ID_RE.search(c.get("body") or "")
+        if m and m.group(1) == hub_name:
+            status_of[m.group(2)] = c.get("status")
+    out = []
+    for rid, card in sorted(status_of.items()):
+        row = rows.get(rid)
+        if not row or not row[0]:
+            continue
+        board = row[0]
+        card_open = card not in ("done", "archived")
+        board_done = board in TERMINAL_ROW
+        if card_open and board_done:
+            what = f"board says {board}, the Hermes card is still open"
+        elif not card_open and not board_done:
+            what = f"the Hermes card is done, the board says {board}"
+        else:
+            continue
+        out.append({"id": rid, "board": board, "card": card,
+                    "text": f"{rid} hub/mirror drift: {what}. Ship or reopen?"})
+    return out
+
+
+# --- one cluster's brief -----------------------------------------------------------
+
+def compose(cluster, rail, args, rows, health, digest, bstate, now):
+    last_run = bstate.get("last_run", {})
+    prev_archived = bstate.get("archived", {}).get(cluster, {})
+    hview = {k: v for k, v in health.items() if k != "errors"}
+    hp, kanban = H.build_payload(cluster, rail, args, rows, hview, digest, last_run, prev_archived, now)
+
+    board_lines = [f["value"] for f in hp["fields"] if f["name"] not in ("archived",)]
+    archived_total = sum((hp["data"].get("archived_since") or {}).values())
+    sync_errors = sum(1 for f in hp["fields"] if f["name"] == "attention" and f["value"].startswith("❌"))
+    faulty = bool(hp["attention"])
+
+    # decisions
+    decisions = []
+    hub_name = (args.hub_map.get(cluster) or [None])[0]
+    reader = (args.kanban_map.get(cluster) or [None])[0]
+    drift = []
+    if hub_name and reader:
+        hub_row = next((r for r in rows if r["name"] == hub_name), None)
+        if hub_row:
+            drift = mirror_drift(reader, hub_name, hub_row["path"])
+    decisions += [d["text"] for d in drift]
+
+    inc, inc_err = None, None
+    hook = (args.incident_map.get(cluster) or [None])[0]
+    if hook:
+        inc, inc_err = read_incidents(hook)
+    open_rows = inc["open"] if inc else []
+    for o in open_rows:
+        if o["needs_you"]:
+            q = o["question"] or "Act or close?"
+            decisions.append(f"{o['id']} {o['label']}: {q}".replace("  ", " ").strip())
+    for d in (inc["decisions"] if inc else []):
+        decisions.append(f"{d['id']} {d['question']}".strip())
+
+    only = cluster in set(args.decisions_only or [])
+    fields, details = [], []
+
+    def add(name, value):
+        fields.append({"name": name, "value": value})
+
+    feed_faults = ([f"⚠️ incident feed unreadable: {inc_err}"] if inc_err else []) + (inc["faults"] if inc else [])
+    faulty = faulty or bool(feed_faults)
+
+    shown = decisions[:MAX_DECISIONS]
+    if decisions:
+        add("decision-head", f"🙋 needs your decision ({len(decisions)})")
+        for d in shown:
+            add("decision", f"• {d}")
+        if len(decisions) > len(shown):
+            add("decision", f"+{len(decisions) - len(shown)} more in details")
+            details += [f"• {d}" for d in decisions[len(shown):]]
+    elif not only and not faulty:
+        add("clear", "✅ nothing needs you")
+
+    show_boards = False
+    if not only:
+        if open_rows:
+            add("incident-head", f"🔥 open incidents ({len(open_rows)})")
+            for o in open_rows[:MAX_INCIDENTS]:
+                add("incident", f"• {incident_line(o)}")
+            if len(open_rows) > MAX_INCIDENTS:
+                add("incident", f"+{len(open_rows) - MAX_INCIDENTS} more in details")
+                details += [f"• {incident_line(o)}" for o in open_rows[MAX_INCIDENTS:]]
+        for line in feed_faults:
+            add("incident-fault", line if line.startswith(("⚠️", "⛔", "❌")) else f"⚠️ {line}")
+        details += (inc["details"] if inc else [])
+
+        boards_last = bstate.get("boards_last", {}).get(cluster)
+        slow_clock = boards_last is None or now - boards_last >= args.boards_every_days * DAY - 1800
+        show_boards = bool(args.show_boards or decisions or faulty or slow_clock)
+        if show_boards:
+            for line in board_lines:
+                add("board", line)
+        else:
+            details += board_lines
+        if archived_total:
+            details.append(f"🧹 archived since the last brief: {archived_total}")
+
+        bots = [f"{k} {v}" for k, v in (inc["bots"].items() if inc else []) if v]
+        if archived_total:
+            bots.append(f"archived {archived_total}")
+        bots.append(f"sync errors {sync_errors}")
+        add("bots", "🤖 24h: " + " · ".join(bots))
+
+    day = H.day_stamp(now)
+    key = hashlib.sha256(f"brief|{cluster}|{day}".encode()).hexdigest()[:32]
+    payload = {
+        "kind": "brief", "cluster": cluster, "rail": rail, "key": key,
+        "severity": "warn" if decisions else "info",
+        "title": f"Daily brief · {cluster}", "date": day, "period_days": 1,
+        "next_due": H.day_stamp(now + DAY), "attention": bool(decisions),
+        "fields": fields,
+        "data": {"decisions": decisions, "drift": drift, "open_incidents": len(open_rows),
+                 "boards_shown": show_boards, "archived": archived_total, "sync_errors": sync_errors,
+                 "bots": inc["bots"] if inc else {}},
+    }
+    if details:
+        payload["details"] = details
+    carried = bstate.get("errors", {}).get(cluster)
+    if carried:
+        payload["carried_error"] = carried
+        payload["fields"].append({"name": "retry", "value": "↻ retry: carried forward after a failed post"})
+    return payload, kanban, show_boards
+
+
+# --- run -----------------------------------------------------------------------------
+
+def cmd_run(args):
+    now = int(args.now or time.time())
+    rows = H.parse_registry(args.registry)
+    if not rows:
+        print("board brief run: empty or missing --registry", file=sys.stderr)
+        return 64
+    H.prepare_run_args(args)
+    args.incident_map = H.per_cluster_flags(args.incidents)
+    args.faults_only = []
+    write = not (args.dry_run or args.no_state)
+    health = H.read_json(args.health_state_file, {})
+    digest = H.read_json(args.state_file, {})
+    bstate = health.get("brief", {})
+
+    for cluster, rail in H.clusters_of(rows, args.cluster_map):
+        if args.cluster and cluster != args.cluster:
+            continue
+        if not H.is_due(cluster, bstate.get("last_run", {}), args, now):
+            nxt = H.day_stamp(bstate["last_run"][cluster] + args.every_days * DAY)
+            log(f"skipped(not-due) {cluster} next={nxt}")
+            continue
+        payload, kanban, boards_shown = compose(cluster, rail, args, rows, health, digest, bstate, now)
+        baseline = {s: b["archived_total"] for s, b in kanban.items()}
+
+        def stamp(error=None):
+            if not write:
+                return
+            st = H.read_json(args.health_state_file, {})
+            b = st.setdefault("brief", {})
+            for k in ("last_run", "archived", "boards_last", "errors"):
+                b.setdefault(k, {})
+            if error is None:
+                b["last_run"][cluster] = now
+                if baseline:
+                    b["archived"][cluster] = baseline
+                if boards_shown:
+                    b["boards_last"][cluster] = now
+                b["errors"].pop(cluster, None)
+            else:
+                b["errors"][cluster] = error
+            H.write_state(args.health_state_file, st)
+
+        only = cluster in set(args.decisions_only or [])
+        if only and not payload["attention"]:
+            log(f"skipped(no-decision) {cluster}")
+            stamp()
+            continue
+        line = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+        if args.dry_run:
+            print(line)
+            log(f"{cluster} dry-run (not posted)")
+            continue
+        if not args.poster:
+            print("board brief run: need --poster (or --dry-run)", file=sys.stderr)
+            return 64
+        try:
+            r = subprocess.run(shlex.split(args.poster), input=line, capture_output=True, text=True, timeout=180)
+            ok, detail = r.returncode == 0, (r.stderr or "").strip()[-400:] or f"poster exit {r.returncode}"
+        except (OSError, subprocess.TimeoutExpired) as e:
+            ok, detail = False, str(e)
+        if ok:
+            stamp()
+            log(f"{cluster} posted key={payload['key']}")
+        else:
+            reason = H.redact(detail, 400)
+            stamp(reason)
+            log(f"ERROR({reason}) {cluster}")
+    return 0
+
+
+def main(argv=None):
+    argv = list(sys.argv[1:] if argv is None else argv)
+    ap = argparse.ArgumentParser(prog="board brief", description=__doc__.split("\n\n")[0])
+    sub = ap.add_subparsers(dest="mode", required=True)
+    p = sub.add_parser("run")
+    p.add_argument("--config")
+    p.add_argument("--health-state-file", default=H.DEFAULT_HEALTH_STATE)
+    p.add_argument("--now", type=int)
+    H.add_source_flags(p)
+    p.add_argument("--incidents", action="append")
+    p.add_argument("--decisions-only", action="append")
+    p.add_argument("--every-days", type=float, default=1)
+    p.add_argument("--boards-every-days", type=float, default=3)
+    p.add_argument("--show-boards", action="store_true")
+    p.add_argument("--poster")
+    p.add_argument("--cluster")
+    p.add_argument("--force", action="store_true")
+    p.add_argument("--dry-run", action="store_true")
+    p.add_argument("--no-state", action="store_true")
+    if argv and argv[0] == "run":
+        argv = ["run"] + H.expand_config(argv[1:], "brief")
+    args = ap.parse_args(argv)
+    return cmd_run(args)
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -255,19 +255,26 @@ def blame_rows(root, rel, ref):
     return rows
 
 
-def hub_stats(path, stale_days, now):
+def hub_rows(path):
+    """{row id: (state, last-change epoch)} for one board file, from the origin
+    copy when there is one; None when the file is not readable or not in git."""
     p = Path(path)
     if not p.is_file():
-        return {"missing": True}
+        return None
     top = git(p.parent, "rev-parse", "--show-toplevel")
     if top.returncode != 0 or not top.stdout.strip():
-        return {"missing": True}
+        return None
     root = top.stdout.strip()
     rel = os.path.relpath(os.path.realpath(p), os.path.realpath(root))
     ref = origin_ref(root)
     rows = blame_rows(root, rel, ref)
     if rows is None and ref:
         rows = blame_rows(root, rel, None)
+    return rows
+
+
+def hub_stats(path, stale_days, now):
+    rows = hub_rows(path)
     if rows is None:
         return {"missing": True}
     cutoff = now - stale_days * DAY
@@ -509,10 +516,7 @@ def cmd_run(args):
     if not rows:
         print("board health run: empty or missing --registry", file=sys.stderr)
         return 64
-    args.kanban_map = per_cluster_flags(args.kanban)
-    args.line_map = per_cluster_flags(args.line)
-    args.hub_map = per_cluster_flags(args.hub)
-    args.board_map = per_cluster_flags(args.board)
+    prepare_run_args(args)
     quiet = set(args.quiet or [])
     write = not (args.dry_run or args.no_state)
     health = read_json(args.health_state_file, {})
@@ -573,7 +577,78 @@ def cmd_run(args):
     return 0
 
 
+def add_source_flags(p):
+    """The flags that say WHAT to read: shared by `run` here and by `board brief`."""
+    p.add_argument("--registry", required=True)
+    p.add_argument("--cluster-map", default="")
+    p.add_argument("--state-file", default=DEFAULT_DIGEST_STATE)
+    p.add_argument("--stale-days", type=float, default=7)
+    p.add_argument("--sync-stale-hours", type=float, default=6)
+    p.add_argument("--kanban", action="append")
+    p.add_argument("--line", action="append")
+    p.add_argument("--hub", action="append")
+    p.add_argument("--board", action="append")
+    p.add_argument("--triage-open", type=int, default=20)
+    p.add_argument("--triage-days", type=int, default=14)
+
+
+def prepare_run_args(args):
+    """Turn the repeatable C=VALUE flags into per-cluster maps on `args`."""
+    args.kanban_map = per_cluster_flags(args.kanban)
+    args.line_map = per_cluster_flags(args.line)
+    args.hub_map = per_cluster_flags(args.hub)
+    args.board_map = per_cluster_flags(args.board)
+
+
+DEFAULT_CONFIG = os.path.expanduser("~/.config/dwarves-kit/board.json")
+
+
+def expand_config(argv, mode):
+    """Flags from the operator's config file, ahead of the command line.
+
+    The file is JSON: {"common": {...}, "<mode>": {...}}, each key a long flag
+    name with `-` as `_` (a flat top-level key counts as common). A list repeats
+    the flag, `true` is a bare flag, and the mode section overrides common. The
+    file is `--config F`, else $DWARVES_BOARD_CONFIG, else the default path when
+    it exists. Flags on the command line come after, so they win for a single
+    flag and add to a repeatable one. A bad file is a usage error, never ignored.
+    """
+    argv = list(argv)
+    path = os.environ.get("DWARVES_BOARD_CONFIG", "")
+    if "--config" in argv:
+        i = argv.index("--config")
+        if i + 1 >= len(argv):
+            raise SystemExit("--config needs a file")
+        path = argv[i + 1]
+        del argv[i:i + 2]
+    elif not path and os.path.isfile(DEFAULT_CONFIG):
+        path = DEFAULT_CONFIG
+    if not path:
+        return argv
+    try:
+        cfg = json.loads(Path(path).read_text())
+        if not isinstance(cfg, dict):
+            raise ValueError("top level must be an object")
+    except (OSError, ValueError) as e:
+        raise SystemExit(f"board {mode}: cannot read config {path}: {e}")
+    merged = {k: v for k, v in cfg.items() if k not in ("common", "health", "brief")}
+    merged.update(cfg.get("common") or {})
+    merged.update(cfg.get(mode) or {})
+    out = []
+    for key, val in merged.items():
+        flag = "--" + key.replace("_", "-")
+        if val is True:
+            out.append(flag)
+        elif val is False or val is None:
+            continue
+        else:
+            for item in (val if isinstance(val, list) else [val]):
+                out += [flag, os.path.expanduser(str(item)) if str(item).startswith("~") else str(item)]
+    return out + argv
+
+
 def main(argv=None):
+    argv = list(sys.argv[1:] if argv is None else argv)
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     sub = ap.add_subparsers(dest="mode", required=True)
     for name in ("record", "run"):
@@ -585,25 +660,18 @@ def main(argv=None):
             p.add_argument("--leg", choices=("sync", "mirror"), default="sync")
             p.add_argument("--rc", type=int, default=0)
         else:
-            p.add_argument("--registry", required=True)
-            p.add_argument("--cluster-map", default="")
-            p.add_argument("--state-file", default=DEFAULT_DIGEST_STATE)
+            p.add_argument("--config")
+            add_source_flags(p)
             p.add_argument("--every-days", type=float, default=3)
-            p.add_argument("--stale-days", type=float, default=7)
-            p.add_argument("--sync-stale-hours", type=float, default=6)
-            p.add_argument("--kanban", action="append")
-            p.add_argument("--line", action="append")
-            p.add_argument("--hub", action="append")
-            p.add_argument("--board", action="append")
             p.add_argument("--faults-only", action="append")
-            p.add_argument("--triage-open", type=int, default=20)
-            p.add_argument("--triage-days", type=int, default=14)
             p.add_argument("--quiet", action="append")
             p.add_argument("--poster")
             p.add_argument("--cluster")
             p.add_argument("--force", action="store_true")
             p.add_argument("--dry-run", action="store_true")
             p.add_argument("--no-state", action="store_true")
+    if argv and argv[0] == "run":
+        argv = ["run"] + expand_config(argv[1:], "health")
     args = ap.parse_args(argv)
     return cmd_record(args) if args.mode == "record" else cmd_run(args)
 

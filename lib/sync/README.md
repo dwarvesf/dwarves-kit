@@ -224,6 +224,43 @@ no updated-at field, so "stale" there means the latest of created, started and
 completed is older than the threshold, and the first run has no archived
 baseline, so it reports no archived count. Tests: `tests/test-board-health.sh`.
 
+**Daily brief.** `board brief run` is the one message an operator reads each
+day, built on the health engine above (its source flags, its `--config` file,
+its health state). Per cluster, in this order, each section left out when empty:
+
+| Section | Source |
+|---|---|
+| needs your decision | hub rows whose state and mirror card disagree in a way the mirror cannot settle (`ID hub/mirror drift: board says shipped, the Hermes card is still open. Ship or reopen?`), plus incident rows the hook marks `needs_you`, plus the hook's explicit `decisions`. Three lines, then `+N more in details`. With none and no fault, one line says nothing needs the operator. |
+| open incidents | the `--incidents C=CMD` hook: count, three rows, the hook's fault lines. An unreadable hook is a fault line, never an all-clear. |
+| boards | the health lines (hub, board, fault, sync, extra, attention). Shown when a decision or fault exists, or `--boards-every-days` (default 3) has passed; otherwise they ride the details. |
+| bots | one line: the hook's bot counts, cards archived since the last delivered brief, sync errors |
+
+The incident hook prints one JSON object, every key optional, so any operator's
+incident source fits:
+
+```
+{"open": [{"id", "label", "age", "firing": bool, "needs_you": bool, "question"}],
+ "decisions": [{"id", "question"}], "bots": {"auto-resolved": 3},
+ "faults": ["line"], "details": ["line"]}
+```
+
+The payload is `kind: "brief"`: the health payload shape with `date`, one
+display line per field for the main message, and `details` (a list of lines)
+for the follow-up message. The poster decides how the follow-up lands (a thread
+reply where the rail has threads, else a second short message); a failed details
+post never fails the main one. `--decisions-only C` makes cluster C post only
+when a decision exists, and then only the decision lines. A failed post is not
+stamped, so it stays due and rides `carried_error`. Brief state lives in the
+health state file under `brief`.
+
+`board health run` and `board brief run` read their flags from `--config FILE`,
+else `$DWARVES_BOARD_CONFIG`, else `~/.config/dwarves-kit/board.json`: JSON with
+`common`, `health`, and `brief` sections, each key a long flag with `-` as `_`
+(a list repeats the flag, `true` is a bare flag). Command-line flags come
+after the file. This is what lets an agent run `board health run --dry-run`
+with no flags of its own. Tests: `tests/test-board-brief.sh`. Where the kit's
+Hermes skills sit on top: `docs/hermes-layering.md`.
+
 **Exit code.** 0 when every sync, publish, and preflight leg was clean. The
 digest, mirror, and health legs are observational and never flip it.
 
