@@ -262,6 +262,21 @@ after the file. This is what lets an agent run `board health run --dry-run`
 with no flags of its own. Tests: `tests/test-board-brief.sh`. Where the kit's
 Hermes skills sit on top: `docs/hermes-layering.md`.
 
+**Hermes link.** `board hermes link [--home DIR] [--profile NAME] [--cluster C] [--dry-run] [--yes]
+[--no-verify]` links one Hermes agent profile to the kit: it detects Hermes homes (`--home`,
+`$HERMES_HOME`, `hermes config path`, `~/hermes-*/home`, `~/.hermes`), picks the profile that speaks for
+the operator, installs `adapters/hermes/skills/*` into that profile's skills dir with a stamp file
+(`.dwarves-kit-skills.json`: a digest of the skill files, the kit version and sha), records the link in
+`~/.config/dwarves-kit/hermes-links.json` (with the cluster's rail, hub, and boards read from the kit flag
+file), and verifies with one real agent turn: the agent must run `board health run --dry-run --force` and
+answer a nonce, then the command prints `linked`. It previews the plan and asks on a terminal; without
+one it writes only with `--yes`. A profile in another account's home uses `--sudo-user`. No Hermes found
+is a skip line and exit 0. `board hermes check [--record]` compares each recorded link's stamp with this
+kit (stale: no stamp, a different digest, a missing skill); `board sweep` records it every tick under
+`hermes_links` in the health state, and `board brief` turns a stale link into one decision line, `kit
+skills on <label> are stale: re-run board hermes link`, for the link's cluster (the first cluster when
+none is named). Tests: `tests/test-board-hermes.sh`.
+
 **Exit code.** 0 when every sync, publish, and preflight leg was clean. The
 digest, mirror, and health legs are observational and never flip it.
 
