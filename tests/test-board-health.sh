@@ -46,7 +46,7 @@ mkdir -p "$WORK/crew/_meta"
 git -C "$WORK/crew" init -q -b main
 printf '| ID | Item | Notes | Status |\n|---|---|---|---|\n| AB-1 | old row | | queued |\n| AB-3 | waits | | parked [later] |\n| AB-4 | done | | shipped |\n' > "$WORK/crew/_meta/BACKLOG.md"
 commit "$WORK/crew" $((NOW - 10 * DAY)) first
-printf '| AB-2 | new row | | executing |\n' >> "$WORK/crew/_meta/BACKLOG.md"
+printf '| AB-2 | new row | | executing |\n| AB-5 | newer row | | claimed |\n' >> "$WORK/crew/_meta/BACKLOG.md"
 commit "$WORK/crew" $((NOW - 1 * DAY)) second
 # the same repo as a bare origin, so the origin copy is what gets read
 git clone -q --bare "$WORK/crew" "$WORK/crew-origin.git"
@@ -136,10 +136,10 @@ fresh
 printf '  synced reminders: 1 spoke items, 4 board rows\n' | rec crew 0 "$NOW"
 run "$NOW" --dry-run > "$WORK/dry.out"
 p="$(grep '"cluster":"alpha"' "$WORK/dry.out" | tail -n 1)"
-eq "crew open counts the active rows only (origin copy, not the local edit)" "$(jq '.data.hubs.crew.open' <<<"$p")" '2'
+eq "crew open counts the active rows only (origin copy, not the local edit)" "$(jq '.data.hubs.crew.open' <<<"$p")" '3'
 eq "one active row is stale" "$(jq '.data.hubs.crew.stale' <<<"$p")" '1'
 eq "parked counted apart" "$(jq '.data.hubs.crew.parked' <<<"$p")" '1'
-eq "hubs line reads open and stale" "$(jq -r '.fields[] | select(.name=="hubs") | .value' <<<"$p")" '⚠️ hubs: crew 2 open (1 stale) · 1 parked'
+eq "hubs line reads open and stale" "$(jq -r '.fields[] | select(.name=="hubs") | .value' <<<"$p")" '⚠️ hubs: crew 3 open (1 stale) · 1 parked'
 p2="$(grep '"cluster":"beta"' "$WORK/dry.out" | tail -n 1)"
 eq "a hub with no origin falls back to the working copy" "$(jq -c '.data.hubs.solo | [.open, .stale]' <<<"$p2")" '[1,1]'
 
