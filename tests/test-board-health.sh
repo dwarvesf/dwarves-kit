@@ -253,8 +253,30 @@ printf '#!/usr/bin/env bash\nexit 7\n' > "$WORK/hook-bad"
 chmod +x "$WORK/hook" "$WORK/hook-bad"
 run "$NOW" --cluster alpha --line "alpha=$WORK/hook" --line "alpha=$WORK/hook-bad"
 eq "each non-blank stdout line is a field" "$(field extra)" "$(printf '📝 drafts: 2 waiting\nsecond line')"
-eq "still delivered" "$(npost)" '1'
 grep -q 'WARN line hook exited 7' "$WORK/run.err" && ok "the failing hook is logged" || bad "no hook warning"
+eq "the operator's lines lead the digest" "$(jq -r '.fields[0].name' <<<"$(last_payload)")" 'extra'
+eq "still delivered" "$(npost)" '1'
+
+echo "case long list (a line is cut by whole items, with a +N more tail):"
+fresh
+printf 'synced reminders: 1 spoke items, 4 board rows\n' | rec crew 0 "$NOW"
+cat > "$WORK/kanban-many" <<'EOF'
+#!/usr/bin/env bash
+if [ "$1 $2" = "boards list" ]; then
+  printf '['; for i in 1 2 3 4 5 6 7 8 9 10 11 12; do
+    [ "$i" -gt 1 ] && printf ','
+    printf '{"slug":"board-number-%s","archived":false,"counts":{"ready":%s}}' "$i" "$((20 - i))"
+  done; printf ']'
+else
+  echo '[]'
+fi
+EOF
+chmod +x "$WORK/kanban-many"
+run "$NOW" --cluster alpha --kanban "alpha=$WORK/kanban-many"
+kline="$(field kanban)"
+[ "${#kline}" -le 270 ] && ok "the kanban line stays on one short line (${#kline} chars)" || bad "kanban line too long: ${#kline}"
+case "$kline" in *" more") ok "the cut is announced as +N more";; *) bad "no +N more tail: $kline";; esac
+case "$kline" in *"board-number-1 19 open"*) ok "the biggest board leads";; *) bad "order wrong: $kline";; esac
 
 echo "case payload shape (kind, key, one line per field):"
 fresh

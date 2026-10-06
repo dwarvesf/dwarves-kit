@@ -302,16 +302,37 @@ def day_stamp(epoch):
     return time.strftime("%Y-%m-%d", time.localtime(epoch))
 
 
-def top_list(items, fmt, cap=8):
-    shown = [fmt(n, v) for n, v in items[:cap]]
-    if len(items) > cap:
-        shown.append(f"+{len(items) - cap} more")
+def top_list(items, fmt, cap=8, budget=240):
+    """The first items that fit one line, then `+N more`. A line is cut by whole items, never mid-word."""
+    shown, used = [], 0
+    for n, v in items[:cap]:
+        text = fmt(n, v)
+        if shown and used + len(text) + 3 > budget:
+            break
+        shown.append(text)
+        used += len(text) + 3
+    if len(items) > len(shown):
+        shown.append(f"+{len(items) - len(shown)} more")
     return " · ".join(shown)
 
 
 def build_payload(cluster, rail, args, registry_rows, health, digest, last_run, prev_archived, now):
     repos = [r for r in registry_rows if r["rail"] == rail]
     attention = []
+    fields = []
+
+    # the operator's own lines lead: facts only the operator knows
+    for cmd in args.line_map.get(cluster, []):
+        try:
+            r = subprocess.run(shlex.split(cmd), capture_output=True, text=True, timeout=120)
+            extra = [redact(l, 400) for l in r.stdout.splitlines() if l.strip()] if r.returncode == 0 else []
+            if r.returncode != 0:
+                log(f"WARN line hook exited {r.returncode} for {cluster}")
+        except (OSError, subprocess.TimeoutExpired):
+            extra = []
+            log(f"WARN line hook failed for {cluster}")
+        for l in extra:
+            fields.append({"name": "extra", "value": l})
 
     # hubs
     hubs = {}
@@ -324,7 +345,6 @@ def build_payload(cluster, rail, args, registry_rows, health, digest, last_run, 
     def hub_fmt(n, s):
         return f"{n} {s['open']} open" + (f" ({s['stale']} stale)" if s["stale"] else "")
 
-    fields = []
     if hub_open or any(s["parked"] for s in hubs.values()):
         parked = sum(s["parked"] for s in hubs.values())
         icon = "⚠️" if sum(s["stale"] for s in hubs.values()) else "🗂️"
@@ -401,19 +421,6 @@ def build_payload(cluster, rail, args, registry_rows, health, digest, last_run, 
     carried = (digest.get("_cluster_errors") or {}).get(cluster)
     if carried:
         attention.append("⚠️ last change digest failed to post: " + redact(carried, 120))
-
-    # extra lines from the operator's hooks
-    for cmd in args.line_map.get(cluster, []):
-        try:
-            r = subprocess.run(shlex.split(cmd), capture_output=True, text=True, timeout=120)
-            extra = [redact(l, 400) for l in r.stdout.splitlines() if l.strip()] if r.returncode == 0 else []
-            if r.returncode != 0:
-                log(f"WARN line hook exited {r.returncode} for {cluster}")
-        except (OSError, subprocess.TimeoutExpired):
-            extra = []
-            log(f"WARN line hook failed for {cluster}")
-        for l in extra:
-            fields.append({"name": "extra", "value": l})
 
     for a in attention:
         fields.append({"name": "attention", "value": a})
