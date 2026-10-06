@@ -2775,6 +2775,19 @@ chk "after the holder exits, apply exits 0" "$rc"
 chk_no "after the holder exits, no busy SKIP" "$out" "busy, held by"
 chk "after the holder exits, the worktree is removed" "$([ ! -e "$LWT" ]; echo $?)"
 chk "after the holder exits, the branch is deleted" "$(git -C "$LREPO" rev-parse --verify feat/land >/dev/null 2>&1 && echo 1 || echo 0)"
+
+echo "--- pipeline reader in the worktree: the caller's own '| tail' never counts as a holder"
+# `wrap land <wt> | tail -6` run from a shell standing in <wt> starts tail with <wt> as its cwd.
+# It exits when land does, so land removes the worktree instead of reporting a phantom holder.
+build_land busypipe
+LREPO="$TMPD/ld-repo-busypipe"; LWT="$(cd "$LREPO/wt" && pwd -P)"
+out="$( { GH_STUB_OPEN_PRS='[]' GH_STUB_CREATE_NUM=43 GH_STUB_LAND_REPO="$LWT" GH_STUB_LAND_REMOTE="$TMPD/ld-bare-busypipe" \
+  GH_STUB_LAND_BRANCH=feat/land GH_STUB_LAND_DEF=main "$WRAP" land "$LWT" 2>&1; echo "LAND_RC=$?"; } | ( cd "$LWT" && cat ) )"
+chk_has "pipe reader: land exits 0" "$out" "LAND_RC=0"
+chk_no "pipe reader: no busy SKIP for the caller's own pipeline" "$out" "busy, held by"
+chk_has "pipe reader: land reports the removal" "$out" "removed worktree $LWT"
+chk "pipe reader: the worktree is gone" "$([ ! -e "$LWT" ]; echo $?)"
+chk "pipe reader: the local branch is deleted" "$(git -C "$LREPO" rev-parse --verify feat/land >/dev/null 2>&1 && echo 1 || echo 0)"
 } # end sec_busy
 
 # One section, in this process. The driver sets LAND_SECTION per child; the last line is the
