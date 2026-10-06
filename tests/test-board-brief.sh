@@ -8,7 +8,8 @@
 #
 #   AC1  decisions: hub/mirror drift becomes one question per row, three at most
 #   AC2  incident hook: open rows, needs_you rows become decisions, bots, faults
-#   AC3  a failing or malformed hook is a fault line, never an all-clear
+#   AC3  a failing or malformed hook is a fault line, never an all-clear; the hook is
+#        told when the run is a preview or a test (BOARD_BRIEF_READ_ONLY)
 #   AC4  no decision: one all-clear line; --decisions-only posts nothing (and stamps)
 #   AC5  boards section: first run, every third day, or when a decision or fault exists;
 #        otherwise its lines ride the details
@@ -95,6 +96,7 @@ chmod +x "$WORK/kanban"
 # incident hook stub: prints $FAKE_INC_FILE, or fails
 cat > "$WORK/incidents" <<'EOF'
 #!/usr/bin/env bash
+echo "${BOARD_BRIEF_READ_ONLY:-unset}" >> "$FAKE_INC_FLAG"
 [ -n "${FAKE_INC_FAIL:-}" ] && { echo "feed exploded" >&2; exit 4; }
 cat "$FAKE_INC_FILE"
 EOF
@@ -107,7 +109,7 @@ cat >> "$FAKE_POSTED"; echo >> "$FAKE_POSTED"
 exit "${FAKE_POSTER_RC:-0}"
 EOF
 chmod +x "$WORK/poster"
-export FAKE_NOW="$NOW" FAKE_POSTED="$WORK/posted.out" FAKE_INC_FILE="$WORK/inc.json"
+export FAKE_NOW="$NOW" FAKE_POSTED="$WORK/posted.out" FAKE_INC_FILE="$WORK/inc.json" FAKE_INC_FLAG="$WORK/inc.flag"
 export FAKE_KANBAN_FAIL="" FAKE_ARCHIVED=5 FAKE_POSTER_RC=0 FAKE_POSTER_ERR="" FAKE_CARDS="" FAKE_INC_FAIL=""
 
 HS="$WORK/health.json"; DS="$WORK/digest.json"
@@ -181,6 +183,15 @@ has "an explicit hook decision is a decision" "$(msg)" "fixbox Retry the failed 
 has "hook details ride the details" "$(det)" "AI spend 24h: 1.20 USD"
 has "the overflow rows ride the details" "$(det)" "t5"
 has "bots show as given, zeros dropped" "$(msg)" "🤖 24h: auto-resolved 3 · parked 2 · sync errors 0"
+
+echo "case hook flag (read-only under a preview or a test):"
+fresh; : > "$FAKE_INC_FLAG"
+FAKE_CARDS="$CLEAN" run "$NOW" --cluster alpha
+eq "a real run gives the hook no read-only flag" "$(< "$FAKE_INC_FLAG")" "unset"
+: > "$FAKE_INC_FLAG"; FAKE_CARDS="$CLEAN" run "$NOW" --cluster alpha --force --dry-run > /dev/null
+eq "--dry-run sets BOARD_BRIEF_READ_ONLY" "$(< "$FAKE_INC_FLAG")" "1"
+: > "$FAKE_INC_FLAG"; FAKE_CARDS="$CLEAN" run "$NOW" --cluster alpha --force --no-state
+eq "--no-state sets it too" "$(< "$FAKE_INC_FLAG")" "1"
 
 echo "case hook failure is a fault, never an all-clear:"
 fresh

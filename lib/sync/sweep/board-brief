@@ -34,7 +34,9 @@ operator's incident source fits. Every key is optional:
    "details": ["line", ...]}             extra lines for the details message
 
 A hook that fails, or prints something that is not that object, becomes a fault
-line: the brief never claims "all clear" over an unreadable feed.
+line: the brief never claims "all clear" over an unreadable feed. Under --dry-run
+and --no-state the hook runs with BOARD_BRIEF_READ_ONLY=1 in its environment and
+must write nothing (no alert, no heartbeat).
 
 The payload (one JSON line per cluster, stdout under --dry-run), handed to
 --poster on stdin; exit 0 means the main message was delivered:
@@ -74,6 +76,7 @@ import hashlib
 import importlib.machinery
 import importlib.util
 import json
+import os
 import re
 import shlex
 import subprocess
@@ -111,10 +114,13 @@ def _text(value, cap=200):
     return H.redact(str(value), cap) if value is not None else ""
 
 
-def read_incidents(cmd):
-    """(data, error): the hook's JSON object, cleaned; error is one short reason."""
+def read_incidents(cmd, read_only=False):
+    """(data, error): the hook's JSON object, cleaned; error is one short reason.
+    Under a preview or a live test the hook runs with BOARD_BRIEF_READ_ONLY=1 and
+    must write nothing."""
+    env = dict(os.environ, BOARD_BRIEF_READ_ONLY="1") if read_only else None
     try:
-        r = subprocess.run(shlex.split(cmd), capture_output=True, text=True, timeout=300)
+        r = subprocess.run(shlex.split(cmd), capture_output=True, text=True, timeout=300, env=env)
     except (OSError, subprocess.TimeoutExpired) as e:
         return None, H.redact(str(e), 100)
     if r.returncode != 0:
@@ -209,7 +215,7 @@ def compose(cluster, rail, args, rows, health, digest, bstate, now):
     inc, inc_err = None, None
     hook = (args.incident_map.get(cluster) or [None])[0]
     if hook:
-        inc, inc_err = read_incidents(hook)
+        inc, inc_err = read_incidents(hook, args.dry_run or args.no_state)
     open_rows = inc["open"] if inc else []
     for o in open_rows:
         if o["needs_you"]:
