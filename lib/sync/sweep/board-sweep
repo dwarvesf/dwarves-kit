@@ -405,6 +405,10 @@ if [ "$HEALTH" -eq 1 ]; then
   python3 "$HEALTH_BIN" run "${hflags[@]}" ${health_flags[@]+"${health_flags[@]}"} 2>&1 | sed 's/^/  /'
 fi
 
+# hermes link drift: compare each linked profile's skill stamp with this kit and record it for the
+# brief; observational, a failure here never fails the sweep
+python3 "$BIN/board-hermes" check --record --health-state-file "$HEALTH_STATE" >/dev/null 2>&1 || echo "  hermes link check failed (non-fatal)"
+
 if [ "$rc_any" -eq 0 ] && [ "$DRY_RUN" -eq 0 ] && [ -n "$ON_CLEAN" ]; then
   "$ON_CLEAN" || echo "  on-clean hook failed (non-fatal)"
 fi

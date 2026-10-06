@@ -1,0 +1,453 @@
+#!/usr/bin/env python3
+"""board hermes: link a Hermes agent profile to the kit, and notice when the link goes stale.
+
+The kit ships thin Hermes skills (adapters/hermes/skills/*/SKILL.md) that only say
+which kit command to run. `link` puts them in one Hermes profile, records the link,
+and proves the profile can use them. `check` compares each linked profile's stamp
+with the kit, so a changed skill is noticed instead of silently drifting.
+
+  board hermes link [--home DIR] [--profile NAME] [--cluster C] [--label L]
+                    [--sudo-user U] [--dry-run] [--yes] [--no-verify]
+  board hermes check [--record] [--health-state-file F]
+
+link, in order (each step previewed; nothing is written before a yes):
+  1 detect   Hermes homes: --home, else $HERMES_HOME, `hermes config path`, ~/hermes-*/home,
+             ~/hermes-*, ~/.hermes; a home counts when it has a config.yaml. Profiles are the
+             root (`default`) and each profiles/<name> with its own config.yaml.
+  2 pick     the profile that speaks for the operator (the master or spokesperson): --profile,
+             else asked on a terminal. With more than one choice and no terminal, it lists the
+             choices and exits 64. No Hermes found: one skip line, exit 0.
+  3 install  every skill dir under adapters/hermes/skills into the profile's skills dir, and a
+             stamp file (.dwarves-kit-skills.json: a digest of the skill files, the kit version
+             and sha, the time). Re-running refreshes.
+  4 record   the link in ~/.config/dwarves-kit/hermes-links.json ($DWARVES_HERMES_LINKS), with
+             the cluster's rail, hub, and boards read from the kit flag file (see `board health
+             run`) when one is set up.
+  5 verify   one real turn through the profile: the agent must load kit-board and run
+             `board health run --dry-run --force`, and answer `KITLINK <n>`. Success prints
+             `linked`. Skipped with --no-verify, under --dry-run, and for --sudo-user homes.
+
+Confirmation: on a terminal link shows the plan and asks [Y/n]; a no is a strict no-op.
+Without a terminal it writes only with --yes, else it prints the plan and exits 64.
+--dry-run prints the plan and writes nothing. --sudo-user U reads and writes the home
+as U through `sudo -n -u U -H` (a Hermes home owned by another account).
+
+check: for each recorded link, `stale` when the stamp is missing, the skills digest differs
+from this kit's, or a kit skill is missing from the profile. --record writes the result into
+the health state under `hermes_links`, which `board sweep` does every tick and `board brief`
+reads: a stale link becomes one decision line, `kit skills on <label> are stale: re-run
+board hermes link`. Prints one JSON line per link. Exit 0 either way.
+"""
+
+import argparse
+import glob
+import hashlib
+import json
+import os
+import re
+import secrets
+import shlex
+import shutil
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+HERE = Path(__file__).resolve().parent
+sys.path.insert(0, str(HERE))
+import sweep_modules  # noqa: E402
+
+KIT = HERE.parent.parent.parent
+SKILLS_SRC = KIT / "adapters" / "hermes" / "skills"
+STAMP_NAME = ".dwarves-kit-skills.json"
+DEFAULT_LINKS = os.path.expanduser("~/.config/dwarves-kit/hermes-links.json")
+VERIFY_SESSION = "kit-link-verify"
+
+
+def say(msg):
+    print(f"hermes: {msg}")
+
+
+def links_path():
+    return os.environ.get("DWARVES_HERMES_LINKS") or DEFAULT_LINKS
+
+
+# --- the kit side: skills, digest, version ------------------------------------------
+
+def kit_skills():
+    """[Path] of every skill dir the kit ships (a dir holding a SKILL.md), sorted."""
+    if not SKILLS_SRC.is_dir():
+        return []
+    return sorted(d for d in SKILLS_SRC.iterdir() if (d / "SKILL.md").is_file())
+
+
+def skills_digest():
+    """A short digest of every shipped skill file: the staleness test."""
+    h = hashlib.sha256()
+    for d in kit_skills():
+        for f in sorted(p for p in d.rglob("*") if p.is_file()):
+            h.update(str(f.relative_to(SKILLS_SRC)).encode())
+            h.update(b"\0")
+            h.update(f.read_bytes())
+            h.update(b"\0")
+    return h.hexdigest()[:16]
+
+
+def kit_version():
+    try:
+        return (KIT / "VERSION").read_text().strip()
+    except OSError:
+        return "unknown"
+
+
+def kit_sha():
+    r = subprocess.run(["git", "-C", str(KIT), "rev-parse", "--short", "HEAD"], capture_output=True, text=True)
+    return r.stdout.strip() if r.returncode == 0 else ""
+
+
+# --- a Hermes home, read and written as this user or another --------------------------
+
+class Fs:
+    def __init__(self, sudo_user=""):
+        self.pre = ["sudo", "-n", "-u", sudo_user, "-H"] if sudo_user else []
+
+    def _run(self, argv, text_in=None):
+        return subprocess.run(self.pre + argv, capture_output=True, text=True, input=text_in, timeout=120)
+
+    def isdir(self, p):
+        return os.path.isdir(p) if not self.pre else self._run(["test", "-d", p]).returncode == 0
+
+    def isfile(self, p):
+        return os.path.isfile(p) if not self.pre else self._run(["test", "-f", p]).returncode == 0
+
+    def listdir(self, p):
+        if not self.pre:
+            return sorted(os.listdir(p)) if os.path.isdir(p) else []
+        r = self._run(["ls", "-1", p])
+        return sorted(r.stdout.split()) if r.returncode == 0 else []
+
+    def read(self, p):
+        if not self.pre:
+            try:
+                return Path(p).read_text()
+            except OSError:
+                return None
+        r = self._run(["cat", p])
+        return r.stdout if r.returncode == 0 else None
+
+    def write(self, p, text):
+        if not self.pre:
+            Path(p).parent.mkdir(parents=True, exist_ok=True)
+            tmp = Path(p).with_name(Path(p).name + f".tmp{os.getpid()}")
+            tmp.write_text(text)
+            os.replace(tmp, p)
+            return True
+        parent = os.path.dirname(p)
+        r = self._run(["sh", "-c", f"mkdir -p {shlex.quote(parent)} && cat > {shlex.quote(p)}"], text_in=text)
+        return r.returncode == 0
+
+    def sync_dir(self, src, dst):
+        if not self.pre:
+            shutil.copytree(src, dst, dirs_exist_ok=True)
+            return True
+        r = self._run(["sh", "-c", f"mkdir -p {shlex.quote(dst)} && rsync -a {shlex.quote(str(src) + '/')} {shlex.quote(dst + '/')}"])
+        return r.returncode == 0
+
+
+def detect_homes(fs, explicit):
+    cands = []
+    if explicit:
+        cands.append(explicit)
+    else:
+        if os.environ.get("HERMES_HOME"):
+            cands.append(os.environ["HERMES_HOME"])
+        if shutil.which("hermes"):
+            try:
+                r = subprocess.run(["hermes", "config", "path"], capture_output=True, text=True, timeout=15)
+                if r.returncode == 0 and r.stdout.strip():
+                    cands.append(str(Path(r.stdout.strip().splitlines()[-1]).parent))
+            except (OSError, subprocess.TimeoutExpired):
+                pass
+        home = os.path.expanduser("~")
+        cands += sorted(glob.glob(os.path.join(home, "hermes-*", "home")))
+        cands += sorted(glob.glob(os.path.join(home, "hermes-*")))
+        cands.append(os.path.join(home, ".hermes"))
+    seen, out = set(), []
+    for c in cands:
+        c = os.path.expanduser(c)
+        key = os.path.realpath(c) if not fs.pre else c
+        if key in seen:
+            continue
+        seen.add(key)
+        if fs.isfile(os.path.join(c, "config.yaml")):
+            out.append(c)
+    return out
+
+
+def list_profiles(fs, home):
+    out = ["default"]
+    root = os.path.join(home, "profiles")
+    for n in fs.listdir(root):
+        if fs.isfile(os.path.join(root, n, "config.yaml")):
+            out.append(n)
+    return out
+
+
+def skills_dir(home, profile):
+    return os.path.join(home, "skills") if profile == "default" else os.path.join(home, "profiles", profile, "skills")
+
+
+def default_label(home, profile):
+    if profile != "default":
+        return profile
+    h = Path(home)
+    return h.parent.name if h.name == "home" else h.name
+
+
+# --- the recorded links ----------------------------------------------------------------
+
+def load_links():
+    try:
+        data = json.loads(Path(links_path()).read_text())
+        return data if isinstance(data, dict) and isinstance(data.get("links"), list) else {"links": []}
+    except (OSError, ValueError):
+        return {"links": []}
+
+
+def save_links(data):
+    p = Path(links_path())
+    p.parent.mkdir(parents=True, exist_ok=True)
+    tmp = p.with_name(p.name + f".tmp{os.getpid()}")
+    old = os.umask(0o077)
+    try:
+        tmp.write_text(json.dumps(data, indent=1, sort_keys=True))
+        os.replace(tmp, p)
+    finally:
+        os.umask(old)
+
+
+def read_mapping(cluster):
+    """The cluster's rail, hub, and boards from the kit flag file (see `board health run`)."""
+    H = sweep_modules.load("board-health")
+    path = os.environ.get("DWARVES_BOARD_CONFIG", "")
+    if not path and os.path.isfile(H.DEFAULT_CONFIG):
+        path = H.DEFAULT_CONFIG
+    if not path:
+        return {}
+    try:
+        cfg = json.loads(Path(path).read_text())
+    except (OSError, ValueError):
+        return {}
+    common = dict(cfg.get("common") or {})
+    clusters = dict(p.split("=", 1) for p in str(cfg.get("cluster_map", "")).split(",") if "=" in p)
+
+    def values(key):
+        raw = common.get(key) or cfg.get(key) or []
+        return [v.split("=", 1)[1] for v in (raw if isinstance(raw, list) else [raw]) if v.startswith(cluster + "=")]
+
+    if not cluster or cluster not in clusters:
+        return {}
+    hub = values("hub")
+    return {"rail": clusters[cluster], "hub": hub[0] if hub else "", "boards": values("board")}
+
+
+def check_links():
+    """[{label, home, profile, cluster, stale, reason}] for every recorded link."""
+    digest = skills_digest()
+    expected = [d.name for d in kit_skills()]
+    out = []
+    for e in load_links()["links"]:
+        fs = Fs(e.get("sudo_user", ""))
+        sdir = e.get("skills_dir") or skills_dir(e.get("home", ""), e.get("profile", "default"))
+        raw = fs.read(os.path.join(sdir, STAMP_NAME))
+        reason = ""
+        try:
+            stamp = json.loads(raw) if raw else None
+        except ValueError:
+            stamp = None
+        if not isinstance(stamp, dict):
+            reason = "no stamp"
+        elif stamp.get("skills_digest") != digest:
+            reason = "the kit's skills changed"
+        else:
+            missing = [n for n in expected if not fs.isfile(os.path.join(sdir, n, "SKILL.md"))]
+            if missing:
+                reason = f"skill {missing[0]} is missing"
+        out.append({"label": e.get("label") or default_label(e.get("home", ""), e.get("profile", "default")),
+                    "home": e.get("home", ""), "profile": e.get("profile", "default"),
+                    "cluster": e.get("cluster", ""), "stale": bool(reason), "reason": reason})
+    return out
+
+
+def cmd_check(args):
+    H = sweep_modules.load("board-health")
+    results = check_links()
+    for r in results:
+        print(json.dumps(r, ensure_ascii=False, separators=(",", ":")))
+    if args.record:
+        state = H.read_json(args.health_state_file, {})
+        state["hermes_links"] = [dict(r, ts=int(time.time())) for r in results]
+        H.write_state(args.health_state_file, state)
+    return 0
+
+
+# --- link --------------------------------------------------------------------------------
+
+def ask(prompt, default=""):
+    try:
+        reply = input(prompt).strip()
+    except EOFError:
+        return None
+    return reply or default
+
+
+def choose(title, options, explicit, interactive):
+    """One of `options`: the explicit value, the only one, or asked on a terminal; else None."""
+    if explicit:
+        return explicit
+    if len(options) == 1:
+        return options[0]
+    if not interactive:
+        say(f"{title}: more than one choice and no terminal; pass it as a flag. Choices:")
+        for o in options:
+            print(f"  {o}")
+        return None
+    print(f"{title}:")
+    for i, o in enumerate(options, 1):
+        print(f"  {i}. {o}")
+    pick = ask(f"pick 1-{len(options)} [1]: ", "1")
+    try:
+        return options[int(pick) - 1]
+    except (TypeError, ValueError, IndexError):
+        return None
+
+
+def verify(home, profile):
+    """Run one real turn through the profile. (ok, detail)."""
+    hermes = shutil.which("hermes")
+    if not hermes:
+        return False, "hermes is not on PATH"
+    nonce = secrets.token_hex(3)
+    prompt = ("Use the kit-board skill: run the board health dry run and answer with exactly one line: "
+              f"KITLINK {nonce} <number of boards over threshold>")
+    argv = [hermes] + (["-p", profile] if profile != "default" else []) + [
+        "chat", "--in", os.path.expanduser("~"), "-c", VERIFY_SESSION, "--create-if-missing",
+        "--format", "stream-json", "-q", prompt]
+    try:
+        r = subprocess.run(argv, capture_output=True, text=True, timeout=420, env=dict(os.environ, HERMES_HOME=home))
+    except (OSError, subprocess.TimeoutExpired) as e:
+        return False, f"the agent turn failed: {e}"
+    ran, answer = False, ""
+    for line in r.stdout.splitlines():
+        try:
+            ev = json.loads(line)
+        except ValueError:
+            continue
+        if ev.get("type") == "tool_use" and "board health run" in json.dumps(ev.get("input", {})):
+            ran = True
+        if ev.get("type") == "result":
+            answer = ev.get("text", "") or ""
+    m = re.search(rf"KITLINK {nonce} (\d+)", answer)
+    if r.returncode != 0 or not m:
+        return False, f"no KITLINK answer (exit {r.returncode})"
+    if not ran:
+        return False, "the agent answered without running board health run"
+    return True, f"the agent ran board health run and counted {m.group(1)} board(s) over threshold"
+
+
+def cmd_link(args):
+    fs = Fs(args.sudo_user)
+    interactive = sys.stdin.isatty() and sys.stdout.isatty()
+    skills = kit_skills()
+    if not skills:
+        say(f"no skills to install: {SKILLS_SRC} holds none")
+        return 1
+    homes = detect_homes(fs, args.home)
+    if not homes:
+        say("skip: no Hermes home found (looked for a config.yaml under $HERMES_HOME, `hermes config path`, ~/hermes-*/home, ~/hermes-*, ~/.hermes)")
+        return 0
+    say("homes found: " + ", ".join(homes))
+    home = choose("Hermes home", homes, args.home, interactive)
+    if not home:
+        return 64
+    profiles = list_profiles(fs, home)
+    profile = choose("profile that speaks for you", profiles, args.profile, interactive)
+    if not profile:
+        return 64
+    if profile not in profiles:
+        say(f"no profile '{profile}' in {home}; choices: {', '.join(profiles)}")
+        return 64
+    sdir = skills_dir(home, profile)
+    digest = skills_digest()
+    label = args.label or default_label(home, profile)
+    mapping = read_mapping(args.cluster) if args.cluster else {}
+    plan = [f"home     {home}" + (f" (as {args.sudo_user})" if args.sudo_user else ""),
+            f"profile  {profile}  ({label})",
+            f"skills   {sdir}"]
+    for d in skills:
+        plan.append(f"install  {d.name}  ({'refresh' if fs.isdir(os.path.join(sdir, d.name)) else 'new'})")
+    plan.append(f"stamp    {os.path.join(sdir, STAMP_NAME)}  digest={digest} kit={kit_version()}@{kit_sha() or 'n/a'}")
+    plan.append(f"record   {links_path()}" + (f"  cluster={args.cluster}" + (f" rail={mapping['rail']}" if mapping.get("rail") else "")
+                + (f" hub={mapping['hub']}" if mapping.get("hub") else "") + (f" boards={','.join(mapping.get('boards', []))}" if mapping.get("boards") else "") if args.cluster else ""))
+    plan.append("verify   one agent turn: kit-board runs `board health run --dry-run --force`"
+                + ("  (skipped: --no-verify)" if args.no_verify else "  (skipped: --sudo-user home)" if args.sudo_user else ""))
+    say("plan")
+    for line in plan:
+        print(f"  {line}")
+    if args.dry_run:
+        say("dry-run: nothing written")
+        return 0
+    if not args.yes:
+        if not interactive:
+            say("not a terminal: pass --yes to write this plan")
+            return 64
+        if ask("write this plan? [Y/n] ", "y").lower() not in ("y", "yes"):
+            say("declined: nothing written")
+            return 0
+
+    for d in skills:
+        if not fs.sync_dir(d, os.path.join(sdir, d.name)):
+            say(f"failed to install {d.name} into {sdir}")
+            return 1
+    stamp = {"skills_digest": digest, "kit_version": kit_version(), "kit_sha": kit_sha(),
+             "skills": [d.name for d in skills], "linked_at": int(time.time())}
+    if not fs.write(os.path.join(sdir, STAMP_NAME), json.dumps(stamp, indent=1, sort_keys=True) + "\n"):
+        say("failed to write the stamp")
+        return 1
+    data = load_links()
+    entry = {"home": home, "profile": profile, "label": label, "skills_dir": sdir, "cluster": args.cluster or "",
+             "sudo_user": args.sudo_user or "", "linked_at": stamp["linked_at"], **mapping}
+    data["links"] = [e for e in data["links"] if (e.get("home"), e.get("profile")) != (home, profile)] + [entry]
+    save_links(data)
+    say(f"installed {', '.join(d.name for d in skills)} and recorded the link")
+    if args.no_verify or args.sudo_user:
+        say("installed, not verified" + (" (--sudo-user home: run the check as that account)" if args.sudo_user else ""))
+        return 0
+    ok, detail = verify(home, profile)
+    say("linked" if ok else f"installed, not verified: {detail}")
+    if ok:
+        say(detail)
+    return 0 if ok else 1
+
+
+def main(argv=None):
+    ap = argparse.ArgumentParser(prog="board hermes", description=__doc__.split("\n\n")[0])
+    sub = ap.add_subparsers(dest="mode", required=True)
+    lk = sub.add_parser("link")
+    lk.add_argument("--home")
+    lk.add_argument("--profile")
+    lk.add_argument("--cluster", default="")
+    lk.add_argument("--label", default="")
+    lk.add_argument("--sudo-user", default="")
+    lk.add_argument("--dry-run", action="store_true")
+    lk.add_argument("--yes", action="store_true")
+    lk.add_argument("--no-verify", action="store_true")
+    ck = sub.add_parser("check")
+    ck.add_argument("--record", action="store_true")
+    ck.add_argument("--health-state-file", default=sweep_modules.load("board-health").DEFAULT_HEALTH_STATE)
+    args = ap.parse_args(argv)
+    return cmd_link(args) if args.mode == "link" else cmd_check(args)
+
+
+if __name__ == "__main__":
+    sys.exit(main())
