@@ -291,7 +291,14 @@ digest, mirror, and health legs are observational and never flip it.
 `board mirror-cleanup` reconciles the open Hermes cards against the boards (dry
 run by default, never deletes). `--kinds-file` takes a JSON rule list that
 sorts the bot-made cards the mirror never owns; without it only the Hermes
-decomposer rule is built in. Design notes and tests:
+decomposer rule is built in. A rule with an `expire` block
+(`{"days": 14, "board": "social", "status": "triage"}`) archives the cards of
+its kind that sat in that status for that long on that board; `--expire-only`
+runs just that step (no registry, no BACKLOG reads) and prints one line,
+`expired N cards on <board> (limit Nd)`, or `would expire ...` on a dry run.
+`board sweep --expire-kinds-file F` runs it every tick against the mirror's
+Hermes store (`--dry-run` only reports). Design notes and tests: `tests/test-board-mirror-expire.sh`,
+`tests/test-board-sweep-expire.sh`,
 `tests/test-board-sweep*.sh`, `tests/test-board-digest.sh`,
 `tests/test-board-mirror-cleanup.sh`.
 
