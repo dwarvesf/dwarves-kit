@@ -345,6 +345,14 @@ out="$(cd "$TMPD/mtx-self" && "$WRAP" apply --apply --own "$TMPD/mtx-self" "$MTX
 chk_no "own-cwd: the run's own cwd is not a busy holder" "$out" "busy, held by"
 chk "own-cwd: the worktree is removed" "$([ ! -e "$TMPD/mtx-self" ]; echo $?)"
 
+echo "--- busy: a pipeline reader standing in the worktree is the caller's own, never busy"
+git -C "$MTX" branch mtx-pipe-branch origin/merged-ancestor >/dev/null 2>&1
+git -C "$MTX" worktree add "$TMPD/mtx-pipe" mtx-pipe-branch >/dev/null 2>&1
+out="$( { "$WRAP" apply --apply --own "$TMPD/mtx-pipe" "$MTX" 2>&1; echo "APPLY_RC=$?"; } | ( cd "$TMPD/mtx-pipe" && cat ) )"
+chk_has "pipe reader: apply exits 0" "$out" "APPLY_RC=0"
+chk_no "pipe reader: the run's own pipeline is not a busy holder" "$out" "busy, held by"
+chk "pipe reader: the worktree is removed" "$([ ! -e "$TMPD/mtx-pipe" ]; echo $?)"
+
 echo "--- busy: without lsof, one NOTE and today's removal"
 git -C "$MTX" branch mtx-nolsof-branch origin/merged-ancestor >/dev/null 2>&1
 git -C "$MTX" worktree add "$TMPD/mtx-nolsof" mtx-nolsof-branch >/dev/null 2>&1
