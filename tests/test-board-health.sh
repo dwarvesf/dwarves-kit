@@ -306,6 +306,7 @@ chmod +x "$WORK/kanban-many"
 run "$NOW" --cluster alpha --kanban "alpha=$WORK/kanban-many"
 eq "exactly three board fault lines, biggest first" "$(field fault | head -3 | tr '\n' '|')" '⚠️ board-5: 25 waiting in triage, oldest 2d|⚠️ board-4: 24 waiting in triage, oldest 2d|⚠️ board-3: 23 waiting in triage, oldest 2d|'
 eq "the rest are counted, not listed" "$(field fault | tail -1)" '+2 more boards over threshold'
+eq "fault lines sit before the sync line, in the mock's order" "$(jq -r '[.fields[].name] | join(",")' <<<"$(last_payload)")" 'fault,fault,fault,fault,sync'
 eq "three board lines plus the tail, no more" "$(field fault | wc -l | tr -d ' ')" '4'
 eq "a board under both thresholds is silent" "$(field fault | grep -c calm)" '0'
 eq "no board is named, so no board lines" "$(jq -r '[.fields[] | select(.name=="board")] | length' <<<"$(last_payload)")" '0'

@@ -26,7 +26,7 @@ Output:
   ok   --health-faults-only reaches the leg
   ok   board health run --help
 
-board-health: 95 passed, 0 failed
+board-health: 96 passed, 0 failed
 Verdict: PASS
 ```
 

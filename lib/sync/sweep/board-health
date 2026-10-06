@@ -383,16 +383,15 @@ def build_payload(cluster, rail, args, registry_rows, health, digest, last_run, 
 
     if hub_name and hub_name in hubs:
         h = hubs[hub_name]
-        line = f"🗂️ {hub_name}: {h['open']} active, {h['parked']} parked"
+        line, kind = f"🗂️ {hub_name}: {h['open']} active, {h['parked']} parked", "hub"
         if hub_name in kanban:
             mirrored = kanban[hub_name]["origins"].get(hub_name, 0)
             if mirrored == h["open"] + h["parked"]:
                 line += f" · Hermes mirror {mirrored} open = hub ✅"
             else:
-                faults.append("⚠️" + line[len("🗂️"):] + f" · Hermes mirror {mirrored} open ≠ hub")
-                line = None
-        if line:
-            fields.append({"name": "hub", "value": line})
+                line, kind = "⚠️" + line[len("🗂️"):] + f" · Hermes mirror {mirrored} open ≠ hub", "fault"
+                faults.append(line)
+        fields.append({"name": kind, "value": line})
 
     for slug in show_boards:
         b = kanban.get(slug)
@@ -414,10 +413,12 @@ def build_payload(cluster, rail, args, registry_rows, health, digest, last_run, 
     over = sorted(((s, b) for s, b in kanban.items()
                    if b["triage"] > 0 and (b["triage"] > args.triage_open or b["triage_oldest_days"] > args.triage_days)),
                   key=lambda kv: (-kv[1]["triage"], kv[0]))
-    for slug, b in over[:3]:
-        faults.append(f"⚠️ {slug}: {b['triage']} waiting in triage, oldest {b['triage_oldest_days']}d")
+    over_lines = [f"⚠️ {slug}: {b['triage']} waiting in triage, oldest {b['triage_oldest_days']}d" for slug, b in over[:3]]
     if len(over) > 3:
-        faults.append(f"+{len(over) - 3} more boards over threshold")
+        over_lines.append(f"+{len(over) - 3} more boards over threshold")
+    for text in over_lines:
+        fields.append({"name": "fault", "value": text})
+    faults.extend(over_lines)
     # an operator line that opens with the warning mark is a fault too
     for f in fields:
         if f["name"] == "extra" and f["value"].startswith("⚠️"):
@@ -466,11 +467,6 @@ def build_payload(cluster, rail, args, registry_rows, health, digest, last_run, 
     if carried:
         attention.append("⚠️ last change digest failed to post: " + redact(carried, 120))
 
-    # fault lines that are not already shown above (an operator line is shown in place)
-    shown = {f["value"] for f in fields}
-    for fl in faults:
-        if fl not in shown:
-            fields.append({"name": "fault", "value": fl})
     for a in attention:
         fields.append({"name": "attention", "value": a})
     flagged = bool(attention or faults)
