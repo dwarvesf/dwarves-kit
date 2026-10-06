@@ -284,22 +284,22 @@ lacks "a fresh link adds no decision" "$(msg_of c2)" "kit skills on"
 jq '.skills_digest = "0000000000000000"' "$HOME/hermes-alpha/home/profiles/chief/skills/.dwarves-kit-skills.json" > "$WORK/s.json" \
   && command cp "$WORK/s.json" "$HOME/hermes-alpha/home/profiles/chief/skills/.dwarves-kit-skills.json"
 brief "$DWARVES_HERMES_LINKS"
-has "a stale link is a decision line for its cluster" "$(msg_of c2)" "• kit skills on chief are stale: re-run board hermes link"
-has "under the decision head" "$(msg_of c2)" "🙋 needs your decision (1)"
+has "a stale link is a decision line for its cluster" "$(msg_of c2)" "• kit skills on \`chief\` are stale: re-run \`board hermes link\`"
+has "under the decision head" "$(msg_of c2)" "### 🙋 Needs your decision (1)"
 lacks "and not in another cluster's brief" "$(msg_of c1)" "kit skills on"
 python3 - "$DWARVES_HERMES_LINKS" <<'PYEOF'
 import json, sys
 p = sys.argv[1]; d = json.load(open(p)); d["links"][0]["cluster"] = ""; json.dump(d, open(p, "w"))
 PYEOF
 brief "$DWARVES_HERMES_LINKS"
-has "a link with no cluster goes to the first cluster" "$(msg_of c1)" "kit skills on chief are stale"
+has "a link with no cluster goes to the first cluster" "$(msg_of c1)" "kit skills on \`chief\` are stale"
 lacks "and only there" "$(msg_of c2)" "kit skills on"
 echo "{\"hermes_links\":[{\"label\":\"recorded\",\"cluster\":\"c1\",\"stale\":true,\"reason\":\"x\"}]}" > "$WORK/bh.json"
 : > "$FAKE_POSTED"
 DWARVES_HERMES_LINKS="$WORK/none.json" python3 "$BRIEF" run --registry "$WORK/repos.txt" --cluster-map "c1=r1,c2=r2" \
   --state-file "$WORK/digest.json" --health-state-file "$WORK/bh.json" --poster "$WORK/poster" \
   --kanban "c1=$WORK/kanban" --now "$NOW" 2>/dev/null
-has "the sweep's recorded state is what the brief reads" "$(msg_of c1)" "kit skills on recorded are stale"
+has "the sweep's recorded state is what the brief reads" "$(msg_of c1)" "kit skills on \`recorded\` are stale"
 
 echo "case verb:"
 out="$("$BOARD" hermes link --help 2>&1)"
