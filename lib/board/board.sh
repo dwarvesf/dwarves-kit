@@ -218,6 +218,14 @@
 #                                                               `health run` and `brief run` read their flags
 #                                                               from --config FILE, $DWARVES_BOARD_CONFIG, or
 #                                                               ~/.config/dwarves-kit/board.json.
+#   board.sh hermes link [--home <dir>] [--profile <name>] [--cluster <c>] [--dry-run] [--yes] [--no-verify]
+#   board.sh hermes check [--record]                            link a Hermes agent profile to the kit: install
+#                                                               adapters/hermes/skills into the profile with a
+#                                                               version stamp, record the link and the cluster's
+#                                                               rail and boards, prove it with one agent turn.
+#                                                               `check` finds linked profiles whose skills are
+#                                                               stale (`sweep` records it, `brief` says so).
+#                                                               Forwards to lib/sync/sweep/board-hermes.
 #
 # Registry format (`boards.txt`): whitespace-delimited `<name> <path-to-BACKLOG.md> [bridge]`
 # rows, `#` comments, `~` expands to $HOME. A THIRD field, `bridge`, opts a repo into `mirror`:
@@ -249,6 +257,7 @@ BOARD_SWEEP_VERIFY_SH="$(cd "$BOARD_DIR/.." && pwd)/sync/sweep/board-sweep-verif
 BOARD_MIRROR_CLEANUP_PY="$BOARD_DIR/board-mirror-cleanup.py"
 BOARD_HEALTH_PY="$(cd "$BOARD_DIR/.." && pwd)/sync/sweep/board-health"
 BOARD_BRIEF_PY="$(cd "$BOARD_DIR/.." && pwd)/sync/sweep/board-brief"
+BOARD_HERMES_PY="$(cd "$BOARD_DIR/.." && pwd)/sync/sweep/board-hermes"
 COCKPIT_PY="$(cd "$BOARD_DIR/.." && pwd)/sync/cockpit.py"  # lib/sync/, the P2 sync-engine port
 MEGA_SH="$(cd "$BOARD_DIR/.." && pwd)/mega/mega.sh"  # lib/mega/mega.sh, one level up from lib/board/
 
@@ -1213,6 +1222,7 @@ main() {
     mirror-cleanup) shift; exec python3 "$BOARD_MIRROR_CLEANUP_PY" "$@" ;;
     health) shift; exec python3 "$BOARD_HEALTH_PY" "$@" ;;
     brief) shift; exec python3 "$BOARD_BRIEF_PY" "$@" ;;
+    hermes) shift; exec python3 "$BOARD_HERMES_PY" "$@" ;;
     init) shift; cmd_init "$@" ;;
     capture) shift; cmd_capture "$@" ;;
     promote) shift; exec "$BOARD_DIR/bin/add-backlog" "$@" ;;

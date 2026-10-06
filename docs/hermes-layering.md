@@ -29,4 +29,13 @@ Rules for this layer:
 - A skill holds no logic: no counting, no thresholds, no formatting. If a skill needs a number, the kit command prints it.
 - A skill only runs read-only forms (`--dry-run`) of a command that can post.
 - The operator's flags come from the kit config file (`--config`, `$DWARVES_BOARD_CONFIG`, or `~/.config/dwarves-kit/board.json`), so a skill never carries an operator's boards, channels, or paths.
-- An operator installs the skills by copying `adapters/hermes/skills/<name>/` into the agent's skills directory. The kit does not ship an installer.
+- `board hermes link` installs the skills into one profile (the master or spokesperson), stamps the install with a digest of the skill files, records the link and the cluster's rail and boards in `~/.config/dwarves-kit/hermes-links.json`, and proves it with one agent turn (the agent must run `board health run --dry-run --force` and answer a nonce). `/kit:onboard` offers it. Re-running refreshes.
+- `board sweep` runs `board hermes check --record` every tick. A linked profile whose stamp differs from the installed kit is stale, and `board brief` raises one decision line, `kit skills on <label> are stale: re-run board hermes link`.
+
+```
+ board hermes link ----> profile/skills/{kit-board,kit-precedent}  +  .dwarves-kit-skills.json (digest)
+        |                                  ^
+        +-> hermes-links.json              | compared every sweep tick
+                                           |
+ board sweep --> board hermes check --record --> health state --> board brief  "kit skills on X are stale"
+```

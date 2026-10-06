@@ -8,11 +8,15 @@ their own rails; the brief never replaces them.
 
 Message order, each section omitted when empty:
 
-  needs your decision   one line per item, each a clear question: hub rows whose
+  needs your decision   one line per item, each a clear question (or the one fact to
+                        act on): hub rows whose
                         state differs from their Hermes mirror card in a way the
                         mirror cannot settle (`ID hub/mirror drift: ... Ship or
                         reopen?`), and incident rows the --incidents hook marks
-                        `needs_you`. Three at most, then `+N more in details`.
+                        `needs_you`, and a linked Hermes profile whose kit skills are
+                        stale (`kit skills on <label> are stale: re-run board hermes
+                        link`, from `board hermes check`, for the link's cluster or
+                        the first cluster). Three at most, then `+N more in details`.
                         With none, one line says nothing needs the operator.
   open incidents        from the --incidents hook (see below): the count, up to
                         three rows, the hook's own fault lines
@@ -74,8 +78,6 @@ stderr: `brief: ...` log lines. Exit 0 on a normal run; only a usage error is no
 
 import argparse
 import hashlib
-import importlib.machinery
-import importlib.util
 import json
 import os
 import re
@@ -88,16 +90,11 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 
 
-def _load_health():
-    path = str(HERE / "board-health")
-    loader = importlib.machinery.SourceFileLoader("board_health", path)
-    spec = importlib.util.spec_from_loader("board_health", loader)
-    mod = importlib.util.module_from_spec(spec)
-    loader.exec_module(mod)
-    return mod
+sys.path.insert(0, str(HERE))
+import sweep_modules  # noqa: E402
 
-
-H = _load_health()
+H = sweep_modules.load("board-health")
+HM = sweep_modules.load("board-hermes")
 DAY = H.DAY
 ORIGIN_ID_RE = re.compile(r"^origin:\s*([^\s:]+):(\S+)", re.M)
 TERMINAL_ROW = ("shipped", "dropped", "done", "closed")
@@ -232,6 +229,15 @@ def compose(cluster, rail, args, rows, health, digest, bstate, now):
     for d in (inc["decisions"] if inc else []):
         decisions.append(f"{d['id']} {d['question']}".strip())
 
+    # a Hermes profile linked to this kit whose skills are out of date: the sweep records
+    # the comparison each tick, and a brief with no record compares now
+    links = health.get("hermes_links")
+    if links is None:
+        links = HM.check_links()
+    for link in links:
+        if link.get("stale") and (link.get("cluster") or args.first_cluster) == cluster:
+            decisions.append(f"kit skills on {link.get('label') or link.get('profile')} are stale: re-run board hermes link")
+
     only = cluster in set(args.decisions_only or [])
     fields, details = [], []
 
@@ -318,7 +324,9 @@ def cmd_run(args):
     digest = H.read_json(args.state_file, {})
     bstate = health.get("brief", {})
 
-    for cluster, rail in H.clusters_of(rows, args.cluster_map):
+    clusters = H.clusters_of(rows, args.cluster_map)
+    args.first_cluster = clusters[0][0] if clusters else ""
+    for cluster, rail in clusters:
         if args.cluster and cluster != args.cluster:
             continue
         if not H.is_due(cluster, bstate.get("last_run", {}), args, now):
