@@ -20,6 +20,11 @@
 #   wrap.sh flick-7b < pairs                                step 7b's flick shadow call; prints the FYI STATE row text
 #   wrap.sh --help
 #
+#   land, apply --worktrees and apply --own refuse to remove a worktree a live process still
+#   holds (its cwd or an open file inside it): `SKIP <wt>: busy, held by pid <pid> (<command>)`
+#   (`and N more` when several), branch kept, the rest of the pass continues. Set
+#   KIT_WRAP_SKIP_BUSY_CHECK=1 to skip the check; without lsof it prints one NOTE and removes as before.
+#
 #   --under <root> (scan and apply, repeatable) appends every immediate child of <root> that
 #   holds a .git file or directory, in sorted order, to the repo list. Other children are
 #   skipped; a root with no repos prints one line. A bare --under (no directory follows it)
@@ -131,7 +136,7 @@ source "$LIB_ROOT/config/kit-config.sh" || { echo "FATAL: lib/config/kit-config.
 source "$LIB_ROOT/gate/default-branch-warn.sh" || { echo "FATAL: lib/gate/default-branch-warn.sh missing or unreadable" >&2; exit 1; }
 for _m in common scan apply pull carry ci merge land start log deploy rebase adopt flick; do source "$SELF_DIR/wrap-$_m.sh" || { echo "FATAL: lib/wrap/wrap-$_m.sh missing or unreadable" >&2; exit 1; }; done; unset _m
 
-_usage() { sed -n '2,35p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
+_usage() { sed -n '2,40p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
 
 # --------------------------------------------------------------------------- entry
 

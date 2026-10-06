@@ -905,6 +905,15 @@ _land_tidy() {
     return 2
   fi
 
+  # A live process holding the worktree (its cwd or an open file) would keep writing into a
+  # deleted path, so the merge stands and the worktree and branch stay.
+  if _wt_busy "$wt"; then
+    echo "     ${BUSY_MSG}"
+    echo "     ${branch} is merged; worktree ${wt} and ${branch} stay until the holder exits"
+    [ "$blocked" = 0 ] || return 2
+    return 0
+  fi
+
   # `-f -f` overrides the lock the Agent tool puts on every worktree it creates; the merge
   # proof above is what earns the removal. The removal counts only once the path is gone.
   git -C "$repo" worktree remove -f -f "$wt" >/dev/null 2>&1
