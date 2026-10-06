@@ -208,6 +208,16 @@
 #                                                               the last run, sync health per spoke);
 #                                                               `sweep --health` runs it every tick.
 #                                                               Forwards to lib/sync/sweep/board-health.
+#   board.sh brief run --registry <path> [--poster <cmd>] [--dry-run] [--force] ...
+#                                                               ONE message per cluster per day built on
+#                                                               `health`: what needs the operator's decision,
+#                                                               open incidents (from an --incidents hook),
+#                                                               the boards every third day, one line of what
+#                                                               the bots did; details follow as a second
+#                                                               message. Forwards to lib/sync/sweep/board-brief.
+#                                                               `health run` and `brief run` read their flags
+#                                                               from --config FILE, $DWARVES_BOARD_CONFIG, or
+#                                                               ~/.config/dwarves-kit/board.json.
 #
 # Registry format (`boards.txt`): whitespace-delimited `<name> <path-to-BACKLOG.md> [bridge]`
 # rows, `#` comments, `~` expands to $HOME. A THIRD field, `bridge`, opts a repo into `mirror`:
@@ -238,6 +248,7 @@ BOARD_SWEEP_SH="$(cd "$BOARD_DIR/.." && pwd)/sync/sweep/board-sweep"            
 BOARD_SWEEP_VERIFY_SH="$(cd "$BOARD_DIR/.." && pwd)/sync/sweep/board-sweep-verify"
 BOARD_MIRROR_CLEANUP_PY="$BOARD_DIR/board-mirror-cleanup.py"
 BOARD_HEALTH_PY="$(cd "$BOARD_DIR/.." && pwd)/sync/sweep/board-health"
+BOARD_BRIEF_PY="$(cd "$BOARD_DIR/.." && pwd)/sync/sweep/board-brief"
 COCKPIT_PY="$(cd "$BOARD_DIR/.." && pwd)/sync/cockpit.py"  # lib/sync/, the P2 sync-engine port
 MEGA_SH="$(cd "$BOARD_DIR/.." && pwd)/mega/mega.sh"  # lib/mega/mega.sh, one level up from lib/board/
 
@@ -1201,6 +1212,7 @@ main() {
       exec bash "$BOARD_SWEEP_SH" "$@" ;;
     mirror-cleanup) shift; exec python3 "$BOARD_MIRROR_CLEANUP_PY" "$@" ;;
     health) shift; exec python3 "$BOARD_HEALTH_PY" "$@" ;;
+    brief) shift; exec python3 "$BOARD_BRIEF_PY" "$@" ;;
     init) shift; cmd_init "$@" ;;
     capture) shift; cmd_capture "$@" ;;
     promote) shift; exec "$BOARD_DIR/bin/add-backlog" "$@" ;;
