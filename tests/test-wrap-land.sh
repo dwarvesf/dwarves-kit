@@ -2173,6 +2173,27 @@ chk "PG4b: exits 2" "$([ "$rc" -eq 2 ]; echo $?)"
 chk_has "PG4b: the late red check refuses the merge" "$out" "checks failed: PR evidence"
 chk_no "PG4b: never merges" "$(cat "$GH_STUB_CALLS")" "pr merge"
 
+echo "--- PG4d: a check GitHub registers minutes late (an unfiltered pull_request workflow) is still waited for"
+pg_build pg4d "" "$PG_WF"
+out="$(pg_land pg4d GH_STUB_PR_42='{"number":42,"statusCheckRollup":[]}' GH_STUB_PR_42_21="$PG_RED")"; rc=$?
+chk "PG4d: exits 2" "$([ "$rc" -eq 2 ]; echo $?)"
+chk_has "PG4d: the check that registered after 200s refuses the merge" "$out" "checks failed: PR evidence"
+chk_no "PG4d: never merges" "$(cat "$GH_STUB_CALLS")" "pr merge"
+
+echo "--- PG4e: a paths-filtered workflow that starts nothing pays only the short grace"
+pg_build pg4e "" $'on:\n  pull_request:\n    paths: [src/**]\njobs:\n  x:\n    runs-on: [self-hosted]'
+out="$(pg_land pg4e GH_STUB_PR_42='{"number":42,"statusCheckRollup":[]}')"; rc=$?
+chk "PG4e: exits 0" "$rc"
+chk "PG4e: no more than 5 rollup reads" "$([ "$(grep -c 'statusCheckRollup' "$GH_STUB_CALLS")" -le 5 ]; echo $?)"
+chk_has "PG4e: merged" "$out" "merged #42 ("
+
+echo "--- PG4f: an unfiltered workflow whose checks never register says so, then merges as before"
+pg_build pg4f "" "$PG_WF"
+out="$(pg_land pg4f GH_STUB_PR_42='{"number":42,"statusCheckRollup":[]}')"; rc=$?
+chk "PG4f: exits 0" "$rc"
+chk_has "PG4f: names the unregistered gate" "$out" "no checks registered on #42 after"
+chk_has "PG4f: merged" "$out" "merged #42 ("
+
 echo "--- PG4c: a check still pending at the bound refuses"
 pg_build pg4c "" "$PG_WF"
 out="$(pg_land pg4c GH_STUB_PR_42='{"number":42,"statusCheckRollup":[{"name":"PR evidence","status":"IN_PROGRESS","conclusion":""}]}')"; rc=$?
