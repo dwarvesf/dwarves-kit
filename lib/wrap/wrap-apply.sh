@@ -107,8 +107,13 @@ _wt_cleared() {
 # form is one whole-system `lsof -Fpcn` filtered by path prefix: about 0.3s on a worktree of
 # any size, where `lsof +D <wt>` walks the tree (3.6s on a 160k-file one). This run's own pid,
 # its descendants and its ancestors never count: they hold the path only because the operator
-# or a caller ran wrap from inside it. KIT_WRAP_SKIP_BUSY_CHECK=1 turns the check off. Without
-# lsof it prints one NOTE per run and answers "not busy", today's behavior.
+# or a caller ran wrap from inside it. So does a pipeline reader: a process in this run's own
+# process group whose stdin is a pipe. The `| tail -6` of `wrap land <wt> | tail -6` inherits
+# the shell's cwd inside the worktree, lives only until wrap exits, and would otherwise read as
+# a holder that never leaves. A background job (stdin not a pipe) or one from an earlier call
+# (another group) still counts.
+# KIT_WRAP_SKIP_BUSY_CHECK=1 turns the check off. Without lsof it prints one NOTE per run and
+# answers "not busy", today's behavior.
 BUSY_MSG=""
 _WT_BUSY_NOTED=0
 _wt_busy() {
@@ -122,32 +127,41 @@ _wt_busy() {
     return 1
   fi
   canon="$(cd "$wt" 2>/dev/null && pwd -P)" || return 1
-  psnap="$(ps -axo pid=,ppid= 2>/dev/null)"
+  psnap="$(ps -axo pid=,ppid=,pgid= 2>/dev/null)"
   # lsof runs from /, so this shell's own cwd inside the worktree cannot match.
-  holders="$(cd / && lsof -nP -w +c 0 -Fpcn 2>/dev/null | WT="$canon" SELF="$$" PSNAP="$psnap" awk '
+  holders="$(cd / && lsof -nP -w +c 0 -Fpcftn 2>/dev/null | WT="$canon" SELF="$$" PSNAP="$psnap" awk '
     BEGIN {
       n = split(ENVIRON["PSNAP"], rows, "\n")
-      for (i = 1; i <= n; i++) { split(rows[i], f, " "); if (f[1] != "") par[f[1]] = f[2] }
+      for (i = 1; i <= n; i++) { split(rows[i], f, " "); if (f[1] != "") { par[f[1]] = f[2]; grp[f[1]] = f[3] } }
       self = ENVIRON["SELF"]; wt = ENVIRON["WT"]; wl = length(wt)
+      selfgrp = grp[self] + 0
       for (p = self; p != "" && p + 0 > 1 && !(p in anc); p = par[p]) anc[p] = 1
     }
     function mine(pid,   p, hops) {
       if (pid in anc) return 1
+      if (selfgrp > 1 && grp[pid] + 0 == selfgrp && pipein[pid]) return 1
       for (p = pid; p != "" && p + 0 > 1 && hops < 64; p = par[p]) { if (p == self) return 1; hops++ }
       return 0
     }
-    /^p/ { pid = substr($0, 2); next }
-    /^c/ { cmd = substr($0, 2); next }
+    /^p/ { pid = substr($0, 2); fd = ""; next }
+    /^c/ { cmdof[pid] = substr($0, 2); next }
+    /^f/ { fd = substr($0, 2); next }
+    /^t/ { if (fd == "0" && ($0 == "tPIPE" || $0 == "tFIFO")) pipein[pid] = 1; next }
     /^n/ {
       name = substr($0, 2)
       if (name != wt && substr(name, 1, wl + 1) != wt "/") next
       if (pid in seen) next
       seen[pid] = 1
-      if (mine(pid)) next
-      if (count == 0) { fpid = pid; fcmd = cmd }
-      count++
+      order[++k] = pid
     }
-    END { if (count > 0) printf "%s\t%s\t%d\n", fpid, fcmd, count }
+    END {
+      for (i = 1; i <= k; i++) {
+        if (mine(order[i])) continue
+        if (count == 0) { fpid = order[i]; fcmd = cmdof[order[i]] }
+        count++
+      }
+      if (count > 0) printf "%s\t%s\t%d\n", fpid, fcmd, count
+    }
   ')"
   [ -n "$holders" ] || return 1
   IFS=$'\t' read -r pid cmd n <<< "$holders"
