@@ -197,11 +197,14 @@
 #                                                               prove a sweep wrote no board, or
 #                                                               read what the newest tick did.
 #   board.sh mirror-cleanup [--registry <path>] [--snapshot <path>] [--hermes-home <dir>]
-#                            [--kinds-file <path>] [--apply]
+#                            [--kinds-file <path>] [--expire-only] [--apply]
 #                                                               reconcile the open Hermes cards
 #                                                               against the boards (dry run by
-#                                                               default; never deletes). Forwards
-#                                                               to lib/board/board-mirror-cleanup.py.
+#                                                               default; never deletes). A kinds-file
+#                                                               rule with an expire block archives
+#                                                               its cards by age; --expire-only runs
+#                                                               just that. Forwards to
+#                                                               lib/board/board-mirror-cleanup.py.
 #   board.sh health run --registry <path> [--poster <cmd>] [--dry-run] [--force] ...
 #   board.sh health record --repo <name> --rc <n>               the periodic board health digest per
 #                                                               cluster (open, stale, archived since

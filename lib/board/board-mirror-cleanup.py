@@ -32,6 +32,16 @@ rule is the Hermes decomposer: a child it made (created_by auto-decomposer)
 belongs to its root card. A rule with "age_report" also prints the kind's age
 distribution and that text as a proposed expiry (never applied).
 
+A rule with "expire" {"days": N, "board": B, "status": "triage"} turns that
+proposal into an action: a card of the rule's kind on board B, still in the
+given status (default triage), created N or more days ago, is archived. Only
+boards named by an expire block ever expire; a card with no created_at never
+does. The summary is one line per expiring board:
+`expired N cards on B (limit Nd)`, `would expire ...` on a dry run.
+--expire-only runs just that step: no registry, no BACKLOG reads, no snapshot
+changes, nothing but the expiry line (and, on a dry run, when the next card
+crosses its limit). It is the verb the sweep's expiry leg calls.
+
 Dry run by default. --apply archives, then drops the matching snapshot lines
 (a copy of the snapshot is kept next to it first).
 
@@ -41,7 +51,7 @@ roadmaps always come from the working tree, as in the mirror.
 
 Usage: board mirror-cleanup [--registry F] [--snapshot F] [--hermes-home D]
          [--kinds-file F] [--source origin|working] [--board NAME]...
-         [--apply] [--verbose] [--json]
+         [--expire-only] [--apply] [--verbose] [--json]
 """
 
 import argparse
@@ -185,6 +195,14 @@ def load_kinds(path):
     kinds = json.loads(Path(path).read_text())
     if not isinstance(kinds, list) or not all(isinstance(k, dict) and k.get("kind") for k in kinds):
         raise SystemExit(f"--kinds-file {path}: expected a JSON list of rules, each with a kind")
+    for k in kinds:
+        exp = k.get("expire")
+        if exp is None:
+            continue
+        days = exp.get("days") if isinstance(exp, dict) else None
+        if (not isinstance(days, (int, float)) or isinstance(days, bool) or days <= 0
+                or not isinstance(exp.get("board"), str) or not exp["board"]):
+            raise SystemExit(f"--kinds-file {path}: kind {k['kind']}: expire needs a positive days and a board")
     return kinds
 
 
@@ -256,6 +274,30 @@ def age_buckets(cards, now):
     return [(label, counts.get(label, 0)) for _, label in edges]
 
 
+def expire_status(rule):
+    return rule["expire"].get("status", "triage")
+
+
+def is_expired(card, rule, now):
+    """A card of an expiring kind, in the expiring status, past its limit. A card
+    with no created_at is never expired: an unknown age is not an old age."""
+    created = card.get("created_at")
+    if not created or card["status"] != expire_status(rule):
+        return False
+    return now - created >= rule["expire"]["days"] * 86400
+
+
+def limit_text(rule):
+    return f"{rule['expire']['days']:g}d"
+
+
+def next_crossing(cards, rule, now):
+    """The earliest moment a still-live card of this kind crosses its limit, or None."""
+    left = [c["created_at"] for c in cards
+            if c.get("created_at") and c["status"] == expire_status(rule) and not is_expired(c, rule, now)]
+    return min(left) + rule["expire"]["days"] * 86400 if left else None
+
+
 def find_chain(actions, d_cards, args):
     """Decomposer children whose root card is being archived. A decomposed root
     lists its children as `parents`, and `complete` on it fails until they finish,
@@ -295,6 +337,8 @@ def main(argv=None):
     ap.add_argument("--hermes", default=os.environ.get("HERMES_BIN", "hermes"))
     ap.add_argument("--source", choices=("origin", "working"), default="origin")
     ap.add_argument("--board", action="append", help="limit to this board (repeatable); default every board")
+    ap.add_argument("--expire-only", action="store_true",
+                    help="run only the age expiry the rule list asks for (kinds with an expire block)")
     ap.add_argument("--apply", action="store_true", help="archive the cards; default is a dry run")
     ap.add_argument("--verbose", action="store_true", help="list every card with an action")
     ap.add_argument("--json", action="store_true", help="print the summary as JSON")
@@ -304,21 +348,30 @@ def main(argv=None):
     kinds = load_kinds(args.kinds_file)
     rules = {k["kind"]: k for k in kinds}
 
-    repos = load_sources(args.registry, args.source)
+    expiring = {k["kind"]: k for k in kinds if k.get("expire")}
+    if args.expire_only and not expiring:
+        raise SystemExit("board mirror-cleanup: --expire-only needs a rule with an expire block in --kinds-file")
+    repos = {} if args.expire_only else load_sources(args.registry, args.source)
     boards = hermes_json(["boards", "list", "--json"], args.hermes_home, args.hermes)
     slugs = [b["slug"] for b in boards if not b.get("archived")]
     if args.board:
         slugs = [s for s in slugs if s in args.board]
+    if args.expire_only:
+        slugs = [s for s in slugs if s in {r["expire"]["board"] for r in expiring.values()}]
     now = time.time()
 
     per_board, closed = {}, Counter()
     actions = []
     d_cards = defaultdict(list)
+    expire_live = defaultdict(list)   # (board, kind) -> open cards the rule watches
+    expire_actions = []
     for slug in slugs:
         counts = Counter()
         for card in hermes_json(["--board", slug, "list", "--json"], args.hermes_home, args.hermes):
             if card["status"] in ("done", "archived"):
                 closed[slug] += 1
+                continue
+            if args.expire_only and ORIGIN_RE.search(card.get("body") or ""):
                 continue
             cls, sub, detail = classify(card, slug, repos, kinds)
             counts[cls] += 1
@@ -328,21 +381,55 @@ def main(argv=None):
             origin = (ORIGIN_RE.search(card.get("body") or "") or [None, ""])[1]
             if cls == "d":
                 d_cards[sub].append((slug, card))
+                rule = expiring.get(sub)
+                if rule and rule["expire"]["board"] == slug:
+                    expire_live[(slug, sub)].append(card)
+                    if is_expired(card, rule, now):
+                        days_old = int((now - card["created_at"]) // 86400)
+                        expire_actions.append({"board": slug, "id": card["id"], "origin": "",
+                                               "why": f"x expired {sub} {days_old}d old, limit {limit_text(rule)}",
+                                               "snapshot": False, "expire": (slug, sub)})
             elif cls in ("b", "c") or (cls == "e" and sub == "state-drift"):
                 actions.append({"board": slug, "id": card["id"], "origin": origin,
                                 "why": f"{cls} {sub} {detail}".strip(), "snapshot": True})
         per_board[slug] = counts
     chain = find_chain(actions, d_cards, args)
     actions.extend(chain)
+    actions.extend(expire_actions)
+
+    def expire_lines(done=None):
+        """One line per expiring board. done is the per-(board, kind) count of
+        cards archived, or None on a dry run, which reports what would go."""
+        out = []
+        for kind, rule in expiring.items():
+            board = rule["expire"]["board"]
+            planned = sum(1 for a in expire_actions if a["expire"] == (board, kind))
+            if done is None:
+                out.append(f"would expire {planned} cards on {board} (limit {limit_text(rule)})")
+                nxt = next_crossing(expire_live[(board, kind)], rule, now)
+                if nxt:
+                    out.append(f"next card on {board} crosses {limit_text(rule)} at "
+                               f"{time.strftime('%Y-%m-%d %H:%M %Z', time.localtime(nxt))}")
+            else:
+                out.append(f"expired {done.get((board, kind), 0)} cards on {board} (limit {limit_text(rule)})")
+        return out
 
     open_total = sum(sum(c[k] for k in "abcde") for c in per_board.values())
-    if args.json:
+    if args.expire_only:
+        if not args.apply:
+            print("\n".join(expire_lines()))
+        if args.verbose:
+            for a in expire_actions:
+                print(f"  archive {a['board']}/{a['id']}  {a['why']}")
+    elif args.json:
         print(json.dumps({
             "open_cards": open_total,
             "actions": len(actions),
             "boards": {s: dict(sorted(c.items())) for s, c in per_board.items()},
             "closed": dict(closed),
             "d_kinds": {k: len(v) for k, v in d_cards.items()},
+            "expire": {f"{r['expire']['board']}/{k}": sum(1 for a in expire_actions if a["expire"] == (r["expire"]["board"], k))
+                       for k, r in expiring.items()},
         }, indent=1, sort_keys=True))
     else:
         print(f"board-mirror-cleanup ({'APPLY' if args.apply else 'DRY RUN'}) registry={args.registry} source={args.source}")
@@ -385,11 +472,14 @@ def main(argv=None):
             print(f"  archive {a['board']}/{a['id']}  {a['origin'] or '-':28} {a['why']}")
         if len(shown) < len(actions):
             print(f"  ... {len(actions) - len(shown)} more (--verbose lists all)")
+        if expiring and not args.apply:
+            print("\n".join(expire_lines()))
 
     if not args.apply:
         return 0
 
     dropped, errors, archived = set(), 0, 0
+    expired = Counter()
     for a in actions:
         r = hermes(["--board", a["board"], "archive", a["id"]], args.hermes_home, args.hermes)
         if r.returncode != 0:
@@ -397,6 +487,8 @@ def main(argv=None):
             print(f"  ERROR archive {a['board']}/{a['id']}: {(r.stderr or r.stdout).strip()[:200]}", file=sys.stderr)
             continue
         archived += 1
+        if a.get("expire"):
+            expired[a["expire"]] += 1
         if a["snapshot"] and a["origin"]:
             dropped.add((a["origin"], a["id"]))
     snap = Path(args.snapshot)
@@ -420,7 +512,10 @@ def main(argv=None):
         tmp.write_text("\n".join(keep) + ("\n" if keep else ""))
         os.replace(tmp, snap)
         print(f"snapshot: dropped {n_dropped} lines (backup {backup.name})")
-    print(f"applied: {archived} archived, {errors} error(s)")
+    if expiring:
+        print("\n".join(expire_lines(expired)))
+    if not args.expire_only:
+        print(f"applied: {archived} archived, {errors} error(s)")
     return 1 if errors else 0
 
 
