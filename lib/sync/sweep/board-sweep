@@ -39,6 +39,10 @@
 #   --state-file F          digest state (default ~/.cache/backlog-sync/digest-state.json)
 #   --mirror-hermes-home D  turn the mirror leg on, against the kanban store at D
 #   --mirror-snapshot F     mirror snapshot (default <repo-root>/_meta/.board-mirror-snapshot.jsonl)
+#   --expire-kinds-file F   turn the expiry leg on (needs --mirror-hermes-home): `board
+#                           mirror-cleanup --expire-only --kinds-file F` archives the cards the
+#                           rule list's expire blocks name (a social card in triage for 14 days),
+#                           once per tick; --dry-run only reports. Observational like the mirror.
 #   --repo-root D           repo root handed to `board mirror` (default: the cwd's git root)
 #   --health                add the health leg: `board-health run` after the digests, due
 #                           every --health-every-days (default 3) per cluster. Without it the
@@ -84,6 +88,7 @@ ON_CLEAN=""
 STATE_FILE="${HOME}/.cache/backlog-sync/digest-state.json"
 MIRROR_HERMES_HOME=""
 MIRROR_SNAPSHOT=""
+EXPIRE_KINDS=""
 REPO_ROOT=""
 DRY_RUN=0
 digest_flags=()
@@ -122,6 +127,7 @@ while [ $# -gt 0 ]; do case "$1" in
   --state-file) STATE_FILE="${2:-}"; shift 2;;
   --mirror-hermes-home) MIRROR_HERMES_HOME="${2:-}"; shift 2;;
   --mirror-snapshot) MIRROR_SNAPSHOT="${2:-}"; shift 2;;
+  --expire-kinds-file) EXPIRE_KINDS="${2:-}"; shift 2;;
   --repo-root) REPO_ROOT="${2:-}"; shift 2;;
   --dry-run) DRY_RUN=1; shift;;
   -h|--help) usage; exit 0;;
@@ -384,6 +390,22 @@ if [ -n "$MIRROR_HERMES_HOME" ]; then
     mirror_cleanup
   else
     echo "  mirror skipped: hermes CLI not on PATH"
+  fi
+fi
+
+# expiry leg: archive the bot-made cards that outlived their rule's limit. Same
+# store and PATH rules as the mirror leg, but it reads no BACKLOG and writes no
+# snapshot, so it needs none of the origin plumbing and runs even on a tick where
+# the mirror was skipped. Observational: a failure logs and never flips rc_any.
+if [ -n "$EXPIRE_KINDS" ] && [ -n "$MIRROR_HERMES_HOME" ]; then
+  if command -v hermes >/dev/null 2>&1; then
+    expire_flags=()
+    [ "$DRY_RUN" -eq 0 ] && expire_flags+=(--apply)
+    eout="$(HERMES_HOME="$MIRROR_HERMES_HOME" "$BOARD_CMD" mirror-cleanup --expire-only --hermes-home "$MIRROR_HERMES_HOME" --kinds-file "$EXPIRE_KINDS" ${expire_flags[@]+"${expire_flags[@]}"} 2>&1)"; erc=$?
+    echo "  expire rc=$erc (home=$MIRROR_HERMES_HOME)"
+    printf '%s\n' "$eout" | sed 's/^/    /'
+  else
+    echo "  expire skipped: hermes CLI not on PATH"
   fi
 fi
 
