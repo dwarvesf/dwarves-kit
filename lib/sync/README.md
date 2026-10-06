@@ -183,8 +183,40 @@ cannot be resolved, the whole mirror call is skipped for that tick: the
 planner archives any card whose row is missing from the extract, so a partial
 registry would close that repo's live cards.
 
+**Health digest.** The change digest says what moved. `board health` (also the
+sweep's `--health` leg) says whether the boards and the sync legs are healthy,
+on a slow clock, through the same `--poster`. Every sweep tick records each
+sync and mirror outcome (spokes seen, rc, error lines) into
+`~/.cache/backlog-sync/health-state.json`; `--health` then builds one payload
+per cluster once `--health-every-days` (default 3) has passed since its last
+delivered post. A failed post is not stamped, so it retries next tick and
+rides `carried_error`.
+
+| Section | Source |
+|---|---|
+| hubs | per repo on the cluster's rail: active rows, parked rows, stale rows (an active row whose line did not change in `--health-stale-days`, default 7, from `git blame` on the origin copy of the board) |
+| kanban | per board of the `--health-kanban CLUSTER=CMD` reader (a `hermes kanban` wrapper): open cards, stale cards, cards archived since the last delivered run |
+| sync | per spoke and the mirror leg, ok or failed, from the tick records; FLAPPING ids and a carried change-digest failure from the digest state; a sweep record older than six hours |
+| extra | each stdout line of `--health-line CLUSTER=CMD`, for facts only the operator knows |
+
+The payload is the digest payload plus `kind: "health"`, `period_days`,
+`next_due`, `attention`, and one display line per field:
+
+```
+{kind: "health", cluster, rail, key, severity: info|warn, title, period_days,
+ next_due, attention, fields: [{name, value}], data, carried_error?}
+```
+
+`attention` is true when something needs a human: a failed sync or mirror leg,
+a FLAPPING id, a carried post failure, an unreadable kanban reader, a stale
+sweep record. A cluster named by `--health-quiet C` posts nothing while
+`attention` is false; the run is still stamped. Two limits: a kanban card has
+no updated-at field, so "stale" there means the latest of created, started and
+completed is older than the threshold, and the first run has no archived
+baseline, so it reports no archived count. Tests: `tests/test-board-health.sh`.
+
 **Exit code.** 0 when every sync, publish, and preflight leg was clean. The
-digest and mirror legs are observational and never flip it.
+digest, mirror, and health legs are observational and never flip it.
 
 `board mirror-cleanup` reconciles the open Hermes cards against the boards (dry
 run by default, never deletes). `--kinds-file` takes a JSON rule list that
