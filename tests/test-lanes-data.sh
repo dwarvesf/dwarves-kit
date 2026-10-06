@@ -193,6 +193,13 @@ app/db.py|DELETE FROM users WHERE 1=1|hit
 app/db.py|x("DROP  TABLE users")|hit
 app/db.py|x("TRUNCATE users")|hit
 db/reset.sql|TRUNCATE TABLE users|hit
+app/db.py|db.exec("TRUNCATE users")|hit
+app/db.py|x = "truncate table orders"|hit
+app/db.js|sql`TRUNCATE sessions;`|hit
+app/db.py|run('TRUNCATE TABLE audit_log')|hit
+ui/Row.tsx|<span className="truncate text-[13px] text-grey-400">{r.to}</span>|miss
+ui/Row.tsx|<div className="truncate flex">{r.name}</div>|miss
+ui/Row.tsx|const c = cn("truncate max-w-xs", extra)|miss
 app/fmt.py|# truncate long names|miss
 app/fmt.py|name.truncate(20)|miss
 docs/notes.md|DROP TABLE users;|miss

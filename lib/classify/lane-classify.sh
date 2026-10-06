@@ -111,7 +111,9 @@ _HP_kitconfig='(^|/)\.kit\.toml$'
 # Added-line signatures for data loss, checked only in non-doc files. `truncate` counts as SQL:
 # any use in a .sql file, or a statement-shaped `truncate <name>;` elsewhere.
 _HL_common='drop[[:space:]]+(table|column|database|schema)|deletemany\([[:space:]]*\{[[:space:]]*\}[[:space:]]*\)'
-_HL_truncate_code='(truncate[[:space:]]+(table[[:space:]]+)?[a-z_."]+[[:space:]]*;|["'"'"'`][[:space:]]*truncate[[:space:]]+(table[[:space:]]+)?[a-z_."]+)'
+_HL_truncate_code='(truncate[[:space:]]+(table[[:space:]]+)?[a-z_."]+[[:space:]]*;|["'"'"'`][[:space:]]*truncate[[:space:]]+(table[[:space:]]+)?[a-z_."]+([^a-z0-9_."-]|$))'
+# A CSS `truncate` utility in a class attribute (`className="truncate flex"`) is not SQL.
+_HL_truncate_css='class(name)?[[:space:]]*=[[:space:]]*[{"'"'"'`]'
 _HL_truncate_sql='(.*[^a-z_])?truncate[[:space:]]+(table[[:space:]]+)?[a-z_."]+'
 
 # _hp_re <kind> -- the built-in ERE for a hard-path kind.
@@ -555,7 +557,7 @@ _floor_scan() {
   [ -n "$rec" ] || rec="$(grep -Ei -e "${T}.*delete[[:space:]]+from" "$tmp/added" | grep -Eiv -e "${T}.*(^|[^a-z0-9_])where([^a-z0-9_]|\$)" | head -1)" || true
   [ -n "$rec" ] || rec="$(grep -Ei -e "${T}.*delete[[:space:]]+from.*where[[:space:]]+(1[[:space:]]*=[[:space:]]*1|true)([^a-z0-9_]|\$)" "$tmp/added" | head -1)" || true
   [ -n "$rec" ] || rec="$(grep -Ei -m1 -e "^[^${T}]*\.sql${T}${_HL_truncate_sql}" "$tmp/added" | head -1)" || true
-  [ -n "$rec" ] || rec="$(grep -Ei -m1 -e "${T}.*${_HL_truncate_code}" "$tmp/added" | head -1)" || true
+  [ -n "$rec" ] || rec="$(grep -Ei -e "${T}.*${_HL_truncate_code}" "$tmp/added" | grep -Eiv -e "${T}.*${_HL_truncate_css}" | head -1)" || true
   [ -z "$rec" ] || printf 'full data-loss: %s\n' "${rec%%$T*}"
   return 0
 }
