@@ -8,27 +8,33 @@ set -uo pipefail
 KIT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ORCH="$KIT/lib/queue/orchestrate.sh"
 STUB="$KIT/tests/fixtures/orca-stub/orca"
-passed=0; failed=0; cfail=0; cname=""
+passed=0; failed=0; cfail=0; cname=""; cdetail=""
 
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 export DWARVES_KIT_LOG_DIR="$TMP/kitlogs" CLAUDE_FLAGS="" TIER4_CLOSE=0 WAVE_CAP=2 ORCA_POLL_SECS=0
 
-case_begin() { cname="$1"; cfail=0; }
+case_begin() { cname="$1"; cfail=0; cdetail=""; }
+# A failed assertion prints its detail line AND keeps it for the FAIL line: tests/run-all.sh keeps only the
+# FAIL lines of a failed suite plus a short tail, so a detail line printed earlier is lost from a nightly log.
+fail_detail() {  # message
+  cfail=$((cfail + 1)); echo "  [$cname] $1"
+  cdetail="${cdetail:+$cdetail | }$(printf '%s' "$1" | tr '\n' ' ' | head -c 300)"
+}
 expect() {  # actual expected description
   [ "$1" = "$2" ] && return 0
-  cfail=$((cfail + 1)); echo "  [$cname] $3: expected '$2' got '$1'"
+  fail_detail "$3: expected '$2' got '$1'"
 }
 expect_match() {  # text regex description
   printf '%s' "$1" | grep -Eq -- "$2" && return 0
-  cfail=$((cfail + 1)); echo "  [$cname] $3: no match for /$2/ in: $(printf '%s' "$1" | head -c 300)"
+  fail_detail "$3: no match for /$2/ in: $(printf '%s' "$1" | head -c 300)"
 }
 expect_no_match() {
   printf '%s' "$1" | grep -Eq -- "$2" || return 0
-  cfail=$((cfail + 1)); echo "  [$cname] $3: unexpected match for /$2/"
+  fail_detail "$3: unexpected match for /$2/"
 }
 case_end() {
-  if [ "$cfail" = 0 ]; then echo "PASS $cname"; passed=$((passed + 1)); else echo "FAIL $cname"; failed=$((failed + 1)); fi
+  if [ "$cfail" = 0 ]; then echo "PASS $cname"; passed=$((passed + 1)); else echo "FAIL $cname: ${cdetail:0:900}"; failed=$((failed + 1)); fi
 }
 
 # Poison binaries: a sentinel proves they were called.
@@ -133,10 +139,13 @@ tc_AC1() {
   case_begin AC1
   mkcase
   printf '# Mega-goal: default fixture\n## Sub-goals\n- [ ] SG-01 only , auto , PR #__\n' > "$MEGA/ROADMAP.md"
+  # The shebang must sit in column 0: with leading spaces the kernel refuses the exec (ENOEXEC) and the
+  # calling bash re-runs the file as a script in a forked child, which intermittently dies with a
+  # segfault under load (Homebrew bash 5.3 on the nightly host), failing the run with rc 1.
   cat > "$TMP/claude-flip" <<'EOF'
-  #!/usr/bin/env bash
-  cat >/dev/null
-  bash "$ORCH_UNDER_TEST" flip "$MEGA_UNDER_TEST" SG-01
+#!/usr/bin/env bash
+cat >/dev/null
+bash "$ORCH_UNDER_TEST" flip "$MEGA_UNDER_TEST" SG-01
 EOF
   chmod +x "$TMP/claude-flip"
   export POISON_SENTINEL="$W/sentinel"
@@ -144,11 +153,11 @@ EOF
     ( PATH="$TMP/poison:$PATH" ORCA_CMD="$TMP/poison/orca" CLAUDE_CMD="$TMP/claude-flip" ORCH_UNDER_TEST="$ORCH" MEGA_UNDER_TEST="$MEGA" \
       bash "$ORCH" run "$MEGA" "$@" ) >"$W/def.out" 2>&1
   }
-  run_default; expect "$?" 0 "no flag exits 0"
-  expect "$(ls "$W/sentinel" 2>/dev/null)" "" "no flag: poison never called"
+  run_default; rc=$?; expect "$rc" 0 "no flag exits 0 (run output: $(tail -c 300 "$W/def.out" | tr '\n' ' '))"
+  expect "$(cat "$W/sentinel" 2>/dev/null)" "" "no flag: poison never called"
   printf '# Mega-goal: default fixture\n## Sub-goals\n- [ ] SG-01 only , auto , PR #__\n' > "$MEGA/ROADMAP.md"
-  run_default --backend claude; expect "$?" 0 "--backend claude exits 0"
-  expect "$(ls "$W/sentinel" 2>/dev/null)" "" "--backend claude: poison never called"
+  run_default --backend claude; rc=$?; expect "$rc" 0 "--backend claude exits 0 (run output: $(tail -c 300 "$W/def.out" | tr '\n' ' '))"
+  expect "$(cat "$W/sentinel" 2>/dev/null)" "" "--backend claude: poison never called"
   printf '# Mega-goal: default fixture\n## Sub-goals\n- [ ] SG-01 only , auto , PR #__\n' > "$MEGA/ROADMAP.md"
   fns=$(PATH="$TMP/poison:$PATH" ORCA_CMD="$TMP/poison/orca" CLAUDE_CMD="$TMP/claude-flip" ORCH_UNDER_TEST="$ORCH" MEGA_UNDER_TEST="$MEGA" \
     bash -c '. "$1"; cmd_run "$2" >/dev/null 2>&1; declare -F | awk "{print \$3}" | grep -E "^orca_(plan|tick|gate|derive|reset)$"' _ "$ORCH" "$MEGA")
@@ -455,7 +464,7 @@ tc_mutation_check() {
   sed 's/\[ "\$live" = exited \]/false/' "$KIT/lib/queue/orca-backend.sh" > "$TMP/orca-backend.mutant.sh"
   expect "$(grep -c 'false; then _S_STATE=PARKED' "$TMP/orca-backend.mutant.sh")" 1 "the mutant drops the exited branch"
   row=$(ORCA_BACKEND_LIB="$TMP/orca-backend.mutant.sh" ac4_row | sed -n 2p)
-  [ "$row" != "PARKED exited" ] || { cfail=$((cfail + 1)); echo "  [$cname] AC4 stayed green on the mutant"; }
+  [ "$row" != "PARKED exited" ] || fail_detail "AC4 stayed green on the mutant"
   expect_match "$row" '^INDETERMINATE' "the mutant falls to INDETERMINATE (never a false RUNNING)"
   case_end
 }
