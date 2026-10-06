@@ -17,10 +17,11 @@ Message order, each section omitted when empty:
   open incidents        from the --incidents hook (see below): the count, up to
                         three rows, the hook's own fault lines
   boards                the `board health` lines (hub, board, fault, sync, extra,
-                        attention). Shown only when a decision item exists, a
-                        fault exists, or --boards-every-days (default 3) has
-                        passed since they last posted; otherwise they ride the
-                        details message.
+                        attention). Shown only when a decision item exists or
+                        --boards-every-days (default 3) has passed since they last
+                        posted; otherwise they ride the details message. Sync
+                        failures do not bring them back: the bots line counts
+                        them, and instant alerts stay on their own rails.
   bots                  one count line: the hook's bot counts, cards archived
                         since the last delivered brief, and sync errors
 
@@ -111,7 +112,15 @@ def log(msg):
 # --- the incident hook ---------------------------------------------------------
 
 def _text(value, cap=200):
-    return H.redact(str(value), cap) if value is not None else ""
+    """One printable line from a hook value. Secrets are masked (webhook URLs, secret
+    references, long hex or base64 runs); a name like `some_rule-crit` is kept whole."""
+    if value is None:
+        return ""
+    text = "".join(c if c.isprintable() else " " for c in str(value))
+    text = re.sub(r"https://discord(app)?\.com/api/webhooks/\S+", "[webhook-redacted]", text)
+    text = re.sub(r"op://\S+", "[ref-redacted]", text)
+    text = re.sub(r"\b[0-9a-fA-F]{32,}\b|\b[A-Za-z0-9+/=]{40,}\b", "[redacted]", text)
+    return re.sub(r"\s+", " ", text).strip()[:cap]
 
 
 def read_incidents(cmd, read_only=False):
@@ -199,7 +208,6 @@ def compose(cluster, rail, args, rows, health, digest, bstate, now):
     board_lines = [f["value"] for f in hp["fields"] if f["name"] not in ("archived",)]
     archived_total = sum((hp["data"].get("archived_since") or {}).values())
     sync_errors = sum(1 for f in hp["fields"] if f["name"] == "attention" and f["value"].startswith("❌"))
-    faulty = bool(hp["attention"])
 
     # decisions
     decisions = []
@@ -231,7 +239,6 @@ def compose(cluster, rail, args, rows, health, digest, bstate, now):
         fields.append({"name": name, "value": value})
 
     feed_faults = ([f"⚠️ incident feed unreadable: {inc_err}"] if inc_err else []) + (inc["faults"] if inc else [])
-    faulty = faulty or bool(feed_faults)
 
     shown = decisions[:MAX_DECISIONS]
     if decisions:
@@ -241,7 +248,7 @@ def compose(cluster, rail, args, rows, health, digest, bstate, now):
         if len(decisions) > len(shown):
             add("decision", f"+{len(decisions) - len(shown)} more in details")
             details += [f"• {d}" for d in decisions[len(shown):]]
-    elif not only and not faulty:
+    elif not only and not feed_faults:
         add("clear", "✅ nothing needs you")
 
     show_boards = False
@@ -259,7 +266,7 @@ def compose(cluster, rail, args, rows, health, digest, bstate, now):
 
         boards_last = bstate.get("boards_last", {}).get(cluster)
         slow_clock = boards_last is None or now - boards_last >= args.boards_every_days * DAY - 1800
-        show_boards = bool(args.show_boards or decisions or faulty or slow_clock)
+        show_boards = bool(args.show_boards or decisions or slow_clock)
         if show_boards:
             for line in board_lines:
                 add("board", line)

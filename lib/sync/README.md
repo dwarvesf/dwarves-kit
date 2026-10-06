@@ -232,7 +232,7 @@ its health state). Per cluster, in this order, each section left out when empty:
 |---|---|
 | needs your decision | hub rows whose state and mirror card disagree in a way the mirror cannot settle (`ID hub/mirror drift: board says shipped, the Hermes card is still open. Ship or reopen?`), plus incident rows the hook marks `needs_you`, plus the hook's explicit `decisions`. Three lines, then `+N more in details`. With none and no fault, one line says nothing needs the operator. |
 | open incidents | the `--incidents C=CMD` hook: count, three rows, the hook's fault lines. An unreadable hook is a fault line, never an all-clear. |
-| boards | the health lines (hub, board, fault, sync, extra, attention). Shown when a decision or fault exists, or `--boards-every-days` (default 3) has passed; otherwise they ride the details. |
+| boards | the health lines (hub, board, fault, sync, extra, attention). Shown when a decision exists or `--boards-every-days` (default 3) has passed; otherwise they ride the details. A sync failure does not bring them back: the bots line counts it, and instant alerts stay on their own rails. |
 | bots | one line: the hook's bot counts, cards archived since the last delivered brief, sync errors |
 
 The incident hook prints one JSON object, every key optional, so any operator's
@@ -248,7 +248,8 @@ The payload is `kind: "brief"`: the health payload shape with `date`, one
 display line per field for the main message, and `details` (a list of lines)
 for the follow-up message. The poster decides how the follow-up lands (a thread
 reply where the rail has threads, else a second short message); a failed details
-post never fails the main one. `--decisions-only C` makes cluster C post only
+post never fails the main one. Under `--dry-run` and `--no-state` the hook runs with
+`BOARD_BRIEF_READ_ONLY=1` and must write nothing. `--decisions-only C` makes cluster C post only
 when a decision exists, and then only the decision lines. A failed post is not
 stamped, so it stays due and rides `carried_error`. Brief state lives in the
 health state file under `brief`.

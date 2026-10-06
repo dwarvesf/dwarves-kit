@@ -11,8 +11,8 @@
 #   AC3  a failing or malformed hook is a fault line, never an all-clear; the hook is
 #        told when the run is a preview or a test (BOARD_BRIEF_READ_ONLY)
 #   AC4  no decision: one all-clear line; --decisions-only posts nothing (and stamps)
-#   AC5  boards section: first run, every third day, or when a decision or fault exists;
-#        otherwise its lines ride the details
+#   AC5  boards section: first run, every third day, or when a decision exists;
+#        otherwise its lines ride the details (a sync fault does not bring them back)
 #   AC6  bots line: hook counts, cards archived since the last brief, sync errors
 #   AC7  cadence: due once a day, --force, --dry-run and --no-state stamp nothing
 #   AC8  a failed post stays due, rides carried_error, clears on delivery
@@ -193,6 +193,18 @@ eq "--dry-run sets BOARD_BRIEF_READ_ONLY" "$(< "$FAKE_INC_FLAG")" "1"
 : > "$FAKE_INC_FLAG"; FAKE_CARDS="$CLEAN" run "$NOW" --cluster alpha --force --no-state
 eq "--no-state sets it too" "$(< "$FAKE_INC_FLAG")" "1"
 
+echo "case hook text (names kept whole, secrets masked):"
+fresh
+cat > "$FAKE_INC_FILE" <<'EOF'
+{"open":[{"id":"t1","label":"hermes_state_registry-crit @ hermes-personal"},
+         {"id":"t2","label":"leak 0123456789abcdef0123456789abcdef0123 op://Vault/item/field https://discord.com/api/webhooks/1/abc"}]}
+EOF
+FAKE_CARDS="$CLEAN" run "$NOW" --cluster alpha
+has "a long rule name is not masked" "$(msg)" "hermes_state_registry-crit @ hermes-personal"
+has "hex runs are masked" "$(msg)" "leak [redacted]"
+has "secret references are masked" "$(msg)" "[ref-redacted]"
+has "webhook URLs are masked" "$(msg)" "[webhook-redacted]"
+
 echo "case hook failure is a fault, never an all-clear:"
 fresh
 FAKE_INC_FAIL=1 FAKE_CARDS="$CLEAN" run "$NOW" --cluster alpha
@@ -242,7 +254,9 @@ has "--show-boards forces them" "$(msg)" "🗂️ crew"
 fresh
 FAKE_CARDS="$CLEAN" run "$NOW" --cluster alpha
 FAKE_SYNC_RC=1 FAKE_CARDS="$CLEAN" run $((NOW + DAY)) --cluster alpha
-has "a fault brings the boards back" "$(msg)" "❌ sync failed: crew"
+lacks "a sync fault does not bring the boards back" "$(msg)" "❌ sync failed: crew"
+has "the bots line counts it" "$(msg)" "sync errors 1"
+has "and the details name it" "$(det)" "❌ sync failed: crew"
 
 echo "case bots line (archived since the last brief, sync errors):"
 fresh
