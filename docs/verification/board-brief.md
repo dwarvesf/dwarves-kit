@@ -27,10 +27,34 @@ Exit: 0
 Output:
   ok   board brief run --help
 
-board-brief: 87 passed, 0 failed
+board-brief: 110 passed, 0 failed
 board-health: 96 passed, 0 failed
 PASS=55 FAIL=0
 Verdict: PASS
+```
+
+## Format revision (headings, links, bold question)
+
+The first live TEST was flat text. The revision renders each section under a Discord small heading with a blank line between sections, ids as masked links with the preview suppressed (inline code when there is no URL), the question in bold, hosts after `@` in inline code, and the same rules in the details message. `render.ts` in event-bridge appends the body to the head line with a plain newline, so blank lines and `###` headings survive; only `@everyone` and `@here` are defanged.
+
+| Claim | Evidence |
+|---|---|
+| sections sit under `###` headings, each heading after the first follows a blank line, in the details too | green run, case formatting; negative control 9 |
+| a board row id links to its line in the GitHub copy of the board; inline code when the board is not on GitHub | same case; negative control 7 |
+| a hook row id links to its URL; an http URL or one with markup characters is refused | same case; negative control 11 |
+| every link has its URL in angle brackets (no preview) | same case; negative control 10 |
+| the decision question is bold, a host after `@` is inline code | same case; negative control 8 |
+| the main message stays under `--main-chars`: boards move to the details, then the incident rows past the first | same case; negative control 12 |
+
+Controls 7 to 12, mutations applied on a committed tree and reverted:
+
+```
+Control 7: row ids are not linked (row_link returns inline code)       -> FAIL the shipped row with an open card is a question; board-brief: 107 passed, 3 failed
+Control 8: the question is not bold (bold_question returns the text)   -> FAIL the decision question is bold; board-brief: 108 passed, 2 failed
+Control 9: no blank line between sections (the gap is dropped)         -> FAIL a heading follows text with no blank line; board-brief: 109 passed, 1 failed
+Control 10: link preview not suppressed ([t](url) instead of [t](<url>)) -> FAIL a ticket id is a masked link with the preview suppressed; board-brief: 106 passed, 4 failed
+Control 11: a hook URL is not validated (the URL check removed)        -> FAIL an http URL is refused: the id is inline code; board-brief: 108 passed, 2 failed
+Control 12: the budget is ignored (the boards demotion removed)        -> FAIL over the budget the boards block moves to the details; board-brief: 107 passed, 3 failed
 ```
 
 ## Negative controls
