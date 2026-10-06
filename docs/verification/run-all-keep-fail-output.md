@@ -64,4 +64,17 @@ Verdict: RED as expected
 
 ## Negative control
 
-See the block appended below, produced by `lib/gate/negctl.sh` after the commit.
+The mutation restores the master run-all.sh; the block below came from `lib/gate/negctl.sh`, run after the commit.
+
+```
+Command: bash lib/gate/negctl.sh <root> "bash tests/test-run-all-timeout.sh" "git show origin/master:tests/run-all.sh > tests/run-all.sh"
+Exit: 0 (green before mutation)
+Changed: tests/run-all.sh
+Exit: 1 (under mutation, RED expected)
+Output:
+  run-all: FAILED -> test-nofailword
+  test-run-all-timeout: 9 passed, 1 FAILED
+Restore: git checkout HEAD -- tests/run-all.sh
+Exit: 0 (green after restore)
+Verdict: PASS
+```
