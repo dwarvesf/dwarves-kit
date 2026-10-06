@@ -2788,6 +2788,17 @@ chk_no "pipe reader: no busy SKIP for the caller's own pipeline" "$out" "busy, h
 chk_has "pipe reader: land reports the removal" "$out" "removed worktree $LWT"
 chk "pipe reader: the worktree is gone" "$([ ! -e "$LWT" ]; echo $?)"
 chk "pipe reader: the local branch is deleted" "$(git -C "$LREPO" rev-parse --verify feat/land >/dev/null 2>&1 && echo 1 || echo 0)"
+
+echo "--- pipeline reader while wrap runs under timeout: wrap sits in its own group, the reader in the shell's"
+# `timeout 120 wrap land <wt> | tail -6` puts wrap in timeout's process group; tail keeps the shell's.
+# perl setpgrp stands in for timeout so the case needs no coreutils.
+build_land busytmo
+LREPO="$TMPD/ld-repo-busytmo"; LWT="$(cd "$LREPO/wt" && pwd -P)"
+out="$( { GH_STUB_OPEN_PRS='[]' GH_STUB_CREATE_NUM=44 GH_STUB_LAND_REPO="$LWT" GH_STUB_LAND_REMOTE="$TMPD/ld-bare-busytmo" \
+  GH_STUB_LAND_BRANCH=feat/land GH_STUB_LAND_DEF=main perl -e 'setpgrp(0,0); exec @ARGV' "$WRAP" land "$LWT" 2>&1; echo "LAND_RC=$?"; } | ( cd "$LWT" && cat ) )"
+chk_has "timeout shape: land exits 0" "$out" "LAND_RC=0"
+chk_no "timeout shape: no busy SKIP for the caller's own pipeline" "$out" "busy, held by"
+chk "timeout shape: the worktree is gone" "$([ ! -e "$LWT" ]; echo $?)"
 } # end sec_busy
 
 # One section, in this process. The driver sets LAND_SECTION per child; the last line is the
