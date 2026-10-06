@@ -2712,6 +2712,38 @@ chk_has "24: names the newline" "$out" "a touched path holds a newline"
 ig_nopush "24" ig24
 } # end sec_ignored
 
+# ===========================================================================
+sec_busy() {
+echo "=== land: a worktree a live process holds stays, the merge still lands ==="
+# ===========================================================================
+# A background subagent's browser or test loop can outlive its "done" report. Removing the
+# worktree under it loses its writes, so land keeps the worktree and branch and says so.
+echo "--- busy holder: merge reported, worktree and branch stay, exit 0"
+build_land busy
+LREPO="$TMPD/ld-repo-busy"; LWT="$(cd "$LREPO/wt" && pwd -P)"
+LTIP="$(git -C "$LWT" rev-parse HEAD)"
+BUSY_SECS=120
+( cd "$LWT" && exec sleep "$BUSY_SECS" ) & BUSY_PID=$!
+sleep 1
+out="$(GH_STUB_OPEN_PRS='[]' GH_STUB_CREATE_NUM=42 GH_STUB_LAND_REPO="$LWT" GH_STUB_LAND_REMOTE="$TMPD/ld-bare-busy" \
+  GH_STUB_LAND_BRANCH=feat/land GH_STUB_LAND_DEF=main "$WRAP" land "$LWT" 2>&1)"; rc=$?
+chk "busy land exits 0" "$rc"
+chk_has "busy land still reports the merge" "$out" "merged #42"
+chk_has "busy land prints the busy SKIP with the holder" "$out" "SKIP $LWT: busy, held by pid ${BUSY_PID} (sleep)"
+chk_has "busy land says the worktree stayed" "$out" "worktree $LWT and feat/land stay"
+chk_no "busy land never reports a removal" "$out" "removed worktree"
+chk "busy land kept the worktree" "$([ -d "$LWT" ]; echo $?)"
+chk "busy land kept the local branch" "$(git -C "$LREPO" rev-parse --verify feat/land >/dev/null 2>&1; echo $?)"
+
+echo "--- holder gone: the follow-up apply removes the worktree and deletes the branch"
+kill "$BUSY_PID" 2>/dev/null; wait "$BUSY_PID" 2>/dev/null
+out="$(GH_STUB_UNAUTH=1 "$WRAP" apply --apply --own "$LWT" "$LREPO" 2>&1)"; rc=$?
+chk "after the holder exits, apply exits 0" "$rc"
+chk_no "after the holder exits, no busy SKIP" "$out" "busy, held by"
+chk "after the holder exits, the worktree is removed" "$([ ! -e "$LWT" ]; echo $?)"
+chk "after the holder exits, the branch is deleted" "$(git -C "$LREPO" rev-parse --verify feat/land >/dev/null 2>&1 && echo 1 || echo 0)"
+} # end sec_busy
+
 # One section, in this process. The driver sets LAND_SECTION per child; the last line is the
 # child's result for the driver to sum (it is not the suite's final line).
 [ "$(type -t "$LAND_SECTION")" = function ] || { echo "test-wrap-land: no such section: $LAND_SECTION" >&2; exit 64; }

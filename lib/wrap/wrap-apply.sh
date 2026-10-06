@@ -99,6 +99,63 @@ _wt_cleared() {
   return 0
 }
 
+# _wt_busy <worktree path> -- 0 when a live process outside this wrap run holds the worktree:
+# its current directory or an open file or mapping sits at or under the path. Sets BUSY_MSG to
+# the one-line `SKIP <wt>: busy, held by pid <pid> (<command>)` (plus `and N more`). A
+# subagent that reported done can still run a headless browser, a blocked `cp -i` or a test
+# loop in its worktree; removing the directory under it makes every later write vanish. The
+# form is one whole-system `lsof -Fpcn` filtered by path prefix: about 0.3s on a worktree of
+# any size, where `lsof +D <wt>` walks the tree (3.6s on a 160k-file one). This run's own pid,
+# its descendants and its ancestors never count: they hold the path only because the operator
+# or a caller ran wrap from inside it. KIT_WRAP_SKIP_BUSY_CHECK=1 turns the check off. Without
+# lsof it prints one NOTE per run and answers "not busy", today's behavior.
+BUSY_MSG=""
+_WT_BUSY_NOTED=0
+_wt_busy() {
+  local wt="$1" canon holders psnap pid cmd n
+  BUSY_MSG=""
+  [ "${KIT_WRAP_SKIP_BUSY_CHECK:-0}" = 1 ] && return 1
+  if ! command -v lsof >/dev/null 2>&1; then
+    if [ "$_WT_BUSY_NOTED" = 0 ]; then
+      echo "     NOTE: busy check unavailable (no lsof)"; _WT_BUSY_NOTED=1
+    fi
+    return 1
+  fi
+  canon="$(cd "$wt" 2>/dev/null && pwd -P)" || return 1
+  psnap="$(ps -axo pid=,ppid= 2>/dev/null)"
+  # lsof runs from /, so this shell's own cwd inside the worktree cannot match.
+  holders="$(cd / && lsof -nP -w +c 0 -Fpcn 2>/dev/null | WT="$canon" SELF="$$" PSNAP="$psnap" awk '
+    BEGIN {
+      n = split(ENVIRON["PSNAP"], rows, "\n")
+      for (i = 1; i <= n; i++) { split(rows[i], f, " "); if (f[1] != "") par[f[1]] = f[2] }
+      self = ENVIRON["SELF"]; wt = ENVIRON["WT"]; wl = length(wt)
+      for (p = self; p != "" && p + 0 > 1 && !(p in anc); p = par[p]) anc[p] = 1
+    }
+    function mine(pid,   p, hops) {
+      if (pid in anc) return 1
+      for (p = pid; p != "" && p + 0 > 1 && hops < 64; p = par[p]) { if (p == self) return 1; hops++ }
+      return 0
+    }
+    /^p/ { pid = substr($0, 2); next }
+    /^c/ { cmd = substr($0, 2); next }
+    /^n/ {
+      name = substr($0, 2)
+      if (name != wt && substr(name, 1, wl + 1) != wt "/") next
+      if (pid in seen) next
+      seen[pid] = 1
+      if (mine(pid)) next
+      if (count == 0) { fpid = pid; fcmd = cmd }
+      count++
+    }
+    END { if (count > 0) printf "%s\t%s\t%d\n", fpid, fcmd, count }
+  ')"
+  [ -n "$holders" ] || return 1
+  IFS=$'\t' read -r pid cmd n <<< "$holders"
+  BUSY_MSG="SKIP ${wt}: busy, held by pid ${pid} (${cmd})"
+  [ "${n:-1}" -gt 1 ] 2>/dev/null && BUSY_MSG="${BUSY_MSG} and $(( n - 1 )) more"
+  return 0
+}
+
 # A worktree path may carry a newline, so the record stream is NUL-delimited: `--porcelain -z`
 # terminates every attribute with NUL, which keeps the path whole.
 _apply_worktrees() {
@@ -160,6 +217,9 @@ _apply_worktrees() {
     lock="unlocked"; _wt_locked "$wt" && lock="locked"
     if [ "$lock" = "locked" ] && _wt_lock_live "$wt"; then
       echo "     SKIP ${wt}: locked by live pid $(_wt_lock_pid "$wt") (an agent is still running)"; continue
+    fi
+    if _wt_busy "$wt"; then
+      echo "     ${BUSY_MSG}"; continue
     fi
     verdict="remove worktree ${wt} [${wtb}, ${lock}] and delete ${wtb} (${proof})"
     if [ "$APPLY" != 1 ]; then
