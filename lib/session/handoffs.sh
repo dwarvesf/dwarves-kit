@@ -25,13 +25,26 @@
 #                  checkout is on the default branch (the move belongs on a
 #                  branch). Never deletes anything.
 #
-#   handoffs.sh list [--repo DIR] [--days N] [--limit N]
+#   handoffs.sh list [--repo DIR] [--under [ROOT]]... [--days N] [--limit N]
 #     --repo DIR   repo to scan (default: git rev-parse --show-toplevel of
 #                  cwd, else cwd itself)
+#     --under ROOT scan every immediate child of ROOT that holds a .git file or
+#                  directory, sorted (same rule as `wrap scan --under`).
+#                  Repeatable; `--under=ROOT` also works. A bare `--under` (no
+#                  ROOT, or a flag next) expands the wrap.roots knob, root-only
+#                  config. Output switches to grouped form: per repo with at
+#                  least one open handoff, a `## <repo path>` header then that
+#                  repo's lines (no per-repo count), repos with none print
+#                  nothing, and the last line is
+#                  "<n> open handoffs in <m> repos" (n uncapped). A root with no
+#                  git repos prints a note on stderr. Without --under the
+#                  output is exactly as before.
 #     --days N     only include handoffs at least N days old (staleness
-#                  filter; default: no filter, show every open handoff)
+#                  filter; default: no filter, show every open handoff);
+#                  applies per repo under --under
 #     --limit N    max handoff lines to print before collapsing the rest to
-#                  "+N more" (default: 5; 0 means unlimited)
+#                  "+N more" (default: 5; 0 means unlimited); per repo under
+#                  --under
 #
 #   Scans <repo>/_meta/handoffs/ and <repo>/.claude/handoffs/ for *.md files
 #   sitting directly in either directory, one level deep, no recursion: a
@@ -161,23 +174,12 @@ handoff_liveness() { # <file>
   fi
 }
 
-cmd_list() {
-  local repo="" days="" limit=5
-  while [ $# -gt 0 ]; do
-    case "$1" in
-      --repo) [ $# -ge 2 ] || { echo "handoffs list: --repo needs a value" >&2; return 64; }; repo="$2"; shift 2 ;;
-      --days) [ $# -ge 2 ] || { echo "handoffs list: --days needs a value" >&2; return 64; }; days="$2"; shift 2 ;;
-      --limit) [ $# -ge 2 ] || { echo "handoffs list: --limit needs a value" >&2; return 64; }; limit="$2"; shift 2 ;;
-      *) echo "handoffs list: unknown arg '$1'" >&2; return 64 ;;
-    esac
-  done
-  case "$limit" in
-    ''|*[!0-9]*) echo "handoffs list: --limit must be a non-negative integer (got '$limit')" >&2; return 64 ;;
-  esac
-  [ -n "$repo" ] || repo="$(repo_root)"
-  repo="$(cd "$repo" 2>/dev/null && pwd || true)"
-  [ -n "$repo" ] || { echo "handoffs list: repo not found" >&2; return 1; }
-
+# _list_one <repo> <days> <limit> -- scan one repo (already an existing dir). Sets the
+# globals LIST_N (open handoffs after --days, uncapped) and LIST_OUT (the capped,
+# oldest-first lines, "+N more" included, no count line). Both empty/0 when none.
+_list_one() {
+  local repo="$1" days="$2" limit="$3"
+  LIST_N=0 LIST_OUT=""
   local files=()
   local d f
   for d in "$repo/_meta/handoffs" "$repo/.claude/handoffs"; do
@@ -186,11 +188,7 @@ cmd_list() {
       files+=("$f")
     done < <(find "$d" -maxdepth 1 -type f -name '*.md' 2>/dev/null)
   done
-
-  if [ "${#files[@]}" -eq 0 ]; then
-    echo "no handoffs"
-    return 0
-  fi
+  [ "${#files[@]}" -gt 0 ] || return 0
 
   _load_board "$repo"
 
@@ -207,23 +205,100 @@ cmd_list() {
     liveness="$(handoff_liveness "$f")"
     rows+=("$(printf '%09d\t%sd  %s  next: %s  %s' "$age" "$age" "$rel" "$excerpt" "$liveness")")
   done
-
-  if [ "${#rows[@]}" -eq 0 ]; then
-    echo "no handoffs"
-    return 0
-  fi
+  [ "${#rows[@]}" -gt 0 ] || return 0
 
   # Sort oldest first (largest age first) by the zero-padded sort key, then
   # strip the key before printing.
   local sorted; sorted="$(printf '%s\n' "${rows[@]}" | sort -rn -t"$(printf '\t')" -k1,1 | cut -f2-)"
-  local total_n="${#rows[@]}"
-  if [ "$limit" -gt 0 ] && [ "$total_n" -gt "$limit" ]; then
-    printf '%s\n' "$sorted" | head -n "$limit"
-    echo "+$((total_n - limit)) more"
+  LIST_N="${#rows[@]}"
+  if [ "$limit" -gt 0 ] && [ "$LIST_N" -gt "$limit" ]; then
+    LIST_OUT="$(printf '%s\n' "$sorted" | head -n "$limit")
++$((LIST_N - limit)) more"
   else
-    printf '%s\n' "$sorted"
+    LIST_OUT="$sorted"
   fi
-  echo "$total_n open handoffs"
+}
+
+# _under_add <root> -- append every immediate child of <root> holding a .git file or
+# directory, sorted, to the CALLER's `under_repos` array. Same rule as `_add_under` in
+# lib/wrap/wrap-scan.sh (not sourced: that file needs wrap.sh's whole environment).
+_under_add() {
+  local found r
+  found="$(for r in "${1%/}"/*/; do [ -e "${r}.git" ] && printf '%s\n' "${r%/}"; done | LC_ALL=C sort)"
+  if [ -z "$found" ]; then echo "handoffs list: ${1}: --under found no git repos" >&2; return 0; fi
+  while IFS= read -r r; do under_repos+=("$r"); done <<< "$found"
+}
+
+# _under_expand_bare -- a bare `--under` expands every root of the wrap.roots knob
+# (tilde-expanded, listed order) onto the CALLER's `unders` array. Root-only config read,
+# as in wrap. An empty knob is an error, so a bare --under never silently means "nothing".
+_under_expand_bare() {
+  local kit roots r
+  kit="$(cd "$(dirname "${BASH_SOURCE[0]}")/../config" 2>/dev/null && pwd)/kit-config.sh"
+  [ -r "$kit" ] || { echo "handoffs list: $kit missing or unreadable" >&2; return 1; }
+  # shellcheck source=lib/config/kit-config.sh
+  source "$kit"
+  roots="$(kit_config_get_root wrap.roots "")"
+  if [ -z "$roots" ]; then
+    echo "handoffs list: --under given no directory and wrap.roots is empty" >&2
+    return 64
+  fi
+  for r in $roots; do
+    case "$r" in
+      "~") r="$HOME" ;;
+      "~/"*) r="$HOME/${r#\~/}" ;;
+    esac
+    unders+=("$r")
+  done
+}
+
+cmd_list() {
+  local repo="" days="" limit=5 want_under=0
+  local unders=() under_repos=()
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --repo) [ $# -ge 2 ] || { echo "handoffs list: --repo needs a value" >&2; return 64; }; repo="$2"; shift 2 ;;
+      --days) [ $# -ge 2 ] || { echo "handoffs list: --days needs a value" >&2; return 64; }; days="$2"; shift 2 ;;
+      --limit) [ $# -ge 2 ] || { echo "handoffs list: --limit needs a value" >&2; return 64; }; limit="$2"; shift 2 ;;
+      --under=*) unders+=("${1#--under=}"); shift ;;
+      --under)
+        # A value that is not a flag is the root; otherwise this is the bare form.
+        if [ $# -ge 2 ] && [ "${2#-}" = "$2" ]; then unders+=("$2"); shift 2
+        else want_under=1; shift; fi ;;
+      *) echo "handoffs list: unknown arg '$1'" >&2; return 64 ;;
+    esac
+  done
+  case "$limit" in
+    ''|*[!0-9]*) echo "handoffs list: --limit must be a non-negative integer (got '$limit')" >&2; return 64 ;;
+  esac
+
+  if [ "$want_under" = 1 ] || [ "${#unders[@]}" -gt 0 ]; then
+    local rc=0 u r total=0 nrepos=0
+    [ "$want_under" = 0 ] || _under_expand_bare || { rc=$?; return "$rc"; }
+    [ -z "$repo" ] || under_repos+=("$repo")
+    for u in "${unders[@]}"; do _under_add "$u"; done
+    for r in "${under_repos[@]+"${under_repos[@]}"}"; do
+      [ -d "$r" ] || { echo "handoffs list: repo not found: $r" >&2; continue; }
+      _list_one "$(cd "$r" && pwd)" "$days" "$limit"
+      [ "$LIST_N" -gt 0 ] || continue
+      printf '## %s\n%s\n' "$r" "$LIST_OUT"
+      total=$((total + LIST_N)); nrepos=$((nrepos + 1))
+    done
+    echo "$total open handoffs in $nrepos repos"
+    return 0
+  fi
+
+  [ -n "$repo" ] || repo="$(repo_root)"
+  repo="$(cd "$repo" 2>/dev/null && pwd || true)"
+  [ -n "$repo" ] || { echo "handoffs list: repo not found" >&2; return 1; }
+
+  _list_one "$repo" "$days" "$limit"
+  if [ "$LIST_N" -eq 0 ]; then
+    echo "no handoffs"
+    return 0
+  fi
+  printf '%s\n' "$LIST_OUT"
+  echo "$LIST_N open handoffs"
 }
 
 # Archive one finished handoff. The one writer in this file: a git mv (tracked)
