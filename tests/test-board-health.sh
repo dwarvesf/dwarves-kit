@@ -118,7 +118,7 @@ field() { jq -r --arg n "$1" '[.fields[] | select(.name == $n) | .value] | join(
 
 echo "case record (spokes, rc, errors only on failure):"
 fresh
-printf '  synced reminders: 3 spoke items, 9 board rows\n  synced notion: 2 spoke items, 9 board rows\n  (nothing to do)\nWARNING: malformed board rows for AB-8\n' | rec crew 0 "$NOW"
+printf 'synced reminders: 3 spoke items, 9 board rows\nsynced notion: 2 spoke items, 9 board rows\n(nothing to do)\nWARNING: malformed board rows for AB-8\n' | rec crew 0 "$NOW"
 eq "spokes parsed" "$(jq -c '.sync.crew.spokes' "$HS")" '["notion","reminders"]'
 eq "rc recorded" "$(jq '.sync.crew.rc' "$HS")" '0'
 eq "no errors on a clean sync" "$(jq -c '.sync.crew.errors' "$HS")" '[]'
@@ -133,7 +133,7 @@ eq "record without --repo is a usage error" "$?" '64'
 
 echo "case hubs (active, parked, stale from the origin copy):"
 fresh
-printf '  synced reminders: 1 spoke items, 4 board rows\n' | rec crew 0 "$NOW"
+printf 'synced reminders: 1 spoke items, 4 board rows\n' | rec crew 0 "$NOW"
 run "$NOW" --dry-run > "$WORK/dry.out"
 p="$(grep '"cluster":"alpha"' "$WORK/dry.out" | tail -n 1)"
 eq "crew open counts the active rows only (origin copy, not the local edit)" "$(jq '.data.hubs.crew.open' <<<"$p")" '3'
@@ -145,7 +145,7 @@ eq "a hub with no origin falls back to the working copy" "$(jq -c '.data.hubs.so
 
 echo "case kanban (open, stale, archived since the last run):"
 fresh
-printf '  synced reminders: 1 spoke items, 4 board rows\n' | rec crew 0 "$NOW"
+printf 'synced reminders: 1 spoke items, 4 board rows\n' | rec crew 0 "$NOW"
 KB=(--kanban "alpha=$WORK/kanban" --cluster alpha)
 run "$NOW" --dry-run "${KB[@]}" > "$WORK/dry.out"
 p="$(tail -n 1 "$WORK/dry.out")"
@@ -160,7 +160,7 @@ eq "archived since the last run is the count delta" "$(field archived)" '🧹 ar
 
 echo "case cadence (due once, then quiet; force; dry-run and no-state stamp nothing):"
 fresh
-printf '  synced reminders: 1 spoke items, 4 board rows\n' | rec crew 0 "$NOW"
+printf 'synced reminders: 1 spoke items, 4 board rows\n' | rec crew 0 "$NOW"
 run "$NOW" --cluster alpha
 eq "first run posts" "$(npost)" '1'
 run $((NOW + 3600)) --cluster alpha
@@ -171,7 +171,7 @@ eq "three days later it is due again" "$(npost)" '2'
 run $((NOW + 3 * DAY + 60)) --cluster alpha --force
 eq "--force ignores the cadence" "$(npost)" '3'
 fresh
-printf '  synced reminders: 1 spoke items, 4 board rows\n' | rec crew 0 "$NOW"
+printf 'synced reminders: 1 spoke items, 4 board rows\n' | rec crew 0 "$NOW"
 run "$NOW" --cluster alpha --dry-run >/dev/null
 eq "--dry-run posts nothing" "$(npost)" '0'
 eq "--dry-run stamps nothing" "$(jq -c '.last_run // {}' "$HS")" '{}'
@@ -183,7 +183,7 @@ eq "so the real run after a test post is still due" "$(npost)" '2'
 
 echo "case quiet (clean posts nothing but is stamped; a failed leg posts):"
 fresh
-printf '  synced reminders: 1 spoke items, 4 board rows\n' | rec crew 0 "$NOW"
+printf 'synced reminders: 1 spoke items, 4 board rows\n' | rec crew 0 "$NOW"
 run "$NOW" --cluster alpha --quiet alpha
 eq "a clean quiet cluster posts nothing" "$(npost)" '0'
 eq "and is stamped so it does not retry hourly" "$(jq -r '.last_run.alpha' "$HS")" "$NOW"
@@ -196,7 +196,7 @@ eq "the failing repo and its error ride an attention line" "$(field attention)" 
 
 echo "case failed post (stays due, carried, cleared on delivery):"
 fresh
-printf '  synced reminders: 1 spoke items, 4 board rows\n' | rec crew 0 "$NOW"
+printf 'synced reminders: 1 spoke items, 4 board rows\n' | rec crew 0 "$NOW"
 FAKE_POSTER_RC=1; FAKE_POSTER_ERR='bridge said https://discord.com/api/webhooks/123/abcdefghijklmnopqrstuvwxyz0123456789'
 run "$NOW" --cluster alpha
 eq "no stamp after a failed post" "$(jq -r '.last_run.alpha // "none"' "$HS")" 'none'
@@ -211,26 +211,32 @@ eq "and stamps the run" "$(jq -r '.last_run.alpha' "$HS")" "$((NOW + 3600))"
 
 echo "case digest state (FLAPPING ids, a carried digest error):"
 fresh
-printf '  synced reminders: 1 spoke items, 4 board rows\n' | rec crew 0 "$NOW"
+printf 'synced reminders: 1 spoke items, 4 board rows\n' | rec crew 0 "$NOW"
 printf '%s' '{"crew":{"pending":{"flapping_ids":["AB-1"]}},"_cluster_errors":{"alpha":"post failed last sweep"}}' > "$DS"
 run "$NOW" --cluster alpha --quiet alpha
 eq "flapping makes a quiet cluster post" "$(npost)" '1'
 eq "flapping line names the id and repo" "$(field attention | head -1)" '⚠️ AB-1 flapping between the board and a spoke (crew)'
 eq "carried digest error is attention too" "$(field attention | tail -1)" '⚠️ last change digest failed to post: post failed last sweep'
+printf '%s' '{"crew":{"pending":{"flapping_ids":["x-apple-reminder://AAAABBBB-CCCC"]}}}' > "$DS"
+run "$NOW" --cluster alpha --quiet alpha --force
+eq "a spoke-side id is shortened, never pasted whole" "$(field attention | head -1)" '⚠️ spoke item …B-CCCC flapping between the board and a spoke (crew)'
 echo '{}' > "$DS"
+fresh
+printf 'dry-run notion: 1 spoke items, 4 board rows\n' | rec crew 0 "$NOW"
+eq "a dry-run sync line names its spoke too" "$(jq -c '.sync.crew.spokes' "$HS")" '["notion"]'
 
 echo "case sync health (stale record, unreadable kanban, mirror):"
 fresh
-printf '  synced reminders: 1 spoke items, 4 board rows\n' | rec crew 0 "$((NOW - 8 * 3600))"
+printf 'synced reminders: 1 spoke items, 4 board rows\n' | rec crew 0 "$((NOW - 8 * 3600))"
 run "$NOW" --cluster alpha
 case "$(field attention)" in *"sweep record is 8h old"*) ok "an old sweep record is reported";; *) bad "no lag line: $(field attention)";; esac
 fresh
-printf '  synced reminders: 1 spoke items, 4 board rows\n' | rec crew 0 "$NOW"
+printf 'synced reminders: 1 spoke items, 4 board rows\n' | rec crew 0 "$NOW"
 FAKE_KANBAN_FAIL=1
 run "$NOW" --cluster alpha --kanban "alpha=$WORK/kanban"
 case "$(field attention)" in *"kanban unreadable for alpha: reader exploded"*) ok "an unreadable kanban is attention, not a crash";; *) bad "no kanban error: $(field attention)";; esac
 fresh
-printf '  synced reminders: 1 spoke items, 4 board rows\n' | rec crew 0 "$NOW"
+printf 'synced reminders: 1 spoke items, 4 board rows\n' | rec crew 0 "$NOW"
 printf 'board-mirror: ERROR cannot complete t_8fbaac45\n' | python3 "$HEALTH" record --leg mirror --rc 0 --now "$NOW" --health-state-file "$HS"
 run "$NOW" --cluster alpha
 case "$(field attention)" in *"hermes mirror failed: board-mirror: ERROR cannot complete"*) ok "a mirror error line is attention even at rc 0";; *) bad "no mirror error: $(field attention)";; esac
@@ -241,7 +247,7 @@ case "$(field attention)" in *"no sweep record yet"*) ok "no record at all is sa
 
 echo "case line hook (extra lines ride; a failing hook never breaks the run):"
 fresh
-printf '  synced reminders: 1 spoke items, 4 board rows\n' | rec crew 0 "$NOW"
+printf 'synced reminders: 1 spoke items, 4 board rows\n' | rec crew 0 "$NOW"
 printf '#!/usr/bin/env bash\necho "📝 drafts: 2 waiting"\necho\necho "second line"\n' > "$WORK/hook"
 printf '#!/usr/bin/env bash\nexit 7\n' > "$WORK/hook-bad"
 chmod +x "$WORK/hook" "$WORK/hook-bad"
@@ -252,7 +258,7 @@ grep -q 'WARN line hook exited 7' "$WORK/run.err" && ok "the failing hook is log
 
 echo "case payload shape (kind, key, one line per field):"
 fresh
-printf '  synced reminders: 1 spoke items, 4 board rows\n' | rec crew 0 "$NOW"
+printf 'synced reminders: 1 spoke items, 4 board rows\n' | rec crew 0 "$NOW"
 run "$NOW" --cluster alpha --force; k1="$(jq -r .key <<<"$(last_payload)")"
 run $((NOW + 60)) --cluster alpha --force; k2="$(jq -r .key <<<"$(last_payload)")"
 eq "same cluster and day, same key (the poster's idempotency key)" "$k1" "$k2"
@@ -269,7 +275,7 @@ mkdir -p "$WORK/sw/home/.cache/backlog-sync"
 cat > "$WORK/swboard" <<'EOF'
 #!/usr/bin/env bash
 case "$1" in
-  sync) echo "  synced reminders: 2 spoke items, 5 board rows"; echo "  (nothing to do)"; exit 0 ;;
+  sync) echo "synced reminders: 2 spoke items, 5 board rows"; echo "(nothing to do)"; exit 0 ;;
   mirror) echo "    mirror: plan 0 ops"; exit 0 ;;
 esac
 exit 0

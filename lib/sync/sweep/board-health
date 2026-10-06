@@ -35,7 +35,7 @@ Run flags:
   --cluster-map M       cluster=rail,cluster=rail (as for the digest)
   --state-file F        the digest state, read for FLAPPING ids and carried errors
   --health-state-file F health state (default ~/.cache/backlog-sync/health-state.json)
-  --every-days N        cadence (default 3); a failed post stays due and retries
+  --every-days N        cadence (default 3); a failed post is not stamped, so it stays due and retries
   --stale-days N        staleness threshold (default 7)
   --sync-stale-hours N  a sweep record older than this is itself a problem (default 6)
   --kanban C=CMD        reader for cluster C: CMD is run as `CMD boards list --json`
@@ -65,7 +65,8 @@ from pathlib import Path
 
 ACTIVE = ("queued", "claimed", "speccing", "validated", "executing")
 ID_RE = re.compile(r"^\|\s*([A-Z]+-[0-9]+)\s*\|")
-SPOKE_RE = re.compile(r"^\s+(?:synced|dry-run)\s+([A-Za-z0-9_-]+):")
+SPOKE_RE = re.compile(r"^\s*(?:synced|dry-run)\s+([A-Za-z0-9_-]+):")
+ROW_ID_RE = re.compile(r"^[A-Z]+-[0-9]+$")
 ERR_WORD_RE = re.compile(r"\b(ERROR|FAILED|Traceback)\b")
 DAY = 86400
 
@@ -394,7 +395,9 @@ def build_payload(cluster, rail, args, registry_rows, health, digest, last_run, 
                     for i in (digest.get(r["name"], {}).get("pending", {}).get("flapping_ids") or [])})
     for item in flaps:
         repo, rid = item.split(" ", 1)
-        attention.append(f"⚠️ {rid} flapping between the board and a spoke ({repo})")
+        # a spoke-side id (a reminder URL, a page id) is not a board row id
+        label = rid if ROW_ID_RE.match(rid) else f"spoke item …{rid[-6:]}"
+        attention.append(f"⚠️ {label} flapping between the board and a spoke ({repo})")
     carried = (digest.get("_cluster_errors") or {}).get(cluster)
     if carried:
         attention.append("⚠️ last change digest failed to post: " + redact(carried, 120))
@@ -415,7 +418,7 @@ def build_payload(cluster, rail, args, registry_rows, health, digest, last_run, 
     for a in attention:
         fields.append({"name": "attention", "value": a})
 
-    period = args.every_days
+    period = int(args.every_days) if float(args.every_days).is_integer() else args.every_days
     next_due = day_stamp(now + period * DAY)
     key = hashlib.sha256(f"health|{cluster}|{day_stamp(now)}".encode()).hexdigest()[:32]
     payload = {
@@ -434,8 +437,8 @@ def build_payload(cluster, rail, args, registry_rows, health, digest, last_run, 
     return payload, kanban
 
 
-def is_due(cluster, last_run, args, now, has_error):
-    if args.force or has_error:
+def is_due(cluster, last_run, args, now):
+    if args.force:
         return True
     last = last_run.get(cluster)
     # a half hour of grace keeps an hourly tick from slipping a whole extra hour
@@ -461,8 +464,7 @@ def cmd_run(args):
     for cluster, rail in clusters_of(rows, args.cluster_map):
         if args.cluster and cluster != args.cluster:
             continue
-        has_error = bool(health.get("errors", {}).get(cluster))
-        if not is_due(cluster, last_run, args, now, has_error):
+        if not is_due(cluster, last_run, args, now):
             nxt = day_stamp(last_run[cluster] + args.every_days * DAY)
             log(f"skipped(not-due) {cluster} next={nxt}")
             continue
