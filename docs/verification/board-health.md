@@ -23,7 +23,7 @@ Exit: 0
 Output:
   ok   board health run --help
 
-board-health: 69 passed, 0 failed
+board-health: 75 passed, 0 failed
 Verdict: PASS
 ```
 
@@ -47,7 +47,7 @@ Output:
   FAIL one active row is stale (got '2', want '1')
   FAIL hubs line reads open and stale (got '⚠️ hubs: crew 3 open (2 stale) · 1 parked', want '⚠️ hubs: crew 3 open (1 stale) · 1 parked')
   FAIL a hub with no origin falls back to the working copy (got '[1,0]', want '[1,1]')
-board-health: 66 passed, 3 failed
+board-health: 72 passed, 3 failed
 ```
 
 ```
@@ -58,7 +58,7 @@ Output:
   FAIL a failed sync needs attention, so it posts (got '0', want '1')
   FAIL flapping makes a quiet cluster post (got '0', want '1')
   FAIL carried digest error is attention too (got '', want '⚠️ last change digest failed to post: post failed last sweep')
-board-health: 62 passed, 7 failed
+board-health: 67 passed, 8 failed
 ```
 
 ## Reproduce
