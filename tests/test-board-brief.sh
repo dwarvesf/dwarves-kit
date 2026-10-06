@@ -19,6 +19,9 @@
 #   AC9  payload shape: kind brief, stable key per day, details only when there are some
 #   AC10 --config / $DWARVES_BOARD_CONFIG feed the flags for brief and health; a bad file is an error
 #   AC11 the board verb reaches the script
+#   AC12 formatting: small headings, a blank line between sections, ids as masked links with the
+#        preview suppressed (inline code with no URL), the question in bold, hosts in inline code,
+#        the main message kept under --main-chars
 set -uo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
@@ -57,6 +60,9 @@ git -C "$WORK/solo" init -q -b main
 printf '| ID | Item | Notes | Status |\n|---|---|---|---|\n| SO-1 | one | | queued |\n' > "$WORK/solo/BACKLOG.md"
 commit "$WORK/solo" $((NOW - 1 * DAY)) first
 
+# a GitHub origin, so a board row id links to its line
+git -C "$WORK/crew" remote add origin git@github.com:acme/crew.git
+git -C "$WORK/crew" update-ref refs/remotes/origin/main HEAD
 cat > "$WORK/boards.txt" <<EOF
 crew  $WORK/crew/_meta/BACKLOG.md  on rail=crew
 solo  $WORK/solo/BACKLOG.md        rail=pers
@@ -140,13 +146,13 @@ det() { jq -r '(.details // []) | join("\n")' <<<"$(last)"; }
 echo "case decisions (hub/mirror drift, one question per row):"
 fresh
 run "$NOW" --cluster alpha
-has "the shipped row with an open card is a question" "$(msg)" "AB-4 hub/mirror drift: board says shipped, the Hermes card is still open. Ship or reopen?"
-has "the head counts the items" "$(msg)" "🙋 needs your decision (1)"
+has "the shipped row with an open card is a question" "$(msg)" "[AB-4](<https://github.com/acme/crew/blob/main/_meta/BACKLOG.md?plain=1#L6>) hub/mirror drift: board says shipped, the Hermes card is still open. **Ship or reopen?**"
+has "the head counts the items" "$(msg)" "### 🙋 Needs your decision (1)"
 eq "a decision makes the payload warn" "$(jq -r '.severity' <<<"$(last)")" "warn"
 eq "and flags attention" "$(jq -r '.attention' <<<"$(last)")" "true"
 fresh
 FAKE_CARDS="AB-1:ready,AB-2:done,AB-4:done" run "$NOW" --cluster alpha
-has "a done card on a live row is a question" "$(msg)" "AB-2 hub/mirror drift: the Hermes card is done, the board says executing. Ship or reopen?"
+has "a done card on a live row is a question" "$(msg)" "[AB-2](<https://github.com/acme/crew/blob/main/_meta/BACKLOG.md?plain=1#L4>) hub/mirror drift: the Hermes card is done, the board says executing. **Ship or reopen?**"
 lacks "a done card on a shipped row is settled" "$(msg)" "AB-4 hub/mirror drift"
 fresh
 FAKE_CARDS="AB-1:ready,AB-2:ready,AB-3:ready,AB-4:ready,AB-5:done" run "$NOW" --cluster alpha
@@ -158,10 +164,10 @@ cat > "$FAKE_INC_FILE" <<'EOF'
 EOF
 run "$NOW" --cluster alpha
 eq "four decisions are counted" "$(jq -r '.data.decisions | length' <<<"$(last)")" "4"
-has "the head shows the true count" "$(msg)" "🙋 needs your decision (4)"
+has "the head shows the true count" "$(msg)" "### 🙋 Needs your decision (4)"
 eq "three lines show in the message" "$(jq -r '[.fields[] | select(.name == "decision")] | length' <<<"$(last)")" "4"
 has "the rest is named, not dropped" "$(msg)" "+1 more in details"
-has "the rest is in the details" "$(det)" "t3 alpha three"
+has "the rest is in the details" "$(det)" "\`t3\` alpha three"
 
 echo "case incident hook (rows, bots, faults, explicit decisions):"
 fresh
@@ -175,13 +181,13 @@ cat > "$FAKE_INC_FILE" <<'EOF'
  "details":["AI spend 24h: 1.20 USD"]}
 EOF
 FAKE_CARDS="$CLEAN" run "$NOW" --cluster alpha
-has "the incident head" "$(msg)" "🔥 open incidents (5)"
-has "a firing row says so" "$(msg)" "• 3h ago t9 gateway-run-crit @ host · firing"
+has "the incident head" "$(msg)" "### 🔥 Open incidents (5)"
+has "a firing row says so" "$(msg)" "• 3h ago \`t9\` gateway-run-crit @ \`host\` · firing"
 has "three rows, then the rest named" "$(msg)" "+2 more in details"
 has "the hook's fault line shows under incidents" "$(msg)" "⚠️ auditor: violations 2"
-has "an explicit hook decision is a decision" "$(msg)" "fixbox Retry the failed job?"
+has "an explicit hook decision is a decision" "$(msg)" "\`fixbox\` **Retry the failed job?**"
 has "hook details ride the details" "$(det)" "AI spend 24h: 1.20 USD"
-has "the overflow rows ride the details" "$(det)" "t5"
+has "the overflow rows ride the details" "$(det)" "\`t5\`"
 has "bots show as given, zeros dropped" "$(msg)" "🤖 24h: auto-resolved 3 · parked 2 · sync errors 0"
 
 echo "case hook flag (read-only under a preview or a test):"
@@ -196,20 +202,74 @@ eq "--no-state sets it too" "$(< "$FAKE_INC_FLAG")" "1"
 echo "case hook text (names kept whole, secrets masked):"
 fresh
 cat > "$FAKE_INC_FILE" <<'EOF'
-{"open":[{"id":"t1","label":"hermes_state_registry-crit @ hermes-personal"},
+{"open":[{"id":"t1","label":"hermes_state_registry-crit @ `hermes-personal`"},
          {"id":"t2","label":"leak 0123456789abcdef0123456789abcdef0123 op://Vault/item/field https://discord.com/api/webhooks/1/abc"}]}
 EOF
 FAKE_CARDS="$CLEAN" run "$NOW" --cluster alpha
-has "a long rule name is not masked" "$(msg)" "hermes_state_registry-crit @ hermes-personal"
+has "a long rule name is not masked" "$(msg)" "hermes_state_registry-crit @ \`hermes-personal\`"
 has "hex runs are masked" "$(msg)" "leak [redacted]"
 has "secret references are masked" "$(msg)" "[ref-redacted]"
 has "webhook URLs are masked" "$(msg)" "[webhook-redacted]"
+
+echo "case formatting (headings, blank lines, links, bold question, code hosts):"
+fresh
+cat > "$FAKE_INC_FILE" <<'EOF'
+{"open":[{"id":"t_96178862","label":"hermes_state_registry-crit","host":"hermes-personal","age":"1d ago","needs_you":true,
+          "url":"https://hermes.example/kanban?task=t_96178862","question":"new alert kind, triage or add a rule. Act or close?"},
+         {"id":"t_ec9c213b","label":"heartbeat-silent @ restic-backup","age":"2d ago","firing":true,"url":"https://hermes.example/kanban?task=t_ec9c213b"},
+         {"id":"t_bad","label":"x","host":"h","url":"http://plain.example/x"},
+         {"id":"t_inj","label":"y","host":"h","url":"https://ok.example/x)[evil](https://evil.example"}]}
+EOF
+FAKE_CARDS="$CLEAN" run "$NOW" --cluster alpha
+text="$(msg)"
+has "sections are separated by a blank line" "$text" $'(1)\n• [`AB-4`'
+has "the headings are Discord small headings" "$text" "### 🔥 Open incidents (4)"
+printf '%s' "$text" | grep -B1 '^### ' | grep -v '^###' | grep -v '^--$' | grep -qv '^$' && bad "a heading follows text with no blank line" || ok "every heading but the first follows a blank line"
+has "a ticket id is a masked link with the preview suppressed" "$text" "[t_96178862](<https://hermes.example/kanban?task=t_96178862>)"
+has "the decision question is bold" "$text" "**Act or close?**"
+has "the host after @ is inline code" "$text" "hermes_state_registry-crit @ \`hermes-personal\`"
+has "a host inside a legacy label is inline code too" "$text" "heartbeat-silent @ \`restic-backup\`"
+has "an http URL is refused: the id is inline code" "$text" "\`t_bad\`"
+has "a URL carrying markup characters is refused" "$(det)" "\`t_inj\`"
+lacks "no forged link survives" "$text" "evil"
+lacks "no bare URL is left to unfurl" "$text" " https://"
+has "boards, sync and bots follow" "$text" "### 🔄 Sync · 🤖 Bots"
+git -C "$WORK/crew" remote set-url origin /srv/local/crew.git
+fresh
+run "$NOW" --cluster alpha
+has "a board that is not on GitHub: the row id is inline code" "$(msg)" "\`AB-4\` hub/mirror drift"
+git -C "$WORK/crew" remote set-url origin git@github.com:acme/crew.git
+fresh
+echo '{"crew":{"pending":{"flapping_ids":["AB-1"]}}}' > "$DS"
+FAKE_CARDS="$CLEAN" run "$NOW" --cluster alpha --show-boards
+has "an id in a flapping line links to its row" "$(msg)" "⚠️ [AB-1](<https://github.com/acme/crew/blob/main/_meta/BACKLOG.md?plain=1#L3>) flapping between the board and a spoke (crew)"
+echo '{}' > "$DS"
+fresh
+FAKE_CARDS="$CLEAN" run "$NOW" --cluster alpha
+FAKE_CARDS="$CLEAN" run $((NOW + DAY)) --cluster alpha
+has "boards hidden: the bots block has its own heading" "$(msg)" "### 🤖 Bots"
+lacks "and no sync heading" "$(msg)" "### 🔄 Sync"
+text="$(det)"
+has "the details use the same headings" "$text" "### 🗂️ Boards"
+has "and the same blank-line rhythm" "$text" $'\n\n### 🔄 Sync'
+fresh
+FAKE_CARDS="$CLEAN" run "$NOW" --cluster alpha --main-chars 120
+has "over the budget the boards block moves to the details" "$(det)" "### 🗂️ Boards"
+lacks "and leaves the main message" "$(msg)" "### 🗂️ Boards"
+eq "so the boards are not stamped as shown" "$(jq -r '.data.boards_shown' <<<"$(last)")" "false"
+fresh
+cat > "$FAKE_INC_FILE" <<'EOF'
+{"open":[{"id":"a","label":"one","age":"1d"},{"id":"b","label":"two","age":"2d"},{"id":"c","label":"three","age":"3d"}]}
+EOF
+FAKE_CARDS="$CLEAN" run "$NOW" --cluster alpha --main-chars 120
+has "still over: the incident rows past the first move too" "$(msg)" "+2 more in details"
+has "and ride the details under their own heading" "$(det)" "### 🔥 More incidents"
 
 echo "case hook failure is a fault, never an all-clear:"
 fresh
 FAKE_INC_FAIL=1 FAKE_CARDS="$CLEAN" run "$NOW" --cluster alpha
 has "an exit failure shows as a fault" "$(msg)" "⚠️ incident feed unreadable: feed exploded"
-lacks "and no all-clear line" "$(msg)" "nothing needs you"
+lacks "and no all-clear line" "$(msg)" "Nothing needs you"
 fresh
 echo 'not json' > "$FAKE_INC_FILE"
 FAKE_CARDS="$CLEAN" run "$NOW" --cluster alpha
@@ -222,7 +282,7 @@ has "a non-object is a fault" "$(msg)" "hook JSON is not an object"
 echo "case all clear and --decisions-only:"
 fresh
 FAKE_CARDS="$CLEAN" run "$NOW" --cluster alpha
-has "no decision: one all-clear line" "$(msg)" "✅ nothing needs you"
+has "no decision: one all-clear line" "$(msg)" "### ✅ Nothing needs you"
 lacks "and no decision head" "$(msg)" "🙋"
 eq "severity info" "$(jq -r '.severity' <<<"$(last)")" "info"
 fresh
