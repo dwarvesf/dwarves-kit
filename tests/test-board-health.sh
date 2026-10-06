@@ -77,11 +77,19 @@ if [ "$1 $2" = "boards list" ]; then
   cat <<JSON
 [{"slug":"work","archived":false,"counts":{"triage":2,"ready":1,"done":4,"archived":${FAKE_ARCHIVED:-5}}},
  {"slug":"idle","archived":false,"counts":{"done":2}},
+ {"slug":"crew","archived":false,"counts":{"ready":${FAKE_MIRROR_N:-4}}},
  {"slug":"gone","archived":true,"counts":{"ready":9}}]
 JSON
+elif [ "$2" = "crew" ]; then
+  printf '['
+  for i in $(seq 1 "${FAKE_MIRROR_N:-4}"); do
+    [ "$i" -gt 1 ] && printf ','
+    printf '{"id":"m%s","status":"ready","body":"origin: crew:AB-%s\\nnotes: x","created_at":%s}' "$i" "$i" "$((FAKE_NOW - 1 * 86400))"
+  done
+  printf ']'
 else
   cat <<JSON
-[{"id":"a","status":"triage","created_at":$((FAKE_NOW - 12 * 86400)),"started_at":null,"completed_at":null},
+[{"id":"a","status":"triage","created_at":$((FAKE_NOW - ${FAKE_OLD_DAYS:-12} * 86400)),"started_at":null,"completed_at":null},
  {"id":"b","status":"ready","created_at":$((FAKE_NOW - 12 * 86400)),"started_at":$((FAKE_NOW - 1 * 86400)),"completed_at":null},
  {"id":"c","status":"triage","created_at":$((FAKE_NOW - 2 * 86400)),"started_at":null,"completed_at":null},
  {"id":"d","status":"done","created_at":$((FAKE_NOW - 30 * 86400)),"started_at":null,"completed_at":null}]
@@ -139,24 +147,43 @@ p="$(grep '"cluster":"alpha"' "$WORK/dry.out" | tail -n 1)"
 eq "crew open counts the active rows only (origin copy, not the local edit)" "$(jq '.data.hubs.crew.open' <<<"$p")" '3'
 eq "one active row is stale" "$(jq '.data.hubs.crew.stale' <<<"$p")" '1'
 eq "parked counted apart" "$(jq '.data.hubs.crew.parked' <<<"$p")" '1'
-eq "hubs line reads open and stale" "$(jq -r '.fields[] | select(.name=="hubs") | .value' <<<"$p")" '⚠️ hubs: crew 3 open (1 stale) · 1 parked'
+eq "no hub is named, so no hub line and no per-repo dump" "$(jq -r '[.fields[] | select(.name=="hub" or .name=="hubs")] | length' <<<"$p")" '0'
 p2="$(grep '"cluster":"beta"' "$WORK/dry.out" | tail -n 1)"
 eq "a hub with no origin falls back to the working copy" "$(jq -c '.data.hubs.solo | [.open, .stale]' <<<"$p2")" '[1,1]'
 
-echo "case kanban (open, stale, archived since the last run):"
+echo "case hub line (active, parked, and the Hermes mirror against the hub):"
+KB=(--kanban "alpha=$WORK/kanban" --cluster alpha)
+run "$NOW" --dry-run "${KB[@]}" --hub "alpha=crew" > "$WORK/dry.out"
+p="$(tail -n 1 "$WORK/dry.out")"
+eq "the hub line matches the mirror" "$(jq -r '.fields[] | select(.name=="hub") | .value' <<<"$p")" '🗂️ crew: 3 active, 1 parked · Hermes mirror 4 open = hub ✅'
+eq "a matching hub is not a fault" "$(jq -r '.attention' <<<"$p")" 'false'
+FAKE_MIRROR_N=6 run "$NOW" --dry-run "${KB[@]}" --hub "alpha=crew" > "$WORK/dry.out"
+p="$(tail -n 1 "$WORK/dry.out")"
+eq "a mirror that differs is a fault line" "$(jq -r '[.fields[] | select(.name=="fault") | .value] | first' <<<"$p")" '⚠️ crew: 3 active, 1 parked · Hermes mirror 6 open ≠ hub'
+eq "and flags attention" "$(jq -r '.attention' <<<"$p")" 'true'
+run "$NOW" --dry-run --cluster alpha --hub "alpha=crew" > "$WORK/dry.out"
+eq "no kanban reader: the hub line is just its rows" "$(tail -n 1 "$WORK/dry.out" | jq -r '.fields[] | select(.name=="hub") | .value')" '🗂️ crew: 3 active, 1 parked'
+
+echo "case kanban lines (named boards, archived since, triage threshold):"
 fresh
 printf 'synced reminders: 1 spoke items, 4 board rows\n' | rec crew 0 "$NOW"
-KB=(--kanban "alpha=$WORK/kanban" --cluster alpha)
-run "$NOW" --dry-run "${KB[@]}" > "$WORK/dry.out"
+run "$NOW" --dry-run "${KB[@]}" --board "alpha=work" --board "alpha=idle" > "$WORK/dry.out"
 p="$(tail -n 1 "$WORK/dry.out")"
-eq "open cards counted, done and archived boards left out" "$(jq -c '.data.kanban | keys' <<<"$p")" '["idle","work"]'
-eq "work: 3 open" "$(jq '.data.kanban.work.open' <<<"$p")" '3'
+eq "open cards counted, done and archived boards left out" "$(jq -c '.data.kanban | keys' <<<"$p")" '["crew","idle","work"]'
 eq "work: one stale card, by the latest of created/started/completed" "$(jq '.data.kanban.work.stale' <<<"$p")" '1'
-eq "kanban line" "$(jq -r '.fields[] | select(.name=="kanban") | .value' <<<"$p")" '⚠️ kanban: work 3 open (1 stale, oldest 12d)'
-eq "first run has no archived delta" "$(jq -r '[.fields[] | select(.name=="archived")] | length' <<<"$p")" '0'
+eq "a named board with open cards: status mix and stale" "$(jq -r '[.fields[] | select(.name=="board") | .value] | first' <<<"$p")" '🗂️ work: 3 open (triage 2, ready 1) · 1 stale'
+eq "a named board with nothing open: done count" "$(jq -r '[.fields[] | select(.name=="board") | .value] | last' <<<"$p")" '🗂️ idle: 2 done, 0 open'
+eq "an unnamed board gets no line" "$(jq -r '[.fields[].value | select(contains("crew"))] | length' <<<"$p")" '0'
+eq "under the triage threshold: no fault line" "$(jq -r '[.fields[] | select(.name=="fault")] | length' <<<"$p")" '0'
+eq "first run has no archived line" "$(jq -r '[.fields[] | select(.name=="archived")] | length' <<<"$p")" '0'
 run "$NOW" "${KB[@]}" --force; FAKE_ARCHIVED=9
 run $((NOW + 3 * DAY)) "${KB[@]}"
-eq "archived since the last run is the count delta" "$(field archived)" '🧹 archived this period: work 4'
+eq "archived since the last run is one total" "$(field archived)" '🧹 archived this period: 4'
+FAKE_OLD_DAYS=20 run $((NOW + 6 * DAY)) "${KB[@]}" --force
+eq "oldest triage card past 14d: one fault line" "$(field fault | head -1)" '⚠️ work: 2 waiting in triage, oldest 26d'
+eq "a board over threshold flags attention" "$(jq -r '.attention' <<<"$(last_payload)")" 'true'
+FAKE_OLD_DAYS=3 run $((NOW + 9 * DAY)) "${KB[@]}" --force --triage-days 60
+eq "a raised --triage-days clears it" "$(jq -r '[.fields[] | select(.name=="fault")] | length' <<<"$(last_payload)")" '0'
 
 echo "case cadence (due once, then quiet; force; dry-run and no-state stamp nothing):"
 fresh
@@ -257,26 +284,49 @@ grep -q 'WARN line hook exited 7' "$WORK/run.err" && ok "the failing hook is log
 eq "the operator's lines lead the digest" "$(jq -r '.fields[0].name' <<<"$(last_payload)")" 'extra'
 eq "still delivered" "$(npost)" '1'
 
-echo "case long list (a line is cut by whole items, with a +N more tail):"
+echo "case over threshold (three fault lines at most, then a +N more tail):"
 fresh
 printf 'synced reminders: 1 spoke items, 4 board rows\n' | rec crew 0 "$NOW"
 cat > "$WORK/kanban-many" <<'EOF'
 #!/usr/bin/env bash
 if [ "$1 $2" = "boards list" ]; then
-  printf '['; for i in 1 2 3 4 5 6 7 8 9 10 11 12; do
+  printf '['; for i in 1 2 3 4 5; do
     [ "$i" -gt 1 ] && printf ','
-    printf '{"slug":"board-number-%s","archived":false,"counts":{"ready":%s}}' "$i" "$((20 - i))"
-  done; printf ']'
+    printf '{"slug":"board-%s","archived":false,"counts":{"triage":%s}}' "$i" "$((20 + i))"
+  done; printf ',{"slug":"calm","archived":false,"counts":{"triage":3}}]'
 else
-  echo '[]'
+  slug="$2"; n=3; [ "$slug" != "calm" ] && n="${slug#board-}" && n=$((20 + n))
+  printf '['; for i in $(seq 1 "$n"); do
+    [ "$i" -gt 1 ] && printf ','
+    printf '{"id":"t%s","status":"triage","created_at":%s}' "$i" "$((FAKE_NOW - 2 * 86400))"
+  done; printf ']'
 fi
 EOF
 chmod +x "$WORK/kanban-many"
 run "$NOW" --cluster alpha --kanban "alpha=$WORK/kanban-many"
-kline="$(field kanban)"
-[ "${#kline}" -le 270 ] && ok "the kanban line stays on one short line (${#kline} chars)" || bad "kanban line too long: ${#kline}"
-case "$kline" in *" more") ok "the cut is announced as +N more";; *) bad "no +N more tail: $kline";; esac
-case "$kline" in *"board-number-1 19 open"*) ok "the biggest board leads";; *) bad "order wrong: $kline";; esac
+eq "exactly three board fault lines, biggest first" "$(field fault | head -3 | tr '\n' '|')" '⚠️ board-5: 25 waiting in triage, oldest 2d|⚠️ board-4: 24 waiting in triage, oldest 2d|⚠️ board-3: 23 waiting in triage, oldest 2d|'
+eq "the rest are counted, not listed" "$(field fault | tail -1)" '+2 more boards over threshold'
+eq "a board under both thresholds is silent" "$(field fault | grep -c calm)" '0'
+eq "no board is named, so no board lines" "$(jq -r '[.fields[] | select(.name=="board")] | length' <<<"$(last_payload)")" '0'
+
+echo "case faults only (a cluster that shows nothing but faults):"
+fresh
+printf 'synced reminders: 1 spoke items, 4 board rows\n' | rec crew 0 "$NOW"
+run "$NOW" --cluster alpha --kanban "alpha=$WORK/kanban" --hub "alpha=crew" --board "alpha=work" --faults-only alpha
+eq "clean: no lines at all" "$(jq -r '.fields | length' <<<"$(last_payload)")" '0'
+printf '%s' '{"crew":{"pending":{"flapping_ids":["AB-1"]}}}' > "$DS"
+run "$NOW" --cluster alpha --force --kanban "alpha=$WORK/kanban" --hub "alpha=crew" --board "alpha=work" --faults-only alpha
+eq "flapping: only the fault line" "$(jq -c '[.fields[].value]' <<<"$(last_payload)")" '["⚠️ AB-1 flapping between the board and a spoke (crew)"]'
+echo '{}' > "$DS"
+
+echo "case operator warning (a line that opens with the warning mark is a fault):"
+fresh
+printf 'synced reminders: 1 spoke items, 4 board rows\n' | rec crew 0 "$NOW"
+printf '#!/usr/bin/env bash\necho "⚠️ drafts waiting: 1 (#9), oldest 12d · ⏳ #9 parks in 2d"\n' > "$WORK/hook-warn"; chmod +x "$WORK/hook-warn"
+run "$NOW" --cluster alpha --quiet alpha --line "alpha=$WORK/hook-warn"
+eq "it posts even for a quiet cluster" "$(npost)" '1'
+eq "and flags attention" "$(jq -r '.attention' <<<"$(last_payload)")" 'true'
+eq "the line is shown once, in place" "$(jq -r '[.fields[].value | select(startswith("⚠️ drafts"))] | length' <<<"$(last_payload)")" '1'
 
 echo "case payload shape (kind, key, one line per field):"
 fresh
@@ -320,9 +370,15 @@ eq "the quiet clean cluster stays silent" "$(jq -r 'select(.kind=="health" and .
 eq "and its stamp lands in the health state" "$(jq -r '.last_run.alpha != null and .last_run.beta != null' "$SWH")" 'true'
 out="$(sweep --health)"
 eq "the next tick is not due" "$(grep -c '"kind":"health"' "$FAKE_POSTED")" '1'
+out="$(sweep --health --health-force --health-hub "alpha=crew" --health-kanban "alpha=$WORK/kanban" --health-board "alpha=work" --health-triage-open 1 --health-faults-only beta)"
+ap="$(jq -c 'select(.kind=="health" and .cluster=="alpha")' "$FAKE_POSTED" | tail -n 1)"
+eq "--health-hub and --health-board reach the leg" "$(jq -r '[.fields[] | select(.name=="hub" or .name=="board") | .name] | join(",")' <<<"$ap")" 'hub,board'
+case "$(jq -r '[.fields[] | select(.name=="fault") | .value] | first' <<<"$ap")" in '⚠️ work: 2 waiting in triage, oldest '*) ok "--health-triage-open reaches the leg";; *) bad "triage flag lost: $ap";; esac
+eq "--health-faults-only reaches the leg" "$(jq -c 'select(.kind=="health" and .cluster=="beta") | .fields' "$FAKE_POSTED" | tail -n 1)" '[]'
+hcount="$(grep -c '"kind":"health"' "$FAKE_POSTED")"
 before="$(cksum < "$SWH")"
 out="$(sweep --health --health-force --dry-run)"
-eq "--dry-run prints the payload, posts nothing" "$(grep -c '"kind":"health"' "$FAKE_POSTED")" '1'
+eq "--dry-run prints the payload, posts nothing" "$(grep -c '"kind":"health"' "$FAKE_POSTED")" "$hcount"
 case "$out" in *'"kind":"health"'*) ok "the dry run shows the payload";; *) bad "dry run printed no payload";; esac
 eq "--dry-run leaves the real health state alone" "$(cksum < "$SWH")" "$before"
 

@@ -192,12 +192,20 @@ per cluster once `--health-every-days` (default 3) has passed since its last
 delivered post. A failed post is not stamped, so it retries next tick and
 rides `carried_error`.
 
-| Section | Source |
+| Line | Source |
 |---|---|
-| hubs | per repo on the cluster's rail: active rows, parked rows, stale rows (an active row whose line did not change in `--health-stale-days`, default 7, from `git blame` on the origin copy of the board) |
-| kanban | per board of the `--health-kanban CLUSTER=CMD` reader (a `hermes kanban` wrapper): open cards, stale cards, cards archived since the last delivered run |
-| sync | per spoke and the mirror leg, ok or failed, from the tick records; FLAPPING ids and a carried change-digest failure from the digest state; a sweep record older than six hours |
-| extra | each stdout line of `--health-line CLUSTER=CMD`, for facts only the operator knows |
+| extra | each stdout line of `--health-line CLUSTER=CMD`, for facts only the operator knows; a line that opens with the warning mark counts as a fault |
+| hub | the one hub named by `--health-hub CLUSTER=NAME`: `NAME: <active> active, <parked> parked · Hermes mirror <n> open = hub`. Rows come from `git blame` on the origin copy of the board; the mirror count is the open cards of kanban board NAME whose body says `origin: NAME:`. A mismatch is a fault line instead. |
+| board | each kanban board named by `--health-board CLUSTER=SLUG` (reader: `--health-kanban CLUSTER=CMD`, a `hermes kanban` wrapper): open cards with their status, stale cards, tickets created since the last delivered run |
+| archived | cards archived since the last delivered run, one total; omitted on a baseline run |
+| fault | one line per kanban board over the triage threshold (`--health-triage-open`, default 20 cards, or `--health-triage-days`, default 14 days for the oldest), three at most, then `+N more boards over threshold` |
+| sync | per spoke and the mirror leg, ok or failed, from the tick records |
+| attention | failed legs, FLAPPING ids, a carried change-digest failure, a sweep record older than six hours |
+
+One short line per item. Only real faults carry the warning mark; other repos'
+hubs and boards get no line unless they trip the triage threshold, and their
+counts stay in the payload's `data`. `--health-faults-only C` keeps only the
+fault and attention lines for cluster C.
 
 The payload is the digest payload plus `kind: "health"`, `period_days`,
 `next_due`, `attention`, and one display line per field:
@@ -208,7 +216,8 @@ The payload is the digest payload plus `kind: "health"`, `period_days`,
 ```
 
 `attention` is true when something needs a human: a failed sync or mirror leg,
-a FLAPPING id, a carried post failure, an unreadable kanban reader, a stale
+a FLAPPING id, a carried post failure, an unreadable kanban reader, a hub
+that differs from its mirror, a board over the triage threshold, a stale
 sweep record. A cluster named by `--health-quiet C` posts nothing while
 `attention` is false; the run is still stamped. Two limits: a kanban card has
 no updated-at field, so "stale" there means the latest of created, started and
