@@ -93,7 +93,7 @@ _rollup_failed_checks() {
 # verdict is read. Returns 2 with the PR left open.
 # The registration grace has two sizes. GitHub queued the `pull_request` run of share#47 190s
 # after the PR opened, so 30s merged ahead of it. A workflow that is sure to run on every PR
-# (a `pull_request` trigger with no `paths`/`labeled` filter) holds to
+# (a `pull_request` trigger key, not the word inside an `if:`, with no `paths`/`labeled` filter) holds to
 # KIT_WRAP_LAND_REGISTER_SECS; a filtered one may legitimately start nothing, so it keeps
 # the short KIT_WRAP_LAND_GRACE_SECS. The wait ends at the first check that appears, so the
 # long bound costs nothing when GitHub is quick.
@@ -107,7 +107,7 @@ _land_unfiltered_pr_workflow() {
   local f
   for f in "$1"/.github/workflows/*.y*ml; do
     [ -f "$f" ] || continue
-    grep -qE 'pull_request' "$f" || continue
+    grep -qE '^[[:space:]]*(pull_request(_target)?:|-[[:space:]]*pull_request)|^on:.*pull_request' "$f" || continue
     grep -qE '^[[:space:]]*paths(-ignore)?:|labeled' "$f" || return 0
   done
   return 1

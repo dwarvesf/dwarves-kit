@@ -2187,6 +2187,18 @@ chk "PG4e: exits 0" "$rc"
 chk "PG4e: no more than 5 rollup reads" "$([ "$(grep -c 'statusCheckRollup' "$GH_STUB_CALLS")" -le 5 ]; echo $?)"
 chk_has "PG4e: merged" "$out" "merged #42 ("
 
+echo "--- PG4g: pull_request named only inside an if: (kit test.yml shape) pays the short grace"
+pg_build pg4g "" $'on:\n  workflow_dispatch:\njobs:\n  x:\n    if: github.event_name != \'pull_request\'\n    runs-on: [self-hosted]'
+out="$(pg_land pg4g GH_STUB_PR_42='{"number":42,"statusCheckRollup":[]}')"; rc=$?
+chk "PG4g: exits 0" "$rc"
+chk "PG4g: no more than 5 rollup reads" "$([ "$(grep -c 'statusCheckRollup' "$GH_STUB_CALLS")" -le 5 ]; echo $?)"
+chk_no "PG4g: no long-wait notice" "$out" "no checks registered"
+
+echo "--- PG4h: the inline trigger forms still get the long hold"
+pg_build pg4h "" $'on: [push, pull_request]\njobs:\n  x:\n    runs-on: [self-hosted]'
+out="$(pg_land pg4h GH_STUB_PR_42='{"number":42,"statusCheckRollup":[]}' GH_STUB_PR_42_21="$PG_RED")"; rc=$?
+chk "PG4h: exits 2" "$([ "$rc" -eq 2 ]; echo $?)"
+
 echo "--- PG4f: an unfiltered workflow whose checks never register says so, then merges as before"
 pg_build pg4f "" "$PG_WF"
 out="$(pg_land pg4f GH_STUB_PR_42='{"number":42,"statusCheckRollup":[]}')"; rc=$?
