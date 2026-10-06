@@ -18,6 +18,8 @@ no(){ echo "  FAIL: $*" >&2; fail=$((fail+1)); }
 
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
+# Pin the kit log root so no case can write into the operator's real one.
+export DWARVES_KIT_LOG_DIR="$TMP/default-logs"
 
 mkkit() {  # $1 = dir ; a kit-shaped tree holding the real run-all.sh
   mkdir -p "$1/tests/lib"
@@ -96,6 +98,30 @@ OUT6="$(env -u RUN_ALL_TIMEOUT_SECS bash "$K6/tests/run-all.sh" --only slowpoke 
 if [ "$RC6" -eq 1 ] && grep -q 'test-slowpoke.*TIMEOUT (1s)' <<<"$OUT6" && ! grep -q '^run-all: FAILED ->' <<<"$OUT6"; then
   ok "TIMEOUT (1s) from the data file, no FAILED line"
 else no "rc=$RC6 out=$OUT6"; fi
+
+echo "[9] a failed suite's full output is kept, including a cause line that never says FAIL"
+K7="$TMP/k7"; mkkit "$K7"; mkdir -p "$K7/lib/telemetry" "$K7/lib/config"
+cp "$DIR/lib/telemetry/kit-log-dir.sh" "$K7/lib/telemetry/"; cp "$DIR/lib/config/kit-config.sh" "$K7/lib/config/"
+# The cause line comes first, then enough padding to push it out of the 8-line tail.
+{ printf '#!/usr/bin/env bash\necho "  [AC1] --backend claude exits 0: expected '"'0'"' got '"'1'"'"\n'
+  printf 'for i in 1 2 3 4 5 6 7 8 9 10; do echo "  ok line $i"; done\necho "FAIL AC1"\nexit 1\n'; } > "$K7/tests/test-nofailword.sh"
+LOG7="$TMP/logs7"
+OUT7="$(DWARVES_KIT_LOG_DIR="$LOG7" bash "$K7/tests/run-all.sh" --only nofailword 2>&1)"; RC7=$?
+KEPT7="$(ls "$LOG7"/run-all/*/test-nofailword.out 2>/dev/null | head -1)"
+if [ "$RC7" -eq 1 ] && [ -n "$KEPT7" ] \
+   && grep -q "expected '0' got '1'" "$KEPT7" \
+   && ! grep -q "expected '0' got '1'" <<<"$OUT7" \
+   && grep -qF "full output: $KEPT7" <<<"$OUT7"; then
+  ok "kept file holds the cause line the summary dropped, and its path is printed"
+else no "rc=$RC7 kept=$KEPT7 out=$OUT7"; fi
+
+echo "[10] a passing run creates no run-all dir"
+LOG8="$TMP/logs8"
+printf '#!/usr/bin/env bash\nexit 0\n' > "$K7/tests/test-quiet.sh"
+OUT8="$(DWARVES_KIT_LOG_DIR="$LOG8" bash "$K7/tests/run-all.sh" --only quiet 2>&1)"; RC8=$?
+if [ "$RC8" -eq 0 ] && [ ! -e "$LOG8/run-all" ] && ! grep -q 'full output' <<<"$OUT8"; then
+  ok "green run leaves the log root untouched"
+else no "rc=$RC8 out=$OUT8 ls=$(ls -A "$LOG8" 2>&1)"; fi
 
 if [ "$fail" -gt 0 ]; then echo "test-run-all-timeout: $pass passed, $fail FAILED" >&2; exit 1; fi
 echo "test-run-all-timeout: all $pass passed"

@@ -26,6 +26,8 @@
 #        RUN_ALL_JOBS=<n>         parallel suites (default: auto on macOS, 1 elsewhere)
 #        RUN_ALL_TIMEOUT_SECS=<n>  per-suite ceiling (default: 300; bin/test-affected.timeouts lists the
 #                                  per-suite values). When set it applies to every suite.
+#        DWARVES_KIT_LOG_DIR / KIT_LEDGER_DIR  the kit log root (lib/telemetry/kit-log-dir.sh); a failed
+#                                  suite's full output is kept under <root>/run-all/<stamp>/<suite>.out
 # Exit:  0 all green, 1 one or more failed (every failure is listed at the end).
 
 set -uo pipefail
@@ -261,6 +263,20 @@ echo "" >&2
 # into one "FAILED ->" line cost two full re-runs to tell apart on 2026-09-12.
 failed=""
 timedout=""
+# A failed suite's FAIL lines and 8-line tail can miss the line that names the cause (a detail
+# line such as `expected '0' got '1'` that never says FAIL), and $OUTDIR is deleted on exit. Keep
+# the whole output under the kit log root, in one dir per run, created only when something failed.
+_keep_dir=""
+keep_failed_log() {  # $1 = suite name, $2 = its captured log
+  [ -f "$KIT_DIR/lib/telemetry/kit-log-dir.sh" ] && [ -f "$2" ] || return 0
+  local base
+  base="$( source "$KIT_DIR/lib/telemetry/kit-log-dir.sh" 2>/dev/null && kit_resolve_log_dir 2>/dev/null )" || return 0
+  [ -n "$base" ] || return 0
+  [ -n "$_keep_dir" ] || _keep_dir="$base/run-all/$(date -u +%Y%m%dT%H%M%SZ)-$$"
+  mkdir -p "$_keep_dir" 2>/dev/null && cp "$2" "$_keep_dir/$1.out" 2>/dev/null \
+    && echo "      full output: $_keep_dir/$1.out"
+  return 0
+}
 while IFS= read -r t; do
   name="$(basename "$t" .sh)"
   log="$OUTDIR/$name.log"
@@ -303,6 +319,7 @@ while IFS= read -r t; do
         printf '%s\n' "$_clean" | grep -E '(^|[[:space:]])FAIL([[:space:]]|:|$)' | head -20 | sed 's/^/      ! /'
       fi
       sed 's/^/      | /' "$log" | tail -8
+      keep_failed_log "$name" "$log"
       ;;
   esac
 done <"$runlist"
