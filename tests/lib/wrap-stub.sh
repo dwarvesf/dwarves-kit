@@ -234,7 +234,9 @@ esac
 exit 1
 STUB
 chmod +x "$TMPD/stub/gh"
-PATH="$TMPD/stub:$PATH"; export PATH
+# lsof lives in /usr/sbin on macOS; a launchd launcher with a trimmed PATH (the nightly job) lacks it, wrap then
+# fails open with a NOTE and the busy-holder cases read red. Keep it findable.
+PATH="$TMPD/stub:$PATH:/usr/sbin:/sbin"; export PATH
 GH_STUB_CALLS="$TMPD/gh-calls.log"; export GH_STUB_CALLS; : > "$GH_STUB_CALLS"
 # One mergeability read per settle for every case that does not test the settle wait
 # itself; those cases set their own bound and put a no-op `sleep` first on PATH.
