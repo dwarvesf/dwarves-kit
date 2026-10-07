@@ -39,6 +39,7 @@ A one-line summary band above the prompt counts queued and executing tasks, hand
 | the band's `ho`, `wt` and `pr` are buttons (`h`, `w`, `p`) that fill fixed prompts and never submit | band test 10, fourth negative control |
 | the worktree segment counts stale worktrees (merged, old, detached-old, main excluded) and drops only that part on a git failure | band tests 11 to 15, parse tests, fifth negative control |
 | NEXT lists DO NOW then URGENT then QUICK WINS, at most five, hides when empty, survives a priority failure, and bumps the hotkeys | pane tests 20 to 26, parse tests, sixth negative control |
+| a row from another mod beneath the band still renders beside the band's own row | band test 16, seventh negative control |
 | the manifest and module load as the engine reads them | validate run below |
 
 ## Run table
@@ -208,3 +209,26 @@ Verdict: RED as expected
 ```
 
 Restored: PASS=27 FAIL=0, and the checkout's `kit.toml` is unchanged.
+
+## Negative control: the band stacks over downstream rows
+
+The AbovePrompt hook now awaits `next(e)` and draws its row above the result, so a mod beneath it still renders. Ran `lib/gate/negctl.sh` with the prior `hooks/register.tsx` as the mutation.
+
+```
+Command: claude plugin test integrations/claude-code/board-pane
+Exit: 0 (green before mutation)
+Output:
+   56 pass
+   0 fail
+  Ran 56 tests across 3 files. [0.72s]
+Mutation: git show a2666f0e^:integrations/claude-code/board-pane/hooks/register.tsx > integrations/claude-code/board-pane/hooks/register.tsx
+Exit: 1 (under mutation, RED expected)
+Output:
+  (fail) a row from a mod beneath still renders when the band has its own row
+   55 pass
+   1 fail
+  Ran 56 tests across 3 files. [0.73s]
+Restore: git checkout HEAD -- integrations/claude-code/board-pane/hooks/register.tsx
+Exit: 0 (green after restore)
+Verdict: PASS
+```
