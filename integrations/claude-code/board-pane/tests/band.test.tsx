@@ -37,6 +37,8 @@ type Options = {
   defaultBranch?: { exitCode: number; stdout: string }
   // Merged-list lookups that fail for these branch names.
   mergedFails?: readonly string[]
+  // Another mod's AbovePrompt row, beneath the plugin, drawn instead of the engine's empty band.
+  downstream?: string
 }
 
 const result = (exitCode: number, stdout: string) => ({
@@ -104,8 +106,13 @@ const setup = async ($: Params[0], on: Params[1], failing: readonly Failing[] = 
   })
   // The engine's own band, beneath the plugin: what next(e) reaches when the mod draws nothing.
   on('ui.render', ($$, e) => {
-    const { Box } = $$.ui.resolve(e)
-    return <Box />
+    const { Box, Text } = $$.ui.resolve(e)
+    if (options.downstream === undefined) return <Box />
+    return (
+      <Box key="downstream">
+        <Text key="downstream-text">{options.downstream}</Text>
+      </Box>
+    )
   })
   await $.session.start({ cwd: '/work/app-one', surface: 'terminal', isInteractive: true })
   return { calls, gitArgs, filled, submitted, opened, closed, panes, clock }
@@ -124,6 +131,14 @@ test('the band shows every segment with the right counts', async ($, on) => {
   expect((await ui.find({ key: 'seg-handoffs' }))?.text).toBe('2ho')
   expect((await ui.find({ key: 'seg-worktrees' }))?.text).toBe('2wt')
   expect((await ui.find({ key: 'seg-prs' }))?.text).toBe('2pr')
+  await ui.unmount()
+})
+
+test('a row from a mod beneath still renders when the band has its own row', async ($, on) => {
+  await setup($, on, [], { downstream: 'agentpane row' })
+  const ui = await mountBand($)
+  expect((await ui.find({ key: 'seg-tasks' }))?.text).toBe('tasks 2q 1act')
+  expect((await ui.find({ key: 'downstream' }))?.text).toBe('agentpane row')
   await ui.unmount()
 })
 

@@ -437,10 +437,15 @@ export const register: Register = on => {
         </Box>,
       )
     }
-    if (segments.length === 0) return next(e)
+    // The tree beneath (other mods, then the engine's band) stacks under this row, so none is swallowed.
+    const below = await next(e)
+    if (segments.length === 0) return below
     return (
-      <Box flexDirection="row">
-        {segments.flatMap((segment, index) => (index === 0 ? [segment] : [<Text dimColor>{' · '}</Text>, segment]))}
+      <Box flexDirection="column">
+        <Box flexDirection="row">
+          {segments.flatMap((segment, index) => (index === 0 ? [segment] : [<Text dimColor>{' · '}</Text>, segment]))}
+        </Box>
+        {below}
       </Box>
     )
   })
