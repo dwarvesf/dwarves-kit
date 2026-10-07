@@ -36,6 +36,12 @@ read would otherwise close every linked card on every spoke. A relative
 process cwd. More than 20 archive-driven closes in one tick means a bulk
 archive pass, so the whole batch is refused with a note;
 `--allow-archived-closes N` is the one-run override.
+The snapshot drops a card's map entry once its row leaves the board, so after
+the first tick the card's `ID-NNN` title prefix is its only link. A card
+linked that way closes too, but only when its title text agrees with the
+archive row. A card already done whose row sits in the archive closed is
+settled on both sides: no write and no orphan note. The page stays in the
+spoke with its closed status; the sync never trashes it.
 
 ## What each app can hold
 

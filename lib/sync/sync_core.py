@@ -400,6 +400,8 @@ def plan_sync(rows: dict, items: list, state: dict,
             continue
         linked[bid] = it
     claimed_rids = {it["rid"] for it in linked.values()}
+    unrowed_rids = {it["rid"] for _b, it, _e in unrowed}
+    orphan_rids: set[str] = set()
     for it in items:
         if it["rid"] in claimed_rids:
             continue
@@ -419,7 +421,12 @@ def plan_sync(rows: dict, items: list, state: dict,
             linked[bid] = it
             claimed_rids.add(it["rid"])
         else:
-            p.notes.append(f"orphan item (no board row): {it['title']!r}")
+            # resolved against the archive below, with the snapshot-linked
+            # leftovers: build_state drops a map entry once its row leaves
+            # the board, so after one tick the title prefix is the only link
+            orphan_rids.add(it["rid"])
+            if it["rid"] not in unrowed_rids:
+                unrowed.append((bid, it, None))
 
     for bid, row in rows.items():
         active = row.status_kw in ACTIVE_STATUSES
@@ -534,17 +541,24 @@ def plan_sync(rows: dict, items: list, state: dict,
     # and its card stays open forever (measured live: orphan Reminders cards
     # went 23 -> 69 in four days after one archive pass). Close the card, but
     # only against a row found in the archive carrying a closed status. An id
-    # missing from both files stays open and keeps its orphan note.
+    # missing from both files stays open and keeps its orphan note. A done
+    # card whose row sits in the archive closed is settled on both sides: no
+    # write and no note (it was ~500 notes per tick on one Notion spoke).
     closes = []
     for bid, it, entry in unrowed:
-        if bid in tombstones or entry.get("scoped_out") or it["done"]:
-            continue
         arch = (archived or {}).get(bid)
-        if arch is None:
+        kw = ARCHIVED_KW_RE.match(arch.status_kw).group(0).lower() if arch else ""
+        if kw in ARCHIVED_CLOSED and it["done"]:
             continue
-        kw = ARCHIVED_KW_RE.match(arch.status_kw).group(0).lower()
+        if it["rid"] in orphan_rids:
+            p.notes.append(f"orphan item (no board row): {it['title']!r}")
+        if bid in tombstones or (entry or {}).get("scoped_out") or it["done"]:
+            continue
         if kw not in ARCHIVED_CLOSED or not in_scope(arch, filt):
             continue
+        if entry is None and not titles_agree(parse_title(it["title"])[1],
+                                              arch.item):
+            continue  # linked by title prefix alone: the text must agree too
         closes.append((bid, it["rid"], kw))
     close_cap = max(MAX_ARCHIVED_CLOSES, allow_closes)
     if len(closes) > close_cap:

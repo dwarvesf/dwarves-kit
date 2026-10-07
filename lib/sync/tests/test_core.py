@@ -1105,6 +1105,54 @@ def test_a_duplicate_id_inside_the_archive_takes_the_first_occurrence():
     assert p.src_set_status == [("r1", "shipped")]
 
 
+def _unmapped(bid, title, done=False, status=None):
+    """A card for an archived row AFTER the first tick: build_state dropped
+    its map entry, so the title prefix is its only link to the row."""
+    it = item("r1", f"{bid} · {title}", done=done, status=status)
+    return parse_board(BOARD), [it], {"map": {}}
+
+
+def test_done_card_for_an_archived_closed_row_is_quiet():
+    """Finished on both sides: nothing to write and nothing to report. This
+    was the ~500 orphan notes per tick on the ops-toolkit Notion spoke."""
+    for bid, title, kw in (("ID-40", "Shipped thing", "shipped"),
+                           ("ID-41", "Dropped thing", "dropped")):
+        rows, items, state = _unmapped(bid, title, done=True, status=kw)
+        p = plan_sync(rows, items, state, archived=parse_board(ARCHIVE))
+        assert p.notes == [] and not p.src_set_status, bid
+
+
+def test_open_card_for_an_archived_row_closes_after_the_map_entry_is_gone():
+    """The first-tick close is not the only chance: a refused or missed
+    close used to leave the card open forever once its map entry dropped."""
+    rows, items, state = _unmapped("ID-40", "Shipped thing")
+    p = plan_sync(rows, items, state, archived=parse_board(ARCHIVE))
+    assert p.src_set_status == [("r1", "shipped")]
+
+
+def test_prefix_only_close_needs_the_archive_title_to_agree():
+    rows, items, state = _unmapped("ID-40", "Some other work")
+    p = plan_sync(rows, items, state, archived=parse_board(ARCHIVE))
+    assert not p.src_set_status
+    assert any("orphan item" in n for n in p.notes)
+
+
+def test_true_orphans_keep_their_note():
+    """No archive row, or an archive row still open: the note is the signal."""
+    for bid, done in (("ID-77", True), ("ID-77", False), ("ID-42", True)):
+        rows, items, state = _unmapped(bid, "Half-written row", done=done)
+        p = plan_sync(rows, items, state, archived=parse_board(ARCHIVE))
+        assert not p.src_set_status, bid
+        assert sum("orphan item" in n for n in p.notes) == 1, bid
+
+
+def test_prefix_only_closes_share_the_archive_close_cap():
+    n = MAX_ARCHIVED_CLOSES + 1
+    items, _state, archive = _close_case(n)
+    p = plan_sync({}, items, {"map": {}}, archived=archive)
+    assert p.src_set_status == [] and p.closes_refused == n
+
+
 def test_resolve_archive_takes_a_relative_path_from_the_board_directory():
     """A launchd tick runs from an arbitrary cwd, so a cwd-relative archive
     reads empty, or reads another repo's archive that shares the prefix."""
