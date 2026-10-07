@@ -127,6 +127,37 @@ chk_has "land reports the delete" "$out" "deleted feat/land"
 chk "land deleted the branch on origin too" \
   "$(git -C "$TMPD/ld-bare-ok" rev-parse --verify feat/land >/dev/null 2>&1 && echo 1 || echo 0)"
 chk_has "land reports the origin delete" "$out" "deleted feat/land on origin"
+
+echo "--- --no-pull: the merge and tidy still happen, the main checkout is never written"
+build_land nopull
+NREPO="$TMPD/ld-repo-nopull"; NREPO_P="$(cd "$NREPO" && pwd -P)"; NWT="$(cd "$NREPO/wt" && pwd -P)"
+NTIP="$(git -C "$NWT" rev-parse HEAD)"
+printf 'another session, mid-edit\n' > "$NREPO/live-session.txt"
+N_HEAD0="$(git -C "$NREPO" rev-parse HEAD)"
+N_IDX0="$(git -C "$NREPO" ls-files -s | shasum)"
+N_ST0="$(git -C "$NREPO" status --porcelain | grep -v 'wt/')"
+: > "$GH_STUB_CALLS"
+out="$(GH_STUB_OPEN_PRS='[]' GH_STUB_CREATE_NUM=43 GH_STUB_LAND_REPO="$NWT" GH_STUB_LAND_REMOTE="$TMPD/ld-bare-nopull" \
+  GH_STUB_LAND_BRANCH=feat/land GH_STUB_LAND_DEF=main "$WRAP" land "$NWT" --no-pull 2>&1)"; rc=$?
+chk "land --no-pull exits 0" "$rc"
+chk_has "land --no-pull reports the skipped pull" "$out" "SKIP pull: --no-pull"
+chk_no "land --no-pull never reports a pull" "$out" "pulled "
+chk_no "land --no-pull never reports PULL BLOCKED" "$out" "PULL BLOCKED"
+chk_has "land --no-pull still merged the PR" "$(cat "$GH_STUB_CALLS")" "pr merge 43 --repo"
+chk_has "land --no-pull still verifies the tree" "$out" "tree verified"
+chk "main checkout HEAD is untouched under --no-pull" \
+  "$([ "$(git -C "$NREPO" rev-parse HEAD)" = "$N_HEAD0" ] && [ "$N_HEAD0" != "$NTIP" ]; echo $?)"
+chk "main checkout index and tree are untouched under --no-pull" \
+  "$([ "$(git -C "$NREPO" ls-files -s | shasum)" = "$N_IDX0" ] && [ "$(git -C "$NREPO" status --porcelain | grep -v 'wt/')" = "$N_ST0" ] && [ "$(cat "$NREPO/live-session.txt")" = "another session, mid-edit" ]; echo $?)"
+chk "land --no-pull removed the worktree" "$([ ! -e "$NWT" ]; echo $?)"
+chk "land --no-pull deleted the local branch" \
+  "$(git -C "$NREPO" rev-parse --verify feat/land >/dev/null 2>&1 && echo 1 || echo 0)"
+chk_has "land --no-pull reports the local delete" "$out" "deleted feat/land"
+chk "land --no-pull deleted the branch on origin" \
+  "$(git -C "$TMPD/ld-bare-nopull" rev-parse --verify feat/land >/dev/null 2>&1 && echo 1 || echo 0)"
+chk_has "land --no-pull reports the origin delete" "$out" "deleted feat/land on origin"
+chk "the default branch on origin holds the PR head tree" \
+  "$([ "$(git -C "$TMPD/ld-bare-nopull" rev-parse main^{tree})" = "$(git -C "$NREPO" rev-parse "${NTIP}^{tree}")" ]; echo $?)"
 } # end sec_happy
 
 # ===========================================================================
