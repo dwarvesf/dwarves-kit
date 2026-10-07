@@ -381,7 +381,7 @@ _land_ignored_guard() {
   return 1
 }
 
-# cmd_land <worktree> [--title T] [--body-file F] -- the landing loop for ONE committed
+# cmd_land <worktree> [--title T] [--body-file F] [--no-pull] -- the landing loop for ONE committed
 # branch in a hand-made worktree: push, open the PR, squash-merge, verify the tree, fast
 # forward the main checkout, remove the worktree, delete the branch. Each step prints one
 # line with its sha or its refusal. With no --body-file the PR body is the branch's proof of
@@ -395,6 +395,7 @@ _land_ignored_guard() {
 # code, and the run stops there.
 cmd_land() {
   local wt="" title="" body_file="" verify="" arg count=0 want="" flags_given=0
+  NO_PULL=0
   for arg in "$@"; do
     if [ -n "$want" ]; then
       case "$want" in title) title="$arg" ;; body) body_file="$arg" ;; verify) verify="$arg" ;; esac
@@ -408,13 +409,14 @@ cmd_land() {
       --verify) want=verify ;;
       --verify=*) verify="${arg#--verify=}" ;;
       --with-ci) KIT_WRAP_CI_ON_MERGE=1 ;;
+      --no-pull) NO_PULL=1 ;;
       -*) echo "wrap.sh land: unknown flag '$arg'" >&2; return 64 ;;
       *) _reject_packed land "$arg" || return 64
          count=$(( count + 1 )); wt="$arg" ;;
     esac
   done
   [ -z "$want" ] || { echo "wrap.sh land: --${want} needs a value" >&2; return 64; }
-  [ "$count" -eq 1 ] || { echo "usage: wrap.sh land <worktree> [--title T] [--body-file F] [--with-ci] [--verify <cmd>]" >&2; return 64; }
+  [ "$count" -eq 1 ] || { echo "usage: wrap.sh land <worktree> [--title T] [--body-file F] [--with-ci] [--no-pull] [--verify <cmd>]" >&2; return 64; }
   _is_repo "$wt" || { echo "wrap.sh land: ${wt} is not a git worktree" >&2; return 64; }
   if [ -n "$body_file" ] && [ ! -f "$body_file" ]; then
     echo "wrap.sh land: --body-file '${body_file}' is not an existing file" >&2; return 64
@@ -876,9 +878,13 @@ _land_tidy() {
   # another branch, and neither is a reason to strand a merged worktree. A dirty file the
   # repo declares merge=union is carried across (_land_ff_pull); any other dirty
   # file is never stashed past and never reset; the refusal is reported and the tidy continues.
+  # Under --no-pull (a step 0 stop) the main checkout belongs to a live session, so the
+  # fast-forward is skipped with the same line `apply --no-pull` prints.
   local blocked=0 cur
   cur="$(git -C "$repo" branch --show-current 2>/dev/null)"
-  if [ "$cur" != "$def" ]; then
+  if [ "$NO_PULL" = 1 ]; then
+    echo "     SKIP pull: --no-pull"
+  elif [ "$cur" != "$def" ]; then
     echo "     PULL BLOCKED: ${repo} is on '${cur:-<detached>}', not ${def}"
     blocked=1
   elif _land_ff_pull "$repo"; then
