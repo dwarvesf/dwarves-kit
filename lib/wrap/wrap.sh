@@ -7,7 +7,7 @@
 #   wrap.sh apply --pull-only [--apply] <repo> [...]        fetch + pull stage alone, no worktree/branch/stray write
 #   wrap.sh apply --no-pull [--apply] [--own <path>]... <repo> [...]  tidy without the pull or the stray-commits move (a step 0 stop)
 #   wrap.sh merge [--apply] [--no-pull] [--pr N] [--with-ci] [--verify C] <repo>   merges ONE own green PR (--pr: a named draft)
-#   wrap.sh land  <worktree> [--title T] [--body-file F] [--with-ci] [--verify C]   one hand-made worktree, landed
+#   wrap.sh land  <worktree> [--title T] [--body-file F] [--with-ci] [--no-pull] [--verify C]   one hand-made worktree, landed
 #   wrap.sh start <repo> <branch> [--carry [<path>...]]     one hand-made worktree, started
 #   wrap.sh log   "<slug>: <one sentence>" [--date YYYY-MM-DD]
 #   wrap.sh default-branch <repo>                           prints the detected name
