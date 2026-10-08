@@ -119,7 +119,14 @@ MODE="${1:-}"
 source "$KIT_DIR/tests/lib/job-count.sh"
 JOBS="$(job_count "${RUN_ALL_JOBS:-}")"
 
-OUTDIR="$(mktemp -d)"
+# Explicit template: macOS `mktemp -d` ignores $TMPDIR and lands in /var/folders, which a
+# sandbox may deny. An empty OUTDIR would send every write to /runlist, /parallel, ... and run
+# zero suites, so a failed mkdir stops the run.
+OUTDIR="$(mktemp -d "${TMPDIR:-/tmp}/run-all.XXXXXX" 2>/dev/null)" || OUTDIR=""
+if [ -z "$OUTDIR" ] || [ ! -d "$OUTDIR" ]; then
+  echo "run-all: cannot create a scratch dir under ${TMPDIR:-/tmp}; set TMPDIR to a writable directory" >&2
+  exit 1
+fi
 trap 'rm -rf "$OUTDIR"' EXIT
 
 # --- --changed: pick suites by the diff ---------------------------------------
