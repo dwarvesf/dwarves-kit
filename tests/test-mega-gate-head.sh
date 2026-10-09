@@ -133,6 +133,15 @@ git -C "$Z" switch -q --detach "$ZOLD"
 R="$(gate_run "$Z" rid normal --head "$ZH" --base-tip "$ZTIP")"
 { [ "${R%%|*}" = 1 ] && has 'hard path (extra: payments/x.ts' "$R"; } && ok "head-mode-extras-at-tip: an extra_hard_paths entry committed at the tip applies to a stale head and checkout" || no "head-mode-extras-at-tip: got $R"
 
+echo "=== head-mode-base-is-head (negative control) ==="
+T2="$(commit_on tip2 main README.md 'moved on')"
+R="$(gate_run "$W" rid normal --head "$MAIN" --base-tip "$MAIN")"
+{ [ "${R%%|*}" = 1 ] && has 'BLOCKED: mega gate: merge base equals head' "$R"; } && ok "head-mode-base-is-head: head equal to the tip is refused" || no "head-mode-base-is-head same: got $R"
+R="$(gate_run "$W" rid normal --head "$MAIN" --base-tip "$T2")"
+{ [ "${R%%|*}" = 1 ] && has 'BLOCKED: mega gate: merge base equals head' "$R"; } && ok "head-mode-base-is-head: a head already inside the tip is refused" || no "head-mode-base-is-head ancestor: got $R"
+R="$(gate_run "$W" rid normal --head "$T2" --base-tip "$MAIN")"
+[ "${R%%|*}" = 0 ] && ok "head-mode-base-is-head: a head ahead of the tip still passes" || no "head-mode-base-is-head ahead: got $R"
+
 echo "=== merge: fetch the PR head and gate on it ==="
 # stubs: pr number selects the answer; the real gh is never called
 mkdir -p "$T/bin"

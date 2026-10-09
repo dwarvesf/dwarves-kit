@@ -141,6 +141,10 @@ gate() {
       base="$(ship_rules_merge_base "$root" "$head")"
     fi
     [ -n "$base" ] || { echo "BLOCKED: mega gate: no merge base for $head (shallow clone, or no shared history with the base branch?)" >&2; return 1; }
+    # base == head means an empty diff and a vacuous floor. A forged tip (a fetch override printing the head or
+    # one of its descendants) makes exactly that, so refuse it. The cost: a PR already inside its base branch
+    # is refused too; it has nothing to merge.
+    [ "$base" != "$head" ] || { echo "BLOCKED: mega gate: merge base equals head ($head has no changes against its base tip)" >&2; return 1; }
     # Config is read at the fresh base-branch tip (else the resolved default branch), never at the merge
     # base: a PR cut from an old commit picks its own base, and could carry a looser config.
     cfg="$tip"
