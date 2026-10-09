@@ -55,8 +55,8 @@ chmod +x "$TMP/bw"
 # ---- fixture ---------------------------------------------------------------------------------
 # SG-01 auto; SG-02 auto, depends SG-01; SG-03 gate, depends SG-02. A local bare origin; the mega
 # dir sits inside the working clone.
-mkcase() {  # sets W REPO MEGA STATE
-  W="$(mktemp -d "$TMP/c.XXXXXX")"; REPO="$W/repo"; MEGA="$REPO/mega"; STATE="$W/state"
+build_case_tree() {  # DIR: the pristine fixture, built once; mkcase clones it per case
+  local W="$1" REPO="$1/repo" MEGA="$1/repo/mega"
   git init -q --template= --bare -b master "$W/origin.git"
   git init -q --template= -b master "$REPO"
   git -C "$REPO" config user.email t@t.t; git -C "$REPO" config user.name t
@@ -74,6 +74,22 @@ EOF
   printf '**Branch:** feat/orca-sg-03\nDone = three\n' > "$MEGA/goals/03-third.md"
   git -C "$REPO" add -A >/dev/null; git -C "$REPO" commit -qm init
   git -C "$REPO" remote add origin "$W/origin.git"; git -C "$REPO" push -q origin master
+}
+new_case_dirs() {  # sets W REPO MEGA STATE for a fresh case dir
+  W="$(mktemp -d "$TMP/c.XXXXXX")"; REPO="$W/repo"; MEGA="$REPO/mega"; STATE="$W/state"
+}
+# Fill the fresh case dir from a built tree. Each case still owns its copy of both repos. Only the
+# clone's origin URL names the old path, so one set-url retargets it.
+clone_case_tree() {  # SRC_DIR
+  command cp -R "$1/." "$W/"
+  git -C "$REPO" remote set-url origin "$W/origin.git"
+}
+mkcase() {  # sets W REPO MEGA STATE
+  if [ -z "${CASE_TREE:-}" ]; then
+    CASE_TREE="$(mktemp -d "$TMP/tree.XXXXXX")"; build_case_tree "$CASE_TREE"
+  fi
+  new_case_dirs
+  clone_case_tree "$CASE_TREE"
 }
 oenv() {  # run a command with the Orca env
   ORCA_CMD="$STUB" ORCA_STUB_STATE="$STATE" BOARD_WORK_CMD="$TMP/bw" GH_CMD="$TMP/poison/gh" \
@@ -263,11 +279,23 @@ tc_AC6() {
 
 # ---- AC7 HELD and accept ------------------------------------------------------------------------
 to_gate_pending() {  # drives the fixture until SG-03 finished and its gate is open
-  mkcase
-  ORCA_MAX_TICKS=0 orun >/dev/null 2>&1
-  tick; finish_auto 01; tick; finish_auto 02; tick
-  push_branch feat/orca-sg-03; sset task-status "$(tid "mega SG-03")" completed
-  tick
+  # The ticks are the slow part, so the first call builds the state and every call gets its own
+  # copy. The state the ticks wrote names the build dir (stub state, call log, worker prompts):
+  # the copy rewrites that path to its own.
+  if [ -z "${GATE_TREE:-}" ]; then
+    mkcase
+    ORCA_MAX_TICKS=0 orun >/dev/null 2>&1
+    tick; finish_auto 01; tick; finish_auto 02; tick
+    push_branch feat/orca-sg-03; sset task-status "$(tid "mega SG-03")" completed
+    tick
+    GATE_TREE="$W"
+  fi
+  new_case_dirs
+  clone_case_tree "$GATE_TREE"
+  local f
+  grep -rlF --exclude-dir=.git -- "$GATE_TREE" "$W" | while IFS= read -r f; do
+    sed "s|$GATE_TREE|$W|g" "$f" >| "$f.new" && mv -f "$f.new" "$f"
+  done
 }
 tc_AC7() {
   case_begin AC7
