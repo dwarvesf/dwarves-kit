@@ -280,6 +280,8 @@ _pr_fetch() {
   if [ -n "${MEGA_MERGE_PR_FETCH_CMD:-}" ]; then "$MEGA_MERGE_PR_FETCH_CMD" "$pr" "$sha" "$bb"; return; fi
   root="${MEGA_MERGE_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null || true)}"
   [ -n "$root" ] || return 1
+  # The value feeds shell arithmetic below, which evaluates a[$(cmd)] as code: digits only, checked first.
+  case "${MEGA_MERGE_FETCH_TIMEOUT:-60}" in *[!0-9]*) echo "BLOCKED: MEGA_MERGE_FETCH_TIMEOUT must be whole seconds (digits only), got '${MEGA_MERGE_FETCH_TIMEOUT}'" >&2; return 1 ;; esac
   # ponytail: a background fetch polled against a deadline, since macOS has no timeout(1). It signals git,
   # not git's helper children; upgrade to a process-group kill if a helper ever outlives the wait.
   # No watchdog subshell: a TERM disposition ignored by the caller would leave one running to its end.

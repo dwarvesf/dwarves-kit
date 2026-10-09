@@ -198,6 +198,14 @@ R="$(cd "$W" && PATH="$T/slowbin:$T/bin:$PATH" MEGA_MERGE_FETCH_TIMEOUT=1 MEGA_M
   MEGA_MERGE_PR_BASE_CMD="$T/prbase" MEGA_MERGE_PR_INFO_CMD="$T/prinfo" MEGA_MERGE_PR_FILES_CMD="$T/prfiles" bash "$MM" merge 7 rid normal --execute 2>&1)"; rc=$?
 { [ "$rc" = 1 ] && has 'cannot fetch PR #7' "$R" && [ $((SECONDS - t0)) -lt 15 ]; } && ok "merge-fetch-timeout: a hung fetch is killed and refused" || no "merge-fetch-timeout: rc=$rc after $((SECONDS - t0))s: $R"
 
+echo "=== merge-fetch-timeout-value (negative control) ==="
+PWNED="$T/pwned"; rm -f "$PWNED"
+for v in abc -5 1.5 '1 2' "a[\$(touch $PWNED)]"; do
+  R="$(MEGA_MERGE_FETCH_TIMEOUT="$v" merge_run 7)"
+  { [ "${R%%|*}" = 1 ] && has 'MEGA_MERGE_FETCH_TIMEOUT must be' "$R" && ! merged 7; } && ok "merge-fetch-timeout-value: '$v' is refused before the fetch" || no "merge-fetch-timeout-value '$v': got $R"
+done
+[ ! -e "$PWNED" ] && ok "merge-fetch-timeout-value: a command in the value never ran" || no "merge-fetch-timeout-value: the value was evaluated"
+
 echo "=== merge-clean-pr-head ==="
 git -C "$W" push -q -f origin "$C:refs/pull/9/head" 2>/dev/null
 echo "$C" > "$T/head-9"; echo main > "$T/base-9"
