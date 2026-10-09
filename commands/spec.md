@@ -188,7 +188,7 @@ One diagram, the kind that actually clarifies , not all five:
   four cargo-culted levels
 
 Prefer Mermaid (GitHub-native, diffable, hand-editable) over a binary image.
-When the repo keeps `docs/design/UML.md`, cite the changed diagram ids instead of a new Mermaid block.
+When the repo keeps `docs/SYSTEM-DESIGN.md`, cite the changed diagram ids instead of a new Mermaid block.
 
 ### ADR link(s)
 Link the ADR(s) that record any lasting or irreversible decision this design makes. If the
