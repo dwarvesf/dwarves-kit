@@ -180,3 +180,43 @@ ship_rule_floor() {
   } >&2
   return 2
 }
+
+# ship_rule_identities <root> <base> <head>: refuse a push whose commits carry a fixture-shaped
+# author, committer or Co-authored-by email (x@x, t@t.dev, example.com, .test, .invalid). Real
+# addresses, GitHub noreply addresses and bot noreply co-authors pass. Prints the message, returns 2.
+_sr_fixture_email() {  # _sr_fixture_email <email>: 0 when fixture-shaped
+  local e dom; e=$(printf '%s' "$1" | tr 'A-Z' 'a-z')
+  [ -n "$e" ] || return 1
+  case "$e" in *@*) ;; *) return 0 ;; esac
+  dom="${e##*@}"
+  case "$dom" in *.*) ;; *) return 0 ;; esac
+  case "$e" in t@t.dev|test@example.com) return 0 ;; esac
+  case "$dom" in example.com|example.org|example.net|*.example|*.test|*.invalid|*.localhost|*.local) return 0 ;; esac
+  return 1
+}
+ship_rule_identities() {
+  local root="$1" base="$2" head="$3" sha field email bad="" line
+  [ -n "$base" ] && [ -n "$head" ] && [ "$base" != "$head" ] || return 0
+  git -C "$root" remote get-url origin >/dev/null 2>&1 || return 0   # no origin: a scratch repo, nothing to protect
+  while IFS= read -r sha; do
+    [ -n "$sha" ] || continue
+    for field in author committer; do
+      email=$(git -C "$root" log -1 --format="%${field:0:1}e" "$sha" 2>/dev/null)
+      if _sr_fixture_email "$email"; then bad="${bad}  ${sha:0:8} ${field} <${email}>"$'\n'; fi
+    done
+    while IFS= read -r line; do
+      email=$(printf '%s' "$line" | sed -n 's/.*<\([^>]*\)>.*/\1/p')
+      [ -n "$email" ] || continue
+      if _sr_fixture_email "$email"; then bad="${bad}  ${sha:0:8} Co-authored-by <${email}>"$'\n'; fi
+    done < <(git -C "$root" log -1 --format='%(trailers:key=Co-authored-by,valueonly)' "$sha" 2>/dev/null)
+  done < <(git -C "$root" rev-list "$base..$head" 2>/dev/null)
+  [ -n "$bad" ] || return 0
+  _sr_log "BLOCKED | ship-gate | fixture identity"
+  {
+    echo "BLOCKED: ship-gate. These commits carry a fixture git identity (no-dot domain, t@t.dev, example.com, .test); it would reach a real branch and show as a stranger contributor:"
+    printf '%s' "$bad"
+    echo "Fix: git commit --amend --reset-author (last commit), or git rebase -i with --reset-author per commit; a Co-authored-by line needs a message edit."
+    echo "Then check 'git config user.email' in this worktree: a test or script left a fixture value there."
+  } >&2
+  return 2
+}

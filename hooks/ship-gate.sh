@@ -162,6 +162,9 @@ SLUG_Q=$(printf '%q' "$SLUG")   # shell-safe form for the commands this hook pri
 # no base (no remote default resolved): every diff-keyed check below skips.
 MBASE=$(ship_rules_merge_base "$ROOT" "$PHEAD")
 
+# Fixture git identities (x@x, t@t.dev) must not reach a real branch: refuse before any other check.
+ship_rule_identities "$ROOT" "$MBASE" "$PHEAD" || exit 2
+
 # --- Proof-of-done gate (diff-keyed, SPEC-INDEPENDENT). This is the bridge: it fires on
 # freeform /goal work too, because it classifies the branch DIFF instead of a spec. A
 # load-bearing (behavioral/stateful) change cannot ship without a matching proof-of-done

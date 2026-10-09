@@ -4,6 +4,9 @@ All notable changes to dwarves-kit are documented here.
 
 ## [Unreleased]
 
+### Fixed
+- `ship-gate` refuses a push whose commits carry a fixture git identity (a no-dot domain such as `x@x`, `t@t.dev`, `example.com`, `.test`) as author, committer or `Co-authored-by`; real, GitHub noreply and bot noreply addresses pass. Cause of the `han <x@x>` commit on PR #930: unknown (not in the tree). Needs an `origin` remote.
+
 ### Security-relevant config
 - Mega-goal auto-merge head pin (BEHAVIOR CHANGE for `lib/goal/mega-merge.sh merge`): the merge reads the PR head SHA first and passes it as `gh pr merge --match-head-commit <sha>`, so a push after the guards read the PR (such as a `.kit.toml` edit) makes GitHub refuse the merge. An unreadable or malformed head refuses the merge (fail closed), and the DRY-RUN line shows the pinned command. New test-only env knob `MEGA_MERGE_PR_HEAD_CMD`. The gate's diff rules still read the orchestrator checkout's local `HEAD`.
 
