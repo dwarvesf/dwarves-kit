@@ -145,6 +145,21 @@ _pr_info() {
     --jq '[(.isDraft|tostring), ([.labels[].name]|join(",")), .title] | join("")' 2>/dev/null
 }
 
+# _pr_head <pr> -- prints the PR head commit SHA (exactly 40 lowercase hex characters), the pin
+# `merge` hands to `gh pr merge --match-head-commit`. Overridable for tests via
+# MEGA_MERGE_PR_HEAD_CMD (test-only; never set in an unattended run). Prints nothing and returns
+# nonzero when the read fails or the value is not a bare SHA (a multi-line or CR-tailed value fails
+# the length check) -> caller fails closed.
+_pr_head() {
+  local out
+  if [ -n "${MEGA_MERGE_PR_HEAD_CMD:-}" ]; then out="$("$MEGA_MERGE_PR_HEAD_CMD" "$1")" || return 1
+  else out="$(gh pr view "$1" --json headRefOid --jq .headRefOid 2>/dev/null)" || return 1
+  fi
+  [ "${#out}" -eq 40 ] || return 1
+  case "$out" in *[!0-9a-f]*) return 1 ;; esac
+  printf '%s\n' "$out"
+}
+
 # _merge_exclusion <pr> -- the CODE-LEVEL gate/held-final exclusion,
 # defense-in-depth over commands/mega.md's prompt-only rule. Reads PR STATE:
 #   return 0 + a reason  -> this PR must NOT auto-merge (draft / hold-label / title marker)
@@ -249,9 +264,19 @@ merge() {
   done
   local posture; posture="$(_resolve_posture "$posture_flag")"
 
+  # Head pin. Read the head FIRST: the merge below succeeds only if the PR head still equals H, and H
+  # was read before every guard, so every guard read H or a newer head (which fails the merge). Do not
+  # move this read after a guard.
+  local head excl rc
+  head="$(_pr_head "$pr")"; rc=$?
+  if [ "$rc" -ne 0 ]; then
+    echo "BLOCKED: cannot read PR #$pr head commit (gh unavailable/offline); failing closed and refusing auto-merge. Verify + merge manually if intended." >&2
+    _log "$rid" "BLOCKED merge pr=$pr (head unreadable, fail-closed)"
+    return 1
+  fi
+
   # CODE-LEVEL gate/held-final exclusion, checked BEFORE the gate so a
   # held PR is refused even if its gates pass. Fail-closed: unreadable state is refused.
-  local excl rc
   excl="$(_merge_exclusion "$pr")"; rc=$?
   if [ "$rc" -eq 0 ]; then
     echo "BLOCKED: refusing to auto-merge PR #$pr -- $excl. Gated / held-final PRs are merged by a human, not the loop (mega-merge exclusion)." >&2
@@ -286,7 +311,7 @@ merge() {
     return 1
   fi
 
-  local cmd_str="gh pr merge $pr --squash --delete-branch"
+  local cmd_str="gh pr merge $pr --squash --delete-branch --match-head-commit $head"
   if [ "$posture" = "per-pr-review" ]; then
     echo "DRY-RUN (posture=per-pr-review, a human reviews every PR): $cmd_str"
     _log "$rid" "DRY-RUN merge pr=$pr lane=$lane posture=per-pr-review"
@@ -300,7 +325,7 @@ merge() {
 
   echo "EXECUTING: $cmd_str"
   _log "$rid" "EXECUTE merge pr=$pr lane=$lane posture=$posture"
-  gh pr merge "$pr" --squash --delete-branch
+  gh pr merge "$pr" --squash --delete-branch --match-head-commit "$head"
 }
 
 # mark <pr> [repo] -- the MARK half of the merge-exclusion guard. The guard
