@@ -931,8 +931,48 @@ case_ship_marker_at_base() {
   [ "$HOOK_RC" = 2 ] && pass ship-marker-at-base || fail ship-marker-at-base "marker removed from the tree switched the rule off: rc=$HOOK_RC"
 }
 
+# ---- test paths are not kind auth (built-in default) ----
+case_floor_test_paths_not_auth() {
+  local bad="" p out
+  for p in tests/auth/login.test.ts tests/fixtures/login.json e2e/login.spec.ts src/auth/__tests__/session.ts \
+           experiments/qa-runner/cases/oracle/sd-login-locked.mjs; do
+    mkrepo; addfile "$p" "x"
+    out="$(floor_out)"; [ -z "$out" ] || bad="$bad [floor $p => '$out']"
+    out="$(cd "$ROOT" && KIT_PROJECT_ROOT="$ROOT" lcx classify --files "$p" "add a test" 2>/dev/null)"
+    [ "$out" = normal ] || bad="$bad [classify $p => '$out']"
+  done
+  [ -z "$bad" ] && pass floor-test-paths-not-auth || fail floor-test-paths-not-auth "$bad"
+}
+
+# Only auth gains the test-path exception: every other kind still hits a test path.
+case_floor_test_paths_other_kinds() {
+  local bad="" row p k out
+  for row in tests/migrations/0001_init.sql:migration tests/fixtures/.env:secret tests/fixtures/.github/workflows/ci.yml:ci \
+             tests/fixtures/Dockerfile:infra tests/fixtures/.kit.toml:kit-config; do
+    p="${row%%:*}"; k="${row##*:}"
+    mkrepo; addfile "$p" "x"
+    out="$(floor_out)"; [ "$out" = "full $k: $p" ] || bad="$bad [$p => '$out']"
+  done
+  # a test path that also hits another kind keeps scanning past auth in --files mode
+  out="$(cd "$ROOT" && KIT_PROJECT_ROOT="$ROOT" lcx explain --files "tests/fixtures/credentials-login.json" "add a test" 2>/dev/null | sed -n 2p)"
+  case "$out" in *"(secret: tests/fixtures/credentials-login.json)"*) ;; *) bad="$bad [files credentials-login => '$out']" ;; esac
+  [ -z "$bad" ] && pass floor-test-paths-other-kinds || fail floor-test-paths-other-kinds "$bad"
+}
+
+# A skipped test-path auth hit is named on stderr: TAB fields, the path last.
+case_floor_test_path_notice() {
+  local err want; mkrepo; addfile tests/auth/login.test.ts "x"
+  err="$(floor_err)"
+  want="$(printf 'floor-exempt\tauth\ttest-path\t-\tbuilt-in test-path default\t-\ttests/auth/login.test.ts')"
+  [ -z "$(floor_out)" ] && [ "$err" = "$want" ] && pass floor-test-path-notice || fail floor-test-path-notice "stdout='$(floor_out)' stderr='$err'"
+  # a path the auth pattern would not have hit prints nothing
+  mkrepo; addfile tests/plain.test.ts "x"; err="$(floor_err)"
+  [ -z "$err" ] || fail floor-test-path-notice "quiet leg: '$err'"
+}
+
 # ---- [lanes] hard_path_exempt (read at the merge base only) ----
-ORACLE=experiments/qa-runner/cases/oracle/sd-login-locked.mjs
+# FX hits auth with no config; the old oracle path is a test path now (cases/) and no longer does.
+ORACLE=scripts/login-smoke.sh
 # exempt_repo <entry>: mkrepo, then main commits [lanes] hard_path_exempt = "<entry>" and feat/x
 # is recreated on top of it, so the merge base carries the exemption.
 exempt_repo() {
@@ -945,7 +985,7 @@ floor_err() { lcx floor "$ROOT" main 2>&1 >/dev/null; }
 
 case_floor_exempt_fixture_quiet() {
   local bad="" e out err
-  for e in '^experiments/qa-runner/cases/' '^experiments/qa-runner/cases/oracle/[^/]*[.]mjs$'; do
+  for e in '^scripts/' '^scripts/login-[^/]*[.]sh$'; do
     exempt_repo "$e"; addfile "$ORACLE" "x"
     out="$(floor_out)"; err="$(floor_err)"
     [ -z "$out" ] || bad="$bad [$e: stdout '$out']"
@@ -957,7 +997,7 @@ case_floor_exempt_fixture_quiet() {
 case_floor_exempt_real_auth_still_hits() {
   local bad="" p out
   for p in src/auth/login.ts lib/session.ts; do
-    exempt_repo '^experiments/qa-runner/cases/'; addfile "$ORACLE" "x"; addfile "$p" "x"
+    exempt_repo '^scripts/'; addfile "$ORACLE" "x"; addfile "$p" "x"
     out="$(floor_out)"; [ "$out" = "full auth: $p" ] || bad="$bad [$p => '$out']"
   done
   [ -z "$bad" ] && pass floor-exempt-real-auth-still-hits || fail floor-exempt-real-auth-still-hits "$bad"
@@ -968,11 +1008,11 @@ case_floor_exempt_real_auth_still_hits() {
 case_floor_exempt_working_tree_ignored() {
   local a b
   mkrepo; addfile "$ORACLE" "x"
-  printf '[gate]\nlane_gates = true\n[lanes]\nhard_path_exempt = "^experiments/"\n' > "$ROOT/.kit.toml"
+  printf '[gate]\nlane_gates = true\n[lanes]\nhard_path_exempt = "^scripts/"\n' > "$ROOT/.kit.toml"
   a="$(floor_out)"
   mkrepo
   _git checkout -q -b feat/cfg main >/dev/null 2>&1
-  printf '[gate]\nlane_gates = true\n[lanes]\nhard_path_exempt = "^experiments/"\n' > "$ROOT/.kit.toml"; _commit "chore: exempt on a branch"
+  printf '[gate]\nlane_gates = true\n[lanes]\nhard_path_exempt = "^scripts/"\n' > "$ROOT/.kit.toml"; _commit "chore: exempt on a branch"
   _git checkout -q feat/x >/dev/null 2>&1; addfile "$ORACLE" "x"
   _git checkout -q feat/cfg >/dev/null 2>&1
   b="$(lcx floor "$ROOT" main feat/x 2>/dev/null)"
@@ -999,7 +1039,7 @@ case_floor_exempt_empty_match_rejected() {
 }
 
 case_floor_exempt_data_loss_still_hits() {
-  exempt_repo '^experiments/qa-runner/cases/'; addfile "$ORACLE" 'DROP TABLE users;'
+  exempt_repo '^scripts/'; addfile "$ORACLE" 'DROP TABLE users;'
   local out; out="$(floor_out)"
   [ "$out" = "full data-loss: $ORACLE" ] && pass floor-exempt-data-loss-still-hits || fail floor-exempt-data-loss-still-hits "got '$out'"
 }
@@ -1008,10 +1048,10 @@ case_floor_exempt_data_loss_still_hits() {
 # branch only it does not.
 case_classify_files_exempt() {
   local on off
-  exempt_repo '^experiments/qa-runner/cases/'
+  exempt_repo '^scripts/'
   on="$(cd "$ROOT" && KIT_PROJECT_ROOT="$ROOT" lcx classify --files "$ORACLE" "add a qa oracle case" 2>/dev/null)"
   mkrepo
-  printf '[gate]\nlane_gates = true\n[lanes]\nhard_path_exempt = "^experiments/qa-runner/cases/"\n' > "$ROOT/.kit.toml"; _commit "chore: exempt in the PR"
+  printf '[gate]\nlane_gates = true\n[lanes]\nhard_path_exempt = "^scripts/"\n' > "$ROOT/.kit.toml"; _commit "chore: exempt in the PR"
   off="$(cd "$ROOT" && KIT_PROJECT_ROOT="$ROOT" lcx classify --files "$ORACLE" "add a qa oracle case" 2>/dev/null)"
   if [ "$on" = normal ] && [ "$off" = full ]; then pass classify-files-exempt
   else fail classify-files-exempt "base exemption => '$on' (want normal); branch-only => '$off' (want full)"; fi
@@ -1020,7 +1060,7 @@ case_classify_files_exempt() {
 case_ship_exempt_in_pr_blocks() {
   mkrepo; new_log
   printf 'Lane: normal\n' > "$ROOT/docs/specs/SPEC-001-x.md"
-  printf '[gate]\nlane_gates = true\n[lanes]\nhard_path_exempt = "^experiments/qa-runner/cases/"\n' > "$ROOT/.kit.toml"
+  printf '[gate]\nlane_gates = true\n[lanes]\nhard_path_exempt = "^scripts/"\n' > "$ROOT/.kit.toml"
   mkdir -p "$ROOT/$(dirname "$ORACLE")"; echo x > "$ROOT/$ORACLE"; _commit "chore: exemption and oracle in one PR"
   record_gates $NORMAL_GATES; run_hook
   if [ "$HOOK_RC" = 2 ] && printf '%s' "$HOOK_ERR" | grep -qF 'hard path (kit-config: .kit.toml'; then pass ship-exempt-in-pr-blocks
@@ -1030,7 +1070,7 @@ case_ship_exempt_in_pr_blocks() {
 # An exempted path leaves an EXEMPT line in ship-gate.log; a rejected entry never does.
 case_ship_exempt_logged() {
   local ok_rc ok_log bad_rc bad_log
-  exempt_repo '^experiments/qa-runner/cases/'; new_log
+  exempt_repo '^scripts/'; new_log
   printf 'Lane: normal\n' > "$ROOT/docs/specs/SPEC-001-x.md"; addfile "$ORACLE" "x"
   record_gates $NORMAL_GATES; run_hook
   ok_rc="$HOOK_RC"; ok_log="$(cat "$LOGD/ship-gate.log" 2>/dev/null)"
@@ -1050,7 +1090,7 @@ run_case() {
 }
 # `parity` (byte-identical against the baseline) holds only at the refactor commit; after the
 # flip the standing check is parity-after-flip.
-ALL="parity-after-flip plan-flip four-false-hits webhook-signature-suggests suggest-records explain-suggest-line classify-files-full escalate-suggest floor-paths floor-rename-counts-both-sides floor-data-loss floor-extra-paths-union floor-invalid-extra-ere override-drop-review override-uncommitted override-typo override-no-light pinned-root malformed-array-fails-closed policy-at-base ship-migration-blocks ship-migration-absent-quiet ship-switch-off-on-base ship-flip-gate-in-pr ship-hollow-full-override ship-data-loss ship-no-spec-blocks ship-suggest-advisory workflow-view floor-timing floor-non-ascii hook-timeout floor-submodule override-empty-phases ship-operator-hollow-full ship-push-forms ship-base-is-origin-head ship-checks-pushed-ref ship-slug-quoted risk-verb significance-uses-risk floor-no-leaks override-unknown-lane-name toml-valid ship-merge-base-once override-operator-precedence default-lane-layers start-no-duplicate-skips ship-fail-closed-refs floor-diff-hardening floor-plus-line floor-where-boundary floor-timing-30k default-rejects-tiny safety-push-forms ship-marker-collisions ship-continuation-and-heredoc ship-marker-at-base floor-exempt-fixture-quiet floor-exempt-real-auth-still-hits floor-exempt-working-tree-ignored floor-exempt-never-kit-config floor-exempt-empty-match-rejected floor-exempt-data-loss-still-hits classify-files-exempt ship-exempt-in-pr-blocks ship-exempt-logged"
+ALL="parity-after-flip plan-flip four-false-hits webhook-signature-suggests suggest-records explain-suggest-line classify-files-full escalate-suggest floor-paths floor-rename-counts-both-sides floor-data-loss floor-extra-paths-union floor-invalid-extra-ere override-drop-review override-uncommitted override-typo override-no-light pinned-root malformed-array-fails-closed policy-at-base ship-migration-blocks ship-migration-absent-quiet ship-switch-off-on-base ship-flip-gate-in-pr ship-hollow-full-override ship-data-loss ship-no-spec-blocks ship-suggest-advisory workflow-view floor-timing floor-non-ascii hook-timeout floor-submodule override-empty-phases ship-operator-hollow-full ship-push-forms ship-base-is-origin-head ship-checks-pushed-ref ship-slug-quoted risk-verb significance-uses-risk floor-no-leaks override-unknown-lane-name toml-valid ship-merge-base-once override-operator-precedence default-lane-layers start-no-duplicate-skips ship-fail-closed-refs floor-diff-hardening floor-plus-line floor-where-boundary floor-timing-30k default-rejects-tiny safety-push-forms ship-marker-collisions ship-continuation-and-heredoc ship-marker-at-base floor-test-paths-not-auth floor-test-paths-other-kinds floor-test-path-notice floor-exempt-fixture-quiet floor-exempt-real-auth-still-hits floor-exempt-working-tree-ignored floor-exempt-never-kit-config floor-exempt-empty-match-rejected floor-exempt-data-loss-still-hits classify-files-exempt ship-exempt-in-pr-blocks ship-exempt-logged"
 if [ "$#" -eq 0 ]; then set -- $ALL; fi
 for c in "$@"; do run_case "$c"; done
 [ "$FAILS" -eq 0 ]

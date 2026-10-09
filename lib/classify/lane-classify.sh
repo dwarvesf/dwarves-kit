@@ -108,6 +108,9 @@ _HP_secret='(^|/)\.env(\.(local|dev|development|prod|production|staging|test))?$
 _HP_ci='(^|/)\.github/'
 _HP_infra='(^|/)Dockerfile[^/]*$|(^|/)[^/]*(iam|role|polic)[^/]*\.tf$|(^|/)(iam|policies)/[^/]*\.tf$'
 _HP_kitconfig='(^|/)\.kit\.toml$'
+# Test paths never count as kind `auth` (every other kind still matches them). Fixed, case-sensitive,
+# not configurable: a config hook here would be a second, unreviewed exemption path.
+_HP_testpath='(^|/)(tests|__tests__|fixtures|cases)/|\.(test|spec)\.[^/]+$'
 # Added-line signatures for data loss, checked only in non-doc files. `truncate` counts as SQL:
 # any use in a .sql file, or a statement-shaped `truncate <name>;` elsewhere.
 _HL_common='drop[[:space:]]+(table|column|database|schema)|deletemany\([[:space:]]*\{[[:space:]]*\}[[:space:]]*\)'
@@ -126,6 +129,7 @@ _hp_re() {
     kit-config) printf '%s' "$_HP_kitconfig" ;;
   esac
 }
+_hp_is_test_path() { printf '%s\n' "$1" | grep -Eq -- "$_HP_testpath"; }
 # The extra_hard_paths union, loaded once per process (each load reads config and shells out).
 _EXTRA_LOADED=0; _EXTRA_LIST=""
 _load_extras() {
@@ -151,6 +155,7 @@ _path_kind() {
   if [ -n "$_EXEMPT_RE" ] && printf '%s\n' "$f" | grep -Eq -- "$_EXEMPT_RE"; then ex=1; fi
   for k in $_HP_KINDS; do
     [ "$ex" = 1 ] && [ "$k" != kit-config ] && continue
+    [ "$k" = auth ] && _hp_is_test_path "$f" && continue
     if printf '%s\n' "$f" | grep -Eiq -- "$(_hp_re "$k")"; then printf '%s' "$k"; return 0; fi
   done
   _load_extras
@@ -549,9 +554,20 @@ _floor_scan() {
       done | awk -F'\t' -v s="$short" '!seen[$2]++ { print "floor: exempt " $1 ": " $2 " ([lanes] hard_path_exempt at " s ")" }' >&2
     fi
   fi
+  # Kind auth skips test paths: they are blanked in its own list (line numbers kept), and each blanked
+  # path the auth pattern would have hit is named on stderr as a TAB notice, path last.
+  local apaths="$kpaths"
+  grep -nE -e "$_HP_testpath" "$kpaths" 2>/dev/null | cut -d: -f1 > "$tmp/tlines" || true
+  if [ -s "$tmp/tlines" ]; then
+    awk 'NR==FNR { x[$1] = 1; next } { print ((FNR in x) ? "" : $0) }' "$tmp/tlines" "$kpaths" > "$tmp/paths_auth"
+    apaths="$tmp/paths_auth"
+    awk 'NR==FNR { x[$1] = 1; next } (FNR in x)' "$tmp/tlines" "$kpaths" | grep -Ei -e "$_HP_auth" 2>/dev/null \
+      | awk -F'\n' '{ print "floor-exempt\tauth\ttest-path\t-\tbuilt-in test-path default\t-\t" $0 }' >&2 || true
+  fi
   for k in $_HP_KINDS; do
     re="$(_hp_re "$k")"
     if [ "$k" = kit-config ]; then hit="$(grep -Ein -m1 -e "$re" "$tmp/paths" 2>/dev/null | head -1)" || hit=""
+    elif [ "$k" = auth ]; then hit="$(grep -Ein -m1 -e "$re" "$apaths" 2>/dev/null | head -1)" || hit=""
     else hit="$(grep -Ein -m1 -e "$re" "$kpaths" 2>/dev/null | head -1)" || hit=""; fi
     num="${hit%%:*}"
     if [ -n "$hit" ] && { [ "$best" = 0 ] || [ "$num" -lt "$best" ]; }; then best="$num"; bestkind="$k"; fi
