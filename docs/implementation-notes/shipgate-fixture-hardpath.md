@@ -107,6 +107,14 @@ Warnings for the builder:
 - The floor builds one blanked list per exemptable kind (`pl_auth`, `pl_migration`) and one `grep -nE -e <ere>` per record. It does not use `grep -f`, so no pattern file can hold an empty line.
 - `--files` finds the merge base with `git merge-base HEAD <default branch>` and applies no exemption when that fails. It does not call `_deesc_resolve_base`, whose last resort is HEAD itself (builder item 1). `_load_exempt` runs in `_files_hard_hit` before the per-path subshells, so the config is read once per call, not once per path.
 - A rejected config prints nothing in `--files` mode (stderr dropped). The push shows the refusal through the floor.
+- Spec and builder item 21 conflict: the spec fixes the advisory text as `hard-path exempt <kind>: <path> by ... entry <n> (paths: ...; reason: ...)`, path before reason. The spec wins. A wildcard-matched path with spaces can therefore imitate the trailing `(paths: ...)` text on that one human line. The TAB notice (path last) stays the machine contract, the framing line marks the block as data, and the `EXEMPT` log line puts the path inside the parenthesis before `entry`.
+- Display folding follows builder item 33, wider than the spec: every byte outside printable ASCII and every `|` in a printed path, glob or reason becomes `?` in the advisory, the log and the JSON. The floor stdout and the BLOCKED text keep the real path.
+- Test-path notices cap at 20 per push, then one `[advisory] hard-path skip auth: N more test paths` line (items 20 and 32). Entry notices and refusals never cap. The log holds the same lines, written in one append under one timestamp.
+- The `WARNING` text carries `entry <n>` or `config` before the problem, so the line says which table was wrong.
+- No scratch file from `mktemp`: the floor runs with its stderr unredirected, so the raw TAB lines reach the caller (builder item 2). Nothing is parsed.
+- `battery-gate.sh` sends the floor call stderr to `/dev/null` (builder item 17), so raw TAB notices never leak into the size gate. No new test; `test-battery-gate.sh` stays green.
+- The exit-0 JSON is emitted once, at the end of `_floor_check`. The later `lane-suggest` advisory in the hook (builder item 39) stays on stderr: it never rode `SR_NOTICES`. Mega-merge calls fill `SR_NOTICES` and print nothing more (items 38 and 48 accepted as intended).
+- `run_hook` now returns the hook stdout in `HOOK_OUT` (builder item 42).
 
 ## Negative controls
 
@@ -138,3 +146,12 @@ Warnings for the builder:
 | `classify-files-exempt` | merge base falls back to HEAD | yes (no-merge-base leg) |
 | `classify-files-exempt` | auth entries not applied | yes |
 | `classify-files-exempt` | auth skip reads the migration entries | yes (needed the `sql/auth/login.ts` leg) |
+| `ship-test-path-skip-visible` | relay drops test-path notices | yes |
+| `ship-exempt-logged`, `ship-test-path-skip-visible` | hook keeps notices on stderr (no JSON) | yes |
+| `ship-exempt-logged` | reader rejection lines not relayed | yes |
+| `ship-exempt-logged` | notices logged, not printed | yes |
+| `ship-test-path-skip-visible` | test-path cap removed | yes |
+| `ship-test-path-skip-visible` | `\|` in a path not folded | yes |
+| `ship-test-path-skip-visible` | 300-character cut removed | yes |
+| `ship-exempt-in-pr-blocks` | `_floor_check` disabled | yes |
+| `test-codex-hooks` | `ship-gate.sh` edited without a repin | yes (2 FAIL) |

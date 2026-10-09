@@ -33,7 +33,7 @@ fi
 floor="${BATTERY_SMALL_FLOOR:-$(KIT_PROJECT_ROOT="$root" kit_config_get battery.size_floor 150)}"
 [[ "$floor" =~ ^[0-9]+$ ]] || floor=150
 
-[ -z "$(bash "$LC" floor "$root" "$base")" ] || { echo RUN; exit 0; }
+[ -z "$(bash "$LC" floor "$root" "$base" 2>/dev/null)" ] || { echo RUN; exit 0; }
 
 excl=(':(exclude)*.md' ':(exclude)docs/verification/**')
 lines="$(_deesc_changed_lines "$root" "$base" "${excl[@]}")"
