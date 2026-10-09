@@ -120,6 +120,7 @@ Warnings for the builder:
 - An empty file list also counts as unreadable (return 2): a PR with no listed files cannot be classified.
 - The unreadable-list refusal says `cannot classify`, a different text from the state-unreadable refusal, so the two causes read apart in the log.
 - `MEGA_MERGE_PR_FILES_CMD` is in `lib/config/module-registry.md` beside `MEGA_MERGE_PR_INFO_CMD` (builder item 41). `tests/test-meta.sh` shows one failure, `docs/FEATURES.md is fresh`, a generated file the doc-refresh task owns.
+- `floor-exempt-malformed-rejected` pins the rejection count (exactly one `lane-data:` line per bad entry) and the `full auth` stdout. The per-message wording is pinned at the reader in `exempt-reader-rejects`, so a message edit breaks one place.
 
 ## Negative controls
 
@@ -167,3 +168,7 @@ Warnings for the builder:
 | `floor-exempt-forbidden-kinds-rejected` | kind allowlist removed | yes |
 | `floor-exempt-forbidden-kinds-rejected`, `floor-exempt-reason-required` | refusal ignored, valid entries still apply | yes |
 | `floor-exempt-reason-required` | reason and missing-key checks removed | yes |
+| `floor-exempt-canary-rejected` | canary comparison off | yes |
+| `floor-exempt-canary-rejected` | user canaries not loaded | yes (leg B) |
+| `floor-exempt-malformed-rejected` | `**` inside a segment allowed | yes |
+| `floor-exempt-malformed-rejected` | single-bracket header accepted | yes |
