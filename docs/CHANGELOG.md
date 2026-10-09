@@ -5,6 +5,7 @@ All notable changes to dwarves-kit are documented here.
 ## [Unreleased]
 
 ### Fixed
+- `wrap land` and `wrap apply` could miss the "already landed" proof about 1 run in 20 on macOS: `_absorbed` set `local LC_ALL=C`, and Homebrew bash 5.3 SIGSEGVs (rc 139) in `setlocale` when the function exit restores `LC_ALL`, so the proof read as empty and land went down the push and merge path. `LC_ALL=C` now reaches git through `env`, never as a bash variable. Showed up as the intermittent red `test-wrap-land` in the nightly regression.
 - `ship-gate` refuses a push whose commits carry a fixture git identity (a no-dot domain such as `x@x`, `t@t.dev`, `example.com`, `.test`) as author, committer or `Co-authored-by`; real, GitHub noreply and bot noreply addresses pass. Cause of the `han <x@x>` commit on PR #930: unknown (not in the tree). Needs an `origin` remote. Opt out with `fixture_identities = false` under `[gate]` in a committed `.kit.toml` (read at the merge base).
 
 ### Security-relevant config
