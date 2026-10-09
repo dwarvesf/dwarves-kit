@@ -122,6 +122,17 @@ R="$(gate_run "$X" rid normal --head "$XH" --base-tip "$XTIP")"
 R="$(gate_run "$X" rid normal --head "$XH" --base-tip "$XOLD")"
 [ "${R%%|*}" = 0 ] && ok "head-mode-config-at-tip: control, the tip itself having lane_gates off passes" || no "head-mode-config-at-tip control: got $R"
 
+echo "=== head-mode-extras-at-tip ==="
+Z="$T/extrarepo"; git init -q -b main "$Z"
+printf '[gate]\nlane_gates = true\n' > "$Z/.kit.toml"; printf 'hello\n' > "$Z/README.md"
+git -C "$Z" add -A; git -C "$Z" commit -qm old; ZOLD="$(git -C "$Z" rev-parse HEAD)"
+printf '[gate]\nlane_gates = true\n[lanes]\nextra_hard_paths = "^payments/"\n' > "$Z/.kit.toml"; git -C "$Z" commit -qam tip; ZTIP="$(git -C "$Z" rev-parse HEAD)"
+git -C "$Z" switch -q -c pr-old "$ZOLD"; mkdir -p "$Z/payments"; echo 'x' > "$Z/payments/x.ts"
+git -C "$Z" add -A; git -C "$Z" commit -qm pr; ZH="$(git -C "$Z" rev-parse HEAD)"
+git -C "$Z" switch -q --detach "$ZOLD"
+R="$(gate_run "$Z" rid normal --head "$ZH" --base-tip "$ZTIP")"
+{ [ "${R%%|*}" = 1 ] && has 'hard path (extra: payments/x.ts' "$R"; } && ok "head-mode-extras-at-tip: an extra_hard_paths entry committed at the tip applies to a stale head and checkout" || no "head-mode-extras-at-tip: got $R"
+
 echo "=== merge: fetch the PR head and gate on it ==="
 # stubs: pr number selects the answer; the real gh is never called
 mkdir -p "$T/bin"

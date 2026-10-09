@@ -93,7 +93,9 @@ _log() {  # rid text
 # lane is the ledger START-AMEND over the spec header; here the caller's <lane> argument is that lane.
 #
 # With --head <sha> (what `merge` passes) the rules read <sha>, the PR head GitHub merges, from the
-# object store alone: never the working tree, never the local HEAD. <sha> and --base-tip must be 40
+# object store, never the working tree or the local HEAD, with ONE exception: [lanes] extra_hard_paths is a
+# union, so the $MEGA_MERGE_ROOT working tree and HEAD copies still count (they can only add entries) beside
+# the copy committed at the base-branch tip. <sha> and --base-tip must be 40
 # lowercase hex commits in the repo. The base is merge-base(<sha>, --base-tip), else the merge base
 # with the remote default branch. Head mode never skips the rules: no repo, a bad SHA or no merge
 # base (a shallow clone has none) is BLOCKED, exit 1. The spec comes from <sha>'s tree. The merge base

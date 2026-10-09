@@ -176,14 +176,18 @@ lane_default() {
 
 # lane_extra_hard_paths: every ERE from [lanes] extra_hard_paths, one per line. The union of all
 # layers, including both the working-tree and the HEAD copy of the project file, so a dirty edit
-# that deletes an entry cannot drop it. An invalid ERE is skipped with one stderr line.
+# that deletes an entry cannot drop it. KIT_FLOOR_CONFIG_AT=<rev> (the mega gate's PR-head mode) adds the
+# copy committed at <rev>, so a stale checkout cannot drop an entry the base-branch tip carries. An
+# invalid ERE is skipped with one stderr line.
 lane_extra_hard_paths() {
-  local pf d v; pf="$(kit_config_project)"; d="$(dirname "$pf")"
+  local pf d v r; pf="$(kit_config_project)"; d="$(dirname "$pf")"
   {
     _kit_toml_get "$pf" lanes extra_hard_paths
     if git -C "$d" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
       local tmp; tmp="$(mktemp)"
-      kit_config_show_at "$d" HEAD > "$tmp" && _kit_toml_get "$tmp" lanes extra_hard_paths
+      for r in HEAD ${KIT_FLOOR_CONFIG_AT:-}; do
+        kit_config_show_at "$d" "$r" > "$tmp" && _kit_toml_get "$tmp" lanes extra_hard_paths
+      done
       rm -f "$tmp"
     fi
     _kit_toml_get "$(_ld_operator_file)" lanes extra_hard_paths
