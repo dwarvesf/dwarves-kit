@@ -60,14 +60,16 @@ export MEGA_MERGE_PR_FILES_CMD="$TMP/prfiles"
 
 # injected PR head: prints $TMP/head-out (default: a fixed 40-hex SHA) and exits $TMP/head-rc (default 0)
 # The merge gates on the PR head, so the stub head is a real commit in a throwaway repo (MEGA_MERGE_ROOT) and
-# the fetch stub prints that commit as the base tip (base equals head: an empty diff). The real fetch and the
+# the fetch stub prints its parent as the base tip (an empty diff; a head equal to its base is refused). The real fetch and the
 # diff rules are covered by tests/test-mega-gate-head.sh.
 FIX="$TMP/fixrepo"; git init -q "$FIX" 2>/dev/null
 git -C "$FIX" -c user.email=t@example.org -c user.name=t commit -q --allow-empty -m init
+TIP_SHA="$(git -C "$FIX" rev-parse HEAD)"
+git -C "$FIX" -c user.email=t@example.org -c user.name=t commit -q --allow-empty -m pr
 HEAD_SHA="$(git -C "$FIX" rev-parse HEAD)"
 export MEGA_MERGE_ROOT="$FIX"
 printf '#!/usr/bin/env bash\necho main\n' > "$TMP/prbase"; chmod +x "$TMP/prbase"
-printf '#!/usr/bin/env bash\necho %s\n' "$HEAD_SHA" > "$TMP/prfetch"; chmod +x "$TMP/prfetch"
+printf '#!/usr/bin/env bash\necho %s\n' "$TIP_SHA" > "$TMP/prfetch"; chmod +x "$TMP/prfetch"
 export MEGA_MERGE_PR_BASE_CMD="$TMP/prbase" MEGA_MERGE_PR_FETCH_CMD="$TMP/prfetch"
 printf '%s\n' "$HEAD_SHA" > "$TMP/head-out"; echo 0 > "$TMP/head-rc"
 cat > "$TMP/prhead" <<SH
