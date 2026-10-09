@@ -180,6 +180,80 @@ mv -f "$K/tests/test-red2.sh" "$TMP/red2.discard"
 RROW="$(awk -F'\t' '$3 == "run:run-all" && $5 == "1"' "$LOG" | tail -1)"
 [ -n "$RROW" ] && ok "a failing run is recorded with exit 1 on its run line" || no "no failing run line"
 
+echo "[12] --failed reruns only the suites whose latest history line did not pass"
+K3="$TMP/kit3"; mkkit "$K3"
+for n in gamma delta eps; do printf '#!/usr/bin/env bash\nexit 0\n' >"$K3/tests/test-$n.sh"; done
+H="$TMP/failed-history.tsv"
+hrow() { printf '2026-10-08T00:00:00Z\tabc1234\t%s\t%s\t%s\t1.0\n' "$1" "$2" "$3" >>"$H"; }   # suite secs exit
+: >"$H"
+hrow test-alpha 5 1                      # failed, never reran: picked
+hrow test-beta 5 1; hrow test-beta 4 0   # failed, then passed: NOT picked
+hrow test-gamma 300 124                  # a timeout is a failure: picked
+hrow test-delta 3 255                    # the worker died: picked
+hrow test-eps 2 0                        # always green: NOT picked
+hrow test-gone 9 1                       # failed, but the suite is no longer on disk: ignored
+printf '2026-10-08T00:00:01Z\tabc1234\trun:run-all\t400\t1\t1.0\tkind=run\tselected=6\n' >>"$H"   # run lines never count as suites
+OUT="$(KIT_SUITE_TIMES_FILE="$H" RA "$K3" --failed 2>&1 </dev/null)"; RC=$?
+ran_ok() { grep -qE "^$1 +ok" <<<"$OUT"; }   # did suite $1 run and pass in $OUT
+if [ "$RC" -eq 0 ] \
+   && ran_ok test-alpha && ran_ok test-gamma && ran_ok test-delta \
+   && ! ran_ok test-beta && ! ran_ok test-eps && ! grep -qE '^test-gone ' <<<"$OUT" \
+   && grep -q '^run-all: 3 suites' <<<"$OUT" && grep -q '^run-all: all 3 suites passed' <<<"$OUT"; then
+  ok "exactly alpha (exit 1), gamma (124) and delta (255) ran; beta (failed then passed), eps and the vanished suite did not"
+else no "rc=$RC out=$OUT"; fi
+
+echo "[12b] a suite that failed and then passed is not picked: only that history means nothing to run"
+: >"$H"; hrow test-alpha 5 1; hrow test-alpha 4 0; hrow test-beta 1 0
+BEFORE="$(wc -l <"$H" | tr -d ' ')"
+OUT="$(KIT_SUITE_TIMES_FILE="$H" RA "$K3" --failed 2>&1 </dev/null)"; RC=$?
+if [ "$RC" -eq 0 ] && [ "$(wc -l <<<"$OUT" | tr -d ' ')" = 1 ] && grep -q '^run-all: --failed: no failed suite' <<<"$OUT" \
+   && ! grep -qE '^test-[a-z]+ +ok' <<<"$OUT" && [ "$(wc -l <"$H" | tr -d ' ')" = "$BEFORE" ]; then
+  ok "one line, exit 0, no suite ran, no history line appended"
+else no "rc=$RC out=$OUT"; fi
+
+echo "[12c] an empty or missing history means nothing runs: one line, exit 0"
+: >"$H"
+OUT="$(KIT_SUITE_TIMES_FILE="$H" RA "$K3" --failed 2>&1 </dev/null)"; RC=$?
+if [ "$RC" -eq 0 ] && [ "$(wc -l <<<"$OUT" | tr -d ' ')" = 1 ] && grep -q '^run-all: --failed: ' <<<"$OUT" \
+   && ! grep -qE '^test-[a-z]+ +ok' <<<"$OUT" && [ ! -s "$H" ]; then
+  ok "empty history: one line, nothing run, nothing logged"
+else no "rc=$RC out=$OUT"; fi
+OUT="$(KIT_SUITE_TIMES_FILE="$TMP/never/there.tsv" RA "$K3" --failed 2>&1 </dev/null)"; RC=$?
+if [ "$RC" -eq 0 ] && [ "$(wc -l <<<"$OUT" | tr -d ' ')" = 1 ] && grep -q 'no history' <<<"$OUT" \
+   && ! grep -qE '^test-[a-z]+ +ok' <<<"$OUT" && [ ! -e "$TMP/never/there.tsv" ]; then
+  ok "missing history: one line naming it, nothing run, nothing created"
+else no "rc=$RC out=$OUT"; fi
+
+echo "[12d] --failed adds the always-on lints (as --changed does) only when something failed"
+printf '#!/usr/bin/env bash\n# always: fixture tree-wide lint\nexit 0\n' >"$K3/tests/test-lint.sh"
+: >"$H"; hrow test-alpha 5 1
+OUT="$(KIT_SUITE_TIMES_FILE="$H" RA "$K3" --failed 2>&1 </dev/null)"; RC=$?
+if [ "$RC" -eq 0 ] && grep -qE '^test-alpha +ok' <<<"$OUT" && grep -qE '^test-lint +ok' <<<"$OUT" && ! grep -qE '^test-gamma +ok' <<<"$OUT"; then
+  ok "failed suite plus the always-on lint"
+else no "rc=$RC out=$OUT"; fi
+: >"$H"; hrow test-alpha 5 0
+OUT="$(KIT_SUITE_TIMES_FILE="$H" RA "$K3" --failed 2>&1 </dev/null)"; RC=$?
+if [ "$RC" -eq 0 ] && ! grep -qE '^test-lint +ok' <<<"$OUT" && grep -q '^run-all: --failed: no failed suite' <<<"$OUT"; then
+  ok "nothing failed: the lint does not run alone"
+else no "rc=$RC out=$OUT"; fi
+
+echo "[12e] the rerun is logged, so the next --failed sees the suite green"
+: >"$H"; hrow test-gamma 5 1
+KIT_SUITE_TIMES_FILE="$H" RA "$K3" --failed >/dev/null 2>&1 </dev/null
+OUT="$(KIT_SUITE_TIMES_FILE="$H" RA "$K3" --failed 2>&1 </dev/null)"; RC=$?
+if [ "$RC" -eq 0 ] && grep -q '^run-all: --failed: no failed suite' <<<"$OUT" && ! grep -qE '^test-[a-z]+ +ok' <<<"$OUT"; then
+  ok "gamma failed, was rerun green, and is no longer picked"
+else no "rc=$RC out=$OUT"; fi
+
+echo "[12f] a suite that is still red after the rerun keeps --failed exiting 1"
+printf '#!/usr/bin/env bash\necho "FAIL: still red"\nexit 1\n' >"$K3/tests/test-red3.sh"
+: >"$H"; hrow test-red3 5 1
+KIT_SUITE_TIMES_FILE="$H" RA "$K3" --failed >"$TMP/red3.out" 2>&1 </dev/null; RC=$?
+KIT_SUITE_TIMES_FILE="$H" RA "$K3" --failed >"$TMP/red3b.out" 2>&1 </dev/null; RC2=$?
+if [ "$RC" -eq 1 ] && [ "$RC2" -eq 1 ] && grep -q '^run-all: FAILED ->.*test-red3' "$TMP/red3.out" \
+   && ! grep -qE '^test-(alpha|beta|gamma|delta|eps) ' "$TMP/red3.out"; then ok "only the red suite ran, red stays red, exit 1 both times"; else no "rc=$RC/$RC2"; fi
+mv -f "$K3/tests/test-red3.sh" "$TMP/red3.discard"
+
 echo
 echo "run-all-times: $pass passed, $fail failed"
 [ "$fail" -eq 0 ]
