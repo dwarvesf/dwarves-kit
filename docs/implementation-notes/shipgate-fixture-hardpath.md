@@ -63,6 +63,33 @@ Warnings for the builder:
 29. TASK-7's AC: each line names a choice or fact the spec does not hold. `docs/WORKFLOW.md` range is 75-81 (Reviewer 4).
 30. Notices also show in mega-merge runs, which call `ship_rule_floor`; that is intended (Reviewer 6). Check that `hooks/codex-hook-adapter.sh` passes stdout JSON through; if not, Codex users see only the log, so record it.
 
+## Rework validate round 3 (7 reviewers, NEEDS REVISION, 1 critical, 33 warnings; round ceiling reached)
+
+A fold-diff check before round 3 found that the first DEC-16 guard matched key names in changed lines, which an edit to only an entry's `paths =` line bypasses. The guard became file-level.
+
+Critical, folded after the round closed: the `.kit.toml` rule inside `_merge_exclusion` would make `mark` report a held PR that is not held (Reviewers 5, 2, 3). Fold: a separate `_merge_config_guard`, called from `merge()` only, plus AC22 leg 6.
+
+Warnings for the builder:
+
+31. Race: `merge()` runs `gh pr merge` with no `--match-head-commit`. Read the head SHA with the file list and pass it, so a push between the check and the merge cannot slip in a `.kit.toml` edit (Reviewers 1, 2).
+32. A notice cap must never hide an entry-sourced notice, and it must print the hidden total per kind and source. Test-path notices may collapse after 20 (Reviewer 1). This overrides item 20's plain cap.
+33. Item 21 extends: fold non-ASCII bytes (bidi controls such as U+202E) in displayed paths to `?` too (Reviewer 1).
+34. Item 25 extends: apply the `|` fold to the `WARNING` line and the JSON as well as the log (Reviewer 1).
+35. SECURITY.md: the merge base comes from local remote-tracking refs, which a local agent can rewrite; name `wrap merge --apply` among the unguarded merge paths (Reviewers 1, 3).
+36. Notice flood can exceed the 30 s hook timeout, and a timeout lets the push through. Write the log in one append, cap test-path notices, and add a timing case through `ship_rule_floor` to Verification. Point the "Reader slows the hook" Failure modes row at it (Reviewer 2).
+37. Large PRs: `gh pr diff --name-only` may hit GitHub's diff limit and refuse as unclassifiable (fail-closed). Never swap in `gh pr view --json files`, which caps at 100 files and fails open. The safe alternative is `gh api --paginate .../pulls/<n>/files` or local `git diff --name-only` from `gate()`'s resolved base and head. Record the choice (Reviewers 2, 5).
+38. On a successful mega merge, `gate_out` notices are discarded. Print the `[advisory]` lines on success too, or correct item 30 (Reviewers 2, 3).
+39. Emit the exit-0 JSON from one `_exit_ok` helper or an EXIT trap gated on status 0, so the later `lane-suggest` advisory (`ship-gate.sh:451-454`) can join `SR_NOTICES` (Reviewer 5).
+40. Cite `hooks/batch-debt-warn.sh:37` (a PreToolUse `additionalContext` emitter) as the precedent, not `context-budget.sh:132`, which is UserPromptSubmit (Reviewers 4, 5).
+41. Add `MEGA_MERGE_PR_FILES_CMD` to `lib/config/module-registry.md` beside `MEGA_MERGE_PR_INFO_CMD` (Reviewer 5).
+42. `tests/test-lanes-data.sh:334-336` runs the hook with `2>&1 >/dev/null`; change the helper so AC19 and AC20 can read stdout JSON (Reviewer 4).
+43. Add AC20 legs for the framing line, the 300-char cut and the `?` fold of `|` in a path (Reviewer 4).
+44. AC22 legs (1) and (2) reduce to the same file list; keep both for the record but assert the reason text `touches .kit.toml` (Reviewer 4).
+45. CHANGELOG (TASK-8): every mega-goal PR that edits `.kit.toml` now needs a human merge (Reviewer 4).
+46. TASK-10: put the commented `[[gate.hard_path_exempt]]` example at the end of the `[gate]` block; keys written after that header belong to the table (Reviewer 3).
+47. Picture and Design diagrams do not draw the hook JSON emitter or `_merge_config_guard`; add them when TASK-6 rewrites the ADR (Reviewers 4, 6).
+48. Mega-merge `ship_rule_floor` calls fill `SR_NOTICES` but emit nothing; intended for a script caller (Reviewer 6).
+
 ## Decisions made during the build
 
 (none yet)
