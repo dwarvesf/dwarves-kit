@@ -4,8 +4,8 @@
 # held-final / draft PR is refused at the code level even when the prompt-level rule is
 # absent, unreadable state fails closed, and a normal `auto` PR still merges.
 #
-# Fully offline: gate-ledger + PR-state are injected (MEGA_MERGE_GATE_LEDGER,
-# MEGA_MERGE_PR_INFO_CMD), so no `gh` and no real gate ledger are touched.
+# Fully offline: gate-ledger + PR-state + the PR file list are injected (MEGA_MERGE_GATE_LEDGER,
+# MEGA_MERGE_PR_INFO_CMD, MEGA_MERGE_PR_FILES_CMD), so no `gh` and no real gate ledger are touched.
 #
 # Run: bash tests/test-mega-merge.sh   (exit 0 = all green)
 
@@ -37,10 +37,25 @@ case "\$1" in
   7) printf 'false%s*%sglob label\\n' "\$US" "\$US" ;;                    # label '*' must not glob/clear-crash
   8) printf 'false%s  Gated-Final  %swhitespace and case\\n' "\$US" "\$US" ;; # normalized hold match
   9) echo "not json at all {{{" ;;                                        # malformed non-empty -> fail closed
+  1[1-9]) printf 'false%s%sclear PR for the config guard\n' "\$US" "\$US" ;; # non-draft, unlabelled
 esac
 SH
 chmod +x "$TMP/prinfo"
 export MEGA_MERGE_PR_INFO_CMD="$TMP/prinfo"
+# injected changed-file lists: pr number selects the scenario; every other PR changes src/app.ts only
+cat > "$TMP/prfiles" <<'SH'
+#!/usr/bin/env bash
+case "$1" in
+  11|12|16) printf 'docs/notes.md\n.kit.toml\n' ;;   # the root .kit.toml among others
+  14) printf 'docs/.kit.toml\n' ;;                    # a nested file of the same name
+  15) exit 1 ;;                                       # unreadable
+  17) printf 'kit.toml.old\n.kit.toml\n' ;;            # a rename: both sides listed
+  18) i=0; while [ "$i" -lt 3000 ]; do echo "f$i"; i=$((i+1)); done ;;   # at the REST ceiling
+  *) printf 'src/app.ts\n' ;;
+esac
+SH
+chmod +x "$TMP/prfiles"
+export MEGA_MERGE_PR_FILES_CMD="$TMP/prfiles"
 
 run() { MEGA_MERGE_GATE_LEDGER="$1" bash "$MM" merge "$2" somerid full 2>&1; }
 
@@ -102,7 +117,7 @@ has "ship-gate not satisfied" "$O7"; ok "AC7: clear PR + failing gate still bloc
 # AC7b [unknown-lane fail-closed, TIER-4 security]: a clear PR with an UNKNOWN lane (e.g. the
 # real gate-ledger, not a stub) must NOT vacuous-pass. Uses the real gate-ledger deliberately.
 GL_REAL="$KIT_DIR/lib/gate/gate-ledger.sh"
-O7b="$(DWARVES_KIT_LOG_DIR="$(mktemp -d)/l" MEGA_MERGE_GATE_LEDGER="$GL_REAL" MEGA_MERGE_PR_INFO_CMD="$TMP/prinfo" bash "$MM" merge 1 someridZ mega --execute 2>&1)"
+O7b="$(DWARVES_KIT_LOG_DIR="$(mktemp -d)/l" MEGA_MERGE_GATE_LEDGER="$GL_REAL" MEGA_MERGE_PR_INFO_CMD="$TMP/prinfo" MEGA_MERGE_PR_FILES_CMD="$TMP/prfiles" bash "$MM" merge 1 someridZ mega --execute 2>&1)"
 has "BLOCKED" "$O7b"; ok "AC7b: unknown lane 'mega' is refused, not vacuous-passed (real gate-ledger)" $?
 if has "gh pr merge" "$O7b"; then ok "AC7b: unknown lane never reaches gh --execute" 1; else ok "AC7b: unknown lane never reaches gh --execute" 0; fi
 
@@ -112,6 +127,49 @@ rm -f "$GH_MARK"
 O10="$(PATH="$TMP:$PATH" MEGA_MERGE_GATE_LEDGER="$TMP/gl-pass" bash "$MM" merge 2 somerid full --execute 2>&1)"
 has "BLOCKED" "$O10"; ok "AC8: held PR + --execute is still BLOCKED" $?
 ok "AC8 [load-bearing]: held PR + --execute never invokes gh" $([ -f "$GH_MARK" ] && echo 1 || echo 0)
+
+echo ""
+echo "=== mega-merge-refuses-exempt-change: a PR that touches .kit.toml is never auto-merged ==="
+# The PRs are non-draft and unlabelled, so only the file rule can refuse them.
+# (1), (2): .kit.toml among the changed files (the exemption's paths line, or one canary element, edited).
+for pr in 11 12; do
+  rm -f "$GH_MARK"
+  OG="$(PATH="$TMP:$PATH" MEGA_MERGE_GATE_LEDGER="$TMP/gl-pass" bash "$MM" merge "$pr" somerid full --execute 2>&1)"; RG=$?
+  { [ "$RG" -ne 0 ] && has "touches .kit.toml" "$OG"; }; ok "config guard [NC]: PR $pr touching .kit.toml is refused with a passing gate" $?
+  ok "config guard [NC]: PR $pr + --execute never invokes gh" $([ -f "$GH_MARK" ] && echo 1 || echo 0)
+done
+# (3), (4): src/app.ts only, and docs/.kit.toml only, are not refused for this reason
+for pr in 13 14; do
+  OG="$(MEGA_MERGE_GATE_LEDGER="$TMP/gl-pass" bash "$MM" merge "$pr" somerid full 2>&1)"; RG=$?
+  { [ "$RG" -eq 0 ] && has "gh pr merge $pr" "$OG" && ! has "touches .kit.toml" "$OG"; }; ok "config guard: PR $pr (no root .kit.toml) still merges (dry-run)" $?
+done
+# (5): the file list cannot be read -> unclassifiable, refused
+OG="$(MEGA_MERGE_GATE_LEDGER="$TMP/gl-pass" bash "$MM" merge 15 somerid full 2>&1)"; RG=$?
+{ [ "$RG" -ne 0 ] && has "cannot classify" "$OG" && ! has "gh pr merge 15" "$OG"; }; ok "config guard [NC]: an unreadable file list is refused as unclassifiable" $?
+# (7): a rename of .kit.toml lists both sides; the old name is the root file, so it is refused
+OG="$(MEGA_MERGE_GATE_LEDGER="$TMP/gl-pass" bash "$MM" merge 17 somerid full 2>&1)"; RG=$?
+{ [ "$RG" -ne 0 ] && has "touches .kit.toml" "$OG"; }; ok "config guard [NC]: a rename of .kit.toml (both sides listed) is refused" $?
+# (8): a list at the 3000-file REST ceiling may be truncated, so it is unclassifiable
+OG="$(MEGA_MERGE_GATE_LEDGER="$TMP/gl-pass" bash "$MM" merge 18 somerid full 2>&1)"; RG=$?
+{ [ "$RG" -ne 0 ] && has "cannot classify" "$OG" && ! has "gh pr merge 18" "$OG"; }; ok "config guard [NC]: a 3000-line file list is refused as unclassifiable" $?
+# (9): the real default read (no override): `gh pr diff --name-only` shows only a rename's new name,
+# so the guard must read the REST files list, which carries previous_filename
+mkdir -p "$TMP/rn"
+cat > "$TMP/rn/gh" <<'SH'
+#!/usr/bin/env bash
+case "$1 $2" in
+  "pr diff") echo moved-config.toml ;;                  # the old name is invisible here
+  "api repos/{owner}/{repo}/pulls/19/files") printf 'moved-config.toml\n.kit.toml\n' ;;
+  *) exit 1 ;;
+esac
+SH
+chmod +x "$TMP/rn/gh"
+OG="$(env -u MEGA_MERGE_PR_FILES_CMD PATH="$TMP/rn:$PATH" MEGA_MERGE_GATE_LEDGER="$TMP/gl-pass" bash "$MM" merge 19 somerid full 2>&1)"; RG=$?
+{ [ "$RG" -ne 0 ] && has "touches .kit.toml" "$OG"; }; ok "config guard [NC]: the default read sees the old name of a renamed .kit.toml" $?
+# (6): `mark` on a PR whose files include .kit.toml, while the draft and label calls fail, must still say NOT confirmed held
+printf '#!/usr/bin/env bash\nexit 1\n' > "$TMP/mark-gh-fail"; chmod +x "$TMP/mark-gh-fail"
+OG="$(MEGA_MERGE_GH="$TMP/mark-gh-fail" bash "$MM" mark 16 2>&1)"; RG=$?
+{ [ "$RG" -ne 0 ] && has "NOT confirmed held" "$OG" && ! has "marked PR #16 held" "$OG"; }; ok "config guard [NC]: mark stays state-only (a .kit.toml PR is not reported held)" $?
 
 echo ""
 echo "=== mega-merge mark (SPEC-100 mark half, SG-04 / ID-089) ==="

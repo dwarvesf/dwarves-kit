@@ -119,6 +119,7 @@ real reader consumes it today (all rows below are, except where noted).
 | - | mega.over_test | `false` | [design] | mega | GLOBAL scaffold-rigor default; real control is per-sub-goal `Done-mode: over-test`. |
 | MEGAGOALS_ROOT | env-only | (none) | [impl] | mega | Root dir where mega-goal folders live; unset falls through to further path resolution in `lib/mega/mega.sh`. |
 | MEGA_MERGE_PR_INFO_CMD | env-only | (none) | [impl] | mega | Override the command used to fetch PR info at merge time; called directly when set. |
+| MEGA_MERGE_PR_FILES_CMD | env-only | (none) | [impl] | mega | Override the command used to list a PR's changed files at merge time (the `.kit.toml` auto-merge guard); called directly when set. |
 | MEGA_MERGE_GATE_LEDGER | env-only | `$LIB_ROOT/gate/gate-ledger.sh` | [impl] | mega | Which `gate-ledger.sh` `mega-merge.sh` shells out to. |
 | MEGA_MERGE_ROOT | env-only | the cwd's repo | [impl] | mega | Which repo `mega-merge.sh gate` reads for the ship-gate diff rules (HEAD against the default-branch merge base). |
 | MEGA_GATE_DISPATCH | env-only | `1` | [impl] | mega | `1` dispatches a `gate` / `gate!` sub-goal like any other (grounded on the PR existing); `0` restores the stop-before-running behavior. |

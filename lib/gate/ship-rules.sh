@@ -15,7 +15,10 @@
 #   ship_rule_large_spec <spec> <rid> <lane> <ledger>
 #                                                  a large normal-lane spec needs a validate ran/override
 #   ship_rule_floor <root> <base> <head> <rid> <spec> <ledger>
-#                                                  a hard-path diff owes the full lane's gates
+#                                                  a hard-path diff owes the full lane's gates; every hard-path
+#                                                  skip and every refused exemption config is printed on stderr,
+#                                                  logged, and collected in SR_NOTICES (one notice per line) so a
+#                                                  hook can show them on an allowed push
 #
 # The two rule functions print the BLOCKED message on stderr and return 2; they return 0 on a pass
 # and on any ambiguity (missing tooling, no base): the ship-gate is a quality gate that fails open.
@@ -95,12 +98,51 @@ ship_rule_large_spec() {
   return 2
 }
 
+# _sr_log_all <lines>: append every line of a multi-line log tail under one timestamp, in one write.
+_sr_log_all() {
+  [ "${SHIP_RULES_LOG:-0}" = 1 ] && [ -n "${SHIP_RULES_LOG_DIR:-}" ] && [ -n "$1" ] || return 0
+  mkdir -p "$SHIP_RULES_LOG_DIR" 2>/dev/null || true
+  printf '%s\n' "$1" | sed "s/^/$(date -u +%Y-%m-%dT%H:%M:%SZ) | /" >> "$SHIP_RULES_LOG_DIR/ship-gate.log" 2>/dev/null || true
+}
+
+# _sr_relay <rid>: turn the floor's stderr (stdin) into "A<TAB>advisory" and "L<TAB>log tail" lines.
+# Entry skips and refused configs always pass; test-path skips pass up to 20, then one count line. A
+# printed path or reason has every byte outside printable ASCII, and any |, folded to ? (the log keeps
+# its columns; a bidi control cannot reorder the line).
+_sr_relay() {
+  LC_ALL=C awk -F'\t' -v rid="$1" '
+    function fold(s) { gsub(/[^ -~]/, "?", s); gsub(/[|]/, "?", s); return s }
+    BEGIN { rid = fold(rid) }
+    $1 == "floor-exempt" {
+      p = $0; for (i = 0; i < 6; i++) p = substr(p, index(p, "\t") + 1)
+      p = fold(p); kind = fold($2); src = fold($3)
+      if ($3 ~ /^entry /) {
+        print "A\t[advisory] hard-path exempt " kind ": " p " by [[gate.hard_path_exempt]] " src " (paths: " fold($4) "; reason: " fold($5) ")"
+        print "L\tEXEMPT | floor | " rid " (" kind ": " p "; " src "; reason: " fold($5) ")"
+      } else if (++nt <= 20) {
+        print "A\t[advisory] hard-path skip " kind ": " p " (built-in test-path default)"
+        print "L\tEXEMPT | floor | " rid " (" kind ": " p "; test-path default)"
+      }
+      next
+    }
+    index($0, "lane-data: [[gate.hard_path_exempt]] ") == 1 {
+      l = $0; sub(/^lane-data: \[\[gate\.hard_path_exempt\]\] /, "", l)
+      who = l; sub(/ at .*/, "", who); sub(/^[^:]*: /, "", l); sub(/; no exemption applies$/, "", l)
+      l = fold(who ": " l)
+      print "A\tWARNING: hard-path exemptions refused: " l ". Every hard path applies until the base .kit.toml is fixed."
+      print "L\tEXEMPT-REFUSED | floor | " rid " (" l ")"
+    }
+    END { if (nt > 20) print "A\t[advisory] hard-path skip auth: " (nt - 20) " more test paths (built-in test-path default)" }
+  '
+}
+
 # Diff floor (hard paths). The path test lives in lib/classify/lane-classify.sh `floor`. A hit means
 # the full lane's gates apply whatever the spec's Lane says. The floor follows [gate] lane_gates as of
 # the MERGE BASE, never the PR head, so a PR cannot switch off its own floor. Full-lane gates are read
 # from the kit and operator layers only (--kit-lanes).
 ship_rule_floor() {
-  local root="$1" base="$2" head="$3" rid="$4" spec="$5" ledger="$6" hit gaps fk rid_q
+  local root="$1" base="$2" head="$3" rid="$4" spec="$5" ledger="$6" hit gaps fk rid_q errf line rest logbuf
+  SR_NOTICES=""   # never inherit a caller's value: it would reach the hook's systemMessage
   [ -f "$ledger" ] || return 0
   [ -n "$base" ] || return 0
   if ! ship_rules_switch_on lane_gates "$root" "$base"; then
@@ -109,7 +151,21 @@ ship_rule_floor() {
   fi
   [ -f "$_SR_LCLS" ] || return 0
   [ "$base" != "$(git -C "$root" rev-parse "$head" 2>/dev/null || true)" ] || return 0
-  hit=$(bash "$_SR_LCLS" floor "$root" "$base" "$head" 2>/dev/null || true)
+  errf="$(mktemp 2>/dev/null)" || errf=""
+  if [ -n "$errf" ]; then hit=$(bash "$_SR_LCLS" floor "$root" "$base" "$head" 2>"$errf" || true)
+  else hit=$(bash "$_SR_LCLS" floor "$root" "$base" "$head" || true); fi   # no scratch file: the raw lines reach stderr
+  # Skips and refusals are shown and audited before any return, so a clean pass still names them.
+  if [ -n "$errf" ]; then
+    logbuf=""
+    while IFS=$'\t' read -r line rest; do
+      case "$line" in
+        A) printf '%s\n' "$rest" >&2; SR_NOTICES="${SR_NOTICES:+$SR_NOTICES$'\n'}$rest" ;;
+        L) logbuf="${logbuf:+$logbuf$'\n'}$rest" ;;
+      esac
+    done < <(_sr_relay "$rid" < "$errf")
+    _sr_log_all "$logbuf"
+    rm -f "$errf"
+  fi
   [ -n "$hit" ] || return 0
   gaps=$(KIT_PROJECT_ROOT="$root" bash "$ledger" check full "$rid" --kit-lanes 2>&1) && return 0
   fk="${hit#full }"
