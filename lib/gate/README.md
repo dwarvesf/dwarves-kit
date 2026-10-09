@@ -100,6 +100,7 @@ lane_gates         = true    # ship-gate: lane x phase required-gate check + no-
 understanding_gate = true    # anti-rationalization Stop hook (ADR-0031)
 commit_format      = true    # commit-subject lint
 board_row_gate     = false   # board-row-gate hook: default ON, so the useful setting is false
+fixture_identities  = false  # ship-gate fixture git identity check: default ON, so the useful setting is false
 ```
 
 `lib/gate/gate-policy.sh enabled <key> [root]` is the one reader; hooks call it and never

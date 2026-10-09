@@ -31,11 +31,11 @@
 #   gate-policy.sh enabled <key> [project-root] [--at <base>]   exit 0 = on, exit 1 = off by config (only 1)
 #   gate-policy.sh keys                            the known keys, one per line
 #
-# <key>: proof_of_done | lane_gates | understanding_gate | commit_format | board_row_gate
+# <key>: proof_of_done | lane_gates | understanding_gate | commit_format | board_row_gate | fixture_identities
 set -uo pipefail
 GATE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-KEYS="proof_of_done lane_gates understanding_gate commit_format board_row_gate"
-DEFAULT_ON="board_row_gate"   # the code default when no config file names the key
+KEYS="proof_of_done lane_gates understanding_gate commit_format board_row_gate fixture_identities"
+DEFAULT_ON="board_row_gate fixture_identities"   # the code default when no config file names the key
 
 enabled() {
   local key="${1:-}" root="${2:-$PWD}" at="" v
