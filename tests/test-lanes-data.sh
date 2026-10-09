@@ -90,7 +90,7 @@ _commit() { _git add -A -f >/dev/null 2>&1; _git commit -q -m "$1" >/dev/null 2>
 mkrepo() {   # mkrepo [true|false] [branch]: the lane_gates value committed on the default branch (default true), and its name (default main)
   ROOT="$(_mk)"
   git init -q -b "${2:-main}" "$ROOT" >/dev/null 2>&1
-  git -C "$ROOT" config user.email t@t; git -C "$ROOT" config user.name t
+  git -C "$ROOT" config user.email t@users.noreply.github.com; git -C "$ROOT" config user.name t
   mkdir -p "$ROOT/docs/verification" "$ROOT/docs/specs"
   echo m > "$ROOT/docs/verification/README.md"
   printf '[gate]\nlane_gates = %s\n' "${1:-true}" > "$ROOT/.kit.toml"
