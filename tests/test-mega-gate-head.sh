@@ -108,5 +108,105 @@ R="$(gate_run "$W" rid normal --head "$(commit_on pr-spec-s main docs/specs/SPEC
 R="$(gate_run "$W" rid normal --head "$(commit_on pr-spec-n main tools/x/docs/specs/SPEC-abc-rid.md "$(specs 5)")")"
 [ "${R%%|*}" = 0 ] && ok "head-mode-large-spec: a co-located name with a non-numeric id is not a spec" || no "head-mode-large-spec non-numeric: got $R"
 
+echo "=== merge: fetch the PR head and gate on it ==="
+# stubs: pr number selects the answer; the real gh is never called
+mkdir -p "$T/bin"
+printf '#!/usr/bin/env bash\ncat "%s/head-$1"\n' "$T" > "$T/prhead"
+printf '#!/usr/bin/env bash\ncat "%s/base-$1"\n' "$T" > "$T/prbase"
+printf '#!/usr/bin/env bash\nprintf "false\\037\\037clear PR\\n"\n' > "$T/prinfo"
+printf '#!/usr/bin/env bash\necho README.md\n' > "$T/prfiles"
+chmod +x "$T/prhead" "$T/prbase" "$T/prinfo" "$T/prfiles"
+GHLOG="$T/gh.log"
+printf '#!/usr/bin/env bash\necho "$*" >> "%s"\nexit 0\n' "$GHLOG" > "$T/bin/gh"; chmod +x "$T/bin/gh"
+# merge_run <pr> [base-stub] -> "<exit>|<output>"; head-<pr> and base-<pr> hold the stub answers
+merge_run() {
+  local out rc; : > "$GHLOG"
+  out="$(cd "$W" && PATH="$T/bin:$PATH" MEGA_MERGE_ROOT="$W" MEGA_MERGE_GATE_LEDGER="$T/gl" MEGA_MERGE_PR_HEAD_CMD="$T/prhead" \
+    MEGA_MERGE_PR_BASE_CMD="${2:-$T/prbase}" MEGA_MERGE_PR_INFO_CMD="$T/prinfo" MEGA_MERGE_PR_FILES_CMD="$T/prfiles" \
+    bash "$MM" merge "$1" rid normal --execute 2>&1)"; rc=$?
+  printf '%s|%s' "$rc" "$out"
+}
+merged() { grep -qF "pr merge $1" "$GHLOG"; }
+norefs() { [ -z "$(git -C "$W" for-each-ref refs/kit)" ]; }
+
+git -C "$W" push -q origin "$P:refs/pull/7/head" 2>/dev/null
+echo "$P" > "$T/head-7"; echo main > "$T/base-7"
+R="$(merge_run 7)"
+{ [ "${R%%|*}" = 1 ] && has 'hard path (auth: src/auth/login.ts' "$R" && ! merged 7; } && ok "merge-floor-sees-pr-head: the PR head's auth change is refused from the main checkout" || no "merge-floor-sees-pr-head: got $R; gh: $(cat "$GHLOG")"
+norefs && ok "merge-floor-sees-pr-head: the private refs are deleted after the gate" || no "merge-floor-sees-pr-head: left $(git -C "$W" for-each-ref refs/kit)"
+
+echo "=== merge-fetch-mismatch (negative control) ==="
+C="$(commit_on pr-clean main README.md 'hello again')"
+git -C "$W" push -q -f origin "$C:refs/pull/7/head" 2>/dev/null
+R="$(merge_run 7)"
+{ [ "${R%%|*}" = 1 ] && has 'head moved after it was pinned' "$R" && ! merged 7; } && ok "merge-fetch-mismatch: another commit at refs/pull/7/head is refused" || no "merge-fetch-mismatch moved: got $R"
+norefs && ok "merge-fetch-mismatch: the private refs are deleted on a mismatch" || no "merge-fetch-mismatch: left refs"
+git -C "$W" remote set-url origin "$T/nonexistent.git"
+R="$(merge_run 7)"
+{ [ "${R%%|*}" = 1 ] && has 'cannot fetch PR #7' "$R" && ! merged 7; } && ok "merge-fetch-mismatch: an unreachable origin is refused" || no "merge-fetch-mismatch unreachable: got $R"
+git -C "$W" remote set-url origin "$O"
+
+echo "=== merge-fetch-timeout ==="
+mkdir -p "$T/slowbin"; REALGIT="$(command -v git)"
+printf '#!/usr/bin/env bash\nfor a in "$@"; do [ "$a" = fetch ] && exec sleep 25; done\nexec "%s" "$@"\n' "$REALGIT" > "$T/slowbin/git"; chmod +x "$T/slowbin/git"
+t0=$SECONDS
+R="$(cd "$W" && PATH="$T/slowbin:$T/bin:$PATH" MEGA_MERGE_FETCH_TIMEOUT=1 MEGA_MERGE_ROOT="$W" MEGA_MERGE_GATE_LEDGER="$T/gl" MEGA_MERGE_PR_HEAD_CMD="$T/prhead" \
+  MEGA_MERGE_PR_BASE_CMD="$T/prbase" MEGA_MERGE_PR_INFO_CMD="$T/prinfo" MEGA_MERGE_PR_FILES_CMD="$T/prfiles" bash "$MM" merge 7 rid normal --execute 2>&1)"; rc=$?
+{ [ "$rc" = 1 ] && has 'cannot fetch PR #7' "$R" && [ $((SECONDS - t0)) -lt 15 ]; } && ok "merge-fetch-timeout: a hung fetch is killed and refused" || no "merge-fetch-timeout: rc=$rc after $((SECONDS - t0))s: $R"
+
+echo "=== merge-clean-pr-head ==="
+git -C "$W" push -q -f origin "$C:refs/pull/9/head" 2>/dev/null
+echo "$C" > "$T/head-9"; echo main > "$T/base-9"
+R="$(merge_run 9)"
+{ [ "${R%%|*}" = 0 ] && merged "9 --squash --delete-branch --match-head-commit $C" ; } && ok "merge-clean-pr-head: a README-only PR merges with the pinned head" || no "merge-clean-pr-head: got $R; gh: $(cat "$GHLOG")"
+norefs && ok "merge-clean-pr-head: no private refs remain after a merge" || no "merge-clean-pr-head: left refs"
+
+echo "=== merge-mega-base ==="
+M="$(commit_on mega/x main db/migrations/0001.sql 'create table t;')"
+git -C "$W" push -q origin "$M:refs/heads/mega/x" 2>/dev/null
+Q="$(commit_on pr-wave mega/x README.md 'wave change')"
+git -C "$W" push -q origin "$Q:refs/pull/8/head" 2>/dev/null
+echo "$Q" > "$T/head-8"; echo mega/x > "$T/base-8"
+R="$(merge_run 8)"
+{ [ "${R%%|*}" = 0 ] && merged "8 --squash --delete-branch --match-head-commit $Q" && ! has 'hard path' "$R"; } && ok "merge-mega-base: a wave PR is diffed against its own base branch, not main" || no "merge-mega-base: got $R"
+echo main > "$T/base-8"
+R="$(merge_run 8)"
+{ [ "${R%%|*}" = 1 ] && has 'hard path (migration' "$R"; } && ok "merge-mega-base: the same PR diffed against main hits the earlier wave's migration" || no "merge-mega-base against main: got $R"
+
+echo "=== merge-base-read ==="
+rm -f "$T/base-7"; echo "$P" > "$T/head-7"; git -C "$W" push -q -f origin "$P:refs/pull/7/head" 2>/dev/null
+R="$(merge_run 7)"
+{ [ "${R%%|*}" = 1 ] && has 'cannot fetch PR #7' "$R" && ! merged 7; } && ok "merge-base-read: an unreadable base branch is refused" || no "merge-base-read unreadable: got $R"
+echo 'a..b' > "$T/base-7"
+R="$(merge_run 7)"
+{ [ "${R%%|*}" = 1 ] && has 'cannot fetch PR #7' "$R" && ! merged 7; } && ok "merge-base-read: a base name check-ref-format rejects is refused" || no "merge-base-read bad name: got $R"
+echo nobranch > "$T/base-7"
+R="$(merge_run 7)"
+{ [ "${R%%|*}" = 1 ] && has 'cannot fetch PR #7' "$R" && ! merged 7; } && ok "merge-base-read: a base branch missing on origin is refused" || no "merge-base-read missing: got $R"
+
+echo "=== merge-base-retarget ==="
+printf '#!/usr/bin/env bash\nn=$(cat "%s/cnt" 2>/dev/null || echo 0); n=$((n+1)); echo $n > "%s/cnt"\nif [ "$n" -ge 2 ]; then echo mega/x; else echo main; fi\n' "$T" "$T" > "$T/prbase-flip"
+chmod +x "$T/prbase-flip"; rm -f "$T/cnt"
+R="$(merge_run 9 "$T/prbase-flip")"
+{ [ "${R%%|*}" = 1 ] && has 'base branch changed' "$R" && ! merged 9; } && ok "merge-base-retarget: a base that changed after the gate is refused" || no "merge-base-retarget: got $R"
+
+echo "=== merge-fetch-override ==="
+# MEGA_MERGE_PR_FETCH_CMD replaces the fetch and the comparison; merge still validates what it prints
+override_run() { # <stub-body> -> "<exit>|<output>"
+  printf '#!/usr/bin/env bash\n%s\n' "$1" > "$T/prfetch"; chmod +x "$T/prfetch"; : > "$GHLOG"; echo main > "$T/base-9"
+  local out rc
+  out="$(cd "$W" && PATH="$T/bin:$PATH" MEGA_MERGE_PR_FETCH_CMD="$T/prfetch" MEGA_MERGE_ROOT="$W" MEGA_MERGE_GATE_LEDGER="$T/gl" MEGA_MERGE_PR_HEAD_CMD="$T/prhead" \
+    MEGA_MERGE_PR_BASE_CMD="$T/prbase" MEGA_MERGE_PR_INFO_CMD="$T/prinfo" MEGA_MERGE_PR_FILES_CMD="$T/prfiles" bash "$MM" merge 9 rid normal --execute 2>&1)"; rc=$?
+  printf '%s|%s' "$rc" "$out"
+}
+R="$(override_run "echo $MAIN")"
+{ [ "${R%%|*}" = 0 ] && merged 9; } && ok "merge-fetch-override: a stub printing a real base tip merges" || no "merge-fetch-override good: got $R"
+R="$(override_run 'echo not-a-sha')"
+{ [ "${R%%|*}" = 1 ] && has 'BLOCKED' "$R" && ! merged 9; } && ok "merge-fetch-override: a printed tip that is not 40 hex is refused" || no "merge-fetch-override garbage: got $R"
+R="$(override_run 'echo 2222222222222222222222222222222222222222')"
+{ [ "${R%%|*}" = 1 ] && has 'BLOCKED' "$R" && ! merged 9; } && ok "merge-fetch-override: a printed tip that is not a commit is refused" || no "merge-fetch-override missing: got $R"
+R="$(override_run 'exit 1')"
+{ [ "${R%%|*}" = 1 ] && has 'cannot fetch PR #9' "$R" && ! merged 9; } && ok "merge-fetch-override: a failing stub is refused" || no "merge-fetch-override fail: got $R"
+
 echo "---"; echo "PASS=$PASS FAIL=$FAIL"
 [ "$FAIL" -eq 0 ]

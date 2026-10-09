@@ -241,6 +241,53 @@ _pr_head() {
   printf '%s\n' "$out"
 }
 
+# _pr_base <pr> -- prints the PR's base branch name. Overridable for tests via MEGA_MERGE_PR_BASE_CMD
+# (test-only; never set in an unattended run). Nonzero when the read fails or the name is not a
+# branch name git accepts (a leading - or @ is refused too) -> caller fails closed.
+_pr_base() {
+  local out
+  if [ -n "${MEGA_MERGE_PR_BASE_CMD:-}" ]; then out="$("$MEGA_MERGE_PR_BASE_CMD" "$1")" || return 1
+  else out="$(gh pr view "$1" --json baseRefName --jq .baseRefName 2>/dev/null)" || return 1
+  fi
+  [ -n "$out" ] || return 1
+  case "$out" in -*|@*) return 1 ;; esac
+  git check-ref-format --branch "$out" >/dev/null 2>&1 || return 1
+  printf '%s\n' "$out"
+}
+
+# _pr_fetch <pr> <sha> <base-branch> -- fetches the PR head and its base branch from origin into the
+# private refs refs/kit/pr-<pr>/head and /base (not FETCH_HEAD, so two merges cannot overwrite each
+# other), checks the head ref equals <sha>, and prints the base tip. Returns 1 on a failed or timed-out
+# fetch (MEGA_MERGE_FETCH_TIMEOUT seconds, default 60; no prompt) and 2 on a head mismatch. The private
+# refs are deleted on every failure here and by `merge` after the gate. MEGA_MERGE_PR_FETCH_CMD
+# replaces all of this, the comparison included (test-only; never set in an unattended run).
+_pr_fetch() {
+  local pr="$1" sha="$2" bb="$3" root fpid wpid rc got tip
+  if [ -n "${MEGA_MERGE_PR_FETCH_CMD:-}" ]; then "$MEGA_MERGE_PR_FETCH_CMD" "$pr" "$sha" "$bb"; return; fi
+  root="${MEGA_MERGE_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null || true)}"
+  [ -n "$root" ] || return 1
+  # ponytail: a background fetch plus a watchdog kill, since macOS has no timeout(1); it kills git, not
+  # git's helper children. Upgrade to a process-group kill if a helper ever outlives the wait.
+  GIT_TERMINAL_PROMPT=0 git -C "$root" fetch -q origin "+refs/pull/$pr/head:refs/kit/pr-$pr/head" "+refs/heads/$bb:refs/kit/pr-$pr/base" >/dev/null 2>&1 &
+  fpid=$!
+  ( sleep "${MEGA_MERGE_FETCH_TIMEOUT:-60}"; kill "$fpid" 2>/dev/null ) >/dev/null 2>&1 &
+  wpid=$!
+  wait "$fpid" 2>/dev/null; rc=$?
+  kill "$wpid" 2>/dev/null; wait "$wpid" 2>/dev/null
+  if [ "$rc" -ne 0 ]; then _pr_fetch_clean "$root" "$pr"; return 1; fi
+  got="$(git -C "$root" rev-parse --verify -q "refs/kit/pr-$pr/head^{commit}" 2>/dev/null || true)"
+  tip="$(git -C "$root" rev-parse --verify -q "refs/kit/pr-$pr/base^{commit}" 2>/dev/null || true)"
+  if [ -z "$tip" ]; then _pr_fetch_clean "$root" "$pr"; return 1; fi
+  if [ "$got" != "$sha" ]; then _pr_fetch_clean "$root" "$pr"; return 2; fi
+  printf '%s\n' "$tip"
+}
+
+# _pr_fetch_clean <root> <pr> -- drops the private refs so they pin no objects against gc.
+_pr_fetch_clean() {
+  git -C "$1" update-ref -d "refs/kit/pr-$2/head" >/dev/null 2>&1 || true
+  git -C "$1" update-ref -d "refs/kit/pr-$2/base" >/dev/null 2>&1 || true
+}
+
 # _merge_exclusion <pr> -- the CODE-LEVEL gate/held-final exclusion,
 # defense-in-depth over commands/mega.md's prompt-only rule. Reads PR STATE:
 #   return 0 + a reason  -> this PR must NOT auto-merge (draft / hold-label / title marker)
@@ -381,8 +428,27 @@ merge() {
     return 1
   fi
 
+  # Gate on the PR head GitHub merges, not on this checkout's HEAD: fetch the head and its base branch,
+  # check the head is the pinned one, and hand both to the gate. The base comes from the PR's own base
+  # branch, so a wave PR is not charged for earlier waves' changes.
+  local base_branch tip root
+  base_branch="$(_pr_base "$pr")"; rc=$?
+  if [ "$rc" -eq 0 ]; then tip="$(_pr_fetch "$pr" "$head" "$base_branch")"; rc=$?; fi
+  if [ "$rc" -eq 2 ]; then
+    echo "BLOCKED: PR #$pr head moved after it was pinned ($head); refusing auto-merge, rerun to pin the new head." >&2
+    _log "$rid" "BLOCKED merge pr=$pr (head moved after pin)"
+    return 1
+  elif [ "$rc" -ne 0 ]; then
+    echo "BLOCKED: cannot fetch PR #$pr head or base from origin; failing closed and refusing auto-merge." >&2
+    _log "$rid" "BLOCKED merge pr=$pr (fetch failed, fail-closed)"
+    return 1
+  fi
+
   local gate_out
-  if ! gate_out="$(gate "$rid" "$lane" 2>&1)"; then
+  gate_out="$(gate "$rid" "$lane" --head "$head" --base-tip "$tip" 2>&1)"; rc=$?
+  root="${MEGA_MERGE_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null || true)}"
+  [ -z "$root" ] || _pr_fetch_clean "$root" "$pr"
+  if [ "$rc" -ne 0 ]; then
     {
       echo "BLOCKED: ship-gate not satisfied, refusing auto-merge for PR #$pr (rid=$rid, lane=$lane)."
       printf '%s\n' "$gate_out" | sed 's/^/  /'
@@ -403,6 +469,14 @@ merge() {
     echo "DRY-RUN (gate passed; pass --execute to actually run this): $cmd_str"
     _log "$rid" "DRY-RUN merge pr=$pr lane=$lane posture=$posture"
     return 0
+  fi
+
+  # --match-head-commit pins only the head: a base retarget after the gate would change what the merge
+  # lands on, so read the base again and refuse when it moved.
+  if [ "$(_pr_base "$pr")" != "$base_branch" ]; then
+    echo "BLOCKED: PR #$pr base branch changed after the gate ran (was $base_branch); refusing auto-merge, rerun to gate the new base." >&2
+    _log "$rid" "BLOCKED merge pr=$pr (base changed after gate)"
+    return 1
   fi
 
   echo "EXECUTING: $cmd_str"

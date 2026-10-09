@@ -79,11 +79,20 @@ PRFILES_STUB="$FAKEBIN/prfiles-clear"
 printf '#!/usr/bin/env bash\necho src/app.ts\n' > "$PRFILES_STUB"
 chmod +x "$PRFILES_STUB"
 export MEGA_MERGE_PR_FILES_CMD="$PRFILES_STUB"
-# The merge pins the PR head it read; inject a fixed head so no real gh is called for it.
+# The merge pins the PR head it read and gates on it, so the head is a real commit in a throwaway repo
+# (MEGA_MERGE_ROOT), the base stub names a branch, and the fetch stub prints the commit as the base tip
+# (an empty diff). The real fetch and diff rules are covered by tests/test-mega-gate-head.sh.
+FIX="$(mktemp -d)"; git init -q "$FIX" 2>/dev/null
+git -C "$FIX" -c user.email=t@example.org -c user.name=t commit -q --allow-empty -m init
+FIX_HEAD="$(git -C "$FIX" rev-parse HEAD)"
+export MEGA_MERGE_ROOT="$FIX"
 PRHEAD_STUB="$FAKEBIN/prhead-fixed"
-printf '#!/usr/bin/env bash\necho d2a480915ea1d62eaca5bfba24a7609a1adcd8b8\n' > "$PRHEAD_STUB"
+printf '#!/usr/bin/env bash\necho %s\n' "$FIX_HEAD" > "$PRHEAD_STUB"
 chmod +x "$PRHEAD_STUB"
 export MEGA_MERGE_PR_HEAD_CMD="$PRHEAD_STUB"
+printf '#!/usr/bin/env bash\necho main\n' > "$FAKEBIN/prbase-main"; chmod +x "$FAKEBIN/prbase-main"
+printf '#!/usr/bin/env bash\necho %s\n' "$FIX_HEAD" > "$FAKEBIN/prfetch-fixed"; chmod +x "$FAKEBIN/prfetch-fixed"
+export MEGA_MERGE_PR_BASE_CMD="$FAKEBIN/prbase-main" MEGA_MERGE_PR_FETCH_CMD="$FAKEBIN/prfetch-fixed"
 
 LANE=full
 REQUIRED="$(bash "$GL" required "$LANE")"
