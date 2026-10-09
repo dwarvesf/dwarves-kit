@@ -30,10 +30,10 @@ cp "$KIT_DIR/install.sh" "$FAKE_KIT/install.sh"
 HOME="$HOME_SB" CLAUDE_DIR="$DEST" bash "$FAKE_KIT/install.sh" >/dev/null 2>&1 || true
 LIB="$DEST/dwarves-kit/lib/mod"
 
-[ -f "$LIB/keep.sh" ] && [ -f "$LIB/sub/deep.sh" ] && [ -f "$LIB/bin/tool" ]; chk "tracked lib files are copied" $?
-[ ! -e "$LIB/.venv" ];                chk "a .venv is not copied" $?
-[ ! -e "$LIB/__pycache__" ];          chk "a __pycache__ is not copied" $?
-[ ! -e "$LIB/rust/target" ];          chk "rust/target cargo output is not copied" $?
-[ ! -e "$LIB/bin/engine-rs" ];        chk "a bin/*-rs built binary is not copied" $?
+chk "tracked lib files are copied" "$([ -f "$LIB/keep.sh" ] && [ -f "$LIB/sub/deep.sh" ] && [ -f "$LIB/bin/tool" ]; echo $?)"
+chk "a .venv is not copied" "$([ ! -e "$LIB/.venv" ]; echo $?)"
+chk "a __pycache__ is not copied" "$([ ! -e "$LIB/__pycache__" ]; echo $?)"
+chk "rust/target cargo output is not copied" "$([ ! -e "$LIB/rust/target" ]; echo $?)"
+chk "a bin/*-rs built binary is not copied" "$([ ! -e "$LIB/bin/engine-rs" ]; echo $?)"
 
 [ "$fail" -eq 0 ] && echo "PASS: install lib copy skips build output" || { echo "SOME TESTS FAILED"; exit 1; }
