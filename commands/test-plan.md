@@ -121,6 +121,8 @@ When Step 1d applies, also tag each case sourced from the scenario-builder modul
 **harness tier** (`A` / `B`) per that step's rule. A case with no external-API dependency
 carries no tier tag; do not force one on it.
 
+If the brief carries a `## Test plan (draft from design)` section, or the spec cites `docs/SYSTEM-DESIGN.md` diagram ids, fold those rows into the matrix alongside the acceptance-criteria cases and mark their source as `model`. Keep each row's diagram id and element key. Never drop a model row silently; a dropped row carries a one-line reason.
+
 Skip a category only when it genuinely does not apply to this spec, and say why in the coverage notes. Do not pad with cases that do not map to an acceptance criterion.
 
 ### Step 3: Write the `## Test plan` section into the active spec

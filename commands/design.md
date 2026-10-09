@@ -49,8 +49,21 @@ a dropped row carries a one-line reason. Still situations, still no oracles.
 ### Step 5: Write the Solution (and Design) into the brief
 Once the user approves the design, **append** a `## Solution` section (and `## Failure modes` / an I/O contract sub-section if produced) to the brief file found (or created) in Step 1 (`docs/briefs/DECISION-BRIEF-<slug>.md`, or the legacy `docs/briefs/DECISION-BRIEF.md` if that is where you read from), using the same solution-depth sub-section shape: `### Approaches considered`, `### Chosen approach + why`, `### Extensibility & boundaries`. **If Step 4 produced a diagram + ADR link(s)** (the design was design-bearing), also **append a `## Design` section** with `### Diagram` (the Mermaid block) and `### ADR link(s)` , the shape `/kit:spec`'s own `## Design` block expects (the understanding-gate design). When the system-design branch ran, `### Diagram` cites the `docs/SYSTEM-DESIGN.md` diagram ids it changed (and the artifact link, if published) instead of pasting a Mermaid block. Skip the `## Design` append entirely when the design was not design-bearing; `/kit:spec`'s template collapses it to `obvious: <why>` on its own. **Do NOT overwrite** the brief's existing product framing. If the brief does not exist, create it fresh at `docs/briefs/DECISION-BRIEF-<slug>.md` with a one-line Problem stub plus the Solution.
 
+### Step 5b: Draft test cases from the approved delta
+When the system-design branch ran and the user approved a diagram delta, derive draft test cases from the changed elements before handoff. Append them to the brief as `## Test plan (draft from design)`: one row per changed element, mapped by element kind.
+
+| Changed element | Test kind |
+|---|---|
+| State transition | Transition case: every new or changed legal row, plus one illegal sample per changed state |
+| Sequence (including failure sequences) | Integration scenario |
+| ERD constraint or key | Constraint-violation case |
+| Use case | Acceptance test group |
+| Component edge | Contract test |
+
+Each row cites the diagram id and element key, and leaves proof as `TBD`. Skip this step when the branch did not run.
+
 ### Step 6: Hand off
-Tell the user the design is captured and the next step is `/kit:spec`, which reads the brief and folds the Solution into the spec's `## Solution` (and the Design section, if present, into the spec's `## Design`). Do NOT run `/kit:spec` yourself; this lane only shapes and records the design.
+Tell the user the design is captured and the next step is `/kit:spec`, which reads the brief and folds the Solution into the spec's `## Solution` (and the Design section, if present, into the spec's `## Design`). If Step 5b ran, name the `## Test plan (draft from design)` section; `/kit:test-plan` folds it into the coverage matrix. Do NOT run `/kit:spec` yourself; this lane only shapes and records the design.
 
 After Step 6, record it for lane telemetry, one line:
 `bash lib/gate/gate-ledger.sh record <rid> Design ran "approaches=<N> design-bearing=<yes|no>"`.
