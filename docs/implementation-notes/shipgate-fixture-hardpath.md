@@ -105,6 +105,8 @@ Warnings for the builder:
 - `floor-exempt-empty-match-rejected` is gone. Its job moves to the reader cases (`exempt-reader-rejects`) and to the floor-level rejection cases.
 - Between the floor-filter and ship-rules tasks `ship-exempt-logged` is red: it still expects the first-build `floor: exempt` log line. The ship-rules task rewrites it.
 - The floor builds one blanked list per exemptable kind (`pl_auth`, `pl_migration`) and one `grep -nE -e <ere>` per record. It does not use `grep -f`, so no pattern file can hold an empty line.
+- `--files` finds the merge base with `git merge-base HEAD <default branch>` and applies no exemption when that fails. It does not call `_deesc_resolve_base`, whose last resort is HEAD itself (builder item 1). `_load_exempt` runs in `_files_hard_hit` before the per-path subshells, so the config is read once per call, not once per path.
+- A rejected config prints nothing in `--files` mode (stderr dropped). The push shows the refusal through the floor.
 
 ## Negative controls
 
@@ -132,3 +134,7 @@ Warnings for the builder:
 | `floor-exempt-notice-rules` | per-line entry numbers not deduplicated, so the highest entry wins | yes |
 | `floor-exempt-real-auth-still-hits` | any non-empty record set blanks the auth list | yes |
 | `floor-exempt-working-tree-ignored` | reader reads the working-tree `.kit.toml` | yes |
+| `classify-files-exempt` | `--files` reads the exemption at HEAD | yes (branch-only leg) |
+| `classify-files-exempt` | merge base falls back to HEAD | yes (no-merge-base leg) |
+| `classify-files-exempt` | auth entries not applied | yes |
+| `classify-files-exempt` | auth skip reads the migration entries | yes (needed the `sql/auth/login.ts` leg) |

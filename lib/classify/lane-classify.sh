@@ -137,25 +137,34 @@ _load_extras() {
   _EXTRA_LIST="$(lane_extra_hard_paths)"; _EXTRA_LOADED=1
 }
 
-# The [lanes] hard_path_exempt ERE for --files, read once per process at the merge base of the
-# project root, the same read point the floor uses (never HEAD or the working tree).
-_EXEMPT_LOADED=0; _EXEMPT_RE=""
+# The [[gate.hard_path_exempt]] records for --files: one joined ERE per exemptable kind, read once per
+# process at the real merge base of HEAD and the default branch, never HEAD or the working tree. With
+# no merge base there is no exemption. A rejected config prints nothing here (the push shows it).
+_EXEMPT_LOADED=0; _EXEMPT_AUTH=""; _EXEMPT_MIG=""
 _load_exempt() {
   [ "$_EXEMPT_LOADED" = 1 ] && return 0
   _EXEMPT_LOADED=1
-  local top; top="$(git -C "$(dirname "$(kit_config_project)")" rev-parse --show-toplevel 2>/dev/null)" || return 0
-  _EXEMPT_RE="$(lane_hard_path_exempt "$top" "$(_deesc_resolve_base "$top")")"
+  local top base recs
+  top="$(git -C "$(dirname "$(kit_config_project)")" rev-parse --show-toplevel 2>/dev/null)" || return 0
+  base="$(git -C "$top" merge-base HEAD "$(_deesc_default_branch "$top")" 2>/dev/null)" || return 0
+  [ -n "$base" ] || return 0
+  recs="$(lane_hard_path_exempt "$top" "$base" 2>/dev/null)"
+  _EXEMPT_AUTH="$(printf '%s\n' "$recs" | awk -F'\t' '$2 == "auth" { print $3 }' | paste -sd'|' -)"
+  _EXEMPT_MIG="$(printf '%s\n' "$recs" | awk -F'\t' '$2 == "migration" { print $3 }' | paste -sd'|' -)"
 }
 
 # _path_kind <path> -- print the hard-path kind a changed path hits (first match), else nothing.
-# An exempt path skips every built-in kind except kit-config; extras still apply.
+# Kind auth skips test paths and the auth entries; kind migration skips the migration entries; no
+# other kind skips anything. Extras still apply.
 _path_kind() {
-  local f="$1" k extra ex=0
+  local f="$1" k extra
   _load_exempt
-  if [ -n "$_EXEMPT_RE" ] && printf '%s\n' "$f" | grep -Eq -- "$_EXEMPT_RE"; then ex=1; fi
   for k in $_HP_KINDS; do
-    [ "$ex" = 1 ] && [ "$k" != kit-config ] && continue
-    [ "$k" = auth ] && _hp_is_test_path "$f" && continue
+    case "$k" in
+      auth) _hp_is_test_path "$f" && continue
+            [ -n "$_EXEMPT_AUTH" ] && printf '%s\n' "$f" | grep -Eq -e "$_EXEMPT_AUTH" && continue ;;
+      migration) [ -n "$_EXEMPT_MIG" ] && printf '%s\n' "$f" | grep -Eq -e "$_EXEMPT_MIG" && continue ;;
+    esac
     if printf '%s\n' "$f" | grep -Eiq -- "$(_hp_re "$k")"; then printf '%s' "$k"; return 0; fi
   done
   _load_extras
@@ -170,6 +179,7 @@ _path_kind() {
 _files_hard_hit() {
   local f k _files=()
   IFS=' ' read -ra _files <<< "$FILES"
+  _load_exempt
   for f in ${_files[@]+"${_files[@]}"}; do
     k="$(_path_kind "$f")"
     [ -n "$k" ] && { printf '%s: %s' "$k" "$f"; return 0; }

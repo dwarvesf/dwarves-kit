@@ -1193,14 +1193,23 @@ case_floor_exempt_data_loss_still_hits() {
 # classify --files reads the exemption at the merge base too: committed on main it applies, on the
 # branch only it does not.
 case_classify_files_exempt() {
-  local on off
+  local on off nobase mig
   exempt_repo '["scripts/login-*.sh"]' '["auth"]'
   on="$(cd "$ROOT" && KIT_PROJECT_ROOT="$ROOT" lcx classify --files "$ORACLE" "add a smoke script" 2>/dev/null)"
   mkrepo
   printf '[gate]\nlane_gates = true\n%s\n' "$(ent '["scripts/login-*.sh"]' '["auth"]' '"r"')" > "$ROOT/.kit.toml"; _commit "chore: exempt in the PR"
   off="$(cd "$ROOT" && KIT_PROJECT_ROOT="$ROOT" lcx classify --files "$ORACLE" "add a smoke script" 2>/dev/null)"
-  if [ "$on" = normal ] && [ "$off" = full ]; then pass classify-files-exempt
-  else fail classify-files-exempt "base exemption => '$on' (want normal); branch-only => '$off' (want full)"; fi
+  # no resolvable default branch: HEAD itself must not stand in for the merge base
+  mkrepo true trunk
+  printf '[gate]\nlane_gates = true\n%s\n' "$(ent '["scripts/login-*.sh"]' '["auth"]' '"r"')" > "$ROOT/.kit.toml"; _commit "chore: exempt on HEAD"
+  nobase="$(cd "$ROOT" && KIT_PROJECT_ROOT="$ROOT" lcx classify --files "$ORACLE" "add a smoke script" 2>/dev/null)"
+  # an auth entry does not exempt a migration path, and a migration entry does
+  exempt_repo '["sql/**"]' '["migration"]'
+  mig="$(cd "$ROOT" && KIT_PROJECT_ROOT="$ROOT" lcx classify --files "sql/migrations/0002.sql src/auth/login.ts" "add a script" 2>/dev/null)"
+  local mig_auth; mig_auth="$(cd "$ROOT" && KIT_PROJECT_ROOT="$ROOT" lcx classify --files "sql/auth/login.ts" "add a script" 2>/dev/null)"
+  local mig_only; mig_only="$(cd "$ROOT" && KIT_PROJECT_ROOT="$ROOT" lcx classify --files "sql/migrations/0002.sql" "add a script" 2>/dev/null)"
+  if [ "$on" = normal ] && [ "$off" = full ] && [ "$nobase" = full ] && [ "$mig" = full ] && [ "$mig_auth" = full ] && [ "$mig_only" = normal ]; then pass classify-files-exempt
+  else fail classify-files-exempt "base exemption => '$on' (want normal); branch-only => '$off' (want full); no merge base => '$nobase' (want full); migration+auth => '$mig' (want full); migration entry on an auth path => '$mig_auth' (want full); migration only => '$mig_only' (want normal)"; fi
 }
 
 case_ship_exempt_in_pr_blocks() {
