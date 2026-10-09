@@ -1019,6 +1019,23 @@ case_exempt_reader_rejects() {
   rd_reject "backslash" "$(ent '["a/b.sh"]' '["auth"]' '"a\\b"')" "reason"
   rd_reject "triple quote" "$(printf 'x = """\n[[gate.hard_path_exempt]]\npaths = ["a/b.sh"]\nkinds = ["auth"]\nreason = "r"\n"""\n')" "multi-line string"
   rd_reject "inline table" "$(printf 'hard_path_exempt = [{ paths = ["a"] }]\n[[gate.hard_path_exempt]]\npaths = ["a/b.sh"]\nkinds = ["auth"]\nreason = "r"\nextra = 1\n')" "unknown key 'extra'"
+  # AC12 glob legs: malformed globs
+  local g
+  for g in 'experiments/***' 'a**/b' '/scripts/**' '../scripts/**' 'scripts/[l]ogin.sh' '' 'a//b' 'a/./b' 'scripts/' 'scripts/login smoke.sh' 'a/**b'; do
+    rd_reject "glob '$g'" "$(ent "[\"$g\"]" '["auth"]' '"r"')" "glob"
+  done
+  for g in '**' '*/**' '*' '**/*'; do
+    rd_reject "glob '$g'" "$(ent "[\"$g\"]" '["auth"]' '"r"')" "every segment is a wildcard"
+  done
+  # AC11: a glob that covers a built-in or a user canary; a malformed canaries value
+  rd_reject "canary src/**" "$(ent '["src/**"]' '["auth"]' '"r"')" "matches the canary path 'src/auth/login.ts'"
+  rd_reject "canary **/*.ts" "$(ent '["**/*.ts"]' '["auth"]' '"r"')" "canary"
+  rd_reject "canary user" "$(printf '[gate]\nhard_path_canaries = ["scripts/login-real.sh"]\n%s\n' "$(ent '["scripts/**"]' '["auth"]' '"r"')")" "matches the canary path 'scripts/login-real.sh'"
+  rd_reject "canary user after" "$(printf '%s\n[gate]\nhard_path_canaries = ["scripts/login-real.sh"]\n' "$(ent '["scripts/**"]' '["auth"]' '"r"')")" "scripts/login-real.sh"
+  rd_reject "canaries multi-line" "$(printf '[gate]\nhard_path_canaries = [\n "a/b.ts",\n]\n%s\n' "$VALID_ENTRY")" "hard_path_canaries"
+  rd_reject "canaries wildcard" "$(printf '[gate]\nhard_path_canaries = ["a/*.ts"]\n%s\n' "$VALID_ENTRY")" "literal repo path"
+  rd_reject "canaries outside gate" "$(printf '[lanes]\nhard_path_canaries = ["a/b.ts"]\n%s\n' "$VALID_ENTRY")" "hard_path_canaries"
+  rd_reject "canaries single-quoted" "$(printf "[gate]\nhard_path_canaries = ['a/b.ts']\n%s\n" "$VALID_ENTRY")" "hard_path_canaries"
   # an old-shape key does nothing: no record, no complaint
   reader_run "$(printf '[lanes]\nhard_path_exempt = "^scripts/"\n')"
   { [ -z "$RD_OUT" ] && [ -z "$RD_ERR" ]; } || RD_BAD="$RD_BAD [old shape: out '$RD_OUT' err '$RD_ERR']"
@@ -1027,6 +1044,29 @@ case_exempt_reader_rejects() {
   [ "$(printf '%s\n' "$RD_OUT" | wc -l | tr -d ' ')" = 1 ] && [ -z "$RD_ERR" ] || RD_BAD="$RD_BAD [valid crlf: out '$RD_OUT' err '$RD_ERR']"
   case "$RD_OUT" in "1${t}auth${t}"*"${t}scripts/login-*.sh${t}a # b") ;; *) RD_BAD="$RD_BAD [valid crlf record '$RD_OUT']" ;; esac
   [ -z "$RD_BAD" ] && pass exempt-reader-rejects || fail exempt-reader-rejects "$RD_BAD"
+}
+
+# ere_has <ere> <path>: the ERE matches the whole path.
+ere_has() { printf '%s\n' "$2" | grep -Eq -- "$1"; }
+# AC4: glob semantics, read back through the reader's own ERE.
+case_exempt_glob_semantics() {
+  local bad="" row g yes no p ere
+  # glob|paths that match (space-separated)|paths that must not match
+  while IFS='|' read -r g yes no; do
+    reader_run "$(ent "[\"$g\"]" '["auth"]' '"r"')"
+    ere="$(printf '%s\n' "$RD_OUT" | head -1 | cut -f3)"
+    [ -n "$ere" ] || { bad="$bad [$g: no record: $RD_ERR]"; continue; }
+    for p in $yes; do ere_has "$ere" "$p" || bad="$bad [$g should match $p]"; done
+    for p in $no; do ere_has "$ere" "$p" && bad="$bad [$g should not match $p]"; done
+  done <<'ROWS'
+experiments/*/cases/**|experiments/x/cases/a/b.mjs experiments/qa-runner/cases/oracle/sd-login-locked.mjs|experiments/x/y/cases-old/b.mjs experiments/a/b/cases/x.mjs experiments/cases/a.mjs vendor/experiments/x/cases/a.mjs
+**/login.sh|login.sh a/b/login.sh|a/xlogin.sh a/login.shx
+a/**/b|a/b a/x/y/b|a/x/zb a/xb
+scripts/login-?.sh|scripts/login-1.sh|scripts/login-12.sh scripts/login-/.sh
+scripts/login-*.sh|scripts/login-smoke.sh scripts/login-.sh|scripts/loginXsmoke.sh scripts/a/login-x.sh scripts/login-smoke.shx scripts/login-a/b.sh
+a.b+c/**|a.b+c/x|aXb+c/x a.bbc/x
+ROWS
+  [ -z "$bad" ] && pass exempt-glob-semantics || fail exempt-glob-semantics "$bad"
 }
 
 # ---- [lanes] hard_path_exempt (read at the merge base only) ----
@@ -1149,7 +1189,7 @@ run_case() {
 }
 # `parity` (byte-identical against the baseline) holds only at the refactor commit; after the
 # flip the standing check is parity-after-flip.
-ALL="parity-after-flip plan-flip four-false-hits webhook-signature-suggests suggest-records explain-suggest-line classify-files-full escalate-suggest floor-paths floor-rename-counts-both-sides floor-data-loss floor-extra-paths-union floor-invalid-extra-ere override-drop-review override-uncommitted override-typo override-no-light pinned-root malformed-array-fails-closed policy-at-base ship-migration-blocks ship-migration-absent-quiet ship-switch-off-on-base ship-flip-gate-in-pr ship-hollow-full-override ship-data-loss ship-no-spec-blocks ship-suggest-advisory workflow-view floor-timing floor-non-ascii hook-timeout floor-submodule override-empty-phases ship-operator-hollow-full ship-push-forms ship-base-is-origin-head ship-checks-pushed-ref ship-slug-quoted risk-verb significance-uses-risk floor-no-leaks override-unknown-lane-name toml-valid ship-merge-base-once override-operator-precedence default-lane-layers start-no-duplicate-skips ship-fail-closed-refs floor-diff-hardening floor-plus-line floor-where-boundary floor-timing-30k default-rejects-tiny safety-push-forms ship-marker-collisions ship-continuation-and-heredoc ship-marker-at-base exempt-reader-rejects floor-test-paths-not-auth floor-test-paths-other-kinds floor-test-path-notice floor-exempt-fixture-quiet floor-exempt-real-auth-still-hits floor-exempt-working-tree-ignored floor-exempt-never-kit-config floor-exempt-empty-match-rejected floor-exempt-data-loss-still-hits classify-files-exempt ship-exempt-in-pr-blocks ship-exempt-logged"
+ALL="parity-after-flip plan-flip four-false-hits webhook-signature-suggests suggest-records explain-suggest-line classify-files-full escalate-suggest floor-paths floor-rename-counts-both-sides floor-data-loss floor-extra-paths-union floor-invalid-extra-ere override-drop-review override-uncommitted override-typo override-no-light pinned-root malformed-array-fails-closed policy-at-base ship-migration-blocks ship-migration-absent-quiet ship-switch-off-on-base ship-flip-gate-in-pr ship-hollow-full-override ship-data-loss ship-no-spec-blocks ship-suggest-advisory workflow-view floor-timing floor-non-ascii hook-timeout floor-submodule override-empty-phases ship-operator-hollow-full ship-push-forms ship-base-is-origin-head ship-checks-pushed-ref ship-slug-quoted risk-verb significance-uses-risk floor-no-leaks override-unknown-lane-name toml-valid ship-merge-base-once override-operator-precedence default-lane-layers start-no-duplicate-skips ship-fail-closed-refs floor-diff-hardening floor-plus-line floor-where-boundary floor-timing-30k default-rejects-tiny safety-push-forms ship-marker-collisions ship-continuation-and-heredoc ship-marker-at-base exempt-reader-rejects exempt-glob-semantics floor-test-paths-not-auth floor-test-paths-other-kinds floor-test-path-notice floor-exempt-fixture-quiet floor-exempt-real-auth-still-hits floor-exempt-working-tree-ignored floor-exempt-never-kit-config floor-exempt-empty-match-rejected floor-exempt-data-loss-still-hits classify-files-exempt ship-exempt-in-pr-blocks ship-exempt-logged"
 if [ "$#" -eq 0 ]; then set -- $ALL; fi
 for c in "$@"; do run_case "$c"; done
 [ "$FAILS" -eq 0 ]

@@ -99,6 +99,8 @@ Warnings for the builder:
 - Only the first problem per entry prints, so a malformed entry gives exactly one line.
 - BOM and CRLF are stripped, then parsed (builder item 26). The BOM is cut by `substr`, because the awk on macOS does not read `\357` octal escapes inside a regex.
 - The reader skips the awk run when the file holds neither `hard_path_exempt` nor `hard_path_canaries`, so a repo with no config pays one `git show` and one grep.
+- The all-wildcard glob rule is partly redundant with the canary check: `**` or `*` also matches a built-in canary. The test pins the all-wildcard message itself, so the rule stays covered if canaries change.
+- Entry numbers count every `[[gate.hard_path_exempt]]` table in file order, valid or not. A kind listed twice in one entry collapses to one record.
 
 ## Negative controls
 
@@ -113,3 +115,10 @@ Warnings for the builder:
 | `exempt-reader-rejects` | single-bracket header accepted | yes |
 | `exempt-reader-rejects` | trailing comma accepted | yes |
 | `exempt-reader-rejects` | `\|` in reason allowed | yes |
+| `exempt-glob-semantics` | record ERE left unanchored | yes |
+| `exempt-glob-semantics` | `*` translated to `.*` | yes (after adding the `login-a/b.sh` and `a/b/cases` rows; the first rows missed it) |
+| `exempt-glob-semantics` | `?` rewritten after `**/` in a second pass | yes |
+| `exempt-reader-rejects` | canary comparison disabled | yes |
+| `exempt-reader-rejects` | all-wildcard check disabled | yes (message leg) |
+| `exempt-reader-rejects` | `**` inside a segment allowed | yes |
+| `exempt-reader-rejects` | user canaries not loaded | yes |
