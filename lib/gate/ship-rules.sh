@@ -141,6 +141,7 @@ _sr_relay() {
 # from the kit and operator layers only (--kit-lanes).
 ship_rule_floor() {
   local root="$1" base="$2" head="$3" rid="$4" spec="$5" ledger="$6" hit gaps fk rid_q errf line rest logbuf
+  SR_NOTICES=""   # never inherit a caller's value: it would reach the hook's systemMessage
   [ -f "$ledger" ] || return 0
   [ -n "$base" ] || return 0
   if ! ship_rules_switch_on lane_gates "$root" "$base"; then
@@ -149,7 +150,6 @@ ship_rule_floor() {
   fi
   [ -f "$_SR_LCLS" ] || return 0
   [ "$base" != "$(git -C "$root" rev-parse "$head" 2>/dev/null || true)" ] || return 0
-  SR_NOTICES=""
   errf="$(mktemp 2>/dev/null)" || errf=""
   if [ -n "$errf" ]; then hit=$(bash "$_SR_LCLS" floor "$root" "$base" "$head" 2>"$errf" || true)
   else hit=$(bash "$_SR_LCLS" floor "$root" "$base" "$head" || true); fi   # no scratch file: the raw lines reach stderr
