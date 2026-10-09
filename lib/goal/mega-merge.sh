@@ -200,8 +200,16 @@ _merge_exclusion() {
 # _pr_files <pr> -- prints the PR's changed file names, one per line. Overridable for tests via
 # MEGA_MERGE_PR_FILES_CMD. Nonzero when the list cannot be read (gh error / offline).
 _pr_files() {
-  if [ -n "${MEGA_MERGE_PR_FILES_CMD:-}" ]; then "$MEGA_MERGE_PR_FILES_CMD" "$1"; return; fi
-  gh pr diff "$1" --name-only 2>/dev/null
+  local out n
+  if [ -n "${MEGA_MERGE_PR_FILES_CMD:-}" ]; then out="$("$MEGA_MERGE_PR_FILES_CMD" "$1")" || return 1
+  else
+    # `gh pr diff --name-only` lists only a rename's new name; the REST files list carries both sides.
+    out="$(gh api "repos/{owner}/{repo}/pulls/$1/files" --paginate --jq '.[] | .filename, (.previous_filename // empty)' 2>/dev/null)" || return 1
+  fi
+  # The REST endpoint returns at most 3000 files: a list this long may be cut, so it is unclassifiable.
+  n="$(printf '%s\n' "$out" | grep -c .)"
+  [ "$n" -lt 3000 ] || return 1
+  printf '%s\n' "$out"
 }
 
 # _merge_config_guard <pr> -- a PR that touches the root .kit.toml is never auto-merged: the file holds
