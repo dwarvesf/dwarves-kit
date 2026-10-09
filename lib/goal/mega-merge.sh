@@ -262,18 +262,24 @@ _pr_base() {
 # refs are deleted on every failure here and by `merge` after the gate. MEGA_MERGE_PR_FETCH_CMD
 # replaces all of this, the comparison included (test-only; never set in an unattended run).
 _pr_fetch() {
-  local pr="$1" sha="$2" bb="$3" root fpid wpid rc got tip
+  local pr="$1" sha="$2" bb="$3" root fpid ticks rc got tip
   if [ -n "${MEGA_MERGE_PR_FETCH_CMD:-}" ]; then "$MEGA_MERGE_PR_FETCH_CMD" "$pr" "$sha" "$bb"; return; fi
   root="${MEGA_MERGE_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null || true)}"
   [ -n "$root" ] || return 1
-  # ponytail: a background fetch plus a watchdog kill, since macOS has no timeout(1); it kills git, not
-  # git's helper children. Upgrade to a process-group kill if a helper ever outlives the wait.
+  # ponytail: a background fetch polled against a deadline, since macOS has no timeout(1). It signals git,
+  # not git's helper children; upgrade to a process-group kill if a helper ever outlives the wait.
+  # No watchdog subshell: a TERM disposition ignored by the caller would leave one running to its end.
   GIT_TERMINAL_PROMPT=0 git -C "$root" fetch -q origin "+refs/pull/$pr/head:refs/kit/pr-$pr/head" "+refs/heads/$bb:refs/kit/pr-$pr/base" >/dev/null 2>&1 &
   fpid=$!
-  ( sleep "${MEGA_MERGE_FETCH_TIMEOUT:-60}"; kill "$fpid" 2>/dev/null ) >/dev/null 2>&1 &
-  wpid=$!
+  ticks=$(( ${MEGA_MERGE_FETCH_TIMEOUT:-60} * 10 ))
+  while kill -0 "$fpid" 2>/dev/null; do
+    if [ "$ticks" -le 0 ]; then
+      kill "$fpid" 2>/dev/null; sleep 1; kill -KILL "$fpid" 2>/dev/null
+      break
+    fi
+    ticks=$((ticks - 1)); sleep 0.1
+  done
   wait "$fpid" 2>/dev/null; rc=$?
-  kill "$wpid" 2>/dev/null; wait "$wpid" 2>/dev/null
   if [ "$rc" -ne 0 ]; then _pr_fetch_clean "$root" "$pr"; return 1; fi
   got="$(git -C "$root" rev-parse --verify -q "refs/kit/pr-$pr/head^{commit}" 2>/dev/null || true)"
   tip="$(git -C "$root" rev-parse --verify -q "refs/kit/pr-$pr/base^{commit}" 2>/dev/null || true)"
