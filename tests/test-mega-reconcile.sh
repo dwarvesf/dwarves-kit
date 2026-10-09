@@ -74,6 +74,11 @@ PRINFO_STUB="$FAKEBIN/prinfo-clear"
 printf '#!/usr/bin/env bash\nprintf '"'"'false\\037\\037clear test PR\\n'"'"'\n' > "$PRINFO_STUB"
 chmod +x "$PRINFO_STUB"
 export MEGA_MERGE_PR_INFO_CMD="$PRINFO_STUB"
+# The config guard reads the PR's changed files; inject a list with no .kit.toml (covered in test-mega-merge.sh).
+PRFILES_STUB="$FAKEBIN/prfiles-clear"
+printf '#!/usr/bin/env bash\necho src/app.ts\n' > "$PRFILES_STUB"
+chmod +x "$PRFILES_STUB"
+export MEGA_MERGE_PR_FILES_CMD="$PRFILES_STUB"
 
 LANE=full
 REQUIRED="$(bash "$GL" required "$LANE")"

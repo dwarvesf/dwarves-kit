@@ -115,6 +115,11 @@ Warnings for the builder:
 - `battery-gate.sh` sends the floor call stderr to `/dev/null` (builder item 17), so raw TAB notices never leak into the size gate. No new test; `test-battery-gate.sh` stays green.
 - The exit-0 JSON is emitted once, at the end of `_floor_check`. The later `lane-suggest` advisory in the hook (builder item 39) stays on stderr: it never rode `SR_NOTICES`. Mega-merge calls fill `SR_NOTICES` and print nothing more (items 38 and 48 accepted as intended).
 - `run_hook` now returns the hook stdout in `HOOK_OUT` (builder item 42).
+- Builder item 31 (pass `--match-head-commit` to `gh pr merge`) is not done. The spec names no head-sha read, and a second `gh` call would need its own stub in every merge test. The residual: a push between the file check and the merge can add a `.kit.toml` edit. The fail-open trust model already covers unguarded merge paths.
+- Builder item 37: `gh pr diff --name-only` can fail on a very large PR. The guard then refuses as unclassifiable (fail closed). `gh pr view --json files` is not used because it caps at 100 files and fails open.
+- An empty file list also counts as unreadable (return 2): a PR with no listed files cannot be classified.
+- The unreadable-list refusal says `cannot classify`, a different text from the state-unreadable refusal, so the two causes read apart in the log.
+- `MEGA_MERGE_PR_FILES_CMD` is in `lib/config/module-registry.md` beside `MEGA_MERGE_PR_INFO_CMD` (builder item 41). `tests/test-meta.sh` shows one failure, `docs/FEATURES.md is fresh`, a generated file the doc-refresh task owns.
 
 ## Negative controls
 
@@ -155,3 +160,7 @@ Warnings for the builder:
 | `ship-test-path-skip-visible` | 300-character cut removed | yes |
 | `ship-exempt-in-pr-blocks` | `_floor_check` disabled | yes |
 | `test-codex-hooks` | `ship-gate.sh` edited without a repin | yes (2 FAIL) |
+| `mega-merge-refuses-exempt-change` | `merge()` without the guard call | yes (legs 1, 2, 5) |
+| `mega-merge-refuses-exempt-change` | guard matches `.kit.toml` as a substring | yes (leg 4) |
+| `mega-merge-refuses-exempt-change` | guard moved into `_merge_exclusion` | yes (legs 1, 2, 5, 6) |
+| `mega-merge-refuses-exempt-change` | unreadable list treated as clear | yes (leg 5) |
