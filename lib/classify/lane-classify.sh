@@ -108,6 +108,9 @@ _HP_secret='(^|/)\.env(\.(local|dev|development|prod|production|staging|test))?$
 _HP_ci='(^|/)\.github/'
 _HP_infra='(^|/)Dockerfile[^/]*$|(^|/)[^/]*(iam|role|polic)[^/]*\.tf$|(^|/)(iam|policies)/[^/]*\.tf$'
 _HP_kitconfig='(^|/)\.kit\.toml$'
+# Test paths never count as kind `auth` (every other kind still matches them). Fixed, case-sensitive,
+# not configurable: a config hook here would be a second, unreviewed exemption path.
+_HP_testpath='(^|/)(tests|__tests__|fixtures|cases)/|\.(test|spec)\.[^/]+$'
 # Added-line signatures for data loss, checked only in non-doc files. `truncate` counts as SQL:
 # any use in a .sql file, or a statement-shaped `truncate <name>;` elsewhere.
 _HL_common='drop[[:space:]]+(table|column|database|schema)|deletemany\([[:space:]]*\{[[:space:]]*\}[[:space:]]*\)'
@@ -126,6 +129,7 @@ _hp_re() {
     kit-config) printf '%s' "$_HP_kitconfig" ;;
   esac
 }
+_hp_is_test_path() { printf '%s\n' "$1" | grep -Eq -- "$_HP_testpath"; }
 # The extra_hard_paths union, loaded once per process (each load reads config and shells out).
 _EXTRA_LOADED=0; _EXTRA_LIST=""
 _load_extras() {
@@ -133,10 +137,34 @@ _load_extras() {
   _EXTRA_LIST="$(lane_extra_hard_paths)"; _EXTRA_LOADED=1
 }
 
+# The [[gate.hard_path_exempt]] records for --files: one joined ERE per exemptable kind, read once per
+# process at the real merge base of HEAD and the default branch, never HEAD or the working tree. With
+# no merge base there is no exemption. A rejected config prints nothing here (the push shows it).
+_EXEMPT_LOADED=0; _EXEMPT_AUTH=""; _EXEMPT_MIG=""
+_load_exempt() {
+  [ "$_EXEMPT_LOADED" = 1 ] && return 0
+  _EXEMPT_LOADED=1
+  local top base recs
+  top="$(git -C "$(dirname "$(kit_config_project)")" rev-parse --show-toplevel 2>/dev/null)" || return 0
+  base="$(git -C "$top" merge-base HEAD "$(_deesc_default_branch "$top")" 2>/dev/null)" || return 0
+  [ -n "$base" ] || return 0
+  recs="$(lane_hard_path_exempt "$top" "$base" 2>/dev/null)"
+  _EXEMPT_AUTH="$(printf '%s\n' "$recs" | awk -F'\t' '$2 == "auth" { print $3 }' | paste -sd'|' -)"
+  _EXEMPT_MIG="$(printf '%s\n' "$recs" | awk -F'\t' '$2 == "migration" { print $3 }' | paste -sd'|' -)"
+}
+
 # _path_kind <path> -- print the hard-path kind a changed path hits (first match), else nothing.
+# Kind auth skips test paths and the auth entries; kind migration skips the migration entries; no
+# other kind skips anything. Extras still apply.
 _path_kind() {
   local f="$1" k extra
+  _load_exempt
   for k in $_HP_KINDS; do
+    case "$k" in
+      auth) _hp_is_test_path "$f" && continue
+            [ -n "$_EXEMPT_AUTH" ] && printf '%s\n' "$f" | grep -Eq -e "$_EXEMPT_AUTH" && continue ;;
+      migration) [ -n "$_EXEMPT_MIG" ] && printf '%s\n' "$f" | grep -Eq -e "$_EXEMPT_MIG" && continue ;;
+    esac
     if printf '%s\n' "$f" | grep -Eiq -- "$(_hp_re "$k")"; then printf '%s' "$k"; return 0; fi
   done
   _load_extras
@@ -151,6 +179,7 @@ _path_kind() {
 _files_hard_hit() {
   local f k _files=()
   IFS=' ' read -ra _files <<< "$FILES"
+  _load_exempt
   for f in ${_files[@]+"${_files[@]}"}; do
     k="$(_path_kind "$f")"
     [ -n "$k" ] && { printf '%s: %s' "$k" "$f"; return 0; }
@@ -501,6 +530,45 @@ _floor_git() {
     -c diff.noprefix=false -c diff.mnemonicPrefix=false -c diff.renames=false -c diff.external= \
     -c core.attributesFile=/dev/null "$@"
 }
+# _floor_blank <tmp> <kind> <short-sha>: writes $tmp/pl_<kind>, the path list with this kind's exempt
+# paths blanked (blank lines, never deleted, so line numbers and the submodule index stay valid). The
+# exempt paths are those matched by an entry of this kind in $tmp/recs (the lowest entry number wins)
+# and, for kind auth, test paths that no entry covers. Each blanked path the kind's pattern would have
+# hit is named on stderr, once, as one TAB line with the path last (a path cannot forge a field):
+#   floor-exempt <kind> entry <n> <globs> <reason> <short-sha> <path>
+#   floor-exempt auth test-path - built-in test-path default - <path>
+# A kind with no records runs no entry grep, and no pattern is ever empty.
+_floor_blank() {
+  local tmp="$1" k="$2" short="$3" n ere re list="$tmp/paths"
+  re="$(_hp_re "$k")"
+  : > "$tmp/m_$k"
+  while IFS=$'\t' read -r n _ ere _; do
+    grep -nE -e "$ere" "$tmp/paths" 2>/dev/null | cut -d: -f1 | awk -v n="$n" '{ print $1 "\t" n }' >> "$tmp/m_$k" || true
+  done < <(awk -F'\t' -v k="$k" '$2 == k' "$tmp/recs")
+  if [ -s "$tmp/m_$k" ]; then
+    awk -F'\t' '!s[$1]++' "$tmp/m_$k" > "$tmp/mm_$k"
+    awk -F'\t' 'NR==FNR { n[$1] = $2; next } { print ((FNR in n) ? "" : $0) }' "$tmp/mm_$k" "$tmp/paths" > "$tmp/pl_$k"
+    awk -F'\t' -v np="$tmp/en_$k" -v pp="$tmp/ep_$k" 'NR==FNR { n[$1] = $2; next } (FNR in n) { print n[FNR] > np; print $0 > pp }' "$tmp/mm_$k" "$tmp/paths"
+    list="$tmp/pl_$k"
+    grep -Ein -e "$re" "$tmp/ep_$k" 2>/dev/null | cut -d: -f1 > "$tmp/ei_$k" || true
+    awk -F'\t' -v k="$k" -v s="$short" '
+      FILENAME == ARGV[1] { if ($2 == k) { g[$1] = $4; r[$1] = $5 } next }
+      FILENAME == ARGV[2] { hit[$1] = 1; next }
+      FILENAME == ARGV[3] { nn[FNR] = $0; next }
+      (FNR in hit) { print "floor-exempt\t" k "\tentry " nn[FNR] "\t" g[nn[FNR]] "\t" r[nn[FNR]] "\t" s "\t" $0 }
+    ' "$tmp/recs" "$tmp/ei_$k" "$tmp/en_$k" "$tmp/ep_$k" >&2
+  fi
+  if [ "$k" = auth ]; then
+    grep -nE -e "$_HP_testpath" "$list" 2>/dev/null | cut -d: -f1 > "$tmp/tlines" || true
+    if [ -s "$tmp/tlines" ]; then
+      awk 'NR==FNR { x[$1] = 1; next } { print ((FNR in x) ? "" : $0) }' "$tmp/tlines" "$list" > "$tmp/pl_auth.t"
+      awk 'NR==FNR { x[$1] = 1; next } (FNR in x)' "$tmp/tlines" "$list" | grep -Ei -e "$re" 2>/dev/null \
+        | awk '{ print "floor-exempt\tauth\ttest-path\t-\tbuilt-in test-path default\t-\t" $0 }' >&2 || true
+      mv -f "$tmp/pl_auth.t" "$tmp/pl_auth"
+    fi
+  fi
+  [ -f "$tmp/pl_$k" ] || cp "$tmp/paths" "$tmp/pl_$k"
+}
 _floor_scan() {
   local root="$1" base="$2" head="$3" tmp="$4"
   _floor_git "$root" diff -z --raw --no-renames --no-ext-diff --no-textconv --text "$base" "$head" > "$tmp/raw" 2>/dev/null || true
@@ -516,10 +584,17 @@ _floor_scan() {
     state == 2 { path = path "?" $0; next }
     END { flush() }'
   local links; links="$(sed -n 1p "$tmp/links")"
-  local best=0 bestkind="" k re hit num
+  local best=0 bestkind="" k re hit num short list
+  # Hard-path exemptions at <base> (see lane_hard_path_exempt): kind auth skips test paths and its
+  # entries' paths, kind migration skips its entries' paths. Every other kind, extras, submodules and
+  # the data-loss scan below read the full path list.
+  short="$(git -C "$root" rev-parse --short "$base" 2>/dev/null || printf '%s' "$base")"
+  lane_hard_path_exempt "$root" "$base" > "$tmp/recs" || true
+  for k in auth migration; do _floor_blank "$tmp" "$k" "$short"; done
   for k in $_HP_KINDS; do
     re="$(_hp_re "$k")"
-    hit="$(grep -Ein -m1 -e "$re" "$tmp/paths" 2>/dev/null | head -1)" || hit=""
+    case "$k" in auth|migration) list="$tmp/pl_$k" ;; *) list="$tmp/paths" ;; esac
+    hit="$(grep -Ein -m1 -e "$re" "$list" 2>/dev/null | head -1)" || hit=""
     num="${hit%%:*}"
     if [ -n "$hit" ] && { [ "$best" = 0 ] || [ "$num" -lt "$best" ]; }; then best="$num"; bestkind="$k"; fi
   done

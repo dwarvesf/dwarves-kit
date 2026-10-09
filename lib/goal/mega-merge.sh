@@ -197,6 +197,37 @@ _merge_exclusion() {
   return 1
 }
 
+# _pr_files <pr> -- prints the PR's changed file names, one per line. Overridable for tests via
+# MEGA_MERGE_PR_FILES_CMD. Nonzero when the list cannot be read (gh error / offline).
+_pr_files() {
+  local out n
+  if [ -n "${MEGA_MERGE_PR_FILES_CMD:-}" ]; then out="$("$MEGA_MERGE_PR_FILES_CMD" "$1")" || return 1
+  else
+    # `gh pr diff --name-only` lists only a rename's new name; the REST files list carries both sides.
+    out="$(gh api "repos/{owner}/{repo}/pulls/$1/files" --paginate --jq '.[] | .filename, (.previous_filename // empty)' 2>/dev/null)" || return 1
+  fi
+  # The REST endpoint returns at most 3000 files: a list this long may be cut, so it is unclassifiable.
+  n="$(printf '%s\n' "$out" | grep -c .)"
+  [ "$n" -lt 3000 ] || return 1
+  printf '%s\n' "$out"
+}
+
+# _merge_config_guard <pr> -- a PR that touches the root .kit.toml is never auto-merged: the file holds
+# the hard-path exemptions and the gate switches, and the full lane's gates are agent-run, so a human
+# reads that change. A file-level rule on purpose: an exemption entry spans several lines, so a match
+# on changed lines would miss an edit to only an entry's `paths =` line. Kept out of _merge_exclusion,
+# which `mark` re-runs to confirm a hold landed and so must stay state-only.
+#   return 0 + a reason -> refuse;  return 1 -> clear;  return 2 -> the file list is unreadable or empty.
+_merge_config_guard() {
+  local files
+  files="$(_pr_files "$1")" || return 2
+  [ -n "$files" ] || return 2
+  if printf '%s\n' "$files" | grep -qxF '.kit.toml'; then
+    echo "touches .kit.toml (hard-path and gate config); a human merges it"; return 0
+  fi
+  return 1
+}
+
 # merge <pr> <rid> <lane> [--execute] [--posture=<val>] -- ACTION.
 merge() {
   local pr="${1:-}" rid="${2:-}" lane="${3:-}"
@@ -229,6 +260,17 @@ merge() {
   elif [ "$rc" -eq 2 ]; then
     echo "BLOCKED: cannot read PR #$pr state (gh unavailable/offline); failing closed and refusing auto-merge. Verify + merge manually if intended." >&2
     _log "$rid" "BLOCKED merge pr=$pr (unclassifiable state, fail-closed)"
+    return 1
+  fi
+
+  excl="$(_merge_config_guard "$pr")"; rc=$?
+  if [ "$rc" -eq 0 ]; then
+    echo "BLOCKED: refusing to auto-merge PR #$pr -- $excl." >&2
+    _log "$rid" "BLOCKED merge pr=$pr (config guard: $excl)"
+    return 1
+  elif [ "$rc" -eq 2 ]; then
+    echo "BLOCKED: cannot classify PR #$pr: its changed files are unreadable (gh unavailable/offline); failing closed and refusing auto-merge. Verify + merge manually if intended." >&2
+    _log "$rid" "BLOCKED merge pr=$pr (changed files unreadable, fail-closed)"
     return 1
   fi
 
