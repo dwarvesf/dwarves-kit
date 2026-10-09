@@ -167,6 +167,9 @@ light  = ["think", "spec", "validate", "review"]
 [lanes]                         # [impl] lib/classify/lane-classify.sh, lib/gate/lane-data.sh
 default          = "normal"     #        the lane classify returns when no rule picks another
 extra_hard_paths = ""           #        ERE over changed paths; ADDS to the built-in hard paths, never removes
+# hard_path_exempt = "^experiments/qa-runner/cases/"  # project .kit.toml only, read at the merge base;
+#                                 one case-sensitive ERE whose paths skip the built-in kinds except kit-config;
+#                                 write a dot as [.] (\. is not a TOML escape). docs/WORKFLOW.md has the rule
 
 [adopt]                         # [impl] lib/adopt.sh; read at adopt time, never by a hook
 single_source = false           #        Default for `--single-source` when neither that flag nor

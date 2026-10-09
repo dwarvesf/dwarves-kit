@@ -72,7 +72,13 @@ diff can show (authz, API contract, external provider, weakened validation). The
 applies the full lane's gates to any diff that touches a hard path (migrations, auth, secrets,
 CI workflows, kit config, data loss), whatever the spec's `Lane:` says. With
 `[gate] lane_gates = false` on the base branch none of this runs; a PR cannot switch it off for
-its own push. Moving an assigned lane lighter stays a Pause-if decision.
+its own push. A repo may exempt paths it has reviewed as not risky (a test oracle named `*login*`)
+with `[lanes] hard_path_exempt`: one ERE, read only from the `.kit.toml` at the merge base, so the PR
+that adds it still meets the floor through the kit-config path, and later pushes ride it. It skips
+every built-in kind except kit config (secrets and CI paths too, so keep it narrow); extras,
+submodules and data-loss lines still apply; an entry that matches the empty string or a canary hard
+path is dropped; each skip logs an `EXEMPT` line. Write a dot as `[.]`. Adding an entry narrows a hard
+path, so it is a Pause-if decision. Moving an assigned lane lighter stays a Pause-if decision.
 
 A kit spec copies its `Lane:` from `lib/classify/lane-classify.sh`. It takes `full` only when the
 floor hits a hard path or a full-lane trigger in the table above applies. Choosing `full` by habit

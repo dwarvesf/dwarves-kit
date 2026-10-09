@@ -195,3 +195,33 @@ lane_extra_hard_paths() {
     printf '%s\n' "$v"
   done | sort -u
 }
+
+# lane_hard_path_exempt <root> <rev>: the [lanes] hard_path_exempt ERE from the .kit.toml committed
+# at <rev>, else nothing. Only that copy counts: no working tree, no operator overlay, no kit root.
+# Callers pass the merge base, so a PR cannot exempt its own push. The entry is dropped with one
+# stderr line when it is not a valid ERE, matches the empty string, or matches a canary hard path:
+# an over-broad entry (`.`, `.+`, `x|.`) would otherwise exempt real auth. The match is
+# case-sensitive. Write a literal dot as `[.]`: `\.` is not a valid TOML string escape.
+_LD_EXEMPT_CANARIES='src/auth/login.ts
+lib/session.ts
+app/auth.py
+.env
+config/secrets/prod.txt
+db/migrations/0001_init.sql
+.github/workflows/ci.yml
+Dockerfile'
+lane_hard_path_exempt() {
+  local root="$1" rev="$2" tmp v rc=0
+  [ -n "$root" ] && [ -n "$rev" ] || return 0
+  tmp="$(mktemp)" || return 0
+  kit_config_show_at "$root" "$rev" > "$tmp"
+  v="$(_kit_toml_get "$tmp" lanes hard_path_exempt)"
+  rm -f "$tmp"
+  [ -n "$v" ] || return 0
+  printf '\n' | grep -Eq -- "$v" 2>/dev/null || rc=$?
+  if [ "$rc" -gt 1 ]; then echo "lane-data: hard_path_exempt entry '$v' is not a valid ERE; skipped" >&2; return 0; fi
+  if [ "$rc" = 0 ] || printf '%s\n' "$_LD_EXEMPT_CANARIES" | grep -Eq -- "$v"; then
+    echo "lane-data: hard_path_exempt entry '$v' matches the empty string or a canary hard path; skipped" >&2; return 0
+  fi
+  printf '%s\n' "$v"
+}

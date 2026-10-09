@@ -133,10 +133,24 @@ _load_extras() {
   _EXTRA_LIST="$(lane_extra_hard_paths)"; _EXTRA_LOADED=1
 }
 
+# The [lanes] hard_path_exempt ERE for --files, read once per process at the merge base of the
+# project root, the same read point the floor uses (never HEAD or the working tree).
+_EXEMPT_LOADED=0; _EXEMPT_RE=""
+_load_exempt() {
+  [ "$_EXEMPT_LOADED" = 1 ] && return 0
+  _EXEMPT_LOADED=1
+  local top; top="$(git -C "$(dirname "$(kit_config_project)")" rev-parse --show-toplevel 2>/dev/null)" || return 0
+  _EXEMPT_RE="$(lane_hard_path_exempt "$top" "$(_deesc_resolve_base "$top")")"
+}
+
 # _path_kind <path> -- print the hard-path kind a changed path hits (first match), else nothing.
+# An exempt path skips every built-in kind except kit-config; extras still apply.
 _path_kind() {
-  local f="$1" k extra
+  local f="$1" k extra ex=0
+  _load_exempt
+  if [ -n "$_EXEMPT_RE" ] && printf '%s\n' "$f" | grep -Eq -- "$_EXEMPT_RE"; then ex=1; fi
   for k in $_HP_KINDS; do
+    [ "$ex" = 1 ] && [ "$k" != kit-config ] && continue
     if printf '%s\n' "$f" | grep -Eiq -- "$(_hp_re "$k")"; then printf '%s' "$k"; return 0; fi
   done
   _load_extras
@@ -516,10 +530,29 @@ _floor_scan() {
     state == 2 { path = path "?" $0; next }
     END { flush() }'
   local links; links="$(sed -n 1p "$tmp/links")"
-  local best=0 bestkind="" k re hit num
+  local best=0 bestkind="" k re hit num kpaths="$tmp/paths" exre short
+  # [lanes] hard_path_exempt at <base>: an exempt path is blanked (line numbers kept for the
+  # submodule index) for every built-in kind except kit-config, and each exempted hit is named
+  # on stderr. Extras, submodules and the data-loss scan below still see every path.
+  exre="$(lane_hard_path_exempt "$root" "$base")"
+  if [ -n "$exre" ]; then
+    printf '%s\n' "$exre" > "$tmp/exre"
+    grep -nE -f "$tmp/exre" "$tmp/paths" 2>/dev/null | cut -d: -f1 > "$tmp/exlines" || true
+    if [ -s "$tmp/exlines" ]; then
+      awk 'NR==FNR { x[$1] = 1; next } { print ((FNR in x) ? "" : $0) }' "$tmp/exlines" "$tmp/paths" > "$tmp/paths_ne"
+      kpaths="$tmp/paths_ne"
+      grep -E -f "$tmp/exre" "$tmp/paths" > "$tmp/expaths" 2>/dev/null || true
+      short="$(git -C "$root" rev-parse --short "$base" 2>/dev/null || printf '%s' "$base")"
+      for k in $_HP_KINDS; do
+        [ "$k" = kit-config ] && continue
+        grep -Ei -e "$(_hp_re "$k")" "$tmp/expaths" 2>/dev/null | awk -v k="$k" '{ print k "\t" $0 }' || true
+      done | awk -F'\t' -v s="$short" '!seen[$2]++ { print "floor: exempt " $1 ": " $2 " ([lanes] hard_path_exempt at " s ")" }' >&2
+    fi
+  fi
   for k in $_HP_KINDS; do
     re="$(_hp_re "$k")"
-    hit="$(grep -Ein -m1 -e "$re" "$tmp/paths" 2>/dev/null | head -1)" || hit=""
+    if [ "$k" = kit-config ]; then hit="$(grep -Ein -m1 -e "$re" "$tmp/paths" 2>/dev/null | head -1)" || hit=""
+    else hit="$(grep -Ein -m1 -e "$re" "$kpaths" 2>/dev/null | head -1)" || hit=""; fi
     num="${hit%%:*}"
     if [ -n "$hit" ] && { [ "$best" = 0 ] || [ "$num" -lt "$best" ]; }; then best="$num"; bestkind="$k"; fi
   done

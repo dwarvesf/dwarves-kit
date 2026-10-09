@@ -100,7 +100,7 @@ ship_rule_large_spec() {
 # the MERGE BASE, never the PR head, so a PR cannot switch off its own floor. Full-lane gates are read
 # from the kit and operator layers only (--kit-lanes).
 ship_rule_floor() {
-  local root="$1" base="$2" head="$3" rid="$4" spec="$5" ledger="$6" hit gaps fk rid_q
+  local root="$1" base="$2" head="$3" rid="$4" spec="$5" ledger="$6" hit gaps fk rid_q errf line
   [ -f "$ledger" ] || return 0
   [ -n "$base" ] || return 0
   if ! ship_rules_switch_on lane_gates "$root" "$base"; then
@@ -109,7 +109,19 @@ ship_rule_floor() {
   fi
   [ -f "$_SR_LCLS" ] || return 0
   [ "$base" != "$(git -C "$root" rev-parse "$head" 2>/dev/null || true)" ] || return 0
-  hit=$(bash "$_SR_LCLS" floor "$root" "$base" "$head" 2>/dev/null || true)
+  errf="$(mktemp 2>/dev/null)" || errf=/dev/null
+  hit=$(bash "$_SR_LCLS" floor "$root" "$base" "$head" 2>"$errf" || true)
+  # A [lanes] hard_path_exempt skip is audited before any return. Only `floor: exempt ` lines log;
+  # a rejected-entry line from the reader never reads as an exemption.
+  if [ "$errf" != /dev/null ]; then
+    while IFS= read -r line; do
+      case "$line" in "floor: exempt "*)
+        line="${line#floor: exempt }"
+        _sr_log "EXEMPT | floor | $rid (${line% (\[lanes\] hard_path_exempt at *})" ;;
+      esac
+    done < "$errf"
+    rm -f "$errf"
+  fi
   [ -n "$hit" ] || return 0
   gaps=$(KIT_PROJECT_ROOT="$root" bash "$ledger" check full "$rid" --kit-lanes 2>&1) && return 0
   fk="${hit#full }"
