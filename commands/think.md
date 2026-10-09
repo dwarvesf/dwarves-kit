@@ -56,6 +56,10 @@ Bracket the phase for timing before starting: `bash lib/gate/gate-ledger.sh outc
 ## If BUILD: recommended scope for v1
 ## If RETHINK: what needs to change before building
 ## If KILL: what would have to be true to reconsider
+## Appetite: [how much time this is worth, e.g. 2 days, 1 week, 6 weeks]
+<!-- the appetite caps design depth: how far down L1 to L4 the design goes, and whether heavy checks like model checking are in scope -->
+## Rabbit holes
+<!-- spots likely to swallow time, named early; one bullet each: the spot, and the cut or decision that avoids it -->
 ## North-star alignment: [N1-N7 served, or "none"]
 ## Survival scenarios
 <!-- scenario-gen: 3-5 rows from the Q5 sketch; situations, no oracles -->
