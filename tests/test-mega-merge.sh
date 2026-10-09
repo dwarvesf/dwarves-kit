@@ -5,7 +5,7 @@
 # absent, unreadable state fails closed, and a normal `auto` PR still merges.
 #
 # Fully offline: gate-ledger + PR-state + the PR file list are injected (MEGA_MERGE_GATE_LEDGER,
-# MEGA_MERGE_PR_INFO_CMD, MEGA_MERGE_PR_FILES_CMD), so no `gh` and no real gate ledger are touched.
+# MEGA_MERGE_PR_INFO_CMD, MEGA_MERGE_PR_FILES_CMD, MEGA_MERGE_PR_HEAD_CMD), so no `gh` and no real gate ledger are touched.
 #
 # Run: bash tests/test-mega-merge.sh   (exit 0 = all green)
 
@@ -56,6 +56,17 @@ esac
 SH
 chmod +x "$TMP/prfiles"
 export MEGA_MERGE_PR_FILES_CMD="$TMP/prfiles"
+
+# injected PR head: prints $TMP/head-out (default: a fixed 40-hex SHA) and exits $TMP/head-rc (default 0)
+HEAD_SHA=d2a480915ea1d62eaca5bfba24a7609a1adcd8b8
+printf '%s\n' "$HEAD_SHA" > "$TMP/head-out"; echo 0 > "$TMP/head-rc"
+cat > "$TMP/prhead" <<SH
+#!/usr/bin/env bash
+cat "$TMP/head-out"
+exit "\$(cat "$TMP/head-rc")"
+SH
+chmod +x "$TMP/prhead"
+export MEGA_MERGE_PR_HEAD_CMD="$TMP/prhead"
 
 run() { MEGA_MERGE_GATE_LEDGER="$1" bash "$MM" merge "$2" somerid full 2>&1; }
 
@@ -199,6 +210,66 @@ has "gh pr merge 1" "$O_UNMARKED"; ok "mark negative control: an un-marked auto 
 # input guard + idempotence
 MB="$(bash "$MM" mark notanum 2>&1)"; has "must be a bare PR number" "$MB"; ok "mark: rejects a non-numeric PR (exit 64)" $?
 MEGA_MERGE_GH="$TMP/mark-gh" bash "$MM" mark 3 >/dev/null 2>&1; ok "mark: idempotent (re-run exits 0)" $([ $? -eq 0 ] && echo 0 || echo 1)
+
+echo ""
+echo "=== mega-merge head pin: the merge is pinned to the head read before the guards ==="
+# A fake gh: records every call; `pr merge` refuses when --match-head-commit differs from the
+# "current head" file, and records DELETED-BRANCH only on a merge that succeeds.
+PIN_LOG="$TMP/pin-gh.log"; CUR_HEAD="$TMP/cur-head"
+mkdir -p "$TMP/pin"
+cat > "$TMP/pin/gh" <<SH
+#!/usr/bin/env bash
+echo "\$*" >> "$PIN_LOG"
+[ "\$1 \$2" = "pr merge" ] || exit 0
+pin=""; prev=""
+for a in "\$@"; do [ "\$prev" = "--match-head-commit" ] && pin="\$a"; prev="\$a"; done
+if [ -n "\$pin" ] && [ "\$pin" != "\$(cat "$CUR_HEAD")" ]; then echo "head moved" >&2; exit 1; fi
+echo DELETED-BRANCH >> "$PIN_LOG"
+SH
+chmod +x "$TMP/pin/gh"
+pinrun() { PATH="$TMP/pin:$PATH" MEGA_MERGE_GATE_LEDGER="$TMP/gl-pass" bash "$MM" merge "$@" 2>&1; }
+
+# AC1 [head-pin-passed]: the recorded argv carries the pin; the dry-run prints the same command.
+: > "$PIN_LOG"; echo "$HEAD_SHA" > "$CUR_HEAD"
+OP="$(pinrun 1 somerid full --execute)"; RP=$?
+has "pr merge 1 --squash --delete-branch --match-head-commit $HEAD_SHA" "$(cat "$PIN_LOG")"; ok "head-pin-passed: gh pr merge carries --match-head-commit <sha>" $?
+ok "head-pin-passed: --execute returns 0 when the head still matches" $([ "$RP" -eq 0 ] && echo 0 || echo 1)
+OD="$(pinrun 1 somerid full)"
+has "gh pr merge 1 --squash --delete-branch --match-head-commit $HEAD_SHA" "$OD"; ok "head-pin-passed: the DRY-RUN line prints the pinned command" $?
+OD="$(pinrun 1 somerid full --posture=per-pr-review)"
+has "--match-head-commit $HEAD_SHA" "$OD"; ok "head-pin-passed: the per-pr-review line prints the pinned command" $?
+
+# AC2 [NC, head-unreadable-refused]: an unreadable or malformed head refuses and never reaches gh pr merge.
+head_refused() { # <label> -- reads $TMP/head-out and $TMP/head-rc as set by the caller
+  : > "$PIN_LOG"
+  local o r; o="$(pinrun 1 somerid full --execute)"; r=$?
+  { [ "$r" -ne 0 ] && has "cannot read PR #1 head commit" "$o" && ! has "pr merge" "$(cat "$PIN_LOG")"; }; ok "head-unreadable-refused: $1" $?
+}
+echo 1 > "$TMP/head-rc"; : > "$TMP/head-out"; head_refused "the head command exits 1"
+echo 0 > "$TMP/head-rc"; : > "$TMP/head-out"; head_refused "empty output"
+printf 'abc\n' > "$TMP/head-out"; head_refused "a short value"
+printf '%s\n%s\n' "$HEAD_SHA" "$HEAD_SHA" > "$TMP/head-out"; head_refused "two lines of valid SHAs"
+printf '%s\r\n' "$HEAD_SHA" > "$TMP/head-out"; head_refused "a trailing carriage return"
+printf '%s\n' "$(printf '%s' "$HEAD_SHA" | tr 'a-f' 'A-F')" > "$TMP/head-out"; head_refused "uppercase hex"
+printf 'gggggggggggggggggggggggggggggggggggggggg\n' > "$TMP/head-out"; head_refused "40 non-hex characters"
+printf '%s\n' "$HEAD_SHA" > "$TMP/head-out"
+
+# AC3 [NC, head-read-first]: the head stub, the state stub and the files stub share one call log.
+CALLS="$TMP/calls.log"; : > "$CALLS"
+for w in head info files; do
+  case "$w" in head) base="$TMP/prhead" ;; info) base="$TMP/prinfo" ;; files) base="$TMP/prfiles" ;; esac
+  printf '#!/usr/bin/env bash\necho %s >> "%s"\nexec "%s" "$@"\n' "$w" "$CALLS" "$base" > "$TMP/log-$w"; chmod +x "$TMP/log-$w"
+done
+MEGA_MERGE_PR_HEAD_CMD="$TMP/log-head" MEGA_MERGE_PR_INFO_CMD="$TMP/log-info" MEGA_MERGE_PR_FILES_CMD="$TMP/log-files" \
+  MEGA_MERGE_GATE_LEDGER="$TMP/gl-pass" bash "$MM" merge 1 somerid full >/dev/null 2>&1
+[ "$(head -n1 "$CALLS")" = "head" ] && [ "$(grep -c . "$CALLS")" -ge 3 ]; ok "head-read-first: the head is read before the state and the file list" $?
+
+# AC4 [NC, head-moved-fails]: a push after the pin moves the head; the merge fails and no branch is deleted.
+: > "$PIN_LOG"; echo "ffffffffffffffffffffffffffffffffffffffff" > "$CUR_HEAD"
+OM="$(pinrun 1 somerid full --execute)"; RM=$?
+ok "head-moved-fails: --execute returns nonzero when the head moved" $([ "$RM" -ne 0 ] && echo 0 || echo 1)
+if has "DELETED-BRANCH" "$(cat "$PIN_LOG")"; then ok "head-moved-fails: no branch delete on a refused merge" 1; else ok "head-moved-fails: no branch delete on a refused merge" 0; fi
+echo "$HEAD_SHA" > "$CUR_HEAD"
 
 echo ""
 echo "=== $PASS/$TOTAL passed, $FAIL failed ==="
