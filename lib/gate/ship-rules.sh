@@ -14,13 +14,15 @@
 #                                                  lanes come from the .kit.toml committed at <base>
 #   ship_rule_large_spec <spec> <rid> <lane> <ledger>
 #                                                  a large normal-lane spec needs a validate ran/override
+#   ship_rule_identities <root> <base> <head>      a push whose new commits carry a fixture git identity (x@x, t@t.dev,
+#                                                  example.com, .local) is refused; [gate] fixture_identities = false opts out
 #   ship_rule_floor <root> <base> <head> <rid> <spec> <ledger>
 #                                                  a hard-path diff owes the full lane's gates; every hard-path
 #                                                  skip and every refused exemption config is printed on stderr,
 #                                                  logged, and collected in SR_NOTICES (one notice per line) so a
 #                                                  hook can show them on an allowed push
 #
-# The two rule functions print the BLOCKED message on stderr and return 2; they return 0 on a pass
+# The rule functions print the BLOCKED message on stderr and return 2; they return 0 on a pass
 # and on any ambiguity (missing tooling, no base): the ship-gate is a quality gate that fails open.
 # They write the audit log only when SHIP_RULES_LOG=1 (the hook sets it; the mega gate stays
 # side-effect free). Sibling libs resolve from this file's own location.
@@ -181,9 +183,12 @@ ship_rule_floor() {
   return 2
 }
 
-# ship_rule_identities <root> <base> <head>: refuse a push whose commits carry a fixture-shaped
-# author, committer or Co-authored-by email (x@x, t@t.dev, example.com, .test, .invalid). Real
-# addresses, GitHub noreply addresses and bot noreply co-authors pass. Prints the message, returns 2.
+# ship_rule_identities <root> <base> <head>: refuse a push whose new commits (base..head, so old history
+# on the default branch never counts) carry a fixture-shaped author, committer or Co-authored-by email:
+# a bare-hostname or .local domain (x@x, user@Host.local), t@t.dev, test@example.com, example.*, .test,
+# .invalid, .localhost. Real, GitHub noreply and bot noreply addresses pass. Needs an origin remote.
+# Off with `fixture_identities = false` under [gate] in a committed .kit.toml. Fails open: when it
+# cannot read the range it says so on stderr and passes. Prints the message and returns 2 on a hit.
 _sr_fixture_email() {  # _sr_fixture_email <email>: 0 when fixture-shaped
   local e dom; e=$(printf '%s' "$1" | tr 'A-Z' 'a-z')
   [ -n "$e" ] || return 1
@@ -195,28 +200,34 @@ _sr_fixture_email() {  # _sr_fixture_email <email>: 0 when fixture-shaped
   return 1
 }
 ship_rule_identities() {
-  local root="$1" base="$2" head="$3" sha field email bad="" line
-  [ -n "$base" ] && [ -n "$head" ] && [ "$base" != "$head" ] || return 0
+  local root="$1" base="$2" head="$3" out rec sha ae ce co e bad="" short
   git -C "$root" remote get-url origin >/dev/null 2>&1 || return 0   # no origin: a scratch repo, nothing to protect
-  while IFS= read -r sha; do
-    [ -n "$sha" ] || continue
-    for field in author committer; do
-      email=$(git -C "$root" log -1 --format="%${field:0:1}e" "$sha" 2>/dev/null)
-      if _sr_fixture_email "$email"; then bad="${bad}  ${sha:0:8} ${field} <${email}>"$'\n'; fi
-    done
-    while IFS= read -r line; do
-      email=$(printf '%s' "$line" | sed -n 's/.*<\([^>]*\)>.*/\1/p')
-      [ -n "$email" ] || continue
-      if _sr_fixture_email "$email"; then bad="${bad}  ${sha:0:8} Co-authored-by <${email}>"$'\n'; fi
-    done < <(git -C "$root" log -1 --format='%(trailers:key=Co-authored-by,valueonly)' "$sha" 2>/dev/null)
-  done < <(git -C "$root" rev-list "$base..$head" 2>/dev/null)
+  ship_rules_switch_on fixture_identities "$root" "$base" || return 0   # read at the merge base: a push cannot switch off its own check
+  if [ -z "$base" ] || [ -z "$head" ]; then echo "ship-gate: fixture identity check skipped (no base to compare against)" >&2; return 0; fi
+  [ "$base" != "$head" ] || return 0
+  out=$(git -C "$root" log --format='%H%x1f%ae%x1f%ce%x1f%(trailers:key=Co-authored-by,valueonly,separator=%x1e)%x1d' "$base..$head" 2>/dev/null) \
+    || { echo "ship-gate: fixture identity check skipped (git log failed)" >&2; return 0; }
+  while IFS= read -r -d $'\x1d' rec; do
+    rec="${rec#$'\n'}"
+    IFS=$'\x1f' read -r sha ae ce co <<< "$rec"
+    short="${sha:0:8}"
+    _sr_fixture_email "$ae" && bad="${bad}  ${short} author <$(printf '%s' "$ae" | tr -d '[:cntrl:]')>"$'\n'
+    _sr_fixture_email "$ce" && bad="${bad}  ${short} committer <$(printf '%s' "$ce" | tr -d '[:cntrl:]')>"$'\n'
+    while IFS= read -r -d $'\x1e' line || [ -n "${line:-}" ]; do
+      e=$(printf '%s' "$line" | sed -n 's/.*<\([^>]*\)>.*/\1/p')
+      [ -n "$e" ] || { line=""; continue; }
+      _sr_fixture_email "$e" && bad="${bad}  ${short} Co-authored-by <$(printf '%s' "$e" | tr -d '[:cntrl:]')>"$'\n'
+      line=""
+    done < <(printf '%s' "$co")
+  done < <(printf '%s' "$out")
   [ -n "$bad" ] || return 0
   _sr_log "BLOCKED | ship-gate | fixture identity"
   {
-    echo "BLOCKED: ship-gate. These commits carry a fixture git identity (no-dot domain, t@t.dev, example.com, .test); it would reach a real branch and show as a stranger contributor:"
+    echo "BLOCKED: ship-gate. These commits carry a fixture git identity (bare-hostname or .local domain, t@t.dev, example.com, .test); it would reach a real branch and show as a stranger contributor:"
     printf '%s' "$bad"
     echo "Fix: git commit --amend --reset-author (last commit), or git rebase -i with --reset-author per commit; a Co-authored-by line needs a message edit."
-    echo "Then check 'git config user.email' in this worktree: a test or script left a fixture value there."
+    echo "Then check 'git config user.email' in this worktree: a test or script left a fixture value there (an unset identity on a Mac gives user@Host.local)."
+    echo "A legit internal domain that looks like this: set 'fixture_identities = false' under [gate] in a committed .kit.toml."
   } >&2
   return 2
 }

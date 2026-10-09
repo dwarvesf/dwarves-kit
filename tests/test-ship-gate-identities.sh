@@ -38,4 +38,22 @@ case_commit "co-author t@t.dev blocked"           2 "$REAL" "Co-authored-by: tes
 case_commit "noreply author + devin bot co-author ok" 0 "$REAL" "Co-authored-by: devin-ai-integration[bot] <158243242+devin-ai-integration[bot]@users.noreply.github.com>"
 case_commit "real address ok"                     0 "han@d.foundation"
 
+case_commit "test@example.com blocked"           2 "test@example.com"
+case_commit "user@Host.local blocked"             2 "user@Host.local"
+
+# opt-out: [gate] fixture_identities = false committed on the default branch lets x@x pass
+d="$(mktemp -d)/r"; mkrepo "$d"
+printf '[gate]\nfixture_identities = false\n' > "$d/.kit.toml"; git -C "$d" add -A; git -C "$d" commit -q -m "chore: opt out"
+git -C "$d" push -q origin master 2>/dev/null; git -C "$d" remote set-head origin master 2>/dev/null
+git -C "$d" switch -qc fix/change; echo g > "$d/g"; git -C "$d" add -A
+GIT_AUTHOR_EMAIL=x@x git -C "$d" commit -q -m "fix: change"
+[ "$(gate "$d")" = 0 ] && ok "opt-out switch lets x@x pass" || no "opt-out switch lets x@x pass"
+
+# old history never blocks: a fixture commit already on origin's default branch, clean commit on top
+d="$(mktemp -d)/r"; mkrepo "$d"
+echo old > "$d/old"; git -C "$d" add -A; GIT_AUTHOR_EMAIL=x@x git -C "$d" commit -q -m "chore: old fixture commit"
+git -C "$d" push -q origin master 2>/dev/null; git -C "$d" remote set-head origin master 2>/dev/null
+git -C "$d" switch -qc fix/change; echo g > "$d/g"; git -C "$d" add -A; git -C "$d" commit -q -m "fix: clean change"
+[ "$(gate "$d")" = 0 ] && ok "fixture commit already on default branch does not block a clean push" || no "old history must not block"
+
 echo "pass=$PASS fail=$FAIL"; [ "$FAIL" = 0 ]

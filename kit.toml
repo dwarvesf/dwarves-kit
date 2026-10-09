@@ -119,6 +119,9 @@ commit_format      = false      # [impl] hooks/commit-format.sh commit-subject l
 board_row_gate     = true       # [impl] hooks/board-row-gate.sh: a commit adding a new board row
                                 #        needs a board-row-ok line. Default ON; a repo opts out
                                 #        with `board_row_gate = false` in a committed .kit.toml.
+fixture_identities  = true       # [impl] hooks/ship-gate.sh: a push whose new commits carry a fixture git
+                                #        identity (x@x, t@t.dev, example.com, .local) is refused. Default ON; a repo
+                                #        with legit internal domains opts out with `fixture_identities = false`.
 # hard_path_canaries = ["src/billing/login.ts"]  # project .kit.toml only; literal repo paths that ADD to the built-in canaries,
 #                                 so a hard_path_exempt glob that matches one is refused
 # Hard-path exemptions: project .kit.toml only (ignored here and in the operator file), read at the merge base.
