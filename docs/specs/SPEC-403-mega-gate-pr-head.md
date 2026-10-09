@@ -1,6 +1,6 @@
 # Spec: the mega-goal merge gate checks the PR head it merges
 Generated: 2026-10-10
-Status: DRAFT
+Status: VALIDATED
 Lane: full
 Depth: blind-spot (failure: the auto-merge gate passes on a commit other than the one GitHub merges, so a hard-path diff in the PR skips the full lane's gates)
 References: `lib/goal/mega-merge.sh` `_pr_head` (imitate its overridable read and fail-closed return); `lib/gate/ship-rules.sh` `ship_rules_merge_base`, `ship_rule_floor`, `ship_rule_large_spec` (reuse as is); `git fetch origin refs/pull/<n>/head` (use as is).
