@@ -119,6 +119,15 @@ commit_format      = false      # [impl] hooks/commit-format.sh commit-subject l
 board_row_gate     = true       # [impl] hooks/board-row-gate.sh: a commit adding a new board row
                                 #        needs a board-row-ok line. Default ON; a repo opts out
                                 #        with `board_row_gate = false` in a committed .kit.toml.
+# hard_path_canaries = ["src/billing/login.ts"]  # project .kit.toml only; literal repo paths that ADD to the built-in canaries,
+#                                 so a hard_path_exempt glob that matches one is refused
+# Hard-path exemptions: project .kit.toml only (ignored here and in the operator file), read at the merge base.
+# Keep this example LAST in the block: any key written after the header below belongs to that table.
+# Only kinds auth and migration can be exempted; one invalid entry refuses them all. docs/WORKFLOW.md has the rule.
+# [[gate.hard_path_exempt]]
+# paths  = ["experiments/*/cases/**"]   # git-style globs: * and ? stay in one segment, ** crosses directories
+# kinds  = ["auth"]
+# reason = "public practice-site oracle scripts, no auth code"
 
 [proof]                         # the proof-of-done image rule, OPT-IN: everything below is inert
                                 #        while `visual` is false (the push gate is then byte-identical
@@ -167,9 +176,6 @@ light  = ["think", "spec", "validate", "review"]
 [lanes]                         # [impl] lib/classify/lane-classify.sh, lib/gate/lane-data.sh
 default          = "normal"     #        the lane classify returns when no rule picks another
 extra_hard_paths = ""           #        ERE over changed paths; ADDS to the built-in hard paths, never removes
-# hard_path_exempt = "^experiments/qa-runner/cases/"  # project .kit.toml only, read at the merge base;
-#                                 one case-sensitive ERE whose paths skip the built-in kinds except kit-config;
-#                                 write a dot as [.] (\. is not a TOML escape). docs/WORKFLOW.md has the rule
 
 [adopt]                         # [impl] lib/adopt.sh; read at adopt time, never by a hook
 single_source = false           #        Default for `--single-source` when neither that flag nor
