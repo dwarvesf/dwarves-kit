@@ -206,6 +206,17 @@ If the current branch is not main/master:
 
 If on main: warn that they should have used a feature branch.
 
+### Step 8b: Tag and GitHub Release (after the version cut lands on the default branch)
+
+Run this only once the version bump commit is merged into the default branch and the project is released from GitHub. Skip it silently when there is no version file or no `origin`. A cut without a tag or Release leaves GitHub showing an old release as Latest (kit 2.1.0 to 2.3.0 shipped that way). Let `V` be the bare version from `VERSION` and `SHA` the release merge commit on the default branch (`git log -1 --format=%H origin/<default>` after a fetch, or the PR's `mergeCommit`).
+
+1. **Tag.** Skip if `git ls-remote --tags origin "v$V"` already lists it. Otherwise: `git tag -a "v$V" "$SHA" -m "dwarves-kit $V"` (use the project name for non-kit repos), then a plain single `git push origin "v$V"`.
+2. **Notes file.** If `docs/releases/$V.md` exists, copy it to a scratch file and rewrite relative image paths (`](assets/...`) to `https://raw.githubusercontent.com/<owner>/<repo>/<default-branch>/docs/releases/assets/...`, and the relative changelog link (`../CHANGELOG.md`) to its absolute `https://github.com/<owner>/<repo>/blob/<default-branch>/docs/CHANGELOG.md`. Otherwise take that version's section from the changelog (Step 5 file) and append a link to the full changelog.
+3. **Release.** `gh release create "v$V" --verify-tag --title "v$V" --notes-file <file> --latest`. The title is the bare tag, matching every existing release. Never pass a free-text title.
+4. **Verify.** `gh release list --limit 3` shows `v$V` as Latest, and `git ls-remote --tags origin "v$V"` lists the tag. Report both lines in the Step 9 summary.
+
+This step never moves or re-creates an existing tag: a moved tag is a history rewrite and needs the operator. If the tag exists on a different commit, stop and report.
+
 ### Step 9: Summary
 
 ```
@@ -219,6 +230,7 @@ Changelog: [updated / created / skipped]
 Docs updated: [list]
 Drafts archived: [list moved to .claude/goals/done/, or "none"]
 PR: [URL or "ready to push"]
+Release: [vX.Y.Z tag + GitHub Release (Latest), or "skipped"]
 ```
 
 Source: ClaudeKit /ck:ship pipeline (merge > test > adversarial review > version > changelog > push > PR). Adapted: review gate reads the spec's `## Review` section instead of running inline review. Version bump is optional and project-aware.
