@@ -11,6 +11,17 @@ All notable changes to dwarves-kit are documented here.
 
 Release note: [docs/releases/2.3.0.md](releases/2.3.0.md).
 
+### Highlights
+
+- **Design review as a diagram delta.** `/kit:design` now reviews a feature as a delta against `docs/SYSTEM-DESIGN.md`, rendered as a UML drawing set with new, changed and removed elements marked. `/kit:spec` stops on an unapproved L1 or L2 change and keeps terms and quality requirements as living docs. (#961, #962)
+- **Lighter, data-driven lanes.** Lanes are data in `kit.toml`, the default lane is light, and a fail-closed diff floor applies full-lane gates to hard paths. Small specs skip the 7-reviewer round, and `/kit:execute` uses one builder per spec. (#840, #849, #860, #847, #843)
+- **Safer gates and hooks.** A hardened `safety-gate` normalizer and `permission-auto-approve`, every hook anchored to the repo root, a board-row gate, and the hard-path exemptions listed under Security-relevant config. (#804, #801, #802, #703)
+- **Wrap and landing grow up.** `wrap land`, `start`, `rebase`, `adopt` and `deploy-wait` land hand-made worktrees end to end, with merge proofs that cannot delete unlanded work, conflict recovery, CI-label waits, and a linted report. (#674, #718, #954, #947, #861, #794, #817)
+- **Board and fleet visibility.** `board work` shows who is on what, `board brief` and `board health` post a daily digest per cluster, `board hermes` links kit skills into Hermes, and a Board pane mod brings it into Claude Code. (#834, #944, #941, #945, #874)
+- **Scheduled harvest and the decision API.** The harvest sweep stages learnings from transcripts on a schedule, and `bin/flick` answers "pick one of N" through a decision API behind an egress guard. (#814, #829, #864, #895)
+- **Cost and context observability.** `session observe entry-fee`, `burn` and `timing`, `session recall --tail`, and a percent-of-window `context-budget` warning show where tokens and time go. (#657, #563, #880, #753, #759)
+- **Faster tests.** `bin/test-affected` and `run-all.sh --changed` run only what a diff touches, suites run in parallel, and `negctl --parallel` runs controls side by side. (#815, #664, #916, #930)
+
 ### COMPAT (contract surfaces, per forge kit-versioning.md)
 - Command surface (`wrap land`, additive, MINOR): `land --no-pull` makes the same promise `merge --no-pull` and `apply --no-pull` make, never write the main checkout. It still pushes, merges, verifies the tree, deletes the origin branch, removes the worktree and deletes the local branch, but skips the closing fast-forward with `SKIP pull: --no-pull`. `/kit:wrap` step 0 and step 3 now send a stopped repo's hand-made worktree through `land <wt> --no-pull` instead of the manual push, `gh pr create`, `merge`, `apply --own` loop. (#954)
 - Config surface (new env knob `KIT_WRAP_LAND_REGISTER_SECS`, additive, MINOR): the `wrap land` check-registration hold for an unfiltered `pull_request` workflow, default 300. `KIT_WRAP_LAND_GRACE_SECS` (30) now covers only filtered workflows. (#947)
@@ -113,206 +124,100 @@ Release note: [docs/releases/2.3.0.md](releases/2.3.0.md).
 - New root `SECURITY.md` states the fail-open trust model and the private reporting channel.
 
 ### Added
-- The scheduled harvest sweep, phase 1. `hooks/harvest_sweep.py` reads claude transcripts (devin when `harvest.sources` lists it) behind a per-source cursor, extracts learnings and pattern sightings, stages them into sweep ledgers, and writes a wrap-shaped report per run. It builds, pushes, and merges nothing. `deploy/macos/harvest-sweep/` ships the LaunchAgent template, launcher, installer, and README. Docs: `docs/MANUAL.md` (Harvest sweep), `docs/architecture.md`, and the root `README.md`. (#829)
-- `tests/lib/hook-parity.sh`, a sourced bash library shared by every Python-to-bash hook port's parity harness. `hp_run_case <case-json> <hook-cmd...>` runs one case in its own temp `HOME` and cwd (or `HP_CWD`), under `env -i` plus the case's `env` object (a `null` value unsets the var, `ROOT` in a value expands to `HP_ROOT`), and prints one JSON line `{name, rc, stdout, stderr, log, stray}`. `hp_gen_expected <rev> <hook-basename> <cases.jsonl> <expected.jsonl>` extracts a hook's `.sh`/`.py` pair at a revision and runs every case through that shim. `hp_check <cases.jsonl> <expected.jsonl> <hook-cmd...>` diffs every case against the goldens and reports `<N> passed, <M> failed`. money-gate (`feat/money-gate-bash`) and citation-guard (`feat/citation-guard-bash`) each hand-built this harness before it existed; the four queued ports (backlog-stage, context-hints, harvest, intake-sweep) source it instead. Self-test: `tests/test-hook-parity-lib.sh` (SPEC-373). (#825)
-- `lib/bench/lens-eval.sh <command-file> <base-ref> <cases.json> [--samples N] [--model M] [--live]`, a repeatable eval for prompt-only lenses. It runs the command's working-tree text (treatment) and its text at the base ref (control) against fixture specs through headless `claude -p --safe-mode --tools ""`, N samples per arm, and greps each report's finding blocks for the case file's signals. It prints a per-case, per-signal table, the samples directory, the cost, and a verdict. Only a live pass exits 0; a dry run exits 3 and spends nothing; a failed sample exits 2 unscored. `tests/fixtures/sustainability-lens/lens-eval.json` reruns the SPEC-314 hand eval; its first live runs cost $0.18 and $0.20 for 3 calls. `tests/test-lens-eval.sh` runs offline against a stub `claude` (SPEC-316). (#775)
-- `lens-eval.sh` prints one extra line, `note: all <n> 'fewer' signals show no gap between arms; base <base-ref> may already carry what they assume it predates`, when every `control: fewer` signal in a run shows no gap and treatment itself hit the majority. A `fewer` signal only means something when the base ref predates the capability it names, per `docs/verification/r7-quiet-calibration.md`'s three `-any` signals FAILing against `origin/master` for exactly that reason. A treatment miss is never read as a base problem. No new flag, schema field, or exit code (SPEC-325). (#786)
-- `/kit:kit-health` check 12: reports every broken symlink under the installed kit root (`${DWARVES_KIT:-$HOME/.claude/dwarves-kit}`), naming the link and its dangling target, and recommends re-running `install.sh` (every symlink there is written by its compat-mode `kit_symlink_hardened` step, so a re-run always repoints it). Read-only, never mutates. Closes the gap where a moved checkout left `docs/WORKFLOW.md` pointing at the old path unnoticed until the gate ledger needed a manual override. `tests/test-meta.sh` proves it against a synthetic kit root (one good symlink, one dangling). (#767)
-- `wrap deploy-wait <owner>/<name> <sha> [--check <substr>]... [--timeout <secs>]`, the push-deploy half of `/kit:wrap` step 4. A repo that deploys on push (Cloudflare `Workers Builds: <name>`) carries its deploy as a check run on the merge commit, which step 4 could not check, so operators polled `gh api .../check-runs` by hand. The verb polls every 10s until each `--check` value matches a run and every matching run is completed, keeps the highest id per name so a rerun supersedes a stale run, prints `<conclusion> <name>` per run, and exits 0 only when all concluded `success`; 1 names the failures, 2 is a gh or read error, 124 is the timeout (default 600s). Step 4 claims `DEPLOYED` for a push-deploy repo only after it exits 0. Proof: `docs/verification/wrap-deploy-sha-wait.md` (SPEC-313). (#765)
-- `/kit:wrap` step 10, follow-through. `/kit:wrap follow` (or `[wrap] follow_through = "lanes"`) runs after the report prints: background workers build every `REPORTED` candidate in `build_lanes` and every FYI follow-up the pass can finish in those lanes, wait for checks and merge each green own PR through `wrap merge --apply --pr`, and print a second `## Follow-through:` report. `follow all` also takes each `REPORTED` full-lane candidate through the home repo's full lane (reserved SPEC number, `kit:spec-validate` with the blocking design-record lens, build, negative control, proof) into a draft PR that wrap never merges; the second report asks `REVIEW #<pr>` in `Needs you`. `Needs you` items never run. Proof: `docs/verification/wrap-follow-through.md` (SPEC-310). (#754)
-- `session recall --tail <id-prefix>` prints what one session is doing now: its last prompts and replies (10 by default, `--limit N`), the last turn time, and the last write age including subagent transcripts. The prefix matches transcript names across every project dir, so a peer running in a worktree resolves from the main checkout. Tool calls, tool results, hook and meta turns never print; slash commands print as `/x <args>`. Text is control-character stripped and secret-redacted before the 200-character cap, with a tail-only pattern wider than the shared `SECRET_SHAPE_RE`. `--limit` now rejects a value below 1 or a non-integer with exit 2 in every mode, where `abc` used to throw a traceback. `/kit:wrap` step 7b names it as the rung after `--sessions`. Proof: `docs/verification/recall-session-tail.md` (SPEC-309). (#753)
-- `wrap merge --apply`'s conflict recovery gains a second leg. When the stuck own PR's head already carries `origin/<default>` (the local union merge landed and pushed, yet GitHub still reports CONFLICTING because its merge never reads `.gitattributes`), the union re-merge has nothing left to do, so wrap builds the squash-equivalent commit itself: `merge-tree --write-tree` for the merged tree, one `commit-tree` parented on `origin/<default>`, a push to a `<branch>-squash` branch, and a replacement PR under the original title and body that gates and merges through the same `_pr_gate` + squash + tree-verify path. Every refusal the first merge owed still applies (a PR that is red beside the conflict, a head that does not carry the base, a moved tip, a gated replacement all refuse by name), and the report names the superseded PR for a manual close. Proof: `docs/verification/wrap-merge-squash-fallback.md`. (#728)
-- `hooks/board-row-gate.sh` (PreToolUse Bash, `board` install module, always on through the plugin) blocks a `git commit` in any repo whose root has `_meta/BACKLOG.md` or `BACKLOG.md` when the commit adds a new board row and the message has no `board-row-ok: <reason>` line. A new row is a first-cell ID matching `^[A-Z][A-Z0-9]*-[0-9]+$` that HEAD's board lacks, so status flips, moved rows, and IDs cited in Notes never count. The message is read from `-m`/`--message`, heredoc bodies, and `-F`/`--file`; an unreadable message blocks only when new IDs exist. Merge, rebase, cherry-pick, and revert states skip. Per-repo opt-out: `[gate] board_row_gate = false`. Session kill switch: `DWARVES_KIT_SKIP_BOARD_ROW_GATE=1`. Proof: `docs/verification/board-row-gate.md`. (#703)
-- `hooks/ship-gate.sh` refuses a kit-repo push whose diff edits an input of `docs/FEATURES.md` (`commands/*.md`, `agents/*.md`, `skills/*/SKILL.md`, `hooks/*.sh`, `hooks/hooks.json`, `settings.json`, `tests/test-*.sh`, `docs/specs/SPEC-*.md`) and leaves the generated projection stale. The check is `lib/registry/feature-registry.sh check`, the same verb `tests/test-meta.sh` now pins freshness with, so the gate and the suite cannot disagree about what fresh means. A push that also carries `docs/FEATURES.md` skips the ~20s regeneration; CI pins whether that regeneration was correct. Escape hatch: `DWARVES_KIT_SKIP_REGISTRY_FRESHNESS=1`. Proof: `docs/verification/registry-freshness-guard.md`. (#675)
-- `tests/run-all.sh --time` appends each suite's elapsed seconds to its report line and prints a `run-all: slowest:` block of the ten worst after it. The flag is order-free and combines with `--all`, `--only` and `--changed`; without it the output is byte-identical to before. (#673)
-- `bin/wrap land <worktree> [--title T] [--body-file F]` lands one committed branch from a hand-made worktree: it pushes the named branch, opens the PR with `--head` and never `--base`, squash-merges as its own call, verifies the default branch holds the PR head through `merge`'s own tree check, fast-forwards the main checkout with `--ff-only`, then removes the worktree and deletes the branch. A dirty worktree, a HEAD on the default branch, an absent or unauthenticated `gh`, and a branch with no commits ahead each refuse by name before any write. A refused pull prints `PULL BLOCKED`, leaves the checkout untouched, and still tidies. Proof: `docs/verification/wrap-land.md`. (#674)
-- Every `**FYI:**` bullet in the wrap report opens with a tag, `SKIPPED` (a step that did not run), `STATE` (a fact the operator meets next time), or `INCIDENT` (something that went wrong this pass). `lib/wrap/report-lint.sh` fails an untagged bullet, and fails one whose text reads as an ask, which belongs in `Needs you` with its own DECIDE or RUN tag. (#672)
-- `tests/run-all.sh` with no argument is now `--changed`; the full glob is `--all`, which CI runs. CI itself runs only on `workflow_dispatch` and a `v*` tag push, no longer on every push and pull request. The wrap report's `**Built:**` items open with a verdict, `BUILT`, `STAGED`, `FILED`, or `NOTE`, and `lib/wrap/report-lint.sh` fails an item without one. (#666)
-- `tests/run-all.sh --changed [<base>]` runs only the suites the diff against `<base>` (default: the merge-base with `origin/master`) touches: suites whose code lines name a changed file's basename, changed suites themselves, `tests/test-<mod>*.sh` for `lib/<mod>/`, plus every suite with an `# always:` header (the tree-wide lints: kit-contract, config-registry, no-personal-paths, no-scattered-ids, boundary-lint, meta). The local pre-push check; CI keeps the full glob. `RUN_ALL_JOBS` now defaults to `auto` on macOS, where every parallel run has been green, and stays `1` on Linux until the ubuntu flake is understood. (#664)
-- `session observe entry-fee [--days N] [--project SLUG-OR-NAME] [--top N] [--trend] [--json]`
-  sizes the fixed preamble every agent turn re-reads before any work. The per-session
-  total is measured (the first main-chain assistant turn's input + cache-creation +
-  cache-read); the per-component split is estimated at four characters per token over
-  the rendered preamble text and is labelled an estimate everywhere, with the remainder
-  shown as one `(unattributed)` row. Adds a per-repo median and, with `--trend`, ISO-week
-  medians so a preamble cleanup shows as a drop. Not part of `report`. `--project` now
-  also accepts a bare repo name, which matches every slug containing it, for `cost` and
-  `burn` too. Spec: `docs/specs/SPEC-289-observe-entry-fee.md`. (#657)
-- Added a Codex plugin manifest and a Codex lifecycle adapter for the five hard guardrails: destructive-command safety, secret-file protection, ship completeness, commit format, and premature-completion protection. Claude Code keeps its existing manifest and settings. The shared secret policy now also denies Codex and Cloudflare credential files, and hard-hook logs omit command or subject text that could contain tokens. Codex requires explicit trust for each exact hook hash. This is not prompt/output DLP, and tool-hook coverage is limited to verified paths.
-- `gate-ledger.sh plan-record <rid> <lane> [--ran|--skipped|--override <phase>[:<reason>]]...`
-  disposes every phase of a lane's plan in one call, instead of one `record`/`override` call per
-  gate (nine hand-typed calls on a normal-lane prose PR). The phase list comes from `plan`, so the
-  WORKFLOW lane matrix is still parsed in one place, and each line is written by the existing
-  `record`/`override` function, so the GATE line format, the grill-skip reason enum, and the
-  distinct-override-reason guard all keep applying unchanged. It refuses before writing anything:
-  an off-plan phase, a phase given twice, a reason-less `--skipped`/`--override`, or a plan phase
-  left undisposed exits 64, and the rules the two writers own are caught by replaying the set
-  against a scratch ledger first, so a rejected call leaves the real ledger byte-identical.
-  `ship` is the one phase a caller may omit, since the push records it. (#634)
-- `backlog.sh dedupe-all [file]`: sweeps every duplicated id in one pass, keeping whichever
-  copy is not `queued` (file order breaks a tie), instead of naming one id at a time like the
-  existing `dedupe <id>`. `wrap merge --apply`'s union re-merge (PR #608) now calls it right
-  after the re-merge commit, on any merge-marked file the merge touched that still parses as a
-  kanban table: a union-marked log resolves a real conflict by keeping both sides, which
-  duplicates a row when two branches flip the same id, a defect deduped by hand 12 times on
-  one day before this fix. A drop lands as its own follow-up commit (`fix(board): dedupe
-  union-merged rows`), never folded into the merge commit; a clean board makes no commit. (#635)
-- `wrap merge --apply` verifies the default branch's tree after `gh pr merge` reports MERGED,
-  instead of trusting gh's word alone: it fetches the default branch and checks the PR head's
-  tree against the new tip, either whole or scoped to the paths the PR touched (another PR may
-  have landed on the default branch meanwhile). A stale `headRefOid` captured before a late
-  push, or an armed auto-merge overtaken by a push after the gates read, can both report
-  MERGED while the default branch moves on without the reviewed tree; three such gaps were
-  confirmed by hand in one session. A verified merge now prints `tree verified`; a real gap
-  prints `TREE MISMATCH, <n> paths differ` and exits 3 without deleting the branch. (#628)
-- `lib/session/handoffs.sh list [--repo DIR] [--days N]`: lists open handoff files (`_meta/handoffs/`
-  and `.claude/handoffs/`, skipping `done/`/`_archive/`), oldest first, each with its `## Next`
-  excerpt. `/kit:start` now surfaces the count and excerpts next to its goal-drafts bullet, so a
-  pile of unread handoffs shows up at session entry instead of needing a manual audit. (#626)
-- `batch-debt-warn.sh` (PreToolUse Bash hook, `session` module): warns once per session when a
-  second `gh pr merge` runs and the gate ledger holds no lane START since that session's first
-  merge. A batch-shaped session (board sweep, overnight run) records neither gate taps nor a
-  debt marker, so its understanding debt used to be lost unless the operator backfilled by hand.
-  Advisory only, never blocks; the warn names the `gate-ledger.sh start` + `debt` fix in one line.
-  Merge counting uses the ledger substrate stream `merge-watch/<session_id>.log`. (#620)
-- `intake gate <url | "subject">` (`bin/intake`, `lib/intake/intake.sh`): the scripted dedup
-  gate for knowledge intake. Reads six decision stores, the URL ledger, every board in the
-  operator's boards registry, the verdict ledger, prior notes, this kit's own inventory via
-  `precedent find`, and open pull requests via `gh`, then prints every hit as one JSON object
-  and exits 0 on any hit, 1 on none. A store with no key, a command not on PATH, or a path
-  that does not exist is skipped with a reason and never fails the gate. Replaces five
-  hand-written prose copies of the same checklist, two of which had already drifted. (#615)
-- Scattered-id enumerator at `lib/lint/scattered-ids.sh`, reachable as `bin/lint`, with README, SPEC, docs and `tests/test-lint-scattered-ids.sh`. It is the one reproducible item enumeration behind the provenance rule (CONTRIBUTING, Where an ID may appear): git ls-files, the id regex, the exclusions, and the documented exemptions (own-number headers, Relates-to and Backlog lines, provenance footers, board rows, dated log lines, board arrays, fixtures, the commit-format guard regex, FEATURES.md, CHANGELOG). `tests/test-no-scattered-ids.sh` now drives its clean zones through the enumerator, so widening the ratchet is one line instead of a new grep. Zones 3 (hooks), 4 (bin) and 5 (skills) are cleaned and guarded. (#591)
-- Configurable Claude Code output style (SPEC-252). The kit ships `output-styles/` (plugin-native dir; first style `adhd`, a Concise superset absorbed from ayghri/i-have-adhd). `[output] style = "<name>"` in a project `.kit.toml`, the operator `kit.toml`, or the kit root makes `lib/adopt.sh` copy the kit style into `<project>/.claude/output-styles/` and set `outputStyle` in `<project>/.claude/settings.json` (targeted jq merge, hooks untouched); a name the kit does not ship sets the key only. `install.sh` symlinks every kit style into `~/.claude/output-styles/` (a real file there is never replaced) and `--uninstall` removes only its own links. The `/output-style` picker's `settings.local.json` outranks the project file, so a person's own pick still wins. (#558)
-- `install.sh` step 7b sets an OPERATOR-level default output style, closing the gap the adopt-time write left: `[output] style` from the operator or kit-root `kit.toml` (project scope skipped, install has no project) sets `.outputStyle` in `$CLAUDE_DIR/settings.json` directly, refusing a `/`- or `..`-bearing name and never touching the file when the key is empty (SPEC-252). (#559)
-- `docs/execution-planes.md`: the four ways the kit runs agents (board, orchestrator, queue, gauntlet), how work flows between them, what they share, and their differing trust and isolation models. Written because two of them live in `lib/queue/` and share no code, and because the queue's unsandboxed posture was stated only in a source comment. (#534)
-- `docs/PHILOSOPHY.md` gains "Reversible in git is the line between acting and asking", the principle behind every autonomy knob added this cycle. The knobs were documented individually; the policy behind them was not, which is how three other docs kept describing the old ask-first behavior. (#534)
-- `Needs you` in the `/kit:wrap` report carries an admission test. An item belongs there only when the operator is the only one who can do it: it needs a human credential or presence, it is irreversible and outward-facing, or it is a judgment whose options carry different irreversible outcomes. Everything else runs before the report prints and is reported past tense in `What happened`. Five cases are named explicitly, because they are the ones that kept surfacing as permission requests: merging your own green PR, pulling the default branch, installing what you just merged, dispatching an established deploy, rerunning a check (#524). (#527)
-- Three `[wrap]` autonomy knobs make each of wrap's write actions a choice, defaulting to the acting posture: `merge_own_prs` (step 3), `tidy_worktrees` (step 5), `build_candidates` (step 7b). A `false` turns that step's action into a report line named in `FYI`; it never turns the step off and never relaxes a refusal the tools make on their own (#526). (#527)
-- `session observe burn`: ranks live sessions by token burn over a `--since` minutes window. Subagents roll into their parent, usage is deduplicated by message and request id, and each row shows the live context size and the owning PID. It answers "which session is burning tokens right now" without a hand script. Stdlib only, additive view, every other view unchanged (SPEC-254). (#563)
-- `hooks/context-budget.sh`: a `UserPromptSubmit` hook in the `session` module that warns once per 100k-token band once a session's live context (input + cache creation + cache read of the last main-chain assistant turn) passes 200k, and clears on a drop back under budget (e.g. after `/compact`). Ported from the operator's personal, already-tested dotfiles hook. `KIT_CTX_WARN`/`KIT_CTX_STEP` env knobs; advisory, never blocks (SPEC-255). (#572)
-- `doc-drift`'s Tier 1 pass now also checks diagram nodes: an ASCII/box diagram node naming a file, module, or symbol is a claim and gets the same existence check as a prose reference, quoting the node text when the target is missing. Contract lifted from archify's validated-IR idea (source-cited nodes, checked citations), not its renderer. (#613)
-- `skills/loop-engineering/SKILL.md` gains a stop condition covering every shape (a loop repeating an unchanged move, same diff, same command, same failure, must stop and report, the Ralph Wiggum failure) and a scorecard column for the bounded-revise engine (cost per accepted change: total spend over changes merged, per loop, never tokens per run). (#612)
-- `design`: Review a feature design as a system-design delta (#962)
-- `spec`: Terms and quality requirements as repo-level living docs (#961)
-- `tests`: Add run-all --failed and a no-weaken rule for the fix agent (#959)
-- `board`: Expire bot cards by age in mirror-cleanup and the sweep (#953)
-- `wrap`: Refuse to remove a worktree a live process still holds (#948)
-- `sync`: Board sweep, digest, mirror cleanup and verify as kit verbs (#929)
-- `wrap`: Archive finished handoffs at session close (#921)
-- `wrap`: Land refuses ignored files under touched paths (#917)
-- `test`: Test budget in briefs, host-load warning, suite timing history (#913)
-- Impl notes gate (#756)
-- `wrap`: Adopt verb that adopts a repo and lands it (#907)
-- `registry`: Tests column reads lib tests and credits tests that invoke a verb (#904)
-- `flick`: Add clef backend (Cloudflare Workers AI) (#895)
-- Proof-asset CLI, put and flush for visual proof images (#894)
-- `wrap`: Lint report prose against STE-lite (#893)
-- `gate`: A proof of done carries its captured output into the PR (#892)
-- `gate`: Negative_control knob, full-lane-only option (#883)
-- `session-observe`: Add timing view (#880)
-- `integrations`: Board band actions, worktree staleness, NEXT (#878)
-- `integrations`: Board pane mod for Claude Code (#874)
-- `registry`: List lib verbs in FEATURES.md, fix path-index gaps, hook descriptions and trigger classes (#851)
-- `execute`: One builder per spec, verification at slice and build end, sampled recheck (ADR-0038) (#847)
-- `gate`: Validate-round verb owns the validation round's bookkeeping (#842)
-- `spec`: Depth line, research and full test-plan review only when earned, light pass by default (#843)
-- `mega`: Opt-in Orca backend for the mega runner (trial, default path unchanged) (#841)
-- `lanes`: Lanes as data, light default lane, fail-closed diff floor at ship (#840)
-- `board`: Board work, a live table of who is on what (orca, file activity, ledger) (#834)
-- `adopt`: Small AGENTS.md pointer, hash-safe migration, two-concept onboarding (#833)
-- `board`: Work verb joins board, mega, git, orca and ledger (#831)
-- `commands`: Tag every subagent dispatch description with rid=<rid> (#824)
-- `harvest`: Scheduled multi-agent harvest sweep, phase 1 (#814)
-- `spec`: Run spec validation as parallel reviewers (#816)
-- `session-observe`: Count every hook event, not just Stop (#803)
-- `negctl`: Run the negative control at a commit with --at (#798)
-- `ui-design`: Brief names excluded styles (#773)
-- `wrap`: Add opt-in --archive-unmerged to apply (#763)
-- Wrap start carry (#758)
-- `config`: Adopt.single_source and wrap.roots knobs (#744)
-- `wrap`: Four landing fixes, -D, --under, stray-line carry (#742)
-- `adopt`: Add --single-source mode to fold CLAUDE.md into AGENTS.md (#740)
-- `gate`: Add negctl --base-ref mode for shared checkouts (#724)
-- `board`: Lint verb enumerates malformed rows before sync trips (#723)
-- `observe`: Transcript-measured skill listing, last-fired skills columns (#721)
-- `wrap`: Start verb, the worktree-opening half of land (#718)
-- `board`: Run scaffolds a single-row megadir for orchestrate (#717)
-- `board`: Get verb for single-row status (#715)
-- `orchestrate`: Per-agent turn ceiling with deterministic segment handoff (#714)
-- `hooks`: Context-budget turns directive one band past budget (#697)
-- `wrap`: Retry transient gh merge errors (#708)
-- `observe`: Tools --errors groups errors by prefix (#709)
-- `wrap`: Apply --own scopes tidy to the named worktrees (#710)
-- `wrap`: Land adopts the operator's own open PR (#706)
-- `webcheck`: Flag an SVG og:image and a missing og:url (#704)
-- `wrap`: Merge --pr N lands one reviewed draft PR (#701)
-- `start`: Mega-goal awareness + capped pick-up lists (#694)
-- `start`: Pick up from handoffs, goal drafts, and the board (#693)
-- `audit`: A cadence table and an audit due verb for the audit loops (#679)
-- `git`: Declare the board and notes merge=union (#663)
-- `spec`: Mint spec numbers against open PR heads too (#661)
-- `wrap`: Warn when a write verb lands a file on the default branch (#658)
-- `gate`: Quality gates default off, adopt seeds the preset (#656)
-- `dispatch`: Separate the attempt state from the task state (#655)
-- `gate`: Make the blocking quality gates opt-out per project (#653)
-- `dispatch`: Carry the standing worker rules inline in every prompt (#650)
-- `registry`: Add a check verb so drift is answerable outside the suite (#648)
-- `gate`: Add verbatim-rows check for structured index rewrites (#638)
-- `session`: Split burn rows by model, priced (#637)
-- `wrap`: Pull past a sibling's dirty tracked files behind a knob (#630)
-- `wrap`: Apply removes only a proven-merged locked worktree (#622)
-- `negctl`: Bounded retries so a flaky test can still prove a control (#604)
-- `lint`: Scattered-id enumerator, plus hooks, bin and skills cleaned (#587)
-- `repohygiene`: Prove nothing references a staging entry before flagging it (#583)
-- `kit`: Worker brief pattern and proof-gate skeleton (#582)
-- `wrap`: Refuse a Built whose every item is prose (#580)
-- `wrap`: Carry union-marked logs across the ff-only pull (#577)
-- `repo-hygiene`: Audit-loop instance over a repo's own files (#576)
-- `wrap`: Allow Built list form for multiple candidates (#573)
-- `wrap`: Warn when a NEW Built item drives CDP (#567)
-- `precedent`: Learnings registry kind for harness site recipes (#562)
-- `kit-wrap`: An after seam, and the seam owes an outcome (#551)
-- `board`: Warn when a cockpit repo's checkout lags upstream (#547)
-- `learn`: Raise propose promote-precision, answer the settings-env trust question (#542)
-- `kit`: The provenance rule, plus a ratchet lint that enforces it (#537)
-- `kit-wrap`: Drain_staged, the one knob whose default does not act (#532)
-- `kit-wrap`: Mechanise the Needs you admission test (#529)
-- `kit`: Five command autonomy knobs, defaults act (#528)
-- `board`: Refuse promoting judgment-free bare-URL staged blocks (#518)
+
+#### Design and spec lane
+- `/kit:design` reviews a feature design as a delta against the repo's `docs/SYSTEM-DESIGN.md`, rendered as a UML drawing set with every element marked new, changed or removed. `/kit:spec` keeps terms and quality requirements as living repo-level docs. (#961, #962)
+- Specs carry a `Depth:` line, so research agents and the full test-plan review run only when the spec earns them. A light two-lens test-plan pass is the default. (#843)
+- Spec validation runs as parallel reviewers, and the new validate-round gate verb does the round's bookkeeping. (#816, #842)
+- `/kit:execute` hands one builder the whole spec, verifies at slice and build end, and rechecks a sample of passes in a fresh context. (#847)
+- `spec task-done <spec> <TASK-ID> --commit <sha>` checks off one task line and can append its verification entry. (#800)
+- Spec numbers are minted against open PR heads too, so two branches stop taking the same number. (#661)
+- Every subagent dispatch description carries `rid=<rid>`, so transcripts can be counted per run. (#824)
+- Briefs carry a test budget, a host-load warning and suite timing history. (#913)
+- A new impl-notes gate checks that a spec's implementation notes exist. (#756)
+- `ui-design` briefs name the styles to exclude. (#773)
+- A worker-brief pattern and a proof-gate skeleton are available for builder dispatches. (#582)
+- `lib/bench/lens-eval.sh` runs a repeatable eval of a prompt-only lens against fixture specs, and warns when its "fewer" signals show no gap. (#775, #786)
+- `dispatch` keeps attempt state apart from task state and carries the standing worker rules in every prompt. (#655, #650)
+
+#### Gates, lanes and ship
+- Lanes are data (`[lane.<name>]` blocks in `kit.toml`), with a light default lane and a fail-closed diff floor at ship that applies full-lane gates to hard paths. (#840, #849)
+- `validate` is `light` on the normal lane, and a small spec skips the 7-reviewer round. (#860, #858)
+- The blocking quality gates default off and are opt-out per project; `adopt` seeds the preset. (#656, #653)
+- `[gate] negative_control` can limit the negative control to the full lane. (#883)
+- A proof of done carries its captured output into the PR, and `proof-asset` puts and flushes visual proof images. (#892, #894)
+- `negctl` can run at a commit (`--at`), against a base ref on a shared checkout (`--base-ref`), with bounded retries for flaky tests, and one control per worktree in parallel (`--parallel`). (#798, #724, #604, #930)
+- `gate-ledger.sh plan-record` disposes a whole lane plan in one call, and `inherit` lets a task branch reuse a validated multi-task spec's gates. (#634, #914)
+- A verbatim-rows check guards structured index rewrites. (#638)
+- `ship-gate` refuses a push that leaves `docs/FEATURES.md` stale, and `lib/registry/feature-registry.sh check` answers drift outside the suite. (#675, #648)
+- `FEATURES.md` lists lib verbs, hook descriptions and trigger classes, and its Tests column credits tests that invoke a verb. (#851, #904)
+- `battery` refuses a small change and points at proof of done. (#890)
+- `[test] suite = "affected"` runs only the tests a change touches. (#885)
+
+#### Hooks and safety
+- `board-row-gate` blocks a commit that adds a board row without a `board-row-ok:` reason. (#703)
+- `batch-debt-warn` warns once per session when a second `gh pr merge` runs with no gate record. (#620)
+- `context-budget` warns when a session's context grows past budget and, one band later, tells the agent to wrap up. (#572, #697)
+- A Codex plugin manifest and lifecycle adapter carry the five hard guardrails to Codex.
+- `money-gate` and `citation-guard` now run as bash plus jq, with shared parity harness `tests/lib/hook-parity.sh` pinning them to the old Python. (#822, #823, #825)
+
+#### Wrap and landing
+- `wrap land` lands one committed branch from a hand-made worktree; `wrap start` opens it, `land` adopts the operator's own open PR, and `land` carries dirty union-marked files across the pull. (#674, #718, #706, #758, #778)
+- `wrap merge --pr N` lands one reviewed draft PR, retries transient gh merge errors, and falls back to a squash-equivalent replacement PR when GitHub still reports CONFLICTING. (#701, #708, #728)
+- `wrap rebase`, `wrap adopt` and `wrap deploy-wait` are new verbs: rebase a worktree branch, adopt a repo and land it, and wait for a push-deploy check. (#788, #907, #765)
+- `/kit:wrap follow` builds the report's candidates in background workers and merges each green own PR. (#754)
+- `wrap apply` gains `--own` (scope the tidy), `--archive-unmerged`, `--pull-only`, a third ABSORBED merge proof, and removal of a proven-merged locked worktree. (#710, #763, #857, #793, #622)
+- `wrap apply` pulls past a sibling's dirty tracked files behind a knob, carries union-marked logs across the pull, and moves stray local commits to a branch. (#630, #577, #757)
+- Wrap warns when a write verb lands a file on the default branch, refuses ignored files under touched paths, and archives finished handoffs at session close. (#658, #917, #921)
+- `merge --apply` checks the default branch's tree after the merge and recovers from conflicts by merging `origin/<default>` into the branch. (#628, #861, #859)
+- The wrap report is linted: Built and FYI items need tags, prose-only Built is refused, report prose is checked against STE-lite, and `Needs you` has an admission test. (#580, #573, #567, #672, #666, #676, #677, #893, #529, #527)
+- New `[wrap]` knobs make each write action a choice (`merge_own_prs`, `tidy_worktrees`, `build_candidates`, `build_lanes`, `distill`, `delete_merged_remote_branches`, `follow_through`, `autoland_carry`, `drain_staged`), and wrap gains a `before`/`after` seam. (#526, #527, #528, #532, #551, #617, #736, #754, #755, #782)
+- `adopt.single_source` and `wrap.roots` knobs, and `adopt --single-source`, fold `CLAUDE.md` into `AGENTS.md`. `/kit:adopt` writes a small `AGENTS.md` pointer. (#744, #740, #833)
+- Four landing fixes (`-D`, `--under`, stray-line carry and one more) make `wrap` safer on a shared checkout. (#742)
+- `wrap flick-7b` and the `flick` decision API (clef backend on Cloudflare Workers AI) support wrap's shadow step 7b. (#864, #895, #924)
+- `/kit:start` picks up from handoffs, goal drafts and the board, with mega-goal awareness and capped lists. (#693, #694)
+- `git` treats the board and notes as `merge=union`. (#663)
+
+#### Board and sync
+- `board work` prints one live table of who is on what, joining board rows, mega sub-goals, git, Orca and the run ledger. (#834, #831, #849)
+- `board brief`, `board health` and `board hermes link|check` give a periodic per-cluster digest and a Hermes skill link with a stale check. (#941, #944, #945, #946)
+- Board sweep, digest, mirror cleanup and verify are kit verbs, and bot cards expire by age. (#929, #953)
+- `board get` shows one row's status, `board lint` lists malformed rows before sync trips, `board run` scaffolds a single-row megadir, and `backlog.sh dedupe-all` collapses the duplicates a union re-merge leaves behind. (#715, #723, #717, #635, #608)
+- `board` warns when a cockpit repo's checkout lags upstream and refuses to promote bare-URL staged blocks. (#547, #518)
+- The Board pane mod for Claude Code shows band actions, worktree staleness and NEXT. (#874, #878)
+- `mega` can run a roadmap through Orca Tasks and supervised workers (opt-in), and `orchestrate` caps turns per agent with a deterministic segment handoff. (#841, #714)
+
+#### Observability and session
+- `session observe entry-fee`, `burn`, `timing` and `tools --errors` size the per-turn preamble, rank live sessions by token burn (split by model, priced), time hooks and group errors. (#657, #563, #637, #880, #709)
+- `session observe` counts every hook event, not just Stop, and measures the skill listing and last-fired skills from transcripts. (#803, #721)
+- `session recall --tail <id-prefix>` shows what one session is doing now. (#753)
+- `lib/session/handoffs.sh list` lists open handoffs, per repo with `--under`. (#626, #940)
+- `stats ceremony` reports gate records, dispatches and catches per run and week. (#849)
+
+#### Tests and tooling
+- `tests/run-all.sh --failed` reruns only failed suites, and the fix agent follows a no-weaken rule for tests. (#959)
+- `tests/run-all.sh` defaults to `--changed`, takes `--time`, and `bin/test-affected` maps a diff to the suites it touches. (#664, #666, #673, #815)
+- `intake gate` is a scripted dedup gate for knowledge intake. (#615)
+- The scattered-id enumerator `bin/lint` backs the provenance rule and its ratchet. (#537, #587, #591)
+- A configurable Claude Code output style (first style `adhd`) is set by `[output] style`, at adopt and install time. (#558, #559)
+- `precedent` has a learnings kind for harness site recipes. (#562)
+- `webcheck` flags an SVG `og:image` and a missing `og:url`. (#704)
+- The harvest sweep stages learnings from transcripts on a schedule, in phase 1. (#814, #829)
+- `audit due` and a cadence table schedule the audit loops; the repo-hygiene loop audits a repo's own files and proves nothing references a staging entry before flagging it. (#679, #576, #583)
+- `/kit:kit-health` reports broken symlinks under the installed kit root, `doc-drift` checks diagram nodes, and `loop-engineering` gains a stop condition. (#767, #613, #612)
+- `learn` raises propose promote-precision. (#542)
+- Docs: `docs/execution-planes.md` and a PHILOSOPHY principle that reversible-in-git is the line between acting and asking. (#534)
 
 ### Changed
-- Docs: ops-toolkit paths named in `commands/start.md` and a `lib/sync/sync_core.py` comment follow the ops-toolkit move: `_meta/board-decisions.py` and `_meta/board-archive` now live under `_meta/scripts/`. Dated proof records under `docs/verification/` keep the old paths as history. (#872)
-- `gate-ledger.sh check` runs fast (performance, output and exit code unchanged). Each verdict is cached in `$LOG_DIR/.gate-check.cache`, keyed on the ledger's size, mtime, inode and ctime under a header that hashes each lane-data file and every `lib/gate/*.sh` on its own, the same key `lane-telemetry.sh` uses; the two key helpers now live in `lib/gate/ledger-key.sh`. A ledger changed under 2 s ago (by ctime) or unreadable is never cached. Any miss, unreadable or malformed entry runs the full check, so a corrupt cache only costs time. `normalize_phase` skips its four-process pipeline for a name that is already a stable key (48 of the 103 spawns per full-lane check). A warm call drops from about 220 ms to under 100 ms on a loaded host; see `docs/verification/ledger-check-fast.md`. (#912)
-- `lane-telemetry.sh misfires` runs fast (performance, output unchanged). `misfires` computes the run rows once, `_rows` reads every ledger in one awk process instead of one per file, and `_shipped_incomplete` caches each `gate-ledger.sh check` verdict in `$LOG_DIR/.shipped-incomplete.cache`, keyed on the ledger's size and mtime under a header that hashes the lane data (root, operator and project kit.toml, the gate scripts), so a lane-rule change drops every entry. A missing or corrupt cache falls back to the live check. Measured over 197 ledgers: about 93 s before, see `docs/verification/misfires-speed.md` for the cold and warm numbers. (#863)
-- `hooks/context-budget.sh` warns on a percentage of the model's context window instead of a raw token count. `KIT_CTX_WARN` (200000) and `KIT_CTX_STEP` (100000, repeating bands) are replaced by `KIT_CTX_WARN_PCT` (default 65, advisory) and `KIT_CTX_STRONG_PCT` (default 70, directive), each firing once per session until context drops back under the warn threshold. The window defaults to 200000, auto-bumps to 1000000 for a model id carrying a `1m` marker (a long-context variant), and `KIT_CTX_WINDOW` overrides either. An absolute token count does not track a model's actual headroom the same way across window sizes; a percentage does (SPEC-255). (#759)
-- `/kit:wrap` step 7b sizes a candidate against `wrap.build_lanes` instead of hardcoding `tiny`. A lane on that list builds inline in the home repo, in a worktree on its own branch, dispatched to a worker and closed by one quoted verification command; a non-`tiny` lane also opens a PR that step 3 merges only when green, so the home repo's ship-gate proof still applies. Every unlisted lane stages its row and drafts its goal as before. `full` is the one lane the list cannot buy an inline build for: a full candidate files a QUEUED ROW on the home repo's `_meta/BACKLOG.md` through `bin/board capture` (which detects the repo's id prefix and mints against the board plus its fetched git history), still drafts its goal, and reports `(lane=full, filed: <repo> <ID-NNN>, goal drafted: <path>)`. Staging is gone for that lane because it was a dead end: one estate board holds 248 rows staged since May and has drained none. `lib/wrap/report-lint.sh` accepts `verified:` on any lane, accepts the new `filed:` closure, requires every item naming a lane to carry one of the three, and REFUSES `lane=full` closed as `staged`. (#621)
-- Finished the `lib/` scattered-id strip and registered `lib` as ratchet zone 8: `bin/lint --zone lib --count` is 0 and `tests/test-no-scattered-ids.sh` enforces it going forward, alongside hooks/bin/skills. Also taught the enumerator's provenance-footer exemption to recognize the shell/python `# provenance: ...` shape, not just markdown's `<!-- provenance: ... -->`. (#618)
-- `/kit:explain` no longer hardcodes `narrate-log` + `svg-knowledge-diagram`; it hands the
-  grounded skeleton (reading-order diff, recorded test line, mermaid change-map) to whatever
-  skill `understand.teach` names, through the Skill tool (ADR-0036). **Behavior change for an
-  engine-only adopter (no teacher configured):** `/kit:explain` used to always enrich the
-  skeleton with prose (Background, Goal and intuition) and a per-hunk explanation inline;
-  with `understand.teach` empty it now prints `skipped: no teacher` and hands over the
-  mechanical skeleton alone, with no enrichment step. Set `understand.teach` (learning-kit's
-  `understand` lane, or a custom skill) to keep the prior enrichment (#560). (#606)
-- Stripped scattered spec ids from `lib/` comments and module docs across 136 files: each id became the plain reason or a file path. Printed strings stayed clean, and tool.toml board arrays, own-number headers, tests and fixtures were left alone. The zone is not registered in the ratchet yet: about 478 hits remain, heaviest in queue, stats and gate. (#591)
-- Stripped scattered spec ids from `agents/*.md` and `commands/*.md`, the two surfaces that load into a model's context every session: each id became the plain reason, a quoted decision title, or a file path. Registered as lint zones 6 and 7 in `tests/test-no-scattered-ids.sh`. (#616)
-- Retired the `cc-` host-agent prefix (kit-contract C1) from the last doc filenames still carrying it: the cc-hyg-04-stop-tax spec/verification/impl-notes trio (spec claims SPEC-253), the cc-hyg-09-override-yaml proof, and four `lib/*/docs/implementation-notes/cc-*.md` files. (#565)
-- Renamed three `docs/verification/` files to their feature slug instead of a bare SPEC number: `SPEC-044.md` -> `proof-done-task-types.md`, `SPEC-045.md` -> `gate-lib-install-path.md`, `spec-200-t1-t2.md` -> `signal-pipelines-t1-t2.md`. (#565)
-- Dated the two undated `docs/research/` files that had no live wiring (`architecture-patterns.md`, `architecture-orchestrator-wavefront.md`) and the undated retro `v1.3-v1.5.md`, using each file's own git or in-body date. (#565)
-- Migrated `docs/proof/` (flagged in `docs/README.md` as pre-convention, never migrated) into `docs/verification/`, and moved `lib/skill-curator/RUNBOOK.md` next to its sibling docs under `lib/skill-curator/docs/`. (#565)
-- `/kit:wrap` step 7b routes every built candidate through the lane instead of editing and committing inline. The precedent check still decides the home and the `ENHANCE`/`NEW` token; `lib/classify/lane-classify.sh classify` now decides where the build happens. A `tiny` candidate is built in its home repo on its own branch, verified by one command whose output the report quotes, then committed. A `normal`, `full`, `bug`, or `backfill` candidate is not built inside wrap: the row is staged with `bin/wrap stage` and its six-section goal draft is written to `.claude/goals/<slug>.md` in the home repo, which is also the pointer the drain fence needs. The step names the worker model tiers (Sonnet default, Opus for verification and for security, money, or data-model work, Haiku for mechanical fan-out). `wrap.build_candidates = false` still stages and never builds; it now classifies too, so a staged row names the lane it owes. The `**Built:**` report line carries the lane and the closure: `(lane=tiny, verified: <check>, <commit>)`, `(lane=<lane>, staged + goal drafted: <path>)`, or `(lane=<lane>, staged: build_candidates off)`; `lib/wrap/report-lint.sh` keeps requiring the `ENHANCE`/`NEW` token, now pinned against the suffix by `tests/test-wrap.sh` (ID-827). (#569)
-- `tests`: Build the orca fixture and gate state once (#960)
-- `test`: Pick suites by run or source and by kit.toml section or key (#927)
-- `test`: Run test-affected suites in parallel, longest first (#916)
-- `registry`: One-pass reference matcher, generate 50s to 4s (#915)
-- `test`: Per-area meta picks and measured per-suite timeouts (#911)
-- `tests`: Split test-meta.sh into per-area suites (#909)
-- `wrap`: Split wrap.sh and its tests into per-subcommand modules (#853)
-- `hooks`: Read specs in one awk pass in context-readiness (#805)
-- `ci`: Run the suites in parallel, keep macOS off pull requests (#644)
-- `lib`: Strip scattered spec ids from comments and module docs (#588)
+
+- `/kit:wrap` step 7b sizes a candidate against `wrap.build_lanes`, routes every built candidate through its lane, and files a full-lane candidate as a queued board row. (#621, #569)
+- `hooks/context-budget.sh` warns on a percentage of the model's window (`KIT_CTX_WARN_PCT` 65, `KIT_CTX_STRONG_PCT` 70) instead of a raw token count. (#759)
+- `/kit:explain` hands its skeleton to whatever skill `understand.teach` names; with no teacher it prints `skipped: no teacher`. (#606, #560)
+- Faster: `gate-ledger.sh check` caches its verdict, `lane-telemetry.sh misfires` drops from about 93 s, the registry reference matcher cuts generation from 50 s to 4 s, and `context-readiness` reads specs in one awk pass. (#912, #863, #915, #805)
+- Faster tests: suites run in parallel longest first, picks follow run or source and `kit.toml` section or key, per-area meta suites carry measured timeouts, and the orca fixture builds once. (#916, #927, #911, #909, #960, #644)
+- `wrap.sh` is split into per-subcommand modules with their tests. (#853)
+- Docs follow ops-toolkit's move of `board-decisions.py` and `board-archive` under `_meta/scripts/`. (#872)
+- Spec ids are stripped from `lib/`, `agents/`, `commands/` and user-facing strings, `lib` becomes lint zone 8, and the `cc-` prefix retires from doc filenames. (#588, #591, #616, #618, #565, #536)
 
 ### Deprecated
 - `bin/learn` forwards to `bin/reflect` (same verbs, arguments, exit codes) for ONE release,
@@ -322,160 +227,66 @@ Release note: [docs/releases/2.3.0.md](releases/2.3.0.md).
   Repoint any external caller to `bin/reflect` now. (#606)
 
 ### Fixed
-- `wrap land` held only 30s for a PR's checks to register, so a `pull_request` run GitHub queued 190s late (dwarvesf/share#47) merged unchecked. A repo whose `pull_request` workflow has no `paths` or `labeled` filter now holds up to `KIT_WRAP_LAND_REGISTER_SECS` (300), ending at the first check, and says so when none registers. Filtered workflows keep the 30s grace. (#947)
-- Three guard suites were red on master: `tests/test-config-registry.sh` (`ledger.location` is read root-only by `lib/decide/flick.sh` but was missing from the "Root-only keys" table), `tests/test-no-personal-paths.sh` (operator paths in five docs), and `tests/test-no-scattered-ids.sh` (spec ids in `commands/wrap.md`, `lib/decide/flick.sh`, `lib/wrap/wrap-apply.sh`). Fixed at the source; no guard or exemption changed. `bin/config get ledger.location` now ignores a project `.kit.toml`, matching what `flick` already did. (#875)
-- `wrap.sh` took flags packed into one word (a zsh `$args` that does not word-split, giving ` --own /path`) as a repo path, printed `not a git repo, skipped`, and silently lost the `--own` scope, so `apply --worktrees` could sweep every merged worktree in a shared repo. `apply`, `scan`, `merge`, `land`, `start`, and `rebase` now refuse a positional that starts with `-` after leading whitespace, or holds whitespace followed by `--`, with exit 64 and one stderr line. A path with spaces and no ` --` still works. (#850)
-- `post-compact-reinject` never fired: it was wired as `PostToolUse` with matcher `compact`, and no tool is named `compact`. It now runs on `SessionStart` with matcher `compact` in `settings.json` and `hooks/hooks.json`, emits the documented `hookSpecificOutput.additionalContext` shape built with `json.dumps` (the old sed escaping broke on backslashes and newlines), and adds the active spec's intent (first paragraph under `## Problem`, else `## Intent` or `## Goal`, one line, 400 chars) after the `SPEC:` line. It also no longer exits early in a repo with no `.claude/backups`. (#810)
-- A hook fired from a repo subdirectory read and wrote relative to that subdirectory: `session-state-save.sh` nested its state under the subdir with `Spec: none`, and `pre-compact-backup.sh`, `post-compact-reinject.sh`, `anti-rationalization.sh`, `spec-drift-guard.sh`, `context-readiness.sh` and `slop-cleaner.sh` missed root files the same way. A new `hooks/anchor-root.sh` now fronts every entry in `hooks/hooks.json` and the root `settings.json`: it saves the true cwd as `DWARVES_KIT_INVOCATION_CWD`, cds to git's toplevel (a worktree keeps its own; outside a repo it is a no-op), then execs the hook. `secrets-guard.sh` is the one unanchored entry, since it resolves relative path operands against the real cwd. `ship-gate.sh` resolves a relative embedded `cd` and its no-cd root from the payload `.cwd` (then `DWARVES_KIT_INVOCATION_CWD`, then `$PWD`), so a cross-repo push still gates the pushed repo; its Codex trust pin is refreshed. Both tables call the wrapper as `bash .../anchor-root.sh`, and the wrapper runs each `.sh` hook under an explicit `bash`, so a hook or wrapper that lost its exec bit still blocks (exit 2) instead of exiting 126, which Claude Code treats as non-blocking. The wrapper cds only when the physical cwd sits under git's toplevel (a `core.worktree`/`GIT_WORK_TREE` elsewhere leaves it in place). `tests/test-hook-anchor.sh` fails any future unwrapped entry in either table (SPEC-334). (#802)
-- `tests/test-pitch.sh` AC1 rendered its live `kit-emit-sweep` sample straight onto the tracked `docs/verification/pitch-command/sample-pitch.md`, so every `tests/test-pitch.sh` run (direct or via `tests/run-all.sh`) left the checkout dirty. AC1 now renders into a scratch temp path, a new self-check asserts the tracked path is never read back in, and the tracked file's freshness is now an explicit manual command (`bash lib/pitch.sh render kit-emit-sweep --out docs/verification/pitch-command/sample-pitch.md`) instead of a test side effect. Proof: `docs/verification/pitch-test-tmp-out.md` (SPEC-324). (#784)
-- `lib/gate/negctl.sh` froze its restore set right after `mutate_cmd`, before the RED `test_cmd` run executed, so a tracked file that run itself wrote (a fixture a test harness renders on every pass, the exact shape `#784`/SPEC-324 hit) was never restored and a genuine control read as a spurious `tree differs from the pre-run snapshot` FAIL; a green retry attempt's own leftover write could also make the next attempt spuriously RED and mask a vacuous mutation as `Verdict: PASS` under `NEGCTL_RED_ATTEMPTS>1`. The restore set now recomputes live inside `restore()` (covering the `EXIT` trap and an empty mutation set), anything beyond the mutation's own set is restored only when it resolves at `HEAD` (a naive single `git checkout HEAD --` call over the whole set aborts entirely the moment one path doesn't, which a scratch-repo probe confirmed leaves the mutation applied), an unrestorable new file is named in the failure and left in place, never `git rm`/`git clean`d, and a green retry attempt that leaves tracked dirt stops further attempts instead of letting the next one run against a polluted tree. `--no-renames` on every diff capture stops a staged rename from hiding its own deletion half. A follow-up critique round then found the mutation's own set could itself carry a HEAD-absent path (`git mv` as the mutation) and still abort its own restore call whole, a SIGINT arriving mid-checkout could leave the tree mutated (`restore_done` was set before the checkout ran, so no later attempt would run either), and step 6's own confirmatory run could dirty the tree again on a genuine `PASS` with nothing left to sweep it up. `restore()` now partitions MUTATE_SET and everything beyond it together in one loop with one checkout call, ignores `INT`/`TERM`/`HUP` for the rest of its life once cleanup starts, and runs a second, unconditional sweep after step 6. Proof: `docs/verification/negctl-side-writes.md` (SPEC-327). (#790)
-- `proof-gate.sh`'s behavioral rigor hint and its no-registry-row contract fallback now name `lib/gate/negctl.sh`, the tool that already mechanises "revert -> RED -> restore"; a session had read the un-pointed hint and hand-rolled the negative-control loop itself (SPEC-315). (#774)
-- `spec-next.sh reserve` no longer hands one number to several worktrees of the same repo. It keyed each claim by the checkout's folder name, so worktrees at `<repo>/.claude/worktrees/<slug>` each saw zero live claims and three took SPEC-315. Claims are now keyed by the physical path of the repo's common git dir, shared by every worktree and distinct for two repos with the same folder name, and the scan lists `docs/specs` in every git worktree so a sibling's uncommitted spec reads as taken. Ledger lines written under the old folder-name key stop counting and expire at the 24h TTL. Proof: `docs/verification/spec-reserve-worktree.md` (SPEC-318). (#776)
-- `/kit:think`, `/kit:design` and `/kit:debug` descriptions again name the superpowers skill they outrank. #700 had moved that clause into the body, which selection never reads; `test-command-triggers` now also pins the 400-char cap. Four contract suites that pinned unqualified agent names (`advisor`, `research-*`) now accept the `kit:` prefix from the plugin-install fix. (#770)
-- The `deploy-wait counts gh time` test no longer flakes. `deploy-wait` reads elapsed time through a `_dw_seconds` seam that a test can drive from `DEPLOY_WAIT_CLOCK_FILE`, so the slow-gh stub advances a clock instead of racing a real `sleep 2` against whole-second `$SECONDS`. (#769)
-- `wrap merge --apply` and `wrap land` no longer report `TREE MISMATCH` when another PR merged into the default branch between the head's last re-merge and this squash. The tree check compared whole trees, then only the PR's paths, so a file both PRs edited (a union-merged `LAB_LOG.md` in practice) always differed and the merge exited 3 without deleting the branch although it landed. The check now takes the merge commit gh names, requires it on `origin/<default>`, and compares its own diff against the PR's net diff path by path as zero-context patches. A concurrent edit elsewhere in a shared file passes; a squash of a stale head, a missing change, an altered line, or an unlanded deletion is still a mismatch, and a merge commit that is not on the default branch is `UNVERIFIABLE`. Proof: `docs/verification/wrap-merge-tree-check.md`. (#768)
-- `precedent find --surface inventory` stopped hiding indexed rows. A query matched a row only when every word was present, so one extra word returned nothing ("lane classify regex" missed `lib/classify/lane-classify.sh`). Rows now rank by how many terms they match, name hits above description hits, all-term matches on top, with a floor (all terms up to two, n-1 above) so one common word cannot flood the digest. A YAML block-scalar `description: |` or `>-` indexed as the marker itself (29 of 172 skills on one machine); frontmatter now reads the indented text. The extensionless entry points under `lib/<x>/bin/` (`session-observe`, `session-recall`, `plugin-check` and nine more) are indexed as kit verbs. On the jev-eval 59-query labeled set, hit@1 26/45 to 30/45, hit@3 30/45 to 34/45, none precision 12/18 to 9/11. Proof: `docs/verification/precedent-partial-match.md` (SPEC-308). (#745)
-- `wrap merge --apply` no longer refuses a PR it just re-merged because GitHub had not caught up. GitHub computes mergeability asynchronously after a push, so the re-gate read UNKNOWN or the old head's CONFLICTING and printed `nothing eligible to merge` while the PR turned MERGEABLE seconds later. The re-gate now polls until the head is the one wrap pushed and the verdict has left UNKNOWN/CONFLICTING, bounded by `KIT_WRAP_SETTLE_SECS` (default 60); a first read of UNKNOWN on any PR is re-read the same way. A head nobody expected ends the wait and is refused, and the merge stays pinned with `--match-head-commit` to the pushed head. A branch no local checkout holds now re-merges in a scratch detached worktree instead of falling through to the carried-base fallback, which refuses a head that lacks the base by design. Proof: `docs/verification/wrap-merge-settle.md` (SPEC-306). (#732)
-- `install.sh` in plugin (compat-only) mode now retires a stale bare `~/.claude/agents/<name>.md` whose agent the cached plugin also ships, so the agent listing stops showing every kit agent twice (`task-verifier` and `kit:task-verifier`). The copy is moved to `~/.claude/agents.retired-<date>/`, never deleted, and a kit-named copy the cached plugin does not ship yet is left alone. Pinned by `tests/test-install-compat.sh`. (#691)
-- `lib/spec/spec-next.sh` now reclaims the reservation lock as soon as its holder process is gone, instead of waiting out the 24h `SPEC_RESERVE_TTL`: a test process that died with the lock held wedged every `reserve` on the machine for a full day (600 spins, about 43 seconds, then a loud failure). A live holder's lock is still respected, and a lock whose owner stamp is missing or unparseable still falls back to the TTL path. `reserve` and `next` also reject arguments with exit 64 now, because `spec-next.sh reserve --help` silently minted a real reservation. (#671)
-- `/kit:think`, `/kit:design`, and `/kit:debug` descriptions now carry trigger phrases (English and Vietnamese: "design X", "brainstorm X", "thiết kế X", "fix this bug", "bị lỗi"), and `AGENTS.md` §2 gains a skill-routing paragraph. Skill selection runs on descriptions, so the bare one-liners lost every "design" or "bug" prompt to superpowers `brainstorming` / `systematic-debugging`, which then ran a parallel pipeline outside the gate ledger and ship-gate in adopted repos. (#631)
-- Fixture `mkrepo()` helpers in `tests/test-cheap-guards.sh`, `tests/test-queue.bats`, `tests/test-runaway-guards.sh`, and `tests/test-notes-sanitization.sh` now refuse to run `git config` under an empty fixture dir (a failed `mktemp -d` or an unset caller var previously let `git -C ""` write the tester git identity into the real repo's `.git/config`; board ID-873). (#619)
-- `tests/test-explain.sh`, `tests/test-quiz-gate.sh`, and `tests/test-weekend-batch.sh` captured
-  their proof samples (`docs/verification/{explain-command,quiz-gate,weekend-batch}/sample-*.md`)
-  with a fresh run-specific value baked in (a new fixture commit SHA each run for the first two,
-  a fresh wall-clock timestamp for the third), so every `tests/run-all.sh` pass rewrote all three
-  tracked files and left the checkout dirty, blocking `lib/gate/negctl.sh`'s clean-tree
-  requirement. Each test now normalizes its run-specific value to a fixed placeholder before
-  writing the sample, so the captured content is deterministic across runs (ID-830). (#614)
-- `tests/test-boundary-lint.sh` AC2 and AC3 shared one `$FX` fixture dir, so AC3's "exits
-  non-zero" assertion passed on AC2's own still-live planted violation instead of on the
-  name check it claims to test; only the message-content assertion caught a broken
-  `name_re`. AC3 now gets its own fresh `mktemp -d` fixture (ID-872). (#610)
-- A transcript JSONL line that decoded to valid JSON but not an object (e.g. `["x"]`) crashed `session-observe cost`/`report` and `session-semantic` with `AttributeError: 'list' object has no attribute 'get'`. The shared `lib/session/parse_transcript.py` `iter_entries()` now skips a non-object decoded line the same way it already skips a malformed one; `session-observe`'s `blocks()`/`collect()` and `session-semantic`'s `collect_prompts()` also guard a valid entry whose `message`/`usage` field is itself non-dict. (#571)
-- `bin/release` rolled `[Unreleased]` into the root `CHANGELOG.md` stub instead of `docs/CHANGELOG.md` (SPEC-185 moved the real history there), wrote a stray comma in the section header instead of a hyphen, and missed the third version surface `tool.toml` that `tests/test-meta.sh` pins (SPEC-115). Now targets `docs/CHANGELOG.md`, writes `## [X.Y.Z] - date`, bumps `tool.toml` alongside `VERSION`/`plugin.json`, and prints the tag-push line last so it is not missed (ID-648). (#535)
-- The shared `SECRET_SHAPE_RE` in `lib/precedent/inventory.py` and `lib/session/recall/session_recall.py` missed AWS secret access keys, PEM private-key blocks, 1Password `ops_` service tokens, and `PASSWORD=`/`TOKEN=` assignments. Widened both byte-equal copies (pinned by `tests/test-precedent.sh`) as defense in depth on top of the `--explain` confinement (ID-642). (#535)
-- `/kit:wrap` step 5 left every worktree behind, and with it every branch a worktree held. The step wrote `--worktrees` as optional, so the flag went unpassed; `apply` then skipped each worktree and each branch with `held by a worktree`. Measured on one live checkout: 9 worktrees and 8 branches skipped from that one omission. The step now passes the flag on every call (#523). (#527)
-- `/kit:wrap` step 5 took the session cwd as its repo argument. From inside a worktree that reads as the feature branch, so `apply` never pulled, and its `fetch origin <def>:<def>` fallback refuses outright when the default branch is checked out elsewhere. The step now resolves the main checkout via `--git-common-dir` (#523). (#527)
-- `/kit:wrap` step 9 narrated `Left alone` from what the steps intended rather than from a re-scan, so a surviving worktree or branch never appeared in the report. Step 5 now closes with a final `wrap scan` and step 9 derives the section from it (#523). (#527)
-- `/kit:wrap` step 7b ran the precedent check and then only quoted the hit, naming the tool the work should have joined while the work never joined it. A hit now wires the enhancement into that tool and commits; a clear-shaped miss is built in its home repo; only a scope that is a judgment stages a row (#525). (#527)
-- `/kit:wrap` Step 7a landing from `master`/`main` reads `gate-ledger.sh rid`'s refusal as a clean skip, so the DEBT marker looked unnecessary instead of impossible. It now prints `skipped (structural): DEBT marker impossible this run (<reason>)` for that case, and reasons why a session-derived rid would create a ledger entry no ship-gate check can trace back to a branch (ID-651). (#548)
-- Board id minting read the working copy of the board file and nothing else, so a checkout behind origin, or a board whose rows were archived out, handed out an id another session already took (three measured collisions on one consumer board). `history_max_id()` (`lib/sync/sync_core.py`) now raises the mint floor from `git log -p --all` over that file, and all three minters pass the path: `board.sh cmd_capture`, `sync_core.apply_board`, and `add-backlog`, which dropped its own weaker raw-text regex and delegates to the shared minter (ID-650, shipped in #541, refined by #596 and #606; the changelog entry was missed at the time). (#609)
-- A branch that touched an append-only log (`LAB_LOG.md`, `BACKLOG.md`) after the default branch moved could show CONFLICTING on GitHub's squash-merge even though `.gitattributes`' `merge=union` resolves it locally without a conflict. `/kit:ship` Step 8 now runs `lib/gate/premerge.sh check` before the push, merging the default branch in when the working branch is behind; a real conflict stops the step and leaves the merge unresolved rather than picking a side; an already-current branch does nothing and prints nothing (ID-653). (#548)
-- `lib/board/backlog.sh set` matched every row whose first cell was the given id, so a union-merge duplicate got both copies flipped silently instead of one. `set` now refuses (exit 1, writes nothing) when an id matches more than one row, naming the line numbers and pointing at the new `dedupe <ID>` verb, which collapses the duplicates down to one (preferring a shipped, then dropped, then parked copy, else the last occurrence). (#625)
-- `tests`: Run-all scratch dir honors TMPDIR and fails loudly (#958)
-- `board-pane`: Stack the AbovePrompt band over downstream rows (#957)
-- `sync`: Close or quiet spoke cards of archived rows by title prefix (#955)
-- `wrap`: Count a pipeline reader in the calling shell group as the caller own (#952)
-- `wrap`: A caller pipeline reader never counts as a worktree holder (#951)
-- `classify`: Stop Tailwind truncate class tripping data-loss floor (#943)
-- `wrap`: Long land hold only for a real pull_request trigger (#950)
-- `test`: Run-all keeps a failed suite's full output (#939)
-- `test`: Give the orca AC1 fixture a column-0 shebang (#938)
-- `hooks`: Long-session nudge suggests /dcompact, not a handoff (#937)
-- `codex`: Repin hooks after the ship-gate edit (#936)
-- `gate`: Ship-rules logs via the hook dir, skip ignored artifacts (#935)
-- `gate`: Share ship-gate rules with the mega gate and fail closed (#931)
-- `test`: Board-sweep test ignores an ambient GH_TOKEN (#933)
-- `config`: Register decide root-only keys, rename a perl var (#932)
-- `board`: Mirror archives closed rows and moves drifted cards (#928)
-- `wrap`: Land guard allows a symlink that points outside the worktree (#926)
-- `gate`: Stop grep -q SIGPIPE from failing big-producer gate checks (#925)
-- `ship-gate`: Honor the ledger START-AMEND lane over the spec header (#920)
-- `gate`: Rename the check-cache temp var off the CC_ env namespace (#918)
-- `test`: Make master green (test-adopt hash list, codex probe bound) (#908)
-- `test`: Keep interactive test runs off the full glob (#906)
-- `test`: Census and FEATURES.md catch up with the proof-asset CLI (#903)
-- `output-styles`: Adhd defers reply shape to CLAUDE.md (#902)
-- `config`: Declare the proof.* root-only keys in the registry (#901)
-- `spec`: Resolve co-located specs in kit spec helpers (#898)
-- `battery`: Refuse a small change and point at proof of done (#890)
-- `test`: Pin operator overlay in proof-table-gen test (#889)
-- `test`: Adopt known-hash list, gate opt-out base config, one TOML reader in the sweep (#886)
-- `wrap`: Step 3 merges only the session's own PRs via --pr (#882)
-- `observe`: Dedup assistant usage by message id in cost and burn (#877)
-- Reminders timeout (#873)
-- `tests`: Register the new mega and lanes config keys, drop the sd false positive, portable stat in harvest test (#845)
-- `harvest`: Pin neutral config in harvest tests, show STATE rows in dry run (#838)
-- `wrap`: Make the ci label gate opt-in via --with-ci (#835)
-- `config`: Register harvest and wrap env vars so the config registry test passes (#832)
-- `stats`: Restore trigger phrases in the stats skill description (#830)
-- `harvest`: Hold on a weekly usage limit instead of paging auth (#828)
-- `harvest`: Install the sweep plist readable by vps-mon discovery (#826)
-- `harvest`: Restate the extraction task after the transcript (#821)
-- `tests`: Isolate run ledger in three orchestrate tests (#820)
-- `harvest`: Route harvest.py --status to the sweep (#819)
-- `wrap`: Arm the ci label before merge --apply on label-gated repos (#813)
-- `session`: Handoffs.sh scans one level; any subfolder means consumed (#797)
-- `proof-ledger`: Name the near-miss file in the BLOCKED message (#792)
-- `context-budget`: Read the real window from a statusline file (#791)
-- `ship`: Pin the verification-section fence rule (#787)
-- `install`: Link kit.toml and VERSION into the compat farm (#764)
-- `context-budget`: Detect 1M window from model-identity attachment (#762)
-- `hooks`: Context-budget finds the 1M window from the configured model (#761)
-- `wrap`: Gate the latest check run per name, not every stale run (#760)
-- `tests`: Isolate no-personal-paths render from operator kit.toml (#750)
-- `precedent`: Skip dot-directories in the lib verb scan (#749)
-- `config`: Honor operator kit.toml layer in bin/config (#746)
-- `wrap`: Delete land's own branch on origin after a verified merge (#741)
-- `wrap`: Run the origin branch sweep under --own too (#738)
-- `gate`: Read tests-only diffs by path, not commit subject (#735)
-- `tests`: Restore config-registry and loop-engineering green (#730)
-- `board`: Serialize row-id mint+append under a shared flock (#727)
-- `wrap`: Carry union files even beside non-union dirt (#725)
-- `lint`: Clear personal-path and scattered-id failures (#722)
-- `agents`: Qualify kit-internal dispatch references as kit:<agent> (#719)
-- `board`: Dedupe reports an absent id instead of silent set -e death (#716)
-- `board`: Fold 6-cell rows back to the 4-cell contract (#713)
-- `board`: Dedupe collided row ids that refused the hourly sync (#712)
-- `board`: Writeback skips a card the mirror itself completed (#711)
-- Plugin-mode install keeps agents plugin-served; detector 3 honors project pins (#707)
-- `agents`: Make audit-scanner frontmatter valid strict YAML (#705)
-- `wrap`: Report unbuilt candidates instead of filing or staging rows (#702)
-- `wrap`: Skip a worktree locked by a live agent pid (#698)
-- `install`: Never write a CLI shim whose target is outside HOME (#696)
-- `goal`: Prune worktrees, count Status in megagoals (#695)
-- `wrap`: Read own open PRs off the repo, not the gh search index (#690)
-- `board`: Reject stray flag args in backlog.sh set note (#689)
-- `sync`: Close the spoke card of an archived board row (#686)
-- `sync`: Refuse bulk status flips and duplicate board rows (#684)
-- `wrap`: Skip draft PRs in the merge gate (#685)
-- `board`: Writeback skips a blocked card, never parks its git row (#682)
-- `board`: Skip writeback for a card still in its mirror-created column (#680)
-- `wrap`: Drop the no-table rule the table sections contradicted (#678)
-- `spec`: Make spec-next T4's gh-free PATH portable to CI (#662)
-- `dispatch,gate`: Release settled attempt records, read a bold Lane header (#660)
-- `board`: Promote <n> honours the shim's --backlog-file flag (#659)
-- `ci`: Default the runner back to sequential, parallel is opt-in (#647)
-- `ci`: Mark test-runs-dashboard serial, it fails under concurrency on ubuntu (#646)
-- `registry`: Regenerate FEATURES.md after the install-guard test landed (#645)
-- `install`: Skip a symlink whose target already resolves to itself (#642)
-- `board`: Refuse cleanly when BACKLOG_FILE names no readable file (#641)
-- `wrap`: Resolve the run's own stash by name, never by stack top (#636)
-- `run-all`: Report a timeout as its own fact, not a failed suite (#605)
-- `board`: A terminal state's note supersedes the in-flight ones (#600)
-- `wrap`: Remove a locked worktree instead of declining (#595)
-- `tests`: Size the wavefront windows for unbounded machine load (#594)
-- `tests`: Widen the wavefront suite's startup windows (#589)
-- `recall`: Read a non-dict message as empty instead of crashing (#586)
-- `tests`: Pin the gate-dispatch bare remote HEAD to master (#585)
-- `repohygiene`: Read a log's budget only from a clause that is about that log (#584)
-- `repohygiene`: Read a mega-goal's own record before its commit log (#578)
-- `wrap`: Land log entries below the header, not above it (#574)
-- `docs`: Drop an operator path from the precedent verification (#568)
-- `precedent`: Accept bare-word find args, index extensionless scripts (#566)
-- `spec`: Slug research, brief, and context paths per feature (#564)
-- `learn`: The kit stops reading the operator's dotfiles skill (#554)
-- `kit-wrap`: Scan candidates first; Built names its home (#553)
-- `ci`: Stop refreshing apt to reach a preinstalled jq (#552)
-- `tests`: Reach the proof gate, fixtures meet the Built contract (#549)
-- `wrap`: Make step 7b report an outcome the lint can check (#546)
-- `tests`: Assert the invariant, and let CI see every suite (#539)
-- `board`: Fold ID-643's two stray cells back into Notes (#540)
-- `kit`: Strip spec IDs from strings the operator actually reads (#536)
-- `mega`: Bin/mega status was blind to the current SG-NN grammar (#533)
-- `kit-wrap`: FYI carries future work, and each item names its home (#531)
-- `precedent`: Widen the inventory scan back to whathas parity (#520)
-- `prose-rag`: Resolver skips the kit's own PATH wrapper (#519)
+
+#### Wrap and landing
+- `wrap land` holds up to 300 s for a late-registering `pull_request` check, only for a real `pull_request` trigger, so a run queued 190 s late (dwarvesf/share#47) no longer merges unchecked. (#947, #950)
+- A worktree is no longer removed while a live process holds it, and a caller's own pipeline reader never counts as a holder. (#948, #951, #952, #698)
+- Flags packed into one word (a zsh `$args`) no longer silently lose `--own`; `wrap` verbs now refuse them with exit 64. (#850)
+- `wrap merge --apply` and `land` stop reporting `TREE MISMATCH` when another PR merged in between, and wait for GitHub to settle mergeability instead of refusing a just re-merged PR. (#768, #732)
+- On label-gated repos, `land`, `merge --apply` and `apply` arm the `ci` label first and wait for the checks it starts, so a head no longer merges untested; the label gate is opt-in via `--with-ci`. (#809, #813, #817, #835)
+- Merge proofs name `refs/heads/<branch>` and `refs/remotes/origin/<default>`, so a colliding tag or branch name can no longer delete unlanded work. (#793, #794)
+- `wrap` gates the latest check run per name, skips draft PRs, reads own open PRs off the repo, and step 3 merges only the session's own PRs via `--pr`. (#760, #685, #690, #882)
+- `wrap` deletes land's own origin branch after a verified merge, runs the origin sweep under `--own`, carries union files beside non-union dirt, and resolves its stash by name. (#741, #738, #725, #636)
+- `wrap` removes a locked worktree instead of declining, lands log entries below the header, allows a symlink that points outside the worktree, and drops the no-table rule that contradicted the table sections. (#595, #574, #926, #678)
+- `wrap` reports unbuilt candidates instead of filing rows, and step 7b reports an outcome the lint can check. (#702, #546, #553)
+- `/kit:wrap` steps 5, 7 and 9 fixes: pass `--worktrees`, resolve the main checkout, re-scan before `Left alone`, wire a precedent hit into the tool, and print a structural skip for the DEBT marker. (#523, #524, #525, #527, #548)
+- `/kit:ship` step 8 runs a pre-merge check so a branch on an append-only log no longer shows CONFLICTING. (#548)
+
+#### Gates and ship
+- `negctl` restores files a test run itself writes, survives interrupts, and no longer reads a leftover write as a failed control. (#790, #774)
+- The ship gate honors the ledger START-AMEND lane over the spec header, shares its rules with the mega gate and fails closed, and skips ignored artifacts. (#920, #935, #931)
+- Gate checks no longer fail on `grep -q` SIGPIPE from large producers, and tests-only diffs are read by path, not commit subject. (#925, #735)
+- The classifier stops a Tailwind `truncate` class tripping the data-loss floor. (#943)
+- `proof-ledger` names the near-miss file in its BLOCKED message, and `dispatch,gate` release settled attempt records and read a bold Lane header. (#792, #660)
+- `ship` pins the verification-section fence rule. (#787)
+
+#### Hooks and install
+- `post-compact-reinject` now fires (SessionStart, matcher `compact`), and every hook runs through `hooks/anchor-root.sh`, so a hook fired from a subdirectory reads root files. (#810, #802)
+- Context-budget finds the real window from a statusline file, the model-identity attachment or the configured model, and the long-session nudge suggests `/dcompact`. (#791, #762, #761, #937)
+- `/kit:think`, `/kit:design` and `/kit:debug` carry trigger phrases in their descriptions, and `stats` restores its own. (#770, #631, #830; #700 had moved the clause out of the description)
+- Plugin-mode install retires duplicate bare agents, keeps agents plugin-served, never writes a CLI shim outside HOME, skips a self-resolving symlink, and links `kit.toml` and `VERSION` into the compat farm. (#691, #707, #696, #642, #764)
+- Agent references are qualified as `kit:<agent>`, and `audit-scanner` frontmatter is valid strict YAML. (#719, #705)
+- Codex hooks are repinned after the ship-gate edit. (#936)
+- The `adhd` output style defers reply shape to `CLAUDE.md`. (#902)
+
+#### Board and sync
+- Board id minting reads git history and takes a shared flock, so ids no longer collide across checkouts and sessions. (#609, #727; builds on #541 and #596)
+- Duplicate and malformed rows heal: `set` refuses an id matching several rows, `dedupe` reports an absent id, 6-cell rows fold back to 4, and collided ids no longer refuse the hourly sync. (#625, #716, #713, #712)
+- Writeback skips a card the mirror itself completed, a blocked card, and a card still in its mirror-created column; a terminal note supersedes in-flight ones. (#711, #682, #680, #600)
+- Sync closes the spoke card of an archived row, refuses bulk status flips and duplicate rows, and the mirror archives closed rows and moves drifted cards. (#686, #955, #684, #928)
+- Backlog helpers reject stray flags, honor `--backlog-file`, and refuse cleanly on an unreadable file. (#689, #659, #641)
+- The board pane stacks the AbovePrompt band over downstream rows. (#957)
+- `goal` prunes worktrees and counts Status in megagoals; `bin/mega status` reads the current SG-NN grammar. (#695, #533)
+
+#### Harvest, config and release tooling
+- Harvest holds on a weekly usage limit, installs its plist readable by vps-mon, restates the task after the transcript, routes `--status` to the sweep, and shows STATE rows in a dry run. (#828, #826, #821, #819, #838)
+- `bin/config` honors the operator `kit.toml` layer; `ledger.location`, `decide` and `proof.*` root-only keys are registered. (#746, #875, #932, #901)
+- `bin/release` targets `docs/CHANGELOG.md`, writes the right header and bumps `tool.toml`. (#535)
+- The shared secret-shape regex now catches AWS secret keys, PEM blocks, 1Password tokens and `PASSWORD=` assignments. (#535)
+- `spec-next.sh reserve` no longer gives one number to several worktrees, reclaims a dead holder's lock, and rejects arguments. (#776, #671)
+- Spec helpers resolve co-located specs, and research, brief and context paths are slugged per feature. (#898, #564)
+- `precedent find` ranks partial matches, accepts bare-word args, skips dot-directories and indexes extensionless scripts. (#745, #566, #749, #520)
+- Observe dedups assistant usage by message id; recall and the transcript parser survive non-object lines. (#877, #586, #571)
+- `session` handoffs scan one level, and the kit no longer reads the operator's dotfiles skill. (#797, #554)
+- `repohygiene` reads a log's budget and a mega-goal's own record correctly. (#584, #578)
+- `prose-rag` resolver skips the kit's own PATH wrapper, `kit-wrap` scans candidates first, and FYI carries future work with its home. (#519, #553, #531)
+- Docs lose an operator path (#568), and spec ids leave strings the operator reads (#536).
+
+#### Tests and CI
+- Test fixtures no longer write into the real repo or leave the checkout dirty, and flaky or load-sensitive suites are bounded. (#619, #614, #610, #784, #769, #594, #589)
+- Run-all keeps a failed suite's full output, reports a timeout as its own fact, honors TMPDIR and keeps interactive runs off the full glob. (#939, #605, #958, #906)
+- CI defaults the runner back to sequential, marks `test-runs-dashboard` serial and stops refreshing apt for jq. (#647, #646, #552)
+- Internal: 20 maintenance PRs (#938, #933, #918, #908, #903, #889, #886, #873, #845, #832, #820, #750, #730, #722, #662, #645, #585, #549, #540, #539).
 
 ## [2.2.0] - 2026-09-07
 
