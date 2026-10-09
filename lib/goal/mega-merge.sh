@@ -96,11 +96,13 @@ _log() {  # rid text
 # object store alone: never the working tree, never the local HEAD. <sha> and --base-tip must be 40
 # lowercase hex commits in the repo. The base is merge-base(<sha>, --base-tip), else the merge base
 # with the remote default branch. Head mode never skips the rules: no repo, a bad SHA or no merge
-# base (a shallow clone has none) is BLOCKED, exit 1. The spec comes from <sha>'s tree. Three silent
-# passes remain, for hook parity: no ledger file, [gate] lane_gates off at the base, and a classifier
-# that is missing or errors (SECURITY.md).
+# base (a shallow clone has none) is BLOCKED, exit 1. The spec comes from <sha>'s tree. The merge base
+# only scopes the diff: every config read ([gate] lane_gates, the project lane override, the hard-path
+# exemptions) is at the base-branch tip, since the PR author picks the merge base by where the branch is
+# cut. Three silent passes remain, for hook parity: no ledger file, [gate] lane_gates off at the tip, and
+# a classifier that is missing or errors (SECURITY.md).
 gate() {
-  local rid="${1:-}" lane="${2:-}" rc=0 root="" head="" base="" head_mode=0 tip="" a
+  local rid="${1:-}" lane="${2:-}" rc=0 root="" head="" base="" head_mode=0 tip="" a cfg=""
   [ -n "$rid" ] && [ -n "$lane" ] || { echo "usage: gate <rid> <lane> [--head <sha> [--base-tip <sha>]]" >&2; return 64; }
   shift 2
   while [ "$#" -gt 0 ]; do
@@ -137,15 +139,20 @@ gate() {
       base="$(ship_rules_merge_base "$root" "$head")"
     fi
     [ -n "$base" ] || { echo "BLOCKED: mega gate: no merge base for $head (shallow clone, or no shared history with the base branch?)" >&2; return 1; }
+    # Config is read at the fresh base-branch tip (else the resolved default branch), never at the merge
+    # base: a PR cut from an old commit picks its own base, and could carry a looser config.
+    cfg="$tip"
+    [ -n "$cfg" ] || cfg="$(git -C "$root" rev-parse --verify -q "$(ship_rules_resolve_base "$root")^{commit}" 2>/dev/null || true)"
+    [ -n "$cfg" ] || cfg="$base"
   else
     head="$(git -C "$root" rev-parse HEAD 2>/dev/null || true)"
     [ -z "$head" ] || base="$(ship_rules_merge_base "$root" "$head")"
   fi
   # Same call as the hook: the project .kit.toml lanes come from the merge base, so a project lane
   # override reads the same in both gates and a change under review cannot rewrite its own lanes.
-  ship_rules_ledger_check "$root" "$lane" "$rid" "$GATE_LEDGER" "$base" || rc=$?
+  ship_rules_ledger_check "$root" "$lane" "$rid" "$GATE_LEDGER" "${cfg:-$base}" || rc=$?
   [ "$rc" -eq 0 ] || return "$rc"
-  if [ "$head_mode" -eq 1 ]; then _ship_rules_gate_head "$rid" "$lane" "$root" "$head" "$base"
+  if [ "$head_mode" -eq 1 ]; then _ship_rules_gate_head "$rid" "$lane" "$root" "$head" "$base" "$cfg"
   else _ship_rules_gate "$rid" "$lane" "$root" "$head" "$base"; fi
 }
 
@@ -172,9 +179,9 @@ _ship_rules_gate() {
 # _ship_rules_gate_head -- the same two rules on a commit: the spec is read from <head>'s tree into a
 # scratch file (removed before every return), and messages name the in-tree path.
 _ship_rules_gate_head() {
-  local rid="$1" lane="$2" root="$3" head="$4" base="$5" spec="" tmp="" rc=0
+  local rid="$1" lane="$2" root="$3" head="$4" base="$5" cfg="$6" spec="" tmp="" rc=0
   spec="$(_spec_in_tree "$root" "$head" "$rid")"
-  if [ -n "$spec" ] && ship_rules_switch_on lane_gates "$root" "$base"; then
+  if [ -n "$spec" ] && ship_rules_switch_on lane_gates "$root" "$cfg"; then
     tmp="$(mktemp 2>/dev/null)" || tmp=""
     if [ -n "$tmp" ] && git -C "$root" cat-file blob "$head:$spec" > "$tmp" 2>/dev/null; then
       ship_rule_large_spec "$tmp" "$rid" "$lane" "$GATE_LEDGER" "$spec" || rc=1
@@ -182,7 +189,7 @@ _ship_rules_gate_head() {
     [ -z "$tmp" ] || rm -f "$tmp"
     [ "$rc" -eq 0 ] || return 1
   fi
-  ship_rule_floor "$root" "$base" "$head" "$rid" "$spec" "$GATE_LEDGER" || return 1
+  ship_rule_floor "$root" "$base" "$head" "$rid" "$spec" "$GATE_LEDGER" "$cfg" || return 1
   return 0
 }
 

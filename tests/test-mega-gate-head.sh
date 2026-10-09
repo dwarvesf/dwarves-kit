@@ -108,6 +108,20 @@ R="$(gate_run "$W" rid normal --head "$(commit_on pr-spec-s main docs/specs/SPEC
 R="$(gate_run "$W" rid normal --head "$(commit_on pr-spec-n main tools/x/docs/specs/SPEC-abc-rid.md "$(specs 5)")")"
 [ "${R%%|*}" = 0 ] && ok "head-mode-large-spec: a co-located name with a non-numeric id is not a spec" || no "head-mode-large-spec non-numeric: got $R"
 
+echo "=== head-mode-config-at-tip (negative control) ==="
+# X: an old main commit with lane_gates off, a current tip with it on; the PR head branches from the old one
+X="$T/cfgrepo"; git init -q -b main "$X"
+printf '[gate]\nlane_gates = false\n' > "$X/.kit.toml"; printf 'hello\n' > "$X/README.md"
+git -C "$X" add -A; git -C "$X" commit -qm old; XOLD="$(git -C "$X" rev-parse HEAD)"
+printf '[gate]\nlane_gates = true\n' > "$X/.kit.toml"; git -C "$X" commit -qam tip; XTIP="$(git -C "$X" rev-parse HEAD)"
+git -C "$X" switch -q -c pr-old "$XOLD"; mkdir -p "$X/src/auth"; echo 'export const y = 1' > "$X/src/auth/login.ts"
+git -C "$X" add -A; git -C "$X" commit -qm pr; XH="$(git -C "$X" rev-parse HEAD)"
+git -C "$X" switch -q --detach "$XOLD"   # the orchestrator checkout is stale too
+R="$(gate_run "$X" rid normal --head "$XH" --base-tip "$XTIP")"
+{ [ "${R%%|*}" = 1 ] && has 'hard path (auth: src/auth/login.ts' "$R"; } && ok "head-mode-config-at-tip: a head cut from a lane_gates=false commit is gated by the tip's config" || no "head-mode-config-at-tip: got $R"
+R="$(gate_run "$X" rid normal --head "$XH" --base-tip "$XOLD")"
+[ "${R%%|*}" = 0 ] && ok "head-mode-config-at-tip: control, the tip itself having lane_gates off passes" || no "head-mode-config-at-tip control: got $R"
+
 echo "=== merge: fetch the PR head and gate on it ==="
 # stubs: pr number selects the answer; the real gh is never called
 mkdir -p "$T/bin"
