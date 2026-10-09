@@ -1,6 +1,6 @@
 {
   "name": "kit",
-  "version": "2.2.0",
+  "version": "2.3.0",
   "description": "Spec-driven workflow with shared Claude Code and Codex guardrails.",
   "author": {
     "name": "Dwarves Foundation",
