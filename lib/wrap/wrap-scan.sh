@@ -81,7 +81,7 @@ _scan_repo() {
 # both callers declare them local). A root with none prints one line and appends nothing.
 _add_under() {
   local found r
-  found="$(for r in "${1%/}"/*/; do [ -e "${r}.git" ] && printf '%s\n' "${r%/}"; done | LC_ALL=C sort)"
+  found="$(for r in "${1%/}"/*/; do [ -e "${r}.git" ] && printf '%s\n' "${r%/}"; done | env LC_ALL=C sort)"
   if [ -z "$found" ]; then echo "== ${1}: --under found no git repos"; return 0; fi
   while IFS= read -r r; do count=$(( count + 1 )); repos[count]="$r"; done <<< "$found"
 }

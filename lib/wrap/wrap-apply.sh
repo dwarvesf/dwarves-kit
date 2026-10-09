@@ -39,9 +39,10 @@ _absorbed() {
   local repo="$1" def="$2" tip="$3" main base changed differ rest path nl=$'\n'
   # core.quotePath=true makes both lists pure ASCII: bash 5 in a UTF-8 locale truncates a
   # string at a backslash before an invalid byte, which once dropped an overlapping path.
-  # LC_ALL=C also halves the loop's cost.
-  local LC_ALL=C
-  local -a g=(git -C "$repo" --no-replace-objects -c core.quotePath=true)
+  # LC_ALL=C reaches git through env, never as a bash variable: Homebrew bash 5.3 on macOS
+  # SIGSEGVs (rc 139) in setlocale when a function exit restores LC_ALL, about 1 call in 20
+  # under load, and the proof then reads as "not absorbed".
+  local -a g=(env LC_ALL=C git -C "$repo" --no-replace-objects -c core.quotePath=true)
   main="$("${g[@]}" rev-parse --verify --quiet "refs/remotes/origin/${def}^{commit}")" || return 1
   tip="$("${g[@]}" rev-parse --verify --quiet "${tip}^{commit}")" || return 1
   base="$("${g[@]}" merge-base "$main" "$tip" 2>/dev/null)" || return 1
