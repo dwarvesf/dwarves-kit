@@ -79,6 +79,11 @@ PRFILES_STUB="$FAKEBIN/prfiles-clear"
 printf '#!/usr/bin/env bash\necho src/app.ts\n' > "$PRFILES_STUB"
 chmod +x "$PRFILES_STUB"
 export MEGA_MERGE_PR_FILES_CMD="$PRFILES_STUB"
+# The merge pins the PR head it read; inject a fixed head so no real gh is called for it.
+PRHEAD_STUB="$FAKEBIN/prhead-fixed"
+printf '#!/usr/bin/env bash\necho d2a480915ea1d62eaca5bfba24a7609a1adcd8b8\n' > "$PRHEAD_STUB"
+chmod +x "$PRHEAD_STUB"
+export MEGA_MERGE_PR_HEAD_CMD="$PRHEAD_STUB"
 
 LANE=full
 REQUIRED="$(bash "$GL" required "$LANE")"
