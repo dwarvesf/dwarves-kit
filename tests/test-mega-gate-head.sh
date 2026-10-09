@@ -208,5 +208,11 @@ R="$(override_run 'echo 2222222222222222222222222222222222222222')"
 R="$(override_run 'exit 1')"
 { [ "${R%%|*}" = 1 ] && has 'cannot fetch PR #9' "$R" && ! merged 9; } && ok "merge-fetch-override: a failing stub is refused" || no "merge-fetch-override fail: got $R"
 
+echo "=== docs-match ==="
+for v in MEGA_MERGE_PR_BASE_CMD MEGA_MERGE_PR_FETCH_CMD MEGA_MERGE_FETCH_TIMEOUT; do
+  grep -qE "^\| $v \|" "$KIT/lib/config/module-registry.md" && ok "docs-match: module-registry.md has a row for $v" || no "docs-match: no registry row for $v"
+done
+grep -E '^\| MEGA_MERGE_PR_(BASE|FETCH)_CMD \|' "$KIT/lib/config/module-registry.md" | grep -q 'Test-only' && ok "docs-match: the base and fetch overrides are marked test-only" || no "docs-match: registry rows not marked test-only"
+grep -q 'MEGA_MERGE_PR_FETCH_CMD' "$KIT/docs/CHANGELOG.md" && grep -q 'refs/pull/<n>/head' "$KIT/docs/CHANGELOG.md" && ok "docs-match: CHANGELOG names the PR-head gate and the new knob" || no "docs-match: CHANGELOG line missing"
 echo "---"; echo "PASS=$PASS FAIL=$FAIL"
 [ "$FAIL" -eq 0 ]
