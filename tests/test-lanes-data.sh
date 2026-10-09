@@ -1214,6 +1214,41 @@ case_classify_files_exempt() {
   else fail classify-files-exempt "base exemption => '$on' (want normal); branch-only => '$off' (want full); no merge base => '$nobase' (want full); migration+auth => '$mig' (want full); migration entry on an auth path => '$mig_auth' (want full); migration only => '$mig_only' (want normal)"; fi
 }
 
+# cfg_repo <toml body>: mkrepo, then main commits [gate] lane_gates plus <body> as .kit.toml and feat/x is
+# recreated on top of it.
+cfg_repo() {
+  mkrepo; _git checkout -q main >/dev/null 2>&1
+  printf '[gate]\nlane_gates = true\n%s\n' "$1" > "$ROOT/.kit.toml"; _commit "chore: cfg"
+  _git checkout -q -B feat/x >/dev/null 2>&1
+}
+# floor_rejects <label> <needle>: with FX on the branch, auth still hits and stderr names <needle> and the refusal.
+floor_rejects() {
+  local out err; addfile "$ORACLE" "x"
+  out="$(floor_out)"; err="$(floor_err)"
+  [ "$out" = "full auth: $ORACLE" ] || FR_BAD="$FR_BAD [$1: stdout '$out']"
+  case "$err" in *"$2"*"no exemption applies"*) ;; *) FR_BAD="$FR_BAD [$1: stderr '$err' lacks '$2']" ;; esac
+}
+
+# A second entry with a kind that is never exemptable (or unknown) refuses the whole config, valid entry included.
+case_floor_exempt_forbidden_kinds_rejected() {
+  FR_BAD=""; local k nl=$'\n' want
+  for k in secret ci infra kit-config extra; do
+    cfg_repo "$(ent '["scripts/login-*.sh"]' '["auth"]' '"r"')$nl$(ent '["a/b.sh"]' "[\"$k\"]" '"r"')"
+    case "$k" in extra) want="unknown kind 'extra'" ;; *) want="kind '$k' is never exemptable" ;; esac
+    floor_rejects "kind $k" "$want"
+  done
+  [ -z "$FR_BAD" ] && pass floor-exempt-forbidden-kinds-rejected || fail floor-exempt-forbidden-kinds-rejected "$FR_BAD"
+}
+
+case_floor_exempt_reason_required() {
+  FR_BAD=""; local r
+  cfg_repo "$(printf '[[gate.hard_path_exempt]]\npaths = ["scripts/login-*.sh"]\nkinds = ["auth"]\n')"; floor_rejects "reason absent" "reason"
+  for r in '""' '"   "'; do
+    cfg_repo "$(ent '["scripts/login-*.sh"]' '["auth"]' "$r")"; floor_rejects "reason $r" "reason"
+  done
+  [ -z "$FR_BAD" ] && pass floor-exempt-reason-required || fail floor-exempt-reason-required "$FR_BAD"
+}
+
 case_ship_exempt_in_pr_blocks() {
   mkrepo; new_log
   printf 'Lane: normal\n' > "$ROOT/docs/specs/SPEC-001-x.md"
@@ -1294,7 +1329,7 @@ run_case() {
 }
 # `parity` (byte-identical against the baseline) holds only at the refactor commit; after the
 # flip the standing check is parity-after-flip.
-ALL="parity-after-flip plan-flip four-false-hits webhook-signature-suggests suggest-records explain-suggest-line classify-files-full escalate-suggest floor-paths floor-rename-counts-both-sides floor-data-loss floor-extra-paths-union floor-invalid-extra-ere override-drop-review override-uncommitted override-typo override-no-light pinned-root malformed-array-fails-closed policy-at-base ship-migration-blocks ship-migration-absent-quiet ship-switch-off-on-base ship-flip-gate-in-pr ship-hollow-full-override ship-data-loss ship-no-spec-blocks ship-suggest-advisory workflow-view floor-timing floor-non-ascii hook-timeout floor-submodule override-empty-phases ship-operator-hollow-full ship-push-forms ship-base-is-origin-head ship-checks-pushed-ref ship-slug-quoted risk-verb significance-uses-risk floor-no-leaks override-unknown-lane-name toml-valid ship-merge-base-once override-operator-precedence default-lane-layers start-no-duplicate-skips ship-fail-closed-refs floor-diff-hardening floor-plus-line floor-where-boundary floor-timing-30k default-rejects-tiny safety-push-forms ship-marker-collisions ship-continuation-and-heredoc ship-marker-at-base exempt-reader-rejects exempt-glob-semantics floor-test-paths-not-auth floor-test-paths-other-kinds floor-test-path-notice floor-exempt-fixture-quiet floor-exempt-glob-bounded floor-exempt-per-kind floor-exempt-migration-only floor-exempt-notice-rules floor-exempt-real-auth-still-hits floor-exempt-working-tree-ignored floor-exempt-never-kit-config floor-exempt-old-shape-ignored floor-exempt-data-loss-still-hits classify-files-exempt ship-exempt-in-pr-blocks ship-exempt-logged ship-test-path-skip-visible"
+ALL="parity-after-flip plan-flip four-false-hits webhook-signature-suggests suggest-records explain-suggest-line classify-files-full escalate-suggest floor-paths floor-rename-counts-both-sides floor-data-loss floor-extra-paths-union floor-invalid-extra-ere override-drop-review override-uncommitted override-typo override-no-light pinned-root malformed-array-fails-closed policy-at-base ship-migration-blocks ship-migration-absent-quiet ship-switch-off-on-base ship-flip-gate-in-pr ship-hollow-full-override ship-data-loss ship-no-spec-blocks ship-suggest-advisory workflow-view floor-timing floor-non-ascii hook-timeout floor-submodule override-empty-phases ship-operator-hollow-full ship-push-forms ship-base-is-origin-head ship-checks-pushed-ref ship-slug-quoted risk-verb significance-uses-risk floor-no-leaks override-unknown-lane-name toml-valid ship-merge-base-once override-operator-precedence default-lane-layers start-no-duplicate-skips ship-fail-closed-refs floor-diff-hardening floor-plus-line floor-where-boundary floor-timing-30k default-rejects-tiny safety-push-forms ship-marker-collisions ship-continuation-and-heredoc ship-marker-at-base exempt-reader-rejects exempt-glob-semantics floor-test-paths-not-auth floor-test-paths-other-kinds floor-test-path-notice floor-exempt-fixture-quiet floor-exempt-glob-bounded floor-exempt-per-kind floor-exempt-migration-only floor-exempt-notice-rules floor-exempt-real-auth-still-hits floor-exempt-working-tree-ignored floor-exempt-forbidden-kinds-rejected floor-exempt-reason-required floor-exempt-never-kit-config floor-exempt-old-shape-ignored floor-exempt-data-loss-still-hits classify-files-exempt ship-exempt-in-pr-blocks ship-exempt-logged ship-test-path-skip-visible"
 if [ "$#" -eq 0 ]; then set -- $ALL; fi
 for c in "$@"; do run_case "$c"; done
 [ "$FAILS" -eq 0 ]

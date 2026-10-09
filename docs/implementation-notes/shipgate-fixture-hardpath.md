@@ -164,3 +164,6 @@ Warnings for the builder:
 | `mega-merge-refuses-exempt-change` | guard matches `.kit.toml` as a substring | yes (leg 4) |
 | `mega-merge-refuses-exempt-change` | guard moved into `_merge_exclusion` | yes (legs 1, 2, 5, 6) |
 | `mega-merge-refuses-exempt-change` | unreadable list treated as clear | yes (leg 5) |
+| `floor-exempt-forbidden-kinds-rejected` | kind allowlist removed | yes |
+| `floor-exempt-forbidden-kinds-rejected`, `floor-exempt-reason-required` | refusal ignored, valid entries still apply | yes |
+| `floor-exempt-reason-required` | reason and missing-key checks removed | yes |
