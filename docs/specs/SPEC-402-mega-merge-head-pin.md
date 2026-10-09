@@ -1,6 +1,6 @@
 # Spec: pin the mega-goal auto-merge to the head its guards read
 Generated: 2026-10-09
-Status: DRAFT
+Status: VALIDATED
 Lane: full
 Depth: blind-spot (failure: a push between the guards and the merge lands a commit no guard read, such as a .kit.toml edit)
 References: `lib/goal/mega-merge.sh:142-146` (`_pr_info`, imitate its overridable `gh pr view --json` read and its fail-closed nonzero return); `lib/goal/mega-merge.sh:202-214` (`_pr_files`, imitate the `MEGA_MERGE_PR_*_CMD` test override); `gh pr merge --match-head-commit` (use as is).
