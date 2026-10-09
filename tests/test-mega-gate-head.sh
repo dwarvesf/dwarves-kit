@@ -142,6 +142,16 @@ R="$(gate_run "$W" rid normal --head "$MAIN" --base-tip "$T2")"
 R="$(gate_run "$W" rid normal --head "$T2" --base-tip "$MAIN")"
 [ "${R%%|*}" = 0 ] && ok "head-mode-base-is-head: a head ahead of the tip still passes" || no "head-mode-base-is-head ahead: got $R"
 
+echo "=== head-mode-criss-cross (negative control) ==="
+K="$T/crisscross"; git init -q -b main "$K"; echo r > "$K/f"; git -C "$K" add -A; git -C "$K" commit -qm root
+git -C "$K" switch -q -c a; echo a > "$K/a"; git -C "$K" add -A; git -C "$K" commit -qm a1
+git -C "$K" switch -q -c b main; echo b > "$K/b"; git -C "$K" add -A; git -C "$K" commit -qm b1
+git -C "$K" merge -q --no-edit a >/dev/null 2>&1; KB="$(git -C "$K" rev-parse HEAD)"
+git -C "$K" switch -q a; git -C "$K" merge -q --no-edit "$(git -C "$K" rev-parse b~1)" >/dev/null 2>&1; KA="$(git -C "$K" rev-parse HEAD)"
+[ "$(git -C "$K" merge-base --all "$KA" "$KB" | wc -l | tr -d ' ')" = 2 ] || echo "fixture: expected two merge bases"
+R="$(gate_run "$K" rid normal --head "$KA" --base-tip "$KB")"
+{ [ "${R%%|*}" = 1 ] && has 'BLOCKED: mega gate: ambiguous merge base' "$R"; } && ok "head-mode-criss-cross: two merge bases are refused" || no "head-mode-criss-cross: got $R"
+
 echo "=== merge: fetch the PR head and gate on it ==="
 # stubs: pr number selects the answer; the real gh is never called
 mkdir -p "$T/bin"

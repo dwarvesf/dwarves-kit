@@ -104,7 +104,7 @@ _log() {  # rid text
 # cut. Three silent passes remain, for hook parity: no ledger file, [gate] lane_gates off at the tip, and
 # a classifier that is missing or errors (SECURITY.md).
 gate() {
-  local rid="${1:-}" lane="${2:-}" rc=0 root="" head="" base="" head_mode=0 tip="" a cfg=""
+  local rid="${1:-}" lane="${2:-}" rc=0 root="" head="" base="" head_mode=0 tip="" a cfg="" bases=""
   [ -n "$rid" ] && [ -n "$lane" ] || { echo "usage: gate <rid> <lane> [--head <sha> [--base-tip <sha>]]" >&2; return 64; }
   shift 2
   while [ "$#" -gt 0 ]; do
@@ -136,10 +136,13 @@ gate() {
     _gate_sha_ok "$root" "$head" || { echo "BLOCKED: mega gate: head $head is not a commit in $root" >&2; return 1; }
     if [ -n "$tip" ]; then
       _gate_sha_ok "$root" "$tip" || { echo "BLOCKED: mega gate: base tip $tip is not a commit in $root" >&2; return 1; }
-      base="$(git -C "$root" merge-base "$head" "$tip" 2>/dev/null || true)"
     else
-      base="$(ship_rules_merge_base "$root" "$head")"
+      tip="$(git -C "$root" rev-parse --verify -q "$(ship_rules_resolve_base "$root")^{commit}" 2>/dev/null || true)"
     fi
+    # More than one merge base (a criss-cross merge) has no single diff base: refuse, never pick one.
+    bases="$([ -z "$tip" ] || git -C "$root" merge-base --all "$head" "$tip" 2>/dev/null || true)"
+    case "$bases" in *$'\n'*) echo "BLOCKED: mega gate: ambiguous merge base for $head (criss-cross merge history; rebase or merge the base branch into the PR)" >&2; return 1 ;; esac
+    base="$bases"
     [ -n "$base" ] || { echo "BLOCKED: mega gate: no merge base for $head (shallow clone, or no shared history with the base branch?)" >&2; return 1; }
     # base == head means an empty diff and a vacuous floor. A forged tip (a fetch override printing the head or
     # one of its descendants) makes exactly that, so refuse it. The cost: a PR already inside its base branch
@@ -147,9 +150,7 @@ gate() {
     [ "$base" != "$head" ] || { echo "BLOCKED: mega gate: merge base equals head ($head has no changes against its base tip)" >&2; return 1; }
     # Config is read at the fresh base-branch tip (else the resolved default branch), never at the merge
     # base: a PR cut from an old commit picks its own base, and could carry a looser config.
-    cfg="$tip"
-    [ -n "$cfg" ] || cfg="$(git -C "$root" rev-parse --verify -q "$(ship_rules_resolve_base "$root")^{commit}" 2>/dev/null || true)"
-    [ -n "$cfg" ] || cfg="$base"
+    cfg="${tip:-$base}"
   else
     head="$(git -C "$root" rev-parse HEAD 2>/dev/null || true)"
     [ -z "$head" ] || base="$(ship_rules_merge_base "$root" "$head")"
