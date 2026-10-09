@@ -1357,6 +1357,36 @@ case_ship_test_path_skip_visible() {
   [ -z "$bad" ] && pass ship-test-path-skip-visible || fail ship-test-path-skip-visible "$bad"
 }
 
+
+# An inherited SR_NOTICES must not reach the hook's stdout on a push that produces no notice.
+case_ship_notices_env_ignored() {
+  local bad=""
+  ship_fixture clean normal; record_gates $NORMAL_GATES
+  SR_NOTICES='forged' run_hook
+  [ "$HOOK_RC" = 0 ] || bad="$bad [rc=$HOOK_RC err=$HOOK_ERR]"
+  [ -z "$HOOK_OUT" ] || bad="$bad [stdout carries an inherited notice: $HOOK_OUT]"
+  ship_fixture clean normal; record_gates $NORMAL_GATES
+  printf '[gate]\nlane_gates = false\n' > "$ROOT/.kit.toml"; _git checkout -q main >/dev/null 2>&1; _commit "chore: switch off"; _git checkout -q feat/x >/dev/null 2>&1; _git rebase -q main >/dev/null 2>&1
+  SR_NOTICES='forged' run_hook
+  [ -z "$HOOK_OUT" ] || bad="$bad [lane_gates off leg: $HOOK_OUT]"
+  [ -z "$bad" ] && pass ship-notices-env-ignored || fail ship-notices-env-ignored "$bad"
+}
+
+# A | or a non-ASCII byte in the branch name folds to ? in the log, so the log keeps its columns.
+case_ship_rid_folded() {
+  local bad="" log line
+  mkrepo; new_log
+  _git checkout -q -B 'feat/a|b' >/dev/null 2>&1
+  printf 'Lane: normal\n' > "$ROOT/docs/specs/SPEC-001-x.md"; addfile tests/auth/login.test.ts "x"
+  record_gates $NORMAL_GATES; HOOK_CMD="git push" run_hook
+  log="$(cat "$LOGD/ship-gate.log" 2>/dev/null)"
+  line="$(printf '%s\n' "$log" | grep -F 'EXEMPT | floor |' | head -1)"
+  [ -n "$line" ] || bad="$bad [no EXEMPT line: rc=$HOOK_RC err=$HOOK_ERR log=$log]"
+  [ "$(printf '%s' "$line" | awk -F' [|] ' '{print NF}')" = 3 ] || bad="$bad [extra column: $line]"
+  printf '%s' "$line" | grep -qF 'a?b' || bad="$bad [rid not folded: $line]"
+  [ -z "$bad" ] && pass ship-rid-folded || fail ship-rid-folded "$bad"
+}
+
 # ---------------------------------------------------------------------------
 run_case() {
   local fn="case_${1//-/_}"
@@ -1364,7 +1394,7 @@ run_case() {
 }
 # `parity` (byte-identical against the baseline) holds only at the refactor commit; after the
 # flip the standing check is parity-after-flip.
-ALL="parity-after-flip plan-flip four-false-hits webhook-signature-suggests suggest-records explain-suggest-line classify-files-full escalate-suggest floor-paths floor-rename-counts-both-sides floor-data-loss floor-extra-paths-union floor-invalid-extra-ere override-drop-review override-uncommitted override-typo override-no-light pinned-root malformed-array-fails-closed policy-at-base ship-migration-blocks ship-migration-absent-quiet ship-switch-off-on-base ship-flip-gate-in-pr ship-hollow-full-override ship-data-loss ship-no-spec-blocks ship-suggest-advisory workflow-view floor-timing floor-non-ascii hook-timeout floor-submodule override-empty-phases ship-operator-hollow-full ship-push-forms ship-base-is-origin-head ship-checks-pushed-ref ship-slug-quoted risk-verb significance-uses-risk floor-no-leaks override-unknown-lane-name toml-valid ship-merge-base-once override-operator-precedence default-lane-layers start-no-duplicate-skips ship-fail-closed-refs floor-diff-hardening floor-plus-line floor-where-boundary floor-timing-30k default-rejects-tiny safety-push-forms ship-marker-collisions ship-continuation-and-heredoc ship-marker-at-base exempt-reader-rejects exempt-glob-semantics floor-test-paths-not-auth floor-test-paths-other-kinds floor-test-path-notice floor-exempt-fixture-quiet floor-exempt-glob-bounded floor-exempt-per-kind floor-exempt-migration-only floor-exempt-notice-rules floor-exempt-real-auth-still-hits floor-exempt-working-tree-ignored floor-exempt-forbidden-kinds-rejected floor-exempt-reason-required floor-exempt-canary-rejected floor-exempt-malformed-rejected floor-exempt-never-kit-config floor-exempt-old-shape-ignored floor-exempt-data-loss-still-hits classify-files-exempt ship-exempt-in-pr-blocks ship-exempt-logged ship-test-path-skip-visible"
+ALL="parity-after-flip plan-flip four-false-hits webhook-signature-suggests suggest-records explain-suggest-line classify-files-full escalate-suggest floor-paths floor-rename-counts-both-sides floor-data-loss floor-extra-paths-union floor-invalid-extra-ere override-drop-review override-uncommitted override-typo override-no-light pinned-root malformed-array-fails-closed policy-at-base ship-migration-blocks ship-migration-absent-quiet ship-switch-off-on-base ship-flip-gate-in-pr ship-hollow-full-override ship-data-loss ship-no-spec-blocks ship-suggest-advisory workflow-view floor-timing floor-non-ascii hook-timeout floor-submodule override-empty-phases ship-operator-hollow-full ship-push-forms ship-base-is-origin-head ship-checks-pushed-ref ship-slug-quoted risk-verb significance-uses-risk floor-no-leaks override-unknown-lane-name toml-valid ship-merge-base-once override-operator-precedence default-lane-layers start-no-duplicate-skips ship-fail-closed-refs floor-diff-hardening floor-plus-line floor-where-boundary floor-timing-30k default-rejects-tiny safety-push-forms ship-marker-collisions ship-continuation-and-heredoc ship-marker-at-base exempt-reader-rejects exempt-glob-semantics floor-test-paths-not-auth floor-test-paths-other-kinds floor-test-path-notice floor-exempt-fixture-quiet floor-exempt-glob-bounded floor-exempt-per-kind floor-exempt-migration-only floor-exempt-notice-rules floor-exempt-real-auth-still-hits floor-exempt-working-tree-ignored floor-exempt-forbidden-kinds-rejected floor-exempt-reason-required floor-exempt-canary-rejected floor-exempt-malformed-rejected floor-exempt-never-kit-config floor-exempt-old-shape-ignored floor-exempt-data-loss-still-hits classify-files-exempt ship-exempt-in-pr-blocks ship-exempt-logged ship-test-path-skip-visible ship-notices-env-ignored ship-rid-folded"
 if [ "$#" -eq 0 ]; then set -- $ALL; fi
 for c in "$@"; do run_case "$c"; done
 [ "$FAILS" -eq 0 ]
