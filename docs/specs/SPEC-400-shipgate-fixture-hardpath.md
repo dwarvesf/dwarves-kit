@@ -1,6 +1,6 @@
 # Spec: hard-path exemption as per-kind glob entries, read at the merge base
 Generated: 2026-10-09
-Status: DRAFT
+Status: VALIDATED
 Lane: full
 Depth: blind-spot (failure: an exemption that a PR can use to lower its own floor, or that hides a real auth, secret, CI or infra path)
 References: `lib/gate/gate-policy.sh:25-51` (imitate `--at <base>`: read the project layer from `git show <base>:.kit.toml`, never the PR head); `lib/config/kit-config.sh:105` (`kit_config_show_at`, reuse as is); `lib/gate/lane-data.sh:31-48` (`_ld_array`, imitate its fail-closed one-line array parse); git's `:(glob)` pathspec magic (imitate its `*`, `?` and `**` semantics only).
