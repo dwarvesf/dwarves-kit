@@ -112,6 +112,7 @@ _sr_log_all() {
 _sr_relay() {
   LC_ALL=C awk -F'\t' -v rid="$1" '
     function fold(s) { gsub(/[^ -~]/, "?", s); gsub(/[|]/, "?", s); return s }
+    BEGIN { rid = fold(rid) }
     $1 == "floor-exempt" {
       p = $0; for (i = 0; i < 6; i++) p = substr(p, index(p, "\t") + 1)
       p = fold(p); kind = fold($2); src = fold($3)

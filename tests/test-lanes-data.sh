@@ -1382,7 +1382,7 @@ case_ship_rid_folded() {
   log="$(cat "$LOGD/ship-gate.log" 2>/dev/null)"
   line="$(printf '%s\n' "$log" | grep -F 'EXEMPT | floor |' | head -1)"
   [ -n "$line" ] || bad="$bad [no EXEMPT line: rc=$HOOK_RC err=$HOOK_ERR log=$log]"
-  [ "$(printf '%s' "$line" | awk -F' [|] ' '{print NF}')" = 3 ] || bad="$bad [extra column: $line]"
+  [ "$(printf '%s' "$line" | awk -F' [|] ' '{print NF}')" = 4 ] || bad="$bad [extra column: $line]"
   printf '%s' "$line" | grep -qF 'a?b' || bad="$bad [rid not folded: $line]"
   [ -z "$bad" ] && pass ship-rid-folded || fail ship-rid-folded "$bad"
 }
