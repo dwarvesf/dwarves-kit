@@ -89,10 +89,10 @@ Exit: 1 (RED expected)
   NOT ok - head-mode-base-is-head same: got 0|
   NOT ok - head-mode-base-is-head ancestor: got 0|
   NOT ok - head-mode-criss-cross: got 0|
-  NOT ok - merge-fetch-timeout-value 'abc': got 1|/Users/tieubao/workspace/dwarvesf/dwarves-kit/.claude/worktree
+  NOT ok - merge-fetch-timeout-value 'abc': got 1|<worktree>
   NOT ok - merge-fetch-timeout-value '-5': got 1|BLOCKED: cannot fetch PR #7 head or base from origin; failing c
-  NOT ok - merge-fetch-timeout-value '1.5': got 1|/Users/tieubao/workspace/dwarvesf/dwarves-kit/.claude/worktree
-  NOT ok - merge-fetch-timeout-value '1 2': got 1|/Users/tieubao/workspace/dwarvesf/dwarves-kit/.claude/worktree
+  NOT ok - merge-fetch-timeout-value '1.5': got 1|<worktree>
+  NOT ok - merge-fetch-timeout-value '1 2': got 1|<worktree>
   NOT ok - merge-fetch-timeout-value 'a[$(touch /var/folders/dr/n3x74rr93kvfjf1873pyjvp80000gn/T/tmp.ZCD6lnkiXa/
   NOT ok - merge-clean-pr-head: left refs
   PASS=46 FAIL=11
