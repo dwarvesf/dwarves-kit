@@ -20,4 +20,16 @@ Delta from `docs/specs/SPEC-403-mega-gate-pr-head.md`. Round 1: NEEDS REVISION, 
 
 ## Decisions made during the build
 
-(none yet)
+Delta from the spec and the warnings above.
+
+- Items 1 to 13 are built, with these differences. Item 1: `merge` reads `_pr_base` again only before `EXECUTING`, not on a dry-run (a dry-run merges nothing). Item 13 is a picture change only and is not applied to the spec.
+- Item 2: the fetch timeout is `MEGA_MERGE_FETCH_TIMEOUT` (seconds, default 60), a new env knob with a registry row (the spec lists two knobs; this is a third). The wait polls `kill -0` every 0.1 s and sends TERM, then KILL after 1 s. A first version used a watchdog subshell and `kill`; it hung 60 s per merge under `negctl.sh`, which hands its children an ignored TERM, so it was replaced.
+- Item 4: the name rules live in `spec_path_matches` (`lib/spec/spec-find.sh`) and the head-mode lookup uses it. `spec_for_slug` keeps its own `ls` glob, untouched, so the hook path cannot drift. The two must agree; the hyphenated and non-numeric co-located cases pin that.
+- `ship_rule_large_spec` takes an optional fifth argument, the path its message names, so head mode prints the in-tree path and not the scratch file. The hook passes four arguments and is unchanged. `hooks/` did not change, so `hooks/codex-hooks.json` is not repinned.
+- Item 5: the fetch override replaces the fetch and the head comparison. The gate's head validation (40 lowercase hex, a commit in the repo) covers both `H` and the printed tip, so a bad tip refuses with a `BLOCKED: mega gate:` message from the gate, not the fetch message.
+- `--head` with a `MEGA_MERGE_ROOT` that is not a repo reaches `cat-file` and prints `is not a commit` (item 10); the test matches that message.
+- Private refs are deleted right after the gate returns (and inside `_pr_fetch` on a failure), not at function exit: only the objects matter after the gate, and this avoids a RETURN trap.
+- Item 8: the silent passes (no ledger file, `lane_gates` off at the base, missing or failing classifier) are named in the `gate` header comment and in `SECURITY.md`.
+- Existing merge tests (`test-mega-merge.sh`, `test-mega-reconcile.sh`) now run against a throwaway one-commit repo set as `MEGA_MERGE_ROOT`, with base and fetch stubs; head and tip are the same commit, so the diff is empty. They no longer read the kit repo.
+- `docs/FEATURES.md` was regenerated: `test-meta.sh` reported drift from the spec file itself.
+- `docs/verification/mega-gate-pr-head-e2e.sh` uses the real `gate-ledger.sh` against a temp `DWARVES_KIT_LOG_DIR` only, as `test-mega-reconcile.sh` does; no ledger record was written for this spec.
