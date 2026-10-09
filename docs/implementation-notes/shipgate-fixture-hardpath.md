@@ -1,29 +1,41 @@
 # Implementation notes: shipgate-fixture-hardpath
 
-Delta from `docs/specs/SPEC-400-shipgate-fixture-hardpath.md`. The validate round closed APPROVED with 0 critical and 27 warnings across 7 reviewers. The warnings below are for the builder. They do not change the spec unless a build decision says so here.
+Delta from `docs/specs/SPEC-400-shipgate-fixture-hardpath.md` (the per-kind glob rework). The first build's notes are superseded; its decisions live in git history at `c28ef8c4`.
 
-## Warnings to resolve during the build (consensus first)
+## Rework validate round (7 reviewers, NEEDS REVISION, 4 critical, 36 warnings)
 
-1. `classify --files` reads the exemption at HEAD (TASK-3). Reviewers 1, 2, 3 and 5 flagged it: a PR that commits its own exemption gets lane `normal` from classify, `risk` and significance. Prefer one resolver that takes a rev and read at the merge base for both `_floor_scan` and `_path_kind`. If HEAD stays, add an AC proving the floor still blocks and state that the classify lane is advisory.
-2. Over-broad entries pass the empty-match guard (`.`, `.+`, `x|.`). Reviewers 1, 2 and 3. Add a guard: reject an entry that matches a canary path such as `src/auth/login.ts` or `.env`, and validate each `|` alternative.
-3. One exemption skips every kind (`secret`, `ci`, `infra`, `migration`), not only `auth`. Reviewers 1, 2, 3 and 5. Either key the exemption by kind or document the all-kinds scope in Edge Cases with the secret risk named.
-4. Stderr capture in `ship_rule_floor` (`lib/gate/ship-rules.sh:116-117` drops it and returns before logging on an empty hit). Reviewers 2, 3 and 6. Write the `EXEMPT` log line before the early return, filter by prefix so rejected-ERE lines never log as exempt, add a regression case.
-5. TOML escaping: `"\.mjs$"` is an invalid TOML escape. Reviewers 2 and 3. Document `[.]` in TASK-5 and test an entry with a dot.
-6. Task wiring (Reviewer 4): TASK-2 and TASK-3 depend on TASK-1, TASK-4 on TASK-2; the Terms and Design text point at TASK-4 where TASK-5 owns docs and the ADR; AC9 and the `--files` path need AC rows.
-7. Picture drift (Reviewers 4 and 6): add the `--files` read point and the stderr to `ship-gate.log` arrow.
-8. Stale base after an exemption is removed on main (Reviewer 2): state how `<base>` is derived and add a failure-mode row.
-9. Hostile ERE complexity (Reviewer 1): low risk because the base file was reviewed; note it.
+Criticals, folded into the spec:
+
+- Silent, PR-steerable test-path `auth` skip (Reviewer 4). Fold: the skip now prints a TAB notice and an `[advisory]` line (AC20).
+- TASK-2 and TASK-3 too large (Reviewer 4). Fold: split into 2a/2b and 3a/3b; each code task carries its own AC cases.
+- No migration-only test, so an empty pattern line could blank every `auth` path (Reviewer 2). Fold: empty-pattern invariant plus AC21.
+- Glob tests missed `**/`, `a/**/b` and `?`, and a `sed` chain can corrupt an earlier rule's output (Reviewer 1). Fold: AC4 rows plus a one-pass translation rule.
+
+Fold-side decisions not asked for by a critical:
+
+- The notice moved to TAB-separated fields with the path last. Reviewers 1 and 2 showed a wildcard-matched path can forge an entry number or reason in the old parenthesised format. This rode the AC20 change because both touch the same line.
+- An all-wildcard glob (`**`, `*/**`) is invalid. Reviewers 1, 2 and 5 noted a bare `**` had no defined translation.
+- `cases` stays in the test-path list. Reviewers 1 and 5 asked to drop it as too generic, but the operator listed it explicitly. Open question for the operator.
+
+## Warnings for the builder (not in the spec)
+
+1. `--files` HEAD fallback: `_deesc_resolve_base` falls back to `git rev-parse HEAD` (`lane-classify.sh:412`). In `_load_exempt`, apply no exemption when no real merge base resolves (Reviewers 1, 2). Add a leg to `classify-files-exempt`.
+2. `mktemp` failure in `ship_rule_floor` sets `errf=/dev/null` (`ship-rules.sh:113`), which drops notices and refusals. Pass the floor's stderr straight through instead (Reviewer 2).
+3. Validate everything, then emit: a parser error after some records were printed must print no record (Reviewer 2).
+4. Rejection lines name the line number and cause. CRLF, BOM, spaced headers, inline tables and trailing commas fail closed with a clear message (Reviewers 2, 3). `hard_path_canaries` after the tables is valid TOML: parse the whole file before validating entries (Reviewer 3).
+5. Apply the one-line array rules to `hard_path_canaries`, and refuse the config when it is malformed or multi-line (Reviewer 1).
+6. Refuse the exemption config when the base `.kit.toml` holds a `"""` or `'''` string, since a table inside one would parse as an entry (Reviewer 1).
+7. Cap entries at 32 and refuse past that, or join each kind's EREs into one grep, so `_path_kind` cost stays flat (Reviewer 2).
+8. Escape control bytes and `|` in printed paths, and forbid `|` in `reason`, so `ship-gate.log`'s 3-field format holds (Reviewer 1).
+9. Canaries are a backstop for listed paths only. Consider more built-in canaries (`db/migrate/`, `alembic/versions/`, `prisma/migrations/`, a `.tsx` login form) (Reviewers 1, 3, 5).
+10. Stale merge base: a branch cut from an old main reads that commit's exemptions. Name this ceiling in ADR-0039 and `SECURITY.md`; the same holds for `lane_gates` (Reviewer 3).
+11. Revoking a bad entry reaches in-flight branches only after they rebase. Say so in the Failure modes row and ADR (Reviewer 2).
+12. `SECURITY.md`: name a private reporting channel (GitHub private vulnerability reporting) and state that the floor is client-side review routing, bypassable by `--no-verify` (Reviewer 1).
+13. The record field order is the contract; only the reader and `_floor_scan` consume it (Reviewer 5).
+14. Declare dependencies for TASK-12 (after TASK-8 to TASK-11) and TASK-13 (after all) (Reviewers 3, 4).
+15. Confirm the data-loss scan has no extension filter before AC16 pins `scripts/login-smoke.sh` (Reviewer 3).
+16. `migration` exemptability has no grounded false positive (Reviewers 4, 5). It is in scope by operator decision; AC13 and AC21 cover it.
 
 ## Decisions made during the build
 
-- Item 1: one resolver, `lane_hard_path_exempt <root> <rev>` in `lib/gate/lane-data.sh`. The floor passes `<base>`. `classify --files` passes the merge base of the project root (`_deesc_resolve_base`), not HEAD as the spec's TASK-3 said. A PR that commits its own exemption gets `full` from classify. Pinned by `classify-files-exempt` (branch-only exemption gives `full`).
-- Item 2: the reader rejects an entry that matches the empty string (tested on one empty line: `printf '' | grep` never matches, so the spec's empty-input idea was vacuous) or any canary path: `src/auth/login.ts`, `lib/session.ts`, `app/auth.py`, `.env`, `config/secrets/prod.txt`, `db/migrations/0001_init.sql`, `.github/workflows/ci.yml`, `Dockerfile`. The canary test runs on the whole ERE, so any `|` alternative that matches a canary rejects the entry. No separate split on `|`: a naive split breaks grouped alternation. `.kit.toml` is not a canary, so the kit-config immunity is tested on its own path.
-- Item 3: kept all-kinds scope (except kit-config) and documented it in `docs/WORKFLOW.md`, the `kit.toml` comment and ADR-0039, with the secret and CI risk named. Keying by kind adds syntax for no observed need.
-- Item 4: `ship_rule_floor` captures the floor's stderr in a temp file and logs `EXEMPT | floor | <rid> (<kind>: <path>)` before the empty-hit return. Only lines starting `floor: exempt ` log. Pinned by `ship-exempt-logged`, which also checks a rejected entry (`.`) leaves no EXEMPT line.
-- Item 5: the `[.]` form is documented in `docs/WORKFLOW.md`, the `kit.toml` comment and the reader's header comment; `floor-exempt-fixture-quiet` runs an entry with `[.]`.
-- The exempt-path notice runs one grep per kind over the exempt paths only, so cost stays flat as the exempt directory grows. Exempt lines are blanked, not removed, so the submodule line index stays valid.
-- Item 6 to 7: the spec text was not edited after validation; the AC rows added for `--files` and data loss are `classify-files-exempt` and `floor-exempt-data-loss-still-hits`. ADR and docs landed under TASK-5.
-- Item 8: `<base>` is the merge base of the pushed head and the remote default branch (`ship_rules_merge_base`). An entry removed on the default branch reaches a branch only after it rebases or merges the default branch. Recorded in ADR-0039 Consequences.
-- Item 9: hostile ERE complexity is left untimed; the base file passed a full-lane review. Listed under Not proven in the verification record.
-- AC3 landed as two new paths in the existing `floor-paths` hit list (`src/auth/login.ts`, `lib/session.ts`).
-- AC6 uses the entry `^[.]kit[.]toml$`, which passes the reader, so the test proves the kit-config immunity, not the reader rejection.
+(none yet)
