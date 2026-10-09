@@ -10,11 +10,16 @@
 # is sub-second, and the wall clock was the sum of 146 of them. Output stays deterministic
 # because results are collated in glob order after the run, not as each suite finishes.
 #
-# Usage: bash tests/run-all.sh [--all | --only <pattern> | --changed [<base>]] [--time]
+# Usage: bash tests/run-all.sh [--all | --only <pattern> | --changed [<base>] | --failed] [--time]
 #        Bare (no argument) is --changed: only the suites the diff against <base> touches
 #        (default base: the merge-base with origin/master), plus the always-on lints. The
 #        local check. --all is the full glob, what CI and the nightly job run; it refuses
 #        (exit 64) unless CI is non-empty or KIT_RUN_ALL=1.
+#        --failed reruns only the suites whose latest line in the suite timing history has exit != 0
+#        (a 124 timeout counts), plus the same always-on lints --changed adds. It reads the history
+#        and never runs a suite to find failures, so run it after a red run, in a fix loop. A suite
+#        that failed and later passed is not rerun; a suite no longer on disk is dropped. No history,
+#        or no failed suite: it prints one line and exits 0 with nothing run.
 #        --time appends each suite's elapsed seconds to its report line and prints a
 #        slowest-10 block after the report. It may appear before or after the mode
 #        argument, and combines with --all, --only and --changed.
@@ -185,6 +190,37 @@ if [ "$MODE" = "--changed" ]; then
     fi
     [ -s "$PICKED" ] || exit 0
   fi
+fi
+
+# --- --failed: pick suites by the history -------------------------------------
+# A fix loop used to rerun the whole --changed set (or worse) when only the red suites needed it.
+# The history (tests/lib/suite-times.sh) already records every suite's exit, so the failed ones
+# are a read, not a run. Same shape as --changed: build $PICKED, let phase 1 filter it, and add
+# the `# always:` lints, which no failure list can name. They are added only when a suite is
+# rerun: an all-green history runs nothing at all.
+if [ "$MODE" = "--failed" ]; then
+  if [ ! -f "$KIT_DIR/tests/lib/suite-times.sh" ]; then
+    echo "run-all: --failed needs tests/lib/suite-times.sh, which this tree lacks" >&2
+    exit 1
+  fi
+  _failed_err="$OUTDIR/failed.err"
+  _failed_all="$(bash "$KIT_DIR/tests/lib/suite-times.sh" failed 2>"$_failed_err")"
+  PICKED="$OUTDIR/picked"
+  : >"$PICKED"
+  _dropped=""
+  for _n in $_failed_all; do
+    if [ -f "tests/$_n.sh" ]; then printf 'tests/%s.sh\n' "$_n" >>"$PICKED"; else _dropped="$_dropped $_n"; fi
+  done
+  if [ ! -s "$PICKED" ]; then
+    if [ -s "$_failed_err" ]; then echo "run-all: --failed: $(sed 's/^suite-times: //' "$_failed_err" | head -1); nothing run"
+    else echo "run-all: --failed: no failed suite in the history${_dropped:+ that is still on disk}; nothing run"; fi
+    exit 0
+  fi
+  _nfailed="$(wc -l <"$PICKED" | tr -d ' ')"
+  grep -l '^# always:' tests/test-*.sh >>"$PICKED" 2>/dev/null
+  sort -u -o "$PICKED" "$PICKED"
+  echo "run-all: --failed: $_nfailed suites whose latest run did not pass${_dropped:+ (gone from disk, skipped:$_dropped)}, $(( $(wc -l <"$PICKED" | tr -d ' ') - _nfailed )) always-on added"
+  sed 's/^/  /' "$PICKED"
 fi
 
 # --- phase 1: decide what runs, sequentially and cheaply ---------------------

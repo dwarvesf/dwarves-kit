@@ -13,6 +13,9 @@
 #   suite-times.sh p95 [<suite>]                 per-suite runs and p95 seconds, slowest first
 #   suite-times.sh runs                          the last 20 run lines, then p50 and p95 wall
 #                                                 per entry point over those lines
+#   suite-times.sh failed                        the suites whose latest line has exit != 0 (124, a
+#                                                 kill, counts), one name per line; reads the log,
+#                                                 never runs a suite
 #   suite-times.sh expected [<jobs>]             expected wall seconds of a full run, from the
 #                                                 suite names on stdin (median each, jobs wide)
 #   suite-times.sh tune [--write] [--allow-lower]
@@ -120,6 +123,15 @@ do_p95() {
   have_log || { no_log; return 0; }
   stats | sort -t "$TAB" -k3,3nr | awk -F'\t' -v only="${1:-}" '
     only == "" || $1 == only { printf "%-46s %4d runs  p95 %ds\n", $1, $2, $3 }'
+  return 0
+}
+
+# Latest line wins per suite (the log is append-ordered), so a suite that failed and then
+# passed is not listed. Run lines never count as suites.
+do_failed() {
+  have_log || { no_log; return 0; }
+  awk -F'\t' '$3 !~ /^run:/ && NF >= 5 { last[$3] = $5 }
+               END { for (s in last) if (last[s] != "0") print s }' "$(log_file)" | sort
   return 0
 }
 
@@ -249,8 +261,9 @@ case "${1:-}" in
   append-run) shift; do_append_run "$@" 2>/dev/null; exit 0 ;;
   p95)        shift; do_p95 "$@" ;;
   runs)       shift; do_runs "$@" ;;
+  failed)     shift; do_failed "$@" ;;
   expected)   shift; do_expected "$@" ;;
   tune)       shift; do_tune "$@" ;;
   -h|--help|help|"") sed -n '2,/^set -u/p' "$0" | sed '$d;s/^# \{0,1\}//' ;;
-  *) echo "suite-times: unknown verb: $1 (append|append-run|p95|runs|expected|tune)" >&2; exit 64 ;;
+  *) echo "suite-times: unknown verb: $1 (append|append-run|p95|runs|failed|expected|tune)" >&2; exit 64 ;;
 esac

@@ -41,6 +41,7 @@ You receive:
 - **Minimum change**: Apply the smallest diff that fixes the issue. Don't refactor surrounding code. Don't "improve" things the verifier didn't flag.
 - **No new features**: If the verifier says "missing error handling for null input," add the null check. Don't add logging, metrics, or retry logic that weren't in the spec.
 - **No spec changes**: If you think the spec is wrong, say so in your report. Don't silently deviate.
+- **Frozen evaluator, no exceptions.** When a test fails, investigate why the code is wrong. Never weaken an assertion, comment out or delete a test, add a skip, or raise a timeout to make it pass. This is the same rule `kit:test-writer` holds for the spec's acceptance criteria and the same discipline as "No spec changes" above: if the test itself looks wrong, say so in your report and do not edit it.
 - **Test after fix**: Run the test suite. If your fix breaks a test, undo it and report the conflict.
 
 ## Output format
