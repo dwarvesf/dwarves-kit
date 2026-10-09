@@ -156,7 +156,8 @@ _pr_head() {
   else out="$(gh pr view "$1" --json headRefOid --jq .headRefOid 2>/dev/null)" || return 1
   fi
   [ "${#out}" -eq 40 ] || return 1
-  case "$out" in *[!0-9a-f]*) return 1 ;; esac
+  # Spelled out, not [!0-9a-f]: a range follows the locale's collation and can admit uppercase.
+  case "$out" in *[!0123456789abcdef]*) return 1 ;; esac
   printf '%s\n' "$out"
 }
 
@@ -265,8 +266,9 @@ merge() {
   local posture; posture="$(_resolve_posture "$posture_flag")"
 
   # Head pin. Read the head FIRST: the merge below succeeds only if the PR head still equals H, and H
-  # was read before every guard, so every guard read H or a newer head (which fails the merge). Do not
-  # move this read after a guard.
+  # was read before the PR-state guards, so each of them read H or a newer head (which fails the
+  # merge). Do not move this read after a guard. The gate's diff rules read the local checkout, not
+  # the PR head, so the pin does not cover them (SECURITY.md).
   local head excl rc
   head="$(_pr_head "$pr")"; rc=$?
   if [ "$rc" -ne 0 ]; then

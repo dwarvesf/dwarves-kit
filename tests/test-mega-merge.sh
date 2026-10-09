@@ -251,6 +251,7 @@ printf 'abc\n' > "$TMP/head-out"; head_refused "a short value"
 printf '%s\n%s\n' "$HEAD_SHA" "$HEAD_SHA" > "$TMP/head-out"; head_refused "two lines of valid SHAs"
 printf '%s\r\n' "$HEAD_SHA" > "$TMP/head-out"; head_refused "a trailing carriage return"
 printf '%s\n' "$(printf '%s' "$HEAD_SHA" | tr 'a-f' 'A-F')" > "$TMP/head-out"; head_refused "uppercase hex"
+printf 'gggggggggggggggggggggggggggggggggggggggg\n' > "$TMP/head-out"; head_refused "40 non-hex characters"
 printf '%s\n' "$HEAD_SHA" > "$TMP/head-out"
 
 # AC3 [NC, head-read-first]: the head stub, the state stub and the files stub share one call log.
