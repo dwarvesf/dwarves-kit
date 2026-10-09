@@ -37,7 +37,7 @@ case "\$1" in
   7) printf 'false%s*%sglob label\\n' "\$US" "\$US" ;;                    # label '*' must not glob/clear-crash
   8) printf 'false%s  Gated-Final  %swhitespace and case\\n' "\$US" "\$US" ;; # normalized hold match
   9) echo "not json at all {{{" ;;                                        # malformed non-empty -> fail closed
-  1[1-6]) printf 'false%s%sclear PR for the config guard\n' "\$US" "\$US" ;; # non-draft, unlabelled
+  1[1-9]) printf 'false%s%sclear PR for the config guard\n' "\$US" "\$US" ;; # non-draft, unlabelled
 esac
 SH
 chmod +x "$TMP/prinfo"
@@ -49,6 +49,8 @@ case "$1" in
   11|12|16) printf 'docs/notes.md\n.kit.toml\n' ;;   # the root .kit.toml among others
   14) printf 'docs/.kit.toml\n' ;;                    # a nested file of the same name
   15) exit 1 ;;                                       # unreadable
+  17) printf 'kit.toml.old\n.kit.toml\n' ;;            # a rename: both sides listed
+  18) i=0; while [ "$i" -lt 3000 ]; do echo "f$i"; i=$((i+1)); done ;;   # at the REST ceiling
   *) printf 'src/app.ts\n' ;;
 esac
 SH
@@ -144,6 +146,26 @@ done
 # (5): the file list cannot be read -> unclassifiable, refused
 OG="$(MEGA_MERGE_GATE_LEDGER="$TMP/gl-pass" bash "$MM" merge 15 somerid full 2>&1)"; RG=$?
 { [ "$RG" -ne 0 ] && has "cannot classify" "$OG" && ! has "gh pr merge 15" "$OG"; }; ok "config guard [NC]: an unreadable file list is refused as unclassifiable" $?
+# (7): a rename of .kit.toml lists both sides; the old name is the root file, so it is refused
+OG="$(MEGA_MERGE_GATE_LEDGER="$TMP/gl-pass" bash "$MM" merge 17 somerid full 2>&1)"; RG=$?
+{ [ "$RG" -ne 0 ] && has "touches .kit.toml" "$OG"; }; ok "config guard [NC]: a rename of .kit.toml (both sides listed) is refused" $?
+# (8): a list at the 3000-file REST ceiling may be truncated, so it is unclassifiable
+OG="$(MEGA_MERGE_GATE_LEDGER="$TMP/gl-pass" bash "$MM" merge 18 somerid full 2>&1)"; RG=$?
+{ [ "$RG" -ne 0 ] && has "cannot classify" "$OG" && ! has "gh pr merge 18" "$OG"; }; ok "config guard [NC]: a 3000-line file list is refused as unclassifiable" $?
+# (9): the real default read (no override): `gh pr diff --name-only` shows only a rename's new name,
+# so the guard must read the REST files list, which carries previous_filename
+mkdir -p "$TMP/rn"
+cat > "$TMP/rn/gh" <<'SH'
+#!/usr/bin/env bash
+case "$1 $2" in
+  "pr diff") echo moved-config.toml ;;                  # the old name is invisible here
+  "api repos/{owner}/{repo}/pulls/19/files") printf 'moved-config.toml\n.kit.toml\n' ;;
+  *) exit 1 ;;
+esac
+SH
+chmod +x "$TMP/rn/gh"
+OG="$(env -u MEGA_MERGE_PR_FILES_CMD PATH="$TMP/rn:$PATH" MEGA_MERGE_GATE_LEDGER="$TMP/gl-pass" bash "$MM" merge 19 somerid full 2>&1)"; RG=$?
+{ [ "$RG" -ne 0 ] && has "touches .kit.toml" "$OG"; }; ok "config guard [NC]: the default read sees the old name of a renamed .kit.toml" $?
 # (6): `mark` on a PR whose files include .kit.toml, while the draft and label calls fail, must still say NOT confirmed held
 printf '#!/usr/bin/env bash\nexit 1\n' > "$TMP/mark-gh-fail"; chmod +x "$TMP/mark-gh-fail"
 OG="$(MEGA_MERGE_GH="$TMP/mark-gh-fail" bash "$MM" mark 16 2>&1)"; RG=$?
