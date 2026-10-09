@@ -123,6 +123,10 @@ is no reference to point at.]
 ## Problem
 [What user pain does this solve? Copy from decision brief if available.]
 
+## Terms
+<!-- Delta only. The glossary is a living doc at repo level; a spec never owns a term. -->
+Terms this spec ADDS or CHANGES, one line each: `term: definition`. The canonical home is the repo glossary `CONTEXT.md` (the same file `/kit:grill` writes). Write each new or changed term there when you write this spec; never keep a term only here. Write "none" when no term changes.
+
 ## Solution
 <!-- Depth pattern forked from superpowers:brainstorming ("propose 2-3 approaches"; "design for isolation and clarity"). See the solution-depth design spec under docs/specs/. -->
 
@@ -225,6 +229,18 @@ The definition-of-done picture. Each bullet is false now and true after, and eac
 Rule: observable, not narrated. If a bullet cannot be verified by reading a file, running a command, or seeing a state, it is fluff and gets cut (PHILOSOPHY: every file justifies its existence). Pair the after-state with a "(Today: ...)" current-state note where it sharpens the contrast.
 - [ ] [observable end state]. (Today: [current state].)
 - [ ] [observable end state, checkable by `<command>`].
+
+## Quality requirements
+<!-- Delta only. The requirements are a living doc at repo level; a spec cites IDs and never restates them. -->
+Cite the IDs from the repo file `docs/QUALITY.md` that this spec touches (`Q-<AREA>-<n>`). Mark each one new, tightened, or affected. Link each to the acceptance criterion or `## Verification` line that tests it. Write a new or tightened requirement into `docs/QUALITY.md` together with this spec. Create the file on first use. Write "none" when no requirement is touched.
+- Q-<AREA>-<n> (new | tightened | affected): [tested by: criterion or Verification line]
+
+Entry shape in `docs/QUALITY.md`:
+- ID: `Q-<AREA>-<n>`
+- Quality: latency, availability, security, cost, ...
+- Scenario: the stimulus and the expected response
+- Measure: a number with its unit
+- Check: how it is checked (test, monitor, review)
 
 ## Acceptance Criteria (global)
 - [ ] All tasks pass their individual acceptance criteria

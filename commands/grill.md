@@ -231,6 +231,8 @@ The moment an answer resolves something, write it where it lives:
 
 - **A term or concept clarified** -> the repo's glossary (`CONTEXT.md` if the repo keeps one;
   create it glossary-only if the resolution warrants it). Show the edit inline.
+- **A quality requirement clarified** (latency, availability, security, cost...) -> `docs/QUALITY.md`
+  (create it on first use), as a `Q-<AREA>-<n>` entry. Show the edit inline.
 - **A decision** meeting ALL THREE criteria, hard to reverse + surprising without context +
   the result of a genuine trade-off, -> a sparse ADR under the repo's decisions dir. Decisions
   failing the bar go in the goal draft's Context instead, not an ADR (sparse beats noisy).
