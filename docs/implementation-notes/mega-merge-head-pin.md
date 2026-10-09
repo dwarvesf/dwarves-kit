@@ -18,4 +18,9 @@ Delta from `docs/specs/SPEC-402-mega-merge-head-pin.md`. Validate round: 7 revie
 
 ## Decisions made during the build
 
-(none yet)
+- No conflict between the spec and builder items 1 to 11 surfaced.
+- `_pr_head` checks the value by length (40) plus a no-non-hex `case`, not a regex. A two-line value, a trailing `\r` and uppercase hex all fail without a `grep -x` that would match per line.
+- The head stub in `tests/test-mega-merge.sh` reads `$TMP/head-out` and `$TMP/head-rc`, so the refusal cases mutate files instead of defining one stub per case. It is exported globally, so the `env -u` and PATH-fake-`gh` cases keep it (item 7).
+- `head-moved-fails` uses a fake `gh` that logs `DELETED-BRANCH` only after an accepted merge, which is how item 5 asserts no branch delete on a refusal.
+- Other callers: no other test calls `mega-merge.sh merge`. `test-ledger-durability.sh`, `test-goal-dispatch.sh` and `test-mega-gate-parity.sh` only source the file, hit usage, or call `gate`; `test-tier4-close.sh` uses its own `WAVE_MERGE_CMD`.
+- `docs/FEATURES.md` was regenerated in the docs commit: the committed spec shifted three spec-reference counts, and `test-meta.sh` was red on that drift before this change.
