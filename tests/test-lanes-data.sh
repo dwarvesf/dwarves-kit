@@ -1069,34 +1069,82 @@ ROWS
   [ -z "$bad" ] && pass exempt-glob-semantics || fail exempt-glob-semantics "$bad"
 }
 
-# ---- [lanes] hard_path_exempt (read at the merge base only) ----
+# ---- [[gate.hard_path_exempt]] at the floor (read at the merge base only) ----
 # FX hits auth with no config; the old oracle path is a test path now (cases/) and no longer does.
 ORACLE=scripts/login-smoke.sh
-# exempt_repo <entry>: mkrepo, then main commits [lanes] hard_path_exempt = "<entry>" and feat/x
-# is recreated on top of it, so the merge base carries the exemption.
+# exempt_repo <paths> <kinds> [<reason>]: mkrepo, then main commits one entry (raw TOML values) and
+# feat/x is recreated on top of it, so the merge base carries the exemption.
 exempt_repo() {
   mkrepo
   _git checkout -q main >/dev/null 2>&1
-  printf '[gate]\nlane_gates = true\n[lanes]\nhard_path_exempt = "%s"\n' "$1" > "$ROOT/.kit.toml"; _commit "chore: exempt"
+  printf '[gate]\nlane_gates = true\n%s\n' "$(ent "$1" "$2" "${3:-\"r\"}")" > "$ROOT/.kit.toml"; _commit "chore: exempt"
   _git checkout -q -B feat/x >/dev/null 2>&1
 }
 floor_err() { lcx floor "$ROOT" main 2>&1 >/dev/null; }
+# err_fields <n>: field <n> of the first floor-exempt TAB line on the floor's stderr.
+err_fields() { floor_err | awk -F'\t' -v n="$1" '$1 == "floor-exempt" { print $n; exit }'; }
 
 case_floor_exempt_fixture_quiet() {
-  local bad="" e out err
-  for e in '^scripts/' '^scripts/login-[^/]*[.]sh$'; do
-    exempt_repo "$e"; addfile "$ORACLE" "x"
-    out="$(floor_out)"; err="$(floor_err)"
-    [ -z "$out" ] || bad="$bad [$e: stdout '$out']"
-    printf '%s' "$err" | grep -qF "floor: exempt auth: $ORACLE" || bad="$bad [$e: stderr '$err']"
-  done
+  local bad="" out err want sha
+  exempt_repo '["scripts/login-*.sh"]' '["auth"]' '"smoke script for a public site"'; addfile "$ORACLE" "x"
+  out="$(floor_out)"; err="$(floor_err)"; sha="$(git -C "$ROOT" rev-parse --short main)"
+  want="$(printf 'floor-exempt\tauth\tentry 1\tscripts/login-*.sh\tsmoke script for a public site\t%s\t%s' "$sha" "$ORACLE")"
+  [ -z "$out" ] || bad="$bad [stdout '$out']"
+  [ "$err" = "$want" ] || bad="$bad [stderr '$err' want '$want']"
   [ -z "$bad" ] && pass floor-exempt-fixture-quiet || fail floor-exempt-fixture-quiet "$bad"
+}
+
+# A glob never matches across a segment it does not name.
+case_floor_exempt_glob_bounded() {
+  local bad="" p out
+  for p in experiments/x/y/oracle-old/login.mjs experiments/oracle/login.mjs; do
+    exempt_repo '["experiments/*/oracle/**"]' '["auth"]'; addfile "$p" "x"
+    out="$(floor_out)"; [ "$out" = "full auth: $p" ] || bad="$bad [$p => '$out']"
+  done
+  [ -z "$bad" ] && pass floor-exempt-glob-bounded || fail floor-exempt-glob-bounded "$bad"
+}
+
+# An auth entry does not exempt a migration hit on the same file.
+case_floor_exempt_per_kind() {
+  local p=experiments/x/oracle/migrations/login.sql out
+  exempt_repo '["experiments/*/oracle/**"]' '["auth"]'; addfile "$p" "x"
+  out="$(floor_out)"
+  if [ "$out" = "full migration: $p" ] && [ "$(err_fields 2)" = auth ]; then pass floor-exempt-per-kind
+  else fail floor-exempt-per-kind "stdout '$out' kind field '$(err_fields 2)'"; fi
+}
+
+# Entries for migration only: auth stays in force, non-matching migrations stay in force, and the
+# matched migration is named on stderr. No empty pattern may blank a kind that has no records.
+case_floor_exempt_migration_only() {
+  local bad="" out
+  exempt_repo '["sql/migrations/**"]' '["migration"]'; addfile sql/migrations/0002.sql "x"
+  out="$(floor_out)"; [ -z "$out" ] || bad="$bad [1: stdout '$out']"
+  [ "$(err_fields 2)" = migration ] || bad="$bad [1: kind '$(err_fields 2)']"
+  exempt_repo '["sql/migrations/**"]' '["migration"]'; addfile src/auth/login.ts "x"
+  out="$(floor_out)"; [ "$out" = "full auth: src/auth/login.ts" ] || bad="$bad [2: '$out']"
+  exempt_repo '["sql/migrations/**"]' '["migration"]'; addfile db/migrations/0001_init.sql "x"
+  out="$(floor_out)"; [ "$out" = "full migration: db/migrations/0001_init.sql" ] || bad="$bad [3: '$out']"
+  [ -z "$bad" ] && pass floor-exempt-migration-only || fail floor-exempt-migration-only "$bad"
+}
+
+# Notice rules: an entry beats the test-path default, the lowest entry number wins, a path prints once.
+case_floor_exempt_notice_rules() {
+  local bad="" err n
+  mkrepo; _git checkout -q main >/dev/null 2>&1
+  printf '[gate]\nlane_gates = true\n%s\n%s\n' "$(ent '["tests/**"]' '["auth", "auth"]' '"first"')" "$(ent '["tests/auth/*"]' '["auth"]' '"second"')" > "$ROOT/.kit.toml"
+  _commit "chore: two entries"; _git checkout -q -B feat/x >/dev/null 2>&1
+  addfile tests/auth/login.test.ts "x"
+  err="$(floor_err)"; n="$(printf '%s\n' "$err" | grep -c '^floor-exempt')"
+  [ "$n" = 1 ] || bad="$bad [notice count $n: $err]"
+  [ "$(err_fields 3)" = "entry 1" ] && [ "$(err_fields 5)" = first ] || bad="$bad [entry $(err_fields 3) reason $(err_fields 5)]"
+  [ -z "$(floor_out)" ] || bad="$bad [stdout '$(floor_out)']"
+  [ -z "$bad" ] && pass floor-exempt-notice-rules || fail floor-exempt-notice-rules "$bad"
 }
 
 case_floor_exempt_real_auth_still_hits() {
   local bad="" p out
   for p in src/auth/login.ts lib/session.ts; do
-    exempt_repo '^scripts/'; addfile "$ORACLE" "x"; addfile "$p" "x"
+    exempt_repo '["scripts/login-*.sh"]' '["auth"]'; addfile "$ORACLE" "x"; addfile "$p" "x"
     out="$(floor_out)"; [ "$out" = "full auth: $p" ] || bad="$bad [$p => '$out']"
   done
   [ -z "$bad" ] && pass floor-exempt-real-auth-still-hits || fail floor-exempt-real-auth-still-hits "$bad"
@@ -1105,13 +1153,14 @@ case_floor_exempt_real_auth_still_hits() {
 # Only the merge base counts: (A) an exemption in the working tree only, (B) an exemption committed
 # on the checked-out branch while the floor runs against another branch.
 case_floor_exempt_working_tree_ignored() {
-  local a b
+  local a b cfg
+  cfg="$(printf '[gate]\nlane_gates = true\n%s\n' "$(ent '["scripts/login-*.sh"]' '["auth"]' '"r"')")"
   mkrepo; addfile "$ORACLE" "x"
-  printf '[gate]\nlane_gates = true\n[lanes]\nhard_path_exempt = "^scripts/"\n' > "$ROOT/.kit.toml"
+  printf '%s\n' "$cfg" > "$ROOT/.kit.toml"
   a="$(floor_out)"
   mkrepo
   _git checkout -q -b feat/cfg main >/dev/null 2>&1
-  printf '[gate]\nlane_gates = true\n[lanes]\nhard_path_exempt = "^scripts/"\n' > "$ROOT/.kit.toml"; _commit "chore: exempt on a branch"
+  printf '%s\n' "$cfg" > "$ROOT/.kit.toml"; _commit "chore: exempt on a branch"
   _git checkout -q feat/x >/dev/null 2>&1; addfile "$ORACLE" "x"
   _git checkout -q feat/cfg >/dev/null 2>&1
   b="$(lcx floor "$ROOT" main feat/x 2>/dev/null)"
@@ -1120,25 +1169,23 @@ case_floor_exempt_working_tree_ignored() {
 }
 
 case_floor_exempt_never_kit_config() {
-  exempt_repo '^[.]kit[.]toml$'
-  printf '[gate]\nlane_gates = true\n[lanes]\nhard_path_exempt = "^[.]kit[.]toml$"\nextra_hard_paths = ""\n' > "$ROOT/.kit.toml"; _commit "chore: edit config"
+  exempt_repo '[".kit.toml"]' '["auth"]'
+  printf '[gate]\nlane_gates = true\n' > "$ROOT/.kit.toml"; _commit "chore: edit config"
   local out; out="$(floor_out)"
   [ "$out" = "full kit-config: .kit.toml" ] && pass floor-exempt-never-kit-config || fail floor-exempt-never-kit-config "got '$out'"
 }
 
-case_floor_exempt_empty_match_rejected() {
-  local bad="" e out err
-  for e in '|x' '.' '.+' 'x|.' 'auth' '(unclosed'; do
-    exempt_repo "$e"; addfile src/auth/login.ts "x"
-    out="$(floor_out)"; err="$(floor_err)"
-    [ "$out" = "full auth: src/auth/login.ts" ] || bad="$bad [$e => '$out']"
-    printf '%s' "$err" | grep -q 'hard_path_exempt entry .* skipped' || bad="$bad [$e: no rejection line: '$err']"
-  done
-  [ -z "$bad" ] && pass floor-exempt-empty-match-rejected || fail floor-exempt-empty-match-rejected "$bad"
+# The first-build key does nothing.
+case_floor_exempt_old_shape_ignored() {
+  mkrepo; _git checkout -q main >/dev/null 2>&1
+  printf '[gate]\nlane_gates = true\n[lanes]\nhard_path_exempt = "^scripts/"\n' > "$ROOT/.kit.toml"; _commit "chore: old shape"
+  _git checkout -q -B feat/x >/dev/null 2>&1; addfile "$ORACLE" "x"
+  local out; out="$(floor_out)"
+  [ "$out" = "full auth: $ORACLE" ] && pass floor-exempt-old-shape-ignored || fail floor-exempt-old-shape-ignored "got '$out'"
 }
 
 case_floor_exempt_data_loss_still_hits() {
-  exempt_repo '^scripts/'; addfile "$ORACLE" 'DROP TABLE users;'
+  exempt_repo '["scripts/login-*.sh"]' '["auth"]'; addfile "$ORACLE" 'DROP TABLE users;'
   local out; out="$(floor_out)"
   [ "$out" = "full data-loss: $ORACLE" ] && pass floor-exempt-data-loss-still-hits || fail floor-exempt-data-loss-still-hits "got '$out'"
 }
@@ -1147,11 +1194,11 @@ case_floor_exempt_data_loss_still_hits() {
 # branch only it does not.
 case_classify_files_exempt() {
   local on off
-  exempt_repo '^scripts/'
-  on="$(cd "$ROOT" && KIT_PROJECT_ROOT="$ROOT" lcx classify --files "$ORACLE" "add a qa oracle case" 2>/dev/null)"
+  exempt_repo '["scripts/login-*.sh"]' '["auth"]'
+  on="$(cd "$ROOT" && KIT_PROJECT_ROOT="$ROOT" lcx classify --files "$ORACLE" "add a smoke script" 2>/dev/null)"
   mkrepo
-  printf '[gate]\nlane_gates = true\n[lanes]\nhard_path_exempt = "^scripts/"\n' > "$ROOT/.kit.toml"; _commit "chore: exempt in the PR"
-  off="$(cd "$ROOT" && KIT_PROJECT_ROOT="$ROOT" lcx classify --files "$ORACLE" "add a qa oracle case" 2>/dev/null)"
+  printf '[gate]\nlane_gates = true\n%s\n' "$(ent '["scripts/login-*.sh"]' '["auth"]' '"r"')" > "$ROOT/.kit.toml"; _commit "chore: exempt in the PR"
+  off="$(cd "$ROOT" && KIT_PROJECT_ROOT="$ROOT" lcx classify --files "$ORACLE" "add a smoke script" 2>/dev/null)"
   if [ "$on" = normal ] && [ "$off" = full ]; then pass classify-files-exempt
   else fail classify-files-exempt "base exemption => '$on' (want normal); branch-only => '$off' (want full)"; fi
 }
@@ -1189,7 +1236,7 @@ run_case() {
 }
 # `parity` (byte-identical against the baseline) holds only at the refactor commit; after the
 # flip the standing check is parity-after-flip.
-ALL="parity-after-flip plan-flip four-false-hits webhook-signature-suggests suggest-records explain-suggest-line classify-files-full escalate-suggest floor-paths floor-rename-counts-both-sides floor-data-loss floor-extra-paths-union floor-invalid-extra-ere override-drop-review override-uncommitted override-typo override-no-light pinned-root malformed-array-fails-closed policy-at-base ship-migration-blocks ship-migration-absent-quiet ship-switch-off-on-base ship-flip-gate-in-pr ship-hollow-full-override ship-data-loss ship-no-spec-blocks ship-suggest-advisory workflow-view floor-timing floor-non-ascii hook-timeout floor-submodule override-empty-phases ship-operator-hollow-full ship-push-forms ship-base-is-origin-head ship-checks-pushed-ref ship-slug-quoted risk-verb significance-uses-risk floor-no-leaks override-unknown-lane-name toml-valid ship-merge-base-once override-operator-precedence default-lane-layers start-no-duplicate-skips ship-fail-closed-refs floor-diff-hardening floor-plus-line floor-where-boundary floor-timing-30k default-rejects-tiny safety-push-forms ship-marker-collisions ship-continuation-and-heredoc ship-marker-at-base exempt-reader-rejects exempt-glob-semantics floor-test-paths-not-auth floor-test-paths-other-kinds floor-test-path-notice floor-exempt-fixture-quiet floor-exempt-real-auth-still-hits floor-exempt-working-tree-ignored floor-exempt-never-kit-config floor-exempt-empty-match-rejected floor-exempt-data-loss-still-hits classify-files-exempt ship-exempt-in-pr-blocks ship-exempt-logged"
+ALL="parity-after-flip plan-flip four-false-hits webhook-signature-suggests suggest-records explain-suggest-line classify-files-full escalate-suggest floor-paths floor-rename-counts-both-sides floor-data-loss floor-extra-paths-union floor-invalid-extra-ere override-drop-review override-uncommitted override-typo override-no-light pinned-root malformed-array-fails-closed policy-at-base ship-migration-blocks ship-migration-absent-quiet ship-switch-off-on-base ship-flip-gate-in-pr ship-hollow-full-override ship-data-loss ship-no-spec-blocks ship-suggest-advisory workflow-view floor-timing floor-non-ascii hook-timeout floor-submodule override-empty-phases ship-operator-hollow-full ship-push-forms ship-base-is-origin-head ship-checks-pushed-ref ship-slug-quoted risk-verb significance-uses-risk floor-no-leaks override-unknown-lane-name toml-valid ship-merge-base-once override-operator-precedence default-lane-layers start-no-duplicate-skips ship-fail-closed-refs floor-diff-hardening floor-plus-line floor-where-boundary floor-timing-30k default-rejects-tiny safety-push-forms ship-marker-collisions ship-continuation-and-heredoc ship-marker-at-base exempt-reader-rejects exempt-glob-semantics floor-test-paths-not-auth floor-test-paths-other-kinds floor-test-path-notice floor-exempt-fixture-quiet floor-exempt-glob-bounded floor-exempt-per-kind floor-exempt-migration-only floor-exempt-notice-rules floor-exempt-real-auth-still-hits floor-exempt-working-tree-ignored floor-exempt-never-kit-config floor-exempt-old-shape-ignored floor-exempt-data-loss-still-hits classify-files-exempt ship-exempt-in-pr-blocks ship-exempt-logged"
 if [ "$#" -eq 0 ]; then set -- $ALL; fi
 for c in "$@"; do run_case "$c"; done
 [ "$FAILS" -eq 0 ]

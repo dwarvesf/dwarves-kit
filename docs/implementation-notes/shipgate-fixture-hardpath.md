@@ -101,6 +101,10 @@ Warnings for the builder:
 - The reader skips the awk run when the file holds neither `hard_path_exempt` nor `hard_path_canaries`, so a repo with no config pays one `git show` and one grep.
 - The all-wildcard glob rule is partly redundant with the canary check: `**` or `*` also matches a built-in canary. The test pins the all-wildcard message itself, so the rule stays covered if canaries change.
 - Entry numbers count every `[[gate.hard_path_exempt]]` table in file order, valid or not. A kind listed twice in one entry collapses to one record.
+- The floor cases for AC14, AC15 (floor legs), AC16 and AC17 and the cases `floor-exempt-glob-bounded` and `floor-exempt-notice-rules` landed with the helper rewrite in the floor-filter task, not in the later case tasks. They share the new `exempt_repo <paths> <kinds> [<reason>]` helper, so leaving the first-build versions red would have meant writing them twice.
+- `floor-exempt-empty-match-rejected` is gone. Its job moves to the reader cases (`exempt-reader-rejects`) and to the floor-level rejection cases.
+- Between the floor-filter and ship-rules tasks `ship-exempt-logged` is red: it still expects the first-build `floor: exempt` log line. The ship-rules task rewrites it.
+- The floor builds one blanked list per exemptable kind (`pl_auth`, `pl_migration`) and one `grep -nE -e <ere>` per record. It does not use `grep -f`, so no pattern file can hold an empty line.
 
 ## Negative controls
 
@@ -122,3 +126,9 @@ Warnings for the builder:
 | `exempt-reader-rejects` | all-wildcard check disabled | yes (message leg) |
 | `exempt-reader-rejects` | `**` inside a segment allowed | yes |
 | `exempt-reader-rejects` | user canaries not loaded | yes |
+| `floor-exempt-per-kind` | migration reads the auth-blanked list | yes |
+| `floor-exempt-migration-only` | a kind with no records blanks every path via an empty pattern | yes (legs 2 and 3) |
+| `floor-exempt-notice-rules` | test-path scan reads the original list, so an entry does not win | yes (notice count 2) |
+| `floor-exempt-notice-rules` | per-line entry numbers not deduplicated, so the highest entry wins | yes |
+| `floor-exempt-real-auth-still-hits` | any non-empty record set blanks the auth list | yes |
+| `floor-exempt-working-tree-ignored` | reader reads the working-tree `.kit.toml` | yes |

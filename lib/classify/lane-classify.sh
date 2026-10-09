@@ -520,6 +520,45 @@ _floor_git() {
     -c diff.noprefix=false -c diff.mnemonicPrefix=false -c diff.renames=false -c diff.external= \
     -c core.attributesFile=/dev/null "$@"
 }
+# _floor_blank <tmp> <kind> <short-sha>: writes $tmp/pl_<kind>, the path list with this kind's exempt
+# paths blanked (blank lines, never deleted, so line numbers and the submodule index stay valid). The
+# exempt paths are those matched by an entry of this kind in $tmp/recs (the lowest entry number wins)
+# and, for kind auth, test paths that no entry covers. Each blanked path the kind's pattern would have
+# hit is named on stderr, once, as one TAB line with the path last (a path cannot forge a field):
+#   floor-exempt <kind> entry <n> <globs> <reason> <short-sha> <path>
+#   floor-exempt auth test-path - built-in test-path default - <path>
+# A kind with no records runs no entry grep, and no pattern is ever empty.
+_floor_blank() {
+  local tmp="$1" k="$2" short="$3" n ere re list="$tmp/paths"
+  re="$(_hp_re "$k")"
+  : > "$tmp/m_$k"
+  while IFS=$'\t' read -r n _ ere _; do
+    grep -nE -e "$ere" "$tmp/paths" 2>/dev/null | cut -d: -f1 | awk -v n="$n" '{ print $1 "\t" n }' >> "$tmp/m_$k" || true
+  done < <(awk -F'\t' -v k="$k" '$2 == k' "$tmp/recs")
+  if [ -s "$tmp/m_$k" ]; then
+    awk -F'\t' '!s[$1]++' "$tmp/m_$k" > "$tmp/mm_$k"
+    awk -F'\t' 'NR==FNR { n[$1] = $2; next } { print ((FNR in n) ? "" : $0) }' "$tmp/mm_$k" "$tmp/paths" > "$tmp/pl_$k"
+    awk -F'\t' -v np="$tmp/en_$k" -v pp="$tmp/ep_$k" 'NR==FNR { n[$1] = $2; next } (FNR in n) { print n[FNR] > np; print $0 > pp }' "$tmp/mm_$k" "$tmp/paths"
+    list="$tmp/pl_$k"
+    grep -Ein -e "$re" "$tmp/ep_$k" 2>/dev/null | cut -d: -f1 > "$tmp/ei_$k" || true
+    awk -F'\t' -v k="$k" -v s="$short" '
+      FILENAME == ARGV[1] { if ($2 == k) { g[$1] = $4; r[$1] = $5 } next }
+      FILENAME == ARGV[2] { hit[$1] = 1; next }
+      FILENAME == ARGV[3] { nn[FNR] = $0; next }
+      (FNR in hit) { print "floor-exempt\t" k "\tentry " nn[FNR] "\t" g[nn[FNR]] "\t" r[nn[FNR]] "\t" s "\t" $0 }
+    ' "$tmp/recs" "$tmp/ei_$k" "$tmp/en_$k" "$tmp/ep_$k" >&2
+  fi
+  if [ "$k" = auth ]; then
+    grep -nE -e "$_HP_testpath" "$list" 2>/dev/null | cut -d: -f1 > "$tmp/tlines" || true
+    if [ -s "$tmp/tlines" ]; then
+      awk 'NR==FNR { x[$1] = 1; next } { print ((FNR in x) ? "" : $0) }' "$tmp/tlines" "$list" > "$tmp/pl_auth.t"
+      awk 'NR==FNR { x[$1] = 1; next } (FNR in x)' "$tmp/tlines" "$list" | grep -Ei -e "$re" 2>/dev/null \
+        | awk '{ print "floor-exempt\tauth\ttest-path\t-\tbuilt-in test-path default\t-\t" $0 }' >&2 || true
+      mv -f "$tmp/pl_auth.t" "$tmp/pl_auth"
+    fi
+  fi
+  [ -f "$tmp/pl_$k" ] || cp "$tmp/paths" "$tmp/pl_$k"
+}
 _floor_scan() {
   local root="$1" base="$2" head="$3" tmp="$4"
   _floor_git "$root" diff -z --raw --no-renames --no-ext-diff --no-textconv --text "$base" "$head" > "$tmp/raw" 2>/dev/null || true
@@ -535,40 +574,17 @@ _floor_scan() {
     state == 2 { path = path "?" $0; next }
     END { flush() }'
   local links; links="$(sed -n 1p "$tmp/links")"
-  local best=0 bestkind="" k re hit num kpaths="$tmp/paths" exre short
-  # [lanes] hard_path_exempt at <base>: an exempt path is blanked (line numbers kept for the
-  # submodule index) for every built-in kind except kit-config, and each exempted hit is named
-  # on stderr. Extras, submodules and the data-loss scan below still see every path.
-  exre="$(lane_hard_path_exempt "$root" "$base")"
-  if [ -n "$exre" ]; then
-    printf '%s\n' "$exre" > "$tmp/exre"
-    grep -nE -f "$tmp/exre" "$tmp/paths" 2>/dev/null | cut -d: -f1 > "$tmp/exlines" || true
-    if [ -s "$tmp/exlines" ]; then
-      awk 'NR==FNR { x[$1] = 1; next } { print ((FNR in x) ? "" : $0) }' "$tmp/exlines" "$tmp/paths" > "$tmp/paths_ne"
-      kpaths="$tmp/paths_ne"
-      grep -E -f "$tmp/exre" "$tmp/paths" > "$tmp/expaths" 2>/dev/null || true
-      short="$(git -C "$root" rev-parse --short "$base" 2>/dev/null || printf '%s' "$base")"
-      for k in $_HP_KINDS; do
-        [ "$k" = kit-config ] && continue
-        grep -Ei -e "$(_hp_re "$k")" "$tmp/expaths" 2>/dev/null | awk -v k="$k" '{ print k "\t" $0 }' || true
-      done | awk -F'\t' -v s="$short" '!seen[$2]++ { print "floor: exempt " $1 ": " $2 " ([lanes] hard_path_exempt at " s ")" }' >&2
-    fi
-  fi
-  # Kind auth skips test paths: they are blanked in its own list (line numbers kept), and each blanked
-  # path the auth pattern would have hit is named on stderr as a TAB notice, path last.
-  local apaths="$kpaths"
-  grep -nE -e "$_HP_testpath" "$kpaths" 2>/dev/null | cut -d: -f1 > "$tmp/tlines" || true
-  if [ -s "$tmp/tlines" ]; then
-    awk 'NR==FNR { x[$1] = 1; next } { print ((FNR in x) ? "" : $0) }' "$tmp/tlines" "$kpaths" > "$tmp/paths_auth"
-    apaths="$tmp/paths_auth"
-    awk 'NR==FNR { x[$1] = 1; next } (FNR in x)' "$tmp/tlines" "$kpaths" | grep -Ei -e "$_HP_auth" 2>/dev/null \
-      | awk -F'\n' '{ print "floor-exempt\tauth\ttest-path\t-\tbuilt-in test-path default\t-\t" $0 }' >&2 || true
-  fi
+  local best=0 bestkind="" k re hit num short list
+  # Hard-path exemptions at <base> (see lane_hard_path_exempt): kind auth skips test paths and its
+  # entries' paths, kind migration skips its entries' paths. Every other kind, extras, submodules and
+  # the data-loss scan below read the full path list.
+  short="$(git -C "$root" rev-parse --short "$base" 2>/dev/null || printf '%s' "$base")"
+  lane_hard_path_exempt "$root" "$base" > "$tmp/recs" || true
+  for k in auth migration; do _floor_blank "$tmp" "$k" "$short"; done
   for k in $_HP_KINDS; do
     re="$(_hp_re "$k")"
-    if [ "$k" = kit-config ]; then hit="$(grep -Ein -m1 -e "$re" "$tmp/paths" 2>/dev/null | head -1)" || hit=""
-    elif [ "$k" = auth ]; then hit="$(grep -Ein -m1 -e "$re" "$apaths" 2>/dev/null | head -1)" || hit=""
-    else hit="$(grep -Ein -m1 -e "$re" "$kpaths" 2>/dev/null | head -1)" || hit=""; fi
+    case "$k" in auth|migration) list="$tmp/pl_$k" ;; *) list="$tmp/paths" ;; esac
+    hit="$(grep -Ein -m1 -e "$re" "$list" 2>/dev/null | head -1)" || hit=""
     num="${hit%%:*}"
     if [ -n "$hit" ] && { [ "$best" = 0 ] || [ "$num" -lt "$best" ]; }; then best="$num"; bestkind="$k"; fi
   done
