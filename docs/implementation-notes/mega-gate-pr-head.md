@@ -33,3 +33,16 @@ Delta from the spec and the warnings above.
 - Existing merge tests (`test-mega-merge.sh`, `test-mega-reconcile.sh`) now run against a throwaway one-commit repo set as `MEGA_MERGE_ROOT`, with base and fetch stubs; head and tip are the same commit, so the diff is empty. They no longer read the kit repo.
 - `docs/FEATURES.md` was regenerated: `test-meta.sh` reported drift from the spec file itself.
 - `docs/verification/mega-gate-pr-head-e2e.sh` uses the real `gate-ledger.sh` against a temp `DWARVES_KIT_LOG_DIR` only, as `test-mega-reconcile.sh` does; no ledger record was written for this spec.
+- Security review fix 1: in head mode every config read is at the base-branch tip `T` (`--base-tip`, else the resolved default branch), not at `merge-base(H, T)`; the merge base only scopes the diff. `ship_rule_floor` takes an optional 7th argument `<cfg-rev>` and hands it to the classifier as `KIT_FLOOR_CONFIG_AT` (set to empty on the hook path, so an ambient value never reaches the hook). Unset, every read stays at the base.
+- Security review fix 2: `lane_extra_hard_paths` also unions the `.kit.toml` committed at `KIT_FLOOR_CONFIG_AT`. The working tree and `HEAD` copies still count (they only add entries); the `mega-merge.sh` header no longer says the gate never reads the working tree.
+- Security review fix 3: head mode refuses when `merge-base == H`, whatever `T` is. A fetch override printing `H` (or a descendant of `H`) as the tip would otherwise make the diff empty. Cost: a PR already inside its base branch is refused; it has nothing to merge. The `test-mega-merge.sh` and `test-mega-reconcile.sh` fixtures now have a head one commit ahead of the tip.
+- Security review fix 4: `MEGA_MERGE_FETCH_TIMEOUT` must be all digits before the fetch starts. The value fed `$(( ))`, which evaluates `a[$(cmd)]` as code.
+- Security review fix 5: `git merge-base --all H T` with more than one base refuses (`ambiguous merge base`); the gate never picks one.
+
+### Negative controls (security review fixes)
+
+- `head-mode-config-at-tip`: head cut from a `lane_gates = false` commit, tip has it on; RED on the old code (gate passes), GREEN now.
+- `head-mode-extras-at-tip`: stale head and checkout, `extra_hard_paths` committed only at the tip; RED then GREEN.
+- `head-mode-base-is-head`: head equal to the tip, and head already inside the tip; RED then GREEN. The head-ahead case stays green both ways.
+- `head-mode-criss-cross`: two merge bases; RED then GREEN.
+- `merge-fetch-timeout-value`: `abc`, `-5`, `1.5`, `1 2` and `a[$(touch ...)]`; RED then GREEN, and the injected command never ran.

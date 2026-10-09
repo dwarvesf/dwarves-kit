@@ -69,6 +69,49 @@ Exit: 0 (green after restore)
 Verdict: PASS
 ```
 
+## Security review fixes
+
+A review found five holes in head mode. Each got a test first, run against the pre-fix `lib/` (commit `2429794d`), then green after the fix.
+
+| # | Hole | Fix | Case |
+|---|------|-----|------|
+| 1 | Config read at the author-chosen merge base | Read at the base-branch tip; the base only scopes the diff | `head-mode-config-at-tip` |
+| 2 | `extra_hard_paths` from the working tree only | Also union the copy committed at the tip | `head-mode-extras-at-tip` |
+| 3 | Base equal to head makes the floor vacuous | Refuse when `merge-base == H` | `head-mode-base-is-head` |
+| 4 | Unvalidated `MEGA_MERGE_FETCH_TIMEOUT` reaches `$(( ))` | Digits only, checked before the fetch | `merge-fetch-timeout-value` |
+| 5 | Criss-cross merges have several bases | Refuse when `merge-base --all` returns more than one | `head-mode-criss-cross` |
+
+```
+Command: git checkout 2429794d -- lib && bash tests/test-mega-gate-head.sh   (new cases, old code)
+Exit: 1 (RED expected)
+  NOT ok - head-mode-config-at-tip: got 0|
+  NOT ok - head-mode-extras-at-tip: got 0|
+  NOT ok - head-mode-base-is-head same: got 0|
+  NOT ok - head-mode-base-is-head ancestor: got 0|
+  NOT ok - head-mode-criss-cross: got 0|
+  NOT ok - merge-fetch-timeout-value 'abc': got 1|/Users/tieubao/workspace/dwarvesf/dwarves-kit/.claude/worktree
+  NOT ok - merge-fetch-timeout-value '-5': got 1|BLOCKED: cannot fetch PR #7 head or base from origin; failing c
+  NOT ok - merge-fetch-timeout-value '1.5': got 1|/Users/tieubao/workspace/dwarvesf/dwarves-kit/.claude/worktree
+  NOT ok - merge-fetch-timeout-value '1 2': got 1|/Users/tieubao/workspace/dwarvesf/dwarves-kit/.claude/worktree
+  NOT ok - merge-fetch-timeout-value 'a[$(touch /var/folders/dr/n3x74rr93kvfjf1873pyjvp80000gn/T/tmp.ZCD6lnkiXa/
+  NOT ok - merge-clean-pr-head: left refs
+  PASS=46 FAIL=11
+
+Restore: git checkout HEAD -- lib
+Command: bash tests/test-mega-gate-head.sh
+Exit: 0 (green after the fixes)
+  PASS=57 FAIL=0
+
+Command: bash tests/test-mega-merge.sh          Exit: 0   === 55/55 passed, 0 failed ===
+Command: bash tests/test-mega-reconcile.sh      Exit: 0   === 35/35 passed, 0 failed ===
+Command: bash tests/test-mega-gate-parity.sh    Exit: 0   PASS=12 FAIL=0
+Command: bash tests/test-lanes-data.sh          Exit: 0   83 PASS lines, no FAIL
+Command: bash tests/test-lane-classify.sh       Exit: 0   === 38/38 passed, 0 failed ===
+Verdict: PASS
+```
+
+The no-`--head` hook path is unchanged: `ship_rule_floor` is called with six arguments and the classifier reads `${KIT_FLOOR_CONFIG_AT:-$base}` with the variable set to empty, so `test-mega-gate-parity.sh` stays green. `hooks/` did not change, so `hooks/codex-hooks.json` is not repinned.
+
 ## Not proven
 
 - GitHub's own behavior: that `refs/pull/<n>/head` exists for a fork PR and is current a moment after a push rests on GitHub's documented behavior and the SPEC grounding sample; no test talks to a real PR. A merge right after a push can refuse with "head moved"; a rerun pins the new head.
