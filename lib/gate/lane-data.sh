@@ -196,32 +196,116 @@ lane_extra_hard_paths() {
   done | sort -u
 }
 
-# lane_hard_path_exempt <root> <rev>: the [lanes] hard_path_exempt ERE from the .kit.toml committed
-# at <rev>, else nothing. Only that copy counts: no working tree, no operator overlay, no kit root.
-# Callers pass the merge base, so a PR cannot exempt its own push. The entry is dropped with one
-# stderr line when it is not a valid ERE, matches the empty string, or matches a canary hard path:
-# an over-broad entry (`.`, `.+`, `x|.`) would otherwise exempt real auth. The match is
-# case-sensitive. Write a literal dot as `[.]`: `\.` is not a valid TOML string escape.
-_LD_EXEMPT_CANARIES='src/auth/login.ts
-lib/session.ts
-app/auth.py
-.env
-config/secrets/prod.txt
-db/migrations/0001_init.sql
-.github/workflows/ci.yml
-Dockerfile'
+# lane_hard_path_exempt <root> <rev>: the hard-path exemption records from the .kit.toml committed at
+# <rev>, else nothing. Only that copy counts: no working tree, no operator overlay, no kit root.
+# Callers pass the merge base, so a PR cannot exempt its own push. The config is the array of
+# tables [[gate.hard_path_exempt]] (keys paths, kinds, reason; kinds auth or migration only).
+# Everything is validated before anything prints: any invalid entry refuses the WHOLE config (stdout
+# empty, one stderr line per problem). Exit 0 always. Records, one per (entry, kind), TAB-separated:
+#   <entry number> <kind> <ere> <globs joined by ", "> <reason>
+# Not a TOML parser: it accepts exactly one-line arrays and double-quoted strings, and refuses the rest.
 lane_hard_path_exempt() {
-  local root="$1" rev="$2" tmp v rc=0
+  local root="$1" rev="$2" tmp sha
   [ -n "$root" ] && [ -n "$rev" ] || return 0
   tmp="$(mktemp)" || return 0
   kit_config_show_at "$root" "$rev" > "$tmp"
-  v="$(_kit_toml_get "$tmp" lanes hard_path_exempt)"
-  rm -f "$tmp"
-  [ -n "$v" ] || return 0
-  printf '\n' | grep -Eq -- "$v" 2>/dev/null || rc=$?
-  if [ "$rc" -gt 1 ]; then echo "lane-data: hard_path_exempt entry '$v' is not a valid ERE; skipped" >&2; return 0; fi
-  if [ "$rc" = 0 ] || printf '%s\n' "$_LD_EXEMPT_CANARIES" | grep -Eq -- "$v"; then
-    echo "lane-data: hard_path_exempt entry '$v' matches the empty string or a canary hard path; skipped" >&2; return 0
-  fi
-  printf '%s\n' "$v"
+  if ! grep -q 'hard_path_exempt\|hard_path_canaries' "$tmp"; then command rm -f "$tmp"; return 0; fi
+  sha="$(git -C "$root" rev-parse --short "$rev" 2>/dev/null || printf '%s' "$rev")"
+  awk -v sha="$sha" '
+    function trim(s) { sub(/^[[:space:]]+/, "", s); sub(/[[:space:]]+$/, "", s); return s }
+    function sw(v, i) { while (substr(v, i, 1) ~ /[ \t]/) i++; return i }
+    function cfgerr(m) { cerr[++ncerr] = m }
+    function eerr(e, m) { if (err[e] == "") err[e] = m }
+    # parse_arr <v>: fills AV[1..AN] from a one-line array of double-quoted strings; returns the problem or "".
+    function parse_arr(v,   i, j, s, c) {
+      AN = 0
+      if (substr(v, 1, 1) != "[") return "value must be a one-line array of double-quoted strings"
+      i = sw(v, 2)
+      if (substr(v, i, 1) == "]") return "array is empty"
+      while (1) {
+        i = sw(v, i)
+        if (substr(v, i, 1) != "\"") return "elements must be double-quoted strings on one line"
+        j = index(substr(v, i + 1), "\"")
+        if (j == 0) return "unterminated string"
+        s = substr(v, i + 1, j - 1)
+        if (index(s, "\\")) return "string holds a backslash"
+        if (s ~ /[[:cntrl:]]/) return "string holds a control character"
+        AV[++AN] = s; i = sw(v, i + j + 1)
+        c = substr(v, i, 1)
+        if (c == ",") { i = sw(v, i + 1); if (substr(v, i, 1) == "]") return "trailing comma"; continue }
+        if (c == "]") { i++; break }
+        return "expected a comma or ] after an element"
+      }
+      i = sw(v, i)
+      if (substr(v, i) != "" && substr(v, i) !~ /^#/) return "text after the closing bracket"
+      return ""
+    }
+    # parse_str <v>: AS = the content of a one-line double-quoted string; returns the problem or "".
+    function parse_str(v,   j, s, i) {
+      if (substr(v, 1, 1) != "\"") return "value must be a one-line double-quoted string"
+      j = index(substr(v, 2), "\"")
+      if (j == 0) return "unterminated string"
+      s = substr(v, 2, j - 1)
+      if (index(s, "\\")) return "string holds a backslash"
+      if (s ~ /[[:cntrl:]]/) return "string holds a control character"
+      i = sw(v, j + 2)
+      if (substr(v, i) != "" && substr(v, i) !~ /^#/) return "text after the closing quote"
+      AS = s; return ""
+    }
+    { line = $0; sub(/\r$/, "", line); if (NR == 1 && substr(line, 1, 3) == "\357\273\277") line = substr(line, 4); t = trim(line) }
+    t == "" || t ~ /^#/ { next }
+    index(t, "\"\"\"") || index(t, "\047\047\047") { tq = 1 }
+    t ~ /^\[/ {
+      h = t; sub(/[[:space:]]*#.*$/, "", h); hn = h; gsub(/[[:space:]]/, "", hn)
+      sec = "other"
+      if (hn == "[[gate.hard_path_exempt]]") {
+        hdr = 1
+        if (h != "[[gate.hard_path_exempt]]") cfgerr("line " NR ": the header must be exactly [[gate.hard_path_exempt]]")
+        else { cur = ++ne; sec = "ent"; hline[cur] = NR }
+      } else if (hn == "[gate.hard_path_exempt]") {
+        hdr = 1; cfgerr("line " NR ": use the array-of-tables header [[gate.hard_path_exempt]], not [gate.hard_path_exempt]")
+      } else if (hn == "[gate]") sec = "gate"
+      next
+    }
+    sec == "ent" {
+      if (t !~ /^[A-Za-z_][A-Za-z0-9_-]*[[:space:]]*=/) { eerr(cur, "line " NR ": expected a key = value line"); next }
+      key = t; sub(/[[:space:]]*=.*$/, "", key); val = t; sub(/^[^=]*=[[:space:]]*/, "", val)
+      if (key != "paths" && key != "kinds" && key != "reason") { eerr(cur, "line " NR ": unknown key \047" key "\047"); next }
+      if (seen[cur, key]++) { eerr(cur, "line " NR ": duplicate key \047" key "\047"); next }
+      if (key == "reason") { m = parse_str(val); if (m == "") R[cur] = AS }
+      else {
+        m = parse_arr(val)
+        if (m == "") { if (key == "paths") { NP[cur] = AN; for (x = 1; x <= AN; x++) P[cur, x] = AV[x] } else { NK[cur] = AN; for (x = 1; x <= AN; x++) K[cur, x] = AV[x] } }
+      }
+      if (m != "") eerr(cur, "line " NR ": " key ": " m)
+      next
+    }
+    sec == "gate" && t ~ /^hard_path_canaries[[:space:]]*=/ { next }
+    index(t, "hard_path_canaries") { cfgerr("line " NR ": hard_path_canaries is read only as a key under [gate]") }
+    END {
+      if (tq && hdr) cfgerr("the file holds a multi-line string; a table inside one cannot be told from an entry")
+      if (ne > 32) cfgerr(ne " entries; the limit is 32")
+      for (e = 1; e <= ne; e++) {
+        m = err[e]
+        if (m == "") for (x = 1; x <= 3 && m == ""; x++) { k = (x == 1 ? "paths" : x == 2 ? "kinds" : "reason"); if (!seen[e, k]) m = "missing key \047" k "\047" }
+        if (m == "" && trim(R[e]) == "") m = "reason must not be empty"
+        if (m == "" && index(R[e], "|")) m = "reason must not hold |"
+        for (x = 1; m == "" && x <= NK[e]; x++) {
+          k = K[e, x]
+          if (k == "secret" || k == "ci" || k == "infra" || k == "kit-config") m = "kind \047" k "\047 is never exemptable"
+          else if (k != "auth" && k != "migration") m = "unknown kind \047" k "\047"
+        }
+        if (m != "") { nerr++; print "lane-data: [[gate.hard_path_exempt]] entry " e " at " sha ": " m "; no exemption applies" > "/dev/stderr" }
+      }
+      for (x = 1; x <= ncerr; x++) { nerr++; print "lane-data: [[gate.hard_path_exempt]] config at " sha ": " cerr[x] "; no exemption applies" > "/dev/stderr" }
+      if (nerr) exit 0
+      for (e = 1; e <= ne; e++) {
+        globs = ""; for (x = 1; x <= NP[e]; x++) globs = globs (x > 1 ? ", " : "") P[e, x]
+        delete done
+        for (x = 1; x <= NK[e]; x++) { k = K[e, x]; if (done[k]++) continue; print e "\t" k "\t-\t" globs "\t" R[e] }
+      }
+    }
+  ' "$tmp"
+  command rm -f "$tmp"
+  return 0
 }

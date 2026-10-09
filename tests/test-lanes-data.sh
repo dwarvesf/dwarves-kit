@@ -970,6 +970,65 @@ case_floor_test_path_notice() {
   [ -z "$err" ] || fail floor-test-path-notice "quiet leg: '$err'"
 }
 
+# ---- the exemption reader (lane_hard_path_exempt) at its own output ----
+# reader_run <toml>: main commits <toml> as .kit.toml; sets RD_OUT (stdout) and RD_ERR (stderr) of the
+# reader at main.
+RD_ERR=""; RD_OUT=""
+reader_run() {
+  local ef; ef="$(_mk)/err"
+  mkrepo; _git checkout -q main >/dev/null 2>&1
+  printf '%s' "$1" > "$ROOT/.kit.toml"; _commit "chore: cfg"
+  RD_OUT="$(bash -c 'source "$1/lib/gate/lane-data.sh"; lane_hard_path_exempt "$2" main' _ "$KIT_DIR" "$ROOT" 2>"$ef")"
+  RD_ERR="$(cat "$ef")"
+}
+# ent <paths> <kinds> <reason>: one [[gate.hard_path_exempt]] table; each value is raw TOML text.
+ent() { printf '[[gate.hard_path_exempt]]\npaths = %s\nkinds = %s\nreason = %s\n' "$1" "$2" "$3"; }
+VALID_ENTRY="$(ent '["scripts/login-*.sh"]' '["auth"]' '"r"')"
+# rd_reject <label> <toml> <needle>: the reader prints no record and its stderr holds <needle>.
+rd_reject() {
+  reader_run "$2"
+  [ -z "$RD_OUT" ] || { RD_BAD="$RD_BAD [$1: stdout '$RD_OUT']"; return; }
+  case "$RD_ERR" in *"$3"*"no exemption applies"*) ;; *) RD_BAD="$RD_BAD [$1: stderr '$RD_ERR' lacks '$3']" ;; esac
+}
+case_exempt_reader_rejects() {
+  RD_BAD=""
+  local v nl=$'\n' t=$'\t'
+  # AC7 to AC9: a second entry with a forbidden or unknown kind refuses the whole config
+  for v in secret ci infra kit-config; do
+    rd_reject "kind $v" "$VALID_ENTRY$nl$(ent '["a/b.sh"]' "[\"$v\"]" '"r"')" "kind '$v' is never exemptable"
+  done
+  rd_reject "kind extra" "$VALID_ENTRY$nl$(ent '["a/b.sh"]' '["extra"]' '"r"')" "unknown kind 'extra'"
+  rd_reject "kind typo" "$(ent '["a/b.sh"]' '["Auth"]' '"r"')" "unknown kind 'Auth'"
+  # AC10: reason absent, empty, blank, with a TAB, with |
+  rd_reject "reason absent" "$(printf '[[gate.hard_path_exempt]]\npaths = ["a/b.sh"]\nkinds = ["auth"]\n')" "reason"
+  rd_reject "reason empty" "$(ent '["a/b.sh"]' '["auth"]' '""')" "reason"
+  rd_reject "reason blank" "$(ent '["a/b.sh"]' '["auth"]' '"   "')" "reason"
+  rd_reject "reason tab" "$(ent '["a/b.sh"]' '["auth"]' "\"a${t}b\"")" "reason"
+  rd_reject "reason pipe" "$(ent '["a/b.sh"]' '["auth"]' '"a|b"')" "reason"
+  # AC12 parser legs: key, array and quoting forms
+  rd_reject "key path" "$(printf '[[gate.hard_path_exempt]]\npath = ["a/b.sh"]\nkinds = ["auth"]\nreason = "r"\n')" "unknown key 'path'"
+  rd_reject "key kind" "$(printf '[[gate.hard_path_exempt]]\npaths = ["a/b.sh"]\nkind = ["auth"]\nreason = "r"\n')" "unknown key 'kind'"
+  rd_reject "multi-line paths" "$(printf '[[gate.hard_path_exempt]]\npaths = [\n  "a/b.sh",\n]\nkinds = ["auth"]\nreason = "r"\n')" "paths"
+  rd_reject "single-bracket header" "$(printf '[gate.hard_path_exempt]\npaths = ["a/b.sh"]\nkinds = ["auth"]\nreason = "r"\n')" "[[gate.hard_path_exempt]]"
+  rd_reject "spaced header" "$(printf '[[ gate.hard_path_exempt ]]\npaths = ["a/b.sh"]\nkinds = ["auth"]\nreason = "r"\n')" "header"
+  rd_reject "single-quoted" "$(ent "['a/b.sh']" '["auth"]' '"r"')" "paths"
+  rd_reject "single-quoted reason" "$(ent '["a/b.sh"]' '["auth"]' "'r'")" "reason"
+  rd_reject "trailing comma" "$(ent '["a/b.sh",]' '["auth"]' '"r"')" "trailing comma"
+  rd_reject "empty array" "$(ent '[]' '["auth"]' '"r"')" "paths"
+  rd_reject "duplicate key" "$(printf '[[gate.hard_path_exempt]]\npaths = ["a/b.sh"]\npaths = ["c/d.sh"]\nkinds = ["auth"]\nreason = "r"\n')" "duplicate key 'paths'"
+  rd_reject "backslash" "$(ent '["a/b.sh"]' '["auth"]' '"a\\b"')" "reason"
+  rd_reject "triple quote" "$(printf 'x = """\n[[gate.hard_path_exempt]]\npaths = ["a/b.sh"]\nkinds = ["auth"]\nreason = "r"\n"""\n')" "multi-line string"
+  rd_reject "inline table" "$(printf 'hard_path_exempt = [{ paths = ["a"] }]\n[[gate.hard_path_exempt]]\npaths = ["a/b.sh"]\nkinds = ["auth"]\nreason = "r"\nextra = 1\n')" "unknown key 'extra'"
+  # an old-shape key does nothing: no record, no complaint
+  reader_run "$(printf '[lanes]\nhard_path_exempt = "^scripts/"\n')"
+  { [ -z "$RD_OUT" ] && [ -z "$RD_ERR" ]; } || RD_BAD="$RD_BAD [old shape: out '$RD_OUT' err '$RD_ERR']"
+  # a valid config with CRLF line ends, a BOM, a trailing comment and tabs around = is read
+  reader_run "$(printf '\357\273\277[[gate.hard_path_exempt]]\r\npaths\t=\t["scripts/login-*.sh"]  # c\r\nkinds=["auth", "auth"]\r\nreason = "a # b"\r\n')"
+  [ "$(printf '%s\n' "$RD_OUT" | wc -l | tr -d ' ')" = 1 ] && [ -z "$RD_ERR" ] || RD_BAD="$RD_BAD [valid crlf: out '$RD_OUT' err '$RD_ERR']"
+  case "$RD_OUT" in "1${t}auth${t}"*"${t}scripts/login-*.sh${t}a # b") ;; *) RD_BAD="$RD_BAD [valid crlf record '$RD_OUT']" ;; esac
+  [ -z "$RD_BAD" ] && pass exempt-reader-rejects || fail exempt-reader-rejects "$RD_BAD"
+}
+
 # ---- [lanes] hard_path_exempt (read at the merge base only) ----
 # FX hits auth with no config; the old oracle path is a test path now (cases/) and no longer does.
 ORACLE=scripts/login-smoke.sh
@@ -1090,7 +1149,7 @@ run_case() {
 }
 # `parity` (byte-identical against the baseline) holds only at the refactor commit; after the
 # flip the standing check is parity-after-flip.
-ALL="parity-after-flip plan-flip four-false-hits webhook-signature-suggests suggest-records explain-suggest-line classify-files-full escalate-suggest floor-paths floor-rename-counts-both-sides floor-data-loss floor-extra-paths-union floor-invalid-extra-ere override-drop-review override-uncommitted override-typo override-no-light pinned-root malformed-array-fails-closed policy-at-base ship-migration-blocks ship-migration-absent-quiet ship-switch-off-on-base ship-flip-gate-in-pr ship-hollow-full-override ship-data-loss ship-no-spec-blocks ship-suggest-advisory workflow-view floor-timing floor-non-ascii hook-timeout floor-submodule override-empty-phases ship-operator-hollow-full ship-push-forms ship-base-is-origin-head ship-checks-pushed-ref ship-slug-quoted risk-verb significance-uses-risk floor-no-leaks override-unknown-lane-name toml-valid ship-merge-base-once override-operator-precedence default-lane-layers start-no-duplicate-skips ship-fail-closed-refs floor-diff-hardening floor-plus-line floor-where-boundary floor-timing-30k default-rejects-tiny safety-push-forms ship-marker-collisions ship-continuation-and-heredoc ship-marker-at-base floor-test-paths-not-auth floor-test-paths-other-kinds floor-test-path-notice floor-exempt-fixture-quiet floor-exempt-real-auth-still-hits floor-exempt-working-tree-ignored floor-exempt-never-kit-config floor-exempt-empty-match-rejected floor-exempt-data-loss-still-hits classify-files-exempt ship-exempt-in-pr-blocks ship-exempt-logged"
+ALL="parity-after-flip plan-flip four-false-hits webhook-signature-suggests suggest-records explain-suggest-line classify-files-full escalate-suggest floor-paths floor-rename-counts-both-sides floor-data-loss floor-extra-paths-union floor-invalid-extra-ere override-drop-review override-uncommitted override-typo override-no-light pinned-root malformed-array-fails-closed policy-at-base ship-migration-blocks ship-migration-absent-quiet ship-switch-off-on-base ship-flip-gate-in-pr ship-hollow-full-override ship-data-loss ship-no-spec-blocks ship-suggest-advisory workflow-view floor-timing floor-non-ascii hook-timeout floor-submodule override-empty-phases ship-operator-hollow-full ship-push-forms ship-base-is-origin-head ship-checks-pushed-ref ship-slug-quoted risk-verb significance-uses-risk floor-no-leaks override-unknown-lane-name toml-valid ship-merge-base-once override-operator-precedence default-lane-layers start-no-duplicate-skips ship-fail-closed-refs floor-diff-hardening floor-plus-line floor-where-boundary floor-timing-30k default-rejects-tiny safety-push-forms ship-marker-collisions ship-continuation-and-heredoc ship-marker-at-base exempt-reader-rejects floor-test-paths-not-auth floor-test-paths-other-kinds floor-test-path-notice floor-exempt-fixture-quiet floor-exempt-real-auth-still-hits floor-exempt-working-tree-ignored floor-exempt-never-kit-config floor-exempt-empty-match-rejected floor-exempt-data-loss-still-hits classify-files-exempt ship-exempt-in-pr-blocks ship-exempt-logged"
 if [ "$#" -eq 0 ]; then set -- $ALL; fi
 for c in "$@"; do run_case "$c"; done
 [ "$FAILS" -eq 0 ]

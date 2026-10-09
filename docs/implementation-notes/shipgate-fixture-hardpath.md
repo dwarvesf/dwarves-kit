@@ -92,4 +92,24 @@ Warnings for the builder:
 
 ## Decisions made during the build
 
-(none yet)
+- Test-path notice case `floor-test-path-notice` landed with the matcher change, not with the output relay: the notice line is born in `_floor_scan`, so its stderr shape is pinned where the code is written.
+- Legacy first-build exempt cases moved to `scripts/login-smoke.sh` and `^scripts/` entries so they stay green until the table reader replaces them.
+- The reader refuses the file when `"""` or `'''` appears and a `[[gate.hard_path_exempt]]` header exists. A triple quote with no such header stays silent.
+- A rejection that is not tied to one entry prints `config at <sha>` in place of `entry <n> at <sha>`. It covers bad headers, a stray `hard_path_canaries`, multi-line strings and the 32-entry cap (builder item 7).
+- Only the first problem per entry prints, so a malformed entry gives exactly one line.
+- BOM and CRLF are stripped, then parsed (builder item 26). The BOM is cut by `substr`, because the awk on macOS does not read `\357` octal escapes inside a regex.
+- The reader skips the awk run when the file holds neither `hard_path_exempt` nor `hard_path_canaries`, so a repo with no config pays one `git show` and one grep.
+
+## Negative controls
+
+| Case | Mutation | FAIL seen |
+|---|---|---|
+| `floor-test-paths-other-kinds` | floor greps non-auth kinds over the test-path-blanked list | yes |
+| `floor-test-paths-not-auth` | `apaths` reset to the full list (rule not wired) | yes |
+| `floor-test-paths-not-auth` | `_path_kind` auth skip deleted | yes |
+| `floor-test-paths-other-kinds` | `_path_kind` skips test paths for every kind | yes (credentials-login leg) |
+| `exempt-reader-rejects` | kind allowlist removed | yes |
+| `exempt-reader-rejects` | reason and missing-key checks removed | yes |
+| `exempt-reader-rejects` | single-bracket header accepted | yes |
+| `exempt-reader-rejects` | trailing comma accepted | yes |
+| `exempt-reader-rejects` | `\|` in reason allowed | yes |
