@@ -56,6 +56,7 @@ Dispatch the **kit:fix-agent** subagent with:
 - The failing check's essence (name, error excerpt, file:line if known) -- not the full log.
 - The diff-touched files as scope.
 - Instruction: targeted fix only, no refactor, no new features (kit:fix-agent's own contract already enforces this).
+- Instruction: a failing check is investigated, never silenced. Do not weaken an assertion, comment out or delete a test, add a skip, or raise a timeout to turn it green; if the test itself looks wrong, report it and leave it unedited (kit:fix-agent's frozen-evaluator rule).
 
 Do not reimplement kit:fix-agent's fix logic here; this command only feeds it the CI failure and reads its FIX REPORT back.
 
