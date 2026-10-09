@@ -12,6 +12,9 @@
 #   spec_for_slug <root> <s>   the first spec_files line that matches <s>: a root file by the
 #                              glob SPEC-*-<s>.md, a co-located file only by the exact name
 #                              SPEC-<digits>-<s>.md (a glob `*` would span dashes across tools)
+#   spec_path_matches <rel> <s>  0 when the repo-relative path <rel> is the spec <s> would pick under
+#                              the same name rules (root glob, or a co-located docs/specs/ with a
+#                              digit id), for a caller that lists a commit's tree, not a checkout
 #
 # Pruned from the walk: every dot-dir (.git, .claude/worktrees/<other branch>), node_modules,
 # vendor, target, dist, build. Both functions exit 0 always and set no shell options.
@@ -48,5 +51,20 @@ spec_for_slug() {
     printf '%s\n' "$f"
     return 0
   done < <(spec_files "$root")
+  return 0
+}
+
+# spec_path_matches <rel> <slug>: the name rules of spec_for_slug, applied to one repo-relative path.
+# A fixed-string `case` on the whole path, never a pattern built from the slug.
+spec_path_matches() {
+  local rel="$1" slug="$2" base num
+  [ -n "$slug" ] || return 1
+  base="${rel##*/}"
+  case "$base" in SPEC-*-"$slug".md) ;; *) return 1 ;; esac
+  [ "$rel" != "docs/specs/$base" ] || return 0
+  case "$rel" in */docs/specs/"$base") ;; *) return 1 ;; esac
+  num="${base#SPEC-}"; num="${num%-"$slug".md}"
+  case "$num" in ''|*[!0-9]*) return 1 ;; esac
+  case "/${rel%/*}/" in */.[!/]*|*/node_modules/*|*/vendor/*|*/target/*|*/dist/*|*/build/*) return 1 ;; esac
   return 0
 }

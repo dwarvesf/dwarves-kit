@@ -76,7 +76,8 @@ _log() {  # rid text
   printf '%s | %s | %s\n' "$(now)" "$a" "$b" >> "$LOG_DIR/mega-merge.log" 2>/dev/null || true
 }
 
-# gate <rid> <lane> -- DECISION ONLY. No file writes, no gh calls. Reuses
+# gate <rid> <lane> [--head <sha> [--base-tip <sha>]] -- DECISION ONLY. No gh calls, no writes
+# beyond a scratch spec file that is removed before return. Reuses
 # gate-ledger.sh check() byte-for-byte (same lane x phase matrix hooks/ship-gate.sh
 # enforces at push), so its ledger arm never drifts looser than the ship-gate's. The
 # ship-gate's full-lane implementation-notes check reads repo files and is NOT mirrored
@@ -86,17 +87,40 @@ _log() {  # rid text
 # sources (lib/gate/ship-rules.sh), so a green gate means the push passes them too:
 #   - a large normal-lane spec needs a validate ran/override record (spec found by spec_for_slug);
 #   - a diff touching a hard path owes the full lane's gates whatever <lane> says.
-# They read the repo at $MEGA_MERGE_ROOT (default: the cwd's repo) and its HEAD against the
-# merge base with the remote default branch. No repo, no base, or no helper means the rules
-# are skipped, the same fail-open the hook has. The hook's lane is the ledger START-AMEND over
-# the spec header; here the caller's <lane> argument is that lane.
+# They read the repo at $MEGA_MERGE_ROOT (default: the cwd's repo). With no --head they read its
+# local HEAD against the merge base with the remote default branch; no repo, no base, or no helper
+# means the rules are skipped, the same fail-open the hook has (the hook-parity path). The hook's
+# lane is the ledger START-AMEND over the spec header; here the caller's <lane> argument is that lane.
+#
+# With --head <sha> (what `merge` passes) the rules read <sha>, the PR head GitHub merges, from the
+# object store alone: never the working tree, never the local HEAD. <sha> and --base-tip must be 40
+# lowercase hex commits in the repo. The base is merge-base(<sha>, --base-tip), else the merge base
+# with the remote default branch. Head mode never skips the rules: no repo, a bad SHA or no merge
+# base (a shallow clone has none) is BLOCKED, exit 1. The spec comes from <sha>'s tree. Three silent
+# passes remain, for hook parity: no ledger file, [gate] lane_gates off at the base, and a classifier
+# that is missing or errors (SECURITY.md).
 gate() {
-  local rid="${1:-}" lane="${2:-}" rc=0 root="" head="" base=""
-  [ -n "$rid" ] && [ -n "$lane" ] || { echo "usage: gate <rid> <lane>" >&2; return 64; }
+  local rid="${1:-}" lane="${2:-}" rc=0 root="" head="" base="" head_mode=0 tip="" a
+  [ -n "$rid" ] && [ -n "$lane" ] || { echo "usage: gate <rid> <lane> [--head <sha> [--base-tip <sha>]]" >&2; return 64; }
+  shift 2
+  while [ "$#" -gt 0 ]; do
+    a="$1"
+    case "$a" in
+      --head|--base-tip)
+        [ "$#" -ge 2 ] && [ -n "$2" ] || { echo "gate: $a needs a value" >&2; return 64; }
+        if [ "$a" = --head ]; then head_mode=1; head="$2"; else tip="$2"; fi
+        shift 2 ;;
+      *) echo "gate: unknown argument '$a'" >&2; return 64 ;;
+    esac
+  done
+  [ -z "$tip" ] || [ "$head_mode" -eq 1 ] || { echo "gate: --base-tip needs --head" >&2; return 64; }
   [ -f "$GATE_LEDGER" ] || { echo "gate: gate-ledger.sh not found at $GATE_LEDGER" >&2; return 1; }
   root="${MEGA_MERGE_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null || true)}"
-  # No repo: the ledger check runs bare and the diff rules are skipped, the same fail-open the hook has.
-  [ -n "$root" ] || { bash "$GATE_LEDGER" check "$lane" "$rid"; return; }
+  if [ -z "$root" ]; then
+    [ "$head_mode" -eq 0 ] || { echo "BLOCKED: mega gate: --head needs a repo" >&2; return 1; }
+    # No repo: the ledger check runs bare and the diff rules are skipped, the same fail-open the hook has.
+    bash "$GATE_LEDGER" check "$lane" "$rid"; return
+  fi
   # A helper that fails to load fails the gate (the hook blocks too), never a silent bare check.
   # shellcheck source=lib/gate/ship-rules.sh
   if ! { [ -f "$SHIP_RULES" ] && source "$SHIP_RULES" 2>/dev/null; }; then
@@ -104,13 +128,32 @@ gate() {
     echo "BLOCKED: ship-gate. lib/gate/ship-rules.sh failed to load; reinstall or fix the kit" >&2
     return 1
   fi
-  head="$(git -C "$root" rev-parse HEAD 2>/dev/null || true)"
-  [ -z "$head" ] || base="$(ship_rules_merge_base "$root" "$head")"
+  if [ "$head_mode" -eq 1 ]; then
+    _gate_sha_ok "$root" "$head" || { echo "BLOCKED: mega gate: head $head is not a commit in $root" >&2; return 1; }
+    if [ -n "$tip" ]; then
+      _gate_sha_ok "$root" "$tip" || { echo "BLOCKED: mega gate: base tip $tip is not a commit in $root" >&2; return 1; }
+      base="$(git -C "$root" merge-base "$head" "$tip" 2>/dev/null || true)"
+    else
+      base="$(ship_rules_merge_base "$root" "$head")"
+    fi
+    [ -n "$base" ] || { echo "BLOCKED: mega gate: no merge base for $head (shallow clone, or no shared history with the base branch?)" >&2; return 1; }
+  else
+    head="$(git -C "$root" rev-parse HEAD 2>/dev/null || true)"
+    [ -z "$head" ] || base="$(ship_rules_merge_base "$root" "$head")"
+  fi
   # Same call as the hook: the project .kit.toml lanes come from the merge base, so a project lane
   # override reads the same in both gates and a change under review cannot rewrite its own lanes.
   ship_rules_ledger_check "$root" "$lane" "$rid" "$GATE_LEDGER" "$base" || rc=$?
   [ "$rc" -eq 0 ] || return "$rc"
-  _ship_rules_gate "$rid" "$lane" "$root" "$head" "$base"
+  if [ "$head_mode" -eq 1 ]; then _ship_rules_gate_head "$rid" "$lane" "$root" "$head" "$base"
+  else _ship_rules_gate "$rid" "$lane" "$root" "$head" "$base"; fi
+}
+
+# _gate_sha_ok <root> <sha> -- 0 iff <sha> is 40 lowercase hex and a commit in <root>.
+_gate_sha_ok() {
+  [ "${#2}" -eq 40 ] || return 1
+  case "$2" in *[!0123456789abcdef]*) return 1 ;; esac
+  git -C "$1" cat-file -e "$2^{commit}" 2>/dev/null
 }
 
 _ship_rules_gate() {
@@ -123,6 +166,43 @@ _ship_rules_gate() {
     ship_rule_large_spec "$spec" "$rid" "$lane" "$GATE_LEDGER" || return 1
   fi
   ship_rule_floor "$root" "$base" "$head" "$rid" "$spec" "$GATE_LEDGER" || return 1
+  return 0
+}
+
+# _ship_rules_gate_head -- the same two rules on a commit: the spec is read from <head>'s tree into a
+# scratch file (removed before every return), and messages name the in-tree path.
+_ship_rules_gate_head() {
+  local rid="$1" lane="$2" root="$3" head="$4" base="$5" spec="" tmp="" rc=0
+  spec="$(_spec_in_tree "$root" "$head" "$rid")"
+  if [ -n "$spec" ] && ship_rules_switch_on lane_gates "$root" "$base"; then
+    tmp="$(mktemp 2>/dev/null)" || tmp=""
+    if [ -n "$tmp" ] && git -C "$root" cat-file blob "$head:$spec" > "$tmp" 2>/dev/null; then
+      ship_rule_large_spec "$tmp" "$rid" "$lane" "$GATE_LEDGER" "$spec" || rc=1
+    fi
+    [ -z "$tmp" ] || rm -f "$tmp"
+    [ "$rc" -eq 0 ] || return 1
+  fi
+  ship_rule_floor "$root" "$base" "$head" "$rid" "$spec" "$GATE_LEDGER" || return 1
+  return 0
+}
+
+# _spec_in_tree <root> <sha> <rid> -- prints the in-tree path of the spec <rid> picks in <sha>'s tree:
+# a root docs/specs/ match first, else the shallowest co-located match (LC_ALL=C order), the pick
+# order of spec_for_slug. Prints nothing when there is none.
+_spec_in_tree() {
+  local root="$1" sha="$2" rid="$3" p rootpick="" colo="" n
+  [ -r "$SPEC_FIND" ] && source "$SPEC_FIND" 2>/dev/null || return 0
+  while IFS= read -r -d '' p; do
+    case "$p" in *$'\n'*) continue ;; esac
+    spec_path_matches "$p" "$rid" || continue
+    if [ "${p#docs/specs/}" != "$p" ] && [ "${p#docs/specs/*/}" = "$p" ]; then
+      rootpick="$p"; break
+    fi
+    n="$(printf '%s' "$p" | tr -cd '/' | wc -c | tr -d ' ')"
+    colo="${colo:+$colo$'\n'}$n$(printf '\t')$p"
+  done < <(git -C "$root" ls-tree -r -z --name-only "$sha" 2>/dev/null)
+  if [ -n "$rootpick" ]; then printf '%s\n' "$rootpick"; return 0; fi
+  [ -z "$colo" ] || printf '%s\n' "$colo" | LC_ALL=C sort -t "$(printf '\t')" -k1,1n -k2 | head -1 | cut -f2-
   return 0
 }
 

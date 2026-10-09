@@ -12,8 +12,9 @@
 #                                                  (KIT_PROJECT_ROOT=<root>), so a project lane override
 #                                                  reads the same for every caller; with <base> the project
 #                                                  lanes come from the .kit.toml committed at <base>
-#   ship_rule_large_spec <spec> <rid> <lane> <ledger>
-#                                                  a large normal-lane spec needs a validate ran/override
+#   ship_rule_large_spec <spec> <rid> <lane> <ledger> [<shown-spec>]
+#                                                  a large normal-lane spec needs a validate ran/override;
+#                                                  <shown-spec> is the path the message names (default <spec>)
 #   ship_rule_identities <root> <base> <head>      a push whose new commits carry a fixture git identity (x@x, t@t.dev,
 #                                                  example.com, .local) is refused; [gate] fixture_identities = false opts out
 #   ship_rule_floor <root> <base> <head> <rid> <spec> <ledger>
@@ -84,7 +85,7 @@ ship_rules_ledger_check() {
 # check stops a LARGE normal-lane spec from shipping unvalidated. `spec.sh depth size` exits 1 on a
 # large spec; only that exact code engages. A missing spec.sh or an unreadable spec (exit 2) fails open.
 ship_rule_large_spec() {
-  local spec="$1" rid="$2" lane="$3" ledger="$4" size_rc rid_q
+  local spec="$1" rid="$2" lane="$3" ledger="$4" shown="${5:-$1}" size_rc rid_q
   [ "$lane" = normal ] && [ -f "$_SR_SPEC_SH" ] || return 0
   bash "$_SR_SPEC_SH" depth size "$spec" >/dev/null 2>&1; size_rc=$?
   [ "$size_rc" -eq 1 ] || return 0
@@ -93,7 +94,7 @@ ship_rule_large_spec() {
   _sr_log "BLOCKED | ship-gate | $rid ($lane, large, no validate)"
   {
     echo "BLOCKED: ship-gate. Spec '$rid' is large (4+ tasks, a deeper Depth, or no countable task) and has no validate gate that ran or was overridden."
-    echo "Rule: a large normal-lane spec needs the fresh-context validation before it ships (\`bash <kit>/lib/spec/spec.sh depth size $spec\`). Run /kit:spec-validate, or log an explicit override (recorded for audit):"
+    echo "Rule: a large normal-lane spec needs the fresh-context validation before it ships (\`bash <kit>/lib/spec/spec.sh depth size $shown\`). Run /kit:spec-validate, or log an explicit override (recorded for audit):"
     echo "  bash \"$ledger\" override $rid_q validate \"<reason>\""
     echo "Or switch the lane gates off for this repo: [gate] lane_gates = false in the committed project kit config (lib/gate/README.md, 'Switching a gate off')."
   } >&2
