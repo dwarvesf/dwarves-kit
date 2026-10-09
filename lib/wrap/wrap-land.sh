@@ -373,7 +373,7 @@ _land_ignored_guard() {
   [ "$n" -gt 0 ] || return 0
 
   echo "     LAND REFUSED: ${n} ignored path$([ "$n" -eq 1 ] || echo s) under what ${branch} touches; a clean checkout will not have $([ "$n" -eq 1 ] && echo it || echo them)" >&2
-  printf '%s' "$lines" | LC_ALL=C sort | head -n 20 | sed 's/^/       /' >&2
+  printf '%s' "$lines" | env LC_ALL=C sort | head -n 20 | sed 's/^/       /' >&2
   [ "$n" -le 20 ] || echo "       and $(( n - 20 )) more" >&2
   if [ "$marked" -lt "$n" ]; then
     echo "     a human decides for each unmarked path: commit it (git add -f), delete it, or allow it in [wrap] land_ignored_allow in the operator kit.toml" >&2
