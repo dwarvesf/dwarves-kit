@@ -94,6 +94,8 @@ Source: GSD v1's 4 parallel researchers. Mode A uses formal `.claude/agents/` fi
 
 ### Step 3: Generate the spec
 
+**L1/L2 escalation.** If the feature adds or changes an L1 or L2 element of `docs/SYSTEM-DESIGN.md` (a new external system, a new container or component, a changed edge between them) and the brief has no approved design for it, stop. Route back to `/kit:design` to record an ADR and the L1/L2 delta first. Specs may add L3/L4 detail on their own.
+
 Create `docs/specs/` directory if it doesn't exist. The Step 1 stub already holds the NNN: use it and do not call `spec-next.sh` again (the paragraph below is how Step 1 picked it). Generate these files (the main spec already exists as the Step 1 header stub; fill it in and keep its `Lane:` and `Depth:` lines):
 
 **`docs/specs/SPEC-NNN-<slug>.md`** (main spec). Pick NNN with
@@ -188,6 +190,7 @@ One diagram, the kind that actually clarifies , not all five:
   four cargo-culted levels
 
 Prefer Mermaid (GitHub-native, diffable, hand-editable) over a binary image.
+When the repo keeps `docs/SYSTEM-DESIGN.md`, cite the changed diagram ids instead of a new Mermaid block.
 
 ### ADR link(s)
 Link the ADR(s) that record any lasting or irreversible decision this design makes. If the
