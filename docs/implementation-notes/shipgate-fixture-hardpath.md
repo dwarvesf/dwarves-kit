@@ -66,6 +66,9 @@ Numbers keep the validate-round numbering. Items not listed were folded into the
 - The unreadable-list refusal says `cannot classify`, a different text from the state-unreadable refusal, so the two causes read apart in the log.
 - `MEGA_MERGE_PR_FILES_CMD` is in `lib/config/module-registry.md` beside `MEGA_MERGE_PR_INFO_CMD` (builder item 41). `tests/test-meta.sh` shows one failure, `docs/FEATURES.md is fresh`, a generated file the doc-refresh task owns.
 - `floor-exempt-malformed-rejected` pins the rejection count (exactly one `lane-data:` line per bad entry) and the `full auth` stdout. The per-message wording is pinned at the reader in `exempt-reader-rejects`, so a message edit breaks one place.
+- Security review fix 1: `_pr_files` reads `gh api repos/{owner}/{repo}/pulls/<pr>/files --paginate` with `.filename` and `.previous_filename`, so a renamed `.kit.toml` lists its old name. The REST endpoint returns at most 3000 files, so a list of 3000 or more lines is unclassifiable (return 2, fail closed). The cap applies to the `MEGA_MERGE_PR_FILES_CMD` override too, so a stub can test it.
+- Security review fix 2: `ship_rule_floor` resets `SR_NOTICES` on its first line, so an exported value cannot reach the hook `systemMessage` through an early return.
+- Security review fix 3: `_sr_relay` folds `rid` with the same `fold` as paths, so a `|` or non-ASCII byte in a branch name becomes `?` and the log keeps its columns. The case uses a bare push because the hook parser splits a quoted `|` in the command.
 
 ## Negative controls
 
@@ -117,3 +120,7 @@ Numbers keep the validate-round numbering. Items not listed were folded into the
 | `floor-exempt-canary-rejected` | user canaries not loaded | yes (leg B) |
 | `floor-exempt-malformed-rejected` | `**` inside a segment allowed | yes |
 | `floor-exempt-malformed-rejected` | single-bracket header accepted | yes |
+| `mega-merge-refuses-exempt-change` (default read) | `_pr_files` back to `gh pr diff --name-only` | yes (fake gh lists only the new name) |
+| `mega-merge-refuses-exempt-change` (3000 lines) | no 3000-line ceiling check | yes |
+| `ship-notices-env-ignored` | `SR_NOTICES=""` back after the early returns | yes (lane_gates off leg prints the forged notice) |
+| `ship-rid-folded` | `BEGIN { rid = fold(rid) }` removed | yes (log shows `a|b`) |

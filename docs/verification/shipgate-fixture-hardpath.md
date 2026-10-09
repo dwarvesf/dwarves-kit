@@ -176,3 +176,39 @@ The builder's other negative controls (about 45 mutations, one table) are in `do
 - The consumer repo's own `.kit.toml` entry ships there as its own full-lane PR and is not exercised here.
 - A broad entry crafted to dodge every canary path still exempts what it matches. The full-lane review of the `.kit.toml` change is the check on that.
 - The e2e legs run in a local fixture with no remote. The hook parses the push command and never contacts a remote, so a real `git push` is not exercised.
+
+## Security review fixes
+
+Three fixes from the security review: the `.kit.toml` rename bypass in the merge guard, an inherited `SR_NOTICES` reaching `systemMessage`, and an unfolded branch name in log lines. Each new case was committed and run before its fix.
+
+| Case | Before the fix | After |
+|---|---|---|
+| `mega-merge-refuses-exempt-change`, default read through a fake `gh api` (rename) | FAIL | PASS |
+| `mega-merge-refuses-exempt-change`, 3000-line list refused as unclassifiable | FAIL | PASS |
+| `mega-merge-refuses-exempt-change`, stub listing both sides of a rename | PASS (the stub already lists `.kit.toml`; kept as a contract check) | PASS |
+| `ship-notices-env-ignored` | FAIL (forged notice on stdout) | PASS |
+| `ship-rid-folded` | FAIL (`a|b` in the log) | PASS |
+
+Captured run after the fixes:
+
+```
+$ bash tests/test-mega-merge.sh
+  PASS mark: idempotent (re-run exits 0)
+
+=== 41/41 passed, 0 failed ===
+$ bash tests/test-mega-reconcile.sh
+  PASS AC6: the posture knob is documented in mega.md
+
+=== 35/35 passed, 0 failed ===
+$ bash tests/test-lanes-data.sh ship-exempt-logged ship-test-path-skip-visible ship-exempt-in-pr-blocks ship-notices-env-ignored ship-rid-folded floor-paths
+PASS ship-exempt-logged
+PASS ship-test-path-skip-visible
+PASS ship-exempt-in-pr-blocks
+PASS ship-notices-env-ignored
+PASS ship-rid-folded
+PASS floor-paths
+$ bash tests/test-codex-hooks.sh
+PASS working directory token fixture is absent from output and logs
+
+94 passed, 0 failed
+```
