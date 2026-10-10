@@ -2990,7 +2990,9 @@ echo "--- draft_no_ship_record: a draft writes no Ship line to the gate ledger"
 dr_build dr10 feat/drship
 bash "$GATE_LEDGER" record drship spec ran "spec cycle for the draft test" >/dev/null
 chk "draft_no_ship_record: the ledger run exists (precondition)" "$([ -f "$KIT_LEDGER_DIR/runs/drship.log" ]; echo $?)"
-out="$(dr_land GH_STUB_OPEN_HEAD_feat_drship="[]")"; rc=$?
+# The merge stubs are wired on purpose: a run that fell through to the merge would reach the Ship record.
+out="$(dr_land GH_STUB_OPEN_HEAD_feat_drship="[]" GH_STUB_LAND_REPO="$DR_WT" GH_STUB_LAND_REMOTE="$DR_BARE" \
+  GH_STUB_LAND_BRANCH=feat/drship GH_STUB_LAND_DEF=main)"; rc=$?
 chk "draft_no_ship_record: the draft opened" "$rc"
 chk "draft_no_ship_record: no Ship line in the ledger" "$(grep -ci '| GATE | ship |' "$KIT_LEDGER_DIR/runs/drship.log")"
 chk_no "draft_no_ship_record: no record line printed" "$out" "recorded ship gate"
