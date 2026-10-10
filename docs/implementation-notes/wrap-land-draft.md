@@ -60,3 +60,9 @@ Deltas and decisions the spec left to the builder.
 - Outside the spec's Touches: `tests/test-wrap-deploy.sh` asserted the old step 10 hand-rolled draft create line in `commands/wrap.md`. Its one assertion now names the `bin/wrap land --draft` line. No other change there.
 - `_usage` in `wrap.sh` prints header lines 2 to 40; the new usage line shifted it, so the range is now 2 to 41.
 - Branch names with a double quote open a draft and the gate payload stays valid JSON (`jq -n --arg`); one case pins it.
+
+## Lead review fixes
+
+- An adopted draft whose body is empty or title-only now fills from `--body-file` when one is given. The spec text (an adopted empty draft takes the proof body) assumed no `--body-file`, but step 10 always passes one. Plain `land` keeps its old behavior: the new branch fires only under `--draft`.
+- Step 10 drops the `cd <wt> &&` prefix and passes an absolute `--body-file <wt>/docs/verification/<slug>.md`. With the prefix, a relative `bin/wrap` resolved to the worktree copy. In a consumer repo that copy does not exist. In the kit repo the branch would run its own unreviewed `hooks/ship-gate.sh`. The verb already hands the hook the worktree as its cwd, so the home repo is still the one gated.
+- This branch opens its own draft by hand, because the installed kit predates `--draft` and the worktree copy must not gate itself.

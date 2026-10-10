@@ -81,6 +81,17 @@ Two builder findings from the controls:
 - The first noclobber case ran `bash -C bin/wrap` and `SHELLOPTS=noclobber`. Both proved nothing: `bin/wrap` re-execs bash and drops `-C`, and an exported `SHELLOPTS` also carries `errexit` into the child. The first control run came back `Verdict: FAIL ... vacuous`. The case now runs `bash -C lib/wrap/wrap.sh`, and its mutant fails exactly the one case.
 - The first AC-10 control run left the `no Ship line` assertion green: the stubbed merge failed before the Ship record, so only `the draft opened` went red. The case now wires the merge stubs, and the mutant fails the `no Ship line in the ledger` assertion by name.
 
+## Review fixes
+
+An Opus correctness review of the built branch found two defects. Both are fixed, each with its own control. The mutation is the file's prior revision.
+
+| Fix | Commit | Draft section after the fix | Mutant | Under mutation | Verdict |
+|---|---|---|---|---|---|
+| An adopted empty-body draft fills from `--body-file` (case `draft_adopt_empty_body_takes_body_file`) | `db64167b` | 106 passed | `git show db64167b~1:lib/wrap/wrap-land.sh` | 104 passed, 2 FAILED of 106 | PASS |
+| Step 10 runs the installed `bin/wrap` with an absolute `--body-file`, never `cd <wt> && bin/wrap` (a kit branch would gate itself with its own hook) | `19ee5267` | 106 passed | `git show 19ee5267~1:commands/wrap.md` | 104 passed, 2 FAILED of 106 (both `draft_wrap_md_uses_verb` checks) | PASS |
+
+The first run of the second control reported `test was not green before the mutation`: its green run failed 34 checks while the machine sat at load average 275 with 150 MiB of disk free. The rerun alone went green, then red, then green.
+
 ## Cases the tests bind
 
 | Case | Setup | Asserted |
