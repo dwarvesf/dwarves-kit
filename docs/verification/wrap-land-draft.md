@@ -6,29 +6,27 @@
 
 | Check | Command | Exit | Result |
 |---|---|---|---|
-| `draft` section | `LAND_ONLY=draft LAND_CACHE=0 bash tests/test-wrap-land.sh` | 0 | 101 passed |
-| Whole land suite, no cache | `LAND_CACHE=0 bash tests/test-wrap-land.sh` | 0 | 716 passed, 15 of 15 sections ran |
-| Affected suites | `bash tests/run-all.sh --changed origin/master` | 1 | 34 suites, 32 ok, see the notes below |
+| `draft` section | `LAND_ONLY=draft LAND_CACHE=0 bash tests/test-wrap-land.sh` | 0 | 106 passed (101 before the review fixes) |
+| Whole land suite, no cache, after the review fixes | `LAND_CACHE=0 bash tests/test-wrap-land.sh` | 0 | 721 passed |
+| Deploy suite, after the review fixes | `bash tests/test-wrap-deploy.sh` | 0 | 176 passed |
+| Affected suites, after the review fixes | `RUN_ALL_TIMEOUT_SECS=600 bash tests/run-all.sh --changed origin/master` | 0 | all 37 suites passed |
 | Negative controls | `bash lib/gate/negctl.sh <root> <test-cmd> <mutate-cmd>` x 12 | 0 each | every mutant went RED, every restore went green |
 
 ## Green run
 
 Command: `LAND_ONLY=draft LAND_CACHE=0 bash tests/test-wrap-land.sh`
 Exit: 0
-Output: `test-wrap-land: all 101 passed`
+Output: `test-wrap-land: all 106 passed` (101 before the review fixes)
 
 Command: `LAND_CACHE=0 bash tests/test-wrap-land.sh`
 Exit: 0
-Output: `test-wrap-land: 15 sections, 15 ran, 0 cached (0 checks credited)` / `test-wrap-land: all 716 passed`
+Output: `test-wrap-land: all 721 passed` (after the review fixes; 716 before them)
 
-Command: `bash tests/run-all.sh --changed origin/master`
-Exit: 1
-Output: `run-all: FAILED -> test-gate-validate-round test-meta-docs-registry` / `run-all: 34 suites run, 0 skipped for missing tooling`
+Command: `RUN_ALL_TIMEOUT_SECS=600 bash tests/run-all.sh --changed origin/master`
+Exit: 0
+Output: `run-all: all 37 suites passed, 0 skipped for missing tooling`
 
-Both run-all failures are outside this change:
-
-- `test-gate-validate-round` is the known load flake. Run alone it printed `=== results: 196/196 pass, 0 fail ===` (`bash tests/test-gate-validate-round.sh`, exit 0). The first run-all of the build did not list it.
-- `test-meta-docs-registry` fails on `docs/FEATURES.md is fresh`. The drift is already present at the branch base (`git archive HEAD~2` then `feature-registry.sh check` prints `has DRIFTED`) and absent on `origin/master` (`is fresh`). The spec and notes commits changed the per-command spec counts. `docs/FEATURES.md` is outside this change's file list, so it is left for the lead: `bash lib/registry/feature-registry.sh check --fix`.
+The builder's first run-all exited 1 on two suites. `test-gate-validate-round` was the known load flake (196/196 alone). `test-meta-docs-registry` caught `docs/FEATURES.md` drift from the spec commits; the lead regenerated it in `3dfcdec1`. The rerun above follows both review fixes.
 
 All 12 suites under `test-wrap-*` printed `ok` in that run, including `test-wrap-land` and `test-wrap-deploy`.
 
