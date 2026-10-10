@@ -26,3 +26,9 @@ The build's tests catch each of these, so they stay out of the spec.
 - An adopted draft with an empty body and no proof file stays empty. DEC-E covers new PRs only.
 - `_land_proof_files` tests `-f`, which follows symlinks, and the body inlines the file. This is a pre-existing `land` risk and out of scope here.
 - Step 10's old push set an upstream with `-u`. `land` pushes without it. This is harmless, because step 10 removes the worktree after the draft opens.
+
+## Fold-diff check warnings
+
+- `WRAP_LAND_SHIP_GATE` overrides the gate path, so an exit-0 script there skips the gate. Print one stderr line naming the override whenever it is set.
+- AC-16 drives a stub gate only. Add one smoke case that pipes the real `hooks/ship-gate.sh` through `--draft` on a fixture, so a payload mismatch with the real hook goes red.
+- Step 10 passes `--body-file docs/verification/<slug>.md`. When that file is missing, `land` exits 64 on the existing-file check. That message is clear enough, so no new refusal.
