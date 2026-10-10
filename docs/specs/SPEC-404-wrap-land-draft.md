@@ -1,6 +1,6 @@
 # Spec: wrap land --draft opens a draft PR and stops
 Generated: 2026-10-10
-Status: DRAFT
+Status: VALIDATED
 Lane: full
 Depth: standard (every fact is settled by reading `lib/wrap/wrap-land.sh` and one `gh --help`; the draft path reuses land's own push, body builder and adopt path)
 References: `lib/wrap/wrap-land.sh:396-833` (`cmd_land`; imitate its refusal order, its open-PR lookup, its adopt checks and its in-process `--body` build); `lib/wrap/wrap-land.sh:168-200` (`_land_proof_body`; reuse as is); `lib/wrap/wrap-land.sh:207-219` (`_land_proof_block`; reuse as is).

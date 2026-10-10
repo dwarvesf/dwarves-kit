@@ -32,3 +32,16 @@ The build's tests catch each of these, so they stay out of the spec.
 - `WRAP_LAND_SHIP_GATE` overrides the gate path, so an exit-0 script there skips the gate. Print one stderr line naming the override whenever it is set.
 - AC-16 drives a stub gate only. Add one smoke case that pipes the real `hooks/ship-gate.sh` through `--draft` on a fixture, so a payload mismatch with the real hook goes red.
 - Step 10 passes `--body-file docs/verification/<slug>.md`. When that file is missing, `land` exits 64 on the existing-file check. That message is clear enough, so no new refusal.
+
+## Validation round 2 warnings (APPROVED, critical=0)
+
+- Build the hook payload with `jq -n --arg cwd ... --arg cmd ...`, never a printf template. A branch name with a quote would break the JSON, and the hook fails open on an empty command.
+- Treat ANY nonzero hook exit as a refusal, not only exit 2. A missing hook file refuses already, so a hook crash should too. Add an exit-1 stub case to AC-16.
+- Capture the hook's stdout and stderr. Relay stderr in the refusal. Drop stdout on exit 0 (it can hold a JSON `systemMessage`), so the draft output order stays as the Interfaces list says.
+- Export `CLAUDE_PLUGIN_ROOT` to the kit root (`$SELF_DIR/../..`) when unset, before the hook runs, so the hook's libs resolve from the same kit and not a missing install path.
+- The real-hook smoke case runs with the libs present. Name the install-path dependency in a comment.
+- The ship-gate refusal row covers every hook block (identities, doc-projection, registry freshness), so print the hook stderr verbatim after `DRAFT REFUSED: ship-gate blocked the push`.
+- Step 10 keeps the `cd <wt> &&` prefix on the `land --draft` line, because `--body-file docs/verification/<slug>.md` is relative to the cwd.
+- Add a `created ready` stub fixture (`GH_STUB_PR_<n>` with `isDraft:false`) and a case for the DEC-G post-create refusal, with a negative control (delete the read: case red).
+- TASK-D includes the stub `pr view` switch.
+- Refresh the `## Design` Diagram sentence when the build lands: four refusals plus the hook call. Add the DEC-G box to Picture and a row to the refusals table in the same commit.
