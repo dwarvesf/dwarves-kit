@@ -2981,6 +2981,17 @@ chk_has "draft_adopt_stays_draft: says adopted draft" "$out" "adopted draft PR #
 chk_has "draft_adopt_stays_draft: says the body was set" "$out" "PR #18 body set from the proof of done"
 chk "draft_adopt_stays_draft: no pr merge call" "$(dr_calls '^pr merge')"
 chk "draft_adopt_stays_draft: the worktree remains" "$([ -d "$DR_WT" ]; echo $?)"
+
+echo "--- draft_adopt_empty_body_takes_body_file: an adopted empty-body draft is filled from --body-file"
+dr_build dr8c
+DR8C_BODY="$(mktemp "${TMPDIR:-/tmp}/dr8c-body.XXXXXX")"
+printf '## Proof of done\nfrom the body file\n' >| "$DR8C_BODY"
+out="$(DR_FLAGS="--body-file $DR8C_BODY" dr_land GH_STUB_OPEN_HEAD_feat_land="$(dr_open_pr 19 "" true)")"; rc=$?
+chk "draft_adopt_empty_body_takes_body_file: exits 0" "$rc"
+chk "draft_adopt_empty_body_takes_body_file: the body is set from the file" \
+  "$([ "$(grep -cE "^pr edit 19 .*--body-file ${DR8C_BODY}" "$GH_STUB_CALLS")" -eq 1 ]; echo $?)"
+chk_has "draft_adopt_empty_body_takes_body_file: says the body was set" "$out" "PR #19 body set from ${DR8C_BODY}"
+chk "draft_adopt_empty_body_takes_body_file: no pr ready call" "$(dr_calls '^pr ready')"
 dr_build dr8b
 out="$(dr_land GH_STUB_OPEN_HEAD_feat_land="$(dr_open_pr 19 "A body written by hand." true)")"; rc=$?
 chk "draft_adopt_stays_draft: an adopted draft with its own body exits 0" "$rc"
@@ -3099,7 +3110,9 @@ echo "--- draft_wrap_md_uses_verb: step 10 opens the draft through the verb"
 DR_MD="$KIT_DIR/commands/wrap.md"
 chk "draft_wrap_md_uses_verb: no hand-rolled draft create line" "$([ "$(grep -c 'gh pr create --draft' "$DR_MD")" -eq 0 ]; echo $?)"
 chk "draft_wrap_md_uses_verb: the land --draft line carries --body-file" \
-  "$(grep 'land --draft' "$DR_MD" | grep -q -- '--body-file docs/verification/<slug>.md'; echo $?)"
+  "$(grep 'land --draft' "$DR_MD" | grep -q -- '--body-file <wt>/docs/verification/<slug>.md'; echo $?)"
+chk "draft_wrap_md_uses_verb: the land --draft line runs the installed verb, not the worktree copy" \
+  "$([ "$(grep -c 'cd <wt> && bin/wrap land --draft' "$DR_MD")" -eq 0 ]; echo $?)"
 } # end sec_draft
 
 # One section, in this process. The driver sets LAND_SECTION per child; the last line is the

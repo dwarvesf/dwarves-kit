@@ -658,11 +658,14 @@ cmd_land() {
     pr_ref="$(printf '%s' "$open_json" | jq -r '.[0].url // ""' 2>/dev/null)"
     # An adopted PR keeps the body its author wrote. One that has none (empty, or only its
     # own title, which is what a title-only create leaves) takes the proof body.
-    if [ -n "$proof_body" ]; then
+    # A draft adopted with --body-file fills an empty body from that file instead.
+    if [ -n "$proof_body" ] || { [ "$draft" -eq 1 ] && [ -n "$body_file" ]; }; then
       local open_body; open_body="$(printf '%s' "$open_json" | jq -r '.[0] | if ((.body // "") == "" or .body == .title) then "none" else "own" end' 2>/dev/null)"
       if [ "$open_body" = "none" ]; then
-        if gh pr edit "$n" --repo "$url" --body "$proof_body" >/dev/null 2>&1; then
-          echo "     PR #${n} body set from the proof of done"
+        local fill_from="the proof of done" fill=(--body "$proof_body")
+        [ -z "$body_file" ] || { fill_from="$body_file"; fill=(--body-file "$body_file"); }
+        if gh pr edit "$n" --repo "$url" "${fill[@]}" >/dev/null 2>&1; then
+          echo "     PR #${n} body set from ${fill_from}"
         else
           echo "     note: PR #${n} body could not be set from the proof of done" >&2
         fi
