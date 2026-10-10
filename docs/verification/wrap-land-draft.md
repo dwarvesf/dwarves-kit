@@ -109,6 +109,12 @@ The first run of the second control reported `test was not green before the muta
 | Noclobber | `bash -C lib/wrap/wrap.sh` | exit 0, body holds `## Proof of done` |
 | Created ready | stub answers `{"isDraft":false}` or `{}` | exit 2, names `gh pr ready --undo 42`, no merge call |
 
+## Rollback
+
+- Code: revert the squash commit. `--draft` is additive, so plain `land` needs no other change after the revert.
+- Docs: the same revert restores the hand `git push` and `gh pr create --draft` lines in `commands/wrap.md` step 10.
+- GitHub state: a draft PR the verb opened closes with `gh pr close <n> --repo <url>`. The pushed branch deletes with `git push origin --delete <branch>`. The verb writes no other state: no merge, no Ship ledger line, no worktree removal.
+
 ## Reproduce
 
 ```
