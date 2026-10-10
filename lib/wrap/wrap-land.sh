@@ -381,7 +381,7 @@ _land_ignored_guard() {
   return 1
 }
 
-# cmd_land <worktree> [--title T] [--body-file F] [--no-pull] -- the landing loop for ONE committed
+# cmd_land <worktree> [--title T] [--body-file F] [--no-pull] [--with-ci] [--verify C] [--draft] -- the landing loop for ONE committed
 # branch in a hand-made worktree: push, open the PR, squash-merge, verify the tree, fast
 # forward the main checkout, remove the worktree, delete the branch. Each step prints one
 # line with its sha or its refusal. With no --body-file the PR body is the branch's proof of
@@ -393,8 +393,14 @@ _land_ignored_guard() {
 # is `merge`'s own `_tree_verify`, never a second copy. Nothing here logs a proof-ledger
 # override: a ship-gate refusal on the push surfaces with the gate's own stderr and exit
 # code, and the run stops there.
+#
+# --draft stops the loop at the open: after the same pre-push refusals (plus an already-landed
+# branch, an open non-draft PR, a new PR with no proof and no --body-file, and the ship-gate
+# hook) it pushes, opens or adopts a DRAFT PR, prints the URL and the proof block, and returns.
+# It never marks the PR ready, merges, tidies, pulls or writes a Ship record; the worktree stays.
 cmd_land() {
   local wt="" title="" body_file="" verify="" arg count=0 want="" flags_given=0
+  local draft=0 with_ci_given=0 verify_given=0 nopull_given=0
   NO_PULL=0
   for arg in "$@"; do
     if [ -n "$want" ]; then
@@ -406,17 +412,24 @@ cmd_land() {
       --title=*) title="${arg#--title=}"; flags_given=1 ;;
       --body-file) want=body; flags_given=1 ;;
       --body-file=*) body_file="${arg#--body-file=}"; flags_given=1 ;;
-      --verify) want=verify ;;
-      --verify=*) verify="${arg#--verify=}" ;;
-      --with-ci) KIT_WRAP_CI_ON_MERGE=1 ;;
-      --no-pull) NO_PULL=1 ;;
+      --verify) want=verify; verify_given=1 ;;
+      --verify=*) verify="${arg#--verify=}"; verify_given=1 ;;
+      --with-ci) KIT_WRAP_CI_ON_MERGE=1; with_ci_given=1 ;;
+      --no-pull) NO_PULL=1; nopull_given=1 ;;
+      --draft) draft=1 ;;
       -*) echo "wrap.sh land: unknown flag '$arg'" >&2; return 64 ;;
       *) _reject_packed land "$arg" || return 64
          count=$(( count + 1 )); wt="$arg" ;;
     esac
   done
   [ -z "$want" ] || { echo "wrap.sh land: --${want} needs a value" >&2; return 64; }
-  [ "$count" -eq 1 ] || { echo "usage: wrap.sh land <worktree> [--title T] [--body-file F] [--with-ci] [--no-pull] [--verify <cmd>]" >&2; return 64; }
+  # --draft never merges or tidies, so the flags that only steer those would be silently dead.
+  if [ "$draft" -eq 1 ]; then
+    [ "$with_ci_given" -eq 0 ] || { echo "wrap.sh land: --draft cannot combine with --with-ci" >&2; return 64; }
+    [ "$verify_given" -eq 0 ] || { echo "wrap.sh land: --draft cannot combine with --verify" >&2; return 64; }
+    [ "$nopull_given" -eq 0 ] || { echo "wrap.sh land: --draft cannot combine with --no-pull" >&2; return 64; }
+  fi
+  [ "$count" -eq 1 ] || { echo "usage: wrap.sh land <worktree> [--title T] [--body-file F] [--with-ci] [--no-pull] [--verify <cmd>] [--draft]" >&2; return 64; }
   _is_repo "$wt" || { echo "wrap.sh land: ${wt} is not a git worktree" >&2; return 64; }
   if [ -n "$body_file" ] && [ ! -f "$body_file" ]; then
     echo "wrap.sh land: --body-file '${body_file}' is not an existing file" >&2; return 64
@@ -517,6 +530,9 @@ cmd_land() {
     case "$proof" in ancestor*) proof="" ;; esac
   fi
   if [ -n "$proof" ]; then
+    if [ "$draft" -eq 1 ]; then
+      echo "     DRAFT REFUSED: ${branch} is already landed (${proof}); nothing to review" >&2; return 2
+    fi
     # The proof can cost a network round trip: the tree and tip it judged must still be the
     # ones on disk.
     if [ -n "$(git -C "$wt" status --porcelain 2>/dev/null)" ] \
@@ -574,6 +590,36 @@ cmd_land() {
     fi
   fi
 
+  # Draft-only refusals, all before the push. The ship-gate call stands in for the PreToolUse
+  # hook, which sees a literal `git push` in a Bash command and never sees this one.
+  if [ "$draft" -eq 1 ]; then
+    if [ "$open_count" -eq 1 ] && [ "$(printf '%s' "$open_json" | jq -r '.[0].isDraft // false' 2>/dev/null)" != "true" ]; then
+      local nd_n; nd_n="$(printf '%s' "$open_json" | jq -r '.[0].number' 2>/dev/null)"
+      echo "     DRAFT REFUSED: open PR #${nd_n} is not a draft; gh pr ready --undo ${nd_n} converts it, then rerun" >&2
+      return 2
+    fi
+    if [ "$open_count" -eq 0 ] && [ -z "$body_file" ] && [ -z "$proof_body" ]; then
+      echo "     DRAFT REFUSED: no proof-of-done file and no --body-file; a draft with a title-only body is not allowed" >&2
+      return 2
+    fi
+    local gate gate_err gate_rc
+    gate="${WRAP_LAND_SHIP_GATE:-$SELF_DIR/../../hooks/ship-gate.sh}"
+    [ -z "${WRAP_LAND_SHIP_GATE:-}" ] || echo "     note: ship-gate path overridden by WRAP_LAND_SHIP_GATE (${gate})" >&2
+    if [ ! -f "$gate" ]; then
+      echo "     DRAFT REFUSED: ship-gate blocked the push" >&2
+      echo "     ship-gate hook not found: ${gate}" >&2
+      return 2
+    fi
+    # Stdout is dropped (a hook can print a JSON systemMessage there); stderr is the reason.
+    gate_err="$(jq -n --arg cwd "$wt" --arg cmd "git push origin ${branch}" '{cwd: $cwd, tool_input: {command: $cmd}}' \
+      | CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-$(cd "$SELF_DIR/../.." && pwd)}" bash "$gate" 2>&1 >/dev/null)"; gate_rc=$?
+    if [ "$gate_rc" -ne 0 ]; then
+      echo "     DRAFT REFUSED: ship-gate blocked the push" >&2
+      [ -z "$gate_err" ] || printf '%s\n' "$gate_err" >&2
+      return 2
+    fi
+  fi
+
   git -C "$wt" push origin "$branch"; rc=$?
   if [ "$rc" -ne 0 ]; then
     echo "     PUSH REFUSED: git push origin ${branch} exited ${rc}" >&2
@@ -603,20 +649,23 @@ cmd_land() {
       echo "     PR REFUSED: open PR #${n} is authored by ${open_author}" >&2; return 2
     fi
     local open_draft; open_draft="$(printf '%s' "$open_json" | jq -r '.[0].isDraft // false' 2>/dev/null)"
-    if [ "$open_draft" = "true" ]; then
+    if [ "$open_draft" = "true" ] && [ "$draft" -eq 0 ]; then
       gh pr ready "$n" --repo "$url" >/dev/null 2>&1 || {
         echo "     PR REFUSED: open PR #${n} is a draft and gh pr ready failed" >&2; return 2; }
     fi
-    echo "     adopted PR #${n}"
+    if [ "$draft" -eq 1 ]; then echo "     adopted draft PR #${n}"; else echo "     adopted PR #${n}"; fi
     [ "$flags_given" -eq 1 ] && echo "     note: adopted PR #${n} keeps its own title and body" >&2
     pr_ref="$(printf '%s' "$open_json" | jq -r '.[0].url // ""' 2>/dev/null)"
     # An adopted PR keeps the body its author wrote. One that has none (empty, or only its
     # own title, which is what a title-only create leaves) takes the proof body.
-    if [ -n "$proof_body" ]; then
+    # A draft adopted with --body-file fills an empty body from that file instead.
+    if [ -n "$proof_body" ] || { [ "$draft" -eq 1 ] && [ -n "$body_file" ]; }; then
       local open_body; open_body="$(printf '%s' "$open_json" | jq -r '.[0] | if ((.body // "") == "" or .body == .title) then "none" else "own" end' 2>/dev/null)"
       if [ "$open_body" = "none" ]; then
-        if gh pr edit "$n" --repo "$url" --body "$proof_body" >/dev/null 2>&1; then
-          echo "     PR #${n} body set from the proof of done"
+        local fill_from="the proof of done" fill=(--body "$proof_body")
+        [ -z "$body_file" ] || { fill_from="$body_file"; fill=(--body-file "$body_file"); }
+        if gh pr edit "$n" --repo "$url" "${fill[@]}" >/dev/null 2>&1; then
+          echo "     PR #${n} body set from ${fill_from}"
         else
           echo "     note: PR #${n} body could not be set from the proof of done" >&2
         fi
@@ -625,10 +674,11 @@ cmd_land() {
   else
     # `--head`, never `--base`: a base the caller names is the way a PR ends up targeting
     # another feature branch. With --repo, gh targets the repository's own default branch.
+    local -a draft_arg=(); [ "$draft" -eq 0 ] || draft_arg=(--draft)
     if [ -n "$body_file" ]; then
-      created="$(gh pr create --repo "$url" --head "$branch" --title "$title" --body-file "$body_file" 2>&1)"; rc=$?
+      created="$(gh pr create --repo "$url" --head "$branch" ${draft_arg[@]+"${draft_arg[@]}"} --title "$title" --body-file "$body_file" 2>&1)"; rc=$?
     else
-      created="$(gh pr create --repo "$url" --head "$branch" --title "$title" --body "${proof_body:-$title}" 2>&1)"; rc=$?
+      created="$(gh pr create --repo "$url" --head "$branch" ${draft_arg[@]+"${draft_arg[@]}"} --title "$title" --body "${proof_body:-$title}" 2>&1)"; rc=$?
     fi
     if [ "$rc" -ne 0 ]; then
       echo "     PR REFUSED: gh pr create exited ${rc}: ${created}" >&2; return 2
@@ -637,7 +687,26 @@ cmd_land() {
     case "$n" in
       ''|*[!0-9]*) echo "     PR REFUSED: gh pr create named no PR number: ${created}" >&2; return 2 ;;
     esac
-    echo "     opened PR #${n}"
+    if [ "$draft" -eq 1 ]; then
+      # One read confirms the flag took: a ready PR left behind could be merged by a later plain land.
+      local made_draft; made_draft="$(gh pr view "$n" --repo "$url" --json isDraft 2>/dev/null | jq -r '.isDraft // false' 2>/dev/null)"
+      if [ "$made_draft" != "true" ]; then
+        echo "     DRAFT REFUSED: PR #${n} was created ready; gh pr ready --undo ${n} converts it (the PR stays open)" >&2
+        return 2
+      fi
+      echo "     opened draft PR #${n}"
+    else
+      echo "     opened PR #${n}"
+    fi
+  fi
+
+  # The draft exit: the PR is open and still a draft, so nothing below (checks, merge, tree
+  # verify, Ship record, tidy) may run. The worktree stays for the operator's review.
+  if [ "$draft" -eq 1 ]; then
+    echo "     draft PR: ${pr_ref:-#${n}}"
+    echo "     worktree kept: ${wt}"
+    [ -z "$proof_base" ] || _land_proof_block "$wt" "$proof_base" "${pr_ref:-#${n}}"
+    return 0
   fi
 
   # Under `--with-ci`/`KIT_WRAP_CI_ON_MERGE=1` a label-gated repo runs no checks until the

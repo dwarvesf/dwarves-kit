@@ -309,7 +309,7 @@ chk_has "commands/wrap.md takes follow all, and all only right after follow" "$W
 chk_has "commands/wrap.md resolves the mode through follow-mode" "$WRAP_MD" "bin/wrap follow-mode [lanes|all]"
 chk_has "the off mode drafts one exact FYI row" "$WRAP_MD" "| STATE | wrap.follow_through is off, <n> in-lane items stay REPORTED; /kit:wrap follow builds them | |"
 chk_has "the lead creates worktrees serially before dispatch" "$WRAP_MD" "create the worktree first, serially, from the lead"
-chk_has "a full-lane PR opens as a draft titled from the feature commit" "$WRAP_MD" "gh pr create --draft --head <branch> --title \"<the feature commit subject the worker reported>\""
+chk_has "a full-lane PR opens as a draft titled from the feature commit" "$WRAP_MD" "bin/wrap land --draft <wt> --title \"<the feature commit subject the worker reported>\""
 chk_no "no step-10 PR is titled by a bare --fill" "$WRAP_MD" '--fill`'
 chk_has "a follow-through PR takes the first commit title" "$WRAP_MD" "gh pr create --head <branch> --fill-first"
 chk_has "the draft and the removed worktree keep a later wrap from merging it" "$WRAP_MD" "\`wrap merge --apply\` skips a draft, and no worktree is left for a later wrap's step 3"

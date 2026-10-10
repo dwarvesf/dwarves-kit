@@ -2832,6 +2832,289 @@ chk_no "timeout shape: no busy SKIP for the caller's own pipeline" "$out" "busy,
 chk "timeout shape: the worktree is gone" "$([ ! -e "$LWT" ]; echo $?)"
 } # end sec_busy
 
+# ===========================================================================
+sec_draft() {
+echo "=== land --draft: push, open a draft PR, stop ==="
+# ===========================================================================
+# Real git, `gh` stubbed. The ship gate is a stub script (WRAP_LAND_SHIP_GATE) in every case but
+# the smoke case, because the real hook refuses the fixture identity (t@t) the builders commit with.
+DR_GATES="$TMPD/dr-gates"; mkdir -p "$DR_GATES"
+DR_IN="$DR_GATES/pass.in"; DR_ROOT="$DR_GATES/pass.root"
+cat > "$DR_GATES/pass.sh" <<'GATE'
+#!/usr/bin/env bash
+cat > "$(dirname "$0")/pass.in"
+printf '%s' "${CLAUDE_PLUGIN_ROOT:-}" > "$(dirname "$0")/pass.root"
+printf '%s\n' '{"systemMessage":"stub gate notice"}'
+exit 0
+GATE
+cat > "$DR_GATES/block.sh" <<'GATE'
+#!/usr/bin/env bash
+cat >/dev/null
+echo "BLOCKED: stub gate says no" >&2
+printf '%s\n' '{"systemMessage":"stub gate stdout"}'
+exit 2
+GATE
+cat > "$DR_GATES/crash.sh" <<'GATE'
+#!/usr/bin/env bash
+cat >/dev/null
+echo "stub gate crashed" >&2
+exit 1
+GATE
+chmod +x "$DR_GATES"/*.sh
+DR_PASS="$DR_GATES/pass.sh"
+
+# dr_build <name> [branch] -- build_land plus a committed proof file; sets DR_WT, DR_BARE, DR_BR
+dr_build() {
+  DR_BR="${2:-feat/land}"
+  build_land "$1" "" "$DR_BR"
+  local wt="$TMPD/ld-repo-$1/wt"
+  mkdir -p "$wt/docs/verification"
+  printf '# Verification\nNEGATIVE CONTROL\nCommand: `bash t.sh`\nExit: 0\nOutput:\nt: all 3 passed\nVerdict: PASS\n' \
+    > "$wt/docs/verification/land.md"
+  git -C "$wt" add -A; git -C "$wt" commit -qm "docs: proof of done" >/dev/null 2>&1
+  DR_WT="$(cd "$wt" && pwd -P)"; DR_BARE="$TMPD/ld-bare-$1"; DR_REPO="$TMPD/ld-repo-$1"
+}
+# dr_build_bare <name> -- build_land with NO proof file
+dr_build_bare() {
+  DR_BR=feat/land
+  build_land "$1"
+  DR_WT="$(cd "$TMPD/ld-repo-$1/wt" && pwd -P)"; DR_BARE="$TMPD/ld-bare-$1"; DR_REPO="$TMPD/ld-repo-$1"
+}
+# dr_land [VAR=val ...] -- one `land --draft` of $DR_WT with the stub gate; $DR_FLAGS adds flags
+dr_land() {
+  : > "$GH_STUB_CALLS"; rm -f "$GH_STUB_CALLS".*
+  env -u CLAUDE_PLUGIN_ROOT GH_STUB_OPEN_PRS='[]' GH_STUB_CREATE_NUM=42 WRAP_LAND_SHIP_GATE="${DR_GATE:-$DR_PASS}" \
+    "$@" "$WRAP" land "$DR_WT" --draft ${DR_FLAGS:-} 2>&1
+}
+dr_origin_has() { git -C "$DR_BARE" rev-parse --verify "${1:-$DR_BR}" >/dev/null 2>&1 && echo 1 || echo 0; }
+dr_calls() { grep -cE "$1" "$GH_STUB_CALLS"; }
+dr_open_pr() { # dr_open_pr <number> <body> <isDraft> -- an open own PR for the branch
+  jq -cn --argjson n "$1" --arg b "$2" --argjson d "$3" '[{number:$n,baseRefName:"main",author:{login:"me"},isDraft:$d,
+    isCrossRepository:false,title:"feat: the landed change",body:$b,url:("https://github.com/o/r/pull/"+($n|tostring))}]'
+}
+
+echo "--- draft_flag_with_ci_refused: --draft with --with-ci exits 64 and names the flag"
+dr_build dr1
+out="$(DR_FLAGS="--with-ci" dr_land)"; rc=$?
+chk "draft_flag_with_ci_refused: exits 64" "$([ "$rc" -eq 64 ]; echo $?)"
+chk_has "draft_flag_with_ci_refused: names --with-ci" "$out" "--draft cannot combine with --with-ci"
+chk "draft_flag_with_ci_refused: nothing pushed" "$(dr_origin_has)"
+
+echo "--- draft_flag_verify_nopull_refused: --verify (even empty) and --no-pull exit 64"
+out="$(DR_FLAGS="--verify true" dr_land)"; rc=$?
+chk "draft_flag_verify_nopull_refused: --verify exits 64" "$([ "$rc" -eq 64 ]; echo $?)"
+chk_has "draft_flag_verify_nopull_refused: names --verify" "$out" "--draft cannot combine with --verify"
+out="$(DR_FLAGS="--verify=" dr_land)"; rc=$?
+chk "draft_flag_verify_nopull_refused: an empty --verify= still exits 64" "$([ "$rc" -eq 64 ]; echo $?)"
+out="$(DR_FLAGS="--no-pull" dr_land)"; rc=$?
+chk "draft_flag_verify_nopull_refused: --no-pull exits 64" "$([ "$rc" -eq 64 ]; echo $?)"
+chk_has "draft_flag_verify_nopull_refused: names --no-pull" "$out" "--draft cannot combine with --no-pull"
+chk "draft_flag_verify_nopull_refused: nothing pushed" "$(dr_origin_has)"
+
+echo "--- draft_already_landed_refused: a landed branch refuses and keeps everything"
+dr_build dr4
+git -C "$DR_WT" push -q origin feat/land
+DR4_ORIGIN="$(git -C "$DR_BARE" rev-parse feat/land)"
+DR4_TIP="$(git -C "$DR_WT" rev-parse HEAD)"
+land_adv dr4
+echo "pr change" > "$TMPD/ld-adv-dr4/pr-file.txt"; git -C "$TMPD/ld-adv-dr4" add -A; git -C "$TMPD/ld-adv-dr4" commit -qm "squash of the branch"
+echo "later edit" >> "$TMPD/ld-adv-dr4/pr-file.txt"; git -C "$TMPD/ld-adv-dr4" add -A; git -C "$TMPD/ld-adv-dr4" commit -qm "later change"
+git -C "$TMPD/ld-adv-dr4" push -q origin main
+out="$(dr_land GH_STUB_MERGED_feat_land="[{\"headRefOid\":\"${DR4_TIP}\",\"baseRefName\":\"main\",\"mergedAt\":\"2026-09-30T00:00:00Z\"}]")"; rc=$?
+chk "draft_already_landed_refused: exits 2" "$([ "$rc" -eq 2 ]; echo $?)"
+chk_has "draft_already_landed_refused: says so" "$out" "DRAFT REFUSED: feat/land is already landed"
+chk "draft_already_landed_refused: the worktree remains" "$([ -d "$DR_WT" ]; echo $?)"
+chk "draft_already_landed_refused: the local branch remains" "$(git -C "$DR_REPO" rev-parse --verify feat/land >/dev/null 2>&1; echo $?)"
+chk "draft_already_landed_refused: origin is untouched" "$([ "$(git -C "$DR_BARE" rev-parse feat/land)" = "$DR4_ORIGIN" ]; echo $?)"
+
+echo "--- draft_nondraft_open_refused: an open ready PR refuses before the push"
+dr_build dr5
+out="$(dr_land GH_STUB_OPEN_HEAD_feat_land="$(dr_open_pr 18 "own body" false)")"; rc=$?
+chk "draft_nondraft_open_refused: exits 2" "$([ "$rc" -eq 2 ]; echo $?)"
+chk_has "draft_nondraft_open_refused: names the PR and the undo command" "$out" "open PR #18 is not a draft; gh pr ready --undo 18"
+chk "draft_nondraft_open_refused: origin has no branch" "$(dr_origin_has)"
+chk "draft_nondraft_open_refused: no pr ready call" "$(dr_calls '^pr ready')"
+
+echo "--- draft_no_proof_refused: no proof file and no --body-file refuses"
+dr_build_bare dr6
+out="$(dr_land)"; rc=$?
+chk "draft_no_proof_refused: exits 2" "$([ "$rc" -eq 2 ]; echo $?)"
+chk_has "draft_no_proof_refused: says so" "$out" "DRAFT REFUSED: no proof-of-done file and no --body-file"
+chk "draft_no_proof_refused: nothing pushed" "$(dr_origin_has)"
+chk "draft_no_proof_refused: no PR created" "$(dr_calls '^pr create')"
+
+echo "--- draft_new_pr_is_draft_with_proof: create carries --draft and the proof body"
+dr_build dr7
+DR7_BASE_HEAD="$(git -C "$DR_REPO" rev-parse HEAD)"
+out="$(dr_land)"; rc=$?
+DR7_CALLS="$(cat "$GH_STUB_CALLS")"
+chk "draft_new_pr_is_draft_with_proof: exits 0" "$rc"
+chk "draft_new_pr_is_draft_with_proof: the create call carries --draft" "$([ "$(dr_calls '^pr create .* --draft ')" -eq 1 ]; echo $?)"
+chk_has "draft_new_pr_is_draft_with_proof: the body carries the proof section" "$DR7_CALLS" "## Proof of done"
+chk_has "draft_new_pr_is_draft_with_proof: the body carries the captured output" "$DR7_CALLS" "t: all 3 passed"
+chk_has "draft_new_pr_is_draft_with_proof: reports the push" "$out" "pushed feat/land"
+chk_has "draft_new_pr_is_draft_with_proof: reports the draft" "$out" "opened draft PR #42"
+chk_has "draft_new_pr_is_draft_with_proof: reads isDraft back" "$DR7_CALLS" "pr view 42"
+
+echo "--- draft_stays_open: no merge, worktree and branch kept, URL and proof block printed"
+chk "draft_stays_open: no pr merge call" "$(dr_calls '^pr merge')"
+chk "draft_stays_open: no pr ready call" "$(dr_calls '^pr ready')"
+chk "draft_stays_open: exits 0" "$rc"
+chk "draft_stays_open: the worktree remains" "$([ -d "$DR_WT" ]; echo $?)"
+chk "draft_stays_open: the local branch remains" "$(git -C "$DR_REPO" rev-parse --verify feat/land >/dev/null 2>&1; echo $?)"
+chk "draft_stays_open: the branch is on origin" "$([ "$(dr_origin_has)" = 1 ]; echo $?)"
+chk "draft_stays_open: the main checkout did not move" "$([ "$(git -C "$DR_REPO" rev-parse HEAD)" = "$DR7_BASE_HEAD" ]; echo $?)"
+chk_has "draft_stays_open: prints the PR url" "$out" "draft PR: https://github.com/o/r/pull/42"
+chk_has "draft_stays_open: says the worktree is kept" "$out" "worktree kept: ${DR_WT}"
+chk_has "draft_stays_open: prints the proof block" "$out" "PROOF OF DONE"
+chk_no "draft_stays_open: never tidies" "$out" "deleted feat/land"
+
+echo "--- draft_adopt_stays_draft: an adopted draft is not marked ready; a title-only body takes the proof"
+dr_build dr8
+out="$(dr_land GH_STUB_OPEN_HEAD_feat_land="$(dr_open_pr 18 "feat: the landed change" true)")"; rc=$?
+chk "draft_adopt_stays_draft: exits 0" "$rc"
+chk "draft_adopt_stays_draft: no pr ready call" "$(dr_calls '^pr ready')"
+chk "draft_adopt_stays_draft: no pr create call" "$(dr_calls '^pr create')"
+chk "draft_adopt_stays_draft: the title-only body is replaced" "$([ "$(dr_calls '^pr edit 18 ')" -eq 1 ]; echo $?)"
+chk_has "draft_adopt_stays_draft: and the new body is the proof body" "$(cat "$GH_STUB_CALLS")" "## Proof of done"
+chk_has "draft_adopt_stays_draft: says adopted draft" "$out" "adopted draft PR #18"
+chk_has "draft_adopt_stays_draft: says the body was set" "$out" "PR #18 body set from the proof of done"
+chk "draft_adopt_stays_draft: no pr merge call" "$(dr_calls '^pr merge')"
+chk "draft_adopt_stays_draft: the worktree remains" "$([ -d "$DR_WT" ]; echo $?)"
+
+echo "--- draft_adopt_empty_body_takes_body_file: an adopted empty-body draft is filled from --body-file"
+dr_build dr8c
+DR8C_BODY="$(mktemp "${TMPDIR:-/tmp}/dr8c-body.XXXXXX")"
+printf '## Proof of done\nfrom the body file\n' >| "$DR8C_BODY"
+out="$(DR_FLAGS="--body-file $DR8C_BODY" dr_land GH_STUB_OPEN_HEAD_feat_land="$(dr_open_pr 19 "" true)")"; rc=$?
+chk "draft_adopt_empty_body_takes_body_file: exits 0" "$rc"
+chk "draft_adopt_empty_body_takes_body_file: the body is set from the file" \
+  "$([ "$(grep -cE "^pr edit 19 .*--body-file ${DR8C_BODY}" "$GH_STUB_CALLS")" -eq 1 ]; echo $?)"
+chk_has "draft_adopt_empty_body_takes_body_file: says the body was set" "$out" "PR #19 body set from ${DR8C_BODY}"
+chk "draft_adopt_empty_body_takes_body_file: no pr ready call" "$(dr_calls '^pr ready')"
+dr_build dr8b
+out="$(dr_land GH_STUB_OPEN_HEAD_feat_land="$(dr_open_pr 19 "A body written by hand." true)")"; rc=$?
+chk "draft_adopt_stays_draft: an adopted draft with its own body exits 0" "$rc"
+chk "draft_adopt_stays_draft: and keeps that body" "$(dr_calls '^pr edit')"
+
+echo "--- draft_no_ship_record: a draft writes no Ship line to the gate ledger"
+dr_build dr10 feat/drship
+bash "$GATE_LEDGER" record drship spec ran "spec cycle for the draft test" >/dev/null
+chk "draft_no_ship_record: the ledger run exists (precondition)" "$([ -f "$KIT_LEDGER_DIR/runs/drship.log" ]; echo $?)"
+# The merge stubs are wired on purpose: a run that fell through to the merge would reach the Ship record.
+out="$(dr_land GH_STUB_OPEN_HEAD_feat_drship="[]" GH_STUB_LAND_REPO="$DR_WT" GH_STUB_LAND_REMOTE="$DR_BARE" \
+  GH_STUB_LAND_BRANCH=feat/drship GH_STUB_LAND_DEF=main)"; rc=$?
+chk "draft_no_ship_record: the draft opened" "$rc"
+chk "draft_no_ship_record: no Ship line in the ledger" "$(grep -ci '| GATE | ship |' "$KIT_LEDGER_DIR/runs/drship.log")"
+chk_no "draft_no_ship_record: no record line printed" "$out" "recorded ship gate"
+
+echo "--- draft_inherits_refusals: dirty tree, ignored file and a template without a body each refuse"
+dr_build dr11a
+echo x > "$DR_WT/dirty.txt"
+out="$(dr_land)"; rc=$?
+chk "draft_inherits_refusals: a dirty tree exits 1" "$([ "$rc" -eq 1 ]; echo $?)"
+chk_has "draft_inherits_refusals: names the dirty tree" "$out" "is dirty"
+chk "draft_inherits_refusals: dirty tree pushes nothing" "$(dr_origin_has)"
+dr_build dr11b
+printf 'local.dat\n' > "$DR_WT/.gitignore"; git -C "$DR_WT" add -A; git -C "$DR_WT" commit -qm "chore: ignore a local file" >/dev/null 2>&1
+echo x > "$DR_WT/local.dat"
+out="$(dr_land)"; rc=$?
+chk "draft_inherits_refusals: an ignored file exits 1" "$([ "$rc" -eq 1 ]; echo $?)"
+chk_has "draft_inherits_refusals: names the ignored path" "$out" "local.dat"
+chk "draft_inherits_refusals: ignored file pushes nothing" "$(dr_origin_has)"
+dr_build dr11c
+mkdir -p "$DR_WT/.github"; printf '## What\n' > "$DR_WT/.github/pull_request_template.md"
+git -C "$DR_WT" add -A; git -C "$DR_WT" commit -qm "docs: add a PR template" >/dev/null 2>&1
+out="$(dr_land)"; rc=$?
+chk "draft_inherits_refusals: a template without --body-file exits 2" "$([ "$rc" -eq 2 ]; echo $?)"
+chk_has "draft_inherits_refusals: names the template" "$out" "a title-only PR body is not allowed"
+chk "draft_inherits_refusals: template refusal pushes nothing" "$(dr_origin_has)"
+chk "draft_inherits_refusals: template refusal creates no PR" "$(dr_calls '^pr create')"
+
+echo "--- draft_runs_ship_gate: the gate sees the push payload; any nonzero exit or a missing hook refuses"
+dr_build dr16a
+out="$(DR_GATE="$DR_GATES/block.sh" dr_land)"; rc=$?
+chk "draft_runs_ship_gate: a gate exit 2 refuses with exit 2" "$([ "$rc" -eq 2 ]; echo $?)"
+chk_has "draft_runs_ship_gate: says the gate blocked the push" "$out" "DRAFT REFUSED: ship-gate blocked the push"
+chk_has "draft_runs_ship_gate: relays the gate's stderr" "$out" "BLOCKED: stub gate says no"
+chk_no "draft_runs_ship_gate: drops the gate's stdout" "$out" "stub gate stdout"
+chk "draft_runs_ship_gate: a blocked gate pushes nothing" "$(dr_origin_has)"
+chk "draft_runs_ship_gate: a blocked gate creates no PR" "$(dr_calls '^pr create')"
+out="$(DR_GATE="$DR_GATES/crash.sh" dr_land)"; rc=$?
+chk "draft_runs_ship_gate: a gate exit 1 refuses too" "$([ "$rc" -eq 2 ]; echo $?)"
+chk_has "draft_runs_ship_gate: relays the crash text" "$out" "stub gate crashed"
+chk "draft_runs_ship_gate: a crashed gate pushes nothing" "$(dr_origin_has)"
+out="$(DR_GATE="$DR_GATES/no-such-hook.sh" dr_land)"; rc=$?
+chk "draft_runs_ship_gate: a missing hook refuses with exit 2" "$([ "$rc" -eq 2 ]; echo $?)"
+chk_has "draft_runs_ship_gate: names the missing hook" "$out" "ship-gate hook not found"
+chk "draft_runs_ship_gate: a missing hook pushes nothing" "$(dr_origin_has)"
+rm -f "$DR_IN" "$DR_ROOT"
+out="$(dr_land)"; rc=$?
+chk "draft_runs_ship_gate: a passing gate lets the draft open" "$rc"
+chk "draft_runs_ship_gate: the gate got the worktree as .cwd" "$([ "$(jq -r '.cwd' "$DR_IN")" = "$DR_WT" ]; echo $?)"
+chk "draft_runs_ship_gate: the gate got the push command" "$([ "$(jq -r '.tool_input.command' "$DR_IN")" = "git push origin feat/land" ]; echo $?)"
+chk "draft_runs_ship_gate: CLAUDE_PLUGIN_ROOT defaults to the kit root" "$([ "$(cat "$DR_ROOT")" = "$(cd "$KIT_DIR" && pwd)" ]; echo $?)"
+chk_no "draft_runs_ship_gate: a passing gate's stdout is dropped" "$out" "stub gate notice"
+chk_has "draft_runs_ship_gate: the path override is announced" "$out" "WRAP_LAND_SHIP_GATE"
+dr_build dr16q 'feat/q"uote'
+rm -f "$DR_IN"
+out="$(dr_land GH_STUB_OPEN_HEAD_feat_q_uote="[]")"; rc=$?
+chk "draft_runs_ship_gate: a branch name with a quote still opens" "$rc"
+chk "draft_runs_ship_gate: the payload stays valid JSON for that branch" \
+  "$([ "$(jq -r '.tool_input.command' "$DR_IN" 2>/dev/null)" = 'git push origin feat/q"uote' ]; echo $?)"
+
+echo "--- draft_real_ship_gate_smoke: the real hook gets a payload it reads (it refuses the fixture identity)"
+# Needs the kit's own lib/ beside hooks/ (a checkout, not a bare install), which is how this suite runs.
+dr_build dr16r
+: > "$GH_STUB_CALLS"
+out="$(env -u CLAUDE_PLUGIN_ROOT DWARVES_KIT_LOG_DIR="$TMPD/dr-hook-log" GH_STUB_OPEN_PRS='[]' "$WRAP" land "$DR_WT" --draft 2>&1)"; rc=$?
+chk "draft_real_ship_gate_smoke: the real hook refuses the fixture identity with exit 2" "$([ "$rc" -eq 2 ]; echo $?)"
+chk_has "draft_real_ship_gate_smoke: says the gate blocked the push" "$out" "DRAFT REFUSED: ship-gate blocked the push"
+chk_has "draft_real_ship_gate_smoke: relays the hook's own reason" "$out" "BLOCKED"
+chk "draft_real_ship_gate_smoke: nothing pushed" "$(dr_origin_has)"
+
+echo "--- draft_template_repo_with_body_file: a template repo opens the draft with --body-file"
+dr_build dr17
+mkdir -p "$DR_WT/.github"; printf '## What\n' > "$DR_WT/.github/pull_request_template.md"
+git -C "$DR_WT" add -A; git -C "$DR_WT" commit -qm "docs: add a PR template" >/dev/null 2>&1
+printf 'A filled-in body.\n' > "$TMPD/dr17-body.md"
+out="$(DR_FLAGS="--body-file $TMPD/dr17-body.md" dr_land)"; rc=$?
+chk "draft_template_repo_with_body_file: exits 0" "$rc"
+chk "draft_template_repo_with_body_file: the create call carries --draft and the body file" \
+  "$([ "$(dr_calls "^pr create .* --draft .*--body-file $TMPD/dr17-body.md")" -eq 1 ]; echo $?)"
+chk_has "draft_template_repo_with_body_file: opened a draft" "$out" "opened draft PR #42"
+
+echo "--- draft_noclobber_body_nonempty: a draft opened under noclobber still carries the proof body"
+dr_build dr18
+: > "$GH_STUB_CALLS"
+# bin/wrap re-execs bash, which drops -C, so noclobber goes on the process that builds the body.
+out="$(env -u CLAUDE_PLUGIN_ROOT GH_STUB_OPEN_PRS='[]' GH_STUB_CREATE_NUM=42 WRAP_LAND_SHIP_GATE="$DR_PASS" \
+  bash -C "$KIT_DIR/lib/wrap/wrap.sh" land "$DR_WT" --draft 2>&1)"; rc=$?
+chk "draft_noclobber_body_nonempty: exits 0 under noclobber" "$rc"
+chk_has "draft_noclobber_body_nonempty: the body holds the proof section" "$(cat "$GH_STUB_CALLS")" "## Proof of done"
+
+echo "--- draft_created_ready_refused: a PR the stub reports as ready after create refuses"
+dr_build dr19
+out="$(dr_land GH_STUB_PR_42='{"isDraft":false}')"; rc=$?
+chk "draft_created_ready_refused: exits 2" "$([ "$rc" -eq 2 ]; echo $?)"
+chk_has "draft_created_ready_refused: names the PR and the undo command" "$out" "PR #42 was created ready; gh pr ready --undo 42"
+chk "draft_created_ready_refused: no pr merge call" "$(dr_calls '^pr merge')"
+dr_build dr19b
+out="$(dr_land GH_STUB_PR_42='{}')"; rc=$?
+chk "draft_created_ready_refused: an unreadable isDraft refuses too" "$([ "$rc" -eq 2 ]; echo $?)"
+
+echo "--- draft_usage_names_flag: the usage text names --draft"
+chk_has "draft_usage_names_flag: wrap --help names --draft" "$("$WRAP" --help 2>&1)" "--draft"
+
+echo "--- draft_wrap_md_uses_verb: step 10 opens the draft through the verb"
+DR_MD="$KIT_DIR/commands/wrap.md"
+chk "draft_wrap_md_uses_verb: no hand-rolled draft create line" "$([ "$(grep -c 'gh pr create --draft' "$DR_MD")" -eq 0 ]; echo $?)"
+chk "draft_wrap_md_uses_verb: the land --draft line carries --body-file" \
+  "$(grep 'land --draft' "$DR_MD" | grep -q -- '--body-file <wt>/docs/verification/<slug>.md'; echo $?)"
+chk "draft_wrap_md_uses_verb: the land --draft line runs the installed verb, not the worktree copy" \
+  "$([ "$(grep -c 'cd <wt> && bin/wrap land --draft' "$DR_MD")" -eq 0 ]; echo $?)"
+} # end sec_draft
+
 # One section, in this process. The driver sets LAND_SECTION per child; the last line is the
 # child's result for the driver to sum (it is not the suite's final line).
 [ "$(type -t "$LAND_SECTION")" = function ] || { echo "test-wrap-land: no such section: $LAND_SECTION" >&2; exit 64; }
