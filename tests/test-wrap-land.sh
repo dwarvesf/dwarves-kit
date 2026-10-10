@@ -3074,9 +3074,10 @@ chk_has "draft_template_repo_with_body_file: opened a draft" "$out" "opened draf
 echo "--- draft_noclobber_body_nonempty: a draft opened under noclobber still carries the proof body"
 dr_build dr18
 : > "$GH_STUB_CALLS"
+# bin/wrap re-execs bash, which drops -C, so noclobber goes on the process that builds the body.
 out="$(env -u CLAUDE_PLUGIN_ROOT GH_STUB_OPEN_PRS='[]' GH_STUB_CREATE_NUM=42 WRAP_LAND_SHIP_GATE="$DR_PASS" \
-  bash -C "$WRAP" land "$DR_WT" --draft 2>&1)"; rc=$?
-chk "draft_noclobber_body_nonempty: exits 0 under bash -C" "$rc"
+  bash -C "$KIT_DIR/lib/wrap/wrap.sh" land "$DR_WT" --draft 2>&1)"; rc=$?
+chk "draft_noclobber_body_nonempty: exits 0 under noclobber" "$rc"
 chk_has "draft_noclobber_body_nonempty: the body holds the proof section" "$(cat "$GH_STUB_CALLS")" "## Proof of done"
 
 echo "--- draft_created_ready_refused: a PR the stub reports as ready after create refuses"
