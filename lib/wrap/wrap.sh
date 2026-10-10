@@ -8,6 +8,7 @@
 #   wrap.sh apply --no-pull [--apply] [--own <path>]... <repo> [...]  tidy without the pull or the stray-commits move (a step 0 stop)
 #   wrap.sh merge [--apply] [--no-pull] [--pr N] [--with-ci] [--verify C] <repo>   merges ONE own green PR (--pr: a named draft)
 #   wrap.sh land  <worktree> [--title T] [--body-file F] [--with-ci] [--no-pull] [--verify C]   one hand-made worktree, landed
+#   wrap.sh land  <worktree> --draft [--title T] [--body-file F]   push, open a draft PR, stop: no merge, no tidy
 #   wrap.sh start <repo> <branch> [--carry [<path>...]]     one hand-made worktree, started
 #   wrap.sh log   "<slug>: <one sentence>" [--date YYYY-MM-DD]
 #   wrap.sh default-branch <repo>                           prints the detected name
@@ -63,7 +64,8 @@
 # `merge`'s squash-equivalent fallback for a conflicting own PR whose head already holds
 # the base (one commit-tree, one <branch>-squash push with a single scratch-ref delete and
 # repush, one replacement `gh pr create`), `land`'s own named push, PR create, squash
-# merge, worktree remove and branch delete, `apply`'s stray-line carry (per dirty
+# merge, worktree remove and branch delete (`land --draft` stops after one push and one `pr create --draft`),
+# `apply`'s stray-line carry (per dirty
 # union-marked file, one scratch detached worktree at origin/<default>, one commit, one push
 # of a new wrap/stray-* branch, knob wrap.carry_stray_lines), `apply`'s stray-commit carry
 # (the main checkout on the default branch and ahead of origin: one local and pushed
@@ -136,7 +138,7 @@ source "$LIB_ROOT/config/kit-config.sh" || { echo "FATAL: lib/config/kit-config.
 source "$LIB_ROOT/gate/default-branch-warn.sh" || { echo "FATAL: lib/gate/default-branch-warn.sh missing or unreadable" >&2; exit 1; }
 for _m in common scan apply pull carry ci merge land start log deploy rebase adopt flick; do source "$SELF_DIR/wrap-$_m.sh" || { echo "FATAL: lib/wrap/wrap-$_m.sh missing or unreadable" >&2; exit 1; }; done; unset _m
 
-_usage() { sed -n '2,40p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
+_usage() { sed -n '2,41p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
 
 # --------------------------------------------------------------------------- entry
 

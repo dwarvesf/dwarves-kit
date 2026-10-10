@@ -45,3 +45,18 @@ The build's tests catch each of these, so they stay out of the spec.
 - Add a `created ready` stub fixture (`GH_STUB_PR_<n>` with `isDraft:false`) and a case for the DEC-G post-create refusal, with a negative control (delete the read: case red).
 - TASK-D includes the stub `pr view` switch.
 - Refresh the `## Design` Diagram sentence when the build lands: four refusals plus the hook call. Add the DEC-G box to Picture and a row to the refusals table in the same commit.
+
+## Build
+
+Deltas and decisions the spec left to the builder.
+
+- The ship-gate call and the refusals sit inline in `cmd_land`, not in a helper, as the spec's "no new helper" rule asks. The already-landed refusal is the first statement of the merge-proof block, so it runs before the network reads (`ls-remote`) that block does.
+- The `--with-ci`/`--verify`/`--no-pull` refusal tracks a `*_given` variable per flag, set at parse time. `--verify=` with an empty value still refuses.
+- The post-create `isDraft` read treats a failed `gh`, empty output and a null field alike: refuse, exit 2.
+- The adopt path prints `adopted draft PR #<n>` in draft mode and keeps `adopted PR #<n>` for plain land, so existing assertions are untouched. The `gh pr ready` call is skipped only when `--draft` is set.
+- The gate notice for `WRAP_LAND_SHIP_GATE` is one stderr line starting `note: ship-gate path overridden`. The missing-hook refusal prints `DRAFT REFUSED: ship-gate blocked the push` then `ship-gate hook not found: <path>`.
+- Real-hook smoke: the standard fixtures commit as `t@t`, which the real hook's fixture-identity rule refuses. So the smoke case asserts exit 2 plus the relayed `BLOCKED` text. A payload the hook cannot read would fail open and let the push through, so that case goes red on a payload mismatch. It needs `lib/` beside `hooks/` (a kit checkout).
+- Stub: `pr view --json isDraft` answers `{"isDraft":true}` unless a case sets `GH_STUB_PR_<n>`. The created-ready case sets it to `{"isDraft":false}`, the unreadable case to `{}`.
+- Outside the spec's Touches: `tests/test-wrap-deploy.sh` asserted the old step 10 hand-rolled draft create line in `commands/wrap.md`. Its one assertion now names the `bin/wrap land --draft` line. No other change there.
+- `_usage` in `wrap.sh` prints header lines 2 to 40; the new usage line shifted it, so the range is now 2 to 41.
+- Branch names with a double quote open a draft and the gate payload stays valid JSON (`jq -n --arg`); one case pins it.

@@ -68,6 +68,8 @@ Approach 1. The refusals, the body and the adopt checks already exist and are te
  +--------------------+
  | open or adopt PR   |   land:  create (ready) / adopt + pr ready
  |                    |   draft: create --draft / adopt, stay draft  <== new
+ | draft create only: |
+ |  gh pr view isDraft|-- not true --> refuse exit 2 (created ready)   <== new
  +--------------------+
         |
         +-- draft: print PR URL + proof block, exit 0. Worktree kept.  <== new
@@ -82,7 +84,7 @@ Approach 1. The refusals, the body and the adopt checks already exist and are te
 See `## Solution`: approach 1, a flag on `land`.
 
 ### Diagram
-The `## Picture` flow above is the control flow. The draft mode adds one flag, two pre-push refusals, one refusal on the already-landed branch, one `--draft` argument to `gh pr create`, and one early return.
+The `## Picture` flow above is the control flow. The draft mode adds one flag, four pre-push refusals (an already-landed branch, an open non-draft PR, no proof and no body, the ship-gate hook call), one `--draft` argument to `gh pr create`, one post-create read of `isDraft`, and one early return.
 
 ### ADR link(s)
 none. The choice is reversible: removing the flag removes the mode.
@@ -119,6 +121,7 @@ Refusals, all before the push unless stated (each prints one `... REFUSED:` line
 | one open PR for the branch and it is not a draft | 2 | `DRAFT REFUSED: open PR #<n> is not a draft; gh pr ready --undo <n> converts it, then rerun` |
 | new PR, no `--body-file`, and the branch has no proof file | 2 | `DRAFT REFUSED: no proof-of-done file and no --body-file; a draft with a title-only body is not allowed` |
 | `hooks/ship-gate.sh` exits 2 for the synthesized push, or the hook file is missing | 2 | `DRAFT REFUSED: ship-gate blocked the push` followed by the hook's own stderr |
+| `gh pr view --json isDraft` after create is not `true` (or unreadable) | 2 | `DRAFT REFUSED: PR #<n> was created ready; gh pr ready --undo <n> converts it (the PR stays open)` |
 | more than one open PR | 2 | `PR REFUSED: <n> open PRs for <branch>` (unchanged; this one fires after the push, as in `land`) |
 | open PR targets another base, another author, or the login does not resolve | 2 | unchanged (after the push, as in `land`) |
 | `git push` fails | its rc | `PUSH REFUSED: ...` (unchanged) |

@@ -125,6 +125,11 @@ case "$sub" in
             merge_oid="$(git -C "$repo" rev-parse -q --verify HEAD 2>/dev/null)"
             default_state="{\"state\":\"MERGED\",\"mergeCommit\":{\"oid\":\"${merge_oid:-1a2b3c4d5e6f}\"}}"
             printf '%s\n' "${GH_STUB_VIEW_STATE:-$default_state}" ;;
+          isDraft)
+            # `land --draft` re-reads the PR it just created. A PR is a draft unless the case
+            # sets GH_STUB_PR_<n> to a created-ready answer such as {"isDraft":false}.
+            key="GH_STUB_PR_$n"; eval "val=\"\${$key:-}\""
+            if [ -n "$val" ]; then printf '%s\n' "$val"; else printf '%s\n' '{"isDraft":true}'; fi ;;
           *)
             key="GH_STUB_PR_$n"; eval "val=\"\${$key:-}\""
             # Read k serves GH_STUB_PR_<n>_<j> for the highest j <= k that is set (j >= 2),
