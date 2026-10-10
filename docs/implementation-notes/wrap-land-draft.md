@@ -1,0 +1,28 @@
+# Implementation notes: wrap land --draft
+
+Delta from `docs/specs/SPEC-404-wrap-land-draft.md` only. The spec is the contract; this log holds what the spec leaves to the builder.
+
+## Validation round 1: folded criticals
+
+Round 1 closed NEEDS REVISION with two criticals. Both are folded into the spec as DEC-H and DEC-I.
+
+- DEC-H: four reviewers found that the step 10 swap hides the draft push from `hooks/ship-gate.sh`. The draft path now pipes a synthesized push payload to the hook before its push (AC-16).
+- DEC-I: two reviewers found that the new step 10 line dropped `--body-file`, so the template check refused it in a repo with a PR template. Step 10 now passes `--body-file` (AC-15, AC-17).
+
+## Round 1 warnings for the builder
+
+The build's tests catch each of these, so they stay out of the spec.
+
+- Post-create `gh pr view <n> --json isDraft`: pass `--repo <url>`. Treat an unreadable or empty answer the same as `false`: exit 2. The `DRAFT REFUSED` message names `gh pr ready --undo <n>` and says the PR stays open.
+- The stub's `pr view` default prints `{}`, so `isDraft` reads null. Add the stub switch before any new-PR draft case can pass.
+- AC-10 (`draft_no_ship_record`) must seed a ledger run for the rid, as the existing cases do near `tests/test-wrap-land.sh:339`. Without the seed, the Ship path never runs and the control stays green.
+- The `noclobber` case: `wrap.sh` runs as a child process, so `set -C` in the test shell does not reach it. Run the child with `bash -C` or export `SHELLOPTS`, or the case proves nothing.
+- `--verify` has no given-flag variable today, and `NO_PULL` is a global reset in `cmd_land`. Track each flag's presence for the exit-64 refusals, so `--verify=` with an empty value still refuses.
+- Pin the already-landed draft refusal right after `proof` turns non-empty. An open PR on a landed branch reaches the earlier `LAND REFUSED` return first, and that message is acceptable.
+- Update the `cmd_land` header comment flag list as well as the usage line.
+- AC-3 "byte for byte" excludes the usage text, which TASK-A changes on purpose.
+- The Outputs list omits two lines the adopt path already prints: `body set from the proof of done` and the stderr `keeps its own title and body` note. Do not assert an exact line order that excludes them.
+- The push runs before the base, author and login checks on an adopted PR, as in `land`. Kept unchanged, because moving them is a `land` change.
+- An adopted draft with an empty body and no proof file stays empty. DEC-E covers new PRs only.
+- `_land_proof_files` tests `-f`, which follows symlinks, and the body inlines the file. This is a pre-existing `land` risk and out of scope here.
+- Step 10's old push set an upstream with `-u`. `land` pushes without it. This is harmless, because step 10 removes the worktree after the draft opens.

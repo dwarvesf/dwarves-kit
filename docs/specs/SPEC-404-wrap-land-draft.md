@@ -58,6 +58,7 @@ Approach 1. The refusals, the body and the adopt checks already exist and are te
  | draft only:        |
  |  open PR not draft |-- refuse --> exit 2, nothing pushed          <== new
  |  no proof, no body |-- refuse --> exit 2, nothing pushed          <== new
+ |  ship-gate hook    |-- exit 2 --> refuse exit 2, nothing pushed    <== new
  +--------------------+
         |
         v
@@ -104,6 +105,7 @@ wrap.sh land <worktree> --draft [--title T] [--body-file F]
 - Refused with `--draft`, exit 64 and `wrap.sh land: --draft cannot combine with --with-ci` (and likewise `--verify`, `--no-pull`): those three flags only steer the merge and the tidy, which `--draft` never runs. Silently ignoring them hides an operator mistake.
 - Outputs (stdout, in order): `land <branch> -> <def> (<wt>)`, `     pushed <branch> (<sha>)`, then `     opened draft PR #<n>` or `     adopted draft PR #<n>`, then `     draft PR: <url>`, then `     worktree kept: <wt>`, then the existing `PROOF OF DONE` block when the branch has a proof file.
 - Exit codes: 0 draft open or adopted. 1 a pre-state refusal `land` already uses (dirty tree, detached HEAD, default branch, no commits ahead, ignored-file guard). 2 a PR or push refusal. 64 usage.
+- Ship gate: the last check before the push pipes `{"cwd":"<wt>","tool_input":{"command":"git push origin <branch>"}}` to `hooks/ship-gate.sh` (the kit's own copy, `$SELF_DIR/../../hooks/ship-gate.sh` from `lib/wrap/wrap.sh`; tests override the path with `WRAP_LAND_SHIP_GATE`). That is the payload the PreToolUse hook gets for a literal push, so the draft push meets the same lane, proof, implementation-notes and registry checks the hand `git push` met. Hook exit 2 refuses. A missing hook file refuses too, because the gate is the reason this mode exists.
 - Invariants: with `--draft` the run never calls `gh pr merge`, never calls `gh pr ready`, never removes the worktree or the branch, never deletes the origin branch, never pulls the main checkout, and never writes a Ship record to the gate ledger. The PR it leaves is a draft.
 
 Refusals, all before the push unless stated (each prints one `... REFUSED:` line and nothing is pushed):
@@ -116,6 +118,7 @@ Refusals, all before the push unless stated (each prints one `... REFUSED:` line
 | branch already on the default branch (merge proof hit) | 2 | `DRAFT REFUSED: <branch> is already landed (<proof>); nothing to review` |
 | one open PR for the branch and it is not a draft | 2 | `DRAFT REFUSED: open PR #<n> is not a draft; gh pr ready --undo <n> converts it, then rerun` |
 | new PR, no `--body-file`, and the branch has no proof file | 2 | `DRAFT REFUSED: no proof-of-done file and no --body-file; a draft with a title-only body is not allowed` |
+| `hooks/ship-gate.sh` exits 2 for the synthesized push, or the hook file is missing | 2 | `DRAFT REFUSED: ship-gate blocked the push` followed by the hook's own stderr |
 | more than one open PR | 2 | `PR REFUSED: <n> open PRs for <branch>` (unchanged; this one fires after the push, as in `land`) |
 | open PR targets another base, another author, or the login does not resolve | 2 | unchanged (after the push, as in `land`) |
 | `git push` fails | its rc | `PUSH REFUSED: ...` (unchanged) |
@@ -143,6 +146,7 @@ none
   - the already-landed branch refuses, keeps the worktree and branch, pushes nothing (AC-4)
   - an open non-draft PR refuses before the push (AC-5)
   - a new PR with no proof file and no `--body-file` refuses before the push (AC-6)
+  - a ship-gate exit 2 refuses before the push, and a missing hook file refuses the same way (AC-16)
 
 ### Phase 2: The draft path
 - [ ] TASK-C: create with `--draft`, adopt a draft without `gh pr ready`, and return before the checks gate. Done when:
@@ -156,9 +160,9 @@ none
 - [ ] TASK-D: a `draft` section in `tests/test-wrap-land.sh` with one named case per AC and the negative controls. Done when:
   - `LAND_ONLY=draft bash tests/test-wrap-land.sh` is green (AC-12)
   - each negative control turns its named case red (AC-13)
-- [ ] TASK-E: docs. Update the `wrap.sh` header usage and write-set comment, and `commands/wrap.md` step 10 to open the draft with `bin/wrap land --draft <wt> --title "<feature commit subject>"` in place of `git push` + `gh pr create --draft`. Done when:
+- [ ] TASK-E: docs. Update the `wrap.sh` header usage and write-set comment, and `commands/wrap.md` step 10 to open the draft with `bin/wrap land --draft <wt> --title "<feature commit subject>" --body-file docs/verification/<slug>.md` in place of `git push` + `gh pr create --draft`. Done when:
   - the usage text names `--draft` (AC-14)
-  - step 10 no longer carries the hand `gh pr create --draft` line, and its "never merges a full-lane PR" and "`wrap land` and `wrap merge` never run on it" text says plain `land` and `merge` (AC-15)
+  - step 10 no longer carries the hand `gh pr create --draft` line, its `land --draft` line carries `--body-file`, and its "never merges a full-lane PR" and "`wrap land` and `wrap merge` never run on it" text says plain `land` and `merge` (AC-15)
 
 ## After state
 - [ ] `bin/wrap land <wt> --draft` pushes, opens a draft PR with the proof body, prints the URL, and leaves the worktree. (Today: no `--draft`; a session runs `git push` then `gh pr create --draft` by hand.)
@@ -192,7 +196,9 @@ none
 | AC-12 | the section runs green | `LAND_ONLY=draft` | n/a |
 | AC-13 | every control above is red against its mutant | the control run in `## Verification` | n/a |
 | AC-14 | the usage text names `--draft` | `draft_usage_names_flag` | remove `--draft` from the header: case red |
-| AC-15 | `commands/wrap.md` carries no `gh pr create --draft` | `draft_wrap_md_uses_verb` | restore the hand line: case red |
+| AC-15 | `commands/wrap.md` carries no `gh pr create --draft`, and its `land --draft` line carries `--body-file` | `draft_wrap_md_uses_verb` | restore the hand line, or drop `--body-file` from the verb line: case red |
+| AC-16 | a ship-gate stub exiting 2 refuses with exit 2 and origin has no branch; a missing hook path refuses the same way; a stub exiting 0 lets the draft open and received the worktree as `.cwd` and `git push origin <branch>` as the command | `draft_runs_ship_gate` | delete the gate call: origin gains the branch, case red |
+| AC-17 | a repo with a PR template plus `--body-file` opens the draft (the step 10 shape) | `draft_template_repo_with_body_file` | n/a, pins the step 10 path through the unchanged template check |
 | extra | a draft opened under `set -o noclobber` has a non-empty body | `draft_noclobber_body_nonempty` | rebuild the body through a redirect to a file created with `>`: case red under noclobber |
 
 ## Verification
@@ -233,11 +239,13 @@ After create, the draft path reads the PR once with `gh pr view <n> --json isDra
 - Marking the draft ready or merging it after review. The operator does that, or plain `land` does.
 - Choosing which changes are full-lane. `lib/classify/lane-classify.sh` owns that.
 - Removing the worktree after the draft opens. Step 10 keeps its own `git worktree remove` line.
+- Running the ship gate inside plain `land`. Its internal push is ungated today (the `via=land` comment in `cmd_land` says so). This spec closes the gap for `--draft` only, because `--draft` replaces a push the hook used to see.
 
 ## Touches
 - lib/wrap/**
 - commands/wrap.md
 - tests/test-wrap-land.sh
+- tests/lib/wrap-stub.sh
 
 ## Decision Log
 - DEC-A: `--draft` is a flag on `land`, not a new verb, because the refusals, the body builder and the adopt path already live there. Rejected: a new `wrap draft` verb (two copies of the refusals drift), a wrapper script (keeps the empty-body class).
@@ -247,6 +255,8 @@ After create, the draft path reads the PR once with `gh pr view <n> --json isDra
 - DEC-E: a new draft with no proof file and no `--body-file` is refused. The title-only fallback of `land` is the empty-body failure this item exists to remove. Rejected: fall back to the title (the observed failure).
 - DEC-F: the draft path writes no Ship ledger record. A draft has not shipped, and a Ship line would trip the step 8 retro trigger early.
 - DEC-G: after create, one `gh pr view --json isDraft` read confirms the PR is a draft. Rejected: trust the flag (a silent ready PR could then be merged by a later plain `land`).
+- DEC-H (validation round 1, critical): `--draft` pipes a synthesized push payload to `hooks/ship-gate.sh` before its push. The PreToolUse hook only sees a literal `git push` in a Bash command, so moving step 10's push inside `cmd_land` would drop the full-lane gate from the one push it exists for. Rejected: a copy of the gate's checks in `wrap-land.sh` (two copies drift), keeping a hand `git push` in step 10 (keeps the hand sequence this spec removes).
+- DEC-I (validation round 1, critical): step 10 passes `--body-file docs/verification/<slug>.md`, as the hand `gh pr create` did. The template check stays unchanged, so a repo with a PR template opens the draft exactly as before. Rejected: let a proof body satisfy the template check in draft mode (changes `land` semantics for one mode).
 
 ## Grounding
 
@@ -256,6 +266,7 @@ External shapes the spec asserts, each sampled read-only on this machine:
 - `gh pr ready --undo` exists and is plan dependent. Sample: `gh pr ready --help` printed `If supported by your plan, convert to draft with --undo`.
 - `isDraft` is a readable PR field. Sample: `gh pr list --repo dwarvesf/dwarves-kit --state all --limit 2 --json number,isDraft,isCrossRepository` printed `[{"isCrossRepository":false,"isDraft":false,"number":971},{"isCrossRepository":false,"isDraft":false,"number":970}]`. `cmd_land` already requests `isDraft` in its lookup (`lib/wrap/wrap-land.sh:498`).
 - The proof lookup. Sample: `bash lib/gate/proof-ledger.sh proof-files . HEAD~15` printed three `docs/verification/*.md` paths (for example `docs/verification/mega-gate-pr-head.md`). A branch with no such file prints nothing, which is the DEC-E trigger.
+- The ship-gate payload. `hooks/ship-gate.sh:15-21` reads stdin with `INPUT=$(cat)`, takes `.cwd` as the real cwd, and takes `.tool_input.command` as the command, then engages on `git ... push` (line 46). Its header (line 10) says exit 2 blocks. A direct pipe of the same JSON reaches the same code path the PreToolUse hook takes.
 - The test stub answers `pr create` with a fixed URL and exits 0, and records argv (`tests/lib/wrap-stub.sh:171-174`). It has no `isDraft` answer for `pr view` yet; TASK-D adds one stub switch for the post-create read. The real shape is sampled above.
 
 Dry traces, one per negative control (read from `lib/wrap/wrap-land.sh` at the cited lines, nothing mutated here):
@@ -266,6 +277,7 @@ Dry traces, one per negative control (read from `lib/wrap/wrap-land.sh` at the c
 - NC for AC-4 (remove the already-landed refusal): the proof branch at lines 519-561 reaches `_land_tidy` at line 559, which removes the worktree. The case asserts the worktree path exists and fails. Red.
 - NC for AC-8 (leave `gh pr ready` reachable): the existing block at lines 605-609 calls `gh pr ready` for a draft. The stub logs it and `draft_adopt_stays_draft` asserts no `pr ready` call. Red.
 - NC for AC-11 (draft return above the ignored-file guard): the guard at line 565 never runs, so the ignored fixture file does not refuse and the push happens. `draft_inherits_refusals` asserts exit 1 and an absent origin branch. Red.
+- NC for AC-16 (delete the gate call): no check stands between the template check (line 569) and the push (line 577), so the stub gate's exit 2 is never read and the bare origin gains the branch. `draft_runs_ship_gate` asserts the origin ref is absent and fails. Red.
 - NC for the `noclobber` case: rebuilding the body through `> "$file"` under `set -C` fails when the file exists, so the body arg is empty. The case asserts the body holds `## Proof of done`. Red.
 
 ## Open questions
