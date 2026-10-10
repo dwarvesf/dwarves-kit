@@ -12,11 +12,12 @@
 #                                                  (KIT_PROJECT_ROOT=<root>), so a project lane override
 #                                                  reads the same for every caller; with <base> the project
 #                                                  lanes come from the .kit.toml committed at <base>
-#   ship_rule_large_spec <spec> <rid> <lane> <ledger>
-#                                                  a large normal-lane spec needs a validate ran/override
+#   ship_rule_large_spec <spec> <rid> <lane> <ledger> [<shown-spec>]
+#                                                  a large normal-lane spec needs a validate ran/override;
+#                                                  <shown-spec> is the path the message names (default <spec>)
 #   ship_rule_identities <root> <base> <head>      a push whose new commits carry a fixture git identity (x@x, t@t.dev,
 #                                                  example.com, .local) is refused; [gate] fixture_identities = false opts out
-#   ship_rule_floor <root> <base> <head> <rid> <spec> <ledger>
+#   ship_rule_floor <root> <base> <head> <rid> <spec> <ledger> [<cfg-rev>]
 #                                                  a hard-path diff owes the full lane's gates; every hard-path
 #                                                  skip and every refused exemption config is printed on stderr,
 #                                                  logged, and collected in SR_NOTICES (one notice per line) so a
@@ -84,7 +85,7 @@ ship_rules_ledger_check() {
 # check stops a LARGE normal-lane spec from shipping unvalidated. `spec.sh depth size` exits 1 on a
 # large spec; only that exact code engages. A missing spec.sh or an unreadable spec (exit 2) fails open.
 ship_rule_large_spec() {
-  local spec="$1" rid="$2" lane="$3" ledger="$4" size_rc rid_q
+  local spec="$1" rid="$2" lane="$3" ledger="$4" shown="${5:-$1}" size_rc rid_q
   [ "$lane" = normal ] && [ -f "$_SR_SPEC_SH" ] || return 0
   bash "$_SR_SPEC_SH" depth size "$spec" >/dev/null 2>&1; size_rc=$?
   [ "$size_rc" -eq 1 ] || return 0
@@ -93,7 +94,7 @@ ship_rule_large_spec() {
   _sr_log "BLOCKED | ship-gate | $rid ($lane, large, no validate)"
   {
     echo "BLOCKED: ship-gate. Spec '$rid' is large (4+ tasks, a deeper Depth, or no countable task) and has no validate gate that ran or was overridden."
-    echo "Rule: a large normal-lane spec needs the fresh-context validation before it ships (\`bash <kit>/lib/spec/spec.sh depth size $spec\`). Run /kit:spec-validate, or log an explicit override (recorded for audit):"
+    echo "Rule: a large normal-lane spec needs the fresh-context validation before it ships (\`bash <kit>/lib/spec/spec.sh depth size $shown\`). Run /kit:spec-validate, or log an explicit override (recorded for audit):"
     echo "  bash \"$ledger\" override $rid_q validate \"<reason>\""
     echo "Or switch the lane gates off for this repo: [gate] lane_gates = false in the committed project kit config (lib/gate/README.md, 'Switching a gate off')."
   } >&2
@@ -141,21 +142,24 @@ _sr_relay() {
 # Diff floor (hard paths). The path test lives in lib/classify/lane-classify.sh `floor`. A hit means
 # the full lane's gates apply whatever the spec's Lane says. The floor follows [gate] lane_gates as of
 # the MERGE BASE, never the PR head, so a PR cannot switch off its own floor. Full-lane gates are read
-# from the kit and operator layers only (--kit-lanes).
+# from the kit and operator layers only (--kit-lanes). The optional 7th argument <cfg> names the rev the
+# config (lane_gates, hard-path exemptions) is read at instead of <base>: the mega gate passes the fresh
+# base-branch tip, since a base the PR author picked by branching from an old commit is author-chosen.
+# Unset, every read stays at <base>, which is the hook's behavior.
 ship_rule_floor() {
-  local root="$1" base="$2" head="$3" rid="$4" spec="$5" ledger="$6" hit gaps fk rid_q errf line rest logbuf
+  local root="$1" base="$2" head="$3" rid="$4" spec="$5" ledger="$6" cfg="${7:-$2}" hit gaps fk rid_q errf line rest logbuf
   SR_NOTICES=""   # never inherit a caller's value: it would reach the hook's systemMessage
   [ -f "$ledger" ] || return 0
   [ -n "$base" ] || return 0
-  if ! ship_rules_switch_on lane_gates "$root" "$base"; then
+  if ! ship_rules_switch_on lane_gates "$root" "$cfg"; then
     _sr_log "OFF-BY-CONFIG | floor | $rid"
     return 0
   fi
   [ -f "$_SR_LCLS" ] || return 0
   [ "$base" != "$(git -C "$root" rev-parse "$head" 2>/dev/null || true)" ] || return 0
   errf="$(mktemp 2>/dev/null)" || errf=""
-  if [ -n "$errf" ]; then hit=$(bash "$_SR_LCLS" floor "$root" "$base" "$head" 2>"$errf" || true)
-  else hit=$(bash "$_SR_LCLS" floor "$root" "$base" "$head" || true); fi   # no scratch file: the raw lines reach stderr
+  if [ -n "$errf" ]; then hit=$(KIT_FLOOR_CONFIG_AT="${7:-}" bash "$_SR_LCLS" floor "$root" "$base" "$head" 2>"$errf" || true)
+  else hit=$(KIT_FLOOR_CONFIG_AT="${7:-}" bash "$_SR_LCLS" floor "$root" "$base" "$head" || true); fi   # no scratch file: the raw lines reach stderr
   # Skips and refusals are shown and audited before any return, so a clean pass still names them.
   if [ -n "$errf" ]; then
     logbuf=""

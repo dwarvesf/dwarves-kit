@@ -589,7 +589,7 @@ _floor_scan() {
   # entries' paths, kind migration skips its entries' paths. Every other kind, extras, submodules and
   # the data-loss scan below read the full path list.
   short="$(git -C "$root" rev-parse --short "$base" 2>/dev/null || printf '%s' "$base")"
-  lane_hard_path_exempt "$root" "$base" > "$tmp/recs" || true
+  lane_hard_path_exempt "$root" "${KIT_FLOOR_CONFIG_AT:-$base}" > "$tmp/recs" || true   # KIT_FLOOR_CONFIG_AT: the mega gate reads config at the base-branch tip, not the PR-chosen base
   for k in auth migration; do _floor_blank "$tmp" "$k" "$short"; done
   for k in $_HP_KINDS; do
     re="$(_hp_re "$k")"

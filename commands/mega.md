@@ -281,7 +281,10 @@ one place a human watching the mega run actually sees output.
 `lib/goal/mega-merge.sh` is the ship-layer auto-merge ENFORCEMENT: `gate` reuses
 `lib/gate/gate-ledger.sh check` verbatim (the lane's `measure-twice` gates -- the same
 set `hooks/ship-gate.sh` enforces at push) -- it never re-derives or loosens that
-logic. `merge` runs `gate` FIRST; on a failing or missing gate it **REFUSES
+logic. `merge` fetches the PR's head (`refs/pull/<n>/head`) and base branch from `origin`, refuses when the
+fetched head is not the head it pinned, and runs `gate --head <pinned sha>`, so the hard-path floor and the
+large-spec rule read the commit GitHub merges, against the PR's own base branch, whatever branch the
+orchestrator checkout is on. On a failing or missing gate it **REFUSES
 unconditionally** (prints `BLOCKED: ship-gate not satisfied, refusing auto-merge`,
 logs it, exits nonzero, never touches `gh`) -- a failing/missing gate can **never**
 auto-merge, the exact mis-build the autonomous-loop hardening design names as its risk. On a passing gate it is
