@@ -809,6 +809,11 @@ EOF
   O1="$(env DWARVES_KIT_LOG_DIR="$D1" bash "$GL" report --period month 2>/dev/null)"
   O2="$(env DWARVES_KIT_LOG_DIR="$D2" bash "$GL" report --period month 2>/dev/null)"
   assert "C12 report --period month non-empty (run inside the window)" "$([ -n "$O1" ] && { trap '' PIPE; echo "$O1" | grep -q 'vr-c12'; } && echo 0 || echo 1)"
+  # The header's `since <now-30d>` stamp has one-second resolution and the two calls run
+  # back to back, so a second boundary between them moves it. Mask the stamp; the rows
+  # and totals stay byte-compared.
+  O1="$(printf '%s\n' "$O1" | sed 's/since [0-9T:Z-]*)/since STAMP)/')"
+  O2="$(printf '%s\n' "$O2" | sed 's/since [0-9T:Z-]*)/since STAMP)/')"
   assert "C12 report --period month byte-identical" "$([ "$O1" = "$O2" ]; echo $?)"
   # python marker readers
   A1="$(env DWARVES_KIT_LOG_DIR="$D1" python3 -c "import sys,os;from pathlib import Path;sys.path.insert(0,'$KIT_DIR/lib/stats/src');from stats.adapters import read_kit_gates;print(read_kit_gates(Path(os.environ['DWARVES_KIT_LOG_DIR'])/'runs'))" 2>/dev/null)"
