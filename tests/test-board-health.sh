@@ -264,6 +264,17 @@ run "$NOW" --cluster alpha --kanban "alpha=$WORK/kanban"
 case "$(field attention)" in *"kanban unreadable for alpha: reader exploded"*) ok "an unreadable kanban is attention, not a crash";; *) bad "no kanban error: $(field attention)";; esac
 fresh
 printf 'synced reminders: 1 spoke items, 4 board rows\n' | rec crew 0 "$NOW"
+cat > "$WORK/kanban-cwd" <<EOF2
+#!/usr/bin/env bash
+[ "\$(pwd)" = "/" ] || { echo "shell-init: error retrieving current directory: getcwd: cannot access parent directories: Permission denied" >&2; exit 1; }
+exec "$WORK/kanban" "\$@"
+EOF2
+chmod +x "$WORK/kanban-cwd"
+mkdir -p "$WORK/unreadable/job"
+( cd "$WORK/unreadable/job" && run "$NOW" --cluster alpha --kanban "alpha=$WORK/kanban-cwd" )
+case "$(field attention)" in *"kanban unreadable"*) bad "reader ran from the job cwd: $(field attention)";; *) ok "the kanban reader runs from / , not the job cwd";; esac
+fresh
+printf 'synced reminders: 1 spoke items, 4 board rows\n' | rec crew 0 "$NOW"
 printf 'board-mirror: ERROR cannot complete t_8fbaac45\n' | python3 "$HEALTH" record --leg mirror --rc 0 --now "$NOW" --health-state-file "$HS"
 run "$NOW" --cluster alpha
 case "$(field attention)" in *"hermes mirror failed: board-mirror: ERROR cannot complete"*) ok "a mirror error line is attention even at rc 0";; *) bad "no mirror error: $(field attention)";; esac

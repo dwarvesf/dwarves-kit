@@ -291,7 +291,8 @@ class KanbanError(Exception):
 
 
 def kanban_json(cmd, args):
-    r = subprocess.run(shlex.split(cmd) + args, capture_output=True, text=True, timeout=120)
+    # cwd=/: a user-switching reader (sudo -u) dies at startup if the job's cwd is unreadable to it
+    r = subprocess.run(shlex.split(cmd) + args, capture_output=True, text=True, timeout=120, cwd="/")
     if r.returncode != 0:
         raise KanbanError(redact((r.stderr or r.stdout) or f"exit {r.returncode}"))
     try:
