@@ -115,6 +115,18 @@ out=$(jq -r '.stdout' <<<"$got")
 check "args append, #! seeds are executable, touch sets mtime, today folds to @TODAY@" "$ok"
 if [ "$ok" != 1 ]; then echo "    got: $out"; fi
 
+# --- settle: wait for a detached child to finish ---
+cat > "$FAKE/detach-hook.sh" <<'EOS'
+#!/usr/bin/env bash
+cat >/dev/null
+: > "$HOME/pending.lock"
+( sleep 1; echo done > "$HOME/result.txt"; mv -f "$HOME/pending.lock" "$HOME/discard.lock" ) >/dev/null 2>&1 &
+EOS
+c=$(jq -n '{name:"settle", payload:"hi", settle:["home/pending.lock"], read:["home/result.txt"]}')
+got=$(hp_run_case "$c" bash "$FAKE/detach-hook.sh")
+[ "$(jq -r '.files["home/result.txt"]' <<<"$got")" = "done" ] && ok=1 || ok=0
+check "settle waits until the detached child has removed its marker" "$ok"
+
 # --- rc and stderr pass through ---
 c=$(jq -n '{name:"exit-code", env:{FAKE_EXIT:"7"}, payload:"hi"}')
 got=$(hp_run_case "$c" bash "$FAKE/fake-hook.sh")
