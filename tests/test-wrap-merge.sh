@@ -1447,12 +1447,13 @@ cat > "$TMPD/rs-unit.sh" <<'UNIT'
 source "$1/lib/wrap/wrap-common.sh"
 source "$1/lib/wrap/wrap-merge.sh"
 trap 'echo caller-term' TERM
+int_before="$(trap -p INT)"
 _RS_HIT=1
 _pr_head_resync /nonexistent https://example.invalid/o/r 120 feat/x \
   1111111111111111111111111111111111111111 2222222222222222222222222222222222222222 >/dev/null
 echo "rc=$?"
 echo "term=$(trap -p TERM)"
-echo "int=$(trap -p INT)"
+[ "$(trap -p INT)" = "$int_before" ] && echo "int=unchanged" || echo "int=changed"
 echo "pub1=$(_url_public 'https://u:p@ss@host.example/o/r.git')"
 echo "pub2=$(_url_public 'git@github.com:o/r.git')"
 echo "pub3=$(_url_public 'https://github.com/o/r')"
@@ -1462,7 +1463,7 @@ out="$(GH_STUB_PR_120="$(rs_json 120 2222222222222222222222222222222222222222 ME
   bash "$TMPD/rs-unit.sh" "$KIT_DIR" 2>&1)"
 chk_has "resync unit: a stale flag from an earlier run is reset (caught up, rc 3)" "$out" "rc=3"
 chk_has "resync unit: the caller's TERM trap is back" "$out" "term=trap -- 'echo caller-term'"
-chk "resync unit: an untrapped INT is left untrapped" "$(printf '%s\n' "$out" | grep -qx 'int='; echo $?)"
+chk_has "resync unit: the caller's INT disposition is back" "$out" "int=unchanged"
 chk_no "resync unit: no INT trap remains" "$out" "_resync_trap"
 chk_has "resync unit: userinfo is stripped, a raw @ in the password too" "$out" "pub1=https://host.example/o/r.git"
 chk_has "resync unit: an scp-style URL is unchanged" "$out" "pub2=git@github.com:o/r.git"
