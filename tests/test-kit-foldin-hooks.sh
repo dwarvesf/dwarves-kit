@@ -706,12 +706,14 @@ if HOME="$INSTALL_HOME" bash "$KIT_DIR/install.sh" --with board,session,advisor 
     RC=0; [ -x "$DEST/${NAME}.sh" ] || RC=1
     assert_exit "install.sh materializes hooks/${NAME}.sh executable" 0 $RC
   done
-  # citation-guard.sh, context-hints.sh, and backlog-stage.sh are pure bash+jq ports with no .py
-  # companion; harvest still ships one.
-  for NAME in harvest; do
+  # citation-guard.sh, context-hints.sh, backlog-stage.sh, and harvest.sh are pure bash+jq ports with no
+  # same-named .py; harvest.sh ships the sweep's Python library and the sweep beside it.
+  for NAME in harvest_lib harvest_sweep; do
     RC=0; [ -f "$DEST/${NAME}.py" ] || RC=1
     assert_exit "install.sh materializes hooks/${NAME}.py (companion)" 0 $RC
   done
+  RC=0; [ -f "$DEST/harvest.py" ] && RC=1
+  assert_exit "install.sh does NOT materialize a harvest.py" 0 $RC
   RC=0; [ -f "$DEST/citation-guard.py" ] && RC=1
   assert_exit "install.sh does NOT materialize a citation-guard.py" 0 $RC
   RC=0; [ -f "$DEST/context-hints.py" ] && RC=1
