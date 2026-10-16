@@ -81,6 +81,7 @@ chk "a key inside an HTML comment line is not a row" "$({ absent COMMENT_ENV && 
 chk "the last row without a trailing newline is found by env var" "$(winner LAST_ENV r15; echo $?)"
 chk "the last row without a trailing newline is found by toml key" "$(winner last.key r15; echo $?)"
 chk "an unknown key fails with no output" "$(absent NO_SUCH_KEY; echo $?)"
+chk "a repeated toml key prints only the first row, never both" "$([ "$(_find_row a.key)" = '| A_ENV | a.key | 1 | live | m | r1 |' ]; echo $?)"
 chk "the whole raw row is printed, unchanged" "$([ "$(_find_row A_ENV)" = '| A_ENV | a.key | 1 | live | m | r1 |' ]; echo $?)"
 
 [ "$fail" -eq 0 ] && echo "PASS: _find_row matches the pinned lookup rules" || { echo "SOME TESTS FAILED"; exit 1; }
