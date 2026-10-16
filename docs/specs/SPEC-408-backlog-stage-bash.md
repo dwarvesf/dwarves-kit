@@ -98,7 +98,7 @@ Negative controls, through `lib/gate/negctl.sh` with P1 as the test command:
 | NC5 | keep the payload file after `--staged-run` | the `staged-run-*` and `detached-*` cases |
 | NC6 | exempt `--staged-run` from the `BACKLOG_STAGE_AUTO` gate | `staged-run-without-auto` |
 | NC7 | skip the forward-intent pre-filter | the `prefilter-miss*` cases |
-| NC8 | print the transcript text with `jq -r` (a trailing newline) | every case that stages, through the prompt's byte count |
+| NC8 | hand the extractor the transcript text plus a trailing newline | every case that stages, through the prompt's byte count |
 
 ## Verification
 
