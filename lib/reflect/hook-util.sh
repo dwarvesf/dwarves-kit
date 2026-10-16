@@ -52,17 +52,22 @@ hu_join() { printf '%s/%s' "${1%/}" "$2"; }
 # timeout of zero or less starts it and kills it at once, as subprocess.run does). Returns the
 # command's status; a killed command returns non-zero and leaves <out-file>.timedout beside its
 # output, because subprocess.run throws a timed-out command's stdout away (callers that keep
-# output truncate it). The watchdog's sleep is reaped.
+# output truncate it). The watchdog and its sleep are reaped.
 hu_run_capture() {
   local t=$1 out=$2 pid wd rc; shift 2
   [ "$t" -ge 0 ] || t=0
   command rm -f -- "$out.timedout" 2>/dev/null
   if [ -n "${HU_STDIN:-}" ]; then "$@" < "$HU_STDIN" > "$out" 2>/dev/null & else "$@" > "$out" 2>/dev/null & fi
   pid=$!
-  ( sleep "$t" 2>/dev/null; kill -9 "$pid" 2>/dev/null && : > "$out.timedout" ) >/dev/null 2>&1 &
+  # The watchdog traps TERM and waits on a backgrounded sleep: a TERM that lands before the sleep
+  # starts, or while it runs, ends the watchdog at once. (A foreground sleep defers the TERM for its
+  # whole length, which left the caller waiting out the timeout.)
+  ( trap 'kill $(jobs -p) 2>/dev/null; exit 0' TERM
+    sleep "$t" 2>/dev/null &
+    wait $! 2>/dev/null && { kill -9 "$pid" 2>/dev/null && : > "$out.timedout"; } ) >/dev/null 2>&1 &
   wd=$!
   wait "$pid" 2>/dev/null; rc=$?
-  pkill -P "$wd" 2>/dev/null; kill "$wd" 2>/dev/null; wait "$wd" 2>/dev/null
+  kill "$wd" 2>/dev/null; wait "$wd" 2>/dev/null
   return $rc
 }
 
