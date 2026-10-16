@@ -19,7 +19,7 @@ fail=0; [ "$rc" -eq 0 ] || fail=1
 # Large payload: a 2 MB transcript text goes through the hook whole, inline and detached. The Python
 # held it in memory; a bash port that passed it as an argument would hit the OS argument limit
 # (about 1 MB on macOS) and stage nothing, so the payload must travel by file.
-T="$(mktemp -d)"
+T="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
 mkdir -p "$T/cwd/_meta" "$T/home"
 printf '# Backlog\n' > "$T/cwd/_meta/BACKLOG.md"
 head -c 2097152 /dev/zero | tr '\0' 'a' > "$T/filler"

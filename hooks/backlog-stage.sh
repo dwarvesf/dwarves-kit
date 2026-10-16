@@ -99,7 +99,7 @@ for a in "$@"; do
   fi
 done
 
-W=$(mktemp -d) || exit 0
+W=$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX") || exit 0
 trap 'case "$W" in /*/*) command rm -rf -- "$W" ;; esac 2>/dev/null' EXIT
 
 LIB='include "staging-format";
