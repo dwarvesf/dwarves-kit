@@ -705,6 +705,19 @@ jqt "decide: the made-up name is egress_denied" "$out" '.error == "egress_denied
 check "decide: zero requests reach the provider" "$([ "$(stub_count)" = 0 ]; echo $?)"
 check "the log reason is word_gate and the name is not logged" "$([ "$(jq -r .reason "$LOG")" = word_gate ] && ! grep -q "$WGNAME" "$LOG"; echo $?)"
 
+echo "== denial reasons: each layer logs its own tag, never text =="
+cfg backend=jev points=wrap-7b deny_words=acme word_gate=on
+stub_reset; rm -f "$LOG"
+out="$(decide_run ok "$(req "$(q p1 backlog-flip-script board new)" "$(q p2 AB board)" "$(q p3 acme-secret-plan board)" "$(q p4 backlog-flip-script zzprivatetool)" "$(q p5 "$WGNAME-sync" board)")")"
+jqt "reasons batch: one sent, four denied" "$out" '.counts == {"answered":1,"denied":4,"error":0}'
+reason_at() { jq -r --argjson i "$1" 'select(.index == $i) | .reason // "none"' "$LOG"; }
+check "slug shape layer logs cand" "$([ "$(reason_at 1)" = cand ]; echo $?)" "got $(reason_at 1)"
+check "deny_words layer logs deny_word" "$([ "$(reason_at 2)" = deny_word ]; echo $?)" "got $(reason_at 2)"
+check "non-public hit layer logs hit_not_public" "$([ "$(reason_at 3)" = hit_not_public ]; echo $?)" "got $(reason_at 3)"
+check "word gate layer logs word_gate" "$([ "$(reason_at 4)" = word_gate ]; echo $?)" "got $(reason_at 4)"
+check "the sent row carries no reason" "$([ "$(reason_at 0)" = none ]; echo $?)"
+check "no denied candidate or hit text reaches the log" "$(grep -q "acme-secret-plan\|zzprivatetool\|$WGNAME" "$LOG"; [ $? -ne 0 ]; echo $?)"
+
 out="$(body_run "$(req "$(q p1 pr-ci-api-cli-json-yaml board)" "$(q p2 git-gh-repo-env-url-sdk wrap)" "$(q p3 todo-wip-config-auth-regex board)" "$(q p4 stdin-stdout-async-diff-lint board)")")"
 jqt "built-in dev words pass without being in the dictionary" "$out" '(.questions|keys) == ["q1","q2","q3","q4"]'
 
