@@ -25,7 +25,7 @@ Verdict: PASS
 | Foldin suite | `bash tests/test-kit-foldin-hooks.sh` | `Passed: 99 / 99`, including eight concurrent harvests staging one row |
 | Helpers | `bash tests/test-hook-util.sh`, `bash tests/test-hook-parity-lib.sh` | `30 passed, 0 failed`; `22 passed, 0 failed` |
 | No Python in the hook | `grep -c python hooks/harvest.sh` | `2`: the two routes to `hooks/harvest_sweep.py` for the operator and sweep verbs |
-| Changed suites | `bash tests/run-all.sh --changed` | see the proof ledger of the PR |
+| Changed suites | `bash tests/run-all.sh --changed` | `all 51 suites passed, 0 skipped for missing tooling` |
 
 ## Negative controls
 
