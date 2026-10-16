@@ -1,0 +1,522 @@
+{"in":"","out":[]}
+{"in":" ","out":[]}
+{"in":"a b c","out":["a","b","c"]}
+{"in":"bin/tool subcmd --x 'a b'","out":["bin/tool","subcmd","--x","a b"]}
+{"in":"say \"hello world\" now","out":["say","hello world","now"]}
+{"in":"a\\ b","out":["a b"]}
+{"in":"'unterminated","out":null}
+{"in":"\"unterminated","out":null}
+{"in":"trail\\","out":null}
+{"in":"''","out":[""]}
+{"in":"\"\"","out":[""]}
+{"in":"a''b","out":["ab"]}
+{"in":"x 'it'\"'\"'s'","out":["x","it's"]}
+{"in":"\"a\\\"b\"","out":["a\"b"]}
+{"in":"\"a\\nb\"","out":["a\\nb"]}
+{"in":"'a\\nb'","out":["a\\nb"]}
+{"in":"a\\\nb","out":["a\nb"]}
+{"in":"claude -p --model haiku --setting-sources project","out":["claude","-p","--model","haiku","--setting-sources","project"]}
+{"in":"a  b\tc\nd","out":["a","b","c","d"]}
+{"in":"\\\\","out":["\\"]}
+{"in":"\"\\\\\"","out":["\\"]}
+{"in":"# not a comment","out":["#","not","a","comment"]}
+{"in":"\\ =b\tx ya -","out":[" =b","x","ya","-"]}
+{"in":"-é$éx y","out":["-é$éx","y"]}
+{"in":"$`\t\t\"x y$x y\t`","out":null}
+{"in":"\"-=é`é","out":null}
+{"in":"'$\taéb\n-$é","out":null}
+{"in":" -\n\né","out":["-","é"]}
+{"in":"''`","out":["`"]}
+{"in":"#-\" ","out":null}
+{"in":"``x y=b#bé=-=","out":["``x","y=b#bé=-="]}
+{"in":"  '\\\t=","out":null}
+{"in":"\n\nax y$\\`$\"\\-","out":null}
+{"in":"-`","out":["-`"]}
+{"in":"","out":[]}
+{"in":"b\n'$b'`é","out":["b","$b`é"]}
+{"in":" ","out":[]}
+{"in":"=#$$`bx y#é\t#\\","out":null}
+{"in":"é\\\\ é\"x y =éx y\t","out":null}
+{"in":"\\","out":null}
+{"in":"-\\éb$''\t\\","out":null}
+{"in":"-a\t-x y=aa$=\t","out":["-a","-x","y=aa$="]}
+{"in":"\t ' ","out":null}
+{"in":"\t''=\n'#$","out":null}
+{"in":"\n#\n# -\"","out":null}
+{"in":"\\#b\n\t=é","out":["#b","=é"]}
+{"in":"\t'\nbé\n","out":null}
+{"in":"","out":[]}
+{"in":"=","out":["="]}
+{"in":"a-'$\n`$ b-\"","out":null}
+{"in":"\n'\\-$\"\n-\"","out":null}
+{"in":"","out":[]}
+{"in":"x y","out":["x","y"]}
+{"in":"x y\"'-\\\"\n`$=x y","out":null}
+{"in":"$","out":["$"]}
+{"in":"\\\t-a'$","out":null}
+{"in":"`é`#`-\téx y","out":["`é`#`-","éx","y"]}
+{"in":"#-\\é``'` ","out":null}
+{"in":"=$-\t\"-a","out":null}
+{"in":"\\=\\\\\"#==``","out":null}
+{"in":"bx y`\t$$'$a\\`","out":null}
+{"in":" $\né\\\n'# \n","out":null}
+{"in":"#","out":["#"]}
+{"in":"=a\"é'\n`\\#$-'","out":null}
+{"in":"x y#","out":["x","y#"]}
+{"in":"x y x y-","out":["x","y","x","y-"]}
+{"in":"","out":[]}
+{"in":"-b`=","out":["-b`="]}
+{"in":"b\"b$x ya","out":null}
+{"in":"-`","out":["-`"]}
+{"in":"`b","out":["`b"]}
+{"in":"$`'='\t","out":["$`="]}
+{"in":"\t\té\"'bb`","out":null}
+{"in":"$\"x y--`a ","out":null}
+{"in":"$``#","out":["$``#"]}
+{"in":"'\"=`\t\\-\\","out":null}
+{"in":"x y\n","out":["x","y"]}
+{"in":"#=\"`","out":null}
+{"in":"'=`","out":null}
+{"in":"#$a","out":["#$a"]}
+{"in":"\\\"é\\é\n\t\n'","out":null}
+{"in":"b$`","out":["b$`"]}
+{"in":"#=","out":["#="]}
+{"in":"=éé` ='","out":null}
+{"in":"-  \n é`","out":["-","é`"]}
+{"in":"\"'\n\\\tb`","out":null}
+{"in":"`$'","out":null}
+{"in":"b","out":["b"]}
+{"in":"\\\"x y","out":["\"x","y"]}
+{"in":" ","out":[]}
+{"in":"","out":[]}
+{"in":"","out":[]}
+{"in":"=aé\n\t$ax y`-#`","out":["=aé","$ax","y`-#`"]}
+{"in":"x y\"$#'b=` ","out":null}
+{"in":"\t","out":[]}
+{"in":"\tx yx y\\\n ","out":["x","yx","y\n"]}
+{"in":"\t#'","out":null}
+{"in":"-=\\\tx y`'","out":null}
+{"in":"x y=bé\t","out":["x","y=bé"]}
+{"in":"a","out":["a"]}
+{"in":"","out":[]}
+{"in":"a#x y\"é\\#='é\t\\","out":null}
+{"in":"é#","out":["é#"]}
+{"in":"$ \néaa\\ é$-a","out":["$","éaa é$-a"]}
+{"in":"\\' bx y$#'é","out":null}
+{"in":"","out":[]}
+{"in":"","out":[]}
+{"in":"a-# aé'\n","out":null}
+{"in":"\\","out":null}
+{"in":"\t","out":[]}
+{"in":"","out":[]}
+{"in":"$ `'$##","out":null}
+{"in":"$x y\\","out":null}
+{"in":"$''$$","out":["$$$"]}
+{"in":"\ta=","out":["a="]}
+{"in":"= \"\\=`-$-aé\"","out":["=","\\=`-$-aé"]}
+{"in":"\\-\t`é-\\é","out":["-","`é-é"]}
+{"in":"b`'`=`\nb' ","out":["b``=`\nb"]}
+{"in":" ","out":[]}
+{"in":"","out":[]}
+{"in":"#\\#","out":["##"]}
+{"in":"","out":[]}
+{"in":"","out":[]}
+{"in":"bé#-x y-\"b\"a","out":["bé#-x","y-ba"]}
+{"in":"-a","out":["-a"]}
+{"in":"$ é\\\n`é","out":["$","é\n`é"]}
+{"in":"a`-'b'\n","out":["a`-b"]}
+{"in":"b'a#\\","out":null}
+{"in":"","out":[]}
+{"in":"'\"` '\n\\\nb#$","out":["\"` ","\nb#$"]}
+{"in":"b\\#\t","out":["b#"]}
+{"in":"-\t\"é\"-\n\\","out":null}
+{"in":"x yb $#x y--`","out":["x","yb","$#x","y--`"]}
+{"in":"`--aé#'` ","out":null}
+{"in":"\"\\-","out":null}
+{"in":"b\\\" =","out":["b\"","="]}
+{"in":"a","out":["a"]}
+{"in":"#\n$-","out":["#","$-"]}
+{"in":"\\'\"\"'","out":null}
+{"in":"``--a","out":["``--a"]}
+{"in":"b \"é`\"\n\"","out":null}
+{"in":"bx y'x yx yé\"é`","out":null}
+{"in":"#éébé=","out":["#éébé="]}
+{"in":"a a-x y=#'\n\t`=","out":null}
+{"in":"\"\"\n$\"\\'x y=\"-","out":["","$\\'x y=-"]}
+{"in":" a '$\t= ","out":null}
+{"in":" ","out":[]}
+{"in":"\\`=a\nb-$'`b\t","out":null}
+{"in":"b$=-","out":["b$=-"]}
+{"in":"b#b\n#\t$# -","out":["b#b","#","$#","-"]}
+{"in":"a=\"é#x y","out":null}
+{"in":"\n'\té\t=x y#éé\t","out":null}
+{"in":"x y$\"-é\t","out":null}
+{"in":"x y`b##'\\\ta`-\n","out":null}
+{"in":"-éx yb\\=","out":["-éx","yb="]}
+{"in":"\n==\\a\"#x y","out":null}
+{"in":"","out":[]}
+{"in":"'``","out":null}
+{"in":"a-b#'-é`\"\n","out":null}
+{"in":"$=-'-\\-#","out":null}
+{"in":"\\=$='x y' ","out":["=$=x y"]}
+{"in":"x y= -\n '$","out":null}
+{"in":"","out":[]}
+{"in":"`$=a\"\\","out":null}
+{"in":"'é$é\n$","out":null}
+{"in":"","out":[]}
+{"in":"é","out":["é"]}
+{"in":"#","out":["#"]}
+{"in":"","out":[]}
+{"in":"'x y'\n\n\"","out":null}
+{"in":"`#x y\n\"\\x y\nbx y","out":null}
+{"in":" \\ a ","out":[" a"]}
+{"in":"\"# =","out":null}
+{"in":"'\\'-'`\\`'\\\"\n","out":["\\-`\\`\""]}
+{"in":"\t`#x y\\`\\","out":null}
+{"in":"b","out":["b"]}
+{"in":"\t ","out":[]}
+{"in":"`ab","out":["`ab"]}
+{"in":" x y\nb","out":["x","y","b"]}
+{"in":"$` #ab","out":["$`","#ab"]}
+{"in":"=a-\t-\\","out":null}
+{"in":"a$éb`","out":["a$éb`"]}
+{"in":"$\\#$`b'$","out":null}
+{"in":" x y\n\n","out":["x","y"]}
+{"in":"#a\n\t$$b#\\b$","out":["#a","$$b#b$"]}
+{"in":"'$-x yé\\b","out":null}
+{"in":"#x yb \\=é`\t","out":["#x","yb","=é`"]}
+{"in":"-'","out":null}
+{"in":"`éé-'#","out":null}
+{"in":"$é\n-é\t\n","out":["$é","-é"]}
+{"in":"=\"#x yba\n`$\"éé","out":["=#x yba\n`$éé"]}
+{"in":"'a-$x y'\né#b\t","out":["a-$x y","é#b"]}
+{"in":"''`\t\\  '","out":null}
+{"in":"\\-$","out":["-$"]}
+{"in":"éa-#=- \\'","out":["éa-#=-","'"]}
+{"in":"x y`''","out":["x","y`"]}
+{"in":"\tx y\"=x y\t\"","out":["x","y=x y\t"]}
+{"in":"=\n","out":["="]}
+{"in":"`é","out":["`é"]}
+{"in":"`x y- a-\"-`","out":null}
+{"in":"$\n","out":["$"]}
+{"in":"é\t\"=x yx y\"b é `","out":["é","=x yx yb","é","`"]}
+{"in":"\tb$-","out":["b$-"]}
+{"in":"a= $b\t=\t-=$","out":["a=","$b","=","-=$"]}
+{"in":"\\\"a\n","out":["\"a"]}
+{"in":"","out":[]}
+{"in":"#=\tb","out":["#=","b"]}
+{"in":"\t'$$#\"'=`-\\","out":null}
+{"in":"","out":[]}
+{"in":"\"","out":null}
+{"in":" b'é\n","out":null}
+{"in":"$=","out":["$="]}
+{"in":"","out":[]}
+{"in":"bb`b'","out":null}
+{"in":"\t'-a\"","out":null}
+{"in":"","out":[]}
+{"in":" ","out":[]}
+{"in":"\"é`$`\t","out":null}
+{"in":"$","out":["$"]}
+{"in":"'a-é\"","out":null}
+{"in":"\"","out":null}
+{"in":"\n$`# =é#'\\b$","out":null}
+{"in":"=`-x y=\\-é\\","out":null}
+{"in":"é\t$'","out":null}
+{"in":" a=-b \t\t","out":["a=-b"]}
+{"in":"'-a'-'","out":null}
+{"in":"'x y \\`b`\"","out":null}
+{"in":"$","out":["$"]}
+{"in":"\"--#\n`-$","out":null}
+{"in":"a='x y$  bé","out":null}
+{"in":" $é#\tx y#\n#","out":["$é#","x","y#","#"]}
+{"in":"\"\"é'  #\n\\#x y\\","out":null}
+{"in":"=","out":["="]}
+{"in":"''","out":[""]}
+{"in":"$\n$=a-aé#$","out":["$","$=a-aé#$"]}
+{"in":"\\`","out":["`"]}
+{"in":"ébx ya\n\\=$","out":["ébx","ya","=$"]}
+{"in":"'é\"\\\\=","out":null}
+{"in":"abx y\na$`","out":["abx","y","a$`"]}
+{"in":"a\na#b= --\n\"","out":null}
+{"in":"'\n=é$\"\nx y","out":null}
+{"in":"\té\n=\tb-\"# b","out":null}
+{"in":"aé`\"\\é`\"'$$é","out":null}
+{"in":"éa=\\\\\\\"'\n#\"x y","out":null}
+{"in":"`\t$=- a\"$bé-","out":null}
+{"in":"-$","out":["-$"]}
+{"in":"x yé\"\n`b=ax yé","out":null}
+{"in":"\\$#","out":["$#"]}
+{"in":"\\`","out":["`"]}
+{"in":"b\t\"","out":null}
+{"in":"$\t\n$x y","out":["$","$x","y"]}
+{"in":"x y\"x y$\n$`é\t\\x y","out":null}
+{"in":"-b=x yé'","out":null}
+{"in":" a","out":["a"]}
+{"in":"\\b\na$b","out":["b","a$b"]}
+{"in":"x y\n","out":["x","y"]}
+{"in":"$-\n#'é","out":null}
+{"in":" -","out":["-"]}
+{"in":"'","out":null}
+{"in":"","out":[]}
+{"in":"\\\n$``\né","out":["\n$``","é"]}
+{"in":"-`\\","out":null}
+{"in":"","out":[]}
+{"in":"\n\t\\é $ \"","out":null}
+{"in":"\tb\n-é-  \\=","out":["b","-é-","="]}
+{"in":"","out":[]}
+{"in":"\t\\\t\naé-`","out":["\t","aé-`"]}
+{"in":"`-`","out":["`-`"]}
+{"in":"$-b\t\\\nx yb=","out":["$-b","\nx","yb="]}
+{"in":"a\\b-b$#x ya-","out":["ab-b$#x","ya-"]}
+{"in":"\naa","out":["aa"]}
+{"in":"x y'`\\","out":null}
+{"in":"= ","out":["="]}
+{"in":"`#\"\n-$x y-","out":null}
+{"in":"\\- `\\`\\\n\tx y#'","out":null}
+{"in":"é '='","out":["é","="]}
+{"in":"\n`","out":["`"]}
+{"in":"b`\"\"é '''","out":null}
+{"in":"\\'=x ya","out":["'=x","ya"]}
+{"in":" '","out":null}
+{"in":"\tb\n","out":["b"]}
+{"in":"-=\t-\\`#\t=","out":["-=","-`#","="]}
+{"in":"-x y","out":["-x","y"]}
+{"in":"`\tb$éb","out":["`","b$éb"]}
+{"in":"\n$","out":["$"]}
+{"in":"","out":[]}
+{"in":"","out":[]}
+{"in":"\\\\\\$ == $--","out":["\\$","==","$--"]}
+{"in":"é","out":["é"]}
+{"in":"#\\ ","out":["# "]}
+{"in":"\t$`\\","out":null}
+{"in":"`# \t'","out":null}
+{"in":" \"x y-'b-#'\t`","out":null}
+{"in":"a'\n\n==b","out":null}
+{"in":"\"\nx y'=aa#\n","out":null}
+{"in":" \n é$","out":["é$"]}
+{"in":"b","out":["b"]}
+{"in":"$=\t`\t-","out":["$=","`","-"]}
+{"in":"\\béé`\t#\\","out":null}
+{"in":"é- #`='`a`","out":null}
+{"in":"\n","out":[]}
+{"in":"\n=\\","out":null}
+{"in":"x y-=\t'a$ $$","out":null}
+{"in":"-\t#\\'\n$\\","out":null}
+{"in":"'x yb$##","out":null}
+{"in":" -","out":["-"]}
+{"in":"","out":[]}
+{"in":"\nax y\t\\#`","out":["ax","y","#`"]}
+{"in":"#é\"é\tbb$","out":null}
+{"in":"a#\\#x y\t =-\t#","out":["a##x","y","=-","#"]}
+{"in":"\\-\"\t\t\"$é","out":["-\t\t$é"]}
+{"in":"\n\nb\"éax ya#","out":null}
+{"in":" é #é'x ya=","out":null}
+{"in":"b##=\\b\\\n","out":["b##=b\n"]}
+{"in":"#=$'\\'é\"","out":null}
+{"in":"éa-é#x ya","out":["éa-é#x","ya"]}
+{"in":"'=`\"\n ","out":null}
+{"in":"=-#'b#=\n\n","out":null}
+{"in":"\"\\\\-\na==ba=-","out":null}
+{"in":"","out":[]}
+{"in":"é","out":["é"]}
+{"in":"\"é\"\n-","out":["é","-"]}
+{"in":"","out":[]}
+{"in":"\"=bx yé$b#-x y","out":null}
+{"in":"-é\n-a","out":["-é","-a"]}
+{"in":"é\"","out":null}
+{"in":"\t é= ","out":["é="]}
+{"in":"b\\\"#-\\#\"\"","out":["b\"#-#"]}
+{"in":"=\"a`","out":null}
+{"in":"\n","out":[]}
+{"in":"\t#\n'\n\\-'=\n","out":["#","\n\\-="]}
+{"in":"bb` éé'\\b","out":null}
+{"in":"'-","out":null}
+{"in":"$'\t\tb'`x ya`-","out":["$\t\tb`x","ya`-"]}
+{"in":"\n#\n\t","out":["#"]}
+{"in":"b-\"\"é'#-","out":null}
+{"in":"ax y","out":["ax","y"]}
+{"in":"\n`aa\"","out":null}
+{"in":"` é-a`","out":["`","é-a`"]}
+{"in":"`$$#-\\ é\t","out":["`$$#- é"]}
+{"in":"b= ","out":["b="]}
+{"in":"-b`'x y\t\na\"","out":null}
+{"in":"\"é=`\"\té","out":["é=`","é"]}
+{"in":"aax ya 'é-aa","out":null}
+{"in":"\néb","out":["éb"]}
+{"in":"# a-\t\tx y'","out":null}
+{"in":"x y-\"","out":null}
+{"in":"\\$b\t=","out":["$b","="]}
+{"in":"\t$","out":["$"]}
+{"in":"'é=\\=x y\"ax y","out":null}
+{"in":"","out":[]}
+{"in":"$","out":["$"]}
+{"in":"=$=#\\#`=\"\"","out":["=$=##`="]}
+{"in":"$","out":["$"]}
+{"in":"\t`-\nx y#","out":["`-","x","y#"]}
+{"in":"=$--#x y=$`","out":["=$--#x","y=$`"]}
+{"in":"é#\nx y=x y #'","out":null}
+{"in":"#-'=\n\n\\=-'","out":["#-=\n\n\\=-"]}
+{"in":"'a=\n","out":null}
+{"in":"","out":[]}
+{"in":"x yx yé\"\t-x y\t`x yé\"","out":["x","yx","yé\t-x y\t`x yé"]}
+{"in":"$ \\#\\a$b\"#\n","out":null}
+{"in":"","out":[]}
+{"in":"\n-`a","out":["-`a"]}
+{"in":"\\a\"\"","out":["a"]}
+{"in":"=é\n#","out":["=é","#"]}
+{"in":"","out":[]}
+{"in":"`b\"","out":null}
+{"in":"$","out":["$"]}
+{"in":"b \n`'\\=\"\ta","out":null}
+{"in":"`` \n\n\n-`=$","out":["``","-`=$"]}
+{"in":"''\\\\é","out":["\\é"]}
+{"in":"x y\n##b\t\\\t","out":["x","y","##b","\t"]}
+{"in":"a=\t$\t\t`\\\\","out":["a=","$","`\\"]}
+{"in":"= `","out":["=","`"]}
+{"in":"``é\"","out":null}
+{"in":"","out":[]}
+{"in":"`$'x yx y $ a\"\\","out":null}
+{"in":"\"#\n-x y\"=b","out":["#\n-x y=b"]}
+{"in":"$'\n-$'\\a#","out":["$\n-$a#"]}
+{"in":"\nb$x y","out":["b$x","y"]}
+{"in":"-","out":["-"]}
+{"in":"#=`","out":["#=`"]}
+{"in":"`é'\\\"\n\tab=","out":null}
+{"in":"--  'éaé","out":null}
+{"in":"\t","out":[]}
+{"in":"","out":[]}
+{"in":"a\\``#abaaa","out":["a``#abaaa"]}
+{"in":"\"\"\na=a-\t","out":["","a=a-"]}
+{"in":"\t''=--'","out":null}
+{"in":" \t\\","out":null}
+{"in":"","out":[]}
+{"in":"-`x y","out":["-`x","y"]}
+{"in":"","out":[]}
+{"in":"\"\\ba=","out":null}
+{"in":"-$","out":["-$"]}
+{"in":"\n","out":[]}
+{"in":"\t\t","out":[]}
+{"in":"'é","out":null}
+{"in":"ba\n\"é` b#x y \t","out":null}
+{"in":"","out":[]}
+{"in":"'\"a=bx y\t\n\t$ ","out":null}
+{"in":"a","out":["a"]}
+{"in":"a``","out":["a``"]}
+{"in":"b","out":["b"]}
+{"in":"\n`\t'`'-\\#\t`a","out":["`","`-#","`a"]}
+{"in":"'\n\t\"\"\"x y\n#é$","out":null}
+{"in":"\\#$\\b\\é\t#","out":["#$bé","#"]}
+{"in":"é\"é =$b","out":null}
+{"in":"b\n\n","out":["b"]}
+{"in":"é'-'éé","out":["é-éé"]}
+{"in":"\n#\"\\x y","out":null}
+{"in":"\"\"\\x y-","out":["x","y-"]}
+{"in":"","out":[]}
+{"in":" ' '=","out":[" ="]}
+{"in":"#-","out":["#-"]}
+{"in":"`  x y$$   b#","out":["`","x","y$$","b#"]}
+{"in":"'\t\"$\" '#x y","out":["\t\"$\" #x","y"]}
+{"in":"b\\ -","out":["b -"]}
+{"in":"éx yéb#","out":["éx","yéb#"]}
+{"in":"$\"","out":null}
+{"in":"$","out":["$"]}
+{"in":"x y-","out":["x","y-"]}
+{"in":"","out":[]}
+{"in":"","out":[]}
+{"in":"\t$\"`\"-é#\"##","out":null}
+{"in":"-$\n$\"\"$b \\a'","out":null}
+{"in":"`\n\ta\t##'\"","out":null}
+{"in":"\\\t\"\na\t'`=","out":null}
+{"in":"","out":[]}
+{"in":"b \t","out":["b"]}
+{"in":"-é'  ","out":null}
+{"in":"b'=","out":null}
+{"in":"-éé-=é#-","out":["-éé-=é#-"]}
+{"in":"\\##x y=-x y -#\"\t","out":null}
+{"in":"\nb'\t\t\n","out":null}
+{"in":" \n","out":[]}
+{"in":"a x y","out":["a","x","y"]}
+{"in":" a\n\"b","out":null}
+{"in":"\t$`#\tbx y$$","out":["$`#","bx","y$$"]}
+{"in":"=\" ","out":null}
+{"in":"`##$`éa\t\"","out":null}
+{"in":"-aéa#\"x y","out":null}
+{"in":"\" x yb-\"$`","out":[" x yb-$`"]}
+{"in":"$'=\"é\n=bx y","out":null}
+{"in":"\\#b'b","out":null}
+{"in":"$#\"a é\"\t\"'","out":null}
+{"in":"#'x y\\","out":null}
+{"in":"","out":[]}
+{"in":" $'a","out":null}
+{"in":"\\","out":null}
+{"in":"é=\t'\"\n","out":null}
+{"in":"`=x y='='$ \"","out":null}
+{"in":"\"b","out":null}
+{"in":"\"-`=`#","out":null}
+{"in":"\\x y ","out":["x","y"]}
+{"in":"`\ta`$\tb","out":["`","a`$","b"]}
+{"in":"ba--x y=x y`\"é-","out":null}
+{"in":" =`x y\\a\\-`-#`","out":["=`x","ya-`-#`"]}
+{"in":" ==\"a#`","out":null}
+{"in":"#\"x y\t`","out":null}
+{"in":"$-'#bx y\n#\"\t","out":null}
+{"in":" x y","out":["x","y"]}
+{"in":"","out":[]}
+{"in":"=\"\n =","out":null}
+{"in":"x ya=\téé=","out":["x","ya=","éé="]}
+{"in":"","out":[]}
+{"in":"$ -\t\\x yb","out":["$","-","x","yb"]}
+{"in":"'  \" ","out":null}
+{"in":"\né","out":["é"]}
+{"in":"=-'\t-`\\x yx y--","out":null}
+{"in":" -=-","out":["-=-"]}
+{"in":"=#\n\t","out":["=#"]}
+{"in":"$ $a","out":["$","$a"]}
+{"in":"b\\\\`$","out":["b\\`$"]}
+{"in":"` =éx yx y#-","out":["`","=éx","yx","y#-"]}
+{"in":"\"#\tab`b","out":null}
+{"in":"-","out":["-"]}
+{"in":" x y\\ x yx y","out":["x","y x","yx","y"]}
+{"in":"#=a=\t=x yx y","out":["#=a=","=x","yx","y"]}
+{"in":"'é\"\n\n ","out":null}
+{"in":"' é\na-a\n$","out":null}
+{"in":"é","out":["é"]}
+{"in":"\tx y#\"x y\"é`","out":["x","y#x yé`"]}
+{"in":"\\","out":null}
+{"in":"","out":[]}
+{"in":"x y'é\\x y\"-b \\-","out":null}
+{"in":"éé=`#x y","out":["éé=`#x","y"]}
+{"in":" \" \" =\t\t","out":[" ","="]}
+{"in":"\n\téx y$é b`b\\a","out":["éx","y$é","b`ba"]}
+{"in":" \"-\"'\\a","out":null}
+{"in":"x y`x y'``","out":null}
+{"in":"$=\\\"","out":["$=\""]}
+{"in":"' bx y x y x yb-b-","out":null}
+{"in":"\"#x y$-","out":null}
+{"in":"\"`=\"-=\nx y\"x y","out":null}
+{"in":"\\#-é\t \t-\t#=","out":["#-é","-","#="]}
+{"in":"a\n\"","out":null}
+{"in":"\na\"\\a\"\"\"=","out":["a\\a="]}
+{"in":"é$#\\\t\né#'","out":null}
+{"in":"\"\\`","out":null}
+{"in":"$\n a\\$","out":["$","a$"]}
+{"in":"=\n\n=#","out":["=","=#"]}
+{"in":"\tb#","out":["b#"]}
+{"in":"\"\\\t`#'b\\a","out":null}
+{"in":"\"b\n\\ b-\n`# \n","out":null}
+{"in":" \\\\\"-","out":null}
+{"in":"`-'\t\t  -  ","out":null}
+{"in":"x y","out":["x","y"]}
+{"in":"- \\ #\"=\n`","out":null}
+{"in":"$\"= a\"\n \t\t`","out":["$= a","`"]}
+{"in":"=x yaé$b ","out":["=x","yaé$b"]}
+{"in":"x y= \t\"` '","out":null}
+{"in":"\"b\\x ya-x yé\t`\t","out":null}
+{"in":"`é\n","out":["`é"]}
+{"in":"","out":[]}
+{"in":"`'a'#-\tb\nb#","out":["`a#-","b","b#"]}
+{"in":"\n#b#\\\"bx y`é=-","out":["#b#\"bx","y`é=-"]}
+{"in":"$x y$' \\\"$\"é\n","out":null}
+{"in":"\\\\\"-é\t","out":null}
+{"in":"b \t","out":["b"]}
+{"in":"a\t$","out":["a","$"]}

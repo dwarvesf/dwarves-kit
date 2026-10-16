@@ -98,6 +98,23 @@ got=$(hp_run_case "$c" bash "$FAKE/fake-hook.sh")
 [ "$(jq -r 'has("files")' <<<"$got")" = "false" ] && ok=1 || ok=0
 check "a case with no read list emits no files field" "$ok"
 
+# --- args, executable seeds, touch, and the @TODAY@ fold ---
+cat > "$FAKE/misc-hook.sh" <<'EOS'
+#!/usr/bin/env bash
+set -uo pipefail
+cat >/dev/null
+echo "args:$*"
+[ -x "$HOME/tool" ] && echo "tool-exec"
+echo "mtime-year:$(date -r "$HOME/stamp" +%Y 2>/dev/null || date -d "@$(stat -c %Y "$HOME/stamp")" +%Y)"
+echo "today:$(date +%Y-%m-%d)"
+EOS
+c=$(jq -n '{name:"misc", payload:"hi", args:["--force","x y"], seed:{"home/tool":"#!/bin/sh\ntrue\n","home/stamp":""}, touch:{"home/stamp":1500000000}}')
+got=$(hp_run_case "$c" bash "$FAKE/misc-hook.sh")
+out=$(jq -r '.stdout' <<<"$got")
+[ "$out" = "$(printf 'args:--force x y\ntool-exec\nmtime-year:2017\ntoday:@TODAY@')" ] && ok=1 || ok=0
+check "args append, #! seeds are executable, touch sets mtime, today folds to @TODAY@" "$ok"
+if [ "$ok" != 1 ]; then echo "    got: $out"; fi
+
 # --- rc and stderr pass through ---
 c=$(jq -n '{name:"exit-code", env:{FAKE_EXIT:"7"}, payload:"hi"}')
 got=$(hp_run_case "$c" bash "$FAKE/fake-hook.sh")

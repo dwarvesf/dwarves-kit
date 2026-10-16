@@ -15,6 +15,6 @@ case "${BACKLOG_STAGE_AUTO:-}" in 1|true|yes|on) ;; *) exit 0 ;; esac
 # sources into the same staging funnel (intake-sweep is config-gated: no
 # _meta/intake-sources.json means it is a silent no-op, and it self-throttles to daily),
 # so the surfaced candidate count already includes them. One wiring point, one funnel.
-case " $* " in *" --surface "*) python3 "$HERE/intake-sweep.py" || true ;; esac
+case " $* " in *" --surface "*) bash "$HERE/intake-sweep.sh" || true ;; esac
 python3 "$HERE/backlog-stage.py" "$@" || true
 exit 0

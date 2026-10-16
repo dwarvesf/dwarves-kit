@@ -218,7 +218,9 @@ chk "every module has a test (module-local or repo-root)" "$(printf "%b" "$untes
 
 # ---------------------------------------------------------------- C5 proposal currency
 echo "== C5 currency: proposers stage blocks, never write a board =="
-# Anything that writes a `## [staged]` block must get it from the ONE renderer.
+# Anything that writes a `## [staged]` block must get it from the ONE renderer. The jq twin
+# lib/reflect/staging-format.jq is the one file allowed to define a second copy: the bash hooks
+# cannot import the Python, and tests/test-staging-format-jq.sh pins the twin to it byte for byte.
 bespoke=""
 while IFS= read -r f; do
   case "$f" in
@@ -245,7 +247,7 @@ while IFS= read -r f; do
 # lint had never seen.)
 done < <(grep -rlI '## \[staged\]' lib hooks --exclude='*.md' --exclude-dir=.venv \
            --exclude-dir=target --exclude-dir=__pycache__ 2>/dev/null \
-         | grep -v 'staging-format.py' | sort)
+         | grep -v 'staging-format\.py\|staging-format\.jq' | sort)
 chk "every staged-block writer goes through the one renderer" "$(printf "%b" "$bespoke")"
 
 # No proposer appends to a BACKLOG.md (the human gate `board promote` owns that write).

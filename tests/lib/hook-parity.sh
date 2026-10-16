@@ -18,7 +18,11 @@
 #   seed  {"home/<path>": text, "cwd/<path>": text}  files written before the run
 #   read  ["home/<path>", "cwd/<path>"]  files dumped after the run into `files`
 #         (JSON-normalized when they parse, numbers canonical: 1000.0 reads 1000; null when missing)
-# The tokens @HOME@ and @CWD@ expand to the case's own temp directories in env values
+#   touch {"home/<path>": <epoch>}  set a seeded file's mtime (a throttle stamp from the past)
+#   args  ["--force"]  extra arguments appended to the hook command
+# A seeded file whose text starts with "#!" is made executable.
+# Today's date folds to @TODAY@ in every output field, so a golden that carries a stamped date
+# does not rot. The tokens @HOME@ and @CWD@ expand to the case's own temp directories in env values
 # and payload text, and fold back in every output field, so goldens never carry a temp path.
 hp_run_case() {
   local case_json="$1"; shift
@@ -57,7 +61,20 @@ hp_run_case() {
     esac
     mkdir -p "$(dirname "$seed_path")"
     jq -j --arg k "$seed_key" '.seed[$k]' <<<"$case_json" > "$seed_path"
+    [ "$(head -c 2 "$seed_path")" = "#!" ] && chmod +x "$seed_path"
   done < <(jq -r '(.seed // {}) | keys_unsorted[]' <<<"$case_json")
+  local touch_key touch_epoch touch_path
+  while IFS=$'\t' read -r touch_key touch_epoch; do
+    [ -n "$touch_key" ] || continue
+    case "$touch_key" in
+      home/*) touch_path="$home/${touch_key#home/}" ;;
+      cwd/*)  touch_path="$cwd/${touch_key#cwd/}" ;;
+      *) continue ;;
+    esac
+    touch -t "$(date -r "$touch_epoch" +%Y%m%d%H%M.%S 2>/dev/null || date -d "@$touch_epoch" +%Y%m%d%H%M.%S)" "$touch_path"
+  done < <(jq -r '(.touch // {}) | to_entries[] | "\(.key)\t\(.value)"' <<<"$case_json")
+  local extra=() extra_arg
+  while IFS= read -r extra_arg; do extra+=("$extra_arg"); done < <(jq -r '(.args // [])[]' <<<"$case_json")
 
   local payload="$T/payload" ptxt
   if [ "$(jq -r '.payload | type' <<<"$case_json")" = "object" ]; then
@@ -77,7 +94,7 @@ hp_run_case() {
 
   local rc=0 out err
   err=$(cd "$cwd" && env -i PATH="$PATH" HOME="$home" LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8 \
-    ${envs[@]+"${envs[@]}"} "$@" < "$payload" 2>&1 >"$T/stdout") || rc=$?
+    ${envs[@]+"${envs[@]}"} "$@" ${extra[@]+"${extra[@]}"} < "$payload" 2>&1 >"$T/stdout") || rc=$?
   out=$(cat "$T/stdout")
 
   local norm; norm=$(jq -S -c . <<<"$out" 2>/dev/null) || norm="$out"
@@ -119,6 +136,8 @@ hp_run_case() {
     done < <(jq -r '.read[]' <<<"$case_json")
   fi
 
+  local today; today=$(date +%Y-%m-%d)
+  norm=${norm//$today/@TODAY@}; err=${err//$today/@TODAY@}; logn=${logn//$today/@TODAY@}; files=${files//$today/@TODAY@}
   norm=${norm//$home_p/@HOME@}; norm=${norm//$home/@HOME@}; norm=${norm//$cwd_p/@CWD@}; norm=${norm//$cwd/@CWD@}
   err=${err//$home_p/@HOME@}; err=${err//$home/@HOME@}; err=${err//$cwd_p/@CWD@}; err=${err//$cwd/@CWD@}
   logn=${logn//$home_p/@HOME@}; logn=${logn//$home/@HOME@}; logn=${logn//$cwd_p/@CWD@}; logn=${logn//$cwd/@CWD@}
@@ -133,6 +152,8 @@ hp_run_case() {
 # hp_gen_expected <rev> <hook-basename> <cases.jsonl> <expected.jsonl>
 # Regenerates goldens from the Python hook at <rev>, run through that revision's own
 # bash shim (so a Python crash reads the way the shim surfaced it).
+# HP_EXTRA_FILES="lib/a.py lib/b.sh" copies more files from <rev>, at the same relative path, for a
+# hook whose Python imports a sibling module (the hook sits in hooks/ beside lib/).
 # HP_SILENT_CASES="name ..." marks cases where the Python crashed and the port
 # deliberately exits 0 silently instead: their goldens become rc 0 with every
 # output field empty (a spec-recorded divergence, never a way to hide a failure).
@@ -143,6 +164,11 @@ hp_gen_expected() {
   local H; H="$(mktemp -d)"; mkdir -p "$H/hooks" "$H/bin"
   git -C "$kit_root" show "${rev}:hooks/${hook}.sh" > "$H/hooks/$hook.sh"
   git -C "$kit_root" show "${rev}:hooks/${hook}.py" > "$H/hooks/$hook.py"
+  local extra_file
+  for extra_file in ${HP_EXTRA_FILES:-}; do
+    mkdir -p "$H/$(dirname "$extra_file")"
+    git -C "$kit_root" show "${rev}:${extra_file}" > "$H/$extra_file"
+  done
   # resolved once: under env -i a mise shim would reinstall python per call
   ln -s "$(python3 -c 'import sys; print(sys.executable)')" "$H/bin/python3"
   : > "$expected_file"
