@@ -68,6 +68,13 @@ fix stays fixed.
 The file is deliberately hyphenated, so it is not directly importable. Callers load it by path with
 `importlib.util.spec_from_file_location`.
 
+The bash hooks (`intake-sweep`, `backlog-stage`) run with no Python, so `staging-format.jq` carries a
+twin of `norm`, `render_block`, and the two `existing_keys` parsers (board rows, staging headings), and
+`shlex-split.sh` carries Python's `shlex.split` for the hooks that run a command string.
+`tests/test-staging-format-jq.sh` pins both to the Python on goldens that `tests/fixtures/staging-format-jq/gen-expected.sh`
+generates from `staging-format.py` and the stdlib. A grammar change lands in the Python first; the test then
+names what the twin must follow.
+
 ## The convergence is real, but it is not complete
 
 The kit's stated contract (ADR-0034 decision 1, SPEC-200 I1, contract rule **C5**) is that every

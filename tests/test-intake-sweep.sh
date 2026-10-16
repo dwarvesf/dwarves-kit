@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# test-intake-sweep.sh -- hooks/intake-sweep.py: the deferred-link sources -> staging
+# test-intake-sweep.sh -- hooks/intake-sweep.sh: the deferred-link sources -> staging
 # funnel adapter (jsonl + command kinds), its three dedup layers, the config gate, the
 # throttle, and the backlog-stage.sh --surface wiring. Hermetic: every run points
 # REPO_ROOT + INTAKE_SWEEP_STATE_DIR at temp dirs; no model call anywhere.
 set -uo pipefail
 KIT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-SWEEP="$KIT_DIR/hooks/intake-sweep.py"
+SWEEP="$KIT_DIR/hooks/intake-sweep.sh"
 
 PASS=0; FAIL=0
 ok()  { echo "  ok: $1"; PASS=$((PASS+1)); }
@@ -58,7 +58,7 @@ cat > "$R/_meta/intake-sources.json" <<EOF
 EOF
 
 echo "== sweep: keepers staged, skips + dups not, broken adapter fail-safe =="
-out="$(REPO_ROOT="$R" INTAKE_SWEEP_STATE_DIR="$R/state" python3 "$SWEEP" --force 2>&1)"; rc=$?
+out="$(REPO_ROOT="$R" INTAKE_SWEEP_STATE_DIR="$R/state" bash "$SWEEP" --force 2>&1)"; rc=$?
 S="$R/_meta/backlog-staging.md"
 assert_true "sweep exits 0 with a broken adapter in config" "$rc"
 assert_true "keep-verdict item staged" "$(grep -q '## \[staged\] A keeper article' "$S"; echo $?)"
@@ -72,20 +72,20 @@ assert_true "summary line printed" "$({ trap '' PIPE; echo "$out" 2>/dev/null ||
 
 echo "== idempotence: a second forced run stages nothing new =="
 before="$(grep -c '^## \[staged\]' "$S")"
-REPO_ROOT="$R" INTAKE_SWEEP_STATE_DIR="$R/state" python3 "$SWEEP" --force >/dev/null 2>&1
+REPO_ROOT="$R" INTAKE_SWEEP_STATE_DIR="$R/state" bash "$SWEEP" --force >/dev/null 2>&1
 after="$(grep -c '^## \[staged\]' "$S")"
 assert_true "block count unchanged on re-run ($before)" "$([ "$before" = "$after" ]; echo $?)"
 
 echo "== durable dedup: swept key never re-proposed even after its block is promoted =="
 # simulate promote: the staged block leaves the staging file entirely
 grep -v 'keeper article\|keep-me\|worth a deep read' "$S" > "$S.tmp" && mv -f "$S.tmp" "$S"
-REPO_ROOT="$R" INTAKE_SWEEP_STATE_DIR="$R/state" python3 "$SWEEP" --force >/dev/null 2>&1
+REPO_ROOT="$R" INTAKE_SWEEP_STATE_DIR="$R/state" bash "$SWEEP" --force >/dev/null 2>&1
 assert_true "NC: promoted-away keeper NOT re-staged (swept-keys state)" \
   "$(! grep -q '## \[staged\] A keeper article' "$S"; echo $?)"
 
 echo "== config gate: no intake-sources.json -> silent no-op =="
 R2="$(mkrepo)"
-out="$(REPO_ROOT="$R2" INTAKE_SWEEP_STATE_DIR="$R2/state" python3 "$SWEEP" --force 2>&1)"; rc=$?
+out="$(REPO_ROOT="$R2" INTAKE_SWEEP_STATE_DIR="$R2/state" bash "$SWEEP" --force 2>&1)"; rc=$?
 assert_true "exits 0 without config" "$rc"
 assert_true "NC: no staging file created" "$([ ! -f "$R2/_meta/backlog-staging.md" ]; echo $?)"
 assert_true "NC: no output" "$([ -z "$out" ]; echo $?)"
@@ -98,9 +98,9 @@ cat > "$R3/_meta/intake-sources.json" <<'EOF'
   "include": {"field": "verdict", "equals": "keep"},
   "map": {"title": "title", "url": "url"}}]}
 EOF
-REPO_ROOT="$R3" INTAKE_SWEEP_STATE_DIR="$R3/state" INTAKE_SWEEP_MIN_INTERVAL=3600 python3 "$SWEEP" >/dev/null 2>&1
+REPO_ROOT="$R3" INTAKE_SWEEP_STATE_DIR="$R3/state" INTAKE_SWEEP_MIN_INTERVAL=3600 bash "$SWEEP" >/dev/null 2>&1
 printf '{"url": "https://example.com/two", "title": "Second item", "verdict": "keep"}\n' >> "$R3/ledger.jsonl"
-REPO_ROOT="$R3" INTAKE_SWEEP_STATE_DIR="$R3/state" INTAKE_SWEEP_MIN_INTERVAL=3600 python3 "$SWEEP" >/dev/null 2>&1
+REPO_ROOT="$R3" INTAKE_SWEEP_STATE_DIR="$R3/state" INTAKE_SWEEP_MIN_INTERVAL=3600 bash "$SWEEP" >/dev/null 2>&1
 S3="$R3/_meta/backlog-staging.md"
 assert_true "first run staged inside the interval" "$(grep -q 'First item' "$S3"; echo $?)"
 assert_true "NC: second unforced run throttled" "$(! grep -q 'Second item' "$S3"; echo $?)"
@@ -119,11 +119,11 @@ cat > "$R5/_meta/intake-sources.json" <<'EOF'
    "map": {"title": "title", "url": "url"}}
 ]}
 EOF
-err="$(REPO_ROOT="$R5" INTAKE_SWEEP_STATE_DIR="$R5/state" python3 "$SWEEP" --force 2>&1 >/dev/null)"
+err="$(REPO_ROOT="$R5" INTAKE_SWEEP_STATE_DIR="$R5/state" bash "$SWEEP" --force 2>&1 >/dev/null)"
 assert_true "unknown kind warns on stderr" "$({ trap '' PIPE; echo "$err" 2>/dev/null || :; } | grep -q "typo-kind.*unknown kind 'jsonlines'"; echo $?)"
 assert_true "the good source still stages despite a broken sibling" \
   "$(grep -q 'Item A' "$R5/_meta/backlog-staging.md"; echo $?)"
-out="$(REPO_ROOT="$R5" INTAKE_SWEEP_STATE_DIR="$R5/state" python3 "$SWEEP" --check 2>&1)"; rc=$?
+out="$(REPO_ROOT="$R5" INTAKE_SWEEP_STATE_DIR="$R5/state" bash "$SWEEP" --check 2>&1)"; rc=$?
 assert_true "--check exits 0" "$rc"
 assert_true "--check reports the good source's raw yield" "$({ trap '' PIPE; echo "$out" 2>/dev/null || :; } | grep -qE 'ok +good \(jsonl\): 1 item'; echo $?)"
 assert_true "--check FAILs the unknown kind" "$({ trap '' PIPE; echo "$out" 2>/dev/null || :; } | grep -q 'FAIL typo-kind'; echo $?)"
@@ -131,7 +131,7 @@ assert_true "--check WARNs the dead path (0 items)" "$({ trap '' PIPE; echo "$ou
 assert_true "--check counts what needs attention" "$({ trap '' PIPE; echo "$out" 2>/dev/null || :; } | grep -q '3 source(s), 2 needing attention'; echo $?)"
 assert_true "NC: --check stages nothing (report-only)" \
   "$(! grep -q 'dead-path\|typo-kind' "$R5/_meta/backlog-staging.md"; echo $?)"
-out="$(REPO_ROOT="$R2" INTAKE_SWEEP_STATE_DIR="$R2/state" python3 "$SWEEP" --check 2>&1)"
+out="$(REPO_ROOT="$R2" INTAKE_SWEEP_STATE_DIR="$R2/state" bash "$SWEEP" --check 2>&1)"
 assert_true "--check says so when no sources are configured" "$({ trap '' PIPE; echo "$out" 2>/dev/null || :; } | grep -q 'no sources configured'; echo $?)"
 
 echo "== surface wiring: backlog-stage.sh --surface runs the sweep then surfaces =="

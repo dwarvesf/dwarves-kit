@@ -152,7 +152,7 @@ Total direct time recovered if both RETIRE-CANDIDATE timeouts are fixed or moved
 | `test-explain.sh` | 1 | 0 | 15 | other | KEEP | Runs real logic against a fixture. understanding-gate. |
 | `test-gate-ledger-report.sh` | 1 | 0 | 8 | gate | KEEP | Guards a live blocking/safety gate. `gate-ledger.sh report --period week|month` cross-cutting markdown report. |
 | `test-goal-dispatch.sh` | 1 | 0 | 21 | git-mechanics | KEEP | Exercises real git/board/queue fixtures, not mocked prose. lib/goal/goal.sh dispatch behavior. |
-| `test-intake-sweep.sh` | 1 | 0 | 0 | git-mechanics | KEEP | Exercises real git/board/queue fixtures, not mocked prose. hooks/intake-sweep.py: the deferred-link sources -> staging funnel adapter (jsonl + command kinds), its three dedup layers, the config |
+| `test-intake-sweep.sh` | 1 | 0 | 0 | git-mechanics | KEEP | Exercises real git/board/queue fixtures, not mocked prose. hooks/intake-sweep.sh: the deferred-link sources -> staging funnel adapter (jsonl + command kinds), its three dedup layers, the config |
 | `test-kri-wiring.sh` | 1 | 0 | 31 | doc-structure | THIN | Greps a markdown/command file for a phrase or section; proves the prose exists, not that the behavior runs. No-orphan wiring check for kit-run-integrity's five sub-goals (01-05, plus the |
 | `test-lane-deescalate.sh` | 1 | 0 | 22 | gate | KEEP | Guards a live blocking/safety gate. kit-run-integrity sub-goal 07 ( kit half). |
 | `test-lane-classify.sh` | 1 | 0 | 32 | git-mechanics | KEEP | Exercises real git/board/queue fixtures, not mocked prose. kit-telemetry. |

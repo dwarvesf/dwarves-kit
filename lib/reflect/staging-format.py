@@ -18,6 +18,12 @@ Filename is deliberately hyphenated (matches the `staging-format*` file-fence to
 sub-goal files use); a plain `import staging_format` cannot see it, so importers load it via
 `importlib.util.spec_from_file_location` (see `drain.py`).
 
+The bash hooks (intake-sweep, backlog-stage) cannot import this module, so
+lib/reflect/staging-format.jq carries a twin of norm, render_block, and the existing_keys
+parsers. tests/test-staging-format-jq.sh pins the twin to this file on goldens generated from
+it; change the grammar here, regenerate with tests/fixtures/staging-format-jq/gen-expected.sh,
+and the test names what the twin must follow.
+
 Stdlib only.
 """
 import json
