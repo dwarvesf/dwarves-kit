@@ -44,6 +44,16 @@ else
   fail=1; echo "  FAIL jq missing: rc=$rc stderr=$err"
 fi
 
+# An unset HOME (launchd, cron) falls back to the password database, as Python's expanduser does,
+# and never stops the hook under `set -u`.
+H="$(mktemp -d)"
+err=$(printf '{"prompt":"hi","session_id":"homeless"}' | env -i PATH="$PATH" CONTEXT_HINTS_TEMPORAL=0 bash "$HOOK" 2>&1 >/dev/null); rc=$?
+if [ "$rc" = 0 ] && [ -z "$err" ]; then
+  echo "  PASS unset HOME: exit 0, no error"
+else
+  fail=1; echo "  FAIL unset HOME: rc=$rc stderr=$err"
+fi
+
 # No interpreter beyond bash and jq: the hook never names python.
 if [ "$(grep -c 'python' "$HOOK")" = 0 ]; then
   echo "  PASS hook names no python"

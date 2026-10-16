@@ -63,7 +63,8 @@ sid=$(printf '%s' "$INPUT" | jq -rnj "$FUNCS"'
     | (if ($s | test("^[A-Za-z0-9_-]{1,64}$")) then $s else "default" end), "x" end' 2>/dev/null) || exit 0
 sid=${sid%x}
 
-state_dir="${CONTEXT_HINTS_STATE-$HOME/.claude/dwarves-kit/state/context-hints}"
+default_state=~/.claude/dwarves-kit/state/context-hints
+state_dir="${CONTEXT_HINTS_STATE-$default_state}"
 state_path="${state_dir:+$state_dir/}$sid.json"
 map_path="${CONTEXT_HINTS_SKILLMAP-$HERE/context-hints-skills-map.json}"
 # A file that is missing, unreadable, or starts with a BOM (a parse error to Python) reads as
