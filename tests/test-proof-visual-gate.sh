@@ -24,7 +24,7 @@ fails=0; total=0
 pass(){ total=$((total+1)); echo "PASS $*"; }
 fail(){ total=$((total+1)); echo "FAIL $*"; fails=$((fails+1)); }
 
-TMPD="$(mktemp -d "${TMPDIR:-/tmp}/dk-proof-vg.XXXXXX")"
+TMPD="$(mktemp -d "${TMPDIR:-/tmp}/dk-proof-vg.XXXXXX")" || exit 1
 trap 'rm -rf "$TMPD"' EXIT
 export GIT_TEMPLATE_DIR="$TMPD/no-git-template"; mkdir -p "$GIT_TEMPLATE_DIR"
 export KIT_LEDGER_DIR="$TMPD/ledger"

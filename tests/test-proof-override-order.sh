@@ -30,7 +30,7 @@ make_fixture() {  # $1 = dir
 }
 base() { git -C "$1" rev-parse HEAD; }
 
-F=/tmp/vf-gate-override-order
+F=${TMPDIR:-/tmp}/vf-gate-override-order
 make_fixture "$F"
 SLUG=vf-override-fix
 BASE="$(base "$F")"

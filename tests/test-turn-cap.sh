@@ -18,13 +18,13 @@ KIT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # Pin the kit-root config layer to this checkout (same convention as test-orchestrate.sh)
 # so `[mega].turn_cap` resolution reads THIS kit.toml, not a dev machine's installed copy.
 export KIT_CONFIG_ROOT="${KIT_CONFIG_ROOT:-$KIT}"
-export KIT_PROJECT_ROOT="${KIT_PROJECT_ROOT:-$(mktemp -d)}"
+[ -n "${KIT_PROJECT_ROOT:-}" ] || KIT_PROJECT_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; export KIT_PROJECT_ROOT
 ORCH="$KIT/lib/queue/orchestrate.sh"
 fails=0
 pass() { echo "PASS $*"; }
 fail() { echo "FAIL $*"; fails=$((fails + 1)); }
 
-TMP="$(mktemp -d)"
+TMP="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
 trap 'rm -rf "$TMP"' EXIT
 export DWARVES_KIT_LOG_DIR="$TMP/kitlogs"
 

@@ -26,7 +26,7 @@ KIT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # a dev machine has as an installed copy of THIS checkout. Pin it to the checkout so the
 # no-Model: expectations below (read from $KIT/kit.toml) hold in both places.
 export KIT_CONFIG_ROOT="${KIT_CONFIG_ROOT:-$KIT}"
-export KIT_PROJECT_ROOT="${KIT_PROJECT_ROOT:-$(mktemp -d)}"
+[ -n "${KIT_PROJECT_ROOT:-}" ] || KIT_PROJECT_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; export KIT_PROJECT_ROOT
 # The expectation comes from the resolver itself, never a re-implementation of its toml parse.
 kit_default_model() { ( cd "$KIT" && bash -c 'source lib/config/kit-config.sh; kit_config_get mega.default_model' ); }
 ORCH="$KIT/lib/queue/orchestrate.sh"
@@ -34,7 +34,7 @@ fails=0; total=0
 pass() { total=$((total + 1)); echo "PASS $*"; }
 fail() { total=$((total + 1)); echo "FAIL $*"; fails=$((fails + 1)); }
 
-TMP="$(mktemp -d)"
+TMP="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
 trap 'rm -rf "$TMP"' EXIT
 export DWARVES_KIT_LOG_DIR="$TMP/kitlogs"
 

@@ -23,7 +23,7 @@ assert_eq() { TOTAL=$((TOTAL+1)); if [ "$2" = "$3" ]; then echo -e "  ${GREEN}PA
 assert_ne() { TOTAL=$((TOTAL+1)); if [ "$2" != "$3" ]; then echo -e "  ${GREEN}PASS${NC} $1"; PASS=$((PASS+1)); else echo -e "  ${RED}FAIL${NC} $1 (got the forbidden '$3')"; FAIL=$((FAIL+1)); fi; }
 assert_nonempty() { TOTAL=$((TOTAL+1)); if [ -n "$2" ]; then echo -e "  ${GREEN}PASS${NC} $1"; PASS=$((PASS+1)); else echo -e "  ${RED}FAIL${NC} $1 (empty)"; FAIL=$((FAIL+1)); fi; }
 
-ROOT="$(mktemp -d -t onboard-detect.XXXXXX)"
+ROOT="$(mktemp -d "${TMPDIR:-/tmp}/onboard-detect.XXXXXX")" || exit 1
 trap 'rm -rf "$ROOT"' EXIT
 
 # --- fixture builders -------------------------------------------------------

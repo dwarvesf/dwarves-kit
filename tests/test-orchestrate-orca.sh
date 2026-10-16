@@ -10,7 +10,7 @@ ORCH="$KIT/lib/queue/orchestrate.sh"
 STUB="$KIT/tests/fixtures/orca-stub/orca"
 passed=0; failed=0; cfail=0; cname=""; cdetail=""
 
-TMP="$(mktemp -d)"
+TMP="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
 trap 'rm -rf "$TMP"' EXIT
 export DWARVES_KIT_LOG_DIR="$TMP/kitlogs" CLAUDE_FLAGS="" TIER4_CLOSE=0 WAVE_CAP=2 ORCA_POLL_SECS=0
 
@@ -76,7 +76,7 @@ EOF
   git -C "$REPO" remote add origin "$W/origin.git"; git -C "$REPO" push -q origin master
 }
 new_case_dirs() {  # sets W REPO MEGA STATE for a fresh case dir
-  W="$(mktemp -d "$TMP/c.XXXXXX")"; REPO="$W/repo"; MEGA="$REPO/mega"; STATE="$W/state"
+  W="$(mktemp -d "$TMP/c.XXXXXX")" || exit 1; REPO="$W/repo"; MEGA="$REPO/mega"; STATE="$W/state"
 }
 # Fill the fresh case dir from a built tree. Each case still owns its copy of both repos. Only the
 # clone's origin URL names the old path, so one set-url retargets it.
@@ -86,7 +86,7 @@ clone_case_tree() {  # SRC_DIR
 }
 mkcase() {  # sets W REPO MEGA STATE
   if [ -z "${CASE_TREE:-}" ]; then
-    CASE_TREE="$(mktemp -d "$TMP/tree.XXXXXX")"; build_case_tree "$CASE_TREE"
+    CASE_TREE="$(mktemp -d "$TMP/tree.XXXXXX")" || exit 1; build_case_tree "$CASE_TREE"
   fi
   new_case_dirs
   clone_case_tree "$CASE_TREE"

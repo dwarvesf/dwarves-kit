@@ -18,7 +18,7 @@ fails=0; total=0
 pass(){ total=$((total+1)); echo "PASS $*"; }
 fail(){ total=$((total+1)); echo "FAIL $*"; fails=$((fails+1)); }
 
-TMPD="$(mktemp -d "${TMPDIR:-/tmp}/dk-vp-contract.XXXXXX")"
+TMPD="$(mktemp -d "${TMPDIR:-/tmp}/dk-vp-contract.XXXXXX")" || exit 1
 trap 'rm -rf "$TMPD"' EXIT
 
 # Pin every config layer: the operator's real ~/.config/dwarves-kit/kit.toml and the

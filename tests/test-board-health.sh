@@ -28,7 +28,7 @@ ok()  { PASS=$((PASS+1)); printf "  ok   %s\n" "$1"; }
 bad() { FAIL=$((FAIL+1)); printf "  FAIL %s\n" "$1"; }
 eq()  { [ "$2" = "$3" ] && ok "$1" || bad "$1 (got '$2', want '$3')"; }
 
-WORK="$(mktemp -d)"
+WORK="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
 trap 'command rm -rf "$WORK"' EXIT
 export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null
 NOW=1790000000

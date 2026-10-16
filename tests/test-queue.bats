@@ -10,7 +10,7 @@ setup() {
   KIT="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"
   QUEUE="$KIT/lib/queue/queue.sh"
   FIX="$KIT/tests/fixtures/queue"
-  WORK="$(mktemp -d)"
+  WORK="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
   QSTUB="$WORK/stub"; mkdir -p "$QSTUB"
   QLOG="$QSTUB/verbs.log"; : > "$QLOG"
   JOURNAL="$WORK/queue-journal.tsv"

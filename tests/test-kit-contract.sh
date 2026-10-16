@@ -43,7 +43,7 @@ ok()  { printf "  ${GREEN}PASS${NC} %s\n" "$1"; PASS=$((PASS+1)); }
 bad() { printf "  ${RED}FAIL${NC} %s %s\n" "$1" "${2:-}"; FAIL=$((FAIL+1)); }
 chk() { if [ -z "$2" ]; then ok "$1"; else bad "$1" "(offenders: $(echo "$2" | tr '\n' ' '))"; fi; }
 
-TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
+TMP="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; trap 'rm -rf "$TMP"' EXIT
 
 # Modules = the kit's DECLARED module list (install.sh KIT_KNOWN_MODULES, the same list
 # lib/config/module-registry.md is completeness-checked against) mapped to their lib/ dirs,

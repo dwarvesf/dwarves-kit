@@ -74,7 +74,7 @@ BACKLOG="${OPT_BACKLOG:-$REPO/_meta/BACKLOG.md}"
 LEDGER_ROOT="$(kit_resolve_log_dir)" || exit 1
 [ -d "$LEDGER_ROOT" ] && LEDGER_ROOT="$(canon "$LEDGER_ROOT")"
 
-T="$(mktemp -d)"
+T="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")"
 trap 'rm -rf "$T"' EXIT
 
 # ---- source readers: each writes normalized JSON under $T ----------------------------------

@@ -27,7 +27,7 @@ assert() {
   else echo -e "  ${RED}FAIL${NC} $1"; FAIL=$((FAIL+1)); fi
 }
 
-TMPDIR_T="$(mktemp -d "${TMPDIR:-/tmp}/dk-precedent-test.XXXXXX")"
+TMPDIR_T="$(mktemp -d "${TMPDIR:-/tmp}/dk-precedent-test.XXXXXX")" || exit 1
 TMPDIR_T="$(cd "$TMPDIR_T" && pwd)"   # normalize a double slash, same reason as test-board.sh
 trap 'rm -rf "$TMPDIR_T"' EXIT
 

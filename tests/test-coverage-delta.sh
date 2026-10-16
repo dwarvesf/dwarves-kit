@@ -11,7 +11,7 @@ fails=0
 pass(){ echo "PASS $*"; }
 fail(){ echo "FAIL $*"; fails=$((fails+1)); }
 
-WORK="$(mktemp -d)"
+WORK="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
 trap 'rm -rf "$WORK" 2>/dev/null || true' EXIT
 
 # make_repo <dir>: a git repo with a committed baseline (one source file + one test file).

@@ -67,7 +67,7 @@ assert "0 orphans on the live tree (drift lint green)" "$RC"
 
 echo ""
 echo "=== AC2: NEGATIVE CONTROL -- a planted unregistered env var IS flagged ==="
-PLANT_DIR="$(mktemp -d -t config-registry-plant.XXXXXX)"
+PLANT_DIR="$(mktemp -d "${TMPDIR:-/tmp}/config-registry-plant.XXXXXX")" || exit 1
 mkdir -p "$PLANT_DIR/lib"
 cat > "$PLANT_DIR/lib/plant.sh" <<'EOF'
 #!/usr/bin/env bash
@@ -115,7 +115,7 @@ assert_eq "get with set-but-empty env falls through to the default (\${VAR:-} se
 if CONFIG_REGISTRY_FILE=/nonexistent-registry.md bash "$CONFIG_BIN" list >/dev/null 2>&1; then RC=1; else RC=0; fi
 assert "list with a missing registry file fails (exit != 0), no silent header-only success" $RC
 
-FIXDIR="$(mktemp -d -t config-registry-fixture.XXXXXX)"
+FIXDIR="$(mktemp -d "${TMPDIR:-/tmp}/config-registry-fixture.XXXXXX")" || exit 1
 mkdir -p "$FIXDIR/root" "$FIXDIR/proj"
 cat > "$FIXDIR/root/kit.toml" <<'EOF'
 [mega]
@@ -300,7 +300,7 @@ echo ""
 echo "=== AC9: command autonomy knobs resolve root-only ==="
 # shellcheck source=/dev/null
 . "$(cd "$(dirname "$0")/.." && pwd)/lib/config/kit-config.sh"
-AUTONOMY_DIR="$(mktemp -d)"; AUT_OP="$AUTONOMY_DIR/op"; AUT_PROJ="$AUTONOMY_DIR/proj"
+AUTONOMY_DIR="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; AUT_OP="$AUTONOMY_DIR/op"; AUT_PROJ="$AUTONOMY_DIR/proj"
 mkdir -p "$AUT_OP" "$AUT_PROJ"
 cat > "$AUT_OP/kit.toml" <<'TOML'
 [ship]
@@ -444,7 +444,7 @@ assert "live precedent.registry row: field 6 (doc) is the FULL sentence, not tru
 # is scoped precisely to the scripting surface the module documents as its contract.
 echo ""
 echo "=== AC12: precedent.registry regression control (config get/explain, project override) ==="
-PREC_DIR="$(mktemp -d)"
+PREC_DIR="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
 printf '[precedent]\nregistry = "/tmp/attacker-inventory.txt"\n' > "$PREC_DIR/.kit.toml"
 PREC_GET="$(KIT_PROJECT_ROOT="$PREC_DIR" bash "$CONFIG_BIN" get precedent.registry)"
 RC=0; [ "$PREC_GET" = "/tmp/attacker-inventory.txt" ] && RC=1

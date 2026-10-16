@@ -6,11 +6,11 @@ KIT="$(cd "$(dirname "$0")/.." && pwd)"
 PASS=0; FAIL=0
 ok() { PASS=$((PASS + 1)); echo "ok - $1"; }
 no() { FAIL=$((FAIL + 1)); echo "NOT ok - $1"; }
-LOGDIR="$(mktemp -d)"
+LOGDIR="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
 REAL=tieubao@users.noreply.github.com
 
 mkrepo() { # $1=dir; a fresh bare origin per repo
-  local ORIGIN; ORIGIN="$(mktemp -d)"; git init -q --bare -b master "$ORIGIN" 2>/dev/null
+  local ORIGIN; ORIGIN="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; git init -q --bare -b master "$ORIGIN" 2>/dev/null
   git clone -q "$ORIGIN" "$1" 2>/dev/null
   git -C "$1" symbolic-ref HEAD refs/heads/master
   git -C "$1" config user.email "$REAL"; git -C "$1" config user.name "Han Ngo"
@@ -23,7 +23,7 @@ gate() { # $1=repo -> echoes exit code
       | CLAUDE_PLUGIN_ROOT="$KIT" DWARVES_KIT_LOG_DIR="$LOGDIR" bash "$KIT/hooks/ship-gate.sh" >/dev/null 2>&1; echo $? )
 }
 case_commit() { # $1=name $2=expected exit $3=author-email $4=trailer-line(optional) $5=committer-email(optional)
-  local d; d="$(mktemp -d)/r"; mkrepo "$d"; git -C "$d" switch -qc "fix/change"
+  local d; d="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; d="$d/r"; mkrepo "$d"; git -C "$d" switch -qc "fix/change"
   echo "$1" > "$d/g"; git -C "$d" add -A
   GIT_AUTHOR_EMAIL="$3" GIT_AUTHOR_NAME=han GIT_COMMITTER_EMAIL="${5:-$REAL}" \
     git -C "$d" commit -q -m "fix: change" -m "${4:-body}"
@@ -42,7 +42,7 @@ case_commit "test@example.com blocked"           2 "test@example.com"
 case_commit "user@Host.local blocked"             2 "user@Host.local"
 
 # opt-out: [gate] fixture_identities = false committed on the default branch lets x@x pass
-d="$(mktemp -d)/r"; mkrepo "$d"
+d="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; d="$d/r"; mkrepo "$d"
 printf '[gate]\nfixture_identities = false\n' > "$d/.kit.toml"; git -C "$d" add -A; git -C "$d" commit -q -m "chore: opt out"
 git -C "$d" push -q origin master 2>/dev/null; git -C "$d" remote set-head origin master 2>/dev/null
 git -C "$d" switch -qc fix/change; echo g > "$d/g"; git -C "$d" add -A
@@ -50,7 +50,7 @@ GIT_AUTHOR_EMAIL=x@x git -C "$d" commit -q -m "fix: change"
 [ "$(gate "$d")" = 0 ] && ok "opt-out switch lets x@x pass" || no "opt-out switch lets x@x pass"
 
 # old history never blocks: a fixture commit already on origin's default branch, clean commit on top
-d="$(mktemp -d)/r"; mkrepo "$d"
+d="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; d="$d/r"; mkrepo "$d"
 echo old > "$d/old"; git -C "$d" add -A; GIT_AUTHOR_EMAIL=x@x git -C "$d" commit -q -m "chore: old fixture commit"
 git -C "$d" push -q origin master 2>/dev/null; git -C "$d" remote set-head origin master 2>/dev/null
 git -C "$d" switch -qc fix/change; echo g > "$d/g"; git -C "$d" add -A; git -C "$d" commit -q -m "fix: clean change"

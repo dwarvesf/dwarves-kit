@@ -153,7 +153,7 @@ cmd_log() {
   local n=${#line}
   [ "$n" -gt "$LOG_LINE_BUDGET" ] && echo "wrap log: note: ${n} chars, over the ${LOG_LINE_BUDGET}-char routine budget" >&2
 
-  local head_n tmp mode; tmp="$(mktemp)"
+  local head_n tmp mode; tmp="$(mktemp "${TMPDIR:-/tmp}/kit.XXXXXX")"
   head_n="$(_log_anchor_head_lines "$resolved")"
   if [ "$head_n" -gt 0 ] 2>/dev/null; then
     sed -n "1,${head_n}p" "$resolved" > "$tmp"

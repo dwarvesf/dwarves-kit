@@ -10,7 +10,7 @@ PASS=0; FAIL=0
 ok() { PASS=$((PASS + 1)); echo "ok - $1"; }
 no() { FAIL=$((FAIL + 1)); echo "NOT ok - $1"; }
 
-LOGDIR="$(mktemp -d)"   # isolate the gate-ledger store from the real one
+LOGDIR="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1   # isolate the gate-ledger store from the real one
 LEDGER="$KIT/lib/gate/gate-ledger.sh"
 
 mkrepo() { # $1=dir $2=slug $3=lane [$4=nomarker] -> repo on feat/<slug> with a spec committed
@@ -39,46 +39,46 @@ gate() { # $1=cwd $2=command $3=stderr-capture -> echoes exit code
       | CLAUDE_PLUGIN_ROOT="$KIT" DWARVES_KIT_LOG_DIR="$LOGDIR" bash "$KIT/hooks/ship-gate.sh" >/dev/null 2>"$3"; echo $? )
 }
 case_push() { # $1=label $2=repo $3=expected-rc $4=grep-pattern-or-empty [$5=cwd] [$6=cmd]
-  local e rc; e="$(mktemp)"
+  local e rc; e="$(mktemp "${TMPDIR:-/tmp}/kit.XXXXXX")" || return 1
   rc="$(gate "${5:-$2}" "${6:-git push -u origin HEAD}" "$e")"
   if [ "$rc" = "$3" ] && { [ -z "$4" ] || grep -q -- "$4" "$e"; }; then ok "$1"
   else no "$1 (want rc=$3 /$4/; got rc=$rc, stderr: $(tr '\n' ' ' < "$e"))"; fi
 }
 
 # 1 full lane, every gate recorded, no notes -> blocked, names MISSING-NOTES
-R="$(mktemp -d)"; mkrepo "$R" n1 full; gates n1 full
+R="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; mkrepo "$R" n1 full; gates n1 full
 case_push "1 full lane without notes blocks" "$R" 2 'MISSING-NOTES: docs/implementation-notes/n1.md'
 
 # 2 notes with a ## entry -> pass; 2b a table-only note -> pass
-R="$(mktemp -d)"; mkrepo "$R" n2 full; gates n2 full
+R="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; mkrepo "$R" n2 full; gates n2 full
 notes "$R" n2.md '# Implementation notes -- n2\n\n## 2026-09-24 a decision\n- Why: x\n'
 case_push "2 notes with a ## entry pass" "$R" 0 ''
-R="$(mktemp -d)"; mkrepo "$R" n2b full; gates n2b full
+R="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; mkrepo "$R" n2b full; gates n2b full
 notes "$R" n2b.md '# Notes\n\n| Decision | Why |\n|---|---|\n| a | b |\n'
 case_push "2b table-only notes pass" "$R" 0 ''
 
 # 3 zero-deviation line only -> pass
-R="$(mktemp -d)"; mkrepo "$R" n3 full; gates n3 full
+R="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; mkrepo "$R" n3 full; gates n3 full
 notes "$R" n3.md '# Implementation notes -- n3\n\nNo deviations; matches the spec verbatim\n'
 case_push "3 zero-deviation line passes" "$R" 0 ''
 
 # 4 title-only file -> blocked
-R="$(mktemp -d)"; mkrepo "$R" n4 full; gates n4 full
+R="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; mkrepo "$R" n4 full; gates n4 full
 notes "$R" n4.md '# Implementation notes -- n4\n\n   \n'
 case_push "4 title-only notes block" "$R" 2 'MISSING-NOTES'
 
 # 5 notes in the working tree, not committed -> blocked
-R="$(mktemp -d)"; mkrepo "$R" n5 full; gates n5 full
+R="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; mkrepo "$R" n5 full; gates n5 full
 printf '## entry\n' > "$R/docs/implementation-notes/n5.md"
 case_push "5 uncommitted notes block" "$R" 2 'MISSING-NOTES'
 
 # 6 normal lane, no notes -> pass
-R="$(mktemp -d)"; mkrepo "$R" n6 normal; gates n6 normal
+R="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; mkrepo "$R" n6 normal; gates n6 normal
 case_push "6 normal lane needs no notes" "$R" 0 ''
 
 # 7 missing review gate AND no notes -> one message, both gaps
-R="$(mktemp -d)"; mkrepo "$R" n7 full; gates n7 full review
-E7="$(mktemp)"; RC7="$(gate "$R" 'git push -u origin HEAD' "$E7")"
+R="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; mkrepo "$R" n7 full; gates n7 full review
+E7="$(mktemp "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; RC7="$(gate "$R" 'git push -u origin HEAD' "$E7")"
 [ "$RC7" = 2 ] && grep -q 'MISSING-GATE: review' "$E7" && grep -q 'MISSING-NOTES' "$E7" \
   && [ "$(grep -c '^BLOCKED' "$E7")" = 1 ] \
   && ok "7 ledger gap and notes gap share one BLOCKED message" \
@@ -99,22 +99,23 @@ sed -n '/^### Step 10/,/^### /p' "$KIT/commands/wrap.md" | grep -q 'docs/impleme
   && ok "10c execute.md states the ship-gate rule, no header-only clause" || no "10c execute.md still contradicts the rule"
 
 # 11 notes named after the spec file -> pass
-R="$(mktemp -d)"; mkrepo "$R" n11 full; gates n11 full
+R="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; mkrepo "$R" n11 full; gates n11 full
 notes "$R" SPEC-001-n11.md '# Notes\n\n## entry\n'
 case_push "11 SPEC-NNN-<slug>.md notes pass" "$R" 0 ''
 
 # 12 no notes, logged override -> pass
-R="$(mktemp -d)"; mkrepo "$R" n12 full; gates n12 full
+R="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; mkrepo "$R" n12 full; gates n12 full
 DWARVES_KIT_LOG_DIR="$LOGDIR" bash "$LEDGER" override n12 impl-notes "test: notes waived" >/dev/null 2>&1
 case_push "12 impl-notes override clears the gap" "$R" 0 ''
 
 # 13 no proof marker -> advisory only
-R="$(mktemp -d)"; mkrepo "$R" n13 full nomarker; gates n13 full
+R="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; mkrepo "$R" n13 full nomarker; gates n13 full
 case_push "13 unadopted repo gets an advisory, not a block" "$R" 0 '\[advisory\] full-lane spec'
 
 # 14 push via a leading cd from a foreign cwd checks THAT repo
-R="$(mktemp -d)"; mkrepo "$R" n14 full; gates n14 full
-case_push "14 cd <repo> && git push checks the target repo" "$R" 2 'MISSING-NOTES' "$(mktemp -d)" "cd $R && git push -u origin HEAD"
+R="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; mkrepo "$R" n14 full; gates n14 full
+_cwd14="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
+case_push "14 cd <repo> && git push checks the target repo" "$R" 2 'MISSING-NOTES' "$_cwd14" "cd $R && git push -u origin HEAD"
 
 # 15-17 big producers under pipefail: grep -q exits on its first match, the producer
 # (git show, cat, grep) is still writing, takes SIGPIPE, and pipefail reports the whole
@@ -123,14 +124,14 @@ bigfill() { # $1=file $2=line -> ~300KB of repeated lines appended
   local i; for i in $(seq 1 4000); do printf '%s\n' "$2"; done >> "$1"
 }
 # 15 a large notes file with an entry on its first line -> pass
-R="$(mktemp -d)"; mkrepo "$R" n15 full; gates n15 full
+R="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; mkrepo "$R" n15 full; gates n15 full
 printf '%s\n' '- Why: the entry is on the first body line' > "$R/docs/implementation-notes/n15.md"
 bigfill "$R/docs/implementation-notes/n15.md" '- filler line that pads the notes file well past the pipe buffer size so the producer is still writing'
 git -C "$R" add -A; git -C "$R" commit -qm notes
 case_push "15 large notes file passes (no SIGPIPE false MISSING-NOTES)" "$R" 0 ''
 
 # 16 a large ledger whose impl-notes override is the first line -> the override is seen
-R="$(mktemp -d)"; mkrepo "$R" n16 full
+R="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; mkrepo "$R" n16 full
 DWARVES_KIT_LOG_DIR="$LOGDIR" bash "$LEDGER" override n16 impl-notes "test: notes waived" >/dev/null 2>&1
 gates n16 full
 LEDGER16="$LOGDIR/runs/n16.log"
@@ -138,12 +139,12 @@ bigfill "$LEDGER16" '2026-09-24T00:00:00Z | ACTION | filler line that pads the l
 case_push "16 override at the head of a large ledger clears the gap" "$R" 0 ''
 
 # 17 a large BACKLOG.md whose first row names the slug -> no "appears nowhere" advisory
-R="$(mktemp -d)"; mkrepo "$R" n17 full; gates n17 full
+R="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; mkrepo "$R" n17 full; gates n17 full
 notes "$R" n17.md '# Notes\n\n## entry\n'
 mkdir -p "$R/_meta"; printf '| n17 | row naming the slug |\n' > "$R/_meta/BACKLOG.md"
 bigfill "$R/_meta/BACKLOG.md" '| X-1 | filler row that pads the backlog well past the pipe buffer size so the first grep keeps writing |'
 git -C "$R" add -A; git -C "$R" commit -qm backlog
-E17="$(mktemp)"; RC17="$(gate "$R" 'git push -u origin HEAD' "$E17")"
+E17="$(mktemp "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; RC17="$(gate "$R" 'git push -u origin HEAD' "$E17")"
 [ "$RC17" = 0 ] && ! grep -q 'appears nowhere in _meta/BACKLOG.md' "$E17" \
   && ok "17 large BACKLOG naming the slug raises no false advisory" \
   || no "17 want rc=0 and no advisory; got rc=$RC17: $(tr '\n' ' ' < "$E17")"

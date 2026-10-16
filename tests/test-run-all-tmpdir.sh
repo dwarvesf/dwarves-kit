@@ -15,7 +15,7 @@ pass=0; fail=0
 ok(){ echo "  ok: $*"; pass=$((pass+1)); }
 no(){ echo "  FAIL: $*" >&2; fail=$((fail+1)); }
 
-TMP="$(mktemp -d "${TMPDIR:-/tmp}/rat.XXXXXX")"
+TMP="$(mktemp -d "${TMPDIR:-/tmp}/rat.XXXXXX")" || exit 1
 trap 'rm -rf "$TMP"' EXIT
 export DWARVES_KIT_LOG_DIR="$TMP/logs"
 

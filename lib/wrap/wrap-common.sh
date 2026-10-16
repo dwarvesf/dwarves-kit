@@ -328,7 +328,7 @@ _merge_default() {
     return 1
   fi
 
-  log="$(mktemp)" || return 1
+  log="$(mktemp "${TMPDIR:-/tmp}/kit.XXXXXX")" || return 1
   [ -n "$MVP_HIT" ] && { rm -f "$log"; return 130; }
   _rb_git "$wt" merge --no-ff --no-commit --no-overwrite-ignore "origin/${def}" > "$log" 2>&1
   if [ -n "$MVP_HIT" ]; then

@@ -21,7 +21,7 @@ export KIT_RUN_ALL=1
 # at a time). Each fixture's elapsed value is pinned to [sleep, sleep+1], not to one exact second.
 SLOW_S='[23]'; QUICK_S='[01]'
 
-TMP="$(mktemp -d)"
+TMP="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
 trap 'rm -rf "$TMP"' EXIT
 
 mkkit() {  # $1 = dir ; $2 = the run-all.sh to install ; plus the two fixture suites

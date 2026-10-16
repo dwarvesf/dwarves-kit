@@ -19,7 +19,7 @@ RED='\033[0;31m'; GREEN='\033[0;32m'; NC='\033[0m'
 assert_eq() { TOTAL=$((TOTAL+1)); if [ "$2" = "$3" ]; then echo -e "  ${GREEN}PASS${NC} $1"; PASS=$((PASS+1)); else echo -e "  ${RED}FAIL${NC} $1 (expected '$3', got '$2')"; FAIL=$((FAIL+1)); fi; }
 assert_contains() { TOTAL=$((TOTAL+1)); if { trap '' PIPE; printf '%s' "$2" 2>/dev/null || :; } | grep -qF "$3"; then echo -e "  ${GREEN}PASS${NC} $1"; PASS=$((PASS+1)); else echo -e "  ${RED}FAIL${NC} $1 (missing '$3')"; FAIL=$((FAIL+1)); fi; }
 
-ROOT="$(mktemp -d -t sp199-recheck.XXXXXX)"
+ROOT="$(mktemp -d "${TMPDIR:-/tmp}/sp199-recheck.XXXXXX")" || exit 1
 trap 'rm -rf "$ROOT"' EXIT
 
 # --- the scenario-(b) fixture: bash-install machine + fresh unadopted repo -------------------

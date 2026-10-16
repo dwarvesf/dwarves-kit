@@ -10,7 +10,7 @@
 # CLAUDE_PLUGIN_ROOT pointed at this checkout, the same path a live push/commit/stop hits.
 set -uo pipefail
 KIT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
+TMP="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; trap 'rm -rf "$TMP"' EXIT
 export CLAUDE_PLUGIN_ROOT="$KIT_DIR" KIT_CONFIG_ROOT="$KIT_DIR" KIT_CONFIG_OPERATOR="$KIT_DIR/tests/fixtures/gates-on"
 export DWARVES_KIT_LOG_DIR="$TMP/logs" KIT_LEDGER_DIR="$TMP/ledger"
 mkdir -p "$DWARVES_KIT_LOG_DIR" "$KIT_LEDGER_DIR"

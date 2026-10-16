@@ -39,7 +39,7 @@ echo "=== whole-spec dispatch: structural checks on commands/execute.md ==="
 while IFS='|' read -r label rc; do assert "$label" "$rc"; done < <(structural "$KIT_DIR/commands/execute.md")
 
 if git -C "$KIT_DIR" cat-file -e "$BASE_SHA:commands/execute.md" 2>/dev/null; then
-  BASE_MD="$(mktemp)"
+  BASE_MD="$(mktemp "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
   git -C "$KIT_DIR" show "$BASE_SHA:commands/execute.md" >| "$BASE_MD"
   assert "base execute.md at $BASE_SHA is 36055 bytes" "$([ "$(wc -c < "$BASE_MD")" -eq 36055 ] && echo 0 || echo 1)"
   echo ""
@@ -54,7 +54,7 @@ fi
 echo ""
 echo "=== fixture: the unmeetable spec is unmeetable, the meetable spec is meetable ==="
 CHK="$FIXDIR/check.sh"
-T="$(mktemp -d)"
+T="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
 mkdir -p "$T/tests/fixtures/whole-spec-dispatch"
 cp "$CHK" "$T/tests/fixtures/whole-spec-dispatch/check.sh"
 printf 'hello' >| "$T/hello.txt"
@@ -76,7 +76,7 @@ assert "SPEC-900 carries AC-3, SPEC-901 does not" "$(grep -q 'AC-3' "$FIXDIR/SPE
 echo ""
 echo "=== behavior: recheck-sample.sh decide ==="
 RS="$KIT_DIR/lib/gate/recheck-sample.sh"
-WT="$(mktemp -d)"
+WT="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
 export DWARVES_KIT_LOG_DIR="$WT/log"
 d() { bash "$RS" decide "$@" 2>/dev/null; }
 assert "N=0 never samples" "$([ "$(d rid-a 0)" = skipped ] && [ "$(d rid-b 0)" = skipped ] && echo 0 || echo 1)"

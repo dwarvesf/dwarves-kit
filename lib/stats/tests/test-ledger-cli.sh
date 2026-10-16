@@ -16,7 +16,7 @@ has()  { case "$3" in *"$2"*) ok "$1";; *) bad "$1 (missing: $2)";; esac; }
 hasnt(){ case "$3" in *"$2"*) bad "$1 (unexpected: $2)";; *) ok "$1";; esac; }
 
 # ---- fixtures ---------------------------------------------------------------
-FIX="$(mktemp -d)"
+FIX="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
 export DWARVES_KIT_LOG_DIR="$FIX/kitlogs"
 export STATS_TIDE_DB="$FIX/state.sqlite"
 export STATS_TGCLEANUP_DIR="$FIX/tg"

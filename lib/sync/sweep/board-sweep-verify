@@ -159,7 +159,7 @@ snapshot() {
   done 3< "$REGISTRY"
 }
 
-BEFORE=$(mktemp); AFTER=$(mktemp)
+BEFORE=$(mktemp "${TMPDIR:-/tmp}/kit.XXXXXX"); AFTER=$(mktemp "${TMPDIR:-/tmp}/kit.XXXXXX")
 
 snapshot "$BEFORE"
 if [ "$RUN" -eq 1 ]; then

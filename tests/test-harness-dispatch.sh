@@ -28,12 +28,12 @@ fails=0
 pass() { echo "PASS $*"; }
 fail() { echo "FAIL $*"; fails=$((fails + 1)); }
 
-TMP="$(mktemp -d)"
+TMP="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
 trap 'rm -rf "$TMP"' EXIT
 
 # A mega-goal dir with one sub-goal whose goal file carries the given header lines.
 mk_goal() {  # headers... -> echoes the megadir
-  local dir; dir=$(mktemp -d "$TMP/mega.XXXXXX")
+  local dir; dir=$(mktemp -d "$TMP/mega.XXXXXX") || exit 1
   mkdir -p "$dir/goals"
   { for h in "$@"; do printf '%s\n' "$h"; done; printf '\nbody\n'; } > "$dir/goals/01-thing.md"
   printf '%s\n' "$dir"
@@ -244,7 +244,7 @@ echo "== END-TO-END: cmd_run drives a vendor sub-goal to grounded completion (re
 # pattern in test-orchestrate-hardening.sh. Serial run (WAVE_CAP unset -> 1), so no git/worktree.
 ORCH="$KIT/lib/queue/orchestrate.sh"
 mk_mega() {  # roadmap-checkbox-char -> echoes megadir
-  local dir; dir=$(mktemp -d "$TMP/e2e.XXXXXX"); mkdir -p "$dir/goals"
+  local dir; dir=$(mktemp -d "$TMP/e2e.XXXXXX") || exit 1; mkdir -p "$dir/goals"
   printf '# e2e\n\n- [%s] SG-01 vendor probe , auto\n' "$1" > "$dir/ROADMAP.md"
   printf 'run one sub-goal.\n' > "$dir/POINTER_PROMPT.md"
   printf 'Harness: codex\nModel: gpt-5\nEffort: high\n\n**Branch:** chore/e2e\n\n## Task\nflip the box.\n' > "$dir/goals/01-probe.md"
@@ -256,7 +256,7 @@ cat > "$codex_flip/codex" <<EOF
 #!/usr/bin/env bash
 cat >/dev/null   # drain the stdin prompt
 sed -i.bak 's/- \[ \] SG-01/- [x] SG-01/' "\$MOCK_ROADMAP" 2>/dev/null || \
-  { tmp=\$(mktemp); sed 's/- \[ \] SG-01/- [x] SG-01/' "\$MOCK_ROADMAP" > "\$tmp"; mv "\$tmp" "\$MOCK_ROADMAP"; }
+  { tmp=\$(mktemp "\${TMPDIR:-/tmp}/kit.XXXXXX") || exit 1; sed 's/- \[ \] SG-01/- [x] SG-01/' "\$MOCK_ROADMAP" > "\$tmp"; mv "\$tmp" "\$MOCK_ROADMAP"; }
 exit 0
 EOF
 chmod +x "$codex_flip/codex"

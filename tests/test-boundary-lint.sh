@@ -24,7 +24,7 @@ assert "boundary-lint PASSes on the live tree (rc=$RC): $OUT" "$([ "$RC" -eq 0 ]
 
 echo ""
 echo "=== AC2: negative control -- a mktemp fixture with a planted hardcoded path is caught ==="
-FX="$(mktemp -d)"
+FX="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
 mkdir -p "$FX/lib" "$FX/hooks" "$FX/commands" "$FX/tests"
 : > "$FX/kit.toml"
 # Built from two halves so the pattern this fixture plants never appears literally in this
@@ -45,7 +45,7 @@ echo "=== AC3: negative control -- a planted retired-skill name in a NEW command
 # only the message-content assertion caught the break. A fresh dir makes the exit code prove
 # what it claims.
 rm -rf "$FX"
-FX="$(mktemp -d)"
+FX="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
 mkdir -p "$FX/commands"
 # Not one of the three files the old hand list carried before this fix (wrap.md/explain.md/
 # quiz-gate.md): proves name_files now globs every commands/*.md, the finding-3 fix.

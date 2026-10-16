@@ -43,7 +43,7 @@ else
   _date_n_days_ago() { date -u -d "-$1 days" +%Y-%m-%d; }
 fi
 
-TMPDIR_T="$(mktemp -d)"
+TMPDIR_T="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
 trap 'rm -rf "$TMPDIR_T"' EXIT
 
 D2="$(_date_n_days_ago 2)"    # inside window, newest

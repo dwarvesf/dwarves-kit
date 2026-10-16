@@ -36,7 +36,7 @@ mkdir -p "${AB_DIR}"
 
 # Plain (uncompressed) tar: GNU tar on a remote runner cannot auto-detect
 # compression on a pipe; bsdtar can. Plain works everywhere.
-TARS="$(mktemp -d)"
+TARS="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
 trap 'rm -rf "${TARS}"' EXIT
 git archive "${REF_A}" > "${TARS}/A.tar"
 git archive "${REF_B}" > "${TARS}/B.tar"

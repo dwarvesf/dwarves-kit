@@ -7,7 +7,7 @@ set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$HERE/../../.." && pwd)"
 REV="${1:-ce08a00b}"
-H="$(mktemp -d)"; mkdir -p "$H/hooks" "$H/bin"
+H="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; mkdir -p "$H/hooks" "$H/bin"
 git -C "$ROOT" show "$REV:hooks/money-gate.sh" > "$H/hooks/money-gate.sh"
 git -C "$ROOT" show "$REV:hooks/money-gate.py" > "$H/hooks/money-gate.py"
 # the interpreter path is resolved once: under env -i a version-manager shim would

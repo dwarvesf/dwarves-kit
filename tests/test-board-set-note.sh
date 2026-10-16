@@ -16,7 +16,7 @@ FAILED=0
 pass() { printf 'PASS %s\n' "$1"; }
 fail() { printf 'FAIL %s\n' "$1"; FAILED=$((FAILED + 1)); }
 
-TMP=$(mktemp -d)
+TMP=$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX") || exit 1
 trap 'rm -rf "$TMP"' EXIT
 
 # A fresh one-row board per case, so no case can see another's writes.

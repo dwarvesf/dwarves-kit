@@ -44,8 +44,8 @@ modules_section_true() {
 # ============================================================
 echo "== NC spine-only: a plain temp-HOME install wires ONLY the spine =="
 # ============================================================
-H1="$(mktemp -d)"
-HOME="$H1" bash "$KIT_DIR/install.sh" >/tmp/kitmod-h1.log 2>&1
+H1="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
+HOME="$H1" bash "$KIT_DIR/install.sh" >${TMPDIR:-/tmp}/kitmod-h1.log 2>&1
 WIRED1="$(wired_hooks "$H1/.claude/settings.json")"
 EXPECT_SPINE="anti-rationalization.sh
 commit-format.sh
@@ -63,8 +63,8 @@ assert_true "spine-only install: no module recorded true in kit.toml [modules] (
 # ============================================================
 echo "== NC --with board,stats: wires exactly those + records in kit.toml; re-run reproduces =="
 # ============================================================
-H2="$(mktemp -d)"
-HOME="$H2" bash "$KIT_DIR/install.sh" --with board,stats >/tmp/kitmod-h2.log 2>&1
+H2="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
+HOME="$H2" bash "$KIT_DIR/install.sh" --with board,stats >${TMPDIR:-/tmp}/kitmod-h2.log 2>&1
 WIRED2="$(wired_hooks "$H2/.claude/settings.json")"
 EXPECT_BOARD="$(printf '%s\nbacklog-stage.sh\nboard-row-gate.sh' "$EXPECT_SPINE" | sort -u)"
 assert_true "--with board,stats wires spine + backlog-stage.sh + board-row-gate.sh (board's hooks) only" "$([ "$WIRED2" = "$EXPECT_BOARD" ]; echo $?)"
@@ -72,7 +72,7 @@ assert_true "kit.toml records board = true" "$(grep -qx 'board = true' "$H2/.cla
 assert_true "kit.toml records stats = true (hookless module, still recorded)" "$(grep -qx 'stats = true' "$H2/.claude/dwarves-kit/kit.toml"; echo $?)"
 assert_true "kit.toml records session = false (not requested)" "$(grep -qx 'session = false' "$H2/.claude/dwarves-kit/kit.toml"; echo $?)"
 
-HOME="$H2" bash "$KIT_DIR/install.sh" >/tmp/kitmod-h2-rerun.log 2>&1
+HOME="$H2" bash "$KIT_DIR/install.sh" >${TMPDIR:-/tmp}/kitmod-h2-rerun.log 2>&1
 WIRED2B="$(wired_hooks "$H2/.claude/settings.json")"
 assert_true "re-run (no --with) reproduces the same wired set from the manifest" "$([ "$WIRED2" = "$WIRED2B" ]; echo $?)"
 
@@ -89,7 +89,7 @@ assert_true "no un-opted-in module hook present after --with board,stats (leaked
 # ============================================================
 echo "== NC team_mode reserved: --with team_mode is a clean error, not installable =="
 # ============================================================
-H3="$(mktemp -d)"
+H3="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
 ERR3="$(HOME="$H3" bash "$KIT_DIR/install.sh" --with team_mode 2>&1)"; RC3=$?
 assert_true "--with team_mode exits nonzero" "$([ "$RC3" -ne 0 ]; echo $?)"
 assert_true "--with team_mode error names the reserved reason" "$({ trap '' PIPE; printf '%s' "$ERR3" 2>/dev/null || :; } | grep -qi 'reserved'; echo $?)"
@@ -98,7 +98,7 @@ assert_true "--with team_mode never wrote a settings.json" "$([ ! -f "$H3/.claud
 # ============================================================
 echo "== NC unknown module name: clean error, not silent =="
 # ============================================================
-H4="$(mktemp -d)"
+H4="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
 ERR4="$(HOME="$H4" bash "$KIT_DIR/install.sh" --with bogus-module 2>&1)"; RC4=$?
 assert_true "--with bogus-module exits nonzero" "$([ "$RC4" -ne 0 ]; echo $?)"
 assert_true "--with bogus-module error names the unknown module" "$({ trap '' PIPE; printf '%s' "$ERR4" 2>/dev/null || :; } | grep -q 'bogus-module'; echo $?)"
@@ -109,12 +109,12 @@ echo "== NC existing-consumer migration: re-running install.sh is ADDITIVE, neve
 # ============================================================
 # Simulate the pre-SG-04 all-hooks installer: seed settings.json with the FULL
 # (unfiltered) kit settings.json, no kit.toml yet.
-H5="$(mktemp -d)"
+H5="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
 mkdir -p "$H5/.claude"
 cp "$KIT_DIR/settings.json" "$H5/.claude/settings.json"
 BEFORE5="$(wired_hooks "$H5/.claude/settings.json")"
 BEFORE5_N="$(printf '%s\n' "$BEFORE5" | grep -c .)"
-HOME="$H5" bash "$KIT_DIR/install.sh" >/tmp/kitmod-h5.log 2>&1
+HOME="$H5" bash "$KIT_DIR/install.sh" >${TMPDIR:-/tmp}/kitmod-h5.log 2>&1
 AFTER5="$(wired_hooks "$H5/.claude/settings.json")"
 DROPPED="$(comm -23 <(printf '%s\n' "$BEFORE5") <(printf '%s\n' "$AFTER5"))"
 assert_true "additive re-install drops nothing from an old all-hooks install (before=$BEFORE5_N, dropped:${DROPPED:-none})" "$([ -z "$DROPPED" ]; echo $?)"
@@ -122,10 +122,10 @@ assert_true "additive re-install drops nothing from an old all-hooks install (be
 # ============================================================
 echo "== NC --prune: the explicit, only way to trim a previously-wired hook =="
 # ============================================================
-H6="$(mktemp -d)"
+H6="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
 mkdir -p "$H6/.claude"
 cp "$KIT_DIR/settings.json" "$H6/.claude/settings.json"
-HOME="$H6" bash "$KIT_DIR/install.sh" --prune --with board >/tmp/kitmod-h6.log 2>&1
+HOME="$H6" bash "$KIT_DIR/install.sh" --prune --with board >${TMPDIR:-/tmp}/kitmod-h6.log 2>&1
 WIRED6="$(wired_hooks "$H6/.claude/settings.json")"
 EXPECT_PRUNE="$(printf '%s\nbacklog-stage.sh\nboard-row-gate.sh' "$EXPECT_SPINE" | sort -u)"
 assert_true "--prune --with board trims to exactly spine + board (drops the old all-hooks set)" "$([ "$WIRED6" = "$EXPECT_PRUNE" ]; echo $?)"
@@ -133,18 +133,18 @@ assert_true "--prune --with board trims to exactly spine + board (drops the old 
 # ============================================================
 echo "== POST-INSTALL SMOKE: every wired hook script runs cleanly (exit 0) on a no-op event =="
 # ============================================================
-H7="$(mktemp -d)"
-HOME="$H7" bash "$KIT_DIR/install.sh" --with board,session,advisor,cosmetic,queue,stats,quiz_gate,weekend_batch,sync >/tmp/kitmod-h7.log 2>&1
+H7="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
+HOME="$H7" bash "$KIT_DIR/install.sh" --with board,session,advisor,cosmetic,queue,stats,quiz_gate,weekend_batch,sync >${TMPDIR:-/tmp}/kitmod-h7.log 2>&1
 # Invoke each installed hook from a real (throwaway) git repo, not the kit checkout
 # itself, so a hook's project-root-relative reads (e.g. .claude/backups, docs/specs)
 # see a clean, self-consistent tree instead of the kit's own live dev state.
-SMOKE_REPO="$(mktemp -d)"
+SMOKE_REPO="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
 git -C "$SMOKE_REPO" init -q
 mkdir -p "$SMOKE_REPO/.claude/backups" "$SMOKE_REPO/docs/specs"
 SMOKE_FAIL=0; SMOKE_N=0
 for h in "$H7/.claude/dwarves-kit/hooks/"*.sh; do
   SMOKE_N=$((SMOKE_N+1))
-  ( cd "$SMOKE_REPO" && echo '{}' | bash "$h" >/tmp/kitmod-smoke-out 2>&1 )
+  ( cd "$SMOKE_REPO" && echo '{}' | bash "$h" >${TMPDIR:-/tmp}/kitmod-smoke-out 2>&1 )
   rc=$?
   if [ "$rc" -ne 0 ]; then SMOKE_FAIL=$((SMOKE_FAIL+1)); echo "    smoke-fail: $(basename "$h") exit=$rc"; fi
 done
@@ -166,7 +166,7 @@ echo "== NC lint-load-bearing: a hook that DOES read kit.toml is caught, not a v
 # that the repo happens to be clean today. A synthetic hooks/ dir with one real
 # hook (copied) plus one planted offender is checked with the SAME assertion the
 # standing lint uses; the offender must be named, and the real hook must not be.
-NC_HOOKS_DIR="$(mktemp -d)"
+NC_HOOKS_DIR="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
 cp "$KIT_DIR/hooks/safety-gate.sh" "$NC_HOOKS_DIR/safety-gate.sh"
 cat > "$NC_HOOKS_DIR/fake-config-reader.sh" <<'FAKEHOOK'
 #!/usr/bin/env bash
@@ -197,14 +197,16 @@ done
 # Prod regime: resolver (KIT_CONFIG_ROOT pointed at the install dir) reads the
 # INSTALL file's [modules] (board=true, this run's --with).
 RESOLVER="$KIT_DIR/lib/config/kit-config.sh"
-PROD_VAL="$(KIT_CONFIG_ROOT="$H2/.claude/dwarves-kit" KIT_PROJECT_ROOT="$(mktemp -d)" bash -c "source '$RESOLVER'; kit_config_get modules.board")"
+_pr="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
+PROD_VAL="$(KIT_CONFIG_ROOT="$H2/.claude/dwarves-kit" KIT_PROJECT_ROOT="$_pr" bash -c "source '$RESOLVER'; kit_config_get modules.board")"
 assert_true "prod regime: resolver reads the INSTALL kit.toml (modules.board=true from --with board,stats)" "$([ "$PROD_VAL" = "true" ]; echo $?)"
 # Dev regime: resolver (KIT_CONFIG_ROOT pointed at the repo checkout) reads the
 # REPO-ROOT default directly -- proven distinct from the install copy by reading
 # a [mega] key whose repo-root default differs from nothing-installed (mega is
 # never in [modules], so it is untouched by install's per-run recompute; reading
 # it from the repo-root root at all is the proof this regime bypasses install).
-DEV_VAL="$(KIT_CONFIG_ROOT="$KIT_DIR" KIT_PROJECT_ROOT="$(mktemp -d)" bash -c "source '$RESOLVER'; kit_config_get mega.wave_cap")"
+_pr="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
+DEV_VAL="$(KIT_CONFIG_ROOT="$KIT_DIR" KIT_PROJECT_ROOT="$_pr" bash -c "source '$RESOLVER'; kit_config_get mega.wave_cap")"
 assert_true "dev regime: resolver reads the REPO-ROOT kit.toml directly (mega.wave_cap=2, no install needed)" "$([ "$DEV_VAL" = "2" ]; echo $?)"
 
 # ============================================================
@@ -238,42 +240,42 @@ echo "== NC output-style operator-level (SPEC-252 install gap): install.sh sets 
 # ============================================================
 # KIT_CONFIG_OPERATOR is a DIRECTORY (lib/config/kit-config.sh appends /kit.toml); scratch
 # per case so the real operator ~/.config/dwarves-kit/kit.toml never leaks into this suite.
-H8="$(mktemp -d)"
-OP8="$(mktemp -d)"
+H8="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
+OP8="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
 cat > "$OP8/kit.toml" <<'TOML'
 [output]
 style = "adhd"
 TOML
-HOME="$H8" KIT_CONFIG_OPERATOR="$OP8" bash "$KIT_DIR/install.sh" >/tmp/kitmod-h8.log 2>&1
+HOME="$H8" KIT_CONFIG_OPERATOR="$OP8" bash "$KIT_DIR/install.sh" >${TMPDIR:-/tmp}/kitmod-h8.log 2>&1
 STYLE8="$(jq -r '.outputStyle // ""' "$H8/.claude/settings.json" 2>/dev/null)"
 assert_true "operator kit.toml [output] style=adhd sets outputStyle in settings.json" "$([ "$STYLE8" = "adhd" ]; echo $?)"
 # Settle: install.sh's own hook/permission jq merge reorders between the very first run
 # (no prior settings.json, direct copy) and the second (merge pipeline); a third run
 # against an already-merged file is stable (pre-existing, unrelated to this step). One
 # more run here reaches that stable state before the idempotency check below.
-HOME="$H8" KIT_CONFIG_OPERATOR="$OP8" bash "$KIT_DIR/install.sh" >/tmp/kitmod-h8-settle.log 2>&1
+HOME="$H8" KIT_CONFIG_OPERATOR="$OP8" bash "$KIT_DIR/install.sh" >${TMPDIR:-/tmp}/kitmod-h8-settle.log 2>&1
 
 # ============================================================
 echo "== NC output-style empty: no [output] style leaves outputStyle unset =="
 # ============================================================
-H9="$(mktemp -d)"
-OP9="$(mktemp -d)"
-HOME="$H9" KIT_CONFIG_OPERATOR="$OP9" bash "$KIT_DIR/install.sh" >/tmp/kitmod-h9.log 2>&1
+H9="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
+OP9="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
+HOME="$H9" KIT_CONFIG_OPERATOR="$OP9" bash "$KIT_DIR/install.sh" >${TMPDIR:-/tmp}/kitmod-h9.log 2>&1
 HAS_STYLE9="$(jq -r 'has("outputStyle")' "$H9/.claude/settings.json" 2>/dev/null)"
 assert_true "no operator/kit-root output.style -> outputStyle key absent" "$([ "$HAS_STYLE9" = "false" ]; echo $?)"
 
 # ============================================================
 echo "== NC output-style idempotent re-run: byte-identical settings.json =="
 # ============================================================
-cp "$H8/.claude/settings.json" /tmp/kitmod-h8-before.json
-HOME="$H8" KIT_CONFIG_OPERATOR="$OP8" bash "$KIT_DIR/install.sh" >/tmp/kitmod-h8-rerun.log 2>&1
-assert_true "re-run with the same operator style is byte-identical" "$(cmp -s /tmp/kitmod-h8-before.json "$H8/.claude/settings.json"; echo $?)"
+cp "$H8/.claude/settings.json" ${TMPDIR:-/tmp}/kitmod-h8-before.json
+HOME="$H8" KIT_CONFIG_OPERATOR="$OP8" bash "$KIT_DIR/install.sh" >${TMPDIR:-/tmp}/kitmod-h8-rerun.log 2>&1
+assert_true "re-run with the same operator style is byte-identical" "$(cmp -s ${TMPDIR:-/tmp}/kitmod-h8-before.json "$H8/.claude/settings.json"; echo $?)"
 
 # ============================================================
 echo "== NC output-style path-shaped name refused =="
 # ============================================================
-H10="$(mktemp -d)"
-OP10="$(mktemp -d)"
+H10="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
+OP10="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
 cat > "$OP10/kit.toml" <<'TOML'
 [output]
 style = "../evil"

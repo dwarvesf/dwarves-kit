@@ -157,7 +157,7 @@ ship_rule_floor() {
   fi
   [ -f "$_SR_LCLS" ] || return 0
   [ "$base" != "$(git -C "$root" rev-parse "$head" 2>/dev/null || true)" ] || return 0
-  errf="$(mktemp 2>/dev/null)" || errf=""
+  errf="$(mktemp "${TMPDIR:-/tmp}/kit.XXXXXX" 2>/dev/null)" || errf=""
   if [ -n "$errf" ]; then hit=$(KIT_FLOOR_CONFIG_AT="${7:-}" bash "$_SR_LCLS" floor "$root" "$base" "$head" 2>"$errf" || true)
   else hit=$(KIT_FLOOR_CONFIG_AT="${7:-}" bash "$_SR_LCLS" floor "$root" "$base" "$head" || true); fi   # no scratch file: the raw lines reach stderr
   # Skips and refusals are shown and audited before any return, so a clean pass still names them.

@@ -16,7 +16,7 @@ source "$KIT_DIR/tests/lib/run-lock.sh"; run_lock_exec "$KIT_DIR/tests/test-wrap
 # Suites run concurrently (WRAP_JOBS at a time, largest file first so the slow ones start early).
 # Each suite's output and exit code land in its own temp file; printing follows glob order.
 WRAP_JOBS="${WRAP_JOBS:-4}"
-export OUT_DIR="$(mktemp -d "${TMPDIR:-/tmp}/test-wrap.XXXXXX")"
+OUT_DIR="$(mktemp -d "${TMPDIR:-/tmp}/test-wrap.XXXXXX")" || exit 1; export OUT_DIR
 trap 'rm -rf "$OUT_DIR"' EXIT
 
 # test-wrap counts the PASS lines of each suite; a cached land section prints none, so it runs fresh here.

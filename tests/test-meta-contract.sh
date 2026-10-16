@@ -138,7 +138,7 @@ done
 # exercises the jq clean+merge path. This test pre-seeds settings.json with a
 # THIRD-PARTY hook (a command that does NOT contain "dwarves-kit") and asserts the
 # merge preserves it, yields valid JSON, and still pulls in a dwarves-kit hook.
-MERGE_HOME=$(mktemp -d)
+MERGE_HOME=$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX") || exit 1
 mkdir -p "$MERGE_HOME/.claude"
 THIRD_PARTY_CMD="/opt/acme/hooks/audit-log.sh"
 # Build the pre-existing settings via jq so it is always well-formed JSON.

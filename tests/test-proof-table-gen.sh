@@ -23,7 +23,7 @@ expect()  { if { trap '' PIPE; printf '%s' "$3" 2>/dev/null || :; } | grep -qF "
 refute()  { if { trap '' PIPE; printf '%s' "$3" 2>/dev/null || :; } | grep -qF "$2"; then bad "$1 (unexpected '$2' present)"; else ok "$1"; fi; }
 assert_eq() { if [ "$2" = "$3" ]; then ok "$1"; else bad "$1 (expected '$3', got '$2')"; fi; }
 
-WORK="$(mktemp -d "${TMPDIR:-/tmp}/kit-proof-table-gen.XXXXXX")"
+WORK="$(mktemp -d "${TMPDIR:-/tmp}/kit-proof-table-gen.XXXXXX")" || exit 1
 trap 'rm -rf "$WORK"' EXIT
 export DWARVES_KIT_LOG_DIR="$WORK/logs"
 # Lane data (which gates a lane requires) layers the operator overlay over kit.toml. Pin the

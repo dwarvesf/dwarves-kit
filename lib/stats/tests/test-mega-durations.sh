@@ -33,7 +33,7 @@ has()  { case "$3" in *"$2"*) ok "$1";; *) bad "$1 (missing: $2)";; esac; }
 hasnt(){ case "$3" in *"$2"*) bad "$1 (unexpected: $2)";; *) ok "$1";; esac; }
 eq()   { if [ "$2" = "$3" ]; then ok "$1"; else bad "$1 (want '$3', got '$2')"; fi; }
 
-FIX="$(mktemp -d)"
+FIX="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
 # every non-kit source isolated to an absent path -- only kit_gates matters here.
 export STATS_TIDE_DB="$FIX/nonexistent.sqlite"
 export STATS_TGCLEANUP_DIR="$FIX/nonexistent-tg"

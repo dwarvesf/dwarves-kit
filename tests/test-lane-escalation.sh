@@ -20,7 +20,7 @@ FIX="$KIT_DIR/tests/fixtures/lane-escalation"
 # ~/.local/state/dwarves-kit/logs/completeness.log (the 12 leaked "jwt sessions" lines the
 # SPEC-073 eval found). Mirrors tests/test-hooks.sh's file-wide export. Per-command
 # `DWARVES_KIT_LOG_DIR="$LOG_DIR"` prefixes below intentionally override this for the ledger AC.
-export DWARVES_KIT_LOG_DIR="$(mktemp -d "${TMPDIR:-/tmp}/dwarves-kit-lane-esc.XXXXXX")"
+DWARVES_KIT_LOG_DIR="$(mktemp -d "${TMPDIR:-/tmp}/dwarves-kit-lane-esc.XXXXXX")" || exit 1; export DWARVES_KIT_LOG_DIR
 
 PASS=0; FAIL=0; TOTAL=0
 RED='\033[0;31m'; GREEN='\033[0;32m'; NC='\033[0m'
@@ -67,7 +67,7 @@ assert "AC3: escalate exits 0 on HOLD too" $([ "$EXIT_NEG" -eq 0 ] && echo 0 || 
 
 # same-lane control: normal spec text against a normal current lane also HOLDs (same
 # rank, not just lighter -- "same or lighter" both refuse to escalate)
-SAME_DIR="$(mktemp -d "${TMPDIR:-/tmp}/dwarves-kit-lane-esc.XXXXXX")"
+SAME_DIR="$(mktemp -d "${TMPDIR:-/tmp}/dwarves-kit-lane-esc.XXXXXX")" || exit 1
 printf '# Spec: bounded fix\n\n## Problem\nA bounded bug fix, nothing more.\n' > "$SAME_DIR/bug-spec.md"
 OUT_SAME="$(bash "$LC" escalate bug "$SAME_DIR/bug-spec.md" 2>&1)"
 assert_contains "AC3: same-rank re-class also HOLDs (bug vs bug-ranked text)" "HOLD bug" "$OUT_SAME"
@@ -80,7 +80,7 @@ assert_contains "AC6: the pre-existing 'check' downgrade guard still fires (unto
 echo ""
 echo "=== GATE-LEDGER RE-PLAN: start --amend re-plans up-only ==="
 # ============================================================
-LOG_DIR="$(mktemp -d "${TMPDIR:-/tmp}/dwarves-kit-lane-esc-ledger.XXXXXX")"
+LOG_DIR="$(mktemp -d "${TMPDIR:-/tmp}/dwarves-kit-lane-esc-ledger.XXXXXX")" || exit 1
 RID="lane-esc-test-run"
 DWARVES_KIT_LOG_DIR="$LOG_DIR" bash "$GL" start "$RID" tiny tiny feature feature testrepo >/dev/null 2>&1
 REQ_TINY="$(bash "$GL" required tiny 2>/dev/null)"

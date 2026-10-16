@@ -48,8 +48,8 @@ echo "== RUNTIME: full temp-HOME snapshot is byte-identical across two lens runs
 if ! command -v uv >/dev/null 2>&1 || [ ! -d "$STATS_DIR/.venv" ]; then
   skp "runtime snapshot NC (uv or the synced venv unavailable -- CI runs the LINT above; run locally after 'uv sync' to exercise this)"
 else
-  TMPHOME="$(mktemp -d)"
-  FIX="$(mktemp -d)"
+  TMPHOME="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
+  FIX="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
   mkdir -p "$FIX/runs"
   # a minimal fixture ledger: one run with a couple GATE lines so gate-yield has rows.
   cat > "$FIX/runs/np-fixrun.log" <<'EOF'
@@ -105,7 +105,7 @@ EOF
   fi
 
   echo "== RUNTIME honest-zero + determinism: empty ledger -> zeros, same answer twice =="
-  EMPTY="$(mktemp -d)"; mkdir -p "$EMPTY/runs"
+  EMPTY="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; mkdir -p "$EMPTY/runs"
   A="$(env -i PATH="$PATH" HOME="$TMPHOME" PYTHONDONTWRITEBYTECODE=1 KIT_LEDGER_DIR="$EMPTY" \
         STATS_SESSIONS_DIR="$TMPHOME/none" STATS_SECRET_GUARD_LOG="$TMPHOME/none.log" \
         STATS_MEMORY_PROJECTS_ROOT="$TMPHOME/none" STATS_GIT_REPO_DIR="$TMPHOME/none" \

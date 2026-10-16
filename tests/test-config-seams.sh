@@ -31,7 +31,7 @@ chk() {
 chk_has() { chk "$1" "$({ trap '' PIPE; printf '%s' "$2" 2>/dev/null || :; } | grep -qF -- "$3"; echo $?)"; }
 chk_no()  { chk "$1" "$({ trap '' PIPE; printf '%s' "$2" 2>/dev/null || :; } | grep -qF -- "$3" && echo 1 || echo 0)"; }
 
-TMPD="$(mktemp -d "${TMPDIR:-/tmp}/dk-config-seams-test.XXXXXX")"
+TMPD="$(mktemp -d "${TMPDIR:-/tmp}/dk-config-seams-test.XXXXXX")" || exit 1
 TMPD="$(cd "$TMPD" && pwd)"
 trap 'rm -rf "$TMPD"' EXIT
 

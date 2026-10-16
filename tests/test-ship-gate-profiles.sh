@@ -12,7 +12,7 @@ set -uo pipefail
 KIT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 export KIT_CONFIG_OPERATOR="$KIT_DIR/tests/fixtures/gates-on"   # quality gates are opt-in; this suite exercises them ON
 HOOK="$KIT_DIR/hooks/ship-gate.sh"
-LOGDIR="$(mktemp -d)"; trap 'rm -rf "$LOGDIR"' EXIT
+LOGDIR="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; trap 'rm -rf "$LOGDIR"' EXIT
 fails=0
 pass(){ echo "PASS $*"; }
 fail(){ echo "FAIL $*"; fails=$((fails+1)); }
@@ -63,9 +63,9 @@ EOF
 }
 
 for profile in eval tool-build feature; do
-  A="/tmp/vf-shipgate-$profile-allow"; build "$A" "$profile" 1   # complete proof
+  A="${TMPDIR:-/tmp}/vf-shipgate-$profile-allow"; build "$A" "$profile" 1   # complete proof
   if run_hook "$A"; then pass "[$profile] proof present -> ship-gate ALLOWS the push"; else fail "[$profile] complete proof should ALLOW but the hook BLOCKED"; fi
-  B="/tmp/vf-shipgate-$profile-block"; build "$B" "$profile" 0   # no negative-control run
+  B="${TMPDIR:-/tmp}/vf-shipgate-$profile-block"; build "$B" "$profile" 0   # no negative-control run
   if run_hook "$B"; then fail "[$profile] missing negative control should BLOCK but the hook ALLOWED"; else pass "[$profile] negative-control run missing -> ship-gate BLOCKS the push"; fi
 done
 

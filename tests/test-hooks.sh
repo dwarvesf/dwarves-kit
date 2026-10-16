@@ -12,7 +12,7 @@ export KIT_CONFIG_OPERATOR="$KIT_DIR/tests/fixtures/gates-on"   # quality gates 
 # ~/.claude/dwarves-kit/logs. The log-writing hooks honor DWARVES_KIT_LOG_DIR
 # (default unchanged in production). Removed on exit; the :? guard refuses to
 # rm an empty path.
-export DWARVES_KIT_LOG_DIR="$(mktemp -d "${TMPDIR:-/tmp}/dwarves-kit-test-logs.XXXXXX")"
+DWARVES_KIT_LOG_DIR="$(mktemp -d "${TMPDIR:-/tmp}/dwarves-kit-test-logs.XXXXXX")" || exit 1; export DWARVES_KIT_LOG_DIR
 trap 'rm -rf "${DWARVES_KIT_LOG_DIR:?}"' EXIT
 
 PASS=0
@@ -318,7 +318,7 @@ assert_output_contains "spec-next: next is numeric" "^[0-9][0-9][0-9]$" "$(bash 
 echo ""
 echo "=== stack-merge: the squash-stack dance, codified (SPEC-065) ==="
 # ============================================================
-SM_DIR=$(mktemp -d "${TMPDIR:-/tmp}/dwarves-kit-sm.XXXXXX")
+SM_DIR=$(mktemp -d "${TMPDIR:-/tmp}/dwarves-kit-sm.XXXXXX") || exit 1
 cat > "$SM_DIR/gh" <<'GHEOF'
 #!/bin/bash
 case "$*" in
@@ -348,7 +348,7 @@ assert_exit "stack-merge: zero-arg chain is loud, not a silent no-op" 64 $RC
 echo ""
 echo "=== install-by-copy: pinned install, no branch-following symlinks (SPEC-066) ==="
 # ============================================================
-IC_DIR=$(mktemp -d "${TMPDIR:-/tmp}/dwarves-kit-ic.XXXXXX")
+IC_DIR=$(mktemp -d "${TMPDIR:-/tmp}/dwarves-kit-ic.XXXXXX") || exit 1
 CLAUDE_DIR="$IC_DIR" bash "$KIT_DIR/install.sh" >/dev/null 2>&1
 assert_true "install: hooks are real files, not symlinks" "$([ -f "$IC_DIR/dwarves-kit/hooks/safety-gate.sh" ] && [ ! -L "$IC_DIR/dwarves-kit/hooks/safety-gate.sh" ]; echo $?)"
 assert_true "install: lib is a real dir" "$([ -d "$IC_DIR/dwarves-kit/lib" ] && [ ! -L "$IC_DIR/dwarves-kit/lib" ]; echo $?)"
@@ -365,7 +365,7 @@ CLAUDE_DIR="$IC_DIR" bash "$KIT_DIR/install.sh" >/dev/null 2>&1
 assert_output_not_contains "install: re-run reverts hand-edited installed hook (anti-drift)" "# drift" "$(tail -1 "$IC_DIR/dwarves-kit/hooks/safety-gate.sh")"
 # AC3 durability (review F1): a USER-owned contract file survives MULTIPLE installs,
 # because kit-managed-ness is the stamp's managed= list, not stamp presence.
-IC2_DIR=$(mktemp -d "${TMPDIR:-/tmp}/dwarves-kit-ic2.XXXXXX")
+IC2_DIR=$(mktemp -d "${TMPDIR:-/tmp}/dwarves-kit-ic2.XXXXXX") || exit 1
 mkdir -p "$IC2_DIR/dwarves-kit"
 echo "# MY OWN AGENTS" > "$IC2_DIR/dwarves-kit/AGENTS.md"
 CLAUDE_DIR="$IC2_DIR" bash "$KIT_DIR/install.sh" >/dev/null 2>&1
@@ -384,7 +384,7 @@ assert_output_contains "uninstall: user AGENTS.md untouched" "# MY OWN AGENTS" "
 echo ""
 echo "=== precedent: the intake read-back (SPEC-068) ==="
 # ============================================================
-PRE_DIR=$(mktemp -d "${TMPDIR:-/tmp}/dwarves-kit-pre.XXXXXX")
+PRE_DIR=$(mktemp -d "${TMPDIR:-/tmp}/dwarves-kit-pre.XXXXXX") || exit 1
 mkdir -p "$PRE_DIR/docs/specs" "$PRE_DIR/logs/runs"
 git -C "$PRE_DIR" init -q
 printf '# SPEC-001: Widget frobnicator pipeline\nfrobnicate the widget pipeline twice\n' > "$PRE_DIR/docs/specs/SPEC-001-widget.md"
@@ -404,7 +404,7 @@ assert_output_not_contains "precedent: negative control (source removed -> gone)
 echo ""
 echo "=== telemetry detectors: boardless + shipped-incomplete (SPEC-069) ==="
 # ============================================================
-BD_DIR=$(mktemp -d "${TMPDIR:-/tmp}/dwarves-kit-bd.XXXXXX")
+BD_DIR=$(mktemp -d "${TMPDIR:-/tmp}/dwarves-kit-bd.XXXXXX") || exit 1
 mkdir -p "$BD_DIR/repo/_meta" "$BD_DIR/logs/runs"
 git -C "$BD_DIR" init -q "$BD_DIR/repo"
 REPO_BASE="$(basename "$BD_DIR/repo")"
@@ -584,7 +584,7 @@ assert_exit "allows clean completion" 0 $RC
 # throwaway fixture dir. trap-cleaned; never writes into the repo.
 mkdbg() {  # mkdbg : fresh dir with .claude/debug/
   [ -n "${DBG:-}" ] && rm -rf "$DBG"
-  DBG=$(mktemp -d "${TMPDIR:-/tmp}/dk-dbg.XXXXXX")
+  DBG=$(mktemp -d "${TMPDIR:-/tmp}/dk-dbg.XXXXXX") || exit 1
   mkdir -p "$DBG/.claude/debug"
 }
 ratdbg() {  # ratdbg <assistant_response_json_string> : run hook from $DBG, echo exit code
@@ -604,7 +604,7 @@ RC=$(ratdbg '{"stop_hook_active":false,"assistant_response":"Let me just try a q
 assert_exit "allows guess-fix language once root cause recorded" 0 $RC
 
 # no .claude/debug at all: guard is dormant, guess-fix language passes
-NODBG=$(mktemp -d "${TMPDIR:-/tmp}/dk-nodbg.XXXXXX")
+NODBG=$(mktemp -d "${TMPDIR:-/tmp}/dk-nodbg.XXXXXX") || exit 1
 RC=0
 ( cd "$NODBG" && echo '{"stop_hook_active":false,"assistant_response":"Let me just try a quick fix and see."}' | bash "$KIT_DIR/hooks/anti-rationalization.sh" >/dev/null 2>&1 ) || RC=$?
 assert_exit "no-block guess-fix outside any debug session" 0 $RC
@@ -615,7 +615,7 @@ rm -rf "$NODBG"
 # marker in the uncommitted diff's added lines blocks; clean diff or no claim passes.
 mkpha() {
   [ -n "${PHA:-}" ] && rm -rf "$PHA"
-  PHA=$(mktemp -d "${TMPDIR:-/tmp}/dk-pha.XXXXXX")
+  PHA=$(mktemp -d "${TMPDIR:-/tmp}/dk-pha.XXXXXX") || exit 1
   ( cd "$PHA" && git init -q && git config user.email t@e && git config user.name t \
     && printf 'def f():\n    return 1\n' > a.py && git add -A && git commit -qm base )
 }
@@ -678,7 +678,7 @@ RC=$(run_hook secrets-guard.sh 'not json{')
 assert_exit "fail-open on malformed input" 0 $RC
 
 # H-1 (review): a symlink with an innocuous name pointing at a secret is blocked
-SLNK=$(mktemp -d "${TMPDIR:-/tmp}/dk-slnk.XXXXXX")
+SLNK=$(mktemp -d "${TMPDIR:-/tmp}/dk-slnk.XXXXXX") || exit 1
 mkdir -p "$SLNK/.ssh" && : > "$SLNK/.ssh/id_rsa" && ln -s "$SLNK/.ssh/id_rsa" "$SLNK/notes.txt"
 RC=$(run_hook secrets-guard.sh "{\"tool_name\":\"Read\",\"tool_input\":{\"file_path\":\"$SLNK/notes.txt\"}}")
 assert_exit "blocks Read of a symlink pointing at a secret" 2 $RC
@@ -896,7 +896,7 @@ paa_fallthrough "does not approve npx -y prettier (auto-confirms install)" '{"to
 # config-named program (diff.external, gpg.program). The hook approves git
 # only when rev-parse --is-inside-work-tree prints "true" from the payload's
 # .cwd ($PWD when absent); a bare layout prints "false".
-PAA_BARE=$(mktemp -d "${TMPDIR:-/tmp}/paa-bare.XXXXXX")
+PAA_BARE=$(mktemp -d "${TMPDIR:-/tmp}/paa-bare.XXXXXX") || exit 1
 git init -q --bare "$PAA_BARE/layout"
 
 paa_fallthrough "does not approve git log inside a bare layout (payload .cwd)" "$(printf '{"tool_name":"Bash","cwd":"%s","tool_input":{"command":"git log"}}' "$PAA_BARE/layout")"
@@ -1116,7 +1116,7 @@ af_bin() {
   fi
 }
 
-AF_TMP=$(mktemp -d "${TMPDIR:-/tmp}/dk-autofmt.XXXXXX")
+AF_TMP=$(mktemp -d "${TMPDIR:-/tmp}/dk-autofmt.XXXXXX") || exit 1
 RS="$AF_TMP/lib.rs"; printf 'fn main(){}\n' > "$RS"
 
 # B1a: rustup present and its stable rustfmt succeeds -> hook uses rustup, not plain rustfmt.
@@ -1178,7 +1178,7 @@ assert_exit "produces valid JSON" 0 $?
 # --- ambiguity, abort-path safety (reconciled to ADR-0010). ---
 mkfx() {  # mkfx <branch> : fresh throwaway git repo on <branch> with empty docs/specs
   [ -n "${FX:-}" ] && rm -rf "$FX"
-  FX=$(mktemp -d "${TMPDIR:-/tmp}/dk-cr.XXXXXX")
+  FX=$(mktemp -d "${TMPDIR:-/tmp}/dk-cr.XXXXXX") || exit 1
   ( cd "$FX" && git init -q && git checkout -q -b "$1" && mkdir -p docs/specs )
 }
 cr() { ( cd "$FX" && bash "$KIT_DIR/hooks/context-readiness.sh" 2>/dev/null ); }
@@ -1308,9 +1308,9 @@ assert_exit "respects stop_hook_active" 0 $RC
 # /tmp marker. The build/ canary is the falsifiable signal: the OLD grep-after
 # code filtered only node_modules|vendor|dist, so build/canary.py WOULD surface;
 # pruned, it must not. (CPU-descent perf is benched in the proof-of-done.)
-SCAN_MARKER=$(mktemp "${TMPDIR:-/tmp}/dk-mark.XXXXXX")
+SCAN_MARKER=$(mktemp "${TMPDIR:-/tmp}/dk-mark.XXXXXX") || exit 1
 touch -t 202001010000 "$SCAN_MARKER"
-SCAN_DIR=$(mktemp -d "${TMPDIR:-/tmp}/dk-scan.XXXXXX")
+SCAN_DIR=$(mktemp -d "${TMPDIR:-/tmp}/dk-scan.XXXXXX") || exit 1
 ( cd "$SCAN_DIR" && git init -q )
 printf 'v%s = 1\n' $(seq 350) > "$SCAN_DIR/touched.py"        # >300 lines -> bloat, at root
 mkdir -p "$SCAN_DIR/build"
@@ -1321,7 +1321,7 @@ assert_output_contains "slop: reports a bloated root source file (scan works)" "
 assert_output_not_contains "slop: prunes build/ (SPEC-086 canary, falsifiable)" "canary.py" "$SLOP_OUT"
 
 # guard: same bloated file in a NON-git dir -> hook skips the scan, no nudge
-NOGIT=$(mktemp -d "${TMPDIR:-/tmp}/dk-nogit.XXXXXX")
+NOGIT=$(mktemp -d "${TMPDIR:-/tmp}/dk-nogit.XXXXXX") || exit 1
 printf 'v%s = 1\n' $(seq 350) > "$NOGIT/orphan.py"
 SLOP_NG=$( cd "$NOGIT" && echo '{"stop_hook_active":false,"assistant_response":"done"}' \
   | DWARVES_KIT_SESSION_MARKER="$SCAN_MARKER" bash "$KIT_DIR/hooks/slop-cleaner.sh" 2>/dev/null )
@@ -1329,8 +1329,8 @@ assert_output_not_contains "slop: no scan outside a git work tree (guard)" "orph
 
 # --- cc-hyg-04: resolution memory. A flagged file nudges once per session, then
 # stays silent until its content changes (kills the "same 7 files re-flagged 19x" tax).
-MEM_MARK=$(mktemp "${TMPDIR:-/tmp}/dk-memmark.XXXXXX"); touch -t 202001010000 "$MEM_MARK"
-MEM_DIR=$(mktemp -d "${TMPDIR:-/tmp}/dk-mem.XXXXXX"); ( cd "$MEM_DIR" && git init -q )
+MEM_MARK=$(mktemp "${TMPDIR:-/tmp}/dk-memmark.XXXXXX") || exit 1; touch -t 202001010000 "$MEM_MARK"
+MEM_DIR=$(mktemp -d "${TMPDIR:-/tmp}/dk-mem.XXXXXX") || exit 1; ( cd "$MEM_DIR" && git init -q )
 printf 'v%s = 1\n' $(seq 350) > "$MEM_DIR/big.py"      # >300 lines -> bloat
 _slop_mem() { ( cd "$MEM_DIR" && echo '{"stop_hook_active":false,"session_id":"memtest"}' \
   | DWARVES_KIT_SESSION_MARKER="$MEM_MARK" bash "$KIT_DIR/hooks/slop-cleaner.sh" 2>/dev/null ); }
@@ -1352,7 +1352,7 @@ assert_output_contains "session-state: lists a changed source file" "touched.py"
 assert_output_not_contains "session-state: prunes build/ (SPEC-086 canary)" "canary.py" "$SS_STATE"
 
 # guard: outside a git work tree, does not scan (RECENT_FILES=none)
-NOGIT2=$(mktemp -d "${TMPDIR:-/tmp}/dk-nogit2.XXXXXX")
+NOGIT2=$(mktemp -d "${TMPDIR:-/tmp}/dk-nogit2.XXXXXX") || exit 1
 printf 'q = 9\n' > "$NOGIT2/orphan.py"
 ( cd "$NOGIT2" && echo '{"stop_hook_active":false}' \
   | DWARVES_KIT_SESSION_MARKER="$SCAN_MARKER" bash "$KIT_DIR/hooks/session-state-save.sh" 2>/dev/null )
@@ -1361,7 +1361,7 @@ assert_output_not_contains "session-state: no scan outside a git work tree (guar
 
 # --- cc-hyg-04: change-gated debounce. An unchanged Stop skips the rewrite+rotate;
 # a real change writes again (cuts the every-Stop tax without staleness risk).
-DB_DIR=$(mktemp -d "${TMPDIR:-/tmp}/dk-db.XXXXXX")
+DB_DIR=$(mktemp -d "${TMPDIR:-/tmp}/dk-db.XXXXXX") || exit 1
 ( cd "$DB_DIR" && git init -q && git config user.email t@t && git config user.name t && git commit -q --allow-empty -m base )
 # DEBUG=1 makes the hook print a "skipping" line when it debounces -- a robust
 # signal (archive filenames collide at 1s resolution, so counting is flaky).
@@ -1433,7 +1433,7 @@ echo ""
 echo "=== dispatch-gate: disjointness gate + drift guard (SPEC-032 / ADR-0019) ==="
 # ============================================================
 GATE="$KIT_DIR/lib/gate/dispatch-gate.sh"
-GT=$(mktemp -d "${TMPDIR:-/tmp}/dwarves-kit-gate.XXXXXX")
+GT=$(mktemp -d "${TMPDIR:-/tmp}/dwarves-kit-gate.XXXXXX") || exit 1
 printf '# x\n## Touches\n- `a/**`\n\n## Task\n- do\n' > "$GT/spec-a.md"
 printf '# y\n## Touches\n- `b/**`\n' > "$GT/spec-b.md"
 printf '# z\n## Touches\n- `a/sub/**`\n' > "$GT/spec-asub.md"
@@ -1455,7 +1455,7 @@ GATE_PLAN=$(bash "$GATE" plan "$GT/spec-a.md" "$GT/spec-b.md" "$GT/spec-asub.md"
 assert_output_contains "gate plan: spec-asub waits on spec-a (overlap serialized)" "WAIT.*spec-asub" "$GATE_PLAN"
 
 # drift guard: a throwaway git repo with goal branches + a hands-off list.
-GD=$(mktemp -d "${TMPDIR:-/tmp}/dwarves-kit-drift.XXXXXX")
+GD=$(mktemp -d "${TMPDIR:-/tmp}/dwarves-kit-drift.XXXXXX") || exit 1
 git -C "$GD" init -q
 git -C "$GD" config user.email t@t; git -C "$GD" config user.name t
 printf '### Hands-off shared-surface list\n- `CHANGELOG.md`\n- `docs/retro/v*.md`\n\n### next\n' > "$GD/WF.md"
@@ -1608,7 +1608,7 @@ assert_output_contains "type: budget absorb stays spec-feature" "^spec-feature$"
 echo ""
 echo "=== lane-telemetry: read-side aggregation over run ledgers (SPEC-061) ==="
 # ============================================================
-LT_DIR=$(mktemp -d "${TMPDIR:-/tmp}/dwarves-kit-lt.XXXXXX")
+LT_DIR=$(mktemp -d "${TMPDIR:-/tmp}/dwarves-kit-lt.XXXXXX") || exit 1
 mkdir -p "$LT_DIR/runs"
 printf '2026-06-10T07:00:00Z | START | lane=normal classified=full type=spec-feature repo=kitA\n2026-06-10T07:05:00Z | GATE | spec | ran | spec written\n2026-06-10T07:30:00Z | GATE | review | ran | FIX-FIRST findings=5\n2026-06-10T08:00:00Z | GATE | ship | ran | shipping pr=#38\n' > "$LT_DIR/runs/spec-a.log"
 printf '2026-06-10T09:00:00Z | START | lane=tiny classified=tiny type=doc repo=kitB\n2026-06-10T09:10:00Z | GATE | build | skipped | tiny lane\n' > "$LT_DIR/runs/spec-b.log"
@@ -1633,7 +1633,7 @@ assert_output_contains "telemetry: negative control (START removed -> untracked)
 echo ""
 echo "=== lane-telemetry: type misroutes + escaped defects (SPEC-062) ==="
 # ============================================================
-LT2_DIR=$(mktemp -d "${TMPDIR:-/tmp}/dwarves-kit-lt2.XXXXXX")
+LT2_DIR=$(mktemp -d "${TMPDIR:-/tmp}/dwarves-kit-lt2.XXXXXX") || exit 1
 mkdir -p "$LT2_DIR/runs"
 printf '2026-06-10T07:00:00Z | START | lane=normal classified=normal type=spec-feature ctype=eval repo=kitA\n2026-06-10T08:00:00Z | GATE | ship | ran | shipping pr=#41\n' > "$LT2_DIR/runs/spec-x.log"
 printf '2026-06-11T07:00:00Z | START | lane=bug classified=bug type=incident repo=kitA\n2026-06-11T07:01:00Z | ACTION | defect traced: escaped-from=spec-x cache stampede\n' > "$LT2_DIR/runs/bug-stampede.log"
@@ -1656,7 +1656,7 @@ assert_output_contains "telemetry: negative control (ctype stripped -> 0)" "type
 echo ""
 echo "=== lane-telemetry: review economics (ID-392) ==="
 # ============================================================
-RE_DIR=$(mktemp -d "${TMPDIR:-/tmp}/dwarves-kit-re.XXXXXX")
+RE_DIR=$(mktemp -d "${TMPDIR:-/tmp}/dwarves-kit-re.XXXXXX") || exit 1
 RE() { DWARVES_KIT_LOG_DIR="$RE_DIR" bash "$KIT_DIR/lib/gate/gate-ledger.sh" "$@" 2>/dev/null; }
 LTRE() { DWARVES_KIT_LOG_DIR="$RE_DIR" bash "$KIT_DIR/lib/telemetry/lane-telemetry.sh" "$@" 2>/dev/null; }
 # run-fp: one review round, clean SHIP -> first-pass.
@@ -1794,10 +1794,10 @@ echo ""
 echo "=== proof-ledger: the proof-of-done ship gate (diff-keyed, spec-independent) ==="
 # ============================================================
 PL="$KIT_DIR/lib/gate/proof-ledger.sh"
-export DWARVES_KIT_LOG_DIR=$(mktemp -d "${TMPDIR:-/tmp}/dwarves-kit-proof.XXXXXX")
+DWARVES_KIT_LOG_DIR="$(mktemp -d "${TMPDIR:-/tmp}/dwarves-kit-proof.XXXXXX")" || exit 1; export DWARVES_KIT_LOG_DIR
 # Build a temp repo with a base commit; echo "<root> <base>".
 _pl_repo() {
-  local d; d=$(mktemp -d "${TMPDIR:-/tmp}/dwarves-kit-pl.XXXXXX")
+  local d; d=$(mktemp -d "${TMPDIR:-/tmp}/dwarves-kit-pl.XXXXXX") || exit 1
   git -C "$d" init -q; git -C "$d" config user.email t@t.t; git -C "$d" config user.name t
   git -C "$d" commit -q --allow-empty -m "chore: base"
   printf '%s %s' "$d" "$(git -C "$d" rev-parse HEAD)"
@@ -1938,7 +1938,7 @@ echo "=== goal-registry: cross-session running-goal registry (SPEC-036 / ADR-002
 # ============================================================
 REG="$KIT_DIR/lib/goal/goal-registry.sh"
 # Isolate the registry in a temp dir (the override the lib reads), not the real .git.
-export GOAL_REGISTRY_DIR=$(mktemp -d "${TMPDIR:-/tmp}/dwarves-kit-reg.XXXXXX")
+GOAL_REGISTRY_DIR="$(mktemp -d "${TMPDIR:-/tmp}/dwarves-kit-reg.XXXXXX")" || exit 1; export GOAL_REGISTRY_DIR
 
 bash "$REG" claim goal-a full "src-a/**" >/dev/null 2>&1
 assert_exit "registry: claim goal-a (src-a/**) -> admitted" 0 "$?"
@@ -1981,8 +1981,8 @@ echo "=== goal-drafts: archive-on-ship lifecycle (SPEC-037 / ADR-0023) ==="
 # ============================================================
 DRF="$KIT_DIR/lib/goal/goal-drafts.sh"
 # Isolate both roots (the overrides the lib reads), not the real .claude/docs.
-export GOAL_DRAFTS_DIR=$(mktemp -d "${TMPDIR:-/tmp}/dwarves-kit-drf.XXXXXX")
-export GOAL_SPECS_DIR=$(mktemp -d "${TMPDIR:-/tmp}/dwarves-kit-spec.XXXXXX")
+GOAL_DRAFTS_DIR="$(mktemp -d "${TMPDIR:-/tmp}/dwarves-kit-drf.XXXXXX")" || exit 1; export GOAL_DRAFTS_DIR
+GOAL_SPECS_DIR="$(mktemp -d "${TMPDIR:-/tmp}/dwarves-kit-spec.XXXXXX")" || exit 1; export GOAL_SPECS_DIR
 
 # Seed specs: one SHIPPED, one still-live.
 printf -- '---\nStatus: SHIPPED (v1.0.0)\n---\n' > "$GOAL_SPECS_DIR/SPEC-027-mid-flight.md"
@@ -2107,7 +2107,7 @@ echo ""
 echo "=== backlog.sh: the Active queue as a kanban board (SPEC-055) ==="
 # ============================================================
 # Fixture: a minimal BACKLOG copy; BACKLOG_FILE points the helper at it.
-BLF=$(mktemp "${TMPDIR:-/tmp}/dk-backlog.XXXXXX.md")
+BLF=$(mktemp "${TMPDIR:-/tmp}/dk-backlog.XXXXXX.md") || exit 1
 cat > "$BLF" <<'BLEOF'
 # Backlog
 | ID | Title | Source | Target artifact | Lane | Status |
@@ -2145,7 +2145,7 @@ echo ""
 echo "=== SPEC-070: rid = branch slug (gate-ledger rid verb) ==="
 # ============================================================
 GL70="$KIT_DIR/lib/gate/gate-ledger.sh"
-RIDD=$(mktemp -d "${TMPDIR:-/tmp}/dk-rid.XXXXXX")
+RIDD=$(mktemp -d "${TMPDIR:-/tmp}/dk-rid.XXXXXX") || exit 1
 ( cd "$RIDD" && git init -q -b master . && git config user.email t@e && git config user.name t \
   && git commit -qm base --allow-empty )
 
@@ -2179,7 +2179,7 @@ assert_exit "rid succeeds on a prefixless branch" 0 $RC
 assert_eq_str "rid passes a prefixless branch through (hotfix-z)" "hotfix-z" "$OUT"
 
 # AC2: a repo whose default branch is main -> same refusal
-RIDM=$(mktemp -d "${TMPDIR:-/tmp}/dk-ridm.XXXXXX")
+RIDM=$(mktemp -d "${TMPDIR:-/tmp}/dk-ridm.XXXXXX") || exit 1
 ( cd "$RIDM" && git init -q -b main . && git config user.email t@e && git config user.name t \
   && git commit -qm base --allow-empty )
 OUT=$(cd "$RIDM" && bash "$GL70" rid 2>/dev/null); RC=$?
@@ -2228,7 +2228,7 @@ RC=0; grep -q "4. behavioral: the fallback for types with no registry row" "$PG7
 assert_exit "ID-061: rowless-type behavioral fallback still present (source pin)" 0 $RC
 
 # --- ID-063: boardless advisory reachable on a SPEC-LESS push ---
-SG71=$(mktemp -d "${TMPDIR:-/tmp}/dk-sg71.XXXXXX")
+SG71=$(mktemp -d "${TMPDIR:-/tmp}/dk-sg71.XXXXXX") || exit 1
 ( cd "$SG71" && git init -q -b main . && git config user.email t@e && git config user.name t \
   && mkdir -p _meta && printf '| ID-900 | some other row | x | x | tiny | queued |\n' > _meta/BACKLOG.md \
   && git add -A && git commit -qm base \
@@ -2244,7 +2244,7 @@ OUT=$( cd "$SG71" && printf '%s' '{"tool_input":{"command":"git push origin feat
 assert_output_not_contains "ID-063: boarded spec-less push is silent" "appears nowhere" "$OUT"
 
 # --- ID-062: build-ran run shipping no verification record -> advisory ---
-LOG62=$(mktemp -d "${TMPDIR:-/tmp}/dk-log62.XXXXXX")
+LOG62=$(mktemp -d "${TMPDIR:-/tmp}/dk-log62.XXXXXX") || exit 1
 mkdir -p "$LOG62/runs"
 printf '%s\n' \
   '2026-06-11T00:00:00Z | START | lane=bug classified=bug type=bug-fix repo=x' \
@@ -2270,7 +2270,7 @@ assert_output_not_contains "ID-062: tiny-lane run never warns" "ships no docs/ve
 rm -rf "$SG71" "$LOG62"
 
 # --- ID-050: out-of-order disposed phase gets * + legend; in-order stays clean ---
-LOG50=$(mktemp -d "${TMPDIR:-/tmp}/dk-log50.XXXXXX")
+LOG50=$(mktemp -d "${TMPDIR:-/tmp}/dk-log50.XXXXXX") || exit 1
 mkdir -p "$LOG50/runs"
 printf '%s\n' \
   '2026-06-11T00:00:00Z | GATE | grill | ran | q' \
@@ -2393,7 +2393,7 @@ OUT=$(bash "$GL76" required tiny)
 assert_output_not_contains "tiny required still excludes review (run-lite, not measure-twice)" "review" "$OUT"
 
 # AC2: descent violation + clean
-LOG76=$(mktemp -d "${TMPDIR:-/tmp}/dk-log76.XXXXXX")
+LOG76=$(mktemp -d "${TMPDIR:-/tmp}/dk-log76.XXXXXX") || exit 1
 mkdir -p "$LOG76/runs"
 printf '%s\n' \
   '2026-06-11T01:00:00Z | GATE | build | ran | jumped the gun' \
@@ -2448,7 +2448,7 @@ N=$(DWARVES_KIT_LOG_DIR="$LOG76" bash "$GL76" descent dup bug 2>&1 | grep -c 'DE
 assert_exit "violations dedup to one line per (phase, gap) pair" 0 $([ "$N" = "1" ]; echo $?)
 
 # AC3: ship-gate advisory (violating ledger) + silence (clean)
-SG76=$(mktemp -d "${TMPDIR:-/tmp}/dk-sg76.XXXXXX")
+SG76=$(mktemp -d "${TMPDIR:-/tmp}/dk-sg76.XXXXXX") || exit 1
 ( cd "$SG76" && git init -q -b main . && git config user.email t@e && git config user.name t \
   && mkdir -p _meta && printf '| ID-1 | viol work | x | x | tiny | queued |\n' > _meta/BACKLOG.md \
   && git add -A && git commit -qm base && git switch -q -c feat/viol && printf 'x\n' > f && git add -A && git commit -qm w )
@@ -2479,7 +2479,7 @@ echo "=== SPEC-077: START amend + stack-merge self-reconcile (ID-072/073) ==="
 GL77="$KIT_DIR/lib/gate/gate-ledger.sh"
 LT77="$KIT_DIR/lib/telemetry/lane-telemetry.sh"
 SM77="$KIT_DIR/lib/goal/stack-merge.sh"
-LOG77=$(mktemp -d "${TMPDIR:-/tmp}/dk-log77.XXXXXX")
+LOG77=$(mktemp -d "${TMPDIR:-/tmp}/dk-log77.XXXXXX") || exit 1
 mkdir -p "$LOG77/runs"
 
 # ID-072: amend verb + unified read contract
@@ -2496,7 +2496,7 @@ assert_output_not_contains "a sanctioned amend does not flag MULTI-START" "MULTI
 OUT=$(DWARVES_KIT_LOG_DIR="$LOG77" bash "$LT77" report 2>&1)
 assert_output_not_contains "report counts the amended lane (no misroute from the corrected line)" "lane-misrouted: 1" "$OUT"
 # review F1: AMEND-first then a plain START , the amend still wins in report
-LOGAF=$(mktemp -d "${TMPDIR:-/tmp}/dk-logaf.XXXXXX")
+LOGAF=$(mktemp -d "${TMPDIR:-/tmp}/dk-logaf.XXXXXX") || exit 1
 mkdir -p "$LOGAF/runs"
 printf '%s\n' \
   '2026-06-11T02:00:00Z | START-AMEND | lane=full classified=full type=bug-fix repo=r' \
@@ -2516,7 +2516,7 @@ assert_output_contains "plain duplicate STARTs still flag MULTI-START" "MULTI-ST
 rm -rf "$LOG77"
 
 # ID-073: _ensure_reconciled unit fixtures (local bare remote, no gh)
-SMW=$(mktemp -d "${TMPDIR:-/tmp}/dk-smw.XXXXXX")
+SMW=$(mktemp -d "${TMPDIR:-/tmp}/dk-smw.XXXXXX") || exit 1
 ( cd "$SMW" && git init -q --bare remote.git \
   && git clone -q remote.git work 2>/dev/null && cd work \
   && git config user.email t@e && git config user.name t \
@@ -2568,7 +2568,7 @@ echo ""
 echo "=== SPEC-080: INCONCLUSIVE never satisfies the proof gate ==="
 # ============================================================
 PL80="$KIT_DIR/lib/gate/proof-ledger.sh"
-PR80=$(mktemp -d "${TMPDIR:-/tmp}/dk-pr80.XXXXXX")
+PR80=$(mktemp -d "${TMPDIR:-/tmp}/dk-pr80.XXXXXX") || exit 1
 ( cd "$PR80" && git init -q -b main . && git config user.email t@e && git config user.name t \
   && mkdir -p docs/verification && printf 'convention\n' > docs/verification/README.md \
   && printf 'x\n' > app.sh && git add -A && git commit -qm base \
@@ -2598,7 +2598,7 @@ rm -rf "$PR80"
 # ============================================================
 # output-offload.sh -- threshold + reversible offload (SG-06)
 # ============================================================
-OFFLOAD_CACHE="$(mktemp -d "${TMPDIR:-/tmp}/dwarves-kit-offload-test.XXXXXX")"
+OFFLOAD_CACHE="$(mktemp -d "${TMPDIR:-/tmp}/dwarves-kit-offload-test.XXXXXX")" || exit 1
 trap 'rm -rf "${DWARVES_KIT_LOG_DIR:?}" "${OFFLOAD_CACHE:?}"' EXIT
 run_offload() {  # $1=input json ; sets OFFLOAD_OUT ; budget = 25 tokens (~100 chars)
   OFFLOAD_OUT=$(printf '%s' "$1" | XDG_CACHE_HOME="$OFFLOAD_CACHE" OFFLOAD_MAX_TOKENS=25 \
@@ -2730,11 +2730,11 @@ _git_repo() {  # _git_repo <dir> : init a repo with one commit
   mkdir -p "$1" && ( cd "$1" && git init -q && git config user.email t@t && git config user.name t \
     && git commit -q --allow-empty -m base )
 }
-AN_MARK=$(mktemp "${TMPDIR:-/tmp}/dk-anmark.XXXXXX")
+AN_MARK=$(mktemp "${TMPDIR:-/tmp}/dk-anmark.XXXXXX") || exit 1
 touch -t 202001010000 "$AN_MARK"
 
 # Case 1: session-state-save from a nested subdirectory writes at the toplevel.
-SUBDIR_REPO=$(mktemp -d "${TMPDIR:-/tmp}/dk-subdir.XXXXXX")
+SUBDIR_REPO=$(mktemp -d "${TMPDIR:-/tmp}/dk-subdir.XXXXXX") || exit 1
 _git_repo "$SUBDIR_REPO"
 mkdir -p "$SUBDIR_REPO/docs/specs" "$SUBDIR_REPO/.claude/handoffs"
 printf '# Spec\nStatus: DRAFT\n' > "$SUBDIR_REPO/docs/specs/SPEC-001-x.md"
@@ -2751,7 +2751,7 @@ assert_output_contains "anchor: session-state subdir with content scans the root
   "$(printf '%s\n' "$AN_STATE" | sed -n '/^## Files modified this session/,/^## /p')"
 
 # Case 2: a worktree session keeps its own state, the main checkout is untouched.
-WT_DIR=$(mktemp -d "${TMPDIR:-/tmp}/dk-wt.XXXXXX")
+WT_DIR=$(mktemp -d "${TMPDIR:-/tmp}/dk-wt.XXXXXX") || exit 1
 rmdir "$WT_DIR"   # git worktree add wants to create the directory itself
 ( cd "$SUBDIR_REPO" && git worktree add -q "$WT_DIR" -b anchor-wt 2>/dev/null )
 mkdir -p "$WT_DIR/sub"
@@ -2766,7 +2766,7 @@ assert_true "anchor: worktree keeps own state, main checkout state unchanged" $?
 ( cd "$SUBDIR_REPO" && git worktree remove --force "$WT_DIR" 2>/dev/null )
 
 # Case 3: outside a git repo the wrapper is a no-op (same contract as NOGIT2 above).
-NOGIT3=$(mktemp -d "${TMPDIR:-/tmp}/dk-nogit3.XXXXXX")
+NOGIT3=$(mktemp -d "${TMPDIR:-/tmp}/dk-nogit3.XXXXXX") || exit 1
 printf 'q = 9\n' > "$NOGIT3/orphan.py"
 ( cd "$NOGIT3" && echo '{"stop_hook_active":false}' \
   | DWARVES_KIT_SESSION_MARKER="$AN_MARK" bash "$ANCHOR" "$KIT_DIR/hooks/session-state-save.sh" 2>/dev/null )
@@ -2774,7 +2774,7 @@ SS_NG3=$(cat "$NOGIT3/.claude/session-state/last-state.md" 2>/dev/null)
 assert_output_not_contains "anchor: session-state outside a repo, wrapper-routed, does not scan" "orphan.py" "$SS_NG3"
 
 # Case 4: pre-compact-backup from a subdirectory writes at the toplevel.
-PCB_REPO=$(mktemp -d "${TMPDIR:-/tmp}/dk-pcb.XXXXXX")
+PCB_REPO=$(mktemp -d "${TMPDIR:-/tmp}/dk-pcb.XXXXXX") || exit 1
 _git_repo "$PCB_REPO"
 mkdir -p "$PCB_REPO/docs/specs" "$PCB_REPO/.claude/handoffs"
 printf '# Spec\nStatus: DRAFT\n' > "$PCB_REPO/docs/specs/SPEC-001-x.md"
@@ -2798,7 +2798,7 @@ assert_true "anchor: writer/reader pair, backups dir is at the repo root" $?
 assert_true "anchor: writer/reader pair, no nested backups dir" $?
 
 # Case 6: ship-gate resolves a relative embedded cd against the real invocation cwd.
-AN_PARENT=$(mktemp -d "${TMPDIR:-/tmp}/dk-parent.XXXXXX")
+AN_PARENT=$(mktemp -d "${TMPDIR:-/tmp}/dk-parent.XXXXXX") || exit 1
 _git_repo "$AN_PARENT/session-repo"; mkdir -p "$AN_PARENT/session-repo/sub"
 _git_repo "$AN_PARENT/other-repo"
 AN_EXPECT=$(cd / && cd "$AN_PARENT/other-repo" && pwd -P)
@@ -2822,7 +2822,7 @@ _cddir_check "anchor: ship-gate relative cd resolves via DWARVES_KIT_INVOCATION_
 ( cd "$AN_PARENT/other-repo" && git checkout -q -b feat/anchor-probe && mkdir -p _meta \
   && printf '| ID | Item | Status |\n|---|---|---|\n| X-1 | unrelated | queued |\n' > _meta/BACKLOG.md \
   && git add -A && git commit -q -m backlog )
-AN_EMPTY_PLUGIN=$(mktemp -d "${TMPDIR:-/tmp}/dk-noplugin.XXXXXX")
+AN_EMPTY_PLUGIN=$(mktemp -d "${TMPDIR:-/tmp}/dk-noplugin.XXXXXX") || exit 1
 AN_SG_ERR=$( cd "$AN_PARENT/session-repo/sub" \
   && printf '{"cwd":"%s","tool_input":{"command":"git push origin feat/anchor-probe"}}' "$AN_PARENT/other-repo" \
   | CLAUDE_PLUGIN_ROOT="$AN_EMPTY_PLUGIN" bash "$ANCHOR" "$KIT_DIR/hooks/ship-gate.sh" 2>&1 >/dev/null )
@@ -2831,12 +2831,12 @@ assert_output_contains "anchor: ship-gate payload cwd resolves root via git -C (
 
 # Case 7: every entry in BOTH dispatch tables launches through the wrapper (never 126/127).
 # Side effects fenced: HOME is a temp dir, and PATH stubs shadow the notifier and indexer.
-AN_HOME=$(mktemp -d "${TMPDIR:-/tmp}/dk-anhome.XXXXXX")
+AN_HOME=$(mktemp -d "${TMPDIR:-/tmp}/dk-anhome.XXXXXX") || exit 1
 mkdir -p "$AN_HOME/stubs"
 for _b in osascript notify-send codebase-memory-mcp; do
   printf '#!/bin/sh\nexit 0\n' > "$AN_HOME/stubs/$_b"; chmod +x "$AN_HOME/stubs/$_b"
 done
-AN_SMOKE=$(mktemp -d "${TMPDIR:-/tmp}/dk-smoke.XXXXXX")
+AN_SMOKE=$(mktemp -d "${TMPDIR:-/tmp}/dk-smoke.XXXXXX") || exit 1
 _git_repo "$AN_SMOKE"; mkdir -p "$AN_SMOKE/sub"
 AN_BAD=""; AN_N=0
 while IFS= read -r _cmd; do
@@ -2879,7 +2879,7 @@ _gate_rc() {  # _gate_rc <cwd> <payload> <hook> <table> [env assignments...] : e
   ( cd "$cwd" && printf '%s' "$payload" | env "$@" sh -c "$cmd" >/dev/null 2>&1 ) || rc=$?
   echo "$rc"
 }
-GB=$(mktemp -d "${TMPDIR:-/tmp}/dk-gateblock.XXXXXX")
+GB=$(mktemp -d "${TMPDIR:-/tmp}/dk-gateblock.XXXXXX") || exit 1
 _git_repo "$GB/repo"; mkdir -p "$GB/repo/sub"
 # ship-gate fixture: a feature branch whose normal-lane spec has no recorded gates
 ( cd "$GB/repo" && git checkout -q -b feat/anchor-sg && mkdir -p docs/specs \
@@ -2924,7 +2924,7 @@ rm -rf "$GB"
 
 # The anchor cds only when the physical cwd sits under git's toplevel. With GIT_WORK_TREE
 # pointing elsewhere, a cd would strand the hook outside any repo, so it stays put.
-AW=$(mktemp -d "${TMPDIR:-/tmp}/dk-anworktree.XXXXXX")
+AW=$(mktemp -d "${TMPDIR:-/tmp}/dk-anworktree.XXXXXX") || exit 1
 _git_repo "$AW/repo"; mkdir -p "$AW/repo/sub" "$AW/elsewhere"
 printf '#!/bin/bash\npwd -P\n' > "$AW/probe.sh"; chmod +x "$AW/probe.sh"
 AW_REPO=$(cd "$AW/repo" && pwd -P); AW_ELSE=$(cd "$AW/elsewhere" && pwd -P)
@@ -2938,7 +2938,7 @@ rm -rf "$AW"
 echo ""
 echo "=== post-compact-reinject (SessionStart compact) ==="
 # ============================================================
-PCR_REPO=$(mktemp -d "${TMPDIR:-/tmp}/dk-pcr.XXXXXX")
+PCR_REPO=$(mktemp -d "${TMPDIR:-/tmp}/dk-pcr.XXXXXX") || exit 1
 _git_repo "$PCR_REPO"
 mkdir -p "$PCR_REPO/docs/specs"
 printf '# SPEC-001: x\nStatus: DRAFT\n\n## Problem\n\nCompaction drops the "spec" intent C:\\dir\n  and more.\n\n## Other\nnot this\n' > "$PCR_REPO/docs/specs/SPEC-001-x.md"
@@ -2949,7 +2949,7 @@ assert_output_contains "reinject: additionalContext carries the SPEC line" "SPEC
 assert_output_contains "reinject: additionalContext carries the Problem intent, quotes and backslashes intact" 'INTENT: Compaction drops the "spec" intent C:[\]dir and more.' "$PCR_CTX"
 assert_output_not_contains "reinject: intent stops at the first paragraph" "not this" "$PCR_CTX"
 
-PCR_REPO2=$(mktemp -d "${TMPDIR:-/tmp}/dk-pcr2.XXXXXX")
+PCR_REPO2=$(mktemp -d "${TMPDIR:-/tmp}/dk-pcr2.XXXXXX") || exit 1
 _git_repo "$PCR_REPO2"
 mkdir -p "$PCR_REPO2/docs/specs"
 printf '# SPEC-001: y\nStatus: DRAFT\n\n## Notes\nno intent section\n' > "$PCR_REPO2/docs/specs/SPEC-001-y.md"
@@ -2972,7 +2972,7 @@ echo "=== flick: a command-layer tool, never called from a hook (no LLM API call
 # ============================================================
 FLICK_HITS="$(grep -rIl -e 'bin/flick' -e 'lib/decide' -e 'flick\.sh' "$KIT_DIR/hooks" 2>/dev/null | grep -v '/tests/' || true)"
 assert_true "no file under hooks/ references flick" "$([ -z "$FLICK_HITS" ] && echo 0 || echo 1)"
-FLICK_PLANT="$(mktemp -d)"; echo 'bash "$DWARVES_KIT/bin/flick" < x' > "$FLICK_PLANT/h.sh"
+FLICK_PLANT="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; echo 'bash "$DWARVES_KIT/bin/flick" < x' > "$FLICK_PLANT/h.sh"
 assert_true "the flick pin is not vacuous: a planted reference is found" "$(grep -rIl -e 'bin/flick' "$FLICK_PLANT" >/dev/null 2>&1 && echo 0 || echo 1)"
 rm -r "$FLICK_PLANT"
 

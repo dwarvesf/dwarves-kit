@@ -97,7 +97,7 @@ assert "agent cites the audit-loop pattern doc" $?
 echo ""
 echo "=== NC: write-capable fixture roster trips the AC1 check ==="
 
-FIXTURE_DIR="$(mktemp -d -t audit-scanner-contract.XXXXXX)"
+FIXTURE_DIR="$(mktemp -d "${TMPDIR:-/tmp}/audit-scanner-contract.XXXXXX")" || exit 1
 trap 'rm -rf "$FIXTURE_DIR"' EXIT
 
 cat > "$FIXTURE_DIR/agent-writey.md" <<'EOF'

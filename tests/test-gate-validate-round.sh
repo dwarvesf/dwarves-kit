@@ -14,7 +14,7 @@ set -uo pipefail
 # Hermetic git: no inherited repo env (GIT_DIR/GIT_COMMON_DIR/...), no user
 # config, no real HOME -- the suite must behave identically on any host.
 unset $(git rev-parse --local-env-vars)
-VR_HOME="$(mktemp -d)"; HOME="$VR_HOME"; export HOME
+VR_HOME="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; HOME="$VR_HOME"; export HOME
 export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
 KIT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 GL="$KIT_DIR/lib/gate/gate-ledger.sh"
@@ -24,7 +24,7 @@ RED='\033[0;31m'; GREEN='\033[0;32m'; NC='\033[0m'
 assert() { TOTAL=$((TOTAL+1)); if [ "$2" -eq 0 ]; then echo -e "  ${GREEN}PASS${NC} $1"; PASS=$((PASS+1)); else echo -e "  ${RED}FAIL${NC} $1"; FAIL=$((FAIL+1)); fi; }
 
 TMPS=("$VR_HOME")
-_mk() { local d; d="$(mktemp -d)"; TMPS+=("$d"); printf '%s' "$d"; }
+_mk() { local d; d="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || return 1; TMPS+=("$d"); printf '%s' "$d"; }
 cleanup() { local d; for d in "${TMPS[@]:-}"; do [ -n "$d" ] && rm -rf "$d" 2>/dev/null; done; }
 trap cleanup EXIT
 

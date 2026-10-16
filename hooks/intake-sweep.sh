@@ -64,7 +64,7 @@ else
   root=$(git rev-parse --show-toplevel 2>/dev/null) && [ -n "$root" ] || root=$(pwd -P)
 fi
 
-W=$(mktemp -d) || exit 0
+W=$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX") || exit 0
 trap 'case "$W" in /*/*) command rm -rf -- "$W" ;; esac 2>/dev/null' EXIT
 
 cfg="${INTAKE_SWEEP_CONFIG:-$(hu_join "$root" _meta/intake-sources.json)}"

@@ -38,7 +38,7 @@ eq()  { [ "$2" = "$3" ] && ok "$1" || bad "$1 (got '$2', want '$3')"; }
 has() { printf '%s' "$2" | grep -qF -- "$3" && ok "$1" || bad "$1 (missing '$3' in '$2')"; }
 lacks() { printf '%s' "$2" | grep -qF -- "$3" && bad "$1 (found '$3' in '$2')" || ok "$1"; }
 
-WORK="$(mktemp -d)"
+WORK="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
 trap 'command rm -rf "$WORK"' EXIT
 export HOME="$WORK/home"; mkdir -p "$HOME"
 export DWARVES_HERMES_LINKS="$WORK/links.json"

@@ -9,7 +9,7 @@ export KIT_CONFIG_OPERATOR="$KIT_DIR/tests/fixtures/gates-on"   # quality gates 
 CODEX_MANIFEST="${CODEX_MANIFEST:-$KIT_DIR/.codex-plugin/plugin.json}"
 CODEX_HOOKS_FILE="${CODEX_HOOKS_FILE:-$KIT_DIR/hooks/codex-hooks.json}"
 ADAPTER="$KIT_DIR/hooks/codex-hook-adapter.sh"
-TEST_DIR="$(mktemp -d "${TMPDIR:-/tmp}/dwarves-kit-codex-hooks.XXXXXX")"
+TEST_DIR="$(mktemp -d "${TMPDIR:-/tmp}/dwarves-kit-codex-hooks.XXXXXX")" || exit 1
 export DWARVES_KIT_LOG_DIR="$TEST_DIR/logs"
 export PLUGIN_ROOT="$KIT_DIR"
 

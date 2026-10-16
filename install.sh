@@ -725,7 +725,7 @@ unset _h _esc
 KIT_STATUSLINE_ON=0
 case " $KIT_ENABLED_HOOK_NAMES " in *" statusline.sh "*) KIT_STATUSLINE_ON=1 ;; esac
 
-KIT_SETTINGS_FILTERED="$(mktemp)"
+KIT_SETTINGS_FILTERED="$(mktemp "${TMPDIR:-/tmp}/kit.XXXXXX")"
 jq --arg re "$KIT_HOOK_RE" --argjson sl "$KIT_STATUSLINE_ON" '
   .hooks |= (
     to_entries | map(
@@ -1026,7 +1026,7 @@ if [ -f "$KIT_DIR/kit.toml" ] && [ -f "$SETTINGS_FILE" ] && command -v jq >/dev/
     source "$KIT_DIR/lib/config/kit-config.sh"
   }
   if _kit_load_config_resolver_for_style 2>/dev/null; then
-    KIT_STYLE_SCRATCH="$(mktemp -d)"
+    KIT_STYLE_SCRATCH="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")"
     OUTPUT_STYLE_NAME="$(KIT_CONFIG_ROOT="$KIT_DIR" KIT_PROJECT_ROOT="$KIT_STYLE_SCRATCH" \
       kit_config_get "output.style" "")"
     rmdir "$KIT_STYLE_SCRATCH" 2>/dev/null || true

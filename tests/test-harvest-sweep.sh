@@ -7,7 +7,7 @@
 # Exit 0 = all tests pass. Exit 1 = failures found.
 
 KIT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-TD="$(mktemp -d "${TMPDIR:-/tmp}/harvest-sweep-test.XXXXXX")"
+TD="$(mktemp -d "${TMPDIR:-/tmp}/harvest-sweep-test.XXXXXX")" || exit 1
 trap 'rm -rf "${TD:?}"' EXIT
 
 export HARVEST_STATE_DIR="$TD/state"
@@ -3089,7 +3089,7 @@ t14() { printf '%s\n' "$T14_OUT" | sed -n "s/^$1=//p"; }
 assert_eq "AC28: --status on a state with no run prints none" "0|none" "$(t14 status_none)"
 # The documented entry is hooks/harvest.py --status; the dispatcher must route it
 # to the sweep, not fall through to the hook path and exit 0 silently.
-status_state=$(mktemp -d)
+status_state=$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX") || exit 1
 status_out=$(HARVEST_STATE_DIR="$status_state" python3 "$KIT_DIR/hooks/harvest.py" --status </dev/null 2>/dev/null; echo "|$?")
 assert_eq "AC28: harvest.py --status routes to the sweep" "none|0" "$(printf '%s' "$status_out" | tr -d '\n')"
 assert_eq "AC4: an active --sweep runs end to end at rc 0" "0" "$(t14 sweep_rc)"

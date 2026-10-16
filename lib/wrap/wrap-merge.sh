@@ -171,7 +171,7 @@ _union_dedupe_rows() {
 # prints its path. No operator checkout is touched. `_scratch_wt_drop` removes it.
 _scratch_wt_add() {
   local d
-  d="$(mktemp -d)" || return 1
+  d="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || return 1
   git -C "$1" worktree add -q --detach "$d/wt" "$2" >/dev/null 2>&1 || { rm -rf "$d"; return 1; }
   printf '%s' "$d/wt"
 }
@@ -446,7 +446,7 @@ cmd_merge() {
 
   # Exactly one detail read per PR. The full JSON goes to its own temp file and the
   # eligibility loop reads it back, because the dependents gate needs every base first.
-  local jsondir; jsondir="$(mktemp -d)"
+  local jsondir; jsondir="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")"
   local cache="${jsondir}/index"
   local n detail base head
   for n in $numbers; do
