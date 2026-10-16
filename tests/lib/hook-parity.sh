@@ -105,8 +105,12 @@ hp_run_case() {
   fi
 
   local rc=0 out err
-  err=$(cd "$cwd" && env -i PATH="$PATH" HOME="$home" TMPDIR="${TMPDIR:-/tmp}" LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8 \
-    ${envs[@]+"${envs[@]}"} "$@" ${extra[@]+"${extra[@]}"} < "$payload" 2>&1 >"$T/stdout") || rc=$?
+  # A hook that hangs (a mutated port blocking on stdin, or a detached child that keeps a pipe
+  # open) must fail the case, not the suite: 30 s alarm on the hook (macOS has no timeout), stderr
+  # to a file so no pipe waits on a leaked child.
+  (cd "$cwd" && env -i PATH="$PATH" HOME="$home" TMPDIR="${TMPDIR:-/tmp}" LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8 \
+    ${envs[@]+"${envs[@]}"} perl -e 'alarm shift; exec @ARGV' 30 "$@" ${extra[@]+"${extra[@]}"} < "$payload" 2>"$T/stderr" >"$T/stdout") || rc=$?
+  err=$(cat "$T/stderr")
   out=$(cat "$T/stdout")
 
   local settle_pat settle_glob settle_n
