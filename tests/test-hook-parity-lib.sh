@@ -76,6 +76,28 @@ got=$(HP_LOG_VAR=FAKE_HOOK_LOG hp_run_case "$c" bash "$FAKE/fake-hook.sh")
 [ "$(jq -r '.stray' <<<"$got")" = "" ] && ok=1 || ok=0
 check "no stray reported when the hook writes only its log" "$ok"
 
+# --- seed, read, and the @HOME@ / @CWD@ tokens ---
+cat > "$FAKE/seed-hook.sh" <<'EOS'
+#!/usr/bin/env bash
+set -uo pipefail
+cat >/dev/null
+n=$(cat "$HOME/in.json" 2>/dev/null)
+mkdir -p "$(dirname "$STATE_OUT")"
+printf '{"n":%s,"x":1000.0}' "${n:-0}" > "$STATE_OUT"
+echo "wrote $STATE_OUT"
+EOS
+c=$(jq -n '{name:"seed-read", env:{STATE_OUT:"@HOME@/out/state.json"}, payload:"hi",
+  seed:{"home/in.json":"7"}, read:["home/out/state.json","home/missing.json"]}')
+got=$(hp_run_case "$c" bash "$FAKE/seed-hook.sh")
+[ "$(jq -c '.files' <<<"$got")" = '{"home/out/state.json":"{\"n\":7,\"x\":1000}","home/missing.json":null}' ] && ok=1 || ok=0
+check "seed feeds the hook and read dumps files (numbers canonical, missing is null)" "$ok"
+[ "$(jq -r '.stdout' <<<"$got")" = "wrote @HOME@/out/state.json" ] && ok=1 || ok=0
+check "the temp HOME folds back to @HOME@ in stdout" "$ok"
+c=$(jq -n '{name:"no-read", payload:"hi"}')
+got=$(hp_run_case "$c" bash "$FAKE/fake-hook.sh")
+[ "$(jq -r 'has("files")' <<<"$got")" = "false" ] && ok=1 || ok=0
+check "a case with no read list emits no files field" "$ok"
+
 # --- rc and stderr pass through ---
 c=$(jq -n '{name:"exit-code", env:{FAKE_EXIT:"7"}, payload:"hi"}')
 got=$(hp_run_case "$c" bash "$FAKE/fake-hook.sh")
