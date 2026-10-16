@@ -15,6 +15,7 @@ Two setup costs, no assertion changed in any existing suite. The third, the Orca
 | assertion sets are identical | check-count table below |
 | `_find_row` rewrite is equal to the old loop | equivalence run below (513 keys, 0 diffs) and the seams suite |
 | `_find_row` rewrite is load-bearing | negative control 1 |
+| `_find_row` lookup rules are pinned | `tests/test-config-find-row.sh` (26 checks, passes on the old loop and the new awk) and negative control 4 |
 | install exclude drops only build output | tracked-file diff below (511 of 511 land) |
 | install exclude is load-bearing | negative control 2, `tests/test-install-lib-copy.sh` |
 | nothing at runtime reads the dropped paths | install artifact findings below |
@@ -37,7 +38,8 @@ The before and after columns are not a controlled A/B: the before figures are p9
 |---|---|---|
 | test-config-seams | 56 (file untouched) | 56/56 passed |
 | test-hooks | file untouched | file untouched, suite green |
-| test-install-lib-copy (new) | n/a | 5 checks |
+| test-install-lib-copy (new) | n/a | 5 checks, plus a failed-install report |
+| test-config-find-row (new) | n/a | 26 checks |
 
 ## Run table
 
@@ -82,6 +84,16 @@ ok   a __pycache__ is not copied
 ok   rust/target cargo output is not copied
 ok   a bin/*-rs built binary is not copied
 PASS: install lib copy skips build output
+Verdict: PASS
+```
+
+```
+Command: bash tests/test-config-find-row.sh && bash tests/test-install-lib-copy.sh && bash tests/test-config-seams.sh
+Exit: 0
+Output:
+PASS: _find_row matches the pinned lookup rules   (26 ok)
+PASS: install lib copy skips build output         (5 ok, install.sh exit 0, log not printed)
+=== 56/56 passed ===
 Verdict: PASS
 ```
 
@@ -147,6 +159,17 @@ FAIL rust/target cargo output is not copied
 FAIL a bin/*-rs built binary is not copied
 SOME TESTS FAILED
 Verdict: RED as expected; restored with git checkout -- install.sh, 5/5 ok
+```
+
+```
+Control 4: in _find_row, drop the `found ||` guard so every matching row prints (first match no longer wins)
+Command: bash tests/test-config-find-row.sh
+Exit: 1
+Output:
+FAIL a repeated toml key prints only the first row, never both
+FAIL the whole raw row is printed, unchanged
+SOME TESTS FAILED
+Verdict: RED as expected; restored with git checkout --, 26/26 ok. The same test passes against origin/master's old loop.
 ```
 
 ## Not proven
