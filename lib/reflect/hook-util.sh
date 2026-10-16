@@ -54,20 +54,20 @@ hu_join() { printf '%s/%s' "${1%/}" "$2"; }
 # output, because subprocess.run throws a timed-out command's stdout away (callers that keep
 # output truncate it). The watchdog and its sleep are reaped.
 hu_run_capture() {
-  local t=$1 out=$2 pid wd rc; shift 2
+  local t=$1 out=$2 pid wd rc kids; shift 2
   [ "$t" -ge 0 ] || t=0
   command rm -f -- "$out.timedout" 2>/dev/null
   if [ -n "${HU_STDIN:-}" ]; then "$@" < "$HU_STDIN" > "$out" 2>/dev/null & else "$@" > "$out" 2>/dev/null & fi
   pid=$!
-  # The watchdog traps TERM and waits on a backgrounded sleep: a TERM that lands before the sleep
-  # starts, or while it runs, ends the watchdog at once. (A foreground sleep defers the TERM for its
-  # whole length, which left the caller waiting out the timeout.)
-  ( trap 'kill $(jobs -p) 2>/dev/null; exit 0' TERM
-    sleep "$t" 2>/dev/null &
-    wait $! 2>/dev/null && { kill -9 "$pid" 2>/dev/null && : > "$out.timedout"; } ) >/dev/null 2>&1 &
+  ( sleep "$t" 2>/dev/null; kill -9 "$pid" 2>/dev/null && : > "$out.timedout" ) >/dev/null 2>&1 &
   wd=$!
   wait "$pid" 2>/dev/null; rc=$?
-  kill "$wd" 2>/dev/null; wait "$wd" 2>/dev/null
+  # SIGKILL, not TERM: a caller that ignores TERM (lib/gate/negctl.sh does, once its restore step runs)
+  # passes the disposition to every child, and a TERM the watchdog ignored left this wait running out
+  # the whole timeout. The watchdog goes first so it cannot fire on a finished pid; its sleep is reaped after.
+  kids=$(pgrep -P "$wd" 2>/dev/null)
+  kill -9 "$wd" 2>/dev/null; wait "$wd" 2>/dev/null
+  [ -z "$kids" ] || kill -9 $kids 2>/dev/null
   return $rc
 }
 

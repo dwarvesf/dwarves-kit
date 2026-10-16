@@ -67,6 +67,8 @@ before=$(pgrep -f "sleep 7" 2>/dev/null | wc -l | tr -d ' ')
 hu_run_capture 7 "$T/out5" true
 sleep 0.3; after=$(pgrep -f "sleep 7" 2>/dev/null | wc -l | tr -d ' ')
 check "hu_run_capture leaves no watchdog sleep behind" "$after" "$before"
+took=$( ( trap '' TERM; start=$(date +%s); hu_run_capture 8 "$T/out6" true; echo $(( $(date +%s) - start )) ) )
+check "hu_run_capture returns at once when the caller ignores TERM" "$([ "$took" -lt 4 ] && echo prompt)" prompt
 
 # hu_utf8_ok
 printf '{"a":"é"}' > "$T/ok.json"; printf '\xef\xbb\xbf{}' > "$T/bom.json"; printf 'bad \xff byte' > "$T/bad.json"
