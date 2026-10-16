@@ -141,18 +141,18 @@ add detached-no-candidates "$(e '[]' '"HARVEST_SYNC":"0"')" "$P" "$(S cwd/t.json
 add detached-state-dir-unwritable "$(e "$EJ" '"HARVEST_SYNC":"0","HARVEST_STATE_DIR":"@HOME@/f/hv"')" "$P" "$(S cwd/t.jsonl "$T1" home/f x)"
 
 # --- --lab-log ---
-LL=$'## 2026-10-16 - session-slug: did the thing\n- one\n- two\n- three'
+LL=$'## 2026-01-03 - session-slug: did the thing\n- one\n- two\n- three'
 add lablog-basic "$(e '' '"HARVEST_LABLOG_DRAFT":"@CWD@/_meta/.lab-log-draft.md"')" "$P" "$(S cwd/t.jsonl "$T1" home/ext-out.txt "$LL")" '["cwd/_meta/.lab-log-draft.md","home/prompt.txt","home/prompt.txt.size"]' '["--lab-log"]'
 add lablog-default-draft-path "$(e '')" "$P" "$(S cwd/t.jsonl "$T1" home/ext-out.txt "$LL")" '["cwd/_meta/.lab-log-draft.md"]' '["--lab-log"]'
 add lablog-none "$(e '')" "$P" "$(S cwd/t.jsonl "$T1" home/ext-out.txt 'NONE')" '["cwd/_meta/.lab-log-draft.md","home/prompt.txt"]' '["--lab-log"]'
 add lablog-none-lowercase "$(e '')" "$P" "$(S cwd/t.jsonl "$T1" home/ext-out.txt 'none, nothing worth logging')" '["cwd/_meta/.lab-log-draft.md"]' '["--lab-log"]'
 add lablog-empty-output "$(e '')" "$P" "$(S cwd/t.jsonl "$T1" home/ext-out.txt '')" '["cwd/_meta/.lab-log-draft.md"]' '["--lab-log"]'
-add lablog-fenced "$(e '')" "$P" "$(S cwd/t.jsonl "$T1" home/ext-out.txt $'```markdown\n## 2026-10-16 - slug: x\n- a\n```')" '["cwd/_meta/.lab-log-draft.md"]' '["--lab-log"]'
+add lablog-fenced "$(e '')" "$P" "$(S cwd/t.jsonl "$T1" home/ext-out.txt $'```markdown\n## 2026-01-03 - slug: x\n- a\n```')" '["cwd/_meta/.lab-log-draft.md"]' '["--lab-log"]'
 add lablog-not-a-heading "$(e '')" "$P" "$(S cwd/t.jsonl "$T1" home/ext-out.txt $'# Title\n- just bullets\n## not dated')" '["cwd/_meta/.lab-log-draft.md"]' '["--lab-log"]'
-add lablog-heading-not-first-line "$(e '')" "$P" "$(S cwd/t.jsonl "$T1" home/ext-out.txt $'Here is the entry:\n## 2026-10-16 - slug: x\n- a')" '["cwd/_meta/.lab-log-draft.md"]' '["--lab-log"]'
-add lablog-trailing-whitespace "$(e '')" "$P" "$(S cwd/t.jsonl "$T1" home/ext-out.txt $'\n\n## 2026-10-16 - slug: x  \n- a   \n\n\n')" '["cwd/_meta/.lab-log-draft.md"]' '["--lab-log"]'
+add lablog-heading-not-first-line "$(e '')" "$P" "$(S cwd/t.jsonl "$T1" home/ext-out.txt $'Here is the entry:\n## 2026-01-03 - slug: x\n- a')" '["cwd/_meta/.lab-log-draft.md"]' '["--lab-log"]'
+add lablog-trailing-whitespace "$(e '')" "$P" "$(S cwd/t.jsonl "$T1" home/ext-out.txt $'\n\n## 2026-01-03 - slug: x  \n- a   \n\n\n')" '["cwd/_meta/.lab-log-draft.md"]' '["--lab-log"]'
 add lablog-appends-to-existing "$(e '')" "$P" "$(S cwd/t.jsonl "$T1" home/ext-out.txt "$LL" cwd/_meta/.lab-log-draft.md $'earlier draft\n\n')" '["cwd/_meta/.lab-log-draft.md"]' '["--lab-log"]'
-add lablog-unicode "$(e '')" "$P" "$(S cwd/t.jsonl "$T1" home/ext-out.txt $'## 2026-10-16 - đà-nẵng: xong\n- 测试')" '["cwd/_meta/.lab-log-draft.md"]' '["--lab-log"]'
+add lablog-unicode "$(e '')" "$P" "$(S cwd/t.jsonl "$T1" home/ext-out.txt $'## 2026-01-03 - đà-nẵng: xong\n- 测试')" '["cwd/_meta/.lab-log-draft.md"]' '["--lab-log"]'
 add lablog-draft-env-override "$(e '' '"HARVEST_LABLOG_DRAFT":"@CWD@/out/draft.md"')" "$P" "$(S cwd/t.jsonl "$T1" home/ext-out.txt "$LL")" '["cwd/out/draft.md"]' '["--lab-log"]'
 add lablog-draft-env-empty-uses-default "$(e '' '"HARVEST_LABLOG_DRAFT":""')" "$P" "$(S cwd/t.jsonl "$T1" home/ext-out.txt "$LL")" '["cwd/_meta/.lab-log-draft.md"]' '["--lab-log"]'
 add crash-lablog-draft-relative "$(e '' '"HARVEST_LABLOG_DRAFT":"draft.md"')" "$P" "$(S cwd/t.jsonl "$T1" home/ext-out.txt "$LL")" '["cwd/draft.md"]' '["--lab-log"]'

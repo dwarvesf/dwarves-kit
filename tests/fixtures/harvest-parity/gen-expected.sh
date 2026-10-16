@@ -12,6 +12,8 @@ KIT_ROOT="$(cd "$HERE/../../.." && pwd)"
 REV="${1:-b9306b37}"
 # shellcheck source=../../lib/hook-parity.sh
 source "$KIT_ROOT/tests/lib/hook-parity.sh"
+# The Python waits out its whole 120 s extractor timeout in extractor-timeout-discards-stdout, past the harness alarm.
+export HP_CASE_TIMEOUT="${HP_CASE_TIMEOUT:-200}"
 HP_KIT_ROOT="$KIT_ROOT" HP_EXTRA_FILES="hooks/harvest_sweep.py lib/session/parse_transcript.py lib/config/kit-config.sh" \
   hp_gen_expected "$REV" harvest "$HERE/cases.jsonl" "$HERE/expected.jsonl"
 # A Python traceback carries the scratch path of the run, so the golden keeps the crash as a silent exit 0:
