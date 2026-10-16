@@ -141,12 +141,24 @@ case "$sub" in
             # failure does -- nothing printed, non-zero exit.
             eval "vf=\"\${GH_STUB_FAIL_VIEW_${n}_${cnt}:-0}\""
             [ "$vf" = "1" ] && exit 1
+            # GH_STUB_VIEW_KILL_<n>_<k>=1: the k-th view of PR <n> sends TERM to the pid in
+            # GH_STUB_KILL_PIDFILE (the wrap process), so a signal lands inside that read.
+            eval "vk=\"\${GH_STUB_VIEW_KILL_${n}_${cnt}:-0}\""
+            if [ "$vk" = "1" ] && [ -n "${GH_STUB_KILL_PIDFILE:-}" ]; then
+              kill -TERM "$(cat "$GH_STUB_KILL_PIDFILE")" 2>/dev/null
+            fi
             j="$cnt"
             while [ "$j" -gt 1 ]; do
               key2="GH_STUB_PR_${n}_${j}"; eval "val2=\"\${$key2:-}\""
               if [ -n "${val2:-}" ]; then val="$val2"; break; fi
               j=$(( j - 1 ))
             done
+            # After a successful `pr reopen <n>`, GH_STUB_PR_<n>_REOPENED (when set) answers
+            # every later read: GitHub re-read the head on the reopen.
+            if [ -e "${GH_STUB_CALLS:-/dev/null}.reopened-$n" ]; then
+              key3="GH_STUB_PR_${n}_REOPENED"; eval "val3=\"\${$key3:-}\""
+              [ -n "${val3:-}" ] && val="$val3"
+            fi
             [ -n "$val" ] || val="{}"
             # A %REMERGE_TIP% marker resolves against the real branch tip, because a
             # re-merge test cannot know the recovered commit's SHA before wrap creates it.
@@ -180,6 +192,25 @@ case "$sub" in
       ready)
         # `merge --pr N` marks a targeted draft ready. Nothing to print; real gh is silent too.
         exit "${GH_STUB_READY_RC:-0}" ;;
+      close)
+        # `merge`'s head resync closes the PR. GH_STUB_CLOSE_KILL=1 sends TERM to the wrap
+        # process (GH_STUB_KILL_PIDFILE) while the close runs, before it returns.
+        if [ "${GH_STUB_CLOSE_KILL:-0}" = "1" ] && [ -n "${GH_STUB_KILL_PIDFILE:-}" ]; then
+          kill -TERM "$(cat "$GH_STUB_KILL_PIDFILE")" 2>/dev/null
+        fi
+        exit "${GH_STUB_CLOSE_RC:-0}" ;;
+      reopen)
+        # GH_STUB_REOPEN_FAILS=N fails the first N reopens; GH_STUB_REOPEN_RC sets the exit
+        # after that. A successful reopen leaves a marker the `pr view` answer keys on.
+        n="${1:-}"
+        cnt_f="${GH_STUB_CALLS:-/dev/null}.reopen-$n"
+        cnt=$(( $(cat "$cnt_f" 2>/dev/null || echo 0) + 1 )); echo "$cnt" > "$cnt_f" 2>/dev/null
+        [ "$cnt" -le "${GH_STUB_REOPEN_FAILS:-0}" ] && exit 1
+        rc="${GH_STUB_REOPEN_RC:-0}"
+        [ "$rc" -eq 0 ] && : > "${GH_STUB_CALLS:-/dev/null}.reopened-$n"
+        exit "$rc" ;;
+      comment)
+        exit "${GH_STUB_COMMENT_RC:-0}" ;;
       edit)
         # `land`'s ci-label sync adds (or removes and re-adds) the `ci` label. The call is
         # recorded like every other; a case that needs the next `pr view` to show the new
