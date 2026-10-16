@@ -32,3 +32,8 @@ Deltas from SPEC-409. Nothing here repeats what the spec already states.
 
 - Context: `hooks/harvest_sweep.py` imports the state-dir resolver, the slug rules, the ledger locks and the stager from `harvest.py`, and the operator verbs share its locks.
 - Decision/Change: that library and the three verbs moved to `hooks/harvest_lib.py`; the sweep's entry runs the verbs. `tests/test-harvest-sweep.sh` imports the library under its old name. Porting the sweep itself is not part of this change.
+
+## 2026-10-16 The registry lint reads shell, not Python
+
+- Context: `tests/test-config-registry.sh` scans `.sh` files for env vars and flags any that `lib/config/module-registry.md` does not list. The Python hook hid eleven `HARVEST_*` variables from it.
+- Decision/Change: all eleven have rows now, in the `session` module with `HARVEST_STATE_DIR`.

@@ -66,7 +66,7 @@ The detach, the transcript walk, the bracket scan, and the shlex splitter are th
 | T1: harness | `tests/lib/hook-parity.sh`, `tests/test-hook-parity-lib.sh` | a stamp the hook just wrote folds to `@NOW@` |
 | T2: goldens | `tests/fixtures/harvest-parity/` | cases and goldens generated from the Python at `b9306b37` before the port |
 | T3: port | `hooks/harvest.sh`, `hooks/harvest_lib.py`; delete `hooks/harvest.py` | `bash tests/test-harvest-parity.sh` passes; no `python` call in the hook outside the sweep routes |
-| T4: references | `docs/hooks.md`, `docs/MANUAL.md`, `README.md`, `docs/architecture.md`, `tests/test-harvest-sweep.sh`, `tests/test-kit-foldin-hooks.sh` | no live doc or test names `harvest.py` as current code |
+| T4: references | `lib/config/module-registry.md`, `docs/hooks.md`, `docs/MANUAL.md`, `README.md`, `docs/architecture.md`, `tests/test-harvest-sweep.sh`, `tests/test-kit-foldin-hooks.sh` | no live doc or test names `harvest.py` as current code |
 | T5: records | `docs/CHANGELOG.md`, `docs/verification/harvest-bash.md`, `docs/implementation-notes/harvest-bash.md`, `docs/retro/`, `docs/FEATURES.md` (regenerated) | CHANGELOG names the port |
 
 ## Test plan
