@@ -3,7 +3,7 @@
 set -u
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SA="$DIR/bin/session-audit"
-TMP="$(mktemp -d)"
+TMP="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
 trap 'rm -rf "$TMP"' EXIT
 PASS=0; FAIL=0
 ok() { PASS=$((PASS + 1)); echo "  ok: $1"; }

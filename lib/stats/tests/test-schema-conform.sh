@@ -47,7 +47,7 @@ check "real live kit line passes" PASS "$real_line"
 
 echo
 echo "== Tier A: the planned debt + token marker shapes (generated, never hand-typed) =="
-SCRATCH="$(mktemp -d)"
+SCRATCH="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
 export DWARVES_KIT_LOG_DIR="$SCRATCH"
 bash "$GATE_LEDGER" tokens sg01-nc-rid in=1200 out=340 cache_read=5000 cache_create=0 cost=0.42 >/dev/null
 bash "$GATE_LEDGER" debt sg01-nc-rid significance=high worthiness=high verdict=tap response=defer reason="weekend batch" >/dev/null

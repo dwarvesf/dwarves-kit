@@ -8,7 +8,7 @@ KIT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # shellcheck source=lib/hook-parity.sh
 source "$KIT_DIR/tests/lib/hook-parity.sh"
 
-FAKE="$(mktemp -d)"
+FAKE="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
 cat > "$FAKE/fake-hook.sh" <<'EOS'
 #!/usr/bin/env bash
 set -uo pipefail
@@ -39,7 +39,7 @@ got=$(hp_run_case "$c" bash "$FAKE/fake-hook.sh")
 check "null-unset excludes the var from the hook's env" "$ok"
 
 # --- ROOT-in-value-only: expands inside a value, never inside a key ---
-HROOT="$(mktemp -d)"
+HROOT="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
 c=$(jq -n '{name:"root-expand", env:{FAKE_ROOTVAR:"ROOT/leaf", FAKE_ROOT_MARKER:"plain"}, payload:"hi"}')
 got=$(HP_ROOT="$HROOT" hp_run_case "$c" bash "$FAKE/fake-hook.sh")
 root_out=$(jq -r '.stdout | fromjson | .root' <<<"$got")
@@ -48,7 +48,7 @@ rootkey_out=$(jq -r '.stdout | fromjson | .rootkey' <<<"$got")
 check "ROOT expands in a value; a key merely containing ROOT is untouched" "$ok"
 
 # --- BAD-EPOCH: a non-digit first field flags the whole log ---
-LOGDIR="$(mktemp -d)"
+LOGDIR="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
 c=$(jq -n --arg log "$LOGDIR/bad.log" '{name:"bad-epoch", env:{FAKE_HOOK_LOG:$log, FAKE_EPOCH:"nope"}, payload:"hi"}')
 got=$(HP_LOG_VAR=FAKE_HOOK_LOG hp_run_case "$c" bash "$FAKE/fake-hook.sh")
 [ "$(jq -r '.log' <<<"$got")" = "BAD-EPOCH logged" ] && ok=1 || ok=0
@@ -151,7 +151,7 @@ if [ "$rc" -eq 0 ] && echo "$out" | grep -q "1 passed, 0 failed"; then ok=1; els
 check "hp_check passes and returns zero on a match" "$ok"
 
 # --- hp_gen_expected: extracts a rev's hooks/<name>.sh (+ .py) and runs cases through it ---
-GITROOT="$(mktemp -d)"
+GITROOT="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
 git -C "$GITROOT" init -q
 git -C "$GITROOT" config user.email test@example.com
 git -C "$GITROOT" config user.name test

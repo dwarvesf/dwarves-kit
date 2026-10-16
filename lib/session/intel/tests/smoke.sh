@@ -9,7 +9,7 @@ set -euo pipefail
 DIR="$(cd "$(dirname "$0")/.." && pwd)"
 BIN="$DIR/bin/session-intel"
 run(){ python3 "$BIN" "$@"; }
-TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
+TMP="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; trap 'rm -rf "$TMP"' EXIT
 
 # ledger with a normalized duplicate ("Same Origin Policy" vs "same-origin-policy")
 LED="$TMP/ledger.md"

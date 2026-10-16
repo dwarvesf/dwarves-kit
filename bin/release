@@ -83,7 +83,7 @@ print(f"  {path}: [{v}] section rolled ({last or 'no prior tag'} -> HEAD)")
 PY
 
 echo "== channel 2 · paid stream bundle =="
-STAGE="$(mktemp -d)"
+STAGE="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")"
 mkdir -p "$STAGE/forge-stream"
 cp docs/CHANGELOG.md "$STAGE/forge-stream/CHANGELOG.md"
 [ -f docs/tiers.md ] && cp docs/tiers.md "$STAGE/forge-stream/"

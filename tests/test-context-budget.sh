@@ -16,7 +16,7 @@ KIT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 HOOK="$KIT_DIR/hooks/context-budget.sh"
 [ -r "$HOOK" ] || { echo "ERROR: hook not found at $HOOK" >&2; exit 1; }
 
-_tmp="$(mktemp -d "${TMPDIR:-/tmp}/dwarves-kit-context-budget-tests.XXXXXX")"
+_tmp="$(mktemp -d "${TMPDIR:-/tmp}/dwarves-kit-context-budget-tests.XXXXXX")" || exit 1
 trap 'rm -rf "$_tmp"' EXIT
 export HOME="$_tmp"
 unset KIT_CTX_WARN_PCT KIT_CTX_STRONG_PCT KIT_CTX_WINDOW

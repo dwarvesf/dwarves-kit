@@ -22,7 +22,7 @@ ok()  { PASS=$((PASS+1)); printf "  ok   %s\n" "$1"; }
 bad() { FAIL=$((FAIL+1)); printf "  FAIL %s\n" "$1"; }
 check() { if [ "$2" -eq 0 ]; then ok "$1"; else bad "$1"; fi; }
 
-WORK="$(mktemp -d)"
+WORK="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
 trap 'command rm -rf "$WORK"' EXIT
 
 export STUB_DIR="$WORK/stub"

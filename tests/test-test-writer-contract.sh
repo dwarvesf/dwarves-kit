@@ -70,7 +70,7 @@ assert "...and the stop holds even under bypassPermissions (autonomous-caller co
 echo ""
 echo "=== AC3: NEGATIVE CONTROL -- a REVISE-verdict fixture trips the documented stop check ==="
 
-FIXTURE_DIR="$(mktemp -d -t test-writer-contract-fixture.XXXXXX)"
+FIXTURE_DIR="$(mktemp -d "${TMPDIR:-/tmp}/test-writer-contract-fixture.XXXXXX")" || exit 1
 trap 'rm -rf "$FIXTURE_DIR"' EXIT
 
 cat > "$FIXTURE_DIR/spec-revise.md" <<'EOF'

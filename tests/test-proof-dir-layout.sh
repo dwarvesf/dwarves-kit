@@ -47,7 +47,7 @@ EOF
 base() { git -C "$1" rev-parse HEAD; }
 
 # 1. GREEN: green + negative control split across two runs/ files, current lib -> PASS
-F=/tmp/vf-gate-split; make_fixture "$F" 1
+F=${TMPDIR:-/tmp}/vf-gate-split; make_fixture "$F" 1
 if bash "$LIB" check "$F" "$(base "$F")" vf-fix >/dev/null 2>&1; then
   pass "split green+negctl under one <slug>/ dir satisfies the gate"
 else
@@ -55,7 +55,7 @@ else
 fi
 
 # 2. NEGATIVE CONTROL A: same fixture without the negative-control run -> BLOCK
-F=/tmp/vf-gate-noneg; make_fixture "$F" 0
+F=${TMPDIR:-/tmp}/vf-gate-noneg; make_fixture "$F" 0
 if bash "$LIB" check "$F" "$(base "$F")" vf-fix >/dev/null 2>&1; then
   fail "green-only should BLOCK but the gate passed (trivially green)"
 else
@@ -66,8 +66,8 @@ fi
 # History-independent: construct the pre-change lib from the CURRENT one (awk the set-wise
 # block out), so this stays valid even after the feature is merged to master. Reading the lib
 # from git history breaks the moment master HAS the change.
-F=/tmp/vf-gate-split   # reuse the split fixture (has both runs/ files)
-OLD=/tmp/vf-oldlib.sh
+F=${TMPDIR:-/tmp}/vf-gate-split   # reuse the split fixture (has both runs/ files)
+OLD=${TMPDIR:-/tmp}/vf-oldlib.sh
 awk '/# set-wise \(directory layout\)/{s=1} /\[ "\$ok" -eq 0 \] && return 0/{s=0} !s' "$LIB" > "$OLD"
 if [ -s "$OLD" ] && ! grep -q 'set-wise' "$OLD"; then
   if bash "$OLD" check "$F" "$(base "$F")" vf-fix >/dev/null 2>&1; then

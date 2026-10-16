@@ -26,7 +26,7 @@ expect() {  # <name> <needle> <haystack>  (grep -q = BRE: parens in needles are 
 echo "=== golden run: one task end to end (SPEC-067) ==="
 
 # --- a temp world: repo + logs ---
-WORLD=$(mktemp -d "${TMPDIR:-/tmp}/dwarves-kit-e2e.XXXXXX")
+WORLD=$(mktemp -d "${TMPDIR:-/tmp}/dwarves-kit-e2e.XXXXXX") || exit 1
 trap 'rm -rf "$WORLD"' EXIT   # always under $TMPDIR, never the repo
 export DWARVES_KIT_LOG_DIR="$WORLD/logs"
 REPO="$WORLD/repo"

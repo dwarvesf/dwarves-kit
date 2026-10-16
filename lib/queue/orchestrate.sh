@@ -437,7 +437,7 @@ _roadmap_remote_view() {  # dir roadmap
     echo "[orchestrate] [reconcile] fast-forwarded $def to origin/$def before the box check." >&2
     printf '%s' "$roadmap"; return 0
   fi
-  tmp=$(mktemp) || return 0
+  tmp=$(mktemp "${TMPDIR:-/tmp}/kit.XXXXXX") || return 0
   if git -C "$repo" show "origin/$def:$rel" > "$tmp" 2>/dev/null; then
     echo "[orchestrate] [reconcile] tree not fast-forwardable; reading ROADMAP.md from origin/$def for the box check only." >&2
     printf '%s' "$tmp"; return 0
@@ -999,7 +999,7 @@ STREAM_RETENTION_DAYS="${STREAM_RETENTION_DAYS:-14}"
 _redact_secrets_file() {  # file
   local f="$1" tmp
   [ -n "$f" ] && [ -s "$f" ] || return 0
-  tmp=$(mktemp 2>/dev/null) || return 0
+  tmp=$(mktemp "${TMPDIR:-/tmp}/kit.XXXXXX" 2>/dev/null) || return 0
   if sed -E \
       -e 's/(sk|gho|ghp|ghu|ghs|ghr|glpat)[_-][A-Za-z0-9_-]{8,}/[REDACTED]/g' \
       -e 's/xox[baprs]-[A-Za-z0-9-]{8,}/[REDACTED]/g' \
@@ -1289,7 +1289,7 @@ _run_one_session() {  # dir id pfile route_flags stream
     # Continuation prompt: the caller's original prompt + a segment block that points the
     # successor at the fresh per-id handoff and the warm ledger, by absolute path (a wave
     # session's cwd is its own worktree). Rebuilt into the SAME temp file each segment.
-    seg_pfile="${seg_pfile:-$(mktemp)}"
+    seg_pfile="${seg_pfile:-$(mktemp "${TMPDIR:-/tmp}/kit.XXXXXX")}"
     cat "$pfile" > "$seg_pfile"
     {
       printf '\n\n---\nTURN-CEILING CONTINUATION (segment %s of %s)\n' "$((seg + 1))" "$TURN_CAP_SEGMENTS"
@@ -1902,7 +1902,7 @@ _wave_run() {  # megadir roadmap
     [ -n "$rmodel" ] && route_flags="$route_flags --model $rmodel"
     [ -n "$reffort" ] && route_flags="$route_flags --effort $reffort"
 
-    pfile=$(mktemp)
+    pfile=$(mktemp "${TMPDIR:-/tmp}/kit.XXXXXX")
     _build_prompt "$megadir" "$id" > "$pfile"
     # Flip-contract injection (WAVE sessions only, activation). A wave session runs in its
     # own worktree , a separate checkout , so editing ROADMAP.md there flips only the worktree's
@@ -1955,7 +1955,7 @@ _wave_run() {  # megadir roadmap
       # off-by-default path below is untouched). `tmux new-window` returns as soon as the window is
       # created, before the pane's command exits, so there is no pid to `wait` on here -- the pane
       # writes its own exit code to $donefile instead (the reap loop polls it, see below).
-      donefile=$(mktemp -u)
+      donefile=$(mktemp -u "${TMPDIR:-/tmp}/kit.XXXXXX")
       if ! _pane_spawn "$megadir" "$id" "$wt" "$pfile" "$route_flags" "$donefile"; then
         echo "[orchestrate] [wave] [mux] $id: tmux pane spawn failed; marking wave failed." >&2
         _emit_event "$megadir" "$id" blocked "wave: tmux pane spawn failed"
@@ -2321,7 +2321,7 @@ _dispatch_tier4_verifiers() {  # dir roadmap
   local outs=()
   local tmps=()
   for n in 1 2 3; do
-    pfile=$(mktemp); ofile=$(mktemp)
+    pfile=$(mktemp "${TMPDIR:-/tmp}/kit.XXXXXX"); ofile=$(mktemp "${TMPDIR:-/tmp}/kit.XXXXXX")
     tmps+=("$pfile" "$ofile")
     _build_verifier_prompt "$dir" "$roadmap" "$n" > "$pfile"
     _emit_event "$dir" close verifying "dispatching verifier $n/3"
@@ -2715,7 +2715,7 @@ cmd_run() {
     # borrow). Removes the backtick/${}/secret-guard bug class when the handoff body carries shell
     # metachars, and dodges ARG_MAX on a large injected handoff. `claude -p` reads the prompt from
     # stdin when no positional prompt is given.
-    local pfile; pfile=$(mktemp)
+    local pfile; pfile=$(mktemp "${TMPDIR:-/tmp}/kit.XXXXXX")
     # Review-fix FIX 8: a Ctrl-C while this session is in flight otherwise leaves the prompt temp
     # file (it holds the injected HANDOFF content) sitting in ${TMPDIR:-/tmp}. The explicit `rm -f`
     # below covers the happy path; this trap covers an interrupt. Cheap to reset every cycle (only

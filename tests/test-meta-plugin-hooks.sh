@@ -130,7 +130,7 @@ assert_eq "every settings.json hook script exists in hooks/ (missing: ${MISSING_
 # (2) A real install into a throwaway HOME leaves every referenced path resolvable.
 # This is the direct regression guard: it fails on the buggy installer that never
 # materialized the scripts, and passes once install.sh links them into place.
-TMP_HOME=$(mktemp -d)
+TMP_HOME=$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX") || exit 1
 if HOME="$TMP_HOME" bash "$KIT_DIR/install.sh" >/dev/null 2>&1; then
   UNRESOLVED=$(grep -oE '\$HOME/\.claude/dwarves-kit/hooks/[A-Za-z0-9._-]+\.sh' "$TMP_HOME/.claude/settings.json" \
     | sort -u \
@@ -171,7 +171,7 @@ rm -rf "$TMP_HOME"
 # must NOT clobber the real hook scripts. Regression: when KIT_DIR == the install
 # destination, the per-file link step rm'd each script and replaced it with a
 # self-referential broken symlink. Here the scripts must stay resolvable.
-INPLACE_HOME=$(mktemp -d)
+INPLACE_HOME=$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX") || exit 1
 mkdir -p "$INPLACE_HOME/.claude/dwarves-kit"
 cp -R "$KIT_DIR/hooks" "$KIT_DIR/commands" "$KIT_DIR/agents" "$KIT_DIR/skills" \
       "$KIT_DIR/settings.json" "$KIT_DIR/install.sh" "$INPLACE_HOME/.claude/dwarves-kit/" 2>/dev/null
@@ -256,7 +256,7 @@ echo "=== kit-health symlink check (check 12: broken-symlink detection) ==="
 # guard for the WORKFLOW.md-after-repo-move incident: a stale symlink under
 # the installed kit root went unnoticed until the gate ledger needed a manual
 # override.
-SYMLINK_FIXTURE=$(mktemp -d)
+SYMLINK_FIXTURE=$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX") || exit 1
 mkdir -p "$SYMLINK_FIXTURE/kit-root/docs" "$SYMLINK_FIXTURE/real-target"
 echo "real" > "$SYMLINK_FIXTURE/real-target/WORKFLOW.md"
 ln -s "$SYMLINK_FIXTURE/real-target/WORKFLOW.md" "$SYMLINK_FIXTURE/kit-root/AGENTS.md"          # good

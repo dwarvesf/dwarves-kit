@@ -20,7 +20,7 @@ RED='\033[0;31m'; GREEN='\033[0;32m'; NC='\033[0m'
 ok() { TOTAL=$((TOTAL+1)); if [ "$2" -eq 0 ]; then echo -e "  ${GREEN}PASS${NC} $1"; PASS=$((PASS+1)); else echo -e "  ${RED}FAIL${NC} $1"; FAIL=$((FAIL+1)); fi; }
 has() { { trap '' PIPE; printf '%s' "$2" 2>/dev/null || :; } | grep -qF -- "$1"; }
 
-TMP="$(mktemp -d)"
+TMP="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
 # injected gate-ledger stubs: one that passes, one that fails
 printf '#!/usr/bin/env bash\nexit 0\n' > "$TMP/gl-pass"; chmod +x "$TMP/gl-pass"
 printf '#!/usr/bin/env bash\necho "MISSING-GATE: build" >&2\nexit 1\n' > "$TMP/gl-fail"; chmod +x "$TMP/gl-fail"
@@ -140,7 +140,8 @@ has "ship-gate not satisfied" "$O7"; ok "AC7: clear PR + failing gate still bloc
 # AC7b [unknown-lane fail-closed, TIER-4 security]: a clear PR with an UNKNOWN lane (e.g. the
 # real gate-ledger, not a stub) must NOT vacuous-pass. Uses the real gate-ledger deliberately.
 GL_REAL="$KIT_DIR/lib/gate/gate-ledger.sh"
-O7b="$(DWARVES_KIT_LOG_DIR="$(mktemp -d)/l" MEGA_MERGE_GATE_LEDGER="$GL_REAL" MEGA_MERGE_PR_INFO_CMD="$TMP/prinfo" MEGA_MERGE_PR_FILES_CMD="$TMP/prfiles" bash "$MM" merge 1 someridZ mega --execute 2>&1)"
+_l7b="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
+O7b="$(DWARVES_KIT_LOG_DIR="$_l7b/l" MEGA_MERGE_GATE_LEDGER="$GL_REAL" MEGA_MERGE_PR_INFO_CMD="$TMP/prinfo" MEGA_MERGE_PR_FILES_CMD="$TMP/prfiles" bash "$MM" merge 1 someridZ mega --execute 2>&1)"
 has "BLOCKED" "$O7b"; ok "AC7b: unknown lane 'mega' is refused, not vacuous-passed (real gate-ledger)" $?
 if has "gh pr merge" "$O7b"; then ok "AC7b: unknown lane never reaches gh --execute" 1; else ok "AC7b: unknown lane never reaches gh --execute" 0; fi
 

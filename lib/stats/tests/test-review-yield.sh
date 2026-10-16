@@ -21,7 +21,7 @@ bad()  { printf 'FAIL  %s\n' "$1"; FAIL=$((FAIL+1)); }
 has()  { case "$3" in *"$2"*) ok "$1";; *) bad "$1 (missing: $2)";; esac; }
 hasnt(){ case "$3" in *"$2"*) bad "$1 (unexpected: $2)";; *) ok "$1";; esac; }
 
-FIX="$(mktemp -d)"
+FIX="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
 FIXTURE_ROOT="$ROOT/tests/fixtures/review-yield"
 
 # ---- env: rejected_findings sources point at the COMMITTED fixture repos; kit source points
@@ -147,7 +147,7 @@ has "D-min-n with --min-n 10, even the high-n test-coverage row is now low_n=tru
     "low_n": true' "$YIELD_MINN10"
 
 echo "== Z-div-by-zero: raised=0 (no review kit_gates activity at all) -> fp_rate_approx NULL for every row, never 0.0 =="
-ZFIX="$(mktemp -d)"
+ZFIX="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
 mkdir -p "$ZFIX/tg"
 ZERO_YIELD="$(env \
   STATS_REPOS="$STATS_REPOS" \
@@ -170,7 +170,7 @@ has "Z-div-by-zero every row is low_n (raised=0 < 5)" '"low_n": true' "$ZERO_YIE
 echo "== H-nc: HONEST-ZERO negative control (load-bearing) =="
 # No ledger files (rejected_findings 0 rows) + no review kit_gates activity -> ZERO output
 # rows, clean exit, never a crash, never a fabricated row.
-HFIX="$(mktemp -d)"
+HFIX="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
 HZERO="$(env \
   STATS_REPOS="$HFIX/repo-none-at-all" \
   DWARVES_KIT_LOG_DIR="$HFIX/nonexistent-kit-log-dir" \
@@ -197,7 +197,7 @@ echo "== H-nc-deliberate-break: prove H-nc is falsifiable, not vacuous (literal 
 # branch from NULL to 0.0. On the SAME zero-ledger-files zero-review-activity state above,
 # this fabricates exactly one bogus all-NULL/0.0 row instead of returning zero rows.
 CLI_FILE="$ROOT/src/stats/cli.py"
-CLI_BACKUP="$(mktemp)"
+CLI_BACKUP="$(mktemp "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
 cp "$CLI_FILE" "$CLI_BACKUP"
 
 python3 - "$CLI_FILE" <<'PY'

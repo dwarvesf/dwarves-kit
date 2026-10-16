@@ -39,7 +39,7 @@ anchor_violations() {
   ' "$1"
 }
 
-TMP="$(mktemp -d "${TMPDIR:-/tmp}/dk-anchor-lint.XXXXXX")"
+TMP="$(mktemp -d "${TMPDIR:-/tmp}/dk-anchor-lint.XXXXXX")" || exit 1
 trap 'rm -rf "$TMP"' EXIT
 
 echo "=== anchor lint: the checker itself ==="

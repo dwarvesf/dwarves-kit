@@ -17,7 +17,7 @@ pass=0; fail=0
 ok(){ echo "  ok: $*"; pass=$((pass+1)); }
 no(){ echo "  FAIL: $*" >&2; fail=$((fail+1)); }
 
-TMP="$(mktemp -d)"
+TMP="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
 trap 'rm -rf "$TMP"' EXIT
 export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null
 g() { git -c user.name=t -c user.email=t@t "$@"; }

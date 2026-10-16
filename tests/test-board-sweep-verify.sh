@@ -13,7 +13,7 @@ set -u
 
 HERE=$(cd "$(dirname "$0")" && pwd)
 VERIFY="${HERE}/../lib/sync/sweep/board-sweep-verify"
-TMP=$(mktemp -d)
+TMP=$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX") || exit 1
 trap 'command rm -rf "$TMP"' EXIT
 
 fail=0

@@ -51,7 +51,7 @@ echo "== NC lint-load-bearing: the grep genuinely catches a planted live-path re
 # A vacuously-green lint proves nothing (SPEC-183's same NC pattern). Plant a fake
 # consumer that DOES call kit_config_get team.actor_identity and confirm the same
 # grep this test uses would flag it.
-FAKE_DIR="$(mktemp -d)"; trap 'rm -rf "$FAKE_DIR"' EXIT
+FAKE_DIR="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; trap 'rm -rf "$FAKE_DIR"' EXIT
 mkdir -p "$FAKE_DIR/lib/fake"
 cat > "$FAKE_DIR/lib/fake/fake-team-consumer.sh" <<'EOF'
 #!/usr/bin/env bash
@@ -63,7 +63,7 @@ assert_true "NC: planted live-path read of team.actor_identity is caught by the 
 # ============================================================
 echo "== resolver-readable: kit_config_get surfaces reserved keys via project override =="
 # ============================================================
-PROJ="$(mktemp -d)"
+PROJ="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
 cat > "$PROJ/.kit.toml" <<'TOML'
 [features]
 auto_improvement = true

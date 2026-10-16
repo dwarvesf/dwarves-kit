@@ -10,7 +10,7 @@ PASS=0; FAIL=0
 ok() { PASS=$((PASS + 1)); echo "ok - $1"; }
 no() { FAIL=$((FAIL + 1)); echo "NOT ok - $1"; }
 
-FIX="$(mktemp -d)"
+FIX="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
 trap 'rm -rf "$FIX"' EXIT
 
 mkdir -p "$FIX/bin" "$FIX/.claude-plugin" "$FIX/docs"

@@ -28,7 +28,7 @@ chk() {
   else echo -e "  ${RED}FAIL${NC} $1"; FAIL=$((FAIL+1)); fi
 }
 
-TMPD="$(mktemp -d "${TMPDIR:-/tmp}/dk-atomic-mint-test.XXXXXX")"
+TMPD="$(mktemp -d "${TMPDIR:-/tmp}/dk-atomic-mint-test.XXXXXX")" || exit 1
 TMPD="$(cd "$TMPD" && pwd)"
 trap 'rm -rf "$TMPD"' EXIT
 

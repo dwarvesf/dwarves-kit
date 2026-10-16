@@ -13,7 +13,7 @@ ok() { PASS=$((PASS + 1)); echo "ok - $1"; }
 no() { FAIL=$((FAIL + 1)); echo "NOT ok - $1"; }
 REG="lib/registry/feature-registry.sh"
 
-D="$(mktemp -d)"
+D="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
 mkdir -p "$D/lib/registry" "$D/lib/x/tests" "$D/commands" "$D/agents" "$D/skills/sk" "$D/hooks" "$D/docs/specs" "$D/tests"
 cp "$KIT/$REG" "$D/$REG"
 stub() { printf -- '---\ndescription: a stub\n---\nbody\n'; }

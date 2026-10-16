@@ -83,7 +83,7 @@ lane_resolve() {
   # base at ship time), never the working tree, so a change under review cannot rewrite its own lanes.
   local _ld_at_file="" _ld_rc=0
   if [ -n "${KIT_LANE_PROJECT_AT:-}" ]; then
-    _ld_at_file="$(mktemp)" || return 1
+    _ld_at_file="$(mktemp "${TMPDIR:-/tmp}/kit.XXXXXX")" || return 1
     kit_config_show_at "$(dirname "$(kit_config_project)")" "$KIT_LANE_PROJECT_AT" > "$_ld_at_file" 2>/dev/null || : > "$_ld_at_file"
   fi
   _ld_at_file="$_ld_at_file" _lane_resolve_layers "$@" || _ld_rc=$?
@@ -184,7 +184,7 @@ lane_extra_hard_paths() {
   {
     _kit_toml_get "$pf" lanes extra_hard_paths
     if git -C "$d" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-      local tmp; tmp="$(mktemp)"
+      local tmp; tmp="$(mktemp "${TMPDIR:-/tmp}/kit.XXXXXX")"
       for r in HEAD ${KIT_FLOOR_CONFIG_AT:-}; do
         kit_config_show_at "$d" "$r" > "$tmp" && _kit_toml_get "$tmp" lanes extra_hard_paths
       done
@@ -222,10 +222,10 @@ Dockerfile'
 lane_hard_path_exempt() {
   local root="$1" rev="$2" tmp can sha
   [ -n "$root" ] && [ -n "$rev" ] || return 0
-  tmp="$(mktemp)" || return 0
+  tmp="$(mktemp "${TMPDIR:-/tmp}/kit.XXXXXX")" || return 0
   kit_config_show_at "$root" "$rev" > "$tmp"
   if ! grep -q 'hard_path_exempt\|hard_path_canaries' "$tmp"; then command rm -f "$tmp"; return 0; fi
-  can="$(mktemp)" || { command rm -f "$tmp"; return 0; }
+  can="$(mktemp "${TMPDIR:-/tmp}/kit.XXXXXX")" || { command rm -f "$tmp"; return 0; }
   printf '%s\n' "$_LD_EXEMPT_CANARIES" > "$can"
   sha="$(git -C "$root" rev-parse --short "$rev" 2>/dev/null || printf '%s' "$rev")"
   awk -v sha="$sha" '

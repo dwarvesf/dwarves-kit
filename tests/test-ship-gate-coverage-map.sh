@@ -11,11 +11,11 @@ PASS=0; FAIL=0
 ok() { PASS=$((PASS + 1)); echo "ok - $1"; }
 no() { FAIL=$((FAIL + 1)); echo "NOT ok - $1"; }
 
-LOGDIR="$(mktemp -d)"   # isolate the gate-ledger store from the real one
+LOGDIR="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1   # isolate the gate-ledger store from the real one
 PG="$KIT/lib/gate/proof-gate.sh"
 
 # --- unit: proof-gate.sh coverage ---------------------------------------------------------
-FIX="$(mktemp -d)"
+FIX="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
 cat > "$FIX/spec.md" <<'EOF'
 # Spec: x
 Lane: full
@@ -125,52 +125,52 @@ EOF
 }
 
 # (a) test plan + proof WITHOUT coverage map -> warning emitted, merge NOT blocked
-TA="$(mktemp -d)"; mkrepo "$TA"
+TA="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; mkrepo "$TA"
 git -C "$TA" switch -qc feat/cmapa
 spec_with_plan "$TA/docs/specs/SPEC-001-cmapa.md"
 printf 'Command: `x`\nExit: 0\nVerdict: PASS\nNEGATIVE CONTROL\n' > "$TA/docs/verification/cmapa.md"
 git -C "$TA" add -A; git -C "$TA" commit -qm work
 record_gates cmapa
-EA="$(mktemp)"
+EA="$(mktemp "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
 RCA="$(gate "$TA" 'git push -u origin HEAD' "$EA")"
 [ "$RCA" = 0 ] && grep -q '\[advisory\] test-plan coverage' "$EA" \
   && ok "(a) plan + mapless proof -> advisory emitted, exit 0 (not blocked)" \
   || no "(a) expected exit 0 + coverage advisory; got exit $RCA, stderr: $(cat "$EA")"
 
 # (b) all rows mapped -> no warning
-TB="$(mktemp -d)"; mkrepo "$TB"
+TB="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; mkrepo "$TB"
 git -C "$TB" switch -qc feat/cmapb
 spec_with_plan "$TB/docs/specs/SPEC-001-cmapb.md"
 printf 'NEGATIVE CONTROL\nVerdict: PASS\n\n## Test plan coverage\n| Row | Run / skip reason |\n|---|---|\n| 1 | R1 |\n| 2 | skipped: covered by row 1 |\n' > "$TB/docs/verification/cmapb.md"
 git -C "$TB" add -A; git -C "$TB" commit -qm work
 record_gates cmapb
-EB="$(mktemp)"
+EB="$(mktemp "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
 RCB="$(gate "$TB" 'git push -u origin HEAD' "$EB")"
 [ "$RCB" = 0 ] && ! grep -q '\[advisory\] test-plan coverage' "$EB" \
   && ok "(b) all rows mapped -> no coverage advisory, exit 0" \
   || no "(b) expected exit 0 + no coverage advisory; got exit $RCB, stderr: $(cat "$EB")"
 
 # (c) spec with NO test plan -> no warning (no new requirement, pass path unchanged)
-TC="$(mktemp -d)"; mkrepo "$TC"
+TC="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; mkrepo "$TC"
 git -C "$TC" switch -qc feat/cmapc
 printf '# Spec: x\nStatus: DRAFT\nLane: full\n' > "$TC/docs/specs/SPEC-001-cmapc.md"
 notes_for "$TC/docs/specs/SPEC-001-cmapc.md"
 git -C "$TC" add -A; git -C "$TC" commit -qm work
 record_gates cmapc
-EC="$(mktemp)"
+EC="$(mktemp "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
 RCC="$(gate "$TC" 'git push -u origin HEAD' "$EC")"
 [ "$RCC" = 0 ] && ! grep -q '\[advisory\] test-plan coverage' "$EC" \
   && ok "(c) no test plan -> no coverage advisory, exit 0" \
   || no "(c) expected exit 0 + no coverage advisory; got exit $RCC, stderr: $(cat "$EC")"
 
 # (d) partially mapped -> advisory names the unmapped rows, still not blocked
-TD="$(mktemp -d)"; mkrepo "$TD"
+TD="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; mkrepo "$TD"
 git -C "$TD" switch -qc feat/cmapd
 spec_with_plan "$TD/docs/specs/SPEC-001-cmapd.md"
 printf 'NEGATIVE CONTROL\nVerdict: PASS\n\n## Test plan coverage\n| Row | Run / skip reason |\n|---|---|\n| 1 | R1 |\n' > "$TD/docs/verification/cmapd.md"
 git -C "$TD" add -A; git -C "$TD" commit -qm work
 record_gates cmapd
-ED="$(mktemp)"
+ED="$(mktemp "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
 RCD="$(gate "$TD" 'git push -u origin HEAD' "$ED")"
 [ "$RCD" = 0 ] && grep -q 'UNMAPPED: 2' "$ED" \
   && ok "(d) partial map -> advisory names unmapped row 2, exit 0" \

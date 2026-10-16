@@ -189,7 +189,7 @@ _ship_rules_gate_head() {
   local rid="$1" lane="$2" root="$3" head="$4" base="$5" cfg="$6" spec="" tmp="" rc=0
   spec="$(_spec_in_tree "$root" "$head" "$rid")"
   if [ -n "$spec" ] && ship_rules_switch_on lane_gates "$root" "$cfg"; then
-    tmp="$(mktemp 2>/dev/null)" || tmp=""
+    tmp="$(mktemp "${TMPDIR:-/tmp}/kit.XXXXXX" 2>/dev/null)" || tmp=""
     if [ -n "$tmp" ] && git -C "$root" cat-file blob "$head:$spec" > "$tmp" 2>/dev/null; then
       ship_rule_large_spec "$tmp" "$rid" "$lane" "$GATE_LEDGER" "$spec" || rc=1
     fi

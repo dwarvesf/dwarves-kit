@@ -16,7 +16,7 @@ fails=0
 pass() { echo "PASS $*"; }
 fail() { echo "FAIL $*"; fails=$((fails + 1)); }
 
-TMP="$(mktemp -d)"
+TMP="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
 trap 'rm -rf "$TMP"' EXIT
 export DWARVES_KIT_LOG_DIR="$TMP/kitlogs"
 export CLAUDE_FLAGS=""

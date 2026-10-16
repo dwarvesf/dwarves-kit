@@ -18,7 +18,7 @@ ok() { TOTAL=$((TOTAL+1)); if [ "$2" -eq 0 ]; then echo -e "  ${GREEN}PASS${NC} 
 has() { { trap '' PIPE; printf '%s' "$2" 2>/dev/null || :; } | grep -qF -- "$1"; }
 
 # seeded corpus: a fixed DWARVES_KIT_LOG_DIR with three runs of distinct lane/type
-export DWARVES_KIT_LOG_DIR="$(mktemp -d)/logs"
+DWARVES_KIT_LOG_DIR="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; DWARVES_KIT_LOG_DIR="$DWARVES_KIT_LOG_DIR/logs"; export DWARVES_KIT_LOG_DIR
 seed() {  # rid lane type
   bash "$GL" start "$1" "$2" "$2" "$3" "$3" testrepo >/dev/null 2>&1
   bash "$GL" record "$1" think ran x >/dev/null 2>&1
@@ -57,7 +57,7 @@ OUTB="$(NO_COLOR=1 bash "$LT" render "[" 2>&1)"
 if { trap '' PIPE; printf '%s' "$OUTB" 2>/dev/null || :; } | grep -qiE 'awk|character class|syntax'; then ok "filter '[' does not crash awk [NC]" 1; else ok "filter '[' does not crash awk [NC]" 0; fi
 
 # --- gate coverage counts DISTINCT runs, not raw lines (a re-recorded phase counts once) ---
-DD="$(mktemp -d)/logs"
+DD="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; DD="$DD/logs"
 DWARVES_KIT_LOG_DIR="$DD" bash "$GL" start rr full full spec-feature spec-feature rp >/dev/null 2>&1
 DWARVES_KIT_LOG_DIR="$DD" bash "$GL" record rr think ran x >/dev/null 2>&1
 DWARVES_KIT_LOG_DIR="$DD" bash "$GL" record rr think ran "retry" >/dev/null 2>&1   # same phase, same run, twice
@@ -67,14 +67,14 @@ has "1 run," "$OUTC"; ok "single run pluralizes as 'run' not 'runs'" $?
 if printf '%s' "$OUTC" | grep -E 'think +[2-9]' >/dev/null; then ok "gate coverage dedupes a re-recorded phase (think=1, not 2)" 1; else ok "gate coverage dedupes a re-recorded phase (think=1, not 2)" 0; fi
 
 # --- filter matches lane OR type substring (DEC-002, intentional): a type substring hits too ---
-DT="$(mktemp -d)/logs"
+DT="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; DT="$DT/logs"
 DWARVES_KIT_LOG_DIR="$DT" bash "$GL" start t1 normal normal full-stack full-stack rp >/dev/null 2>&1
 DWARVES_KIT_LOG_DIR="$DT" bash "$GL" record t1 think ran x >/dev/null 2>&1
 OUTT="$(DWARVES_KIT_LOG_DIR="$DT" NO_COLOR=1 bash "$LT" render full 2>&1)"
 has "full-stack" "$OUTT"; ok "filter matches a TYPE substring too (DEC-002 lane-OR-type), not only lane" $?
 
 # --- SPEC-110: token efficiency section + usage=? honest null + render --mermaid annotation ---
-TT="$(mktemp -d)/logs"
+TT="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; TT="$TT/logs"
 DWARVES_KIT_LOG_DIR="$TT" bash "$GL" start ta full full spec-feature spec-feature rp >/dev/null 2>&1
 DWARVES_KIT_LOG_DIR="$TT" bash "$GL" tokens ta in=1000 out=200 cache_read=5000 cache_create=0 >/dev/null 2>&1
 DWARVES_KIT_LOG_DIR="$TT" bash "$GL" start tb normal normal spec-feature spec-feature rp >/dev/null 2>&1   # NO tokens -> usage=?
@@ -90,12 +90,13 @@ OUTA="$(DWARVES_KIT_LOG_DIR="$TT" NO_COLOR=1 bash "$LT" render 2>&1)"
 { { trap '' PIPE; printf '%s' "$OUTA" 2>/dev/null || :; } | grep -q "Lane routing" && ! { trap '' PIPE; printf '%s' "$OUTA" 2>/dev/null || :; } | grep -qF '```mermaid'; }; ok "SPEC-110 NC: ASCII render unchanged (no mermaid block without the flag)" $?
 
 # --- graceful-empty NEGATIVE CONTROL: empty/fresh LOG_DIR ---
-OUTE="$(DWARVES_KIT_LOG_DIR="$(mktemp -d)/empty" NO_COLOR=1 bash "$LT" render 2>&1)"
+_le="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
+OUTE="$(DWARVES_KIT_LOG_DIR="$_le/empty" NO_COLOR=1 bash "$LT" render 2>&1)"
 has "no runs recorded" "$OUTE"; ok "empty corpus renders an honest 'no runs recorded' [NC]" $?
 if { trap '' PIPE; printf '%s' "$OUTE" 2>/dev/null || :; } | grep -qiE 'error|not found|unbound|syntax'; then ok "empty render does not crash [NC]" 1; else ok "empty render does not crash [NC]" 0; fi
 
 # --- ID-398: failure-policy breakdown in `report` ---
-PD="$(mktemp -d)/logs"
+PD="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; PD="$PD/logs"
 DWARVES_KIT_LOG_DIR="$PD" bash "$GL" start pr1 full full spec-feature spec-feature rp >/dev/null 2>&1
 DWARVES_KIT_LOG_DIR="$PD" bash "$GL" outcome pr1 build start >/dev/null 2>&1
 DWARVES_KIT_LOG_DIR="$PD" bash "$GL" outcome pr1 build end caught=true policy=escalate >/dev/null 2>&1
@@ -116,7 +117,7 @@ if { trap '' PIPE; printf '%s' "$OUTNP" 2>/dev/null || :; } | grep -qF "failure 
 # of lane-telemetry.sh minus its trailing `main` call, so the real _rows runs against the oracle.
 echo ""
 echo "=== lane-telemetry misfires speed ==="
-TD="$(mktemp -d)"
+TD="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
 cp -R "$KIT_DIR/lib" "$TD/lib"
 sed '$d' "$LT" > "$TD/lib/telemetry/lt-src.sh"
 legacy_rows() {

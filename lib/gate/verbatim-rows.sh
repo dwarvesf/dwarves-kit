@@ -51,7 +51,7 @@ if [ $? -ne 0 ]; then
   exit 2
 fi
 
-orig_tmp="$(mktemp)"
+orig_tmp="$(mktemp "${TMPDIR:-/tmp}/kit.XXXXXX")"
 trap 'rm -f "$orig_tmp"' EXIT
 printf '%s\n' "$orig_content" | grep -E "$pattern" -- > "$orig_tmp" || true
 

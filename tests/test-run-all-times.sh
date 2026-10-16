@@ -10,7 +10,7 @@ pass=0; fail=0
 ok(){ echo "  ok: $*"; pass=$((pass+1)); }
 no(){ echo "  FAIL: $*" >&2; fail=$((fail+1)); }
 
-TMP="$(mktemp -d)"
+TMP="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
 trap 'rm -rf "$TMP"' EXIT
 export KIT_TEST_LOCK=0 KIT_LOAD_STUB=0
 unset CI KIT_RUN_ALL KIT_SUITE_TIMES_CAP

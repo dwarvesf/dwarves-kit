@@ -128,7 +128,7 @@ done
 echo ""
 echo "=== AC4: NEGATIVE CONTROL -- a fixture command with neither emit nor exemption IS caught ==="
 
-FIXTURE_DIR="$(mktemp -d -t command-emit-sweep-fixture.XXXXXX)"
+FIXTURE_DIR="$(mktemp -d "${TMPDIR:-/tmp}/command-emit-sweep-fixture.XXXXXX")" || exit 1
 trap 'rm -rf "$FIXTURE_DIR"' EXIT
 
 # one legit "emits" copy, one legit "exempt" copy, one fabricated bad command (SPEC-139's own

@@ -23,7 +23,7 @@ mod_path() { printf '%s/.claude/dwarves-kit/integrations/claude-code/board-pane'
 count_of() { printf '%s' "$2" | tr ':' '\n' | grep -cFx "$1"; }
 
 echo "== fresh install adds the mod path and copies only what the mod loads =="
-H1="$(mktemp -d)"
+H1="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
 HOME="$H1" bash "$KIT_DIR/install.sh" >"$H1/install.log" 2>&1
 MOD1="$(mod_path "$H1")"
 assert_true "fresh install sets env.CLAUDE_CODE_PLUGIN_DIRS to the installed mod path" "$([ "$(dirs_of "$H1")" = "$MOD1" ]; echo $?)"
@@ -36,7 +36,7 @@ assert_true "second run keeps exactly one entry" "$([ "$(count_of "$MOD1" "$(dir
 assert_true "second run leaves the value unchanged" "$([ "$(dirs_of "$H1")" = "$MOD1" ]; echo $?)"
 
 echo "== an existing unrelated path and env key survive =="
-H2="$(mktemp -d)"
+H2="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
 mkdir -p "$H2/.claude"
 printf '{"env":{"CLAUDE_CODE_PLUGIN_DIRS":"/opt/other-mod","KEEP":"1"}}\n' > "$H2/.claude/settings.json"
 HOME="$H2" bash "$KIT_DIR/install.sh" >"$H2/install.log" 2>&1
@@ -55,14 +55,14 @@ HOME="$H1" bash "$KIT_DIR/install.sh" --uninstall >"$H1/uninstall.log" 2>&1
 assert_true "the key is dropped when ours was the only entry" "$([ "$(dirs_of "$H1")" = "<unset>" ]; echo $?)"
 
 echo "== --no-mods skips the mod =="
-H3="$(mktemp -d)"
+H3="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
 HOME="$H3" bash "$KIT_DIR/install.sh" --no-mods >"$H3/install.log" 2>&1
 assert_true "--no-mods leaves env.CLAUDE_CODE_PLUGIN_DIRS unset" "$([ "$(dirs_of "$H3")" = "<unset>" ]; echo $?)"
 assert_true "--no-mods copies no mod files" "$([ ! -e "$(mod_path "$H3")" ]; echo $?)"
 
 echo "== plugin-compat install registers the live checkout path, with no copy =="
 compat_home() { # a fixture HOME the installer reads as a plugin machine
-  local h; h="$(mktemp -d)"
+  local h; h="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
   mkdir -p "$h/.claude/plugins/cache/dwarves-marketplace/kit/1.0.0/lib"
   printf '%s' "$h"
 }
@@ -79,7 +79,7 @@ assert_true "compat re-run lists the checkout path once" "$([ "$(count_of "$CHEC
 echo "== switching between the two installs never loads the mod twice =="
 # Separate fixture homes: a full install run over compat symlinks would write through them into
 # this checkout, so each direction starts from its own state.
-H7="$(mktemp -d)"
+H7="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
 mkdir -p "$H7/.claude"
 printf '{"env":{"CLAUDE_CODE_PLUGIN_DIRS":"/opt/other-mod:%s"}}\n' "$CHECKOUT_MOD" > "$H7/.claude/settings.json"
 HOME="$H7" bash "$KIT_DIR/install.sh" >"$H7/install.log" 2>&1
@@ -104,7 +104,7 @@ assert_true "uninstall drops the key when the checkout path was the only entry" 
 
 echo "== a full install over a compat install never writes into the checkout's kit.toml =="
 H8="$(compat_home)"
-TOML_SAVED="$(mktemp)"
+TOML_SAVED="$(mktemp "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
 cp "$KIT_DIR/kit.toml" "$TOML_SAVED"
 HOME="$H8" bash "$KIT_DIR/install.sh" >"$H8/install.log" 2>&1
 assert_true "compat leaves kit.toml as a link into the checkout" "$([ -L "$H8/.claude/dwarves-kit/kit.toml" ]; echo $?)"

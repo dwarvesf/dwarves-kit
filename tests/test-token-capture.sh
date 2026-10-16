@@ -17,7 +17,7 @@ fails=0
 pass() { echo "PASS $*"; }
 fail() { echo "FAIL $*"; fails=$((fails + 1)); }
 
-TMP="$(mktemp -d)"
+TMP="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
 trap 'rm -rf "$TMP"' EXIT
 
 # The known, real-shape stream-json the mock emits. Assistant usage sums to

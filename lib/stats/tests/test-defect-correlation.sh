@@ -21,7 +21,7 @@ bad()  { printf 'FAIL  %s\n' "$1"; FAIL=$((FAIL+1)); }
 has()  { case "$3" in *"$2"*) ok "$1";; *) bad "$1 (missing: $2)";; esac; }
 hasnt(){ case "$3" in *"$2"*) bad "$1 (unexpected: $2)";; *) ok "$1";; esac; }
 
-FIX="$(mktemp -d)"
+FIX="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
 GITREPO="$FIX/repo"
 KITLOG="$FIX/kit-runs"
 

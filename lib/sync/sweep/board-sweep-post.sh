@@ -73,7 +73,7 @@ posted=0
 if [ ! -x "$POSTER" ]; then
   fail "poster not executable: $POSTER"
 else
-  poster_err="$(mktemp)"
+  poster_err="$(mktemp "${TMPDIR:-/tmp}/kit.XXXXXX")"
   if printf '%s' "$payload" | "$POSTER" >/dev/null 2>"$poster_err"; then
     posted=1
   else
@@ -90,7 +90,7 @@ if [ "$posted" -eq 1 ]; then
 else
   reason_safe="$(printf '%s' "$reason" | LC_ALL=C tr -c '[:print:]' ' ' \
     | sed -E 's#https://discord(app)?\.com/api/webhooks/[^ ]+#[webhook-redacted]#g; s#[A-Za-z0-9_-]{24,}#[redacted]#g')"
-  rfile="$(mktemp)"; chmod 600 "$rfile"
+  rfile="$(mktemp "${TMPDIR:-/tmp}/kit.XXXXXX")"; chmod 600 "$rfile"
   printf '%s' "$reason_safe" > "$rfile"
   bash "$DIGEST" --mark-failed --cluster "$CLUSTER" --reason-file "$rfile" "${common[@]}"
   rm -f "$rfile"

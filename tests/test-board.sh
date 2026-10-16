@@ -48,7 +48,7 @@ assert() {
 }
 skip() { TOTAL=$((TOTAL+1)); SKIP=$((SKIP+1)); echo -e "  ${YELLOW}SKIP${NC} $1"; }
 
-TMPDIR_T="$(mktemp -d "${TMPDIR:-/tmp}/dk-board-test.XXXXXX")"
+TMPDIR_T="$(mktemp -d "${TMPDIR:-/tmp}/dk-board-test.XXXXXX")" || exit 1
 TMPDIR_T="$(cd "$TMPDIR_T" && pwd)"   # normalize away a double slash (macOS $TMPDIR often ends
                                        # in one), so string-prefix assertions below compare
                                        # apples to apples against board.sh's own canonicalization

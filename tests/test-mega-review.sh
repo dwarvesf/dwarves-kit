@@ -25,7 +25,7 @@ PASS=0; FAIL=0
 ok() { PASS=$((PASS + 1)); echo "ok - $1"; }
 no() { FAIL=$((FAIL + 1)); echo "NOT ok - $1"; }
 
-TMP="$(mktemp -d "${TMPDIR:-/tmp}/dk-mega-review-test.XXXXXX")"
+TMP="$(mktemp -d "${TMPDIR:-/tmp}/dk-mega-review-test.XXXXXX")" || exit 1
 TMP="$(cd "$TMP" && pwd)"
 trap 'rm -rf "$TMP"' EXIT
 

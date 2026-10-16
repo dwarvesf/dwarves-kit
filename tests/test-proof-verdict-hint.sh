@@ -20,7 +20,7 @@ fail(){ echo "FAIL $*"; fails=$((fails+1)); }
 HINT_PROSE='has a NEGATIVE CONTROL and a green run, but its LAST Verdict line reads FAIL/INCONCLUSIVE'
 HINT_FIX='record the negative control'\''s own outcome as `Result: RED as expected`'
 
-F=/tmp/vf-proof-verdict-hint
+F=${TMPDIR:-/tmp}/vf-proof-verdict-hint
 trap 'rm -rf "$F"' EXIT
 
 make_fixture() {  # $1 = dir; a fresh repo with a behavioral (.sh) diff staged

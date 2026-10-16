@@ -141,7 +141,7 @@ grep -qiE 'FAIL-OPEN|NC2' "$A"; assert "AC5: advisor.md states the fail-open con
 grep -qiE 'FINAL sub-goal' "$A"; assert "AC5: advisor.md pins the final-sub-goal's-rid convention (its own claimed canonical home)" $?
 
 # AC6: negative control -- the fail_open_call check itself catches a bare (non-fail-open) call
-BAD_FIXTURE="$(mktemp "${TMPDIR:-/tmp}/dwarves-kit-advisor-bad.XXXXXX.md")"
+BAD_FIXTURE="$(mktemp "${TMPDIR:-/tmp}/dwarves-kit-advisor-bad.XXXXXX.md")" || exit 1
 trap 'rm -f "$BAD_FIXTURE"' EXIT
 cat > "$BAD_FIXTURE" <<'EOF'
 bash lib/gate/gate-ledger.sh record "$rid" advisor ran "mode=P5 findings=<N> actor=$(git config user.name)"
@@ -170,7 +170,7 @@ assert "AC7: fixture-without-advisor log DID run other gates (it ran, just never
 # AC8: the WRITE side -- invoke the real, unmodified lib/gate/gate-ledger.sh record verb (not a
 # hand-authored fixture) and confirm it produces the exact GATE-line shape the two dispatch sites
 # depend on. AC7 alone only proves the fixtures LOOK right; this proves the live script agrees.
-AC8_LOGDIR="$(mktemp -d "${TMPDIR:-/tmp}/dwarves-kit-advisor-ac8.XXXXXX")"
+AC8_LOGDIR="$(mktemp -d "${TMPDIR:-/tmp}/dwarves-kit-advisor-ac8.XXXXXX")" || exit 1
 trap 'rm -f "$BAD_FIXTURE"; rm -rf "$AC8_LOGDIR"' EXIT
 AC8_RID="ac8-live-write-fixture"
 if DWARVES_KIT_LOG_DIR="$AC8_LOGDIR" bash "$KIT_DIR/lib/gate/gate-ledger.sh" record "$AC8_RID" advisor ran "mode=P5 findings=2 actor=Test Actor" >/dev/null 2>&1; then

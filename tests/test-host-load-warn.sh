@@ -10,7 +10,7 @@ pass=0; fail=0
 ok(){ echo "  ok: $*"; pass=$((pass+1)); }
 no(){ echo "  FAIL: $*" >&2; fail=$((fail+1)); }
 
-TMP="$(mktemp -d)"
+TMP="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
 trap 'rm -rf "$TMP"' EXIT
 # A kit root with no kit.toml and no operator file: the default (16) is the only source.
 export KIT_CONFIG_ROOT="$TMP/root" KIT_CONFIG_OPERATOR="$TMP/op" KIT_PROJECT_ROOT="$TMP/proj"

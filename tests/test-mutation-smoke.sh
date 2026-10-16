@@ -25,7 +25,7 @@ expect()  { if { trap '' PIPE; printf '%s' "$3" 2>/dev/null || :; } | grep -qF "
 refute()  { if { trap '' PIPE; printf '%s' "$3" 2>/dev/null || :; } | grep -qF "$2"; then bad "$1 (unexpected '$2')"; else ok "$1"; fi; }
 eq()      { if [ "$2" = "$3" ]; then ok "$1"; else bad "$1 (want '$3' got '$2')"; fi; }
 
-TMPROOT="$(mktemp -d "${TMPDIR:-/tmp}/kit-mut-smoke.XXXXXX")"
+TMPROOT="$(mktemp -d "${TMPDIR:-/tmp}/kit-mut-smoke.XXXXXX")" || exit 1
 export DWARVES_KIT_LOG_DIR="$TMPROOT/logs"
 trap 'rm -rf "$TMPROOT"' EXIT
 
@@ -35,7 +35,7 @@ git_init() { git -C "$1" init -q; git -C "$1" config user.email t@t.t; git -C "$
 # of the requested flavor. Prints "<repo> <base-sha>".
 # flavor: biting | nonbiting | baseline-red | many-biting
 mk_fixture() {
-  local flavor="$1" repo; repo="$(mktemp -d "$TMPROOT/repo.XXXXXX")"
+  local flavor="$1" repo; repo="$(mktemp -d "$TMPROOT/repo.XXXXXX")" || return 1
   git_init "$repo"
   # BASE commit: code.sh with a placeholder body (no mutable operator yet).
   printf 'calc() {\n  echo 0\n}\n' > "$repo/code.sh"
@@ -157,7 +157,7 @@ eq     "T8 MUTATION line changes nothing vs an empty ledger" "$MUT_OUT" "$EMPTY_
 # ============================================================
 echo "=== T9: no test runner -> SKIP (advisory, exit 0) ==="
 # ============================================================
-REPO="$(mktemp -d "$TMPROOT/norunner.XXXXXX")"; git_init "$REPO"
+REPO="$(mktemp -d "$TMPROOT/norunner.XXXXXX")" || exit 1; git_init "$REPO"
 printf 'x=1\n' > "$REPO/code.sh"; ( cd "$REPO" && git add -A && git commit -qm base )
 printf 'x=$(( 1 + 1 ))\n' > "$REPO/code.sh"; ( cd "$REPO" && git add -A && git commit -qm change )
 BASE="$( cd "$REPO" && git rev-parse HEAD~1 )"
@@ -178,7 +178,7 @@ rewrite "$PF" 3 'QQQ'; eq "T10 last-line rewrite (rest intact)" "$(cat "$PF")" "
 # ============================================================
 echo "=== T11: scope -- a diff touching only tests/docs yields no candidates (SKIP) ==="
 # ============================================================
-REPO="$(mktemp -d "$TMPROOT/testsonly.XXXXXX")"; git_init "$REPO"
+REPO="$(mktemp -d "$TMPROOT/testsonly.XXXXXX")" || exit 1; git_init "$REPO"
 printf 'echo base\n' > "$REPO/test-foo.sh"; printf '# doc\n' > "$REPO/README.md"
 ( cd "$REPO" && git add -A && git commit -qm base )
 printf 'x=$(( 1 + 1 ))\n' > "$REPO/test-foo.sh"; printf '# doc x=$(( 2 + 2 ))\n' > "$REPO/README.md"

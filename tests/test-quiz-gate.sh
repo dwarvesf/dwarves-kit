@@ -24,7 +24,7 @@ assert() { TOTAL=$((TOTAL+1)); if [ "$2" -eq 0 ] 2>/dev/null; then echo -e "  ${
 gitq() { git -C "$1" "${@:2}"; }
 mkrepo() { local d="$1"; mkdir -p "$d"; git init -q -b master "$d"; gitq "$d" config user.email t@t; gitq "$d" config user.name t; }
 
-LOGDIR="$(mktemp -d)"
+LOGDIR="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
 trap 'rm -rf "$LOGDIR"' EXIT
 export DWARVES_KIT_LOG_DIR="$LOGDIR"
 
@@ -32,7 +32,7 @@ export DWARVES_KIT_LOG_DIR="$LOGDIR"
 # Fixture A: a multi-rank change (background doc + new file + modified file + test) with a recorded
 # proof under docs/verification/, so `questions` has real files, real added lines, and a real verdict.
 # ---------------------------------------------------------------------------
-DA="$(mktemp -d)"; mkrepo "$DA"
+DA="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; mkrepo "$DA"
 printf 'let a = 1;\n' > "$DA/alpha.js"
 gitq "$DA" add -A; gitq "$DA" commit -qm "init base"
 mkdir -p "$DA/docs/verification/widget" "$DA/tests"
@@ -87,7 +87,7 @@ assert "AC2 a DEBT-only ledger fails gate check (response lines never satisfy a 
 echo "=== AC3: engage routes through the understand.teach seam (dispatch, not reimplementation) ==="
 # Fixture operator kit.toml with understand.teach FILLED, isolated from the real machine's own
 # ~/.config/dwarves-kit/kit.toml (KIT_CONFIG_OPERATOR points here instead).
-OPDIR="$(mktemp -d)"; trap 'rm -rf "$LOGDIR" "$OPDIR"' EXIT
+OPDIR="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; trap 'rm -rf "$LOGDIR" "$OPDIR"' EXIT
 mkdir -p "$OPDIR/filled" "$OPDIR/none" "$OPDIR/whitespace"
 printf '[understand]\nteach = "fixture-teacher"\n' > "$OPDIR/filled/kit.toml"
 printf '[understand]\nteach = " "\n' > "$OPDIR/whitespace/kit.toml"
@@ -123,7 +123,7 @@ assert "AC3 commands/quiz-gate.md reaches understand.teach and names no skill di
 echo "=== AC4: GROUNDED negative control (narrative differs from the diff) ==="
 # Fixture B: the diff adds `subtract`; the commit BODY and an untracked file claim `multiply`. `questions`
 # takes the ref ONLY -- there is no narrative channel -- so the quiz must name `subtract`, never `multiply`.
-DB="$(mktemp -d)"; mkrepo "$DB"
+DB="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; mkrepo "$DB"
 printf '// calc\n' > "$DB/calc.js"; gitq "$DB" add -A; gitq "$DB" commit -qm "init calc"
 printf '// calc\nfunction subtract(a, b) { return a - b; }\n' > "$DB/calc.js"      # DIFF truth: subtract
 printf 'This change adds a multiply function.\n' > "$DB/AGENT_NARRATIVE.txt"       # untracked lie
@@ -143,7 +143,7 @@ assert "AC4 no recorded proof -> Q4 says '[no recorded test result]' (does not i
 echo "=== Edges: docs/tests-only change + a range ref ==="
 # MAJOR-2: a change touching ONLY docs/ + tests/ has no primary code file -> Q3 fires the
 # "touches only docs/tests" branch (not a doc mis-labeled as the primary code file).
-DD="$(mktemp -d)"; mkrepo "$DD"
+DD="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; mkrepo "$DD"
 printf 'seed\n' > "$DD/seed.txt"; gitq "$DD" add -A; gitq "$DD" commit -qm "seed"
 mkdir -p "$DD/docs" "$DD/tests"
 printf '# Doc\nnew doc line\n'   > "$DD/docs/note.md"

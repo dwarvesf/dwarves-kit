@@ -8,7 +8,7 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$HERE/root"
 c=$(cat)
 name=$(jq -r .name <<<"$c")
-TMP="$(mktemp -d)"; mkdir -p "$TMP/home"
+TMP="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; mkdir -p "$TMP/home"
 log="$TMP/cg.log"
 envs=(); unset_log=0
 if [ "$(jq -r '.env | has("CITATION_GUARD_LOG")' <<<"$c")" = "true" ]; then

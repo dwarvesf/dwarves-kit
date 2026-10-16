@@ -43,7 +43,7 @@ assert_has() {
   assert_eq "$1" 0 "$RC"
 }
 
-TMP="$(mktemp -d "${TMPDIR:-/tmp}/test-lens-eval.XXXXXX")"
+TMP="$(mktemp -d "${TMPDIR:-/tmp}/test-lens-eval.XXXXXX")" || exit 1
 STUB_BIN="$TMP/bin"
 REPO="$TMP/repo"
 mkdir -p "$STUB_BIN" "$REPO/commands"

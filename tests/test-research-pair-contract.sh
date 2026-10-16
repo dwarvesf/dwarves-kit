@@ -158,7 +158,7 @@ echo "=== Rows 33-34: in-suite NEGATIVE CONTROLS (scratch copies, never a tracke
 # keeps the blast radius at exactly one pin. The ! cmp -s setup guard is the
 # assertion rows 35/36 predict RED under the live mutation (sed is a silent
 # no-op when the substring is already gone).
-NC_DIR="$(mktemp -d -t research-pair-contract-nc.XXXXXX)"
+NC_DIR="$(mktemp -d "${TMPDIR:-/tmp}/research-pair-contract-nc.XXXXXX")" || exit 1
 trap 'rm -rf "$NC_DIR"' EXIT
 
 sed 's/ Only report real risks, not style preferences\.//' "$P" > "$NC_DIR/mut-p.md"

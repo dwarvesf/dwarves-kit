@@ -16,7 +16,7 @@ pass=0; fail=0
 ok(){ echo "  ok: $*"; pass=$((pass+1)); }
 no(){ echo "  FAIL: $*" >&2; fail=$((fail+1)); }
 
-TMP="$(mktemp -d)"
+TMP="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
 trap 'rm -rf "$TMP"' EXIT
 mkrepo() {  # $1 = dir; a lib with add() and a test that needs add 2 2 = 4
   mkdir -p "$1/sub dir"

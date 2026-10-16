@@ -32,7 +32,7 @@ make_fixture() {  # $1 = dir
 }
 base(){ git -C "$1" rev-parse HEAD; }
 
-F=/tmp/vf-tool-path-gate
+F=${TMPDIR:-/tmp}/vf-tool-path-gate
 make_fixture "$F"
 if bash "$LIB" check "$F" "$(base "$F")" vf-tool >/dev/null 2>&1; then
   pass "tools/<name>/docs/verification/<slug>.md proof satisfies the gate"

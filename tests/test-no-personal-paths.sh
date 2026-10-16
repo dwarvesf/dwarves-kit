@@ -25,8 +25,9 @@ no() { FAIL=$((FAIL + 1)); echo "NOT ok - $1"; }
 # up this machine's real operator overlay (e.g. adopt.single_source = true), which skips
 # the two-file render this check depends on -- same isolation test-adopt.sh already uses.
 SENTINEL="/opt/kit-root-sentinel"
-T="$(mktemp -d)"; git -C "$T" init -q
-CLAUDE_PLUGIN_ROOT="$SENTINEL" KIT_CONFIG_OPERATOR="$(mktemp -d)" bash lib/adopt.sh "$T" >/dev/null 2>&1
+T="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; git -C "$T" init -q
+_op="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
+CLAUDE_PLUGIN_ROOT="$SENTINEL" KIT_CONFIG_OPERATOR="$_op" bash lib/adopt.sh "$T" >/dev/null 2>&1
 RENDERED="$(grep -rl -e "$SENTINEL" -e '/Users/' "$T" --exclude-dir=.git 2>/dev/null)"
 if [ -z "$RENDERED" ]; then
   ok "adopt renders no render-time install path into the consumer repo"

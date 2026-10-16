@@ -22,7 +22,7 @@ refute()  { if { trap '' PIPE; printf '%s' "$3" 2>/dev/null || :; } | grep -q "$
 SPEC_INDEX="$KIT_DIR/lib/spec/spec-index.sh"
 
 mk_repo() {
-  local r; r="$(mktemp -d "${TMPDIR:-/tmp}/kit-spec-index.XXXXXX")"
+  local r; r="$(mktemp -d "${TMPDIR:-/tmp}/kit-spec-index.XXXXXX")" || exit 1
   git -C "$r" init -q
   git -C "$r" config user.email t@t.t
   git -C "$r" config user.name t

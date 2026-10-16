@@ -181,7 +181,7 @@ state_write() {  # <new-json-object-on-stdin> -- merges shallowly over the exist
   # The state carries upstream error text (_cluster_errors), so the new JSON
   # travels via a 0600 temp file, never argv (macOS shows other users' argv),
   # and the state file itself is written under umask 077 + chmod 600.
-  local newf; newf="$(mktemp)"; chmod 600 "$newf"
+  local newf; newf="$(mktemp "${TMPDIR:-/tmp}/kit.XXXXXX")"; chmod 600 "$newf"
   cat > "$newf"
   mkdir -p "$(dirname "$STATE_FILE")"
   # Two concurrent --repo runs (or a run racing --mark-posted/--mark-failed)
@@ -233,7 +233,7 @@ do_repo_mode() {
     log "WARN state file missing at $STATE_FILE, treating as first sweep"
   fi
 
-  local tmp_records; tmp_records="$(mktemp)"
+  local tmp_records; tmp_records="$(mktemp "${TMPDIR:-/tmp}/kit.XXXXXX")"
   trap 'rm -f "$tmp_records"' RETURN
 
   local parse_degraded=0

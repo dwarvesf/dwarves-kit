@@ -129,7 +129,7 @@ echo "=== Row 27: in-suite NEGATIVE CONTROL (scratch copy, never the tracked fil
 # Substring strip, not line delete: row 13's pin and row 14's first fragment
 # share one physical line in the SKILL body (SPEC-209 coverage notes), so only
 # a substring removal keeps the blast radius at exactly one fragment.
-NC_DIR="$(mktemp -d -t loop-engineering-contract-nc.XXXXXX)"
+NC_DIR="$(mktemp -d "${TMPDIR:-/tmp}/loop-engineering-contract-nc.XXXXXX")" || exit 1
 trap 'rm -rf "$NC_DIR"' EXIT
 sed 's/A flat K still counts as progress if the worst severity dropped\. //' "$S" > "$NC_DIR/mut.md"
 

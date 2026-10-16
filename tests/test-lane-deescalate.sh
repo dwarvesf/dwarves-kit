@@ -18,7 +18,7 @@ GL="$KIT_DIR/lib/gate/gate-ledger.sh"
 # test-lane-escalation.sh's DWARVES_KIT_LOG_DIR export) -- CI-portability: every ledger
 # read/write below is scoped to a fixture dir, never the machine-local
 # ~/.local/state/dwarves-kit ledger, so the suite is identical on a fresh CI checkout.
-export DWARVES_KIT_LOG_DIR="$(mktemp -d "${TMPDIR:-/tmp}/dwarves-kit-lane-deesc.XXXXXX")"
+DWARVES_KIT_LOG_DIR="$(mktemp -d "${TMPDIR:-/tmp}/dwarves-kit-lane-deesc.XXXXXX")" || exit 1; export DWARVES_KIT_LOG_DIR
 
 PASS=0; FAIL=0; TOTAL=0
 RED='\033[0;31m'; GREEN='\033[0;32m'; NC='\033[0m'
@@ -65,7 +65,7 @@ grep -qF 'deescalate <chosen-lane>' "$LC"; assert "wiring: usage string document
 echo ""
 echo "=== T1/T2: FIRE -- normal lane, diff under the floor -> advisory + ledger line ==="
 # ============================================================
-WORK="$(mktemp -d "${TMPDIR:-/tmp}/dwarves-kit-lane-deesc-fix.XXXXXX")"
+WORK="$(mktemp -d "${TMPDIR:-/tmp}/dwarves-kit-lane-deesc-fix.XXXXXX")" || exit 1
 D="$WORK/t1"; make_repo "$D"
 echo "one more line" >> "$D/a.txt"
 git -C "$D" add -A; git -C "$D" commit -qm small
@@ -123,7 +123,7 @@ bash "$LC" deescalate normal --root "$D" --base "$BASE" >/dev/null 2>&1
 assert "T5: the FIRE case's own exit code is 0 (never blocks)" $?
 
 # a ledger write failure (unwritable log dir) must never change the command's own exit.
-UNWRITABLE="$(mktemp -d "${TMPDIR:-/tmp}/dwarves-kit-lane-deesc-ro.XXXXXX")"
+UNWRITABLE="$(mktemp -d "${TMPDIR:-/tmp}/dwarves-kit-lane-deesc-ro.XXXXXX")" || exit 1
 chmod 000 "$UNWRITABLE"
 DWARVES_KIT_LOG_DIR="$UNWRITABLE/nope" bash "$LC" deescalate normal --root "$D" --base "$BASE" --rid "ledger-fail-test" >/dev/null 2>&1
 assert "T6: a ledger-write failure still leaves exit 0" $?

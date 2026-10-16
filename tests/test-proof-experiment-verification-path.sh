@@ -39,7 +39,7 @@ make_fixture() {
 base(){ git -C "$1" rev-parse HEAD; }
 
 check_accepts() {  # $1 = label, $2 = proof path relative to repo root
-  local d=/tmp/vf-exp-path-gate
+  local d=${TMPDIR:-/tmp}/vf-exp-path-gate
   make_fixture "$d" "$2"
   if bash "$LIB" check "$d" "$(base "$d")" vf-exp >/dev/null 2>&1; then
     pass "$1"
@@ -63,7 +63,7 @@ check_accepts "an unenumerated owner dir under docs/verification/ accepted" \
 
 # Guard the other direction: a README under docs/verification/ is documentation about
 # proofs, not a proof, and must stay excluded or every repo self-satisfies the gate.
-D=/tmp/vf-exp-path-gate-neg
+D=${TMPDIR:-/tmp}/vf-exp-path-gate-neg
 make_fixture "$D" "experiments/e/docs/verification/README.md"
 if bash "$LIB" check "$D" "$(base "$D")" vf-exp >/dev/null 2>&1; then
   fail "a docs/verification/README.md must NOT satisfy the gate, but it did"

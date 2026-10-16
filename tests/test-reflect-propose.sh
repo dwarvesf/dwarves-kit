@@ -25,7 +25,7 @@ assert_true() { if [ "$2" -eq 0 ]; then ok "$1"; else bad "$1"; fi; }
 # A fresh sandbox per test: an injected aggregate, a HOLDS interpreter+verifier by default,
 # isolated staging/board/ledger. Sets TD, AGG, STAGING, BACKLOG. Exports the seams.
 setup() {
-  TD="$(mktemp -d)"; SANDBOXES+=("$TD")
+  TD="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; SANDBOXES+=("$TD")
   AGG="$TD/agg.json"; STAGING="$TD/staging.md"; BACKLOG="$TD/BACKLOG.md"
   cat > "$AGG" <<'EOF'
 {"window":{"days":30,"megas":null,"rids":["loop-05","loop-04"],"n_rids":2},
@@ -268,7 +268,7 @@ assert_true "subprocess-fail: 0 candidates, staging untouched" "$([ ! -f "$STAGI
 # retype one to act on it, and so nobody did. Same disease session-intel had (T6).
 echo ""
 echo "== T7: reflect propose --retro stages a retro's action items =="
-RT="$(mktemp -d)"
+RT="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
 cat > "$RT/RETRO-2026-07-15.md" <<'EOF'
 # Retro: a cycle
 ## What worked
@@ -366,7 +366,7 @@ assert_true "off: exit 0" "$([ $RC -eq 0 ]; echo $?)"
 assert_true "off: no staging file written" "$([ ! -f "$STAGING" ]; echo $?)"
 assert_true "off: the block is printed on stdout" "$({ trap '' PIPE; echo "$OUT" 2>/dev/null || :; } | grep -q '## \[staged\] Printed not staged'; echo $?)"
 assert_true "off: the summary says it did not stage" "$({ trap '' PIPE; echo "$OUT" 2>/dev/null || :; } | grep -q 'BACKLOG_STAGE_AUTO is off'; echo $?)"
-RT="$(mktemp -d)"; SANDBOXES+=("$RT")
+RT="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; SANDBOXES+=("$RT")
 printf '# Retro\n## Action items\n- [ ] Print this retro item -- owner: @tieubao\n' > "$RT/RETRO-2026-09-18.md"
 printf '| ID | Item | Notes | Status |\n|---|---|---|---|\n' > "$RT/BACKLOG.md"
 OUT="$(env -u BACKLOG_STAGE_AUTO python3 "$PROPOSE" --retro "$RT/RETRO-2026-09-18.md" --staging "$RT/staging.md" --backlog "$RT/BACKLOG.md" 2>&1)"; RC=$?

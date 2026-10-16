@@ -28,7 +28,7 @@ assert "row2: goal.sh drafts dir == goal.sh draft dir (byte-identical)" \
   "$(cmp <(bash "$GOAL" drafts dir) <(bash "$GOAL" draft dir) >/dev/null 2>&1 && echo 0 || echo 1)"
 
 echo "=== row 3: registry list -- happy-path, AC-3 ==="
-d="$(mktemp -d)"; trap 'rm -rf "$d"' EXIT
+d="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; trap 'rm -rf "$d"' EXIT
 assert "row3: registry list forwards + prints '(no running goals)'" \
   "$(GOAL_REGISTRY_DIR="$d" bash "$GOAL" registry list | grep -qx '(no running goals)' && echo 0 || echo 1)"
 rm -rf "$d"; trap - EXIT
@@ -57,14 +57,14 @@ assert "row7: no-args usage is byte-identical to comment-stripped lines 2-13" \
   "$(cmp <(bash "$GOAL") <(sed -n '2,13p' "$GOAL" | sed 's/^# \{0,1\}//') >/dev/null 2>&1 && echo 0 || echo 1)"
 
 echo "=== row 8: -h / --help / help byte-identical -- boundary/edge, AC-8 ==="
-d="$(mktemp -d)"; trap 'rm -rf "$d"' EXIT
+d="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; trap 'rm -rf "$d"' EXIT
 bash "$GOAL" --help > "$d/h1"; bash "$GOAL" -h > "$d/h2"; bash "$GOAL" help > "$d/h3"
 assert "row8: --help/-h/help all byte-identical" \
   "$(cmp "$d/h1" "$d/h2" >/dev/null 2>&1 && cmp "$d/h2" "$d/h3" >/dev/null 2>&1 && echo 0 || echo 1)"
 rm -rf "$d"; trap - EXIT
 
 echo "=== row 9: quoting-boundary adversarial arg through draft -- boundary/edge, AC-1 ==="
-d="$(mktemp -d)"; trap 'rm -rf "$d"' EXIT
+d="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; trap 'rm -rf "$d"' EXIT
 out="$(GOAL_DRAFTS_DIR="$d" bash "$GOAL" draft 'list extra-words' 2>&1)"; ec=$?
 assert "row9: single-token forwarding lands on goal-drafts.sh's catch-all (usage, exit 64)" \
   "$([ "$out" = 'usage: goal-drafts.sh {archive [--dry-run]|list|dir}' ] && [ "$ec" -eq 64 ] && echo 0 || echo 1)"
@@ -81,7 +81,7 @@ assert "row10: unrecognized verb error is exact + exit 1 (bogus-verb, whitespace
      && echo 0 || echo 1)"
 
 echo "=== row 11: sibling script missing -- failure-injection, AC-11 (missing half) ==="
-d="$(mktemp -d)"; trap 'rm -rf "$d"' EXIT
+d="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; trap 'rm -rf "$d"' EXIT
 sed 's#goal-drafts\.sh#goal-drafts-NOPE.sh#' "$GOAL" > "$d/goal-missing.sh"
 out="$(bash "$d/goal-missing.sh" draft dir 2>&1)"; ec=$?
 assert "row11: missing sibling surfaces bash's own 'No such file or directory', exit 127" \
@@ -92,7 +92,7 @@ echo "=== row 12: sibling script unreadable (chmod 000) -- failure-injection, AC
 if [ "$(id -u)" -eq 0 ]; then
   skip "row12: skipped -- running as root, chmod 000 is not enforced against root"
 else
-  d="$(mktemp -d)"; trap 'rm -rf "$d"' EXIT
+  d="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; trap 'rm -rf "$d"' EXIT
   cp "$GOAL" lib/goal/goal-drafts.sh "$d/"
   chmod 000 "$d/goal-drafts.sh"
   out="$(bash "$d/goal.sh" draft dir 2>&1)"; ec=$?
@@ -116,7 +116,7 @@ assert "row14: lib/goal/handoff-gen execs python3 at column 0" \
   "$(grep -q '^exec python3' lib/goal/handoff-gen && echo 0 || echo 1)"
 
 echo "=== row 15: verb string contains shell metacharacters -- security/abuse, AC-9 ==="
-d="$(mktemp -d)"; trap 'rm -rf "$d"' EXIT
+d="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; trap 'rm -rf "$d"' EXIT
 pwned="$d/pwned"
 bash "$GOAL" "bad;touch $pwned" >/dev/null 2>&1
 assert "row15: metachar verb is matched as one literal case pattern, never executed" \
@@ -124,7 +124,7 @@ assert "row15: metachar verb is matched as one literal case pattern, never execu
 rm -rf "$d"; trap - EXIT
 
 echo "=== row 16: forwarded arg contains shell metacharacters -- security/abuse, AC-1 ==="
-d="$(mktemp -d)"; trap 'rm -rf "$d"' EXIT
+d="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; trap 'rm -rf "$d"' EXIT
 pwned2="$d/pwned2"
 bash "$GOAL" draft "; touch $pwned2" >/dev/null 2>&1
 assert "row16: metachar forwarded arg reaches the sibling as inert argv, never executed" \
@@ -132,7 +132,7 @@ assert "row16: metachar forwarded arg reaches the sibling as inert argv, never e
 rm -rf "$d"; trap - EXIT
 
 echo "=== row 17: merge bogus-subcmd vs direct mega-merge.sh bogus-subcmd -- regression, AC-10 (fidelity) ==="
-d="$(mktemp -d)"; trap 'rm -rf "$d"' EXIT
+d="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; trap 'rm -rf "$d"' EXIT
 bash "$GOAL" merge bogus-subcmd > "$d/via" 2>&1; via=$?
 bash lib/goal/mega-merge.sh bogus-subcmd > "$d/direct" 2>&1; direct=$?
 assert "row17: via-goal.sh and direct mega-merge.sh are byte-identical, both exit 64" \
@@ -140,7 +140,7 @@ assert "row17: via-goal.sh and direct mega-merge.sh are byte-identical, both exi
 rm -rf "$d"; trap - EXIT
 
 echo "=== row 18: EXIT-trap discriminator, merge's real exec vs a plain nested call -- regression, AC-10 ==="
-d="$(mktemp -d)"; trap 'rm -rf "$d"' EXIT
+d="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; trap 'rm -rf "$d"' EXIT
 cp -R lib "$d/"
 awk '{ if ($0 == "main \"$@\"") print "trap '"'"'echo EXEC_DISCRIMINATOR_FIRED >&2'"'"' EXIT"; print }' "$d/lib/goal/goal.sh" > "$d/lib/goal/goal-trapped.sh"
 if ! grep -q 'EXEC_DISCRIMINATOR' "$d/lib/goal/goal-trapped.sh"; then
@@ -157,7 +157,7 @@ assert "row19: empty-string verb + trailing args prints usage, byte-identical to
   "$(cmp <(bash "$GOAL" "" extra args here) <(sed -n '2,13p' "$GOAL" | sed 's/^# \{0,1\}//') >/dev/null 2>&1 && echo 0 || echo 1)"
 
 echo "=== row 20: registry claim <slug> <lane> <glob1> <glob2> <glob3> -- regression, AC-3, AC-1 (forwarding depth) ==="
-d="$(mktemp -d)"; trap 'rm -rf "$d"' EXIT
+d="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; trap 'rm -rf "$d"' EXIT
 out="$(GOAL_REGISTRY_DIR="$d" bash "$GOAL" registry claim testslug backend "glob/a/**" "glob/b/**" "glob/c/**")"; ec=$?
 assert "row20: 3 trailing tokens forward intact through registry -> touches= line + success message" \
   "$([ "$ec" -eq 0 ] && [ "$out" = "CLAIMED testslug (lane=backend)" ] && grep -qxF 'touches=glob/a/** glob/b/** glob/c/**' "$d/testslug.goal" && echo 0 || echo 1)"

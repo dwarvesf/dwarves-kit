@@ -6,7 +6,7 @@ PASS=0; FAIL=0
 assert() { if [ "$2" -eq 0 ]; then echo "  PASS $1"; PASS=$((PASS+1)); else echo "  FAIL $1"; FAIL=$((FAIL+1)); fi; }
 has() { grep -qF -- "$2" "$KIT_DIR/$1"; echo $?; }
 
-T="$(mktemp -d "${TMPDIR:-/tmp}/suite-knob.XXXXXX")"
+T="$(mktemp -d "${TMPDIR:-/tmp}/suite-knob.XXXXXX")" || exit 1
 trap 'mv -f "$T" "$T.done"' EXIT
 source "$KIT_DIR/lib/config/kit-config.sh"
 export KIT_CONFIG_ROOT="$KIT_DIR" KIT_CONFIG_OPERATOR="$T/op" KIT_PROJECT_ROOT="$T/proj"

@@ -193,7 +193,7 @@ assert "the record call precedes the quiz-gate tap call in commands/ship.md (rec
 echo ""
 echo "=== AC4: NEGATIVE CONTROL -- a fabricated over-claim IS caught by the sweep ==="
 
-FIXTURE="$(mktemp -t understanding-wiring-fixture.XXXXXX)"
+FIXTURE="$(mktemp "${TMPDIR:-/tmp}/understanding-wiring-fixture.XXXXXX")" || exit 1
 trap 'rm -f "$FIXTURE"' EXIT
 cat > "$FIXTURE" <<'EOF'
 ## The understanding axis (ADR-0031)

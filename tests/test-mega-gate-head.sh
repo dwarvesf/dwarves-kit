@@ -10,7 +10,7 @@ set -uo pipefail
 KIT="$(cd "$(dirname "$0")/.." && pwd)"
 MM="$KIT/lib/goal/mega-merge.sh"
 export KIT_CONFIG_OPERATOR="$KIT/tests/fixtures/gates-on"
-T="$(mktemp -d)"
+T="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
 export DWARVES_KIT_LOG_DIR="$T/log"
 export GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@example.org GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@example.org
 PASS=0; FAIL=0

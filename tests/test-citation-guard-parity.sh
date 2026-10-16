@@ -27,7 +27,7 @@ echo "citation-guard parity: $pass passed, $fail failed"
 # 500 ms on an idle machine, and the assertion is the hook timeout itself (5 s): at load
 # average 113 to 198 a 2 s bound flaked while the idle run took 232 ms. (A slurping `jq -s` is fast enough here; NC5 and `nonjson-before-final` catch
 # it instead, because it aborts at the first line that is not JSON.)
-T="$(mktemp -d)"
+T="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
 filler=$(head -c 5000 /dev/zero | tr '\0' 'x')
 big=$(head -c 5000000 /dev/zero | tr '\0' 'y')
 { i=0; while [ "$i" -lt 3000 ]; do i=$((i + 1))

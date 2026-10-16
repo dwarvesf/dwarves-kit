@@ -32,7 +32,7 @@ verdict_is() {
   else echo -e "  ${RED}FAIL${NC} $label -- got '$got', expected '$expected'"; FAIL=$((FAIL+1)); fi
 }
 
-TMPDIR_T="$(mktemp -d)"
+TMPDIR_T="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
 trap 'rm -rf "$TMPDIR_T"' EXIT
 
 echo "=== significance-classify: worthy-tap (AC1) ==="

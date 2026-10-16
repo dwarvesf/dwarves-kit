@@ -27,7 +27,7 @@ bad()  { printf 'FAIL  %s\n' "$1"; FAIL=$((FAIL+1)); }
 has()  { case "$3" in *"$2"*) ok "$1";; *) bad "$1 (missing: $2)";; esac; }
 hasnt(){ case "$3" in *"$2"*) bad "$1 (unexpected: $2)";; *) ok "$1";; esac; }
 
-FIX="$(mktemp -d)"
+FIX="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
 export DWARVES_KIT_LOG_DIR="$ROOT/tests/fixtures/kit-gates-cost"
 export STATS_TIDE_DB="$FIX/nonexistent.sqlite"
 export STATS_TGCLEANUP_DIR="$FIX/nonexistent-tg"

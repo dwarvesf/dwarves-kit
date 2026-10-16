@@ -28,7 +28,7 @@ bad() { TOTAL=$((TOTAL+1)); FAIL=$((FAIL+1)); echo -e "  ${RED}FAIL${NC} $1"; }
 eq()      { if [ "$2" = "$3" ]; then ok "$1"; else bad "$1 (want '$3' got '$2')"; fi; }
 present() { if [ -e "$2" ]; then bad "$1 (LEAK: '$2' exists outside docs/verification/generated)"; else ok "$1"; fi; }
 
-WORK="$(mktemp -d "${TMPDIR:-/tmp}/kit-sec-harden.XXXXXX")"
+WORK="$(mktemp -d "${TMPDIR:-/tmp}/kit-sec-harden.XXXXXX")" || exit 1
 trap 'rm -rf "$WORK"' EXIT
 export DWARVES_KIT_LOG_DIR="$WORK/logs"; mkdir -p "$DWARVES_KIT_LOG_DIR/runs"
 

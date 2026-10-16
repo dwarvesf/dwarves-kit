@@ -111,7 +111,7 @@ kit_config_show_at() { git -C "$1" show "$2:.kit.toml" 2>/dev/null; }
 # a launcher that deliberately runs without -e. Reproduced and fixed (review finding).
 if [ "${BASH_SOURCE[0]}" = "$0" ] && [ "${1:-}" = "selftest" ]; then
   set -euo pipefail
-  d="$(mktemp -d)"; trap 'rm -rf "$d"' EXIT
+  d="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")"; trap 'rm -rf "$d"' EXIT
   mkdir -p "$d/root" "$d/proj" "$d/op"
   cat > "$d/root/kit.toml" <<'TOML'
 [ledger]

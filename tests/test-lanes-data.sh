@@ -20,7 +20,7 @@ LANES="tiny normal full bug backfill"
 
 FAILS=0
 TMPS=()
-_mk() { local d; d="$(mktemp -d)"; TMPS+=("$d"); printf '%s' "$d"; }
+_mk() { local d; d="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || return 1; TMPS+=("$d"); printf '%s' "$d"; }
 cleanup() { local d; for d in "${TMPS[@]:-}"; do [ -n "$d" ] && rm -rf "$d" 2>/dev/null; done; }
 trap cleanup EXIT
 pass() { echo "PASS $1"; }

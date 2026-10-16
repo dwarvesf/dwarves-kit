@@ -21,9 +21,9 @@ cd "${KIT_ROOT}"
 # such a host set GAUNTLET_STAGE_DIR to a path under $HOME.
 if [ -n "${GAUNTLET_STAGE_DIR:-}" ]; then
   mkdir -p "${GAUNTLET_STAGE_DIR}"
-  STAGE="$(mktemp -d "${GAUNTLET_STAGE_DIR%/}/room.XXXXXX")"
+  STAGE="$(mktemp -d "${GAUNTLET_STAGE_DIR%/}/room.XXXXXX")" || exit 1
 else
-  STAGE="$(mktemp -d)"
+  STAGE="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
 fi
 trap 'rm -rf "${STAGE}"' EXIT
 mkdir -p "${STAGE}/work/checks"

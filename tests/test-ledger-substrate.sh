@@ -20,7 +20,7 @@ bad() { fail=$((fail+1)); printf '  FAIL  %s\n' "$1"; }
 assert_eq() { if [ "$2" = "$3" ]; then ok "$1"; else bad "$1 (want '$3', got '$2')"; fi; }
 
 echo "== substrate: append + read round-trip =="
-TMP="$(mktemp -d)"
+TMP="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
 KIT_LEDGER_DIR="$TMP" bash "$LEDGER" append "runs/x.log" "first line"
 KIT_LEDGER_DIR="$TMP" bash "$LEDGER" append "runs/x.log" "second | line"
 GOT="$(KIT_LEDGER_DIR="$TMP" bash "$LEDGER" read "runs/x.log")"
@@ -50,18 +50,18 @@ fi
 if [ -e "runs/boom.log" ]; then bad "empty KIT_LEDGER_DIR wrote a stray relative runs/boom.log"; rm -rf runs 2>/dev/null; else ok "no stray relative path written on the empty-root error"; fi
 
 echo "== NC back-compat: DWARVES_KIT_LOG_DIR still resolves when KIT_LEDGER_DIR is unset =="
-TMP2="$(mktemp -d)"
+TMP2="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
 ( unset KIT_LEDGER_DIR; DWARVES_KIT_LOG_DIR="$TMP2" bash "$LEDGER" append "runs/bc.log" "compat" )
 BC="$(cat "$TMP2/runs/bc.log" 2>/dev/null)"
 assert_eq "DWARVES_KIT_LOG_DIR (legacy alias) writes under its root" "$BC" "compat"
 
 echo "== NC precedence: KIT_LEDGER_DIR wins over DWARVES_KIT_LOG_DIR =="
-TMP3="$(mktemp -d)"; TMP4="$(mktemp -d)"
+TMP3="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; TMP4="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")"
 KIT_LEDGER_DIR="$TMP3" DWARVES_KIT_LOG_DIR="$TMP4" bash "$LEDGER" append "runs/p.log" "wins"
 if [ -f "$TMP3/runs/p.log" ] && [ ! -f "$TMP4/runs/p.log" ]; then ok "KIT_LEDGER_DIR takes precedence"; else bad "KIT_LEDGER_DIR should win over DWARVES_KIT_LOG_DIR"; fi
 
 echo "== NC shared-root: gate-ledger writes, the substrate reads the SAME root =="
-TMP5="$(mktemp -d)"
+TMP5="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
 RID="substrate-shared-test"
 KIT_LEDGER_DIR="$TMP5" bash "$GATE_LEDGER" record "$RID" build ran "wrote via gate-ledger" >/dev/null 2>&1
 # the substrate reads the same runs/<rid>.log gate-ledger wrote (rid slug = runid())

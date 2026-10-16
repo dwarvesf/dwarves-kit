@@ -19,7 +19,7 @@ chk() {
 }
 chk_has() { chk "$1" "$({ trap '' PIPE; printf '%s' "$2" 2>/dev/null || :; } | grep -qF -- "$3"; echo $?)"; }
 
-TMPD="$(mktemp -d "${TMPDIR:-/tmp}/dk-staging-stage-test.XXXXXX")"
+TMPD="$(mktemp -d "${TMPDIR:-/tmp}/dk-staging-stage-test.XXXXXX")" || exit 1
 TMPD="$(cd "$TMPD" && pwd)"
 trap 'chmod -R u+w "$TMPD" 2>/dev/null; rm -rf "$TMPD"' EXIT
 

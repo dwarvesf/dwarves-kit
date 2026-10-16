@@ -20,7 +20,7 @@ chk() {
 chk_has() { chk "$1" "$({ trap '' PIPE; printf '%s' "$2" 2>/dev/null || :; } | grep -qF -- "$3"; echo $?)"; }
 chk_no()  { chk "$1" "$({ trap '' PIPE; printf '%s' "$2" 2>/dev/null || :; } | grep -qF -- "$3" && echo 1 || echo 0)"; }
 
-TMPD="$(mktemp -d "${TMPDIR:-/tmp}/dk-wrap-test.XXXXXX")"
+TMPD="$(mktemp -d "${TMPDIR:-/tmp}/dk-wrap-test.XXXXXX")" || exit 1
 TMPD="$(cd "$TMPD" && pwd)"
 # git records a worktree path fully resolved, so a report line naming one carries the
 # symlink-free form of TMPD on macOS (/private/var...), not the logical one.

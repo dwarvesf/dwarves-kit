@@ -42,7 +42,7 @@ assert() {
 
 # --- Plant the fixture OUT of the repo; trap-clean on exit -------------------
 # ${TMPDIR:-/tmp} so this works on Ubuntu CI runners where TMPDIR is unset.
-FIXTURE_DIR="$(mktemp -d "${TMPDIR:-/tmp}/dwarves-kit-test.XXXXXX")"
+FIXTURE_DIR="$(mktemp -d "${TMPDIR:-/tmp}/dwarves-kit-test.XXXXXX")" || exit 1
 trap 'rm -rf "$FIXTURE_DIR"' EXIT
 
 # Class 1: SQL injection (string-interpolated query)

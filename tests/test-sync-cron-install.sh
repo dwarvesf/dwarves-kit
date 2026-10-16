@@ -13,7 +13,8 @@ ok()   { PASS=$((PASS+1)); printf '  PASS %s\n' "$1"; }
 bad()  { FAIL=$((FAIL+1)); printf '  FAIL %s\n' "$1"; }
 check(){ if eval "$2"; then ok "$1"; else bad "$1 -- got: $3"; fi; }
 
-d="$(mktemp -d)"; trap 'rm -rf "$d"' EXIT
+d="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; trap 'rm -rf "$d"' EXIT
+d="$(cd "$d" && pwd -P)" || exit 1
 
 # fake $HOME so the script never touches the real ~/Library, and a fake
 # kit-root kit.toml so kit_config_get's second precedence level is inert.

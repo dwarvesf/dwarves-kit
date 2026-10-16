@@ -14,7 +14,7 @@
 # Run: bash tests/test-spec-find.sh     Exit 0 = all pass.
 set -uo pipefail
 unset $(git rev-parse --local-env-vars)
-SF_HOME="$(mktemp -d)"; HOME="$SF_HOME"; export HOME
+SF_HOME="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; HOME="$SF_HOME"; export HOME
 export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
 export SPEC_NEXT_NO_PR_SCAN=1
 KIT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
@@ -26,10 +26,10 @@ bad() { FAIL=$((FAIL+1)); echo "FAIL $1"; }
 eq()  { if [ "$2" = "$3" ]; then ok "$1"; else bad "$1 (want '$3' got '$2')"; fi; }
 has() { case "$2" in *"$3"*) ok "$1" ;; *) bad "$1 (missing '$3' in: $2)" ;; esac; }
 
-TMP="$(cd "$(mktemp -d)" && pwd -P)"
+_td="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; TMP="$(cd "$_td" && pwd -P)"
 cleanup() { chmod -R u+rwx "$TMP" 2>/dev/null; rm -rf "$TMP" "$SF_HOME"; }
 trap cleanup EXIT
-fresh() { mktemp -d "$TMP/x.XXXXXX"; }   # mktemp, not a counter: callers run it in subshells
+fresh() { mktemp -d "$TMP/x.XXXXXX" || return 1; }   # mktemp, not a counter: callers run it in subshells
 spec() { mkdir -p "$(dirname "$1")"; printf '# Spec\n\nStatus: DRAFT\n%s\n' "${2:-}" > "$1"; }
 
 # git repo: master holds the marker (+ an optional root spec), then a work branch.

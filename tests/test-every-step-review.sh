@@ -30,7 +30,7 @@ assert "AC1: full lane's required set includes spec+review+ship (no review phase
 
 # --- AC2 [NEGATIVE CONTROL]: ship-gate (gate-ledger check) BLOCKS a missing required review ---
 # Real exercise of the enforcement path in an isolated ledger dir.
-TMPLOG="$(mktemp -d "${TMPDIR:-/tmp}/every-step.XXXXXX")"
+TMPLOG="$(mktemp -d "${TMPDIR:-/tmp}/every-step.XXXXXX")" || exit 1
 export DWARVES_KIT_LOG_DIR="$TMPLOG"
 RID="everystep-negctl"
 # record ALL required full gates EXCEPT 'review'

@@ -13,7 +13,7 @@ bad() { echo "  FAIL: $1" >&2; FAIL=$((FAIL+1)); }
 assert_true() { if [ "$2" = "0" ]; then ok "$1"; else bad "$1"; fi; }
 
 mkrepo() { # fresh consumer repo + state dir; echoes the repo root
-  local r; r="$(mktemp -d)"
+  local r; r="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
   mkdir -p "$r/_meta" "$r/state"
   echo "$r"
 }

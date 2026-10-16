@@ -28,7 +28,7 @@ mkrepo() {
 # Fixture A: a multi-rank change (background doc + new file + modified files + test), so reading
 # order and alphabetical order genuinely differ. Two commits: a base, then the change under explanation.
 # ---------------------------------------------------------------------------
-DA="$(mktemp -d)"; mkrepo "$DA"
+DA="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; mkrepo "$DA"
 printf 'let a = 1;\n' > "$DA/alpha.js"
 printf 'let z = 1;\n' > "$DA/zebra.js"
 gitq "$DA" add -A; gitq "$DA" commit -qm "init base files"
@@ -42,7 +42,7 @@ printf 'echo beta test\n'                          > "$DA/tests/test-beta.sh" # 
 gitq "$DA" add -A; gitq "$DA" commit -qm "wire beta helper into alpha and zebra"
 REFA="$(gitq "$DA" rev-parse HEAD)"
 
-ART="$(mktemp)"
+ART="$(mktemp "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
 ( cd "$DA" && bash "$LIB" render "$REFA" ) > "$ART"
 
 echo "=== AC1: four sections in reading order ==="
@@ -84,7 +84,7 @@ echo "=== AC4: GROUNDED-IN-DIFF negative control (load-bearing) ==="
 # Fixture B: the change adds `subtract`. A FALSE narrative (commit body + an external narrative file)
 # claims it adds `multiply`. The engine's only input is the git ref -- there is no channel for the
 # narrative -- so the explainer must describe the DIFF (subtract), never the false narrative (multiply).
-DB="$(mktemp -d)"; mkrepo "$DB"
+DB="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; mkrepo "$DB"
 printf '// calc\n' > "$DB/calc.js"
 gitq "$DB" add -A; gitq "$DB" commit -qm "init calc"
 printf '// calc\nfunction subtract(a, b) { return a - b; }\n' > "$DB/calc.js"   # DIFF truth: subtract
@@ -95,7 +95,7 @@ gitq "$DB" add calc.js
 gitq "$DB" commit -qm "update calc helper" -m "Adds a multiply operation as requested."
 REFB="$(gitq "$DB" rev-parse HEAD)"
 
-ARTB="$(mktemp)"
+ARTB="$(mktemp "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
 ( cd "$DB" && bash "$LIB" render "$REFB" ) > "$ARTB"
 
 assert "AC4a explainer describes the DIFF (names 'subtract')" \
@@ -108,14 +108,14 @@ assert "AC4a explainer does NOT parrot the body/untracked narrative ('multiply')
 # The engine must (a) still describe the diff (subtract) and derive its Goal from the diff, and (b) surface
 # the subject ONLY as explicitly-UNVERIFIED metadata, never as a trusted goal/title. So every occurrence of
 # the false word must sit on an UNVERIFIED-labeled line, and no derived-Goal line may carry it.
-DC="$(mktemp -d)"; mkrepo "$DC"
+DC="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; mkrepo "$DC"
 printf '// calc\n' > "$DC/calc.js"
 gitq "$DC" add -A; gitq "$DC" commit -qm "init calc"
 printf '// calc\nfunction subtract(a, b) { return a - b; }\n' > "$DC/calc.js"   # DIFF truth: subtract
 gitq "$DC" add -A
 gitq "$DC" commit -qm "feat(calc): add multiply operation as requested"          # SUBJECT lies: multiply
 REFC="$(gitq "$DC" rev-parse HEAD)"
-ARTC="$(mktemp)"
+ARTC="$(mktemp "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
 ( cd "$DC" && bash "$LIB" render "$REFC" ) > "$ARTC"
 
 assert "AC4b (subject channel) explainer still describes the DIFF (names 'subtract')" \

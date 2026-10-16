@@ -177,7 +177,7 @@ if [ "$SINGLE" -eq 1 ]; then
     else
       # git mv needs CLAUDE.md tracked; fall back to a plain mv for an untracked file or a
       # non-git target (the WARNING above already covered the latter).
-      notes="$(mktemp)"; cp "$claude" "$notes" || exit 1
+      notes="$(mktemp "${TMPDIR:-/tmp}/kit.XXXXXX")"; cp "$claude" "$notes" || exit 1
       if ! git -C "$TARGET" rev-parse --git-dir >/dev/null 2>&1 \
         || ! git -C "$TARGET" mv CLAUDE.md AGENTS.md 2>/dev/null; then
         mv "$claude" "$agents"
@@ -280,7 +280,7 @@ fi
 # (tmp + mv) so a kill / full disk mid-write can't leave a half-written pointer (review #3).
 if [ ! -f "$workflow" ] || { [ "$REFRESH" -eq 1 ] && ! cmp -s <(workflow_block) "$workflow"; }; then
   if [ "$DRY" -eq 1 ]; then note "write WORKFLOW.md pointer"; else
-    tmp="$(mktemp)"; workflow_block > "$tmp"; mv "$tmp" "$workflow"
+    tmp="$(mktemp "${TMPDIR:-/tmp}/kit.XXXXXX")"; workflow_block > "$tmp"; mv "$tmp" "$workflow"
   fi
   did=1
 fi
@@ -294,7 +294,7 @@ pointer_is_block=0
 if [ ! -f "$block_target" ] || ! grep -qxF "$START" "$block_target" 2>/dev/null; then
   if [ "$pointer_is_block" -eq 1 ]; then :   # the pointer already carries the rules; no block
   elif [ "$DRY" -eq 1 ]; then note "append the operate-contract block to $block_target"; else
-    tmp="$(mktemp)"; { [ -f "$block_target" ] && cat "$block_target"; printf '\n'; claude_block "$block_mode"; } > "$tmp"; mv "$tmp" "$block_target"
+    tmp="$(mktemp "${TMPDIR:-/tmp}/kit.XXXXXX")"; { [ -f "$block_target" ] && cat "$block_target"; printf '\n'; claude_block "$block_mode"; } > "$tmp"; mv "$tmp" "$block_target"
   fi
   [ "$pointer_is_block" -eq 1 ] || did=1
 elif [ "$REFRESH" -eq 1 ]; then
@@ -307,7 +307,7 @@ elif [ "$REFRESH" -eq 1 ]; then
     exit 1
   fi
   if [ "$DRY" -eq 1 ]; then note "refresh the operate-contract block in $block_target"; did=1; else
-    tmp="$(mktemp)"
+    tmp="$(mktemp "${TMPDIR:-/tmp}/kit.XXXXXX")"
     # END{if(drop)exit 3}: belt-and-suspenders against an unterminated block slipping past the
     # guard above; the `|| exit` stops us from mv-ing a truncated file when awk bails.
     awk -v s="$START" -v e="$END" '
@@ -366,7 +366,7 @@ if [ -n "$kit_root_toml" ] && [ "$RESOLVER_OK" -eq 1 ]; then
     else
       with_norm=""
       [ -n "$WITH_ARG" ] && with_norm=" $(echo "$WITH_ARG" | tr ',' ' ' | xargs) "
-      tmp="$(mktemp)"
+      tmp="$(mktemp "${TMPDIR:-/tmp}/kit.XXXXXX")"
       {
         echo "# .kit.toml -- this PROJECT's override of the kit-root defaults."
         echo "# Only the keys you set here matter; every key you omit inherits the kit-root"
@@ -451,7 +451,7 @@ if [ -n "$kit_root_toml" ] && [ "$RESOLVER_OK" -eq 1 ] && command -v jq >/dev/nu
       before_wired=""
       [ -f "$project_settings" ] && before_wired="$(jq -r '[.hooks // {} | to_entries[]? | .value[]? | .hooks[]? | .command] | .[]' "$project_settings" 2>/dev/null | grep -F 'dwarves-kit/hooks/' | sort -u)"
 
-      filtered="$(mktemp)"
+      filtered="$(mktemp "${TMPDIR:-/tmp}/kit.XXXXXX")"
       if [ -n "$hook_re" ]; then
         jq --arg re "$hook_re" '
           .hooks |= (

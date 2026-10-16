@@ -9,7 +9,7 @@
 # Exit 0 = all tests pass. Exit 1 = failures found.
 
 KIT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-TD="$(mktemp -d "${TMPDIR:-/tmp}/kit-foldin-hooks-test.XXXXXX")"
+TD="$(mktemp -d "${TMPDIR:-/tmp}/kit-foldin-hooks-test.XXXXXX")" || exit 1
 trap 'rm -rf "${TD:?}"' EXIT
 
 # Pin a neutral operator/kit-root config and a marker-free harvest state dir: the harvest

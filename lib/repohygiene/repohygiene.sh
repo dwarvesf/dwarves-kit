@@ -684,7 +684,7 @@ REPO_ROOT=$(pwd -P)
 
 NOW=$(date +%s)
 FINDINGS=0
-TMP=$(mktemp -d)
+TMP=$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")
 trap 'rm -rf "$TMP"' EXIT
 
 printf 'detector\tverdict\tpath\tevidence\n'

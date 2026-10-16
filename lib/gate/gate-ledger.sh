@@ -710,7 +710,7 @@ plan_record() {
   fi
   [ "$_pr_n" -gt 0 ] || { echo "plan-record: no dispositions given" >&2; return 64; }
 
-  local scratch; scratch="$(mktemp -d)" || { echo "plan-record: cannot create a scratch dir for the dry run" >&2; return 1; }
+  local scratch; scratch="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || { echo "plan-record: cannot create a scratch dir for the dry run" >&2; return 1; }
   # The scratch dir holds a copy of the real ledger; an interrupt must not strand it in
   # TMPDIR. The trap runs at script exit, after this function's locals are gone, so it
   # reads a script-scope name (a local here made every refusal exit 1 under set -u).

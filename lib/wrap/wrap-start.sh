@@ -118,7 +118,14 @@ _start_carry() {
   if [ $# -gt 0 ]; then
     git -C "$repo" stash push -u -q -m "$name" -- "$@" >/dev/null 2>&1
   else
-    git -C "$repo" stash push -u -q -m "$name" >/dev/null 2>&1
+    # The new worktree lives in <repo>/.claude/worktrees. A gitignore normally hides it. Without
+    # one (GIT_CONFIG_GLOBAL=/dev/null, a fresh account) `-u` takes it as dirt, so the pathspec
+    # leaves it out; an ignored path in a pathspec makes git refuse, so only then.
+    if git -C "$repo" check-ignore -q "$wt" 2>/dev/null; then
+      git -C "$repo" stash push -u -q -m "$name" >/dev/null 2>&1
+    else
+      git -C "$repo" stash push -u -q -m "$name" -- . ':(exclude).claude/worktrees' >/dev/null 2>&1
+    fi
   fi
 
   sha=""

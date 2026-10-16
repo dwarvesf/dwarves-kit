@@ -20,7 +20,7 @@ ok()  { echo "  ok: $1"; PASS=$((PASS+1)); }
 bad() { echo "  FAIL: $1" >&2; FAIL=$((FAIL+1)); }
 assert_true() { if [ "$2" = "0" ]; then ok "$1"; else bad "$1"; fi; }
 
-TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
+TMP="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; trap 'rm -rf "$TMP"' EXIT
 export KIT_LEDGER_DIR="$TMP/ledger"
 
 echo "== census: the Cadence table is exactly the in-kit instance set =="

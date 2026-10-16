@@ -52,7 +52,7 @@ echo "  -> $OUT4"
 
 echo ""
 echo "=== exact multi-model tie: deterministic (alphabetical) winner ==="
-TIE="$(mktemp "${TMPDIR:-/tmp}/tie-ledger.XXXXXX")"
+TIE="$(mktemp "${TMPDIR:-/tmp}/tie-ledger.XXXXXX")" || exit 1
 # haiku and sonnet both PASS at the SAME token count. The tie-break contract: the winner is the
 # alphabetically-first tier, and the basis string is emitted in that same sorted order.
 printf 'code-add-flag\tb-haiku\tpass\t500000\t40\t900\t450000\t49060\t5\t0.1\thaiku-4-5\ts1\n'  > "$TIE"
@@ -68,7 +68,7 @@ rm -f "$TIE"
 
 echo ""
 echo "=== malformed/short row: skipped, no arithmetic crash ==="
-BAD="$(mktemp "${TMPDIR:-/tmp}/bad-ledger.XXXXXX")"
+BAD="$(mktemp "${TMPDIR:-/tmp}/bad-ledger.XXXXXX")" || exit 1
 printf 'code-add-flag\tb-haiku\tpass\t300000\t40\t900\t250000\t49060\t5\t0.1\thaiku-4-5\ts1\n' > "$BAD"
 printf 'code-add-flag\tb-haiku\tpass\n' >> "$BAD"   # short row: no numeric total_tokens column
 OUT5=$(bash "$RS" "$BAD" code-add-flag 2>&1); RC5=$?

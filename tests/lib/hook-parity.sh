@@ -27,7 +27,7 @@
 hp_run_case() {
   local case_json="$1"; shift
   local T home cwd
-  T="$(mktemp -d)"
+  T="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
   home="$T/home"; mkdir -p "$home"
   if [ -n "${HP_CWD:-}" ]; then cwd="$HP_CWD"; else cwd="$T/cwd"; mkdir -p "$cwd"; fi
 
@@ -93,7 +93,7 @@ hp_run_case() {
   fi
 
   local rc=0 out err
-  err=$(cd "$cwd" && env -i PATH="$PATH" HOME="$home" LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8 \
+  err=$(cd "$cwd" && env -i PATH="$PATH" HOME="$home" TMPDIR="${TMPDIR:-/tmp}" LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8 \
     ${envs[@]+"${envs[@]}"} "$@" ${extra[@]+"${extra[@]}"} < "$payload" 2>&1 >"$T/stdout") || rc=$?
   out=$(cat "$T/stdout")
 
@@ -161,7 +161,7 @@ hp_gen_expected() {
   local rev="$1" hook="$2" cases_file="$3" expected_file="$4"
   local kit_root="${HP_KIT_ROOT:-}"
   [ -z "$kit_root" ] && kit_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-  local H; H="$(mktemp -d)"; mkdir -p "$H/hooks" "$H/bin"
+  local H; H="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; mkdir -p "$H/hooks" "$H/bin"
   git -C "$kit_root" show "${rev}:hooks/${hook}.sh" > "$H/hooks/$hook.sh"
   git -C "$kit_root" show "${rev}:hooks/${hook}.py" > "$H/hooks/$hook.py"
   local extra_file

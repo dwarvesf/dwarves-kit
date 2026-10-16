@@ -48,7 +48,7 @@ enabled() {
   local rest; rest="$(KIT_PROJECT_ROOT=/nonexistent kit_config_get "gate.$key" "$def" 2>/dev/null)" || return 0
   local pfile="$root/.kit.toml" tmp=""
   if [ -n "$at" ]; then
-    tmp="$(mktemp)"; pfile="$tmp"
+    tmp="$(mktemp "${TMPDIR:-/tmp}/kit.XXXXXX")"; pfile="$tmp"
     kit_config_show_at "$root" "$at" > "$tmp" || : > "$tmp"
   fi
   local pv; pv="$(_kit_toml_get "$pfile" gate "$key")"

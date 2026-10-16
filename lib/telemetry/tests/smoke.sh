@@ -30,7 +30,8 @@ eq() {  # eq <label> <got> <want>
 # `cd`+`pwd` normalizes the path: macOS $TMPDIR carries a trailing slash, so a raw mktemp path
 # holds a `//` that $PWD later collapses -- which would make the isolated-mode compare (P3b,
 # built from $PWD) fail on a string artifact rather than on resolver behavior.
-WORK="$(cd "$(mktemp -d "${TMPDIR:-/tmp}/telemetry-smoke.XXXXXX")" && pwd)"
+_td="$(mktemp -d "${TMPDIR:-/tmp}/telemetry-smoke.XXXXXX")" || exit 1
+WORK="$(cd "$_td" && pwd)"
 trap 'rm -rf "$WORK"' EXIT
 
 HOME_FX="$WORK/home";      mkdir -p "$HOME_FX"

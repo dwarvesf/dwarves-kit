@@ -8,7 +8,7 @@ PASS=0; FAIL=0
 ok() { PASS=$((PASS + 1)); echo "ok - $1"; }
 no() { FAIL=$((FAIL + 1)); echo "NOT ok - $1"; }
 
-LOGDIR="$(mktemp -d)"   # isolate the gate-ledger store from the real one
+LOGDIR="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1   # isolate the gate-ledger store from the real one
 
 mkrepo() { # $1=dir  $2=adopted(yes/no)
   git init -q -b master "$1"
@@ -24,7 +24,7 @@ gate() { # $1=repo  $2=command  -> echoes exit code
 }
 
 # 1. spec, NO lane, adopted -> BLOCK (exit 2)
-T1="$(mktemp -d)"; mkrepo "$T1" yes
+T1="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; mkrepo "$T1" yes
 git -C "$T1" switch -qc feat/sgone
 printf '# Spec: x\nStatus: DRAFT\n' > "$T1/docs/specs/SPEC-001-sgone.md"
 git -C "$T1" add -A; git -C "$T1" commit -qm spec
@@ -34,7 +34,7 @@ git -C "$T1" add -A; git -C "$T1" commit -qm spec
 # The canonical form is plain `Lane: full`; the two markdown-bold variants must parse the
 # same, because a bold header used to BLOCK the push with "Spec has no 'Lane:' header".
 lane_header_case() { # $1=slug  $2=header line
-  local d; d="$(mktemp -d)"; mkrepo "$d" yes
+  local d; d="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; mkrepo "$d" yes
   git -C "$d" switch -qc "feat/$1"
   printf '# Spec: x\nStatus: DRAFT\n%s\n' "$2" > "$d/docs/specs/SPEC-001-$1.md"
   mkdir -p "$d/docs/implementation-notes"   # a full-lane push needs its notes file
@@ -52,14 +52,14 @@ lane_header_case sgtwob  '**Lane**: full'
 lane_header_case sgtwoc  '**Lane:** full'
 
 # 3. spec, no lane, NOT adopted (no marker) -> fail open (exit 0)
-T3="$(mktemp -d)"; mkrepo "$T3" no
+T3="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; mkrepo "$T3" no
 git -C "$T3" switch -qc feat/sgthree
 printf '# Spec: x\nStatus: DRAFT\n' > "$T3/docs/specs/SPEC-001-sgthree.md"
 git -C "$T3" add -A; git -C "$T3" commit -qm spec
 [ "$(gate "$T3" 'git push -u origin HEAD')" = 0 ] && ok "spec + no-lane + NOT adopted -> fail open (exit 0)" || no "no-marker should fail open"
 
 # 4. no spec for the slug -> fail open (exit 0)
-T4="$(mktemp -d)"; mkrepo "$T4" yes
+T4="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; mkrepo "$T4" yes
 git -C "$T4" switch -qc feat/sgfour
 echo x > "$T4/foo.txt"; git -C "$T4" add -A; git -C "$T4" commit -qm c
 [ "$(gate "$T4" 'git push -u origin HEAD')" = 0 ] && ok "no spec for slug -> fail open (exit 0)" || no "no-spec should fail open"
@@ -70,7 +70,7 @@ echo x > "$T4/foo.txt"; git -C "$T4" add -A; git -C "$T4" commit -qm c
 # 6. START-AMEND lane resolution: the last amend wins over the spec header; a plain START never does.
 # $1=slug $2=spec header lane $3=gates to record (lane name) $4=ledger verb line ("" | amend <lane> | start <lane>)
 amend_case() {
-  local d; d="$(mktemp -d)"; mkrepo "$d" yes
+  local d; d="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; mkrepo "$d" yes
   git -C "$d" switch -qc "feat/$1"
   printf '# Spec: x\nStatus: DRAFT\nLane: %s\n' "$2" > "$d/docs/specs/SPEC-001-$1.md"
   mkdir -p "$d/docs/implementation-notes"

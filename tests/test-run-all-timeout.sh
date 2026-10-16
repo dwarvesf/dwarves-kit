@@ -16,7 +16,7 @@ pass=0; fail=0
 ok(){ echo "  ok: $*"; pass=$((pass+1)); }
 no(){ echo "  FAIL: $*" >&2; fail=$((fail+1)); }
 
-TMP="$(mktemp -d)"
+TMP="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
 trap 'rm -rf "$TMP"' EXIT
 # Pin the kit log root so no case can write into the operator's real one.
 export DWARVES_KIT_LOG_DIR="$TMP/default-logs"
@@ -81,7 +81,7 @@ K5="$TMP/k5"; mkkit "$K5"; mkdir -p "$K5/bin"
 printf '#!/usr/bin/env bash\nexit 0\n' > "$K5/tests/test-heavy.sh"; green "$K5"
 printf '# header\ntest-heavy 900\n' > "$K5/bin/test-affected.timeouts"
 lim() { # $1 = suite ; $2 = RUN_ALL_TIMEOUT_SECS or empty ; prints the ceiling the worker applied
-  local od; od="$(mktemp -d "$TMP/od.XXXXXX")"
+  local od; od="$(mktemp -d "$TMP/od.XXXXXX")" || exit 1
   ( cd "$K5" && if [ -n "$2" ]; then RUN_ALL_TIMEOUT_SECS="$2"; export RUN_ALL_TIMEOUT_SECS; else unset RUN_ALL_TIMEOUT_SECS; fi
     bash tests/run-all.sh --run-one "tests/$1.sh" "$od" >/dev/null 2>&1 )
   cat "$od/$1.limit" 2>/dev/null

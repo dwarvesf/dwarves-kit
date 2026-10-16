@@ -231,7 +231,7 @@ cmd_put() {
     fi
   fi
 
-  local tmpd; tmpd="$(mktemp -d)"; trap "rm -rf '$tmpd'" EXIT
+  local tmpd; tmpd="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")"; trap "rm -rf '$tmpd'" EXIT
 
   # GIFs pass through untouched; every other still goes through the converter.
   local kind ext cap work
