@@ -14,7 +14,7 @@ Usage:
        numbering `board promote <n>` already reads. Moves any staged candidate older than
        N days (default: DEFAULT_EXPIRE_DAYS) to [expired] first.
 
-Env: BACKLOG_STAGE_STAGING (same name + repo-relative default as hooks/backlog-stage.py /
+Env: BACKLOG_STAGE_STAGING (same name + repo-relative default as hooks/backlog-stage.sh /
 lib/board/bin/add-backlog: <repo-root>/_meta/backlog-staging.md).
 
 The expiry window is a plain CONSTANT with a --days override (never a

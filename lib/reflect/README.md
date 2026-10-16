@@ -88,14 +88,14 @@ of two:
 | `session audit` (`lib/session/audit/bin/session-audit`) | imports `staging-format.py` | converged |
 | `session intel` (`lib/session/intel/bin/session-intel`) | imports `staging-format.py` | converged |
 | `stats anomalies --propose` (`lib/stats/src/stats/anomalies.py`) | its **own** `render_block()` | **copy** |
-| session-end stager (`hooks/backlog-stage.py`) | its **own** `render_candidate()` | **copy** |
+| session-end stager (`hooks/backlog-stage.sh`) | `staging-format.jq`, the jq twin | converged |
 
-The two copies are not harmless duplication. They have already drifted: both predate
-`render_block`'s whitespace-collapse guard and neither has it. `hooks/backlog-stage.py` uses a bare
-`.strip()`, which removes only leading and trailing whitespace, so an embedded newline in a
-model-extracted field survives into the staging file and forges a second block. That hook is fed
-LLM-extracted transcript text, which is exactly the input the guard exists for. Detail, with a
-reproduction, is in `docs/proof-of-done.md`.
+The remaining copy is not harmless duplication. `anomalies.py` predates `render_block`'s
+whitespace-collapse guard and does not have it, so an embedded newline in a model-extracted field
+can survive into the staging file and forge a second block. (The session-end stager's own copy was
+folded into the shared renderer earlier, and the bash hook now renders through `staging-format.jq`,
+which `tests/test-staging-format-jq.sh` pins to `render_block`.) Detail, with a reproduction, is in
+`docs/proof-of-done.md`.
 
 C5 does not catch this, because it greps for a code reference to `render_block` / `render_candidate`
 and a file that *defines* a function with that name matches its own grep. C5's negative control
