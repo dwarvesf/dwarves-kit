@@ -748,6 +748,7 @@ chk "settle: polled past UNKNOWN and the stale CONFLICTING (4 detail reads)" \
   "$([ "$(views 80)" -eq 4 ]; echo $?)"
 chk "settle: pinned the merge to the pushed head" \
   "$(grep -q -- "^pr merge 80 .*--match-head-commit ${ST_PUSHED}" "$GH_STUB_CALLS"; echo $?)"
+chk "settle: a late settle never closes the PR" "$(grep -q '^pr close' "$GH_STUB_CALLS" && echo 1 || echo 0)"
 
 # --- a verdict that stays CONFLICTING past the bound still skips with the existing message
 build_remerge stuck
@@ -765,6 +766,7 @@ chk "settle: the wait is bounded (initial read plus 4 reads over 6s)" \
   "$([ "$(views 82)" -eq 5 ]; echo $?)"
 chk "settle: a stuck CONFLICTING never merges #82" \
   "$(grep -q '^pr merge 82 ' "$GH_STUB_CALLS" && echo 1 || echo 0)"
+chk "settle: a stuck CONFLICTING on the pushed head never closes the PR" "$(grep -q '^pr close' "$GH_STUB_CALLS" && echo 1 || echo 0)"
 
 # --- a head someone else pushed during the wait is refused at once, never merged
 build_remerge moved
@@ -780,6 +782,7 @@ chk_has "settle: a moved head is named" "$out" "SKIP #84 after the re-merge: hea
 chk "settle: a moved head stops the wait at once (3 detail reads)" \
   "$([ "$(views 84)" -eq 3 ]; echo $?)"
 chk "settle: a moved head is never merged" "$(grep -q '^pr merge' "$GH_STUB_CALLS" && echo 1 || echo 0)"
+chk "settle: a moved head never closes the PR" "$(grep -q '^pr close' "$GH_STUB_CALLS" && echo 1 || echo 0)"
 
 # --- a push GitHub never registers is refused once the bound runs out
 build_remerge lost
@@ -792,6 +795,7 @@ chk "settle: an unregistered push exits 0 without merging" "$rc"
 chk_has "settle: an unregistered push names the stale head" "$out" \
   "SKIP #86 after the re-merge: head is $(printf '%s' "$LS_TIP" | cut -c1-7), not the pushed"
 chk "settle: an unregistered push is never merged" "$(grep -q '^pr merge' "$GH_STUB_CALLS" && echo 1 || echo 0)"
+chk "settle: a stale head with no state field never closes the PR" "$(grep -q '^pr close' "$GH_STUB_CALLS" && echo 1 || echo 0)"
 
 # --- a first read of UNKNOWN is re-read, never a SKIP on its own
 build_remerge first
@@ -1151,6 +1155,206 @@ chk "merge-cycle: wrap --help names --verify" \
 chk "merge-cycle: bin/wrap usage names --verify on both verbs" \
   "$([ "$(grep -c -- '--verify' "$WRAP")" -ge 2 ]; echo $?)"
 
+# ===========================================================================
+echo "=== merge: a stale head after wrap's own push resyncs with one close and reopen ==="
+# ===========================================================================
+# GitHub can keep serving the pre-push head after wrap's re-merge push. When the settle
+# wait ends on it and origin holds exactly the pushed commit, wrap closes and reopens its
+# own PR once. Every case runs the bare form. Reads of the PR: 1 the cache loop, 2 to 4 the
+# settle window (bound 4s, no-op sleep), 5 the resync's own read, 6 on the state reads.
+rs_json() { # rs_json <number> <head oid> <mergeable> <mergeStateStatus> [jq edit]
+  printf '{"number":%s,"title":"log entry","headRefName":"feat/union","headRefOid":"%s","baseRefName":"main","mergeable":"%s","mergeStateStatus":"%s","reviewDecision":"APPROVED","statusCheckRollup":[{"conclusion":"SUCCESS"}],"state":"OPEN","isDraft":false,"autoMergeRequest":null}' \
+    "$1" "$2" "$3" "$4" | jq -c "${5:-.}"
+}
+rs_tip() { git -C "$TMPD/rm-bare-$1" rev-parse feat/union; }
+rs_count() { grep -c -- "$1" "$GH_STUB_CALLS" || true; }
+rs_reads() { cat "$GH_STUB_CALLS.view-$1" 2>/dev/null || echo 0; }
+RS_PIDF="$TMPD/rs-wrap.pid"
+rs_merge() { # rs_merge <n> <name> [VAR=value ...] -- later VAR=value pairs win
+  local n="$1" name="$2" stale; shift 2
+  stale="$(rs_json "$n" "$(rs_tip "$name")" CONFLICTING DIRTY)"
+  : > "$GH_STUB_CALLS"; rm -f "$GH_STUB_CALLS".*
+  RS_OUT="$(env PATH="$TMPD/nosleep:$PATH" KIT_WRAP_SETTLE_SECS=4 \
+    GH_STUB_OPEN_PRS="$(open_one "$n")" "GH_STUB_PR_${n}=${stale}" "GH_STUB_PR_${n}_2=${stale}" \
+    GH_STUB_LAND_REPO="$TMPD/rm-clone-$name" GH_STUB_LAND_REMOTE="$TMPD/rm-bare-$name" \
+    GH_STUB_LAND_BRANCH=feat/union GH_STUB_KILL_PIDFILE="$RS_PIDF" "$@" \
+    sh -c 'echo $$ > "$0"; exec "$@"' "$RS_PIDF" "$WRAP" merge --apply "$TMPD/rm-clone-$name" 2>&1)"
+  RS_RC=$?
+}
+rs_merged() { # rs_merged <n> <name> -- merged, tree verified, pinned to the pushed head
+  local pushed; pushed="$(git -C "$TMPD/rm-clone-$2" rev-parse feat/union)"
+  chk "resync #$1: exits 0" "$RS_RC"
+  chk_has "resync #$1: merged, tree verified" "$RS_OUT" "merged #$1 ($(git -C "$TMPD/rm-bare-$2" rev-parse main)): tree verified"
+  chk "resync #$1: merge pinned to the pushed head" \
+    "$(grep -q -- "^pr merge $1 .*--match-head-commit ${pushed}" "$GH_STUB_CALLS"; echo $?)"
+}
+rs_untouched() { # rs_untouched <n> -- no close, no reopen, no merge
+  chk "resync #$1: no pr close" "$([ "$(rs_count "^pr close $1")" -eq 0 ]; echo $?)"
+  chk "resync #$1: no pr reopen" "$([ "$(rs_count "^pr reopen $1")" -eq 0 ]; echo $?)"
+  chk "resync #$1: no pr merge" "$([ "$(rs_count "^pr merge")" -eq 0 ]; echo $?)"
+}
+
+echo "--- resync: a stale head is closed and reopened once, then merged"
+build_remerge rs90; T="$(rs_tip rs90)"
+rs_merge 90 rs90 GH_STUB_PR_90_REOPENED="$(rs_json 90 %REMERGE_TIP% MERGEABLE CLEAN)"
+rs_merged 90 rs90
+chk_has "resync #90: names the resync" "$RS_OUT" "#90 still shows head $(printf '%s' "$T" | cut -c1-7) after the push of"
+chk_has "resync #90: reports it" "$RS_OUT" "resynced #90: closed and reopened"
+chk_has "resync #90: eligible after the re-merge" "$RS_OUT" "eligible #90 after the re-merge"
+chk "resync #90: one close" "$([ "$(rs_count '^pr close 90')" -eq 1 ]; echo $?)"
+chk "resync #90: one reopen" "$([ "$(rs_count '^pr reopen 90')" -eq 1 ]; echo $?)"
+chk "resync #90: one comment" "$([ "$(rs_count '^pr comment 90')" -eq 1 ]; echo $?)"
+chk "resync #90: the close comes before the reopen" \
+  "$([ "$(grep -n '^pr close 90' "$GH_STUB_CALLS" | cut -d: -f1)" -lt "$(grep -n '^pr reopen 90' "$GH_STUB_CALLS" | cut -d: -f1)" ]; echo $?)"
+chk "resync #90: the close carries no --comment, -d or --delete-branch" \
+  "$(grep '^pr close 90' "$GH_STUB_CALLS" | grep -qE -- '--comment|--delete-branch|(^| )-d( |$)' && echo 1 || echo 0)"
+chk_no "resync #90: the comment carries no branch name" "$(grep '^pr comment 90' "$GH_STUB_CALLS")" "feat/union"
+
+echo "--- resync: GitHub caught up before the close, so no close runs"
+build_remerge rs96
+rs_merge 96 rs96 GH_STUB_PR_96_5="$(rs_json 96 %REMERGE_TIP% MERGEABLE CLEAN)"
+rs_merged 96 rs96
+chk_has "resync #96: caught up on its own" "$RS_OUT" "#96 caught up on its own; no resync needed"
+chk "resync #96: no pr close" "$([ "$(rs_count '^pr close 96')" -eq 0 ]; echo $?)"
+chk_no "resync #96: no still-stale text" "$RS_OUT" "still stale"
+
+echo "--- resync: a refusing step 1 read never closes"
+build_remerge rs92; T="$(rs_tip rs92)"
+rs_merge 92 rs92 GH_STUB_PR_92_5="$(rs_json 92 "$T" CONFLICTING DIRTY '.isDraft = true')"
+rs_untouched 92
+chk_has "resync #92: a draft is named" "$RS_OUT" "no resync for #92: isDraft is not false"
+chk_has "resync #92: the existing SKIP stands" "$RS_OUT" "SKIP #92 after the re-merge: head is"
+build_remerge rs93; T="$(rs_tip rs93)"
+rs_merge 93 rs93 GH_STUB_PR_93_5="$(rs_json 93 "$T" CONFLICTING DIRTY '.state = "CLOSED"')"
+rs_untouched 93
+chk_has "resync #93: a closed PR is named" "$RS_OUT" "no resync for #93: state CLOSED"
+build_remerge rs102; T="$(rs_tip rs102)"
+rs_merge 102 rs102 GH_STUB_PR_102_5="$(rs_json 102 "$T" CONFLICTING DIRTY '.autoMergeRequest = {"mergeMethod":"SQUASH"}')"
+rs_untouched 102
+chk_has "resync #102: armed auto-merge is named" "$RS_OUT" "no resync for #102: auto-merge armed or unreadable"
+build_remerge rs105; T="$(rs_tip rs105)"
+rs_merge 105 rs105 GH_STUB_PR_105_5="$(rs_json 105 "$T" CONFLICTING DIRTY 'del(.state)')"
+rs_untouched 105
+chk_has "resync #105: a missing state fails closed" "$RS_OUT" "no resync for #105: state unreadable"
+build_remerge rs106; T="$(rs_tip rs106)"
+rs_merge 106 rs106 GH_STUB_PR_106_5="$(rs_json 106 "$T" CONFLICTING DIRTY 'del(.isDraft)')"
+rs_untouched 106
+chk_has "resync #106: a missing isDraft fails closed" "$RS_OUT" "no resync for #106: isDraft is not false"
+build_remerge rs107; T="$(rs_tip rs107)"
+rs_merge 107 rs107 GH_STUB_PR_107_5="$(rs_json 107 "$T" CONFLICTING DIRTY 'del(.autoMergeRequest)')"
+rs_untouched 107
+chk_has "resync #107: a missing autoMergeRequest fails closed" "$RS_OUT" "no resync for #107: auto-merge armed or unreadable"
+
+echo "--- resync: origin moved past the pushed commit, so no close"
+build_remerge rs91
+mkdir -p "$TMPD/rm-bare-rs91/hooks"
+cat > "$TMPD/rm-bare-rs91/hooks/post-receive" <<'HOOK'
+#!/bin/sh
+while read -r old new ref; do
+  [ "$ref" = refs/heads/feat/union ] || continue
+  c="$(GIT_AUTHOR_NAME=f GIT_AUTHOR_EMAIL=f@f GIT_COMMITTER_NAME=f GIT_COMMITTER_EMAIL=f@f \
+    git commit-tree "${new}^{tree}" -p "$new" -m foreign)"
+  git update-ref refs/heads/feat/union "$c"
+done
+HOOK
+chmod +x "$TMPD/rm-bare-rs91/hooks/post-receive"
+rs_merge 91 rs91
+rs_untouched 91
+chk_has "resync #91: a foreign origin tip is named" "$RS_OUT" "no resync for #91: origin tip is"
+
+echo "--- resync: open dependents skip the resync (bare form only)"
+build_remerge rs98
+rs_merge 98 rs98 \
+  GH_STUB_OPEN_PRS='[{"number":98,"title":"log entry","headRefName":"feat/union"},{"number":99,"title":"stacked","headRefName":"feat/child"}]' \
+  GH_STUB_PR_99='{"number":99,"title":"stacked","headRefName":"feat/child","headRefOid":"aa","baseRefName":"feat/union","mergeable":"MERGEABLE","mergeStateStatus":"CLEAN","reviewDecision":"APPROVED","statusCheckRollup":[{"conclusion":"SUCCESS"}]}'
+rs_untouched 98
+chk_has "resync #98: dependents are named" "$RS_OUT" "no resync for #98: dependents open"
+chk_has "resync #98: the dependent itself is not eligible" "$RS_OUT" "SKIP #99 stacked: base is feat/union"
+
+echo "--- resync: a decoy ref that tail-matches the branch does not fool the origin check"
+build_remerge rs103
+git -C "$TMPD/rm-bare-rs103" update-ref refs/heads/a/refs/heads/feat/union "$(rs_tip rs103)"
+rs_merge 103 rs103 GH_STUB_PR_103_REOPENED="$(rs_json 103 %REMERGE_TIP% MERGEABLE CLEAN)"
+rs_merged 103 rs103
+chk "resync #103: one close" "$([ "$(rs_count '^pr close 103')" -eq 1 ]; echo $?)"
+
+echo "--- resync: two failed reopens exit 2 and name the reopen command"
+build_remerge rs94
+rs_merge 94 rs94 GH_STUB_REOPEN_RC=1
+chk "resync #94: exits 2" "$([ "$RS_RC" -eq 2 ]; echo $?)"
+chk_has "resync #94: names the reopen command" "$RS_OUT" \
+  "FAILED merge #94: closed #94 to resync its head, and the reopen failed; reopen it: gh pr reopen 94 --repo"
+chk_has "resync #94: names the re-push step" "$RS_OUT" "(if origin lost feat/union, push it at"
+chk "resync #94: two reopens" "$([ "$(rs_count '^pr reopen 94')" -eq 2 ]; echo $?)"
+chk "resync #94: one comment saying the reopen failed" \
+  "$([ "$(grep '^pr comment 94' "$GH_STUB_CALLS" | grep -c 'the reopen failed')" -eq 1 ]; echo $?)"
+chk_no "resync #94: the comment carries no branch name" "$(grep '^pr comment 94' "$GH_STUB_CALLS")" "feat/union"
+chk "resync #94: no pr merge" "$([ "$(rs_count '^pr merge')" -eq 0 ]; echo $?)"
+
+echo "--- resync: one failed reopen, then the retry succeeds"
+build_remerge rs95
+rs_merge 95 rs95 GH_STUB_REOPEN_FAILS=1 GH_STUB_PR_95_REOPENED="$(rs_json 95 %REMERGE_TIP% MERGEABLE CLEAN)"
+rs_merged 95 rs95
+chk "resync #95: two reopens" "$([ "$(rs_count '^pr reopen 95')" -eq 2 ]; echo $?)"
+
+echo "--- resync: a failed close is judged by state, fail closed"
+build_remerge rs100; T="$(rs_tip rs100)"
+rs_merge 100 rs100 GH_STUB_CLOSE_RC=1 GH_STUB_PR_100_6="$(rs_json 100 "$T" CONFLICTING DIRTY)"
+chk "resync #100: exits 0" "$RS_RC"
+chk "resync #100: no reopen" "$([ "$(rs_count '^pr reopen 100')" -eq 0 ]; echo $?)"
+chk_has "resync #100: an open PR after a failed close is named" "$RS_OUT" "no resync for #100: close failed and #100 is still open"
+chk_has "resync #100: the existing SKIP stands" "$RS_OUT" "SKIP #100 after the re-merge: head is"
+build_remerge rs101
+rs_merge 101 rs101 GH_STUB_CLOSE_RC=1 GH_STUB_PR_101_6='{}'
+chk "resync #101: exits 2" "$([ "$RS_RC" -eq 2 ]; echo $?)"
+chk_has "resync #101: names the unreadable close" "$RS_OUT" \
+  "FAILED merge #101: close #101 errored and its state is unreadable; if it is closed: gh pr reopen 101 --repo"
+chk "resync #101: three state reads, no more" "$([ "$(rs_reads 101)" -eq 8 ]; echo $?)"
+chk "resync #101: no reopen" "$([ "$(rs_count '^pr reopen 101')" -eq 0 ]; echo $?)"
+chk "resync #101: no comment" "$([ "$(rs_count '^pr comment 101')" -eq 0 ]; echo $?)"
+chk "resync #101: no pr merge" "$([ "$(rs_count '^pr merge')" -eq 0 ]; echo $?)"
+build_remerge rs108; T="$(rs_tip rs108)"
+rs_merge 108 rs108 GH_STUB_CLOSE_RC=1 GH_STUB_PR_108_6='{}' \
+  GH_STUB_PR_108_7="$(rs_json 108 "$T" CONFLICTING DIRTY '.state = "CLOSED"')" \
+  GH_STUB_PR_108_REOPENED="$(rs_json 108 %REMERGE_TIP% MERGEABLE CLEAN)"
+rs_merged 108 rs108
+chk "resync #108: one reopen after the CLOSED read" "$([ "$(rs_count '^pr reopen 108')" -eq 1 ]; echo $?)"
+
+echo "--- resync: still stale after the reopen, one pair only and the next steps named"
+build_remerge rs97
+rs_merge 97 rs97
+chk "resync #97: exits 0" "$RS_RC"
+chk "resync #97: one close" "$([ "$(rs_count '^pr close 97')" -eq 1 ]; echo $?)"
+chk "resync #97: one reopen" "$([ "$(rs_count '^pr reopen 97')" -eq 1 ]; echo $?)"
+chk_has "resync #97: names the wait" "$RS_OUT" \
+  "still stale after a close and reopen; wait until gh pr view 97 --json headRefOid shows"
+chk_has "resync #97: names the manual close and reopen" "$RS_OUT" "gh pr close 97 && gh pr reopen 97"
+chk "resync #97: no pr merge" "$([ "$(rs_count '^pr merge')" -eq 0 ]; echo $?)"
+
+echo "--- resync: an interrupt inside the close window reopens and exits 130"
+build_remerge rs104; T="$(rs_tip rs104)"
+rs_merge 104 rs104 GH_STUB_CLOSE_KILL=1 GH_STUB_PR_104_6="$(rs_json 104 "$T" CONFLICTING DIRTY '.state = "CLOSED"')"
+chk "resync #104: exits 130" "$([ "$RS_RC" -eq 130 ]; echo $?)"
+chk_has "resync #104: prints the recovery command" "$RS_OUT" \
+  "INTERRUPTED inside the resync of #104; if #104 is closed, reopen it: gh pr reopen 104 --repo"
+chk_has "resync #104: reports the reopen" "$RS_OUT" "reopened #104 after the interrupt"
+chk "resync #104: one reopen" "$([ "$(rs_count '^pr reopen 104')" -eq 1 ]; echo $?)"
+chk "resync #104: no pr merge" "$([ "$(rs_count '^pr merge')" -eq 0 ]; echo $?)"
+build_remerge rs109; T="$(rs_tip rs109)"
+rs_merge 109 rs109 GH_STUB_CLOSE_KILL=1 GH_STUB_CLOSE_RC=1 \
+  GH_STUB_PR_109_6="$(rs_json 109 "$T" CONFLICTING DIRTY '.state = "CLOSED"')"
+chk "resync #109: exits 130" "$([ "$RS_RC" -eq 130 ]; echo $?)"
+chk_has "resync #109: reports the reopen" "$RS_OUT" "reopened #109 after the interrupt"
+chk "resync #109: one reopen" "$([ "$(rs_count '^pr reopen 109')" -eq 1 ]; echo $?)"
+chk "resync #109: the handler's read is the last one (6 reads)" "$([ "$(rs_reads 109)" -eq 6 ]; echo $?)"
+
+echo "--- resync: an interrupt before the close stops the run with the PR untouched"
+build_remerge rs110
+rs_merge 110 rs110 GH_STUB_VIEW_KILL_110_5=1
+chk "resync #110: exits 130" "$([ "$RS_RC" -eq 130 ]; echo $?)"
+chk_has "resync #110: says nothing changed" "$RS_OUT" \
+  "INTERRUPTED inside the resync of #110 before the close; nothing changed on GitHub"
+rs_untouched 110
 
 echo
 if [ "$FAIL" -gt 0 ]; then echo "test-wrap-merge: $PASS passed, $FAIL FAILED of $TOTAL" >&2; exit 1; fi

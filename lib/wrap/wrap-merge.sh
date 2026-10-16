@@ -106,6 +106,175 @@ _pr_detail_at_head() {
   printf '%s' "$detail"
 }
 
+# _resync_state <url> <number> -- the PR's state as OPEN, CLOSED or MERGED, else
+# `unreadable`. Nothing GitHub returns is echoed unless it is one of the three words.
+_resync_state() {
+  local s
+  s="$(gh pr view "$2" --repo "$1" --json state 2>/dev/null | jq -r '.state // ""' 2>/dev/null)"
+  case "$s" in OPEN|CLOSED|MERGED) printf '%s' "$s" ;; *) printf 'unreadable' ;; esac
+}
+
+# _resync_trap -- INT/TERM/HUP inside `_pr_head_resync`. Shaped like `_mvp_trap`: the first
+# line ignores the signals (and PIPE, so a closed carry pipe cannot end it mid-reopen), it
+# sets the flag the helper checks, and it never calls `exit`. Before the close started there
+# is nothing to undo and no network call. Once it started, one state read decides: exactly
+# CLOSED gets one reopen; anything else is reported, never acted on. The recovery command
+# goes to stderr first, before any network call.
+_resync_trap() {
+  trap '' INT TERM HUP PIPE
+  _RS_HIT=1
+  if [ -z "$_RS_CLOSING" ]; then
+    echo "INTERRUPTED inside the resync of #${_RS_N} before the close; nothing changed on GitHub" >&2
+    return
+  fi
+  echo "INTERRUPTED inside the resync of #${_RS_N}; if #${_RS_N} is closed, reopen it: gh pr reopen ${_RS_N} --repo ${_RS_PUB}" >&2
+  local s
+  s="$(_resync_state "$_RS_URL" "$_RS_N")"
+  case "$s" in
+    CLOSED)
+      if gh pr reopen "$_RS_N" --repo "$_RS_URL" >/dev/null 2>&1; then
+        echo "reopened #${_RS_N} after the interrupt" >&2
+      else
+        echo "could not reopen #${_RS_N} after the interrupt; run the command above" >&2
+      fi ;;
+    OPEN) echo "#${_RS_N} is still open after the interrupt; nothing to undo" >&2 ;;
+    *) echo "#${_RS_N} state reads '${s}' after the interrupt, so no reopen was tried; check it: gh pr view ${_RS_N} --repo ${_RS_PUB}" >&2 ;;
+  esac
+}
+
+# _resync_out <rc> -- every exit of `_pr_head_resync` once the trap is armed: the caller's
+# INT/TERM/HUP/PIPE handlers go back, and a set flag turns any return into 130.
+_resync_out() {
+  local s
+  for s in INT TERM HUP PIPE; do
+    eval "local saved=\"\${_RS_SAVED_${s}:-}\""
+    if [ -n "$saved" ]; then eval "$saved"; else trap - "$s"; fi
+  done
+  [ -n "$_RS_HIT" ] && return 130
+  return "$1"
+}
+
+# _pr_head_resync <repo> <url> <n> <branch> <prior-oid> <pushed-oid> -- one close and
+# reopen of an own PR whose head GitHub never re-read after wrap's own push (SPEC-405).
+# GitHub can keep serving the pre-push head long past the settle window; a close and a
+# reopen makes it re-read the head ref. It acts only on proof that wrap's push is the only
+# difference: the PR is OPEN, not a draft, no auto-merge armed, still on <prior-oid>, and
+# origin's branch tip is exactly <pushed-oid>. It never merges and never reads the verdict.
+# Returns 0 resynced, 3 caught up (no close ran), 1 no resync (the last read showed the PR
+# open and unchanged), 2 needs a human, 130 interrupted. Prints every line it owns. Runs in
+# the current shell: the trap and its flag live here, so never call it inside $(...).
+_pr_head_resync() {
+  local repo="$1" url="$2" n="$3" branch="$4" prior="$5" pushed="$6"
+  local pub pre head reason lines tip rc s tries sig
+  _RS_HIT=""; _RS_CLOSING=""; _RS_N="$n"; _RS_URL="$url"
+  # A printed recovery command never carries credentials from the origin URL.
+  pub="$(printf '%s' "$url" | sed -E 's#^([A-Za-z][A-Za-z0-9+.-]*://)[^/@]*@#\1#')"
+  _RS_PUB="$pub"
+  for sig in INT TERM HUP PIPE; do eval "_RS_SAVED_${sig}=\"\$(trap -p ${sig})\""; done
+  trap '_resync_trap' INT TERM HUP
+
+  # Step 1: a fresh read right before acting. Every field must be present; a missing one
+  # fails its test, never a `// false` default that would read it as a pass.
+  pre="$(gh pr view "$n" --repo "$url" --json state,isDraft,headRefOid,autoMergeRequest 2>/dev/null)"
+  head="$(printf '%s' "$pre" | jq -r '.headRefOid // ""' 2>/dev/null)"
+  case "$head" in *[!0-9a-f]*|'') head="" ;; esac
+  [ "${#head}" -eq 40 ] || head=""
+  if [ -n "$head" ] && [ "$head" = "$pushed" ]; then
+    echo "     #${n} caught up on its own; no resync needed"
+    _resync_out 3; return
+  fi
+  reason="unreadable PR state"
+  if [ -n "$pre" ]; then
+    reason="$(printf '%s' "$pre" | jq -r '
+      if type != "object" then "unreadable PR state"
+      elif .state != "OPEN" then
+        "state " + ((.state // "") as $s | if $s == "CLOSED" or $s == "MERGED" then $s else "unreadable" end)
+      elif .isDraft != false then "isDraft is not false"
+      elif (has("autoMergeRequest") | not) or .autoMergeRequest != null then "auto-merge armed or unreadable"
+      else "" end' 2>/dev/null)" || reason="unreadable PR state"
+  fi
+  if [ -z "$reason" ] && [ "$head" != "$prior" ]; then
+    if [ -n "$head" ]; then reason="head moved to $(_short "$head")"; else reason="unreadable PR state"; fi
+  fi
+  if [ -n "$reason" ]; then
+    echo "     no resync for #${n}: ${reason}"
+    _resync_out 1; return
+  fi
+
+  # Step 2: origin's tip, the ref GitHub reads. `ls-remote` patterns match on the ref's
+  # tail, so only the line naming exactly refs/heads/<branch> counts, and only one may.
+  if lines="$(git -C "$repo" ls-remote origin "refs/heads/${branch}" 2>/dev/null)"; then
+    lines="$(printf '%s\n' "$lines" | awk -F'\t' -v r="refs/heads/${branch}" '$2 == r { print $1 }')"
+  else
+    lines=""
+  fi
+  if [ -z "$lines" ] || [ "$(printf '%s\n' "$lines" | wc -l | tr -d ' ')" != 1 ]; then
+    echo "     no resync for #${n}: origin ref is ambiguous or missing"
+    _resync_out 1; return
+  fi
+  tip="$lines"
+  if [ "$tip" != "$pushed" ]; then
+    echo "     no resync for #${n}: origin tip is $(_short "$tip"), not the pushed $(_short "$pushed")"
+    _resync_out 1; return
+  fi
+
+  echo "     #${n} still shows head $(_short "$prior") after the push of $(_short "$pushed"); closing and reopening #${n} to resync"
+  # From here a signal makes the handler read the state. A signal anywhere above left the
+  # PR untouched, so the flag stops the run before the close.
+  _RS_CLOSING=1
+  [ -z "$_RS_HIT" ] || { _resync_out 130; return; }
+  gh pr close "$n" --repo "$url" >/dev/null 2>&1; rc=$?
+  # The flag before the close's exit code: a handler that already ran owns the outcome.
+  [ -z "$_RS_HIT" ] || { _resync_out 130; return; }
+  if [ "$rc" -ne 0 ]; then
+    # A close that errors may still have landed (a timeout, a 502). Judge it by state, fail
+    # closed: exactly OPEN means nothing changed, exactly CLOSED means reopen, anything else
+    # after three reads is a human's call, never a blind reopen.
+    tries=0
+    while :; do
+      s="$(_resync_state "$url" "$n")"; tries=$(( tries + 1 ))
+      case "$s" in OPEN|CLOSED) break ;; esac
+      [ "$tries" -lt 3 ] || break
+      sleep 2
+      [ -z "$_RS_HIT" ] || { _resync_out 130; return; }
+    done
+    case "$s" in
+      OPEN)
+        echo "     no resync for #${n}: close failed and #${n} is still open"
+        _resync_out 1; return ;;
+      CLOSED) ;;
+      *)
+        echo "FAILED merge #${n}: close #${n} errored and its state is unreadable; if it is closed: gh pr reopen ${n} --repo ${pub}" >&2
+        _resync_out 2; return ;;
+    esac
+  fi
+
+  # Step 5: the reopen, one retry after 2s.
+  tries=0; rc=1
+  while [ "$tries" -lt 2 ]; do
+    [ -z "$_RS_HIT" ] || { _resync_out 130; return; }
+    if gh pr reopen "$n" --repo "$url" >/dev/null 2>&1; then rc=0; break; fi
+    tries=$(( tries + 1 ))
+    [ "$tries" -lt 2 ] && sleep 2
+  done
+  [ -z "$_RS_HIT" ] || { _resync_out 130; return; }
+  _resync_out 0
+
+  # Step 7: a best-effort trail on the PR, static text plus short oids only.
+  local body
+  if [ "$rc" -eq 0 ]; then
+    echo "     resynced #${n}: closed and reopened"
+    body="wrap merge closed and reopened this PR so GitHub re-reads its head: it still showed $(_short "$prior") after the push of $(_short "$pushed")."
+  else
+    echo "FAILED merge #${n}: closed #${n} to resync its head, and the reopen failed; reopen it: gh pr reopen ${n} --repo ${pub} (if origin lost ${branch}, push it at $(_short "$pushed") first)" >&2
+    body="wrap merge closed this PR so GitHub re-reads its head ($(_short "$prior") stale, $(_short "$pushed") pushed), and the reopen failed. Reopen it: gh pr reopen ${n}."
+  fi
+  gh pr comment "$n" --repo "$url" --body "$body" >/dev/null 2>&1 \
+    || echo "     comment on #${n} failed; the resync itself is unaffected"
+  [ "$rc" -eq 0 ] && return 0
+  return 2
+}
+
 # _branch_worktree <repo> <branch> -- the checkout that holds <branch>, empty when none does.
 # `--porcelain -z` NUL-terminates every attribute, which keeps a path carrying a newline whole.
 _branch_worktree() {
@@ -518,9 +687,31 @@ cmd_merge() {
         # that head: a head that never arrived or that someone else pushed is refused.
         detail="$(_pr_detail_settled "$url" "$conflict_n" "$REMERGE_OID" "$c_oid")"
         local r_head; r_head="$(printf '%s' "$detail" | jq -r '.headRefOid // ""' 2>/dev/null)"
+        # Still the pre-push head once the wait ran out: GitHub may never re-read the head
+        # ref on its own, and one close and reopen makes it. Dependents open would refuse
+        # the merge anyway, so the resync there would be churn with no merge behind it.
+        local resynced=""
+        if [ -n "$r_head" ] && [ "$r_head" = "$c_oid" ]; then
+          if awk -F'\t' -v h="$c_head" -v n="$conflict_n" \
+               '$3 == h && $1 != n { found = 1 } END { exit !found }' "$cache"; then
+            echo "     no resync for #${conflict_n}: dependents open"
+          else
+            _pr_head_resync "$repo" "$url" "$conflict_n" "$c_head" "$c_oid" "$REMERGE_OID"; local rsc=$?
+            case "$rsc" in
+              0|3)
+                [ "$rsc" -eq 0 ] && resynced=1
+                detail="$(_pr_detail_settled "$url" "$conflict_n" "$REMERGE_OID" "$c_oid")"
+                r_head="$(printf '%s' "$detail" | jq -r '.headRefOid // ""' 2>/dev/null)" ;;
+              2|130) rm -rf "$jsondir"; return "$rsc" ;;
+            esac
+          fi
+        fi
         verdict="$(_pr_gate "$detail" "$def")"
         if [ "$r_head" != "$REMERGE_OID" ]; then
           verdict="SKIP head is $(_short "$r_head"), not the pushed $(_short "$REMERGE_OID")"
+          if [ -n "$resynced" ] && [ "$r_head" = "$c_oid" ]; then
+            verdict="${verdict}, still stale after a close and reopen; wait until gh pr view ${conflict_n} --json headRefOid shows $(_short "$REMERGE_OID"), then re-run wrap merge --apply --pr ${conflict_n} (a re-run before that ends at left alone), or close and reopen it by hand: gh pr close ${conflict_n} && gh pr reopen ${conflict_n}"
+          fi
         elif [ -z "$verdict" ]; then
           verdict="SKIP unreadable PR JSON"
         elif [ "$verdict" = "OK" ] && awk -F'\t' -v h="$c_head" -v n="$conflict_n" \
