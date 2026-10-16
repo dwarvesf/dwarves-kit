@@ -135,6 +135,20 @@ SOME TESTS FAILED
 Verdict: RED as expected; restored, 5/5 ok
 ```
 
+```
+Control 3 (after the rebase): install.sh reverted to origin/master (cp -R of lib)
+Command: bash tests/test-install-lib-copy.sh
+Exit: 1
+Output:
+ok   tracked lib files are copied
+FAIL a .venv is not copied
+FAIL a __pycache__ is not copied
+FAIL rust/target cargo output is not copied
+FAIL a bin/*-rs built binary is not copied
+SOME TESTS FAILED
+Verdict: RED as expected; restored with git checkout -- install.sh, 5/5 ok
+```
+
 ## Not proven
 
 - The before column is a loaded-host p95, the after column an idle-host run, so the ratio overstates the gain from these changes alone. No controlled A/B was run.
