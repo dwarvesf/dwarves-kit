@@ -357,7 +357,7 @@ The `harvest` hook stages learnings when a session compacts or ends. The harvest
 
 | Command | What it does |
 |---|---|
-| `python3 hooks/harvest.py --sweep` | One run. Needs `harvest.enable = true` and the host marker; otherwise it exits 0 without work. |
+| `bash hooks/harvest.sh --sweep` | One run. Needs `harvest.enable = true` and the host marker; otherwise it exits 0 without work. |
 | `... --sweep --dry-run` | Prints the manifest a run would produce. Changes no cursor, ledger, or report state (only the raw extract cache is written). |
 | `... --sweep --since <iso\|epoch>` | Reads sessions from that time instead of the cursor. |
 | `... --status` | Prints the newest report path, its candidate count, and the queued learning count, or `none`. |

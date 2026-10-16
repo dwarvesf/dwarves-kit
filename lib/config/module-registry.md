@@ -247,6 +247,17 @@ single-reader fence). No env vars; per-repo values live in `.kit.toml [sync]`.
 | Env var | kit.toml key | Default | Status | Module | Doc |
 |---|---|---|---|---|---|
 | HARVEST_STATE_DIR | env-only | `$HOME/.claude/dwarves-kit/state/harvest` | [impl] | session | Harvest state dir: the `--stop-trigger` counter and lock, the detached-child payload handoff, and the sweep's cursor, ledgers and patterns. `--dry-run` points it at a throwaway overlay. |
+| HARVEST_LEDGER | env-only | `<repo root>/_meta/learned-ledger.md` | [impl] | session | The ledger `hooks/harvest.sh` appends queued learnings to. Env-only because hooks never read `kit.toml`. |
+| HARVEST_GLOSSARIES | env-only | `<repo root>/learning/*/GLOSSARY.md` | [impl] | session | Colon-separated glossary files the harvest dedups against. Empty falls back to the default. |
+| HARVEST_EXTRACTOR | env-only | `claude -p --model haiku --setting-sources project` | [impl] | session | The model command of `hooks/harvest.sh`: the prompt on stdin, a JSON array on stdout, split like shlex and never run through a shell. Tests point it at a stub. |
+| HARVEST_FUZZY_THRESHOLD | env-only | 0 | [impl] | session | Also drop a candidate within this edit distance of a known slug. Zero, a negative number, or a non-number turns it off. |
+| HARVEST_MAXCHARS | env-only | 12000 | [impl] | session | How many trailing characters of the session transcript the harvest sends to the model. Zero keeps all of it. |
+| HARVEST_LABLOG_DRAFT | env-only | `<repo root>/_meta/.lab-log-draft.md` | [impl] | session | The staging file `--lab-log` appends its LAB_LOG draft to. It never writes `LAB_LOG.md`. |
+| HARVEST_MIN_INTERVAL | env-only | 3600 | [impl] | session | Seconds between two harvests (one stamp for the ledger harvest, one for `--lab-log`). Zero or less turns the debounce off. |
+| HARVEST_SYNC | env-only | off | [impl] | session | `1`/`true`/`yes`/`on` runs the no-flag and `--lab-log` harvests inline instead of in a detached child, so a test can read the result. |
+| HARVEST_STOP_TRIGGER | env-only | off | [impl] | session | `1`/`true`/`yes`/`on` enables `--stop-trigger`, the opt-in harvest on every Nth Stop event. |
+| HARVEST_STOP_N | env-only | 10 | [impl] | session | The Stop event interval of `--stop-trigger`, counted per session. Less than one means one. |
+| HARVEST_STOP_SYNC | env-only | off | [impl] | session | `1`/`true`/`yes`/`on` runs a `--stop-trigger` fire inline instead of in a detached child. |
 | SKILL_CURATOR_STATE_DIR | env-only | `$HOME/.claude/skill-curator` | [impl] | session | Root of the skill-curator tool's state (ledger, lock, log, config). |
 | SKILL_CURATOR_PROPOSALS_DIR | env-only | `$HOME/.claude/skill-proposals` | [impl] | session | Where drafted skill proposals land. |
 | SKILL_CURATOR_SKILLS_DIR | env-only | `$HOME/.claude/skills` | [impl] | session | Where curated/promoted skills are written. |

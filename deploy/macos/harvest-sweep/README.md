@@ -93,4 +93,4 @@ rm -rf '<state>/sweep/extract'
 ```
 
 A later `install --apply` resumes from the same cursor; queued learnings
-drain through the normal flush path (`python3 hooks/harvest.py --flush-list`).
+drain through the normal flush path (`python3 hooks/harvest_sweep.py --flush-list`).

@@ -88,7 +88,7 @@ if [ "$UNINSTALL" -eq 1 ]; then
   echo "uninstalled $LABEL: removed $plist and $marker"
   echo "the host is back to hook + wrap distill behavior immediately."
   echo "sweep state left in place at $STATE/sweep (a re-install resumes from it):"
-  echo "  queued learnings: $queued  (flush path: python3 $KIT/hooks/harvest.py --flush-list)"
+  echo "  queued learnings: $queued  (flush path: python3 $KIT/hooks/harvest_sweep.py --flush-list)"
   echo "  extract/ size: ${exsize:-0}"
   echo "  also left: cursor.json, ledger/, patterns.jsonl, proposed.jsonl, runs/"
   echo "to purge the raw transcript cache when you are done with it (not run):"

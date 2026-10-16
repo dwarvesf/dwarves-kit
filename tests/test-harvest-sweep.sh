@@ -1,6 +1,6 @@
 #!/bin/bash
 # test-harvest-sweep.sh -- tests for the harvest sweep (SPEC-357) and the shared
-# stager it reuses from hooks/harvest.py. The extractor is always a stub; nothing
+# stager it reuses from hooks/harvest_lib.py. The extractor is always a stub; nothing
 # here touches real transcripts, real launchd, or a real model.
 #
 # Run: bash tests/test-harvest-sweep.sh
@@ -53,7 +53,7 @@ echo "=== T1 shared stager ==="
 # One in-process run prints one KEY=VALUE line per check; the bash side asserts each.
 T1_OUT=$(KIT_DIR="$KIT_DIR" TD="$TD" python3 - <<'PY'
 import importlib.util, os
-spec = importlib.util.spec_from_file_location("harvest", os.path.join(os.environ["KIT_DIR"], "hooks", "harvest.py"))
+spec = importlib.util.spec_from_file_location("harvest", os.path.join(os.environ["KIT_DIR"], "hooks", "harvest_lib.py"))
 h = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(h)
 
@@ -2909,7 +2909,7 @@ assert_eq "AC18: the rendered all-prose report lints rc 0" "0" "$(t13 s8_lint)"
 
 # ============================================================
 echo ""
-echo "=== T14 entry: --sweep, --dry-run, --status, sweep.lock, _dispatch ==="
+echo "=== T14 entry: --sweep, --dry-run, --status, sweep.lock ==="
 
 # AC2/AC3/AC4/AC28 + the After-state dry run: --sweep needs an active host
 # (harvest.enable through the root-only config read AND the installed marker),
@@ -2923,7 +2923,7 @@ hs = importlib.util.module_from_spec(spec)
 sys.modules["hs"] = hs
 spec.loader.exec_module(hs)
 sys.path.insert(0, os.path.join(os.environ["KIT_DIR"], "hooks"))
-import harvest
+import harvest_lib as harvest
 KIT, TD, NOW = (os.environ["KIT_DIR"], os.environ["TD"], int(os.environ["T5_NOW"]))
 FIX = os.path.join(KIT, "tests", "fixtures", "harvest-sweep")
 P = lambda k, v: print("%s=%s" % (k, v))
@@ -3070,16 +3070,16 @@ mk(root, "x2", NOW - 3600)
 P("unmarked_rc", hs.main(["--sweep"]))
 P("unmarked_calls", calls())
 
-# ---- harvest.py's _dispatch routes --sweep before the payload fall-through ----
+# ---- the sweep entry routes --sweep before the payload fall-through ----
 base, root = scenario()
 mk(root, "r1", NOW - 3600)
-rc = harvest._dispatch(["--sweep"])
+rc = hs.main(["--sweep"])
 P("dispatch_rc", rc)
 P("dispatch_report", os.path.exists(os.path.join(
     os.environ["HARVEST_STATE_DIR"], "sweep", "runs", "run-%d" % NOW, "report.md")))
 buf = io.StringIO()
 with contextlib.redirect_stdout(buf):
-    rc = harvest._dispatch(["--sweep", "--dry-run"])
+    rc = hs.main(["--sweep", "--dry-run"])
 P("dispatch_dry_rc", rc)
 P("dispatch_dry_manifest", '"run_id"' in buf.getvalue())
 PY
@@ -3087,11 +3087,11 @@ PY
 t14() { printf '%s\n' "$T14_OUT" | sed -n "s/^$1=//p"; }
 
 assert_eq "AC28: --status on a state with no run prints none" "0|none" "$(t14 status_none)"
-# The documented entry is hooks/harvest.py --status; the dispatcher must route it
+# The documented entry is hooks/harvest.sh --status; the hook must route it
 # to the sweep, not fall through to the hook path and exit 0 silently.
 status_state=$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX") || exit 1
-status_out=$(HARVEST_STATE_DIR="$status_state" python3 "$KIT_DIR/hooks/harvest.py" --status </dev/null 2>/dev/null; echo "|$?")
-assert_eq "AC28: harvest.py --status routes to the sweep" "none|0" "$(printf '%s' "$status_out" | tr -d '\n')"
+status_out=$(HARVEST_STATE_DIR="$status_state" bash "$KIT_DIR/hooks/harvest.sh" --status </dev/null 2>/dev/null; echo "|$?")
+assert_eq "AC28: harvest.sh --status routes to the sweep" "none|0" "$(printf '%s' "$status_out" | tr -d '\n')"
 assert_eq "AC4: an active --sweep runs end to end at rc 0" "0" "$(t14 sweep_rc)"
 assert_eq "AC4: the run extracted all three sessions" "3" "$(t14 sweep_calls)"
 assert_eq "AC12: --sweep wrote report.md under runs/<run-id>/" "True" "$(t14 sweep_report)"
@@ -3117,9 +3117,9 @@ assert_eq "AC4: a disabled host exits 0" "0" "$(t14 disabled_rc)"
 assert_eq "AC4: a disabled host calls no extractor" "0" "$(t14 disabled_calls)"
 assert_eq "AC4: a disabled host writes no cursor" "False" "$(t14 disabled_cursor)"
 assert_eq "AC4: an unmarked host exits 0 and calls nothing" "0|0" "$(t14 unmarked_rc)|$(t14 unmarked_calls)"
-assert_eq "AC4: _dispatch routes --sweep to the entry" "0" "$(t14 dispatch_rc)"
+assert_eq "AC4: the sweep entry runs --sweep again" "0" "$(t14 dispatch_rc)"
 assert_eq "AC4: the dispatched run wrote the report" "True" "$(t14 dispatch_report)"
-assert_eq "After state: _dispatch also carries --dry-run" "0|True" "$(t14 dispatch_dry_rc)|$(t14 dispatch_dry_manifest)"
+assert_eq "After state: the sweep entry also carries --dry-run" "0|True" "$(t14 dispatch_dry_rc)|$(t14 dispatch_dry_manifest)"
 
 # ============================================================
 echo ""
@@ -3141,7 +3141,7 @@ hs = importlib.util.module_from_spec(spec)
 sys.modules["hs"] = hs
 spec.loader.exec_module(hs)
 sys.path.insert(0, os.path.join(os.environ["KIT_DIR"], "hooks"))
-import harvest
+import harvest_lib as harvest
 KIT, TD, NOW = (os.environ["KIT_DIR"], os.environ["TD"], int(os.environ["T5_NOW"]))
 FIX = os.path.join(KIT, "tests", "fixtures", "harvest-sweep")
 P = lambda k, v: print("%s=%s" % (k, v))
@@ -3376,7 +3376,7 @@ hs = importlib.util.module_from_spec(spec)
 sys.modules["hs"] = hs
 spec.loader.exec_module(hs)
 sys.path.insert(0, os.path.join(os.environ["KIT_DIR"], "hooks"))
-import harvest
+import harvest_lib as harvest
 KIT, TD, NOW = (os.environ["KIT_DIR"], os.environ["TD"], int(os.environ["T5_NOW"]))
 FIX = os.path.join(KIT, "tests", "fixtures", "harvest-sweep")
 P = lambda k, v: print("%s=%s" % (k, v))
@@ -3435,7 +3435,7 @@ def mk(root, sid, la, n=6):
 def flush_list():
     buf = io.StringIO()
     with contextlib.redirect_stdout(buf):
-        rc = harvest._dispatch(["--flush-list"])
+        rc = hs.main(["--flush-list"])
     return rc, json.loads(buf.getvalue() or "[]")
 
 def rows(path):
@@ -3475,12 +3475,12 @@ P("fl_noctx_nulls", json.dumps({k: by_id["other:lone-item"].get(k)
   if "other:lone-item" in by_id else "missing")
 
 with contextlib.redirect_stderr(io.StringIO()):
-    m1 = harvest._dispatch(["--mark-flushed", rid, "LAB_LOG-9"])
+    m1 = hs.main(["--mark-flushed", rid, "LAB_LOG-9"])
     after_mark = open(led).read()
-    m2 = harvest._dispatch(["--mark-flushed", rid, "again"])
-    m3 = harvest._dispatch(["--mark-flushed", "_no-repo:no-such", "x"])
-    m4 = harvest._dispatch(["--mark-flushed", "no-colon-here", "x"])
-    m5 = harvest._dispatch(["--mark-flushed", "nosuchslug:i", "x"])
+    m2 = hs.main(["--mark-flushed", rid, "again"])
+    m3 = hs.main(["--mark-flushed", "_no-repo:no-such", "x"])
+    m4 = hs.main(["--mark-flushed", "no-colon-here", "x"])
+    m5 = hs.main(["--mark-flushed", "nosuchslug:i", "x"])
 P("mark_first", m1)
 P("mark_repeat", m2)
 P("mark_unknown", m3)
@@ -3521,7 +3521,7 @@ with contextlib.redirect_stderr(io.StringIO()):
         done = threading.Event()
         def marker():
             for i in items:
-                if harvest._dispatch(["--mark-flushed", "conc:" + i, "ref-" + i]) != 0:
+                if hs.main(["--mark-flushed", "conc:" + i, "ref-" + i]) != 0:
                     conc_errs.append("mark rc!=0 " + i)
         def cleaner():
             while not done.is_set():
@@ -3581,7 +3581,7 @@ assert_eq "AC30: the real flushed row survives a dry run" "flushed:ref1" "$(t22 
 
 # ============================================================================
 # T15 harvest.sh gate + [harvest] root-only config (AC8, DEC-3, DEC-9, DEC-27):
-# the auto modes exit 0 without spawning harvest.py when HARVEST_SWEEP_CHILD=1,
+# the auto modes exit 0 without spawning the harvest when HARVEST_SWEEP_CHILD=1,
 # or when the host is sweep-active (installed marker + harvest.enable) and
 # harvest.hook_when_sweep_on is false. kit_config_get_root resolution means a
 # project .kit.toml can neither activate the gate nor reopen the hook.

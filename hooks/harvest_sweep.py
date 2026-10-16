@@ -42,7 +42,7 @@ import urllib.parse
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, _HERE)
-import harvest  # noqa: E402  (shared state-dir default lives there)
+import harvest_lib as harvest  # noqa: E402  (shared state-dir default, slugs, ledger locks)
 
 # The shared JSONL parser lives outside hooks/, so load it by path.
 _spec = importlib.util.spec_from_file_location(
@@ -1826,7 +1826,7 @@ def _report_text(result, cursor, cands, prose_only, queued):
         fyi += result[s]["state_rows"]
     fyi += run["incidents"]
     fyi.append("STATE run: %d learnings queued in sweep ledgers; flush path: "
-               "python3 hooks/harvest.py --flush-list" % queued)
+               "python3 hooks/harvest_sweep.py --flush-list" % queued)
     lines.append("**FYI:**")
     lines += ["- " + r for r in fyi]
     lines += ["", "**Learnings staged:**"]
@@ -2027,15 +2027,19 @@ def cmd_status():
 
 
 def main(argv):
-    """The sweep entry: --sweep [--dry-run] [--since <iso|epoch>], or --status.
+    """The sweep entry: --sweep [--dry-run] [--since <iso|epoch>], --status, or one of the
+    operator verbs --cleanup [ledger], --flush-list, --mark-flushed <row-id> <ref>.
     --sweep needs an active host (config + marker), takes sweep.lock, and exits by
     the rc table; a disabled, unmarked, or lock-held run exits 0 without work.
     --dry-run takes the same lock, refuses it when held, and prints the manifest."""
+    verb = harvest.main(argv)   # --cleanup, --flush-list, --mark-flushed: the operator verbs
+    if verb is not None:
+        return verb
     if "--status" in argv:
         return cmd_status()
     dry = "--dry-run" in argv
     if "--sweep" not in argv and not dry:
-        sys.stderr.write("usage: harvest_sweep.py --sweep [--dry-run] [--since <iso>] | --status\n")
+        sys.stderr.write("usage: harvest_sweep.py --sweep [--dry-run] [--since <iso>] | --status | --cleanup [ledger] | --flush-list | --mark-flushed <row-id> <ref>\n")
         return 64
     since = None
     if "--since" in argv:

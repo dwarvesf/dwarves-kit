@@ -21,11 +21,11 @@ The expiry window is a plain CONSTANT with a --days override (never a
 kit.toml key -- this is what keeps this file disjoint from the kit.toml edit).
 
 The write is guarded by a blocking exclusive `fcntl.flock` on a sibling `<staging>.lock`
-file: the same idiom hooks/harvest.py's post-#226 dedup-on-append fix uses for the
+file: the same idiom hooks/harvest_lib.py's post-#226 dedup-on-append fix uses for the
 learned-ledger (open/create the lock, acquire, read + mutate + write, release in `finally`),
 adapted here to the staging file. bash(1) `flock` itself is not used anywhere in this repo
 (absent on macOS, per lib/queue/orchestrate.sh's own note) -- this is the same Python
-fcntl.flock idiom harvest.py already established, not a new locking primitive.
+fcntl.flock idiom harvest_lib.py already established, not a new locking primitive.
 """
 import fcntl
 import importlib.util

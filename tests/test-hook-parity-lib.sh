@@ -139,6 +139,17 @@ got=$(hp_run_case "$c" bash "$FAKE/bytes-hook.sh")
 [ "$(jq -r '.stdout' <<<"$got")" = "1 ${PATH%%:*}" ] && ok=1 || ok=0
 check "a base64 seed writes raw bytes (one 0xff byte) and @PATH@ expands" "$ok"
 
+# --- a stamp the hook just wrote folds to @NOW@; one it did not write keeps its value ---
+cat > "$FAKE/stamp-hook.sh" <<'EOS'
+#!/usr/bin/env bash
+cat >/dev/null
+printf '%s' "$(date +%s)" > "$HOME/fresh"
+EOS
+c=$(jq -n '{name:"stamp", payload:"hi", seed:{"home/old":"1500000000"}, read:["home/fresh","home/old"]}')
+got=$(hp_run_case "$c" bash "$FAKE/stamp-hook.sh")
+[ "$(jq -r '.files["home/fresh"]' <<<"$got")/$(jq -r '.files["home/old"]' <<<"$got")" = "@NOW@/1500000000" ] && ok=1 || ok=0
+check "a fresh epoch in a read file folds to @NOW@ and an old one stays" "$ok"
+
 # --- rc and stderr pass through ---
 c=$(jq -n '{name:"exit-code", env:{FAKE_EXIT:"7"}, payload:"hi"}')
 got=$(hp_run_case "$c" bash "$FAKE/fake-hook.sh")

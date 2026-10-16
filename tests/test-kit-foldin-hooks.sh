@@ -616,7 +616,7 @@ for MODE in harvest-run lab-log-run stop-harvest; do
   PF="$TD/hv-state-corrupt/payload-$MODE.json"
   echo 'not valid json{{{' > "$PF"
   RC=0
-  python3 "$KIT_DIR/hooks/harvest.py" "--$MODE" "$PF" >/dev/null 2>&1 || RC=$?
+  bash "$KIT_DIR/hooks/harvest.sh" "--$MODE" "$PF" >/dev/null 2>&1 || RC=$?
   assert_exit "row 4j-l: --$MODE on a corrupt payload exits 0" 0 $RC
   TOTAL=$((TOTAL + 1))
   if [ ! -f "$PF" ]; then
@@ -629,82 +629,40 @@ for MODE in harvest-run lab-log-run stop-harvest; do
 done
 
 # ID-202: dedup-on-append must survive CONCURRENT invocations sharing one ledger
-# (e.g. parallel subagent sessions each firing PreCompact). Pre-fix, existing_slugs()
-# (read) and append_rows() (write) were two unlocked steps: several concurrent
-# harvest.py processes could each read the ledger before any had appended and all
-# decide the same slug was new, observed as up to 6x duplicates in production.
+# (e.g. parallel subagent sessions each firing PreCompact). Pre-fix, the read of the known slugs
+# and the append were two unlocked steps: several concurrent harvests could each read the ledger
+# before any had appended and all decide the same slug was new, observed as up to 6x duplicates.
 #
-# A real subprocess-timing race (N processes + a sleeping fake extractor) is what
-# actually happens in production, but proved too flaky to assert on in THIS test
-# under a loaded dev/CI box: pre-fix failure rate ranged 30-90% run-to-run because
-# process-spawn jitter alone was often enough to scatter arrivals outside the
-# window. So this drives the SAME code path (_harvest_payload) in-process via
-# Python threads with a threading.Barrier forcing simultaneous arrival at the
-# critical section, plus a deterministic sleep inside existing_slugs() standing in
-# for "the write hasn't landed yet" -- this reproduces the exact race 8/8 times
-# pre-fix (dup_count=8) and 8/8 times post-fix (dup_count=1) in manual verification.
+# Eight real harvest processes share one ledger. Each one's fake extractor checks in at a rendezvous
+# directory and waits (up to 10 s) until all eight have, so every process reaches the dedup and the
+# append together; the ledger's lock is the only thing that makes the second to eighth see the first's row.
 cat >"$TD/hv-race-transcript.jsonl" <<'EOF'
 {"type":"assistant","message":{"content":[{"type":"text","text":"harvest append needs a lock"}]}}
 EOF
 RACE_LEDGER="$TD/hv-race-repo/_meta/learned-ledger.md"
-mkdir -p "$TD/hv-race-repo"
-cat >"$TD/hv-race-test.py" <<PYEOF
-import importlib.util, threading, os, sys, time
-
-KIT_DIR = "$KIT_DIR"
-LEDGER = "$RACE_LEDGER"
-TRANSCRIPT = "$TD/hv-race-transcript.jsonl"
-N = 8
-
-os.environ["HARVEST_LEDGER"] = LEDGER
-os.environ["HARVEST_GLOSSARIES"] = ""
-os.environ["HARVEST_MIN_INTERVAL"] = "0"
-
-spec = importlib.util.spec_from_file_location("harvest_under_test", os.path.join(KIT_DIR, "hooks", "harvest.py"))
-harvest = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(harvest)
-
-barrier = threading.Barrier(N)
-real_extract = harvest.extract_json_array
-real_existing_slugs = harvest.existing_slugs
-
-def patched_extract(text):
-    barrier.wait()  # force all N threads into the vulnerable section at the same instant
-    return real_extract(text)
-
-def patched_existing_slugs(ledger, glossaries):
-    # Stand-in for "no other process has appended yet": widen the read-then-decide
-    # window past any GIL scheduling quantum, so an unlocked caller reliably lets
-    # ALL N threads read a pre-append ledger state.
-    result = real_existing_slugs(ledger, glossaries)
-    time.sleep(0.05)
-    return result
-
-def fake_run_extractor(prompt):
-    return '[{"item":"harvest-dedup-race","kind":"insight","home":"drop","why":"append has no lock"}]'
-
-harvest.extract_json_array = patched_extract
-harvest.existing_slugs = patched_existing_slugs
-harvest.run_extractor = fake_run_extractor
-
-payload = {"transcript_path": TRANSCRIPT}
-
-def worker():
-    harvest._harvest_payload(payload)
-
-threads = [threading.Thread(target=worker) for _ in range(N)]
-for t in threads:
-    t.start()
-for t in threads:
-    t.join()
-
-content = open(LEDGER, encoding="utf-8").read() if os.path.exists(LEDGER) else ""
-print(content.count("harvest-dedup-race"))
-print(content.count("| date | item"))
-PYEOF
-RACE_OUT=$(python3 "$TD/hv-race-test.py" 2>/dev/null)
-DUP_COUNT=$(echo "$RACE_OUT" | sed -n '1p')
-HEADER_COUNT=$(echo "$RACE_OUT" | sed -n '2p')
+mkdir -p "$TD/hv-race-repo" "$TD/hv-race-rendezvous"
+cat >"$TD/hv-race-extractor.sh" <<'EOF'
+#!/usr/bin/env bash
+cat >/dev/null
+: > "$RACE_DIR/in.$$"
+for _ in $(seq 1 100); do
+  [ "$(ls "$RACE_DIR" | wc -l | tr -d ' ')" -ge 8 ] && break
+  sleep 0.1
+done
+printf '[{"item":"harvest-dedup-race","kind":"insight","home":"drop","why":"append has no lock"}]'
+EOF
+chmod +x "$TD/hv-race-extractor.sh"
+RACE_PIDS=""
+for _ in 1 2 3 4 5 6 7 8; do
+  echo "{\"transcript_path\":\"$TD/hv-race-transcript.jsonl\"}" | RACE_DIR="$TD/hv-race-rendezvous" \
+    HARVEST_LEDGER="$RACE_LEDGER" HARVEST_GLOSSARIES="" HARVEST_MIN_INTERVAL=0 HARVEST_SYNC=1 \
+    HARVEST_EXTRACTOR="$TD/hv-race-extractor.sh" HARVEST_STATE_DIR="$TD/hv-race-state" \
+    bash "$KIT_DIR/hooks/harvest.sh" >/dev/null 2>&1 &
+  RACE_PIDS="$RACE_PIDS $!"
+done
+wait $RACE_PIDS
+DUP_COUNT=$(grep -c "harvest-dedup-race" "$RACE_LEDGER" 2>/dev/null || true)
+HEADER_COUNT=$(grep -c "| date | item" "$RACE_LEDGER" 2>/dev/null || true)
 assert_eq "row 4c: 8 concurrent harvests of the same insight stage exactly once (ID-202)" "1" "$DUP_COUNT"
 assert_eq "row 4c: concurrent harvests never duplicate the ledger header" "1" "$HEADER_COUNT"
 
@@ -748,12 +706,14 @@ if HOME="$INSTALL_HOME" bash "$KIT_DIR/install.sh" --with board,session,advisor 
     RC=0; [ -x "$DEST/${NAME}.sh" ] || RC=1
     assert_exit "install.sh materializes hooks/${NAME}.sh executable" 0 $RC
   done
-  # citation-guard.sh, context-hints.sh, and backlog-stage.sh are pure bash+jq ports with no .py
-  # companion; harvest still ships one.
-  for NAME in harvest; do
+  # citation-guard.sh, context-hints.sh, backlog-stage.sh, and harvest.sh are pure bash+jq ports with no
+  # same-named .py; harvest.sh ships the sweep's Python library and the sweep beside it.
+  for NAME in harvest_lib harvest_sweep; do
     RC=0; [ -f "$DEST/${NAME}.py" ] || RC=1
     assert_exit "install.sh materializes hooks/${NAME}.py (companion)" 0 $RC
   done
+  RC=0; [ -f "$DEST/harvest.py" ] && RC=1
+  assert_exit "install.sh does NOT materialize a harvest.py" 0 $RC
   RC=0; [ -f "$DEST/citation-guard.py" ] && RC=1
   assert_exit "install.sh does NOT materialize a citation-guard.py" 0 $RC
   RC=0; [ -f "$DEST/context-hints.py" ] && RC=1
@@ -805,7 +765,7 @@ LEAK=$(grep -rln 'workspace/tieubao' \
   "$KIT_DIR/hooks/citation-guard.sh" \
   "$KIT_DIR/hooks/context-hints.sh" \
   "$KIT_DIR/hooks/context-hints-skills-map.json" \
-  "$KIT_DIR/hooks/harvest.sh" "$KIT_DIR/hooks/harvest.py" 2>/dev/null || true)
+  "$KIT_DIR/hooks/harvest.sh" "$KIT_DIR/hooks/harvest_lib.py" 2>/dev/null || true)
 assert_eq "no 'workspace/tieubao' in any new file" "" "$LEAK"
 
 # ============================================================

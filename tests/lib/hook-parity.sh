@@ -157,6 +157,8 @@ hp_run_case() {
       if [ -f "$rpath" ]; then
         rtxt=$(cat "$rpath")
         rtxt=$(jq -S -c 'walk(if type == "number" then . + 0 else . end)' <<<"$rtxt" 2>/dev/null) || rtxt=$(cat "$rpath")
+        # a stamp the hook just wrote (an epoch within a day of now) folds to @NOW@, so a golden does not rot
+        case "$rtxt" in [0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]) [ $(( $(date +%s) - rtxt )) -lt 86400 ] && [ "$rtxt" -le $(( $(date +%s) + 60 )) ] && rtxt="@NOW@" ;; esac
         files=$(jq -c --arg k "$rp" --arg v "$rtxt" '.[$k] = $v' <<<"$files")
       else
         files=$(jq -c --arg k "$rp" '.[$k] = null' <<<"$files")
