@@ -38,7 +38,7 @@ for mode in inline detached; do
   env -i PATH="$PATH" HOME="$T/home" LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8 REPO_ROOT="$T/cwd" \
     BACKLOG_STAGE_STATE_DIR="$T/home/bs" BACKLOG_STAGE_AUTO=1 BACKLOG_STAGE_SYNC=$sync BACKLOG_STAGE_MIN_INTERVAL=0 \
     BACKLOG_STAGE_MAXCHARS=3000000 BACKLOG_STAGE_EXTRACTOR="bash $T/home/ext.sh" \
-    bash "$HOOK" < "$T/payload" >/dev/null 2>&1
+    perl -e 'alarm shift; exec @ARGV' 60 bash "$HOOK" < "$T/payload" >/dev/null 2>&1
   for _ in $(seq 1 100); do [ -s "$T/cwd/_meta/backlog-staging.md" ] && [ -s "$T/home/prompt.size" ] && break; sleep 0.3; done
   size=$(cat "$T/home/prompt.size" 2>/dev/null || echo 0)
   if [ "$size" -gt 2097152 ] && grep -q '^## \[staged\] Add retry to uploader' "$T/cwd/_meta/backlog-staging.md" 2>/dev/null; then

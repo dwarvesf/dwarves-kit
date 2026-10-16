@@ -196,5 +196,16 @@ HP_SILENT_CASES="gen-case" HP_KIT_ROOT="$GITROOT" hp_gen_expected "$REV" fake "$
 jq -e '.rc == 0 and .stdout == "" and .stderr == "" and .log == "" and .stray == ""' "$FAKE/gen-silent.jsonl" >/dev/null && ok=1 || ok=0
 check "HP_SILENT_CASES blanks a named case's golden to a silent exit 0" "$ok"
 
+# A hanging hook (one that never reads stdin and idles) fails the case at the alarm, it does not hang
+cat > "$FAKE/hang-hook.sh" <<'EOS'
+#!/usr/bin/env bash
+sleep 20
+EOS
+c=$(jq -n '{name:"hang", payload:"hi"}')
+start=$SECONDS
+got=$(HP_CASE_TIMEOUT=2 hp_run_case "$c" bash "$FAKE/hang-hook.sh")
+[ "$(jq -r '.rc' <<<"$got")" != 0 ] && [ $((SECONDS - start)) -lt 15 ] && ok=1 || ok=0
+check "a hanging hook is killed at the per-case alarm and reports a non-zero rc" "$ok"
+
 echo "hook-parity-lib self-test: $pass passed, $fail failed"
 [ "$fail" -eq 0 ]
