@@ -569,8 +569,15 @@ else
   mkdir -p "$CLAUDE_DIR/dwarves-kit"
   [ -L "$LIB_DEST" ] && rm "$LIB_DEST"
   [ -d "$LIB_DEST" ] && [ ! -L "$LIB_DEST" ] && rm -rf "$LIB_DEST"
-  cp -R "$KIT_DIR/lib" "$LIB_DEST"
-  echo "[ok] Copied lib into $LIB_DEST (pinned, SPEC-066)"
+  # Skip gitignored build output: a venv is not relocatable and `bin/stats` (`uv run --project`)
+  # rebuilds it on first use; the retired prose-rag Rust crate left target/ and bin/*-rs behind
+  # (419M + 5M) and nothing under bin/ or lib/ resolves them (bin/prose-rag never looks under lib/).
+  # Patterns mirror the .gitignore build-output rules.
+  (cd "$KIT_DIR" && tar -cf - \
+    --exclude='.venv' --exclude='__pycache__' --exclude='*.pyc' \
+    --exclude='lib/*/rust/target' --exclude='lib/*/bin/*-rs' lib) \
+    | tar -xpf - -C "$CLAUDE_DIR/dwarves-kit"
+  echo "[ok] Copied lib into $LIB_DEST (pinned, SPEC-066; build output skipped)"
 fi
 
 # 1c-bis. Deploy bin/ -- the STABLE consumer entrypoint dir (SPEC-184). Consumers (an

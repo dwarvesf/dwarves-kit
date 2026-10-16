@@ -112,13 +112,22 @@ _seam_rows() {
 # (ledger.location: KIT_LEDGER_DIR is listed before DWARVES_KIT_LOG_DIR before the toml-only
 # default row, so a lookup by the bare key resolves to the canonical env var's row).
 _find_row() {
-  local key="$1" row env tk
-  while IFS= read -r row; do
-    [ -n "$row" ] || continue
-    env="$(_row_get "$row" 1)"; tk="$(_row_get "$row" 2)"
-    if [ "$env" = "$key" ] || [ "$tk" = "$key" ]; then printf '%s' "$row"; return 0; fi
-  done < <(_registry_rows)
-  return 1
+  local key="$1"
+  # One awk pass instead of two `$(_row_get)` forks per row. The split mirrors _row_get: swap
+  # the escaped pipe for a sentinel, split on `|`, trim, so an escaped pipe never opens a cell.
+  # No early exit: the writer behind the process substitution must never see a closed pipe.
+  K="$key" awk '
+    BEGIN { key = ENVIRON["K"] }
+    function cell(s) { gsub(/\001/, "|", s); gsub(/^[[:space:]]+|[[:space:]]+$/, "", s); return s }
+    found || $0 == "" { next }
+    {
+      line = $0
+      gsub(/\\\|/, "\001", line)
+      split(line, f, "|")
+      if (cell(f[2]) == key || cell(f[3]) == key) { printf "%s", $0; found = 1 }
+    }
+    END { exit found ? 0 : 1 }
+  ' < <(_registry_rows)
 }
 
 # _default_value <cell> -- the MACHINE value of a registry Default cell. The cell is authored
