@@ -74,7 +74,7 @@ The transcript walk is one jq program over the raw lines that mirrors the Python
 | T1: harness | `tests/lib/hook-parity.sh`, `tests/test-hook-parity-lib.sh` | `settle`, `@HOME@`/`@CWD@` in seeds and args, `@PATH@` in env values, and `base64:` seeds work and are self-tested |
 | T2: goldens | `tests/fixtures/backlog-stage-parity/` | cases and goldens generated from the Python at `b9306b37` before the port |
 | T3: port | `hooks/backlog-stage.sh`; delete `hooks/backlog-stage.py` | `bash tests/test-backlog-stage-parity.sh` passes; no `python` in the hook |
-| T4: references | `docs/hooks.md`, `docs/test-value-audit.md`, `tests/test-kit-foldin-hooks.sh`, the install and adopt lists | no live doc or test names `backlog-stage.py` as current code |
+| T4: references | `docs/hooks.md`, `docs/test-value-audit.md`, `lib/config/module-registry.md`, `tests/test-kit-foldin-hooks.sh`, the install and adopt lists | no live doc or test names `backlog-stage.py` as current code |
 | T5: records | `docs/CHANGELOG.md`, `docs/verification/backlog-stage-bash.md`, `docs/implementation-notes/backlog-stage-bash.md`, `docs/retro/`, `docs/FEATURES.md` (regenerated) | CHANGELOG names the port |
 
 ## Test plan
@@ -93,8 +93,8 @@ Negative controls, through `lib/gate/negctl.sh` with P1 as the test command:
 |---|---|---|
 | NC1 | count brackets to the last `]`, not the matching one | `stage-two-arrays-first-only` |
 | NC2 | read a string `content` as text | `transcript-string-content-ignored`, `transcript-only-string-content` |
-| NC3 | never write the throttle stamp (in `lib/reflect/hook-util.sh`) | `throttle-first-run-creates-stamp`, `crash-maxchars-invalid`, `throttle-before-transcript-read` |
-| NC4 | drop the board dedup | `dedup-board`, `dedup-board-case-and-punctuation` |
+| NC3 | never write the throttle stamp (in `lib/reflect/hook-util.sh`) | `throttle-first-run-creates-stamp`, `throttle-before-transcript-read`, `state-dir-default` |
+| NC4 | drop the board dedup | `dedup-board`, `dedup-board-case-and-punctuation`, `detached-dedup-against-board` |
 | NC5 | keep the payload file after `--staged-run` | the `staged-run-*` and `detached-*` cases |
 | NC6 | exempt `--staged-run` from the `BACKLOG_STAGE_AUTO` gate | `staged-run-without-auto` |
 | NC7 | skip the forward-intent pre-filter | the `prefilter-miss*` cases |
