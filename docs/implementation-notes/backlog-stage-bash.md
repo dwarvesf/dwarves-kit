@@ -27,3 +27,9 @@ Deltas from SPEC-408. Nothing here repeats what the spec already states.
 ## 2026-10-16 Real data
 
 - 400 real session transcripts on this machine, with the model call stubbed to a fixed answer and the real board for dedup, went through the Python and the port: see `docs/verification/backlog-stage-bash.md` for the final counts.
+
+## 2026-10-16 The hung negative control was a TERM that nobody could deliver
+
+- Context: every `negctl.sh` run of the parity test finished its green and red runs in under a minute each, then spent 15 minutes or more in the green run after the restore. Each case waited for the per-case alarm. The earlier round that hung for two hours was the same stall without the alarm.
+- Decision/Change: `negctl.sh` runs `trap '' INT TERM HUP` in its restore step and never undoes it, so the final run, and every hook it starts, ignores TERM. `hu_run_capture` ended its watchdog with TERM, so the wait on the watchdog ran out the whole 120 s extractor timeout. The watchdog now gets SIGKILL, and its sleep is reaped after it. `tests/test-hook-util.sh` runs the helper under `trap '' TERM` and fails the old code.
+- Why: the stall hit any hook that used the helper (intake-sweep too), only under a caller that ignores TERM, which is exactly what a proof run is.
