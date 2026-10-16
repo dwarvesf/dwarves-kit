@@ -13,7 +13,13 @@
 # port's own fixture; this library only knows the generic case shape.
 
 # hp_run_case <case-json> <hook-cmd...>
-# Runs one case, prints one JSON line: {name, rc, stdout, stderr, log, stray}.
+# Runs one case, prints one JSON line: {name, rc, stdout, stderr, log, stray} plus
+# `files` when the case names a `read` list. Optional case fields:
+#   seed  {"home/<path>": text, "cwd/<path>": text}  files written before the run
+#   read  ["home/<path>", "cwd/<path>"]  files dumped after the run into `files`
+#         (JSON-normalized when they parse, numbers canonical: 1000.0 reads 1000; null when missing)
+# The tokens @HOME@ and @CWD@ expand to the case's own temp directories in env values
+# and payload text, and fold back in every output field, so goldens never carry a temp path.
 hp_run_case() {
   local case_json="$1"; shift
   local T home cwd
@@ -32,18 +38,36 @@ hp_run_case() {
       envs+=("$log_var=$default_log")
     fi
   fi
+  local home_p cwd_p
+  home_p=$(cd "$home" && pwd -P); cwd_p=$(cd "$cwd" && pwd -P)
   while IFS= read -r kv; do
     local k="${kv%%=*}" v="${kv#*=}"
     [ -n "${HP_ROOT:-}" ] && v="${v//ROOT/$HP_ROOT}"
+    v="${v//@HOME@/$home}"; v="${v//@CWD@/$cwd}"
     envs+=("$k=$v")
   done < <(jq -r '(.env // {}) | to_entries[] | select(.value != null) | "\(.key)=\(.value)"' <<<"$case_json")
 
-  local payload="$T/payload"
+  local seed_key seed_path
+  while IFS= read -r seed_key; do
+    [ -n "$seed_key" ] || continue
+    case "$seed_key" in
+      home/*) seed_path="$home/${seed_key#home/}" ;;
+      cwd/*)  seed_path="$cwd/${seed_key#cwd/}" ;;
+      *) continue ;;
+    esac
+    mkdir -p "$(dirname "$seed_path")"
+    jq -j --arg k "$seed_key" '.seed[$k]' <<<"$case_json" > "$seed_path"
+  done < <(jq -r '(.seed // {}) | keys_unsorted[]' <<<"$case_json")
+
+  local payload="$T/payload" ptxt
   if [ "$(jq -r '.payload | type' <<<"$case_json")" = "object" ]; then
-    jq -c '.payload' <<<"$case_json" > "$payload"
+    ptxt=$(jq -c '.payload' <<<"$case_json")
+    ptxt="${ptxt//@HOME@/$home}"; ptxt="${ptxt//@CWD@/$cwd}"
+    printf '%s\n' "$ptxt" > "$payload"
   else
     local raw; raw=$(jq -j '.payload' <<<"$case_json")
-    printf '%s' "${raw#RAW:}" > "$payload"
+    raw="${raw#RAW:}"; raw="${raw//@HOME@/$home}"; raw="${raw//@CWD@/$cwd}"
+    printf '%s' "$raw" > "$payload"
   fi
 
   local eff=""
@@ -71,17 +95,39 @@ hp_run_case() {
     { [ -d "$home" ] && (cd "$home" && find . -type f 2>/dev/null | sed 's|^\./|home/|')
       [ -d "$cwd" ] && (cd "$cwd" && find . -type f 2>/dev/null | sed 's|^\./|cwd/|')
     } | while IFS= read -r f; do
-        case "$f" in
-          home/*) full="$home/${f#home/}" ;;
-          cwd/*)  full="$cwd/${f#cwd/}" ;;
-        esac
+        if [ "${f#home/}" != "$f" ]; then full="$home/${f#home/}"; else full="$cwd/${f#cwd/}"; fi
         [ "$full" = "$eff" ] || printf '%s\n' "$f"
       done | LC_ALL=C sort | paste -sd, -
   )
 
+  local files="null" rp rpath rtxt
+  if [ "$(jq -r 'has("read")' <<<"$case_json")" = "true" ]; then
+    files="{}"
+    while IFS= read -r rp; do
+      case "$rp" in
+        home/*) rpath="$home/${rp#home/}" ;;
+        cwd/*)  rpath="$cwd/${rp#cwd/}" ;;
+        *) continue ;;
+      esac
+      if [ -f "$rpath" ]; then
+        rtxt=$(cat "$rpath")
+        rtxt=$(jq -S -c 'walk(if type == "number" then . + 0 else . end)' <<<"$rtxt" 2>/dev/null) || rtxt=$(cat "$rpath")
+        files=$(jq -c --arg k "$rp" --arg v "$rtxt" '.[$k] = $v' <<<"$files")
+      else
+        files=$(jq -c --arg k "$rp" '.[$k] = null' <<<"$files")
+      fi
+    done < <(jq -r '.read[]' <<<"$case_json")
+  fi
+
+  norm=${norm//$home_p/@HOME@}; norm=${norm//$home/@HOME@}; norm=${norm//$cwd_p/@CWD@}; norm=${norm//$cwd/@CWD@}
+  err=${err//$home_p/@HOME@}; err=${err//$home/@HOME@}; err=${err//$cwd_p/@CWD@}; err=${err//$cwd/@CWD@}
+  logn=${logn//$home_p/@HOME@}; logn=${logn//$home/@HOME@}; logn=${logn//$cwd_p/@CWD@}; logn=${logn//$cwd/@CWD@}
+  files=${files//$home_p/@HOME@}; files=${files//$home/@HOME@}; files=${files//$cwd_p/@CWD@}; files=${files//$cwd/@CWD@}
+
   jq -c -n --arg name "$name" --argjson rc "$rc" --arg stdout "$norm" --arg stderr "$err" \
-    --arg log "$logn" --arg stray "$stray" \
-    '{name:$name, rc:$rc, stdout:$stdout, stderr:$stderr, log:$log, stray:$stray}'
+    --arg log "$logn" --arg stray "$stray" --argjson files "$files" \
+    '{name:$name, rc:$rc, stdout:$stdout, stderr:$stderr, log:$log, stray:$stray}
+     + (if $files == null then {} else {files:$files} end)'
 }
 
 # hp_gen_expected <rev> <hook-basename> <cases.jsonl> <expected.jsonl>

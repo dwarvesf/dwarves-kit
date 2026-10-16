@@ -276,7 +276,7 @@ file count so this table cannot drift):
 | `batch-debt-warn` | PreToolUse Bash | advisory | a session merging a second PR with no lane START since its first merge |
 | `slop-cleaner` | Stop | advisory | long-session code bloat; suggests, never blocks |
 | `context-readiness` | SessionStart | advisory | starting blind: injects spec/board state + an intent-first next step |
-| `context-hints` | UserPromptSubmit | convenience | none (temporal + keyword skill-hint injection, sub-ms, never blocks) |
+| `context-hints` | UserPromptSubmit | convenience | none (temporal + keyword skill-hint injection, no model call, never blocks) |
 | `citation-guard` | Stop | advisory | hallucinated `file:line` citations in the final message; log-only by default, opt-in strict mode (`CITATION_GUARD_STRICT=1`) blocks |
 | `harvest` | PreCompact, SessionEnd | convenience | none (stages durable learnings / a LAB_LOG draft to a staging file; never writes a durable home, always exits 0; its auto modes exit 0 without work on a host where the harvest sweep is active, unless `harvest.hook_when_sweep_on` is true) |
 | `backlog-stage` | SessionEnd | convenience | none (stages forward-looking work-items to a staging file; never writes the board, always exits 0) |
