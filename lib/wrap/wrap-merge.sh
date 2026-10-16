@@ -155,7 +155,7 @@ _resync_out() {
 }
 
 # _pr_head_resync <repo> <url> <n> <branch> <prior-oid> <pushed-oid> -- one close and
-# reopen of an own PR whose head GitHub never re-read after wrap's own push (SPEC-405).
+# reopen of an own PR whose head GitHub never re-read after wrap's own push.
 # GitHub can keep serving the pre-push head long past the settle window; a close and a
 # reopen makes it re-read the head ref. It acts only on proof that wrap's push is the only
 # difference: the PR is OPEN, not a draft, no auto-merge armed, still on <prior-oid>, and
