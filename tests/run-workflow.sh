@@ -40,7 +40,7 @@ run_step() {
   fi
 }
 export -f run_step
-RW_MARKS=$(mktemp -d); export RW_MARKS RW_VERBOSE="$verbose"
+RW_MARKS=$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX") || exit 1; export RW_MARKS RW_VERBOSE="$verbose"
 steps=$(grep -E '^\s+(- )?run: bash tests/' "$WF" | sed 's/.*run: //')
 total=$(printf '%s\n' "$steps" | grep -c .)
 # -P keeps the order of START only; each step's block prints whole, so red lines never interleave

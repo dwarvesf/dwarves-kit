@@ -11,7 +11,7 @@ KIT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 HOOK="$KIT_DIR/hooks/board-row-gate.sh"
 [ -r "$HOOK" ] || { echo "ERROR: hook not found at $HOOK" >&2; exit 1; }
 
-T="$(mktemp -d "${TMPDIR:-/tmp}/dwarves-kit-board-row-gate.XXXXXX")"
+T="$(mktemp -d "${TMPDIR:-/tmp}/dwarves-kit-board-row-gate.XXXXXX")" || exit 1
 trap 'rm -rf "$T"' EXIT
 export HOME="$T/home"; mkdir -p "$HOME"
 export DWARVES_KIT_LOG_DIR="$T/logs"

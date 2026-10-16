@@ -76,7 +76,7 @@ LC_ALL=C grep -qF "$EMDASH" "$DA" && bad "drafted-agent.md: no em-dash" || ok "d
 # Simulate the DEFAULT install promotion of the golden draft (strip marker -> agents/<name>.md),
 # into a temp dir so the real repo + ~/.claude are untouched. Proves the install path yields a
 # valid, marker-free, lint-passing agent that is dispatchable-shaped.
-TMPAG="$(mktemp -d "${TMPDIR:-/tmp}/meta-install.XXXXXX")"
+TMPAG="$(mktemp -d "${TMPDIR:-/tmp}/meta-install.XXXXXX")" || exit 1
 tail -n +2 "$DA" > "$TMPAG/installed.md"   # drop the line-1 DRAFT marker
 [ "$(head -1 "$TMPAG/installed.md")" = "---" ]; chk "install: marker stripped, frontmatter is now line 1" $?
 LC_ALL=C grep -qF "$MARKER" "$TMPAG/installed.md" && bad "install: no DRAFT marker remains" || ok "install: no DRAFT marker remains"

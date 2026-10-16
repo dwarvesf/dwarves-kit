@@ -44,7 +44,7 @@ skip() { TOTAL=$((TOTAL+1)); SKIP=$((SKIP+1)); echo -e "  ${YELLOW}SKIP${NC} $1"
 # Fixture: an isolated ledger dir (DWARVES_KIT_LOG_DIR) + an isolated repo-root (for impl-notes /
 # explainer resolution), so this test never touches the real machine corpus.
 # ---------------------------------------------------------------------------
-TMPDIR_T="$(mktemp -d)"
+TMPDIR_T="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
 trap 'rm -rf "$TMPDIR_T"' EXIT
 export DWARVES_KIT_LOG_DIR="$TMPDIR_T/logs"
 mkdir -p "$DWARVES_KIT_LOG_DIR/runs"

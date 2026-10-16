@@ -30,7 +30,7 @@ count() { local c; c="$(grep -c "$1" "$2" 2>/dev/null)"; printf '%s' "${c:-0}"; 
 # A temp git repo whose only spec is SPEC-005 => next free is 006. `cd` into it so spec-next's
 # `git rev-parse --show-toplevel` resolves here; SPEC_RESERVE_FILE isolates the ledger.
 mk_repo() {
-  local r; r="$(mktemp -d "${TMPDIR:-/tmp}/kit-spec-reserve.XXXXXX")"
+  local r; r="$(mktemp -d "${TMPDIR:-/tmp}/kit-spec-reserve.XXXXXX")" || exit 1
   git -C "$r" init -q; git -C "$r" config user.email t@t.t; git -C "$r" config user.name t
   mkdir -p "$r/docs/specs"; : > "$r/docs/specs/SPEC-005-x.md"
   git -C "$r" add -A; git -C "$r" commit -qm init >/dev/null 2>&1
@@ -155,11 +155,11 @@ echo "=== T10: orchestrate _wave_reserve_spec wiring (mock spec-next) ==="
 # Source orchestrate.sh (its source-guard skips main) and drive the helper with a mock.
 # shellcheck disable=SC1090
 ( source "$KIT_DIR/lib/queue/orchestrate.sh" 2>/dev/null
-  MOCK="$(mktemp)"; printf '#!/usr/bin/env bash\necho 128\n' > "$MOCK"; chmod +x "$MOCK"
+  MOCK="$(mktemp "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; printf '#!/usr/bin/env bash\necho 128\n' > "$MOCK"; chmod +x "$MOCK"
   got="$(SPEC_NEXT_CMD="$MOCK" _wave_reserve_spec)"
   [ "$got" = "128" ] && echo "T10A-OK" || echo "T10A-BAD:$got"
   # degrade path: a mock that fails (nonzero, no output) => helper returns nonzero, empty
-  BADMOCK="$(mktemp)"; printf '#!/usr/bin/env bash\nexit 1\n' > "$BADMOCK"; chmod +x "$BADMOCK"
+  BADMOCK="$(mktemp "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; printf '#!/usr/bin/env bash\nexit 1\n' > "$BADMOCK"; chmod +x "$BADMOCK"
   if got2="$(SPEC_NEXT_CMD="$BADMOCK" _wave_reserve_spec)"; then echo "T10B-BAD:nonempty:$got2"; else
     [ -z "$got2" ] && echo "T10B-OK" || echo "T10B-BAD:$got2"; fi
 ) > "${TMPDIR:-/tmp}/t10.$$" 2>/dev/null
@@ -188,7 +188,7 @@ eq "T11 a foreign repo's LIVE line is preserved" "$FOREIGN_LIVE" "1"
 echo "=== T12: repo match is anchored (review #4: 'foo' != 'foo-bar') ==="
 # ============================================================
 # Reserve under a repo whose name is a prefix of the ledger line's repo; it must NOT count.
-R="$(mktemp -d "${TMPDIR:-/tmp}/kit-spec-reserve.XXXXXX")"; mv "$R" "$R-bar"; R="$R-bar"
+R="$(mktemp -d "${TMPDIR:-/tmp}/kit-spec-reserve.XXXXXX")" || exit 1; mv "$R" "$R-bar"; R="$R-bar"
 git -C "$R" init -q; git -C "$R" config user.email t@t.t; git -C "$R" config user.name t
 mkdir -p "$R/docs/specs"; : > "$R/docs/specs/SPEC-005-x.md"
 git -C "$R" add -A; git -C "$R" commit -qm init >/dev/null 2>&1
@@ -310,7 +310,7 @@ eq "T20 the main checkout sees both worktree claims (008)" "$N20M" "008"
 # ============================================================
 echo "=== T21: two DIFFERENT repos sharing a folder name keep separate counters ==="
 # ============================================================
-P1="$(mktemp -d "${TMPDIR:-/tmp}/kit-spec-reserve-p1.XXXXXX")"; P2="$(mktemp -d "${TMPDIR:-/tmp}/kit-spec-reserve-p2.XXXXXX")"
+P1="$(mktemp -d "${TMPDIR:-/tmp}/kit-spec-reserve-p1.XXXXXX")" || exit 1; P2="$(mktemp -d "${TMPDIR:-/tmp}/kit-spec-reserve-p2.XXXXXX")"
 for P in "$P1" "$P2"; do
   mkdir -p "$P/same/docs/specs"; git -C "$P/same" init -q; git -C "$P/same" config user.email t@t.t; git -C "$P/same" config user.name t
   : > "$P/same/docs/specs/SPEC-005-x.md"; git -C "$P/same" add -A; git -C "$P/same" commit -qm init >/dev/null 2>&1
@@ -359,7 +359,7 @@ echo "=== T24: CDPATH must not hijack the bare 'cd' that computes the repo key (
 # `_reservations()` never sees a repo's own prior claims and every `reserve` re-derives the SAME
 # max+1, double-issuing a number.
 R="$(mk_repo)"; RES="$R/res.log"
-DECOY_PARENT="$(mktemp -d "${TMPDIR:-/tmp}/kit-spec-reserve-decoy.XXXXXX")"
+DECOY_PARENT="$(mktemp -d "${TMPDIR:-/tmp}/kit-spec-reserve-decoy.XXXXXX")" || exit 1
 mkdir -p "$DECOY_PARENT/decoy/.git"
 N24A="$(cd "$R" && CDPATH="$DECOY_PARENT/decoy" SPEC_RESERVE_FILE="$RES" bash "$SN" reserve 2>/dev/null)"
 N24B="$(cd "$R" && CDPATH="$DECOY_PARENT/decoy" SPEC_RESERVE_FILE="$RES" bash "$SN" reserve 2>/dev/null)"

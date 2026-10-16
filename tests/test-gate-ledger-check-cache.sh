@@ -16,7 +16,7 @@ PASS=0; FAIL=0
 RED='\033[0;31m'; GREEN='\033[0;32m'; NC='\033[0m'
 ok() { if [ "$2" -eq 0 ]; then echo -e "  ${GREEN}PASS${NC} $1"; PASS=$((PASS+1)); else echo -e "  ${RED}FAIL${NC} $1"; FAIL=$((FAIL+1)); fi; }
 
-TD="$(mktemp -d)"
+TD="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
 trap 'rm -rf "$TD"' EXIT
 SH="$TD/shim"; mkdir -p "$SH"
 cp -R "$KIT_DIR/lib" "$SH/lib"; cp "$KIT_DIR/kit.toml" "$SH/kit.toml"

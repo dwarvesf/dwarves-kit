@@ -13,14 +13,14 @@ no() { FAIL=$((FAIL + 1)); echo "NOT ok - $1"; }
 run_install() { HOME="$1" CLAUDE_DIR="$1/.claude" bash "$KIT_DIR/install.sh" >"$1/install.log" 2>&1; }
 
 # 1. shell-only install (no plugins file) symlinks every command
-H1="$(mktemp -d)"; mkdir -p "$H1/.claude"
+H1="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; mkdir -p "$H1/.claude"
 run_install "$H1"
 WANT=$(ls "$KIT_DIR/commands/"*.md | wc -l | xargs)
 GOT=$(find "$H1/.claude/commands" -type l 2>/dev/null | wc -l | xargs)
 if [ "$GOT" = "$WANT" ]; then ok "shell-only install links every command ($GOT)"; else no "shell-only linked $GOT of $WANT"; fi
 
 # 2. plugin install (kit@* in installed_plugins.json) creates no bare symlinks
-H2="$(mktemp -d)"; mkdir -p "$H2/.claude/plugins" "$H2/.claude/commands"
+H2="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; mkdir -p "$H2/.claude/plugins" "$H2/.claude/commands"
 echo '{"version":2,"plugins":{"kit@dwarves-marketplace":[{"scope":"user"}]}}' > "$H2/.claude/plugins/installed_plugins.json"
 ln -s "$KIT_DIR/commands/design.md" "$H2/.claude/commands/design.md"   # stale link from an earlier shell install
 ln -s /elsewhere/other.md "$H2/.claude/commands/other.md"              # foreign link, must survive

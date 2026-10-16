@@ -26,7 +26,7 @@ echo "== T1.2 install-mode detection answers"
 check "onboard-detect prints a mode" test -n "$(bash lib/onboard-detect.sh)"
 
 echo "== T1.3 adoption cycle on a throwaway fixture (fresh -> adopted -> idempotent)"
-FIXTURE="$(mktemp -d)"
+FIXTURE="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
 trap 'rm -rf "${FIXTURE}"' EXIT
 git -C "${FIXTURE}" init -q
 check "fresh fixture reports NOT adopted" bash -c "! bash lib/adopt.sh --check '${FIXTURE}'"

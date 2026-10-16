@@ -57,7 +57,7 @@ _rb_stages() {
 # twice), and no line was added by BOTH sides (the union would then carry it twice).
 _rb_changelog_merge() {
   local d rc=1
-  d="$(mktemp -d)" || return 1
+  d="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || return 1
   # Process substitution, not a pipe: under pipefail diff's exit 1 would mask grep's answer.
   if _rb_stages "$1" "$2" "$d" \
      && ! grep -q '^<' < <(diff -a "$d/1" "$d/2"; diff -a "$d/1" "$d/3") \
@@ -107,7 +107,7 @@ _rb_resolve() {
   local wt="$1" gen="$2" p refused="" regen=0 cl_out=""; shift 2
   for p in "$@"; do
     if [ "$p" = "$_RB_GENERATED" ] && [ -n "$gen" ]; then regen=1
-    elif [ "$p" = "$_RB_CHANGELOG" ] && cl_out="$(mktemp)" && _rb_changelog_merge "$wt" "$p" "$cl_out"; then :
+    elif [ "$p" = "$_RB_CHANGELOG" ] && cl_out="$(mktemp "${TMPDIR:-/tmp}/kit.XXXXXX")" && _rb_changelog_merge "$wt" "$p" "$cl_out"; then :
     elif _union_marked "$wt" "$p"; then refused="${refused}${refused:+, }${p} (merge=union, delete/rename conflict)"
     else refused="${refused}${refused:+, }${p}"
     fi
@@ -239,7 +239,7 @@ cmd_rebase() {
   # internal, a test seam: WRAP_REBASE_MAX_STOPS replaces the one-stop-per-commit bound
   max="${WRAP_REBASE_MAX_STOPS:-$(( ahead + 1 ))}"
   [ -f "$wt/$_RB_GENERATOR" ] && gen="$wt/$_RB_GENERATOR"
-  log="$(mktemp)" || { echo "wrap.sh rebase: mktemp failed" >&2; return 1; }
+  log="$(mktemp "${TMPDIR:-/tmp}/kit.XXXXXX")" || { echo "wrap.sh rebase: mktemp failed" >&2; return 1; }
 
   echo "rebase ${branch} onto origin/${def} (${wt})"
   _rb_git "$wt" rebase "origin/${def}" > "$log" 2>&1

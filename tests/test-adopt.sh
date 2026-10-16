@@ -6,7 +6,7 @@ PASS=0; FAIL=0
 ok() { PASS=$((PASS + 1)); echo "ok - $1"; }
 no() { FAIL=$((FAIL + 1)); echo "NOT ok - $1"; }
 
-newrepo() { local d; d="$(mktemp -d)"; git -C "$d" init -q; echo "$d"; }
+newrepo() { local d; d="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || return 1; git -C "$d" init -q; echo "$d"; }
 POINTER="lib/adopt/AGENTS.pointer.md"
 # fold_ok <repo> <original-file>: AGENTS.md is exactly the pointer, a blank line, then the original bytes.
 fold_ok() { { cat "$POINTER"; printf '\n'; cat "$2"; } | cmp -s - "$1/AGENTS.md"; }
@@ -14,7 +14,7 @@ fold_ok() { { cat "$POINTER"; printf '\n'; cat "$2"; } | cmp -s - "$1/AGENTS.md"
 # The operator kit.toml is fenced off for the whole suite: a real operator may have
 # adopt.single_source or output.style turned on, and every case below asserts the kit-root
 # default. Cases that need their own operator file re-export the variable and restore this one.
-NO_OPERATOR="$(mktemp -d)"; export KIT_CONFIG_OPERATOR="$NO_OPERATOR"
+NO_OPERATOR="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; export KIT_CONFIG_OPERATOR="$NO_OPERATOR"
 
 # 1. fresh adopt creates the 4 artifacts
 T1="$(newrepo)"
@@ -227,7 +227,7 @@ fi
 # --- SPEC-252: [output] style -> project output-styles/ + settings.json outputStyle ---
 # The operator kit.toml is fenced off (a real operator may set output.style); only the
 # kit-root default ("") and the project .kit.toml speak here.
-export KIT_CONFIG_OPERATOR="$(mktemp -d)"
+KIT_CONFIG_OPERATOR="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; export KIT_CONFIG_OPERATOR
 T12="$(newrepo)"
 bash lib/adopt.sh "$T12" >/dev/null
 if [ ! -f "$T12/.claude/output-styles/adhd.md" ] \
@@ -349,7 +349,7 @@ fi
 # covers a mid-test failure too).
 # The knob is set in a temp COPY of the kit tree (lib, kit.toml, AGENTS.md): the tracked kit.toml
 # is never edited, so a concurrent run cannot see a flipped knob.
-KT="$(mktemp -d)"; mkdir "$KT/lib"; cp lib/adopt.sh "$KT/lib/"; cp -R lib/adopt lib/config "$KT/lib/"
+KT="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; mkdir "$KT/lib"; cp lib/adopt.sh "$KT/lib/"; cp -R lib/adopt lib/config "$KT/lib/"
 cp AGENTS.md "$KT/"; cp kit.toml "$KT/kit.toml.orig"
 set_single_source_knob() {
   awk -v v="$1" '{ if ($0 ~ /^single_source = /) print "single_source = " v; else print }' "$KT/kit.toml.orig" > "$KT/kit.toml"
@@ -494,12 +494,12 @@ fi
 
 # T5b / AC-9: known-hashes.sh refuses in a shallow clone and leaves the list unchanged. The
 # synthetic repo also proves the script works in a full clone, so the refusal is not a broken setup.
-KS="$(mktemp -d)"; mkdir -p "$KS/lib/adopt"; cp lib/adopt/known-hashes.sh "$KS/lib/adopt/"
+KS="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; mkdir -p "$KS/lib/adopt"; cp lib/adopt/known-hashes.sh "$KS/lib/adopt/"
 printf 'KEEP\n' > "$KS/lib/adopt/agents-known.sha256"
 git -C "$KS" init -q; printf 'one\n' > "$KS/AGENTS.md"; git -C "$KS" add -A
 git -C "$KS" -c user.email=t@t -c user.name=t commit -qm one
 printf 'two\n' >> "$KS/AGENTS.md"; git -C "$KS" -c user.email=t@t -c user.name=t commit -qam two
-KC="$(mktemp -d)/clone"; git clone -q --depth 1 "file://$KS" "$KC" 2>/dev/null
+KC="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; KC="$KC/clone"; git clone -q --depth 1 "file://$KS" "$KC" 2>/dev/null
 E5="$(bash "$KC/lib/adopt/known-hashes.sh" 2>&1)"; r5=$?
 KFULL="$(bash "$KS/lib/adopt/known-hashes.sh" 2>&1)"; rf=$?
 if [ "$r5" -ne 0 ] && echo "$E5" | grep -qi 'shallow' && [ "$(cat "$KC/lib/adopt/agents-known.sha256")" = "KEEP" ] \
@@ -543,7 +543,7 @@ else
 fi
 
 # Operator config with single_source = true: AC-1 and AC-2 still pass (pointer only, no block).
-OPD="$(mktemp -d)"; printf '[adopt]\nsingle_source = true\n' > "$OPD/kit.toml"
+OPD="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; printf '[adopt]\nsingle_source = true\n' > "$OPD/kit.toml"
 P11="$(newrepo)"; KIT_CONFIG_OPERATOR="$OPD" bash lib/adopt.sh "$P11" >/dev/null 2>&1; r12=$?
 if [ "$r12" -eq 0 ] && [ "$(wc -c < "$P11/AGENTS.md")" -le 1200 ] && grep -qF '~/.claude/dwarves-kit/AGENTS.md' "$P11/AGENTS.md" \
   && head -n 1 "$P11/AGENTS.md" | grep -qF 'kit:agents-pointer' && [ "$(cat "$P11/CLAUDE.md")" = "@AGENTS.md" ] \
@@ -554,7 +554,7 @@ else
 fi
 
 # Missing pointer template: exit 1, an existing AGENTS.md stays byte-identical, nothing is reported swapped.
-MT="$(mktemp -d)"; mkdir "$MT/lib"; cp lib/adopt.sh "$MT/lib/"; cp -R lib/adopt lib/config "$MT/lib/"; rm -f "$MT/lib/adopt/AGENTS.pointer.md"
+MT="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; mkdir "$MT/lib"; cp lib/adopt.sh "$MT/lib/"; cp -R lib/adopt lib/config "$MT/lib/"; rm -f "$MT/lib/adopt/AGENTS.pointer.md"
 P12="$(seed_old)"; cp "$P12/AGENTS.md" "$P12/AGENTS.before"
 E12="$(bash "$MT/lib/adopt.sh" --refresh --swap-agents "$P12" 2>&1)"; r13=$?
 P13="$(newrepo)"; E13="$(bash "$MT/lib/adopt.sh" "$P13" 2>&1)"; r14=$?
@@ -566,7 +566,7 @@ else
 fi
 
 # Adopting the kit's own tree is refused. Runs on a temp COPY of the tree, never the checkout.
-ST="$(mktemp -d)"; mkdir "$ST/lib"; cp lib/adopt.sh "$ST/lib/"; cp -R lib/adopt lib/config "$ST/lib/"; cp AGENTS.md "$ST/"; cp AGENTS.md "$ST/AGENTS.before"
+ST="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; mkdir "$ST/lib"; cp lib/adopt.sh "$ST/lib/"; cp -R lib/adopt lib/config "$ST/lib/"; cp AGENTS.md "$ST/"; cp AGENTS.md "$ST/AGENTS.before"
 KO="$(bash "$ST/lib/adopt.sh" "$ST" 2>&1)"; r15=$?
 if [ "$r15" -eq 1 ] && echo "$KO" | grep -q "own tree" && cmp -s "$ST/AGENTS.md" "$ST/AGENTS.before" && [ ! -e "$ST/WORKFLOW.md" ]; then
   ok "adopt refuses the kit's own tree"
@@ -586,8 +586,8 @@ else
 fi
 
 # T8 / AC-10: no source AGENTS.md anywhere still adopts and writes the pointer.
-NS="$(mktemp -d)"; mkdir -p "$NS/lib"; cp lib/adopt.sh "$NS/lib/"; cp -R lib/adopt lib/config "$NS/lib/"
-NSTARGET="$(newrepo)"; NSEMPTY="$(mktemp -d)"
+NS="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; mkdir -p "$NS/lib"; cp lib/adopt.sh "$NS/lib/"; cp -R lib/adopt lib/config "$NS/lib/"
+NSTARGET="$(newrepo)" || exit 1; NSEMPTY="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
 CLAUDE_PLUGIN_ROOT="$NSEMPTY" bash "$NS/lib/adopt.sh" "$NSTARGET" >/dev/null 2>&1; r11=$?
 if [ "$r11" -eq 0 ] && cmp -s "$NSTARGET/AGENTS.md" "$POINTER"; then ok "no source contract"; else no "no source contract (rc=$r11)"; fi
 
@@ -595,7 +595,7 @@ if [ "$r11" -eq 0 ] && cmp -s "$NSTARGET/AGENTS.md" "$POINTER"; then ok "no sour
 J2="docs/verification/gauntlet/2026-09-01-onboarding-campaign/J2/transcript.jsonl"
 OJ="$(bash lib/adopt/onboarding-cost.sh "$J2" 2>&1)"
 CCU='"usage":{"input_tokens":10,"output_tokens":5,"cache_read_input_tokens":100,"cache_creation_input_tokens":1}'
-CCY="$(mktemp)"; CCN="$(mktemp)"
+CCY="$(mktemp "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; CCN="$(mktemp "${TMPDIR:-/tmp}/kit.XXXXXX")"
 printf '%s\n' "{\"type\":\"assistant\",\"message\":{\"id\":\"m1\",$CCU,\"content\":[{\"type\":\"tool_use\",\"name\":\"Read\",\"input\":{\"file_path\":\"/h/.claude/dwarves-kit/AGENTS.md\"}}]}}" \
   "{\"type\":\"assistant\",\"message\":{\"id\":\"m1\",$CCU,\"content\":[{\"type\":\"text\",\"text\":\"x\"}]}}" > "$CCY"
 printf '%s\n' "{\"type\":\"assistant\",\"message\":{\"id\":\"m1\",$CCU,\"content\":[{\"type\":\"tool_use\",\"name\":\"Read\",\"input\":{\"file_path\":\"/h/src/main.js\"}}]}}" > "$CCN"

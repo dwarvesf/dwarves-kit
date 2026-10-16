@@ -1132,7 +1132,7 @@ land_adv_regen prace o
 cat > "$TMPD/race-push.sh" <<SH
 #!/usr/bin/env bash
 set -e
-d=\$(mktemp -d)
+d=\$(mktemp -d "\${TMPDIR:-/tmp}/kit.XXXXXX") || exit 1
 git clone -q "$TMPD/ld-bare-prace" "\$d/r"
 git -C "\$d/r" config user.email t@t; git -C "\$d/r" config user.name t
 git -C "\$d/r" checkout -q feat/land
@@ -2531,10 +2531,10 @@ ig_nopush() {
   chk "$1: no PR create, edit, ready or merge" "$(grep -cE '^pr (create|edit|ready|merge)' "$GH_STUB_CALLS")"
 }
 # ig_op <value>: an operator config dir whose [wrap] land_ignored_allow is <value>.
-ig_op() { local d; d="$(mktemp -d "$TMPD/ig-op.XXXXXX")"; printf '[wrap]\nland_ignored_allow = "%s"\n' "$1" > "$d/kit.toml"; printf '%s' "$d"; }
+ig_op() { local d; d="$(mktemp -d "$TMPD/ig-op.XXXXXX")" || return 1; printf '[wrap]\nland_ignored_allow = "%s"\n' "$1" > "$d/kit.toml"; printf '%s' "$d"; }
 # ig_shim <sub> <match>: a git shim dir that fails one subcommand whose argv holds <match>.
 ig_shim() {
-  local d; d="$(mktemp -d "$TMPD/ig-shim.XXXXXX")"
+  local d; d="$(mktemp -d "$TMPD/ig-shim.XXXXXX")" || exit 1
   cat > "$d/git" <<SH
 #!/usr/bin/env bash
 args=("\$@"); i=0
@@ -2595,7 +2595,7 @@ chk_no "4b: no refusal" "$out" "LAND REFUSED"
 
 echo "--- 4c: a symlink pointing outside the worktree (a worktree-setup link) passes"
 _ig_build ig4c 'out\n' ""
-IG_EXT="$(mktemp -d "$TMPD/ig-ext.XXXXXX")"; echo x > "$IG_EXT/oracle.json"
+IG_EXT="$(mktemp -d "$TMPD/ig-ext.XXXXXX")" || exit 1; echo x > "$IG_EXT/oracle.json"
 ln -s "$IG_EXT" "$IG_WT/tools/x/out"
 chk_has "4c: fixture check: git lists the symlink as ignored" \
   "$(git -C "$IG_WT" status --porcelain --ignored=matching)" "!! tools/x/out"
@@ -2984,7 +2984,7 @@ chk "draft_adopt_stays_draft: the worktree remains" "$([ -d "$DR_WT" ]; echo $?)
 
 echo "--- draft_adopt_empty_body_takes_body_file: an adopted empty-body draft is filled from --body-file"
 dr_build dr8c
-DR8C_BODY="$(mktemp "${TMPDIR:-/tmp}/dr8c-body.XXXXXX")"
+DR8C_BODY="$(mktemp "${TMPDIR:-/tmp}/dr8c-body.XXXXXX")" || exit 1
 printf '## Proof of done\nfrom the body file\n' >| "$DR8C_BODY"
 out="$(DR_FLAGS="--body-file $DR8C_BODY" dr_land GH_STUB_OPEN_HEAD_feat_land="$(dr_open_pr 19 "" true)")"; rc=$?
 chk "draft_adopt_empty_body_takes_body_file: exits 0" "$rc"

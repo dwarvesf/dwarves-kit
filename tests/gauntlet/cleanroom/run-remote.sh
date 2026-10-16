@@ -61,7 +61,7 @@ fi
 echo "== running round on ${HOST} (persona=${PERSONA} row=${ROW})"
 # The remote driver: bring docker up if needed, resolve the key locally on the
 # host, run the round, leave the record in ${RDIR}/out.
-DRIVER="$(mktemp)"
+DRIVER="$(mktemp "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
 trap 'rm -f "${DRIVER}"' EXIT
 # The probe command crosses ssh base64-encoded: it nests quotes three deep
 # (round-2 finding: a single-quoted export shattered on the prompt's own

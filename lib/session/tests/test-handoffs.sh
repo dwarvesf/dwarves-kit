@@ -24,7 +24,7 @@ stamp_days_ago() { # <N>
   fi
 }
 
-REPO="$(mktemp -d)"
+REPO="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
 mkdir -p "$REPO/_meta/handoffs/done" "$REPO/.claude/handoffs"
 
 cat > "$REPO/_meta/handoffs/with-next.md" <<'EOF'
@@ -58,7 +58,7 @@ touch -t "$(stamp_days_ago 10)" "$REPO/_meta/handoffs/with-next.md"
 touch -t "$(stamp_days_ago 2)"  "$REPO/.claude/handoffs/no-next.md"
 touch -t "$(stamp_days_ago 1)"  "$REPO/_meta/handoffs/done/decoy.md"
 
-EMPTY="$(mktemp -d)"
+EMPTY="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
 
 pass=0; fail=0
 ok() { echo "  ok: $*"; pass=$((pass+1)); }
@@ -124,10 +124,10 @@ fi
 # BACKLOG.md below is deliberately the INVERSE of origin's, so a wrong
 # implementation that reads the working copy flips DEAD and LIVE.
 
-GBARE="$(mktemp -d)"
+GBARE="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
 git init -q --bare "$GBARE/origin.git"
 
-GWORK="$(mktemp -d)"
+GWORK="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
 git init -q -b main "$GWORK"
 mkdir -p "$GWORK/_meta"
 cat > "$GWORK/_meta/BACKLOG.md" <<'EOF'
@@ -144,7 +144,7 @@ git -C "$GWORK" remote add origin "$GBARE/origin.git"
 git -C "$GWORK" push -q origin main
 git -C "$GBARE/origin.git" symbolic-ref HEAD refs/heads/main
 
-GSCAN="$(mktemp -d)"
+GSCAN="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
 git clone -q "$GBARE/origin.git" "$GSCAN/repo"
 GREPO="$GSCAN/repo"
 mkdir -p "$GREPO/_meta/handoffs"
@@ -211,7 +211,7 @@ else
 fi
 
 echo "[13] local fallback: no origin, unresolved id stays open, tagged (local)"
-LREPO="$(mktemp -d)"
+LREPO="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
 mkdir -p "$LREPO/_meta/handoffs"
 cat > "$LREPO/_meta/handoffs/local-fallback.md" <<'EOF'
 # Handoff: no git origin here
@@ -228,7 +228,7 @@ else
 fi
 
 echo "[14] cap: 7 handoffs collapse to 5 lines + '+2 more', count line stays uncapped"
-CAPREPO="$(mktemp -d)"
+CAPREPO="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
 mkdir -p "$CAPREPO/_meta/handoffs"
 for i in 1 2 3 4 5 6 7; do
   cat > "$CAPREPO/_meta/handoffs/h$i.md" <<EOF
@@ -258,7 +258,7 @@ if [[ "$limshown" -eq 2 && "$limout" == *"+5 more"* ]]; then ok "--limit 2: $lim
 # in [1]/[4]/[6], so new files never land there.
 
 echo "[16] an arbitrarily-named subdirectory (not on any list) is excluded"
-ARCREPO="$(mktemp -d)"
+ARCREPO="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
 mkdir -p "$ARCREPO/_meta/handoffs/old" \
          "$ARCREPO/.claude/handoffs/archive" \
          "$ARCREPO/.claude/handoffs/.claude/session-state" \
@@ -318,7 +318,7 @@ arc_last="$(printf '%s\n' "$arcout" | tail -1)"
 if [[ "$arc_last" == "2 open handoffs" ]]; then ok "count: $arc_last"; else no "expected '2 open handoffs', got: $arc_last"; fi
 
 echo "[18] a .claude/ ancestor above the repo root blanks neither scan root"
-CREPO="$(mktemp -d)/.claude/worktrees/x/repo"
+CREPO="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; CREPO="$CREPO/.claude/worktrees/x/repo"
 mkdir -p "$CREPO/_meta/handoffs" "$CREPO/.claude/handoffs"
 cat > "$CREPO/_meta/handoffs/live.md" <<'EOF'
 # Handoff: live under _meta/handoffs, repo nested under .claude/
@@ -342,7 +342,7 @@ c_last="$(printf '%s\n' "$cout" | tail -1)"
 if [[ "$c_last" == "2 open handoffs" ]]; then ok "count: $c_last"; else no "expected '2 open handoffs', got: $c_last"; fi
 
 echo "[19] only-excluded repo (arbitrary + named subdirectories): honest 'no handoffs'"
-EXREPO="$(mktemp -d)"
+EXREPO="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
 mkdir -p "$EXREPO/.claude/handoffs/archive" "$EXREPO/_meta/handoffs/_archive" "$EXREPO/_meta/handoffs/old"
 cat > "$EXREPO/.claude/handoffs/archive/old.md" <<'EOF'
 # Handoff: archived
@@ -366,7 +366,7 @@ exout="$(bash "$HO" list --repo "$EXREPO")"
 if [[ "$exout" == "no handoffs" ]]; then ok "no handoffs for only-excluded repo"; else no "expected 'no handoffs', got: $exout"; fi
 
 echo "[20] a done/ ancestor above the repo root blanks neither scan root"
-DREPO="$(mktemp -d)/done/repo"
+DREPO="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; DREPO="$DREPO/done/repo"
 mkdir -p "$DREPO/_meta/handoffs" "$DREPO/.claude/handoffs"
 cat > "$DREPO/_meta/handoffs/live.md" <<'EOF'
 # Handoff: live under _meta/handoffs, repo nested under done/
@@ -397,7 +397,7 @@ if [[ "$d_last" == "2 open handoffs" ]]; then ok "count: $d_last"; else no "expe
 set +e
 
 echo "[21] archive: tracked file on a feature branch moves with git mv"
-AROOT="$(mktemp -d)"
+AROOT="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
 git clone -q "$GBARE/origin.git" "$AROOT/repo"
 AREPO="$AROOT/repo"
 mkdir -p "$AREPO/_meta/handoffs" "$AREPO/.claude/handoffs"
@@ -478,7 +478,7 @@ got="$(bash "$HO" list --repo "$REPO")"
 if [[ "$got" == "$want" ]]; then ok "--repo output byte-identical to the pre-change shape"; else no "--repo output drifted: $got"; fi
 
 # Fixture root: alpha (2 handoffs), zeta (1), beta (none), plain (handoff but no .git).
-UROOT="$(mktemp -d)"
+UROOT="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
 for r in alpha beta zeta; do mkdir -p "$UROOT/$r"; git -C "$UROOT/$r" init -q; done
 mkdir -p "$UROOT/alpha/.claude/handoffs" "$UROOT/zeta/_meta/handoffs" "$UROOT/plain/.claude/handoffs"
 printf '# H\n\n## Next\nalpha old.\n' > "$UROOT/alpha/.claude/handoffs/old.md"
@@ -520,7 +520,7 @@ llwant="$(printf '%s\n' "## $UROOT/alpha" \
 if [[ "$ll" == "$llwant" ]]; then ok "--limit caps each repo, total stays uncapped"; else no "--limit wrong: $ll"; fi
 
 echo "[31] repeatable --under: two roots, in the order given"
-UROOT2="$(mktemp -d)"; mkdir -p "$UROOT2/omega/_meta/handoffs"; git -C "$UROOT2/omega" init -q
+UROOT2="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; mkdir -p "$UROOT2/omega/_meta/handoffs"; git -C "$UROOT2/omega" init -q
 printf '# H\n\n## Next\nomega.\n' > "$UROOT2/omega/_meta/handoffs/o.md"
 rout="$(bash "$HO" list --under "$UROOT2" --under "$UROOT" 2>&1)"
 if [[ "$(printf '%s\n' "$rout" | grep '^## ')" == "$(printf '## %s\n' "$UROOT2/omega" "$UROOT/alpha" "$UROOT/zeta")" \
@@ -531,7 +531,7 @@ else
 fi
 
 echo "[32] bare --under expands the wrap.roots knob (stubbed), root-only"
-KCFG="$(mktemp -d)"; KOP="$(mktemp -d)"
+KCFG="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; KOP="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")"
 printf '[wrap]\nroots = "%s %s"\n' "$UROOT" "$UROOT2" > "$KCFG/kit.toml"
 bout="$(KIT_CONFIG_ROOT="$KCFG" KIT_CONFIG_OPERATOR="$KOP" bash "$HO" list --under 2>&1)"; brc=$?
 if [[ $brc -eq 0 && "$(printf '%s\n' "$bout" | grep '^## ')" == "$(printf '## %s\n' "$UROOT/alpha" "$UROOT/zeta" "$UROOT2/omega")" \

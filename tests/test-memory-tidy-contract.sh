@@ -126,7 +126,7 @@ echo "=== Row 25: in-suite NEGATIVE CONTROL (scratch copy, never the tracked fil
 # Mirrors tests/test-test-writer-contract.sh AC3: prove the pins discriminate.
 # Substring strip, not line delete: rows 13 and 14 share one physical line in
 # the SKILL body, so a line delete would flip both (SPEC-208 critique, CRITICAL 1).
-NC_DIR="$(mktemp -d -t memory-tidy-contract-nc.XXXXXX)"
+NC_DIR="$(mktemp -d "${TMPDIR:-/tmp}/memory-tidy-contract-nc.XXXXXX")" || exit 1
 trap 'rm -rf "$NC_DIR"' EXIT
 sed 's/ UNSURE notes are never deleted; list them in the report\.//' "$S" > "$NC_DIR/mut.md"
 

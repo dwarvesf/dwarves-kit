@@ -22,7 +22,7 @@ expect() { if { trap '' PIPE; printf '%s' "$3" 2>/dev/null || :; } | grep -q "$2
 
 # A temp git repo whose only local spec is SPEC-0449 (local max, before the PR scan).
 mk_repo() {
-  local r; r="$(mktemp -d "${TMPDIR:-/tmp}/kit-spec-next-pr.XXXXXX")"
+  local r; r="$(mktemp -d "${TMPDIR:-/tmp}/kit-spec-next-pr.XXXXXX")" || exit 1
   git -C "$r" init -q; git -C "$r" config user.email t@t.t; git -C "$r" config user.name t
   mkdir -p "$r/docs/specs"; : > "$r/docs/specs/SPEC-0449-x.md"
   git -C "$r" add -A; git -C "$r" commit -qm init >/dev/null 2>&1
@@ -32,7 +32,7 @@ mk_repo() {
 # A stub `gh` on PATH. $1 selects behavior: "ok" (one open PR holding SPEC-0450) or "fail"
 # (auth fails, as if `gh` is present but not logged in).
 mk_stub_gh() {
-  local mode="$1" bin; bin="$(mktemp -d "${TMPDIR:-/tmp}/kit-stub-gh.XXXXXX")"
+  local mode="$1" bin; bin="$(mktemp -d "${TMPDIR:-/tmp}/kit-stub-gh.XXXXXX")" || return 1
   cat > "$bin/gh" <<EOF
 #!/usr/bin/env bash
 mode="$mode"
@@ -89,7 +89,7 @@ R="$(mk_repo)"
 # /bin/bash on macOS and /usr/bin/bash on Linux, whichever this box actually has) and
 # symlink it in; `gh` is deliberately never one of the resolved names, so it cannot leak
 # in by any path.
-FENCE="$(mktemp -d "${TMPDIR:-/tmp}/kit-no-gh.XXXXXX")"
+FENCE="$(mktemp -d "${TMPDIR:-/tmp}/kit-no-gh.XXXXXX")" || exit 1
 for _name in bash sh git sed grep sort uniq awk head tail cat mktemp ls dirname basename \
              tr cut wc env printf date mkdir mv rm rmdir sleep stat ln chmod; do
   _resolved="$(command -v "$_name" 2>/dev/null)"

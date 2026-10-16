@@ -32,14 +32,14 @@ GNUBIN=/opt/homebrew/opt/coreutils/libexec/gnubin
 if [ -z "${BW_GNU:-}" ]; then
   if [ -d "$GNUBIN" ]; then GNU_RUN=1; else echo "SKIP: GNU-tools pass ($GNUBIN not found)"; GNU_RUN=0; fi
 else GNU_RUN=0; fi
-TMP="$(mktemp -d)"
+TMP="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
 trap 'rm -rf "$TMP"' EXIT
 
 # ---- helpers -------------------------------------------------------------------------------
 
 W=""; LOGS=""; REPO=""; PAGE=""; SLOG=""
 new_case() {
-  W="$(mktemp -d "$TMP/case.XXXXXX")"; LOGS="$W/logs"; REPO="$W/repo"; PAGE="$W/page.json"; SLOG="$W/orca.log"
+  W="$(mktemp -d "$TMP/case.XXXXXX")" || exit 1; LOGS="$W/logs"; REPO="$W/repo"; PAGE="$W/page.json"; SLOG="$W/orca.log"
   mkdir -p "$LOGS/runs" "$REPO/_meta"
   git -C "$REPO" init -q
   git -C "$REPO" -c user.email=t@t -c user.name=t commit -q --allow-empty -m init

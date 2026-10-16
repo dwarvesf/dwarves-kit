@@ -11,7 +11,7 @@ KIT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 HOOK="$KIT_DIR/hooks/batch-debt-warn.sh"
 [ -r "$HOOK" ] || { echo "ERROR: hook not found at $HOOK" >&2; exit 1; }
 
-_tmp="$(mktemp -d "${TMPDIR:-/tmp}/dwarves-kit-batch-debt-tests.XXXXXX")"
+_tmp="$(mktemp -d "${TMPDIR:-/tmp}/dwarves-kit-batch-debt-tests.XXXXXX")" || exit 1
 trap 'rm -rf "$_tmp"' EXIT
 export HOME="$_tmp"
 export CLAUDE_PLUGIN_ROOT="$KIT_DIR"

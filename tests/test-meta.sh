@@ -24,7 +24,7 @@ source "$KIT_DIR/tests/lib/run-lock.sh"; run_lock_exec "$KIT_DIR/tests/test-meta
 # ones start early). Each suite's output and exit code land in its own temp file;
 # printing follows the runner-suites order.
 META_JOBS="${META_JOBS:-4}"
-export OUT_DIR="$(mktemp -d "${TMPDIR:-/tmp}/test-meta.XXXXXX")"
+OUT_DIR="$(mktemp -d "${TMPDIR:-/tmp}/test-meta.XXXXXX")" || exit 1; export OUT_DIR
 trap 'rm -rf "$OUT_DIR"' EXIT
 
 SUITES="$(sed -n 's/^# runner-suites: //p' "${BASH_SOURCE[0]}")"

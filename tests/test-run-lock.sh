@@ -13,7 +13,7 @@ chk() { # chk <label> <rc>
 chk_has() { chk "$1" "$(printf '%s' "$2" | grep -qF -- "$3"; echo $?)"; }
 chk_no()  { chk "$1" "$(printf '%s' "$2" | grep -qF -- "$3" && echo 1 || echo 0)"; }
 
-TMPD="$(mktemp -d "${TMPDIR:-/tmp}/dk-run-lock-test.XXXXXX")"
+TMPD="$(mktemp -d "${TMPDIR:-/tmp}/dk-run-lock-test.XXXXXX")" || exit 1
 trap 'rm -rf "$TMPD"' EXIT
 LOCK="$TMPD/lock"
 

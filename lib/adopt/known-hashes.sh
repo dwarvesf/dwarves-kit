@@ -17,7 +17,7 @@ if [ "$(git -C "$REPO" rev-parse --is-shallow-repository 2>/dev/null)" != "false
   exit 1
 fi
 
-out="$(mktemp)"; trap 'rm -f "$out"' EXIT
+out="$(mktemp "${TMPDIR:-/tmp}/kit.XXXXXX")"; trap 'rm -f "$out"' EXIT
 
 versions() { # $1 = repo path, $2 = label
   local c h

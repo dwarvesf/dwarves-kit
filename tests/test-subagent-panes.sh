@@ -30,7 +30,7 @@ wait_nonempty() {  # file [tries]
 }
 settle() { sleep 0.5; }
 
-TMP="$(mktemp -d)"
+TMP="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
 trap 'rm -rf "$TMP"' EXIT
 
 # tmux mock: records every call to $STATE/calls.log (full argv, for -- / order assertions), and

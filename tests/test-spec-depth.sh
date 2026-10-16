@@ -16,7 +16,7 @@ assert_eq() { # name expected actual
   else echo -e "  ${RED}FAIL${NC} $1 (expected '$2', got '$3')"; FAIL=$((FAIL+1)); fi
 }
 want() { [ "$SECTION" = all ] || [ "$SECTION" = "$1" ]; }
-CRLF_DIR=$(mktemp -d); trap 'mv -f "$CRLF_DIR" "${TMPDIR:-/tmp}/spec-depth-crlf.done" 2>/dev/null' EXIT
+CRLF_DIR=$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX") || exit 1; trap 'mv -f "$CRLF_DIR" "${TMPDIR:-/tmp}/spec-depth-crlf.done" 2>/dev/null' EXIT
 # Built at run time: a committed CRLF file would be normalized by git attributes.
 printf '# Spec: fixture crlf\r\nGenerated: 2026-10-01\r\nLane: normal\r\nDepth: standard (one file, no unknown)\r\n\r\n## Problem\r\nfixture body\r\n\r\n## Open questions\r\n(none; fixture)\r\n' > "$CRLF_DIR/crlf.md"
 lvl() { bash "$H" level "$FX/$1.md" 2>/dev/null; }
@@ -99,7 +99,7 @@ fi
 
 if want size; then
   echo "=== size (small = normal lane + standard depth + at most 3 tasks) ==="
-  SZ=$(mktemp -d)
+  SZ=$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX") || exit 1
   # mk <name> <lane> <depth-line-or-empty> <checkbox-tasks> [table-tasks]
   mk() {
     { printf '# Spec: size fixture\nGenerated: 2026-10-01\nStatus: DRAFT\nLane: %s\n' "$2"

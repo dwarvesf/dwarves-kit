@@ -7,7 +7,7 @@ KIT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 source "$KIT_DIR/lib/reflect/hook-util.sh"
 pass=0; fail=0
 check() { if [ "$2" = "$3" ]; then pass=$((pass + 1)); else fail=$((fail + 1)); echo "  FAIL $1: want '$3' got '$2'"; fi; }
-T="$(mktemp -d)"
+T="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
 
 # hu_int
 check "hu_int plain" "$(hu_int 42 x)" 42

@@ -30,7 +30,7 @@ echo "money-gate parity: $pass passed, $fail failed"
 # 113 to 198. It still catches a per-match copy of the rest (17 s on the dense 1 MB). Two payloads: a sparse one
 # (1 MB of filler, one hit at the end) and a dense one (one line of minified JSON full of
 # hits), which catches a scan that copies the rest of the string once per match.
-T="$(mktemp -d)"
+T="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
 head -c 1048576 /dev/zero | tr '\0' 'a' > "$T/sparse"
 i=0; : > "$T/dense"; unit='{\"amount\":1,\"currency\":\"usd\",\"tokenize\":\"x\"},'
 while [ "$(wc -c < "$T/dense")" -lt 1048576 ]; do
@@ -51,7 +51,7 @@ done
 
 # jq missing: the gate is off, visibly. A PATH with bash and a few basics but no jq (macOS
 # ships /usr/bin/jq, so /usr/bin itself cannot be on it).
-B="$(mktemp -d)"
+B="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
 for t in bash env cat dirname mkdir date; do p=$(command -v "$t") && ln -s "$p" "$B/$t"; done
 err=$(printf '{"tool_input":{"file_path":"/w/fin/x.py","new_string":"usd"},"cwd":"/w/fin"}' \
   | env -i PATH="$B" HOME="$T" MONEY_GATE_REPOS=fin MONEY_GATE_STRICT=1 "$B/bash" "$HOOK" 2>&1 >/dev/null); rc=$?

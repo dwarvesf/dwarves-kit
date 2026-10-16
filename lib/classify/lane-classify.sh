@@ -515,7 +515,7 @@ floor() {
   export KIT_PROJECT_ROOT="$root"
   [ -n "$base" ] || base="$(_deesc_resolve_base "$root")"
   [ -n "$base" ] || return 0
-  tmp="$(mktemp -d)" || return 0
+  tmp="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || return 0
   _floor_scan "$root" "$base" "$head" "$tmp"
   rm -rf "$tmp"   # the scratch dir this call made; no RETURN trap, which would outlive the function
   return 0

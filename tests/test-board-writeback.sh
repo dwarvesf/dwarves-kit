@@ -54,7 +54,7 @@ assert() {
 }
 skip() { TOTAL=$((TOTAL+1)); SKIP=$((SKIP+1)); echo -e "  ${YELLOW}SKIP${NC} $1"; }
 
-TMPDIR_T="$(mktemp -d "${TMPDIR:-/tmp}/dk-board-writeback-test.XXXXXX")"
+TMPDIR_T="$(mktemp -d "${TMPDIR:-/tmp}/dk-board-writeback-test.XXXXXX")" || exit 1
 TMPDIR_T="$(cd "$TMPDIR_T" && pwd -P)"
 trap 'rm -rf "$TMPDIR_T"' EXIT
 

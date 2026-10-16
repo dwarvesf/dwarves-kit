@@ -21,7 +21,7 @@ done
 # anything else naming QL-VERDICT is a malformed marker and a loud error.
 QL_OK='\[\[QL-VERDICT round=[0-9]+ clean=(true|false) findings=[0-9]+\]\]'
 
-TMP="$(mktemp)"
+TMP="$(mktemp "${TMPDIR:-/tmp}/kit.XXXXXX")"
 trap 'rm -f "$TMP"' EXIT
 
 # rounds_files <dir> -- the record files: ROUNDS.md + prefixed *-ROUNDS.md

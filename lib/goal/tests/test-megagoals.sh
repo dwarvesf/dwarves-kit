@@ -20,7 +20,7 @@ no() { echo "  FAIL: $*" >&2; fail=$((fail+1)); }
 # open-table / done-table embed the same checkbox token inside a table's
 # Status cell (the shape experiments/homelab-net-research/megagoals/* uses).
 
-REPO="$(mktemp -d)"
+REPO="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
 mkdir -p "$REPO/_meta/megagoals/open-list" \
          "$REPO/_meta/megagoals/done-list" \
          "$REPO/_meta/megagoals/open-table" \
@@ -119,7 +119,7 @@ fi
 
 # --- cap test: 7 open mega-goals, default limit 5 --------------------------
 
-CAPREPO="$(mktemp -d)"
+CAPREPO="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
 for i in 1 2 3 4 5 6 7; do
   d="$CAPREPO/_meta/megagoals/cap-$i"
   mkdir -p "$d"
@@ -149,7 +149,7 @@ if [[ "$shown2" -eq 2 && "$lout" == *"+5 more"* ]]; then ok "--limit 2: $shown2 
 
 # --- other three known shapes discovered ------------------------------------
 
-SHAPEREPO="$(mktemp -d)"
+SHAPEREPO="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
 mkdir -p "$SHAPEREPO/experiments/exp1/megagoals/e1" \
          "$SHAPEREPO/tools/tool1/docs/megagoals/t1" \
          "$SHAPEREPO/docs/megagoals/d1"
@@ -173,7 +173,7 @@ fi
 
 # --- negative controls -------------------------------------------------------
 
-EMPTY="$(mktemp -d)"
+EMPTY="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
 echo "[10] NC empty repo: honest 'no mega-goals', exit 0"
 eout="$(bash "$MG" list --repo "$EMPTY")"
 erc=$?
@@ -185,7 +185,7 @@ if [[ "$eout" == "no mega-goals" && $erc -eq 0 ]]; then ok "no mega-goals, exit 
 # all; status-and-table has a "## Sub-goals" table with zero checkboxes
 # (wave/dependency listing, not a tracker) plus the real tally in "## Status".
 
-STATUSREPO="$(mktemp -d)"
+STATUSREPO="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
 mkdir -p "$STATUSREPO/_meta/megagoals/status-only" \
          "$STATUSREPO/_meta/megagoals/status-and-table"
 
@@ -242,7 +242,7 @@ fi
 # double-count a mega-goal (each worktree under the repo is a full checkout,
 # so an unpruned find sees the same ROADMAP.md once per worktree).
 
-WTREPO="$(mktemp -d)"
+WTREPO="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
 mkdir -p "$WTREPO/_meta/megagoals/a" \
          "$WTREPO/.claude/worktrees/wt1/_meta/megagoals/a"
 cat > "$WTREPO/_meta/megagoals/a/ROADMAP.md" <<'EOF'

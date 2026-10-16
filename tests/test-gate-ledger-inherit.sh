@@ -18,7 +18,7 @@ assert() { TOTAL=$((TOTAL+1)); if [ "$2" -eq 0 ]; then echo -e "  ${GREEN}PASS${
 ok() { if eval "$2"; then assert "$1" 0; else assert "$1 (out: ${OUT:-} err: ${ERR:-})" 1; fi; }
 
 TMPS=()
-_mk() { local d; d="$(mktemp -d)"; TMPS+=("$d"); printf '%s' "$d"; }
+_mk() { local d; d="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || return 1; TMPS+=("$d"); printf '%s' "$d"; }
 cleanup() { local d; for d in "${TMPS[@]:-}"; do [ -n "$d" ] && rm -rf "$d" 2>/dev/null; done; }
 trap cleanup EXIT
 

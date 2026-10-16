@@ -24,9 +24,9 @@ run_leg() { # run_leg <name> <probe_cmd> <expected_rc>
   # /var/folders stage would bind-mount empty into the room (run.sh's own
   # comment on this).
   mkdir -p "${HOME}/.cache/gauntlet-persist-check"
-  stage_dir="$(mktemp -d "${HOME}/.cache/gauntlet-persist-check/stage.XXXXXX")"
-  out_dir="$(mktemp -d)"
-  log="$(mktemp)"
+  stage_dir="$(mktemp -d "${HOME}/.cache/gauntlet-persist-check/stage.XXXXXX")" || exit 1
+  out_dir="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
+  log="$(mktemp "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
 
   rc=0
   GAUNTLET_STAGE_DIR="${stage_dir}" RUN_OUT="${out_dir}/room" PROBE_CMD="${probe_cmd}" \
@@ -54,9 +54,9 @@ run_leg "leg B (PROBE_CMD='exit 0')" "exit 0" 0
 # must persist as <REDACTED-KEY>, never the literal value.
 leg_c() {
   local stage_dir out_dir log rc ok=1
-  stage_dir="$(mktemp -d "${HOME}/.cache/gauntlet-persist-check/stage.XXXXXX")"
-  out_dir="$(mktemp -d "${HOME}/.cache/gauntlet-persist-check/out.XXXXXX")"
-  log="$(mktemp "${HOME}/.cache/gauntlet-persist-check/log.XXXXXX")"
+  stage_dir="$(mktemp -d "${HOME}/.cache/gauntlet-persist-check/stage.XXXXXX")" || exit 1
+  out_dir="$(mktemp -d "${HOME}/.cache/gauntlet-persist-check/out.XXXXXX")" || exit 1
+  log="$(mktemp "${HOME}/.cache/gauntlet-persist-check/log.XXXXXX")" || exit 1
   rc=0
   ANTHROPIC_API_KEY="dummy-scrub-canary-0451" \
     GAUNTLET_STAGE_DIR="${stage_dir}" RUN_OUT="${out_dir}/room" \
@@ -78,9 +78,9 @@ leg_c
 # grep|while under pipefail exited 1 and run.sh died before RUN_OUT).
 leg_d() {
   local stage_dir out_dir log rc ok=1
-  stage_dir="$(mktemp -d "${HOME}/.cache/gauntlet-persist-check/stage.XXXXXX")"
-  out_dir="$(mktemp -d "${HOME}/.cache/gauntlet-persist-check/out.XXXXXX")"
-  log="$(mktemp "${HOME}/.cache/gauntlet-persist-check/log.XXXXXX")"
+  stage_dir="$(mktemp -d "${HOME}/.cache/gauntlet-persist-check/stage.XXXXXX")" || exit 1
+  out_dir="$(mktemp -d "${HOME}/.cache/gauntlet-persist-check/out.XXXXXX")" || exit 1
+  log="$(mktemp "${HOME}/.cache/gauntlet-persist-check/log.XXXXXX")" || exit 1
   rc=0
   ANTHROPIC_API_KEY="dummy-clean-room-canary" \
     GAUNTLET_STAGE_DIR="${stage_dir}" RUN_OUT="${out_dir}/room" \

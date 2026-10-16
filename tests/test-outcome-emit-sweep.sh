@@ -106,7 +106,7 @@ assert_eq "the inventory names exactly 21 file:phase rows (22 sites -- mega.md's
 echo ""
 echo "=== AC4: NEGATIVE CONTROL -- a fixture site with no paired bracket IS flagged ==="
 
-FIXTURE_DIR="$(mktemp -d -t outcome-emit-sweep-fixture.XXXXXX)"
+FIXTURE_DIR="$(mktemp -d "${TMPDIR:-/tmp}/outcome-emit-sweep-fixture.XXXXXX")" || exit 1
 trap 'rm -rf "$FIXTURE_DIR"' EXIT
 
 # one legit "bracketed" copy (real repo file), one fabricated bad command: has a `record ...

@@ -10,7 +10,7 @@ KIT_DIR="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 fail=0
 chk() { if [ "$2" -eq 0 ]; then echo "ok   $1"; else echo "FAIL $1"; fail=1; fi; }
 
-DEST="$(mktemp -d)"; HOME_SB="$(mktemp -d)"; FAKE_KIT="$(mktemp -d)"; INSTALL_LOG="$(mktemp)"
+DEST="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; HOME_SB="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")"; FAKE_KIT="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")"; INSTALL_LOG="$(mktemp "${TMPDIR:-/tmp}/kit.XXXXXX")"
 trap 'rm -rf "$DEST" "$HOME_SB" "$FAKE_KIT" "$INSTALL_LOG"' EXIT
 
 mkdir -p "$FAKE_KIT/hooks" "$FAKE_KIT/commands" "$FAKE_KIT/agents" "$FAKE_KIT/skills/demo" "$FAKE_KIT/bin" "$FAKE_KIT/docs/impl-playbook" \

@@ -524,7 +524,7 @@ _apply_repo() {
   elif [ -n "$TIPS_OVERRIDE" ]; then
     TIPS_FILE="$TIPS_OVERRIDE"; own_snapshot=0
   else
-    TIPS_FILE="$(mktemp)"
+    TIPS_FILE="$(mktemp "${TMPDIR:-/tmp}/kit.XXXXXX")"
     git -C "$repo" for-each-ref --format='%(refname:lstrip=2) %(objectname)' refs/heads/ > "$TIPS_FILE" 2>/dev/null
   fi
 

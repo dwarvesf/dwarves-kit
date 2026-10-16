@@ -12,7 +12,7 @@
 set -uo pipefail
 c=$(cat)
 name=$(jq -r .name <<<"$c")
-T="$(mktemp -d)"; mkdir -p "$T/home" "$T/cwd"
+T="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; mkdir -p "$T/home" "$T/cwd"
 default_log="$T/case.log"
 envs=(); unset_log=0
 if [ "$(jq -r '.env | has("MONEY_GATE_LOG")' <<<"$c")" = "true" ]; then

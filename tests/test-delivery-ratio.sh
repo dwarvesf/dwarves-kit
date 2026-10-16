@@ -10,7 +10,7 @@ pass=0; fail=0
 assert() { if [ "$2" -eq 0 ]; then echo "  PASS $1"; pass=$((pass+1)); else echo "  FAIL $1"; fail=$((fail+1)); fi; }
 
 # a throwaway git repo with a base commit + one branch commit staged by the caller.
-mkrepo() { local d; d="$(mktemp -d)"; git -C "$d" init -q; git -C "$d" config user.email t@t; git -C "$d" config user.name t; \
+mkrepo() { local d; d="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || return 1; git -C "$d" init -q; git -C "$d" config user.email t@t; git -C "$d" config user.name t; \
   echo seed > "$d/seed"; git -C "$d" add -A; git -C "$d" commit -qm base; echo "$d"; }
 
 echo "=== delivery-ratio (advisory) ==="

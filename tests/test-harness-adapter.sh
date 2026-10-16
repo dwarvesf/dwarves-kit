@@ -145,7 +145,7 @@ TIER4_CLOSE=0 source "$KIT/lib/queue/orchestrate.sh"
 # first run of this suite (the function is `_route`, not `_route_flags`), so the guard stays.
 type -t _route >/dev/null 2>&1 && pass "_route is sourceable from orchestrate.sh" \
   || { fail "_route not found after sourcing orchestrate.sh (renamed?); the allowlist cases below are meaningless"; echo "$fails FAILED"; exit 1; }
-gf="$(mktemp)"; trap 'rm -f "$gf"' EXIT
+gf="$(mktemp "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; trap 'rm -f "$gf"' EXIT
 
 printf 'Model: fable\nEffort: high\n' > "$gf"
 if out=$(_route "$gf" 2>&1); then

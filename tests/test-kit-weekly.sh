@@ -13,7 +13,7 @@ GREEN='\033[0;32m'; RED='\033[0;31m'; NC='\033[0m'
 ok(){ echo -e "  ${GREEN}PASS${NC} $*"; PASS=$((PASS+1)); }
 no(){ echo -e "  ${RED}FAIL${NC} $*"; FAIL=$((FAIL+1)); }
 
-TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
+TMP="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; trap 'rm -rf "$TMP"' EXIT
 
 echo "=== kit-weekly dispatcher behavior ==="
 

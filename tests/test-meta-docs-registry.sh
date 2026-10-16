@@ -308,13 +308,13 @@ echo "=== Feature-registry freshness pin (SPEC-219) ==="
 # definitions of "fresh" would eventually disagree.
 # `check` keeps the bytes of its own generator run (FEATURE_REGISTRY_KEEP), which is the
 # first run of the determinism pin below: two runs total, not three.
-REG_TMP=$(mktemp)
+REG_TMP=$(mktemp "${TMPDIR:-/tmp}/kit.XXXXXX") || exit 1
 FEATURE_REGISTRY_KEEP="$REG_TMP" bash "$KIT_DIR/lib/registry/feature-registry.sh" check "$KIT_DIR/docs/FEATURES.md" >/dev/null 2>&1
 assert_true "docs/FEATURES.md is fresh (check verb, SPEC-219)" $?
 # AC-1 determinism pin (review finding): a second run must be byte-identical, so a
 # future edit that reintroduces nondeterminism (locale, glob order, a timestamp)
 # fails HERE even when the committed file was regenerated in the same PR.
-REG_TMP2=$(mktemp)
+REG_TMP2=$(mktemp "${TMPDIR:-/tmp}/kit.XXXXXX") || exit 1
 bash "$KIT_DIR/lib/registry/feature-registry.sh" generate "$REG_TMP2" 2>/dev/null
 cmp -s "$REG_TMP" "$REG_TMP2"
 assert_true "feature-registry generator is deterministic (double run byte-identical, SPEC-219)" $?
@@ -458,7 +458,7 @@ assert_true "lib/gate/verify-counts.sh exists and is executable" \
 # alias to verify-counts.sh. The real target regenerates COUNTS.md by running every
 # suite, so stub it and prove routing cheaply -- a future edit that drops the alias arm
 # (or misroutes the verb) is then caught in CI, not by eyeballing the case statement.
-_gate_route_tmp="$(mktemp -d "${TMPDIR:-/tmp}/dk-gate-route.XXXXXX")"
+_gate_route_tmp="$(mktemp -d "${TMPDIR:-/tmp}/dk-gate-route.XXXXXX")" || exit 1
 cp "$KIT_DIR/lib/gate/gate.sh" "$_gate_route_tmp/gate.sh"
 printf '#!/usr/bin/env bash\necho "ROUTED $*"\n' > "$_gate_route_tmp/verify-counts.sh"
 chmod +x "$_gate_route_tmp/verify-counts.sh"

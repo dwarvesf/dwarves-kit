@@ -18,7 +18,7 @@ PASS=0; FAIL=0
 ok()  { PASS=$((PASS+1)); printf "  ok   %s\n" "$1"; }
 bad() { FAIL=$((FAIL+1)); printf "  FAIL %s\n" "$1"; }
 
-WORK="$(mktemp -d)"
+WORK="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
 trap 'command rm -rf "$WORK"' EXIT
 mkdir -p "$WORK/_meta" "$WORK/.local/bin"
 : > "$WORK/boards.txt"

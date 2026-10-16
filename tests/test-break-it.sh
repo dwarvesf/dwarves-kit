@@ -116,7 +116,7 @@ assert "T3-AC2 [NEGATIVE CONTROL]: the leaky hole is REAL (probe violates the co
 bash "$FIX/tight/test.sh" >/dev/null 2>&1
 assert "T3-AC3: the tight suite is GREEN with the guard in place" $?
 # Strip the GUARD-LINE into a temp impl and re-run the tight suite against it.
-STRIPPED=$(mktemp)
+STRIPPED=$(mktemp "${TMPDIR:-/tmp}/kit.XXXXXX") || exit 1
 trap 'rm -f "$STRIPPED"' EXIT
 grep -v 'GUARD-LINE' "$FIX/tight/impl.sh" > "$STRIPPED"
 [ "$(wc -l < "$STRIPPED")" -lt "$(wc -l < "$FIX/tight/impl.sh")" ]

@@ -17,7 +17,7 @@ bad() { echo "  FAIL: $1" >&2; FAIL=$((FAIL+1)); }
 has() { grep -qF -- "$2" <<<"$1" && ok "$3" || bad "$3 (missing '$2' in: $1)"; }
 hasnt() { grep -qF -- "$2" <<<"$1" && bad "$3 (unexpected '$2' in: $1)" || ok "$3"; }
 
-W="$(mktemp -d)"
+W="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
 trap 'rm -rf "$W"' EXIT
 export KIT_LOAD_WARN=100000 TA_MARK="$W/mark"
 unset KIT_LEDGER_DIR

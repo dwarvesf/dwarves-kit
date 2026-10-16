@@ -26,8 +26,8 @@ mkinstall() { # $1=dir  $2=with-contract(yes/no/stub-only/no-lane-data): mirror 
 }
 
 # 1. adopt run FROM the install finds the source AGENTS.md + lands the contract
-INSTALL="$(mktemp -d)/dwarves-kit"; mkinstall "$INSTALL" yes
-TMP="$(mktemp -d)"; git -C "$TMP" init -q
+INSTALL="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; INSTALL="$INSTALL/dwarves-kit"; mkinstall "$INSTALL" yes
+TMP="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; git -C "$TMP" init -q
 if CLAUDE_PLUGIN_ROOT="$INSTALL" bash "$INSTALL/lib/adopt.sh" "$TMP" >/dev/null 2>&1 \
   && [ -f "$TMP/AGENTS.md" ] && [ -f "$TMP/WORKFLOW.md" ]; then
   ok "adopt from the install creates the contract (source AGENTS.md resolved)"
@@ -43,8 +43,8 @@ N=$(CLAUDE_PLUGIN_ROOT="$INSTALL" bash "$INSTALL/lib/gate/gate-ledger.sh" requir
 # adopt copied the install's AGENTS.md and had to fail without it, so this was a "must fail" control.
 # Now adopt writes the self-contained pointer from lib/adopt/ and reads the full contract only to
 # measure drift, so the assertion flips: it lands the pointer and exits 0.
-BARE="$(mktemp -d)/dwarves-kit"; mkinstall "$BARE" no
-TMP2="$(mktemp -d)"; git -C "$TMP2" init -q
+BARE="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; BARE="$BARE/dwarves-kit"; mkinstall "$BARE" no
+TMP2="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; git -C "$TMP2" init -q
 if CLAUDE_PLUGIN_ROOT="$BARE" bash "$BARE/lib/adopt.sh" "$TMP2" >/dev/null 2>&1 \
   && [ -f "$TMP2/AGENTS.md" ] && cmp -s "$TMP2/AGENTS.md" "$KIT/lib/adopt/AGENTS.pointer.md"; then
   ok "adopt without the contract symlinks lands the self-contained pointer (ca34e023)"
@@ -56,7 +56,7 @@ fi
 # gate-ledger must FAIL to resolve the lane matrix, proving the kit.toml read is real (SPEC-185 made
 # docs/WORKFLOW.md the human view; 148c6923 moved the lane data into kit.toml, so a reader pointed
 # at WORKFLOW.md gets nothing from the contract files alone).
-NOLD="$(mktemp -d)/dwarves-kit"; mkinstall "$NOLD" no-lane-data
+NOLD="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; NOLD="$NOLD/dwarves-kit"; mkinstall "$NOLD" no-lane-data
 N4=$(CLAUDE_PLUGIN_ROOT="$NOLD" bash "$NOLD/lib/gate/gate-ledger.sh" required full 2>/dev/null | wc -l | tr -d ' ')
 [ "${N4:-0}" -lt 5 ] && ok "NC: gate-ledger fails against an install with no kit.toml lane data (got $N4 rows)" \
   || no "NC: gate-ledger should NOT resolve the lane matrix without kit.toml (got $N4 rows, expected <5)"

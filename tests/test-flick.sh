@@ -26,7 +26,7 @@ check() { if [ "$2" = "0" ]; then ok "$1"; else bad "$1" "${3:-}"; fi; }
 # jqt <name> <json> <jq-boolean-expression>
 jqt() { if printf '%s' "$2" | jq -e "$3" >/dev/null 2>&1; then ok "$1"; else bad "$1" "json: $(printf '%s' "$2" | head -c 400)"; fi; }
 
-T="$(mktemp -d)"
+T="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
 STUB_PID=""
 cleanup() { { [ -n "$STUB_PID" ] && kill "$STUB_PID" && wait "$STUB_PID"; } 2>/dev/null; rm -rf "$T"; }
 trap cleanup EXIT

@@ -17,7 +17,7 @@ _stray_lines() {
 _stray_board_rows() {
   local base="$1" add="$2" tmp
   grep -qE '^\| *[A-Z]+-[0-9]+ *\|' "$base" || return 0
-  tmp="$(mktemp)"
+  tmp="$(mktemp "${TMPDIR:-/tmp}/kit.XXXXXX")"
   awk -F'|' 'function rid() { if ($0 !~ /^\| *[A-Z]+-[0-9]+ *\|/) return ""; id = $2; gsub(/^ +| +$/, "", id); return id }
     FNR == NR { if ((i = rid()) != "") row[i] = $0; next }
     { i = rid(); if (i != "" && (i in row)) print row[i]; else print }' "$add" "$base" > "$tmp"
@@ -46,7 +46,7 @@ _carry_branch_ours() {
   printf '%s' "$b" | grep -qxE "wrap/stray-${slug}-[0-9]{8}-[0-9]{4}" || return 1
   base="$(git -C "$repo" merge-base "origin/${def}" "$oid" 2>/dev/null)" || return 1
   [ "$(git -C "$repo" diff --name-only "$base" "$oid")" = "$f" ] || return 1
-  d="$(mktemp -d)"
+  d="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")"
   # Every line before the first hunk is header; after it, a leading + or - is content.
   git -C "$repo" diff -U0 "$base" "$oid" -- "$f" | awk -v d="$d" '
     /^@@/ { h = 1; next }
@@ -206,7 +206,7 @@ _carry_stray_file() {
   branch="wrap/stray-${slug}-$(date +%Y%m%d-%H%M)"
   wt="$(_scratch_wt_add "$repo" "origin/${def}")" || {
     echo "     FAILED carry ${f}: a scratch worktree at origin/${def} failed"; FAILURES=1; return 0; }
-  base="$(mktemp)"
+  base="$(mktemp "${TMPDIR:-/tmp}/kit.XXXXXX")"
   git -C "$repo" show "origin/${def}:${f}" > "$base" 2>/dev/null
   # A last line with no newline would fuse with the first carried line.
   [ -s "$base" ] && [ -n "$(tail -c 1 "$base")" ] && echo >> "$base"
@@ -248,7 +248,7 @@ _carry_stray() {
   if [ -z "$gd" ] || [ "$gd" != "$cd_" ]; then echo "     SKIP stray lines: not the main checkout"; return 0; fi
   while IFS= read -r -d '' f; do
     [ -f "$repo/$f" ] && _union_marked "$repo" "$f" || continue
-    add="$(mktemp)"
+    add="$(mktemp "${TMPDIR:-/tmp}/kit.XXXXXX")"
     _stray_lines "$repo" "$def" "$f" > "$add"
     n="$(grep -c '' "$add")"
     if [ "$n" -gt 0 ] 2>/dev/null; then

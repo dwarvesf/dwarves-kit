@@ -10,7 +10,7 @@ KIT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # a dev machine has as an installed copy of THIS checkout. Pin it to the checkout so the
 # no-Model: expectations below (read from $KIT/kit.toml) hold in both places.
 export KIT_CONFIG_ROOT="${KIT_CONFIG_ROOT:-$KIT}"
-export KIT_PROJECT_ROOT="${KIT_PROJECT_ROOT:-$(mktemp -d)}"
+[ -n "${KIT_PROJECT_ROOT:-}" ] || KIT_PROJECT_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; export KIT_PROJECT_ROOT
 # The expectation comes from the resolver itself, never a re-implementation of its toml parse.
 kit_default_model() { ( cd "$KIT" && bash -c 'source lib/config/kit-config.sh; kit_config_get mega.default_model' ); }
 ORCH="$KIT/lib/queue/orchestrate.sh"
@@ -21,7 +21,7 @@ fails=0
 pass() { echo "PASS $*"; }
 fail() { echo "FAIL $*"; fails=$((fails + 1)); }
 
-TMP="$(mktemp -d)"
+TMP="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
 trap 'rm -rf "$TMP"' EXIT
 
 # --- fixture: a mega-goal dir with 2 auto sub-goals then a gate ---
@@ -236,7 +236,7 @@ grep -q '^SG-01|.*--model sonnet --effort low' "$TMP/route.log" \
   && pass "run passes --model/--effort for hinted SG-01" || { fail "SG-01 routing flags missing"; cat "$TMP/route.log"; }
 # The inherit fallback (SPEC-087, "no config -> no flag") stays asserted: with BOTH config
 # layers pointed at empty dirs, SG-02 must dispatch with no --model at all.
-EMPTY_ROOT="$(mktemp -d)"
+EMPTY_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
 DR3="$TMP/mgr3"; mk_routed "$DR3"; : > "$TMP/route3.log"
 KIT_CONFIG_ROOT="$EMPTY_ROOT" KIT_PROJECT_ROOT="$EMPTY_ROOT" ROUTE_LOG="$TMP/route3.log" ROUTE_RM="$DR3/ROADMAP.md" CLAUDE_FLAGS="" \
   CLAUDE_CMD="$TMP/claude-route" bash "$ORCH" run "$DR3" >/dev/null 2>&1

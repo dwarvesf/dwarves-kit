@@ -16,7 +16,7 @@
 set -u
 HERE="$(cd "$(dirname "$0")" && pwd)"
 BOARD_SH="$HERE/../lib/board/board.sh"
-WORK="$(mktemp -d)"
+WORK="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
 trap 'command rm -rf "$WORK"' EXIT
 PASS=0; FAIL=0
 ok()  { PASS=$((PASS+1)); echo "  ok   $1"; }

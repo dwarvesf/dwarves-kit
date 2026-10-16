@@ -22,7 +22,7 @@ ok() { echo "  ok: $*"; pass=$((pass+1)); }
 no() { echo "  FAIL: $*" >&2; fail=$((fail+1)); }
 
 # --- build an ephemeral plugins dir + stub PATH ------------------------------
-WORK="$(mktemp -d "${TMPDIR:-/tmp}/plugin-check-smoke.XXXXXX")"
+WORK="$(mktemp -d "${TMPDIR:-/tmp}/plugin-check-smoke.XXXXXX")" || exit 1
 CANARY="${WORK}/CANARY-real-updater-was-shelled"
 STUBBIN="${WORK}/bin"; mkdir -p "$STUBBIN"
 # Put the stub on PATH AS `claude` too (defense: the tool defaults CLAUDE_BIN=claude).

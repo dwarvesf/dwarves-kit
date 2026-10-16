@@ -125,7 +125,7 @@ echo "=== Row 24: in-suite NEGATIVE CONTROL (scratch copy, never the tracked fil
 # discriminate. Substring strip, not line delete: row 16's pin and row 17's pin
 # share one physical line of the agent body (SPEC-210 coverage notes), so only
 # a substring removal keeps the blast radius at exactly one pin.
-NC_DIR="$(mktemp -d -t research-arch-contract-nc.XXXXXX)"
+NC_DIR="$(mktemp -d "${TMPDIR:-/tmp}/research-arch-contract-nc.XXXXXX")" || exit 1
 trap 'rm -rf "$NC_DIR"' EXIT
 sed 's/ Patterns, not exhaustive listings\.//' "$A" > "$NC_DIR/mut.md"
 

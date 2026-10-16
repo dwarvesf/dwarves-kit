@@ -42,7 +42,7 @@ assert() {
   else echo -e "  ${RED}FAIL${NC} $1"; FAIL=$((FAIL+1)); fi
 }
 
-TMP="$(mktemp -d "${TMPDIR:-/tmp}/dk-board-run.XXXXXX")"
+TMP="$(mktemp -d "${TMPDIR:-/tmp}/dk-board-run.XXXXXX")" || exit 1
 TMP="$(cd "$TMP" && pwd)"
 trap 'rm -rf "$TMP"' EXIT
 

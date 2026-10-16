@@ -98,7 +98,7 @@ echo "$SKILL_CLAIMED" | grep -qx "anomalies" && ok "../../skills/stats/SKILL.md 
 
 # b3. `ledger anomalies --propose` actually feeds the cc-backlog staging buffer (work-intake
 # fed): call the real stager against a fixture anomaly, end to end, no mock of the write path.
-FIX="$(mktemp -d)"
+FIX="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
 WI_OUT="$(cd "$ROOT" && uv run python3 - "$FIX" <<'PY'
 import sys
 sys.path.insert(0, "src")
@@ -121,7 +121,7 @@ echo "$WI_OUT" | grep -q "HAS-BLOCK" && ok "staged proposal lands in the cc-back
   || bad "staged proposal missing the expected ## [staged] block"
 
 # ---- (c) OVER-CLAIM negative control (must be CAUGHT, load-bearing) -----------------------
-NC_DIR="$(mktemp -d)"
+NC_DIR="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
 cp README.md "$NC_DIR/README.md"
 printf '\n# NC injection (temp only, never touches the real README)\n`uv run stats zzz-nonexistent --foo`\n' \
   >> "$NC_DIR/README.md"

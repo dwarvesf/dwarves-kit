@@ -24,7 +24,7 @@ chk_has() { chk "$1" "$(printf '%s' "$2" | grep -qF -- "$3"; echo $?)"; }
 chk_not_has() { chk "$1" "$(printf '%s' "$2" | grep -qF -- "$3"; [ $? -ne 0 ]; echo $?)"; }
 
 TODAY="$(date +%Y-%m-%d)"   # fixtures must be fresh: promote refuses a stale block
-TMPD="$(mktemp -d "${TMPDIR:-/tmp}/dk-board-promote-test.XXXXXX")"
+TMPD="$(mktemp -d "${TMPDIR:-/tmp}/dk-board-promote-test.XXXXXX")" || exit 1
 TMPD="$(cd "$TMPD" && pwd)"
 trap 'rm -rf "$TMPD"' EXIT
 

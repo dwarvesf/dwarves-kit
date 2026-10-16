@@ -9,7 +9,7 @@ KIT_DIR="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 fail=0
 chk() { if [ "$2" -eq 0 ]; then echo "ok   $1"; else echo "FAIL $1"; fail=1; fi; }
 
-TMP="$(mktemp -d)"; HOME_SB="$(mktemp -d)"; FAKE_KIT="$(mktemp -d)"
+TMP="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; HOME_SB="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")"; FAKE_KIT="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")"
 trap 'rm -rf "$TMP" "$HOME_SB" "$FAKE_KIT"' EXIT
 
 # A stand-in checkout with the dirs the compat branch links, then CLAUDE_DIR

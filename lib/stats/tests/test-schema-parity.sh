@@ -105,7 +105,7 @@ echo "== R-load: rebuild() actually calls the guard (not just importable) =="
 # Prove _load_python_table really invokes assert_parity by monkeypatching it to raise
 # unconditionally, then confirming rebuild() propagates that failure -- if the call
 # site were ever deleted, this goes from FAIL(raised) to a silent pass.
-FIX="$(mktemp -d)"
+FIX="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
 GUARD_OUT="$(env \
   DWARVES_KIT_LOG_DIR="$FIX/kitlogs" \
   STATS_TIDE_DB="$FIX/state.sqlite" \

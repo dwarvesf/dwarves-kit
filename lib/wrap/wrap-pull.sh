@@ -15,12 +15,12 @@
 # tables offers the anchor rule two equally wrong places.
 _union_carry_back() {
   local local_copy="$1" base="$2" target="$3" add tmp head_n mode n
-  add="$(mktemp)"
+  add="$(mktemp "${TMPDIR:-/tmp}/kit.XXXXXX")"
   grep -Fxv -f "$target" "$local_copy" > "$add" 2>/dev/null
   n="$(grep -c '' "$add" 2>/dev/null)"; n="${n:-0}"
   if [ "$n" -le 0 ] 2>/dev/null; then rm -f "$add"; printf '0'; return 0; fi
 
-  tmp="$(mktemp)"
+  tmp="$(mktemp "${TMPDIR:-/tmp}/kit.XXXXXX")"
   mode="$(_fmode "$target")"
   case "$mode" in ''|*[!0-7]*) mode="" ;; esac
   [ -n "$mode" ] && chmod "$mode" "$tmp"   # mktemp opens 0600; carry the target's mode over
@@ -158,7 +158,7 @@ _pull_default() {
   if [ -n "$staged" ]; then
     echo "     NOTE: the index carries staged changes, so no log file is carried across (restoring an index is out of scope)"
   elif [ -n "$modified" ]; then
-    union_tmp="$(mktemp)"
+    union_tmp="$(mktemp "${TMPDIR:-/tmp}/kit.XXXXXX")"
     while IFS= read -r -d '' f; do
       # A path git reports as modified but that is not a regular file cannot be copied back,
       # so it counts as a judgment call and stops the whole carry.
@@ -188,7 +188,7 @@ _pull_default() {
           echo "     NOTE: modified merge=union file(s) alongside; --apply would carry their local lines across the pull"
         fi
       elif [ -z "$nonunion" ] || _pull_past_dirty_on; then
-        saved_dir="$(mktemp -d)"
+        saved_dir="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")"
         while IFS= read -r -d '' f; do
           n=$(( n + 1 ))
           cp "$repo/$f" "${saved_dir}/${n}"
@@ -210,7 +210,7 @@ _pull_default() {
   local blocked_file="" stash_name="" stash_sha="" nblocked=0
   if [ "$APPLY" = 1 ] && [ -z "$staged" ] && [ -n "$nonunion" ] && _pull_past_dirty_on \
      && _write_guard "$repo"; then
-    blocked_file="$(mktemp)"
+    blocked_file="$(mktemp "${TMPDIR:-/tmp}/kit.XXXXXX")"
     nblocked="$(_ff_blocked_into "$repo" "$blocked_file")"
     if [ "$nblocked" -gt 0 ] 2>/dev/null; then
       stash_name="wrap-pull-past-dirty-$(date +%s)-$$"
@@ -276,12 +276,12 @@ _land_ff_pull() {
   staged="$(git -C "$repo" diff --cached --name-only 2>/dev/null)"
   modified="$(git -C "$repo" diff --name-only 2>/dev/null)"
   if [ -z "$staged" ] && [ -n "$modified" ]; then
-    union_tmp="$(mktemp)"
+    union_tmp="$(mktemp "${TMPDIR:-/tmp}/kit.XXXXXX")"
     while IFS= read -r -d '' f; do
       [ -f "$repo/$f" ] && _union_marked "$repo" "$f" && printf '%s\0' "$f" >> "$union_tmp"
     done < <(git -C "$repo" diff --name-only -z 2>/dev/null)
     if [ -s "$union_tmp" ]; then
-      saved_dir="$(mktemp -d)"
+      saved_dir="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")"
       while IFS= read -r -d '' f; do
         n=$(( n + 1 ))
         cp "$repo/$f" "${saved_dir}/${n}"

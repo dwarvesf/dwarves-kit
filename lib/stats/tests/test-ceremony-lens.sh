@@ -26,7 +26,7 @@ hasnt(){ case "$3" in *"$2"*) bad "$1 (unexpected: $2)";; *) ok "$1";; esac; }
 nofire() { if printf '%s' "$2" | jq -e . >/dev/null 2>&1; then hasnt "$1" "$FIRES" "$2"; else bad "$1 (output is not JSON)"; fi; }
 eq()   { if [ "$2" = "$3" ]; then ok "$1"; else bad "$1 (want '$3', got '$2')"; fi; }
 
-FIX="$(mktemp -d)"
+FIX="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
 GITREPO="$FIX/repo"
 KITLOG="$FIX/kit-runs"
 SESS="$FIX/sessions"

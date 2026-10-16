@@ -6,7 +6,7 @@
 set -euo pipefail
 KIT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 SHIM="$KIT_DIR/hooks/money-gate.sh"
-TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
+TMP="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; trap 'rm -rf "$TMP"' EXIT
 LOG="$TMP/gate.log"
 pass=0; fail=0
 ok(){ echo "  ok: $*"; pass=$((pass+1)); }

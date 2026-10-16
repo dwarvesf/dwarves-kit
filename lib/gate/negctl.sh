@@ -161,7 +161,7 @@ if [ "${1:-}" = "--base-ref" ]; then
   extract=""
   cleanup() { rm -rf ${extract:+"$extract"} ${out_file:+"$out_file"}; }
   trap cleanup EXIT
-  extract="$(mktemp -d)"; new_out_file
+  extract="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")"; new_out_file
 
   # git archive reads from the object store, never the working tree, so it cannot refuse or
   # damage a dirty checkout; that is the entire reason this mode exists.

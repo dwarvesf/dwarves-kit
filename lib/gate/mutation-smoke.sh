@@ -51,7 +51,7 @@ MAX="${MUTATION_SMOKE_MAX:-5}"
 # BSD sed rejects line address 0, so the head slice is skipped when n==1.
 _replace_line() {  # <file> <lineno> <new-content>
   local f="$1" n="$2" new="$3" tmp
-  tmp="$(mktemp)"
+  tmp="$(mktemp "${TMPDIR:-/tmp}/kit.XXXXXX")"
   {
     [ "$n" -gt 1 ] && sed -n "1,$((n-1))p" "$f"
     printf '%s\n' "$new"
@@ -197,7 +197,7 @@ run() {  # [<base>]
   fi
 
   # Collect candidates first: if there is nothing to mutate, skip before paying for a suite run.
-  local cand_file; cand_file="$(mktemp)"
+  local cand_file; cand_file="$(mktemp "${TMPDIR:-/tmp}/kit.XXXXXX")"
   candidates > "$cand_file"
   if [ ! -s "$cand_file" ]; then
     echo "[MUTATION-SMOKE] SKIP: no mutable changed code lines (only tests/docs, or no operator match)" >&2
@@ -219,7 +219,7 @@ run() {  # [<base>]
     [ -L "$file" ] && continue   # never mutate through a symlink (defense-in-depth)
     attempts=$((attempts+1))
 
-    CUR_FILE="$file"; CUR_BK="$(mktemp)"; cp "$file" "$CUR_BK"
+    CUR_FILE="$file"; CUR_BK="$(mktemp "${TMPDIR:-/tmp}/kit.XXXXXX")"; cp "$file" "$CUR_BK"
     _replace_line "$file" "$lineno" "$mut"
     if _run_suite "$cmd"; then rc=0; else rc=1; fi   # 0 = suite stayed GREEN (mutation SURVIVED)
     cp "$CUR_BK" "$file"; rm -f "$CUR_BK"; CUR_FILE=""; CUR_BK=""

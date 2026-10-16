@@ -51,12 +51,12 @@ echo "=== lib/goal/mega-merge.sh exists, is executable, dispatches gate + merge 
 grep -qE '^[[:space:]]*gate\)[[:space:]]*gate' "$MM"; assert "mega-merge.sh dispatches 'gate'" $?
 grep -qE '^[[:space:]]*merge\)[[:space:]]*merge' "$MM"; assert "mega-merge.sh dispatches 'merge'" $?
 
-LOGDIR="$(mktemp -d)"   # isolate the ledger + override-log stores from the real ones
+LOGDIR="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1   # isolate the ledger + override-log stores from the real ones
 export DWARVES_KIT_LOG_DIR="$LOGDIR"
 
 # Fake gh on PATH: leaves a marker file if actually invoked, so "did NOT call gh" is
 # a real assertion, not just "the script printed DRY-RUN".
-FAKEBIN="$(mktemp -d)"
+FAKEBIN="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
 GH_CALLED_MARKER="$LOGDIR/gh-was-called"
 cat > "$FAKEBIN/gh" <<EOF
 #!/usr/bin/env bash
@@ -82,7 +82,7 @@ export MEGA_MERGE_PR_FILES_CMD="$PRFILES_STUB"
 # The merge pins the PR head it read and gates on it, so the head is a real commit in a throwaway repo
 # (MEGA_MERGE_ROOT), the base stub names a branch, and the fetch stub prints its parent as the base tip
 # (an empty diff; a head equal to its base is refused). The real fetch and diff rules are covered by tests/test-mega-gate-head.sh.
-FIX="$(mktemp -d)"; git init -q "$FIX" 2>/dev/null
+FIX="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; git init -q "$FIX" 2>/dev/null
 git -C "$FIX" -c user.email=t@example.org -c user.name=t commit -q --allow-empty -m init
 FIX_TIP="$(git -C "$FIX" rev-parse HEAD)"
 git -C "$FIX" -c user.email=t@example.org -c user.name=t commit -q --allow-empty -m pr
@@ -177,7 +177,7 @@ mkrepo() {
   git -C "$d" commit -q --allow-empty -m init
 }
 
-D_DEPLOY="$(mktemp -d)"; mkrepo "$D_DEPLOY"
+D_DEPLOY="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; mkrepo "$D_DEPLOY"
 B_DEPLOY="$(git -C "$D_DEPLOY" rev-parse HEAD)"
 mkdir -p "$D_DEPLOY/deploy"
 echo 'echo rollout' > "$D_DEPLOY/deploy/rollout.sh"
@@ -186,7 +186,7 @@ DEPLOYABLE_OUT="$(bash "$PL" deployable "$D_DEPLOY" "$B_DEPLOY")"
 assert "AC5: a deployable diff -> lib/gate/proof-ledger.sh deployable prints 'yes' (terminus engages)" \
   $([ "$DEPLOYABLE_OUT" = "yes" ] && echo 0 || echo 1)
 
-D_INERT="$(mktemp -d)"; mkrepo "$D_INERT"
+D_INERT="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; mkrepo "$D_INERT"
 B_INERT="$(git -C "$D_INERT" rev-parse HEAD)"
 echo '# just docs' > "$D_INERT/NOTES.md"
 git -C "$D_INERT" add -A; git -C "$D_INERT" commit -qm "docs: add notes"

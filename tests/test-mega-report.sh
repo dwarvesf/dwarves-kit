@@ -13,7 +13,7 @@ bad() { echo "  FAIL: $1" >&2; FAIL=$((FAIL+1)); }
 assert_grep()   { if grep -qF "$2" <<<"$3"; then ok "$1"; else bad "$1 (missing: $2)"; fi; }
 assert_nogrep() { if grep -qF "$2" <<<"$3"; then bad "$1 (unexpected: $2)"; else ok "$1"; fi; }
 
-TD="$(mktemp -d)"
+TD="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
 MROOT="$TD/megagoals"; LOGS="$TD/logs"
 mkdir -p "$MROOT/demo/goals" "$LOGS/runs"
 

@@ -351,7 +351,7 @@ hooks_table() {
 generate() {
   local out="${1:-$KIT_DIR/docs/FEATURES.md}"
   local tmp="$out.tmp.$$" qfile rfile
-  qfile="$(mktemp)"; rfile="$(mktemp)"
+  qfile="$(mktemp "${TMPDIR:-/tmp}/kit.XXXXXX")"; rfile="$(mktemp "${TMPDIR:-/tmp}/kit.XXXXXX")"
   # expand the paths NOW: the trap fires at script exit, after the locals are gone
   trap "rm -f '$tmp' '$qfile' '$rfile'" EXIT
   load_refs "$qfile" "$rfile"
@@ -397,7 +397,7 @@ check() {
     echo "feature-registry: $out does not exist; run 'generate' first" >&2
     return 1
   fi
-  tmp="$(mktemp)"
+  tmp="$(mktemp "${TMPDIR:-/tmp}/kit.XXXXXX")"
   generate "$tmp"
   [ -z "${FEATURE_REGISTRY_KEEP:-}" ] || cp -f "$tmp" "$FEATURE_REGISTRY_KEEP"
   if diff -q "$tmp" "$out" >/dev/null 2>&1; then

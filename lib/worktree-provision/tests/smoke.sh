@@ -10,7 +10,7 @@ DIR="$(cd "$(dirname "$0")/.." && pwd)"
 BIN="$DIR/bin/worktree-provision"
 run(){ python3 "$BIN" "$@"; }   # env-var cases use `env VAR=val python3` directly (unambiguous)
 
-TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
+TMP="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; trap 'rm -rf "$TMP"' EXIT
 # fixture A: a source repo with gitignored env + a python manifest, and an empty worktree
 SRC="$TMP/main"; WT="$TMP/wt"
 mkdir -p "$SRC" "$WT"

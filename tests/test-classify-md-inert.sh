@@ -72,37 +72,37 @@ fi
 
 # Subject-word trap: a tests-only diff is classified by its paths, never its subject.
 # (a) tests-only + "restore" subject -> behavioral (the old lib read it stateful)
-FA="$(mktemp -d)"; build "$FA" test "put the probe back: restore the helper"
+FA="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; build "$FA" test "put the probe back: restore the helper"
 [ "$(cls "$LIB" "$FA")" = behavioral ] && pass "tests-only 'restore' diff -> behavioral" || fail "tests-only 'restore' should be behavioral, got $(cls "$LIB" "$FA")"
 
 # (b) migration file + test + "migrate" subject -> stateful (a non-test path keeps the signal)
-F="$(mktemp -d)"; build "$F" mig "migrate the orders table"
+F="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; build "$F" mig "migrate the orders table"
 [ "$(cls "$LIB" "$F")" = stateful ] && pass "migration+test 'migrate' diff -> stateful (preserved)" || fail "migration+test should be stateful, got $(cls "$LIB" "$F")"
 
 # (b2) code + test + "backup" subject -> stateful (a mixed diff keeps the subject signal)
-F="$(mktemp -d)"; build "$F" codetest "add the nightly backup"
+F="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; build "$F" codetest "add the nightly backup"
 [ "$(cls "$LIB" "$F")" = stateful ] && pass "code+test 'backup' diff -> stateful (preserved)" || fail "code+test 'backup' should be stateful, got $(cls "$LIB" "$F")"
 
 # (b3) same mixed diff, but thousands of test paths sort after the source file: the guard
 # must still see the source path (a `grep -q` early exit under pipefail read it as absent)
-F="$(mktemp -d)"; build "$F" codetest "add the nightly backup"
+F="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; build "$F" codetest "add the nightly backup"
 for i in $(seq 1 4000); do : > "$F/tests/test-padding-file-with-a-long-name-$i.sh"; done
 [ "$(cls "$LIB" "$F")" = stateful ] && pass "code+4000 tests 'backup' diff -> stateful (large diff)" || fail "large code+test 'backup' should be stateful, got $(cls "$LIB" "$F")"
 
 # (b4) a rename out of a migrations dir into tests/: the source path must stay visible
-F="$(mktemp -d)"; build "$F" renamemig "chore: retire migration 0042 into test fixtures"
+F="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; build "$F" renamemig "chore: retire migration 0042 into test fixtures"
 [ "$(cls "$LIB" "$F")" = stateful ] && pass "rename db/migrations -> tests/fixtures -> stateful" || fail "rename out of db/migrations should be stateful, got $(cls "$LIB" "$F")"
 
 # (b5) a data file named test_* is not a test: its subject still counts
-F="$(mktemp -d)"; build "$F" seedsql "feat: seed the demo account into the production database"
+F="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; build "$F" seedsql "feat: seed the demo account into the production database"
 [ "$(cls "$LIB" "$F")" = stateful ] && pass "db/seeds/test_accounts.sql -> stateful" || fail "seed sql named test_* should be stateful, got $(cls "$LIB" "$F")"
 
 # (b6) a nested test/ dir that is not a test tree (a k8s overlay): its subject still counts
-F="$(mktemp -d)"; build "$F" overlay "feat: rollout 3 replicas"
+F="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; build "$F" overlay "feat: rollout 3 replicas"
 [ "$(cls "$LIB" "$F")" = stateful ] && pass "k8s/overlays/test/kustomization.yaml -> stateful" || fail "k8s test overlay should be stateful, got $(cls "$LIB" "$F")"
 
 # (c) source file on a stateful path, neutral subject -> stateful, same verdict as before
-F="$(mktemp -d)"; build "$F" deploy "tweak the helper"
+F="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; build "$F" deploy "tweak the helper"
 [ "$(cls "$LIB" "$F")" = stateful ] && pass "lib/deploy.sh, neutral subject -> stateful (unchanged)" || fail "stateful path should be stateful, got $(cls "$LIB" "$F")"
 
 # (a) negative control: strip the tests-only guard from the current lib; the same fixture

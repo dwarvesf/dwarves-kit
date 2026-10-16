@@ -43,7 +43,7 @@ assert() { TOTAL=$((TOTAL+1)); if [ "$2" -eq 0 ]; then echo -e "  ${GREEN}PASS${
 # ------------------------------------------------------------------------------------------
 _mkws() {
   local name="$1" src="$FIXTURES/$1" ws
-  ws="$(mktemp -d)"
+  ws="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
   mkdir -p "$ws/docs/specs" "$ws/docs/verification" "$ws/docs/implementation-notes" "$ws/logs/runs"
   [ -f "$src/spec.md" ] && cp "$src/spec.md" "$ws/docs/specs/SPEC-900-$name.md"
   [ -f "$src/proof.md" ] && cp "$src/proof.md" "$ws/docs/verification/$name.md"
@@ -74,7 +74,7 @@ echo "=== AC1: real sample -- render against a REAL recently-shipped rid (kit-em
 # The tracked docs/verification/pitch-command/sample-pitch.md is the canonical proof sample,
 # refreshed by hand (see docs/implementation-notes/kit-pitch.md), never by this test: render
 # into a scratch copy instead, so a green run never dirties the tracked file.
-SAMPLE_OUT="$(mktemp -d)/sample-pitch.md"
+SAMPLE_OUT="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; SAMPLE_OUT="$SAMPLE_OUT/sample-pitch.md"
 ( cd "$KIT_DIR" && bash "$LIB" render kit-emit-sweep --out "$SAMPLE_OUT" ) >/dev/null
 assert "AC1 sample-pitch.md was written" "$([ -s "$SAMPLE_OUT" ] && echo 0 || echo 1)"
 SECTIONS=$(grep -cE '^## [1-5]\. ' "$SAMPLE_OUT")
@@ -158,7 +158,7 @@ assert "AC5 commands/pitch.md explicitly documents it never posts (prose, not co
 
 echo ""
 echo "=== AC7: team-shared is fail-safe (stubbed gh, no network) ==="
-FAKEBIN="$(mktemp -d)"
+FAKEBIN="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
 cat > "$FAKEBIN/gh" <<'STUB'
 #!/usr/bin/env bash
 case "${GH_STUB_MODE:-}" in

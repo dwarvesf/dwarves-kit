@@ -62,7 +62,7 @@ out="$("$KIT_DIR/bin/audit" cadences 2>&1)"
 assert_true "bin/audit forwards to lib/audit (a cadence row came back)" "$(grep -q 'doc-drift' <<<"$out"; echo $?)"
 
 echo "== reflect: debt dispatches to the relocated weekend-batch =="
-TMPLOG="$(mktemp -d)"
+TMPLOG="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
 out="$(DWARVES_KIT_LOG_DIR="$TMPLOG" "$KIT_DIR/bin/reflect" debt list 2>&1)"; rc=$?
 assert_true "reflect debt list exits 0 through bin/reflect (empty ledger)" "$rc"
 out="$(DWARVES_KIT_LOG_DIR="$TMPLOG" "$KIT_DIR/bin/reflect" debt collect --all-repos 2>&1)"; rc=$?
@@ -77,7 +77,7 @@ assert_true "reflect propose exits 0 through bin/reflect (--help)" "$rc"
 assert_true "reflect propose reaches the distiller (its own usage, not a refusal)" "$(grep -q 'usage: reflect propose' <<<"$out"; echo $?)"
 
 echo "== reflect: drain dispatches to the SPEC-196 render (deep behavior: test-reflect-drain.sh) =="
-TMPSTAGE="$(mktemp -d)/backlog-staging.md"
+TMPSTAGE="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; TMPSTAGE="$TMPSTAGE/backlog-staging.md"
 out="$(BACKLOG_STAGE_STAGING="$TMPSTAGE" "$KIT_DIR/bin/reflect" drain 2>&1)"; rc=$?
 assert_true "reflect drain exits 0 through bin/reflect (no staging file)" "$rc"
 assert_true "reflect drain reports nothing staged (honest-empty)" "$(grep -q 'nothing staged' <<<"$out"; echo $?)"
@@ -105,7 +105,7 @@ out="$("$KIT_DIR/bin/session" bogus-verb 2>&1)"; rc=$?
 assert_true "session rejects an unknown verb (exit 1)" "$([ $rc -eq 1 ]; echo $?)"
 
 echo "== board: promote folds the human gate (ex add-backlog) =="
-EMPTY="$(mktemp -d)"
+EMPTY="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
 out="$(cd "$EMPTY" && "$KIT_DIR/bin/board" promote 2>&1)"; rc=$?
 assert_true "board promote exits 0 in an empty repo" "$rc"
 assert_true "board promote reports nothing staged" "$(grep -qE 'no staged candidates|nothing staged' <<<"$out"; echo $?)"
@@ -124,7 +124,7 @@ echo "== precedent: forwarder reaches precedent.sh (records + inventory surfaces
 out="$("$KIT_DIR/bin/precedent" --help 2>&1)"; rc=$?
 assert_true "precedent forwarder reaches precedent.sh usage" "$rc"
 assert_true "precedent --help prints precedent.sh's own usage" "$(grep -q 'precedent.sh --' <<<"$out"; echo $?)"
-EMPTY_PRECEDENT="$(mktemp -d)"
+EMPTY_PRECEDENT="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
 out="$(cd "$EMPTY_PRECEDENT" && "$KIT_DIR/bin/precedent" find "spec drift" --surface records 2>&1)"; rc=$?
 assert_true "precedent find --surface records dispatches end to end (empty repo, no hits)" "$rc"
 out="$("$KIT_DIR/bin/precedent" find x --surface bogus 2>&1)"; rc=$?
@@ -141,7 +141,7 @@ echo "== wrap: forwarder reaches wrap.sh (deep behavior: test-wrap.sh) =="
 out="$("$KIT_DIR/bin/wrap" --help 2>&1)"; rc=$?
 assert_true "wrap forwarder exits 0 (--help)" "$rc"
 assert_true "wrap --help prints wrap.sh's own usage" "$(grep -q 'wrap.sh scan' <<<"$out"; echo $?)"
-WRAP_EMPTY="$(mktemp -d)"
+WRAP_EMPTY="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
 out="$("$KIT_DIR/bin/wrap" scan "$WRAP_EMPTY" 2>&1)"; rc=$?
 assert_true "wrap scan dispatches end to end (non-repo argument, exit 0)" "$rc"
 assert_true "wrap scan prints the not-a-repo skip line" "$(grep -q 'not a git repo, skipped' <<<"$out"; echo $?)"

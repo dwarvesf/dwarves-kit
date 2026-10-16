@@ -10,7 +10,7 @@ bad() { echo "  FAIL: $1" >&2; FAIL=$((FAIL+1)); }
 has() { grep -qF -- "$2" <<<"$1" && ok "$3" || bad "$3 (missing '$2' in: $1)"; }
 hasnt() { grep -qF -- "$2" <<<"$1" && bad "$3 (unexpected '$2' in: $1)" || ok "$3"; }
 
-W="$(mktemp -d)"
+W="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
 trap 'rm -rf "$W"' EXIT
 R="$W/repo"; mkdir -p "$R/tests/lib" "$R/bin" "$R/lib/x"; cd "$R"
 git init -q -b main . && git config user.email t@t && git config user.name t

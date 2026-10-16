@@ -23,7 +23,7 @@ RED='\033[0;31m'; GREEN='\033[0;32m'; NC='\033[0m'
 assert() { TOTAL=$((TOTAL+1)); if [ "$2" -eq 0 ]; then echo -e "  ${GREEN}PASS${NC} $1"; PASS=$((PASS+1)); else echo -e "  ${RED}FAIL${NC} $1"; FAIL=$((FAIL+1)); fi; }
 
 TMPS=()
-_mk() { local d; d="$(mktemp -d)"; TMPS+=("$d"); printf '%s' "$d"; }
+_mk() { local d; d="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || return 1; TMPS+=("$d"); printf '%s' "$d"; }
 cleanup() { local d; for d in "${TMPS[@]:-}"; do [ -n "$d" ] && rm -rf "$d" 2>/dev/null; done; }
 trap cleanup EXIT
 
@@ -161,7 +161,7 @@ CHK="$(bash "$GL" check full inj 2>&1 || true)"
 unset DWARVES_KIT_LOG_DIR
 
 # --- SPEC-110: the tokens verb writes an ADDITIVE marker that check() IGNORES ---
-TOKD="$(mktemp -d)/logs"
+TOKD="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; TOKD="$TOKD/logs"
 DWARVES_KIT_LOG_DIR="$TOKD" bash "$GL" start trun normal normal spec-feature spec-feature rp >/dev/null 2>&1
 for ph in spec validate build review ship; do DWARVES_KIT_LOG_DIR="$TOKD" bash "$GL" record trun "$ph" ran x >/dev/null 2>&1; done
 DWARVES_KIT_LOG_DIR="$TOKD" bash "$GL" tokens trun in=1200 out=80 cache_read=4000 cache_create=0 cost=0.05 >/dev/null 2>&1
@@ -176,7 +176,7 @@ grep -qE '\| TOKENS \| in=12 out=5 cache_read=0 cache_create=9$' "$TOKD/runs/tru
 # location). Under `location = "isolated"` the write plane wrote to the toml location while
 # stats read the XDG default, and it failed SILENTLY: stats just reported no runs. It now asks
 # the ONE resolver instead of reimplementing it (2026-07-15).
-CPROJ="$(mktemp -d)"; printf '[ledger]\nlocation = "isolated"\n' > "$CPROJ/.kit.toml"
+CPROJ="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; printf '[ledger]\nlocation = "isolated"\n' > "$CPROJ/.kit.toml"
 c_write="$(cd "$CPROJ" && bash -c ". \"$KIT_DIR/lib/telemetry/kit-log-dir.sh\" && kit_resolve_log_dir" 2>/dev/null)"
 c_read="$(cd "$CPROJ" && PYTHONPATH="$KIT_DIR/lib/stats/src" python3 -c 'from stats.config import kit_log_dir; print(kit_log_dir())' 2>/dev/null | tail -1)"
 [ -n "$c_read" ] && [ "$c_write" = "$c_read" ]

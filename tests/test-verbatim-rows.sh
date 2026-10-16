@@ -17,7 +17,7 @@ SCRIPT="$KIT_DIR/lib/gate/verbatim-rows.sh"
 PASS=0; FAIL=0; TOTAL=0
 assert() { TOTAL=$((TOTAL+1)); if [ "$2" -eq 0 ]; then echo "  PASS $1"; PASS=$((PASS+1)); else echo "  FAIL $1 ${3:-}" >&2; FAIL=$((FAIL+1)); fi; }
 
-FX="$(mktemp -d)"
+FX="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
 cleanup() { rm -rf "$FX"; }
 trap cleanup EXIT
 

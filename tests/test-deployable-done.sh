@@ -16,7 +16,7 @@ PASS=0; FAIL=0; TOTAL=0
 RED='\033[0;31m'; GREEN='\033[0;32m'; NC='\033[0m'
 assert() { TOTAL=$((TOTAL+1)); if [ "$2" -eq 0 ]; then echo -e "  ${GREEN}PASS${NC} $1"; PASS=$((PASS+1)); else echo -e "  ${RED}FAIL${NC} $1"; FAIL=$((FAIL+1)); fi; }
 
-LOGDIR="$(mktemp -d)"   # isolate the override-log store from the real one
+LOGDIR="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1   # isolate the override-log store from the real one
 
 # mkrepo <dir> -- an adopted repo (docs/verification/README.md present) at an init commit.
 mkrepo() {
@@ -38,7 +38,7 @@ echo "=== deployable-done (SPEC-095 AC1-AC5) ==="
 echo ""
 echo "=== AC1 [LOAD-BEARING NEGATIVE CONTROL]: deployable diff, no proof -> BLOCKED ==="
 # ============================================================
-D1="$(mktemp -d)"; mkrepo "$D1"
+D1="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; mkrepo "$D1"
 B1="$(base "$D1")"
 mkdir -p "$D1/deploy"
 cp "$FIX/deploy-rollout.sh" "$D1/deploy/rollout.sh"
@@ -61,7 +61,7 @@ assert "AC1: the block message names the stateful class + missing proof" \
 echo ""
 echo "=== AC2: same deployable diff WITH a well-formed deploy-proof + UAT -> PASSES ==="
 # ============================================================
-D2="$(mktemp -d)"; mkrepo "$D2"
+D2="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; mkrepo "$D2"
 B2="$(base "$D2")"
 mkdir -p "$D2/deploy"
 cp "$FIX/deploy-rollout.sh" "$D2/deploy/rollout.sh"
@@ -80,7 +80,7 @@ fi
 echo ""
 echo "=== AC3 [inert unaffected]: a docs-only diff classifies inert and ships with no proof ==="
 # ============================================================
-D3="$(mktemp -d)"; mkrepo "$D3"
+D3="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; mkrepo "$D3"
 B3="$(base "$D3")"
 mkdir -p "$D3/docs"
 cp "$FIX/inert-notes.md" "$D3/docs/notes.md"
@@ -100,7 +100,7 @@ fi
 echo ""
 echo "=== AC4 [override logs]: a logged override on the AC1 no-proof repo passes + is audited ==="
 # ============================================================
-D4="$(mktemp -d)"; mkrepo "$D4"
+D4="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; mkrepo "$D4"
 B4="$(base "$D4")"
 mkdir -p "$D4/deploy"
 cp "$FIX/deploy-rollout.sh" "$D4/deploy/rollout.sh"
@@ -118,7 +118,7 @@ assert "AC4: the override is logged to the audit trail (slug + reason present)" 
 
 # --- cc-hyg-04: an override does NOT excuse application source code outside deploy/.
 # (deploy scripts above stay override-able; a lib/ source change must not.)
-D4B="$(mktemp -d)"; mkrepo "$D4B"
+D4B="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; mkrepo "$D4B"
 B4B="$(base "$D4B")"
 mkdir -p "$D4B/lib"; printf 'echo broken\n' > "$D4B/lib/handler.sh"
 git -C "$D4B" add -A; git -C "$D4B" commit -qm "feat(handler): urgent source change"

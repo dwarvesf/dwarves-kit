@@ -20,7 +20,7 @@ if ! jq -e . "$SETTINGS" >/dev/null 2>&1; then echo "install: $SETTINGS is not v
 
 cp "$SETTINGS" "$SETTINGS.bak-$(date +%Y%m%d-%H%M%S)" 2>/dev/null || true
 
-tmp="$(mktemp)"
+tmp="$(mktemp "${TMPDIR:-/tmp}/kit.XXXXXX")"
 jq --arg skill "$HOOK_SKILL" --arg surface "$HOOK_SURFACE" '
   def add($event; $cmd):
     .hooks[$event] = ((.hooks[$event] // [])
