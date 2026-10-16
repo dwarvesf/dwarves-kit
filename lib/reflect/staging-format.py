@@ -103,7 +103,7 @@ def norm(title):
 def render_block(candidate):
     """Render one candidate dict as a `## [staged]` block string (trailing blank line).
 
-    Byte-identical to hooks/backlog-stage.py:render_candidate / anomalies.py:render_block.
+    Byte-identical to hooks/backlog-stage.sh (through staging-format.jq) / anomalies.py:render_block.
     Required: title. Optional: intent, approach, u, f, home, source. Returns None if the
     title is empty (a titleless block is unparseable and never emitted).
     """

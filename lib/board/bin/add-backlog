@@ -30,7 +30,7 @@ Three refusals guard the board at promote time (a candidate is never deleted, it
                     repo instead of the named one.
 
 Env: BACKLOG_STAGE_BACKLOG, BACKLOG_STAGE_STAGING (same names + repo-relative
-defaults as hooks/backlog-stage.py: `git rev-parse --show-toplevel` else $PWD),
+defaults as hooks/backlog-stage.sh: `git rev-parse --show-toplevel` else $PWD),
 BACKLOG_PROMOTE_HOMES (directory the Home names resolve under; default: this repo's parent).
 Promoted rows land in a `### Conversation intake` section (created if missing);
 re-file into the right section by hand later. Stdlib only.

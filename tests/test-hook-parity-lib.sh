@@ -115,6 +115,30 @@ out=$(jq -r '.stdout' <<<"$got")
 check "args append, #! seeds are executable, touch sets mtime, today folds to @TODAY@" "$ok"
 if [ "$ok" != 1 ]; then echo "    got: $out"; fi
 
+# --- settle: wait for a detached child to finish ---
+cat > "$FAKE/detach-hook.sh" <<'EOS'
+#!/usr/bin/env bash
+cat >/dev/null
+: > "$HOME/pending.lock"
+( sleep 1; echo done > "$HOME/result.txt"; mv -f "$HOME/pending.lock" "$HOME/discard.lock" ) >/dev/null 2>&1 &
+EOS
+c=$(jq -n '{name:"settle", payload:"hi", settle:["home/pending.lock"], read:["home/result.txt"]}')
+got=$(hp_run_case "$c" bash "$FAKE/detach-hook.sh")
+[ "$(jq -r '.files["home/result.txt"]' <<<"$got")" = "done" ] && ok=1 || ok=0
+check "settle waits until the detached child has removed its marker" "$ok"
+
+# --- base64 seeds carry bytes a JSON string cannot, and @PATH@ expands in env values ---
+cat > "$FAKE/bytes-hook.sh" <<'EOS'
+#!/usr/bin/env bash
+cat >/dev/null
+printf '%s' "$(wc -c < "$HOME/raw.bin" | tr -d ' ')"
+printf ' %s' "${SEEN_PATH%%:*}"
+EOS
+c=$(jq -n '{name:"b64", payload:"hi", env:{SEEN_PATH:"@PATH@"}, seed:{"home/raw.bin":"base64:/w=="}}')
+got=$(hp_run_case "$c" bash "$FAKE/bytes-hook.sh")
+[ "$(jq -r '.stdout' <<<"$got")" = "1 ${PATH%%:*}" ] && ok=1 || ok=0
+check "a base64 seed writes raw bytes (one 0xff byte) and @PATH@ expands" "$ok"
+
 # --- rc and stderr pass through ---
 c=$(jq -n '{name:"exit-code", env:{FAKE_EXIT:"7"}, payload:"hi"}')
 got=$(hp_run_case "$c" bash "$FAKE/fake-hook.sh")
@@ -171,6 +195,17 @@ check "hp_gen_expected extracts the rev's hook and runs cases through it" "$ok"
 HP_SILENT_CASES="gen-case" HP_KIT_ROOT="$GITROOT" hp_gen_expected "$REV" fake "$FAKE/gen-cases.jsonl" "$FAKE/gen-silent.jsonl"
 jq -e '.rc == 0 and .stdout == "" and .stderr == "" and .log == "" and .stray == ""' "$FAKE/gen-silent.jsonl" >/dev/null && ok=1 || ok=0
 check "HP_SILENT_CASES blanks a named case's golden to a silent exit 0" "$ok"
+
+# A hanging hook (one that never reads stdin and idles) fails the case at the alarm, it does not hang
+cat > "$FAKE/hang-hook.sh" <<'EOS'
+#!/usr/bin/env bash
+sleep 20
+EOS
+c=$(jq -n '{name:"hang", payload:"hi"}')
+start=$SECONDS
+got=$(HP_CASE_TIMEOUT=2 hp_run_case "$c" bash "$FAKE/hang-hook.sh")
+[ "$(jq -r '.rc' <<<"$got")" != 0 ] && [ $((SECONDS - start)) -lt 15 ] && ok=1 || ok=0
+check "a hanging hook is killed at the per-case alarm and reports a non-zero rc" "$ok"
 
 echo "hook-parity-lib self-test: $pass passed, $fail failed"
 [ "$fail" -eq 0 ]

@@ -55,6 +55,11 @@ hu_run_capture 5 "$T/out2" sh -c 'exit 3'; rc=$?
 check "hu_run_capture returns a non-zero status" "$rc" 3
 start=$(date +%s); hu_run_capture 1 "$T/out3" sh -c 'sleep 5; echo late'; rc=$?; took=$(( $(date +%s) - start ))
 check "hu_run_capture kills a command that overruns" "$([ "$rc" -ne 0 ] && [ "$took" -lt 4 ] && [ ! -s "$T/out3" ] && echo killed)" killed
+check "hu_run_capture marks a timed-out run" "$([ -e "$T/out3.timedout" ] && echo marked)" marked
+hu_run_capture 5 "$T/out3b" sh -c 'echo ok'
+check "hu_run_capture leaves no mark on a run that finished" "$([ -e "$T/out3b.timedout" ] && echo marked || echo clean)" clean
+hu_run_capture 1 "$T/out3c" sh -c 'echo partial; sleep 4'
+check "hu_run_capture keeps partial output on disk for the caller to discard" "$(cat "$T/out3c")/$([ -e "$T/out3c.timedout" ] && echo marked)" "partial/marked"
 HU_STDIN="$T/in" ; printf 'from stdin' > "$T/in"
 hu_run_capture 5 "$T/out4" cat; unset HU_STDIN
 check "hu_run_capture feeds HU_STDIN to the command" "$(cat "$T/out4")" "from stdin"
@@ -62,6 +67,8 @@ before=$(pgrep -f "sleep 7" 2>/dev/null | wc -l | tr -d ' ')
 hu_run_capture 7 "$T/out5" true
 sleep 0.3; after=$(pgrep -f "sleep 7" 2>/dev/null | wc -l | tr -d ' ')
 check "hu_run_capture leaves no watchdog sleep behind" "$after" "$before"
+took=$( ( trap '' TERM; start=$(date +%s); hu_run_capture 8 "$T/out6" true; echo $(( $(date +%s) - start )) ) )
+check "hu_run_capture returns at once when the caller ignores TERM" "$([ "$took" -lt 4 ] && echo prompt)" prompt
 
 # hu_utf8_ok
 printf '{"a":"é"}' > "$T/ok.json"; printf '\xef\xbb\xbf{}' > "$T/bom.json"; printf 'bad \xff byte' > "$T/bad.json"

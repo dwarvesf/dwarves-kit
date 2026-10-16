@@ -15,11 +15,14 @@
 # hp_run_case <case-json> <hook-cmd...>
 # Runs one case, prints one JSON line: {name, rc, stdout, stderr, log, stray} plus
 # `files` when the case names a `read` list. Optional case fields:
-#   seed  {"home/<path>": text, "cwd/<path>": text}  files written before the run
+#   seed  {"home/<path>": text, "cwd/<path>": text}  files written before the run (@HOME@ and @CWD@ expand;
+#         a value starting "base64:" is decoded, for bytes a JSON string cannot hold, invalid UTF-8 included)
 #   read  ["home/<path>", "cwd/<path>"]  files dumped after the run into `files`
 #         (JSON-normalized when they parse, numbers canonical: 1000.0 reads 1000; null when missing)
 #   touch {"home/<path>": <epoch>}  set a seeded file's mtime (a throttle stamp from the past)
-#   args  ["--force"]  extra arguments appended to the hook command
+#   args  ["--force"]  extra arguments appended to the hook command (@HOME@ and @CWD@ expand)
+#   settle ["home/<glob>"]  after the hook returns, wait (up to 20 s) until nothing matches each
+#         glob: a hook that hands its work to a detached child finishes after it exits
 # A seeded file whose text starts with "#!" is made executable.
 # Today's date folds to @TODAY@ in every output field, so a golden that carries a stamped date
 # does not rot. The tokens @HOME@ and @CWD@ expand to the case's own temp directories in env values
@@ -47,11 +50,11 @@ hp_run_case() {
   while IFS= read -r kv; do
     local k="${kv%%=*}" v="${kv#*=}"
     [ -n "${HP_ROOT:-}" ] && v="${v//ROOT/$HP_ROOT}"
-    v="${v//@HOME@/$home}"; v="${v//@CWD@/$cwd}"
+    v="${v//@HOME@/$home}"; v="${v//@CWD@/$cwd}"; v="${v//@PATH@/$PATH}"
     envs+=("$k=$v")
   done < <(jq -r '(.env // {}) | to_entries[] | select(.value != null) | "\(.key)=\(.value)"' <<<"$case_json")
 
-  local seed_key seed_path
+  local seed_key seed_path seed_text
   while IFS= read -r seed_key; do
     [ -n "$seed_key" ] || continue
     case "$seed_key" in
@@ -60,7 +63,13 @@ hp_run_case() {
       *) continue ;;
     esac
     mkdir -p "$(dirname "$seed_path")"
-    jq -j --arg k "$seed_key" '.seed[$k]' <<<"$case_json" > "$seed_path"
+    seed_text=$(jq -j --arg k "$seed_key" '.seed[$k], "x"' <<<"$case_json"); seed_text=${seed_text%x}
+    if [ "${seed_text#base64:}" != "$seed_text" ]; then
+      printf '%s' "${seed_text#base64:}" | base64 -d > "$seed_path"   # raw bytes a JSON string cannot hold
+    else
+      seed_text="${seed_text//@HOME@/$home}"; seed_text="${seed_text//@CWD@/$cwd}"
+      printf '%s' "$seed_text" > "$seed_path"
+    fi
     [ "$(head -c 2 "$seed_path")" = "#!" ] && chmod +x "$seed_path"
   done < <(jq -r '(.seed // {}) | keys_unsorted[]' <<<"$case_json")
   local touch_key touch_epoch touch_path
@@ -74,7 +83,10 @@ hp_run_case() {
     touch -t "$(date -r "$touch_epoch" +%Y%m%d%H%M.%S 2>/dev/null || date -d "@$touch_epoch" +%Y%m%d%H%M.%S)" "$touch_path"
   done < <(jq -r '(.touch // {}) | to_entries[] | "\(.key)\t\(.value)"' <<<"$case_json")
   local extra=() extra_arg
-  while IFS= read -r extra_arg; do extra+=("$extra_arg"); done < <(jq -r '(.args // [])[]' <<<"$case_json")
+  while IFS= read -r extra_arg; do
+    extra_arg="${extra_arg//@HOME@/$home}"; extra_arg="${extra_arg//@CWD@/$cwd}"
+    extra+=("$extra_arg")
+  done < <(jq -r '(.args // [])[]' <<<"$case_json")
 
   local payload="$T/payload" ptxt
   if [ "$(jq -r '.payload | type' <<<"$case_json")" = "object" ]; then
@@ -93,9 +105,25 @@ hp_run_case() {
   fi
 
   local rc=0 out err
-  err=$(cd "$cwd" && env -i PATH="$PATH" HOME="$home" TMPDIR="${TMPDIR:-/tmp}" LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8 \
-    ${envs[@]+"${envs[@]}"} "$@" ${extra[@]+"${extra[@]}"} < "$payload" 2>&1 >"$T/stdout") || rc=$?
+  # A hook that hangs (a mutated port blocking on stdin, or a detached child that keeps a pipe
+  # open) must fail the case, not the suite: 30 s alarm on the hook (macOS has no timeout), stderr
+  # to a file so no pipe waits on a leaked child.
+  { (cd "$cwd" && env -i PATH="$PATH" HOME="$home" TMPDIR="${TMPDIR:-/tmp}" LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8 \
+    ${envs[@]+"${envs[@]}"} perl -e 'alarm shift; exec @ARGV' "${HP_CASE_TIMEOUT:-30}" "$@" ${extra[@]+"${extra[@]}"} < "$payload" 2>"$T/stderr" >"$T/stdout") || rc=$?; } 2>/dev/null
+  err=$(cat "$T/stderr")
   out=$(cat "$T/stdout")
+
+  local settle_pat settle_glob settle_n
+  while IFS= read -r settle_pat; do
+    [ -n "$settle_pat" ] || continue
+    case "$settle_pat" in
+      home/*) settle_glob="$home/${settle_pat#home/}" ;;
+      cwd/*)  settle_glob="$cwd/${settle_pat#cwd/}" ;;
+      *) continue ;;
+    esac
+    settle_n=0
+    while [ "$settle_n" -lt 100 ] && compgen -G "$settle_glob" >/dev/null; do sleep 0.2; settle_n=$((settle_n + 1)); done
+  done < <(jq -r '(.settle // [])[]' <<<"$case_json")
 
   local norm; norm=$(jq -S -c . <<<"$out" 2>/dev/null) || norm="$out"
 

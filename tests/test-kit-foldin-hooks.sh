@@ -312,7 +312,7 @@ STAGED_SYNC=$(cat "$TD/bs-repo-syncslow/_meta/backlog-staging.md" 2>/dev/null)
 assert_contains "row 3d: candidate already present immediately (proves it ran inline, not async)" "slow extractor proof" "$STAGED_SYNC"
 
 # row 3e: the detached child must be reparented into its OWN process group
-# (start_new_session=True) -- the literal OS-level mechanism the whole fix's
+# (bash job control, `set -m`; the Python used start_new_session) -- the OS-level mechanism the whole fix's
 # "survives SessionEnd's process teardown" claim rests on. Rows 3b/3c only prove the
 # hook returns fast and the work eventually lands; neither proves the child is actually
 # isolated from the invoking process group. Verified via `pgrep`/`ps`, not a kill/signal
@@ -350,14 +350,12 @@ fi
 wait_for_file_contains "row 3e: candidate still lands after the pgid check" \
   "pgid probe" "$TD/bs-repo-pgid/_meta/backlog-staging.md"
 
-# row 3f: a CORRUPT payload handoff file must never leak on disk. cmd_staged_run's read
-# step (json.load) can fail on a truncated/malformed file; the fix wraps BOTH the read
-# and the work in one outer finally so the payload file is always removed, not just when
-# the read succeeds.
+# row 3f: a CORRUPT payload handoff file must never leak on disk. The --staged-run child
+# removes its payload file whether or not the read and the work succeed.
 mkdir -p "$TD/bs-state-corrupt"
 echo 'not valid json{{{' > "$TD/bs-state-corrupt/payload-corrupt.json"
 RC=0
-python3 "$KIT_DIR/hooks/backlog-stage.py" --staged-run "$TD/bs-state-corrupt/payload-corrupt.json" >/dev/null 2>&1 || RC=$?
+bash "$KIT_DIR/hooks/backlog-stage.sh" --staged-run "$TD/bs-state-corrupt/payload-corrupt.json" >/dev/null 2>&1 || RC=$?
 assert_exit "row 3f: --staged-run on a corrupt payload exits 0" 0 $RC
 TOTAL=$((TOTAL + 1))
 if [ ! -f "$TD/bs-state-corrupt/payload-corrupt.json" ]; then
@@ -368,40 +366,23 @@ else
   FAIL=$((FAIL + 1))
 fi
 
-# row 3g: stage_from_text() unit-tested directly (no subprocess, no transcript file,
-# no detach plumbing) -- proving its dedup-skip and empty-candidates branches, which no
-# full-hook-invocation test exercises (every existing row uses one new, non-duplicate
-# candidate). Mirrors the ID-202 race harness's importlib.util pattern already used
-# later in this same file.
-cat > "$TD/bs-unit-test.py" <<PYEOF
-import importlib.util, os, sys
-
-KIT_DIR = "$KIT_DIR"
-TD = "$TD"
-
-spec = importlib.util.spec_from_file_location("backlog_stage_under_test", os.path.join(KIT_DIR, "hooks", "backlog-stage.py"))
-bs = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(bs)
-
-backlog = os.path.join(TD, "bs-unit-backlog.md")
-staging = os.path.join(TD, "bs-unit-staging.md")
-
-with open(backlog, "w") as fh:
-    fh.write("| ID | Item | Notes | Status |\n|---|---|---|---|\n| ID-1 | Fix flaky deploy script | already tracked | queued |\n")
-
-bs.run_extractor = lambda prompt: '[{"title":"Fix flaky deploy script","intent":"dup","approach":"","u":"hi","f":"mid","home":""}]'
-bs.stage_from_text("dummy transcript text", "2026-07-30", backlog, staging)
-dedup_ok = not os.path.exists(staging)
-print("dedup_skip_ok=" + str(dedup_ok))
-
-bs.run_extractor = lambda prompt: '[]'
-bs.stage_from_text("dummy transcript text", "2026-07-30", backlog, staging)
-empty_ok = not os.path.exists(staging)
-print("empty_candidates_ok=" + str(empty_ok))
-PYEOF
-UNIT_OUT=$(python3 "$TD/bs-unit-test.py" 2>&1)
-assert_contains "row 3g: stage_from_text skips a candidate whose title already exists on the board" "dedup_skip_ok=True" "$UNIT_OUT"
-assert_contains "row 3g: stage_from_text writes nothing for an empty candidate list" "empty_candidates_ok=True" "$UNIT_OUT"
+# row 3g: the --staged-run child driven directly (no transcript file, no detach plumbing):
+# its dedup-skip and empty-candidates branches, which no full-hook-invocation test exercises
+# (every existing row uses one new, non-duplicate candidate).
+printf '| ID | Item | Notes | Status |\n|---|---|---|---|\n| ID-1 | Fix flaky deploy script | already tracked | queued |\n' > "$TD/bs-unit-backlog.md"
+mkdir -p "$TD/bs-unit-state"
+printf '{"text":"dummy transcript text","date":"2026-07-30","backlog":"%s","staging":"%s"}' "$TD/bs-unit-backlog.md" "$TD/bs-unit-staging.md" > "$TD/bs-unit-state/payload-dup.json"
+printf '#!/bin/sh\ncat >/dev/null\nprintf %%s '"'"'[{"title":"Fix flaky deploy script","intent":"dup","approach":"","u":"hi","f":"mid","home":""}]'"'"'\n' > "$TD/bs-unit-dup-extractor.sh"
+chmod +x "$TD/bs-unit-dup-extractor.sh"
+BACKLOG_STAGE_EXTRACTOR="$TD/bs-unit-dup-extractor.sh" bash "$KIT_DIR/hooks/backlog-stage.sh" --staged-run "$TD/bs-unit-state/payload-dup.json" >/dev/null 2>&1
+DEDUP_OK=0; [ ! -e "$TD/bs-unit-staging.md" ] && DEDUP_OK=1
+assert_eq "row 3g: --staged-run skips a candidate whose title already exists on the board" "1" "$DEDUP_OK"
+printf '{"text":"dummy transcript text","date":"2026-07-30","backlog":"%s","staging":"%s"}' "$TD/bs-unit-backlog.md" "$TD/bs-unit-staging.md" > "$TD/bs-unit-state/payload-empty.json"
+printf '#!/bin/sh\ncat >/dev/null\nprintf %%s '"'"'[]'"'"'\n' > "$TD/bs-unit-empty-extractor.sh"
+chmod +x "$TD/bs-unit-empty-extractor.sh"
+BACKLOG_STAGE_EXTRACTOR="$TD/bs-unit-empty-extractor.sh" bash "$KIT_DIR/hooks/backlog-stage.sh" --staged-run "$TD/bs-unit-state/payload-empty.json" >/dev/null 2>&1
+EMPTY_OK=0; [ ! -e "$TD/bs-unit-staging.md" ] && EMPTY_OK=1
+assert_eq "row 3g: --staged-run writes nothing for an empty candidate list" "1" "$EMPTY_OK"
 
 # NC: empty stdin never blocks a session end.
 RC=0; echo '' | bash "$KIT_DIR/hooks/backlog-stage.sh" >/dev/null 2>&1 || RC=$?
@@ -767,9 +748,9 @@ if HOME="$INSTALL_HOME" bash "$KIT_DIR/install.sh" --with board,session,advisor 
     RC=0; [ -x "$DEST/${NAME}.sh" ] || RC=1
     assert_exit "install.sh materializes hooks/${NAME}.sh executable" 0 $RC
   done
-  # citation-guard.sh and context-hints.sh are pure bash+jq ports with no .py companion;
-  # the other two still ship one.
-  for NAME in backlog-stage harvest; do
+  # citation-guard.sh, context-hints.sh, and backlog-stage.sh are pure bash+jq ports with no .py
+  # companion; harvest still ships one.
+  for NAME in harvest; do
     RC=0; [ -f "$DEST/${NAME}.py" ] || RC=1
     assert_exit "install.sh materializes hooks/${NAME}.py (companion)" 0 $RC
   done
@@ -777,6 +758,8 @@ if HOME="$INSTALL_HOME" bash "$KIT_DIR/install.sh" --with board,session,advisor 
   assert_exit "install.sh does NOT materialize a citation-guard.py" 0 $RC
   RC=0; [ -f "$DEST/context-hints.py" ] && RC=1
   assert_exit "install.sh does NOT materialize a context-hints.py" 0 $RC
+  RC=0; [ -f "$DEST/backlog-stage.py" ] && RC=1
+  assert_exit "install.sh does NOT materialize a backlog-stage.py" 0 $RC
   RC=0; [ -f "$DEST/context-hints-skills-map.json" ] || RC=1
   assert_exit "install.sh materializes context-hints-skills-map.json (companion)" 0 $RC
 
@@ -818,7 +801,7 @@ echo ""
 echo "=== Done gate: no ops-toolkit path leaked into the new files ==="
 # ============================================================
 LEAK=$(grep -rln 'workspace/tieubao' \
-  "$KIT_DIR/hooks/backlog-stage.sh" "$KIT_DIR/hooks/backlog-stage.py" \
+  "$KIT_DIR/hooks/backlog-stage.sh" \
   "$KIT_DIR/hooks/citation-guard.sh" \
   "$KIT_DIR/hooks/context-hints.sh" \
   "$KIT_DIR/hooks/context-hints-skills-map.json" \

@@ -50,6 +50,7 @@ boards = [
   "", "no table here\n",
   "| ID-1 | CRLF item | n |\r\n| ID-2 | Second | n |\r\n",
   "| ID-1 | Lone CR | n |\r| ID-2 | After CR | n |\r",
+  "\x1f| ID-1 | Unit separator lead | n |\n \x1f| ID-2 |\x1f Spaced \x1f| n |",
   "| ID-1 | Vertical tab | n |\x0b| ID-2 | After VT | n |\x0c| ID-3 | After FF | n |\x85| ID-4 | After NEL | n |\u2028| ID-5 | After LS | n |\x1c| ID-6 | After FS | n |",
 ]
 stagings = [
