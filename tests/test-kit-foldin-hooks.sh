@@ -115,7 +115,7 @@ RC=0; echo 'not json' | bash "$KIT_DIR/hooks/context-hints.sh" >/dev/null 2>&1 |
 assert_exit "NC: malformed JSON exits 0" 0 $RC
 
 # ID-269: session-age cache-hygiene nudge. Threshold is NUDGE_THRESHOLD_SECONDS in
-# context-hints.py (6h = 21600s). Each row primes a session's "start" at t=BASE via a
+# context-hints.sh (6h = 21600s). Each row primes a session's "start" at t=BASE via a
 # first hook call, then re-invokes at t=BASE+ELAPSED to control the elapsed value the
 # hook computes (same CONTEXT_HINTS_NOW seam the row-1 test above already relies on).
 NUDGE_STATE="$TD/ch-nudge-state"
@@ -767,14 +767,16 @@ if HOME="$INSTALL_HOME" bash "$KIT_DIR/install.sh" --with board,session,advisor 
     RC=0; [ -x "$DEST/${NAME}.sh" ] || RC=1
     assert_exit "install.sh materializes hooks/${NAME}.sh executable" 0 $RC
   done
-  # citation-guard.sh is a pure bash+jq port with no .py companion; the other
-  # three still ship one.
-  for NAME in backlog-stage context-hints harvest; do
+  # citation-guard.sh and context-hints.sh are pure bash+jq ports with no .py companion;
+  # the other two still ship one.
+  for NAME in backlog-stage harvest; do
     RC=0; [ -f "$DEST/${NAME}.py" ] || RC=1
     assert_exit "install.sh materializes hooks/${NAME}.py (companion)" 0 $RC
   done
   RC=0; [ -f "$DEST/citation-guard.py" ] && RC=1
   assert_exit "install.sh does NOT materialize a citation-guard.py" 0 $RC
+  RC=0; [ -f "$DEST/context-hints.py" ] && RC=1
+  assert_exit "install.sh does NOT materialize a context-hints.py" 0 $RC
   RC=0; [ -f "$DEST/context-hints-skills-map.json" ] || RC=1
   assert_exit "install.sh materializes context-hints-skills-map.json (companion)" 0 $RC
 
@@ -818,7 +820,7 @@ echo "=== Done gate: no ops-toolkit path leaked into the new files ==="
 LEAK=$(grep -rln 'workspace/tieubao' \
   "$KIT_DIR/hooks/backlog-stage.sh" "$KIT_DIR/hooks/backlog-stage.py" \
   "$KIT_DIR/hooks/citation-guard.sh" \
-  "$KIT_DIR/hooks/context-hints.sh" "$KIT_DIR/hooks/context-hints.py" \
+  "$KIT_DIR/hooks/context-hints.sh" \
   "$KIT_DIR/hooks/context-hints-skills-map.json" \
   "$KIT_DIR/hooks/harvest.sh" "$KIT_DIR/hooks/harvest.py" 2>/dev/null || true)
 assert_eq "no 'workspace/tieubao' in any new file" "" "$LEAK"
