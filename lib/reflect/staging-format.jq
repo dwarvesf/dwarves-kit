@@ -62,6 +62,13 @@ def sf_splitlines: gsub("\r\n|[\r\u000b\u000c\u001c-\u001e\u0085\u2028\u2029]"; 
 # Board rows, as staging-format.py existing_keys reads them (splitlines).
 def sf_board_keys:
   [sf_splitlines[] | capture("^\\s*\\|\\s*[A-Z]+-\\d+\\s*\\|\\s*(?<t>[^|]+)\\|")? | .t | sf_norm];
+# Board rows, as hooks/backlog-stage.py read them (line by line, universal newlines only).
+def sf_board_keys_lines:
+  [sf_universal | split("\n")[] | capture("^\\s*\\|\\s*[A-Z]+-\\d+\\s*\\|\\s*(?<t>[^|]+)\\|")? | .t | sf_norm];
+# Staging headings, as hooks/backlog-stage.py read them: line by line, no borrowing from the next line.
+def sf_staging_titles_lines:
+  [sf_universal | split("\n")[] | capture("^##\\s*\\[[^\\]]+\\]\\s*(?<t>.+)")? | .t | sf_norm];
+
 # A block starts at a line beginning "##\s*[", and runs to the next one. The heading regex is
 # applied to the block alone, as Python does, so a bare "## [staged]" heading cannot borrow the
 # next block's heading as its title.
