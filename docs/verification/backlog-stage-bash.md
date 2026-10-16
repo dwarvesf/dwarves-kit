@@ -30,7 +30,7 @@ Verdict: PASS
 | Registry lint | `bash tests/test-config-registry.sh` | `59/59 passed` (the six `BACKLOG_STAGE_*` variables are registered) |
 | Contract lint | `bash tests/test-kit-contract.sh` | `25 passed, 0 failed` |
 | No Python | `grep -c python hooks/backlog-stage.sh` | `0` |
-| Changed suites | `bash tests/run-all.sh --changed` | see the last section |
+| Changed suites | `bash tests/run-all.sh --changed` | `all 60 suites passed, 0 skipped for missing tooling` |
 
 ## Negative controls
 

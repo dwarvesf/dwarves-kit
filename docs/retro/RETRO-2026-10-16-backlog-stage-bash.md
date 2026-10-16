@@ -5,9 +5,9 @@ Sprint: one session, third of the four remaining Python hook ports
 Answers below were drafted by the lead from the session record, not collected one question at a time.
 
 ## Metrics
-- Goldens: 189 cases generated from the Python before the port, each with the exact prompt and its byte count
-- Real transcripts: 400 replayed through both hooks with the model stubbed, identical prompts and staging
-- Fresh review rounds: see the verification record
+- Goldens: 204 cases generated from the Python before the port, each with the exact prompt and its byte count
+- Real transcripts: 204 replayed through both hooks on the final head with the model stubbed, identical prompts, staging, and stderr (an earlier 400-transcript replay found the trailing newline)
+- Fresh review rounds: none; the proof is the corpus, the real-data replay, and the negative controls
 - Negative controls: 8
 
 ## What worked
@@ -21,3 +21,6 @@ Answers below were drafted by the lead from the session record, not collected on
 
 ## Action items
 - None for the operator.
+
+## Also hurt
+- Every negative control stalled for 15 minutes or more in its final green run. `negctl.sh` ignores TERM after its restore step and `hu_run_capture` ended its watchdog with TERM, so each case waited for the per-case alarm. It took four attempts, one of them blaming machine load, to find it. Look at which process holds a wait before blaming the machine.
