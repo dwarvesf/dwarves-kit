@@ -1,0 +1,20 @@
+{"kind":"board","text":"# Board\n\n| ID | Item | Notes | Status |\n|---|---|---|---|\n| ID-1 | Rust ownership | n | queued |\n| ID-22 | Thuế thu nhập | | shipped |\n","keys":["rust ownership","thuế thu nhập"]}
+{"kind":"board","text":"| Not a row | x |\n| ID | Not a row | x |\n|ID-3|Tight|x|\n  | AB-12 | Indented | x |\n| ID-4 |  | x |\n| ID-5 | has | pipe | x |\n","keys":["","has","indented","tight"]}
+{"kind":"board","text":"","keys":[]}
+{"kind":"board","text":"no table here\n","keys":[]}
+{"kind":"board","text":"| ID-1 | CRLF item | n |\r\n| ID-2 | Second | n |\r\n","keys":["crlf item","second"]}
+{"kind":"board","text":"| ID-1 | Lone CR | n |\r| ID-2 | After CR | n |\r","keys":["after cr","lone cr"]}
+{"kind":"board","text":"| ID-1 | Vertical tab | n |\u000b| ID-2 | After VT | n |\f| ID-3 | After FF | n || ID-4 | After NEL | n | | ID-5 | After LS | n |\u001c| ID-6 | After FS | n |","keys":["after ff","after fs","after ls","after nel","after vt","vertical tab"]}
+{"kind":"staging","text":"# Backlog staging\n\n## [staged] Pick a DB\n- Intent: x\n\n## [rejected] Old idea\n- Intent: y\n\n## [promoted ID-9] Shipped one\n- Source: s\n","keys":["old idea","pick a db","shipped one"]}
+{"kind":"staging","text":"## [staged]\n- Intent: x\n\n","keys":["intent x"]}
+{"kind":"staging","text":"## [staged]   \n\n","keys":[]}
+{"kind":"staging","text":"## [staged] !!!\n\n","keys":[""]}
+{"kind":"staging","text":"## [staged] CRLF title\r\n- Intent: x\r\n","keys":["crlf title"]}
+{"kind":"staging","text":"##[staged] no space\n## [a b] two words\n##  [x]   spaced   title  \n","keys":["no space","spaced title","two words"]}
+{"kind":"staging","text":"text before\n## [staged] First\nmore\n## [staged] Second\n","keys":["first","second"]}
+{"kind":"staging","text":"","keys":[]}
+{"kind":"staging","text":"no blocks\n","keys":[]}
+{"kind":"staging","text":"## not a block\n## [unclosed title\n","keys":[]}
+{"kind":"staging","text":"## [staged] Đà Nẵng\n## [staged] ĐÀ NẴNG\n","keys":["đà nẵng"]}
+{"kind":"staging","text":"## [staged] Lone CR\r## [staged] After CR\r","keys":["after cr","lone cr"]}
+{"kind":"staging","text":"## [staged]\r- Intent: x\r","keys":["intent x"]}

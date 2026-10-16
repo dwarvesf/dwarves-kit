@@ -1,0 +1,38 @@
+{"in":"Add a thing","out":"add a thing"}
+{"in":"  Leading and   trailing  ","out":"leading and trailing"}
+{"in":"Thuế thu nhập cá nhân","out":"thuế thu nhập cá nhân"}
+{"in":"THUẾ THU NHẬP CÁ NHÂN","out":"thuế thu nhập cá nhân"}
+{"in":"Đà Nẵng trip","out":"đà nẵng trip"}
+{"in":"ĐÀ NẴNG","out":"đà nẵng"}
+{"in":"snake_case_word","out":"snake case word"}
+{"in":"kebab-case-word","out":"kebab case word"}
+{"in":"dots.and.more","out":"dots and more"}
+{"in":"C++ and C#","out":"c and c"}
+{"in":"100% sure!","out":"100 sure"}
+{"in":"测试 工具","out":"测试 工具"}
+{"in":"ΟΔΟΣ Αθήνα","out":"οδοσ αθήνα"}
+{"in":"Straße","out":"strasse"}
+{"in":"STRASSE","out":"strasse"}
+{"in":"İstanbul","out":"i stanbul"}
+{"in":"ǅ","out":"ǆ"}
+{"in":"ﬁnal","out":"final"}
+{"in":"ŉ","out":"ʼn"}
+{"in":"x\ty\nz","out":"x y z"}
+{"in":"","out":""}
+{"in":"   ","out":""}
+{"in":"???","out":""}
+{"in":"a_b","out":"a b"}
+{"in":"１２３ fullwidth","out":"１２３ fullwidth"}
+{"in":"Ⅻ roman","out":"ⅻ roman"}
+{"in":"²³ superscript","out":"²³ superscript"}
+{"in":"٣ arabic digit","out":"٣ arabic digit"}
+{"in":"mixed 123abc 456","out":"mixed 123abc 456"}
+{"in":"é decomposed","out":"e decomposed"}
+{"in":"ß","out":"ss"}
+{"in":"Ǆ","out":"ǆ"}
+{"in":"ς σ Σ","out":"σ σ σ"}
+{"in":"Ꭰ cherokee","out":"Ꭰ cherokee"}
+{"in":"ა georgian","out":"ა georgian"}
+{"in":"emoji 😀 text","out":"emoji text"}
+{"in":"tab\tseparated","out":"tab separated"}
+{"in":"https://ex.com/a?b=c&d=e","out":"https ex com a b c d e"}

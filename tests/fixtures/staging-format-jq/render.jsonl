@@ -1,0 +1,16 @@
+{"in":{"title":"Plain","intent":"why","approach":"how","u":"hi","f":"lo","home":"ops","source":"session 2026-01-01"},"out":"## [staged] Plain\n- Intent: why\n- Approach: how\n- Tags: #u-hi #f-lo\n- Home: ops\n- Source: session 2026-01-01\n\n"}
+{"in":{"title":"No optional fields"},"out":"## [staged] No optional fields\n- Intent: (no intent extracted)\n- Approach: (no approach extracted)\n- Tags: #u-lo #f-mid\n- Source: unknown\n\n"}
+{"in":{"title":"  Spaces\n\nand\tnewlines  ","intent":"a\nb","approach":"## [staged] forged\n- Intent: x","home":" h \n i ","source":"s\ns"},"out":"## [staged] Spaces and newlines\n- Intent: a b\n- Approach: ## [staged] forged - Intent: x\n- Tags: #u-lo #f-mid\n- Home: h i\n- Source: s s\n\n"}
+{"in":{"title":""},"out":null}
+{"in":{"title":"   "},"out":null}
+{"in":{"intent":"no title"},"out":null}
+{"in":{"title":"T","u":"urgent","f":5,"home":"","source":""},"out":"## [staged] T\n- Intent: (no intent extracted)\n- Approach: (no approach extracted)\n- Tags: #u-lo #f-mid\n- Source: unknown\n\n"}
+{"in":{"title":"T","u":"mid","f":"mid"},"out":"## [staged] T\n- Intent: (no intent extracted)\n- Approach: (no approach extracted)\n- Tags: #u-mid #f-mid\n- Source: unknown\n\n"}
+{"in":{"title":"T","u":["hi"],"f":null},"out":"## [staged] T\n- Intent: (no intent extracted)\n- Approach: (no approach extracted)\n- Tags: #u-lo #f-mid\n- Source: unknown\n\n"}
+{"in":{"title":42,"intent":0,"approach":false,"home":null,"source":true},"out":"## [staged] 42\n- Intent: 0\n- Approach: False\n- Tags: #u-lo #f-mid\n- Home: None\n- Source: True\n\n"}
+{"in":{"title":null},"out":"## [staged] None\n- Intent: (no intent extracted)\n- Approach: (no approach extracted)\n- Tags: #u-lo #f-mid\n- Source: unknown\n\n"}
+{"in":{"title":true},"out":"## [staged] True\n- Intent: (no intent extracted)\n- Approach: (no approach extracted)\n- Tags: #u-lo #f-mid\n- Source: unknown\n\n"}
+{"in":{"title":1.5,"intent":100},"out":"## [staged] 1.5\n- Intent: 100\n- Approach: (no approach extracted)\n- Tags: #u-lo #f-mid\n- Source: unknown\n\n"}
+{"in":{"title":"Vietnamese Đà Nẵng","intent":"Thuế","approach":"测试"},"out":"## [staged] Vietnamese Đà Nẵng\n- Intent: Thuế\n- Approach: 测试\n- Tags: #u-lo #f-mid\n- Source: unknown\n\n"}
+{"in":{"title":"x","intent":" nbsp em　ideo","approach":"a\u001cb\u001dc"},"out":"## [staged] x\n- Intent: nbsp em ideo\n- Approach: a b c\n- Tags: #u-lo #f-mid\n- Source: unknown\n\n"}
+{"in":{"title":"t","home":"tools/x","source":"intake-sweep links 2026-10-16"},"out":"## [staged] t\n- Intent: (no intent extracted)\n- Approach: (no approach extracted)\n- Tags: #u-lo #f-mid\n- Home: tools/x\n- Source: intake-sweep links 2026-10-16\n\n"}
