@@ -63,9 +63,9 @@ EOF
 }
 
 for profile in eval tool-build feature; do
-  A="/tmp/vf-shipgate-$profile-allow"; build "$A" "$profile" 1   # complete proof
+  A="${TMPDIR:-/tmp}/vf-shipgate-$profile-allow"; build "$A" "$profile" 1   # complete proof
   if run_hook "$A"; then pass "[$profile] proof present -> ship-gate ALLOWS the push"; else fail "[$profile] complete proof should ALLOW but the hook BLOCKED"; fi
-  B="/tmp/vf-shipgate-$profile-block"; build "$B" "$profile" 0   # no negative-control run
+  B="${TMPDIR:-/tmp}/vf-shipgate-$profile-block"; build "$B" "$profile" 0   # no negative-control run
   if run_hook "$B"; then fail "[$profile] missing negative control should BLOCK but the hook ALLOWED"; else pass "[$profile] negative-control run missing -> ship-gate BLOCKS the push"; fi
 done
 

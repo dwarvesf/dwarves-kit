@@ -663,7 +663,7 @@ for big in bigfinite bigforever; do
   jqt "oversized command output ($big): no_token" "$out" '.error == "no_token"'
   check "oversized output ($big) sent nothing and finished in bounded time" "$([ "$(stub_count)" = 0 ] && [ $((t1-t0)) -lt 16000 ]; echo $?)" "took $((t1-t0)) ms"
 done
-check "no token temp dir is left behind" "$(! ls -d /tmp/flick.* >/dev/null 2>&1; echo $?)"
+check "no token temp dir is left behind" "$(! ls -d ${TMPDIR:-/tmp}/flick.* >/dev/null 2>&1; echo $?)"
 
 echo "-- the command's first word must be an absolute path --"
 reset_ran

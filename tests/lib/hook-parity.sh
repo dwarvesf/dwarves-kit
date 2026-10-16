@@ -93,7 +93,7 @@ hp_run_case() {
   fi
 
   local rc=0 out err
-  err=$(cd "$cwd" && env -i PATH="$PATH" HOME="$home" LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8 \
+  err=$(cd "$cwd" && env -i PATH="$PATH" HOME="$home" TMPDIR="${TMPDIR:-/tmp}" LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8 \
     ${envs[@]+"${envs[@]}"} "$@" ${extra[@]+"${extra[@]}"} < "$payload" 2>&1 >"$T/stdout") || rc=$?
   out=$(cat "$T/stdout")
 

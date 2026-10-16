@@ -39,21 +39,21 @@ build() {
 cls() { bash "$1" classify "$2" "$(git -C "$2" rev-parse main)"; }
 
 # AC1: md-only + "migrate" subject -> inert (the fix)
-F=/tmp/cls-md; build "$F" md "migrate eval + tool dialects"
+F=${TMPDIR:-/tmp}/cls-md; build "$F" md "migrate eval + tool dialects"
 [ "$(cls "$LIB" "$F")" = inert ] && pass "md-only 'migrate' diff -> inert" || fail "md-only 'migrate' should be inert, got $(cls "$LIB" "$F")"
 
 # AC3a: code + "migrate" subject -> stateful (real signal preserved)
-F=/tmp/cls-codemig; build "$F" code "migrate the database schema"
+F=${TMPDIR:-/tmp}/cls-codemig; build "$F" code "migrate the database schema"
 [ "$(cls "$LIB" "$F")" = stateful ] && pass "code+'migrate' diff -> stateful (preserved)" || fail "code+'migrate' should be stateful, got $(cls "$LIB" "$F")"
 
 # AC3b: code-only, no keywords -> behavioral
-F=/tmp/cls-code; build "$F" code "tweak the helper"
+F=${TMPDIR:-/tmp}/cls-code; build "$F" code "tweak the helper"
 [ "$(cls "$LIB" "$F")" = behavioral ] && pass "code-only diff -> behavioral" || fail "code-only should be behavioral, got $(cls "$LIB" "$F")"
 
 # AC2 negative control: a lib with the inert-FIRST block STRIPPED classifies md-only 'migrate'
 # as stateful (the bug). History-independent: construct the pre-fix lib from the CURRENT one
 # (awk the inert-FIRST block out), so this stays valid even after the fix is merged to master.
-F=/tmp/cls-md   # reuse the md-only 'migrate' fixture
+F=${TMPDIR:-/tmp}/cls-md   # reuse the md-only 'migrate' fixture
 # The stripped copy MUST live beside the real lib: proof-ledger.sh resolves its siblings
 # (lib/telemetry/kit-log-dir.sh) relative to its own path, so a copy in /tmp aborts with
 # FATAL before it can classify anything. That dependency arrived after this test was

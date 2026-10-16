@@ -308,15 +308,15 @@ rm -f "$T13/AGENTS.before" "$T13/CLAUDE.before" "$T13/CLAUDE.orig"
 T14="$(newrepo)"
 printf 'AGENTS-CONTENT\n' > "$T14/AGENTS.md"
 printf 'CLAUDE-CONTENT-NOT-A-POINTER\n' > "$T14/CLAUDE.md"
-if bash lib/adopt.sh --single-source "$T14" >/dev/null 2>/tmp/single-source-t14.err; then
+if bash lib/adopt.sh --single-source "$T14" >/dev/null 2>${TMPDIR:-/tmp}/single-source-t14.err; then
   no "--single-source should refuse when AGENTS.md and CLAUDE.md both exist and differ"
 elif grep -q AGENTS-CONTENT "$T14/AGENTS.md" && grep -q CLAUDE-CONTENT-NOT-A-POINTER "$T14/CLAUDE.md" \
-  && grep -q 'AGENTS.md' /tmp/single-source-t14.err && grep -q 'CLAUDE.md' /tmp/single-source-t14.err; then
+  && grep -q 'AGENTS.md' ${TMPDIR:-/tmp}/single-source-t14.err && grep -q 'CLAUDE.md' ${TMPDIR:-/tmp}/single-source-t14.err; then
   ok "--single-source refuses (exit 1, writes nothing) when both files exist and differ, naming both"
 else
   no "--single-source did not refuse cleanly on a real conflict"
 fi
-rm -f /tmp/single-source-t14.err
+rm -f ${TMPDIR:-/tmp}/single-source-t14.err
 
 # 22. Neither exists -> AGENTS.md is the pointer alone, CLAUDE.md the one-line import, exit 0.
 T15="$(newrepo)"

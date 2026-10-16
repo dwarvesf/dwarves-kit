@@ -40,7 +40,7 @@ make_fixture() {
 base(){ git -C "$1" rev-parse HEAD; }
 gate(){ bash "$LIB" check "$1" "$(base "$1")" vf-vis >/dev/null 2>&1; }   # 0 = ACCEPT, non-0 = BLOCK
 
-F=/tmp/vf-vis-gate
+F=${TMPDIR:-/tmp}/vf-vis-gate
 make_fixture "$F" image-real;     gate "$F" && pass "real committed image accepted"           || fail "real image should ACCEPT but BLOCKED"
 make_fixture "$F" image-dangling; gate "$F" && fail "dangling image should BLOCK but ACCEPTED" || pass "dangling image BLOCKED (fix #1)"
 make_fixture "$F" text;           gate "$F" && pass "text run-table still accepted (regression)" || fail "text run-table should ACCEPT but BLOCKED"
