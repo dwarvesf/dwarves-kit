@@ -74,12 +74,22 @@ fi
 backlog="${BACKLOG_STAGE_BACKLOG-$(hu_join "$root" _meta/BACKLOG.md)}"
 staging="${BACKLOG_STAGE_STAGING-$(hu_join "$root" _meta/backlog-staging.md)}"
 
+argv_has() { local f=$1 a; shift; for a in "$@"; do [ "$a" = "$f" ] && return 0; done; return 1; }
+arg_after() { # arg_after <flag> <args...>: the argument after the first <flag>, or empty
+  local flag=$1 a seen=0; shift
+  for a in "$@"; do
+    if [ "$seen" = 1 ]; then printf '%s' "$a"; return 0; fi
+    [ "$a" = "$flag" ] && seen=1
+  done
+  return 0
+}
 truthy_env() { local v; v=$(printf '%s' "${1:-}" | tr '[:upper:]' '[:lower:]' | sed 's/^[[:space:]]*//; s/[[:space:]]*$//'); case "$v" in 1|true|yes|on) return 0 ;; esac; return 1; }
 
 # --surface: one line when candidates wait. Fast and local, no model call.
 for a in "$@"; do
   if [ "$a" = "--surface" ]; then
     [ -f "$staging" ] || exit 0
+    iconv -f UTF-8 -t UTF-8 "$staging" >/dev/null 2>&1 || exit 0   # the Python reads it as text and crashes on invalid UTF-8
     n=$(LC_ALL=C tr '\r' '\n' < "$staging" 2>/dev/null | LC_ALL=C grep -c '^## \[staged\]')
     if [ "${n:-0}" -gt 0 ]; then
       s=s; [ "$n" = 1 ] && s=""
@@ -104,22 +114,26 @@ Include ONLY items with explicit forward intent (add to backlog, we should, let'
 
 '
 
-# run_extractor <prompt-file> <out-file>: the extractor command with the prompt on stdin, a 120 s
-# timeout, stdout kept whatever the exit status. Returns 1 on a command string shlex refuses.
+# run_extractor <prompt-file> <out-file>: the extractor command with the prompt on stdin and a 120 s
+# timeout. Its stdout is kept whatever its exit status, but a timed-out run's stdout is thrown away,
+# as subprocess.run does. Returns 1 on a command string shlex refuses or one that holds no command
+# (both crash the Python).
 run_extractor() {
   local cmd="${BACKLOG_STAGE_EXTRACTOR:-claude -p --model haiku --setting-sources project}"
   shlex_split "$cmd" || return 1
+  [ "${#SHLEX_ARGV[@]}" -gt 0 ] || return 1
   : > "$2"
   HU_STDIN="$1" hu_run_capture 120 "$2" "${SHLEX_ARGV[@]}"
+  [ ! -e "$2.timedout" ] || : > "$2"
   return 0
 }
 
-# stage_from_text <text> <date> <backlog> <staging>: the slow half. The extractor call, dedup
+# stage_from_text <text-file> <date> <backlog> <staging>: the slow half. The extractor call, dedup
 # against the board and the staging buffer, and the append. Returns 1 on a crash shape.
 stage_from_text() {
-  local text=$1 date=$2 bl=$3 st=$4 pf of arr res nblocks header out
+  local textfile=$1 date=$2 bl=$3 st=$4 pf of arr res nblocks header out
   pf="$W/prompt"; of="$W/out"
-  printf '%s%s' "$PROMPT_HEAD" "$text" > "$pf"
+  { printf '%s' "$PROMPT_HEAD"; cat "$textfile"; } > "$pf"
   run_extractor "$pf" "$of" || return 1
   iconv -f UTF-8 -t UTF-8 "$of" >/dev/null 2>&1 || return 1
   jq -L "$JQLIB" -R -s -c "$LIB"'
@@ -166,22 +180,22 @@ stage_from_text() {
 
 readable() { [ -f "$1" ] && [ -r "$1" ] && printf '%s' "$1" || printf '/dev/null'; }
 
-# --staged-run <payload-file>: the detached child. Reads the handed-off {text, date, backlog,
-# staging}, stages, and always removes the payload file.
-if [ "${1:-}" = "--staged-run" ]; then
-  pf="${2:-}"
+# --staged-run <payload-file> (anywhere in argv): the detached child. Reads the handed-off
+# {text, date, backlog, staging}, stages, and always removes the payload file.
+if argv_has --staged-run "$@"; then
+  pf=$(arg_after --staged-run "$@")
   if [ -n "$pf" ] && [ -f "$pf" ]; then
-    # all four keys must be present, as the Python indexes them before it calls anything
-    fields=$(jq -j 'if type == "object" and has("text") and has("date") and has("backlog") and has("staging")
-                       and (.text | type) == "string" and (.backlog | type) == "string" and (.staging | type) == "string"
-                    then .text, "\u0001", (.date | if type == "string" then . else tostring end), "\u0001", .backlog, "\u0001", .staging, "x"
-                    else error end' "$pf" 2>/dev/null) && {
-      fields=${fields%x}
-      text=${fields%%$'\001'*}; fields=${fields#*$'\001'}
-      date=${fields%%$'\001'*}; fields=${fields#*$'\001'}
-      bl=${fields%%$'\001'*}; st=${fields#*$'\001'}
-      stage_from_text "$text" "$date" "$bl" "$st" || true
-    }
+    # all four keys must be present, as the Python indexes them before it calls anything; the
+    # file is read as Python reads it (no BOM, valid UTF-8). Each field goes to its own file or
+    # variable: the text can hold any byte a separator would be.
+    if hu_utf8_ok "$pf" && jq -e -L "$JQLIB" 'type == "object" and has("text") and has("date") and has("backlog") and has("staging")
+         and (.text | type) == "string" and (.backlog | type) == "string" and (.staging | type) == "string"' "$pf" >/dev/null 2>&1; then
+      jq -j '.text' "$pf" > "$W/text"
+      date=$(jq -j -L "$JQLIB" 'include "staging-format"; .date | sf_pystr' "$pf")
+      bl=$(jq -j '.backlog' "$pf"; printf x); bl=${bl%x}
+      st=$(jq -j '.staging' "$pf"; printf x); st=${st%x}
+      stage_from_text "$W/text" "$date" "$bl" "$st" || true
+    fi
     { rm -f "$pf"; } 2>/dev/null
   fi
   exit 0
@@ -200,17 +214,19 @@ fields=$(printf '%s' "$INPUT" | jq -L "$JQLIB" -rnj "$LIB"'
   | if ([inputs] | length) > 0 or ($o | type) != "object" then error
     else ($o | sf_get("transcript_path"; null)) as $tp
       | if ($tp | truthy | not) then error
-        elif ($tp | type) != "string" then error
-        else $tp, "\u0001", (($o | sf_get("_today"; null)) | if truthy then sf_pystr else "" end), "x" end
+        else (if ($tp | type) != "string" then "\u0002" else $tp end), "\u0001", (($o | sf_get("_today"; null)) | if truthy then sf_pystr else "" end), "x" end
     end' 2>/dev/null) || exit 0
 fields=${fields%x}
 tp=${fields%%$'\001'*}; today=${fields#*$'\001'}
+# a truthy transcript_path that is not a string passes the throttle and then crashes the Python
+badpath=0; [ "$tp" = $'\002' ] && badpath=1
 
 default_state=~/.claude/dwarves-kit/state/backlog-stage
 state_dir="${BACKLOG_STAGE_STATE_DIR-$default_state}"
 
 hu_throttled "$state_dir" last-run "$(hu_int "${BACKLOG_STAGE_MIN_INTERVAL-3600}" 3600)" && exit 0
 
+[ "$badpath" = 0 ] || exit 0
 max=$(hu_int "${BACKLOG_STAGE_MAXCHARS-12000}" x); [ "$max" != x ] || exit 0
 
 # The transcript text: the text blocks of every user and assistant entry, newline-joined, the
@@ -250,17 +266,25 @@ if [ "${BACKLOG_STAGE_PREFILTER-1}" != "0" ]; then
 fi
 
 date=${today:-$(date +%Y-%m-%d)}
+printf '%s' "$text" > "$W/text"
 
 if truthy_env "${BACKLOG_STAGE_SYNC:-}"; then
-  stage_from_text "$text" "$date" "$backlog" "$staging" || true
+  stage_from_text "$W/text" "$date" "$backlog" "$staging" || true
   exit 0
 fi
 
-# Detach: hand the work to a child in its own process group and return at once.
-{ mkdir -p "$state_dir" && jq -n -c --arg text "$text" --arg date "$date" --arg b "$backlog" --arg s "$staging" \
-    '{text: $text, date: $date, backlog: $b, staging: $s}' > "$state_dir/payload-$$.json"; } 2>/dev/null || exit 0
-set -m
-nohup bash "$SELF" --staged-run "$state_dir/payload-$$.json" </dev/null >/dev/null 2>&1 &
-set +m
-echo "backlog-stage: fired detached (candidates land in $staging after this hook returns)" >&2
+# Detach: hand the work to a child in its own process group and return at once. The payload is
+# built from files (the text can be megabytes) and moved into place only once it is whole.
+pf="$state_dir/payload-$$.json"
+if mkdir -p "$state_dir" 2>/dev/null \
+   && jq -n -c --rawfile text "$W/text" --arg date "$date" --arg b "$backlog" --arg s "$staging" \
+        '{text: $text, date: $date, backlog: $b, staging: $s}' > "$pf.tmp" 2>/dev/null \
+   && mv -f "$pf.tmp" "$pf" 2>/dev/null; then
+  # bash can print "child setpgid: Operation not permitted" when the child execs before the
+  # parent sets its group; the group is set either way, so the shell's own message is dropped.
+  { set -m; nohup bash "$SELF" --staged-run "$pf" </dev/null >/dev/null 2>&1 & set +m; } 2>/dev/null
+  echo "backlog-stage: fired detached (candidates land in $staging after this hook returns)" >&2
+else
+  { command rm -f -- "$pf.tmp"; } 2>/dev/null
+fi
 exit 0

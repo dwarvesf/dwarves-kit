@@ -220,9 +220,7 @@ add surface-sweep-config-absent "$(E)" 'RAW:' "$(S cwd/_meta/backlog-staging.md 
 add surface-flag-anywhere "$(E)" 'RAW:' "$(S cwd/_meta/backlog-staging.md $'## [staged] A\n')" '[]' '["--x","--surface"]'
 
 # --- classes the intake-sweep review found, applied here ---
-add crash-transcript-invalid-utf8 "$(e "$EJ")" "$P" "$(S cwd/t.jsonl "$(printf '{"type":"user","message":{"content":[{"type":"text","text":"we should x"}]}}\n{"type":"user","message":{"content":[{"type":"text","text":"bad \xff byte"}]}}\n')")"
 add transcript-bom-first-line-skipped "$(e "$EJ")" "$P" "$(S cwd/t.jsonl "$(printf '\xef\xbb\xbf')"$'{"type":"user","message":{"content":[{"type":"text","text":"we should first"}]}}\n{"type":"user","message":{"content":[{"type":"text","text":"we should second"}]}}\n')"
-add crash-model-output-invalid-utf8 "$(e '')" "$P" "$(S cwd/t.jsonl "$T1" home/ext-out.txt "$(printf '[{"title":"bad \xff byte"}]')")"
 add model-output-bom-is-fine "$(e '')" "$P" "$(S cwd/t.jsonl "$T1" home/ext-out.txt "$(printf '\xef\xbb\xbf[{"title":"After BOM"}]')")"
 add dedup-board-cr-line-breaks "$(e '[{"title":"Add retry to uploader"},{"title":"Fresh one"}]')" "$P" "$(S cwd/t.jsonl "$T1" cwd/_meta/BACKLOG.md $'| ID-1 | Add retry to uploader | n |\r| ID-2 | Other | n |\r')"
 add dedup-board-vt-is-not-a-line-break "$(e '[{"title":"Add retry to uploader"},{"title":"Second row"}]')" "$P" "$(S cwd/t.jsonl "$T1" cwd/_meta/BACKLOG.md $'| ID-1 | Add retry to uploader | n |\x0b| ID-2 | Second row | n |\x0c')"
@@ -232,4 +230,23 @@ add throttle-interval-huge "$(e "$EJ" '"BACKLOG_STAGE_MIN_INTERVAL":"99999999999
 add surface-cr-only-lines "$(E)" 'RAW:' "$(S cwd/_meta/backlog-staging.md $'## [staged] A\r## [staged] B\r## [rejected] C\r')" '[]' '["--surface"]'
 add staged-run-text-not-string "$(e "$EJ")" 'RAW:' "$(S home/pf.json '{"text":5,"date":"d","backlog":"@CWD@/b.md","staging":"@CWD@/s.md"}')" '["cwd/s.md","home/pf.json"]' '["--staged-run","@HOME@/pf.json"]'
 add staged-run-date-number "$(e "$EJ")" 'RAW:' "$(S home/pf.json '{"text":"we should x","date":20260102,"backlog":"@CWD@/b.md","staging":"@CWD@/s.md"}')" '["cwd/s.md","home/pf.json"]' '["--staged-run","@HOME@/pf.json"]'
+
+# --- found by the fresh review of this port ---
+add crash-transcript-invalid-utf8 "$(e "$EJ")" "$P" "$(S cwd/t.jsonl 'base64:eyJ0eXBlIjoidXNlciIsIm1lc3NhZ2UiOnsiY29udGVudCI6W3sidHlwZSI6InRleHQiLCJ0ZXh0Ijoid2Ugc2hvdWxkIHgifV19fQp7InR5cGUiOiJ1c2VyIiwibWVzc2FnZSI6eyJjb250ZW50IjpbeyJ0eXBlIjoidGV4dCIsInRleHQiOiJiYWQg/yBieXRlIn1dfX0K')"
+add crash-model-output-invalid-utf8 "$(e '')" "$P" "$(S cwd/t.jsonl "$T1" home/ext-out.txt 'base64:W3sidGl0bGUiOiJiYWQg/yBieXRlIn1d')"
+add surface-staging-not-utf8 "$(E)" 'RAW:' "$(S cwd/_meta/backlog-staging.md 'base64:IyMgW3N0YWdlZF0gRWFybGllciD/IHRpdGxlCg==')" '[]' '["--surface"]'
+add crash-staging-not-utf8-after-model-call "$(e "$EJ")" "$P" "$(S cwd/t.jsonl "$T1" cwd/_meta/backlog-staging.md 'base64:IyMgW3N0YWdlZF0gRWFybGllciD/IHRpdGxlCg==')"
+add soh-in-transcript-text-sync "$(e "$EJ")" "$P" "$(S cwd/t.jsonl "$(TR $'we should a\x01b and \x01\x01 c' 'ok')")"
+add soh-in-transcript-text-detached "$(e "$EJ" '"BACKLOG_STAGE_SYNC":"0"')" "$P" "$(S cwd/t.jsonl "$(TR $'we should a\x01b and \x01\x01 c' 'ok')")" '["cwd/_meta/backlog-staging.md","home/prompt.txt","home/prompt.txt.size"]' '[]' '{}' '["home/bs/payload-*.json"]'
+add soh-in-staged-run-payload "$(e "$EJ")" 'RAW:' "$(S home/pf.json '{"text":"we should a\u0001b \u0001\u0001 c","date":"d","backlog":"@CWD@/b.md","staging":"@CWD@/s.md"}')" '["cwd/s.md","home/prompt.txt","home/prompt.txt.size","home/pf.json"]' '["--staged-run","@HOME@/pf.json"]'
+add payload-transcript-path-number-passes-throttle-then-crashes "$(e "$EJ" '"BACKLOG_STAGE_MIN_INTERVAL":"3600"')" '{"transcript_path":5}' '{}' '["cwd/_meta/backlog-staging.md","home/bs/last-run"]'
+add payload-transcript-path-true-passes-throttle-then-crashes "$(e "$EJ" '"BACKLOG_STAGE_MIN_INTERVAL":"3600"')" '{"transcript_path":true}' '{}' '["home/bs/last-run"]'
+add staged-run-flag-not-first "$(e "$EJ")" 'RAW:' "$(S cwd/t.jsonl "$T1" home/pf.json "$PF")" '["cwd/_meta/backlog-staging.md","home/pf.json"]' '["--other","--staged-run","@HOME@/pf.json"]'
+add staged-run-date-null "$(e "$EJ")" 'RAW:' "$(S home/pf.json '{"text":"we should x","date":null,"backlog":"@CWD@/b.md","staging":"@CWD@/s.md"}')" '["cwd/s.md","home/pf.json"]' '["--staged-run","@HOME@/pf.json"]'
+add staged-run-date-true "$(e "$EJ")" 'RAW:' "$(S home/pf.json '{"text":"we should x","date":true,"backlog":"@CWD@/b.md","staging":"@CWD@/s.md"}')" '["cwd/s.md","home/pf.json"]' '["--staged-run","@HOME@/pf.json"]'
+add staged-run-payload-bom "$(e "$EJ")" 'RAW:' "$(S home/pf.json 'base64:77u/eyJ0ZXh0Ijoid2Ugc2hvdWxkIHgiLCJkYXRlIjoiZCIsImJhY2tsb2ciOiIiLCJzdGFnaW5nIjoiIn0=')" '["cwd/s.md","home/pf.json"]' '["--staged-run","@HOME@/pf.json"]'
+add staged-run-payload-invalid-utf8 "$(e "$EJ")" 'RAW:' "$(S home/pf.json 'base64:eyJ0ZXh0Ijoid2Ugc2hvdWxkIP8iLCJkYXRlIjoiZCIsImJhY2tsb2ciOiJAQ1dEQC9iLm1kIiwic3RhZ2luZyI6IkBDV0RAL3MubWQifQ==')" '["cwd/s.md","home/pf.json","home/prompt.txt"]' '["--staged-run","@HOME@/pf.json"]'
+add crash-extractor-blank-command "$(e "$EJ" '"BACKLOG_STAGE_EXTRACTOR":"   "')" "$P" "$(S cwd/t.jsonl "$T1")"
+add dedup-board-unit-separator-lead "$(e '[{"title":"Add retry to uploader"},{"title":"Fresh one"}]')" "$P" "$(S cwd/t.jsonl "$T1" cwd/_meta/BACKLOG.md "$(printf '\x1f| ID-1 | Add retry to uploader | n |\n')")"
+add extractor-timeout-discards-stdout "$(e "$EJ" '"BACKLOG_STAGE_EXTRACTOR":"bash @HOME@/ext-hang.sh","PATH":"@HOME@/shim:@PATH@"')" "$P" "$(S cwd/t.jsonl "$T1" home/ext-hang.sh $'#!/bin/sh\ncat > "$EXT_PROMPT_FILE"\nprintf \'%s\' "$EXT_JSON"\n/bin/sleep 130\n' home/shim/sleep $'#!/bin/sh\nexec /bin/sleep 1\n')"
 echo "wrote $(wc -l < "$OUT" | tr -d ' ') cases"

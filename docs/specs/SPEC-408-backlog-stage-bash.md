@@ -1,9 +1,9 @@
 # SPEC-408: backlog-stage runs as bash plus jq
 
-**Status:** DRAFT
+**Status:** VALIDATED, revision 2 (round 1 NEEDS REVISION folded; see Decision Log)
 Lane: full
 Type: spec-refactor
-**Proof:** `docs/verification/backlog-stage-bash.md`; `tests/test-backlog-stage-parity.sh`, `tests/test-kit-foldin-hooks.sh`, `tests/test-intake-sweep.sh`.
+**Proof:** `docs/verification/backlog-stage-bash.md`; `tests/test-backlog-stage-parity.sh`, `tests/test-kit-foldin-hooks.sh`, `tests/test-intake-sweep.sh`, `tests/test-hook-util.sh`.
 References: `hooks/backlog-stage.py` and its shim at `b9306b37` (the behavior to reproduce); `docs/specs/SPEC-407-intake-sweep-bash.md` (the grammar twin and the shlex splitter this port reuses); `docs/specs/SPEC-406-context-hints-bash.md`; `tests/lib/hook-parity.sh`.
 
 ## Problem
@@ -18,16 +18,16 @@ References: `hooks/backlog-stage.py` and its shim at `b9306b37` (the behavior to
 |---|---|
 | Exit code | always 0. A shape the Python crashed on stages nothing and prints nothing; the throttle stamp it had already written stays |
 | Opt-in | unless `$BACKLOG_STAGE_AUTO` is exactly `1`, `true`, `yes`, or `on` (lowercase, not trimmed), exit 0 with no output, whatever the arguments. The detached child inherits the variable from its parent, so it passes the gate too |
-| Surface | with `--surface` anywhere in the arguments: run `hooks/intake-sweep.sh` first (its output comes first), then, when `$BACKLOG_STAGE_STAGING` (default `<root>/_meta/backlog-staging.md`) is a file, count its lines that start with `## [staged]` and print `📋 N backlog candidate(s) staged in <staging>.` when N is not zero. Nothing else runs |
+| Surface | with `--surface` anywhere in the arguments: run `hooks/intake-sweep.sh` first (its output comes first), then, when `$BACKLOG_STAGE_STAGING` (default `<root>/_meta/backlog-staging.md`) is a valid UTF-8 file (an invalid one prints nothing), count its lines (a lone `\r` ends a line) that start with `## [staged]` and print `📋 N backlog candidate(s) staged in <staging>.` when N is not zero. Nothing else runs |
 | Root | `$REPO_ROOT` when non-empty, else `git rev-parse --show-toplevel`, else the physical cwd |
-| Stdin | exactly one JSON object with a truthy string `transcript_path`; anything else (empty, malformed, trailing data, a BOM, a list) exits 0 with no throttle stamp. A lone high surrogate escape is accepted, as in Python |
+| Stdin | exactly one JSON object with a truthy `transcript_path`; anything else (empty, malformed, trailing data, a BOM, a list, a missing or falsy path) exits 0 with no throttle stamp. A truthy `transcript_path` that is not a string passes the throttle (the stamp is written) and then ends the run. A lone high surrogate escape is accepted, as in Python |
 | Throttle | `$BACKLOG_STAGE_MIN_INTERVAL` as an integer (blanks and a sign allowed), default 3600 when unset or not an integer; zero or negative turns it off. Otherwise the stamp `<state dir>/last-run`: when it exists and is younger than the interval, exit 0; else create it and go on. State dir `$BACKLOG_STAGE_STATE_DIR` when SET (empty means the cwd and the directory cannot be created), else `~/.claude/dwarves-kit/state/backlog-stage`. The stamp is written before the transcript is read |
-| Transcript text | `$BACKLOG_STAGE_MAXCHARS` (default 12000; an integer with blanks and a sign allowed; any other value ends the run). From the file at `transcript_path` (a missing or unreadable file is empty text): every non-blank line that parses as JSON; a line that does not parse is skipped, a line that parses to a non-object ends the run. An entry whose `type` is `user` or `assistant` contributes the `text` of each block in `message.content` that is an object with `type` `text` and a truthy `text`, in order, newline-joined; a `message` that is truthy and not an object, a `content` that is a number or `true`, or a non-string `text` ends the run. A `content` that is a string or an object contributes nothing. The last MAXCHARS characters are kept when the text is longer (zero keeps everything; a negative value drops that many from the front). A text with no non-blank character ends the run |
+| Transcript text | `$BACKLOG_STAGE_MAXCHARS` (default 12000; an integer with blanks and a sign allowed, clamped past 18 digits; any other value ends the run). From the file at `transcript_path` (a missing or unreadable file is empty text; a file that is not valid UTF-8 ends the run): every non-blank line that parses as JSON (a first line that starts with a BOM does not); a line that does not parse is skipped, a line that parses to a non-object ends the run. An entry whose `type` is `user` or `assistant` contributes the `text` of each block in `message.content` that is an object with `type` `text` and a truthy `text`, in order, newline-joined; a `message` that is truthy and not an object, a `content` that is a number or `true`, or a non-string `text` ends the run. A `content` that is a string or an object contributes nothing. The last MAXCHARS characters are kept when the text is longer (zero keeps everything; a negative value drops that many from the front). A text with no non-blank character ends the run |
 | Pre-filter | unless `$BACKLOG_STAGE_PREFILTER` is exactly `0`, a text with none of the forward-intent phrases (`todo`, `to-do`, `backlog`, `we should`, `i should`, `should we`, `let's`, `lets`, `next time`, `follow up`, `follow-up`, `followup`, `remind me`, `reminder`, `need to`, `have to`, `going to`, `gonna`, `plan to`, `want to`, `in the future`, `revisit`, `circle back`, `action item`, `down the line`, `later on`, `come back to`, `for later`, as whole words, case-insensitive) ends the run before the model call |
-| Date | `_today` from the payload when truthy (Python's `str()` of it), else today's local date |
+| Date | `_today` from the payload when truthy (Python's `str()` of a scalar: `None`, `True`, a decimal integer), else today's local date |
 | Run | `$BACKLOG_STAGE_SYNC` truthy (`1`, `true`, `yes`, `on`, trimmed, any case): stage inline. Otherwise write `{text, date, backlog, staging}` to `<state dir>/payload-<pid>.json`, start `--staged-run <file>` in the background in its own process group, print `backlog-stage: fired detached (candidates land in <staging> after this hook returns)` on stderr, and return. A state dir that cannot be created means nothing runs and nothing prints |
-| `--staged-run` | reads the payload file, stages from it, and always removes the file (a missing, corrupt, or incomplete file included). The file must be an object with all four keys, else nothing is staged and no model call is made. No file argument or a missing file does nothing |
-| Extractor | `$BACKLOG_STAGE_EXTRACTOR` when non-empty, else `claude -p --model haiku --setting-sources project`, split like Python's `shlex.split` and run with the prompt on stdin, a 120 s timeout, its stdout kept whatever its exit status. A command string shlex refuses ends the run |
+| `--staged-run` | `--staged-run` anywhere in the arguments; the file is the next argument. It reads the payload file, stages from it, and always removes the file (a missing, corrupt, or incomplete file included). The file must be valid UTF-8 without a BOM and an object with all four keys (`text`, `backlog`, `staging` strings, `date` any value, printed as `str()` does), else nothing is staged and no model call is made. No file argument or a missing file does nothing |
+| Extractor | `$BACKLOG_STAGE_EXTRACTOR` when non-empty, else `claude -p --model haiku --setting-sources project`, split like Python's `shlex.split` and run with the prompt on stdin and a 120 s timeout. Its stdout is kept whatever its exit status, except that a run that times out is killed and its stdout is thrown away. A command string shlex refuses, or one with no words in it, ends the run; so does output that is not valid UTF-8 |
 | Prompt | the fixed head (`You extract FORWARD-LOOKING work-items ...Transcript follows:` and a blank line) followed by the transcript text, byte for byte |
 | Model output | the first balanced `[...]` of the output, counting brackets with no regard for strings, parsed as JSON; no `[`, no balance, a parse error, or a non-list means no candidates. No candidates ends the run |
 | Dedup | against `$BACKLOG_STAGE_BACKLOG` (default `<root>/_meta/BACKLOG.md`) rows `\| ID-N \| Item \|` and the headings `## [state] title` of `$BACKLOG_STAGE_STAGING`, matched line by line; a set-but-empty path is the empty path. A candidate that is not an object, has an empty normalized title, or whose normalized title is known is skipped; each staged title joins the known set |
@@ -71,7 +71,7 @@ The transcript walk is one jq program over the raw lines that mirrors the Python
 
 | Task | Files | Acceptance |
 |---|---|---|
-| T1: harness | `tests/lib/hook-parity.sh`, `tests/test-hook-parity-lib.sh` | `settle`, and `@HOME@`/`@CWD@` in seeds and args, work and are self-tested |
+| T1: harness | `tests/lib/hook-parity.sh`, `tests/test-hook-parity-lib.sh` | `settle`, `@HOME@`/`@CWD@` in seeds and args, `@PATH@` in env values, and `base64:` seeds work and are self-tested |
 | T2: goldens | `tests/fixtures/backlog-stage-parity/` | cases and goldens generated from the Python at `b9306b37` before the port |
 | T3: port | `hooks/backlog-stage.sh`; delete `hooks/backlog-stage.py` | `bash tests/test-backlog-stage-parity.sh` passes; no `python` in the hook |
 | T4: references | `docs/hooks.md`, `docs/test-value-audit.md`, `tests/test-kit-foldin-hooks.sh`, the install and adopt lists | no live doc or test names `backlog-stage.py` as current code |
@@ -93,15 +93,16 @@ Negative controls, through `lib/gate/negctl.sh` with P1 as the test command:
 |---|---|---|
 | NC1 | count brackets to the last `]`, not the matching one | `stage-two-arrays-first-only` |
 | NC2 | read a string `content` as text | `transcript-string-content-ignored`, `transcript-only-string-content` |
-| NC3 | never write the throttle stamp | `throttle-first-run-creates-stamp`, `crash-maxchars-invalid`, `throttle-before-transcript-read` |
+| NC3 | never write the throttle stamp (in `lib/reflect/hook-util.sh`) | `throttle-first-run-creates-stamp`, `crash-maxchars-invalid`, `throttle-before-transcript-read` |
 | NC4 | drop the board dedup | `dedup-board`, `dedup-board-case-and-punctuation` |
 | NC5 | keep the payload file after `--staged-run` | the `staged-run-*` and `detached-*` cases |
 | NC6 | exempt `--staged-run` from the `BACKLOG_STAGE_AUTO` gate | `staged-run-without-auto` |
 | NC7 | skip the forward-intent pre-filter | the `prefilter-miss*` cases |
+| NC8 | print the transcript text with `jq -r` (a trailing newline) | every case that stages, through the prompt's byte count |
 
 ## Verification
 
-P1 to P5 hold and NC1 to NC7 report PASS. `bash tests/run-all.sh --changed` exits 0.
+P1 to P5 hold and NC1 to NC8 report PASS. `bash tests/run-all.sh --changed` exits 0.
 
 ## After state
 
@@ -112,3 +113,4 @@ backlog-stage runs with no Python, on the staging grammar twin. Its prompt, stag
 - Goldens come from the Python hook at `b9306b37`, run through that revision's shim, before the port was written. They include the exact prompt the model was sent, so the transcript walk is pinned byte for byte.
 - The Python swallowed every crash (`|| true`), so a crash case's golden is a silent exit 0 plus whatever the Python had already written.
 - The detached child cannot be a new session without `setsid`; a new process group is the recorded substitute.
+- Revision 2 (round 1 of the fresh review, NEEDS REVISION, 2 critical): the detached payload carried the transcript text through `jq --arg` and split its fields on a control byte, so a U+0001 in the text, or a text past the argument limit, staged nothing or staged to a junk path; the payload is now built from files, each field is read on its own, and the file is moved into place whole. A timed-out extractor's stdout is discarded as `subprocess.run` does (the timeout marker lives in `hook-util.sh`); a blank extractor command, an invalid-UTF-8 transcript, model output, staging file, or payload, a truthy non-string `transcript_path`, a `--staged-run` that is not the first argument, and a `null` or `true` date all follow the Python. The corpus gained the cases (invalid UTF-8 through `base64:` seeds the harness now supports) and the string-content gap is recorded, not fixed.

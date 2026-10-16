@@ -15,7 +15,8 @@
 # hp_run_case <case-json> <hook-cmd...>
 # Runs one case, prints one JSON line: {name, rc, stdout, stderr, log, stray} plus
 # `files` when the case names a `read` list. Optional case fields:
-#   seed  {"home/<path>": text, "cwd/<path>": text}  files written before the run (@HOME@ and @CWD@ expand)
+#   seed  {"home/<path>": text, "cwd/<path>": text}  files written before the run (@HOME@ and @CWD@ expand;
+#         a value starting "base64:" is decoded, for bytes a JSON string cannot hold, invalid UTF-8 included)
 #   read  ["home/<path>", "cwd/<path>"]  files dumped after the run into `files`
 #         (JSON-normalized when they parse, numbers canonical: 1000.0 reads 1000; null when missing)
 #   touch {"home/<path>": <epoch>}  set a seeded file's mtime (a throttle stamp from the past)
@@ -49,7 +50,7 @@ hp_run_case() {
   while IFS= read -r kv; do
     local k="${kv%%=*}" v="${kv#*=}"
     [ -n "${HP_ROOT:-}" ] && v="${v//ROOT/$HP_ROOT}"
-    v="${v//@HOME@/$home}"; v="${v//@CWD@/$cwd}"
+    v="${v//@HOME@/$home}"; v="${v//@CWD@/$cwd}"; v="${v//@PATH@/$PATH}"
     envs+=("$k=$v")
   done < <(jq -r '(.env // {}) | to_entries[] | select(.value != null) | "\(.key)=\(.value)"' <<<"$case_json")
 
@@ -63,8 +64,12 @@ hp_run_case() {
     esac
     mkdir -p "$(dirname "$seed_path")"
     seed_text=$(jq -j --arg k "$seed_key" '.seed[$k], "x"' <<<"$case_json"); seed_text=${seed_text%x}
-    seed_text="${seed_text//@HOME@/$home}"; seed_text="${seed_text//@CWD@/$cwd}"
-    printf '%s' "$seed_text" > "$seed_path"
+    if [ "${seed_text#base64:}" != "$seed_text" ]; then
+      printf '%s' "${seed_text#base64:}" | base64 -d > "$seed_path"   # raw bytes a JSON string cannot hold
+    else
+      seed_text="${seed_text//@HOME@/$home}"; seed_text="${seed_text//@CWD@/$cwd}"
+      printf '%s' "$seed_text" > "$seed_path"
+    fi
     [ "$(head -c 2 "$seed_path")" = "#!" ] && chmod +x "$seed_path"
   done < <(jq -r '(.seed // {}) | keys_unsorted[]' <<<"$case_json")
   local touch_key touch_epoch touch_path

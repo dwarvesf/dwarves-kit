@@ -4,6 +4,7 @@
 {"kind":"board","text":"no table here\n","keys":[]}
 {"kind":"board","text":"| ID-1 | CRLF item | n |\r\n| ID-2 | Second | n |\r\n","keys":["crlf item","second"]}
 {"kind":"board","text":"| ID-1 | Lone CR | n |\r| ID-2 | After CR | n |\r","keys":["after cr","lone cr"]}
+{"kind":"board","text":"\u001f| ID-1 | Unit separator lead | n |\n \u001f| ID-2 |\u001f Spaced \u001f| n |","keys":["spaced","unit separator lead"]}
 {"kind":"board","text":"| ID-1 | Vertical tab | n |\u000b| ID-2 | After VT | n |\f| ID-3 | After FF | n || ID-4 | After NEL | n | | ID-5 | After LS | n |\u001c| ID-6 | After FS | n |","keys":["after ff","after fs","after ls","after nel","after vt","vertical tab"]}
 {"kind":"staging","text":"# Backlog staging\n\n## [staged] Pick a DB\n- Intent: x\n\n## [rejected] Old idea\n- Intent: y\n\n## [promoted ID-9] Shipped one\n- Source: s\n","keys":["old idea","pick a db","shipped one"]}
 {"kind":"staging","text":"## [staged]\n- Intent: x\n\n","keys":["intent x"]}

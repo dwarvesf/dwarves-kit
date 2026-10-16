@@ -127,6 +127,18 @@ got=$(hp_run_case "$c" bash "$FAKE/detach-hook.sh")
 [ "$(jq -r '.files["home/result.txt"]' <<<"$got")" = "done" ] && ok=1 || ok=0
 check "settle waits until the detached child has removed its marker" "$ok"
 
+# --- base64 seeds carry bytes a JSON string cannot, and @PATH@ expands in env values ---
+cat > "$FAKE/bytes-hook.sh" <<'EOS'
+#!/usr/bin/env bash
+cat >/dev/null
+printf '%s' "$(wc -c < "$HOME/raw.bin" | tr -d ' ')"
+printf ' %s' "${SEEN_PATH%%:*}"
+EOS
+c=$(jq -n '{name:"b64", payload:"hi", env:{SEEN_PATH:"@PATH@"}, seed:{"home/raw.bin":"base64:/w=="}}')
+got=$(hp_run_case "$c" bash "$FAKE/bytes-hook.sh")
+[ "$(jq -r '.stdout' <<<"$got")" = "1 ${PATH%%:*}" ] && ok=1 || ok=0
+check "a base64 seed writes raw bytes (one 0xff byte) and @PATH@ expands" "$ok"
+
 # --- rc and stderr pass through ---
 c=$(jq -n '{name:"exit-code", env:{FAKE_EXIT:"7"}, payload:"hi"}')
 got=$(hp_run_case "$c" bash "$FAKE/fake-hook.sh")
