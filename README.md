@@ -313,7 +313,7 @@ Within one spec, tasks run sequentially. Across specs, `/kit:dispatch` fans out 
 | statusline | StatusLine | Shows model, branch, context %, cost, thinking mode |
 | codebase-index | SessionStart (opt-in) | Background-indexes the repo into codebase-memory-mcp |
 
-**Harvest sweep (scheduled capture).** The per-session hook only sees a session that ends or compacts cleanly. The sweep reads transcripts on a schedule instead, so a killed or long-running session is still harvested. `python3 hooks/harvest.py --sweep` reads new claude sessions (plus devin when `harvest.sources` lists it) behind a per-source cursor, extracts learnings and pattern sightings, stages them into sweep ledgers, and writes a wrap-shaped report per run. It builds, pushes, and merges nothing.
+**Harvest sweep (scheduled capture).** The per-session hook only sees a session that ends or compacts cleanly. The sweep reads transcripts on a schedule instead, so a killed or long-running session is still harvested. `bash hooks/harvest.sh --sweep` reads new claude sessions (plus devin when `harvest.sources` lists it) behind a per-source cursor, extracts learnings and pattern sightings, stages them into sweep ledgers, and writes a wrap-shaped report per run. It builds, pushes, and merges nothing.
 
 - `--sweep --dry-run` prints the manifest of what a run would do and changes no cursor, ledger, or report state (only the raw extract cache is written). `--since <iso|epoch>` widens the window. `--status` prints the newest report path, its candidate count, and the queued learning count.
 - `--flush-list` prints every queued learning as one JSON array. `--mark-flushed <row-id> <ref>` marks one routed once a human or the learning-ledger flush has written it to a durable home.

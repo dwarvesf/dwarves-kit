@@ -20,7 +20,7 @@
 
 **FYI:**
 - STATE claude: lag: 1 eligible unread, oldest 3.0h
-- STATE run: 2 learnings queued in sweep ledgers; flush path: python3 hooks/harvest.py --flush-list
+- STATE run: 2 learnings queued in sweep ledgers; flush path: python3 hooks/harvest_sweep.py --flush-list
 
 **Learnings staged:**
 - retry-flaky-login (repeat, tools/retry) -> ledger/dwarvesf__dwarves-kit.md
