@@ -36,7 +36,7 @@ usage() { sed -n '2,16p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; EMITTED=1; 
 
 # Output state, set as the run learns it.
 BACKEND=""; MODEL=""; LATENCY_MS=0; MODE_OUT="shadow"
-NORM=""; PARSED=0; DENIED=0; KEEP=""; DENY_IDX=""; DENY_REASON="guard"; WG_IDX=""; WG_REASON=word_gate
+NORM=""; PARSED=0; DENIED=0; KEEP=""; DENY_IDX=""; DENY_REASON="guard"; DENY_WHY=""; GUARD_WHY=""; WG_IDX=""; WG_REASON=word_gate
 
 # Nothing parsed, so nothing to count. The error comes from the closed set, never from input.
 fail_input() {
@@ -200,11 +200,14 @@ build_public() {
   set +f
 }
 
-# guard_ok <candidate> <hit>: exit 0 when the pair may leave the host (wrap-7b rules).
+# guard_ok <candidate> <hit>: exit 0 when the pair may leave the host (wrap-7b rules). On a
+# denial GUARD_WHY names the layer that stopped it, never any of the text: `cand` (slug shape),
+# `deny_word`, or `hit_not_public` (a hit that is not a kit-public name, malformed names included).
 guard_ok() {
   local cand="$1" hit="$2" w re_cand='^[a-z0-9-]{3,40}$' re_hit='^[A-Za-z0-9._-]{1,64}$' bad=0
-  [[ "$cand" =~ $re_cand ]] || return 1
-  [[ "$hit" =~ $re_hit ]] || return 1
+  GUARD_WHY=""
+  [[ "$cand" =~ $re_cand ]] || { GUARD_WHY=cand; return 1; }
+  [[ "$hit" =~ $re_hit ]] || { GUARD_WHY=hit_not_public; return 1; }
   # deny_words: case-folded substring, so a word errs toward denial. Folding happens in the
   # match itself, with no extra process.
   shopt -s nocasematch
@@ -214,8 +217,9 @@ guard_ok() {
   done
   set +f
   shopt -u nocasematch
-  [ "$bad" = 0 ] || return 1
+  [ "$bad" = 0 ] || { GUARD_WHY=deny_word; return 1; }
   case "$PUBLIC" in *" $hit "*) return 0 ;; esac
+  GUARD_WHY=hit_not_public
   return 1
 }
 
@@ -532,6 +536,7 @@ LOG_BODY='(
   | ($keep | split(" ") | map(select(. != "") | tonumber)) as $kidx
   | ($deny | split(" ") | map(select(. != "") | tonumber)) as $didx
   | ($wgidx | split(" ") | map(select(. != "") | tonumber)) as $wgi
+  | ($dwhy | split(" ") | map(select(. != "") | split("=") | {key: .[0], value: .[1]}) | from_entries) as $dmap
   | $norm.questions as $all
   | [ ( $kidx[] as $i | $all[$i] as $q
       | ($out.answers[$q.id] // {}) as $a
@@ -542,7 +547,7 @@ LOG_BODY='(
     ( $didx[] as $i
       | {ts: (now | todate), backend: $backend, model: $model, point: $point, index: $i,
          latency_ms: $lat, chosen: "", error: "egress_denied",
-         reason: (if ($wgi | index($i)) != null then $wgreason else $dreason end), mode: $mode, mode_downgraded: $note} ) ]
+         reason: (if ($wgi | index($i)) != null then $wgreason else ($dmap[($i | tostring)] // $dreason) end), mode: $mode, mode_downgraded: $note} ) ]
   | sort_by(.index) | .[] | tojson )'
 
 # log_target: print the decide.jsonl path, or nothing when the log dir cannot be resolved.
@@ -615,7 +620,7 @@ finalize() {
   local all out target
   target="$(log_target)"
   all="$(jq -r --argjson norm "$NORM" --arg keep "${KEEP# }" --arg deny "${DENY_IDX# }" \
-    --arg err "$1" --arg resp "${RESP:-}" --arg dreason "$DENY_REASON" --arg wgidx "${WG_IDX# }" --arg wgreason "$WG_REASON" --arg backend "$BACKEND" --arg model "$MODEL" \
+    --arg err "$1" --arg resp "${RESP:-}" --arg dreason "$DENY_REASON" --arg dwhy "${DENY_WHY# }" --arg wgidx "${WG_IDX# }" --arg wgreason "$WG_REASON" --arg backend "$BACKEND" --arg model "$MODEL" \
     --argjson lat "${LATENCY_MS:-0}" --arg mode "$MODE_OUT" --arg point "wrap-7b" \
     --argjson note "${MODE_NOTE:-false}" --argjson criteria "$POINT_WRAP_7B_CRITERIA" \
     -n "$FINAL_PROG$LOG_BODY")" || exit 0
@@ -690,7 +695,7 @@ main() {
   build_public
   local i=0
   while [ "$i" -lt "$PARSED" ]; do
-    if guard_ok "${Q_CAND[$i]}" "${Q_HIT[$i]}"; then KEEP="$KEEP $i"; else DENY_IDX="$DENY_IDX $i"; DENIED=$((DENIED+1)); fi
+    if guard_ok "${Q_CAND[$i]}" "${Q_HIT[$i]}"; then KEEP="$KEEP $i"; else DENY_IDX="$DENY_IDX $i"; DENY_WHY="$DENY_WHY $i=$GUARD_WHY"; DENIED=$((DENIED+1)); fi
     i=$((i+1))
   done
   [ -n "$KEEP" ] || finalize egress_denied
