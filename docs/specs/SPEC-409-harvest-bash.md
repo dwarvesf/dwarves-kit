@@ -86,7 +86,7 @@ Negative controls, through `lib/gate/negctl.sh` with P1 as the test command (NC1
 | NC2 | never apply the fuzzy threshold | the `fuzzy-*` cases |
 | NC3 | ignore the glossary files | the `dedup-glossary-*` cases |
 | NC4 | let one batch stage the same slug twice | `dedup-within-batch` |
-| NC5 | keep the payload file after a detached child | the `detached-*` and `stop-detached-fire` cases |
+| NC5 | keep the payload file after a detached child | the detached, `*-run`, and `stop-detached-fire` cases |
 | NC6 | fire the stop-trigger on every turn | the `stop-*` cases |
 | NC7 | keep a timed-out extractor's stdout | `extractor-timeout-discards-stdout` |
 | NC8 | drop the sweep-child recursion guard | `sweep-child-marker-exits` |

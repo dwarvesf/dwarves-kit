@@ -6,7 +6,7 @@ Answers below were drafted by the lead from the session record, not collected on
 
 ## Metrics
 - Goldens: 171 cases generated from the Python before the port, each with the exact prompt and its byte count
-- Real transcripts: see the verification record
+- Real transcripts: 204 replayed through both hooks with the model stubbed, identical prompts, ledgers, and stderr
 - Fresh review rounds: none; the proof is the corpus, the real-data replay, and the negative controls
 - Negative controls: 9
 
