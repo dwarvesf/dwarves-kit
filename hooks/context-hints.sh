@@ -37,6 +37,13 @@ done
 HERE=$(cd -P "$(dirname "$src")" && pwd)
 
 INPUT=$(cat) || exit 0
+# A BOM before the JSON is a parse error to Python's json.load, so it is one here. A lone high
+# surrogate escape (an emoji cut in half) is a parse error to jq but not to Python: swap it for
+# U+FFFD and parse again.
+case "$INPUT" in $'\xef\xbb\xbf'*) exit 0 ;; esac
+if ! printf '%s' "$INPUT" | jq -e . >/dev/null 2>&1; then
+  INPUT=$(printf '%s' "$INPUT" | jq -Rrs 'gsub("\\\\u[dD][89abAB][0-9a-fA-F]{2}(?!\\\\u[dD][c-fC-F])"; "\\ufffd")' 2>/dev/null) || exit 0
+fi
 
 # Python truthiness, as the original's `or` chains used it.
 FUNCS='
@@ -59,10 +66,12 @@ sid=${sid%x}
 state_dir="${CONTEXT_HINTS_STATE-$HOME/.claude/dwarves-kit/state/context-hints}"
 state_path="${state_dir:+$state_dir/}$sid.json"
 map_path="${CONTEXT_HINTS_SKILLMAP-$HERE/context-hints-skills-map.json}"
-# A file that is missing or unreadable reads as empty, which the program treats as invalid JSON.
+# A file that is missing, unreadable, or starts with a BOM (a parse error to Python) reads as
+# empty, which the program treats as invalid JSON.
+usable() { [ -f "$1" ] && [ -r "$1" ] && [ "$(head -c 3 "$1" | od -An -tx1 | tr -d ' \n')" != efbbbf ]; }
 state_file=$state_path; map_file=$map_path
-[ -f "$state_file" ] && [ -r "$state_file" ] || state_file=/dev/null
-[ -f "$map_file" ] && [ -r "$map_file" ] || map_file=/dev/null
+usable "$state_file" || state_file=/dev/null
+usable "$map_file" || map_file=/dev/null
 
 # One program for the whole decision. It prints the state to write, a separator, a Y or N
 # for "print something", the text, and a closing x. Crash points of the Python (a state file
@@ -78,14 +87,23 @@ def humanize: toint as $s
     else "\($s / 3600 | floor)h\(($s % 3600) / 60 | floor | pad2)m" end;
 def pyfloat: if type == "number" then .
   elif type == "boolean" then (if . then 1 else 0 end)
-  elif type == "string" then (try tonumber catch "VALUE") else "TYPE" end;
+  elif type == "string" then (try (gsub("^\\s+|\\s+$"; "") | tonumber) catch "VALUE") else "TYPE" end;
 def reescape: gsub("(?<c>[\\\\^$.|?*+()\\[\\]{}])"; "\\" + .c);
+# The Python \b: a boundary between a word character (a letter, a digit, or _) and anything else.
+# The Oniguruma \b also counts combining marks as word characters, so a decomposed accent differs,
+# and its lookbehind refuses a case-insensitive match. So find every place the key occurs (a
+# zero-width match, so overlapping ones count), then test the characters either side by hand.
+def isw($cp): $cp != null and ([$cp] | implode | test("^[\\p{L}\\p{N}_]$"));
+def keyword_hit($prompt; $cps; $k):
+  any($prompt | match("(?=(" + ($k | reescape) + "))"; "gi");
+      .offset as $o | ($o + ($k | length)) as $e
+      | (isw(if $o == 0 then null else $cps[$o - 1] end) != isw($cps[$o]))
+        and (isw(if $e == 0 then null else $cps[$e - 1] end) != isw($cps[$e])));
 
 def temporal:
   if $off == "0" then {ok: true, write: null, line: null}
   else
-    ($now | gsub("^\\s+|\\s+$"; "")) as $nr
-    | (if $nr == "" then now else (try ($nr | tonumber) catch null) end) as $t
+    (if $now == "" then now else (try ($now | gsub("^\\s+|\\s+$"; "") | tonumber) catch null) end) as $t
     | if $t == null then {ok: false}
       else
         (try [$state | fromjson] catch null) as $parsed
@@ -120,11 +138,12 @@ def temporal:
     | (if ($prompt | type) != "string" then {crash: true}
        elif ($prompt | test("\\S")) | not then {hints: []}
        else
-         (try [$map | fromjson] catch null) as $m
+         ($prompt | explode) as $cps
+         | (try [$map | fromjson] catch null) as $m
          | if $m == null then {hints: []}
            elif ($m[0] | type) != "object" then {crash: true}
            else {hints: [$m[0] | to_entries[]
-                 | select(.key as $k | $prompt | test("\\b" + ($k | reescape) + "\\b"; "i"))
+                 | select(.key as $k | keyword_hit($prompt; $cps; $k))
                  | "\(.value | pystr) (keyword: \(.key))"]} end
        end) as $h
     | if $h.crash then ($tp.write // ""), "\u0001N"

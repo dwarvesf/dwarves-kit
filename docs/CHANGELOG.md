@@ -4,6 +4,10 @@ All notable changes to dwarves-kit are documented here.
 
 ## [Unreleased]
 
+### COMPAT (contract surfaces, per forge kit-versioning.md)
+- Hook surface (`hooks/context-hints.sh`, PORT, no behavior change intended): the UserPromptSubmit hook runs as bash plus jq; `hooks/context-hints.py` is gone, so the hook no longer needs python3. It was tested on jq 1.7.1 and 1.8.2. Parity with the Python, as its shim surfaced it, is pinned by `tests/test-context-hints-parity.sh` (120 goldens generated from `b9306b37`) and was checked on 1,266 real captured prompts. Recorded divergences, none from a realistic payload: `NaN` or `Infinity` in the payload, state, or map; `CONTEXT_HINTS_NOW` spellings only Python's `float()` accepts (`1_000`, `inf`); characters whose Python `lower()` and Oniguruma case folding disagree (the Kelvin sign, dotted `İ`, the long s); a map value that is a list or object. An upgraded install keeps an orphaned `hooks/context-hints.py` that nothing calls (SPEC-406).
+- Test surface (`tests/lib/hook-parity.sh`): `hp_run_case` gains a `seed` field (files written before the run), a `read` field (files dumped after it), and `@HOME@`/`@CWD@` tokens; the library now runs under bash 3.2.
+
 ### Fixed
 - `wrap land` and `wrap apply` could miss the "already landed" proof about 1 run in 20 on macOS: `_absorbed` set `local LC_ALL=C`, and Homebrew bash 5.3 SIGSEGVs (rc 139) in `setlocale` when the function exit restores `LC_ALL`, so the proof read as empty and land went down the push and merge path. `LC_ALL=C` now reaches git through `env`, never as a bash variable. Showed up as the intermittent red `test-wrap-land` in the nightly regression.
 - `ship-gate` refuses a push whose commits carry a fixture git identity (a no-dot domain such as `x@x`, `t@t.dev`, `example.com`, `.test`) as author, committer or `Co-authored-by`; real, GitHub noreply and bot noreply addresses pass. Cause of the `han <x@x>` commit on PR #930: unknown (not in the tree). Needs an `origin` remote. Opt out with `fixture_identities = false` under `[gate]` in a committed `.kit.toml` (read at the merge base).
