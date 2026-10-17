@@ -37,6 +37,12 @@
 #                                       dispose EVERY phase of the lane's plan in one call
 #                                       (`ship` may be omitted: the push records it); refuses
 #                                       and writes NOTHING on any invalid disposition
+#   record-batch <rid> <lane> [--evidence-default "<text>"] <phase>=<ran|skipped|override>:<evidence> ...
+#                                       record the named phases in one call, each with its own
+#                                       evidence: start (no ledger) or start --amend (ledger exists),
+#                                       record/override each phase, then check <lane> <rid> and exit
+#                                       with its status; refuses and writes NOTHING on an unknown
+#                                       phase, a bad state, or empty evidence
 #   inherit  <rid> full --from <parent-rid>
 #                                       write one override line per spec-level gate (think..test-plan)
 #                                       whose LAST state in the parent ledger is ran; refuses and
@@ -629,6 +635,47 @@ _plan_record_apply() {
   done
 }
 
+# Dry-run the parsed disposition set (the _pr_* globals) against a scratch copy of this rid's
+# ledger, then check the real ledger did not move. Returns 0 only for a clean, undrifted replay;
+# any refusal writes nothing to the real ledger. Shared by plan-record and record-batch.
+# Usage: _pr_dry_run <rid> <verb-name-for-messages>
+_pr_dry_run() {
+  local rid="$1" who="$2"
+  local scratch; scratch="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || { echo "$who: cannot create a scratch dir for the dry run" >&2; return 1; }
+  # The scratch dir holds a copy of the real ledger; an interrupt must not strand it in
+  # TMPDIR. The trap runs at script exit, after this function's locals are gone, so it
+  # reads a script-scope name (a local here made every refusal exit 1 under set -u).
+  _pr_scratch="$scratch"
+  trap 'rm -rf "${_pr_scratch:-}"' EXIT
+  local real stem rc=0
+  real="$(ledger_file "$rid")" || return 1
+  stem="$(basename "$real")"
+  mkdir -p "$scratch/runs"
+  # Two copies: the dry run appends to the one under runs/, the other stays pristine for the
+  # drift check below.
+  if [ -f "$real" ]; then cp "$real" "$scratch/runs/$stem"; cp "$real" "$scratch/orig"; fi
+  # Both roots move together: ledger_append resolves KIT_LEDGER_DIR per call, while
+  # override()'s duplicate-reason guard reads RUNS_DIR through ledger_file().
+  # The subshell inherits the EXIT trap; it must not delete the scratch the parent still compares.
+  ( trap - EXIT; RUNS_DIR="$scratch/runs"; KIT_LEDGER_DIR="$scratch"; _plan_record_apply ) || rc=$?
+  if [ "$rc" -ne 0 ]; then
+    echo "$who: refused; nothing was written to the ledger for '$rid'" >&2
+    return "$rc"
+  fi
+
+  # The dry run validated against a snapshot. A writer that appended to the real
+  # ledger since then (another session's override on the same rid) could make the real
+  # pass fail mid-loop and leave a partial ledger, so refuse when the file moved.
+  if [ -f "$real" ] && ! cmp -s "$real" "$scratch/orig"; then
+    echo "$who: the ledger for '$rid' changed during the dry run; nothing was written, re-run" >&2
+    return 75
+  fi
+  rm -rf "$scratch"; _pr_scratch=""; trap - EXIT
+
+
+  return 0
+}
+
 # plan-record: dispose EVERY phase of a lane's plan in one call. A run that
 # followed its lane needed one record/override call per gate, nine hand-typed calls on a
 # normal-lane prose PR, each one a chance to mistype a phase or forget one.
@@ -710,36 +757,7 @@ plan_record() {
   fi
   [ "$_pr_n" -gt 0 ] || { echo "plan-record: no dispositions given" >&2; return 64; }
 
-  local scratch; scratch="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || { echo "plan-record: cannot create a scratch dir for the dry run" >&2; return 1; }
-  # The scratch dir holds a copy of the real ledger; an interrupt must not strand it in
-  # TMPDIR. The trap runs at script exit, after this function's locals are gone, so it
-  # reads a script-scope name (a local here made every refusal exit 1 under set -u).
-  _pr_scratch="$scratch"
-  trap 'rm -rf "${_pr_scratch:-}"' EXIT
-  local real stem rc=0
-  real="$(ledger_file "$rid")" || return 1
-  stem="$(basename "$real")"
-  mkdir -p "$scratch/runs"
-  # Two copies: the dry run appends to the one under runs/, the other stays pristine for the
-  # drift check below.
-  if [ -f "$real" ]; then cp "$real" "$scratch/runs/$stem"; cp "$real" "$scratch/orig"; fi
-  # Both roots move together: ledger_append resolves KIT_LEDGER_DIR per call, while
-  # override()'s duplicate-reason guard reads RUNS_DIR through ledger_file().
-  # The subshell inherits the EXIT trap; it must not delete the scratch the parent still compares.
-  ( trap - EXIT; RUNS_DIR="$scratch/runs"; KIT_LEDGER_DIR="$scratch"; _plan_record_apply ) || rc=$?
-  if [ "$rc" -ne 0 ]; then
-    echo "plan-record: refused; nothing was written to the ledger for '$rid'" >&2
-    return "$rc"
-  fi
-
-  # The dry run validated against a snapshot. A writer that appended to the real
-  # ledger since then (another session's override on the same rid) could make the real
-  # pass fail mid-loop and leave a partial ledger, so refuse when the file moved.
-  if [ -f "$real" ] && ! cmp -s "$real" "$scratch/orig"; then
-    echo "plan-record: the ledger for '$rid' changed during the dry run; nothing was written, re-run" >&2
-    return 75
-  fi
-  rm -rf "$scratch"; _pr_scratch=""; trap - EXIT
+  _pr_dry_run "$rid" plan-record || return $?
 
   _plan_record_apply || {
     echo "plan-record: the dry run passed but a write failed for '$rid'; inspect with: gate-ledger.sh show $rid" >&2
@@ -759,6 +777,102 @@ plan_record() {
     printf 'check: gaps remain for lane %s (listed above)\n' "$lane"
   fi
   return 0
+}
+
+# record-batch: record several phases of a lane in one call, each with its own evidence. A full-lane
+# build whose design phases ran elsewhere (another repo, another host, an approved design PR)
+# otherwise needs one record/override call per gate. Unlike plan-record, the caller names only
+# the phases that need a line; the closing check() shows what is still open.
+#
+# Writes go through start()/record()/override(), so the ledger format, the grill-skip reason enum
+# and the distinct-override-reason guard apply unchanged. The whole set is replayed against a
+# scratch ledger first (_pr_dry_run), so a refusal writes nothing, START line included. With no
+# ledger yet the run is opened with `start`; with one it is corrected with `start --amend`,
+# carrying over the classified lane, type and repo of the last START line.
+#
+# `--evidence-default` fills any item with no evidence of its own. An `override` item still needs
+# a distinct reason per phase, so a shared default on two overrides is refused (exit 65).
+# The exit code is check()'s: 0 when every required gate of the lane has a ran|override entry.
+# Usage: record-batch <rid> <lane> [--evidence-default "<text>"] <phase>=<ran|skipped|override>[:<evidence>] ...
+record_batch() {
+  local usage="usage: record-batch <rid> <lane> [--evidence-default \"<text>\"] <phase>=<ran|skipped|override>:<evidence> ..."
+  local rid="${1:-}" lane="${2:-}"
+  if [ -z "$rid" ] || [ -z "$lane" ]; then echo "$usage" >&2; return 64; fi
+  shift 2
+  local plan_out; plan_out="$(plan "$lane")" || return 1
+  local plan_phases=" " pline ph
+  while IFS= read -r pline; do
+    ph="$(printf '%s' "$pline" | awk '{print $2}')"
+    [ -n "$ph" ] && plan_phases="$plan_phases$ph "
+  done <<< "$plan_out"
+
+  local default_ev="" item rest state ev
+  local items=()
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --evidence-default)
+        [ $# -ge 2 ] || { echo "record-batch: --evidence-default needs a text argument" >&2; return 64; }
+        default_ev="$(oneline "$2")"; shift 2 ;;
+      *) items+=("$1"); shift ;;
+    esac
+  done
+  [ "${#items[@]}" -gt 0 ] || { echo "record-batch: no <phase>=<state>:<evidence> items given" >&2; echo "$usage" >&2; return 64; }
+
+  _pr_rid="$rid"; _pr_n=0; _pr_kind=(); _pr_phase=(); _pr_reason=()
+  local seen=" "
+  for item in "${items[@]}"; do
+    case "$item" in
+      *=*) ;;
+      *) echo "record-batch: '$item' is not <phase>=<state>[:<evidence>]" >&2; return 64 ;;
+    esac
+    ph="$(normalize_phase "${item%%=*}")"
+    rest="${item#*=}"
+    state="${rest%%:*}"
+    if [ "$state" = "$rest" ]; then ev=""; else ev="${rest#*:}"; fi
+    ev="$(oneline "$ev" | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//')"
+    [ -n "$ph" ] || { echo "record-batch: '$item' has no phase name" >&2; return 64; }
+    case "$plan_phases" in
+      *" $ph "*) ;;
+      *) echo "record-batch: '$ph' is not a phase of lane '$lane' (plan:$plan_phases)" >&2; return 64 ;;
+    esac
+    case "$state" in
+      ran|skipped|override) ;;
+      *) echo "record-batch: '$ph' state '$state' must be ran|skipped|override" >&2; return 64 ;;
+    esac
+    case "$seen" in
+      *" $ph "*) echo "record-batch: phase '$ph' given twice" >&2; return 64 ;;
+    esac
+    [ -n "$ev" ] || ev="$default_ev"
+    [ -n "$ev" ] || { echo "record-batch: '$ph' has no evidence (give $ph=$state:<evidence> or --evidence-default)" >&2; return 64; }
+    seen="$seen$ph "
+    _pr_kind[$_pr_n]="$state"; _pr_phase[$_pr_n]="$ph"; _pr_reason[$_pr_n]="$ev"
+    _pr_n=$((_pr_n+1))
+  done
+
+  _pr_dry_run "$rid" record-batch || return $?
+
+  # Open or correct the run. A ledger with no START line is amended from the lane alone.
+  local f last blob classified type ctype repo
+  f="$(ledger_file "$rid")" || return 1
+  if [ -f "$f" ]; then
+    last="$(awk -F' [|] ' '$2=="START"||$2=="START-AMEND"{l=$3} END{print l}' "$f")"
+    _rb_kv() { printf '%s\n' "$last" | tr ' ' '\n' | sed -n "s/^$1=//p" | head -n 1; }
+    classified="$(_rb_kv classified)"; type="$(_rb_kv type)"; ctype="$(_rb_kv ctype)"; repo="$(_rb_kv repo)"
+    start --amend "$rid" "$lane" "${classified:-$lane}" "${type:-spec-feature}" "$ctype" "$repo" || return $?
+  else
+    start "$rid" "$lane" "$lane" spec-feature || return $?
+  fi
+  _plan_record_apply || {
+    echo "record-batch: the dry run passed but a write failed for '$rid'; inspect with: gate-ledger.sh show $rid" >&2
+    return 1
+  }
+
+  local i=0
+  while [ "$i" -lt "$_pr_n" ]; do
+    printf '%-18s %s\n' "${_pr_phase[$i]}" "${_pr_kind[$i]}"
+    i=$((i+1))
+  done
+  check "$lane" "$rid"
 }
 
 # inherit: a task branch built under an approved multi-task spec carries that spec's
@@ -1598,11 +1712,12 @@ _vr_dispatch() {
 # sessions reach for most. The other verbs print their own `usage:` line when called bare.
 usage() {
   cat <<'EOF'
-usage: gate-ledger.sh {required|start|record|action|tokens|debt|debt-response|outcome|outcome-read|mutation|config|override|plan-record|inherit|check|show|plan|progress|rid|descent|history|report|validate-round} ...
+usage: gate-ledger.sh {required|start|record|action|tokens|debt|debt-response|outcome|outcome-read|mutation|config|override|plan-record|record-batch|inherit|check|show|plan|progress|rid|descent|history|report|validate-round} ...
 
   start [--amend] <rid> <chosen-lane> <classified-lane> <chosen-type> [classified-type] [repo]
   record <rid> <phase> <ran|skipped> [reason]
   override <rid> <phase> <reason>
+  record-batch <rid> <lane> [--evidence-default "<text>"] <phase>=<ran|skipped|override>:<evidence> ...
   debt <rid> significance=<low|high> worthiness=<low|high> verdict=<tap|wave|not-significant> [response=<engage|defer|wave>] [reason=...]
   check <lane> <rid> [--kit-lanes]
   plan <lane>
@@ -1628,6 +1743,7 @@ case "$cmd" in
   config)   config_stamp "$@" ;;
   override) override "$@" ;;
   plan-record) plan_record "$@" ;;
+  record-batch) record_batch "$@" ;;
   inherit)  inherit "$@" ;;
   check)    check "$@" ;;
   show)     show "$@" ;;

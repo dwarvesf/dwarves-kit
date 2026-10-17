@@ -3,6 +3,9 @@
 # line per named plan phase in a single call, and refuses without writing anything when the
 # disposition set is incomplete or invalid.
 #
+# The record-batch cases (RB1-RB7) at the end pin `record-batch <rid> <lane> <phase>=<state>:<evidence> ...`:
+# per-phase evidence, start-or-amend, override routing, refuse-before-write, and check's exit status.
+#
 # Isolation: every case runs under a fresh DWARVES_KIT_LOG_DIR so the real machine corpus is
 # never touched.
 #
@@ -199,6 +202,87 @@ OUT="$(gl plan-record r14 normal --skipped grill:"reason=home-turf: x" --ran thi
          --skipped validate:"NEEDS REVISION: critical=1" --ran design-record --skipped test-plan:"prose" \
          --ran build --ran review --ran docs --ran ship 2>&1)"; RC=$?
 [ "$RC" -eq 0 ] && assert "C14 with a validate disposition exits 0" 0 || assert "C14 with a validate disposition exits 0 (got $RC: $OUT)" 1
+
+# ---------------------------------------------------------------------------
+# record-batch: per-phase evidence, start-or-amend, then check.
+# ---------------------------------------------------------------------------
+echo "=== gate-ledger record-batch ==="
+
+FULL_BATCH=(grill=skipped:"reason=operator-wave: design approved elsewhere" think=ran:"design PR 12" design=ran:"design PR 12 body"
+            design-critique=ran:"critique in design PR" spec=ran:"spec merged" validate=ran:"APPROVED fresh agent=t"
+            design-record=ran:"in the spec" test-plan=ran:"matrix in spec" build=ran:"branch built"
+            review=ran:"review-team clean" docs=ran:"docs updated" ship=ran:"pushed" reflect=override:"lead reflects at wrap")
+
+# RB1: a full batch on a fresh rid opens the run, writes every phase, and check passes (exit 0).
+new_log
+OUT="$(gl record-batch b1 full "${FULL_BATCH[@]}" 2>&1)"; RC=$?
+[ "$RC" -eq 0 ] && assert "RB1 full batch exits 0" 0 || assert "RB1 full batch exits 0 (got $RC: $OUT)" 1
+gl check full b1 >/dev/null 2>&1 && assert "RB1 check full passes" 0 || assert "RB1 check full passes" 1
+[ "$(ledger_of b1 | grep -c '| START | ')" -eq 1 ] && assert "RB1 exactly one START line" 0 || assert "RB1 exactly one START line" 1
+[ "$(ledger_of b1 | grep -c '| GATE | ')" -eq 13 ] && assert "RB1 13 GATE lines" 0 || assert "RB1 13 GATE lines (got $(ledger_of b1 | grep -c '| GATE | '))" 1
+ledger_of b1 | grep -q '| GATE | design | ran | design PR 12 body$' \
+  && assert "RB1 each phase keeps its own evidence in the record() format" 0 || assert "RB1 each phase keeps its own evidence" 1
+
+# RB2: --evidence-default fills items with no evidence; an item's own evidence wins.
+new_log
+OUT="$(gl record-batch b2 full --evidence-default "ran in design PR 12" think=ran design=ran spec=ran:"own text" 2>&1)"; RC=$?
+[ "$RC" -eq 1 ] && assert "RB2 partial batch exits with check's status (1)" 0 || assert "RB2 partial batch exits 1 (got $RC)" 1
+ledger_of b2 | grep -q '| GATE | think | ran | ran in design PR 12$' \
+  && assert "RB2 default evidence fills a bare item" 0 || assert "RB2 default evidence fills a bare item" 1
+ledger_of b2 | grep -q '| GATE | spec | ran | own text$' \
+  && assert "RB2 item evidence beats the default" 0 || assert "RB2 item evidence beats the default" 1
+printf '%s\n' "$OUT" | grep -q 'MISSING-GATE: build' \
+  && assert "RB2 check names the still-open gates" 0 || assert "RB2 check names the still-open gates (got: $OUT)" 1
+
+# RB3: a phase outside the lane's plan refuses with 64 and writes nothing, START included.
+new_log
+OUT="$(gl record-batch b3 full think=ran:"x" nonsense=ran:"y" 2>&1)"; RC=$?
+[ "$RC" -eq 64 ] && assert "RB3 unknown phase exits 64" 0 || assert "RB3 unknown phase exits 64 (got $RC)" 1
+printf '%s\n' "$OUT" | grep -q "'nonsense' is not a phase of lane 'full'" \
+  && assert "RB3 names the unknown phase" 0 || assert "RB3 names the unknown phase (got: $OUT)" 1
+[ -z "$(ledger_of b3)" ] && assert "RB3 writes nothing" 0 || assert "RB3 writes nothing" 1
+
+# RB4: an item with no evidence and no default refuses; so does an unknown state.
+new_log
+OUT="$(gl record-batch b4 full think=ran:"x" design=ran 2>&1)"; RC=$?
+[ "$RC" -eq 64 ] && assert "RB4 missing evidence exits 64" 0 || assert "RB4 missing evidence exits 64 (got $RC)" 1
+printf '%s\n' "$OUT" | grep -q "'design' has no evidence" \
+  && assert "RB4 names the phase with no evidence" 0 || assert "RB4 names the phase with no evidence (got: $OUT)" 1
+[ -z "$(ledger_of b4)" ] && assert "RB4 writes nothing" 0 || assert "RB4 writes nothing" 1
+OUT="$(gl record-batch b4 full think=ran:"x" design=maybe:"y" 2>&1)"; RC=$?
+[ "$RC" -eq 64 ] && [ -z "$(ledger_of b4)" ] && assert "RB4 unknown state exits 64 and writes nothing" 0 || assert "RB4 unknown state exits 64 and writes nothing (got $RC)" 1
+
+# RB5: an existing ledger is amended, never given a second plain START, and keeps its type.
+new_log
+gl start b5 normal normal incident incident >/dev/null 2>&1
+OUT="$(gl record-batch b5 full "${FULL_BATCH[@]}" 2>&1)"; RC=$?
+[ "$RC" -eq 0 ] && assert "RB5 batch on an existing ledger exits 0" 0 || assert "RB5 batch on an existing ledger exits 0 (got $RC: $OUT)" 1
+[ "$(ledger_of b5 | grep -c '| START | ')" -eq 1 ] && [ "$(ledger_of b5 | grep -c '| START-AMEND | ')" -eq 1 ] \
+  && assert "RB5 one START plus one START-AMEND" 0 || assert "RB5 one START plus one START-AMEND" 1
+ledger_of b5 | grep '| START-AMEND | ' | grep -q 'lane=full classified=normal type=incident' \
+  && assert "RB5 the amend moves the lane and keeps classified and type" 0 || assert "RB5 the amend moves the lane and keeps classified and type (got: $(ledger_of b5 | grep START-AMEND))" 1
+OUT="$(gl record-batch b5 full think=ran:"again" 2>&1)"
+[ "$(ledger_of b5 | grep -c '| START | ')" -eq 1 ] && assert "RB5 a second call still adds no plain START" 0 || assert "RB5 a second call still adds no plain START" 1
+
+# RB6: override items land as override lines through override(), with the distinct-reason guard.
+new_log
+gl record-batch b6 full think=override:"approved in design PR" design=override:"approved in design review" >/dev/null 2>&1
+ledger_of b6 | grep -q '| GATE | think | override | approved in design PR$' \
+  && ledger_of b6 | grep -q '| GATE | design | override | approved in design review$' \
+  && assert "RB6 override items land as override lines" 0 || assert "RB6 override items land as override lines (got: $(ledger_of b6))" 1
+new_log
+OUT="$(gl record-batch b6 full --evidence-default "same words" think=override design=override 2>&1)"; RC=$?
+[ "$RC" -eq 65 ] && assert "RB6 a shared override reason exits 65" 0 || assert "RB6 a shared override reason exits 65 (got $RC: $OUT)" 1
+[ -z "$(ledger_of b6)" ] && assert "RB6 the refused batch writes nothing, START included" 0 || assert "RB6 the refused batch writes nothing (got: $(ledger_of b6))" 1
+
+# RB7: a bad lane and a malformed item refuse.
+new_log
+gl record-batch b7 nolane think=ran:"x" >/dev/null 2>&1; RC=$?
+[ "$RC" -ne 0 ] && [ -z "$(ledger_of b7)" ] && assert "RB7 unknown lane refuses and writes nothing" 0 || assert "RB7 unknown lane refuses (got $RC)" 1
+gl record-batch b7 full think >/dev/null 2>&1; RC=$?
+[ "$RC" -eq 64 ] && [ -z "$(ledger_of b7)" ] && assert "RB7 item without = exits 64" 0 || assert "RB7 item without = exits 64 (got $RC)" 1
+gl record-batch b7 full think=ran:"x" think=ran:"y" >/dev/null 2>&1; RC=$?
+[ "$RC" -eq 64 ] && [ -z "$(ledger_of b7)" ] && assert "RB7 a phase given twice exits 64" 0 || assert "RB7 a phase given twice exits 64 (got $RC)" 1
 
 echo "=== $PASS/$TOTAL passed ==="
 [ "$FAIL" -eq 0 ] || exit 1
