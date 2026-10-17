@@ -19,6 +19,6 @@ HP_KIT_ROOT="$KIT_ROOT" HP_EXTRA_FILES="hooks/harvest_sweep.py lib/session/parse
 # A Python traceback carries the scratch path of the run, so the golden keeps the crash as a silent exit 0:
 # the stderr is blanked, every other field stays as the Python left it. The operator verbs now run in
 # hooks/harvest_sweep.py, so a usage line names that script (a recorded rename).
-tmp="$(mktemp "${TMPDIR:-/tmp}/harvest-expected.XXXXXX")"
+tmp="$(mktemp "${TMPDIR:-/tmp}/harvest-expected.XXXXXX")" || exit 1
 jq -c 'if (.stderr | startswith("Traceback")) then .stderr = "" else . end | .stderr |= sub("usage: harvest\\.py"; "usage: harvest_sweep.py")' "$HERE/expected.jsonl" > "$tmp" && mv -f "$tmp" "$HERE/expected.jsonl"
 echo "wrote $(wc -l < "$HERE/expected.jsonl" | tr -d ' ') cases from $REV"
