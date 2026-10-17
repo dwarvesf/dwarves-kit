@@ -54,7 +54,14 @@ gate ledger record "$rid" Build ran "note"   # a gate decision
 gate ledger check full "$rid"                # exit 0 iff every required gate has ran|override
 gate ledger progress "$rid" full             # step k/n + checklist
 gate ledger inherit "$rid" full --from <spec-rid>   # a task branch carries its spec's gates
+gate ledger record-batch "$rid" full think=ran:"design PR" reflect=override:"at wrap"   # several gates, one call
 ```
+
+### Recording many gates at once
+
+`record-batch <rid> <lane> [--evidence-default "<text>"] <phase>=<ran|skipped|override>:<evidence> ...` is for a build whose design phases ran elsewhere: another repo, another host, or an approved design PR. It opens the run with `start` when no ledger exists, or corrects it with `start --amend` (keeping the classified lane, type and repo of the last START line). It then records each named phase through `record` or `override`, so the line format, the grill-skip reason enum and the distinct-override-reason guard apply unchanged. Last, it runs `check <lane> <rid>` and exits with that status, so 0 means the lane is complete.
+
+Each item carries its own evidence. `--evidence-default` fills any item with none. The whole set is replayed against a scratch ledger first, so a refusal writes nothing, START line included: an unknown phase, an unknown state, a phase given twice, or empty evidence exits 64, and a reason reused across two overrides exits 65 (give each override its own evidence). Unlike `plan-record`, only the named phases need a line. Unlike `inherit`, the evidence is the caller's word and no parent ledger is read.
 
 ### Task branches under a validated spec
 
