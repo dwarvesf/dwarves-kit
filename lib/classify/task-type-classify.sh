@@ -21,6 +21,7 @@
 #   4. operate      -- recurring procedure run (payroll...)   -> append-only run ledger
 #   5. eval         -- benchmark / evaluate / compare tools -> a TEST-REPORT
 #   6. research     -- investigate / survey / landscape      -> a cited report
+#  6b. review       -- standalone review of a code artifact   -> a review report
 #   7. doc          -- write docs / readme / changelog        -> doc-verifier match
 #   8. migration    -- deploy / migrate / schema / rollout    -> dry-run + rollback
 #   9. reconcile    -- drift / cleanup / records-vs-reality   -> inventory + verdicts
@@ -39,7 +40,7 @@
 #
 # Usage:
 #   task-type-classify.sh classify "<task description>"  -> the type, exit 0
-#   task-type-classify.sh types                           -> the 11 type names
+#   task-type-classify.sh types                           -> the 12 type names
 set -euo pipefail
 
 task_type_classify() {

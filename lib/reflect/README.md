@@ -75,11 +75,10 @@ twin of `norm`, `render_block`, and the two `existing_keys` parsers (board rows,
 generates from `staging-format.py` and the stdlib. A grammar change lands in the Python first; the test then
 names what the twin must follow.
 
-## The convergence is real, but it is not complete
+## The convergence is complete
 
 The kit's stated contract (ADR-0034 decision 1, SPEC-200 I1, contract rule **C5**) is that every
-proposer renders through this one module. As of 2026-07-15 that is true of four writers and false
-of two:
+proposer renders through this one module. That is true of all six writers:
 
 | Proposer | Renders via | Status |
 |---|---|---|
@@ -87,21 +86,18 @@ of two:
 | `reflect propose --retro` (`propose.py`) | imports `staging-format.py` | converged |
 | `session audit` (`lib/session/audit/bin/session-audit`) | imports `staging-format.py` | converged |
 | `session intel` (`lib/session/intel/bin/session-intel`) | imports `staging-format.py` | converged |
-| `stats anomalies --propose` (`lib/stats/src/stats/anomalies.py`) | its **own** `render_block()` | **copy** |
+| `stats anomalies --propose` (`lib/stats/src/stats/anomalies.py`) | `render_block()` is a thin wrapper that loads `staging-format.py` and calls its `render_block` | converged |
 | session-end stager (`hooks/backlog-stage.sh`) | `staging-format.jq`, the jq twin | converged |
 
-The remaining copy is not harmless duplication. `anomalies.py` predates `render_block`'s
-whitespace-collapse guard and does not have it, so an embedded newline in a model-extracted field
-can survive into the staging file and forge a second block. (The session-end stager's own copy was
-folded into the shared renderer earlier, and the bash hook now renders through `staging-format.jq`,
-which `tests/test-staging-format-jq.sh` pins to `render_block`.) Detail, with a reproduction, is in
-`docs/proof-of-done.md`.
+`anomalies.py` once kept its own copy of the block grammar, without the whitespace-collapse guard,
+so an embedded newline in a model-extracted field could forge a second block. The wrapper removed
+that copy. The session-end stager's bash hook renders through `staging-format.jq`, which
+`tests/test-staging-format-jq.sh` pins to `render_block`. Detail, with a reproduction of the old
+copy, is in `docs/proof-of-done.md`.
 
-C5 does not catch this, because it greps for a code reference to `render_block` / `render_candidate`
-and a file that *defines* a function with that name matches its own grep. C5's negative control
-plants the comment-mention evasion, not the define-your-own-copy evasion, so this shape was never
-tested. Fixing it is a behavior change in two other modules and needs its own spec; it is recorded
-here rather than left invisible.
+C5 greps for a code reference to `render_block` / `render_candidate`, so a file that merely
+*defines* a function with that name matches its own grep. The wrapper in `anomalies.py` is that
+shape by name only: it delegates to the shared renderer.
 
 `lib/board/bin/add-backlog` also keeps a private `parse_staging()` reader. That one is a known and
 accepted duplicate (`staging-format.py`'s own docstring says so): it is the promoter, the single

@@ -1,5 +1,5 @@
 #!/bin/bash
-# harvest.sh -- PreCompact and SessionEnd hook that stages session learnings and a LAB_LOG draft; always exits 0.
+# harvest.sh -- hook that stages session learnings on PreCompact (no flag) and a LAB_LOG draft on SessionEnd (--lab-log); always exits 0.
 # Function-named port of ops-toolkit's cc-harvest (kit-foldin design note, was cc-harvest). When a
 # session is about to compact (or ends), the durable decisions, gotchas, and concepts in it are
 # easy to lose. This reads the transcript, asks a cheap Claude model (Haiku) for the genuinely

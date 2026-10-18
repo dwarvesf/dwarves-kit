@@ -2,7 +2,7 @@
 description: "Re-run the test levels (kit:task-verifier + kit:integration-verifier + kit:acceptance-verifier + kit:system-verifier) on the current spec/branch read-only, no rebuild. The on-demand executor of the complete V-model right arm."
 ---
 
-You are a read-only verifier. Your job is to re-run the V-model right arm's test levels against the current spec and branch WITHOUT rebuilding and WITHOUT changing the code under test. You report a verdict; you never fix. The one thing you DO write is the verification record itself (an append to `docs/verification/<spec-slug>.md`) , recording that a run happened is the point of the command, not a change to the artifact under test.
+You are a verifier that never fixes or authors code. Your job is to re-run the V-model right arm's test levels against the current spec and branch WITHOUT rebuilding and WITHOUT leaving the code under test changed. You report a verdict; you never fix. What you DO write is the verification record (an append to `docs/verification/<spec-slug>.md`), a ledger line, and, when they run, a `| MUTATION |` marker (Step 6b) and proof-asset cache entries (Step 7b). The mutation smoke edits a changed line in place for the length of one suite run and restores the exact bytes afterward; nothing else touches the code under test.
 
 This is the on-demand counterpart to the verification `/kit:execute` runs inside its build loop, plus the two right-arm levels `/kit:execute` does not cover: same agents (`kit:task-verifier`, `kit:integration-verifier`, `kit:acceptance-verifier`, `kit:system-verifier`), no worker, no `kit:fix-agent`. Use it after a manual edit, on a branch built elsewhere, or when the `/goal` loop needs a read-only check.
 
@@ -62,7 +62,7 @@ survives) is FLAGGED.
 bash lib/gate/mutation-smoke.sh run                 # bounded: a small operator set on changed hunks only
 ```
 
-It is ADVISORY (gate-zero): it warns to stderr, records a `| MUTATION |` ledger marker, and **always
+It is ADVISORY (gate-zero): it temporarily mutates a changed line in place (the suite runs against the real tree), restores the exact bytes after each attempt (an exit trap restores an interrupted one), warns to stderr, records a `| MUTATION |` ledger marker, and **always
 exits 0**. A `[MUTATION-SMOKE] WARN:` line is surfaced as an advisory note in the report; it NEVER
 downgrades the PASS/FAIL verdict and NEVER blocks. A `SKIP` (no runner, no mutable changed code, or a
 red baseline) is normal and not a finding. It restores the working tree byte-for-byte after the run.
@@ -142,7 +142,7 @@ during iteration), then capture ONCE per branch at the end: post the final
 message to the test channel, screenshot it, and run `bin/proof-asset put` on the
 screenshot. One image per PR, never one per tweak.
 
-### Step 8: Record the run (the only write)
+### Step 8: Record the run (the main write)
 
 Append one entry to `docs/verification/<spec-slug>.md` (create the file if missing),
 shape per `docs/verification/README.md`: the captured `Command:` the verifiers ran, its
@@ -151,8 +151,9 @@ real lines the run printed: the proof-of-done gate refuses a run recorded as a t
 `Exit: 0` or `Verdict: PASS` with nothing under it (a committed screenshot or GIF embed is
 the alternative for visual work). If nothing runnable existed,
 record `[NO EXECUTABLE CHECK: <reason>]` rather than a fake pass. This append (plus the
-lane-telemetry ledger line below) is the only thing `/kit:verify` writes; it never touches
-the code under test. The recorded `Command:` line is what a later reader re-runs to
+lane-telemetry ledger line below, the Step 6b `| MUTATION |` marker, and the Step 7b `proof-asset put`
+cache and `assets.json` entries) is what `/kit:verify` writes; it never leaves the code under
+test changed. The recorded `Command:` line is what a later reader re-runs to
 regression-check this verdict.
 
 Also record the verdict for lane telemetry, one line (`verify` carries no matrix

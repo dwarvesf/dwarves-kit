@@ -2,12 +2,12 @@
 # bin/session -- STABLE consumer entrypoint for the session subsystem. Collapses
 # the five prefixed `bin/session-*` CLIs
 # (session-intel, session-observe, session-recall, session-report,
-# session-semantic) into one `session <verb>` grammar; deep lib paths unchanged.
+# session-semantic) into one `session <verb>` grammar (plus `audit`, which has no prefixed CLI); deep lib paths unchanged.
 #
 # Consumers reference THIS stable path, never a deep `$DWARVES_KIT/lib/session/<x>`
 # path, so an internal lib reorg never breaks them again.
 #
-# Usage: session <intel|observe|recall|report|semantic> <args...>
+# Usage: session <intel|observe|recall|report|semantic|audit> <args...>
 set -euo pipefail
 SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 exec bash "$SELF_DIR/../lib/session/session.sh" "$@"
