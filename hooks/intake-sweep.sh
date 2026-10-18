@@ -52,6 +52,8 @@ JQLIB="$HERE/../lib/reflect"
 source "$JQLIB/shlex-split.sh"
 # shellcheck source=../lib/reflect/hook-util.sh
 source "$JQLIB/hook-util.sh"
+# shellcheck source=../lib/reflect/staging-format.sh
+source "$JQLIB/staging-format.sh"
 
 force=0; check=0
 for a in "$@"; do
@@ -237,11 +239,11 @@ nblocks=$(jq '.blocks | length' <<<"$res")
 # Append the blocks (a header first when the file is new), then record the keys. A staging path
 # with no directory part, or one that cannot be written, stages nothing and records nothing.
 case "$staging" in */*) ;; *) exit 0 ;; esac
-stage_dir=${staging%/*}; [ -n "$stage_dir" ] || stage_dir=/
 header=""
 [ -f "$staging" ] || header=$'# Backlog staging (auto, via backlog-stage)\n\nCandidates auto-extracted from sessions. Review + promote by hand.\nGitignored: may name unfiled work. NEVER the source of truth.\n\n'
 text=$(jq -j '.blocks | join("")' <<<"$res"; printf x)
-{ mkdir -p "$stage_dir" && printf '%s%s' "$header" "${text%x}" >> "$staging"; } 2>/dev/null || exit 0
+# the one locked staging write path (lib/reflect/staging-format.sh -> staging-format.py append)
+printf '%s' "${text%x}" | sf_append "$staging" "$header" || exit 0
 { mkdir -p "$state_dir" && jq -r '.keys[]' <<<"$res" >> "$swept_file"; } 2>/dev/null || true
 printf '\xf0\x9f\xa7\xb2 intake-sweep: staged %s candidate(s) (%s) in %s.\n' "$nblocks" "$(jq -r '.per' <<<"$res")" "$staging"
 exit 0

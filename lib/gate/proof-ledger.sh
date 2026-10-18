@@ -15,7 +15,8 @@
 #                 Pass = a fresh verification entry with a green run AND a NEGATIVE CONTROL
 #                 ([gate] negative_control = full drops the control unless a hard path or a
 #                 full-lane spec is involved; default `always`).
-#   inert      -- docs / comments / cosmetic (markdown-only diff). Pass (no ritual).
+#   inert      -- docs / comments / cosmetic: a diff made only of *.md/*.txt, .kit.toml, or documentation
+#                 and asset files under a docs/ tree (generated .html/.svg/.png included). Pass (no ritual).
 #
 # "Fresh" = the branch diff itself added/modified the docs/verification/*.md entry, so an
 # old proof from unrelated work does not satisfy a new change.
@@ -87,6 +88,18 @@ _changed() {
 
 _subjects() { git -C "$1" log "$2"..HEAD --format='%s' 2>/dev/null || true; }
 
+# _nondoc_paths: stdin paths minus the docs. A doc is *.md, *.txt, *.markdown, a .kit.toml, or a file in a docs/
+# tree with a documentation or asset extension (html, htm, svg only under the repo-root docs/). A secret-shaped
+# path (case-insensitive) is never a doc. Build files (package.json, Makefile, compose, toml, yaml) are not on
+# the allowlist, so they keep their class.
+_nondoc_paths() {
+  awk '{ lc = tolower($0) }
+    lc ~ /(^|\/)[^\/]*credentials?[^\/]*$|(^|\/)secrets?\/|\.(pem|key|p12|pfx)$|(^|\/)\.env/ { print; next }
+    $0 ~ /\.(md|txt|markdown)$/ || $0 ~ /(^|\/)\.kit\.toml$/ { next }
+    ($0 ~ /(^|\/)docs\// && $0 ~ /\.(rst|adoc|png|jpe?g|gif|webp|pdf|csv)$/) || ($0 ~ /^docs\// && $0 ~ /\.(html?|svg)$/) { next }
+    { print }'
+}
+
 classify() {
   local root="${1:-}" base="${2:-}"
   [ -n "$root" ] && [ -n "$base" ] || { echo "usage: classify <root> <base>" >&2; return 64; }
@@ -101,7 +114,9 @@ classify() {
   # where the ledger lives), never project behavior: a .kit.toml-only diff owes no proof-of-done,
   # whatever key it touches; otherwise flipping a [gate] key would itself be gated. A diff that
   # also touches code is classified by the code.
-  if [ -z "$(printf '%s\n' "$changed" | grep -vE '\.(md|txt|markdown)$|(^|/)\.kit\.toml$')" ]; then
+  # A docs tree counts as docs: a generated HTML/SVG/PNG drawing set under docs/ holds JS and images but
+  # ships no behavior (see _nondoc_paths for what stays code). Any other file keeps its own class.
+  if [ -z "$(printf '%s\n' "$changed" | _nondoc_paths)" ]; then
     echo inert; return 0
   fi
 
@@ -115,7 +130,7 @@ classify() {
   # tests, and a nested test/ dir (k8s/overlays/test/) is not a test tree.
   local code_ext='(py|go|rs|rb|js|jsx|ts|tsx|sh|bash|swift|kt|java|ex|exs)'
   subjects=""
-  if [ -n "$(printf '%s\n' "$changed" | grep -vE '\.(md|txt|markdown)$|(^|/)\.kit\.toml$' \
+  if [ -n "$(printf '%s\n' "$changed" | _nondoc_paths \
        | grep -vE "^(tests?|__tests__)/|(^|/)__tests__/|(^|/)test_[^/]*\.${code_ext}\$|[._]test\.${code_ext}\$")" ]; then
     subjects="$(_subjects "$root" "$base")"
   fi

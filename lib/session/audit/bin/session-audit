@@ -215,14 +215,7 @@ def cmd_triage(args):
         staged.append(cand["title"])
 
     if blocks and not args.dry_run:
-        exists = os.path.isfile(staging)
-        parent = os.path.dirname(staging)
-        if parent:
-            os.makedirs(parent, exist_ok=True)
-        with open(staging, "a", encoding="utf-8") as fh:
-            if not exists:
-                fh.write("# Backlog staging\n\n")
-            fh.writelines(blocks)
+        sf.append_blocks(staging, blocks, header="# Backlog staging\n\n")
 
     if args.json:
         print(json.dumps({"status": "ok", "report": name, "staged": staged,

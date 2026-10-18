@@ -4,15 +4,22 @@
 merged first landed it, since `staging-format*`
 did not exist yet on this branch's history).
 
-Three verbs on the CLI: `parse <file>` (read blocks back as JSON), `render` (render one
-candidate from stdin JSON), and `stage` (the one staging WRITER: dedupe + render + append
-in a single process, used directly and by `wrap stage`).
+Five verbs on the CLI: `parse <file>` (read blocks back as JSON), `render` (render one
+candidate from stdin JSON), `stage` (dedupe + render + append in a single process, used
+directly and by `wrap stage`), and `append <file> [--header TEXT]` (append the blocks read
+on stdin; the path the bash hooks use, since they render in jq and cannot import this module).
+
+One lock domain for the whole file. `staging_lock(path)` is a blocking flock on a lock file
+in the tmpdir, keyed by the buffer's realpath like the board lock. `append_blocks` and `rewrite`
+take it, and so do `reflect drain` and `board promote`. Every writer of the buffer goes through
+those two functions: a raw `>>` or an open-for-write elsewhere is the lost-append bug this exists
+to prevent. Lock order where two are held: the board lock (sync_core.board_lock) first, then
+this one.
 
 A staging file is a sequence of `## [<state>] <title>` blocks, each followed by `- Field:
-value` lines (Intent, Approach, Tags, Home, Source, ...). This mirrors
-`lib/board/bin/add-backlog`'s private `parse_staging()` (that reader is settled, working, and
-NOT on this sub-goal's touch list -- it keeps its own copy for now; a future cleanup can point
-it at this module instead of maintaining the grammar twice).
+value` lines (Intent, Approach, Tags, Home, Source, ...). `lib/board/bin/add-backlog` (the
+promoter) reads blocks through `parse_blocks` here; the only second copy of the grammar is the
+jq twin below.
 
 Filename is deliberately hyphenated (matches the `staging-format*` file-fence token both
 sub-goal files use); a plain `import staging_format` cannot see it, so importers load it via
@@ -26,10 +33,14 @@ and the test names what the twin must follow.
 
 Stdlib only.
 """
+import contextlib
+import fcntl
+import hashlib
 import json
 import os
 import sys
 import re
+import tempfile
 from datetime import date, datetime
 
 # A block starts at a line beginning with '## [' -- the one boundary definition every reader
@@ -209,6 +220,96 @@ def existing_keys(*sources):
     return keys
 
 
+# --- the one locked write path ------------------------------------------------------------
+
+def staging_lock_path(staging):
+    """The one lock address every staging writer shares: tmpdir + md5 of the buffer's realpath,
+    the same scheme as sync_core.board_lock_path. Outside the repo on purpose: a lock file
+    beside a gitignored buffer still shows up as an untracked file in the consumer's checkout."""
+    return os.path.join(
+        tempfile.gettempdir(),
+        "staging-%s.lock" % hashlib.md5(os.path.realpath(staging).encode()).hexdigest())
+
+
+@contextlib.contextmanager
+def staging_lock(staging, required=False):
+    """Blocking exclusive flock on `staging_lock_path(staging)`: the one lock every staging
+    writer shares (append, drain's expiry, promote's relabel). bash has no flock on macOS, so
+    the bash hooks reach this through the `append` CLI verb rather than locking themselves.
+
+    A lock file that cannot be opened (tmpdir unwritable) degrades to an unlocked write with a
+    warning when `required` is False: for an append, losing the caller's block is worse than the
+    rare race. A read-modify-write (`rewrite`) passes required=True and fails instead, since an
+    unlocked whole-file rewrite is what drops concurrent appends. Writers must agree on TMPDIR:
+    two processes with different values hold different lock files and exclude nothing."""
+    parent = os.path.dirname(staging)
+    if parent:
+        os.makedirs(parent, exist_ok=True)
+    try:
+        fd = os.open(staging_lock_path(staging), os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600)
+    except OSError as e:
+        if required:
+            raise
+        sys.stderr.write(f"staging-format.py: no lock ({e}); writing unlocked\n")
+        yield
+        return
+    with os.fdopen(fd, "r+") as lockf:
+        fcntl.flock(lockf, fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(lockf, fcntl.LOCK_UN)
+
+
+def _append_locked(staging, data, header, nofollow):
+    flags = os.O_WRONLY | os.O_APPEND | os.O_CREAT
+    if nofollow:
+        # closes the window between a caller's symlink check and this append: a symlink swapped
+        # in after that check raises ELOOP here instead of redirecting the write
+        flags |= os.O_NOFOLLOW
+    fd = os.open(staging, flags, 0o644)
+    with os.fdopen(fd, "ab") as fh:
+        if header and fh.tell() == 0:
+            fh.write(header)
+        fh.write(data)
+
+
+def append_blocks(staging, blocks, header="", nofollow=False):
+    """Append already-rendered block text to the staging buffer, under the staging lock.
+    `header` is written once, only when the file is new or empty (decided inside the lock, so
+    two first writers cannot both write it). `blocks` and `header` may be str or bytes."""
+    enc = lambda v: v if isinstance(v, bytes) else str(v).encode("utf-8", "surrogateescape")
+    data = enc("".join(blocks) if isinstance(blocks, (list, tuple)) else blocks)
+    with staging_lock(staging):
+        _append_locked(staging, data, enc(header) if header else b"", nofollow)
+
+
+def rewrite(staging, fn):
+    """Read-modify-write the staging buffer under the staging lock. `fn(text)` returns
+    `(new_text, result)`; the file is replaced atomically only when the text changed, so a
+    reader outside the lock never sees a half-written buffer. Returns `result`. The text is
+    read INSIDE the hold: a block appended since the caller last looked is in `text`."""
+    with staging_lock(staging, required=True):
+        try:
+            with open(staging, encoding="utf-8") as fh:
+                text = fh.read()
+        except FileNotFoundError:
+            text = ""
+        new_text, result = fn(text)
+        if new_text != text:
+            target = os.path.realpath(staging)
+            try:
+                mode = os.stat(target).st_mode & 0o7777  # keep the buffer's mode (it may be 0600)
+            except FileNotFoundError:
+                mode = 0o644
+            fd, tmp = tempfile.mkstemp(dir=os.path.dirname(target) or ".", prefix=".staging.")
+            with os.fdopen(fd, "w", encoding="utf-8") as fh:
+                fh.write(new_text)
+            os.chmod(tmp, mode)
+            os.replace(tmp, target)
+        return result
+
+
 def cmd_stage():
     """`staging-format.py stage`: read one JSON object on stdin (title, intent, home,
     staging, backlog?) and either report a duplicate or append one block. See the
@@ -235,9 +336,6 @@ def cmd_stage():
     title = data.get("title", "")
     staging = data.get("staging", "")
     key = norm(title)
-    if key and key in existing_keys(("staging", staging), ("board", data.get("backlog"))):
-        print(f"stage: already staged: {title}")
-        return 0
 
     block = render_block({
         "title": title,
@@ -251,20 +349,52 @@ def cmd_stage():
         sys.stderr.write("usage: staging-format.py stage: title is required\n")
         return 64
 
-    header = "" if os.path.isfile(staging) else "# Backlog staging\n\n"
+    header = "# Backlog staging\n\n"
     try:
-        # O_NOFOLLOW closes the window between the caller's symlink check and this append: a
-        # symlink swapped in after that check raises ELOOP here instead of redirecting the write.
-        fd = os.open(
-            staging, os.O_WRONLY | os.O_APPEND | os.O_CREAT | os.O_NOFOLLOW, 0o644
-        )
-        with os.fdopen(fd, "a", encoding="utf-8") as fh:
-            fh.write(header + block)
+        # dedupe and append share one lock hold: no window between "is it staged" and
+        # "stage it" for another writer to land in
+        with staging_lock(staging):
+            if key and key in existing_keys(("staging", staging), ("board", data.get("backlog"))):
+                print(f"stage: already staged: {title}")
+                return 0
+            _append_locked(staging, block.encode("utf-8"), header.encode("utf-8"), True)
     except OSError as e:
         print(f"FAILED: {e}")
         return 2
 
     print(block.splitlines()[0])
+    return 0
+
+
+def cmd_append(argv):
+    """`staging-format.py append <staging> [--header TEXT]`: append the rendered blocks read on
+    stdin, under the staging lock. The bash hooks render in jq and write through this."""
+    args = list(argv)
+    header = ""
+    if "--header" in args:
+        i = args.index("--header")
+        if i + 1 >= len(args):
+            sys.stderr.write("usage: staging-format.py append <staging> [--header TEXT]\n")
+            return 64
+        header = args[i + 1]
+        del args[i:i + 2]
+    if len(args) != 1:
+        sys.stderr.write("usage: staging-format.py append <staging> [--header TEXT]\n")
+        return 64
+    data = sys.stdin.buffer.read()
+    if not data:
+        return 0
+    try:
+        data.decode("utf-8")
+    except UnicodeDecodeError:
+        # one invalid byte would make every later strict-UTF-8 reader (promote, drain) crash
+        sys.stderr.write("staging-format.py append: stdin is not valid UTF-8; nothing written\n")
+        return 65
+    try:
+        append_blocks(args[0], data, header)
+    except OSError as e:
+        sys.stderr.write(f"staging-format.py append: {e}\n")
+        return 2
     return 0
 
 
@@ -281,7 +411,9 @@ def _main(argv):
         return 0
     if len(argv) >= 2 and argv[1] == "stage":
         return cmd_stage()
-    sys.stderr.write("usage: staging_format.py {parse <file>|render <stdin-json>|stage}\n")
+    if len(argv) >= 2 and argv[1] == "append":
+        return cmd_append(argv[2:])
+    sys.stderr.write("usage: staging_format.py {parse <file>|render <stdin-json>|stage|append <file>}\n")
     return 64
 
 

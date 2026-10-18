@@ -1,0 +1,90 @@
+#!/usr/bin/env python3
+"""board-normalize: pad short rows of a board to their table's own column count.
+
+One-shot repair for a board whose older writers (promote, capture) put 4-cell rows under a
+wider header. Each row with fewer cells than its table header keeps its id, item and status
+and spreads the cells between them over the middle columns in order; the rest stay empty:
+
+  | ID-7 | Item | Notes | queued |  ->  | ID-7 | Item | Notes |  |  | queued |   (6 columns)
+
+Rows already at the header's width, rows wider than it, and every non-row line are left
+byte-for-byte. Idempotent. Refuses to write unless the set of row ids is unchanged and no id
+is duplicated by the rewrite.
+
+  board-normalize <board.md>          rewrite in place, print the counts
+  board-normalize --check <board.md>  count only, write nothing; exit 1 when a row is short
+"""
+import os
+import re
+import sys
+import tempfile
+
+_UNESC = re.compile(r"(?<!\\)\|")
+_ID_HEADER = re.compile(r"^\s*\|\s*ID\s*\|")
+_RULE = re.compile(r"^\s*\|[\s:|-]*-[\s:|-]*\|?\s*$")
+_ID_ROW = re.compile(r"^\|\s*([A-Z][A-Z0-9]*-\d+)\s*\|")
+
+
+def normalize(text):
+    out, ncols, padded, wider = [], None, 0, 0
+    for line in text.splitlines(keepends=True):
+        body = line.rstrip("\n")
+        if _ID_HEADER.match(body):
+            ncols = len(_UNESC.findall(body)) - 1
+            out.append(line)
+            continue
+        if not body.lstrip().startswith("|"):
+            if not body.strip():
+                ncols = None  # a blank line ends the table
+            out.append(line)
+            continue
+        if ncols is None or _RULE.match(body) or not _ID_ROW.match(body):
+            out.append(line)
+            continue
+        parts = _UNESC.split(body)
+        cells = parts[1:-1]
+        if parts[0].strip() or parts[-1].strip() or len(cells) >= ncols:
+            wider += len(cells) > ncols
+            out.append(line)
+            continue
+        middle = cells[2:-1]
+        fill = [m.strip() for m in middle[:ncols - 3]] + [""] * (ncols - 3 - len(middle[:ncols - 3]))
+        new = [cells[0].strip(), cells[1].strip()] + fill + [cells[-1].strip()]
+        out.append("| " + " | ".join(new) + " |" + ("\n" if line.endswith("\n") else ""))
+        padded += 1
+    return "".join(out), padded, wider
+
+
+def ids(text):
+    return [m.group(1) for m in (_ID_ROW.match(l) for l in text.splitlines()) if m]
+
+
+def main(argv):
+    check = "--check" in argv
+    args = [a for a in argv if a != "--check"]
+    if len(args) != 1:
+        sys.stderr.write(__doc__)
+        return 64
+    path = args[0]
+    with open(path, encoding="utf-8") as fh:
+        text = fh.read()
+    new, padded, wider = normalize(text)
+    before, after = ids(text), ids(new)
+    print(f"row ids before: {len(before)}, after: {len(after)}, padded: {padded}, wider than header: {wider}")
+    if sorted(before) != sorted(after) or len(set(before)) != len(set(after)):
+        sys.stderr.write("board-normalize: row ids changed; nothing written\n")
+        return 2
+    if check:
+        return 1 if padded else 0
+    if padded:
+        target = os.path.realpath(path)
+        fd, tmp = tempfile.mkstemp(dir=os.path.dirname(target), prefix=".board-normalize.")
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            fh.write(new)
+        os.chmod(tmp, os.stat(target).st_mode & 0o7777)
+        os.replace(tmp, target)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

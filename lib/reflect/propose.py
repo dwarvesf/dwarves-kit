@@ -536,14 +536,11 @@ def run_retro(retro_path, staging, backlog, dry_run):
     if blocks and not dry_run and not stage:
         sys.stdout.write("".join(blocks))
     if blocks and not dry_run and stage:
-        header = "" if os.path.isfile(staging) else (
+        sf.append_blocks(staging, blocks, header=(
             "# Backlog staging (auto, via reflect propose)\n\n"
             "Candidates auto-extracted from the ledger. Review + promote by hand "
             "(`board promote`).\nGitignored: may name unfiled work. NEVER the source of truth.\n\n"
-        )
-        os.makedirs(os.path.dirname(staging) or ".", exist_ok=True)
-        with open(staging, "a", encoding="utf-8") as fh:
-            fh.write(header + "".join(blocks))
+        ))
 
     if dry_run:
         sys.stdout.write("".join(blocks) or "reflect propose --retro: nothing new to stage\n")
@@ -609,14 +606,11 @@ def run(days, megas, staging, backlog, dry_run, aggregate_file):
     if staged_blocks and not dry_run and not stage:
         sys.stdout.write("".join(staged_blocks))
     if staged_blocks and not dry_run and stage:           # (3d) staged write
-        header = "" if os.path.isfile(staging) else (
+        sf.append_blocks(staging, staged_blocks, header=(
             "# Backlog staging (auto, via reflect propose)\n\n"
             "Candidates auto-extracted from the ledger. Review + promote by hand "
             "(`board promote`).\nGitignored: may name unfiled work. NEVER the source of truth.\n\n"
-        )
-        os.makedirs(os.path.dirname(staging) or ".", exist_ok=True)
-        with open(staging, "a", encoding="utf-8") as fh:
-            fh.write(header + "".join(staged_blocks))
+        ))
 
     print(f"reflect propose: {len(aggregate['signals'])} signals over "
           f"{aggregate['window']['n_rids']} rids -> {len(hypotheses)} hypotheses -> "
