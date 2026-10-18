@@ -40,6 +40,9 @@
 #                                                               column count; prints the id. The
 #                                                               one row-minting verb (capture and
 #                                                               promote call it too).
+#   board.sh normalize [--check] <board.md>                     pad short rows to their table's own
+#                                                               column count (one-shot repair; keeps
+#                                                               every id, idempotent)
 #   board.sh states [--backlog-file <path>]                    legal state names
 #   board.sh run <ID> [--backlog-file <path>] [--dir <megadir>] [--exec] [-- <orchestrate-args>]
 #                                                               the single-row dispatch path:
@@ -1176,6 +1179,7 @@ main() {
     init) shift; cmd_init "$@" ;;
     capture) shift; cmd_capture "$@" ;;
     promote) shift; exec "$BOARD_DIR/bin/add-backlog" "$@" ;;
+    normalize) shift; exec python3 "$BOARD_DIR/bin/board-normalize" "$@" ;;
     run) shift; exec "$BOARD_RUN_SH" "$@" ;;
     work) shift; exec bash "$BOARD_DIR/work.sh" "$@" ;;
     -h|--help|help) usage ;;

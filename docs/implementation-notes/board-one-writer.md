@@ -16,19 +16,18 @@ No spec: a normal-lane fix on drift rows 27, 28, 29, 32 and 34 and two ranked ri
 - **Promote re-reads staging inside the hold and relabels by block text.** A block that no longer matches (expired by drain, promoted by another session) is skipped with a note and mints no row. Rows are minted only for blocks a dry relabel pass proved reachable, so two byte-identical twins cannot leave a row with no relabel. Before, promote wrote back the text it read at start, which dropped any block appended meanwhile and could mint a row for an already-expired candidate. Behaviour changes a caller can see: promote exits 1 when nothing was promoted, and ids on a board with no padded id are bare numbers (`ID-7`), padded to the widest padded id otherwise (`ID-007`), where capture was always bare and promote always padded.
 - **`add-backlog` reads blocks through `staging-format.parse_blocks`.** Its private `parse_staging` was the third copy of the grammar; the jq twin is now the only other one (drift row 34).
 - **The bash hooks go through `lib/reflect/staging-format.sh` (`sf_append`).** With python3 it calls `staging-format.py append`. Without python3 it is a plain append: the hooks were ported to run on bash plus jq alone, and a host with no python3 also has no promote, drain or anomalies run, so nothing rewrites the buffer. Requiring python3 for the hook would undo that port for no gain.
-- **Lint judges each table against its own header.** On the kit's own board this now reports 259 four-cell rows under the six-column Active queue header. They are real: promote and capture wrote them. The old lint hid them by expecting 4 cells everywhere and reported two false findings instead. Normalising the board is a separate change and is left to the board's owner.
+- **Lint judges each table against its own header.** On the kit's own board this now reports 259 four-cell rows under the six-column Active queue header. They are real: promote and capture wrote them. The old lint hid them by expecting 4 cells everywhere and reported two false findings instead. `lib/board/bin/board-normalize` (`board normalize`) padded them to six cells in a later commit: the item keeps its slot, the notes cell moves to Source, Target artifact and Lane stay empty, and the row-id multiset is checked before and after (280 and 280).
 
 ## Not routed
 
 - `board run` only reads a row (`backlog.sh row`) and scaffolds a mega-goal directory; it writes nothing to the board, so there was nothing to route through `add`.
 - `sync intake` still mints in `sync_core.apply_board`. It runs under the same `board_lock`, writes a bulk batch with provenance and the `#inbox` quarantine, and reads only 4-cell rows. Folding it into `add` is a separate change in the sync module.
 
-## Known gaps, for the owners of those files
+## Known gaps
 
-- `lib/reflect/propose.py` (`run_retro`), `lib/session/audit/bin/session-audit` and `lib/session/intel/bin/session-intel` still open the buffer for append themselves. They need `staging_format.append_blocks(staging, blocks, header=...)`. `tests/test-staging-one-writer.sh` names them in `KNOWN_RAW` so a fourth raw writer fails the test, and each one comes off the list when it moves.
+`propose.py`, `session-audit` and `session-intel` now append through `append_blocks`, and `sync_core.split_row` reads a row by its table's header width; the guard in `tests/test-staging-one-writer.sh` has an empty allow-list.
+
 - `skills/backlog-reconcile/SKILL.md` (drift row 32) still describes the board shape as 4 cells.
-- `sync_core.split_row` returns None for anything but a 4-cell row, so `board sync` cannot see the kit board's 6-column rows.
-- `lib/reflect/propose.py` has two append sites (`run_retro` and the main staging path), and its header decision (`os.path.isfile`) sits outside any lock. Both rewriters replace the file's inode, so an unlocked appender holding the old inode loses its block outright. This is the one real hole left in the single-writer claim.
 - Dedupe-then-append is not atomic for the hooks and for `stats anomalies --propose`: two concurrent runs can both stage one title. The append is safe; the title check would have to move inside the lock (`staging-format.py stage` already does).
 - A promote that writes the board and then dies before the staging relabel leaves rows whose blocks stay `[staged]`; the next promote mints them again. Board first is the right order (the reverse loses candidates), and the old promote had the same window. A title check against the board would close it.
 - An older installed `drain.py` still locks `<staging>.lock`, which the new code does not use, so the two exclude nothing until every consumer upgrades.

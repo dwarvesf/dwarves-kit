@@ -147,12 +147,18 @@ Three read-only lenses ran on the finished diff (concurrency and data loss, secu
 
 Left open and named in the implementation notes: `propose.py` still appends unlocked, dedupe-then-append is not atomic in the hooks and in anomalies, and a promote that dies between the board write and the relabel mints again on the next run.
 
+## Follow-up commits (coordinator request)
+
+| Change | Evidence |
+|---|---|
+| `propose.py` (both sites), `session-audit`, `session-intel` append through `append_blocks`; the guard now fails on any python writer that opens the buffer for append outside `staging-format.py` | `tests/test-staging-one-writer.sh` 38/38; negative control: `session-intel` reverted to a raw append, 2 FAIL, restored, green |
+| `sync_core.split_row` / `parse_board` / `apply_board` read a row by the table's header width | `lib/sync/tests` 238 passed, including three new cases for 6-cell rows |
+| `_meta/BACKLOG.md` normalized by `board normalize`: 259 short rows padded to 6 cells, 280 row ids before and after, id lists identical, `lint` reports `(no lint findings)` | `tests/test-board-add.sh` AC10, 64/64 |
+
 ## Not proven
 
-- The three proposers outside this slice's file fence (`reflect propose --retro`, `session audit`, `session intel`) still append without the lock; the guard names them.
 - `sync intake` still mints in `sync_core`, under the same board lock; it was not routed through `add`.
 - Two stage hooks that dedupe against a snapshot and then append can still both stage one title; only the append is atomic.
-- The kit's own `_meta/BACKLOG.md` carries 259 four-cell rows under its six-column Active queue header. `lint` now reports them; they were not rewritten.
 - Hosts where two writers run with different `TMPDIR` values hold different lock files, the same limit the board lock has.
 
 ## Rollback
