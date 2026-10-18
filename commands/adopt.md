@@ -32,7 +32,9 @@ or `--single-source` (see below).
 - `docs/verification/README.md` -- the proof marker that makes the ship-gate engage.
 - `.kit.toml` -- an OPT-IN starter override of the kit-root defaults. Created
   only on a fresh adopt (never overwritten afterward); `--with` seeds the named modules
-  `true` instead of inheriting the kit-root default. Edit `[modules]` any time and re-run
+  `true` instead of inheriting the kit-root default. `--with` names the exact set, so a core module
+  you leave out starts `false` (`install.sh --with` differs: it adds to the core set). Without `--with`
+  only `core` modules, today `board`, start `true`; every other module is opt-in. Edit `[modules]` any time and re-run
   `/kit:adopt` (or `--refresh`) to re-wire. Its `[gate]` block is where the blocking quality
   gates are turned on for this repo (the four keys adopt seeds are OFF by default; `board_row_gate`,
   `fixture_identities` and `review_verdict` default ON): adopt seeds `proof_of_done`,
@@ -40,10 +42,14 @@ or `--single-source` (see below).
   time and a comment explaining each; set one to `true`, commit, and it applies from the next
   hook fire (no re-adopt). Safety gates have no key. Detail: `lib/gate/README.md` "Turning a gate on".
 - `.claude/settings.json` hook entries for this project's currently-enabled hook-bearing
-  modules (`board`, `session`, `advisor`, `cosmetic`) -- a targeted jq MERGE, re-wired on
-  every adopt run from the project's CURRENT `.kit.toml`, never a wholesale file rewrite.
-  Command/skill modules (`queue`, `stats`, `quiz_gate`, `weekend_batch`, `bridge`) need no
-  settings.json entry.
+  modules -- a targeted jq MERGE, re-wired on every adopt run from the project's CURRENT
+  `.kit.toml`, never a wholesale file rewrite. The module list and each module's hooks come from
+  `lib/config/modules.tsv`, the one table `install.sh` reads too; a module with no hook there
+  (`queue`, `stats`, ...) needs no settings.json entry. On a machine with the kit plugin installed
+  adopt leaves the project's `settings.json` alone (it adds no hooks and strips none), because the
+  plugin's `hooks.json` already registers every hook under a different command string, a second set
+  would fire twice, and the project file is committed and shared; the output line says so. A hook your
+  own `~/.claude/settings.json` also wires is fine: Claude Code runs an identical handler once.
 
 To adopt several repos at once, use `bin/wrap adopt <repo>...` instead of running the driver per repo. It dry-runs by default, and with `--apply` it opens and lands one adoption PR per repo. See the `adopt` bullet in `commands/wrap.md`.
 

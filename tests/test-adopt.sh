@@ -15,6 +15,9 @@ fold_ok() { { cat "$POINTER"; printf '\n'; cat "$2"; } | cmp -s - "$1/AGENTS.md"
 # adopt.single_source or output.style turned on, and every case below asserts the kit-root
 # default. Cases that need their own operator file re-export the variable and restore this one.
 NO_OPERATOR="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; export KIT_CONFIG_OPERATOR="$NO_OPERATOR"
+# The same for the Claude home: adopt reads $CLAUDE_DIR to see whether the kit plugin is installed, and a real machine
+# may have it. An empty home is the baseline here.
+NO_CLAUDE="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; export CLAUDE_DIR="$NO_CLAUDE"
 
 # 1. fresh adopt creates the 4 artifacts
 T1="$(newrepo)"
@@ -106,7 +109,7 @@ if git -C "$T1" diff --quiet; then ok "--dry-run on an adopted repo writes nothi
 # SPEC-192 (goal 06, harness-ops): per-project .kit.toml override + adopt-time module wiring.
 # The resolver (lib/config/kit-config.sh, goal 01) already merges <project>/.kit.toml over the
 # kit-root default; these tests close the loop through adopt: a starter .kit.toml is seeded,
-# and the currently-enabled hook-modules (board/session/advisor/cosmetic) are wired into
+# and the currently-enabled hook-modules (per lib/config/modules.tsv) are wired into
 # <project>/.claude/settings.json at adopt time.
 # ------------------------------------------------------------------------------------------
 wired_hooks() { jq -r '[.hooks // {} | to_entries[]? | .value[]? | .hooks[]? | .command] | .[]' "$1" 2>/dev/null | grep -oE 'dwarves-kit/hooks/[A-Za-z0-9._-]+\.sh' | sed 's#dwarves-kit/hooks/##' | sort -u; }
@@ -124,13 +127,25 @@ if [ -f "$T8/.kit.toml" ] && grep -q '^\[modules\]' "$T8/.kit.toml" \
 else
   no "fresh adopt did not seed .kit.toml with the expected [modules] section"
 fi
+# 12b. The seeded modules are exactly the module table's toggleable modules, in table order: the
+# ones the old private table lacked (worktree, money_gate, prose_rag, sync) are in, the folded
+# bridge is out.
+SEEDED="$(awk '/^\[modules\]/ { s = 1; next } /^\[/ { s = 0 } s && /^[a-z_]+ = / { printf "%s ", $1 }' "$T8/.kit.toml" | sed 's/ $//')"
+TABLE_MODS="$(bash -c "source lib/config/modules.sh; kit_modules_known")"
+if [ "$SEEDED" = "$TABLE_MODS" ] && ! printf '%s' "$SEEDED" | grep -qw bridge && printf '%s' "$SEEDED" | grep -qw money_gate; then
+  ok "fresh adopt seeds exactly the module table's modules (incl. money_gate, prose_rag, worktree, sync; no bridge)"
+else
+  no "seeded [modules] differ from the module table: [$SEEDED] vs [$TABLE_MODS]"
+fi
 
-# 13. That same fresh adopt wires the kit-root-default-enabled modules' hooks into the
-# project's settings.json (board/session/advisor default true; cosmetic defaults false).
+# 13. That same fresh adopt wires the core modules' hooks into the project's settings.json
+# (board is core; session, advisor and cosmetic are opt-in and stay out).
 W13="$(wired_hooks "$T8/.claude/settings.json")"
-if { trap '' PIPE; printf '%s\n' "$W13" 2>/dev/null || :; } | grep -qx backlog-stage.sh && { trap '' PIPE; printf '%s\n' "$W13" 2>/dev/null || :; } | grep -qx context-hints.sh \
+if { trap '' PIPE; printf '%s\n' "$W13" 2>/dev/null || :; } | grep -qx backlog-stage.sh && { trap '' PIPE; printf '%s\n' "$W13" 2>/dev/null || :; } | grep -qx board-row-gate.sh \
+  && ! { trap '' PIPE; printf '%s\n' "$W13" 2>/dev/null || :; } | grep -qx context-hints.sh \
+  && ! { trap '' PIPE; printf '%s\n' "$W13" 2>/dev/null || :; } | grep -qx context-readiness.sh \
   && ! { trap '' PIPE; printf '%s\n' "$W13" 2>/dev/null || :; } | grep -qx auto-format.sh; then
-  ok "fresh adopt wires kit-root-default-enabled modules' hooks (board/advisor in, cosmetic out)"
+  ok "fresh adopt wires only the core module's hooks (board in; session, advisor, cosmetic out)"
 else
   no "fresh adopt wired the wrong hook set: [$W13]"
 fi
@@ -149,10 +164,10 @@ fi
 # 15. THE Done= proof: a project .kit.toml [modules] board=false results in that project NOT
 # wiring the board hook (backlog-stage.sh), verified via its settings.json.
 T10="$(newrepo)"
-bash lib/adopt.sh "$T10" >/dev/null
+bash lib/adopt.sh --with board,session "$T10" >/dev/null
 W15_BEFORE="$(wired_hooks "$T10/.claude/settings.json")"
 { trap '' PIPE; printf '%s\n' "$W15_BEFORE" 2>/dev/null || :; } | grep -qx backlog-stage.sh \
-  && ok "precondition: board's hook is wired before the override (kit-root default board=true)" \
+  && ok "precondition: board's hook is wired before the override (--with board,session)" \
   || no "precondition failed: board's hook was never wired to begin with"
 sed -i.bak 's/^board = true$/board = false/' "$T10/.kit.toml" && rm -f "$T10/.kit.toml.bak"
 grep -qx 'board = false' "$T10/.kit.toml" || no "test setup: could not flip board=false in $T10/.kit.toml"
@@ -221,7 +236,74 @@ else
   no "re-running adopt --refresh churned settings.json with no .kit.toml change"
 fi
 
-rm -rf "$T8" "$T9" "$T10" "$T11"
+# 19. A module the old private table lacked now wires: --with money_gate seeds it and wires money-gate.sh.
+T13="$(newrepo)"
+bash lib/adopt.sh --with money_gate,prose_rag "$T13" >/dev/null
+W19="$(wired_hooks "$T13/.claude/settings.json")"
+if { trap '' PIPE; printf '%s\n' "$W19" 2>/dev/null || :; } | grep -qx money-gate.sh && { trap '' PIPE; printf '%s\n' "$W19" 2>/dev/null || :; } | grep -qx prose-rag.sh; then
+  ok "--with money_gate,prose_rag wires money-gate.sh and prose-rag.sh (modules the old adopt table did not know)"
+else
+  no "--with money_gate,prose_rag did not wire its hooks: [$W19]"
+fi
+# Each wired hook sits under the event the module table names.
+EV19="$(jq -r '.hooks | to_entries[] | .key as $e | .value[] | .hooks[] | .command | gsub("^.*/hooks/"; "") | split(" ")[0] | "\($e):\(.)"' "$T13/.claude/settings.json" | sort -u | tr '\n' ' ')"
+if [ "$EV19" = "PreToolUse:money-gate.sh UserPromptSubmit:prose-rag.sh " ]; then
+  ok "wired hooks sit under the events the module table names"
+else
+  no "wired events differ from the table: [$EV19]"
+fi
+
+# 20. The committed project file does not depend on the operator's own settings: a hook wired
+# user-level is still wired per project (Claude Code runs an identical handler once, so there is
+# no double-fire to avoid, and teammates without the user-level wiring still get the hook).
+T14="$(newrepo)"
+CD20="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
+printf '%s' '{"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":"bash $HOME/.claude/dwarves-kit/hooks/anchor-root.sh $HOME/.claude/dwarves-kit/hooks/board-row-gate.sh"}]}]}}' > "$CD20/settings.json"
+CLAUDE_DIR="$CD20" bash lib/adopt.sh "$T14" >/dev/null 2>&1
+T14B="$(newrepo)"
+bash lib/adopt.sh "$T14B" >/dev/null 2>&1
+if [ "$(wired_hooks "$T14/.claude/settings.json")" = "$(wired_hooks "$T14B/.claude/settings.json")" ] \
+  && wired_hooks "$T14/.claude/settings.json" | grep -qx board-row-gate.sh; then
+  ok "adopt output is the same with or without user-level kit hooks (board-row-gate wired in both)"
+else
+  no "adopt output depends on the operator's user-level settings"
+fi
+
+# 21. On a machine with the kit plugin, adopt leaves the project's settings.json alone (the plugin registers every hook).
+T15="$(newrepo)"
+CD21="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
+mkdir -p "$CD21/plugins/cache/dwarves-marketplace/kit/1.0.0/lib"
+OUT21="$(CLAUDE_DIR="$CD21" bash lib/adopt.sh --with board,session "$T15" 2>&1)"
+if [ ! -f "$T15/.claude/settings.json" ] && grep -qx 'board = true' "$T15/.kit.toml" && grep -qx 'session = true' "$T15/.kit.toml" \
+  && printf '%s' "$OUT21" | grep -q 'the kit plugin already registers'; then
+  ok "plugin machine: .kit.toml records the modules, no project settings.json is written, adopt names why"
+else
+  no "plugin machine wiring wrong: $OUT21"
+fi
+# NC: the same repo with the plugin gone wires its hooks, so the empty result above was the plugin rule.
+CLAUDE_DIR="$NO_CLAUDE" bash lib/adopt.sh --refresh "$T15" >/dev/null 2>&1
+if wired_hooks "$T15/.claude/settings.json" | grep -qx context-readiness.sh; then
+  ok "NC: without the plugin the same repo wires its hooks"
+else
+  no "NC: hooks did not appear without the plugin"
+fi
+# The project file is committed and shared, so a plugin machine leaves it byte for byte alone.
+cp "$T15/.claude/settings.json" "$T15/.settings.before"
+OUT21B="$(CLAUDE_DIR="$CD21" bash lib/adopt.sh --refresh "$T15" 2>&1)"
+if cmp -s "$T15/.settings.before" "$T15/.claude/settings.json" && printf '%s' "$OUT21B" | grep -q 'left alone'; then
+  ok "plugin machine: re-adopt leaves an existing project settings.json byte for byte alone"
+else
+  no "plugin machine changed the committed project settings.json: $OUT21B"
+fi
+# --dry-run says the same and writes nothing.
+OUT21C="$(CLAUDE_DIR="$CD21" bash lib/adopt.sh --dry-run "$T15" 2>&1)"
+if printf '%s' "$OUT21C" | grep -q 'would leave .*settings.json alone'; then
+  ok "plugin machine: --dry-run reports it would leave settings.json alone"
+else
+  no "plugin machine --dry-run output: $OUT21C"
+fi
+
+rm -rf "$T8" "$T9" "$T10" "$T11" "$T13" "$T14" "$T14B" "$T15" "$CD20" "$CD21"
 fi
 
 # --- SPEC-252: [output] style -> project output-styles/ + settings.json outputStyle ---

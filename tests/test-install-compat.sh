@@ -53,14 +53,49 @@ out3="$(HOME="$HOME_SB3" CLAUDE_DIR="$TMP3" bash "$KIT_DIR/install.sh" 2>&1)"
 [ -f "$TMP3/agents/my-own-agent.md" ];                    chk "user agent with a non-kit name survives" $?
 { trap '' PIPE; printf '%s' "$out3" 2>/dev/null || :; } | grep -q "Retired stale bare agent copy"; chk "install log announces the retire" $?
 
-# --- KIT_FORCE_FULL bypasses compat even with the plugin present ---
+# --- the refusal is loud: it says it refused, names the escape, and --with is called out ---
+{ trap '' PIPE; printf '%s' "$out" 2>/dev/null || :; } | grep -q '\[refused\] Not wiring kit hooks'; chk "plugin machine: install says it refused to wire hooks" $?
+{ trap '' PIPE; printf '%s' "$out" 2>/dev/null || :; } | grep -q -- '--force-both'; chk "plugin machine: install names the --force-both escape" $?
+HOME_SB5="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")"; TMP5="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")"
+trap 'rm -rf "$TMP" "${TMP2:-}" "${TMP3:-}" "${TMP4:-}" "$HOME_SB1" "$HOME_SB2" "${HOME_SB3:-}" "${HOME_SB4:-}" "$HOME_SB5" "$TMP5" "${TMP6:-}" "${HOME_SB6:-}"' EXIT
+mkdir -p "$TMP5/plugins/cache/dwarves-marketplace/kit/1.0.0/lib"
+out5="$(HOME="$HOME_SB5" CLAUDE_DIR="$TMP5" bash "$KIT_DIR/install.sh" --with session,advisor 2>&1)"
+{ trap '' PIPE; printf '%s' "$out5" 2>/dev/null || :; } | grep -q -- '--with session,advisor ignored'; chk "plugin machine: --with is named as ignored" $?
+{ [ ! -e "$TMP5/settings.json" ] || ! jq -e 'has("hooks")' "$TMP5/settings.json" >/dev/null; }; chk "plugin machine: --with still wires no hooks" $?
+[ ! -e "$TMP5/dwarves-kit/kit.toml" ] || [ -L "$TMP5/dwarves-kit/kit.toml" ]; chk "plugin machine: no install record is rendered (kit.toml stays a link)" $?
+
+# --- roster-only plugin (no cache dir) is detected by the same detector ---
+TMP6="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")"; HOME_SB6="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")"
+mkdir -p "$TMP6/plugins"
+echo '{"version":2,"plugins":{"kit@dwarves-marketplace":[{"scope":"user"}]}}' > "$TMP6/plugins/installed_plugins.json"
+out6="$(HOME="$HOME_SB6" CLAUDE_DIR="$TMP6" bash "$KIT_DIR/install.sh" 2>&1)"
+{ trap '' PIPE; printf '%s' "$out6" 2>/dev/null || :; } | grep -q 'COMPAT-ONLY'; chk "roster-only plugin: took the compat branch" $?
+{ [ ! -e "$TMP6/settings.json" ] || ! jq -e 'has("hooks")' "$TMP6/settings.json" >/dev/null; }; chk "roster-only plugin: no hooks wired" $?
+
+# --- mode both: hooks already in settings.json next to the plugin are warned about, not silently kept ---
+TMP7="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")"; HOME_SB7="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")"
+mkdir -p "$TMP7/plugins/cache/dwarves-marketplace/kit/1.0.0/lib"
+printf '%s' '{"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":"$HOME/.claude/dwarves-kit/hooks/safety-gate.sh"}]}]}}' > "$TMP7/settings.json"
+out7="$(HOME="$HOME_SB7" CLAUDE_DIR="$TMP7" bash "$KIT_DIR/install.sh" 2>&1)"
+{ trap '' PIPE; printf '%s' "$out7" 2>/dev/null || :; } | grep -q 'every hook fires twice right now'; chk "mode both: install warns the hooks already fire twice and names the fix" $?
+grep -q 'safety-gate.sh' "$TMP7/settings.json"; chk "mode both: install does not edit the operator's settings.json hooks" $?
+rm -rf "$TMP7" "$HOME_SB7"
+
+# --- --force-both bypasses compat even with the plugin present ---
 TMP2="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
 mkdir -p "$TMP2/plugins/cache/dwarves-marketplace/kit/1.0.0/lib"
-out2="$(HOME="$HOME_SB2" CLAUDE_DIR="$TMP2" KIT_FORCE_FULL=1 bash "$KIT_DIR/install.sh" 2>&1 || true)"
-if { trap '' PIPE; printf '%s' "$out2" 2>/dev/null || :; } | grep -q 'COMPAT-ONLY'; then echo "FAIL KIT_FORCE_FULL still compat"; fail=1; else echo "ok   KIT_FORCE_FULL bypasses compat"; fi
+out2="$(HOME="$HOME_SB2" CLAUDE_DIR="$TMP2" bash "$KIT_DIR/install.sh" --force-both 2>&1 || true)"
+if { trap '' PIPE; printf '%s' "$out2" 2>/dev/null || :; } | grep -q 'COMPAT-ONLY'; then echo "FAIL --force-both still compat"; fail=1; else echo "ok   --force-both bypasses compat"; fi
+jq -e '.hooks.PreToolUse | length > 0' "$TMP2/settings.json" >/dev/null 2>&1; chk "--force-both wires the spine hooks next to the plugin" $?
+# The older env spelling still works.
+TMP2B="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")"; HOME_SB2B="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")"
+mkdir -p "$TMP2B/plugins/cache/dwarves-marketplace/kit/1.0.0/lib"
+HOME="$HOME_SB2B" CLAUDE_DIR="$TMP2B" KIT_FORCE_FULL=1 bash "$KIT_DIR/install.sh" >/dev/null 2>&1 || true
+jq -e '.hooks.PreToolUse | length > 0' "$TMP2B/settings.json" >/dev/null 2>&1; chk "KIT_FORCE_FULL=1 is still honored as the older spelling of --force-both" $?
+rm -rf "$TMP2B" "$HOME_SB2B"
 # ... but never reopens the bare-agent duplicate: the plugin serves agents under
 # kit:, so the full install with a plugin cached must not copy agents/ again.
-[ -z "$(ls -A "$TMP2/agents" 2>/dev/null)" ]; chk "KIT_FORCE_FULL with plugin cached copies no bare agents" $?
+[ -z "$(ls -A "$TMP2/agents" 2>/dev/null)" ]; chk "--force-both with plugin cached copies no bare agents" $?
 { trap '' PIPE; printf '%s' "$out2" 2>/dev/null || :; } | grep -q 'Agents served by the cached plugin'; chk "install log says agents come from the plugin" $?
 
 # --- no plugin cached -> the full install still copies agents (negative control) ---

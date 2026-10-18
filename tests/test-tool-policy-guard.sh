@@ -131,8 +131,8 @@ assert "row 19: hooks.json registers exactly one PreToolUse entry, matcher *" $?
 [ "$(jq -r '.hooks.PreToolUse[] | select(.hooks[].command | contains("tool-policy-guard")) | .matcher' "$KIT_DIR/settings.json")" = "*" ]
 assert "row 20: settings.json registers exactly one PreToolUse entry, matcher *" $?
 
-grep -E '^[[:space:]]*advisor\)' "$KIT_DIR/install.sh" | grep -qF 'tool-policy-guard.sh'
-assert "row 21: install.sh maps the hook into the advisor module (order-tolerant)" $?
+bash -c "source '$KIT_DIR/lib/config/modules.sh'; kit_module_hooks advisor" | tr ' ' '\n' | grep -qxF 'tool-policy-guard.sh'
+assert "row 21: the module table maps the hook into the advisor module (order-tolerant)" $?
 
 echo ""
 echo "=== Row 22: in-suite NEGATIVE CONTROL (scratch copy, never the tracked file) ==="

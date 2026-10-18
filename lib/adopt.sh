@@ -39,11 +39,16 @@
 # Per-project override close-out (goal 06): the resolver (lib/config/kit-config.sh,
 # goal 01) already merges <target>/.kit.toml over the kit-root default. This closes the loop:
 # adopt seeds a starter <target>/.kit.toml (opt-in; never overwritten after creation) and, on
-# EVERY run (fresh or --refresh), wires the currently-enabled HOOK-bearing modules (board,
-# session, advisor, cosmetic) into <target>/.claude/settings.json via a jq MERGE (never a
-# wholesale file rewrite -- other entries in that file are preserved). Command/skill modules
-# (queue, stats, quiz_gate, weekend_batch, bridge) need no settings.json entry, so they are
-# recorded in .kit.toml but never touch settings.json. This is "wired at adopt time", not read
+# EVERY run (fresh or --refresh), wires the currently-enabled HOOK-bearing modules into
+# <target>/.claude/settings.json via a jq MERGE (never a wholesale file rewrite -- other entries
+# in that file are preserved). The module list and each module's hooks come from the ONE module
+# table, lib/config/modules.tsv (the same file install.sh reads); a module with no hook (queue,
+# stats, ...) is recorded in .kit.toml but never touches settings.json. On a machine with the kit
+# plugin installed it leaves the project's settings.json alone: the plugin's hooks.json already
+# registers every hook, under a different command string, so a second set would fire twice.
+# (A hook the operator's own ~/.claude/settings.json also wires is fine: Claude Code runs an
+# identical handler once.) The project file is committed and shared, so it never changes on the
+# strength of one machine's plugin. This is "wired at adopt time", not read
 # per hook fire: re-running adopt.sh (an explicit, deliberate action) recomputes the project's
 # wired set from its CURRENT .kit.toml; nothing reads .kit.toml at hook-fire time.
 set -uo pipefail
@@ -56,8 +61,13 @@ KIT_ROOT="${CLAUDE_PLUGIN_ROOT:-$HOME/.claude/dwarves-kit}"
 # the install (in place, or via the per-dir compat symlinks). settings.json already writes its
 # hook commands as $HOME/.claude/dwarves-kit/hooks/*.sh for the same reason.
 KIT_REF="~/.claude/dwarves-kit"
+CLAUDE_DIR="${CLAUDE_DIR:-$HOME/.claude}"   # overridable for fixtures, like install.sh
 SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SRC_ROOT="$(cd "$SELF_DIR/.." && pwd)"   # the dwarves-kit repo root when run from its lib/
+# The one module table (names, hooks, defaults), shared with install.sh.
+# shellcheck source=lib/config/modules.sh
+source "$SELF_DIR/config/modules.sh" || { echo "adopt: module table missing: $SELF_DIR/config/modules.sh" >&2; exit 1; }
+KIT_KNOWN_MODULES="$(kit_modules_known)"
 START="<!-- kit:adopt -->"               # managed-block markers in the consumer CLAUDE.md
 END="<!-- /kit:adopt -->"
 
@@ -338,22 +348,6 @@ fi
 # kit_root_toml and the config resolver are already loaded up front (needed for the
 # single_source knob before this point too).
 
-# module -> its hook script basenames (space-separated; empty = hookless -- queue, stats,
-# quiz_gate, weekend_batch, bridge are commands/skills with no hook to gate). Kept in sync
-# with install.sh's kit_module_hooks() (same doc note there): only board/session/advisor/
-# cosmetic carry a hook, so only those need a settings.json entry.
-kit_module_hooks() {
-  case "$1" in
-    board) echo "backlog-stage.sh" ;;
-    session) echo "context-readiness.sh output-offload.sh pre-compact-backup.sh post-compact-reinject.sh session-state-save.sh harvest.sh citation-guard.sh" ;;
-    advisor) echo "context-hints.sh" ;;
-    cosmetic) echo "auto-format.sh notification.sh slop-cleaner.sh statusline.sh codebase-index.sh permission-auto-approve.sh" ;;
-    *) echo "" ;;
-  esac
-}
-
-KIT_KNOWN_MODULES="board session advisor cosmetic queue stats quiz_gate weekend_batch bridge"
-
 # 5. Per-project .kit.toml -- an OPT-IN starter. Created only if absent; a
 # project's own config is NEVER overwritten by adopt, fresh or --refresh (same invariant as
 # AGENTS.md / the proof marker). --with (first run only) seeds the named modules `true`;
@@ -418,17 +412,15 @@ fi
 # is picked up the next time adopt runs. Never on hook-fire (Not: runtime per-call module
 # toggling). A jq MERGE, never a settings.json rewrite: only kit-module hook entries
 # (dwarves-kit/hooks/*) are added/removed; every other entry in the file is preserved untouched.
-# Command/skill modules (queue, stats, quiz_gate, weekend_batch, bridge) have no hook, so they
-# never touch settings.json regardless of their .kit.toml value.
+# Modules with no hook in the table never touch settings.json regardless of their .kit.toml value.
 if [ -n "$kit_root_toml" ] && [ "$RESOLVER_OK" -eq 1 ] && command -v jq >/dev/null 2>&1; then
   settings_src=""
   for c in "$SRC_ROOT/settings.json" "$KIT_ROOT/settings.json"; do
     [ -f "$c" ] && { settings_src="$c"; break; }
   done
   if [ -n "$settings_src" ]; then
-    HOOKED_MODULES="board session advisor cosmetic"
     enabled_list="" wired_hook_names=""
-    for m in $HOOKED_MODULES; do
+    for m in $KIT_KNOWN_MODULES; do
       KIT_CONFIG_ROOT="$(dirname "$kit_root_toml")" KIT_PROJECT_ROOT="$TARGET" \
         v="$(kit_config_get "modules.$m" "false")"
       if [ "$v" = "true" ]; then
@@ -438,14 +430,31 @@ if [ -n "$kit_root_toml" ] && [ "$RESOLVER_OK" -eq 1 ] && command -v jq >/dev/nu
     done
     wired_hook_names="$(echo "$wired_hook_names" | xargs)"
 
+    # The plugin registers every hook itself. The project settings.json is committed and shared, so
+    # on a plugin machine adopt neither adds hooks to it nor strips any: it leaves the file alone.
+    shared_note="" plugin_machine=0
+    install_mode="$(CLAUDE_DIR="$CLAUDE_DIR" bash "$SELF_DIR/onboard-detect.sh" mode 2>/dev/null || echo none)"
+    case "$install_mode" in
+      plugin|both)
+        plugin_machine=1
+        shared_note=" (project settings.json left alone, the kit plugin already registers every hook)"
+        ;;
+    esac
+
     hook_re=""
     for h in $wired_hook_names; do
       esc="$(printf '%s' "$h" | sed 's/\./\\./g')"
       if [ -z "$hook_re" ]; then hook_re="$esc"; else hook_re="$hook_re|$esc"; fi
     done
 
-    if [ "$DRY" -eq 1 ]; then
+    if [ "$plugin_machine" -eq 1 ]; then
+      if [ "$DRY" -eq 1 ]; then note "leave $project_settings alone$shared_note"
+      else echo "adopt: project hook-module wiring for $TARGET -> modules:${enabled_list:-<none>}$shared_note"; fi
+    elif [ "$DRY" -eq 1 ]; then
       note "wire $project_settings for modules:${enabled_list:-<none>} (hooks:${wired_hook_names:-none})"
+    elif [ -z "$wired_hook_names" ] && [ ! -f "$project_settings" ]; then
+      # Nothing to add and no file to clean: do not create an empty settings.json.
+      echo "adopt: project hook-module wiring for $TARGET -> modules:${enabled_list:-<none>}"
     else
       # Whole kit command strings, not hook basenames: a rewrite that keeps the same hooks but
       # changes how they are invoked (the anchor-root.sh prefix) is still a change to report.

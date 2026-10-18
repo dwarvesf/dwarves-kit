@@ -1,0 +1,36 @@
+# lib/config/modules.tsv -- the ONE module table.
+#
+# Read by install.sh and lib/adopt.sh through lib/config/modules.sh; neither keeps a private
+# copy. Add a module, move a hook, or flip a default HERE and nowhere else
+# (tests/test-modules-table.sh pins every other surface to this file).
+#
+# Columns, tab separated; '#' starts a comment line; '-' means none:
+#   module   the --with name and the [modules] key in kit.toml / .kit.toml
+#   default  core    on in a FRESH install and a fresh adopt (a per-project .kit.toml may turn it off)
+#            opt-in  off until named in --with or set true in [modules]
+#   hooks    space separated <Event>:<script> pairs the module wires. The Event must match where
+#            settings.json registers the script; statusLine is the one non-hook entry (the
+#            statusline.sh command). Several events for one script are several pairs.
+#   clis     space separated bin/<name> entrypoints exposed on PATH (~/.local/bin)
+#
+# 'spine' is not a toggle: install.sh wires it on every install, so it is never a valid --with
+# name and never a [modules] key. It stays here so the safety hooks have one home too.
+# Existing installs keep what they have: a default change reaches a NEW install only.
+#
+# board's SessionStart entry is `backlog-stage.sh --surface`: that pass runs intake-sweep.sh, which
+# feeds the board's staging file. Both stage entries are inert until opted in (BACKLOG_STAGE_AUTO=1,
+# and a repo's _meta/intake-sources.json for the sweep), so core board stays quiet by default.
+# module	default	hooks	clis
+spine	core	PreToolUse:safety-gate.sh PreToolUse:ship-gate.sh PreToolUse:spec-drift-guard.sh PreToolUse:secrets-guard.sh PreToolUse:commit-format.sh Stop:anti-rationalization.sh	-
+board	core	SessionStart:backlog-stage.sh PreToolUse:board-row-gate.sh SessionEnd:backlog-stage.sh	board
+session	opt-in	SessionStart:context-readiness.sh SessionStart:post-compact-reinject.sh PreToolUse:batch-debt-warn.sh PostToolUse:output-offload.sh PreCompact:pre-compact-backup.sh PreCompact:harvest.sh SessionEnd:harvest.sh Stop:citation-guard.sh UserPromptSubmit:context-budget.sh	session
+advisor	opt-in	PreToolUse:tool-policy-guard.sh UserPromptSubmit:context-hints.sh	-
+cosmetic	opt-in	SessionStart:codebase-index.sh PostToolUse:auto-format.sh Stop:slop-cleaner.sh Notification:notification.sh PermissionRequest:permission-auto-approve.sh statusLine:statusline.sh	-
+queue	opt-in	-	-
+stats	opt-in	-	-
+quiz_gate	opt-in	-	-
+weekend_batch	opt-in	-	-
+worktree	opt-in	-	worktree-provision
+money_gate	opt-in	PreToolUse:money-gate.sh	-
+prose_rag	opt-in	UserPromptSubmit:prose-rag.sh	prose-rag
+sync	opt-in	-	-

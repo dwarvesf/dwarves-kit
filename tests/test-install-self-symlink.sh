@@ -21,6 +21,10 @@ echo 'real hook' > "$FAKE_KIT/hooks/marker.sh"
 echo 'real lib'  > "$FAKE_KIT/lib/marker.sh"
 echo 'playbook'  > "$FAKE_KIT/docs/impl-playbook/marker.md"
 cp "$KIT_DIR/install.sh" "$FAKE_KIT/install.sh"
+# install.sh reads the module table and asks the detector, both from lib/ next to it.
+mkdir -p "$FAKE_KIT/lib/config"
+cp "$KIT_DIR/lib/config/modules.sh" "$KIT_DIR/lib/config/modules.tsv" "$FAKE_KIT/lib/config/"
+cp "$KIT_DIR/lib/onboard-detect.sh" "$FAKE_KIT/lib/onboard-detect.sh"
 mkdir -p "$TMP/plugins/cache/dwarves-marketplace/kit/1.0.0/lib"
 ln -s "$FAKE_KIT" "$TMP/dwarves-kit"
 

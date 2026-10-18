@@ -24,11 +24,11 @@ list` can render "every declared key," not just the env-shaped subset.
 Authoritative assignment per ADR-0034 decision 3, renamed by the 2026-07-18 amendment (leg ->
 stage; Specify/Execute/Observe/Govern -> Shape/Build/Watch/Check, Learn kept) and by ADR-0036
 (Learn -> Reflect, the subsystem `learn` -> `reflect`). Old names shown parenthetically for one
-release. Every `KIT_KNOWN_MODULES` entry
-(`install.sh`, 12 modules) has exactly one row. `team_mode` is excluded from
-`KIT_KNOWN_MODULES` itself (install.sh hard-rejects it until team-mode ships), so
-it is not a row here either , the completeness rule is scoped to
-`KIT_KNOWN_MODULES`, not to every `[modules]` line in `kit.toml`.
+release. Every toggleable module in `lib/config/modules.tsv` (the one module table that
+`install.sh` and `lib/adopt.sh` both read, 12 modules) has exactly one row. `team_mode` is not in that
+table (install.sh hard-rejects it until team-mode ships), and neither is `spine` (always wired, never a
+toggle), so neither is a row here , the completeness rule is scoped to the table's
+toggleable modules, not to every `[modules]` line in `kit.toml`.
 
 | Module | Primary stage | Notes |
 |---|---|---|
@@ -43,7 +43,7 @@ it is not a row here either , the completeness rule is scoped to
 | sync | Shape (Specify) | spanner: spoke intake -> board rows (Shape input side) + outward mirror to Reminders/Notion/Hermes (Watch, presentation). Engine lib/sync/, verb `board sync`, per-repo `[sync]` config. ABSORBED `bridge` 2026-07-16 (same engine surface, zero live consumers at fold time: no `bridge=on` rows, no snapshot, module off): the SPEC-147 cockpit mirror + SPEC-149 writeback become a sync EDGE in the SPEC-002 P2 port. FIRST SLICE LANDED (`lib/sync/cockpit.py`, `board mirror --engine sync --dry-run`): the deterministic multi-source EXTRACT + keyed `row_hash` git-wins diff, carrying over the reachable-state map {triage, ready, blocked, done}. The legacy `mirror`/`status`/`writeback` verbs + lib/board/board-mirror.sh + board-writeback.sh stay the DEFAULT and runnable, serving the still-deferred live LOAD leg, two-way writeback, snapshot migration, and eventual verb-retirement. |
 | worktree | Build (Execute) | |
 | money_gate | Check (Govern) | |
-| classify | Shape (Specify) | not a `KIT_KNOWN_MODULES` install toggle (it is spine machinery), but ADR-0034 decision 3 assigns it a stage and pins THIS file as the machine home for that table. Added 2026-07-14: the stage was answerable only from ADR prose. |
+| classify | Shape (Specify) | not a `modules.tsv` install toggle (it is spine machinery), but ADR-0034 decision 3 assigns it a stage and pins THIS file as the machine home for that table. Added 2026-07-14: the stage was answerable only from ADR prose. |
 | gate | Check (Govern) | spine machinery, same as above (ADR-0034 decision 3). |
 | spec | Shape (Specify) | spine machinery (ADR-0034 decision 3). |
 | goal | Shape (Specify) | spine machinery (ADR-0034 decision 3). |
@@ -432,21 +432,22 @@ never turns the step off.
 |---|---|---|---|---|---|
 | WEB_DRIFT_SITES | env-only | (unset) | [impl] | (none) | Sites the `kit:web-drift` audit loop enumerates, read by `lib/webcheck/webcheck.py sites` (adapter-default invariant: the kit ships no hostname). Separator is COMMA or WHITESPACE, never colon, because every `https://` URL carries a colon. Unset means no sites are declared: the skill reports that and stops, which is a clean result, not an error. |
 
-### modules (install-time manifest, `install.sh` `KIT_KNOWN_MODULES`, one row per entry)
+### modules (install-time manifest, `lib/config/modules.tsv`, one row per entry)
 
-No env var exists for any of these , they are install-time flags recorded in the
+Defaults mirror the `default` column of `lib/config/modules.tsv`: `core` is `true`, `opt-in` is `false`
+(`tests/test-modules-table.sh` pins it). No env var exists for any of these , they are install-time flags recorded in the
 consumer's own `kit.toml [modules]` section (an install RECORD, never read at
 runtime by a hook per the standing "no runtime manifest read" lint), read at
 COMMAND invocation via `kit_config_get modules.<name>`.
 
 | Env var | kit.toml key | Default | Status | Module | Doc |
 |---|---|---|---|---|---|
-| - | modules.board | `true` | [impl] | board | Enables board's hooks + CLI. |
-| - | modules.session | `true` | [impl] | session | Enables session's hooks + CLI. |
-| - | modules.advisor | `true` | [impl] | advisor | Enables the advisor's hook-bearing surface. |
+| - | modules.board | `true` | [impl] | board | Enables board's hooks + CLI. Core: on in a fresh install and a fresh adopt. |
+| - | modules.session | `false` | [impl] | session | Enables session's hooks + CLI. |
+| - | modules.advisor | `false` | [impl] | advisor | Enables the advisor's hook-bearing surface. |
 | - | modules.cosmetic | `false` | [impl] | cosmetic | Statusline; orthogonal to the loop. |
-| - | modules.queue | `true` | [impl] | queue | Hookless; orchestrate/dispatch are commands. |
-| - | modules.stats | `true` | [impl] | stats | Hookless read-plane projection. |
+| - | modules.queue | `false` | [impl] | queue | Hookless; orchestrate/dispatch are commands. |
+| - | modules.stats | `false` | [impl] | stats | Hookless read-plane projection. |
 | - | modules.quiz_gate | `false` | [impl] | quiz_gate | Hookless; backs `commands/quiz-gate.md`. |
 | - | modules.weekend_batch | `false` | [impl] | weekend_batch | Hookless; backs `lib/queue/weekend-batch.sh`. |
 | - | modules.worktree | `false` | [impl] | worktree | Hookless; exposes the `worktree-provision` CLI. |
@@ -495,7 +496,8 @@ against any of these bare tokens as covered without a registry row.
 | KITLOG | `lib/stats/tests/test-defect-correlation.sh`: test-fixture-local. |
 | KITTY_WINDOW_ID | The Kitty terminal emulator's own env var; an unrelated false positive of the `KIT` prefix match, not a kit config surface at all. |
 | KIT_DIR | `lib/plugin-check/tests/smoke.sh`: test-fixture scratch dir. |
-| KIT_KNOWN_MODULES | `install.sh`: a hardcoded bash array literal, never read from the environment. |
+| KIT_KNOWN_MODULES | `install.sh` and `lib/adopt.sh`: derived from `lib/config/modules.tsv` at run time, never read from the environment. |
+| KIT_MODULES_FILE | `lib/config/modules.sh`: a test seam that points the module-table readers at another file; the default is `modules.tsv` next to the script, and no shipped path sets it. |
 | KIT_LIB | Script-local computed dir in most readers (e.g. `lib/telemetry/lane-telemetry.sh`); the real env-overridable cousin is `DWARVES_KIT_LIB` (Python, `lib/stats/src/stats/config.py`), which the bash-oriented seed regex cannot see (no `$` sigil in Python source) , documented here rather than silently dropped: see `lib/stats/README.md`'s own env table for `DWARVES_KIT_LIB`'s default (this repo's own `lib/`, kit-internal). |
 | MEGA_ROOT | `lib/board/work.sh`: script-local, set from `--megagoals-root` or `$REPO/_meta/megagoals`, never env-read. |
 | MEGA_SH | `lib/board/board.sh`: computed `$BOARD_DIR/../mega/mega.sh`. |

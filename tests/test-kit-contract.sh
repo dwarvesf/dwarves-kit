@@ -45,7 +45,7 @@ chk() { if [ -z "$2" ]; then ok "$1"; else bad "$1" "(offenders: $(echo "$2" | t
 
 TMP="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; trap 'rm -rf "$TMP"' EXIT
 
-# Modules = the kit's DECLARED module list (install.sh KIT_KNOWN_MODULES, the same list
+# Modules = the kit's DECLARED module list (lib/config/modules.tsv, the same list
 # lib/config/module-registry.md is completeness-checked against) mapped to their lib/ dirs,
 # UNION any lib/ dir carrying a tool.toml.
 #
@@ -78,7 +78,7 @@ module_home() {  # module_home <module> -> its dir, or "" for "documented elsewh
 }
 modules() {
   {
-    grep -o '^KIT_KNOWN_MODULES="[^"]*"' install.sh | sed 's/.*"\(.*\)"/\1/' | tr ' ' '\n' \
+    bash -c "source lib/config/modules.sh; kit_modules_known" | tr ' ' '\n' \
       | sed 's/_/-/g' | while read -r m; do
           [ -n "$m" ] || continue
           h="$(module_home "$m")"
