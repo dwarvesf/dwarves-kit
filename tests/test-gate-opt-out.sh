@@ -51,7 +51,7 @@ hook ship-gate.sh "$R" "$PUSH"; rc=$?
 git -C "$R" reset -q --mixed HEAD~1; rm -f "$R/.kit.toml"; off_base "$R" proof_of_done
 hook ship-gate.sh "$R" "$PUSH"; rc=$?
 [ $rc -eq 0 ] && pass "committed proof_of_done = false -> ship-gate ALLOWS the same push" || fail "proof_of_done=false still blocked (rc=$rc): $ERR"
-grep -q 'OFF-BY-CONFIG | proof-gate | x' "$DWARVES_KIT_LOG_DIR/ship-gate.log" && pass "the skip leaves an OFF-BY-CONFIG line in ship-gate.log" || fail "no OFF-BY-CONFIG log line"
+grep -q 'OFF-BY-CONFIG | proof-gate | x' "$KIT_LEDGER_DIR/hooks/ship-gate.log" && pass "the skip leaves an OFF-BY-CONFIG line in ship-gate.log" || fail "no OFF-BY-CONFIG log line"
 echo edited >> "$R/.kit.toml"
 hook ship-gate.sh "$R" "$PUSH"; rc=$?
 [ $rc -eq 2 ] && pass "NC: a dirty edit on the committed .kit.toml -> gate back ON" || fail "dirty .kit.toml still switched the gate off (rc=$rc)"
@@ -73,7 +73,7 @@ hook ship-gate.sh "$L" "$PUSH"; rc=$?
 off_base "$L" lane_gates
 hook ship-gate.sh "$L" "$PUSH"; rc=$?
 [ $rc -eq 0 ] && pass "committed lane_gates = false (proof gate still on) -> ship-gate ALLOWS the lane-less spec" || fail "lane_gates=false still blocked (rc=$rc): $ERR"
-[ "$(grep -c 'OFF-BY-CONFIG | lane-gate | x' "$DWARVES_KIT_LOG_DIR/ship-gate.log")" -eq 1 ] && pass "exactly one lane-gate OFF-BY-CONFIG line per push" || fail "lane-gate skip logged $(grep -c 'lane-gate' "$DWARVES_KIT_LOG_DIR/ship-gate.log") times"
+[ "$(grep -c 'OFF-BY-CONFIG | lane-gate | x' "$KIT_LEDGER_DIR/hooks/ship-gate.log")" -eq 1 ] && pass "exactly one lane-gate OFF-BY-CONFIG line per push" || fail "lane-gate skip logged $(grep -c 'lane-gate' "$KIT_LEDGER_DIR/hooks/ship-gate.log") times"
 
 echo "== proof classifier: .kit.toml is harness config =="
 PL="$KIT_DIR/lib/gate/proof-ledger.sh"; BASE="$(git -C "$L" rev-parse main~1)"
@@ -89,7 +89,7 @@ hook anti-rationalization.sh "$U" "$STOP"; rc=$?
 off "$U" understanding_gate
 hook anti-rationalization.sh "$U" "$STOP"; rc=$?
 [ $rc -eq 0 ] && pass "committed understanding_gate = false -> Stop hook ALLOWS" || fail "understanding_gate=false still blocked (rc=$rc)"
-grep -q 'OFF-BY-CONFIG | understanding_gate' "$DWARVES_KIT_LOG_DIR/anti-rationalization.log" && pass "the skip is logged in anti-rationalization.log" || fail "no OFF-BY-CONFIG line in anti-rationalization.log"
+grep -q 'OFF-BY-CONFIG | understanding_gate' "$KIT_LEDGER_DIR/hooks/anti-rationalization.log" && pass "the skip is logged in anti-rationalization.log" || fail "no OFF-BY-CONFIG line in anti-rationalization.log"
 
 echo "== commit_format =="
 C="$TMP/commit"; bare "$C"
@@ -99,7 +99,7 @@ hook commit-format.sh "$C" "$BAD"; rc=$?
 off "$C" commit_format
 hook commit-format.sh "$C" "$BAD"; rc=$?
 [ $rc -eq 0 ] && pass "committed commit_format = false -> commit-format ALLOWS" || fail "commit_format=false still blocked (rc=$rc)"
-grep -q 'OFF-BY-CONFIG | commit_format' "$DWARVES_KIT_LOG_DIR/commit-format.log" && pass "the skip is logged in commit-format.log" || fail "no OFF-BY-CONFIG line in commit-format.log"
+grep -q 'OFF-BY-CONFIG | commit_format' "$KIT_LEDGER_DIR/hooks/commit-format.log" && pass "the skip is logged in commit-format.log" || fail "no OFF-BY-CONFIG line in commit-format.log"
 
 echo "== operator overlay + resolver edges =="
 O="$TMP/operator-proof"; repo "$O"; echo change >> "$O/src/code.sh"; git -C "$O" commit -qam "feat: change"

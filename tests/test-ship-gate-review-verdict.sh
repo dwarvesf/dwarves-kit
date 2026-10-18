@@ -102,7 +102,7 @@ git -C "$R" checkout -q feat/k1; git -C "$R" rebase -q master
 E="$(mktemp "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
 RC="$(gate "$R" 'git push -u origin HEAD' "$E")"
 [ "$RC" = 0 ] && ok "key off (on the default branch): DO NOT SHIP passes" || no "key off (on the default branch): DO NOT SHIP passes (rc=$RC: $(tr '\n' ' ' < "$E"))"
-grep -q 'OFF-BY-CONFIG | review-verdict | k1' "$LOGDIR/ship-gate.log" && ok "key off is logged as OFF-BY-CONFIG" || no "key off is logged as OFF-BY-CONFIG"
+grep -q 'OFF-BY-CONFIG | review-verdict | k1' "$LOGDIR/hooks/ship-gate.log" && ok "key off is logged as OFF-BY-CONFIG" || no "key off is logged as OFF-BY-CONFIG"
 
 # an opt-out the branch carries itself, committed or not, counts for nothing
 R="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; mkrepo "$R" k2 '\n## Review\n\n### Verdict: DO NOT SHIP\n'
@@ -114,7 +114,7 @@ RC="$(gate "$R" 'git push -u origin HEAD' "$E")"
 [ "$RC" = 2 ] && ok "key off committed only on the branch: still blocks" || no "key off committed only on the branch: still blocks (rc=$RC)"
 
 # the block is logged like the other rules
-grep -q 'BLOCKED | ship-gate | v1 (review verdict DO NOT SHIP)' "$LOGDIR/ship-gate.log" && ok "the block is written to ship-gate.log" || no "the block is written to ship-gate.log"
+grep -q 'BLOCKED | ship-gate | v1 (review verdict DO NOT SHIP)' "$LOGDIR/hooks/ship-gate.log" && ok "the block is written to ship-gate.log" || no "the block is written to ship-gate.log"
 
 # the rule is a kit default: no config names the key and it resolves ON
 KIT_CONFIG_OPERATOR=/nonexistent bash "$KIT/lib/gate/gate-policy.sh" enabled review_verdict "$KIT" && ok "review_verdict resolves ON by default" || no "review_verdict resolves ON by default"

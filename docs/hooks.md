@@ -14,7 +14,7 @@ The plugin `hooks.json` runs every hook except secrets-guard through `hooks/anch
 Two env vars apply to groups of hooks, not all of them:
 
 - `DWARVES_KIT_DEBUG=1` prints a `[dwarves-kit:<name>]` trace line to stderr. These hooks honor it: anti-rationalization, auto-format, codebase-index, context-readiness, permission-auto-approve, safety-gate, session-state-save, slop-cleaner, spec-drift-guard.
-- `DWARVES_KIT_LOG_DIR` moves the log directory (default `~/.claude/dwarves-kit/logs`). These hooks honor it: anti-rationalization, board-row-gate, commit-format, safety-gate, secrets-guard, ship-gate, slop-cleaner, spec-drift-guard.
+- Hook logs live in `hooks/` under the ledger root: `~/.local/state/dwarves-kit/logs/hooks/<hook>.log` by default. `lib/telemetry/hook-log-dir.sh` resolves the root with the same precedence as the ledgers (`KIT_LEDGER_DIR`, then `DWARVES_KIT_LOG_DIR`, then `[ledger].location`, then the XDG default), so one setting moves both. `DWARVES_KIT_LOG_DIR=/x` puts the logs in `/x/hooks`. These hooks log there: anti-rationalization, board-row-gate, citation-guard, commit-format, safety-gate, secrets-guard, ship-gate, slop-cleaner, spec-drift-guard. On first use the helper copies any old log from `~/.claude/dwarves-kit/logs` with `cp -n` and never deletes the old directory.
 
 A `[gate]` key in the committed project kit config switches a gate off. `lib/gate/gate-policy.sh` reads it. See `lib/gate/README.md`.
 
