@@ -9,4 +9,4 @@ Record phase gates with the spec slug as the rid: `gate-ledger.sh record <spec-s
 
 **Why:** one push blocked twice in a row for these two reasons on a branch whose gates had all genuinely run.
 
-**How to apply:** record under both keys if telemetry wants the board ID, but the slug record is the one that gates. Add `Lane:` right after `Status:` when drafting a spec. Related: [[kit-ship-gate-push-mechanics]] in ops-toolkit memory.
+**How to apply:** record under both keys if telemetry wants the board ID, but the slug record is the one that gates. Add `Lane:` right after `Status:` when drafting a spec. Related: `ops-toolkit/.claude/memory/kit-ship-gate-push-mechanics.md` (cross-store, ops-toolkit memory).
