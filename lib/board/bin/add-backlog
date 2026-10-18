@@ -33,14 +33,21 @@ Env: BACKLOG_STAGE_BACKLOG, BACKLOG_STAGE_STAGING (same names + repo-relative
 defaults as hooks/backlog-stage.sh: `git rev-parse --show-toplevel` else $PWD),
 BACKLOG_PROMOTE_HOMES (directory the Home names resolve under; default: this repo's parent).
 Promoted rows land in a `### Conversation intake` section (created if missing);
-re-file into the right section by hand later. Stdlib only.
+re-file into the right section by hand later.
+
+Writers. Rows are minted by the one row verb (lib/board/board_add.py, `backlog.sh add`), in
+the target table's own column count. The staging buffer is rewritten only through
+staging-format.py `rewrite` under the staging lock, re-reading the file INSIDE the hold, so a
+block a proposer appended while a promote ran is kept. Lock order: board lock, then staging
+lock. A block that changed since it was listed (expired by drain, promoted by a second
+session) is skipped with a note, never minted twice. Stdlib plus sync_core.
 """
 import datetime
+import importlib.util
 import os
 import re
 import subprocess
 import sys
-import tempfile
 
 
 def _repo_root():
@@ -60,46 +67,24 @@ STAGING = os.environ.get("BACKLOG_STAGE_STAGING", os.path.join(_ROOT, "_meta/bac
 SECTION = "### Conversation intake"
 
 
-def parse_staging(text):
-    """Return list of dicts {raw, start, state, title, fields{...}} for each ## block."""
-    blocks = []
-    # split keeping block boundaries; each block starts at a line beginning with '## '
-    idxs = [m.start() for m in re.finditer(r"(?m)^##\s*\[", text)]
-    for i, s in enumerate(idxs):
-        e = idxs[i + 1] if i + 1 < len(idxs) else len(text)
-        raw = text[s:e]
-        head = re.match(r"##\s*\[([^\]]+)\]\s*(.+)", raw)
-        if not head:
-            continue
-        fields = dict(re.findall(r"(?m)^-\s*([A-Za-z]+):\s*(.+)$", raw))
-        blocks.append({
-            "raw": raw, "start": s, "end": e,
-            "state": head.group(1).strip(), "title": head.group(2).strip(),
-            "fields": fields,
-        })
-    return blocks
+def _load(name, path):
+    spec = importlib.util.spec_from_file_location(name, path)
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules[name] = mod
+    spec.loader.exec_module(mod)
+    return mod
 
 
-sys.path.insert(0, os.path.join(
-    os.path.dirname(os.path.dirname(os.path.dirname(
-        os.path.realpath(__file__)))), "sync"))
-from sync_core import board_lock, history_max_id  # noqa: E402
-from sync_core import next_id as _core_next_id  # noqa: E402
+_LIB = os.path.dirname(os.path.dirname(os.path.dirname(os.path.realpath(__file__))))
+# The one staging grammar and the one staging lock (lib/reflect/staging-format.py).
+sf = _load("staging_format", os.path.join(_LIB, "reflect", "staging-format.py"))
+parse_staging = sf.parse_blocks
 
 
-def next_id(backlog_text, floor=0):
-    """One past the highest id in play. Delegates to the sync_core minter so
-    this file stops carrying a second, weaker rule: the old local version
-    regex-scanned the whole text for `ID-\\d+`, so a token quoted in a notes
-    cell counted as a real row (the ID-480 bug sync_core already fixed).
-
-    `floor` carries the git-history maximum from `history_max_id`, which the
-    caller computes ONCE outside its promote loop: without it the mint sees
-    only the working copy, and a checkout lagging origin re-claims an id
-    another session already pushed.
-    """
-    n = max(_core_next_id(backlog_text, "ID"), floor + 1)
-    return f"ID-{n:03d}"  # 3-digit to match board convention
+sys.path.insert(0, os.path.join(_LIB, "sync"))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.realpath(__file__))))
+from sync_core import board_lock  # noqa: E402
+import board_add  # noqa: E402
 
 
 def clean(s):
@@ -197,7 +182,9 @@ def refusal(b):
     return None
 
 
-def make_row(cid, b):
+def row_spec(b):
+    """The `board_add` spec for one staged block: the title, plus the Intent / Approach /
+    Tags / Home / Source composed into the first middle cell (Notes & source)."""
     f = b["fields"]
     notes = (
         f"Intent: {clean(f.get('Intent', ''))} . "
@@ -210,29 +197,16 @@ def make_row(cid, b):
         notes += f" -> {home}"
     if src:
         notes += f" ({src})"
-    return f"| {cid} | {clean(b['title'])} | {notes} | queued |\n"
+    return {"title": clean(b["title"]), "mids": [notes], "status": "queued"}
 
 
-def insert_row(backlog_text, row):
-    """Insert row under the intake section (create it near EOF if missing)."""
-    if SECTION in backlog_text:
-        # insert right after the section's table header (the |---| line)
-        i = backlog_text.index(SECTION)
-        hdr = re.search(r"\|\s*-{3}.*\n", backlog_text[i:])
-        if hdr:
-            at = i + hdr.end()
-            return backlog_text[:at] + row + backlog_text[at:]
-    block = (
-        f"\n{SECTION}\n\n"
-        "| ID | Item | Notes & source | Status |\n"
-        "|---|---|---|---|\n" + row
-    )
-    # before "## Recently closed" if present, else EOF
-    marker = "## Recently closed"
-    if marker in backlog_text:
-        i = backlog_text.index(marker)
-        return backlog_text[:i] + block + "\n" + backlog_text[i:]
-    return backlog_text.rstrip() + "\n" + block
+def _retag(text, block, new_head):
+    """`text` with `block`'s `## [staged]` heading replaced by `new_head`, or None when the
+    block is no longer in `text` verbatim (it changed after it was listed)."""
+    raw = block["raw"]
+    if raw not in text:
+        return None
+    return text.replace(raw, raw.replace("## [staged]", new_head, 1), 1)
 
 
 def main(argv):
@@ -285,11 +259,18 @@ def main(argv):
         return 1
 
     if reject:
-        for b in chosen:
-            text = text.replace(b["raw"], b["raw"].replace("## [staged]", "## [rejected]", 1), 1)
-        open(STAGING, "w", encoding="utf-8").write(text)
-        print(f"rejected {len(chosen)} candidate(s).")
-        return 0
+        def _reject(current):
+            n = 0
+            for b in chosen:
+                new = _retag(current, b, "## [rejected]")
+                if new is None:
+                    print(f"skipped {b['title']!r}: changed since it was listed", file=sys.stderr)
+                    continue
+                current, n = new, n + 1
+            return current, n
+        n = sf.rewrite(STAGING, _reject)
+        print(f"rejected {n} candidate(s).")
+        return 0 if n else 1
 
     refused_ids = set()
     for b in chosen:
@@ -304,32 +285,34 @@ def main(argv):
     if not os.path.isfile(BACKLOG):
         print(f"board not found: {BACKLOG}", file=sys.stderr)
         return 2
-    # single-writer lock (the shared board lock, sync_core.board_lock: stable
-    # inode OUTSIDE the repo, so the atomic replace below can't strand a waiter
-    # on a stale fd): parallel sessions promoting concurrently is how duplicate
-    # IDs got minted (2026-07-16, kit ID-288)
+    # Single writer for both files. The board lock (sync_core.board_lock: stable inode OUTSIDE
+    # the repo) serializes the id mint against every other minter (parallel promotes minting
+    # the same id is how duplicates got in, kit ID-288); the staging lock serializes the
+    # relabel against proposers appending and drain expiring. Order: board, then staging.
+    promoted, skipped = [], []
     with board_lock(BACKLOG):
-        btext = open(BACKLOG, encoding="utf-8").read()  # read AFTER the lock
-        # once, not per row: one git read covers every id this promote run mints
-        floor = history_max_id(BACKLOG)
-        promoted = []
-        for b in chosen:
-            cid = next_id(btext, floor)
-            row = make_row(cid, b)
-            if len(re.split(r"(?<!\\)\|", row.rstrip("\n"))) != 6:
-                print(f"refusing malformed row for {cid}: {row!r}", file=sys.stderr)
-                return 2
-            btext = insert_row(btext, row)
-            text = text.replace(b["raw"], b["raw"].replace("## [staged]", f"## [promoted {cid}]", 1), 1)
-            promoted.append((cid, b["title"]))
-        fd, tmp = tempfile.mkstemp(dir=os.path.dirname(BACKLOG) or ".")
-        with os.fdopen(fd, "w", encoding="utf-8") as f:
-            f.write(btext)
-        os.replace(tmp, BACKLOG)
-        open(STAGING, "w", encoding="utf-8").write(text)
+        def _promote(current):
+            live = []
+            for b in chosen:
+                if b["raw"] in current:
+                    live.append(b)
+                else:
+                    skipped.append(b)
+            if not live:
+                return current, None
+            specs = [row_spec(b) for b in live]
+            ids = board_add.add_rows_locked(BACKLOG, specs, section=SECTION)
+            for b, cid in zip(live, ids):
+                current = _retag(current, b, f"## [promoted {cid}]")
+                promoted.append((cid, b["title"]))
+            return current, None
+        sf.rewrite(STAGING, _promote)
+    for b in skipped:
+        print(f"skipped {b['title']!r}: changed since it was listed (re-run `board promote`)",
+              file=sys.stderr)
     for cid, title in promoted:
         print(f"promoted {cid}: {title}")
-    return 0
+    return 0 if promoted else 1
 
 
 if __name__ == "__main__":

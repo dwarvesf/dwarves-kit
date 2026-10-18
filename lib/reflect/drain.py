@@ -20,14 +20,10 @@ lib/board/bin/add-backlog: <repo-root>/_meta/backlog-staging.md).
 The expiry window is a plain CONSTANT with a --days override (never a
 kit.toml key -- this is what keeps this file disjoint from the kit.toml edit).
 
-The write is guarded by a blocking exclusive `fcntl.flock` on a sibling `<staging>.lock`
-file: the same idiom hooks/harvest_lib.py's post-#226 dedup-on-append fix uses for the
-learned-ledger (open/create the lock, acquire, read + mutate + write, release in `finally`),
-adapted here to the staging file. bash(1) `flock` itself is not used anywhere in this repo
-(absent on macOS, per lib/queue/orchestrate.sh's own note) -- this is the same Python
-fcntl.flock idiom harvest_lib.py already established, not a new locking primitive.
+The write goes through `staging-format.py rewrite`, the same locked read-modify-write every
+staging writer uses (one lock domain, shared with append and promote), so an
+expiry pass cannot lose a block a proposer appends meanwhile.
 """
-import fcntl
 import importlib.util
 import os
 import re
@@ -67,10 +63,6 @@ def _staging_path():
     return os.environ.get(
         "BACKLOG_STAGE_STAGING", os.path.join(_repo_root(), "_meta/backlog-staging.md")
     )
-
-
-def _lock_path(staging):
-    return staging + ".lock"
 
 
 def expire_stale(text, days):
@@ -143,17 +135,11 @@ def main(argv):
         print(f"no staging file ({staging}); nothing staged.")
         return 0
 
-    os.makedirs(os.path.dirname(staging) or ".", exist_ok=True)
-    with open(_lock_path(staging), "a") as lockf:
-        fcntl.flock(lockf, fcntl.LOCK_EX)
-        try:
-            text = open(staging, encoding="utf-8").read()
-            new_text, expired = expire_stale(text, days)
-            if new_text != text:
-                open(staging, "w", encoding="utf-8").write(new_text)
-                text = new_text
-        finally:
-            fcntl.flock(lockf, fcntl.LOCK_UN)
+    def _expire(current):
+        new_text, n = expire_stale(current, days)
+        return new_text, (new_text, n)
+
+    text, expired = sf.rewrite(staging, _expire)
 
     blocks = sf.parse_blocks(text)
     print(render(blocks))
