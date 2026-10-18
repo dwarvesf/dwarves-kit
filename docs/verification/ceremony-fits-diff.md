@@ -80,3 +80,7 @@ The host was shared with other sessions all evening. Wall seconds swing 2 to 5 t
 Not changed: `bin/config list` itself (321 rows, a fork per cell) is the real cost and belongs to the config module; `test-config-seams` costs about 12 CPU s and was left alone; `bin/test-affected.timeouts` waits for a re-measure on a quiet host.
 
 Two side findings, both fixed in the test files: `test-hooks.sh` made its backlog fixture with `mktemp dk-backlog.XXXXXX.md`, which BSD `mktemp` treats as one literal file, so two concurrent `test-hooks` runs on a host collided (it happened twice during this work, with other sessions' runs). It is a directory now. The original `test-lanes-data` also failed once on its own `floor-timing-30k` limit (17.9 s against 15 s) when five suites shared the host; the edited version builds its 30000 paths in the index and ran in under 4 s.
+
+## Rollback
+
+Revert the merge commit. Nothing here writes state: the change is two classifier functions, their tests and three test files. A repo that wants the old strictness back for the floor can add `extra_hard_paths` entries; the proof gate has no switch except `[gate] proof_of_done = false`.
