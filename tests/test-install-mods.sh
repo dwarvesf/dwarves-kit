@@ -108,7 +108,7 @@ TOML_SAVED="$(mktemp "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
 cp "$KIT_DIR/kit.toml" "$TOML_SAVED"
 HOME="$H8" bash "$KIT_DIR/install.sh" >"$H8/install.log" 2>&1
 assert_true "compat leaves kit.toml as a link into the checkout" "$([ -L "$H8/.claude/dwarves-kit/kit.toml" ]; echo $?)"
-HOME="$H8" KIT_FORCE_FULL=1 bash "$KIT_DIR/install.sh" >"$H8/install-full.log" 2>&1
+HOME="$H8" bash "$KIT_DIR/install.sh" --force-both >"$H8/install-full.log" 2>&1
 assert_true "the full install leaves the checkout's kit.toml byte for byte" "$(cmp -s "$TOML_SAVED" "$KIT_DIR/kit.toml"; echo $?)"
 assert_true "the full install writes its own kit.toml, not a link" "$([ -f "$H8/.claude/dwarves-kit/kit.toml" ] && [ ! -L "$H8/.claude/dwarves-kit/kit.toml" ]; echo $?)"
 # A failing run must not leave the checkout dirty for the next suite.

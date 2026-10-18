@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
 # test-install-modules.sh -- ID-277 SG-04 (kit-modularity, install/wire): install.sh is
 # LAYERED. The spine (safety-gate, ship-gate, spec-drift-guard, secrets-guard,
-# commit-format, anti-rationalization) is always wired; every other hook belongs to an
+# commit-format, anti-rationalization) is always wired. A FRESH install also wires the
+# `core` modules of lib/config/modules.tsv (today: board). Every other hook belongs to an
 # opt-in module (`--with <a,b,c>`), recorded in a `kit.toml [modules]` manifest that
 # DRIVES the shell wiring above -- it is never a runtime feature-registry a hook reads
-# (see the standing anti-drift lint at the bottom of this file).
+# (see the standing anti-drift lint at the bottom of this file). An existing install keeps
+# what it has: the core set reaches new installs only.
 #
 # Run: bash tests/test-install-modules.sh
 set -uo pipefail
@@ -19,6 +21,18 @@ assert_true() { if [ "$2" -eq 0 ]; then ok "$1"; else bad "$1"; fi; }
 wired_hooks() { # $1 = settings.json path
   jq -r '[.hooks // {} | to_entries[]? | .value[]? | .hooks[]? | .command] | .[]' "$1" 2>/dev/null \
     | grep -oE 'hooks/[A-Za-z0-9._-]+\.sh' | sed 's#hooks/##' | grep -v '^anchor-root\.sh$' | sort -u
+}
+
+# table_hooks_wired <module>... -- the hook basenames the module table gives these modules (the
+# spine always), kept to those settings.json registers. Expectations come from the table, never a
+# second list here; a hook the table names but settings.json does not carry yet cannot be wired.
+table_hooks_wired() {
+  local names m h
+  names="$(bash -c "source '$KIT_DIR/lib/config/modules.sh'; kit_module_hooks spine")"
+  for m in "$@"; do names="$names $(bash -c "source '$KIT_DIR/lib/config/modules.sh'; kit_module_hooks $m")"; done
+  for h in $names; do
+    jq -e --arg h "$h" '[.hooks[][].hooks[].command] | any(contains("hooks/" + $h))' "$KIT_DIR/settings.json" >/dev/null 2>&1 && echo "$h"
+  done | sort -u
 }
 
 # modules_section_true <toml-file> -- bare keys set `= true` WITHIN [modules] only
@@ -42,7 +56,7 @@ modules_section_true() {
 }
 
 # ============================================================
-echo "== NC spine-only: a plain temp-HOME install wires ONLY the spine =="
+echo "== NC default: a plain temp-HOME install wires the spine plus the core modules (board) and nothing else =="
 # ============================================================
 H1="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
 HOME="$H1" bash "$KIT_DIR/install.sh" >${TMPDIR:-/tmp}/kitmod-h1.log 2>&1
@@ -53,12 +67,32 @@ safety-gate.sh
 secrets-guard.sh
 ship-gate.sh
 spec-drift-guard.sh"
-assert_true "spine-only install wires exactly the 6 spine hooks" "$([ "$WIRED1" = "$EXPECT_SPINE" ]; echo $?)"
-NON_SPINE="$(printf '%s\n' "$WIRED1" | grep -vFxf <(printf '%s\n' "$EXPECT_SPINE") || true)"
-assert_true "spine-only install: no optional-module hook present (extra: ${NON_SPINE:-none})" "$([ -z "$NON_SPINE" ]; echo $?)"
-assert_true "spine-only install: kit.toml has team_mode = false" "$(grep -qx 'team_mode = false' "$H1/.claude/dwarves-kit/kit.toml"; echo $?)"
+EXPECT_DEFAULT="$(table_hooks_wired board)"
+assert_true "default install wires exactly spine + board's hooks (expected from the table: $(printf '%s' "$EXPECT_DEFAULT" | tr '\n' ' '))" "$([ "$WIRED1" = "$EXPECT_DEFAULT" ]; echo $?)"
+assert_true "default install wires all 6 spine hooks" "$([ -z "$(comm -23 <(printf '%s\n' "$EXPECT_SPINE") <(printf '%s\n' "$WIRED1"))" ]; echo $?)"
+assert_true "default install wires board-row-gate.sh (board is core)" "$({ trap '' PIPE; printf '%s\n' "$WIRED1" 2>/dev/null || :; } | grep -qx board-row-gate.sh; echo $?)"
+NON_DEFAULT="$(printf '%s\n' "$WIRED1" | grep -vFxf <(printf '%s\n' "$EXPECT_DEFAULT") || true)"
+assert_true "default install: no opt-in module hook present (extra: ${NON_DEFAULT:-none})" "$([ -z "$NON_DEFAULT" ]; echo $?)"
+for _h in context-readiness.sh output-offload.sh harvest.sh citation-guard.sh context-budget.sh batch-debt-warn.sh context-hints.sh tool-policy-guard.sh auto-format.sh money-gate.sh prose-rag.sh; do
+  { trap '' PIPE; printf '%s\n' "$WIRED1" 2>/dev/null || :; } | grep -qx "$_h" && NON_DEFAULT_LEAK="${NON_DEFAULT_LEAK:-} $_h"
+done
+assert_true "default install: session, advisor, cosmetic, money_gate and prose_rag hooks stay off (leaked:${NON_DEFAULT_LEAK:-none})" "$([ -z "${NON_DEFAULT_LEAK:-}" ]; echo $?)"
+assert_true "default install: kit.toml has team_mode = false" "$(grep -qx 'team_mode = false' "$H1/.claude/dwarves-kit/kit.toml"; echo $?)"
 OPT_TRUE="$(modules_section_true "$H1/.claude/dwarves-kit/kit.toml")"
-assert_true "spine-only install: no module recorded true in kit.toml [modules] (extra: ${OPT_TRUE:-none})" "$([ -z "$OPT_TRUE" ]; echo $?)"
+assert_true "default install: only board is recorded true in kit.toml [modules] (got: ${OPT_TRUE:-none})" "$([ "$OPT_TRUE" = "board" ]; echo $?)"
+assert_true "default install announces the core modules" "$(grep -q 'Fresh install: core modules on by default: board' ${TMPDIR:-/tmp}/kitmod-h1.log; echo $?)"
+
+# ============================================================
+echo "== NC existing install keeps what it has: a re-run never adds the core modules =="
+# ============================================================
+H1B="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
+HOME="$H1B" bash "$KIT_DIR/install.sh" --prune >${TMPDIR:-/tmp}/kitmod-h1b.log 2>&1
+WIRED1B="$(wired_hooks "$H1B/.claude/settings.json")"
+assert_true "setup: --prune leaves a spine-only install" "$([ "$WIRED1B" = "$EXPECT_SPINE" ]; echo $?)"
+HOME="$H1B" bash "$KIT_DIR/install.sh" >${TMPDIR:-/tmp}/kitmod-h1b-rerun.log 2>&1
+WIRED1C="$(wired_hooks "$H1B/.claude/settings.json")"
+assert_true "a plain re-run on a spine-only install stays spine-only (board is not added)" "$([ "$WIRED1C" = "$EXPECT_SPINE" ]; echo $?)"
+assert_true "...and kit.toml still records no module true" "$([ -z "$(modules_section_true "$H1B/.claude/dwarves-kit/kit.toml")" ]; echo $?)"
 
 # ============================================================
 echo "== NC --with board,stats: wires exactly those + records in kit.toml; re-run reproduces =="
@@ -66,8 +100,8 @@ echo "== NC --with board,stats: wires exactly those + records in kit.toml; re-ru
 H2="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
 HOME="$H2" bash "$KIT_DIR/install.sh" --with board,stats >${TMPDIR:-/tmp}/kitmod-h2.log 2>&1
 WIRED2="$(wired_hooks "$H2/.claude/settings.json")"
-EXPECT_BOARD="$(printf '%s\nbacklog-stage.sh\nboard-row-gate.sh' "$EXPECT_SPINE" | sort -u)"
-assert_true "--with board,stats wires spine + backlog-stage.sh + board-row-gate.sh (board's hooks) only" "$([ "$WIRED2" = "$EXPECT_BOARD" ]; echo $?)"
+EXPECT_BOARD="$(table_hooks_wired board)"
+assert_true "--with board,stats wires spine + board's hooks from the table only" "$([ "$WIRED2" = "$EXPECT_BOARD" ]; echo $?)"
 assert_true "kit.toml records board = true" "$(grep -qx 'board = true' "$H2/.claude/dwarves-kit/kit.toml"; echo $?)"
 assert_true "kit.toml records stats = true (hookless module, still recorded)" "$(grep -qx 'stats = true' "$H2/.claude/dwarves-kit/kit.toml"; echo $?)"
 assert_true "kit.toml records session = false (not requested)" "$(grep -qx 'session = false' "$H2/.claude/dwarves-kit/kit.toml"; echo $?)"
@@ -127,7 +161,7 @@ mkdir -p "$H6/.claude"
 cp "$KIT_DIR/settings.json" "$H6/.claude/settings.json"
 HOME="$H6" bash "$KIT_DIR/install.sh" --prune --with board >${TMPDIR:-/tmp}/kitmod-h6.log 2>&1
 WIRED6="$(wired_hooks "$H6/.claude/settings.json")"
-EXPECT_PRUNE="$(printf '%s\nbacklog-stage.sh\nboard-row-gate.sh' "$EXPECT_SPINE" | sort -u)"
+EXPECT_PRUNE="$(table_hooks_wired board)"
 assert_true "--prune --with board trims to exactly spine + board (drops the old all-hooks set)" "$([ "$WIRED6" = "$EXPECT_PRUNE" ]; echo $?)"
 
 # ============================================================
@@ -214,17 +248,9 @@ echo "== COVERAGE-DELTA: every module in the manifest maps to a real installable
 # ============================================================
 # Each optional module either has >=1 hook that exists on disk, or is a documented
 # hookless module backed by a real command/skill/lib subsystem.
-declare -a HOOKED_MODULES=(board session advisor cosmetic)
-declare -a HOOKLESS_MODULES=(queue stats quiz_gate weekend_batch sync)
 COV_FAIL=""
-for m in "${HOOKED_MODULES[@]}"; do
-  case "$m" in
-    board) HOOKS="backlog-stage.sh board-row-gate.sh" ;;
-    session) HOOKS="context-readiness.sh output-offload.sh pre-compact-backup.sh post-compact-reinject.sh harvest.sh citation-guard.sh context-budget.sh batch-debt-warn.sh" ;;
-    advisor) HOOKS="context-hints.sh tool-policy-guard.sh" ;;
-    cosmetic) HOOKS="auto-format.sh notification.sh slop-cleaner.sh statusline.sh codebase-index.sh permission-auto-approve.sh" ;;
-  esac
-  for h in $HOOKS; do
+for m in $(bash -c "source '$KIT_DIR/lib/config/modules.sh'; kit_modules_known"); do
+  for h in $(bash -c "source '$KIT_DIR/lib/config/modules.sh'; kit_module_hooks $m"); do
     [ -f "$KIT_DIR/hooks/$h" ] || COV_FAIL="$COV_FAIL $m:$h"
   done
 done

@@ -33,6 +33,10 @@ echo 'command'      > "$FAKE_KIT/commands/demo.md"
 echo 'agent'        > "$FAKE_KIT/agents/demo.md"
 echo 'skill'        > "$FAKE_KIT/skills/demo/SKILL.md"
 cp "$KIT_DIR/install.sh" "$FAKE_KIT/install.sh"
+# install.sh reads the module table and asks the detector, both from lib/ next to it.
+mkdir -p "$FAKE_KIT/lib/config"
+cp "$KIT_DIR/lib/config/modules.sh" "$KIT_DIR/lib/config/modules.tsv" "$FAKE_KIT/lib/config/"
+cp "$KIT_DIR/lib/onboard-detect.sh" "$FAKE_KIT/lib/onboard-detect.sh"
 
 if ! HOME="$HOME_SB" CLAUDE_DIR="$DEST" bash "$FAKE_KIT/install.sh" >"$INSTALL_LOG" 2>&1; then
   echo "FAIL install.sh exited non-zero; last lines of its log:"

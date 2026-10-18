@@ -7,6 +7,11 @@
 KIT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 source "$KIT_DIR/tests/lib/wrap-stub.sh"
 
+# adopt reads $CLAUDE_DIR to see whether the kit plugin is installed; with it, adopt writes no
+# project hooks. The cases below stub the driver against the settings.json the default wiring
+# writes, so an empty Claude home keeps them the same on a machine that has the plugin.
+CLAUDE_DIR="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")"; export CLAUDE_DIR
+
 # adopt_clone <name> -- a bare remote plus a clean clone on main, unadopted. Prints
 # the clone path. One commit is everything adopt's fixtures need, so they do not
 # ride build_remote's branch farm.

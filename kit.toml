@@ -28,13 +28,16 @@
 
 # ======================= HARNESS OPS (ships today) =======================
 
-[modules]                       # [impl] install.sh KIT_KNOWN_MODULES; gates HOOKS + PATH CLI shims
-board          = true           #        commands/skills always install regardless
-session        = true
-advisor        = true
+[modules]                       # [impl] lib/config/modules.tsv is the module table (hooks, CLIs, core or
+                                #        opt-in); these defaults MIRROR its default column, pinned by
+                                #        tests/test-modules-table.sh. core = true, opt-in = false.
+                                #        Gates HOOKS + PATH CLI shims; commands/skills install regardless.
+board          = true           # core: board-row-gate; backlog-stage and intake-sweep stay inert until configured
+session        = false
+advisor        = false
 cosmetic       = false
-queue          = true           # hookless (orchestrate/dispatch are commands)
-stats          = true           # hookless
+queue          = false          # hookless (orchestrate/dispatch are commands)
+stats          = false          # hookless
 quiz_gate      = false          # hookless; backs commands/quiz-gate.md
 weekend_batch  = false          # hookless; backs lib/queue/weekend-batch.sh
 # bridge: folded into `sync` 2026-07-16 (one engine surface; legacy
