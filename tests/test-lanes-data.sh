@@ -324,7 +324,21 @@ ship_fixture() {
   esac
   _commit "chore: change"
 }
-record_gates() { local p; for p in "$@"; do gl record x "$p" ran "fixture $p" >/dev/null 2>&1; done; }
+# record_gates <phase>...: write `ran` lines for rid x. The first call for a phase list goes through the
+# real writer (`gl record`) into a template ledger; later calls append that template's lines to the case's
+# ledger. A case's gate-ledger forks (one per phase, ~130 across the suite) become one per distinct list.
+_RG_TPL=""
+record_gates() {
+  local key="$*" tpl p keep="$LOGD"
+  [ -n "$_RG_TPL" ] || _RG_TPL="$(_mk)"
+  tpl="$_RG_TPL/${key// /_}"
+  if [ ! -f "$tpl/runs/x.log" ]; then
+    mkdir -p "$tpl/runs"; LOGD="$tpl"
+    for p in "$@"; do gl record x "$p" ran "fixture $p" >/dev/null 2>&1; done
+    LOGD="$keep"
+  fi
+  mkdir -p "$LOGD/runs"; cat "$tpl/runs/x.log" >> "$LOGD/runs/x.log"
+}
 # run_hook: pushes feat/x through the real hook in the fixture; sets HOOK_RC, HOOK_ERR (stderr) and HOOK_OUT (stdout).
 # HOOK_CMD overrides the command, HOOK_CWD the directory the hook is invoked from.
 run_hook() {
@@ -823,15 +837,12 @@ CASES
 # 30000 changed files: the -z split is one awk pass, not a shell loop per record.
 case_floor_timing_30k() {
   mkrepo; _git branch -q tbase >/dev/null 2>&1
-  mkdir -p "$ROOT/pad" "$ROOT/zz/auth"
-  python3 - "$ROOT" <<'PY'
-import os, sys
-r = sys.argv[1]
-for i in range(30000):
-    open(os.path.join(r, "pad", "f%d.txt" % i), "w").write("%d\n" % i)
-open(os.path.join(r, "zz", "auth", "z.ts"), "w").write("x\n")
-PY
-  _commit "chore: 30000 files"
+  # 30000 changed paths straight into the index and one commit: the floor reads commits, never the working
+  # tree, and writing 30000 files then `git add -A` cost more than the floor run this case times.
+  local blob; blob="$(printf '1\n' | _git hash-object -w --stdin)"
+  { awk -v b="$blob" 'BEGIN { for (i = 0; i < 30000; i++) printf "100644 %s\tpad/f%d.txt\n", b, i }'
+    printf '100644 %s\tzz/auth/z.ts\n' "$blob"; } | _git update-index --add --index-info
+  _git commit -q -m "chore: 30000 files" >/dev/null 2>&1
   local t0 t1 out ms; t0="$(_now)"; out="$(lcx floor "$ROOT" tbase 2>/dev/null)"; t1="$(_now)"
   ms="$(python3 -c "print(int(($t1-$t0)*1000))")"
   if [ "$out" = "full auth: zz/auth/z.ts" ] && [ "$ms" -lt 15000 ]; then pass "floor-timing-30k (${ms}ms for 30000 paths)"
@@ -977,9 +988,12 @@ case_floor_test_path_notice() {
 # reader_run <toml>: main commits <toml> as .kit.toml; sets RD_OUT (stdout) and RD_ERR (stderr) of the
 # reader at main.
 RD_ERR=""; RD_OUT=""
+RD_REPO=""
 reader_run() {
   local ef; ef="$(_mk)/err"
-  mkrepo; _git checkout -q main >/dev/null 2>&1
+  # One repo serves every call: only main's .kit.toml differs between them, and the reader reads main's tip.
+  if [ -z "$RD_REPO" ]; then mkrepo; RD_REPO="$ROOT"; else ROOT="$RD_REPO"; fi
+  _git checkout -q main >/dev/null 2>&1
   printf '%s' "$1" > "$ROOT/.kit.toml"; _commit "chore: cfg"
   RD_OUT="$(bash -c 'source "$1/lib/gate/lane-data.sh"; lane_hard_path_exempt "$2" main' _ "$KIT_DIR" "$ROOT" 2>"$ef")"
   RD_ERR="$(cat "$ef")"
@@ -1084,6 +1098,9 @@ exempt_repo() {
   _git checkout -q -B feat/x >/dev/null 2>&1
 }
 floor_err() { lcx floor "$ROOT" main 2>&1 >/dev/null; }
+# floor_both: one floor run; prints stdout, leaves stderr in $FLOOR_ERRF.
+FLOOR_ERRF="$(_mk)/floor-err"   # made here, in the main shell: floor_both runs inside $(...)
+floor_both() { lcx floor "$ROOT" main 2>"$FLOOR_ERRF"; }
 # err_fields <n>: field <n> of the first floor-exempt TAB line on the floor's stderr.
 err_fields() { floor_err | awk -F'\t' -v n="$1" '$1 == "floor-exempt" { print $n; exit }'; }
 
@@ -1267,11 +1284,12 @@ $(ent '["scripts/**"]' '["auth"]' '"r"')"; addfile "$ORACLE" "x"
 
 # A malformed entry refuses the config: auth still hits, and the push shows exactly one rejection line.
 case_floor_exempt_malformed_rejected() {
-  local bad="" g n t=$'\t' toml
+  local bad="" g n t=$'\t' toml out err
   for g in 'experiments/***' 'a**/b' '/scripts/**' '../scripts/**' 'scripts/[l]ogin.sh' '' '**' '*/**' '*' '**/*'; do
     cfg_repo "$(ent "[\"$g\"]" '["auth"]' '"r"')"; addfile "$ORACLE" "x"
-    [ "$(floor_out)" = "full auth: $ORACLE" ] || bad="$bad [glob '$g' stdout '$(floor_out)']"
-    n="$(floor_err | grep -c '^lane-data: \[\[gate\.hard_path_exempt\]\]')"; [ "$n" = 1 ] || bad="$bad [glob '$g': $n rejection lines]"
+    out="$(floor_both)"; err="$(cat "$FLOOR_ERRF")"   # one floor run serves both the stdout and stderr legs
+    [ "$out" = "full auth: $ORACLE" ] || bad="$bad [glob '$g' stdout '$out']"
+    n="$(printf '%s\n' "$err" | grep -c '^lane-data: \[\[gate\.hard_path_exempt\]\]')"; [ "$n" = 1 ] || bad="$bad [glob '$g': $n rejection lines]"
   done
   for toml in "$(ent '["a/b.sh"]' '["auth"]' "\"a${t}b\"")" \
               "$(ent '["a/b.sh"]' '["auth"]' '"a|b"')" \
@@ -1279,8 +1297,9 @@ case_floor_exempt_malformed_rejected() {
               "$(printf '[[gate.hard_path_exempt]]\npaths = [\n "a/b.sh",\n]\nkinds = ["auth"]\nreason = "r"\n')" \
               "$(printf '[gate.hard_path_exempt]\npaths = ["a/b.sh"]\nkinds = ["auth"]\nreason = "r"\n')"; do
     cfg_repo "$toml"; addfile "$ORACLE" "x"
-    [ "$(floor_out)" = "full auth: $ORACLE" ] || bad="$bad [stdout '$(floor_out)' for: $(printf '%s' "$toml" | tr '\n' '~')]"
-    n="$(floor_err | grep -c '^lane-data: \[\[gate\.hard_path_exempt\]\]')"; [ "$n" = 1 ] || bad="$bad [$n rejection lines for: $(printf '%s' "$toml" | tr '\n' '~')]"
+    out="$(floor_both)"; err="$(cat "$FLOOR_ERRF")"
+    [ "$out" = "full auth: $ORACLE" ] || bad="$bad [stdout '$out' for: $(printf '%s' "$toml" | tr '\n' '~')]"
+    n="$(printf '%s\n' "$err" | grep -c '^lane-data: \[\[gate\.hard_path_exempt\]\]')"; [ "$n" = 1 ] || bad="$bad [$n rejection lines for: $(printf '%s' "$toml" | tr '\n' '~')]"
   done
   [ -z "$bad" ] && pass floor-exempt-malformed-rejected || fail floor-exempt-malformed-rejected "$bad"
 }

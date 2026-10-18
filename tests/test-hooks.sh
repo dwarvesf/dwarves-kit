@@ -2659,27 +2659,29 @@ COSMETIC_GARBAGE=(
   '{"tool_input":{"file_path":"/nonexistent/../../x"}}'
   '{"tool_input":{"file_path":null},"type":null}'
 )
+# One battery serves both questions below: each run records the worst exit code per hook (the exit-0 contract)
+# and whether any run exited 2 (the block contract), so no hook sees the same garbage twice.
+BLOCKERS=""; COSMETIC_WORST=()
 for H in $COSMETIC_HOOKS; do
   WORST=0
   for BAD in "${COSMETIC_GARBAGE[@]}"; do
     printf '%s' "$BAD" | bash "$KIT_DIR/hooks/$H.sh" >/dev/null 2>&1
     RC=$?
     [ "$RC" -ne 0 ] && WORST=$RC
+    [ "$RC" -eq 2 ] && BLOCKERS="$BLOCKERS $H"
   done
-  assert_exit "NEGATIVE CONTROL: $H exits 0 on all 10 garbage-input shapes" 0 "$WORST"
+  COSMETIC_WORST+=("$WORST")
+done
+_i=0
+for H in $COSMETIC_HOOKS; do
+  assert_exit "NEGATIVE CONTROL: $H exits 0 on all 10 garbage-input shapes" 0 "${COSMETIC_WORST[$_i]}"
+  _i=$((_i + 1))
 done
 
 # NEGATIVE CONTROL: no cosmetic hook may emit exit 2 (the blocking code) on ANY input above.
 # Asserted separately from the exit-0 check so a future regression that returns 1 or 5 is
 # reported as the contract breach it is, while a regression that returns 2 is reported as the
 # BLOCK it is. Same battery, different question.
-BLOCKERS=""
-for H in $COSMETIC_HOOKS; do
-  for BAD in "${COSMETIC_GARBAGE[@]}"; do
-    printf '%s' "$BAD" | bash "$KIT_DIR/hooks/$H.sh" >/dev/null 2>&1
-    [ $? -eq 2 ] && BLOCKERS="$BLOCKERS $H"
-  done
-done
 assert_true "NEGATIVE CONTROL: no cosmetic hook ever exits 2 (the only blocking code)" \
   "$([ -z "$BLOCKERS" ]; echo $?)"
 
