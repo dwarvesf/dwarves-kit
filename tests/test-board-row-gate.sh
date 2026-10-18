@@ -192,7 +192,7 @@ check "12.2 uncommitted opt-out does not apply, BLOCKS"   block "$OPT" "git comm
 git -C "$OPT" add .kit.toml; git -C "$OPT" commit -qm "chore: gate config"
 add_row "$OPT" "$B" CL-004
 check "12.3 committed opt-out passes a new row, no marker" allow "$OPT" "git commit -m 'docs: x'"
-if grep -q "OFF-BY-CONFIG | .*repo-optout | CL-004" "$DWARVES_KIT_LOG_DIR/board-row-gate.log"; then
+if grep -q "OFF-BY-CONFIG | .*repo-optout | CL-004" "$DWARVES_KIT_LOG_DIR/hooks/board-row-gate.log"; then
   PASS=$((PASS+1)); echo "  PASS 12.4 the opt-out skip is logged OFF-BY-CONFIG"
 else FAIL=$((FAIL+1)); echo "  FAIL 12.4 no OFF-BY-CONFIG line for the opt-out repo"; fi
 echo "# edited" >> "$OPT/.kit.toml"
@@ -204,8 +204,8 @@ mkdir -p "$T/op-off"; printf '[gate]\nboard_row_gate = false\n' > "$T/op-off/kit
 KIT_CONFIG_OPERATOR="$T/op-off" check "12.7 operator overlay false turns it off machine-wide" allow "$DF" "git commit -m 'docs: x'"
 
 echo "== Log =="
-if grep -q '| BLOCKED |' "$DWARVES_KIT_LOG_DIR/board-row-gate.log" 2>/dev/null \
-   && grep -q '| MARKER |' "$DWARVES_KIT_LOG_DIR/board-row-gate.log"; then
+if grep -q '| BLOCKED |' "$DWARVES_KIT_LOG_DIR/hooks/board-row-gate.log" 2>/dev/null \
+   && grep -q '| MARKER |' "$DWARVES_KIT_LOG_DIR/hooks/board-row-gate.log"; then
   PASS=$((PASS+1)); echo "  PASS 10.1 blocks and marker passes are logged"
 else
   FAIL=$((FAIL+1)); echo "  FAIL 10.1 log missing BLOCKED or MARKER lines"

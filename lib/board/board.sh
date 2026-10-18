@@ -98,14 +98,7 @@
 #
 #   board.sh mirror [--dry-run] [--repo-root <path>] [--registry <path>] [--snapshot <path>]
 #                    [--mega-board <name>] [--board-prefix <prefix>]
-#                    [--remote <user@host>] [--remote-kit-path <path>] [--engine legacy|sync]
-#                                                               `--engine sync` (the sync-engine
-#                                                               cockpit channel) routes
-#                                                               the deterministic extract+diff
-#                                                               through lib/sync/cockpit.py; today
-#                                                               it is dry-run-only (the plan), the
-#                                                               live LOAD + writeback stay on the
-#                                                               legacy engine (the default).
+#                    [--remote <user@host>] [--remote-kit-path <path>]
 #                                                               project opt-in (`bridge=on`)
 #                                                               cockpit boards + one card per
 #                                                               ACTIVE mega-goal onto a Hermes
@@ -268,7 +261,6 @@ BOARD_MIRROR_CLEANUP_PY="$BOARD_DIR/board-mirror-cleanup.py"
 BOARD_HEALTH_PY="$(cd "$BOARD_DIR/.." && pwd)/sync/sweep/board-health"
 BOARD_BRIEF_PY="$(cd "$BOARD_DIR/.." && pwd)/sync/sweep/board-brief"
 BOARD_HERMES_PY="$(cd "$BOARD_DIR/.." && pwd)/sync/sweep/board-hermes"
-COCKPIT_PY="$(cd "$BOARD_DIR/.." && pwd)/sync/cockpit.py"  # lib/sync/, the P2 sync-engine port
 MEGA_SH="$(cd "$BOARD_DIR/.." && pwd)/mega/mega.sh"  # lib/mega/mega.sh, one level up from lib/board/
 
 [ -f "$BACKLOG_SH" ]         || { echo "board: lib/board/backlog.sh not found at $BACKLOG_SH" >&2; exit 1; }
@@ -293,12 +285,10 @@ _parse_flags() {
   OPT_BACKLOG_FILE=""; OPT_REPO_ROOT=""; OPT_REGISTRY=""; OPT_DRY_RUN=0
   OPT_SNAPSHOT=""; OPT_MEGA_BOARD=""; OPT_BOARD_PREFIX=""; OPT_REMOTE=""; OPT_REMOTE_KIT_PATH=""
   OPT_BRANCH=""; OPT_PR_BASE=""; OPT_WITH_MEGA=0; OPT_MEGA_CODE_ROOT=""
-  OPT_ENGINE="legacy"
   POSITIONAL=()
   while [ $# -gt 0 ]; do
     case "$1" in
       --backlog-file)    OPT_BACKLOG_FILE="${2:-}"; shift 2 ;;
-      --engine)          OPT_ENGINE="${2:-}"; shift 2 ;;
       --repo-root)       OPT_REPO_ROOT="${2:-}"; shift 2 ;;
       --registry)        OPT_REGISTRY="${2:-}"; shift 2 ;;
       --dry-run)         OPT_DRY_RUN=1; shift ;;
@@ -673,31 +663,6 @@ cmd_mirror() {
   local repo_root; repo_root="$(_resolve_repo_root)"
   local registry="${OPT_REGISTRY:-$repo_root/_meta/boards.txt}"
   local snapshot="${OPT_SNAPSHOT:-$repo_root/_meta/.board-mirror-snapshot.jsonl}"
-
-  # The sync-engine cockpit channel port. Opt-in via
-  # `--engine sync`; today it re-lands the DETERMINISTIC legs (multi-source
-  # extract + the keyed row_hash-git-wins diff) as a dry-run plan. The live
-  # LOAD leg (applying to a Hermes kanban) and two-way writeback stay on the
-  # legacy engine below until the next slice, so a bare `--engine sync` without
-  # --dry-run is refused rather than silently doing nothing.
-  case "$OPT_ENGINE" in
-    legacy|sync) : ;;
-    *) echo "mirror: unknown --engine '$OPT_ENGINE' (expected legacy|sync)" >&2; return 64 ;;
-  esac
-  if [ "$OPT_ENGINE" = "sync" ]; then
-    [ -f "$registry" ] || { echo "mirror: no registry at $registry" >&2; return 1; }
-    if [ "$OPT_DRY_RUN" -ne 1 ]; then
-      echo "mirror --engine sync: apply not yet ported; run with --dry-run for" \
-           "the plan, or use the legacy engine (default) to apply." >&2
-      return 64
-    fi
-    # --snapshot always passed (cockpit.py treats a missing file as empty prior
-    # state), mirroring the legacy branch below for a symmetric read.
-    local plan_args=(plan --registry "$registry" --snapshot "$snapshot")
-    [ -n "$OPT_MEGA_BOARD" ]   && plan_args+=(--mega-board "$OPT_MEGA_BOARD")
-    [ -n "$OPT_BOARD_PREFIX" ] && plan_args+=(--board-prefix "$OPT_BOARD_PREFIX")
-    exec python3 "$COCKPIT_PY" "${plan_args[@]}"
-  fi
 
   _legacy_bridge_note
   [ -f "$registry" ] || { echo "mirror: no registry at $registry" >&2; return 1; }
@@ -1181,11 +1146,11 @@ cmd_publish() {
   return 3
 }
 
-# bridge was folded into the sync module 2026-07-16; these verbs are the
-# legacy cockpit engine until the sync-engine port lands fully.
+# mirror/status/writeback run one engine, the cockpit bridge (board-mirror.sh and
+# board-writeback.sh). The per-repo spoke sync is a separate job: `board sync`.
 _legacy_bridge_note() {
-  echo "note: mirror/status/writeback are the legacy cockpit engine (bridge)," >&2
-  echo "      folded into the sync module; the port is tracked on the kit board." >&2
+  echo "note: mirror/status/writeback are the cockpit bridge engine (board-mirror.sh);" >&2
+  echo "      the per-repo spoke sync is \`board sync\`, a separate engine." >&2
 }
 
 usage() { sed -n '2,/^set -euo pipefail$/p' "${BASH_SOURCE[0]}" | sed '$d' | sed 's/^# \{0,1\}//'; }

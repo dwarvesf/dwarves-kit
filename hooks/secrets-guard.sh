@@ -18,6 +18,8 @@
 # Exit 2 = block.
 
 set -uo pipefail
+# Hook logs live under the ledger root (lib/telemetry/hook-log-dir.sh); the fallback keeps a hook running without lib/.
+. "${BASH_SOURCE[0]%/*}/../lib/telemetry/hook-log-dir.sh" 2>/dev/null || kit_hook_log_dir() { printf '%s' "${KIT_LEDGER_DIR:-${DWARVES_KIT_LOG_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/dwarves-kit/logs}}/hooks"; }
 
 INPUT=$(cat 2>/dev/null) || exit 0
 command -v jq >/dev/null 2>&1 || exit 0   # no jq -> fail-open
@@ -25,8 +27,8 @@ command -v jq >/dev/null 2>&1 || exit 0   # no jq -> fail-open
 TOOL=$(printf '%s' "$INPUT" | jq -r '.tool_name // empty' 2>/dev/null) || exit 0
 [ -z "$TOOL" ] && exit 0
 
-LOG_DIR="${DWARVES_KIT_LOG_DIR:-$HOME/.claude/dwarves-kit/logs}"
 log_block() {  # $1=tool  $2=block class (never user-controlled text)
+  local LOG_DIR; LOG_DIR="$(kit_hook_log_dir)"
   mkdir -p "$LOG_DIR" 2>/dev/null || return 0
   printf '%s | BLOCKED | %s | %s\n' \
     "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$1" "$2" \

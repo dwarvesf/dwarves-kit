@@ -12,6 +12,8 @@
 # (_default_block). A second rule that reads the spec: a DO NOT SHIP review verdict refuses the push
 # (ship_rule_review_verdict, [gate] review_verdict). Exit 2 = block.
 set -uo pipefail
+# Hook logs live under the ledger root (lib/telemetry/hook-log-dir.sh); the fallback keeps a hook running without lib/.
+. "${BASH_SOURCE[0]%/*}/../lib/telemetry/hook-log-dir.sh" 2>/dev/null || kit_hook_log_dir() { printf '%s' "${KIT_LEDGER_DIR:-${DWARVES_KIT_LOG_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/dwarves-kit/logs}}/hooks"; }
 # Preserve fail-open even on the pathological case (HOME unset under set -u): the lib
 # fallback below uses $HOME, so default it to empty rather than error-exit.
 HOME="${HOME:-}"
@@ -90,7 +92,7 @@ if ! source "$SHIP_RULES" 2>/dev/null; then
   # tree with no kit lib/ at all (master's behavior without the helper) passes.
   if [ -f "${CLAUDE_PLUGIN_ROOT:-$HOME/.claude/dwarves-kit}/lib/gate/gate-ledger.sh" ] \
      || [ -f "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/gate/gate-ledger.sh" ]; then
-    _SR_LOG_DIR="${DWARVES_KIT_LOG_DIR:-$HOME/.claude/dwarves-kit/logs}"
+    _SR_LOG_DIR="$(kit_hook_log_dir)"
     mkdir -p "$_SR_LOG_DIR" 2>/dev/null || true
     echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) | FAIL-OPEN | ship-rules unavailable | $SHIP_RULES" >> "$_SR_LOG_DIR/ship-gate.log" 2>/dev/null || true
     echo "BLOCKED: ship-gate. lib/gate/ship-rules.sh failed to load; reinstall or fix the kit" >&2
@@ -99,7 +101,7 @@ if ! source "$SHIP_RULES" 2>/dev/null; then
   exit 0
 fi
 SHIP_RULES_LOG=1
-SHIP_RULES_LOG_DIR="${DWARVES_KIT_LOG_DIR:-$HOME/.claude/dwarves-kit/logs}"
+SHIP_RULES_LOG_DIR="$(kit_hook_log_dir)"
 _resolve_base() { ship_rules_resolve_base "$ROOT"; }
 
 # [gate] toggles. lib/gate/gate-policy.sh resolves them (project config wins, then the
@@ -122,7 +124,7 @@ PREFS="${CLAUDE_PLUGIN_ROOT:-$HOME/.claude/dwarves-kit}/lib/gate/push-refs.sh"
 # which a human sets when launching the session. A `KIT_ALLOW_DEFAULT_PUSH=1 git push` prefix on
 # the command is agent-writable and does not count.
 _default_block() {
-  local LOG_DIR="${DWARVES_KIT_LOG_DIR:-$HOME/.claude/dwarves-kit/logs}"
+  local LOG_DIR="$(kit_hook_log_dir)"
   mkdir -p "$LOG_DIR" 2>/dev/null || true
   if [ "${KIT_ALLOW_DEFAULT_PUSH:-0}" = 1 ]; then
     echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) | ALLOWED | default-push | $1 ($2) KIT_ALLOW_DEFAULT_PUSH=1" >> "$LOG_DIR/ship-gate.log" 2>/dev/null || true
@@ -140,7 +142,7 @@ _default_block() {
   exit 2
 }
 _refs_block() {   # _refs_block <reason>
-  local LOG_DIR="${DWARVES_KIT_LOG_DIR:-$HOME/.claude/dwarves-kit/logs}"
+  local LOG_DIR="$(kit_hook_log_dir)"
   mkdir -p "$LOG_DIR" 2>/dev/null || true
   echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) | BLOCKED | ship-gate | (unaccounted push)" >> "$LOG_DIR/ship-gate.log" 2>/dev/null || true
   {
@@ -208,7 +210,7 @@ ship_rule_identities "$ROOT" "$MBASE" "$PHEAD" || exit 2
 PROOF="${CLAUDE_PLUGIN_ROOT:-$HOME/.claude/dwarves-kit}/lib/gate/proof-ledger.sh"
 _gate_on() {  # $1 = [gate] key, $2 = log label, $3 = optional rev to read the switch at
   ship_rules_switch_on "$1" "$ROOT" "${3:-}" && return 0
-  local LOG_DIR="${DWARVES_KIT_LOG_DIR:-$HOME/.claude/dwarves-kit/logs}"
+  local LOG_DIR="$(kit_hook_log_dir)"
   mkdir -p "$LOG_DIR" 2>/dev/null || true
   echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) | OFF-BY-CONFIG | $2 | $SLUG" >> "$LOG_DIR/ship-gate.log" 2>/dev/null || true
   return 1
@@ -234,7 +236,7 @@ if [ -f "$PROOF" ] && [ -f "$ROOT/docs/verification/README.md" ] && _gate_on pro
   HEADSHA="$PHEAD"
   if [ -n "$BASE" ] && [ "$BASE" != "$HEADSHA" ]; then
     if ! PMSG=$(bash "$PROOF" check "$ROOT" "$BASE" "$SLUG" 2>&1); then
-      LOG_DIR="${DWARVES_KIT_LOG_DIR:-$HOME/.claude/dwarves-kit/logs}"
+      LOG_DIR="$(kit_hook_log_dir)"
       mkdir -p "$LOG_DIR" 2>/dev/null || true
       echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) | BLOCKED | proof-gate | $SLUG" >> "$LOG_DIR/ship-gate.log" 2>/dev/null || true
       printf '%s\n' "$PMSG" >&2
@@ -271,7 +273,7 @@ if [ -f "$ROOT/lib/gate/doc-projection-check.sh" ] && [ -f "$ROOT/tests/test-met
   if [ -n "$DPBASE" ] && grep -qE '^(agents/|commands/|AGENTS\.md$|docs/(MANUAL|architecture|WORKFLOW)\.md$)' \
        < <(git -C "$ROOT" diff --name-only "$DPBASE" "$PHEAD" 2>/dev/null); then
     if ! DPMSG=$(bash "$ROOT/lib/gate/doc-projection-check.sh" "$ROOT" 2>&1); then
-      echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) | BLOCKED | doc-projection | $SLUG" >> "${DWARVES_KIT_LOG_DIR:-$HOME/.claude/dwarves-kit/logs}/ship-gate.log" 2>/dev/null || true
+      echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) | BLOCKED | doc-projection | $SLUG" >> "$(kit_hook_log_dir)/ship-gate.log" 2>/dev/null || true
       {
         echo "BLOCKED: doc-projection drift. This push touches a projection surface and the derived doc rows are out of sync:"
         printf '%s\n' "$DPMSG"
@@ -303,7 +305,7 @@ if [ -f "$ROOT/lib/registry/feature-registry.sh" ] && [ -f "$ROOT/docs/FEATURES.
   if [ -n "$FRDIFF" ] && ! grep -qx 'docs/FEATURES\.md' < <(printf '%s\n' "$FRDIFF") \
      && grep -qE '^(commands/[^/]+\.md|agents/[^/]+\.md|skills/[^/]+/SKILL\.md|hooks/[^/]+\.sh|hooks/hooks\.json|settings\.json|tests/test-[^/]+\.sh|docs/specs/SPEC-[^/]+\.md)$' < <(printf '%s\n' "$FRDIFF"); then
     if ! FRMSG=$(bash "$ROOT/lib/registry/feature-registry.sh" check "$ROOT/docs/FEATURES.md" 2>&1); then
-      echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) | BLOCKED | registry-freshness | $SLUG" >> "${DWARVES_KIT_LOG_DIR:-$HOME/.claude/dwarves-kit/logs}/ship-gate.log" 2>/dev/null || true
+      echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) | BLOCKED | registry-freshness | $SLUG" >> "$(kit_hook_log_dir)/ship-gate.log" 2>/dev/null || true
       {
         echo "BLOCKED: registry freshness. This push edits an input of docs/FEATURES.md and the generated projection has drifted:"
         printf '%s\n' "$FRMSG" | head -40
@@ -401,7 +403,7 @@ if [ -z "$LANE" ]; then
   # not a pass: fail CLOSED so a spec-driven change cannot ship lane-less (the growatt-tui hole).
   # Everywhere else (no marker) stay fail-open: the gate never blocks unrelated work.
   if [ -f "$ROOT/docs/verification/README.md" ] && _gate_on lane_gates lane-gate "$MBASE"; then
-    LOG_DIR="${DWARVES_KIT_LOG_DIR:-$HOME/.claude/dwarves-kit/logs}"
+    LOG_DIR="$(kit_hook_log_dir)"
     mkdir -p "$LOG_DIR" 2>/dev/null || true
     echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) | BLOCKED | ship-gate | $SLUG (no-lane)" >> "$LOG_DIR/ship-gate.log" 2>/dev/null || true
     {
@@ -468,7 +470,7 @@ GAPS=$(ship_rules_ledger_check "$ROOT" "$LANE" "$SLUG" "$LEDGER" "$MBASE" 2>&1);
 if [ -n "$NOTES_GAP" ]; then GAPS="${GAPS:+$GAPS$'\n'}$NOTES_GAP"; GRC=1; fi
 if [ "$GRC" -ne 0 ]; then
   bash "$LEDGER" outcome "$SLUG" ship end caught=true >/dev/null 2>&1 || true
-  LOG_DIR="${DWARVES_KIT_LOG_DIR:-$HOME/.claude/dwarves-kit/logs}"
+  LOG_DIR="$(kit_hook_log_dir)"
   mkdir -p "$LOG_DIR" 2>/dev/null || true
   echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) | BLOCKED | ship-gate | $SLUG ($LANE)" >> "$LOG_DIR/ship-gate.log" 2>/dev/null || true
   {

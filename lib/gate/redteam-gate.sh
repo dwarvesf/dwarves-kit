@@ -47,19 +47,18 @@
 #          treatment token counts don't have yet.
 #
 # SCOPE: the redteam PROCEDURE itself (the SKILL.md blocks named above, cap-3 loop,
-# VERDICT: SECURE judgment) lives in a sibling dotfiles repo, out of scope here. This script
-# only gives that procedure a call worth making; it does not call itself. N stays 0 in
-# `mega-durations`/`kit_gates` until the dotfiles-side procedure is edited to call `start`/
-# `round` at its own round boundaries -- that wiring is a separate, tracked follow-up, not
-# implied by this PR landing.
+# VERDICT: SECURE judgment) lives in a sibling dotfiles repo, out of scope here. That procedure
+# is the caller: it runs `gate redteam start|round` through the stable `bin/gate` entrypoint at
+# its own round boundaries, so no caller sits inside this repo by design. This script only gives
+# that procedure a call worth making.
 #
-# Usage the calling procedure is expected to adopt (not yet wired anywhere as of this PR):
-#   redteam-gate.sh start "$RID"
+# Usage the calling procedure adopts:
+#   gate redteam start "$RID"
 #   ... run the adversarial pass ...
-#   redteam-gate.sh round "$RID" findings cost=0.42 round=1 reason="2 findings, fixed"
-#   redteam-gate.sh start "$RID"
+#   gate redteam round "$RID" findings cost=0.42 round=1 reason="2 findings, fixed"
+#   gate redteam start "$RID"
 #   ... run round 2 ...
-#   redteam-gate.sh round "$RID" secure cost=0.31 round=2
+#   gate redteam round "$RID" secure cost=0.31 round=2
 
 set -uo pipefail
 

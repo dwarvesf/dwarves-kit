@@ -11,6 +11,8 @@
 # uses correctly. Remaining patterns are unambiguous rationalization signals.
 
 set -euo pipefail
+# Hook logs live under the ledger root (lib/telemetry/hook-log-dir.sh); the fallback keeps a hook running without lib/.
+. "${BASH_SOURCE[0]%/*}/../lib/telemetry/hook-log-dir.sh" 2>/dev/null || kit_hook_log_dir() { printf '%s' "${KIT_LEDGER_DIR:-${DWARVES_KIT_LOG_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/dwarves-kit/logs}}/hooks"; }
 INPUT=$(cat)
 
 # Guard: prevent infinite Stop hook loop
@@ -28,7 +30,7 @@ POLICY="${CLAUDE_PLUGIN_ROOT:-$HOME/.claude/dwarves-kit}/lib/gate/gate-policy.sh
 if [ -f "$POLICY" ]; then
   PRC=0; bash "$POLICY" enabled understanding_gate "$(git rev-parse --show-toplevel 2>/dev/null || pwd)" || PRC=$?
   if [ "$PRC" -eq 1 ]; then
-    LOG_DIR="${DWARVES_KIT_LOG_DIR:-$HOME/.claude/dwarves-kit/logs}"
+    LOG_DIR="$(kit_hook_log_dir)"
     mkdir -p "$LOG_DIR" 2>/dev/null || true
     echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) | OFF-BY-CONFIG | understanding_gate | ${DWARVES_KIT_INVOCATION_CWD:-$(pwd)}" >> "$LOG_DIR/anti-rationalization.log" 2>/dev/null || true
     exit 0
@@ -54,7 +56,7 @@ PATTERNS=(
 for PATTERN in "${PATTERNS[@]}"; do
   if grep -qi "$PATTERN" < <(echo "$RESPONSE"); then
     # Log for future eval corpus
-    LOG_DIR="${DWARVES_KIT_LOG_DIR:-$HOME/.claude/dwarves-kit/logs}"
+    LOG_DIR="$(kit_hook_log_dir)"
     mkdir -p "$LOG_DIR"
     echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) | BLOCKED | $PATTERN | ${DWARVES_KIT_INVOCATION_CWD:-$(pwd)}" >> "$LOG_DIR/anti-rationalization.log"
 
@@ -98,7 +100,7 @@ if [ -d ".claude/debug" ]; then
   if [ "$UNDIAGNOSED" = "1" ]; then
     for PATTERN in "${GUESS_FIX_PATTERNS[@]}"; do
       if grep -qi "$PATTERN" < <(echo "$RESPONSE"); then
-        LOG_DIR="${DWARVES_KIT_LOG_DIR:-$HOME/.claude/dwarves-kit/logs}"
+        LOG_DIR="$(kit_hook_log_dir)"
         mkdir -p "$LOG_DIR"
         echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) | BLOCKED-GUESSFIX | $PATTERN | ${DWARVES_KIT_INVOCATION_CWD:-$(pwd)}" >> "$LOG_DIR/anti-rationalization.log"
 
@@ -122,7 +124,7 @@ if grep -qiE '\b(all done|done\b|complete|completed|finished|ready for review|re
   PHANTOM_RE='^\+[[:space:]]*(raise[[:space:]]+NotImplementedError|unimplemented!\(|panic\(.*not implemented|throw[[:space:]]+new[[:space:]]+Error\(.*not implemented|throw[[:space:]]+new[[:space:]]+NotImplementedException)'
   PHANTOM=$(git diff --no-color 2>/dev/null | grep -iE "$PHANTOM_RE" | head -1 || true)
   if [ -n "$PHANTOM" ]; then
-    LOG_DIR="${DWARVES_KIT_LOG_DIR:-$HOME/.claude/dwarves-kit/logs}"
+    LOG_DIR="$(kit_hook_log_dir)"
     mkdir -p "$LOG_DIR"
     echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) | BLOCKED-PHANTOM | ${DWARVES_KIT_INVOCATION_CWD:-$(pwd)}" >> "$LOG_DIR/anti-rationalization.log"
 
