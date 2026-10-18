@@ -102,7 +102,8 @@ FILES=""; FILES_SET=0; REMAIN=()
 
 # Built-in hard paths (case-insensitive ERE over changed paths). Constants on purpose: no
 # config file can remove one. `[lanes] extra_hard_paths` only adds.
-_HP_migration='(^|/)(migrations?|migrate)/|(^|/)alembic/versions/|(^|/)drizzle/|(^|/)schema\.(sql|rb|prisma)$|(^|/)[^/]*changelog[^/]*\.(xml|ya?ml|json|sql)$'
+# Liquibase changelog layouts (docs.liquibase.com: db.changelog-master.xml, db/changelog/ dir); a bare changelog-<date>.json is content.
+_HP_migration='(^|/)(migrations?|migrate)/|(^|/)alembic/versions/|(^|/)drizzle/|(^|/)schema\.(sql|rb|prisma)$|(^|/)db\.changelog[^/]*\.(xml|ya?ml|json|sql)$|(^|/)changelog-master\.(xml|ya?ml|json|sql)$|(^|/)(db|liquibase)/([^/]+/)*([^/]*changelog[^/]*|changelog/[^/]+)\.(xml|ya?ml|json|sql)$'
 _HP_auth='(^|/)(auth(entication|orization|orisation|n|z|[_-][a-z_-]*)?|oauth|rbac|permissions?|sessions?)(/|\.[a-z]+$)|(^|/)[^/]*(login|password|passwd|jwt)[^/]*$'
 _HP_secret='(^|/)\.env(\.(local|dev|development|prod|production|staging|test))?$|(^|/)secrets?/|\.(pem|key|p12|pfx)$|(^|/)[^/]*credentials?[^/]*$'
 _HP_ci='(^|/)\.github/'
