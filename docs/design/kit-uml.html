@@ -1,0 +1,2241 @@
+<title>dwarves-kit</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@87.5,500;87.5,700&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* A drafting set: sticky sheet index on the left, a cover, then one bordered sheet per diagram with a title block; figures on a faint drafting grid. */
+:root{
+  --fz:1; --paper:#eef1f4; --sheet:#ffffff; --ink:#17212b; --ink-2:#4e5b69; --rule:#d3dae2; --grid:#edf0f4;
+  --new:#0a6aa1; --new-soft:#e2f0f8; --chg:#9a5700; --chg-soft:#fbefdd; --rm:#8a95a1; --ext-soft:#f1f3f6; --err:#b42318;
+  --display:"Archivo","Arial Narrow","Helvetica Neue",Arial,sans-serif;
+  --body:"IBM Plex Sans","Helvetica Neue",Arial,sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,"SF Mono",Menlo,monospace;
+  /* Tones (fill, stroke, label ink) for the optional `tone` field; label ink is AA on the fill. */
+  --tn-blue-f:#dbeafe; --tn-blue-s:#2563eb; --tn-blue-i:#1e3a8a; --tn-green-f:#dcfce7; --tn-green-s:#15803d; --tn-green-i:#14532d;
+  --tn-amber-f:#fef3c7; --tn-amber-s:#b45309; --tn-amber-i:#78350f; --tn-rose-f:#ffe4e6; --tn-rose-s:#e11d48; --tn-rose-i:#881337;
+  --tn-violet-f:#ede9fe; --tn-violet-s:#7c3aed; --tn-violet-i:#4c1d95; --tn-gray-f:#e5e7eb; --tn-gray-s:#6b7280; --tn-gray-i:#1f2937;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    color-scheme:dark;
+    --paper:#0d1217; --sheet:#141a21; --ink:#e2e8ee; --ink-2:#9aa7b4; --rule:#2a3440; --grid:#19212a;
+    --new:#5db7ea; --new-soft:#10304a; --chg:#e5a24b; --chg-soft:#3a2a13; --rm:#6d7987; --ext-soft:#1a2129; --err:#ff8a80;
+    --tn-blue-f:#172a4d; --tn-blue-s:#6aa0ff; --tn-blue-i:#cfe0ff; --tn-green-f:#123524; --tn-green-s:#4ade80; --tn-green-i:#c9f5d9;
+    --tn-amber-f:#3d2a0c; --tn-amber-s:#f0a93b; --tn-amber-i:#ffe3b0; --tn-rose-f:#43161f; --tn-rose-s:#fb7185; --tn-rose-i:#ffd5db;
+    --tn-violet-f:#2a1f4f; --tn-violet-s:#a78bfa; --tn-violet-i:#e4dcff; --tn-gray-f:#2a313a; --tn-gray-s:#94a3b8; --tn-gray-i:#e2e8f0;
+  }
+}
+:root[data-theme="dark"]{
+  color-scheme:dark;
+  --paper:#0d1217; --sheet:#141a21; --ink:#e2e8ee; --ink-2:#9aa7b4; --rule:#2a3440; --grid:#19212a;
+  --new:#5db7ea; --new-soft:#10304a; --chg:#e5a24b; --chg-soft:#3a2a13; --rm:#6d7987; --ext-soft:#1a2129; --err:#ff8a80;
+  --tn-blue-f:#172a4d; --tn-blue-s:#6aa0ff; --tn-blue-i:#cfe0ff; --tn-green-f:#123524; --tn-green-s:#4ade80; --tn-green-i:#c9f5d9;
+  --tn-amber-f:#3d2a0c; --tn-amber-s:#f0a93b; --tn-amber-i:#ffe3b0; --tn-rose-f:#43161f; --tn-rose-s:#fb7185; --tn-rose-i:#ffd5db;
+  --tn-violet-f:#2a1f4f; --tn-violet-s:#a78bfa; --tn-violet-i:#e4dcff; --tn-gray-f:#2a313a; --tn-gray-s:#94a3b8; --tn-gray-i:#e2e8f0;
+}
+*{box-sizing:border-box}
+body{background:var(--paper);color:var(--ink);font:400 15px/1.6 var(--body);padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+.wrap{max-width:1240px;margin:0 auto;padding-block:32px 64px;display:grid;grid-template-columns:220px minmax(0,1fr);gap:32px;align-items:start}
+@media (max-width:900px){.wrap{grid-template-columns:minmax(0,1fr)}.index{position:static!important}}
+code,.mono{font-family:var(--mono);font-size:.9em}
+a{color:var(--new)}
+:focus-visible{outline:2px solid var(--new);outline-offset:2px}
+
+.index{position:sticky;top:calc(env(safe-area-inset-top,0px) + 24px);display:grid;gap:4px;font-size:13px;max-height:calc(100vh - 48px);overflow-y:auto}
+.index .k{font:500 11px var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--ink-2);padding-block:0 8px}
+.index a{display:grid;grid-template-columns:26px 1fr auto;gap:8px;align-items:baseline;color:var(--ink);text-decoration:none;padding:6px 8px;border-radius:4px}
+.index a:hover,.index a.cur{background:var(--sheet)}
+.index .no{font:500 11px var(--mono);color:var(--ink-2);font-variant-numeric:tabular-nums}
+
+main{display:grid;gap:28px;min-width:0}
+.tag{font:500 10px var(--mono);letter-spacing:.06em;text-transform:uppercase;padding:2px 6px;border-radius:3px;border:1px solid currentColor;white-space:nowrap}
+.tag.new{color:var(--new)} .tag.chg{color:var(--chg)} .tag.rm{color:var(--rm);border-style:dashed} .tag.same{color:var(--ink-2)}
+
+.cover{background:var(--sheet);border:1px solid var(--rule);padding:28px 32px;display:grid;gap:20px;scroll-margin-top:24px}
+.cover .lvl{font:500 11px var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--ink-2)}
+.cover h1{font:700 44px/1.05 var(--display);font-stretch:87.5%;letter-spacing:-.01em;margin:0;text-wrap:balance}
+.cover .dek{font-size:17px;max-width:64ch;color:var(--ink-2)}
+.cover .dek p{margin:0 0 8px}
+.facts{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));border-top:1px solid var(--rule);margin:0}
+.facts div{padding:14px 16px 14px 0;border-bottom:1px solid var(--rule)}
+.facts dt{font:500 11px var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--ink-2)}
+.facts dd{margin:4px 0 0}
+.legend{display:flex;flex-wrap:wrap;gap:10px 22px;align-items:center;font-size:13px;color:var(--ink-2)}
+.legend span{display:inline-flex;align-items:center;gap:8px}
+.sw{width:30px;height:16px;border-radius:3px;border:1.6px solid var(--ink-2);background:var(--sheet)}
+.sw.new{border-color:var(--new);background:var(--new-soft)} .sw.chg{border-color:var(--chg);background:var(--chg-soft)}
+.sw.rm{border:1.6px dashed var(--rm);background:transparent} .sw.ext{background:var(--ext-soft)}
+.ask{border-left:3px solid var(--new);padding:4px 0 4px 16px}
+.ask h2{font:700 15px var(--display);margin:0 0 6px}
+.ask ol{margin:0;padding-left:20px}
+
+.sheet{background:var(--sheet);border:1px solid var(--rule);scroll-margin-top:24px;min-width:0}
+.sheet.s-rm{border-style:dashed}
+.tb{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:16px;align-items:stretch;border-bottom:1px solid var(--rule)}
+.tb .title{padding:18px 24px}
+.tb .lvl{font:500 11px var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--ink-2)}
+.tb h2{font:700 26px/1.15 var(--display);font-stretch:87.5%;margin:2px 0 0;text-wrap:balance}
+.tb dl{display:grid;grid-template-columns:auto auto;margin:0;border-left:1px solid var(--rule);font-size:12px}
+.tb dl div{padding:8px 14px;border-bottom:1px solid var(--rule);display:grid;gap:2px;align-content:center}
+.tb dl div:nth-child(odd){border-right:1px solid var(--rule)}
+.tb dl div:nth-last-child(-n+2){border-bottom:0}
+.tb dt{font:500 10px var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--ink-2)}
+.tb dd{margin:0;font-variant-numeric:tabular-nums}
+@media (max-width:640px){.tb{grid-template-columns:minmax(0,1fr)}.tb dl{border-left:0;border-top:1px solid var(--rule)}}
+.note{margin:0;padding:16px 24px 0;max-width:calc(78ch + 48px)}
+.note p,.note ul{margin:0 0 8px}
+.note .tablewrap{margin:0 0 8px}
+.err{margin:16px 24px 0;border-left:3px solid var(--err);padding:4px 0 4px 14px;font-family:var(--mono);font-size:13px;white-space:pre-wrap}
+figure{margin:0;padding:16px 24px 0}
+.canvas{overflow-x:auto;border:1px solid var(--rule);background-color:var(--sheet);background-image:linear-gradient(var(--grid) 1px,transparent 1px),linear-gradient(90deg,var(--grid) 1px,transparent 1px);background-size:20px 20px}
+.canvas svg{display:block;width:100%;height:auto;min-width:780px;margin:0 auto}
+figcaption{font-size:13px;color:var(--ink-2);padding-top:8px}
+.review{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:24px;padding:18px 24px 24px}
+.review h3{font:500 11px var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--ink-2);margin:0 0 8px}
+.review ul,.review ol{margin:0;padding-left:18px;display:grid;gap:4px;font-size:14px}
+.delta{list-style:none;padding-left:0!important}
+.delta li{display:grid;grid-template-columns:74px 1fr;gap:8px;align-items:baseline}
+.delta .tag{justify-self:start}
+table{border-collapse:collapse;width:100%;font-size:14px}
+th{text-align:left;font:500 11px var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--ink-2);padding:8px 12px 8px 0;border-bottom:1px solid var(--ink-2)}
+td{padding:10px 12px 10px 0;border-bottom:1px solid var(--rule);vertical-align:top}
+.tablewrap{overflow-x:auto}
+
+/* SVG drawing classes */
+.box{fill:var(--sheet);stroke:var(--ink-2);stroke-width:1.2}
+.box.ext{fill:var(--ext-soft)}
+/* Tone rules sit before the delta rules of the same weight, so new / chg / rm still win. */
+.tone-blue{--tf:var(--tn-blue-f);--ts:var(--tn-blue-s);--ti:var(--tn-blue-i)}
+.tone-green{--tf:var(--tn-green-f);--ts:var(--tn-green-s);--ti:var(--tn-green-i)}
+.tone-amber{--tf:var(--tn-amber-f);--ts:var(--tn-amber-s);--ti:var(--tn-amber-i)}
+.tone-rose{--tf:var(--tn-rose-f);--ts:var(--tn-rose-s);--ti:var(--tn-rose-i)}
+.tone-violet{--tf:var(--tn-violet-f);--ts:var(--tn-violet-s);--ti:var(--tn-violet-i)}
+.tone-gray{--tf:var(--tn-gray-f);--ts:var(--tn-gray-s);--ti:var(--tn-gray-i)}
+.box[class*="tone-"]{fill:var(--tf);stroke:var(--ts);stroke-width:1.6}
+.box.new{fill:var(--new-soft);stroke:var(--new);stroke-width:1.6}
+.box.chg{fill:var(--chg-soft);stroke:var(--chg);stroke-width:1.6}
+.box.rm{fill:var(--sheet);stroke:var(--rm);stroke-dasharray:5 4}
+.frame{fill:none;stroke:var(--rule);stroke-width:1.2}
+.frame[class*="tone-"]{fill:var(--tf);fill-opacity:.4;stroke:var(--ts);stroke-width:1.4}
+[class*="tone-"] .t-lane{fill:var(--ti)}
+.boundary{fill:var(--sheet);fill-opacity:.55;stroke:var(--ink-2);stroke-width:1.3}
+.band{stroke:var(--rule);stroke-dasharray:3 5}
+.t-lane{font:500 calc(10px * var(--fz)) var(--mono);letter-spacing:.08em;fill:var(--ink-2);text-transform:uppercase}
+.t-sys{font:700 calc(15px * var(--fz)) var(--display);fill:var(--ink)}
+.t-name{font:600 calc(13px * var(--fz)) var(--body);fill:var(--ink)}
+.t-case{font:500 calc(12.5px * var(--fz)) var(--body);fill:var(--ink)}
+.t-note{font:400 calc(10.5px * var(--fz)) var(--mono);fill:var(--ink-2)}
+.t-stereo{font:italic 400 calc(10.5px * var(--fz)) var(--body);fill:var(--ink-2)}
+.t-edge{font:400 calc(10.5px * var(--fz)) var(--mono);fill:var(--ink-2);paint-order:stroke;stroke:var(--sheet);stroke-width:4px;stroke-linejoin:round}
+:where([class*="tone-"]) :is(.t-name,.t-note,.t-case,.t-stereo){fill:var(--ti)}
+.t-rm{fill:var(--rm);text-decoration:line-through}
+.t-new{fill:var(--new)} .t-chg{fill:var(--chg)}
+.edge{fill:none;stroke:var(--ink-2);stroke-width:1.3}
+.edge.dash{stroke-dasharray:5 4}
+.hd-fill{fill:var(--ink-2)} .hd-open{fill:none;stroke:var(--ink-2);stroke-width:1.3} .hd-hollow{fill:var(--sheet);stroke:var(--ink-2);stroke-width:1.3}
+.e[class*="tone-"] .edge{stroke:var(--ts);stroke-width:1.6} .e[class*="tone-"] .hd-fill{fill:var(--ts)} .e[class*="tone-"] .hd-open,.e[class*="tone-"] .hd-hollow,.e[class*="tone-"] .crow,.e[class*="tone-"] .crow-o{stroke:var(--ts)} .e[class*="tone-"] .t-edge{fill:var(--ti)}
+.e.new .edge{stroke:var(--new);stroke-width:1.6} .e.new .hd-fill{fill:var(--new)} .e.new .hd-open,.e.new .hd-hollow,.e.new .crow{stroke:var(--new)} .e.new .t-edge{fill:var(--new)}
+.e.chg .edge{stroke:var(--chg);stroke-width:1.6} .e.chg .hd-fill{fill:var(--chg)} .e.chg .hd-open,.e.chg .hd-hollow,.e.chg .crow{stroke:var(--chg)} .e.chg .t-edge{fill:var(--chg)}
+.e.rm .edge{stroke:var(--rm);stroke-dasharray:5 4} .e.rm .hd-fill{fill:var(--rm)} .e.rm .hd-open,.e.rm .crow{stroke:var(--rm)} .e.rm .t-edge{fill:var(--rm);text-decoration:line-through}
+.actor circle,.actor line{fill:var(--sheet);stroke:var(--ink);stroke-width:1.5}
+.actor[class*="tone-"] circle{fill:var(--tf)} .actor[class*="tone-"] circle,.actor[class*="tone-"] line{stroke:var(--ts);stroke-width:1.6}
+.actor.new circle,.actor.new line{stroke:var(--new)} .actor.chg circle,.actor.chg line{stroke:var(--chg)} .actor.rm circle,.actor.rm line{stroke:var(--rm);stroke-dasharray:4 3}
+.life{stroke:var(--ink-2);stroke-dasharray:4 5;stroke-width:1}
+.th{fill:var(--ink)} .th.new{fill:var(--new)} .th.chg{fill:var(--chg)} .th.rm{fill:none;stroke:var(--rm);stroke-dasharray:5 4}
+.t-th{font:600 calc(12.5px * var(--fz)) var(--mono);fill:var(--sheet)} .t-th.t-rm{fill:var(--rm)}
+.t-col{font:400 calc(11.5px * var(--fz)) var(--mono);fill:var(--ink)}
+.t-flag{font:400 calc(10.5px * var(--fz)) var(--mono);fill:var(--ink-2)}
+.t-ops{font:400 calc(11.5px * var(--fz)) var(--mono);fill:var(--ink-2)}
+.row-new{fill:var(--new-soft)} .row-chg{fill:var(--chg-soft)}
+.state{fill:var(--sheet);stroke:var(--ink);stroke-width:1.4}
+.state[class*="tone-"]{fill:var(--tf);stroke:var(--ts);stroke-width:1.6}
+.state.new{fill:var(--new-soft);stroke:var(--new);stroke-width:1.6} .state.chg{fill:var(--chg-soft);stroke:var(--chg);stroke-width:1.6} .state.rm{stroke:var(--rm);stroke-dasharray:5 4}
+.dot{fill:var(--ink)} .ring{fill:none;stroke:var(--ink);stroke-width:1.4}
+.crow{fill:none;stroke:var(--ink-2);stroke-width:1.3}
+.crow-o{fill:var(--sheet);stroke:var(--ink-2);stroke-width:1.3}
+.e.new .crow-o{stroke:var(--new)} .e.chg .crow-o{stroke:var(--chg)}
+.t-num{font:600 calc(10.5px * var(--fz)) var(--mono);fill:var(--ink)}
+@media (prefers-reduced-motion:no-preference){html{scroll-behavior:smooth}}
+</style>
+
+<div class="wrap">
+<nav class="index" aria-label="Sheets" id="idx"></nav>
+<main id="sheets"><noscript><p class="err">This drawing set draws itself with JavaScript.</p></noscript></main>
+</div>
+
+<script type="text/plain" id="uml-cur" data-model="docs/SYSTEM-DESIGN.md">---
+rev: A
+---
+
+# dwarves-kit
+
+The kit is six clusters of bash, Python and prose commands that meet at a few shared stores. The spine (lane commands and their agents) moves one unit of work from intake to land. Gates and ledgers record and enforce what the spine did. Execution planes run many sessions at once. The board and signal path carries work items and proposals. Session and knowledge reads transcripts and distills them. Hooks wire all of it to Claude Code events and run the audit loops.
+
+This model is a backfill. It maps the kit as the code stands on master, from a read-only pass with `path:line` evidence, spot-checked against the code. The planned workset module is the only amber element. Cluster colors hold on every sheet: spine blue, gates rose, planes violet, board green, hooks gray, session plain. Boxes marked «external» belong to another cluster or sit outside the kit.
+
+## Use cases
+
+Four actors drive the kit. The operator starts and lands work, the agent session runs the lane commands, a scheduler (launchd or cron) runs the unattended passes, and the Claude Code runtime fires hooks on its own events.
+
+```uml
+id: use-cases
+type: usecase
+title: Who drives the kit
+level: L1
+system: dwarves-kit
+review:
+  - The scheduler drives three passes (sweep, queue drain, reflect) with no operator in the loop. Is that the intended boundary, or should a sweep or a queue drain need an operator start?
+  - Spec approval is the only operator step inside the plan band. Should Done (grill and phase 0) also need an explicit operator yes?
+actors:
+  - {id: operator, name: operator, kind: human, side: left, tone: blue}
+  - {id: agent, name: agent session, kind: system, side: right, tone: violet}
+  - {id: runtime, name: Claude Code runtime, kind: external, side: right, tone: green}
+  - {id: scheduler, name: "scheduler (launchd, cron)", kind: system, side: right, tone: gray}
+cases:
+  - {id: start, name: Orient and pick next work, actor: operator, at: [0, 0]}
+  - {id: think, name: Challenge and design an idea, actor: operator, at: [0, 1]}
+  - {id: approve, name: Approve the spec, actor: operator, at: [0, 2]}
+  - {id: assign, name: Assign a row to a goal, actor: agent, include: [grill], at: [1, 0]}
+  - {id: grill, name: Grill and define Done, actor: agent, at: [1, 1]}
+  - {id: spec, name: Write and validate a spec, actor: agent, at: [1, 2]}
+  - {id: mega, name: Run a mega-goal roadmap, actor: operator, at: [0, 3]}
+  - {id: hold, name: Release a held wave merge, actor: operator, at: [0, 4]}
+  - {id: execute, name: Build a spec with verifiers, actor: agent, at: [1, 3]}
+  - {id: dispatch, name: Fan out disjoint specs, actor: agent, at: [1, 4]}
+  - {id: debug, name: Debug to root cause, actor: agent, at: [1, 5]}
+  - {id: reverify, name: Re-verify a branch, actor: operator, at: [0, 6]}
+  - {id: gauntlet, name: Probe an artifact clean-room, actor: operator, at: [0, 7]}
+  - {id: review, name: Review a branch with lenses, actor: agent, at: [1, 6]}
+  - {id: proof, name: Write the proof of done, actor: agent, at: [1, 7]}
+  - {id: wrap, name: Land and wrap the session, actor: operator, at: [0, 8]}
+  - {id: ship, name: Ship a PR, actor: agent, include: [gate], at: [1, 8]}
+  - {id: gate, name: Gate a push or PR, actor: runtime, at: [1, 9]}
+  - {id: promote, name: Promote staged rows, actor: operator, at: [0, 10]}
+  - {id: adopt, name: Adopt a consumer repo, actor: operator, at: [0, 11]}
+  - {id: guard, name: Guard every tool call, actor: runtime, at: [1, 10]}
+  - {id: audit, name: Run an audit loop, actor: agent, at: [1, 11]}
+  - {id: sweep, name: Sweep and mirror boards, actor: scheduler, at: [1, 12]}
+  - {id: queue, name: Drain the overnight queue, actor: scheduler, at: [1, 13]}
+  - {id: quiz, name: Answer the quiz tap, actor: operator, at: [0, 14]}
+  - {id: harvest, name: Harvest learnings, actor: runtime, at: [1, 14]}
+  - {id: reflect, name: Propose rows from ledgers, actor: scheduler, at: [1, 15]}
+  - {id: recall, name: Recall a past session, actor: agent, at: [1, 16]}
+bands:
+  - {name: plan, rows: [0, 2]}
+  - {name: build, rows: [3, 5]}
+  - {name: verify, rows: [6, 7]}
+  - {name: ship and land, rows: [8, 9]}
+  - {name: operate, rows: [10, 13]}
+  - {name: learn, rows: [14, 16]}
+```
+
+## How the clusters connect
+
+The one-page answer: six clusters, five shared stores, and the outside systems they call. Only cluster-to-cluster and cluster-to-store edges are drawn, each labelled with its dominant verb; the component sheets that follow open each cluster.
+
+```uml
+id: context
+type: component
+title: How the clusters connect
+level: L2
+caption: Toned boxes are the six clusters (session is plain); boxes with a top band are shared stores; shaded «external» boxes sit outside the kit. Each edge carries its dominant verb only.
+review:
+  - Gates is the only cluster every other cluster writes into (through gate-ledger). Is one append-only ledger root the right single point of truth, or should planes keep their own journal outside it as the queue does today?
+  - Board and session both write the staging buffer with no shared lock. Accept that, or give staging one writer?
+nodes:
+  - {id: runtime, name: Claude Code runtime, note: hook events, kind: ext, at: [1, 0]}
+  - {id: transcripts, name: Claude Code transcripts, note: "~/.claude/projects/*.jsonl", kind: store, at: [3, 0]}
+  - {id: kittoml, name: kit.toml layers, note: "project > operator > root", kind: store, at: [0, 1]}
+  - {id: hooks, name: hooks and audit loops, note: "anchor-root, config, adopt, audits", tone: gray, at: [1, 1]}
+  - {id: session, name: session and knowledge, note: "recall, reflect, harvest, precedent", at: [3, 1]}
+  - {id: claude, name: claude -p, note: "haiku, sonnet passes", kind: ext, at: [4, 1]}
+  - {id: ledger, name: ledger root, note: "runs/<rid>.log, sibling logs", kind: store, at: [0, 3]}
+  - {id: gates, name: gates and ledgers, note: "ship-gate, gate-ledger, proof, stats", tone: rose, at: [1, 3]}
+  - {id: spine, name: spine and lanes, note: "assign, spec, execute, ship, wrap", tone: blue, at: [2, 3]}
+  - {id: board, name: board and signal path, note: "backlog.sh, promote, sync, sweep", tone: green, at: [3, 3]}
+  - {id: backlog, name: BACKLOG and staging, note: "BACKLOG.md, backlog-staging.md", kind: store, at: [4, 3]}
+  - {id: docs, name: repo docs, note: "specs, briefs, proof, memory", kind: store, at: [0, 4]}
+  - {id: hermes, name: Hermes kanban, kind: ext, at: [4, 4]}
+  - {id: planes, name: execution planes, note: "orchestrate, queue, dispatch, gauntlet", tone: violet, at: [2, 5]}
+  - {id: flickapi, name: Jev or Clef API, note: flick shadow pick, kind: ext, at: [4, 5]}
+  - {id: gh, name: gh, note: "PRs, issues, merges", kind: ext, at: [1, 6]}
+  - {id: workers, name: claude -p workers, note: "tmux session or headless", kind: ext, at: [2, 6]}
+edges:
+  - {from: runtime, to: hooks, label: fires events}
+  - {from: hooks, to: kittoml, label: "seeds, reads"}
+  - {from: hooks, to: gates, label: runs gate hooks}
+  - {from: hooks, to: session, label: runs capture hooks}
+  - {from: session, to: transcripts, label: reads}
+  - {from: session, to: claude, label: LLM passes}
+  - {from: session, to: backlog, label: stages proposals}
+  - {from: spine, to: gates, label: records gates}
+  - {from: spine, to: board, label: flips row status}
+  - {from: spine, to: planes, label: "claims, fans out"}
+  - {from: spine, to: session, label: "precedent, handoffs"}
+  - {from: spine, to: docs, label: "writes spec, proof"}
+  - {from: gates, to: ledger, label: appends}
+  - {from: gates, to: kittoml, label: "reads [gate], [lane]"}
+  - {from: planes, to: gates, label: "START, merge check"}
+  - {from: planes, to: workers, label: spawns}
+  - {from: planes, to: gh, label: merges PRs}
+  - {from: board, to: planes, label: "queues #auto rows"}
+  - {from: board, to: backlog, label: writes rows}
+  - {from: board, to: hermes, label: mirrors cards}
+  - {from: board, to: flickapi, label: shadow pick}
+```
+
+## Spine and lanes
+
+The spine is prose commands plus a few classifiers. `/kit:assign` is the one mutator at intake; every other lane command records its own gate through gate-ledger (only the heaviest writers are drawn). The write agents (builder, fix-agent) are separate from the read-only verifiers on purpose.
+
+```uml
+id: c-spine
+type: component
+title: Spine and lanes
+level: L2
+review:
+  - The DO NOT SHIP stop lives only in ship.md prose, and any `review ran` record satisfies the review gate whatever its verdict. Should ship-gate read the `## Review` verdict?
+  - Seven commands write one spec file (replace-not-stack sections). Keep the single file, or split Review and Test plan into sibling files?
+lanes:
+  - {id: up, name: board and planes, tone: gray}
+  - {id: plan, name: plan, tone: blue}
+  - {id: build, name: build and verify, tone: blue}
+  - {id: down, name: gates and docs, tone: gray}
+  - {id: land, name: ship and land, tone: blue}
+nodes:
+  - {id: board, name: backlog.sh, note: board cluster, kind: ext, lane: up, at: [1, 0]}
+  - {id: registry, name: goal-registry, note: planes cluster, kind: ext, lane: up, at: [2, 0]}
+  - {id: start, name: /kit:start, note: read-only next-step detector, lane: plan, at: [0, 2]}
+  - {id: assign, name: /kit:assign, note: "row to goal draft, START, claim", lane: plan, at: [1, 2]}
+  - {id: think, name: "think, design, prototype", note: Decision Brief, lane: plan, at: [2, 2]}
+  - {id: classify, name: classify libs, note: "lane, type, role, significance", lane: plan, at: [0, 3]}
+  - {id: grill, name: /kit:grill, note: type-shaped interview, lane: plan, at: [1, 3]}
+  - {id: spec, name: "spec, validate, test-plan", note: "SPEC-NNN, 7 reviewers", lane: plan, at: [2, 3]}
+  - {id: execute, name: /kit:execute, note: "lane re-check, fix loop max 2", lane: build, at: [1, 5]}
+  - {id: writers, name: builder and fix-agent, note: write-capable agents, lane: build, at: [2, 5]}
+  - {id: verifiers, name: right-arm verifiers, note: "task, integration, acceptance, recheck", lane: build, at: [1, 6]}
+  - {id: ledger, name: gate-ledger, note: gates cluster, kind: ext, lane: down, at: [3, 5]}
+  - {id: docs, name: "spec, brief, verification log", note: repo docs, kind: store, lane: down, at: [3, 6]}
+  - {id: ship, name: /kit:ship, note: "tests, version, PR", lane: land, at: [0, 8]}
+  - {id: review, name: "review-team, battery", note: "## Review verdict", lane: land, at: [1, 8]}
+  - {id: lenses, name: lenses and advisor, note: "security, code, domain, break-it", lane: land, at: [2, 8]}
+  - {id: wrap, name: /kit:wrap and bin/wrap, note: "land, merge, tidy, distill", lane: land, at: [0, 9]}
+edges:
+  - {from: start, to: assign, label: suggests}
+  - {from: assign, to: board, label: "next, set claimed"}
+  - {from: assign, to: registry, label: claim}
+  - {from: assign, to: grill, label: Q&A digest}
+  - {from: assign, to: think, label: freeform intent}
+  - {from: assign, to: classify, label: "type, lane"}
+  - {from: think, to: spec, label: brief}
+  - {from: spec, to: execute, label: VALIDATED spec}
+  - {from: spec, to: ledger, label: validate round}
+  - {from: execute, to: writers, label: dispatches}
+  - {from: execute, to: verifiers, label: dispatches}
+  - {from: verifiers, to: writers, label: "FAIL:fixable"}
+  - {from: execute, to: classify, label: "escalate, agent-for"}
+  - {from: execute, to: ledger, label: record build}
+  - {from: verifiers, to: docs, label: verification log}
+  - {from: verifiers, to: review, label: suggests review}
+  - {from: review, to: lenses, label: dispatches}
+  - {from: review, to: docs, label: writes Review}
+  - {from: ship, to: review, label: reads verdict}
+  - {from: ship, to: wrap, label: wrap land}
+  - {from: ship, to: ledger, label: record Ship}
+```
+
+## Gates and ledgers
+
+Two hooks can stop work: safety-gate (always on) and ship-gate (per `[gate]` key). Ship-gate composes push-refs, ship-rules, the config readers and two ledgers. Every writer appends through one substrate, `lib/ledger/ledger.sh`, which resolves the ledger root; the read plane recomputes from those files and persists nothing.
+
+```uml
+id: c-gates
+type: component
+title: Gates and ledgers
+level: L2
+review:
+  - "`lane_gates` and `proof_of_done` default to false in kit.toml, so a fresh install blocks only default-branch pushes and fixture identities. Flip either default?"
+  - Hook logs sit in `~/.claude/dwarves-kit/logs` while ledgers sit in the XDG state root. Move the hook logs under the ledger root?
+nodes:
+  - {id: safety, name: safety-gate, note: "always on: deletes, main push", tone: rose, at: [0, 0]}
+  - {id: shipgate, name: ship-gate, note: "PreToolUse Bash, exit 2 blocks", tone: rose, at: [1, 0]}
+  - {id: rules, name: "push-refs, ship-rules", note: "refs, base, floor, identities", tone: rose, at: [2, 0]}
+  - {id: classify, name: lane-classify, note: spine cluster, kind: ext, at: [3, 0]}
+  - {id: hooklogs, name: hook logs, note: "~/.claude/dwarves-kit/logs", kind: store, at: [0, 1]}
+  - {id: gateledger, name: gate-ledger, note: "start, record, check, outcome, debt", tone: rose, at: [1, 1]}
+  - {id: proof, name: "proof-ledger, proof-gate, negctl", note: "proof class, check, override", tone: rose, at: [2, 1]}
+  - {id: verif, name: docs/verification, note: proof files and marker, kind: store, at: [3, 1]}
+  - {id: policyhooks, name: policy hooks, note: "anti-rationalization, commit, board-row, money", tone: rose, at: [0, 2]}
+  - {id: substrate, name: ledger substrate, note: "ledger.sh, kit-log-dir.sh", tone: rose, at: [1, 2]}
+  - {id: advisory, name: advisory gates, note: "quiz-gate, coverage-delta, mutation-smoke, redteam", tone: rose, at: [2, 2]}
+  - {id: megamerge, name: mega-merge, note: planes cluster, kind: ext, at: [3, 2]}
+  - {id: config, name: "gate-policy, lane-data", note: the two kit.toml readers, tone: rose, at: [0, 3]}
+  - {id: ledgerroot, name: ledger root, note: "runs/, proof-overrides, completeness", kind: store, at: [1, 3]}
+  - {id: readplane, name: "lane-telemetry, stats", note: "in-memory DuckDB, persists nothing", tone: rose, at: [2, 3]}
+  - {id: staging, name: backlog staging, note: board cluster, kind: store, at: [3, 3]}
+  - {id: kittoml, name: kit.toml layers, kind: store, at: [0, 4]}
+  - {id: spine, name: spine commands, note: spine cluster, kind: ext, at: [1, 4]}
+edges:
+  - {from: shipgate, to: rules, label: parse refs}
+  - {from: rules, to: classify, label: hard-path floor}
+  - {from: shipgate, to: gateledger, label: "check lane, outcome"}
+  - {from: shipgate, to: proof, label: check proof}
+  - {from: shipgate, to: hooklogs, label: "BLOCKED, ALLOWED"}
+  - {from: shipgate, to: config, label: enabled key --at base}
+  - {from: safety, to: hooklogs, label: BLOCKED}
+  - {from: policyhooks, to: config, label: enabled key}
+  - {from: config, to: kittoml, label: "[gate], [lane.*]"}
+  - {from: gateledger, to: config, label: required gates}
+  - {from: gateledger, to: substrate, label: ledger_append}
+  - {from: proof, to: substrate, label: overrides}
+  - {from: proof, to: verif, label: reads fresh proof}
+  - {from: substrate, to: ledgerroot, label: appends}
+  - {from: spine, to: gateledger, label: "START, GATE, OUTCOME"}
+  - {from: megamerge, to: gateledger, label: check}
+  - {from: advisory, to: gateledger, label: "DEBT, GATE, MUTATION"}
+  - {from: readplane, to: ledgerroot, label: reads runs}
+  - {from: readplane, to: staging, label: anomalies --propose}
+```
+
+## Execution planes
+
+Four engines run agents: the orchestrator (one fresh `claude -p` per sub-goal, serial or in waves), the overnight queue (an interactive session in a tmux window), `/kit:dispatch` (Agent-tool workers in worktrees) and the gauntlet (a clean-room probe in docker). They share the dispatch-gate disjointness check and the goal registry, not code.
+
+```uml
+id: c-planes
+type: component
+title: Execution planes
+level: L2
+review:
+  - "`WAVE_MERGE_CMD` defaults to `mega-merge merge` without `--execute`, which returns 0 on a dry run, so converge logs `merged` for nothing. Default to `--execute`, or stop converge from emitting merged on a dry run?"
+  - The queue works in the real checkout with `--dangerously-skip-permissions` and detects protected-path writes only after the run. Move it to a worktree like the wave sessions?
+nodes:
+  - {id: mega, name: /kit:mega, note: "ROADMAP, goals/NN-*.md", tone: violet, at: [0, 0]}
+  - {id: orchestrate, name: orchestrate.sh, note: "waves, converge, tier-4 close", tone: violet, at: [1, 0]}
+  - {id: megamerge, name: mega-merge, note: "gate, merge, mark", tone: violet, at: [2, 0]}
+  - {id: gh, name: gh, note: "PR view, squash merge", kind: ext, at: [3, 0]}
+  - {id: dispatchgate, name: dispatch-gate, note: "Touches disjointness, drift", tone: violet, at: [1, 1]}
+  - {id: handoffgen, name: handoff-gen, note: transcript to HANDOFF.md, tone: violet, at: [2, 1]}
+  - {id: claude, name: "claude -p, vendor CLIs", note: headless workers, kind: ext, at: [3, 1]}
+  - {id: dispatch, name: /kit:dispatch, note: one worker per spec, tone: violet, at: [0, 2]}
+  - {id: registry, name: "goal-registry, wt", note: "claim, log, release", tone: violet, at: [1, 2]}
+  - {id: ledger, name: gate-ledger, note: gates cluster, kind: ext, at: [2, 2]}
+  - {id: gauntlet, name: "/kit:gauntlet, clean-room", note: docker probe per round, tone: violet, at: [3, 2]}
+  - {id: attempts, name: attempt-state, note: task and attempt machine, tone: violet, at: [0, 3]}
+  - {id: agenttool, name: Agent tool, note: "background, worktree", kind: ext, at: [1, 3]}
+  - {id: watch, name: watch-board, note: "#auto rows, reaper", tone: violet, at: [0, 4]}
+  - {id: queue, name: queue.sh, note: "tmux window, types /goal", tone: violet, at: [1, 4]}
+  - {id: journal, name: queue journal, note: "queue-journal.tsv, sidecars", kind: store, at: [2, 4]}
+  - {id: board, name: parse-board, note: board cluster, kind: ext, at: [0, 5]}
+  - {id: tmux, name: tmux, kind: ext, at: [1, 5]}
+edges:
+  - {from: mega, to: orchestrate, label: run <dir>}
+  - {from: orchestrate, to: megamerge, label: per landed PR}
+  - {from: megamerge, to: gh, label: squash merge}
+  - {from: orchestrate, to: dispatchgate, label: wave admission}
+  - {from: orchestrate, to: handoffgen, label: "turn cap, usage"}
+  - {from: orchestrate, to: claude, label: spawns}
+  - {from: orchestrate, to: ledger, label: "START, TOKENS"}
+  - {from: gauntlet, to: ledger, label: "outcome, record"}
+  - {from: dispatch, to: dispatchgate, label: "plan, drift"}
+  - {from: dispatch, to: registry, label: claim}
+  - {from: dispatch, to: attempts, label: dispatch}
+  - {from: dispatch, to: agenttool, label: worker per spec}
+  - {from: registry, to: dispatchgate, label: overlap check}
+  - {from: watch, to: queue, label: queue run plan}
+  - {from: watch, to: board, label: queue-rows}
+  - {from: queue, to: journal, label: appends verdict}
+  - {from: queue, to: tmux, label: send-keys /goal}
+```
+
+## Board and signal path
+
+`backlog.sh` owns the row grammar and the only lock-held status flip. Proposers never write the board: they append `[staged]` blocks, and `board promote` is the human gate that turns a block into a `queued` row. A scheduled sweep syncs spokes, publishes, and mirrors rows to Hermes kanban; writeback turns a card move into a held PR.
+
+```uml
+id: c-board
+type: component
+title: Board and signal path
+level: L2
+review:
+  - "At least five paths write BACKLOG.md outside `board_lock` (assign freeform, wayfind, web-drift, board-run, hand edits). Route them all through `backlog.sh`?"
+  - Hermes is reached by two bridges with different keys (the sync spoke and the mirror). Retire one?
+nodes:
+  - {id: proposers, name: proposers, note: "stats, reflect, session-audit, hooks", kind: ext, at: [0, 0]}
+  - {id: format, name: staging-format, note: "one block grammar, .jq twin", tone: green, at: [1, 0]}
+  - {id: parse, name: parse-board, note: "#queue{} allow-list", tone: green, at: [2, 0]}
+  - {id: queue, name: "watch-board, queue", note: planes cluster, kind: ext, at: [3, 0]}
+  - {id: spokes, name: spoke apps, note: "gh issues, Notion, Reminders, Multica", kind: ext, at: [4, 0]}
+  - {id: staging, name: backlog-staging.md, note: "## [staged] blocks", kind: store, at: [1, 1]}
+  - {id: cli, name: board CLI, note: board.sh dispatcher, tone: green, at: [2, 1]}
+  - {id: sweep, name: board-sweep, note: "sync, digest, publish, mirror", tone: green, at: [3, 1]}
+  - {id: sync, name: sync engine, note: "hub and spokes, 3-way merge", tone: green, at: [4, 1]}
+  - {id: spine, name: "assign, wrap, audits", note: spine and hooks clusters, kind: ext, at: [0, 2]}
+  - {id: promote, name: board promote, note: "add-backlog, 3 refusals", tone: green, at: [1, 2]}
+  - {id: backlogsh, name: backlog.sh, note: "next, get, set, dedupe", tone: green, at: [2, 2]}
+  - {id: mirror, name: mirror and writeback, note: "snapshot, held PR", tone: green, at: [3, 2]}
+  - {id: hermes, name: Hermes kanban, kind: ext, at: [4, 2]}
+  - {id: backlog, name: BACKLOG.md, note: "pipe table, Status column", kind: store, at: [2, 3]}
+  - {id: flick, name: flick, note: wrap 7b shadow pick, tone: green, at: [0, 4]}
+  - {id: jev, name: Jev or Clef API, kind: ext, at: [1, 4]}
+edges:
+  - {from: proposers, to: format, label: render_block}
+  - {from: format, to: staging, label: appends staged}
+  - {from: promote, to: staging, label: reads blocks}
+  - {from: promote, to: backlog, label: queued row}
+  - {from: cli, to: promote, label: promote}
+  - {from: cli, to: backlogsh, label: "board, set"}
+  - {from: cli, to: parse, label: queue-rows}
+  - {from: backlogsh, to: backlog, label: set under lock}
+  - {from: spine, to: backlogsh, label: "next, set state"}
+  - {from: spine, to: backlog, label: hand-writes rows}
+  - {from: spine, to: flick, label: step 7b}
+  - {from: queue, to: parse, label: board queue}
+  - {from: sweep, to: cli, label: "sync, publish, mirror"}
+  - {from: sweep, to: sync, label: per registry row}
+  - {from: sync, to: spokes, label: "read, apply"}
+  - {from: sync, to: backlog, label: spoke flips}
+  - {from: sweep, to: mirror, label: mirror tick}
+  - {from: mirror, to: hermes, label: hermes kanban}
+  - {from: flick, to: jev, label: HTTPS pick}
+```
+
+## Session and knowledge
+
+This cluster turns transcripts and ledgers into staged proposals, ledger rows and memory notes, and answers "done before?". Every LLM pass here fails open and exits 0, so a silent failure reads as "nothing learned".
+
+```uml
+id: c-session
+type: component
+title: Session and knowledge
+level: L2
+review:
+  - Four transcript parsers exist (the shared Python one plus jq copies in harvest, skill-curator and the audit agent). Fold them onto parse_transcript.py?
+  - "`session recall`, `handoffs.sh`, `explain.sh` and `pitch.sh` have no `bin/` forwarder, so callers use raw lib paths. Add forwarders before the workset module depends on two of them?"
+nodes:
+  - {id: transcripts, name: transcripts, note: "~/.claude/projects/*.jsonl", kind: store, at: [0, 0]}
+  - {id: harvest, name: harvest hook and sweep, note: "PreCompact, 6h sweep", at: [1, 0]}
+  - {id: learned, name: learned-ledger.md, note: queued learnings, kind: store, at: [2, 0]}
+  - {id: claude, name: claude -p, note: "haiku, sonnet", kind: ext, at: [3, 0]}
+  - {id: recallcli, name: session recall, note: "--sessions, --tail", at: [0, 1]}
+  - {id: stagehooks, name: stage hooks, note: "backlog-stage, intake-sweep", at: [1, 1]}
+  - {id: curator, name: skill-curator, note: "drafts SKILL.md, human promote", at: [3, 1]}
+  - {id: observe, name: "observe, intel, audit", note: "usage, weekly digest, deep audit", at: [0, 2]}
+  - {id: staging, name: backlog staging, note: board cluster, kind: store, at: [1, 2]}
+  - {id: reflect, name: reflect, note: "propose, drain, debt", at: [2, 2]}
+  - {id: gates, name: "stats, run ledger", note: gates cluster, kind: ext, at: [3, 3]}
+  - {id: handoffs, name: handoffs.sh, note: "list LIVE, DEAD; archive", at: [0, 4]}
+  - {id: wrapdistill, name: wrap distill, note: "steps 1b, 7, 8", at: [1, 4]}
+  - {id: precedent, name: "precedent, prose-rag", note: done before?, at: [2, 4]}
+  - {id: memory, name: ".claude/memory, handoffs", note: repo-committed, kind: store, at: [3, 4]}
+  - {id: explain, name: "explain, pitch, retro", note: grounded write-ups, at: [1, 5]}
+  - {id: memtidy, name: memory-tidy, note: "memory-sweep, PR-gated", at: [3, 5]}
+edges:
+  - {from: recallcli, to: transcripts, label: reads}
+  - {from: observe, to: transcripts, label: reads}
+  - {from: harvest, to: transcripts, label: reads tail}
+  - {from: harvest, to: learned, label: appends queued}
+  - {from: harvest, to: claude, label: haiku}
+  - {from: stagehooks, to: staging, label: stages}
+  - {from: observe, to: staging, label: intel stages}
+  - {from: reflect, to: staging, label: stages}
+  - {from: reflect, to: gates, label: stats lenses}
+  - {from: reflect, to: claude, label: sonnet}
+  - {from: curator, to: claude, label: reviewer}
+  - {from: wrapdistill, to: handoffs, label: "list, archive"}
+  - {from: wrapdistill, to: precedent, label: find per candidate}
+  - {from: wrapdistill, to: explain, label: retro call}
+  - {from: wrapdistill, to: memory, label: incident note}
+  - {from: precedent, to: memory, label: reads notes}
+  - {from: precedent, to: gates, label: reads reasons}
+  - {from: memtidy, to: memory, label: PR-gated edits}
+```
+
+## Hooks runtime
+
+Every wired hook runs through `anchor-root.sh` (secrets-guard is the one exception). The gate hooks live in the gates cluster and the capture hooks in session; this sheet holds the wiring, config, consumer install and the context hooks.
+
+```uml
+id: c-hooks
+type: component
+title: Hooks runtime and config
+level: L2
+review:
+  - adopt.sh wires four modules while install.sh wires ten; its comment claims they are in sync. Make adopt read install.sh's table?
+  - Plugin plus bash install double-fires every hook, and onboard only discloses it. Refuse the second install instead?
+nodes:
+  - {id: runtime, name: Claude Code runtime, note: event JSON on stdin, kind: ext, at: [0, 0]}
+  - {id: anchor, name: anchor-root.sh, note: cd to repo root then exec, tone: gray, at: [1, 0]}
+  - {id: pretool, name: PreToolUse guards, note: "secrets, tool-policy, spec-drift", tone: gray, at: [2, 0]}
+  - {id: manifests, name: hook manifests, note: "hooks.json, settings.json", kind: store, at: [0, 1]}
+  - {id: context, name: context hooks, note: "readiness, reinject, hints, budget", tone: gray, at: [2, 1]}
+  - {id: codex, name: codex adapter, note: 5 hooks for Codex, tone: gray, at: [0, 2]}
+  - {id: conv, name: convenience hooks, note: "format, offload, notify, approve", tone: gray, at: [2, 2]}
+  - {id: snapshots, name: snapshot hooks, note: "state-save, pre-compact backup", tone: gray, at: [2, 3]}
+  - {id: statedirs, name: session state, note: ".claude/session-state, backups", kind: store, at: [3, 3]}
+  - {id: gatehooks, name: gate hooks, note: gates cluster, kind: ext, at: [2, 4]}
+  - {id: capture, name: capture hooks, note: session cluster, kind: ext, at: [2, 5]}
+  - {id: configcli, name: bin/config, note: "list, get, explain, seams", tone: gray, at: [0, 6]}
+  - {id: kitconfig, name: kit-config.sh, note: the only TOML reader, tone: gray, at: [1, 6]}
+  - {id: kittoml, name: kit.toml layers, kind: store, at: [0, 7]}
+  - {id: adopt, name: "adopt, onboard, install.sh", note: consumer wiring, tone: gray, at: [1, 7]}
+  - {id: consumer, name: consumer repo, note: "AGENTS.md, .claude/settings.json", kind: store, at: [2, 7]}
+edges:
+  - {from: runtime, to: anchor, label: fires}
+  - {from: runtime, to: manifests, label: reads wiring}
+  - {from: anchor, to: pretool, label: exec each family}
+  - {from: anchor, to: context}
+  - {from: anchor, to: conv}
+  - {from: anchor, to: snapshots}
+  - {from: anchor, to: gatehooks}
+  - {from: anchor, to: capture}
+  - {from: codex, to: gatehooks, label: dispatches 5}
+  - {from: snapshots, to: statedirs, label: writes}
+  - {from: context, to: statedirs, label: reads backup}
+  - {from: configcli, to: kitconfig, label: get}
+  - {from: kitconfig, to: kittoml, label: "project > operator > root"}
+  - {from: adopt, to: kitconfig, label: module toggles}
+  - {from: adopt, to: consumer, label: writes contract}
+  - {from: adopt, to: kittoml, label: seeds .kit.toml}
+```
+
+## Audit loops
+
+Split from the hooks sheet to keep both readable. Each audit skill gathers mechanically (Tier 1), hands the evidence to the read-only audit-scanner agent (Tier 2), applies only its one allowed mutation, and appends a cadence marker.
+
+```uml
+id: c-audit
+type: component
+title: Audit loops
+level: L2
+review:
+  - Nothing schedules an audit; `bin/audit due` only reports age. Wire a cadence job, or keep audits operator-started?
+  - web-drift appends rows by hand into consumer boards, outside `board_lock`. Route it through `backlog.sh` or staging?
+nodes:
+  - {id: runs, name: audit-runs.log, note: ledger root, kind: store, at: [0, 0]}
+  - {id: trigger, name: operator or schedule, kind: ext, at: [1, 0]}
+  - {id: cadence, name: Cadence table, note: docs/patterns/audit-loop.md, kind: store, at: [2, 0]}
+  - {id: ghapi, name: gh api, note: "workflows, secrets, runs", kind: ext, at: [0, 1]}
+  - {id: audit, name: bin/audit, note: "due, cadences, ran", tone: gray, at: [1, 1]}
+  - {id: worktree, name: worktree PR, note: the operator merges, kind: ext, at: [2, 1]}
+  - {id: webcheck, name: webcheck, note: "stdlib HTTP probe, public sites", tone: gray, at: [0, 2]}
+  - {id: skills, name: audit skills, note: "doc, ci, web, topology, repo, backlog, gauntlet, memory", tone: gray, at: [1, 2]}
+  - {id: scanner, name: audit-scanner, note: "read-only judge, sonnet", tone: gray, at: [2, 2]}
+  - {id: backlog, name: backlog.sh, note: board cluster, kind: ext, at: [0, 3]}
+  - {id: hygiene, name: repohygiene.sh, note: 5 detectors, tone: gray, at: [1, 3]}
+  - {id: registry, name: feature-registry, note: generate and cmp, tone: gray, at: [2, 3]}
+edges:
+  - {from: trigger, to: audit, label: due?}
+  - {from: audit, to: runs, label: reads ages}
+  - {from: audit, to: cadence, label: parses}
+  - {from: skills, to: audit, label: ran <instance>}
+  - {from: skills, to: scanner, label: evidence chunks}
+  - {from: skills, to: webcheck, label: sites audit}
+  - {from: skills, to: hygiene, label: scan}
+  - {from: skills, to: registry, label: generate}
+  - {from: skills, to: backlog, label: "set state, rows"}
+  - {from: skills, to: worktree, label: opens PR}
+  - {from: skills, to: ghapi, label: ci-drift reads}
+```
+
+## Workset (planned)
+
+Planned: a workset is a whole work stream (one or more sessions, browser tabs, a handoff, refs to rows and PRs) that can be parked and restored. It sits beside session and board and reuses their reads rather than adding stores of its own beyond one file per workset. Everything on this sheet is amber because none of it exists in the kit yet.
+
+```uml
+id: c-workset
+type: component
+title: Workset beside session and board
+level: L2
+review:
+  - Workset reads `session recall` and `handoffs.sh` through raw lib paths today. Add `bin/` forwarders as part of the fold?
+  - The terminal launcher and the browser are host adapters. Ship the fold with both behind a config seam, or with the browser leg off?
+lanes:
+  - {id: host, name: host adapters and outside, tone: gray}
+  - {id: ws, name: workset (planned), tone: amber}
+  - {id: session, name: session cluster, tone: gray}
+  - {id: board, name: board and planes, tone: gray}
+nodes:
+  - {id: launcher, name: terminal launcher, note: resumes a session, kind: ext, lane: host, at: [0, 0]}
+  - {id: browser, name: Chromium browser over CDP, note: "list, open, close tabs", kind: ext, lane: host, at: [0, 1]}
+  - {id: gh, name: gh, note: PR state, kind: ext, lane: host, at: [0, 4]}
+  - {id: files, name: workset files, note: "one JSON per workset, machine-local", kind: store, tone: amber, lane: ws, at: [1, 0]}
+  - {id: cli, name: workset CLI, note: "scan, park, brief, restore, close-tabs", tone: amber, lane: ws, at: [1, 1]}
+  - {id: brief, name: brief, note: "live PR and row state, next step", tone: amber, lane: ws, at: [1, 2]}
+  - {id: transcripts, name: transcripts, kind: store, lane: session, at: [2, 0]}
+  - {id: recall, name: session recall, note: "--sessions, --tail", kind: ext, lane: session, at: [2, 1]}
+  - {id: handoffs, name: handoffs.sh, note: "list, archive", kind: ext, lane: session, at: [2, 2]}
+  - {id: backlogsh, name: backlog.sh get, note: row lookup, kind: ext, lane: board, at: [1, 4]}
+  - {id: registry, name: goal-registry, note: who holds a worktree, kind: ext, lane: board, at: [2, 4]}
+edges:
+  - {from: cli, to: files, label: "writes, reads", tone: amber}
+  - {from: cli, to: launcher, label: restore, tone: amber}
+  - {from: cli, to: browser, label: tabs, tone: amber}
+  - {from: cli, to: recall, label: finds sessions, tone: amber}
+  - {from: recall, to: transcripts, label: reads}
+  - {from: cli, to: handoffs, label: "reads, archives", tone: amber}
+  - {from: cli, to: registry, label: claims, tone: amber}
+  - {from: cli, to: brief, label: before restore, tone: amber}
+  - {from: brief, to: backlogsh, label: row status, tone: amber}
+  - {from: brief, to: gh, label: PR state, tone: amber}
+```
+
+## Ledger stores
+
+The ledger root holds append-only text, one physical line per event. Every `runs/<rid>.log` line goes through `gate-ledger.sh` and `ledger_append`; only a GATE line with `ran` or `override` satisfies `check`, and every other line type is additive. The rid is the branch slug with its `type/` prefix stripped. Writers and readers per table:
+
+- `runs/<rid>.log`: written by gate-ledger verbs (called by the spine commands, orchestrate, wt.sh, quiz-gate, significance-classify, coverage-delta, mutation-smoke, weekend-batch, harvest sweep). Read by ship-gate, mega-merge, lane-telemetry, stats, weekend-batch, batch-debt-warn, precedent, pitch, the mega projections and reflect.
+- `proof-overrides.log`: written by `proof-ledger override` (operator, wrap-adopt, agents on docs paths). Read only by `proof-ledger is-overridden`.
+- `completeness.log`: written by `lane-classify check` on a downgrade. Read by `lane-telemetry misfires`.
+- `queue-journal.tsv`: written by queue.sh and the watch-board reaper. Read by watch-board dedup and `queue wait`.
+- `audit-runs.log`: written by `audit ran`. Read by `audit due`.
+- `merge-watch/<sid>.log` and the two `.cache` files: written and read by the one tool that owns each (batch-debt-warn, gate-ledger `check`, lane-telemetry).
+
+```uml
+id: erd-ledgers
+type: erd
+title: Ledger root stores
+level: L3
+review:
+  - "`proof-overrides.log` keys on repo-id plus slug while runs key on rid. Should an override also land as a GATE override line in the run, so one file answers \"why did this ship\"?"
+  - The check cache trusts file stat for 2 seconds. Acceptable, or key it on content hash?
+tables:
+  - name: START line
+    at: [0, 0]
+    cols: [[ts], [kind, "START | START-AMEND"], [lane], [classified], [type], [ctype, NULL], [repo]]
+  - name: GATE line
+    at: [1, 0]
+    cols: [[ts], [phase], [status, "ran | skipped | override"], [reason]]
+  - name: OUTCOME line
+    at: [2, 0]
+    cols: [[ts], [phase], [at, "start | end"], [caught, NULL], [dur_s, NULL], [policy, NULL]]
+  - name: TOKENS line
+    at: [3, 0]
+    cols: [[ts], [in], [out], [cache_read], [cache_create], [cost, NULL], [phase, NULL]]
+  - name: DEBT line
+    at: [0, 1]
+    cols: [[ts], [significance], [worthiness], [verdict], [response, NULL], [reason, NULL]]
+  - name: run
+    at: [1, 1]
+    cols: [[rid, PK], [file, "runs/<rid>.log"]]
+  - name: ROUND line
+    at: [2, 1]
+    cols: [[ts], [state, "open | closing | close | void | incomplete"], [token]]
+  - name: proof override
+    at: [0, 2]
+    cols: [[ts], [repo_id], [slug, FK], [reason]]
+  - name: gate-check cache entry
+    at: [1, 2]
+    cols: [[lane], [rid, FK], [kitlanes], [size], [mtime], [inode], [ctime], [verdict, "pass | fail:phases"]]
+  - name: ACTION or MUTATION line
+    at: [2, 2]
+    cols: [[ts], [kind], [note]]
+  - name: completeness line
+    at: [0, 3]
+    cols: [[ts], [chosen], [suggested], [desc]]
+  - name: queue journal row
+    at: [1, 3]
+    cols: [[ts], [slug, "<repo>__<ID>"], [verdict, "done | gated | stalled | error"], [reason]]
+  - name: audit run
+    at: [2, 3]
+    cols: [[epoch], [iso], [instance], [note]]
+  - name: merge-watch line
+    at: [3, 3]
+    cols: [[ts], [session_id], [kind, "MERGE | WARNED"]]
+rels:
+  - {from: run, to: START line, cardinality: "1:N"}
+  - {from: run, to: GATE line, cardinality: "1:0..N"}
+  - {from: run, to: OUTCOME line, cardinality: "1:0..N"}
+  - {from: run, to: TOKENS line, cardinality: "1:0..N"}
+  - {from: run, to: DEBT line, cardinality: "1:0..N"}
+  - {from: run, to: ROUND line, cardinality: "1:0..N"}
+  - {from: run, to: ACTION or MUTATION line, cardinality: "1:0..N"}
+  - {from: run, to: proof override, cardinality: "1:0..N", label: slug = rid}
+  - {from: run, to: gate-check cache entry, cardinality: "1:0..N"}
+```
+
+## Repo-committed stores
+
+What lives in git (or in the git common dir) and how one unit of work threads through it: a staged block becomes a row, a row becomes a goal draft, a draft targets a spec, and the spec owns its proof and notes. Mega-goal folders and the goal registry sit beside that chain.
+
+```uml
+id: erd-repo
+type: erd
+title: Repo-committed stores
+level: L3
+review:
+  - The row-to-draft-to-spec chain is joined by hand-typed IDs and slugs, with no checker. Add a lint that a goal draft's `id` and `target_spec` resolve?
+  - Goal drafts are gitignored and the registry lives in the git common dir, so neither survives a fresh clone. Is that intended?
+tables:
+  - name: staging block
+    at: [0, 0]
+    cols: [[title, PK], [state, "staged | promoted ID-N | rejected | expired"], [Intent], [Approach], [Tags], [Home], [Source]]
+  - name: BACKLOG row
+    at: [1, 0]
+    cols: [[ID, PK], [Item], [Notes, "#u-* #f-* #queue{} #auto"], [Status, "queued .. shipped"]]
+  - name: handoff
+    at: [2, 0]
+    cols: [[path, PK], [cited IDs], [state, "open | archived"]]
+  - name: goal registry entry
+    at: [0, 1]
+    cols: [[slug, PK], [lane], [status, "running | blocked | ready | done"], [branch], [worktree], [touches]]
+  - name: goal draft
+    at: [1, 1]
+    cols: [[slug, PK], [id, FK], [target_spec, FK], [status], [created]]
+  - name: SPEC
+    at: [2, 1]
+    cols: [[NNN, PK], [slug, UQ], [Status, "DRAFT .. SHIPPED"], [Lane], [Depth], [Verification], [Review], [Test plan]]
+  - name: decision brief
+    at: [3, 1]
+    cols: [[slug, PK], [verdict, "BUILD | RETHINK | KILL"], [Solution, NULL], [Design, NULL]]
+  - name: attempt store
+    at: [0, 2]
+    cols: [[task, PK], [state], [winner, NULL], [result_ref, NULL], [excluded]]
+  - name: verification log
+    at: [2, 2]
+    cols: [[slug, "PK FK"], [Command], [Exit], [Output], [Verdict], [NEGATIVE CONTROL, NULL]]
+  - name: impl-notes
+    at: [3, 2]
+    cols: [[slug, FK], [entry, "## date title"]]
+  - name: memory note
+    at: [0, 3]
+    cols: [[slug, PK], [description], [body], [MEMORY.md line]]
+  - name: ROADMAP
+    at: [1, 3]
+    cols: [[megadir, PK], [SG line, "box, auto | gate | gate!, depends, PR #n"]]
+  - name: goal file
+    at: [2, 3]
+    cols: [[SG id, PK], [Model], [Effort], [Harness], [Branch], [Touches], [Done]]
+  - name: HANDOFF or DECISIONS
+    at: [3, 3]
+    cols: [[megadir, FK], [SG id, "FK NULL"], [body]]
+rels:
+  - {from: BACKLOG row, to: staging block, cardinality: "1:0..1", label: promoted from}
+  - {from: BACKLOG row, to: handoff, cardinality: "0..N:0..N", label: cited by}
+  - {from: BACKLOG row, to: goal draft, cardinality: "1:0..N", label: id}
+  - {from: goal draft, to: SPEC, cardinality: "0..N:0..1", label: target_spec}
+  - {from: goal registry entry, to: goal draft, cardinality: "0..1:0..1", label: slug}
+  - {from: goal registry entry, to: attempt store, cardinality: "1:0..N", label: task}
+  - {from: SPEC, to: decision brief, cardinality: "0..N:0..1", label: folds in}
+  - {from: SPEC, to: verification log, cardinality: "1:0..1"}
+  - {from: SPEC, to: impl-notes, cardinality: "1:0..1"}
+  - {from: ROADMAP, to: goal file, cardinality: "1:N"}
+  - {from: goal file, to: HANDOFF or DECISIONS, cardinality: "1:0..1"}
+```
+
+## Push gate
+
+A `git push` or `gh pr create` from the agent passes two hooks in order. The safety-gate refuses destructive commands and default-branch pushes; the ship-gate then runs its checks in a fixed order and stops at the first gap. A pass still writes an OUTCOME pair, so the ledger shows the gate ran.
+
+```uml
+id: seq-push-gate
+type: sequence
+title: A push through the gates
+level: L3
+review:
+  - Step 7 fails open (no base, bad ref, missing lib) while step 3 fails closed on an unparsable push. One policy for both?
+  - "`start --amend` lets any ledger writer re-lane a run (step 9 reads the last one). Restrict amend to the lead?"
+participants:
+  - {name: agent session, tone: violet}
+  - {name: Claude Code runtime}
+  - {name: anchor-root, tone: gray}
+  - {name: safety-gate, tone: rose}
+  - {name: ship-gate, tone: rose}
+  - {name: push-refs, tone: rose}
+  - {name: gate-policy, tone: rose}
+  - {name: proof-ledger, tone: rose}
+  - {name: gate-ledger, tone: rose}
+messages:
+  - {from: agent session, to: Claude Code runtime, text: "Bash git push", kind: call}
+  - {from: Claude Code runtime, to: anchor-root, text: "PreToolUse JSON", kind: call}
+  - {from: anchor-root, to: safety-gate, text: "cd root, exec", kind: call}
+  - {from: safety-gate, to: anchor-root, text: "exit 0 (or 2 on main push)", kind: return}
+  - {from: anchor-root, to: ship-gate, text: "cd root, exec", kind: call}
+  - {from: ship-gate, to: push-refs, text: "parse command refs", kind: call}
+  - {from: push-refs, to: ship-gate, text: "@@REF or @@DEFAULT-PUSH", kind: return}
+  - {from: ship-gate, to: ship-gate, text: "fixture identity check", kind: call}
+  - {from: ship-gate, to: gate-policy, text: "enabled proof_of_done --at base", kind: call}
+  - {from: ship-gate, to: proof-ledger, text: "check root base slug", kind: call}
+  - {from: proof-ledger, to: ship-gate, text: "0 proven, 1 gap", kind: return}
+  - {from: ship-gate, to: gate-ledger, text: "outcome ship start", kind: call}
+  - {from: ship-gate, to: gate-ledger, text: "show slug (last START-AMEND lane)", kind: call}
+  - {from: ship-gate, to: gate-ledger, text: "check lane slug, then check full on hard paths", kind: call}
+  - {from: gate-ledger, to: ship-gate, text: "missing gates or none", kind: return}
+  - {from: ship-gate, to: gate-ledger, text: "outcome ship end caught=", kind: call}
+  - {from: ship-gate, to: Claude Code runtime, text: "exit 2 BLOCKED, or exit 0", kind: return}
+  - {from: Claude Code runtime, to: agent session, text: "blocked with override hint, or push runs", kind: return}
+```
+
+## Intake to land
+
+One unit of work on the normal lane. Assign opens the run (START) and claims it; every phase command after that records its own gate, which the push gate later checks. Spec validation and the fix loop are the two bounded loops.
+
+```uml
+id: seq-lifecycle
+type: sequence
+title: One unit of work, intake to land
+level: L3
+review:
+  - A small normal spec replaces steps 7 to 9 with `override Validate`. Is the size floor the right trigger for that skip?
+  - The fix loop stops at 2 retries and then records PARTIAL (step 15). Should PARTIAL block ship, or only warn?
+participants:
+  - {name: operator, tone: blue}
+  - {name: /kit:assign, tone: blue}
+  - {name: /kit:spec, tone: blue}
+  - {name: validators, tone: blue}
+  - {name: /kit:execute, tone: blue}
+  - {name: builder, tone: blue}
+  - {name: verifiers, tone: blue}
+  - {name: review-team, tone: blue}
+  - {name: "ship, wrap", tone: blue}
+  - {name: gate-ledger, tone: rose}
+messages:
+  - {from: operator, to: /kit:assign, text: "assign ID-NNN (after /kit:start)", kind: call}
+  - {from: /kit:assign, to: /kit:assign, text: "grill: type-shaped questions", kind: call}
+  - {from: /kit:assign, to: gate-ledger, text: "record grill; start rid lane type", kind: call}
+  - {from: /kit:assign, to: operator, text: "goal draft, row claimed", kind: return}
+  - {from: operator, to: /kit:spec, text: write the spec, kind: call}
+  - {from: /kit:spec, to: operator, text: "DRAFT, approve?", kind: return}
+  - {from: /kit:spec, to: validators, text: "validate round, 7 in parallel", kind: call}
+  - {from: validators, to: /kit:spec, text: "APPROVED: Status VALIDATED", kind: return}
+  - {from: /kit:spec, to: gate-ledger, text: "validate-round close", kind: call}
+  - {from: operator, to: /kit:execute, text: "execute (Go?)", kind: call}
+  - {from: /kit:execute, to: builder, text: whole-spec brief, kind: call}
+  - {from: builder, to: /kit:execute, text: commit per task, kind: return}
+  - {from: /kit:execute, to: verifiers, text: "task, integration, acceptance", kind: call}
+  - {from: verifiers, to: /kit:execute, text: "PASS or FAIL:fixable (fix max 2)", kind: return}
+  - {from: /kit:execute, to: gate-ledger, text: "record build ran (or PARTIAL)", kind: call}
+  - {from: operator, to: review-team, text: review the branch, kind: call}
+  - {from: review-team, to: gate-ledger, text: record review ran, kind: call}
+  - {from: operator, to: "ship, wrap", text: ship, kind: call}
+  - {from: "ship, wrap", to: gate-ledger, text: "record Ship ran pr=#N", kind: call}
+  - {from: "ship, wrap", to: operator, text: "PR open (push passed the gates)", kind: return}
+  - {from: operator, to: "ship, wrap", text: wrap, kind: call}
+  - {from: "ship, wrap", to: operator, text: "merged, row shipped, report", kind: return}
+```
+
+## Mega-goal wave
+
+One orchestrator cycle with `WAVE_CAP` of 2 or more. Admission is greedy in ROADMAP order and needs disjoint `## Touches`; a `gate` sub-goal is never admitted to a wave. Siblings drain on a failure and are never killed. The merge step is a dry run unless the operator set `WAVE_MERGE_CMD`.
+
+```uml
+id: seq-mega-wave
+type: sequence
+title: One orchestrate wave cycle
+level: L3
+review:
+  - Step 12 refuses converge when two branches touched one file, after both ran. Check declared Touches against the real diff earlier?
+  - Step 15 runs only with `--execute`, yet step 16 returns 0 on a dry run and converge records merged. Fix the default or the event?
+participants:
+  - {name: orchestrate, tone: violet}
+  - {name: ROADMAP}
+  - {name: dispatch-gate, tone: violet}
+  - {name: git worktree}
+  - {name: spec-next, tone: blue}
+  - {name: gate-ledger, tone: rose}
+  - {name: claude -p worker}
+  - {name: mega-merge, tone: violet}
+  - {name: gh}
+messages:
+  - {from: orchestrate, to: ROADMAP, text: "read unchecked SGs, deps", kind: call}
+  - {from: orchestrate, to: dispatch-gate, text: "disjoint Touches per candidate", kind: call}
+  - {from: dispatch-gate, to: orchestrate, text: admitted set, kind: return}
+  - {from: orchestrate, to: git worktree, text: ".claude/worktrees/<SG>", kind: call}
+  - {from: orchestrate, to: spec-next, text: reserve a SPEC number, kind: call}
+  - {from: orchestrate, to: gate-ledger, text: "start rid (lane-classify)", kind: call}
+  - {from: orchestrate, to: claude -p worker, text: "prompt + FLIP contract", kind: async}
+  - {from: claude -p worker, to: gh, text: open PR, kind: call}
+  - {from: claude -p worker, to: ROADMAP, text: "flip box (flip.lock)", kind: call}
+  - {from: claude -p worker, to: orchestrate, text: exit code, kind: return}
+  - {from: orchestrate, to: orchestrate, text: "reap: kill -0 poll, drain siblings", kind: call}
+  - {from: orchestrate, to: git worktree, text: "converge: union of diffs, refuse overlap", kind: call}
+  - {from: orchestrate, to: mega-merge, text: "merge pr rid lane", kind: call}
+  - {from: mega-merge, to: gate-ledger, text: check lane rid, kind: call}
+  - {from: mega-merge, to: gh, text: "squash merge (only with --execute)", kind: call}
+  - {from: mega-merge, to: orchestrate, text: "0 (also on dry run)", kind: return}
+  - {from: orchestrate, to: ROADMAP, text: "re-read; all checked: tier-4 close, HOLD", kind: call}
+```
+
+## Signal to row to ship
+
+The signal path ends at a human: proposers only stage, and promote is the gate into the board. The sweep tick runs on its own schedule and touches rows only through sync and the Hermes mirror.
+
+```uml
+id: seq-signal
+type: sequence
+title: Signal to row, and the sweep tick
+level: L3
+review:
+  - Promote refuses blocks older than 14 days while drain expires them at 30. Align the two windows?
+  - One failed `git fetch` skips the mirror for every repo in the tick (step 13). Keep the all-or-nothing rule?
+participants:
+  - {name: proposer}
+  - {name: staging}
+  - {name: operator, tone: blue}
+  - {name: board promote, tone: green}
+  - {name: BACKLOG.md}
+  - {name: /kit:assign, tone: blue}
+  - {name: "/kit:ship, wrap", tone: blue}
+  - {name: board-sweep, tone: green}
+  - {name: sync engine, tone: green}
+  - {name: Hermes kanban}
+messages:
+  - {from: proposer, to: staging, text: "append [staged] (dedup by title)", kind: call}
+  - {from: operator, to: board promote, text: "promote n | all", kind: call}
+  - {from: board promote, to: staging, text: "read, refuse stale or mis-homed", kind: call}
+  - {from: board promote, to: BACKLOG.md, text: "board_lock, next_id, row queued", kind: call}
+  - {from: board promote, to: staging, text: "mark [promoted ID-N]", kind: call}
+  - {from: operator, to: /kit:assign, text: "assign --next", kind: call}
+  - {from: /kit:assign, to: BACKLOG.md, text: "set claimed, then speccing", kind: call}
+  - {from: operator, to: "/kit:ship, wrap", text: "ship, then wrap", kind: call}
+  - {from: "/kit:ship, wrap", to: BACKLOG.md, text: "set shipped \"<PR>\"", kind: call}
+  - {from: board-sweep, to: sync engine, text: "sync per registry row", kind: async}
+  - {from: sync engine, to: BACKLOG.md, text: "spoke flips under board_lock", kind: call}
+  - {from: board-sweep, to: BACKLOG.md, text: "publish: commit, push or rebase", kind: call}
+  - {from: board-sweep, to: Hermes kanban, text: "mirror plan, apply (skip tick on fetch fail)", kind: call}
+```
+
+## Board row lifecycle
+
+The Status column's leading keyword is the state; the rest of the cell is prose. `backlog.sh set` accepts any legal state from any state, so the arrows below are the paths callers actually take, not guards. `validated` has no setter (rose).
+
+```uml
+id: sm-board-row
+type: state
+title: Board row status
+level: L4
+review:
+  - Nothing sets `validated`; only backlog-reconcile maps a VALIDATED spec onto it. Make `/kit:spec` set it on a validate-round close, or drop the state?
+  - "`set` has no transition guard. Add one (for example, refuse shipped to claimed), or keep it permissive for hand repairs?"
+states:
+  - {name: queued, initial: true, at: [0, 1]}
+  - {name: claimed, at: [1, 1]}
+  - {name: speccing, at: [2, 0]}
+  - {name: validated, at: [3, 0]}
+  - {name: executing, at: [3, 1]}
+  - {name: shipped, final: true, at: [4, 1]}
+  - {name: parked, at: [3, 2]}
+  - {name: dropped, final: true, at: [1, 2]}
+transitions:
+  - {from: queued, to: claimed, event: "assign --next, wt start"}
+  - {from: claimed, to: speccing, event: assign (lane has spec)}
+  - {from: claimed, to: executing, event: "assign (tiny), wayfind"}
+  - {from: speccing, to: validated, event: no setter, tone: rose}
+  - {from: validated, to: executing, event: no setter, tone: rose}
+  - {from: executing, to: shipped, event: "wrap, sync close, reconcile"}
+  - {from: executing, to: parked, event: "wrap, reconcile"}
+  - {from: queued, to: dropped, event: "wrap, reconcile, sync archive"}
+  - {from: shipped, to: queued, event: spoke reopens, via: [[4, 2.6], [0, 2.6]]}
+```
+
+## Spec status
+
+The spec's `Status:` header changes in place; nothing migrates the file. Execute accepts APPROVED or VALIDATED, but its preflight also needs a passing `validate` GATE (or an override) on normal, full and backfill lanes. Nothing sets PARKED except a hand edit.
+
+```uml
+id: sm-spec-status
+type: state
+title: Spec Status header
+level: L4
+review:
+  - PARKED has no setter and no command reads it except the active-spec resolver. Give `/kit:wrap` a park verb?
+  - A mid-flight amend keeps VALIDATED (add-only). Should an amend that adds a task re-open the validate round?
+states:
+  - {name: DRAFT, initial: true, at: [1, 0]}
+  - {name: APPROVED, at: [1, 1]}
+  - {name: VALIDATED, at: [1, 2]}
+  - {name: SHIPPED, final: true, at: [1, 3]}
+  - {name: PARKED, at: [0, 2]}
+transitions:
+  - {from: DRAFT, to: APPROVED, event: operator approves}
+  - {from: APPROVED, to: APPROVED, event: NEEDS REVISION at ceiling}
+  - {from: APPROVED, to: VALIDATED, event: "round APPROVED, or override Validate"}
+  - {from: VALIDATED, to: VALIDATED, event: add-only amend}
+  - {from: VALIDATED, to: SHIPPED, event: "/kit:ship (drafts archive)"}
+  - {from: VALIDATED, to: PARKED, event: "hand edit (from any state)", tone: gray}
+```
+
+## Run ledger lifecycle
+
+A run is the rid's file, read as a state by `check`. Nothing stores the state itself; `check` derives it from the lines each time (with a stat-keyed cache). `blocked` is what the push hook or mega-merge sees, not a line in the file.
+
+```uml
+id: sm-run-ledger
+type: state
+title: Run ledger, as check sees it
+level: L4
+review:
+  - A run with no START (a queue run, or a sub-goal with no `**Branch:**`) shows lane `?` in telemetry and is never checked. Should queue runs write START?
+  - An override reason reused for a second gate is refused (exit 65). Is a free-text reason enough for an override, or should it name a backlog row?
+states:
+  - {name: absent, initial: true, at: [1, 0]}
+  - {name: started, at: [1, 1]}
+  - {name: gating, at: [1, 2]}
+  - {name: blocked, at: [0, 2]}
+  - {name: complete, at: [1, 3]}
+  - {name: shipped, final: true, at: [1, 4]}
+transitions:
+  - {from: absent, to: started, event: "start (assign, orchestrate, wt)"}
+  - {from: started, to: started, event: start --amend}
+  - {from: started, to: gating, event: first record}
+  - {from: gating, to: gating, event: "record, override, inherit"}
+  - {from: gating, to: blocked, event: "check exits 1 at push or merge", tone: rose}
+  - {from: blocked, to: gating, event: record or override the gap}
+  - {from: gating, to: complete, event: last required gate}
+  - {from: complete, to: shipped, event: "push passes, record Ship on land"}
+```
+
+## Queue row run
+
+One overnight queue row, from plan to verdict, as `queue.sh` and the watch-board reaper see it. `done` and `gated` are terminal for the watcher; plain `queue run` skips only `done`.
+
+```uml
+id: sm-queue-row
+type: state
+title: Queue row run
+level: L4
+review:
+  - "`done` rests on a self-reported EXIT_SIGNAL or pane text; only a git delta counts as verified progress. Require a git delta for `done`?"
+  - Three stalls quarantine a row with no alert. Should quarantine stage a proposal so a human sees it?
+states:
+  - {name: planned, initial: true, at: [0, 1]}
+  - {name: in-flight, at: [1, 1]}
+  - {name: done, final: true, at: [2, 0]}
+  - {name: gated, final: true, at: [3, 0]}
+  - {name: stalled, at: [2, 2]}
+  - {name: error, at: [2, 1]}
+  - {name: quarantined, final: true, at: [3, 2]}
+  - {name: cooldown, at: [3, 1]}
+transitions:
+  - {from: planned, to: in-flight, event: "window opened, beat"}
+  - {from: in-flight, to: done, event: "EXIT_SIGNAL true, RUNNER_DONE", via: [[1, 0]]}
+  - {from: in-flight, to: gated, event: "REASON, RUNNER_GATED, protected path", via: [[1, -0.4], [3, -0.4]]}
+  - {from: in-flight, to: error, event: "launch failed twice, breaker"}
+  - {from: in-flight, to: stalled, event: "timeout, ceiling, beat 3600s", via: [[1, 2]]}
+  - {from: stalled, to: planned, event: retry_after elapsed, via: [[2, 2.6], [0, 2.6]]}
+  - {from: stalled, to: quarantined, event: 3 stalls}
+  - {from: error, to: cooldown, event: cooldown_until set}
+  - {from: cooldown, to: planned, event: cooldown elapsed, via: [[3, 0.55], [0, 0.55]]}
+```
+
+## Cross-cutting concepts
+
+- Layered config. One TOML reader, `lib/config/kit-config.sh`, resolves a key from the project `.kit.toml`, then the operator `~/.config/dwarves-kit/kit.toml`, then the kit-root `kit.toml`. The project layer counts only when it is tracked and clean, or when read at a revision with `--at`. Two readers sit on top: `gate-policy.sh` for `[gate]` keys (any reader error means ON) and `lane-data.sh` for `[lane.*]` phases. Vendor enablement, `runner_host`, `probe_key_ref` and `[decide]` are root-only on purpose.
+- The ledger root resolver. `kit-log-dir.sh` picks `$KIT_LEDGER_DIR`, else `$DWARVES_KIT_LOG_DIR`, else `[ledger].location`, else `${XDG_STATE_HOME:-~/.local/state}/dwarves-kit/logs`. A set-but-empty `KIT_LEDGER_DIR` is fatal. Every append goes through `lib/ledger/ledger.sh`, which collapses newlines so one event is one physical line. Hook audit logs do not use this resolver (see Risks).
+- Fail-open versus fail-closed, per gate. safety-gate: always on, documented accepted holes. ship-gate: closed on an unloadable ship-rules, an unparsable push in an adopted repo, a missing Lane; open when no kit `lib/` exists. proof-ledger `check`: open on no base, a bad ref or a missing lib. gate-policy: an unreadable reader means ON. Advisory measures (coverage-delta, mutation-smoke, check-edit, load-warn, money-gate without STRICT): always exit 0. Codex adapter: closed, but Codex treats a hook failure as non-blocking.
+- Egress points. `claude -p --model haiku` from harvest and backlog-stage (transcript tails); `claude -p` sonnet from reflect propose, session-audit and the skill-curator reviewer; `claude -p` workers from the orchestrator and the queue; Jev or Clef HTTPS from flick (candidate slugs, gated by `decide.points`, `deny_words`, `word_gate`); webcheck HTTP to consumer-declared sites (http(s) only, same-host redirects); `hermes kanban` from the mirror and the sync spoke; `gh` from mega-merge, writeback, wrap and ci-drift. Every LLM egress fails open and exits 0.
+- Worktree isolation and merge at the lead. Wave sessions, dispatch workers and `wrap start` each get a worktree under `.claude/worktrees/`. Workers never merge: the orchestrator converges one PR at a time under `flip.lock`, `/kit:dispatch` hands READY branches to the lead's `/kit:ship`, and tier-4 close HOLDs for a human. The serial orchestrator path and the queue still run in the real checkout.
+- Staging as the human gate. Proposers (stats anomalies, reflect propose, session-audit triage, session-intel, the stage hooks, `wrap stage`) append `[staged]` blocks through one grammar (`staging-format.py`, with a `.jq` twin for bash). `board promote` is the gate that mints a row. Direct board writers exist (capture, sync intake, assign freeform, wayfind, web-drift); see the Drift register.
+- One rid per run. The rid is the branch slug with `type/` stripped, derived after the branch exists. The same key joins assign-time records, ship-gate's push check, mega-merge and telemetry.
+
+## Risks and technical debt
+
+Ranked by blast radius, widest first.
+
+- Unsandboxed workers on shared state. Both executors run `--dangerously-skip-permissions`; the queue and the serial orchestrator work in the real checkout, and protected-path writes are detected after the run, only with sanitize on. Trigger: a worker edits outside its scope overnight. Mitigation: sanitize, the XPIA fence, `#queue{}` allow-listing, wave worktrees, the `flip.lock`.
+- The board has no single writer. Fourteen or more paths write `BACKLOG.md`; `board_lock` covers capture, promote, sync, `set` and `dedupe`, not assign freeform, wayfind, web-drift or board-run. Consumer boards use `merge=union`, which lands both rows of an ID collision, and a misconfigured spoke once flipped 30 rows. Trigger: two sessions mint the same ID, or a shared spoke drifts. Mitigation: `publish` detects duplicate IDs after a rebase, `wrap` runs `dedupe-all`, sync has a 10-flip breaker and a worktree fence.
+- Wave converge can record "merged" for nothing. `WAVE_MERGE_CMD` defaults to `mega-merge merge` with no `--execute`, which returns 0 on a dry run; converge then emits `merged`. Trigger: any default wave run. Mitigation: tier-4 close HOLDs for a human; the ROADMAP box still needs a real `PR #n`.
+- Enforcement defaults off. `lane_gates`, `proof_of_done`, `understanding_gate` and `commit_format` default to false, so a fresh install blocks only default-branch pushes, fixture identities and new board rows. Trigger: a consumer assumes the HARD labels in the docs. Mitigation: adopt seeds `.kit.toml`; the kit itself turns the gates on.
+- Prose-only gates behind HARD claims. DO NOT SHIP stops only through `commands/ship.md` prose; any `review ran` or `battery ran` record satisfies the review gate whatever the verdict; spec-drift and descent are detect-only. Trigger: an agent skips the prose step. Mitigation: none in code.
+- Ledger trust. `start --amend` has no operator or agent split, so any writer can re-lane a run; `inherit` is lead-only by convention. Trigger: a worker lowers its own lane. Mitigation: the hard-path floor still applies the full lane, and a reused override reason is refused.
+- Self-reported completion. The queue reads tmux pane text or a status file the run writes; `EXIT_SIGNAL: true` counts as reported, not verified. The orchestrator trusts a flipped box plus a `PR #n`. `attempt-state.sh` has no lock and relies on the lead calling it in sequence. Trigger: a run claims done with no diff. Mitigation: the breaker treats a git delta as the only verified progress.
+- LLM egress fails silently. Harvest, backlog-stage, skill-review, session-audit and reflect send transcript text to `claude -p` and exit 0 on any failure; flick sends slugs to Jev or Clef and fails open. Trigger: a model or auth outage reads as "nothing learned". Mitigation: `render_block` collapses whitespace in transcript-derived text; debounce and recursion guards on the hooks.
+- Hook-log split brain. Gate and hook logs default to `~/.claude/dwarves-kit/logs`, which a plugin reinstall can wipe; the ledgers moved to the XDG root. `DWARVES_KIT_LOG_DIR` moves both, since it is also a ledger-root alias. Trigger: a reinstall erases the BLOCKED and OFF-BY-CONFIG trail. Mitigation: none.
+- Staging has two lock domains. drain locks `<staging>.lock`, promote locks the board, and stats and the hooks append with no lock; promote rewrites the whole staging file. Trigger: a promote runs while a proposer appends. Mitigation: none; the append is lost.
+- Bug lane cannot record its gate. The bug lane requires a `debug` gate, and no command records one. Trigger: every bug-lane ship. Mitigation: a manual `record` or `override`.
+- Consumer wiring gaps. adopt.sh wires fewer modules than install.sh; plugin-only machines get hook paths that do not exist; plugin plus bash double-fires every hook. Trigger: adopting a repo on a plugin-only host. Mitigation: onboard discloses the mode.
+- A hook runs migration code. batch-debt-warn sources `ledger.sh`, whose `ledger_root` runs `kit_migrate_log_dir` (a `cp -Rn`) inside a PreToolUse hook. Trigger: the first merge of a session on a host with a legacy log dir. Mitigation: `cp -n` never overwrites.
+- One spec file, many writers. Seven or more commands write one spec, with replace-not-stack sections; drift voids a validate round and a second void ends it; a silent builder plus a re-dispatch race on the same files. Mitigation: the pinned blob and the round state machine.
+- Narrow verifier allowlists. Verification commands outside npm, go, pytest, `bash tests/*` and `git diff` become lead-run rows that recheck cannot audit. Mitigation: recheck re-executes the allowed ones.
+- Four transcript parsers. The shared Python parser plus jq copies in harvest, skill-curator and the audit agent. Trigger: a Claude Code transcript schema change. Mitigation: none; each breaks on its own.
+- Two meanings of "debt". stats reads it as waved gates (`gates_ovr`); quiz-gate and weekend-batch read `| DEBT |` lines. Mitigation: none.
+- Hermes bridges. Two independent bridges with different keys; writeback collapses four states to `ready`, and a closed held PR is never re-proposed; one failed fetch skips the whole mirror tick. Mitigation: the skip rule prevents a partial registry from archiving cards.
+- Stat-keyed caches. `.gate-check.cache` and `.shipped-incomplete.cache` key on size, mtime, inode and ctime and write only for ledgers 2 seconds old. Trigger: a write inside that window. Mitigation: the 2-second rule.
+- Dead or advisory parts. redteam-gate has no caller; mutation-smoke and coverage-delta always exit 0; money-gate is log-only without STRICT; plugin-check gates nothing; `last-state.md` is written every Stop and never read; recall, handoffs, explain and pitch have no `bin/` forwarder.
+- Machine-global session marker. `/tmp/.dwarves-kit-session-start` is shared by every concurrent session on a host. Trigger: two sessions start minutes apart. Mitigation: none.
+- Degrade paths. A vendor harness runs with no turn cap, watchdog or token capture; a failed SPEC reservation lets the worker pick its own number; a goal file with no `**Branch:**` skips START.
+
+## Drift register
+
+Every doc-versus-code mismatch the read-only pass found, deduplicated. "Fix" names the side that should move.
+
+| # | Fix | Doc claim | Code reality | Locations |
+|---|---|---|---|---|
+| 1 | code (ship-gate reads `## Review`) or doc | The ship gate blocks on DO NOT SHIP (HARD) | No hook or gate lib reads the verdict; only ship.md prose stops | docs/WORKFLOW.md:167, docs/workflow-paths.md:299, examples/hello-spec/WORKFLOW.md:35, commands/ship.md:14 |
+| 2 | doc | Spec is `[HARD: spec-drift guard]` | spec-drift-guard warns and never blocks | docs/WORKFLOW.md:180, docs/workflow-map.md:114-116, hooks/spec-drift-guard.sh:2-4 |
+| 3 | doc | `/kit:think` dispatches brief-reviewer plus advisor; `/kit:ship` dispatches advisor | think dispatches only brief-reviewer; ship has no advisor; advisor runs in review-team, spec, battery, mega | docs/workflow-paths.md:235,300,394, commands/think.md:72 |
+| 4 | doc | The validate round has 5 reviewers | 7 reviewers | commands/start.md:48, commands/spec-validate.md:9, docs/FEATURES.md:42 |
+| 5 | code comment | "the 11 type names"; precedence list omits `review` | `types` prints 12; `review` is rule 6b | lib/classify/task-type-classify.sh:42,97,130 |
+| 6 | doc | next.md cites `/wrap-session` | only commands/wrap.md exists | commands/next.md:56 |
+| 7 | doc | `/kit:verify` only appends the log plus a ledger line | Step 6b mutation-smoke mutates and restores the tree and writes MUTATION; Step 7b runs `proof-asset put` | commands/verify.md:5,62-69,127,154 |
+| 8 | code (debug records its gate) | The bug lane requires a `debug` gate | No command records `debug`; debug.md writes only an ACTION line | lib/gate/gate-ledger.sh `required bug`, commands/debug.md:48 |
+| 9 | doc | Required gates come from the WORKFLOW.md lane x phase matrix, parsed at runtime | Read from kit.toml `[lane.<name>]` via lane-data.sh; WORKFLOW.md is read only by dispatch-gate for the hands-off list | lib/gate/README.md:36-37 (and its ASCII diagram), lib/gate/lane-data.sh:2-4, lib/gate/dispatch-gate.sh:22 |
+| 10 | doc | Every `[gate]` key is off except `board_row_gate` | `fixture_identities` also defaults ON | lib/gate/README.md "Turning a gate on", kit.toml:122, lib/gate/gate-policy.sh:36 |
+| 11 | doc | "Two things here can actually stop you"; callables table complete | Table omits `redteam` and `proof-gate contract, skeleton, coverage`; gate.sh routes `redteam` | lib/gate/README.md:5-6, lib/gate/gate.sh:35 |
+| 12 | code (one root) or doc | `DWARVES_KIT_LOG_DIR` moves the hook log dir; Tier B hook logs live in `~/.local/state/dwarves-kit/logs` | It is also the ledger-root alias; hooks write to `~/.claude/dwarves-kit/logs` | docs/hooks.md:11-12, lib/stats/docs/ledger-event-schema.md:~91, lib/telemetry/kit-log-dir.sh:44-47, hooks/ship-gate.sh:101,124 |
+| 13 | doc | money-gate prints "confirm before applying" | Only with `MONEY_GATE_STRICT`; otherwise it only logs | docs/hooks.md money-gate row, hooks/money-gate.sh:156-168 |
+| 14 | doc (header) | ship-gate "FAILS OPEN on any ambiguity" | Blocks on unloadable ship-rules, an unaccounted push, an unreadable marker, a missing Lane | hooks/ship-gate.sh:8-12,87-99,163-187,398-409 |
+| 15 | code | No hook reaches kit-log-dir.sh transitively | batch-debt-warn does, and runs the migration | lib/telemetry/kit-log-dir.sh:19-21, hooks/batch-debt-warn.sh:19-23 |
+| 16 | doc | "Where things write to disk" lists the hook logs | Omits ship-gate.log, board-row-gate.log, mega-merge.log, merge-watch/, both `.cache` files | docs/architecture.md:~583-591 |
+| 17 | doc | lib/money-gate is a module | It holds only SPEC.md; the code is hooks/money-gate.sh; lib/gate SPEC is a known gap | lib/money-gate/SPEC.md:46-51, lib/telemetry/docs/proof-of-done.md:~10, lib/gate/README.md |
+| 18 | doc | queue.sh and orchestrate.sh share no code | `orchestrate.sh queue <src>` execs `queue.sh run` | docs/execution-planes.md:46-48, lib/queue/orchestrate.sh:2884 |
+| 19 | doc | pane-tail.jq is shared by queue and gauntlet | Used by `orchestrate.sh panes` and cleanroom watch.sh; queue.sh never | docs/execution-planes.md:146, lib/queue/orchestrate.sh:250,1709, tests/gauntlet/cleanroom/watch.sh:17 |
+| 20 | doc, or code (queue writes START) | gate-ledger is the telemetry rail for every plane | queue and watch-board never call it (they use queue-journal.tsv); the gauntlet reaches it only through prompt text | docs/execution-planes.md:145, commands/gauntlet.md:114-126 |
+| 21 | doc | Orchestrator isolation is none, the real checkout | Wave sessions each run in `.claude/worktrees/<id>`; only the serial path uses the real checkout | docs/execution-planes.md:59, lib/queue/orchestrate.sh:1351,1988 |
+| 22 | doc | No DAG, no wave scheduler, single chain only | Wave scheduler (`_wave_gate`, `_wave_run`, `_wave_converge`) and multi-dep `depends` exist; mega.md:196-208 documents waves | commands/mega.md:553-554, commands/dispatch.md:181-182 |
+| 23 | code comments | `WAVE_CAP` defaults to 1 and converge is unreachable | Default is 2 | lib/queue/orchestrate.sh:201,2090,2454-2455,2533-2535,2578-2579 |
+| 24 | code comment | harness.sh: "Nothing calls it into the dispatch path yet" | orchestrate.sh sources and uses it | lib/queue/harness.sh:20-21, lib/queue/orchestrate.sh:135,1151 |
+| 25 | doc | lib/README lists `queue/weekend-batch.sh`, a `session/` dir with only the parser, and a `goal/` row without wt.sh | weekend-batch lives in lib/reflect; lib/session also holds recall, observe, intel, audit, handoffs.sh; wt.sh exists | lib/README.md:15,19,22 |
+| 26 | doc or code | dispatch caps workers at 4 | No code enforces a cap; `dispatch-gate plan` has none; `WAVE_CAP` is 2 | commands/dispatch.md:31 |
+| 27 | doc | "Nothing writes BACKLOG.md directly"; promote is the only edge in | Direct writers: board capture, sync intake, assign freeform, wayfind, web-drift | docs/data-flow.md:70,75, lib/board/board.sh:957-981, lib/sync/backlog_sync.py:289-291, commands/assign.md:33, commands/wayfind.md:92, skills/web-drift/SKILL.md:34 |
+| 28 | doc | `learn propose, drain, debt` | The subsystem is `reflect`; `bin/learn` is a deprecated forwarder | docs/data-flow.md:25-62,76,121,209, lib/reflect/reflect.sh:20, bin/learn:2-4 |
+| 29 | doc | Proposers stage automatically | Writes are opt-in (`BACKLOG_STAGE_AUTO=1`); otherwise propose prints and backlog-stage returns | docs/data-flow.md:33-47, hooks/backlog-stage.sh:10-14, lib/reflect/propose.py:45,554 |
+| 30 | code (wire it) or doc | intake-sweep runs at SessionStart via `backlog-stage --surface` | backlog-stage is wired on SessionEnd with no `--surface`; only tests call it; intake-sweep never runs | docs/architecture.md:283, hooks/hooks.json:189, docs/hooks.md:61, docs/FEATURES.md:127 |
+| 31 | doc | BACKLOG.md cites `lib/goal-registry.sh` and `lib/backlog.sh`; "Shipped items drop off the queue" | Paths are lib/goal/ and lib/board/; wrap keeps shipped rows in place | _meta/BACKLOG.md:23-25,339 |
+| 32 | code | `backlog.sh lint` checks the board shape | It hardcodes 4 cells while the kit board has 6 columns; promote and capture write 4-column rows into it | lib/board/backlog.sh:305, lib/board/bin/add-backlog:226-228, lib/board/board.sh:968, skills/backlog-reconcile/SKILL.md:47 |
+| 33 | doc | mirror, status and writeback were folded into the sync module | They still run the legacy bash engine; `--engine sync` is dry-run only | lib/board/board.sh:683-686,1202-1207 |
+| 34 | doc | add-backlog's `parse_staging` is the only private grammar copy | The `.jq` twin is a second | docs/data-flow.md:97, lib/reflect/staging-format.py:24-29 |
+| 35 | doc | `intake gate` replaces five intake skills | No in-kit caller; only lib/README and the module registry mention it | lib/intake/intake.sh:3-7 |
+| 36 | doc | anomalies.py keeps its own `render_block` copy | It loads staging-format.py | lib/reflect/README.md:79-98, lib/stats/src/stats/anomalies.py:750-765 |
+| 37 | code (remove) or doc | `bin/learn` lives one release | Removal tied to 2.4.0 and the file still exists | lib/reflect/README.md:60, docs/CHANGELOG.md:247-250, bin/learn |
+| 38 | code (usage) | `bin/session` usage lists five verbs | Omits `audit`, which session.sh dispatches | bin/session:4-10, lib/session/session.sh:32 |
+| 39 | doc | session-state-save runs on Stop | Wired on Stop and SubagentStop | docs/architecture.md:289, hooks/hooks.json:173,234 |
+| 40 | code comment | harvest.sh stages learnings on PreCompact and SessionEnd | The no-flag harvest runs on PreCompact only; SessionEnd runs `--lab-log` | hooks/harvest.sh:2, hooks/hooks.json:152,194 |
+| 41 | doc (or rename) | Skill `observe` reads as the session observe front door | It fronts lib/bench, not lib/session/observe | skills/observe/SKILL.md |
+| 42 | cleanup | The Rust prose-rag crate is retired | `lib/prose-rag/bin/prose-rag-rs` (5 MB) and `rust/target` remain as ignored files | install.sh:573 |
+| 43 | code | adopt.sh's module table is in sync with install.sh | install.sh also wires board-row-gate, context-budget, batch-debt-warn, tool-policy-guard, money_gate, prose_rag; adopt still knows `bridge` and lacks worktree, money_gate, prose_rag, sync | lib/adopt.sh:343-355, install.sh:226-243, commands/adopt.md |
+| 44 | doc | context-budget warns once per 100k-token band past 200k | Percentage thresholds, `KIT_CTX_WARN_PCT` 65 and `KIT_CTX_STRONG_PCT` 70 | docs/architecture.md inventory row, hooks/context-budget.sh:20-26, docs/hooks.md:43 |
+| 45 | doc | repo-hygiene has five detectors and six item classes | The sixth (handoff) class is a model-run procedure; the script has detectors 1 to 5 | skills/repo-hygiene/SKILL.md, lib/repohygiene/repohygiene.sh:15-19 |
+| 46 | doc | gauntlet-proof-audit has "no default cron" | Its second Cadence section and the cadence table say monthly | skills/gauntlet-proof-audit/SKILL.md, docs/patterns/audit-loop.md:90 |
+| 47 | doc | audit-scanner's dispatchers are six named loops | memory-tidy and gauntlet-proof-audit also dispatch it | agents/audit-scanner.md:3, skills/gauntlet-proof-audit/SKILL.md step 4 |</script>
+<script type="text/plain" id="uml-base" data-ref=""></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/js-yaml/4.1.0/js-yaml.min.js" integrity="sha384-+pxiN6T7yvpryuJmE1gM9PX7yQit15auDb+ZwwvJOd/4be2Cie5/IuVXgQb/S9du" crossorigin="anonymous"></script>
+<script>
+// system-design: parse a SYSTEM-DESIGN.md model and diff two of them. Pure functions, no DOM.
+// The build inlines this file into template.html; test.mjs requires it in node.
+
+var UML_TYPES = ['usecase', 'class', 'erd', 'sequence', 'state', 'component'];
+
+var idn = function (e) { return typeof e === 'string' ? e : (e.id || e.name); };
+var arrowKey = function (extra) {
+  return function (e) { return e.id || (e.from + ' → ' + e.to + (e[extra] ? ' ' + e[extra] : '')); };
+};
+
+// Per type: [field, kind label, identity fn]. Identity is id, else name, else from/to.
+var UML_COLL = {
+  usecase: [['actors', 'actor', idn], ['cases', 'case', idn]],
+  class: [['classes', 'class', idn], ['relations', 'relation', arrowKey('kind')]],
+  erd: [['tables', 'table', idn], ['rels', 'rel', arrowKey('label')]],
+  sequence: [['participants', 'participant', idn], ['messages', 'message', function (e) { return e.from + '|' + e.to + '|' + e.text; }]],
+  state: [['states', 'state', idn], ['transitions', 'transition', arrowKey('event')]],
+  component: [['nodes', 'node', idn], ['edges', 'edge', arrowKey('label')]]
+};
+
+// Rows inside an element that get their own +/-/~ marks.
+var rowName = function (r) { return Array.isArray(r) ? String(r[0]) : String(r).split(/[:(\s]/)[0]; };
+var UML_ROWS = { table: [['cols', 'col']], class: [['attrs', 'attr'], ['ops', 'op']] };
+
+// Layout hints place an element on its sheet and tone colors it; neither is a design change, so the delta skips them.
+var LAYOUT_KEYS = { at: 1, via: 1, route: 1, side: 1, lane: 1, tone: 1 };
+function bare(v) {
+  if (!v || typeof v !== 'object' || Array.isArray(v)) return v;
+  var o = {}, ks = Object.keys(v).filter(function (k) { return !LAYOUT_KEYS[k]; });
+  ks.forEach(function (k) { o[k] = v[k]; });
+  // A participant given as {name: X, tone: ...} is the same participant as the string X.
+  return ks.length === 1 && ks[0] === 'name' && typeof o.name === 'string' ? o.name : o;
+}
+
+function canon(v) {
+  if (Array.isArray(v)) return '[' + v.map(canon).join(',') + ']';
+  if (v && typeof v === 'object') return '{' + Object.keys(v).sort().map(function (k) { return JSON.stringify(k) + ':' + canon(v[k]); }).join(',') + '}';
+  return JSON.stringify(v === undefined ? null : v);
+}
+
+var PROSE_SECTIONS = /^##\s+(Cross-cutting concepts|Risks and technical debt)\s*$/i;
+
+// Split prose on "## " headings: named sections (or every heading when all) go to model.sections,
+// the rest returns as the diagram note.
+function takeSections(text, model, all) {
+  return text.split(/^(?=## )/m).filter(function (seg) {
+    var hm = /^##\s+(.+)$/m.exec(seg);
+    if (!/^## /.test(seg) || !(all || PROSE_SECTIONS.test(seg.split('\n')[0]))) return !all;
+    model.sections.push({ title: hm[1].trim(), body: seg.slice(seg.indexOf('\n') + 1).trim() });
+    return false;
+  }).join('');
+}
+
+function parseModel(md, load) {
+  var model = { title: '', intro: '', rev: '', decided: [], diagrams: [], sections: [], errors: [] };
+  // Optional front matter: rev (review round letter) and decided (decisions so far), drawn on the cover.
+  var fm = /^---[ \t]*\n([\s\S]*?)\n---[ \t]*\n/.exec(md);
+  if (fm) {
+    md = md.slice(fm[0].length);
+    try {
+      var top = load(fm[1]) || {};
+      if (top.rev != null) model.rev = String(top.rev);
+      if (top.decided != null) model.decided = (Array.isArray(top.decided) ? top.decided : [top.decided]).map(String);
+    } catch (e) { model.errors.push('front matter: YAML: ' + e.message); }
+  }
+  var h = /^#\s+(.+)$/m.exec(md), last = 0;
+  if (h) {
+    model.title = h[1].trim();
+    // The prose between the title and the first heading or block is the cover's intro, not a diagram note.
+    var rest = md.slice(h.index + h[0].length), stop = rest.search(/^(## |```uml)/m);
+    if (stop < 0) stop = rest.length;
+    model.intro = rest.slice(0, stop).trim();
+    last = h.index + h[0].length + stop;
+  }
+  var re = /^```uml[^\n]*\n([\s\S]*?)^```[ \t]*$/gm, m, n = 0, seen = {};
+  while ((m = re.exec(md))) {
+    n++;
+    var note = takeSections(md.slice(last, m.index), model, false);
+    last = re.lastIndex;
+    var spec;
+    try { spec = load(m[1]); } catch (e) { model.errors.push('block ' + n + ': YAML: ' + e.message); continue; }
+    if (!spec || typeof spec !== 'object') { model.errors.push('block ' + n + ': not a YAML mapping'); continue; }
+    if (!spec.id) { model.errors.push('block ' + n + ': missing id'); continue; }
+    if (UML_TYPES.indexOf(spec.type) < 0) { model.errors.push(spec.id + ': unknown type ' + spec.type); continue; }
+    if (seen[spec.id]) { model.errors.push(spec.id + ': duplicate id'); continue; }
+    seen[spec.id] = 1;
+    model.diagrams.push({ id: spec.id, type: spec.type, title: spec.title || spec.id, level: spec.level || '', note: note, review: [].concat(spec.review || []).map(String), caption: spec.caption ? String(spec.caption) : "", spec: spec });
+  }
+  takeSections(md.slice(last), model, true);
+  return model;
+}
+
+// Merge two lists by identity. Current order wins; a removed item sits after
+// its nearest surviving predecessor from the base list.
+function mergeList(baseArr, curArr, keyFn, norm) {
+  norm = norm || bare;
+  baseArr = baseArr || []; curArr = curArr || [];
+  var bk = baseArr.map(keyFn), ck = curArr.map(keyFn), bmap = {}, cset = {};
+  bk.forEach(function (k, i) { bmap[k] = baseArr[i]; });
+  ck.forEach(function (k) { cset[k] = 1; });
+  var out = curArr.map(function (el, i) {
+    var k = ck[i], b = bmap[k];
+    return { key: k, el: el, base: b, st: b === undefined ? 'new' : (canon(norm(b)) === canon(norm(el)) ? '' : 'changed') };
+  });
+  bk.forEach(function (k, i) {
+    if (cset[k]) return;
+    var at = 0;
+    for (var j = i - 1; j >= 0; j--) {
+      var p = out.findIndex(function (o) { return o.key === bk[j]; });
+      if (p >= 0) { at = p + 1; break; }
+    }
+    out.splice(at, 0, { key: k, el: baseArr[i], base: baseArr[i], st: 'removed' });
+  });
+  return out;
+}
+
+function rowDetail(kind, item) {
+  var specs = UML_ROWS[kind];
+  if (!specs || item.st !== 'changed') return [];
+  var d = [];
+  specs.forEach(function (s) {
+    var rows = mergeList(item.base[s[0]], item.el[s[0]], rowName);
+    rows.filter(function (r) { return r.st === 'removed'; }).forEach(function (r) { d.push('-' + s[1] + ' ' + r.key); });
+    rows.filter(function (r) { return r.st === 'new'; }).forEach(function (r) { d.push('+' + s[1] + ' ' + r.key); });
+    rows.filter(function (r) { return r.st === 'changed'; }).forEach(function (r) { d.push('~' + s[1] + ' ' + r.key); });
+  });
+  Object.keys(Object.assign({}, item.base, item.el)).forEach(function (f) {
+    if (LAYOUT_KEYS[f] || specs.some(function (s) { return s[0] === f; })) return;
+    if (canon(item.base[f]) !== canon(item.el[f])) d.push('~' + f);
+  });
+  return d;
+}
+
+function fieldDetail(item) {
+  if (item.st !== 'changed') return [];
+  return Object.keys(Object.assign({}, item.base, item.el)).filter(function (f) {
+    return !LAYOUT_KEYS[f] && canon(item.base[f]) !== canon(item.el[f]);
+  }).map(function (f) { return '~' + f; });
+}
+
+// One diagram's collections merged against its base version (null = all new).
+function mergeDiagram(baseD, curD, noBase) {
+  var spec = (curD || baseD).spec, merged = {};
+  UML_COLL[spec.type].forEach(function (c) {
+    var b = baseD ? baseD.spec[c[0]] : [], cur = curD ? curD.spec[c[0]] : [];
+    if (noBase) b = cur;
+    var keyFn = function (e, i) { return c[2](e, i); };
+    var items = c[0] === 'messages' ? mergeMessages(b, cur, keyFn) : mergeList(b, cur, keyFn);
+    if (!curD) items.forEach(function (it) { it.st = 'removed'; });
+    items.forEach(function (it) {
+      it.kind = c[1];
+      it.detail = UML_ROWS[c[1]] ? rowDetail(c[1], it) : fieldDetail(it);
+      var rs = UML_ROWS[c[1]];
+      if (rs) {
+        it.rows = {};
+        rs.forEach(function (s) {
+          it.rows[s[0]] = it.st === 'changed' ? mergeList(it.base[s[0]], it.el[s[0]], rowName)
+            : (it.el[s[0]] || []).map(function (r) { return { key: rowName(r), el: r, st: '' }; });
+        });
+      }
+    });
+    merged[c[0]] = items;
+  });
+  return merged;
+}
+
+// A message is keyed by from|to|text plus an occurrence counter, so an insert
+// does not re-key the messages after it. A repeat of the same triple gets #2, #3.
+function mergeMessages(b, cur, keyFn) {
+  var keyed = function (arr) {
+    var seen = {};
+    return (arr || []).map(function (e) {
+      var k = keyFn(e), n = seen[k] = (seen[k] || 0) + 1;
+      return { k: n > 1 ? k + ' #' + n : k, e: e };
+    });
+  };
+  var out = mergeList(keyed(b), keyed(cur), function (x) { return x.k; }, function (x) { return { k: x.k, e: bare(x.e) }; });
+  out.forEach(function (o) { o.el = o.el.e; o.base = o.base && o.base.e; });
+  return out;
+}
+
+function diffModels(base, cur) {
+  var list = [], sheets = [], bmap = {}, cset = {};
+  (base ? base.diagrams : []).forEach(function (d) { bmap[d.id] = d; });
+  cur.diagrams.forEach(function (d) { cset[d.id] = 1; });
+  cur.diagrams.forEach(function (d) {
+    var b = bmap[d.id];
+    if (base && !b) {
+      sheets.push({ d: d, st: 'new', merged: mergeDiagram(null, d) });
+      list.push({ diagram: d.id, title: d.title, st: 'new', kind: 'diagram', key: d.type, detail: [] });
+      return;
+    }
+    var merged = mergeDiagram(b, d, !base), st = '';
+    if (b && (b.type !== d.type || b.title !== d.title || b.level !== d.level)) {
+      st = 'changed';
+      list.push({ diagram: d.id, title: d.title, st: 'changed', kind: 'diagram', key: d.type, detail: ['~title/level/type'] });
+    }
+    UML_COLL[d.type].forEach(function (c) {
+      merged[c[0]].forEach(function (it) {
+        if (!it.st) return;
+        st = 'changed';
+        list.push({ diagram: d.id, title: d.title, st: it.st, kind: it.kind, key: it.key, name: it.el && typeof it.el === 'object' ? it.el.name : undefined, detail: it.detail });
+      });
+    });
+    sheets.push({ d: d, st: st, merged: merged });
+  });
+  (base ? base.diagrams : []).forEach(function (b) {
+    if (cset[b.id]) return;
+    sheets.push({ d: b, st: 'removed', merged: mergeDiagram(b, null) });
+    list.push({ diagram: b.id, title: b.title, st: 'removed', kind: 'diagram', key: b.type, detail: [] });
+  });
+  return { list: list, sheets: sheets };
+}
+
+function deltaLines(delta) {
+  return delta.list.map(function (x) {
+    return x.st + ' ' + x.diagram + ' ' + x.kind + ' ' + x.key + (x.detail.length ? ': ' + x.detail.join(', ') : '');
+  });
+}
+
+if (typeof module !== 'undefined') module.exports = { parseModel: parseModel, diffModels: diffModels, deltaLines: deltaLines, mergeList: mergeList };
+</script>
+<script>
+// system-design layout: grid placement, orthogonal routing, edge label placement. Pure functions, no DOM.
+// The build inlines this file into template.html; test.mjs requires it in node.
+// A diagram is a grid of cells. A hinted node sits at its `at: [col, row]`; the rest are placed
+// deterministically (layered by edge direction, or one column per lane). Edges run orthogonally
+// through the gutters between cells, so no edge crosses a box.
+
+const isCell = a => Array.isArray(a) && a.length === 2 && a.every(n => Number.isInteger(n) && n >= 0);
+
+// Longest-path rank along edge direction; back edges of cycles (found by DFS in input order) are ignored.
+function rankNodes(ids, edges) {
+  const out = {}, rank = {}, state = {}, back = {};
+  ids.forEach(id => { out[id] = []; rank[id] = 0; });
+  edges.forEach(e => { if (e.v in out && e.w in out && e.v !== e.w) out[e.v].push(e.w); });
+  const dfs = v => {
+    state[v] = 1;
+    out[v].forEach(w => { if (state[w] === 1) back[v + '>' + w] = 1; else if (!state[w]) dfs(w); });
+    state[v] = 2;
+  };
+  ids.forEach(id => { if (!state[id]) dfs(id); });
+  for (let k = 0; k < ids.length; k++) {
+    let moved = false;
+    ids.forEach(v => out[v].forEach(w => {
+      if (!back[v + '>' + w] && rank[w] < rank[v] + 1) { rank[w] = rank[v] + 1; moved = true; }
+    }));
+    if (!moved) break;
+  }
+  return rank;
+}
+
+// Cell per node id. o.dir 'LR' (ranks are columns) or 'TB' (ranks are rows); o.lanes = ordered lane ids,
+// node.lane picks one: each lane is a column, rows follow rank. Hinted nodes keep their cell.
+function placeGrid(nodes, edges, o) {
+  o = o || {};
+  const cell = {}, taken = {}, K = (c, r) => c + ',' + r, warn = o.warn || [];
+  nodes.forEach(n => {
+    if (n.at == null) return;
+    if (!isCell(n.at)) { warn.push(n.id + ': at must be [col, row] of whole numbers >= 0, placed automatically'); return; }
+    if (taken[K(n.at[0], n.at[1])]) { warn.push(n.id + ': cell ' + n.at + ' already holds ' + taken[K(n.at[0], n.at[1])] + ', placed automatically'); return; }
+    cell[n.id] = n.at.slice(); taken[K(n.at[0], n.at[1])] = n.id;
+  });
+  const free = nodes.filter(n => !cell[n.id]);
+  if (!free.length) return cell;
+  const ids = nodes.map(n => n.id), rank = rankNodes(ids, edges);
+  const lanes = o.lanes && o.lanes.length ? o.lanes : null;
+  // primary axis: lane index or rank; secondary: order inside it.
+  const prim = {};
+  free.forEach(n => { prim[n.id] = lanes ? (lanes.indexOf(n.lane) < 0 ? lanes.length : lanes.indexOf(n.lane)) : rank[n.id]; });
+  const layers = [];
+  free.forEach(n => { (layers[prim[n.id]] = layers[prim[n.id]] || []).push(n.id); });
+  const nb = {};
+  ids.forEach(id => { nb[id] = { up: [], down: [] }; });
+  edges.forEach(e => { if (nb[e.v] && nb[e.w] && e.v !== e.w) { nb[e.w].up.push(e.v); nb[e.v].down.push(e.w); } });
+  const slot = {};
+  if (lanes) {
+    // Inside a lane, follow rank, then input order.
+    layers.forEach(L => { if (!L) return; L.sort((a, b) => rank[a] - rank[b] || ids.indexOf(a) - ids.indexOf(b)).forEach((id, i) => { slot[id] = i; }); });
+  } else {
+    // Barycenter sweeps (stable sort keeps input order on ties), then align each node with its neighbours' median.
+    layers.forEach(L => L && L.forEach((id, i) => { slot[id] = i; }));
+    const bary = (L, dir) => {
+      const bc = id => { const xs = nb[id][dir].filter(x => x in slot).map(x => slot[x]); return xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : slot[id]; };
+      const keyed = L.map(id => [id, bc(id)]);
+      keyed.sort((a, b) => a[1] - b[1]);
+      keyed.forEach((k, i) => { slot[k[0]] = i; L[i] = k[0]; });
+    };
+    for (let round = 0; round < 2; round++) {
+      layers.forEach(L => L && bary(L, 'up'));
+      for (let i = layers.length - 1; i >= 0; i--) if (layers[i]) bary(layers[i], 'down');
+    }
+    layers.forEach(L => {
+      if (!L) return;
+      let last = -1;
+      L.forEach(id => {
+        const xs = nb[id].up.filter(x => x in slot && prim[x] < prim[id]).map(x => slot[x]).sort((a, b) => a - b);
+        const want = xs.length ? xs[Math.floor((xs.length - 1) / 2)] : last + 1;
+        slot[id] = Math.max(want, last + 1); last = slot[id];
+      });
+    });
+  }
+  const lr = lanes || (o.dir || 'LR') === 'LR';
+  layers.forEach((L, p) => L && L.forEach(id => {
+    let s = slot[id];
+    const at = () => lr ? [p, s] : [s, p];
+    while (taken[K(...at())]) s++;
+    cell[id] = at(); taken[K(...at())] = id;
+  }));
+  return cell;
+}
+
+// Route plans in grid terms. Each plan names its shape and the gutters it uses.
+// Gutter i on the column axis sits before column i (0 = left margin); on the row axis, before row i.
+function planRoutes(edges, cell) {
+  const occ = {};
+  Object.keys(cell).forEach(id => { occ[cell[id][0] + ',' + cell[id][1]] = id; });
+  const empty = (c, r) => !occ[c + ',' + r];
+  const between = (a, b) => { const out = []; for (let i = Math.min(a, b) + 1; i < Math.max(a, b); i++) out.push(i); return out; };
+  return edges.map(e => {
+    const A = cell[e.v], B = cell[e.w];
+    if (!A || !B) return null;
+    if (e.v === e.w) return { t: 'self' };
+    if (e.via) return { t: 'via' };
+    if (e.route === 'straight') return { t: 'straight' };
+    const [ca, ra] = A, [cb, rb] = B, dc = Math.sign(cb - ca), dr = Math.sign(rb - ra);
+    if (ra === rb && between(ca, cb).every(c => empty(c, ra))) return { t: 'h' };
+    if (ca === cb && between(ra, rb).every(r => empty(ca, r))) return { t: 'v' };
+    if (ra === rb) return { t: 'uh', rg: ra };
+    if (ca === cb) return { t: 'uv', cg: ca + 1 };
+    // L: along A's row to B's column, then into B's top or bottom.
+    if (between(ca, cb).concat([cb]).every(c => empty(c, ra)) && between(ra, rb).every(r => empty(cb, r))) return { t: 'L1' };
+    // L: along A's column to B's row, then into B's side.
+    if (between(ra, rb).concat([rb]).every(r => empty(ca, r)) && between(ca, cb).every(c => empty(c, rb))) return { t: 'L2' };
+    // Z through a column gutter, middle gutter first.
+    const cgs = []; for (let g = Math.min(ca, cb) + 1; g <= Math.max(ca, cb); g++) cgs.push(g);
+    const mid = (Math.min(ca, cb) + Math.max(ca, cb) + 1) / 2;
+    cgs.sort((a, b) => Math.abs(a - mid) - Math.abs(b - mid) || a - b);
+    // Gutter g sits between index g-1 and g. Cells between an end and the gutter must be empty.
+    const span = (a, b) => { const out = []; for (let i = a; i < b; i++) out.push(i); return out; };
+    for (const g of cgs) {
+      const okA = (dc > 0 ? span(ca + 1, g) : span(g, ca)).every(c => empty(c, ra));
+      const okB = (dc > 0 ? span(g, cb) : span(cb + 1, g)).every(c => empty(c, rb));
+      if (okA && okB) return { t: 'zh', cg: g };
+    }
+    const rgs = []; for (let g = Math.min(ra, rb) + 1; g <= Math.max(ra, rb); g++) rgs.push(g);
+    const midr = (Math.min(ra, rb) + Math.max(ra, rb) + 1) / 2;
+    rgs.sort((a, b) => Math.abs(a - midr) - Math.abs(b - midr) || a - b);
+    for (const g of rgs) {
+      const okA = (dr > 0 ? span(ra + 1, g) : span(g, ra)).every(r => empty(ca, r));
+      const okB = (dr > 0 ? span(g, rb) : span(rb + 1, g)).every(r => empty(cb, r));
+      if (okA && okB) return { t: 'zv', rg: g };
+    }
+    // Channel: out of A into its adjacent column gutter, along the row gutter next to B, into B.
+    return { t: 'ch', cg: dc > 0 ? ca + 1 : ca, rg: dr > 0 ? rb : rb + 1 };
+  });
+}
+
+// Pixel geometry from cells, node sizes and gutter widths.
+function geometry(nodes, cell, gc, gr, o) {
+  let nc = 0, nr = 0;
+  nodes.forEach(n => { const c = cell[n.id]; if (c) { nc = Math.max(nc, c[0] + 1); nr = Math.max(nr, c[1] + 1); } });
+  const cw = Array(nc).fill(o.emptyW || 60), rh = Array(nr).fill(o.emptyH || 40), seen = {};
+  nodes.forEach(n => {
+    const c = cell[n.id]; if (!c) return;
+    cw[c[0]] = Math.max(seen['c' + c[0]] ? cw[c[0]] : 0, n.w); seen['c' + c[0]] = 1;
+    rh[c[1]] = Math.max(seen['r' + c[1]] ? rh[c[1]] : 0, n.h); seen['r' + c[1]] = 1;
+  });
+  const cx = [], ry = [];
+  let x = 0; for (let i = 0; i < nc; i++) { x += gc[i]; cx.push(x); x += cw[i]; }
+  const W = x + gc[nc];
+  let y = 0; for (let i = 0; i < nr; i++) { y += gr[i]; ry.push(y); y += rh[i]; }
+  const H = y + gr[nr];
+  const box = {};
+  nodes.forEach(n => {
+    const c = cell[n.id]; if (!c) return;
+    box[n.id] = { x: cx[c[0]] + (cw[c[0]] - n.w) / 2, y: o.alignTop ? ry[c[1]] : ry[c[1]] + (rh[c[1]] - n.h) / 2, w: n.w, h: n.h };
+  });
+  const gx = i => (i === 0 ? 0 : cx[i - 1] + cw[i - 1]) + gc[i] / 2;
+  const gy = i => (i === 0 ? 0 : ry[i - 1] + rh[i - 1]) + gr[i] / 2;
+  const at = v => { const f = Math.floor(v); return v - f >= 0.25 ? gx(f + 1) : cx[f] + cw[f] / 2; };
+  const atY = v => { const f = Math.floor(v); return v - f >= 0.25 ? gy(f + 1) : ry[f] + rh[f] / 2; };
+  return { nc, nr, cw, rh, cx, ry, W, H, box, gx, gy, at, atY };
+}
+
+const sideOf = (b, s, t) => s === 'r' ? [b.x + b.w, b.y + b.h * t] : s === 'l' ? [b.x, b.y + b.h * t] : s === 'b' ? [b.x + b.w * t, b.y + b.h] : [b.x + b.w * t, b.y];
+// Where the ray from a box's center toward p leaves the box.
+function clip(b, p) {
+  const cx = b.x + b.w / 2, cy = b.y + b.h / 2, dx = p[0] - cx, dy = p[1] - cy;
+  if (!dx && !dy) return [cx, cy];
+  const s = Math.min(dx ? (b.w / 2) / Math.abs(dx) : Infinity, dy ? (b.h / 2) / Math.abs(dy) : Infinity);
+  return [cx + dx * s, cy + dy * s];
+}
+
+// Points per edge, plus which segment sits in which gutter (for track offsets) and which ends sit on which side.
+function pixelize(edges, plans, cell, G) {
+  return edges.map((e, i) => {
+    const p = plans[i]; if (!p) return null;
+    const A = G.box[e.v], B = G.box[e.w], [ca, ra] = cell[e.v], [cb, rb] = cell[e.w];
+    const acx = A.x + A.w / 2, acy = A.y + A.h / 2, bcx = B.x + B.w / 2, bcy = B.y + B.h / 2;
+    const r = { pts: null, tracks: [], ends: [] };
+    const hs = cb > ca ? ['r', 'l'] : ['l', 'r'], vs = rb > ra ? ['b', 't'] : ['t', 'b'];
+    if (p.t === 'self') {
+      const x = A.x + A.w, y = acy;
+      r.pts = [[x, y - 8], [x + 22, y - 8], [x + 22, y + 8], [x, y + 8]];
+    } else if (p.t === 'straight') {
+      r.pts = [clip(A, [bcx, bcy]), clip(B, [acx, acy])];
+    } else if (p.t === 'via') {
+      const raw = [[acx, acy]].concat(e.via.map(v => [G.at(v[0]), G.atY(v[1])]), [[bcx, bcy]]);
+      const pts = [raw[0]];
+      for (let k = 1; k < raw.length; k++) {
+        const a = pts[pts.length - 1], b = raw[k];
+        if (a[0] !== b[0] && a[1] !== b[1]) pts.push([b[0], a[1]]);
+        pts.push(b);
+      }
+      const first = pts[1], last = pts[pts.length - 2];
+      pts[0] = first[1] === acy ? [first[0] > acx ? A.x + A.w : A.x, acy] : [acx, first[1] > acy ? A.y + A.h : A.y];
+      pts[pts.length - 1] = last[1] === bcy ? [last[0] > bcx ? B.x + B.w : B.x, bcy] : [bcx, last[1] > bcy ? B.y + B.h : B.y];
+      r.pts = pts;
+    } else if (p.t === 'h') {
+      const y = (Math.max(A.y, B.y) + Math.min(A.y + A.h, B.y + B.h)) / 2;
+      r.pts = [[hs[0] === 'r' ? A.x + A.w : A.x, y], [hs[1] === 'l' ? B.x : B.x + B.w, y]];
+      r.ends = [[e.v, hs[0], 0, 'y'], [e.w, hs[1], 1, 'y']]; r.straight = 'y';
+    } else if (p.t === 'v') {
+      const x = (Math.max(A.x, B.x) + Math.min(A.x + A.w, B.x + B.w)) / 2;
+      r.pts = [[x, vs[0] === 'b' ? A.y + A.h : A.y], [x, vs[1] === 't' ? B.y : B.y + B.h]];
+      r.ends = [[e.v, vs[0], 0, 'x'], [e.w, vs[1], 1, 'x']]; r.straight = 'x';
+    } else if (p.t === 'uh') {
+      const y = G.gy(p.rg);
+      r.pts = [[acx, A.y], [acx, y], [bcx, y], [bcx, B.y]];
+      r.tracks = [['r', p.rg, 1]]; r.ends = [[e.v, 't', 0, 'x'], [e.w, 't', 3, 'x']];
+    } else if (p.t === 'uv') {
+      const x = G.gx(p.cg);
+      r.pts = [[A.x + A.w, acy], [x, acy], [x, bcy], [B.x + B.w, bcy]];
+      r.tracks = [['c', p.cg, 1]]; r.ends = [[e.v, 'r', 0, 'y'], [e.w, 'r', 3, 'y']];
+    } else if (p.t === 'L1') {
+      r.pts = [[hs[0] === 'r' ? A.x + A.w : A.x, acy], [bcx, acy], [bcx, vs[1] === 't' ? B.y : B.y + B.h]];
+      r.ends = [[e.v, hs[0], 0, 'y'], [e.w, vs[1], 2, 'x']];
+    } else if (p.t === 'L2') {
+      r.pts = [[acx, vs[0] === 'b' ? A.y + A.h : A.y], [acx, bcy], [hs[1] === 'l' ? B.x : B.x + B.w, bcy]];
+      r.ends = [[e.v, vs[0], 0, 'x'], [e.w, hs[1], 2, 'y']];
+    } else if (p.t === 'zh') {
+      const x = G.gx(p.cg);
+      r.pts = [[hs[0] === 'r' ? A.x + A.w : A.x, acy], [x, acy], [x, bcy], [hs[1] === 'l' ? B.x : B.x + B.w, bcy]];
+      r.tracks = [['c', p.cg, 1]]; r.ends = [[e.v, hs[0], 0, 'y'], [e.w, hs[1], 3, 'y']];
+    } else if (p.t === 'zv') {
+      const y = G.gy(p.rg);
+      r.pts = [[acx, vs[0] === 'b' ? A.y + A.h : A.y], [acx, y], [bcx, y], [bcx, vs[1] === 't' ? B.y : B.y + B.h]];
+      r.tracks = [['r', p.rg, 1]]; r.ends = [[e.v, vs[0], 0, 'x'], [e.w, vs[1], 3, 'x']];
+    } else {
+      const x = G.gx(p.cg), y = G.gy(p.rg), vin = rb > ra ? 't' : 'b';
+      r.pts = [[hs[0] === 'r' ? A.x + A.w : A.x, acy], [x, acy], [x, y], [bcx, y], [bcx, vin === 't' ? B.y : B.y + B.h]];
+      r.tracks = [['c', p.cg, 1], ['r', p.rg, 2]]; r.ends = [[e.v, hs[0], 0, 'y'], [e.w, vin, 4, 'x']];
+    }
+    return r;
+  });
+}
+
+// Spread segments sharing a gutter, and edge ends sharing a box side, so no two lines lie on top of each other.
+function separate(routes, edges, G, step) {
+  const groups = {};
+  routes.forEach((r, i) => r && r.tracks.forEach(t => { (groups[t[0] + t[1]] = groups[t[0] + t[1]] || []).push([i, t]); }));
+  Object.keys(groups).forEach(k => {
+    const g = groups[k]; if (g.length < 2) return;
+    const ax = g[0][1][0] === 'c' ? 0 : 1, oth = 1 - ax;
+    g.sort((a, b) => {
+      const pa = routes[a[0]].pts, pb = routes[b[0]].pts;
+      return Math.min(pa[a[1][2]][oth], pa[a[1][2] + 1][oth]) - Math.min(pb[b[1][2]][oth], pb[b[1][2] + 1][oth]) || a[0] - b[0];
+    });
+    g.forEach(([i, t], n) => {
+      const d = (n - (g.length - 1) / 2) * step, pts = routes[i].pts;
+      pts[t[2]][ax] += d; pts[t[2] + 1][ax] += d;
+    });
+  });
+  // Box sides: ends sorted by where the edge heads, then spaced evenly along the side.
+  const sides = {};
+  routes.forEach((r, i) => r && r.ends.forEach(en => { (sides[en[0] + '|' + en[1]] = sides[en[0] + '|' + en[1]] || []).push([i, en]); }));
+  Object.keys(sides).forEach(k => {
+    const s = sides[k]; if (s.length < 2) return;
+    const b = G.box[s[0][1][0]], ax = s[0][1][3] === 'y' ? 1 : 0;
+    const far = ([i, en]) => { const pts = routes[i].pts, j = en[2] === 0 ? Math.min(2, pts.length - 1) : Math.max(0, pts.length - 3); return pts[j][ax]; };
+    s.sort((a, b2) => far(a) - far(b2) || a[0] - b2[0]);
+    const len = ax ? b.h : b.w, gap = Math.min(24, len / (s.length + 1));
+    s.forEach(([i, en], n) => {
+      const pos = (ax ? b.y : b.x) + len / 2 + (n - (s.length - 1) / 2) * gap, pts = routes[i].pts;
+      if (routes[i].straight) return; // straight lines are moved below, both ends together
+      const j = en[2], nj = j === 0 ? 1 : j - 1;
+      pts[j][ax] = pos; pts[nj][ax] = pos;
+    });
+  });
+  // Parallel straight edges between the same two boxes sit side by side.
+  const pairs = {};
+  routes.forEach((r, i) => { if (r && r.straight) { const k = [edges[i].v, edges[i].w].sort().join('|'); (pairs[k] = pairs[k] || []).push(i); } });
+  Object.keys(pairs).forEach(k => {
+    const g = pairs[k]; if (g.length < 2) return;
+    g.forEach((i, n) => { const ax = routes[i].straight === 'y' ? 1 : 0, d = (n - (g.length - 1) / 2) * 22; routes[i].pts.forEach(p => { p[ax] += d; }); });
+  });
+}
+
+const hit = (a, b) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+const segRect = (p, q) => ({ x: Math.min(p[0], q[0]) - 1, y: Math.min(p[1], q[1]) - 1, w: Math.abs(p[0] - q[0]) + 2, h: Math.abs(p[1] - q[1]) + 2 });
+
+// Label spots: each segment, longest first, at a few points along it, on either side.
+// Hard: a box, another label or the frame edge. Soft: crossing another edge's line.
+function placeLabels(edges, routes, G, obstacles, LH) {
+  const placed = [], fails = [], segs = [];
+  routes.forEach((r, i) => r && r.pts.slice(1).forEach((q, k) => segs.push({ i, p: r.pts[k], q })));
+  edges.forEach((e, i) => {
+    const r = routes[i]; if (!r || !e.lw) return;
+    const h = e.lines.length * LH, w = e.lw;
+    const cands = [];
+    r.pts.slice(1).map((q, k) => [r.pts[k], q]).sort((a, b) => Math.hypot(b[1][0] - b[0][0], b[1][1] - b[0][1]) - Math.hypot(a[1][0] - a[0][0], a[1][1] - a[0][1]))
+      .forEach(([p, q]) => [0.5, 0.35, 0.65, 0.2, 0.8, 0.1, 0.9].forEach(f => {
+        const mx = p[0] + (q[0] - p[0]) * f, my = p[1] + (q[1] - p[1]) * f;
+        if (p[1] === q[1]) {
+          cands.push({ x: mx - w / 2, y: my - h - 5, a: 'middle' }, { x: mx - w / 2, y: my + 5, a: 'middle' });
+        } else if (p[0] === q[0]) {
+          cands.push({ x: mx + 7, y: my - h / 2, a: 'start' }, { x: mx - 7 - w, y: my - h / 2, a: 'end' });
+        } else {
+          cands.push({ x: mx + 6, y: my - h - 2, a: 'start' }, { x: mx - 6 - w, y: my + 2, a: 'start' });
+        }
+      }));
+    let best = null, bestScore = Infinity;
+    cands.forEach(c => {
+      const rc = { x: c.x - 2, y: c.y - 1, w: w + 4, h: h + 2 };
+      let score = 0;
+      if (rc.x < 2 || rc.y < 2 || rc.x + rc.w > G.W - 2 || rc.y + rc.h > G.H - 2) score += 1000;
+      obstacles.forEach(b => { if (hit(rc, b)) score += 1000; });
+      placed.forEach(b => { if (hit(rc, b)) score += 1000; });
+      segs.forEach(s => { if (s.i !== i && hit(rc, segRect(s.p, s.q))) score += 1; });
+      if (score < bestScore) { bestScore = score; best = c; }
+    });
+    if (!best) return;
+    const rect = { x: best.x - 2, y: best.y - 1, w: w + 4, h: h + 2 };
+    placed.push(rect);
+    if (bestScore >= 1000) fails.push({ i, rect }); else if (bestScore > 0) fails.push({ i, rect, soft: true });
+    r.label = { x: best.a === 'middle' ? best.x + w / 2 : best.a === 'end' ? best.x + w : best.x, y: best.y, a: best.a, lines: e.lines, rect };
+  });
+  return fails;
+}
+
+// The whole pipeline. nodes [{id, w, h, at, lane}], edges [{v, w, lines, lw, via, route}].
+// o: {dir, lanes, gutterW, gutterH, margin, alignTop, warn, lineH, obstacles(G) -> rects}.
+// Returns {cell, box, routes, W, H, G}. Labels that cannot find a clear spot widen the gutters around them.
+function layoutGraph(nodes, edges, o) {
+  o = o || {};
+  const warn = o.warn || [], LH = o.lineH || 13;
+  const known = {}; nodes.forEach(n => { known[n.id] = 1; });
+  const ok = edges.filter(e => { if (known[e.v] && known[e.w]) return true; warn.push('edge ' + e.v + ' to ' + e.w + ': unknown end, not drawn'); return false; });
+  const cell = placeGrid(nodes, ok, { dir: o.dir, lanes: o.lanes, warn });
+  const plans = planRoutes(ok, cell);
+  let nc = 0, nr = 0;
+  Object.keys(cell).forEach(id => { nc = Math.max(nc, cell[id][0] + 1); nr = Math.max(nr, cell[id][1] + 1); });
+  const m = o.margin == null ? 40 : o.margin;
+  const gc = Array(nc + 1).fill(o.gutterW || 80), gr = Array(nr + 1).fill(o.gutterH || 56);
+  gc[0] = gc[nc] = m; gr[0] = gr[nr] = m;
+  Object.keys(o.gutterRows || {}).forEach(k => { if (+k <= nr) gr[+k] = Math.max(gr[+k], o.gutterRows[k]); });
+  // Gutters fit the labels of straight edges between neighbours and the tracks that run through them.
+  const count = {};
+  plans.forEach((p, i) => {
+    if (!p) return;
+    const e = ok[i], A = cell[e.v], B = cell[e.w];
+    if (p.t === 'h' && Math.abs(A[0] - B[0]) === 1) gc[Math.max(A[0], B[0])] = Math.max(gc[Math.max(A[0], B[0])], (e.lw || 0) + 30);
+    if (p.t === 'v' && Math.abs(A[1] - B[1]) === 1) gr[Math.max(A[1], B[1])] = Math.max(gr[Math.max(A[1], B[1])], e.lines.length * LH + 22);
+    if (p.cg != null) count['c' + p.cg] = (count['c' + p.cg] || 0) + 1;
+    if (p.rg != null) count['r' + p.rg] = (count['r' + p.rg] || 0) + 1;
+  });
+  Object.keys(count).forEach(k => { const g = +k.slice(1), need = count[k] * 12 + 28; if (k[0] === 'c') gc[g] = Math.max(gc[g], need); else gr[g] = Math.max(gr[g], need); });
+  let G, routes, fails = [];
+  for (let round = 0; round < 7; round++) {
+    G = geometry(nodes, cell, gc, gr, o);
+    routes = pixelize(ok, plans, cell, G);
+    separate(routes, ok, G, 12);
+    const obs = Object.keys(G.box).map(id => { const b = G.box[id]; return { x: b.x - 3, y: b.y - 3, w: b.w + 6, h: b.h + 6 }; }).concat(o.obstacles ? o.obstacles(G) : []);
+    // A label on top of another edge's line widens its gutter only in the first rounds; a label on a box always does.
+    fails = placeLabels(ok, routes, G, obs, LH).filter(f => !f.soft || round < 2);
+    if (!fails.length) break;
+    // Widen each gutter a failed label overlaps (once per round), then lay out again.
+    const wc = {}, wr = {};
+    fails.forEach(f => {
+      const r = f.rect;
+      for (let g = 0; g <= G.nc; g++) {
+        const x0 = g === 0 ? 0 : G.cx[g - 1] + G.cw[g - 1], x1 = g === G.nc ? G.W : G.cx[g];
+        if (r.x < x1 && r.x + r.w > x0) wc[g] = 1;
+      }
+      for (let g = 0; g <= G.nr; g++) {
+        const y0 = g === 0 ? 0 : G.ry[g - 1] + G.rh[g - 1], y1 = g === G.nr ? G.H : G.ry[g];
+        if (r.y < y1 && r.y + r.h > y0) wr[g] = 1;
+      }
+    });
+    Object.keys(wc).forEach(g => { gc[g] += 30; });
+    Object.keys(wr).forEach(g => { gr[g] += 16; });
+    if (!Object.keys(wc).length && !Object.keys(wr).length) gc[0] += 30;
+  }
+  fails = fails.filter(f => !f.soft);
+  if (fails.length) warn.push(fails.length + ' edge label(s) overlap something; add at: or via: hints');
+  const all = routes.map((r, i) => r && Object.assign(r, { e: ok[i] })).filter(Boolean);
+  return { cell, box: G.box, routes: all, W: G.W, H: G.H, G };
+}
+
+if (typeof module !== 'undefined') module.exports = { rankNodes, placeGrid, planRoutes, layoutGraph, isCell };
+</script>
+<script>
+(function(){
+const $ = id => document.getElementById(id);
+const esc = s => String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+const f1 = n => (+n).toFixed(1);
+const P = pts => pts.map(p => f1(p[0]) + ',' + f1(p[1])).join(' ');
+const T = (x,y,s,c,a) => `<text x="${f1(x)}" y="${f1(y)}"${c?` class="${c}"`:''}${a&&a!=='start'?` text-anchor="${a}"`:''}>${esc(s)}</text>`;
+const R = (x,y,w,h,c,rx) => `<rect x="${f1(x)}" y="${f1(y)}" width="${f1(w)}" height="${f1(h)}"${rx?` rx="${rx}"`:''} class="${c}"/>`;
+const line = (pts,c) => `<polyline points="${P(pts)}" class="${c||'edge'}"/>`;
+const nm = e => typeof e === 'string' ? e : (e.id || e.name);
+const label = e => typeof e === 'string' ? e : (e.name || e.id);
+const list = v => v == null ? [] : (Array.isArray(v) ? v : [v]);
+const ST = {new:'new', changed:'chg', removed:'rm', '':''};
+const st = it => ST[(it && it.st) || ''];
+const MARK = {new:'+ ', changed:'~ ', removed:'- ', '':''};
+
+/* Text width from the real fonts (canvas), so boxes and labels fit what the browser draws. */
+const ctx = document.createElement('canvas').getContext('2d');
+let FONT = {};
+function fonts(){
+  const cs = getComputedStyle(document.documentElement), v = k => cs.getPropertyValue(k).trim();
+  const z = parseFloat(v('--fz')) || 1, px = n => (n * z).toFixed(2) + 'px';
+  FONT = { name:`600 ${px(13)} ${v('--body')}`, case:`500 ${px(12.5)} ${v('--body')}`, stereo:`italic 400 ${px(10.5)} ${v('--body')}`,
+    note:`400 ${px(10.5)} ${v('--mono')}`, edge:`400 ${px(10.5)} ${v('--mono')}`, col:`400 ${px(11.5)} ${v('--mono')}`, th:`600 ${px(12.5)} ${v('--mono')}`, sys:`700 ${px(15)} ${v('--display')}` };
+}
+const meas = (s,k) => { ctx.font = FONT[k]; return ctx.measureText(String(s)).width; };
+// Balanced wrap: one line when it fits in max, else the two-line split with the shortest longer line.
+function wrap2(s,k,max){
+  s = String(s||''); if(!s) return [];
+  if(meas(s,k) <= max) return [s];
+  const w = s.split(' '); if(w.length < 2) return [s];
+  let best = null, bw = Infinity;
+  for(let i=1;i<w.length;i++){ const a=w.slice(0,i).join(' '), b=w.slice(i).join(' '), m=Math.max(meas(a,k),meas(b,k)); if(m<bw){ bw=m; best=[a,b]; } }
+  return best;
+}
+// Greedy wrap into at most n lines of width max (the last line takes the rest). A word wider than max
+// breaks after its last fitting : / . - _ (else mid-word) and the pieces join without a space.
+function wrapN(s,k,max,n){
+  const words=[];
+  String(s||'').split(' ').filter(Boolean).forEach(w=>{
+    let rest=w, glue=false;
+    while(meas(rest,k)>max&&rest.length>1){
+      let cut=0, fit=1;
+      for(let i=1;i<=rest.length&&meas(rest.slice(0,i),k)<=max;i++){ fit=i; if(/[:\/.\-_]/.test(rest[i-1])) cut=i; }
+      cut=cut||fit; words.push({t:rest.slice(0,cut),glue}); rest=rest.slice(cut); glue=true;
+    }
+    words.push({t:rest,glue});
+  });
+  const out=[]; let cur='';
+  words.forEach(w=>{ const nx=cur?cur+(w.glue?'':' ')+w.t:w.t; if(cur&&meas(nx,k)>max&&out.length<n-1){ out.push(cur); cur=w.t; } else cur=nx; });
+  if(cur) out.push(cur);
+  return out;
+}
+const linesW = (ls,k) => Math.max(0,...ls.map(l=>meas(l,k)));
+const edgeLabel = (s,max) => { const lines = wrap2(s,'edge',max||170); return { lines, lw: Math.ceil(linesW(lines,'edge')) }; };
+const labelSvg = r => r.label ? r.label.lines.map((l,i)=>T(r.label.x, r.label.y+10+i*13, l, 't-edge', r.label.a)).join('') : '';
+
+function tip(p,q,type){
+  const dx=q[0]-p[0], dy=q[1]-p[1], L=Math.hypot(dx,dy)||1, ux=dx/L, uy=dy/L, nx=-uy, ny=ux;
+  const at=(d,w)=>[q[0]-ux*d+nx*w, q[1]-uy*d+ny*w];
+  if(type==='open') return `<polyline points="${P([at(10,5),q,at(10,-5)])}" class="hd-open"/>`;
+  if(type==='fill') return `<polygon points="${P([at(10,4.5),q,at(10,-4.5)])}" class="hd-fill"/>`;
+  if(type==='tri') return `<polygon points="${P([at(14,8),q,at(14,-8)])}" class="hd-hollow"/>`;
+  if(type==='dia') return `<polygon points="${P([q,at(9,5),at(18,0),at(9,-5)])}" class="hd-fill"/>`;
+  return '';
+}
+function arrow(pts,o){
+  o=o||{};
+  let s=line(pts,'edge'+(o.dash?' dash':''));
+  if(o.end) s+=tip(pts[pts.length-2],pts[pts.length-1],o.end);
+  if(o.start) s+=tip(pts[1],pts[0],o.start);
+  return s;
+}
+// A tone is presentation only: a known name becomes a tone-<name> class, anything else is dropped with a sheet warning.
+const TONES=['blue','green','amber','rose','violet','gray'];
+function toneOf(el,warn,what){
+  const t=el&&typeof el==='object'&&!Array.isArray(el)?el.tone:null;
+  if(t==null||t==='') return '';
+  if(TONES.indexOf(String(t))>=0) return String(t);
+  const m=what+': unknown tone "'+t+'", ignored (use '+TONES.join(', ')+')';
+  if(warn.indexOf(m)<0) warn.push(m);
+  return '';
+}
+const TC = t => t?' tone-'+t:'';
+const TG = (t,inner) => t?`<g class="tone-${t}">${inner}</g>`:inner;
+const E = (s,inner,t) => `<g class="e${s?' '+s:''}${TC(t)}">${inner}</g>`;
+// The canvas never draws narrower than 780 px: a small figure gets centered on a wider sheet.
+function svg(W,H,lbl,body){
+  const w=Math.max(Math.ceil(W),780), dx=(w-W)/2;
+  return `<svg viewBox="0 0 ${w} ${Math.ceil(H)}" style="max-width:${w}px" role="img" aria-label="${esc(lbl)}"><g transform="translate(${f1(dx)},0)">${body}</g></svg>`;
+}
+const routeEdges = (L,fn) => L.routes.map(fn).join('');
+
+/* ---------- component ---------- */
+function rComp(d,M,warn){
+  const sp=d.spec, its=M.nodes;
+  // One box size per sheet, wide enough for every name; notes wrap inside it.
+  const BW=Math.min(260,Math.max(170,...its.map(it=>meas(label(it.el),'name')+28)));
+  const notes=its.map(it=>it.el.note?wrapN(it.el.note,'note',BW-16,3):[]);
+  const BH=Math.max(...its.map((it,i)=>16+(it.el.kind==='ext'?14:0)+16+notes[i].length*13+10),52);
+  const laneOf=e=>e.lane||e.group;
+  const laneNames={}, order=[];
+  list(sp.lanes).forEach(l=>{ const id=typeof l==='string'?l:l.id; laneNames[id]=typeof l==='string'?l:(l.name||l.id); order.push(id); });
+  its.forEach(it=>{ const l=laneOf(it.el); if(l&&order.indexOf(l)<0){ order.push(l); laneNames[l]=l; } });
+  const laneTone={};
+  list(sp.lanes).forEach(l=>{ if(typeof l!=='string'){ const t=toneOf(l,warn,'lane '+l.id); if(t) laneTone[l.id]=t; } });
+  const nodes=its.map(it=>({id:nm(it.el),w:BW,h:BH,at:it.el.at,lane:laneOf(it.el),it,tone:toneOf(it.el,warn,'node '+nm(it.el))||laneTone[laneOf(it.el)]||''}));
+  const edges=M.edges.map(it=>Object.assign({v:it.el.from,w:it.el.to,via:it.el.via,route:it.el.route,it,tone:toneOf(it.el,warn,'edge '+it.key)},it.el.label?edgeLabel(it.el.label):{lines:[],lw:0}));
+  const lanes=G=>order.map(id=>{
+    const bs=nodes.filter(n=>n.lane===id).map(n=>G.box[n.id]).filter(Boolean);
+    if(!bs.length) return null;
+    const x=Math.min(...bs.map(b=>b.x))-18, y=Math.min(...bs.map(b=>b.y))-18;
+    const x2=Math.max(...bs.map(b=>b.x+b.w))+18, y2=Math.max(...bs.map(b=>b.y+b.h))+30;
+    return {id,x,y,w:x2-x,h:y2-y,name:laneNames[id],tone:laneTone[id]||''};
+  }).filter(Boolean);
+  const L=layoutGraph(nodes,edges,{dir:'LR',lanes:order.length?order:null,warn,gutterW:80,gutterH:56,margin:34,
+    obstacles:G=>lanes(G).map(l=>({x:l.x+6,y:l.y+l.h-20,w:meas(l.name.toUpperCase(),'note')+16,h:16}))});
+  let s=lanes(L.G).map(l=>TG(l.tone,R(l.x,l.y,l.w,l.h,'frame'+TC(l.tone),6)+T(l.x+12,l.y+l.h-9,l.name,'t-lane'))).join('');
+  s+=routeEdges(L,r=>E(st(r.e.it),arrow(r.pts,{dash:!!r.e.it.el.dashed,end:'fill'})+labelSvg(r),r.e.tone));
+  nodes.forEach((n,i)=>{
+    const b=L.box[n.id], e=n.it.el, k=st(n.it), cx=b.x+b.w/2, ext=e.kind==='ext';
+    const ls=notes[its.indexOf(n.it)], body=(ext?14:0)+16+ls.length*13;
+    let y=b.y+(b.h-body)/2;
+    let x=R(b.x,b.y,b.w,b.h,'box'+(ext?' ext':'')+TC(n.tone)+(k?' '+k:''),4);
+    if(e.kind==='store') x+=line([[b.x,b.y+8],[b.x+b.w,b.y+8]],'edge');
+    if(ext){ x+=T(cx,y+10,'«external»','t-stereo','middle'); y+=14; }
+    x+=T(cx,y+12,label(e),'t-name'+(k==='rm'?' t-rm':''),'middle'); y+=16;
+    ls.forEach((l,j)=>{ x+=T(cx,y+11+j*13,l,'t-note','middle'); });
+    s+=`<g${n.tone?` class="tone-${n.tone}"`:''}><title>${esc(nm(e))}</title>${x}</g>`;
+  });
+  return svg(L.W,L.H,'Component diagram: '+d.title,s);
+}
+
+/* ---------- erd ---------- */
+function crow(q,p,k){
+  const dx=p[0]-q[0], dy=p[1]-q[1], L=Math.hypot(dx,dy)||1, ux=dx/L, uy=dy/L, nx=-uy, ny=ux;
+  const at=(d,w)=>[q[0]+ux*d+nx*w, q[1]+uy*d+ny*w];
+  let s='';
+  if(k==='one') s+=line([at(8,-7),at(8,7)],'crow')+line([at(13,-7),at(13,7)],'crow');
+  if(k==='zone') s+=line([at(8,-7),at(8,7)],'crow');
+  if(k==='many'||k==='zmany') s+=line([at(0,-8),at(12,0),at(0,8)],'crow');
+  if(k==='zone'||k==='zmany'){ const c=at(k==='zone'?19:20,0); s+=`<circle cx="${f1(c[0])}" cy="${f1(c[1])}" r="5" class="crow-o"/>`; }
+  return s;
+}
+const CARD = s => { s=String(s).trim(); return s==='1'?'one':s==='0..1'?'zone':/^0\.\./.test(s)?'zmany':'many'; };
+function rErd(d,M,warn){
+  const flag=r=>Array.isArray(r.el)&&r.el[1]!=null?String(r.el[1]):'';
+  const nodes=M.tables.map(it=>{
+    const cols=it.rows.cols;
+    const w=Math.max(220,meas(label(it.el),'th')+28,...cols.map(r=>meas(MARK[r.st||'']+r.key,'col')+meas(flag(r),'note')+44));
+    return {id:nm(it.el),w:Math.ceil(w),h:28+cols.length*20+10,at:it.el.at,it,cols};
+  });
+  const edges=M.rels.map(it=>Object.assign({v:it.el.from,w:it.el.to,via:it.el.via,route:it.el.route,it,tone:toneOf(it.el,warn,'rel '+it.key)},it.el.label?edgeLabel(it.el.label):{lines:[],lw:0}));
+  const L=layoutGraph(nodes,edges,{dir:'LR',warn,gutterW:100,gutterH:56,margin:40,alignTop:true});
+  let s=routeEdges(L,r=>{
+    const cd=String(r.e.it.el.cardinality||'1:N').split(':'), p=r.pts;
+    return E(st(r.e.it),line(p)+crow(p[0],p[1],CARD(cd[0]))+crow(p[p.length-1],p[p.length-2],CARD(cd[1]||'N'))+labelSvg(r),r.e.tone);
+  });
+  nodes.forEach(n=>{
+    const b=L.box[n.id], k=st(n.it);
+    let x=R(b.x,b.y,b.w,b.h,'box'+(k?' '+k:''))+R(b.x,b.y,b.w,28,'th'+(k?' '+k:''))+T(b.x+12,b.y+19,label(n.it.el),'t-th'+(k==='rm'?' t-rm':''));
+    n.cols.forEach((r,i)=>{
+      const yy=b.y+28+20*i, rs=ST[r.st||''];
+      if(rs==='new'||rs==='chg') x+=R(b.x+1,yy+3,b.w-2,20,'row-'+rs);
+      const tc=rs==='rm'||k==='rm'?' t-rm':rs?' t-'+rs:'';
+      x+=T(b.x+12,yy+17,MARK[r.st||'']+r.key,'t-col'+tc);
+      if(flag(r)) x+=T(b.x+b.w-12,yy+17,flag(r),'t-flag'+tc,'end');
+    });
+    s+=x;
+  });
+  return svg(L.W,L.H,'Entity relationship diagram: '+d.title,s);
+}
+
+/* ---------- state ---------- */
+function rState(d,M,warn){
+  const S=M.states;
+  const BW=Math.max(130,...S.map(it=>meas(label(it.el),'name')+40));
+  const nodes=S.map(it=>({id:nm(it.el),w:Math.ceil(BW),h:46,at:it.el.at,it,tone:toneOf(it.el,warn,'state '+nm(it.el))}));
+  const edges=M.transitions.map(it=>{ const t=it.el, ev=t.event||'';
+    const lines=t.guard?wrap2(ev,'edge',200).slice(0,1).concat(['['+t.guard+']']):wrap2(ev,'edge',170);
+    return {v:t.from,w:t.to,via:t.via,route:t.route,it,lines,lw:Math.ceil(linesW(lines,'edge')),tone:toneOf(t,warn,'transition '+it.key)}; });
+  const first=S.find(it=>it.el.initial&&it.st!=='removed')||S.find(it=>it.st!=='removed');
+  const fins=S.filter(it=>it.el.final);
+  const marks=G=>{ const out=[];
+    if(first){ const b=G.box[nm(first.el)]; out.push({x:b.x-54,y:b.y+b.h/2-10,w:50,h:20}); }
+    fins.forEach(it=>{ const b=G.box[nm(it.el)]; out.push({x:b.x+b.w,y:b.y+b.h/2-14,w:54,h:28}); });
+    return out; };
+  const L=layoutGraph(nodes,edges,{dir:'LR',warn,gutterW:110,gutterH:70,margin:70,obstacles:marks});
+  let s=routeEdges(L,r=>E(st(r.e.it),arrow(r.pts,{end:'fill'})+labelSvg(r),r.e.tone));
+  if(first){ const b=L.box[nm(first.el)], y=b.y+b.h/2; s+=`<circle class="dot" cx="${f1(b.x-46)}" cy="${f1(y)}" r="8"/>`+arrow([[b.x-38,y],[b.x,y]],{end:'fill'}); }
+  fins.forEach(it=>{ const b=L.box[nm(it.el)], y=b.y+b.h/2, x=b.x+b.w; s+=E(st(it),arrow([[x,y],[x+30,y]],{end:'fill'})+`<circle class="ring" cx="${f1(x+42)}" cy="${f1(y)}" r="11"/><circle class="dot" cx="${f1(x+42)}" cy="${f1(y)}" r="6"/>`,toneOf(it.el,[],'')); });
+  nodes.forEach(n=>{ const b=L.box[n.id], k=st(n.it);
+    s+=TG(n.tone,R(b.x,b.y,b.w,b.h,'state'+TC(n.tone)+(k?' '+k:''),23)+T(b.x+b.w/2,b.y+b.h/2+5,label(n.it.el),'t-name'+(k==='rm'?' t-rm':''),'middle')); });
+  return svg(L.W+20,L.H,'State machine: '+d.title,s);
+}
+
+/* ---------- class ---------- */
+function rClass(d,M,warn){
+  const rowT=r=>MARK[r.st||'']+(Array.isArray(r.el)?r.el[0]:String(r.el));
+  const nodes=M.classes.map(it=>{
+    const c=it.el, attrs=it.rows.attrs, ops=it.rows.ops, nameH=c.stereotype?44:32;
+    const w=Math.max(170,meas(label(c),'name')+32,...attrs.concat(ops).map(r=>meas(rowT(r),'col')+24));
+    return {id:nm(c),w:Math.ceil(w),h:nameH+(attrs.length?attrs.length*18+10:0)+ops.length*18+10,at:c.at,it,nameH,attrs,ops};
+  });
+  const edges=M.relations.map(it=>Object.assign({v:it.el.from,w:it.el.to,via:it.el.via,route:it.el.route,it,tone:toneOf(it.el,warn,'relation '+it.key)},it.el.label?edgeLabel(it.el.label):{lines:[],lw:0}));
+  const L=layoutGraph(nodes,edges,{dir:'TB',warn,gutterW:90,gutterH:70,margin:40,alignTop:true});
+  let s=routeEdges(L,r=>{
+    const el=r.e.it.el, k=el.kind||'assoc', p=r.pts;
+    const o=k==='comp'?{start:'dia',end:'open'}:k==='realize'?{dash:true,end:'tri'}:k==='dep'?{dash:true,end:'open'}:{end:'open'};
+    let x=arrow(p,o)+labelSvg(r);
+    const mu=list(el.mult), off=(a,b,dd)=>{ const dx=b[0]-a[0], dy=b[1]-a[1], l=Math.hypot(dx,dy)||1; return [a[0]+dx/l*dd-dy/l*10, a[1]+dy/l*dd+dx/l*10+4]; };
+    if(mu[0]!=null){ const q=off(p[0],p[1],k==='comp'?28:14); x+=T(q[0],q[1],mu[0],'t-edge','middle'); }
+    if(mu[1]!=null){ const q=off(p[p.length-1],p[p.length-2],20); x+=T(q[0],q[1],mu[1],'t-edge','middle'); }
+    return E(st(r.e.it),x,r.e.tone);
+  });
+  nodes.forEach(n=>{
+    const b=L.box[n.id], c=n.it.el, k=st(n.it), cx=b.x+b.w/2;
+    let x=R(b.x,b.y,b.w,b.h,'box'+(k?' '+k:''),3);
+    if(c.stereotype) x+=T(cx,b.y+16,'«'+c.stereotype+'»','t-stereo','middle');
+    x+=T(cx,b.y+n.nameH-11,label(c),'t-name'+(k==='rm'?' t-rm':''),'middle')+line([[b.x,b.y+n.nameH],[b.x+b.w,b.y+n.nameH]]);
+    let yy=b.y+n.nameH;
+    const row=(r,i,cl)=>{ const rs=ST[r.st||'']; return T(b.x+10,yy+18+i*18,rowT(r),cl+(rs?' t-'+rs:'')); };
+    if(n.attrs.length){ n.attrs.forEach((r,i)=>{ x+=row(r,i,'t-col'); }); yy+=n.attrs.length*18+10; x+=line([[b.x,yy],[b.x+b.w,yy]]); }
+    n.ops.forEach((r,i)=>{ x+=row(r,i,'t-ops'); });
+    s+=x;
+  });
+  return svg(L.W,L.H,'UML class diagram: '+d.title,s);
+}
+
+/* ---------- use case ---------- */
+function rUse(d,M,warn){
+  const sp=d.spec, A=M.actors, C=M.cases;
+  const amap={}, atone={}; A.forEach(it=>{ amap[nm(it.el)]=it; atone[nm(it.el)]=toneOf(it.el,warn,'actor '+nm(it.el)); });
+  const withOnly=id=>!C.some(it=>list(it.el.actor).indexOf(id)>=0)&&C.some(it=>list(it.el.with).indexOf(id)>=0);
+  const side=it=>{ const a=it.el; if(a.side==='left'||a.side==='right') return a.side; return (a.kind&&a.kind!=='human')||withOnly(nm(a))?'right':'left'; };
+  const RX=Math.ceil(Math.max(100,...C.map(it=>meas(label(it.el),'case')/2+22)));
+  // Fallback cells: cases of left actors fill column 0, grouped by actor in model order; every other case goes to
+  // column 1, on the row of the case that includes or extends it when that row is free.
+  const used={}, K=(c,r)=>c+','+r, cellOf={};
+  C.forEach(it=>{ if(isCell(it.el.at)){ used[K(...it.el.at)]=1; cellOf[nm(it.el)]=it.el.at; } });
+  const leftCase=it=>{ const p=list(it.el.actor)[0]; return !!(p&&amap[p]&&side(amap[p])==='left'); };
+  const put=(it,col,want)=>{ let r=want; while(used[K(col,r)]) r++; cellOf[nm(it.el)]=[col,r]; used[K(col,r)]=1; };
+  A.forEach(a=>C.forEach(it=>{ if(!cellOf[nm(it.el)]&&leftCase(it)&&list(it.el.actor)[0]===nm(a.el)) put(it,0,0); }));
+  C.forEach(it=>{
+    if(cellOf[nm(it.el)]) return;
+    const id=nm(it.el), src=C.find(o=>cellOf[nm(o.el)]&&(list(o.el.include).concat(list(o.el.extend)).indexOf(id)>=0||list(it.el.extend).indexOf(nm(o.el))>=0));
+    put(it,1,src?cellOf[nm(src.el)][1]:0);
+  });
+  const nodes=C.map(it=>({id:nm(it.el),w:RX*2,h:44,at:isCell(it.el.at)?it.el.at:cellOf[nm(it.el)],it,tone:toneOf(it.el,warn,'case '+nm(it.el))}));
+  const edges=[];
+  C.forEach(it=>{ const c=it.el, s=it.st==='removed'?'removed':it.st;
+    list(c.include).forEach(x=>edges.push({v:nm(c),w:x,lines:['«include»'],lw:Math.ceil(meas('«include»','edge')),it:{st:s}}));
+    list(c.extend).forEach(x=>edges.push({v:nm(c),w:x,lines:['«extend»'],lw:Math.ceil(meas('«extend»','edge')),it:{st:s}}));
+  });
+  const gutterRows={};
+  list(sp.bands).forEach((band,i)=>{ if(i) gutterRows[+list(band.rows)[0]||0]=64; });
+  const L=layoutGraph(nodes,edges,{dir:'LR',warn,gutterW:110,gutterH:28,margin:30,gutterRows});
+  const lefts=A.filter(it=>side(it)==='left'), rights=A.filter(it=>side(it)==='right');
+  const AB=Math.ceil(Math.max(124,...A.filter(it=>(it.el.kind||'human')!=='human').map(it=>meas(label(it.el),'name')+24))), hb=AB/2;
+  const AW=Math.max(150,AB), ox=lefts.length?AW+40:30, oy=78, bx=ox-10, by=20, bw=L.W+20, bh=oy-by+L.H+10;
+  const cb=id=>{ const b=L.box[id]; return b&&{id, cx:ox+b.x+b.w/2, cy:oy+b.y+b.h/2, rx:b.w/2}; };
+  let s=`<rect class="boundary" x="${bx}" y="${by}" width="${f1(bw)}" height="${f1(bh)}" rx="14"/>`;
+  if(sp.system){ const t=wrap2(sp.system,'sys',bw-40); s+=T(bx+18,by+26,t[0],'t-sys'); if(t[1]) s+=T(bx+18,by+44,t[1],'t-note'); }
+  list(sp.bands).forEach((band,i)=>{
+    const rows=list(band.rows), r0=+rows[0]||0;
+    if(i>0) s+=line([[bx,oy+L.G.gy(r0)],[bx+bw,oy+L.G.gy(r0)]],'band');
+    s+=T(bx+14,oy+L.G.gy(r0)+(i?14:6),band.name||'','t-lane');
+  });
+  // Actors: centered on their cases, then pushed apart so none overlap.
+  const placeSide=(arr,isLeft)=>{
+    const ys=arr.map(it=>{ const id=nm(it.el), cs=C.filter(c=>list(c.el.actor).concat(list(c.el.with)).indexOf(id)>=0).map(c=>cb(nm(c.el))).filter(Boolean);
+      return {it,y:cs.length?cs.reduce((a,c)=>a+c.cy,0)/cs.length:oy+40,cs}; });
+    ys.sort((a,b)=>a.y-b.y);
+    let last=-Infinity; ys.forEach(o=>{ o.y=Math.max(o.y,last+96,oy+20); last=o.y; });
+    return ys.map(o=>Object.assign(o,{x:isLeft?ox-AW/2-30:bx+bw+AW/2+10,left:isLeft}));
+  };
+  const placed=placeSide(lefts,true).concat(placeSide(rights,false));
+  let H=by+bh+20;
+  // An actor line that would cut through another case runs along the row gutter above its case instead.
+  const ells=nodes.map(n=>Object.assign({id:n.id},cb(n.id)));
+  const cuts=(p,q,id)=>ells.some(e=>e.id!==id&&Array.from({length:24},(_,i)=>i/23).some(t=>{ const x=p[0]+(q[0]-p[0])*t, y=p[1]+(q[1]-p[1])*t; return ((x-e.cx)/e.rx)**2+((y-e.cy)/22)**2<1.05; }));
+  const col0=ox+L.G.cx[0], colN=ox+L.G.cx[L.G.nc-1]+L.G.cw[L.G.nc-1];
+  placed.forEach(o=>{
+    const a=o.it.el, k=st(o.it), human=(a.kind||'human')==='human';
+    o.cs.forEach(c=>{ const tx=o.left?c.cx-c.rx:c.cx+c.rx, sx=o.left?o.x+(human?18:hb):o.x-(human?18:hb), p=[sx,o.y-(human?10:0)];
+      let pts=[p,[tx,c.cy]];
+      if(cuts(p,[tx,c.cy],c.id)){ const yg=oy+L.G.gy(L.cell[c.id][1])-8, xe=o.left?col0-14:colN+14; pts=[p,[xe,yg],[c.cx,yg],[c.cx,c.cy-22]]; }
+      s+=E(k==='rm'?'rm':(k==='new'?'new':''),line(pts),atone[nm(a)]); });
+    const at=atone[nm(a)];
+    if(human){ s+=TG(at,`<g class="actor${TC(at)}${k?' '+k:''}" transform="translate(${f1(o.x)},${f1(o.y)})"><circle cx="0" cy="-30" r="9"/><line x1="0" y1="-21" x2="0" y2="6"/><line x1="-15" y1="-12" x2="15" y2="-12"/><line x1="0" y1="6" x2="-12" y2="28"/><line x1="0" y1="6" x2="12" y2="28"/></g>`+T(o.x,o.y+46,label(a),'t-name'+(k==='rm'?' t-rm':''),'middle')); H=Math.max(H,o.y+60); }
+    else { s+=TG(at,R(o.x-hb,o.y-22,AB,44,'box'+(a.kind==='external'?' ext':'')+TC(at)+(k?' '+k:''),4)+T(o.x,o.y-5,a.kind==='external'?'«external»':'«system»','t-stereo','middle')+T(o.x,o.y+11,label(a),'t-name'+(k==='rm'?' t-rm':''),'middle')); H=Math.max(H,o.y+40); }
+  });
+  let inner=routeEdges(L,r=>E(st(r.e.it),arrow(r.pts,{dash:true,end:'open'})+labelSvg(r)));
+  nodes.forEach(n=>{ const b=L.box[n.id], k=st(n.it), cx=b.x+b.w/2, cy=b.y+b.h/2;
+    inner+=`<g${n.tone?` class="tone-${n.tone}"`:''}><title>${esc(nm(n.it.el))}</title><ellipse class="box${TC(n.tone)}${k?' '+k:''}" cx="${f1(cx)}" cy="${f1(cy)}" rx="${f1(b.w/2)}" ry="${f1(b.h/2)}"/>`+T(cx,cy+4,label(n.it.el),'t-case'+(k==='rm'?' t-rm':''),'middle')+`</g>`; });
+  s+=`<g transform="translate(${ox},${oy})">${inner}</g>`;
+  const W=rights.length?bx+bw+AW+30:bx+bw+30;
+  return svg(W,H,'Use case diagram: '+d.title,s);
+}
+
+/* ---------- sequence: evenly spaced lifelines, labels in at most two lines ---------- */
+function rSeq(d,M,warn){
+  const parts=M.participants, idx={}; parts.forEach((p,i)=>idx[nm(p.el)]=i);
+  const msgs=M.messages.filter(it=>{ const ok=it.el.from in idx&&it.el.to in idx; if(!ok) warn.push('message '+it.key+': unknown participant, not drawn'); return ok; });
+  // Two balanced lines; a long unbreakable token (a URL, a DID) splits at : / . so one step cannot widen every gap.
+  const lab=msgs.map((it,i)=>{ const t=(i+1)+' '+(it.el.text||''), ls=wrap2(t,'edge',150);
+    return linesW(ls,'edge')>190?wrapN(t,'edge',Math.max(150,Math.ceil(meas(t,'edge')/2)+12),2):ls; });
+  // Even gaps sized for the labels, capped at 200 px; a longer label spills past its lifelines and the canvas grows to fit.
+  let need=150;
+  msgs.forEach((it,i)=>{ const m=it.el; if(m.from===m.to) return; const span=Math.abs(idx[m.to]-idx[m.from]); need=Math.max(need,(linesW(lab[i],'edge')+28)/span); });
+  const sp=Math.ceil(Math.max(Math.min(need,200),...parts.map(p=>meas(label(p.el),'name')+40)));
+  let lo=0, hi=(parts.length-1)*sp;
+  msgs.forEach((it,i)=>{ const m=it.el; if(m.from===m.to) return; const c=(idx[m.from]+idx[m.to])/2*sp, h=linesW(lab[i],'edge')/2; lo=Math.min(lo,c-h); hi=Math.max(hi,c+h); });
+  const x0=Math.ceil(Math.max(80,sp/2+10,12-lo)), X=i=>x0+i*sp, hw=Math.min(sp-24,Math.max(110,...parts.map(p=>meas(label(p.el),'name')+28)));
+  let y=64, body='', W=Math.max(x0+(parts.length-1)*sp+x0,x0+hi+12);
+  msgs.forEach((it,i)=>{
+    const m=it.el, xa=X(idx[m.from]), xb=X(idx[m.to]), k=m.kind||'call', ls=lab[i];
+    const o=k==='return'?{dash:true,end:'open'}:k==='async'?{end:'open'}:{end:'fill'};
+    let s='';
+    if(m.from===m.to){
+      y+=10;
+      s+=arrow([[xa,y],[xa+26,y],[xa+26,y+16],[xa+2,y+16]],o);
+      ls.forEach((l,j)=>{ s+=T(xa+34,y+10+j*13,l,'t-edge'); });
+      W=Math.max(W,xa+34+linesW(ls,'edge')+16);
+      y+=Math.max(26,ls.length*13+10)+14;
+    } else {
+      y+=ls.length*13+12;
+      ls.forEach((l,j)=>{ s+=T((xa+xb)/2,y-6-(ls.length-1-j)*13,l,'t-edge','middle'); });
+      s+=arrow([[xa,y],[xb,y]],o);
+      y+=14;
+    }
+    body+=E(st(it),s,toneOf(m,warn,'message '+it.key));
+  });
+  const H=y+20;
+  let head='';
+  parts.forEach((p,i)=>{ const x=X(i), k=st(p), pt=toneOf(p.el,warn,'participant '+nm(p.el));
+    head+=line([[x,50],[x,H-8]],'life')+TG(pt,R(x-hw/2,16,hw,34,'box'+TC(pt)+(k?' '+k:''),3)+T(x,38,label(p.el),'t-name'+(k==='rm'?' t-rm':''),'middle')); });
+  return svg(W,H,'Sequence diagram: '+d.title,head+body);
+}
+
+const RENDER={class:rClass,erd:rErd,state:rState,component:rComp,usecase:rUse,sequence:rSeq};
+const TYPE={class:'Class',erd:'Entity relationship',state:'State machine',component:'Component',usecase:'Use case',sequence:'Sequence'};
+const CAPTION={
+  component:'Boxes are deployable parts; frames are lanes. Solid arrows are calls or data flow; dashed arrows are indirect links. Shaded boxes are «external».',
+  erd:'Crow’s feet mark the many side, a circle marks zero or optional, double bars mark exactly one. Rows marked + are new, ~ changed, - removed.',
+  sequence:'Time runs down. Filled arrowheads are calls, dashed arrows are replies, open arrowheads are asynchronous notices.',
+  state:'The filled dot is the start; the ringed dot is the end. Brackets hold a guard condition.',
+  usecase:'Ellipses are use cases inside the system boundary; actors sit outside it. Dashed arrows are «include» and «extend».',
+  class:'Diamonds mark composition, hollow triangles realization, dashed open arrows dependency. Numbers at the ends are multiplicities.'
+};
+const COUNT={component:['Nodes','nodes'],erd:['Tables','tables'],sequence:['Steps','messages'],state:['States','states'],usecase:['Cases','cases'],class:['Classes','classes']};
+
+/* ---------- page ---------- */
+function inline(s){ return esc(s).replace(/`([^`]+)`/g,'<code>$1</code>').replace(/\*\*([^*]+)\*\*/g,'<strong>$1</strong>'); }
+function prose(md){
+  const paras=String(md||'').split(/\n\s*\n/).map(p=>p.trim()).filter(p=>p&&!/^#/.test(p));
+  const cells=l=>l.trim().replace(/^\||\|$/g,'').split('|').map(c=>c.trim());
+  const table=ls=>{ const rows=ls.filter(l=>!/^\s*\|[\s:|-]+\|\s*$/.test(l)).map(cells);
+    return '<div class="tablewrap"><table><thead><tr>'+rows[0].map(c=>'<th>'+inline(c)+'</th>').join('')+'</tr></thead><tbody>'+
+      rows.slice(1).map(r=>'<tr>'+r.map(c=>'<td>'+inline(c)+'</td>').join('')+'</tr>').join('')+'</tbody></table></div>'; };
+  return paras.map(p=>{ const ls=p.split('\n');
+    if(ls.length>1&&ls.every(l=>/^\s*\|/.test(l))) return table(ls);
+    return ls.every(l=>/^\s*[-*] /.test(l)) ? '<ul>'+ls.map(l=>'<li>'+inline(l.replace(/^\s*[-*] /,''))+'</li>').join('')+'</ul>' : '<p>'+inline(ls.join(' '))+'</p>'; }).join('');
+}
+const TAGTXT={new:'new',chg:'changed',rm:'removed'};
+const tag = s => s ? `<span class="tag ${s}">${TAGTXT[s]}</span>` : '';
+const sid = id => 'd-'+String(id).replace(/[^A-Za-z0-9_-]/g,'_');
+const pad = n => String(n).padStart(2,'0');
+const dl = rows => '<dl>'+rows.map(r=>`<div><dt>${esc(r[0])}</dt><dd>${r[1]}</dd></div>`).join('')+'</dl>';
+
+function main(){
+  const curEl=$('uml-cur'), baseEl=$('uml-base'), ref=baseEl.dataset.ref;
+  const out=$('sheets');
+  if(!window.jsyaml){ out.innerHTML='<p class="err">Could not load js-yaml from cdnjs.cloudflare.com.</p>'; return; }
+  const cur=parseModel(curEl.textContent,jsyaml.load);
+  const base=ref?parseModel(baseEl.textContent,jsyaml.load):null;
+  const delta=diffModels(base,cur);
+  const title=cur.title||'System design', rev=cur.rev;
+  const cnt={new:0,changed:0,removed:0}; delta.list.forEach(x=>cnt[x.st]++);
+  const sheets=[];
+  const errs=cur.errors.map(e=>'current: '+e).concat(base?base.errors.map(e=>'base: '+e):[]);
+  if(errs.length) sheets.push({id:'errors',nav:'Errors',lvl:'Errors',title:'Model errors',facts:[],body:`<p class="err">${esc(errs.join('\n'))}</p>`});
+  delta.sheets.forEach(sh=>{
+    const d=sh.d, warn=[], s=ST[sh.st];
+    let fig;
+    try{ fig=RENDER[d.type](d,sh.merged,warn); }catch(e){ fig=''; warn.push('render failed: '+e.message); }
+    const mine=delta.list.filter(x=>x.diagram===d.id&&x.kind!=='diagram');
+    const review=d.review.length?`<div><h3>Check here</h3><ul>${d.review.map(r=>`<li>${inline(r)}</li>`).join('')}</ul></div>`:'';
+    const changes=mine.length?`<div><h3>Changes</h3><ul class="delta">${mine.map(x=>`<li>${tag(ST[x.st])}<span><code>${esc(x.kind+' '+x.key)}</code>${x.name&&x.name!==x.key?' '+esc(x.name):''}${x.detail.length?' <code>'+esc(x.detail.join(', '))+'</code>':''}</span></li>`).join('')}</ul></div>`:'';
+    const c=COUNT[d.type], n=(sh.merged[c[1]]||[]).filter(it=>it.st!=='removed').length;
+    sheets.push({id:sid(d.id),nav:d.title,lvl:(d.level?d.level+' · ':'')+TYPE[d.type],title:d.title,st:s,
+      facts:[[c[0],String(n)]],
+      body:(d.note.trim()?`<div class="note">${prose(d.note)}</div>`:'')+
+        (warn.length?`<p class="err">${esc(warn.join('\n'))}</p>`:'')+
+        `<figure><div class="canvas">${fig}</div><figcaption>${d.caption?esc(String(d.caption)):CAPTION[d.type]}</figcaption></figure>`+
+        (review||changes?`<div class="review">${review}${changes}</div>`:'<div style="height:24px"></div>')});
+  });
+  cur.sections.forEach((s,i)=>sheets.push({id:'prose-'+i,nav:s.title,lvl:'Notes',title:s.title,facts:[],body:`<div class="note" style="padding-bottom:24px">${prose(s.body)}</div>`}));
+  const N=sheets.length;
+  const facts=[['Source',`<code>${esc(curEl.dataset.model)}</code>`],['Base',ref?`<code>${esc(ref)}</code>`:'none'],['Sheets',String(N)]];
+  if(rev) facts.unshift(['Revision',esc(rev)]);
+  if(ref) facts.push(['Delta',`${cnt.new} new, ${cnt.changed} changed, ${cnt.removed} removed`]);
+  const cover=`<section class="cover" id="cover"><div><div class="lvl">System design drawing set${rev?' · Rev '+esc(rev):''}</div><h1>${esc(title)}</h1></div>`+
+    (cur.intro?`<div class="dek">${prose(cur.intro)}</div>`:'')+
+    `<dl class="facts">${facts.map(f=>`<div><dt>${esc(f[0])}</dt><dd>${f[1]}</dd></div>`).join('')}</dl>`+
+    `<div class="legend" aria-label="Legend"><span><i class="sw new"></i>new</span><span><i class="sw chg"></i>changed</span><span><i class="sw rm"></i>removed (struck through)</span><span><i class="sw ext"></i>«external» system</span><span><i class="sw"></i>unchanged</span></div>`+
+    (cur.decided.length?`<div class="ask"><h2>Decided${rev?' in rev '+esc(rev):''}</h2><ol>${cur.decided.map(x=>`<li>${inline(x)}</li>`).join('')}</ol></div>`:'')+`</section>`;
+  $('idx').innerHTML=`<div class="k">Drawing set${rev?' · Rev '+esc(rev):''}</div><a href="#cover"><span class="no">00</span><span>Cover</span><span></span></a>`+
+    sheets.map((s,i)=>`<a href="#${s.id}"><span class="no">${pad(i+1)}</span><span>${esc(s.nav)}</span>${tag(s.st)||'<span></span>'}</a>`).join('');
+  out.innerHTML=cover+sheets.map((s,i)=>{
+    const meta=[['Sheet',`${pad(i+1)} / ${pad(N)}`]].concat(rev?[['Rev',esc(rev)]]:[],s.facts.map(f=>[f[0],esc(f[1])]),[['Delta',ref?(tag(s.st)||'<span class="tag same">none</span>'):'no base']]);
+    return `<section class="sheet${s.st==='rm'?' s-rm':''}" id="${s.id}"><header class="tb"><div class="title"><div class="lvl">${esc(s.lvl)}</div><h2>${esc(s.title)}</h2></div>${dl(meta)}</header>${s.body}</section>`;
+  }).join('');
+  const links=[...document.querySelectorAll('.index a')];
+  if('IntersectionObserver' in window){
+    const io=new IntersectionObserver(es=>{ es.forEach(en=>{ if(en.isIntersecting) links.forEach(a=>a.classList.toggle('cur',a.hash==='#'+en.target.id)); }); },{rootMargin:'-40% 0px -55% 0px'});
+    document.querySelectorAll('section.sheet,section.cover').forEach(s=>io.observe(s));
+  }
+}
+const run=()=>{ try{ main(); }catch(e){ $('sheets').innerHTML='<p class="err">'+esc(e.stack||e)+'</p>'; } };
+// Measure with the web fonts once they load; draw anyway after 3 s (offline, blocked fonts).
+fonts();
+const load=document.fonts&&document.fonts.load?Promise.all(Object.values(FONT).map(f=>document.fonts.load(f).catch(()=>0))):Promise.resolve();
+Promise.race([load,new Promise(r=>setTimeout(r,3000))]).then(run);
+})();
+</script>
