@@ -550,8 +550,11 @@ removes).
   `merge` asks before touching `gh`; there is no second override path inside
   `mega-merge.sh` -- the existing `lib/gate/gate-ledger.sh override <rid> <phase>
   <reason>` audit trail is still how a human clears a gate.
-- **A DAG / wave scheduler.** Single chain only; fan-in/fan-out
-  is the GSD v2 handoff tripwire, rejected at Step 1.
+- **A dependency-graph planner.** This command writes a chain; fan-in/fan-out
+  is the GSD v2 handoff tripwire, rejected at Step 1. The runtime does run
+  dependency-independent sub-goals with provably disjoint `## Touches` as concurrent
+  waves (`lib/queue/orchestrate.sh`, `WAVE_CAP` default 2, a `depends SG-NN` tail per
+  line), but that scheduler lives in the orchestrator, not in this command.
 - **The activator loop itself.** `/goal` / `ralph-loop` / `lib/queue/orchestrate.sh` own
   the turn-by-turn execution (staying activator-agnostic); this command is
   planning plus the merge-enforcement affordance it hands the loop, not a new

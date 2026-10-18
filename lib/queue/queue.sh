@@ -12,7 +12,9 @@
 # output marker (`RUNNER_DONE` / `RUNNER_GATED:`), line-anchored AND blank-line-guarded (a marker
 # line must be the first captured line or preceded by a blank line, so a soft-wrapped echo of the
 # typed prompt -- which is DESIGNED to contain the marker text -- cannot false-trigger), never a
-# fixed sleep. Every launch + exit lands a journal row. Two consecutive `error` OR `stalled` megas
+# fixed sleep. A marker (or an EXIT_SIGNAL: true status file) is only a claim: the journal records
+# `done` when the repo's HEAD moved or a PR was created since the window opened (`_run_delta`);
+# a completion claim with neither is journaled `gated` with reason `no-delta`. Every launch + exit lands a journal row. Two consecutive `error` OR `stalled` megas
 # STOP THE NIGHT (both indicate the launch mechanism itself is dysfunctional, not a per-mega
 # outcome).
 #
@@ -797,6 +799,22 @@ _progress_evidence() {  # slug repo head-before
   case "$files" in ''|*[!0-9]*) ;; *) [ "$files" -gt 0 ] && { printf 'reported'; return; } ;; esac
 }
 
+# 0 iff the finished run left VERIFIABLE evidence of work: the repo's HEAD moved since the window
+# opened, or a pull request was created since then. A run's own EXIT_SIGNAL or RUNNER_DONE marker is a
+# claim, not a delta. Uncommitted edits do not count (the breaker credits them as progress, but a
+# `done` row means shipped work). `gh` is optional: without it only the HEAD check can vouch.
+_run_delta() {  # repo head-before started-iso
+  local repo="$1" before="$2" since="$3" after n
+  { [ -n "$repo" ] && [ -d "$repo" ]; } || return 1
+  after=$(git -C "$repo" rev-parse HEAD 2>/dev/null)
+  { [ -n "$after" ] && [ -n "$before" ] && [ "$after" != "$before" ]; } && return 0
+  command -v gh >/dev/null 2>&1 || return 1
+  n=$(cd "$repo" && gh pr list --state all --limit 30 --json createdAt \
+        -q "[.[] | select(.createdAt >= \"$since\")] | length" 2>/dev/null) || return 1
+  case "$n" in ''|*[!0-9]*) return 1 ;; esac
+  [ "$n" -gt 0 ]
+}
+
 # Update the counters for one finished run and print the verdict to journal, which is the input
 # verdict UNLESS the breaker trips. Terminal verdicts (`done`/`gated`) are never rewritten: a
 # legitimate investigate-and-report row changes no files and must not be called stagnation for it.
@@ -925,7 +943,7 @@ cmd_run() {
     _warn "queue: no queue source (want a tsv path or --from-boards)"; return 64
   fi
 
-  local consec_fail=0 attempts=0 total_calls=0 slug repo pointer reason verdict head_before brk_verdict brk_reason
+  local consec_fail=0 attempts=0 total_calls=0 slug repo pointer reason verdict head_before started_iso brk_verdict brk_reason
   while IFS=$'\t' read -r slug repo pointer _rest; do
     [ -n "$slug" ] || continue
 
@@ -963,6 +981,7 @@ cmd_run() {
     _say "[queue] $slug: launching /goal in a $TERMINAL_MUX window (repo=$repo)."
     # Snapshot HEAD before the window opens: hatch 1 of the breaker's progress evidence.
     head_before=$(git -C "$repo" rev-parse HEAD 2>/dev/null)
+    started_iso=$(date -u +%Y-%m-%dT%H:%M:%SZ)
     verdict=$(_run_row "$slug" "$repo" "$pointer")
 
     case "$verdict" in
@@ -976,6 +995,11 @@ cmd_run() {
     IFS=$'\t' read -r brk_verdict brk_reason <<< "$(_breaker_apply "$slug" "$repo" "$head_before" "$verdict")"
     verdict="$brk_verdict"
     [ -n "$brk_reason" ] && reason="$brk_reason"
+    # `done` is a verified state: a self-reported completion (RUNNER_DONE, EXIT_SIGNAL: true) with no
+    # HEAD move and no new PR is only a claim, so a human looks at it.
+    if [ "$verdict" = done ] && ! _run_delta "$repo" "$head_before" "$started_iso"; then
+      verdict=gated; reason=no-delta
+    fi
     # A protected path written by an untrusted-path run outranks every other verdict,
     # including `done`. `gated` is terminal, so the row stops here and a human looks at it.
     if [ "$QUEUE_SANITIZE_PROMPT" = 1 ]; then

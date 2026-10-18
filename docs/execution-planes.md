@@ -1,7 +1,7 @@
 # Execution planes
 
-The kit runs agents four different ways. Two of them live in the same directory and share
-no code, which is the single most confusing thing in the layout. This doc is the map.
+The kit runs agents four different ways. Two of them live in the same directory and are
+separate engines, which is the single most confusing thing in the layout. This doc is the map.
 
 `docs/architecture.md` owns each component's internals. This doc owns the comparison: what
 each plane is for, how they hand off, where they deliberately do not connect, and which one
@@ -44,8 +44,9 @@ to reach for.
 
 `lib/queue/orchestrate.sh` and `lib/queue/queue.sh` sit in one directory and are separate
 engines. `queue.sh` never calls `orchestrate.sh`; its only mention of that file is a comment.
-A queue-launched session may invoke the orchestrator as one of its own tool calls, which is
-the whole relationship.
+The reverse link is one line: `orchestrate.sh queue <src>` is an alias that execs
+`queue.sh run <src>`, so the orchestrator CLI can start the queue and nothing more. A
+queue-launched session may also invoke the orchestrator as one of its own tool calls.
 
 ## Side by side
 
@@ -55,9 +56,9 @@ the whole relationship.
 | Runs an agent | no | `claude -p`, headless | `claude`, interactive | a probe in a container |
 | Concurrency | n/a | a wave, `WAVE_CAP` (2) | one row at a time | one probe per round |
 | Auth | n/a | the host's session | the operator's live login | a spend-capped API key |
-| Isolation | n/a | none, the real checkout | none, the real checkout | a fresh container per round |
+| Isolation | n/a | a worktree per wave session; the serial path uses the real checkout | none, the real checkout | a fresh container per round |
 | Mutates | the row | the code | the code | the artifact under test |
-| Ends when | a human sets a state | every box is checked | the journal has a verdict | a probe passes unaided twice |
+| Ends when | a human sets a state | every box is checked | the journal has a verdict, and `done` needs a HEAD move or a new PR | a probe passes unaided twice |
 
 ## What each is for
 
@@ -86,6 +87,12 @@ real interactive session, and types `/goal <pointer body>` into it. The header s
 beats a headless worker: a headless token can expire or be killed independently, and the run
 dies with it. Driving the operator's live session sidesteps that class, at the cost of running
 under the operator's own authority.
+
+A completion claim is not a result. The run's `RUNNER_DONE` marker or `EXIT_SIGNAL: true` file
+only says it believes it finished. The conductor journals `done` when the repo's HEAD moved or a
+pull request was created since the window opened; a claim with neither is journaled `gated` with
+reason `no-delta`, so a human looks. The reaper (`watch-board.sh`) cannot check the delta for a
+slug whose conductor died, so it journals such a claim `gated` too, never `done`.
 
 **Gauntlet.** Not an executor. It converges an artifact, usually docs, until a fresh probe
 agent can complete a fixed task using only that artifact. See the duality below.
@@ -142,11 +149,12 @@ Almost nothing, and the exceptions are worth knowing.
 
 | Shared | Between | What it is |
 |---|---|---|
-| `lib/gate/gate-ledger.sh` | every plane | the telemetry rail; phases bracket their runs on it |
-| `lib/queue/pane-tail.jq` | queue, gauntlet | a display filter for streamed transcripts, used by the gauntlet's local watch path |
+| `lib/gate/gate-ledger.sh` | orchestrator, gauntlet | the telemetry rail. The orchestrator writes a START record and token counts for each dispatched sub-goal. The gauntlet reaches it only through the commands its prompt tells the lead to run (`commands/gauntlet.md`). The queue and `watch-board.sh` never call it; they write `queue-journal.tsv` |
+| `lib/queue/pane-tail.jq` | orchestrator, gauntlet | a display filter for streamed transcripts: `orchestrate.sh panes` and the gauntlet's cleanroom `watch.sh` use it. `queue.sh` never does |
 
 That is the full list. The gauntlet shares no orchestration logic, no state, and nothing at all
-with the board. The planes are independent engines on one shared ledger.
+with the board. The planes are independent engines; only the orchestrator and the gauntlet write
+to the gate ledger, and the queue keeps its own journal.
 
 ## Trust and isolation
 

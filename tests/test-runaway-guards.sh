@@ -88,6 +88,7 @@ mkrepo() {  # dir -> a clean git repo on default branch `main`
   echo x > "$d/f"; git -C "$d" add f; git -C "$d" commit -qm init
 }
 seed_transcript() { printf '%s\n' "$2" > "$QSTUB/$1.transcript"; }
+seed_work() { : > "$QSTUB/$1.work"; }   # the window commits once in its repo: the verified delta a done needs
 jverdict() { awk -F'\t' -v s="$1" '$2==s {v=$3} END{print v}' "$JOURNAL"; }
 jreason()  { awk -F'\t' -v s="$1" '$2==s {v=$4} END{print v}' "$JOURNAL"; }
 jrows()    { awk -F'\t' -v s="$1" '$2==s {n++} END{print n+0}' "$JOURNAL"; }
@@ -129,6 +130,7 @@ echo "--- Section A: the stale-window watchdog ---"
 # A1 the conductor beats while it runs, and clears the beat when the run ends.
 new_env; REPO="$WORK/r1"; mkrepo "$REPO"; echo "p" > "$WORK/p.txt"
 seed_transcript a1 "  RUNNER_DONE"
+seed_work a1
 run_row a1 "$REPO" "$WORK/p.txt" >/dev/null
 assert_eq "A1: a completed run journals done" "$(jverdict a1)" "done"
 [ ! -f "$RUNDIR/a1.beat" ]
@@ -195,14 +197,15 @@ OUT="$(watch)"
 case "$OUT" in *quarantined*) R=0 ;; *) R=1 ;; esac
 assert "A7: a quarantined slug is never planned again" $R "-- got: $OUT"
 
-# A8 a dead beat whose run DID finish is honored, not relabelled. Real finished work must not be
-# thrown away just because its conductor died before it could journal.
+# A8 a dead beat whose run claims it finished is not relabelled `stalled`, but the reaper cannot
+# check the git delta (it does not know the repo), so the claim is gated for a human: never done.
 new_env; new_board_repo
 export QUEUE_BEAT_STALE_SECS=0 QUEUE_BEAT_DEAD_SECS=0
 : > "$RUNDIR/fixboard__ID-001.beat"
 printf 'EXIT_SIGNAL: true\n' > "$RUNDIR/fixboard__ID-001.status"
 watch >/dev/null
-assert_eq "A8: a dead beat with EXIT_SIGNAL true journals done, not stalled" "$(jverdict fixboard__ID-001)" "done"
+assert_eq "A8: a dead beat with EXIT_SIGNAL true journals gated, not done and not stalled" "$(jverdict fixboard__ID-001)" "gated"
+assert_eq "A8: the reaper names the unchecked delta" "$(jreason fixboard__ID-001 | cut -c1-8)" "no-delta"
 
 # A9 a slug carrying a path separator is refused before any sidecar file is opened.
 new_env
@@ -292,13 +295,14 @@ for i in 1 2 3; do run_row b5 "$REPO" "$WORK/p.txt" >/dev/null; done
 assert_eq "B5: a question freezes the counters, no trip" "$(jverdict b5)" "stalled"
 assert_eq "B5: the no-progress counter never advanced" "$(guard_num b5 noprogress)" "0"
 
-# B6 the breaker never rewrites a TERMINAL verdict. An investigate-and-report row changes no
-# files and must not be called stagnation for it.
+# B6 the breaker never rewrites a TERMINAL verdict to `error`. A completion claim with no delta
+# is gated `no-delta` by the delta rule, never called stagnation.
 new_env; REPO="$WORK/rb6"; mkrepo "$REPO"; echo "p" > "$WORK/p.txt"
 export QUEUE_NOPROGRESS_TRIP=1
 seed_transcript b6 "  RUNNER_DONE"
 run_row b6 "$REPO" "$WORK/p.txt" >/dev/null
-assert_eq "B6: a done run is never rewritten to error" "$(jverdict b6)" "done"
+assert_eq "B6: a completion with no delta is gated, never rewritten to error" "$(jverdict b6)" "gated"
+assert_eq "B6: the reason is no-delta" "$(jreason b6)" "no-delta"
 
 echo
 echo "--- Section C: the dual-condition exit gate ---"
@@ -307,8 +311,17 @@ echo "--- Section C: the dual-condition exit gate ---"
 # channel does not need prose to agree with it.
 new_env; REPO="$WORK/rc1"; mkrepo "$REPO"; echo "p" > "$WORK/p.txt"
 status_during c1 'EXIT_SIGNAL: true\n'
+seed_work c1
 run_row c1 "$REPO" "$WORK/p.txt" >/dev/null
 assert_eq "C1: explicit EXIT_SIGNAL true yields done with no pane marker" "$(jverdict c1)" "done"
+
+# C1b NEGATIVE CONTROL for C1: the same explicit EXIT_SIGNAL true with NO commit and NO PR is only a
+# claim. It is journaled gated, reason no-delta, never done.
+new_env; REPO="$WORK/rc1b"; mkrepo "$REPO"; echo "p" > "$WORK/p.txt"
+status_during c1b 'EXIT_SIGNAL: true\n'
+run_row c1b "$REPO" "$WORK/p.txt" >/dev/null
+assert_eq "C1b NC: EXIT_SIGNAL true with no delta is gated" "$(jverdict c1b)" "gated"
+assert_eq "C1b NC: the reason is no-delta" "$(jreason c1b)" "no-delta"
 
 # C2 a REASON alongside an explicit completion maps onto the journal's existing `gated`.
 new_env; REPO="$WORK/rc2"; mkrepo "$REPO"; echo "p" > "$WORK/p.txt"
@@ -335,6 +348,7 @@ assert_eq "C4 NC: the verdict names the malformed signal" "$(jreason c4)" "malfo
 # C5 BACKWARD COMPATIBILITY: with no status file at all the shipped pane path is untouched.
 new_env; REPO="$WORK/rc5"; mkrepo "$REPO"; echo "p" > "$WORK/p.txt"
 seed_transcript c5 "  RUNNER_DONE"
+seed_work c5
 run_row c5 "$REPO" "$WORK/p.txt" >/dev/null
 assert_eq "C5: no status file -> the pane marker still yields done" "$(jverdict c5)" "done"
 
