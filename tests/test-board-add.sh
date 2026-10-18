@@ -15,6 +15,7 @@
 #        gets 6-cell rows from both)
 #   AC7  `bin/board add --backlog-file` reaches the verb
 #   AC8  hostile status, section and title text cannot forge rows, headings or cells
+#   AC10 board-normalize pads short rows without losing an id; the kit board lints clean
 #   AC9  suffixed headings, legend tables, ids above 999, git-history floor, batch order
 #
 # Run: bash tests/test-board-add.sh
@@ -231,6 +232,26 @@ BB="$TMPD/door.md"; new4 "$BB"
 did="$(bash "$KIT_DIR/bin/board" add "via the door" --notes "dn" --backlog-file "$BB")"
 chk "door: prints the minted id" "$([ "$did" = "ID-2" ]; echo $?)"
 chk_has "door: the row is written" "$(cat "$BB")" "| ID-2 | via the door | dn | queued |"
+
+# ============================================================
+echo "== AC10: board-normalize pads short rows, keeps every id, is idempotent =="
+# ============================================================
+NORM="$KIT_DIR/lib/board/bin/board-normalize"
+BZ="$TMPD/short.md"
+printf '# B\n\n| ID | Title | Source | Target artifact | Lane | Status |\n|----|-------|--------|-----------------|------|--------|\n| ID-1 | full | s | t | normal | queued |\n| ID-2 | short | notes with \\| pipe | claimed |\n| ID-3 | five | a | b | shipped |\n\n| ID | Item | Notes | Status |\n|---|---|---|---|\n| ID-4 | four | n | queued |\n\nprose | with | pipes\n' > "$BZ"
+python3 "$NORM" --check "$BZ" >/dev/null; rc=$?
+chk "--check exits 1 and writes nothing while a row is short" "$([ "$rc" -eq 1 ] && grep -q '^| ID-2 | short | notes with \\| pipe | claimed |$' "$BZ"; echo $?)"
+out="$(python3 "$NORM" "$BZ")"
+chk_has "the counts line shows 4 ids before and after" "$out" "row ids before: 4, after: 4, padded: 2"
+chk_has "a 4-cell row spreads into the first middle cell" "$(cat "$BZ")" "| ID-2 | short | notes with \\| pipe |  |  | claimed |"
+chk_has "a 5-cell row keeps its cells in order" "$(cat "$BZ")" "| ID-3 | five | a | b |  | shipped |"
+chk_has "the 4-column table after the blank line is untouched" "$(cat "$BZ")" "| ID-4 | four | n | queued |"
+chk_has "prose with pipes is untouched" "$(cat "$BZ")" "prose | with | pipes"
+chk "lint is clean afterwards" "$([ "$(bl "$BZ" lint)" = "(no lint findings)" ]; echo $?)"
+before="$(shasum -a 256 "$BZ" | cut -d' ' -f1)"
+python3 "$NORM" "$BZ" >/dev/null; python3 "$NORM" --check "$BZ" >/dev/null
+chk "a second run changes nothing and --check exits 0" "$([ "$?" -eq 0 ] && [ "$(shasum -a 256 "$BZ" | cut -d' ' -f1)" = "$before" ]; echo $?)"
+chk "the kit's own board has no shape findings" "$([ "$(bl "$KIT_DIR/_meta/BACKLOG.md" lint)" = "(no lint findings)" ]; echo $?)"
 
 echo ""
 echo "== $TOTAL run, $PASS passed, $FAIL failed =="
