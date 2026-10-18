@@ -490,7 +490,7 @@ def anomalies(
     ),
     as_json: bool = _FMT,
 ):
-    """Detect anomalies over the lenses (READ-ONLY: unpaid-debt count, token-cost
+    """Detect anomalies over the lenses (READ-ONLY: waived-gate count, token-cost
     spike vs rolling median, gate/proof misfire-rate, implementation-notes deviation density,
     gate ceremony via caught/fix-correlation, dep-independent serial-when-parallel runs, and
     (ARMED) a per-session token-runaway check over the `sessions` table). With

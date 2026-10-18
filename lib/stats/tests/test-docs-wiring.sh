@@ -77,7 +77,7 @@ fi
 
 # b1. skill frontmatter carries its trigger phrases (fires on the documented asks).
 FRONTMATTER="$(sed -n '/^---$/,/^---$/p' ../../skills/stats/SKILL.md)"
-for phrase in "show me the ledger state" "understanding debt" "token cost" "kit runs" \
+for phrase in "show me the ledger state" "waived gates" "token cost" "kit runs" \
               "render the ledger" "any ledger anomalies"; do
   has "skill frontmatter carries trigger: '$phrase'" "$phrase" "$FRONTMATTER"
 done

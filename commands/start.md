@@ -106,6 +106,7 @@ Append to every recommendation:
 - Active goal drafts in `.claude/goals/` (count, and `slug -> status`), if any
 - Open handoffs (count, oldest first, each with its Next excerpt): `bash lib/session/handoffs.sh list` scans `_meta/handoffs/` and `.claude/handoffs/` one level deep, no recursion: a file sitting directly in either directory is open, a file moved into any subdirectory (whatever it is named) counts as consumed, so a pile of unread handoffs surfaces at session start instead of needing a manual audit. If none, print "Open handoffs: none".
 - Running goals across sessions (the cross-session registry): the count from `bash lib/goal/goal-registry.sh list`, so an operator opening a new session sees what other sessions already have in flight before starting a colliding goal. This is the kit-level companion to the native agent view (which sees only the current session's subagents, not goals across sessions).
+- LLM egress failures (last 7 days): `bash lib/telemetry/egress-fail.sh summary` prints ONE line (for example `harvest failed 3 times in the last 7 days`) when a `claude -p` call from harvest, backlog-stage, skill-review, session-audit, or reflect propose failed or came back empty; it prints nothing when all is well, and then you print nothing. The hooks stay fail-open, so this line is the only place an outage shows. Skip it in `--brief` mode (its one-line contract wins).
 
 ## Output format
 

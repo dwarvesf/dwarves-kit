@@ -305,6 +305,17 @@ def build_aggregate(days, megas):
     }
 
 
+def _egress_fail(reason):
+    """Fail-open egress visibility: one line in the egress-failures ledger. Never raises."""
+    try:
+        subprocess.run(
+            ["bash", os.path.join(KIT_ROOT, "lib", "telemetry", "egress-fail.sh"),
+             "record", "reflect-propose", reason],
+            capture_output=True, timeout=15)
+    except (OSError, subprocess.SubprocessError):
+        pass
+
+
 def _run_llm(cmd, prompt):
     """Run an LLM seam (interpreter/verifier). Returns (text, in_tokens, out_tokens).
     Dual-mode: if stdout parses as a `--output-format json` envelope (has "usage"), use its
@@ -314,7 +325,12 @@ def _run_llm(cmd, prompt):
         r = subprocess.run(shlex.split(cmd), input=prompt, capture_output=True, text=True, timeout=180)
         raw = r.stdout or ""
     except (subprocess.SubprocessError, OSError):
+        _egress_fail("command failed to run or timed out")
         return "", 0, 0
+    if r.returncode != 0:
+        _egress_fail(f"command exit {r.returncode}")
+    elif not raw.strip():
+        _egress_fail("empty output")
     try:
         env = json.loads(raw)
         if isinstance(env, dict) and "usage" in env:

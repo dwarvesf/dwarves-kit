@@ -63,6 +63,8 @@ source "$JQLIB/shlex-split.sh"
 source "$JQLIB/hook-util.sh"
 # shellcheck source=../lib/reflect/staging-format.sh
 source "$JQLIB/staging-format.sh"
+# shellcheck source=../lib/telemetry/egress-fail.sh
+source "$HERE/../lib/telemetry/egress-fail.sh"
 
 # On the SessionStart surface pass, first sweep the consumer's declared deferred-link sources into
 # the same staging funnel (config-gated, self-throttling), so the surfaced count already includes them.
@@ -121,12 +123,19 @@ Include ONLY items with explicit forward intent (add to backlog, we should, let'
 # as subprocess.run does. Returns 1 on a command string shlex refuses or one that holds no command
 # (both crash the Python).
 run_extractor() {
-  local cmd="${BACKLOG_STAGE_EXTRACTOR:-claude -p --model haiku --setting-sources project}"
+  local cmd="${BACKLOG_STAGE_EXTRACTOR:-claude -p --model haiku --setting-sources project}" rc=0
   shlex_split "$cmd" || return 1
   [ "${#SHLEX_ARGV[@]}" -gt 0 ] || return 1
   : > "$2"
-  HU_STDIN="$1" hu_run_capture 120 "$2" "${SHLEX_ARGV[@]}"
-  [ ! -e "$2.timedout" ] || : > "$2"
+  HU_STDIN="$1" hu_run_capture 120 "$2" "${SHLEX_ARGV[@]}" || rc=$?
+  # fail-open, but a failed, timed-out, or empty call leaves one line in the egress-failures ledger
+  if [ -e "$2.timedout" ]; then
+    : > "$2"; egress_fail backlog-stage "timeout after 120s"
+  elif [ "$rc" -ne 0 ]; then
+    egress_fail backlog-stage "extractor exit $rc"
+  elif ! grep -q '[^[:space:]]' "$2" 2>/dev/null; then
+    egress_fail backlog-stage "empty output"
+  fi
   return 0
 }
 
