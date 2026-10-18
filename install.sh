@@ -385,7 +385,10 @@ KIT_REQUESTED_MODULES="$(echo "$KIT_REQUESTED_MODULES" | xargs)"
 #
 # "Plugin installed" is lib/onboard-detect.sh's answer, the same one /kit:onboard shows:
 # mode `plugin` (cache or roster, no bash hooks) or `both` (a plugin AND bash hooks).
-KIT_INSTALL_MODE="$(CLAUDE_DIR="$CLAUDE_DIR" bash "$KIT_DIR/lib/onboard-detect.sh" mode 2>/dev/null || echo none)"
+if ! KIT_INSTALL_MODE="$(CLAUDE_DIR="$CLAUDE_DIR" bash "$KIT_DIR/lib/onboard-detect.sh" mode 2>/dev/null)"; then
+  echo "[warn] plugin detector ($KIT_DIR/lib/onboard-detect.sh) failed; assuming no kit plugin is installed"
+  KIT_INSTALL_MODE=none
+fi
 case "$KIT_INSTALL_MODE" in plugin|both) KIT_PLUGIN_PRESENT=1 ;; *) KIT_PLUGIN_PRESENT=0 ;; esac
 
 # kit_symlink_hardened <target> <linkname> -- `ln -sfn` silently no-ops on macOS

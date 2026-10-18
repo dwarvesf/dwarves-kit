@@ -104,6 +104,12 @@ P_SET="$(table_problems "$TABLE" "$KIT_DIR/settings.json")"
 assert_true "settings.json: every hook is in one module under its event, every table hook is wired (${P_SET:-no problems})" "$([ -z "$P_SET" ]; echo $?)"
 P_PLG="$(table_problems "$TABLE" "$KIT_DIR/hooks/hooks.json")"
 assert_true "hooks/hooks.json (the plugin manifest) agrees too (${P_PLG:-no problems})" "$([ -z "$P_PLG" ]; echo $?)"
+# Every CLI the table lists is a bin/ entrypoint; bin/ also holds forwarders the table leaves out on purpose.
+MISSING_BIN=""
+for c in $(awk -F'\t' '/^#/ || NF < 4 || $4 == "-" { next } { print $4 }' "$TABLE"); do
+  [ -f "$KIT_DIR/bin/$c" ] || MISSING_BIN="$MISSING_BIN $c"
+done
+assert_true "every CLI in the table has a bin/ entrypoint (missing:${MISSING_BIN:- none})" "$([ -z "$MISSING_BIN" ]; echo $?)"
 SL_CMD="$(jq -r '.statusLine.command // ""' "$KIT_DIR/settings.json")"
 assert_true "the statusLine pair in the table matches settings.json statusLine.command" "$({ trap '' PIPE; printf '%s' "$SL_CMD" 2>/dev/null || :; } | grep -q 'statusline\.sh'; echo $?)"
 
@@ -114,6 +120,7 @@ for f in install.sh lib/adopt.sh; do
   assert_true "$f defines no kit_module_hooks / kit_module_clis function" "$(! grep -qE '^kit_module_(hooks|clis)\(\)' "$KIT_DIR/$f"; echo $?)"
   assert_true "$f has no KIT_KNOWN_MODULES string literal" "$(! grep -qE '^KIT_KNOWN_MODULES="[a-z_ ]+"' "$KIT_DIR/$f"; echo $?)"
   assert_true "$f sources lib/config/modules.sh" "$(grep -q 'config/modules\.sh' "$KIT_DIR/$f"; echo $?)"
+  assert_true "$f has no HOOKED_MODULES list and no case over module names" "$(! grep -qE '^[[:space:]]*(HOOKED_MODULES=|(board|session|advisor|cosmetic|money_gate|prose_rag)\) )' "$KIT_DIR/$f"; echo $?)"
 done
 
 # ============================================================

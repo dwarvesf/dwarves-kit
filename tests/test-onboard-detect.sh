@@ -128,6 +128,25 @@ assert_eq "roster names kit@dwarves-marketplace, no cache dir -> plugin" "$(run_
 D="$ROOT/roster-other"; mkdir -p "$D/plugins"
 echo '{"version":2,"plugins":{"other@elsewhere":[{"scope":"user"}]}}' > "$D/plugins/installed_plugins.json"
 assert_eq "roster naming only another plugin -> none" "$(run_mode "$D")" "none"
+# The roster is the authority: a cache dir outlives /plugin uninstall, so cache plus a roster
+# without the kit is a stale cache, not an install (else install.sh would refuse every hook).
+D="$ROOT/stale-cache"; make_plugin_cache "$D"; mkdir -p "$D/plugins"
+echo '{"version":2,"plugins":{}}' > "$D/plugins/installed_plugins.json"
+assert_eq "stale cache dir, roster without the kit -> none" "$(run_mode "$D")" "none"
+# NC: the same cache with no roster file at all is still read as a plugin (older Claude Code, fixtures).
+D="$ROOT/cache-no-roster"; make_plugin_cache "$D"
+assert_eq "cache dir and no roster file -> plugin" "$(run_mode "$D")" "plugin"
+# An unanchored match would read devkit@dwarves-marketplace as the kit.
+D="$ROOT/roster-lookalike"; mkdir -p "$D/plugins"
+echo '{"version":2,"plugins":{"devkit@dwarves-marketplace":[{"scope":"user"}]}}' > "$D/plugins/installed_plugins.json"
+assert_eq "roster key devkit@dwarves-marketplace is not the kit -> none" "$(run_mode "$D")" "none"
+# A plugin switched off in settings.json is not present, roster or not.
+D="$ROOT/disabled"; mkdir -p "$D/plugins"
+echo '{"version":2,"plugins":{"kit@dwarves-marketplace":[{"scope":"user"}]}}' > "$D/plugins/installed_plugins.json"
+echo '{"enabledPlugins":{"kit@dwarves-marketplace":false}}' > "$D/settings.json"
+assert_eq "kit plugin disabled in enabledPlugins -> none" "$(run_mode "$D")" "none"
+echo '{"enabledPlugins":{"kit@dwarves-marketplace":true}}' > "$D/settings.json"
+assert_eq "NC: the same install enabled -> plugin" "$(run_mode "$D")" "plugin"
 
 echo ""
 echo "=== AC9: NO HARDCODED ROSTER -- commands/onboard.md generates the module list from the registry ==="

@@ -229,7 +229,7 @@ Be honest about what the plugin path cannot do, in short bullets:
   on `/plugin update`. A bash checkout tracks whatever you `git pull`.
 - **Module choice does not select plugin hooks:** the plugin registers every kit hook through
   `hooks/hooks.json` at `${CLAUDE_PLUGIN_ROOT}`, whatever the repo's `[modules]` says. So on a plugin
-  machine adopt wires NO per-repo module hooks (they would fire twice) and says so in its output; the
+  machine adopt leaves the repo's `.claude/settings.json` alone (a second set of hooks would fire twice) and says so in its output; the
   `[modules]` section still records the choice for the commands that read it. Per-module hook
   selection is a bash-install feature. Say this at adopt time too: on a plugin machine, never claim
   `[modules]` turned a hook off or on.

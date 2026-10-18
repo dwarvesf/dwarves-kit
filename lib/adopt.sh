@@ -44,10 +44,11 @@
 # in that file are preserved). The module list and each module's hooks come from the ONE module
 # table, lib/config/modules.tsv (the same file install.sh reads); a module with no hook (queue,
 # stats, ...) is recorded in .kit.toml but never touches settings.json. On a machine with the kit
-# plugin installed it wires nothing new: the plugin's hooks.json already registers every hook,
-# under a different command string, so a second set would fire twice. (A hook the operator's own
-# ~/.claude/settings.json also wires is fine: Claude Code runs an identical handler once.)
-# This is "wired at adopt time", not read
+# plugin installed it leaves the project's settings.json alone: the plugin's hooks.json already
+# registers every hook, under a different command string, so a second set would fire twice.
+# (A hook the operator's own ~/.claude/settings.json also wires is fine: Claude Code runs an
+# identical handler once.) The project file is committed and shared, so it never changes on the
+# strength of one machine's plugin. This is "wired at adopt time", not read
 # per hook fire: re-running adopt.sh (an explicit, deliberate action) recomputes the project's
 # wired set from its CURRENT .kit.toml; nothing reads .kit.toml at hook-fire time.
 set -uo pipefail
@@ -429,13 +430,14 @@ if [ -n "$kit_root_toml" ] && [ "$RESOLVER_OK" -eq 1 ] && command -v jq >/dev/nu
     done
     wired_hook_names="$(echo "$wired_hook_names" | xargs)"
 
-    # The plugin registers every hook itself, so a machine with it gets no per-project hook entries.
-    shared_note=""
+    # The plugin registers every hook itself. The project settings.json is committed and shared, so
+    # on a plugin machine adopt neither adds hooks to it nor strips any: it leaves the file alone.
+    shared_note="" plugin_machine=0
     install_mode="$(CLAUDE_DIR="$CLAUDE_DIR" bash "$SELF_DIR/onboard-detect.sh" mode 2>/dev/null || echo none)"
     case "$install_mode" in
       plugin|both)
-        [ -n "$wired_hook_names" ] && shared_note=" (not wired, the kit plugin already registers: $wired_hook_names)"
-        wired_hook_names=""
+        plugin_machine=1
+        shared_note=" (project settings.json left alone, the kit plugin already registers every hook)"
         ;;
     esac
 
@@ -445,11 +447,14 @@ if [ -n "$kit_root_toml" ] && [ "$RESOLVER_OK" -eq 1 ] && command -v jq >/dev/nu
       if [ -z "$hook_re" ]; then hook_re="$esc"; else hook_re="$hook_re|$esc"; fi
     done
 
-    if [ "$DRY" -eq 1 ]; then
-      note "wire $project_settings for modules:${enabled_list:-<none>} (hooks:${wired_hook_names:-none})$shared_note"
+    if [ "$plugin_machine" -eq 1 ]; then
+      if [ "$DRY" -eq 1 ]; then note "leave $project_settings alone$shared_note"
+      else echo "adopt: project hook-module wiring for $TARGET -> modules:${enabled_list:-<none>}$shared_note"; fi
+    elif [ "$DRY" -eq 1 ]; then
+      note "wire $project_settings for modules:${enabled_list:-<none>} (hooks:${wired_hook_names:-none})"
     elif [ -z "$wired_hook_names" ] && [ ! -f "$project_settings" ]; then
       # Nothing to add and no file to clean: do not create an empty settings.json.
-      echo "adopt: project hook-module wiring for $TARGET -> modules:${enabled_list:-<none>}$shared_note"
+      echo "adopt: project hook-module wiring for $TARGET -> modules:${enabled_list:-<none>}"
     else
       # Whole kit command strings, not hook basenames: a rewrite that keeps the same hooks but
       # changes how they are invoked (the anchor-root.sh prefix) is still a change to report.
@@ -509,7 +514,7 @@ if [ -n "$kit_root_toml" ] && [ "$RESOLVER_OK" -eq 1 ] && command -v jq >/dev/nu
       after_wired=""
       [ -f "$project_settings" ] && after_wired="$(jq -r '[.hooks // {} | to_entries[]? | .value[]? | .hooks[]? | .command] | .[]' "$project_settings" 2>/dev/null | grep -F 'dwarves-kit/hooks/' | sort -u)"
       [ "$before_wired" != "$after_wired" ] && did=1
-      echo "adopt: project hook-module wiring for $TARGET -> modules:${enabled_list:-<none>}$shared_note"
+      echo "adopt: project hook-module wiring for $TARGET -> modules:${enabled_list:-<none>}"
     fi
   fi
 fi

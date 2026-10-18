@@ -269,7 +269,7 @@ else
   no "adopt output depends on the operator's user-level settings"
 fi
 
-# 21. On a machine with the kit plugin, adopt wires no per-project hooks (the plugin registers them all).
+# 21. On a machine with the kit plugin, adopt leaves the project's settings.json alone (the plugin registers every hook).
 T15="$(newrepo)"
 CD21="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
 mkdir -p "$CD21/plugins/cache/dwarves-marketplace/kit/1.0.0/lib"
@@ -280,24 +280,27 @@ if [ ! -f "$T15/.claude/settings.json" ] && grep -qx 'board = true' "$T15/.kit.t
 else
   no "plugin machine wiring wrong: $OUT21"
 fi
-# A project that already carries kit hooks gets them removed on a plugin machine (they would fire twice).
+# NC: the same repo with the plugin gone wires its hooks, so the empty result above was the plugin rule.
 CLAUDE_DIR="$NO_CLAUDE" bash lib/adopt.sh --refresh "$T15" >/dev/null 2>&1
 if wired_hooks "$T15/.claude/settings.json" | grep -qx context-readiness.sh; then
-  CLAUDE_DIR="$CD21" bash lib/adopt.sh --refresh "$T15" >/dev/null 2>&1
-  if [ -z "$(wired_hooks "$T15/.claude/settings.json")" ]; then
-    ok "plugin machine: re-adopt strips the project's earlier kit hook entries"
-  else
-    no "plugin machine: earlier kit hook entries survived re-adopt"
-  fi
+  ok "NC: without the plugin the same repo wires its hooks"
 else
-  no "setup for the plugin strip case: the bash-path adopt wired nothing"
+  no "NC: hooks did not appear without the plugin"
 fi
-# NC: the same repo with the plugin gone wires again.
-CLAUDE_DIR="$NO_CLAUDE" bash lib/adopt.sh --refresh "$T15" >/dev/null 2>&1
-if wired_hooks "$T15/.claude/settings.json" | grep -qx context-readiness.sh; then
-  ok "NC: without the plugin the same repo wires its hooks again"
+# The project file is committed and shared, so a plugin machine leaves it byte for byte alone.
+cp "$T15/.claude/settings.json" "$T15/.settings.before"
+OUT21B="$(CLAUDE_DIR="$CD21" bash lib/adopt.sh --refresh "$T15" 2>&1)"
+if cmp -s "$T15/.settings.before" "$T15/.claude/settings.json" && printf '%s' "$OUT21B" | grep -q 'left alone'; then
+  ok "plugin machine: re-adopt leaves an existing project settings.json byte for byte alone"
 else
-  no "NC: hooks did not come back without the plugin"
+  no "plugin machine changed the committed project settings.json: $OUT21B"
+fi
+# --dry-run says the same and writes nothing.
+OUT21C="$(CLAUDE_DIR="$CD21" bash lib/adopt.sh --dry-run "$T15" 2>&1)"
+if printf '%s' "$OUT21C" | grep -q 'would leave .*settings.json alone'; then
+  ok "plugin machine: --dry-run reports it would leave settings.json alone"
+else
+  no "plugin machine --dry-run output: $OUT21C"
 fi
 
 rm -rf "$T8" "$T9" "$T10" "$T11" "$T13" "$T14" "$T14B" "$T15" "$CD20" "$CD21"

@@ -45,8 +45,9 @@ or `--single-source` (see below).
   `.kit.toml`, never a wholesale file rewrite. The module list and each module's hooks come from
   `lib/config/modules.tsv`, the one table `install.sh` reads too; a module with no hook there
   (`queue`, `stats`, ...) needs no settings.json entry. On a machine with the kit plugin installed
-  adopt wires no per-repo hooks, because the plugin's `hooks.json` already registers every hook under
-  a different command string and a second set would fire twice; the output line says so. A hook your
+  adopt leaves the project's `settings.json` alone (it adds no hooks and strips none), because the
+  plugin's `hooks.json` already registers every hook under a different command string, a second set
+  would fire twice, and the project file is committed and shared; the output line says so. A hook your
   own `~/.claude/settings.json` also wires is fine: Claude Code runs an identical handler once.
 
 To adopt several repos at once, use `bin/wrap adopt <repo>...` instead of running the driver per repo. It dry-runs by default, and with `--apply` it opens and lands one adoption PR per repo. See the `adopt` bullet in `commands/wrap.md`.

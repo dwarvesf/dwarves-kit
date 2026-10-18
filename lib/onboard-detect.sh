@@ -9,9 +9,9 @@
 # This is the ONE detector: install.sh calls it (`onboard-detect.sh mode`) to decide whether to
 # refuse wiring hooks next to the plugin, and lib/adopt.sh calls it to skip per-project hook wiring,
 # so install, adopt and onboard agree on what "installed as a plugin" means:
-#   plugin cache present : a lib dir exists under
-#       $CLAUDE_DIR/plugins/cache/dwarves-marketplace/kit/*/lib,
-#       OR $CLAUDE_DIR/plugins/installed_plugins.json names kit@dwarves-marketplace.
+#   plugin present       : $CLAUDE_DIR/plugins/installed_plugins.json names kit@dwarves-marketplace;
+#       with no roster file, a lib dir under $CLAUDE_DIR/plugins/cache/dwarves-marketplace/kit/*/lib
+#       decides instead. A plugin switched off in settings.json enabledPlugins does not count.
 #   bash hooks live      : $CLAUDE_DIR/settings.json registers >=1 dwarves-kit/hooks/*.sh command
 #       (the full bash install path; the plugin COMPAT symlink deliberately writes no
 #       settings.json hooks, so a compat-only machine reads as `plugin`, correctly).
@@ -33,16 +33,23 @@ set -euo pipefail
 CLAUDE_DIR="${CLAUDE_DIR:-$HOME/.claude}"
 
 # plugin_present -- true if a dwarves-kit plugin install is present on this machine.
+# The Claude Code roster is the authority when it exists: a cache dir outlives `/plugin uninstall`,
+# so a stale cache must not read as an install (install.sh would then refuse to wire any hook and
+# the machine would have none). Only without a roster (an older Claude Code, a fixture) does the
+# cache glob decide. Either way a plugin switched off in settings.json (enabledPlugins false) is
+# not present. Grep, not jq, so a first-run probe has no hard jq dependency.
 plugin_present() {
-  # Primary: the plugin cache-lib glob. A glob with no match under `set -e`
+  local ip="$CLAUDE_DIR/plugins/installed_plugins.json" settings="$CLAUDE_DIR/settings.json"
+  if [ -f "$settings" ] && grep -Eq '"kit@dwarves-marketplace"[[:space:]]*:[[:space:]]*false' "$settings" 2>/dev/null; then
+    return 1
+  fi
+  if [ -f "$ip" ]; then
+    grep -q '"kit@dwarves-marketplace"' "$ip" 2>/dev/null
+    return $?
+  fi
+  # No roster: the plugin cache-lib glob. A glob with no match under `set -e`
   # must not abort the function, so guard it inside an `if`.
   if ls -d "$CLAUDE_DIR"/plugins/cache/dwarves-marketplace/kit/*/lib >/dev/null 2>&1; then
-    return 0
-  fi
-  # Fallback: the CC-owned roster names the kit's marketplace. Grep (not jq) so there is no hard
-  # jq dependency in a first-run probe; the marketplace slug is specific enough to not false-match.
-  local ip="$CLAUDE_DIR/plugins/installed_plugins.json"
-  if [ -f "$ip" ] && grep -q 'kit@dwarves-marketplace' "$ip" 2>/dev/null; then
     return 0
   fi
   return 1
