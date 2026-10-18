@@ -1,6 +1,6 @@
 # SPEC-410: the ceremony a diff owes follows what the diff changes
 
-**Status:** DRAFT
+**Status:** VALIDATED
 Lane: full
 Type: spec-fix
 **Proof:** `docs/verification/ceremony-fits-diff.md`; `tests/test-ceremony-fits-diff.sh`, `tests/test-classify-md-inert.sh`, `tests/test-lanes-data.sh`.
