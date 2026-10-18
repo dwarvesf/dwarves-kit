@@ -29,13 +29,15 @@ _KIT_HOOK_LOG_NAMES="anti-rationalization board-row-gate citation-guard commit-f
 # _kit_hook_log_migrate <root> <hooks-dir>: one-time, additive copy of old hook logs into the
 # new dir. Sources, in order: the ledger root itself (hook logs sat directly in it when a knob
 # pinned it) and the old default ~/.claude/dwarves-kit/logs. The old default is skipped when a
-# knob pins the root, so a test's temp dir never ingests the machine's logs. cp -n never
+# knob pins the root or [ledger].location is "isolated" (a per-project root must not ingest the
+# machine-wide logs), so a test's temp dir never ingests the machine's logs. cp -n never
 # overwrites, the old files are never deleted, and a symlinked source is refused. The sentinel
 # lands only when every copy succeeded, so a partial copy retries on the next call.
 _kit_hook_log_migrate() {
   local root="$1" dir="$2" src name ok=1 srcs=("$1")
   mkdir -p "$dir" 2>/dev/null || return 0
-  if [ -z "${KIT_LEDGER_DIR+x}" ] && [ -z "${DWARVES_KIT_LOG_DIR:-}" ] && command -v kit_legacy_log_dir >/dev/null 2>&1; then
+  if [ -z "${KIT_LEDGER_DIR+x}" ] && [ -z "${DWARVES_KIT_LOG_DIR:-}" ] && [ "$root" != "$PWD/.kit/logs" ] \
+     && command -v kit_legacy_log_dir >/dev/null 2>&1; then
     srcs+=("$(kit_legacy_log_dir)")
   fi
   for src in "${srcs[@]}"; do

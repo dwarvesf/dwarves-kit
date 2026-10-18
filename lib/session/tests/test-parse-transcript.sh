@@ -96,6 +96,10 @@ for bad in obj msg content text utf8; do
 done
 bash "$PT" --harvest-text 100 "$HT/missing.jsonl" >/dev/null 2>&1; rc=$?
 if [[ $rc -eq 1 ]]; then ok "missing file exits 1"; else no "missing file rc=$rc"; fi
+printf '%s\n' '{"type":"user","message":{"content":[{"type":"text","text":"keep"}]}}' > "$HT/badbyte.jsonl"
+printf '{"type":"assistant","message":{"content":[{"type":"text","text":"bad \xff byte"}]}}\n' >> "$HT/badbyte.jsonl"
+tb="$(bash "$PT" --tail-text 5 "$HT/badbyte.jsonl")"; rc=$?
+if [[ $rc -eq 0 && "$tb" == *"[user] keep"* && "$tb" == *$'bad \xef\xbf\xbd byte'* ]]; then ok "--tail-text reads past invalid UTF-8 (U+FFFD), unlike --harvest-text"; else no "tail-text bad byte rc=$rc out=$tb"; fi
 
 echo
 if [[ $fail -eq 0 ]]; then

@@ -92,7 +92,7 @@ def parse_lines(lines, strict: bool = False) -> Iterator[dict]:
         yield entry
 
 
-def iter_entries(path: str, strict: bool = False) -> Iterator[dict]:
+def iter_entries(path: str, strict: bool = False, errors: str = "strict") -> Iterator[dict]:
     """Yield each successfully-parsed JSON *object* in `path`, in file order.
 
     Malformed / blank lines are skipped, never raised. A line that decodes to
@@ -101,9 +101,10 @@ def iter_entries(path: str, strict: bool = False) -> Iterator[dict]:
     the first `.get()` downstream instead of being treated as the untrusted
     input it is. A missing or unreadable `path` raises (FileNotFoundError /
     PermissionError / OSError) so the caller can decide whether that is a
-    per-file skip or a reported error.
+    per-file skip or a reported error. Invalid UTF-8 raises by default; a
+    caller that wants to read past it passes errors="replace".
     """
-    with open(path, "r", encoding="utf-8") as fh:
+    with open(path, "r", encoding="utf-8", errors=errors) as fh:
         yield from parse_lines(fh, strict)
 
 
@@ -120,9 +121,10 @@ def tail_text(path: str, k: int) -> str:
     """The last `k` user+assistant turns that carry non-blank text, rendered as
     "[role] text" blocks joined by a blank line, plus a trailing newline. The role
     is `message.role`, falling back to the entry type. Thinking, tool and summary
-    entries have no text block and drop out. Tolerant: a malformed entry is skipped."""
+    entries have no text block and drop out. Tolerant: a malformed entry is skipped
+    and an invalid UTF-8 byte becomes U+FFFD, as the old jq filter did."""
     turns = []
-    for entry in iter_entries(path):
+    for entry in iter_entries(path, errors="replace"):
         message = entry.get("message")
         if not _is_turn(entry) or not isinstance(message, dict):
             continue

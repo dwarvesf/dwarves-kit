@@ -53,6 +53,14 @@ D=$(resolve "$H" DWARVES_KIT_LOG_DIR="$H/pin")
 check "pinned root does not ingest the old default" "$([ -e "$D/ship-gate.log" ] && echo ingested || echo no)" "no"
 check "pinned root adopts a log that sat directly in it" "$(cat "$D/safety-gate.log" 2>/dev/null)" "pin old"
 
+# 4b. [ledger].location = isolated: a per-project root never ingests the machine-wide old logs
+H=$(new_home); L="$H/.claude/dwarves-kit/logs"; printf 'machine\n' > "$L/ship-gate.log"
+mkdir -p "$H/proj"; printf '[ledger]\nlocation = "isolated"\n' > "$H/proj/.kit.toml"
+D=$(cd "$H/proj" && env -i PATH="$PATH" HOME="$H" XDG_STATE_HOME="$H/xdg" KIT_CONFIG_OPERATOR="$H/none" \
+  KIT_CONFIG_ROOT="$H/none" KIT_PROJECT_ROOT="$H/proj" bash -c '. "$1"; kit_hook_log_dir' _ "$HLD")
+check "isolated root is the project's .kit/logs/hooks" "$D" "$H/proj/.kit/logs/hooks"
+check "isolated root does not ingest the machine-wide logs" "$([ -e "$D/ship-gate.log" ] && echo ingested || echo no)" "no"
+
 # 5. a symlinked old dir is refused
 H=$(new_home); rmdir "$H/.claude/dwarves-kit/logs"; mkdir -p "$H/elsewhere"; printf 'planted\n' > "$H/elsewhere/ship-gate.log"
 ln -s "$H/elsewhere" "$H/.claude/dwarves-kit/logs"
