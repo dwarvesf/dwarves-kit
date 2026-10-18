@@ -43,7 +43,11 @@
 #   lane-classify.sh escalate <current-lane> <spec-file>  -> up-only spec->build re-classify
 #                                                            (ESCALATE <cur> -> <heavier> | HOLD <cur>), exit 0
 #   lane-classify.sh floor <root> [<base>]              -> `full <kind>: <path>` for the first hard-path hit
-#                                                            in the base..HEAD diff, else nothing, exit 0
+#                                                            in the base..HEAD diff, else nothing, exit 0.
+#                                                            A hit counts only for a non-doc file (.md,
+#                                                            README or README.<text ext>, anything under docs/)
+#                                                            whose hunks change more than comment or blank
+#                                                            lines; see _floor_comment_only
 #   lane-classify.sh deescalate <chosen-lane> [--rid <rid>] [--root <path>] [--base <ref>] [--floor <N>]
 #                                                        -> down-only SHIP-time size nudge:
 #                                                           advisory line + ledger action, never blocks, exit 0
@@ -570,28 +574,10 @@ _floor_blank() {
   fi
   [ -f "$tmp/pl_$k" ] || cp "$tmp/paths" "$tmp/pl_$k"
 }
-_floor_scan() {
-  local root="$1" base="$2" head="$3" tmp="$4"
-  _floor_git "$root" diff -z --raw --no-renames --no-ext-diff --no-textconv --text "$base" "$head" > "$tmp/raw" 2>/dev/null || true
-  # One pass over the -z stream: records are ":<modes> ... <status>" then the path. A gitlink has
-  # mode 160000. A newline inside a path shows up as a line that is not a record start; it is
-  # folded into the path as "?".
-  : > "$tmp/paths"; : > "$tmp/links"
-  tr '\0' '\n' < "$tmp/raw" | awk -v pf="$tmp/paths" -v lf="$tmp/links" '
-    function flush() { if (have) { n++; print path > pf; if (link) print n > lf } have = 0 }
-    /^:[0-7][0-7][0-7][0-7][0-7][0-7] [0-7][0-7][0-7][0-7][0-7][0-7] / && state != 1 {
-      flush(); split($0, m, " "); link = (m[1] == ":160000" || m[2] == "160000"); state = 1; next }
-    state == 1 { path = $0; have = 1; state = 2; next }
-    state == 2 { path = path "?" $0; next }
-    END { flush() }'
-  local links; links="$(sed -n 1p "$tmp/links")"
-  local best=0 bestkind="" k re hit num short list
-  # Hard-path exemptions at <base> (see lane_hard_path_exempt): kind auth skips test paths and its
-  # entries' paths, kind migration skips its entries' paths. Every other kind, extras, submodules and
-  # the data-loss scan below read the full path list.
-  short="$(git -C "$root" rev-parse --short "$base" 2>/dev/null || printf '%s' "$base")"
-  lane_hard_path_exempt "$root" "${KIT_FLOOR_CONFIG_AT:-$base}" > "$tmp/recs" || true   # KIT_FLOOR_CONFIG_AT: the mega gate reads config at the base-branch tip, not the PR-chosen base
-  for k in auth migration; do _floor_blank "$tmp" "$k" "$short"; done
+# _floor_find <tmp> <links>: print "<line><TAB><kind>" for the first path-list hit over every hard-path
+# kind, the extras and the first submodule, else nothing. Earliest line wins; ties go to the earlier kind.
+_floor_find() {
+  local tmp="$1" links="$2" best=0 bestkind="" k re hit num list
   for k in $_HP_KINDS; do
     re="$(_hp_re "$k")"
     case "$k" in auth|migration) list="$tmp/pl_$k" ;; *) list="$tmp/paths" ;; esac
@@ -610,6 +596,123 @@ _floor_scan() {
     num="$links"
     if [ "$best" = 0 ] || [ "$num" -lt "$best" ]; then best="$num"; bestkind="submodule"; fi
   fi
+  [ "$best" = 0 ] || printf '%s\t%s\n' "$best" "$bestkind"
+}
+# _floor_drop <tmp> <n>: blank line n in the path list and in both exemption-filtered copies.
+_floor_drop() {
+  local tmp="$1" n="$2" f
+  for f in paths pl_auth pl_migration; do
+    [ -f "$tmp/$f" ] || continue
+    awk -v n="$n" 'FNR == n { print ""; next } { print }' "$tmp/$f" > "$tmp/$f.d" && mv -f "$tmp/$f.d" "$tmp/$f"
+  done
+}
+# _floor_comment_only <root> <base> <head> <tmp> <n> <kind>: true when the file on path-list line n changed
+# nothing but comment or blank lines. Fails safe (false, the floor stands) for anything it cannot prove: a
+# submodule, a symlink, a path that matches the secret pattern (whatever kind won), a file type with no known `#`
+# comment syntax (only shell, python, toml, yaml, terraform and Dockerfile-named files qualify), a file that
+# holds a heredoc, triple-quote or YAML block-scalar opener (a `#` line there may be data), a backslash
+# continuation next to the change, a mode change, a binary diff, an empty or unparsable diff. A `#!` line, a
+# parser-steering comment (Dockerfile directive, coding or modeline tag) and a scanner-suppression comment
+# (nosec, noqa, shellcheck, and the like) are code. A change within the first three lines of a file that
+# carries a shebang, coding cookie or Dockerfile directive there keeps the floor, because such a line only
+# works at the top. A change group must follow a comment, the top of the file, or a blank line that follows one.
+_FLOOR_DATA_OPENER='<<|"""|'"'''"'|(^|[[:space:]:-])[|>][0-9+-]*[[:space:]]*(#.*)?$'
+# Lines whose position matters: a shebang, a coding cookie, a Dockerfile directive, an emacs modeline.
+_FLOOR_DIRECTIVE='^#!|coding[:=]|-\*-|^#[[:space:]]*(syntax|escape|check)[[:space:]]*='
+_floor_comment_only() {
+  local root="$1" base="$2" head="$3" tmp="$4" n="$5" kind="$6" path rev dirhead=0
+  [ "$kind" != submodule ] || return 1
+  grep -qx -e "$n" "$tmp/nosoft" 2>/dev/null && return 1
+  path="$(sed -n "${n}p" "$tmp/paths")"
+  [ -n "$path" ] || return 1
+  # The winning kind is only the first match; a path that ALSO matches the secret pattern never qualifies.
+  printf '%s\n' "$path" | grep -Eiq -- "$(_hp_re secret)" && return 1
+  case "${path##*/}" in
+    *.sh|*.bash|*.zsh|*.py|*.toml|*.yml|*.yaml|*.tf|Dockerfile|*.dockerfile) ;;
+    *) return 1 ;;
+  esac
+  # A `#` line can be data: a heredoc body, a triple-quoted string, a YAML block scalar. Any such opener in
+  # either image of the file keeps the floor; so does a backslash continuation (checked on the diff below).
+  # A directive in the first three lines of either image (shebang, coding cookie, Dockerfile directive) is
+  # position-sensitive: a change that touches those lines is code (checked in the awk below).
+  for rev in "$base" "$head"; do
+    _floor_git "$root" show "$rev:$path" 2>/dev/null | grep -aEq -e "$_FLOOR_DATA_OPENER" && return 1
+    _floor_git "$root" show "$rev:$path" 2>/dev/null | head -3 | grep -aEiq -e "$_FLOOR_DIRECTIVE" && dirhead=1
+  done
+  _floor_git "$root" diff --no-renames --no-ext-diff --no-textconv --text --no-color -U2 --src-prefix=a/ --dst-prefix=b/ "$base" "$head" -- ":(literal)$path" > "$tmp/cdiff" 2>/dev/null || return 1
+  [ -s "$tmp/cdiff" ] || return 1
+  # A NUL byte means binary: bash 3.2 drops NULs in a substitution and awk may too, so test the file itself.
+  LC_ALL=C tr -d '\0' < "$tmp/cdiff" | cmp -s - "$tmp/cdiff" || return 1
+  # Every change group (a run of + and - lines) must start right after a comment line, the top of the file, or
+  # a blank line that itself follows a comment, a blank line or the top. A `#` or blank line that follows a
+  # code or data line may sit inside a quoted string, a continuation or a bracket, where it is not a comment.
+  awk -v dirhead="$dirhead" '
+    function kind(t) { return t ~ /^[[:space:]]*#/ ? "cm" : (t ~ /^[[:space:]]*$/ ? "bl" : "code") }
+    function steer(t) { return t ~ /^[[:space:]]*#!/ || t ~ /coding[:=]|-\*-/ || t ~ /^[[:space:]]*#[[:space:]]*(syntax|escape|check)[[:space:]]*=/ }
+    /^@@ / { body = 1; p1 = p2 = "none"; split($2, o, /[-,]/); split($3, w, /[+,]/)
+      atop = (o[2] + 0 <= 1 && w[2] + 0 <= 1); ol = o[2] + 0; nl = w[2] + 0; next }
+    !body && /^(old mode|new mode|Binary files|GIT binary patch|rename |copy |similarity )/ { bad = 1; next }
+    !body { next }
+    /^\\/ { next }
+    /^ / { c = substr($0, 2); if (c ~ /\\$/ || steer(c)) bad = 1; p2 = p1; p1 = kind(c); ol++; nl++; next }
+    /^[-+]/ { c = substr($0, 2); changed++
+      if (p1 != "chg") {
+        if (dirhead && (ol <= 3 || nl <= 3)) bad = 1
+        ok = (p1 == "cm") || (p1 == "none" && atop) || (p1 == "bl" && (p2 == "cm" || p2 == "bl" || (p2 == "none" && atop)))
+        if (!ok) bad = 1
+      }
+      p2 = p1; p1 = "chg"
+      if ($0 ~ /^-/) ol++; else nl++
+      if (c ~ /\\$/ || steer(c) || c !~ /^[[:space:]]*(#.*)?$/) bad = 1
+      # comments that switch a scanner off are code
+      lc = tolower(c)
+      if (lc ~ /ignore|disable|skip|suppress|allowlist|nolint|nosec|noqa|nosemgrep|nosonar|tfsec|tflint|checkov|trivy|kics|hadolint|shellcheck|pylint|lgtm|codeql|trufflehog|gitleaks|pragma|lint:|type:/) bad = 1 }
+    END { exit (bad || !changed) ? 1 : 0 }' "$tmp/cdiff"
+}
+_floor_scan() {
+  local root="$1" base="$2" head="$3" tmp="$4"
+  _floor_git "$root" diff -z --raw --no-renames --no-ext-diff --no-textconv --text "$base" "$head" > "$tmp/raw" 2>/dev/null || true
+  # One pass over the -z stream: records are ":<modes> ... <status>" then the path. A gitlink has
+  # mode 160000. A newline inside a path shows up as a line that is not a record start; it is
+  # folded into the path as "?".
+  : > "$tmp/paths"; : > "$tmp/links"; : > "$tmp/nosoft"
+  tr '\0' '\n' < "$tmp/raw" | awk -v pf="$tmp/paths" -v lf="$tmp/links" -v nf="$tmp/nosoft" '
+    function flush() { if (have) { n++; print path > pf; if (link) print n > lf; if (link || sym) print n > nf } have = 0 }
+    /^:[0-7][0-7][0-7][0-7][0-7][0-7] [0-7][0-7][0-7][0-7][0-7][0-7] / && state != 1 {
+      flush(); split($0, m, " "); link = (m[1] == ":160000" || m[2] == "160000")
+      sym = (m[1] == ":120000" || m[2] == "120000"); state = 1; next }
+    state == 1 { path = $0; have = 1; state = 2; next }
+    state == 2 { path = path "?" $0; next }
+    END { flush() }'
+  local links; links="$(sed -n 1p "$tmp/links")"
+  local best=0 bestkind="" k short pick tries=0 t0=$SECONDS
+  # Hard-path exemptions at <base> (see lane_hard_path_exempt): kind auth skips test paths and its
+  # entries' paths, kind migration skips its entries' paths. Every other kind, extras, submodules and
+  # the data-loss scan below read the full path list.
+  short="$(git -C "$root" rev-parse --short "$base" 2>/dev/null || printf '%s' "$base")"
+  lane_hard_path_exempt "$root" "${KIT_FLOOR_CONFIG_AT:-$base}" > "$tmp/recs" || true   # KIT_FLOOR_CONFIG_AT: the mega gate reads config at the base-branch tip, not the PR-chosen base
+  # A secret-shaped path is never a doc, whatever its extension or directory.
+  grep -Ein -e "$(_hp_re secret)" "$tmp/paths" 2>/dev/null | cut -d: -f1 >> "$tmp/nosoft" || true
+  # Docs never trip a hard path: blank them (line numbers stay valid) before any pattern runs.
+  awk 'FILENAME == ARGV[1] { keep[$1] = 1; next }
+    !(FNR in keep) && ($0 ~ /\.(md|markdown)$/ || $0 ~ /(^|\/)README\.(md|markdown|txt|rst|adoc)$/ ||
+      ($0 ~ /(^|\/)docs\// && $0 ~ /\.(txt|rst|adoc|png|jpe?g|gif|webp|pdf|csv)$/) ||
+      ($0 ~ /^docs\// && $0 ~ /\.(html?|svg)$/)) { print ""; next }
+    { print }' "$tmp/nosoft" "$tmp/paths" > "$tmp/paths.d" && mv -f "$tmp/paths.d" "$tmp/paths"
+  for k in auth migration; do _floor_blank "$tmp" "$k" "$short"; done
+  _load_extras   # in this shell, so the substitutions in the loop below inherit the cache instead of re-reading config
+  # A hit on a file whose changed lines are all comments or blank is not a hard-path change: drop it
+  # and look again. Capped at 50 drops and 8 seconds, so a pathological diff keeps the floor instead of costing
+  # git calls per path (the hook fails open on its own timeout, the unsafe direction).
+  while :; do
+    pick="$(_floor_find "$tmp" "$links")"
+    [ -n "$pick" ] || break
+    best="${pick%%$'\t'*}"; bestkind="${pick#*$'\t'}"
+    if [ "$tries" -lt 50 ] && [ $((SECONDS - t0)) -lt 8 ] && _floor_comment_only "$root" "$base" "$head" "$tmp" "$best" "$bestkind"; then
+      _floor_drop "$tmp" "$best"; tries=$((tries + 1)); best=0; bestkind=""; continue
+    fi
+    break
+  done
   if [ "$best" != 0 ]; then
     printf 'full %s: %s\n' "$bestkind" "$(sed -n "${best}p" "$tmp/paths")"
     return 0
