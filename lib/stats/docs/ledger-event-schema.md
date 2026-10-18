@@ -41,7 +41,7 @@ them are `k=v`; this table states plainly which are and which aren't:
 | Verb | Payload grammar | k=v? | Producer |
 |---|---|---|---|
 | `START` | `lane=<L> classified=<L> type=<T> [ctype=<T>] repo=<R>` | yes, space-separated | `gate-ledger.sh start` |
-| `START-AMEND` | same as `START` | yes | `gate-ledger.sh start --amend` |
+| `START-AMEND` | same as `START` | yes | `gate-ledger.sh start --amend` (a lowering also writes a `GATE`/`lane-lower`/`override` line) |
 | `GATE` | `<phase> \| <ran\|skipped\|override> \| <reason>` | **no**, 3 more pipe-delimited positional fields, not k=v | `gate-ledger.sh record` / `override` |
 | `ACTION` | freeform oneline text | **no**, opaque text | `gate-ledger.sh action` |
 | `TOKENS` | `in=<N> out=<N> cache_read=<N> cache_create=<N> [cost=<N>] [phase=<P>]` | yes, space-separated | `gate-ledger.sh tokens` |

@@ -134,7 +134,7 @@ created: <YYYY-MM-DD>
   bash lib/gate/gate-ledger.sh start "$RID" "<chosen lane>" "<classifier's suggested lane>" "<chosen work type>" "<classifier's suggested type>"
   ```
 
-  Mis-recorded the lane or type? Correct it with `bash lib/gate/gate-ledger.sh start --amend "$RID" "<correct lane>" ...` , a sanctioned START-AMEND every reader takes as canonical (last amend wins); an honest fix never reads as a MULTI-START misfire.
+  Mis-recorded the lane or type? Correct it with `bash lib/gate/gate-ledger.sh start --amend "$RID" "<correct lane>" ...` , a sanctioned START-AMEND every reader takes as canonical (last amend wins); an honest fix never reads as a MULTI-START misfire. An amend may raise the lane; a lighter lane is refused unless it carries `--lower --reason "<why>"` before the rid (logged as a `lane-lower` override).
 
   The repo is auto-detected. `lib/telemetry/lane-telemetry.sh report|misfires` reads these at `/kit:retro`; a run without a START line surfaces as untracked (itself a signal).
 

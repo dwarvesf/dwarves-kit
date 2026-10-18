@@ -68,7 +68,8 @@ echo x > "$T4/foo.txt"; git -C "$T4" add -A; git -C "$T4" commit -qm c
 [ "$(gate "$T1" 'git status')" = 0 ] && ok "non-push command -> exit 0" || no "non-push should exit 0"
 
 # 6. START-AMEND lane resolution: the last amend wins over the spec header; a plain START never does.
-# $1=slug $2=spec header lane $3=gates to record (lane name) $4=ledger verb line ("" | amend <lane> | start <lane>)
+# $1=slug $2=spec header lane $3=gates to record (lane name) $4=ledger verb line ("" | amend <lane> | lower <lane> | start <lane>)
+# A bare amend only raises (a lowering is refused and writes nothing); `lower` is the sanctioned --lower --reason form.
 amend_case() {
   local d; d="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; mkrepo "$d" yes
   git -C "$d" switch -qc "feat/$1"
@@ -80,6 +81,7 @@ amend_case() {
   DWARVES_KIT_LOG_DIR="$LOGDIR" bash "$GL" start "$1" "$2" "$2" spec-feature spec-feature r >/dev/null 2>&1
   case "$4" in
     amend\ *) DWARVES_KIT_LOG_DIR="$LOGDIR" bash "$GL" start --amend "$1" "${4#amend }" full spec-feature spec-feature r >/dev/null 2>&1 ;;
+    lower\ *) DWARVES_KIT_LOG_DIR="$LOGDIR" bash "$GL" start --amend --lower --reason "test lowering" "$1" "${4#lower }" full spec-feature spec-feature r >/dev/null 2>&1 ;;
     start\ *) DWARVES_KIT_LOG_DIR="$LOGDIR" bash "$GL" start "$1" "${4#start }" full spec-feature spec-feature r >/dev/null 2>&1 ;;
   esac
   while read -r g; do
@@ -89,7 +91,8 @@ amend_case() {
   DWARVES_KIT_LOG_DIR="$LOGDIR" bash "$GL" record "$1" validate ran "test" >/dev/null 2>&1
   gate "$d" 'git push -u origin HEAD'
 }
-[ "$(amend_case amdone full normal 'amend normal')" = 0 ] && ok "spec full + amend normal + normal gates -> pass (amend clears full-only gates)" || no "amend to normal should clear full-only gates"
+[ "$(amend_case amdone full normal 'lower normal')" = 0 ] && ok "spec full + amend --lower normal + normal gates -> pass (a sanctioned lowering clears full-only gates)" || no "amend --lower to normal should clear full-only gates"
+[ "$(amend_case amdlow full normal 'amend normal')" = 2 ] && ok "spec full + bare amend normal + normal gates -> blocked (a lowering without --lower is refused)" || no "a bare amend must not lower the lane"
 [ "$(amend_case amdtwo full normal '')" = 2 ] && ok "spec full + no amend + normal gates -> blocked (full kept)" || no "no amend should keep the full lane"
 [ "$(amend_case amdthree normal normal 'amend full')" = 2 ] && ok "spec normal + amend full + normal gates -> blocked (amend raises)" || no "amend to full should raise a normal run"
 [ "$(amend_case amdfour full normal 'start normal')" = 2 ] && ok "spec full + second plain START normal -> blocked (plain START never lowers)" || no "a plain START must not override the spec lane"

@@ -200,7 +200,9 @@ Cap: <250> words. Read-only; never write the test.
      silence; say so in the report so the lead does not read it as laziness.
 4. Write the spec's `## Review` section (replace-not-stack) and record the legs in
    the gate ledger under the BRANCH SLUG: `bash lib/gate/gate-ledger.sh record <rid> battery ran "<verdict> arms=<n> caught=<n>"`
-   (the slug, never a board ID, is what the ship-gate reads). Then close the
+   (the slug, never a board ID, is what the ship-gate reads). `<verdict>` is the merged verdict, written exactly as in the
+   spec's `### Verdict:` line (`SHIP`, `FIX THEN SHIP` or `DO NOT SHIP`) and FIRST in the reason: the ship-gate reads it back
+   (`gate-ledger.sh review-verdict <rid>`) and refuses the push when the spec's verdict line differs from it. Then close the
    timing bracket: `bash lib/gate/gate-ledger.sh outcome <rid> battery end caught=<true if any arm found a defect, else false>`.
 5. Name what each arm caught in the report. Disagreement between arms is the
    signal this battery exists to produce.

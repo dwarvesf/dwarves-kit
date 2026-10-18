@@ -109,13 +109,48 @@ disposition` does not count). The LAST `Verdict:` line there whose value starts 
 `### Verdict: ...` and replace the section on a re-run, so a fresh review clears the block.
 Code fences and other verdict words (`SOLID`, `SECURE`) are skipped. No section, no verdict or an
 unreadable spec passes, and the other rules still apply. The spec is read as committed at the
-pushed head, so an uncommitted edit does not clear a committed DO NOT SHIP. The rule checks the
-spec's own record and is not a tamper check: a branch can edit its own verdict line. A ledger `review ran` record never
-stands in for the verdict: only the line in the spec counts. The rule runs before the lane
+pushed head, so an uncommitted edit does not clear a committed DO NOT SHIP.
+
+A branch can edit its own verdict line, so the rule also cross-checks the run ledger. The review
+commands (`/kit:review`, `/kit:review-team`, `/kit:battery`) record `review ran "<verdict> ..."`
+after they write the spec, with the verdict (`SHIP`, `FIX THEN SHIP` or `DO NOT SHIP`) as the first
+words of the reason. `gate-ledger.sh review-verdict <rid>` prints the LAST such verdict; a record
+whose reason starts with anything else is skipped and never clears an earlier one. When that
+verdict differs from the spec's last verdict, the push is refused with both verdicts named;
+re-running the review records and writes the new one. A spec with no verdict at all is refused
+only against a recorded `FIX THEN SHIP` or `DO NOT SHIP`: a recorded `SHIP` softens nothing. The
+reason must start with the verdict followed by a space, `:`, `;`, `,`, `.` or the end, so
+`SHIP-clean` is not a verdict.
+A run with no recorded verdict is checked on the spec alone, as before. The ledger sits outside
+the branch, so a commit cannot soften it, but any ledger writer can append a line: this check
+raises the cost of a softened spec, it does not sign anything. The rule runs before the lane
 checks, so it holds whatever the spec's `Lane:` says. It logs `BLOCKED | ship-gate | <slug>
-(review verdict DO NOT SHIP)` to `ship-gate.log`. Key: `[gate] review_verdict`, default ON, read
+(review verdict DO NOT SHIP)` or `(review verdict mismatch: spec '<v>', ledger '<v>')` to
+`ship-gate.log`. Key: `[gate] review_verdict`, default ON, read
 at the merge base (an opt-out must already sit on the default branch). Proof:
-`tests/test-ship-gate-review-verdict.sh`.
+`tests/test-ship-gate-review-verdict.sh`, `tests/test-gate-ledger-amend.sh` (the reader).
+
+### Amending a run's lane
+
+`gate ledger start --amend <rid> <lane> ...` appends a `START-AMEND` line; every reader, ship-gate
+included, takes the LAST one as the run's lane. An amend may raise the lane. It refuses (exit 65,
+nothing written) to lower it, because a lighter lane sheds required gates. Order: `tiny` <
+`normal` = `bug` = `backfill` < `full`. The special lanes sit at `normal`'s rank, so moving
+between them stays free and a drop from `full` to either needs the flags. An amend to any other
+name (`tiny2`, `Tiny`) exits 64, because ship-gate reads the lane back as `[a-z-]+` and a look-alike
+would read as `tiny`. To lower on purpose:
+
+```
+gate ledger start --amend --lower --reason "<why>" <rid> <lighter-lane> <classified> <type> ...
+```
+
+That first appends `GATE | lane-lower | override | <from> -> <to>: <reason>`, which lane
+telemetry counts like any gate override, then the `START-AMEND`. `--lower` and `--reason` go
+before the rid; `--lower` without a reason, or with a blank one, exits 64. `record-batch` amends
+through the same path and has no such flags, so it cannot lower a run: run `start --amend --lower`
+first. The ledger is append-only text, so a writer who bypasses
+the verb can still append a raw line; the guard stops the sanctioned verb from doing it
+silently. Proof: `tests/test-gate-ledger-amend.sh`.
 
 ### The hard-path floor and what it ignores
 
@@ -133,6 +168,7 @@ or asset files under `docs/` classes `inert`. Source, build files and secret-sha
 
 The blocking quality gates are OPT-IN. The kit root says `false` for every key except
 `board_row_gate`, `fixture_identities` and `review_verdict`, so a fresh install blocks nothing else until someone turns a gate on.
+`/kit:adopt` is the exception for the repo it adopts: it seeds `lane_gates = true` and `proof_of_done = true` in that repo's `.kit.toml`, so an adopted repo enforces both from the first push, while a raw install keeps the kit root defaults (off).
 Those three default on; a repo opts out with `<key> = false` in a committed
 `.kit.toml`, under the same committed-and-clean rule as any project `false`. Two places do that, and both apply on
 the next hook fire, no re-adopt, no restart:
@@ -198,7 +234,8 @@ bash tests/test-quiz-gate.sh             # SPEC-125 grounded questions + anti-fa
 bash tests/test-ship-gate-fail-closed.sh # SPEC-048
 bash tests/test-ship-gate-refs-block.sh  # a push the gate cannot account for is refused in an adopted repo
 bash tests/test-ceremony-fits-diff.sh    # docs-only diffs class inert; comment-only edits skip the hard-path floor
-bash tests/test-ship-gate-review-verdict.sh # DO NOT SHIP verdict blocks; last wins; key off
+bash tests/test-ship-gate-review-verdict.sh # DO NOT SHIP verdict blocks; last wins; ledger cross-check; key off
+bash tests/test-gate-ledger-amend.sh        # start --amend raises freely, lowering needs --lower --reason; review-verdict reader
 bash tests/test-gate-opt-out.sh          # [gate] false switches each quality gate off (machine has them on); safety gate immune
 bash tests/test-gate-opt-in.sh           # kit defaults: every quality gate off; a project true turns one on
 bash tests/test-ship-gate-profiles.sh    # install-dependent, see below

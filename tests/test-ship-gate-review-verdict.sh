@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # test-ship-gate-review-verdict.sh -- the ship-gate refuses a push while the branch spec's last
-# `## Review` verdict is DO NOT SHIP (ship_rule_review_verdict in lib/gate/ship-rules.sh).
-# No Review section, no verdict, an unreadable spec, or [gate] review_verdict = false passes.
+# `## Review` verdict is DO NOT SHIP, or differs from the last verdict a review recorded in the run
+# ledger (ship_rule_review_verdict in lib/gate/ship-rules.sh).
+# No Review section, no verdict, an unreadable spec, no ledger verdict, or [gate] review_verdict = false passes.
 # Drives hooks/ship-gate.sh with crafted stdin (same harness as test-ship-gate-impl-notes.sh).
 set -uo pipefail
 KIT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -112,6 +113,43 @@ RC="$(gate "$R" 'git push -u origin HEAD' "$E")"
 git -C "$R" add -A; git -C "$R" commit -qm "chore: opt out on the branch"
 RC="$(gate "$R" 'git push -u origin HEAD' "$E")"
 [ "$RC" = 2 ] && ok "key off committed only on the branch: still blocks" || no "key off committed only on the branch: still blocks (rc=$RC)"
+
+# the ledger cross-check: the last verdict a review recorded in the run ledger must match the spec's.
+# case_ledger <label> <slug> <spec-verdict-or-empty> <ledger-record-reasons...> -- the expected rc is set by the caller via WANT
+case_ledger() { # $1=label $2=slug $3=spec-body $4=expected-rc $5=grep-pattern-or-empty, then the ledger reasons (one `review ran` each)
+  local label="$1" slug="$2" body="$3" want="$4" pat="$5" R e rc r; shift 5
+  R="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || return 1; e="$(mktemp "${TMPDIR:-/tmp}/kit.XXXXXX")" || return 1
+  mkrepo "$R" "$slug" "$body"
+  for r in "$@"; do DWARVES_KIT_LOG_DIR="$LOGDIR" bash "$LEDGER" record "$slug" review ran "$r" >/dev/null 2>&1; done
+  rc="$(gate "$R" 'git push -u origin HEAD' "$e")"
+  if [ "$rc" = "$want" ] && { [ -z "$pat" ] || grep -q -- "$pat" "$e"; }; then ok "$label"
+  else no "$label (want rc=$want /$pat/; got rc=$rc, stderr: $(tr '\n' ' ' < "$e"))"; fi
+}
+MISMATCH='BLOCKED: ship-gate. The spec .*disagree on the review verdict'
+case_ledger "ledger DO NOT SHIP, spec edited to SHIP: blocks and names both" l1 '\n## Review\n\n### Verdict: SHIP\n' 2 "$MISMATCH" "DO NOT SHIP findings=3 rejected=0 actor=t"
+case_ledger "the mismatch message shows the ledger verdict and says to re-run review" l1b '\n## Review\n\n### Verdict: SHIP\n' 2 'run ledger says: *DO NOT SHIP' "DO NOT SHIP findings=3"
+case_ledger "the mismatch message says to re-run review" l1c '\n## Review\n\n### Verdict: SHIP\n' 2 'Re-run /kit:review' "DO NOT SHIP findings=3"
+case_ledger "ledger DO NOT SHIP, spec Review section deleted: blocks" l2 '\n## Notes\n\nnothing\n' 2 "$MISMATCH" "DO NOT SHIP findings=3"
+case_ledger "ledger FIX THEN SHIP, spec SHIP: blocks" l3 '\n## Review\n\n### Verdict: SHIP\n' 2 "$MISMATCH" "FIX THEN SHIP findings=1"
+case_ledger "ledger SHIP, spec FIX THEN SHIP: blocks (any difference)" l4 '\n## Review\n\n### Verdict: FIX THEN SHIP\n' 2 "$MISMATCH" "SHIP findings=0"
+case_ledger "ledger SHIP, spec has no Review verdict: passes (nothing softened)" l14 '\n## Notes\n\nnothing\n' 0 '' "SHIP findings=0"
+case_ledger "ledger and spec agree on SHIP: passes" l5 '\n## Review\n\n### Verdict: SHIP\n' 0 '' "SHIP findings=0 rejected=0 actor=t"
+case_ledger "ledger and spec agree on FIX THEN SHIP: passes" l6 '\n## Review\n\n### Verdict: FIX THEN SHIP\n' 0 '' "FIX THEN SHIP findings=2"
+case_ledger "the last ledger record wins: re-review SHIP after DO NOT SHIP passes" l7 '\n## Review\n\n### Verdict: SHIP\n' 0 '' "DO NOT SHIP findings=3" "SHIP findings=0"
+case_ledger "a later unparseable ledger record does not hide an earlier verdict" l8 '\n## Review\n\n### Verdict: SHIP\n' 2 "$MISMATCH" "DO NOT SHIP findings=3" "ok"
+case_ledger "no ledger verdict (unparseable record only): spec alone decides, SHIP passes" l9 '\n## Review\n\n### Verdict: SHIP\n' 0 '' "ok"
+case_ledger "no ledger verdict: spec alone, DO NOT SHIP still blocks" l10 '\n## Review\n\n### Verdict: DO NOT SHIP\n' 2 "$BLOCK .l10.*DO NOT SHIP" "ok"
+case_ledger "spec DO NOT SHIP with a matching ledger record keeps the DO NOT SHIP block" l11 '\n## Review\n\n### Verdict: DO NOT SHIP\n' 2 "$BLOCK .l11.*DO NOT SHIP" "DO NOT SHIP findings=1"
+case_ledger "battery records count as the review verdict" l12 '\n## Review\n\n### Verdict: SHIP\n' 0 '' "SHIP arms=3 caught=0"
+grep -q 'BLOCKED | ship-gate | l1 (review verdict mismatch' "$LOGDIR/hooks/ship-gate.log" && ok "the mismatch block is written to ship-gate.log" || no "the mismatch block is written to ship-gate.log"
+
+# key off (committed on the default branch) also switches the cross-check off
+R="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; mkrepo "$R" l13 '\n## Review\n\n### Verdict: SHIP\n'
+DWARVES_KIT_LOG_DIR="$LOGDIR" bash "$LEDGER" record l13 review ran "DO NOT SHIP findings=3" >/dev/null 2>&1
+git -C "$R" checkout -q master; printf '[gate]\nreview_verdict = false\n' > "$R/.kit.toml"; git -C "$R" add -A; git -C "$R" commit -qm "chore: opt out"
+git -C "$R" checkout -q feat/l13; git -C "$R" rebase -q master
+E="$(mktemp "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; RC="$(gate "$R" 'git push -u origin HEAD' "$E")"
+[ "$RC" = 0 ] && ok "key off: the ledger cross-check is off too" || no "key off: the ledger cross-check is off too (rc=$RC: $(tr '\n' ' ' < "$E"))"
 
 # the block is logged like the other rules
 grep -q 'BLOCKED | ship-gate | v1 (review verdict DO NOT SHIP)' "$LOGDIR/hooks/ship-gate.log" && ok "the block is written to ship-gate.log" || no "the block is written to ship-gate.log"

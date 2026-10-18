@@ -10,7 +10,11 @@
 # Subcommands:
 #   required <lane>                     print the lane's required gate keys
 #   start    <rid> <chosen-lane> <classified-lane> <chosen-type> [classified-type] [repo]   record routing facts
-#   start --amend <same args>           sanctioned correction; readers take the last AMEND
+#   start --amend <same args>           sanctioned correction; readers take the last AMEND. May raise the lane
+#                                       (tiny < normal = bug = backfill < full); lowering is refused
+#                                       unless `start --amend --lower --reason "<text>" <rid> ...`, which
+#                                       also logs a `GATE | lane-lower | override` line
+#   review-verdict <rid>                print the last verdict recorded by a review (SHIP | FIX THEN SHIP | DO NOT SHIP)
 #   record   <rid> <phase> <ran|skipped> [reason]   append a gate decision (a `grill`+`skipped`
 #                                       reason MUST start with reason=<home-turf|density-low|
 #                                       operator-wave>; every other phase/state is free text)
@@ -177,17 +181,56 @@ required() {
   return 0
 }
 
+# The lane a run currently owes: the LAST START-AMEND, else the FIRST plain START (the same rule every
+# reader applies). Prints nothing when the ledger has no START line.
+_effective_lane() {
+  local f; f="$(ledger_file "$1")" || return 0
+  [ -f "$f" ] || return 0
+  awk -F' [|] ' '
+    $2=="START-AMEND" { a=$3 }
+    $2=="START" && first=="" { first=$3 }
+    END { l = (a != "") ? a : first; if (match(l, /lane=[^ ]+/)) print substr(l, RSTART+5, RLENGTH-5) }' "$f"
+}
+
+# Strictness rank of a lane, for the amend guard: tiny 1, normal 2, full 3. The special lanes bug and
+# backfill sit at normal's rank, so moving between them stays free (their old rule) while a drop from
+# full to either still needs --lower. A lane outside this set has no rank; an amend to one is refused,
+# and an amend FROM one (a hand-written first START) is not compared.
+_lane_rank() {
+  case "$1" in
+    tiny) echo 1 ;;
+    normal|bug|backfill) echo 2 ;;
+    full) echo 3 ;;
+  esac
+}
+
 # START records the run's routing facts for lane telemetry: the lane the
 # operator chose, the classifier's suggestion, the work type, and the repo. One line per
 # run, written at assign/start time; lib/telemetry/lane-telemetry.sh aggregates these read-side.
 start() {
   # --amend: a sanctioned correction. Writes START-AMEND; every
   # reader takes the LAST START-AMEND, else the FIRST plain START. Append-only stands.
-  local marker=START uprefix=start
-  if [ "${1:-}" = "--amend" ]; then marker=START-AMEND; uprefix="start --amend"; shift; fi
+  # An amend may raise the lane freely; lowering it needs `--lower --reason "<text>"` (see _lane_rank).
+  local marker=START uprefix=start lower=0 reason=""
+  if [ "${1:-}" = "--amend" ]; then
+    marker=START-AMEND; uprefix="start --amend"; shift
+    while [ $# -gt 0 ]; do
+      case "$1" in
+        --lower)  lower=1; shift ;;
+        --reason) [ $# -ge 2 ] || { echo "start --amend: --reason needs a value" >&2; return 64; }
+                  reason="$(oneline "$2")"; shift 2 ;;
+        *) break ;;
+      esac
+    done
+  elif [ "${1:-}" = "--lower" ] || [ "${1:-}" = "--reason" ]; then
+    echo "start: --lower and --reason belong to 'start --amend'" >&2; return 64
+  fi
   local rid="${1:-}" lane="${2:-}" classified="${3:-}" type="${4:-}" ctype="${5:-}" repo="${6:-}"
   if [ -z "$rid" ] || [ -z "$lane" ] || [ -z "$classified" ] || [ -z "$type" ]; then
     echo "usage: $uprefix <rid> <chosen-lane> <classified-lane> <chosen-type> [classified-type] [repo]" >&2; return 64
+  fi
+  if [ "$lower" = 1 ] && [ -z "${reason//[[:space:]]/}" ]; then
+    echo "start --amend --lower needs --reason \"<text>\"" >&2; return 64
   fi
   [ -n "$repo" ] || repo="$(basename "$(git rev-parse --show-toplevel 2>/dev/null || pwd)")"
   # the KV blob is space-split read-side; a space in any value corrupts the parse
@@ -197,6 +240,29 @@ start() {
   lane="$(printf '%s' "$lane" | tr ' ' '-')"
   classified="$(printf '%s' "$classified" | tr ' ' '-')"
   mkdir -p "$RUNS_DIR"
+  # Lowering guard: ship-gate reads the LAST START-AMEND, so an unguarded amend could re-lane a run
+  # to a lighter lane and shed its gates. The refusal writes nothing; an accepted lowering leaves an
+  # override-style line that lane-telemetry counts.
+  if [ "$marker" = START-AMEND ]; then
+    local prev prank nrank
+    prev="$(_effective_lane "$rid")"
+    prank="$(_lane_rank "$prev")"; nrank="$(_lane_rank "$lane")"
+    # An unknown target lane is refused: ship-gate reads the lane back with [a-z-]+, so a look-alike
+    # name (tiny2, tiny_x) would read as tiny and dodge the guard below. The lane data holds exactly
+    # these five lanes (lane-data.sh LANE_NAMES), so every valid target has a rank.
+    if [ -z "$nrank" ]; then
+      echo "start --amend: '$lane' is not a lane (known: tiny normal full bug backfill)." >&2
+      return 64
+    fi
+    if [ -n "$prank" ] && [ -n "$nrank" ] && [ "$nrank" -lt "$prank" ]; then
+      if [ "$lower" != 1 ]; then
+        echo "start --amend: refused. '$rid' is lane $prev; $lane is lighter (order: tiny < normal = bug = backfill < full)." >&2
+        echo "To lower the lane on purpose: start --amend --lower --reason \"<why>\" $rid $lane ... (flags before the rid; record-batch has none, so run start --amend --lower first). Recorded as a lane-lower override for audit." >&2
+        return 65
+      fi
+      append_run_line "$rid" "$(printf '%s | GATE | lane-lower | override | %s -> %s: %s' "$(now)" "$prev" "$lane" "$reason")"
+    fi
+  fi
   local line
   line="$(printf '%s | %s | lane=%s classified=%s type=%s' "$(now)" "$marker" "$lane" "$classified" "$type")"
   [ -n "$ctype" ] && line="$line ctype=$ctype"
@@ -485,6 +551,26 @@ override() {
   fi
   mkdir -p "$RUNS_DIR"
   append_run_line "$rid" "$(printf '%s | GATE | %s | override | %s' "$(now)" "$phase" "$reason")"
+}
+
+# review-verdict <rid>: the LAST verdict the review commands recorded for this run, one of SHIP,
+# FIX THEN SHIP, DO NOT SHIP; nothing when none was recorded. /kit:review, /kit:review-team and
+# /kit:battery write `record <rid> review ran "<verdict> findings=..."` (battery normalizes to the
+# review gate), so the verdict is the first words of a `GATE | review | ran` reason. A reason that
+# starts with anything else (a bare "ok", a note) is skipped and never clears an earlier verdict.
+# ship-gate cross-checks this against the spec's own `## Review` verdict line.
+review_verdict() {
+  local f; f="$(ledger_file "${1:-}")" || return 0
+  [ -f "$f" ] || return 0
+  awk -F' [|] ' '
+    $2=="GATE" && $3=="review" && $4=="ran" {
+      r=$5; for (i=6; i<=NF; i++) r=r " | " $i
+      r=toupper(r); sub(/^[ \t*_`]+/, "", r)
+      if (r ~ /^DO[ -]NOT[ -]SHIP([ :;,.]|$)/) v="DO NOT SHIP"
+      else if (r ~ /^FIX[ -]THEN[ -]SHIP([ :;,.]|$)/) v="FIX THEN SHIP"
+      else if (r ~ /^SHIP([ :;,.]|$)/) v="SHIP"
+    }
+    END { if (v != "") print v }' "$f"
 }
 
 show() { local f; f="$(ledger_file "${1:-}")"; if [ -f "$f" ]; then cat "$f"; else echo "(no ledger for '${1:-}')" >&2; return 1; fi; }
@@ -1712,9 +1798,10 @@ _vr_dispatch() {
 # sessions reach for most. The other verbs print their own `usage:` line when called bare.
 usage() {
   cat <<'EOF'
-usage: gate-ledger.sh {required|start|record|action|tokens|debt|debt-response|outcome|outcome-read|mutation|config|override|plan-record|record-batch|inherit|check|show|plan|progress|rid|descent|history|report|validate-round} ...
+usage: gate-ledger.sh {required|start|record|action|tokens|debt|debt-response|outcome|outcome-read|mutation|config|override|plan-record|record-batch|inherit|check|show|review-verdict|plan|progress|rid|descent|history|report|validate-round} ...
 
   start [--amend] <rid> <chosen-lane> <classified-lane> <chosen-type> [classified-type] [repo]
+  start --amend --lower --reason "<text>" <rid> <lighter-lane> ...   lowering needs both flags
   record <rid> <phase> <ran|skipped> [reason]
   override <rid> <phase> <reason>
   record-batch <rid> <lane> [--evidence-default "<text>"] <phase>=<ran|skipped|override>:<evidence> ...
@@ -1747,6 +1834,7 @@ case "$cmd" in
   inherit)  inherit "$@" ;;
   check)    check "$@" ;;
   show)     show "$@" ;;
+  review-verdict) review_verdict "$@" ;;
   plan)     plan "$@" ;;
   progress) progress "$@" ;;
   rid)      rid "$@" ;;

@@ -39,7 +39,7 @@ Spec words never pick `full`: a hard-gate match is only a `LANE-SUGGEST` line, a
 - **`ESCALATE <current> -> <heavier>`**: the spec's own text classifies to a heavier lane
   than the one it carries. Re-plan up-only -- this never stops the run, it only adds
   rigor:
-  1. `bash lib/gate/gate-ledger.sh start --amend "$RID" <heavier> <classified-lane> <chosen-type> <ctype> <repo>` -- readers take the LAST START-AMEND, so the ledger's effective lane becomes `<heavier>` and `required <heavier>`'s extra measure-twice gates are now required for this run.
+  1. `bash lib/gate/gate-ledger.sh start --amend "$RID" <heavier> <classified-lane> <chosen-type> <ctype> <repo>` -- readers take the LAST START-AMEND (raising the lane needs no flag; lowering needs `--lower --reason`), so the ledger's effective lane becomes `<heavier>` and `required <heavier>`'s extra measure-twice gates are now required for this run.
   2. Bump the spec's `Lane:` header UP to `<heavier>` (never down) -- `hooks/ship-gate.sh` reads that header to pick the required gate set, so the heavier set is enforced at ship, not just recorded mid-flight.
   3. `bash lib/gate/gate-ledger.sh action "$RID" "lane escalated <current> -> <heavier> at spec->build boundary"` -- one durable line naming the escalation.
 - **`HOLD <current>`**: the spec-implied lane is the same or lighter than the current

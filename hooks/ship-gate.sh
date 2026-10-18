@@ -12,8 +12,9 @@
 # is no repo, no spec, no resolvable remote default, or no kit lib at all, so a bug here cannot
 # block unrelated work. Force-push stays safety-gate.sh's job. One safety rule lives here because only this hook
 # resolves the destination ref: a git push that lands on a default branch is refused in any repo
-# (_default_block). A second rule that reads the spec: a DO NOT SHIP review verdict refuses the push
-# (ship_rule_review_verdict, [gate] review_verdict). Exit 2 = block.
+# (_default_block). A second rule that reads the spec: a DO NOT SHIP review verdict, or a spec verdict that
+# differs from the last one the run ledger recorded, refuses the push (ship_rule_review_verdict,
+# [gate] review_verdict). Exit 2 = block.
 set -uo pipefail
 # Hook logs live under the ledger root (lib/telemetry/hook-log-dir.sh); the fallback keeps a hook running without lib/.
 . "${BASH_SOURCE[0]%/*}/../lib/telemetry/hook-log-dir.sh" 2>/dev/null || kit_hook_log_dir() { printf '%s' "${KIT_LEDGER_DIR:-${DWARVES_KIT_LOG_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/dwarves-kit/logs}}/hooks"; }
@@ -373,9 +374,10 @@ if [ -z "$SPEC" ]; then
   exit 0
 fi
 
-# Review-verdict rule (ship-rules.sh): a spec whose last '## Review' verdict is DO NOT SHIP refuses the
-# push. It reads the spec only, so it runs before the lane checks and whatever the lane or lane_gates say.
-ship_rule_review_verdict "$ROOT" "$MBASE" "$PHEAD" "$SPEC" "$SLUG" || exit 2
+# Review-verdict rule (ship-rules.sh): a spec whose last '## Review' verdict is DO NOT SHIP, or differs from
+# the last verdict the run ledger recorded for this slug, refuses the push. It needs no lane, so it runs
+# before the lane checks and whatever the lane or lane_gates say.
+ship_rule_review_verdict "$ROOT" "$MBASE" "$PHEAD" "$SPEC" "$SLUG" "$LEDGER62" || exit 2
 
 # Test-plan coverage advisory (never blocks): the spec carries a ## Test plan, so the proof-of-done owes
 # a ## Test plan coverage map -- each matrix row mapped to the run that exercised it, or an
