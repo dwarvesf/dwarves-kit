@@ -163,7 +163,8 @@ Every workflow, lane, loop, side-flow, and alternate path in one connected pictu
   ⚡1 safety-gate ............ destructive Bash (rm -rf, DROP TABLE, git reset --hard); stands over
                               EVERY Bash call at ANY point in this picture, not only at ship
   ⚡2 push-to-main blocker ... push to main/protected branches; plus the ship-gate: no push
-                              without recorded proof/gate ledger entries
+                              without recorded proof/gate ledger entries, and none while the
+                              spec's last ## Review verdict is DO NOT SHIP
   ⚡3 anti-rationalization ... premature "done", phantom-impl stub, guess-fix while ## Root cause
                               is empty (Stop hook)
   ⚡4 verification pipeline .. unmet acceptance criteria / tests that did not run (the EXECUTE
@@ -296,9 +297,10 @@ Off-ramp entries that also land in Shape: `[H/I] /kit:onboard` (first run, orche
  ## Review verdict ──> [H/I] /kit:docs ──> [D] doc-verifier ──> docs match code
     |
     v
- [H/I] /kit:ship ──> reads ## Review (DO NOT SHIP = stop, HARD) ──> version + changelog
+ [H/I] /kit:ship ──> reads ## Review (DO NOT SHIP = stop) ──> version + changelog
     |                 + [D] advisor ──> commit ──> PR
-    |                 [E] ship-gate HARD: no push without recorded proof/gates
+    |                 [E] ship-gate HARD: no push without recorded proof/gates, and none while the
+                     spec's last ## Review verdict is DO NOT SHIP ([gate] review_verdict)
     |                 [E] safety-gate HARD: push-to-main / force-push / destructive Bash
     v
  shipped ──> Reflect (/kit:retro)
@@ -416,7 +418,7 @@ One line per live feature: `entry -> ... -> terminal`. Grouped by kind; every fe
 | `[H/I] /kit:explain -> literate-diff explainer -> feeds /kit:quiz-gate` |
 | `[H/I] /kit:quiz-gate -> 5 diff-grounded questions -> engage/defer/wave logged (advisory)` |
 | `[H/I] /kit:pitch <rid> -> assemble buy-in doc from existing sources -> doc (never fabricates)` |
-| `[H/I] /kit:ship -> gate check + version + changelog + PR -> /kit:retro (HARD on DO NOT SHIP)` |
+| `[H/I] /kit:ship -> gate check + version + changelog + PR -> /kit:retro (ship-gate refuses a push on DO NOT SHIP)` |
 | `[H/I] /kit:greenlight -> snapshot PR checks via gh -> real vs flaky -> fix-agent (real) / bounded retry (flaky) -> one terminal state (report-only, human merges)` |
 | `[H/I] /kit:retro -> capture learnings -> docs/retro/v<version>.md -> feeds next /kit:think` |
 | `[H/I] /kit:wrap -> flip board rows + merge green PRs + deploy check + worktree tidy -> skim-first report (distill half on by default)` |

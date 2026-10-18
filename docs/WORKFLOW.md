@@ -164,7 +164,7 @@ migration (same dry-run + rollback shape); agent-org config rides spec-feature l
 | Build    | /kit:execute or /kit:next | tasks checked, end verifiers PASS | verification pipeline (one builder, one end verification pass, fix; max 2) |
 | Review   | /kit:review or /kit:review-team | review verdict recorded; full lane loops per SPEC-231 | advisory (default-run + bounded loop on full: SPEC-231, docs/patterns/review-fix-loop.md) |
 | Docs     | /kit:docs | README/CHANGELOG match code | advisory |
-| Ship     | /kit:ship | tagged + PR | ship gate (blocks on DO NOT SHIP), push-to-main blocker |
+| Ship     | /kit:ship | tagged + PR | ship gate (refuses a push or PR while the spec's last `## Review` verdict is DO NOT SHIP; `[gate] review_verdict`), push-to-main blocker |
 | Reflect  | /kit:retro | docs/retro/v<version>.md written | advisory |
 | Debug (off-cycle) | /kit:debug | root cause recorded, fix verified (human-confirmed only when `debug.confirm_fix=true`) | iron law + guess-fix guard (anti-rationalization) |
 
@@ -1357,7 +1357,14 @@ The edges that fire when the happy path does not hold.
    double-advancing status. The filesystem is the source of truth.
 6. **DO-NOT-SHIP gate.** `/kit:ship` reads the spec's `## Review` verdict first.
    `DO NOT SHIP` -> stop, fix first. `FIX THEN SHIP` -> apply fixes, then ship. No
-   `## Review` section -> warn and ask; never silently skipped.
+   `## Review` section -> warn and ask; never silently skipped. The hook backs the
+   command: `hooks/ship-gate.sh` reads the LAST `Verdict:` line inside the spec's
+   `## Review` section(s) and, on `DO NOT SHIP`, refuses `git push` and `gh pr create`
+   (exit 2, `BLOCKED | ship-gate | <slug> (review verdict DO NOT SHIP)` in `ship-gate.log`).
+   Re-running `/kit:review` replaces the section and clears it. No `## Review` section, no
+   verdict, or an unreadable spec passes. On by default; `[gate] review_verdict = false` in
+   a committed `.kit.toml` (read at the merge base) opts out. A ledger `review ran` record
+   alone never satisfies this; only the verdict line counts.
 7. **Completeness warn + log (not a block).** Two self-checks (decision-translation and
    doc-update) warn + log to `~/.claude/dwarves-kit/logs/completeness.log` without
    blocking; `/kit:ship` and `/kit:retro` review that log at the gate. (Full rule: the

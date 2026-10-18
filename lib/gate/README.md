@@ -90,11 +90,27 @@ TS | MUTATION| verdict=flag|clean|skip [k=v ...]
 the ship-gate all ignore it (they key on `$2=="GATE"`). A TOKENS, DEBT, OUTCOME or MUTATION line
 can never fake, satisfy, or mask a gate. Keep that property when adding a marker verb.
 
+### The review verdict rule (`ship-rules.sh`)
+
+`hooks/ship-gate.sh` refuses a `git push` or `gh pr create` while the branch spec's last review
+verdict is `DO NOT SHIP`. `ship_rule_review_verdict` finds the spec the way the lane check does
+(`spec-find.sh`), then reads every `## Review` section (an exact heading, so `## Review
+disposition` does not count). The LAST `Verdict:` line there whose value starts with `SHIP`,
+`FIX THEN SHIP` or `DO NOT SHIP` wins; `/kit:review` and `/kit:review-team` write it as
+`### Verdict: ...` and replace the section on a re-run, so a fresh review clears the block.
+Code fences and other verdict words (`SOLID`, `SECURE`) are skipped. No section, no verdict or an
+unreadable spec passes, and the other rules still apply. A ledger `review ran` record never
+stands in for the verdict: only the line in the spec counts. The rule runs before the lane
+checks, so it holds whatever the spec's `Lane:` says. It logs `BLOCKED | ship-gate | <slug>
+(review verdict DO NOT SHIP)` to `ship-gate.log`. Key: `[gate] review_verdict`, default ON, read
+at the merge base (an opt-out must already sit on the default branch). Proof:
+`tests/test-ship-gate-review-verdict.sh`.
+
 ## Turning a gate on
 
 The blocking quality gates are OPT-IN. The kit root says `false` for every key except
-`board_row_gate`, so a fresh install blocks nothing else until someone turns a gate on.
-`board_row_gate` defaults on; a repo opts out with `board_row_gate = false` in a committed
+`board_row_gate`, `fixture_identities` and `review_verdict`, so a fresh install blocks nothing else until someone turns a gate on.
+Those three default on; a repo opts out with `<key> = false` in a committed
 `.kit.toml`, under the same committed-and-clean rule as any project `false`. Two places do that, and both apply on
 the next hook fire, no re-adopt, no restart:
 
@@ -108,6 +124,7 @@ understanding_gate = true    # anti-rationalization Stop hook (ADR-0031)
 commit_format      = true    # commit-subject lint
 board_row_gate     = false   # board-row-gate hook: default ON, so the useful setting is false
 fixture_identities  = false  # ship-gate fixture git identity check: default ON, so the useful setting is false
+review_verdict     = false   # ship-gate DO NOT SHIP review verdict check: default ON, so the useful setting is false
 ```
 
 `lib/gate/gate-policy.sh enabled <key> [root]` is the one reader; hooks call it and never
@@ -156,6 +173,7 @@ bash tests/test-ledger-durability.sh     # 37, SPEC-097 durable root, override g
 bash tests/test-ledger-substrate.sh      #  9, the one append substrate
 bash tests/test-quiz-gate.sh             # 29, SPEC-125 grounded questions + anti-fatigue
 bash tests/test-ship-gate-fail-closed.sh #  5, SPEC-048
+bash tests/test-ship-gate-review-verdict.sh # 28, DO NOT SHIP verdict blocks; last wins; key off
 bash tests/test-gate-opt-out.sh          # [gate] false switches each quality gate off (machine has them on); safety gate immune
 bash tests/test-gate-opt-in.sh           # kit defaults: every quality gate off; a project true turns one on
 bash tests/test-ship-gate-profiles.sh    # install-dependent, see below

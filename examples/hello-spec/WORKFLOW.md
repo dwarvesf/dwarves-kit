@@ -32,7 +32,7 @@ The ship-gate applies the full lane's gates to any diff that touches a hard path
 | Build    | /kit:execute or /kit:next | tasks checked, verifier PASS | verification pipeline (worker, verifier, fix; max 2) |
 | Review   | /kit:review or /kit:review-team | review verdict recorded | advisory |
 | Docs     | /kit:docs | README/CHANGELOG match code | advisory |
-| Ship     | /kit:ship | tagged + PR | ship gate (blocks on DO NOT SHIP), push-to-main blocker |
+| Ship     | /kit:ship | tagged + PR | ship gate (refuses a push or PR while the spec's last `## Review` verdict is DO NOT SHIP; `[gate] review_verdict`), push-to-main blocker |
 | Reflect  | /kit:retro | docs/retro/v<version>.md written | advisory |
 
 Throughout: safety-gate blocks destructive Bash; anti-rationalization blocks

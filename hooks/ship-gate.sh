@@ -9,7 +9,8 @@
 # repo, no spec, no lane, missing tooling) so a bug here can never block unrelated
 # work. Force-push stays safety-gate.sh's job. One safety rule lives here because only this hook
 # resolves the destination ref: a git push that lands on a default branch is refused in any repo
-# (_default_block). Exit 2 = block.
+# (_default_block). A second rule that reads the spec: a DO NOT SHIP review verdict refuses the push
+# (ship_rule_review_verdict, [gate] review_verdict). Exit 2 = block.
 set -uo pipefail
 # Preserve fail-open even on the pathological case (HOME unset under set -u): the lib
 # fallback below uses $HOME, so default it to empty rather than error-exit.
@@ -366,6 +367,10 @@ if [ -z "$SPEC" ]; then
   _floor_check
   exit 0
 fi
+
+# Review-verdict rule (ship-rules.sh): a spec whose last '## Review' verdict is DO NOT SHIP refuses the
+# push. It reads the spec only, so it runs before the lane checks and whatever the lane or lane_gates say.
+ship_rule_review_verdict "$ROOT" "$MBASE" "$SPEC" "$SLUG" || exit 2
 
 # Test-plan coverage advisory (never blocks): the spec carries a ## Test plan, so the proof-of-done owes
 # a ## Test plan coverage map -- each matrix row mapped to the run that exercised it, or an

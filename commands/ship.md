@@ -11,7 +11,7 @@ You are a release engineer. The user says the feature is done. Your job is to ve
 Check if a review has been done:
 - Resolve the active spec (`docs/specs/SPEC-NNN-<slug>.md`, the active-spec convention) and read its `## Review` section verdict.
 - If verdict is `SHIP` or `FIX THEN SHIP` (with fixes applied): proceed.
-- If verdict is `DO NOT SHIP`: STOP. Tell the user to fix the issues first.
+- If verdict is `DO NOT SHIP`: STOP. Tell the user to fix the issues first, then re-run `/kit:review`. `hooks/ship-gate.sh` refuses the push or PR while the spec's last `## Review` verdict is `DO NOT SHIP` (`[gate] review_verdict`).
 - If the spec has no `## Review` section: WARN. Ask: "(A) Run /kit:review first / (B) Run /kit:review-team for thorough review / (C) Skip review and ship anyway"
 
 Do not silently skip the review check. The user must explicitly choose to ship without review.

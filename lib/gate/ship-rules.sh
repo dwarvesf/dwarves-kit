@@ -17,6 +17,9 @@
 #                                                  <shown-spec> is the path the message names (default <spec>)
 #   ship_rule_identities <root> <base> <head>      a push whose new commits carry a fixture git identity (x@x, t@t.dev,
 #                                                  example.com, .local) is refused; [gate] fixture_identities = false opts out
+#   ship_rule_review_verdict <root> <base> <spec> <rid>
+#                                                  a spec whose last `## Review` verdict is DO NOT SHIP refuses the
+#                                                  push; no section or no verdict passes; [gate] review_verdict = false opts out
 #   ship_rule_floor <root> <base> <head> <rid> <spec> <ledger> [<cfg-rev>]
 #                                                  a hard-path diff owes the full lane's gates; every hard-path
 #                                                  skip and every refused exemption config is printed on stderr,
@@ -232,6 +235,51 @@ ship_rule_identities() {
     echo "Fix: git commit --amend --reset-author (last commit), or git rebase -i with --reset-author per commit; a Co-authored-by line needs a message edit."
     echo "Then check 'git config user.email' in this worktree: a test or script left a fixture value there (an unset identity on a Mac gives user@Host.local)."
     echo "A legit internal domain that looks like this: set 'fixture_identities = false' under [gate] in a committed .kit.toml."
+  } >&2
+  return 2
+}
+
+# ship_rule_review_verdict <root> <base> <spec> <rid>: refuse a push whose spec records DO NOT SHIP.
+# /kit:review and /kit:review-team write a `### Verdict: SHIP | FIX THEN SHIP | DO NOT SHIP` line inside
+# a `## Review` section of the spec, replacing the prior section. The LAST canonical verdict line inside
+# any `## Review` section wins (code fences skipped; `Verdict: SECURE` and other non-ship words are
+# ignored). A spec with no `## Review` section, no canonical verdict, or an unreadable file passes: other
+# rules still apply. Off with `review_verdict = false` under [gate] in a committed .kit.toml, read at the
+# merge base so a push cannot switch off its own check. Prints the message and returns 2 on a hit.
+_sr_review_last_verdict() {  # _sr_review_last_verdict <spec>: prints SHIP, FIX THEN SHIP or DO NOT SHIP, else nothing
+  awk '
+    /^```/ { fence = !fence; next }
+    fence { next }
+    /^#[[:space:]]/ || /^##[[:space:]]/ { inrev = ($0 ~ /^##[[:space:]]+Review[[:space:]]*$/); next }
+    !inrev { next }
+    {
+      line = $0
+      sub(/^[#[:space:]*_>-]+/, "", line)
+      if (line !~ /^Verdict[^:]*:/) next
+      sub(/^[^:]*:[[:space:]*_`]*/, "", line)
+      line = toupper(line)
+      if (line ~ /^DO[ -]NOT[ -]SHIP([^A-Z0-9]|$)/) v = "DO NOT SHIP"
+      else if (line ~ /^FIX[ -]THEN[ -]SHIP([^A-Z0-9]|$)/) v = "FIX THEN SHIP"
+      else if (line ~ /^SHIP([^A-Z0-9]|$)/) v = "SHIP"
+    }
+    END { if (v != "") print v }
+  ' "$1" 2>/dev/null
+}
+ship_rule_review_verdict() {
+  local root="$1" base="$2" spec="$3" rid="$4" verdict
+  [ -n "$spec" ] && [ -r "$spec" ] || return 0
+  if ! ship_rules_switch_on review_verdict "$root" "$base"; then
+    _sr_log "OFF-BY-CONFIG | review-verdict | $rid"
+    return 0
+  fi
+  verdict=$(_sr_review_last_verdict "$spec") || return 0
+  [ "$verdict" = "DO NOT SHIP" ] || return 0
+  _sr_log "BLOCKED | ship-gate | $rid (review verdict DO NOT SHIP)"
+  {
+    echo "BLOCKED: ship-gate. The '## Review' section of spec '$rid' ends in the verdict DO NOT SHIP:"
+    echo "  $spec"
+    echo "Fix what the review found, then re-run /kit:review (or /kit:review-team). It replaces the '## Review' section, so the new verdict clears this block."
+    echo "A project that does not want this check: set 'review_verdict = false' under [gate] in a committed .kit.toml."
   } >&2
   return 2
 }
