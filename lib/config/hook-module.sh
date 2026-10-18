@@ -15,14 +15,22 @@
 # call. Every uncertainty answers "not off" so the hook runs: a missing table, a hook the table
 # does not list, the spine, a value that is not literally true or false.
 # tests/test-anchor-module-gate.sh pins the precedence against kit_config_get.
+#
+# Trust decision: the project layer wins, as it does for kit_config_get, so a project .kit.toml
+# can turn a module off for the sessions that open that repo. That is a local convenience choice,
+# never the safety rules: the spine (safety-gate, secrets-guard, ship-gate and the rest) is not
+# toggleable, and a [gate] key is read at the default branch by ship-gate itself. Two small
+# differences from kit_config_get fail safe: an empty config file is skipped (an empty file would
+# shift the layer index), and a value that is not literally true or false falls through to the
+# next layer instead of ending the lookup.
 [ "${1:-}" = off ] && [ -n "${2:-}" ] || exit 1
-_tsv="${KIT_MODULES_FILE:-$(dirname "$0")/modules.tsv}"
+_tsv="${KIT_MODULES_FILE:-${0%/*}/modules.tsv}"
 [ -f "$_tsv" ] || exit 1
 _files=("$_tsv"); _layers="t"
 for _l in "p:${KIT_PROJECT_ROOT:-$PWD}/.kit.toml" \
           "o:${KIT_CONFIG_OPERATOR:-${XDG_CONFIG_HOME:-$HOME/.config}/dwarves-kit}/kit.toml" \
           "r:${KIT_CONFIG_ROOT:-${DWARVES_KIT:-$HOME/.claude/dwarves-kit}}/kit.toml"; do
-  [ -f "${_l#*:}" ] && { _files+=("${_l#*:}"); _layers="$_layers ${_l%%:*}"; }
+  [ -s "${_l#*:}" ] && { _files+=("${_l#*:}"); _layers="$_layers ${_l%%:*}"; }
 done
 [ "$(awk -F'\t' -v hook="$2" -v layers="$_layers" '
   BEGIN { split(layers, L, " ") }

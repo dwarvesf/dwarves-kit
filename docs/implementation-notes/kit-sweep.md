@@ -14,3 +14,5 @@ Deltas and decisions from the brief. No spec drove this sweep; the brief was the
 | Drift rows 17, 37, 39 | NOT APPLICABLE | The money-gate docs dir is required by the contract test, `bin/learn` is not yet due, and the session-state hook is gone. |
 | Hermes bridges | Closed as accepted | Operator decision: keep both as separate jobs. |
 | FEATURES.md | Regenerated with `check --fix` | The new lib script and test files move its counts. |
+| Who may switch a module off | The project `.kit.toml` wins, as the brief and `kit_config_get` specify | The review lens flagged that a PR branch controls that file. The spine and every `[gate]` key sit outside this toggle, and ship-gate reads gate keys at the default branch, so a project file can only quiet the opt-in and board hooks in the sessions that open that repo. The header of `lib/config/hook-module.sh` records the decision. |
+| Differences from `kit_config_get` | An empty config file is skipped; a value that is not `true` or `false` falls through to the next layer | Both fail toward running the hook. |

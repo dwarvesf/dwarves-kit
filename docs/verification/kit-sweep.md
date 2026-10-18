@@ -21,7 +21,7 @@
 ```
 Command: bash tests/test-anchor-module-gate.sh
 Exit: 0
-Output: Results: 28 passed, 0 failed
+Output: Results: 39 passed, 0 failed
 Verdict: PASS
 ```
 
@@ -49,7 +49,7 @@ Command: bash lib/gate/negctl.sh "$PWD" "bash tests/test-anchor-module-gate.sh" 
 Exit: 1 (under mutation, RED expected)
 Output: Results: 23 passed, 5 failed
 Restore: git checkout HEAD -- hooks/anchor-root.sh
-Exit: 0 (green after restore, 28 passed)
+Exit: 0 (green after restore, 39 passed)
 Verdict: PASS
 ```
 
@@ -61,6 +61,10 @@ Restore: git checkout HEAD -- hooks/ship-gate.sh
 Exit: 0 (green after restore, 11 passed)
 Verdict: PASS
 ```
+
+## Review
+
+One read-only `kit:code-reviewer` lens on the wrapper and lib script returned FIX THEN SHIP. Applied: `${0%/*}` instead of two `dirname` forks, empty config files skipped, tests for prefix keys, CRLF, an empty file, a path with a space, stdin passthrough, one-module-per-hook and the spine fast path against the table row. Recorded as a decision: the project layer wins, as `kit_config_get` does (header of `lib/config/hook-module.sh`).
 
 ## Not proven
 

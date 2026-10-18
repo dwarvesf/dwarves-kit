@@ -21,7 +21,7 @@ case "$(pwd -P)/" in "$ROOT"/*) cd "$ROOT" 2>/dev/null || true ;; esac
 # hooks/ on purpose: no hook names the config files (tests/test-gate-opt-out.sh lints it).
 case "${1##*/}" in
   safety-gate.sh|secrets-guard.sh|ship-gate.sh|spec-drift-guard.sh|commit-format.sh|anti-rationalization.sh) ;;
-  *) bash "$(dirname "$0")/../lib/config/hook-module.sh" off "${1##*/}" 2>/dev/null && exit 0 ;;
+  *) bash "${0%/*}/../lib/config/hook-module.sh" off "${1##*/}" 2>/dev/null && exit 0 ;;
 esac
 # A .sh hook runs under an explicit `bash`, never by its exec bit: a hook that lost the bit
 # must still block (exit 2), not exit 126, which Claude Code treats as non-blocking. Every

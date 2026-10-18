@@ -98,6 +98,38 @@ parity "operator beats root" cosmetic slop-cleaner.sh "" $'[modules]\ncosmetic =
 parity "project beats operator" board board-row-gate.sh $'[modules]\nboard = false' $'[modules]\nboard = true' ""
 parity "inline comment and section comment" session context-readiness.sh "" "" $'[modules]   # x\nsession = true   # on'
 
+# layer-edge cases: prefix keys, CRLF, an empty file, a path with a space, a quoted value
+parity "prefix key: money does not match money_gate" money_gate money-gate.sh $'[modules]\nmoney = true' "" ""
+parity "prefix key: money_gate exact" money_gate money-gate.sh $'[modules]\nmoney_gate = true' "" ""
+parity "wrong section is ignored" cosmetic slop-cleaner.sh $'[other]\ncosmetic = true' "" ""
+parity "quoted false" board board-row-gate.sh $'[modules]\nboard = "false"' "" ""
+reset; printf '[modules]\r\ncosmetic = true\r\n' > "$T/proj/.kit.toml"
+want "CRLF config file" slop-cleaner ran
+reset; : > "$T/proj/.kit.toml"; printf '[modules]\ncosmetic = true\n' > "$T/op/kit.toml"
+want "an empty project file does not shift the layers" slop-cleaner ran
+mkdir -p "$T/with space"; reset; printf '[modules]\ncosmetic = true\n' > "$T/with space/.kit.toml"
+got="$(cd "$T/proj" && KIT_PROJECT_ROOT="$T/with space" KIT_CONFIG_OPERATOR="$T/op" KIT_CONFIG_ROOT="$T/root" bash "$T/kit/hooks/anchor-root.sh" "$T/kit/hooks/slop-cleaner.sh" </dev/null)"
+[ "$got" = RAN-slop-cleaner ] && ok "a project path with a space resolves" || no "a project path with a space resolves (got [$got])"
+reset
+# the hook still gets its stdin when it runs
+cat > "$T/kit/hooks/echo-stdin.sh" <<'STUB'
+#!/bin/bash
+cat
+STUB
+got="$(printf 'payload-123' | (cd "$T/proj" && KIT_PROJECT_ROOT="$T/proj" KIT_CONFIG_OPERATOR="$T/op" KIT_CONFIG_ROOT="$T/root" bash "$T/kit/hooks/anchor-root.sh" "$T/kit/hooks/echo-stdin.sh"))"
+[ "$got" = payload-123 ] && ok "an unlisted hook receives its stdin" || no "an unlisted hook receives its stdin (got [$got])"
+# no hook basename is claimed by two modules (first match would win silently)
+DUP="$(awk -F'\t' '!/^#/ && NF >= 4 { n = split($3, t, " "); delete seen; for (i = 1; i <= n; i++) { sub(/^[A-Za-z]*:/, "", t[i]); if (t[i] != "-" && !(t[i] in seen)) { seen[t[i]] = 1; c[t[i]]++ } } } END { for (k in c) if (c[k] > 1) print k }' "$KIT/lib/config/modules.tsv")"
+[ -z "$DUP" ] && ok "no hook belongs to two modules" || no "hooks claimed by two modules: $DUP"
+# the wrapper's spine fast path names exactly the table's spine hooks
+FAST="$(sed -n 's/^  \(safety-gate.sh|[^)]*\)) ;;$/\1/p' "$KIT/hooks/anchor-root.sh" | tr '|' '\n' | sort)"
+SPINE="$(awk -F'\t' '$1 == "spine" { n = split($3, t, " "); for (i = 1; i <= n; i++) { sub(/^[A-Za-z]*:/, "", t[i]); print t[i] } }' "$KIT/lib/config/modules.tsv" | sort -u)"
+[ -n "$FAST" ] && [ "$FAST" = "$SPINE" ] && ok "the spine fast path matches the table's spine row" || no "spine fast path drifted from the table (fast: $(echo $FAST) / table: $(echo $SPINE))"
+# spine = false in config changes nothing
+printf '[modules]\nspine = false\n' > "$T/proj/.kit.toml"
+if KIT_PROJECT_ROOT="$T/proj" KIT_CONFIG_OPERATOR="$T/op" KIT_CONFIG_ROOT="$T/root" bash "$KIT/lib/config/hook-module.sh" off safety-gate.sh; then no "spine = false is ignored"; else ok "spine = false is ignored"; fi
+reset
+
 # negative control: with the gate block removed the opt-in hook runs when it should be skipped
 cp "$KIT/lib/config/modules.tsv" "$KIT/lib/config/hook-module.sh" "$T/kit/lib/config/"
 awk '/^# Module gate/ { skip = 1 } /^# A \.sh hook runs under/ { skip = 0 } !skip' "$KIT/hooks/anchor-root.sh" > "$T/kit/hooks/anchor-root.sh"
