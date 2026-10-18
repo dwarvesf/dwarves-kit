@@ -17,10 +17,10 @@
 [ -n "${_KIT_LOG_DIR_SOURCED:-}" ] && return 0
 _KIT_LOG_DIR_SOURCED=1
 
-# The config-layer resolver (lib/config/kit-config.sh), sourced best-effort: it is a command-
-# time lib, never read by a hot hook, and this file is itself sourced by non-hook commands
-# only (gate-ledger.sh, proof-ledger.sh, lane-classify.sh, ...) -- see docs/proof-of-done.md
-# for the `hooks/*.sh` grep confirming no hook reaches this transitively.
+# The config-layer resolver (lib/config/kit-config.sh), sourced best-effort. It reads TOML, so it is
+# a command-time lib: hooks never source it at start. A hook reaches it only through
+# lib/telemetry/hook-log-dir.sh, and only at the moment it writes a log line (hook logs live in
+# <this root>/hooks).
 _KIT_LOG_DIR_SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib/config/kit-config.sh
 source "$_KIT_LOG_DIR_SELF/../config/kit-config.sh" || { echo "kit-log-dir: lib/config/kit-config.sh missing or unreadable" >&2; return 1; }

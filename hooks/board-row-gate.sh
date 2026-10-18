@@ -24,6 +24,8 @@
 # Never evaluates command text; everything below reads it as a string.
 
 set -uo pipefail
+# Hook logs live under the ledger root (lib/telemetry/hook-log-dir.sh); the fallback keeps a hook running without lib/.
+. "${BASH_SOURCE[0]%/*}/../lib/telemetry/hook-log-dir.sh" 2>/dev/null || kit_hook_log_dir() { printf '%s' "${KIT_LEDGER_DIR:-${DWARVES_KIT_LOG_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/dwarves-kit/logs}}/hooks"; }
 [ "${DWARVES_KIT_SKIP_BOARD_ROW_GATE:-0}" = "1" ] && exit 0
 INPUT=$(cat 2>/dev/null) || exit 0
 case "$INPUT" in *git*commit*) ;; *) exit 0 ;; esac   # fast path: no jq fork for most commands
@@ -221,7 +223,7 @@ NEW=$(comm -23 <(printf '%s\n' "$TAKEN") <(printf '%s\n' "$BASEIDS") | tr '\n' '
 NEW="${NEW% }"
 [ -n "$NEW" ] || exit 0
 
-LOG_DIR="${DWARVES_KIT_LOG_DIR:-$HOME/.claude/dwarves-kit/logs}"
+LOG_DIR="$(kit_hook_log_dir)"
 _log() { mkdir -p "$LOG_DIR" 2>/dev/null && printf '%s | %s | %s | %s\n' \
   "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$1" "$ROOT" "$NEW" >> "$LOG_DIR/board-row-gate.log" 2>/dev/null || true; }
 

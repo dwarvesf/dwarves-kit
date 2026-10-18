@@ -90,9 +90,13 @@ wait for them to exist" (ROADMAP) means concretely.
 
 ## Tier B: kit context/hook logs (loose envelope only, informational)
 
-8 standalone files, each written by one hook script, under
-`~/.local/state/dwarves-kit/logs/*.log` (sibling to the `runs/` directory, not inside
-it). All 8 satisfy the universal envelope (timestamp-prefixed, pipe-delimited,
+8 standalone files, each written by one script. The hook logs (`commit-format`,
+`safety-gate`, `ship-gate`, `slop-cleaner`, `spec-drift-guard`) live under
+`~/.local/state/dwarves-kit/logs/hooks/`; the other files (`completeness`, `mega-merge`,
+`proof-overrides`) sit in `~/.local/state/dwarves-kit/logs/*.log`, siblings of the
+`runs/` directory. `KIT_LEDGER_DIR` and `DWARVES_KIT_LOG_DIR` move both, since the
+hook directory is `<ledger root>/hooks` (resolved by `lib/telemetry/hook-log-dir.sh`).
+All 8 satisfy the universal envelope (timestamp-prefixed, pipe-delimited,
 append-only) but **do not** share Tier A's `VERB` enum or payload grammar, each hook
 defined its own field layout independently. They are named here for completeness (part
 of the goal's "confirm the ~10 existing kit stores... conform", conform at the

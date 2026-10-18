@@ -220,30 +220,10 @@ payload_tp() { jq -j -L "$JQLIB" "$LIB"'if type == "object" then (sf_get("transc
 # transcript_text <path> <max>: the text blocks of every user and assistant entry, newline-joined, the
 # last <max> characters kept, followed by an x sentinel; nothing when a crash shape is met (invalid
 # UTF-8, a line that is not an object, a message that is not an object, a non-string text block).
+# The parse itself lives in lib/session/parse_transcript.py (--harvest-text), the one transcript parser.
 transcript_text() {
   [ -f "$1" ] && [ -r "$1" ] || return 0
-  iconv -f UTF-8 -t UTF-8 "$1" >/dev/null 2>&1 || return 0
-  jq -L "$JQLIB" -R -n -j --argjson max "$2" "$LIB"'
-    def blocks($o):
-      ($o | sf_get("message"; null) | if truthy then . else {} end) as $m
-      | if ($m | type) != "object" then error("message")
-        else ($m | sf_get("content"; []) | if truthy then . else [] end) as $c
-          | if ($c | type) == "array" then [$c[] | select(type == "object" and .type == "text" and (.text | truthy)) | .text]
-            elif ($c | type) == "string" or ($c | type) == "object" then []
-            else error("content") end
-        end;
-    (reduce (inputs | pystrip | select(. != "" and (startswith("﻿") | not))) as $line ({parts: [], bad: false};
-       if .bad then .
-       else (try [$line | fromjson] catch []) as $p
-         | if ($p | length) == 0 then .
-           elif ($p[0] | type) != "object" then .bad = true
-           elif ($p[0].type | IN("user", "assistant")) then (try (.parts += blocks($p[0])) catch (.bad = true))
-           else . end
-       end)) as $r
-    | if $r.bad or ([$r.parts[] | type != "string"] | any) then empty
-      else ($r.parts | join("\n")) as $t
-        | (if ($t | length) > $max then $t[(0 - $max):] else $t end), "x"
-      end' "$1" 2>/dev/null
+  python3 "$HERE/../lib/session/parse_transcript.py" --harvest-text "$2" "$1" 2>/dev/null || return 0
 }
 
 # run_extractor <prompt-file> <out-file>: the extractor with the prompt on stdin, a 120 s timeout,

@@ -9,6 +9,8 @@
 # Source: GSD gsd-validate-commit.sh (adapted to bash+jq). Exit 2 = block.
 
 set -uo pipefail
+# Hook logs live under the ledger root (lib/telemetry/hook-log-dir.sh); the fallback keeps a hook running without lib/.
+. "${BASH_SOURCE[0]%/*}/../lib/telemetry/hook-log-dir.sh" 2>/dev/null || kit_hook_log_dir() { printf '%s' "${KIT_LEDGER_DIR:-${DWARVES_KIT_LOG_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/dwarves-kit/logs}}/hooks"; }
 INPUT=$(cat 2>/dev/null) || exit 0
 command -v jq >/dev/null 2>&1 || exit 0
 CMD=$(printf '%s' "$INPUT" | jq -r '.tool_input.command // empty' 2>/dev/null) || exit 0
@@ -24,7 +26,7 @@ POLICY="${CLAUDE_PLUGIN_ROOT:-$HOME/.claude/dwarves-kit}/lib/gate/gate-policy.sh
 if [ -f "$POLICY" ]; then
   PRC=0; bash "$POLICY" enabled commit_format "$(git rev-parse --show-toplevel 2>/dev/null || pwd)" || PRC=$?
   if [ "$PRC" -eq 1 ]; then
-    LOG_DIR="${DWARVES_KIT_LOG_DIR:-$HOME/.claude/dwarves-kit/logs}"
+    LOG_DIR="$(kit_hook_log_dir)"
     mkdir -p "$LOG_DIR" 2>/dev/null || true
     printf '%s | OFF-BY-CONFIG | commit_format | %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$(pwd)" >> "$LOG_DIR/commit-format.log" 2>/dev/null || true
     exit 0
@@ -46,7 +48,7 @@ case "$SUBJ" in
 esac
 
 block() {  # $1 = why
-  local LOG_DIR="${DWARVES_KIT_LOG_DIR:-$HOME/.claude/dwarves-kit/logs}"
+  local LOG_DIR="$(kit_hook_log_dir)"
   mkdir -p "$LOG_DIR" 2>/dev/null && printf '%s | BLOCKED | %s | %s\n' \
     "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$1" "subject omitted" \
     >> "$LOG_DIR/commit-format.log" 2>/dev/null || true
