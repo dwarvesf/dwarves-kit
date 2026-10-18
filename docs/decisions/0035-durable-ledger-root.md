@@ -63,6 +63,10 @@ Superseded in part: hook logs now live under the ledger root, in `<root>/hooks/`
 
 **6. Retention: append-only stands.** Restated from ADR-0034 decision 10 so it is visible from the root's own record: ledgers are never rewritten, and rotation is revisited only at a measured threshold (shared root over 100 MB, or `stats digest` wall-time over 10 s), never as silent TTL deletion.
 
+## Amendment: migration runs at install, never at runtime
+
+The one-time copy of the old corpus (and of the old hook logs, `<root>/hooks/`) no longer happens inside `kit_migrate_log_dir`, `ledger_root` or `kit_hook_log_dir`. Hooks reach all three, and a hook must not run migration code. The copy lives in `lib/telemetry/kit-migrate.sh`, which `install.sh` and `lib/adopt.sh` call once. The resolvers only resolve a path. `kit_migrate_log_dir` stays as a name for the corpus libs that still call it at load, and now only prints the one-line `kit_note_unmigrated` note when a legacy dir exists and the sentinel is missing, so a missed install is visible without a copy. Where this record says "migrates in additively on first access", read "on the first install or adopt". `[ledger].location = "isolated"` roots are no longer seeded from the machine corpus.
+
 ## Consequences
 
 - **The corpus survives a reinstall.** The default root is outside `~/.claude` entirely, so the 2026-07-01 failure cannot recur through that path. Verified by `lib/telemetry/tests/smoke.sh` case P4c, which asserts the default never resolves inside the blast zone whatever `$HOME` is.

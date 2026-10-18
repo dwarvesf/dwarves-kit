@@ -102,7 +102,12 @@ bash "$KIT/lib/adopt.sh" --with "<comma,separated,chosen>" "$REPO"
 
 This injects the contract AND seeds `<repo>/.kit.toml` with those modules `true` AND wires the
 enabled hook-bearing modules into `<repo>/.claude/settings.json`, all idempotent and non-destructive.
-Show the command's output (it reports what it created). Never call adopt a second time; the "not
+Show the command's output (it reports what it created). Tell the user what the seed turned on:
+a fresh `.kit.toml` sets `[gate] proof_of_done = true` and `lane_gates = true`, so a push of a
+load-bearing diff now needs a recorded proof and the lane's gates. To turn either off, set it to
+`false` in `<repo>/.kit.toml` and commit; the seeded comment says the same. Adopt also runs the
+one-time log migration (`lib/telemetry/kit-migrate.sh`) if old logs are still in the legacy dir.
+Never call adopt a second time; the "not
 adopted" repo becomes adopted here, once. If the call exits non-zero, print its error and stop this
 step with no partial state (adopt is atomic per file), then continue to D.
 
