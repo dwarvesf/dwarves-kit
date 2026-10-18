@@ -58,5 +58,5 @@ Module is the `install.sh --with` group that enables the hook. Spine hooks alway
 | `hooks/anchor-root.sh` | Wrapper every wired hook runs through. Changes to the repo root and exports `DWARVES_KIT_INVOCATION_CWD`. Prints nothing. |
 | `hooks/statusline.sh` | The `statusLine` command, not a hook. Prints `[<model>] <branch> \| ctx:N% \| $<cost> \| think:<on or off>`. Ships with the cosmetic module. |
 | `hooks/codex-hook-adapter.sh`, `hooks/codex-hooks.json` | Codex runtime adapter. It supports five hooks: safety-gate, ship-gate, commit-format, secrets-guard, anti-rationalization. |
-| `hooks/intake-sweep.sh` | Run by `backlog-stage.sh --surface`. Not wired as an event. |
+| `hooks/intake-sweep.sh` | Run by `backlog-stage.sh --surface`, which is wired on SessionStart. Not wired as its own event. |
 | `hooks/harvest_sweep.py` | Run by `harvest.sh` for its sweep and operator verbs. Not wired as an event. |
