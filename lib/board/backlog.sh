@@ -43,11 +43,23 @@
 #                                    `wrap.sh`'s union re-merge after a GitHub conflict, where the
 #                                    rows to fix are unknown up front and every one wants the same
 #                                    rule; a known single id still goes through plain `dedupe`.
-#   backlog.sh lint [file]         -> enumerate malformed board rows (wrong cell count,
-#                                    duplicate ids, `\|` escapes the bash parser cannot
+#   backlog.sh lint [file]         -> enumerate malformed board rows (wrong cell count for
+#                                    the table's own header, duplicate ids, `\|` escapes the bash parser cannot
 #                                    see, non-id first cells, unrecognized statuses).
 #                                    Enumerator, exits 0; the fix verbs are dedupe and
 #                                    a hand edit.
+#   backlog.sh add [--notes TEXT] [--mid VALUE]... [--status STATE] [--section HEADING] [--] <title>
+#                                  -> mint the next id and write ONE new row, under the shared
+#                                    board lock (the verb that files a new row: `board capture`,
+#                                    `board promote`, /kit:assign freeform, /kit:wayfind and
+#                                    web-drift all call it). Prints the id. The row is written in
+#                                    the target table's own column count, read from its header:
+#                                    --mid fills the cells between the title and the status in
+#                                    order (--notes is the first), unfilled cells stay empty.
+#                                    --section targets the table under that heading line (made
+#                                    from the board's first table header when absent); without
+#                                    it the row lands at the top of the first `| ID |` table.
+#                                    The status must be a legal state (default queued).
 #   backlog.sh states              -> the legal state names
 #
 # BACKLOG_FILE overrides the file path (tests point it at a fixture copy).
@@ -290,7 +302,12 @@ lint() {
     function report(rule, line, detail) {
       printf "line %s: %s: %s\n", line, rule, detail; n++
     }
-    /^[ \t]*\|[ \t]*ID[ \t]*\|/ { intable = 1; next }
+    /^[ \t]*\|[ \t]*ID[ \t]*\|/ {
+      intable = 1
+      # column count from the table header itself: unescaped pipes minus one
+      h = $0; gsub(/\\\|/, "", h); ncols = gsub(/\|/, "|", h) - 1
+      next
+    }
     intable && /^[ \t]*\|[\-: |]*$/ { next }
     intable && $0 !~ /^[ \t]*\|/ { intable = 0 }
     intable && /^[ \t]*\|/ {
@@ -302,7 +319,7 @@ lint() {
       # sync parser and still leaves the status cell readable from the end
       esc = $0; gsub(/\\\|/, "", esc)
       pipes = gsub(/\|/, "|", esc)
-      if (pipes != 5) report("cell-count", NR, "expected 4 cells, found " (pipes - 1))
+      if (pipes != ncols + 1) report("cell-count", NR, "expected " ncols " cells, found " (pipes - 1))
       id = $2; gsub(/^[ \t]+|[ \t]+$/, "", id)
       if (id !~ ("^" idre "$")) { report("id-format", NR, "first cell is not an id: " substr(id, 1, 30)); next }
       seen[id]++; lines[id] = (id in lines) ? lines[id] ", " NR : NR
@@ -319,6 +336,14 @@ lint() {
       for (id in seen) if (seen[id] > 1) report("duplicate-id", lines[id], id ": " seen[id] " rows; dedupe first")
       if (n == 0) print "(no lint findings)"
     }' "$file"
+}
+
+# add <title> [flags] -- the verb for a NEW row. The flags, the lock, the id mint and the write
+# all live in board_add.py (board_lock held across the whole read -> mint -> write); this hands
+# over the legal states through the environment, so the one parser validates the status.
+add_row() {
+  command -v python3 >/dev/null 2>&1 || { echo "backlog.sh add: python3 is required (the board lock lives in sync_core)" >&2; return 1; }
+  BOARD_ADD_STATES="$STATES" python3 "$BACKLOG_DIR/board_add.py" add "$BACKLOG_FILE" "$@"
 }
 
 # _board_locked <target-file> <argv...> -- re-run this invocation under the shared
@@ -371,8 +396,9 @@ main() {
     dedupe)     dedupe "$@" ;;
     dedupe-all) dedupe_all "$@" ;;
     lint)       lint "$@" ;;
+    add)        add_row "$@" ;;
     states)     echo "$STATES" | tr ' ' '\n' ;;
-    *) echo "usage: backlog.sh {board|next|get <ID-NNN>|row <ID-NNN>|set <ID-NNN> <state> [note]|dedupe <ID-NNN>|dedupe-all [file]|lint [file]|states}" >&2; return 64 ;;
+    *) echo "usage: backlog.sh {board|next|get <ID-NNN>|row <ID-NNN>|set <ID-NNN> <state> [note]|dedupe <ID-NNN>|dedupe-all [file]|lint [file]|add [--notes T] [--status S] [--section H] [--] <title>|states}" >&2; return 64 ;;
   esac
 }
 

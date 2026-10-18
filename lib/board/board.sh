@@ -33,6 +33,16 @@
 #                                                               (cell count, dup ids, `\|`
 #                                                               escapes, bad statuses); an
 #                                                               enumerator, exits 0
+#   board.sh add <title> [--notes T] [--mid V]... [--status S] [--section H] [--backlog-file <path>]
+#                                                               file ONE new row: the next id is
+#                                                               minted and written under the board
+#                                                               lock, in the target table's own
+#                                                               column count; prints the id. The
+#                                                               one row-minting verb (capture and
+#                                                               promote call it too).
+#   board.sh normalize [--check] <board.md>                     pad short rows to their table's own
+#                                                               column count (one-shot repair; keeps
+#                                                               every id, idempotent)
 #   board.sh states [--backlog-file <path>]                    legal state names
 #   board.sh run <ID> [--backlog-file <path>] [--dir <megadir>] [--exec] [-- <orchestrate-args>]
 #                                                               the single-row dispatch path:
@@ -913,38 +923,13 @@ cmd_capture() {
   [ -n "$title" ] || { echo "usage: board capture \"<title>\" [-b <notes>]" >&2; exit 2; }
   backlog="${backlog:-$PWD/_meta/BACKLOG.md}"
   [ -f "$backlog" ] || { echo "board capture: no board at $backlog (run \`board init\`)" >&2; exit 2; }
+  # The mint and the write run in the one row-minting verb (`backlog.sh add`), under the
+  # shared per-board lock (sync_core.board_lock, the same file promote/sync/set flock), so two
+  # sessions capturing at once serialize instead of minting the same id. The row takes the
+  # target table's own column count.
   local bid
-  # The read -> mint -> append runs under the shared per-board lock
-  # (sync_core.board_lock, the same file add-backlog/backlog_sync flock), so two
-  # sessions capturing at once serialize instead of minting the same id. The
-  # file is re-read INSIDE the hold: the mint is always derived from the
-  # current board, never from a pre-lock snapshot.
-  bid="$(BOARD_SYNC_LIB="$BOARD_DIR/../sync" python3 - "$backlog" "$title" "$notes" <<'PY'
-import os, sys, tempfile
-from pathlib import Path
-sys.path.insert(0, os.environ["BOARD_SYNC_LIB"])
-from sync_core import board_lock, detect_prefix, next_id, escape
-path = Path(sys.argv[1])
-title, notes = sys.argv[2], sys.argv[3] or "filed via board capture"
-with board_lock(path):
-    text = path.read_text()
-    prefix = detect_prefix(text)
-    bid = f"{prefix}-{next_id(text, prefix, path)}"
-    row = f"| {bid} | {escape(' '.join(title.split()))} | {escape(notes)} | queued |\n"
-    lines = text.splitlines(keepends=True)
-    for i, ln in enumerate(lines):
-        if ln.startswith("|---"):
-            lines.insert(i + 1, row)
-            break
-    else:
-        sys.exit(f"no table header found in {path}")
-    fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.")
-    with os.fdopen(fd, "w") as f:
-        f.write("".join(lines))
-    os.replace(tmp, path)
-print(bid)
-PY
-)"
+  bid="$(BACKLOG_FILE="$backlog" bash "$BACKLOG_SH" add --notes "${notes:-filed via board capture}" -- "$title")" \
+    || { echo "board capture: could not add the row to $backlog" >&2; exit 1; }
   # sync in a subshell: cmd_sync ends in exec and must not replace this shell.
   ( cmd_sync --backlog-file "$backlog" ) || true
   local rid=""
@@ -1194,6 +1179,7 @@ main() {
     init) shift; cmd_init "$@" ;;
     capture) shift; cmd_capture "$@" ;;
     promote) shift; exec "$BOARD_DIR/bin/add-backlog" "$@" ;;
+    normalize) shift; exec python3 "$BOARD_DIR/bin/board-normalize" "$@" ;;
     run) shift; exec "$BOARD_RUN_SH" "$@" ;;
     work) shift; exec bash "$BOARD_DIR/work.sh" "$@" ;;
     -h|--help|help) usage ;;
