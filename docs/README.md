@@ -2,6 +2,8 @@
 
 If you just want to **use** dwarves-kit, stop here and read the repo [`README.md`](../README.md) or the condensed [`QUICKSTART.md`](QUICKSTART.md): install, then run your first `/kit:` cycle. Everything else in `docs/` is the kit's own design history and dogfood output, written while building the kit. A new user never has to open it.
 
+Two install-time facts, in case you read this folder first. `lib/adopt.sh` (`/kit:adopt`) seeds `[gate] proof_of_done = true` and `lane_gates = true` into a fresh `.kit.toml`, so an adopted repo has both gates on; a raw `install.sh` leaves every gate off. And `install.sh` and `lib/adopt.sh` run the one migration of old kit logs into the durable ledger root (`lib/telemetry/kit-migrate.sh`); no hook or path resolver copies anything.
+
 This folder is large because the kit was built **through its own workflow**: every feature got a spec, most got an ADR, each cycle got a retro. That accumulation is the point, not clutter, but it is for maintainers and the curious, not for getting started.
 
 ## What's here
