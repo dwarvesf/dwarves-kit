@@ -61,6 +61,8 @@ JQLIB="$HERE/../lib/reflect"
 source "$JQLIB/shlex-split.sh"
 # shellcheck source=../lib/reflect/hook-util.sh
 source "$JQLIB/hook-util.sh"
+# shellcheck source=../lib/reflect/staging-format.sh
+source "$JQLIB/staging-format.sh"
 
 # On the SessionStart surface pass, first sweep the consumer's declared deferred-link sources into
 # the same staging funnel (config-gated, self-throttling), so the surfaced count already includes them.
@@ -170,11 +172,11 @@ stage_from_text() {
   nblocks=$(jq 'length' <<<"$res")
   [ "$nblocks" -gt 0 ] || return 0
   case "$st" in */*) ;; *) return 1 ;; esac
-  local st_dir=${st%/*}; [ -n "$st_dir" ] || st_dir=/
   header=""
   [ -f "$st" ] || header=$'# Backlog staging (auto, via backlog-stage)\n\nCandidates auto-extracted from sessions. Review + promote by hand.\nGitignored: may name unfiled work. NEVER the source of truth.\n\n'
   out=$(jq -j 'join("")' <<<"$res"; printf x)
-  { mkdir -p "$st_dir" && printf '%s%s' "$header" "${out%x}" >> "$st"; } 2>/dev/null || return 1
+  # the one locked staging write path (lib/reflect/staging-format.sh -> staging-format.py append)
+  printf '%s' "${out%x}" | sf_append "$st" "$header" || return 1
   return 0
 }
 

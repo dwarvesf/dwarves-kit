@@ -184,6 +184,9 @@ DRYPLAN="$(STUB_CALL_LOG="$CALLS" STUB_ID_COUNTER="$IDCTR" HERMES_BIN="$STUB" ba
 assert "dry-run plans exactly 7 ops (6 board rows + 1 mega card)" "$([ "$(printf '%s\n' "$DRYPLAN" | grep -c . )" -eq 7 ] && echo 0 || echo 1)"
 assert "dry-run makes ZERO hermes calls" "$([ ! -s "$CALLS" ] && echo 0 || echo 1)"
 assert "dry-run writes NOTHING to the snapshot" "$([ ! -s "$SNAP" ] && echo 0 || echo 1)"
+ENGFLAG_PLAN="$(STUB_CALL_LOG="$CALLS" STUB_ID_COUNTER="$IDCTR" HERMES_BIN="$STUB" bash "$BOARD" mirror --repo-root "$TMPDIR_T" --registry "$REGISTRY" --snapshot "$SNAP" --dry-run --engine sync 2>/dev/null)"
+# the stub's id counter advances between the two runs, so compare the plans with digits removed
+assert "a stale --engine sync flag no longer routes to a second engine (same plan as the default)" "$([ -n "$ENGFLAG_PLAN" ] && [ "$(printf '%s' "$ENGFLAG_PLAN" | tr -d '0-9')" = "$(printf '%s' "$DRYPLAN" | tr -d '0-9')" ] && echo 0 || echo 1)"
 CREATE_ID001="$(printf '%s\n' "$DRYPLAN" | jq -c 'select(.origin=="fixR:ID-001")')"
 assert "ID-001's create argv carries --triage (queued -> triage)" "$(printf '%s' "$CREATE_ID001" | jq -e '.argv | index("--triage")' >/dev/null 2>&1 && echo 0 || echo 1)"
 CREATE_ID002="$(printf '%s\n' "$DRYPLAN" | jq -c 'select(.origin=="fixR:ID-002")')"

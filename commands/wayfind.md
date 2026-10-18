@@ -89,7 +89,7 @@ Invoked with a loose idea. Charting is one session's work and hand-resolves noth
 
 1. **Name the destination** via `/kit:grill`. The destination fixes the scope, so it is settled first.
 2. **Map the frontier**: grill again, breadth-first, fanning across the whole space for the open decisions and first takeable steps. **No fog surfaced = no map needed**: the journey fits one session; stop and route to `/kit:grill` + `/kit:spec` instead.
-3. **Write map.md** (Destination + Notes filled, Decisions empty, fog sketched into Not yet specified) and **add the ONE umbrella board row** for the effort: hand-edit `_meta/BACKLOG.md` per its Schema section (`backlog.sh` has no add verb), next free ID, status `claimed`, notes pointing at the map path.
+3. **Write map.md** (Destination + Notes filled, Decisions empty, fog sketched into Not yet specified) and **add the ONE umbrella board row** for the effort with the row verb, never a hand edit: `bash "${DWARVES_KIT:-$HOME/.claude/dwarves-kit}/lib/board/backlog.sh" add --status claimed --notes 'map: <map path>' -- '<effort title>'` (it mints the next free ID under the board lock and prints it; the row takes the board's own column count; pass freeform text in single quotes with an inner `'` written `'\''`, and keep the `--`).
 4. **Create the tickets you can state now**, then wire `Blocked-by` in a second pass (tickets need numbers before they can reference each other). Everything else stays fog.
 5. **Fire the research subagents** for every research ticket, in parallel, each capturing to its `research/<name>` branch.
 6. Stop. Report the map path, the frontier, and the running research.

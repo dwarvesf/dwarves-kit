@@ -322,14 +322,7 @@ def cmd_propose(args):
         staged.append(c["title"])
 
     if blocks and not args.dry_run:
-        parent = os.path.dirname(staging)
-        if parent:
-            os.makedirs(parent, exist_ok=True)
-        exists = os.path.isfile(staging)
-        with open(staging, "a", encoding="utf-8") as fh:
-            if not exists:
-                fh.write("# Backlog staging\n\n")
-            fh.writelines(blocks)
+        sf.append_blocks(staging, blocks, header="# Backlog staging\n\n")
 
     if args.dry_run:
         sys.stdout.write("".join(blocks) or "session-intel propose: nothing new to stage\n")

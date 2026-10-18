@@ -1178,3 +1178,38 @@ def test_read_archive_degrades_on_an_unreadable_path(capsys):
         binary.write_bytes(b"| ID-40 | x | y | shipped |\n\xff\xfe\x00")
         assert backlog_sync.read_archive(binary, "ID") == {}
     assert capsys.readouterr().out.count("archive: cannot read") == 2
+
+
+SIX_COL_BOARD = (
+    "| ID | Title | Source | Target artifact | Lane | Status |\n"
+    "|----|-------|--------|-----------------|------|--------|\n"
+    "| ID-7 | six cell row | from a brief | SPEC-1 | normal | queued [note] |\n"
+    "\n"
+    "| ID | Item | Notes | Status |\n"
+    "|---|---|---|---|\n"
+    "| ID-8 | four cell row | n | claimed |\n"
+)
+
+
+def test_parse_board_reads_rows_by_the_tables_own_column_count():
+    rows = parse_board(SIX_COL_BOARD)
+    assert set(rows) == {"ID-7", "ID-8"}
+    assert rows["ID-7"].item == "six cell row"
+    assert rows["ID-7"].status_kw == "queued"
+    assert rows["ID-7"].notes == "from a brief | SPEC-1 | normal"
+    assert rows["ID-7"].ncols == 6
+    assert rows["ID-8"].ncols == 4
+
+
+def test_split_row_wants_the_stated_column_count():
+    line = "| ID-7 | a | b | c | d | queued |\n"
+    assert sync_core.split_row(line) is None
+    assert sync_core.split_row(line, 6) == ["ID-7", "a", "b", "c", "d", "queued"]
+
+
+def test_apply_board_flips_a_six_cell_row_in_place():
+    plan = Plan()
+    plan.board_set_status = [("ID-7", "shipped")]
+    new_text, _ = apply_board(SIX_COL_BOARD, plan)
+    assert "| ID-7 | six cell row | from a brief | SPEC-1 | normal | shipped [note] |" in new_text
+    assert "| ID-8 | four cell row | n | claimed |" in new_text

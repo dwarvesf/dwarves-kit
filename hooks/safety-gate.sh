@@ -28,6 +28,8 @@
 
 set -euo pipefail
 set -f  # no globbing while we word-split segments
+# Hook logs live under the ledger root (lib/telemetry/hook-log-dir.sh); the fallback keeps a hook running without lib/.
+. "${BASH_SOURCE[0]%/*}/../lib/telemetry/hook-log-dir.sh" 2>/dev/null || kit_hook_log_dir() { printf '%s' "${KIT_LEDGER_DIR:-${DWARVES_KIT_LOG_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/dwarves-kit/logs}}/hooks"; }
 INPUT=$(cat)
 CMD=$(echo "$INPUT" | jq -r '.tool_input.command // empty')
 [ -z "$CMD" ] && exit 0
@@ -36,9 +38,8 @@ if [ "${DWARVES_KIT_DEBUG:-0}" = "1" ]; then
   echo "[dwarves-kit:safety] checking command (${#CMD} chars)" >&2
 fi
 
-LOG_DIR="${DWARVES_KIT_LOG_DIR:-$HOME/.claude/dwarves-kit/logs}"
-
 log_block() {
+  local LOG_DIR; LOG_DIR="$(kit_hook_log_dir)"
   mkdir -p "$LOG_DIR"
   echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) | BLOCKED | $1 | ${DWARVES_KIT_INVOCATION_CWD:-$(pwd)}" >> "$LOG_DIR/safety-gate.log"
 }

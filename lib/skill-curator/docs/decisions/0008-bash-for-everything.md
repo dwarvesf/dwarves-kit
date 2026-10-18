@@ -29,8 +29,10 @@ Python was considered and declined at review.
 ## Trade-offs
 
 Bash is harder to unit-test than Python, mitigated by the env-seam + 58 shell-level
-checks. Cross-language with cc-harvest means the transcript parser is reimplemented in bash
-(`transcript.sh`) rather than imported; accepted as a small, locked-by-fixture cost.
+checks. The transcript parser started as a bash and jq copy (`transcript.sh`). The kit now has one
+transcript parser, `lib/session/parse_transcript.py`, and `transcript.sh` calls its `--tail-text`
+mode, so a transcript schema change is fixed in one place. The tool stays bash; only the JSON
+parse moved to the shared Python module.
 
 ## Open questions
 

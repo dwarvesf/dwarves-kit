@@ -13,8 +13,8 @@ The plugin `hooks.json` runs every hook except secrets-guard through `hooks/anch
 
 Two env vars apply to groups of hooks, not all of them:
 
-- `DWARVES_KIT_DEBUG=1` prints a `[dwarves-kit:<name>]` trace line to stderr. These hooks honor it: anti-rationalization, auto-format, codebase-index, context-readiness, permission-auto-approve, safety-gate, session-state-save, slop-cleaner, spec-drift-guard.
-- `DWARVES_KIT_LOG_DIR` moves the log directory (default `~/.claude/dwarves-kit/logs`). These hooks honor it: anti-rationalization, board-row-gate, commit-format, safety-gate, secrets-guard, ship-gate, slop-cleaner, spec-drift-guard.
+- `DWARVES_KIT_DEBUG=1` prints a `[dwarves-kit:<name>]` trace line to stderr. These hooks honor it: anti-rationalization, auto-format, codebase-index, context-readiness, permission-auto-approve, safety-gate, slop-cleaner, spec-drift-guard.
+- Hook logs live in `hooks/` under the ledger root: `~/.local/state/dwarves-kit/logs/hooks/<hook>.log` by default. `lib/telemetry/hook-log-dir.sh` resolves the root with the same precedence as the ledgers (`KIT_LEDGER_DIR`, then `DWARVES_KIT_LOG_DIR`, then `[ledger].location`, then the XDG default), so one setting moves both. `DWARVES_KIT_LOG_DIR=/x` puts the logs in `/x/hooks`. These hooks log there: anti-rationalization, board-row-gate, citation-guard, commit-format, safety-gate, secrets-guard, ship-gate, slop-cleaner, spec-drift-guard. On first use the helper copies any old log from `~/.claude/dwarves-kit/logs` with `cp -n` and never deletes the old directory.
 
 A `[gate]` key in the committed project kit config switches a gate off. `lib/gate/gate-policy.sh` reads it. See `lib/gate/README.md`.
 
@@ -38,7 +38,6 @@ Module is the `install.sh --with` group that enables the hook. Spine hooks alway
 | output-offload | PostToolUse (all tools) | `[dwarves-kit] <tool> output was large (~N tokens, over the N-token offload threshold). Full payload saved to <file>.` | `OFFLOAD_MAX_TOKENS` (default 2000), `XDG_CACHE_HOME` | session | `hooks/output-offload.sh` |
 | pre-compact-backup | PreCompact | `Backup saved: <file>` on stderr. Writes `.claude/backups/`. | none | session | `hooks/pre-compact-backup.sh` |
 | harvest | PreCompact; SessionEnd (`--lab-log`) | `harvest: staged N new ...`, `harvest: staged a LAB_LOG draft ...`, `harvest: fired detached ...` on stderr. | `HARVEST_LEDGER`, `HARVEST_GLOSSARIES`, `HARVEST_EXTRACTOR`, `HARVEST_FUZZY_THRESHOLD`, `HARVEST_MAXCHARS`, `HARVEST_LABLOG_DRAFT`, `HARVEST_STOP_TRIGGER`, `HARVEST_STOP_N`, `HARVEST_STATE_DIR`, `HARVEST_MIN_INTERVAL`, `HARVEST_SYNC`, `HARVEST_SWEEP_CHILD`, `REPO_ROOT` | session | `hooks/harvest.sh` (bash plus jq), `hooks/harvest_lib.py` (the sweep ledger helpers and operator verbs) |
-| session-state-save | Stop; SubagentStop | Silent. Writes `.claude/session-state/last-state.md`. | `DWARVES_KIT_SESSION_MARKER` | session | `hooks/session-state-save.sh` |
 | citation-guard | Stop | `citation-guard: unresolved citations:` on stderr, only in strict mode. Otherwise it logs. | `CITATION_GUARD_STRICT=1`, `CITATION_GUARD_ROOT`, `CITATION_GUARD_LOG` | session | `hooks/citation-guard.sh` |
 | context-budget | UserPromptSubmit | User line: `Context budget: this session is at N% of its window`, then `Context ceiling: this session is at N% of its window`. Model line: `CONTEXT BUDGET:` and `CONTEXT CEILING:`. | `KIT_CTX_WARN_PCT` (default 65), `KIT_CTX_STRONG_PCT` (default 70), `KIT_CTX_WINDOW` | session | `hooks/context-budget.sh` |
 | batch-debt-warn | PreToolUse (Bash) | `Batch-debt warning:` on the second `gh pr merge` of a session with no lane START in the ledger. Once per session. | none | session | `hooks/batch-debt-warn.sh` |
