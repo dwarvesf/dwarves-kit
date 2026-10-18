@@ -25,7 +25,7 @@ migrate() {
   env -i PATH="$PATH" HOME="$home" XDG_STATE_HOME="$home/xdg" KIT_CONFIG_OPERATOR="$home/none" \
     KIT_CONFIG_ROOT="$home/none" KIT_PROJECT_ROOT="$home/none" "$@" bash "$KM" >/dev/null 2>&1
 }
-new_home() { local h; h=$(mktemp -d "$T/h.XXXXXX"); mkdir -p "$h/.claude/dwarves-kit/logs"; printf '%s' "$h"; }
+new_home() { local h; h=$(mktemp -d "$T/h.XXXXXX") || return 1; mkdir -p "$h/.claude/dwarves-kit/logs"; printf '%s' "$h"; }
 
 # 1. precedence: default is the XDG root, the knobs move it, KIT_LEDGER_DIR beats the alias
 H=$(new_home)
