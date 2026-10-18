@@ -56,14 +56,14 @@ The three code files are reverted to the merge base, the new suites run, then th
 ```
 Command: bash tests/test-gate-ledger-amend.sh
 Mutation: git checkout 83083b13 -- lib/gate/gate-ledger.sh lib/gate/ship-rules.sh hooks/ship-gate.sh
-Exit: 1 (under mutation, RED expected)   gate-ledger amend: 13/33 passed
+Exit: 1 (under mutation, RED expected)   gate-ledger amend: 13/39 passed
 Restore: git checkout HEAD -- hooks/ship-gate.sh lib/gate/gate-ledger.sh lib/gate/ship-rules.sh
 Exit: 0 (green after restore)
 Verdict: PASS
 
 Command: bash tests/test-ship-gate-review-verdict.sh
 Mutation: same three files at the merge base
-Exit: 1 (under mutation, RED expected)   pass=45 fail=8
+Exit: 1 (under mutation, RED expected)   pass=46 fail=8
 Restore: same
 Exit: 0 (green after restore)
 Verdict: PASS
