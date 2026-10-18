@@ -64,6 +64,39 @@ assert entries[0]['message']['content'] == 'please tidy the repo and commit'
 print('ok')
 " | grep -q '^ok$'; then ok "iter_entries generator, load list, content preserved"; else no "python API contract check failed"; fi
 
+echo "[8] --tail-text K: last K text turns as [role] text blocks, the skill-curator summary"
+CUR="${DIR}/../skill-curator/tests/fixtures/sample-transcript.jsonl"
+t2="$(bash "$PT" --tail-text 2 "$CUR")"
+if [[ "$t2" == $'[assistant] running wrangler deploy now\n\n[assistant] deployed successfully' ]]; then ok "K=2 keeps the last two text turns"; else no "tail-text K=2 wrong: $t2"; fi
+t0="$(bash "$PT" --tail-text 0 "$CUR")"
+if [[ -z "$t0" ]]; then ok "K=0 keeps nothing"; else no "K=0 not empty: $t0"; fi
+bash "$PT" --tail-text abc "$CUR" >/dev/null 2>&1; rc=$?
+if [[ $rc -eq 1 ]]; then ok "non-numeric K fails with exit 1"; else no "non-numeric K rc=$rc"; fi
+
+echo "[9] --harvest-text MAX: text blocks newline-joined, last MAX chars, x sentinel"
+HT="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")"
+printf '%s\n' '{"type":"user","message":{"content":[{"type":"text","text":"alpha"}]}}' \
+  '{"type":"system","message":{"content":[{"type":"text","text":"ignored"}]}}' \
+  'not json' \
+  '{"type":"assistant","message":{"content":[{"type":"text","text":"beta"},{"type":"tool_use","name":"x"}]}}' > "$HT/ok.jsonl"
+h="$(bash "$PT" --harvest-text 100 "$HT/ok.jsonl"; echo END)"
+if [[ "$h" == $'alpha\nbetax\nEND' || "$h" == $'alpha\nbetaxEND' ]]; then ok "joined text plus sentinel, system and bad lines skipped"; else no "harvest-text wrong: $h"; fi
+h="$(bash "$PT" --harvest-text 4 "$HT/ok.jsonl")"
+if [[ "$h" == "betax" ]]; then ok "MAX keeps the last characters"; else no "MAX=4 wrong: $h"; fi
+h="$(bash "$PT" --harvest-text 0 "$HT/ok.jsonl")"
+if [[ "$h" == $'alpha\nbetax' ]]; then ok "MAX=0 keeps everything"; else no "MAX=0 wrong: $h"; fi
+printf '%s\n' '{"type":"user","message":{"content":[{"type":"text","text":"x"}]}}' '5' > "$HT/obj.jsonl"
+printf '%s\n' '{"type":"user","message":"x"}' > "$HT/msg.jsonl"
+printf '%s\n' '{"type":"user","message":{"content":7}}' > "$HT/content.jsonl"
+printf '%s\n' '{"type":"user","message":{"content":[{"type":"text","text":5}]}}' > "$HT/text.jsonl"
+printf '\xff\xfe\n' > "$HT/utf8.jsonl"
+for bad in obj msg content text utf8; do
+  out="$(bash "$PT" --harvest-text 100 "$HT/$bad.jsonl" 2>/dev/null)"; rc=$?
+  if [[ $rc -eq 1 && -z "$out" ]]; then ok "crash shape '$bad' prints nothing, exit 1"; else no "crash shape '$bad' rc=$rc out=$out"; fi
+done
+bash "$PT" --harvest-text 100 "$HT/missing.jsonl" >/dev/null 2>&1; rc=$?
+if [[ $rc -eq 1 ]]; then ok "missing file exits 1"; else no "missing file rc=$rc"; fi
+
 echo
 if [[ $fail -eq 0 ]]; then
   echo "smoke: all $pass passed"
