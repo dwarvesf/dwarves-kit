@@ -267,7 +267,7 @@ single-reader fence). No env vars; per-repo values live in `.kit.toml [sync]`.
 | SKILL_CURATOR_MEMORY_LEDGER | env-only | `""` | [impl] | session | Path to the learning ledger surface.sh cross-references; feature is off if unset. |
 | SKILL_CURATOR_CURATOR_CMD | env-only | (real `claude -p`) | [impl] | session | Override the curator's model-invocation command (test injection point). |
 | SKILL_CURATOR_REVIEWER_CMD | env-only | (real `claude -p`) | [impl] | session | Override the async reviewer's model-invocation command. |
-| DWARVES_KIT_SESSION_MARKER | env-only | `/tmp/.dwarves-kit-session-start` | [impl] | session | Path of the session-start marker file. |
+| DWARVES_KIT_SESSION_MARKER | env-only | `/tmp/.dwarves-kit-session-start-<session_id>` (fallback `ppid<PPID>`) | [impl] | session | Path of the session-start marker file; markers older than a day are swept, an override skips the sweep. |
 | KIT_CTX_WARN_PCT | env-only | `65` | [impl] | session | Percent of the context window at which the context-budget hook's advisory notice fires (SPEC-255). |
 | KIT_CTX_STRONG_PCT | env-only | `70` | [impl] | session | Percent of the context window at which the context-budget hook escalates to a directive notice (SPEC-255). |
 | KIT_CTX_WINDOW | env-only | auto (`200000`, or `1000000` for a `1m`-marked model) | [impl] | session | Context window size the context-budget hook computes percentages against (SPEC-255). |

@@ -38,7 +38,9 @@ project's ledger must not mix with anything else on the machine.
 ## The optional `<project>/.kit.toml` override
 
 Seeded once by `/kit:adopt` (opt-in; never overwritten after creation; `--with a,b,c` seeds
-those modules `true` instead of inheriting the kit-root default). Only the keys you set win;
+those modules `true` instead of inheriting the kit-root default). A fresh seed also writes
+`[gate] lane_gates = true` and `proof_of_done = true`, so an adopted repo enforces both gates;
+a raw install keeps the `kit.toml` defaults, both off. Only the keys you set win;
 everything you omit inherits the operator `kit.toml`, then the kit-root `kit.toml` default
 (`lib/config/kit-config.sh` resolves project > operator > kit-root > default; a missing file
 at any layer is skipped).

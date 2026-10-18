@@ -103,7 +103,8 @@ default and is not part of the always-wired spine.
   `node_modules .git vendor dist target build .venv __pycache__ .obsidian .claude .smtcmp_*`
   **during** traversal, not via a post-filter (the earlier `find . | grep -v` pegged CPU on
   every Stop in a large tree).
-- **Knobs:** `DWARVES_KIT_SESSION_MARKER` (default `/tmp/.dwarves-kit-session-start`),
+- **Knobs:** `DWARVES_KIT_SESSION_MARKER` (default `/tmp/.dwarves-kit-session-start-<session_id>`, fallback
+  `ppid<PPID>`; markers older than a day are swept),
   `DWARVES_KIT_LOG_DIR` (default `$HOME/.claude/dwarves-kit/logs`), `DWARVES_KIT_DEBUG`.
 - **Degrades to:** no-op on the first Stop of a session (it creates the marker and returns,
   having no baseline to diff against), outside a git repo, and when nothing was modified.

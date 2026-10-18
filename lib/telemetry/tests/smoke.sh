@@ -129,7 +129,7 @@ LEGACY_REAL="$HOME_FX/.claude/dwarves-kit/logs"
 mkdir -p "$LEGACY_REAL/runs"
 printf 'ts | START | lane=normal classified=normal type=feature repo=fixture\n' > "$LEGACY_REAL/runs/real-run.log"
 printf '[ledger]\nlocation = "%s"\n' "$WORK/durable-a" > "$CFG_FX/kit.toml"
-env "${env_base[@]}" bash -c 'source "$0" && kit_migrate_log_dir' "$RESOLVER" >/dev/null 2>&1
+env "${env_base[@]}" bash -c 'source "$0" && source "${0%/*}/kit-migrate.sh" && kit_migrate' "$RESOLVER" >/dev/null 2>&1
 [ -f "$WORK/durable-a/runs/real-run.log" ] \
   && ok "6a POSITIVE CONTROL: a real legacy dir IS migrated (so 6b's refusal is falsifiable)" \
   || no "6a a real legacy dir was NOT migrated -- migration is dead, 6b proves nothing"
@@ -140,7 +140,7 @@ mkdir -p "$WORK/evil" "$HOME_FX/.claude/dwarves-kit"
 printf 'exfiltrate-me\n' > "$WORK/evil/secret.txt"
 ln -s "$WORK/evil" "$LEGACY_REAL"
 printf '[ledger]\nlocation = "%s"\n' "$WORK/durable-b" > "$CFG_FX/kit.toml"
-env "${env_base[@]}" bash -c 'source "$0" && kit_migrate_log_dir' "$RESOLVER" >/dev/null 2>"$WORK/mig-err.txt"
+env "${env_base[@]}" bash -c 'source "$0" && source "${0%/*}/kit-migrate.sh" && kit_migrate' "$RESOLVER" >/dev/null 2>"$WORK/mig-err.txt"
 
 [ ! -e "$WORK/durable-b/secret.txt" ] \
   && ok "6b the symlink target's contents are NOT copied into the corpus" \
