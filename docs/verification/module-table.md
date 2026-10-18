@@ -22,6 +22,7 @@
 | 14 | NC3 core added on every re-run | `negctl.sh --at HEAD` on `test-install-modules.sh` | 1 then 0 | RED (47/49) then green |
 | 15 | NC4 adopt ignores the plugin | `negctl.sh --at HEAD` on `test-adopt.sh` | 1 then 0 | RED (60/63) then green |
 | 16 | After merging master (which carries #992) | `bash tests/test-modules-table.sh` and a default install on the merge | 0 | PASS (59/59; installed hooks equal the table) |
+| 17 | Every suite the diff touches, after merging master through #995 | `bash bin/test-affected --base origin/master` | 0 | PASS (75 selected, 0 fail; `test-tool-policy-guard`, `test-config-registry`, `test-kit-contract` and `test-onboard-detect` among them) |
 
 ## Green run
 
