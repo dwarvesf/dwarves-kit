@@ -36,9 +36,9 @@ source "$LIB_ROOT/telemetry/kit-log-dir.sh" || { echo "FATAL: lib/telemetry/kit-
 _ledger_oneline() { printf '%s' "${*:-}" | tr '\n\r' '  '; }
 
 ledger_root() {
-  # kit_migrate_log_dir is a one-time additive migration out of the ~/.claude reinstall blast
-  # zone; it no-ops when an explicit root is set (a test's mktemp), so it is safe to call here.
-  kit_migrate_log_dir || true
+  # Resolve only. A hook reaches this, so it never copies; the one-time move out of the ~/.claude
+  # reinstall blast zone is lib/telemetry/kit-migrate.sh. A legacy dir nobody migrated gets a note.
+  kit_note_unmigrated
   local root
   root="$(kit_resolve_log_dir)" || return 1
   printf '%s' "$root"
