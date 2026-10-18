@@ -196,6 +196,18 @@ assert_true "auto-index hook guards on git rev-parse (worktree-correct, not [ -d
 assert_true "auto-index hook registered as SessionStart in both registries" \
   "$(grep -q 'codebase-index.sh' "$KIT_DIR/settings.json" && grep -q 'codebase-index.sh' "$KIT_DIR/hooks/hooks.json" && echo 0 || echo 1)"
 
+echo "=== dead parts: intake-sweep wired at SessionStart, session-state-save gone ==="
+# backlog-stage --surface runs intake-sweep; it must be registered on SessionStart in both
+# registries, or the sweep has no trigger. The unread session-state writer must stay out of both.
+for REG in "$KIT_DIR/hooks/hooks.json" "$KIT_DIR/settings.json"; do
+  assert_true "$(basename "$REG"): backlog-stage --surface registered on SessionStart" \
+    "$(jq -e '[.hooks.SessionStart[].hooks[].command] | any(test("hooks/backlog-stage\\.sh --surface$"))' "$REG" >/dev/null 2>&1 && echo 0 || echo 1)"
+  assert_true "$(basename "$REG"): session-state-save not registered" \
+    "$(grep -q 'session-state-save' "$REG" && echo 1 || echo 0)"
+done
+assert_true "hooks/session-state-save.sh is removed" \
+  "$([ ! -e "$KIT_DIR/hooks/session-state-save.sh" ] && echo 0 || echo 1)"
+
 # ============================================================
 echo ""
 echo "=== SPEC-083: session-start board wire (ID-033) ==="

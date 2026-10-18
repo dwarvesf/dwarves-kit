@@ -229,7 +229,7 @@ hook_events() { # <basename.sh>
   local ev
   ev=$(jq -r --arg f "hooks/$1" '
         .hooks | to_entries[] | .key as $k | .value[] | .hooks[]
-        | select(.command | endswith($f)) | $k' \
+        | select(.command | sub("^bash [^ ]*hooks/anchor-root.sh "; "") | (endswith($f) or contains($f + " "))) | $k' \
         "$KIT_DIR/hooks/hooks.json" 2>/dev/null | sort -u \
       | awk 'NR>1 {printf "+"} {printf "%s", $0} END {print ""}')
   if [ -z "$ev" ] && jq -r '.statusLine.command // ""' "$KIT_DIR/settings.json" 2>/dev/null \
