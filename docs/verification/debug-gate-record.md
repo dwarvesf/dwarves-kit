@@ -2,7 +2,7 @@
 
 ## What changed
 
-The `bug` lane requires a `debug` gate (`gate-ledger.sh required bug` prints `build debug`), but no command recorded it. `commands/debug.md` now records `gate-ledger.sh record <rid> debug ran "<one-line root cause>"` in Phase 4 step 6, after the fix is verified. The 3-fix wall section says outright not to record the gate, so an escalation leaves it open. `docs/WORKFLOW.md`, `docs/workflow-paths.md`, `lib/gate/README.md` and the generated `docs/FEATURES.md` row follow.
+The `bug` lane requires a `debug` gate (`gate-ledger.sh required bug` prints `build debug`), but no command recorded it. `commands/debug.md` now records `gate-ledger.sh record <rid> debug ran "<one-line root cause>"` in Phase 4 step 6, after the fix is verified. The 3-fix wall section says outright not to record the gate, so an escalation leaves it open. `docs/WORKFLOW.md`, `docs/workflow-paths.md` and the generated `docs/FEATURES.md` row follow.
 
 ## Gate table
 
