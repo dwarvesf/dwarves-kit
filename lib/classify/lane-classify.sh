@@ -353,8 +353,10 @@ lane_check() {
   if [ "$cr" -lt "$sr" ]; then
     echo "LANE-DOWNGRADE: chosen=$chosen suggested=$suggested -- the task text matches a heavier lane; size up or say why" >&2
     desc_trunc="$(printf '%s' "$desc" | tr '\n' ' ' | cut -c1-100)"
-    # classify/explain run far more often WITHOUT a downgrade, so the mkdir/stat is deferred
-    # to this write path.
+    # NB (arch review): unlike the other 5 corpus libs (which migrate at load), lane-classify
+    # migrates HERE, at the downgrade-write path -- classify/explain run far more often WITHOUT
+    # a downgrade, so deferring the mkdir/stat to the actual write is a small deliberate win.
+    kit_migrate_log_dir || true
     log_dir="$(kit_resolve_log_dir)"
     mkdir -p "$log_dir" 2>/dev/null || true
     printf '%s | LANE-CHECK | downgrade | chosen=%s suggested=%s | %s\n' \
