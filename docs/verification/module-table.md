@@ -21,7 +21,7 @@
 | 13 | NC2 plugin refusal off | `negctl.sh --at HEAD` on `test-install-compat.sh` | 1 then 0 | RED then green |
 | 14 | NC3 core added on every re-run | `negctl.sh --at HEAD` on `test-install-modules.sh` | 1 then 0 | RED (47/49) then green |
 | 15 | NC4 adopt plugin skip off | `negctl.sh --at HEAD` on `test-adopt.sh` | 1 then 0 | RED (60/62) then green |
-| 16 | Merge with slice S4's manifests | table suite plus a default install on `HEAD` with S4's `settings.json` and `hooks/hooks.json` | 0 | PASS (59/59; installed hooks equal the table) |
+| 16 | After merging master (which carries #992) | `bash tests/test-modules-table.sh` and a default install on the merge | 0 | PASS (59/59; installed hooks equal the table) |
 
 ## Green run
 
@@ -129,5 +129,4 @@ What each mutation broke, confirmed by hand where the captured tail does not nam
 
 - `hooks/hooks.json`, the plugin manifest, still registers every hook whatever the module choice. The smaller default applies to the bash install and to adopt, not to the plugin.
 - No run on a real plugin install through Claude Code; the plugin cache and roster are fixtures.
-- Slice S4's removal of `session-state-save` and its SessionStart `backlog-stage --surface` entry is checked against its manifests (run 16), not merged. Two exemption lists in `tests/test-modules-table.sh` and one line in `tests/test-install-modules.sh` go away when it lands.
 - The table's per-module `core` flag is a fresh-install default, not a lock: a per-project `.kit.toml` can turn `board` off, and `install.sh --prune` trims it.

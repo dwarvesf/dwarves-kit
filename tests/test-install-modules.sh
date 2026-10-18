@@ -150,9 +150,7 @@ BEFORE5="$(wired_hooks "$H5/.claude/settings.json")"
 BEFORE5_N="$(printf '%s\n' "$BEFORE5" | grep -c .)"
 HOME="$H5" bash "$KIT_DIR/install.sh" >${TMPDIR:-/tmp}/kitmod-h5.log 2>&1
 AFTER5="$(wired_hooks "$H5/.claude/settings.json")"
-# session-state-save.sh is a retired hook (slice S4 deletes it, and the module table no longer
-# lists it), so a re-install drops it on purpose. Delete this exemption when S4 merges.
-DROPPED="$(comm -23 <(printf '%s\n' "$BEFORE5" | grep -vx 'session-state-save.sh') <(printf '%s\n' "$AFTER5"))"
+DROPPED="$(comm -23 <(printf '%s\n' "$BEFORE5") <(printf '%s\n' "$AFTER5"))"
 assert_true "additive re-install drops nothing from an old all-hooks install (before=$BEFORE5_N, dropped:${DROPPED:-none})" "$([ -z "$DROPPED" ]; echo $?)"
 
 # ============================================================
