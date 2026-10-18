@@ -316,6 +316,8 @@ only (unchanged meaning), `rejected=<M>` counts the Step 3a previously-rejected 
 bash lib/gate/gate-ledger.sh record <rid> review ran "<verdict> findings=<K> suppressed=<S> rejected=<M> actor=$(git config user.name)"
 ```
 
+Write `<verdict>` exactly as in the spec's `### Verdict:` line (`SHIP`, `FIX THEN SHIP` or `DO NOT SHIP`) and put it FIRST in the reason: `hooks/ship-gate.sh` reads it back (`gate-ledger.sh review-verdict <rid>`) and refuses the push when the spec's verdict line differs from it. Record it after the spec is written, and re-run both on a re-review.
+
 Close the `review` timing bracket opened at the top of this Process section:
 `bash lib/gate/gate-ledger.sh outcome <rid> review end caught=<true if the verdict is not SHIP, else false>`.
 

@@ -17,7 +17,7 @@
 #                                                  <shown-spec> is the path the message names (default <spec>)
 #   ship_rule_identities <root> <base> <head>      a push whose new commits carry a fixture git identity (x@x, t@t.dev,
 #                                                  example.com, .local) is refused; [gate] fixture_identities = false opts out
-#   ship_rule_review_verdict <root> <base> <head> <spec> <rid>
+#   ship_rule_review_verdict <root> <base> <head> <spec> <rid> [ledger]
 #                                                  a spec whose last `## Review` verdict is DO NOT SHIP refuses the
 #                                                  push; no section or no verdict passes; [gate] review_verdict = false opts out
 #   ship_rule_floor <root> <base> <head> <rid> <spec> <ledger> [<cfg-rev>]
@@ -241,14 +241,18 @@ ship_rule_identities() {
   return 2
 }
 
-# ship_rule_review_verdict <root> <base> <head> <spec> <rid>: refuse a push whose spec records DO NOT SHIP.
+# ship_rule_review_verdict <root> <base> <head> <spec> <rid> [ledger]: refuse a push whose spec records
+# DO NOT SHIP, or whose spec verdict differs from the last one the review recorded in the run ledger.
 # /kit:review and /kit:review-team write a `### Verdict: SHIP | FIX THEN SHIP | DO NOT SHIP` line inside
 # a `## Review` section of the spec, replacing the prior section. The LAST canonical verdict line inside
 # any `## Review` section wins (code fences, quotes and indented code skipped; `Verdict: SECURE` and other
 # non-ship words are ignored). The spec is read as committed at <head> (what the push ships), else from the
 # file when <head> does not hold it. A spec with no `## Review` section, no canonical verdict, or an
-# unreadable file passes: other rules still apply. This is a check on the spec's own record, not a tamper
-# check: a branch can edit its own verdict line. Off with `review_verdict = false` under [gate] in a
+# unreadable file passes: other rules still apply. A branch can edit its own verdict line, so when a
+# [ledger] is given the spec verdict is also compared with the last verdict a review recorded in the run
+# ledger (gate-ledger.sh review-verdict); any difference blocks, and a run with no recorded verdict is
+# checked on the spec alone. The ledger lives outside the branch, but any ledger writer can append to it:
+# this raises the cost of a softened spec, it is not a signature. Off with `review_verdict = false` under [gate] in a
 # committed .kit.toml, read at the merge base so a push cannot switch off its own check. Prints the
 # message and returns 2 on a hit.
 _sr_review_last_verdict() {  # reads a spec on stdin: prints SHIP, FIX THEN SHIP or DO NOT SHIP, else nothing
@@ -274,7 +278,7 @@ _sr_review_last_verdict() {  # reads a spec on stdin: prints SHIP, FIX THEN SHIP
   ' 2>/dev/null
 }
 ship_rule_review_verdict() {
-  local root="$1" base="$2" head="$3" spec="$4" rid="$5" rel verdict shown_spec shown_rid
+  local root="$1" base="$2" head="$3" spec="$4" rid="$5" ledger="${6:-}" rel verdict recorded shown_spec shown_rid
   [ -n "$spec" ] && [ -f "$spec" ] && [ -r "$spec" ] || return 0
   if ! ship_rules_switch_on review_verdict "$root" "$base"; then
     _sr_log "OFF-BY-CONFIG | review-verdict | $(printf '%s' "$rid" | tr -d '[:cntrl:]')"
@@ -286,8 +290,24 @@ ship_rule_review_verdict() {
   else
     verdict=$(head -c 2097152 "$spec" 2>/dev/null | _sr_review_last_verdict) || true
   fi
-  [ "$verdict" = "DO NOT SHIP" ] || return 0
   shown_spec=$(printf '%s' "$spec" | tr -d '[:cntrl:]'); shown_rid=$(printf '%s' "$rid" | tr -d '[:cntrl:]')
+  if [ "$verdict" != "DO NOT SHIP" ]; then
+    # Cross-check against the run ledger: the ledger is session-local and not part of the branch, so a
+    # branch cannot soften its recorded verdict by editing the spec. No ledger verdict = spec only.
+    [ -n "$ledger" ] && [ -f "$ledger" ] || return 0
+    recorded=$(bash "$ledger" review-verdict "$rid" 2>/dev/null) || true
+    [ -n "$recorded" ] && [ "$recorded" != "$verdict" ] || return 0
+    _sr_log "BLOCKED | ship-gate | $shown_rid (review verdict mismatch: spec '${verdict:-none}', ledger '$recorded')"
+    {
+      echo "BLOCKED: ship-gate. The spec '$shown_rid' and the run ledger disagree on the review verdict:"
+      echo "  spec '## Review' says: ${verdict:-no verdict}"
+      echo "  run ledger says:       $recorded (the last 'review ran' record)"
+      echo "  $shown_spec"
+      echo "The review commands write the verdict to both places, so a mismatch means the spec was edited after the review. Re-run /kit:review (or /kit:review-team, /kit:battery), commit the spec, and push again."
+      echo "A project that does not want this check: set 'review_verdict = false' under [gate] in a committed .kit.toml."
+    } >&2
+    return 2
+  fi
   _sr_log "BLOCKED | ship-gate | $shown_rid (review verdict DO NOT SHIP)"
   {
     echo "BLOCKED: ship-gate. The '## Review' section of spec '$shown_rid' ends in the verdict DO NOT SHIP:"

@@ -156,6 +156,8 @@ rejected-findings-memory counts: `findings=<K>` counts FRESH findings only
 bash lib/gate/gate-ledger.sh record <rid> review ran "<verdict> findings=<K> rejected=<M> actor=$(git config user.name)"
 ```
 
+Write `<verdict>` exactly as in the spec's `### Verdict:` line (`SHIP`, `FIX THEN SHIP` or `DO NOT SHIP`) and put it FIRST in the reason: `hooks/ship-gate.sh` reads it back (`gate-ledger.sh review-verdict <rid>`) and refuses the push when the spec's verdict line differs from it. Record it after the spec is written, and re-run both on a re-review.
+
 Close the timing bracket: `bash lib/gate/gate-ledger.sh outcome <rid> review end caught=<true if the verdict is not SHIP, else false>`.
 
 
