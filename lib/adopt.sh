@@ -387,7 +387,7 @@ if [ -n "$kit_root_toml" ] && [ "$RESOLVER_OK" -eq 1 ]; then
           echo "$m = $v"
         done
         echo ""
-        echo "[gate]   # quality gates, OPT-IN except board_row_gate (on by default). true turns one on for this"
+        echo "[gate]   # quality gates, OPT-IN except board_row_gate and review_verdict (on by default). true turns one on for this"
         echo "         # repo, false keeps it off (a false counts once this file is committed). The values"
         echo "         # below are what resolved at adopt time (operator ~/.config/dwarves-kit/kit.toml, else the"
         echo "         # kit default false); delete a line to follow the operator setting again. Detail: the"
@@ -397,6 +397,7 @@ if [ -n "$kit_root_toml" ] && [ "$RESOLVER_OK" -eq 1 ]; then
         echo "         #   understanding_gate Stop hook: blocks a stop that rationalizes unfinished work"
         echo "         #   commit_format      commit-subject lint (conventional type, <=72 chars)"
         echo "         #   board_row_gate     a commit adding a new board row needs a board-row-ok: line"
+        echo "         #   review_verdict     ship-gate: a spec whose last ## Review verdict is DO NOT SHIP refuses the push (on by default)"
         for g in $(bash "$SELF_DIR/gate/gate-policy.sh" keys 2>/dev/null); do
           KIT_CONFIG_ROOT="$(dirname "$kit_root_toml")" KIT_PROJECT_ROOT="$TARGET" \
             v="$(kit_config_get "gate.$g" "false")"

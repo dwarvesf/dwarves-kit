@@ -67,6 +67,25 @@ case_push "a section named Review disposition is not Review" o2 '\n## Review dis
 case_push "a verdict inside a code fence is ignored" o3 '\n## Review\n\n```\n### Verdict: DO NOT SHIP\n```\n' 0 ''
 case_push "DO NOT SHIP mentioned in prose is not a verdict" o4 '\n## Review\n\nA DO NOT SHIP verdict would block.\n### Verdict: SHIP\n' 0 ''
 
+# lines that only look like a verdict
+case_push "a tilde-fenced verdict is ignored" o5 '\n## Review\n\n~~~\n### Verdict: DO NOT SHIP\n~~~\n' 0 ''
+case_push "a quoted verdict is ignored" o6 '\n## Review\n\n> Verdict: DO NOT SHIP (round 1)\n' 0 ''
+case_push "an indented code verdict is ignored" o7 '\n## Review\n\n    Verdict: DO NOT SHIP\n' 0 ''
+case_push "prose that merely contains Verdict is ignored" o8 '\n## Review\n\nVerdict reached after a long talk: DO NOT SHIP\n' 0 ''
+case_push "a history bullet after the verdict is ignored" o10 '\n## Review\n### Verdict: SHIP\n\n- Verdict: DO NOT SHIP (round 1)\n' 0 ''
+case_push "a history bullet does not clear a DO NOT SHIP" o11 '\n## Review\n### Verdict: DO NOT SHIP\n\n- Verdict: SHIP (round 1)\n' 2 'DO NOT SHIP'
+case_push "Verdict after fixes: SHIP reads as SHIP" o9 '\n## Review\n### Verdict: DO NOT SHIP\n\nVerdict after fixes: SHIP\n' 0 ''
+
+# the spec is read as committed at the pushed head, not as edited in the working tree
+R="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; mkrepo "$R" c1 '\n## Review\n\n### Verdict: DO NOT SHIP\n'
+sed -i.bak 's/DO NOT SHIP/SHIP/' "$R/docs/specs/SPEC-001-c1.md"; command rm -f "$R/docs/specs/SPEC-001-c1.md.bak"
+E="$(mktemp "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; RC="$(gate "$R" 'git push -u origin HEAD' "$E")"
+[ "$RC" = 2 ] && ok "an uncommitted edit to SHIP does not clear a committed DO NOT SHIP" || no "uncommitted edit must not clear a committed DO NOT SHIP (rc=$RC)"
+R="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; mkrepo "$R" c2 '\n## Review\n\n### Verdict: SHIP\n'
+sed -i.bak 's/Verdict: SHIP/Verdict: DO NOT SHIP/' "$R/docs/specs/SPEC-001-c2.md"; command rm -f "$R/docs/specs/SPEC-001-c2.md.bak"
+E="$(mktemp "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; RC="$(gate "$R" 'git push -u origin HEAD' "$E")"
+[ "$RC" = 0 ] && ok "an uncommitted DO NOT SHIP does not block a committed SHIP" || no "uncommitted DO NOT SHIP must not block a committed SHIP (rc=$RC)"
+
 # an unreadable spec must not crash the hook: nothing to read, nothing to block on
 R="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; mkrepo "$R" u1 '\n## Review\n\n### Verdict: DO NOT SHIP\n'
 chmod 000 "$R/docs/specs/SPEC-001-u1.md"; E="$(mktemp "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1

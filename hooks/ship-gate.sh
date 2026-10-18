@@ -370,7 +370,7 @@ fi
 
 # Review-verdict rule (ship-rules.sh): a spec whose last '## Review' verdict is DO NOT SHIP refuses the
 # push. It reads the spec only, so it runs before the lane checks and whatever the lane or lane_gates say.
-ship_rule_review_verdict "$ROOT" "$MBASE" "$SPEC" "$SLUG" || exit 2
+ship_rule_review_verdict "$ROOT" "$MBASE" "$PHEAD" "$SPEC" "$SLUG" || exit 2
 
 # Test-plan coverage advisory (never blocks): the spec carries a ## Test plan, so the proof-of-done owes
 # a ## Test plan coverage map -- each matrix row mapped to the run that exercised it, or an

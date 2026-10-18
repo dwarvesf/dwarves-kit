@@ -99,7 +99,9 @@ disposition` does not count). The LAST `Verdict:` line there whose value starts 
 `FIX THEN SHIP` or `DO NOT SHIP` wins; `/kit:review` and `/kit:review-team` write it as
 `### Verdict: ...` and replace the section on a re-run, so a fresh review clears the block.
 Code fences and other verdict words (`SOLID`, `SECURE`) are skipped. No section, no verdict or an
-unreadable spec passes, and the other rules still apply. A ledger `review ran` record never
+unreadable spec passes, and the other rules still apply. The spec is read as committed at the
+pushed head, so an uncommitted edit does not clear a committed DO NOT SHIP. The rule checks the
+spec's own record and is not a tamper check: a branch can edit its own verdict line. A ledger `review ran` record never
 stands in for the verdict: only the line in the spec counts. The rule runs before the lane
 checks, so it holds whatever the spec's `Lane:` says. It logs `BLOCKED | ship-gate | <slug>
 (review verdict DO NOT SHIP)` to `ship-gate.log`. Key: `[gate] review_verdict`, default ON, read
@@ -168,12 +170,12 @@ That is why `lib/gate/SPEC` is still an open IOU in `tests/kit-contract-known-ga
 
 ```bash
 bash tests/test-gate-outcome.sh          # 22, SPEC-129 outcome markers + the additive property
-bash tests/test-gate-vocab-recording.sh  # 17, every required gate name has a command that records it
+bash tests/test-gate-vocab-recording.sh  # every required gate name has a command that records it
 bash tests/test-ledger-durability.sh     # 37, SPEC-097 durable root, override guard, forgery
 bash tests/test-ledger-substrate.sh      #  9, the one append substrate
 bash tests/test-quiz-gate.sh             # 29, SPEC-125 grounded questions + anti-fatigue
 bash tests/test-ship-gate-fail-closed.sh #  5, SPEC-048
-bash tests/test-ship-gate-review-verdict.sh # 28, DO NOT SHIP verdict blocks; last wins; key off
+bash tests/test-ship-gate-review-verdict.sh # DO NOT SHIP verdict blocks; last wins; key off
 bash tests/test-gate-opt-out.sh          # [gate] false switches each quality gate off (machine has them on); safety gate immune
 bash tests/test-gate-opt-in.sh           # kit defaults: every quality gate off; a project true turns one on
 bash tests/test-ship-gate-profiles.sh    # install-dependent, see below

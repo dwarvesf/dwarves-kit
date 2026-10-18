@@ -302,7 +302,7 @@ cross-lens WINNER in the summary is masking.
 - Test coverage: [X]/10
 - Combined: [X]/10
 
-## Verdict: SHIP / FIX THEN SHIP / DO NOT SHIP
+### Verdict: SHIP / FIX THEN SHIP / DO NOT SHIP
 ```
 
 Write the unified report as a `## Review` section IN the active spec (`docs/specs/SPEC-NNN-<slug>.md`, the active-spec review-section convention), **replacing** any prior `## Review` (replace-not-stack). Keep the per-lens findings as subsections (`### Security`, `### Architecture`, `### Test coverage`) and the open items under `### TODOs`. Inside the spec the verdict is a `### Verdict: SHIP / FIX THEN SHIP / DO NOT SHIP` line (a level-3 heading, so it stays inside `## Review`): `hooks/ship-gate.sh` reads the last such line there and refuses the push on `DO NOT SHIP`. If no active spec exists, output the report inline in chat instead. NEVER write the review (or per-lens files) to fixed-name files in the repo root; that pattern collides across concurrent worktrees and sessions.
