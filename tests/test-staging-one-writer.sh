@@ -8,6 +8,7 @@
 # Proves:
 #   AC1  concurrent `staging-format.py append` writers: every block lands whole, and the header
 #        is written exactly once (decided inside the lock)
+#   AC1b a held staging lock makes append, drain and promote all wait (deterministic)
 #   AC2  `board promote` racing appenders loses no appended block and still relabels every
 #        promoted one (the lost-append bug)
 #   AC3  `reflect drain` expiry racing appenders loses no appended block
@@ -58,6 +59,38 @@ chk "header written exactly once" "$([ "$(count '^# Backlog staging' "$S1")" -eq
 chk "no block is torn (each has its Source line)" "$([ "$(count '^- Source: session ' "$S1")" -eq 12 ]; echo $?)"
 python3 "$SF" append "$S1" </dev/null; chk "empty stdin is a clean no-op" "$?"
 python3 "$SF" append 2>/dev/null; chk "usage error without a path (exit 64)" "$([ $? -eq 64 ]; echo $?)"
+
+# ============================================================
+echo "== AC1b: while one process holds the staging lock, append, drain and promote all wait =="
+# ============================================================
+# Deterministic counterpart to the race in AC2: a holder keeps the lock for 3 s, the three
+# writers start inside the hold, and none may touch the buffer until it is released.
+D="$TMPD/hold"; mkdir -p "$D"
+OLD1="$(date -u -v-60d +%Y-%m-%d 2>/dev/null || date -u -d '-60 days' +%Y-%m-%d)"
+{ printf '# Backlog staging\n\n'; block "held seed"; block "held old" "$OLD1"; } > "$D/backlog-staging.md"
+printf '| ID | Item | Notes | Status |\n|---|---|---|---|\n' > "$D/BACKLOG.md"
+python3 - "$SF" "$D/backlog-staging.md" "$D/held" <<'HOLDER' &
+import importlib.util, sys, time
+spec = importlib.util.spec_from_file_location("sf", sys.argv[1])
+m = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(m)
+with m.staging_lock(sys.argv[2]):
+    open(sys.argv[3], "w").close()
+    time.sleep(3)
+HOLDER
+for _ in $(seq 1 50); do [ -e "$D/held" ] && break; sleep 0.2; done
+before="$(shasum -a 256 "$D/backlog-staging.md" | cut -d' ' -f1)"
+( block "held append" | python3 "$SF" append "$D/backlog-staging.md" ) &
+( BACKLOG_STAGE_STAGING="$D/backlog-staging.md" python3 "$DRAIN" >/dev/null 2>&1 ) &
+( BACKLOG_STAGE_BACKLOG="$D/BACKLOG.md" BACKLOG_STAGE_STAGING="$D/backlog-staging.md" python3 "$ADD_BACKLOG" 1 >/dev/null 2>&1 ) &
+sleep 1.5
+during="$(shasum -a 256 "$D/backlog-staging.md" | cut -d' ' -f1)"
+chk "buffer untouched while the lock is held (append, drain and promote all waited)" "$([ "$before" = "$during" ]; echo $?)"
+wait
+chk "after release: the appended block landed" "$([ "$(count '^## \[staged\] held append' "$D/backlog-staging.md")" -eq 1 ]; echo $?)"
+chk "after release: drain expired the old block" "$([ "$(count '^## \[expired\] held old' "$D/backlog-staging.md")" -eq 1 ]; echo $?)"
+chk "after release: promote relabeled the seed block" "$([ "$(count '^## \[promoted ID-[0-9]*\] held seed' "$D/backlog-staging.md")" -eq 1 ]; echo $?)"
+chk "after release: promote minted its row" "$([ "$(grep -cE '^\| ID-[0-9]+ \|' "$D/BACKLOG.md")" -eq 1 ]; echo $?)"
 
 # ============================================================
 echo "== AC2: promote racing appenders: no appended block lost =="
