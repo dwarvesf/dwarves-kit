@@ -37,7 +37,8 @@ CMD_CODE=$(printf '%s\n' "$CMD" | awk '
       m = substr(line, RSTART, RLENGTH)
       sub(/<<-?[ \t]*/, "", m); gsub(/["'\'']/, "", m)
       marker = m; inhd = 1
-      line = substr(line, 1, RSTART - 1)
+      # the rest of the opener line is still code: `git commit -F - <<EOF && git push` pushes
+      line = substr(line, 1, RSTART - 1) " " substr(line, RSTART + RLENGTH)
     }
     print line
   }')
@@ -57,8 +58,8 @@ if grep -qE '(^|[^[:alnum:]_.-])(bash|sh|zsh)([[:space:]][^<|;&]*)?<<' < <(print
 # cross-repo misfire: a `cd other-repo && git push` was gated against the SESSION
 # repo's spec). Resolve the repo from a leading cd prefix when present.
 # BSD-sed-portable: grab the cd arg with grep -o, then strip the prefix + quotes.
-CDDIR=$(printf '%s' "$CMD_CODE" | grep -oE '^[[:space:]]*cd[[:space:]]+[^&;|]+' | head -1 \
-  | sed -E 's/^[[:space:]]*cd[[:space:]]+//; s/[[:space:]]+$//; s/^"//; s/"$//' || true)
+CDDIR=$(printf '%s' "$CMD_CODE" | grep -oE '^[[:space:]]*(cd|pushd)[[:space:]]+[^&;|]+' | head -1 \
+  | sed -E 's/^[[:space:]]*(cd|pushd)[[:space:]]+//; s/[[:space:]]+$//; s/^"//; s/"$//' || true)
 if [ -z "$CDDIR" ]; then   # `git -C <dir> push` ships that repo
   CDDIR=$(printf '%s' "$CMD_CODE" | grep -oE '(^|[[:space:]])-C[[:space:]]+[^[:space:]]+' | head -1 | awk '{print $NF}' || true)
 fi

@@ -32,6 +32,10 @@ set -uo pipefail
 root="${1:-}"; cmd="${2:-}"; cur="${3:-HEAD}"; defname="${4:-}"
 
 block() { printf '@@BLOCK %s\n' "$*"; exit 0; }
+# A push option the gate cannot list is held until the default-branch pass has run, so
+# `git push --follow-tags origin main` is still reported as a default push.
+pend=""
+pblock() { [ -n "$pend" ] || pend="$*"; }
 gcfg() { git -C "$root" config --get "$1" 2>/dev/null || true; }
 
 # The remote a push with no remote argument goes to, the order git reads it in.
@@ -54,7 +58,7 @@ implicit_specs() {
   conf="$(git -C "$root" config --get-all "remote.$r.push" 2>/dev/null || true)"
   if [ -n "$conf" ]; then printf '%s\n' "$conf"; return; fi
   up="$(gcfg "branch.$cur.merge")"; up="${up#refs/heads/}"
-  case "$(gcfg push.default)" in
+  case "${pdo:-$(gcfg push.default)}" in
     nothing) ;;
     upstream|tracking) if [ "$cur" = HEAD ]; then printf 'HEAD\n'; else printf 'HEAD:%s\n' "${up:-$cur}"; fi ;;
     matching)
@@ -88,7 +92,7 @@ while IFS= read -r seg; do
   tok=(); for t in ${raw[@]+"${raw[@]}"}; do tok+=("$(unq "$t")"); done
   # skip leading VAR=value words
   i=0; while [ "$i" -lt "${#tok[@]}" ] && printf '%s' "${tok[$i]}" | grep -Eq '^[A-Za-z_][A-Za-z0-9_]*='; do i=$((i+1)); done
-  first="${tok[$i]:-}"
+  first="${tok[$i]:-}"; first="${first##*/}"   # /usr/bin/git is git
   has_git_push=0; has_gh_create=0
   for ((k=0; k<${#tok[@]}; k++)); do
     [ "${tok[$k]}" = push ] && has_git_push=1
@@ -96,16 +100,33 @@ while IFS= read -r seg; do
   done
   case "$first" in
     git)
-      j=$((i+1)); sub=""
+      j=$((i+1)); sub=""; pdo=""
       while [ "$j" -lt "${#tok[@]}" ]; do
         case "${tok[$j]}" in
           -C) cdirs="$cdirs${tok[$((j+1))]:-}"$'\n'; j=$((j+2)) ;;
-          -c) case "${tok[$((j+1))]:-}" in alias.*) [ "$has_git_push" = 1 ] && block "an alias defined on the command line could be push" ;; esac; j=$((j+2)) ;;
+          -c) case "${tok[$((j+1))]:-}" in
+                alias.*) [ "$has_git_push" = 1 ] && block "an alias defined on the command line could be push" ;;
+                push.default=*) pdo="${tok[$((j+1))]#push.default=}" ;;
+              esac; j=$((j+2)) ;;
           --git-dir=*|--work-tree=*|--namespace=*|--exec-path=*|--no-pager|-p|-P|--paginate|--bare|--no-replace-objects|--literal-pathspecs|--no-optional-locks|--glob-pathspecs|--noglob-pathspecs|--icase-pathspecs) j=$((j+1)) ;;
           -*) [ "$has_git_push" = 1 ] && block "git option '${tok[$j]}' before push is not understood"; j=$((j+1)) ;;
           *) sub="${tok[$j]}"; break ;;
         esac
       done
+      # A branch switch earlier in the same command changes what HEAD means for a later push.
+      if [ "$sub" = checkout ] || [ "$sub" = switch ]; then
+        nb=""
+        for ((k=j+1; k<${#tok[@]}; k++)); do
+          case "${tok[$k]}" in
+            -b|-B|-c|-C|--create|--force-create|--orphan) nb="${tok[$((k+1))]:-}"; break ;;
+            --) break ;;
+            -*) ;;
+            *) nb="${tok[$k]}"; break ;;
+          esac
+        done
+        case "$nb" in '') ;; -|@\{*) cur="@@UNKNOWN" ;; *) cur="$nb" ;; esac
+        continue
+      fi
       [ "$sub" = push ] || continue   # another git command (a commit message may mention push)
       # command substitution, subshells, backticks, variables: cannot be resolved
       case "$seg" in *'$'*|*'`'*|*'('*|*')'*) block "a push segment uses a variable or command substitution" ;; esac
@@ -115,21 +136,21 @@ while IFS= read -r seg; do
         t="${tok[$k]}"
         if [ "$skip" = 1 ]; then skip=0; continue; fi
         case "$t" in
-          --all|--mirror|--tags|--follow-tags|--delete|-d|--prune) block "git push $t pushes refs the gate cannot list" ;;
+          --all|--mirror|--tags|--follow-tags|--delete|-d|--prune) pblock "git push $t pushes refs the gate cannot list" ;;
           --force|-f) force=1 ;;
           -u|--set-upstream|-n|--dry-run|-q|--quiet|-v|--verbose|--no-verify|--verify|--progress|--atomic|--force-with-lease|--force-with-lease=*|--force-if-includes|--no-force-with-lease|--thin|--no-thin|--signed|--signed=*|--no-signed|--porcelain|--ipv4|--ipv6|--recurse-submodules=*|--no-recurse-submodules|--receive-pack=*|--exec=*|--repo=*|--push-option=*) ;;
           -o|--push-option|--repo|--receive-pack|--exec) skip=1 ;;
           -[a-zA-Z][a-zA-Z]*)
-            case "$t" in *f*) force=1 ;; *) printf '%s' "$t" | grep -Eq '^-[unqv]+$' || block "git push option '$t' is not understood" ;; esac ;;
-          -*) block "git push option '$t' is not understood" ;;
+            case "$t" in *f*) force=1 ;; *) printf '%s' "$t" | grep -Eq '^-[unqv]+$' || pblock "git push option '$t' is not understood" ;; esac ;;
+          -*) pblock "git push option '$t' is not understood" ;;
           *) pos+=("$t") ;;
         esac
       done
       if [ "${#pos[@]}" -ge 2 ]; then
-        for ((k=1; k<${#pos[@]}; k++)); do specs="$specs${pos[0]} ${pos[$k]}"$'\n'; done
+        for ((k=1; k<${#pos[@]}; k++)); do specs="$specs${pos[0]} $cur ${pos[$k]}"$'\n'; done
       else
         rem="${pos[0]:-$(push_remote)}"
-        while IFS= read -r r; do [ -n "$r" ] && specs="$specs$rem $r"$'\n'; done <<< "$(implicit_specs "$rem")"
+        while IFS= read -r r; do [ -n "$r" ] && specs="$specs$rem $cur $r"$'\n'; done <<< "$(implicit_specs "$rem")"
       fi
       ;;
     gh)
@@ -159,20 +180,22 @@ done <<< "$(printf '%s\n' "$cmd" | tr ';&|' '\n\n\n')"
 [ "$sawship" = 1 ] || exit 0
 distinct_c="$(printf '%s' "$cdirs" | sed '/^$/d' | sort -u | wc -l | tr -d ' ')"
 [ "$distinct_c" -le 1 ] || block "the command pushes from more than one directory"
-dest() {   # dest <dst>: the branch name a refspec destination lands on
-  local d="${1#refs/heads/}"
-  [ "$d" = HEAD ] && d="$cur"
+dest() {   # dest <dst>: the branch name a refspec destination lands on (git expands heads/x and @)
+  local d="${1#refs/heads/}"; d="${d#heads/}"
+  case "$d" in HEAD|@) d="$cur" ;; esac
   printf '%s' "$d"
 }
 
 # Default-branch pass first, over every git push refspec: a later unresolvable refspec must not
 # hide an earlier (or later) push to the default branch.
-while read -r rem r; do
+while read -r rem cur r; do
   [ -n "$r" ] || continue
   r="${r#+}"
   case "$r" in *:*) d="$(dest "${r#*:}")" ;; *) d="$(dest "$r")" ;; esac
+  [ "$d" = "@@UNKNOWN" ] && pblock "the command switches to a branch the gate cannot name before it pushes"
   if [ "$d" != HEAD ] && is_default "$d" "$rem"; then printf '@@DEFAULT-PUSH %s %s\n' "$d" "$rem"; exit 0; fi
 done <<< "$specs"
+[ -z "$pend" ] || block "$pend"
 if [ "$force" = 1 ]; then printf '@@FORCE\n'; exit 0; fi
 
 resolve() {   # resolve <src> <dst>: print REF, or block
@@ -184,12 +207,12 @@ resolve() {   # resolve <src> <dst>: print REF, or block
   if [ -n "$defname" ] && [ "$dst" = "$defname" ]; then printf '@@DEFAULT\n'; exit 0; fi
   sha="$(git -C "$root" rev-parse --verify -q "${src}^{commit}" 2>/dev/null)" || block "'$src' does not resolve to a commit"
   br="$dst"
-  if [ "$src" = HEAD ]; then [ "$cur" = HEAD ] || br="$cur"
+  if [ "$src" = HEAD ] || [ "$src" = @ ]; then [ "$cur" = HEAD ] || br="$cur"
   elif git -C "$root" show-ref --verify -q "refs/heads/$src" 2>/dev/null; then br="$src"; fi
   printf '@@REF %s %s\n' "$sha" "$br"
 }
 
-while read -r _ r; do
+while read -r _ cur r; do
   [ -n "$r" ] || continue
   r="${r#+}"
   case "$r" in *:*) resolve "${r%%:*}" "${r#*:}" ;; *) resolve "$r" "$r" ;; esac

@@ -46,6 +46,13 @@ expect "the escape is logged" 0 "$(grep -q 'ALLOWED | default-push | main' "$LOG
 expect "cd <repo> && git push from another cwd -> blocked (resolves the target repo)" 2 \
   "$(gate "$LOGDIR" "cd $R && git push")" "lands on 'main'"
 expect "gh pr create on main -> unchanged (not a git push)" 0 "$(gate "$R" 'gh pr create --fill')"
+expect "git push origin @ on main -> blocked (@ is HEAD)" 2 "$(gate "$R" 'git push origin @')"
+expect "git push --follow-tags on main -> blocked (option held until the default pass)" 2 "$(gate "$R" 'git push --follow-tags')" "lands on 'main'"
+expect "/usr/bin/git push on main -> blocked" 2 "$(gate "$R" '/usr/bin/git push')"
+expect "pushd <repo> && git push -> blocked" 2 "$(gate "$LOGDIR" "pushd $R && git push")"
+expect "switch -c to a new branch, then push HEAD -> allowed" 0 "$(gate "$R" 'git switch -c feat/new && git push -u origin HEAD')"
+HD="$(printf 'git commit -q -F - <<%sEOF%s && git push origin main\nfix: body\nEOF' "'" "'")"
+expect "heredoc opener line: the push after it is still read -> blocked" 2 "$(gate "$R" "$HD")"
 
 git -C "$R" switch -qc feat/thing
 expect "feature branch: git push origin HEAD:main -> blocked" 2 "$(gate "$R" 'git push origin HEAD:main')"
@@ -56,11 +63,19 @@ expect "git push -u origin HEAD:refs/heads/feature -> allowed" 0 "$(gate "$R" 'g
 expect "feature branch: plain git push -> allowed" 0 "$(gate "$R" 'git push')"
 expect "feature branch: git push -u origin HEAD -> allowed" 0 "$(gate "$R" 'git push -u origin HEAD')"
 expect "feature branch: git push origin feat/thing -> allowed" 0 "$(gate "$R" 'git push origin feat/thing')"
+expect "feature branch: git push origin HEAD:heads/main -> blocked (git expands heads/)" 2 "$(gate "$R" 'git push origin HEAD:heads/main')"
+expect "feature branch: git push --follow-tags origin main -> blocked" 2 "$(gate "$R" 'git push --follow-tags origin main')"
+expect "feature branch: git push --delete origin main -> blocked" 2 "$(gate "$R" 'git push --delete origin main')"
+expect "checkout main && merge && plain push -> blocked (HEAD is main by then)" 2 \
+  "$(gate "$R" 'git checkout main && git merge feat/thing && git push')" "lands on 'main'"
+expect "switch main && git push origin HEAD -> blocked" 2 "$(gate "$R" 'git switch main && git push origin HEAD')"
 
 # push.default=upstream with the feature branch tracking main: a plain push lands on main.
 git -C "$R" config branch.feat/thing.remote origin; git -C "$R" config branch.feat/thing.merge refs/heads/main
 git -C "$R" config push.default upstream
 expect "push.default=upstream, upstream main: plain git push -> blocked" 2 "$(gate "$R" 'git push')" "lands on 'main'"
+git -C "$R" config --unset push.default
+expect "git -c push.default=upstream push, upstream main -> blocked" 2 "$(gate "$R" 'git -c push.default=upstream push')"
 git -C "$R" config push.default simple
 expect "push.default=simple, upstream main: plain git push -> allowed (git pushes the same name)" 0 "$(gate "$R" 'git push')"
 git -C "$R" config --unset branch.feat/thing.merge; git -C "$R" config --unset push.default
