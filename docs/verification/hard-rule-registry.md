@@ -1,6 +1,6 @@
 # Proof of done: hard claims need code, queue and converge completion need evidence
 
-Acceptance: (1) `docs/hard-rules.tsv` lists every rule code really blocks on and `tests/test-meta-hard-claims.sh` fails a doc HARD mark that names no row and a row whose enforcer, rule, test or needle is missing; (2) `_wave_converge` emits `merged` only when `gh pr view` reports the PR MERGED, else `merge-dry-run`; (3) `queue.sh` journals `done` only when HEAD moved or a PR was created since the window opened, else `gated` with reason `no-delta`; (4) the drift rows named in the brief are fixed in their docs. Lane: full (the diff touches `lib/queue/` and the gate docs). Files: `docs/hard-rules.tsv`, `tests/test-meta-hard-claims.sh`, `tests/test-wave-converge.sh`, `lib/queue/orchestrate.sh`, `lib/queue/queue.sh`, `lib/queue/watch-board.sh`, the queue suites and their fixture mux, plus the docs and comments of the drift rows.
+Acceptance: (1) `docs/hard-rules.tsv` lists the rules code really blocks on, each with a proving test, and `tests/test-meta-hard-claims.sh` fails a doc HARD mark that names no row and a row whose enforcer, rule, call site, test or needle is missing; (2) `_wave_converge` emits `merged` only when `gh pr view` reports the PR MERGED, else `merge-dry-run`; (3) `queue.sh` journals `done` only when HEAD, a local branch tip or an operator PR moved since the window opened, else `gated` with reason `no-delta`; (4) the drift rows named in the brief are fixed in their docs. Lane: full (the diff touches `lib/queue/`, `hooks/harvest.sh` and the gate docs). Files: `docs/hard-rules.tsv`, `tests/test-meta-hard-claims.sh`, `tests/test-wave-converge.sh`, `lib/queue/orchestrate.sh`, `lib/queue/queue.sh`, `lib/queue/watch-board.sh`, the queue suites and their fixture mux, plus the docs and comments of the drift rows.
 
 ## The gaps this closes
 
@@ -16,13 +16,13 @@ Acceptance: (1) `docs/hard-rules.tsv` lists every rule code really blocks on and
 Command: bash tests/test-meta-hard-claims.sh
 Exit: 0
 Output:
-  registry has rows (27)
-  every registry row is real (enforcer, rule, test, needle, gate)
-  NC: planted row x.nofile is flagged ... x.wrongdefault is flagged (6 planted rows)
+  registry has rows (28)
+  every registry row is real (enforcer, rule, call site, test, needle, gate)
+  NC: planted row x.nofile is flagged ... x.keynotread is flagged (9 planted rows)
   the scan reached the live docs (171 files, 34 HARD mentions)
   every HARD mark names a registry rule
-  NC: a HARD mark naming no rule (spec-drift-guard) is flagged
-  Passed: 22 / 22
+  NC: only the two unnamed marks are flagged; ship-gate and the legend pass
+  Passed: 25 / 25
 Verdict: PASS
 ```
 
@@ -45,12 +45,13 @@ Verdict: PASS
 Command: bats tests/test-queue.bats
 Exit: 0
 Output:
-  1..27
-  ok 24 W5 wait bad-slug and missing-slug -> exit 64
+  1..29
   ok 25 D1 no-delta: RUNNER_DONE with no commit and no PR -> gated no-delta
   ok 26 D2 pr-delta: a PR created during the run -> done without a HEAD move
-  ok 27 D3 pr-delta: gh reports no new PR -> gated no-delta
-  (27 ok, 0 not ok; D1 to D3 are the new delta cases)
+  ok 27 D3 pr-delta: a PR older than the window -> gated no-delta
+  ok 28 D4 branch-delta: a new local branch with no HEAD move and no gh -> done
+  ok 29 D5 no-delta-idempotence: the second run over the same tsv opens no second window
+  (29 ok, 0 not ok; D1 to D5 are the new delta cases)
 Verdict: PASS
 ```
 
@@ -69,44 +70,40 @@ Command: bash tests/test-meta.sh
 Exit: 0
 Output:
   === HARD marks in live docs name a registry rule ===
-  Passed: 22 / 22
+  Passed: 25 / 25
   All hard-claim tests passed.
   === Results ===
-  Passed: 924 / 924
+  Passed: 932 / 932
   All meta tests passed.
 Verdict: PASS
 ```
 
 ```
 Command: bash tests/run-all.sh --changed --time
-Exit: 1 (host load average 157; see the reruns below)
+Exit: 1 (test-flick only: a timing check under host load; it passes alone, see below)
 Output:
-  run-all: --changed against ab38a33d: 35 changed files -> 107 suites (103 named, the rest always-on)
-  run-all: FAILED -> test-meta-docs-registry
-  run-all: TIMED OUT at 300s -> test-board-mirror(60s) test-config-registry(164s) test-harvest-sweep(90s) test-install-clis(66s) test-install-compat(82s) test-install-modules(126s) test-lanes-data(692s)
-  run-all: 107 suites run, 0 skipped for missing tooling
-Verdict: one real failure, fixed, plus ten load timeouts rerun alone
+  run-all: --changed against b6794c4e: 40 changed files -> 111 suites (107 named, the rest always-on)
+  test-flick   FAIL (rc=1) (109s)   !   FAIL: ps shows curl really was in flight (the check is not vacuous)
+  run-all: FAILED -> test-flick
+  run-all: 111 suites run, 0 skipped for missing tooling
+Verdict: 110 of 111 suites passed; the one failure is load-sensitive and passes alone (next block)
 ```
 
-The one failure was the registry-freshness pin: the two new test files moved a feature row's test counts. `bash lib/registry/feature-registry.sh generate docs/FEATURES.md` fixed it. Every other picked suite passed in that run. The timed-out suites and the failed one, rerun alone after the fix:
-
 ```
-Command: for t in test-meta-docs-registry test-config-registry test-tier4-close test-board-mirror test-harvest-sweep test-install-clis test-install-compat test-install-modules test-ship-gate-impl-notes test-lanes-data test-wrap-merge; do bash tests/$t.sh; done
-Exit: 0 for every suite
+Command: bash tests/test-flick.sh
+Exit: 0
 Output:
-  test-meta-docs-registry rc=0
-  test-config-registry rc=0
-  test-tier4-close rc=0
-  test-board-mirror rc=0 (45s)
-  test-harvest-sweep rc=0 (45s)
-  test-install-clis rc=0 (37s)
-  test-install-compat rc=0 (35s)
-  test-install-modules rc=0 (54s)
-  test-ship-gate-impl-notes rc=0 (53s)
-  test-lanes-data rc=0 (310s)
-  test-wrap-merge rc=0 (159s)
+  ok: a failed call logs the error against the sent slug
+  ok: a failed lookup sends nothing
+  flick: 346 passed, 0 failed
 Verdict: PASS
 ```
+
+`test-flick` asserts that `ps` still sees a `curl` in flight; on a host at load average 19 the process had already ended. The suite reads nothing this branch changes. An earlier run of the same command, before the review fixes and under a host load average of 157, timed out ten suites (the runner's ceiling, not an assertion) and failed `test-meta-docs-registry`, because the two new test files moved a feature row's counts. `bash lib/registry/feature-registry.sh generate docs/FEATURES.md` fixed that and each timed-out suite then passed alone. A later full repeat, after the review fixes, passed all 108 picked suites.
+
+## Review
+
+Two read-only `kit:code-reviewer` lenses returned FIX THEN SHIP on the first build. Applied: the raw `queue run` skips a `gated` `no-delta` row (D5); a moved local branch tip counts as delta for a worktree run with no `gh` (D4); only the operator's PRs count, and the stub now runs the real jq filter (D2, D3); converge reads PR state from the repo toplevel; the reaper says `unverified`; the three anti-rationalization rows carry the real `off:understanding_gate` default; the registry gained a `wired` column and call-site literals, drops the `unaccounted-push` row (no test proved `_refs_block`), and the suite cross-checks each hook's gate column; the doc scan narrows its definition exemption; docs now qualify commit-format, anti-rationalization and the proof and lane arms of ship-gate as off by default. Accepted: a registry term is matched anywhere on the line, so a mark naming two rules passes; `lib/**/*.md` and `adapters/` are not scanned (none contain HARD).
 
 ## Negative control
 
@@ -159,7 +156,7 @@ Output:
   
   === 48/48 passed, 0 failed ===
 
-Mutation: perl -i -pe 's/! _run_delta "\$repo" "\$head_before" "\$started_iso"/false/' lib/queue/queue.sh
+Mutation: perl -i -pe 's/! _run_delta "\$repo" "\$head_before" "\$tips_before" "\$started_iso"/false/' lib/queue/queue.sh
 Changed: lib/queue/queue.sh
 Exit: 1 (under mutation, RED expected)
 Output:
@@ -186,11 +183,11 @@ Output:
     PASS the scan reached the live docs (171 files, 24 HARD mentions)
     PASS every HARD mark names a registry rule (a HARD with no code behind it must say warns or advisory)
     PASS NC: a HARD mark naming no rule (spec-drift-guard) is flagged
-    PASS NC: a HARD mark naming ship-gate, and a legend pointing at the registry, pass
+    PASS NC: only the two unnamed marks are flagged; ship-gate and the legend pass
     PASS spec-drift-guard never exits 2 (it warns)
   
   === Results ===
-  Passed: 22 / 22
+  Passed: 25 / 25
   All hard-claim tests passed.
 
 Mutation: perl -i -pe 's/spec-drift-guard   \(warns only\)/spec-drift-guard   [HARD]/' docs/WORKFLOW.md
@@ -201,11 +198,11 @@ Output:
     FAIL every HARD mark names a registry rule (a HARD with no code behind it must say warns or advisory) (expected '', got 'docs/WORKFLOW.md:181:  Spec  ------>  spec exists, Status: DRAFT  ------>  spec-drift-guard   [HARD]')
       docs/WORKFLOW.md:181:  Spec  ------>  spec exists, Status: DRAFT  ------>  spec-drift-guard   [HARD]
     PASS NC: a HARD mark naming no rule (spec-drift-guard) is flagged
-    PASS NC: a HARD mark naming ship-gate, and a legend pointing at the registry, pass
+    PASS NC: only the two unnamed marks are flagged; ship-gate and the legend pass
     PASS spec-drift-guard never exits 2 (it warns)
   
   === Results ===
-  Passed: 21 / 22
+  Passed: 24 / 25
   Failed: 1
 
 Restore: git checkout HEAD -- docs/WORKFLOW.md
@@ -213,9 +210,13 @@ Exit: 0 (green after restore)
 Verdict: PASS
 ```
 
+## Rollback
+
+No state migrates. `git revert` of the merge restores the old `done` rule, the old converge event and the old docs. Journal rows written meanwhile stay valid: a `gated` row with reason `no-delta` or `unverified` is an ordinary terminal row the old code also reads, and a `merge-dry-run` event is an extra status string the board view ignores. `docs/hard-rules.tsv` is read only by `tests/test-meta-hard-claims.sh`.
+
 ## Not proven
 
-- `gh pr list` is only stubbed; the real `createdAt` filter ran against no live repository.
+- `gh pr list` is only stubbed (the stub runs the real jq filter over a canned payload); no live repository was queried.
 - Converge's real merge path (`mega-merge.sh merge ... --execute` then `gh pr view` reporting MERGED) is covered with a `gh` stub, not a live PR.
-- The registry proves a rule exists and a test asserts its block; it does not prove the test exercises the live hook wiring in `hooks/hooks.json`.
-- `docs/architecture.md`, `docs/hooks.md`, `lib/gate/README.md`, `README.md`, `AGENTS.md` and the root `WORKFLOW.md` still carry stale wording; they are listed under "Needs from others" in the PR.
+- The registry proves a rule exists, is wired where a lib rule needs wiring, and a test asserts its block; it does not prove the hook is registered in `hooks/hooks.json` or `settings.json`, and it omits blocks no test proves (doc-projection, the ship-rules load failure, the `_refs_block` push parse, citation-guard strict mode, other mega-merge refusals).
+- `docs/architecture.md`, `lib/gate/README.md`, `README.md`, `AGENTS.md`, the root `WORKFLOW.md` and `docs/guides/` still carry stale wording; they are listed under "Needs from others" in the PR.
