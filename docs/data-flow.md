@@ -28,9 +28,9 @@ The Learn stage's whole job. Every arrow is code, not intent; the names are the 
                    ├──►  lane-telemetry report ──┤ (advisory only,
                    │     (bash/awk)              │  feeds /kit:retro)
                    │                             │
-                   └──►  learn debt list       ──┤
+                   └──►  reflect debt list     ──┤
                                                  │
-                                                 ├──►  learn propose ──┐
+                                                 ├──►  reflect propose ┐
                                                  │     (aggregate +    │
   CC transcripts ──┬──►  session observe      ──┤      LLM interpret  │
   ~/.claude/       │     (deterministic)         │      + adversarial  │
@@ -67,36 +67,74 @@ The Learn stage's whole job. Every arrow is code, not intent; the names are the 
 
 | Invariant | In this diagram |
 |---|---|
-| **I1 one currency** | Every proposer lands in the SAME box: `## [staged]` blocks rendered by `lib/reflect/staging-format.py`. `reflect propose`, `stats --propose`, and `session audit triage` all write it. Nothing writes `BACKLOG.md` directly. |
+| **I1 one currency** | Every proposer lands in the SAME box: `## [staged]` blocks rendered by `lib/reflect/staging-format.py` (the bash hooks render the same grammar through its `.jq` twin). `reflect propose`, `stats anomalies --propose`, `session audit triage`, `session intel propose`, `wrap stage`, `backlog-stage` and `intake-sweep` all write it. |
 | **I2 one env family** | That box's path is `BACKLOG_STAGE_STAGING` for every writer (was three different names). |
 | **I3 one durable root** | Everything on the left resolves its paths through `kit_resolve_log_dir` (flow 2). |
 | **I4 one verb** | `run` produces, `propose` stages, `promote` is the human gate. |
 
-**The human gate is the only edge into `BACKLOG.md`.** `board promote` is a person's decision;
-`learn drain` is how they review the pile (and ages stale blocks to `[expired]`). Propose-don't-
-dispose: a machine may fill the staging buffer forever and never move the board.
+**Staging writes are opt-in for the automatic proposers.** `hooks/backlog-stage.sh`
+(SessionEnd), `intake-sweep` and `reflect propose` write the buffer only when
+`BACKLOG_STAGE_AUTO=1`; otherwise the hook returns and `propose` prints its blocks into the
+session report. A buffer nobody drained, fed as a side effect, grew the board 13 to 25 rows a
+day. The explicit verbs (`stats anomalies --propose`, `session audit triage`, `session intel
+propose`, `wrap stage`) write when you run them. `intake-sweep` is called by `backlog-stage
+--surface`, but the hook is wired on SessionEnd with no `--surface`, so today it runs only
+when invoked by hand.
 
-**Two proposers are NOT yet on this path** (SPEC-200 T6/T7, open): `session intel`'s
-synthesis/repeat proposals and `/kit:retro`'s action items emit prose inside their own report,
-so a human must retype them to act. A lead nobody can promote is a lead nobody actions.
+**One writer per file.** The staging buffer and the board each have exactly one locked write
+path, and the lock order is board first, then staging.
+
+```
+  STAGING BUFFER  _meta/backlog-staging.md            BOARD  _meta/BACKLOG.md
+
+  proposers (python)  ─┐                              capture ──────────┐
+  stage hooks (bash)  ─┼─► staging-format.py ─┐       promote ──────────┤
+  wrap stage          ─┘   append_blocks      │       assign freeform ──┼─► backlog.sh add ──┐
+                                              ▼       wayfind ──────────┤   (board_add.py)   │
+  reflect drain ─────────► staging-format.py  LOCK    web-drift ────────┘                    ▼
+  board promote ─────────►   rewrite      (tmpdir)                                    board_lock
+        │                                                                     (tmpdir, md5 of the
+        └─ takes board_lock, then the staging lock                             board's realpath)
+                                                      set / dedupe / dedupe-all ─────────────┘
+                                                      sync intake (sync_core.apply_board) ───┘
+```
+
+- **Staging.** `staging-format.py` owns the lock (a tmpdir flock keyed by the buffer's realpath, like the board lock) and two functions:
+  `append_blocks` (append, header written once) and `rewrite` (read-modify-write, re-read
+  inside the hold, atomic replace). The bash hooks reach them through the `append` CLI verb.
+  A promote therefore keeps a block appended while it ran, and a block that changed after it
+  was listed (expired by drain) is skipped, never minted.
+- **Board.** New rows come from `backlog.sh add` (`lib/board/board_add.py`), which mints the id
+  from a fresh read inside `board_lock` and writes the row in the target table's own column
+  count, read from its header. `capture` and `promote` call it; the prose commands (`/kit:assign`
+  freeform, `/kit:wayfind`, `web-drift`) run the verb instead of hand-editing. `set`, `dedupe`
+  and `dedupe-all` mutate under the same lock. `sync intake` mints in `sync_core` under that
+  lock too. `board writeback` edits `BACKLOG.md` on a held `chore/board-sync` branch, not the
+  working copy.
+
+**`board promote` is the only edge from staging to the board; it is not the only edge into
+the board.** It is a person's decision, and `reflect drain` is how they review the pile (aging
+stale blocks to `[expired]`). Propose-don't-dispose: a machine may fill the staging buffer
+forever and never move the board. `capture`, `/kit:assign` freeform, `/kit:wayfind`, `web-drift`
+and `sync intake` file a row directly because a person or a declared source asked for that row.
+
+**Two proposers reach staging only when run.** `session intel propose` (the digest's synthesis and
+repeat proposals) and `reflect propose --retro` (a retro's action items) are explicit verbs. The
+digest and the retro keep their prose; a lead nobody runs the verb for is a lead nobody actions.
 
 **The private copies drifted, exactly as predicted, and one became a hole** (fixed 2026-07-15).
 `hooks/backlog-stage.py` and `lib/stats/.../anomalies.py` each kept their own `render_block` /
-`render_candidate`. This page previously called them "byte-identical today, which is exactly how
-they will drift tomorrow." Tomorrow arrived in one day: the shared renderer learned to collapse
-whitespace per field (a guard added when these fields started carrying LLM-extracted transcript
-text), the copies did not, and the hook's bare `.strip()` let an embedded newline **forge a
-second `## [staged]` block**. One candidate in, two proposals out, and the forged one was
-indistinguishable from a real one to `board promote`.
+`render_candidate`. The shared renderer learned to collapse whitespace per field (a guard added
+when these fields started carrying LLM-extracted transcript text), the copies did not, and the
+hook's bare `.strip()` let an embedded newline **forge a second `## [staged]` block**. One
+candidate in, two proposals out, and the forged one was indistinguishable from a real one to
+`board promote`.
 
-Both now import the one module. C5 was tightened at the same time: it used to grep for
-`render_block|render_candidate`, which a file DEFINING that function matches with its own
-source, so the rule passed vacuously for the exact two files it existed to catch. It now
-requires the shared module to be LOADED, and its negative control plants a private renderer.
-
-Still reading its own copy of the grammar: `lib/board/bin/add-backlog`'s `parse_staging`. That
-one is a READER (the promoter), so a drift there fails loudly rather than forging a row; it is
-listed in staging-format.py's docstring as known duplication.
+`anomalies.py` and `add-backlog` now load the one module (`add-backlog` used to keep its own
+`parse_staging`; it reads blocks through `parse_blocks` now). C5 requires the shared module to
+be LOADED, not merely named, and its negative control plants a private renderer. The only second
+copy of the grammar left is the `.jq` twin, pinned to the Python on goldens by
+`tests/test-staging-format-jq.sh`.
 
 ---
 
@@ -118,7 +156,7 @@ One append-only corpus, one resolver. Every path below is derived, never hardcod
    proof + override     │            ▼                               │        in-memory DuckDB,
                         │   <root>/runs/<rid>.log     (per run)      │        persists nothing)
   queue.sh        ────► │   <root>/completeness.log                  │
-   journal (idempotency)│   <root>/queue-journal.tsv                 │ ◄──── learn debt list
+   journal (idempotency)│   <root>/queue-journal.tsv                 │ ◄──── reflect debt list
                         └────────────────────────────────────────────┘        (| DEBT | rows)
                                           ▲                                ◄──── mega report /
                                           │                                       mega review
@@ -156,9 +194,9 @@ Who calls whom. An arrow is a real invocation (shell-out, source, or import).
               │
               │                  WATCH                       LEARN
               │                  ─────                       ─────
-              │                  stats ◄── ledger            learn ─┬─► propose ──┐
-              │                  telemetry ◄── ledger               ├─► drain     │
-              │                  session ─┬─► observe                └─► debt      │
+              │                  stats ◄── ledger            reflect ┬─► propose ─┐
+              │                  telemetry ◄── ledger                ├─► drain    │
+              │                  session ─┬─► observe                └─► debt     │
               │                           ├─► semantic                            │
               │                           ├─► intel ──► (calls observe)           │
               │                           ├─► audit ──► triage ────────────────┐  │
@@ -206,7 +244,7 @@ every output feeds a gate, a lens, or a worker slot.
                      ▼                                │              │                             ▼
         ┌────────────────────────┐                    │              │                    quiz-gate ★ tap
         │  gate-ledger required  │       ┌────────────┴───┐          ▼                    (engage/defer/wave)
-        │  <lane>                │       │                │   proof-gate contract         + learn debt row
+        │  <lane>                │       │                │   proof-gate contract         + reflect debt row
         │  reads the lane x      │       ▼                ▼   (docs/verification/               │
         │  phase matrix straight │  review-team      execute        task-types.md:              ▼
         │  out of WORKFLOW.md    │  domain LENS      WORKER slot     which artifact this    weekend-batch

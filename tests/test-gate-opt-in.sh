@@ -33,7 +33,7 @@ done
 R="$TMP/proof"; repo "$R"
 hook ship-gate.sh "$R" "$PUSH"; rc=$?
 [ $rc -eq 0 ] && pass "adopted repo, behavioral diff, no proof, no config -> ship-gate PASSES" || fail "default blocked (rc=$rc): $ERR"
-grep -q 'OFF-BY-CONFIG | proof-gate | x' "$DWARVES_KIT_LOG_DIR/ship-gate.log" && pass "and logs OFF-BY-CONFIG" || fail "no OFF-BY-CONFIG line"
+grep -q 'OFF-BY-CONFIG | proof-gate | x' "$KIT_LEDGER_DIR/hooks/ship-gate.log" && pass "and logs OFF-BY-CONFIG" || fail "no OFF-BY-CONFIG line"
 U="$TMP/understand"; bare "$U"; hook anti-rationalization.sh "$U" "$STOP"; rc=$?
 [ $rc -eq 0 ] && pass "Stop hook passes a rationalization phrase by default" || fail "Stop hook blocked by default (rc=$rc)"
 C="$TMP/commit"; bare "$C"; hook commit-format.sh "$C" "$BAD"; rc=$?

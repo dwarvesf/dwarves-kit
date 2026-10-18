@@ -434,19 +434,14 @@ engine also refuses a run where `notion_db` or `notion_taskboard_db` points at
 the same database, since those apps write. Design, including the git model and
 the honest residuals: `docs/specs/SPEC-004-pull-mode-intake.md`.
 
-## Cockpit channel (SPEC-002 P2, ID-290)
+## Cockpit bridge (`board mirror`) is a separate engine
 
-`cockpit.py` is the sync-engine re-landing of the legacy `board mirror` bridge:
-a MANY-source -> ONE-cockpit channel, distinct from the per-repo two-way spoke
-sync above. It reads a `boards.txt` registry (every opted-in repo's BACKLOG.md
-plus its active `_meta/megagoals/*/ROADMAP.md`) and keys every item by ORIGIN
-(`<repo>:<id>`, `megagoals:<repo>/<slug>`) so many repos pool onto one board
-without ID collisions. It honors the legacy `[A-Z]+-[0-9]+` id pattern
-(`BACKLOG_ID_RE` override), so prefixed boards (`BK-`, `DS-`, `DF-`, ...) pool
-correctly, NOT just bare `ID-`. The diff is `row_hash`-keyed and the board
-always wins (the git-wins conflict rule); the git board keyword maps to the
-Hermes reachable-state set `{triage, ready, blocked}`, and a card leaves the
-board by archive:
+`board mirror`, `status`, and `writeback` run one engine, `lib/board/board-mirror.sh` and
+`lib/board/board-writeback.sh`. It is a MANY-source -> ONE-cockpit channel, distinct from the
+per-repo two-way spoke sync above: it reads a `boards.txt` registry (every `bridge=on` repo's
+BACKLOG.md plus its active `_meta/megagoals/*/ROADMAP.md`) and keys every card by ORIGIN
+(`<repo>:<id>`, `megagoals:<repo>/<slug>`). The board always wins, and the git board keyword maps
+to the Hermes reachable-state set `{triage, ready, blocked}`; a card leaves the board by archive:
 
 | Row status | Card state | When the card is elsewhere |
 |---|---|---|
@@ -455,27 +450,13 @@ board by archive:
 | `parked` | `blocked` | from `ready`: `block`; from `triage`: replace |
 | `shipped`, `dropped`, row gone | archived | `archive` from any live state, so a card with unfinished parents or in `triage` still closes |
 
-`complete` is never used: hermes refuses it on a `triage` card, and the old
-mirror read that refusal as "already terminal" and orphaned the card. A move
-whose verb fails is recorded as not moved and planned again next tick.
+`complete` is never used: hermes refuses it on a `triage` card, and the old mirror read that
+refusal as "already terminal" and orphaned the card. A move whose verb fails is recorded as not
+moved and planned again next tick.
 
-This slice ports the two DETERMINISTIC legs (multi-source extract + the keyed
-diff/plan) and is reachable in dry-run:
-
-```
-python3 cockpit.py extract --registry _meta/boards.txt          # origin-keyed TSV
-python3 cockpit.py plan    --registry _meta/boards.txt [--snapshot F] [--json]
-board mirror --engine sync --dry-run                            # same, via the verb
-```
-
-The extract (and thus the `row_hash`) is byte-identical to the legacy
-`board-mirror.sh` engine, verified with `cmp` on a fixture carrying prefixed
-ids, so the existing bridge snapshot is a format-compatible bearing interface
-for a later cutover. DEFERRED to
-a later slice (still served by the legacy `mirror`/`status`/`writeback` verbs,
-which keep working and print a legacy banner): the live Hermes LOAD leg, two-way
-status writeback, snapshot state-shape migration, and retiring those
-verbs to thin aliases. Design: `docs/specs/SPEC-002-sync-mesh.md` "P2".
+A Python port of the extract and diff (`board mirror --engine sync --dry-run`) was removed: it
+never ran live and duplicated the bash engine. `cockpit.py` keeps only what live spokes import
+(the untrusted-content markers, `redact_secrets`, `repo_root_of`).
 
 ## Tests
 

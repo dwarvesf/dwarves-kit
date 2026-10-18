@@ -147,7 +147,7 @@ out in the RUNBOOK.
 | `hooks/skill-review.sh` | PreCompact/SessionEnd entry: reentrancy + enabled gate, payload to tempfile, detached spawn, return fast |
 | `hooks/sessionstart-surface.sh` | SessionStart entry: emit the one-line loop status as `additionalContext` |
 | `lib/common.sh` | Paths, `cfg()` (env > config.toml > default), logging, `ledger_append`, `safe_slug`, `contains_secret`, the mkdir lock, the reentrancy sentinel |
-| `lib/transcript.sh` | Parse transcript JSONL into last-K `[role] text` turns (jq; skips thinking/tool/summary) |
+| `lib/transcript.sh` | Bash entry to the last-K `[role] text` turns; the parse is `parse_transcript.py --tail-text` (skips thinking/tool/summary) |
 | `lib/reviewer-run.sh` | TRUSTED reviewer: transcript to `claude -p` (no write), two-layer parse, secret-drop, stage draft, ledger row |
 | `lib/reviewer-spawn.sh` | Thin detached wrapper: run reviewer-run, then `rm` the temp payload |
 | `lib/promote.sh` | TRUSTED promote core: list / promote / reject / auto; the only `skills/` writer; secret-refuse, force-backup |

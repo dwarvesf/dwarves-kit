@@ -33,6 +33,16 @@
 #                                                               (cell count, dup ids, `\|`
 #                                                               escapes, bad statuses); an
 #                                                               enumerator, exits 0
+#   board.sh add <title> [--notes T] [--mid V]... [--status S] [--section H] [--backlog-file <path>]
+#                                                               file ONE new row: the next id is
+#                                                               minted and written under the board
+#                                                               lock, in the target table's own
+#                                                               column count; prints the id. The
+#                                                               one row-minting verb (capture and
+#                                                               promote call it too).
+#   board.sh normalize [--check] <board.md>                     pad short rows to their table's own
+#                                                               column count (one-shot repair; keeps
+#                                                               every id, idempotent)
 #   board.sh states [--backlog-file <path>]                    legal state names
 #   board.sh run <ID> [--backlog-file <path>] [--dir <megadir>] [--exec] [-- <orchestrate-args>]
 #                                                               the single-row dispatch path:
@@ -91,14 +101,7 @@
 #
 #   board.sh mirror [--dry-run] [--repo-root <path>] [--registry <path>] [--snapshot <path>]
 #                    [--mega-board <name>] [--board-prefix <prefix>]
-#                    [--remote <user@host>] [--remote-kit-path <path>] [--engine legacy|sync]
-#                                                               `--engine sync` (the sync-engine
-#                                                               cockpit channel) routes
-#                                                               the deterministic extract+diff
-#                                                               through lib/sync/cockpit.py; today
-#                                                               it is dry-run-only (the plan), the
-#                                                               live LOAD + writeback stay on the
-#                                                               legacy engine (the default).
+#                    [--remote <user@host>] [--remote-kit-path <path>]
 #                                                               project opt-in (`bridge=on`)
 #                                                               cockpit boards + one card per
 #                                                               ACTIVE mega-goal onto a Hermes
@@ -261,7 +264,6 @@ BOARD_MIRROR_CLEANUP_PY="$BOARD_DIR/board-mirror-cleanup.py"
 BOARD_HEALTH_PY="$(cd "$BOARD_DIR/.." && pwd)/sync/sweep/board-health"
 BOARD_BRIEF_PY="$(cd "$BOARD_DIR/.." && pwd)/sync/sweep/board-brief"
 BOARD_HERMES_PY="$(cd "$BOARD_DIR/.." && pwd)/sync/sweep/board-hermes"
-COCKPIT_PY="$(cd "$BOARD_DIR/.." && pwd)/sync/cockpit.py"  # lib/sync/, the P2 sync-engine port
 MEGA_SH="$(cd "$BOARD_DIR/.." && pwd)/mega/mega.sh"  # lib/mega/mega.sh, one level up from lib/board/
 
 [ -f "$BACKLOG_SH" ]         || { echo "board: lib/board/backlog.sh not found at $BACKLOG_SH" >&2; exit 1; }
@@ -286,12 +288,10 @@ _parse_flags() {
   OPT_BACKLOG_FILE=""; OPT_REPO_ROOT=""; OPT_REGISTRY=""; OPT_DRY_RUN=0
   OPT_SNAPSHOT=""; OPT_MEGA_BOARD=""; OPT_BOARD_PREFIX=""; OPT_REMOTE=""; OPT_REMOTE_KIT_PATH=""
   OPT_BRANCH=""; OPT_PR_BASE=""; OPT_WITH_MEGA=0; OPT_MEGA_CODE_ROOT=""
-  OPT_ENGINE="legacy"
   POSITIONAL=()
   while [ $# -gt 0 ]; do
     case "$1" in
       --backlog-file)    OPT_BACKLOG_FILE="${2:-}"; shift 2 ;;
-      --engine)          OPT_ENGINE="${2:-}"; shift 2 ;;
       --repo-root)       OPT_REPO_ROOT="${2:-}"; shift 2 ;;
       --registry)        OPT_REGISTRY="${2:-}"; shift 2 ;;
       --dry-run)         OPT_DRY_RUN=1; shift ;;
@@ -667,31 +667,6 @@ cmd_mirror() {
   local registry="${OPT_REGISTRY:-$repo_root/_meta/boards.txt}"
   local snapshot="${OPT_SNAPSHOT:-$repo_root/_meta/.board-mirror-snapshot.jsonl}"
 
-  # The sync-engine cockpit channel port. Opt-in via
-  # `--engine sync`; today it re-lands the DETERMINISTIC legs (multi-source
-  # extract + the keyed row_hash-git-wins diff) as a dry-run plan. The live
-  # LOAD leg (applying to a Hermes kanban) and two-way writeback stay on the
-  # legacy engine below until the next slice, so a bare `--engine sync` without
-  # --dry-run is refused rather than silently doing nothing.
-  case "$OPT_ENGINE" in
-    legacy|sync) : ;;
-    *) echo "mirror: unknown --engine '$OPT_ENGINE' (expected legacy|sync)" >&2; return 64 ;;
-  esac
-  if [ "$OPT_ENGINE" = "sync" ]; then
-    [ -f "$registry" ] || { echo "mirror: no registry at $registry" >&2; return 1; }
-    if [ "$OPT_DRY_RUN" -ne 1 ]; then
-      echo "mirror --engine sync: apply not yet ported; run with --dry-run for" \
-           "the plan, or use the legacy engine (default) to apply." >&2
-      return 64
-    fi
-    # --snapshot always passed (cockpit.py treats a missing file as empty prior
-    # state), mirroring the legacy branch below for a symmetric read.
-    local plan_args=(plan --registry "$registry" --snapshot "$snapshot")
-    [ -n "$OPT_MEGA_BOARD" ]   && plan_args+=(--mega-board "$OPT_MEGA_BOARD")
-    [ -n "$OPT_BOARD_PREFIX" ] && plan_args+=(--board-prefix "$OPT_BOARD_PREFIX")
-    exec python3 "$COCKPIT_PY" "${plan_args[@]}"
-  fi
-
   _legacy_bridge_note
   [ -f "$registry" ] || { echo "mirror: no registry at $registry" >&2; return 1; }
 
@@ -948,38 +923,13 @@ cmd_capture() {
   [ -n "$title" ] || { echo "usage: board capture \"<title>\" [-b <notes>]" >&2; exit 2; }
   backlog="${backlog:-$PWD/_meta/BACKLOG.md}"
   [ -f "$backlog" ] || { echo "board capture: no board at $backlog (run \`board init\`)" >&2; exit 2; }
+  # The mint and the write run in the one row-minting verb (`backlog.sh add`), under the
+  # shared per-board lock (sync_core.board_lock, the same file promote/sync/set flock), so two
+  # sessions capturing at once serialize instead of minting the same id. The row takes the
+  # target table's own column count.
   local bid
-  # The read -> mint -> append runs under the shared per-board lock
-  # (sync_core.board_lock, the same file add-backlog/backlog_sync flock), so two
-  # sessions capturing at once serialize instead of minting the same id. The
-  # file is re-read INSIDE the hold: the mint is always derived from the
-  # current board, never from a pre-lock snapshot.
-  bid="$(BOARD_SYNC_LIB="$BOARD_DIR/../sync" python3 - "$backlog" "$title" "$notes" <<'PY'
-import os, sys, tempfile
-from pathlib import Path
-sys.path.insert(0, os.environ["BOARD_SYNC_LIB"])
-from sync_core import board_lock, detect_prefix, next_id, escape
-path = Path(sys.argv[1])
-title, notes = sys.argv[2], sys.argv[3] or "filed via board capture"
-with board_lock(path):
-    text = path.read_text()
-    prefix = detect_prefix(text)
-    bid = f"{prefix}-{next_id(text, prefix, path)}"
-    row = f"| {bid} | {escape(' '.join(title.split()))} | {escape(notes)} | queued |\n"
-    lines = text.splitlines(keepends=True)
-    for i, ln in enumerate(lines):
-        if ln.startswith("|---"):
-            lines.insert(i + 1, row)
-            break
-    else:
-        sys.exit(f"no table header found in {path}")
-    fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.")
-    with os.fdopen(fd, "w") as f:
-        f.write("".join(lines))
-    os.replace(tmp, path)
-print(bid)
-PY
-)"
+  bid="$(BACKLOG_FILE="$backlog" bash "$BACKLOG_SH" add --notes "${notes:-filed via board capture}" -- "$title")" \
+    || { echo "board capture: could not add the row to $backlog" >&2; exit 1; }
   # sync in a subshell: cmd_sync ends in exec and must not replace this shell.
   ( cmd_sync --backlog-file "$backlog" ) || true
   local rid=""
@@ -1199,11 +1149,11 @@ cmd_publish() {
   return 3
 }
 
-# bridge was folded into the sync module 2026-07-16; these verbs are the
-# legacy cockpit engine until the sync-engine port lands fully.
+# mirror/status/writeback run one engine, the cockpit bridge (board-mirror.sh and
+# board-writeback.sh). The per-repo spoke sync is a separate job: `board sync`.
 _legacy_bridge_note() {
-  echo "note: mirror/status/writeback are the legacy cockpit engine (bridge)," >&2
-  echo "      folded into the sync module; the port is tracked on the kit board." >&2
+  echo "note: mirror/status/writeback are the cockpit bridge engine (board-mirror.sh);" >&2
+  echo "      the per-repo spoke sync is \`board sync\`, a separate engine." >&2
 }
 
 usage() { sed -n '2,/^set -euo pipefail$/p' "${BASH_SOURCE[0]}" | sed '$d' | sed 's/^# \{0,1\}//'; }
@@ -1229,6 +1179,7 @@ main() {
     init) shift; cmd_init "$@" ;;
     capture) shift; cmd_capture "$@" ;;
     promote) shift; exec "$BOARD_DIR/bin/add-backlog" "$@" ;;
+    normalize) shift; exec python3 "$BOARD_DIR/bin/board-normalize" "$@" ;;
     run) shift; exec "$BOARD_RUN_SH" "$@" ;;
     work) shift; exec bash "$BOARD_DIR/work.sh" "$@" ;;
     -h|--help|help) usage ;;

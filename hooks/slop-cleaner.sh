@@ -10,6 +10,8 @@
 # anti-rationalization blocks (exit 2); this one suggests (exit 0 + additionalContext).
 
 set -euo pipefail
+# Hook logs live under the ledger root (lib/telemetry/hook-log-dir.sh); the fallback keeps a hook running without lib/.
+. "${BASH_SOURCE[0]%/*}/../lib/telemetry/hook-log-dir.sh" 2>/dev/null || kit_hook_log_dir() { printf '%s' "${KIT_LEDGER_DIR:-${DWARVES_KIT_LOG_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/dwarves-kit/logs}}/hooks"; }
 INPUT=$(cat)
 
 # Guard: prevent infinite Stop hook loop.
@@ -63,7 +65,7 @@ BLOAT_FILES=""
 # the same ~7 files re-flagged up to 19x in a row). State is per-session, keyed by
 # session_id, storing "path<TAB>contenthash" for each already-reported file.
 SESSION_ID=$(printf '%s' "$INPUT" | jq -r '.session_id // "default"' 2>/dev/null || echo default)
-SEEN_LOG_DIR="${DWARVES_KIT_LOG_DIR:-$HOME/.claude/dwarves-kit/logs}"
+SEEN_LOG_DIR="$(kit_hook_log_dir)"
 mkdir -p "$SEEN_LOG_DIR" 2>/dev/null || true
 SEEN_FILE="$SEEN_LOG_DIR/slop-seen-${SESSION_ID//[^A-Za-z0-9._-]/_}.tsv"
 # Prune stale seen-files (>7d) so the dir does not grow unbounded across sessions.
@@ -127,7 +129,7 @@ done <<< "$RECENT_FILES"
 
 if [ -n "$BLOAT_FILES" ]; then
   # Log for eval corpus
-  LOG_DIR="${DWARVES_KIT_LOG_DIR:-$HOME/.claude/dwarves-kit/logs}"
+  LOG_DIR="$(kit_hook_log_dir)"
   mkdir -p "$LOG_DIR"
   echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) | SLOP | $(echo -e "$BLOAT_FILES" | wc -l | tr -d ' ') files | $(pwd)" >> "$LOG_DIR/slop-cleaner.log"
 

@@ -815,12 +815,6 @@ def stage_proposals(anomalies: list[Anomaly], staging: str | None, backlog: str 
 
 
 def _append_blocks(staging: str, blocks: list[str]) -> None:
-    """Append blocks to the staging buffer (create with the cc-backlog header if new)."""
-    exists = os.path.isfile(staging)
-    parent = os.path.dirname(staging)
-    if parent:
-        os.makedirs(parent, exist_ok=True)
-    with open(staging, "a", encoding="utf-8") as fh:
-        if not exists:
-            fh.write(_STAGING_HEADER + "\n")
-        fh.write("".join(blocks))
+    """Append blocks to the staging buffer through the kit's one locked staging writer
+    (staging-format.py `append_blocks`: the staging lock, header written once for a new file)."""
+    _staging_format().append_blocks(staging, blocks, header=_STAGING_HEADER + "\n")

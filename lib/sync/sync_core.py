@@ -67,6 +67,7 @@ ID_TOKEN = r"[A-Z][A-Z0-9]*-\d+"
 TITLE_RE = re.compile(r"^(" + ID_TOKEN + r")\s*(?:[·:, -]\s*)?(.*)$")
 STRICT_ROW_RE = re.compile(r"^\| (ID-\d+) \|")
 GEN_ROW_RE = re.compile(r"^\| (" + ID_TOKEN + r") \|")
+_ID_HEADER_RE = re.compile(r"^\s*\|\s*ID\s*\|")
 
 # --- board parsing -----------------------------------------------------------
 
@@ -78,14 +79,22 @@ class Row:
     status_kw: str
     lineno: int
     notes: str = ""
+    ncols: int = 4
 
 
-def split_row(line: str):
-    """Split a table row on unescaped pipes; None if not a 4-cell row."""
+def header_columns(line: str) -> int:
+    """Cells in a `| ID | ... |` table header: unescaped pipes minus one."""
+    return len(CELL_SPLIT.findall(line.rstrip("\n"))) - 1
+
+
+def split_row(line: str, ncols: int = 4):
+    """Split a table row on unescaped pipes; None unless it has exactly `ncols` cells (the
+    table's own column count from its header; 4 for the Item / Notes / Status shape). Returns
+    every cell stripped: id first, status last, whatever sits between is the notes."""
     parts = CELL_SPLIT.split(line.rstrip("\n"))
-    if len(parts) != 6 or parts[0].strip() or parts[5].strip():
+    if ncols < 3 or len(parts) != ncols + 2 or parts[0].strip() or parts[-1].strip():
         return None
-    return [p.strip() for p in parts[1:5]]
+    return [p.strip() for p in parts[1:-1]]
 
 
 def detect_prefix(text: str) -> str:
@@ -112,19 +121,24 @@ def parse_board(text: str, strict_id: bool = True,
               if strict_id else GEN_ROW_RE)
     id_full = re.escape(prefix) + r"-\d+" if strict_id else ID_TOKEN
     rows: dict[str, Row] = {}
+    ncols = 4  # until a table header says otherwise
     for i, line in enumerate(text.splitlines()):
+        if _ID_HEADER_RE.match(line):
+            ncols = header_columns(line)
+            continue
         if not row_re.match(line):
             continue
-        cells = split_row(line)
+        cells = split_row(line, ncols)
         if not cells:
             continue
-        rid, item, notes, status = cells
+        rid, item, status = cells[0], cells[1], cells[-1]
+        notes = " | ".join(cells[2:-1])
         if not re.fullmatch(id_full, rid):
             continue
         kw = status.split()[0].lower() if status.split() else ""
         if rid in rows:
             continue  # first occurrence wins (dup rows are a board bug)
-        rows[rid] = Row(rid, unescape(item), kw, i, unescape(notes))
+        rows[rid] = Row(rid, unescape(item), kw, i, unescape(notes), ncols)
     return rows
 
 
@@ -719,13 +733,13 @@ def apply_board(text: str, plan: Plan, prefix: str = "ID",
         row = rows[bid]
         line = lines[row.lineno]
         eol = "\n" if line.endswith("\n") else ""
-        cells = split_row(line)
+        cells = split_row(line, row.ncols)
         if item is not None:
             cells[1] = escape(item)
         if status_kw is not None:
-            rest = cells[3].split(maxsplit=1)
+            rest = cells[-1].split(maxsplit=1)
             trailing = f" {rest[1]}" if len(rest) > 1 else ""
-            cells[3] = f"{status_kw}{trailing}"
+            cells[-1] = f"{status_kw}{trailing}"
         lines[row.lineno] = "| " + " | ".join(cells) + " |" + eol
 
     for bid, kw in plan.board_set_status:

@@ -279,14 +279,13 @@ file count so this table cannot drift):
 | `context-hints` | UserPromptSubmit | convenience | none (temporal + keyword skill-hint injection, no model call, never blocks) |
 | `citation-guard` | Stop | advisory | hallucinated `file:line` citations in the final message; log-only by default, opt-in strict mode (`CITATION_GUARD_STRICT=1`) blocks |
 | `harvest` | PreCompact, SessionEnd | convenience | none (stages durable learnings / a LAB_LOG draft to a staging file; never writes a durable home, always exits 0; its auto modes exit 0 without work on a host where the harvest sweep is active, unless `harvest.hook_when_sweep_on` is true) |
-| `backlog-stage` | SessionEnd | convenience | none (stages forward-looking work-items to a staging file; never writes the board, always exits 0) |
-| `intake-sweep` | SessionStart (invoked by backlog-stage --surface) | convenience | none (sweeps consumer-declared deferred-link sources into the same staging file; config-gated no-op, always exits 0) |
+| `backlog-stage` | SessionEnd; SessionStart (`--surface`) | convenience | none (opt-in via `BACKLOG_STAGE_AUTO`; stages forward-looking work-items to a staging file; never writes the board, always exits 0) |
+| `intake-sweep` | SessionStart (run by the wired `backlog-stage --surface`, same opt-in) | convenience | none (sweeps consumer-declared deferred-link sources into the same staging file; config-gated no-op, always exits 0) |
 | `auto-format` | PostToolUse Write/Edit | convenience | none (idempotent formatting) |
 | `output-offload` | PostToolUse * | advisory | oversized tool output bloating context; offloads the full payload to a file + nudges, never blocks |
 | `statusline` | StatusLine | convenience | none (HUD) |
 | `notification` | Notification | convenience | none (desktop notify) |
 | `permission-auto-approve` | PermissionRequest | convenience | none (removes approve-20-times friction for read-only ops) |
-| `session-state-save` | Stop | convenience | none (state persistence) |
 | `pre-compact-backup` | PreCompact | convenience | none (session snapshot) |
 | `post-compact-reinject` | SessionStart compact | convenience | none (re-injects rules compaction stripped) |
 | `codebase-index` | SessionStart (opt-in) | convenience | none (background indexing) |
@@ -589,8 +588,6 @@ Beyond the repo itself, the kit writes to:
 | `~/.claude/dwarves-kit/logs/commit-format.log` | Blocked non-conventional commit subjects | commit-format.sh |
 | `~/.claude/dwarves-kit/logs/spec-drift-guard.log` | Files created outside the spec | spec-drift-guard.sh |
 | `~/.claude/dwarves-kit/logs/slop-cleaner.log` | Bloat detections | slop-cleaner.sh |
-| `.claude/session-state/last-state.md` | Latest session snapshot | session-state-save.sh |
-| `.claude/session-state/archive/*` | Last 10 rotated snapshots | session-state-save.sh |
 | `.claude/debug/<slug>.md` | Per-bug evidence ledger (Symptoms / Root cause / Evidence / Eliminated / Fix attempts / Resolution) | /kit:debug |
 | `.claude/debug/<slug>.log` | `[DEBUG Hn]`-tagged instrumentation output | /kit:debug |
 
