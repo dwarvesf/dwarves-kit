@@ -56,7 +56,7 @@ out3="$(HOME="$HOME_SB3" CLAUDE_DIR="$TMP3" bash "$KIT_DIR/install.sh" 2>&1)"
 # --- the refusal is loud: it says it refused, names the escape, and --with is called out ---
 { trap '' PIPE; printf '%s' "$out" 2>/dev/null || :; } | grep -q '\[refused\] Not wiring kit hooks'; chk "plugin machine: install says it refused to wire hooks" $?
 { trap '' PIPE; printf '%s' "$out" 2>/dev/null || :; } | grep -q -- '--force-both'; chk "plugin machine: install names the --force-both escape" $?
-HOME_SB5="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")"; TMP5="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")"
+HOME_SB5="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; TMP5="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
 trap 'rm -rf "$TMP" "${TMP2:-}" "${TMP3:-}" "${TMP4:-}" "$HOME_SB1" "$HOME_SB2" "${HOME_SB3:-}" "${HOME_SB4:-}" "$HOME_SB5" "$TMP5" "${TMP6:-}" "${HOME_SB6:-}"' EXIT
 mkdir -p "$TMP5/plugins/cache/dwarves-marketplace/kit/1.0.0/lib"
 out5="$(HOME="$HOME_SB5" CLAUDE_DIR="$TMP5" bash "$KIT_DIR/install.sh" --with session,advisor 2>&1)"
@@ -65,7 +65,7 @@ out5="$(HOME="$HOME_SB5" CLAUDE_DIR="$TMP5" bash "$KIT_DIR/install.sh" --with se
 [ ! -e "$TMP5/dwarves-kit/kit.toml" ] || [ -L "$TMP5/dwarves-kit/kit.toml" ]; chk "plugin machine: no install record is rendered (kit.toml stays a link)" $?
 
 # --- roster-only plugin (no cache dir) is detected by the same detector ---
-TMP6="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")"; HOME_SB6="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")"
+TMP6="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; HOME_SB6="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
 mkdir -p "$TMP6/plugins"
 echo '{"version":2,"plugins":{"kit@dwarves-marketplace":[{"scope":"user"}]}}' > "$TMP6/plugins/installed_plugins.json"
 out6="$(HOME="$HOME_SB6" CLAUDE_DIR="$TMP6" bash "$KIT_DIR/install.sh" 2>&1)"
@@ -73,7 +73,7 @@ out6="$(HOME="$HOME_SB6" CLAUDE_DIR="$TMP6" bash "$KIT_DIR/install.sh" 2>&1)"
 { [ ! -e "$TMP6/settings.json" ] || ! jq -e 'has("hooks")' "$TMP6/settings.json" >/dev/null; }; chk "roster-only plugin: no hooks wired" $?
 
 # --- mode both: hooks already in settings.json next to the plugin are warned about, not silently kept ---
-TMP7="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")"; HOME_SB7="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")"
+TMP7="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; HOME_SB7="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
 mkdir -p "$TMP7/plugins/cache/dwarves-marketplace/kit/1.0.0/lib"
 printf '%s' '{"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":"$HOME/.claude/dwarves-kit/hooks/safety-gate.sh"}]}]}}' > "$TMP7/settings.json"
 out7="$(HOME="$HOME_SB7" CLAUDE_DIR="$TMP7" bash "$KIT_DIR/install.sh" 2>&1)"
@@ -88,7 +88,7 @@ out2="$(HOME="$HOME_SB2" CLAUDE_DIR="$TMP2" bash "$KIT_DIR/install.sh" --force-b
 if { trap '' PIPE; printf '%s' "$out2" 2>/dev/null || :; } | grep -q 'COMPAT-ONLY'; then echo "FAIL --force-both still compat"; fail=1; else echo "ok   --force-both bypasses compat"; fi
 jq -e '.hooks.PreToolUse | length > 0' "$TMP2/settings.json" >/dev/null 2>&1; chk "--force-both wires the spine hooks next to the plugin" $?
 # The older env spelling still works.
-TMP2B="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")"; HOME_SB2B="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")"
+TMP2B="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; HOME_SB2B="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
 mkdir -p "$TMP2B/plugins/cache/dwarves-marketplace/kit/1.0.0/lib"
 HOME="$HOME_SB2B" CLAUDE_DIR="$TMP2B" KIT_FORCE_FULL=1 bash "$KIT_DIR/install.sh" >/dev/null 2>&1 || true
 jq -e '.hooks.PreToolUse | length > 0' "$TMP2B/settings.json" >/dev/null 2>&1; chk "KIT_FORCE_FULL=1 is still honored as the older spelling of --force-both" $?

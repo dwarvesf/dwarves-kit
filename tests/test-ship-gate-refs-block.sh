@@ -38,8 +38,8 @@ expect_pass() { # $1=label $2=repo $3=command
   else no "$1 (want exit 0, no refusal; got $rc: $(head -c 300 "$ERR"))"; fi
 }
 
-A="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")/r"; mkrepo "$A" yes
-N="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")/r"; mkrepo "$N" no
+A="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")/r" || exit 1; mkrepo "$A" yes
+N="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")/r" || exit 1; mkrepo "$N" no
 HD="$(printf "bash <<'EOT'\ngit push origin feat/work\nEOT")"
 
 expect_block "git push --all in an adopted repo: refused, reason from the parser" "$A" 'git push --all origin' "--all"
