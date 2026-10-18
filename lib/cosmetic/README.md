@@ -11,13 +11,13 @@ filing accident, it is the module's whole contract.
 This dir is documentation only. **The module has no code of its own** and this README
 does not move any: all six executables live in the kit's flat `hooks/` dir alongside the
 spine hooks, because that is where the installer's hook map reads them from
-(`install.sh `kit_module_hooks()``). This dir exists so the module has a front door, a spec, and a proof
+(`lib/config/modules.tsv`, read by `install.sh` through `lib/config/modules.sh`). This dir exists so the module has a front door, a spec, and a proof
 like every other module the kit contract enumerates.
 
 | What | Where |
 |---|---|
 | The six hook scripts | `hooks/{auto-format,notification,slop-cleaner,statusline,permission-auto-approve,codebase-index}.sh` |
-| Module -> hook map | `install.sh `kit_module_hooks()`` (`kit_module_hooks()`) |
+| Module -> hook map | `lib/config/modules.tsv` (`kit_module_hooks cosmetic` in `lib/config/modules.sh`) |
 | Event + matcher registration | `settings.json` (user install) and `hooks/hooks.json` (plugin install) |
 | statusLine registration | `settings.json` `.statusLine.command`, gated on the same `--with cosmetic` opt-in (`install.sh's statusLine registration block`) |
 | Design | `lib/cosmetic/docs/specs/SPEC-201-cosmetic-hooks.md` |
@@ -69,7 +69,7 @@ strips every one of them out of the settings it writes, and prints
 | Env | Read by | Default | Effect |
 |---|---|---|---|
 | `DWARVES_KIT_DEBUG` | all except `statusline` | `0` | `1` = trace to stderr |
-| `DWARVES_KIT_LOG_DIR` | `slop-cleaner` | `$HOME/.claude/dwarves-kit/logs` | where the nudge log and the per-session seen-file live |
+| `DWARVES_KIT_LOG_DIR` | `slop-cleaner` | `${XDG_STATE_HOME:-~/.local/state}/dwarves-kit/logs` | the ledger root; the nudge log and the per-session seen-file live in its `hooks/` subdir |
 | `DWARVES_KIT_SESSION_MARKER` | `slop-cleaner` | `/tmp/.dwarves-kit-session-start` | the "modified since" baseline; overridable for tests |
 
 Full behavior, non-behavior, and degrade paths per hook, plus the three findings from the

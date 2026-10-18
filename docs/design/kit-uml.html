@@ -164,7 +164,10 @@ td{padding:10px 12px 10px 0;border-bottom:1px solid var(--rule);vertical-align:t
 </div>
 
 <script type="text/plain" id="uml-cur" data-model="docs/SYSTEM-DESIGN.md">---
-rev: A
+rev: B
+decided:
+  - "Hermes stays reached by two bridges, kept as separate jobs: the cockpit mirror is the estate read-mirror over bridge=on boards, and the per-board sync spoke is the two-way sync for one board."
+  - "Hooks of an off module are skipped in anchor-root.sh, so a plugin install honors [modules]."
 ---
 
 # dwarves-kit
@@ -241,12 +244,12 @@ level: L2
 caption: Toned boxes are the six clusters (session is plain); boxes with a top band are shared stores; shaded «external» boxes sit outside the kit. Each edge carries its dominant verb only.
 review:
   - Gates is the only cluster every other cluster writes into (through gate-ledger). Is one append-only ledger root the right single point of truth, or should planes keep their own journal outside it as the queue does today?
-  - Board and session both write the staging buffer with no shared lock. Accept that, or give staging one writer?
+  - Board is the only core module beyond the spine; session, advisor and cosmetic are opt-in. Is that the right default for a fresh install?
 nodes:
   - {id: runtime, name: Claude Code runtime, note: hook events, kind: ext, at: [1, 0]}
   - {id: transcripts, name: Claude Code transcripts, note: "~/.claude/projects/*.jsonl", kind: store, at: [3, 0]}
   - {id: kittoml, name: kit.toml layers, note: "project > operator > root", kind: store, at: [0, 1]}
-  - {id: hooks, name: hooks and audit loops, note: "anchor-root, config, adopt, audits", tone: gray, at: [1, 1]}
+  - {id: hooks, name: hooks and audit loops, note: "anchor-root, module table, config, adopt, audits", tone: gray, at: [1, 1]}
   - {id: session, name: session and knowledge, note: "recall, reflect, harvest, precedent", at: [3, 1]}
   - {id: claude, name: claude -p, note: "haiku, sonnet passes", kind: ext, at: [4, 1]}
   - {id: ledger, name: ledger root, note: "runs/<rid>.log, sibling logs", kind: store, at: [0, 3]}
@@ -346,7 +349,7 @@ edges:
 
 ## Gates and ledgers
 
-Two hooks can stop work: safety-gate (always on) and ship-gate (per `[gate]` key). Ship-gate composes push-refs, ship-rules, the config readers and two ledgers. Every writer appends through one substrate, `lib/ledger/ledger.sh`, which resolves the ledger root; the read plane recomputes from those files and persists nothing.
+Two hooks do most of the stopping: safety-gate (always on) and ship-gate (per `[gate]` key). Other policy hooks block too; `docs/hard-rules.tsv` lists every rule code blocks on. Ship-gate composes push-refs, ship-rules, the config readers and two ledgers. Every writer appends through one substrate, `lib/ledger/ledger.sh`, which resolves the ledger root; the read plane recomputes from those files and persists nothing.
 
 ```uml
 id: c-gates
@@ -355,18 +358,18 @@ title: Gates and ledgers
 level: L2
 review:
   - "`lane_gates` and `proof_of_done` default to false in kit.toml, so a fresh install blocks only default-branch pushes and fixture identities. Flip either default?"
-  - Hook logs sit in `~/.claude/dwarves-kit/logs` while ledgers sit in the XDG state root. Move the hook logs under the ledger root?
+  - ship-gate closes on an unloadable ship-rules, an unaccounted push or a missing Lane in an adopted repo, and opens when no kit lib exists. Should the no-lib case also close once the kit is installed?
 nodes:
   - {id: safety, name: safety-gate, note: "always on: deletes, main push", tone: rose, at: [0, 0]}
   - {id: shipgate, name: ship-gate, note: "PreToolUse Bash, exit 2 blocks", tone: rose, at: [1, 0]}
   - {id: rules, name: "push-refs, ship-rules", note: "refs, base, floor, identities", tone: rose, at: [2, 0]}
   - {id: classify, name: lane-classify, note: spine cluster, kind: ext, at: [3, 0]}
-  - {id: hooklogs, name: hook logs, note: "~/.claude/dwarves-kit/logs", kind: store, at: [0, 1]}
+  - {id: hooklogs, name: hook logs, note: "<ledger root>/hooks/", kind: store, at: [0, 1]}
   - {id: gateledger, name: gate-ledger, note: "start, record, check, outcome, debt", tone: rose, at: [1, 1]}
   - {id: proof, name: "proof-ledger, proof-gate, negctl", note: "proof class, check, override", tone: rose, at: [2, 1]}
   - {id: verif, name: docs/verification, note: proof files and marker, kind: store, at: [3, 1]}
   - {id: policyhooks, name: policy hooks, note: "anti-rationalization, commit, board-row, money", tone: rose, at: [0, 2]}
-  - {id: substrate, name: ledger substrate, note: "ledger.sh, kit-log-dir.sh", tone: rose, at: [1, 2]}
+  - {id: substrate, name: ledger substrate, note: "ledger.sh, kit-log-dir.sh, hook-log-dir.sh", tone: rose, at: [1, 2]}
   - {id: advisory, name: advisory gates, note: "quiz-gate, coverage-delta, mutation-smoke, redteam", tone: rose, at: [2, 2]}
   - {id: megamerge, name: mega-merge, note: planes cluster, kind: ext, at: [3, 2]}
   - {id: config, name: "gate-policy, lane-data", note: the two kit.toml readers, tone: rose, at: [0, 3]}
@@ -383,6 +386,7 @@ edges:
   - {from: shipgate, to: hooklogs, label: "BLOCKED, ALLOWED"}
   - {from: shipgate, to: config, label: enabled key --at base}
   - {from: safety, to: hooklogs, label: BLOCKED}
+  - {from: substrate, to: hooklogs, label: resolves dir}
   - {from: policyhooks, to: config, label: enabled key}
   - {from: config, to: kittoml, label: "[gate], [lane.*]"}
   - {from: gateledger, to: config, label: required gates}
@@ -407,7 +411,7 @@ type: component
 title: Execution planes
 level: L2
 review:
-  - "`WAVE_MERGE_CMD` defaults to `mega-merge merge` without `--execute`, which returns 0 on a dry run, so converge logs `merged` for nothing. Default to `--execute`, or stop converge from emitting merged on a dry run?"
+  - No code caps `/kit:dispatch` workers; `WAVE_CAP` of 2 limits waves only. Should `dispatch-gate plan` enforce a cap?
   - The queue works in the real checkout with `--dangerously-skip-permissions` and detects protected-path writes only after the run. Move it to a worktree like the wave sessions?
 nodes:
   - {id: mega, name: /kit:mega, note: "ROADMAP, goals/NN-*.md", tone: violet, at: [0, 0]}
@@ -430,8 +434,8 @@ nodes:
   - {id: tmux, name: tmux, kind: ext, at: [1, 5]}
 edges:
   - {from: mega, to: orchestrate, label: run <dir>}
-  - {from: orchestrate, to: megamerge, label: per landed PR}
-  - {from: megamerge, to: gh, label: squash merge}
+  - {from: orchestrate, to: megamerge, label: "per landed PR, merge-dry-run"}
+  - {from: megamerge, to: gh, label: "squash merge, pr view"}
   - {from: orchestrate, to: dispatchgate, label: wave admission}
   - {from: orchestrate, to: handoffgen, label: "turn cap, usage"}
   - {from: orchestrate, to: claude, label: spawns}
@@ -444,7 +448,7 @@ edges:
   - {from: registry, to: dispatchgate, label: overlap check}
   - {from: watch, to: queue, label: queue run plan}
   - {from: watch, to: board, label: queue-rows}
-  - {from: queue, to: journal, label: appends verdict}
+  - {from: queue, to: journal, label: "appends verdict, no-delta"}
   - {from: queue, to: tmux, label: send-keys /goal}
 ```
 
@@ -458,11 +462,11 @@ type: component
 title: Board and signal path
 level: L2
 review:
-  - "At least five paths write BACKLOG.md outside `board_lock` (assign freeform, wayfind, web-drift, board-run, hand edits). Route them all through `backlog.sh`?"
-  - Hermes is reached by two bridges with different keys (the sync spoke and the mirror). Retire one?
+  - Rows now go through `backlog.sh add`, but the kit board holds 259 four-cell rows under a six-column header. Normalize them in one change, or let lint report them until they are touched?
+  - Writeback collapses four card states to `ready`, and a closed held PR is never re-proposed. Keep that, or map the states one to one?
 nodes:
   - {id: proposers, name: proposers, note: "stats, reflect, session-audit, hooks", kind: ext, at: [0, 0]}
-  - {id: format, name: staging-format, note: "one block grammar, .jq twin", tone: green, at: [1, 0]}
+  - {id: format, name: staging-format, note: "grammar, staging_lock, .jq twin", tone: green, at: [1, 0]}
   - {id: parse, name: parse-board, note: "#queue{} allow-list", tone: green, at: [2, 0]}
   - {id: queue, name: "watch-board, queue", note: planes cluster, kind: ext, at: [3, 0]}
   - {id: spokes, name: spoke apps, note: "gh issues, Notion, Reminders, Multica", kind: ext, at: [4, 0]}
@@ -471,8 +475,8 @@ nodes:
   - {id: sweep, name: board-sweep, note: "sync, digest, publish, mirror", tone: green, at: [3, 1]}
   - {id: sync, name: sync engine, note: "hub and spokes, 3-way merge", tone: green, at: [4, 1]}
   - {id: spine, name: "assign, wrap, audits", note: spine and hooks clusters, kind: ext, at: [0, 2]}
-  - {id: promote, name: board promote, note: "add-backlog, 3 refusals", tone: green, at: [1, 2]}
-  - {id: backlogsh, name: backlog.sh, note: "next, get, set, dedupe", tone: green, at: [2, 2]}
+  - {id: promote, name: board promote, note: "calls add, 3 refusals", tone: green, at: [1, 2]}
+  - {id: backlogsh, name: backlog.sh, note: "add, next, get, set, dedupe", tone: green, at: [2, 2]}
   - {id: mirror, name: mirror and writeback, note: "snapshot, held PR", tone: green, at: [3, 2]}
   - {id: hermes, name: Hermes kanban, kind: ext, at: [4, 2]}
   - {id: backlog, name: BACKLOG.md, note: "pipe table, Status column", kind: store, at: [2, 3]}
@@ -480,15 +484,14 @@ nodes:
   - {id: jev, name: Jev or Clef API, kind: ext, at: [1, 4]}
 edges:
   - {from: proposers, to: format, label: render_block}
-  - {from: format, to: staging, label: appends staged}
-  - {from: promote, to: staging, label: reads blocks}
-  - {from: promote, to: backlog, label: queued row}
+  - {from: format, to: staging, label: appends under lock}
+  - {from: promote, to: staging, label: reads, rewrites}
+  - {from: promote, to: backlogsh, label: add queued row}
   - {from: cli, to: promote, label: promote}
   - {from: cli, to: backlogsh, label: "board, set"}
   - {from: cli, to: parse, label: queue-rows}
-  - {from: backlogsh, to: backlog, label: set under lock}
-  - {from: spine, to: backlogsh, label: "next, set state"}
-  - {from: spine, to: backlog, label: hand-writes rows}
+  - {from: backlogsh, to: backlog, label: add, set under lock}
+  - {from: spine, to: backlogsh, label: "add, next, set state"}
   - {from: spine, to: flick, label: step 7b}
   - {from: queue, to: parse, label: board queue}
   - {from: sweep, to: cli, label: "sync, publish, mirror"}
@@ -510,11 +513,11 @@ type: component
 title: Session and knowledge
 level: L2
 review:
-  - Four transcript parsers exist (the shared Python one plus jq copies in harvest, skill-curator and the audit agent). Fold them onto parse_transcript.py?
+  - harvest and transcript.sh now need `python3` for the shared parser. Check for it at install time, or keep the hooks fail-open?
   - "`session recall`, `handoffs.sh`, `explain.sh` and `pitch.sh` have no `bin/` forwarder, so callers use raw lib paths. Add forwarders before the workset module depends on two of them?"
 nodes:
   - {id: transcripts, name: transcripts, note: "~/.claude/projects/*.jsonl", kind: store, at: [0, 0]}
-  - {id: harvest, name: harvest hook and sweep, note: "PreCompact, 6h sweep", at: [1, 0]}
+  - {id: harvest, name: harvest hook and sweep, note: "PreCompact, 6h sweep, shared parser", at: [1, 0]}
   - {id: learned, name: learned-ledger.md, note: queued learnings, kind: store, at: [2, 0]}
   - {id: claude, name: claude -p, note: "haiku, sonnet", kind: ext, at: [3, 0]}
   - {id: recallcli, name: session recall, note: "--sessions, --tail", at: [0, 1]}
@@ -553,7 +556,7 @@ edges:
 
 ## Hooks runtime
 
-Every wired hook runs through `anchor-root.sh` (secrets-guard is the one exception). The gate hooks live in the gates cluster and the capture hooks in session; this sheet holds the wiring, config, consumer install and the context hooks.
+Every wired hook runs through `anchor-root.sh` (secrets-guard is the one exception), which also skips a hook whose module is off. The gate hooks live in the gates cluster and the capture hooks in session; this sheet holds the wiring, config, consumer install and the context hooks.
 
 ```uml
 id: c-hooks
@@ -561,8 +564,8 @@ type: component
 title: Hooks runtime and config
 level: L2
 review:
-  - adopt.sh wires four modules while install.sh wires ten; its comment claims they are in sync. Make adopt read install.sh's table?
-  - Plugin plus bash install double-fires every hook, and onboard only discloses it. Refuse the second install instead?
+  - "`hooks.json` still registers every hook and `anchor-root.sh` skips the ones whose module is off. Generate `hooks.json` per module, or accept one bash start per skipped hook?"
+  - Hook-log and ledger migration (`cp -n`) run inside hooks on first use. Move both to install time?
 nodes:
   - {id: runtime, name: Claude Code runtime, note: event JSON on stdin, kind: ext, at: [0, 0]}
   - {id: anchor, name: anchor-root.sh, note: cd to repo root then exec, tone: gray, at: [1, 0]}
@@ -571,18 +574,21 @@ nodes:
   - {id: context, name: context hooks, note: "readiness, reinject, hints, budget", tone: gray, at: [2, 1]}
   - {id: codex, name: codex adapter, note: 5 hooks for Codex, tone: gray, at: [0, 2]}
   - {id: conv, name: convenience hooks, note: "format, offload, notify, approve", tone: gray, at: [2, 2]}
-  - {id: snapshots, name: snapshot hooks, note: "state-save, pre-compact backup", tone: gray, at: [2, 3]}
+  - {id: snapshots, name: snapshot hooks, note: pre-compact backup, tone: gray, at: [2, 3]}
   - {id: statedirs, name: session state, note: ".claude/session-state, backups", kind: store, at: [3, 3]}
   - {id: gatehooks, name: gate hooks, note: gates cluster, kind: ext, at: [2, 4]}
   - {id: capture, name: capture hooks, note: session cluster, kind: ext, at: [2, 5]}
   - {id: configcli, name: bin/config, note: "list, get, explain, seams", tone: gray, at: [0, 6]}
   - {id: kitconfig, name: kit-config.sh, note: the only TOML reader, tone: gray, at: [1, 6]}
   - {id: kittoml, name: kit.toml layers, kind: store, at: [0, 7]}
-  - {id: adopt, name: "adopt, onboard, install.sh", note: consumer wiring, tone: gray, at: [1, 7]}
+  - {id: adopt, name: "adopt, onboard, install.sh", note: "consumer wiring, reads modules.tsv", tone: gray, at: [1, 7]}
+  - {id: hookmodule, name: hook-module.sh, note: "off when [modules] says false", tone: gray, at: [1, 1]}
+  - {id: modtable, name: modules.tsv, note: "module table: hooks, CLIs, default", kind: store, at: [1, 2]}
   - {id: consumer, name: consumer repo, note: "AGENTS.md, .claude/settings.json", kind: store, at: [2, 7]}
 edges:
   - {from: runtime, to: anchor, label: fires}
   - {from: runtime, to: manifests, label: reads wiring}
+  - {from: anchor, to: hookmodule, label: module on?}
   - {from: anchor, to: pretool, label: exec each family}
   - {from: anchor, to: context}
   - {from: anchor, to: conv}
@@ -594,6 +600,8 @@ edges:
   - {from: context, to: statedirs, label: reads backup}
   - {from: configcli, to: kitconfig, label: get}
   - {from: kitconfig, to: kittoml, label: "project > operator > root"}
+  - {from: hookmodule, to: modtable}
+  - {from: hookmodule, to: kittoml, via: [[0.5, 1], [0.5, 7]]}
   - {from: adopt, to: kitconfig, label: module toggles}
   - {from: adopt, to: consumer, label: writes contract}
   - {from: adopt, to: kittoml, label: seeds .kit.toml}
@@ -610,7 +618,7 @@ title: Audit loops
 level: L2
 review:
   - Nothing schedules an audit; `bin/audit due` only reports age. Wire a cadence job, or keep audits operator-started?
-  - web-drift appends rows by hand into consumer boards, outside `board_lock`. Route it through `backlog.sh` or staging?
+  - Audit skills file rows through `backlog.sh add`, so a noisy audit can flood a board. Add a per-run row cap?
 nodes:
   - {id: runs, name: audit-runs.log, note: ledger root, kind: store, at: [0, 0]}
   - {id: trigger, name: operator or schedule, kind: ext, at: [1, 0]}
@@ -925,7 +933,7 @@ title: One orchestrate wave cycle
 level: L3
 review:
   - Step 12 refuses converge when two branches touched one file, after both ran. Check declared Touches against the real diff earlier?
-  - Step 15 runs only with `--execute`, yet step 16 returns 0 on a dry run and converge records merged. Fix the default or the event?
+  - Converge now records `merge-dry-run` when `gh` does not report MERGED, and the wave carries on. Should the wave stop at the first unmerged PR?
 participants:
   - {name: orchestrate, tone: violet}
   - {name: ROADMAP}
@@ -997,7 +1005,7 @@ messages:
 
 ## Board row lifecycle
 
-The Status column's leading keyword is the state; the rest of the cell is prose. `backlog.sh set` accepts any legal state from any state, so the arrows below are the paths callers actually take, not guards. `validated` has no setter (rose).
+The Status column's leading keyword is the state; the rest of the cell is prose. `backlog.sh set` accepts any legal state from any state, so the arrows below are the paths callers actually take, not guards. `/kit:spec` sets `validated` when an APPROVED validate round closes on a spec with a `Board:` header; nothing sets the move out of it (rose).
 
 ```uml
 id: sm-board-row
@@ -1005,7 +1013,7 @@ type: state
 title: Board row status
 level: L4
 review:
-  - Nothing sets `validated`; only backlog-reconcile maps a VALIDATED spec onto it. Make `/kit:spec` set it on a validate-round close, or drop the state?
+  - "`/kit:spec` now sets `validated`, but nothing sets the move from `validated` to `executing`. Should `/kit:execute` or assign set it?"
   - "`set` has no transition guard. Add one (for example, refuse shipped to claimed), or keep it permissive for hand repairs?"
 states:
   - {name: queued, initial: true, at: [0, 1]}
@@ -1020,7 +1028,7 @@ transitions:
   - {from: queued, to: claimed, event: "assign --next, wt start"}
   - {from: claimed, to: speccing, event: assign (lane has spec)}
   - {from: claimed, to: executing, event: "assign (tiny), wayfind"}
-  - {from: speccing, to: validated, event: no setter, tone: rose}
+  - {from: speccing, to: validated, event: "/kit:spec, round approved"}
   - {from: validated, to: executing, event: no setter, tone: rose}
   - {from: executing, to: shipped, event: "wrap, sync close, reconcile"}
   - {from: executing, to: parked, event: "wrap, reconcile"}
@@ -1087,7 +1095,7 @@ transitions:
 
 ## Queue row run
 
-One overnight queue row, from plan to verdict, as `queue.sh` and the watch-board reaper see it. `done` and `gated` are terminal for the watcher; plain `queue run` skips only `done`.
+One overnight queue row, from plan to verdict, as `queue.sh` and the watch-board reaper see it. `done` and `gated` are terminal for the watcher; plain `queue run` skips `done` and a `gated` row whose reason is `no-delta`. A row is `done` only after a HEAD move, a moved local branch tip or an operator PR created since the window opened.
 
 ```uml
 id: sm-queue-row
@@ -1095,7 +1103,7 @@ type: state
 title: Queue row run
 level: L4
 review:
-  - "`done` rests on a self-reported EXIT_SIGNAL or pane text; only a git delta counts as verified progress. Require a git delta for `done`?"
+  - A clean exit with no git delta is now `gated` (`no-delta`), and `queue run` skips it on re-run. Should the reaper re-queue it once, or leave it for a human?
   - Three stalls quarantine a row with no alert. Should quarantine stage a proposal so a human sees it?
 states:
   - {name: planned, initial: true, at: [0, 1]}
@@ -1108,8 +1116,8 @@ states:
   - {name: cooldown, at: [3, 1]}
 transitions:
   - {from: planned, to: in-flight, event: "window opened, beat"}
-  - {from: in-flight, to: done, event: "EXIT_SIGNAL true, RUNNER_DONE", via: [[1, 0]]}
-  - {from: in-flight, to: gated, event: "REASON, RUNNER_GATED, protected path", via: [[1, -0.4], [3, -0.4]]}
+  - {from: in-flight, to: done, event: "EXIT_SIGNAL true and a git delta", via: [[1, 0]]}
+  - {from: in-flight, to: gated, event: "REASON, RUNNER_GATED, no-delta, protected path", via: [[1, -0.4], [3, -0.4]]}
   - {from: in-flight, to: error, event: "launch failed twice, breaker"}
   - {from: in-flight, to: stalled, event: "timeout, ceiling, beat 3600s", via: [[1, 2]]}
   - {from: stalled, to: planned, event: retry_after elapsed, via: [[2, 2.6], [0, 2.6]]}
@@ -1120,93 +1128,97 @@ transitions:
 
 ## Cross-cutting concepts
 
-- Layered config. One TOML reader, `lib/config/kit-config.sh`, resolves a key from the project `.kit.toml`, then the operator `~/.config/dwarves-kit/kit.toml`, then the kit-root `kit.toml`. The project layer counts only when it is tracked and clean, or when read at a revision with `--at`. Two readers sit on top: `gate-policy.sh` for `[gate]` keys (any reader error means ON) and `lane-data.sh` for `[lane.*]` phases. Vendor enablement, `runner_host`, `probe_key_ref` and `[decide]` are root-only on purpose.
-- The ledger root resolver. `kit-log-dir.sh` picks `$KIT_LEDGER_DIR`, else `$DWARVES_KIT_LOG_DIR`, else `[ledger].location`, else `${XDG_STATE_HOME:-~/.local/state}/dwarves-kit/logs`. A set-but-empty `KIT_LEDGER_DIR` is fatal. Every append goes through `lib/ledger/ledger.sh`, which collapses newlines so one event is one physical line. Hook audit logs do not use this resolver (see Risks).
+- Layered config. One TOML reader, `lib/config/kit-config.sh`, resolves a key from the project `.kit.toml`, then the operator `~/.config/dwarves-kit/kit.toml`, then the kit-root `kit.toml`. The project layer counts only when it is tracked and clean, or when read at a revision with `--at`. Two readers sit on top: `gate-policy.sh` for `[gate]` keys (any reader error means ON) and `lane-data.sh` for `[lane.*]` phases. Vendor enablement, `runner_host`, `probe_key_ref` and `[decide]` are root-only on purpose. `[modules]` decides which hooks run: `lib/config/modules.tsv` maps each hook to its module, and `anchor-root.sh` skips a hook whose module is off (the spine never is).
+- The ledger root resolver. `kit-log-dir.sh` picks `$KIT_LEDGER_DIR`, else `$DWARVES_KIT_LOG_DIR`, else `[ledger].location`, else `${XDG_STATE_HOME:-~/.local/state}/dwarves-kit/logs`. A set-but-empty `KIT_LEDGER_DIR` is fatal. Every append goes through `lib/ledger/ledger.sh`, which collapses newlines so one event is one physical line. Hook audit logs use the same root through `hook-log-dir.sh`, in a `hooks/` subdirectory.
 - Fail-open versus fail-closed, per gate. safety-gate: always on, documented accepted holes. ship-gate: closed on an unloadable ship-rules, an unparsable push in an adopted repo, a missing Lane; open when no kit `lib/` exists. proof-ledger `check`: open on no base, a bad ref or a missing lib. gate-policy: an unreadable reader means ON. Advisory measures (coverage-delta, mutation-smoke, check-edit, load-warn, money-gate without STRICT): always exit 0. Codex adapter: closed, but Codex treats a hook failure as non-blocking.
 - Egress points. `claude -p --model haiku` from harvest and backlog-stage (transcript tails); `claude -p` sonnet from reflect propose, session-audit and the skill-curator reviewer; `claude -p` workers from the orchestrator and the queue; Jev or Clef HTTPS from flick (candidate slugs, gated by `decide.points`, `deny_words`, `word_gate`); webcheck HTTP to consumer-declared sites (http(s) only, same-host redirects); `hermes kanban` from the mirror and the sync spoke; `gh` from mega-merge, writeback, wrap and ci-drift. Every LLM egress fails open and exits 0.
 - Worktree isolation and merge at the lead. Wave sessions, dispatch workers and `wrap start` each get a worktree under `.claude/worktrees/`. Workers never merge: the orchestrator converges one PR at a time under `flip.lock`, `/kit:dispatch` hands READY branches to the lead's `/kit:ship`, and tier-4 close HOLDs for a human. The serial orchestrator path and the queue still run in the real checkout.
-- Staging as the human gate. Proposers (stats anomalies, reflect propose, session-audit triage, session-intel, the stage hooks, `wrap stage`) append `[staged]` blocks through one grammar (`staging-format.py`, with a `.jq` twin for bash). `board promote` is the gate that mints a row. Direct board writers exist (capture, sync intake, assign freeform, wayfind, web-drift); see the Drift register.
+- Staging as the human gate. Proposers (stats anomalies, reflect propose, session-audit triage, session-intel, the stage hooks, `wrap stage`) append `[staged]` blocks through one grammar (`staging-format.py`, with a `.jq` twin for bash). `board promote` is the gate that mints a row, and every row write goes through `backlog.sh add`, under the board lock. Staging writes go through one lock, `staging_lock`.
 - One rid per run. The rid is the branch slug with `type/` stripped, derived after the branch exists. The same key joins assign-time records, ship-gate's push check, mega-merge and telemetry.
 
 ## Risks and technical debt
 
-Ranked by blast radius, widest first.
+Ranked by blast radius, widest first. Open risks come first; the closed and accepted ones follow.
 
 - Unsandboxed workers on shared state. Both executors run `--dangerously-skip-permissions`; the queue and the serial orchestrator work in the real checkout, and protected-path writes are detected after the run, only with sanitize on. Trigger: a worker edits outside its scope overnight. Mitigation: sanitize, the XPIA fence, `#queue{}` allow-listing, wave worktrees, the `flip.lock`.
-- The board has no single writer. Fourteen or more paths write `BACKLOG.md`; `board_lock` covers capture, promote, sync, `set` and `dedupe`, not assign freeform, wayfind, web-drift or board-run. Consumer boards use `merge=union`, which lands both rows of an ID collision, and a misconfigured spoke once flipped 30 rows. Trigger: two sessions mint the same ID, or a shared spoke drifts. Mitigation: `publish` detects duplicate IDs after a rebase, `wrap` runs `dedupe-all`, sync has a 10-flip breaker and a worktree fence.
-- Wave converge can record "merged" for nothing. `WAVE_MERGE_CMD` defaults to `mega-merge merge` with no `--execute`, which returns 0 on a dry run; converge then emits `merged`. Trigger: any default wave run. Mitigation: tier-4 close HOLDs for a human; the ROADMAP box still needs a real `PR #n`.
-- Enforcement defaults off. `lane_gates`, `proof_of_done`, `understanding_gate` and `commit_format` default to false, so a fresh install blocks only default-branch pushes, fixture identities and new board rows. Trigger: a consumer assumes the HARD labels in the docs. Mitigation: adopt seeds `.kit.toml`; the kit itself turns the gates on.
-- Gates that only detect. Spec-drift and descent warn and never block. DO NOT SHIP now blocks at ship-gate (`[gate] review_verdict`), but a branch can still edit its own verdict line. Trigger: an agent rewrites the verdict. Mitigation: the review lenses record the verdict in the run ledger.
+- Enforcement defaults off. `lane_gates`, `proof_of_done`, `understanding_gate` and `commit_format` default to false, so a fresh install blocks only default-branch pushes, fixture identities, DO NOT SHIP verdicts and new board rows. The docs now say which rules are off by default (`docs/hard-rules.tsv`, and `tests/test-meta-hard-claims.sh` fails a HARD label with no code behind it), so the trigger is a consumer who skips that table. Mitigation: adopt seeds `.kit.toml`; the kit itself turns the gates on.
+- Gates that only detect. Spec-drift and descent warn and never block; the docs say so. DO NOT SHIP blocks at ship-gate (`[gate] review_verdict`), but a branch can still edit its own verdict line. Trigger: an agent rewrites the verdict. Mitigation: the review lenses record the verdict in the run ledger.
 - Ledger trust. `start --amend` has no operator or agent split, so any writer can re-lane a run; `inherit` is lead-only by convention. Trigger: a worker lowers its own lane. Mitigation: the hard-path floor still applies the full lane, and a reused override reason is refused.
-- Self-reported completion. The queue reads tmux pane text or a status file the run writes; `EXIT_SIGNAL: true` counts as reported, not verified. The orchestrator trusts a flipped box plus a `PR #n`. `attempt-state.sh` has no lock and relies on the lead calling it in sequence. Trigger: a run claims done with no diff. Mitigation: the breaker treats a git delta as the only verified progress.
+- Self-reported completion, now narrower. The queue counts `done` only after a HEAD move, a moved local branch tip or an operator PR created since the window opened; otherwise the row is `gated` with reason `no-delta`. The orchestrator still trusts a flipped box plus a `PR #n`, and `attempt-state.sh` has no lock and relies on the lead calling it in sequence. Trigger: a sub-goal claims done with a flipped box and no real PR. Mitigation: the ROADMAP box needs a real `PR #n`; tier-4 close HOLDs for a human.
 - LLM egress fails silently. Harvest, backlog-stage, skill-review, session-audit and reflect send transcript text to `claude -p` and exit 0 on any failure; flick sends slugs to Jev or Clef and fails open. Trigger: a model or auth outage reads as "nothing learned". Mitigation: `render_block` collapses whitespace in transcript-derived text; debounce and recursion guards on the hooks.
-- Hook-log split brain. Gate and hook logs default to `~/.claude/dwarves-kit/logs`, which a plugin reinstall can wipe; the ledgers moved to the XDG root. `DWARVES_KIT_LOG_DIR` moves both, since it is also a ledger-root alias. Trigger: a reinstall erases the BLOCKED and OFF-BY-CONFIG trail. Mitigation: none.
-- Staging has two lock domains. drain locks `<staging>.lock`, promote locks the board, and stats and the hooks append with no lock; promote rewrites the whole staging file. Trigger: a promote runs while a proposer appends. Mitigation: none; the append is lost.
-- Consumer wiring gaps. adopt.sh wires fewer modules than install.sh; plugin-only machines get hook paths that do not exist; plugin plus bash double-fires every hook. Trigger: adopting a repo on a plugin-only host. Mitigation: onboard discloses the mode.
-- A hook runs migration code. batch-debt-warn sources `ledger.sh`, whose `ledger_root` runs `kit_migrate_log_dir` (a `cp -Rn`) inside a PreToolUse hook. Trigger: the first merge of a session on a host with a legacy log dir. Mitigation: `cp -n` never overwrites.
+- A hook runs migration code. batch-debt-warn sources `ledger.sh`, whose `ledger_root` runs `kit_migrate_log_dir` (a `cp -Rn`) inside a PreToolUse hook, and `hook-log-dir.sh` copies old hook logs with `cp -n` on first use. Trigger: the first merge or first logged event on a host with a legacy log dir. Mitigation: `cp -n` never overwrites and the old dir is never deleted.
 - One spec file, many writers. Seven or more commands write one spec, with replace-not-stack sections; drift voids a validate round and a second void ends it; a silent builder plus a re-dispatch race on the same files. Mitigation: the pinned blob and the round state machine.
 - Narrow verifier allowlists. Verification commands outside npm, go, pytest, `bash tests/*` and `git diff` become lead-run rows that recheck cannot audit. Mitigation: recheck re-executes the allowed ones.
-- Four transcript parsers. The shared Python parser plus jq copies in harvest, skill-curator and the audit agent. Trigger: a Claude Code transcript schema change. Mitigation: none; each breaks on its own.
+- Plugin hooks still register for every module. `hooks/hooks.json` lists every hook; `anchor-root.sh` now skips a hook whose module is off, but each skipped hook still costs one bash start. Trigger: a plugin install with most modules off. Mitigation: the lookup is one awk pass and only non-spine hooks pay for it.
 - Two meanings of "debt". stats reads it as waved gates (`gates_ovr`); quiz-gate and weekend-batch read `| DEBT |` lines. Mitigation: none.
-- Hermes bridges. Two independent bridges with different keys; writeback collapses four states to `ready`, and a closed held PR is never re-proposed; one failed fetch skips the whole mirror tick. Mitigation: the skip rule prevents a partial registry from archiving cards.
 - Stat-keyed caches. `.gate-check.cache` and `.shipped-incomplete.cache` key on size, mtime, inode and ctime and write only for ledgers 2 seconds old. Trigger: a write inside that window. Mitigation: the 2-second rule.
-- Dead or advisory parts. redteam-gate has no caller; mutation-smoke and coverage-delta always exit 0; money-gate is log-only without STRICT; plugin-check gates nothing; `last-state.md` is written every Stop and never read; recall, handoffs, explain and pitch have no `bin/` forwarder.
+- Advisory and unwired parts. mutation-smoke and coverage-delta always exit 0; money-gate is log-only without STRICT; plugin-check gates nothing; the intake gate has no in-kit caller; recall, handoffs, explain and pitch have no `bin/` forwarder. redteam-gate is called by the operator's skills each round, so it is not dead.
 - Machine-global session marker. `/tmp/.dwarves-kit-session-start` is shared by every concurrent session on a host. Trigger: two sessions start minutes apart. Mitigation: none.
 - Degrade paths. A vendor harness runs with no turn cap, watchdog or token capture; a failed SPEC reservation lets the worker pick its own number; a goal file with no `**Branch:**` skips START.
 
+**Closed or accepted**
+
+- Board has no single writer. Closed in #994. `backlog.sh add` mints the id and writes one row under the shared board lock, in the target table's own column count; `board capture`, `board promote`, `/kit:assign` freeform, `/kit:wayfind` and `web-drift` all call it. Residual: consumer boards use `merge=union`, which lands both rows of an ID collision; `publish` detects duplicates after a rebase and `wrap` runs `dedupe-all`.
+- Staging has two lock domains. Closed in #994. `staging-format.py` holds `staging_lock`, `append_blocks`, `rewrite` and an `append` verb; reflect, promote, anomalies, the stage hooks, session-audit and session-intel write through them, and promote re-reads the buffer inside its hold.
+- Wave converge can record "merged" for nothing. Closed in #997. Converge emits `merged` only when `gh pr view` reports the PR MERGED; otherwise it emits `merge-dry-run`. The default `WAVE_MERGE_CMD` is still a dry run, so a real merge needs a wrapper that passes `--execute`.
+- Hook-log split brain. Closed in #993. Hook logs live in `<ledger root>/hooks/` through `hook-log-dir.sh`; the first use copies old logs in with `cp -n` and never deletes the old dir.
+- Four transcript parsers. Closed in #993. `lib/session/parse_transcript.py` gains `--tail-text` and `--harvest-text`; `hooks/harvest.sh` and `lib/skill-curator` call them. harvest and transcript.sh now need `python3`.
+- Consumer wiring gaps. Closed in #996 and this sweep. `lib/config/modules.tsv` is the one module table that install.sh and adopt.sh read; a fresh install wires the spine plus `board`; `install.sh` refuses to wire hooks beside a plugin install unless `--force-both`; `anchor-root.sh` honors the module choice for plugin installs.
+- Hermes bridges. Accepted, operator decision. Both stay as separate jobs: the cockpit mirror (`board-mirror.sh`, `bridge=on` in a consumer's boards registry) is the estate read-mirror over those boards, and the per-board sync spoke (`sources/hermes.py`) is the two-way sync for one board's job. Retiring either breaks a running job. Residual: writeback collapses four states to `ready`, a closed held PR is never re-proposed, and one failed fetch skips the whole mirror tick (the skip rule prevents a partial registry from archiving cards).
+
 ## Drift register
 
-Every doc-versus-code mismatch the read-only pass found, deduplicated. "Fix" names the side that should move.
+Every doc-versus-code mismatch the read-only pass found, deduplicated. "Fix" names the side that should move, or `FIXED in #N` / `NOT APPLICABLE` once a PR settled it. Row 15 is the only row still open.
 
 | # | Fix | Doc claim | Code reality | Locations |
 |---|---|---|---|---|
 | 1 | FIXED in #990 | The ship gate blocks on DO NOT SHIP (HARD) | ship-gate now reads the last `## Review` verdict and blocks on DO NOT SHIP, behind `[gate] review_verdict` (default on) | hooks/ship-gate.sh, kit.toml, lib/gate/README.md |
-| 2 | doc | Spec is `[HARD: spec-drift guard]` | spec-drift-guard warns and never blocks | docs/WORKFLOW.md:180, docs/workflow-map.md:114-116, hooks/spec-drift-guard.sh:2-4 |
-| 3 | doc | `/kit:think` dispatches brief-reviewer plus advisor; `/kit:ship` dispatches advisor | think dispatches only brief-reviewer; ship has no advisor; advisor runs in review-team, spec, battery, mega | docs/workflow-paths.md:235,300,394, commands/think.md:72 |
-| 4 | doc | The validate round has 5 reviewers | 7 reviewers | commands/start.md:48, commands/spec-validate.md:9, docs/FEATURES.md:42 |
-| 5 | code comment | "the 11 type names"; precedence list omits `review` | `types` prints 12; `review` is rule 6b | lib/classify/task-type-classify.sh:42,97,130 |
-| 6 | doc | next.md cites `/wrap-session` | only commands/wrap.md exists | commands/next.md:56 |
-| 7 | doc | `/kit:verify` only appends the log plus a ledger line | Step 6b mutation-smoke mutates and restores the tree and writes MUTATION; Step 7b runs `proof-asset put` | commands/verify.md:5,62-69,127,154 |
+| 2 | FIXED in #997 | Spec is `[HARD: spec-drift guard]` | spec-drift-guard warns and never blocks Now: docs/WORKFLOW.md and docs/workflow-map.md say spec-drift-guard warns only. | docs/WORKFLOW.md:180, docs/workflow-map.md:114-116, hooks/spec-drift-guard.sh:2-4 |
+| 3 | FIXED in #997 | `/kit:think` dispatches brief-reviewer plus advisor; `/kit:ship` dispatches advisor | think dispatches only brief-reviewer; ship has no advisor; advisor runs in review-team, spec, battery, mega Now: workflow-paths and commands/think.md name brief-reviewer only. | docs/workflow-paths.md:235,300,394, commands/think.md:72 |
+| 4 | FIXED in #997 | The validate round has 5 reviewers | 7 reviewers Now: start.md, spec-validate.md and FEATURES.md say 7 reviewers. | commands/start.md:48, commands/spec-validate.md:9, docs/FEATURES.md:42 |
+| 5 | FIXED in #997 | "the 11 type names"; precedence list omits `review` | `types` prints 12; `review` is rule 6b Now: the comments say 12 types and place `review`. | lib/classify/task-type-classify.sh:42,97,130 |
+| 6 | FIXED in #997 | next.md cites `/wrap-session` | only commands/wrap.md exists Now: next.md names /kit:wrap. | commands/next.md:56 |
+| 7 | FIXED in #997 | `/kit:verify` only appends the log plus a ledger line | Step 6b mutation-smoke mutates and restores the tree and writes MUTATION; Step 7b runs `proof-asset put` Now: verify.md documents steps 6b and 7b. | commands/verify.md:5,62-69,127,154 |
 | 8 | FIXED in #989 | The bug lane requires a `debug` gate | `/kit:debug` records `debug ran` on a verified root cause, and nothing on escalation | commands/debug.md Phase 4, tests/test-gate-vocab-recording.sh |
-| 9 | doc | Required gates come from the WORKFLOW.md lane x phase matrix, parsed at runtime | Read from kit.toml `[lane.<name>]` via lane-data.sh; WORKFLOW.md is read only by dispatch-gate for the hands-off list | lib/gate/README.md:36-37 (and its ASCII diagram), lib/gate/lane-data.sh:2-4, lib/gate/dispatch-gate.sh:22 |
-| 10 | doc | Every `[gate]` key is off except `board_row_gate` | `fixture_identities` also defaults ON | lib/gate/README.md "Turning a gate on", kit.toml:122, lib/gate/gate-policy.sh:36 |
-| 11 | doc | "Two things here can actually stop you"; callables table complete | Table omits `redteam` and `proof-gate contract, skeleton, coverage`; gate.sh routes `redteam` | lib/gate/README.md:5-6, lib/gate/gate.sh:35 |
-| 12 | code (one root) or doc | `DWARVES_KIT_LOG_DIR` moves the hook log dir; Tier B hook logs live in `~/.local/state/dwarves-kit/logs` | It is also the ledger-root alias; hooks write to `~/.claude/dwarves-kit/logs` | docs/hooks.md:11-12, lib/stats/docs/ledger-event-schema.md:~91, lib/telemetry/kit-log-dir.sh:44-47, hooks/ship-gate.sh:101,124 |
-| 13 | doc | money-gate prints "confirm before applying" | Only with `MONEY_GATE_STRICT`; otherwise it only logs | docs/hooks.md money-gate row, hooks/money-gate.sh:156-168 |
-| 14 | doc (header) | ship-gate "FAILS OPEN on any ambiguity" | Blocks on unloadable ship-rules, an unaccounted push, an unreadable marker, a missing Lane | hooks/ship-gate.sh:8-12,87-99,163-187,398-409 |
+| 9 | FIXED in #997 and #998 | Required gates come from the WORKFLOW.md lane x phase matrix, parsed at runtime | Read from kit.toml `[lane.<name>]` via lane-data.sh; WORKFLOW.md is read only by dispatch-gate for the hands-off list Now: lib/gate/README.md and its diagram read lane data from kit.toml via lane-data.sh. | lib/gate/README.md:36-37 (and its ASCII diagram), lib/gate/lane-data.sh:2-4, lib/gate/dispatch-gate.sh:22 |
+| 10 | FIXED in #997 | Every `[gate]` key is off except `board_row_gate` | `fixture_identities` also defaults ON Now: the README lists fixture_identities as default ON. | lib/gate/README.md "Turning a gate on", kit.toml:122, lib/gate/gate-policy.sh:36 |
+| 11 | FIXED in #998 | "Two things here can actually stop you"; callables table complete | Table omits `redteam` and `proof-gate contract, skeleton, coverage`; gate.sh routes `redteam` Now: the callables table lists redteam and the proof-gate verbs; the README counts three blockers and points at docs/hard-rules.tsv. | lib/gate/README.md:5-6, lib/gate/gate.sh:35 |
+| 12 | FIXED in #993 | `DWARVES_KIT_LOG_DIR` moves the hook log dir; Tier B hook logs live in `~/.local/state/dwarves-kit/logs` | It is also the ledger-root alias; hooks write to `~/.claude/dwarves-kit/logs` Now: hook logs live in `<ledger root>/hooks/` through hook-log-dir.sh, and the docs say so. | docs/hooks.md:11-12, lib/stats/docs/ledger-event-schema.md:~91, lib/telemetry/kit-log-dir.sh:44-47, hooks/ship-gate.sh:101,124 |
+| 13 | FIXED in #998 | money-gate prints "confirm before applying" | Only with `MONEY_GATE_STRICT`; otherwise it only logs Now: the money-gate header, README and FEATURES row say log-only without STRICT. | docs/hooks.md money-gate row, hooks/money-gate.sh:156-168 |
+| 14 | FIXED in #998 | ship-gate "FAILS OPEN on any ambiguity" | Blocks on unloadable ship-rules, an unaccounted push, an unreadable marker, a missing Lane Now: the ship-gate header lists where it closes and where it opens. | hooks/ship-gate.sh:8-12,87-99,163-187,398-409 |
 | 15 | code | No hook reaches kit-log-dir.sh transitively | batch-debt-warn does, and runs the migration | lib/telemetry/kit-log-dir.sh:19-21, hooks/batch-debt-warn.sh:19-23 |
-| 16 | doc | "Where things write to disk" lists the hook logs | Omits ship-gate.log, board-row-gate.log, mega-merge.log, merge-watch/, both `.cache` files | docs/architecture.md:~583-591 |
-| 17 | doc | lib/money-gate is a module | It holds only SPEC.md; the code is hooks/money-gate.sh; lib/gate SPEC is a known gap | lib/money-gate/SPEC.md:46-51, lib/telemetry/docs/proof-of-done.md:~10, lib/gate/README.md |
-| 18 | doc | queue.sh and orchestrate.sh share no code | `orchestrate.sh queue <src>` execs `queue.sh run` | docs/execution-planes.md:46-48, lib/queue/orchestrate.sh:2884 |
-| 19 | doc | pane-tail.jq is shared by queue and gauntlet | Used by `orchestrate.sh panes` and cleanroom watch.sh; queue.sh never | docs/execution-planes.md:146, lib/queue/orchestrate.sh:250,1709, tests/gauntlet/cleanroom/watch.sh:17 |
-| 20 | doc, or code (queue writes START) | gate-ledger is the telemetry rail for every plane | queue and watch-board never call it (they use queue-journal.tsv); the gauntlet reaches it only through prompt text | docs/execution-planes.md:145, commands/gauntlet.md:114-126 |
-| 21 | doc | Orchestrator isolation is none, the real checkout | Wave sessions each run in `.claude/worktrees/<id>`; only the serial path uses the real checkout | docs/execution-planes.md:59, lib/queue/orchestrate.sh:1351,1988 |
-| 22 | doc | No DAG, no wave scheduler, single chain only | Wave scheduler (`_wave_gate`, `_wave_run`, `_wave_converge`) and multi-dep `depends` exist; mega.md:196-208 documents waves | commands/mega.md:553-554, commands/dispatch.md:181-182 |
-| 23 | code comments | `WAVE_CAP` defaults to 1 and converge is unreachable | Default is 2 | lib/queue/orchestrate.sh:201,2090,2454-2455,2533-2535,2578-2579 |
-| 24 | code comment | harness.sh: "Nothing calls it into the dispatch path yet" | orchestrate.sh sources and uses it | lib/queue/harness.sh:20-21, lib/queue/orchestrate.sh:135,1151 |
-| 25 | doc | lib/README lists `queue/weekend-batch.sh`, a `session/` dir with only the parser, and a `goal/` row without wt.sh | weekend-batch lives in lib/reflect; lib/session also holds recall, observe, intel, audit, handoffs.sh; wt.sh exists | lib/README.md:15,19,22 |
-| 26 | doc or code | dispatch caps workers at 4 | No code enforces a cap; `dispatch-gate plan` has none; `WAVE_CAP` is 2 | commands/dispatch.md:31 |
-| 27 | doc | "Nothing writes BACKLOG.md directly"; promote is the only edge in | Direct writers: board capture, sync intake, assign freeform, wayfind, web-drift | docs/data-flow.md:70,75, lib/board/board.sh:957-981, lib/sync/backlog_sync.py:289-291, commands/assign.md:33, commands/wayfind.md:92, skills/web-drift/SKILL.md:34 |
-| 28 | doc | `learn propose, drain, debt` | The subsystem is `reflect`; `bin/learn` is a deprecated forwarder | docs/data-flow.md:25-62,76,121,209, lib/reflect/reflect.sh:20, bin/learn:2-4 |
-| 29 | doc | Proposers stage automatically | Writes are opt-in (`BACKLOG_STAGE_AUTO=1`); otherwise propose prints and backlog-stage returns | docs/data-flow.md:33-47, hooks/backlog-stage.sh:10-14, lib/reflect/propose.py:45,554 |
-| 30 | code (wire it) or doc | intake-sweep runs at SessionStart via `backlog-stage --surface` | backlog-stage is wired on SessionEnd with no `--surface`; only tests call it; intake-sweep never runs | docs/architecture.md:283, hooks/hooks.json:189, docs/hooks.md:61, docs/FEATURES.md:127 |
-| 31 | doc | BACKLOG.md cites `lib/goal-registry.sh` and `lib/backlog.sh`; "Shipped items drop off the queue" | Paths are lib/goal/ and lib/board/; wrap keeps shipped rows in place | _meta/BACKLOG.md:23-25,339 |
-| 32 | code | `backlog.sh lint` checks the board shape | It hardcodes 4 cells while the kit board has 6 columns; promote and capture write 4-column rows into it | lib/board/backlog.sh:305, lib/board/bin/add-backlog:226-228, lib/board/board.sh:968, skills/backlog-reconcile/SKILL.md:47 |
-| 33 | doc | mirror, status and writeback were folded into the sync module | They still run the legacy bash engine; `--engine sync` is dry-run only | lib/board/board.sh:683-686,1202-1207 |
-| 34 | doc | add-backlog's `parse_staging` is the only private grammar copy | The `.jq` twin is a second | docs/data-flow.md:97, lib/reflect/staging-format.py:24-29 |
-| 35 | doc | `intake gate` replaces five intake skills | No in-kit caller; only lib/README and the module registry mention it | lib/intake/intake.sh:3-7 |
-| 36 | doc | anomalies.py keeps its own `render_block` copy | It loads staging-format.py | lib/reflect/README.md:79-98, lib/stats/src/stats/anomalies.py:750-765 |
-| 37 | code (remove) or doc | `bin/learn` lives one release | Removal tied to 2.4.0 and the file still exists | lib/reflect/README.md:60, docs/CHANGELOG.md:247-250, bin/learn |
-| 38 | code (usage) | `bin/session` usage lists five verbs | Omits `audit`, which session.sh dispatches | bin/session:4-10, lib/session/session.sh:32 |
-| 39 | doc | session-state-save runs on Stop | Wired on Stop and SubagentStop | docs/architecture.md:289, hooks/hooks.json:173,234 |
-| 40 | code comment | harvest.sh stages learnings on PreCompact and SessionEnd | The no-flag harvest runs on PreCompact only; SessionEnd runs `--lab-log` | hooks/harvest.sh:2, hooks/hooks.json:152,194 |
-| 41 | doc (or rename) | Skill `observe` reads as the session observe front door | It fronts lib/bench, not lib/session/observe | skills/observe/SKILL.md |
-| 42 | cleanup | The Rust prose-rag crate is retired | `lib/prose-rag/bin/prose-rag-rs` (5 MB) and `rust/target` remain as ignored files | install.sh:573 |
-| 43 | code | adopt.sh's module table is in sync with install.sh | install.sh also wires board-row-gate, context-budget, batch-debt-warn, tool-policy-guard, money_gate, prose_rag; adopt still knows `bridge` and lacks worktree, money_gate, prose_rag, sync | lib/adopt.sh:343-355, install.sh:226-243, commands/adopt.md |
-| 44 | doc | context-budget warns once per 100k-token band past 200k | Percentage thresholds, `KIT_CTX_WARN_PCT` 65 and `KIT_CTX_STRONG_PCT` 70 | docs/architecture.md inventory row, hooks/context-budget.sh:20-26, docs/hooks.md:43 |
-| 45 | doc | repo-hygiene has five detectors and six item classes | The sixth (handoff) class is a model-run procedure; the script has detectors 1 to 5 | skills/repo-hygiene/SKILL.md, lib/repohygiene/repohygiene.sh:15-19 |
-| 46 | doc | gauntlet-proof-audit has "no default cron" | Its second Cadence section and the cadence table say monthly | skills/gauntlet-proof-audit/SKILL.md, docs/patterns/audit-loop.md:90 |
-| 47 | doc | audit-scanner's dispatchers are six named loops | memory-tidy and gauntlet-proof-audit also dispatch it | agents/audit-scanner.md:3, skills/gauntlet-proof-audit/SKILL.md step 4 |</script>
+| 16 | FIXED in #998 | "Where things write to disk" lists the hook logs | Omits ship-gate.log, board-row-gate.log, mega-merge.log, merge-watch/, both `.cache` files Now: the architecture list names the hook logs under `<ledger root>/hooks/`, mega-merge.log, merge-watch/ and both caches. | docs/architecture.md:~583-591 |
+| 17 | NOT APPLICABLE | lib/money-gate is a module | It holds only SPEC.md; the code is hooks/money-gate.sh; lib/gate SPEC is a known gap Reason: lib/money-gate holds README, SPEC and proof-of-done on purpose: tests/test-kit-contract.sh requires it as the module's docs home, and the hook stays in hooks/ (see #992). | lib/money-gate/SPEC.md:46-51, lib/telemetry/docs/proof-of-done.md:~10, lib/gate/README.md |
+| 18 | FIXED in #997 | queue.sh and orchestrate.sh share no code | `orchestrate.sh queue <src>` execs `queue.sh run` Now: execution-planes says `orchestrate.sh queue` execs `queue.sh run`. | docs/execution-planes.md:46-48, lib/queue/orchestrate.sh:2884 |
+| 19 | FIXED in #997 | pane-tail.jq is shared by queue and gauntlet | Used by `orchestrate.sh panes` and cleanroom watch.sh; queue.sh never Now: execution-planes names the real pane-tail.jq users. | docs/execution-planes.md:146, lib/queue/orchestrate.sh:250,1709, tests/gauntlet/cleanroom/watch.sh:17 |
+| 20 | FIXED in #997 | gate-ledger is the telemetry rail for every plane | queue and watch-board never call it (they use queue-journal.tsv); the gauntlet reaches it only through prompt text Now: execution-planes scopes gate-ledger to the planes that call it. | docs/execution-planes.md:145, commands/gauntlet.md:114-126 |
+| 21 | FIXED in #997 | Orchestrator isolation is none, the real checkout | Wave sessions each run in `.claude/worktrees/<id>`; only the serial path uses the real checkout Now: execution-planes says wave sessions run in worktrees. | docs/execution-planes.md:59, lib/queue/orchestrate.sh:1351,1988 |
+| 22 | FIXED in #997 | No DAG, no wave scheduler, single chain only | Wave scheduler (`_wave_gate`, `_wave_run`, `_wave_converge`) and multi-dep `depends` exist; mega.md:196-208 documents waves Now: mega.md and dispatch.md describe the wave scheduler. | commands/mega.md:553-554, commands/dispatch.md:181-182 |
+| 23 | FIXED in #997 | `WAVE_CAP` defaults to 1 and converge is unreachable | Default is 2 Now: the comments say WAVE_CAP defaults to 2. | lib/queue/orchestrate.sh:201,2090,2454-2455,2533-2535,2578-2579 |
+| 24 | FIXED in #997 | harness.sh: "Nothing calls it into the dispatch path yet" | orchestrate.sh sources and uses it Now: the harness.sh comment says orchestrate.sh uses it. | lib/queue/harness.sh:20-21, lib/queue/orchestrate.sh:135,1151 |
+| 25 | FIXED in #997 | lib/README lists `queue/weekend-batch.sh`, a `session/` dir with only the parser, and a `goal/` row without wt.sh | weekend-batch lives in lib/reflect; lib/session also holds recall, observe, intel, audit, handoffs.sh; wt.sh exists Now: lib/README rows match the tree. | lib/README.md:15,19,22 |
+| 26 | FIXED in #997 | dispatch caps workers at 4 | No code enforces a cap; `dispatch-gate plan` has none; `WAVE_CAP` is 2 Now: dispatch.md says no code caps workers. | commands/dispatch.md:31 |
+| 27 | FIXED in #994 | "Nothing writes BACKLOG.md directly"; promote is the only edge in | Direct writers: board capture, sync intake, assign freeform, wayfind, web-drift Now: `backlog.sh add` is the one row writer; data-flow.md lists the real writers. | docs/data-flow.md:70,75, lib/board/board.sh:957-981, lib/sync/backlog_sync.py:289-291, commands/assign.md:33, commands/wayfind.md:92, skills/web-drift/SKILL.md:34 |
+| 28 | FIXED in #994 | `learn propose, drain, debt` | The subsystem is `reflect`; `bin/learn` is a deprecated forwarder Now: data-flow.md says reflect. | docs/data-flow.md:25-62,76,121,209, lib/reflect/reflect.sh:20, bin/learn:2-4 |
+| 29 | FIXED in #994 | Proposers stage automatically | Writes are opt-in (`BACKLOG_STAGE_AUTO=1`); otherwise propose prints and backlog-stage returns Now: data-flow.md says staging writes are opt-in. | docs/data-flow.md:33-47, hooks/backlog-stage.sh:10-14, lib/reflect/propose.py:45,554 |
+| 30 | FIXED in #992 | intake-sweep runs at SessionStart via `backlog-stage --surface` | backlog-stage is wired on SessionEnd with no `--surface`; only tests call it; intake-sweep never runs Now: backlog-stage.sh --surface is wired on SessionStart, so intake-sweep has a trigger. | docs/architecture.md:283, hooks/hooks.json:189, docs/hooks.md:61, docs/FEATURES.md:127 |
+| 31 | FIXED in #997 | BACKLOG.md cites `lib/goal-registry.sh` and `lib/backlog.sh`; "Shipped items drop off the queue" | Paths are lib/goal/ and lib/board/; wrap keeps shipped rows in place Now: BACKLOG.md cites the real paths. | _meta/BACKLOG.md:23-25,339 |
+| 32 | FIXED in #994 | `backlog.sh lint` checks the board shape | It hardcodes 4 cells while the kit board has 6 columns; promote and capture write 4-column rows into it Now: `lint` follows the table's own header. | lib/board/backlog.sh:305, lib/board/bin/add-backlog:226-228, lib/board/board.sh:968, skills/backlog-reconcile/SKILL.md:47 |
+| 33 | FIXED in #993 | mirror, status and writeback were folded into the sync module | They still run the legacy bash engine; `--engine sync` is dry-run only Now: the sync-engine dry run is removed; mirror, status and writeback stay on the legacy engine and the docs say so. | lib/board/board.sh:683-686,1202-1207 |
+| 34 | FIXED in #994 | add-backlog's `parse_staging` is the only private grammar copy | The `.jq` twin is a second Now: data-flow.md names the .jq twin as the only second grammar copy. | docs/data-flow.md:97, lib/reflect/staging-format.py:24-29 |
+| 35 | FIXED in #998 | `intake gate` replaces five intake skills | No in-kit caller; only lib/README and the module registry mention it Now: lib/README and the module registry say no in-kit command, skill or hook calls the intake gate. | lib/intake/intake.sh:3-7 |
+| 36 | FIXED in #997 | anomalies.py keeps its own `render_block` copy | It loads staging-format.py Now: the reflect README says anomalies.py loads staging-format.py. | lib/reflect/README.md:79-98, lib/stats/src/stats/anomalies.py:750-765 |
+| 37 | NOT APPLICABLE | `bin/learn` lives one release | Removal tied to 2.4.0 and the file still exists Reason: bin/learn is due for removal in 2.4.0 and VERSION is 2.3.0, so nothing is overdue (see #992). | lib/reflect/README.md:60, docs/CHANGELOG.md:247-250, bin/learn |
+| 38 | FIXED in #997 | `bin/session` usage lists five verbs | Omits `audit`, which session.sh dispatches Now: bin/session usage lists audit. | bin/session:4-10, lib/session/session.sh:32 |
+| 39 | NOT APPLICABLE | session-state-save runs on Stop | Wired on Stop and SubagentStop Reason: the session-state-save hook was removed in #992. | docs/architecture.md:289, hooks/hooks.json:173,234 |
+| 40 | FIXED in #997 | harvest.sh stages learnings on PreCompact and SessionEnd | The no-flag harvest runs on PreCompact only; SessionEnd runs `--lab-log` Now: the harvest.sh header says PreCompact stages and SessionEnd drafts the LAB_LOG. | hooks/harvest.sh:2, hooks/hooks.json:152,194 |
+| 41 | FIXED in #997 | Skill `observe` reads as the session observe front door | It fronts lib/bench, not lib/session/observe Now: the observe skill says it fronts lib/bench. | skills/observe/SKILL.md |
+| 42 | FIXED in #992 | The Rust prose-rag crate is retired | `lib/prose-rag/bin/prose-rag-rs` (5 MB) and `rust/target` remain as ignored files Now: the ignored Rust leftovers were moved to the Trash. | install.sh:573 |
+| 43 | FIXED in #996 | adopt.sh's module table is in sync with install.sh | install.sh also wires board-row-gate, context-budget, batch-debt-warn, tool-policy-guard, money_gate, prose_rag; adopt still knows `bridge` and lacks worktree, money_gate, prose_rag, sync Now: adopt.sh and install.sh both read lib/config/modules.tsv. | lib/adopt.sh:343-355, install.sh:226-243, commands/adopt.md |
+| 44 | FIXED in #998 | context-budget warns once per 100k-token band past 200k | Percentage thresholds, `KIT_CTX_WARN_PCT` 65 and `KIT_CTX_STRONG_PCT` 70 Now: the architecture inventory row names the percentage thresholds. | docs/architecture.md inventory row, hooks/context-budget.sh:20-26, docs/hooks.md:43 |
+| 45 | FIXED in #997 | repo-hygiene has five detectors and six item classes | The sixth (handoff) class is a model-run procedure; the script has detectors 1 to 5 Now: the repo-hygiene skill says detector 6 is a model-run procedure. | skills/repo-hygiene/SKILL.md, lib/repohygiene/repohygiene.sh:15-19 |
+| 46 | FIXED in #997 | gauntlet-proof-audit has "no default cron" | Its second Cadence section and the cadence table say monthly Now: gauntlet-proof-audit and the cadence table agree. | skills/gauntlet-proof-audit/SKILL.md, docs/patterns/audit-loop.md:90 |
+| 47 | FIXED in #997 | audit-scanner's dispatchers are six named loops | memory-tidy and gauntlet-proof-audit also dispatch it Now: audit-scanner lists every dispatcher. | agents/audit-scanner.md:3, skills/gauntlet-proof-audit/SKILL.md step 4 |</script>
 <script type="text/plain" id="uml-base" data-ref=""></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/js-yaml/4.1.0/js-yaml.min.js" integrity="sha384-+pxiN6T7yvpryuJmE1gM9PX7yQit15auDb+ZwwvJOd/4be2Cie5/IuVXgQb/S9du" crossorigin="anonymous"></script>
 <script>

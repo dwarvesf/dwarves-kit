@@ -295,7 +295,7 @@ Within one spec, tasks run sequentially. Across specs, `/kit:dispatch` fans out 
 | anti-rationalization | Stop | Catches Claude declaring work done prematurely |
 | slop-cleaner | Stop | Flags bloated code in recently modified files |
 | citation-guard | Stop | Flags (or blocks, CITATION_GUARD_STRICT=1) hallucinated file:line citations in the final message |
-| money-gate | PreToolUse(Edit\|Write\|MultiEdit) | Asks before a money-touching edit lands in a repo named in MONEY_GATE_REPOS (inert unset) |
+| money-gate | PreToolUse(Edit\|Write\|MultiEdit) | Logs a money-touching edit in a repo named in MONEY_GATE_REPOS, and asks before it lands only with MONEY_GATE_STRICT (inert unset) |
 | prose-rag | UserPromptSubmit | Injects relevant prior notes on recall-shaped prompts (dormant unless PROSE_RAG_INJECT=1) |
 | board-row-gate | PreToolUse(Bash) | Blocks a `git commit` that adds a new board row (a first-cell ID absent from HEAD's `_meta/BACKLOG.md` or `BACKLOG.md`, any prefix) unless the message carries a `board-row-ok: <reason>` line. On by default; a repo opts out with `[gate] board_row_gate = false` in its committed `.kit.toml`; session kill switch `DWARVES_KIT_SKIP_BOARD_ROW_GATE=1` |
 | batch-debt-warn | PreToolUse(Bash) | Warns once when a session merges a 2nd PR with no lane START in the gate ledger since the first merge |
@@ -501,7 +501,7 @@ For the full file listing including individual agent/hook/command names, run `gi
 
 **Debug mode.** Set `DWARVES_KIT_DEBUG=1` and every hook logs its decisions to stderr. Useful when a hook misbehaves or you want to understand why something was blocked or approved.
 
-**Hook logs.** Hooks that make enforcement decisions append to `~/.claude/dwarves-kit/logs/` (`anti-rationalization.log`, `safety-gate.log`, `spec-drift-guard.log`, `slop-cleaner.log`). These build the eval corpus for future optimization.
+**Hook logs.** Hooks that make enforcement decisions append to `<ledger root>/hooks/` (`anti-rationalization.log`, `safety-gate.log`, `spec-drift-guard.log`, `slop-cleaner.log`), next to the run ledgers and surviving a plugin reinstall. The ledger root defaults to `${XDG_STATE_HOME:-~/.local/state}/dwarves-kit/logs`; `KIT_LEDGER_DIR`, `DWARVES_KIT_LOG_DIR` or `[ledger].location` move it. These build the eval corpus for future optimization.
 
 **Weekly scheduler.** The kit ships ONE weekly LaunchAgent: a dispatcher over a declarative jobs list (session-intel digest, `reflect propose`, print-only unless `BACKLOG_STAGE_AUTO=1` is set in `~/.config/kit-weekly/env`; adding a job = one line, never a new plist). Consumer instantiates it: `bash deploy/macos/install`; runbook at [`deploy/macos/README.md`](deploy/macos/README.md).
 

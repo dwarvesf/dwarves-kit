@@ -99,7 +99,7 @@ One unit of work, with what enforces each step:
   run the check yourself ......... a local run, not a remote one; a claim
         |                          you did not run is not a result
         v
-  commit ......................... commit-format hook  [HARD]
+  commit ......................... commit-format hook  [HARD when [gate] commit_format is on]
         |
         v
   record the gate you ran ........ gate-ledger
@@ -214,8 +214,8 @@ ledger, never a persisted second source of truth.
 
 Adoption is **layered, not all-or-nothing**. `install.sh` wires the essential spine
 unconditionally (the spec-driven development (SDD) ship discipline: safety-gate, ship-gate, spec-drift-guard,
-secrets-guard, commit-format, anti-rationalization) and opt-in modules only when asked
-(`install.sh --with board,session,stats,...`), recording the enabled set in the consumer's
+secrets-guard, commit-format, anti-rationalization) plus the core `board` module, and the other
+modules only when asked (`install.sh --with session,stats,...`; the module table is `lib/config/modules.tsv`), recording the enabled set in the consumer's
 `kit.toml [modules]` manifest, an install artifact that records the choice, never read at
 runtime. Full adoption model + rationale: `docs/PHILOSOPHY.md` and `README.md`.
 

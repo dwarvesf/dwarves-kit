@@ -291,7 +291,7 @@ file count so this table cannot drift):
 | `codebase-index` | SessionStart (opt-in) | convenience | none (background indexing) |
 | `money-gate` | PreToolUse Edit/Write/MultiEdit | convenience | a silent careless edit to a ledger/payroll/wallet file in a repo the consumer named financial (inert until MONEY_GATE_REPOS is set) |
 | `prose-rag` | UserPromptSubmit | convenience | re-deriving what the consumer already wrote; injects prior notes on recall-shaped prompts (dormant unless PROSE_RAG_INJECT=1) |
-| `context-budget` | UserPromptSubmit | advisory | a long session burning most of its spend re-reading the same context from cache unnoticed; warns once per 100k-token band past 200k, never blocks |
+| `context-budget` | UserPromptSubmit | advisory | a long session burning most of its spend re-reading the same context from cache unnoticed; warns once per session when the context window passes a percentage threshold (`KIT_CTX_WARN_PCT` 65, `KIT_CTX_STRONG_PCT` 70) and again after a drop back under it, never blocks |
 | `tool-policy-guard` | PreToolUse | advisory | drifting to a denied/ask-tier tool the policy file maps per domain (inert until a tool-policy.json exists) |
 
 **The harvest sweep is the second capture path.** The `harvest` hook stages per session at PreCompact and SessionEnd. On a host where the sweep is installed, `hooks/harvest_sweep.py` (reached as `hooks/harvest.sh --sweep`) replaces it: a LaunchAgent renders from `deploy/macos/harvest-sweep/` and runs on a `harvest.schedule_hours` interval. Each run reads new claude transcripts (devin when `harvest.sources` lists it) behind a per-source cursor, extracts learnings and pattern sightings, stages them into sweep ledgers, and writes a wrap-shaped report. It builds, pushes, and merges nothing. A host is active only when `harvest.enable` is true and the `<state>/sweep/installed` marker exists. The marker is written by `install --apply` and never syncs. Flags: `--dry-run` (manifest, no cursor or ledger change), `--status`, `--flush-list`, `--mark-flushed`. A 5-hour or weekly usage limit holds the run (exit 0, cursor kept, no failure counted). `wrap.distill = "harvest"` leaves the distill half of `/kit:wrap` to the sweep on those hosts.
@@ -582,12 +582,17 @@ Beyond the repo itself, the kit writes to:
 | `${XDG_STATE_HOME:-~/.local/state}/dwarves-kit/logs/runs/<rid>.log` | Per-run gate/routing ledger, the retro + eval corpus (DURABLE: outside the plugin-reinstall blast zone, SPEC-097; legacy `~/.claude/dwarves-kit/logs` migrated in additively) | gate-ledger.sh |
 | `${XDG_STATE_HOME:-~/.local/state}/dwarves-kit/logs/completeness.log` | Lane-downgrade / completeness records | lane-classify.sh (write), lane-telemetry.sh (read) |
 | `${XDG_STATE_HOME:-~/.local/state}/dwarves-kit/logs/proof-overrides.log` | Logged proof-of-done overrides | proof-ledger.sh |
-| `~/.claude/dwarves-kit/logs/anti-rationalization.log` | Blocked Stop-event patterns | anti-rationalization.sh |
-| `~/.claude/dwarves-kit/logs/safety-gate.log` | Blocked destructive Bash commands | safety-gate.sh |
-| `~/.claude/dwarves-kit/logs/secrets-guard.log` | Blocked secret-file reads (path + tool, never contents) | secrets-guard.sh |
-| `~/.claude/dwarves-kit/logs/commit-format.log` | Blocked non-conventional commit subjects | commit-format.sh |
-| `~/.claude/dwarves-kit/logs/spec-drift-guard.log` | Files created outside the spec | spec-drift-guard.sh |
-| `~/.claude/dwarves-kit/logs/slop-cleaner.log` | Bloat detections | slop-cleaner.sh |
+| `<ledger root>/hooks/anti-rationalization.log` | Blocked Stop-event patterns | anti-rationalization.sh |
+| `<ledger root>/hooks/safety-gate.log` | Blocked destructive Bash commands | safety-gate.sh |
+| `<ledger root>/hooks/secrets-guard.log` | Blocked secret-file reads (path + tool, never contents) | secrets-guard.sh |
+| `<ledger root>/hooks/commit-format.log` | Blocked non-conventional commit subjects | commit-format.sh |
+| `<ledger root>/hooks/spec-drift-guard.log` | Files created outside the spec | spec-drift-guard.sh |
+| `<ledger root>/hooks/slop-cleaner.log` | Bloat detections | slop-cleaner.sh |
+| `<ledger root>/hooks/ship-gate.log` | Ship-gate BLOCKED, ALLOWED and OFF-BY-CONFIG lines | ship-gate.sh |
+| `<ledger root>/hooks/board-row-gate.log` | Blocked new board rows | board-row-gate.sh |
+| `<ledger root>/mega-merge.log` | Mega-goal merge decisions, DRY-RUN included | lib/goal/mega-merge.sh |
+| `<ledger root>/merge-watch/<session>.log` | One line per `gh pr merge` in a session, for the batch-debt warning | batch-debt-warn.sh |
+| `<ledger root>/.gate-check.cache`, `<ledger root>/.shipped-incomplete.cache` | Verdict caches keyed on the ledger fingerprint, so an unchanged ledger skips the re-check | gate-ledger.sh, lane-telemetry.sh |
 | `.claude/debug/<slug>.md` | Per-bug evidence ledger (Symptoms / Root cause / Evidence / Eliminated / Fix attempts / Resolution) | /kit:debug |
 | `.claude/debug/<slug>.log` | `[DEBUG Hn]`-tagged instrumentation output | /kit:debug |
 
@@ -716,7 +721,9 @@ guard), and how do I trigger it.
 - **BUILDING** expands to: `builder -> end verifiers (task-verifier, integration-verifier, acceptance-verifier) -> {PASS | FAIL:fixable -> fix-agent (<=2) | FAIL:escalate}`. The diagram is in `docs/WORKFLOW.md` "## Flow and loop reference" (the execute pipeline), and the read-only contract is in "## Verification pipeline" above.
 - **DEBUGGING** expands to: `Phase 1 Root cause -> Phase 2 Pattern -> Phase 3 Hypothesis -> Phase 4 Implementation`, under the iron law (no fix without a recorded root cause), guarded by the guess-fix guard. The diagram is in `docs/WORKFLOW.md` "## Flow and loop reference" (the debug loop).
 
-### Hard stops as guards (the only blockers)
+### Hard stops as guards (the autonomy stops; other rules block too)
+
+These four are where an autonomous run stops. They are not the only blockers: `docs/hard-rules.tsv` lists every rule code blocks on (secrets-guard, commit-format, board-row-gate, tool-policy-guard and more ship-gate rules), each with its proving test. The verification pipeline is run by the `/execute` command text, not by a hook. anti-rationalization blocks only while `[gate] understanding_gate` is on.
 
 | Hard stop | Guards the transition | Effect |
 |---|---|---|

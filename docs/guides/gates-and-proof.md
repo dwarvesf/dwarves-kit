@@ -1,20 +1,24 @@
 # Gates and proof of done (user guide)
 
-Almost everything in the kit ADVISES; exactly four things BLOCK. If a run
-stopped hard, you hit one of these, and each has a designed way through that is
-never "disable the gate":
+Almost everything in the kit ADVISES. A short list of rules BLOCK, each backed
+by code and a proving test (`docs/hard-rules.tsv`); several are off until a
+`[gate]` key turns them on. These are the ones you meet most. If a run stopped
+hard, you hit one of them, and each has a designed way through that is never
+"disable the gate":
 
 ```
- the 4 hard stops                           the way through
+ the stops you meet most                     the way through
  ─────────────────                          ───────────────
- spec-drift guard ......... build diverged  amend the spec (add-only) or
-   from the spec's contract                 re-scope; then continue
+ spec-drift guard ......... warns only:     amend the spec (add-only) or
+   build diverged from the contract         re-scope; then continue
  verification pipeline .... a task failed   fix-agent retries (cap 2), then
    its verifier                             escalate: the task or spec is wrong
  ship gate + push-to-main . no proof of     produce the proof, or log an
    done for a behavioral change             AUDITED override with a reason
  debug iron law ........... fix attempted   record the root cause first;
    without a recorded root cause            guess-fixes are refused
+   (anti-rationalization, while
+   [gate] understanding_gate is on)
 ```
 
 ## Proof of done, the part everyone meets

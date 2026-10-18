@@ -40,7 +40,7 @@ toggleable modules, not to every `[modules]` line in `kit.toml`.
 | stats | Watch (Observe) | |
 | quiz_gate | Build (Execute) | |
 | weekend_batch | Reflect (Learn) | |
-| sync | Shape (Specify) | spanner: spoke intake -> board rows (Shape input side) + outward mirror to Reminders/Notion/Hermes (Watch, presentation). Engine lib/sync/, verb `board sync`, per-repo `[sync]` config. ABSORBED `bridge` 2026-07-16 (same engine surface, zero live consumers at fold time: no `bridge=on` rows, no snapshot, module off): the SPEC-147 cockpit mirror + SPEC-149 writeback become a sync EDGE in the SPEC-002 P2 port. FIRST SLICE LANDED (`lib/sync/cockpit.py`, `board mirror --engine sync --dry-run`): the deterministic multi-source EXTRACT + keyed `row_hash` git-wins diff, carrying over the reachable-state map {triage, ready, blocked, done}. The legacy `mirror`/`status`/`writeback` verbs + lib/board/board-mirror.sh + board-writeback.sh stay the DEFAULT and runnable, serving the still-deferred live LOAD leg, two-way writeback, snapshot migration, and eventual verb-retirement. |
+| sync | Shape (Specify) | spanner: spoke intake -> board rows (Shape input side) + outward mirror to Reminders/Notion/Hermes (Watch, presentation). Engine lib/sync/, verb `board sync`, per-repo `[sync]` config. ABSORBED `bridge` 2026-07-16 (same engine surface, zero live consumers at fold time: no `bridge=on` rows, no snapshot, module off): the SPEC-147 cockpit mirror + SPEC-149 writeback become a sync EDGE in the SPEC-002 P2 port. The `board mirror --engine sync` dry-run slice was removed (it had no caller); `lib/sync/cockpit.py` stays for the helpers `sources/hermes.py`, `sources/notion_taskboard_pull.py` and `lib/mega/runs-dashboard.py` import. The legacy `mirror`/`status`/`writeback` verbs + lib/board/board-mirror.sh + board-writeback.sh stay the DEFAULT and runnable, serving the still-deferred live LOAD leg, two-way writeback, snapshot migration, and eventual verb-retirement. |
 | worktree | Build (Execute) | |
 | money_gate | Check (Govern) | |
 | classify | Shape (Specify) | not a `modules.tsv` install toggle (it is spine machinery), but ADR-0034 decision 3 assigns it a stage and pins THIS file as the machine home for that table. Added 2026-07-14: the stage was answerable only from ADR prose. |
@@ -320,6 +320,8 @@ single-reader fence). No env vars; per-repo values live in `.kit.toml [sync]`.
 | PRECEDENT_REGISTRY | precedent.registry | `${XDG_CONFIG_HOME:-$HOME/.config}/dwarves-kit/inventory.txt` | [consumer] | precedent | Registry file of extra `<kind> <path>` scan locations (`repo\|scripts\|skills\|crons\|memory`) for `precedent find --surface inventory\|all`. Resolution: `--registry` flag > this env var > `kit_config_get_root precedent.registry` (the operator `kit.toml` or the kit-root `kit.toml` ONLY; a project `.kit.toml` is never read for this key because registry rows widen the roots `--explain` may read and a project toml rides inside an untrusted PR, `kit-config.sh:75-90`) > the XDG default path shown here (read by `inventory.py` itself, not the resolver). Empty/missing registry means built-in scan only. |
 
 ### intake (`intake gate` decision stores, no install module)
+
+No command, skill or hook in this kit calls `intake gate`; the callers are an operator's own intake skills (see `lib/README.md`).
 
 Every row resolves with `kit_config_get_root` (the operator `kit.toml` or the kit-root
 `kit.toml` ONLY; a project `.kit.toml` is never read for any of them because two name a

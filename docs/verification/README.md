@@ -224,7 +224,7 @@ A task's **proof class** decides what "done" needs. Classify with `lib/gate/proo
 |---|---|---|
 | **stateful** | deployment, migration, anything touching data / persistent state | Exercise the REAL flow on a copy or dry-run, record it, AND note rollback / reversibility. Never "done" without a recorded run + a rollback path. |
 | **behavioral** | implementation that changes behavior (a feature, a logic fix) | Run the REAL primary flow end-to-end (the path the change adds), record it, AND include a negative control (revert -> RED -> restore). |
-| **inert** | docs, comments, cosmetic, pure text | Exempt. Record `[PROOF OF DONE: exempt -- <reason>]`. No run. |
+| **inert** | docs, comments, cosmetic, pure text; a diff made only of `*.md`/`*.txt`, `.kit.toml`, and documentation or asset files under `docs/` | Exempt. Record `[PROOF OF DONE: exempt -- <reason>]`. No run. |
 
 - **Run the real primary flow, not a proxy.** The recorded run must exercise the actual
   path the change adds, not a tangential green test that happens to pass.
