@@ -2,9 +2,10 @@
 
 > Agent-facing contract. Read after CLAUDE.md. It names the lifecycle, routes
 > work by risk, and points at the guardrail that enforces each boundary.
-> It suggests and routes; it does not block. The only hard stops are the
-> safety-gate hook, the push-to-main blocker, the anti-rationalization Stop
-> hook, and the verification pipeline.
+> It suggests and routes; it does not block. The four hard stops, where an
+> autonomous run stops for a human, are the safety-gate hook, the push-to-main
+> blocker, the anti-rationalization Stop hook, and the verification pipeline.
+> Every rule that code really blocks on is listed in `docs/hard-rules.tsv`.
 > The visual flow/loop view (every flow + alt-flow, its trigger, and its
 > stop condition, with ASCII diagrams) is the `## Flow and loop reference`
 > section at the end of this file.
@@ -177,13 +178,14 @@ thing that enforces the exit:
   Think  ----->  decision brief written  ---------->  advisory
     |
     v
-  Spec  ------>  spec exists, Status: DRAFT  ------>  spec-drift-guard   [HARD]
+  Spec  ------>  spec exists, Status: DRAFT  ------>  spec-drift-guard   (warns only)
     |
     v
   Validate --->  Status: VALIDATED  --------------->  execute preflight; ship gate (full)
     |
     v
-  Build  ----->  tasks checked, end verifiers PASS  verification pipeline [HARD]
+  Build  ----->  tasks checked, end verifiers PASS  verification pipeline (command-run;
+    |                                                 ship-gate checks the record)
     |                                                 builder -> end verifiers -> fix
     v
   Review  ---->  verdict recorded  ---------------->  advisory
@@ -198,8 +200,8 @@ thing that enforces the exit:
   Reflect ---->  docs/retro/v<version>.md written ->  advisory
 
   off-cycle
-  Debug  ----->  root cause recorded, fix verified ->  iron law +         [HARD]
-                                                       guess-fix guard
+  Debug  ----->  root cause recorded, fix verified ->  iron law (prose) +
+                                                       guess-fix guard   [HARD: anti-rationalization]
 ```
 
 The opt-in phases (Design, Design critique, Prototype, UI design, Test plan) hang off the
@@ -368,8 +370,9 @@ that validates it):
 review RUNS and records (`bash lib/gate/gate-ledger.sh record <rid> <phase> ran`);
 mid-flight a failing review is advisory and does NOT halt the run. The only wall is at
 ship: `hooks/ship-gate.sh` refuses a push whose lane has a `measure-twice` phase with
-no `ran`/`override` entry (the lane's required set is parsed from the lane x phase
-matrix). So the full lane inherits full-coverage review for free from bare `/kit:*`,
+no `ran`/`override` entry (the lane's required set is read from the
+`[lane.<name>]` data in `kit.toml` via `lib/gate/lane-data.sh`; the lane x phase matrix is the human view).
+So the full lane inherits full-coverage review for free from bare `/kit:*`,
 with the hard gate at push and advisory records throughout.
 
 ## The advisor: the kit-default extra lens (ADR-0028 P5/P6)
@@ -385,8 +388,8 @@ DEFAULT (on every applicable run, not opt-in), in two modes:
   merged findings, never a blocker.
 - **Over-suggest (P6)** -- a generative pass surfaced to the human JUST BEFORE the
   final review: it proposes additional ideas / sub-goals the completed work now makes
-  cheap or valuable. Dispatched at the ship / mega-lane final boundary (`/kit:mega`,
-  SG-08, consumes it). Proposals only; the human filters.
+  cheap or valuable. Dispatched at the `/kit:spec` design-time pass and the `/kit:mega`
+  convergence gate (`/kit:mega`, SG-08, consumes it); `/kit:ship` does not dispatch it. Proposals only; the human filters.
 
 One agent, two modes. Its `model:` (default `sonnet`) is the cheap-first tier knob so
 a kit-default lens never silently burns `opus` on every run (WORKFLOW.md verification
@@ -1159,8 +1162,9 @@ the cycle, V-model, and type loops) lives at [`docs/workflow-map.md`](workflow-m
 
 At a glance: **1** backbone (the spine, above), **5** primary intake lanes (the lane
 table, above), **3** bounded loops (the engines, below), **11** opt-in side-flows,
-**7** alternate/branch flows, and **4** hard stops (the only blockers). Everything
-except the four hard stops **suggests and routes; it does not block**.
+**7** alternate/branch flows, and **4** hard stops (where an autonomous run stops
+for a human). The rules code really blocks on are listed in `docs/hard-rules.tsv`;
+everything else **suggests and routes; it does not block**.
 
 ### The state stores the flows move between
 
@@ -1270,7 +1274,7 @@ On that verdict `/kit:debug` records the bug lane's `debug` gate (`gate-ledger.s
 builder for the whole spec, then verifies once at the end: a single `task-verifier` pass
 over every task's criteria, the integration-verifier (multi-task specs), and the
 acceptance-verifier. Self-reported "done" is never proof; the verifiers are.
-Enforcer: the verification pipeline is itself a hard stop. Stop: the end verifiers PASS.
+Enforcer: the pipeline is run by the `/kit:execute` command text, not by a hook; `ship-gate` checks only that its `execute` gate was recorded. Stop: the end verifiers PASS.
 Branches: `PASS` (advance), `FAIL:fixable` (retry via fix-agent, **max 2**),
 `FAIL:escalate` (stop -> human), retries exhausted (`Result: PARTIAL`, the unmet
 criterion named). A `recheck-verifier` re-audit samples the PASSes (ADR-0038).
@@ -1371,17 +1375,20 @@ The edges that fire when the happy path does not hold.
    blocking; `/kit:ship` and `/kit:retro` review that log at the gate. (Full rule: the
    "## Completion contract" above.)
 
-### The four hard stops (the only blockers)
+### The four hard stops (where an autonomous run stops)
 
-Everything else suggests or warns. These four refuse to proceed, because the cost of the
-mistake is irreversible:
+These four refuse to proceed, because the cost of the mistake is irreversible. Three are
+hooks that exit 2. The fourth is run by the command text. Other hooks block as well
+(secrets-guard, commit-format, board-row-gate, tool-policy-guard, more ship-gate rules);
+`docs/hard-rules.tsv` lists every rule code really blocks on, with the test that proves it,
+and `tests/test-meta-hard-claims.sh` fails a doc that labels something a hard block without one.
 
 | Hard stop | Fires on | Mechanism |
 |---|---|---|
 | safety-gate | destructive Bash (`rm -rf`, `DROP TABLE`, `git reset --hard`, `kubectl delete`; build-artifact allowlist exempt) | PreToolUse hook, exit 2 |
 | push-to-main blocker | a push to `main`/`master`/protected | PreToolUse hook, exit 2 |
 | anti-rationalization | premature "done" claim; phantom-impl stub in the diff; guess-fix while `## Root cause` empty | Stop hook |
-| verification pipeline | a task whose acceptance criteria are unmet or whose tests did not actually run | `/execute` gate (builder -> end verifiers -> fix -> escalate) |
+| verification pipeline | a task whose acceptance criteria are unmet or whose tests did not actually run | `/execute` command text (builder -> end verifiers -> fix -> escalate); `ship-gate` checks the gate record |
 
 ### Quick reference: trigger -> flow -> stop -> enforcer
 
@@ -1391,9 +1398,9 @@ mistake is irreversible:
 | `/kit:assign <ID-NNN or freeform>` | goal draft + lane routing (freeform: delegate to `/kit:think`, then allocate ID + row) | draft written, status flipped, handed off | none (mutator; idempotent; approve-before-allocate) |
 | `/kit:dispatch <specs>` | disjointness gate -> N background worktree workers -> lead-owned convergence | all workers READY + drift-clean, converged via `/kit:ship` | disjointness gate + drift guard (`lib/gate/dispatch-gate.sh`); no auto-merge; no DAG |
 | `/kit:think` | decision brief | brief written (if BUILD) | advisory |
-| `/kit:spec` | spec scaffold | spec exists, `Status: DRAFT` | spec-drift-guard hook |
+| `/kit:spec` | spec scaffold | spec exists, `Status: DRAFT` | spec-drift-guard hook (warns, never blocks) |
 | `/kit:spec-validate` | 7-lens adversarial review (6 advisory, 1 blocking), dispatched fresh-context by `/kit:spec` and `/kit:execute` | `Status: VALIDATED` | ship gate (full lane); `/kit:execute` preflight (normal, full, backfill) |
-| `/kit:execute` | verification pipeline | all tasks + integration PASS | verification pipeline (hard) |
+| `/kit:execute` | verification pipeline | all tasks + integration PASS | verification pipeline (command-run; ship-gate checks the record) |
 | `/kit:debug` | feedback-loop-first debug loop (Phase 0 + 4 phases) | root cause + fix verified (human-confirmed only when `debug.confirm_fix=true`) | iron law + guess-fix guard |
 | `/kit:review[-team]` | review | verdict recorded in the spec's `## Review` | advisory |
 | `/kit:docs` | doc sync + doc-verifier | docs match code | advisory |

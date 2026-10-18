@@ -385,7 +385,7 @@ The `harvest` hook stages learnings when a session compacts or ends. The harvest
 | `code-reviewer` | `/review-team` | Focused review with configurable lens |
 | `security-reviewer` | `/review-team` | Deep OWASP-style audit |
 | `break-it` | `/kit:battery` (escalation lens, behavioral code with tests) | Read-only adversarial prober: hunts one concrete input or call sequence the suite does not constrain, returns `PROBE`/`NO-PROBE`; rung 2 of the coverage -> probe -> mutation ladder, before `lib/gate/mutation-smoke.sh` |
-| `advisor` | `/review-team` (Step 2b, critique) + ship/mega final boundary (over-suggest) | Read-only kit-default EXTRA cross-cutting lens; two modes (P5 critique + P6 over-suggest); additive, never replaces the specialized reviewers |
+| `advisor` | `/review-team` (Step 2b) and `/kit:battery` (leg 3), critique; `/kit:spec` design-time pass and `/kit:mega` convergence gate, over-suggest | Read-only kit-default EXTRA cross-cutting lens; two modes (P5 critique + P6 over-suggest); additive, never replaces the specialized reviewers |
 | `brief-reviewer` | (right-arm parity roster; dispatchable on the brief/decision doc) | Read-only static left-arm reviewer of the design brief (`DECISION-BRIEF-<slug>.md` or a spec's Problem/Context) for clarity, completeness, testability |
 | `acceptance-verifier` | (right-arm parity roster; dispatchable at the spec's acceptance boundary) | Read-only dynamic verifier: executes the active spec's `## Verification` section end to end, maps each AC to a passing check |
 | `system-verifier` | (right-arm parity roster; dispatchable as the whole-project check) | Read-only dynamic verifier: runs the full unscoped project test suite, the right-arm mirror of design |
@@ -522,7 +522,9 @@ approve-before-allocate, sanitize, atomic-allocate.
 | "run it all the way to a PR, your call" | max | only the 4 hard stops + a real blocker |
 
 The 4 hard stops (`safety-gate`, `push-to-main`, `anti-rationalization`, the verification
-pipeline) are **never** waived by any autonomy level.
+pipeline) are **never** waived by any autonomy level. The first three are hooks that exit 2;
+the pipeline is run by the `/kit:execute` command text, and `ship-gate` checks that its gate was
+recorded. Every rule code really blocks on is listed in `docs/hard-rules.tsv`.
 
 (The at-a-glance intent cheat-sheet now lives at the top: see `## Drive it by intent (start here)`.)
 

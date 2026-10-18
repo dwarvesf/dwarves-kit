@@ -1,0 +1,28 @@
+id	enforcer	rule	gate	test	needle	doc_terms
+safety-gate.rm-rf	hooks/safety-gate.sh	block "rm-rf"	always	tests/test-hooks.sh	blocks rm -rf	safety-gate
+safety-gate.find-delete	hooks/safety-gate.sh	block "find-delete"	always	tests/test-hooks.sh	D1: find -delete on a home path blocks	safety-gate
+safety-gate.force-push	hooks/safety-gate.sh	block "force-push"	always	tests/test-hooks.sh	still blocks +refspec force push	safety-gate
+safety-gate.push-all	hooks/safety-gate.sh	block "push-all"	always	tests/test-hooks.sh	Q46: --mirror push	safety-gate
+safety-gate.push-to-main	hooks/safety-gate.sh	block "push-to-main"	always	tests/test-hooks.sh	F1: quoted main ref still blocks	safety-gate,push-to-main
+safety-gate.git-reset-hard	hooks/safety-gate.sh	block "git-reset-hard"	always	tests/test-hooks.sh	blocks git reset --hard	safety-gate
+safety-gate.kubectl-delete	hooks/safety-gate.sh	block "kubectl-delete"	always	tests/test-hooks.sh	Q49: kubectl -n ns delete	safety-gate
+safety-gate.drop-table	hooks/safety-gate.sh	block "drop-table"	always	tests/test-hooks.sh	still blocks DROP TABLE via psql	safety-gate
+ship-gate.default-push	hooks/ship-gate.sh	_default_block()	always	tests/test-ship-gate-default-push.sh	git push origin main -> blocked	ship-gate,push-to-main
+ship-gate.unaccounted-push	hooks/ship-gate.sh	_refs_block()	always	tests/test-ship-gate-default-push.sh	heredoc opener line: the push after it is still read -> blocked	ship-gate
+ship-gate.fixture-identity	lib/gate/ship-rules.sh	ship_rule_identities()	on:fixture_identities	tests/test-ship-gate-identities.sh	author x@x blocked	ship-gate
+ship-gate.review-verdict	lib/gate/ship-rules.sh	ship_rule_review_verdict()	on:review_verdict	tests/test-ship-gate-review-verdict.sh	DO NOT SHIP blocks and names the spec	ship-gate
+ship-gate.hard-path-floor	lib/gate/ship-rules.sh	ship_rule_floor()	off:lane_gates	tests/test-lanes-data.sh	ship-migration-blocks	ship-gate
+ship-gate.lane-required-gates	hooks/ship-gate.sh	ship_rules_ledger_check	off:lane_gates	tests/test-spec-find.sh	row10 ship-gate names the full lane	ship-gate
+ship-gate.no-lane	hooks/ship-gate.sh	(no-lane)	off:lane_gates	tests/test-ship-gate-fail-closed.sh	spec + no-lane + adopted -> blocked (exit 2)	ship-gate
+ship-gate.large-spec-validate	lib/gate/ship-rules.sh	ship_rule_large_spec()	off:lane_gates	tests/test-hooks.sh	ship-gate: large normal spec with no validate is blocked	ship-gate
+ship-gate.impl-notes	hooks/ship-gate.sh	MISSING-NOTES	off:lane_gates	tests/test-ship-gate-impl-notes.sh	1 full lane without notes blocks	ship-gate
+ship-gate.proof-of-done	hooks/ship-gate.sh	| BLOCKED | proof-gate |	off:proof_of_done	tests/test-ship-gate-profiles.sh	negative-control run missing -> ship-gate BLOCKS the push	ship-gate,proof-of-done
+ship-gate.registry-freshness	hooks/ship-gate.sh	| BLOCKED | registry-freshness |	always	tests/test-registry-freshness-guard.sh	input moved + stale projection -> blocked (exit 2)	ship-gate
+board-row-gate.new-row	hooks/board-row-gate.sh	BLOCKED: board-row-gate.	on:board_row_gate	tests/test-board-row-gate.sh	2.1 new row, no marker BLOCKS	board-row-gate
+commit-format.subject	hooks/commit-format.sh	block() {	off:commit_format	tests/test-hooks.sh	blocks non-conventional subject	commit-format
+secrets-guard.secret-file-path	hooks/secrets-guard.sh	secret-file path	always	tests/test-hooks.sh	blocks Read of .env	secrets-guard
+secrets-guard.secret-read-command	hooks/secrets-guard.sh	secret-read command	always	tests/test-hooks.sh	blocks Bash cat of an ssh key	secrets-guard
+anti-rationalization.excuse-phrases	hooks/anti-rationalization.sh	Rationalization detected	always	tests/test-hooks.sh	blocks 'follow-up PR'	anti-rationalization
+anti-rationalization.guess-fix	hooks/anti-rationalization.sh	BLOCKED-GUESSFIX	always	tests/test-hooks.sh	blocks guess-fix when ledger root cause empty	anti-rationalization,guess-fix
+anti-rationalization.phantom-impl	hooks/anti-rationalization.sh	BLOCKED-PHANTOM	always	tests/test-hooks.sh	blocks completion claim with NotImplementedError in diff	anti-rationalization
+tool-policy-guard.deny	hooks/tool-policy-guard.sh	is DENIED by policy	opt-in:tool-policy file	tests/test-tool-policy-guard.sh	row 1: v1 deny exits 2	tool-policy-guard,tool-policy

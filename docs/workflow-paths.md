@@ -19,7 +19,7 @@ GENERATED projection. This file enumerates every entry point and where each path
 | lib verb | `[V]` | a lib script declares itself with a `# kit-verb:` header; commands, hooks, agents or a human call it | `board work`, `classify floor` |
 | dispatched | `[D]` | a command dispatches it as a subagent | every agent (`task-verifier`, `advisor`, ...) |
 
-Enforcement marks: `HARD` = blocking (exit 2 or pipeline gate); `adv` = advisory (warns, logs, never blocks); `conv` = convenience (never blocks, no verdict). The four hard stops are safety-gate, the push-to-main blocker (inside safety-gate + ship-gate), anti-rationalization, and the execute verification pipeline; everything else advises.
+Enforcement marks: `HARD` = a rule that code really blocks on (a hook or lib exits 2), listed in `docs/hard-rules.tsv` and pinned by `tests/test-meta-hard-claims.sh`; a gate that is off by default says so in that registry's `gate` column; `adv` = advisory (warns, logs, never blocks); `conv` = convenience (never blocks, no verdict). The four hard stops are where autonomous runs stop for a human: safety-gate, the push-to-main blocker (inside safety-gate + ship-gate), anti-rationalization, and the execute verification pipeline. The pipeline is run by the command text, so `ship-gate` checks only that its gate was recorded. Other hooks block too (see the registry); everything else advises.
 
 Stage grouping (Shape / Build / Watch / Check / Reflect) follows the README's five stages. Stages are metadata: a feature sits where its work happens, and Check gates every boundary rather than owning a segment.
 
@@ -30,7 +30,7 @@ Every workflow, lane, loop, side-flow, and alternate path in one connected pictu
 ```
  LEGEND   ->  forward flow      ==>  loop-back / re-entry      alt:  an alternate flow fires here
  [H] human-typed  [I] intent-read  [E] event-fired  [D] dispatched   (trigger classes per section 1)
- ⚡1..⚡4  a hard stop can fire at this point; the four stops are the HARD-STOP RAIL at the bottom
+ ⚡1..⚡4  a hard stop can fire at this point; the four stops are the STOP RAIL at the bottom
 
                  [E] session start ........ hooks inject context (Watch, section 4.4)
                           |
@@ -92,7 +92,7 @@ Every workflow, lane, loop, side-flow, and alternate path in one connected pictu
  |        |   +--> downstream UI offshoot: [H/I] /kit:ui-design -> frontend-design skill ->
  |        |        [H/I] /kit:visual-team (5 design lenses) -> fix-agent revise (max 2) -> SOLID
  |        v
- |   [H/I] /kit:spec-validate  7 lenses (1 HARD on the design record)
+ |   [H/I] /kit:spec-validate  7 lenses (1 blocking verdict on the design record; reviewer prose, no hook)
  |        |     NEEDS REVISION ==> back to /kit:spec
  |        v  Status: VALIDATED
  |   [H/I] /kit:test-plan ...... coverage matrix -> ## Test plan (default on normal/full)
@@ -113,7 +113,7 @@ Every workflow, lane, loop, side-flow, and alternate path in one connected pictu
  |   [H/I] /kit:execute  (or [H/I] /kit:next: human-paced, same pipeline)
  |        |     alt: 2+ active specs and the slug is ambiguous -> ASK, never guess
  |        v
- |   +- EXECUTE PIPELINE  (the HARD verification pipeline) ----------------------------+
+ |   +- EXECUTE PIPELINE  (the verification pipeline, command-run) --------------------+
  |   |                                                                                 |
  |   |  [D] builder, one for the spec (data-etl-worker | db-migration-worker | general) |
  |   |       |                                                                         |
@@ -159,7 +159,7 @@ Every workflow, lane, loop, side-flow, and alternate path in one connected pictu
                              [I] topology-drift (registry vs path-index cross-check -> delta re-place -> PR gate)
                              both Tier 2 ==> [D] audit-scanner (shared read-only evidence pass)
 
-  HARD-STOP RAIL  (the ONLY four blockers; everything else advises, warns, or routes):
+  STOP RAIL  (the four autonomy stops; every rule code really blocks on is in docs/hard-rules.tsv):
   ⚡1 safety-gate ............ destructive Bash (rm -rf, DROP TABLE, git reset --hard); stands over
                               EVERY Bash call at ANY point in this picture, not only at ship
   ⚡2 push-to-main blocker ... push to main/protected branches; plus the ship-gate: no push
@@ -168,7 +168,7 @@ Every workflow, lane, loop, side-flow, and alternate path in one connected pictu
   ⚡3 anti-rationalization ... premature "done", phantom-impl stub, guess-fix while ## Root cause
                               is empty (Stop hook)
   ⚡4 verification pipeline .. unmet acceptance criteria / tests that did not run (the EXECUTE
-                              PIPELINE box above IS this stop)
+                              PIPELINE box above IS this stop; command-run, ship-gate checks the record)
 ```
 
 ## 3 · System topology
@@ -233,7 +233,7 @@ Commands never hand off in memory; the baton passes through stores on disk.
         v
  [H/I] /kit:grill ──> typed interview, one question at a time ──> phase-0 Done=
         |
-        v                                      [D] brief-reviewer + advisor critique
+        v                                      [D] brief-reviewer critique
  [H/I] /kit:think ──> DECISION-BRIEF.md ──┬──> [H/I] /kit:design ──> Solution in brief
         |                                 |      +── [H/I] /kit:devs-team (5 lenses, report-only)
         |                                 +──> [H/I] /kit:prototype ──> spike branch, folds back
@@ -241,7 +241,7 @@ Commands never hand off in memory; the baton passes through stores on disk.
  [H/I] /kit:spec ──> [D] research-architecture + research-context
         |                + research-pitfalls + research-stack (brownfield, read-only)
         v
-     SPEC-NNN DRAFT ──> [H/I] /kit:spec-validate (7 lenses, 1 HARD on the design record)
+     SPEC-NNN DRAFT ──> [H/I] /kit:spec-validate (7 lenses, 1 blocking verdict on the design record)
         |                        NEEDS REVISION ──> back to /kit:spec
         v
      Status: VALIDATED ──> Build
@@ -261,7 +261,7 @@ Off-ramp entries that also land in Shape: `[H/I] /kit:onboard` (first run, orche
     v
  [H/I] /kit:execute  (or [H/I] /kit:next, human-paced, same pipeline)
     |
-    |   whole-spec HARD pipeline:
+    |   whole-spec pipeline (command-run; ship-gate checks the record):
     |   [D] builder (data-etl-worker | db-migration-worker | general), one for the spec
     |        ──> [D] task-verifier, one pass ──PASS──> done   (sampled [D] recheck-verifier)
     |                 └─FAIL:fixable──> [D] fix-agent ──> re-verify (max 2) ──> ESCALATE
@@ -298,7 +298,7 @@ Off-ramp entries that also land in Shape: `[H/I] /kit:onboard` (first run, orche
     |
     v
  [H/I] /kit:ship ──> reads ## Review (DO NOT SHIP = stop) ──> version + changelog
-    |                 + [D] advisor ──> commit ──> PR
+    |                 ──> commit ──> PR
     |                 [E] ship-gate HARD: no push without recorded proof/gates, and none while the
                      spec's last ## Review verdict is DO NOT SHIP ([gate] review_verdict)
     |                 [E] safety-gate HARD: push-to-main / force-push / destructive Bash
@@ -319,7 +319,7 @@ Off-ramp entries that also land in Shape: `[H/I] /kit:onboard` (first run, orche
  are read-only views; [V] orchestrate --backend orca is the opt-in /kit:mega backend; [V] adopt pointer
  is /kit:adopt's writer.
  Ad hoc production alert: [D] devops-triage ──> bounded root-cause verdict (read-only).
- Standing Check hooks: secrets-guard [E, HARD], commit-format [E, HARD],
+ Standing Check hooks: secrets-guard [E, HARD], commit-format [E, HARD when [gate] commit_format is on],
  board-row-gate [E, HARD: no new board row without board-row-ok], batch-debt-warn [E, adv],
  anti-rationalization [E, HARD on Stop], citation-guard [E, adv; strict mode blocks],
  money-gate [E, inert until MONEY_GATE_REPOS], tool-policy-guard [E, wired PreToolUse *
@@ -393,12 +393,12 @@ One line per live feature: `entry -> ... -> terminal`. Grouped by kind; every fe
 | `[H/I] /kit:assign -> goal draft + lane pick -> grill / think / spec / dispatch / ship per lane` |
 | `[H/I] /kit:grill -> typed interview -> phase-0 Done= -> lane routing` |
 | `[H] /kit:wayfind (human ONLY) -> decision map + tickets -> /kit:spec or ROADMAP` |
-| `[H/I] /kit:think -> brief-reviewer + advisor critique -> DECISION-BRIEF.md -> design or spec` |
+| `[H/I] /kit:think -> brief-reviewer critique -> DECISION-BRIEF.md -> design or spec` |
 | `[H/I] /kit:design -> one decision at a time -> Solution in brief -> /kit:spec` |
 | `[H/I] /kit:prototype -> spike on prototype/<name> branch -> decision folds into brief/spec` |
 | `[H/I] /kit:devs-team -> 5 engineering lenses -> report-only -> feeds /kit:design` |
 | `[H/I] /kit:spec -> 4 research agents -> SPEC-NNN DRAFT -> spec-validate or ui-design` |
-| `[H/I] /kit:spec-validate -> 7 lenses (1 HARD) -> VALIDATED or back to /kit:spec` |
+| `[H/I] /kit:spec-validate -> 7 lenses (1 blocking verdict) -> VALIDATED or back to /kit:spec` |
 | `[H/I] /kit:feature-map -> research-features per module (parallel) -> docs/specs/<module>.md + top-level checklist` |
 | `[H/I] /kit:test-plan -> coverage matrix -> ## Test plan -> review-team or execute` |
 | `[H/I] /kit:test-plan-review-team -> 6 lenses + revise loop -> SOLID verdict -> test-write or execute` |
@@ -456,7 +456,7 @@ One line per live feature: `entry -> ... -> terminal`. Grouped by kind; every fe
 | `[D] frontend-reviewer <- /kit:review-team (UI diffs) -> a11y lens -> findings merged` |
 | `[D] infra-reviewer <- /kit:review-team (infra diffs) -> deploy/IaC lens -> findings merged` |
 | `[D] performance-reviewer <- /kit:review-team (perf diffs) -> hot-path lens -> findings merged` |
-| `[D] advisor <- review-team, ship + many others at the final boundary -> additive findings` |
+| `[D] advisor <- review-team, spec, battery, mega at the final boundary -> additive findings` |
 | `[D] responding-to-review <- /kit:review-team -> verify findings, push back -> proposed fixes` |
 | `[D] agent-effectiveness <- /kit:draft-agent (diff-keyed) -> 4-lens validation -> advisory` |
 | `[D] doc-verifier <- /kit:docs -> docs-vs-code check -> PASS/FAIL back to /kit:docs` |
@@ -493,12 +493,12 @@ One line per live feature: `entry -> ... -> terminal`. Grouped by kind; every fe
 | `[E] UserPromptSubmit -> context-budget -> warn once per threshold as live context passes a share of the window (adv, terminal)` |
 | `[E] PreToolUse Bash -> safety-gate -> HARD block destructive Bash / push-to-main / force-push` |
 | `[E] PreToolUse Bash -> ship-gate -> HARD block ship without recorded proof/gates` |
-| `[E] PreToolUse Bash -> commit-format -> HARD block non-conventional commit subjects` |
+| `[E] PreToolUse Bash -> commit-format -> HARD block non-conventional commit subjects (when [gate] commit_format is on)` |
 | `[E] PreToolUse Bash -> board-row-gate -> HARD block a commit that adds a new board row without a board-row-ok line` |
 | `[E] PreToolUse Bash -> batch-debt-warn -> warn on a second PR merge with no lane START in the ledger (adv, terminal)` |
 | `[E] PreToolUse Read/Edit/Bash -> secrets-guard -> HARD block secret-file reads` |
 | `[E] PreToolUse Write -> spec-drift-guard -> warn on files the active spec never mentions (adv)` |
-| `[E] PreToolUse Edit/Write/MultiEdit -> money-gate -> warn on money-file edits (inert by default)` |
+| `[E] PreToolUse Edit/Write/MultiEdit -> money-gate -> log money-file edits; ask to confirm only with MONEY_GATE_STRICT (inert by default)` |
 | `[E] PreToolUse * -> tool-policy-guard -> allow/ask/deny per domain (inert until tool-policy.json)` |
 | `[E] PostToolUse Write/Edit -> auto-format -> idempotent formatting (conv, terminal)` |
 | `[E] PostToolUse * -> output-offload -> oversized output to file + nudge (adv, terminal)` |

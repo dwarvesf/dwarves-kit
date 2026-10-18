@@ -2,9 +2,10 @@
 
 > Agent-facing contract. Read after CLAUDE.md. It names the lifecycle, routes
 > work by risk, and points at the guardrail that enforces each boundary.
-> It suggests and routes; it does not block. The only hard stops are the
-> safety-gate hook, the push-to-main blocker, the anti-rationalization Stop
-> hook, and the verification pipeline.
+> It suggests and routes; it does not block. The four hard stops, where an
+> autonomous run stops for a human, are the safety-gate hook, the push-to-main
+> blocker, the anti-rationalization Stop hook, and the verification pipeline.
+> Other hooks block too (secrets-guard, commit-format, board-row-gate).
 
 ## Required reading (in order)
 1. CLAUDE.md            - project context: stack, structure, rules

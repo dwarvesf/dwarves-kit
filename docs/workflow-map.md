@@ -22,7 +22,7 @@
 | 10 | Mid-flight amend | the add-only spec amend excursion off the execute pipeline |
 | 11 | 11 opt-in side-flows | trigger -> writes-to -> stop for each advisory flow |
 | 12 | 7 alternate flows | the edges that fire when the happy path does not hold |
-| 13 | 4 hard stops | the only blockers; everything else advises or warns |
+| 13 | 4 hard stops | where autonomous runs stop for a human; every blocking rule is in docs/hard-rules.tsv |
 | 14 | The day loop | what an ordinary change runs between edit and landed: local check, commit, push, merge, wrap |
 
 ## 0 · Inventory
@@ -32,9 +32,10 @@
 |  1 backbone (the spine)          5 primary intake lanes                  |
 |  3 bounded loops (engines)       +1 mid-flight amend micro-loop          |
 |  11 opt-in side-flows            7 alternate / branch flows              |
-|  4 hard stops (the ONLY blockers)                                        |
+|  4 hard stops (where autonomous runs stop for a human)                   |
 |                                                                          |
-|  everything except the 4 hard stops suggests and routes; it never blocks |
+|  the rules code really blocks on are listed in docs/hard-rules.tsv;      |
+|  everything else suggests and routes                                     |
 +--------------------------------------------------------------------------+
 ```
 
@@ -112,17 +113,20 @@
 
 ```
   Think -> Design -> Design critique -> Spec -> Validate -> Test plan
-  (adv)   (opt-in)     (opt-in)       [HARD:    (normal/   (default
+  (adv)   (opt-in)     (opt-in)       (adv:      (normal/   (default
                                        spec-drift  full)     normal/full)
-                                       guard]
+                                       guard warns)
      -> Build -> Review -> Docs -> Ship -> Reflect
-       [HARD:    (adv)     (adv)  [HARD:    (adv)
-        verification              ship gate +
-        pipeline]                 push-to-main]
+       (prose:   (adv)     (adv)  [HARD: ship-gate  (adv)
+        verifiers                 + push-to-main]
+        run by the
+        command)
 
-  off-cycle entry:  Debug (/kit:debug) .. [HARD: iron law + guess-fix guard]
+  off-cycle entry:  Debug (/kit:debug) .. [HARD: anti-rationalization guess-fix guard]
+                                          (the iron law itself is prose)
 
-  legend: [HARD] = enforced blocker; everything else advisory
+  legend: [HARD] = a rule in docs/hard-rules.tsv that a hook or lib really blocks on;
+          everything else advisory
 ```
 
 ## 5 · The 12 type loops
@@ -286,7 +290,11 @@ Advisory, never blocking. Output binds to the active spec (replace-not-stack).
 
 ## 13 · The 4 hard stops
 
-The ONLY blockers; everything else advises or warns.
+Where autonomous runs stop for a human. Three are hooks that exit 2. The fourth, the
+verification pipeline, is run by the `/kit:execute` command text: `ship-gate` checks only that
+its `execute` gate was recorded. Other hooks block too (secrets-guard, commit-format,
+board-row-gate, tool-policy-guard, and more ship-gate rules); the full list of rules code really
+blocks on is `docs/hard-rules.tsv`, pinned by `tests/test-meta-hard-claims.sh`.
 
 ```
   +---------------------+  +---------------------+  +----------------------+  +---------------------+
@@ -296,8 +304,8 @@ The ONLY blockers; everything else advises or warns.
   | (rm -rf, DROP       |  | /protected          |  | phantom-impl stub;   |  | criteria; tests     |
   | TABLE, git reset    |  |                     |  | guess-fix while      |  | that did not run    |
   | --hard, kubectl     |  | PreToolUse hook,    |  | ## Root cause empty  |  |                     |
-  | delete)             |  | exit 2              |  |                      |  | /execute gate       |
-  | PreToolUse, exit 2  |  |                     |  | Stop hook            |  | (builder->verifier) |
+  | delete)             |  | exit 2              |  |                      |  | /execute command    |
+  | PreToolUse, exit 2  |  |                     |  | Stop hook            |  | (prose; recorded)   |
   +---------------------+  +---------------------+  +----------------------+  +---------------------+
 ```
 

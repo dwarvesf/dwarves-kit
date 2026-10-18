@@ -2,7 +2,7 @@
 # runner: relays every tests/test-meta-<area>.sh suite and prints the summed counts.
 # tests/run-all.sh skips files carrying this header, so each suite runs once; under
 # --changed a pick that names THIS file expands to the runner-suites list below.
-# runner-suites: plugin-hooks contract agents-commands spec-depth review-verifiers vmodel-dispatch goal-ledger docs-registry
+# runner-suites: plugin-hooks contract agents-commands spec-depth review-verifiers vmodel-dispatch goal-ledger docs-registry hard-claims
 #
 # Not always-on: bin/test-affected picks this suite when a diff touches a path it
 # reads (meta_input there). The nightly --all runs the area suites daily; CI --all
