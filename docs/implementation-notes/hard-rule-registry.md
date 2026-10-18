@@ -17,10 +17,20 @@ No spec: the brief fixed the five items. Proof: `docs/verification/hard-rule-reg
 | `spec-drift-guard` and the spec-validate design-record lens lose their HARD labels | The hook only warns. Reviewer 6 is prompt text with a blocking verdict, not a hook. |
 | Wave converge asks `gh pr view` (through `MEGA_MERGE_GH`) for the PR state | The hook exit code proves nothing: the default hook is a dry run that exits 0. No new env knob: a `WAVE_*` or `QUEUE_*` name must be registered in `lib/config/module-registry.md`, which this slice does not own. A real merge needs a `WAVE_MERGE_CMD` wrapper that passes `--execute`. |
 | Converge returns 0 after a dry run and keeps going | Stopping on every dry run would make the default wave path unusable. The truth is in the event (`merge-dry-run`), not the exit code. |
-| Queue delta evidence is a HEAD move or a PR created since the window opened (`gh pr list --state all`, filtered by `createdAt`) | A run in a worktree leaves the main checkout's HEAD where it was but opens a PR. Uncommitted edits do not count: the breaker credits them as progress, but a `done` row means shipped work. A missing `gh` leaves only the HEAD check. |
 | The rule covers `RUNNER_DONE` as well as `EXIT_SIGNAL: true` | Both are a run's own claim. The brief's "a row reaches done only when" is general. |
 | The reaper journals a finished-but-orphaned run `gated`, never `done` | The reaper does not know the slug's repo, so it cannot check the delta. A run that wrote its own `REASON` keeps that reason. |
 | The test fixture mux commits on window open when `<slug>.work` exists | The queue suites asserted `done` on a pane marker alone. They now say how the run "worked", and a no-work twin of each shape asserts `gated no-delta`. |
+| A `wired` column names the call site in `hooks/ship-gate.sh` for a rule defined in `lib/gate/ship-rules.sh` | A function name matches after its call is deleted. The call-site literal fails the registry when the rule is defined and never invoked. |
+| Rule literals are call sites (`block "subject is not a Conventional`, `log_block "$TOOL" "secret-file path"`), and test needles carry the assertion wrapper (`assert_exit "blocks rm -rf" 2`) | A bare function definition or a label substring survives deleting the assertion it should prove. |
+| The suite cross-checks a hook's `gate` column against the hook source: `always` forbids `gate-policy.sh`, `on:`/`off:<key>` needs `enabled <key>` | The first draft marked the three anti-rationalization rows `always`; the hook exits early unless `[gate] understanding_gate` is on, which defaults off. A review caught it, so the suite now would. |
+| `ship-gate.unaccounted-push` is not in the registry | Its only listed test exercised the default-branch rule, not `_refs_block`. A registry row needs a test that proves that rule. |
+| The doc scan keeps definitions narrow: a legend (`[HARD] = ...` or `` `HARD` = ... `` naming the registry) and `-> HARD hook:` | A bare mention of the registry path on a mark line must not clear the mark. |
+| Docs say "the rules code blocks on, each with a proving test", not "every rule" | doc-projection, the ship-rules load failure, citation-guard strict mode and some mega-merge refusals block too and have no registered test. The registry lists what it can prove. |
+| Queue delta is HEAD, any local branch tip (`git for-each-ref refs/heads`), or an `--author "@me"` PR created since the window opened | A run in a linked worktree, or on a host with no `gh` (`--push-only`), moves a branch tip and not the main checkout's HEAD. The author filter keeps a teammate's PR from vouching for the run. |
+| The raw `queue run` skips a `gated` row whose reason is `no-delta`, like a `done` row | A report-only row would otherwise reopen a window and repeat its claim every night. The watcher already treats `gated` as terminal. |
+| The reaper's reason is `unverified`, not `no-delta` | It never checked the delta; `no-delta` is a finding, `unverified` is an absence of one. |
+| Converge runs `gh pr view` from the repo toplevel it already resolved | A PR number resolves in the caller's cwd otherwise. |
+| `docs/FEATURES.md` is regenerated in this branch | The new test files move its test counts, and the ship-gate freshness rule blocks a push that edits an input and leaves the projection stale. |
 
 ## Deviations from the brief
 
