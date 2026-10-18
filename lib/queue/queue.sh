@@ -13,8 +13,10 @@
 # line must be the first captured line or preceded by a blank line, so a soft-wrapped echo of the
 # typed prompt -- which is DESIGNED to contain the marker text -- cannot false-trigger), never a
 # fixed sleep. A marker (or an EXIT_SIGNAL: true status file) is only a claim: the journal records
-# `done` when the repo's HEAD moved or a PR was created since the window opened (`_run_delta`);
-# a completion claim with neither is journaled `gated` with reason `no-delta`. Every launch + exit lands a journal row. Two consecutive `error` OR `stalled` megas
+# `done` when the repo's HEAD or a local branch tip moved, or a PR of the operator's was created,
+# since the window opened (`_run_delta`); a completion claim with none of those is journaled
+# `gated` with reason `no-delta`.
+# Every launch + exit lands a journal row. Two consecutive `error` OR `stalled` megas
 # STOP THE NIGHT (both indicate the launch mechanism itself is dysfunctional, not a per-mega
 # outcome).
 #
@@ -304,11 +306,13 @@ _status_num() {  # slug key
 # `done` row is skipped on re-run (idempotent nights).
 _journal_init() { mkdir -p "$(dirname "$QUEUE_JOURNAL")" 2>/dev/null || true; }
 
-# 0 iff <slug> already has a `done` row. Field-exact (col1=slug, col2=verdict), so a slug that
-# merely APPEARS in another row's reason text never false-matches.
+# 0 iff <slug> already has a `done` row, or a `gated` row whose reason is `no-delta` (a completion
+# claim a human has yet to look at: relaunching it every night would only repeat the claim).
+# Field-exact (col2=slug, col3=verdict, col4=reason), so a slug that merely APPEARS in another
+# row's reason text never false-matches.
 _journal_has_done() {  # slug
   [ -f "$QUEUE_JOURNAL" ] || return 1
-  awk -F'\t' -v s="$1" '$2==s && $3=="done"{f=1} END{exit !f}' "$QUEUE_JOURNAL"
+  awk -F'\t' -v s="$1" '$2==s && ($3=="done" || ($3=="gated" && $4=="no-delta")){f=1} END{exit !f}' "$QUEUE_JOURNAL"
 }
 
 _journal_append() {  # slug verdict reason
@@ -799,17 +803,25 @@ _progress_evidence() {  # slug repo head-before
   case "$files" in ''|*[!0-9]*) ;; *) [ "$files" -gt 0 ] && { printf 'reported'; return; } ;; esac
 }
 
-# 0 iff the finished run left VERIFIABLE evidence of work: the repo's HEAD moved since the window
-# opened, or a pull request was created since then. A run's own EXIT_SIGNAL or RUNNER_DONE marker is a
-# claim, not a delta. Uncommitted edits do not count (the breaker credits them as progress, but a
-# `done` row means shipped work). `gh` is optional: without it only the HEAD check can vouch.
-_run_delta() {  # repo head-before started-iso
-  local repo="$1" before="$2" since="$3" after n
+# A hash of every local branch tip: a run that works in a linked worktree commits on a branch the
+# main checkout's HEAD never follows, and `git for-each-ref` sees that without needing `gh`.
+_branch_tips() {  # repo
+  git -C "$1" for-each-ref --format='%(refname) %(objectname)' refs/heads 2>/dev/null | cksum
+}
+
+# 0 iff the finished run left VERIFIABLE evidence of work: the repo's HEAD moved, a local branch tip
+# moved or appeared (a worktree commit), or a pull request of the operator's was created since the
+# window opened. A run's own EXIT_SIGNAL or RUNNER_DONE marker is a claim, not a delta. Uncommitted
+# edits do not count (the breaker credits them as progress, but a `done` row means shipped work).
+# `gh` is optional: without it only the two git checks can vouch.
+_run_delta() {  # repo head-before tips-before started-iso
+  local repo="$1" before="$2" tips="$3" since="$4" after n
   { [ -n "$repo" ] && [ -d "$repo" ]; } || return 1
   after=$(git -C "$repo" rev-parse HEAD 2>/dev/null)
   { [ -n "$after" ] && [ -n "$before" ] && [ "$after" != "$before" ]; } && return 0
+  { [ -n "$tips" ] && [ "$(_branch_tips "$repo")" != "$tips" ]; } && return 0
   command -v gh >/dev/null 2>&1 || return 1
-  n=$(cd "$repo" && gh pr list --state all --limit 30 --json createdAt \
+  n=$(cd "$repo" && gh pr list --state all --author "@me" --limit 30 --json createdAt \
         -q "[.[] | select(.createdAt >= \"$since\")] | length" 2>/dev/null) || return 1
   case "$n" in ''|*[!0-9]*) return 1 ;; esac
   [ "$n" -gt 0 ]
@@ -943,13 +955,13 @@ cmd_run() {
     _warn "queue: no queue source (want a tsv path or --from-boards)"; return 64
   fi
 
-  local consec_fail=0 attempts=0 total_calls=0 slug repo pointer reason verdict head_before started_iso brk_verdict brk_reason
+  local consec_fail=0 attempts=0 total_calls=0 slug repo pointer reason verdict head_before tips_before started_iso brk_verdict brk_reason
   while IFS=$'\t' read -r slug repo pointer _rest; do
     [ -n "$slug" ] || continue
 
     # idempotent nights: a slug already `done` is skipped (no window)
     if _journal_has_done "$slug"; then
-      _say "[queue] $slug: already done (journal); skipping."
+      _say "[queue] $slug: already done or gated no-delta (journal); skipping."
       continue
     fi
 
@@ -981,6 +993,7 @@ cmd_run() {
     _say "[queue] $slug: launching /goal in a $TERMINAL_MUX window (repo=$repo)."
     # Snapshot HEAD before the window opens: hatch 1 of the breaker's progress evidence.
     head_before=$(git -C "$repo" rev-parse HEAD 2>/dev/null)
+    tips_before=$(_branch_tips "$repo")
     started_iso=$(date -u +%Y-%m-%dT%H:%M:%SZ)
     verdict=$(_run_row "$slug" "$repo" "$pointer")
 
@@ -997,7 +1010,7 @@ cmd_run() {
     [ -n "$brk_reason" ] && reason="$brk_reason"
     # `done` is a verified state: a self-reported completion (RUNNER_DONE, EXIT_SIGNAL: true) with no
     # HEAD move and no new PR is only a claim, so a human looks at it.
-    if [ "$verdict" = done ] && ! _run_delta "$repo" "$head_before" "$started_iso"; then
+    if [ "$verdict" = done ] && ! _run_delta "$repo" "$head_before" "$tips_before" "$started_iso"; then
       verdict=gated; reason=no-delta
     fi
     # A protected path written by an untrusted-path run outranks every other verdict,

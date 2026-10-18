@@ -147,11 +147,11 @@ _reap_stale_runs() {  # journal
     reason=""
     if [ "$sig" = true ]; then
       # The reaper does not know the slug's repo, so it cannot check the git delta: a finished run
-      # whose conductor died is never `done` here, only `gated` for a human (reason no-delta unless the
-      # run wrote its own REASON).
+      # whose conductor died is never `done` here, only `gated` for a human (reason `unverified`
+      # unless the run wrote its own REASON).
       reason="$(_status_get "$slug" REASON)"
       verdict="gated"
-      [ -n "$reason" ] || reason="no-delta: the conductor died before the run's git delta was checked"
+      [ -n "$reason" ] || reason="unverified: the conductor died before the run's git delta was checked"
       _guard_clear "$slug"
     else
       verdict=stalled

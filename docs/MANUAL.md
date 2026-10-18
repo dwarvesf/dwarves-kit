@@ -522,9 +522,9 @@ approve-before-allocate, sanitize, atomic-allocate.
 | "run it all the way to a PR, your call" | max | only the 4 hard stops + a real blocker |
 
 The 4 hard stops (`safety-gate`, `push-to-main`, `anti-rationalization`, the verification
-pipeline) are **never** waived by any autonomy level. The first three are hooks that exit 2;
+pipeline) are **never** waived by any autonomy level. The first three are hooks that exit 2 (anti-rationalization only while `[gate] understanding_gate` is on);
 the pipeline is run by the `/kit:execute` command text, and `ship-gate` checks that its gate was
-recorded. Every rule code really blocks on is listed in `docs/hard-rules.tsv`.
+recorded. The rules code blocks on, each with the test that proves it, are listed in `docs/hard-rules.tsv`.
 
 (The at-a-glance intent cheat-sheet now lives at the top: see `## Drive it by intent (start here)`.)
 
@@ -564,10 +564,10 @@ Every hook logs to stderr what it matched and what it decided. Run the failing s
 
 | Symptom | Look at |
 |---|---|
-| Bash command blocked unexpectedly | `~/.claude/dwarves-kit/logs/safety-gate.log` |
-| Stop event keeps firing complaints | `~/.claude/dwarves-kit/logs/anti-rationalization.log` |
-| New file warned about unfairly | `~/.claude/dwarves-kit/logs/spec-drift-guard.log` |
-| Slop-cleaner nagging on something fine | `~/.claude/dwarves-kit/logs/slop-cleaner.log` |
+| Bash command blocked unexpectedly | `<ledger root>/hooks/safety-gate.log` |
+| Stop event keeps firing complaints | `<ledger root>/hooks/anti-rationalization.log` |
+| New file warned about unfairly | `<ledger root>/hooks/spec-drift-guard.log` |
+| Slop-cleaner nagging on something fine | `<ledger root>/hooks/slop-cleaner.log` |
 | Statusline showing defaults | run `bash hooks/statusline.sh < /dev/null` and inspect |
 | Hook silently does nothing | `DWARVES_KIT_DEBUG=1` and re-trigger; check stderr |
 
@@ -576,11 +576,13 @@ that feeds `/kit:retro` and the effectiveness eval (`runs/<rid>.log`, `completen
 `proof-overrides.log`) defaults to `${XDG_STATE_HOME:-~/.local/state}/dwarves-kit/logs/`
 (SPEC-097: outside the plugin-reinstall blast zone so it survives a reinstall; an existing
 `~/.claude/dwarves-kit/logs` corpus is migrated in additively on first use). The **hook
-diagnostic logs** above (`safety-gate.log`, `slop-cleaner.log`, etc.) stay at
-`~/.claude/dwarves-kit/logs/`, they are ephemeral breadcrumbs, not corpus. Set
-`DWARVES_KIT_LOG_DIR` to redirect the corpus elsewhere (it also disables auto-migration, so
-an explicit path never ingests the legacy corpus); the test suite sets it to a throwaway
-`mktemp` dir so running tests never writes into your real tree.
+diagnostic logs** above (`safety-gate.log`, `slop-cleaner.log`, etc.) live in a `hooks/`
+subdirectory of that same ledger root (`lib/telemetry/hook-log-dir.sh`), so a plugin reinstall
+no longer erases the BLOCKED trail; the first run copies any old
+`~/.claude/dwarves-kit/logs/*.log` hook logs in. Set `DWARVES_KIT_LOG_DIR` (or `KIT_LEDGER_DIR`)
+to redirect the corpus and the hook logs together (it also disables auto-migration, so an
+explicit path never ingests the legacy corpus); the test suite sets it to a throwaway `mktemp`
+dir so running tests never writes into your real tree.
 
 ### Common failure modes
 
@@ -607,7 +609,7 @@ The hook's exit code 2 is final. Override paths in order:
 
 #### `anti-rationalization` keeps firing on legitimate work
 
-Check `~/.claude/dwarves-kit/logs/anti-rationalization.log` for the pattern. The v1.1 trim narrowed to 5 phrases ("left as an exercise", "follow-up PR", "too many issues to address", "that's a separate concern", "follow-up task"). If a legitimate phrase is hitting, it is in this list. Options:
+Check `<ledger root>/hooks/anti-rationalization.log` for the pattern. The v1.1 trim narrowed to 5 phrases ("left as an exercise", "follow-up PR", "too many issues to address", "that's a separate concern", "follow-up task"). If a legitimate phrase is hitting, it is in this list. Options:
 - Rephrase the completion note (this is the intended behavior; the hook is doing its job).
 - If the pattern is genuinely too broad, propose removing it via a PR with sample false-positive logs from your `.log` file as evidence.
 

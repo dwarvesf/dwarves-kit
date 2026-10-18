@@ -2193,7 +2193,7 @@ _wave_converge() {  # megadir [id...]
       return "$rc"
     fi
     # The hook exiting 0 is not a merge (the default hook is a dry run). Ask GitHub.
-    state=$("${MEGA_MERGE_GH:-gh}" pr view "$pr" --json state -q .state 2>/dev/null) || state=""
+    state=$(cd "$repo" && "${MEGA_MERGE_GH:-gh}" pr view "$pr" --json state -q .state 2>/dev/null) || state=""
     if [ "$state" = MERGED ]; then
       _emit_event "$megadir" "$id" merged "converge: PR #$pr merged (one-at-a-time under the flip lock)"
       _say "[orchestrate] [converge] $id merged (PR #$pr)."

@@ -4,10 +4,12 @@
 # Run: bash tests/test-meta-hard-claims.sh   (standalone, or via the tests/test-meta.sh runner)
 # Harness (counters, colors, assert_eq/assert_true): tests/lib/meta-stub.sh
 #
-# docs/hard-rules.tsv lists every rule the kit's code really blocks on. This suite pins two things:
-#   1. Every registry row is real: its enforcing file exists and contains the rule's literal name,
-#      its test file exists and contains the literal needle that proves the block, and its gate
-#      column agrees with lib/gate/gate-policy.sh (a default-on key, an opt-in key, or no key).
+# docs/hard-rules.tsv lists the rules the kit's code really blocks on, each with a proving test.
+# This suite pins two things:
+#   1. Every registry row is real: its enforcing file exists and contains the rule's literal call
+#      or message, a lib rule is wired into hooks/ship-gate.sh, its test file contains the literal
+#      needle that proves the block, and its gate column agrees with lib/gate/gate-policy.sh (a
+#      default-on key, an off-by-default key, or no key) and with the hook that reads the key.
 #   2. Every doc that marks something HARD names a registry rule (a doc_terms entry on the same
 #      line). A doc claim with no code behind it must say "warns" or "advisory" instead.
 # Both checks run again on planted bad input (negative controls), so a green run is not vacuous.
@@ -21,13 +23,13 @@ TAB="$(printf '\t')"
 
 # check_registry <registry-file>: prints one problem per line, nothing when the registry is sound.
 check_registry() {
-  local reg="$1" n=0 id enforcer rule gate test needle terms seen="" key kind
+  local reg="$1" n=0 id enforcer rule wired gate test needle terms seen="" key kind
   local policy_keys default_on
   policy_keys=" $(sed -n 's/^KEYS="\(.*\)"$/\1/p' "$POLICY") "
   default_on=" $(sed -n 's/^DEFAULT_ON="\([^"]*\)".*$/\1/p' "$POLICY") "
-  [ "$(head -1 "$reg")" = "id${TAB}enforcer${TAB}rule${TAB}gate${TAB}test${TAB}needle${TAB}doc_terms" ] \
-    || { echo "header: not id/enforcer/rule/gate/test/needle/doc_terms"; return; }
-  while IFS="$TAB" read -r id enforcer rule gate test needle terms; do
+  [ "$(head -1 "$reg")" = "id${TAB}enforcer${TAB}rule${TAB}wired${TAB}gate${TAB}test${TAB}needle${TAB}doc_terms" ] \
+    || { echo "header: not id/enforcer/rule/wired/gate/test/needle/doc_terms"; return; }
+  while IFS="$TAB" read -r id enforcer rule wired gate test needle terms; do
     n=$((n + 1))
     if [ -z "$id" ] || [ -z "$terms" ]; then echo "row $n: a column is empty"; continue; fi
     case "$seen" in *" $id "*) echo "$id: duplicate id" ;; esac
@@ -36,11 +38,27 @@ check_registry() {
     if [ -f "$KIT_DIR/$enforcer" ] && ! grep -qF -- "$rule" "$KIT_DIR/$enforcer"; then
       echo "$id: rule '$rule' not found in $enforcer"
     fi
+    if [ "$wired" != "-" ] && ! grep -qF -- "$wired" "$KIT_DIR/hooks/ship-gate.sh"; then
+      echo "$id: call '$wired' not found in hooks/ship-gate.sh (the rule is defined but never wired)"
+    fi
     [ -f "$KIT_DIR/$test" ] || { echo "$id: test $test does not exist"; }
     if [ -f "$KIT_DIR/$test" ] && ! grep -qF -- "$needle" "$KIT_DIR/$test"; then
       echo "$id: needle '$needle' not found in $test"
     fi
     kind="${gate%%:*}"; key="${gate#*:}"
+    case "$enforcer" in
+      hooks/ship-gate.sh|lib/*) ;;
+      hooks/*)
+        [ -f "$KIT_DIR/$enforcer" ] || continue
+        # A hook that reads a [gate] key through gate-policy.sh is not "always"; one that does not
+        # read it cannot be on:/off:<key>.
+        if [ "$kind" = always ] && grep -q 'gate-policy.sh' "$KIT_DIR/$enforcer"; then
+          echo "$id: gate says always but $enforcer reads gate-policy.sh"
+        fi
+        if { [ "$kind" = on ] || [ "$kind" = off ]; } && ! grep -qF "enabled $key" "$KIT_DIR/$enforcer"; then
+          echo "$id: gate says $kind:$key but $enforcer never asks gate-policy.sh 'enabled $key'"
+        fi ;;
+    esac
     case "$kind" in
       always) [ "$gate" = always ] || echo "$id: gate 'always' takes no key" ;;
       on)  case "$policy_keys" in *" $key "*) ;; *) echo "$id: gate key '$key' is not a gate-policy key" ;; esac
@@ -54,12 +72,15 @@ check_registry() {
 }
 
 # registry_terms <registry-file>: every doc_terms entry, one per line.
-registry_terms() { tail -n +2 "$1" | cut -f7 | tr ',' '\n' | sort -u; }
+registry_terms() { tail -n +2 "$1" | cut -f8 | tr ',' '\n' | sort -u; }
 
-# A line that DEFINES the HARD label or the placement test is not a claim about a rule.
+# A line that DEFINES the HARD label (a legend: `[HARD] = ...` or `HARD` = ... pointing at the
+# registry) or the placement test (`-> HARD hook:`) is not a claim about a rule.
 is_definition() {
   case "$1" in
-    *docs/hard-rules.tsv*|*"HARD hook:"*) return 0 ;;
+    *docs/hard-rules.tsv*)
+      case "$1" in *'HARD] = '*|*'HARD` = '*) return 0 ;; esac ;;
+    *"-> HARD hook:"*) return 0 ;;
   esac
   return 1
 }
@@ -118,14 +139,17 @@ assert_true "registry carries the ship-gate review_verdict rule" "$(cut -f1 "$RE
 # a missing needle, and a bad gate is flagged for each.
 BAD="$(mktemp "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
 head -1 "$REG" > "$BAD"
-printf 'x.nofile\thooks/does-not-exist.sh\tr\talways\ttests/test-hooks.sh\tblocks rm -rf\tx\n' >> "$BAD"
-printf 'x.norule\thooks/safety-gate.sh\tNO-SUCH-RULE-LITERAL\talways\ttests/test-hooks.sh\tblocks rm -rf\tx\n' >> "$BAD"
-printf 'x.notest\thooks/safety-gate.sh\tblock "rm-rf"\talways\ttests/no-such-test.sh\tn\tx\n' >> "$BAD"
-printf 'x.noneedle\thooks/safety-gate.sh\tblock "rm-rf"\talways\ttests/test-hooks.sh\tNO-SUCH-NEEDLE\tx\n' >> "$BAD"
-printf 'x.badgate\thooks/safety-gate.sh\tblock "rm-rf"\toff:no_such_key\ttests/test-hooks.sh\tblocks rm -rf\tx\n' >> "$BAD"
-printf 'x.wrongdefault\thooks/safety-gate.sh\tblock "rm-rf"\toff:board_row_gate\ttests/test-hooks.sh\tblocks rm -rf\tx\n' >> "$BAD"
+printf 'x.nofile\thooks/does-not-exist.sh\tr\t-\talways\ttests/test-hooks.sh\tblocks rm -rf\tx\n' >> "$BAD"
+printf 'x.norule\thooks/safety-gate.sh\tNO-SUCH-RULE-LITERAL\t-\talways\ttests/test-hooks.sh\tblocks rm -rf\tx\n' >> "$BAD"
+printf 'x.notest\thooks/safety-gate.sh\tblock "rm-rf"\t-\talways\ttests/no-such-test.sh\tn\tx\n' >> "$BAD"
+printf 'x.noneedle\thooks/safety-gate.sh\tblock "rm-rf"\t-\talways\ttests/test-hooks.sh\tNO-SUCH-NEEDLE\tx\n' >> "$BAD"
+printf 'x.badgate\thooks/safety-gate.sh\tblock "rm-rf"\t-\toff:no_such_key\ttests/test-hooks.sh\tblocks rm -rf\tx\n' >> "$BAD"
+printf 'x.wrongdefault\thooks/safety-gate.sh\tblock "rm-rf"\t-\toff:board_row_gate\ttests/test-hooks.sh\tblocks rm -rf\tx\n' >> "$BAD"
+printf 'x.notwired\tlib/gate/ship-rules.sh\tship_rule_identities()\tNO-SUCH-CALL-IN-THE-HOOK\ton:fixture_identities\ttests/test-hooks.sh\tblocks rm -rf\tx\n' >> "$BAD"
+printf 'x.alwayswrong\thooks/commit-format.sh\t|| block "subject is not a Conventional\t-\talways\ttests/test-hooks.sh\tblocks rm -rf\tx\n' >> "$BAD"
+printf 'x.keynotread\thooks/secrets-guard.sh\tsecret-file path\t-\toff:commit_format\ttests/test-hooks.sh\tblocks rm -rf\tx\n' >> "$BAD"
 BADOUT="$(check_registry "$BAD")"
-for id in x.nofile x.norule x.notest x.noneedle x.badgate x.wrongdefault; do
+for id in x.nofile x.norule x.notest x.noneedle x.badgate x.wrongdefault x.notwired x.alwayswrong x.keynotread; do
   assert_true "NC: planted row $id is flagged" "$(printf '%s\n' "$BADOUT" | grep -q "^$id:"; echo $?)"
 done
 rm -f "$BAD"
@@ -153,10 +177,11 @@ printf '%s\n' \
   'Spec ------> spec exists  ------>  spec-drift-guard   [HARD]' \
   'push ------> ship-gate + push-to-main blocker  [HARD]' \
   'see docs/hard-rules.tsv: [HARD] = enforced blocker' \
+  'spec-drift-guard [HARD] (docs/hard-rules.tsv)' \
   'a plain sentence about a hard problem' > "$PLANT"
 PLANTOUT="$(scan_file "$PLANT" "$REG")"
 assert_true "NC: a HARD mark naming no rule (spec-drift-guard) is flagged" "$(printf '%s\n' "$PLANTOUT" | grep -q 'spec-drift-guard'; echo $?)"
-assert_eq "NC: a HARD mark naming ship-gate, and a legend pointing at the registry, pass" "1" "$(printf '%s\n' "$PLANTOUT" | grep -c .)"
+assert_eq "NC: only the two unnamed marks are flagged; ship-gate and the legend pass" "2" "$(printf '%s\n' "$PLANTOUT" | grep -c .)"
 rm -f "$PLANT"
 
 # The spec-drift guard really only warns, which is why no doc may call it HARD.

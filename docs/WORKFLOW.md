@@ -5,7 +5,7 @@
 > It suggests and routes; it does not block. The four hard stops, where an
 > autonomous run stops for a human, are the safety-gate hook, the push-to-main
 > blocker, the anti-rationalization Stop hook, and the verification pipeline.
-> Every rule that code really blocks on is listed in `docs/hard-rules.tsv`.
+> The rules code blocks on, each with a proving test, are listed in `docs/hard-rules.tsv`.
 > The visual flow/loop view (every flow + alt-flow, its trigger, and its
 > stop condition, with ASCII diagrams) is the `## Flow and loop reference`
 > section at the end of this file.
@@ -208,7 +208,7 @@ The opt-in phases (Design, Design critique, Prototype, UI design, Test plan) han
 same chain at the point the table gives them; every one is advisory.
 
 Throughout: safety-gate blocks destructive Bash; anti-rationalization blocks
-premature "done"; auto-format runs on edit; post-compact-reinject
+premature "done" (while `understanding_gate` is on); auto-format runs on edit; post-compact-reinject
 protects long sessions. The Debug row is an off-cycle
 entry point (a bug-lane loop), not a linear phase between Reflect and the next cycle.
 
@@ -652,8 +652,8 @@ a naming one.
 
 ## The understanding axis
 
-A second axis, orthogonal to the verification gates above (ADR-0024/0025 stay the only hard
-stops): not "is it correct?" but "does the human understand the change enough to shape the next
+A second axis, orthogonal to the verification gates above (ADR-0024/0025 stay the correctness
+gates): not "is it correct?" but "does the human understand the change enough to shape the next
 loop?" Advisory by construction -- nothing below ever blocks a correct build.
 
 - **BEFORE: the design record (SG-01, ADR-0031 §1, SPEC-122).** A design-bearing spec (new
@@ -1378,16 +1378,16 @@ The edges that fire when the happy path does not hold.
 ### The four hard stops (where an autonomous run stops)
 
 These four refuse to proceed, because the cost of the mistake is irreversible. Three are
-hooks that exit 2. The fourth is run by the command text. Other hooks block as well
+hooks that exit 2 (anti-rationalization only while `[gate] understanding_gate` is on). The fourth is run by the command text. Other hooks block as well
 (secrets-guard, commit-format, board-row-gate, tool-policy-guard, more ship-gate rules);
-`docs/hard-rules.tsv` lists every rule code really blocks on, with the test that proves it,
+`docs/hard-rules.tsv` lists the rules code blocks on, each with the test that proves it,
 and `tests/test-meta-hard-claims.sh` fails a doc that labels something a hard block without one.
 
 | Hard stop | Fires on | Mechanism |
 |---|---|---|
 | safety-gate | destructive Bash (`rm -rf`, `DROP TABLE`, `git reset --hard`, `kubectl delete`; build-artifact allowlist exempt) | PreToolUse hook, exit 2 |
 | push-to-main blocker | a push to `main`/`master`/protected | PreToolUse hook, exit 2 |
-| anti-rationalization | premature "done" claim; phantom-impl stub in the diff; guess-fix while `## Root cause` empty | Stop hook |
+| anti-rationalization | premature "done" claim; phantom-impl stub in the diff; guess-fix while `## Root cause` empty | Stop hook, only while `[gate] understanding_gate` is on (default off; `/kit:adopt` seeds it) |
 | verification pipeline | a task whose acceptance criteria are unmet or whose tests did not actually run | `/execute` command text (builder -> end verifiers -> fix -> escalate); `ship-gate` checks the gate record |
 
 ### Quick reference: trigger -> flow -> stop -> enforcer

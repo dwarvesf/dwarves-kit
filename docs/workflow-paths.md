@@ -159,7 +159,7 @@ Every workflow, lane, loop, side-flow, and alternate path in one connected pictu
                              [I] topology-drift (registry vs path-index cross-check -> delta re-place -> PR gate)
                              both Tier 2 ==> [D] audit-scanner (shared read-only evidence pass)
 
-  STOP RAIL  (the four autonomy stops; every rule code really blocks on is in docs/hard-rules.tsv):
+  STOP RAIL  (the four autonomy stops; the rules code blocks on, each with a test, are in docs/hard-rules.tsv):
   ⚡1 safety-gate ............ destructive Bash (rm -rf, DROP TABLE, git reset --hard); stands over
                               EVERY Bash call at ANY point in this picture, not only at ship
   ⚡2 push-to-main blocker ... push to main/protected branches; plus the ship-gate: no push
@@ -299,7 +299,7 @@ Off-ramp entries that also land in Shape: `[H/I] /kit:onboard` (first run, orche
     v
  [H/I] /kit:ship ──> reads ## Review (DO NOT SHIP = stop) ──> version + changelog
     |                 ──> commit ──> PR
-    |                 [E] ship-gate HARD: no push without recorded proof/gates, and none while the
+    |                 [E] ship-gate HARD: no push onto a default branch; with proof_of_done / lane_gates on, none without recorded proof/gates; and none while the
                      spec's last ## Review verdict is DO NOT SHIP ([gate] review_verdict)
     |                 [E] safety-gate HARD: push-to-main / force-push / destructive Bash
     v
@@ -321,7 +321,7 @@ Off-ramp entries that also land in Shape: `[H/I] /kit:onboard` (first run, orche
  Ad hoc production alert: [D] devops-triage ──> bounded root-cause verdict (read-only).
  Standing Check hooks: secrets-guard [E, HARD], commit-format [E, HARD when [gate] commit_format is on],
  board-row-gate [E, HARD: no new board row without board-row-ok], batch-debt-warn [E, adv],
- anti-rationalization [E, HARD on Stop], citation-guard [E, adv; strict mode blocks],
+ anti-rationalization [E, HARD on Stop while [gate] understanding_gate is on], citation-guard [E, adv; strict mode blocks],
  money-gate [E, inert until MONEY_GATE_REPOS], tool-policy-guard [E, wired PreToolUse *
  but inert until tool-policy.json exists].
 ```
@@ -490,7 +490,7 @@ One line per live feature: `entry -> ... -> terminal`. Grouped by kind; every fe
 | `[E] UserPromptSubmit -> prose-rag -> prior-note injection, opt-in PROSE_RAG_INJECT=1 (conv)` |
 | `[E] UserPromptSubmit -> context-budget -> warn once per threshold as live context passes a share of the window (adv, terminal)` |
 | `[E] PreToolUse Bash -> safety-gate -> HARD block destructive Bash / push-to-main / force-push` |
-| `[E] PreToolUse Bash -> ship-gate -> HARD block ship without recorded proof/gates` |
+| `[E] PreToolUse Bash -> ship-gate -> HARD block a push onto a default branch; with proof_of_done / lane_gates on, ship without recorded proof/gates` |
 | `[E] PreToolUse Bash -> commit-format -> HARD block non-conventional commit subjects (when [gate] commit_format is on)` |
 | `[E] PreToolUse Bash -> board-row-gate -> HARD block a commit that adds a new board row without a board-row-ok line` |
 | `[E] PreToolUse Bash -> batch-debt-warn -> warn on a second PR merge with no lane START in the ledger (adv, terminal)` |
@@ -503,7 +503,7 @@ One line per live feature: `entry -> ... -> terminal`. Grouped by kind; every fe
 | `[E] SessionStart compact -> post-compact-reinject -> restore stripped rules (conv, terminal)` |
 | `[E] PreCompact -> pre-compact-backup -> session snapshot (conv, terminal)` |
 | `[E] PreCompact + SessionEnd --lab-log -> harvest -> staged learnings / LAB_LOG draft (conv)` |
-| `[E] Stop -> anti-rationalization -> HARD block premature "done" / guess-fix` |
+| `[E] Stop -> anti-rationalization -> HARD block premature "done" / guess-fix (while [gate] understanding_gate is on)` |
 | `[E] Stop -> slop-cleaner -> suggest long-session code trims (adv, terminal)` |
 | `[E] Stop -> citation-guard -> flag hallucinated file:line (adv; CITATION_GUARD_STRICT=1 blocks)` |
 | `[E] SessionEnd -> backlog-stage -> stage work-items to staging file, never the board (conv)` |

@@ -411,31 +411,68 @@ jverdict() { awk -F'\t' -v s="$1" '$2==s{print $3}' "$JOURNAL"; }    # slug -> v
   awk -F'\t' '$2=="nd1"{print $4}' "$JOURNAL" | grep -q '^no-delta$'
 }
 
-# D2 a PR created since the window opened counts as delta even when HEAD did not move (the run
-# worked in a worktree). A `gh` stub on PATH answers `pr list` with a createdAt in the future.
+# D2 a PR of mine created since the window opened counts as delta even when HEAD did not move (the run
+# worked in a worktree and pushed). The `gh` stub honours -q: it runs the real jq filter over a canned
+# `pr list` payload, so the createdAt comparison and the author flag are exercised, not skipped.
+mkgh() {  # createdAt-of-the-one-PR
+  mkdir -p "$WORK/ghbin"
+  cat > "$WORK/ghbin/gh" <<GHEOF
+#!/usr/bin/env bash
+case "\$*" in *"--author @me"*) ;; *) echo "gh stub: --author @me missing" >&2; exit 1 ;; esac
+q=""; while [ \$# -gt 0 ]; do [ "\$1" = "-q" ] && q="\$2"; shift; done
+printf '%s' '[{"createdAt":"$1"}]' | jq -r "\$q"
+GHEOF
+  chmod +x "$WORK/ghbin/gh"
+}
+
 @test "D2 pr-delta: a PR created during the run -> done without a HEAD move" {
   local repo="$WORK/rd2"; mkrepo "$repo"
   echo "report only" > "$WORK/pd2.txt"
   seed_transcript nd2 "  RUNNER_DONE"
   row nd2 "$repo" "$WORK/pd2.txt" > "$WORK/q.tsv"
-  mkdir -p "$WORK/ghbin"
-  printf '#!/usr/bin/env bash\necho 1\n' > "$WORK/ghbin/gh"; chmod +x "$WORK/ghbin/gh"
+  mkgh "2099-01-01T00:00:00Z"
 
   PATH="$WORK/ghbin:$PATH" run bash "$QUEUE" run "$WORK/q.tsv"
   [ "$status" -eq 0 ]
   [ "$(jverdict nd2)" = "done" ]
 }
 
-# D3 a gh that reports zero PRs is no evidence
-@test "D3 pr-delta: gh reports no new PR -> gated no-delta" {
+# D3 a PR that predates the window is no evidence
+@test "D3 pr-delta: a PR older than the window -> gated no-delta" {
   local repo="$WORK/rd3"; mkrepo "$repo"
   echo "report only" > "$WORK/pd3.txt"
   seed_transcript nd3 "  RUNNER_DONE"
   row nd3 "$repo" "$WORK/pd3.txt" > "$WORK/q.tsv"
-  mkdir -p "$WORK/ghbin"
-  printf '#!/usr/bin/env bash\necho 0\n' > "$WORK/ghbin/gh"; chmod +x "$WORK/ghbin/gh"
+  mkgh "2000-01-01T00:00:00Z"
 
   PATH="$WORK/ghbin:$PATH" run bash "$QUEUE" run "$WORK/q.tsv"
   [ "$status" -eq 0 ]
   [ "$(jverdict nd3)" = "gated" ]
+}
+
+# D4 a worktree run that only creates a branch (no PR, no gh) still leaves a delta
+@test "D4 branch-delta: a new local branch with no HEAD move and no gh -> done" {
+  local repo="$WORK/rd4"; mkrepo "$repo"
+  echo "report only" > "$WORK/pd4.txt"
+  seed_transcript nd4 "  RUNNER_DONE"
+  : > "$QSTUB/nd4.branch"
+  row nd4 "$repo" "$WORK/pd4.txt" > "$WORK/q.tsv"
+
+  PATH="$WORK/nogh:$PATH" run bash "$QUEUE" run "$WORK/q.tsv"
+  [ "$status" -eq 0 ]
+  [ "$(jverdict nd4)" = "done" ]
+}
+
+# D5 a gated no-delta row is not relaunched by the next `queue run` over the same tsv
+@test "D5 no-delta-idempotence: the second run over the same tsv opens no second window" {
+  local repo="$WORK/rd5"; mkrepo "$repo"
+  echo "report only" > "$WORK/pd5.txt"
+  seed_transcript nd5 "  RUNNER_DONE"
+  row nd5 "$repo" "$WORK/pd5.txt" > "$WORK/q.tsv"
+
+  PATH="$WORK/nogh:$PATH" run bash "$QUEUE" run "$WORK/q.tsv"
+  PATH="$WORK/nogh:$PATH" run bash "$QUEUE" run "$WORK/q.tsv"
+  [ "$status" -eq 0 ]
+  [ "$(grep -c 'new-window slug=nd5' "$QLOG")" -eq 1 ]
+  [ "$(awk -F'\t' '$2=="nd5"' "$JOURNAL" | wc -l | tr -d ' ')" -eq 1 ]
 }

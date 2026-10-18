@@ -205,7 +205,7 @@ export QUEUE_BEAT_STALE_SECS=0 QUEUE_BEAT_DEAD_SECS=0
 printf 'EXIT_SIGNAL: true\n' > "$RUNDIR/fixboard__ID-001.status"
 watch >/dev/null
 assert_eq "A8: a dead beat with EXIT_SIGNAL true journals gated, not done and not stalled" "$(jverdict fixboard__ID-001)" "gated"
-assert_eq "A8: the reaper names the unchecked delta" "$(jreason fixboard__ID-001 | cut -c1-8)" "no-delta"
+assert_eq "A8: the reaper says the delta was never checked" "$(jreason fixboard__ID-001 | cut -c1-10)" "unverified"
 
 # A9 a slug carrying a path separator is refused before any sidecar file is opened.
 new_env

@@ -34,7 +34,7 @@
 |  11 opt-in side-flows            7 alternate / branch flows              |
 |  4 hard stops (where autonomous runs stop for a human)                   |
 |                                                                          |
-|  the rules code really blocks on are listed in docs/hard-rules.tsv;      |
+|  the rules code blocks on (each with a test) are in docs/hard-rules.tsv; |
 |  everything else suggests and routes                                     |
 +--------------------------------------------------------------------------+
 ```
@@ -290,7 +290,8 @@ Advisory, never blocking. Output binds to the active spec (replace-not-stack).
 
 ## 13 · The 4 hard stops
 
-Where autonomous runs stop for a human. Three are hooks that exit 2. The fourth, the
+Where autonomous runs stop for a human. Three are hooks that exit 2 (anti-rationalization only
+while `[gate] understanding_gate` is on). The fourth, the
 verification pipeline, is run by the `/kit:execute` command text: `ship-gate` checks only that
 its `execute` gate was recorded. Other hooks block too (secrets-guard, commit-format,
 board-row-gate, tool-policy-guard, and more ship-gate rules); the full list of rules code really
@@ -324,7 +325,7 @@ What an ordinary change in this repo runs, from edit to landed.
     |                          when the diff touches a path it reads.
     |                          About 1-2 minutes on a Mac.
     v
-  commit ..................... commit-format hook [HARD]
+  commit ..................... commit-format hook [HARD when [gate] commit_format is on]
     |
     v
   push / gh pr create ........ ship-gate + push-to-main blocker [HARD]

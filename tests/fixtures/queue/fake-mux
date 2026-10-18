@@ -7,7 +7,8 @@
 # Env:
 #   QSTUB  dir holding <slug>.transcript (canned pane output) and optional <slug>.dead (window
 #          exited -> capture-pane returns nonzero, the launcher's "window died" signal)
-#   <slug>.work  optional flag file; the window then commits once in its start dir when it opens
+#   <slug>.work    optional flag file; the window then commits once in its start dir when it opens
+#   <slug>.branch  optional flag file; the window then creates one branch in its start dir (worktree work)
 #   QLOG   append-only verb log the tests assert against (default $QSTUB/verbs.log)
 set -u
 QSTUB="${QSTUB:?fake-mux: QSTUB unset}"
@@ -37,6 +38,11 @@ case "$verb" in
     if [ -f "$QSTUB/$slug.work" ] && [ -n "$wdir" ]; then
       git -C "$wdir" -c user.email=t@t.dev -c user.name=tester \
         commit -q --allow-empty -m "chore: simulated work for $slug"
+    fi
+    # <slug>.branch: the window works in a linked worktree, so only a new branch tip appears; the
+    # main checkout's HEAD does not move.
+    if [ -f "$QSTUB/$slug.branch" ] && [ -n "$wdir" ]; then
+      git -C "$wdir" branch "work/$slug" HEAD
     fi
     exit 0 ;;
   kill-window) printf 'kill-window slug=%s\n' "$slug" >> "$QLOG"; exit 0 ;;
