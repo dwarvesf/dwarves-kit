@@ -462,7 +462,7 @@ type: component
 title: Board and signal path
 level: L2
 review:
-  - Rows now go through `backlog.sh add`, but the kit board holds 259 four-cell rows under a six-column header. Normalize them in one change, or let lint report them until they are touched?
+  - Rows now go through `backlog.sh add` and the kit board is lint-clean after `board normalize`. Should lint run in CI so a hand edit cannot reintroduce short rows?
   - Writeback collapses four card states to `ready`, and a closed held PR is never re-proposed. Keep that, or map the states one to one?
 nodes:
   - {id: proposers, name: proposers, note: "stats, reflect, session-audit, hooks", kind: ext, at: [0, 0]}
