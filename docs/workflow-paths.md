@@ -274,7 +274,7 @@ Off-ramp entries that also land in Shape: `[H/I] /kit:onboard` (first run, orche
  [H/I] /kit:mega ─────> roadmap of 3-8 sub-goals ──> /goal loop per sub-goal
                           (each runs the spec..ship chain) ──> ship-gate merge per tag
  [H/I] /kit:debug ────> off-cycle: Phase 0..4, iron law (no fix without recorded root cause),
-                          3-fix architecture wall ──> verified fix ──> resume prior state
+                          3-fix architecture wall ──> verified fix ──> records `debug` gate (root cause only) ──> resume prior state
  [H/I] /kit:ui-design ──> UI brief ──> frontend-design skill ──> /kit:visual-team critique
                           ──> [D] fix-agent revise (bounded) ──> SOLID
  [H/I] /kit:draft-agent ──> [D] meta-agent draft ──> [D] agent-effectiveness ──> install (--draft stops staged)
@@ -405,7 +405,7 @@ One line per live feature: `entry -> ... -> terminal`. Grouped by kind; every fe
 | `[H/I] /kit:next -> load next undone task -> human-paced, same verification path` |
 | `[H/I] /kit:dispatch -> N worktree workers behind disjointness gate -> lead converges -> ship` |
 | `[H/I] /kit:mega -> roadmap of 3-8 sub-goals -> /goal loop each -> ship-gate merge per tag` |
-| `[H/I] /kit:debug -> Phase 0..4 under the iron law -> verified fix -> resume prior state` |
+| `[H/I] /kit:debug -> Phase 0..4 under the iron law -> verified fix -> records the debug gate (root cause only) -> resume prior state` |
 | `[H/I] /kit:review -> single-pass paranoid review -> verdict -> docs or back to execute/spec` |
 | `[H/I] /kit:review-team -> reviewer roster + advisor in parallel -> ## Review -> /kit:docs` |
 | `[H/I] /kit:visual-team -> 5 design lenses -> report-only verdict` |

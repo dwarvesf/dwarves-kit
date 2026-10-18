@@ -118,12 +118,18 @@ Record findings in `## Evidence` as you go. When you can name the cause and poin
    **Defense in depth.** Once the root cause is fixed, list each layer the bad value crossed (entry point, business logic, environment guard, debug instrumentation) and add a cheap validation at each one that makes the same bug structurally impossible, not just fixed at the source. Skip layers that would only add speculative checks.
 4. **Clean up.** Remove all instrumentation in one pass over the region markers (`sed '/# #region DEBUG/,/# #endregion/d'` or equivalent). Confirm `git bisect reset` ran if you bisected.
 5. **Declare it fixed on the loop's own evidence.** Increment `## Fix attempts`. Write the result in `## Resolution`. Then read `kit_config_get_root debug.confirm_fix false`. False, the default: step 3 already proved it (the new test passes, no other test broke, the symptom is gone), so declare it fixed and report those three results as the evidence. True: hold the verdict and ask the human to confirm. Either way, a fix missing any of step 3's three conditions is NEVER declared fixed, and the ledger is stripped only after the verdict stands.
+6. **Record the debug gate, only on a confirmed root cause and resolution.** The `bug` lane requires a `debug` gate, and no other command records it, so without this line every bug-lane push is refused by the ship-gate. Once the verdict stands (`## Root cause` filled, step 3 green, and the human confirmation in hand when `debug.confirm_fix` is true), record it with the one-line root cause as evidence:
+   ```
+   RID=$(bash lib/gate/gate-ledger.sh rid)
+   bash lib/gate/gate-ledger.sh record "$RID" debug ran "<one-line root cause>"
+   ```
+   The rid is the branch slug, the same key the ship-gate checks at push. Derive it on the fix branch (the verb refuses master, main and a detached HEAD).
 
 ## The 3-fix architecture wall
 
 If a fix does not work:
 - Fewer than 3 attempts: return to Phase 1 with the new information. Do not attempt another fix on top.
-- **3 or more attempts, or each fix reveals a new problem in a different place: STOP.** That pattern means the architecture is wrong, not the hypothesis. Do not attempt fix #4. Present the `## Eliminated` list to the human and question the design.
+- **3 or more attempts, or each fix reveals a new problem in a different place: STOP.** That pattern means the architecture is wrong, not the hypothesis. Do not attempt fix #4. Present the `## Eliminated` list to the human and question the design. **Do not record the `debug` gate on this path** (no `ran`, no `skipped`): with no confirmed root cause the gate stays open, and the ship-gate keeps refusing the push until a root cause is found or the operator logs an `override`. The same holds when Phase 0 cannot build a feedback loop, or the loop ends without a filled `## Root cause`.
 
 ## Red flags (stop and return to Phase 1)
 

@@ -151,7 +151,7 @@ That is why `lib/gate/SPEC` is still an open IOU in `tests/kit-contract-known-ga
 
 ```bash
 bash tests/test-gate-outcome.sh          # 22, SPEC-129 outcome markers + the additive property
-bash tests/test-gate-vocab-recording.sh  # 17, every required gate name has a command that records it
+bash tests/test-gate-vocab-recording.sh  # 31, every required gate name has a command that records it (full lane + bug-lane debug)
 bash tests/test-ledger-durability.sh     # 37, SPEC-097 durable root, override guard, forgery
 bash tests/test-ledger-substrate.sh      #  9, the one append substrate
 bash tests/test-quiz-gate.sh             # 29, SPEC-125 grounded questions + anti-fatigue
