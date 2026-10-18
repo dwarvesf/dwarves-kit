@@ -61,6 +61,12 @@ Output:
 Verdict: PASS (the negative cases went red under the old pattern, as required)
 ```
 
+## Rollback
+
+| Change | How to undo | Blast radius |
+|---|---|---|
+| `_HP_migration` changelog alternative in `lib/classify/lane-classify.sh` | `git revert` the fix commit; the old pattern returns, the new tests go red | lane classification only: no data, no schema, no deployed state |
+
 ## Not proven
 
 - Liquibase files named `changelog.<ext>` outside a `db/` or `liquibase/` directory no longer match; the narrow rule trades that for not flagging content files. A repo with such a layout adds it through `[lanes] extra_hard_paths`.
