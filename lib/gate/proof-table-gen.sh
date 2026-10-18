@@ -24,6 +24,7 @@ SCRIPT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"  # repo root =
 KIT_ROOT="${KIT_ROOT:-$SCRIPT_ROOT}"
 # shellcheck source=lib/telemetry/kit-log-dir.sh
 source "$SCRIPT_ROOT/lib/telemetry/kit-log-dir.sh" || { echo "FATAL: lib/telemetry/kit-log-dir.sh missing or unreadable" >&2; exit 1; }
+kit_migrate_log_dir || true
 
 export KIT_ROOT
 export KIT_LOG_DIR

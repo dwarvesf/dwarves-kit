@@ -15,7 +15,7 @@
 #   kit_resolve_log_dir   -> the durable log dir ($DWARVES_KIT_LOG_DIR wins if set)
 #   kit_legacy_log_dir    -> the original default (~/.claude/dwarves-kit/logs)
 #   kit_note_unmigrated [root] -> one stderr line when a legacy dir still exists and kit-migrate never ran
-#   kit_migrate_log_dir   -> a shim for outside callers; now only kit_note_unmigrated
+#   kit_migrate_log_dir   -> kept for the corpus libs that call it at load; now only kit_note_unmigrated
 #
 # Idempotent-source guard: sourcing twice is a no-op.
 [ -n "${_KIT_LOG_DIR_SOURCED:-}" ] && return 0
