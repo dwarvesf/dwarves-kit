@@ -21,11 +21,11 @@ Lane: normal. Fixes drift rows 27, 28, 29, 32, 34 and the two ranked risks "the 
 
 Command: `bash tests/test-board-add.sh`
 Exit: 0
-Output: `== 40 run, 40 passed, 0 failed ==`
+Output: `== 55 run, 55 passed, 0 failed ==`
 
 Command: `bash tests/test-staging-one-writer.sh`
 Exit: 0
-Output: `== 28 run, 28 passed, 0 failed ==`
+Output: `== 35 run, 35 passed, 0 failed ==`
 
 Command: `bash tests/test-board-promote.sh; bash tests/test-board-atomic-mint.sh; bash tests/test-board-lint.sh; bash tests/test-staging-stage.sh; bash tests/test-reflect-drain.sh; bash tests/test-staging-format-jq.sh`
 Exit: 0
@@ -129,6 +129,23 @@ Exit: 0 (green after restore)
 ```
 
 The race test AC2 (promote against appenders) is probabilistic: with the lock removed it lost 3 appended blocks in one run and none in another. AC1b is the deterministic proof, and AC2 is kept as the end-to-end shape of the original bug.
+
+## Review
+
+Three read-only lenses ran on the finished diff (concurrency and data loss, security and input robustness, test coverage and regressions). No lens found a lock-order inversion or a self-deadlock. Fixed after review, each with a test in the two new suites:
+
+| Finding | Fix |
+|---|---|
+| `--status` and `--section` were written raw; a newline walked past the bash `grep -qx` and forged a row, a table-shaped section poisoned the id floor | both validated in `board_add.py`; AC8 |
+| Prose commands passed freeform text inside double quotes | single quotes after `--`; AC8 |
+| Staging lock held across the git history scan | floor computed before the staging lock (`promote_blocks`) |
+| Twin identical blocks could leave a row with no relabel | rows minted only for blocks a dry relabel proved reachable; AC4 |
+| `rewrite` forced mode 0644 | keeps the buffer's mode; AC4 |
+| An unlocked `rewrite` could drop appends | `rewrite` fails closed when the lock cannot open; append still degrades |
+| A suffixed intake heading made a second section | prefix match on the heading; AC9 |
+| Batch order reversed, non-UTF-8 stdin accepted, symlinked board replaced | newest on top, exit 65, write through realpath |
+
+Left open and named in the implementation notes: `propose.py` still appends unlocked, dedupe-then-append is not atomic in the hooks and in anomalies, and a promote that dies between the board write and the relabel mints again on the next run.
 
 ## Not proven
 

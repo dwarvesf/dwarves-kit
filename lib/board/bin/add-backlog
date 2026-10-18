@@ -209,6 +209,44 @@ def _retag(text, block, new_head):
     return text.replace(raw, raw.replace("## [staged]", new_head, 1), 1)
 
 
+def promote_blocks(chosen):
+    """Mint a board row for each chosen block and relabel it `[promoted ID-N]`; returns
+    (promoted [(id, title)], skipped [block]).
+
+    The single writer for both files. The board lock (sync_core.board_lock: stable inode OUTSIDE
+    the repo) serializes the id mint against every other minter (parallel promotes minting the
+    same id is how duplicates got in, kit ID-288); the staging lock serializes the relabel
+    against proposers appending and drain expiring. Order: board, then staging. The slow git
+    history scan runs BEFORE the staging lock is taken, so a hook appending is never stuck behind
+    a fetch. Staging is re-read inside the hold; a block that no longer matches (expired,
+    promoted by another session) is skipped, and rows are minted only for blocks the relabel is
+    known to reach, so the board and the buffer cannot disagree within one run."""
+    promoted, skipped = [], []
+    with board_lock(BACKLOG):
+        floor = board_add.history_floor(BACKLOG)
+
+        def _promote(current):
+            plan, probe = [], current
+            for b in chosen:
+                nxt = _retag(probe, b, "## [promoted]")
+                if nxt is None:
+                    skipped.append(b)
+                else:
+                    probe = nxt
+                    plan.append(b)
+            if not plan:
+                return current, None
+            ids = board_add.add_rows_locked(BACKLOG, [row_spec(b) for b in plan],
+                                            section=SECTION, floor=floor)
+            for b, cid in zip(plan, ids):
+                current = _retag(current, b, f"## [promoted {cid}]")
+                promoted.append((cid, b["title"]))
+            return current, None
+
+        sf.rewrite(STAGING, _promote)
+    return promoted, skipped
+
+
 def main(argv):
     global BACKLOG, STAGING
     # Consumer shims (`<repo>/_meta/board`) append `--backlog-file <path>` to
@@ -285,28 +323,7 @@ def main(argv):
     if not os.path.isfile(BACKLOG):
         print(f"board not found: {BACKLOG}", file=sys.stderr)
         return 2
-    # Single writer for both files. The board lock (sync_core.board_lock: stable inode OUTSIDE
-    # the repo) serializes the id mint against every other minter (parallel promotes minting
-    # the same id is how duplicates got in, kit ID-288); the staging lock serializes the
-    # relabel against proposers appending and drain expiring. Order: board, then staging.
-    promoted, skipped = [], []
-    with board_lock(BACKLOG):
-        def _promote(current):
-            live = []
-            for b in chosen:
-                if b["raw"] in current:
-                    live.append(b)
-                else:
-                    skipped.append(b)
-            if not live:
-                return current, None
-            specs = [row_spec(b) for b in live]
-            ids = board_add.add_rows_locked(BACKLOG, specs, section=SECTION)
-            for b, cid in zip(live, ids):
-                current = _retag(current, b, f"## [promoted {cid}]")
-                promoted.append((cid, b["title"]))
-            return current, None
-        sf.rewrite(STAGING, _promote)
+    promoted, skipped = promote_blocks(chosen)
     for b in skipped:
         print(f"skipped {b['title']!r}: changed since it was listed (re-run `board promote`)",
               file=sys.stderr)

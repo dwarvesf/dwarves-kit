@@ -48,9 +48,9 @@
 #                                    see, non-id first cells, unrecognized statuses).
 #                                    Enumerator, exits 0; the fix verbs are dedupe and
 #                                    a hand edit.
-#   backlog.sh add <title> [--notes TEXT] [--mid VALUE]... [--status STATE] [--section HEADING]
+#   backlog.sh add [--notes TEXT] [--mid VALUE]... [--status STATE] [--section HEADING] [--] <title>
 #                                  -> mint the next id and write ONE new row, under the shared
-#                                    board lock (the one verb that creates rows: `board capture`,
+#                                    board lock (the verb that files a new row: `board capture`,
 #                                    `board promote`, /kit:assign freeform, /kit:wayfind and
 #                                    web-drift all call it). Prints the id. The row is written in
 #                                    the target table's own column count, read from its header:
@@ -338,21 +338,12 @@ lint() {
     }' "$file"
 }
 
-# add <title> [flags] -- the one row-minting verb. The lock, the id mint, and the write all
-# live in board_add.py (board_lock held across the whole read -> mint -> write), so this is a
-# thin shell that validates the status against the legal vocabulary and hands over.
+# add <title> [flags] -- the verb for a NEW row. The flags, the lock, the id mint and the write
+# all live in board_add.py (board_lock held across the whole read -> mint -> write); this hands
+# over the legal states through the environment, so the one parser validates the status.
 add_row() {
-  local prev="" status=""
-  for arg in "$@"; do
-    [ "$prev" = "--status" ] && status="$arg"
-    prev="$arg"
-  done
-  if [ -n "$status" ] && ! echo "$STATES" | tr ' ' '\n' | grep -qx "$status"; then
-    echo "backlog.sh add: unknown status '$status' (states: $STATES)" >&2
-    return 64
-  fi
   command -v python3 >/dev/null 2>&1 || { echo "backlog.sh add: python3 is required (the board lock lives in sync_core)" >&2; return 1; }
-  python3 "$BACKLOG_DIR/board_add.py" add "$BACKLOG_FILE" "$@"
+  BOARD_ADD_STATES="$STATES" python3 "$BACKLOG_DIR/board_add.py" add "$BACKLOG_FILE" "$@"
 }
 
 # _board_locked <target-file> <argv...> -- re-run this invocation under the shared
@@ -407,7 +398,7 @@ main() {
     lint)       lint "$@" ;;
     add)        add_row "$@" ;;
     states)     echo "$STATES" | tr ' ' '\n' ;;
-    *) echo "usage: backlog.sh {board|next|get <ID-NNN>|row <ID-NNN>|set <ID-NNN> <state> [note]|dedupe <ID-NNN>|dedupe-all [file]|lint [file]|add <title> [--notes T] [--status S] [--section H]|states}" >&2; return 64 ;;
+    *) echo "usage: backlog.sh {board|next|get <ID-NNN>|row <ID-NNN>|set <ID-NNN> <state> [note]|dedupe <ID-NNN>|dedupe-all [file]|lint [file]|add [--notes T] [--status S] [--section H] [--] <title>|states}" >&2; return 64 ;;
   esac
 }
 

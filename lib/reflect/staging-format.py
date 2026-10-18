@@ -232,22 +232,28 @@ def staging_lock_path(staging):
 
 
 @contextlib.contextmanager
-def staging_lock(staging):
+def staging_lock(staging, required=False):
     """Blocking exclusive flock on `staging_lock_path(staging)`: the one lock every staging
     writer shares (append, drain's expiry, promote's relabel). bash has no flock on macOS, so
     the bash hooks reach this through the `append` CLI verb rather than locking themselves.
+
     A lock file that cannot be opened (tmpdir unwritable) degrades to an unlocked write with a
-    warning: losing the caller's block is worse than the rare race the lock closes."""
+    warning when `required` is False: for an append, losing the caller's block is worse than the
+    rare race. A read-modify-write (`rewrite`) passes required=True and fails instead, since an
+    unlocked whole-file rewrite is what drops concurrent appends. Writers must agree on TMPDIR:
+    two processes with different values hold different lock files and exclude nothing."""
     parent = os.path.dirname(staging)
     if parent:
         os.makedirs(parent, exist_ok=True)
     try:
-        lockf = open(staging_lock_path(staging), "a")
+        fd = os.open(staging_lock_path(staging), os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600)
     except OSError as e:
+        if required:
+            raise
         sys.stderr.write(f"staging-format.py: no lock ({e}); writing unlocked\n")
         yield
         return
-    with lockf:
+    with os.fdopen(fd, "r+") as lockf:
         fcntl.flock(lockf, fcntl.LOCK_EX)
         try:
             yield
@@ -283,7 +289,7 @@ def rewrite(staging, fn):
     `(new_text, result)`; the file is replaced atomically only when the text changed, so a
     reader outside the lock never sees a half-written buffer. Returns `result`. The text is
     read INSIDE the hold: a block appended since the caller last looked is in `text`."""
-    with staging_lock(staging):
+    with staging_lock(staging, required=True):
         try:
             with open(staging, encoding="utf-8") as fh:
                 text = fh.read()
@@ -292,10 +298,14 @@ def rewrite(staging, fn):
         new_text, result = fn(text)
         if new_text != text:
             target = os.path.realpath(staging)
+            try:
+                mode = os.stat(target).st_mode & 0o7777  # keep the buffer's mode (it may be 0600)
+            except FileNotFoundError:
+                mode = 0o644
             fd, tmp = tempfile.mkstemp(dir=os.path.dirname(target) or ".", prefix=".staging.")
             with os.fdopen(fd, "w", encoding="utf-8") as fh:
                 fh.write(new_text)
-            os.chmod(tmp, 0o644)
+            os.chmod(tmp, mode)
             os.replace(tmp, target)
         return result
 
@@ -374,6 +384,12 @@ def cmd_append(argv):
     data = sys.stdin.buffer.read()
     if not data:
         return 0
+    try:
+        data.decode("utf-8")
+    except UnicodeDecodeError:
+        # one invalid byte would make every later strict-UTF-8 reader (promote, drain) crash
+        sys.stderr.write("staging-format.py append: stdin is not valid UTF-8; nothing written\n")
+        return 65
     try:
         append_blocks(args[0], data, header)
     except OSError as e:

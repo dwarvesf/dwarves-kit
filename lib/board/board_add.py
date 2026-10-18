@@ -1,21 +1,24 @@
 #!/usr/bin/env python3
-"""board_add.py -- the one writer that mints NEW rows onto a board (`backlog.sh add`).
+"""board_add.py -- the writer for NEW board rows (`backlog.sh add`).
 
-Every path that files a new row goes through `add_rows` / `add_rows_locked`: `board capture`,
+Every caller that files one row goes through `add_rows` / `add_rows_locked`: `board capture`,
 `board promote`, `/kit:assign` freeform, `/kit:wayfind`'s umbrella row, and `web-drift`'s
-consumer rows. The id is minted from a fresh read INSIDE the board lock (sync_core.board_lock:
+consumer rows. (`board sync` intake mints a bulk batch in sync_core under the same lock.) The id is minted from a fresh read INSIDE the board lock (sync_core.board_lock:
 the same address set/dedupe/capture/sync flock), so two sessions can never mint one id. The
 row is written in the target table's OWN column count, read from its header, so a 6-column
 board is not handed 4-cell rows.
 
   board_add.py add <board.md> <title> [--mid VALUE]... [--notes TEXT] [--status STATE]
                                        [--section HEADING]
-      Prints the minted id. `--mid` fills the cells between Title and Status in order (a
+      Prints the minted id. Put `--` before the title when it comes from untrusted text, so a
+      leading dash cannot read as a flag. `--mid` fills the cells between Title and Status in order (a
       4-column board has one, a 6-column board has three); `--notes` is the first `--mid`.
       Cells left unfilled stay empty. More values than the table has middle cells is a
       usage error. `--section` targets the table under that exact heading line (created
-      from the board's primary table header when absent); without it the row lands at the
-      top of the board's first `| ID |` table.
+      from the board's primary table header when absent; it must be a one-line `#`-heading
+      with no pipe); without it the row lands at the top of the board's first `| ID |` table.
+      `--status` must be one word; the BOARD_ADD_STATES env var (space-separated, set by
+      backlog.sh) narrows it to the board's legal states.
 
 Library use: `add_rows_locked(path, specs, section=None)` assumes the caller already holds
 `board_lock(path)` (promote does, together with the staging lock); `add_rows` takes it.
@@ -57,7 +60,9 @@ def _primary_table(lines):
 def _section_table(lines, heading):
     """(header_idx, rule_idx) of the first table after the line equal to `heading`, else None."""
     for i, ln in enumerate(lines):
-        if ln.rstrip("\n").strip() != heading:
+        text = ln.rstrip("\n").strip()
+        # the heading as written, or with a suffix after it (`### Conversation intake (auto)`)
+        if text != heading and not text.startswith(heading + " "):
             continue
         for j in range(i + 1, len(lines) - 1):
             if lines[j].startswith("#"):
@@ -66,6 +71,28 @@ def _section_table(lines, heading):
                 return j, j + 1
         return None
     return None
+
+
+_HEADING_OK = re.compile(r"^#{1,6} [^|\n\r\x00-\x1f]+$")
+_STATUS_OK = re.compile(r"^[A-Za-z][A-Za-z-]*$")
+
+
+def _refuse(message):
+    sys.stderr.write(f"board add: {message}\n")
+    raise SystemExit(64)
+
+
+def _check_section(section):
+    if section is not None and not _HEADING_OK.match(section):
+        _refuse(f"--section must be a one-line heading like '### Name' with no pipe: {section!r}")
+
+
+def _check_status(status):
+    if not _STATUS_OK.match(status):
+        _refuse(f"status must be one word: {status!r}")
+    legal = os.environ.get("BOARD_ADD_STATES", "").split()
+    if legal and status not in legal:
+        _refuse(f"unknown status '{status}' (states: {' '.join(legal)})")
 
 
 def _id_width(text, prefix):
@@ -104,10 +131,23 @@ def _render_row(bid, title, mids, status, ncols):
     return "| " + " | ".join(cells) + " |\n"
 
 
-def add_rows_locked(path, specs, section=None):
+def history_floor(path):
+    """The highest id git history knows for this board (0 when git cannot answer). Slow (a
+    fetch and a `git log -p`), so a caller holding a second lock computes it BEFORE taking
+    that lock and passes it to add_rows_locked."""
+    with open(path, encoding="utf-8") as fh:
+        text = fh.read()
+    return history_max_id(path, detect_prefix(text))
+
+
+def add_rows_locked(path, specs, section=None, floor=None):
     """Mint and write one row per spec; the caller holds board_lock(path). A spec is a dict:
     title (required), mids (list of middle-cell values), status (default queued). Returns the
-    minted ids in order. The board is written once, atomically (tmp + replace)."""
+    minted ids in order. The board is written once, atomically (tmp + replace). `floor` is a
+    precomputed `history_floor(path)`; omitted, it is computed here."""
+    _check_section(section)
+    for spec in specs:
+        _check_status(spec.get("status", "queued"))
     with open(path, encoding="utf-8") as fh:
         text = fh.read()
     lines = text.splitlines(keepends=True)
@@ -118,7 +158,9 @@ def add_rows_locked(path, specs, section=None):
     row_nums = [int(r.rsplit("-", 1)[1]) for r in parse_board(text, prefix=prefix)]
     line_nums = [int(m) for m in re.findall(
         r"^\| " + re.escape(prefix) + r"-(\d+) \|", text, flags=re.M)]
-    nid = max(row_nums + line_nums + [history_max_id(path, prefix)], default=0) + 1
+    if floor is None:
+        floor = history_max_id(path, prefix)
+    nid = max(row_nums + line_nums + [floor], default=0) + 1
 
     primary = _primary_table(lines)
     if section:
@@ -148,14 +190,14 @@ def add_rows_locked(path, specs, section=None):
         ids.append(bid)
         rows.append(_render_row(bid, spec["title"], mids, spec.get("status", "queued"), ncols))
     at = table[1] + 1
-    lines[at:at] = rows
+    lines[at:at] = reversed(rows)  # newest on top, as every earlier writer left them
 
-    fd, tmp = tempfile.mkstemp(dir=os.path.dirname(os.path.abspath(path)),
-                               prefix=f".{os.path.basename(path)}.")
+    target = os.path.realpath(path)  # a symlinked board is written through, not replaced
+    fd, tmp = tempfile.mkstemp(dir=os.path.dirname(target), prefix=f".{os.path.basename(target)}.")
     with os.fdopen(fd, "w", encoding="utf-8") as fh:
         fh.write("".join(lines))
-    os.chmod(tmp, os.stat(path).st_mode & 0o7777)
-    os.replace(tmp, path)
+    os.chmod(tmp, os.stat(target).st_mode & 0o7777)
+    os.replace(tmp, target)
     return ids
 
 

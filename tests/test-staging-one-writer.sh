@@ -149,7 +149,7 @@ PY
 out="$(BACKLOG_STAGE_BACKLOG="$D/BACKLOG.md" BACKLOG_STAGE_STAGING="$D/backlog-staging.md" python3 "$ADD_BACKLOG" 1 2>&1)"
 chk_has "promote picks the live block that now holds index 1" "$out" "promoted ID-"
 chk "exactly one row minted" "$([ "$(grep -cE '^\| ID-[0-9]+ \|' "$D/BACKLOG.md")" -eq 1 ]; echo $?)"
-chk "the expired block was not promoted" "$(grep -q '^## \[expired\] first' "$D/backlog-staging.md"; echo $?)"
+chk "the expired block was not promoted (its title is not on the board)" "$(grep -q 'first' "$D/BACKLOG.md"; [ $? -ne 0 ]; echo $?)"
 # library-level: a stale selection (raw text no longer present) is skipped
 python3 - "$ADD_BACKLOG" "$D" <<'PY'
 import importlib.machinery, importlib.util, os, sys
@@ -166,6 +166,71 @@ assert mod._retag(current, stale, "## [promoted ID-9]") is None
 print("stale-ok")
 PY
 chk "a vanished block is reported as stale by the relabel helper" "$?"
+
+# the end-to-end stale path: the caller lists, another session expires a block, THEN the locked
+# section runs. promote_blocks gets the stale selection and must skip it.
+D="$TMPD/a4b"; mkdir -p "$D"
+printf '| ID | Item | Notes | Status |\n|---|---|---|---|\n' > "$D/BACKLOG.md"
+{ printf '# Backlog staging\n\n'; block "stale pick"; block "live pick"; } > "$D/backlog-staging.md"
+python3 - "$ADD_BACKLOG" "$D" <<'STALE'
+import importlib.machinery, importlib.util, os, sys
+path, d = sys.argv[1], sys.argv[2]
+os.environ["BACKLOG_STAGE_BACKLOG"] = os.path.join(d, "BACKLOG.md")
+os.environ["BACKLOG_STAGE_STAGING"] = os.path.join(d, "backlog-staging.md")
+loader = importlib.machinery.SourceFileLoader("add_backlog", path)
+spec = importlib.util.spec_from_loader("add_backlog", loader)
+mod = importlib.util.module_from_spec(spec)
+loader.exec_module(mod)
+stg = os.path.join(d, "backlog-staging.md")
+listed = [b for b in mod.parse_staging(open(stg).read()) if b["state"] == "staged"]
+text = open(stg).read().replace("## [staged] stale pick", "## [expired] stale pick", 1)
+open(stg, "w").write(text)
+promoted, skipped = mod.promote_blocks(listed)
+print("promoted=%s skipped=%s" % ([t for _, t in promoted], [b["title"] for b in skipped]))
+STALE
+chk "stale selection: one row minted, for the live block only" "$([ "$(grep -cE '^\| ID-[0-9]+ \|' "$D/BACKLOG.md")" -eq 1 ] && grep -q 'live pick' "$D/BACKLOG.md"; echo $?)"
+chk "stale selection: the expired block stays expired" "$(grep -q '^## \[expired\] stale pick' "$D/backlog-staging.md"; echo $?)"
+
+# two byte-identical staged blocks, both chosen: both relabeled, two rows, no crash
+D="$TMPD/a4c"; mkdir -p "$D"
+printf '| ID | Item | Notes | Status |\n|---|---|---|---|\n' > "$D/BACKLOG.md"
+{ printf '# Backlog staging\n\n'; block "twin"; block "twin"; } > "$D/backlog-staging.md"
+out="$(BACKLOG_STAGE_BACKLOG="$D/BACKLOG.md" BACKLOG_STAGE_STAGING="$D/backlog-staging.md" python3 "$ADD_BACKLOG" all 2>&1)"; rc=$?
+chk "identical twin blocks: exit 0" "$([ "$rc" -eq 0 ]; echo $?)"
+chk "identical twin blocks: two rows, two relabels" "$([ "$(grep -cE '^\| ID-[0-9]+ \|' "$D/BACKLOG.md")" -eq 2 ] && [ "$(count '^## \[promoted ID-[0-9]*\] twin' "$D/backlog-staging.md")" -eq 2 ]; echo $?)"
+
+# the buffer keeps its mode through a rewrite (it may name unfiled work)
+D="$TMPD/a4d"; mkdir -p "$D"
+{ printf '# Backlog staging\n\n'; block "private old" "$OLD"; } > "$D/backlog-staging.md"; chmod 600 "$D/backlog-staging.md"
+BACKLOG_STAGE_STAGING="$D/backlog-staging.md" python3 "$DRAIN" >/dev/null 2>&1
+mode="$(stat -f %Lp "$D/backlog-staging.md" 2>/dev/null || stat -c %a "$D/backlog-staging.md")"
+chk "a 0600 buffer is still 0600 after drain rewrote it" "$([ "$mode" = 600 ] && grep -q '^## \[expired\] private old' "$D/backlog-staging.md"; echo $?)"
+
+# stdin that is not UTF-8 is refused, not appended
+D="$TMPD/a4e"; mkdir -p "$D"
+printf '## [staged] bad\n- Intent: \xff\xfe\n\n' | python3 "$SF" append "$D/s.md" 2>/dev/null; rc=$?
+chk "non-UTF-8 stdin exits 65 and writes nothing" "$([ "$rc" -eq 65 ] && [ ! -s "$D/s.md" ]; echo $?)"
+
+# lock that cannot be opened: append degrades to an unlocked write, rewrite fails closed
+python3 - "$SF" "$TMPD/a4f" <<'NOLOCK'
+import importlib.util, os, sys
+spec = importlib.util.spec_from_file_location("sf", sys.argv[1])
+sf = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(sf)
+d = sys.argv[2]
+os.makedirs(d)
+sf.staging_lock_path = lambda s: "/nonexistent-dir/x.lock"
+st = os.path.join(d, "s.md")
+sf.append_blocks(st, "## [staged] unlocked\n- Intent: x\n\n")
+assert "unlocked" in open(st).read(), "append must still land"
+try:
+    sf.rewrite(st, lambda t: (t + "x", None))
+except OSError:
+    print("nolock-ok")
+else:
+    raise SystemExit("rewrite must fail closed without a lock")
+NOLOCK
+chk "no lock file: append degrades, rewrite fails closed" "$?"
 
 # ============================================================
 echo "== AC5: no raw append to the staging buffer is left in the hooks or anomalies =="

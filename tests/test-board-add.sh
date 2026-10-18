@@ -14,6 +14,8 @@
 #   AC6  `board capture` and `board promote` write through the same verb (6-column board
 #        gets 6-cell rows from both)
 #   AC7  `bin/board add --backlog-file` reaches the verb
+#   AC8  hostile status, section and title text cannot forge rows, headings or cells
+#   AC9  suffixed headings, legend tables, ids above 999, git-history floor, batch order
 #
 # Run: bash tests/test-board-add.sh
 
@@ -58,7 +60,7 @@ minted="$(cat "$TMPD"/one.*.out | grep -oE '[0-9]+' | sort -n | uniq | grep -c .
 chk "eight adds, eight unique ids" "$([ "$minted" -eq 8 ]; echo $?)"
 chk "board holds nine rows (the original plus eight)" \
     "$([ "$(grep -cE '^\| ID-[0-9]+ \|' "$B")" -eq 9 ]; echo $?)"
-chk "ids start past the existing ID-1" "$([ "$(grep -cE '^\| ID-1 \|' "$B")" -eq 1 ]; echo $?)"
+chk "ids start past the existing ID-1 (highest minted is ID-9)" "$([ "$(grep -oE '^\| ID-[0-9]+' "$B" | grep -oE '[0-9]+' | sort -n | tail -1)" -eq 9 ]; echo $?)"
 chk "lint is clean after the race" "$([ "$(bl "$B" lint)" = "(no lint findings)" ]; echo $?)"
 
 # ============================================================
@@ -160,6 +162,67 @@ intake="$(sed -n '/^### Conversation intake/,$p' "$BC")"
 chk_has "promote: the section table copies the board's 6-col header" "$intake" "| ID | Title | Source | Target artifact | Lane | Status |"
 chk_has "promote: its row has 6 cells" "$intake" "| ID-008 | Promote me | Intent: a real reason to do this . Approach: do it #u-mid #f-hi -> dwarves-kit (session $TODAY) |  |  | queued |"
 chk "promote: lint clean on the board after both writers" "$([ "$(bl "$BC" lint)" = "(no lint findings)" ]; echo $?)"
+
+# ============================================================
+echo "== AC8: hostile input cannot forge rows, headings or cells =="
+# ============================================================
+BH="$TMPD/hostile.md"; new4 "$BH"
+before="$(shasum -a 256 "$BH" | cut -d' ' -f1)"
+bl "$BH" add --status $'queued\n| ID-999 | forged | x | done' -- t >/dev/null 2>&1; rc=$?
+chk "status with a newline and a forged row is refused (exit 64)" "$([ "$rc" -eq 64 ]; echo $?)"
+bl "$BH" add --status 'queued | ID-998 | forged | x | done' -- t >/dev/null 2>&1; rc=$?
+chk "status with pipes is refused (exit 64)" "$([ "$rc" -eq 64 ]; echo $?)"
+bl "$BH" add --section $'## x\n## [staged] y' -- t >/dev/null 2>&1; rc=$?
+chk "a section with an embedded newline is refused (exit 64)" "$([ "$rc" -eq 64 ]; echo $?)"
+bl "$BH" add --section '| ID-77777 | forged | x | done |' -- t >/dev/null 2>&1; rc=$?
+chk "a section that is table syntax is refused (exit 64)" "$([ "$rc" -eq 64 ]; echo $?)"
+chk "none of the four refusals wrote anything" "$([ "$(shasum -a 256 "$BH" | cut -d' ' -f1)" = "$before" ]; echo $?)"
+bl "$BH" add -- '--status foo' >/dev/null 2>&1; rc=$?
+chk_has "a title after -- may contain flag words" "$(cat "$BH")" "| --status foo |"
+tfile="$TMPD/marker"
+bl "$BH" add --notes '$(touch '"$tfile"')' -- '`touch '"$tfile"'`' >/dev/null 2>&1
+chk "shell metacharacters in single quotes stay inert" "$([ ! -e "$tfile" ]; echo $?)"
+
+# ============================================================
+echo "== AC9: section matching, table choice, ids, history floor =="
+# ============================================================
+BS="$TMPD/suffix.md"; new4 "$BS"
+printf '\n### Conversation intake (auto)\n\n| ID | Item | Notes | Status |\n|---|---|---|---|\n| ID-5 | old | n | queued |\n' >> "$BS"
+bl "$BS" add --notes n --section "### Conversation intake" -- "joins the suffixed section" >/dev/null
+chk "a heading with a suffix is the same section (no second section made)" "$([ "$(grep -c '^### Conversation intake' "$BS")" -eq 1 ]; echo $?)"
+chk_has "the row landed under the suffixed heading" "$(sed -n '/^### Conversation intake/,$p' "$BS")" "joins the suffixed section"
+
+BLEG="$TMPD/legend.md"
+printf '# B\n\n| Key | Meaning |\n|---|---|\n| u | urgent |\n\n| ID | Item | Notes | Status |\n|---|---|---|---|\n| ID-3 | a | n | queued |\n' > "$BLEG"
+bl "$BLEG" add -- "lands in the ID table" >/dev/null
+chk "a legend table before the ID table is skipped" "$([ "$(grep -n 'lands in the ID table' "$BLEG" | cut -d: -f1)" -gt "$(grep -n '^| ID | Item' "$BLEG" | cut -d: -f1)" ]; echo $?)"
+
+B1="$TMPD/big.md"
+printf '| ID | Item | Notes | Status |\n|---|---|---|---|\n| ID-999 | a | n | queued |\n' > "$B1"
+chk "ids above 999 keep counting (ID-999 -> ID-1000)" "$([ "$(bl "$B1" add x)" = "ID-1000" ]; echo $?)"
+
+BN="$TMPD/notable.md"; printf '# nothing here\n' > "$BN"
+bl "$BN" add x >/dev/null 2>&1; rc=$?
+chk "a board with no table refuses a plain add" "$([ "$rc" -ne 0 ]; echo $?)"
+idn="$(bl "$BN" add --section '### New' -- x 2>/dev/null)"
+chk_has "a section add on a table-less board creates a default table" "$(cat "$BN")" "| $idn | x |"
+
+BO="$TMPD/order.md"; new4 "$BO"
+python3 - "$KIT_DIR/lib/board" "$BO" <<'ORDER'
+import sys
+sys.path.insert(0, sys.argv[1])
+import board_add
+board_add.add_rows(sys.argv[2], [{"title": "first"}, {"title": "second"}, {"title": "third"}])
+ORDER
+chk "a batch lands newest on top (third, second, first)" "$([ "$(grep -E '^\| ID-[0-9]+ \| (first|second|third) ' "$BO" | awk -F'|' '{gsub(/ /,"",$3); printf "%s,", $3}')" = "third,second,first," ]; echo $?)"
+
+BG="$TMPD/gitfloor"; mkdir -p "$BG"
+git -C "$BG" init -q 2>/dev/null
+printf '| ID | Item | Notes | Status |\n|---|---|---|---|\n| ID-50 | gone | n | queued |\n' > "$BG/BACKLOG.md"
+git -C "$BG" -c user.name=t -c user.email=t@example.org add BACKLOG.md
+git -C "$BG" -c user.name=t -c user.email=t@example.org commit -q -m seed 2>/dev/null
+printf '| ID | Item | Notes | Status |\n|---|---|---|---|\n' > "$BG/BACKLOG.md"
+chk "git history raises the mint floor (a deleted ID-50 is never reused)" "$([ "$(bl "$BG/BACKLOG.md" add x)" = "ID-051" ]; echo $?)"
 
 # ============================================================
 echo "== AC7: the public door, bin/board add --backlog-file =="
