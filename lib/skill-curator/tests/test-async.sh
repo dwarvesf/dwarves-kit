@@ -9,6 +9,7 @@ pass=0; fail=0
 ok(){ echo "  ok: $*"; pass=$((pass+1)); }
 no(){ echo "  FAIL: $*" >&2; fail=$((fail+1)); }
 export SKILL_CURATOR_STATE_DIR="$TMP/state" SKILL_CURATOR_PROPOSALS_DIR="$TMP/proposals"
+export KIT_LEDGER_DIR="$TMP/ledger"   # a failed model call is ledgered (lib/telemetry/egress-fail.sh); keep it in the sandbox
 PAY="$TMP/pay.json"; jq -n --arg tp "$DIR/tests/fixtures/sample-transcript.jsonl" '{session_id:"a",transcript_path:$tp}' > "$PAY"
 
 echo "[1] a slow (sleep 30) reviewer does not delay the hook return (<1.5s)"

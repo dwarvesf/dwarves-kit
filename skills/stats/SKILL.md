@@ -1,6 +1,6 @@
 ---
 name: stats
-description: Query or render ledger state and propose backlog rows off anomalies. Use when asked to SEE it -- "show me the ledger state", "my debt", "understanding debt", "telemetry", "token cost", "kit runs", "render the ledger" -- or to check it -- "any ledger anomalies". NOT for editing/mutating any ledger. NOT for ad-hoc SQL exploration. NOT a persistent TUI/app.
+description: Query or render ledger state and propose backlog rows off anomalies. Use when asked to SEE it -- "show me the ledger state", "my waived gates", "telemetry", "token cost", "kit runs", "render the ledger" -- or to check it -- "any ledger anomalies". NOT for understanding debt (`| DEBT |` lines; use `bin/reflect debt list`). NOT for editing/mutating any ledger. NOT for ad-hoc SQL exploration. NOT a persistent TUI/app.
 ---
 
 # stats
@@ -13,7 +13,7 @@ is no path through this skill that mutates anything.**
 
 ## Scope and triggers
 
-Covers the ledgers `stats` reads: the dwarves-kit gate/proof/telemetry corpus, tide file-move state, tg-cleanup snapshots, the learning ledger. Additional trigger phrases: "understanding debt", "telemetry", "how much am I spending on tokens", "kit runs", "kit lane telemetry", "ledger status", "render the ledger", "ledger dashboard", "share this as an artifact" (mid-ledger-conversation), "is my debt over threshold", "propose a backlog row from the ledger state".
+Covers the ledgers `stats` reads: the dwarves-kit gate/proof/telemetry corpus, tide file-move state, tg-cleanup snapshots, the learning ledger. Additional trigger phrases: "waived gates", "telemetry", "how much am I spending on tokens", "kit runs", "kit lane telemetry", "ledger status", "render the ledger", "ledger dashboard", "share this as an artifact" (mid-ledger-conversation), "are my waived gates over threshold", "propose a backlog row from the ledger state".
 
 Drives the read-only `stats` CLI (dwarves-kit/lib/stats) and renders the result as EITHER an in-terminal reply (bot-reply-formatting, tables + bar-fills) or a shareable web Artifact, both from the same one query; `stats anomalies` is the feedback-loop path, PROPOSE-only (stages a cc-backlog candidate, never files a board row). READ-ONLY by hard contract over every source ledger, the CLI never writes back to a source ledger; the one exception is `stats anomalies --propose`, whose ONLY write is the gitignored cc-backlog staging buffer.
 
@@ -31,7 +31,7 @@ source and breaks the whole point of the lens (the understanding-gate work alrea
 | The operator wants | Command |
 |---|---|
 | "show me the ledger state" / "kit runs" / "kit lane telemetry" | `stats render kit_runs --surface terminal` |
-| "my debt" / "understanding debt" | `stats anomalies` (checks `SUM(kit_runs.gates_ovr)` against threshold; this is the current debt signal, superseding a raw grep over `\| DEBT \|` lines). For the raw numbers behind it, `stats query "SELECT rid, gates_ovr FROM kit_runs WHERE gates_ovr > 0" --surface terminal` |
+| "my waived gates" / "how many gates did we waive" | `stats anomalies` (the `waived_gates` anomaly checks `SUM(kit_runs.gates_ovr)` against `waived_gates_max`). This is waived gates only, never understanding debt: that lives in the `\| DEBT \|` ledger lines (`bin/reflect debt list`). For the raw numbers behind it, `stats query "SELECT rid, gates_ovr FROM kit_runs WHERE gates_ovr > 0" --surface terminal` |
 | "any ledger anomalies" / "should I propose anything" | `stats anomalies` (report only) or `stats anomalies --propose` (stage a candidate row per fired anomaly into the cc-backlog staging buffer; never files a board row) |
 | "is the pipeline ceremony" / "gate work vs what shipped" / "dispatches and tokens per run" | `stats ceremony` (add `--json`, `--from/--to` or `--since-sha` to compare windows); the `ceremony_share` anomaly shows in `stats anomalies` |
 | "telemetry" (tide moves) | `stats render tide_moves --surface terminal` |
@@ -111,7 +111,7 @@ in-repo file.
 ## Known tradeoffs (read before trusting an anomaly at face value)
 
 - `stats anomalies`' `home` field is a static per-detector guess, not derived from
-  data; debt/misfire sums are GLOBAL across every repo in `kit_runs`, and ~44% of
+  data; waived-gates/misfire sums are GLOBAL across every repo in `kit_runs`, and ~44% of
   `kit_runs` rows carry `repo = "?"` (unattributed) as of this writing. Treat a fired
   anomaly's "home" as a starting guess for the operator to confirm, not a fact.
 - A missing source (e.g. no tide `state.sqlite` on this host) reads identically to a

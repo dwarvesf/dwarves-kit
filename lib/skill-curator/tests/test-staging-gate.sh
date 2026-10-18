@@ -10,6 +10,7 @@ pass=0; fail=0
 ok(){ echo "  ok: $*"; pass=$((pass+1)); }
 no(){ echo "  FAIL: $*" >&2; fail=$((fail+1)); }
 export SKILL_CURATOR_STATE_DIR="$TMP/state" SKILL_CURATOR_PROPOSALS_DIR="$TMP/proposals" SKILL_CURATOR_SKILLS_DIR="$TMP/skills"
+export KIT_LEDGER_DIR="$TMP/ledger"   # a failed model call is ledgered (lib/telemetry/egress-fail.sh); keep it in the sandbox
 mkdir -p "$SKILL_CURATOR_SKILLS_DIR"
 PAY="$TMP/pay.json"; jq -n --arg tp "$DIR/tests/fixtures/sample-transcript.jsonl" '{session_id:"g",transcript_path:$tp}' > "$PAY"
 mk_env(){ jq -nc --arg r "$1" '{type:"result",total_cost_usd:0.001,result:$r,usage:{input_tokens:1,output_tokens:1}}'; }

@@ -104,12 +104,14 @@ hp_run_case() {
     eff=$(printf '%s\n' ${envs[@]+"${envs[@]}"} | grep "^$log_var=" | tail -1 | cut -d= -f2-)
   fi
 
+  # A caller may export KIT_LEDGER_DIR so a hook's own ledger lines land outside the observed HOME and cwd.
+  local ledger_env=(); [ -z "${KIT_LEDGER_DIR:-}" ] || ledger_env=(KIT_LEDGER_DIR="$KIT_LEDGER_DIR")
   local rc=0 out err
   # A hook that hangs (a mutated port blocking on stdin, or a detached child that keeps a pipe
   # open) must fail the case, not the suite: 30 s alarm on the hook (macOS has no timeout), stderr
   # to a file so no pipe waits on a leaked child.
   { (cd "$cwd" && env -i PATH="$PATH" HOME="$home" TMPDIR="${TMPDIR:-/tmp}" LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8 \
-    ${envs[@]+"${envs[@]}"} perl -e 'alarm shift; exec @ARGV' "${HP_CASE_TIMEOUT:-30}" "$@" ${extra[@]+"${extra[@]}"} < "$payload" 2>"$T/stderr" >"$T/stdout") || rc=$?; } 2>/dev/null
+    ${ledger_env[@]+"${ledger_env[@]}"} ${envs[@]+"${envs[@]}"} perl -e 'alarm shift; exec @ARGV' "${HP_CASE_TIMEOUT:-30}" "$@" ${extra[@]+"${extra[@]}"} < "$payload" 2>"$T/stderr" >"$T/stdout") || rc=$?; } 2>/dev/null
   err=$(cat "$T/stderr")
   out=$(cat "$T/stdout")
 

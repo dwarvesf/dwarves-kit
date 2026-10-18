@@ -11,6 +11,10 @@ HOOK="$KIT_DIR/hooks/backlog-stage.sh"
 # shellcheck source=lib/hook-parity.sh
 source "$KIT_DIR/tests/lib/hook-parity.sh"
 
+# The hook ledgers a failed model call (lib/telemetry/egress-fail.sh); keep that file out of the observed tree.
+KIT_LEDGER_DIR="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; export KIT_LEDGER_DIR
+trap 'mv -f "$KIT_LEDGER_DIR" "$KIT_LEDGER_DIR.discard" 2>/dev/null' EXIT
+
 out=$(hp_check "$FIX/cases.jsonl" "$FIX/expected.jsonl" bash "$HOOK")
 rc=$?
 printf '%s\n' "$out" | sed 's/^\([0-9]* passed, [0-9]* failed\)$/backlog-stage parity: \1/'

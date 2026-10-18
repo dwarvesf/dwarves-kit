@@ -5,6 +5,7 @@ DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SA="$DIR/bin/session-audit"
 TMP="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
 trap 'rm -rf "$TMP"' EXIT
+export KIT_LEDGER_DIR="$TMP/ledger"   # a failed runtime is ledgered (lib/telemetry/egress-fail.sh); keep it in the sandbox
 PASS=0; FAIL=0
 ok() { PASS=$((PASS + 1)); echo "  ok: $1"; }
 no() { FAIL=$((FAIL + 1)); echo "  FAIL: $1"; }

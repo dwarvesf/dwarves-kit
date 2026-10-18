@@ -11,6 +11,7 @@ ok(){ echo "  ok: $*"; pass=$((pass+1)); }
 no(){ echo "  FAIL: $*" >&2; fail=$((fail+1)); }
 
 export SKILL_CURATOR_STATE_DIR="$TMP/state"
+export KIT_LEDGER_DIR="$TMP/ledger"   # a failed model call is ledgered (lib/telemetry/egress-fail.sh); keep it in the sandbox
 export SKILL_CURATOR_PROPOSALS_DIR="$TMP/proposals"
 export SKILL_CURATOR_SKILLS_DIR="$TMP/skills"; mkdir -p "$SKILL_CURATOR_SKILLS_DIR"
 LEDGER="$SKILL_CURATOR_STATE_DIR/ledger.jsonl"
