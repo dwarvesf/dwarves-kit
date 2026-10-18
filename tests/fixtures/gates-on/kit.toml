@@ -7,3 +7,13 @@ lane_gates         = true
 understanding_gate = true
 commit_format      = true
 board_row_gate     = true
+
+# Every toggleable module ON too: hooks/anchor-root.sh skips a hook whose module is off, and a
+# suite that drives an opt-in hook through the wrapper needs it to run.
+[modules]
+board          = true
+session        = true
+advisor        = true
+cosmetic       = true
+money_gate     = true
+prose_rag      = true

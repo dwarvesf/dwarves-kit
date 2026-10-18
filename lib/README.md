@@ -22,7 +22,7 @@ orphans with no cluster stay as bare scripts at the root.
 | `telemetry/` | `lane-telemetry.sh` `kit-log-dir.sh` |
 | `session/` | `session.sh` (verb dispatcher behind `bin/session`) `parse_transcript.py` `parse-transcript.sh` (the shared transcript parser) `handoffs.sh`, plus the sub-tools `recall/` `observe/` `intel/` `audit/` |
 | `precedent/` | `precedent.sh` `inventory.py` (records + inventory surfaces; stable entry `bin/precedent`) |
-| `intake/` | `intake.sh` (the knowledge-intake dedup gate; stable entry `bin/intake`) |
+| `intake/` | `intake.sh` (the knowledge-intake dedup gate; stable entry `bin/intake`). No command, skill or hook in this kit calls it: the callers are an operator's own intake skills, so a kit-only install never exercises it |
 | *(root)* | `adopt.sh` `explain.sh` `pitch.sh`, orphans, no cluster |
 
 ## Resolution scheme (the `LIB_ROOT` anchor, no shims)

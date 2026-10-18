@@ -7,7 +7,7 @@ how you phrase the ask. Four positions:
  propose ─── low (default) ─── high ─── max
     │            │               │        │
  plans only,  stops at every  stops only  stops only at the
- runs nothing advisory        at the 4    4 hard stops or a
+ runs nothing advisory        at the 4    4 autonomy stops or a
               checkpoint      hard stops  real blocker; runs
                               + the       all the way to a PR
                               push/PR
@@ -17,13 +17,15 @@ how you phrase the ask. Four positions:
 |---|---|---|
 | "propose it, don't run anything" | propose | after planning; waits for go |
 | "run it, check with me at each phase" | low (default) | every advisory phase boundary |
-| "run the lane, only stop at hard stops" | high | the 4 hard stops + the push/PR |
-| "run it all the way to a PR, your call" | max | only the 4 hard stops + a real blocker |
+| "run the lane, only stop at hard stops" | high | the 4 autonomy stops + the push/PR |
+| "run it all the way to a PR, your call" | max | only the 4 autonomy stops + a real blocker |
 
 Two things never move with the dial:
 
-1. **The 4 hard stops hold at every position** (guide: `gates-and-proof.md`).
-   Max autonomy is not gate bypass; it is fewer courtesy check-ins.
+1. **The 4 autonomy stops hold at every position** (guide: `gates-and-proof.md`).
+   They are where an autonomous run stops, not the only blockers: other hooks
+   block too (`docs/hard-rules.tsv`). Max autonomy is not gate bypass; it is
+   fewer courtesy check-ins.
 2. **Decisions taken alone get recorded.** At high/max, a judgment call you
    would have been asked about lands on a ledger instead of interrupting you;
    you review the calls afterward, not the pauses during.

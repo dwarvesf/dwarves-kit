@@ -5,9 +5,12 @@
 # branch is pushed or a PR is opened, refuse if the active spec's lane has a
 # required (measure-twice) gate with no `ran`/`override` entry in its run ledger.
 #
-# This is a QUALITY gate, not a safety gate: it FAILS OPEN on any ambiguity (no
-# repo, no spec, no lane, missing tooling) so a bug here can never block unrelated
-# work. Force-push stays safety-gate.sh's job. One safety rule lives here because only this hook
+# This is mostly a QUALITY gate, and its failure mode is a mix, not one rule. It fails CLOSED
+# (exit 2) when lib/gate/ship-rules.sh will not load while a kit lib exists, when the push parser
+# cannot account for a push in an adopted repo (unparsable, several branches, a heredoc to a
+# shell), and when a spec exists with no Lane header in an adopted repo. It fails OPEN when there
+# is no repo, no spec, no resolvable remote default, or no kit lib at all, so a bug here cannot
+# block unrelated work. Force-push stays safety-gate.sh's job. One safety rule lives here because only this hook
 # resolves the destination ref: a git push that lands on a default branch is refused in any repo
 # (_default_block). A second rule that reads the spec: a DO NOT SHIP review verdict refuses the push
 # (ship_rule_review_verdict, [gate] review_verdict). Exit 2 = block.

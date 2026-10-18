@@ -47,8 +47,8 @@ exits before it does anything at all.
 tools). `money_gate` is a **hook-only module**: this `lib/money-gate/` dir is its doc
 home and carries no code.
 
-**Wiring.** `install.sh --with money_gate` installs the one hook (`kit_module_hooks
-money_gate` -> `money-gate.sh`) and records `modules.money_gate` in the consumer's
+**Wiring.** `install.sh --with money_gate` installs the one hook (`lib/config/modules.tsv` row
+`money_gate` -> `money-gate.sh`) and records `modules.money_gate` in the consumer's
 `kit.toml` (default `false`). Registered as PreToolUse matcher `Edit|Write|MultiEdit`,
 timeout 5s, in `hooks/hooks.json` (plugin install) and `settings.json` (bash install).
 

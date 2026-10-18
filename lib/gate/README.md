@@ -4,10 +4,14 @@ The **Check stage's** engine (ADR-0034, stage names per the 2026-07-18 amendment
 phase boundary in the kit routes through this module. It is what makes a lane a *contract*
 instead of a suggestion.
 
-Two things here can actually stop you. Everything else observes, classifies, or nudges.
+Three things here can actually stop you: the lane gate (`gate-ledger.sh`), the proof gate
+(`proof-ledger.sh`) and the dispatch gate (`dispatch-gate.sh`). `hooks/ship-gate.sh` also holds
+a few rules of its own (default-branch push, DO NOT SHIP verdict, fixture identities, the
+hard-path floor). Everything else here observes, classifies, or nudges. Which claims are real
+blockers, and what enforces each, is `docs/hard-rules.tsv`.
 
 ```
-        WORKFLOW.md lane x phase matrix          the branch diff
+     kit.toml [lane.<name>] (lane-data.sh)       the branch diff
                     |                                  |
                     v                                  v
         gate-ledger.sh  (the LANE gate)      proof-ledger.sh  (the PROOF gate)
@@ -18,8 +22,10 @@ Two things here can actually stop you. Everything else observes, classifies, or 
                                  (exit 2 = block)
 ```
 
-Both are diff/lane-keyed and spec-independent, so they fire the same whether the work came
-through `/kit:execute` or a freeform `/goal` loop.
+The proof gate is diff-keyed and spec-independent. The lane gate keys on the spec's `Lane:`
+(and on the diff's hard-path floor), so both fire the same whether the work came through
+`/kit:execute` or a freeform `/goal` loop. Both are off until `[gate] proof_of_done` and
+`[gate] lane_gates` are on (see "Turning a gate on").
 
 ## The callables
 
@@ -32,7 +38,8 @@ verb grammar and adds no logic. Call any script directly by path too; both work.
 | `gate proof-ledger` | `proof-ledger.sh` | The proof-of-done gate. Classifies the branch diff, demands a matching fresh proof. | **yes** (`check` exit 1) |
 | `gate dispatch` | `dispatch-gate.sh` | Disjointness gate for `/kit:dispatch`. Two goals run in parallel only if their `## Touches` globs are provably disjoint. Also the drift guard. | **yes** (serializes / exit 1 on drift) |
 | `gate policy` | `gate-policy.sh` | The `[gate]` on/off reader (opt-in: on only when the key resolves to `true`). `enabled <key> [root]` exits 0 when a gate is on for that project. Hooks call it instead of reading config. | no |
-| `gate proof` | `proof-gate.sh` | Classifier, not a gate. Task description to proof class + the artifact that work-type owes. | no |
+| `gate proof` | `proof-gate.sh` | Classifier, not a gate. `class`, `requirement`, `classes`: task description to proof class + the artifact that work-type owes. `contract "<task>"`: what that work-type owes. `skeleton <slug>`: a fillable `docs/verification/<slug>.md` on stdout. `coverage <spec> [proof.md ...]`: which spec criteria a proof covers. | no |
+| `gate redteam` | `redteam-gate.sh` | Records one rung-4 redteam round (GATE, TOKENS and OUTCOME lines in one call) so the rung-4 cost is measurable. Missing `cost=` is rejected. | no (rc 64 on bad arguments) |
 | `gate quiz` | `quiz-gate.sh` | The star-tap NUDGE. Builds 5 diff-grounded questions, routes through the `understand.teach` seam. | no (nudge only) |
 | `gate coverage-delta` | `coverage-delta.sh` | Advisory. Source lines moved but test lines did not? Warn. | no (always exit 0) |
 | `gate mutation-smoke` | `mutation-smoke.sh` | Advisory. Mutates a changed line, re-runs the suite. A surviving mutation means the suite does not bite. | no (always exit 0) |
@@ -43,9 +50,11 @@ verb grammar and adds no logic. Call any script directly by path too; both work.
 
 ### The lane gate (`gate-ledger.sh`)
 
-The single source for "which gates does this lane require" is the **`docs/WORKFLOW.md` lane x
-phase matrix**, parsed at runtime. There is no second copy in code. A matrix cell of
-`measure-twice` means required.
+The single source for "which gates does this lane require" is the **`[lane.<name>]` blocks in
+`kit.toml`**, read by `lane-data.sh` (project `.kit.toml` when tracked and clean, then the
+operator overlay, then the kit root). A phase in `phases` and not in `light` is required.
+`docs/WORKFLOW.md` carries the human-readable matrix, projected from that data and checked by
+`doc-projection-check.sh`; code never parses it.
 
 ```bash
 rid=$(gate ledger rid)                       # branch slug, `type/` prefix stripped
@@ -108,6 +117,18 @@ checks, so it holds whatever the spec's `Lane:` says. It logs `BLOCKED | ship-ga
 at the merge base (an opt-out must already sit on the default branch). Proof:
 `tests/test-ship-gate-review-verdict.sh`.
 
+### The hard-path floor and what it ignores
+
+`ship_rule_floor` makes a diff that touches a hard path (migration, auth, secret, CI, infra or kit config) owe the full lane's gates, whatever lane the spec names. It does not count a diff
+that only changes documentation, or one whose changed lines in a non-doc file are blank lines
+or `#` comments (`lane-classify.sh floor`). Anything it cannot decide keeps the floor: a
+secret-pattern path, a symlink, a gitlink, an unknown file type, a mode change, a NUL byte, a
+heredoc, triple-quote or YAML block file, a change next to a shebang or directive, a
+scanner-suppression comment, or more than 50 hits or 8 seconds of scanning. The proof gate
+sizes itself the same way: a diff made only of `*.md`/`*.txt`, `.kit.toml`, and documentation
+or asset files under `docs/` classes `inert`. Source, build files and secret-shaped paths under
+`docs/` keep their class. Proof: `tests/test-ceremony-fits-diff.sh`.
+
 ## Turning a gate on
 
 The blocking quality gates are OPT-IN. The kit root says `false` for every key except
@@ -169,12 +190,14 @@ That is why `lib/gate/SPEC` is still an open IOU in `tests/kit-contract-known-ga
 ## Tests
 
 ```bash
-bash tests/test-gate-outcome.sh          # 22, SPEC-129 outcome markers + the additive property
+bash tests/test-gate-outcome.sh          # SPEC-129 outcome markers + the additive property
 bash tests/test-gate-vocab-recording.sh  # every required gate name has a command that records it
-bash tests/test-ledger-durability.sh     # 37, SPEC-097 durable root, override guard, forgery
-bash tests/test-ledger-substrate.sh      #  9, the one append substrate
-bash tests/test-quiz-gate.sh             # 29, SPEC-125 grounded questions + anti-fatigue
-bash tests/test-ship-gate-fail-closed.sh #  5, SPEC-048
+bash tests/test-ledger-durability.sh     # SPEC-097 durable root, override guard, forgery
+bash tests/test-ledger-substrate.sh      # the one append substrate
+bash tests/test-quiz-gate.sh             # SPEC-125 grounded questions + anti-fatigue
+bash tests/test-ship-gate-fail-closed.sh # SPEC-048
+bash tests/test-ship-gate-refs-block.sh  # a push the gate cannot account for is refused in an adopted repo
+bash tests/test-ceremony-fits-diff.sh    # docs-only diffs class inert; comment-only edits skip the hard-path floor
 bash tests/test-ship-gate-review-verdict.sh # DO NOT SHIP verdict blocks; last wins; key off
 bash tests/test-gate-opt-out.sh          # [gate] false switches each quality gate off (machine has them on); safety gate immune
 bash tests/test-gate-opt-in.sh           # kit defaults: every quality gate off; a project true turns one on
@@ -190,7 +213,7 @@ and still fails `check`. The checklist saying done does not mean the ship-gate a
 divergence is deliberate (a skip is a decision worth seeing, not a pass), but it surprises
 everyone once.
 
-**2. The two gates fail in opposite directions.** The lane gate **fails closed**: an unknown
+**2. The two gates fail in opposite directions.** (`hooks/ship-gate.sh` itself is a mix: its header lists where it closes and where it opens.) The lane gate **fails closed**: an unknown
 lane is refused, because reading an empty required-list would vacuously pass and let a run ship
 with zero gates enforced. The proof gate **fails open**: no repo, no base, empty diff, missing
 tooling all return 0, because a gate bug must never block unrelated work. If you are adding a
