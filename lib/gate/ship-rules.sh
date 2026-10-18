@@ -21,7 +21,8 @@
 #                                                  a spec whose last `## Review` verdict is DO NOT SHIP refuses the
 #                                                  push; no section or no verdict passes; [gate] review_verdict = false opts out
 #   ship_rule_floor <root> <base> <head> <rid> <spec> <ledger> [<cfg-rev>]
-#                                                  a hard-path diff owes the full lane's gates; every hard-path
+#                                                  a hard-path diff owes the full lane's gates (docs and comment-only
+#                                                  edits are not a hard-path diff, see lane-classify.sh floor); every hard-path
 #                                                  skip and every refused exemption config is printed on stderr,
 #                                                  logged, and collected in SR_NOTICES (one notice per line) so a
 #                                                  hook can show them on an allowed push
@@ -142,7 +143,8 @@ _sr_relay() {
   '
 }
 
-# Diff floor (hard paths). The path test lives in lib/classify/lane-classify.sh `floor`. A hit means
+# Diff floor (hard paths). The path test lives in lib/classify/lane-classify.sh `floor`, which also
+# drops docs and comment-only edits before it reports a hit, so this rule stays a thin caller. A hit means
 # the full lane's gates apply whatever the spec's Lane says. The floor follows [gate] lane_gates as of
 # the MERGE BASE, never the PR head, so a PR cannot switch off its own floor. Full-lane gates are read
 # from the kit and operator layers only (--kit-lanes). The optional 7th argument <cfg> names the rev the

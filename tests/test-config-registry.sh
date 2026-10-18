@@ -58,6 +58,37 @@ _allow_regex() {
   ' "$REGISTRY" | paste -sd'|' -
 }
 
+# --------------------------------------------- prelude: fixtures + the two `list` renders
+# `bin/config list` resolves every registry row: a fork-heavy pass of several CPU seconds. This suite
+# reads two differently-seeded renders of it (project/env seeded, operator seeded); AC8's structural
+# leak check reads the first, since "no seam row leaks into list" does not depend on any value. The two
+# are independent, so they start here and run beside everything below; `wait` collects them where the
+# first is asserted.
+FIXDIR="$(mktemp -d "${TMPDIR:-/tmp}/config-registry-fixture.XXXXXX")" || exit 1
+mkdir -p "$FIXDIR/root" "$FIXDIR/proj"
+cat > "$FIXDIR/root/kit.toml" <<'EOF'
+[mega]
+wave_cap = 2
+tier4_close = true
+EOF
+cat > "$FIXDIR/proj/.kit.toml" <<'EOF'
+[mega]
+wave_cap = 5
+EOF
+mkdir -p "$FIXDIR/op" "$FIXDIR/op-empty"
+cat > "$FIXDIR/op/kit.toml" <<'EOF'
+[mega]
+tier4_close = false
+EOF
+cat > "$FIXDIR/op-empty/kit.toml" <<'EOF'
+[mega]
+wave_cap = 3
+EOF
+
+LISTDIR="$(mktemp -d "${TMPDIR:-/tmp}/config-registry-lists.XXXXXX")" || exit 1
+( KIT_CONFIG_ROOT="$FIXDIR/root" KIT_PROJECT_ROOT="$FIXDIR/proj" KIT_DELIVERY_RATIO_WARN=99 bash "$CONFIG_BIN" list > "$LISTDIR/fixture" 2>&1 ) &
+( KIT_CONFIG_ROOT="$FIXDIR/root" KIT_PROJECT_ROOT="$FIXDIR/proj" KIT_CONFIG_OPERATOR="$FIXDIR/op" bash "$CONFIG_BIN" list > "$LISTDIR/op" ) &
+
 echo "=== AC1: drift lint -- every seed-regex hit in lib/hooks/bin is registered or allowlisted ==="
 ALLOW_RE="^($(_allow_regex))\$"
 OUT="$(cd "$KIT_DIR" && manifest_diff_flat "lib hooks bin" "$SEED_RE" "$REGISTRY" "$ALLOW_RE")"
@@ -115,18 +146,7 @@ assert_eq "get with set-but-empty env falls through to the default (\${VAR:-} se
 if CONFIG_REGISTRY_FILE=/nonexistent-registry.md bash "$CONFIG_BIN" list >/dev/null 2>&1; then RC=1; else RC=0; fi
 assert "list with a missing registry file fails (exit != 0), no silent header-only success" $RC
 
-FIXDIR="$(mktemp -d "${TMPDIR:-/tmp}/config-registry-fixture.XXXXXX")" || exit 1
-mkdir -p "$FIXDIR/root" "$FIXDIR/proj"
-cat > "$FIXDIR/root/kit.toml" <<'EOF'
-[mega]
-wave_cap = 2
-tier4_close = true
-EOF
-cat > "$FIXDIR/proj/.kit.toml" <<'EOF'
-[mega]
-wave_cap = 5
-EOF
-FIXTURE_LIST="$(KIT_CONFIG_ROOT="$FIXDIR/root" KIT_PROJECT_ROOT="$FIXDIR/proj" KIT_DELIVERY_RATIO_WARN=99 bash "$CONFIG_BIN" list)"
+wait; FIXTURE_LIST="$(cat "$LISTDIR/fixture")"
 if { trap '' PIPE; printf '%s\n' "$FIXTURE_LIST" 2>/dev/null || :; } | grep -qE '^WAVE_CAP[[:space:]]+\[impl\][[:space:]]+5[[:space:]]+project \.kit\.toml'; then RC=0; else RC=1; fi
 assert "list: a project .kit.toml override visibly wins WAVE_CAP's row (5, project .kit.toml)" $RC
 if { trap '' PIPE; printf '%s\n' "$FIXTURE_LIST" 2>/dev/null || :; } | grep -qE '^KIT_DELIVERY_RATIO_WARN[[:space:]]+\[impl\][[:space:]]+99[[:space:]]+env'; then RC=0; else RC=1; fi
@@ -148,21 +168,11 @@ assert "explain mega.wave_cap: level 4 (kit-root) shows the shadowed value 2" $R
 # silently under-reported what the real resolver would return. KIT_CONFIG_OPERATOR points at
 # a per-call fixture dir so this never touches the real operator file on the machine running
 # the test. ---
-mkdir -p "$FIXDIR/op" "$FIXDIR/op-empty"
-cat > "$FIXDIR/op/kit.toml" <<'EOF'
-[mega]
-tier4_close = false
-EOF
-cat > "$FIXDIR/op-empty/kit.toml" <<'EOF'
-[mega]
-wave_cap = 3
-EOF
-
 assert_eq "get: operator kit.toml wins over kit-root when no env/project override" \
   "$(KIT_CONFIG_ROOT="$FIXDIR/root" KIT_PROJECT_ROOT="$FIXDIR/proj" KIT_CONFIG_OPERATOR="$FIXDIR/op" bash "$CONFIG_BIN" get mega.tier4_close)" \
   'false'
 
-OP_LIST="$(KIT_CONFIG_ROOT="$FIXDIR/root" KIT_PROJECT_ROOT="$FIXDIR/proj" KIT_CONFIG_OPERATOR="$FIXDIR/op" bash "$CONFIG_BIN" list)"
+OP_LIST="$(cat "$LISTDIR/op")"
 if { trap '' PIPE; printf '%s\n' "$OP_LIST" 2>/dev/null || :; } | grep -qE '^TIER4_CLOSE[[:space:]]+\[impl\][[:space:]]+false[[:space:]]+operator kit\.toml'; then RC=0; else RC=1; fi
 assert "list: TIER4_CLOSE shows the operator override, provenance 'operator kit.toml'" $RC
 
@@ -236,60 +246,53 @@ WINDOW_ROWS="$(_window_rows)"
 
 echo ""
 echo "=== AC6: TASK-001 -- every ## Seams row's Key matches a registry row ==="
-SEAM_COUNT=0; SEAM_MISSING=0
-while IFS= read -r srow; do
-  [ -n "$srow" ] || continue
-  SEAM_COUNT=$((SEAM_COUNT+1))
-  skey="$(_seam_col "$srow" 1)"
-  found=0
-  while IFS= read -r wrow; do
-    [ -n "$wrow" ] || continue
-    wenv="$(_window_col "$wrow" 1)"; wkey="$(_window_col "$wrow" 2)"
-    if [ "$wenv" = "$skey" ] || [ "$wkey" = "$skey" ]; then found=1; break; fi
-  done <<< "$WINDOW_ROWS"
-  if [ "$found" -ne 1 ]; then
-    echo "  MISSING registry row for seam key: $skey" >&2
-    SEAM_MISSING=$((SEAM_MISSING+1))
-  fi
-done <<< "$SEAM_ROWS"
+# One awk pass per table instead of a subshell per cell (13 seam rows x ~320 registry rows x 2 cells was
+# thousands of forks). A cell is field 1 or 2 of the row split on `|`, trimmed, as _seam_col/_window_col read it.
+WINDOW_KEYS="$(printf '%s\n' "$WINDOW_ROWS" | awk -F'|' 'NF { for (i = 2; i <= 3; i++) { v = $i; gsub(/^[ \t]+|[ \t]+$/, "", v); print v } }')"
+SEAM_KEYS="$(printf '%s\n' "$SEAM_ROWS" | awk -F'|' 'NF { v = $2; gsub(/^[ \t]+|[ \t]+$/, "", v); print v }')"
+SEAM_COUNT="$(printf '%s\n' "$SEAM_ROWS" | grep -c .)"
+SEAM_MISSING_LIST="$(WK="$WINDOW_KEYS" SK="$SEAM_KEYS" awk 'BEGIN { n = split(ENVIRON["WK"], w, "\n"); for (i = 1; i <= n; i++) have[w[i]] = 1
+    m = split(ENVIRON["SK"], s, "\n"); for (i = 1; i <= m; i++) if (!(s[i] in have)) print s[i] }')"
+SEAM_MISSING=0
+while IFS= read -r skey; do
+  [ -n "$skey" ] || continue
+  echo "  MISSING registry row for seam key: $skey" >&2
+  SEAM_MISSING=$((SEAM_MISSING+1))
+done <<< "$SEAM_MISSING_LIST"
 assert "every ## Seams Key ($SEAM_COUNT rows) matches a registered env var or section.key" "$SEAM_MISSING"
 
 echo ""
 echo "=== AC7: TASK-001 -- every ## Seams row's Kind is skill|file|dir|binary ==="
 KIND_BAD=0
-while IFS= read -r srow; do
+while IFS=$'\t' read -r skind srow; do
   [ -n "$srow" ] || continue
-  skind="$(_seam_col "$srow" 2)"
   case "$skind" in
     skill|file|dir|binary) ;;
     *) echo "  BAD Kind '$skind' for row: $srow" >&2; KIND_BAD=$((KIND_BAD+1)) ;;
   esac
-done <<< "$SEAM_ROWS"
+done < <(printf '%s\n' "$SEAM_ROWS" | awk -F'|' 'NF { v = $3; gsub(/^[ \t]+|[ \t]+$/, "", v); print v "\t" $0 }')
 assert "every ## Seams Kind is one of skill|file|dir|binary" "$KIND_BAD"
 
 echo ""
 echo "=== AC8: TASK-001 -- the ## Seams table does not leak into the registry window / 'config list' ==="
-LIST_OUT="$(bash "$CONFIG_BIN" list 2>&1)"
-LEAK_ROW=0
-while IFS= read -r srow; do
-  [ -n "$srow" ] || continue
-  if printf '%s\n' "$LIST_OUT" | grep -qF "$srow"; then
-    echo "  LEAK: a literal ## Seams row line appears in 'config list' output: $srow" >&2
-    LEAK_ROW=$((LEAK_ROW+1))
-  fi
-done <<< "$SEAM_ROWS"
+LIST_OUT="$FIXTURE_LIST"
+# LIST_OUT is the project/env-seeded render started in the prelude. Both checks run in one awk pass: a literal
+# row line inside a list line, and a seam key on more than one list line.
+LEAK_OUT="$(ROWS="$SEAM_ROWS" KEYS="$SEAM_KEYS" LIST="$LIST_OUT" awk 'BEGIN {
+    nr = split(ENVIRON["ROWS"], r, "\n"); nk = split(ENVIRON["KEYS"], k, "\n"); nl = split(ENVIRON["LIST"], l, "\n")
+    for (i = 1; i <= nr; i++) { if (r[i] == "") continue
+      for (j = 1; j <= nl; j++) if (index(l[j], r[i])) { print "ROW\t" r[i]; break } }
+    for (i = 1; i <= nk; i++) { if (k[i] == "") continue
+      c = 0; for (j = 1; j <= nl; j++) if (index(l[j], k[i])) c++
+      if (c > 1) print "DUP\t" k[i] "\t" c } }')"
+LEAK_ROW=0; LEAK_DUP=0
+while IFS=$'\t' read -r kind a b; do
+  case "$kind" in
+    ROW) echo "  LEAK: a literal ## Seams row line appears in 'config list' output: $a" >&2; LEAK_ROW=$((LEAK_ROW+1)) ;;
+    DUP) echo "  LEAK: seam key '$a' appears $b times in 'config list' output (want <=1)" >&2; LEAK_DUP=$((LEAK_DUP+1)) ;;
+  esac
+done <<< "$LEAK_OUT"
 assert "no literal ## Seams row line appears in 'bash bin/config list' output" "$LEAK_ROW"
-
-LEAK_DUP=0
-while IFS= read -r srow; do
-  [ -n "$srow" ] || continue
-  skey="$(_seam_col "$srow" 1)"
-  cnt="$(printf '%s\n' "$LIST_OUT" | grep -cF "$skey")"
-  if [ "$cnt" -gt 1 ]; then
-    echo "  LEAK: seam key '$skey' appears $cnt times in 'config list' output (want <=1)" >&2
-    LEAK_DUP=$((LEAK_DUP+1))
-  fi
-done <<< "$SEAM_ROWS"
 assert "every ## Seams key appears at most once in 'bash bin/config list' output" "$LEAK_DUP"
 
 # --------------------------------------------- command autonomy knobs (SPEC-246 sibling)
@@ -452,7 +455,7 @@ assert "config get precedent.registry ignores the attacker project override (got
 PREC_EXPLAIN="$(KIT_PROJECT_ROOT="$PREC_DIR" bash "$CONFIG_BIN" explain precedent.registry)"
 RC=0; printf '%s' "$PREC_EXPLAIN" | grep -q 'source: project .kit.toml' && RC=1
 assert "config explain precedent.registry never reports source: project .kit.toml" "$RC"
-rm -rf "$PREC_DIR"
+rm -rf "$PREC_DIR" "$LISTDIR"
 
 echo ""
 echo "=== $PASS/$TOTAL passed ==="
