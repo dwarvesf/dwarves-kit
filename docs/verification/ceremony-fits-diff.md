@@ -39,10 +39,13 @@ Verdict: PASS
 
 ```
 Command: bash tests/run-all.sh --changed --time   (52 suites, load average 20 to 60)
-Exit: 1 (one suite), fixed, then the final run below
+Exit: 1 (one suite), fixed, then that suite and the later-edited suites re-run alone
 Output: 51 suites ok; test-meta-docs-registry failed "docs/FEATURES.md is fresh". After
         `bash lib/registry/feature-registry.sh generate docs/FEATURES.md` that suite prints "Passed: 120 / 120 All meta tests passed."
-Verdict: see the final run
+Re-runs after the fix: test-meta-docs-registry 120/120, test-boundary-lint 5/5, test-no-scattered-ids 9/9, test-ceremony-fits-diff 25/25,
+        test-hooks 826 pass 0 fail (after the backlog fixture change), test-lanes-data 83 pass 0 fail, test-config-registry 59 pass 0 fail.
+        A second full `--changed` run queued behind other sessions' runs on the per-host lock for 20 minutes and was stopped.
+Verdict: PASS
 ```
 
 The first run listed `test-lanes-data` 382 s, `test-hooks` 315 s, `test-wrap-land` 268 s as the slowest.
