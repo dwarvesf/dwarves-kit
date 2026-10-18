@@ -44,7 +44,6 @@ GATE_LEDGER="$LIB_ROOT/gate/gate-ledger.sh"
 
 # shellcheck source=lib/telemetry/kit-log-dir.sh
 source "$LIB_ROOT/telemetry/kit-log-dir.sh" || { echo "weekend-batch: lib/telemetry/kit-log-dir.sh missing or unreadable" >&2; exit 1; }
-kit_migrate_log_dir || true
 LOG_DIR="$(kit_resolve_log_dir)"
 RUNS_DIR="$LOG_DIR/runs"
 

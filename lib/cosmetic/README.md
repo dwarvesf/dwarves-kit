@@ -70,7 +70,7 @@ strips every one of them out of the settings it writes, and prints
 |---|---|---|---|
 | `DWARVES_KIT_DEBUG` | all except `statusline` | `0` | `1` = trace to stderr |
 | `DWARVES_KIT_LOG_DIR` | `slop-cleaner` | `${XDG_STATE_HOME:-~/.local/state}/dwarves-kit/logs` | the ledger root; the nudge log and the per-session seen-file live in its `hooks/` subdir |
-| `DWARVES_KIT_SESSION_MARKER` | `slop-cleaner` | `/tmp/.dwarves-kit-session-start` | the "modified since" baseline; overridable for tests |
+| `DWARVES_KIT_SESSION_MARKER` | `slop-cleaner` | `/tmp/.dwarves-kit-session-start-<session_id>` (fallback `ppid<PPID>`) | the "modified since" baseline, one per session; markers older than a day are swept; an override replaces the whole path and skips the sweep |
 
 Full behavior, non-behavior, and degrade paths per hook, plus the three findings from the
 audit that wrote it (one of them a real defect, now fixed):

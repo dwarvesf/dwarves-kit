@@ -99,7 +99,6 @@ fi
 # The ledger-verdict cache keys (_lane_fp, _file_id), shared with lane-telemetry's cache.
 # shellcheck source=lib/gate/ledger-key.sh
 source "$GATE_DIR/ledger-key.sh" || { echo "FATAL: lib/gate/ledger-key.sh missing or unreadable" >&2; exit 1; }
-kit_migrate_log_dir || true
 LOG_DIR="$(kit_resolve_log_dir)" || exit 1
 RUNS_DIR="$LOG_DIR/runs"
 

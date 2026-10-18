@@ -39,7 +39,6 @@ LIB_ROOT="$(cd "$SELF_DIR/.." && pwd)"
 KIT_ROOT="$(cd "$SELF_DIR/../.." && pwd)"
 # shellcheck source=lib/telemetry/kit-log-dir.sh
 source "$LIB_ROOT/telemetry/kit-log-dir.sh" || { echo "FATAL: lib/telemetry/kit-log-dir.sh missing or unreadable" >&2; exit 1; }
-kit_migrate_log_dir || true
 LOG_DIR="$(kit_resolve_log_dir)"
 # shellcheck source=lib/config/kit-config.sh
 source "$LIB_ROOT/config/kit-config.sh" || { echo "FATAL: lib/config/kit-config.sh missing or unreadable" >&2; exit 1; }

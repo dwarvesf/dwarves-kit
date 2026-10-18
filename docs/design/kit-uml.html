@@ -164,10 +164,12 @@ td{padding:10px 12px 10px 0;border-bottom:1px solid var(--rule);vertical-align:t
 </div>
 
 <script type="text/plain" id="uml-cur" data-model="docs/SYSTEM-DESIGN.md">---
-rev: B
+rev: C
 decided:
   - "Hermes stays reached by two bridges, kept as separate jobs: the cockpit mirror is the estate read-mirror over bridge=on boards, and the per-board sync spoke is the two-way sync for one board."
   - "Hooks of an off module are skipped in anchor-root.sh, so a plugin install honors [modules]."
+  - "Adopted repos seed lane_gates and proof_of_done on; raw installs stay lenient."
+  - "Lowering a run's lane needs --lower --reason; the verdict in the spec must match the run ledger."
 ---
 
 # dwarves-kit
@@ -297,7 +299,7 @@ type: component
 title: Spine and lanes
 level: L2
 review:
-  - ship-gate now blocks on a DO NOT SHIP verdict, but a branch can edit its own `## Review` line. Should ship-gate also compare it with the verdict recorded in the run ledger?
+  - ship-gate compares the spec's `## Review` verdict with the one recorded in the run ledger, but the ledger is append-only, not tamper-proof: any writer can append a line. Should ledger writes be signed or fenced?
   - Seven commands write one spec file (replace-not-stack sections). Keep the single file, or split Review and Test plan into sibling files?
 lanes:
   - {id: up, name: board and planes, tone: gray}
@@ -357,7 +359,7 @@ type: component
 title: Gates and ledgers
 level: L2
 review:
-  - "`lane_gates` and `proof_of_done` default to false in kit.toml, so a fresh install blocks only default-branch pushes and fixture identities. Flip either default?"
+  - Spec-drift and descent still only warn, even in an adopted repo where `lane_gates` and `proof_of_done` are on. Should either block once a repo is adopted?
   - ship-gate closes on an unloadable ship-rules, an unaccounted push or a missing Lane in an adopted repo, and opens when no kit lib exists. Should the no-lib case also close once the kit is installed?
 nodes:
   - {id: safety, name: safety-gate, note: "always on: deletes, main push", tone: rose, at: [0, 0]}
@@ -505,7 +507,7 @@ edges:
 
 ## Session and knowledge
 
-This cluster turns transcripts and ledgers into staged proposals, ledger rows and memory notes, and answers "done before?". Every LLM pass here fails open and exits 0, so a silent failure reads as "nothing learned".
+This cluster turns transcripts and ledgers into staged proposals, ledger rows and memory notes, and answers "done before?". Every LLM pass here fails open and exits 0, and a failed call lands in `egress-failures.log`, so an outage no longer reads as "nothing learned".
 
 ```uml
 id: c-session
@@ -565,7 +567,7 @@ title: Hooks runtime and config
 level: L2
 review:
   - "`hooks.json` still registers every hook and `anchor-root.sh` skips the ones whose module is off. Generate `hooks.json` per module, or accept one bash start per skipped hook?"
-  - Hook-log and ledger migration (`cp -n`) run inside hooks on first use. Move both to install time?
+  - Migration of old logs now runs at install and adopt only, so a plugin-only machine that never runs either keeps its old logs and sees a stderr note. Is the note enough, or should `/kit:start` offer the migration?
 nodes:
   - {id: runtime, name: Claude Code runtime, note: event JSON on stdin, kind: ext, at: [0, 0]}
   - {id: anchor, name: anchor-root.sh, note: cd to repo root then exec, tone: gray, at: [1, 0]}
@@ -842,7 +844,7 @@ title: A push through the gates
 level: L3
 review:
   - Step 7 fails open (no base, bad ref, missing lib) while step 3 fails closed on an unparsable push. One policy for both?
-  - "`start --amend` lets any ledger writer re-lane a run (step 9 reads the last one). Restrict amend to the lead?"
+  - "`start --amend` may only raise a lane, but any writer can pass `--lower --reason`. Should a lowering need a marker only the operator can set?"
 participants:
   - {name: agent session, tone: violet}
   - {name: Claude Code runtime}
@@ -1141,34 +1143,34 @@ transitions:
 Ranked by blast radius, widest first. Open risks come first; the closed and accepted ones follow.
 
 - Unsandboxed workers on shared state. Both executors run `--dangerously-skip-permissions`; the queue and the serial orchestrator work in the real checkout, and protected-path writes are detected after the run, only with sanitize on. Trigger: a worker edits outside its scope overnight. Mitigation: sanitize, the XPIA fence, `#queue{}` allow-listing, wave worktrees, the `flip.lock`.
-- Enforcement defaults off. `lane_gates`, `proof_of_done`, `understanding_gate` and `commit_format` default to false, so a fresh install blocks only default-branch pushes, fixture identities, DO NOT SHIP verdicts and new board rows. The docs now say which rules are off by default (`docs/hard-rules.tsv`, and `tests/test-meta-hard-claims.sh` fails a HARD label with no code behind it), so the trigger is a consumer who skips that table. Mitigation: adopt seeds `.kit.toml`; the kit itself turns the gates on.
-- Gates that only detect. Spec-drift and descent warn and never block; the docs say so. DO NOT SHIP blocks at ship-gate (`[gate] review_verdict`), but a branch can still edit its own verdict line. Trigger: an agent rewrites the verdict. Mitigation: the review lenses record the verdict in the run ledger.
-- Ledger trust. `start --amend` has no operator or agent split, so any writer can re-lane a run; `inherit` is lead-only by convention. Trigger: a worker lowers its own lane. Mitigation: the hard-path floor still applies the full lane, and a reused override reason is refused.
 - Self-reported completion, now narrower. The queue counts `done` only after a HEAD move, a moved local branch tip or an operator PR created since the window opened; otherwise the row is `gated` with reason `no-delta`. The orchestrator still trusts a flipped box plus a `PR #n`, and `attempt-state.sh` has no lock and relies on the lead calling it in sequence. Trigger: a sub-goal claims done with a flipped box and no real PR. Mitigation: the ROADMAP box needs a real `PR #n`; tier-4 close HOLDs for a human.
-- LLM egress fails silently. Harvest, backlog-stage, skill-review, session-audit and reflect send transcript text to `claude -p` and exit 0 on any failure; flick sends slugs to Jev or Clef and fails open. Trigger: a model or auth outage reads as "nothing learned". Mitigation: `render_block` collapses whitespace in transcript-derived text; debounce and recursion guards on the hooks.
-- A hook runs migration code. batch-debt-warn sources `ledger.sh`, whose `ledger_root` runs `kit_migrate_log_dir` (a `cp -Rn`) inside a PreToolUse hook, and `hook-log-dir.sh` copies old hook logs with `cp -n` on first use. Trigger: the first merge or first logged event on a host with a legacy log dir. Mitigation: `cp -n` never overwrites and the old dir is never deleted.
-- One spec file, many writers. Seven or more commands write one spec, with replace-not-stack sections; drift voids a validate round and a second void ends it; a silent builder plus a re-dispatch race on the same files. Mitigation: the pinned blob and the round state machine.
-- Narrow verifier allowlists. Verification commands outside npm, go, pytest, `bash tests/*` and `git diff` become lead-run rows that recheck cannot audit. Mitigation: recheck re-executes the allowed ones.
-- Plugin hooks still register for every module. `hooks/hooks.json` lists every hook; `anchor-root.sh` now skips a hook whose module is off, but each skipped hook still costs one bash start. Trigger: a plugin install with most modules off. Mitigation: the lookup is one awk pass and only non-spine hooks pay for it.
-- Two meanings of "debt". stats reads it as waved gates (`gates_ovr`); quiz-gate and weekend-batch read `| DEBT |` lines. Mitigation: none.
-- Stat-keyed caches. `.gate-check.cache` and `.shipped-incomplete.cache` key on size, mtime, inode and ctime and write only for ledgers 2 seconds old. Trigger: a write inside that window. Mitigation: the 2-second rule.
-- Advisory and unwired parts. mutation-smoke and coverage-delta always exit 0; money-gate is log-only without STRICT; plugin-check gates nothing; the intake gate has no in-kit caller; recall, handoffs, explain and pitch have no `bin/` forwarder. redteam-gate is called by the operator's skills each round, so it is not dead.
-- Machine-global session marker. `/tmp/.dwarves-kit-session-start` is shared by every concurrent session on a host. Trigger: two sessions start minutes apart. Mitigation: none.
 - Degrade paths. A vendor harness runs with no turn cap, watchdog or token capture; a failed SPEC reservation lets the worker pick its own number; a goal file with no `**Branch:**` skips START.
 
 **Closed or accepted**
 
+- Enforcement defaults off. Closed in #1000 for adopted repos. Now: `/kit:adopt` seeds `lane_gates = true` and `proof_of_done = true` in a fresh `.kit.toml`; a raw install keeps `kit.toml` defaults off. Was: `lane_gates`, `proof_of_done`, `understanding_gate` and `commit_format` default to false, so a fresh install blocks only default-branch pushes, fixture identities, DO NOT SHIP verdicts and new board rows. The docs now say which rules are off by default (`docs/hard-rules.tsv`, and `tests/test-meta-hard-claims.sh` fails a HARD label with no code behind it), so the trigger is a consumer who skips that table. Mitigation: adopt seeds `.kit.toml`; the kit itself turns the gates on.
+- Gates that only detect. Closed in #1002 for the verdict part. Now: ship-gate compares the spec's last `## Review` verdict with the one recorded in the run ledger and blocks on a mismatch; spec-drift and descent still warn only. Was: spec-drift and descent warn and never block; the docs say so. DO NOT SHIP blocks at ship-gate (`[gate] review_verdict`), but a branch can still edit its own verdict line. Trigger: an agent rewrites the verdict. Mitigation: the review lenses record the verdict in the run ledger.
+- Ledger trust. Closed in #1002. Now: `start --amend` may only raise a lane; lowering exits 65 unless `--lower --reason`, which appends `GATE | lane-lower | override`. Limit: the ledger is append-only by convention, so a writer can still append lines. Was: `start --amend` has no operator or agent split, so any writer can re-lane a run; `inherit` is lead-only by convention. Trigger: a worker lowers its own lane. Mitigation: the hard-path floor still applies the full lane, and a reused override reason is refused.
+- LLM egress fails silently. Closed in #1001. Now: a failed, timed-out or empty `claude -p` call appends to `egress-failures.log`, `egress-fail.sh summary` prints one line, and `/kit:start` shows it. Was: harvest, backlog-stage, skill-review, session-audit and reflect send transcript text to `claude -p` and exit 0 on any failure; flick sends slugs to Jev or Clef and fails open. Trigger: a model or auth outage reads as "nothing learned". Mitigation: `render_block` collapses whitespace in transcript-derived text; debounce and recursion guards on the hooks.
+- A hook runs migration code. Closed in #1000. Now: `lib/telemetry/kit-migrate.sh` copies the old corpus and hook logs once, from `install.sh` and `/kit:adopt`; the resolvers only resolve and print one stderr note while a legacy dir is unmigrated. Was: batch-debt-warn sources `ledger.sh`, whose `ledger_root` runs `kit_migrate_log_dir` (a `cp -Rn`) inside a PreToolUse hook, and `hook-log-dir.sh` copies old hook logs with `cp -n` on first use. Trigger: the first merge or first logged event on a host with a legacy log dir. Mitigation: `cp -n` never overwrites and the old dir is never deleted.
+- Two meanings of "debt". Closed in #1001. Now: the stats metric is `waived_gates`; `| DEBT |` lines stay understanding debt. Was: stats read waived gates (`gates_ovr`) as debt.
+- Machine-global session marker. Closed in #1001. Now: slop-cleaner keys the marker `/tmp/.dwarves-kit-session-start-<session_id>` (fallback ppid) and sweeps markers older than a day. Was: one shared `/tmp/.dwarves-kit-session-start`.
 - Board has no single writer. Closed in #994. `backlog.sh add` mints the id and writes one row under the shared board lock, in the target table's own column count; `board capture`, `board promote`, `/kit:assign` freeform, `/kit:wayfind` and `web-drift` all call it. Residual: consumer boards use `merge=union`, which lands both rows of an ID collision; `publish` detects duplicates after a rebase and `wrap` runs `dedupe-all`.
 - Staging has two lock domains. Closed in #994. `staging-format.py` holds `staging_lock`, `append_blocks`, `rewrite` and an `append` verb; reflect, promote, anomalies, the stage hooks, session-audit and session-intel write through them, and promote re-reads the buffer inside its hold.
 - Wave converge can record "merged" for nothing. Closed in #997. Converge emits `merged` only when `gh pr view` reports the PR MERGED; otherwise it emits `merge-dry-run`. The default `WAVE_MERGE_CMD` is still a dry run, so a real merge needs a wrapper that passes `--execute`.
-- Hook-log split brain. Closed in #993. Hook logs live in `<ledger root>/hooks/` through `hook-log-dir.sh`; the first use copies old logs in with `cp -n` and never deletes the old dir.
+- Hook-log split brain. Closed in #993. Hook logs live in `<ledger root>/hooks/` through `hook-log-dir.sh`; old logs are copied in with `cp -n` by `kit-migrate.sh` at install time (was first use, until #1000) and the old dir is never deleted.
 - Four transcript parsers. Closed in #993. `lib/session/parse_transcript.py` gains `--tail-text` and `--harvest-text`; `hooks/harvest.sh` and `lib/skill-curator` call them. harvest and transcript.sh now need `python3`.
 - Consumer wiring gaps. Closed in #996 and this sweep. `lib/config/modules.tsv` is the one module table that install.sh and adopt.sh read; a fresh install wires the spine plus `board`; `install.sh` refuses to wire hooks beside a plugin install unless `--force-both`; `anchor-root.sh` honors the module choice for plugin installs.
 - Hermes bridges. Accepted, operator decision. Both stay as separate jobs: the cockpit mirror (`board-mirror.sh`, `bridge=on` in a consumer's boards registry) is the estate read-mirror over those boards, and the per-board sync spoke (`sources/hermes.py`) is the two-way sync for one board's job. Retiring either breaks a running job. Residual: writeback collapses four states to `ready`, a closed held PR is never re-proposed, and one failed fetch skips the whole mirror tick (the skip rule prevents a partial registry from archiving cards).
+- One spec file, many writers. Accepted: watch voided rounds. Seven or more commands write one spec, with replace-not-stack sections; drift voids a validate round and a second void ends it; a silent builder plus a re-dispatch race on the same files. Mitigation: the pinned blob and the round state machine.
+- Narrow verifier allowlists. Accepted: the narrow list is the safer default. Verification commands outside npm, go, pytest, `bash tests/*` and `git diff` become lead-run rows that recheck cannot audit. Mitigation: recheck re-executes the allowed ones.
+- Plugin hooks still register for every module. Accepted: one bash start per skipped hook is cheap. `hooks/hooks.json` lists every hook; `anchor-root.sh` now skips a hook whose module is off, but each skipped hook still costs one bash start. Trigger: a plugin install with most modules off. Mitigation: the lookup is one awk pass and only non-spine hooks pay for it.
+- Stat-keyed caches. Accepted: the window is 2 s and a recheck is cheap. `.gate-check.cache` and `.shipped-incomplete.cache` key on size, mtime, inode and ctime and write only for ledgers 2 seconds old. Trigger: a write inside that window. Mitigation: the 2-second rule.
+- Advisory and unwired parts. Accepted: advisory by design; the `bin/` forwarders come with the workset fold. mutation-smoke and coverage-delta always exit 0; money-gate is log-only without STRICT; plugin-check gates nothing; the intake gate has no in-kit caller; recall, handoffs, explain and pitch have no `bin/` forwarder. redteam-gate is called by the operator's skills each round, so it is not dead.
 
 ## Drift register
 
-Every doc-versus-code mismatch the read-only pass found, deduplicated. "Fix" names the side that should move, or `FIXED in #N` / `NOT APPLICABLE` once a PR settled it. Row 15 is the only row still open.
+Every doc-versus-code mismatch the read-only pass found, deduplicated. "Fix" names the side that should move, or `FIXED in #N` / `NOT APPLICABLE` once a PR settled it. No row is open.
 
 | # | Fix | Doc claim | Code reality | Locations |
 |---|---|---|---|---|
@@ -1186,7 +1188,7 @@ Every doc-versus-code mismatch the read-only pass found, deduplicated. "Fix" nam
 | 12 | FIXED in #993 | `DWARVES_KIT_LOG_DIR` moves the hook log dir; Tier B hook logs live in `~/.local/state/dwarves-kit/logs` | It is also the ledger-root alias; hooks write to `~/.claude/dwarves-kit/logs` Now: hook logs live in `<ledger root>/hooks/` through hook-log-dir.sh, and the docs say so. | docs/hooks.md:11-12, lib/stats/docs/ledger-event-schema.md:~91, lib/telemetry/kit-log-dir.sh:44-47, hooks/ship-gate.sh:101,124 |
 | 13 | FIXED in #998 | money-gate prints "confirm before applying" | Only with `MONEY_GATE_STRICT`; otherwise it only logs Now: the money-gate header, README and FEATURES row say log-only without STRICT. | docs/hooks.md money-gate row, hooks/money-gate.sh:156-168 |
 | 14 | FIXED in #998 | ship-gate "FAILS OPEN on any ambiguity" | Blocks on unloadable ship-rules, an unaccounted push, an unreadable marker, a missing Lane Now: the ship-gate header lists where it closes and where it opens. | hooks/ship-gate.sh:8-12,87-99,163-187,398-409 |
-| 15 | code | No hook reaches kit-log-dir.sh transitively | batch-debt-warn does, and runs the migration | lib/telemetry/kit-log-dir.sh:19-21, hooks/batch-debt-warn.sh:19-23 |
+| 15 | FIXED in #1000 | No hook reaches kit-log-dir.sh transitively | batch-debt-warn does, and ran the migration Now: kit-log-dir.sh only resolves; `kit-migrate.sh` runs the copy from install.sh and adopt. | lib/telemetry/kit-log-dir.sh:19-21, hooks/batch-debt-warn.sh:19-23 |
 | 16 | FIXED in #998 | "Where things write to disk" lists the hook logs | Omits ship-gate.log, board-row-gate.log, mega-merge.log, merge-watch/, both `.cache` files Now: the architecture list names the hook logs under `<ledger root>/hooks/`, mega-merge.log, merge-watch/ and both caches. | docs/architecture.md:~583-591 |
 | 17 | NOT APPLICABLE | lib/money-gate is a module | It holds only SPEC.md; the code is hooks/money-gate.sh; lib/gate SPEC is a known gap Reason: lib/money-gate holds README, SPEC and proof-of-done on purpose: tests/test-kit-contract.sh requires it as the module's docs home, and the hook stays in hooks/ (see #992). | lib/money-gate/SPEC.md:46-51, lib/telemetry/docs/proof-of-done.md:~10, lib/gate/README.md |
 | 18 | FIXED in #997 | queue.sh and orchestrate.sh share no code | `orchestrate.sh queue <src>` execs `queue.sh run` Now: execution-planes says `orchestrate.sh queue` execs `queue.sh run`. | docs/execution-planes.md:46-48, lib/queue/orchestrate.sh:2884 |

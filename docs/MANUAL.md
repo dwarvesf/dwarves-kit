@@ -575,10 +575,10 @@ Log paths (line format `timestamp | EVENT | detail | project_dir`). The **run co
 that feeds `/kit:retro` and the effectiveness eval (`runs/<rid>.log`, `completeness.log`,
 `proof-overrides.log`) defaults to `${XDG_STATE_HOME:-~/.local/state}/dwarves-kit/logs/`
 (SPEC-097: outside the plugin-reinstall blast zone so it survives a reinstall; an existing
-`~/.claude/dwarves-kit/logs` corpus is migrated in additively on first use). The **hook
+`~/.claude/dwarves-kit/logs` corpus is migrated in additively at install time by `lib/telemetry/kit-migrate.sh`). The **hook
 diagnostic logs** above (`safety-gate.log`, `slop-cleaner.log`, etc.) live in a `hooks/`
 subdirectory of that same ledger root (`lib/telemetry/hook-log-dir.sh`), so a plugin reinstall
-no longer erases the BLOCKED trail; the first run copies any old
+no longer erases the BLOCKED trail; the same install-time step copies any old
 `~/.claude/dwarves-kit/logs/*.log` hook logs in. Set `DWARVES_KIT_LOG_DIR` (or `KIT_LEDGER_DIR`)
 to redirect the corpus and the hook logs together (it also disables auto-migration, so an
 explicit path never ingests the legacy corpus); the test suite sets it to a throwaway `mktemp`

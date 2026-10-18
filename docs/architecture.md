@@ -579,7 +579,7 @@ Beyond the repo itself, the kit writes to:
 
 | Path | What | Who writes |
 |---|---|---|
-| `${XDG_STATE_HOME:-~/.local/state}/dwarves-kit/logs/runs/<rid>.log` | Per-run gate/routing ledger, the retro + eval corpus (DURABLE: outside the plugin-reinstall blast zone, SPEC-097; legacy `~/.claude/dwarves-kit/logs` migrated in additively) | gate-ledger.sh |
+| `${XDG_STATE_HOME:-~/.local/state}/dwarves-kit/logs/runs/<rid>.log` | Per-run gate/routing ledger, the retro + eval corpus; a lane lowered with `gate-ledger.sh start --amend --lower --reason` adds a `GATE \| lane-lower \| override` line (DURABLE: outside the plugin-reinstall blast zone, SPEC-097; legacy `~/.claude/dwarves-kit/logs` migrated in additively at install time by `lib/telemetry/kit-migrate.sh`) | gate-ledger.sh |
 | `${XDG_STATE_HOME:-~/.local/state}/dwarves-kit/logs/completeness.log` | Lane-downgrade / completeness records | lane-classify.sh (write), lane-telemetry.sh (read) |
 | `${XDG_STATE_HOME:-~/.local/state}/dwarves-kit/logs/proof-overrides.log` | Logged proof-of-done overrides | proof-ledger.sh |
 | `<ledger root>/hooks/anti-rationalization.log` | Blocked Stop-event patterns | anti-rationalization.sh |
@@ -591,6 +591,7 @@ Beyond the repo itself, the kit writes to:
 | `<ledger root>/hooks/ship-gate.log` | Ship-gate BLOCKED, ALLOWED and OFF-BY-CONFIG lines | ship-gate.sh |
 | `<ledger root>/hooks/board-row-gate.log` | Blocked new board rows | board-row-gate.sh |
 | `<ledger root>/mega-merge.log` | Mega-goal merge decisions, DRY-RUN included | lib/goal/mega-merge.sh |
+| `<ledger root>/egress-failures.log` | One `ts \| source \| reason` line per failed, timed-out or empty `claude -p` call in the harvest, backlog-stage, skill-review, session-audit and reflect-propose paths; the reader is `egress-fail.sh summary`, shown by `/kit:start` | lib/telemetry/egress-fail.sh |
 | `<ledger root>/merge-watch/<session>.log` | One line per `gh pr merge` in a session, for the batch-debt warning | batch-debt-warn.sh |
 | `<ledger root>/.gate-check.cache`, `<ledger root>/.shipped-incomplete.cache` | Verdict caches keyed on the ledger fingerprint, so an unchanged ledger skips the re-check | gate-ledger.sh, lane-telemetry.sh |
 | `.claude/debug/<slug>.md` | Per-bug evidence ledger (Symptoms / Root cause / Evidence / Eliminated / Fix attempts / Resolution) | /kit:debug |

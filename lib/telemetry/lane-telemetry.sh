@@ -34,7 +34,6 @@ source "$KIT_LIB/kit-log-dir.sh" || { echo "FATAL: lib/telemetry/kit-log-dir.sh 
 # The ledger-verdict cache keys (_lane_fp, _file_id), shared with gate-ledger check's own cache.
 # shellcheck source=lib/gate/ledger-key.sh
 source "$LIB_ROOT/gate/ledger-key.sh" || { echo "FATAL: lib/gate/ledger-key.sh missing or unreadable" >&2; exit 1; }
-kit_migrate_log_dir || true
 LOG_DIR="$(kit_resolve_log_dir)"
 RUNS_DIR="$LOG_DIR/runs"
 COMPLETENESS="$LOG_DIR/completeness.log"
