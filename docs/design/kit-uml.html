@@ -294,7 +294,7 @@ type: component
 title: Spine and lanes
 level: L2
 review:
-  - The DO NOT SHIP stop lives only in ship.md prose, and any `review ran` record satisfies the review gate whatever its verdict. Should ship-gate read the `## Review` verdict?
+  - ship-gate now blocks on a DO NOT SHIP verdict, but a branch can edit its own `## Review` line. Should ship-gate also compare it with the verdict recorded in the run ledger?
   - Seven commands write one spec file (replace-not-stack sections). Keep the single file, or split Review and Test plan into sibling files?
 lanes:
   - {id: up, name: board and planes, tone: gray}
@@ -1136,13 +1136,12 @@ Ranked by blast radius, widest first.
 - The board has no single writer. Fourteen or more paths write `BACKLOG.md`; `board_lock` covers capture, promote, sync, `set` and `dedupe`, not assign freeform, wayfind, web-drift or board-run. Consumer boards use `merge=union`, which lands both rows of an ID collision, and a misconfigured spoke once flipped 30 rows. Trigger: two sessions mint the same ID, or a shared spoke drifts. Mitigation: `publish` detects duplicate IDs after a rebase, `wrap` runs `dedupe-all`, sync has a 10-flip breaker and a worktree fence.
 - Wave converge can record "merged" for nothing. `WAVE_MERGE_CMD` defaults to `mega-merge merge` with no `--execute`, which returns 0 on a dry run; converge then emits `merged`. Trigger: any default wave run. Mitigation: tier-4 close HOLDs for a human; the ROADMAP box still needs a real `PR #n`.
 - Enforcement defaults off. `lane_gates`, `proof_of_done`, `understanding_gate` and `commit_format` default to false, so a fresh install blocks only default-branch pushes, fixture identities and new board rows. Trigger: a consumer assumes the HARD labels in the docs. Mitigation: adopt seeds `.kit.toml`; the kit itself turns the gates on.
-- Prose-only gates behind HARD claims. DO NOT SHIP stops only through `commands/ship.md` prose; any `review ran` or `battery ran` record satisfies the review gate whatever the verdict; spec-drift and descent are detect-only. Trigger: an agent skips the prose step. Mitigation: none in code.
+- Gates that only detect. Spec-drift and descent warn and never block. DO NOT SHIP now blocks at ship-gate (`[gate] review_verdict`), but a branch can still edit its own verdict line. Trigger: an agent rewrites the verdict. Mitigation: the review lenses record the verdict in the run ledger.
 - Ledger trust. `start --amend` has no operator or agent split, so any writer can re-lane a run; `inherit` is lead-only by convention. Trigger: a worker lowers its own lane. Mitigation: the hard-path floor still applies the full lane, and a reused override reason is refused.
 - Self-reported completion. The queue reads tmux pane text or a status file the run writes; `EXIT_SIGNAL: true` counts as reported, not verified. The orchestrator trusts a flipped box plus a `PR #n`. `attempt-state.sh` has no lock and relies on the lead calling it in sequence. Trigger: a run claims done with no diff. Mitigation: the breaker treats a git delta as the only verified progress.
 - LLM egress fails silently. Harvest, backlog-stage, skill-review, session-audit and reflect send transcript text to `claude -p` and exit 0 on any failure; flick sends slugs to Jev or Clef and fails open. Trigger: a model or auth outage reads as "nothing learned". Mitigation: `render_block` collapses whitespace in transcript-derived text; debounce and recursion guards on the hooks.
 - Hook-log split brain. Gate and hook logs default to `~/.claude/dwarves-kit/logs`, which a plugin reinstall can wipe; the ledgers moved to the XDG root. `DWARVES_KIT_LOG_DIR` moves both, since it is also a ledger-root alias. Trigger: a reinstall erases the BLOCKED and OFF-BY-CONFIG trail. Mitigation: none.
 - Staging has two lock domains. drain locks `<staging>.lock`, promote locks the board, and stats and the hooks append with no lock; promote rewrites the whole staging file. Trigger: a promote runs while a proposer appends. Mitigation: none; the append is lost.
-- Bug lane cannot record its gate. The bug lane requires a `debug` gate, and no command records one. Trigger: every bug-lane ship. Mitigation: a manual `record` or `override`.
 - Consumer wiring gaps. adopt.sh wires fewer modules than install.sh; plugin-only machines get hook paths that do not exist; plugin plus bash double-fires every hook. Trigger: adopting a repo on a plugin-only host. Mitigation: onboard discloses the mode.
 - A hook runs migration code. batch-debt-warn sources `ledger.sh`, whose `ledger_root` runs `kit_migrate_log_dir` (a `cp -Rn`) inside a PreToolUse hook. Trigger: the first merge of a session on a host with a legacy log dir. Mitigation: `cp -n` never overwrites.
 - One spec file, many writers. Seven or more commands write one spec, with replace-not-stack sections; drift voids a validate round and a second void ends it; a silent builder plus a re-dispatch race on the same files. Mitigation: the pinned blob and the round state machine.
@@ -1161,14 +1160,14 @@ Every doc-versus-code mismatch the read-only pass found, deduplicated. "Fix" nam
 
 | # | Fix | Doc claim | Code reality | Locations |
 |---|---|---|---|---|
-| 1 | code (ship-gate reads `## Review`) or doc | The ship gate blocks on DO NOT SHIP (HARD) | No hook or gate lib reads the verdict; only ship.md prose stops | docs/WORKFLOW.md:167, docs/workflow-paths.md:299, examples/hello-spec/WORKFLOW.md:35, commands/ship.md:14 |
+| 1 | FIXED in #990 | The ship gate blocks on DO NOT SHIP (HARD) | ship-gate now reads the last `## Review` verdict and blocks on DO NOT SHIP, behind `[gate] review_verdict` (default on) | hooks/ship-gate.sh, kit.toml, lib/gate/README.md |
 | 2 | doc | Spec is `[HARD: spec-drift guard]` | spec-drift-guard warns and never blocks | docs/WORKFLOW.md:180, docs/workflow-map.md:114-116, hooks/spec-drift-guard.sh:2-4 |
 | 3 | doc | `/kit:think` dispatches brief-reviewer plus advisor; `/kit:ship` dispatches advisor | think dispatches only brief-reviewer; ship has no advisor; advisor runs in review-team, spec, battery, mega | docs/workflow-paths.md:235,300,394, commands/think.md:72 |
 | 4 | doc | The validate round has 5 reviewers | 7 reviewers | commands/start.md:48, commands/spec-validate.md:9, docs/FEATURES.md:42 |
 | 5 | code comment | "the 11 type names"; precedence list omits `review` | `types` prints 12; `review` is rule 6b | lib/classify/task-type-classify.sh:42,97,130 |
 | 6 | doc | next.md cites `/wrap-session` | only commands/wrap.md exists | commands/next.md:56 |
 | 7 | doc | `/kit:verify` only appends the log plus a ledger line | Step 6b mutation-smoke mutates and restores the tree and writes MUTATION; Step 7b runs `proof-asset put` | commands/verify.md:5,62-69,127,154 |
-| 8 | code (debug records its gate) | The bug lane requires a `debug` gate | No command records `debug`; debug.md writes only an ACTION line | lib/gate/gate-ledger.sh `required bug`, commands/debug.md:48 |
+| 8 | FIXED in #989 | The bug lane requires a `debug` gate | `/kit:debug` records `debug ran` on a verified root cause, and nothing on escalation | commands/debug.md Phase 4, tests/test-gate-vocab-recording.sh |
 | 9 | doc | Required gates come from the WORKFLOW.md lane x phase matrix, parsed at runtime | Read from kit.toml `[lane.<name>]` via lane-data.sh; WORKFLOW.md is read only by dispatch-gate for the hands-off list | lib/gate/README.md:36-37 (and its ASCII diagram), lib/gate/lane-data.sh:2-4, lib/gate/dispatch-gate.sh:22 |
 | 10 | doc | Every `[gate]` key is off except `board_row_gate` | `fixture_identities` also defaults ON | lib/gate/README.md "Turning a gate on", kit.toml:122, lib/gate/gate-policy.sh:36 |
 | 11 | doc | "Two things here can actually stop you"; callables table complete | Table omits `redteam` and `proof-gate contract, skeleton, coverage`; gate.sh routes `redteam` | lib/gate/README.md:5-6, lib/gate/gate.sh:35 |
