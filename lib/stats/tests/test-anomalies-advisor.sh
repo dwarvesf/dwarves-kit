@@ -9,7 +9,7 @@
 # sub-goal's build that `read_kit()`'s subprocess into the installed `lane-telemetry.sh`
 # returns 0 rows in this local environment (a pre-existing, out-of-scope issue, see
 # `_meta/megagoals/harness-observatory/DECISIONS.md`) -- the SAME reason `test-feedback.sh`'s
-# debt/misfire fixtures currently fail here. `serial_when_parallel` is anchored on `git_fixes.ts`
+# waived-gates/misfire fixtures currently fail here. `serial_when_parallel` is anchored on `git_fixes.ts`
 # instead (the HANDOFF windowing lesson), so this suite never touches the broken path.
 #
 # The load-bearing cases:

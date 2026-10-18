@@ -172,6 +172,10 @@ write_pointer() {
 git -C "$TARGET" rev-parse --git-dir >/dev/null 2>&1 \
   || echo "adopt: warning: $TARGET is not a git repo (adopting at filesystem level anyway)" >&2
 
+# Move any legacy kit logs into the durable ledger root, once. This is the only place besides
+# install.sh that copies them; hooks and resolvers never do (lib/telemetry/kit-migrate.sh).
+[ "$DRY" -eq 1 ] || bash "$SELF_DIR/telemetry/kit-migrate.sh" || true
+
 did=0
 note() { echo "adopt: would $*"; }
 
@@ -352,7 +356,10 @@ fi
 # project's own config is NEVER overwritten by adopt, fresh or --refresh (same invariant as
 # AGENTS.md / the proof marker). --with (first run only) seeds the named modules `true`;
 # every other key seeds the kit-root default it would inherit anyway -- writing the line
-# explicitly just makes the override point visible and editable.
+# explicitly just makes the override point visible and editable. The one exception is
+# [gate] proof_of_done and lane_gates: a fresh seed turns them ON (the kit root keeps them off
+# for a raw install). An existing .kit.toml is never touched, so a repo that set or deleted
+# either key keeps its choice.
 if [ -n "$kit_root_toml" ] && [ "$RESOLVER_OK" -eq 1 ]; then
   if [ ! -f "$dotkit" ]; then
     if [ "$DRY" -eq 1 ]; then
@@ -381,20 +388,30 @@ if [ -n "$kit_root_toml" ] && [ "$RESOLVER_OK" -eq 1 ]; then
           echo "$m = $v"
         done
         echo ""
-        echo "[gate]   # quality gates, OPT-IN except board_row_gate and review_verdict (on by default). true turns one on for this"
-        echo "         # repo, false keeps it off (a false counts once this file is committed). The values"
-        echo "         # below are what resolved at adopt time (operator ~/.config/dwarves-kit/kit.toml, else the"
-        echo "         # kit default false); delete a line to follow the operator setting again. Detail: the"
-        echo "         # installed kit's lib/gate/README.md, 'Turning a gate on'. Safety gates have no key."
-        echo "         #   proof_of_done      ship-gate: a load-bearing diff needs a proof-of-done record"
-        echo "         #   lane_gates         ship-gate: the lane x phase required gates + the no-Lane refusal"
+        echo "[gate]   # quality gates. An adopted repo starts with proof_of_done and lane_gates ON (the kit root"
+        echo "         # keeps them off for a raw install). The others are OPT-IN except board_row_gate and"
+        echo "         # review_verdict (on by default). true turns a gate on for this repo, false keeps it off"
+        echo "         # (a false counts once this file is committed). To turn one of the two seeded gates off,"
+        echo "         # set \`proof_of_done = false\` or \`lane_gates = false\` below and commit. The other values are"
+        echo "         # what resolved at adopt time (operator ~/.config/dwarves-kit/kit.toml, else the kit default"
+        echo "         # false); delete a line to follow the operator setting again. Detail: the installed kit's"
+        echo "         # lib/gate/README.md, 'Turning a gate on'. Safety gates have no key."
+        echo "         #   proof_of_done      ship-gate: a load-bearing diff needs a proof-of-done record (seeded true)"
+        echo "         #   lane_gates         ship-gate: the lane x phase required gates + the no-Lane refusal (seeded true)"
         echo "         #   understanding_gate Stop hook: blocks a stop that rationalizes unfinished work"
         echo "         #   commit_format      commit-subject lint (conventional type, <=72 chars)"
         echo "         #   board_row_gate     a commit adding a new board row needs a board-row-ok: line"
         echo "         #   review_verdict     ship-gate: a spec whose last ## Review verdict is DO NOT SHIP refuses the push (on by default)"
         for g in $(bash "$SELF_DIR/gate/gate-policy.sh" keys 2>/dev/null); do
-          KIT_CONFIG_ROOT="$(dirname "$kit_root_toml")" KIT_PROJECT_ROOT="$TARGET" \
-            v="$(kit_config_get "gate.$g" "false")"
+          case "$g" in
+            # An adopted repo defaults these two ON. An operator overlay that names the key still
+            # wins; the kit root (which keeps them off for a raw install) is skipped.
+            proof_of_done|lane_gates)
+              v="$(KIT_CONFIG_ROOT=/nonexistent KIT_PROJECT_ROOT=/nonexistent kit_config_get "gate.$g" "true")" ;;
+            *)
+              KIT_CONFIG_ROOT="$(dirname "$kit_root_toml")" KIT_PROJECT_ROOT="$TARGET" \
+                v="$(kit_config_get "gate.$g" "false")" ;;
+          esac
           echo "$g = $v"
         done
       } > "$tmp"

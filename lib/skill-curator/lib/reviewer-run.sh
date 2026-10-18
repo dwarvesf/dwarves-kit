@@ -15,6 +15,14 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "$HERE/common.sh"
 # shellcheck source=lib/transcript.sh
 . "$HERE/transcript.sh"
+# Egress visibility (lib/telemetry/egress-fail.sh): a failed model call stays fail-open but is ledgered.
+# The tool still runs standalone when lib/telemetry is absent, so the helper degrades to a no-op.
+if [ -f "$HERE/../../telemetry/egress-fail.sh" ]; then
+  # shellcheck source=../../telemetry/egress-fail.sh
+  . "$HERE/../../telemetry/egress-fail.sh"
+else
+  egress_fail() { :; }
+fi
 
 main() {
   local payload_file="${1:-}"
@@ -48,6 +56,7 @@ main() {
   envelope="$(printf '%s' "$input" | run_reviewer)"
   if [ -z "${envelope//[[:space:]]/}" ]; then
     si_log "reviewer: empty claude output (missing/auth/non-zero); no draft"
+    egress_fail skill-review "empty claude output"
     _ledger false "" 0 0 0 "no-output"; return 0
   fi
 
@@ -58,7 +67,7 @@ main() {
   otok="$(jq -r '.usage.output_tokens // 0' <<<"$envelope" 2>/dev/null | grep -Eo '^[0-9]+' | head -1)"; otok="${otok:-0}"
   result="$(jq -r '.result // empty' <<<"$envelope" 2>/dev/null)"
   if [ -z "$result" ]; then
-    si_log "reviewer: envelope had no .result; no draft"; _ledger false "" "$cost" "$itok" "$otok" "no-result"; return 0
+    si_log "reviewer: envelope had no .result; no draft"; egress_fail skill-review "envelope had no result"; _ledger false "" "$cost" "$itok" "$otok" "no-result"; return 0
   fi
 
   # Inner layer: the model's JSON {draft|null, reason}. Tolerate a stray code fence / canary line.

@@ -36,11 +36,18 @@ or `--single-source` (see below).
   you leave out starts `false` (`install.sh --with` differs: it adds to the core set). Without `--with`
   only `core` modules, today `board`, start `true`; every other module is opt-in. Edit `[modules]` any time and re-run
   `/kit:adopt` (or `--refresh`) to re-wire. Its `[gate]` block is where the blocking quality
-  gates are turned on for this repo (the four keys adopt seeds are OFF by default; `board_row_gate`,
-  `fixture_identities` and `review_verdict` default ON): adopt seeds `proof_of_done`,
-  `lane_gates`, `understanding_gate`, and `commit_format` with the values that resolved at adopt
-  time and a comment explaining each; set one to `true`, commit, and it applies from the next
-  hook fire (no re-adopt). Safety gates have no key. Detail: `lib/gate/README.md` "Turning a gate on".
+  gates are set for this repo. A fresh seed turns `proof_of_done` and `lane_gates` ON (the kit
+  root keeps them off for a raw install, so a repo adopted before this change keeps whatever its
+  file says); an operator `kit.toml` that names either key still wins. `understanding_gate` and
+  `commit_format` are seeded with the values that resolved at adopt time (off by default), and
+  `board_row_gate`, `fixture_identities` and `review_verdict` default ON. Every key gets a comment,
+  and the block says how to turn each seeded gate off: set `proof_of_done = false` or
+  `lane_gates = false` and commit. Changes apply from the next hook fire (no re-adopt). Adopt only
+  seeds a fresh file: an existing `.kit.toml` is never touched, so a key the repo set or deleted
+  stays as it is. Safety gates have no key. Detail: `lib/gate/README.md` "Turning a gate on".
+- A one-time move of old kit logs into the durable ledger root (`lib/telemetry/kit-migrate.sh`),
+  which `install.sh` also runs. It is the only place logs are copied; a hook or resolver never
+  copies. `--check` and `--dry-run` skip it.
 - `.claude/settings.json` hook entries for this project's currently-enabled hook-bearing
   modules -- a targeted jq MERGE, re-wired on every adopt run from the project's CURRENT
   `.kit.toml`, never a wholesale file rewrite. The module list and each module's hooks come from

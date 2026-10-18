@@ -28,8 +28,19 @@ if [ "${DWARVES_KIT_DEBUG:-0}" = "1" ]; then
   echo "[dwarves-kit:slop-cleaner] checking recently modified files" >&2
 fi
 
-# Session-start marker. Path is overridable for tests; prod default unchanged.
-MARKER="${DWARVES_KIT_SESSION_MARKER:-/tmp/.dwarves-kit-session-start}"
+# Session id from the hook payload (fallback: the parent pid), sanitized for a file name.
+SESSION_ID=$(printf '%s' "$INPUT" | jq -r '.session_id // "default"' 2>/dev/null || echo default)
+if [ "$SESSION_ID" = "default" ] || [ -z "$SESSION_ID" ]; then SESSION_ID="ppid$PPID"; fi
+
+# Session-start marker, one per session so concurrent sessions never share a baseline. Path is
+# overridable for tests. Default markers older than a day are swept so /tmp does not grow.
+MARKER_PREFIX="/tmp/.dwarves-kit-session-start"
+if [ -n "${DWARVES_KIT_SESSION_MARKER:-}" ]; then
+  MARKER="$DWARVES_KIT_SESSION_MARKER"
+else
+  MARKER="${MARKER_PREFIX}-${SESSION_ID//[^A-Za-z0-9._-]/_}"
+  find -H /tmp -maxdepth 1 -name '.dwarves-kit-session-start*' -type f -mmin +1440 -delete 2>/dev/null || true
+fi
 
 # If no session marker exists, create one and skip this run
 # (first Stop of the session -- no baseline to compare against)
@@ -64,7 +75,6 @@ BLOAT_FILES=""
 # its content changes. Without this the same files re-nudge on every Stop (measured:
 # the same ~7 files re-flagged up to 19x in a row). State is per-session, keyed by
 # session_id, storing "path<TAB>contenthash" for each already-reported file.
-SESSION_ID=$(printf '%s' "$INPUT" | jq -r '.session_id // "default"' 2>/dev/null || echo default)
 SEEN_LOG_DIR="$(kit_hook_log_dir)"
 mkdir -p "$SEEN_LOG_DIR" 2>/dev/null || true
 SEEN_FILE="$SEEN_LOG_DIR/slop-seen-${SESSION_ID//[^A-Za-z0-9._-]/_}.tsv"

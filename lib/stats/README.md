@@ -137,14 +137,14 @@ trigger set + surface-selection rule (quick look -> terminal; share/review -> Ar
 ### The feedback loop: `stats anomalies`
 
 Detects 3 anomaly classes over the SAME SG-02 lens (one data path, no re-query of a raw
-ledger): unpaid understanding-debt (`SUM(kit_runs.gates_ovr)` over a threshold), a
+ledger): waived gates (`SUM(kit_runs.gates_ovr)` over a threshold; not understanding debt, which is the `| DEBT |` ledger lines), a
 token-cost spike (latest `tide_tier_b_calls.cost_usd` vs. the rolling median of the prior
 window), and a gate/proof misfire rate (`lane_misroute`/`type_misroute` over a threshold,
 with a minimum-sample floor so a 1-of-1 run can never read as "100% misfiring").
 
 ```bash
 uv run stats anomalies                              # report only, writes nothing
-uv run stats anomalies --threshold debt_max=10       # tune a threshold (KEY=VALUE, repeatable)
+uv run stats anomalies --threshold waived_gates_max=10       # tune a threshold (KEY=VALUE, repeatable)
 uv run stats anomalies --propose                     # STAGE a row per fired anomaly
 ```
 
@@ -199,8 +199,8 @@ suites listed below; these four are not, and the docs should not pretend otherwi
    (`adapters.read_kit`) rather than failing loud. A silent schema drift upstream shows up
    here as blank columns, not an error.
 3. **Anomaly `home` attribution is a static per-detector guess** (`"dwarves-kit"` for
-   debt/misfire, `"ops-toolkit"` for cost-spike), not derived from the actual data; the
-   operator re-homes on promote. Debt and misfire sums are GLOBAL across every repo in
+   waived_gates/misfire, `"ops-toolkit"` for cost-spike), not derived from the actual data; the
+   operator re-homes on promote. Waived-gates and misfire sums are GLOBAL across every repo in
    `kit_runs`, not per-repo, while the proposal itself stages into wherever
    `CC_BACKLOG_STAGING`/`OPS_TOOLKIT` points (an explicit, ops-toolkit-specific opt-in
    post-05K) regardless of which repo the signal came from, a real attribution seam. And

@@ -68,6 +68,16 @@ def _repo_root():
     raise RuntimeError("session-audit: cannot locate the kit repo root (lib/session not found)")
 
 
+def _egress_fail(reason):
+    """Fail-open egress visibility: one line in the egress-failures ledger. Never raises."""
+    try:
+        subprocess.run(["bash", os.path.join(_repo_root(), "lib", "telemetry", "egress-fail.sh"),
+                        "record", "session-audit", reason],
+                       capture_output=True, timeout=15)
+    except (OSError, RuntimeError, subprocess.SubprocessError):
+        pass
+
+
 def _today():
     d = os.environ.get("SESSION_AUDIT_DATE")
     return d if d else datetime.date.today().isoformat()
@@ -109,10 +119,15 @@ def run_agent(prompt, model):
         r = subprocess.run(shlex.split(cmd), input=prompt, capture_output=True,
                            text=True, timeout=3600)
     except (OSError, subprocess.SubprocessError):
+        _egress_fail("command failed to run or timed out")
         return None
     if r.returncode != 0:
+        _egress_fail(f"command exit {r.returncode}")
         return None
-    return parse_runtime_json(r.stdout)
+    res = parse_runtime_json(r.stdout)
+    if res is None:
+        _egress_fail("empty or unparseable output")
+    return res
 
 
 def extract_recommendations(report_text):

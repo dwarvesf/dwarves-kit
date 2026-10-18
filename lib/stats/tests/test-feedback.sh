@@ -87,27 +87,27 @@ R()  { uv run stats "$@" 2>&1; }
 REBUILD() { uv run stats rebuild >/dev/null 2>&1; }
 staged_n() { [ -f "$CC_BACKLOG_STAGING" ] && grep -c '^## \[staged\]' "$CC_BACKLOG_STAGING" || echo 0; }
 
-DEBT='"key": "debt"'
+WAIVED='"key": "waived_gates"'
 COST='"key": "cost_spike"'
 MIS='"key": "misfire"'
 
 # =============================================================================================
-echo "== F-debt-over: SUM(gates_ovr)=6 (>5) fires debt, nothing else =="
+echo "== F-waived-over: SUM(gates_ovr)=6 (>5) fires waived_gates, nothing else =="
 reset; kitrun o1 "full full data data" 6; REBUILD
 OUT="$(R anomalies --json)"
-has  "F-debt-over fires debt"      "$DEBT" "$OUT"
-hasnt "F-debt-over no cost"        "$COST" "$OUT"
-hasnt "F-debt-over no misfire"     "$MIS"  "$OUT"
+has  "F-waived-over fires waived_gates"      "$WAIVED" "$OUT"
+hasnt "F-waived-over no cost"        "$COST" "$OUT"
+hasnt "F-waived-over no misfire"     "$MIS"  "$OUT"
 
-echo "== F-debt-under: SUM(gates_ovr)=5 (== debt_max, not >) does NOT fire =="
+echo "== F-waived-under: SUM(gates_ovr)=5 (== waived_gates_max, not >) does NOT fire =="
 reset; kitrun u1 "full full data data" 5; REBUILD
-hasnt "F-debt-under no debt" "$DEBT" "$(R anomalies --json)"
+hasnt "F-waived-under no waived_gates" "$WAIVED" "$(R anomalies --json)"
 
 echo "== F-cost-spike: prior 5 x0.10 + latest 0.90 (9x) fires cost_spike =="
 reset; tide_costs 0.10 0.10 0.10 0.10 0.10 0.90; REBUILD
 OUT="$(R anomalies --json)"
 has  "F-cost-spike fires cost"  "$COST" "$OUT"
-hasnt "F-cost-spike no debt"    "$DEBT" "$OUT"
+hasnt "F-cost-spike no waived_gates"    "$WAIVED" "$OUT"
 hasnt "F-cost-spike no misfire" "$MIS"  "$OUT"
 
 echo "== F-cost-nospike: 6 x0.10 (latest not >3x median) does NOT fire =="
@@ -131,7 +131,7 @@ kitrun m4 "full full data data"   0
 REBUILD
 OUT="$(R anomalies --json)"
 has  "F-misfire-over fires misfire" "$MIS"  "$OUT"
-hasnt "F-misfire-over no debt"      "$DEBT" "$OUT"
+hasnt "F-misfire-over no waived_gates"      "$WAIVED" "$OUT"
 hasnt "F-misfire-over no cost"      "$COST" "$OUT"
 
 echo "== F-misfire-boundary: 4 runs, 1 misrouted (rate == 0.25) does NOT fire =="
@@ -161,32 +161,32 @@ tide_costs 0.10 0.10 0.10 0.10 0.10 0.11   # latest 1.1x median (< 3x)
 REBUILD
 reset_staging
 OUT="$(R anomalies --propose --json)"
-hasnt "F-nc-noise reports no debt"    "$DEBT"    "$OUT"
+hasnt "F-nc-noise reports no waived_gates"    "$WAIVED"    "$OUT"
 hasnt "F-nc-noise reports no cost"    "$COST"    "$OUT"
 hasnt "F-nc-noise reports no misfire" "$MIS"     "$OUT"
 hasnt "F-nc-noise stages nothing"     '"action": "staged"' "$OUT"
 eq   "F-nc-noise zero staged blocks"  "$(staged_n)" "0"
 
 echo "== F-proposal-not-autofile: --propose stages, board byte-identical, add-backlog sees it =="
-reset; kitrun p1 "full full data data" 6; REBUILD   # debt fires
+reset; kitrun p1 "full full data data" 6; REBUILD   # waived_gates fires
 reset_staging
 BOARD_BEFORE="$(shasum -a 256 "$CC_BACKLOG_BACKLOG")"
 OUT="$(R anomalies --propose --json)"
 has  "F-pnaf reports staged"        '"action": "staged"' "$OUT"
 eq   "F-pnaf one staged block"      "$(staged_n)" "1"
-has  "F-pnaf staged block in buffer" "## [staged] Feedback: unpaid understanding-debt over threshold" "$(cat "$CC_BACKLOG_STAGING")"
+has  "F-pnaf staged block in buffer" "## [staged] Feedback: waived gates over threshold" "$(cat "$CC_BACKLOG_STAGING")"
 BOARD_AFTER="$(shasum -a 256 "$CC_BACKLOG_BACKLOG")"
 eq   "F-pnaf board BYTE-IDENTICAL (not auto-filed)" "$BOARD_AFTER" "$BOARD_BEFORE"
 # the staged proposal is consumable by the REAL add-backlog human gate:
 if [ -f "$ADDBL" ]; then
   ADDBL_OUT="$(python3 "$ADDBL" list 2>&1)"
-  has  "F-pnaf add-backlog lists the proposal" "unpaid understanding-debt over threshold" "$ADDBL_OUT"
+  has  "F-pnaf add-backlog lists the proposal" "waived gates over threshold" "$ADDBL_OUT"
 else
   echo "SKIP  F-pnaf add-backlog cross-check (cc-backlog is an ops-toolkit-only sibling tool; not present in this repo)"
 fi
 
 echo "== F-dedup: a second --propose stages NOTHING new (idempotent) =="
-OUT2="$(R anomalies --propose --json)"   # same lens, staging already has the debt block
+OUT2="$(R anomalies --propose --json)"   # same lens, staging already has the waived_gates block
 has  "F-dedup second run marks duplicate" '"action": "duplicate"' "$OUT2"
 hasnt "F-dedup second run stages nothing"  '"action": "staged"'    "$OUT2"
 eq   "F-dedup still exactly one block"     "$(staged_n)" "1"
@@ -196,7 +196,7 @@ echo "== F-no-staging-config (05K over-test): --propose with a real proposal to 
            crash, and NEVER a silent write to a stray cwd-relative path (the exact failure
            mode CC_BACKLOG_STAGING/OPS_TOOLKIT losing their ops-toolkit-hardcoded default
            post-05K-move could have reintroduced) =="
-reset; kitrun ns1 "full full data data" 6; REBUILD   # debt fires, same shape as F-pnaf
+reset; kitrun ns1 "full full data data" 6; REBUILD   # waived_gates fires, same shape as F-pnaf
 reset_staging
 nontransient_tree() { find "$ROOT" -type f -not -path '*/.venv/*' -not -path '*__pycache__*' -not -name '*.pyc' | sort; }
 TREE_BEFORE="$(nontransient_tree)"
@@ -212,12 +212,12 @@ eq "F-no-staging-config no stray file appeared under \$ROOT (no cwd-relative wri
 echo "== F-threshold-flag: the one --threshold flag tunes each cutoff =="
 reset; kitrun t1 "full full data data" 6; tide_costs 0.10 0.10 0.10 0.10 0.10 0.15; REBUILD
 DEF="$(R anomalies --json)"
-has  "F-threshold default fires debt"   "$DEBT" "$DEF"
+has  "F-threshold default fires waived_gates"   "$WAIVED" "$DEF"
 hasnt "F-threshold default no cost (1.5x<3x)" "$COST" "$DEF"
-hasnt "F-threshold debt_max=100 suppresses debt" "$DEBT" "$(R anomalies --threshold debt_max=100 --json)"
+hasnt "F-threshold waived_gates_max=100 suppresses waived_gates" "$WAIVED" "$(R anomalies --threshold waived_gates_max=100 --json)"
 has  "F-threshold cost_multiplier=1.1 makes cost fire" "$COST" "$(R anomalies --threshold cost_multiplier=1.1 --json)"
 R anomalies --threshold bogus=1 >/dev/null 2>&1; eq "F-threshold unknown key exits 2" "$?" "2"
-R anomalies --threshold debt_max=abc >/dev/null 2>&1; eq "F-threshold non-numeric exits 2" "$?" "2"
+R anomalies --threshold waived_gates_max=abc >/dev/null 2>&1; eq "F-threshold non-numeric exits 2" "$?" "2"
 
 echo "== F-readonly-nc: detect+propose mutates NO source ledger (byte-identical) =="
 reset; kitrun r1 "full full data data" 6; tide_costs 0.10 0.10 0.10 0.10 0.10 0.90; REBUILD

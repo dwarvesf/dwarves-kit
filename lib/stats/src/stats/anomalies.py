@@ -37,7 +37,7 @@ from . import materialize
 # Every key is overridable by the single repeatable `--threshold KEY=VALUE` CLI flag. These
 # are deliberately loose-ish scaffolds to be tightened after real ledger data accrues.
 DEFAULTS: dict[str, float] = {
-    "debt_max": 5.0,          # >5 accumulated waved gates (overrides) = debt piling up
+    "waived_gates_max": 5.0,  # >5 accumulated waved gates (gate overrides) = waivers piling up
     "cost_window": 5.0,       # rolling-median window AND min-sample floor for a cost spike
     "cost_multiplier": 3.0,   # latest cost > 3x the recent median = a spike, not variance
     "misfire_rate_max": 0.25,  # >25% of runs misrouting is signal, not noise
@@ -89,23 +89,23 @@ class Anomaly:
 
 # --- detectors: each reads ONLY via materialize.query (one data path) --------------------
 
-def _detect_debt(th: dict) -> Anomaly | None:
-    """Unpaid understanding-debt: SUM(kit_runs.gates_ovr). A gate override is a consciously
-    WAVED gate = unpaid debt (the signal materialized in the lens today;)."""
+def _detect_waived_gates(th: dict) -> Anomaly | None:
+    """Waived gates: SUM(kit_runs.gates_ovr). A gate override is a consciously WAVED gate. This
+    is NOT understanding debt: that is the `| DEBT |` ledger line (`reflect debt list`)."""
     _cols, rows = materialize.query("SELECT COALESCE(SUM(gates_ovr), 0) AS n FROM kit_runs")
     n = int(rows[0][0] or 0) if rows else 0
-    if n <= th["debt_max"]:
+    if n <= th["waived_gates_max"]:
         return None
     return Anomaly(
-        key="debt",
-        title="Feedback: unpaid understanding-debt over threshold",
-        intent=(f"Pay down accumulated understanding debt: {n} waved gates (kit gate overrides) "
-                f"exceed the threshold of {int(th['debt_max'])}."),
-        approach=("Review the kit runs carrying gate overrides (kit_runs.gates_ovr) and engage the "
-                  "deferred/waved items (weekend debt-paydown). Detected via `ledger anomalies`."),
+        key="waived_gates",
+        title="Feedback: waived gates over threshold",
+        intent=(f"Review the waived gates: {n} gate overrides exceed the threshold of "
+                f"{int(th['waived_gates_max'])}."),
+        approach=("Review the kit runs carrying gate overrides (kit_runs.gates_ovr) and decide per "
+                  "override whether the waiver still stands. Detected via `stats anomalies`."),
         tags="#u-mid #f-mid",
         home="dwarves-kit",
-        metric=f"gates_ovr_sum={n}",
+        metric=f"waived_gates={n}",
     )
 
 
@@ -607,7 +607,7 @@ def _detect_ceremony_share(th: dict) -> Anomaly | None:
 
 
 DETECTORS = (
-    _detect_debt, _detect_cost_spike, _detect_misfire, _detect_unknown_density,
+    _detect_waived_gates, _detect_cost_spike, _detect_misfire, _detect_unknown_density,
     _detect_ceremony, _detect_token_runaway, _detect_serial_when_parallel,
     _detect_memory_hygiene, _detect_review_fp, _detect_ceremony_share,
 )

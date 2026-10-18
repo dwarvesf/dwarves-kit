@@ -23,7 +23,7 @@ DESC="$(awk '/^description:/{f=1} f{print} /^---$/ && f && NR>2{exit}' "$SKILL" 
 # instead so a wrapped description still matches.
 RAW="$(sed -n '1,/^---$/p' "$SKILL" | sed -n '2,$p')"
 has "R-trigger 'show me the ledger state'" 'show me the ledger state' "$RAW"
-has "R-trigger 'my debt'"                  'my debt'                  "$RAW"
+has "R-trigger 'my waived gates'"           'my waived gates'          "$RAW"
 has "R-trigger 'telemetry'"                'telemetry'                "$RAW"
 has "R-trigger 'token cost'"               'token cost'               "$RAW"
 has "R-trigger NOT-case present"           'NOT for'                  "$RAW"

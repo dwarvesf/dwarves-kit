@@ -4,8 +4,9 @@
 # migration) and that per-gate override reasons are enforced (blanket overrides rejected).
 #
 # Isolation: every case runs the real libs under a FAKE $HOME + $XDG_STATE_HOME with
-# DWARVES_KIT_LOG_DIR unset, so the resolver picks the durable default and migration runs
-# from a seeded fake legacy -- the real machine corpus is never touched.
+# DWARVES_KIT_LOG_DIR unset, so the resolver picks the durable default and the install-time
+# migration (lib/telemetry/kit-migrate.sh) runs from a seeded fake legacy -- the real machine
+# corpus is never touched. Runtime libs only resolve; they never copy.
 #
 # Run: bash tests/test-ledger-durability.sh   (exit 0 = all AC green)
 
@@ -17,6 +18,7 @@ LC="$KIT_DIR/lib/classify/lane-classify.sh"
 PL="$KIT_DIR/lib/gate/proof-ledger.sh"
 PREC="$KIT_DIR/lib/precedent/precedent.sh"
 MM="$KIT_DIR/lib/goal/mega-merge.sh"
+KM="$KIT_DIR/lib/telemetry/kit-migrate.sh"
 
 PASS=0; FAIL=0; TOTAL=0
 RED='\033[0;31m'; GREEN='\033[0;32m'; NC='\033[0m'
@@ -57,7 +59,8 @@ for f in kit-harden-01-eff-val kit-harden-08-megamirror plugin-native-operate-co
   echo "2026 | START | lane=full classified=full type=spec-feature repo=dwarves-kit" > "$LEGACY/runs/$f.log"
 done
 echo "2026 | LANE-CHECK | x" > "$LEGACY/completeness.log"
-run "$GL" record migrun build ran "trigger migrate" >/dev/null 2>&1
+run "$KM" >/dev/null 2>&1
+run "$GL" record migrun build ran "after migrate" >/dev/null 2>&1
 MIG_OK=0
 for f in kit-harden-01-eff-val kit-harden-08-megamirror plugin-native-operate-contract; do
   [ -f "$DURABLE/runs/$f.log" ] || MIG_OK=1
@@ -77,9 +80,9 @@ REP="$(run "$LT" report 2>/dev/null)"; MIS="$(run "$LT" misfires 2>/dev/null)"
 # --- AC4a: idempotent (sentinel short-circuit) ---
 new_env
 echo "OLD-CONTENT" > "$LEGACY/runs/clash.log"
-run "$GL" record c1 think ran x >/dev/null 2>&1     # first access migrates + drops sentinel
+run "$KM" >/dev/null 2>&1                           # first migrate copies + drops sentinel
 echo "NEW-CONTENT" > "$DURABLE/runs/clash.log"       # durable copy diverges
-run "$GL" record c2 think ran x >/dev/null 2>&1     # second access must NOT re-copy
+run "$KM" >/dev/null 2>&1                           # second migrate must NOT re-copy
 grep -q "NEW-CONTENT" "$DURABLE/runs/clash.log"; assert "AC4a: second migrate does not clobber (sentinel short-circuit)" $?
 [ -f "$DURABLE/.migrated" ]; assert "AC4a: .migrated sentinel present" $?
 
@@ -87,30 +90,63 @@ grep -q "NEW-CONTENT" "$DURABLE/runs/clash.log"; assert "AC4a: second migrate do
 new_env
 echo "LEGACY-CONTENT" > "$LEGACY/runs/pre.log"
 mkdir -p "$DURABLE/runs"; echo "PRE-EXISTING" > "$DURABLE/runs/pre.log"   # conflict present, no sentinel yet
-run "$GL" record cp1 think ran x >/dev/null 2>&1     # migrate's cp -Rn must skip the existing file
+run "$KM" >/dev/null 2>&1                           # migrate's cp -Rn must skip the existing file
 grep -q "PRE-EXISTING" "$DURABLE/runs/pre.log"; assert "AC4b: cp -Rn does not clobber a pre-existing durable file (real copy path)" $?
 
 # --- AC5: env override honored, and migration does NOT pull the seeded/real corpus ---
 new_env
 echo "2026 | START | x" > "$LEGACY/runs/should-not-migrate.log"
 EXPLICIT="$(_mk)/explicit"
+env HOME="$HH" XDG_STATE_HOME="$XX" DWARVES_KIT_LOG_DIR="$EXPLICIT" bash "$KM" >/dev/null 2>&1
 env HOME="$HH" XDG_STATE_HOME="$XX" DWARVES_KIT_LOG_DIR="$EXPLICIT" bash "$GL" record e1 think ran x >/dev/null 2>&1
 [ -f "$EXPLICIT/runs/e1.log" ]; assert "AC5: explicit DWARVES_KIT_LOG_DIR is honored" $?
 [ ! -f "$EXPLICIT/runs/should-not-migrate.log" ]; assert "AC5: env-set path does NOT ingest legacy corpus" $?
 
-# --- T3 per-lib wiring smokes: all corpus libs resolve+migrate, not just gate-ledger ---
+# --- T3 per-lib wiring smokes: every corpus lib resolves the durable path, none copies ---
 new_env
 run "$PL" override some-slug "a proof override reason" >/dev/null 2>&1 || true
 [ -f "$DURABLE/proof-overrides.log" ]; assert "T3: proof-ledger writes proof-overrides.log to the durable path" $?
 new_env; echo "2026 | START | x" > "$LEGACY/runs/seed.log"
 run "$PREC" find "durable ledger storage" >/dev/null 2>&1 || true
-[ -f "$DURABLE/.migrated" ]; assert "T3: precedent sources resolver + migrates on load" $?
-new_env
+[ ! -f "$DURABLE/.migrated" ] && [ ! -f "$DURABLE/runs/seed.log" ]; assert "T3: precedent sources the resolver and does NOT migrate on load" $?
+new_env; echo "2026 | START | x" > "$LEGACY/runs/seed.log"
 run "$MM" gate somerid normal >/dev/null 2>&1 || true
-[ -f "$DURABLE/.migrated" ]; assert "T3: mega-merge sources resolver + migrates on load" $?
+[ ! -f "$DURABLE/.migrated" ] && [ ! -f "$DURABLE/runs/seed.log" ]; assert "T3: mega-merge sources the resolver and does NOT migrate on load" $?
+
+# --- runtime never copies; a missed install is visible (drift: a hook ran migration code) ---
+new_env; echo "2026 | START | x" > "$LEGACY/runs/seed.log"
+NOTE="$(run "$GL" record rt1 think ran x 2>&1 >/dev/null)"
+[ -f "$DURABLE/runs/rt1.log" ]; assert "runtime: ledger append still lands in the durable root" $?
+[ ! -e "$DURABLE/runs/seed.log" ] && [ ! -e "$DURABLE/.migrated" ]; assert "runtime: ledger_root copies nothing and drops no sentinel" $?
+printf '%s' "$NOTE" | grep -q "never migrated"; assert "runtime: an unmigrated legacy dir leaves a one-line note on stderr" $?
+run "$KM" >/dev/null 2>&1
+NOTE="$(run "$GL" record rt2 think ran x 2>&1 >/dev/null)"
+[ -f "$DURABLE/runs/seed.log" ] && [ -f "$DURABLE/hooks/.migrated" ]; assert "install: kit-migrate copies the corpus and seals the hooks dir" $?
+[ -z "$NOTE" ]; assert "install: after kit-migrate the note is gone" $?
+
+# --- the hook named in the drift row: batch-debt-warn resolves the root and copies nothing ---
+new_env; echo "2026 | START | x" > "$LEGACY/runs/seed.log"
+printf '{"session_id":"s1","tool_input":{"command":"gh pr merge 7"}}' \
+  | env -u DWARVES_KIT_LOG_DIR HOME="$HH" XDG_STATE_HOME="$XX" CLAUDE_PLUGIN_ROOT="$KIT_DIR" bash "$KIT_DIR/hooks/batch-debt-warn.sh" >/dev/null 2>&1
+[ -f "$DURABLE/merge-watch/s1.log" ]; assert "hook: batch-debt-warn still appends its merge-watch line to the durable root" $?
+[ ! -e "$DURABLE/runs/seed.log" ] && [ ! -e "$DURABLE/.migrated" ]; assert "hook: batch-debt-warn ran no migration (nothing copied, no sentinel)" $?
+
+# --- the two callers of the one migrate entry point ---
+new_env; echo "2026 | START | x" > "$LEGACY/runs/seed.log"
+TGT="$(_mk)"; git -C "$TGT" init -q 2>/dev/null
+run "$KIT_DIR/lib/adopt.sh" "$TGT" >/dev/null 2>&1
+[ -f "$DURABLE/runs/seed.log" ] && [ -f "$DURABLE/.migrated" ]; assert "adopt: a real adopt runs the one-time migration" $?
+new_env; echo "2026 | START | x" > "$LEGACY/runs/seed.log"
+TGT="$(_mk)"; git -C "$TGT" init -q 2>/dev/null
+run "$KIT_DIR/lib/adopt.sh" --dry-run "$TGT" >/dev/null 2>&1
+[ ! -e "$DURABLE/.migrated" ]; assert "adopt: --dry-run migrates nothing" $?
+grep -q 'lib/telemetry/kit-migrate.sh' "$KIT_DIR/install.sh"; assert "install: install.sh calls the one migrate entry point" $?
+n_cp="$(grep -c 'cp -Rn\|cp -n' "$KIT_DIR/lib/ledger/ledger.sh" "$KIT_DIR/lib/telemetry/kit-log-dir.sh" "$KIT_DIR/lib/telemetry/hook-log-dir.sh" | awk -F: '{s+=$2} END{print s+0}')"
+[ "$n_cp" -eq 0 ]; assert "runtime libs (ledger, kit-log-dir, hook-log-dir) contain no cp" $?
 
 # --- fresh-install: no legacy dir ever existed (the [ -d legacy ]-false branch) ---
 fresh_env
+run "$KM" >/dev/null 2>&1
 run "$GL" record fresh think ran x >/dev/null 2>&1
 [ -f "$DURABLE/.migrated" ]; assert "fresh-install: no-legacy branch drops sentinel, no crash" $?
 [ -f "$DURABLE/runs/fresh.log" ]; assert "fresh-install: record still writes to durable" $?
@@ -119,6 +155,7 @@ run "$GL" record fresh think ran x >/dev/null 2>&1
 new_env
 SECRET="$(_mk)"; echo "TOP-SECRET" > "$SECRET/private.txt"
 rm -rf "$LEGACY"; ln -s "$SECRET" "$LEGACY"          # legacy is now a symlink to a secret dir
+run "$KM" >/dev/null 2>&1 || true
 run "$GL" record symrun think ran x >/dev/null 2>&1 || true
 [ ! -f "$DURABLE/private.txt" ]; assert "SEC-2: migration does NOT follow a symlinked legacy dir (no exfiltration)" $?
 [ -f "$DURABLE/runs/symrun.log" ]; assert "SEC-2: record still works after refusing the symlink" $?

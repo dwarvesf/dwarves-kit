@@ -4,14 +4,18 @@
 # WHY: the run corpus that feeds /kit:retro and the effectiveness eval used to
 # default to ~/.claude/dwarves-kit/logs -- INSIDE the plugin state dir, which a plugin
 # reinstall recreates (the 2026-07-01 reinstall wiped the whole corpus). This resolver
-# moves the default OUT of that blast zone to XDG state, and migrates any legacy corpus
-# in additively on first access. Corpus-bearing libs source this instead of hard-coding
-# the path, so there is one place the default lives.
+# moves the default OUT of that blast zone to XDG state. Corpus-bearing libs source this
+# instead of hard-coding the path, so there is one place the default lives.
+#
+# This file only RESOLVES. It never copies: a hook reaches it, and a hook must not run
+# migration code. Moving an old corpus into the durable root is lib/telemetry/kit-migrate.sh,
+# run once by install.sh and lib/adopt.sh.
 #
 # Contract (all functions, no output on load, safe under set -euo pipefail):
 #   kit_resolve_log_dir   -> the durable log dir ($DWARVES_KIT_LOG_DIR wins if set)
 #   kit_legacy_log_dir    -> the original default (~/.claude/dwarves-kit/logs)
-#   kit_migrate_log_dir   -> one-time, additive, sentinel-guarded copy legacy -> durable
+#   kit_note_unmigrated [root] -> one stderr line when a legacy dir still exists and kit-migrate never ran
+#   kit_migrate_log_dir   -> kept for the corpus libs that call it at load; now only kit_note_unmigrated
 #
 # Idempotent-source guard: sourcing twice is a no-op.
 [ -n "${_KIT_LOG_DIR_SOURCED:-}" ] && return 0
@@ -61,41 +65,24 @@ kit_resolve_log_dir() {
 
 kit_legacy_log_dir() { printf '%s' "$HOME/.claude/dwarves-kit/logs"; }
 
-# One-time additive migration. No-ops when:
-#   - DWARVES_KIT_LOG_DIR is set (explicit path = caller owns it; this is what stops a
-#     test pointing at a temp dir from ingesting the real machine corpus), or
-#   - the durable dir == legacy dir (nothing to move), or
-#   - the .migrated sentinel already exists (already done).
-# Otherwise cp -Rn legacy/. durable/ (no-clobber, never deletes legacy) and drops the
-# sentinel. All failures are swallowed: a migration hiccup must never break a tool call.
-kit_migrate_log_dir() {
-  # An explicit root (either knob) means the caller owns the path -- do not migrate the
-  # machine corpus into a test's mktemp dir (: KIT_LEDGER_DIR joins the guard).
+# kit_note_unmigrated: a missed install stays visible. When the legacy default dir still exists and
+# the shared durable root has no .migrated sentinel (corpus or hooks/), say so once per process and
+# name the fix. Silent when a knob pins the root, when the root is the legacy dir or a per-project
+# one, and after kit-migrate.sh ran. It never copies and never fails.
+kit_note_unmigrated() {
+  [ -n "${_KIT_UNMIGRATED_NOTED:-}" ] && return 0
   [ "${KIT_LEDGER_DIR+set}" = "set" ] && return 0
   [ -n "${DWARVES_KIT_LOG_DIR:-}" ] && return 0
-  local durable legacy
-  durable="$(kit_resolve_log_dir)"
+  local legacy durable="${1:-}"
   legacy="$(kit_legacy_log_dir)"
+  [ -d "$legacy" ] && [ ! -L "$legacy" ] || return 0
+  [ -n "$durable" ] || durable="$(kit_resolve_log_dir 2>/dev/null)" || return 0
   [ "$durable" = "$legacy" ] && return 0
-  [ -f "$durable/.migrated" ] && return 0
-  mkdir -p "$durable" 2>/dev/null || return 0
-  if [ -d "$legacy" ] && [ ! -L "$legacy" ]; then
-    # -R recursive, -n no-clobber (never overwrite a file already durable). The trailing
-    # /. copies contents, not the dir itself. Legacy is never touched.
-    # Sentinel is dropped ONLY on cp success (security review S3): a partial/failed copy
-    # (perm, disk) leaves NO sentinel so the next access retries and completes.
-    if cp -Rn "$legacy/." "$durable/" 2>/dev/null; then
-      : > "$durable/.migrated" 2>/dev/null || true
-    fi
-  elif [ -L "$legacy" ]; then
-    # Refuse to migrate THROUGH a symlink (security review B2): cp would dereference it and
-    # fan an attacker-planted target's contents into the corpus /kit:retro + the eval read.
-    # Warn, and sentinel so we do not re-scan a hostile link every command.
-    echo "kit-log-dir: legacy log dir is a symlink; refusing to migrate through it ($legacy)" >&2
-    : > "$durable/.migrated" 2>/dev/null || true
-  else
-    # Fresh install: no legacy dir ever existed. Nothing to migrate; mark done.
-    : > "$durable/.migrated" 2>/dev/null || true
-  fi
+  [ "$durable" = "$PWD/.kit/logs" ] && return 0
+  [ -f "$durable/.migrated" ] && [ -f "$durable/hooks/.migrated" ] && return 0
+  _KIT_UNMIGRATED_NOTED=1
+  echo "kit-log-dir: legacy logs in $legacy were never migrated to $durable; run: bash <kit>/lib/telemetry/kit-migrate.sh (install.sh and adopt do it once)" >&2
   return 0
 }
+
+kit_migrate_log_dir() { kit_note_unmigrated; return 0; }

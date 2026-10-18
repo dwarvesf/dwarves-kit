@@ -121,6 +121,8 @@ JQLIB="$HERE/../lib/reflect"
 source "$JQLIB/shlex-split.sh"
 # shellcheck source=../lib/reflect/hook-util.sh
 source "$JQLIB/hook-util.sh"
+# shellcheck source=../lib/telemetry/egress-fail.sh
+source "$HERE/../lib/telemetry/egress-fail.sh"
 
 W=$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX") || exit 0
 trap 'case "$W" in /*/*) command rm -rf -- "$W" ;; esac 2>/dev/null' EXIT
@@ -227,14 +229,21 @@ transcript_text() {
 }
 
 # run_extractor <prompt-file> <out-file>: the extractor with the prompt on stdin, a 120 s timeout,
-# stdout kept whatever the exit status. Returns 1 on a command string shlex refuses.
+# stdout kept whatever the exit status. Returns 1 on a command string shlex refuses. A failed,
+# timed-out, or empty call stays fail-open but leaves one line in the egress-failures ledger.
 run_extractor() {
-  local cmd="${HARVEST_EXTRACTOR:-claude -p --model haiku --setting-sources project}"
+  local cmd="${HARVEST_EXTRACTOR:-claude -p --model haiku --setting-sources project}" rc=0
   shlex_split "$cmd" || return 1
   : > "$2"
   [ "${#SHLEX_ARGV[@]}" -gt 0 ] || return 1
-  HU_STDIN="$1" hu_run_capture 120 "$2" "${SHLEX_ARGV[@]}"
-  [ ! -e "$2.timedout" ] || : > "$2"   # subprocess.run throws a timed-out command's stdout away
+  HU_STDIN="$1" hu_run_capture 120 "$2" "${SHLEX_ARGV[@]}" || rc=$?
+  if [ -e "$2.timedout" ]; then   # subprocess.run throws a timed-out command's stdout away
+    : > "$2"; egress_fail harvest "timeout after 120s"
+  elif [ "$rc" -ne 0 ]; then
+    egress_fail harvest "extractor exit $rc"
+  elif ! grep -q '[^[:space:]]' "$2" 2>/dev/null; then
+    egress_fail harvest "empty output"
+  fi
   return 0
 }
 

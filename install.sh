@@ -369,6 +369,11 @@ if [ -n "$KIT_WITH_ARG" ]; then
 fi
 KIT_REQUESTED_MODULES="$(echo "$KIT_REQUESTED_MODULES" | xargs)"
 
+# --- One-time log migration -----------------------------------------------
+# Old run and hook logs move into the durable ledger root here, once, and never from a hook or a
+# resolver (lib/telemetry/kit-migrate.sh). Runs before the plugin-compat branch so both modes get it.
+bash "$KIT_DIR/lib/telemetry/kit-migrate.sh" || true
+
 # --- Plugin-aware compat mode --------------------------------------------
 # If the kit is already installed as a Claude Code plugin, the plugin provides
 # the hooks, commands, agents, and lib/ at runtime via ${CLAUDE_PLUGIN_ROOT}.
