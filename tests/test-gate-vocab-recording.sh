@@ -170,5 +170,52 @@ case "$CHECK_OUT4" in *"MISSING-GATE: review"*) noalias_ok=0 ;; *) noalias_ok=1 
 assert "NEGATIVE CONTROL: 'verify' does NOT satisfy the 'review' gate" "$noalias_ok" "-- $CHECK_OUT4"
 
 echo ""
+echo "--- Section C: bug lane -- /kit:debug records the debug gate on resolution, never on escalation ---"
+
+DEBUG_MD="$COMMANDS_DIR/debug.md"
+REC_RE='gate-ledger\.sh"? *record "?\$?\{?RID\}?"? debug ran'
+
+echo "=== AC7: the bug lane requires debug, and debug.md records it by that literal name ==="
+REQUIRED_BUG="$(bash "$GL" required bug)"
+case " $(printf '%s' "$REQUIRED_BUG" | tr '\n' ' ') " in *" debug "*) rb=0 ;; *) rb=1 ;; esac
+assert "required bug includes debug" "$rb" "-- $REQUIRED_BUG"
+grep -qE "$REC_RE" "$DEBUG_MD"
+assert "commands/debug.md has a literal 'record \$RID debug ran' call" $?
+grep -qE "${REC_RE} \"<one-line root cause>\"" "$DEBUG_MD"
+assert "the record carries the one-line root cause as evidence" $?
+grep -q 'RID=\$(bash lib/gate/gate-ledger.sh rid)' "$DEBUG_MD"
+assert "the rid is resolved with 'gate-ledger.sh rid' (branch slug), as execute.md does" $?
+
+echo ""
+echo "=== AC8: the record sits in Phase 4 (resolution), and the escalation path never records ran ==="
+# split debug.md at the 3-fix wall heading: before = Phase 4 resolution path, wall = escalation path
+WALL_LN="$(grep -n '^## The 3-fix architecture wall' "$DEBUG_MD" | head -1 | cut -d: -f1)"
+RED_LN="$(grep -n '^## Red flags' "$DEBUG_MD" | head -1 | cut -d: -f1)"
+REC_LN="$(grep -nE "$REC_RE" "$DEBUG_MD" | head -1 | cut -d: -f1)"
+P4_LN="$(grep -n '^## Phase 4' "$DEBUG_MD" | head -1 | cut -d: -f1)"
+[ -n "$WALL_LN" ] && [ -n "$RED_LN" ] && [ -n "$REC_LN" ] && [ -n "$P4_LN" ] && [ "$REC_LN" -gt "$P4_LN" ] && [ "$REC_LN" -lt "$WALL_LN" ]
+assert "the debug record is inside Phase 4, before the 3-fix wall section" $?
+WALL_BODY="$(sed -n "${WALL_LN},$((RED_LN-1))p" "$DEBUG_MD")"
+case "$WALL_BODY" in *"gate-ledger.sh record"*) wr=1 ;; *) wr=0 ;; esac
+assert "the 3-fix wall section carries no gate-ledger record call" "$wr"
+case "$WALL_BODY" in *"Do not record the \`debug\` gate"*) wn=0 ;; *) wn=1 ;; esac
+assert "the 3-fix wall section says outright not to record the debug gate" "$wn"
+[ "$(grep -cE "$REC_RE" "$DEBUG_MD")" -eq 1 ]
+assert "exactly one debug ran record in the whole file" $?
+
+echo ""
+echo "=== AC9: dynamic -- the real bug-lane check blocks until debug is recorded ==="
+new_log
+RID4=demo-bug-run
+gl record "$RID4" build ran "fix + failing test green" >/dev/null
+CHECK_OUT5="$(gl check bug "$RID4" 2>&1)"; CHECK_RC5=$?
+assert "check bug blocks on an escalated run (no debug record, exit != 0)" "$([ "$CHECK_RC5" -ne 0 ] && echo 0 || echo 1)"
+case "$CHECK_OUT5" in *"MISSING-GATE: debug"*) md_ok=0 ;; *) md_ok=1 ;; esac
+assert "the check names 'debug' as the missing gate" "$md_ok" "-- $CHECK_OUT5"
+gl record "$RID4" debug ran "stale cache key shadowed the fresh value" >/dev/null
+CHECK_OUT6="$(gl check bug "$RID4" 2>&1)"; CHECK_RC6=$?
+assert "check bug passes once debug ran is recorded (exit 0)" "$CHECK_RC6" "-- $CHECK_OUT6"
+
+echo ""
 echo "=== Summary: $PASS/$TOTAL passed ==="
 [ "$FAIL" -eq 0 ]

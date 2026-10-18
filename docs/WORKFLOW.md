@@ -166,7 +166,7 @@ migration (same dry-run + rollback shape); agent-org config rides spec-feature l
 | Docs     | /kit:docs | README/CHANGELOG match code | advisory |
 | Ship     | /kit:ship | tagged + PR | ship gate (blocks on DO NOT SHIP), push-to-main blocker |
 | Reflect  | /kit:retro | docs/retro/v<version>.md written | advisory |
-| Debug (off-cycle) | /kit:debug | root cause recorded, fix verified (human-confirmed only when `debug.confirm_fix=true`) | iron law + guess-fix guard (anti-rationalization) |
+| Debug (off-cycle) | /kit:debug (records the `debug` gate on a confirmed root cause only) | root cause recorded, fix verified (human-confirmed only when `debug.confirm_fix=true`) | iron law + guess-fix guard (anti-rationalization) |
 
 The backbone of that table as a chain, each phase with the exit that leaves it and the
 thing that enforces the exit:
@@ -1247,6 +1247,7 @@ ledger `.claude/debug/<slug>.md` whose `## Root cause` heading is the contract.
 Enforcer: the guess-fix guard (a gated mode of the anti-rationalization hook) blocks a
 fix/done claim while the open ledger's `## Root cause` is empty. Stop: root cause
 recorded + fix verified. `debug.confirm_fix` ships `false`, so the loop's own three conditions are the verdict; set it `true` to hold for a human.
+On that verdict `/kit:debug` records the bug lane's `debug` gate (`gate-ledger.sh record <rid> debug ran "<one-line root cause>"`); an escalation (the 3-fix wall, no feedback loop, no root cause) records nothing, so the gate stays open and the ship-gate keeps refusing the push.
 
 ```text
    /kit:debug
