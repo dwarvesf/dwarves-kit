@@ -35,8 +35,8 @@ _KIT_HOOK_LOG_NAMES="anti-rationalization board-row-gate citation-guard commit-f
 _kit_hook_log_migrate() {
   local root="$1" dir="$2" src name ok=1 srcs=("$1")
   mkdir -p "$dir" 2>/dev/null || return 0
-  if [ -z "${KIT_LEDGER_DIR+x}" ] && [ -z "${DWARVES_KIT_LOG_DIR:-}" ]; then
-    srcs+=("$HOME/.claude/dwarves-kit/logs")
+  if [ -z "${KIT_LEDGER_DIR+x}" ] && [ -z "${DWARVES_KIT_LOG_DIR:-}" ] && command -v kit_legacy_log_dir >/dev/null 2>&1; then
+    srcs+=("$(kit_legacy_log_dir)")
   fi
   for src in "${srcs[@]}"; do
     [ -d "$src" ] && [ ! -L "$src" ] || continue
