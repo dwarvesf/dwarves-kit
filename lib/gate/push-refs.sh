@@ -11,11 +11,17 @@
 #
 # Output, one line per fact (the exit code is always 0):
 #   @@REF <commit-sha> <branch-name>   one resolved ref the command would push
-#   @@DEFAULT                          a refspec targets the default branch (safety-gate's business)
+#   @@DEFAULT-PUSH <branch> <remote>   a git push lands on a default branch (the ship-gate refuses it)
+#   @@DEFAULT                          gh pr create names a default branch as its head
 #   @@FORCE                            a force push (safety-gate's business)
 #   @@BLOCK <reason>                   the command cannot be accounted for
-# Every line starts with @@ and a ref name appears only inside a REF or BLOCK line, so a branch
-# called DEFAULT or FORCE cannot be mistaken for a marker when the caller matches whole lines.
+# Every line starts with @@ and a ref name appears only after a marker word, so a branch called
+# DEFAULT or FORCE cannot be mistaken for a marker when the caller matches the line start.
+#
+# A default branch is main, master, production, <default-branch-name>, or the branch the target
+# remote's HEAD names. A push with no refspec is resolved the way git resolves it:
+# remote.<remote>.push when set, else push.default (simple and current push the current branch,
+# upstream pushes to branch.<cur>.merge, matching also counts every local default branch).
 #
 # Accounted for: `git [-C dir] [-c k=v] [--git-dir=x ...] push [options] [remote [refspec...]]`
 # and `gh pr create [--head branch]`, each in any number of `;` `&&` `||` `|` segments.
@@ -26,11 +32,50 @@ set -uo pipefail
 root="${1:-}"; cmd="${2:-}"; cur="${3:-HEAD}"; defname="${4:-}"
 
 block() { printf '@@BLOCK %s\n' "$*"; exit 0; }
+gcfg() { git -C "$root" config --get "$1" 2>/dev/null || true; }
+
+# The remote a push with no remote argument goes to, the order git reads it in.
+push_remote() {
+  local r
+  r="$(gcfg "branch.$cur.pushRemote")"; [ -n "$r" ] || r="$(gcfg remote.pushDefault)"
+  [ -n "$r" ] || r="$(gcfg "branch.$cur.remote")"
+  printf '%s' "${r:-origin}"
+}
+
+# The branch <remote>/HEAD names, empty when it cannot be read.
+remote_head() {
+  local h; h="$(git -C "$root" symbolic-ref -q --short "refs/remotes/$1/HEAD" 2>/dev/null || true)"
+  [ -n "$h" ] && printf '%s' "${h#"$1"/}"
+}
+
+# implicit_specs <remote>: the refspecs a push without one uses, one per line.
+implicit_specs() {
+  local r="$1" conf up b
+  conf="$(git -C "$root" config --get-all "remote.$r.push" 2>/dev/null || true)"
+  if [ -n "$conf" ]; then printf '%s\n' "$conf"; return; fi
+  up="$(gcfg "branch.$cur.merge")"; up="${up#refs/heads/}"
+  case "$(gcfg push.default)" in
+    nothing) ;;
+    upstream|tracking) if [ "$cur" = HEAD ]; then printf 'HEAD\n'; else printf 'HEAD:%s\n' "${up:-$cur}"; fi ;;
+    matching)
+      printf 'HEAD\n'
+      for b in main master production "$defname" "$(remote_head "$r")"; do
+        [ -n "$b" ] && git -C "$root" show-ref --verify -q "refs/heads/$b" 2>/dev/null && printf '%s:%s\n' "$b" "$b"
+      done ;;
+    *) printf 'HEAD\n' ;;   # simple (git's default) and current push the branch of the same name
+  esac
+}
+
+is_default() {   # is_default <branch> <remote>
+  case "$1" in main|master|production) return 0 ;; esac
+  [ -n "$defname" ] && [ "$1" = "$defname" ] && return 0
+  [ -n "$1" ] && [ "$1" = "$(remote_head "$2")" ]
+}
 
 # Strip one layer of matching quotes from a token.
 unq() { local t="$1"; t="${t#[\"\']}"; t="${t%[\"\']}"; printf '%s' "$t"; }
 
-specs=""      # newline-separated refspecs from every git push segment
+specs=""      # newline-separated "<remote> <refspec>" lines from every git push segment
 gh_heads=""   # newline-separated --head values from gh pr create segments
 gh_plain=0    # a gh pr create with no --head ships the current branch
 cdirs=""      # distinct -C values
@@ -81,9 +126,10 @@ while IFS= read -r seg; do
         esac
       done
       if [ "${#pos[@]}" -ge 2 ]; then
-        for ((k=1; k<${#pos[@]}; k++)); do specs="$specs${pos[$k]}"$'\n'; done
+        for ((k=1; k<${#pos[@]}; k++)); do specs="$specs${pos[0]} ${pos[$k]}"$'\n'; done
       else
-        specs="${specs}HEAD"$'\n'
+        rem="${pos[0]:-$(push_remote)}"
+        while IFS= read -r r; do [ -n "$r" ] && specs="$specs$rem $r"$'\n'; done <<< "$(implicit_specs "$rem")"
       fi
       ;;
     gh)
@@ -113,14 +159,27 @@ done <<< "$(printf '%s\n' "$cmd" | tr ';&|' '\n\n\n')"
 [ "$sawship" = 1 ] || exit 0
 distinct_c="$(printf '%s' "$cdirs" | sed '/^$/d' | sort -u | wc -l | tr -d ' ')"
 [ "$distinct_c" -le 1 ] || block "the command pushes from more than one directory"
+dest() {   # dest <dst>: the branch name a refspec destination lands on
+  local d="${1#refs/heads/}"
+  [ "$d" = HEAD ] && d="$cur"
+  printf '%s' "$d"
+}
+
+# Default-branch pass first, over every git push refspec: a later unresolvable refspec must not
+# hide an earlier (or later) push to the default branch.
+while read -r rem r; do
+  [ -n "$r" ] || continue
+  r="${r#+}"
+  case "$r" in *:*) d="$(dest "${r#*:}")" ;; *) d="$(dest "$r")" ;; esac
+  if [ "$d" != HEAD ] && is_default "$d" "$rem"; then printf '@@DEFAULT-PUSH %s %s\n' "$d" "$rem"; exit 0; fi
+done <<< "$specs"
 if [ "$force" = 1 ]; then printf '@@FORCE\n'; exit 0; fi
 
 resolve() {   # resolve <src> <dst>: print REF, or block
   local src="$1" dst="$2" sha br
   [ -n "$src" ] || block "an empty source deletes a remote ref"
   case "$src$dst" in *'*'*|*'?'*|*'['*) block "refspec '$src:$dst' is a pattern" ;; esac
-  src="${src#refs/heads/}"; dst="${dst#refs/heads/}"
-  [ "$dst" = HEAD ] && dst="$cur"
+  src="${src#refs/heads/}"; dst="$(dest "$dst")"
   case "$dst" in main|master) printf '@@DEFAULT\n'; exit 0 ;; esac
   if [ -n "$defname" ] && [ "$dst" = "$defname" ]; then printf '@@DEFAULT\n'; exit 0; fi
   sha="$(git -C "$root" rev-parse --verify -q "${src}^{commit}" 2>/dev/null)" || block "'$src' does not resolve to a commit"
@@ -130,7 +189,7 @@ resolve() {   # resolve <src> <dst>: print REF, or block
   printf '@@REF %s %s\n' "$sha" "$br"
 }
 
-while IFS= read -r r; do
+while read -r _ r; do
   [ -n "$r" ] || continue
   r="${r#+}"
   case "$r" in *:*) resolve "${r%%:*}" "${r#*:}" ;; *) resolve "$r" "$r" ;; esac
