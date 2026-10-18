@@ -202,6 +202,14 @@ Exit: 0 (green after restore)
 Verdict: PASS
 ```
 
+## Rollback
+
+Revert the branch's commits (`git revert` each, or revert the merge). Nothing needs a data fix:
+
+- Hook logs: the old `~/.claude/dwarves-kit/logs` directory is never deleted or rewritten, so a reverted hook reads and writes it again. Files the helper copied into `<ledger root>/hooks/` stay behind and are harmless; delete that directory by hand if wanted.
+- `board mirror --engine sync` returns after a revert, still dry-run only.
+- `hooks/codex-hooks.json` pins move back with the hook files in the same revert.
+
 ## Not proven
 
 - The Hermes bridges were inventoried, not changed. Both are in live use, so the operator picks whether to retire either.
