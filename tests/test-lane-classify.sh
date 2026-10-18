@@ -133,5 +133,18 @@ suggest_is "fix session hijacking in the cookie store" normal "SPEC-296 session 
 suggest_is "expire login sessions after an hour" normal "SPEC-296 login sessions -> full"
 
 echo ""
+echo "=== migration hard path: Liquibase changelogs match, content changelog files do not ==="
+# Liquibase layouts still hard-gate. The description is neutral so only the path decides.
+classify_files_is "db.changelog-master.xml" "add a new data file" full "changelog: db.changelog-master.xml -> full"
+classify_files_is "db/changelog/db.changelog-1.0.yaml" "add a new data file" full "changelog: db/changelog/db.changelog-1.0.yaml -> full"
+classify_files_is "src/main/resources/db/changelog/0001-init.xml" "add a new data file" full "changelog: src/main/resources/db/changelog/*.xml -> full"
+classify_files_is "changelog-master.xml" "add a new data file" full "changelog: changelog-master.xml -> full"
+classify_files_is "liquibase/changelog.xml" "add a new data file" full "changelog: liquibase/changelog.xml -> full"
+classify_files_is "liquibase/changelog/x.sql" "add a new data file" full "changelog: liquibase/changelog/x.sql -> full"
+# NEGATIVE CONTROL: dated or slugged content files named changelog-* are data, not migrations.
+classify_files_is "apps/memo/src/data/qa/changelog-2025-01-15-ten-years-strong.json" "add a new data file" normal "changelog [NC] memo data file changelog-<date>-<slug>.json -> not full"
+classify_files_is "docs/changelog-notes.json" "add a new data file" normal "changelog [NC] docs/changelog-notes.json -> not full"
+
+echo ""
 echo "=== $PASS/$TOTAL passed, $FAIL failed ==="
 [ "$FAIL" -eq 0 ]
