@@ -239,14 +239,14 @@ raw="$(grep -nE '>>[[:space:]]*"?\$\{?(st|staging)\}?"?' "$KIT_DIR/hooks/backlog
 chk "hooks carry no raw >> on the staging variable" "$([ -z "$raw" ]; echo $?)"
 chk_has "backlog-stage writes through sf_append" "$(cat "$KIT_DIR/hooks/backlog-stage.sh")" '| sf_append "$st"'
 chk_has "intake-sweep writes through sf_append" "$(cat "$KIT_DIR/hooks/intake-sweep.sh")" '| sf_append "$staging"'
-# No python writer opens the buffer for append itself. Three proposers outside this slice's file
-# fence still do; they are named here so a NEW raw writer fails the test, and each one is
-# dropped from the list when it moves to staging-format.py append_blocks.
-KNOWN_RAW='lib/reflect/propose.py lib/session/audit/bin/session-audit lib/session/intel/bin/session-intel'
-found="$(cd "$KIT_DIR" && grep -rlE 'open\((staging|STAGING)[^)]*"a"' lib hooks bin 2>/dev/null | sort | tr '\n' ' ')"
-unexpected=""
-for f in $found; do case " $KNOWN_RAW " in *" $f "*) ;; *) unexpected="$unexpected $f" ;; esac; done
-chk "no new raw python append to the buffer outside the known three (found:${unexpected:- none new})" "$([ -z "$unexpected" ]; echo $?)"
+# No writer appends to the buffer without the lock. Every python file that opens a staging
+# variable for append, or uses O_APPEND while naming the buffer, other than staging-format.py
+# itself (which holds the lock), is a failure; the allow-list is empty.
+found="$(cd "$KIT_DIR" && { grep -rlE --include='*' 'open\([^)]*(staging|STAGING)[^)]*,[[:space:]]*"[ab]*a[ab+]*"' lib hooks bin; grep -rlE --include='*.py' --include='*.sh' O_APPEND lib hooks bin | xargs grep -lE 'backlog-staging|BACKLOG_STAGE_STAGING' 2>/dev/null; } 2>/dev/null | grep -v -e '^lib/reflect/staging-format.py$' -e '__pycache__' | sort -u | tr '\n' ' ')"
+chk "no writer appends to the buffer outside staging-format.py (found:${found:- none})" "$([ -z "$found" ]; echo $?)"
+for f in lib/reflect/propose.py lib/session/audit/bin/session-audit lib/session/intel/bin/session-intel; do
+  chk_has "$f appends through append_blocks" "$(cat "$KIT_DIR/$f")" "append_blocks("
+done
 chk_has "stats anomalies appends through append_blocks" "$(cat "$KIT_DIR/lib/stats/src/stats/anomalies.py")" "append_blocks("
 
 # ============================================================
