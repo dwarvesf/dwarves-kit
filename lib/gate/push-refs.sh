@@ -188,9 +188,10 @@ dest() {   # dest <dst>: the branch name a refspec destination lands on (git exp
 
 # Default-branch pass first, over every git push refspec: a later unresolvable refspec must not
 # hide an earlier (or later) push to the default branch.
-while read -r rem cur r; do
+lastcur="$cur"   # the branch HEAD names after every switch in the command (gh pr create reads it)
+while read -r rem scur r; do
   [ -n "$r" ] || continue
-  r="${r#+}"
+  r="${r#+}"; cur="$scur"
   case "$r" in *:*) d="$(dest "${r#*:}")" ;; *) d="$(dest "$r")" ;; esac
   [ "$d" = "@@UNKNOWN" ] && pblock "the command switches to a branch the gate cannot name before it pushes"
   if [ "$d" != HEAD ] && is_default "$d" "$rem"; then printf '@@DEFAULT-PUSH %s %s\n' "$d" "$rem"; exit 0; fi
@@ -212,11 +213,13 @@ resolve() {   # resolve <src> <dst>: print REF, or block
   printf '@@REF %s %s\n' "$sha" "$br"
 }
 
-while read -r _ cur r; do
+while read -r _ scur r; do
   [ -n "$r" ] || continue
+  cur="$scur"
   r="${r#+}"
   case "$r" in *:*) resolve "${r%%:*}" "${r#*:}" ;; *) resolve "$r" "$r" ;; esac
 done <<< "$specs"
+cur="$lastcur"
 while IFS= read -r h; do
   [ -n "$h" ] || continue
   resolve "$h" "$h"
