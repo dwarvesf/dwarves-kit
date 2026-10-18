@@ -16,8 +16,8 @@
 # for prompts that open a slash-autocomplete popup. None of that has an analogue here, by design.
 #
 # Scope: this file RESOLVES argv. It spawns nothing and validates no model names (the claude-tier
-# allowlist stays in orchestrate.sh `_route`, see "Model" below). Nothing calls it into the
-# dispatch path yet -- wiring `_run_one_session` to it is a separate change with its own proof.
+# allowlist stays in orchestrate.sh `_route`, see "Model" below). orchestrate.sh sources this file and
+# resolves each sub-goal's `Harness:` through `_harness_of` / `harness_argv` on the dispatch path.
 #
 # bash-3.2 throughout (no assoc arrays): the vendor table is a `case`, which is also just less code
 # than a TSV plus a parser.
