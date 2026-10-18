@@ -13,8 +13,8 @@ Acceptance: (1) `hooks/ship-gate.sh` exits 2 on `git push` and `gh pr create` wh
 
 | Suite | Command | Result |
 |---|---|---|
-| amend guard + verdict reader (new) | `bash tests/test-gate-ledger-amend.sh` | 33/33 |
-| ship-gate verdict rule + ledger cross-check | `bash tests/test-ship-gate-review-verdict.sh` | pass=53 fail=0 (was 37) |
+| amend guard + verdict reader (new) | `bash tests/test-gate-ledger-amend.sh` | 39/39 |
+| ship-gate verdict rule + ledger cross-check | `bash tests/test-ship-gate-review-verdict.sh` | pass=54 fail=0  |
 | ship-gate lane resolution with amend | `bash tests/test-ship-gate-fail-closed.sh` | PASS=12 FAIL=0 |
 | hard-claim registry | `bash tests/test-meta-hard-claims.sh` | 25/25 |
 | docs and feature registry freshness | `bash tests/test-meta-docs-registry.sh` | 120/120 |
@@ -33,7 +33,7 @@ Output:
   PASS full -> tiny with --lower --reason: accepted
   PASS an override-style line records from, to and the reason
   PASS the last record wins: FIX THEN SHIP
-  gate-ledger amend: 33/33 passed
+  gate-ledger amend: 39/39 passed
 Verdict: PASS
 
 Command: bash tests/test-ship-gate-review-verdict.sh
@@ -43,7 +43,7 @@ Output:
   ok - ledger and spec agree on SHIP: passes
   ok - no ledger verdict (unparseable record only): spec alone decides, SHIP passes
   ok - key off: the ledger cross-check is off too
-  pass=53 fail=0
+  pass=54 fail=0
 Verdict: PASS
 ```
 

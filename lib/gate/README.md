@@ -116,8 +116,11 @@ commands (`/kit:review`, `/kit:review-team`, `/kit:battery`) record `review ran 
 after they write the spec, with the verdict (`SHIP`, `FIX THEN SHIP` or `DO NOT SHIP`) as the first
 words of the reason. `gate-ledger.sh review-verdict <rid>` prints the LAST such verdict; a record
 whose reason starts with anything else is skipped and never clears an earlier one. When that
-verdict differs from the spec's last verdict (a missing spec verdict counts as different), the
-push is refused with both verdicts named; re-running the review records and writes the new one.
+verdict differs from the spec's last verdict, the push is refused with both verdicts named;
+re-running the review records and writes the new one. A spec with no verdict at all is refused
+only against a recorded `FIX THEN SHIP` or `DO NOT SHIP`: a recorded `SHIP` softens nothing. The
+reason must start with the verdict followed by a space, `:`, `;`, `,`, `.` or the end, so
+`SHIP-clean` is not a verdict.
 A run with no recorded verdict is checked on the spec alone, as before. The ledger sits outside
 the branch, so a commit cannot soften it, but any ledger writer can append a line: this check
 raises the cost of a softened spec, it does not sign anything. The rule runs before the lane
@@ -133,8 +136,9 @@ at the merge base (an opt-out must already sit on the default branch). Proof:
 included, takes the LAST one as the run's lane. An amend may raise the lane. It refuses (exit 65,
 nothing written) to lower it, because a lighter lane sheds required gates. Order: `tiny` <
 `normal` = `bug` = `backfill` < `full`. The special lanes sit at `normal`'s rank, so moving
-between them stays free and a drop from `full` to either needs the flags. A lane outside that set
-has no rank and is not guarded. To lower on purpose:
+between them stays free and a drop from `full` to either needs the flags. An amend to any other
+name (`tiny2`, `Tiny`) exits 64, because ship-gate reads the lane back as `[a-z-]+` and a look-alike
+would read as `tiny`. To lower on purpose:
 
 ```
 gate ledger start --amend --lower --reason "<why>" <rid> <lighter-lane> <classified> <type> ...
@@ -142,8 +146,9 @@ gate ledger start --amend --lower --reason "<why>" <rid> <lighter-lane> <classif
 
 That first appends `GATE | lane-lower | override | <from> -> <to>: <reason>`, which lane
 telemetry counts like any gate override, then the `START-AMEND`. `--lower` and `--reason` go
-before the rid; `--lower` without a reason exits 64. `record-batch` amends through the same
-path, so it cannot lower a run either. The ledger is append-only text, so a writer who bypasses
+before the rid; `--lower` without a reason, or with a blank one, exits 64. `record-batch` amends
+through the same path and has no such flags, so it cannot lower a run: run `start --amend --lower`
+first. The ledger is append-only text, so a writer who bypasses
 the verb can still append a raw line; the guard stops the sanctioned verb from doing it
 silently. Proof: `tests/test-gate-ledger-amend.sh`.
 

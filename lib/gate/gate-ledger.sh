@@ -194,7 +194,8 @@ _effective_lane() {
 
 # Strictness rank of a lane, for the amend guard: tiny 1, normal 2, full 3. The special lanes bug and
 # backfill sit at normal's rank, so moving between them stays free (their old rule) while a drop from
-# full to either still needs --lower. A lane outside this set has no rank: the guard leaves it alone.
+# full to either still needs --lower. A lane outside this set has no rank; an amend to one is refused,
+# and an amend FROM one (a hand-written first START) is not compared.
 _lane_rank() {
   case "$1" in
     tiny) echo 1 ;;
@@ -228,7 +229,7 @@ start() {
   if [ -z "$rid" ] || [ -z "$lane" ] || [ -z "$classified" ] || [ -z "$type" ]; then
     echo "usage: $uprefix <rid> <chosen-lane> <classified-lane> <chosen-type> [classified-type] [repo]" >&2; return 64
   fi
-  if [ "$lower" = 1 ] && [ -z "$reason" ]; then
+  if [ "$lower" = 1 ] && [ -z "${reason//[[:space:]]/}" ]; then
     echo "start --amend --lower needs --reason \"<text>\"" >&2; return 64
   fi
   [ -n "$repo" ] || repo="$(basename "$(git rev-parse --show-toplevel 2>/dev/null || pwd)")"
@@ -246,10 +247,17 @@ start() {
     local prev prank nrank
     prev="$(_effective_lane "$rid")"
     prank="$(_lane_rank "$prev")"; nrank="$(_lane_rank "$lane")"
+    # An unknown target lane is refused: ship-gate reads the lane back with [a-z-]+, so a look-alike
+    # name (tiny2, tiny_x) would read as tiny and dodge the guard below. The lane data holds exactly
+    # these five lanes (lane-data.sh LANE_NAMES), so every valid target has a rank.
+    if [ -z "$nrank" ]; then
+      echo "start --amend: '$lane' is not a lane (known: tiny normal full bug backfill)." >&2
+      return 64
+    fi
     if [ -n "$prank" ] && [ -n "$nrank" ] && [ "$nrank" -lt "$prank" ]; then
       if [ "$lower" != 1 ]; then
         echo "start --amend: refused. '$rid' is lane $prev; $lane is lighter (order: tiny < normal = bug = backfill < full)." >&2
-        echo "To lower the lane on purpose, add the flags before the rid: start --amend --lower --reason \"<why>\" $rid $lane ... (recorded as a lane-lower override for audit)." >&2
+        echo "To lower the lane on purpose: start --amend --lower --reason \"<why>\" $rid $lane ... (flags before the rid; record-batch has none, so run start --amend --lower first). Recorded as a lane-lower override for audit." >&2
         return 65
       fi
       append_run_line "$rid" "$(printf '%s | GATE | lane-lower | override | %s -> %s: %s' "$(now)" "$prev" "$lane" "$reason")"
@@ -558,9 +566,9 @@ review_verdict() {
     $2=="GATE" && $3=="review" && $4=="ran" {
       r=$5; for (i=6; i<=NF; i++) r=r " | " $i
       r=toupper(r); sub(/^[ \t*_`]+/, "", r)
-      if (r ~ /^DO[ -]NOT[ -]SHIP([^A-Z0-9]|$)/) v="DO NOT SHIP"
-      else if (r ~ /^FIX[ -]THEN[ -]SHIP([^A-Z0-9]|$)/) v="FIX THEN SHIP"
-      else if (r ~ /^SHIP([^A-Z0-9]|$)/) v="SHIP"
+      if (r ~ /^DO[ -]NOT[ -]SHIP([ :;,.]|$)/) v="DO NOT SHIP"
+      else if (r ~ /^FIX[ -]THEN[ -]SHIP([ :;,.]|$)/) v="FIX THEN SHIP"
+      else if (r ~ /^SHIP([ :;,.]|$)/) v="SHIP"
     }
     END { if (v != "") print v }' "$f"
 }

@@ -250,8 +250,9 @@ ship_rule_identities() {
 # file when <head> does not hold it. A spec with no `## Review` section, no canonical verdict, or an
 # unreadable file passes: other rules still apply. A branch can edit its own verdict line, so when a
 # [ledger] is given the spec verdict is also compared with the last verdict a review recorded in the run
-# ledger (gate-ledger.sh review-verdict); any difference blocks, and a run with no recorded verdict is
-# checked on the spec alone. The ledger lives outside the branch, but any ledger writer can append to it:
+# ledger (gate-ledger.sh review-verdict); two different verdicts block, and so does a missing spec
+# verdict against a recorded FIX THEN SHIP or DO NOT SHIP. A run with no recorded verdict is checked on
+# the spec alone. The ledger lives outside the branch, but any ledger writer can append to it:
 # this raises the cost of a softened spec, it is not a signature. Off with `review_verdict = false` under [gate] in a
 # committed .kit.toml, read at the merge base so a push cannot switch off its own check. Prints the
 # message and returns 2 on a hit.
@@ -297,6 +298,9 @@ ship_rule_review_verdict() {
     [ -n "$ledger" ] && [ -f "$ledger" ] || return 0
     recorded=$(bash "$ledger" review-verdict "$rid" 2>/dev/null) || true
     [ -n "$recorded" ] && [ "$recorded" != "$verdict" ] || return 0
+    # A ledger SHIP against a spec with no verdict softens nothing: pass (a SHIP can be recorded by a
+    # note such as record-batch evidence, and a spec need not carry a Review section).
+    [ -n "$verdict" ] || [ "$recorded" != "SHIP" ] || return 0
     _sr_log "BLOCKED | ship-gate | $shown_rid (review verdict mismatch: spec '${verdict:-none}', ledger '$recorded')"
     {
       echo "BLOCKED: ship-gate. The spec '$shown_rid' and the run ledger disagree on the review verdict:"

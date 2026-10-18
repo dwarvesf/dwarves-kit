@@ -51,6 +51,8 @@ gl start --amend --lower lo1 tiny full feature feature r >/dev/null 2>&1; RC=$?
 check "--lower without --reason: exit 64, nothing written" '[ "$RC" -eq 64 ] && [ "$(eff lo1)" = full ]'
 gl start --amend --lower --reason "" lo1 tiny full feature feature r >/dev/null 2>&1; RC=$?
 check "--lower with an empty reason: exit 64" '[ "$RC" -eq 64 ] && [ "$(eff lo1)" = full ]'
+gl start --amend --lower --reason "   " lo1 tiny full feature feature r >/dev/null 2>&1; RC=$?
+check "--lower with a blank reason: exit 64" '[ "$RC" -eq 64 ] && [ "$(eff lo1)" = full ]'
 gl start --amend --lower --reason "spike turned out docs only" lo1 tiny full feature feature r >/dev/null 2>&1; RC=$?
 check "full -> tiny with --lower --reason: accepted" '[ "$RC" -eq 0 ] && [ "$(eff lo1)" = tiny ]'
 check "an override-style line records from, to and the reason" 'log lo1 | grep -qE "\| GATE \| lane-lower \| override \| full -> tiny: spike turned out docs only$"'
@@ -73,8 +75,10 @@ fresh sp2 tiny
 gl start --amend sp2 bug tiny feature feature r >/dev/null 2>&1; RC=$?
 check "tiny -> bug: accepted (a raise)" '[ "$RC" -eq 0 ] && [ "$(eff sp2)" = bug ]'
 fresh sp3 full
-gl start --amend sp3 customlane full feature feature r >/dev/null 2>&1
-check "a lane with no rank is not guarded (old rule)" '[ "$(eff sp3)" = customlane ]'
+for bad in tiny2 Tiny tiny_x "tiny " nosuchlane; do
+  gl start --amend sp3 "$bad" full feature feature r >/dev/null 2>&1; RC=$?
+  check "a look-alike or unknown target lane '$bad' is refused (exit 64), full stays" '[ "$RC" -eq 64 ] && [ "$(eff sp3)" = full ]'
+done
 
 echo "a ledger with no START line"
 gl record nostart1 build ran ok >/dev/null 2>&1
@@ -96,6 +100,8 @@ gl record rv2 battery ran "SHIP arms=3 caught=1" >/dev/null 2>&1
 check "battery records count (battery normalizes to the review gate)" '[ "$(gl review-verdict rv2)" = "SHIP" ]'
 gl record rv3 review ran "DO-NOT-SHIP findings=1" >/dev/null 2>&1
 check "hyphenated spelling reads the same" '[ "$(gl review-verdict rv3)" = "DO NOT SHIP" ]'
+gl record rv5 review ran "SHIP-clean findings=0" >/dev/null 2>&1
+check "SHIP-clean is not SHIP" '[ -z "$(gl review-verdict rv5)" ]'
 gl record rv4 review ran "SHIPPED findings=0" >/dev/null 2>&1
 check "SHIPPED is not SHIP" '[ -z "$(gl review-verdict rv4)" ]'
 check "no ledger: prints nothing, exits 0" '[ -z "$(gl review-verdict no-such-run)" ] && gl review-verdict no-such-run >/dev/null 2>&1'

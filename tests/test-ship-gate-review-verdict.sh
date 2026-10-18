@@ -132,6 +132,7 @@ case_ledger "the mismatch message says to re-run review" l1c '\n## Review\n\n###
 case_ledger "ledger DO NOT SHIP, spec Review section deleted: blocks" l2 '\n## Notes\n\nnothing\n' 2 "$MISMATCH" "DO NOT SHIP findings=3"
 case_ledger "ledger FIX THEN SHIP, spec SHIP: blocks" l3 '\n## Review\n\n### Verdict: SHIP\n' 2 "$MISMATCH" "FIX THEN SHIP findings=1"
 case_ledger "ledger SHIP, spec FIX THEN SHIP: blocks (any difference)" l4 '\n## Review\n\n### Verdict: FIX THEN SHIP\n' 2 "$MISMATCH" "SHIP findings=0"
+case_ledger "ledger SHIP, spec has no Review verdict: passes (nothing softened)" l14 '\n## Notes\n\nnothing\n' 0 '' "SHIP findings=0"
 case_ledger "ledger and spec agree on SHIP: passes" l5 '\n## Review\n\n### Verdict: SHIP\n' 0 '' "SHIP findings=0 rejected=0 actor=t"
 case_ledger "ledger and spec agree on FIX THEN SHIP: passes" l6 '\n## Review\n\n### Verdict: FIX THEN SHIP\n' 0 '' "FIX THEN SHIP findings=2"
 case_ledger "the last ledger record wins: re-review SHIP after DO NOT SHIP passes" l7 '\n## Review\n\n### Verdict: SHIP\n' 0 '' "DO NOT SHIP findings=3" "SHIP findings=0"
