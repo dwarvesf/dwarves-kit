@@ -34,7 +34,7 @@ the ask is "my disk is full", it is the wrong loop.
 
 | Slot | This instance |
 |---|---|
-| Item set | six item classes over ONE git repo, enumerated by `bash lib/repohygiene/repohygiene.sh scan --repo <dir>`: an unreferenced non-code file past its age threshold, a staging drop past its age threshold, a record parked in a central control directory whose owner is one tool or experiment, an append-only log past the budget the repo itself documents, a gitignored directory that is large and cold, and a session handoff file whose cited board rows are no longer open |
+| Item set | six item classes over ONE git repo; the first five are enumerated by `bash lib/repohygiene/repohygiene.sh scan --repo <dir>` (detectors 1 to 5): an unreferenced non-code file past its age threshold, a staging drop past its age threshold, a record parked in a central control directory whose owner is one tool or experiment, an append-only log past the budget the repo itself documents, a gitignored directory that is large and cold; the sixth, a session handoff file whose cited board rows are no longer open, is NOT in the script: the model runs it as a procedure (see "Session handoff files") |
 | Contract | a file earns its place: something references it, or it is young, or it sits with its owner, or it is inside its own stated budget. A gitignored directory has no contract at all here, only a size and a date |
 | Evidence class | Tier 1: the scanner's own output, one line per finding, each carrying the proof inline (the exact path-boundary grep and its zero-hit result, an age in days against its threshold, a duplicate's path plus its sha256, an owner plus the commits that name it, a line count plus the `file:line` where the repo states the threshold, a size plus a newest-mtime). Tier 2: `agents/audit-scanner.md`, dispatched only on the FIX and REMOVE rows, never on the whole set |
 | Apply mechanics | `git mv` for a detector-3 FIX, and nothing else. Detectors 1, 2, 4, and 5 are report-only in every case. No deletion is ever applied, proposed as a command, or staged |
@@ -111,7 +111,7 @@ goal suppresses one finding, while a wrong FIX moves a live engine. Measured bef
 
 ### Session handoff files
 
-A sixth item class, not a path-boundary detector: `_meta/handoffs/*.md`, `.claude/handoffs/*.md`,
+A sixth item class, not a path-boundary detector and not in `repohygiene.sh` (the script runs detectors 1 to 5 only; the model runs this procedure by hand): `_meta/handoffs/*.md`, `.claude/handoffs/*.md`,
 `**/docs/handoffs/*.md`. Contract: a handoff stays only while it cites at least one OPEN board
 row, or names open work that no row carries.
 

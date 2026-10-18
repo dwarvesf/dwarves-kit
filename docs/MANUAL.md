@@ -73,7 +73,7 @@ Index by loop stage (formerly "leg", ADR-0034; the README's "The five stages" se
 **Reads:** install mode via `lib/onboard-detect.sh` (plugin / bash / both / none); adoption state via `lib/adopt.sh --check`; the module roster + consumer knobs via `bin/config list|explain` (the SPEC-198 registry, never a hardcoded list)
 **Writes:** nothing of its own -- it only ever drives `lib/adopt.sh` (to inject the contract and/or seed `<repo>/.kit.toml` with your module choices), and every such write is previewed (`--dry-run` or a shown plan) and confirmed first; a decline is a strict no-op
 **When to invoke:** the first ten minutes on a new machine or a repo you have not adopted yet. It ties together the four things that have to line up before the loop works: which install mode is live, whether this repo is adopted, which modules are on, and which env knobs make them non-inert.
-**What it does, in order:** (A) detect the install mode and explain it in one line each -- for `both` it discloses the double-hooks hazard and points at the one-path fix but never mutates settings; for `none` it prints the two install paths and stops. (B) offer `/kit:adopt` for the current repo (preview then confirm; an already-adopted repo is reported healthy and nothing is written). (C) pick modules -- the list is generated from the registry, and the choice is written by driving `lib/adopt.sh --with` (this is how the plugin path, which has no `install.sh --with`, still gets per-repo module selection). (D) for the chosen modules only, surface the consumer knobs that make them non-inert -- a `.kit.toml`-keyed knob is offered as a previewed write, an env-only knob (e.g. `PROSE_RAG_INJECT`, `MONEY_GATE_REPOS`) yields printed `export` guidance. (E) on the plugin path, disclose the gaps honestly (no statusLine HUD, a frozen SHA vs `git pull`, the `KIT_FORCE_FULL` escape and its hazard). (F) on the bash path, INSTALL-STAMP staleness is ONE printed line + a `/kit:kit-health` pointer, never an upgrade flow. (G) end with two ideas (the lane, proof of done) and a one-line menu of opt-in commands, then `/kit:start` as the next step; the five-stage story is offered only to a newer user or on request.
+**What it does, in order:** (A) detect the install mode and explain it in one line each -- for `both` it discloses the double-hooks hazard and points at the one-path fix but never mutates settings; for `none` it prints the two install paths and stops. (B) offer `/kit:adopt` for the current repo (preview then confirm; an already-adopted repo is reported healthy and nothing is written). (C) pick modules -- the list comes from `lib/config/modules.tsv`, the one module table `install.sh` and `lib/adopt.sh` both read, and the choice is written by driving `lib/adopt.sh --with` (this is how the plugin path, which has no `install.sh --with`, still gets per-repo module selection). (D) for the chosen modules only, surface the consumer knobs that make them non-inert -- a `.kit.toml`-keyed knob is offered as a previewed write, an env-only knob (e.g. `PROSE_RAG_INJECT`, `MONEY_GATE_REPOS`) yields printed `export` guidance. (E) on the plugin path, disclose the gaps honestly (no statusLine HUD, a frozen SHA vs `git pull`, the `--force-both` escape, older spelling `KIT_FORCE_FULL=1`, and its hazard). (F) on the bash path, INSTALL-STAMP staleness is ONE printed line + a `/kit:kit-health` pointer, never an upgrade flow. (G) end with two ideas (the lane, proof of done) and a one-line menu of opt-in commands, then `/kit:start` as the next step; the five-stage story is offered only to a newer user or on request.
 **Fence (ADR-0034 decision 4):** onboard ORCHESTRATES; it calls start + adopt + config and reimplements none of them. It never changes `install.sh`, `adopt.sh`, or `bin/config`.
 **Common gotcha:** it is not an upgrade wizard. If the kit is already installed and this repo is already adopted, onboard is a read-only health tour that writes nothing; to change modules later you hand-edit `<repo>/.kit.toml [modules]` and re-run `/kit:adopt --refresh`.
 
@@ -385,7 +385,7 @@ The `harvest` hook stages learnings when a session compacts or ends. The harvest
 | `code-reviewer` | `/review-team` | Focused review with configurable lens |
 | `security-reviewer` | `/review-team` | Deep OWASP-style audit |
 | `break-it` | `/kit:battery` (escalation lens, behavioral code with tests) | Read-only adversarial prober: hunts one concrete input or call sequence the suite does not constrain, returns `PROBE`/`NO-PROBE`; rung 2 of the coverage -> probe -> mutation ladder, before `lib/gate/mutation-smoke.sh` |
-| `advisor` | `/review-team` (Step 2b, critique) + ship/mega final boundary (over-suggest) | Read-only kit-default EXTRA cross-cutting lens; two modes (P5 critique + P6 over-suggest); additive, never replaces the specialized reviewers |
+| `advisor` | `/review-team` (Step 2b) and `/kit:battery` (leg 3), critique; `/kit:spec` design-time pass and `/kit:mega` convergence gate, over-suggest | Read-only kit-default EXTRA cross-cutting lens; two modes (P5 critique + P6 over-suggest); additive, never replaces the specialized reviewers |
 | `brief-reviewer` | (right-arm parity roster; dispatchable on the brief/decision doc) | Read-only static left-arm reviewer of the design brief (`DECISION-BRIEF-<slug>.md` or a spec's Problem/Context) for clarity, completeness, testability |
 | `acceptance-verifier` | (right-arm parity roster; dispatchable at the spec's acceptance boundary) | Read-only dynamic verifier: executes the active spec's `## Verification` section end to end, maps each AC to a passing check |
 | `system-verifier` | (right-arm parity roster; dispatchable as the whole-project check) | Read-only dynamic verifier: runs the full unscoped project test suite, the right-arm mirror of design |
@@ -522,7 +522,9 @@ approve-before-allocate, sanitize, atomic-allocate.
 | "run it all the way to a PR, your call" | max | only the 4 hard stops + a real blocker |
 
 The 4 hard stops (`safety-gate`, `push-to-main`, `anti-rationalization`, the verification
-pipeline) are **never** waived by any autonomy level.
+pipeline) are **never** waived by any autonomy level. The first three are hooks that exit 2 (anti-rationalization only while `[gate] understanding_gate` is on);
+the pipeline is run by the `/kit:execute` command text, and `ship-gate` checks that its gate was
+recorded. The rules code blocks on, each with the test that proves it, are listed in `docs/hard-rules.tsv`.
 
 (The at-a-glance intent cheat-sheet now lives at the top: see `## Drive it by intent (start here)`.)
 
@@ -562,11 +564,10 @@ Every hook logs to stderr what it matched and what it decided. Run the failing s
 
 | Symptom | Look at |
 |---|---|
-| Bash command blocked unexpectedly | `~/.claude/dwarves-kit/logs/safety-gate.log` |
-| Stop event keeps firing complaints | `~/.claude/dwarves-kit/logs/anti-rationalization.log` |
-| New file warned about unfairly | `~/.claude/dwarves-kit/logs/spec-drift-guard.log` |
-| Slop-cleaner nagging on something fine | `~/.claude/dwarves-kit/logs/slop-cleaner.log` |
-| Session state lost | `.claude/session-state/last-state.md` and `archive/` |
+| Bash command blocked unexpectedly | `<ledger root>/hooks/safety-gate.log` |
+| Stop event keeps firing complaints | `<ledger root>/hooks/anti-rationalization.log` |
+| New file warned about unfairly | `<ledger root>/hooks/spec-drift-guard.log` |
+| Slop-cleaner nagging on something fine | `<ledger root>/hooks/slop-cleaner.log` |
 | Statusline showing defaults | run `bash hooks/statusline.sh < /dev/null` and inspect |
 | Hook silently does nothing | `DWARVES_KIT_DEBUG=1` and re-trigger; check stderr |
 
@@ -575,11 +576,13 @@ that feeds `/kit:retro` and the effectiveness eval (`runs/<rid>.log`, `completen
 `proof-overrides.log`) defaults to `${XDG_STATE_HOME:-~/.local/state}/dwarves-kit/logs/`
 (SPEC-097: outside the plugin-reinstall blast zone so it survives a reinstall; an existing
 `~/.claude/dwarves-kit/logs` corpus is migrated in additively on first use). The **hook
-diagnostic logs** above (`safety-gate.log`, `slop-cleaner.log`, etc.) stay at
-`~/.claude/dwarves-kit/logs/`, they are ephemeral breadcrumbs, not corpus. Set
-`DWARVES_KIT_LOG_DIR` to redirect the corpus elsewhere (it also disables auto-migration, so
-an explicit path never ingests the legacy corpus); the test suite sets it to a throwaway
-`mktemp` dir so running tests never writes into your real tree.
+diagnostic logs** above (`safety-gate.log`, `slop-cleaner.log`, etc.) live in a `hooks/`
+subdirectory of that same ledger root (`lib/telemetry/hook-log-dir.sh`), so a plugin reinstall
+no longer erases the BLOCKED trail; the first run copies any old
+`~/.claude/dwarves-kit/logs/*.log` hook logs in. Set `DWARVES_KIT_LOG_DIR` (or `KIT_LEDGER_DIR`)
+to redirect the corpus and the hook logs together (it also disables auto-migration, so an
+explicit path never ingests the legacy corpus); the test suite sets it to a throwaway `mktemp`
+dir so running tests never writes into your real tree.
 
 ### Common failure modes
 
@@ -606,7 +609,7 @@ The hook's exit code 2 is final. Override paths in order:
 
 #### `anti-rationalization` keeps firing on legitimate work
 
-Check `~/.claude/dwarves-kit/logs/anti-rationalization.log` for the pattern. The v1.1 trim narrowed to 5 phrases ("left as an exercise", "follow-up PR", "too many issues to address", "that's a separate concern", "follow-up task"). If a legitimate phrase is hitting, it is in this list. Options:
+Check `<ledger root>/hooks/anti-rationalization.log` for the pattern. The v1.1 trim narrowed to 5 phrases ("left as an exercise", "follow-up PR", "too many issues to address", "that's a separate concern", "follow-up task"). If a legitimate phrase is hitting, it is in this list. Options:
 - Rephrase the completion note (this is the intended behavior; the hook is doing its job).
 - If the pattern is genuinely too broad, propose removing it via a PR with sample false-positive logs from your `.log` file as evidence.
 
@@ -622,17 +625,14 @@ The hook was downloading the formatter via `npx --yes` per edit (v1.0 bug). Fixe
 - Confirm the formatter is installed globally: `which prettier`, `which ruff`, etc.
 - Confirm the hook is the v1.1+ version: `grep -- '--yes' hooks/auto-format.sh` should return nothing.
 
-#### Session state was lost across compaction
+#### A rule was lost across compaction
 
 Compaction sequence:
 1. `pre-compact-backup.sh` writes a snapshot.
 2. Claude Code compacts.
 3. `post-compact-reinject.sh` (a SessionStart hook with matcher `compact`, so it fires when the compacted session resumes) re-injects critical rules.
-4. `session-state-save.sh` continues to write to `.claude/session-state/last-state.md` on every Stop.
 
-If state is missing, check in order:
-- `.claude/session-state/last-state.md` exists and is current.
-- `.claude/session-state/archive/` for the last 10 rotated snapshots.
+If the rules are missing after a compaction, check:
 - Bash install only: confirm both PreCompact and SessionStart(compact) hooks are registered in `settings.json`.
 - Plugin install: same checks against `hooks/hooks.json`.
 
@@ -663,20 +663,6 @@ The retry cap is by design. After two FAIL:fixable verdicts, the orchestrator ha
 - The acceptance criterion is impossible to meet with the current stack. Update the spec or change the stack.
 
 ### Recovery paths
-
-#### Restore session state after a crash
-
-```
-ls -lt .claude/session-state/
-cat .claude/session-state/last-state.md
-```
-
-If `last-state.md` is corrupt, fall back to the most recent archive:
-```
-ls -lt .claude/session-state/archive/ | head -3
-```
-
-Read the archive into the next session prompt.
 
 #### Reset hooks without uninstalling the kit
 

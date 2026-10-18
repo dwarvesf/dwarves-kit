@@ -45,7 +45,7 @@ If `docs/specs/SPEC-NNN-<slug>.md` exists and its Status line says `DRAFT`:
 
 ```
 Spec exists but not yet approved.
-Suggested: /kit:spec-validate to run adversarial review (5 reviewers), then approve.
+Suggested: /kit:spec-validate to run adversarial review (7 reviewers), then approve.
 ```
 
 ### 4. Spec is APPROVED or VALIDATED, tasks remain

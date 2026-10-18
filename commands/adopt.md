@@ -36,7 +36,8 @@ or `--single-source` (see below).
   you leave out starts `false` (`install.sh --with` differs: it adds to the core set). Without `--with`
   only `core` modules, today `board`, start `true`; every other module is opt-in. Edit `[modules]` any time and re-run
   `/kit:adopt` (or `--refresh`) to re-wire. Its `[gate]` block is where the blocking quality
-  gates are turned on for this repo (they are OFF by default): adopt seeds `proof_of_done`,
+  gates are turned on for this repo (the four keys adopt seeds are OFF by default; `board_row_gate`,
+  `fixture_identities` and `review_verdict` default ON): adopt seeds `proof_of_done`,
   `lane_gates`, `understanding_gate`, and `commit_format` with the values that resolved at adopt
   time and a comment explaining each; set one to `true`, commit, and it applies from the next
   hook fire (no re-adopt). Safety gates have no key. Detail: `lib/gate/README.md` "Turning a gate on".

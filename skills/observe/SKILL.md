@@ -1,9 +1,11 @@
 ---
 name: observe
-description: Query and render the kit's control plane from an agent session. Use when asked about the fleet's runs, gate verdicts, conformance, spend/tokens/cache economics, the cognitive-debt score, replaying a recorded run, or building/refreshing the observability dashboard. Trigger phrases include "dashboard", "control plane", "how much did we spend", "token usage", "cognitive debt", "fleet stats".
+description: Query and render the kit's control plane (fleet runs, spend, debt; backed by lib/bench) from an agent session. NOT for your own Claude Code usage, skill, tool or hook stats (that is `session observe`, lib/session/observe). Use when asked about the fleet's runs, gate verdicts, conformance, spend/tokens/cache economics, the cognitive-debt score, replaying a recorded run, or building/refreshing the observability dashboard. Trigger phrases include "dashboard", "control plane", "how much did we spend", "token usage", "cognitive debt", "fleet stats".
 ---
 
 # observe , the control plane from an agent session
+
+This skill fronts `lib/bench` (the fleet control plane). It is not the `session observe` verb: that one is `lib/session/observe`, which parses your own Claude Code session transcripts for skill, tool and hook usage.
 
 ## Scope and triggers
 

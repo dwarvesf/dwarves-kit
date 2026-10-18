@@ -62,7 +62,7 @@ bash lib/gate/quiz-gate.sh respond <rid> wave                 # accept the debt 
 ### Step 3: The merge proceeds either way
 
 The quiz is a NUDGE. Whatever the human picked (including ignoring it), the merge is not blocked by this
-gate. The correctness gates (the ship-gate and the proof-of-done gate) remain the only hard blocks.
+gate. The correctness gates (the ship-gate and the proof-of-done gate) remain the correctness blocks.
 
 ## Rules
 

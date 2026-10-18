@@ -43,6 +43,7 @@ mkrepo() {  # dir -> a clean git repo on default branch `main`
 }
 seed_transcript() { printf '%s\n' "$2" > "$QSTUB/$1.transcript"; }   # slug last-line
 seed_dead()       { : > "$QSTUB/$1.dead"; }                          # slug
+seed_work()       { : > "$QSTUB/$1.work"; }                          # slug: the window commits once in its repo
 row() { printf '%s\t%s\t%s\n' "$1" "$2" "$3"; }                     # slug repo pointer
 jverdict() { awk -F'\t' -v s="$1" '$2==s{print $3}' "$JOURNAL"; }    # slug -> verdict col
 
@@ -54,6 +55,7 @@ jverdict() { awk -F'\t' -v s="$1" '$2==s{print $3}' "$JOURNAL"; }    # slug -> v
   # INDENTED marker: the real Claude Code TUI renders the final line inside its message block,
   # so the pane shows leading spaces. The live smoke proved a strict ^RUNNER_DONE$ misses this.
   seed_transcript ok1 "  RUNNER_DONE"
+  seed_work ok1
   row ok1 "$repo" "$WORK/p1.txt" > "$WORK/q.tsv"
 
   run bash "$QUEUE" run "$WORK/q.tsv"
@@ -99,6 +101,7 @@ jverdict() { awk -F'\t' -v s="$1" '$2==s{print $3}' "$JOURNAL"; }    # slug -> v
   git -C "$repo" add -A; git -C "$repo" commit -qm "chore: fixture pointer"   # keep the repo clean
   row b4 "$repo" "$repo/_meta/megagoals/fx/goals/p4.txt" > "$WORK/board-rows.tsv"
   seed_transcript b4 "  RUNNER_DONE"
+  seed_work b4
   export QUEUE_BOARD_CMD="$FIX/fake-board" QBOARD_ROWS="$WORK/board-rows.tsv"
 
   run bash "$QUEUE" run "" --from-boards
@@ -129,6 +132,7 @@ jverdict() { awk -F'\t' -v s="$1" '$2==s{print $3}' "$JOURNAL"; }    # slug -> v
   local repo="$WORK/r6"; mkrepo "$repo"
   echo "x" > "$WORK/anywhere.txt"
   seed_transcript hand6 "  RUNNER_DONE"
+  seed_work hand6
   row hand6 "$repo" "$WORK/anywhere.txt" > "$WORK/q6.tsv"
 
   run bash "$QUEUE" run "$WORK/q6.tsv"
@@ -225,6 +229,7 @@ jverdict() { awk -F'\t' -v s="$1" '$2==s{print $3}' "$JOURNAL"; }    # slug -> v
   printf 'report; rm -f %s; $(touch %s.pwned) `id`\n' "$sentinel" "$sentinel" > "$WORK/pm.txt"
   local slug='ev;il&$(rm -rf x)|z'
   seed_transcript "$slug" "RUNNER_DONE"
+  seed_work "$slug"
   row "$slug" "$repo" "$WORK/pm.txt" > "$WORK/q.tsv"
 
   run bash "$QUEUE" run "$WORK/q.tsv"
@@ -323,6 +328,7 @@ jverdict() { awk -F'\t' -v s="$1" '$2==s{print $3}' "$JOURNAL"; }    # slug -> v
   local repo="$WORK/r12"; mkrepo "$repo"
   echo "report HEAD then end" > "$WORK/p12.txt"
   seed_transcript ok12 "  RUNNER_DONE"
+  seed_work ok12
   row ok12 "$repo" "$WORK/p12.txt" > "$WORK/q.tsv"
 
   run bash "$QUEUE" run "$WORK/q.tsv"
@@ -388,4 +394,85 @@ jverdict() { awk -F'\t' -v s="$1" '$2==s{print $3}' "$JOURNAL"; }    # slug -> v
   [ "$status" -eq 64 ]
   run bash "$QUEUE" wait
   [ "$status" -eq 64 ]
+}
+
+# =============================================================================================
+# D1 done-needs-delta: a RUNNER_DONE claim with no HEAD move and no new PR is journaled `gated`,
+# reason `no-delta`, never `done` (the negative control for "self-reported completion").
+@test "D1 no-delta: RUNNER_DONE with no commit and no PR -> gated no-delta" {
+  local repo="$WORK/rd1"; mkrepo "$repo"
+  echo "report only" > "$WORK/pd1.txt"
+  seed_transcript nd1 "  RUNNER_DONE"
+  row nd1 "$repo" "$WORK/pd1.txt" > "$WORK/q.tsv"
+
+  PATH="$WORK/nogh:$PATH" run bash "$QUEUE" run "$WORK/q.tsv"
+  [ "$status" -eq 0 ]
+  [ "$(jverdict nd1)" = "gated" ]
+  awk -F'\t' '$2=="nd1"{print $4}' "$JOURNAL" | grep -q '^no-delta$'
+}
+
+# D2 a PR of mine created since the window opened counts as delta even when HEAD did not move (the run
+# worked in a worktree and pushed). The `gh` stub honours -q: it runs the real jq filter over a canned
+# `pr list` payload, so the createdAt comparison and the author flag are exercised, not skipped.
+mkgh() {  # createdAt-of-the-one-PR
+  mkdir -p "$WORK/ghbin"
+  cat > "$WORK/ghbin/gh" <<GHEOF
+#!/usr/bin/env bash
+case "\$*" in *"--author @me"*) ;; *) echo "gh stub: --author @me missing" >&2; exit 1 ;; esac
+q=""; while [ \$# -gt 0 ]; do [ "\$1" = "-q" ] && q="\$2"; shift; done
+printf '%s' '[{"createdAt":"$1"}]' | jq -r "\$q"
+GHEOF
+  chmod +x "$WORK/ghbin/gh"
+}
+
+@test "D2 pr-delta: a PR created during the run -> done without a HEAD move" {
+  local repo="$WORK/rd2"; mkrepo "$repo"
+  echo "report only" > "$WORK/pd2.txt"
+  seed_transcript nd2 "  RUNNER_DONE"
+  row nd2 "$repo" "$WORK/pd2.txt" > "$WORK/q.tsv"
+  mkgh "2099-01-01T00:00:00Z"
+
+  PATH="$WORK/ghbin:$PATH" run bash "$QUEUE" run "$WORK/q.tsv"
+  [ "$status" -eq 0 ]
+  [ "$(jverdict nd2)" = "done" ]
+}
+
+# D3 a PR that predates the window is no evidence
+@test "D3 pr-delta: a PR older than the window -> gated no-delta" {
+  local repo="$WORK/rd3"; mkrepo "$repo"
+  echo "report only" > "$WORK/pd3.txt"
+  seed_transcript nd3 "  RUNNER_DONE"
+  row nd3 "$repo" "$WORK/pd3.txt" > "$WORK/q.tsv"
+  mkgh "2000-01-01T00:00:00Z"
+
+  PATH="$WORK/ghbin:$PATH" run bash "$QUEUE" run "$WORK/q.tsv"
+  [ "$status" -eq 0 ]
+  [ "$(jverdict nd3)" = "gated" ]
+}
+
+# D4 a worktree run that only creates a branch (no PR, no gh) still leaves a delta
+@test "D4 branch-delta: a new local branch with no HEAD move and no gh -> done" {
+  local repo="$WORK/rd4"; mkrepo "$repo"
+  echo "report only" > "$WORK/pd4.txt"
+  seed_transcript nd4 "  RUNNER_DONE"
+  : > "$QSTUB/nd4.branch"
+  row nd4 "$repo" "$WORK/pd4.txt" > "$WORK/q.tsv"
+
+  PATH="$WORK/nogh:$PATH" run bash "$QUEUE" run "$WORK/q.tsv"
+  [ "$status" -eq 0 ]
+  [ "$(jverdict nd4)" = "done" ]
+}
+
+# D5 a gated no-delta row is not relaunched by the next `queue run` over the same tsv
+@test "D5 no-delta-idempotence: the second run over the same tsv opens no second window" {
+  local repo="$WORK/rd5"; mkrepo "$repo"
+  echo "report only" > "$WORK/pd5.txt"
+  seed_transcript nd5 "  RUNNER_DONE"
+  row nd5 "$repo" "$WORK/pd5.txt" > "$WORK/q.tsv"
+
+  PATH="$WORK/nogh:$PATH" run bash "$QUEUE" run "$WORK/q.tsv"
+  PATH="$WORK/nogh:$PATH" run bash "$QUEUE" run "$WORK/q.tsv"
+  [ "$status" -eq 0 ]
+  [ "$(grep -c 'new-window slug=nd5' "$QLOG")" -eq 1 ]
+  [ "$(awk -F'\t' '$2=="nd5"' "$JOURNAL" | wc -l | tr -d ' ')" -eq 1 ]
 }

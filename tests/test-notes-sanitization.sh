@@ -166,6 +166,7 @@ mkrepo() {
   echo x > "$d/f"; git -C "$d" add f; git -C "$d" commit -qm init
 }
 seed_transcript() { printf '%s\n' "$2" > "$QSTUB/$1.transcript"; }
+seed_work() { : > "$QSTUB/$1.work"; }   # the window commits once in its repo: the delta a done needs
 run_row() {  # slug repo pointer [extra flags]
   local s="$1" r="$2" p="$3"; shift 3
   printf '%s\t%s\t%s\n' "$s" "$r" "$p" > "$WORK/q.tsv"
@@ -242,6 +243,7 @@ present   "C1: and the reason names the path" "CLAUDE.md" "$(jreason c1)"
 # C2 NEGATIVE CONTROL: an ordinary file written by the same run is not gated.
 new_env; REPO="$WORK/rc2"; mkrepo "$REPO"; echo "p" > "$WORK/p.md"
 seed_transcript c2 "  RUNNER_DONE"
+seed_work c2
 cat > "$WORK/mux" <<EOF
 #!/usr/bin/env bash
 [ "\${1:-}" = capture-pane ] && printf 'work\n' >> "$REPO/src.txt"
@@ -255,6 +257,7 @@ assert_eq "C2 NC: an ordinary write is left alone" "$(jverdict c2)" "done"
 # edits CLAUDE.md on purpose is not second-guessed.
 new_env; REPO="$WORK/rc3"; mkrepo "$REPO"; echo "p" > "$WORK/p.md"
 seed_transcript c3 "  RUNNER_DONE"
+seed_work c3
 cat > "$WORK/mux" <<EOF
 #!/usr/bin/env bash
 [ "\${1:-}" = capture-pane ] && printf 'rewritten\n' >> "$REPO/CLAUDE.md"
@@ -308,6 +311,7 @@ absent    "D1: no window was ever opened" "new-window" "$(cat "$QLOG")"
 # D2 NEGATIVE CONTROL: the same row with the sanitizer present launches normally.
 new_env; REPO="$WORK/rd2"; mkrepo "$REPO"; echo "p" > "$WORK/p.md"
 seed_transcript d2 "  RUNNER_DONE"
+seed_work d2
 run_row d2 "$REPO" "$WORK/p.md" --sanitize-prompt >/dev/null
 assert_eq "D2 NC: with the sanitizer present the row runs to done" "$(jverdict d2)" "done"
 

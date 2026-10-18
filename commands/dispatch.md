@@ -28,7 +28,7 @@ bash lib/gate/dispatch-gate.sh plan <spec1> <spec2> ...
 
 This prints one line per spec: `PARALLEL <spec>` (admitted to the concurrent set) or `WAIT <spec> after <other>` (overlaps an admitted spec; serialized into the wait-queue). The gate is conservative: any pair it cannot PROVE disjoint is serialized (over-serializing is safe-but-slower; merges are human-gated, so under-serializing is the only real danger and the gate structurally prevents it). A spec with no `## Touches` makes the gate exit non-zero with a REJECT message; fix the spec, do not bypass the gate.
 
-Specs that touch the same module (the same `lib/<module>/` or file) also wait for each other, even when their `## Touches` globs differ by a suffix: they run serially inside the wave, and the first merges before the next worker starts. Present the parallel-safe set + the wait-queue to the user. Cap concurrent workers at a small max (default **4**); queue the rest even if disjoint (rate-limit / quota protection).
+Specs that touch the same module (the same `lib/<module>/` or file) also wait for each other, even when their `## Touches` globs differ by a suffix: they run serially inside the wave, and the first merges before the next worker starts. Present the parallel-safe set + the wait-queue to the user. Cap concurrent workers at a small max (guidance: **4**; the lead enforces it by hand, since `dispatch-gate.sh plan` prints every PARALLEL spec and applies no cap); queue the rest even if disjoint (rate-limit / quota protection).
 
 ### Step 3: Fan out one background worktree worker per parallel-safe spec
 
@@ -178,7 +178,7 @@ Workers run **autonomous** (bypassPermissions); the kit:task-verifier inside eac
 ## What this command refuses
 
 - **Auto-merge** of worker branches. Merge is the human's, at `/kit:ship`.
-- **A DAG / wave scheduler / crash-recovery durability.** Flat set + pairwise gate + wait-queue only. Real ordering chains -> GSD v2.
+- **A DAG scheduler / crash-recovery durability.** Flat set + pairwise gate + wait-queue only. Dependent chains go through `/kit:mega`, whose orchestrator (`lib/queue/orchestrate.sh`) runs disjoint dependency-independent sub-goals as waves; dispatch has no wave scheduler of its own.
 - **Intra-spec task parallelism.** That is `/kit:execute`, and it stays sequential.
 - **Running a spec without `## Touches`.** The gate rejects it; an undeclared file-set is the "gate lies" failure by default.
 

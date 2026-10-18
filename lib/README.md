@@ -12,14 +12,15 @@ orphans with no cluster stay as bare scripts at the root.
 | Dir | Files |
 |---|---|
 | `board/` | `board.sh` `board-mirror.sh` `board-writeback.sh` `parse-board.sh` `backlog.sh` |
-| `queue/` | `orchestrate.sh` `queue.sh` `weekend-batch.sh` |
+| `queue/` | `orchestrate.sh` `queue.sh` `harness.sh` `orca-backend.sh` `sanitize.sh` `watch-board.sh` `pane-tail.jq` |
+| `reflect/` | `reflect.sh` `drain.sh` `drain.py` `propose.py` `weekend-batch.sh` `hook-util.sh` `shlex-split.sh` `staging-format.py` `staging-format.jq` |
 | `gate/` | `gate-ledger.sh` `proof-gate.sh` `proof-ledger.sh` `proof-table-gen.py` `proof-table-gen.sh` `dispatch-gate.sh` `quiz-gate.sh` `coverage-delta.sh` `verify-counts.sh` `mutation-smoke.sh` |
 | `classify/` | `lane-classify.sh` `role-classify.sh` `significance-classify.sh` `task-type-classify.sh` `route-suggest.sh` |
 | `spec/` | `spec-index.sh` `spec-next.sh` `spec-task-done.sh` |
-| `goal/` | `goal-drafts.sh` `goal-registry.sh` `mega-merge.sh` `stack-merge.sh` `handoff-gen` + `handoff/` (`handoff_gen.py`, `cc_compact.py`) |
+| `goal/` | `goal.sh` `goal-drafts.sh` `goal-registry.sh` `attempt-state.sh` `megagoals.sh` `mega-merge.sh` `stack-merge.sh` `wt.sh` `handoff-gen` + `handoff/` (`handoff_gen.py`, `cc_compact.py`) |
 | `mega/` | `mega.sh` `mega-report.py` `mega-review.py` (the mega-goal engine + its two python halves; stable entry via `bin/mega`) |
 | `telemetry/` | `lane-telemetry.sh` `kit-log-dir.sh` |
-| `session/` | `parse_transcript.py` `parse-transcript.sh` (the shared transcript parser + its tests) |
+| `session/` | `session.sh` (verb dispatcher behind `bin/session`) `parse_transcript.py` `parse-transcript.sh` (the shared transcript parser) `handoffs.sh`, plus the sub-tools `recall/` `observe/` `intel/` `audit/` |
 | `precedent/` | `precedent.sh` `inventory.py` (records + inventory surfaces; stable entry `bin/precedent`) |
 | `intake/` | `intake.sh` (the knowledge-intake dedup gate; stable entry `bin/intake`) |
 | *(root)* | `adopt.sh` `explain.sh` `pitch.sh`, orphans, no cluster |

@@ -65,6 +65,7 @@ EOF
 
 during() { printf '%s\n' "$2" > "$QSTUB/$1.during"; }
 # The run writes its own status file (the common case).
+seed_work() { : > "$QSTUB/$1.work"; }   # the window commits once in its repo: the delta a done needs
 status_during() {
   printf '%b' "$2" > "$QSTUB/$1.status-src"
   during "$1" "cp \"\$QSTUB/$1.status-src\" \"\$KIT_LEDGER_DIR/queue-runs/$1.status\""
@@ -139,6 +140,7 @@ assert "B1: an active ceiling asks the run to self-report TOOL_CALLS" $R
 new_env; REPO="$WORK/rB2"; mkrepo "$REPO"; echo p > "$WORK/p.txt"
 export QUEUE_MAX_TOOL_CALLS=100
 status_during b2 "TOOL_CALLS: 3\nEXIT_SIGNAL: true"
+seed_work b2
 run_row b2 "$REPO" "$WORK/p.txt" >/dev/null
 assert_eq "B2 NC: a run under the ceiling reaches done" "$(jverdict b2)" "done"
 case "$(jreason b2)" in *spend_ceiling*) R=1 ;; *) R=0 ;; esac
@@ -160,6 +162,7 @@ echo "--- Section C: the queue-wide spend ceiling ---"
 new_env; REPO="$WORK/rC"; mkrepo "$REPO"; echo p > "$WORK/p.txt"
 export QUEUE_MAX_TOTAL_TOOL_CALLS=10
 status_during c1 "TOOL_CALLS: 12\nEXIT_SIGNAL: true"
+seed_work c1
 status_during c2 "TOOL_CALLS: 1\nEXIT_SIGNAL: true"
 printf 'c1\t%s\t%s\nc2\t%s\t%s\n' "$REPO" "$WORK/p.txt" "$REPO" "$WORK/p.txt" > "$WORK/qc.tsv"
 run_tsv "$WORK/qc.tsv" >/dev/null
@@ -170,7 +173,9 @@ assert_eq "C1: the queue-wide ceiling skips the remaining row" "$(jrows c2)" "0"
 new_env; REPO="$WORK/rC2"; mkrepo "$REPO"; echo p > "$WORK/p.txt"
 export QUEUE_MAX_TOTAL_TOOL_CALLS=100
 status_during d1 "TOOL_CALLS: 2\nEXIT_SIGNAL: true"
+seed_work d1
 status_during d2 "TOOL_CALLS: 2\nEXIT_SIGNAL: true"
+seed_work d2
 printf 'd1\t%s\t%s\nd2\t%s\t%s\n' "$REPO" "$WORK/p.txt" "$REPO" "$WORK/p.txt" > "$WORK/qd.tsv"
 run_tsv "$WORK/qd.tsv" >/dev/null
 assert_eq "C2 NC: a cheap batch runs the first row" "$(jverdict d1)" "done"
@@ -190,6 +195,7 @@ assert_eq "D1: _status_num is 0 when the key is absent" "$(_status_num nope TOOL
 # behavior). The typed line also carries NO TOOL_CALLS clause when no ceiling is set.
 new_env; REPO="$WORK/rD2"; mkrepo "$REPO"; echo p > "$WORK/p.txt"
 status_during f1 "TOOL_CALLS: 9999\nEXIT_SIGNAL: true"
+seed_work f1
 run_row f1 "$REPO" "$WORK/p.txt" >/dev/null
 assert_eq "D2: with ceilings unset a big count never trips" "$(jverdict f1)" "done"
 case "$(typed f1)" in *TOOL_CALLS*) R=1 ;; *) R=0 ;; esac

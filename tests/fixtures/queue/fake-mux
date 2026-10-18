@@ -7,6 +7,8 @@
 # Env:
 #   QSTUB  dir holding <slug>.transcript (canned pane output) and optional <slug>.dead (window
 #          exited -> capture-pane returns nonzero, the launcher's "window died" signal)
+#   <slug>.work    optional flag file; the window then commits once in its start dir when it opens
+#   <slug>.branch  optional flag file; the window then creates one branch in its start dir (worktree work)
 #   QLOG   append-only verb log the tests assert against (default $QSTUB/verbs.log)
 set -u
 QSTUB="${QSTUB:?fake-mux: QSTUB unset}"
@@ -16,12 +18,13 @@ verb="${1:-}"; shift || true
 args=("$@")
 
 # Pull the window slug from `-t <sess>:<slug>` (tmux) or `-n <slug>` / `--window <slug>`.
-slug=""
+slug=""; wdir=""
 i=0
 while [ "$i" -lt "${#args[@]}" ]; do
   case "${args[$i]}" in
     -t)          t="${args[$((i+1))]:-}"; slug="${t##*:}" ;;
     -n|--window) slug="${args[$((i+1))]:-}" ;;
+    -c)          wdir="${args[$((i+1))]:-}" ;;
   esac
   i=$((i+1))
 done
@@ -29,7 +32,19 @@ done
 case "$verb" in
   has-session) exit 1 ;;                                   # force the new-session path
   new-session) printf 'new-session\n'            >> "$QLOG"; exit 0 ;;
-  new-window)  printf 'new-window slug=%s\n' "$slug" >> "$QLOG"; exit 0 ;;
+  new-window)  printf 'new-window slug=%s\n' "$slug" >> "$QLOG"
+    # work simulation: when $QSTUB/<slug>.work exists, the window makes one commit in its start
+    # directory (new-window -c), so the conductor sees a HEAD move (the verified delta a `done` needs).
+    if [ -f "$QSTUB/$slug.work" ] && [ -n "$wdir" ]; then
+      git -C "$wdir" -c user.email=t@t.dev -c user.name=tester \
+        commit -q --allow-empty -m "chore: simulated work for $slug"
+    fi
+    # <slug>.branch: the window works in a linked worktree, so only a new branch tip appears; the
+    # main checkout's HEAD does not move.
+    if [ -f "$QSTUB/$slug.branch" ] && [ -n "$wdir" ]; then
+      git -C "$wdir" branch "work/$slug" HEAD
+    fi
+    exit 0 ;;
   kill-window) printf 'kill-window slug=%s\n' "$slug" >> "$QLOG"; exit 0 ;;
   send-keys)
     last="${args[$(( ${#args[@]} - 1 ))]:-}"

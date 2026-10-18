@@ -43,10 +43,12 @@ doc's own "Backlog reconcile" SDLC-instances row): every adopter repo gets this 
 
 3. **Enumerate.** `bash lib/board/backlog.sh board` for id/title/status; for `Target artifact`,
    read `_meta/BACKLOG.md` directly and, per row, take the cell matching `^SPEC-\d+$` or
-   `^\(tiny, no spec\)$` by CONTENT, never a fixed column index (real rows drift in column
-   count: `awk -F'|' 'NF'` on this repo's own file shows 83 of 177 active rows at NF=6, only 74
-   at the canonical NF=8). A row with no matching cell is flagged UNSURE and skips straight to
-   the Tier-2 delta list; no Tier-1 mechanical check applies to it.
+   `^\(tiny, no spec\)$` by CONTENT, never a fixed column index (a board's column count is
+   whatever its own header row says: this repo's kit board has 6 columns, other boards have 4
+   or 8, and `backlog.sh lint` and the board writers count cells against that table's header,
+   so a row whose cell count differs from its header is a malformed row). A row with no
+   matching cell is flagged UNSURE and skips straight to the Tier-2 delta list; no Tier-1
+   mechanical check applies to it.
 
 4. **Tier 1, mechanical, batched, zero model cost.** Per row with a matched `Target artifact`:
 
@@ -158,7 +160,7 @@ cadence, per the audit-loop pattern's own driver ladder; the pass itself stays o
 ## Red flags
 
 - Editing `_meta/BACKLOG.md` without the worktree branch: stop, branch, start over.
-- Reading `Target artifact` by column index instead of content pattern: real rows drift in
+- Reading `Target artifact` by column index instead of content pattern: boards differ in
   column count, a fixed index reads the wrong cell.
 - One `git log --grep` subprocess per `(tiny, no spec)` row instead of one batched pass:
   defeats the "cost scales with drift, not board size" guarantee.

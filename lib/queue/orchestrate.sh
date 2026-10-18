@@ -208,6 +208,10 @@ WAVE_CAP="${WAVE_CAP:-$(kit_config_get mega.wave_cap 2)}"
 # has a real recorded PR#; a placeholder `#__` is skipped, so a wave with no real PRs converges to a
 # clean no-op. Tests set WAVE_MERGE_CMD to a mock that records merge ordering. Word-split intentionally
 # (operator config, not user data), mirroring CLAUDE_FLAGS. Override the lane via WAVE_MERGE_LANE.
+# mega-merge's default is a DRY RUN that exits 0, so a hook exit code proves nothing: `_wave_converge`
+# records `merged` only when `gh pr view` reports the PR MERGED afterwards. Any other state records
+# `merge-dry-run`. To merge for real, point WAVE_MERGE_CMD at a wrapper that runs
+# `mega-merge.sh merge "$@" --execute` (mega-merge takes --execute after its three positionals).
 WAVE_MERGE_CMD="${WAVE_MERGE_CMD:-$LIB_ROOT/goal/mega-merge.sh merge}"
 
 # Multiplexer panes (executes section 4). Opt-in (default 0/off): when a wave
@@ -583,7 +587,7 @@ _goalfile() {
 }
 
 # Wavefront admission gate. PURE DECISION helper: it decides
-# which ready sub-goals may run concurrently; it spawns NOTHING and is not yet wired into cmd_run.
+# which ready sub-goals may run concurrently; it spawns NOTHING (cmd_run calls it, then `_wave_run` spawns).
 # Reads the ready set (`_ready_set`), then admits GREEDILY in ROADMAP order , a
 # candidate is admitted iff (a) its goal file declares its OWN `## Touches` section AND (b) it proves
 # disjoint (dispatch-gate.sh, the ONE disjointness authority) against EVERY already-
@@ -2086,9 +2090,10 @@ _wave_run() {  # megadir roadmap
 # MUST happen ONE AT A TIME (never concurrently), in ROADMAP order, each under the flip lock , so two
 # same-base merges never race. This is a THIN SEQUENCER: it does NOT reimplement merging. Each merge
 # goes through the MOCKABLE `$WAVE_MERGE_CMD` hook (default `lib/goal/mega-merge.sh merge`, whose merge
-# SEMANTICS stay untouched per scope , we only sequence calls to it). Real gh-backed merge is DEFERRED
-# for now (waves are off at the default WAVE_CAP=1, so this is never reached and the serial
-# path stays byte-identical; a real merge also needs `gh` + real PRs).
+# SEMANTICS stay untouched per scope , we only sequence calls to it). The default hook is a dry run
+# (a real merge needs a WAVE_MERGE_CMD wrapper that passes --execute), and a sub-goal counts as merged only when `gh pr view` reports the PR MERGED
+# (otherwise the event is `merge-dry-run`). This runs on the default wave path (WAVE_CAP defaults to 2),
+# after `_wave_run` drains an admitted wave; a serial cycle never reaches it.
 
 # Files a wave branch changed vs the base: three-dot diff = changes on <branch> since its merge-base
 # with <base>. Empty when the branch has no commits (e.g. a session that only flipped its box) or is
@@ -2169,7 +2174,7 @@ _wave_converge() {  # megadir [id...]
   #    file's `**Branch:**`); lane = the mega-goal's lane (`WAVE_MERGE_LANE`, default full , mega-goals
   #    run the full lane). Tests override `WAVE_MERGE_CMD` with a recorder, so the extra arg is inert.
   local lockdir="$megadir/.orchestrate/flip.lock"
-  local pr rc branch rid lane="${WAVE_MERGE_LANE:-full}"
+  local pr rc branch rid state lane="${WAVE_MERGE_LANE:-full}"
   for id in "${ordered[@]}"; do
     pr=$(_sg_pr "$roadmap" "$id")
     if [ -z "$pr" ]; then
@@ -2187,8 +2192,15 @@ _wave_converge() {  # megadir [id...]
       echo "[orchestrate] [converge] $id merge hook failed (PR #$pr, rc $rc); stopping convergence (no self-claim)." >&2
       return "$rc"
     fi
-    _emit_event "$megadir" "$id" merged "converge: PR #$pr merged (one-at-a-time under the flip lock)"
-    _say "[orchestrate] [converge] $id merged (PR #$pr)."
+    # The hook exiting 0 is not a merge (the default hook is a dry run). Ask GitHub.
+    state=$(cd "$repo" && "${MEGA_MERGE_GH:-gh}" pr view "$pr" --json state -q .state 2>/dev/null) || state=""
+    if [ "$state" = MERGED ]; then
+      _emit_event "$megadir" "$id" merged "converge: PR #$pr merged (one-at-a-time under the flip lock)"
+      _say "[orchestrate] [converge] $id merged (PR #$pr)."
+      continue
+    fi
+    _emit_event "$megadir" "$id" merge-dry-run "converge: PR #$pr NOT merged (hook exit 0, PR state '${state:-unreadable}'); not recorded as merged"
+    _say "[orchestrate] [converge] $id PR #$pr is not merged (state '${state:-unreadable}'): a dry run or an unconfirmed merge; NOT recorded as merged. A real merge needs a WAVE_MERGE_CMD that passes --execute to mega-merge."
   done
   return 0
 }
@@ -2451,8 +2463,8 @@ cmd_run() {
   local board_mode; board_mode=$(_resolve_board_mode "$board_arg")
   case "$board_mode" in roadmap|kanban|both) ;; *) echo "unknown --board mode: '$board_mode' (want roadmap|kanban|both)" >&2; return 64 ;; esac
 
-  # WAVE_CAP parse-time validation (Edge case 4). Default 1 (waves
-  # off). A non-numeric or <1 value is REJECTED with a clear error + nonzero exit here, NOT silently
+  # WAVE_CAP parse-time validation (Edge case 4). Default 2 (waves
+  # on; WAVE_CAP=1 forces serial). A non-numeric or <1 value is REJECTED with a clear error + nonzero exit here, NOT silently
   # coerced to 1 elsewhere, so a typo (`WAVE_CAP=0`, `WAVE_CAP=two`) fails loudly instead of quietly
   # running serial. The digit-class check rejects empty / non-numeric / negative (the sign char is a
   # non-digit); the `-lt 1` check then rejects 0.
@@ -2531,7 +2543,7 @@ cmd_run() {
   while :; do
     # Size-dispatch: serial-vs-wave decided per cycle on the
     # ADMITTED count (post-`_wave_gate`), NOT the raw ready size (a no-deps mega-goal has ready size
-    # N, so raw size can't gate the serial path). WAVE_CAP defaults to 1 (waves OFF) => this guard is
+    # N, so raw size can't gate the serial path). WAVE_CAP defaults to 2 (waves ON); at WAVE_CAP=1 this guard is
     # FALSE => the loop falls straight through to the byte-identical serial body below, exactly as the
     # pre-wavefront loop ran (the sacred invariant). Only WAVE_CAP>=2 even consults `_wave_gate`; only
     # `admitted>=2` (dep-free, Touches-declaring, provably-disjoint sub-goals) routes to `_wave_run`.
@@ -2575,7 +2587,7 @@ cmd_run() {
         if _wave_run "$dir" "$roadmap"; then
           # Converge the landed wave: merge its sub-goals ONE AT A TIME under the flip
           # lock, in ROADMAP order, via the mockable hook. A same-file cross-wave edit or a merge-hook
-          # failure halts the loop (no self-claim). At the default WAVE_CAP=1 this block is unreachable,
+          # failure halts the loop (no self-claim). At WAVE_CAP=1 this block is unreachable,
           # so the serial path stays byte-identical.
           if ! _wave_converge "$dir" ${_WAVE_LANDED[@]+"${_WAVE_LANDED[@]}"}; then
             echo "[orchestrate] [wave] convergence flagged a same-file cross-wave conflict or a merge failure; halting (no self-claim)." >&2
@@ -2594,7 +2606,7 @@ cmd_run() {
       # a false "done"). Halt for a human instead: a clear blocked message + NONZERO exit, never a
       # false-complete, never a spin. Guarded by `unchecked>0` so the legit all-checked completion
       # still falls through to `_next`'s empty -> "done" return-0 path. Only reachable on the wave
-      # path (WAVE_CAP>=2); the serial default never enters this block, so serial stays byte-identical.
+      # path (WAVE_CAP>=2); WAVE_CAP=1 never enters this block, so serial stays byte-identical.
       local unchecked_n ready_n
       unchecked_n=$(_subgoals "$roadmap" | awk -F'\t' '$3==0 {n++} END{print n+0}')
       if [ "$unchecked_n" -gt 0 ]; then
