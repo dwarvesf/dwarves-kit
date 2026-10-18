@@ -163,6 +163,7 @@ or asset files under `docs/` classes `inert`. Source, build files and secret-sha
 
 The blocking quality gates are OPT-IN. The kit root says `false` for every key except
 `board_row_gate`, `fixture_identities` and `review_verdict`, so a fresh install blocks nothing else until someone turns a gate on.
+`/kit:adopt` is the exception for the repo it adopts: it seeds `lane_gates = true` and `proof_of_done = true` in that repo's `.kit.toml`, so an adopted repo enforces both from the first push, while a raw install keeps the kit root defaults (off).
 Those three default on; a repo opts out with `<key> = false` in a committed
 `.kit.toml`, under the same committed-and-clean rule as any project `false`. Two places do that, and both apply on
 the next hook fire, no re-adopt, no restart:
