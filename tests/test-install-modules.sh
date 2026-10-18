@@ -113,7 +113,7 @@ assert_true "re-run (no --with) reproduces the same wired set from the manifest"
 # ============================================================
 echo "== NC un-opted-hook-absent: a cosmetic/session/advisor hook never reaches settings.json =="
 # ============================================================
-UNWANTED="auto-format.sh notification.sh slop-cleaner.sh statusline.sh codebase-index.sh permission-auto-approve.sh context-hints.sh tool-policy-guard.sh harvest.sh session-state-save.sh citation-guard.sh context-readiness.sh output-offload.sh pre-compact-backup.sh post-compact-reinject.sh money-gate.sh prose-rag.sh context-budget.sh batch-debt-warn.sh"
+UNWANTED="auto-format.sh notification.sh slop-cleaner.sh statusline.sh codebase-index.sh permission-auto-approve.sh context-hints.sh tool-policy-guard.sh harvest.sh citation-guard.sh context-readiness.sh output-offload.sh pre-compact-backup.sh post-compact-reinject.sh money-gate.sh prose-rag.sh context-budget.sh batch-debt-warn.sh"
 LEAKED=""
 for h in $UNWANTED; do
   { trap '' PIPE; printf '%s\n' "$WIRED2" 2>/dev/null || :; } | grep -qx "$h" && LEAKED="$LEAKED $h"
