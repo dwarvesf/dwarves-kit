@@ -614,7 +614,7 @@ _floor_drop() {
 # continuation next to the change, a mode change, a binary diff, an empty or unparsable diff. A `#!` line, a
 # parser-steering comment (Dockerfile directive, coding or modeline tag) and a scanner-suppression comment
 # (nosec, noqa, shellcheck, and the like) are code.
-_FLOOR_DATA_OPENER='<<|"""|'"'''"'|:[[:space:]]*[|>][-+]?[[:space:]]*$|^[[:space:]]*-[[:space:]]*[|>][-+]?[[:space:]]*$'
+_FLOOR_DATA_OPENER='<<|"""|'"'''"'|(^|[[:space:]:-])[|>][0-9+-]*[[:space:]]*(#.*)?$'
 _floor_comment_only() {
   local root="$1" base="$2" head="$3" tmp="$4" n="$5" kind="$6" path rev
   [ "$kind" != submodule ] || return 1
@@ -624,7 +624,7 @@ _floor_comment_only() {
   # The winning kind is only the first match; a path that ALSO matches the secret pattern never qualifies.
   printf '%s\n' "$path" | grep -Eiq -- "$(_hp_re secret)" && return 1
   case "${path##*/}" in
-    *.sh|*.bash|*.zsh|*.py|*.toml|*.yml|*.yaml|*.tf|Dockerfile*|*.dockerfile) ;;
+    *.sh|*.bash|*.zsh|*.py|*.toml|*.yml|*.yaml|*.tf|Dockerfile|*.dockerfile) ;;
     *) return 1 ;;
   esac
   # A `#` line can be data: a heredoc body, a triple-quoted string, a YAML block scalar. Any such opener in
@@ -636,17 +636,22 @@ _floor_comment_only() {
   [ -s "$tmp/cdiff" ] || return 1
   # A NUL byte means binary: bash 3.2 drops NULs in a substitution and awk may too, so test the file itself.
   LC_ALL=C tr -d '\0' < "$tmp/cdiff" | cmp -s - "$tmp/cdiff" || return 1
+  # Every change group (a run of + and - lines) must start right after a blank line, a comment line or the top
+  # of the file. A `#` or blank line that follows a code or data line may sit inside a quoted string, a
+  # continuation or a bracket, where it is not a comment.
   awk '
-    !body && /^@@ / { body = 1; next }
+    /^@@ / { body = 1; prev = "top?"; split($2, o, /[-,]/); split($3, w, /[+,]/); top = (o[2] + 0 <= 1 && w[2] + 0 <= 1); next }
     !body && /^(old mode|new mode|Binary files|GIT binary patch|rename |copy |similarity )/ { bad = 1; next }
     !body { next }
     /^\\/ { next }
-    /^ / { if ($0 ~ /\\$/) bad = 1; next }
+    /^ / { c = substr($0, 2); if (c ~ /\\$/) bad = 1; prev = (c ~ /^[[:space:]]*(#.*)?$/) ? "ok" : "bad"; next }
     /^[-+]/ { c = substr($0, 2); changed++
+      if (prev != "chg" && (prev == "bad" || (prev == "top?" && !top))) bad = 1
+      prev = "chg"
       if (c ~ /\\$/ || c ~ /^[[:space:]]*#!/ || c !~ /^[[:space:]]*(#.*)?$/) bad = 1
       # comments that steer a parser or switch a scanner off are code
       lc = tolower(c)
-      if (lc ~ /(syntax|escape|check)[[:space:]]*=|coding[:=]|-\*-|nosec|noqa|nosemgrep|tfsec|checkov|trivy|kics|shellcheck|pylint|pragma|gitleaks|lint:|type:[[:space:]]*ignore/) bad = 1 }
+      if (lc ~ /(syntax|escape|check)[[:space:]]*=|coding[:=]|-\*-|ignore|disable|skip|suppress|allowlist|nolint|nosec|noqa|nosemgrep|nosonar|tfsec|tflint|checkov|trivy|kics|hadolint|shellcheck|pylint|lgtm|codeql|trufflehog|gitleaks|pragma|lint:|type:/) bad = 1 }
     END { exit (bad || !changed) ? 1 : 0 }' "$tmp/cdiff"
 }
 _floor_scan() {
@@ -671,10 +676,13 @@ _floor_scan() {
   # the data-loss scan below read the full path list.
   short="$(git -C "$root" rev-parse --short "$base" 2>/dev/null || printf '%s' "$base")"
   lane_hard_path_exempt "$root" "${KIT_FLOOR_CONFIG_AT:-$base}" > "$tmp/recs" || true   # KIT_FLOOR_CONFIG_AT: the mega gate reads config at the base-branch tip, not the PR-chosen base
+  # A secret-shaped path is never a doc, whatever its extension or directory.
+  grep -Ein -e "$(_hp_re secret)" "$tmp/paths" 2>/dev/null | cut -d: -f1 >> "$tmp/nosoft" || true
   # Docs never trip a hard path: blank them (line numbers stay valid) before any pattern runs.
   awk 'FILENAME == ARGV[1] { keep[$1] = 1; next }
-    !(FNR in keep) && ($0 ~ /\.(md|markdown)$/ || $0 ~ /(^|\/)README(\.(md|markdown|txt|rst|adoc))?$/ ||
-      ($0 ~ /(^|\/)docs\// && $0 ~ /\.(txt|rst|adoc|html?|svg|png|jpe?g|gif|webp|pdf|json|csv)$/)) { print ""; next }
+    !(FNR in keep) && ($0 ~ /\.(md|markdown)$/ || $0 ~ /(^|\/)README\.(md|markdown|txt|rst|adoc)$/ ||
+      ($0 ~ /(^|\/)docs\// && $0 ~ /\.(txt|rst|adoc|png|jpe?g|gif|webp|pdf|csv)$/) ||
+      ($0 ~ /^docs\// && $0 ~ /\.(html?|svg|json)$/)) { print ""; next }
     { print }' "$tmp/nosoft" "$tmp/paths" > "$tmp/paths.d" && mv -f "$tmp/paths.d" "$tmp/paths"
   for k in auth migration; do _floor_blank "$tmp" "$k" "$short"; done
   _load_extras   # in this shell, so the substitutions in the loop below inherit the cache instead of re-reading config

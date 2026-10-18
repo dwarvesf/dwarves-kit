@@ -23,3 +23,15 @@ The host ran at a load average above 100 for the whole session, so wall seconds 
 | `test-lanes-data` | `record_gates` forked `gate-ledger.sh` once per phase for every ship case; `floor-exempt-malformed-rejected` ran the floor twice per config; `reader_run` built a fresh repo per call | `record_gates` records each distinct phase list once through the real writer and appends the template afterward; one floor run per config serves both the stdout and stderr legs; `reader_run` reuses one repo (only main's `.kit.toml` differs between calls) |
 
 Not changed, and why: `bin/config list` itself is the real cost (321 rows, a fork per cell); fixing it belongs to the config slice. `test-config-seams` is 34 `bin/config seams` calls at about 0.4 CPU seconds each, too small to matter. `bin/test-affected.timeouts` waits for a quiet-host p95 re-measure.
+
+## Review round 2
+
+| Finding | Change |
+|---|---|
+| a `#` or blank line inside a multi-line quoted string, a YAML quoted scalar, or after a code line | change-group rule: a group must follow a blank line, a comment line or the top of the file |
+| YAML block openers with an indentation indicator, a tag, an anchor or a trailing comment | the data-line opener regex covers them |
+| scanner-suppression comments beyond the first list (`hadolint`, `tflint`, `lgtm`, `codeql`, `nosonar`, `trufflehog`) | the blocklist is broader and includes the generic words `ignore`, `disable`, `skip`, `suppress`; prose using those words keeps the floor, by design |
+| `html`, `svg`, `json` under a nested docs dir (`src/auth/docs/login.html`, `package.json` in an action's `docs` dir) | those three extensions count as docs only under the repo-root `docs/` |
+| bare `README` and `Dockerfile.c` | `README` needs a text extension; only `Dockerfile` and `*.dockerfile` are Dockerfile-shaped |
+| `docs/credentials.json` classed inert and passed the floor | secret-shaped paths are never docs, in `classify` and in the floor |
+| `classify` treated `src/docs/h.py` and `lib/docs/x.sh` as docs | a docs-tree file is a doc only when it is not source code; the override-remainder skip added in the first cut is gone because it is no longer needed |

@@ -15,8 +15,8 @@
 #                 Pass = a fresh verification entry with a green run AND a NEGATIVE CONTROL
 #                 ([gate] negative_control = full drops the control unless a hard path or a
 #                 full-lane spec is involved; default `always`).
-#   inert      -- docs / comments / cosmetic: a diff made only of *.md/*.txt, .kit.toml, or any file
-#                 under a docs/ tree (generated .html/.svg/.png included). Pass (no ritual).
+#   inert      -- docs / comments / cosmetic: a diff made only of *.md/*.txt, .kit.toml, or non-source
+#                 files under a docs/ tree (generated .html/.svg/.png included). Pass (no ritual).
 #
 # "Fresh" = the branch diff itself added/modified the docs/verification/*.md entry, so an
 # old proof from unrelated work does not satisfy a new change.
@@ -88,6 +88,15 @@ _changed() {
 
 _subjects() { git -C "$1" log "$2"..HEAD --format='%s' 2>/dev/null || true; }
 
+# _nondoc_paths: stdin paths minus the docs. A doc is *.md, *.txt, *.markdown, a .kit.toml, or a file under a
+# docs/ tree that is neither source code (the extension list the override check uses) nor secret-shaped.
+_nondoc_paths() {
+  awk '/\.(md|txt|markdown)$/ || /(^|\/)\.kit\.toml$/ { next }
+    /(^|\/)docs\// && !/\.(sh|bash|zsh|py|js|jsx|mjs|cjs|ts|tsx|go|rs|rb|c|h|cc|cpp|hpp|java|php|swift|kt|kts|scala|clj|cljs|ex|exs|lua|pl|pm|r|m|mm|sql)$/ \
+      && !/(^|\/)[^\/]*credentials?[^\/]*$|(^|\/)secrets?\/|\.(pem|key|p12|pfx)$|(^|\/)\.env/ { next }
+    { print }'
+}
+
 classify() {
   local root="${1:-}" base="${2:-}"
   [ -n "$root" ] && [ -n "$base" ] || { echo "usage: classify <root> <base>" >&2; return 64; }
@@ -102,10 +111,9 @@ classify() {
   # where the ledger lives), never project behavior: a .kit.toml-only diff owes no proof-of-done,
   # whatever key it touches; otherwise flipping a [gate] key would itself be gated. A diff that
   # also touches code is classified by the code.
-  # A docs tree counts as docs whatever its extension: a generated HTML/SVG/PNG drawing set under
-  # docs/ holds JS and images but ships no behavior. Any file outside docs/ keeps its own class.
-  local doc_re='\.(md|txt|markdown)$|(^|/)\.kit\.toml$|(^|/)docs/'
-  if [ -z "$(printf '%s\n' "$changed" | grep -vE "$doc_re")" ]; then
+  # A docs tree counts as docs: a generated HTML/SVG/PNG drawing set under docs/ holds JS and images but
+  # ships no behavior (see _nondoc_paths for what stays code). Any other file keeps its own class.
+  if [ -z "$(printf '%s\n' "$changed" | _nondoc_paths)" ]; then
     echo inert; return 0
   fi
 
@@ -119,7 +127,7 @@ classify() {
   # tests, and a nested test/ dir (k8s/overlays/test/) is not a test tree.
   local code_ext='(py|go|rs|rb|js|jsx|ts|tsx|sh|bash|swift|kt|java|ex|exs)'
   subjects=""
-  if [ -n "$(printf '%s\n' "$changed" | grep -vE "$doc_re" \
+  if [ -n "$(printf '%s\n' "$changed" | _nondoc_paths \
        | grep -vE "^(tests?|__tests__)/|(^|/)__tests__/|(^|/)test_[^/]*\.${code_ext}\$|[._]test\.${code_ext}\$")" ]; then
     subjects="$(_subjects "$root" "$base")"
   fi
@@ -700,7 +708,6 @@ check() {
     while IFS= read -r f; do
       [ -n "$f" ] || continue
       case "$f" in deploy/*|tools/*/deploy/*) continue ;; esac   # sanctioned deploy: override-able
-      case "$f" in docs/*|*/docs/*) continue ;; esac             # a docs tree is docs, whatever its extension (see classify)
       if printf '%s' "$f" | grep -qE '\.(sh|bash|zsh|py|js|jsx|mjs|cjs|ts|tsx|go|rs|rb|c|h|cc|cpp|hpp|java|php|swift|kt|kts|scala|clj|cljs|ex|exs|lua|pl|pm|r|m|mm|sql)$'; then
         src_remainder="${src_remainder}${f}"$'\n'; continue
       fi

@@ -49,12 +49,23 @@ HTML_JS='<!doctype html><script>document.title = "drawing"; fetch("/x")</script>
 
 case_class_docs_tree_any_extension_is_inert() {
   local bad="" p got
-  for p in docs/design/uml.html docs/design/sheet.svg docs/img/a.png docs/data/x.json tools/x/docs/run.sh docs/design/app.js; do
+  for p in docs/design/uml.html docs/design/sheet.svg docs/img/a.png docs/data/x.json tools/x/docs/notes.pdf; do
     mkrepo; base docs/README.md base; branch
     put "$p" "$HTML_JS"; _commit "feat: generated drawing set"
     got="$(cls)"; [ "$got" = inert ] || bad="$bad [$p => $got]"
   done
   [ -z "$bad" ] && pass class-docs-tree-any-extension-is-inert || fail class-docs-tree-any-extension-is-inert "$bad"
+}
+
+# Source code and secret-shaped files do not become docs by living under docs/.
+case_class_code_under_docs_keeps_its_class() {
+  local bad="" p got
+  for p in docs/design/app.js tools/x/docs/run.sh src/docs/h.py docs/credentials.json docs/secrets/notes.png; do
+    mkrepo; base docs/README.md base; branch
+    put "$p" "x"; _commit "feat: change"
+    got="$(cls)"; [ "$got" = behavioral ] || bad="$bad [$p => $got]"
+  done
+  [ -z "$bad" ] && pass class-code-under-docs-keeps-its-class || fail class-code-under-docs-keeps-its-class "$bad"
 }
 
 case_class_docs_subject_words_ignored() {
@@ -99,25 +110,12 @@ case_check_docs_tree_owes_no_proof() {
   [ "$rc" = 0 ] && [ -z "$out" ] && pass check-docs-tree-owes-no-proof || fail check-docs-tree-owes-no-proof "rc=$rc out=$out"
 }
 
-# A branch that classes non-inert, carries an override, and holds a docs-tree .js file: the override must
-# excuse it (a docs tree is not application source). Without the skip in check(), the .js file reads as source.
-case_check_override_excuses_docs_tree_script() {
-  mkrepo; base docs/README.md base; branch
-  put docs/design/app.js "$HTML_JS"; put config/app.json '{"a":1}'; _commit "feat: drawing set and config"
-  local b ld out rc rc0; b="$(git -C "$ROOT" rev-parse main)"; ld="$(_mk)"
-  [ "$(cls)" = behavioral ] || { fail check-override-excuses-docs-tree-script "fixture did not class behavioral: $(cls)"; return; }
-  # control: no override yet, so the gate blocks
-  DWARVES_KIT_LOG_DIR="$ld" KIT_CONFIG_OPERATOR=/nonexistent bash "$PL" check "$ROOT" "$b" some-slug >/dev/null 2>&1; rc0=$?
-  ( cd "$ROOT" && DWARVES_KIT_LOG_DIR="$ld" KIT_CONFIG_OPERATOR=/nonexistent bash "$PL" override some-slug "docs-tree script and config only" >/dev/null 2>&1 )
-  out="$(DWARVES_KIT_LOG_DIR="$ld" KIT_CONFIG_OPERATOR=/nonexistent bash "$PL" check "$ROOT" "$b" some-slug 2>&1)"; rc=$?
-  { [ "$rc0" = 1 ] && [ "$rc" = 0 ]; } && pass check-override-excuses-docs-tree-script || fail check-override-excuses-docs-tree-script "no-override rc=$rc0 (want 1), override rc=$rc (want 0): $out"
-}
-
 # ---------------------------------------------------------------------------
 # 2. Hard-path floor
 # ---------------------------------------------------------------------------
-PYBASE=$'import os\n\ndef login(user):\n    return check(user)'
-SHBASE=$'#!/bin/bash\nset -e\nrun_migration'
+# Every base ends with a comment line: a comment-only change group must follow a comment, a blank line or the top of the file.
+PYBASE=$'import os\n\ndef login(user):\n    return check(user)\n# end'
+SHBASE=$'#!/bin/bash\nset -e\nrun_migration\n# end'
 
 expect() {  # expect <name> <hit|miss> [<path-that-must-be-named>]
   local name="$1" want="$2" path="${3:-}" out; out="$(floor_out)"
@@ -130,8 +128,8 @@ expect() {  # expect <name> <hit|miss> [<path-that-must-be-named>]
 
 case_floor_docs_never_hit() {
   local bad="" p out
-  for p in docs/auth/design.md docs/design/auth-flow.html docs/secrets/notes.png docs/auth/flows.json \
-           db/migrations/README.md src/auth/README src/auth/README.txt .github/README.md notes/login.md; do
+  for p in docs/auth/design.md docs/design/auth-flow.html docs/auth/flows.json \
+           db/migrations/README.md src/auth/README.txt .github/README.md notes/login.md; do
     mkrepo; branch; put "$p" "x"; _commit "docs: add"
     out="$(floor_out)"; [ -z "$out" ] || bad="$bad [$p => '$out']"
   done
@@ -143,7 +141,9 @@ case_floor_docs_never_hit() {
 case_floor_code_under_docs_or_doc_named_still_hits() {
   local bad="" p out
   for p in docs/migrations/0001.sql .github/docs/ci.yml src/auth/docs/check.py src/docs/login.py \
-           .github/workflows/README.yml db/migrations/README.sql src/auth/README.sh docs/auth/run.sh; do
+           .github/workflows/README.yml db/migrations/README.sql src/auth/README.sh docs/auth/run.sh \
+           src/auth/docs/login.html src/auth/docs/x.svg .github/actions/docs/package.json db/migrations/docs/001.json \
+           docs/credentials.json docs/secrets/notes.png; do
     mkrepo; branch; put "$p" "x"; _commit "feat: add"
     out="$(floor_out)"; case "$out" in "full "*": $p") ;; *) bad="$bad [$p => '$out']" ;; esac
   done
@@ -159,7 +159,7 @@ case_floor_comment_only_edit_is_not_a_hit() {
   local bad="" p content out
   while IFS='|' read -r p content; do
     [ -n "$p" ] || continue
-    case "$content" in PY) content="$PYBASE" ;; SH) content="$SHBASE" ;; esac
+    case "$content" in PY) content="$PYBASE" ;; SH) content="$SHBASE" ;; *) content="$content"$'\n# end' ;; esac
     mkrepo; base "$p" "$content"; branch
     printf '# a new comment\n\n    # indented comment\n' >> "$ROOT/$p"; _commit "docs: comment"
     out="$(floor_out)"; [ -z "$out" ] || bad="$bad [$p => '$out']"
@@ -197,8 +197,8 @@ case_floor_code_change_is_a_hit() {
     out="$(floor_out)"
     [ "$out" = "full auth: scripts/login.sh" ] || bad="$bad [$kind => '$out']"
   done
-  # blank lines alone are not a behavior change
-  mkrepo; base scripts/login.sh "$SHBASE"; branch; put scripts/login.sh $'#!/bin/bash\nset -e\n\nrun_migration'; _commit "style: blank"
+  # a blank line right after a comment is not a behavior change; one after a code line might sit inside a string
+  mkrepo; base scripts/login.sh "$SHBASE"; branch; put scripts/login.sh $'#!/bin/bash\n\nset -e\nrun_migration\n# end'; _commit "style: blank"
   out="$(floor_out)"; [ -z "$out" ] || bad="$bad [blank line => '$out']"
   [ -z "$bad" ] && pass floor-code-change-is-a-hit || fail floor-code-change-is-a-hit "$bad"
 }
@@ -263,7 +263,8 @@ case_floor_cap_keeps_the_floor_on_a_flood() {
 # A `#` line can be data, and some comments are not comments: each of these keeps the floor.
 case_floor_hash_that_is_not_a_comment_keeps_the_floor() {
   local bad="" kind out
-  for kind in continuation heredoc triple yaml-block toml-string noqa shellcheck dockerfile-upper dockerfile-dir; do
+  for kind in continuation heredoc triple yaml-block toml-string noqa shellcheck dockerfile-upper dockerfile-dir \
+              sh-dq-string yaml-dq-scalar yaml-block-2 yaml-block-comment yaml-block-tag yaml-block-anchor hadolint tflint dockerfile-c after-code; do
     mkrepo
     case "$kind" in
       continuation)    base src/auth/hook.sh $'echo start \\\nrm -f victim' ;;
@@ -274,6 +275,16 @@ case_floor_hash_that_is_not_a_comment_keeps_the_floor() {
       noqa|shellcheck) base src/auth/perm.py $'x = 1\ny = 2' ;;
       dockerfile-upper) base Dockerfile 'FROM alpine' ;;
       dockerfile-dir)  base .github/actions/Dockerfile-lint/a.c 'int x;' ;;
+      sh-dq-string)    base src/auth/users.sh $'A="\nalice\nbob\n"\n# end' ;;
+      yaml-dq-scalar)  base .github/workflows/ci.yml $'A: "alice\n    bob"\n# end' ;;
+      yaml-block-2)    base .github/workflows/ci.yml $'A: |2\n    alice\n\n    bob\n# end' ;;
+      yaml-block-comment) base .github/workflows/ci.yml $'A: | # note\n    alice\n\n    bob\n# end' ;;
+      yaml-block-tag)  base .github/workflows/ci.yml $'A: !!str |\n    alice\n\n    bob\n# end' ;;
+      yaml-block-anchor) base .github/workflows/ci.yml $'A: &z |\n    alice\n\n    bob\n# end' ;;
+      hadolint)        base Dockerfile $'FROM alpine\n# end' ;;
+      tflint)          base infra/iam-policy.tf $'resource "a" "b" {}\n# end' ;;
+      dockerfile-c)    base .github/actions/x/Dockerfile.c $'int x;\n# end' ;;
+      after-code)      base src/auth/perm.py $'x = 1\ny = 2\n# end' ;;
     esac
     branch
     case "$kind" in
@@ -286,6 +297,16 @@ case_floor_hash_that_is_not_a_comment_keeps_the_floor() {
       shellcheck)      put src/auth/perm.py $'x = 1\n# shellcheck disable=SC2086\ny = 2'; want="full auth: src/auth/perm.py" ;;
       dockerfile-upper) put Dockerfile $'# SYNTAX=evil/frontend:1\nFROM alpine'; want="full infra: Dockerfile" ;;
       dockerfile-dir)  put .github/actions/Dockerfile-lint/a.c $'int x;\n#define AUTH_OFF 1'; want="full ci: .github/actions/Dockerfile-lint/a.c" ;;
+      sh-dq-string)    put src/auth/users.sh $'A="\nalice\n# eve\nbob\n"\n# end'; want="full auth: src/auth/users.sh" ;;
+      yaml-dq-scalar)  put .github/workflows/ci.yml $'A: "alice\n    # eve\n    bob"\n# end'; want="full ci: .github/workflows/ci.yml" ;;
+      yaml-block-2)    put .github/workflows/ci.yml $'A: |2\n    alice\n\n    # eve\n    bob\n# end'; want="full ci: .github/workflows/ci.yml" ;;
+      yaml-block-comment) put .github/workflows/ci.yml $'A: | # note\n    alice\n\n    # eve\n    bob\n# end'; want="full ci: .github/workflows/ci.yml" ;;
+      yaml-block-tag)  put .github/workflows/ci.yml $'A: !!str |\n    alice\n\n    # eve\n    bob\n# end'; want="full ci: .github/workflows/ci.yml" ;;
+      yaml-block-anchor) put .github/workflows/ci.yml $'A: &z |\n    alice\n\n    # eve\n    bob\n# end'; want="full ci: .github/workflows/ci.yml" ;;
+      hadolint)        put Dockerfile $'FROM alpine\n# end\n# hadolint ignore=DL3008'; want="full infra: Dockerfile" ;;
+      tflint)          put infra/iam-policy.tf $'resource "a" "b" {}\n# end\n# tflint-ignore: terraform_required_version'; want="full infra: infra/iam-policy.tf" ;;
+      dockerfile-c)    put .github/actions/x/Dockerfile.c $'int x;\n# end\n#define X 1'; want="full ci: .github/actions/x/Dockerfile.c" ;;
+      after-code)      put src/auth/perm.py $'x = 1\n# a note after code\ny = 2\n# end'; want="full auth: src/auth/perm.py" ;;
     esac
     _commit "docs: c"
     out="$(floor_out)"; [ "$out" = "$want" ] || bad="$bad [$kind => '$out' want '$want']"
@@ -314,8 +335,10 @@ case_floor_readme_exec_is_code() {
   local bad="" out
   mkrepo; branch; put src/auth/README.sh 'echo hi'; _commit "chore: c"; out="$(floor_out)"
   [ "$out" = "full auth: src/auth/README.sh" ] || bad="$bad [README.sh => '$out']"
-  mkrepo; branch; put src/auth/README 'notes'; put src/auth/README.rst 'notes'; _commit "docs: c"; out="$(floor_out)"
-  [ -z "$out" ] || bad="$bad [README, README.rst => '$out']"
+  mkrepo; branch; put src/auth/README 'notes'; _commit "chore: c"; out="$(floor_out)"
+  [ "$out" = "full auth: src/auth/README" ] || bad="$bad [extensionless README => '$out']"
+  mkrepo; branch; put src/auth/README.rst 'notes'; put src/auth/README.txt 'notes'; _commit "docs: c"; out="$(floor_out)"
+  [ -z "$out" ] || bad="$bad [README.rst, README.txt => '$out']"
   [ -z "$bad" ] && pass floor-readme-exec-is-code || fail floor-readme-exec-is-code "$bad"
 }
 
@@ -377,7 +400,7 @@ run_case() {
   local fn="case_${1//-/_}"
   if declare -F "$fn" >/dev/null; then "$fn"; else fail "$1" "no such case"; fi
 }
-ALL="class-docs-tree-any-extension-is-inert class-docs-subject-words-ignored class-markdown-anywhere-is-inert class-other-files-keep-class class-docs-plus-code-follows-code check-docs-tree-owes-no-proof check-override-excuses-docs-tree-script floor-docs-never-hit floor-code-under-docs-or-doc-named-still-hits floor-docs-beside-real-hard-path-still-hit floor-comment-only-edit-is-not-a-hit floor-comment-removal-is-not-a-hit floor-code-change-is-a-hit floor-cannot-decide-keeps-the-floor floor-new-comment-only-file-is-not-a-hit floor-skips-comment-only-then-names-the-real-hit floor-cap-keeps-the-floor-on-a-flood floor-hash-that-is-not-a-comment-keeps-the-floor floor-secret-pattern-beats-first-kind floor-nul-byte-keeps-the-floor floor-readme-exec-is-code floor-blanking-keeps-line-numbers-aligned floor-exempt-notice-survives-drops floor-data-loss-still-hits-in-comments ship-rule-floor-follows-the-diff"
+ALL="class-docs-tree-any-extension-is-inert class-code-under-docs-keeps-its-class class-docs-subject-words-ignored class-markdown-anywhere-is-inert class-other-files-keep-class class-docs-plus-code-follows-code check-docs-tree-owes-no-proof floor-docs-never-hit floor-code-under-docs-or-doc-named-still-hits floor-docs-beside-real-hard-path-still-hit floor-comment-only-edit-is-not-a-hit floor-comment-removal-is-not-a-hit floor-code-change-is-a-hit floor-cannot-decide-keeps-the-floor floor-new-comment-only-file-is-not-a-hit floor-skips-comment-only-then-names-the-real-hit floor-cap-keeps-the-floor-on-a-flood floor-hash-that-is-not-a-comment-keeps-the-floor floor-secret-pattern-beats-first-kind floor-nul-byte-keeps-the-floor floor-readme-exec-is-code floor-blanking-keeps-line-numbers-aligned floor-exempt-notice-survives-drops floor-data-loss-still-hits-in-comments ship-rule-floor-follows-the-diff"
 if [ "$#" -eq 0 ]; then set -- $ALL; fi
 for c in "$@"; do run_case "$c"; done
 [ "$FAILS" -eq 0 ]
