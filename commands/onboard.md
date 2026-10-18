@@ -33,9 +33,10 @@ Run: `bash "$KIT/lib/onboard-detect.sh" explain`
 It prints one of four modes plus a one-line explanation. Show the user the mode and what it means,
 in one or two sentences, then branch:
 
-- **`plugin`** -- "Installed as a Claude Code plugin; the runtime loads from the plugin. The
-  bash-only extras (the statusLine HUD, and `install.sh --with` for module selection) aren't wired
-  on this path, but I'll bridge the module choice below through `/kit:adopt`." Continue to B.
+- **`plugin`** -- "Installed as a Claude Code plugin; the runtime loads from the plugin, and the
+  plugin registers every kit hook. The bash-only extras (the statusLine HUD, and `install.sh --with`
+  for module selection) aren't wired on this path, so the module choice below is recorded in
+  `.kit.toml` but adds no extra project hooks." Continue to B.
 - **`bash`** -- "Installed via `bash install.sh`; your `settings.json` registers the kit hooks
   directly." Continue to B.
 - **`both`** -- Disclose the hazard, do NOT try to fix it (that is a settings decision, an
@@ -44,6 +45,9 @@ in one or two sentences, then branch:
   `dwarves-kit/hooks/*` entries from `~/.claude/settings.json` (or run `bash install.sh --uninstall`).
   To keep the bash install, `/plugin uninstall dwarves-kit@dwarves-marketplace`. I won't change this
   for you." Then continue to B (the rest still works; the double-fire is a warning, not a blocker).
+  Note for the user: a plain `bash install.sh` on a machine that has the plugin no longer adds a
+  second set of hooks; it refuses and does a compat-only install, so this state comes only from an
+  older install or from `--force-both`.
 - **`none`** -- The kit isn't installed on this machine yet. There is nothing to set up in a repo
   until it is. Tell the user the two install paths and STOP:
   - Recommended: `/plugin marketplace add dwarvesf/dwarves-kit` then `/plugin install dwarves-kit@dwarves-marketplace`
@@ -102,15 +106,11 @@ Show the command's output (it reports what it created). Never call adopt a secon
 adopted" repo becomes adopted here, once. If the call exits non-zero, print its error and stop this
 step with no partial state (adopt is atomic per file), then continue to D.
 
-**Honest caveat about `adopt --with`'s reach.** `adopt --with` seeds only the module set adopt
-itself knows, which is currently NARROWER than the registry's roster. Derive that set at runtime,
-never hardcode it: `grep '^KIT_KNOWN_MODULES=' "$KIT/lib/adopt.sh"` prints adopt's seedable set.
-Any picked module that is in the registry roster but NOT in that set (e.g. `prose_rag` today) would
-be silently skipped by `--with`, so do NOT rely on it for those: after the adopt call, tell the user
-the one exact line to add by hand to `<repo>/.kit.toml`'s `[modules]` section (e.g.
-`prose_rag = true`) and to re-run `/kit:adopt --refresh "$REPO"`, exactly the hand-edit path an
-already-adopted repo uses. That is the honest reach of the existing mechanic; if a later adopt fix
-widens its set, this caveat heals on its own because both sides are derived, not copied.
+**One table, no reach gap.** `adopt --with` and the registry roster both come from
+`lib/config/modules.tsv`, so every module in the roster is seedable. A name adopt does not know is
+a typo: it is skipped, never wired. Adding a module later is the hand-edit path an already-adopted
+repo uses: set `<module> = true` in `<repo>/.kit.toml`'s `[modules]` section, then re-run
+`/kit:adopt --refresh "$REPO"`.
 
 ## C2. Overlays and seams
 
@@ -227,13 +227,12 @@ Be honest about what the plugin path cannot do, in short bullets:
   bash-install-only. If they want it, that is the one reason to run the bash install.
 - **Frozen SHA vs `git pull`:** a plugin install is pinned to the version you installed; it moves only
   on `/plugin update`. A bash checkout tracks whatever you `git pull`.
-- **Project hook wiring points at the bash path:** adopt's per-repo `settings.json` wiring copies hook
-  commands that reference `$HOME/.claude/dwarves-kit/hooks/...`, a path only the bash install creates
-  (the plugin compat shim symlinks lib/bin but NOT hooks/). On a plugin-only machine those wired
-  project-level hook entries will not fire until a bash install also runs. The PLUGIN's own hooks
-  (registered via `hooks/hooks.json` at `${CLAUDE_PLUGIN_ROOT}`) are unaffected and do fire; this gap
-  is specifically the adopt-wired per-repo module entries. Say this at adopt time too, not only here:
-  on a plugin machine, never claim the module hooks are live after adopt.
+- **Module choice does not select plugin hooks:** the plugin registers every kit hook through
+  `hooks/hooks.json` at `${CLAUDE_PLUGIN_ROOT}`, whatever the repo's `[modules]` says. So on a plugin
+  machine adopt wires NO per-repo module hooks (they would fire twice) and says so in its output; the
+  `[modules]` section still records the choice for the commands that read it. Per-module hook
+  selection is a bash-install feature. Say this at adopt time too: on a plugin machine, never claim
+  `[modules]` turned a hook off or on.
 - **Board pane mod:** the bash installer loads the Claude Code board pane in every session by adding its
   path to `env.CLAUDE_CODE_PLUGIN_DIRS`. On a plugin machine that also has a kit checkout, running
   `bash install.sh` (compat mode) registers the checkout's `integrations/claude-code/board-pane` the same
@@ -241,9 +240,10 @@ Be honest about what the plugin path cannot do, in short bullets:
   with no checkout cannot register a second plugin dir, so the pane does not load. Manual enable: add
   `"CLAUDE_CODE_PLUGIN_DIRS": "<kit checkout>/integrations/claude-code/board-pane"` under `env` in
   `~/.claude/settings.json`, or start with `claude --plugin-dir <that path>`.
-- **`KIT_FORCE_FULL=1` escape:** `KIT_FORCE_FULL=1 bash install.sh` forces the full bash install even
-  on a plugin machine, but that is exactly what creates the double-hooks hazard from step A -- only do
-  it if you are deliberately switching paths, and remove the plugin first.
+- **`--force-both` escape:** `bash install.sh --force-both` wires the bash hooks even on a plugin
+  machine, but that is exactly what creates the double-hooks hazard from step A -- only do it if you are
+  deliberately switching paths, and remove the plugin first. Without the flag, `install.sh` refuses to
+  wire hooks next to the plugin and does a compat-only install.
 
 Skip this section entirely for `bash` mode (no gap to disclose).
 

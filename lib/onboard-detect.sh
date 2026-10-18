@@ -6,14 +6,15 @@
 # (commands/onboard.md) is the orchestrator; this is the one deterministic seam worth testing as
 # bash rather than proving by transcript.
 #
-# The detection signals mirror install.sh's own plugin-detect block (install.sh:315-353) exactly,
-# so onboard and install agree on what "installed as a plugin" means:
+# This is the ONE detector: install.sh calls it (`onboard-detect.sh mode`) to decide whether to
+# refuse wiring hooks next to the plugin, and lib/adopt.sh calls it to skip per-project hook wiring,
+# so install, adopt and onboard agree on what "installed as a plugin" means:
 #   plugin cache present : a lib dir exists under
-#       $CLAUDE_DIR/plugins/cache/dwarves-marketplace/kit/*/lib   (install.sh:328's glob),
-#       OR $CLAUDE_DIR/plugins/installed_plugins.json names the dwarves marketplace/kit.
+#       $CLAUDE_DIR/plugins/cache/dwarves-marketplace/kit/*/lib,
+#       OR $CLAUDE_DIR/plugins/installed_plugins.json names kit@dwarves-marketplace.
 #   bash hooks live      : $CLAUDE_DIR/settings.json registers >=1 dwarves-kit/hooks/*.sh command
 #       (the full bash install path; the plugin COMPAT symlink deliberately writes no
-#       settings.json hooks, install.sh:331, so a compat-only machine reads as `plugin`, correctly).
+#       settings.json hooks, so a compat-only machine reads as `plugin`, correctly).
 #
 # Modes:
 #   plugin : plugin cache present, no bash hooks. Runtime loads from the plugin.
@@ -33,7 +34,7 @@ CLAUDE_DIR="${CLAUDE_DIR:-$HOME/.claude}"
 
 # plugin_present -- true if a dwarves-kit plugin install is present on this machine.
 plugin_present() {
-  # Primary: the exact cache-lib glob install.sh:328 keys on. A glob with no match under `set -e`
+  # Primary: the plugin cache-lib glob. A glob with no match under `set -e`
   # must not abort the function, so guard it inside an `if`.
   if ls -d "$CLAUDE_DIR"/plugins/cache/dwarves-marketplace/kit/*/lib >/dev/null 2>&1; then
     return 0
@@ -41,7 +42,7 @@ plugin_present() {
   # Fallback: the CC-owned roster names the kit's marketplace. Grep (not jq) so there is no hard
   # jq dependency in a first-run probe; the marketplace slug is specific enough to not false-match.
   local ip="$CLAUDE_DIR/plugins/installed_plugins.json"
-  if [ -f "$ip" ] && grep -q 'dwarves-marketplace' "$ip" 2>/dev/null; then
+  if [ -f "$ip" ] && grep -q 'kit@dwarves-marketplace' "$ip" 2>/dev/null; then
     return 0
   fi
   return 1
@@ -81,7 +82,7 @@ main() {
   case "$verb" in
     mode) printf '%s\n' "$mode" ;;
     explain) printf '%s\t%s\n' "$mode" "$(explain_mode "$mode")" ;;
-    -h|--help|help) sed -n '2,29p' "$0" | sed 's/^# \{0,1\}//' ;;
+    -h|--help|help) sed -n '2,30p' "$0" | sed 's/^# \{0,1\}//' ;;
     *) echo "onboard-detect: unknown verb '$verb' (use: mode | explain)" >&2; return 64 ;;
   esac
 }

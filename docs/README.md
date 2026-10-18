@@ -8,6 +8,7 @@ This folder is large because the kit was built **through its own workflow**: eve
 
 | Path | What it is | Read it if you want to... |
 |---|---|---|
+| [`../lib/config/modules.tsv`](../lib/config/modules.tsv) | The one module table: each module's hooks (with event), CLIs, and whether it is `core` or `opt-in`. `install.sh` and `lib/adopt.sh` both read it | add a module, move a hook, or change what a fresh install turns on |
 | [`architecture.md`](architecture.md) | Components, data flow, the state model, the verification pipeline | understand how the pieces fit before extending the kit |
 | [`SYSTEM-DESIGN.md`](SYSTEM-DESIGN.md) | The system design model: use cases, how the clusters connect, one component sheet per cluster, the ledger and repo stores, the key flows, the state machines, and a drift register. Rendered as the UML drawing set [`design/kit-uml.html`](design/kit-uml.html) | see how the kit's tools interact, or review a design change as a UML delta |
 | [`execution-planes.md`](execution-planes.md) | The four ways the kit runs agents: board, orchestrator, queue, gauntlet, and their trust models | work out which engine to reach for, or why two of them share a directory |

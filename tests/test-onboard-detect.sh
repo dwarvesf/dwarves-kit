@@ -111,12 +111,23 @@ after="$(find "$D" -type f | sort | xargs shasum 2>/dev/null | shasum | cut -d' 
 assert_eq "detector wrote nothing under CLAUDE_DIR (tree hash unchanged)" "$before" "$after"
 
 echo ""
-echo "=== AC8: DRIFT PIN -- install.sh still carries both detection signals the helper mirrors ==="
+echo "=== AC8: DRIFT PIN -- install.sh and adopt.sh ask THIS detector, they keep no copy of its signals ==="
 INSTALL_SH="$KIT_DIR/install.sh"
-RC=0; grep -q 'plugins/cache/dwarves-marketplace/kit' "$INSTALL_SH" || RC=1
-assert_eq "install.sh still carries the plugin-cache glob signal (onboard-detect mirrors it)" "$RC" "0"
-RC=0; grep -q 'dwarves-kit/hooks/' "$INSTALL_SH" || RC=1
-assert_eq "install.sh still carries the dwarves-kit/hooks/ signal (onboard-detect mirrors it)" "$RC" "0"
+ADOPT_SH="$KIT_DIR/lib/adopt.sh"
+RC=0; grep -q 'onboard-detect\.sh' "$INSTALL_SH" || RC=1
+assert_eq "install.sh calls lib/onboard-detect.sh" "$RC" "0"
+RC=0; grep -q 'onboard-detect\.sh' "$ADOPT_SH" || RC=1
+assert_eq "lib/adopt.sh calls lib/onboard-detect.sh" "$RC" "0"
+RC=0; grep -q 'installed_plugins\.json' "$INSTALL_SH" && RC=1
+assert_eq "install.sh no longer reads installed_plugins.json itself (one detector)" "$RC" "0"
+# Roster-only plugin (no cache dir): the detector still says plugin, so install and adopt agree.
+D="$ROOT/roster"; mkdir -p "$D/plugins"
+echo '{"version":2,"plugins":{"kit@dwarves-marketplace":[{"scope":"user"}]}}' > "$D/plugins/installed_plugins.json"
+assert_eq "roster names kit@dwarves-marketplace, no cache dir -> plugin" "$(run_mode "$D")" "plugin"
+# Negative control: a roster that names only some other plugin is not the kit.
+D="$ROOT/roster-other"; mkdir -p "$D/plugins"
+echo '{"version":2,"plugins":{"other@elsewhere":[{"scope":"user"}]}}' > "$D/plugins/installed_plugins.json"
+assert_eq "roster naming only another plugin -> none" "$(run_mode "$D")" "none"
 
 echo ""
 echo "=== AC9: NO HARDCODED ROSTER -- commands/onboard.md generates the module list from the registry ==="

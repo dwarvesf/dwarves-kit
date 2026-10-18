@@ -11,9 +11,9 @@
 #   AC2  NEGATIVE CONTROL: a planted, unregistered env var matching the seed prefix family IS
 #        flagged an orphan by the same sweep -- proves AC1 is not a vacuous pass.
 #   AC3  module-stage completeness (formerly "module-leg", renamed by the 2026-07-18
-#        amendment): every install.sh KIT_KNOWN_MODULES entry has a row in the
+#        amendment): every lib/config/modules.tsv module has a row in the
 #        registry's "## Module stages" table.
-#   AC4  NEGATIVE CONTROL: a planted extra module name (not in KIT_KNOWN_MODULES) does NOT
+#   AC4  NEGATIVE CONTROL: a planted extra module name (not in the module table) does NOT
 #        spuriously satisfy AC3 -- proves the completeness check is keyed off the real list.
 #   AC5  bin/config functional smoke: list/get/explain resolve correctly, and an env override
 #        + a project .kit.toml override each visibly win their own row (the fixture the
@@ -81,8 +81,8 @@ if { trap '' PIPE; printf '%s\n' "$PLANT_OUT" 2>/dev/null || :; } | grep -qF "OR
 assert "the flagged orphan is specifically KIT_TOTALLY_UNREGISTERED_PLANT" $RC
 
 echo ""
-echo "=== AC3: module-stage completeness -- every KIT_KNOWN_MODULES entry has a registry row ==="
-KNOWN_MODULES="$(grep -o '^KIT_KNOWN_MODULES="[^"]*"' "$KIT_DIR/install.sh" | sed -E 's/^KIT_KNOWN_MODULES="//; s/"$//')"
+echo "=== AC3: module-stage completeness -- every module in lib/config/modules.tsv has a registry row ==="
+KNOWN_MODULES="$(bash -c "source '$KIT_DIR/lib/config/modules.sh'; kit_modules_known")"
 MISSING=0
 for m in $KNOWN_MODULES; do
   if ! grep -qE "^\| $m \|" "$REGISTRY"; then
@@ -90,10 +90,11 @@ for m in $KNOWN_MODULES; do
     MISSING=$((MISSING+1))
   fi
 done
-assert "every KIT_KNOWN_MODULES entry ($(printf '%s' "$KNOWN_MODULES" | wc -w | tr -d ' ') modules) has a Module-stages row" "$MISSING"
+assert "every module in the module table ($(printf '%s' "$KNOWN_MODULES" | wc -w | tr -d ' ') modules) has a Module-stages row" "$MISSING"
+assert "the module table is not empty (a missing table must not pass this check vacuously)" "$([ -n "$KNOWN_MODULES" ]; echo $?)"
 
 echo ""
-echo "=== AC4: NEGATIVE CONTROL -- a module NOT in KIT_KNOWN_MODULES is correctly absent ==="
+echo "=== AC4: NEGATIVE CONTROL -- a module NOT in the module table is correctly absent ==="
 if grep -qE '^\| totally_fake_module \|' "$REGISTRY"; then RC=1; else RC=0; fi
 assert "a fake module name is correctly NOT found in the registry (the check is not vacuous)" $RC
 

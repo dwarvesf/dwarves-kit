@@ -11,6 +11,11 @@
 # wired; everything else is an opt-in module via `--with <a,b,c>`, recorded in a
 # `kit.toml [modules]` manifest. A re-run is additive (never un-wires a previously
 # wired hook); `--prune --with <modules>` is the explicit trim path.
+#
+# v1.3: one module table (lib/config/modules.tsv) feeds this script and lib/adopt.sh. A FRESH
+# install wires the spine plus the table's `core` modules; an existing install keeps its set.
+# When the Claude Code plugin is installed the script refuses to also wire hooks (`--force-both`
+# overrides), using the same detector as /kit:onboard (lib/onboard-detect.sh).
 
 set -euo pipefail
 
@@ -214,45 +219,24 @@ echo "=== dwarves-kit installer ==="
 echo "Kit location: $KIT_DIR"
 echo ""
 
-# --- Layered install: spine + opt-in modules (Decision B, ID-277 SG-04) --
-# The core spine (safety-gate, ship-gate, spec-drift-guard, secrets-guard,
-# commit-format, anti-rationalization) is ALWAYS wired. Everything else is an
-# optional module, wired only when named via `--with <a,b,c>`. A `kit.toml
-# [modules]` manifest RECORDS the enabled set (for `--with`-less re-installs
-# and future discovery) -- it is a shell-install RECORD, never a runtime
-# feature-registry: no hook reads it (see tests/test-no-runtime-manifest-read.sh).
-# bridge folded into sync 2026-07-16 (same engine surface; legacy verbs live
-# until the SPEC-002 P2 port, kit board ID-290)
-KIT_KNOWN_MODULES="board session advisor cosmetic queue stats quiz_gate weekend_batch worktree money_gate prose_rag sync"
-KIT_SPINE_HOOKS="safety-gate.sh ship-gate.sh spec-drift-guard.sh secrets-guard.sh commit-format.sh anti-rationalization.sh"
-
-# module -> its hook script basenames (space-separated; empty = hookless, e.g.
-# queue/stats/quiz_gate/weekend_batch/worktree/sync are commands/skills/CLIs with
-# no hook to gate -- still valid --with names, recorded in the manifest for discovery).
-kit_module_hooks() {
-  case "$1" in
-    board) echo "backlog-stage.sh board-row-gate.sh" ;;
-    session) echo "context-readiness.sh output-offload.sh pre-compact-backup.sh post-compact-reinject.sh session-state-save.sh harvest.sh citation-guard.sh context-budget.sh batch-debt-warn.sh" ;;
-    advisor) echo "context-hints.sh tool-policy-guard.sh" ;;
-    cosmetic) echo "auto-format.sh notification.sh slop-cleaner.sh statusline.sh codebase-index.sh permission-auto-approve.sh" ;;
-    money_gate) echo "money-gate.sh" ;;
-    prose_rag) echo "prose-rag.sh" ;;
-    *) echo "" ;;
-  esac
-}
-
-# module -> the CLIs it exposes on PATH (~/.local/bin). Each name is a stable
-# bin/<name> entrypoint (SPEC-184). Replaces the consumer-side snapshot-symlink
-# dance (ops-toolkit cc-elevation redeploy.sh) for kit-owned tools.
-kit_module_clis() {
-  case "$1" in
-    board) echo "board" ;;
-    session) echo "session" ;;
-    worktree) echo "worktree-provision" ;;
-    prose_rag) echo "prose-rag" ;;
-    *) echo "" ;;
-  esac
-}
+# --- Layered install: spine + core modules + opt-in modules (ID-277 SG-04) --
+# The spine (safety-gate, ship-gate, spec-drift-guard, secrets-guard, commit-format,
+# anti-rationalization) is ALWAYS wired. A FRESH install (no kit.toml record yet) also wires
+# the table's `core` modules. Every other module is wired only when named via `--with <a,b,c>`.
+# A `kit.toml [modules]` manifest RECORDS the enabled set (for `--with`-less re-installs
+# and future discovery) -- it is a shell-install RECORD, never a runtime feature-registry: no
+# hook reads it (see tests/test-no-runtime-manifest-read.sh).
+# The module table (names, hooks with their events, CLIs, core or opt-in) is ONE data file,
+# lib/config/modules.tsv, read through lib/config/modules.sh. lib/adopt.sh reads the same file.
+if [ ! -f "$KIT_DIR/lib/config/modules.sh" ] || [ ! -f "$KIT_DIR/lib/config/modules.tsv" ]; then
+  echo "[error] module table missing: $KIT_DIR/lib/config/modules.{sh,tsv}" >&2
+  exit 1
+fi
+# shellcheck source=lib/config/modules.sh
+source "$KIT_DIR/lib/config/modules.sh"
+KIT_KNOWN_MODULES="$(kit_modules_known)"
+KIT_CORE_MODULES="$(kit_modules_core)"
+KIT_SPINE_HOOKS="$(kit_module_hooks spine)"
 
 # kit_write_cli_shim <name> <target> -- write ~/.local/bin/<name> as an exec-shim to
 # <target>. A wrapper FILE, not a symlink: bin/ entrypoints resolve ../lib relative
@@ -334,6 +318,9 @@ kit_render_install_toml() {
 KIT_WITH_ARG=""
 KIT_PRUNE=0
 KIT_NO_MODS=0
+KIT_FORCE_BOTH=0
+# KIT_FORCE_FULL=1 is the older spelling of --force-both; scripts and docs still use it.
+[ -n "${KIT_FORCE_FULL:-}" ] && KIT_FORCE_BOTH=1
 KIT_ARGS=("$@")
 _i=0
 while [ $_i -lt ${#KIT_ARGS[@]} ]; do
@@ -350,6 +337,9 @@ while [ $_i -lt ${#KIT_ARGS[@]} ]; do
       ;;
     --no-mods)
       KIT_NO_MODS=1
+      ;;
+    --force-both)
+      KIT_FORCE_BOTH=1
       ;;
   esac
   _i=$((_i + 1))
@@ -382,17 +372,22 @@ KIT_REQUESTED_MODULES="$(echo "$KIT_REQUESTED_MODULES" | xargs)"
 # --- Plugin-aware compat mode --------------------------------------------
 # If the kit is already installed as a Claude Code plugin, the plugin provides
 # the hooks, commands, agents, and lib/ at runtime via ${CLAUDE_PLUGIN_ROOT}.
-# Running the full bash install here would DOUBLE-register hooks (settings.json
-# AND the plugin) and could pin a different lib/ version, which is exactly the
-# "don't run both paths" hazard the README warns about.
+# Wiring hooks here too would DOUBLE-register them (settings.json AND the plugin) and
+# could pin a different lib/ version, which is exactly the "don't run both paths" hazard
+# the README warns about. So on a plugin machine this script REFUSES to wire hooks.
 #
-# So on a plugin machine we do a COMPAT-ONLY install: symlink the legacy
+# It does a COMPAT-ONLY install instead: symlink the legacy
 # ~/.claude/dwarves-kit paths (lib, hooks, WORKFLOW.md, AGENTS.md) that docs still
 # call as plain bash (`bash ~/.claude/dwarves-kit/lib/<x>.sh`, where
 # CLAUDE_PLUGIN_ROOT is not set). No settings.json hooks, no flat commands. The
 # symlinks track this checkout (KIT_DIR), which is also the marketplace source,
-# so a `git pull` updates them. Force the full bash install with KIT_FORCE_FULL=1.
+# so a `git pull` updates them. `--force-both` wires the hooks anyway (they then fire twice).
 #
+# "Plugin installed" is lib/onboard-detect.sh's answer, the same one /kit:onboard shows:
+# mode `plugin` (cache or roster, no bash hooks) or `both` (a plugin AND bash hooks).
+KIT_INSTALL_MODE="$(CLAUDE_DIR="$CLAUDE_DIR" bash "$KIT_DIR/lib/onboard-detect.sh" mode 2>/dev/null || echo none)"
+case "$KIT_INSTALL_MODE" in plugin|both) KIT_PLUGIN_PRESENT=1 ;; *) KIT_PLUGIN_PRESENT=0 ;; esac
+
 # kit_symlink_hardened <target> <linkname> -- `ln -sfn` silently no-ops on macOS
 # when LINKNAME already exists as a REAL (non-symlink) directory: -n only guards
 # against LINKNAME being a symlink-to-dir, so ln instead treats LINKNAME as a
@@ -446,22 +441,51 @@ kit_register_mod_dir() {
   fi
 }
 
+# The plugin's cache dir, when there is one (a roster-only plugin has none): the source of the
+# agents the plugin serves.
 PLUGIN_LIB="$(ls -d "$CLAUDE_DIR"/plugins/cache/dwarves-marketplace/kit/*/lib 2>/dev/null | sort -V | tail -1 || true)"
-if [ -n "${PLUGIN_LIB:-}" ] && [ -z "${KIT_FORCE_FULL:-}" ]; then
-  echo "[plugin detected] kit@dwarves-marketplace is installed; runtime comes from the plugin."
-  echo "Doing a COMPAT-ONLY install (legacy path shims), not the full bash install,"
-  echo "to avoid double-registering hooks."
+
+# kit_retire_bare_command_links -- the plugin serves every command under the kit: prefix, so a
+# bare-name symlink a previous shell install left behind duplicates the slash menu and shadows
+# same-named Anthropic built-ins (/design was the first real collision). Remove only our own links.
+kit_retire_bare_command_links() {
+  local cmd_file cmd_name link
+  for cmd_file in "$KIT_DIR/commands/"*.md; do
+    cmd_name=$(basename "$cmd_file")
+    link="$CLAUDE_DIR/commands/$cmd_name"
+    if [ -L "$link" ] && [ "$(readlink "$link")" = "$cmd_file" ]; then
+      rm "$link"
+      echo "[ok] Removed bare command symlink (plugin serves kit:${cmd_name%.md}): /${cmd_name%.md}"
+    fi
+  done
+  echo "[ok] Plugin install detected: commands served as kit:*, no bare symlinks"
+}
+
+if [ "$KIT_PLUGIN_PRESENT" -eq 1 ] && [ "$KIT_FORCE_BOTH" -eq 0 ]; then
+  echo "[plugin detected] kit@dwarves-marketplace is installed (mode: $KIT_INSTALL_MODE); runtime comes from the plugin."
+  echo "[refused] Not wiring kit hooks into settings.json: the plugin already registers every kit hook,"
+  echo "          so a second set would fire each hook twice. Doing a COMPAT-ONLY install instead"
+  echo "          (legacy path shims). To wire the bash hooks anyway: bash install.sh --force-both"
+  if [ -n "$KIT_WITH_ARG" ]; then
+    echo "[refused] --with $KIT_WITH_ARG ignored: modules select hooks, and the plugin owns the hooks here."
+  fi
+  if [ "$KIT_INSTALL_MODE" = "both" ]; then
+    echo "[warn] settings.json ALREADY carries kit hooks next to the plugin's, so every hook fires twice right now."
+    echo "       Keep one path: bash install.sh --uninstall, then bash install.sh (compat-only, the plugin's hooks stay)."
+  fi
+  kit_retire_bare_command_links
   # Self-heal stale bare agent copies from a full install that predates this
-  # compat-mode branch (or ran with KIT_FORCE_FULL=1): the plugin already
+  # compat-mode branch (or ran with --force-both): the plugin already
   # serves these under the kit: namespace, so a leftover bare copy is a
   # duplicate, not a second install path. Same removal a full --uninstall
   # does, run here so a plain re-install cleans it up too.
   # The bare copy is unowned user data (it may have been edited), so it is
   # moved aside, never rm'd, and only when the cached plugin really ships
   # that agent; a checkout ahead of the plugin release leaves the copy alone.
-  PLUGIN_AGENTS="$(dirname "$PLUGIN_LIB")/agents"
+  PLUGIN_AGENTS=""
+  [ -n "${PLUGIN_LIB:-}" ] && PLUGIN_AGENTS="$(dirname "$PLUGIN_LIB")/agents"
   RETIRED_AGENTS="$CLAUDE_DIR/agents.retired-$(date +%Y%m%d)"
-  if [ -d "$KIT_DIR/agents" ] && [ -d "$CLAUDE_DIR/agents" ] && [ ! -L "$CLAUDE_DIR/agents" ]; then
+  if [ -n "$PLUGIN_AGENTS" ] && [ -d "$KIT_DIR/agents" ] && [ -d "$CLAUDE_DIR/agents" ] && [ ! -L "$CLAUDE_DIR/agents" ]; then
     for AGENT_FILE in "$KIT_DIR/agents/"*.md; do
       AGENT_NAME=$(basename "$AGENT_FILE")
       [ -f "$CLAUDE_DIR/agents/$AGENT_NAME" ] || continue
@@ -499,7 +523,7 @@ if [ -n "${PLUGIN_LIB:-}" ] && [ -z "${KIT_FORCE_FULL:-}" ]; then
   fi
   echo ""
   echo "Legacy doc paths (bash ~/.claude/dwarves-kit/lib/*.sh) now resolve."
-  echo "Full bash install anyway: KIT_FORCE_FULL=1 bash install.sh"
+  echo "Full bash install anyway (hooks then fire twice): bash install.sh --force-both"
   exit 0
 fi
 # --- end plugin-aware compat mode ----------------------------------------
@@ -666,18 +690,22 @@ if [ -z "$DEST_REAL" ] || [ "$KIT_REAL" != "$DEST_REAL" ]; then
 fi
 
 # 1f. Resolve the enabled module set (spine always; optionals additive across
-# re-installs unless --prune). Three inputs feed the union so a re-run NEVER
+# re-installs unless --prune). Four inputs feed the union so a re-run NEVER
 # retroactively un-wires a hook a prior run (or a hand-edited settings.json) wired:
 #   (a) kit.toml's prior [modules] (this consumer's own record)
 #   (b) hooks ALREADY present in settings.json that map to a known module (covers
 #       a consumer who ran the OLD all-hooks installer, e.g. ops-toolkit/
 #       console-labs/family-office, before this manifest existed)
 #   (c) this run's --with request
-# --prune drops (a)+(b) and trims to exactly --with (spine-only if --with is empty).
+#   (d) the table's `core` modules, on a FRESH install only. Fresh = no install record and no
+#       module hook in settings.json. An existing install keeps what it has: a change to the
+#       core set reaches new installs, never a re-run on a machine that already chose.
+# --prune drops (a)+(b)+(d) and trims to exactly --with (spine-only if --with is empty).
 KIT_TOML="$CLAUDE_DIR/dwarves-kit/kit.toml"
 
 KIT_PRIOR_MODULES=""
-if [ -f "$KIT_TOML" ]; then
+# A kit.toml that is a symlink is a compat install's link into the checkout, not an install record.
+if [ -f "$KIT_TOML" ] && [ ! -L "$KIT_TOML" ]; then
   KIT_PRIOR_MODULES="$( (kit_toml_modules_section_true "$KIT_TOML" | grep -v '^team_mode$' | tr '\n' ' ') || true)"
 fi
 
@@ -695,12 +723,20 @@ if [ -f "$SETTINGS_FILE" ] && command -v jq >/dev/null 2>&1; then
   unset _mod _h
 fi
 
+KIT_DEFAULT_MODULES=""
+if [ -z "$KIT_PRIOR_MODULES" ] && [ -z "$KIT_EXISTING_WIRED_MODULES" ] && { [ ! -f "$KIT_TOML" ] || [ -L "$KIT_TOML" ]; }; then
+  KIT_DEFAULT_MODULES="$KIT_CORE_MODULES"
+fi
+
 if [ "$KIT_PRUNE" -eq 1 ]; then
   KIT_ENABLED_MODULES="$KIT_REQUESTED_MODULES"
   echo "[ok] --prune: trimming enabled modules to exactly: ${KIT_ENABLED_MODULES:-<spine-only>}"
 else
-  KIT_ENABLED_MODULES="$(printf '%s %s %s\n' "$KIT_PRIOR_MODULES" "$KIT_EXISTING_WIRED_MODULES" "$KIT_REQUESTED_MODULES" \
+  KIT_ENABLED_MODULES="$(printf '%s %s %s %s\n' "$KIT_PRIOR_MODULES" "$KIT_EXISTING_WIRED_MODULES" "$KIT_REQUESTED_MODULES" "$KIT_DEFAULT_MODULES" \
     | tr ' ' '\n' | sed '/^$/d' | sort -u | tr '\n' ' ' | xargs)"
+  if [ -n "$KIT_DEFAULT_MODULES" ]; then
+    echo "[ok] Fresh install: core modules on by default: $KIT_DEFAULT_MODULES (the rest are opt-in: --with <a,b,c>)"
+  fi
 fi
 
 KIT_ENABLED_HOOK_NAMES="$KIT_SPINE_HOOKS"
@@ -871,17 +907,8 @@ fi
 # bare-name symlinks would duplicate the slash menu and shadow same-named Anthropic
 # built-ins (/design was the first real collision). On a plugin install this step
 # instead removes any kit-owned bare symlinks a previous shell install left behind.
-PLUGINS_FILE="$CLAUDE_DIR/plugins/installed_plugins.json"
-if [ -f "$PLUGINS_FILE" ] && jq -e '.plugins | keys[] | select(startswith("kit@"))' "$PLUGINS_FILE" >/dev/null 2>&1; then
-  for CMD_FILE in "$KIT_DIR/commands/"*.md; do
-    CMD_NAME=$(basename "$CMD_FILE")
-    LINK="$CLAUDE_DIR/commands/$CMD_NAME"
-    if [ -L "$LINK" ] && [ "$(readlink "$LINK")" = "$CMD_FILE" ]; then
-      rm "$LINK"
-      echo "[ok] Removed bare command symlink (plugin serves kit:${CMD_NAME%.md}): /${CMD_NAME%.md}"
-    fi
-  done
-  echo "[ok] Plugin install detected: commands served as kit:*, no bare symlinks"
+if [ "$KIT_PLUGIN_PRESENT" -eq 1 ]; then
+  kit_retire_bare_command_links
 else
   for CMD_FILE in "$KIT_DIR/commands/"*.md; do
     CMD_NAME=$(basename "$CMD_FILE")
@@ -929,9 +956,9 @@ fi
 
 # 4b. Install subagent definitions. Skipped when the plugin is cached: the plugin
 # already serves every agent under the kit: namespace, so a bare copy here is the
-# duplicate the compat branch retires. KIT_FORCE_FULL=1 bypasses compat for hooks
+# duplicate the compat branch retires. --force-both bypasses compat for hooks
 # and commands, not for agents, or the escape hatch reopens the duplicate.
-if [ -n "${PLUGIN_LIB:-}" ]; then
+if [ "$KIT_PLUGIN_PRESENT" -eq 1 ]; then
   echo "[ok] Agents served by the cached plugin; bare copies not installed"
 elif [ -d "$KIT_DIR/agents" ]; then
   # Note (ID-905): kit-internal dispatch references are plugin-qualified
@@ -1054,7 +1081,7 @@ fi
 # 6. Verify
 echo ""
 echo "=== Verification ==="
-echo "Modules: spine (always on) + ${KIT_ENABLED_MODULES:-<none opted in>}"
+echo "Modules: spine (always on) + ${KIT_ENABLED_MODULES:-<none opted in>}  (core by default: ${KIT_CORE_MODULES:-none})"
 KIT_NOT_ENABLED=""
 for _mod in $KIT_KNOWN_MODULES; do
   case " $KIT_ENABLED_MODULES " in
@@ -1106,8 +1133,8 @@ echo "OFF by default. Turn one on per repo in <repo>/.kit.toml [gate] (adopt see
 echo "each key explained), or machine-wide in ~/.config/dwarves-kit/kit.toml. Safety gates are"
 echo "always on. Detail: $KIT_DIR/lib/gate/README.md 'Turning a gate on'."
 echo ""
-echo "Tip: opt into a module (board, session, advisor, cosmetic, queue, stats, quiz_gate,"
-echo "weekend_batch): bash $KIT_DIR/install.sh --with board,stats"
+echo "Tip: opt into a module ($(echo "$KIT_KNOWN_MODULES" | sed 's/ /, /g')):"
+echo "  bash $KIT_DIR/install.sh --with session,stats"
 echo "Tip: trim to exactly a set (drops anything previously wired, incl. an old all-hooks"
 echo "install): bash $KIT_DIR/install.sh --prune --with board"
 echo ""
