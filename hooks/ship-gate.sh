@@ -1,5 +1,5 @@
 #!/bin/bash
-# ship-gate.sh -- PreToolUse hook that refuses a push or PR when the spec lane has a required gate with no ran or override entry.
+# ship-gate.sh -- PreToolUse hook that refuses a push onto a default branch, or a push or PR when the spec lane has a required gate with no ran or override entry.
 # ship-gate.sh, PreToolUse hook, matcher: Bash
 # Workflow-completeness gate at the ship/push boundary. When a feature
 # branch is pushed or a PR is opened, refuse if the active spec's lane has a
@@ -7,7 +7,9 @@
 #
 # This is a QUALITY gate, not a safety gate: it FAILS OPEN on any ambiguity (no
 # repo, no spec, no lane, missing tooling) so a bug here can never block unrelated
-# work. push-to-main and force-push stay safety-gate.sh's job. Exit 2 = block.
+# work. Force-push stays safety-gate.sh's job. One safety rule lives here because only this hook
+# resolves the destination ref: a git push that lands on a default branch is refused in any repo
+# (_default_block). Exit 2 = block.
 set -uo pipefail
 # Preserve fail-open even on the pathological case (HOME unset under set -u): the lib
 # fallback below uses $HOME, so default it to empty rather than error-exit.
@@ -35,7 +37,8 @@ CMD_CODE=$(printf '%s\n' "$CMD" | awk '
       m = substr(line, RSTART, RLENGTH)
       sub(/<<-?[ \t]*/, "", m); gsub(/["'\'']/, "", m)
       marker = m; inhd = 1
-      line = substr(line, 1, RSTART - 1)
+      # the rest of the opener line is still code: `git commit -F - <<EOF && git push` pushes
+      line = substr(line, 1, RSTART - 1) " " substr(line, RSTART + RLENGTH)
     }
     print line
   }')
@@ -55,8 +58,8 @@ if grep -qE '(^|[^[:alnum:]_.-])(bash|sh|zsh)([[:space:]][^<|;&]*)?<<' < <(print
 # cross-repo misfire: a `cd other-repo && git push` was gated against the SESSION
 # repo's spec). Resolve the repo from a leading cd prefix when present.
 # BSD-sed-portable: grab the cd arg with grep -o, then strip the prefix + quotes.
-CDDIR=$(printf '%s' "$CMD_CODE" | grep -oE '^[[:space:]]*cd[[:space:]]+[^&;|]+' | head -1 \
-  | sed -E 's/^[[:space:]]*cd[[:space:]]+//; s/[[:space:]]+$//; s/^"//; s/"$//' || true)
+CDDIR=$(printf '%s' "$CMD_CODE" | grep -oE '^[[:space:]]*(cd|pushd)[[:space:]]+[^&;|]+' | head -1 \
+  | sed -E 's/^[[:space:]]*(cd|pushd)[[:space:]]+//; s/[[:space:]]+$//; s/^"//; s/"$//' || true)
 if [ -z "$CDDIR" ]; then   # `git -C <dir> push` ships that repo
   CDDIR=$(printf '%s' "$CMD_CODE" | grep -oE '(^|[[:space:]])-C[[:space:]]+[^[:space:]]+' | head -1 | awk '{print $NF}' || true)
 fi
@@ -105,10 +108,36 @@ _resolve_base() { ship_rules_resolve_base "$ROOT"; }
 POLICY="${CLAUDE_PLUGIN_ROOT:-$HOME/.claude/dwarves-kit}/lib/gate/gate-policy.sh"
 # Which refs does this command push? lib/gate/push-refs.sh answers, and fails closed: a command it
 # cannot fully account for (--all, --mirror, --tags, an unresolvable source, a variable, a wrapper,
-# more than one directory) is BLOCKED, not guessed at. A push whose target is the default branch,
-# or a force push, is safety-gate's business and is left alone. A native git pre-push hook, which
-# receives the exact refs on stdin, is the structural fix; this parser is best-effort.
+# more than one directory) is BLOCKED, not guessed at. A force push is safety-gate's business and
+# is left alone. A git push that lands on a default branch is refused in EVERY repo, adopted or
+# not (_default_block below). A native git pre-push hook, which receives the exact refs on stdin,
+# is the structural fix; this parser is best-effort.
 PREFS="${CLAUDE_PLUGIN_ROOT:-$HOME/.claude/dwarves-kit}/lib/gate/push-refs.sh"
+[ -f "$PREFS" ] || PREFS="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/gate/push-refs.sh"
+# _default_block <branch> <remote>: refuse a git push onto a default branch. Safety-gate reads only
+# the ref tokens typed on the command, so a plain `git push` on main, or a push to a remote whose
+# HEAD names another branch, reached the remote (a subagent's loop landed four commits on a
+# publishing main that way). The one escape is KIT_ALLOW_DEFAULT_PUSH=1 in the HOOK's environment,
+# which a human sets when launching the session. A `KIT_ALLOW_DEFAULT_PUSH=1 git push` prefix on
+# the command is agent-writable and does not count.
+_default_block() {
+  local LOG_DIR="${DWARVES_KIT_LOG_DIR:-$HOME/.claude/dwarves-kit/logs}"
+  mkdir -p "$LOG_DIR" 2>/dev/null || true
+  if [ "${KIT_ALLOW_DEFAULT_PUSH:-0}" = 1 ]; then
+    echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) | ALLOWED | default-push | $1 ($2) KIT_ALLOW_DEFAULT_PUSH=1" >> "$LOG_DIR/ship-gate.log" 2>/dev/null || true
+    exit 0
+  fi
+  echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) | BLOCKED | default-push | $1 ($2) | $ROOT" >> "$LOG_DIR/ship-gate.log" 2>/dev/null || true
+  {
+    echo "BLOCKED: ship-gate. This push lands on '$1', the default branch of '$2'. Never push straight to a default branch."
+    echo "Move the work to a feature branch and open a PR:"
+    echo "  git switch -c <type>/<slug>"
+    echo "  git push -u $2 HEAD:refs/heads/<type>/<slug>"
+    echo "  gh pr create --base $1"
+    echo "Only a human may push '$1' directly: from their own terminal, or in a session they launched with KIT_ALLOW_DEFAULT_PUSH=1 in its environment. A KIT_ALLOW_DEFAULT_PUSH=1 prefix on this command does not count."
+  } >&2
+  exit 2
+}
 _refs_block() {   # _refs_block <reason>
   local LOG_DIR="${DWARVES_KIT_LOG_DIR:-$HOME/.claude/dwarves-kit/logs}"
   mkdir -p "$LOG_DIR" 2>/dev/null || true
@@ -140,6 +169,8 @@ if [ -f "$PREFS" ]; then
   PUSH_OUT=$(bash "$PREFS" "$ROOT" "$CMD_CODE" "$CURBRANCH" "${DEFNAME#origin/}" 2>/dev/null || true)
   # Whole lines only: the parser's markers start with @@ and a ref name appears only inside a
   # REF or BLOCK line, so `feat/DEFAULT-x` cannot pass for the DEFAULT marker.
+  _DPUSH=$(printf '%s\n' "$PUSH_OUT" | grep -m1 '^@@DEFAULT-PUSH ' || true)
+  if [ -n "$_DPUSH" ]; then read -r _ _DBR _DREM <<< "$_DPUSH"; _default_block "$_DBR" "$_DREM"; fi
   if grep -qxE '@@FORCE|@@DEFAULT' < <(printf '%s\n' "$PUSH_OUT"); then exit 0; fi
   if grep -q '^@@BLOCK ' < <(printf '%s\n' "$PUSH_OUT"); then
     _fc_applies && _refs_block "$(printf '%s\n' "$PUSH_OUT" | grep -m1 '^@@BLOCK ' | sed 's/^@@BLOCK //')"

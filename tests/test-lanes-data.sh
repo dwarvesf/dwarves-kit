@@ -523,6 +523,7 @@ case_ship_operator_hollow_full() {
 }
 
 # ---- what counts as a push to the default branch, and which ref is shipped ----
+# A push onto the default branch is refused by the ship-gate itself (exit 2), not left to safety-gate.
 case_ship_push_forms() {
   ship_fixture migration normal; record_gates $NORMAL_GATES
   local bad="" c want other; other="$(_mk)"
@@ -537,9 +538,9 @@ case_ship_push_forms() {
 0|git push -f origin feat/x
 2|git commit -m "fix main thing" && git push -u origin feat/x
 2|git -c user.name=x push -u origin feat/x
-0|git push origin feat/x:master
-0|git push origin HEAD:refs/heads/main
-0|git push origin main
+2|git push origin feat/x:master
+2|git push origin HEAD:refs/heads/main
+2|git push origin main
 2|git push origin HEAD:refs/heads/feat/x
 CASES
   HOOK_CWD="$other" HOOK_CMD="git -C $ROOT push -u origin feat/x" run_hook
