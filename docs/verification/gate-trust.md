@@ -76,3 +76,7 @@ bash tests/test-gate-ledger-amend.sh
 bash tests/test-ship-gate-review-verdict.sh
 bash tests/test-meta-hard-claims.sh
 ```
+
+## Rollback
+
+Revert the PR. Nothing is migrated: the ledger format gains one optional `GATE | lane-lower | override` line and no existing line changes, so ledgers written before or after the revert read the same. To turn only the cross-check off on a repo, set `review_verdict = false` under `[gate]` in a committed `.kit.toml`; there is no switch for the amend guard, because a refused amend writes nothing and `--lower --reason` is the sanctioned way through.
