@@ -20,11 +20,11 @@ ok()  { PASS=$((PASS+1)); printf '  PASS  %s\n' "$1"; }
 bad() { FAIL=$((FAIL+1)); printf '  FAIL  %s\n' "$1"; }
 assert_true() { if [ "$2" -eq 0 ]; then ok "$1"; else bad "$1"; fi; }
 
-# Slice S4 removes session-state-save and wires intake-sweep at SessionStart in settings.json and
-# hooks/hooks.json. Until that lands, settings.json still carries the first and lacks the second;
-# the table already shows the end state. Delete both lists when S4 merges.
+# Slice S4 removes session-state-save and wires `backlog-stage.sh --surface` at SessionStart in
+# settings.json and hooks/hooks.json. Until that lands, settings.json still carries the first and
+# lacks the second; the table already shows the end state. Delete both lists when S4 merges.
 SETTINGS_EXTRA="session-state-save.sh"
-TABLE_NOT_YET_WIRED="intake-sweep.sh"
+TABLE_NOT_YET_WIRED="SessionStart:backlog-stage.sh"
 
 # table_problems <table> <manifest.json>... -- print one line per fault. A manifest is a
 # settings.json or a hooks/hooks.json; the table's <Event>:<script> pairs must match it both ways.
@@ -57,7 +57,7 @@ table_problems() {
       [ -z "$pair" ] && continue
       case "$pair" in statusLine:*) continue ;; esac
       script="${pair#*:}"
-      case " $TABLE_NOT_YET_WIRED " in *" $script "*) continue ;; esac
+      case " $TABLE_NOT_YET_WIRED " in *" $pair "*) continue ;; esac
       printf '%s\n' "$wired" | grep -qxF "$pair" || echo "$(basename "$manifest"): table pair $pair is not wired"
     done <<< "$pairs"
   done
@@ -81,7 +81,7 @@ assert_true "module names are unique (dup: ${DUP:-none})" "$([ -z "$DUP" ]; echo
 assert_true "spine is a row and is core" "$(awk -F'\t' '$1 == "spine" && $2 == "core" { f = 1 } END { exit !f }' "$TABLE"; echo $?)"
 assert_true "the folded bridge module is gone" "$(awk -F'\t' '$1 == "bridge" { f = 1 } END { exit f }' "$TABLE"; echo $?)"
 assert_true "session-state-save is not in the table (slice S4 removes the hook)" "$(! grep -q 'session-state-save' "$TABLE"; echo $?)"
-assert_true "intake-sweep sits under board at SessionStart" "$(awk -F'\t' '$1 == "board" && $3 ~ /SessionStart:intake-sweep\.sh/ { f = 1 } END { exit !f }' "$TABLE"; echo $?)"
+assert_true "board has the SessionStart entry that runs intake-sweep (backlog-stage --surface)" "$(awk -F'\t' '$1 == "board" && $3 ~ /SessionStart:backlog-stage\.sh/ { f = 1 } END { exit !f }' "$TABLE"; echo $?)"
 CORE="$(bash -c "source '$KIT_DIR/lib/config/modules.sh'; kit_modules_core")"
 assert_true "core set is exactly board (spine is not a toggle) (got: $CORE)" "$([ "$CORE" = "board" ]; echo $?)"
 KNOWN="$(bash -c "source '$KIT_DIR/lib/config/modules.sh'; kit_modules_known")"

@@ -127,21 +127,21 @@ Layered by design: the SPINE installs unconditionally (six hooks guarding push, 
 
 **One table.** Every module's name, hooks (with their event), CLIs and default live in one file, `lib/config/modules.tsv`. `install.sh` and `lib/adopt.sh` both read it; `tests/test-modules-table.sh` pins `settings.json`, `hooks/hooks.json`, `kit.toml` and the registry to it. **Behavior change for new installs only:** before, a default `adopt` seeded `session` and `advisor` on; now only `board` starts on, and session, advisor, cosmetic, money_gate and prose_rag are opt-in. An existing install keeps the modules it has; a re-run never adds the core set.
 
-| Module | What it wires | Kind | Default |
-|---|---|---|---|
-| `board` | `backlog-stage` (SessionEnd: stage session work-items to a staging file, opt-in via `BACKLOG_STAGE_AUTO=1`, default off); its `--surface` pass also runs `intake-sweep` (consumer-declared deferred-link sources, config-gated); `board-row-gate` (PreToolUse Bash: blocks a commit that adds a new board row without a `board-row-ok: <reason>` line) | 2 hooks | core |
-| `session` | `context-readiness`, `output-offload`, `pre-compact-backup`, `post-compact-reinject`, `session-state-save`, `harvest`, `citation-guard`, `context-budget` (warns once at 65% of the model's context window, again at 70%, `KIT_CTX_WARN_PCT`/`KIT_CTX_STRONG_PCT`/`KIT_CTX_WINDOW`); plus a PATH shim for the `session` CLI (`session <intel\|observe\|recall\|report\|semantic>`, ADR-0034: the five prefixed CLIs collapsed into one entry) | 8 hooks + 1 CLI | opt-in |
-| `advisor` | `context-hints` (session-elapsed + keyword skill hints) + `tool-policy-guard` (PreToolUse allow/ask/deny per tool domain; inert until a `tool-policy.json` exists) | 2 hooks | opt-in |
-| `cosmetic` | `auto-format`, `notification`, `slop-cleaner`, `statusline`, `codebase-index`, `permission-auto-approve` | 6 hooks | opt-in |
-| `queue` | `/kit:mega` + `/kit:dispatch` machinery (`lib/queue/orchestrate.sh`), the overnight queue launcher (`lib/queue/queue.sh`) | hookless (lib) | opt-in |
-| `stats` | the `stats` CLI, a read-only projection over the run/gate ledgers | hookless (uv CLI) | opt-in |
-| `quiz_gate` | `/kit:quiz-gate` (ADR-0031 understanding-gate nudge) | hookless (command) | opt-in |
-| `weekend_batch` | the debt-paydown reader/closer (`bin/reflect debt`; engine `lib/reflect/weekend-batch.sh`, relocated per ADR-0034, renamed from `learn` by ADR-0036), invoked by a consumer's own skill or directly | hookless (lib) | opt-in |
-| `bridge` | FOLDED INTO `sync` 2026-07-16. The git↔Hermes cockpit mirror/writeback verbs (`board.sh mirror/status/writeback`, `bridge=on` rows in `boards.txt`) remain runnable as the legacy engine until the SPEC-002 P2 port (kit ID-290) re-lands them as a sync edge | absorbed | - |
-| `worktree` | `worktree-provision` on PATH (manual worktree env-symlink + install provisioner, `lib/worktree-provision/`) | hookless (CLI) | opt-in |
-| `money_gate` | `money-gate` (PreToolUse Edit/Write guard for money-touching edits; inert until you set `MONEY_GATE_REPOS`) | 1 hook | opt-in |
-| `prose_rag` | `prose-rag` recall inject (UserPromptSubmit, dormant until `PROSE_RAG_INJECT=1`) + the `prose-rag` CLI alias over context-kit's `ctx` engine verbs (`lib/prose-rag/`) | 1 hook + 1 CLI | opt-in |
-| `sync` | `board sync` two-way spoke mirror (BACKLOG.md ⇄ Apple Reminders / Notion / Hermes kanban; engine `lib/sync/`, per-repo `.kit.toml [sync]` config), inert without `[sync] sources` | hookless (lib) | opt-in |
+| Module | What it wires | Kind |
+|---|---|---|
+| `board` | `backlog-stage` (SessionEnd: stage session work-items to a staging file, opt-in via `BACKLOG_STAGE_AUTO=1`, default off); its `--surface` pass also runs `intake-sweep` (consumer-declared deferred-link sources, config-gated); `board-row-gate` (PreToolUse Bash: blocks a commit that adds a new board row without a `board-row-ok: <reason>` line) | 2 hooks |
+| `session` | `context-readiness`, `output-offload`, `pre-compact-backup`, `post-compact-reinject`, `session-state-save`, `harvest`, `citation-guard`, `context-budget` (warns once at 65% of the model's context window, again at 70%, `KIT_CTX_WARN_PCT`/`KIT_CTX_STRONG_PCT`/`KIT_CTX_WINDOW`); plus a PATH shim for the `session` CLI (`session <intel\|observe\|recall\|report\|semantic>`, ADR-0034: the five prefixed CLIs collapsed into one entry) | 8 hooks + 1 CLI |
+| `advisor` | `context-hints` (session-elapsed + keyword skill hints) + `tool-policy-guard` (PreToolUse allow/ask/deny per tool domain; inert until a `tool-policy.json` exists) | 2 hooks |
+| `cosmetic` | `auto-format`, `notification`, `slop-cleaner`, `statusline`, `codebase-index`, `permission-auto-approve` | 6 hooks |
+| `queue` | `/kit:mega` + `/kit:dispatch` machinery (`lib/queue/orchestrate.sh`), the overnight queue launcher (`lib/queue/queue.sh`) | hookless (lib) |
+| `stats` | the `stats` CLI, a read-only projection over the run/gate ledgers | hookless (uv CLI) |
+| `quiz_gate` | `/kit:quiz-gate` (ADR-0031 understanding-gate nudge) | hookless (command) |
+| `weekend_batch` | the debt-paydown reader/closer (`bin/reflect debt`; engine `lib/reflect/weekend-batch.sh`, relocated per ADR-0034, renamed from `learn` by ADR-0036), invoked by a consumer's own skill or directly | hookless (lib) |
+| `bridge` | FOLDED INTO `sync` 2026-07-16. The git↔Hermes cockpit mirror/writeback verbs (`board.sh mirror/status/writeback`, `bridge=on` rows in `boards.txt`) remain runnable as the legacy engine until the SPEC-002 P2 port (kit ID-290) re-lands them as a sync edge | absorbed |
+| `worktree` | `worktree-provision` on PATH (manual worktree env-symlink + install provisioner, `lib/worktree-provision/`) | hookless (CLI) |
+| `money_gate` | `money-gate` (PreToolUse Edit/Write guard for money-touching edits; inert until you set `MONEY_GATE_REPOS`) | 1 hook |
+| `prose_rag` | `prose-rag` recall inject (UserPromptSubmit, dormant until `PROSE_RAG_INJECT=1`) + the `prose-rag` CLI alias over context-kit's `ctx` engine verbs (`lib/prose-rag/`) | 1 hook + 1 CLI |
+| `sync` | `board sync` two-way spoke mirror (BACKLOG.md ⇄ Apple Reminders / Notion / Hermes kanban; engine `lib/sync/`, per-repo `.kit.toml [sync]` config), inert without `[sync] sources` | hookless (lib) |
 
 `team_mode` is a reserved, not-yet-installable slot (parked, see `docs/PHILOSOPHY.md` "Team mode: parked, not absent"); naming it in `--with` errors on purpose.
 

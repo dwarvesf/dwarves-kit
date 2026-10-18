@@ -17,11 +17,12 @@
 # name and never a [modules] key. It stays here so the safety hooks have one home too.
 # Existing installs keep what they have: a default change reaches a NEW install only.
 #
-# intake-sweep belongs to board (it feeds the board's staging file). It is a silent no-op until
-# a repo declares _meta/intake-sources.json, so core board stays quiet by default.
+# board's SessionStart entry is `backlog-stage.sh --surface`: that pass runs intake-sweep.sh, which
+# feeds the board's staging file. Both stage entries are inert until opted in (BACKLOG_STAGE_AUTO=1,
+# and a repo's _meta/intake-sources.json for the sweep), so core board stays quiet by default.
 # module	default	hooks	clis
 spine	core	PreToolUse:safety-gate.sh PreToolUse:ship-gate.sh PreToolUse:spec-drift-guard.sh PreToolUse:secrets-guard.sh PreToolUse:commit-format.sh Stop:anti-rationalization.sh	-
-board	core	SessionStart:intake-sweep.sh PreToolUse:board-row-gate.sh SessionEnd:backlog-stage.sh	board
+board	core	SessionStart:backlog-stage.sh PreToolUse:board-row-gate.sh SessionEnd:backlog-stage.sh	board
 session	opt-in	SessionStart:context-readiness.sh SessionStart:post-compact-reinject.sh PreToolUse:batch-debt-warn.sh PostToolUse:output-offload.sh PreCompact:pre-compact-backup.sh PreCompact:harvest.sh SessionEnd:harvest.sh Stop:citation-guard.sh UserPromptSubmit:context-budget.sh	session
 advisor	opt-in	PreToolUse:tool-policy-guard.sh UserPromptSubmit:context-hints.sh	-
 cosmetic	opt-in	SessionStart:codebase-index.sh PostToolUse:auto-format.sh Stop:slop-cleaner.sh Notification:notification.sh PermissionRequest:permission-auto-approve.sh statusLine:statusline.sh	-
