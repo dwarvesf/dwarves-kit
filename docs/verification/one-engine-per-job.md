@@ -7,10 +7,10 @@ Four jobs each had two or three implementations. This change keeps one per job: 
 | Claim | Evidence |
 |---|---|
 | harvest and skill-curator output is unchanged | byte-identity block and harvest parity, below |
-| the shared parser rejects the shapes harvest used to crash on | `lib/session/tests/test-parse-transcript.sh`, 19 checks |
+| the shared parser rejects the shapes harvest used to crash on | `lib/session/tests/test-parse-transcript.sh`, 20 checks |
 | `board mirror --engine sync` no longer routes to a second engine | `tests/test-board-mirror.sh`, 108 checks |
 | `cockpit.py` keeps what live spokes import | `tests/test-sync.sh`, 235 checks |
-| hook logs land in `<ledger root>/hooks`, migrated once, never deleted | `tests/test-hook-log-dir.sh`, 17 checks |
+| hook logs land in `<ledger root>/hooks`, migrated once, never deleted | `tests/test-hook-log-dir.sh`, 19 checks |
 | the hook edits did not move any other hook behavior | the suite table below |
 | each control is load-bearing | three negative controls below |
 
@@ -28,7 +28,7 @@ Verdict: PASS
 Command: bash lib/session/tests/test-parse-transcript.sh && bash lib/skill-curator/tests/test-transcript-parse.sh
 Exit: 0
 Output:
-smoke: all 19 passed
+smoke: all 20 passed
 test-transcript-parse: all 6 passed
 Verdict: PASS
 ```
@@ -73,7 +73,7 @@ Verdict: PASS
 Command: bash tests/test-hook-log-dir.sh
 Exit: 0
 Output:
-hook-log-dir: 17 passed, 0 failed
+hook-log-dir: 19 passed, 0 failed
 Verdict: PASS
 ```
 
@@ -91,7 +91,8 @@ The hook edits touch nine hooks, so each hook's own suite ran on the final tree:
 | `tests/test-kit-contract.sh` | 25 passed, 0 failed |
 | `tests/test-kit-foldin-hooks.sh`, `tests/test-meta-plugin-hooks.sh` | all passed |
 | `tests/test-board.sh`, `tests/test-board-writeback.sh` | 57 passed 1 skipped; 69 passed 1 skipped |
-| `tests/test-hooks.sh`, `tests/test-lanes-data.sh` | exit 0 (run before the last one-line helper fix) |
+| `tests/test-hooks.sh`, `tests/test-lanes-data.sh` | exit 0 (run before the two review fixes) |
+| one-reviewer pass (`kit:code-reviewer`, regression and security lens) | no high finding; two fixed (`--tail-text` and invalid UTF-8, isolated root copying machine-wide logs), the rest listed in the implementation notes |
 | `bin/test-affected --base master` | 68 of 77 pass. 7 timed out under a machine load of 100 to 170; 6 of them re-ran green alone, and `test-wrap-land.sh` never got the shared test lock. 2 failed: `test-kit-contract.sh` (fixed, now 25 of 25) and `test-outcome-emit-sweep.sh`, which fails the same way on master (an unpaired outcome bracket in `commands/debug.md`) |
 
 ## Negative control
@@ -106,7 +107,6 @@ Mutation: `parse_lines` stops raising on a non-object line, so `--harvest-text` 
 Command: bash lib/session/tests/test-parse-transcript.sh
 Exit: 0 (green before mutation)
 Output:
-    ok: MAX keeps the last characters
     ok: MAX=0 keeps everything
     ok: crash shape 'obj' prints nothing, exit 1
     ok: crash shape 'msg' prints nothing, exit 1
@@ -114,14 +114,14 @@ Output:
     ok: crash shape 'text' prints nothing, exit 1
     ok: crash shape 'utf8' prints nothing, exit 1
     ok: missing file exits 1
+    ok: --tail-text reads past invalid UTF-8 (U+FFFD), unlike --harvest-text
   
-  smoke: all 19 passed
+  smoke: all 20 passed
 
 Mutation: sed -i '' 's/            if strict:/            if False:/' lib/session/parse_transcript.py
 Changed: lib/session/parse_transcript.py
 Exit: 1 (under mutation, RED expected)
 Output:
-    ok: MAX keeps the last characters
     ok: MAX=0 keeps everything
     FAIL: crash shape 'obj' rc=0 out=xx
     ok: crash shape 'msg' prints nothing, exit 1
@@ -129,8 +129,9 @@ Output:
     ok: crash shape 'text' prints nothing, exit 1
     ok: crash shape 'utf8' prints nothing, exit 1
     ok: missing file exits 1
+    ok: --tail-text reads past invalid UTF-8 (U+FFFD), unlike --harvest-text
   
-  smoke: 1 FAILED, 18 passed
+  smoke: 1 FAILED, 19 passed
 
 Restore: git checkout HEAD -- lib/session/parse_transcript.py
 Exit: 0 (green after restore)
@@ -184,18 +185,19 @@ Mutation: the helper returns the ledger root itself instead of `<root>/hooks`.
 Command: bash tests/test-hook-log-dir.sh
 Exit: 0 (green before mutation)
 Output:
-  hook-log-dir: 17 passed, 0 failed
+  hook-log-dir: 19 passed, 0 failed
 
 Mutation: sed -i '' 's#dir="$root/hooks"#dir="$root"#' lib/telemetry/hook-log-dir.sh
 Changed: lib/telemetry/hook-log-dir.sh
 Exit: 1 (under mutation, RED expected)
 Output:
-    FAIL default is the XDG ledger root plus hooks: want '/var/folders/dr/n3x74rr93kvfjf1873pyjvp80000gn/T//kit.5pVaR7/h.L3UlGT/xdg/dwarves-kit/logs/hooks' got '/var/folders/dr/n3x74rr93kvfjf1873pyjvp80000gn/T//kit.5pVaR7/h.L3UlGT/xdg/dwarves-kit/logs'
-    FAIL DWARVES_KIT_LOG_DIR moves it: want '/var/folders/dr/n3x74rr93kvfjf1873pyjvp80000gn/T//kit.5pVaR7/h.L3UlGT/pin/hooks' got '/var/folders/dr/n3x74rr93kvfjf1873pyjvp80000gn/T//kit.5pVaR7/h.L3UlGT/pin'
-    FAIL KIT_LEDGER_DIR beats the alias: want '/var/folders/dr/n3x74rr93kvfjf1873pyjvp80000gn/T//kit.5pVaR7/h.L3UlGT/led/hooks' got '/var/folders/dr/n3x74rr93kvfjf1873pyjvp80000gn/T//kit.5pVaR7/h.L3UlGT/led'
-    FAIL an empty KIT_LEDGER_DIR falls back to the XDG root, never a relative path: want '/var/folders/dr/n3x74rr93kvfjf1873pyjvp80000gn/T//kit.5pVaR7/h.L3UlGT/xdg/dwarves-kit/logs/hooks' got '/var/folders/dr/n3x74rr93kvfjf1873pyjvp80000gn/T//kit.5pVaR7/h.L3UlGT/xdg/dwarves-kit/logs'
+    FAIL default is the XDG ledger root plus hooks: want '/var/folders/dr/n3x74rr93kvfjf1873pyjvp80000gn/T//kit.bw9si4/h.pxPd0U/xdg/dwarves-kit/logs/hooks' got '/var/folders/dr/n3x74rr93kvfjf1873pyjvp80000gn/T//kit.bw9si4/h.pxPd0U/xdg/dwarves-kit/logs'
+    FAIL DWARVES_KIT_LOG_DIR moves it: want '/var/folders/dr/n3x74rr93kvfjf1873pyjvp80000gn/T//kit.bw9si4/h.pxPd0U/pin/hooks' got '/var/folders/dr/n3x74rr93kvfjf1873pyjvp80000gn/T//kit.bw9si4/h.pxPd0U/pin'
+    FAIL KIT_LEDGER_DIR beats the alias: want '/var/folders/dr/n3x74rr93kvfjf1873pyjvp80000gn/T//kit.bw9si4/h.pxPd0U/led/hooks' got '/var/folders/dr/n3x74rr93kvfjf1873pyjvp80000gn/T//kit.bw9si4/h.pxPd0U/led'
+    FAIL an empty KIT_LEDGER_DIR falls back to the XDG root, never a relative path: want '/var/folders/dr/n3x74rr93kvfjf1873pyjvp80000gn/T//kit.bw9si4/h.pxPd0U/xdg/dwarves-kit/logs/hooks' got '/var/folders/dr/n3x74rr93kvfjf1873pyjvp80000gn/T//kit.bw9si4/h.pxPd0U/xdg/dwarves-kit/logs'
+    FAIL isolated root is the project's .kit/logs/hooks: want '/private/var/folders/dr/n3x74rr93kvfjf1873pyjvp80000gn/T/kit.bw9si4/h.tFx0hh/proj/.kit/logs/hooks' got '/private/var/folders/dr/n3x74rr93kvfjf1873pyjvp80000gn/T/kit.bw9si4/h.tFx0hh/proj/.kit/logs'
     FAIL safety-gate logs into <root>/hooks: want '1' got ''
-  hook-log-dir: 12 passed, 5 failed
+  hook-log-dir: 13 passed, 6 failed
 
 Restore: git checkout HEAD -- lib/telemetry/hook-log-dir.sh
 Exit: 0 (green after restore)

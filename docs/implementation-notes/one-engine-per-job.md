@@ -48,6 +48,7 @@ Hook logs now live in `<ledger root>/hooks/`, resolved by one helper, `lib/telem
 - A hook with no `lib/` beside it falls back to an inline function: env knobs, then the XDG default. It still logs under `<root>/hooks`.
 - Inherited trust: `[ledger].location` comes from the project `.kit.toml`, as it already does for every ledger writer. A hostile repo can choose where hook logs land.
 - `hooks/codex-hooks.json` pins were recomputed with `lib/codex/repin.sh`, because six hook files changed.
+- Known limits, left as is: a hook run through a symlink in another directory misses the lib and uses the inline fallback, which ignores `[ledger].location`. `harvest.sh` and `transcript.sh` now need `python3` (the sweep already did). Python text mode splits a bare `\r` where jq did not; real transcripts hold none.
 - Tests that read `$DWARVES_KIT_LOG_DIR/<hook>.log` now read `<root>/hooks/<hook>.log`. Where a test sets `KIT_LEDGER_DIR` too, that variable wins, so the test reads it.
 
 ## Out of fence, for the lead
