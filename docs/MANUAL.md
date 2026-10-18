@@ -568,7 +568,6 @@ Every hook logs to stderr what it matched and what it decided. Run the failing s
 | Stop event keeps firing complaints | `~/.claude/dwarves-kit/logs/anti-rationalization.log` |
 | New file warned about unfairly | `~/.claude/dwarves-kit/logs/spec-drift-guard.log` |
 | Slop-cleaner nagging on something fine | `~/.claude/dwarves-kit/logs/slop-cleaner.log` |
-| Session state lost | `.claude/session-state/last-state.md` and `archive/` |
 | Statusline showing defaults | run `bash hooks/statusline.sh < /dev/null` and inspect |
 | Hook silently does nothing | `DWARVES_KIT_DEBUG=1` and re-trigger; check stderr |
 
@@ -624,17 +623,14 @@ The hook was downloading the formatter via `npx --yes` per edit (v1.0 bug). Fixe
 - Confirm the formatter is installed globally: `which prettier`, `which ruff`, etc.
 - Confirm the hook is the v1.1+ version: `grep -- '--yes' hooks/auto-format.sh` should return nothing.
 
-#### Session state was lost across compaction
+#### A rule was lost across compaction
 
 Compaction sequence:
 1. `pre-compact-backup.sh` writes a snapshot.
 2. Claude Code compacts.
 3. `post-compact-reinject.sh` (a SessionStart hook with matcher `compact`, so it fires when the compacted session resumes) re-injects critical rules.
-4. `session-state-save.sh` continues to write to `.claude/session-state/last-state.md` on every Stop.
 
-If state is missing, check in order:
-- `.claude/session-state/last-state.md` exists and is current.
-- `.claude/session-state/archive/` for the last 10 rotated snapshots.
+If the rules are missing after a compaction, check:
 - Bash install only: confirm both PreCompact and SessionStart(compact) hooks are registered in `settings.json`.
 - Plugin install: same checks against `hooks/hooks.json`.
 
@@ -665,20 +661,6 @@ The retry cap is by design. After two FAIL:fixable verdicts, the orchestrator ha
 - The acceptance criterion is impossible to meet with the current stack. Update the spec or change the stack.
 
 ### Recovery paths
-
-#### Restore session state after a crash
-
-```
-ls -lt .claude/session-state/
-cat .claude/session-state/last-state.md
-```
-
-If `last-state.md` is corrupt, fall back to the most recent archive:
-```
-ls -lt .claude/session-state/archive/ | head -3
-```
-
-Read the archive into the next session prompt.
 
 #### Reset hooks without uninstalling the kit
 

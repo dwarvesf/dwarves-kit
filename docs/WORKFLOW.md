@@ -208,8 +208,8 @@ The opt-in phases (Design, Design critique, Prototype, UI design, Test plan) han
 same chain at the point the table gives them; every one is advisory.
 
 Throughout: safety-gate blocks destructive Bash; anti-rationalization blocks
-premature "done"; auto-format runs on edit; session-state-save and
-post-compact-reinject protect long sessions. The Debug row is an off-cycle
+premature "done"; auto-format runs on edit; post-compact-reinject
+protects long sessions. The Debug row is an off-cycle
 entry point (a bug-lane loop), not a linear phase between Reflect and the next cycle.
 
 ## The V-model lens
@@ -1112,7 +1112,7 @@ fallback because it alone can run with neither a spec nor a brief.
 | `## UI design` + `## Visual critique` (`/kit:ui-design`; `/kit:visual-team`) | active spec, else the pre-spec brief (visual-team: else inline-only) | spec-first | both write `## Visual critique` to the same heading + location; replace-not-stack dedups |
 | `docs/briefs/DECISION-BRIEF-<slug>.md` (legacy: `docs/briefs/DECISION-BRIEF.md`) | working-tree file | one per feature slug (pre-spec) | exists during `/think`+`/design` before a SPEC-NNN exists; `/spec` folds it into the spec's `## Solution`, after which the spec is the carrier. Slugged per feature (not just per worktree) since these files get committed and merged, so two features sharing a worktree/branch history must not collide |
 | `## Review` (`/kit:review`, `/kit:review-team`) | in the active spec | per-spec | review verdict + findings + TODOs; replace-not-stack; inline in chat if no spec exists |
-| kit logs, session-state | `~/.claude/dwarves-kit/...` | namespaced by worktree id | shared-path writes isolated per worktree |
+| kit logs | `~/.claude/dwarves-kit/...` | namespaced by worktree id | shared-path writes isolated per worktree |
 
 The pre-spec brief is the one artifact that cannot be per-spec (no SPEC-NNN exists
 yet); in that window it is named per feature slug (`DECISION-BRIEF-<slug>.md`), and

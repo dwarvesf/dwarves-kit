@@ -329,8 +329,6 @@ Off-ramp entries that also land in Shape: `[H/I] /kit:onboard` (first run, orche
 ### 4.4 · WATCH: recording what happened
 
 ```
- [E] Stop ────────────> session-state-save (persist last-state.md)  [conv]
- [E] SubagentStop ────> session-state-save (same)                   [conv]
  [E] PreCompact ──────> pre-compact-backup + harvest (stage learnings) [conv]
                         (a host with the harvest sweep active skips the hook; the sweep
                          reads transcripts on a schedule instead)
@@ -507,7 +505,6 @@ One line per live feature: `entry -> ... -> terminal`. Grouped by kind; every fe
 | `[E] PreCompact + SessionEnd --lab-log -> harvest -> staged learnings / LAB_LOG draft (conv)` |
 | `[E] Stop -> anti-rationalization -> HARD block premature "done" / guess-fix` |
 | `[E] Stop -> slop-cleaner -> suggest long-session code trims (adv, terminal)` |
-| `[E] Stop + SubagentStop -> session-state-save -> persist last-state.md + archive (conv)` |
 | `[E] Stop -> citation-guard -> flag hallucinated file:line (adv; CITATION_GUARD_STRICT=1 blocks)` |
 | `[E] SessionEnd -> backlog-stage -> stage work-items to staging file, never the board (conv)` |
 | `[E] Notification -> notification -> desktop notify, async (conv, terminal)` |

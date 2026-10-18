@@ -37,8 +37,8 @@ The ship-gate applies the full lane's gates to any diff that touches a hard path
 | Reflect  | /kit:retro | docs/retro/v<version>.md written | advisory |
 
 Throughout: safety-gate blocks destructive Bash; anti-rationalization blocks
-premature "done"; auto-format runs on edit; session-state-save and
-post-compact-reinject protect long sessions.
+premature "done"; auto-format runs on edit; post-compact-reinject
+protects long sessions.
 
 ## Completion contract
 A task is done only when its acceptance criteria are met and the verifier has
