@@ -1339,49 +1339,7 @@ MEM2=$(_slop_mem); assert_output_not_contains "slop-mem: second Stop (unchanged)
 printf 'x%s = 2\n' $(seq 360) > "$MEM_DIR/big.py"      # content changes, still bloated
 MEM3=$(_slop_mem); assert_output_contains "slop-mem: content change re-flags" "big.py" "$MEM3"
 rm -rf "$MEM_DIR" "$MEM_MARK"
-
-# ============================================================
-echo ""
-echo "=== session-state-save.sh (SPEC-086) ==="
-# ============================================================
-# Reuses the SCAN_DIR/SCAN_MARKER fixture above. State file lists changed source.
-( cd "$SCAN_DIR" && echo '{"stop_hook_active":false}' \
-  | DWARVES_KIT_SESSION_MARKER="$SCAN_MARKER" bash "$KIT_DIR/hooks/session-state-save.sh" 2>/dev/null )
-SS_STATE=$(cat "$SCAN_DIR/.claude/session-state/last-state.md" 2>/dev/null)
-assert_output_contains "session-state: lists a changed source file" "touched.py" "$SS_STATE"
-assert_output_not_contains "session-state: prunes build/ (SPEC-086 canary)" "canary.py" "$SS_STATE"
-
-# guard: outside a git work tree, does not scan (RECENT_FILES=none)
-NOGIT2=$(mktemp -d "${TMPDIR:-/tmp}/dk-nogit2.XXXXXX") || exit 1
-printf 'q = 9\n' > "$NOGIT2/orphan.py"
-( cd "$NOGIT2" && echo '{"stop_hook_active":false}' \
-  | DWARVES_KIT_SESSION_MARKER="$SCAN_MARKER" bash "$KIT_DIR/hooks/session-state-save.sh" 2>/dev/null )
-SS_NG=$(cat "$NOGIT2/.claude/session-state/last-state.md" 2>/dev/null)
-assert_output_not_contains "session-state: no scan outside a git work tree (guard)" "orphan.py" "$SS_NG"
-
-# --- cc-hyg-04: change-gated debounce. An unchanged Stop skips the rewrite+rotate;
-# a real change writes again (cuts the every-Stop tax without staleness risk).
-DB_DIR=$(mktemp -d "${TMPDIR:-/tmp}/dk-db.XXXXXX") || exit 1
-( cd "$DB_DIR" && git init -q && git config user.email t@t && git config user.name t && git commit -q --allow-empty -m base )
-# DEBUG=1 makes the hook print a "skipping" line when it debounces -- a robust
-# signal (archive filenames collide at 1s resolution, so counting is flaky).
-_ss_run() { ( cd "$DB_DIR" && echo '{"stop_hook_active":false}' | DWARVES_KIT_DEBUG=1 bash "$KIT_DIR/hooks/session-state-save.sh" 2>&1 ); }
-_ss_run >/dev/null                                          # first save (establishes fingerprint)
-DB2=$(_ss_run)                                              # unchanged -> should debounce
-assert_output_contains "session-state: debounce skips when unchanged" "skipping" "$DB2"
-( cd "$DB_DIR" && git commit -q --allow-empty -m change )   # HEAD changes -> fingerprint differs
-DB3=$(_ss_run)
-assert_output_not_contains "session-state: writes again after a real change" "skipping" "$DB3"
-# finding 3: further edits to an ALREADY-dirty file (dirty COUNT unchanged) must re-save.
-# A count-based fingerprint would wrongly debounce this; a content hash re-saves.
-( cd "$DB_DIR" && echo one > tracked.txt && git add tracked.txt && git commit -q -m addfile && echo edit1 >> tracked.txt )
-_ss_run >/dev/null                                          # save with tracked.txt dirty (1 dirty file)
-( cd "$DB_DIR" && echo edit2-more >> tracked.txt )          # same file, still 1 dirty -> count unchanged
-DB4=$(_ss_run)
-assert_output_not_contains "session-state: content change to an already-dirty file re-saves (not count)" "skipping" "$DB4"
-rm -rf "$DB_DIR"
-
-rm -rf "$SCAN_DIR" "$NOGIT" "$NOGIT2" "$SCAN_MARKER"
+rm -rf "$SCAN_DIR" "$NOGIT" "$SCAN_MARKER"
 
 # ============================================================
 echo ""
@@ -2733,46 +2691,6 @@ _git_repo() {  # _git_repo <dir> : init a repo with one commit
 AN_MARK=$(mktemp "${TMPDIR:-/tmp}/dk-anmark.XXXXXX") || exit 1
 touch -t 202001010000 "$AN_MARK"
 
-# Case 1: session-state-save from a nested subdirectory writes at the toplevel.
-SUBDIR_REPO=$(mktemp -d "${TMPDIR:-/tmp}/dk-subdir.XXXXXX") || exit 1
-_git_repo "$SUBDIR_REPO"
-mkdir -p "$SUBDIR_REPO/docs/specs" "$SUBDIR_REPO/.claude/handoffs"
-printf '# Spec\nStatus: DRAFT\n' > "$SUBDIR_REPO/docs/specs/SPEC-001-x.md"
-printf 'x = 1\n' > "$SUBDIR_REPO/touched.py"
-( cd "$SUBDIR_REPO/.claude/handoffs" && echo '{"stop_hook_active":false}' \
-  | DWARVES_KIT_SESSION_MARKER="$AN_MARK" bash "$ANCHOR" "$KIT_DIR/hooks/session-state-save.sh" 2>/dev/null )
-[ -f "$SUBDIR_REPO/.claude/session-state/last-state.md" ]
-assert_true "anchor: session-state subdir with content lands at the toplevel" $?
-[ ! -e "$SUBDIR_REPO/.claude/handoffs/.claude/session-state" ]
-assert_true "anchor: session-state subdir with content leaves no nested copy" $?
-AN_STATE=$(cat "$SUBDIR_REPO/.claude/session-state/last-state.md" 2>/dev/null)
-assert_output_contains "anchor: session-state subdir with content reads the root spec" "Spec: DRAFT" "$AN_STATE"
-assert_output_contains "anchor: session-state subdir with content scans the root files" "touched.py" \
-  "$(printf '%s\n' "$AN_STATE" | sed -n '/^## Files modified this session/,/^## /p')"
-
-# Case 2: a worktree session keeps its own state, the main checkout is untouched.
-WT_DIR=$(mktemp -d "${TMPDIR:-/tmp}/dk-wt.XXXXXX") || exit 1
-rmdir "$WT_DIR"   # git worktree add wants to create the directory itself
-( cd "$SUBDIR_REPO" && git worktree add -q "$WT_DIR" -b anchor-wt 2>/dev/null )
-mkdir -p "$WT_DIR/sub"
-AN_SUM_BEFORE=$(shasum "$SUBDIR_REPO/.claude/session-state/last-state.md" 2>/dev/null | awk '{print $1}')
-( cd "$WT_DIR/sub" && echo '{"stop_hook_active":false}' \
-  | DWARVES_KIT_SESSION_MARKER="$AN_MARK" bash "$ANCHOR" "$KIT_DIR/hooks/session-state-save.sh" 2>/dev/null )
-[ -f "$WT_DIR/.claude/session-state/last-state.md" ]
-assert_true "anchor: worktree keeps own state at the worktree toplevel" $?
-AN_SUM_AFTER=$(shasum "$SUBDIR_REPO/.claude/session-state/last-state.md" 2>/dev/null | awk '{print $1}')
-[ -n "$AN_SUM_BEFORE" ] && [ "$AN_SUM_BEFORE" = "$AN_SUM_AFTER" ]
-assert_true "anchor: worktree keeps own state, main checkout state unchanged" $?
-( cd "$SUBDIR_REPO" && git worktree remove --force "$WT_DIR" 2>/dev/null )
-
-# Case 3: outside a git repo the wrapper is a no-op (same contract as NOGIT2 above).
-NOGIT3=$(mktemp -d "${TMPDIR:-/tmp}/dk-nogit3.XXXXXX") || exit 1
-printf 'q = 9\n' > "$NOGIT3/orphan.py"
-( cd "$NOGIT3" && echo '{"stop_hook_active":false}' \
-  | DWARVES_KIT_SESSION_MARKER="$AN_MARK" bash "$ANCHOR" "$KIT_DIR/hooks/session-state-save.sh" 2>/dev/null )
-SS_NG3=$(cat "$NOGIT3/.claude/session-state/last-state.md" 2>/dev/null)
-assert_output_not_contains "anchor: session-state outside a repo, wrapper-routed, does not scan" "orphan.py" "$SS_NG3"
-
 # Case 4: pre-compact-backup from a subdirectory writes at the toplevel.
 PCB_REPO=$(mktemp -d "${TMPDIR:-/tmp}/dk-pcb.XXXXXX") || exit 1
 _git_repo "$PCB_REPO"
@@ -2853,7 +2771,7 @@ EOF
 [ "$AN_N" -gt 0 ] && [ -z "$AN_BAD" ]
 assert_true "anchor: smoke exec, all $AN_N dispatch entries launch (no 126/127)${AN_BAD:+:$AN_BAD}" $?
 
-rm -rf "$SUBDIR_REPO" "$NOGIT3" "$PCB_REPO" "$AN_PARENT" "$AN_EMPTY_PLUGIN" "$AN_HOME" "$AN_SMOKE" "$AN_MARK"
+rm -rf "$PCB_REPO" "$AN_PARENT" "$AN_EMPTY_PLUGIN" "$AN_HOME" "$AN_SMOKE" "$AN_MARK"
 
 # ============================================================
 echo ""

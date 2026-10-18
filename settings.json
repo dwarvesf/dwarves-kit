@@ -29,6 +29,15 @@
             "timeout": 10
           }
         ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash $HOME/.claude/dwarves-kit/hooks/anchor-root.sh $HOME/.claude/dwarves-kit/hooks/backlog-stage.sh --surface",
+            "timeout": 30
+          }
+        ]
       }
     ],
     "PreToolUse": [
@@ -171,11 +180,6 @@
           },
           {
             "type": "command",
-            "command": "bash $HOME/.claude/dwarves-kit/hooks/anchor-root.sh $HOME/.claude/dwarves-kit/hooks/session-state-save.sh",
-            "timeout": 5
-          },
-          {
-            "type": "command",
             "command": "bash $HOME/.claude/dwarves-kit/hooks/anchor-root.sh $HOME/.claude/dwarves-kit/hooks/citation-guard.sh",
             "timeout": 5
           }
@@ -222,17 +226,6 @@
           {
             "type": "command",
             "command": "bash $HOME/.claude/dwarves-kit/hooks/anchor-root.sh $HOME/.claude/dwarves-kit/hooks/context-budget.sh",
-            "timeout": 5
-          }
-        ]
-      }
-    ],
-    "SubagentStop": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bash $HOME/.claude/dwarves-kit/hooks/anchor-root.sh $HOME/.claude/dwarves-kit/hooks/session-state-save.sh",
             "timeout": 5
           }
         ]
