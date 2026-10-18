@@ -45,8 +45,9 @@
 #   lane-classify.sh floor <root> [<base>]              -> `full <kind>: <path>` for the first hard-path hit
 #                                                            in the base..HEAD diff, else nothing, exit 0.
 #                                                            A hit counts only for a non-doc file (.md,
-#                                                            README*, anything under docs/) whose hunks change
-#                                                            more than comment or blank lines; see _floor_comment_only
+#                                                            README or README.<text ext>, anything under docs/)
+#                                                            whose hunks change more than comment or blank
+#                                                            lines; see _floor_comment_only
 #   lane-classify.sh deescalate <chosen-lane> [--rid <rid>] [--root <path>] [--base <ref>] [--floor <N>]
 #                                                        -> down-only SHIP-time size nudge:
 #                                                           advisory line + ledger action, never blocks, exit 0
@@ -607,30 +608,46 @@ _floor_drop() {
 }
 # _floor_comment_only <root> <base> <head> <tmp> <n> <kind>: true when the file on path-list line n changed
 # nothing but comment or blank lines. Fails safe (false, the floor stands) for anything it cannot prove: a
-# submodule, a symlink, a secret-kind path, a file type with no known `#` comment syntax (only shell, python,
-# ruby, toml, yaml, terraform, Dockerfile and dotenv-shaped names qualify), a mode change, a binary diff, an
-# empty or unparsable diff. A `#!` line is code. Blank lines alone qualify only in those same file types.
+# submodule, a symlink, a path that matches the secret pattern (whatever kind won), a file type with no known `#`
+# comment syntax (only shell, python, toml, yaml, terraform and Dockerfile-named files qualify), a file that
+# holds a heredoc, triple-quote or YAML block-scalar opener (a `#` line there may be data), a backslash
+# continuation next to the change, a mode change, a binary diff, an empty or unparsable diff. A `#!` line, a
+# parser-steering comment (Dockerfile directive, coding or modeline tag) and a scanner-suppression comment
+# (nosec, noqa, shellcheck, and the like) are code.
+_FLOOR_DATA_OPENER='<<|"""|'"'''"'|:[[:space:]]*[|>][-+]?[[:space:]]*$|^[[:space:]]*-[[:space:]]*[|>][-+]?[[:space:]]*$'
 _floor_comment_only() {
-  local root="$1" base="$2" head="$3" tmp="$4" n="$5" kind="$6" path d
-  case "$kind" in submodule|secret) return 1 ;; esac
+  local root="$1" base="$2" head="$3" tmp="$4" n="$5" kind="$6" path rev
+  [ "$kind" != submodule ] || return 1
   grep -qx -e "$n" "$tmp/nosoft" 2>/dev/null && return 1
   path="$(sed -n "${n}p" "$tmp/paths")"
   [ -n "$path" ] || return 1
-  case "$path" in
-    *.sh|*.bash|*.zsh|*.py|*.rb|*.toml|*.yml|*.yaml|*.tf) ;;
-    Dockerfile*|*/Dockerfile*) ;;
+  # The winning kind is only the first match; a path that ALSO matches the secret pattern never qualifies.
+  printf '%s\n' "$path" | grep -Eiq -- "$(_hp_re secret)" && return 1
+  case "${path##*/}" in
+    *.sh|*.bash|*.zsh|*.py|*.toml|*.yml|*.yaml|*.tf|Dockerfile*|*.dockerfile) ;;
     *) return 1 ;;
   esac
-  d="$(_floor_git "$root" diff --no-renames --no-ext-diff --no-textconv --text --no-color -U0 --src-prefix=a/ --dst-prefix=b/ "$base" "$head" -- ":(literal)$path" 2>/dev/null)" || return 1
-  [ -n "$d" ] || return 1
-  printf '%s\n' "$d" | awk '
+  # A `#` line can be data: a heredoc body, a triple-quoted string, a YAML block scalar. Any such opener in
+  # either image of the file keeps the floor; so does a backslash continuation (checked on the diff below).
+  for rev in "$base" "$head"; do
+    _floor_git "$root" show "$rev:$path" 2>/dev/null | grep -aEq -e "$_FLOOR_DATA_OPENER" && return 1
+  done
+  _floor_git "$root" diff --no-renames --no-ext-diff --no-textconv --text --no-color -U1 --src-prefix=a/ --dst-prefix=b/ "$base" "$head" -- ":(literal)$path" > "$tmp/cdiff" 2>/dev/null || return 1
+  [ -s "$tmp/cdiff" ] || return 1
+  # A NUL byte means binary: bash 3.2 drops NULs in a substitution and awk may too, so test the file itself.
+  LC_ALL=C tr -d '\0' < "$tmp/cdiff" | cmp -s - "$tmp/cdiff" || return 1
+  awk '
     !body && /^@@ / { body = 1; next }
     !body && /^(old mode|new mode|Binary files|GIT binary patch|rename |copy |similarity )/ { bad = 1; next }
     !body { next }
     /^\\/ { next }
+    /^ / { if ($0 ~ /\\$/) bad = 1; next }
     /^[-+]/ { c = substr($0, 2); changed++
-      if (c ~ /^[[:space:]]*#!/ || c !~ /^[[:space:]]*(#.*)?$/) bad = 1 }
-    END { exit (bad || !changed) ? 1 : 0 }'
+      if (c ~ /\\$/ || c ~ /^[[:space:]]*#!/ || c !~ /^[[:space:]]*(#.*)?$/) bad = 1
+      # comments that steer a parser or switch a scanner off are code
+      lc = tolower(c)
+      if (lc ~ /(syntax|escape|check)[[:space:]]*=|coding[:=]|-\*-|nosec|noqa|nosemgrep|tfsec|checkov|trivy|kics|shellcheck|pylint|pragma|gitleaks|lint:|type:[[:space:]]*ignore/) bad = 1 }
+    END { exit (bad || !changed) ? 1 : 0 }' "$tmp/cdiff"
 }
 _floor_scan() {
   local root="$1" base="$2" head="$3" tmp="$4"
@@ -648,7 +665,7 @@ _floor_scan() {
     state == 2 { path = path "?" $0; next }
     END { flush() }'
   local links; links="$(sed -n 1p "$tmp/links")"
-  local best=0 bestkind="" k short pick tries=0
+  local best=0 bestkind="" k short pick tries=0 t0=$SECONDS
   # Hard-path exemptions at <base> (see lane_hard_path_exempt): kind auth skips test paths and its
   # entries' paths, kind migration skips its entries' paths. Every other kind, extras, submodules and
   # the data-loss scan below read the full path list.
@@ -656,16 +673,19 @@ _floor_scan() {
   lane_hard_path_exempt "$root" "${KIT_FLOOR_CONFIG_AT:-$base}" > "$tmp/recs" || true   # KIT_FLOOR_CONFIG_AT: the mega gate reads config at the base-branch tip, not the PR-chosen base
   # Docs never trip a hard path: blank them (line numbers stay valid) before any pattern runs.
   awk 'FILENAME == ARGV[1] { keep[$1] = 1; next }
-    !(FNR in keep) && ($0 ~ /\.(md|markdown)$/ || $0 ~ /(^|\/)README[^\/]*$/ || $0 ~ /(^|\/)docs\//) { print ""; next }
+    !(FNR in keep) && ($0 ~ /\.(md|markdown)$/ || $0 ~ /(^|\/)README(\.(md|markdown|txt|rst|adoc))?$/ ||
+      ($0 ~ /(^|\/)docs\// && $0 ~ /\.(txt|rst|adoc|html?|svg|png|jpe?g|gif|webp|pdf|json|csv)$/)) { print ""; next }
     { print }' "$tmp/nosoft" "$tmp/paths" > "$tmp/paths.d" && mv -f "$tmp/paths.d" "$tmp/paths"
   for k in auth migration; do _floor_blank "$tmp" "$k" "$short"; done
+  _load_extras   # in this shell, so the substitutions in the loop below inherit the cache instead of re-reading config
   # A hit on a file whose changed lines are all comments or blank is not a hard-path change: drop it
-  # and look again. Capped, so a pathological diff keeps the floor instead of costing a git call per path.
+  # and look again. Capped at 50 drops and 8 seconds, so a pathological diff keeps the floor instead of costing
+  # git calls per path (the hook fails open on its own timeout, the unsafe direction).
   while :; do
     pick="$(_floor_find "$tmp" "$links")"
     [ -n "$pick" ] || break
     best="${pick%%$'\t'*}"; bestkind="${pick#*$'\t'}"
-    if [ "$tries" -lt 50 ] && _floor_comment_only "$root" "$base" "$head" "$tmp" "$best" "$bestkind"; then
+    if [ "$tries" -lt 50 ] && [ $((SECONDS - t0)) -lt 8 ] && _floor_comment_only "$root" "$base" "$head" "$tmp" "$best" "$bestkind"; then
       _floor_drop "$tmp" "$best"; tries=$((tries + 1)); best=0; bestkind=""; continue
     fi
     break

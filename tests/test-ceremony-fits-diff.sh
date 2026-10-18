@@ -99,6 +99,20 @@ case_check_docs_tree_owes_no_proof() {
   [ "$rc" = 0 ] && [ -z "$out" ] && pass check-docs-tree-owes-no-proof || fail check-docs-tree-owes-no-proof "rc=$rc out=$out"
 }
 
+# A branch that classes non-inert, carries an override, and holds a docs-tree .js file: the override must
+# excuse it (a docs tree is not application source). Without the skip in check(), the .js file reads as source.
+case_check_override_excuses_docs_tree_script() {
+  mkrepo; base docs/README.md base; branch
+  put docs/design/app.js "$HTML_JS"; put config/app.json '{"a":1}'; _commit "feat: drawing set and config"
+  local b ld out rc rc0; b="$(git -C "$ROOT" rev-parse main)"; ld="$(_mk)"
+  [ "$(cls)" = behavioral ] || { fail check-override-excuses-docs-tree-script "fixture did not class behavioral: $(cls)"; return; }
+  # control: no override yet, so the gate blocks
+  DWARVES_KIT_LOG_DIR="$ld" KIT_CONFIG_OPERATOR=/nonexistent bash "$PL" check "$ROOT" "$b" some-slug >/dev/null 2>&1; rc0=$?
+  ( cd "$ROOT" && DWARVES_KIT_LOG_DIR="$ld" KIT_CONFIG_OPERATOR=/nonexistent bash "$PL" override some-slug "docs-tree script and config only" >/dev/null 2>&1 )
+  out="$(DWARVES_KIT_LOG_DIR="$ld" KIT_CONFIG_OPERATOR=/nonexistent bash "$PL" check "$ROOT" "$b" some-slug 2>&1)"; rc=$?
+  { [ "$rc0" = 1 ] && [ "$rc" = 0 ]; } && pass check-override-excuses-docs-tree-script || fail check-override-excuses-docs-tree-script "no-override rc=$rc0 (want 1), override rc=$rc (want 0): $out"
+}
+
 # ---------------------------------------------------------------------------
 # 2. Hard-path floor
 # ---------------------------------------------------------------------------
@@ -116,12 +130,24 @@ expect() {  # expect <name> <hit|miss> [<path-that-must-be-named>]
 
 case_floor_docs_never_hit() {
   local bad="" p out
-  for p in docs/auth/design.md docs/migrations/0001.sql docs/design/auth-flow.html docs/secrets/notes.png \
-           db/migrations/README.md src/auth/README src/auth/README.txt .github/README.md .github/docs/ci.yml notes/login.md; do
+  for p in docs/auth/design.md docs/design/auth-flow.html docs/secrets/notes.png docs/auth/flows.json \
+           db/migrations/README.md src/auth/README src/auth/README.txt .github/README.md notes/login.md; do
     mkrepo; branch; put "$p" "x"; _commit "docs: add"
     out="$(floor_out)"; [ -z "$out" ] || bad="$bad [$p => '$out']"
   done
   [ -z "$bad" ] && pass floor-docs-never-hit || fail floor-docs-never-hit "$bad"
+}
+
+# Only documentation and asset extensions count under docs/. Code, config and SQL there, and code that
+# borrows a doc name, keep the floor.
+case_floor_code_under_docs_or_doc_named_still_hits() {
+  local bad="" p out
+  for p in docs/migrations/0001.sql .github/docs/ci.yml src/auth/docs/check.py src/docs/login.py \
+           .github/workflows/README.yml db/migrations/README.sql src/auth/README.sh docs/auth/run.sh; do
+    mkrepo; branch; put "$p" "x"; _commit "feat: add"
+    out="$(floor_out)"; case "$out" in "full "*": $p") ;; *) bad="$bad [$p => '$out']" ;; esac
+  done
+  [ -z "$bad" ] && pass floor-code-under-docs-or-doc-named-still-hits || fail floor-code-under-docs-or-doc-named-still-hits "$bad"
 }
 
 case_floor_docs_beside_real_hard_path_still_hit() {
@@ -185,6 +211,11 @@ case_floor_cannot_decide_keeps_the_floor() {
   # an exec-bit change with no content change
   mkrepo; base scripts/login.sh "$SHBASE"; branch; chmod +x "$ROOT/scripts/login.sh"; _commit "chore: chmod"
   out="$(floor_out)"; [ "$out" = "full auth: scripts/login.sh" ] || bad="$bad [chmod => '$out']"
+  # a comment that steers a parser is code: Dockerfile directive, python coding tag
+  mkrepo; base Dockerfile "FROM alpine"; branch; put Dockerfile $'# syntax=docker/dockerfile:1.7\nFROM alpine'; _commit "docs: c"
+  out="$(floor_out)"; [ "$out" = "full infra: Dockerfile" ] || bad="$bad [dockerfile directive => '$out']"
+  mkrepo; base src/auth/login.py "$PYBASE"; branch; put src/auth/login.py $'# -*- coding: latin-1 -*-\n'"$PYBASE"; _commit "docs: c"
+  out="$(floor_out)"; [ "$out" = "full auth: src/auth/login.py" ] || bad="$bad [coding tag => '$out']"
   # a secret-kind path, even with a comment-only edit
   mkrepo; base secrets/rotate.sh "$SHBASE"; branch; printf '# note\n' >> "$ROOT/secrets/rotate.sh"; _commit "docs: c"
   out="$(floor_out)"; [ "$out" = "full secret: secrets/rotate.sh" ] || bad="$bad [secret => '$out']"
@@ -214,12 +245,107 @@ case_floor_skips_comment_only_then_names_the_real_hit() {
   expect floor-skips-comment-only-then-names-the-real-hit hit src/auth/b.py
 }
 
+# The loop is bounded (50 drops, 8 seconds): past either bound the floor stands. 51 files trip the count bound
+# on a quiet host and the time bound on a loaded one, so the assertion holds on both. A handful drop quietly.
 case_floor_cap_keeps_the_floor_on_a_flood() {
-  local i; mkrepo
-  for i in $(seq 1 55); do base "db/migrations/m$i.sh" "$SHBASE"; done; branch
-  for i in $(seq 1 55); do printf '# note\n' >> "$ROOT/db/migrations/m$i.sh"; done; _commit "docs: comments"
-  local out; out="$(floor_out)"
-  case "$out" in "full migration: db/migrations/m"*) pass floor-cap-keeps-the-floor-on-a-flood ;; *) fail floor-cap-keeps-the-floor-on-a-flood "got '$out'" ;; esac
+  local i n out bad=""
+  for n in 3 51; do
+    mkrepo
+    for i in $(seq 1 "$n"); do base "db/migrations/m$i.sh" "$SHBASE"; done; branch
+    for i in $(seq 1 "$n"); do printf '# note\n' >> "$ROOT/db/migrations/m$i.sh"; done; _commit "docs: comments"
+    out="$(floor_out)"
+    if [ "$n" = 3 ]; then [ -z "$out" ] || bad="$bad [3 comment-only files => '$out']"
+    else case "$out" in "full migration: db/migrations/m"*) ;; *) bad="$bad [51 comment-only files => '$out']" ;; esac; fi
+  done
+  [ -z "$bad" ] && pass floor-cap-keeps-the-floor-on-a-flood || fail floor-cap-keeps-the-floor-on-a-flood "$bad"
+}
+
+# A `#` line can be data, and some comments are not comments: each of these keeps the floor.
+case_floor_hash_that_is_not_a_comment_keeps_the_floor() {
+  local bad="" kind out
+  for kind in continuation heredoc triple yaml-block toml-string noqa shellcheck dockerfile-upper dockerfile-dir; do
+    mkrepo
+    case "$kind" in
+      continuation)    base src/auth/hook.sh $'echo start \\\nrm -f victim' ;;
+      heredoc)         base src/auth/hook.sh $'cat <<EOF\nalice\nEOF' ;;
+      triple)          base src/auth/perm.py $'ALLOWED = """\nalice\n""".split()' ;;
+      yaml-block)      base .github/workflows/ci.yml $'jobs:\n  a:\n    run: |\n      echo hi' ;;
+      toml-string)     base .kit.toml $'x = """\nfoo\n"""' ;;
+      noqa|shellcheck) base src/auth/perm.py $'x = 1\ny = 2' ;;
+      dockerfile-upper) base Dockerfile 'FROM alpine' ;;
+      dockerfile-dir)  base .github/actions/Dockerfile-lint/a.c 'int x;' ;;
+    esac
+    branch
+    case "$kind" in
+      continuation)    put src/auth/hook.sh $'echo start \\\n# note\nrm -f victim'; want="full auth: src/auth/hook.sh" ;;
+      heredoc)         put src/auth/hook.sh $'cat <<EOF\nalice\n# eve\nEOF'; want="full auth: src/auth/hook.sh" ;;
+      triple)          put src/auth/perm.py $'ALLOWED = """\nalice\n# eve\n""".split()'; want="full auth: src/auth/perm.py" ;;
+      yaml-block)      put .github/workflows/ci.yml $'jobs:\n  a:\n    run: |\n      # mallory\n      echo hi'; want="full ci: .github/workflows/ci.yml" ;;
+      toml-string)     put .kit.toml $'x = """\n# bar\nfoo\n"""'; want="full kit-config: .kit.toml" ;;
+      noqa)            put src/auth/perm.py $'x = 1\n# noqa\ny = 2'; want="full auth: src/auth/perm.py" ;;
+      shellcheck)      put src/auth/perm.py $'x = 1\n# shellcheck disable=SC2086\ny = 2'; want="full auth: src/auth/perm.py" ;;
+      dockerfile-upper) put Dockerfile $'# SYNTAX=evil/frontend:1\nFROM alpine'; want="full infra: Dockerfile" ;;
+      dockerfile-dir)  put .github/actions/Dockerfile-lint/a.c $'int x;\n#define AUTH_OFF 1'; want="full ci: .github/actions/Dockerfile-lint/a.c" ;;
+    esac
+    _commit "docs: c"
+    out="$(floor_out)"; [ "$out" = "$want" ] || bad="$bad [$kind => '$out' want '$want']"
+  done
+  [ -z "$bad" ] && pass floor-hash-that-is-not-a-comment-keeps-the-floor || fail floor-hash-that-is-not-a-comment-keeps-the-floor "$bad"
+}
+
+# A path that matches the secret pattern never softens, even when an earlier kind (auth) reports it first.
+case_floor_secret_pattern_beats_first_kind() {
+  local bad="" p out
+  for p in src/auth/secrets/rotate.sh infra/auth/credentials.toml; do
+    mkrepo; base "$p" "$SHBASE"; branch; printf '# note\n' >> "$ROOT/$p"; _commit "docs: c"
+    out="$(floor_out)"; case "$out" in "full "*": $p") ;; *) bad="$bad [$p => '$out']" ;; esac
+  done
+  [ -z "$bad" ] && pass floor-secret-pattern-beats-first-kind || fail floor-secret-pattern-beats-first-kind "$bad"
+}
+
+# A NUL byte means binary: the diff is read from a file, because bash 3.2 drops NULs in a substitution.
+case_floor_nul_byte_keeps_the_floor() {
+  mkrepo; base src/auth/login.py "$PYBASE"; branch; printf '\000# x\n' >> "$ROOT/src/auth/login.py"; _commit "chore: nul"
+  expect floor-nul-byte-keeps-the-floor hit src/auth/login.py
+}
+
+# README is a doc; README.sh is code that borrowed the name.
+case_floor_readme_exec_is_code() {
+  local bad="" out
+  mkrepo; branch; put src/auth/README.sh 'echo hi'; _commit "chore: c"; out="$(floor_out)"
+  [ "$out" = "full auth: src/auth/README.sh" ] || bad="$bad [README.sh => '$out']"
+  mkrepo; branch; put src/auth/README 'notes'; put src/auth/README.rst 'notes'; _commit "docs: c"; out="$(floor_out)"
+  [ -z "$out" ] || bad="$bad [README, README.rst => '$out']"
+  [ -z "$bad" ] && pass floor-readme-exec-is-code || fail floor-readme-exec-is-code "$bad"
+}
+
+# Line numbers stay aligned across every blanking: a doc, a test-path exemption, a dropped comment-only file,
+# a symlink, then the real hit. A gitlink after the dropped file still reports as a submodule.
+case_floor_blanking_keeps_line_numbers_aligned() {
+  local bad="" out
+  mkrepo; base src/auth/a.py "$PYBASE"; base src/auth/c.py "$PYBASE"; branch
+  put docs/auth/x.md x; put tests/auth/login.test.ts x
+  printf '# note\n' >> "$ROOT/src/auth/a.py"; ln -s ../../.env "$ROOT/src/auth/b-link.py"; printf 'x = 1\n' >> "$ROOT/src/auth/c.py"
+  _commit "fix: mixed"
+  out="$(floor_out)"; [ "$out" = "full auth: src/auth/b-link.py" ] || bad="$bad [symlink after dropped file => '$out']"
+  mkrepo; base src/auth/a.py "$PYBASE"; branch
+  printf '# note\n' >> "$ROOT/src/auth/a.py"
+  # `_commit` runs `add -A`, which would stage the gitlink's missing directory as a deletion: stage by hand.
+  _git add src/auth/a.py >/dev/null 2>&1; _git update-index --add --cacheinfo "160000,$(_git rev-parse HEAD),zz-sub" >/dev/null 2>&1
+  _git commit -q -m "chore: submodule" >/dev/null 2>&1
+  out="$(floor_out)"; [ "$out" = "full submodule: zz-sub" ] || bad="$bad [gitlink after dropped file => '$out']"
+  [ -z "$bad" ] && pass floor-blanking-keeps-line-numbers-aligned || fail floor-blanking-keeps-line-numbers-aligned "$bad"
+}
+
+# The exemption notice on stderr is unchanged by the new drops.
+case_floor_exempt_notice_survives_drops() {
+  mkrepo
+  printf '[gate]\nlane_gates = true\n[[gate.hard_path_exempt]]\npaths = ["scripts/login-*.sh"]\nkinds = ["auth"]\nreason = "smoke script"\n' > "$ROOT/.kit.toml"
+  base src/auth/a.py "$PYBASE"; branch
+  put scripts/login-smoke.sh 'echo hi'; printf '# note\n' >> "$ROOT/src/auth/a.py"; _commit "chore: c"
+  local out err; out="$(floor_out)"; err="$(lcx floor "$ROOT" main 2>&1 >/dev/null)"
+  if [ -z "$out" ] && printf '%s' "$err" | grep -q "^floor-exempt.auth.entry 1.scripts/login-\*\.sh.smoke script.*scripts/login-smoke\.sh\$"; then pass floor-exempt-notice-survives-drops
+  else fail floor-exempt-notice-survives-drops "stdout='$out' stderr='$err'"; fi
 }
 
 case_floor_data_loss_still_hits_in_comments() {
@@ -251,7 +377,7 @@ run_case() {
   local fn="case_${1//-/_}"
   if declare -F "$fn" >/dev/null; then "$fn"; else fail "$1" "no such case"; fi
 }
-ALL="class-docs-tree-any-extension-is-inert class-docs-subject-words-ignored class-markdown-anywhere-is-inert class-other-files-keep-class class-docs-plus-code-follows-code check-docs-tree-owes-no-proof floor-docs-never-hit floor-docs-beside-real-hard-path-still-hit floor-comment-only-edit-is-not-a-hit floor-comment-removal-is-not-a-hit floor-code-change-is-a-hit floor-cannot-decide-keeps-the-floor floor-new-comment-only-file-is-not-a-hit floor-skips-comment-only-then-names-the-real-hit floor-cap-keeps-the-floor-on-a-flood floor-data-loss-still-hits-in-comments ship-rule-floor-follows-the-diff"
+ALL="class-docs-tree-any-extension-is-inert class-docs-subject-words-ignored class-markdown-anywhere-is-inert class-other-files-keep-class class-docs-plus-code-follows-code check-docs-tree-owes-no-proof check-override-excuses-docs-tree-script floor-docs-never-hit floor-code-under-docs-or-doc-named-still-hits floor-docs-beside-real-hard-path-still-hit floor-comment-only-edit-is-not-a-hit floor-comment-removal-is-not-a-hit floor-code-change-is-a-hit floor-cannot-decide-keeps-the-floor floor-new-comment-only-file-is-not-a-hit floor-skips-comment-only-then-names-the-real-hit floor-cap-keeps-the-floor-on-a-flood floor-hash-that-is-not-a-comment-keeps-the-floor floor-secret-pattern-beats-first-kind floor-nul-byte-keeps-the-floor floor-readme-exec-is-code floor-blanking-keeps-line-numbers-aligned floor-exempt-notice-survives-drops floor-data-loss-still-hits-in-comments ship-rule-floor-follows-the-diff"
 if [ "$#" -eq 0 ]; then set -- $ALL; fi
 for c in "$@"; do run_case "$c"; done
 [ "$FAILS" -eq 0 ]
