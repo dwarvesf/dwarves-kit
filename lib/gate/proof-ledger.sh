@@ -15,8 +15,8 @@
 #                 Pass = a fresh verification entry with a green run AND a NEGATIVE CONTROL
 #                 ([gate] negative_control = full drops the control unless a hard path or a
 #                 full-lane spec is involved; default `always`).
-#   inert      -- docs / comments / cosmetic: a diff made only of *.md/*.txt, .kit.toml, or non-source
-#                 files under a docs/ tree (generated .html/.svg/.png included). Pass (no ritual).
+#   inert      -- docs / comments / cosmetic: a diff made only of *.md/*.txt, .kit.toml, or documentation
+#                 and asset files under a docs/ tree (generated .html/.svg/.png included). Pass (no ritual).
 #
 # "Fresh" = the branch diff itself added/modified the docs/verification/*.md entry, so an
 # old proof from unrelated work does not satisfy a new change.
@@ -88,12 +88,15 @@ _changed() {
 
 _subjects() { git -C "$1" log "$2"..HEAD --format='%s' 2>/dev/null || true; }
 
-# _nondoc_paths: stdin paths minus the docs. A doc is *.md, *.txt, *.markdown, a .kit.toml, or a file under a
-# docs/ tree that is neither source code (the extension list the override check uses) nor secret-shaped.
+# _nondoc_paths: stdin paths minus the docs. A doc is *.md, *.txt, *.markdown, a .kit.toml, or a file in a docs/
+# tree with a documentation or asset extension (html, htm, svg only under the repo-root docs/). A secret-shaped
+# path (case-insensitive) is never a doc. Build files (package.json, Makefile, compose, toml, yaml) are not on
+# the allowlist, so they keep their class.
 _nondoc_paths() {
-  awk '/\.(md|txt|markdown)$/ || /(^|\/)\.kit\.toml$/ { next }
-    /(^|\/)docs\// && !/\.(sh|bash|zsh|py|js|jsx|mjs|cjs|ts|tsx|go|rs|rb|c|h|cc|cpp|hpp|java|php|swift|kt|kts|scala|clj|cljs|ex|exs|lua|pl|pm|r|m|mm|sql)$/ \
-      && !/(^|\/)[^\/]*credentials?[^\/]*$|(^|\/)secrets?\/|\.(pem|key|p12|pfx)$|(^|\/)\.env/ { next }
+  awk '{ lc = tolower($0) }
+    lc ~ /(^|\/)[^\/]*credentials?[^\/]*$|(^|\/)secrets?\/|\.(pem|key|p12|pfx)$|(^|\/)\.env/ { print; next }
+    $0 ~ /\.(md|txt|markdown)$/ || $0 ~ /(^|\/)\.kit\.toml$/ { next }
+    ($0 ~ /(^|\/)docs\// && $0 ~ /\.(rst|adoc|png|jpe?g|gif|webp|pdf|csv)$/) || ($0 ~ /^docs\// && $0 ~ /\.(html?|svg)$/) { next }
     { print }'
 }
 

@@ -49,7 +49,7 @@ HTML_JS='<!doctype html><script>document.title = "drawing"; fetch("/x")</script>
 
 case_class_docs_tree_any_extension_is_inert() {
   local bad="" p got
-  for p in docs/design/uml.html docs/design/sheet.svg docs/img/a.png docs/data/x.json tools/x/docs/notes.pdf; do
+  for p in docs/design/uml.html docs/design/sheet.svg docs/img/a.png docs/data/x.csv tools/x/docs/notes.pdf; do
     mkrepo; base docs/README.md base; branch
     put "$p" "$HTML_JS"; _commit "feat: generated drawing set"
     got="$(cls)"; [ "$got" = inert ] || bad="$bad [$p => $got]"
@@ -60,7 +60,7 @@ case_class_docs_tree_any_extension_is_inert() {
 # Source code and secret-shaped files do not become docs by living under docs/.
 case_class_code_under_docs_keeps_its_class() {
   local bad="" p got
-  for p in docs/design/app.js tools/x/docs/run.sh src/docs/h.py docs/credentials.json docs/secrets/notes.png; do
+  for p in docs/design/app.js tools/x/docs/run.sh src/docs/h.py docs/credentials.json docs/secrets/notes.png docs/package.json docs/Makefile docs/docker-compose.yml src/auth/docs/check.json docs/Credentials.JSON; do
     mkrepo; base docs/README.md base; branch
     put "$p" "x"; _commit "feat: change"
     got="$(cls)"; [ "$got" = behavioral ] || bad="$bad [$p => $got]"
@@ -128,7 +128,7 @@ expect() {  # expect <name> <hit|miss> [<path-that-must-be-named>]
 
 case_floor_docs_never_hit() {
   local bad="" p out
-  for p in docs/auth/design.md docs/design/auth-flow.html docs/auth/flows.json \
+  for p in docs/auth/design.md docs/design/auth-flow.html docs/auth/flows.csv \
            db/migrations/README.md src/auth/README.txt .github/README.md notes/login.md; do
     mkrepo; branch; put "$p" "x"; _commit "docs: add"
     out="$(floor_out)"; [ -z "$out" ] || bad="$bad [$p => '$out']"
@@ -198,8 +198,11 @@ case_floor_code_change_is_a_hit() {
     [ "$out" = "full auth: scripts/login.sh" ] || bad="$bad [$kind => '$out']"
   done
   # a blank line right after a comment is not a behavior change; one after a code line might sit inside a string
+  mkrepo; base scripts/login.sh "$SHBASE"; branch; printf '\n' >> "$ROOT/scripts/login.sh"; _commit "style: blank"
+  out="$(floor_out)"; [ -z "$out" ] || bad="$bad [blank line after a comment => '$out']"
+  # the same blank line right under a shebang touches the lines a shebang depends on: the floor stands
   mkrepo; base scripts/login.sh "$SHBASE"; branch; put scripts/login.sh $'#!/bin/bash\n\nset -e\nrun_migration\n# end'; _commit "style: blank"
-  out="$(floor_out)"; [ -z "$out" ] || bad="$bad [blank line => '$out']"
+  out="$(floor_out)"; [ "$out" = "full auth: scripts/login.sh" ] || bad="$bad [blank under shebang => '$out']"
   [ -z "$bad" ] && pass floor-code-change-is-a-hit || fail floor-code-change-is-a-hit "$bad"
 }
 
@@ -264,6 +267,7 @@ case_floor_cap_keeps_the_floor_on_a_flood() {
 case_floor_hash_that_is_not_a_comment_keeps_the_floor() {
   local bad="" kind out
   for kind in continuation heredoc triple yaml-block toml-string noqa shellcheck dockerfile-upper dockerfile-dir \
+              top-shebang top-coding top-dockerfile del-shift-coding del-shift-dockerfile blank-in-string \
               sh-dq-string yaml-dq-scalar yaml-block-2 yaml-block-comment yaml-block-tag yaml-block-anchor hadolint tflint dockerfile-c after-code; do
     mkrepo
     case "$kind" in
@@ -285,6 +289,12 @@ case_floor_hash_that_is_not_a_comment_keeps_the_floor() {
       tflint)          base infra/iam-policy.tf $'resource "a" "b" {}\n# end' ;;
       dockerfile-c)    base .github/actions/x/Dockerfile.c $'int x;\n# end' ;;
       after-code)      base src/auth/perm.py $'x = 1\ny = 2\n# end' ;;
+      top-shebang)     base src/auth/hook.sh $'#!/bin/bash\necho hi\n# end' ;;
+      top-coding)      base src/auth/login.py $'# -*- coding: latin-1 -*-\nx = 1\n# end' ;;
+      top-dockerfile)  base Dockerfile $'# syntax=docker/dockerfile:1.4\nFROM alpine\n# end' ;;
+      del-shift-coding) base src/auth/login.py $'#!/usr/bin/python\n# author: x\n# -*- coding: latin-1 -*-\nx = 1\n# end' ;;
+      del-shift-dockerfile) base Dockerfile $'# syntax=docker/dockerfile:1.4\n# my note\n# escape=`\nFROM alpine\n# end' ;;
+      blank-in-string) base src/auth/users.sh $'A="alice\nbob\n\ncarol"\n# end' ;;
     esac
     branch
     case "$kind" in
@@ -307,6 +317,12 @@ case_floor_hash_that_is_not_a_comment_keeps_the_floor() {
       tflint)          put infra/iam-policy.tf $'resource "a" "b" {}\n# end\n# tflint-ignore: terraform_required_version'; want="full infra: infra/iam-policy.tf" ;;
       dockerfile-c)    put .github/actions/x/Dockerfile.c $'int x;\n# end\n#define X 1'; want="full ci: .github/actions/x/Dockerfile.c" ;;
       after-code)      put src/auth/perm.py $'x = 1\n# a note after code\ny = 2\n# end'; want="full auth: src/auth/perm.py" ;;
+      top-shebang)     put src/auth/hook.sh $'# note\n#!/bin/bash\necho hi\n# end'; want="full auth: src/auth/hook.sh" ;;
+      top-coding)      put src/auth/login.py $'# note one\n# note two\n# -*- coding: latin-1 -*-\nx = 1\n# end'; want="full auth: src/auth/login.py" ;;
+      top-dockerfile)  put Dockerfile $'# note\n# syntax=docker/dockerfile:1.4\nFROM alpine\n# end'; want="full infra: Dockerfile" ;;
+      del-shift-coding) put src/auth/login.py $'#!/usr/bin/python\n# -*- coding: latin-1 -*-\nx = 1\n# end'; want="full auth: src/auth/login.py" ;;
+      del-shift-dockerfile) put Dockerfile $'# syntax=docker/dockerfile:1.4\n# escape=`\nFROM alpine\n# end'; want="full infra: Dockerfile" ;;
+      blank-in-string) put src/auth/users.sh $'A="alice\nbob\n\n# eve\ncarol"\n# end'; want="full auth: src/auth/users.sh" ;;
     esac
     _commit "docs: c"
     out="$(floor_out)"; [ "$out" = "$want" ] || bad="$bad [$kind => '$out' want '$want']"

@@ -613,10 +613,14 @@ _floor_drop() {
 # holds a heredoc, triple-quote or YAML block-scalar opener (a `#` line there may be data), a backslash
 # continuation next to the change, a mode change, a binary diff, an empty or unparsable diff. A `#!` line, a
 # parser-steering comment (Dockerfile directive, coding or modeline tag) and a scanner-suppression comment
-# (nosec, noqa, shellcheck, and the like) are code.
+# (nosec, noqa, shellcheck, and the like) are code. A change within the first three lines of a file that
+# carries a shebang, coding cookie or Dockerfile directive there keeps the floor, because such a line only
+# works at the top. A change group must follow a comment, the top of the file, or a blank line that follows one.
 _FLOOR_DATA_OPENER='<<|"""|'"'''"'|(^|[[:space:]:-])[|>][0-9+-]*[[:space:]]*(#.*)?$'
+# Lines whose position matters: a shebang, a coding cookie, a Dockerfile directive, an emacs modeline.
+_FLOOR_DIRECTIVE='^#!|coding[:=]|-\*-|^#[[:space:]]*(syntax|escape|check)[[:space:]]*='
 _floor_comment_only() {
-  local root="$1" base="$2" head="$3" tmp="$4" n="$5" kind="$6" path rev
+  local root="$1" base="$2" head="$3" tmp="$4" n="$5" kind="$6" path rev dirhead=0
   [ "$kind" != submodule ] || return 1
   grep -qx -e "$n" "$tmp/nosoft" 2>/dev/null && return 1
   path="$(sed -n "${n}p" "$tmp/paths")"
@@ -629,29 +633,40 @@ _floor_comment_only() {
   esac
   # A `#` line can be data: a heredoc body, a triple-quoted string, a YAML block scalar. Any such opener in
   # either image of the file keeps the floor; so does a backslash continuation (checked on the diff below).
+  # A directive in the first three lines of either image (shebang, coding cookie, Dockerfile directive) is
+  # position-sensitive: a change that touches those lines is code (checked in the awk below).
   for rev in "$base" "$head"; do
     _floor_git "$root" show "$rev:$path" 2>/dev/null | grep -aEq -e "$_FLOOR_DATA_OPENER" && return 1
+    _floor_git "$root" show "$rev:$path" 2>/dev/null | head -3 | grep -aEiq -e "$_FLOOR_DIRECTIVE" && dirhead=1
   done
-  _floor_git "$root" diff --no-renames --no-ext-diff --no-textconv --text --no-color -U1 --src-prefix=a/ --dst-prefix=b/ "$base" "$head" -- ":(literal)$path" > "$tmp/cdiff" 2>/dev/null || return 1
+  _floor_git "$root" diff --no-renames --no-ext-diff --no-textconv --text --no-color -U2 --src-prefix=a/ --dst-prefix=b/ "$base" "$head" -- ":(literal)$path" > "$tmp/cdiff" 2>/dev/null || return 1
   [ -s "$tmp/cdiff" ] || return 1
   # A NUL byte means binary: bash 3.2 drops NULs in a substitution and awk may too, so test the file itself.
   LC_ALL=C tr -d '\0' < "$tmp/cdiff" | cmp -s - "$tmp/cdiff" || return 1
-  # Every change group (a run of + and - lines) must start right after a blank line, a comment line or the top
-  # of the file. A `#` or blank line that follows a code or data line may sit inside a quoted string, a
-  # continuation or a bracket, where it is not a comment.
-  awk '
-    /^@@ / { body = 1; prev = "top?"; split($2, o, /[-,]/); split($3, w, /[+,]/); top = (o[2] + 0 <= 1 && w[2] + 0 <= 1); next }
+  # Every change group (a run of + and - lines) must start right after a comment line, the top of the file, or
+  # a blank line that itself follows a comment, a blank line or the top. A `#` or blank line that follows a
+  # code or data line may sit inside a quoted string, a continuation or a bracket, where it is not a comment.
+  awk -v dirhead="$dirhead" '
+    function kind(t) { return t ~ /^[[:space:]]*#/ ? "cm" : (t ~ /^[[:space:]]*$/ ? "bl" : "code") }
+    function steer(t) { return t ~ /^[[:space:]]*#!/ || t ~ /coding[:=]|-\*-/ || t ~ /^[[:space:]]*#[[:space:]]*(syntax|escape|check)[[:space:]]*=/ }
+    /^@@ / { body = 1; p1 = p2 = "none"; split($2, o, /[-,]/); split($3, w, /[+,]/)
+      atop = (o[2] + 0 <= 1 && w[2] + 0 <= 1); ol = o[2] + 0; nl = w[2] + 0; next }
     !body && /^(old mode|new mode|Binary files|GIT binary patch|rename |copy |similarity )/ { bad = 1; next }
     !body { next }
     /^\\/ { next }
-    /^ / { c = substr($0, 2); if (c ~ /\\$/) bad = 1; prev = (c ~ /^[[:space:]]*(#.*)?$/) ? "ok" : "bad"; next }
+    /^ / { c = substr($0, 2); if (c ~ /\\$/ || steer(c)) bad = 1; p2 = p1; p1 = kind(c); ol++; nl++; next }
     /^[-+]/ { c = substr($0, 2); changed++
-      if (prev != "chg" && (prev == "bad" || (prev == "top?" && !top))) bad = 1
-      prev = "chg"
-      if (c ~ /\\$/ || c ~ /^[[:space:]]*#!/ || c !~ /^[[:space:]]*(#.*)?$/) bad = 1
-      # comments that steer a parser or switch a scanner off are code
+      if (p1 != "chg") {
+        if (dirhead && (ol <= 3 || nl <= 3)) bad = 1
+        ok = (p1 == "cm") || (p1 == "none" && atop) || (p1 == "bl" && (p2 == "cm" || p2 == "bl" || (p2 == "none" && atop)))
+        if (!ok) bad = 1
+      }
+      p2 = p1; p1 = "chg"
+      if ($0 ~ /^-/) ol++; else nl++
+      if (c ~ /\\$/ || steer(c) || c !~ /^[[:space:]]*(#.*)?$/) bad = 1
+      # comments that switch a scanner off are code
       lc = tolower(c)
-      if (lc ~ /(syntax|escape|check)[[:space:]]*=|coding[:=]|-\*-|ignore|disable|skip|suppress|allowlist|nolint|nosec|noqa|nosemgrep|nosonar|tfsec|tflint|checkov|trivy|kics|hadolint|shellcheck|pylint|lgtm|codeql|trufflehog|gitleaks|pragma|lint:|type:/) bad = 1 }
+      if (lc ~ /ignore|disable|skip|suppress|allowlist|nolint|nosec|noqa|nosemgrep|nosonar|tfsec|tflint|checkov|trivy|kics|hadolint|shellcheck|pylint|lgtm|codeql|trufflehog|gitleaks|pragma|lint:|type:/) bad = 1 }
     END { exit (bad || !changed) ? 1 : 0 }' "$tmp/cdiff"
 }
 _floor_scan() {
@@ -682,7 +697,7 @@ _floor_scan() {
   awk 'FILENAME == ARGV[1] { keep[$1] = 1; next }
     !(FNR in keep) && ($0 ~ /\.(md|markdown)$/ || $0 ~ /(^|\/)README\.(md|markdown|txt|rst|adoc)$/ ||
       ($0 ~ /(^|\/)docs\// && $0 ~ /\.(txt|rst|adoc|png|jpe?g|gif|webp|pdf|csv)$/) ||
-      ($0 ~ /^docs\// && $0 ~ /\.(html?|svg|json)$/)) { print ""; next }
+      ($0 ~ /^docs\// && $0 ~ /\.(html?|svg)$/)) { print ""; next }
     { print }' "$tmp/nosoft" "$tmp/paths" > "$tmp/paths.d" && mv -f "$tmp/paths.d" "$tmp/paths"
   for k in auth migration; do _floor_blank "$tmp" "$k" "$short"; done
   _load_extras   # in this shell, so the substitutions in the loop below inherit the cache instead of re-reading config
