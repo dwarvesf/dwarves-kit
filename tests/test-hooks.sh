@@ -2107,7 +2107,9 @@ echo ""
 echo "=== backlog.sh: the Active queue as a kanban board (SPEC-055) ==="
 # ============================================================
 # Fixture: a minimal BACKLOG copy; BACKLOG_FILE points the helper at it.
-BLF=$(mktemp "${TMPDIR:-/tmp}/dk-backlog.XXXXXX.md") || exit 1
+# A directory, not a file with a suffix: BSD mktemp only randomises trailing X characters, so the old template made one literal file that a concurrent run collided on.
+BLD=$(mktemp -d "${TMPDIR:-/tmp}/dk-backlog.XXXXXX") || exit 1
+BLF="$BLD/backlog.md"
 cat > "$BLF" <<'BLEOF'
 # Backlog
 | ID | Title | Source | Target artifact | Lane | Status |
@@ -2137,7 +2139,7 @@ RC=$(BACKLOG_FILE="$BLF" bash "$BL" set ID-901 bogus-state >/dev/null 2>&1; echo
 assert_exit "set rejects an unknown state" 64 "$RC"
 RC=$(BACKLOG_FILE="$BLF" bash "$BL" set ID-999 queued >/dev/null 2>&1; echo $?)
 assert_exit "set rejects an unknown ID" 1 "$RC"
-rm -f "$BLF"
+rm -f "$BLF"; rmdir "$BLD" 2>/dev/null
 
 
 # ============================================================
