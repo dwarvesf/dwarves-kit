@@ -98,7 +98,7 @@ turn_cap_segments  = 10         # [impl] TURN_CAP_SEGMENTS. Max segments per sub
                                 #        (re-running resumes from the records on disk).
 
 [gate]                          # quality gates, OPT-IN: every key defaults to false here except
-                                #        board_row_gate, which defaults to true. Read when
+                                #        board_row_gate, fixture_identities and review_verdict, which default to true. Read when
                                 #        a hook fires, through lib/gate/gate-policy.sh (project
                                 #        .kit.toml wins, then the operator kit.toml at
                                 #        ~/.config/dwarves-kit/kit.toml, then this file). Turn one on
@@ -122,6 +122,10 @@ board_row_gate     = true       # [impl] hooks/board-row-gate.sh: a commit addin
 fixture_identities  = true       # [impl] hooks/ship-gate.sh: a push whose new commits carry a fixture git
                                 #        identity (x@x, t@t.dev, example.com, .local) is refused. Default ON; a repo
                                 #        with legit internal domains opts out with `fixture_identities = false`.
+review_verdict      = true       # [impl] hooks/ship-gate.sh: a push is refused while the branch spec's last `## Review`
+                                #        verdict (`### Verdict: ...`, as /kit:review and /kit:review-team write it) is
+                                #        DO NOT SHIP. No Review section or no verdict passes. Default ON; a repo opts out
+                                #        with `review_verdict = false` in a committed .kit.toml.
 # hard_path_canaries = ["src/billing/login.ts"]  # project .kit.toml only; literal repo paths that ADD to the built-in canaries,
 #                                 so a hard_path_exempt glob that matches one is refused
 # Hard-path exemptions: project .kit.toml only (ignored here and in the operator file), read at the merge base.

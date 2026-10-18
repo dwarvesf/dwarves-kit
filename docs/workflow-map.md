@@ -65,7 +65,7 @@
   /kit:docs ......... README/CHANGELOG match code
        |
        v
-  /kit:ship ......... tagged + PR; ship gate blocks on DO NOT SHIP
+  /kit:ship ......... tagged + PR; ship-gate refuses a push on a DO NOT SHIP verdict
        |
        v
   /kit:retro ........ docs/retro/v<version>.md written
@@ -278,7 +278,8 @@ Advisory, never blocking. Output binds to the active spec (replace-not-stack).
         |--> idempotent re-run  /kit:assign on an existing draft -> re-surface it,
         |                       never duplicate or double-advance
         |--> DO-NOT-SHIP gate . /kit:ship reads ## Review first: DO NOT SHIP =
-        |                       stop; FIX THEN SHIP = fix, then ship
+        |                       stop; FIX THEN SHIP = fix, then ship; ship-gate
+        |                       refuses the push on DO NOT SHIP ([gate] review_verdict)
         +--> completeness ..... decision-translation + doc-update self-checks
                                 warn + log only; reviewed at /kit:ship + /kit:retro
 ```

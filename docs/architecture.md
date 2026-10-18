@@ -57,7 +57,7 @@ operator-wave>` enum, SPEC-138, so the kit's least-used gate is auditable rather
                  writes: README.md, CHANGELOG.md, other docs as drift dictates
 
 /kit:ship       reads:  docs/specs/SPEC-NNN-<slug>.md (incl. its ## Review verdict), VERSION
-                 gate:   blocks if the spec's ## Review verdict is DO NOT SHIP
+                 gate:   hooks/ship-gate.sh refuses the push if the spec's last ## Review verdict is DO NOT SHIP ([gate] review_verdict)
                  writes: VERSION, CHANGELOG.md entry, git tag, PR
 
 /kit:retro      reads:  docs/specs/SPEC-NNN-<slug>.md, git log

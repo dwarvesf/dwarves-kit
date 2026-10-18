@@ -7,9 +7,9 @@
 # true and there is one place the default lives.
 #
 # Quality gates are OPT-IN: a gate is on only when its key resolves to a literal `true`.
-# The kit root says false for every key but one: board_row_gate defaults ON (DEFAULT_ON),
-# because a board-row check nobody switched on would cover no board. For the rest, an operator turns them on machine-wide in
-# ~/.config/dwarves-kit/kit.toml, a repo turns one on with `<key> = true` in its .kit.toml
+# The kit root says false for every key but three: board_row_gate, fixture_identities and review_verdict
+# default ON (DEFAULT_ON), because a check nobody switched on would cover nothing. For the rest, an
+# operator turns them on machine-wide in ~/.config/dwarves-kit/kit.toml, a repo turns one on with `<key> = true` in its .kit.toml
 # (never commit-gated: turning a gate on is not a bypass). A project-level `false` over an
 # operator `true` counts only once .kit.toml is committed and clean: the hooks read the
 # working tree, so an uncommitted file would let the gated agent switch its own gate off
@@ -31,11 +31,11 @@
 #   gate-policy.sh enabled <key> [project-root] [--at <base>]   exit 0 = on, exit 1 = off by config (only 1)
 #   gate-policy.sh keys                            the known keys, one per line
 #
-# <key>: proof_of_done | lane_gates | understanding_gate | commit_format | board_row_gate | fixture_identities
+# <key>: proof_of_done | lane_gates | understanding_gate | commit_format | board_row_gate | fixture_identities | review_verdict
 set -uo pipefail
 GATE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-KEYS="proof_of_done lane_gates understanding_gate commit_format board_row_gate fixture_identities"
-DEFAULT_ON="board_row_gate fixture_identities"   # the code default when no config file names the key
+KEYS="proof_of_done lane_gates understanding_gate commit_format board_row_gate fixture_identities review_verdict"
+DEFAULT_ON="board_row_gate fixture_identities review_verdict"   # the code default when no config file names the key
 
 enabled() {
   local key="${1:-}" root="${2:-$PWD}" at="" v
