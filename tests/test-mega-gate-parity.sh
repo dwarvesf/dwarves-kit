@@ -116,7 +116,7 @@ rmi="$( ( cd "$R" && DWARVES_KIT_LOG_DIR="$LOGDIR" bash "$KC/lib/goal/mega-merge
 if [ "$rsi" = 2 ] && [ "$rmi" = 1 ] && grep -q 'ship-rules.sh failed to load' "$ei" && grep -q 'ship-rules.sh failed to load' "$emi" && grep -q 'FAIL-OPEN | ship-rules unavailable' "$emi"; then
   ok "i broken helper: ship gate exit $rsi, mega gate exit $rmi, both name the helper"
 else no "i want ship 2 / mega 1 naming the helper; got ship $rsi, mega $rmi; ship: $(tr '\n' ' ' < "$ei"); mega: $(tr '\n' ' ' < "$emi")"; fi
-grep -q 'FAIL-OPEN | ship-rules unavailable' "$LOGDIR/ship-gate.log" 2>/dev/null && ok "i the hook logged FAIL-OPEN | ship-rules unavailable" || no "i no FAIL-OPEN line in ship-gate.log"
+grep -q 'FAIL-OPEN | ship-rules unavailable' "$LOGDIR/hooks/ship-gate.log" 2>/dev/null && ok "i the hook logged FAIL-OPEN | ship-rules unavailable" || no "i no FAIL-OPEN line in ship-gate.log"
 
 # j: no kit lib/ at all (master's behavior without the helper): the hook alone, empty plugin root, exits 0.
 KH="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; mkdir "$KH/hooks" "$KH/empty"; cp "$KIT/hooks/ship-gate.sh" "$KH/hooks/"

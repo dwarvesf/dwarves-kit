@@ -127,8 +127,8 @@ Layered by design: the SPINE installs unconditionally (six hooks guarding push, 
 
 | Module | What it wires | Kind |
 |---|---|---|
-| `board` | `backlog-stage` (SessionEnd: stage session work-items to a staging file, opt-in via `BACKLOG_STAGE_AUTO=1`, default off); its `--surface` pass also runs `intake-sweep` (consumer-declared deferred-link sources, config-gated); `board-row-gate` (PreToolUse Bash: blocks a commit that adds a new board row without a `board-row-ok: <reason>` line) | 2 hooks |
-| `session` | `context-readiness`, `output-offload`, `pre-compact-backup`, `post-compact-reinject`, `session-state-save`, `harvest`, `citation-guard`, `context-budget` (warns once at 65% of the model's context window, again at 70%, `KIT_CTX_WARN_PCT`/`KIT_CTX_STRONG_PCT`/`KIT_CTX_WINDOW`); plus a PATH shim for the `session` CLI (`session <intel\|observe\|recall\|report\|semantic>`, ADR-0034: the five prefixed CLIs collapsed into one entry) | 8 hooks + 1 CLI |
+| `board` | `backlog-stage` (SessionEnd: stage session work-items to a staging file, opt-in via `BACKLOG_STAGE_AUTO=1`, default off; also wired on SessionStart as `--surface`); that pass also runs `intake-sweep` (consumer-declared deferred-link sources, config-gated); `board-row-gate` (PreToolUse Bash: blocks a commit that adds a new board row without a `board-row-ok: <reason>` line) | 2 hooks |
+| `session` | `context-readiness`, `output-offload`, `pre-compact-backup`, `post-compact-reinject`, `harvest`, `citation-guard`, `context-budget` (warns once at 65% of the model's context window, again at 70%, `KIT_CTX_WARN_PCT`/`KIT_CTX_STRONG_PCT`/`KIT_CTX_WINDOW`); plus a PATH shim for the `session` CLI (`session <intel\|observe\|recall\|report\|semantic>`, ADR-0034: the five prefixed CLIs collapsed into one entry) | 7 hooks + 1 CLI |
 | `advisor` | `context-hints` (session-elapsed + keyword skill hints) + `tool-policy-guard` (PreToolUse allow/ask/deny per tool domain; inert until a `tool-policy.json` exists) | 2 hooks |
 | `cosmetic` | `auto-format`, `notification`, `slop-cleaner`, `statusline`, `codebase-index`, `permission-auto-approve` | 6 hooks |
 | `queue` | `/kit:mega` + `/kit:dispatch` machinery (`lib/queue/orchestrate.sh`), the overnight queue launcher (`lib/queue/queue.sh`) | hookless (lib) |
@@ -227,7 +227,6 @@ That is the whole loop. The spec is the unit of handoff: a contractor running `/
 /kit:next           Manual: pick next task, load context, you drive
                      [hooks enforce during build]
                      [statusline shows context budget]
-                     [session-state-save persists progress on every stop]
                      [slop-cleaner flags bloat at stop points]
 /kit:review         Single-pass review (10 min)
 /kit:review-team    Parallel 3-lens review, confidence-gated + validated findings
@@ -292,7 +291,6 @@ Within one spec, tasks run sequentially. Across specs, `/kit:dispatch` fans out 
 | context-hints | UserPromptSubmit | Injects session elapsed/idle time + keyword-matched skill hints (empty map by default; wire your own via CONTEXT_HINTS_SKILLMAP) |
 | anti-rationalization | Stop | Catches Claude declaring work done prematurely |
 | slop-cleaner | Stop | Flags bloated code in recently modified files |
-| session-state-save | Stop, SubagentStop | Persists session state, rotates last 10 archives |
 | citation-guard | Stop | Flags (or blocks, CITATION_GUARD_STRICT=1) hallucinated file:line citations in the final message |
 | money-gate | PreToolUse(Edit\|Write\|MultiEdit) | Asks before a money-touching edit lands in a repo named in MONEY_GATE_REPOS (inert unset) |
 | prose-rag | UserPromptSubmit | Injects relevant prior notes on recall-shaped prompts (dormant unless PROSE_RAG_INJECT=1) |
@@ -432,7 +430,7 @@ Which hooks BLOCK vs warn vs neither is a declared contract: `docs/architecture.
 
 A solo technical lead handing off implementation to contractors. The kit covers the full lifecycle with one shared spec format: the contractor running `/kit:execute` reads the same `docs/specs/SPEC-NNN-<slug>.md` you wrote with `/kit:spec`.
 
-Also for a builder using Claude Code 6-8 hours a day who wants a context-budget HUD, automatic safety guards, session-state persistence across compaction, and slop detection at stop points.
+Also for a builder using Claude Code 6-8 hours a day who wants a context-budget HUD, automatic safety guards, pre-compact backups, and slop detection at stop points.
 
 ## Who this is NOT for
 

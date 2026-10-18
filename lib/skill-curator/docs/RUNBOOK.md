@@ -81,11 +81,12 @@ self-improvement run must never break your session), and nothing here ever delet
 
 - **Symptom:** drafts stop appearing, or a draft looks malformed.
 - **Detect:** `bash tests/test-transcript-parse.sh` against the committed fixture.
-- **Why:** the parser (`lib/transcript.sh`, jq over `.type` in {user,assistant} with
+- **Why:** the parser (`--tail-text` in the kit's shared `lib/session/parse_transcript.py`, reached
+  through `lib/transcript.sh`; it reads `.type` in {user,assistant} with
   `.message.content[].text`) is locked to a sample schema. If Claude Code changes the transcript
   shape, the parser yields an empty summary and the reviewer no-ops (it does not draft garbage).
 - **Fix:** dump a current transcript, re-lock `tests/fixtures/sample-transcript.jsonl`, and adjust
-  the jq filter if the shape moved.
+  `tail_text()` in `lib/session/parse_transcript.py` if the shape moved (every kit transcript reader shares it).
 
 ## 8. Curator data-loss scare / non-git skills dir
 

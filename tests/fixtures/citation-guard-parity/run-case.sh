@@ -34,7 +34,7 @@ err=$(cd "$ROOT" && printf '%s' "$payload" | env -i PATH="$PATH" HOME="$TMP/home
 out=$(cat "$TMP/stdout")
 # the log the hook was told to write: the harness default, the case's absolute path, or
 # the documented default under HOME when the case unsets it
-if [ "$unset_log" = 1 ]; then eff="$TMP/home/.claude/dwarves-kit/logs/citation-guard.log"
+if [ "$unset_log" = 1 ]; then eff="$TMP/home/.local/state/dwarves-kit/logs/hooks/citation-guard.log"
 else eff=$(printf '%s\n' "${envs[@]}" | grep '^CITATION_GUARD_LOG=' | tail -1 | cut -d= -f2-); fi
 logn=""
 case "$eff" in /*) if [ -f "$eff" ]; then
@@ -43,7 +43,7 @@ case "$eff" in /*) if [ -f "$eff" ]; then
 fi ;; esac
 after=$(cd "$ROOT" && find . -type f | LC_ALL=C sort)
 stray=$( { comm -13 <(printf '%s\n' "$before") <(printf '%s\n' "$after") | sed 's|^\./|root/|'
-           (cd "$TMP" && find home -type f) | while IFS= read -r f; do [ "$TMP/$f" = "$eff" ] || printf '%s\n' "$f"; done
+           (cd "$TMP" && find home -type f ! -name .migrated) | while IFS= read -r f; do [ "$TMP/$f" = "$eff" ] || printf '%s\n' "$f"; done
          } | grep -v '^$' | LC_ALL=C sort | paste -sd, - )
 # absolute fixture paths vary by checkout: fold them back to ROOT/HERE
 err=${err//$ROOT/ROOT}; logn=${logn//$ROOT/ROOT}

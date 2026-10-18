@@ -17,9 +17,11 @@
 # Env:
 #   CITATION_GUARD_STRICT=1   block the stop instead of log-only
 #   CITATION_GUARD_ROOT=DIR   resolve relative refs under DIR (else payload cwd, else $PWD)
-#   CITATION_GUARD_LOG=FILE   log path (default ~/.claude/dwarves-kit/logs/citation-guard.log)
+#   CITATION_GUARD_LOG=FILE   log path (default <ledger root>/hooks/citation-guard.log)
 
 set -euo pipefail
+# Hook logs live under the ledger root (lib/telemetry/hook-log-dir.sh); the fallback keeps a hook running without lib/.
+. "${BASH_SOURCE[0]%/*}/../lib/telemetry/hook-log-dir.sh" 2>/dev/null || kit_hook_log_dir() { printf '%s' "${KIT_LEDGER_DIR:-${DWARVES_KIT_LOG_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/dwarves-kit/logs}}/hooks"; }
 
 command -v jq >/dev/null 2>&1 || { echo "citation-guard: jq not found, skipping" >&2; exit 0; }
 
@@ -106,7 +108,7 @@ done <<<"$refs"
 # applies only when unset. A path without a slash has an empty dirname, where
 # the Python's makedirs("") failed, so those write no log at all.
 if [ "${CITATION_GUARD_LOG+x}" = x ]; then logp=$CITATION_GUARD_LOG
-else logp=${HOME:-}/.claude/dwarves-kit/logs/citation-guard.log; fi
+else logp=$(kit_hook_log_dir)/citation-guard.log; fi
 case $logp in
   */*)
     dir=${logp%/*}

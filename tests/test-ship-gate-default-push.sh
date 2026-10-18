@@ -42,7 +42,7 @@ expect "git push -u origin HEAD on main -> blocked" 2 "$(gate "$R" 'git push -u 
 expect "an earlier unresolvable push does not hide a later default push" 2 "$(gate "$R" 'git push origin nothere; git push')"
 expect "KIT_ALLOW_DEFAULT_PUSH=1 in the hook env -> allowed" 0 "$(gate "$R" 'git push' KIT_ALLOW_DEFAULT_PUSH=1)"
 expect "KIT_ALLOW_DEFAULT_PUSH=1 as a command prefix -> still blocked" 2 "$(gate "$R" 'KIT_ALLOW_DEFAULT_PUSH=1 git push')"
-expect "the escape is logged" 0 "$(grep -q 'ALLOWED | default-push | main' "$LOGDIR/ship-gate.log" && echo 0 || echo 1)"
+expect "the escape is logged" 0 "$(grep -q 'ALLOWED | default-push | main' "$LOGDIR/hooks/ship-gate.log" && echo 0 || echo 1)"
 expect "cd <repo> && git push from another cwd -> blocked (resolves the target repo)" 2 \
   "$(gate "$LOGDIR" "cd $R && git push")" "lands on 'main'"
 expect "gh pr create on main -> unchanged (not a git push)" 0 "$(gate "$R" 'gh pr create --fill')"
