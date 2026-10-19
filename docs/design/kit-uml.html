@@ -176,7 +176,7 @@ decided:
 
 The kit is six clusters of bash, Python and prose commands that meet at a few shared stores. The spine (lane commands and their agents) moves one unit of work from intake to land. Gates and ledgers record and enforce what the spine did. Execution planes run many sessions at once. The board and signal path carries work items and proposals. Session and knowledge reads transcripts and distills them. Hooks wire all of it to Claude Code events and run the audit loops.
 
-This model is a backfill. It maps the kit as the code stands on master, from a read-only pass with `path:line` evidence, spot-checked against the code. Amber marks planned work: the workset module, and the batch-2 fixes on the batch-run sheets (planes-compare, seq-queue-night, seq-dispatch, sm-mega-subgoal). Cluster colors hold on every sheet: spine blue, gates rose, planes violet, board green, hooks gray, session plain. Boxes marked «external» belong to another cluster or sit outside the kit.
+This model is a backfill. It maps the kit as the code stands on master, from a read-only pass with `path:line` evidence, spot-checked against the code. Amber marks planned work: the workset module, and one transition on sm-mega-subgoal (a `gate` sub-goal with no `**Branch:**` refused at pre-flight). Cluster colors hold on every sheet: spine blue, gates rose, planes violet, board green, hooks gray, session plain. Boxes marked «external» belong to another cluster or sit outside the kit.
 
 ## Use cases
 
@@ -522,17 +522,17 @@ edges:
 
 ## Which plane to reach for
 
-The side-by-side table from `docs/execution-planes.md`, drawn as a sheet, plus `/kit:dispatch`, which that doc leaves out. FORMAT.md has no table type, so this borrows the ERD: each box is one plane and each row is an attribute with its value. The amber box lists the batch-2 fixes and points at the planes they change.
+The side-by-side table from `docs/execution-planes.md`, drawn as a sheet, plus `/kit:dispatch`, which that doc leaves out. FORMAT.md has no table type, so this borrows the ERD: each box is one plane and each row is an attribute with its value. The isolation gaps it shows for the queue and the serial orchestrator are accepted trade-offs (see Risks), because neither path runs today.
 
 ```uml
 id: planes-compare
 type: erd
 title: The planes side by side
 level: L2
-caption: "Borrowed ERD: each box is one plane, each row an attribute and its value, read across boxes like table columns. Amber links point the planned batch-2 changes at the plane each one changes; the line ends carry no cardinality meaning here."
+caption: "Borrowed ERD: each box is one plane, each row an attribute and its value, read across boxes like table columns. There are no links: the boxes stand side by side."
 review:
   - "`docs/execution-planes.md` counts the board as a plane and leaves out `/kit:dispatch`; c-planes counts dispatch as one of four engines and the board as outside. Which set of four is canonical, so the doc and this sheet agree?"
-  - "After batch-2, the queue and the serial orchestrator both run in worktrees. Is the queue's remaining reason to exist only the live-login auth, and should the table say so?"
+  - "The queue ran 10 rows ever, all on the Air, none in the last month. Keep it as a plane beside the orchestrator, or retire it and note the live-login auth as the one thing lost?"
 tables:
   - name: board
     at: [0, 0]
@@ -546,16 +546,9 @@ tables:
   - name: /kit:dispatch
     at: [0, 1]
     cols: [[unit of work, a VALIDATED spec with Touches], [runs, "Agent tool workers, background"], [concurrency, "the PARALLEL set, cap 4 by hand"], [auth, the lead session], [isolation, a worktree per worker], [mutates, "the code, on goal/<slug>"], [ends when, "READY branches go to /kit:ship"], [stops on, "REJECT, drift, a lost attempt"], [reach for, "several disjoint specs, now"]]
-  - name: batch-2 (planned)
-    at: [1, 1]
-    cols: [[queue isolation, a worktree per row], [serial isolation, "a worktree, as waves do"], [scope check, protected paths before the run], [sub-goal done, only when gh shows its PR], [attempt-state, a store lock], [SPEC reserve fails, the worker stops], ["no **Branch:**", refused at plan time], [vendor harness, "same turn cap, watchdog"]]
   - name: gauntlet
-    at: [2, 1]
+    at: [1, 1]
     cols: [[unit of work, a probe card], [runs, claude -p sonnet in docker], [concurrency, one probe per round], [auth, a spend-capped API key], [isolation, a fresh container per round], [mutates, the artifact under test], [ends when, two unaided passes in a row], [stops on, "round cap, severity stops falling"], [reach for, do the docs work for a stranger]]
-rels:
-  - {from: batch-2 (planned), to: orchestrator, cardinality: "1:1", label: planned, tone: amber}
-  - {from: batch-2 (planned), to: queue, cardinality: "1:1", label: planned, tone: amber, via: [[1.5, 1], [1.5, 0]]}
-  - {from: batch-2 (planned), to: /kit:dispatch, cardinality: "1:1", label: planned, tone: amber}
 ```
 
 ## Board and signal path
@@ -1072,7 +1065,7 @@ messages:
 
 ## Overnight queue night
 
-One `#auto` row through one watcher tick and one `queue.sh run`: the row is planned, typed into a live session as `/goal`, polled, and judged against the git delta (`watch-board.sh:247-325`, `queue.sh:605-683`, `queue.sh:1013-1024`). Today the window opens in the watcher's own checkout, and the protected-path check runs after the run (step 17). The amber step 7 is the planned batch-2 fix: a worktree per row and the scope set before launch.
+One `#auto` row through one watcher tick and one `queue.sh run`: the row is planned, typed into a live session as `/goal`, polled, and judged against the git delta (`watch-board.sh:247-325`, `queue.sh:605-683`, `queue.sh:1013-1024`). The window opens in the watcher's own checkout, and the protected-path check runs after the run (step 16), on because the watcher passes `--sanitize-prompt` (`watch-board.sh:325`). Running each row in a worktree is an accepted trade-off until the queue runs regularly again (see Risks).
 
 ```uml
 id: seq-queue-night
@@ -1080,8 +1073,8 @@ type: sequence
 title: One overnight queue row, tick to verdict
 level: L3
 review:
-  - "Step 7 (planned) moves the row into a worktree, but the preflight still requires a clean checkout on the default branch (step 6). Keep that preflight on the main checkout, or drop it once rows run in worktrees?"
-  - "The reaper (step 19) can never write `done` because it does not know the slug's repo. Should the plan file record the repo so the reaper can check the delta itself?"
+  - "Protected paths are only detected after the run (step 16), and the row runs in the real checkout. Is post-run detection enough while the queue sits idle, with a worktree per row as the reopen fix?"
+  - "The reaper (step 18) can never write `done` because it does not know the slug's repo. Should the plan file record the repo so the reaper can check the delta itself?"
 participants:
   - {name: watch-board, tone: violet}
   - {name: parse-board, tone: green}
@@ -1098,7 +1091,6 @@ messages:
   - {from: watch-board, to: queue journal, text: "last verdict: skip done, gated", kind: call}
   - {from: watch-board, to: queue.sh, text: "run plan.tsv --sanitize-prompt (--apply only)", kind: call}
   - {from: queue.sh, to: git, text: "preflight: clean, default branch; HEAD, tips", kind: call}
-  - {from: queue.sh, to: git, text: "planned: worktree per row, scope set before launch", kind: call, tone: amber}
   - {from: queue.sh, to: tmux, text: "new-window -c repo: claude, skip permissions", kind: call}
   - {from: queue.sh, to: tmux, text: "send-keys /goal <sanitized pointer>, Enter", kind: call}
   - {from: tmux, to: claude session, text: typed /goal, kind: async}
@@ -1115,7 +1107,7 @@ messages:
 
 ## Dispatch fan-out
 
-`/kit:dispatch` is prose the lead executes (`commands/dispatch.md:19-169`); the scripts it calls are the disjointness gate, the goal registry and the attempt store. A worker that drops its stream is `disconnected`, never failed: the lead resumes the same agent with `SendMessage`, and only the lead declares an attempt `lost` after the grace window (`attempt-state.sh:274-297`). The amber step 7 is the planned batch-2 store lock.
+`/kit:dispatch` is prose the lead executes (`commands/dispatch.md:19-169`); the scripts it calls are the disjointness gate, the goal registry and the attempt store. A worker that drops its stream is `disconnected`, never failed: the lead resumes the same agent with `SendMessage`, and only the lead declares an attempt `lost` after the grace window (`attempt-state.sh:274-297`). The attempt store has no lock; one lead calls it in sequence, an accepted trade-off (see Risks).
 
 ```uml
 id: seq-dispatch
@@ -1124,7 +1116,7 @@ title: Dispatch fan-out, disconnect, resume, lost
 level: L3
 review:
   - "The claim (step 4) comes after the Agent call (step 3) in the prose, which calls it a double-check. Should claim move before the launch, so a REFUSED overlap never starts a worker?"
-  - "Loss is declared by hand only (step 14); nothing times out a silent worker. With the store lock added, should a watchdog run `lose-attempt` once the grace window ends?"
+  - "Loss is declared by hand only (step 13); nothing times out a silent worker. A watchdog running `lose-attempt` would be a second caller of the store, which reopens the lock trade-off. Worth it?"
 participants:
   - {name: lead, tone: violet}
   - {name: dispatch-gate, tone: violet}
@@ -1140,7 +1132,6 @@ messages:
   - {from: lead, to: goal-registry, text: "claim slug lane touches", kind: call}
   - {from: goal-registry, to: lead, text: "CLAIMED, or REFUSED on overlap", kind: return}
   - {from: lead, to: attempt-state, text: "dispatch slug worker-id", kind: call}
-  - {from: lead, to: attempt-state, text: "planned: every verb under a store lock", kind: call, tone: amber}
   - {from: worker (worktree), to: goal-registry, text: "switch -c goal/<slug>; log attempts", kind: call}
   - {from: worker (worktree), to: lead, text: "stream drops, no STATUS line", kind: async}
   - {from: lead, to: attempt-state, text: "mark-disconnected --grace 120", kind: call}
@@ -1362,7 +1353,7 @@ transitions:
 
 ## Mega-goal sub-goal
 
-One ROADMAP sub-goal as `orchestrate.sh` sees it. The ROADMAP stores only unchecked or checked; every other state is the last event in `.orchestrate/events.log` (`orchestrate.sh:466-553`). Today a serial run accepts a bare local `[x]` with no `PR #n` (`orchestrate.sh:2777-2812`), and only a `gate` sub-goal is checked against `gh pr view` (`orchestrate.sh:456-463`). The watchdog only alerts on a stall and never kills (`orchestrate.sh:1101-1105`). Amber is the planned batch-2 delta: refuse a goal file with no `**Branch:**` at plan time, stop before the spawn when the SPEC reservation fails, and block a run that gh shows no PR for, or a vendor run past its turn cap.
+One ROADMAP sub-goal as `orchestrate.sh` sees it. The ROADMAP stores only unchecked or checked; every other state is the last event in `.orchestrate/events.log` (`orchestrate.sh:466-553`). Today a serial run accepts a bare local `[x]` with no `PR #n` (`orchestrate.sh:2777-2812`), and only a `gate` sub-goal is checked against `gh pr view` (`orchestrate.sh:456-463`). The watchdog only alerts on a stall and never kills (`orchestrate.sh:1101-1105`). No `.orchestrate/events.log` exists on the Mini or the Air, so this path has not run there. Amber is the one planned fix: a `gate` or `gate!` sub-goal whose goal file has no `**Branch:**` is refused at pre-flight; an `auto` sub-goal without the header keeps running (190 of 771 goal files lack it).
 
 ```uml
 id: sm-mega-subgoal
@@ -1370,8 +1361,8 @@ type: state
 title: Mega-goal sub-goal
 level: L4
 review:
-  - "A gate sub-goal with no `**Branch:**` looks up `gh pr view wave/sg-nn` (`orchestrate.sh:1326-1327`), which never matches the worker's branch, so the hold reports no PR. Is refusing such a file at plan time (amber) enough, or should the gate lookup also fail loudly?"
-  - "Once gh must show the PR, should `checked` also need the PR merged for an `auto` sub-goal on the serial path, which never converges?"
+  - "A gate sub-goal with no `**Branch:**` looks up `gh pr view wave/sg-nn` (`orchestrate.sh:1326-1327`), which never matches the worker's branch. The amber refusal covers gate and gate! only. Should an `auto` sub-goal without the header at least warn at pre-flight, since it skips START?"
+  - "A serial run accepts a bare local `[x]` with no PR (exit 0 to checked). Is the first serial orchestrator run the right trigger to require gh to show the PR, or should the serial path warn on a box with no `PR #n` now?"
 states:
   - {name: refused, tone: amber, at: [0, 0]}
   - {name: unchecked, initial: true, at: [0, 1]}
@@ -1382,13 +1373,12 @@ states:
   - {name: blocked, at: [1, 2]}
   - {name: tier-4 HOLD, final: true, at: [3, 1]}
 transitions:
-  - {from: unchecked, to: refused, event: "planned: no **Branch:**, or SPEC reserve fails", tone: amber}
+  - {from: unchecked, to: refused, event: "planned: gate or gate! with no **Branch:**, at pre-flight", tone: amber}
   - {from: unchecked, to: executing, event: "picked: first unchecked, or ready and disjoint"}
   - {from: unchecked, to: blocked, event: "pre-flight: bad Model, Effort or Harness"}
   - {from: executing, to: "gate / gate! hold", event: "gate: gh pr view finds the PR"}
   - {from: executing, to: checked, event: "exit 0, box checked"}
   - {from: executing, to: blocked, event: "exit nonzero, turn cap, box not flipped, no PR"}
-  - {from: executing, to: blocked, event: "planned: gh shows no PR, vendor turn cap", tone: amber}
   - {from: "gate / gate! hold", to: checked, event: "human merges, box checked, re-run", via: [[2, 0]]}
   - {from: checked, to: merged, event: "converge: mega-merge --execute, MERGED", via: [[2, 2]]}
   - {from: checked, to: tier-4 HOLD, event: "last box: no-orphan sweep, 3 verifiers PASS"}
@@ -1398,7 +1388,7 @@ transitions:
 
 ## Attempt store
 
-The `/kit:dispatch` flow from `seq-dispatch`, as `attempt-state.sh` records it: a task machine (blue) and an attempt machine per worker (violet), with legal moves listed in `attempt-state.sh:63-75` and anything else refused. The two meet in the verbs: `dispatch` opens a `running` attempt, `lose-attempt` sends the task back to `queued`, and `commit-result` marks it `done`. Today the store has no lock and relies on the lead calling it in sequence (`attempt-state.sh:26-29`); the planned batch-2 lock adds no state, so it shows only as amber step 7 on `seq-dispatch`.
+The `/kit:dispatch` flow from `seq-dispatch`, as `attempt-state.sh` records it: a task machine (blue) and an attempt machine per worker (violet), with legal moves listed in `attempt-state.sh:63-75` and anything else refused. The two meet in the verbs: `dispatch` opens a `running` attempt, `lose-attempt` sends the task back to `queued`, and `commit-result` marks it `done`. The store has no lock and relies on the lead calling it in sequence (`attempt-state.sh:26-29`), an accepted trade-off until two callers can hit it at once.
 
 ```uml
 id: sm-attempt
@@ -1447,9 +1437,10 @@ transitions:
 
 Ranked by blast radius, widest first. Open risks come first; accepted trade-offs follow. Closed items live in git and the PRs.
 
-- Unsandboxed workers on shared state. Both executors run `--dangerously-skip-permissions`; the queue and the serial orchestrator work in the real checkout, and protected-path writes are detected after the run, only with sanitize on. Trigger: a worker edits outside its scope overnight. Mitigation: sanitize, the XPIA fence, `#queue{}` allow-listing, wave worktrees, the `flip.lock`. Planned in batch-2: a worktree per queue row and per serial sub-goal, with protected-path scope enforced before the run (seq-queue-night step 7).
-- Self-reported completion, now narrower. The queue counts `done` only after a HEAD move, a moved local branch tip or an operator PR created since the window opened; otherwise the row is `gated` with reason `no-delta`. The orchestrator still trusts a flipped box: a serial run accepts a bare local `[x]`, and only the remote reconcile needs `PR #n` (`orchestrate.sh:2777-2812`). `attempt-state.sh` has no lock and relies on the lead calling it in sequence. Trigger: a sub-goal claims done with a flipped box and no real PR. Mitigation: a `gate` sub-goal needs `gh pr view` to find its PR; tier-4 close HOLDs for a human. Planned in batch-2: a sub-goal counts done only when gh shows its PR, and the attempt store takes a lock (sm-mega-subgoal, seq-dispatch).
-- Degrade paths. A vendor harness runs with no turn cap, watchdog or token capture; a failed SPEC reservation lets the worker pick its own number; a goal file with no `**Branch:**` skips START. Planned in batch-2: a failed reservation stops the worker, a goal file with no `**Branch:**` is refused at plan time, and vendor harnesses get the same turn cap and watchdog (sm-mega-subgoal).
+- Unsandboxed workers on shared state. Both executors run `--dangerously-skip-permissions`; the queue and the serial orchestrator work in the real checkout, and protected-path writes are detected after the run, only with sanitize on. Trigger: a worker edits outside its scope overnight. Mitigation: sanitize, the XPIA fence, `#queue{}` allow-listing, wave worktrees, the `flip.lock`.
+- Self-reported completion, now narrower. The queue counts `done` only after a HEAD move, a moved local branch tip or an operator PR created since the window opened; otherwise the row is `gated` with reason `no-delta`. The orchestrator still trusts a flipped box: a serial run accepts a bare local `[x]`, and only the remote reconcile needs `PR #n` (`orchestrate.sh:2777-2812`). `attempt-state.sh` has no lock and relies on the lead calling it in sequence. Trigger: a sub-goal claims done with a flipped box and no real PR. Mitigation: a `gate` sub-goal needs `gh pr view` to find its PR; tier-4 close HOLDs for a human.
+- Degrade paths. A vendor harness runs with no turn cap, watchdog or token capture; a failed SPEC reservation lets the worker pick its own number; a goal file with no `**Branch:**` skips START.
+- Gate sub-goal with no `**Branch:**`. The gate hold looks up `gh pr view wave/sg-nn` (`orchestrate.sh:1326-1327`), which never matches the worker's real branch, so the hold reports no PR and halts. 190 of 771 goal files lack the header. Trigger: a `gate` or `gate!` goal file written without it. Mitigation: planned, refuse such a file at pre-flight (amber on sm-mega-subgoal); `auto` sub-goals without the header keep running.
 
 **Accepted trade-offs**
 
@@ -1459,6 +1450,11 @@ Ranked by blast radius, widest first. Open risks come first; accepted trade-offs
 - Plugin hooks register for every module: one bash start per skipped hook is cheap.
 - Stat-keyed caches: the 2-second window is short and a recheck is cheap.
 - Advisory and unwired parts: advisory by design, and the `bin/` forwarders arrive with the workset fold.
+- Queue rows and the serial orchestrator run in the real checkout, with protected paths detected only after the run. The queue ran 10 rows ever, all on the Air, none in the last month, and no `.orchestrate/events.log` exists on the Mini or the Air. Sanitize (implied by `--from-boards`, and passed by the watcher) already checks protected paths after the run. Reopen when the queue or the serial path runs regularly again.
+- A serial sub-goal counts done on its box alone, not on a PR gh can see. Reopen on the first serial orchestrator run.
+- `attempt-state.sh` has no lock: one lead calls it in sequence. Reopen when two callers can hit the store at once.
+- Vendor harnesses run with no turn cap or watchdog: no goal file in the estate declares `**Harness:**`. Reopen on the first one that does.
+- A failed SPEC reservation does not stop the worker: rejected, not deferred. The code documents the reservation as best-effort over a scan-safe fallback (`orchestrate.sh:1331-1337`, `orchestrate.sh:1940-1942`), so stopping would turn a rare duplicate number into a stopped wave.
 
 ## Drift register
 
