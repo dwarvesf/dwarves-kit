@@ -1,0 +1,71 @@
+#!/bin/bash
+# Build a self-contained UML drawing set (HTML) from docs/SYSTEM-DESIGN.md.
+# Usage: build --model docs/SYSTEM-DESIGN.md [--base <git-ref> | --base-file <file>] [--style <fragment.html>] --out <file.html> [--shots <dir> [--sheets <id,id>]]
+set -euo pipefail
+shopt -u patsub_replacement 2>/dev/null || true
+
+here=$(cd "$(dirname "$0")" && pwd)
+model='' base_ref='' base_file='' style='' out='' shots='' sheets=''
+die() { echo "build: $*" >&2; exit 1; }
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --model) model=${2:-}; shift 2 ;;
+    --base) base_ref=${2:-}; shift 2 ;;
+    --base-file) base_file=${2:-}; shift 2 ;;
+    --style) style=${2:-}; shift 2 ;;
+    --out) out=${2:-}; shift 2 ;;
+    --shots) shots=${2:-}; shift 2 ;;
+    --sheets) sheets=${2:-}; shift 2 ;;
+    -h|--help) sed -n 2,3p "$0"; exit 0 ;;
+    *) die "unknown argument: $1" ;;
+  esac
+done
+[ -n "$model" ] && [ -n "$out" ] || die "need --model and --out"
+[ -f "$model" ] || die "no such model file: $model"
+[ -z "$sheets" ] || [ -n "$shots" ] || die "--sheets needs --shots"
+[ -z "$base_ref" ] || [ -z "$base_file" ] || die "use --base or --base-file, not both"
+[ -z "$style" ] || [ -f "$style" ] || die "no such style file: $style"
+
+cur=$(cat "$model")
+base='' label=''
+if [ -n "$base_ref" ]; then
+  dir=$(dirname "$model")
+  git -C "$dir" rev-parse --verify --quiet "$base_ref^{commit}" >/dev/null || die "not a commit: $base_ref"
+  # A model missing at the base (first use) diffs as all new.
+  base=$(git -C "$dir" show "$base_ref:./$(basename "$model")" 2>/dev/null || true)
+  label=$base_ref
+elif [ -n "$base_file" ]; then
+  [ -f "$base_file" ] || die "no such base file: $base_file"
+  base=$(cat "$base_file")
+  label=$(basename "$base_file")
+fi
+
+check() {
+  case "$2" in *'</script'*|*'</SCRIPT'*|*'</Script'*) die "$1 contains </script, which would end the embedded block" ;; esac
+  case "$2" in *__UML_*|*__DELTA_JS__*|*__LAYOUT_JS__*|*__MODEL__*|*__BASE_REF__*|*__TITLE__*) die "$1 contains a build placeholder" ;; esac
+}
+check "$model" "$cur"
+check "base" "$base"
+
+html_esc() { local s=$1; s=${s//&/&amp;}; s=${s//</&lt;}; s=${s//>/&gt;}; s=${s//\"/&quot;}; printf '%s' "$s"; }
+title=$(printf '%s\n' "$cur" | sed -n 's/^# //p' | head -n 1)
+[ -n "$title" ] || title='System design'
+
+tpl=$(cat "$here/template.html")
+# Replace each placeholder once, bottom of the page first, so inserted text never holds a later target.
+sub() { local pre=${tpl%%"$1"*}; [ "$pre" != "$tpl" ] || die "template lacks $1"; tpl="$pre$2${tpl#*"$1"}"; }
+sub __LAYOUT_JS__ "$(cat "$here/layout.js")"
+sub __DELTA_JS__ "$(cat "$here/delta.js")"
+sub __UML_BASE__ "$base"
+sub __BASE_REF__ "$(html_esc "$label")"
+sub __UML_CUR__ "$cur"
+sub __MODEL__ "$(html_esc "$model")"
+sub __TITLE__ "$(html_esc "$title")"
+# A repo's style fragment (font links, token overrides) lands after the template's own, so it wins.
+[ -z "$style" ] || sub '<div class="wrap">' "$(cat "$style")
+<div class=\"wrap\">"
+
+mkdir -p "$(dirname "$out")"
+printf '%s\n' "$tpl" > "$out"
+echo "built $out (title: $title${label:+, base: $label})"
+[ -z "$shots" ] || node "$here/shots.mjs" "$out" "$shots" "$sheets" || exit 1

@@ -1,0 +1,600 @@
+<title>__TITLE__</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@87.5,500;87.5,700&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* A drafting set: sticky sheet index on the left, a cover, then one bordered sheet per diagram with a title block; figures on a faint drafting grid. */
+:root{
+  --fz:1; --paper:#eef1f4; --sheet:#ffffff; --ink:#17212b; --ink-2:#4e5b69; --rule:#d3dae2; --grid:#edf0f4;
+  --new:#0a6aa1; --new-soft:#e2f0f8; --chg:#9a5700; --chg-soft:#fbefdd; --rm:#8a95a1; --ext-soft:#f1f3f6; --err:#b42318;
+  --display:"Archivo","Arial Narrow","Helvetica Neue",Arial,sans-serif;
+  --body:"IBM Plex Sans","Helvetica Neue",Arial,sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,"SF Mono",Menlo,monospace;
+  /* Tones (fill, stroke, label ink) for the optional `tone` field; label ink is AA on the fill. */
+  --tn-blue-f:#dbeafe; --tn-blue-s:#2563eb; --tn-blue-i:#1e3a8a; --tn-green-f:#dcfce7; --tn-green-s:#15803d; --tn-green-i:#14532d;
+  --tn-amber-f:#fef3c7; --tn-amber-s:#b45309; --tn-amber-i:#78350f; --tn-rose-f:#ffe4e6; --tn-rose-s:#e11d48; --tn-rose-i:#881337;
+  --tn-violet-f:#ede9fe; --tn-violet-s:#7c3aed; --tn-violet-i:#4c1d95; --tn-gray-f:#e5e7eb; --tn-gray-s:#6b7280; --tn-gray-i:#1f2937;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    color-scheme:dark;
+    --paper:#0d1217; --sheet:#141a21; --ink:#e2e8ee; --ink-2:#9aa7b4; --rule:#2a3440; --grid:#19212a;
+    --new:#5db7ea; --new-soft:#10304a; --chg:#e5a24b; --chg-soft:#3a2a13; --rm:#6d7987; --ext-soft:#1a2129; --err:#ff8a80;
+    --tn-blue-f:#172a4d; --tn-blue-s:#6aa0ff; --tn-blue-i:#cfe0ff; --tn-green-f:#123524; --tn-green-s:#4ade80; --tn-green-i:#c9f5d9;
+    --tn-amber-f:#3d2a0c; --tn-amber-s:#f0a93b; --tn-amber-i:#ffe3b0; --tn-rose-f:#43161f; --tn-rose-s:#fb7185; --tn-rose-i:#ffd5db;
+    --tn-violet-f:#2a1f4f; --tn-violet-s:#a78bfa; --tn-violet-i:#e4dcff; --tn-gray-f:#2a313a; --tn-gray-s:#94a3b8; --tn-gray-i:#e2e8f0;
+  }
+}
+:root[data-theme="dark"]{
+  color-scheme:dark;
+  --paper:#0d1217; --sheet:#141a21; --ink:#e2e8ee; --ink-2:#9aa7b4; --rule:#2a3440; --grid:#19212a;
+  --new:#5db7ea; --new-soft:#10304a; --chg:#e5a24b; --chg-soft:#3a2a13; --rm:#6d7987; --ext-soft:#1a2129; --err:#ff8a80;
+  --tn-blue-f:#172a4d; --tn-blue-s:#6aa0ff; --tn-blue-i:#cfe0ff; --tn-green-f:#123524; --tn-green-s:#4ade80; --tn-green-i:#c9f5d9;
+  --tn-amber-f:#3d2a0c; --tn-amber-s:#f0a93b; --tn-amber-i:#ffe3b0; --tn-rose-f:#43161f; --tn-rose-s:#fb7185; --tn-rose-i:#ffd5db;
+  --tn-violet-f:#2a1f4f; --tn-violet-s:#a78bfa; --tn-violet-i:#e4dcff; --tn-gray-f:#2a313a; --tn-gray-s:#94a3b8; --tn-gray-i:#e2e8f0;
+}
+*{box-sizing:border-box}
+body{background:var(--paper);color:var(--ink);font:400 15px/1.6 var(--body);padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+.wrap{max-width:1240px;margin:0 auto;padding-block:32px 64px;display:grid;grid-template-columns:220px minmax(0,1fr);gap:32px;align-items:start}
+@media (max-width:900px){.wrap{grid-template-columns:minmax(0,1fr)}.index{position:static!important}}
+code,.mono{font-family:var(--mono);font-size:.9em}
+a{color:var(--new)}
+:focus-visible{outline:2px solid var(--new);outline-offset:2px}
+
+.index{position:sticky;top:calc(env(safe-area-inset-top,0px) + 24px);display:grid;gap:4px;font-size:13px;max-height:calc(100vh - 48px);overflow-y:auto}
+.index .k{font:500 11px var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--ink-2);padding-block:0 8px}
+.index a{display:grid;grid-template-columns:26px 1fr auto;gap:8px;align-items:baseline;color:var(--ink);text-decoration:none;padding:6px 8px;border-radius:4px}
+.index a:hover,.index a.cur{background:var(--sheet)}
+.index .no{font:500 11px var(--mono);color:var(--ink-2);font-variant-numeric:tabular-nums}
+
+main{display:grid;gap:28px;min-width:0}
+.tag{font:500 10px var(--mono);letter-spacing:.06em;text-transform:uppercase;padding:2px 6px;border-radius:3px;border:1px solid currentColor;white-space:nowrap}
+.tag.new{color:var(--new)} .tag.chg{color:var(--chg)} .tag.rm{color:var(--rm);border-style:dashed} .tag.same{color:var(--ink-2)}
+
+.cover{background:var(--sheet);border:1px solid var(--rule);padding:28px 32px;display:grid;gap:20px;scroll-margin-top:24px}
+.cover .lvl{font:500 11px var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--ink-2)}
+.cover h1{font:700 44px/1.05 var(--display);font-stretch:87.5%;letter-spacing:-.01em;margin:0;text-wrap:balance}
+.cover .dek{font-size:17px;max-width:64ch;color:var(--ink-2)}
+.cover .dek p{margin:0 0 8px}
+.facts{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));border-top:1px solid var(--rule);margin:0}
+.facts div{padding:14px 16px 14px 0;border-bottom:1px solid var(--rule)}
+.facts dt{font:500 11px var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--ink-2)}
+.facts dd{margin:4px 0 0}
+.legend{display:flex;flex-wrap:wrap;gap:10px 22px;align-items:center;font-size:13px;color:var(--ink-2)}
+.legend span{display:inline-flex;align-items:center;gap:8px}
+.sw{width:30px;height:16px;border-radius:3px;border:1.6px solid var(--ink-2);background:var(--sheet)}
+.sw.new{border-color:var(--new);background:var(--new-soft)} .sw.chg{border-color:var(--chg);background:var(--chg-soft)}
+.sw.rm{border:1.6px dashed var(--rm);background:transparent} .sw.ext{background:var(--ext-soft)}
+.ask{border-left:3px solid var(--new);padding:4px 0 4px 16px}
+.ask h2{font:700 15px var(--display);margin:0 0 6px}
+.ask ol{margin:0;padding-left:20px}
+
+.sheet{background:var(--sheet);border:1px solid var(--rule);scroll-margin-top:24px;min-width:0}
+.sheet.s-rm{border-style:dashed}
+.tb{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:16px;align-items:stretch;border-bottom:1px solid var(--rule)}
+.tb .title{padding:18px 24px}
+.tb .lvl{font:500 11px var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--ink-2)}
+.tb h2{font:700 26px/1.15 var(--display);font-stretch:87.5%;margin:2px 0 0;text-wrap:balance}
+.tb dl{display:grid;grid-template-columns:auto auto;margin:0;border-left:1px solid var(--rule);font-size:12px}
+.tb dl div{padding:8px 14px;border-bottom:1px solid var(--rule);display:grid;gap:2px;align-content:center}
+.tb dl div:nth-child(odd){border-right:1px solid var(--rule)}
+.tb dl div:nth-last-child(-n+2){border-bottom:0}
+.tb dt{font:500 10px var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--ink-2)}
+.tb dd{margin:0;font-variant-numeric:tabular-nums}
+@media (max-width:640px){.tb{grid-template-columns:minmax(0,1fr)}.tb dl{border-left:0;border-top:1px solid var(--rule)}}
+.note{margin:0;padding:16px 24px 0;max-width:calc(78ch + 48px)}
+.note p,.note ul{margin:0 0 8px}
+.note .tablewrap{margin:0 0 8px}
+.err{margin:16px 24px 0;border-left:3px solid var(--err);padding:4px 0 4px 14px;font-family:var(--mono);font-size:13px;white-space:pre-wrap}
+figure{margin:0;padding:16px 24px 0}
+.canvas{overflow-x:auto;border:1px solid var(--rule);background-color:var(--sheet);background-image:linear-gradient(var(--grid) 1px,transparent 1px),linear-gradient(90deg,var(--grid) 1px,transparent 1px);background-size:20px 20px}
+.canvas svg{display:block;width:100%;height:auto;min-width:780px;margin:0 auto}
+figcaption{font-size:13px;color:var(--ink-2);padding-top:8px}
+.review{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:24px;padding:18px 24px 24px}
+.review h3{font:500 11px var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--ink-2);margin:0 0 8px}
+.review ul,.review ol{margin:0;padding-left:18px;display:grid;gap:4px;font-size:14px}
+.delta{list-style:none;padding-left:0!important}
+.delta li{display:grid;grid-template-columns:74px 1fr;gap:8px;align-items:baseline}
+.delta .tag{justify-self:start}
+table{border-collapse:collapse;width:100%;font-size:14px}
+th{text-align:left;font:500 11px var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--ink-2);padding:8px 12px 8px 0;border-bottom:1px solid var(--ink-2)}
+td{padding:10px 12px 10px 0;border-bottom:1px solid var(--rule);vertical-align:top}
+.tablewrap{overflow-x:auto}
+
+/* SVG drawing classes */
+.box{fill:var(--sheet);stroke:var(--ink-2);stroke-width:1.2}
+.box.ext{fill:var(--ext-soft)}
+/* Tone rules sit before the delta rules of the same weight, so new / chg / rm still win. */
+.tone-blue{--tf:var(--tn-blue-f);--ts:var(--tn-blue-s);--ti:var(--tn-blue-i)}
+.tone-green{--tf:var(--tn-green-f);--ts:var(--tn-green-s);--ti:var(--tn-green-i)}
+.tone-amber{--tf:var(--tn-amber-f);--ts:var(--tn-amber-s);--ti:var(--tn-amber-i)}
+.tone-rose{--tf:var(--tn-rose-f);--ts:var(--tn-rose-s);--ti:var(--tn-rose-i)}
+.tone-violet{--tf:var(--tn-violet-f);--ts:var(--tn-violet-s);--ti:var(--tn-violet-i)}
+.tone-gray{--tf:var(--tn-gray-f);--ts:var(--tn-gray-s);--ti:var(--tn-gray-i)}
+.box[class*="tone-"]{fill:var(--tf);stroke:var(--ts);stroke-width:1.6}
+.box.new{fill:var(--new-soft);stroke:var(--new);stroke-width:1.6}
+.box.chg{fill:var(--chg-soft);stroke:var(--chg);stroke-width:1.6}
+.box.rm{fill:var(--sheet);stroke:var(--rm);stroke-dasharray:5 4}
+.frame{fill:none;stroke:var(--rule);stroke-width:1.2}
+.frame[class*="tone-"]{fill:var(--tf);fill-opacity:.4;stroke:var(--ts);stroke-width:1.4}
+[class*="tone-"] .t-lane{fill:var(--ti)}
+.boundary{fill:var(--sheet);fill-opacity:.55;stroke:var(--ink-2);stroke-width:1.3}
+.band{stroke:var(--rule);stroke-dasharray:3 5}
+.t-lane{font:500 calc(10px * var(--fz)) var(--mono);letter-spacing:.08em;fill:var(--ink-2);text-transform:uppercase}
+.t-sys{font:700 calc(15px * var(--fz)) var(--display);fill:var(--ink)}
+.t-name{font:600 calc(13px * var(--fz)) var(--body);fill:var(--ink)}
+.t-case{font:500 calc(12.5px * var(--fz)) var(--body);fill:var(--ink)}
+.t-note{font:400 calc(10.5px * var(--fz)) var(--mono);fill:var(--ink-2)}
+.t-stereo{font:italic 400 calc(10.5px * var(--fz)) var(--body);fill:var(--ink-2)}
+.t-edge{font:400 calc(10.5px * var(--fz)) var(--mono);fill:var(--ink-2);paint-order:stroke;stroke:var(--sheet);stroke-width:4px;stroke-linejoin:round}
+:where([class*="tone-"]) :is(.t-name,.t-note,.t-case,.t-stereo){fill:var(--ti)}
+.t-rm{fill:var(--rm);text-decoration:line-through}
+.t-new{fill:var(--new)} .t-chg{fill:var(--chg)}
+.edge{fill:none;stroke:var(--ink-2);stroke-width:1.3}
+.edge.dash{stroke-dasharray:5 4}
+.hd-fill{fill:var(--ink-2)} .hd-open{fill:none;stroke:var(--ink-2);stroke-width:1.3} .hd-hollow{fill:var(--sheet);stroke:var(--ink-2);stroke-width:1.3}
+.e[class*="tone-"] .edge{stroke:var(--ts);stroke-width:1.6} .e[class*="tone-"] .hd-fill{fill:var(--ts)} .e[class*="tone-"] .hd-open,.e[class*="tone-"] .hd-hollow,.e[class*="tone-"] .crow,.e[class*="tone-"] .crow-o{stroke:var(--ts)} .e[class*="tone-"] .t-edge{fill:var(--ti)}
+.e.new .edge{stroke:var(--new);stroke-width:1.6} .e.new .hd-fill{fill:var(--new)} .e.new .hd-open,.e.new .hd-hollow,.e.new .crow{stroke:var(--new)} .e.new .t-edge{fill:var(--new)}
+.e.chg .edge{stroke:var(--chg);stroke-width:1.6} .e.chg .hd-fill{fill:var(--chg)} .e.chg .hd-open,.e.chg .hd-hollow,.e.chg .crow{stroke:var(--chg)} .e.chg .t-edge{fill:var(--chg)}
+.e.rm .edge{stroke:var(--rm);stroke-dasharray:5 4} .e.rm .hd-fill{fill:var(--rm)} .e.rm .hd-open,.e.rm .crow{stroke:var(--rm)} .e.rm .t-edge{fill:var(--rm);text-decoration:line-through}
+.actor circle,.actor line{fill:var(--sheet);stroke:var(--ink);stroke-width:1.5}
+.actor[class*="tone-"] circle{fill:var(--tf)} .actor[class*="tone-"] circle,.actor[class*="tone-"] line{stroke:var(--ts);stroke-width:1.6}
+.actor.new circle,.actor.new line{stroke:var(--new)} .actor.chg circle,.actor.chg line{stroke:var(--chg)} .actor.rm circle,.actor.rm line{stroke:var(--rm);stroke-dasharray:4 3}
+.life{stroke:var(--ink-2);stroke-dasharray:4 5;stroke-width:1}
+.th{fill:var(--ink)} .th.new{fill:var(--new)} .th.chg{fill:var(--chg)} .th.rm{fill:none;stroke:var(--rm);stroke-dasharray:5 4}
+.t-th{font:600 calc(12.5px * var(--fz)) var(--mono);fill:var(--sheet)} .t-th.t-rm{fill:var(--rm)}
+.t-col{font:400 calc(11.5px * var(--fz)) var(--mono);fill:var(--ink)}
+.t-flag{font:400 calc(10.5px * var(--fz)) var(--mono);fill:var(--ink-2)}
+.t-ops{font:400 calc(11.5px * var(--fz)) var(--mono);fill:var(--ink-2)}
+.row-new{fill:var(--new-soft)} .row-chg{fill:var(--chg-soft)}
+.state{fill:var(--sheet);stroke:var(--ink);stroke-width:1.4}
+.state[class*="tone-"]{fill:var(--tf);stroke:var(--ts);stroke-width:1.6}
+.state.new{fill:var(--new-soft);stroke:var(--new);stroke-width:1.6} .state.chg{fill:var(--chg-soft);stroke:var(--chg);stroke-width:1.6} .state.rm{stroke:var(--rm);stroke-dasharray:5 4}
+.dot{fill:var(--ink)} .ring{fill:none;stroke:var(--ink);stroke-width:1.4}
+.crow{fill:none;stroke:var(--ink-2);stroke-width:1.3}
+.crow-o{fill:var(--sheet);stroke:var(--ink-2);stroke-width:1.3}
+.e.new .crow-o{stroke:var(--new)} .e.chg .crow-o{stroke:var(--chg)}
+.t-num{font:600 calc(10.5px * var(--fz)) var(--mono);fill:var(--ink)}
+@media (prefers-reduced-motion:no-preference){html{scroll-behavior:smooth}}
+</style>
+
+<div class="wrap">
+<nav class="index" aria-label="Sheets" id="idx"></nav>
+<main id="sheets"><noscript><p class="err">This drawing set draws itself with JavaScript.</p></noscript></main>
+</div>
+
+<script type="text/plain" id="uml-cur" data-model="__MODEL__">__UML_CUR__</script>
+<script type="text/plain" id="uml-base" data-ref="__BASE_REF__">__UML_BASE__</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/js-yaml/4.1.0/js-yaml.min.js" integrity="sha384-+pxiN6T7yvpryuJmE1gM9PX7yQit15auDb+ZwwvJOd/4be2Cie5/IuVXgQb/S9du" crossorigin="anonymous"></script>
+<script>
+__DELTA_JS__
+</script>
+<script>
+__LAYOUT_JS__
+</script>
+<script>
+(function(){
+const $ = id => document.getElementById(id);
+const esc = s => String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+const f1 = n => (+n).toFixed(1);
+const P = pts => pts.map(p => f1(p[0]) + ',' + f1(p[1])).join(' ');
+const T = (x,y,s,c,a) => `<text x="${f1(x)}" y="${f1(y)}"${c?` class="${c}"`:''}${a&&a!=='start'?` text-anchor="${a}"`:''}>${esc(s)}</text>`;
+const R = (x,y,w,h,c,rx) => `<rect x="${f1(x)}" y="${f1(y)}" width="${f1(w)}" height="${f1(h)}"${rx?` rx="${rx}"`:''} class="${c}"/>`;
+const line = (pts,c) => `<polyline points="${P(pts)}" class="${c||'edge'}"/>`;
+const nm = e => typeof e === 'string' ? e : (e.id || e.name);
+const label = e => typeof e === 'string' ? e : (e.name || e.id);
+const list = v => v == null ? [] : (Array.isArray(v) ? v : [v]);
+const ST = {new:'new', changed:'chg', removed:'rm', '':''};
+const st = it => ST[(it && it.st) || ''];
+const MARK = {new:'+ ', changed:'~ ', removed:'- ', '':''};
+
+/* Text width from the real fonts (canvas), so boxes and labels fit what the browser draws. */
+const ctx = document.createElement('canvas').getContext('2d');
+let FONT = {};
+function fonts(){
+  const cs = getComputedStyle(document.documentElement), v = k => cs.getPropertyValue(k).trim();
+  const z = parseFloat(v('--fz')) || 1, px = n => (n * z).toFixed(2) + 'px';
+  FONT = { name:`600 ${px(13)} ${v('--body')}`, case:`500 ${px(12.5)} ${v('--body')}`, stereo:`italic 400 ${px(10.5)} ${v('--body')}`,
+    note:`400 ${px(10.5)} ${v('--mono')}`, edge:`400 ${px(10.5)} ${v('--mono')}`, col:`400 ${px(11.5)} ${v('--mono')}`, th:`600 ${px(12.5)} ${v('--mono')}`, sys:`700 ${px(15)} ${v('--display')}` };
+}
+const meas = (s,k) => { ctx.font = FONT[k]; return ctx.measureText(String(s)).width; };
+// Balanced wrap: one line when it fits in max, else the two-line split with the shortest longer line.
+function wrap2(s,k,max){
+  s = String(s||''); if(!s) return [];
+  if(meas(s,k) <= max) return [s];
+  const w = s.split(' '); if(w.length < 2) return [s];
+  let best = null, bw = Infinity;
+  for(let i=1;i<w.length;i++){ const a=w.slice(0,i).join(' '), b=w.slice(i).join(' '), m=Math.max(meas(a,k),meas(b,k)); if(m<bw){ bw=m; best=[a,b]; } }
+  return best;
+}
+// Greedy wrap into at most n lines of width max (the last line takes the rest). A word wider than max
+// breaks after its last fitting : / . - _ (else mid-word) and the pieces join without a space.
+function wrapN(s,k,max,n){
+  const words=[];
+  String(s||'').split(' ').filter(Boolean).forEach(w=>{
+    let rest=w, glue=false;
+    while(meas(rest,k)>max&&rest.length>1){
+      let cut=0, fit=1;
+      for(let i=1;i<=rest.length&&meas(rest.slice(0,i),k)<=max;i++){ fit=i; if(/[:\/.\-_]/.test(rest[i-1])) cut=i; }
+      cut=cut||fit; words.push({t:rest.slice(0,cut),glue}); rest=rest.slice(cut); glue=true;
+    }
+    words.push({t:rest,glue});
+  });
+  const out=[]; let cur='';
+  words.forEach(w=>{ const nx=cur?cur+(w.glue?'':' ')+w.t:w.t; if(cur&&meas(nx,k)>max&&out.length<n-1){ out.push(cur); cur=w.t; } else cur=nx; });
+  if(cur) out.push(cur);
+  return out;
+}
+const linesW = (ls,k) => Math.max(0,...ls.map(l=>meas(l,k)));
+const edgeLabel = (s,max) => { const lines = wrap2(s,'edge',max||170); return { lines, lw: Math.ceil(linesW(lines,'edge')) }; };
+const labelSvg = r => r.label ? r.label.lines.map((l,i)=>T(r.label.x, r.label.y+10+i*13, l, 't-edge', r.label.a)).join('') : '';
+
+function tip(p,q,type){
+  const dx=q[0]-p[0], dy=q[1]-p[1], L=Math.hypot(dx,dy)||1, ux=dx/L, uy=dy/L, nx=-uy, ny=ux;
+  const at=(d,w)=>[q[0]-ux*d+nx*w, q[1]-uy*d+ny*w];
+  if(type==='open') return `<polyline points="${P([at(10,5),q,at(10,-5)])}" class="hd-open"/>`;
+  if(type==='fill') return `<polygon points="${P([at(10,4.5),q,at(10,-4.5)])}" class="hd-fill"/>`;
+  if(type==='tri') return `<polygon points="${P([at(14,8),q,at(14,-8)])}" class="hd-hollow"/>`;
+  if(type==='dia') return `<polygon points="${P([q,at(9,5),at(18,0),at(9,-5)])}" class="hd-fill"/>`;
+  return '';
+}
+function arrow(pts,o){
+  o=o||{};
+  let s=line(pts,'edge'+(o.dash?' dash':''));
+  if(o.end) s+=tip(pts[pts.length-2],pts[pts.length-1],o.end);
+  if(o.start) s+=tip(pts[1],pts[0],o.start);
+  return s;
+}
+// A tone is presentation only: a known name becomes a tone-<name> class, anything else is dropped with a sheet warning.
+const TONES=['blue','green','amber','rose','violet','gray'];
+function toneOf(el,warn,what){
+  const t=el&&typeof el==='object'&&!Array.isArray(el)?el.tone:null;
+  if(t==null||t==='') return '';
+  if(TONES.indexOf(String(t))>=0) return String(t);
+  const m=what+': unknown tone "'+t+'", ignored (use '+TONES.join(', ')+')';
+  if(warn.indexOf(m)<0) warn.push(m);
+  return '';
+}
+const TC = t => t?' tone-'+t:'';
+const TG = (t,inner) => t?`<g class="tone-${t}">${inner}</g>`:inner;
+const E = (s,inner,t) => `<g class="e${s?' '+s:''}${TC(t)}">${inner}</g>`;
+// The canvas never draws narrower than 780 px: a small figure gets centered on a wider sheet.
+function svg(W,H,lbl,body){
+  const w=Math.max(Math.ceil(W),780), dx=(w-W)/2;
+  return `<svg viewBox="0 0 ${w} ${Math.ceil(H)}" style="max-width:${w}px" role="img" aria-label="${esc(lbl)}"><g transform="translate(${f1(dx)},0)">${body}</g></svg>`;
+}
+const routeEdges = (L,fn) => L.routes.map(fn).join('');
+
+/* ---------- component ---------- */
+function rComp(d,M,warn){
+  const sp=d.spec, its=M.nodes;
+  // One box size per sheet, wide enough for every name; notes wrap inside it.
+  const BW=Math.min(260,Math.max(170,...its.map(it=>meas(label(it.el),'name')+28)));
+  const notes=its.map(it=>it.el.note?wrapN(it.el.note,'note',BW-16,3):[]);
+  const BH=Math.max(...its.map((it,i)=>16+(it.el.kind==='ext'?14:0)+16+notes[i].length*13+10),52);
+  const laneOf=e=>e.lane||e.group;
+  const laneNames={}, order=[];
+  list(sp.lanes).forEach(l=>{ const id=typeof l==='string'?l:l.id; laneNames[id]=typeof l==='string'?l:(l.name||l.id); order.push(id); });
+  its.forEach(it=>{ const l=laneOf(it.el); if(l&&order.indexOf(l)<0){ order.push(l); laneNames[l]=l; } });
+  const laneTone={};
+  list(sp.lanes).forEach(l=>{ if(typeof l!=='string'){ const t=toneOf(l,warn,'lane '+l.id); if(t) laneTone[l.id]=t; } });
+  const nodes=its.map(it=>({id:nm(it.el),w:BW,h:BH,at:it.el.at,lane:laneOf(it.el),it,tone:toneOf(it.el,warn,'node '+nm(it.el))||laneTone[laneOf(it.el)]||''}));
+  const edges=M.edges.map(it=>Object.assign({v:it.el.from,w:it.el.to,via:it.el.via,route:it.el.route,it,tone:toneOf(it.el,warn,'edge '+it.key)},it.el.label?edgeLabel(it.el.label):{lines:[],lw:0}));
+  const lanes=G=>order.map(id=>{
+    const bs=nodes.filter(n=>n.lane===id).map(n=>G.box[n.id]).filter(Boolean);
+    if(!bs.length) return null;
+    const x=Math.min(...bs.map(b=>b.x))-18, y=Math.min(...bs.map(b=>b.y))-18;
+    const x2=Math.max(...bs.map(b=>b.x+b.w))+18, y2=Math.max(...bs.map(b=>b.y+b.h))+30;
+    return {id,x,y,w:x2-x,h:y2-y,name:laneNames[id],tone:laneTone[id]||''};
+  }).filter(Boolean);
+  const L=layoutGraph(nodes,edges,{dir:'LR',lanes:order.length?order:null,warn,gutterW:80,gutterH:56,margin:34,
+    obstacles:G=>lanes(G).map(l=>({x:l.x+6,y:l.y+l.h-20,w:meas(l.name.toUpperCase(),'note')+16,h:16}))});
+  let s=lanes(L.G).map(l=>TG(l.tone,R(l.x,l.y,l.w,l.h,'frame'+TC(l.tone),6)+T(l.x+12,l.y+l.h-9,l.name,'t-lane'))).join('');
+  s+=routeEdges(L,r=>E(st(r.e.it),arrow(r.pts,{dash:!!r.e.it.el.dashed,end:'fill'})+labelSvg(r),r.e.tone));
+  nodes.forEach((n,i)=>{
+    const b=L.box[n.id], e=n.it.el, k=st(n.it), cx=b.x+b.w/2, ext=e.kind==='ext';
+    const ls=notes[its.indexOf(n.it)], body=(ext?14:0)+16+ls.length*13;
+    let y=b.y+(b.h-body)/2;
+    let x=R(b.x,b.y,b.w,b.h,'box'+(ext?' ext':'')+TC(n.tone)+(k?' '+k:''),4);
+    if(e.kind==='store') x+=line([[b.x,b.y+8],[b.x+b.w,b.y+8]],'edge');
+    if(ext){ x+=T(cx,y+10,'«external»','t-stereo','middle'); y+=14; }
+    x+=T(cx,y+12,label(e),'t-name'+(k==='rm'?' t-rm':''),'middle'); y+=16;
+    ls.forEach((l,j)=>{ x+=T(cx,y+11+j*13,l,'t-note','middle'); });
+    s+=`<g${n.tone?` class="tone-${n.tone}"`:''}><title>${esc(nm(e))}</title>${x}</g>`;
+  });
+  return svg(L.W,L.H,'Component diagram: '+d.title,s);
+}
+
+/* ---------- erd ---------- */
+function crow(q,p,k){
+  const dx=p[0]-q[0], dy=p[1]-q[1], L=Math.hypot(dx,dy)||1, ux=dx/L, uy=dy/L, nx=-uy, ny=ux;
+  const at=(d,w)=>[q[0]+ux*d+nx*w, q[1]+uy*d+ny*w];
+  let s='';
+  if(k==='one') s+=line([at(8,-7),at(8,7)],'crow')+line([at(13,-7),at(13,7)],'crow');
+  if(k==='zone') s+=line([at(8,-7),at(8,7)],'crow');
+  if(k==='many'||k==='zmany') s+=line([at(0,-8),at(12,0),at(0,8)],'crow');
+  if(k==='zone'||k==='zmany'){ const c=at(k==='zone'?19:20,0); s+=`<circle cx="${f1(c[0])}" cy="${f1(c[1])}" r="5" class="crow-o"/>`; }
+  return s;
+}
+const CARD = s => { s=String(s).trim(); return s==='1'?'one':s==='0..1'?'zone':/^0\.\./.test(s)?'zmany':'many'; };
+function rErd(d,M,warn){
+  const flag=r=>Array.isArray(r.el)&&r.el[1]!=null?String(r.el[1]):'';
+  const nodes=M.tables.map(it=>{
+    const cols=it.rows.cols;
+    const w=Math.max(220,meas(label(it.el),'th')+28,...cols.map(r=>meas(MARK[r.st||'']+r.key,'col')+meas(flag(r),'note')+44));
+    return {id:nm(it.el),w:Math.ceil(w),h:28+cols.length*20+10,at:it.el.at,it,cols};
+  });
+  const edges=M.rels.map(it=>Object.assign({v:it.el.from,w:it.el.to,via:it.el.via,route:it.el.route,it,tone:toneOf(it.el,warn,'rel '+it.key)},it.el.label?edgeLabel(it.el.label):{lines:[],lw:0}));
+  const L=layoutGraph(nodes,edges,{dir:'LR',warn,gutterW:100,gutterH:56,margin:40,alignTop:true});
+  let s=routeEdges(L,r=>{
+    const cd=String(r.e.it.el.cardinality||'1:N').split(':'), p=r.pts;
+    return E(st(r.e.it),line(p)+crow(p[0],p[1],CARD(cd[0]))+crow(p[p.length-1],p[p.length-2],CARD(cd[1]||'N'))+labelSvg(r),r.e.tone);
+  });
+  nodes.forEach(n=>{
+    const b=L.box[n.id], k=st(n.it);
+    let x=R(b.x,b.y,b.w,b.h,'box'+(k?' '+k:''))+R(b.x,b.y,b.w,28,'th'+(k?' '+k:''))+T(b.x+12,b.y+19,label(n.it.el),'t-th'+(k==='rm'?' t-rm':''));
+    n.cols.forEach((r,i)=>{
+      const yy=b.y+28+20*i, rs=ST[r.st||''];
+      if(rs==='new'||rs==='chg') x+=R(b.x+1,yy+3,b.w-2,20,'row-'+rs);
+      const tc=rs==='rm'||k==='rm'?' t-rm':rs?' t-'+rs:'';
+      x+=T(b.x+12,yy+17,MARK[r.st||'']+r.key,'t-col'+tc);
+      if(flag(r)) x+=T(b.x+b.w-12,yy+17,flag(r),'t-flag'+tc,'end');
+    });
+    s+=x;
+  });
+  return svg(L.W,L.H,'Entity relationship diagram: '+d.title,s);
+}
+
+/* ---------- state ---------- */
+function rState(d,M,warn){
+  const S=M.states;
+  const BW=Math.max(130,...S.map(it=>meas(label(it.el),'name')+40));
+  const nodes=S.map(it=>({id:nm(it.el),w:Math.ceil(BW),h:46,at:it.el.at,it,tone:toneOf(it.el,warn,'state '+nm(it.el))}));
+  const edges=M.transitions.map(it=>{ const t=it.el, ev=t.event||'';
+    const lines=t.guard?wrap2(ev,'edge',200).slice(0,1).concat(['['+t.guard+']']):wrap2(ev,'edge',170);
+    return {v:t.from,w:t.to,via:t.via,route:t.route,it,lines,lw:Math.ceil(linesW(lines,'edge')),tone:toneOf(t,warn,'transition '+it.key)}; });
+  const first=S.find(it=>it.el.initial&&it.st!=='removed')||S.find(it=>it.st!=='removed');
+  const fins=S.filter(it=>it.el.final);
+  const marks=G=>{ const out=[];
+    if(first){ const b=G.box[nm(first.el)]; out.push({x:b.x-54,y:b.y+b.h/2-10,w:50,h:20}); }
+    fins.forEach(it=>{ const b=G.box[nm(it.el)]; out.push({x:b.x+b.w,y:b.y+b.h/2-14,w:54,h:28}); });
+    return out; };
+  const L=layoutGraph(nodes,edges,{dir:'LR',warn,gutterW:110,gutterH:70,margin:70,obstacles:marks});
+  let s=routeEdges(L,r=>E(st(r.e.it),arrow(r.pts,{end:'fill'})+labelSvg(r),r.e.tone));
+  if(first){ const b=L.box[nm(first.el)], y=b.y+b.h/2; s+=`<circle class="dot" cx="${f1(b.x-46)}" cy="${f1(y)}" r="8"/>`+arrow([[b.x-38,y],[b.x,y]],{end:'fill'}); }
+  fins.forEach(it=>{ const b=L.box[nm(it.el)], y=b.y+b.h/2, x=b.x+b.w; s+=E(st(it),arrow([[x,y],[x+30,y]],{end:'fill'})+`<circle class="ring" cx="${f1(x+42)}" cy="${f1(y)}" r="11"/><circle class="dot" cx="${f1(x+42)}" cy="${f1(y)}" r="6"/>`,toneOf(it.el,[],'')); });
+  nodes.forEach(n=>{ const b=L.box[n.id], k=st(n.it);
+    s+=TG(n.tone,R(b.x,b.y,b.w,b.h,'state'+TC(n.tone)+(k?' '+k:''),23)+T(b.x+b.w/2,b.y+b.h/2+5,label(n.it.el),'t-name'+(k==='rm'?' t-rm':''),'middle')); });
+  return svg(L.W+20,L.H,'State machine: '+d.title,s);
+}
+
+/* ---------- class ---------- */
+function rClass(d,M,warn){
+  const rowT=r=>MARK[r.st||'']+(Array.isArray(r.el)?r.el[0]:String(r.el));
+  const nodes=M.classes.map(it=>{
+    const c=it.el, attrs=it.rows.attrs, ops=it.rows.ops, nameH=c.stereotype?44:32;
+    const w=Math.max(170,meas(label(c),'name')+32,...attrs.concat(ops).map(r=>meas(rowT(r),'col')+24));
+    return {id:nm(c),w:Math.ceil(w),h:nameH+(attrs.length?attrs.length*18+10:0)+ops.length*18+10,at:c.at,it,nameH,attrs,ops};
+  });
+  const edges=M.relations.map(it=>Object.assign({v:it.el.from,w:it.el.to,via:it.el.via,route:it.el.route,it,tone:toneOf(it.el,warn,'relation '+it.key)},it.el.label?edgeLabel(it.el.label):{lines:[],lw:0}));
+  const L=layoutGraph(nodes,edges,{dir:'TB',warn,gutterW:90,gutterH:70,margin:40,alignTop:true});
+  let s=routeEdges(L,r=>{
+    const el=r.e.it.el, k=el.kind||'assoc', p=r.pts;
+    const o=k==='comp'?{start:'dia',end:'open'}:k==='realize'?{dash:true,end:'tri'}:k==='dep'?{dash:true,end:'open'}:{end:'open'};
+    let x=arrow(p,o)+labelSvg(r);
+    const mu=list(el.mult), off=(a,b,dd)=>{ const dx=b[0]-a[0], dy=b[1]-a[1], l=Math.hypot(dx,dy)||1; return [a[0]+dx/l*dd-dy/l*10, a[1]+dy/l*dd+dx/l*10+4]; };
+    if(mu[0]!=null){ const q=off(p[0],p[1],k==='comp'?28:14); x+=T(q[0],q[1],mu[0],'t-edge','middle'); }
+    if(mu[1]!=null){ const q=off(p[p.length-1],p[p.length-2],20); x+=T(q[0],q[1],mu[1],'t-edge','middle'); }
+    return E(st(r.e.it),x,r.e.tone);
+  });
+  nodes.forEach(n=>{
+    const b=L.box[n.id], c=n.it.el, k=st(n.it), cx=b.x+b.w/2;
+    let x=R(b.x,b.y,b.w,b.h,'box'+(k?' '+k:''),3);
+    if(c.stereotype) x+=T(cx,b.y+16,'«'+c.stereotype+'»','t-stereo','middle');
+    x+=T(cx,b.y+n.nameH-11,label(c),'t-name'+(k==='rm'?' t-rm':''),'middle')+line([[b.x,b.y+n.nameH],[b.x+b.w,b.y+n.nameH]]);
+    let yy=b.y+n.nameH;
+    const row=(r,i,cl)=>{ const rs=ST[r.st||'']; return T(b.x+10,yy+18+i*18,rowT(r),cl+(rs?' t-'+rs:'')); };
+    if(n.attrs.length){ n.attrs.forEach((r,i)=>{ x+=row(r,i,'t-col'); }); yy+=n.attrs.length*18+10; x+=line([[b.x,yy],[b.x+b.w,yy]]); }
+    n.ops.forEach((r,i)=>{ x+=row(r,i,'t-ops'); });
+    s+=x;
+  });
+  return svg(L.W,L.H,'UML class diagram: '+d.title,s);
+}
+
+/* ---------- use case ---------- */
+function rUse(d,M,warn){
+  const sp=d.spec, A=M.actors, C=M.cases;
+  const amap={}, atone={}; A.forEach(it=>{ amap[nm(it.el)]=it; atone[nm(it.el)]=toneOf(it.el,warn,'actor '+nm(it.el)); });
+  const withOnly=id=>!C.some(it=>list(it.el.actor).indexOf(id)>=0)&&C.some(it=>list(it.el.with).indexOf(id)>=0);
+  const side=it=>{ const a=it.el; if(a.side==='left'||a.side==='right') return a.side; return (a.kind&&a.kind!=='human')||withOnly(nm(a))?'right':'left'; };
+  const RX=Math.ceil(Math.max(100,...C.map(it=>meas(label(it.el),'case')/2+22)));
+  // Fallback cells: cases of left actors fill column 0, grouped by actor in model order; every other case goes to
+  // column 1, on the row of the case that includes or extends it when that row is free.
+  const used={}, K=(c,r)=>c+','+r, cellOf={};
+  C.forEach(it=>{ if(isCell(it.el.at)){ used[K(...it.el.at)]=1; cellOf[nm(it.el)]=it.el.at; } });
+  const leftCase=it=>{ const p=list(it.el.actor)[0]; return !!(p&&amap[p]&&side(amap[p])==='left'); };
+  const put=(it,col,want)=>{ let r=want; while(used[K(col,r)]) r++; cellOf[nm(it.el)]=[col,r]; used[K(col,r)]=1; };
+  A.forEach(a=>C.forEach(it=>{ if(!cellOf[nm(it.el)]&&leftCase(it)&&list(it.el.actor)[0]===nm(a.el)) put(it,0,0); }));
+  C.forEach(it=>{
+    if(cellOf[nm(it.el)]) return;
+    const id=nm(it.el), src=C.find(o=>cellOf[nm(o.el)]&&(list(o.el.include).concat(list(o.el.extend)).indexOf(id)>=0||list(it.el.extend).indexOf(nm(o.el))>=0));
+    put(it,1,src?cellOf[nm(src.el)][1]:0);
+  });
+  const nodes=C.map(it=>({id:nm(it.el),w:RX*2,h:44,at:isCell(it.el.at)?it.el.at:cellOf[nm(it.el)],it,tone:toneOf(it.el,warn,'case '+nm(it.el))}));
+  const edges=[];
+  C.forEach(it=>{ const c=it.el, s=it.st==='removed'?'removed':it.st;
+    list(c.include).forEach(x=>edges.push({v:nm(c),w:x,lines:['«include»'],lw:Math.ceil(meas('«include»','edge')),it:{st:s}}));
+    list(c.extend).forEach(x=>edges.push({v:nm(c),w:x,lines:['«extend»'],lw:Math.ceil(meas('«extend»','edge')),it:{st:s}}));
+  });
+  const gutterRows={};
+  list(sp.bands).forEach((band,i)=>{ if(i) gutterRows[+list(band.rows)[0]||0]=64; });
+  const L=layoutGraph(nodes,edges,{dir:'LR',warn,gutterW:110,gutterH:28,margin:30,gutterRows});
+  const lefts=A.filter(it=>side(it)==='left'), rights=A.filter(it=>side(it)==='right');
+  const AB=Math.ceil(Math.max(124,...A.filter(it=>(it.el.kind||'human')!=='human').map(it=>meas(label(it.el),'name')+24))), hb=AB/2;
+  const AW=Math.max(150,AB), ox=lefts.length?AW+40:30, oy=78, bx=ox-10, by=20, bw=L.W+20, bh=oy-by+L.H+10;
+  const cb=id=>{ const b=L.box[id]; return b&&{id, cx:ox+b.x+b.w/2, cy:oy+b.y+b.h/2, rx:b.w/2}; };
+  let s=`<rect class="boundary" x="${bx}" y="${by}" width="${f1(bw)}" height="${f1(bh)}" rx="14"/>`;
+  if(sp.system){ const t=wrap2(sp.system,'sys',bw-40); s+=T(bx+18,by+26,t[0],'t-sys'); if(t[1]) s+=T(bx+18,by+44,t[1],'t-note'); }
+  list(sp.bands).forEach((band,i)=>{
+    const rows=list(band.rows), r0=+rows[0]||0;
+    if(i>0) s+=line([[bx,oy+L.G.gy(r0)],[bx+bw,oy+L.G.gy(r0)]],'band');
+    s+=T(bx+14,oy+L.G.gy(r0)+(i?14:6),band.name||'','t-lane');
+  });
+  // Actors: centered on their cases, then pushed apart so none overlap.
+  const placeSide=(arr,isLeft)=>{
+    const ys=arr.map(it=>{ const id=nm(it.el), cs=C.filter(c=>list(c.el.actor).concat(list(c.el.with)).indexOf(id)>=0).map(c=>cb(nm(c.el))).filter(Boolean);
+      return {it,y:cs.length?cs.reduce((a,c)=>a+c.cy,0)/cs.length:oy+40,cs}; });
+    ys.sort((a,b)=>a.y-b.y);
+    let last=-Infinity; ys.forEach(o=>{ o.y=Math.max(o.y,last+96,oy+20); last=o.y; });
+    return ys.map(o=>Object.assign(o,{x:isLeft?ox-AW/2-30:bx+bw+AW/2+10,left:isLeft}));
+  };
+  const placed=placeSide(lefts,true).concat(placeSide(rights,false));
+  let H=by+bh+20;
+  // An actor line that would cut through another case runs along the row gutter above its case instead.
+  const ells=nodes.map(n=>Object.assign({id:n.id},cb(n.id)));
+  const cuts=(p,q,id)=>ells.some(e=>e.id!==id&&Array.from({length:24},(_,i)=>i/23).some(t=>{ const x=p[0]+(q[0]-p[0])*t, y=p[1]+(q[1]-p[1])*t; return ((x-e.cx)/e.rx)**2+((y-e.cy)/22)**2<1.05; }));
+  const col0=ox+L.G.cx[0], colN=ox+L.G.cx[L.G.nc-1]+L.G.cw[L.G.nc-1];
+  placed.forEach(o=>{
+    const a=o.it.el, k=st(o.it), human=(a.kind||'human')==='human';
+    o.cs.forEach(c=>{ const tx=o.left?c.cx-c.rx:c.cx+c.rx, sx=o.left?o.x+(human?18:hb):o.x-(human?18:hb), p=[sx,o.y-(human?10:0)];
+      let pts=[p,[tx,c.cy]];
+      if(cuts(p,[tx,c.cy],c.id)){ const yg=oy+L.G.gy(L.cell[c.id][1])-8, xe=o.left?col0-14:colN+14; pts=[p,[xe,yg],[c.cx,yg],[c.cx,c.cy-22]]; }
+      s+=E(k==='rm'?'rm':(k==='new'?'new':''),line(pts),atone[nm(a)]); });
+    const at=atone[nm(a)];
+    if(human){ s+=TG(at,`<g class="actor${TC(at)}${k?' '+k:''}" transform="translate(${f1(o.x)},${f1(o.y)})"><circle cx="0" cy="-30" r="9"/><line x1="0" y1="-21" x2="0" y2="6"/><line x1="-15" y1="-12" x2="15" y2="-12"/><line x1="0" y1="6" x2="-12" y2="28"/><line x1="0" y1="6" x2="12" y2="28"/></g>`+T(o.x,o.y+46,label(a),'t-name'+(k==='rm'?' t-rm':''),'middle')); H=Math.max(H,o.y+60); }
+    else { s+=TG(at,R(o.x-hb,o.y-22,AB,44,'box'+(a.kind==='external'?' ext':'')+TC(at)+(k?' '+k:''),4)+T(o.x,o.y-5,a.kind==='external'?'«external»':'«system»','t-stereo','middle')+T(o.x,o.y+11,label(a),'t-name'+(k==='rm'?' t-rm':''),'middle')); H=Math.max(H,o.y+40); }
+  });
+  let inner=routeEdges(L,r=>E(st(r.e.it),arrow(r.pts,{dash:true,end:'open'})+labelSvg(r)));
+  nodes.forEach(n=>{ const b=L.box[n.id], k=st(n.it), cx=b.x+b.w/2, cy=b.y+b.h/2;
+    inner+=`<g${n.tone?` class="tone-${n.tone}"`:''}><title>${esc(nm(n.it.el))}</title><ellipse class="box${TC(n.tone)}${k?' '+k:''}" cx="${f1(cx)}" cy="${f1(cy)}" rx="${f1(b.w/2)}" ry="${f1(b.h/2)}"/>`+T(cx,cy+4,label(n.it.el),'t-case'+(k==='rm'?' t-rm':''),'middle')+`</g>`; });
+  s+=`<g transform="translate(${ox},${oy})">${inner}</g>`;
+  const W=rights.length?bx+bw+AW+30:bx+bw+30;
+  return svg(W,H,'Use case diagram: '+d.title,s);
+}
+
+/* ---------- sequence: evenly spaced lifelines, labels in at most two lines ---------- */
+function rSeq(d,M,warn){
+  const parts=M.participants, idx={}; parts.forEach((p,i)=>idx[nm(p.el)]=i);
+  const msgs=M.messages.filter(it=>{ const ok=it.el.from in idx&&it.el.to in idx; if(!ok) warn.push('message '+it.key+': unknown participant, not drawn'); return ok; });
+  // Two balanced lines; a long unbreakable token (a URL, a DID) splits at : / . so one step cannot widen every gap.
+  const lab=msgs.map((it,i)=>{ const t=(i+1)+' '+(it.el.text||''), ls=wrap2(t,'edge',150);
+    return linesW(ls,'edge')>190?wrapN(t,'edge',Math.max(150,Math.ceil(meas(t,'edge')/2)+12),2):ls; });
+  // Even gaps sized for the labels, capped at 200 px; a longer label spills past its lifelines and the canvas grows to fit.
+  let need=150;
+  msgs.forEach((it,i)=>{ const m=it.el; if(m.from===m.to) return; const span=Math.abs(idx[m.to]-idx[m.from]); need=Math.max(need,(linesW(lab[i],'edge')+28)/span); });
+  const sp=Math.ceil(Math.max(Math.min(need,200),...parts.map(p=>meas(label(p.el),'name')+40)));
+  let lo=0, hi=(parts.length-1)*sp;
+  msgs.forEach((it,i)=>{ const m=it.el; if(m.from===m.to) return; const c=(idx[m.from]+idx[m.to])/2*sp, h=linesW(lab[i],'edge')/2; lo=Math.min(lo,c-h); hi=Math.max(hi,c+h); });
+  const x0=Math.ceil(Math.max(80,sp/2+10,12-lo)), X=i=>x0+i*sp, hw=Math.min(sp-24,Math.max(110,...parts.map(p=>meas(label(p.el),'name')+28)));
+  let y=64, body='', W=Math.max(x0+(parts.length-1)*sp+x0,x0+hi+12);
+  msgs.forEach((it,i)=>{
+    const m=it.el, xa=X(idx[m.from]), xb=X(idx[m.to]), k=m.kind||'call', ls=lab[i];
+    const o=k==='return'?{dash:true,end:'open'}:k==='async'?{end:'open'}:{end:'fill'};
+    let s='';
+    if(m.from===m.to){
+      y+=10;
+      s+=arrow([[xa,y],[xa+26,y],[xa+26,y+16],[xa+2,y+16]],o);
+      ls.forEach((l,j)=>{ s+=T(xa+34,y+10+j*13,l,'t-edge'); });
+      W=Math.max(W,xa+34+linesW(ls,'edge')+16);
+      y+=Math.max(26,ls.length*13+10)+14;
+    } else {
+      y+=ls.length*13+12;
+      ls.forEach((l,j)=>{ s+=T((xa+xb)/2,y-6-(ls.length-1-j)*13,l,'t-edge','middle'); });
+      s+=arrow([[xa,y],[xb,y]],o);
+      y+=14;
+    }
+    body+=E(st(it),s,toneOf(m,warn,'message '+it.key));
+  });
+  const H=y+20;
+  let head='';
+  parts.forEach((p,i)=>{ const x=X(i), k=st(p), pt=toneOf(p.el,warn,'participant '+nm(p.el));
+    head+=line([[x,50],[x,H-8]],'life')+TG(pt,R(x-hw/2,16,hw,34,'box'+TC(pt)+(k?' '+k:''),3)+T(x,38,label(p.el),'t-name'+(k==='rm'?' t-rm':''),'middle')); });
+  return svg(W,H,'Sequence diagram: '+d.title,head+body);
+}
+
+const RENDER={class:rClass,erd:rErd,state:rState,component:rComp,usecase:rUse,sequence:rSeq};
+const TYPE={class:'Class',erd:'Entity relationship',state:'State machine',component:'Component',usecase:'Use case',sequence:'Sequence'};
+const CAPTION={
+  component:'Boxes are deployable parts; frames are lanes. Solid arrows are calls or data flow; dashed arrows are indirect links. Shaded boxes are «external».',
+  erd:'Crow’s feet mark the many side, a circle marks zero or optional, double bars mark exactly one. Rows marked + are new, ~ changed, - removed.',
+  sequence:'Time runs down. Filled arrowheads are calls, dashed arrows are replies, open arrowheads are asynchronous notices.',
+  state:'The filled dot is the start; the ringed dot is the end. Brackets hold a guard condition.',
+  usecase:'Ellipses are use cases inside the system boundary; actors sit outside it. Dashed arrows are «include» and «extend».',
+  class:'Diamonds mark composition, hollow triangles realization, dashed open arrows dependency. Numbers at the ends are multiplicities.'
+};
+const COUNT={component:['Nodes','nodes'],erd:['Tables','tables'],sequence:['Steps','messages'],state:['States','states'],usecase:['Cases','cases'],class:['Classes','classes']};
+
+/* ---------- page ---------- */
+function inline(s){ return esc(s).replace(/`([^`]+)`/g,'<code>$1</code>').replace(/\*\*([^*]+)\*\*/g,'<strong>$1</strong>'); }
+function prose(md){
+  const paras=String(md||'').split(/\n\s*\n/).map(p=>p.trim()).filter(p=>p&&!/^#/.test(p));
+  const cells=l=>l.trim().replace(/^\||\|$/g,'').split('|').map(c=>c.trim());
+  const table=ls=>{ const rows=ls.filter(l=>!/^\s*\|[\s:|-]+\|\s*$/.test(l)).map(cells);
+    return '<div class="tablewrap"><table><thead><tr>'+rows[0].map(c=>'<th>'+inline(c)+'</th>').join('')+'</tr></thead><tbody>'+
+      rows.slice(1).map(r=>'<tr>'+r.map(c=>'<td>'+inline(c)+'</td>').join('')+'</tr>').join('')+'</tbody></table></div>'; };
+  return paras.map(p=>{ const ls=p.split('\n');
+    if(ls.length>1&&ls.every(l=>/^\s*\|/.test(l))) return table(ls);
+    return ls.every(l=>/^\s*[-*] /.test(l)) ? '<ul>'+ls.map(l=>'<li>'+inline(l.replace(/^\s*[-*] /,''))+'</li>').join('')+'</ul>' : '<p>'+inline(ls.join(' '))+'</p>'; }).join('');
+}
+const TAGTXT={new:'new',chg:'changed',rm:'removed'};
+const tag = s => s ? `<span class="tag ${s}">${TAGTXT[s]}</span>` : '';
+const sid = id => 'd-'+String(id).replace(/[^A-Za-z0-9_-]/g,'_');
+const pad = n => String(n).padStart(2,'0');
+const dl = rows => '<dl>'+rows.map(r=>`<div><dt>${esc(r[0])}</dt><dd>${r[1]}</dd></div>`).join('')+'</dl>';
+
+function main(){
+  const curEl=$('uml-cur'), baseEl=$('uml-base'), ref=baseEl.dataset.ref;
+  const out=$('sheets');
+  if(!window.jsyaml){ out.innerHTML='<p class="err">Could not load js-yaml from cdnjs.cloudflare.com.</p>'; return; }
+  const cur=parseModel(curEl.textContent,jsyaml.load);
+  const base=ref?parseModel(baseEl.textContent,jsyaml.load):null;
+  const delta=diffModels(base,cur);
+  const title=cur.title||'System design', rev=cur.rev;
+  const cnt={new:0,changed:0,removed:0}; delta.list.forEach(x=>cnt[x.st]++);
+  const sheets=[];
+  const errs=cur.errors.map(e=>'current: '+e).concat(base?base.errors.map(e=>'base: '+e):[]);
+  if(errs.length) sheets.push({id:'errors',nav:'Errors',lvl:'Errors',title:'Model errors',facts:[],body:`<p class="err">${esc(errs.join('\n'))}</p>`});
+  delta.sheets.forEach(sh=>{
+    const d=sh.d, warn=[], s=ST[sh.st];
+    let fig;
+    try{ fig=RENDER[d.type](d,sh.merged,warn); }catch(e){ fig=''; warn.push('render failed: '+e.message); }
+    const mine=delta.list.filter(x=>x.diagram===d.id&&x.kind!=='diagram');
+    const review=d.review.length?`<div><h3>Check here</h3><ul>${d.review.map(r=>`<li>${inline(r)}</li>`).join('')}</ul></div>`:'';
+    const changes=mine.length?`<div><h3>Changes</h3><ul class="delta">${mine.map(x=>`<li>${tag(ST[x.st])}<span><code>${esc(x.kind+' '+x.key)}</code>${x.name&&x.name!==x.key?' '+esc(x.name):''}${x.detail.length?' <code>'+esc(x.detail.join(', '))+'</code>':''}</span></li>`).join('')}</ul></div>`:'';
+    const c=COUNT[d.type], n=(sh.merged[c[1]]||[]).filter(it=>it.st!=='removed').length;
+    sheets.push({id:sid(d.id),nav:d.title,lvl:(d.level?d.level+' · ':'')+TYPE[d.type],title:d.title,st:s,
+      facts:[[c[0],String(n)]],
+      body:(d.note.trim()?`<div class="note">${prose(d.note)}</div>`:'')+
+        (warn.length?`<p class="err">${esc(warn.join('\n'))}</p>`:'')+
+        `<figure><div class="canvas">${fig}</div><figcaption>${d.caption?esc(String(d.caption)):CAPTION[d.type]}</figcaption></figure>`+
+        (review||changes?`<div class="review">${review}${changes}</div>`:'<div style="height:24px"></div>')});
+  });
+  cur.sections.forEach((s,i)=>sheets.push({id:'prose-'+i,nav:s.title,lvl:'Notes',title:s.title,facts:[],body:`<div class="note" style="padding-bottom:24px">${prose(s.body)}</div>`}));
+  const N=sheets.length;
+  const facts=[['Source',`<code>${esc(curEl.dataset.model)}</code>`],['Base',ref?`<code>${esc(ref)}</code>`:'none'],['Sheets',String(N)]];
+  if(rev) facts.unshift(['Revision',esc(rev)]);
+  if(ref) facts.push(['Delta',`${cnt.new} new, ${cnt.changed} changed, ${cnt.removed} removed`]);
+  const cover=`<section class="cover" id="cover"><div><div class="lvl">System design drawing set${rev?' · Rev '+esc(rev):''}</div><h1>${esc(title)}</h1></div>`+
+    (cur.intro?`<div class="dek">${prose(cur.intro)}</div>`:'')+
+    `<dl class="facts">${facts.map(f=>`<div><dt>${esc(f[0])}</dt><dd>${f[1]}</dd></div>`).join('')}</dl>`+
+    `<div class="legend" aria-label="Legend"><span><i class="sw new"></i>new</span><span><i class="sw chg"></i>changed</span><span><i class="sw rm"></i>removed (struck through)</span><span><i class="sw ext"></i>«external» system</span><span><i class="sw"></i>unchanged</span></div>`+
+    (cur.decided.length?`<div class="ask"><h2>Decided${rev?' in rev '+esc(rev):''}</h2><ol>${cur.decided.map(x=>`<li>${inline(x)}</li>`).join('')}</ol></div>`:'')+`</section>`;
+  $('idx').innerHTML=`<div class="k">Drawing set${rev?' · Rev '+esc(rev):''}</div><a href="#cover"><span class="no">00</span><span>Cover</span><span></span></a>`+
+    sheets.map((s,i)=>`<a href="#${s.id}"><span class="no">${pad(i+1)}</span><span>${esc(s.nav)}</span>${tag(s.st)||'<span></span>'}</a>`).join('');
+  out.innerHTML=cover+sheets.map((s,i)=>{
+    const meta=[['Sheet',`${pad(i+1)} / ${pad(N)}`]].concat(rev?[['Rev',esc(rev)]]:[],s.facts.map(f=>[f[0],esc(f[1])]),[['Delta',ref?(tag(s.st)||'<span class="tag same">none</span>'):'no base']]);
+    return `<section class="sheet${s.st==='rm'?' s-rm':''}" id="${s.id}"><header class="tb"><div class="title"><div class="lvl">${esc(s.lvl)}</div><h2>${esc(s.title)}</h2></div>${dl(meta)}</header>${s.body}</section>`;
+  }).join('');
+  const links=[...document.querySelectorAll('.index a')];
+  if('IntersectionObserver' in window){
+    const io=new IntersectionObserver(es=>{ es.forEach(en=>{ if(en.isIntersecting) links.forEach(a=>a.classList.toggle('cur',a.hash==='#'+en.target.id)); }); },{rootMargin:'-40% 0px -55% 0px'});
+    document.querySelectorAll('section.sheet,section.cover').forEach(s=>io.observe(s));
+  }
+}
+const run=()=>{ try{ main(); }catch(e){ $('sheets').innerHTML='<p class="err">'+esc(e.stack||e)+'</p>'; } };
+// Measure with the web fonts once they load; draw anyway after 3 s (offline, blocked fonts).
+fonts();
+const load=document.fonts&&document.fonts.load?Promise.all(Object.values(FONT).map(f=>document.fonts.load(f).catch(()=>0))):Promise.resolve();
+Promise.race([load,new Promise(r=>setTimeout(r,3000))]).then(run);
+})();
+</script>
