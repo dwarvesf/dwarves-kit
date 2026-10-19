@@ -19,6 +19,10 @@ notes cell, so the adapter keeps no state file and a run is a pure function of
 EVERYTHING the Task Board hands over is untrusted. Title and notes alike are
 neutralized and carried inside a nonce-delimited fence; see `neutralize` and
 `fence` for what each defanged token class would otherwise buy an attacker.
+
+The page BODY (the block children) is the longest untrusted field, so it never
+rides the board row, which must stay one line. `expand_body` fetches it when a
+spoke creates the task from the row, and splices it into the row's fence.
 """
 
 import json
@@ -47,6 +51,10 @@ UNTITLED = "(untitled Notion task)"
 TITLE_CAP = 120     # board item cell; the full title rides inside the fence
 NOTES_CAP = 2000    # one Notion Notes property can be far larger than a row
 MAX_QUERY_PAGES = 20  # runaway guard, not a business limit: 100 rows per page
+PAGE_BODY_CAP = 8000  # chars of page body a spoke task carries
+MAX_BLOCK_CALLS = 30  # runaway guard on block-children reads for one page
+PAGE_BODY_LABEL = "Page body:"
+PAGE_BODY_UNAVAILABLE = "(page body unavailable)"
 
 DEFAULT_PROPS = {"title": "Task", "status": "Status", "notes": "Notes",
                  "queue": "Agent Queue"}
@@ -73,8 +81,12 @@ def _run_ntn(args: list, data: dict | None = None):
     if data is not None:
         cmd += ["-d", "@-"]
         stdin = json.dumps(data)
-    r = subprocess.run(cmd, input=stdin, capture_output=True, text=True,
-                       timeout=120)
+    # A call with no body gets /dev/null: ntn reads a piped stdin as a request
+    # body, which would turn a read into a write.
+    feed = {"input": stdin} if stdin is not None \
+        else {"stdin": subprocess.DEVNULL}
+    r = subprocess.run(cmd, capture_output=True, text=True, timeout=120,
+                       **feed)
     if r.returncode != 0:
         raise SystemExit(
             f"ntn {' '.join(args[:3])} failed: {r.stderr.strip()[:500]}")
@@ -136,6 +148,94 @@ def fence(title: str, notes: str, nonce: str | None = None) -> str:
         f"notes: {safe(notes, NOTES_CAP)}",
         f"--- END {SENTINEL} [{nonce}] ---",
     ])
+
+
+# --- page body (spoke-side, fetched when a task is created) ---------------
+
+# Block types whose text is the page's prose. Anything else (images, embeds,
+# tables, child pages, databases) carries none and is skipped, children and all.
+_TEXT_BLOCKS = {"paragraph": "", "heading_1": "", "heading_2": "",
+                "heading_3": "", "bulleted_list_item": "- ",
+                "numbered_list_item": "- ", "callout": "", "quote": "> "}
+_PAGE_ID = re.compile(re.escape(MARKER_PREFIX) + r"([0-9a-f]{32})")
+_FENCE_END = re.compile(
+    r"--- END " + re.escape(SENTINEL) + r" \[[0-9a-f]{8}\] ---")
+
+
+def _block_line(block: dict) -> str:
+    kind = block.get("type")
+    data = block.get(kind) or {}
+    text = _plain(data.get("rich_text"))
+    if not text:
+        return ""
+    if kind == "to_do":
+        return f"[{'x' if data.get('checked') else ' '}] {text}"
+    return _TEXT_BLOCKS[kind] + text if kind in _TEXT_BLOCKS else ""
+
+
+def fetch_page_body(page_id: str, runner=_run_ntn) -> str:
+    """Plain text of a page's blocks: paginated, one level of nesting. Stops
+    reading once there is more than `PAGE_BODY_CAP` of it, because the caller
+    clips there anyway. Raises on any transport failure; the caller decides
+    what a missing body means."""
+    lines: list[str] = []
+    state = {"calls": 0, "size": 0}
+
+    def full() -> bool:
+        return (state["size"] > PAGE_BODY_CAP
+                or state["calls"] >= MAX_BLOCK_CALLS)
+
+    def walk(block_id: str, indent: str, nested: bool) -> None:
+        cursor = None
+        while not full():
+            args = ["api", f"v1/blocks/{block_id}/children", "page_size==100"]
+            if cursor:
+                args.append(f"start_cursor=={cursor}")
+            state["calls"] += 1
+            resp = runner(args)
+            for block in resp.get("results", []):
+                line = _block_line(block)
+                if not line:
+                    continue
+                lines.append(indent + line)
+                state["size"] += len(line) + 1
+                if not nested and block.get("has_children") and not full():
+                    walk(block["id"], indent + "  ", True)
+            nxt = resp.get("next_cursor")
+            if not resp.get("has_more") or not nxt or nxt == cursor:
+                return
+            cursor = nxt
+
+    walk(page_id, "", False)
+    return "\n".join(lines)
+
+
+def expand_body(body: str, runner=_run_ntn) -> str:
+    """Splice the page body into an intake row's fence, for the spoke that
+    creates a task from that row.
+
+    The board row stays one line, so the page body is fetched here, at create,
+    and never stored on the board. A body with no intake marker or no fence
+    closer is not ours and comes back untouched, with no Notion call. The text
+    goes through `safe` like every other untrusted field. A failed read keeps
+    the row's own body and says so inside the fence, so the task is created
+    either way."""
+    page = _PAGE_ID.search(body)
+    ends = list(_FENCE_END.finditer(body))
+    if not page or len(ends) != 1:
+        return body
+    try:
+        text = fetch_page_body(page.group(1), runner)
+    except (Exception, SystemExit) as exc:
+        print(f"  · note      {NotionTaskBoardPullSource.name}: page body "
+              f"fetch failed for {page.group(1)}: {str(exc)[:200]}")
+        text = PAGE_BODY_UNAVAILABLE
+    else:
+        if not text.strip():
+            return body
+        text = safe(text, PAGE_BODY_CAP)
+    end = ends[0].start()
+    return f"{body[:end]}{PAGE_BODY_LABEL}\n{text}\n{body[end:]}"
 
 
 class NotionTaskBoardPullSource:

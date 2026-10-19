@@ -41,7 +41,7 @@ from sources.notion import NotionSource  # noqa: E402
 from sources.notion_taskboard import (NotionTaskBoardSource,  # noqa: E402
                                       parse_map)
 from sources.notion_taskboard_pull import (  # noqa: E402
-    NotionTaskBoardPullSource)
+    NotionTaskBoardPullSource, expand_body)
 from sources.reminders import RemindersSource  # noqa: E402
 
 LEGACY_REMINDERS_STATE = (Path.home() / ".cache" / "backlog-reminders-sync"
@@ -363,7 +363,8 @@ def build_source(name: str, args):
         return HermesSource(args.hermes_target,
                             args.hermes_home, board=args.hermes_board,
                             assignee=args.hermes_assignee,
-                            workspace=args.hermes_workspace)
+                            workspace=args.hermes_workspace,
+                            body_expander=expand_body)
     if name == "multica":
         missing = [f for f, v in (("multica_url", args.multica_url),
                                   ("multica_workspace", args.multica_workspace),
