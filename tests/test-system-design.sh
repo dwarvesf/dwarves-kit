@@ -28,7 +28,7 @@ chk "build exits 0 on the marketplace fixture with a base file" "$?"
 chk "model title is non-empty" "$([ -n "$title" ]; echo $?)"
 chk "output contains the model title" "$(grep -qF -- "$title" "$OUT" 2>/dev/null; echo $?)"
 chk "output embeds the base model" "$(grep -qF 'id="uml-base"' "$OUT" 2>/dev/null; echo $?)"
-chk "no build placeholder survives" "$(grep -q '__UML_\|__DELTA_JS__\|__LAYOUT_JS__\|__MODEL__\|__BASE_REF__\|__TITLE__' "$OUT" 2>/dev/null && echo 1 || echo 0)"
+chk "no build placeholder survives" "$([ -s "$OUT" ] && ! grep -q '__UML_\|__DELTA_JS__\|__LAYOUT_JS__\|__MODEL__\|__BASE_REF__\|__TITLE__' "$OUT"; echo $?)"
 
 echo "== refusals =="
 BAD="$TMPD/bad.md"
