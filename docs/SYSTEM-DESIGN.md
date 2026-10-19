@@ -12,7 +12,7 @@ decided:
 
 The kit is six clusters of bash, Python and prose commands that meet at a few shared stores. The spine (lane commands and their agents) moves one unit of work from intake to land. Gates and ledgers record and enforce what the spine did. Execution planes run many sessions at once. The board and signal path carries work items and proposals. Session and knowledge reads transcripts and distills them. Hooks wire all of it to Claude Code events and run the audit loops.
 
-This model is a backfill. It maps the kit as the code stands on master, from a read-only pass with `path:line` evidence, spot-checked against the code. The planned workset module is the only amber element. Cluster colors hold on every sheet: spine blue, gates rose, planes violet, board green, hooks gray, session plain. Boxes marked «external» belong to another cluster or sit outside the kit.
+This model is a backfill. It maps the kit as the code stands on master, from a read-only pass with `path:line` evidence, spot-checked against the code. Amber marks planned work: the workset module. Cluster colors hold on every sheet: spine blue, gates rose, planes violet, board green, hooks gray, session plain. Boxes marked «external» belong to another cluster or sit outside the kit.
 
 ## Use cases
 
@@ -358,6 +358,37 @@ edges:
   - {from: watch, to: board, label: queue-rows}
   - {from: queue, to: journal, label: "appends verdict, no-delta"}
   - {from: queue, to: tmux, label: send-keys /goal}
+```
+
+## Which plane to reach for
+
+The side-by-side table from `docs/execution-planes.md`, drawn as a sheet, plus `/kit:dispatch`, which that doc leaves out. FORMAT.md has no table type, so this borrows the ERD: each box is one plane and each row is an attribute with its value. The isolation gaps it shows for the queue and the serial orchestrator are accepted trade-offs (see Risks), because neither path runs today.
+
+```uml
+id: planes-compare
+type: erd
+title: The planes side by side
+level: L2
+caption: "Borrowed ERD: each box is one plane, each row an attribute and its value, read across boxes like table columns. There are no links: the boxes stand side by side."
+review:
+  - "`docs/execution-planes.md` counts the board as a plane and leaves out `/kit:dispatch`; c-planes counts dispatch as one of four engines and the board as outside. Which set of four is canonical, so the doc and this sheet agree?"
+  - "The queue ran 10 rows ever, all on the Air, none in the last month. Keep it as a plane beside the orchestrator, or retire it and note the live-login auth as the one thing lost?"
+tables:
+  - name: board
+    at: [0, 0]
+    cols: [[unit of work, a BACKLOG row], [runs, no agent], [concurrency, n/a], [auth, n/a], [isolation, n/a], [mutates, "the row's Status"], [ends when, a human sets a state], [stops on, parse-board refuses the token], [reach for, "track work, pick what is next"]]
+  - name: orchestrator
+    at: [1, 0]
+    cols: [[unit of work, a ROADMAP sub-goal], [runs, "claude -p or a vendor CLI"], [concurrency, "a wave, WAVE_CAP 2"], [auth, the host session], [isolation, "wave: worktree; serial: real checkout"], [mutates, the code], [ends when, "every box checked, tier-4 HOLD"], [stops on, "Touches overlap, gate!, merge refused"], [reach for, a plan with dependent steps]]
+  - name: queue
+    at: [2, 0]
+    cols: [[unit of work, a plan.tsv row], [runs, interactive claude in tmux], [concurrency, one row at a time], [auth, "the operator's live login"], [isolation, "none, the real checkout"], [mutates, the code], [ends when, "a verdict; done needs a git delta"], [stops on, "timeout, 2 failures, quarantine"], [reach for, "prepared work, unattended overnight"]]
+  - name: /kit:dispatch
+    at: [0, 1]
+    cols: [[unit of work, a VALIDATED spec with Touches], [runs, "Agent tool workers, background"], [concurrency, "the PARALLEL set, cap 4 by hand"], [auth, the lead session], [isolation, a worktree per worker], [mutates, "the code, on goal/<slug>"], [ends when, "READY branches go to /kit:ship"], [stops on, "REJECT, drift, a lost attempt"], [reach for, "several disjoint specs, now"]]
+  - name: gauntlet
+    at: [1, 1]
+    cols: [[unit of work, a probe card], [runs, claude -p sonnet in docker], [concurrency, one probe per round], [auth, a spend-capped API key], [isolation, a fresh container per round], [mutates, the artifact under test], [ends when, two unaided passes in a row], [stops on, "round cap, severity stops falling"], [reach for, do the docs work for a stranger]]
 ```
 
 ## Board and signal path
@@ -872,6 +903,132 @@ messages:
   - {from: orchestrate, to: ROADMAP, text: "re-read; all checked: tier-4 close, HOLD", kind: call}
 ```
 
+## Overnight queue night
+
+One `#auto` row through one watcher tick and one `queue.sh run`: the row is planned, typed into a live session as `/goal`, polled, and judged against the git delta (`watch-board.sh:247-325`, `queue.sh:605-683`, `queue.sh:1013-1024`). The window opens in the watcher's own checkout, and the protected-path check runs after the run (step 16), on because the watcher passes `--sanitize-prompt` (`watch-board.sh:325`). Running each row in a worktree is an accepted trade-off until the queue runs regularly again (see Risks).
+
+```uml
+id: seq-queue-night
+type: sequence
+title: One overnight queue row, tick to verdict
+level: L3
+review:
+  - "Protected paths are only detected after the run (step 16), and the row runs in the real checkout. Is post-run detection enough while the queue sits idle, with a worktree per row as the reopen fix?"
+  - "The reaper (step 18) can never write `done` because it does not know the slug's repo. Should the plan file record the repo so the reaper can check the delta itself?"
+participants:
+  - {name: watch-board, tone: violet}
+  - {name: parse-board, tone: green}
+  - {name: queue journal}
+  - {name: queue.sh, tone: violet}
+  - {name: git}
+  - {name: tmux}
+  - {name: claude session}
+  - {name: gh}
+messages:
+  - {from: watch-board, to: parse-board, text: "rows: keep queued and #auto", kind: call}
+  - {from: watch-board, to: parse-board, text: "queue-rows: #queue{} token, containment", kind: call}
+  - {from: parse-board, to: watch-board, text: "id, repo_root, pointer", kind: return}
+  - {from: watch-board, to: queue journal, text: "last verdict: skip done, gated", kind: call}
+  - {from: watch-board, to: queue.sh, text: "run plan.tsv --sanitize-prompt (--apply only)", kind: call}
+  - {from: queue.sh, to: git, text: "preflight: clean, default branch; HEAD, tips", kind: call}
+  - {from: queue.sh, to: tmux, text: "new-window -c repo: claude, skip permissions", kind: call}
+  - {from: queue.sh, to: tmux, text: "send-keys /goal <sanitized pointer>, Enter", kind: call}
+  - {from: tmux, to: claude session, text: typed /goal, kind: async}
+  - {from: claude session, to: gh, text: "commit, push, draft PR", kind: call}
+  - {from: claude session, to: queue.sh, text: "<slug>.status EXIT_SIGNAL, or RUNNER_DONE", kind: async}
+  - {from: queue.sh, to: tmux, text: "poll 15s: beat, pane, status, ceiling, timeout", kind: call}
+  - {from: queue.sh, to: tmux, text: kill-window, kind: call}
+  - {from: queue.sh, to: git, text: "delta: HEAD moved or branch tip moved", kind: call}
+  - {from: queue.sh, to: gh, text: "pr list since the window opened", kind: call}
+  - {from: queue.sh, to: git, text: "protected paths, after the run, sanitize on", kind: call}
+  - {from: queue.sh, to: queue journal, text: "done | gated (no-delta) | stalled | error", kind: call}
+  - {from: watch-board, to: queue journal, text: "next tick, reaper: dead beat is gated or stalled", kind: call}
+```
+
+## Dispatch fan-out
+
+`/kit:dispatch` is prose the lead executes (`commands/dispatch.md:19-169`); the scripts it calls are the disjointness gate, the goal registry and the attempt store. A worker that drops its stream is `disconnected`, never failed: the lead resumes the same agent with `SendMessage`, and only the lead declares an attempt `lost` after the grace window (`attempt-state.sh:274-297`). The attempt store has no lock; one lead calls it in sequence, an accepted trade-off (see Risks).
+
+```uml
+id: seq-dispatch
+type: sequence
+title: Dispatch fan-out, disconnect, resume, lost
+level: L3
+review:
+  - "The claim (step 4) comes after the Agent call (step 3) in the prose, which calls it a double-check. Should claim move before the launch, so a REFUSED overlap never starts a worker?"
+  - "Loss is declared by hand only (step 13); nothing times out a silent worker. A watchdog running `lose-attempt` would be a second caller of the store, which reopens the lock trade-off. Worth it?"
+participants:
+  - {name: lead, tone: violet}
+  - {name: dispatch-gate, tone: violet}
+  - {name: goal-registry, tone: violet}
+  - {name: attempt-state, tone: violet}
+  - {name: worker (worktree)}
+  - {name: operator, tone: blue}
+  - {name: /kit:ship, tone: blue}
+messages:
+  - {from: lead, to: dispatch-gate, text: "plan <specs>: Touches disjointness", kind: call}
+  - {from: dispatch-gate, to: lead, text: "PARALLEL, WAIT after, or REJECT", kind: return}
+  - {from: lead, to: worker (worktree), text: "Agent tool, background, worktree", kind: async}
+  - {from: lead, to: goal-registry, text: "claim slug lane touches", kind: call}
+  - {from: goal-registry, to: lead, text: "CLAIMED, or REFUSED on overlap", kind: return}
+  - {from: lead, to: attempt-state, text: "dispatch slug worker-id", kind: call}
+  - {from: worker (worktree), to: goal-registry, text: "switch -c goal/<slug>; log attempts", kind: call}
+  - {from: worker (worktree), to: lead, text: "stream drops, no STATUS line", kind: async}
+  - {from: lead, to: attempt-state, text: "mark-disconnected --grace 120", kind: call}
+  - {from: lead, to: worker (worktree), text: "SendMessage, same agent, never re-dispatch", kind: async}
+  - {from: worker (worktree), to: lead, text: "replies in the window", kind: return}
+  - {from: lead, to: attempt-state, text: "resume: disconnected to running", kind: call}
+  - {from: lead, to: attempt-state, text: "or, window over: lose-attempt, worker excluded", kind: call}
+  - {from: worker (worktree), to: lead, text: "STATUS: READY, or BLOCKED with a line", kind: return}
+  - {from: lead, to: dispatch-gate, text: "drift merge-base goal/<slug> spec", kind: call}
+  - {from: lead, to: attempt-state, text: "commit-result slug attempt branch", kind: call}
+  - {from: lead, to: operator, text: "ask per BLOCKED or FAILED goal", kind: call}
+  - {from: lead, to: /kit:ship, text: "READY, drift-clean branches; human merges", kind: call}
+  - {from: lead, to: goal-registry, text: "release; worktree remove", kind: call}
+```
+
+## Gauntlet round
+
+One gauntlet run: a clean-room probe attempts the outcome contract unaided, the lead scores it, and a separate reviser edits only the artifact before the room respins. The round loop, the cap of 3 and the two-pass rule live in `commands/gauntlet.md:150-236`, prose the lead follows; the scripts only stage, run and persist a room (`tests/gauntlet/cleanroom/run.sh:28-316`). Batch-2 plans no change here.
+
+```uml
+id: seq-gauntlet
+type: sequence
+title: Gauntlet probe, revise, respin
+level: L3
+review:
+  - "No code enforces the round cap or counts two consecutive passes; both are prose the lead follows. Should `stats.sh` refuse a SOLID record that lacks a repeated green round?"
+  - "The probe runs `--dangerously-skip-permissions` with only a 1800 s timeout (step 7, `run-remote.sh:36`). Is the container plus the spend-capped key the whole safety layer, or should the probe also get a turn cap?"
+participants:
+  - {name: operator, tone: blue}
+  - {name: lead, tone: violet}
+  - {name: gate-ledger, tone: rose}
+  - {name: run-remote, tone: violet}
+  - {name: room (run.sh), tone: violet}
+  - {name: probe (docker)}
+  - {name: round record}
+  - {name: reviser}
+messages:
+  - {from: operator, to: lead, text: "card, checker, artifact globs, cap 3", kind: call}
+  - {from: lead, to: gate-ledger, text: outcome gauntlet start, kind: call}
+  - {from: lead, to: lead, text: "Tier 1 suite; any RED is the findings", kind: call}
+  - {from: lead, to: run-remote, text: "persona, row, RUN_OUT", kind: call}
+  - {from: run-remote, to: room (run.sh), text: "git archive HEAD; key read on the runner", kind: call}
+  - {from: room (run.sh), to: room (run.sh), text: "stage tarball, strip the answer key", kind: call}
+  - {from: room (run.sh), to: probe (docker), text: "docker run --rm: claude -p sonnet, CARD.md", kind: async}
+  - {from: probe (docker), to: room (run.sh), text: "transcript, submission, exit code", kind: return}
+  - {from: room (run.sh), to: run-remote, text: "redact key, persist out/ (or SCRUB-REFUSED)", kind: return}
+  - {from: run-remote, to: lead, text: rsync the room back, kind: return}
+  - {from: lead, to: lead, text: "checker, transcript: BLOCKER, MAJOR, MINOR", kind: call}
+  - {from: lead, to: round record, text: "round-N, ROUNDS.md, QL-VERDICT", kind: call}
+  - {from: lead, to: reviser, text: "severity fell, N < cap: edit artifact only", kind: call}
+  - {from: reviser, to: lead, text: revision committed, kind: return}
+  - {from: lead, to: run-remote, text: "respin: fresh room from committed state", kind: call}
+  - {from: lead, to: lead, text: "green: repeat once; two passes = SOLID", kind: call}
+  - {from: lead, to: gate-ledger, text: "outcome end caught=, record gauntlet ran", kind: call}
+  - {from: lead, to: operator, text: "SOLID, REVISE (cap hit) or RECONSIDER", kind: return}
+```
+
 ## Signal to row to ship
 
 The signal path ends at a human: proposers only stage, and promote is the gate into the board. The sweep tick runs on its own schedule and touches rows only through sync and the Hermes mirror.
@@ -1034,6 +1191,76 @@ transitions:
   - {from: cooldown, to: planned, event: cooldown elapsed, via: [[3, 0.55], [0, 0.55]]}
 ```
 
+## Mega-goal sub-goal
+
+One ROADMAP sub-goal as `orchestrate.sh` sees it. The ROADMAP stores only unchecked or checked; every other state is the last event in `.orchestrate/events.log` (`orchestrate.sh:466-553`). A serial run accepts a bare local `[x]` with no `PR #n` (`orchestrate.sh:2795-2830`), and only a `gate` sub-goal is checked against `gh pr view` (`orchestrate.sh:456-463`). The watchdog only alerts on a stall and never kills (`orchestrate.sh:1101-1105`). No `.orchestrate/events.log` exists on the Mini or the Air, so this path has not run there. Pre-flight records `blocked` for a bad `Model:`, `Effort:` or `Harness:`, and for a `gate` or `gate!` sub-goal whose goal file has no `**Branch:**` (`orchestrate.sh:1335-1340`, `orchestrate.sh:2700-2705`). An `auto` sub-goal without the header keeps running (190 of 771 goal files lack it).
+
+```uml
+id: sm-mega-subgoal
+type: state
+title: Mega-goal sub-goal
+level: L4
+review:
+  - "The pre-flight refusal covers `gate` and `gate!` only (`orchestrate.sh:2700`). An `auto` sub-goal without `**Branch:**` still runs and skips START, so telemetry shows lane `?`. Should it at least warn at pre-flight?"
+  - "A serial run accepts a bare local `[x]` with no PR (exit 0 to checked). Is the first serial orchestrator run the right trigger to require gh to show the PR, or should the serial path warn on a box with no `PR #n` now?"
+states:
+  - {name: unchecked, initial: true, at: [0, 1]}
+  - {name: executing, at: [1, 1]}
+  - {name: "gate / gate! hold", at: [1, 0]}
+  - {name: checked, at: [2, 1]}
+  - {name: merged, final: true, at: [3, 2]}
+  - {name: blocked, at: [1, 2]}
+  - {name: tier-4 HOLD, final: true, at: [3, 1]}
+transitions:
+  - {from: unchecked, to: executing, event: "picked: first unchecked, or ready and disjoint"}
+  - {from: unchecked, to: blocked, event: "pre-flight: bad Model, Effort, Harness; gate with no **Branch:**"}
+  - {from: executing, to: "gate / gate! hold", event: "gate: gh pr view finds the PR"}
+  - {from: executing, to: checked, event: "exit 0, box checked"}
+  - {from: executing, to: blocked, event: "exit nonzero, turn cap, box not flipped, no PR"}
+  - {from: "gate / gate! hold", to: checked, event: "human merges, box checked, re-run", via: [[2, 0]]}
+  - {from: checked, to: merged, event: "converge: mega-merge --execute, MERGED", via: [[2, 2]]}
+  - {from: checked, to: tier-4 HOLD, event: "last box: no-orphan sweep, 3 verifiers PASS"}
+  - {from: tier-4 HOLD, to: blocked, event: "close blocked: an orphan or a dissent", via: [[3, 1.6], [1.5, 1.6], [1.5, 2]]}
+  - {from: blocked, to: unchecked, event: "operator re-runs; box still unchecked"}
+```
+
+## Attempt store
+
+The `/kit:dispatch` flow from `seq-dispatch`, as `attempt-state.sh` records it: a task machine (blue) and an attempt machine per worker (violet), with legal moves listed in `attempt-state.sh:63-75` and anything else refused. The two meet in the verbs: `dispatch` opens a `running` attempt, `lose-attempt` sends the task back to `queued`, and `commit-result` marks it `done`. The store has no lock and relies on the lead calling it in sequence (`attempt-state.sh:26-29`), an accepted trade-off until two callers can hit it at once.
+
+```uml
+id: sm-attempt
+type: state
+title: Task and attempt states
+level: L4
+review:
+  - "A late `commit-result` on a `lost` attempt is refused (no `lost` to `committed` move), so a worker that answers after `lose-attempt` loses its work. Allow that move when the task is still `queued`?"
+  - "`release` deletes the task file outright. Should a `done` record stay until the branch merges, so a re-dispatch of the same slug sees the winner?"
+states:
+  - {name: queued, initial: true, tone: blue, at: [0, 0]}
+  - {name: dispatched, tone: blue, at: [1, 0]}
+  - {name: done, final: true, tone: blue, at: [2, 0]}
+  - {name: task lost, final: true, tone: blue, at: [1, 1]}
+  - {name: running, tone: violet, at: [0, 2]}
+  - {name: disconnected, tone: violet, at: [1, 2]}
+  - {name: attempt lost, final: true, tone: violet, at: [2, 2]}
+  - {name: committed, final: true, tone: violet, at: [0, 3]}
+  - {name: superseded, final: true, tone: violet, at: [1, 3]}
+transitions:
+  - {from: queued, to: dispatched, event: "dispatch: worker not excluded, no live attempt", tone: blue}
+  - {from: dispatched, to: done, event: commit-result, tone: blue}
+  - {from: dispatched, to: queued, event: "lose-attempt, window over", tone: blue, via: [[1, -0.4], [0, -0.4]]}
+  - {from: queued, to: task lost, event: abandon, tone: blue, via: [[0, 1]]}
+  - {from: dispatched, to: task lost, event: abandon, tone: blue}
+  - {from: running, to: disconnected, event: "mark-disconnected, until = now + grace", tone: violet}
+  - {from: disconnected, to: running, event: "resume, until cleared", tone: violet, via: [[1, 1.6], [0, 1.6]]}
+  - {from: disconnected, to: attempt lost, event: "lose-attempt, now > until", tone: violet}
+  - {from: running, to: committed, event: commit-result, tone: violet}
+  - {from: disconnected, to: committed, event: "commit-result, late", tone: violet, route: straight}
+  - {from: running, to: superseded, event: "sibling won, or abandon", tone: violet, via: [[-0.4, 2], [-0.4, 3.6], [1, 3.6]]}
+  - {from: disconnected, to: superseded, event: "sibling won, or abandon", tone: violet}
+```
+
 ## Cross-cutting concepts
 
 - Layered config. One TOML reader, `lib/config/kit-config.sh`, resolves a key from the project `.kit.toml`, then the operator `~/.config/dwarves-kit/kit.toml`, then the kit-root `kit.toml`. The project layer counts only when it is tracked and clean, or when read at a revision with `--at`. Two readers sit on top: `gate-policy.sh` for `[gate]` keys (any reader error means ON) and `lane-data.sh` for `[lane.*]` phases. Vendor enablement, `runner_host`, `probe_key_ref` and `[decide]` are root-only on purpose. `[modules]` decides which hooks run: `lib/config/modules.tsv` maps each hook to its module, and `anchor-root.sh` skips a hook whose module is off (the spine never is).
@@ -1046,11 +1273,9 @@ transitions:
 
 ## Risks and technical debt
 
-Ranked by blast radius, widest first. Open risks come first; accepted trade-offs follow. Closed items live in git and the PRs.
+Ranked by blast radius, widest first. Open risks come first; accepted trade-offs follow. Closed items live in git and the PRs, the latest being the pre-flight refusal of a `gate` sub-goal with no `**Branch:**` (#1010).
 
-- Unsandboxed workers on shared state. Both executors run `--dangerously-skip-permissions`; the queue and the serial orchestrator work in the real checkout, and protected-path writes are detected after the run, only with sanitize on. Trigger: a worker edits outside its scope overnight. Mitigation: sanitize, the XPIA fence, `#queue{}` allow-listing, wave worktrees, the `flip.lock`.
-- Self-reported completion, now narrower. The queue counts `done` only after a HEAD move, a moved local branch tip or an operator PR created since the window opened; otherwise the row is `gated` with reason `no-delta`. The orchestrator still trusts a flipped box plus a `PR #n`, and `attempt-state.sh` has no lock and relies on the lead calling it in sequence. Trigger: a sub-goal claims done with a flipped box and no real PR. Mitigation: the ROADMAP box needs a real `PR #n`; tier-4 close HOLDs for a human.
-- Degrade paths. A vendor harness runs with no turn cap, watchdog or token capture; a failed SPEC reservation lets the worker pick its own number; a goal file with no `**Branch:**` skips START.
+No open risks; accepted trade-offs below carry their reopen triggers.
 
 **Accepted trade-offs**
 
@@ -1060,7 +1285,18 @@ Ranked by blast radius, widest first. Open risks come first; accepted trade-offs
 - Plugin hooks register for every module: one bash start per skipped hook is cheap.
 - Stat-keyed caches: the 2-second window is short and a recheck is cheap.
 - Advisory and unwired parts: advisory by design, and the `bin/` forwarders arrive with the workset fold.
+- Unsandboxed workers on shared state. The queue and the serial orchestrator run `--dangerously-skip-permissions` in the real checkout, and protected-path writes are detected only after the run, with sanitize on (implied by `--from-boards`, and passed by the watcher). Mitigation: sanitize, the XPIA fence, `#queue{}` allow-listing, wave worktrees, the `flip.lock`. The queue ran 10 rows ever, all on the Air, none in the last month, and no `.orchestrate/events.log` exists on the Mini or the Air. Reopen when the queue or the serial path runs regularly again.
+- Self-reported completion on the serial path. A serial sub-goal counts done on its box alone: a bare local `[x]` passes, and only the remote reconcile needs `PR #n` (`orchestrate.sh:2795-2830`). The queue already needs a git delta or a new PR for `done`, and a `gate` sub-goal needs `gh pr view` to find its PR. Reopen on the first serial orchestrator run.
+- `attempt-state.sh` has no lock: one lead calls it in sequence. Reopen when two callers can hit the store at once.
+- Degrade path, vendor harnesses: they run with no turn cap, watchdog or token capture, and no goal file in the estate declares `**Harness:**`. Reopen on the first one that does.
+- Degrade path, an `auto` sub-goal with no `**Branch:**`: it runs without START, so telemetry shows lane `?`; 190 of 771 goal files lack the header. Reopen on the first serial orchestrator run.
+- Degrade path, a failed SPEC reservation: the worker picks its own number. Stopping it was rejected, not deferred: the code documents the reservation as best-effort over a scan-safe fallback (`orchestrate.sh:1342-1348`, `orchestrate.sh:1951-1953`), so stopping would turn a rare duplicate number into a stopped wave.
 
 ## Drift register
 
 All 47 rows of the first drift pass were resolved in #989 to #1003, each either fixed or not applicable. The history is in git (`git log -p -- docs/SYSTEM-DESIGN.md`). New doc-versus-code drift goes in a fresh table here, with the columns Fix, Doc claim, Code reality and Locations.
+
+| Fix | Doc claim | Code reality | Locations |
+|---|---|---|---|
+| open | The ROADMAP checkbox plus a recorded `PR #n` is the only source of truth for done. | A serial run accepts a bare local `[x]` with no `PR #n`; only the remote reconcile and the `gate` hold look for a PR. | `commands/mega.md:163-164`, `lib/queue/orchestrate.sh:2795-2830` |
+| open | Dispatch persists no durability state, by design. | `attempt-state.sh` persists one `<task>.task` file per task under the git common dir until `release`. | `commands/dispatch.md:172`, `lib/goal/attempt-state.sh:103-169` |
