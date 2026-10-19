@@ -208,6 +208,9 @@ echo "=== AC9: dynamic -- the real bug-lane check blocks until debug is recorded
 new_log
 RID4=demo-bug-run
 gl record "$RID4" build ran "fix + failing test green" >/dev/null
+# The kit's own bug lane requires review too; only an operator overlay makes it optional, and a
+# hermetic run (the nightly pins an empty operator config) has no such overlay.
+gl record "$RID4" review ran "diff read, no findings" >/dev/null
 CHECK_OUT5="$(gl check bug "$RID4" 2>&1)"; CHECK_RC5=$?
 assert "check bug blocks on an escalated run (no debug record, exit != 0)" "$([ "$CHECK_RC5" -ne 0 ] && echo 0 || echo 1)"
 case "$CHECK_OUT5" in *"MISSING-GATE: debug"*) md_ok=0 ;; *) md_ok=1 ;; esac
