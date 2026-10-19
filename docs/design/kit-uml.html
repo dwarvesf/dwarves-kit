@@ -170,7 +170,7 @@ decided:
   - "Hooks of an off module are skipped in anchor-root.sh, so a plugin install honors [modules]."
   - "Adopted repos seed lane_gates and proof_of_done on; raw installs stay lenient."
   - "Lowering a run's lane needs --lower --reason; the verdict in the spec must match the run ledger."
-  - "The UML design review sits between design and spec, runs through the external system-design skill, and stays advisory (no gate)."
+  - "The UML design review sits between design and spec, runs through the kit's system-design skill, and stays advisory (no gate)."
 ---
 
 # dwarves-kit
@@ -359,7 +359,7 @@ edges:
 
 ## Spine and lanes
 
-The spine is prose commands plus a few classifiers. `/kit:assign` is the one mutator at intake; every other lane command records its own gate through gate-ledger (only the heaviest writers are drawn). The write agents (builder, fix-agent) are separate from the read-only verifiers on purpose. The brief reaches the spec through a UML design review, run by the external system-design skill. The review is advisory and records no gate.
+The spine is prose commands plus a few classifiers. `/kit:assign` is the one mutator at intake; every other lane command records its own gate through gate-ledger (only the heaviest writers are drawn). The write agents (builder, fix-agent) are separate from the read-only verifiers on purpose. The brief reaches the spec through a UML design review, run by the kit's system-design skill. The review is advisory and records no gate.
 
 ```uml
 id: c-spine
@@ -382,7 +382,7 @@ nodes:
   - {id: start, name: /kit:start, note: read-only next-step detector, lane: plan, at: [0, 2]}
   - {id: assign, name: /kit:assign, note: "row to goal draft, START, claim", lane: plan, at: [1, 2]}
   - {id: think, name: "think, design, prototype", note: Decision Brief, lane: plan, at: [2, 2]}
-  - {id: sysdesign, name: system-design skill, note: "UML sheets, design review", kind: ext, lane: plan, at: [3, 2]}
+  - {id: sysdesign, name: system-design skill, note: "UML sheets, design review", lane: plan, at: [3, 2]}
   - {id: classify, name: classify libs, note: "lane, type, role, significance", lane: plan, at: [0, 3]}
   - {id: grill, name: /kit:grill, note: type-shaped interview, lane: plan, at: [1, 3]}
   - {id: spec, name: "spec, validate, test-plan", note: "SPEC-NNN, 7 reviewers", lane: plan, at: [2, 3]}
