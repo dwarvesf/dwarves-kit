@@ -410,6 +410,14 @@ fence sentinel, a page id, a board id (`next_id` scans the whole board text), a
 `#tag` (it decides which apps the row reaches), and credential shapes. Notes
 clip at 2000 characters and a run intakes at most 25 rows.
 
+The page body (the card's block children) never rides the board row, which must
+stay one line. The `hermes` spoke fetches it when it creates a task from an
+intake row, through `ntn` (paragraph, heading, list, to-do, callout and quote
+text, one level of nesting, paginated), and splices it into the row's fence
+under `Page body:`. It clips at 8000 characters, passes the same defang and
+redaction as the other fields, and freezes with the rest of the card body. A
+failed read still creates the task and the fence says `(page body unavailable)`.
+
 ```toml
 [sync]
 notion_taskboard_pull_db          = "<database_id>"   # tenant id: consumer repo only

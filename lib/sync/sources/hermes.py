@@ -71,7 +71,7 @@ class HermesSource:
     def __init__(self, target: str, home: str,
                  runner=None, board: str | None = None,
                  assignee: str | None = None,
-                 workspace: str | None = None):
+                 workspace: str | None = None, body_expander=None):
         self.target = target
         self.home = home
         self.board = board
@@ -80,6 +80,10 @@ class HermesSource:
         # directory. A single fixed path for all creates would have them
         # overwrite each other's files.
         self.workspace = workspace
+        # Optional `body -> body` hook run on each created card's body. A row
+        # on the board stays one line, so anything longer a card should carry
+        # is fetched here, at create, and frozen like the rest of the body.
+        self.body_expander = body_expander
         self.runner = runner or (lambda s: _ssh_runner(self.target, s))
 
     def _preamble(self) -> str:
@@ -152,6 +156,8 @@ class HermesSource:
             # sync_fields=False freezes these at create, so marking once here
             # never double-wraps on a re-sync.
             title = mark_untrusted_title(title)
+            if self.body_expander:
+                body = self.body_expander(body)
             body = mark_untrusted_body(body)
             lines.append(
                 "{kb} create {t} --body {b}{x} --idempotency-key "
