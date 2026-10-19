@@ -568,13 +568,38 @@ _squash_fallback() {
   return 0
 }
 
+# _remote_default_branch <owner/name> -- the default branch GitHub reports, for a merge by
+# slug where no checkout has an origin/HEAD to read. Empty (exit 1) when the read fails.
+_remote_default_branch() {
+  local d
+  d="$(gh api "repos/$1" --jq .default_branch 2>/dev/null)" || return 1
+  [ -n "$d" ] || return 1
+  printf '%s' "$d"
+}
+
+# _remote_merge_verify <owner/name> <default branch> <merge sha> -- "OK" or a reason. The
+# check a merge by slug can make without a checkout: gh's compare endpoint names the merge
+# base of the merge commit and the default branch, and that base is the merge commit itself
+# exactly when the default branch holds it.
+_remote_merge_verify() {
+  local mb
+  [ -n "$3" ] || { printf 'gh named no merge commit'; return 0; }
+  mb="$(gh api "repos/$1/compare/$3...$2" --jq .merge_base_commit.sha 2>/dev/null)"
+  if [ "$mb" = "$3" ]; then printf 'OK'
+  elif [ -z "$mb" ]; then printf 'the compare read on %s failed' "$2"
+  else printf 'merge commit is not on %s' "$2"; fi
+}
+
 cmd_merge() {
-  local do_apply=0 repo="" count=0 pr_only="" verify="" pr_head=""
+  local do_apply=0 repo="" count=0 pr_only="" verify="" pr_head="" slug=""
   while [ $# -gt 0 ]; do
     case "$1" in
       --apply) do_apply=1; shift ;;
       --no-pull) NO_PULL=1; shift ;;
       --pr) pr_only="${2:-}"; shift 2 ;;
+      --repo) [ $# -ge 2 ] || { echo "wrap.sh merge: --repo needs an <owner>/<name>" >&2; return 64; }
+              slug="$2"; shift 2 ;;
+      --repo=*) slug="${1#--repo=}"; shift ;;
       --with-ci) KIT_WRAP_CI_ON_MERGE=1; shift ;;
       --verify) [ $# -ge 2 ] || { echo "wrap.sh merge: --verify needs a value" >&2; return 64; }
                 verify="$2"; shift 2 ;;
@@ -584,18 +609,38 @@ cmd_merge() {
          count=$(( count + 1 )); repo="$1"; shift ;;
     esac
   done
-  [ "$count" -eq 1 ] || { echo "usage: wrap.sh merge [--apply] [--no-pull] [--pr N] [--with-ci] [--verify <cmd>] <repo>" >&2; return 64; }
+  if [ -n "$slug" ]; then
+    [ "$count" -eq 0 ] || { echo "wrap.sh merge: --repo and a repo path are exclusive" >&2; return 64; }
+    case "$slug" in
+      */*/*|*[!A-Za-z0-9._/-]*|/*|*/|-*) slug="" ;;
+      */*) ;;
+      *) slug="" ;;
+    esac
+    [ -n "$slug" ] || { echo "wrap.sh merge: --repo wants <owner>/<name>" >&2; return 64; }
+  else
+    [ "$count" -eq 1 ] || { echo "usage: wrap.sh merge [--apply] [--no-pull] [--pr N] [--with-ci] [--verify <cmd>] <repo> | --repo <owner>/<name>" >&2; return 64; }
+  fi
   case "$pr_only" in
     '') ;;
     *[!0-9]*) echo "wrap.sh merge: --pr wants a PR number" >&2; return 64 ;;
   esac
-  _is_repo "$repo" || { echo "wrap.sh merge: ${repo} is not a git repo" >&2; return 64; }
+  [ -n "$slug" ] || _is_repo "$repo" || { echo "wrap.sh merge: ${repo} is not a git repo" >&2; return 64; }
 
   local ghs; ghs="$(_gh_state)"
   if [ "$ghs" != "ok" ]; then _gh_note "$ghs"; return 1; fi
 
-  local def; def="$(_default_branch "$repo")" || { echo "no default branch resolved for ${repo}" >&2; return 1; }
-  local url; url="$(_origin_url "$repo")"
+  # By slug there is no checkout: GitHub names the default branch, every gate reads through
+  # gh, and the steps that need a checkout (the re-merge push, the squash fallback, the tree
+  # verify, the pull) are skipped and said so.
+  local def url
+  if [ -n "$slug" ]; then
+    def="$(_remote_default_branch "$slug")" || { echo "no default branch resolved for ${slug}" >&2; return 1; }
+    url="$slug"
+    echo "remote ${slug}: no local checkout, so the re-merge push, tree verify and pull are skipped"
+  else
+    def="$(_default_branch "$repo")" || { echo "no default branch resolved for ${repo}" >&2; return 1; }
+    url="$(_origin_url "$repo")"
+  fi
 
   local own
   own="$(_open_own_prs "$url")" || {
@@ -615,14 +660,16 @@ cmd_merge() {
       return 1
     fi
     numbers="$pr_only"
-    if [ "$NO_PULL" = 1 ]; then
+    if [ "$NO_PULL" = 1 ] && [ -z "$slug" ]; then
       pr_head="$(printf '%s' "$(_pr_detail "$url" "$pr_only")" | jq -r '.headRefName // ""' 2>/dev/null)"
       if [ -n "$pr_head" ] && _main_holds_branch "$repo" "$pr_head"; then
         echo "SKIP #${pr_only}: head ${pr_head} is checked out in the main checkout (--no-pull)"
         return 0
       fi
     fi
-    if [ "$(printf '%s' "$(_pr_detail "$url" "$pr_only")" | jq -r '.isDraft // false' 2>/dev/null)" = "true" ]; then
+    if [ -n "$slug" ]; then
+      : # a draft stays a draft by slug: the gate below refuses it, nothing marks it ready
+    elif [ "$(printf '%s' "$(_pr_detail "$url" "$pr_only")" | jq -r '.isDraft // false' 2>/dev/null)" = "true" ]; then
       if [ "$do_apply" != 1 ]; then
         echo "note: #${pr_only} is a draft; --apply would run \`gh pr ready\` before merging"
       else
@@ -659,7 +706,7 @@ cmd_merge() {
     fi
     title="$(printf '%s' "$detail" | jq -r '.title // ""' 2>/dev/null)"
     head="$(printf '%s' "$detail" | jq -r '.headRefName // ""' 2>/dev/null)"
-    if [ "$NO_PULL" = 1 ] && [ -n "$head" ] && _main_holds_branch "$repo" "$head"; then
+    if [ "$NO_PULL" = 1 ] && [ -z "$slug" ] && [ -n "$head" ] && _main_holds_branch "$repo" "$head"; then
       echo "SKIP #${n}: head ${head} is checked out in the main checkout (--no-pull)"
       continue
     fi
@@ -685,7 +732,9 @@ cmd_merge() {
   # eligible and exactly one PR is conflicting, so the branch to recover is unambiguous.
   # The re-gate after the push is the authority: it re-reads every gate against the new
   # head, so a push that dismissed an approval or broke a check refuses here.
-  if [ -z "$first_eligible" ] && [ "$conflict_count" = 1 ]; then
+  if [ -n "$slug" ] && [ -z "$first_eligible" ] && [ "$conflict_count" -ge 1 ]; then
+    echo "note: a conflicting PR needs a re-merge push, which --repo skips (no local checkout); update its branch by hand"
+  elif [ -z "$first_eligible" ] && [ "$conflict_count" = 1 ]; then
     local c_head c_oid
     c_head="$(jq -r '.headRefName // ""' "${jsondir}/pr-${conflict_n}.json" 2>/dev/null)"
     c_oid="$(jq -r '.headRefOid // ""' "${jsondir}/pr-${conflict_n}.json" 2>/dev/null)"
@@ -830,6 +879,15 @@ cmd_merge() {
   # squash resolves on GitHub's own side, and a stale headRefOid captured before a late
   # push, or an armed auto-merge overtaken by a push after the gates read, can both
   # report MERGED while the default branch moves on without it.
+  if [ -n "$slug" ]; then
+    local rv; rv="$(_remote_merge_verify "$slug" "$def" "$sha")"
+    if [ "$rv" = "OK" ]; then
+      echo "merged #${first_eligible} (${sha}): verified on ${def} via gh api; local steps skipped (no checkout)"
+      return 0
+    fi
+    echo "merged #${first_eligible} (${sha}): ${rv}" >&2
+    return 3
+  fi
   local tv; tv="$(_tree_verify "$repo" "$def" "$head_oid" "$sha")"
   case "$tv" in
     OK)

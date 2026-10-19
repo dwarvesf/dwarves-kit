@@ -64,6 +64,20 @@ case "$sub" in
     # Only `user --jq .login` is asked for, so the login is the whole answer. A failing
     # call prints nothing, the way gh answers when the identity read fails.
     [ "${GH_STUB_API_RC:-0}" = "0" ] || exit "${GH_STUB_API_RC}"
+    # `merge --repo <slug>` reads repos/<slug> (default branch) and the compare endpoint
+    # (merge base of the merge commit and the default branch). GH_STUB_REMOTE_DEFAULT sets
+    # the branch, GH_STUB_COMPARE_BASE the merge base (default: the sha asked about, so the
+    # default branch holds it), GH_STUB_COMPARE_RC a failed compare read.
+    case "${1:-}" in
+      repos/*/compare/*)
+        [ "${GH_STUB_COMPARE_RC:-0}" = "0" ] || exit "$GH_STUB_COMPARE_RC"
+        want="${1#*/compare/}"; want="${want%%...*}"
+        printf '%s\n' "${GH_STUB_COMPARE_BASE:-$want}"
+        exit 0 ;;
+      repos/*)
+        printf '%s\n' "${GH_STUB_REMOTE_DEFAULT-main}"
+        exit 0 ;;
+    esac
     printf '%s\n' "${GH_STUB_LOGIN:-me}"
     exit 0 ;;
   pr)

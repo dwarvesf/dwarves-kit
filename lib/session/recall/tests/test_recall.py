@@ -149,6 +149,36 @@ class TestRecall(unittest.TestCase):
         self.assertTrue(ask.startswith("rotate the key [redacted] and ship it"))
         self.assertNotIn("op://", ask)
 
+    def test_redaction_is_bounded_on_keyword_runs(self):
+        # SECRET_SHAPE_RE is cubic on repeated PASSWORD/TOKEN runs: 4,095 chars of "TOKEN"
+        # cost ~20 s unbounded. The text is cut to a prefix before the regex, so both the
+        # first-turn ask and the tail line finish fast and still redact a leading secret.
+        # Each case runs in a subprocess with a hard timeout, so the unfixed code goes red
+        # in seconds instead of hanging the suite.
+        import time
+        probe = (
+            "import sys, session_recall as r\n"
+            "text = 'PASSWORD=hunter2 ' + sys.argv[2] * int(sys.argv[3])\n"
+            "if sys.argv[1] == 'ask':\n"
+            "    out = r.opening_ask([{'type': 'user', 'message': {'role': 'user', 'content': text}}])\n"
+            "else:\n"
+            "    out = r._clean_tail_text(text)\n"
+            "print(out)\n"
+        )
+        for word, count in (("TOKEN", 2000), ("PASSWORD", 1000)):
+            for mode in ("ask", "tail"):
+                t0 = time.monotonic()
+                try:
+                    p = subprocess.run([sys.executable, "-c", probe, mode, word, str(count)],
+                                       cwd=ROOT, capture_output=True, text=True, timeout=5)
+                except subprocess.TimeoutExpired:
+                    self.fail(f"{mode} on {word}*{count} still running after 5 s")
+                elapsed = time.monotonic() - t0
+                self.assertEqual(p.returncode, 0, p.stderr)
+                self.assertLess(elapsed, 1.0, f"{mode} on {word}*{count} took {elapsed:.2f}s")
+                self.assertTrue(p.stdout.startswith("[redacted]"), f"{mode}: {p.stdout[:40]!r}")
+                self.assertNotIn("hunter2", p.stdout)
+
     def test_sessions_view_stops_at_limit_and_says_so(self):
         base, _ = self._fake_projects()
         code = ("import sys, session_recall as r; r.PROJECTS=%r; "

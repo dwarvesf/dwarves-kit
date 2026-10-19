@@ -74,7 +74,7 @@ bash "$PT" --tail-text abc "$CUR" >/dev/null 2>&1; rc=$?
 if [[ $rc -eq 1 ]]; then ok "non-numeric K fails with exit 1"; else no "non-numeric K rc=$rc"; fi
 
 echo "[9] --harvest-text MAX: text blocks newline-joined, last MAX chars, x sentinel"
-HT="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")"
+HT="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
 printf '%s\n' '{"type":"user","message":{"content":[{"type":"text","text":"alpha"}]}}' \
   '{"type":"system","message":{"content":[{"type":"text","text":"ignored"}]}}' \
   'not json' \

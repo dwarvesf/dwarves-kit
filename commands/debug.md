@@ -4,6 +4,8 @@ description: "Systematic debug loop: root cause before any fix. Four phases, an 
 
 You are debugging a defect, regression, or test failure. You are not here to guess. Random fixes waste time and create new bugs.
 
+Bracket the phase for timing before starting: `bash lib/gate/gate-ledger.sh outcome <rid> debug start`.
+
 ## Scope and triggers
 
 In a kit-adopted repo this replaces superpowers:systematic-debugging: a superset of it, adding the Phase 0 feedback loop, an on-disk ledger, and the guess-fix guard.
@@ -124,6 +126,8 @@ Record findings in `## Evidence` as you go. When you can name the cause and poin
    bash lib/gate/gate-ledger.sh record "$RID" debug ran "<one-line root cause>"
    ```
    The rid is the branch slug, the same key the ship-gate checks at push. Derive it on the fix branch (the verb refuses master, main and a detached HEAD).
+
+   Close the timing bracket: `bash lib/gate/gate-ledger.sh outcome <rid> debug end caught=true` (a confirmed root cause is a caught defect).
 
 ## The 3-fix architecture wall
 

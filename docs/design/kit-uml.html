@@ -170,17 +170,18 @@ decided:
   - "Hooks of an off module are skipped in anchor-root.sh, so a plugin install honors [modules]."
   - "Adopted repos seed lane_gates and proof_of_done on; raw installs stay lenient."
   - "Lowering a run's lane needs --lower --reason; the verdict in the spec must match the run ledger."
+  - "The UML design review sits between design and spec, runs through the external system-design skill, and stays advisory (no gate)."
 ---
 
 # dwarves-kit
 
 The kit is six clusters of bash, Python and prose commands that meet at a few shared stores. The spine (lane commands and their agents) moves one unit of work from intake to land. Gates and ledgers record and enforce what the spine did. Execution planes run many sessions at once. The board and signal path carries work items and proposals. Session and knowledge reads transcripts and distills them. Hooks wire all of it to Claude Code events and run the audit loops.
 
-This model is a backfill. It maps the kit as the code stands on master, from a read-only pass with `path:line` evidence, spot-checked against the code. Amber marks planned work: the workset module, and one transition on sm-mega-subgoal (a `gate` sub-goal with no `**Branch:**` refused at pre-flight). Cluster colors hold on every sheet: spine blue, gates rose, planes violet, board green, hooks gray, session plain. Boxes marked «external» belong to another cluster or sit outside the kit.
+This model is a backfill. It maps the kit as the code stands on master, from a read-only pass with `path:line` evidence, spot-checked against the code. Amber marks planned work: the workset module. Cluster colors hold on every sheet: spine blue, gates rose, planes violet, board green, hooks gray, session plain. Boxes marked «external» belong to another cluster or sit outside the kit.
 
 ## Use cases
 
-Four actors drive the kit. The operator starts and lands work, the agent session runs the lane commands, a scheduler (launchd or cron) runs the unattended passes, and the Claude Code runtime fires hooks on its own events.
+Four actors drive the kit. The operator starts and lands work, the agent session runs the lane commands, a scheduler (launchd or cron) runs the unattended passes, and the Claude Code runtime fires hooks on its own events. The operator can also review a design as UML before the spec.
 
 ```uml
 id: use-cases
@@ -199,6 +200,7 @@ actors:
 cases:
   - {id: start, name: Orient and pick next work, actor: operator, at: [0, 0]}
   - {id: think, name: Challenge and design an idea, actor: operator, at: [0, 1]}
+  - {id: umlreview, name: Review the design as UML, actor: operator, at: [2, 0]}
   - {id: approve, name: Approve the spec, actor: operator, at: [0, 2]}
   - {id: assign, name: Assign a row to a goal, actor: agent, include: [grill], at: [1, 0]}
   - {id: grill, name: Grill and define Done, actor: agent, at: [1, 1]}
@@ -357,7 +359,7 @@ edges:
 
 ## Spine and lanes
 
-The spine is prose commands plus a few classifiers. `/kit:assign` is the one mutator at intake; every other lane command records its own gate through gate-ledger (only the heaviest writers are drawn). The write agents (builder, fix-agent) are separate from the read-only verifiers on purpose.
+The spine is prose commands plus a few classifiers. `/kit:assign` is the one mutator at intake; every other lane command records its own gate through gate-ledger (only the heaviest writers are drawn). The write agents (builder, fix-agent) are separate from the read-only verifiers on purpose. The brief reaches the spec through a UML design review, run by the external system-design skill. The review is advisory and records no gate.
 
 ```uml
 id: c-spine
@@ -365,8 +367,9 @@ type: component
 title: Spine and lanes
 level: L2
 review:
-  - ship-gate compares the spec's `## Review` verdict with the one recorded in the run ledger, but the ledger is append-only, not tamper-proof: any writer can append a line. Should ledger writes be signed or fenced?
+  - "ship-gate compares the spec's `## Review` verdict with the one recorded in the run ledger, but the ledger is append-only, not tamper-proof: any writer can append a line. Should ledger writes be signed or fenced?"
   - Seven commands write one spec file (replace-not-stack sections). Keep the single file, or split Review and Test plan into sibling files?
+  - The UML design review is advisory. Should `/kit:spec-validate` require a rendered UML set for full-lane work, or stay advisory?
 lanes:
   - {id: up, name: board and planes, tone: gray}
   - {id: plan, name: plan, tone: blue}
@@ -379,6 +382,7 @@ nodes:
   - {id: start, name: /kit:start, note: read-only next-step detector, lane: plan, at: [0, 2]}
   - {id: assign, name: /kit:assign, note: "row to goal draft, START, claim", lane: plan, at: [1, 2]}
   - {id: think, name: "think, design, prototype", note: Decision Brief, lane: plan, at: [2, 2]}
+  - {id: sysdesign, name: system-design skill, note: "UML sheets, design review", kind: ext, lane: plan, at: [3, 2]}
   - {id: classify, name: classify libs, note: "lane, type, role, significance", lane: plan, at: [0, 3]}
   - {id: grill, name: /kit:grill, note: type-shaped interview, lane: plan, at: [1, 3]}
   - {id: spec, name: "spec, validate, test-plan", note: "SPEC-NNN, 7 reviewers", lane: plan, at: [2, 3]}
@@ -398,7 +402,8 @@ edges:
   - {from: assign, to: grill, label: Q&A digest}
   - {from: assign, to: think, label: freeform intent}
   - {from: assign, to: classify, label: "type, lane"}
-  - {from: think, to: spec, label: brief}
+  - {from: think, to: sysdesign, label: brief to UML}
+  - {from: sysdesign, to: spec, label: reviewed design, via: [[3, 2.5], [2, 2.5]]}
   - {from: spec, to: execute, label: VALIDATED spec}
   - {from: spec, to: ledger, label: validate round}
   - {from: execute, to: writers, label: dispatches}
@@ -1353,7 +1358,7 @@ transitions:
 
 ## Mega-goal sub-goal
 
-One ROADMAP sub-goal as `orchestrate.sh` sees it. The ROADMAP stores only unchecked or checked; every other state is the last event in `.orchestrate/events.log` (`orchestrate.sh:466-553`). Today a serial run accepts a bare local `[x]` with no `PR #n` (`orchestrate.sh:2777-2812`), and only a `gate` sub-goal is checked against `gh pr view` (`orchestrate.sh:456-463`). The watchdog only alerts on a stall and never kills (`orchestrate.sh:1101-1105`). No `.orchestrate/events.log` exists on the Mini or the Air, so this path has not run there. Amber is the one planned fix: a `gate` or `gate!` sub-goal whose goal file has no `**Branch:**` is refused at pre-flight; an `auto` sub-goal without the header keeps running (190 of 771 goal files lack it).
+One ROADMAP sub-goal as `orchestrate.sh` sees it. The ROADMAP stores only unchecked or checked; every other state is the last event in `.orchestrate/events.log` (`orchestrate.sh:466-553`). A serial run accepts a bare local `[x]` with no `PR #n` (`orchestrate.sh:2795-2830`), and only a `gate` sub-goal is checked against `gh pr view` (`orchestrate.sh:456-463`). The watchdog only alerts on a stall and never kills (`orchestrate.sh:1101-1105`). No `.orchestrate/events.log` exists on the Mini or the Air, so this path has not run there. Pre-flight records `blocked` for a bad `Model:`, `Effort:` or `Harness:`, and for a `gate` or `gate!` sub-goal whose goal file has no `**Branch:**` (`orchestrate.sh:1335-1340`, `orchestrate.sh:2700-2705`). An `auto` sub-goal without the header keeps running (190 of 771 goal files lack it).
 
 ```uml
 id: sm-mega-subgoal
@@ -1361,10 +1366,9 @@ type: state
 title: Mega-goal sub-goal
 level: L4
 review:
-  - "A gate sub-goal with no `**Branch:**` looks up `gh pr view wave/sg-nn` (`orchestrate.sh:1326-1327`), which never matches the worker's branch. The amber refusal covers gate and gate! only. Should an `auto` sub-goal without the header at least warn at pre-flight, since it skips START?"
+  - "The pre-flight refusal covers `gate` and `gate!` only (`orchestrate.sh:2700`). An `auto` sub-goal without `**Branch:**` still runs and skips START, so telemetry shows lane `?`. Should it at least warn at pre-flight?"
   - "A serial run accepts a bare local `[x]` with no PR (exit 0 to checked). Is the first serial orchestrator run the right trigger to require gh to show the PR, or should the serial path warn on a box with no `PR #n` now?"
 states:
-  - {name: refused, tone: amber, at: [0, 0]}
   - {name: unchecked, initial: true, at: [0, 1]}
   - {name: executing, at: [1, 1]}
   - {name: "gate / gate! hold", at: [1, 0]}
@@ -1373,9 +1377,8 @@ states:
   - {name: blocked, at: [1, 2]}
   - {name: tier-4 HOLD, final: true, at: [3, 1]}
 transitions:
-  - {from: unchecked, to: refused, event: "planned: gate or gate! with no **Branch:**, at pre-flight", tone: amber}
   - {from: unchecked, to: executing, event: "picked: first unchecked, or ready and disjoint"}
-  - {from: unchecked, to: blocked, event: "pre-flight: bad Model, Effort or Harness"}
+  - {from: unchecked, to: blocked, event: "pre-flight: bad Model, Effort, Harness; gate with no **Branch:**"}
   - {from: executing, to: "gate / gate! hold", event: "gate: gh pr view finds the PR"}
   - {from: executing, to: checked, event: "exit 0, box checked"}
   - {from: executing, to: blocked, event: "exit nonzero, turn cap, box not flipped, no PR"}
@@ -1435,12 +1438,9 @@ transitions:
 
 ## Risks and technical debt
 
-Ranked by blast radius, widest first. Open risks come first; accepted trade-offs follow. Closed items live in git and the PRs.
+Ranked by blast radius, widest first. Open risks come first; accepted trade-offs follow. Closed items live in git and the PRs, the latest being the pre-flight refusal of a `gate` sub-goal with no `**Branch:**` (#1010).
 
-- Unsandboxed workers on shared state. Both executors run `--dangerously-skip-permissions`; the queue and the serial orchestrator work in the real checkout, and protected-path writes are detected after the run, only with sanitize on. Trigger: a worker edits outside its scope overnight. Mitigation: sanitize, the XPIA fence, `#queue{}` allow-listing, wave worktrees, the `flip.lock`.
-- Self-reported completion, now narrower. The queue counts `done` only after a HEAD move, a moved local branch tip or an operator PR created since the window opened; otherwise the row is `gated` with reason `no-delta`. The orchestrator still trusts a flipped box: a serial run accepts a bare local `[x]`, and only the remote reconcile needs `PR #n` (`orchestrate.sh:2777-2812`). `attempt-state.sh` has no lock and relies on the lead calling it in sequence. Trigger: a sub-goal claims done with a flipped box and no real PR. Mitigation: a `gate` sub-goal needs `gh pr view` to find its PR; tier-4 close HOLDs for a human.
-- Degrade paths. A vendor harness runs with no turn cap, watchdog or token capture; a failed SPEC reservation lets the worker pick its own number; a goal file with no `**Branch:**` skips START.
-- Gate sub-goal with no `**Branch:**`. The gate hold looks up `gh pr view wave/sg-nn` (`orchestrate.sh:1326-1327`), which never matches the worker's real branch, so the hold reports no PR and halts. 190 of 771 goal files lack the header. Trigger: a `gate` or `gate!` goal file written without it. Mitigation: planned, refuse such a file at pre-flight (amber on sm-mega-subgoal); `auto` sub-goals without the header keep running.
+No open risks; accepted trade-offs below carry their reopen triggers.
 
 **Accepted trade-offs**
 
@@ -1450,11 +1450,12 @@ Ranked by blast radius, widest first. Open risks come first; accepted trade-offs
 - Plugin hooks register for every module: one bash start per skipped hook is cheap.
 - Stat-keyed caches: the 2-second window is short and a recheck is cheap.
 - Advisory and unwired parts: advisory by design, and the `bin/` forwarders arrive with the workset fold.
-- Queue rows and the serial orchestrator run in the real checkout, with protected paths detected only after the run. The queue ran 10 rows ever, all on the Air, none in the last month, and no `.orchestrate/events.log` exists on the Mini or the Air. Sanitize (implied by `--from-boards`, and passed by the watcher) already checks protected paths after the run. Reopen when the queue or the serial path runs regularly again.
-- A serial sub-goal counts done on its box alone, not on a PR gh can see. Reopen on the first serial orchestrator run.
+- Unsandboxed workers on shared state. The queue and the serial orchestrator run `--dangerously-skip-permissions` in the real checkout, and protected-path writes are detected only after the run, with sanitize on (implied by `--from-boards`, and passed by the watcher). Mitigation: sanitize, the XPIA fence, `#queue{}` allow-listing, wave worktrees, the `flip.lock`. The queue ran 10 rows ever, all on the Air, none in the last month, and no `.orchestrate/events.log` exists on the Mini or the Air. Reopen when the queue or the serial path runs regularly again.
+- Self-reported completion on the serial path. A serial sub-goal counts done on its box alone: a bare local `[x]` passes, and only the remote reconcile needs `PR #n` (`orchestrate.sh:2795-2830`). The queue already needs a git delta or a new PR for `done`, and a `gate` sub-goal needs `gh pr view` to find its PR. Reopen on the first serial orchestrator run.
 - `attempt-state.sh` has no lock: one lead calls it in sequence. Reopen when two callers can hit the store at once.
-- Vendor harnesses run with no turn cap or watchdog: no goal file in the estate declares `**Harness:**`. Reopen on the first one that does.
-- A failed SPEC reservation does not stop the worker: rejected, not deferred. The code documents the reservation as best-effort over a scan-safe fallback (`orchestrate.sh:1331-1337`, `orchestrate.sh:1940-1942`), so stopping would turn a rare duplicate number into a stopped wave.
+- Degrade path, vendor harnesses: they run with no turn cap, watchdog or token capture, and no goal file in the estate declares `**Harness:**`. Reopen on the first one that does.
+- Degrade path, an `auto` sub-goal with no `**Branch:**`: it runs without START, so telemetry shows lane `?`; 190 of 771 goal files lack the header. Reopen on the first serial orchestrator run.
+- Degrade path, a failed SPEC reservation: the worker picks its own number. Stopping it was rejected, not deferred: the code documents the reservation as best-effort over a scan-safe fallback (`orchestrate.sh:1342-1348`, `orchestrate.sh:1951-1953`), so stopping would turn a rare duplicate number into a stopped wave.
 
 ## Drift register
 
@@ -1462,7 +1463,7 @@ All 47 rows of the first drift pass were resolved in #989 to #1003, each either 
 
 | Fix | Doc claim | Code reality | Locations |
 |---|---|---|---|
-| open | The ROADMAP checkbox plus a recorded `PR #n` is the only source of truth for done. | A serial run accepts a bare local `[x]` with no `PR #n`; only the remote reconcile and the `gate` hold look for a PR. | `commands/mega.md:163-164`, `lib/queue/orchestrate.sh:2777-2812` |
+| open | The ROADMAP checkbox plus a recorded `PR #n` is the only source of truth for done. | A serial run accepts a bare local `[x]` with no `PR #n`; only the remote reconcile and the `gate` hold look for a PR. | `commands/mega.md:163-164`, `lib/queue/orchestrate.sh:2795-2830` |
 | open | Dispatch persists no durability state, by design. | `attempt-state.sh` persists one `<task>.task` file per task under the git common dir until `release`. | `commands/dispatch.md:172`, `lib/goal/attempt-state.sh:103-169` |</script>
 <script type="text/plain" id="uml-base" data-ref=""></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/js-yaml/4.1.0/js-yaml.min.js" integrity="sha384-+pxiN6T7yvpryuJmE1gM9PX7yQit15auDb+ZwwvJOd/4be2Cie5/IuVXgQb/S9du" crossorigin="anonymous"></script>
