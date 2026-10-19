@@ -581,10 +581,10 @@ class FakeBlocks:
         if self.fail:
             raise self.fail
         block_id = args[1].split("/")[2]
-        cursor = next((a.split("==", 1)[1] for a in args
-                       if a.startswith("start_cursor==")), None)
+        cursors = [a.split("==", 1)[1] for a in args
+                   if a.startswith("start_cursor==")]
         pages = self.children.get(block_id, [[]])
-        i = int(cursor) if cursor else 0
+        i = int(cursors[0]) if cursors else 0
         out = {"results": pages[i]}
         if i + 1 < len(pages):
             out.update(has_more=True, next_cursor=str(i + 1))
@@ -618,7 +618,7 @@ def test_page_body_lands_inside_the_fence_after_notes(tmp_path):
     out = expand_body(notes, fake)
     close = re.search(rf"--- END {SENTINEL} \[[0-9a-f]{{8}}\] ---", out)
     assert out.index("notes: short note") < out.index("Page body:") \
-        < out.index("Reproduce on staging.") < close.start()
+        < out.index("Reproduce on staging.") < close.span()[0]
     assert out.count("--- END") == 1
     assert fake.calls[0][0] == ("api", f"v1/blocks/{HEX_A}/children",
                                 "page_size==100")
@@ -661,8 +661,8 @@ def test_oversized_page_body_is_capped_and_marked_truncated():
     paras = [blk("paragraph", "p" * 500, bid=f"p{i}") for i in range(40)]
     fake = FakeBlocks({HEX_A: [paras[:20], paras[20:]]})
     out = expand_body(row_body(), fake)
-    start = out.index("Page body:\n") + len("Page body:\n")
-    text = out[start:out.index("\n--- END")]
+    label = "Page body:\n"
+    text = out[out.index(label) + len(label):out.index("\n--- END")]
     assert "[truncated]" in text
     assert len(text) <= PAGE_BODY_CAP + len(" [truncated]")
     assert len(fake.calls) <= MAX_BLOCK_CALLS
