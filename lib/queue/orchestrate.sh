@@ -1328,6 +1328,17 @@ _sg_branch() {  # goalfile id
   printf '%s\n' "$branch"
 }
 
+# Pre-flight for a held `gate` / `gate!` sub-goal: its hold looks the PR up by the goal file's
+# `**Branch:**` header (`_sg_pr_url`). Without one `_sg_branch` falls back to `wave/<id>`, which never
+# matches the worker's real branch, so the hold would report "no PR" while one exists. Refuse before
+# dispatch instead. `auto` sub-goals keep the fallback: they never look a PR up by branch.
+_gate_branch_preflight() {  # dir id
+  local gf; gf=$(_goalfile "$1" "$2")
+  [ -n "$gf" ] && grep -qiE '^\*\*Branch:\*\*[[:space:]]*[^[:space:]]' "$gf" && return 0
+  echo "orchestrate: gate sub-goal $2 has no **Branch:** in ${gf:-<no goal file>}; the gate hold cannot find its PR; rejecting pre-flight, not dispatching" >&2
+  return 64
+}
+
 # Atomically reserve ONE SPEC number for a wave sub-goal at dispatch, so a
 # concurrent wave cannot hand the same number to two workers. Delegates to `spec-next.sh
 # reserve` (mkdir-mutex + reservation ledger folded into the scan). Best-effort by contract:
@@ -2684,6 +2695,13 @@ cmd_run() {
         [ "$WAVE_CAP" -ge 2 ] && echo "[orchestrate] [advisory] '$id' is a chain-stop \`gate\`; under WAVE_CAP=$WAVE_CAP independent Touches-disjoint branches keep running. Use \`gate!\` for a global stop-all." >&2
         return 0
       fi
+    fi
+
+    if [ -n "$gate_hold" ] && ! _gate_branch_preflight "$dir" "$id"; then
+      _emit_event "$dir" "$id" blocked "rejected pre-flight: gate sub-goal has no **Branch:** header"
+      [ "$board_mode" != roadmap ] && _render_board "$dir" "$roadmap" "$board_mode" >/dev/null
+      _say "[orchestrate] STOP: $id rejected pre-flight (gate sub-goal without a **Branch:** header); see the 'orchestrate:' reason above. Fix the goal file, then re-run."
+      return 0
     fi
 
     # Per-sub-goal model/effort routing: read the goal file's hints and pass them as

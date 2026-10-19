@@ -268,6 +268,42 @@ out=$(MEGA_GATE_DISPATCH=0 bash "$ORCH" run "$DG6" --dry-run 2>&1)
   && pass "B6 (neg control): MEGA_GATE_DISPATCH=0 dry-run keeps the plain '(gate)' label" \
   || { fail "B6 neg control wrong"; printf '%s\n' "$out"; }
 
+# --- B7: a gate/gate! sub-goal with no **Branch:** header is refused pre-flight; auto without one runs ---
+# The hold looks the PR up by the declared branch; the wave/<id> fallback never matches the worker's
+# real branch, so the human would see "no PR" while one exists. Auto sub-goals keep the fallback.
+printf 'feat/sg-two https://github.com/o/r/pull/42\n' > "$TMP/prs"
+DG7="$TMP/mg-gate-nobranch"; mk_megagoal "$DG7"
+printf 'Done = the deploy is wired\n' > "$DG7/goals/02-wire.md"
+rc=0; run_gate_fixture "$DG7" "$TMP/b7.out" || rc=$?
+{ [ "$rc" = 0 ] && grep -q 'orchestrate: gate sub-goal SG-02 has no \*\*Branch:\*\* in .*02-wire.md; the gate hold cannot find its PR; rejecting pre-flight, not dispatching' "$TMP/b7.out" \
+  && ! grep -q 'INVOKED SG-02' "$TMP/runlog"; } \
+  && pass "B7: gate without **Branch:** is refused pre-flight and not dispatched" \
+  || { fail "B7: gate without Branch not refused (rc=$rc)"; cat "$TMP/b7.out"; cat "$TMP/runlog"; }
+grep -q 'INVOKED SG-01' "$TMP/runlog" \
+  && pass "B7: the auto sub-goal ahead of it still ran" || fail "B7: auto SG-01 did not run"
+
+DG7b="$TMP/mg-gatebang-nobranch"; mk_megagoal "$DG7b"
+sed -i.bak 's/, gate ,/, gate! ,/' "$DG7b/ROADMAP.md"
+printf 'Done = the deploy is wired\n' > "$DG7b/goals/02-wire.md"
+rc=0; run_gate_fixture "$DG7b" "$TMP/b7b.out" || rc=$?
+{ [ "$rc" = 0 ] && grep -q 'gate sub-goal SG-02 has no \*\*Branch:\*\*' "$TMP/b7b.out" \
+  && ! grep -q 'INVOKED SG-02' "$TMP/runlog"; } \
+  && pass "B7: gate! without **Branch:** is refused pre-flight and not dispatched" \
+  || { fail "B7: gate! without Branch not refused (rc=$rc)"; cat "$TMP/b7b.out"; cat "$TMP/runlog"; }
+
+DG7c="$TMP/mg-gate-withbranch"; mk_megagoal "$DG7c"
+rc=0; run_gate_fixture "$DG7c" "$TMP/b7c.out" || rc=$?
+{ [ "$rc" = 0 ] && grep -q 'INVOKED SG-02' "$TMP/runlog" && ! grep -q 'rejecting pre-flight' "$TMP/b7c.out"; } \
+  && pass "B7 (regression pin): gate WITH **Branch:** still dispatches" \
+  || { fail "B7: gate with Branch wrongly refused (rc=$rc)"; cat "$TMP/b7c.out"; }
+
+DG7d="$TMP/mg-auto-nobranch"; mk_megagoal "$DG7d"
+printf 'Done = the thing builds\n' > "$DG7d/goals/01-build.md"
+rc=0; run_gate_fixture "$DG7d" "$TMP/b7d.out" || rc=$?
+{ grep -q 'INVOKED SG-01' "$TMP/runlog" && ! grep -q 'gate sub-goal SG-01 has no' "$TMP/b7d.out"; } \
+  && pass "B7 (regression pin): auto without **Branch:** still dispatches" \
+  || { fail "B7: auto without Branch wrongly refused (rc=$rc)"; cat "$TMP/b7d.out"; }
+
 echo
 if [ "$fails" = 0 ]; then echo "ALL PASS"; else echo "$fails FAILED"; fi
 exit "$fails"
