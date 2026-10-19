@@ -313,6 +313,7 @@ is DISPATCHED like an `auto` one, its prompt carries the held-PR instruction abo
 holds AFTER the session, grounded on the PR existing (a gate sub-goal never flips its own box, so a
 missing PR is the same no-self-claim halt an unflipped box gets). `MEGA_GATE_DISPATCH=0` restores
 the older stop-before-running posture.
+A `gate` / `gate!` sub-goal whose goal file has no `**Branch:**` header is refused pre-flight (the hold finds its PR by that branch); `auto` sub-goals without one still run.
 
 `mega-merge.sh mark` ensures the `do-not-merge` label exists (so `--label` never fails),
 converts the PR to a draft, and adds the label -- exactly the state `_merge_exclusion`
