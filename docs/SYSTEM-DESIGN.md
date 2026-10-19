@@ -1,10 +1,11 @@
 ---
-rev: D
+rev: E
 decided:
   - "Hermes stays reached by two bridges, kept as separate jobs: the cockpit mirror is the estate read-mirror over bridge=on boards, and the per-board sync spoke is the two-way sync for one board."
   - "Hooks of an off module are skipped in anchor-root.sh, so a plugin install honors [modules]."
   - "Adopted repos seed lane_gates and proof_of_done on; raw installs stay lenient."
   - "Lowering a run's lane needs --lower --reason; the verdict in the spec must match the run ledger."
+  - "The UML design review sits between design and spec, runs through the external system-design skill, and stays advisory (no gate)."
 ---
 
 # dwarves-kit
@@ -15,7 +16,7 @@ This model is a backfill. It maps the kit as the code stands on master, from a r
 
 ## Use cases
 
-Four actors drive the kit. The operator starts and lands work, the agent session runs the lane commands, a scheduler (launchd or cron) runs the unattended passes, and the Claude Code runtime fires hooks on its own events.
+Four actors drive the kit. The operator starts and lands work, the agent session runs the lane commands, a scheduler (launchd or cron) runs the unattended passes, and the Claude Code runtime fires hooks on its own events. The operator can also review a design as UML before the spec.
 
 ```uml
 id: use-cases
@@ -34,6 +35,7 @@ actors:
 cases:
   - {id: start, name: Orient and pick next work, actor: operator, at: [0, 0]}
   - {id: think, name: Challenge and design an idea, actor: operator, at: [0, 1]}
+  - {id: umlreview, name: Review the design as UML, actor: operator, at: [2, 0]}
   - {id: approve, name: Approve the spec, actor: operator, at: [0, 2]}
   - {id: assign, name: Assign a row to a goal, actor: agent, include: [grill], at: [1, 0]}
   - {id: grill, name: Grill and define Done, actor: agent, at: [1, 1]}
@@ -192,7 +194,7 @@ edges:
 
 ## Spine and lanes
 
-The spine is prose commands plus a few classifiers. `/kit:assign` is the one mutator at intake; every other lane command records its own gate through gate-ledger (only the heaviest writers are drawn). The write agents (builder, fix-agent) are separate from the read-only verifiers on purpose.
+The spine is prose commands plus a few classifiers. `/kit:assign` is the one mutator at intake; every other lane command records its own gate through gate-ledger (only the heaviest writers are drawn). The write agents (builder, fix-agent) are separate from the read-only verifiers on purpose. The brief reaches the spec through a UML design review, run by the external system-design skill. The review is advisory and records no gate.
 
 ```uml
 id: c-spine
@@ -200,8 +202,9 @@ type: component
 title: Spine and lanes
 level: L2
 review:
-  - ship-gate compares the spec's `## Review` verdict with the one recorded in the run ledger, but the ledger is append-only, not tamper-proof: any writer can append a line. Should ledger writes be signed or fenced?
+  - "ship-gate compares the spec's `## Review` verdict with the one recorded in the run ledger, but the ledger is append-only, not tamper-proof: any writer can append a line. Should ledger writes be signed or fenced?"
   - Seven commands write one spec file (replace-not-stack sections). Keep the single file, or split Review and Test plan into sibling files?
+  - The UML design review is advisory. Should `/kit:spec-validate` require a rendered UML set for full-lane work, or stay advisory?
 lanes:
   - {id: up, name: board and planes, tone: gray}
   - {id: plan, name: plan, tone: blue}
@@ -214,6 +217,7 @@ nodes:
   - {id: start, name: /kit:start, note: read-only next-step detector, lane: plan, at: [0, 2]}
   - {id: assign, name: /kit:assign, note: "row to goal draft, START, claim", lane: plan, at: [1, 2]}
   - {id: think, name: "think, design, prototype", note: Decision Brief, lane: plan, at: [2, 2]}
+  - {id: sysdesign, name: system-design skill, note: "UML sheets, design review", kind: ext, lane: plan, at: [3, 2]}
   - {id: classify, name: classify libs, note: "lane, type, role, significance", lane: plan, at: [0, 3]}
   - {id: grill, name: /kit:grill, note: type-shaped interview, lane: plan, at: [1, 3]}
   - {id: spec, name: "spec, validate, test-plan", note: "SPEC-NNN, 7 reviewers", lane: plan, at: [2, 3]}
@@ -233,7 +237,8 @@ edges:
   - {from: assign, to: grill, label: Q&A digest}
   - {from: assign, to: think, label: freeform intent}
   - {from: assign, to: classify, label: "type, lane"}
-  - {from: think, to: spec, label: brief}
+  - {from: think, to: sysdesign, label: brief to UML}
+  - {from: sysdesign, to: spec, label: reviewed design, via: [[3, 2.5], [2, 2.5]]}
   - {from: spec, to: execute, label: VALIDATED spec}
   - {from: spec, to: ledger, label: validate round}
   - {from: execute, to: writers, label: dispatches}
