@@ -588,8 +588,14 @@ INVOKER_PGID=$(ps -o pgid= -p $$ 2>/dev/null | tr -d ' ')
 RC=0
 REPO_ROOT="$TD/hv-repo-pgid" HARVEST_EXTRACTOR="$TD/hv-pgid-extractor.sh" HARVEST_MIN_INTERVAL=0 \
   bash -c "echo '{\"transcript_path\":\"$HV_TRANS\"}' | bash '$KIT_DIR/hooks/harvest.sh'" >/dev/null 2>&1 || RC=$?
-sleep 0.3
-CHILD_PID=$(pgrep -f "hv-pgid-extractor.sh" | head -1)
+# Poll, not one fixed sleep: under host load the detached spawn can take longer than any
+# single wait, and the extractor stays alive 2s once it starts.
+CHILD_PID=""
+for _ in $(seq 1 50); do
+  CHILD_PID=$(pgrep -f "hv-pgid-extractor.sh" | head -1)
+  [ -n "$CHILD_PID" ] && break
+  sleep 0.1
+done
 TOTAL=$((TOTAL + 1))
 if [ -n "$CHILD_PID" ]; then
   CHILD_PGID=$(ps -o pgid= -p "$CHILD_PID" 2>/dev/null | tr -d ' ')
