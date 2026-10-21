@@ -18,6 +18,9 @@ NONDICT = os.path.join(ROOT, "tests", "nondict-edge", "nondict.jsonl")  # OUTSID
 NONDICT_MSG = os.path.join(ROOT, "tests", "nondict-edge", "nondict-message.jsonl")  # valid objects, hostile `message`
 TAIL_BASIC = os.path.join(ROOT, "fixtures", "tail-basic.jsonl")           # 14 kept turns, no noise
 TAIL_DROPPED = os.path.join(ROOT, "fixtures", "tail-dropped-kinds.jsonl")  # one entry per dropped kind
+FINAL_BACKTICK = os.path.join(ROOT, "fixtures", "final-backtick.jsonl")   # trailing thinking/tool_use-only turns, ``` fences
+FINAL_TILDE = os.path.join(ROOT, "fixtures", "final-tilde.jsonl")         # ~~~~markdown holding ``` and ~~~ blocks
+FINAL_NO_TEXT = os.path.join(ROOT, "fixtures", "final-no-text.jsonl")     # assistant turns with no text at all
 
 
 class TestRecall(unittest.TestCase):
@@ -627,6 +630,72 @@ class TestRecall(unittest.TestCase):
                 os.environ["TZ"] = orig_tz
             time.tzset()
         self.assertIn("10:00  asst  reply 7: two commits, feat then docs", rendered)
+
+    # --- --final: the last assistant reply, or one fenced block of it ---------------
+    # Motivating miss: a background subagent returns its report as one fenced block in
+    # its final reply, and the lead hand-rolled jq over the output JSONL to save it.
+
+    def _final(self, path, *extra):
+        return subprocess.run([sys.executable, BIN, "--final", path, *extra],
+                              capture_output=True, text=True)
+
+    def test_final_picks_last_text_message_and_skips_trailing_no_text_turns(self):
+        # The file ends with a thinking-only turn and a tool_use-only turn; the answer
+        # is the last assistant entry that has text, with its text items joined by newline.
+        text = r.final_reply_text(r.load(FINAL_BACKTICK))
+        self.assertTrue(text.startswith("Final report follows.\n```markdown\n# Not this one"))
+        self.assertNotIn("early draft", text)
+        res = self._final(FINAL_BACKTICK)
+        self.assertEqual(res.returncode, 0)
+        self.assertEqual(res.stdout, text + "\n")
+
+    def test_final_fence_backtick_takes_last_block_and_keeps_inner_fence(self):
+        # Two ```markdown blocks in the reply: the LAST wins. Its inner ```bash block
+        # (same fence length, has an info string) is content, not the closer.
+        res = self._final(FINAL_BACKTICK, "--fence", "markdown")
+        self.assertEqual(res.returncode, 0)
+        self.assertEqual(res.stdout, "# Report\n\nIntro line.\n\n```bash\nls -la\n```\n\nDone section.\n")
+        self.assertNotIn("Not this one", res.stdout)
+
+    def test_final_fence_other_tag_selects_that_block(self):
+        res = self._final(FINAL_BACKTICK, "--fence", "text")
+        self.assertEqual(res.stdout, "after\n")
+
+    def test_final_fence_tilde_keeps_shorter_and_other_char_fences(self):
+        res = self._final(FINAL_TILDE, "--fence", "markdown")
+        self.assertEqual(res.returncode, 0)
+        self.assertEqual(res.stdout,
+                         "# Doc\n\n```\nplain inner\n```\n\n~~~\nshort tilde\n~~~\n\nTail.\n")
+
+    def test_final_fence_not_found_exits_1(self):
+        res = self._final(FINAL_BACKTICK, "--fence", "yaml")
+        self.assertEqual(res.returncode, 1)
+        self.assertEqual(res.stdout, "")
+        self.assertEqual(len(res.stderr.strip().splitlines()), 1)
+        self.assertIn("yaml", res.stderr)
+        # a block that never closes is not a block
+        self.assertIsNone(r.last_fenced_block("```markdown\nno closer", "markdown"))
+
+    def test_final_no_assistant_text_exits_1(self):
+        res = self._final(FINAL_NO_TEXT)
+        self.assertEqual(res.returncode, 1)
+        self.assertEqual(res.stdout, "")
+        self.assertEqual(len(res.stderr.strip().splitlines()), 1)
+
+    def test_final_missing_file_exits_1_and_bad_combos_exit_2(self):
+        self.assertEqual(self._final(os.path.join(ROOT, "no-such.jsonl")).returncode, 1)
+        for extra in (["--json"], ["--sessions"], ["--tail", "abc"], ["backoff"]):
+            self.assertEqual(self._final(SEED, *extra).returncode, 2, extra)
+        bare_fence = subprocess.run([sys.executable, BIN, "--fence", "markdown"],
+                                    capture_output=True, text=True)
+        self.assertEqual(bare_fence.returncode, 2)
+
+    def test_final_output_is_verbatim_not_redacted(self):
+        # The report is saved to a file by the caller, so --final never rewrites it
+        # (--tail redacts because its output is pasted into a session).
+        secret = "see op://vault/item/field for the key"
+        self.assertEqual(r.last_fenced_block("```markdown\n" + secret + "\n```", "markdown"), secret)
+
 
     def test_determinism(self):
         a = subprocess.run([sys.executable, BIN, "backoff", "--file", SEED],

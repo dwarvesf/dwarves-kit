@@ -1,0 +1,6 @@
+{"type": "user", "isSidechain": true, "timestamp": "2026-10-21T09:00:00.000Z", "message": {"role": "user", "content": "write the report"}}
+{"type": "assistant", "isSidechain": true, "timestamp": "2026-10-21T09:00:01.000Z", "message": {"role": "assistant", "content": [{"type": "text", "text": "Draft:\n```markdown\n# early draft\n```"}]}}
+{"type": "user", "isSidechain": true, "timestamp": "2026-10-21T09:00:02.000Z", "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "toolu_x", "content": "ok"}]}}
+{"type": "assistant", "isSidechain": true, "timestamp": "2026-10-21T09:00:03.000Z", "message": {"role": "assistant", "content": [{"type": "text", "text": "Final report follows."}, {"type": "text", "text": "```markdown\n# Not this one\n```\n\nSome prose.\n\n```markdown\n# Report\n\nIntro line.\n\n```bash\nls -la\n```\n\nDone section.\n```\n\n```text\nafter\n```"}]}}
+{"type": "assistant", "isSidechain": true, "timestamp": "2026-10-21T09:00:04.000Z", "message": {"role": "assistant", "content": [{"type": "thinking", "thinking": "hmm", "signature": "s"}]}}
+{"type": "assistant", "isSidechain": true, "timestamp": "2026-10-21T09:00:05.000Z", "message": {"role": "assistant", "content": [{"type": "tool_use", "id": "toolu_x", "name": "Read", "input": {"file_path": "a.py"}}]}}

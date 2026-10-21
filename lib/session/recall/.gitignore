@@ -6,3 +6,6 @@
 !fixtures/tail-dropped-kinds.jsonl
 !tests/nondict-edge/nondict.jsonl
 !tests/nondict-edge/nondict-message.jsonl
+!fixtures/final-backtick.jsonl
+!fixtures/final-tilde.jsonl
+!fixtures/final-no-text.jsonl

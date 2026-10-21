@@ -1,0 +1,2 @@
+{"type": "user", "isSidechain": true, "timestamp": "2026-10-21T09:00:00.000Z", "message": {"role": "user", "content": "go"}}
+{"type": "assistant", "isSidechain": true, "timestamp": "2026-10-21T09:00:01.000Z", "message": {"role": "assistant", "content": [{"type": "text", "text": "Here:\n\n~~~~markdown\n# Doc\n\n```\nplain inner\n```\n\n~~~\nshort tilde\n~~~\n\nTail.\n~~~~\n\nbye"}]}}

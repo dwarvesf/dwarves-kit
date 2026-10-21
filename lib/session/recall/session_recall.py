@@ -528,16 +528,65 @@ def render_tail(sid: str, kept, last_write_mtime: float) -> str:
     return "\n".join(lines)
 
 
+# --- --final: a subagent's last reply, optionally one fenced block of it ------
+
+_FENCE_OPEN_RE = re.compile(r"^ {0,3}(`{3,}|~{3,})[ \t]*(.*)$")
+
+
+def final_reply_text(entries):
+    """Text of the last assistant entry that carries any text (all its text blocks
+    joined by newline), or None. Entries with only tool_use or thinking are skipped.
+    `isSidechain` is not filtered: every line of a subagent transcript carries it."""
+    for entry in reversed(entries):
+        if _role(entry) != "assistant":
+            continue
+        text = _text_blocks(_msg(entry))
+        if text.strip():
+            return text
+    return None
+
+
+def last_fenced_block(text: str, tag: str):
+    """Content of the last CLOSED fenced block opened with info-string `tag`, without
+    the fence lines, or None. The block closes at the next line that is exactly its
+    opening fence string, so a shorter or different-character fence inside it is plain
+    content. A same-length fence line that carries an info string (```bash) inside the
+    block opens a nested block and its bare closer is content, so a ```markdown report
+    holding ```bash examples is not cut at the first example."""
+    found = None
+    fence = None  # (opening fence string, tag, content lines, nested depth)
+    for line in text.splitlines():
+        if fence is None:
+            m = _FENCE_OPEN_RE.match(line)
+            if m:
+                fence = (m.group(1), (m.group(2).split() or [""])[0], [], 0)
+            continue
+        opener, open_tag, lines, depth = fence
+        stripped = line.strip()
+        m = _FENCE_OPEN_RE.match(line)
+        if m and m.group(1) == opener and m.group(2).strip():
+            fence = (opener, open_tag, lines + [line], depth + 1)
+        elif stripped == opener and depth:
+            fence = (opener, open_tag, lines + [line], depth - 1)
+        elif stripped == opener:
+            if open_tag == tag:
+                found = "\n".join(lines)
+            fence = None
+        else:
+            lines.append(line)
+    return found
+
+
 # --- CLI ---------------------------------------------------------------------
 
 def main(argv=None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
-    file = project = tail = None
+    file = project = tail = final = fence_tag = None
     search_all = as_json = sessions = False
     limit = None  # None = mode picks its own default (10 tail, 50 otherwise)
     query_parts = []
     usage = ("usage: session-recall <query> [--file F | --project SLUG-or-repo-name | --all] "
-             "[--sessions] [--limit N] [--json] [--tail PREFIX]\n")
+             "[--sessions] [--limit N] [--json] [--tail PREFIX] [--final FILE [--fence TAG]]\n")
     it = iter(argv)
     for a in it:
         if a == "--file":
@@ -552,6 +601,10 @@ def main(argv=None) -> int:
             as_json = True
         elif a == "--tail":
             tail = next(it, None)
+        elif a == "--final":
+            final = next(it, None)
+        elif a == "--fence":
+            fence_tag = next(it, None)
         elif a == "--limit":
             raw = next(it, None)
             try:
@@ -583,6 +636,31 @@ def main(argv=None) -> int:
         sys.stderr.write(f"session-recall: no project dir under {PROJECTS} is '{project}' "
                          f"or ends in '-{project}'\n")
         return 1
+
+    if fence_tag is not None and final is None:
+        sys.stderr.write(usage)
+        return 2
+    if final is not None:
+        if (not final or final.startswith("-") or fence_tag == "" or query or sessions
+                or as_json or tail is not None):
+            sys.stderr.write(usage)
+            return 2
+        try:
+            text = final_reply_text(load(final))
+        except OSError as e:
+            sys.stderr.write(f"session-recall: {e}\n")
+            return 1
+        if text is None:
+            sys.stderr.write(f"session-recall: no assistant text in {final}\n")
+            return 1
+        if fence_tag is not None:
+            text = last_fenced_block(text, fence_tag)
+            if text is None:
+                sys.stderr.write(f"session-recall: no closed fenced block tagged {fence_tag!r} "
+                                 f"in the final reply of {final}\n")
+                return 1
+        sys.stdout.write(text + "\n")
+        return 0
 
     if tail is not None:
         # every mode-conflict rule from the Design record, one exit 2
