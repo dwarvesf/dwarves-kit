@@ -31,15 +31,18 @@
 # docs/verification/wavefront-startup-windows-negctl.sh does.
 #
 # A RED that is only a load or compile error proves nothing: a mutation that breaks the
-# source turns ANY test red (vitest: `Tests  no tests`, pytest: `ERROR collecting`, go:
-# `[build failed]`, bash: `syntax error near unexpected token`), so the test's assertion was
-# never checked. After a non-zero step 4, red_load_error() reads the captured output; a load
-# or compile signature with no assertion-failure signal (vitest/jest `Tests  N failed`, pytest
-# `N failed`, go `--- FAIL:`, a `FAIL: ` line) is `Verdict: FAIL: RED was a load or compile
-# error, not a failing test (<matched line>)`. It is never retried under NEGCTL_RED_ATTEMPTS.
-# Any assertion signal makes the RED count even when a load signature appears too. The
-# signature lists live in that one function. NEGCTL_ALLOW_LOAD_RED=1 restores the old
-# behaviour (any non-zero exit is RED). --base-ref mode does not apply it: there a missing
+# source turns ANY test red (vitest: `Tests  no tests` or `Transform failed`, pytest: `ERROR
+# collecting`, go: `[build failed]`, bash: `syntax error near unexpected token`), so the test's
+# assertion was never checked. After a non-zero step 4, red_load_error() reads the captured
+# output with ANSI colour codes stripped (CI=true or FORCE_COLOR would otherwise defeat the line
+# anchors). A load or compile signature with no assertion-failure signal (vitest/jest `Tests  N
+# failed`, pytest `N failed`, go `--- FAIL:`, mocha `N failing`, node:test `# fail N`, cargo
+# `test result: FAILED`, TAP `not ok`, bun `N fail`, a `FAIL: ` line) is `Verdict: FAIL: RED was
+# a load or compile error, not a failing test (<matched line>)`. It is never retried under
+# NEGCTL_RED_ATTEMPTS. Any assertion signal makes the RED count even when a load signature
+# appears too. A bare `SyntaxError` is not a load signature: inside a test it is a real
+# failure. The signature lists live in that one function. NEGCTL_ALLOW_LOAD_RED=1 restores the
+# old behaviour (any non-zero exit is RED). --base-ref mode does not apply it: there a missing
 # module at the old ref is the expected way for the change under test to be absent.
 #
 # A test-cmd side write breaks steps 3 and 5 the same way a flaky test breaks step 4: `git
@@ -337,12 +340,15 @@ _beyond_mutate_set() {
 # $1 = the captured RED output. Prints the first load or compile failure line and returns 0
 # when the output shows one and NO assertion-failure signal; returns 1 otherwise (the RED is a
 # real failing test, or says nothing recognisable). Add a runner by adding a line to a list.
+# Both lists run on a copy with ANSI colour codes stripped: CI=true or FORCE_COLOR puts escape
+# codes at the start of a line, which would defeat every `^` anchor below. A bare `SyntaxError`
+# is deliberately not a load signature: inside a test it is a real runtime failure.
 red_load_error() {
-  local f="$1" s re_load="" re_assert=""
+  local f="$1" clean s rc re_load="" re_assert=""
   local load_sigs=(
     '^[[:space:]]*Tests:?[[:space:]]+no tests'   # vitest: the file never loaded, zero tests ran
     'Transform failed'                           # vite/esbuild could not compile the source
-    'SyntaxError'                                # node or python could not parse the source
+    'Failed to parse source for import analysis' # vitest: a broken .js source in a multi-file suite
     'Test suite failed to run'                   # jest: the suite file failed to load
     'ERROR collecting'                           # pytest: import or parse error at collection
     'errors? during collection'                  # pytest: the collection summary line
@@ -358,11 +364,24 @@ red_load_error() {
     '^--- FAIL:'                                       # go test: a test function failed
     '^[[:space:]]*FAIL: '                              # the kit's bash harness failure line
     'AssertionError'                                   # python or node assertion
+    '^[[:space:]]*[0-9]+ failing'                      # mocha summary
+    '^# fail [1-9]'                                    # node:test summary
+    'test result: FAILED'                              # cargo test summary
+    '^not ok'                                          # TAP: a test point failed
+    '^[[:space:]]*[1-9][0-9]* fail'                    # bun test summary
   )
   for s in "${load_sigs[@]}"; do re_load="${re_load:+$re_load|}$s"; done
   for s in "${assert_sigs[@]}"; do re_assert="${re_assert:+$re_assert|}$s"; done
-  grep -aqE "$re_assert" "$f" && return 1
-  grep -aE -m1 "$re_load" "$f" | sed 's/^[[:space:]]*//' | cut -c1-120 | grep .
+  clean="$(mktemp "${TMPDIR:-/tmp}/negctl-clean.XXXXXX")" || return 1
+  sed $'s/\x1b\\[[0-9;]*[A-Za-z]//g' "$f" >| "$clean"
+  if grep -aqE "$re_assert" "$clean"; then
+    rc=1
+  else
+    grep -aE -m1 "$re_load" "$clean" | sed 's/^[[:space:]]*//' | cut -c1-120 | grep .
+    rc=$?
+  fi
+  rm -f "$clean"
+  return "$rc"
 }
 
 restore_files=()

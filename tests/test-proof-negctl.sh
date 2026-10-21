@@ -591,7 +591,11 @@ fi
 # lib.sh is intact and 1 once the mutation breaks `add`.
 LREPO="$TMP/loaderr"; mkrepo "$LREPO"
 printf '#!/usr/bin/env bash\nsource ./lib.sh\n[ "$(add 2 2)" = "4" ] && exit 0\nprintf " Test Files  1 failed (1)\\n      Tests  no tests\\n"\necho "Error: Transform failed with 1 error:"\nexit 1\n' > "$LREPO/test-vitest-load.sh"
-printf '#!/usr/bin/env bash\nsource ./lib.sh\n[ "$(add 2 2)" = "4" ] && exit 0\nprintf " Test Files  1 failed (1)\\n      Tests  1 failed | 0 passed (1)\\n"\necho "SyntaxError: Unexpected token"\nexit 1\n' > "$LREPO/test-vitest-both.sh"
+printf '#!/usr/bin/env bash\nsource ./lib.sh\n[ "$(add 2 2)" = "4" ] && exit 0\nprintf " Test Files  1 failed (1)\\n      Tests  1 failed | 0 passed (1)\\n"\necho "Error: Transform failed with 1 error:"\nexit 1\n' > "$LREPO/test-vitest-both.sh"
+printf '#!/usr/bin/env bash\nsource ./lib.sh\n[ "$(add 2 2)" = "4" ] && exit 0\nprintf "\\033[2m     Tests \\033[22m \\033[1m\\033[31m1 failed\\033[39m\\033[22m | 25 passed (26)\\n"\nprintf "\\033[31m\\033[1mSyntaxError\\033[22m: Unexpected token in JSON\\n\\033[31mError: Transform failed with 1 error:\\033[39m\\n"\nexit 1\n' > "$LREPO/test-vitest-color.sh"
+printf '#!/usr/bin/env bash\nsource ./lib.sh\n[ "$(add 2 2)" = "4" ] && exit 0\nprintf "  1 passing (5ms)\\n  1 failing\\n"\necho "SyntaxError: Unexpected token"\necho "Error: Transform failed with 1 error:"\nexit 1\n' > "$LREPO/test-mocha.sh"
+printf '#!/usr/bin/env bash\nsource ./lib.sh\n[ "$(add 2 2)" = "4" ] && exit 0\nprintf " Test Files  1 failed (1)\\n"\necho "Failed to parse source for import analysis because the content contains invalid JS syntax."\nexit 1\n' > "$LREPO/test-vitest-import.sh"
+printf '#!/usr/bin/env bash\nsource ./lib.sh\n[ "$(add 2 2)" = "4" ] && exit 0\necho "SyntaxError: Unexpected token in JSON"\nexit 1\n' > "$LREPO/test-runtime-syntax.sh"
 git -C "$LREPO" add -A && git -C "$LREPO" -c user.name=t -c user.email=t@t commit -q -m loaderr
 LMUT="sed -i.bak 's/+/-/' lib.sh && rm -f lib.sh.bak"
 
@@ -607,7 +611,7 @@ if [ "$RC" -eq 0 ] && grep -q '^Verdict: PASS$' <<<"$OUT" && grep -q 'accepted b
   ok "escape hatch accepts the load-error RED and says so"
 else no "rc=$RC out=$OUT"; fi
 
-echo "[48] an assertion failure beside a load signature (Tests  1 failed + SyntaxError) still counts as RED"
+echo "[48] an assertion failure beside a load signature (Tests  1 failed + Transform failed) still counts as RED"
 OUT="$(bash "$NC" "$LREPO" "bash test-vitest-both.sh" "$LMUT" 2>&1)"; RC=$?
 if [ "$RC" -eq 0 ] && grep -q '^Verdict: PASS$' <<<"$OUT" && ! grep -q 'load or compile error' <<<"$OUT" && clean "$LREPO"; then
   ok "assertion signal wins over the load signature"
@@ -627,6 +631,30 @@ if [ "$RC" -eq 1 ] && grep -q 'Verdict: FAIL: RED was a load or compile error, n
    && [ "$RC_AT" -eq 1 ] && grep -q 'Verdict: FAIL: RED was a load or compile error' <<<"$OUT_AT" && clean "$LREPO"; then
   ok "bash syntax error rejected in mutate and --at modes"
 else no "rc=$RC/$RC_AT out=$OUT // $OUT_AT"; fi
+
+echo "[51] a colored vitest assertion failure plus a colored SyntaxError counts as RED (ANSI stripped before matching)"
+OUT="$(bash "$NC" "$LREPO" "bash test-vitest-color.sh" "$LMUT" 2>&1)"; RC=$?
+if [ "$RC" -eq 0 ] && grep -q '^Verdict: PASS$' <<<"$OUT" && ! grep -q 'load or compile error' <<<"$OUT" && clean "$LREPO"; then
+  ok "colored assertion line recognised, RED kept"
+else no "rc=$RC out=$OUT"; fi
+
+echo "[52] a mocha-style '1 failing' plus SyntaxError counts as RED"
+OUT="$(bash "$NC" "$LREPO" "bash test-mocha.sh" "$LMUT" 2>&1)"; RC=$?
+if [ "$RC" -eq 0 ] && grep -q '^Verdict: PASS$' <<<"$OUT" && clean "$LREPO"; then
+  ok "mocha assertion signal accepted"
+else no "rc=$RC out=$OUT"; fi
+
+echo "[53] a bare runtime SyntaxError is not a load signature: the RED counts"
+OUT="$(bash "$NC" "$LREPO" "bash test-runtime-syntax.sh" "$LMUT" 2>&1)"; RC=$?
+if [ "$RC" -eq 0 ] && grep -q '^Verdict: PASS$' <<<"$OUT" && clean "$LREPO"; then
+  ok "bare SyntaxError no longer rejects a RED"
+else no "rc=$RC out=$OUT"; fi
+
+echo "[54] vitest 'Failed to parse source for import analysis' is a load error even beside Test Files 1 failed"
+OUT="$(bash "$NC" "$LREPO" "bash test-vitest-import.sh" "$LMUT" 2>&1)"; RC=$?
+if [ "$RC" -eq 1 ] && grep -q 'Verdict: FAIL: RED was a load or compile error, not a failing test (' <<<"$OUT" && clean "$LREPO"; then
+  ok "import-analysis parse failure rejected"
+else no "rc=$RC out=$OUT"; fi
 
 if [ "$fail" -gt 0 ]; then echo "test-proof-negctl: $pass passed, $fail FAILED" >&2; exit 1; fi
 echo "test-proof-negctl: all $pass passed"
