@@ -586,5 +586,47 @@ else
   pass=$((pass+1))
 fi
 
+# --- load-error RED: a mutation that breaks compilation must not count as RED -----------
+# The fixtures print the runner output a broken source file produces; each exits 0 while
+# lib.sh is intact and 1 once the mutation breaks `add`.
+LREPO="$TMP/loaderr"; mkrepo "$LREPO"
+printf '#!/usr/bin/env bash\nsource ./lib.sh\n[ "$(add 2 2)" = "4" ] && exit 0\nprintf " Test Files  1 failed (1)\\n      Tests  no tests\\n"\necho "Error: Transform failed with 1 error:"\nexit 1\n' > "$LREPO/test-vitest-load.sh"
+printf '#!/usr/bin/env bash\nsource ./lib.sh\n[ "$(add 2 2)" = "4" ] && exit 0\nprintf " Test Files  1 failed (1)\\n      Tests  1 failed | 0 passed (1)\\n"\necho "SyntaxError: Unexpected token"\nexit 1\n' > "$LREPO/test-vitest-both.sh"
+git -C "$LREPO" add -A && git -C "$LREPO" -c user.name=t -c user.email=t@t commit -q -m loaderr
+LMUT="sed -i.bak 's/+/-/' lib.sh && rm -f lib.sh.bak"
+
+echo "[46] a RED that is a vitest load error (Tests  no tests) is FAIL, restored, tree clean"
+OUT="$(bash "$NC" "$LREPO" "bash test-vitest-load.sh" "$LMUT" 2>&1)"; RC=$?
+if [ "$RC" -eq 1 ] && grep -q '^Verdict: FAIL: RED was a load or compile error, not a failing test (Tests  no tests)$' <<<"$OUT" && clean "$LREPO"; then
+  ok "load-error RED rejected, matched line named"
+else no "rc=$RC out=$OUT"; fi
+
+echo "[47] NEGCTL_ALLOW_LOAD_RED=1 restores the old behaviour: the same RED is PASS"
+OUT="$(NEGCTL_ALLOW_LOAD_RED=1 bash "$NC" "$LREPO" "bash test-vitest-load.sh" "$LMUT" 2>&1)"; RC=$?
+if [ "$RC" -eq 0 ] && grep -q '^Verdict: PASS$' <<<"$OUT" && grep -q 'accepted because NEGCTL_ALLOW_LOAD_RED=1' <<<"$OUT" && clean "$LREPO"; then
+  ok "escape hatch accepts the load-error RED and says so"
+else no "rc=$RC out=$OUT"; fi
+
+echo "[48] an assertion failure beside a load signature (Tests  1 failed + SyntaxError) still counts as RED"
+OUT="$(bash "$NC" "$LREPO" "bash test-vitest-both.sh" "$LMUT" 2>&1)"; RC=$?
+if [ "$RC" -eq 0 ] && grep -q '^Verdict: PASS$' <<<"$OUT" && ! grep -q 'load or compile error' <<<"$OUT" && clean "$LREPO"; then
+  ok "assertion signal wins over the load signature"
+else no "rc=$RC out=$OUT"; fi
+
+echo "[49] a load-error RED is never retried under NEGCTL_RED_ATTEMPTS=3"
+OUT="$(NEGCTL_RED_ATTEMPTS=3 bash "$NC" "$LREPO" "bash test-vitest-load.sh" "$LMUT" 2>&1)"; RC=$?
+if [ "$RC" -eq 1 ] && grep -q 'Verdict: FAIL: RED was a load or compile error' <<<"$OUT" && grep -q 'attempt 1 of 3' <<<"$OUT" && clean "$LREPO"; then
+  ok "FAIL on attempt 1, no later attempt"
+else no "rc=$RC out=$OUT"; fi
+
+echo "[50] a real bash syntax error from the mutation is FAIL; the --at mode judges it the same way"
+SYN="{ echo fi; cat lib.sh; } > lib.new && mv -f lib.new lib.sh"
+OUT="$(bash "$NC" "$LREPO" "bash test.sh" "$SYN" 2>&1)"; RC=$?
+OUT_AT="$(bash "$NC" --at HEAD "$LREPO" "bash test.sh" "$SYN" 2>&1)"; RC_AT=$?
+if [ "$RC" -eq 1 ] && grep -q 'Verdict: FAIL: RED was a load or compile error, not a failing test (.*syntax error near unexpected token' <<<"$OUT" \
+   && [ "$RC_AT" -eq 1 ] && grep -q 'Verdict: FAIL: RED was a load or compile error' <<<"$OUT_AT" && clean "$LREPO"; then
+  ok "bash syntax error rejected in mutate and --at modes"
+else no "rc=$RC/$RC_AT out=$OUT // $OUT_AT"; fi
+
 if [ "$fail" -gt 0 ]; then echo "test-proof-negctl: $pass passed, $fail FAILED" >&2; exit 1; fi
 echo "test-proof-negctl: all $pass passed"
