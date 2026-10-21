@@ -1,11 +1,11 @@
-# SPEC-412: a canonical SQL injection test literal is not a data-loss line
+# SPEC-412: a canonical SQL injection literal in a test file is not a data-loss line
 
 Generated: 2026-10-21
 Status: DRAFT
 Lane: full
 Depth: blind-spot (failure: a carve-out in the data-loss scan that also hides a real destructive statement)
 Type: spec-fix
-References: `lib/classify/lane-classify.sh:121-125` (the `_HL_*` added-line signatures), `lib/classify/lane-classify.sh:720-741` (the data-loss scan in `_floor_scan`), `lib/gate/ship-rules.sh:119-142` (`_sr_relay`, the floor-exempt notice relay); `tests/test-lanes-data.sh:178-209` (`case_floor_data_loss`, imitate its table) and `:690` (the PATH shim pattern); SPEC-368 (the data-loss row), SPEC-400 DEC-10 and DEC-15 (no exemption skips data-loss; every skip is visible), SPEC-410 (data-loss still reads comment lines).
+References: `lib/classify/lane-classify.sh:121-125` (the `_HL_*` added-line signatures), `:619` (`_FLOOR_DATA_OPENER`, reused as is), `:720-741` (the data-loss scan in `_floor_scan`); `lib/gate/ship-rules.sh:115-142` (`_sr_relay`); `docs/MANUAL.md:138` (the diff-floor sentence); `tests/test-lanes-data.sh:178-209` (`case_floor_data_loss`, imitate its table), `:465` and `:846` (timing cases, imitate), `:690` (the PATH shim pattern); SPEC-368 (the data-loss row), SPEC-400 DEC-10 and DEC-15, SPEC-410 (data-loss still reads comment lines).
 
 ## Problem
 
@@ -19,34 +19,46 @@ for bad in "x'; DROP TABLE alerts;--" "Kit_Regression" ""; do
 
 `DROP TABLE alerts` matches `_HL_common`. The line is test data. The script exits 64 before any SQL runs, and the test stubs wrangler.
 
-This spec covers that one canonical form only: a double-quoted code literal whose whole content is `<word>'; DROP TABLE <name>;--`. Other injection spellings keep hitting (see Failure modes, "Residual spellings").
+This spec covers that one canonical form only, in a test file only: a double-quoted code literal whose whole content is `<word>'; DROP TABLE <name>;--`. Every other spelling and every non-test file keeps hitting.
 
 ## Terms
 
 - data-loss scan: the added-line pass at the end of `_floor_scan`. It writes `path<TAB>line` records for every added line in a non-doc file to `$tmp/added`, then greps them against the `_HL_*` signatures.
-- canonical payload literal: a span in one added line that matches `_HL_sqli_payload` (below) AND passes every line guard in the Contract. The span is a whole double-quoted literal: opening `"`, a bare word, `'`, `;`, optional whitespace, `DROP TABLE`, a bare name, `;--`, closing `"`.
-- test path: `_HP_testpath` at `lib/classify/lane-classify.sh:118`. This spec does not use or change it (DEC-3).
+- sqli test path: a path with a `test`, `tests`, `spec` or `__tests__` directory segment, or a basename that starts with `test_` or `test-`, or contains `_test.` or `.test.`. Case-insensitive. It is local to this rewrite. It is NOT `_HP_testpath`, it does not change any hard-path kind, and no other floor reads it.
+- canonical payload literal: a span that matches `_HL_sqli_payload` and passes every guard in the Contract.
 
 ## Contract
 
-A canonical payload literal is replaced by `"sqli-payload"` before the grep chain runs, only when every guard holds. Any guard that fails leaves the line as it is, so the scan reads the raw line.
+A canonical payload literal is replaced by `"sqli-payload"` before the grep chain runs, only when every guard holds. Any guard that fails leaves the line as it is, and the scan reads the raw line.
 
 | Guard | Rule | Why it is fail-closed |
 |---|---|---|
-| G1 path | the path does not end in `.sql` (case-insensitive) | a `.sql` file is executed as SQL; nothing in it is test data |
-| G2 one quote | the content holds exactly one `'` byte | a real statement that reaches `DROP` after a string needs a `'` to open that string. With one `'`, the only `'` is the payload's, and SQL that starts reading at it sees an unterminated string |
-| G3 no escapes | the content holds no `\` and no backtick | escaped quotes and template literals break quote parity |
-| G4 shape | the lowercased content matches `_HL_sqli_payload` | the span is one whole double-quoted literal, `;--` closes it with no gap |
-| G5 opener | the count of `"` bytes before the span is even | the span's first `"` opens a code literal, so the payload sits inside a code string, not in SQL text |
-| G6 one span | G2 allows at most one span per line; only that span is replaced | a second, real statement on the same line still hits |
+| G0 test path | the path is a sqli test path | production code never qualifies, so a real statement in shipped code always hits |
+| G1 not SQL | the path does not end in `.sql`, `.psql`, `.pgsql`, `.ddl`, `.hql` or `.cql`, and does not contain `.sql.` in its basename (templates such as `seed.sql.j2`) | a SQL file is executed as SQL; nothing in it is test data |
+| G2 one quote | the line holds exactly one `'` byte | SQL that reaches `DROP` after a string needs a second `'` on the line to open that string |
+| G3 no escapes | the line holds no `\` and no backtick | escaped quotes and template literals break quote parity |
+| G4 no joins | the lowercased line holds none of `+`, `%`, `\|\|`, `.format`, `f"`, `fr"`, `rf"`, `${`, `#{` | the literal is never concatenated or interpolated on its own line |
+| G5 shape | the lowercased line matches `_HL_sqli_payload` | the span is one whole double-quoted literal and `;--` closes it with no gap |
+| G6 opener | the count of `"` bytes before the span is even | the span's first `"` opens a code literal |
+| G7 code token | the text before the span, trailing whitespace trimmed, ends in `=`, `(`, `,`, `[`, `:` or the word `in` | the literal is a value in code on this line. A span that starts the line after whitespace (an implicit-concatenation continuation) fails |
+| G8 one span | G2 caps a line at one span; only that span is replaced | a second, real statement on the same line still hits |
+| G9 file openers | the head image of the file holds no `_FLOOR_DATA_OPENER` match (heredoc `<<`, triple quote, YAML block scalar) and no backtick | a heredoc, triple-quoted string or template literal can carry an opener `'` from an earlier line into this one |
 
-Shipped regex bytes (an ERE, matched against the lowercased content, written here inside a fenced block so no markdown escaping applies):
+Shipped regex bytes, as an ERE matched against the lowercased line:
 
 ```
 "[a-z0-9_]*';[[:space:]]*drop[[:space:]]+table[[:space:]]+[a-z0-9_]+;--"
 ```
 
-Every replaced span prints one stderr notice in the SPEC-400 shape: `floor-exempt<TAB>data-loss<TAB>sqli-payload<TAB>-<TAB>built-in sqli-payload literal<TAB>-<TAB><path>`. `_sr_relay` prints its reason field (`$5`) instead of the fixed text `built-in test-path default`; the test-path notice carries that same text in `$5`, so its output is unchanged.
+Sqli test path ERE, matched against the lowercased path:
+
+```
+(^|/)(test|tests|spec|__tests__)/|(^|/)(test_|test-)[^/]*$|(^|/)[^/]*(_test|\.test)\.[^/]+$
+```
+
+Notices. Every replaced span adds one line to a buffer: `floor-exempt<TAB>data-loss<TAB>sqli-payload<TAB>-<TAB>built-in sqli-payload literal<TAB>-<TAB><path>`. The buffer goes to stderr only after the `mv` succeeds. A fallback to raw prints one line instead: `floor-note<TAB>data-loss<TAB>sqli-fallback<TAB><reason>`.
+
+Relay. `_sr_relay` handles `$3 == "sqli-payload"` in its own branch with its own counter `ns`: up to 20 lines of `[advisory] data-loss skip: <path> (built-in sqli-payload literal, test path)` and `L` lines `EXEMPT | floor | <rid> (data-loss: <path>; sqli-payload literal)`, then one END line `[advisory] data-loss skip: <n> more sqli-payload literals`. A `floor-note ... sqli-fallback` line becomes one `L` line `SQLI-FALLBACK | floor | <rid> (<reason>)`. The test-path branch and its counter `nt` do not change.
 
 ## Picture
 
@@ -54,44 +66,58 @@ Every replaced span prints one stderr notice in the SPEC-400 shape: `floor-exemp
  git diff -U0 base..head
         |
         v
- producer awk (LC_ALL=C) --> $tmp/added   path<TAB>line   (unchanged format)
-                         \-> $tmp/plen    byte length of each record's path
+ producer awk (LC_ALL=C) --> $tmp/added  path<TAB>line  (format unchanged)
+                         \-> $tmp/plen   byte length of each record's path
         |
         v
- neutralizer awk (LC_ALL=C, regex from ENVIRON) --> $tmp/added.n
-        |                                     \--> stderr: floor-exempt data-loss sqli-payload <path>
+ self-test: run pass B on two built-in records ---fails---> floor-note sqli-fallback; keep raw
+        | ok
+        v
+ pass A awk: prefilter (' and ;-- in line) + G0 + G1 on path --> candidate paths (unique)
         |
-   awk exit 0 AND same line count? --no--> keep $tmp/added (raw, stricter)
+        v
+ shell: per candidate (cap 20), _floor_git show <head>:<path> | G9 --> $tmp/sqli-allow
+        |
+        v
+ pass B awk (regexes from ENVIRON): G2..G8 on allowed paths --> $tmp/added.n + $tmp/sqli-notes
+        |
+   exit 0 AND equal line counts? --no--> floor-note sqli-fallback; keep $tmp/added (raw)
         | yes
         v
-   mv -f added.n added
+ mv -f added.n added; cat sqli-notes >&2
         |
         v
- grep chain, unchanged: _HL_common -> delete-from-no-where -> where 1=1 -> .sql truncate -> code truncate
+ grep chain, unchanged --> "full data-loss: <path>" or nothing
         |
-        v
- "full data-loss: <path>"  or nothing
+ stderr ---> ship-rules _sr_relay ---> sqli branch (ns, cap 20, END line) ---> push advisory + ship-gate.log
 ```
 
 ## Design
 
 ### Approaches considered + chosen
 
-1. **Skip the data-loss scan on test paths.** Does not fix the sample: `scripts/test/test-hb-ack.sh` has a singular `test/` and a `test-` prefix, and `_HP_testpath` matches neither. Widening `_HP_testpath` widens the auth exemption too. A test can run real destructive SQL against a shared database. Rejected (DEC-3, SPEC-400 DEC-10).
-2. **Neutralize any quote-semicolon-verb-dash span (round 1 draft).** Rejected: it matched real SQL such as `UPDATE t SET a='x'; DROP TABLE b; -- reset`.
-3. **Tighten `_HL_common` itself** with a negative condition for the payload. Rejected: POSIX ERE has no lookaround, so the condition needs the same quote counting in a second tool; one pre-scan keeps the five signatures byte-for-byte as they are.
-4. **Chosen: a guarded pre-scan rewrite of the canonical literal only.** Every guard in the Contract must hold, and any failure leaves the raw line. Tradeoff: it fixes the canonical form only; other spellings keep the full lane.
+1. **Skip the data-loss scan on `_HP_testpath`.** Does not fix the sample (`scripts/test/test-hb-ack.sh` has a singular `test/` and a `test-` prefix). Widening `_HP_testpath` widens the auth exemption too. Rejected (SPEC-400 DEC-10).
+2. **Neutralize any quote-semicolon-verb-dash span (round 1).** Rejected: it matched real SQL such as `UPDATE t SET a='x'; DROP TABLE b; -- reset`.
+3. **Line guards only (round 2).** Rejected: an opener `'` on an earlier line (a variable, an implicit concatenation, a triple quote, a heredoc) makes a qualifying line part of real SQL.
+4. **Tighten `_HL_common` itself.** Rejected: POSIX ERE has no lookaround, so the guards need awk and git anyway; one pre-scan keeps the five signatures byte-for-byte.
+5. **Inline the rewrite into the producer awk.** Rejected: a separate pass reads a complete raw file and falls back to it on any error. G9 needs a git call between candidate detection and rewrite, which awk cannot make.
+6. **Chosen: a guarded pre-scan rewrite** with G0 to G9, a self-test, and fail-closed fallback to the raw file. Tradeoff: it fixes the canonical form in test files only.
 
-ADR: none. The change is reversible (one constant, one awk pass, one relay field), and DEC-1 to DEC-6 hold the record.
+ADR: none. The change is reversible (two constants, two awk passes, one relay branch), and DEC-1 to DEC-8 hold the record.
+
+### Diagram
+
+See `## Picture`.
 
 ### Mechanics
 
-- The producer awk (`:722-732`) runs under `LC_ALL=C` and also writes `$tmp/plen`: the byte length of `cur` for each record. A path that holds a TAB therefore splits at the right byte.
-- The neutralizer reads `plen` and `added`, takes `path = substr(line, 1, n)` and `content = substr(line, n + 2)`, and applies G1 to G6. The regex comes from `ENVIRON`, never `-v`, so awk does no escape processing on it.
-- One left-to-right pass, one `match()` per qualifying line. G2 caps a line at one span, so there is no rescan loop.
-- `tolower` under `LC_ALL=C` touches ASCII bytes only, so match offsets on the lowercased copy align with the original bytes, including after multibyte UTF-8.
-- Fail-closed: the neutralizer writes `$tmp/added.n`. The scan moves it over `$tmp/added` only when awk exits 0 and the line counts are equal. Otherwise the raw file stays.
-- Verified flavours (scratch prototype, all fixture rows below): macOS BWK awk 20200816, gawk and mawk from Homebrew.
+- The producer awk runs under `LC_ALL=C` and also writes `$tmp/plen`, so a path that holds a TAB splits at the right byte.
+- Prefilter: a line pays for `tolower` and `match` only when it holds both `'` and `;--`. G2 caps a line at one span, so there is no rescan loop.
+- All regexes reach awk through `ENVIRON`, never `-v`. `tolower` under `LC_ALL=C` touches ASCII only, so offsets align after multibyte UTF-8.
+- G9 runs one `_floor_git show` per candidate file, capped at 20 files. Past the cap, or when `git show` fails, the file is not allowed.
+- Self-test: before pass B touches real data, it runs on two built-in records: `tests/x.py` with a canonical literal (must be replaced) and `app/x.py` with the same literal (must stay). The literal is assembled from parts in the source (`"dr""op table"`), so the source line itself is not a data-loss line. A failed self-test prints the fallback note and skips the rewrite.
+- Fail-closed: pass B writes `$tmp/added.n` and `$tmp/sqli-notes`. The scan moves `added.n` over `added` only when awk exits 0 and the line counts match, then prints the notes. Otherwise it prints the fallback note and keeps the raw file.
+- Verified flavours (scratch prototype of G0 to G8): macOS BWK awk 20200816, gawk and mawk from Homebrew.
 
 ### Boundaries & failure modes
 
@@ -101,8 +127,8 @@ See `## Failure modes`.
 
 ### Interfaces (I/O contract)
 
-- `lane-classify.sh floor <root> [<base> [<head>]]`: stdout contract unchanged. A diff whose only destructive-shaped added text is canonical payload literals prints nothing for data-loss. Every other destructive added text prints `full data-loss: <path>` as today. Stderr gains one `floor-exempt ... sqli-payload` line per replaced span.
-- `_HL_sqli_payload`: the regex above. No config key, no CLI flag. A PR cannot widen it.
+- `lane-classify.sh floor <root> [<base> [<head>]]`: stdout contract unchanged. A diff whose only destructive-shaped added text is canonical payload literals in sqli test paths prints nothing for data-loss. Every other destructive added text prints `full data-loss: <path>` as today. Stderr gains the notices and fallback line above.
+- `_HL_sqli_payload`, `_HL_sqli_testpath`: the two EREs above. No config key, no CLI flag. A PR cannot widen them.
 
 ### Data model changes
 
@@ -112,69 +138,72 @@ None.
 
 ### Phase 1: Core
 
-| Task | Files | Acceptance |
-|---|---|---|
-| T1: neutralizer | `lib/classify/lane-classify.sh` | AC1 to AC5 hold; the comment above `_HL_common` names the payload rule in one line |
-| T2: relay | `lib/gate/ship-rules.sh` | the `else` branch of `_sr_relay` prints `fold($5)`; `ship-test-path-skip-visible` stays green; AC6 holds |
-| T3: cases | `tests/test-lanes-data.sh` | the new rows and cases go red under both negative controls in `## Verification` |
+| Task | Depends on | Files | Acceptance |
+|---|---|---|---|
+| T1: neutralizer | none | `lib/classify/lane-classify.sh` | AC1 to AC5, AC7, AC8, AC9 hold; the comment above `_HL_common` names the carve-out in one line |
+| T2: relay | T1 | `lib/gate/ship-rules.sh` | AC6 holds; `ship-test-path-skip-visible` stays green |
+| T3: cases | T1, T2 | `tests/test-lanes-data.sh` | every AC row and case exists and goes red under NC1 or NC2 |
+| T4: manual | T1 | `docs/MANUAL.md:138` | the sentence says an added data-loss line forces full, except a canonical injection literal in a test file (SPEC-412) |
+| T5: record | T3 | `docs/verification/data-loss-hardpath-scope.md` | the Verification command output, the NC1 and NC2 `negctl.sh` results, and the ops-toolkit reproduction before and after |
 
 ## After state
 
-A sandbox test that feeds `"x'; DROP TABLE alerts;--"` to an input validator owes the lane its own change earns, and the push output names the skip. Every other destructive added line still forces the full lane, on any path, test paths included.
+A sandbox test that feeds `"x'; DROP TABLE alerts;--"` to an input validator owes the lane its own change earns, and the push output names the skip. Every other destructive added line still forces the full lane.
 
 ## Acceptance Criteria (global)
 
-All rows are in-repo fixtures. Rows go into `case_floor_data_loss` (`path|content|want`) unless a dedicated case is named.
+All rows are in-repo fixtures in `case_floor_data_loss` (`path|content|want`) unless a dedicated case is named.
 
 | AC | Rule | Rows or case |
 |---|---|---|
-| AC1 | The live sample no longer hits | `tools/vps-mon/scripts/test/test-hb-ack.sh\|for bad in "x'; DROP TABLE alerts;--" "Kit_Regression" ""; do\|miss` (the exact line from #4630, as a fixture) |
-| AC2 | Canonical literals never hit | `app/t.py\|p = "1'; drop table users;--"\|miss`; `app/db.py\|db.execute("x'; DROP TABLE users;--")\|miss`; `app/é.py\|s = "é" + "x'; DROP TABLE t;--"\|miss` (multibyte before the span) |
-| AC3 | Real SQL and near-misses still hit | `want hit`, `app/db.py` unless noted: `INSERT INTO t VALUES ('a'); DROP TABLE old; -- legacy`; `UPDATE t SET a='x'; DROP TABLE b; -- reset`; `SELECT 'done'; TRUNCATE TABLE tmp_load; -- nightly`; `db.exec("SELECT '1'; TRUNCATE users;--")`; `db.execute("a"); DROP TABLE users; -- x`; `db/seed.sql\|SELECT "x'; DROP TABLE t;--"` (G1); ``q = `x'; DROP TABLE t;--` `` (G3, backtick); `p = "a \"q\" x'; DROP TABLE t;--"` (G3, backslash); `q = "SELECT '" + "x'; DROP TABLE t;--"` (G2, concatenation); `p = "say "x'; DROP TABLE t;--"` (G5, odd parity); `p = "x'; DROP TABLE alerts; --"` (gap before `--`); `p = "x'; DROP TABLE alerts"` (no `--`); `p = "x'; DROP TABLE IF EXISTS alerts;--"`; `name = "Robert'); DROP TABLE Students;--"` (`)` variant); `p = 'x"; DROP TABLE "users";--'`; `p = "x'; DELETE FROM users;--"`; `tests/t.sh\|DROP TABLE users;\|hit` (a test path is not exempt) |
-| AC4 | A real statement beside a literal still hits | `floor-data-loss-sqli-payload`: `app/m.py` line `x = "a'; DROP TABLE t;--"; db.execute("DROP TABLE users")` prints `full data-loss: app/m.py` |
-| AC5 | TAB in a path splits right | `floor-data-loss-sqli-tab-path`: path `app/a<TAB>b.py` with a canonical literal prints no data-loss line; the same path with `DROP TABLE users;` prints a `full data-loss:` line (the existing `${rec%%$T*}` path print is unchanged and out of scope) |
-| AC6 | The skip is visible | `floor-data-loss-sqli-notice`: AC1's fixture writes exactly one `floor-exempt<TAB>data-loss<TAB>sqli-payload` stderr line naming the path; `ship_rule_floor` relays it as `[advisory] hard-path skip data-loss: <path> (built-in sqli-payload literal)` |
-| AC7 | Awk failure keeps the floor | `floor-data-loss-sqli-awk-fails`: a PATH shim `awk` exits 2 when `ENVIRON` holds the neutralizer's regex variable and execs the real awk otherwise (the `:690` shim pattern). With AC4's line, stdout is `full data-loss: app/m.py`; with AC1's line, stdout is `full data-loss: tools/vps-mon/scripts/test/test-hb-ack.sh` (raw kept) |
-| AC8 | Long line stays linear | `floor-data-loss-sqli-long-line`: one added line of about 170,000 bytes (20,000 short literals, then one canonical literal) finishes the floor within the existing `floor-timing` budget and prints nothing |
+| AC1 | The live sample no longer hits | `tools/vps-mon/scripts/test/test-hb-ack.sh`, the exact #4630 line, `miss` |
+| AC2 | Canonical literals in test paths never hit | `miss`: `tests/t.py` with `p = "1'; drop table users;--"`; `tests/t.py` with `db.execute("x'; DROP TABLE users;--")`; `app/test_q.py` with `cases = ["x'; DROP TABLE t;--", "ok"]`; `app/q_test.go` with `in := map[string]string{"k": "x'; DROP TABLE t;--"}`; `tests/é.py` with `s = ("é", "x'; DROP TABLE t;--")` (multibyte before the span) |
+| AC3 | Real SQL, cross-line openers and near-misses still hit | `hit`. G0: `app/t.py` with `p = "x'; DROP TABLE users;--"`. Cross-line, as two-line fixtures in `floor-data-loss-sqli-crossline`: `tests/t.py` `opener = "UPDATE t SET a='"` then `db.execute(opener + "x'; DROP TABLE users;--")`; `tests/t.py` `sql = ("UPDATE t SET a='"` then `       "x'; DROP TABLE t;--")`; `tests/t.py` `q = """SELECT * FROM t WHERE n = '` then `""" + "x'; DROP TABLE t;--")`; `tests/t.sh` `psql <<EOF`, `UPDATE t SET a='`, `v = "x'; DROP TABLE t;--"`, `EOF` (G9). Single line in `tests/t.py` unless noted: `INSERT INTO t VALUES ('a'); DROP TABLE old; -- legacy`; `UPDATE t SET a='x'; DROP TABLE b; -- reset`; `SELECT 'done'; TRUNCATE TABLE tmp_load; -- nightly`; `db.exec("SELECT '1'; TRUNCATE users;--")`; `db.execute("a"); DROP TABLE users; -- x`; `q = "%s" % "x'; DROP TABLE t;--"`; `q = f"x'; DROP TABLE t;--"`; `q = "a" "x'; DROP TABLE t;--"` (G7); `"x'; DROP TABLE t;--"` alone in `tests/t.sh` (G7); `q = "SELECT '" + "x'; DROP TABLE t;--"`; `p = "say "x'; DROP TABLE t;--"` (G6); ``q = `x'; DROP TABLE t;--` `` (G3); `p = "a \"q\" x'; DROP TABLE t;--"` (G3); `tests/seed.sql`, `tests/seed.pgsql`, `tests/seed.sql.j2` with `x = "x'; DROP TABLE t;--"` (G1); `p = "x'; DROP TABLE alerts; --"`; `p = "x'; DROP TABLE alerts"`; `p = "x'; DROP TABLE IF EXISTS alerts;--"`; `name = "Robert'); DROP TABLE Students;--"`; `p = 'x"; DROP TABLE "users";--'`; `p = "x'; DELETE FROM users;--"`; `tests/t.sh` with `DROP TABLE users;` |
+| AC4 | A real statement beside a literal still hits | `floor-data-loss-sqli-payload`: `tests/m.py` line `x = "a'; DROP TABLE t;--"; db.execute("DROP TABLE users")` prints `full data-loss: tests/m.py` |
+| AC5 | TAB in a path splits right | `floor-data-loss-sqli-tab-path`: `tests/a<TAB>b.py` with a canonical literal prints no data-loss line; with `DROP TABLE users;` it prints a `full data-loss:` line (the existing `${rec%%$T*}` print is unchanged and out of scope) |
+| AC6 | The skip is visible and labelled | `floor-data-loss-sqli-notice`: AC1's fixture writes one `floor-exempt<TAB>data-loss<TAB>sqli-payload` stderr line; `ship_rule_floor` relays `[advisory] data-loss skip: <path> (built-in sqli-payload literal, test path)` and logs `EXEMPT \| floor \| <rid> (data-loss: <path>; sqli-payload literal)`; 21 literals give 20 lines plus `1 more`; a mixed diff with one test-path skip and one sqli skip keeps both counters apart |
+| AC7 | Awk failure or a failed self-test keeps the floor | `floor-data-loss-sqli-awk-fails`: a PATH shim `awk` exits 2 when `ENVIRON` holds the pass-B regex variable. With AC1's line, stdout is `full data-loss: <path>`, stderr holds one `sqli-fallback` line and no `sqli-payload` notice. A second leg breaks the self-test (shim rewrites `sqli-payload` output) with the same result |
+| AC8 | Cost stays flat | `floor-data-loss-sqli-long-line`: one added line of 168,911 bytes (20,000 short literals then one canonical literal) in `tests/l.py`: stdout empty, floor under 3000 ms. `floor-data-loss-sqli-many-lines`: 30,000 added lines in `tests/` files, each holding a canonical literal (1.39 MB): floor under 15000 ms, the `floor-timing-30k` budget |
 | AC9 | No regression | every existing row in `case_floor_data_loss` keeps its verdict; `floor-where-boundary`, `floor-plus-line`, `floor-non-ascii`, `floor-exempt-data-loss-still-hits`, `ship-data-loss`, `ship-test-path-skip-visible`, `floor-test-path-notice`, `floor-timing`, `floor-timing-30k` stay green; `floor-data-loss-still-hits-in-comments` in `tests/test-ceremony-fits-diff.sh` stays green |
 
 ## Verification
 
-`bash tests/test-lanes-data.sh floor-data-loss floor-data-loss-sqli-payload floor-data-loss-sqli-tab-path floor-data-loss-sqli-notice floor-data-loss-sqli-awk-fails floor-data-loss-sqli-long-line floor-where-boundary floor-plus-line floor-non-ascii floor-exempt-data-loss-still-hits ship-data-loss ship-test-path-skip-visible floor-test-path-notice floor-timing floor-timing-30k && bash tests/test-ceremony-fits-diff.sh floor-data-loss-still-hits-in-comments && bash tests/run-all.sh --changed`
+`bash tests/test-lanes-data.sh floor-data-loss floor-data-loss-sqli-payload floor-data-loss-sqli-crossline floor-data-loss-sqli-tab-path floor-data-loss-sqli-notice floor-data-loss-sqli-awk-fails floor-data-loss-sqli-long-line floor-data-loss-sqli-many-lines floor-where-boundary floor-plus-line floor-non-ascii floor-exempt-data-loss-still-hits ship-data-loss ship-test-path-skip-visible floor-test-path-notice floor-timing floor-timing-30k && bash tests/test-ceremony-fits-diff.sh floor-data-loss-still-hits-in-comments && bash tests/run-all.sh --changed`
 
-Two negative controls through `lib/gate/negctl.sh`, test command `bash tests/test-lanes-data.sh floor-data-loss floor-data-loss-sqli-payload`:
+Two negative controls through `lib/gate/negctl.sh`, test command `bash tests/test-lanes-data.sh floor-data-loss floor-data-loss-sqli-payload`, recorded by T5:
 
 - NC1: restore `lib/classify/lane-classify.sh` from the merge base. The AC1 and AC2 rows go red (`floor-data-loss`).
-- NC2: mutate the neutralizer to replace the whole content field instead of the span. AC4 goes red (`floor-data-loss-sqli-payload`).
+- NC2: mutate pass B to replace the whole line content instead of the span. AC4 goes red (`floor-data-loss-sqli-payload`).
 
 ## Edge Cases
 
-- The literal sits in a comment line (`# "x'; DROP TABLE t;--"`): replaced, no hit. A comment holding a bare `DROP TABLE users;` still hits, as SPEC-410 requires.
-- Two canonical literals on one line: G2 fails (two `'`), the line hits. Accepted.
-- A non-ASCII byte before the span: `LC_ALL=C` keeps byte offsets aligned (AC2 multibyte row).
+- The literal sits in a comment line in a test file (`# v = "x'; DROP TABLE t;--"`): replaced if every guard holds. A comment holding a bare `DROP TABLE users;` still hits (SPEC-410).
+- Two literals on one line: G2 fails, the line hits.
+- More than 20 candidate files in one diff: files past the cap keep the raw line and hit.
 - A path with a TAB: split by the byte length from `plen` (AC5).
 
 ## Failure modes
 
 | Class | Mitigation | Detection signal |
 |---|---|---|
-| Real SQL is neutralized | G1 to G5 together: SQL that reaches `DROP` after a string needs a second `'` (G2), a `.sql` file never qualifies (G1), the literal must open a code string (G5). Every round-1 counterexample is an AC3 row | AC3 rows red; the stderr notice names every replaced path |
-| The neutralizer awk fails or truncates | temp file, `mv` only on exit 0 and equal line counts; raw file kept otherwise | AC7 |
-| A long line or many literals | one `match()` per line, no rescan; G2 caps spans at one | AC8 |
-| A TAB in a path misaligns the split | byte length from the producer, not a TAB search | AC5 |
-| Awk flavour or locale differences | `LC_ALL=C` on both awks; regex via `ENVIRON`; prototype verified on BWK awk, gawk, mawk | AC2 multibyte row, `floor-non-ascii` |
-| Deliberate dodge by an unattended agent (SPEC-400 DEC-10) | DEC-10 bars config exemptions a PR can steer. This carve-out is fixed in code and holds only a string SQL cannot run on its own line (G2). Building a real drop from it needs the SQL split across lines or literals, which the line scan already misses today (`"DROP " +` newline `"TABLE x"`). So the carve-out adds no new dodge class. The skip is never silent: AC6 puts it in the push output, and the review lenses read the diff | AC6 advisory line; `ship-gate.log` EXEMPT entry |
-| Residual spellings that still hit | `IF EXISTS`, a numeric context (`1; DROP TABLE t`), no trailing `--`, a space before `--`, `)` variants, `DELETE`/`TRUNCATE` payloads, single-quoted or backtick literals, `OR 1=1` (not a data-loss signature at all). Each keeps the full lane; widening needs a new sample and a new spec | AC3 rows pin each as a hit |
+| Real SQL in shipped code is neutralized | G0: only sqli test paths qualify | AC3 G0 row |
+| Real SQL in a test file is neutralized | G1 to G9: same-line openers (G2), joins (G4), continuation lines (G7), multi-line strings and heredocs (G9) all keep the raw line. Every round-1 and round-2 counterexample is an AC3 row | AC3 rows; the stderr notice names every replaced path |
+| A deliberate test-file author hides one drop string (for example a list built over lines and joined later) | accepted, decided risk (DEC-7). The carve-out does not claim to stop it | AC6 notice on the push and the `ship-gate.log` EXEMPT line; review lenses read the diff |
+| Pass B fails, truncates, or the regex misbehaves on a new awk | self-test first; temp file; `mv` only on exit 0 and equal line counts; notices only after `mv` | AC7; `sqli-fallback` line, `SQLI-FALLBACK` log line |
+| A long line or many lines | prefilter, one `match` per line, no rescan; G9 capped at 20 files | AC8 |
+| A TAB in a path misaligns the split | byte length from the producer | AC5 |
+| Awk flavour or locale differences | `LC_ALL=C`; regex via `ENVIRON`; prototype verified on BWK awk, gawk, mawk | AC2 multibyte row, `floor-non-ascii` |
+| Residual spellings that still hit | `IF EXISTS`, numeric context (`1; DROP TABLE t`), no trailing `--`, a gap before `--`, `)` variants, `DELETE` or `TRUNCATE` payloads, single-quoted or backtick literals, `OR 1=1` (not a data-loss signature), any literal in a non-test path | AC3 rows pin each as a hit |
 
 ## Out of Scope
 
-- `_HP_testpath` and the auth test-path default.
-- Any per-repo exemption for data-loss. SPEC-400 DEC-10 stands.
+- `_HP_testpath` and the auth test-path default. The sqli test path is a separate, local constant.
+- Any per-repo exemption for data-loss. SPEC-400 DEC-10 stands for config.
 - The pre-existing `${rec%%$T*}` path print for a path that holds a TAB.
 
 ## Touches
 
-`lib/classify/lane-classify.sh`, `lib/gate/ship-rules.sh`, `tests/test-lanes-data.sh`, the verification record for this spec.
+`lib/classify/lane-classify.sh`, `lib/gate/ship-rules.sh`, `tests/test-lanes-data.sh`, `docs/MANUAL.md`, `docs/verification/data-loss-hardpath-scope.md`.
 
 ## Grounding
 
@@ -182,39 +211,44 @@ Live sample (read-only, ops-toolkit; AC1 copies it into an in-repo fixture, so n
 
 - Commit `ce61e16c3` ("fix(vps-mon): hb-ack --rule acks a job's stale rows of one non-heartbeat rule (#4630)") adds 28 lines to `tools/vps-mon/scripts/test/test-hb-ack.sh`. The only added line matching any `_HL_*` signature is file line 116: `for bad in "x'; DROP TABLE alerts;--" "Kit_Regression" ""; do`.
 - The file header says no real Cloudflare call happens: `HB_ACK_WRANGLER` points at a stub. The case asserts a bad `rule_id` exits 64 before wrangler runs.
+- G9 on the sample: `git show ce61e16c3:tools/vps-mon/scripts/test/test-hb-ack.sh | grep -nE '<<|"""|`'` prints nothing, and the block-scalar part of `_FLOOR_DATA_OPENER` counts 0 lines. The sample passes G9.
 - Reproduction with this worktree's lib: `bash lib/classify/lane-classify.sh floor ~/workspace/tieubao/ops-toolkit ce61e16c3^ ce61e16c3` prints `full data-loss: tools/vps-mon/scripts/test/test-hb-ack.sh`.
 - Matching rule: `_HL_common='drop[[:space:]]+(table|column|database|schema)|...'` at `lib/classify/lane-classify.sh:121`, applied by the first grep of the chain at `:735`, printed at `:740`.
-- Not a path rule. `_HP_testpath` (`:118`) is `(^|/)(tests|__tests__|fixtures|cases)/|\.(test|spec)\.[^/]+$`; the sample path matches neither branch, and the floor reached the data-loss scan only because no path kind hit (`:716-719` returns first on a path hit).
+- Not a path rule. `_HP_testpath` (`:118`) misses the sample path, and the floor reached the data-loss scan only because no path kind hit (`:716-719` returns first on a path hit).
 
-Prototype run (scratch awk implementing G1 to G6 with `plen`, regex from `ENVIRON`, `LC_ALL=C`): all 21 AC1 to AC4 rows gave the wanted verdict after the existing grep chain, on `/usr/bin/awk` (BWK 20200816), `gawk` and `mawk`, each exit 0 with 21 output lines. The TAB path `app/a<TAB>b.py` split correctly and printed one notice. A 168,911-byte line with one canonical literal finished in under one second on all three.
+Prototype runs (scratch awk implementing G0 to G8 with `plen`, regexes from `ENVIRON`, `LC_ALL=C`; G9 is a shell `git show` step and was checked on the sample above):
 
-Dry trace of the negative controls (real data-loss lines from the rule's own tests that must still hit):
+- 21 rows (AC1, AC2, the single-line AC3 rows for G0, G1, G4, G6, G7, round-1 SQL, and AC4) gave the wanted verdict after the existing grep chain on `/usr/bin/awk` (BWK 20200816), `gawk` and `mawk`, each exit 0 with 21 output lines.
+- A first prototype with a malformed bracket expression made all three awks exit non-zero with empty output. That is the AC7 failure class: the scan must keep the raw file there.
+- 30,000 canonical-literal lines (1,387,780 bytes): pass B took 162 ms on BWK awk, 347 ms on gawk, 67 ms on mawk. A 168,911-byte single line finished under one second on all three.
 
-| Existing case (file:line) | Content | Guard that fails | Grep that still fires | Verdict |
+Dry trace of the negative controls (real data-loss lines from the rule's own tests that must still hit; every one fails G0 as an `app/`, `db/`, `ui/` or `docs/` path, and the second guard listed also fails):
+
+| Existing case (file:line) | Content | Guards that fail | Grep that still fires | Verdict |
 |---|---|---|---|---|
-| `tests/test-lanes-data.sh:186` | `DROP TABLE users;` | G2 (no `'`) | `_HL_common` | hit |
-| `:187` | `db.execute("TRUNCATE users;")` | G2 | `_HL_truncate_code` | hit |
-| `:188` | `await db.users.deleteMany({})` | G2 | `_HL_common` | hit |
-| `:189` | `TRUNCATE users` in `db/reset.sql` | G1 | `_HL_truncate_sql` | hit |
-| `:190`, `:192` | `DELETE FROM users`, `... WHERE 1=1` | G2 | delete-from greps | hit |
-| `:193`, `:196`, `:197` | `x("DROP  TABLE users")` and truncate strings | G2 | `_HL_common`, `_HL_truncate_code` | hit |
-| `:198` | ``sql`TRUNCATE sessions;` `` | G2, G3 | `_HL_truncate_code` | hit |
-| `:199` | `run('TRUNCATE TABLE audit_log')` | G2 (two `'`) | `_HL_truncate_code` | hit |
-| `:830` | `DELETE FROM users -- everywhere` | G2 | delete-from-no-where | hit |
-| `:477`, `:479`, `:482` | `db.execute("DROP TABLE users")` in non-ASCII, spaced and quoted file names | G2 | `_HL_common` | hit, path field untouched |
-| `:814` | `x("DROP TABLE users")` after a `++ a.md` string | G2 | `_HL_common` | hit |
-| `:1208` | `DROP TABLE users;` in an auth-exempt path | G2 | `_HL_common` | hit (DEC-10 holds) |
-| `tests/test-ceremony-fits-diff.sh:391` | `# DROP TABLE users;` | G2 | `_HL_common` | hit (SPEC-410 holds) |
+| `tests/test-lanes-data.sh:186` | `DROP TABLE users;` | G0, G2 | `_HL_common` | hit |
+| `:187` | `db.execute("TRUNCATE users;")` | G0, G2 | `_HL_truncate_code` | hit |
+| `:188` | `await db.users.deleteMany({})` | G0, G2 | `_HL_common` | hit |
+| `:189` | `TRUNCATE users` in `db/reset.sql` | G0, G1 | `_HL_truncate_sql` | hit |
+| `:190`, `:192` | `DELETE FROM users`, `... WHERE 1=1` | G0, G2 | delete-from greps | hit |
+| `:193`, `:196`, `:197`, `:198`, `:199` | quoted drop and truncate strings | G0, G2 | `_HL_common`, `_HL_truncate_code` | hit |
+| `:830` | `DELETE FROM users -- everywhere` | G0, G2 | delete-from-no-where | hit |
+| `:477`, `:479`, `:482` | `db.execute("DROP TABLE users")` in non-ASCII, spaced and quoted file names | G0, G2 | `_HL_common` | hit, path field untouched |
+| `:814` | `x("DROP TABLE users")` after a `++ a.md` string | G0, G2 | `_HL_common` | hit |
+| `:1208` | `DROP TABLE users;` in an auth-exempt path | G0, G2 | `_HL_common` | hit (DEC-10 holds) |
+| `tests/test-ceremony-fits-diff.sh:391` | `# DROP TABLE users;` in `app/q.sh` | G0, G2 | `_HL_common` | hit (SPEC-410 holds) |
 
-NC1 trace: with the merge-base lib, `$tmp/added` keeps the raw AC1 line. `_HL_common` matches `DROP TABLE alerts` at `:735`. `floor_out` prints `full data-loss: tools/vps-mon/.../test-hb-ack.sh` for a `miss` row, so `case_floor_data_loss` appends to `bad` and fails `floor-data-loss`.
+NC1 trace: with the merge-base lib, `$tmp/added` keeps the raw AC1 line. `_HL_common` matches `DROP TABLE alerts` at `:735`. `floor_out` prints `full data-loss: tools/vps-mon/.../test-hb-ack.sh` for a `miss` row, so `case_floor_data_loss` fails `floor-data-loss`.
 
-NC2 trace: the mutated neutralizer replaces the whole AC4 content with `"sqli-payload"`. The record holds no `drop table`. No grep fires, stdout is empty, and `floor-data-loss-sqli-payload` (want `full data-loss: app/m.py`) fails.
+NC2 trace: the mutated pass B replaces the whole AC4 content with `"sqli-payload"`. The record holds no `drop table`. No grep fires, stdout is empty, and `floor-data-loss-sqli-payload` (want `full data-loss: tests/m.py`) fails.
 
 ## Decision Log
 
-- DEC-1: replace the span, never the line. A line can hold a literal and a real statement (AC4, NC2).
-- DEC-2: scope to the canonical form, `;--` with no gap, `DROP TABLE` only, inside a double-quoted literal. Each widening (other verbs, `)`, gaps, other quotes) lacks a sample and is pinned as a hit in AC3.
-- DEC-3: no test-path condition. `_HP_testpath` misses the sample, and a second test-path definition for one scan would drift from the first.
-- DEC-4: the name class is bare (`[a-z0-9_]+`). A quoted identifier stays a hit. Strict wins on doubt.
-- DEC-5: fail closed on every doubt: any guard failing, any awk error, any line-count mismatch leaves the raw line.
-- DEC-6: the skip is visible in the SPEC-400 notice shape and relayed by `_sr_relay`, so a reviewer sees each one (SPEC-400 DEC-15).
+- DEC-1: replace the span, never the line (AC4, NC2).
+- DEC-2: scope to the canonical form: `;--` with no gap, `DROP TABLE` only, inside a double-quoted literal. Each widening lacks a sample and is pinned as a hit in AC3.
+- DEC-3: the sqli test path is a new local constant, not `_HP_testpath`. It never feeds another floor or another kind, so the auth exemption and SPEC-400's test-path default do not move.
+- DEC-4: the name class is bare (`[a-z0-9_]+`). A quoted identifier stays a hit.
+- DEC-5: fail closed on every doubt: any guard failing, a failed self-test, an awk error, a line-count mismatch, a `git show` failure, or the candidate cap leaves the raw line.
+- DEC-6: every skip is visible in its own relay branch and log line (SPEC-400 DEC-15), and a fallback is logged.
+- DEC-7: accepted, decided risk against SPEC-400 DEC-10. A test-file author who sets out to hide one drop string can still do it (for example a list built over several lines and joined later). DEC-10 bars config exemptions a PR can steer. This carve-out is fixed in code, limited to test paths and the canonical shape, and every use prints on the push. The operator directed the build with this residual named.
+- DEC-8: the separate pass beats inlining into the producer because it can fall back to the complete raw file, and G9 needs git between detection and rewrite.
