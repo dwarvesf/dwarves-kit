@@ -1407,6 +1407,266 @@ case_ship_rid_folded() {
   [ -z "$bad" ] && pass ship-rid-folded || fail ship-rid-folded "$bad"
 }
 
+# ---- the data-loss sqli carve-out (ship-gate only, KIT_FLOOR_SQLI_CARVEOUT=1) ----
+SQ_SAMPLE_PATH='tools/vps-mon/scripts/test/test-hb-ack.sh'
+SQ_SAMPLE='for bad in "x'"'"'; DROP TABLE alerts;--" "Kit_Regression" ""; do'
+SQ_LINE='for b in "x'"'"'; DROP TABLE t;--"; do'
+sqx() { env KIT_FLOOR_SQLI_CARVEOUT=1 KIT_CONFIG_OPERATOR=/nonexistent DWARVES_KIT_LOG_DIR="${LOGD:-/nonexistent}" bash "$LC" "$@"; }
+sq_out() { sqx floor "$ROOT" main 2>/dev/null; }
+sq_err() { sqx floor "$ROOT" main 2>&1 >/dev/null; }
+# sq_rows <case>: `path|content|want` rows on stdin, each in a fresh repo, floor run with the flag.
+sq_rows() {
+  local name="$1" bad="" path content want out
+  while IFS='|' read -r path content want; do
+    [ -n "$path" ] || continue
+    mkrepo; addfile "$path" "$content"; out="$(sq_out)"
+    if [ "$want" = hit ]; then [ "$out" = "full data-loss: $path" ] || bad="$bad [$content in $path => '$out']"
+    else [ -z "$out" ] || bad="$bad [$content in $path should not hit: '$out']"; fi
+  done
+  [ -z "$bad" ] && pass "$name" || fail "$name" "$bad"
+}
+# _sq_shim <name> <body>: a dir holding an executable <name> whose body runs before exec'ing the real one.
+_sq_shim() {
+  local d real; d="$(_mk)"; real="$(command -v "$1")"
+  printf '#!/bin/bash\n%s\nexec "%s" "$@"\n' "$2" "$real" > "$d/$1"; chmod +x "$d/$1"; printf '%s' "$d"
+}
+
+case_floor_data_loss_sqli_canonical() {
+  sq_rows floor-data-loss-sqli-canonical <<'CASES'
+tools/vps-mon/scripts/test/test-hb-ack.sh|for bad in "x'; DROP TABLE alerts;--" "Kit_Regression" ""; do|miss
+tests/t.py|for p in "1'; drop table users;--": pass|miss
+tests/é.sh|for b in "x'; DROP TABLE t;--"; do # é|miss
+CASES
+}
+
+case_floor_data_loss_sqli_guards() {
+  sq_rows floor-data-loss-sqli-guards <<'CASES'
+tests/t.sh|p = "x'; DROP TABLE users;--"|hit
+tests/t_test.go|s := fmt.Sprintf(tmpl, "x'; DROP TABLE t;--")|hit
+tests/t.sh|db.execute("x'; DROP TABLE users;--")|hit
+tests/t.sh|       "x'; DROP TABLE t;--")|hit
+tests/t.sh|db.execute(opener + "x'; DROP TABLE users;--")|hit
+tests/t.sh|""" + "x'; DROP TABLE t;--")|hit
+tests/t.sh|for b in f"x'; DROP TABLE t;--"|hit
+tests/t.sh|for b in "x'; DROP TABLE t;--" 'y'|hit
+tests/t.sh|for b in `x'; DROP TABLE t;--`|hit
+tests/t.sh|for b in "a \"q\" x'; DROP TABLE t;--"|hit
+tests/t.sh|echo "a in "x'; DROP TABLE t;--"|hit
+tests/t.sh|psql -c select x in "x'; DROP TABLE users;--"|hit
+tests/t.py|if b in "x'; DROP TABLE t;--": pass|hit
+tests/t.js|for (b in "x'; DROP TABLE t;--") {}|hit
+tests/é.sh|é=1; for b in "x'; DROP TABLE t;--"; do|hit
+tests/t.sh|for b in "x'; DROP TABLE t;--"; do psql -c "$q$b"; done|hit
+tests/t.sh|for b in "x'; DROP TABLE alerts; --"|hit
+tests/t.sh|for b in "x'; DROP TABLE alerts"|hit
+tests/t.sh|for b in "x'; DROP TABLE IF EXISTS alerts;--"|hit
+tests/t.sh|for b in "Robert'); DROP TABLE Students;--"|hit
+tests/t.sh|for b in "x'; DELETE FROM users;--"|hit
+tests/t.sh|INSERT INTO t VALUES ('a'); DROP TABLE old; -- legacy|hit
+tests/t.sh|UPDATE t SET a='x'; DROP TABLE b; -- reset|hit
+tests/t.sh|SELECT 'done'; TRUNCATE TABLE tmp_load; -- nightly|hit
+tests/t.sh|db.exec("SELECT '1'; TRUNCATE users;--")|hit
+tests/t.sh|db.execute("a"); DROP TABLE users; -- x|hit
+tests/t.sh|DROP TABLE users;|hit
+CASES
+}
+
+case_floor_data_loss_sqli_paths() {
+  sq_rows floor-data-loss-sqli-paths <<'CASES'
+app/t.sh|for b in "x'; DROP TABLE alerts;--"; do|hit
+scripts/test-db-reset.sh|for b in "x'; DROP TABLE alerts;--"; do|hit
+scripts/test_db.py|for b in "x'; DROP TABLE alerts;--": pass|hit
+tests/a\b.sh|for b in "x'; DROP TABLE alerts;--"; do|hit
+tests/seed.sql|for b in "x'; DROP TABLE alerts;--"; do|hit
+tests/seed.pgsql|for b in "x'; DROP TABLE alerts;--"; do|hit
+tests/seed.sql.j2|for b in "x'; DROP TABLE alerts;--"; do|hit
+tests/t.pl|for b in "x'; DROP TABLE alerts;--"; do|hit
+tests/t.cpp|for b in "x'; DROP TABLE alerts;--"; do|hit
+tests/t|for b in "x'; DROP TABLE alerts;--"; do|hit
+CASES
+}
+
+# A multi-line string opener anywhere in the head image keeps the hit; the same file without it does not.
+case_floor_data_loss_sqli_crossline() {
+  local bad="" path body want out
+  while IFS='|' read -r path body want; do
+    [ -n "$path" ] || continue
+    mkrepo; mkdir -p "$(dirname "$ROOT/$path")"
+    # shellcheck disable=SC2059
+    printf "$body\n" "\"x'; DROP TABLE t;--\"" > "$ROOT/$path"; _commit "chore: add"
+    out="$(sq_out)"
+    if [ "$want" = hit ]; then [ "$out" = "full data-loss: $path" ] || bad="$bad [$path => '$out']"
+    else [ -z "$out" ] || bad="$bad [$path should not hit: '$out']"; fi
+  done <<'CASES'
+tests/t.sh|psql <<EOF\nUPDATE t SET a='\nfor b in %s; do\nEOF|hit
+tests/t.py|q = """SELECT * FROM t WHERE n = '\nfor b in %s: pass|hit
+tests/t.js|const o = `a='`;\nfor b in %s|hit
+tests/t.rs|let o = r#"a='"#;\nfor b in %s {}|hit
+tests/t.rb|o = %%q(a=')\nfor b in %s do end|hit
+tests/c.sh|x=1\nfor b in %s; do|miss
+tests/c.py|x = 1\nfor b in %s: pass|miss
+tests/c.js|const o = 1;\nfor b in %s|miss
+tests/c.rs|let o = 1;\nfor b in %s {}|miss
+tests/c.rb|o = 1\nfor b in %s do end|miss
+CASES
+  [ -z "$bad" ] && pass floor-data-loss-sqli-crossline || fail floor-data-loss-sqli-crossline "$bad"
+}
+
+case_floor_data_loss_sqli_show_fails() {
+  local shim out err
+  shim="$(_sq_shim git 'case " $* " in *" show "*:tests/*) exit 128 ;; esac')"
+  mkrepo; addfile tests/t.sh "$SQ_LINE"
+  out="$(PATH="$shim:$PATH" sq_out)"; err="$(PATH="$shim:$PATH" sq_err)"
+  if [ "$out" = "full data-loss: tests/t.sh" ] && printf '%s' "$err" | grep -qF "$(printf 'sqli-fallback\thead image unreadable')"
+  then pass floor-data-loss-sqli-show-fails; else fail floor-data-loss-sqli-show-fails "out='$out' err='$err'"; fi
+}
+
+case_floor_data_loss_sqli_cap() {
+  local i out err
+  mkrepo; mkdir -p "$ROOT/tests"
+  for i in $(seq -w 1 21); do printf '%s\n' "$SQ_LINE" > "$ROOT/tests/t$i.sh"; done; _commit "chore: many"
+  out="$(sq_out)"; err="$(sq_err)"
+  if [ "$out" = "full data-loss: tests/t21.sh" ] && [ "$(printf '%s\n' "$err" | grep -c 'sqli-payload')" = 20 ] \
+    && printf '%s' "$err" | grep -qF 'candidate cap'
+  then pass floor-data-loss-sqli-cap; else fail floor-data-loss-sqli-cap "out='$out' err='$(printf '%s' "$err" | tail -3)'"; fi
+}
+
+case_floor_data_loss_sqli_optin() {
+  local bad="" out
+  mkrepo; addfile "$SQ_SAMPLE_PATH" "$SQ_SAMPLE"
+  out="$(floor_out)"; [ "$out" = "full data-loss: $SQ_SAMPLE_PATH" ] || bad="$bad [no flag => '$out']"
+  out="$(KIT_FLOOR_SQLI_CARVEOUT=0 floor_out)"; [ "$out" = "full data-loss: $SQ_SAMPLE_PATH" ] || bad="$bad [flag 0 => '$out']"
+  out="$(sq_out)"; [ -z "$out" ] || bad="$bad [flag 1 => '$out']"
+  grep -qF 'KIT_FLOOR_SQLI_CARVEOUT=0 bash "$LC" floor' "$KIT_DIR/lib/gate/battery-gate.sh" || bad="$bad [battery-gate inherits the flag]"
+  grep -qF 'KIT_FLOOR_SQLI_CARVEOUT=0 KIT_PROJECT_ROOT="$root" bash "$LC" floor' "$KIT_DIR/lib/gate/proof-ledger.sh" || bad="$bad [proof-ledger inherits the flag]"
+  [ -z "$bad" ] && pass floor-data-loss-sqli-optin || fail floor-data-loss-sqli-optin "$bad"
+}
+
+# The span is replaced, never the line: a real statement after the literal still hits.
+case_floor_data_loss_sqli_payload() {
+  local out
+  mkrepo; addfile tests/m.sh 'for b in "a'"'"'; DROP TABLE t;--"; do psql -c "DROP TABLE users"; done'
+  out="$(sq_out)"
+  [ "$out" = "full data-loss: tests/m.sh" ] && pass floor-data-loss-sqli-payload || fail floor-data-loss-sqli-payload "got '$out'"
+}
+
+# A path holding a control byte or a backslash fails G0: the literal and a real drop both hit.
+case_floor_data_loss_sqli_tab_path() {
+  local bad="" out p=$'tests/a\tb.sh'
+  mkrepo; addfile "$p" "$SQ_LINE"; out="$(sq_out)"
+  case "$out" in "full data-loss: "*) ;; *) bad="$bad [literal => '$out']" ;; esac
+  mkrepo; addfile "$p" 'DROP TABLE users;'; out="$(sq_out)"
+  case "$out" in "full data-loss: "*) ;; *) bad="$bad [real drop => '$out']" ;; esac
+  [ -z "$bad" ] && pass floor-data-loss-sqli-tab-path || fail floor-data-loss-sqli-tab-path "$bad"
+}
+
+# The security-review repro shapes, each a hit with the flag set.
+case_floor_data_loss_sqli_review_repros() {
+  local bad="" out pay="\"x'; DROP TABLE users;--\""
+  # path collision: a dirty file named a<backslash>tb.sh beside a clean a<backslash><TAB>b.sh
+  mkrepo; mkdir -p "$ROOT/tests"
+  printf 'psql <<SQL\nupdate t set a = '"'"'\nfor b in %s; do\nSQL\n' "$pay" > "$ROOT/tests/a\\tb.sh"
+  printf 'echo hi\n' > "$ROOT/tests/a\\"$'\t'"b.sh"; _commit "chore: collide"
+  out="$(sq_out)"; case "$out" in "full data-loss: "*) ;; *) bad="$bad [collide => '$out']" ;; esac
+  # `in` as a SQL word inside a shell argument
+  mkrepo; mkdir -p "$ROOT/tests"
+  printf 'q="select 1 from t where a = '"'"'v"\necho $q in %s | psql "$DATABASE_URL"\n' "$pay" > "$ROOT/tests/t.sh"; _commit "chore: echojoin"
+  out="$(sq_out)"; [ "$out" = "full data-loss: tests/t.sh" ] || bad="$bad [echojoin => '$out']"
+  # bare `$` interpolation after a loop header
+  mkrepo; mkdir -p "$ROOT/tests"
+  printf 'q="select * from t where n = '"'"'"\nfor b in %s; do psql -c "$q$b"; done\n' "$pay" > "$ROOT/tests/t.sh"; _commit "chore: dollar"
+  out="$(sq_out)"; [ "$out" = "full data-loss: tests/t.sh" ] || bad="$bad [dollar => '$out']"
+  # an ops script whose basename starts with test-
+  mkrepo; addfile scripts/test-db-reset.sh "for b in $pay; do"
+  out="$(sq_out)"; [ "$out" = "full data-loss: scripts/test-db-reset.sh" ] || bad="$bad [test- basename => '$out']"
+  [ -z "$bad" ] && pass floor-data-loss-sqli-review-repros || fail floor-data-loss-sqli-review-repros "$bad"
+}
+
+case_floor_data_loss_sqli_awk_fails() {
+  local bad="" shim out err
+  mkrepo; addfile "$SQ_SAMPLE_PATH" "$SQ_SAMPLE"
+  shim="$(_sq_shim awk 'case "$*" in *sqli-allow*) exit 2 ;; esac')"
+  out="$(PATH="$shim:$PATH" sq_out)"; err="$(PATH="$shim:$PATH" sq_err)"
+  [ "$out" = "full data-loss: $SQ_SAMPLE_PATH" ] || bad="$bad [pass B fails: out='$out']"
+  printf '%s' "$err" | grep -qF 'rewrite failed' || bad="$bad [no rewrite-failed note: $err]"
+  ! printf '%s' "$err" | grep -qF 'sqli-payload' || bad="$bad [notice after a failed rewrite: $err]"
+  shim="$(_sq_shim awk 'case "$*" in *st.added*) exit 0 ;; esac')"
+  out="$(PATH="$shim:$PATH" sq_out)"; err="$(PATH="$shim:$PATH" sq_err)"
+  [ "$out" = "full data-loss: $SQ_SAMPLE_PATH" ] || bad="$bad [self-test fails: out='$out']"
+  printf '%s' "$err" | grep -qF 'self-test failed' || bad="$bad [no self-test note: $err]"
+  [ -z "$bad" ] && pass floor-data-loss-sqli-awk-fails || fail floor-data-loss-sqli-awk-fails "$bad"
+}
+
+case_ship_sqli_skip_visible() {
+  local bad="" log i shim
+  mkrepo; new_log
+  printf 'Lane: normal\n' > "$ROOT/docs/specs/SPEC-001-x.md"; addfile "$SQ_SAMPLE_PATH" "$SQ_SAMPLE"
+  record_gates $NORMAL_GATES; run_hook
+  log="$(cat "$LOGD/hooks/ship-gate.log" 2>/dev/null)"
+  [ "$HOOK_RC" = 0 ] || bad="$bad [rc=$HOOK_RC err=$HOOK_ERR]"
+  printf '%s' "$HOOK_OUT" | jq -e --arg m "[advisory] data-loss skip: $SQ_SAMPLE_PATH (built-in sqli-payload literal, test path)" '.systemMessage | contains($m)' >/dev/null 2>&1 || bad="$bad [json: $HOOK_OUT]"
+  printf '%s' "$log" | grep -qF "(data-loss: $SQ_SAMPLE_PATH; sqli-payload literal)" || bad="$bad [log: $log]"
+  ! printf '%s' "$log" | grep -F 'sqli' | grep -qF 'test-path default' || bad="$bad [sqli logged as test-path: $log]"
+  # one test-path auth skip and one sqli skip keep their own labels
+  mkrepo; new_log
+  printf 'Lane: normal\n' > "$ROOT/docs/specs/SPEC-001-x.md"; mkdir -p "$ROOT/tests/auth"
+  echo x > "$ROOT/tests/auth/login.test.ts"; printf '%s\n' "$SQ_LINE" > "$ROOT/tests/t.sh"; _commit "chore: both"
+  record_gates $NORMAL_GATES; run_hook
+  printf '%s' "$HOOK_OUT" | jq -e '(.systemMessage | contains("[advisory] hard-path skip auth: tests/auth/login.test.ts (built-in test-path default)"))
+    and (.systemMessage | contains("[advisory] data-loss skip: tests/t.sh (built-in sqli-payload literal, test path)"))' >/dev/null 2>&1 || bad="$bad [mixed: rc=$HOOK_RC $HOOK_OUT]"
+  # 21 sqli skips across 20 files: 20 lines plus one count line
+  mkrepo; new_log
+  printf 'Lane: normal\n' > "$ROOT/docs/specs/SPEC-001-x.md"; mkdir -p "$ROOT/tests"
+  for i in $(seq -w 1 20); do printf '%s\n' "$SQ_LINE" > "$ROOT/tests/t$i.sh"; done
+  printf '%s\n' "$SQ_LINE" >> "$ROOT/tests/t01.sh"; _commit "chore: many"
+  record_gates $NORMAL_GATES; run_hook
+  printf '%s' "$HOOK_OUT" | jq -e '(.systemMessage | split("\n") | map(select(startswith("[advisory] data-loss skip: tests/"))) | length) == 20
+    and (.systemMessage | contains("1 more sqli-payload literals"))' >/dev/null 2>&1 || bad="$bad [cap: rc=$HOOK_RC $HOOK_OUT]"
+  # a fallback blocks, with one advisory line and a log line
+  mkrepo; new_log
+  printf 'Lane: normal\n' > "$ROOT/docs/specs/SPEC-001-x.md"; addfile tests/t.sh "$SQ_LINE"
+  record_gates $NORMAL_GATES
+  shim="$(_sq_shim git 'case " $* " in *" show "*:tests/*) exit 128 ;; esac')"
+  PATH="$shim:$PATH" run_hook
+  log="$(cat "$LOGD/hooks/ship-gate.log" 2>/dev/null)"
+  [ "$HOOK_RC" = 2 ] || bad="$bad [fallback rc=$HOOK_RC]"
+  [ "$(printf '%s\n' "$HOOK_ERR" | grep -c 'data-loss sqli carve-out fell back to the raw scan (head image unreadable)')" = 1 ] || bad="$bad [fallback advisory: $HOOK_ERR]"
+  printf '%s' "$log" | grep -qF 'SQLI-FALLBACK | floor |' || bad="$bad [fallback log: $log]"
+  [ -z "$bad" ] && pass ship-sqli-skip-visible || fail ship-sqli-skip-visible "$bad"
+}
+
+case_floor_data_loss_sqli_long_line() {
+  local t0 t1 out ms
+  mkrepo; mkdir -p "$ROOT/tests"
+  LC_ALL=C awk -v head="$SQ_LINE" 'BEGIN { printf "%s :", head; for (i = 0; i < 20000; i++) printf " \"x%d\"", i; print "" }' > "$ROOT/tests/l.sh"
+  _commit "chore: long"
+  t0="$(_now)"; out="$(sq_out)"; t1="$(_now)"; ms="$(python3 -c "print(int(($t1-$t0)*1000))")"
+  if [ -z "$out" ] && [ "$ms" -lt 3000 ]; then pass "floor-data-loss-sqli-long-line (${ms}ms, $(wc -c < "$ROOT/tests/l.sh" | tr -d ' ') bytes)"
+  else fail floor-data-loss-sqli-long-line "out='$out' elapsed=${ms}ms (limit 3000ms)"; fi
+}
+
+case_floor_data_loss_sqli_many_lines() {
+  local t0 t1 out ms
+  mkrepo; mkdir -p "$ROOT/tests"
+  LC_ALL=C awk -v l="$SQ_LINE" 'BEGIN { for (i = 0; i < 30000; i++) print l }' > "$ROOT/tests/m.sh"
+  _commit "chore: many lines"
+  t0="$(_now)"; out="$(sq_out)"; t1="$(_now)"; ms="$(python3 -c "print(int(($t1-$t0)*1000))")"
+  if [ -z "$out" ] && [ "$ms" -lt 15000 ]; then pass "floor-data-loss-sqli-many-lines (${ms}ms for 30000 lines)"
+  else fail floor-data-loss-sqli-many-lines "out='$out' elapsed=${ms}ms (limit 15000ms)"; fi
+}
+
+case_floor_data_loss_sqli_big_head() {
+  local t0 t1 out ms
+  mkrepo; mkdir -p "$ROOT/tests"
+  _git checkout -q main >/dev/null 2>&1
+  LC_ALL=C awk 'BEGIN { for (i = 0; i < 600000; i++) print "x" i "=1" }' > "$ROOT/tests/big.sh"; _commit "chore: big"
+  _git checkout -q feat/x >/dev/null 2>&1; _git rebase -q main >/dev/null 2>&1
+  printf '%s\n' "$SQ_LINE" >> "$ROOT/tests/big.sh"; _commit "chore: one line"
+  t0="$(_now)"; out="$(sq_out)"; t1="$(_now)"; ms="$(python3 -c "print(int(($t1-$t0)*1000))")"
+  if [ -z "$out" ] && [ "$ms" -lt 5000 ]; then pass "floor-data-loss-sqli-big-head (${ms}ms, $(wc -c < "$ROOT/tests/big.sh" | tr -d ' ') bytes)"
+  else fail floor-data-loss-sqli-big-head "out='$out' elapsed=${ms}ms (limit 5000ms)"; fi
+}
+
 # ---------------------------------------------------------------------------
 run_case() {
   local fn="case_${1//-/_}"
@@ -1414,7 +1674,7 @@ run_case() {
 }
 # `parity` (byte-identical against the baseline) holds only at the refactor commit; after the
 # flip the standing check is parity-after-flip.
-ALL="parity-after-flip plan-flip four-false-hits webhook-signature-suggests suggest-records explain-suggest-line classify-files-full escalate-suggest floor-paths floor-rename-counts-both-sides floor-data-loss floor-extra-paths-union floor-invalid-extra-ere override-drop-review override-uncommitted override-typo override-no-light pinned-root malformed-array-fails-closed policy-at-base ship-migration-blocks ship-migration-absent-quiet ship-switch-off-on-base ship-flip-gate-in-pr ship-hollow-full-override ship-data-loss ship-no-spec-blocks ship-suggest-advisory workflow-view floor-timing floor-non-ascii hook-timeout floor-submodule override-empty-phases ship-operator-hollow-full ship-push-forms ship-base-is-origin-head ship-checks-pushed-ref ship-slug-quoted risk-verb significance-uses-risk floor-no-leaks override-unknown-lane-name toml-valid ship-merge-base-once override-operator-precedence default-lane-layers start-no-duplicate-skips ship-fail-closed-refs floor-diff-hardening floor-plus-line floor-where-boundary floor-timing-30k default-rejects-tiny safety-push-forms ship-marker-collisions ship-continuation-and-heredoc ship-marker-at-base exempt-reader-rejects exempt-glob-semantics floor-test-paths-not-auth floor-test-paths-other-kinds floor-test-path-notice floor-exempt-fixture-quiet floor-exempt-glob-bounded floor-exempt-per-kind floor-exempt-migration-only floor-exempt-notice-rules floor-exempt-real-auth-still-hits floor-exempt-working-tree-ignored floor-exempt-forbidden-kinds-rejected floor-exempt-reason-required floor-exempt-canary-rejected floor-exempt-malformed-rejected floor-exempt-never-kit-config floor-exempt-old-shape-ignored floor-exempt-data-loss-still-hits classify-files-exempt ship-exempt-in-pr-blocks ship-exempt-logged ship-test-path-skip-visible ship-notices-env-ignored ship-rid-folded"
+ALL="parity-after-flip plan-flip four-false-hits webhook-signature-suggests suggest-records explain-suggest-line classify-files-full escalate-suggest floor-paths floor-rename-counts-both-sides floor-data-loss floor-extra-paths-union floor-invalid-extra-ere override-drop-review override-uncommitted override-typo override-no-light pinned-root malformed-array-fails-closed policy-at-base ship-migration-blocks ship-migration-absent-quiet ship-switch-off-on-base ship-flip-gate-in-pr ship-hollow-full-override ship-data-loss ship-no-spec-blocks ship-suggest-advisory workflow-view floor-timing floor-non-ascii hook-timeout floor-submodule override-empty-phases ship-operator-hollow-full ship-push-forms ship-base-is-origin-head ship-checks-pushed-ref ship-slug-quoted risk-verb significance-uses-risk floor-no-leaks override-unknown-lane-name toml-valid ship-merge-base-once override-operator-precedence default-lane-layers start-no-duplicate-skips ship-fail-closed-refs floor-diff-hardening floor-plus-line floor-where-boundary floor-timing-30k default-rejects-tiny safety-push-forms ship-marker-collisions ship-continuation-and-heredoc ship-marker-at-base exempt-reader-rejects exempt-glob-semantics floor-test-paths-not-auth floor-test-paths-other-kinds floor-test-path-notice floor-exempt-fixture-quiet floor-exempt-glob-bounded floor-exempt-per-kind floor-exempt-migration-only floor-exempt-notice-rules floor-exempt-real-auth-still-hits floor-exempt-working-tree-ignored floor-exempt-forbidden-kinds-rejected floor-exempt-reason-required floor-exempt-canary-rejected floor-exempt-malformed-rejected floor-exempt-never-kit-config floor-exempt-old-shape-ignored floor-exempt-data-loss-still-hits classify-files-exempt ship-exempt-in-pr-blocks ship-exempt-logged ship-test-path-skip-visible ship-notices-env-ignored ship-rid-folded floor-data-loss-sqli-canonical floor-data-loss-sqli-guards floor-data-loss-sqli-paths floor-data-loss-sqli-crossline floor-data-loss-sqli-show-fails floor-data-loss-sqli-cap floor-data-loss-sqli-optin floor-data-loss-sqli-payload floor-data-loss-sqli-tab-path floor-data-loss-sqli-review-repros floor-data-loss-sqli-awk-fails ship-sqli-skip-visible floor-data-loss-sqli-long-line floor-data-loss-sqli-many-lines floor-data-loss-sqli-big-head"
 if [ "$#" -eq 0 ]; then set -- $ALL; fi
 for c in "$@"; do run_case "$c"; done
 [ "$FAILS" -eq 0 ]

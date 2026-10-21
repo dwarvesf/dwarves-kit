@@ -115,14 +115,25 @@ _HP_infra='(^|/)Dockerfile[^/]*$|(^|/)[^/]*(iam|role|polic)[^/]*\.tf$|(^|/)(iam|
 _HP_kitconfig='(^|/)\.kit\.toml$'
 # Test paths never count as kind `auth` (every other kind still matches them). Fixed, case-sensitive,
 # not configurable: a config hook here would be a second, unreviewed exemption path.
+# The data-loss sqli carve-out keeps its own _HL_sqli_testpath below; neither list feeds the other.
 _HP_testpath='(^|/)(tests|__tests__|fixtures|cases)/|\.(test|spec)\.[^/]+$'
 # Added-line signatures for data loss, checked only in non-doc files. `truncate` counts as SQL:
-# any use in a .sql file, or a statement-shaped `truncate <name>;` elsewhere.
+# any use in a .sql file, or a statement-shaped `truncate <name>;` elsewhere. With
+# KIT_FLOOR_SQLI_CARVEOUT=1 (the ship-gate only), _floor_sqli first blanks a canonical SQL injection
+# literal that a test file loops over (`for x in "x'; <drop> table t;--"`); see _floor_sqli.
 _HL_common='drop[[:space:]]+(table|column|database|schema)|deletemany\([[:space:]]*\{[[:space:]]*\}[[:space:]]*\)'
 _HL_truncate_code='(truncate[[:space:]]+(table[[:space:]]+)?[a-z_."]+[[:space:]]*;|["'"'"'`][[:space:]]*truncate[[:space:]]+(table[[:space:]]+)?[a-z_."]+([^a-z0-9_."-]|$))'
 # A CSS `truncate` utility in a class attribute (`className="truncate flex"`) is not SQL.
 _HL_truncate_css='class(name)?[[:space:]]*=[[:space:]]*[{"'"'"'`]'
 _HL_truncate_sql='(.*[^a-z_])?truncate[[:space:]]+(table[[:space:]]+)?[a-z_."]+'
+# The sqli carve-out's own constants, matched on lowercased text. _HL_sqli_testpath is local to the
+# carve-out: it is not _HP_testpath above, and no hard-path kind reads it. A `test-` or `test_`
+# basename alone does not qualify: ops scripts such as `scripts/test-db-reset.sh` carry real SQL.
+# Any bare `$` counts as a join: shell interpolates `"$q$b"` without braces.
+_HL_sqli_payload='"[a-z0-9_]*'"'"';[[:space:]]*drop[[:space:]]+table[[:space:]]+[a-z0-9_]+;--"'
+_HL_sqli_testpath='(^|/)(test|tests|spec|__tests__)/|(^|/)[^/]*(_test|\.test)\.[^/]+$'
+_HL_sqli_ext='\.(py|sh|bash|js|ts|go|rb|rs|java|kt)$'
+_HL_sqli_join='[+%]|[|][|]|\.format|fr?"|rf"|\$|#\{'
 
 # _hp_re <kind> -- the built-in ERE for a hard-path kind.
 _HP_KINDS="migration auth secret ci infra kit-config"
@@ -669,6 +680,90 @@ _floor_comment_only() {
       if (lc ~ /ignore|disable|skip|suppress|allowlist|nolint|nosec|noqa|nosemgrep|nosonar|tfsec|tflint|checkov|trivy|kics|hadolint|shellcheck|pylint|lgtm|codeql|trufflehog|gitleaks|pragma|lint:|type:/) bad = 1 }
     END { exit (bad || !changed) ? 1 : 0 }' "$tmp/cdiff"
 }
+# The sqli carve-out's two awk passes over $tmp/plen (byte length of each record's path) and $tmp/added.
+# Pass A prints each candidate path once: a line holding ' and ;-- in a test file of a known language.
+# A path holding a backslash or a control byte never qualifies: git quotes such a name, and two
+# distinct names can unquote to one string, so G9 could read the wrong file.
+read -r -d '' _SQLI_PASS_A <<'AWK' || true
+FILENAME == ARGV[1] { plen[FNR] = $0 + 0; next }
+{ n = plen[FNR]; c = substr($0, n + 2)
+  if (!index(c, "'") || !index(c, ";--")) next
+  p = substr($0, 1, n); lp = tolower(p)
+  if (index(p, "\\") || p ~ /[[:cntrl:]]/) next
+  if (lp !~ ENVIRON["KIT_SQLI_TP"] || lp !~ ENVIRON["KIT_SQLI_EXT"]) next
+  if (!(p in seen)) { seen[p] = 1; print p } }
+AWK
+# Pass B rewrites the one canonical literal on a line of an allowed path when every line guard holds:
+# exactly one ', no backslash or backtick, no join or interpolation marker, the payload shape, an even
+# count of " before it, and a bare `for <name> in ` loop header as the whole text before it. Each
+# rewrite writes one notice line.
+read -r -d '' _SQLI_PASS_B <<'AWK' || true
+FILENAME == ARGV[1] { ok[$0] = 1; next }
+FILENAME == ARGV[2] { plen[FNR] = $0 + 0; next }
+{ n = plen[FNR]; p = substr($0, 1, n); c = substr($0, n + 2)
+  if ((p in ok) && !index(p, "\\") && p !~ /[[:cntrl:]]/ \
+      && index(c, "'") && index(c, ";--") && split(c, parts, "'") == 2 \
+      && !index(c, "\\") && !index(c, "`")) {
+    lp = tolower(p); lc = tolower(c)
+    if (lp ~ ENVIRON["KIT_SQLI_TP"] && lp ~ ENVIRON["KIT_SQLI_EXT"] && lc !~ ENVIRON["KIT_SQLI_JOIN"] \
+        && match(lc, ENVIRON["KIT_SQLI_PAY"])) {
+      pre = substr(c, 1, RSTART - 1); t = pre; nq = gsub(/"/, "", t)
+      if (nq % 2 == 0 && tolower(pre) ~ /^[[:space:]]*for[[:space:]]+[a-z_][a-z0-9_]*[[:space:]]+in[[:space:]]+$/) {
+        c = pre "\"sqli-payload\"" substr(c, RSTART + RLENGTH)
+        printf "floor-exempt\tdata-loss\tsqli-payload\t-\tbuilt-in sqli-payload literal\t-\t%s\n", p > ENVIRON["KIT_SQLI_NOTES"]
+      }
+    }
+  }
+  print p "\t" c }
+AWK
+_floor_sqli_note() { printf 'floor-note\tdata-loss\tsqli-fallback\t%s\n' "$1" >&2; }
+# _floor_sqli <root> <head> <tmp>: the ship-gate's carve-out (KIT_FLOOR_SQLI_CARVEOUT=1) for a canonical
+# SQL injection literal that a test file loops over. It rewrites $tmp/added only when a self-test passes,
+# the file's head image reads cleanly with no multi-line string opener, pass B exits 0 and the line
+# count holds. Any doubt keeps the raw lines and prints one floor-note. Bounded to 20 files and 5 s.
+_floor_sqli() {
+  local root="$1" head="$2" tmp="$3" p n=0 t0=$SECONDS img="$tmp/sqli-img" unread=0 d=dr lit
+  local env=(LC_ALL=C KIT_SQLI_PAY="$_HL_sqli_payload" KIT_SQLI_TP="$_HL_sqli_testpath"
+    KIT_SQLI_EXT="$_HL_sqli_ext" KIT_SQLI_JOIN="$_HL_sqli_join")
+  # Self-test: the literal after `in` must be rewritten, the same literal after `=` must stay. The
+  # literal is built from parts so this source line is not itself a data-loss line.
+  lit="\"x'; ${d}op table t;--\""
+  printf 'tests/x.sh\n' > "$tmp/st.allow"; printf '10\n10\n' > "$tmp/st.plen"
+  printf 'tests/x.sh\tfor b in %s; do\ntests/x.sh\tb = %s\n' "$lit" "$lit" > "$tmp/st.added"
+  printf 'tests/x.sh\tfor b in "sqli-payload"; do\ntests/x.sh\tb = %s\n' "$lit" > "$tmp/st.want"
+  if ! env "${env[@]}" KIT_SQLI_NOTES=/dev/null awk "$_SQLI_PASS_B" "$tmp/st.allow" "$tmp/st.plen" "$tmp/st.added" > "$tmp/st.out" 2>/dev/null \
+    || ! cmp -s "$tmp/st.out" "$tmp/st.want"; then
+    _floor_sqli_note "self-test failed"; return 0
+  fi
+  env "${env[@]}" awk "$_SQLI_PASS_A" "$tmp/plen" "$tmp/added" > "$tmp/sqli-cand" 2>/dev/null || { _floor_sqli_note "rewrite failed"; return 0; }
+  : > "$tmp/sqli-allow"
+  while IFS= read -r p; do
+    [ -n "$p" ] || continue
+    n=$((n + 1))
+    if [ "$n" -gt 20 ]; then _floor_sqli_note "candidate cap"; break; fi
+    if [ $((SECONDS - t0)) -ge 5 ]; then _floor_sqli_note "time budget"; break; fi
+    # Fail closed: an unreadable head image is never allowed (unlike the fail-open pipe in _floor_comment_only).
+    if ! _floor_git "$root" show "$head:$p" > "$img" 2>/dev/null; then
+      [ "$unread" = 1 ] || _floor_sqli_note "head image unreadable"; unread=1; continue
+    fi
+    grep -aEq -e "$_FLOOR_DATA_OPENER" "$img" && continue
+    grep -aqF '`' "$img" && continue
+    case "$p" in
+      *.[rR][sS]) grep -aEq '(^|[^A-Za-z0-9_])b?r#*"' "$img" && continue ;;
+      *.[rR][bB]) grep -aEq '%[qQ]?[({<[]' "$img" && continue ;;
+    esac
+    printf '%s\n' "$p" >> "$tmp/sqli-allow"
+  done < "$tmp/sqli-cand"
+  [ -s "$tmp/sqli-allow" ] || return 0
+  : > "$tmp/sqli-notes"
+  if env "${env[@]}" KIT_SQLI_NOTES="$tmp/sqli-notes" awk "$_SQLI_PASS_B" "$tmp/sqli-allow" "$tmp/plen" "$tmp/added" > "$tmp/added.n" 2>/dev/null \
+    && [ "$(($(wc -l < "$tmp/added.n")))" = "$(($(wc -l < "$tmp/added")))" ] && mv -f "$tmp/added.n" "$tmp/added"; then
+    cat "$tmp/sqli-notes" >&2
+  else
+    _floor_sqli_note "rewrite failed"
+  fi
+  return 0
+}
 _floor_scan() {
   local root="$1" base="$2" head="$3" tmp="$4"
   _floor_git "$root" diff -z --raw --no-renames --no-ext-diff --no-textconv --text "$base" "$head" > "$tmp/raw" 2>/dev/null || true
@@ -719,7 +814,7 @@ _floor_scan() {
   fi
   # Data loss: an ADDED line in a non-doc file. One diff, one awk pass emits "path<TAB>line"
   # records; a quoted header (`+++ "b/..."`, used for tabs, quotes, backslashes) is unquoted.
-  _floor_git "$root" diff --no-renames --no-ext-diff --no-textconv --text --no-color -U0 --src-prefix=a/ --dst-prefix=b/ "$base" "$head" 2>/dev/null | awk '
+  _floor_git "$root" diff --no-renames --no-ext-diff --no-textconv --text --no-color -U0 --src-prefix=a/ --dst-prefix=b/ "$base" "$head" 2>/dev/null | LC_ALL=C awk -v pf="$tmp/plen" '
     /^diff --git / { hdr = 1; cur = ""; skip = 1; next }
     hdr && /^\+\+\+ / { p = substr($0, 5); sub(/\t$/, "", p)
       if (p == "/dev/null") { cur = ""; skip = 1; next }
@@ -728,9 +823,10 @@ _floor_scan() {
       skip = ('"$_DOC_AWK"'); next }
     hdr && /^--- / { next }
     /^@@ / { hdr = 0; next }
-    !hdr && /^\+/ { if (cur != "" && !skip) print cur "\t" substr($0, 2) }
+    !hdr && /^\+/ { if (cur != "" && !skip) { print cur "\t" substr($0, 2); print length(cur) > pf } }
   ' > "$tmp/added"
   [ -s "$tmp/added" ] || return 0
+  [ "${KIT_FLOOR_SQLI_CARVEOUT:-0}" != 1 ] || _floor_sqli "$root" "$head" "$tmp"
   local T=$'\t' rec=""
   rec="$(grep -Ei -m1 -e "${T}.*(${_HL_common})" "$tmp/added" | head -1)" || rec=""
   [ -n "$rec" ] || rec="$(grep -Ei -e "${T}.*delete[[:space:]]+from" "$tmp/added" | grep -Eiv -e "${T}.*(^|[^a-z0-9_])where([^a-z0-9_]|\$)" | head -1)" || true

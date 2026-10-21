@@ -113,7 +113,8 @@ _sr_log_all() {
 }
 
 # _sr_relay <rid>: turn the floor's stderr (stdin) into "A<TAB>advisory" and "L<TAB>log tail" lines.
-# Entry skips and refused configs always pass; test-path skips pass up to 20, then one count line. A
+# Entry skips and refused configs always pass; test-path skips and sqli-payload skips pass up to 20 each,
+# then one count line each; sqli fallbacks give one advisory and one log line each. A
 # printed path or reason has every byte outside printable ASCII, and any |, folded to ? (the log keeps
 # its columns; a bidi control cannot reorder the line).
 _sr_relay() {
@@ -126,10 +127,21 @@ _sr_relay() {
       if ($3 ~ /^entry /) {
         print "A\t[advisory] hard-path exempt " kind ": " p " by [[gate.hard_path_exempt]] " src " (paths: " fold($4) "; reason: " fold($5) ")"
         print "L\tEXEMPT | floor | " rid " (" kind ": " p "; " src "; reason: " fold($5) ")"
+      } else if ($3 == "sqli-payload") {
+        if (++ns <= 20) {
+          print "A\t[advisory] data-loss skip: " p " (built-in sqli-payload literal, test path)"
+          print "L\tEXEMPT | floor | " rid " (data-loss: " p "; sqli-payload literal)"
+        }
       } else if (++nt <= 20) {
         print "A\t[advisory] hard-path skip " kind ": " p " (built-in test-path default)"
         print "L\tEXEMPT | floor | " rid " (" kind ": " p "; test-path default)"
       }
+      next
+    }
+    $1 == "floor-note" && $3 == "sqli-fallback" {
+      r = fold($4)
+      if (!nf++) print "A\t[advisory] data-loss sqli carve-out fell back to the raw scan (" r ")"
+      print "L\tSQLI-FALLBACK | floor | " rid " (" r ")"
       next
     }
     index($0, "lane-data: [[gate.hard_path_exempt]] ") == 1 {
@@ -139,7 +151,8 @@ _sr_relay() {
       print "A\tWARNING: hard-path exemptions refused: " l ". Every hard path applies until the base .kit.toml is fixed."
       print "L\tEXEMPT-REFUSED | floor | " rid " (" l ")"
     }
-    END { if (nt > 20) print "A\t[advisory] hard-path skip auth: " (nt - 20) " more test paths (built-in test-path default)" }
+    END { if (nt > 20) print "A\t[advisory] hard-path skip auth: " (nt - 20) " more test paths (built-in test-path default)"
+      if (ns > 20) print "A\t[advisory] data-loss skip: " (ns - 20) " more sqli-payload literals" }
   '
 }
 
@@ -163,8 +176,8 @@ ship_rule_floor() {
   [ -f "$_SR_LCLS" ] || return 0
   [ "$base" != "$(git -C "$root" rev-parse "$head" 2>/dev/null || true)" ] || return 0
   errf="$(mktemp "${TMPDIR:-/tmp}/kit.XXXXXX" 2>/dev/null)" || errf=""
-  if [ -n "$errf" ]; then hit=$(KIT_FLOOR_CONFIG_AT="${7:-}" bash "$_SR_LCLS" floor "$root" "$base" "$head" 2>"$errf" || true)
-  else hit=$(KIT_FLOOR_CONFIG_AT="${7:-}" bash "$_SR_LCLS" floor "$root" "$base" "$head" || true); fi   # no scratch file: the raw lines reach stderr
+  if [ -n "$errf" ]; then hit=$(KIT_FLOOR_SQLI_CARVEOUT=1 KIT_FLOOR_CONFIG_AT="${7:-}" bash "$_SR_LCLS" floor "$root" "$base" "$head" 2>"$errf" || true)
+  else hit=$(KIT_FLOOR_SQLI_CARVEOUT=1 KIT_FLOOR_CONFIG_AT="${7:-}" bash "$_SR_LCLS" floor "$root" "$base" "$head" || true); fi   # no scratch file: the raw lines reach stderr
   # Skips and refusals are shown and audited before any return, so a clean pass still names them.
   if [ -n "$errf" ]; then
     logbuf=""
