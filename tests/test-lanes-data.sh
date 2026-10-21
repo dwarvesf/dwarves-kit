@@ -1435,7 +1435,7 @@ case_floor_data_loss_sqli_canonical() {
   sq_rows floor-data-loss-sqli-canonical <<'CASES'
 tools/vps-mon/scripts/test/test-hb-ack.sh|for bad in "x'; DROP TABLE alerts;--" "Kit_Regression" ""; do|miss
 tests/t.py|for p in "1'; drop table users;--": pass|miss
-tests/é.sh|é=1; for b in "x'; DROP TABLE t;--"; do|miss
+tests/é.sh|for b in "x'; DROP TABLE t;--"; do # é|miss
 CASES
 }
 
@@ -1452,6 +1452,11 @@ tests/t.sh|for b in "x'; DROP TABLE t;--" 'y'|hit
 tests/t.sh|for b in `x'; DROP TABLE t;--`|hit
 tests/t.sh|for b in "a \"q\" x'; DROP TABLE t;--"|hit
 tests/t.sh|echo "a in "x'; DROP TABLE t;--"|hit
+tests/t.sh|psql -c select x in "x'; DROP TABLE users;--"|hit
+tests/t.py|if b in "x'; DROP TABLE t;--": pass|hit
+tests/t.js|for (b in "x'; DROP TABLE t;--") {}|hit
+tests/é.sh|é=1; for b in "x'; DROP TABLE t;--"; do|hit
+tests/t.sh|for b in "x'; DROP TABLE t;--"; do psql -c "$q$b"; done|hit
 tests/t.sh|for b in "x'; DROP TABLE alerts; --"|hit
 tests/t.sh|for b in "x'; DROP TABLE alerts"|hit
 tests/t.sh|for b in "x'; DROP TABLE IF EXISTS alerts;--"|hit
@@ -1469,6 +1474,9 @@ CASES
 case_floor_data_loss_sqli_paths() {
   sq_rows floor-data-loss-sqli-paths <<'CASES'
 app/t.sh|for b in "x'; DROP TABLE alerts;--"; do|hit
+scripts/test-db-reset.sh|for b in "x'; DROP TABLE alerts;--"; do|hit
+scripts/test_db.py|for b in "x'; DROP TABLE alerts;--": pass|hit
+tests/a\b.sh|for b in "x'; DROP TABLE alerts;--"; do|hit
 tests/seed.sql|for b in "x'; DROP TABLE alerts;--"; do|hit
 tests/seed.pgsql|for b in "x'; DROP TABLE alerts;--"; do|hit
 tests/seed.sql.j2|for b in "x'; DROP TABLE alerts;--"; do|hit
@@ -1492,12 +1500,12 @@ case_floor_data_loss_sqli_crossline() {
   done <<'CASES'
 tests/t.sh|psql <<EOF\nUPDATE t SET a='\nfor b in %s; do\nEOF|hit
 tests/t.py|q = """SELECT * FROM t WHERE n = '\nfor b in %s: pass|hit
-tests/t.js|const o = `a='`;\nfor (b in %s) {}|hit
+tests/t.js|const o = `a='`;\nfor b in %s|hit
 tests/t.rs|let o = r#"a='"#;\nfor b in %s {}|hit
 tests/t.rb|o = %%q(a=')\nfor b in %s do end|hit
 tests/c.sh|x=1\nfor b in %s; do|miss
 tests/c.py|x = 1\nfor b in %s: pass|miss
-tests/c.js|const o = 1;\nfor (b in %s) {}|miss
+tests/c.js|const o = 1;\nfor b in %s|miss
 tests/c.rs|let o = 1;\nfor b in %s {}|miss
 tests/c.rb|o = 1\nfor b in %s do end|miss
 CASES
@@ -1542,12 +1550,36 @@ case_floor_data_loss_sqli_payload() {
   [ "$out" = "full data-loss: tests/m.sh" ] && pass floor-data-loss-sqli-payload || fail floor-data-loss-sqli-payload "got '$out'"
 }
 
+# A path holding a control byte or a backslash fails G0: the literal and a real drop both hit.
 case_floor_data_loss_sqli_tab_path() {
   local bad="" out p=$'tests/a\tb.sh'
-  mkrepo; addfile "$p" "$SQ_LINE"; out="$(sq_out)"; [ -z "$out" ] || bad="$bad [literal => '$out']"
+  mkrepo; addfile "$p" "$SQ_LINE"; out="$(sq_out)"
+  case "$out" in "full data-loss: "*) ;; *) bad="$bad [literal => '$out']" ;; esac
   mkrepo; addfile "$p" 'DROP TABLE users;'; out="$(sq_out)"
   case "$out" in "full data-loss: "*) ;; *) bad="$bad [real drop => '$out']" ;; esac
   [ -z "$bad" ] && pass floor-data-loss-sqli-tab-path || fail floor-data-loss-sqli-tab-path "$bad"
+}
+
+# The security-review repro shapes, each a hit with the flag set.
+case_floor_data_loss_sqli_review_repros() {
+  local bad="" out pay="\"x'; DROP TABLE users;--\""
+  # path collision: a dirty file named a<backslash>tb.sh beside a clean a<backslash><TAB>b.sh
+  mkrepo; mkdir -p "$ROOT/tests"
+  printf 'psql <<SQL\nupdate t set a = '"'"'\nfor b in %s; do\nSQL\n' "$pay" > "$ROOT/tests/a\\tb.sh"
+  printf 'echo hi\n' > "$ROOT/tests/a\\"$'\t'"b.sh"; _commit "chore: collide"
+  out="$(sq_out)"; case "$out" in "full data-loss: "*) ;; *) bad="$bad [collide => '$out']" ;; esac
+  # `in` as a SQL word inside a shell argument
+  mkrepo; mkdir -p "$ROOT/tests"
+  printf 'q="select 1 from t where a = '"'"'v"\necho $q in %s | psql "$DATABASE_URL"\n' "$pay" > "$ROOT/tests/t.sh"; _commit "chore: echojoin"
+  out="$(sq_out)"; [ "$out" = "full data-loss: tests/t.sh" ] || bad="$bad [echojoin => '$out']"
+  # bare `$` interpolation after a loop header
+  mkrepo; mkdir -p "$ROOT/tests"
+  printf 'q="select * from t where n = '"'"'"\nfor b in %s; do psql -c "$q$b"; done\n' "$pay" > "$ROOT/tests/t.sh"; _commit "chore: dollar"
+  out="$(sq_out)"; [ "$out" = "full data-loss: tests/t.sh" ] || bad="$bad [dollar => '$out']"
+  # an ops script whose basename starts with test-
+  mkrepo; addfile scripts/test-db-reset.sh "for b in $pay; do"
+  out="$(sq_out)"; [ "$out" = "full data-loss: scripts/test-db-reset.sh" ] || bad="$bad [test- basename => '$out']"
+  [ -z "$bad" ] && pass floor-data-loss-sqli-review-repros || fail floor-data-loss-sqli-review-repros "$bad"
 }
 
 case_floor_data_loss_sqli_awk_fails() {
@@ -1606,7 +1638,7 @@ case_ship_sqli_skip_visible() {
 case_floor_data_loss_sqli_long_line() {
   local t0 t1 out ms
   mkrepo; mkdir -p "$ROOT/tests"
-  LC_ALL=C awk -v tail="$SQ_LINE" 'BEGIN { printf ":"; for (i = 0; i < 20000; i++) printf " \"x%d\"", i; print "; " tail }' > "$ROOT/tests/l.sh"
+  LC_ALL=C awk -v head="$SQ_LINE" 'BEGIN { printf "%s :", head; for (i = 0; i < 20000; i++) printf " \"x%d\"", i; print "" }' > "$ROOT/tests/l.sh"
   _commit "chore: long"
   t0="$(_now)"; out="$(sq_out)"; t1="$(_now)"; ms="$(python3 -c "print(int(($t1-$t0)*1000))")"
   if [ -z "$out" ] && [ "$ms" -lt 3000 ]; then pass "floor-data-loss-sqli-long-line (${ms}ms, $(wc -c < "$ROOT/tests/l.sh" | tr -d ' ') bytes)"
@@ -1642,7 +1674,7 @@ run_case() {
 }
 # `parity` (byte-identical against the baseline) holds only at the refactor commit; after the
 # flip the standing check is parity-after-flip.
-ALL="parity-after-flip plan-flip four-false-hits webhook-signature-suggests suggest-records explain-suggest-line classify-files-full escalate-suggest floor-paths floor-rename-counts-both-sides floor-data-loss floor-extra-paths-union floor-invalid-extra-ere override-drop-review override-uncommitted override-typo override-no-light pinned-root malformed-array-fails-closed policy-at-base ship-migration-blocks ship-migration-absent-quiet ship-switch-off-on-base ship-flip-gate-in-pr ship-hollow-full-override ship-data-loss ship-no-spec-blocks ship-suggest-advisory workflow-view floor-timing floor-non-ascii hook-timeout floor-submodule override-empty-phases ship-operator-hollow-full ship-push-forms ship-base-is-origin-head ship-checks-pushed-ref ship-slug-quoted risk-verb significance-uses-risk floor-no-leaks override-unknown-lane-name toml-valid ship-merge-base-once override-operator-precedence default-lane-layers start-no-duplicate-skips ship-fail-closed-refs floor-diff-hardening floor-plus-line floor-where-boundary floor-timing-30k default-rejects-tiny safety-push-forms ship-marker-collisions ship-continuation-and-heredoc ship-marker-at-base exempt-reader-rejects exempt-glob-semantics floor-test-paths-not-auth floor-test-paths-other-kinds floor-test-path-notice floor-exempt-fixture-quiet floor-exempt-glob-bounded floor-exempt-per-kind floor-exempt-migration-only floor-exempt-notice-rules floor-exempt-real-auth-still-hits floor-exempt-working-tree-ignored floor-exempt-forbidden-kinds-rejected floor-exempt-reason-required floor-exempt-canary-rejected floor-exempt-malformed-rejected floor-exempt-never-kit-config floor-exempt-old-shape-ignored floor-exempt-data-loss-still-hits classify-files-exempt ship-exempt-in-pr-blocks ship-exempt-logged ship-test-path-skip-visible ship-notices-env-ignored ship-rid-folded floor-data-loss-sqli-canonical floor-data-loss-sqli-guards floor-data-loss-sqli-paths floor-data-loss-sqli-crossline floor-data-loss-sqli-show-fails floor-data-loss-sqli-cap floor-data-loss-sqli-optin floor-data-loss-sqli-payload floor-data-loss-sqli-tab-path floor-data-loss-sqli-awk-fails ship-sqli-skip-visible floor-data-loss-sqli-long-line floor-data-loss-sqli-many-lines floor-data-loss-sqli-big-head"
+ALL="parity-after-flip plan-flip four-false-hits webhook-signature-suggests suggest-records explain-suggest-line classify-files-full escalate-suggest floor-paths floor-rename-counts-both-sides floor-data-loss floor-extra-paths-union floor-invalid-extra-ere override-drop-review override-uncommitted override-typo override-no-light pinned-root malformed-array-fails-closed policy-at-base ship-migration-blocks ship-migration-absent-quiet ship-switch-off-on-base ship-flip-gate-in-pr ship-hollow-full-override ship-data-loss ship-no-spec-blocks ship-suggest-advisory workflow-view floor-timing floor-non-ascii hook-timeout floor-submodule override-empty-phases ship-operator-hollow-full ship-push-forms ship-base-is-origin-head ship-checks-pushed-ref ship-slug-quoted risk-verb significance-uses-risk floor-no-leaks override-unknown-lane-name toml-valid ship-merge-base-once override-operator-precedence default-lane-layers start-no-duplicate-skips ship-fail-closed-refs floor-diff-hardening floor-plus-line floor-where-boundary floor-timing-30k default-rejects-tiny safety-push-forms ship-marker-collisions ship-continuation-and-heredoc ship-marker-at-base exempt-reader-rejects exempt-glob-semantics floor-test-paths-not-auth floor-test-paths-other-kinds floor-test-path-notice floor-exempt-fixture-quiet floor-exempt-glob-bounded floor-exempt-per-kind floor-exempt-migration-only floor-exempt-notice-rules floor-exempt-real-auth-still-hits floor-exempt-working-tree-ignored floor-exempt-forbidden-kinds-rejected floor-exempt-reason-required floor-exempt-canary-rejected floor-exempt-malformed-rejected floor-exempt-never-kit-config floor-exempt-old-shape-ignored floor-exempt-data-loss-still-hits classify-files-exempt ship-exempt-in-pr-blocks ship-exempt-logged ship-test-path-skip-visible ship-notices-env-ignored ship-rid-folded floor-data-loss-sqli-canonical floor-data-loss-sqli-guards floor-data-loss-sqli-paths floor-data-loss-sqli-crossline floor-data-loss-sqli-show-fails floor-data-loss-sqli-cap floor-data-loss-sqli-optin floor-data-loss-sqli-payload floor-data-loss-sqli-tab-path floor-data-loss-sqli-review-repros floor-data-loss-sqli-awk-fails ship-sqli-skip-visible floor-data-loss-sqli-long-line floor-data-loss-sqli-many-lines floor-data-loss-sqli-big-head"
 if [ "$#" -eq 0 ]; then set -- $ALL; fi
 for c in "$@"; do run_case "$c"; done
 [ "$FAILS" -eq 0 ]

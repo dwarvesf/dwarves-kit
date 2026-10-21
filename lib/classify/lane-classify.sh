@@ -127,11 +127,13 @@ _HL_truncate_code='(truncate[[:space:]]+(table[[:space:]]+)?[a-z_."]+[[:space:]]
 _HL_truncate_css='class(name)?[[:space:]]*=[[:space:]]*[{"'"'"'`]'
 _HL_truncate_sql='(.*[^a-z_])?truncate[[:space:]]+(table[[:space:]]+)?[a-z_."]+'
 # The sqli carve-out's own constants, matched on lowercased text. _HL_sqli_testpath is local to the
-# carve-out: it is not _HP_testpath above, and no hard-path kind reads it.
+# carve-out: it is not _HP_testpath above, and no hard-path kind reads it. A `test-` or `test_`
+# basename alone does not qualify: ops scripts such as `scripts/test-db-reset.sh` carry real SQL.
+# Any bare `$` counts as a join: shell interpolates `"$q$b"` without braces.
 _HL_sqli_payload='"[a-z0-9_]*'"'"';[[:space:]]*drop[[:space:]]+table[[:space:]]+[a-z0-9_]+;--"'
-_HL_sqli_testpath='(^|/)(test|tests|spec|__tests__)/|(^|/)(test_|test-)[^/]*$|(^|/)[^/]*(_test|\.test)\.[^/]+$'
+_HL_sqli_testpath='(^|/)(test|tests|spec|__tests__)/|(^|/)[^/]*(_test|\.test)\.[^/]+$'
 _HL_sqli_ext='\.(py|sh|bash|js|ts|go|rb|rs|java|kt)$'
-_HL_sqli_join='[+%]|[|][|]|\.format|fr?"|rf"|\$\{|#\{'
+_HL_sqli_join='[+%]|[|][|]|\.format|fr?"|rf"|\$|#\{'
 
 # _hp_re <kind> -- the built-in ERE for a hard-path kind.
 _HP_KINDS="migration auth secret ci infra kit-config"
@@ -680,28 +682,33 @@ _floor_comment_only() {
 }
 # The sqli carve-out's two awk passes over $tmp/plen (byte length of each record's path) and $tmp/added.
 # Pass A prints each candidate path once: a line holding ' and ;-- in a test file of a known language.
+# A path holding a backslash or a control byte never qualifies: git quotes such a name, and two
+# distinct names can unquote to one string, so G9 could read the wrong file.
 read -r -d '' _SQLI_PASS_A <<'AWK' || true
 FILENAME == ARGV[1] { plen[FNR] = $0 + 0; next }
 { n = plen[FNR]; c = substr($0, n + 2)
   if (!index(c, "'") || !index(c, ";--")) next
   p = substr($0, 1, n); lp = tolower(p)
+  if (index(p, "\\") || p ~ /[[:cntrl:]]/) next
   if (lp !~ ENVIRON["KIT_SQLI_TP"] || lp !~ ENVIRON["KIT_SQLI_EXT"]) next
   if (!(p in seen)) { seen[p] = 1; print p } }
 AWK
 # Pass B rewrites the one canonical literal on a line of an allowed path when every line guard holds:
 # exactly one ', no backslash or backtick, no join or interpolation marker, the payload shape, an even
-# count of " before it, and the word `in` right before it. Each rewrite writes one notice line.
+# count of " before it, and a bare `for <name> in ` loop header as the whole text before it. Each
+# rewrite writes one notice line.
 read -r -d '' _SQLI_PASS_B <<'AWK' || true
 FILENAME == ARGV[1] { ok[$0] = 1; next }
 FILENAME == ARGV[2] { plen[FNR] = $0 + 0; next }
 { n = plen[FNR]; p = substr($0, 1, n); c = substr($0, n + 2)
-  if ((p in ok) && index(c, "'") && index(c, ";--") && split(c, parts, "'") == 2 \
+  if ((p in ok) && !index(p, "\\") && p !~ /[[:cntrl:]]/ \
+      && index(c, "'") && index(c, ";--") && split(c, parts, "'") == 2 \
       && !index(c, "\\") && !index(c, "`")) {
     lp = tolower(p); lc = tolower(c)
     if (lp ~ ENVIRON["KIT_SQLI_TP"] && lp ~ ENVIRON["KIT_SQLI_EXT"] && lc !~ ENVIRON["KIT_SQLI_JOIN"] \
         && match(lc, ENVIRON["KIT_SQLI_PAY"])) {
       pre = substr(c, 1, RSTART - 1); t = pre; nq = gsub(/"/, "", t)
-      if (nq % 2 == 0 && tolower(pre) ~ /(^|[^a-z0-9_])in[ \t]+$/) {
+      if (nq % 2 == 0 && tolower(pre) ~ /^[[:space:]]*for[[:space:]]+[a-z_][a-z0-9_]*[[:space:]]+in[[:space:]]+$/) {
         c = pre "\"sqli-payload\"" substr(c, RSTART + RLENGTH)
         printf "floor-exempt\tdata-loss\tsqli-payload\t-\tbuilt-in sqli-payload literal\t-\t%s\n", p > ENVIRON["KIT_SQLI_NOTES"]
       }
