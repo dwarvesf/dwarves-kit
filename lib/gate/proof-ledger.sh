@@ -388,7 +388,7 @@ _negctl_required() {
   fi
   local LC="$LIB_ROOT/classify/lane-classify.sh"
   [ -f "$LC" ] || { echo yes; return 0; }
-  [ -z "$(KIT_PROJECT_ROOT="$root" bash "$LC" floor "$root" "$base" 2>/dev/null)" ] || { echo yes; return 0; }
+  [ -z "$(KIT_FLOOR_SQLI_CARVEOUT=0 KIT_PROJECT_ROOT="$root" bash "$LC" floor "$root" "$base" 2>/dev/null)" ] || { echo yes; return 0; }
   changed="$(_changed "$root" "$base" | tr '\n' ' ')"
   grep -qx 'flags: hard-path' < <(KIT_PROJECT_ROOT="$root" bash "$LC" explain --files "$changed" "negative control check" 2>/dev/null) \
     && { echo yes; return 0; }
