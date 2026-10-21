@@ -88,3 +88,62 @@ restored and the suite is green again. Re-running the logged Command reproduces 
   bash syntax error case is the only one produced by a real runner.
 - `--base-ref` mode is deliberately unchanged: a missing module at the old ref is the expected
   way for the change under test to be absent.
+
+## Review fixes (commit 66b0553c)
+
+A fresh review found three false verdicts. Fixed: ANSI codes are stripped before both greps
+(colour defeated the `^` anchors); a bare `SyntaxError` is no longer a load signature; mocha,
+node:test, cargo, TAP and bun assertion signals were added; and `Failed to parse source for
+import analysis` is a load signature. Cases 51 to 54 cover them; case 48 now pairs
+`Tests  1 failed` with `Transform failed`. Each new fixture also carries a load line, so the case
+fails when its fix is removed.
+
+```
+Command: bash tests/test-proof-negctl.sh
+Exit: 0
+Output:
+[51] a colored vitest assertion failure plus a colored SyntaxError counts as RED (ANSI stripped before matching)
+  ok: colored assertion line recognised, RED kept
+[52] a mocha-style '1 failing' plus SyntaxError counts as RED
+  ok: mocha assertion signal accepted
+[53] a bare runtime SyntaxError is not a load signature: the RED counts
+  ok: bare SyntaxError no longer rejects a RED
+[54] vitest 'Failed to parse source for import analysis' is a load error even beside Test Files 1 failed
+  ok: import-analysis parse failure rejected
+test-proof-negctl: all 55 passed
+Verdict: PASS
+```
+
+```
+Command: bash tests/run-all.sh --changed
+Exit: 0
+Output:
+run-all: all 51 suites passed, 0 skipped for missing tooling
+Verdict: PASS
+```
+
+Negative control A (the assertion check disabled: `if grep -aqE "$re_assert" "$clean"` becomes
+`if false`), run against 66b0553c:
+
+```
+Command: bash lib/gate/negctl.sh <worktree> "bash tests/test-proof-negctl.sh" "<disable assertion check>"
+Exit: 1 (under mutation, RED expected)
+Output:
+  test-proof-negctl: 52 passed, 3 FAILED
+Restore: git checkout HEAD -- lib/gate/negctl.sh
+Exit: 0 (green after restore)
+Verdict: PASS
+```
+
+Negative control B (the ANSI strip disabled: the `sed` line becomes `cat "$f"`):
+
+```
+Command: bash lib/gate/negctl.sh <worktree> "bash tests/test-proof-negctl.sh" "<disable ANSI strip>"
+Exit: 1 (under mutation, RED expected)
+Output:
+  Verdict: FAIL: RED was a load or compile error, not a failing test (ESC[31mError: Transform failed with 1 error:ESC[39m)
+  test-proof-negctl: 54 passed, 1 FAILED
+Restore: git checkout HEAD -- lib/gate/negctl.sh
+Exit: 0 (green after restore)
+Verdict: PASS
+```
