@@ -1,0 +1,3 @@
+{"type": "user", "isSidechain": true, "timestamp": "2026-10-21T09:00:00.000Z", "message": {"role": "user", "content": "go"}}
+{"type": "assistant", "isSidechain": true, "timestamp": "2026-10-21T09:00:01.000Z", "message": {"role": "assistant", "content": [{"type": "tool_use", "id": "toolu_x", "name": "Read", "input": {"file_path": "a.py"}}]}}
+{"type": "assistant", "isSidechain": true, "timestamp": "2026-10-21T09:00:02.000Z", "message": {"role": "assistant", "content": [{"type": "thinking", "thinking": "hmm", "signature": "s"}]}}
