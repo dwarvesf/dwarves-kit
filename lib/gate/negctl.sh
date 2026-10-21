@@ -30,6 +30,21 @@
 # is hostile on a shared box. Induce it around negctl instead, as
 # docs/verification/wavefront-startup-windows-negctl.sh does.
 #
+# A RED that is only a load or compile error proves nothing: a mutation that breaks the
+# source turns ANY test red (vitest: `Tests  no tests` or `Transform failed`, pytest: `ERROR
+# collecting`, go: `[build failed]`, bash: `syntax error near unexpected token`), so the test's
+# assertion was never checked. After a non-zero step 4, red_load_error() reads the captured
+# output with ANSI colour codes stripped (CI=true or FORCE_COLOR would otherwise defeat the line
+# anchors). A load or compile signature with no assertion-failure signal (vitest/jest `Tests  N
+# failed`, pytest `N failed`, go `--- FAIL:`, mocha `N failing`, node:test `# fail N`, cargo
+# `test result: FAILED`, TAP `not ok`, bun `N fail`, a `FAIL: ` line) is `Verdict: FAIL: RED was
+# a load or compile error, not a failing test (<matched line>)`. It is never retried under
+# NEGCTL_RED_ATTEMPTS. Any assertion signal makes the RED count even when a load signature
+# appears too. A bare `SyntaxError` is not a load signature: inside a test it is a real
+# failure. The signature lists live in that one function. NEGCTL_ALLOW_LOAD_RED=1 restores the
+# old behaviour (any non-zero exit is RED). --base-ref mode does not apply it: there a missing
+# module at the old ref is the expected way for the change under test to be absent.
+#
 # A test-cmd side write breaks steps 3 and 5 the same way a flaky test breaks step 4: `git
 # diff HEAD` is a live, cumulative snapshot, not a delta, so a tracked file <test-cmd> writes
 # while running (a fixture it renders on every pass, not the mutation itself) shows up
@@ -52,6 +67,7 @@
 #      checked for tracked dirt beyond the mutation's own set -- an attempt that itself wrote
 #      a tracked file could otherwise make the NEXT attempt spuriously RED, hiding a
 #      genuinely vacuous mutation. That is a FAIL, named by file, and retries stop there.
+#      A non-zero exit that is only a load or compile error is a FAIL too (see above).
 #   5. restore. The mutation's own set restores exactly as step 3 found it, even when that
 #      set is empty. Anything else tracked-different from HEAD -- most often a file
 #      <test-cmd> wrote while going RED -- restores too, but only if it exists at HEAD:
@@ -321,6 +337,53 @@ _beyond_mutate_set() {
   done < <(git -C "$root" diff HEAD --no-renames --name-only -z 2>/dev/null)
 }
 
+# $1 = the captured RED output. Prints the first load or compile failure line and returns 0
+# when the output shows one and NO assertion-failure signal; returns 1 otherwise (the RED is a
+# real failing test, or says nothing recognisable). Add a runner by adding a line to a list.
+# Both lists run on a copy with ANSI colour codes stripped: CI=true or FORCE_COLOR puts escape
+# codes at the start of a line, which would defeat every `^` anchor below. A bare `SyntaxError`
+# is deliberately not a load signature: inside a test it is a real runtime failure.
+red_load_error() {
+  local f="$1" clean s rc re_load="" re_assert=""
+  local load_sigs=(
+    '^[[:space:]]*Tests:?[[:space:]]+no tests'   # vitest: the file never loaded, zero tests ran
+    'Transform failed'                           # vite/esbuild could not compile the source
+    'Failed to parse source for import analysis' # vitest: a broken .js source in a multi-file suite
+    'Test suite failed to run'                   # jest: the suite file failed to load
+    'ERROR collecting'                           # pytest: import or parse error at collection
+    'errors? during collection'                  # pytest: the collection summary line
+    'Interrupted: [0-9]+ errors?'                # pytest: the run stopped on collection errors
+    '\[build failed\]'                           # go test: the package did not compile
+    '\[setup failed\]'                           # go test: the package could not be set up
+    'syntax error near unexpected token'         # bash: the script or a sourced file did not parse
+  )
+  local assert_sigs=(
+    '^[[:space:]]*Tests:?[[:space:]].*[0-9]+ failed'   # vitest/jest test summary (not `Test Files`)
+    '^=+ .*[0-9]+ failed'                              # pytest summary banner
+    '^[0-9]+ failed'                                   # pytest -q summary
+    '^--- FAIL:'                                       # go test: a test function failed
+    '^[[:space:]]*FAIL: '                              # the kit's bash harness failure line
+    'AssertionError'                                   # python or node assertion
+    '^[[:space:]]*[0-9]+ failing'                      # mocha summary
+    '^# fail [1-9]'                                    # node:test summary
+    'test result: FAILED'                              # cargo test summary
+    '^not ok'                                          # TAP: a test point failed
+    '^[[:space:]]*[1-9][0-9]* fail'                    # bun test summary
+  )
+  for s in "${load_sigs[@]}"; do re_load="${re_load:+$re_load|}$s"; done
+  for s in "${assert_sigs[@]}"; do re_assert="${re_assert:+$re_assert|}$s"; done
+  clean="$(mktemp "${TMPDIR:-/tmp}/negctl-clean.XXXXXX")" || return 1
+  sed $'s/\x1b\\[[0-9;]*[A-Za-z]//g' "$f" >| "$clean"
+  if grep -aqE "$re_assert" "$clean"; then
+    rc=1
+  else
+    grep -aE -m1 "$re_load" "$clean" | sed 's/^[[:space:]]*//' | cut -c1-120 | grep .
+    rc=$?
+  fi
+  rm -f "$clean"
+  return "$rc"
+}
+
 restore_files=()
 restore_done=0
 restore() {
@@ -420,10 +483,15 @@ fi
 
 red_used=0
 rc_red=0
+load_line=""
 while [ "$red_used" -lt "$red_attempts" ]; do
   red_used=$(( red_used + 1 ))
   run_test; rc_red=$?
-  [ "$rc_red" -ne 0 ] && break
+  if [ "$rc_red" -ne 0 ]; then
+    # A load-error RED is final, never retried into a later attempt.
+    load_line="$(red_load_error "$out_file")"
+    break
+  fi
   if [ "$red_used" -lt "$red_attempts" ]; then
     _beyond_mutate_set
     if [ "${#beyond[@]}" -gt 0 ]; then
@@ -438,6 +506,13 @@ else
   echo "Exit: $rc_red (under mutation, RED expected)"
 fi
 show_output
+if [ -n "$load_line" ]; then
+  if [ "${NEGCTL_ALLOW_LOAD_RED:-}" = "1" ]; then
+    echo "Note: RED matched a load-error signature ($load_line); accepted because NEGCTL_ALLOW_LOAD_RED=1"
+  else
+    fail "RED was a load or compile error, not a failing test ($load_line)"
+  fi
+fi
 if [ "$rc_red" -eq 0 ]; then
   # The single-attempt wording is unchanged on purpose: the default path must stay
   # byte-identical, and two dated proof records quote this exact line.

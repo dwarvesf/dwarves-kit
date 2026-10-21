@@ -60,7 +60,10 @@ For COMPARATIVE claims (faster/smaller/fewer), add the optional evidence pair
    `proof-ledger.sh negctl ...`): it refuses a dirty tree, runs GREEN -> mutate -> RED ->
    restore -> GREEN, fails closed on a vacuous mutation or an unrestorable tree, and prints
    the block in the gate's grammar to paste here. Commit the change first; the restore is
-   `git checkout HEAD --`. A `Verdict: FAIL` block never satisfies the gate.
+   `git checkout HEAD --`. A `Verdict: FAIL` block never satisfies the gate. A RED that is
+   only a load or compile error (vitest `Tests  no tests`, pytest `ERROR collecting`, go
+   `[build failed]`, bash `syntax error near unexpected token`) is a FAIL too, unless
+   `NEGCTL_ALLOW_LOAD_RED=1`.
 3. **Reproducible.** Re-running the logged `Command:` reproduces the verdict.
 
 For a load-bearing change, all three are required. Green-only is a weak proof.
