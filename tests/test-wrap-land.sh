@@ -2350,6 +2350,35 @@ chk "PB6: no blob URL was minted for the cache file" \
   "$(printf '%s' "$PB6_BODY" | grep -c 'proof-assets.*raw=true')"
 chk_has "PB6: the committed image still becomes a blob url" \
   "$PB6_BODY" "blob/${PB6_SHA}/docs/verification/after.png?raw=true"
+
+echo "--- PB7: a proof file that arrives through the merged-in default branch is not the branch's proof"
+# The branch owns no proof file. Origin gains one (another PR), the PR comes back CONFLICTING,
+# land merges origin/main in, and the closing block must stay silent: the merge moved the
+# base the block diffs from.
+build_land_reg pb7
+PB7_WT="$(cd "$TMPD/ld-repo-pb7/wt" && pwd -P)"
+PB7_TIP="$(git -C "$PB7_WT" rev-parse HEAD)"
+land_adv pb7
+mkdir -p "$TMPD/ld-adv-pb7/tools/x/docs"
+printf '# Verification\nCommand: `bash t.sh`\nExit: 0\nOutput:\nother tool: 9 passed\nVerdict: PASS\n' \
+  > "$TMPD/ld-adv-pb7/tools/x/docs/proof-of-done.md"
+git -C "$TMPD/ld-adv-pb7" add -A; git -C "$TMPD/ld-adv-pb7" commit -qm "docs: another tool's proof"
+git -C "$TMPD/ld-adv-pb7" push -q origin main
+: > "$GH_STUB_CALLS"; rm -f "$GH_STUB_CALLS".*
+out="$(GH_STUB_OPEN_PRS='[]' GH_STUB_CREATE_NUM=42 \
+  GH_STUB_MERGE_FAILS=1 GH_STUB_MERGE_ERR='Pull Request is not mergeable' \
+  GH_STUB_PR_42="$(lm_conf 42 "$PB7_TIP")" GH_STUB_PR_42_2="$(lm_ok 42)" \
+  KIT_WRAP_CI_GRACE_SECS=0 KIT_WRAP_CARRY_CHECKS_SECS=0 \
+  GH_STUB_LAND_REPO="$PB7_WT" GH_STUB_LAND_REMOTE="$TMPD/ld-bare-pb7" \
+  GH_STUB_LAND_BRANCH=feat/land GH_STUB_LAND_DEF=main "$WRAP" land "$PB7_WT" 2>&1)"; rc=$?
+chk "PB7: exits 0" "$rc"
+chk_has "PB7: the land really merged origin/main in" "$out" "#42 is CONFLICTING: merging origin/main into feat/land"
+chk_has "PB7: the merge commit brought the other proof file in" \
+  "$(git -C "$TMPD/ld-repo-pb7" ls-tree -r --name-only HEAD)" \
+  "tools/x/docs/proof-of-done.md"
+chk_no "PB7: no PROOF OF DONE block" "$out" "PROOF OF DONE"
+chk_no "PB7: the merged-in proof file is not listed" "$out" "  proof: tools/x/docs/proof-of-done.md"
+chk_no "PB7: the merged-in proof output is not shown" "$out" "other tool: 9 passed"
 } # end sec_proofbody
 
 # ===========================================================================

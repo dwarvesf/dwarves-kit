@@ -784,6 +784,10 @@ cmd_land() {
       return 2
     fi
     tip="$MERGED_OID"
+    # The merge-in moved the branch's base to the origin/<def> tip it merged. Re-take it now,
+    # before the second merge lets origin/<def> reach the branch: base..HEAD would otherwise
+    # list every proof file the merge brought in. Unreadable: no block, never a wrong one.
+    proof_base="$(git -C "$wt" merge-base "refs/remotes/origin/${def}" "$tip" 2>/dev/null)" || proof_base=""
 
     if _ci_on_merge; then
       _ci_label_sync "$url" "$n"; rc=$?
