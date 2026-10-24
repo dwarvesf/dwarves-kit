@@ -21,6 +21,11 @@ from sync_core import ACTIVE_STATUSES, extract_tags, strip_tags, title_for
 
 
 def title_with_tags(title: str, body: str) -> str:
+    """The reminder title: text, then the body's tags as a suffix. Tags a
+    board item carries in its own cell are dropped from the text first, so
+    they never double the suffix and never read as drift (read() strips
+    every tag off a title and rebuilds the expected one from the body)."""
+    title = strip_tags(title)
     tags = extract_tags(body or "")
     return f"{title} {' '.join('#' + t for t in tags)}" if tags else title
 

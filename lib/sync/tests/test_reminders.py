@@ -167,3 +167,20 @@ def test_bulk_call_timeout_marks_and_exits_cleanly(transport):
     with pytest.raises(SystemExit, match="did not answer"):
         reminders._osascript(reminders.JXA_READ, "Backlog")
     assert marker.exists()
+
+
+def test_item_tag_is_not_doubled_by_the_body_suffix():
+    # A row whose item cell already carries #u-hi and whose notes carry it
+    # too must create ONE tag on the reminder title, and a row whose item
+    # alone carries it must not leave its tag text inside the title (read()
+    # strips it, so a surviving copy would read as drift every tick).
+    fake = FakeJxa()
+    src = RemindersSource(runner=fake)
+    plan = Plan(src_create=[
+        ("ID-20", "ID-20 · Do it #u-hi", "x #u-hi", "queued"),
+        ("ID-21", "ID-21 · Do it #u-hi", "plain", "queued")])
+    src.apply(plan, {}, {})
+    payload = json.loads(fake.calls[0][1][1])
+    assert [c["title"] for c in payload["create"]] == [
+        "ID-20 · Do it #u-hi", "ID-21 · Do it"]
+    assert title_with_tags("ID-21 · Do it #u-hi", "plain") == "ID-21 · Do it"

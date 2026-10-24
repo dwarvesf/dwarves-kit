@@ -43,6 +43,20 @@ archive row. A card already done whose row sits in the archive closed is
 settled on both sides: no write and no orphan note. The page stays in the
 spoke with its closed status; the sync never trashes it.
 
+**Ownership guards.** The sync carries a human decision and never makes one.
+
+- A shipped or dropped row is never reopened from a spoke. An open spoke item
+  on a closed row is a stale copy: the plan closes it (a note says so) and
+  writes nothing to the board. Active rows stay two-way.
+- Tag filters (`only_tags`, `skip_tags`) read the item cell and the notes
+  cell. Titles compare without `#tags`, so a tag in the item cell never reads
+  as a retitle; Reminders drops item-cell tags from the title text and
+  suffixes only the notes tags.
+- Intake dedupe ("title already on board") looks at rows still in play. A new
+  item titled like a shipped or dropped row is new work.
+- `intake_skip_re` is searched against `title + "\n" + body` (MULTILINE), so
+  `^thread: ` still anchors on a body line and `^\[to:` matches a title.
+
 ## What each app can hold
 
 | Field | Reminders | Notion | Hermes | Multica |
