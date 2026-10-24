@@ -92,6 +92,11 @@ name: sk-bare
 description: Skill with no metadata at all.
 ---
 Body.'
+mkf "$SK/sk-quoted/SKILL.md" '---
+name: sk-quoted
+description: "Quoted description for the index. More text."
+---
+Body.'
 mkf "$SK/sk-bad/SKILL.md" '---
 name: sk-bad
 description: Skill with a malformed estate block.
@@ -281,6 +286,9 @@ S="$(section_of sk-bare)"
 { has "$S" "cluster: (blank)" && has "$S" "layer: (blank)"; }
 check "estate: a skill with no metadata block is grouped under (blank), not an error" $? "$S"
 has "$(row sk-bare)" "(blank)"; check "estate: a missing owner shows as (blank) in the row" $? "$(row sk-bare)"
+
+has "$(row sk-quoted)" "| sk-quoted | Quoted description for the index. |"
+check "index: a quoted YAML description loses its quotes in the summary column" $? "$(row sk-quoted)"
 
 S="$(section_of sk-bad)"
 { has "$S" "cluster: (blank)"; }

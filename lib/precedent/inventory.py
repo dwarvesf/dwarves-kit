@@ -976,7 +976,7 @@ def add_skill_entries(sections: Sections, title: str, dirpath: str, terms, label
         # a skill's name/description weighs double; coverage (terms matched) still dominates
         head_score = score(terms, skill_name, desc, name_weight=4, hay_weight=2)
         s = head_score or (1 if score(terms, "", body, require_all=True) else 0)
-        item = make_item("skill", skill_name, first_sentence(desc), fp, source,
+        item = make_item("skill", skill_name, first_sentence(desc).strip("\"' "), fp, source,
                          estate_from_frontmatter(fm))
         sections.add(title, s, label + suffix(first_sentence(desc)), item)
     return True
@@ -1033,7 +1033,8 @@ def add_markdown_entries(sections: Sections, title: str, dirpath: str, terms, ki
         s = score(terms, name, desc, name_weight=4, hay_weight=2)
         if not s and stem != name:
             s = score(terms, stem, desc, name_weight=4, hay_weight=2)
-        item = make_item(kind, name, first_sentence(desc), fp, source, estate_from_frontmatter(fm))
+        item = make_item(kind, name, first_sentence(desc).strip("\"' "), fp, source,
+                         estate_from_frontmatter(fm))
         sections.add(title, s, f"{kind} {label_tag}{name}" + suffix(first_sentence(desc)), item)
     return True
 
