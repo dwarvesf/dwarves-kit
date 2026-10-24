@@ -33,6 +33,7 @@ Before you propose a NEW tool, script, skill, cron job, or memory note. Also whe
 2. If a hit comes back, quote its summary line as printed and say the work belongs in that thing, in its own repo.
 3. If nothing comes back, say so in one line. Do not claim certainty beyond the search you ran.
 4. For past decisions, specs, or retros, use `--surface records` instead of `inventory`.
+5. When the idea is a name (`board`), query that name alone: an item with exactly that name prints first, in an `exact` section. `precedent index` writes the full page by cluster, layer, and kind.
 
 ## Never
 

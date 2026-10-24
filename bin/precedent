@@ -8,10 +8,12 @@
 #   precedent find "<task description>" | <bare words...> [--surface records|inventory|all]
 #                  [--limit N] [--quiet] [--json] [--registry <file>] [--repo-root <path>]
 #   precedent find --explain "<hit label as printed>"
+#   precedent find "<words>" --layer T3 --cluster <name> --kind skill|tool|script|command|agent
+#   precedent index [--layer L] [--cluster C] [--kind K] [--out <file>]   (markdown page of every item)
 #
 # "have we done something like this before?" at intake: the records surface reads the
 # written record (specs, ADRs, retros, run ledger); the inventory surface reads what has
-# been BUILT (tools, scripts, skills, crons, memory notes). /kit:assign and /kit:grill call
+# been BUILT (tools, scripts, skills, commands, agents, crons, memory notes). /kit:assign and /kit:grill call
 # this before sizing a task.
 set -euo pipefail
 SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
