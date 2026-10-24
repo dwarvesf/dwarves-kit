@@ -1213,3 +1213,134 @@ def test_apply_board_flips_a_six_cell_row_in_place():
     new_text, _ = apply_board(SIX_COL_BOARD, plan)
     assert "| ID-7 | six cell row | from a brief | SPEC-1 | normal | shipped [note] |" in new_text
     assert "| ID-8 | four cell row | n | claimed |" in new_text
+
+
+# --- ownership guards: the board decides, a sync tool never reopens ----------
+
+BOARD_OWN = """| ID | Item | Notes & source | Status |
+|---|---|---|---|
+| ID-20 | Dropped by a human | why | dropped |
+| ID-21 | Shipped long ago | done | shipped |
+| ID-22 | Live work | notes | queued |
+| ID-23 | Tagged in the item #u-hi #infra | plain notes | queued |
+| ID-24 | Personal errand #family | plain notes | queued |
+"""
+
+
+def own_snap(bid, rid, title, status, notes):
+    return {bid: {"rid": rid, "title": title, "notes": notes,
+                  "status": status}}
+
+
+def test_open_spoke_item_never_reopens_a_dropped_row():
+    # DF-611: a human dropped the row, the Reminders item stayed open, and
+    # the binary-spoke "reopened" read wrote the row back to queued.
+    rows = parse_board(BOARD_OWN)
+    items = [item("r20", "ID-20 · Dropped by a human")]  # open, status None
+    state = {"map": own_snap("ID-20", "r20", "Dropped by a human",
+                             "dropped", "why")}
+    p = plan_sync(rows, items, state)
+    assert not p.board_set_status
+    assert p.src_set_status == [("r20", "dropped")]
+    assert any("ID-20" in n for n in p.notes)
+
+
+def test_open_spoke_item_never_reopens_a_shipped_row():
+    rows = parse_board(BOARD_OWN)
+    items = [item("r21", "ID-21 · Shipped long ago")]
+    state = {"map": own_snap("ID-21", "r21", "Shipped long ago",
+                             "shipped", "done")}
+    p = plan_sync(rows, items, state)
+    assert not p.board_set_status
+    assert p.src_set_status == [("r21", "shipped")]
+
+
+def test_definitive_active_status_never_reopens_a_terminal_row():
+    # A spoke that states a keyword (Notion select) gets the same guard.
+    rows = parse_board(BOARD_OWN)
+    items = [item("r20", "ID-20 · Dropped by a human", status="queued")]
+    state = {"map": own_snap("ID-20", "r20", "Dropped by a human",
+                             "dropped", "why")}
+    p = plan_sync(rows, items, state)
+    assert not p.board_set_status
+    assert p.src_set_status == [("r20", "dropped")]
+
+
+def test_reopen_on_an_active_row_still_flows_to_the_board():
+    # Active rows keep the two-way behavior: a spoke close ships the row.
+    rows = parse_board(BOARD_OWN)
+    items = [item("r22", "ID-22 · Live work", done=True)]
+    state = {"map": own_snap("ID-22", "r22", "Live work", "queued", "notes")}
+    p = plan_sync(rows, items, state)
+    assert p.board_set_status == [("ID-22", "shipped")]
+
+
+def test_tag_filters_read_the_item_cell_too():
+    rows = parse_board(BOARD_OWN)
+    assert sync_core.in_scope(rows["ID-23"], {"only_tags": {"u-hi"}})
+    assert not sync_core.in_scope(rows["ID-22"], {"only_tags": {"u-hi"}})
+    assert not sync_core.in_scope(rows["ID-24"], {"skip_tags": {"family"}})
+    assert sync_core.in_scope(rows["ID-22"], {"skip_tags": {"family"}})
+    p = plan_sync(rows, [], {}, filt={"only_tags": {"u-hi"}})
+    assert set(creates(p)) == {"ID-23"}
+    p2 = plan_sync(rows, [], {}, filt={"skip_tags": {"family"}})
+    assert "ID-24" not in creates(p2) and "ID-23" in creates(p2)
+
+
+def test_item_tag_scope_exit_closes_the_spoke_item():
+    rows = parse_board(BOARD_OWN)
+    items = [item("r24", "ID-24 · Personal errand", status="queued")]
+    state = {"map": own_snap("ID-24", "r24", "Personal errand #family",
+                             "queued", "plain notes")}
+    p = plan_sync(rows, items, state, filt={"skip_tags": {"family"}})
+    assert p.src_scope_exit == [("ID-24", "r24")]
+
+
+def test_item_tags_do_not_churn_a_linked_spoke_title():
+    # Reminders hands back a tag-stripped title; the board item keeps its
+    # tags. The pair must read as equal, never as a retitle either way.
+    rows = parse_board(BOARD_OWN)
+    items = [item("r23", "ID-23 · Tagged in the item")]
+    state = {"map": own_snap("ID-23", "r23", "Tagged in the item #u-hi #infra",
+                             "queued", "plain notes")}
+    p = plan_sync(rows, items, state, filt={"only_tags": {"u-hi"}})
+    assert not p.board_edit_item and not p.src_set_title
+    assert p.empty()
+    # and a title-prefix link on first sight is not an id collision
+    p2 = plan_sync(rows, items, {}, filt={"only_tags": {"u-hi"}})
+    assert not any("collision" in n for n in p2.notes)
+
+
+def test_real_spoke_retitle_keeps_the_item_tags():
+    rows = parse_board(BOARD_OWN)
+    items = [item("r23", "ID-23 · Renamed on the spoke")]
+    state = {"map": own_snap("ID-23", "r23", "Tagged in the item #u-hi #infra",
+                             "queued", "plain notes")}
+    p = plan_sync(rows, items, state)
+    assert p.board_edit_item == [("ID-23",
+                                  "Renamed on the spoke #u-hi #infra")]
+
+
+def test_intake_dedupe_ignores_closed_rows():
+    # A fresh ticket titled like a dropped/shipped row is new work.
+    rows = parse_board(BOARD_OWN)
+    items = [item("r30", "Dropped by a human"), item("r31", "Shipped long ago")]
+    p = plan_sync(rows, items, {})
+    assert [a[1] for a in p.board_add] == ["Dropped by a human",
+                                           "Shipped long ago"]
+
+
+def test_intake_dedupe_still_blocks_a_live_title():
+    rows = parse_board(BOARD_OWN)
+    p = plan_sync(rows, [item("r32", "Live work")], {})
+    assert not p.board_add
+    assert any("already on board" in n for n in p.notes)
+
+
+def test_intake_skip_re_also_sees_the_title():
+    items = [item("r40", "[to:chonky] rotate the key", body="plain body"),
+             item("r41", "Investigate CRIT", body="plain body")]
+    p = plan_sync(parse_board(BOARD), items, {},
+                  filt={"intake": "all", "intake_skip_re": r"^\[to:"})
+    assert [a[0] for a in p.board_add] == ["r41"]
+    assert any("intake filtered" in n and "[to:chonky]" in n for n in p.notes)

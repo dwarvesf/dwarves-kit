@@ -20,6 +20,8 @@ from datetime import date
 from pathlib import Path
 
 ACTIVE_STATUSES = {"queued", "claimed", "speccing", "validated", "executing"}
+# A closed row is a human decision. A spoke may carry it, never reopen it.
+TERMINAL_STATUSES = {"shipped", "dropped"}
 # Status keywords an archive row may carry for its spoke card to be closed,
 # and the extraction that reads one. Both match the archive tooling
 # (`_meta/scripts/board-archive`), which moves a row on the LEADING ALPHA RUN of its
@@ -274,10 +276,12 @@ def parse_title(title: str):
 
 
 def titles_agree(spoke_title: str, board_title: str) -> bool:
-    """Same id, different item text (beyond whitespace/case) is a collision,
-    not a link: a bare/empty side has nothing to disagree about."""
-    a = " ".join(spoke_title.split()).casefold()
-    b = " ".join(board_title.split()).casefold()
+    """Same id, different item text (beyond whitespace/case/#tags) is a
+    collision, not a link: a bare/empty side has nothing to disagree about.
+    Tags are not title text: a row keeps `#u-hi` in its item cell while a
+    spoke such as Reminders hands the title back without it."""
+    a = " ".join(strip_tags(spoke_title).split()).casefold()
+    b = " ".join(strip_tags(board_title).split()).casefold()
     return not a or not b or a == b
 
 
@@ -289,6 +293,23 @@ def strip_tags(notes: str) -> str:
     """Remove #tag tokens (for spokes that carry tags in a real tag field)."""
     out = re.sub(r"(?:^|(?<=\s))#[a-z0-9][a-z0-9-]*", "", notes)
     return re.sub(r"[ \t]{2,}", " ", out).strip()
+
+
+def row_tags(row) -> list[str]:
+    """Every tag a board row carries: its item cell and its notes cell.
+    Rows written by hand keep tags in the item (`... #u-hi #f-lo`), rows
+    written by tools keep them in the notes; a filter must see both."""
+    return sorted(set(extract_tags(row.item)) | set(extract_tags(row.notes)))
+
+
+def keep_item_tags(new_title: str, old_item: str) -> str:
+    """A title adopted from a spoke keeps the tags the board item carried:
+    the spoke never held them (Reminders strips them), so taking its text
+    verbatim would silently erase the row's tags."""
+    if extract_tags(new_title):
+        return new_title
+    tags = re.findall(r"(?:^|(?<=\s))#[a-z0-9][a-z0-9-]*", old_item)
+    return " ".join([new_title.strip(), *tags]).strip()
 
 
 # --- plan (pure) -------------------------------------------------------------
@@ -324,7 +345,7 @@ def in_scope(row, filt: dict | None) -> bool:
     """Down-filter: may this row appear on this app at all?"""
     if not filt:
         return True
-    tags = set(extract_tags(row.notes))
+    tags = set(row_tags(row))
     only = filt.get("only_tags")
     if only and not (tags & only):
         return False
@@ -334,18 +355,21 @@ def in_scope(row, filt: dict | None) -> bool:
     return True
 
 
-def intake_ok(body: str, filt: dict | None) -> bool:
+def intake_ok(body: str, filt: dict | None, title: str = "") -> bool:
     """Up-filter: may this foreign app item become a board row?
 
-    `intake_skip_re` is a body regex (re.search, MULTILINE) that keeps an
-    item on the app whatever the intake mode says. It exists for items that
-    have their own lifecycle on the app: a member-facing support ticket
-    carries a `thread:` line, and adopting it means the next tick's
-    scope-exit archives the ticket, which the support desk then reads as
-    "ops closed it" and tells the member their ticket is solved."""
+    `intake_skip_re` is a regex (re.search, MULTILINE) over the title, a
+    newline, then the body; it keeps an item on the app whatever the intake
+    mode says. It exists for items that have their own lifecycle on the app:
+    a member-facing support ticket carries a `thread:` line, and adopting it
+    means the next tick's scope-exit archives the ticket, which the support
+    desk then reads as "ops closed it" and tells the member their ticket is
+    solved. A ticket addressed by title (`[to:chonky] ...`) matches on the
+    title line. A body line anchor (`^thread: `) still matches, since the
+    body starts on its own line."""
     filt = filt or {}
     skip = filt.get("intake_skip_re")
-    if skip and re.search(skip, body, re.MULTILINE):
+    if skip and re.search(skip, f"{title}\n{body}", re.MULTILINE):
         return False
     mode = filt.get("intake", "all")
     if mode == "all":
@@ -510,8 +534,18 @@ def plan_sync(rows: dict, items: list, state: dict,
                                    f"spoke={src_kw})")
                 p.src_set_status.append((it["rid"], board_kw))
             elif src_changed and src_kw != board_kw:
-                p.board_set_status.append((bid, src_kw))
-                eff_kw = src_kw
+                if (board_kw in TERMINAL_STATUSES
+                        and src_kw in ACTIVE_STATUSES):
+                    # A closed row is a human decision. An open spoke item is
+                    # a stale copy, not a vote: close it, never reopen the
+                    # row (a dropped row was written back to queued).
+                    p.src_set_status.append((it["rid"], board_kw))
+                    p.notes.append(
+                        f"{bid}: board is {board_kw}, {app_name} shows it "
+                        f"open; closing it there (board wins)")
+                else:
+                    p.board_set_status.append((bid, src_kw))
+                    eff_kw = src_kw
             elif board_changed:
                 p.src_set_status.append((it["rid"], board_kw))
 
@@ -527,10 +561,14 @@ def plan_sync(rows: dict, items: list, state: dict,
         snapd = snap or {}
         snap_item = snapd.get("title", row.item)
         _, it_title = parse_title(it["title"])
-        board_t_changed = row.item != snap_item
-        src_t_changed = it_title != snap_item
+        # Titles compare without #tags: the item cell keeps them, a spoke
+        # such as Reminders hands the title back without. Treating that gap
+        # as a retitle would strip the tags off the board item.
+        board_t_changed = strip_tags(row.item) != strip_tags(snap_item)
+        src_t_changed = strip_tags(it_title) != strip_tags(snap_item)
         want_title = title_for(bid, row.item)
-        if board_t_changed and src_t_changed and row.item != it_title:
+        if (board_t_changed and src_t_changed
+                and strip_tags(row.item) != strip_tags(it_title)):
             p.conflicts.append(f"{bid}: both sides retitled; board wins "
                                f"(board={row.item!r} spoke={it_title!r})")
             p.src_set_title.append((it["rid"], want_title))
@@ -538,15 +576,17 @@ def plan_sync(rows: dict, items: list, state: dict,
             # rotation guard: a spoke "retitle" that lands exactly on ANOTHER
             # row's current item is the cross-row mispairing signature (the
             # 2026-09-01 scramble), never a real edit; board wins.
-            others = {r.item for b2, r in rows.items() if b2 != bid}
-            if it_title in others:
+            others = {strip_tags(r.item) for b2, r in rows.items()
+                      if b2 != bid}
+            if strip_tags(it_title) in others:
                 p.conflicts.append(
                     f"{bid}: spoke title duplicates another row's item; "
                     f"mispairing suspected, board wins (spoke={it_title!r})")
                 p.src_set_title.append((it["rid"], want_title))
             else:
-                p.board_edit_item.append((bid, it_title))
-        elif it["title"] != want_title:
+                p.board_edit_item.append(
+                    (bid, keep_item_tags(it_title, row.item)))
+        elif strip_tags(it["title"]) != strip_tags(want_title):
             p.src_set_title.append((it["rid"], want_title))
         if snapd.get("notes") != row.notes:
             p.src_set_body.append((it["rid"], row.notes))
@@ -588,17 +628,21 @@ def plan_sync(rows: dict, items: list, state: dict,
             p.notes.append(f"{bid}: archived {kw}; closing on {app_name}")
 
     # brand-new spoke items (no ID prefix, not done) -> new board rows
-    existing_items = {r.item for r in rows.values()}
+    # Dedupe against rows still in play only. A shipped or dropped row is
+    # closed history: a fresh item that happens to share its title (a new
+    # incident ticket) is new work, and skipping it forever hides the ticket.
+    existing_items = {strip_tags(r.item) for r in rows.values()
+                      if r.status_kw not in TERMINAL_STATUSES}
     for it in items:
         if it["rid"] in claimed_rids or it["done"]:
             continue
         bid, _ = parse_title(it["title"])
         if bid is not None or not it["title"].strip():
             continue
-        if not intake_ok(it.get("body") or "", filt):
+        if not intake_ok(it.get("body") or "", filt, it["title"]):
             p.notes.append(f"intake filtered: {it['title']!r} stays on the app")
             continue
-        if it["title"].strip() in existing_items:
+        if strip_tags(it["title"].strip()) in existing_items:
             # same title already on the board: likely a lost-state re-add
             p.notes.append(f"skipped add (title already on board): "
                            f"{it['title']!r}")

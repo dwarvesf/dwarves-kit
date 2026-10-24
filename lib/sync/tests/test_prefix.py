@@ -79,9 +79,23 @@ def test_binary_spoke_dropped_row_closed_item_is_stable():
     assert not p.board_set_status and not p.src_set_status
 
 
-def test_binary_spoke_reopen_flows_to_board_as_queued():
+def test_binary_spoke_reopen_never_reopens_a_dropped_row():
+    # This used to assert the board flip to queued. A dropped row is a human
+    # decision: the open spoke item is closed instead (board wins).
     rows = parse_board(DROPPED_BOARD, prefix="WS")
     item = {"rid": "12", "title": "WS-5 · live test", "done": False,
             "body": "e2e", "status": None}
     p = plan_sync(rows, [item], _state("dropped"), sync_fields=False)
-    assert p.board_set_status == [("WS-5", "queued")]
+    assert not p.board_set_status
+    assert p.src_set_status == [("12", "dropped")]
+
+
+def test_binary_spoke_reopen_of_an_active_row_flows_to_board():
+    # Unchanged two-way behavior: an active row closed on the spoke ships.
+    # Only terminal rows are guarded.
+    board = DROPPED_BOARD.replace("| dropped |", "| queued |")
+    rows = parse_board(board, prefix="WS")
+    item = {"rid": "12", "title": "WS-5 · live test", "done": True,
+            "body": "e2e", "status": None}
+    p = plan_sync(rows, [item], _state("queued"), sync_fields=False)
+    assert p.board_set_status == [("WS-5", "shipped")]
