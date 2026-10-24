@@ -27,11 +27,21 @@
 #          description (a lone digit-only word still sets the legacy [max] as above).
 #   precedent.sh find --explain "<hit label as printed>"
 #       -> the header of the file behind an inventory hit label.
+#   precedent.sh find "<words>" [--layer T0|T1|T2|T3] [--cluster <name>] [--kind <kind>]
+#       -> keep only inventory items declaring that layer / cluster / kind (kinds: skill, tool,
+#          script, command, agent, learning). A query equal to one item's name prints that
+#          item first, in an `exact` section; `kit:<name>` limits it to the kit's own.
+#   precedent.sh index [--layer ..] [--cluster ..] [--kind ..] [--registry <file>]
+#                      [--repo-root <path>] [--out <file>]
+#       -> a markdown page of every skill, tool, script, command and agent, grouped by cluster,
+#          then layer, then kind, with name, summary, path, owner and source; a field an item
+#          does not declare prints as (blank). Stdout, or --out <file>.
 #   precedent.sh -h | --help | help
 #
 # Surfaces searched (repo-relative when present): docs/specs/, docs/decisions/,
 # docs/retro/, docs/verification/, plus run-ledger reasons in $DWARVES_KIT_LOG_DIR/runs/
-# (records); tools, scripts, skills, crons, memory per the registry (inventory).
+# (records); tools, scripts, skills, commands, agents, executables, crons, memory per the
+# registry (inventory).
 set -euo pipefail
 
 SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -45,9 +55,10 @@ LOG_DIR="$(kit_resolve_log_dir)"
 source "$LIB_ROOT/config/kit-config.sh" || { echo "FATAL: lib/config/kit-config.sh missing or unreadable" >&2; exit 1; }
 
 ROOT=""  # resolved per-call in cmd_find, once --repo-root is known
+F_LAYER=""; F_CLUSTER=""; F_KIND=""  # inventory item filters, set by cmd_find / cmd_index
 
 _usage() {
-  sed -n '2,31p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+  sed -n '2,39p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
 }
 
 # repo-root resolution precedence (lib/board/board.sh:158-168): --repo-root flag > REPO_ROOT
@@ -109,6 +120,9 @@ _inventory_find() {
   local py="$SELF_DIR/inventory.py"
 
   local -a args=(--root "$ROOT" --kit "$KIT_ROOT" --limit "$limit")
+  [ -n "${F_LAYER:-}" ] && args+=(--layer "$F_LAYER")
+  [ -n "${F_CLUSTER:-}" ] && args+=(--cluster "$F_CLUSTER")
+  [ -n "${F_KIND:-}" ] && args+=(--kind "$F_KIND")
   [ "$quiet" -eq 1 ] && args+=(--quiet)
   [ "$json" -eq 1 ] && args+=(--json)
   [ -n "$registry" ] && args+=(--registry "$registry")
@@ -148,6 +162,12 @@ cmd_find() {
       --explain)
         [ $# -ge 2 ] || { echo "precedent find: --explain needs a value" >&2; return 64; }
         explain="$2"; shift 2 ;;
+      --layer|--cluster|--kind)
+        [ $# -ge 2 ] || { echo "precedent find: $1 needs a value" >&2; return 64; }
+        case "$1" in
+          --layer) F_LAYER="$2" ;; --cluster) F_CLUSTER="$2" ;; --kind) F_KIND="$2" ;;
+        esac
+        shift 2 ;;
       -h|--help) _usage; return 0 ;;
       --) shift ;;
       -*)
@@ -240,13 +260,46 @@ cmd_find() {
   esac
 }
 
+# cmd_index: the markdown page of every inventory item, delegated to inventory.py --index.
+cmd_index() {
+  local registry="" repo_root_flag="" out=""
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --registry|--repo-root|--out|--layer|--cluster|--kind)
+        [ $# -ge 2 ] || { echo "precedent index: $1 needs a value" >&2; return 64; }
+        case "$1" in
+          --registry) registry="$2" ;; --repo-root) repo_root_flag="$2" ;; --out) out="$2" ;;
+          --layer) F_LAYER="$2" ;; --cluster) F_CLUSTER="$2" ;; --kind) F_KIND="$2" ;;
+        esac
+        shift 2 ;;
+      -h|--help) _usage; return 0 ;;
+      *) echo "precedent index: unknown argument '$1'" >&2; return 64 ;;
+    esac
+  done
+  ROOT="$(_resolve_root "$repo_root_flag")"
+  if [ -z "$registry" ] && [ -z "${PRECEDENT_REGISTRY:-}" ]; then
+    local cfg_registry
+    cfg_registry="$(kit_config_get_root precedent.registry "")"
+    [ -n "$cfg_registry" ] && registry="$cfg_registry"
+  fi
+  local -a args=(--root "$ROOT" --kit "$KIT_ROOT" --index)
+  [ -n "$registry" ] && args+=(--registry "$registry")
+  [ -n "$out" ] && args+=(--out "$out")
+  [ -n "$F_LAYER" ] && args+=(--layer "$F_LAYER")
+  [ -n "$F_CLUSTER" ] && args+=(--cluster "$F_CLUSTER")
+  [ -n "$F_KIND" ] && args+=(--kind "$F_KIND")
+  python3 "$SELF_DIR/inventory.py" "${args[@]}"
+}
+
 main() {
   local sub="${1:-}"
   case "$sub" in
     -h|--help|help) _usage; return 0 ;;
     find) shift; cmd_find "$@" ;;
+    index) shift; cmd_index "$@" ;;
     *)
-      echo "usage: precedent.sh find \"<task description>\" | <bare words...> [--surface records|inventory|all] [--limit N] [--quiet] [--json] [--registry <file>] [--repo-root <path>] [--explain <label>]" >&2
+      echo "usage: precedent.sh find \"<task description>\" | <bare words...> [--surface records|inventory|all] [--limit N] [--quiet] [--json] [--registry <file>] [--repo-root <path>] [--explain <label>] [--layer L] [--cluster C] [--kind K]" >&2
+      echo "       precedent.sh index [--layer L] [--cluster C] [--kind K] [--registry <file>] [--repo-root <path>] [--out <file>]" >&2
       return 64 ;;
   esac
 }
