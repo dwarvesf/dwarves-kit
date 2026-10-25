@@ -69,3 +69,6 @@ tests/.cache/
 # lands, or forever under assets = "local". Never committed, the kit keeps only the
 # manifest at docs/verification/<slug>/assets.json.
 .kit/proof-assets/
+
+# Retired staging lock: the staging lock now lives in the tmpdir (lib/reflect/staging-format.py), never beside the buffer.
+_meta/backlog-staging.md.lock
