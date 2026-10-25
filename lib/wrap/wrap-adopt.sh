@@ -384,6 +384,12 @@ _adopt_one() {
     return 0
   fi
 
+  # R6-: a staged symlink, or a path whose type changed, can carry another file's text into the
+  # commit. The path-name guard below cannot see it, so refuse on the mode and the status letter.
+  if git -C "$wt" diff --cached --raw --no-renames | awk '$2 == "120000" || $5 == "T" { f = 1 } END { exit !f }'; then
+    ADOPT_ROW="failed: adoption staged a symlink or a type change; worktree left at ${wt}"
+    return 0
+  fi
   # R6: every staged path must sit inside ADOPT_PATHS; the one allowed
   # output-styles path is named by the staged settings' own outputStyle.
   style="$(_adopt_style_of "$wt" ":")"

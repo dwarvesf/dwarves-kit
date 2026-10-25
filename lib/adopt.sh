@@ -155,6 +155,14 @@ if [ "$CHECK" -eq 1 ]; then
   is_adopted && { echo "adopted: $TARGET"; exit 0; } || { echo "not adopted: $TARGET"; exit 1; }
 fi
 
+# Adopt reads and rewrites these fixed paths. A symlink at any of them, or at a directory above
+# them, would send the read or the write to a file outside the project, so refuse the target.
+# shellcheck source=lib/config/safe-path.sh
+source "$SELF_DIR/config/safe-path.sh"
+kit_refuse_symlink_path "$TARGET" "$agents" "$claude" "$workflow" "$marker" "$dotkit" \
+  "$project_settings" "$TARGET/.claude/output-styles" \
+  || { echo "adopt: not adopting $TARGET" >&2; exit 1; }
+
 pointer_tpl="$SELF_DIR/adopt/AGENTS.pointer.md"
 known_list="$SELF_DIR/adopt/agents-known.sha256"
 [ -f "$pointer_tpl" ] || { echo "adopt: pointer template missing: $pointer_tpl" >&2; exit 1; }
@@ -547,6 +555,8 @@ if [ -n "$kit_root_toml" ] && [ "$RESOLVER_OK" -eq 1 ] && command -v jq >/dev/nu
   case "$style_name" in
     */*|*..*) echo "adopt: warning: output.style '$style_name' is not a bare name; ignored" >&2; style_name="" ;;
   esac
+  [ -z "$style_name" ] || kit_refuse_symlink_path "$TARGET" "$TARGET/.claude/output-styles/$style_name.md" \
+    || { echo "adopt: warning: output style '$style_name' skipped" >&2; style_name=""; }
   if [ -n "$style_name" ]; then
     style_src=""
     for c in "$SRC_ROOT/output-styles/$style_name.md" "$KIT_ROOT/output-styles/$style_name.md"; do
