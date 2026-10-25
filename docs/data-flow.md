@@ -2,12 +2,12 @@
 
 `docs/architecture.md` says what the pieces are. `docs/WORKFLOW.md` says how one RUN moves
 through the phases. This page says how DATA moves: where a signal is born, what it becomes,
-and how it closes back into the next run. It was the missing third view (a 2026-07-14 sweep
-found 14 lifecycle diagrams and zero data-flow ones).
+and how it closes back into the next run. It is the data-flow view next to the architecture and
+workflow views.
 
 Three flows, one per substrate:
 
-1. **The signal path** (Watch -> Learn -> Shape): telemetry becomes a proposal becomes work.
+1. **The signal path** (Watch -> Reflect -> Shape): telemetry becomes a proposal becomes work.
 2. **The ledger path** (Build -> Check -> Watch): a run writes evidence; the gates and the
    lenses read it.
 3. **The module map**: who calls whom, grouped by stage.
@@ -16,7 +16,7 @@ Three flows, one per substrate:
 
 ## 1. The signal path: telemetry -> proposal -> board -> ship
 
-The Learn stage's whole job. Every arrow is code, not intent; the names are the callables.
+The Reflect stage's whole job. Every arrow is code, not intent; the names are the callables.
 
 ```
   SOURCES                COLLECT + ANALYZE            PROPOSE              HUMAN         WORK
@@ -73,13 +73,11 @@ The Learn stage's whole job. Every arrow is code, not intent; the names are the 
 | **I4 one verb** | `run` produces, `propose` stages, `promote` is the human gate. |
 
 **Staging writes are opt-in for the automatic proposers.** `hooks/backlog-stage.sh`
-(SessionEnd), `intake-sweep` and `reflect propose` write the buffer only when
+(SessionEnd, and SessionStart with `--surface`), `intake-sweep` and `reflect propose` write the buffer only when
 `BACKLOG_STAGE_AUTO=1`; otherwise the hook returns and `propose` prints its blocks into the
 session report. A buffer nobody drained, fed as a side effect, grew the board 13 to 25 rows a
 day. The explicit verbs (`stats anomalies --propose`, `session audit triage`, `session intel
-propose`, `wrap stage`) write when you run them. `intake-sweep` is called by `backlog-stage
---surface`, but the hook is wired on SessionEnd with no `--surface`, so today it runs only
-when invoked by hand.
+propose`, `wrap stage`) write when you run them.
 
 **One writer per file.** The staging buffer and the board each have exactly one locked write
 path, and the lock order is board first, then staging.
@@ -122,19 +120,12 @@ and `sync intake` file a row directly because a person or a declared source aske
 repeat proposals) and `reflect propose --retro` (a retro's action items) are explicit verbs. The
 digest and the retro keep their prose; a lead nobody runs the verb for is a lead nobody actions.
 
-**The private copies drifted, exactly as predicted, and one became a hole** (fixed 2026-07-15).
-`hooks/backlog-stage.py` and `lib/stats/.../anomalies.py` each kept their own `render_block` /
-`render_candidate`. The shared renderer learned to collapse whitespace per field (a guard added
-when these fields started carrying LLM-extracted transcript text), the copies did not, and the
-hook's bare `.strip()` let an embedded newline **forge a second `## [staged]` block**. One
-candidate in, two proposals out, and the forged one was indistinguishable from a real one to
-`board promote`.
-
-`anomalies.py` and `add-backlog` now load the one module (`add-backlog` used to keep its own
-`parse_staging`; it reads blocks through `parse_blocks` now). C5 requires the shared module to
-be LOADED, not merely named, and its negative control plants a private renderer. The only second
-copy of the grammar left is the `.jq` twin, pinned to the Python on goldens by
-`tests/test-staging-format-jq.sh`.
+**One renderer.** Every writer renders a block through the shared `lib/reflect/staging-format.py`.
+It collapses whitespace per field, so an embedded newline in extracted text cannot forge a second
+`## [staged]` block. C5 of the kit contract requires the module to be LOADED, not merely named,
+and its negative control plants a private renderer. The only second copy of the grammar is the
+`.jq` twin, pinned to the Python on goldens by `tests/test-staging-format-jq.sh`. The incident
+behind this rule: `docs/retro/RETRO-2026-10-25-data-flow-incidents.md`.
 
 ---
 
@@ -166,49 +157,26 @@ One append-only corpus, one resolver. Every path below is derived, never hardcod
    NOT in the ledger, by design:
      ~/.claude/intel/{intel,audit}-YYYY-MM-DD.md   the Watch reports (dated artifacts)
      _meta/backlog-staging.md                      the proposal buffer (flow 1)
-     ~/.claude/dwarves-kit/logs/*.log              hook diagnostics (ephemeral, not corpus)
+     <root>/hooks/<hook>.log                       hook diagnostics (under the ledger root, not corpus)
 ```
 
 Why one resolver matters: a plugin reinstall wipes `~/.claude/dwarves-kit/`. Anything that
-defaults there loses its history. `queue.sh` did exactly that until 2026-07-14, and the queue
-journal IS its idempotency state, so a wipe re-runs completed work. That is the whole reason
-SPEC-097 exists and why C6 of the kit contract lints for it.
+defaults there loses its history. The queue journal IS the queue's idempotency state, so a wipe
+re-runs completed work. That is why SPEC-097 exists and why C6 of the kit contract lints for it.
+The hook logs follow the same root (`lib/telemetry/hook-log-dir.sh`). History:
+`docs/retro/RETRO-2026-10-25-data-flow-incidents.md`.
 
 ---
 
 ## 3. The module map, by stage
 
-Who calls whom. An arrow is a real invocation (shell-out, source, or import).
+Who calls whom is drawn in `docs/SYSTEM-DESIGN.md` "How the clusters connect", the one owner of
+the module map. This page keeps only the stage assignment it adds.
 
 ```
-   SHAPE                      BUILD                      CHECK
-   ─────                      ─────                      ─────
-   spec  ──► classify         queue ──► orchestrate      gate ──┬─► gate-ledger
-     │         │                │         │                     ├─► proof-ledger
-     ▼         ▼                ▼         ▼                     └─► ship-gate hook
-   goal ──► board (intake)    worktree  mega             money_gate
-              │                                          advisor (agents/)
-              │                            ▲                   ▲
-              │                            │                   │
-              │                    every phase boundary asks Check
-              │
-              │                  WATCH                       LEARN
-              │                  ─────                       ─────
-              │                  stats ◄── ledger            reflect ┬─► propose ─┐
-              │                  telemetry ◄── ledger                ├─► drain    │
-              │                  session ─┬─► observe                └─► debt     │
-              │                           ├─► semantic                            │
-              │                           ├─► intel ──► (calls observe)           │
-              │                           ├─► audit ──► triage ────────────────┐  │
-              │                           └─► recall                           │  │
-              │                  sync   ──► board mirror (to Hermes cockpit)   │  │
-              │                                                                ▼  ▼
-              └──────────────────────────────────────────────────── board (staging/promote)
-                                          the loop closes here
-
    Spanners (one module, two stages), honest and named in ADR-0034:
-     board   = Shape (intake)  + Learn (staging/promote)
-     session = Watch (capture) + Learn (harvest, via audit triage)
+     board   = Shape (intake)  + Reflect (staging/promote)
+     session = Watch (capture) + Reflect (harvest, via audit triage)
 
    Off the loop:  cosmetic (statusline)   prose_rag (recall over the corpus; stage assignment
                                           is a documented deviation, see module-registry)
