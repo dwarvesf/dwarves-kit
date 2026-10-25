@@ -5,7 +5,7 @@
 [PRIVATE-STREAM.md](PRIVATE-STREAM.md) covers the Craft private stream, and
 [CONTRIBUTING.md](CONTRIBUTING.md) covers adding skills.*
 
-**Schema version: `1.0.0`** · **Status: canonical** ·
+**Schema version: `1.0.0`** · **Status: dropped design, never built** ·
 **Owner: t_3dd38adf** (root of the fleet decomposition)
 
 This document is the single source of truth for two formats:

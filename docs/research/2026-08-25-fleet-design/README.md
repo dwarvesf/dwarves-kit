@@ -1,3 +1,6 @@
+> **Dropped design.** Both board rows (ID-431, ID-432) were dropped as stale, and no `fleet` code exists in the kit.
+> This directory is a dated record of the design, not a live subsystem; the text below reads as written then.
+
 # Skill Fleet
 
 One skill body, every harness. The skill fleet keeps a single canonical
@@ -15,7 +18,7 @@ The fleet has three moving parts:
    source) without silently overwriting it.
 3. **Render** — `fleet render` prints a runtime-by-purpose grid (skills live
    where, versions, drift flags). See the design brief
-   `../briefs/DECISION-BRIEF-skill-fleet.md` for the visual.
+   `../../briefs/DECISION-BRIEF-skill-fleet.md` for the visual.
 
 This directory holds the operator and contributor docs:
 
@@ -34,7 +37,7 @@ bodies, no view of what lives where. The ecosystem's answer today is
 superpowers-style per-harness reinstall: hand-maintained duplicates. That is a
 recorded AVOID in this kit (the packaging doctrine, ID-396). The fleet makes the
 antidote a product feature: one source, generated adapters. That generalizes
-[mattpocock's dual-harness pattern](../briefs/DECISION-BRIEF-skill-fleet.md)
+[mattpocock's dual-harness pattern](../../briefs/DECISION-BRIEF-skill-fleet.md)
 to three harnesses.
 
 Two hard properties the design protects:

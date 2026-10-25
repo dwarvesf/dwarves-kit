@@ -1157,14 +1157,54 @@ contract states the rules; it does not cite the spec IDs that decided them.
 The visual companion to the contract above: the same machine drawn as flows and
 loops. The tables above are the rules; this section is the picture. For per-command
 operator detail read `MANUAL.md`; for component fit and the SDLC state machine read
-`docs/architecture.md`. A standalone one-page rendering of every flow below (plus
-the cycle, V-model, and type loops) lives at [`docs/workflow-map.md`](workflow-map.md).
+`docs/architecture.md`. The cycle, V-model, and type loops are drawn in their own
+sections above ("The cycle", "The V-model lens", "Type loops"); the one-page flow map
+that used to repeat them now points here.
 
 At a glance: **1** backbone (the spine, above), **5** primary intake lanes (the lane
 table, above), **3** bounded loops (the engines, below), **11** opt-in side-flows,
 **7** alternate/branch flows, and **4** hard stops (where an autonomous run stops
 for a human). The rules code really blocks on are listed in `docs/hard-rules.tsv`;
 everything else **suggests and routes; it does not block**.
+
+### The spine (the backbone)
+
+The normal and full lanes run this chain. Each step leaves one artifact the next step reads.
+
+```text
+  session start
+       │
+       ▼
+  /kit:start ........ render the BACKLOG Active queue + goal drafts (read-only)
+       │
+       ▼
+  /kit:assign ....... goal draft + scope fence + lane pick (the ONLY mutator)
+       │
+       ▼             lane runs, normal/full chain:
+  /kit:spec ......... spec exists, Status: DRAFT
+       │
+       ▼
+  /kit:spec-validate  Status: VALIDATED
+       │
+       ▼
+  /kit:execute ...... verification pipeline (builder -> end verifiers -> fix-agent, max 2)
+       │
+       ▼
+  /kit:review ....... review verdict recorded
+       │
+       ▼
+  /kit:docs ......... README/CHANGELOG match code
+       │
+       ▼
+  /kit:ship ......... tagged + PR; ship-gate refuses a push on a DO NOT SHIP verdict
+       │
+       ▼
+  /kit:retro ........ docs/retro/RETRO-<date>-<slug>.md written
+       │
+       ▼
+  on ship: ID-NNN drops off the BACKLOG queue
+           (CHANGELOG is the canonical shipped record)
+```
 
 ### The state stores the flows move between
 
@@ -1324,6 +1364,9 @@ above; this only draws the loop.
 
 ### Opt-in side-flows (11)
 
+This table holds the original eleven. The full command roster, with each command's
+trigger class, is `docs/FEATURES.md`.
+
 Advisory, never blocking. They enrich a lane but are not required by any. All write
 **into the active spec** when the output binds to a spec (replace-not-stack), so a
 later reader and an earlier writer never split across two specs.
@@ -1407,5 +1450,52 @@ and `tests/test-meta-hard-claims.sh` fails a doc that labels something a hard bl
 | `/kit:ship` | ship pipeline | tagged/PR; spec `SHIPPED`; ID off queue | ship gate + push-to-main blocker (hard) |
 | `/kit:retro` | retrospective | `docs/retro/RETRO-<date>-<slug>.md` written | advisory |
 | a `/goal` activator | goal loop | `## Verification` passes + done-definition | anti-rationalization (hard) |
+
+### The day loop
+
+What an ordinary change in this repo runs, from edit to landed.
+
+```text
+  edit
+    │
+    ▼
+  bash tests/run-all.sh ...... the suites the diff touches, plus the always-on
+    │                          tree-wide lints (the suites that carry an
+    │                          `# always:` header); meta only when the diff
+    │                          touches a path it reads. About 1-2 minutes on a Mac.
+    ▼
+  commit ..................... commit-format hook [HARD when [gate] commit_format is on]
+    │
+    ▼
+  push / gh pr create ........ ship-gate + push-to-main blocker [HARD]
+    │
+    ▼
+  merge ...................... no CI check gates this; nothing runs on
+    │                          push or pull_request
+    ▼
+  /kit:wrap .................. board flip, own PRs merged, deploy check,
+                               tidy, activity line, retro
+
+  before a release tag only:
+    KIT_RUN_ALL=1 bash tests/run-all.sh --all ... the full glob, many minutes
+                                    (refuses, exit 64, without CI or KIT_RUN_ALL=1)
+    gh workflow run test .......... the macOS + Ubuntu matrix in CI
+    git push origin v<x.y.z> ...... the same workflow, fired by the tag
+```
+
+`/kit:wrap` is a git landing step here, nothing more: board flips, commit, merge own PRs,
+deploy check, worktree tidy, activity line, report. Its verbs are in `docs/wrap.md`. Its
+heavier half is config. `[wrap] distill` turns the distill pass on at all; `build_candidates`
+lets step 7b wire a distilled candidate into its home repo; `drain_staged` runs only rows the
+operator staged by hand, since step 7b stages nothing; `before` and `after` hang a skill on
+each side of the landing. `follow_through` (`off`, `lanes`, `all`, default `off`;
+`/kit:wrap follow` or `follow all` for one run) adds step 10: after the report, background
+workers build the in-lane leftovers and finishable FYI follow-ups, merge the green own PRs
+once checks settle, and print a second `## Follow-through:` report; `all` also runs full-lane
+candidates through their full lane into a draft PR wrap never merges.
+
+Each item the report lists under `**Built:**` opens with a verdict word, BUILT, REPORTED, or
+NOTE, and `lib/wrap/report-lint.sh` fails an item without one. A candidate not built is
+REPORTED, never filed as a board row or staged.
 
 <!-- provenance: SPEC-062 (telemetry closure), SPEC-063, SPEC-069 (review escalation), SPEC-074 (lane x type composition), SPEC-076 (V-model descent), SPEC-128 (wavefront spec-reservation), SPEC-129 (gate-outcome marker), SPEC-130 (coverage-delta), SPEC-131 (mutation-smoke), SPEC-132 (generated proof-table) -->

@@ -180,8 +180,8 @@ answers the same five for itself.
 ## Step 3: Where it lands once shaped
 
 - A new bounded-revise engine becomes a new `/kit:<name>` side-flow. Register it in
-  `docs/WORKFLOW.md`'s "Opt-in side-flows" table, and in `docs/workflow-map.md`'s mirror.
-  Update both in the same commit, per that section's own companion-drift note.
+  `docs/WORKFLOW.md`'s "Opt-in side-flows" table. `docs/workflow-map.md` is now a pointer
+  stub, so there is no mirror to update.
 - A new campaign wrapper usually becomes a `/kit:<name>` command. That command invokes the Goal
   loop machinery. It does not become a new engine.
 - An idea with no commitment yet goes into `_meta/BACKLOG.md`'s "v2 candidates" tier. The
