@@ -1036,10 +1036,10 @@ if [ -n "$KIT_CLI_NAMES" ]; then
 fi
 
 # 6. Install path-scoped rules templates
-if [ -d "$KIT_DIR/rules" ]; then
+if [ -d "$KIT_DIR/templates/rules" ]; then
   mkdir -p ".claude/rules"
   RULES_INSTALLED=0
-  for RULE_FILE in "$KIT_DIR/rules/"*.md; do
+  for RULE_FILE in "$KIT_DIR/templates/rules/"*.md; do
     RULE_NAME=$(basename "$RULE_FILE")
     # Only copy if the project doesn't already have this rule
     if [ ! -f ".claude/rules/$RULE_NAME" ]; then

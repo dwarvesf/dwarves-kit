@@ -104,7 +104,7 @@ problem (spaghetti growth), never a style nit , name the structural cause.
 [paste diff or list changed files]
 
 ## Architecture context (if available)
-[contents of this feature's dated research file, docs/research/*-<slug>-architecture.md, or the legacy docs/research/architecture.md, or CLAUDE.md patterns]
+[contents of this feature's dated research file, docs/research/*-<slug>-architecture.md, or the legacy docs/research/foundations/architecture.md, or CLAUDE.md patterns]
 ```
 
 **Lens 3: Test-coverage**

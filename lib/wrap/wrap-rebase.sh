@@ -7,10 +7,10 @@
 # the projection must match the tree being rebased. A repo without that generator (a consumer)
 # gets an ordinary refusal on the path.
 # ponytail: one hardcoded pair; a second generated file turns this into a [wrap] knob.
-_RB_GENERATED="docs/FEATURES.md"
+_RB_GENERATED="docs/reference/FEATURES.md"
 _RB_GENERATOR="lib/registry/feature-registry.sh"
 # The only path resolved by keeping both sides, and only when both sides purely added lines.
-_RB_CHANGELOG="docs/CHANGELOG.md"
+_RB_CHANGELOG="CHANGELOG.md"
 
 # _rb_git <wt> <args...> -- git in <wt> with the pins every rebase call carries: a recorded
 # rerere resolution or an operator's updateRefs default must never act inside the verb.

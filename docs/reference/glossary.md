@@ -1,7 +1,7 @@
 # Glossary: the kit's words in plain English
 
 The kit tries to speak the simplest everyday word that fits (see the
-[Plain words rule](../CONTRIBUTING.md#plain-words-rule-2026-07-16)). Some coined
+[Plain words rule](../../CONTRIBUTING.md#plain-words-rule-2026-07-16)). Some coined
 or jargon terms still survive in code, config, and file names because renaming
 them touches hundreds to a thousand+ files each, a migration project per term,
 not a doc sweep. This page is the bridge: it maps each surviving jargon term to

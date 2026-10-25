@@ -59,7 +59,7 @@ RULES (compaction may have dropped these):
 - Write tests alongside implementation.
 - No phantom features. No premature abstraction.
 - Finish what you started before declaring done.
-- If unsure about architecture, check docs/architecture.md and docs/decisions/.
+- If unsure about architecture, check docs/reference/architecture.md and docs/decisions/.
 "
 
 # SessionStart(compact) output: hookSpecificOutput.additionalContext, built by json.dumps (safe for quotes, backslashes, newlines).

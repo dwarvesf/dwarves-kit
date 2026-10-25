@@ -8,7 +8,7 @@ _Figure: a push passes only when the ship gate finds a proof of done and the gat
 
 ## What happens
 
-- Almost everything in the kit advises. A short list of rules blocks. Each blocking rule is backed by code and a test (`docs/hard-rules.tsv`). Several are off until a `[gate]` key turns them on. `/kit:adopt` seeds `proof_of_done` and `lane_gates` on.
+- Almost everything in the kit advises. A short list of rules blocks. Each blocking rule is backed by code and a test (`docs/reference/hard-rules.tsv`). Several are off until a `[gate]` key turns them on. `/kit:adopt` seeds `proof_of_done` and `lane_gates` on.
 - When the agent runs `git push` or `gh pr create`, the ship gate reads two records: the proof ledger (`docs/verification/`) and the gate ledger (the gates the spec's lane requires).
 - A push straight to the default branch is refused in any repo. Branch plus pull request is the only door.
 - A push is also refused while the spec's `## Review` verdict is DO NOT SHIP (see [review.md](review.md)).

@@ -46,7 +46,7 @@ update`). Until then, it runs only in a session that reads this file directly of
 
 ## Step 1: Gate, before designing anything
 
-`docs/PHILOSOPHY.md`'s "Loop boundaries" and "Feature rejection criteria" set the bar. This
+`docs/reference/PHILOSOPHY.md`'s "Loop boundaries" and "Feature rejection criteria" set the bar. This
 skill invents no new one:
 
 - **Bounded-in-session only.** The loop keeps working inside the current session, under a
@@ -152,10 +152,10 @@ BEST VARIANT of one thing (search-select)?
      away whole. If a failed attempt should teach the next one, use the bounded-revise engine
      instead.
 
-  Two adaptations are mandatory, per `docs/PHILOSOPHY.md` "Loop boundaries": a fixed iteration
+  Two adaptations are mandatory, per `docs/reference/PHILOSOPHY.md` "Loop boundaries": a fixed iteration
   budget (never "loop forever until interrupted"), and an honest-halt report at the end, what
   improved, what plateaued, which variant won. Kit targets already queued for this shape, and
-  their corpus bar (10-30+ real transcripts, not yet met): `docs/PHILOSOPHY.md` "AutoResearch
+  their corpus bar (10-30+ real transcripts, not yet met): `docs/reference/PHILOSOPHY.md` "AutoResearch
   optimization". Full source verification and adoption verdict:
   `docs/research/2026-07-31-karpathy-autoresearch-loop.md`.
 
@@ -180,8 +180,8 @@ answers the same five for itself.
 ## Step 3: Where it lands once shaped
 
 - A new bounded-revise engine becomes a new `/kit:<name>` side-flow. Register it in
-  `docs/WORKFLOW.md`'s "Opt-in side-flows" table. `docs/workflow-map.md` is now a pointer
-  stub, so there is no mirror to update.
+  `docs/WORKFLOW.md`'s "Opt-in side-flows" table. That table is the one owner of the
+  flow pictures, so there is no mirror to update.
 - A new campaign wrapper usually becomes a `/kit:<name>` command. That command invokes the Goal
   loop machinery. It does not become a new engine.
 - An idea with no commitment yet goes into `_meta/BACKLOG.md`'s "v2 candidates" tier. The

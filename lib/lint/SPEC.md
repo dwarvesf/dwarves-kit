@@ -35,7 +35,7 @@ weakens instead of grows.
 | Dated log line | line starts with `YYYY-MM-DD` or `## YYYY-MM-DD` |
 | `tool.toml` board array | line matches `board = [...]` |
 | Test/fixture path | any path segment is `tests` or `fixtures` |
-| Named exempt files | `docs/verification/gauntlet/**`, `docs/FEATURES.md`, `docs/CHANGELOG.md` |
+| Named exempt files | `docs/verification/gauntlet/**`, `docs/reference/FEATURES.md`, `CHANGELOG.md` |
 | `printf` substitution | the line carries a literal `SPEC-%s` or `ID-%s` template, not a real id |
 
 `hooks/commit-format.sh`'s guard regex (`SPEC-[0-9]|TASK-[0-9]|...`) needs no exemption entry:

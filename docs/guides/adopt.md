@@ -78,4 +78,4 @@ adopt: AGENTS.md is not a kit file, 1 lines (left alone)
 - [gates-and-proof.md](gates-and-proof.md) explains the ship gate the proof marker turns on.
 - [spine.md](spine.md) is the map of what to do after adoption.
 - [wrap.md](wrap.md) covers landing the adoption PR with the rest of a session.
-- `docs/consumer-contract.md` is the contract adoption wires up.
+- `docs/reference/consumer-contract.md` is the contract adoption wires up.

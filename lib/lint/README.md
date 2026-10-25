@@ -40,7 +40,7 @@ On top of the census pipeline's own exclusions, a hit is dropped when it is:
 - a dated log line (`YYYY-MM-DD ...` or a `## YYYY-MM-DD` heading)
 - a `tool.toml` `board = [...]` array
 - anything under a `tests/` or `fixtures/` directory
-- `docs/verification/gauntlet/**`, `docs/FEATURES.md`, `docs/CHANGELOG.md`
+- `docs/verification/gauntlet/**`, `docs/reference/FEATURES.md`, `CHANGELOG.md`
 - `lib/board/board-run.sh`'s two heredoc lines that emit the literal `SG-01` sub-goal
   (it always scaffolds exactly one sub-goal, so `SG-01` there is the real generated
   value, not a scattered reference; per-file exemption in `is_exempt()`)

@@ -12,7 +12,7 @@ The kit ships five kinds of artifact. Each maps to a Claude Code primitive:
 | `commands/` | Slash command | Human typing `/kit:<name>` |
 | `agents/` | Custom subagent | Dispatched by a command via Task tool |
 | `skills/` | Skill | Claude auto-triggered from skill description |
-| `rules/` | Path-scoped rules | Active when Claude reads matching files |
+| `templates/rules/` | Path-scoped rules | Active when Claude reads matching files |
 
 The kit is intentionally flat. Component dirs sit at the top of the repo, not nested under `src/`, because the kit IS a flat set of prompts and bash scripts; there is no compilation step that justifies a `src/` boundary.
 
@@ -22,7 +22,7 @@ Two dirs hold bash that is not a CC primitive: `tests/` (the suites) and `lib/` 
 
 ## Data flow through `docs/specs/SPEC-NNN-<slug>.md`
 
-> The front door to all of this is [`AGENTS.md`](../AGENTS.md) (repo root): the tool-agnostic operate-contract that any runtime reads first; `CLAUDE.md` and `WORKFLOW.md` point at it rather than restate it. The imperative companion to the descriptive map below is [`docs/WORKFLOW.md`](WORKFLOW.md) (the root `WORKFLOW.md` is a thin pointer to it): the same lifecycle phrased as the contract an agent follows, with risk-tier lanes (including the `backfill` brownfield lane: review an existing codebase and write the operating-layer docs, doc-output only, no app-behavior change) and the gate at each boundary.
+> The front door to all of this is [`AGENTS.md`](../../AGENTS.md) (repo root): the tool-agnostic operate-contract that any runtime reads first; `CLAUDE.md` and `WORKFLOW.md` point at it rather than restate it. The imperative companion to the descriptive map below is [`docs/WORKFLOW.md`](../WORKFLOW.md) (the root `WORKFLOW.md` is a thin pointer to it): the same lifecycle phrased as the contract an agent follows, with risk-tier lanes (including the `backfill` brownfield lane: review an existing codebase and write the operating-layer docs, doc-output only, no app-behavior change) and the gate at each boundary.
 
 `docs/specs/SPEC-NNN-<slug>.md` is the shared contract for the full lifecycle. It is the single source of truth that crosses command boundaries:
 
@@ -261,7 +261,7 @@ Layer 1.
 
 **The inventory** (one row per `hooks/*.sh`; the parity check pins row count to
 file count so this table cannot drift). This table owns each hook's class and the
-failure mode it backstops. `docs/hooks.md` owns which event and matcher fires it, the
+failure mode it backstops. `docs/reference/hooks.md` owns which event and matcher fires it, the
 message it prints, its env knobs, and its module:
 
 | Hook | Class | Failure mode it backstops |
@@ -334,7 +334,7 @@ The active spec among these is resolved by the SPEC-005 rule (`docs/specs/`, bra
 ## Mega-goal orchestration: serial and wavefront (`lib/queue/orchestrate.sh`)
 
 > The kit runs agents four different ways (this orchestrator, the overnight queue, `/kit:dispatch`, the gauntlet). The board runs no agent.
-> `docs/execution-planes.md` compares them: what each is for, how they hand off, where they
+> `docs/reference/execution-planes.md` compares them: what each is for, how they hand off, where they
 > deliberately do not connect, and their differing trust and isolation models. This section
 > owns this orchestrator's internals.
 
@@ -536,7 +536,7 @@ requirement is mentioned. JWT is simpler for this use case.
 In an agent prompt:
 ```
 When you encounter a decision with 2+ valid approaches, follow the
-Collaborative Design Protocol in docs/architecture.md. Present options,
+Collaborative Design Protocol in docs/reference/architecture.md. Present options,
 recommend one, and proceed according to your mode (lead/coder/autonomous).
 ```
 
@@ -631,7 +631,7 @@ opposite directions: overlays install on the engine, every kit writes knowledge 
 the tree. The engine never calls an overlay and never branches on a kit name; a vertical
 feature that needs engine code becomes an absorption row. The cross-repo map, the
 install matrix, and the release policy live in the forge program repo
-(`docs/ARCHITECTURE.md`, `docs/design/kit-distribution.md`, `docs/design/kit-versioning.md`).
+(`docs/reference/architecture.md`, `docs/design/kit-distribution.md`, `docs/design/kit-versioning.md`).
 
 ## SDLC state machine
 
@@ -728,7 +728,7 @@ guard), and how do I trigger it.
 
 ### Hard stops as guards (the autonomy stops; other rules block too)
 
-These four are where an autonomous run stops. They are not the only blockers: `docs/hard-rules.tsv` lists every rule code blocks on (secrets-guard, commit-format, board-row-gate, tool-policy-guard and more ship-gate rules), each with its proving test. The verification pipeline is run by the `/execute` command text, not by a hook. anti-rationalization blocks only while `[gate] understanding_gate` is on.
+These four are where an autonomous run stops. They are not the only blockers: `docs/reference/hard-rules.tsv` lists every rule code blocks on (secrets-guard, commit-format, board-row-gate, tool-policy-guard and more ship-gate rules), each with its proving test. The verification pipeline is run by the `/execute` command text, not by a hook. anti-rationalization blocks only while `[gate] understanding_gate` is on.
 
 | Hard stop | Guards the transition | Effect |
 |---|---|---|

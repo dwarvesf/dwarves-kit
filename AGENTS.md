@@ -21,11 +21,11 @@ block bad outcomes, and how much of that runs depends on the runtime:
   `AGENTS.md` is **advisory only** there: it tells an agent what to do and nothing
   checks it.
 
-Do not assume the guardrails are portable beyond that. See `docs/PHILOSOPHY.md`
+Do not assume the guardrails are portable beyond that. See `docs/reference/PHILOSOPHY.md`
 (honesty rule: never over-claim portable enforcement) and `CLAUDE.md` for the
 CC-specific layer (hooks, slash commands, plugin). The full layering contract, which
 hook backstops what and why (hard / advisory / convenience), is
-`docs/architecture.md` "Hook fallback layer".
+`docs/reference/architecture.md` "Hook fallback layer".
 
 The rest of this file is four portable zones. The goal-crafter
 (`commands/assign.md`) projects them into a six-section `/goal` (see "How a goal
@@ -40,7 +40,7 @@ Orient before you touch anything. Read top to bottom; stop when you have enough.
 1. **AGENTS.md** (this file) - how work is done here; the operate-contract.
 2. **CLAUDE.md** - the Claude-Code layer: stack, structure, rules, hooks, commands, plugin.
 3. **docs/specs/SPEC-NNN-<slug>.md** - the active spec; the shared contract for the cycle. Read its `## Verification` and `## After state` before implementing.
-4. **docs/architecture.md** / **docs/WORKFLOW.md** / **docs/data-flow.md** - reference, not required per task. Read `docs/architecture.md` for how the pieces fit; `docs/data-flow.md` for how DATA moves (the signal path telemetry -> proposal -> board, the ledger write/read paths, the module map); read `docs/WORKFLOW.md` for the lanes and the gate at each phase boundary, and its "Mega-goal delegate execution" section for how a multi-sub-goal mega-goal run dispatches (delegate mode: one fresh headless session per sub-goal; `/goal` stays the official outer loop either way).
+4. **docs/reference/architecture.md** / **docs/WORKFLOW.md** / **docs/reference/data-flow.md** - reference, not required per task. Read `docs/reference/architecture.md` for how the pieces fit; `docs/reference/data-flow.md` for how DATA moves (the signal path telemetry -> proposal -> board, the ledger write/read paths, the module map); read `docs/WORKFLOW.md` for the lanes and the gate at each phase boundary, and its "Mega-goal delegate execution" section for how a multi-sub-goal mega-goal run dispatches (delegate mode: one fresh headless session per sub-goal; `/goal` stays the official outer loop either way).
 
 ## 2. Task loop
 
@@ -225,7 +225,7 @@ unconditionally (the spec-driven development (SDD) ship discipline: safety-gate,
 secrets-guard, commit-format, anti-rationalization) plus the core `board` module, and the other
 modules only when asked (`install.sh --with session,stats,...`; the module table is `lib/config/modules.tsv`), recording the enabled set in the consumer's
 `kit.toml [modules]` manifest, an install artifact that records the choice, never read at
-runtime. Full adoption model + rationale: `docs/PHILOSOPHY.md` and `README.md`.
+runtime. Full adoption model + rationale: `docs/reference/PHILOSOPHY.md` and `README.md`.
 
 ---
 

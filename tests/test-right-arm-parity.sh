@@ -18,7 +18,7 @@
 set -uo pipefail
 KIT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 FIX="$KIT_DIR/tests/fixtures/right-arm-parity"
-ARCH="$KIT_DIR/docs/architecture.md"
+ARCH="$KIT_DIR/docs/reference/architecture.md"
 EXEC="$KIT_DIR/commands/execute.md"
 RECHECK="$KIT_DIR/agents/recheck-verifier.md"
 PASS=0; FAIL=0; TOTAL=0
@@ -51,7 +51,7 @@ for NAME in $AGENTS; do
 done
 
 # --- AC2: the Acceptance and System-test rows in the V-phase inventory are non-empty ---
-[ -f "$ARCH" ]; assert "AC2: docs/architecture.md exists" $?
+[ -f "$ARCH" ]; assert "AC2: docs/reference/architecture.md exists" $?
 grep -q 'acceptance-verifier' "$ARCH"; assert "AC2: architecture.md's Acceptance row names acceptance-verifier" $?
 grep -q 'system-verifier' "$ARCH"; assert "AC2: architecture.md's System-test row names system-verifier" $?
 grep -qi 'brief-reviewer' "$ARCH"; assert "AC2: architecture.md carries a brief-reviewer row (the brief mirror)" $?

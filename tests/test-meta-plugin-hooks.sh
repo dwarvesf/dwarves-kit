@@ -24,7 +24,7 @@ TOOL_TOML_VERSION=$(grep -E '^version' "$KIT_DIR/tool.toml" | head -1 | sed -E '
 assert_eq "tool.toml version matches VERSION file (3-surface pin, SPEC-115)" "$VERSION_FILE" "$TOOL_TOML_VERSION"
 
 # `bin/learn` (#560, ADR-0036) is a "kept for ONE release" forwarder: it first ships in
-# 2.3.0 and is due for deletion starting 2.4.0 (backlog ID-839, docs/CHANGELOG.md
+# 2.3.0 and is due for deletion starting 2.4.0 (backlog ID-839, CHANGELOG.md
 # Deprecated entry). Neither promise was ever mechanically enforced -- the battery's own
 # finding -- so this trips red the moment VERSION reaches 2.4.0 while the file still
 # exists, instead of the removal silently missing its own release like `bin/skill-
@@ -231,7 +231,7 @@ assert_eq "MANUAL hook row carries the board token" 0 $RC
 echo ""
 echo "=== SPEC-084: hook fallback layer (ID-036) ==="
 # ============================================================
-ARCH84="$KIT_DIR/docs/architecture.md"
+ARCH84="$KIT_DIR/docs/reference/architecture.md"
 RC=0; grep -qF '## Hook fallback layer (closing the layering contract)' "$ARCH84" || RC=1
 assert_eq "the section exists" 0 $RC
 RC=0; grep -qF 'fallback for failure modes that survive prose instruction' "$ARCH84" || RC=1

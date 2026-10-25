@@ -5,7 +5,7 @@ and the gauntlet. The board sits beside them and is not an executor. Two of the 
 same directory and are separate engines, which is the single most confusing thing in the layout.
 This doc is the map.
 
-`docs/architecture.md` owns each component's internals. This doc owns the comparison: what
+`docs/reference/architecture.md` owns each component's internals. This doc owns the comparison: what
 each plane is for, how they hand off, where they deliberately do not connect, and which one
 to reach for.
 

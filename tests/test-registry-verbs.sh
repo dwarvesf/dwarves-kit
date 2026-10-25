@@ -3,7 +3,7 @@
 # A lib verb is listed when its script carries `# kit-verb: <name> | <description>` in its
 # first 40 lines. Cases 1-6, 8, 9 drive a COPY of the generator in a throwaway tree (a handful of
 # stub files, well under a second); case 7 pins the real kit: every declared verb has one line
-# in docs/workflow-paths.md and vice versa.
+# in docs/reference/workflow-paths.md and vice versa.
 set -uo pipefail
 KIT="$(cd "$(dirname "$0")/.." && pwd)"
 PASS=0; FAIL=0
@@ -52,7 +52,7 @@ printf '#!/usr/bin/env bash\n# kit-verb: outside | not under lib\n' > "$D/hooks/
 echo "$(gen)" | grep -qF '`outside`' && no "6 marker outside lib listed" || ok "6 marker outside lib/ is ignored"
 
 # 7. real kit: verb rows and path-index verb lines agree
-F="$KIT/docs/FEATURES.md"; W="$KIT/docs/workflow-paths.md"
+F="$KIT/docs/reference/FEATURES.md"; W="$KIT/docs/reference/workflow-paths.md"
 sed -n '/^## Verbs/,$p' "$F" | sed -nE 's/^\| `([^`]+)` \| `\[V\]`.*/\1/p' | sort > "$D/f-verb"
 sed -n '/^### Verbs/,/^## 6/p' "$W" | grep -E '^\| `\[V\] ' | sed -E 's/^\| `\[V\] //; s/ ->.*//' | sort > "$D/w-verb"
 if [ -s "$D/f-verb" ] && diff -q "$D/f-verb" "$D/w-verb" >/dev/null; then

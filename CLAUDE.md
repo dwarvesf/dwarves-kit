@@ -6,7 +6,7 @@ Project instructions for working on **dwarves-kit itself** (the kit's own repo).
 
 dwarves-kit is a Claude Code workflow toolkit: hooks, slash commands, subagents, and skills. Spec-driven lifecycle (`/kit:think` → `/kit:spec` → `/kit:execute` → `/kit:review` → `/kit:ship` → `/kit:retro`) with a verification pipeline (one builder → end verifiers → fix-agent retry, max 2). Distributed as a Claude Code plugin and as a bash installer. Maintainer: Han at Dwarves Foundation.
 
-For component fit and data flow, read `docs/architecture.md`. For operator detail per command, how to drive the kit from natural language, and how to recover from hook misbehavior, read `docs/MANUAL.md`. Design rejection rules live in `docs/PHILOSOPHY.md` and are load-bearing.
+For component fit and data flow, read `docs/reference/architecture.md`. For operator detail per command, how to drive the kit from natural language, and how to recover from hook misbehavior, read `docs/MANUAL.md`. Design rejection rules live in `docs/reference/PHILOSOPHY.md` and are load-bearing.
 
 ## Tech stack
 
@@ -34,7 +34,7 @@ The kit ships its own slash commands (`/kit:start` ... `/kit:retro` ... `/kit:ki
 
 ## Repository structure
 
-See `docs/MANUAL.md` "Project structure" section (canonical) and `docs/architecture.md` (component fit). Do not maintain a third copy here.
+See `docs/MANUAL.md` "Project structure" section (canonical) and `docs/reference/architecture.md` (component fit). Do not maintain a third copy here.
 
 ## Code quality rules
 

@@ -101,7 +101,7 @@ description: sync notion pages
 Body mentions the payroll desk this skill supports.
 FIX
 
-  cat > "$FIX_REPO/docs/FEATURES.md" <<'FIX'
+  cat > "$FIX_REPO/docs/reference/FEATURES.md" <<'FIX'
 # Features
 
 | Command | Icon | Trigger | Description | Since | Owner |

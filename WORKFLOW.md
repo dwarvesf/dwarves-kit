@@ -5,7 +5,7 @@
 > It suggests and routes; it does not block. The four hard stops, where an
 > autonomous run stops for a human, are the safety-gate hook, the push-to-main
 > blocker, the anti-rationalization Stop hook, and the verification pipeline.
-> The rules code blocks on, each with a proving test, are listed in `docs/hard-rules.tsv`.
+> The rules code blocks on, each with a proving test, are listed in `docs/reference/hard-rules.tsv`.
 
 ## Required reading
 `AGENTS.md` is the front door and owns the read-order; it is the single source.

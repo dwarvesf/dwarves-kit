@@ -33,7 +33,7 @@ You receive:
 1. Resolve the diff: `git diff <base>...HEAD`. Read each changed file's surrounding code so the strip matches local style, not your instinct.
 2. Scan the diff for the strip classes:
    - **Redundant comments**: comments that restate the code, are inconsistent with the file's style, or are commented-out code. Keep comments that carry a decision, a tradeoff, or a security gotcha (the kit's comment rule: explain WHY, not WHAT). When a name needs a comment to explain itself, prefer renaming over commenting (coding-hygiene).
-   - **Over-defensive handling**: defensive checks or try/catch blocks that are abnormal for the file's trusted code paths. A documented repo standard overrides this (for example `rules/frontend-ts.md` mandates try/catch around API calls); when the file's own pattern keeps the guard, keep it and flag it as kept.
+   - **Over-defensive handling**: defensive checks or try/catch blocks that are abnormal for the file's trusted code paths. A documented repo standard overrides this (for example `templates/rules/frontend-ts.md` mandates try/catch around API calls); when the file's own pattern keeps the guard, keep it and flag it as kept.
    - **Unnecessary casts**: casts (`as any` and friends) used only to bypass a type error, where a real fix exists (narrow the type, use a proper type guard). A cast with a stated reason is not slop.
    - **Flattenable nesting**: deeply nested code in the changed lines that simplifies to early returns without changing behavior.
    - **Inconsistent patterns**: code that contradicts the file and surrounding codebase (a second convention beside an existing one).

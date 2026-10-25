@@ -91,7 +91,7 @@ echo "== test-meta: area suites picked by the path they read =="
 git stash -q -u
 mkdir -p lib/wrap commands docs lib/z lib/board docs/verification
 printf 'echo w\n' > lib/wrap/wrap.sh; printf '#!/bin/bash\nbash lib/wrap/wrap.sh\n' > tests/test-wrap-x.sh
-printf -- '---\nname: c\n---\n' > commands/c.md; printf '# F\n' > docs/FEATURES.md
+printf -- '---\nname: c\n---\n' > commands/c.md; printf '# F\n' > docs/reference/FEATURES.md
 printf '#!/bin/bash\n# kit-verb: zz | a verb\necho z\n' > lib/z/verb.sh
 printf '#!/bin/bash\n# kit-verb: dd | goes away\necho d\n' > lib/z/dropped.sh
 printf 'echo u\n' > lib/board/unnamed.sh; printf 'echo n\n' > lib/board/named.sh
@@ -114,11 +114,11 @@ hasnt "$out" "tests/test-meta-spec-depth.sh" "a commands/ change does not pick a
 hasnt "$out" "tests/test-meta-goal-ledger.sh" "a commands/ change does not pick goal-ledger"
 hasnt "$out" "tests/test-meta.sh" "an attributed path does not pick the runner"
 git checkout -q -- commands/c.md
-echo "# edit" >> docs/FEATURES.md
+echo "# edit" >> docs/reference/FEATURES.md
 out="$(bash "$TA" --list 2>&1)"
-has   "$out" "tests/test-meta-docs-registry.sh  (reads docs/FEATURES.md)" "a docs/FEATURES.md change picks docs-registry"
-hasnt "$out" "tests/test-meta-contract.sh" "a docs/FEATURES.md change does not pick contract"
-git checkout -q -- docs/FEATURES.md
+has   "$out" "tests/test-meta-docs-registry.sh  (reads docs/reference/FEATURES.md)" "a docs/reference/FEATURES.md change picks docs-registry"
+hasnt "$out" "tests/test-meta-contract.sh" "a docs/reference/FEATURES.md change does not pick contract"
+git checkout -q -- docs/reference/FEATURES.md
 echo "# edit" >> lib/z/verb.sh
 out="$(bash "$TA" --list 2>&1)"
 has   "$out" "tests/test-meta-docs-registry.sh  (reads lib/z/verb.sh)" "a lib file declaring a kit-verb picks docs-registry"

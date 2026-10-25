@@ -24,15 +24,15 @@ rb_build() { # rb_build <name> [--no-generator] -- sets RBO (origin), RBC (main 
 root="$(cd "$(dirname "$0")/../.." && pwd)"
 [ -n "${RB_GEN_FAIL:-}" ] && exit 3
 [ -n "${RB_GEN_NOOP:-}" ] && exit 0
-ls "$root/specs" | LC_ALL=C sort > "$root/docs/FEATURES.md"
+ls "$root/specs" | LC_ALL=C sort > "$root/docs/reference/FEATURES.md"
 [ -n "${RB_GEN_UTF8:-}" ] && echo changed > "$root/docs/café.md"
 [ -n "${RB_GEN_README:-}" ] && printf 'count: %s\n' "$(ls "$root/specs" | wc -l | tr -d ' ')" > "$root/README.md"
 exit 0
 GEN
   [ "${2:-}" = "--no-generator" ] && rm -rf "$work/lib"
   echo a > "$work/specs/a.md"
-  echo a.md > "$work/docs/FEATURES.md"
-  printf '# Changelog\n\n## [Unreleased]\n\n- one\n- two\n' > "$work/docs/CHANGELOG.md"
+  echo a.md > "$work/docs/reference/FEATURES.md"
+  printf '# Changelog\n\n## [Unreleased]\n\n- one\n- two\n' > "$work/CHANGELOG.md"
   printf 'line\n' > "$work/other.md"
   printf 'count: 1\n' > "$work/README.md"
   echo base > "$work/docs/café.md"
@@ -78,24 +78,24 @@ chk_has "rebase: union needs no stop" "$out" "0 stop(s) resolved"
 
 echo "--- CHANGELOG: both sides only added bullets, both kept"
 rb_build clpure
-printf '# Changelog\n\n## [Unreleased]\n\n- o-new\n- one\n- two\n' > "$RBO/docs/CHANGELOG.md"; rb_origin "docs: o"
-printf '# Changelog\n\n## [Unreleased]\n\n- b-new\n- one\n- two\n' > "$RBW/docs/CHANGELOG.md"; rb_branch "docs: b"
+printf '# Changelog\n\n## [Unreleased]\n\n- o-new\n- one\n- two\n' > "$RBO/CHANGELOG.md"; rb_origin "docs: o"
+printf '# Changelog\n\n## [Unreleased]\n\n- b-new\n- one\n- two\n' > "$RBW/CHANGELOG.md"; rb_branch "docs: b"
 out="$(rb_run)"; rc=$?
-cl="$(cat "$RBW/docs/CHANGELOG.md")"
+cl="$(cat "$RBW/CHANGELOG.md")"
 chk "rebase: pure-addition CHANGELOG exits 0" "$rc"
 chk_has "rebase: CHANGELOG keeps origin's bullet" "$cl" "- o-new"
 chk_has "rebase: CHANGELOG keeps the branch's bullet" "$cl" "- b-new"
-chk "rebase: CHANGELOG keeps every base line once" "$([ "$(grep -c '^- one$' "$RBW/docs/CHANGELOG.md")" -eq 1 ] && [ "$(grep -c '^- two$' "$RBW/docs/CHANGELOG.md")" -eq 1 ]; echo $?)"
+chk "rebase: CHANGELOG keeps every base line once" "$([ "$(grep -c '^- one$' "$RBW/CHANGELOG.md")" -eq 1 ] && [ "$(grep -c '^- two$' "$RBW/CHANGELOG.md")" -eq 1 ]; echo $?)"
 chk_has "rebase: CHANGELOG counted as one stop" "$out" "1 stop(s) resolved"
 chk_no "rebase: CHANGELOG carries no marker" "$cl" "<<<<<<<"
 
 echo "--- CHANGELOG: a reworded bullet refuses"
 rb_build clword
-printf '# Changelog\n\n## [Unreleased]\n\n- o-new\n- one reworded\n- two\n' > "$RBO/docs/CHANGELOG.md"; rb_origin "docs: reword"
-printf '# Changelog\n\n## [Unreleased]\n\n- b-new\n- one\n- two\n' > "$RBW/docs/CHANGELOG.md"; rb_branch "docs: b"; old="$(rb_tip)"
+printf '# Changelog\n\n## [Unreleased]\n\n- o-new\n- one reworded\n- two\n' > "$RBO/CHANGELOG.md"; rb_origin "docs: reword"
+printf '# Changelog\n\n## [Unreleased]\n\n- b-new\n- one\n- two\n' > "$RBW/CHANGELOG.md"; rb_branch "docs: b"; old="$(rb_tip)"
 out="$(rb_run)"; rc=$?
 chk "rebase: reworded CHANGELOG exits 1" "$([ "$rc" -eq 1 ]; echo $?)"
-chk_has "rebase: reworded CHANGELOG refused by name" "$out" "REFUSED feat/rb: conflict in docs/CHANGELOG.md"
+chk_has "rebase: reworded CHANGELOG refused by name" "$out" "REFUSED feat/rb: conflict in CHANGELOG.md"
 chk "rebase: reworded CHANGELOG restores the old tip" "$([ "$(rb_tip)" = "$old" ]; echo $?)"
 chk "rebase: reworded CHANGELOG leaves no rebase in progress" "$(rb_rebasing && echo 1 || echo 0)"
 
@@ -105,7 +105,7 @@ echo b > "$RBW/specs/b.md"; rb_gen "$RBW"; rb_branch "feat: b"
 out="$(rb_run)"; rc=$?
 chk "rebase: generated stop exits 0" "$rc"
 chk_has "rebase: generated stop counted" "$out" "1 stop(s) resolved"
-chk "rebase: FEATURES equals a fresh generate" "$([ "$(cat "$RBW/docs/FEATURES.md")" = "$(printf 'a.md\nb.md\no.md')" ]; echo $?)"
+chk "rebase: FEATURES equals a fresh generate" "$([ "$(cat "$RBW/docs/reference/FEATURES.md")" = "$(printf 'a.md\nb.md\no.md')" ]; echo $?)"
 chk "rebase: no marker in any rebased commit" "$(grep -qE '^\+(<{7}|>{7})' < <(git -C "$RBW" log -p origin/main..HEAD) && echo 1 || echo 0)"
 chk "rebase: no merge commit on the branch" "$([ -z "$(git -C "$RBW" rev-list --min-parents=2 origin/main..HEAD)" ]; echo $?)"
 chk "rebase: one pick and no regen commit (committed only after the rebase)" "$([ "$(git -C "$RBW" rev-list --count origin/main..HEAD)" -eq 1 ]; echo $?)"
@@ -122,7 +122,7 @@ chk "rebase: worktree clean after the side effect" "$([ -z "$(git -C "$RBW" stat
 echo "--- a pick left empty by the regeneration is dropped"
 rb_build empty; echo o > "$RBO/specs/o.md"; rb_gen "$RBO"; rb_origin "feat: o"
 echo b > "$RBW/specs/b.md"; rb_gen "$RBW"; rb_branch "feat: b"
-echo extra >> "$RBW/docs/FEATURES.md"; rb_branch "chore: hand-edit features"
+echo extra >> "$RBW/docs/reference/FEATURES.md"; rb_branch "chore: hand-edit features"
 out="$(rb_run)"; rc=$?
 chk "rebase: empty-pick run exits 0" "$rc"
 chk "rebase: the empty pick is gone" "$(grep -q 'hand-edit' < <(git -C "$RBW" log --format=%s origin/main..HEAD) && echo 1 || echo 0)"
@@ -134,7 +134,7 @@ echo b > "$RBW/b.txt"; rb_branch "feat: b"
 out="$(rb_run)"; rc=$?
 chk "rebase: final-regen run exits 0" "$rc"
 chk "rebase: last commit is the regen" "$([ "$(git -C "$RBW" log -1 --format=%s)" = "chore(registry): regenerate FEATURES.md after rebase" ]; echo $?)"
-chk "rebase: the regen commit holds a fresh FEATURES" "$([ "$(git -C "$RBW" show HEAD:docs/FEATURES.md)" = "$(printf 'a.md\no.md')" ]; echo $?)"
+chk "rebase: the regen commit holds a fresh FEATURES" "$([ "$(git -C "$RBW" show HEAD:docs/reference/FEATURES.md)" = "$(printf 'a.md\no.md')" ]; echo $?)"
 
 echo "--- a hand-written conflict refuses and restores the old tip"
 rb_build refuse; echo o-line > "$RBO/other.md"; rb_origin "o"; echo b-line > "$RBW/other.md"; rb_branch "b"; old="$(rb_tip)"
@@ -158,7 +158,7 @@ rb_build markers; echo o > "$RBO/specs/o.md"; rb_gen "$RBO"; rb_origin "feat: o"
 echo b > "$RBW/specs/b.md"; rb_gen "$RBW"; rb_branch "feat: b"; old="$(rb_tip)"
 out="$(RB_GEN_NOOP=1 rb_run)"; rc=$?
 chk "rebase: leftover markers exit 1" "$([ "$rc" -eq 1 ]; echo $?)"
-chk_has "rebase: leftover markers named" "$out" "MARKERS feat/rb: docs/FEATURES.md"
+chk_has "rebase: leftover markers named" "$out" "MARKERS feat/rb: docs/reference/FEATURES.md"
 chk "rebase: leftover markers restore the old tip" "$([ "$(rb_tip)" = "$old" ]; echo $?)"
 chk "rebase: no marker in any reachable commit" "$(grep -qE '^\+(<{7}|>{7})' < <(git -C "$RBW" log -p --all) && echo 1 || echo 0)"
 chk "rebase: leftover markers leave no rebase in progress" "$(rb_rebasing && echo 1 || echo 0)"
@@ -174,10 +174,10 @@ chk "rebase: generator failure restores the old tip" "$([ "$(rb_tip)" = "$old" ]
 
 echo "--- no generator in the repo: FEATURES is an ordinary file"
 rb_build nogen --no-generator
-printf 'a.md\no.md\n' > "$RBO/docs/FEATURES.md"; rb_origin "o"; printf 'a.md\nb.md\n' > "$RBW/docs/FEATURES.md"; rb_branch "b"
+printf 'a.md\no.md\n' > "$RBO/docs/reference/FEATURES.md"; rb_origin "o"; printf 'a.md\nb.md\n' > "$RBW/docs/reference/FEATURES.md"; rb_branch "b"
 out="$(rb_run)"; rc=$?
 chk "rebase: no generator exits 1" "$([ "$rc" -eq 1 ]; echo $?)"
-chk_has "rebase: no generator refuses FEATURES by name" "$out" "REFUSED feat/rb: conflict in docs/FEATURES.md"
+chk_has "rebase: no generator refuses FEATURES by name" "$out" "REFUSED feat/rb: conflict in docs/reference/FEATURES.md"
 
 echo "--- a delete conflict on a union-declared file refuses with the union note"
 rb_build uniondel; git -C "$RBO" rm -q _meta/BACKLOG.md; rb_origin "drop board"
@@ -244,11 +244,11 @@ chk "rebase: preflight refusals leave HEAD" "$([ "$(rb_tip)" = "$old" ]; echo $?
 
 echo "--- CHANGELOG: both sides added the same line refuses"
 rb_build cldup
-printf '# Changelog\n\n## [Unreleased]\n\n- a\n- shared\n- one\n- two\n' > "$RBO/docs/CHANGELOG.md"; rb_origin "docs: o"
-printf '# Changelog\n\n## [Unreleased]\n\n- shared\n- c\n- one\n- two\n' > "$RBW/docs/CHANGELOG.md"; rb_branch "docs: b"; old="$(rb_tip)"
+printf '# Changelog\n\n## [Unreleased]\n\n- a\n- shared\n- one\n- two\n' > "$RBO/CHANGELOG.md"; rb_origin "docs: o"
+printf '# Changelog\n\n## [Unreleased]\n\n- shared\n- c\n- one\n- two\n' > "$RBW/CHANGELOG.md"; rb_branch "docs: b"; old="$(rb_tip)"
 out="$(rb_run)"; rc=$?
 chk "rebase: a line both sides added exits 1" "$([ "$rc" -eq 1 ]; echo $?)"
-chk_has "rebase: a line both sides added refused by name" "$out" "REFUSED feat/rb: conflict in docs/CHANGELOG.md"
+chk_has "rebase: a line both sides added refused by name" "$out" "REFUSED feat/rb: conflict in CHANGELOG.md"
 chk "rebase: a line both sides added restores the old tip" "$([ "$(rb_tip)" = "$old" ]; echo $?)"
 
 echo "--- a recorded rerere resolution never resolves a stop (rerere pinned off)"

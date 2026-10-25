@@ -226,7 +226,7 @@
 #                                                               ~/.config/dwarves-kit/board.json.
 #   board.sh hermes link [--home <dir>] [--profile <name>] [--cluster <c>] [--dry-run] [--yes] [--no-verify]
 #   board.sh hermes check [--record]                            link a Hermes agent profile to the kit: install
-#                                                               adapters/hermes/skills into the profile with a
+#                                                               integrations/hermes/skills into the profile with a
 #                                                               version stamp, record the link and the cluster's
 #                                                               rail and boards, prove it with one agent turn.
 #                                                               `check` finds linked profiles whose skills are

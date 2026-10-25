@@ -25,8 +25,8 @@
 # Usage:
 #   refcheck.sh scan --repo DIR [--docs PATHSPEC]...
 #     --docs   a git pathspec for the item set, repeatable. Default is the living-doc set of
-#              skills/doc-drift/SKILL.md: README.md MANUAL.md AGENTS.md CLAUDE.md
-#              CONTRIBUTING.md ':(glob)docs/*.md' ':(glob)docs/patterns/*.md'
+#              skills/doc-drift/SKILL.md: README.md AGENTS.md CLAUDE.md
+#              CONTRIBUTING.md ':(glob)docs/*.md' ':(glob)docs/reference/*.md' ':(glob)docs/guides/*.md' ':(glob)docs/patterns/*.md'
 #
 # Exit: 0 when the scan ran (dead refs are output, not failure); 2 on bad usage or a target
 # that is not a git repo.
@@ -61,7 +61,7 @@ git rev-parse --show-toplevel >/dev/null 2>&1 || die "not a git repo: $REPO"
 cd "$(git rev-parse --show-toplevel)" || die "cannot enter the repo top"
 
 if [ "${#DOCS[@]}" -eq 0 ]; then
-  DOCS=(README.md MANUAL.md AGENTS.md CLAUDE.md CONTRIBUTING.md ':(glob)docs/*.md' ':(glob)docs/patterns/*.md')
+  DOCS=(README.md AGENTS.md CLAUDE.md CONTRIBUTING.md ':(glob)docs/*.md' ':(glob)docs/reference/*.md' ':(glob)docs/guides/*.md' ':(glob)docs/patterns/*.md')
 fi
 
 TRACKED="$(mktemp "${TMPDIR:-/tmp}/refcheck.XXXXXX")" || die "mktemp failed"

@@ -57,7 +57,7 @@ in one or two sentences, then branch:
 ## B. Offer to adopt this repo
 
 Adoption is what makes an agent classify + pick a lane here and what makes the ship-gate engage
-(`docs/consumer-contract.md`). Check it: `bash "$KIT/lib/adopt.sh" --check "$REPO"`.
+(`docs/reference/consumer-contract.md`). Check it: `bash "$KIT/lib/adopt.sh" --check "$REPO"`.
 
 - **Already adopted** -- Report it healthy: name what's present (`AGENTS.md`, the `CLAUDE.md` loader
   block, the `WORKFLOW.md` pointer, the `docs/verification/README.md` proof marker) and that
@@ -203,7 +203,7 @@ A repo that declines any step stays fully functional; the board is additive.
 
 ## D3. Link a Hermes agent (offer, never assume)
 
-The kit ships thin Hermes skills (`adapters/hermes/skills/`) that tell an agent which kit command answers
+The kit ships thin Hermes skills (`integrations/hermes/skills/`) that tell an agent which kit command answers
 which question. If this machine runs Hermes, offer to link ONE profile (the one that speaks for the
 operator: the master or the spokesperson). Call the real surface, never copy skills by hand:
 
@@ -223,7 +223,7 @@ operator: the master or the spokesperson). Call the real surface, never copy ski
 
 Linking is idempotent: running it again refreshes the skills and the stamp. `board sweep` then compares each
 linked profile's stamp with the installed kit every tick, and `board brief` raises one decision line, `kit
-skills on <label> are stale: re-run board hermes link`, when they differ. Layering: `docs/hermes-layering.md`.
+skills on <label> are stale: re-run board hermes link`, when they differ. Layering: `docs/reference/hermes-layering.md`.
 
 ## E. Disclose the plugin-path gaps (only for mode `plugin` or `both`)
 
@@ -289,7 +289,7 @@ If the user seems newer, or asks why the stage names are what they are, you may 
 retelling of the five-stage loop using the story below after the two-idea tour. One sentence
 per stage, voiced as a role plus what it hands you. Never use
 these story names as command or file names; they are prose only, and the code still calls the
-stages Shape/Build/Watch/Check/Learn. Full mapping: `docs/glossary.md`.
+stages Shape/Build/Watch/Check/Learn. Full mapping: `docs/reference/glossary.md`.
 
 1. **The interview** (Shape) -- you describe what you want; the interview hands you back a
    blueprint, the written spec.

@@ -338,7 +338,7 @@ if [ -f "$ROOT/lib/gate/doc-projection-check.sh" ] && [ -f "$ROOT/tests/test-met
   fi
 fi
 
-# Feature-registry freshness gate (kit repo only): docs/FEATURES.md is a
+# Feature-registry freshness gate (kit repo only): docs/reference/FEATURES.md is a
 # generated projection whose inputs are the whole feature surface, including
 # tests/test-*.sh and docs/specs/SPEC-*.md (the Tests and Specs columns are
 # token greps). An author adding a test file has no reason to think about a docs
@@ -348,7 +348,7 @@ fi
 # never disagree about what fresh means.
 #
 # The regen costs ~4s (one awk pass over specs and tests), so it runs only on the
-# shape of that incident: an input moved and docs/FEATURES.md did NOT. A push that carries the regenerated file
+# shape of that incident: an input moved and docs/reference/FEATURES.md did NOT. A push that carries the regenerated file
 # skips it; whether that regeneration was CORRECT is what tests/test-meta.sh
 # pins in CI. The generator runs from the kit install against the pushed repo's tree
 # (FEATURE_REGISTRY_ROOT), never the repo's own copy; a push that edits the generator
@@ -356,10 +356,10 @@ fi
 # An install that predates FEATURE_REGISTRY_ROOT would scan its own tree and call every push stale.
 GATE_REG_OK=0
 grep -q FEATURE_REGISTRY_ROOT "$GATE_INSTALL/lib/registry/feature-registry.sh" 2>/dev/null && GATE_REG_OK=1
-if [ "$GATE_REG_OK" = 0 ] && [ -f "$ROOT/lib/registry/feature-registry.sh" ] && [ -f "$ROOT/docs/FEATURES.md" ]; then
+if [ "$GATE_REG_OK" = 0 ] && [ -f "$ROOT/lib/registry/feature-registry.sh" ] && [ -f "$ROOT/docs/reference/FEATURES.md" ]; then
   echo "[advisory] registry freshness check skipped: the kit install at $GATE_INSTALL is too old to run it; update the install" >&2
 fi
-if [ -f "$ROOT/lib/registry/feature-registry.sh" ] && [ -f "$ROOT/docs/FEATURES.md" ] \
+if [ -f "$ROOT/lib/registry/feature-registry.sh" ] && [ -f "$ROOT/docs/reference/FEATURES.md" ] \
    && [ "$GATE_REG_OK" = 1 ] \
    && [ "${DWARVES_KIT_SKIP_REGISTRY_FRESHNESS:-0}" != "1" ]; then
   FRBASE="$MBASE"
@@ -368,13 +368,13 @@ if [ -f "$ROOT/lib/registry/feature-registry.sh" ] && [ -f "$ROOT/docs/FEATURES.
   if [ -n "$FRDIFF" ] && ! grep -qx 'docs/FEATURES\.md' < <(printf '%s\n' "$FRDIFF") \
      && grep -qE '^(commands/[^/]+\.md|agents/[^/]+\.md|skills/[^/]+/SKILL\.md|hooks/[^/]+\.sh|hooks/hooks\.json|settings\.json|tests/test-[^/]+\.sh|docs/specs/SPEC-[^/]+\.md)$' < <(printf '%s\n' "$FRDIFF") \
      && ! grep -qx 'lib/registry/feature-registry\.sh' < <(printf '%s\n' "$FRDIFF"); then
-    if ! FRMSG=$(FEATURE_REGISTRY_ROOT="$ROOT" bash "$GATE_INSTALL/lib/registry/feature-registry.sh" check "$ROOT/docs/FEATURES.md" 2>&1); then
+    if ! FRMSG=$(FEATURE_REGISTRY_ROOT="$ROOT" bash "$GATE_INSTALL/lib/registry/feature-registry.sh" check "$ROOT/docs/reference/FEATURES.md" 2>&1); then
       echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) | BLOCKED | registry-freshness | $SLUG" >> "$(kit_hook_log_dir)/ship-gate.log" 2>/dev/null || true
       {
-        echo "BLOCKED: registry freshness. This push edits an input of docs/FEATURES.md and the generated projection has drifted:"
+        echo "BLOCKED: registry freshness. This push edits an input of docs/reference/FEATURES.md and the generated projection has drifted:"
         printf '%s\n' "$FRMSG" | head -40
         echo "Regenerate and commit it:"
-        echo "  bash lib/registry/feature-registry.sh generate docs/FEATURES.md"
+        echo "  bash lib/registry/feature-registry.sh generate docs/reference/FEATURES.md"
         echo "Escape: DWARVES_KIT_SKIP_REGISTRY_FRESHNESS=1."
       } >&2
       exit 2

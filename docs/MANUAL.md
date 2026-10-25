@@ -1,11 +1,11 @@
 # MANUAL
 
-Operator reference for dwarves-kit: every command and agent, a pointer to the hook inventory (`docs/hooks.md`), plus how to drive the kit from natural language and how to recover when it misbehaves. For the WHY behind any choice, see `docs/PHILOSOPHY.md`. For component fit and the SDLC state machine, see `docs/architecture.md`. For the end-to-end workflow contract (phases, risk-tier lanes, gates, flow/loop diagrams), see `WORKFLOW.md`. The install layers, the lifecycle at a glance, the five stages, the skills roster, the directory layout and the test and CI notes sit in the sections after `## Troubleshooting and recovery`.
+Operator reference for dwarves-kit: every command and agent, a pointer to the hook inventory (`docs/reference/hooks.md`), plus how to drive the kit from natural language and how to recover when it misbehaves. For the WHY behind any choice, see `docs/reference/PHILOSOPHY.md`. For component fit and the SDLC state machine, see `docs/reference/architecture.md`. For the end-to-end workflow contract (phases, risk-tier lanes, gates, flow/loop diagrams), see `WORKFLOW.md`. The install layers, the lifecycle at a glance, the five stages, the skills roster, the directory layout and the test and CI notes sit in the sections after `## Troubleshooting and recovery`.
 
 Same loop, told as a story: an interview turns your ask into a blueprint, a crew builds it, a
 logbook records the run, an inspector stamps every doorway, and a debrief writes up the lesson
 for next time. The story names are prose only; every command and file below keeps its real
-name. Full tour: `/kit:onboard`. Story-name lookup: `docs/glossary.md`.
+name. Full tour: `/kit:onboard`. Story-name lookup: `docs/reference/glossary.md`.
 
 ## Conventions
 
@@ -339,7 +339,7 @@ Related, **builder lookup** (inside `/kit:execute`): the spec text is classified
 ### `/kit:ship`
 
 **Phase:** review gate, version bump, changelog, commit, PR
-**Reads:** `docs/specs/SPEC-NNN-<slug>.md` (including its `## Review` verdict), `VERSION`, the resolved changelog file (`docs/CHANGELOG.md` if it exists, SPEC-185, else root `CHANGELOG.md`)
+**Reads:** `docs/specs/SPEC-NNN-<slug>.md` (including its `## Review` verdict), `VERSION`, the resolved changelog file (a changelog under `docs/` if the repo keeps one, else root `CHANGELOG.md`)
 **Writes:** bumped `VERSION`, a new entry in the resolved changelog file, git tag, PR via `gh`
 **When to invoke:** review is green and docs are synced
 **Common gotcha:** the command stops, and `hooks/ship-gate.sh` refuses `git push` and `gh pr create` (`[gate] review_verdict`, on by default), while the last verdict in the spec's `## Review` section is DO NOT SHIP. Use `/review-team` and `responding-to-review` to triage, then re-run `/kit:review`: it replaces the section and clears the block.
@@ -364,10 +364,10 @@ Related, **builder lookup** (inside `/kit:execute`): the spec text is classified
 ### `/kit:absorb`
 
 **Phase:** maintainer connective tissue (external absorption audit)
-**Reads:** the Credits section of this manual + the pinned seed list in `docs/ABSORPTION.md`; prior proposals under `docs/absorption/`
+**Reads:** the Credits section of this manual + the pinned seed list in `docs/absorption/README.md`; prior proposals under `docs/absorption/`
 **Writes:** a dated, proposal-only report under `docs/absorption/` (never a kit component; ends with a `git status` self-check)
 **When to invoke:** the monthly-ish absorption ritual, re-audit upstream sources for new/changed patterns worth adopting
-**Common gotcha:** maintainer-only and proposal-only, it never absorbs or adds a source to Credits itself (the human merge gate). Two lanes: Credits drift + a seed-rescan of the SPEC-014 set. QA/UI candidates needing binaries surface as "recommend external". Source: SPEC-004 + `docs/ABSORPTION.md`.
+**Common gotcha:** maintainer-only and proposal-only, it never absorbs or adds a source to Credits itself (the human merge gate). Two lanes: Credits drift + a seed-rescan of the SPEC-014 set. QA/UI candidates needing binaries surface as "recommend external". Source: SPEC-004 + `docs/absorption/README.md`.
 
 ### `/kit:gauntlet`
 
@@ -397,8 +397,8 @@ Related, **builder lookup** (inside `/kit:execute`): the spec text is classified
 ## Hooks (no invocation)
 
 The full hook inventory (every hook, its event, the message it prints, its knobs, and its
-source file) lives in ONE place: `docs/hooks.md`. For which hook backstops what and why (hard /
-advisory / convenience), read `docs/architecture.md` "Hook fallback layer". This section
+source file) lives in ONE place: `docs/reference/hooks.md`. For which hook backstops what and why (hard /
+advisory / convenience), read `docs/reference/architecture.md` "Hook fallback layer". This section
 deliberately does not duplicate the inventory: a second copy drifted to 14 of 25 rows before the
 2026-07-31 doc-drift run caught it, missing `ship-gate` among others.
 
@@ -476,13 +476,13 @@ The `harvest` hook stages learnings when a session compacts or ends. The harvest
 
 ## Path-scoped rules
 
-`rules/backend-go.md` and `rules/frontend-ts.md` are TEMPLATES. The bash installer (`install.sh`; not the plugin path, not a compat-only run) copies each into `.claude/rules/` of the directory you run it from and skips any file already there. On the plugin path, copy them into `.claude/rules/` by hand. They activate when Claude reads matching files; they do NOT fire on write or create.
+`templates/rules/backend-go.md` and `templates/rules/frontend-ts.md` are TEMPLATES. The bash installer (`install.sh`; not the plugin path, not a compat-only run) copies each into `.claude/rules/` of the directory you run it from and skips any file already there. On the plugin path, copy them into `.claude/rules/` by hand. They activate when Claude reads matching files; they do NOT fire on write or create.
 
 ## Operator scenarios (what you say -> what happens)
 
 How to drive the kit from natural language: scenario -> trigger phrase -> response ->
 orchestration hook. For the flow/loop internals read `WORKFLOW.md` "## Flow and loop
-reference"; for the formal state machine read `docs/architecture.md` "## SDLC state
+reference"; for the formal state machine read `docs/reference/architecture.md` "## SDLC state
 machine".
 
 **The one thing to understand first: three layers, only one is automatic.** Your
@@ -589,7 +589,7 @@ approve-before-allocate, sanitize, atomic-allocate.
 The 4 hard stops (`safety-gate`, `push-to-main`, `anti-rationalization`, the verification
 pipeline) are **never** waived by any autonomy level. The first three are hooks that exit 2 (anti-rationalization only while `[gate] understanding_gate` is on);
 the pipeline is run by the `/kit:execute` command text, and `ship-gate` checks that its gate was
-recorded. The rules code blocks on, each with the test that proves it, are listed in `docs/hard-rules.tsv`.
+recorded. The rules code blocks on, each with the test that proves it, are listed in `docs/reference/hard-rules.tsv`.
 
 (The at-a-glance intent cheat-sheet now lives at the top: see `## Drive it by intent (start here)`.)
 
@@ -615,7 +615,7 @@ bash lib/gate/gate-ledger.sh show    <rid>
 
 ## Troubleshooting and recovery
 
-Diagnose and recover when the kit misbehaves. For why a behavior exists, see `docs/PHILOSOPHY.md` and `docs/decisions/`.
+Diagnose and recover when the kit misbehaves. For why a behavior exists, see `docs/reference/PHILOSOPHY.md` and `docs/decisions/`.
 
 ### First step always: turn on debug mode
 
@@ -846,7 +846,7 @@ flowchart LR
   CH([Check]) -. gates every<br/>phase boundary .- BD
 ```
 
-This diagram is the stages. For how DATA actually moves through them (telemetry -> proposal -> board -> ship, the ledger write/read paths, and the module map of who calls whom), see [`docs/data-flow.md`](data-flow.md).
+This diagram is the stages. For how DATA actually moves through them (telemetry -> proposal -> board -> ship, the ledger write/read paths, and the module map of who calls whom), see [`docs/reference/data-flow.md`](reference/data-flow.md).
 
 Stages are metadata, not directories: each module keeps its name and install unit, and declares a primary stage. The authoritative assignment (machine copy in [`lib/config/module-registry.md`](../lib/config/module-registry.md), rendered by `config list`):
 
@@ -884,7 +884,7 @@ Layered by design: the SPINE installs unconditionally (six hooks guarding push, 
 | `prose_rag` | `prose-rag` recall inject (UserPromptSubmit, dormant until `PROSE_RAG_INJECT=1`) + the `prose-rag` CLI alias over context-kit's `ctx` engine verbs (`lib/prose-rag/`) | 1 hook + 1 CLI |
 | `sync` | `board sync` two-way spoke mirror (BACKLOG.md ⇄ Apple Reminders / Notion / Hermes kanban; engine `lib/sync/`, per-repo `.kit.toml [sync]` config), inert without `[sync] sources` | hookless (lib) |
 
-`team_mode` is a reserved, not-yet-installable slot (parked, see `docs/PHILOSOPHY.md` "Team mode: parked, not absent"); naming it in `--with` errors on purpose.
+`team_mode` is a reserved, not-yet-installable slot (parked, see `docs/reference/PHILOSOPHY.md` "Team mode: parked, not absent"); naming it in `--with` errors on purpose.
 
 **Add a module later** (a later module never re-onboards you): edit `.kit.toml`'s `[modules]` section
 by hand, then re-run `/kit:adopt --refresh` (or `bash lib/adopt.sh --refresh <repo>`) to re-wire
@@ -1012,7 +1012,7 @@ Within one spec, tasks run sequentially. Across specs, `/kit:dispatch` fans out 
 
 ## Skills (Claude-triggered)
 
-Skills have no slash command. Claude loads one when your intent matches its description. The hook inventory lives in [`hooks.md`](hooks.md), every command in the Command reference above, and every agent in the Agents table above; the generated one-row-per-feature view is [`FEATURES.md`](FEATURES.md).
+Skills have no slash command. Claude loads one when your intent matches its description. The hook inventory lives in [`hooks.md`](reference/hooks.md), every command in the Command reference above, and every agent in the Agents table above; the generated one-row-per-feature view is [`FEATURES.md`](reference/FEATURES.md).
 
 | Skill | What it does |
 |-------|-------------|
@@ -1021,7 +1021,7 @@ Skills have no slash command. Claude loads one when your intent matches its desc
 | ci-drift | Whole-estate CI audit (audit-loop instance): enumerates every workflow + GitHub-side state (enabled, secrets/vars, runners, releases, environment policy), verdicts each against the live repo, fixes drift behind a PR gate |
 | gauntlet-proof-audit | Audits committed gauntlet run records (audit-loop instance, general-purpose): markers well-formed, recorded verdict vs committed `checker-output.txt`, findings-count reconciliation, scrub clean, run-dir grammar; REMOVE disallowed, report-first |
 | repo-hygiene | Whole-repo decay audit (audit-loop instance, general-purpose): five detectors over one checkout (unreferenced doc, stale staging drop, record parked in a control surface, log past its documented budget, large cold gitignored dir), each finding carrying its evidence inline, `git mv` the only fix it ever applies, PR-gated. Repo-scoped: the machine surface belongs to ops-toolkit `tools/disk-reclaim` |
-| topology-drift | **Maintainer-only** (dwarves-kit repo dev only): audits THIS KIT's own feature estate (audit-loop instance), cross-checks the generated `docs/FEATURES.md` registry against the `docs/workflow-paths.md` path index both directions, re-places only delta features on the topology, PR-gated. To inventory a project the kit is pointed at, use `/kit:feature-map` instead |
+| topology-drift | **Maintainer-only** (dwarves-kit repo dev only): audits THIS KIT's own feature estate (audit-loop instance), cross-checks the generated `docs/reference/FEATURES.md` registry against the `docs/reference/workflow-paths.md` path index both directions, re-places only delta features on the topology, PR-gated. To inventory a project the kit is pointed at, use `/kit:feature-map` instead |
 | web-drift | Live-website agent-readiness audit (audit-loop instance, general-purpose): probes every site in `WEB_DRIFT_SITES` with `lib/webcheck` over read-only HTTP (groundwork, page, API tiers), verdicts each `(site, check)` pair, and files fixes as board rows in the repo that owns the site's source. Inert until the consumer declares its sites |
 | get-api-docs | Fetches curated API docs via Context Hub before coding |
 | loop-engineering | Designs a new bounded loop for the kit's orchestration: the gate (should this be a loop), then the anatomy (artifact / scanner / reviser / stop condition) on the generic bounded-revise engine |
@@ -1053,8 +1053,7 @@ dwarves-kit/
   tool.toml                     Kit metadata (name, version, language=bash, deps)
   AGENTS.md                     Tool-agnostic operate-contract front door (any runtime reads it first)
   WORKFLOW.md                   Pointer stub; the cycle, lanes, gates, and flow/loop reference live in docs/WORKFLOW.md
-  MANUAL.md                     Pointer stub; the operator reference lives in docs/MANUAL.md
-  CHANGELOG.md                  Pointer stub; the changelog lives in docs/CHANGELOG.md
+  CHANGELOG.md                  Release history
   README.md / CONTRIBUTING.md / VERSION / LICENSE
   CLAUDE.md                     Project template; the Claude-Code layer on top of AGENTS.md
   install.sh / settings.json    Bash install path
@@ -1080,7 +1079,7 @@ dwarves-kit/
   lib/board/work.sh                   `board work`: one read-only table of who is on what, how far along, and who is stuck. Joins the board rows, mega sub-goals, git branches and worktrees, `orca worktree ps` and the run ledger at call time and stores nothing; agent state is working, idle or unknown (file activity stands in for a worktree Orca does not list, marked `(files)`; with Orca itself missing it reads unknown); `--json` is the schema-1 form, `--idle-min N` sets the PARKED threshold
   lib/board/board-run.sh              The single-board-row dispatch path, backing `board.sh run <ID>`: reads the row's Item + Notes through `backlog.sh row` (the board's own parser; same no-row / duplicate-id refusals as `get`), scaffolds the MINIMAL mega-goal dir `lib/queue/orchestrate.sh` expects (one `- [ ] SG-01 <item> , auto` ROADMAP line, POINTER_PROMPT.md seeded from the row, a `goals/01-*.md` contract with `Model:`/`**Branch:**` headers, HANDOFF.md + DECISIONS.md stubs) under the repo's megagoals convention (`--dir` > `megagoal_root:` CLAUDE.md hint > first in-use root in canonical order > `_meta/megagoals/<id-slug>/` default), then prints the exact `orchestrate.sh run <dir>` command. It never launches a session itself; `--exec` composes the launch and forwards args after `--` (e.g. `-- --dry-run`). Idempotent: an existing file is reported `kept`, never overwritten (the `board init` created/kept convention).
   skills/                       Claude-triggered skills (one folder per skill; roster in the Skill table above)
-  rules/                        Path-scoped coding-standard templates
+  templates/rules/              Path-scoped coding-standard templates
   examples/hello-spec/          Illustration of a repo after the kit is adopted: example AGENTS.md, CLAUDE.md and WORKFLOW.md pointers plus one small spec (the onboarding path is /kit:adopt)
   tests/test-hooks.sh           Hook behavior assertions
   tests/test-meta.sh            Structural integrity (manifests, frontmatter, cross-links)

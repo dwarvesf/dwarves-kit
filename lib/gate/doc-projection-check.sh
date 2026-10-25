@@ -19,7 +19,7 @@ for f in "$ROOT"/agents/*.md; do
 done
 
 # 2. Architecture V-phase inventory row count == live command+agent file count.
-rows=$(sed -n '/^## Command and agent V-phase inventory/,/^## /p' "$ROOT/docs/architecture.md" \
+rows=$(sed -n '/^## Command and agent V-phase inventory/,/^## /p' "$ROOT/docs/reference/architecture.md" \
   | grep '^|' | grep -cv '^| Entry\|^|---')
 live=$(ls "$ROOT"/commands/*.md "$ROOT"/agents/*.md 2>/dev/null | wc -l | tr -d ' ')
 [ "$rows" = "$live" ] \

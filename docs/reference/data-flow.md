@@ -1,6 +1,6 @@
 # Data flow
 
-`docs/architecture.md` says what the pieces are. `docs/WORKFLOW.md` says how one RUN moves
+`docs/reference/architecture.md` says what the pieces are. `docs/WORKFLOW.md` says how one RUN moves
 through the phases. This page says how DATA moves: where a signal is born, what it becomes,
 and how it closes back into the next run. It is the data-flow view next to the architecture and
 workflow views.
@@ -245,6 +245,6 @@ claim against the command that supposedly does it.
 
 - New to the kit: `README.md` (the five stages) -> `docs/WORKFLOW.md` (how a run moves) -> this
   page (how data moves).
-- Adding a signal pipeline: `docs/kit-contract.md` (the rules) -> flow 1 above (where your
+- Adding a signal pipeline: `docs/reference/kit-contract.md` (the rules) -> flow 1 above (where your
   output has to land) -> `docs/specs/SPEC-200-signal-pipelines.md` (why).
 - Debugging "where did my evidence go": flow 2.

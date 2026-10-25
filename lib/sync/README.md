@@ -288,12 +288,12 @@ else `$DWARVES_BOARD_CONFIG`, else `~/.config/dwarves-kit/board.json`: JSON with
 (a list repeats the flag, `true` is a bare flag). Command-line flags come
 after the file. This is what lets an agent run `board health run --dry-run`
 with no flags of its own. Tests: `tests/test-board-brief.sh`. Where the kit's
-Hermes skills sit on top: `docs/hermes-layering.md`.
+Hermes skills sit on top: `docs/reference/hermes-layering.md`.
 
 **Hermes link.** `board hermes link [--home DIR] [--profile NAME] [--cluster C] [--dry-run] [--yes]
 [--no-verify]` links one Hermes agent profile to the kit: it detects Hermes homes (`--home`,
 `$HERMES_HOME`, `hermes config path`, `~/hermes-*/home`, `~/.hermes`), picks the profile that speaks for
-the operator, installs `adapters/hermes/skills/*` into that profile's skills dir with a stamp file
+the operator, installs `integrations/hermes/skills/*` into that profile's skills dir with a stamp file
 (`.dwarves-kit-skills.json`: a digest of the skill files, the kit version and sha), records the link in
 `~/.config/dwarves-kit/hermes-links.json` (with the cluster's rail, hub, and boards read from the kit flag
 file), and verifies with one real agent turn: the agent must run `board health run --dry-run --force` and

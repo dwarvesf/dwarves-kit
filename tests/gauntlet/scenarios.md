@@ -43,7 +43,7 @@ tiny lane -> J2, full lane -> J3, debug -> J4, gates/proof -> J5, drift amend
   (not the fixture's doc, which J1 already deliberately breaks as the
   assignment itself)? -> **J11**.
 - multi-session claims are disjoint (`lib/goal/goal-registry.sh claim`,
-  MANUAL.md "Multi-session concurrency") -> inverted: two contributors touch
+  docs/MANUAL.md "Multi-session concurrency") -> inverted: two contributors touch
   overlapping ground with no coordination -> **J9**.
 
 **Category sweep (move 3):** happy (J1-J3), failure-injection (J4, J5, J8,

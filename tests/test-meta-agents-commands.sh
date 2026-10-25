@@ -34,29 +34,28 @@ for AGENT_FILE in "$KIT_DIR/agents/"*.md; do
   fi
 done
 
-# MANUAL.md agent table cross-refs match agents/ files.
-# Canonical agent inventory is in MANUAL.md "Agents" section (table rows), whose bulk now
-# lives at docs/MANUAL.md (root MANUAL.md is a thin stub, SPEC-185).
-# CLAUDE.md no longer mirrors the inventory; see docs/architecture.md for component fit.
+# docs/MANUAL.md agent table cross-refs match agents/ files.
+# Canonical agent inventory is in docs/MANUAL.md "Agents" section (table rows).
+# CLAUDE.md no longer mirrors the inventory; see docs/reference/architecture.md for component fit.
 MANUAL_BULK="$KIT_DIR/docs/MANUAL.md"
 SUBAGENT_NAMES=$(grep '^| `' "$MANUAL_BULK" | sed 's/^| `\([^`]*\)`.*/\1/' | sort -u)
 for NAME in $SUBAGENT_NAMES; do
   if [ -f "$KIT_DIR/agents/$NAME.md" ]; then
     TOTAL=$((TOTAL + 1))
-    echo -e "  ${GREEN}PASS${NC} MANUAL.md row '$NAME' has agents/$NAME.md"
+    echo -e "  ${GREEN}PASS${NC} docs/MANUAL.md row '$NAME' has agents/$NAME.md"
     PASS=$((PASS + 1))
   fi
 done
 
-# Reverse: every agent file mentioned in MANUAL.md as a table row.
+# Reverse: every agent file mentioned in docs/MANUAL.md as a table row.
 for AGENT_FILE in "$KIT_DIR/agents/"*.md; do
   AGENT=$(basename "$AGENT_FILE" .md)
   TOTAL=$((TOTAL + 1))
   if grep -q "^| \`$AGENT\` " "$MANUAL_BULK"; then
-    echo -e "  ${GREEN}PASS${NC} agent $AGENT listed in MANUAL.md"
+    echo -e "  ${GREEN}PASS${NC} agent $AGENT listed in docs/MANUAL.md"
     PASS=$((PASS + 1))
   else
-    echo -e "  ${RED}FAIL${NC} agent $AGENT NOT listed in MANUAL.md"
+    echo -e "  ${RED}FAIL${NC} agent $AGENT NOT listed in docs/MANUAL.md"
     FAIL=$((FAIL + 1))
   fi
 done
@@ -92,7 +91,7 @@ echo "=== Plugin-qualified agent dispatch (ID-905) ==="
 # The plugin registers every agents/*.md under `kit:<name>` only; a bare
 # `subagent_type`/dispatch name falls through to a stale ~/.claude/agents copy
 # (or fails outright, anthropics/claude-code#33689). Every dispatchable
-# reference in commands/, skills/, agents/, and MANUAL.md must therefore be
+# reference in commands/, skills/, agents/, and docs/MANUAL.md must therefore be
 # `kit:`-qualified. Legitimately bare contexts are whitelisted in the scan:
 # file paths (`agents/<name>`, `<name>.md`), `name:`/`generated-by:` frontmatter,
 # and the `advisor` gate-ledger PHASE (record/outcome lines, `advisor`
@@ -124,7 +123,7 @@ FILENAME ~ /(^|\/)agents\// && /^name:/ { next }
       print FILENAME ":" FNR ": bare " name
     }
   }
-}' "$KIT_DIR"/commands/*.md "$KIT_DIR"/skills/*/*.md "$KIT_DIR"/agents/*.md "$KIT_DIR"/MANUAL.md)
+}' "$KIT_DIR"/commands/*.md "$KIT_DIR"/skills/*/*.md "$KIT_DIR"/agents/*.md "$KIT_DIR"/docs/MANUAL.md)
 TOTAL=$((TOTAL + 1))
 if [ -z "$BARE_AGENT_HITS" ]; then
   echo -e "  ${GREEN}PASS${NC} all agent references outside whitelist contexts are kit:-qualified (ID-905)"

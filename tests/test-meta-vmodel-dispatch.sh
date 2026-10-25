@@ -12,9 +12,9 @@ echo "=== V-model lens, convergence, and inventory parity (SPEC-031) ==="
 # ============================================================
 
 # (a) No "8 (workflow|lifecycle )?phases" string in operating surfaces.
-# Scope: docs/, commands/, WORKFLOW.md, README.md, MANUAL.md, AGENTS.md --
+# Scope: docs/, commands/, WORKFLOW.md, README.md, docs/MANUAL.md, AGENTS.md --
 # EXCLUDING docs/specs/, docs/decisions/, docs/research/, docs/retro/, docs/handoff/,
-# docs/CHANGELOG.md (AMEND-001: archive dirs / the changelog are point-in-time and may
+# CHANGELOG.md (AMEND-001: archive dirs / the changelog are point-in-time and may
 # reference old counts -- a retro or a changelog entry that documents the fix must be
 # free to quote the forbidden string; only live surfaces are checked).
 # git ls-files, never a filesystem walk (SPEC-029's dead-prefix scan already
@@ -25,7 +25,7 @@ echo "=== V-model lens, convergence, and inventory parity (SPEC-031) ==="
 # point-in-time artifact that legitimately quotes the very string it fixed
 # (like retro/handoff), so it is not a live operating surface.
 PHASES_8_HITS=$(cd "$KIT_DIR" && git ls-files \
-      'docs/*' 'commands/*' 'WORKFLOW.md' 'README.md' 'MANUAL.md' 'AGENTS.md' \
+      'docs/*' 'commands/*' 'WORKFLOW.md' 'README.md' 'docs/MANUAL.md' 'AGENTS.md' \
     | grep -vE '^(docs/specs/|docs/decisions/|docs/research/|docs/retro/|docs/handoff/|docs/verification/|docs/CHANGELOG\.md)' \
     | xargs grep -In -E "8 (workflow|lifecycle )?phases" 2>/dev/null | head -1)
 TOTAL=$((TOTAL + 1))
@@ -130,14 +130,14 @@ while IFS= read -r entry; do
   fi
 done <<< "$HANDS_OFF_ENTRIES"
 
-# (d) The command/agent V-phase inventory table in docs/architecture.md has a row
+# (d) The command/agent V-phase inventory table in docs/reference/architecture.md has a row
 # count equal to the live file count (ls commands/*.md + ls agents/*.md).
 # Implementation note: rows are counted from the inventory table only, delimited
 # between "## Command and agent V-phase inventory" and "## State model" (the next
 # ## heading after the table). Only pipe-prefixed data rows are counted (excluding
 # the header row and separator row identified by "| Entry" and "|---").
 ARCH_TABLE_ROWS=$(sed -n '/^## Command and agent V-phase inventory/,/^## /p' \
-  "$KIT_DIR/docs/architecture.md" \
+  "$KIT_DIR/docs/reference/architecture.md" \
   | grep "^|" | grep -v "^| Entry\|^|---" | wc -l | tr -d ' ')
 CMD_COUNT=$(ls "$KIT_DIR/commands/"*.md 2>/dev/null | wc -l | tr -d ' ')
 AGT_COUNT=$(ls "$KIT_DIR/agents/"*.md 2>/dev/null | wc -l | tr -d ' ')
@@ -154,7 +154,7 @@ HOOK_COUNT=$(ls "$KIT_DIR/hooks/"*.sh 2>/dev/null | wc -l | tr -d ' ')
 # SG-10 (harness-loop): the roster inventories stay pinned to live counts , the agents table sat
 # at 11 rows against 25 files because only the layout number was pinned. Since the README became a
 # routing page, the rosters live in docs/MANUAL.md (commands: one `### /kit:<name>` section each;
-# agents and skills: a table row each) and docs/hooks.md (every hook file named). Both sides are
+# agents and skills: a table row each) and docs/reference/hooks.md (every hook file named). Both sides are
 # computed; a new agent/command/skill/hook without an entry fails here.
 SKILL_COUNT=$(ls "$KIT_DIR/skills/"*/SKILL.md 2>/dev/null | wc -l | tr -d ' ')
 MANUAL_DOC="$KIT_DIR/docs/MANUAL.md"
@@ -170,16 +170,16 @@ MANUAL_SKILL_ROWS=$(sed -n '/^## Skills (Claude-triggered)/,/^## /p' "$MANUAL_DO
 MANUAL_CMD_ROWS=$(grep -c '^### `/kit:' "$MANUAL_DOC")
 HOOKS_MISSING=""
 for hf in "$KIT_DIR"/hooks/*.sh; do
-  grep -qF "$(basename "$hf" .sh)" "$KIT_DIR/docs/hooks.md" || HOOKS_MISSING="$HOOKS_MISSING $(basename "$hf")"
+  grep -qF "$(basename "$hf" .sh)" "$KIT_DIR/docs/reference/hooks.md" || HOOKS_MISSING="$HOOKS_MISSING $(basename "$hf")"
 done
 assert_eq "MANUAL agents table rows == live agents ($MANUAL_AGT_ROWS == $AGT_COUNT)" "$AGT_COUNT" "$MANUAL_AGT_ROWS"
 assert_eq "MANUAL skills table rows == live skills ($MANUAL_SKILL_ROWS == $SKILL_COUNT)" "$SKILL_COUNT" "$MANUAL_SKILL_ROWS"
 assert_eq "MANUAL command sections == live commands ($MANUAL_CMD_ROWS == $CMD_COUNT)" "$CMD_COUNT" "$MANUAL_CMD_ROWS"
-assert_eq "docs/hooks.md names every hook file (missing:${HOOKS_MISSING:- none})" "" "$HOOKS_MISSING"
+assert_eq "docs/reference/hooks.md names every hook file (missing:${HOOKS_MISSING:- none})" "" "$HOOKS_MISSING"
 
 # No-counts policy: the architecture.md headline tally is retired the same way.
 assert_eq "architecture.md carries no headline roster tally" "0" \
-  "$(grep -cE '^Total: [0-9]+ commands' "$KIT_DIR/docs/architecture.md" | tr -d ' ')"
+  "$(grep -cE '^Total: [0-9]+ commands' "$KIT_DIR/docs/reference/architecture.md" | tr -d ' ')"
 
 # The MANUAL five-stage table (moved out of the README) covers every module the registry assigns a
 # stage (ADR-0034 decision 3 rendered without omissions; the two tables share one truth). "leg"
@@ -218,7 +218,7 @@ fi
 
 # (b) The un-nerf is cross-referenced from the live policy + map docs (not silently
 # broken): PHILOSOPHY and architecture.md both cite ADR-0019.
-for doc in "docs/PHILOSOPHY.md" "docs/architecture.md"; do
+for doc in "docs/reference/PHILOSOPHY.md" "docs/reference/architecture.md"; do
   TOTAL=$((TOTAL + 1))
   if grep -q "ADR-0019" "$KIT_DIR/$doc" 2>/dev/null; then
     echo -e "  ${GREEN}PASS${NC} $doc cross-references ADR-0019 (un-nerf recorded)"
@@ -234,7 +234,7 @@ done
 # form is the cross-goal fan-out carve-out. Scoped to PHILOSOPHY.md (the live policy);
 # specs/ADRs that QUOTE the old wording to document the supersession are exempt.
 TOTAL=$((TOTAL + 1))
-if grep -q "not competing with agent runtimes" "$KIT_DIR/docs/PHILOSOPHY.md" 2>/dev/null; then
+if grep -q "not competing with agent runtimes" "$KIT_DIR/docs/reference/PHILOSOPHY.md" 2>/dev/null; then
   echo -e "  ${RED}FAIL${NC} stale C1 ban ('not competing with agent runtimes') still live in PHILOSOPHY.md"
   FAIL=$((FAIL + 1))
 else
@@ -324,7 +324,7 @@ fi
 # (f) dispatch.md is registered in the human-facing inventories (MANUAL command section + FEATURES).
 TOTAL=$((TOTAL + 1))
 if grep -q '^### `/kit:dispatch`' "$KIT_DIR/docs/MANUAL.md" 2>/dev/null \
-   && grep -q 'kit:dispatch' "$KIT_DIR/docs/FEATURES.md" 2>/dev/null; then
+   && grep -q 'kit:dispatch' "$KIT_DIR/docs/reference/FEATURES.md" 2>/dev/null; then
   echo -e "  ${GREEN}PASS${NC} /kit:dispatch registered in the MANUAL command inventory + the FEATURES registry (SPEC-032)"
   PASS=$((PASS + 1))
 else
@@ -427,7 +427,7 @@ if [ -x "$KIT_DIR/lib/board/board.sh" ] && [ -x "$KIT_DIR/lib/board/parse-board.
    && grep -qF 'backlog.sh' "$KIT_DIR/lib/board/board.sh" \
    && grep -qF 'lib/board/board.sh' "$KIT_DIR/docs/MANUAL.md" \
    && grep -qF 'lib/board/parse-board.sh' "$KIT_DIR/docs/MANUAL.md" \
-   && grep -qF 'board.sh' "$KIT_DIR/docs/architecture.md"; then
+   && grep -qF 'board.sh' "$KIT_DIR/docs/reference/architecture.md"; then
   echo -e "  ${GREEN}PASS${NC} cockpit board wired: lib/board/board.sh + lib/board/parse-board.sh executable, delegates to backlog.sh, doc-impact map updated (SPEC-146)"
   PASS=$((PASS + 1))
 else
@@ -443,7 +443,7 @@ if [ -x "$KIT_DIR/lib/board/board-mirror.sh" ] \
    && grep -qF 'mirror) shift; cmd_mirror "$@" ;;' "$KIT_DIR/lib/board/board.sh" \
    && grep -qF 'status) shift; cmd_status "$@" ;;' "$KIT_DIR/lib/board/board.sh" \
    && grep -qF 'lib/board/board-mirror.sh' "$KIT_DIR/docs/MANUAL.md" \
-   && grep -qF 'board-mirror.sh' "$KIT_DIR/docs/architecture.md"; then
+   && grep -qF 'board-mirror.sh' "$KIT_DIR/docs/reference/architecture.md"; then
   echo -e "  ${GREEN}PASS${NC} board-bridge mirror wired: lib/board/board-mirror.sh executable, board.sh dispatches mirror+status, doc-impact map updated (SPEC-147)"
   PASS=$((PASS + 1))
 else
@@ -459,7 +459,7 @@ TOTAL=$((TOTAL + 1))
 if [ -x "$KIT_DIR/lib/board/board-writeback.sh" ] \
    && grep -qF 'writeback) shift; cmd_writeback "$@" ;;' "$KIT_DIR/lib/board/board.sh" \
    && grep -qF 'lib/board/board-writeback.sh' "$KIT_DIR/docs/MANUAL.md" \
-   && grep -qF 'board-writeback.sh' "$KIT_DIR/docs/architecture.md"; then
+   && grep -qF 'board-writeback.sh' "$KIT_DIR/docs/reference/architecture.md"; then
   echo -e "  ${GREEN}PASS${NC} board-bridge writeback wired: lib/board/board-writeback.sh executable, board.sh dispatches writeback, doc-impact map updated (SPEC-149)"
   PASS=$((PASS + 1))
 else
@@ -548,7 +548,7 @@ else
 fi
 
 TOTAL=$((TOTAL + 1))
-if grep -qF 'Skill routing: what belongs in the kit' "$KIT_DIR/docs/PHILOSOPHY.md"; then
+if grep -qF 'Skill routing: what belongs in the kit' "$KIT_DIR/docs/reference/PHILOSOPHY.md"; then
   echo -e "  ${GREEN}PASS${NC} PHILOSOPHY carries the skill-routing rule (SPEC-059)"
   PASS=$((PASS + 1))
 else

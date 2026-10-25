@@ -100,4 +100,4 @@ A `🔴 **Needs you:**` block lists lettered actions instead. Each one opens wit
 - [gates-and-proof.md](gates-and-proof.md) covers the ship gate that checks a push before `land`.
 - [spine.md](spine.md) shows where wrap sits at the end of the loop.
 - [adopt.md](adopt.md) covers `bin/wrap adopt` for landing an adoption PR.
-- `docs/wrap.md` is the verb lookup; `commands/wrap.md` is the full playbook.
+- `docs/reference/wrap.md` is the verb lookup; `commands/wrap.md` is the full playbook.

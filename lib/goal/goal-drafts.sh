@@ -5,7 +5,7 @@
 # candidate work, gitignored and per-machine. They are NOT the
 # cross-session running-goal REGISTRY (.git/kit-goals/<slug>.goal); the
 # slug is the shared key, draft = candidate work, registry = the run-time lock.
-# See docs/architecture.md "## State model" for the two stores side by side.
+# See docs/reference/architecture.md "## State model" for the two stores side by side.
 #
 # This helper gives drafts a lifecycle so the directory stops being a graveyard:
 # a draft is "drafted" while its work is live, and is ARCHIVED (moved, never

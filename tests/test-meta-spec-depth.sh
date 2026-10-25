@@ -173,7 +173,7 @@ else
 fi
 
 TOTAL=$((TOTAL + 1))
-if grep -qF '## State model' "$KIT_DIR/docs/architecture.md" 2>/dev/null; then
+if grep -qF '## State model' "$KIT_DIR/docs/reference/architecture.md" 2>/dev/null; then
   echo -e "  ${GREEN}PASS${NC} architecture.md has the State model section (SPEC-005)"
   PASS=$((PASS + 1))
 else
@@ -225,7 +225,7 @@ else
   FAIL=$((FAIL + 1))
 fi
 TOTAL=$((TOTAL + 1))
-if grep -qF 'Loop boundaries' "$KIT_DIR/docs/PHILOSOPHY.md" 2>/dev/null; then
+if grep -qF 'Loop boundaries' "$KIT_DIR/docs/reference/PHILOSOPHY.md" 2>/dev/null; then
   echo -e "  ${GREEN}PASS${NC} PHILOSOPHY has the bounded/unbounded loop note (SPEC-006)"
   PASS=$((PASS + 1))
 else
@@ -256,7 +256,7 @@ else
 fi
 
 # SPEC-004: the absorption ritual + the /kit:absorb command exist with their contract.
-ABS_DOC="$KIT_DIR/docs/ABSORPTION.md"
+ABS_DOC="$KIT_DIR/docs/absorption/README.md"
 for HEADING in "## The external lane" "## Interest areas" "## Seed list" "## The adoption rubric" "## The gate"; do
   TOTAL=$((TOTAL + 1))
   if grep -qF "$HEADING" "$ABS_DOC" 2>/dev/null; then
@@ -267,7 +267,7 @@ for HEADING in "## The external lane" "## Interest areas" "## Seed list" "## The
     FAIL=$((FAIL + 1))
   fi
 done
-for ABSFILE in "docs/ABSORPTION.md" "docs/absorption/TEMPLATE.md" "docs/absorption/README.md" "commands/absorb.md"; do
+for ABSFILE in "docs/absorption/README.md" "docs/absorption/TEMPLATE.md" "docs/absorption/README.md" "commands/absorb.md"; do
   TOTAL=$((TOTAL + 1))
   if [ -f "$KIT_DIR/$ABSFILE" ]; then
     echo -e "  ${GREEN}PASS${NC} $ABSFILE exists (SPEC-004)"

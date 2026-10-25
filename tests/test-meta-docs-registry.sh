@@ -219,7 +219,7 @@ fi
 # SPECIFYING) so the model stays legible; brittle-proofed via the full-row regex.
 # (This guard moved here when the operating-layer-vision doc was folded into architecture.md.)
 TOTAL=$((TOTAL + 1))
-if grep -qE '\| BUILDING \|.*amend the spec.*\| SPECIFYING' "$KIT_DIR/docs/architecture.md" 2>/dev/null; then
+if grep -qE '\| BUILDING \|.*amend the spec.*\| SPECIFYING' "$KIT_DIR/docs/reference/architecture.md" 2>/dev/null; then
   echo -e "  ${GREEN}PASS${NC} architecture.md has the BUILDING -> SPECIFYING amend row (SPEC-027)"
   PASS=$((PASS + 1))
 else
@@ -279,20 +279,20 @@ echo ""
 echo "=== SPEC-085: operator doc sync (ID-070) ==="
 # ============================================================
 MAN85="$KIT_DIR/docs/MANUAL.md"
-HOOKS85="$KIT_DIR/docs/hooks.md"
-# parity: the rosters live in MANUAL (command sections, agents) and docs/hooks.md (hooks) since the
+HOOKS85="$KIT_DIR/docs/reference/hooks.md"
+# parity: the rosters live in MANUAL (command sections, agents) and docs/reference/hooks.md (hooks) since the
 # README became a routing page; ROW counts only (summary-header numbers retired by the no-counts
 # policy 2026-08-10)
 HF=$(ls "$KIT_DIR"/hooks/*.sh | wc -l | tr -d ' ')
 HMISS=""
 for hf in "$KIT_DIR"/hooks/*.sh; do grep -qF "$(basename "$hf" .sh)" "$HOOKS85" || HMISS="$HMISS $(basename "$hf")"; done
-assert_eq "docs/hooks.md names every hook file ($HF files; missing:${HMISS:- none})" "" "$HMISS"
+assert_eq "docs/reference/hooks.md names every hook file ($HF files; missing:${HMISS:- none})" "" "$HMISS"
 CF=$(ls "$KIT_DIR"/commands/*.md | wc -l | tr -d ' ')
 CROWS=$(grep -cE '^### `/kit:' "$MAN85" || true)
 assert_eq "MANUAL command sections == command files ($CF)" "$CF" "$CROWS"
 # content: the hard hook is in the public table; the two missing commands exist
 RC=0; grep -q '^| ship-gate ' "$HOOKS85" || RC=1
-assert_eq "docs/hooks.md table carries ship-gate" 0 $RC
+assert_eq "docs/reference/hooks.md table carries ship-gate" 0 $RC
 RC=0; grep -q '^### `/kit:adopt`' "$MAN85" && grep -q '^### `/kit:test-plan-review-team`' "$MAN85" || RC=1
 assert_eq "MANUAL carries adopt + test-plan-review-team sections" 0 $RC
 RC=0; sed -n '/^## Hooks (no invocation)/,/^## /p' "$MAN85" | grep -A2 'context-readiness' | grep -q 'board' || RC=1
@@ -302,7 +302,7 @@ assert_eq "MANUAL context-readiness note is board-aware (SPEC-083)" 0 $RC
 echo ""
 echo "=== Feature-registry freshness pin (SPEC-219) ==="
 # ============================================================
-# docs/FEATURES.md is a generated projection (lib/registry/feature-registry.sh).
+# docs/reference/FEATURES.md is a generated projection (lib/registry/feature-registry.sh).
 # Same class as the derived-count pins above: regenerate and diff against the
 # committed copy; ANY drift (a feature added/removed/renamed, a description or
 # wiring change) fails here until the registry is regenerated.
@@ -313,8 +313,8 @@ echo "=== Feature-registry freshness pin (SPEC-219) ==="
 # `check` keeps the bytes of its own generator run (FEATURE_REGISTRY_KEEP), which is the
 # first run of the determinism pin below: two runs total, not three.
 REG_TMP=$(mktemp "${TMPDIR:-/tmp}/kit.XXXXXX") || exit 1
-FEATURE_REGISTRY_KEEP="$REG_TMP" bash "$KIT_DIR/lib/registry/feature-registry.sh" check "$KIT_DIR/docs/FEATURES.md" >/dev/null 2>&1
-assert_true "docs/FEATURES.md is fresh (check verb, SPEC-219)" $?
+FEATURE_REGISTRY_KEEP="$REG_TMP" bash "$KIT_DIR/lib/registry/feature-registry.sh" check "$KIT_DIR/docs/reference/FEATURES.md" >/dev/null 2>&1
+assert_true "docs/reference/FEATURES.md is fresh (check verb, SPEC-219)" $?
 # AC-1 determinism pin (review finding): a second run must be byte-identical, so a
 # future edit that reintroduces nondeterminism (locale, glob order, a timestamp)
 # fails HERE even when the committed file was regenerated in the same PR.
@@ -326,7 +326,7 @@ assert_true "feature-registry generator is deterministic (double run byte-identi
 # show `-`; audit-scanner is dispatched by the doc-drift + topology-drift + ci-drift skills
 # (cap_list caps the shown names at 3 alphabetically then "+N" for the rest, so a fourth
 # dispatcher pushes the last name into the overflow count rather than dropping it silently).
-ASROW=$(grep -E '^\| `audit-scanner` ' "$KIT_DIR/docs/FEATURES.md")
+ASROW=$(grep -E '^\| `audit-scanner` ' "$KIT_DIR/docs/reference/FEATURES.md")
 RC=0; { { trap '' PIPE; echo "$ASROW" 2>/dev/null || :; } | grep -q 'doc-drift (skill)' && { trap '' PIPE; echo "$ASROW" 2>/dev/null || :; } | grep -q 'ci-drift (skill)' && { trap '' PIPE; echo "$ASROW" 2>/dev/null || :; } | grep -qE '\+[0-9]+ *\|'; } || RC=1
 assert_eq "audit-scanner dispatched-by names doc-drift + ci-drift, overflow count covers the rest" 0 $RC
 rm -f "$REG_TMP" "$REG_TMP2"
@@ -388,7 +388,7 @@ assert_true "review.md reads test state from the verification log (static-judgme
   "$(grep -q 'docs/verification/' "$KIT_DIR/commands/review.md" && echo 0 || echo 1)"
 
 assert_true "PHILOSOPHY records the execution-backed-verify bend" \
-  "$(grep -q 'docs/verification/' "$KIT_DIR/docs/PHILOSOPHY.md" && echo 0 || echo 1)"
+  "$(grep -q 'docs/verification/' "$KIT_DIR/docs/reference/PHILOSOPHY.md" && echo 0 || echo 1)"
 
 # ---- proof of done: the negative control (a green check is only proof if it can fail) ----
 
@@ -451,7 +451,7 @@ assert_true "convention documents the enforcement gate + override" \
   "$(grep -qi 'ship/merge gate\|enforcement' "$KIT_DIR/docs/verification/README.md" && grep -q 'proof-ledger' "$KIT_DIR/docs/verification/README.md" && echo 0 || echo 1)"
 
 assert_true "PHILOSOPHY records the deferred enforcement hook is now built" \
-  "$(grep -q 'proof-ledger' "$KIT_DIR/docs/PHILOSOPHY.md" && echo 0 || echo 1)"
+  "$(grep -q 'proof-ledger' "$KIT_DIR/docs/reference/PHILOSOPHY.md" && echo 0 || echo 1)"
 
 # ---- single-source numbers: borrowed from the experiment sibling (no hand-typed drift) ----
 

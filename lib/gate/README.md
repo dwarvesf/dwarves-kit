@@ -8,7 +8,7 @@ Three things here can actually stop you: the lane gate (`gate-ledger.sh`), the p
 (`proof-ledger.sh`) and the dispatch gate (`dispatch-gate.sh`). `hooks/ship-gate.sh` also holds
 a few rules of its own (default-branch push, DO NOT SHIP verdict, fixture identities, the
 hard-path floor). Everything else here observes, classifies, or nudges. Which claims are real
-blockers, and what enforces each, is `docs/hard-rules.tsv`.
+blockers, and what enforces each, is `docs/reference/hard-rules.tsv`.
 
 ```
      kit.toml [lane.<name>] (lane-data.sh)       the branch diff
