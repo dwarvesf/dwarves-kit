@@ -18,7 +18,7 @@ test-harvest-parity:           171 passed, 0 failed
 test_dashboard.py:             PASSED 13/13
 Verdict: PASS
 ```
-A normal push of a clean adopted repo still passes the gate: `tests/test-ship-gate-*.sh` and `tests/test-registry-freshness-guard.sh` (cases 6, 7, 8, 10) were green in `bash tests/run-all.sh --changed --time` (93 suites).
+A normal push of a clean adopted repo still passes the gate: `tests/test-ship-gate-*.sh` and `tests/test-registry-freshness-guard.sh` (cases 6, 7, 8, 10) were green in `bash tests/run-all.sh --changed --time` (95 suites, all passed).
 
 ## Negative control
 ```
