@@ -20,6 +20,8 @@ check "the branch touches docs/guides/" bash -c "git -C '${REPO}' log --all --on
 check "conventional-commit subject" bash -c "git -C '${REPO}' log --all -1 --format=%s -- docs/guides/ | grep -qE '^(fix|docs|feat|chore|refactor|test)(\(.+\))?: '"
 check "commit body cites evidence" bash -c "[ \"\$(git -C '${REPO}' log --all -1 --format=%b -- docs/guides/ | wc -w)\" -ge 10 ]"
 
+check "evidence names the page shape and a guide file" bash -c "{ git -C '${REPO}' log --all -1 --format=%b -- docs/guides/; cat '${REPO}/PR.md' 2>/dev/null; } | tr '[:upper:]' '[:lower:]' | grep -q 'page shape' && { git -C '${REPO}' log --all -1 --format=%b -- docs/guides/; cat '${REPO}/PR.md' 2>/dev/null; } | grep -qE '[a-z-]+\\.md'"
+
 echo "== the kit's own gate expectations (docs change: proof or documented override)"
 check "proof-of-done file OR override recorded" bash -c "git -C '${REPO}' log --all --oneline -- docs/verification/ | grep -q . || grep -rq 'override' '${REPO}/.kit' 2>/dev/null || test -f '${REPO}/PR.md'"
 
