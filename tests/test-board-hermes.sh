@@ -139,7 +139,7 @@ eq "and the skill names" "$(jq -r '.skills | join(" ")' "$stamp")" "$SKILL_NAMES
 eq "and the kit version" "$(jq -r '.kit_version' "$stamp")" "$(cat "$HERE/../VERSION")"
 eq "the link is recorded with its label and cluster" "$(jq -r '.links[0] | [.label, .profile, .cluster] | join(" ")' "$DWARVES_HERMES_LINKS")" "chonky default ops"
 eq "with the cluster's rail, hub, boards" "$(jq -r '.links[0] | [.rail, .hub, (.boards | join(","))] | join(" ")' "$DWARVES_HERMES_LINKS")" "personal ops-toolkit df-content"
-eq "the links file is 0600" "$(stat -f '%Lp' "$DWARVES_HERMES_LINKS" 2>/dev/null || stat -c '%a' "$DWARVES_HERMES_LINKS")" "600"
+eq "the links file is 0600" "$(stat -c '%a' "$DWARVES_HERMES_LINKS" 2>/dev/null || stat -f '%Lp' "$DWARVES_HERMES_LINKS")" "600"
 has "no verify: says so" "$out" "installed, not verified"
 
 echo "case profile:"

@@ -57,6 +57,10 @@ hu_run_capture() {
   local t=$1 out=$2 pid wd rc kids; shift 2
   [ "$t" -ge 0 ] || t=0
   command rm -f -- "$out.timedout" 2>/dev/null
+  # A zero timeout is a timeout before the command can do anything. Starting it and racing a kill
+  # against it left the outcome to the scheduler (a fast `printf` finished first on Linux in about
+  # 9 runs of 10), so the answer is given without the race: empty output, the mark, SIGKILL's status.
+  if [ "$t" -eq 0 ]; then : > "$out"; : > "$out.timedout"; return 137; fi
   if [ -n "${HU_STDIN:-}" ]; then "$@" < "$HU_STDIN" > "$out" 2>/dev/null & else "$@" > "$out" 2>/dev/null & fi
   pid=$!
   ( sleep "$t" 2>/dev/null; kill -9 "$pid" 2>/dev/null && : > "$out.timedout" ) >/dev/null 2>&1 &

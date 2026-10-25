@@ -30,7 +30,7 @@ real_stat=$(command -v stat)
 cat > "$T/gnu/stat" <<EOS
 #!/bin/sh
 # answers like GNU stat: -c %Y is the mtime; -f is a filesystem query that prints lines and exits 1
-if [ "\$1" = "-c" ] && [ "\$2" = "%Y" ]; then exec "$real_stat" -f %m "\$3" 2>/dev/null || exec "$real_stat" -c %Y "\$3"; fi
+if [ "\$1" = "-c" ] && [ "\$2" = "%Y" ]; then "$real_stat" -c %Y "\$3" 2>/dev/null && exit 0; exec "$real_stat" -f %m "\$3"; fi
 printf '  File: "%s"\n    ID: 0 Namelen: 255 Type: ext2\n' "\$3"; exit 1
 EOS
 chmod +x "$T/gnu/stat"
@@ -56,6 +56,12 @@ check "hu_run_capture returns a non-zero status" "$rc" 3
 start=$(date +%s); hu_run_capture 1 "$T/out3" sh -c 'sleep 5; echo late'; rc=$?; took=$(( $(date +%s) - start ))
 check "hu_run_capture kills a command that overruns" "$([ "$rc" -ne 0 ] && [ "$took" -lt 4 ] && [ ! -s "$T/out3" ] && echo killed)" killed
 check "hu_run_capture marks a timed-out run" "$([ -e "$T/out3.timedout" ] && echo marked)" marked
+survived=0
+for n in 0 -3; do for i in 1 2 3 4 5 6 7 8 9 10; do
+  hu_run_capture "$n" "$T/out0" sh -c 'printf late'; rc=$?
+  [ "$rc" -ne 0 ] && [ ! -s "$T/out0" ] && [ -e "$T/out0.timedout" ] || survived=$((survived + 1))
+done; done
+check "hu_run_capture with a zero or negative timeout always times out (20 runs)" "$survived" 0
 hu_run_capture 5 "$T/out3b" sh -c 'echo ok'
 check "hu_run_capture leaves no mark on a run that finished" "$([ -e "$T/out3b.timedout" ] && echo marked || echo clean)" clean
 hu_run_capture 1 "$T/out3c" sh -c 'echo partial; sleep 4'

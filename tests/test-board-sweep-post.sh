@@ -131,7 +131,7 @@ case "$stored" in
   *) ok "long token shape redacted from the stored reason";;
 esac
 [ -n "$stored" ] && ok "a (scrubbed) reason was still stashed" || bad "reason lost entirely by redaction"
-perm="$(stat -f %Lp "$WORK/state-redact.json" 2>/dev/null || stat -c %a "$WORK/state-redact.json" 2>/dev/null)"
+perm="$(stat -c %a "$WORK/state-redact.json" 2>/dev/null || stat -f %Lp "$WORK/state-redact.json" 2>/dev/null)"
 [ "$perm" = "600" ] && ok "state file written 0600" || bad "state file perms $perm (want 600)"
 
 echo "case embed-budget (8 fat repos on one rail -> total <= 6000, summary field):"

@@ -135,7 +135,7 @@ printf 'ERROR notion: 401 unauthorized\n' | rec crew 1 "$NOW"
 eq "failed sync keeps its error line" "$(jq -r '.sync.crew.errors[0]' "$HS")" 'ERROR notion: 401 unauthorized'
 printf 'mirror: plan 0 ops\n' | python3 "$HEALTH" record --leg mirror --rc 0 --now "$NOW" --health-state-file "$HS"
 eq "mirror leg recorded" "$(jq -c '[.mirror.rc, .mirror.skipped]' "$HS")" '[0,false]'
-eq "state file is 0600" "$(stat -f '%Lp' "$HS" 2>/dev/null || stat -c '%a' "$HS")" '600'
+eq "state file is 0600" "$(stat -c '%a' "$HS" 2>/dev/null || stat -f '%Lp' "$HS")" '600'
 printf 'x\n' | python3 "$HEALTH" record --rc 0 --health-state-file "$HS" 2>/dev/null
 eq "record without --repo is a usage error" "$?" '64'
 

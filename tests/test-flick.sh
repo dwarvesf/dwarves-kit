@@ -706,7 +706,7 @@ check "decide: zero requests reach the provider" "$([ "$(stub_count)" = 0 ]; ech
 check "the log reason is word_gate and the name is not logged" "$([ "$(jq -r .reason "$LOG")" = word_gate ] && ! grep -q "$WGNAME" "$LOG"; echo $?)"
 
 echo "== denial reasons: each layer logs its own tag, never text =="
-cfg backend=jev points=wrap-7b deny_words=acme word_gate=on
+cfg backend=jev points=wrap-7b deny_words=acme word_gate=on dict_file="$WG_DICT"
 stub_reset; rm -f "$LOG"
 out="$(decide_run ok "$(req "$(q p1 backlog-flip-script board new)" "$(q p2 AB board)" "$(q p3 acme-secret-plan board)" "$(q p4 backlog-flip-script zzprivatetool)" "$(q p5 "$WGNAME-sync" board)")")"
 jqt "reasons batch: one sent, four denied" "$out" '.counts == {"answered":1,"denied":4,"error":0}'

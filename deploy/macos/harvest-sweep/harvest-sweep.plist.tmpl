@@ -10,7 +10,8 @@
   the bare-name launcher itself (no .sh, no /bin/bash wrapper). The launcher's
   own start/end lines land in <label>.log next to launchd's stdout/stderr.
 
-  Install:   bash deploy/macos/harvest-sweep/install --apply
+  Install:   bash deploy/macos/harvest-sweep/install with its apply flag (two hyphens
+             are illegal inside an XML comment, so the flag is spelled out here)
   Status:    launchctl print gui/$(id -u)/<label>
   Run now:   launchctl kickstart -k gui/$(id -u)/<label>
   Unload:    launchctl bootout gui/$(id -u)/<label>
