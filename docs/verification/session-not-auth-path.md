@@ -18,17 +18,26 @@ The kit's own `.kit.toml` now exempts `lib/session/**` from the `auth` hard path
 | `lib/session.ts`, `src/auth/login.ts`, `app/session/store.ts`, `lib/other/session/x.sh` | `full auth` |
 | `lib/session/.env`, `lib/session/credentials.json` | `full secret` |
 
-## Red then green
+## Green run
 
 ```
 Command: bash tests/test-lanes-data.sh kit-own-session-not-auth
-master .kit.toml (no entry), Exit 1:
-FAIL kit-own-session-not-auth:  [lib/session/observe/bin/session-observe => 'full auth: lib/session/observe/bin/session-observe'] [lib/session/recall/lib/final.sh => 'full auth: lib/session/recall/lib/final.sh']
-this branch, Exit 0:
+Exit: 0
+Output:
 PASS kit-own-session-not-auth
+Verdict: PASS
 ```
 
-The whole file `bash tests/test-lanes-data.sh` also runs with no FAIL line.
+Red on master (same command, `.kit.toml` without the entry):
+
+```
+Command: bash tests/test-lanes-data.sh kit-own-session-not-auth
+Exit: 1
+Output:
+FAIL kit-own-session-not-auth:  [lib/session/observe/bin/session-observe => 'full auth: lib/session/observe/bin/session-observe'] [lib/session/recall/lib/final.sh => 'full auth: lib/session/recall/lib/final.sh']
+```
+
+The whole file `bash tests/test-lanes-data.sh` also ran with no FAIL line.
 
 ## Negative control
 
