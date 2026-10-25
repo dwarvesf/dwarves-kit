@@ -154,6 +154,9 @@ X'
 engages "backtick near a quoted <<X"        'echo `true` "<<X"
 gh pr create
 X'
+engages "backtick holds a nested quote"     'echo "`echo "<<X"`"
+gh pr create
+X'
 engages "doubt after an earlier heredoc"    "cat <<A
 body
 A
