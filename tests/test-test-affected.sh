@@ -252,7 +252,8 @@ has   "$out" "PASS tests/test-a.sh" "unreadable cache runs the test"
 hasnt "$out" "CACHED" "unreadable cache skips nothing"
 
 echo "== timeouts: per-suite data file, env override, TIMEOUT is not FAIL =="
-mkdir -p "$W/tabin" "$W/lib/telemetry"
+mkdir -p "$W/tabin" "$W/lib/telemetry" "$W/tests/lib"
+cp "$KIT_DIR/tests/lib/timeout.sh" "$W/tests/lib/"
 cp "$TA" "$W/tabin/test-affected"; cp "$KIT_DIR/lib/telemetry/kit-log-dir.sh" "$W/lib/telemetry/" 2>/dev/null || true
 TA2="$W/tabin/test-affected"
 git checkout -q -- . 2>/dev/null || true

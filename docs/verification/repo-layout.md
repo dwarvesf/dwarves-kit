@@ -121,7 +121,7 @@ Command: bash tests/test-no-personal-paths.sh   (clean copy of origin/master)
 Exit: 1
 Output:
 NOT ok - operator path/hostname still present:
-docs/verification/front-door-rewrite.md:91:  warning: templates not found in /Users/tieubao/.git_template
+docs/verification/front-door-rewrite.md:91:  warning: templates not found in ~/.git_template
 
 Passed: 2 / 3
 1 test(s) failed.
@@ -133,7 +133,7 @@ Command: bash tests/test-no-personal-paths.sh   (this branch)
 Exit: 1
 Output:
 NOT ok - operator path/hostname still present:
-docs/verification/front-door-rewrite.md:91:  warning: templates not found in /Users/tieubao/.git_template
+docs/verification/front-door-rewrite.md:91:  warning: templates not found in ~/.git_template
 
 Passed: 2 / 3
 1 test(s) failed.
@@ -185,7 +185,7 @@ Verdict: PASS
 Command: bash lib/gate/negctl.sh "$PWD" "bash tests/test-registry-freshness-guard.sh" "sed ... hooks/ship-gate.sh"   (restore docs/reference/FEATURES.md -> docs/FEATURES.md)
 Exit: 0
 Output:
-  warning: templates not found in /Users/tieubao/.git_template
+  warning: templates not found in ~/.git_template
   ok - a repo-supplied doc-projection checker is not executed by the gate
   ok - an install too old to scan another tree skips the arm with a note (exit 0)
   ---
