@@ -67,7 +67,9 @@ if ! grep -q '^harvest-sweep: sweep\.lock held' "$SWEEP_ERR"; then
   report="-"
   newest="$(status_report)"
   if [ "$newest" != "none" ] && [ -f "$newest" ]; then
-    mtime="$(stat -f %m "$newest" 2>/dev/null || echo 0)"
+    # GNU stat first: on Linux `stat -f %m` is a filesystem query that prints several lines
+    mtime="$(stat -c %Y "$newest" 2>/dev/null || stat -f %m "$newest" 2>/dev/null || echo 0)"
+    case "$mtime" in ''|*[!0-9]*) mtime=0 ;; esac
     [ "$mtime" -ge "$sweep_started" ] && report="$newest"
   fi
   BRIDGE="$HOME/.config/harvest-sweep/bridge"

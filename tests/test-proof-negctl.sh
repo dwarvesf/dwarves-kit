@@ -375,15 +375,20 @@ else
   # so its PID is also its process group, letting one `kill -INT -$PID` reach the whole tree
   # the way a real terminal Ctrl-C would (negctl.sh itself and the shimmed git child alike).
   GITSHIM="$TMP/gitshim"; mkdir -p "$GITSHIM"
-  printf '#!/usr/bin/env bash\ncase " $* " in\n  *" checkout "*) sleep 2 ;;\nesac\nexec /usr/bin/git "$@"\n' > "$GITSHIM/git"
+  # The interrupt must land while the shim sleeps inside the restore's checkout. A fixed sleep before
+  # it guessed when negctl got there, and a loaded runner (macOS CI) was still starting up: the INT hit
+  # before the mutation, the run printed nothing, and both cases failed on a timing guess. The shim now
+  # drops a marker as it enters `checkout`; wait for it (20 s ceiling), then interrupt.
+  wait_for_mark() { local i=0; while [ ! -e "$1" ] && [ "$i" -lt 100 ]; do sleep 0.2; i=$((i+1)); done; }
+  printf '#!/usr/bin/env bash\ncase " $* " in\n  *" checkout "*) [ -z "${GITSHIM_MARK:-}" ] || : > "$GITSHIM_MARK"; sleep 2 ;;\nesac\nexec /usr/bin/git "$@"\n' > "$GITSHIM/git"
   chmod +x "$GITSHIM/git"
   SIGREPO="$TMP/sigrepo"; mkrepo "$SIGREPO"
   (
     set -m
-    PATH="$GITSHIM:$PATH" bash "$NC" "$SIGREPO" "bash test.sh" "sed -i.bak 's/+/-/' lib.sh && rm -f lib.sh.bak" \
+    GITSHIM_MARK="$TMP/shim-mark1" PATH="$GITSHIM:$PATH" bash "$NC" "$SIGREPO" "bash test.sh" "sed -i.bak 's/+/-/' lib.sh && rm -f lib.sh.bak" \
       > "$TMP/sigint-out.txt" 2>&1 &
     PID=$!
-    sleep 1.0
+    wait_for_mark "$TMP/shim-mark1"
     kill -INT -$PID 2>/dev/null
     wait $PID
   )
@@ -399,10 +404,10 @@ else
   SIGREPO2="$TMP/sigrepo2"; mkrepo "$SIGREPO2"
   (
     set -m
-    PATH="$GITSHIM:$PATH" bash "$NC_T2SIG" "$SIGREPO2" "bash test.sh" "sed -i.bak 's/+/-/' lib.sh && rm -f lib.sh.bak" \
+    GITSHIM_MARK="$TMP/shim-mark2" PATH="$GITSHIM:$PATH" bash "$NC_T2SIG" "$SIGREPO2" "bash test.sh" "sed -i.bak 's/+/-/' lib.sh && rm -f lib.sh.bak" \
       > "$TMP/sigint-out2.txt" 2>&1 &
     PID=$!
-    sleep 1.0
+    wait_for_mark "$TMP/shim-mark2"
     kill -INT -$PID 2>/dev/null
     wait $PID
   )

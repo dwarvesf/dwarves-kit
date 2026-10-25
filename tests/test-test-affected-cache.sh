@@ -28,6 +28,7 @@ export KIT_SUITE_TIMES_FILE="$W/hist.tsv"
 # resolve inside the fixture, never in the real tree.
 mkdir -p "$W/tabin" "$W/lib/telemetry" "$W/tests/lib"
 cp "$TA" "$W/tabin/test-affected"
+cp "$KIT_DIR/tests/lib/timeout.sh" "$W/tests/lib/"
 cp "$KIT_DIR/lib/telemetry/kit-log-dir.sh" "$W/lib/telemetry/"; mkdir -p "$W/lib/config"; cp "$KIT_DIR/lib/config/kit-config.sh" "$W/lib/config/"
 cp "$KIT_DIR/tests/lib/suite-times.sh" "$W/tests/lib/"
 TA2="$W/tabin/test-affected"

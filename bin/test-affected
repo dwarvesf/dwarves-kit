@@ -42,7 +42,15 @@ SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 die() { echo "test-affected: $*" >&2; exit 2; }
 
-_timeout() { if command -v timeout >/dev/null 2>&1; then timeout "$@"; else shift; "$@"; fi; }
+# kit_timeout: GNU timeout, else a perl one, so a stock macOS enforces the limits too.
+if [ -f "$SELF_DIR/../tests/lib/timeout.sh" ]; then
+  # shellcheck source=tests/lib/timeout.sh
+  . "$SELF_DIR/../tests/lib/timeout.sh"
+else
+  kit_have_timeout() { command -v timeout >/dev/null 2>&1; }
+  kit_timeout() { if command -v timeout >/dev/null 2>&1; then timeout "$@"; else shift; "$@"; fi; }
+fi
+_timeout() { kit_timeout "$@"; }
 
 # Worker mode: the script re-invokes itself, as tests/run-all.sh does, so the batch needs no second
 # file. `--run-one <outdir> <suite> <limit> <key>`: run one suite under its limit with its own log,
@@ -554,7 +562,7 @@ while IFS= read -r t; do
     echo "    | no status written; the worker died"
   elif [ "$rc" -eq 0 ]; then
     echo "PASS $t"; P=$((P + 1))
-  elif [ "$rc" -eq 124 ] && command -v timeout >/dev/null 2>&1; then
+  elif [ "$rc" -eq 124 ] && kit_have_timeout; then
     echo "TIMEOUT $t (limit ${limit}s)"; T=$((T + 1))
     echo "    | killed at ${limit}s; no assertion failed, the suite ran out of time (re-run it alone, or TEST_AFFECTED_TIMEOUT_SECS=<n>)"
   else

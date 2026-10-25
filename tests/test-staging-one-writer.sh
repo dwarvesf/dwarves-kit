@@ -203,7 +203,7 @@ chk "identical twin blocks: two rows, two relabels" "$([ "$(grep -cE '^\| ID-[0-
 D="$TMPD/a4d"; mkdir -p "$D"
 { printf '# Backlog staging\n\n'; block "private old" "$OLD"; } > "$D/backlog-staging.md"; chmod 600 "$D/backlog-staging.md"
 BACKLOG_STAGE_STAGING="$D/backlog-staging.md" python3 "$DRAIN" >/dev/null 2>&1
-mode="$(stat -f %Lp "$D/backlog-staging.md" 2>/dev/null || stat -c %a "$D/backlog-staging.md")"
+mode="$(stat -c %a "$D/backlog-staging.md" 2>/dev/null || stat -f %Lp "$D/backlog-staging.md")"
 chk "a 0600 buffer is still 0600 after drain rewrote it" "$([ "$mode" = 600 ] && grep -q '^## \[expired\] private old' "$D/backlog-staging.md"; echo $?)"
 
 # stdin that is not UTF-8 is refused, not appended

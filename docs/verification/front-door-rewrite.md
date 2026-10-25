@@ -88,7 +88,7 @@ Output:
   == T1.5 gauntlet prep scripts lint
   PASS  shellcheck -x tests/gauntlet/*.sh tests/gauntlet/cleanroom/*.sh tests/gauntlet/deploy/gauntlet-campaign
   TIER1: GREEN
-  warning: templates not found in /Users/tieubao/.git_template
+  warning: templates not found in ~/.git_template
 Verdict: PASS
 ```
 

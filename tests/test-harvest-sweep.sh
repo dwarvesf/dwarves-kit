@@ -3709,6 +3709,22 @@ assert_eq "kit.toml ships the [harvest] table with safe defaults" "false|6|claud
 echo
 echo "T16 launcher and plist template"
 
+# plutil and PlistBuddy exist only on macOS; elsewhere python3 plistlib answers the same two
+# questions (does the file parse as a plist, what is the value at a key path).
+plist_lint() {
+  if command -v plutil >/dev/null 2>&1; then plutil -lint "$1" 2>/dev/null | awk '{print $2}'
+  else python3 -c 'import plistlib,sys; plistlib.load(open(sys.argv[1],"rb")); print("OK")' "$1" 2>/dev/null; fi
+}
+plist_get() {
+  if [ -x /usr/libexec/PlistBuddy ]; then /usr/libexec/PlistBuddy -c "Print :$2" "$1" 2>/dev/null
+  else python3 -c '
+import plistlib,sys
+v = plistlib.load(open(sys.argv[1],"rb"))
+for k in sys.argv[2].split(":"):
+    v = v[int(k)] if isinstance(v, list) else v[k]
+print(v)' "$1" "$2" 2>/dev/null; fi
+}
+
 T16D="$TD/t16"; T16_HOME="$T16D/home"; T16_LAUNCH="$KIT_DIR/deploy/macos/harvest-sweep/harvest-sweep"
 mkdir -p "$T16_HOME/.local/bin" "$T16_HOME/.config/harvest-sweep" \
   "$T16_HOME/Library/Logs/dwarves-kit" "$T16D/kroot" "$T16D/noop" "$T16D/proj"
@@ -3825,11 +3841,11 @@ assert_eq "the label names the log file" "yes" "$([ -f "$T16_HOME/Library/Logs/d
 sed -e "s|__LABEL__|mini.harvest-sweep|g" -e "s|__KIT__|$KIT_DIR|g" \
     -e "s|__HOME__|$T16_HOME|g" -e "s|__INTERVAL__|21600|g" \
     "$T16_LAUNCH.plist.tmpl" > "$T16D/rendered.plist"
-assert_eq "AC19: the rendered plist lints" "OK" "$(plutil -lint "$T16D/rendered.plist" 2>/dev/null | awk '{print $2}')"
+assert_eq "AC19: the rendered plist lints" "OK" "$(plist_lint "$T16D/rendered.plist")"
 assert_eq "AC19: ProgramArguments[0] is the launcher's absolute path" "$T16_LAUNCH" \
-  "$(/usr/libexec/PlistBuddy -c 'Print :ProgramArguments:0' "$T16D/rendered.plist" 2>/dev/null)"
+  "$(plist_get "$T16D/rendered.plist" ProgramArguments:0)"
 assert_eq "AC19: StartInterval renders the seconds" "21600" \
-  "$(/usr/libexec/PlistBuddy -c 'Print :StartInterval' "$T16D/rendered.plist" 2>/dev/null)"
+  "$(plist_get "$T16D/rendered.plist" StartInterval)"
 assert_eq "AC19: no placeholder survives rendering" "0" "$(grep -c '__[A-Z]*__' "$T16D/rendered.plist")"
 assert_eq "AC19: the launcher is a shebang script without .sh" "yes" \
   "$(head -1 "$T16_LAUNCH" | grep -q '^#!/bin/bash' && echo yes || echo no)"
@@ -3920,10 +3936,10 @@ assert_eq "AC13: --apply exits 0" "0" "$(tf "$R" rc)"
 assert_eq "AC13: --apply writes the plist under LaunchAgents" "yes" \
   "$([ -f "$T17_HOME/Library/LaunchAgents/mini.harvest-sweep.plist" ] && echo yes || echo no)"
 assert_eq "AC13: the written plist lints" "OK" \
-  "$(plutil -lint "$T17_HOME/Library/LaunchAgents/mini.harvest-sweep.plist" 2>/dev/null | awk '{print $2}')"
+  "$(plist_lint "$T17_HOME/Library/LaunchAgents/mini.harvest-sweep.plist")"
 assert_eq "AC13: the written plist's ProgramArguments[0] is the launcher" \
   "$KIT_DIR/deploy/macos/harvest-sweep/harvest-sweep" \
-  "$(/usr/libexec/PlistBuddy -c 'Print :ProgramArguments:0' "$T17_HOME/Library/LaunchAgents/mini.harvest-sweep.plist" 2>/dev/null)"
+  "$(plist_get "$T17_HOME/Library/LaunchAgents/mini.harvest-sweep.plist" ProgramArguments:0)"
 assert_eq "AC13: --apply writes the plist world-readable for vps-mon discovery" "644" \
   "$(python3 -c 'import os,sys; print(format(os.stat(sys.argv[1]).st_mode & 0o777, "o"))' "$T17_HOME/Library/LaunchAgents/mini.harvest-sweep.plist")"
 assert_eq "AC13: --apply bootstraps the label" "yes" \

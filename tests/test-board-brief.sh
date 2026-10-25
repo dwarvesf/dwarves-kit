@@ -42,6 +42,9 @@ export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null
 export HOME="$WORK/home"; mkdir -p "$HOME"
 unset DWARVES_BOARD_CONFIG
 NOW=1790000000
+# local calendar day of an epoch: BSD `date -r <epoch>` first, GNU `date -d @<epoch>` second
+# (on GNU, `-r` takes a FILE, so the BSD form errors and the fallback runs)
+epoch_day() { date -r "$1" +%Y-%m-%d 2>/dev/null || date -d "@$1" +%Y-%m-%d; }
 DAY=86400
 
 commit() {
@@ -365,7 +368,7 @@ p="$(last)"
 eq "kind" "$(jq -r '.kind' <<<"$p")" "brief"
 eq "title names the cluster" "$(jq -r '.title' <<<"$p")" "Daily brief · alpha"
 eq "period one day" "$(jq -r '.period_days' <<<"$p")" "1"
-eq "date and next due" "$(jq -r '[.date, .next_due] | join(" ")' <<<"$p")" "$(date -r "$NOW" +%Y-%m-%d) $(date -r $((NOW + DAY)) +%Y-%m-%d)"
+eq "date and next due" "$(jq -r '[.date, .next_due] | join(" ")' <<<"$p")" "$(epoch_day "$NOW") $(epoch_day $((NOW + DAY)))"
 eq "key is 32 hex" "$(jq -r '.key | test("^[0-9a-f]{32}$")' <<<"$p")" "true"
 fresh
 FAKE_CARDS="$CLEAN" run "$NOW" --cluster alpha; k1="$(jq -r .key <<<"$(last)")"

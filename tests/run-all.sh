@@ -82,7 +82,9 @@ suite_timeout() {
   fi
   echo "${listed:-$TIMEOUT_SECS}"
 }
-_timeout() { if command -v timeout >/dev/null 2>&1; then timeout "$@"; else shift; "$@"; fi; }
+# kit_timeout: GNU timeout, else a perl one, so a stock macOS enforces the limits too.
+source "$KIT_DIR/tests/lib/timeout.sh"
+_timeout() { kit_timeout "$@"; }
 
 # --- worker mode -------------------------------------------------------------
 # The script re-invokes ITSELF as the xargs worker, so the parallel runner needs

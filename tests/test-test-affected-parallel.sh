@@ -28,7 +28,7 @@ mkdir -p "$W/tabin" "$W/lib/telemetry" "$W/lib/config" "$W/lib/host" "$W/tests/l
 cp "$TA" "$W/tabin/test-affected"
 cp "$KIT_DIR/lib/telemetry/kit-log-dir.sh" "$W/lib/telemetry/"; cp "$KIT_DIR/lib/config/kit-config.sh" "$W/lib/config/"
 cp "$KIT_DIR/lib/host/load-warn.sh" "$W/lib/host/"
-cp "$KIT_DIR/tests/lib/suite-times.sh" "$KIT_DIR/tests/lib/job-count.sh" "$W/tests/lib/"
+cp "$KIT_DIR/tests/lib/suite-times.sh" "$KIT_DIR/tests/lib/job-count.sh" "$KIT_DIR/tests/lib/timeout.sh" "$W/tests/lib/"
 TA2="$W/tabin/test-affected"
 
 R="$W/repo"; mkdir -p "$R/tests" "$R/lib/x"; cd "$R"

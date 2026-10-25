@@ -20,7 +20,7 @@ trap 'rm -rf "$TMP"' EXIT
 export DWARVES_KIT_LOG_DIR="$TMP/logs"
 
 K="$TMP/kit"; mkdir -p "$K/tests/lib"
-cp "$RA" "$K/tests/run-all.sh"; cp "$DIR/tests/lib/job-count.sh" "$K/tests/lib/"
+cp "$RA" "$K/tests/run-all.sh"; cp "$DIR/tests/lib/job-count.sh" "$DIR/tests/lib/timeout.sh" "$K/tests/lib/"
 # The fixture suite runs while run-all's scratch dir exists, so it can record where it is.
 cat > "$K/tests/test-where.sh" <<'SUITE'
 #!/usr/bin/env bash

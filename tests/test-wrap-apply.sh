@@ -356,11 +356,24 @@ chk "pipe reader: the worktree is removed" "$([ ! -e "$TMPD/mtx-pipe" ]; echo $?
 echo "--- busy: without lsof, one NOTE and today's removal"
 git -C "$MTX" branch mtx-nolsof-branch origin/merged-ancestor >/dev/null 2>&1
 git -C "$MTX" worktree add "$TMPD/mtx-nolsof" mtx-nolsof-branch >/dev/null 2>&1
-NOLSOF_PATH=""; NOLSOF_OLDIFS="$IFS"; IFS=:
-for d in $PATH; do [ -x "$d/lsof" ] || NOLSOF_PATH="${NOLSOF_PATH:+$NOLSOF_PATH:}$d"; done
+# PATH without lsof. Dropping lsof's directory is not enough on a merged-usr Linux host, where
+# lsof sits in /usr/bin beside git and every other tool the run needs: the run would die on a
+# missing git, not on a missing lsof. So build one directory that links every executable the
+# real PATH offers except lsof, and put only that on PATH.
+NOLSOF_BIN="$TMPD/nolsof-bin"; mkdir -p "$NOLSOF_BIN"
+NOLSOF_OLDIFS="$IFS"; IFS=:
+for d in $PATH; do
+  [ -d "$d" ] || continue
+  for f in "$d"/*; do
+    b="${f##*/}"
+    [ "$b" = lsof ] && continue
+    [ -x "$f" ] && [ -f "$f" ] && [ ! -e "$NOLSOF_BIN/$b" ] && ln -s "$f" "$NOLSOF_BIN/$b"
+  done
+done
 IFS="$NOLSOF_OLDIFS"
+NOLSOF_PATH="$NOLSOF_BIN"
 if PATH="$NOLSOF_PATH" command -v lsof >/dev/null 2>&1; then
-  echo "  (skipped: lsof shares a directory with a needed tool)"
+  echo "  (skipped: lsof is still reachable)"
 else
   out="$(PATH="$NOLSOF_PATH" "$WRAP" apply --apply --worktrees "$MTX" 2>&1)"; rc=$?
   chk "no-lsof apply exits 0" "$rc"
