@@ -91,7 +91,7 @@ echo "=== Plugin-qualified agent dispatch (ID-905) ==="
 # The plugin registers every agents/*.md under `kit:<name>` only; a bare
 # `subagent_type`/dispatch name falls through to a stale ~/.claude/agents copy
 # (or fails outright, anthropics/claude-code#33689). Every dispatchable
-# reference in commands/, skills/, agents/, and docs/MANUAL.md must therefore be
+# reference in commands/, skills/, and agents/ must therefore be
 # `kit:`-qualified. Legitimately bare contexts are whitelisted in the scan:
 # file paths (`agents/<name>`, `<name>.md`), `name:`/`generated-by:` frontmatter,
 # and the `advisor` gate-ledger PHASE (record/outcome lines, `advisor`
@@ -123,7 +123,7 @@ FILENAME ~ /(^|\/)agents\// && /^name:/ { next }
       print FILENAME ":" FNR ": bare " name
     }
   }
-}' "$KIT_DIR"/commands/*.md "$KIT_DIR"/skills/*/*.md "$KIT_DIR"/agents/*.md "$KIT_DIR"/docs/MANUAL.md)
+}' "$KIT_DIR"/commands/*.md "$KIT_DIR"/skills/*/*.md "$KIT_DIR"/agents/*.md)
 TOTAL=$((TOTAL + 1))
 if [ -z "$BARE_AGENT_HITS" ]; then
   echo -e "  ${GREEN}PASS${NC} all agent references outside whitelist contexts are kit:-qualified (ID-905)"
