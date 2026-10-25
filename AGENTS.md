@@ -177,7 +177,7 @@ environment and accepted. This is enforced at ship by the SAME `hooks/ship-gate.
 `proof-ledger.sh check` wall every stateful change already passes through, the ship-gate
 already DETECTS deployability (it classifies `stateful`), so a deployable item marked done
 without the deploy-proof is blocked exactly like any other unproven stateful change, or
-needs a logged override (`proof-ledger.sh override <slug> "<reason>"`). INERT, library,
+needs a logged override (`~/.claude/dwarves-kit/bin/gate proof-ledger override <slug> "<reason>"`). INERT, library,
 refactor, and docs work (the `inert`/`behavioral` classes) is unchanged, it owes no
 deploy-proof or UAT.
 
