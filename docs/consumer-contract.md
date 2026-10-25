@@ -19,8 +19,8 @@ idempotently. The step numbers match the `# N.` comments in `lib/adopt.sh`.
 | 6 | `.claude/settings.json` | Hook wiring for the enabled modules, a targeted `jq` merge | Every run, from the current `.kit.toml` |
 | 6b | `.claude/settings.json`, `.claude/output-styles/` | The `[output] style` pick, when set | Every run, when a style is set |
 
-Only `AGENTS.md`, the proof marker and an existing `.kit.toml` are never overwritten. The
-`WORKFLOW.md` pointer and the `CLAUDE.md` block are replaced on `--refresh`. Steps 6 and 6b leave
+Only `AGENTS.md` (bar the opt-in old-copy swap), the proof marker and an existing `.kit.toml` are never overwritten. The
+`WORKFLOW.md` pointer and the `CLAUDE.md` block are replaced on `--refresh`. Step 6 leaves
 the project `settings.json` alone on a plugin machine, because the plugin already registers every
 hook. `--single-source` folds the block into `AGENTS.md` and skips step 1.
 
