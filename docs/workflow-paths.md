@@ -2,7 +2,7 @@
 title: Workflow paths (the complete path map)
 date: 2026-07-31
 status: GENERATED projection
-sources: docs/research/2026-07-31-feature-trigger-map.md, docs/workflow-map.md, docs/WORKFLOW.md, hooks/hooks.json, settings.json
+sources: docs/research/2026-07-31-feature-trigger-map.md, docs/WORKFLOW.md, hooks/hooks.json, settings.json
 ---
 
 # Workflow paths: every path through the kit
@@ -25,7 +25,7 @@ Stage grouping (Shape / Build / Watch / Check / Reflect) follows the README's fi
 
 ## 2 · Flow topology (the one big picture)
 
-Every workflow, lane, loop, side-flow, and alternate path in one connected picture: the spine, the 5 intake lanes, the 3 bounded engines plus the amend micro-loop, the side-flows at their real attach points, the type-loop intake rail, the 7 alternate flows as `alt:` branch notes, and the 4 hard stops as the bottom rail. Where the picture simplifies, it names the section that carries the detail (the per-stage maps in section 4; the flow census in [`workflow-map.md`](workflow-map.md)); [`WORKFLOW.md`](WORKFLOW.md) stays canonical and wins on any disagreement.
+Every workflow, lane, loop, side-flow, and alternate path in one connected picture: the spine, the 5 intake lanes, the 3 bounded engines plus the amend micro-loop, the side-flows at their real attach points, the type-loop intake rail, the 7 alternate flows as `alt:` branch notes, and the 4 hard stops as the bottom rail. Where the picture simplifies, it names the section that carries the detail (the per-stage maps in section 4; the flow census in [`WORKFLOW.md`](WORKFLOW.md) "Flow and loop reference"); [`WORKFLOW.md`](WORKFLOW.md) stays canonical and wins on any disagreement.
 
 ```
  LEGEND   ->  forward flow      ==>  loop-back / re-entry      alt:  an alternate flow fires here
@@ -45,7 +45,7 @@ Every workflow, lane, loop, side-flow, and alternate path in one connected pictu
                           v
                  type classification ---- non-code type? ---> TYPE-LOOP INTAKE RAIL
                           |                                   one right-sized loop per type, names
-                          | code (spec-feature)               only (shapes: workflow-map.md sec 5):
+                          | code (spec-feature)               only (shapes: WORKFLOW.md "Type loops"):
                           v                                     research | review | eval | doc
                  pick a lane                                    migration | data-tool | incident
                  (in doubt -> heavier)                          reconcile | operate | planning
@@ -108,7 +108,7 @@ Every workflow, lane, loop, side-flow, and alternate path in one connected pictu
  |        v
  |   [H/I] /kit:test-write ..... [D] test-writer, one test per matrix row
  |        |                    (the V-model vertex: BUILD = code + test code;
- |        |                     the full V shape: workflow-map.md section 6)
+ |        |                     the full V shape: WORKFLOW.md "The V-model lens")
  |        v
  |   [H/I] /kit:execute  (or [H/I] /kit:next: human-paced, same pipeline)
  |        |     alt: 2+ active specs and the slug is ambiguous -> ASK, never guess
@@ -334,7 +334,7 @@ Off-ramp entries that also land in Shape: `[H/I] /kit:onboard` (first run, orche
                          reads transcripts on a schedule instead)
  [E] PostToolUse * ───> output-offload (oversized output to file)   [adv]
  [E] SessionStart compact ─> post-compact-reinject (restore rules)   [conv]
- [E] SessionEnd ──────> backlog-stage (stage work-items; --surface runs intake-sweep)
+ [E] SessionEnd ──────> backlog-stage (stage work-items)
                         + harvest --lab-log (stage LAB_LOG draft)   [conv]
  [E] SessionStart ────> intake-sweep (via backlog-stage --surface; config-gated no-op) [conv]
  [E] Notification ────> notification (desktop notify, async)        [conv]
@@ -478,6 +478,7 @@ One line per live feature: `entry -> ... -> terminal`. Grouped by kind; every fe
 | `[I] observe -> control-plane query/render via lib/bench -> read-only dashboard` |
 | `[I] skill-review -> review staged drafts -> promote to ~/.claude/skills/ or reject` |
 | `[I] stats -> ledger query -> reply or Artifact; anomalies --propose stages one candidate` |
+| `[I] system-design -> docs/SYSTEM-DESIGN.md kept per feature -> UML drawing set with the delta marked new / changed / removed -> Artifact for design review` |
 
 ### Hooks
 
@@ -533,8 +534,8 @@ One line per live feature: `entry -> ... -> terminal`. Grouped by kind; every fe
 ## 6 · How to regenerate
 
 1. Re-derive the backbone from `docs/research/2026-07-31-feature-trigger-map.md` (or regenerate that file first per its own Method section: enumerate `commands/`, `agents/`, `skills/*/SKILL.md`, `hooks/*.sh` by `ls`, never trust a doc's count).
-2. Take stage grouping from the README's "The five stages" section; take flow shapes from `docs/workflow-map.md`; take rules and precedence from `docs/WORKFLOW.md` (canonical; it wins on any disagreement).
+2. Take stage grouping from the README's "The five stages" section; take flow shapes from `docs/WORKFLOW.md` "Flow and loop reference"; take rules and precedence from `docs/WORKFLOW.md` (canonical; it wins on any disagreement).
 3. Take hook events from `hooks/hooks.json` and root `settings.json` (same wiring, two install paths; `statusline` rides the `statusLine` key, not a hook event). Live wiring wins over any doc claim: this pass found `tool-policy-guard` wired at PreToolUse `*` in both files although the trigger map called it unwired; it stays inert until a `tool-policy.json` exists.
 4. Every live feature gets exactly one line in section 5; verify with `ls commands/*.md agents/*.md skills/*/SKILL.md hooks/*.sh | wc -l` against the index line count (derive the number, never hardcode it here).
 5. Re-derive the System topology (section 3) from the finished path index: the `[H]`/`[I]`/`[E]`/`[D]` marks give the actor and dispatch edges; the store hand-offs come from each path's write target and the command that reads it next. Invent no edge the index does not show.
-6. Re-derive the Flow topology (section 2) from `docs/workflow-map.md`'s flow census (the backbone, the 5 lanes, the 3 bounded loops + amend micro-loop, the side-flows, the 7 alternate flows, the 4 hard stops) laid onto one connected picture, with `docs/WORKFLOW.md` winning on any disagreement. Where the picture must simplify, point at the section carrying the detail instead of distorting.
+6. Re-derive the Flow topology (section 2) from `docs/WORKFLOW.md`'s "Flow and loop reference" census (the backbone, the 5 lanes, the 3 bounded loops + amend micro-loop, the side-flows, the 7 alternate flows, the 4 hard stops) laid onto one connected picture, with `docs/WORKFLOW.md` winning on any disagreement. Where the picture must simplify, point at the section carrying the detail instead of distorting.

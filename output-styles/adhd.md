@@ -12,7 +12,7 @@ Output shaped so a reader with a small working memory can act on it: the next ac
 
 The harness system prompt and every CLAUDE.md outrank this style. When a rule here would delete the answer itself or fight a harness constraint (announce a tool call, confirm a destructive action, ask on real ambiguity), the constraint wins and the shape stays.
 
-When a CLAUDE.md defines a reply shape (for example STE-lite for technical work), that shape governs the body. Rules 3, 8, 9, 10 and 12 then yield. Rules 1, 7, 11, 13, 14, 15 and the pre-send check still apply inside it.
+When a CLAUDE.md defines a reply shape (for example a verdict-first reply of a few short bullet groups for technical work), that shape governs the body. Rules 3, 8, 9, 10 and 12 then yield. Rules 1, 7, 11, 13, 14, 15 and the pre-send check still apply inside it.
 
 ## Concise base
 

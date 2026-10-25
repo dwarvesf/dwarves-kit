@@ -1,8 +1,8 @@
 # User guides
 
 Task-oriented guides for people USING the kit on their repos. Each answers "what
-do I do and what will I see", nothing else. The contracts live in `WORKFLOW.md`,
-the rationale in `PHILOSOPHY.md`, per-command reference in `MANUAL.md`; a guide
+do I do and what will I see", nothing else. The contracts live in `docs/WORKFLOW.md`,
+the rationale in `docs/PHILOSOPHY.md`, per-command reference in `docs/MANUAL.md`; a guide
 never overrides those, it translates them.
 
 ## The flow
@@ -30,7 +30,6 @@ never overrides those, it translates them.
 | [v-model.md](v-model.md) | you wonder why the kit tests at every altitude, or why all-green tasks still failed acceptance |
 | [scenarios.md](scenarios.md) | the kit starts surfacing "survival scenarios" and "must-NOT-happen" rows while you shape work |
 | [gates-and-proof.md](gates-and-proof.md) | something BLOCKED (ship gate, proof of done, iron law) and you want the way through |
-| [review.md](review.md) | you got a SHIP / FIX THEN SHIP / DO NOT SHIP verdict |
 | [gauntlet.md](gauntlet.md) | an artifact (docs, a runbook, a spec) must survive a cold consumer unaided |
 | [gauntlet-tutorial.md](gauntlet-tutorial.md) | first gauntlet run: step-by-step, with copy-paste slot files |
 

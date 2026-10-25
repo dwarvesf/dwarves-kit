@@ -2,7 +2,7 @@
 
 `wrap` is the landing subsystem. The entrypoint is `bin/wrap` in this repo, or `~/.claude/dwarves-kit/bin/wrap` once installed. It forwards to `lib/wrap/wrap.sh`, which owns the verb grammar. The `commands/wrap.md` file is the session-close playbook that calls these verbs; this page is the lookup.
 
-Each row below was read from the verb's source in `lib/wrap/`. A verb with no row has no situation worth a rule here.
+Each row below was read from the verb's source in `lib/wrap/`.
 
 ## Rules that apply to every verb
 
@@ -27,7 +27,7 @@ Each row below was read from the verb's source in `lib/wrap/`. A verb with no ro
 | The worktree branch is committed and I want it merged | `wrap land <worktree>` | Pushes the named branch, opens or adopts the PR, squash-merges, verifies the tree, fast-forwards the main checkout, removes the worktree, deletes the branch. There is no dry run. |
 | The branch already has an open PR | `wrap land <worktree>` | Adopts that PR and keeps its title and body. It refuses with 2 or more open PRs, a PR by another author, or a base other than the default. |
 | Land a branch while another session is live in the main checkout | `wrap land <worktree> --no-pull` | Same promise as `merge --no-pull` and `apply --no-pull`: never writes the main checkout. It still merges, verifies the tree, deletes the origin branch, and removes the worktree and local branch. It prints `SKIP pull: --no-pull` in place of the fast-forward. |
-| Land a branch but do not merge | none | `land` always merges. Push the branch and open the PR with `git` and `gh` instead. |
+| Land a branch but do not merge | `wrap land <worktree> --draft [--title T] [--body-file F]` | Pushes the named branch, opens or adopts a draft PR, prints the URL and the proof block, and stops. It never marks the PR ready, merges, tidies, pulls or writes a Ship record, and the worktree stays. It refuses an already-landed branch, an open non-draft PR, a new PR with no proof and no `--body-file`, and a ship-gate block. It exits 64 with `--with-ci`, `--verify` or `--no-pull`. |
 | See what `merge` would do | `wrap merge <repo>` | Dry run. Prints `eligible #N` or `SKIP #N <reason>` for each of my open PRs, then `dry run; pass --apply to merge one PR.` |
 | Merge one green PR of mine | `wrap merge --apply [--pr <N>] <repo>` | Squash-merges exactly one PR per call, pinned to the head it gated. It takes exactly one `<repo>` path. Only PRs I authored count; `--pr` naming another author's PR is refused. |
 | The PR is a draft | `wrap merge --apply --pr <N> <repo>` | Runs `gh pr ready` first. Without `--pr`, a draft is skipped. |
@@ -39,6 +39,7 @@ Each row below was read from the verb's source in `lib/wrap/`. A verb with no ro
 | Pull the default branch and nothing else | `wrap apply --apply --pull-only <repo>` | Cannot combine with `--worktrees`, `--own`, `--archive-unmerged`, `--tips-file`, or `--no-pull`. |
 | Adopt a repo into the kit contract | `wrap adopt [--apply] <repo> [<repo>...]` | Dry run by default. `--body-file` takes exactly one repo. |
 | Write the activity line | `wrap log "<slug>: <one sentence>"` | Writes immediately and warns over 300 characters. |
+| Get the step 7b flick second opinion | `wrap flick-7b < pairs` | Reads one `<candidate-slug> <hit-name> <existing-verdict>` pair per line on stdin, calls `bin/flick` once, and prints one line: the text of the report's `STATE` row. It prints `flick wrap-7b: off` when `decide.points` lacks `wrap-7b`, and `no pairs` on empty input. It exits 0 on every path. |
 | Wait for a push-deploy check | `wrap deploy-wait <owner>/<name> <sha> [--check S]... [--timeout N]` | Polls the commit's check runs. Exit 0 all success, 1 a run failed, 124 timeout. |
 
 ## Which verbs preview first
@@ -62,3 +63,6 @@ Each row below was read from the verb's source in `lib/wrap/`. A verb with no ro
 | `adopt` | `lib/wrap/wrap-adopt.sh` |
 | `log`, `stage`, `knowledge-root` | `lib/wrap/wrap-log.sh` |
 | `deploy-wait`, `default-branch`, `follow-mode` | `lib/wrap/wrap-deploy.sh` |
+| `flick-7b` | `lib/wrap/wrap-flick.sh` |
+
+`wrap.sh` sources these helper files, which own no verb: `wrap-common.sh` (shared state), `wrap-carry.sh` (stray-line and autoland carry), `wrap-pull.sh` (the pull and union carry-back), and `wrap-ci.sh` (the `ci` label sync and checks wait). `report-lint.sh` is a separate lint for the wrap report's `Needs you` section.

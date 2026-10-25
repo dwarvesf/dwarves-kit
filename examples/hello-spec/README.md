@@ -10,18 +10,18 @@ The point: see what `docs/specs/SPEC-001-version-flag.md` actually looks like; s
 
 ## The files
 
-### `AGENTS.md`
-The downstream front door. Tool-agnostic operating layer (read-order, task loop, done-definition, "Pause if" list) that any agent runtime reads first. This is the realistic-placeholder template a project inherits from dwarves-kit; `CLAUDE.md` sits under it as the Claude-Code-specific layer. Enforcement (hooks, verifier) is Claude-Code-only; under other runtimes `AGENTS.md` is advisory.
+### `AGENTS.md`, `WORKFLOW.md`, `docs/verification/README.md`, `.kit.toml`
+What `/kit:adopt` writes into a repo today, copied from a real run. `AGENTS.md` is a small pointer (four rules plus the location of the full contract), not a copy of it. `WORKFLOW.md` is a pointer to the lanes and gate matrix in the installed kit. `docs/verification/README.md` is the proof marker: its presence opts the repo into the proof-of-done ship-gate. `.kit.toml` seeds the project's gate and module settings (`proof_of_done` and `lane_gates` start on). Enforcement (hooks, verifier) is Claude-Code-only; under other runtimes `AGENTS.md` is advisory.
 
 ### `CLAUDE.md`
-Project anchor. Read by Claude Code at session start, by `/kit:spec` for stack detection, by every worker subagent in `/kit:execute`. Tells Claude what the project is, what the stack is, where the spec lives, and what code-quality rules apply.
+Project anchor. Read by Claude Code at session start, by `/kit:spec` for stack detection, by the builder subagent in `/kit:execute`. Tells Claude what the project is, what the stack is, where the spec lives, and what code-quality rules apply. The block at the bottom, between the `kit:adopt` markers, is what adopt appends: it imports `AGENTS.md` and points at the lane classifier.
 
-Generated once when the project is set up. Updated by `/kit:docs` when the stack drifts.
+Written once when the project is set up. Updated by `/kit:docs` when the stack drifts.
 
 ### `docs/specs/SPEC-001-version-flag.md`
-The shared contract. Written by `/kit:spec` (with optional adversarial review via `/kit:spec-validate`). Read by `/kit:execute` to dispatch worker subagents per task. Read by `/kit:review` to check spec-compliance. Mutated only by the spec phase; treated as immutable during build.
+The shared contract. Written by `/kit:spec` (with optional adversarial review via `/kit:spec-validate`). Read by `/kit:execute`, which hands the whole spec to one builder subagent. Read by `/kit:review` to check spec-compliance. Mutated only by the spec phase; treated as immutable during build.
 
-Status field cycles: `DRAFT` → `VALIDATED` → tasks marked `[x]` as they complete with verification.
+Status field cycles: `DRAFT` → `VALIDATED` → tasks marked `[x]` as they complete with verification. The `Lane:` header is required: in an adopted repo the ship-gate refuses a push for a spec without one.
 
 ### `docs/specs/` (the directory)
 Convention from GSD (per ADR-002). All planning artifacts live under one directory so hooks (`spec-drift-guard`, `context-readiness`) can find them at predictable paths. The kit's `/kit:spec` creates this directory; nothing should write outside it during planning.
@@ -35,28 +35,29 @@ contractor opens project
 SessionStart hook (context-readiness) sees docs/specs/SPEC-001-version-flag.md status=VALIDATED
    |
    v
-hook injects "next: /kit:execute" into Claude's context
+hook suggests "tasks in progress; say 'continue' (or /kit:execute, /kit:next)"
    |
    v
 contractor types /kit:execute
    |
    v
-worker subagent dispatched per task with this CLAUDE.md + this SPEC.md as context
+ONE builder subagent gets this CLAUDE.md + this SPEC.md and builds every task
    |
    v
-task-verifier subagent checks the worker's output against SPEC.md acceptance criteria
+end verifiers run once over the whole build (task-verifier, then integration and
+acceptance verifiers), checked against the SPEC.md acceptance criteria
    |
    v
-PASS -> next task; FAIL:fixable -> fix-agent (max 2 retries); FAIL:escalate -> human
+PASS -> done; FAIL:fixable -> fix-agent (max 2 retries), re-verify; FAIL:escalate -> human
 ```
 
 ## Reading order
 
-1. Read `AGENTS.md` first; it's the tool-agnostic front door (read-order, task loop, done-definition, Pause-if).
+1. Read `AGENTS.md` first; it's the tool-agnostic front door (four rules and a pointer to the full contract).
 2. Then `CLAUDE.md`: the Claude-Code project anchor that sits under the front door.
 3. Then `docs/specs/SPEC-001-version-flag.md`: the actual feature plan.
 4. Notice: no `--version` code yet. The spec is the input to `/kit:execute`. The example stops at "spec ready to build", not "feature implemented", to keep the example readable.
 
 ---
 
-*Synthetic demo. The `spm` package and the feature it describes are fabricated for documentation purposes; there is no real `pip install spm`. The shape of `CLAUDE.md` and `docs/specs/SPEC-001-version-flag.md`, however, is exactly what the kit's `/kit:spec` command produces.*
+*Synthetic demo. The `spm` package and the feature it describes are fabricated for documentation purposes; there is no real `pip install spm`. The adopt files are real `/kit:adopt` output, and the spec follows the template in `commands/spec.md` (a normal-lane spec leaves the optional sections out).*

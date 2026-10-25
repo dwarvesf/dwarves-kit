@@ -1,0 +1,43 @@
+# .kit.toml -- this PROJECT's override of the kit-root defaults.
+# Only the keys you set here matter; every key you omit inherits the kit-root
+# default at ~/.claude/dwarves-kit/kit.toml (lib/config/kit-config.sh: project keys WIN).
+# Re-run `bash ~/.claude/dwarves-kit/lib/adopt.sh --refresh <this repo>` (or /kit:adopt) after
+# editing [modules] to re-wire this project's .claude/settings.json to match --
+# adopt reads [modules] at adopt time. [gate] is read when a hook fires: set a key to
+# true, commit, and that quality gate is on for this project (false keeps it off).
+
+[modules]
+board = true
+session = false
+advisor = false
+cosmetic = false
+queue = false
+stats = false
+quiz_gate = false
+weekend_batch = false
+worktree = false
+money_gate = false
+prose_rag = false
+sync = false
+
+[gate]   # quality gates. An adopted repo starts with proof_of_done and lane_gates ON (the kit root
+         # keeps them off for a raw install). The others are OPT-IN except board_row_gate and
+         # review_verdict (on by default). true turns a gate on for this repo, false keeps it off
+         # (a false counts once this file is committed). To turn one of the two seeded gates off,
+         # set `proof_of_done = false` or `lane_gates = false` below and commit. The other values are
+         # what resolved at adopt time (operator ~/.config/dwarves-kit/kit.toml, else the kit default
+         # false); delete a line to follow the operator setting again. Detail: the installed kit's
+         # lib/gate/README.md, 'Turning a gate on'. Safety gates have no key.
+         #   proof_of_done      ship-gate: a load-bearing diff needs a proof-of-done record (seeded true)
+         #   lane_gates         ship-gate: the lane x phase required gates + the no-Lane refusal (seeded true)
+         #   understanding_gate Stop hook: blocks a stop that rationalizes unfinished work
+         #   commit_format      commit-subject lint (conventional type, <=72 chars)
+         #   board_row_gate     a commit adding a new board row needs a board-row-ok: line
+         #   review_verdict     ship-gate: a spec whose last ## Review verdict is DO NOT SHIP refuses the push (on by default)
+proof_of_done = true
+lane_gates = true
+understanding_gate = false
+commit_format = false
+board_row_gate = true
+fixture_identities = true
+review_verdict = true

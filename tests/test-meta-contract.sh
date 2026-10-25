@@ -78,31 +78,28 @@ for SECTION in "Context-to-read" "Constraints" "Operating rules" "Validation loo
   fi
 done
 
-# Low-cost regression guards: TASK-003 (hello-spec AGENTS.md w/ "Pause if") and
-# TASK-006 (spec.md template's "## After state"). Pin both so they cannot silently
-# regress.
+# Low-cost regression guards: the hello-spec AGENTS.md is the pointer file adopt writes
+# (lib/adopt/AGENTS.pointer.md), and TASK-006 (spec.md template's "## After state").
+# Pin both so they cannot silently regress.
 DEMO_AGENTS="$KIT_DIR/examples/hello-spec/AGENTS.md"
 TOTAL=$((TOTAL + 1))
-if [ -f "$DEMO_AGENTS" ] && grep -qF 'Pause if' "$DEMO_AGENTS" 2>/dev/null; then
-  echo -e "  ${GREEN}PASS${NC} examples/hello-spec/AGENTS.md exists + carries 'Pause if' (TASK-003)"
+if [ -f "$DEMO_AGENTS" ] && grep -qF 'kit:agents-pointer' "$DEMO_AGENTS" 2>/dev/null; then
+  echo -e "  ${GREEN}PASS${NC} examples/hello-spec/AGENTS.md exists + carries the kit:agents-pointer marker"
   PASS=$((PASS + 1))
 else
-  echo -e "  ${RED}FAIL${NC} examples/hello-spec/AGENTS.md missing or lost 'Pause if'"
+  echo -e "  ${RED}FAIL${NC} examples/hello-spec/AGENTS.md missing or lost the kit:agents-pointer marker"
   FAIL=$((FAIL + 1))
 fi
 
-# Review issue 2: the downstream template (the file real projects copy) must pin
-# all four zone headings too, not just "Pause if" - same teeth as the kit root.
-for ZONE in "## 1. Read in this order" "## 2. Task loop" "## 3. Done means" "## 4. Pause if (ask a human)"; do
-  TOTAL=$((TOTAL + 1))
-  if grep -qF "$ZONE" "$DEMO_AGENTS" 2>/dev/null; then
-    echo -e "  ${GREEN}PASS${NC} examples/hello-spec/AGENTS.md has zone '$ZONE'"
-    PASS=$((PASS + 1))
-  else
-    echo -e "  ${RED}FAIL${NC} examples/hello-spec/AGENTS.md missing zone '$ZONE'"
-    FAIL=$((FAIL + 1))
-  fi
-done
+# The example must stay what adopt writes today: same text as the pointer template.
+TOTAL=$((TOTAL + 1))
+if [ -f "$DEMO_AGENTS" ] && cmp -s "$DEMO_AGENTS" "$KIT_DIR/lib/adopt/AGENTS.pointer.md"; then
+  echo -e "  ${GREEN}PASS${NC} examples/hello-spec/AGENTS.md matches lib/adopt/AGENTS.pointer.md"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}FAIL${NC} examples/hello-spec/AGENTS.md drifted from lib/adopt/AGENTS.pointer.md"
+  FAIL=$((FAIL + 1))
+fi
 
 TOTAL=$((TOTAL + 1))
 if grep -qF '## After state' "$KIT_DIR/commands/spec.md" 2>/dev/null; then

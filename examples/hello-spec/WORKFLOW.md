@@ -1,54 +1,5 @@
-# WORKFLOW.md: the cycle, the lanes, the gates
+# WORKFLOW.md (pointer)
 
-> Agent-facing contract. Read after CLAUDE.md. It names the lifecycle, routes
-> work by risk, and points at the guardrail that enforces each boundary.
-> It suggests and routes; it does not block. The four hard stops, where an
-> autonomous run stops for a human, are the safety-gate hook, the push-to-main
-> blocker, the anti-rationalization Stop hook, and the verification pipeline.
-> Other hooks block too (secrets-guard, commit-format, board-row-gate).
-
-## Required reading (in order)
-1. CLAUDE.md            - project context: stack, structure, rules
-2. docs/specs/SPEC-001-version-flag.md   - the active spec; the shared contract for the cycle
-3. docs/architecture.md - how the pieces fit (reference; not required per task)
-
-## Size the work first (risk-tiered intake)
-Pick a lane before you start. Smaller work skips ceremony.
-
-| Lane   | When | Path |
-|--------|------|------|
-| tiny   | typo, copy, comment, one obvious edit | edit, verify, done. No spec. |
-| normal | one bounded feature or fix | /spec, /execute, /review, /ship |
-| full   | touches auth, authz, hooks, data model, data loss, audit/security, an external provider, an API contract, a migration, or weakens validation | /think, /spec, /spec-validate, /execute, /review-team, /docs, /ship, /retro |
-
-Default to `normal`. The classifier only suggests the full lane; the operator assigns it.
-The ship-gate applies the full lane's gates to any diff that touches a hard path.
-
-## The cycle (phase, exit, enforcer)
-| Phase    | Command | Exit when | Enforced by |
-|----------|---------|-----------|-------------|
-| Think    | /kit:think | decision brief written (if BUILD) | advisory |
-| Spec     | /kit:spec | spec exists, Status: DRAFT | spec-drift-guard hook |
-| Validate | /kit:spec-validate | Status: VALIDATED | advisory (full lane) |
-| Build    | /kit:execute or /kit:next | tasks checked, verifier PASS | verification pipeline (worker, verifier, fix; max 2) |
-| Review   | /kit:review or /kit:review-team | review verdict recorded | advisory |
-| Docs     | /kit:docs | README/CHANGELOG match code | advisory |
-| Ship     | /kit:ship | tagged + PR | ship gate (refuses a push or PR while the spec's last `## Review` verdict is DO NOT SHIP; `[gate] review_verdict`), push-to-main blocker |
-| Reflect  | /kit:retro | docs/retro/v<version>.md written | advisory |
-
-Throughout: safety-gate blocks destructive Bash; anti-rationalization blocks
-premature "done"; auto-format runs on edit; post-compact-reinject
-protects long sessions.
-
-## Completion contract
-A task is done only when its acceptance criteria are met and the verifier has
-actually run the tests, not when you claim they pass. If you cannot run the
-check, report that plainly; the anti-rationalization hook is the backstop for
-premature completion. Self-reported "done" is not proof; the task-verifier is.
-
-## What this contract does NOT do
-It does not lock phases. An experienced operator may skip /spec-validate on a
-normal-lane change or go straight to /next. The kit detects state
-(context-readiness hook) and suggests the next step; it never blocks
-progression. Hard stops are reserved for irreversible cost: destructive
-commands, push-to-main, premature completion, failed verification.
+This repo is adopted into the dwarves-kit. The canonical lanes and the lane x phase gate matrix
+live in the installed kit: `~/.claude/dwarves-kit/WORKFLOW.md`. Read that for the lanes and the gate at each
+phase boundary. The gate machinery (gate-ledger, ship-gate) parses that copy, not this file.

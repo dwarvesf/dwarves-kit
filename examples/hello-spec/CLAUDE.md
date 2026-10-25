@@ -60,3 +60,12 @@ This project uses dwarves-kit. The phases, the risk-tier lanes, and the gate at 
 ## Spec Location
 
 Development specs live in `docs/specs/` as `SPEC-NNN-<slug>.md`. Read the active spec before implementing any feature.
+
+<!-- kit:adopt -->
+## Operating layer (dwarves-kit)
+
+@AGENTS.md
+
+Before touching code, classify the lane: `bash ~/.claude/dwarves-kit/bin/classify lane classify "<task>"`.
+A full-lane change records its gates via `~/.claude/dwarves-kit/bin/gate ledger` or the ship-gate blocks the push.
+<!-- /kit:adopt -->

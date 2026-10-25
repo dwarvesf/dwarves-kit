@@ -1,14 +1,35 @@
 # Spec: add `spm --version` flag
 Generated: 2026-04-21
 Status: VALIDATED
+Lane: normal
+Depth: standard (one flag on an existing argparse parser; nothing here needs research)
 
 ## Problem
 
 `spm` has no way to report its installed version. Users debugging issues with `pip install spm` can't easily confirm which release they have. Common ask in install-help threads.
 
+## Terms
+
+none
+
 ## Solution
 
 Add a `--version` flag to the top-level CLI. Reports the version string from `importlib.metadata.version("spm")`. No new dependency; uses Python 3.12 stdlib.
+
+### Approaches considered
+1. `action="version"` on the top-level argparse parser, version read from package metadata. Smallest change; argparse owns the exit.
+2. A `spm version` subcommand. Matches `git version`, but adds a command the CLI does not otherwise need.
+
+### Chosen approach + why
+Approach 1. It is one line of parser setup, and `-V`/`--version` is what users type first. The subcommand form trades a bigger surface for no new capability.
+
+### Extensibility & boundaries
+- The version string has one source (`pyproject.toml`). A future build-metadata suffix changes only the format string.
+- One unit: the parser setup in `cli.py`. It needs no new module.
+
+## Design
+
+obvious: one argparse option on an existing parser, no new component, no data or interface change beyond the flag.
 
 ## Technical Design
 
@@ -44,6 +65,16 @@ None.
     - [ ] Test that asserts `-V` short form behaves identically to `--version`
     - [ ] All existing tests still pass
 
+## After state
+
+- [ ] `spm --version` and `spm -V` print `spm <semver>` and exit 0. (Today: both exit 2 with "unrecognized arguments".)
+- [ ] The README usage examples list the flag, checkable by `grep -- --version README.md`.
+- [ ] `pyproject.toml` has no new runtime dependency, checkable by `git diff -- pyproject.toml`.
+
+## Quality requirements
+
+none
+
 ## Acceptance Criteria (global)
 
 - [ ] Both task ACs met
@@ -51,6 +82,10 @@ None.
 - [ ] `uv run ruff check .` exits 0
 - [ ] No new runtime dependencies in `pyproject.toml`
 - [ ] README updated with the new flag in the usage examples
+
+## Verification
+
+`uv run pytest tests/test_cli.py && uv run ruff check . && uv run spm --version`
 
 ## Edge Cases
 
@@ -63,6 +98,11 @@ None.
 - Per-subcommand version flags (`spm install --version`). Not a real user need.
 - Version comparison utility (`spm version --check-newer`). Future, separate spec.
 - Auto-update on outdated version detected. Belongs in a separate `spm self-update` feature.
+
+## Touches
+
+- src/spm/**
+- tests/**
 
 ## Decision Log
 

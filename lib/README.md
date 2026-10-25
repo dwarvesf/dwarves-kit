@@ -9,22 +9,47 @@ orphans with no cluster stay as bare scripts at the root.
 
 ## Subsystems
 
-| Dir | Files |
+Every `lib/` directory has one row.
+
+| Dir | Purpose |
 |---|---|
-| `board/` | `board.sh` `board-mirror.sh` `board-writeback.sh` `parse-board.sh` `backlog.sh` |
-| `queue/` | `orchestrate.sh` `queue.sh` `harness.sh` `orca-backend.sh` `sanitize.sh` `watch-board.sh` `pane-tail.jq` |
-| `reflect/` | `reflect.sh` `drain.sh` `drain.py` `propose.py` `weekend-batch.sh` `hook-util.sh` `shlex-split.sh` `staging-format.py` `staging-format.jq` |
-| `gate/` | `gate-ledger.sh` `proof-gate.sh` `proof-ledger.sh` `proof-table-gen.py` `proof-table-gen.sh` `dispatch-gate.sh` `quiz-gate.sh` `coverage-delta.sh` `verify-counts.sh` `mutation-smoke.sh` |
-| `classify/` | `lane-classify.sh` `role-classify.sh` `significance-classify.sh` `task-type-classify.sh` `route-suggest.sh` |
-| `spec/` | `spec-index.sh` `spec-next.sh` `spec-task-done.sh` |
-| `goal/` | `goal.sh` `goal-drafts.sh` `goal-registry.sh` `attempt-state.sh` `megagoals.sh` `mega-merge.sh` `stack-merge.sh` `wt.sh` `handoff-gen` + `handoff/` (`handoff_gen.py`, `cc_compact.py`) |
-| `mega/` | `mega.sh` `mega-report.py` `mega-review.py` (the mega-goal engine + its two python halves; stable entry via `bin/mega`) |
-| `telemetry/` | `lane-telemetry.sh` `kit-log-dir.sh` |
-| `session/` | `session.sh` (verb dispatcher behind `bin/session`) `parse_transcript.py` `parse-transcript.sh` (the shared transcript parser) `handoffs.sh`, plus the sub-tools `recall/` `observe/` `intel/` `audit/` |
-| `precedent/` | `precedent.sh` `inventory.py` (records + inventory surfaces; stable entry `bin/precedent`) |
-| `intake/` | `intake.sh` (the knowledge-intake dedup gate; stable entry `bin/intake`). No command, skill or hook in this kit calls it: the callers are an operator's own intake skills, so a kit-only install never exercises it |
-| `system-design/` | `build` `template.html` `delta.js` `layout.js` `shots.mjs` `test.mjs` `FORMAT.md` `examples/marketplace/` (the UML drawing-set engine behind `skills/system-design`; bash + git to build, node optional for `--shots` and `test.mjs`) |
-| *(root)* | `adopt.sh` `explain.sh` `pitch.sh`, orphans, no cluster |
+| `adopt/` | `/kit:adopt` support: the AGENTS pointer template, known old-copy hashes, `onboarding-cost.sh`. The driver is `adopt.sh` at the root. |
+| `audit/` | `audit.sh`, the cadence trigger for the audit-loop instances (`bin/audit`). |
+| `bench/` | The bench plane: a comparative benchmark runner, its `dashboard.py` control-plane view, and the lens eval. Backs `skills/observe`. |
+| `board/` | The kanban cockpit: `board.sh` and its verbs (`work`, `mirror`, `writeback`, `promote`), `backlog.sh`, `parse-board.sh`. Entry: `bin/board`. |
+| `classify/` | The classifiers: lane, role, significance, task type and route suggestion. Entry: `bin/classify`. |
+| `codex/` | `repin.sh`, a hand-run verb that recomputes the sha256 pins in `hooks/codex-hooks.json`. |
+| `config/` | The config layer: `kit-config.sh` resolver (project > operator > kit-root), `modules.tsv` (the one module table), `module-registry.md` (module to stage map). |
+| `cosmetic/` | The `cosmetic` module's docs: six session-comfort hooks that sit outside the loop. The hook scripts live in `hooks/`. |
+| `decide/` | `flick.sh`, the decide engine: answer a pick-one-of-N question through a decision API, shadow-only and fail-open. Entry: `bin/flick`. |
+| `gate/` | The Check stage's engine: gate and proof ledgers, ship rules, dispatch gate, quiz gate, coverage-delta, mutation-smoke, battery and doc-projection checks. Entry: `bin/gate`; see `gate/README.md`. |
+| `gauntlet/` | `stats.sh`, a read-only projection over the gauntlet run-record corpus. |
+| `goal/` | Goal drafts and the running-goal registry, attempt state, mega-goal merge helpers, the handoff generator. Entry: `bin/goal`. |
+| `host/` | `load-warn.sh`, one warning line when the host is too loaded for a heavy run. |
+| `intake/` | `intake.sh`, the knowledge-intake dedup gate (`bin/intake`). No command, skill or hook in this kit calls it: the callers are an operator's own intake skills, so a kit-only install never exercises it. |
+| `ledger/` | `ledger.sh`, the kit's one append substrate that the gate, proof and telemetry writers share. |
+| `lint/` | `scattered-ids.sh`, the lint for spec, task and ADR ids outside their sanctioned homes. Entry: `bin/lint`. |
+| `mega/` | The mega-goal engine: `mega.sh` status reconcile against git truth, report, review and runs-dashboard halves. Entry: `bin/mega`. |
+| `money-gate/` | The `money_gate` module: a PreToolUse guard that asks before a money-touching edit lands in a repo you named financial. |
+| `plugin-check/` | Read-only freshness lens over the installed Claude Code plugins. Entry: `bin/plugin-check`. |
+| `precedent/` | "Have we done this before?": the records and inventory surfaces. Entry: `bin/precedent`. |
+| `proof/` | `asset.sh`, the proof-asset pipeline behind `bin/proof-asset`. |
+| `prose-rag/` | The `prose_rag` module: local semantic search over your own prose corpus, for prompt injection. Entry: `bin/prose-rag`. |
+| `queue/` | The overnight queue launcher, the non-LLM orchestrator (`orchestrate.sh`, one fresh session per sub-goal), harness and Orca backends. Entry: `bin/queue`. |
+| `reflect/` | The Reflect stage: reads what the harness recorded, proposes work into staging, drains and promotes it. Entry: `bin/reflect`. |
+| `registry/` | `feature-registry.sh`, the generator for `docs/FEATURES.md`, plus the id-parenthetical stripper. |
+| `repohygiene/` | Tier 1 of the `kit:repo-hygiene` audit: mechanical findings on decayed files in one git repo. |
+| `session/` | `session.sh`, the verb dispatcher (`bin/session`), the shared transcript parser, `handoffs.sh`, and the sub-tools `recall/` `observe/` `intel/` `audit/`. |
+| `skill-curator/` | The skill half of the self-improvement loop: drafts a SKILL.md from a session, a promote gate, and a consolidating curator (`bin/skill-improve`, `bin/skill-review`). |
+| `spec/` | Spec index, depth, find, next and task-done helpers. Entry: `bin/spec`. |
+| `stats/` | The read plane: a stateless, read-only projection over the append-only ledgers (Python, run via `uv`). Entry: `bin/stats`. |
+| `sync/` | Board sync: two-way sync between `BACKLOG.md` and its spokes (Apple Reminders, Notion, Hermes kanban, Multica). |
+| `system-design/` | The UML drawing-set engine behind `skills/system-design`: renders `docs/SYSTEM-DESIGN.md` as HTML with the delta marked (bash + git to build, node optional). |
+| `telemetry/` | Lane telemetry, the durable log-dir resolver (`kit-log-dir.sh`), hook-log dir, ledger migration, egress-fail. |
+| `webcheck/` | Audits a live public website for agent readiness (stdlib Python, read-only HTTP). |
+| `worktree-provision/` | Provisions a fresh git worktree: links the gitignored env and runs the project install. Entry: `bin/worktree-provision`. |
+| `wrap/` | The landing step after ship: scan, apply, merge, land, start, rebase, log, adopt and more; verb table in `docs/wrap.md`. Entry: `bin/wrap`. |
+| *(root)* | `adopt.sh` (the `/kit:adopt` driver), `explain.sh` (`/kit:explain` engine), `pitch.sh` (`/kit:pitch` engine), `onboard-detect.sh` (install-mode detector for `/kit:onboard`): orphans, no cluster |
 
 ## Resolution scheme (the `LIB_ROOT` anchor, no shims)
 
