@@ -31,6 +31,10 @@
 #        RUN_ALL_JOBS=<n>         parallel suites (default: auto on macOS, 1 elsewhere)
 #        RUN_ALL_TIMEOUT_SECS=<n>  per-suite ceiling (default: 300; bin/test-affected.timeouts lists the
 #                                  per-suite values). When set it applies to every suite.
+#        RUN_ALL_TIMEOUT_FLOOR_SECS=<n>  a minimum for every suite's ceiling: a suite listed lower runs
+#                                  under <n>, one listed higher keeps its own. For a runner far slower
+#                                  than the host the file was measured on. Empty or non-numeric: unset.
+#                                  RUN_ALL_TIMEOUT_SECS, when set, still wins over both.
 #        DWARVES_KIT_LOG_DIR / KIT_LEDGER_DIR  the kit log root (lib/telemetry/kit-log-dir.sh); a failed
 #                                  suite's full output is kept under <root>/run-all/<stamp>/<suite>.out
 # Exit:  0 all green, 1 one or more failed (every failure is listed at the end).
@@ -80,7 +84,12 @@ suite_timeout() {
   if [ -r "$KIT_DIR/bin/test-affected.timeouts" ]; then
     listed="$(awk -v n="$1" '$1 == n && $2 ~ /^[0-9]+$/ { print $2; exit }' "$KIT_DIR/bin/test-affected.timeouts")"
   fi
-  echo "${listed:-$TIMEOUT_SECS}"
+  local limit="${listed:-$TIMEOUT_SECS}"
+  case "${RUN_ALL_TIMEOUT_FLOOR_SECS:-}" in
+    ''|*[!0-9]*) ;;
+    *) [ "$limit" -ge "$RUN_ALL_TIMEOUT_FLOOR_SECS" ] || limit="$RUN_ALL_TIMEOUT_FLOOR_SECS" ;;
+  esac
+  echo "$limit"
 }
 # kit_timeout: GNU timeout, else a perl one, so a stock macOS enforces the limits too.
 source "$KIT_DIR/tests/lib/timeout.sh"

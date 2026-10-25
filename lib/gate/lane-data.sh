@@ -228,7 +228,7 @@ lane_hard_path_exempt() {
   can="$(mktemp "${TMPDIR:-/tmp}/kit.XXXXXX")" || { command rm -f "$tmp"; return 0; }
   printf '%s\n' "$_LD_EXEMPT_CANARIES" > "$can"
   sha="$(git -C "$root" rev-parse --short "$rev" 2>/dev/null || printf '%s' "$rev")"
-  awk -v sha="$sha" '
+  awk -v sha="$sha" -v BOM="$(printf '\357\273\277')" '
     function trim(s) { sub(/^[[:space:]]+/, "", s); sub(/[[:space:]]+$/, "", s); return s }
     function sw(v, i) { while (substr(v, i, 1) ~ /[ \t]/) i++; return i }
     function cfgerr(m) { cerr[++ncerr] = m }
@@ -301,7 +301,7 @@ lane_hard_path_exempt() {
       return out
     }
     NR == FNR { can[++nc] = $0; next }
-    { line = $0; sub(/\r$/, "", line); if (FNR == 1 && substr(line, 1, 3) == "\357\273\277") line = substr(line, 4); t = trim(line) }
+    { line = $0; sub(/\r$/, "", line); if (FNR == 1 && index(line, BOM) == 1) line = substr(line, 1 + length(BOM)); t = trim(line) }
     t == "" || t ~ /^#/ { next }
     index(t, "\"\"\"") || index(t, "\047\047\047") { tq = 1 }
     t ~ /^\[/ {

@@ -80,5 +80,11 @@ jobs:
           major="$(bash -c 'echo ${BASH_VERSINFO[0]}')"
           [ "$major" -ge 4 ] || { echo "bash $major is too old; the kit needs 4+"; exit 1; }
 
+      # macos-latest ran at a 1-minute load of 75 on 3 cores, 25x the host bin/test-affected.timeouts
+      # was measured on, and two 60 s suites hit their ceiling. The floor lifts every ceiling to 300 s
+      # on that job only: a listed higher ceiling keeps its own value, and a real hang still ends at
+      # 300 s. Empty on ubuntu, which falls back to the per-suite file.
       - name: Run every test suite (tests/run-all.sh)
+        env:
+          RUN_ALL_TIMEOUT_FLOOR_SECS: ${{ matrix.os == 'macos-latest' && '300' || '' }}
         run: bash tests/run-all.sh --all

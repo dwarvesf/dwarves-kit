@@ -91,6 +91,21 @@ if [ "$(lim test-heavy "")" = 900 ] && [ "$(lim test-allgood "")" = 300 ] \
   ok "listed suite 900, unlisted 300, explicit RUN_ALL_TIMEOUT_SECS wins for all"
 else no "heavy=$(lim test-heavy "") allgood=$(lim test-allgood "") heavy+env=$(lim test-heavy 7) allgood+env=$(lim test-allgood 7)"; fi
 
+echo "[7b] RUN_ALL_TIMEOUT_FLOOR_SECS raises a low listed ceiling, never lowers a high one; empty or junk is ignored; the explicit override still wins"
+printf '# header\ntest-heavy 900\ntest-light 60\n' > "$K5/bin/test-affected.timeouts"
+printf '#!/usr/bin/env bash\nexit 0\n' > "$K5/tests/test-light.sh"
+limf() { # $1 = suite ; $2 = RUN_ALL_TIMEOUT_FLOOR_SECS ; $3 = RUN_ALL_TIMEOUT_SECS (optional)
+  local od; od="$(mktemp -d "$TMP/od.XXXXXX")" || exit 1
+  ( cd "$K5" && unset RUN_ALL_TIMEOUT_SECS RUN_ALL_TIMEOUT_FLOOR_SECS
+    [ -z "$2" ] || export RUN_ALL_TIMEOUT_FLOOR_SECS="$2"; [ -z "${3:-}" ] || export RUN_ALL_TIMEOUT_SECS="$3"
+    bash tests/run-all.sh --run-one "tests/$1.sh" "$od" >/dev/null 2>&1 )
+  cat "$od/$1.limit" 2>/dev/null
+}
+if [ "$(limf test-light 300)" = 300 ] && [ "$(limf test-heavy 300)" = 900 ] && [ "$(limf test-allgood 200)" = 300 ] \
+   && [ "$(limf test-light "")" = 60 ] && [ "$(limf test-light abc)" = 60 ] && [ "$(limf test-light 300 7)" = 7 ]; then
+  ok "floor 300: light 60 -> 300, heavy 900 stays, unlisted 300 stays; empty and junk leave 60; explicit 7 wins"
+else no "light=$(limf test-light 300) heavy=$(limf test-heavy 300) unlisted=$(limf test-allgood 200) empty=$(limf test-light "") junk=$(limf test-light abc) explicit=$(limf test-light 300 7)"; fi
+
 echo "[8] a suite over its listed ceiling prints TIMEOUT with that limit, not the global one"
 K6="$TMP/k6"; mkkit "$K6"; mkdir -p "$K6/bin"; slow "$K6"
 printf '# header\ntest-slowpoke 1\n' > "$K6/bin/test-affected.timeouts"
