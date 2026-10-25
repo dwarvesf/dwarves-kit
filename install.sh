@@ -24,7 +24,7 @@ set -euo pipefail
 # the front door must refuse before any write happens).
 for prereq in jq git; do
   if ! command -v "${prereq}" >/dev/null 2>&1; then
-    echo "dwarves-kit install requires '${prereq}' (docs/MANUAL.md: Install options and modules)." >&2
+    echo "dwarves-kit install requires '${prereq}' (README: Requirements)." >&2
     echo "Install it first (brew/apt, or a static binary on PATH), then re-run." >&2
     exit 1
   fi
