@@ -242,6 +242,12 @@ case "$red_attempts" in
 esac
 [ "$red_attempts" -ge 1 ] || { echo "negctl: NEGCTL_RED_ATTEMPTS must be >= 1 (got '$red_attempts')" >&2; exit 64; }
 
+# <root> may be a subdirectory of the repo. `git diff --name-only` prints toplevel-relative
+# paths, but `git -C <subdir> checkout HEAD -- <path>` resolves them against the subdir, so the
+# restore must run from the toplevel or it fails and leaves the mutation in place. Tests and
+# mutations still run in <root>.
+top="$(git -C "$root" rev-parse --show-toplevel 2>/dev/null)" || { echo "negctl: cannot resolve the toplevel of $root" >&2; exit 64; }
+
 if [ -n "$(git -C "$root" status --porcelain --untracked-files=no 2>/dev/null)" ]; then
   echo "negctl: REFUSED -- tracked files are modified or staged in $root; commit first (the restore step is 'git checkout HEAD --', it would wipe them)" >&2
   exit 2
@@ -427,7 +433,7 @@ restore() {
     done
   fi
   if [ "${#to_restore[@]}" -gt 0 ]; then
-    git -C "$root" checkout -q HEAD -- "${to_restore[@]}" 2>/dev/null \
+    git -C "$top" checkout -q HEAD -- "${to_restore[@]}" 2>/dev/null \
       || fail "restore failed: git checkout HEAD -- ${to_restore[*]}"
   fi
   if [ "${#side_effect[@]}" -gt 0 ]; then
