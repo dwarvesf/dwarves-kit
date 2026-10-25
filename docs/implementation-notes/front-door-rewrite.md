@@ -14,7 +14,8 @@ Delta from the brief, not a mirror of it.
 ## Skips
 
 - Mermaid and ASCII diagrams moved into the MANUAL as they were. RL-03 scopes README, QUICKSTART and guides only.
-- Comments in `install.sh` and one test still say "README Option 2". Only the user-visible installer message was repointed.
+- `install.sh` still says "README: Requirements" in its missing-prereq message, and comments there and in one test say "README Option 2". A source edit would have voided the docs-only override, so they are left for a follow-up (point them at `docs/MANUAL.md` "Install options and modules").
+- The override is not enough on its own: the pin edits are source, so `docs/verification/front-door-rewrite.md` carries the run blocks and a negative control.
 
 ## Open
 
