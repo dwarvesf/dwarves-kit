@@ -1,0 +1,120 @@
+#!/bin/bash
+# Render the README and guide figures from docs/figures/MODEL.md, and check they are fresh.
+# Usage: doc-figures render [model] [outdir]   needs node 22+ and Chrome or Edge (CHROME overrides the path)
+#        doc-figures check  [model] [outdir]   no browser; exit 1 on any problem
+# Defaults: model docs/figures/MODEL.md, outdir docs/figures, both under the repo root. DOC_FIGURES_ROOT overrides the root.
+set -euo pipefail
+
+here=$(cd "$(dirname "$0")" && pwd)
+root=${DOC_FIGURES_ROOT:-$(cd "$here/../.." && pwd)}
+die() { echo "doc-figures: $*" >&2; exit 1; }
+
+hash_text() { if command -v shasum >/dev/null 2>&1; then shasum -a 256; else sha256sum; fi | cut -d' ' -f1; }
+
+# blocks <model>: one "<id><TAB><sha256 of the block text>" line per uml fence, sorted by id.
+# The block text is every line between the fences, each ended by a newline.
+blocks() {
+  local fence='```' inb=0 text='' id='' line trimmed
+  while IFS= read -r line || [ -n "$line" ]; do
+    trimmed=${line%"${line##*[![:space:]]}"}
+    if [ "$inb" -eq 0 ]; then
+      if [ "$trimmed" = "${fence}uml" ]; then inb=1; text=''; id=''; fi
+    elif [ "$trimmed" = "$fence" ]; then
+      inb=0
+      [ -n "$id" ] || return 1
+      printf '%s\t%s\n' "$id" "$(printf '%s' "$text" | hash_text)"
+    else
+      text+="$line"$'\n'
+      if [ -z "$id" ] && [[ $line =~ ^id:[[:space:]]*(.*[^[:space:]]) ]]; then id=${BASH_REMATCH[1]}; fi
+    fi
+  done <"$1" | LC_ALL=C sort
+}
+
+resolve_args() {
+  model=${1:-$root/docs/figures/MODEL.md}
+  outdir=${2:-$root/docs/figures}
+  [ -f "$model" ] || die "no such model file: $model"
+}
+
+cmd_render() {
+  resolve_args "$@"
+  local table; table=$(blocks "$model") || die "$model has a uml block without an id"
+  [ -n "$table" ] || die "no uml blocks in $model"
+  local dups; dups=$(printf '%s\n' "$table" | cut -f1 | uniq -d)
+  [ -z "$dups" ] || die "duplicate sheet id: $dups"
+
+  tmp=$(mktemp -d "${TMPDIR:-/tmp}/doc-figures.XXXXXX")
+  trap 'rm -rf "$tmp"' EXIT
+  # The shots land in a scratch directory, so a stray (a cover, a sheet the model dropped) never reaches outdir.
+  SHOT_CLIP=figure SHOT_SCALE=${SHOT_SCALE:-2} bash "$here/build" --model "$model" --out "$tmp/figures.html" --shots "$tmp/shots" >"$tmp/build.log" 2>&1 \
+    || { cat "$tmp/build.log" >&2; die "build or shots failed"; }
+
+  mkdir -p "$outdir"
+  local id
+  while IFS=$'\t' read -r id _; do
+    [ -f "$tmp/shots/d-$id.png" ] || die "no shot for sheet $id"
+    mv -f "$tmp/shots/d-$id.png" "$outdir/$id.png"
+  done <<<"$table"
+  printf '%s\n' "$table" >|"$outdir/MANIFEST.tsv"
+  echo "rendered $(printf '%s\n' "$table" | wc -l | tr -d ' ') figures into $outdir"
+}
+
+cmd_check() {
+  resolve_args "$@"
+  local bad=0
+  problem() { echo "$1"; bad=1; }
+  local manifest=$outdir/MANIFEST.tsv
+  [ -f "$manifest" ] || { echo "MANIFEST.tsv: missing in $outdir (run render)"; exit 1; }
+
+  local table; table=$(blocks "$model") || { echo "$model: a uml block has no id"; exit 1; }
+  local model_ids; model_ids=$(printf '%s\n' "$table" | cut -f1)
+  local manifest_ids; manifest_ids=$(cut -f1 "$manifest")
+  local dups; dups=$(printf '%s\n' "$model_ids" | uniq -d)
+  [ -z "$dups" ] || problem "$model: duplicate sheet id: $dups"
+
+  local id hash mhash
+  # Model against manifest, both ways.
+  while IFS=$'\t' read -r id hash; do
+    [ -n "$id" ] || continue
+    mhash=$(awk -F'\t' -v id="$id" '$1 == id { print $2; exit }' "$manifest")
+    if [ -z "$mhash" ]; then problem "$id: in the model, not in MANIFEST.tsv (run render)"
+    elif [ "$mhash" != "$hash" ]; then problem "$id: sheet changed since the last render (run render)"; fi
+  done <<<"$table"
+  while IFS= read -r id; do
+    [ -n "$id" ] || continue
+    printf '%s\n' "$model_ids" | grep -qxF -- "$id" || problem "$id: in MANIFEST.tsv, not in the model"
+    [ -f "$outdir/$id.png" ] || problem "$id: $outdir/$id.png is missing"
+  done <<<"$manifest_ids"
+  # A PNG the manifest does not list.
+  local f
+  for f in "$outdir"/*.png; do
+    [ -e "$f" ] || continue
+    id=$(basename "$f" .png)
+    printf '%s\n' "$manifest_ids" | grep -qxF -- "$id" || problem "$id: $f is not in MANIFEST.tsv"
+  done
+
+  # Every figures/<id>.png reference in README.md and the living docs names a manifest id.
+  # Dated records (proofs, specs, notes, retros, research) describe their moment and may quote a bad id on purpose.
+  local docs=() file line ref
+  [ ! -f "$root/README.md" ] || docs+=("$root/README.md")
+  while IFS= read -r file; do docs+=("$file"); done < <(find "$root/docs" \( -path "$root/docs/verification" -o -path "$root/docs/specs" \
+    -o -path "$root/docs/implementation-notes" -o -path "$root/docs/retro" -o -path "$root/docs/research" \
+    -o -path "$root/docs/audits" \) -prune -o -name '*.md' -type f -print 2>/dev/null | LC_ALL=C sort)
+  for file in ${docs[@]+"${docs[@]}"}; do
+    while IFS=: read -r line ref; do
+      [ -n "$ref" ] || continue
+      id=${ref#figures/}; id=${id%.png}
+      printf '%s\n' "$manifest_ids" | grep -qxF -- "$id" || problem "${file#"$root"/}:$line: figures/$id.png names no manifest id"
+    done < <(grep -noE 'figures/[A-Za-z0-9_-]+\.png' "$file" || true)
+  done
+  [ "$bad" -eq 0 ] || exit 1
+  echo "doc-figures: ok ($(printf '%s\n' "$manifest_ids" | wc -l | tr -d ' ') figures)"
+}
+
+case "${1:-}" in
+  render) shift; cmd_render "$@" ;;
+  check) shift; cmd_check "$@" ;;
+  -h|--help) sed -n 2,5p "$0" ;;
+  '') sed -n 2,5p "$0" >&2; exit 2 ;;
+  *) die "unknown verb: $1 (use render or check)" ;;
+esac

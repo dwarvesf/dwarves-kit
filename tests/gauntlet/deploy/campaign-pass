@@ -13,7 +13,7 @@
 #
 # Probe: inherits PROBE_CMD from the environment or falls back to the runner's
 # Tier-1 default (claude -p). The omp/NeuralWatt cheap-probe recipe is an
-# OPT-IN the operator exports (docs/guides/gauntlet-tutorial.md "Cheap probe");
+# OPT-IN the operator exports (docs/guides/gauntlet.md "Cheap probe");
 # nothing operator-specific is baked here (SPEC-239 distribution honesty).
 set -uo pipefail
 KIT_ROOT="${KIT_ROOT:?set KIT_ROOT to the kit checkout this pass runs from}"
