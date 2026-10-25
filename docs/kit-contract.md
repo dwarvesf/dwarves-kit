@@ -8,7 +8,7 @@ in each row is the incident, not a hypothetical.
 are reading this to decide whether your change is compliant, run the lint instead; if the
 lint and this page ever disagree, the lint wins and this page is the bug.
 
-## The seven rules
+## The ten rules
 
 | # | Rule | Why (the incident) |
 |---|---|---|
@@ -19,6 +19,9 @@ lint and this page ever disagree, the lint wins and this page is the bug.
 | **C5 Currency** | Every proposer emits `## [staged]` blocks through `lib/reflect/staging-format.py` and never writes a board directly. The human gate (`board promote`) owns that write. | Three proposal shapes for one gate. `session-audit triage` invented a fourth before review caught it. `session intel` (T6) and `/kit:retro` (T7) emitted prose nobody could promote until 2026-07-15; every proposer now speaks the one currency. |
 | **C6 Durable root** | Anything that persists resolves its path through `lib/telemetry/kit-log-dir.sh` (SPEC-097). Never hardcode `~/.claude/dwarves-kit/logs`. | `queue.sh` defaulted its journal into the exact path a plugin reinstall wipes: the one telemetry corpus SPEC-097 did not protect. |
 | **C7 Portable tests** | No test invokes a tool CI lacks (`rg`, `fd`, `sd`, `bat`...). Use POSIX `grep`/`find`. | The C1 lint's first cut used `rg`. On CI, `rg` is absent, the sweep produced no output, and the emptiness-assert **passed vacuously**. Only its negative control caught it. |
+| **C8 CI** | Every `.github/workflows/*.yml` is valid YAML. Quote a step name that carries `: `. | An unquoted step name with `: ` parsed as a mapping and invalidated the whole workflow file. It failed at 0s, so every lint in it silently stopped guarding anything. |
+| **C9 Dispatch** | Every "dispatched by /X" claim (agent frontmatter, README roster) is backed by a command that really dispatches that agent. | Four such claims were wrong at once: agents advertised a dispatcher that never named them, so a reader trusted a wiring that did not exist. |
+| **C10 Exec** | Every text executable in a module declares its interpreter: a shebang and the exec bit. | An extensionless Python executable had no shebang. A caller guessed `bash <script>` and it died on the docstring. |
 
 ## What the lint does NOT check (do not mistake green for safe)
 
@@ -34,41 +37,36 @@ Stated plainly, because a contract that over-claims is worse than one that admit
 - **C5** catches the renderer bypass and three board-append shapes; a `sed -i` insertion or a
   path assembled at runtime evades the grep. The real guarantee is the shared renderer.
 - **C6** is a literal-path match; string concatenation evades it.
+- **C8** checks that the workflow file parses, not that its steps do what they claim.
+- **C9** checks that a command mentions the agent it is said to dispatch, not that the dispatch
+  runs.
+- **C10** checks the shebang and exec bit, not that the named interpreter fits the code.
 
 This is why the lint is only half the gate. The other half is the review lenses (below), and
 they are not optional for a new module.
 
 ## The rule behind the rules: every absence-assertion needs a planted violation
 
-Five of the seven rules assert that something is *absent* (no `CC_*`, no bespoke block, no
+Several of the rules assert that something is *absent* (no `CC_*`, no bespoke block, no
 hardcoded path, no non-portable tool). An absence-assertion that cannot fail is worse than
 no test: it reports safety it never checked. So `tests/test-kit-contract.sh` plants a
-violation for each and asserts it is caught.
+violation for every rule (C1 to C10) and asserts it is caught.
 
 And the planted violation must arrive in a shape the rule's author did NOT have in mind. A
 negative control that plants the violation in the exact syntactic form the regex was written
 against proves only that the regex matches itself.
 
-This is not theory. In one afternoon the discipline caught, in this order: the `rg`-on-CI
-vacuous pass; a lint that flagged its own fixture; C1 blind to `os.environ.get('X')` in single
-quotes, to `os.environ["X"]`, and to a bare `export X=`; C6 blind to every extensionless
-executable (which is the kit's own house style, so it was blind to most of the kit); C7 blind
-to `rg "pat" file` with no flag; C5 fooled by a bespoke writer that name-dropped the renderer
-in a comment; and a module-scope definition under which C3/C4 examined 3 of the kit's 12
-modules while reporting green. Every one of those was found by a review lens re-planting the
-violation differently, not by the suite itself.
+This is not theory: in one afternoon the discipline caught seven blind spots, each found by a
+review lens re-planting the violation differently, not by the suite itself. The list is in
+`docs/retro/RETRO-2026-10-25-kit-contract-incidents.md`.
 
 ## Fanning work out to parallel agents
 
 **One worktree per writer. No exceptions, and this one is not theoretical.**
 
-On 2026-07-15 three agents were dispatched into the SAME checkout to close three doc gaps in
-parallel. Git branches share a working tree, so within minutes: HEAD had been switched out from
-under two of them, one agent's commit landed on another's branch, the contract test flapped red
-from a half-built scaffold that was not its own, and `git .../index.lock` collisions appeared in
-the session's own telemetry. Both agents detected the collision and untangled it with plumbing
-(`commit-tree`, an atomic ref update) without destroying anything, but that recovery was luck
-plus care, not design.
+Git branches share a working tree, so agents dispatched into the SAME checkout switch HEAD out
+from under each other, land commits on each other's branches, and collide on `index.lock`. The
+incident is in `docs/retro/RETRO-2026-10-25-kit-contract-incidents.md`.
 
 - Dispatch with `Agent(isolation: "worktree")`, or hand each agent an explicit `cwd` in a
   worktree the lead created first. A subagent must never create its own.
@@ -79,28 +77,23 @@ plus care, not design.
 If you catch yourself thinking "they are touching different files so it is fine": they are not
 touching different HEADs.
 
-**It also poisons your test results.** During that same fan-out an agent recorded one contract
-run at `23 passed, 1 failed` and could not reproduce it in 15 subsequent runs; nor could I in 10
-more. The most plausible cause is not a flaky lint: it is that the run read the tree while
-another writer was mid-edit. A shared checkout does not just risk your commits, it makes your
-green and your red both untrustworthy, which is the one thing a contract cannot afford.
+**It also poisons your test results.** A shared checkout does not just risk your commits: a run
+that reads the tree while another writer is mid-edit makes your green and your red both
+untrustworthy, which is the one thing a contract cannot afford.
 
 **Verify the commit's contents before you discard the worktree.** A worktree teardown that
 discards uncommitted changes is a delete; the commit is the only survivor, so look at it first:
-`git show --stat HEAD` must list every file you meant to ship. On 2026-07-17 a conductor's
-staging ran inside an `&&` chain where an innocent `grep -c` (zero matches, exit 1) broke the
-chain BEFORE `git add`; the commit sailed through with only the auto-staged `git mv` rename, the
-PR merged looking healthy, and the exit-discard silently destroyed the three files that were the
-actual point of the change. Two corollaries: never put `git add`/`git commit` downstream of a
-command whose nonzero exit is informational (`grep -c`, `diff`, a probe), and treat "the PR
-merged" as no evidence the PR contained the work.
+`git show --stat HEAD` must list every file you meant to ship. Two corollaries: never put
+`git add`/`git commit` downstream of a command whose nonzero exit is informational (`grep -c`,
+`diff`, a probe), and treat "the PR merged" as no evidence the PR contained the work. The
+incident behind this rule is in the retro linked above.
 
 ## Adding a new module, tool, or skill
 
 Work the list, in this order. Every step has a check you can run.
 
 1. **Name it by function, not by host.** Module dir `lib/<name>/`, env family `<NAME>_*`, executable named for what it does. Check: `bash tests/test-kit-contract.sh` (C1).
-2. **Place it on the loop.** Which of the five stages (Shape / Build / Watch / Check / Learn, ADR-0034) does it serve? Add the row to `lib/config/module-registry.md`. A tool that fits no stage is a tool with no reason to be in the kit.
+2. **Place it on the loop.** Which of the five stages (Shape / Build / Watch / Check / Reflect, ADR-0034; Learn was renamed by ADR-0036) does it serve? Add the row to `lib/config/module-registry.md`. A tool that fits no stage is a tool with no reason to be in the kit.
 3. **Wire it before you polish it.** A `bin/` shim or a dispatcher case, in the SAME commit as the first working version. Check: C2.
 4. **Pick the verbs from the closed vocabulary** (SPEC-200 I4): `run` (do the job, write the artifact), `show` (print, write nothing), `propose` (stage proposals), `promote` (the human gate), `trace` (one run's story). Do not invent a synonym.
 5. **If it proposes anything, use the currency.** `## [staged]` blocks via `staging-format.py`, deduped against staging + board, promoted by a human. Never write a board. Check: C5.
@@ -112,7 +105,7 @@ Work the list, in this order. Every step has a check you can run.
 
 The contract is a **Check**-stage gate, and it fires at two boundaries:
 
-- **Build -> Check**: `tests/test-kit-contract.sh` runs locally on every diff, as an always-on suite of `tests/run-all.sh`, and again in the release-tag CI run. Mechanical rules only (naming, wiring, docs presence, currency, root, portability). It cannot judge whether the docs are any *good*.
+- **Build -> Check**: `tests/test-kit-contract.sh` runs locally on every diff, as an always-on suite of `tests/run-all.sh`, and again in the release-tag CI run. Mechanical rules only (naming, wiring, docs presence, currency, root, portability, workflow validity, dispatch claims, interpreter declaration). It cannot judge whether the docs are any *good*.
 - **Check (judgment)**: for that, dispatch the review lenses. `kit:advisor` (the cross-cutting lens) plus a domain reviewer, and for a new module `kit:agent-effectiveness` if it ships an agent. A lint proves the shape; a reviewer proves the substance. Run both; the lint is cheap and the reviewer is not fooled by a technically-compliant README.
 
 Neither replaces the other. The 2026-07-14 sweep found 19 pipelines that all passed CI and
