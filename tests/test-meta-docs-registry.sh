@@ -154,14 +154,14 @@ for SECTION in "^## Required reading" "^## Size the work first" "^## The cycle" 
   fi
 done
 
-# Both the downstream template and the kit root now use docs/specs/ (post-unify, SPEC-010).
-# (ADR-0002). Asserting each in its own file catches a copy-paste path error.
+# The downstream example WORKFLOW.md is the pointer file adopt writes; the kit root uses docs/specs/
+# (post-unify, SPEC-010, ADR-0002).
 TOTAL=$((TOTAL + 1))
-if grep -qF 'docs/specs/' "$WF_DEMO" 2>/dev/null; then
-  echo -e "  ${GREEN}PASS${NC} examples/hello-spec/WORKFLOW.md uses docs/specs/"
+if grep -qF 'WORKFLOW.md (pointer)' "$WF_DEMO" 2>/dev/null; then
+  echo -e "  ${GREEN}PASS${NC} examples/hello-spec/WORKFLOW.md is the pointer file adopt writes"
   PASS=$((PASS + 1))
 else
-  echo -e "  ${RED}FAIL${NC} examples/hello-spec/WORKFLOW.md missing docs/specs/"
+  echo -e "  ${RED}FAIL${NC} examples/hello-spec/WORKFLOW.md is not the pointer file adopt writes"
   FAIL=$((FAIL + 1))
 fi
 
