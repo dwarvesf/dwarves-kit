@@ -527,7 +527,7 @@ edges:
 
 ## Which plane to reach for
 
-The side-by-side table from `docs/execution-planes.md`, drawn as a sheet, plus `/kit:dispatch`, which that doc leaves out. FORMAT.md has no table type, so this borrows the ERD: each box is one plane and each row is an attribute with its value. The isolation gaps it shows for the queue and the serial orchestrator are accepted trade-offs (see Risks), because neither path runs today.
+The side-by-side table from `docs/execution-planes.md`, drawn as a sheet. Four engines run agents (orchestrator, queue, `/kit:dispatch`, gauntlet); the board is a box beside them for contrast, not an executor. FORMAT.md has no table type, so this borrows the ERD: each box is one plane and each row is an attribute with its value. The isolation gaps it shows for the queue and the serial orchestrator are accepted trade-offs (see Risks), because neither path runs today.
 
 ```uml
 id: planes-compare
@@ -536,7 +536,6 @@ title: The planes side by side
 level: L2
 caption: "Borrowed ERD: each box is one plane, each row an attribute and its value, read across boxes like table columns. There are no links: the boxes stand side by side."
 review:
-  - "`docs/execution-planes.md` counts the board as a plane and leaves out `/kit:dispatch`; c-planes counts dispatch as one of four engines and the board as outside. Which set of four is canonical, so the doc and this sheet agree?"
   - "The queue ran 10 rows ever, all on the Air, none in the last month. Keep it as a plane beside the orchestrator, or retire it and note the live-login auth as the one thing lost?"
 tables:
   - name: board
@@ -618,7 +617,7 @@ title: Session and knowledge
 level: L2
 review:
   - harvest and transcript.sh need `python3` for the shared parser. Check for it at install time, or keep the hooks fail-open?
-  - "`session recall`, `handoffs.sh`, `explain.sh` and `pitch.sh` have no `bin/` forwarder, so callers use raw lib paths. Add forwarders before the workset module depends on two of them?"
+  - "`handoffs.sh`, `explain.sh` and `pitch.sh` have no `bin/` forwarder, so callers use raw lib paths. Add forwarders before the workset module depends on one of them?"
 nodes:
   - {id: transcripts, name: transcripts, note: "~/.claude/projects/*.jsonl", kind: store, at: [0, 0]}
   - {id: harvest, name: harvest hook and sweep, note: "PreCompact, 6h sweep, shared parser", at: [1, 0]}
@@ -760,7 +759,7 @@ type: component
 title: Workset beside session and board
 level: L2
 review:
-  - Workset reads `session recall` and `handoffs.sh` through raw lib paths today. Add `bin/` forwarders as part of the fold?
+  - Workset reads `session recall` through `bin/session` and `handoffs.sh` through a raw lib path today. Add a `bin/` forwarder for `handoffs.sh` as part of the fold?
   - The terminal launcher and the browser are host adapters. Ship the fold with both behind a config seam, or with the browser leg off?
 lanes:
   - {id: host, name: host adapters and outside, tone: gray}
@@ -937,7 +936,7 @@ rels:
 
 ## Push gate
 
-A `git push` or `gh pr create` from the agent passes two hooks in order. The safety-gate refuses destructive commands and default-branch pushes; the ship-gate then runs its checks in a fixed order and stops at the first gap. A pass still writes an OUTCOME pair, so the ledger shows the gate ran.
+A `git push` or `gh pr create` from the agent passes two hooks in order. The safety-gate refuses destructive commands and default-branch pushes; the ship-gate then runs its checks in a fixed order and stops at the first gap. In the kit's own repo it also refuses doc-projection drift and a stale feature registry, right after the proof check. A pass still writes an OUTCOME pair, so the ledger shows the gate ran.
 
 ```uml
 id: seq-push-gate
@@ -945,7 +944,7 @@ type: sequence
 title: A push through the gates
 level: L3
 review:
-  - Step 7 fails open (no base, bad ref, missing lib) while step 3 fails closed on an unparsable push. One policy for both?
+  - The proof-ledger check fails open (no base, bad ref, missing lib) while the push-ref parse fails closed on an unparsable push. One policy for both?
   - "`start --amend` may only raise a lane, but any writer can pass `--lower --reason`. Should a lowering need a marker only the operator can set?"
 participants:
   - {name: agent session, tone: violet}
@@ -969,6 +968,8 @@ messages:
   - {from: ship-gate, to: gate-policy, text: "enabled proof_of_done --at base", kind: call}
   - {from: ship-gate, to: proof-ledger, text: "check root base slug", kind: call}
   - {from: proof-ledger, to: ship-gate, text: "0 proven, 1 gap", kind: return}
+  - {from: ship-gate, to: ship-gate, text: "doc-projection-check (kit repo only)", kind: call}
+  - {from: ship-gate, to: ship-gate, text: "registry freshness (kit repo only)", kind: call}
   - {from: ship-gate, to: gate-ledger, text: "outcome ship start", kind: call}
   - {from: ship-gate, to: gate-ledger, text: "show slug (last START-AMEND lane)", kind: call}
   - {from: ship-gate, to: gate-ledger, text: "check lane slug, then check full on hard paths", kind: call}
@@ -1431,7 +1432,7 @@ transitions:
 - Layered config. One TOML reader, `lib/config/kit-config.sh`, resolves a key from the project `.kit.toml`, then the operator `~/.config/dwarves-kit/kit.toml`, then the kit-root `kit.toml`. The project layer counts only when it is tracked and clean, or when read at a revision with `--at`. Two readers sit on top: `gate-policy.sh` for `[gate]` keys (any reader error means ON) and `lane-data.sh` for `[lane.*]` phases. Vendor enablement, `runner_host`, `probe_key_ref` and `[decide]` are root-only on purpose. `[modules]` decides which hooks run: `lib/config/modules.tsv` maps each hook to its module, and `anchor-root.sh` skips a hook whose module is off (the spine never is).
 - The ledger root resolver. `kit-log-dir.sh` picks `$KIT_LEDGER_DIR`, else `$DWARVES_KIT_LOG_DIR`, else `[ledger].location`, else `${XDG_STATE_HOME:-~/.local/state}/dwarves-kit/logs`. A set-but-empty `KIT_LEDGER_DIR` is fatal. Every append goes through `lib/ledger/ledger.sh`, which collapses newlines so one event is one physical line. Hook audit logs use the same root through `hook-log-dir.sh`, in a `hooks/` subdirectory.
 - Fail-open versus fail-closed, per gate. safety-gate: always on, documented accepted holes. ship-gate: closed on an unloadable ship-rules, an unparsable push in an adopted repo, a missing Lane; open when no kit `lib/` exists. proof-ledger `check`: open on no base, a bad ref or a missing lib. gate-policy: an unreadable reader means ON. Advisory measures (coverage-delta, mutation-smoke, check-edit, load-warn, money-gate without STRICT): always exit 0. Codex adapter: closed, but Codex treats a hook failure as non-blocking.
-- Egress points. `claude -p --model haiku` from harvest and backlog-stage (transcript tails); `claude -p` sonnet from reflect propose, session-audit and the skill-curator reviewer; `claude -p` workers from the orchestrator and the queue; Jev or Clef HTTPS from flick (candidate slugs, gated by `decide.points`, `deny_words`, `word_gate`); webcheck HTTP to consumer-declared sites (http(s) only, same-host redirects); `hermes kanban` from the mirror and the sync spoke; `gh` from mega-merge, writeback, wrap and ci-drift. Every LLM egress fails open and exits 0.
+- Egress points. `claude -p --model haiku` from harvest and backlog-stage (transcript tails); `claude -p` sonnet from reflect propose, session-audit and the skill-curator reviewer; `claude -p` workers from the orchestrator and the queue; Jev or Clef HTTPS from flick (candidate slugs, gated by `decide.points`, `deny_words`, `word_gate`); webcheck HTTP to consumer-declared sites (http(s) only, same-host redirects); `hermes kanban` from the mirror and the sync spoke; `gh` from mega-merge, writeback, wrap and ci-drift; `bin/activate` to the forge API (`FORGE_API`, default `forge-api.infras.workers.dev`) through curl; `lib/bench/dashboard.py --push` to the URL passed or `[observe] push_url`, with `FORGE_ADMIN_TOKEN` as the bearer. Every LLM egress fails open and exits 0.
 - Worktree isolation and merge at the lead. Wave sessions, dispatch workers and `wrap start` each get a worktree under `.claude/worktrees/`. Workers never merge: the orchestrator converges one PR at a time under `flip.lock`, `/kit:dispatch` hands READY branches to the lead's `/kit:ship`, and tier-4 close HOLDs for a human. The serial orchestrator path and the queue still run in the real checkout.
 - Staging as the human gate. Proposers (stats anomalies, reflect propose, session-audit triage, session-intel, the stage hooks, `wrap stage`) append `[staged]` blocks through one grammar (`staging-format.py`, with a `.jq` twin for bash). `board promote` is the gate that mints a row, and every row write goes through `backlog.sh add`, under the board lock. Staging writes go through one lock, `staging_lock`.
 - One rid per run. The rid is the branch slug with `type/` stripped, derived after the branch exists. The same key joins assign-time records, ship-gate's push check, mega-merge and telemetry.

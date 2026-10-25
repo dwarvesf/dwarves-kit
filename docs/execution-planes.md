@@ -1,18 +1,21 @@
 # Execution planes
 
-The kit runs agents four different ways. Two of them live in the same directory and are
-separate engines, which is the single most confusing thing in the layout. This doc is the map.
+The kit runs agents four different ways: the orchestrator, the overnight queue, `/kit:dispatch`
+and the gauntlet. The board sits beside them and is not an executor. Two of the four live in the
+same directory and are separate engines, which is the single most confusing thing in the layout.
+This doc is the map.
 
 `docs/architecture.md` owns each component's internals. This doc owns the comparison: what
 each plane is for, how they hand off, where they deliberately do not connect, and which one
 to reach for.
 
-## The four planes
+## The four planes, plus the board
 
 ```
                         ┌──────────────────────────────────────────┐
-                        │  BOARD          rows, states, admission  │
-                        │  lib/board/     runs no agent at all     │
+                        │  BOARD   (not an executor)               │
+                        │  lib/board/     rows, states, admission  │
+                        │                 runs no agent at all     │
                         └───────────────┬──────────────────────────┘
                                         │ a row carries #queue{repo=,pointer=}
                         ┌───────────────┴──────────────┐
@@ -34,6 +37,14 @@ to reach for.
                         └──────────────────────────────┘
 
         ┌──────────────────────────────────────────────────────────┐
+        │ /KIT:DISPATCH   commands/dispatch.md                      │
+        │                                                           │
+        │ the lead session fans out Agent-tool workers, one         │
+        │ worktree per disjoint VALIDATED spec. No board row, no    │
+        │ queue; the lead converges through /kit:ship.              │
+        └──────────────────────────────────────────────────────────┘
+
+        ┌──────────────────────────────────────────────────────────┐
         │ GAUNTLET      tests/gauntlet/cleanroom/                   │
         │                                                           │
         │ a DISPOSABLE probe in a fresh Docker container each round.│
@@ -50,19 +61,19 @@ queue-launched session may also invoke the orchestrator as one of its own tool c
 
 ## Side by side
 
-| | board | orchestrator | queue | gauntlet |
-|---|---|---|---|---|
-| Unit of work | a table row | a ROADMAP sub-goal | a tsv row | a probe card |
-| Runs an agent | no | `claude -p`, headless | `claude`, interactive | a probe in a container |
-| Concurrency | n/a | a wave, `WAVE_CAP` (2) | one row at a time | one probe per round |
-| Auth | n/a | the host's session | the operator's live login | a spend-capped API key |
-| Isolation | n/a | a worktree per wave session; the serial path uses the real checkout | none, the real checkout | a fresh container per round |
-| Mutates | the row | the code | the code | the artifact under test |
-| Ends when | a human sets a state | every box is checked | the journal has a verdict, and `done` needs a HEAD move or a new PR | a probe passes unaided twice |
+| | board (not an executor) | orchestrator | queue | `/kit:dispatch` | gauntlet |
+|---|---|---|---|---|---|
+| Unit of work | a table row | a ROADMAP sub-goal | a tsv row | a VALIDATED spec with `## Touches` | a probe card |
+| Runs an agent | no | `claude -p`, headless | `claude`, interactive | Agent-tool workers, in the background | a probe in a container |
+| Concurrency | n/a | a wave, `WAVE_CAP` (2) | one row at a time | the PARALLEL set, a cap of 4 held by hand | one probe per round |
+| Auth | n/a | the host's session | the operator's live login | the lead session | a spend-capped API key |
+| Isolation | n/a | a worktree per wave session; the serial path uses the real checkout | none, the real checkout | a worktree per worker | a fresh container per round |
+| Mutates | the row | the code | the code | the code, on `goal/<slug>` | the artifact under test |
+| Ends when | a human sets a state | every box is checked | the journal has a verdict, and `done` needs a HEAD move or a new PR | the READY branches go to `/kit:ship` | a probe passes unaided twice |
 
 ## What each is for
 
-**Board.** The ledger and the admission gate. States run `queued → claimed → speccing →
+**Board.** Not an executor: the ledger and the admission gate. States run `queued → claimed → speccing →
 validated → executing → shipped`, plus `parked` and `dropped`. It runs nothing. A row becomes
 executable only when it carries a `#queue{repo=<name>,pointer=<path>}` token, and
 `lib/board/parse-board.sh` is the sole authority that validates it: charset, repo
@@ -94,7 +105,14 @@ pull request was created since the window opened; a claim with neither is journa
 reason `no-delta`, so a human looks. The reaper (`watch-board.sh`) cannot check the delta for a
 slug whose conductor died, so it journals such a claim `gated` too, never `done`.
 
-**Gauntlet.** Not an executor. It converges an artifact, usually docs, until a fresh probe
+**Dispatch.** Several disjoint specs, now, with you watching. `/kit:dispatch` runs
+`lib/gate/dispatch-gate.sh plan` over the specs, fans out one background worktree worker per
+parallel-safe spec, drift-guards each worker, and hands convergence to `/kit:ship`. It never
+auto-merges and is not a DAG. It needs no board row and no pointer file, and it runs under the
+lead's `bypassPermissions` session. It shares the disjointness check with the orchestrator, not
+code.
+
+**Gauntlet.** It runs agents but executes no work. It converges an artifact, usually docs, until a fresh probe
 agent can complete a fixed task using only that artifact. See the duality below.
 
 ## The gauntlet is the dual of `/goal`
@@ -139,7 +157,7 @@ like a mistake until the goal is clear:
 ```
 
 Every link marked with a human is a human. Nothing walks this path end to end on its own, and
-the pointer file is the join: both executors need one, and only `/kit:assign` and `/kit:mega`
+the pointer file is the join: the orchestrator and the queue both need one, and only `/kit:assign` and `/kit:mega`
 produce one. A staged candidate row is prose, so it is not runnable until it has been through
 that step.
 
@@ -150,17 +168,18 @@ Almost nothing, and the exceptions are worth knowing.
 | Shared | Between | What it is |
 |---|---|---|
 | `lib/gate/gate-ledger.sh` | orchestrator, gauntlet | the telemetry rail. The orchestrator writes a START record and token counts for each dispatched sub-goal. The gauntlet reaches it only through the commands its prompt tells the lead to run (`commands/gauntlet.md`). The queue and `watch-board.sh` never call it; they write `queue-journal.tsv` |
+| `lib/gate/dispatch-gate.sh` | orchestrator, `/kit:dispatch` | the one disjointness authority: the orchestrator uses it to admit a wave, `/kit:dispatch` to plan its parallel set. `goal-registry.sh` sources it too, and `/kit:dispatch` claims its workers there |
 | `lib/queue/pane-tail.jq` | orchestrator, gauntlet | a display filter for streamed transcripts: `orchestrate.sh panes` and the gauntlet's cleanroom `watch.sh` use it. `queue.sh` never does |
 
 That is the full list. The gauntlet shares no orchestration logic, no state, and nothing at all
-with the board. The planes are independent engines; only the orchestrator and the gauntlet write
+with the board or `/kit:dispatch`. The planes are independent engines; only the orchestrator and the gauntlet write
 to the gate ledger, and the queue keeps its own journal.
 
 ## Trust and isolation
 
 This is where the planes differ most, and the difference is not documented anywhere else.
 
-**The two executors run unsandboxed on the operator's machine**, in the real checkout, with
+**The orchestrator and the queue run unsandboxed on the operator's machine**, in the real checkout, with
 `--dangerously-skip-permissions`. That is a deliberate tradeoff, not an oversight: the queue's
 own spec centres on avoiding a headless auth failure, and never discusses confinement.
 
@@ -186,6 +205,7 @@ non-https URLs, size cap) and wraps it in explicit untrusted-text fences. It fai
 |---|---|
 | track work and decide what is next | the board |
 | drive a multi-step plan whose steps depend on each other | `/kit:mega`, then the orchestrator |
+| fan out several disjoint, validated specs now, in worktrees | `/kit:dispatch` |
 | run prepared, independent work unattended overnight | the queue |
 | find out whether your docs actually work for a stranger | the gauntlet |
 | execute one thing right now, watching it | `/goal` in your own session |
@@ -199,4 +219,5 @@ Every plane fails closed. The knobs below are the ones worth knowing before star
 |---|---|
 | orchestrator | `WAVE_CAP`, a non-disjoint `## Touches`, a `gate!` sub-goal halting the loop, a failing gate ledger refusing the merge |
 | queue | `QUEUE_TIMEOUT_SECS` per row, two consecutive failures ending the night, stall quarantine, breaker cooldown, a tool-call ceiling |
+| `/kit:dispatch` | a spec with no `## Touches`, a gate `WAIT`, drift past the spec's touches, a lost worker attempt |
 | gauntlet | a hard round cap, a spend-capped key, an honest halt when severity stops falling |

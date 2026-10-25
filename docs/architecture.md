@@ -16,15 +16,13 @@ The kit ships five kinds of artifact. Each maps to a Claude Code primitive:
 
 The kit is intentionally flat. Component dirs sit at the top of the repo, not nested under `src/`, because the kit IS a flat set of prompts and bash scripts; there is no compilation step that justifies a `src/` boundary.
 
-**`bin/` is the stable consumer interface.** One more top-level dir holds the consumer-facing entrypoints: `bin/board`, `bin/classify`, `bin/gate`, `bin/precedent`, `bin/wrap`, thin forwarders to the corresponding `lib/<subsystem>/` entry. A CONSUMER of the kit (an adopted repo's `_meta/board` / `board-all` shim, or the CLAUDE.md block `lib/adopt.sh` injects) references `$DWARVES_KIT/bin/<name>`, never a deep `$DWARVES_KIT/lib/<subsystem>/<file>.sh` path. This is the durable fix for the board-shim class of bug: when the kit-modularity regroup moved `lib/board.sh` -> `lib/board/board.sh`, every consumer that hard-referenced the old deep path broke silently. With `bin/` as the contract, an internal `lib/` reorg's blast radius is the ONE kit-owned wrapper line inside `bin/<name>`, not every consumer. The pick (per-subsystem shims, NOT a `kit <sub> <verb>` uber-dispatcher) is constrained by AGENTS.md's "there is no `kit` uber-dispatcher" architecture statement; `bin/` merely exposes the existing per-subsystem commands at a stable path. `install.sh` deploys `bin/` next to `lib/` (copy in the bash install, symlink in plugin-compat).
+**`bin/` is the stable consumer interface.** One more top-level dir holds the consumer-facing entrypoints: thin forwarders to the corresponding `lib/<subsystem>/` entry (`bin/board`, `bin/gate`, `bin/wrap` and the rest of `bin/`). A CONSUMER of the kit (an adopted repo's `_meta/board` / `board-all` shim, or the CLAUDE.md block `lib/adopt.sh` injects) references `$DWARVES_KIT/bin/<name>`, never a deep `$DWARVES_KIT/lib/<subsystem>/<file>.sh` path. This is the durable fix for the board-shim class of bug: when the kit-modularity regroup moved `lib/board.sh` -> `lib/board/board.sh`, every consumer that hard-referenced the old deep path broke silently. With `bin/` as the contract, an internal `lib/` reorg's blast radius is the ONE kit-owned wrapper line inside `bin/<name>`, not every consumer. The pick (per-subsystem shims, NOT a `kit <sub> <verb>` uber-dispatcher) is constrained by AGENTS.md's "there is no `kit` uber-dispatcher" architecture statement; `bin/` merely exposes the existing per-subsystem commands at a stable path. `install.sh` deploys `bin/` next to `lib/` (copy in the bash install, symlink in plugin-compat).
 
-Two dirs hold bash that is not a CC primitive: `tests/` (the suites) and `lib/` (deterministic command-helper bash that a command invokes but that is not event-triggered, so it does not belong in `hooks/`). Today `lib/` holds `dispatch-gate.sh` (the pure-bash disjointness gate + drift guard `/kit:dispatch` runs, ADR-0019), `lane-classify.sh` (the deterministic task-type -> risk-lane classifier `/kit:assign` + `/kit:dispatch` call, plus the advisory `check` floor guard `/kit:assign` runs after a lane is chosen to flag an under-sized choice; warn + log, never block), `backlog.sh` (the Active queue rendered as a kanban board + the mechanical state flips behind `/kit:assign --next`, SPEC-055), and `goal-registry.sh` (the cross-session running-goal registry `/kit:assign` claims into and `/kit:start` lists, ADR-0022; it sources `dispatch-gate.sh` to reuse the one disjointness rule), `task-type-classify.sh` (the deterministic task -> work-type classifier, SPEC-054/057/060), `role-classify.sh` (the deterministic task -> specialist-DOMAIN fast-path hint behind dynamic agent synthesis, the builder lookup `/kit:execute` uses via `agent-for`, SPEC-089), `gate-ledger.sh` (the per-run gate ledger + START routing record, ADR-0024/SPEC-061; a
-`grill`+`skipped` line is write-time validated against a closed `reason=<home-turf|density-low|
-operator-wave>` enum, SPEC-138, so the kit's least-used gate is auditable rather than free text), `proof-gate.sh`/`proof-ledger.sh` (the proof-of-done class + ship-gate ledger, SPEC-016 line), and `lane-telemetry.sh` (the read-side aggregator over the run ledgers: `report` + `misfires`, reviewed at `/kit:retro` Step 1d, SPEC-061). A helper earns a place in `lib/` only when it must be unit-testable in isolation (all are); one-off bash a command runs inline stays inline (kit-health, ship). `board.sh` is the kit's cockpit board command: it wraps `backlog.sh` for the single-repo kanban render, migrates in the `priority` quadrant awk and the cross-repo `priority matrix` pivot that used to live in a consumer's own `_meta/board`/`_meta/board-all` wrapper scripts (byte-identical output is a pinned non-regression), and adds a `queue` subcommand that reads the CONSUMER's `boards.txt` registry (via `--repo-root`/`REPO_ROOT`, never a kit-side personal default) to emit an allow-listed feed for an unattended overnight runner. `parse-board.sh` is the one structured BACKLOG.md parser both `board.sh`'s `queue` and `board-mirror.sh` (below) reuse, rather than each re-parsing the markdown independently. `board-mirror.sh` backs the `board.sh mirror`/`status` subcommands: a git<->Hermes kanban bridge, read-mirror leg only (`board-writeback.sh` owns the reverse writeback leg). It extracts opted-in (`bridge=on` in `boards.txt`) BACKLOG.md rows + active mega-goal roadmaps, diffs them against an incremental NDJSON snapshot via a bash+awk keyed comparison (no DuckDB -- dozens of rows, not analytics), and loads through `hermes kanban` CLI verbs only (ADR-0001 native-first). A load-bearing finding from this sub-goal's live dev-home E2E: two of Hermes v0.18.0's six documented kanban states (`todo`, `running`) have NO durable CLI-only creation path at all (a card lands there for an instant, then a later unrelated CLI call silently auto-promotes it back to `ready`, with no gateway/dispatcher process running); the bridge's reachable target set is therefore `{triage, ready, blocked, done}` only, and `claimed`/`speccing`/`validated`/`executing` all fall back to `ready` honestly rather than claim a distinction the CLI cannot actually hold. `board-writeback.sh` backs `board.sh writeback`: the reverse leg, consuming the mirror snapshot as its bearing surface. It sources `board-mirror.sh` (function-level reuse, not a re-fork) for the extract/hash/native-state machinery, reverse-maps a Hermes-side status move onto its nearest legal `backlog.sh` git state (a documented lossy collapse -- the forward map is many-to-one, so `ready` reverse-maps to `claimed` as the honest nearest "picked up" state, never a guess at which of claimed/speccing/validated/executing the operator meant), and enforces the row_hash CONFLICT RULE (git wins: a Hermes-side edit applies only if the row's current hash still matches the snapshot's recorded value; a missing/corrupt snapshot refuses ALL edits outright rather than degrading to "apply everything"). Every apply lands in an ISOLATED `git worktree` off the CURRENT HEAD (never the caller's own checkout, never a stale ref), as one `actor=hermes`-attributed commit on a fresh `chore/board-sync` branch, pushed and opened as a HELD `gh pr create` PR (argv-only; never auto-merged). Snapshot refresh after a successful apply updates only `hermes_status` (so writeback does not re-diff the same not-yet-merged move); `row_hash` passes through unchanged, since the git SoT itself has not changed until the PR merges -- at which point `board mirror`'s own ordinary idempotence heals the row.
+Two dirs hold bash that is not a CC primitive: `tests/` (the suites) and `lib/` (deterministic command-helper bash that a command invokes but that is not event-triggered, so it does not belong in `hooks/`). `lib/` is grouped into subsystem directories (`lib/gate/`, `lib/classify/`, `lib/board/`, `lib/goal/`, `lib/queue/` and more); `lib/README.md` is the map of what each holds. A helper earns a place in `lib/` only when it must be unit-testable in isolation (all are); one-off bash a command runs inline stays inline (kit-health, ship). `board.sh` is the kit's cockpit board command: it wraps `backlog.sh` for the single-repo kanban render, migrates in the `priority` quadrant awk and the cross-repo `priority matrix` pivot that used to live in a consumer's own `_meta/board`/`_meta/board-all` wrapper scripts (byte-identical output is a pinned non-regression), and adds a `queue` subcommand that reads the CONSUMER's `boards.txt` registry (via `--repo-root`/`REPO_ROOT`, never a kit-side personal default) to emit an allow-listed feed for an unattended overnight runner. `parse-board.sh` is the one structured BACKLOG.md parser both `board.sh`'s `queue` and `board-mirror.sh` (below) reuse, rather than each re-parsing the markdown independently. `board-mirror.sh` backs the `board.sh mirror`/`status` subcommands: a git<->Hermes kanban bridge, read-mirror leg only (`board-writeback.sh` owns the reverse writeback leg). It extracts opted-in (`bridge=on` in `boards.txt`) BACKLOG.md rows + active mega-goal roadmaps, diffs them against an incremental NDJSON snapshot via a bash+awk keyed comparison (no DuckDB -- dozens of rows, not analytics), and loads through `hermes kanban` CLI verbs only (ADR-0001 native-first). A load-bearing finding from this sub-goal's live dev-home E2E: two of Hermes v0.18.0's six documented kanban states (`todo`, `running`) have NO durable CLI-only creation path at all (a card lands there for an instant, then a later unrelated CLI call silently auto-promotes it back to `ready`, with no gateway/dispatcher process running); the bridge's reachable target set is therefore `{triage, ready, blocked, done}` only, and `claimed`/`speccing`/`validated`/`executing` all fall back to `ready` honestly rather than claim a distinction the CLI cannot actually hold. `board-writeback.sh` backs `board.sh writeback`: the reverse leg, consuming the mirror snapshot as its bearing surface. It sources `board-mirror.sh` (function-level reuse, not a re-fork) for the extract/hash/native-state machinery, reverse-maps a Hermes-side status move onto its nearest legal `backlog.sh` git state (a documented lossy collapse -- the forward map is many-to-one, so `ready` reverse-maps to `claimed` as the honest nearest "picked up" state, never a guess at which of claimed/speccing/validated/executing the operator meant), and enforces the row_hash CONFLICT RULE (git wins: a Hermes-side edit applies only if the row's current hash still matches the snapshot's recorded value; a missing/corrupt snapshot refuses ALL edits outright rather than degrading to "apply everything"). Every apply lands in an ISOLATED `git worktree` off the CURRENT HEAD (never the caller's own checkout, never a stale ref), as one `actor=hermes`-attributed commit on a fresh `chore/board-sync` branch, pushed and opened as a HELD `gh pr create` PR (argv-only; never auto-merged). Snapshot refresh after a successful apply updates only `hermes_status` (so writeback does not re-diff the same not-yet-merged move); `row_hash` passes through unchanged, since the git SoT itself has not changed until the PR merges -- at which point `board mirror`'s own ordinary idempotence heals the row.
 
 ## Data flow through `docs/specs/SPEC-NNN-<slug>.md`
 
-> The front door to all of this is [`AGENTS.md`](../AGENTS.md) (repo root): the tool-agnostic operate-contract that any runtime reads first; `CLAUDE.md` and `WORKFLOW.md` point at it rather than restate it. The imperative companion to the descriptive map below is [`WORKFLOW.md`](../WORKFLOW.md) (repo root): the same lifecycle phrased as the contract an agent follows, with risk-tier lanes (including the `backfill` brownfield lane: review an existing codebase and write the operating-layer docs, doc-output only, no app-behavior change) and the gate at each boundary.
+> The front door to all of this is [`AGENTS.md`](../AGENTS.md) (repo root): the tool-agnostic operate-contract that any runtime reads first; `CLAUDE.md` and `WORKFLOW.md` point at it rather than restate it. The imperative companion to the descriptive map below is [`docs/WORKFLOW.md`](WORKFLOW.md) (the root `WORKFLOW.md` is a thin pointer to it): the same lifecycle phrased as the contract an agent follows, with risk-tier lanes (including the `backfill` brownfield lane: review an existing codebase and write the operating-layer docs, doc-output only, no app-behavior change) and the gate at each boundary.
 
 `docs/specs/SPEC-NNN-<slug>.md` is the shared contract for the full lifecycle. It is the single source of truth that crosses command boundaries:
 
@@ -51,6 +49,8 @@ operator-wave>` enum, SPEC-138, so the kit's least-used gate is auditable rather
 
 /kit:review-team  reads:  git diff
                    dispatches: security-reviewer (security) + code-reviewer agent x2 (architecture, test-coverage)
+                   + a domain lens when the diff touches one (api, frontend, infra, performance reviewers)
+                   + the advisor extra lens (Step 2b)
                    writes:  ## Review section (per-lens subsections) in the active spec (else inline)
 
 /kit:docs       reads:  git diff
@@ -68,7 +68,7 @@ operator-wave>` enum, SPEC-138, so the kit's least-used gate is auditable rather
 
 **V-model lifecycle lens (ADR-0018, reframed 2026-05-23)**: the kit's workflow is shaped as a V: a **BUILD arm** (left, decompose + implement) and a **TEST arm** (right, plan + execute + report), with Code at the vertex. Each static-review gate verifies one artifact at its phase (not a separate lane); they are not test levels. The V-model is a lens over WORKFLOW.md's cycle table, not a second phase list. Feature-rejection criterion #2 is count-agnostic: "serves fewer than 2 lifecycle phases." See ADR-0018 (SPEC-031 C2; build-left/test-right reframe 2026-05-23).
 
-**Concurrency boundary (ADR-0019 + ADR-0020 + ADR-0022)**: the kit permits concurrency along two axes and stops short of a DAG / wave scheduler / crash-recovery runtime (handed to GSD v2).
+**Concurrency boundary (ADR-0019 + ADR-0020 + ADR-0022)**: the kit permits concurrency along two axes. It stops short of an ordering graph across goals and a crash-recovery runtime (both still handed to GSD v2). One bounded exception lives in the mega-goal orchestrator: dep-independent sub-goals with provably disjoint `## Touches` run as concurrent waves (default `WAVE_CAP=2`; ADR-0030, "wavefront in, GSD-v2 still out"; see "Mega-goal orchestration" below).
 - **In-session (ADR-0019 + ADR-0020):** **bounded cross-goal fan-out**, one lead session orchestrating N isolated worktree workers over disjoint `VALIDATED` specs, behind a disjointness gate, with lead-owned convergence. ADR-0019 supersedes the four standing "one session / sequential" boundaries (SPEC-032 C1); ADR-0020 locks the dispatch primitive to in-session `Agent(run_in_background, isolation:worktree)` workers (Path A, proven by the SPEC-033 spike), not the read-only `claude agents` view. The implementing surface is `/kit:dispatch`; the convergence contract is SPEC-031.
 - **Cross-session:** **one operator's N concurrent same-machine sessions over disjoint goals**, coordinated by a passive **running-goal registry** (`lib/goal/goal-registry.sh`), one single-writer file per goal under `.git/kit-goals/`, reusing the same disjointness rule to refuse a goal that overlaps an active one, and serving as the cross-session monitor (`list`, surfaced in `/kit:start`) plus each goal's attempt log. ADR-0022 supersedes the "multi-session stays L5" boundary (SPEC-036 C4) for exactly this case. What stays L5 (Nimbalyst / GSD v2): coordination across machines, 3+ live human operators, and goal-ordering chains. The registry records and compares; it never schedules, sequences, or merges.
 
@@ -129,7 +129,7 @@ Every command and agent mapped to its V-model arm, grouped so the left side (BUI
 | `/kit:spec-validate` | command | Spec review | gate | Adversarial pre-build gate; 7 lenses attack the spec (6 advisory, 1 blocking on the design record); sets Status: VALIDATED |
 | `/kit:devs-team` | command | Design critique | gate | Opt-in; 5 engineering lenses stress-test the solution design before the spec hardens |
 | `/kit:review` | command | Code review | gate | Single-pass paranoid review; security, architecture, regressions, edge cases |
-| `/kit:review-team` | command | Code review | gate | Parallel variant; dispatches `security-reviewer` (security) plus the `code-reviewer` agent x2 (architecture / test-coverage lenses) |
+| `/kit:review-team` | command | Code review | gate | Parallel variant; dispatches `security-reviewer` (security) plus the `code-reviewer` agent x2 (architecture / test-coverage lenses), a domain lens (`api-reviewer`, `frontend-reviewer`, `infra-reviewer`, `performance-reviewer`) when the diff touches that area, and the `advisor` extra lens |
 | `/kit:visual-team` | command | Visual critique | gate | Opt-in; 5 design lenses critique UI output; mirrors review-team for visual work |
 | `/kit:docs` | command | Doc sync | gate | Diffs code vs docs and patches drift; dispatches doc-verifier before committing |
 | `/kit:explain` | command | Understanding (AFTER gate) | gate | ADR-0031 §2; emits a literate-diff explainer (background -> goal+intuition -> prose-ordered diff -> diagram) via `lib/explain.sh`, composing narrate-log + svg-knowledge-diagram; grounded in the diff + test results, advisory |
@@ -260,39 +260,41 @@ Layer 1.
    for a guardrail.
 
 **The inventory** (one row per `hooks/*.sh`; the parity check pins row count to
-file count so this table cannot drift):
+file count so this table cannot drift). This table owns each hook's class and the
+failure mode it backstops. `docs/hooks.md` owns which event and matcher fires it, the
+message it prints, its env knobs, and its module:
 
-| Hook | Event | Class | Failure mode it backstops |
-|---|---|---|---|
-| `codex-hook-adapter` | Codex PreToolUse, Stop | compatibility | normalizes Codex payloads and dispatches shared policies; owns no allow or deny rule |
-| `anchor-root` | every hooks.json/settings.json event except secrets-guard's PreToolUse entry | infrastructure | none (cds to the resolved root before exec'ing the real hook; owns no allow or deny rule) |
-| `safety-gate` | PreToolUse Bash | hard | destructive deletes, push-to-main, force-push under deadline pressure |
-| `secrets-guard` | PreToolUse Read/Edit/Bash | hard | reading secret files "just to check"; transcript is plaintext |
-| `ship-gate` | PreToolUse Bash | hard | shipping without proof of done / recorded gates (ADR-0024 boundary); a hard-path diff owes the full lane's gates whatever the spec's `Lane:` says (when `[gate] lane_gates` is on at the merge base) |
-| `commit-format` | PreToolUse Bash | hard | drifting commit subjects (type, length, ticket-tag leakage) |
-| `board-row-gate` | PreToolUse Bash | hard | a session filing a board row for a follow-up it should do or drop; a new row needs a `board-row-ok: <reason>` line in the commit message; the one `[gate]` key that defaults on (`board_row_gate`) |
-| `anti-rationalization` | Stop | hard | declaring work complete while rationalizing known-incomplete work |
-| `spec-drift-guard` | PreToolUse Write | advisory | creating files the active spec never mentions |
-| `batch-debt-warn` | PreToolUse Bash | advisory | a session merging a second PR with no lane START since its first merge |
-| `slop-cleaner` | Stop | advisory | long-session code bloat; suggests, never blocks |
-| `context-readiness` | SessionStart | advisory | starting blind: injects spec/board state + an intent-first next step |
-| `context-hints` | UserPromptSubmit | convenience | none (temporal + keyword skill-hint injection, no model call, never blocks) |
-| `citation-guard` | Stop | advisory | hallucinated `file:line` citations in the final message; log-only by default, opt-in strict mode (`CITATION_GUARD_STRICT=1`) blocks |
-| `harvest` | PreCompact, SessionEnd | convenience | none (stages durable learnings / a LAB_LOG draft to a staging file; never writes a durable home, always exits 0; its auto modes exit 0 without work on a host where the harvest sweep is active, unless `harvest.hook_when_sweep_on` is true) |
-| `backlog-stage` | SessionEnd; SessionStart (`--surface`) | convenience | none (opt-in via `BACKLOG_STAGE_AUTO`; stages forward-looking work-items to a staging file; never writes the board, always exits 0) |
-| `intake-sweep` | SessionStart (run by the wired `backlog-stage --surface`, same opt-in) | convenience | none (sweeps consumer-declared deferred-link sources into the same staging file; config-gated no-op, always exits 0) |
-| `auto-format` | PostToolUse Write/Edit | convenience | none (idempotent formatting) |
-| `output-offload` | PostToolUse * | advisory | oversized tool output bloating context; offloads the full payload to a file + nudges, never blocks |
-| `statusline` | StatusLine | convenience | none (HUD) |
-| `notification` | Notification | convenience | none (desktop notify) |
-| `permission-auto-approve` | PermissionRequest | convenience | none (removes approve-20-times friction for read-only ops) |
-| `pre-compact-backup` | PreCompact | convenience | none (session snapshot) |
-| `post-compact-reinject` | SessionStart compact | convenience | none (re-injects rules compaction stripped) |
-| `codebase-index` | SessionStart (opt-in) | convenience | none (background indexing) |
-| `money-gate` | PreToolUse Edit/Write/MultiEdit | convenience | a silent careless edit to a ledger/payroll/wallet file in a repo the consumer named financial (inert until MONEY_GATE_REPOS is set) |
-| `prose-rag` | UserPromptSubmit | convenience | re-deriving what the consumer already wrote; injects prior notes on recall-shaped prompts (dormant unless PROSE_RAG_INJECT=1) |
-| `context-budget` | UserPromptSubmit | advisory | a long session burning most of its spend re-reading the same context from cache unnoticed; warns once per session when the context window passes a percentage threshold (`KIT_CTX_WARN_PCT` 65, `KIT_CTX_STRONG_PCT` 70) and again after a drop back under it, never blocks |
-| `tool-policy-guard` | PreToolUse | advisory | drifting to a denied/ask-tier tool the policy file maps per domain (inert until a tool-policy.json exists) |
+| Hook | Class | Failure mode it backstops |
+|---|---|---|
+| `codex-hook-adapter` | compatibility | normalizes Codex payloads and dispatches shared policies; owns no allow or deny rule |
+| `anchor-root` | infrastructure | none (cds to the resolved root before exec'ing the real hook; owns no allow or deny rule) |
+| `safety-gate` | hard | destructive deletes, push-to-main, force-push under deadline pressure |
+| `secrets-guard` | hard | reading secret files "just to check"; transcript is plaintext |
+| `ship-gate` | hard | shipping without proof of done / recorded gates (ADR-0024 boundary); a hard-path diff owes the full lane's gates whatever the spec's `Lane:` says (when `[gate] lane_gates` is on at the merge base) |
+| `commit-format` | hard | drifting commit subjects (type, length, ticket-tag leakage) |
+| `board-row-gate` | hard | a session filing a board row for a follow-up it should do or drop; a new row needs a `board-row-ok: <reason>` line in the commit message; one of three `[gate]` keys that default on (`board_row_gate`, `fixture_identities`, `review_verdict`; every other key defaults off, see `kit.toml`) |
+| `anti-rationalization` | hard | declaring work complete while rationalizing known-incomplete work |
+| `spec-drift-guard` | advisory | creating files the active spec never mentions |
+| `batch-debt-warn` | advisory | a session merging a second PR with no lane START since its first merge |
+| `slop-cleaner` | advisory | long-session code bloat; suggests, never blocks |
+| `context-readiness` | advisory | starting blind: injects spec/board state + an intent-first next step |
+| `context-hints` | convenience | none (temporal + keyword skill-hint injection, no model call, never blocks) |
+| `citation-guard` | advisory | hallucinated `file:line` citations in the final message; log-only by default, opt-in strict mode (`CITATION_GUARD_STRICT=1`) blocks |
+| `harvest` | convenience | none (stages durable learnings / a LAB_LOG draft to a staging file; never writes a durable home, always exits 0; its auto modes exit 0 without work on a host where the harvest sweep is active, unless `harvest.hook_when_sweep_on` is true) |
+| `backlog-stage` | convenience | none (opt-in via `BACKLOG_STAGE_AUTO`; stages forward-looking work-items to a staging file; never writes the board, always exits 0) |
+| `intake-sweep` | convenience | none (sweeps consumer-declared deferred-link sources into the same staging file; config-gated no-op, always exits 0) |
+| `auto-format` | convenience | none (idempotent formatting) |
+| `output-offload` | advisory | oversized tool output bloating context; offloads the full payload to a file + nudges, never blocks |
+| `statusline` | convenience | none (HUD) |
+| `notification` | convenience | none (desktop notify) |
+| `permission-auto-approve` | convenience | none (removes approve-20-times friction for read-only ops) |
+| `pre-compact-backup` | convenience | none (session snapshot) |
+| `post-compact-reinject` | convenience | none (re-injects rules compaction stripped) |
+| `codebase-index` | convenience | none (background indexing) |
+| `money-gate` | convenience | a silent careless edit to a ledger/payroll/wallet file in a repo the consumer named financial (inert until MONEY_GATE_REPOS is set) |
+| `prose-rag` | convenience | re-deriving what the consumer already wrote; injects prior notes on recall-shaped prompts (dormant unless PROSE_RAG_INJECT=1) |
+| `context-budget` | advisory | a long session burning most of its spend re-reading the same context from cache unnoticed; warns once per session when the context window passes a percentage threshold (`KIT_CTX_WARN_PCT` 65, `KIT_CTX_STRONG_PCT` 70) and again after a drop back under it, never blocks |
+| `tool-policy-guard` | advisory | drifting to a denied/ask-tier tool the policy file maps per domain (inert until a tool-policy.json exists) |
 
 **The harvest sweep is the second capture path.** The `harvest` hook stages per session at PreCompact and SessionEnd. On a host where the sweep is installed, `hooks/harvest_sweep.py` (reached as `hooks/harvest.sh --sweep`) replaces it: a LaunchAgent renders from `deploy/macos/harvest-sweep/` and runs on a `harvest.schedule_hours` interval. Each run reads new claude transcripts (devin when `harvest.sources` lists it) behind a per-source cursor, extracts learnings and pattern sightings, stages them into sweep ledgers, and writes a wrap-shaped report. It builds, pushes, and merges nothing. A host is active only when `harvest.enable` is true and the `<state>/sweep/installed` marker exists. The marker is written by `install --apply` and never syncs. Flags: `--dry-run` (manifest, no cursor or ledger change), `--status`, `--flush-list`, `--mark-flushed`. A 5-hour or weekly usage limit holds the run (exit 0, cursor kept, no failure counted). `wrap.distill = "harvest"` leaves the distill half of `/kit:wrap` to the sweep on those hosts.
 
@@ -331,15 +333,15 @@ The active spec among these is resolved by the SPEC-005 rule (`docs/specs/`, bra
 
 ## Mega-goal orchestration: serial and wavefront (`lib/queue/orchestrate.sh`)
 
-> The kit runs agents four different ways (board, this orchestrator, the queue, the gauntlet).
+> The kit runs agents four different ways (this orchestrator, the overnight queue, `/kit:dispatch`, the gauntlet). The board runs no agent.
 > `docs/execution-planes.md` compares them: what each is for, how they hand off, where they
 > deliberately do not connect, and their differing trust and isolation models. This section
 > owns this orchestrator's internals.
 
 `orchestrate.sh run <megagoal-dir>` drives a mega-goal ROADMAP as one fresh `claude -p` session per
-sub-goal (SPEC-087: no session accumulates more than one sub-goal's context). By default it runs
-**strictly serially**. Opt-in **wavefront** scheduling lets dep-independent
-sub-goals run as concurrent waves. The whole wave subsystem is gated behind one env var.
+sub-goal (SPEC-087: no session accumulates more than one sub-goal's context). Dep-independent
+sub-goals with disjoint `## Touches` run as concurrent **waves**, on by default (`WAVE_CAP=2`).
+`WAVE_CAP=1` forces strictly serial runs, and a mega-goal with no declared `## Touches` serializes anyway.
 
 ### The overnight queue launcher (`lib/queue/queue.sh`, a sibling, SPEC-148)
 
@@ -447,13 +449,15 @@ one-time advisory pointing to `gate!` for a global stop-all. The default flip to
 was gated on an audit that no live mega-goal ROADMAP relies on `gate`=global-stop (clean).
 
 **Env surface:** `WAVE_CAP` (default **2** = waves on; `1` forces serial; integer `>=1`), `FLIP_LOCK_STALE_SECS` (default 120),
-`WAVE_MERGE_CMD` (the convergence merge hook; real `gh`-backed wiring is ID-090),
-`TURN_CAP` (default **100**, `[mega].turn_cap`; per-agent turn CEILING via `--max-turns` +
+`WAVE_MERGE_CMD` (the convergence merge hook; default `mega-merge.sh merge`, a dry run unless a wrapper passes `--execute`),
+`TURN_CAP` (default **300**, `[mega].turn_cap`; per-agent turn CEILING via `--max-turns` +
 a deterministic segment handoff that re-dispatches the SAME sub-goal; `0` disables) and
 `TURN_CAP_SEGMENTS` (default **10**, `[mega].turn_cap_segments`; the stuck-loop bound).
 The ceiling pairs with the stall watchdog, which is the LEASE (`WATCHDOG_STALL_SECS` alerts on
 a lapsed lease and never kills; only the ceiling stops a segment). Full design +
 exit-criteria proof: `docs/specs/SPEC-106-dag-wavefront-scheduling.md` + `docs/verification/orchestrate-wavefront.md`.
+
+Also in the env surface: `MULTIPLEXER` (default off; with waves, each wave session runs in a tmux window the operator can watch), `TIER4_CLOSE` (default on; when every box is checked the run does a close pass and holds the final human gate), `lib/queue/harness.sh` (resolves the CLI-agent vendor to its headless argv) and `lib/queue/orca-backend.sh` (loaded only under `--backend orca`).
 
 ## Verification pipeline (the load-bearing piece)
 
