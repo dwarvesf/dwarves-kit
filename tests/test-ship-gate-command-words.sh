@@ -84,6 +84,117 @@ gh pr create
 echo 'x'"
 engages "nested double quotes"             'echo "$(echo "gh pr create")"'
 
+# gh global flags may sit between gh and pr.
+engages "gh -R owner/repo pr create"        'gh -R owner/repo pr create --fill'
+engages "gh --repo x pr create"             'gh --repo owner/repo pr create --fill'
+engages "gh --repo=x pr new"                'gh --repo=owner/repo pr new --fill'
+engages "env-prefixed gh -R pr create"      'GH_TOKEN=x gh -R a/b pr create --fill'
+engages "cd x && gh -R pr create"           "cd $R && gh -R a/b pr create --fill"
+engages "command gh -R pr new"              'command gh -R a/b pr new --fill'
+engages "two global flags before pr"        'gh --repo a/b --hostname h.example pr create'
+engages "quoted gh command word"            '"gh" -R a/b pr create'
+inert "gh -R phrase in echo"                "echo 'then gh -R a/b pr create'"
+inert "gh -R phrase in commit message"      'git commit -qm "docs: gh --repo a/b pr create"'
+inert "gh pr list is not a ship step"       'gh -R a/b pr list'
+
+# A `<<X` inside quotes opens no heredoc: the lines after it still run.
+engages "single-quoted <<X hides gh"        "echo '<<X'
+gh pr create --fill
+X"
+engages "double-quoted <<X hides gh"        'echo "<<X"
+gh pr create --fill
+X'
+engages "single-quoted <<X hides push"      "echo '<<X'
+git -C $R push -u origin HEAD
+X"
+engages "printf of a quoted <<X"            "printf '%s' '<<X'
+gh pr new --fill
+X"
+engages "quoted <<-X"                       "echo '<<-X'
+gh pr create
+X"
+engages "quoted <<'X'"                      "echo '<<\"X\"'
+gh pr create
+X"
+engages "multi-line quote holds <<X"        "echo 'a
+<<X
+b'
+gh pr create
+X"
+engages "<<X after a closed substitution"   'echo "$(echo hi) <<X"
+gh pr create
+X'
+engages "comment apostrophe, quoted <<X"    "echo hi # it's
+echo '<<X'
+gh pr create
+X"
+engages "ANSI-C quote, quoted <<X"          "echo \$'it\\'s' '<<X'
+gh pr create
+X"
+engages "here-string is no heredoc"         'cat <<<x
+gh pr create
+x'
+engages "arithmetic shift is no heredoc"    'echo $((1<<X))
+gh pr create
+X'
+engages "backslash-quoted marker"           'cat <<\X
+gh pr create
+X'
+engages "quoted <<X in a substitution"      'echo "$(echo "<<X")"
+gh pr create
+X'
+
+engages "heredoc opener line ends in a quote" "cat <<X 'a
+b'
+gh pr create
+X"
+engages "case inside a substitution"        'echo "$(case a in a) echo hi;; esac) <<X"
+gh pr create
+X'
+engages "backtick near a quoted <<X"        'echo `true` "<<X"
+gh pr create
+X'
+engages "doubt after an earlier heredoc"    "cat <<A
+body
+A
+echo \$'x' '<<B'
+gh pr create
+B"
+engages "variable marker"                   'cat <<$M
+gh pr create
+$M'
+engages "escaped < before <X"               'echo \<<X
+gh pr create
+X'
+engages "dollar-brace holding a quote"      'echo "${x:-"<<X"}"
+gh pr create
+X'
+
+# Real heredocs are still stripped, and a ship step after one still engages.
+inert "heredoc body prose"                  "cat <<'EOF'
+next run gh pr create now
+git push origin main
+EOF"
+inert "commit message heredoc"              "git commit -qF - <<EOF
+docs: mention gh pr create and git push
+EOF"
+inert "commit message in a substitution"    'git commit -m "$(cat <<'"'EOF'"'
+mention gh pr create and git push
+EOF
+)"'
+inert "quoted <<X, nothing else"            "echo '<<X'
+X"
+inert "quoted <<X, quoted prose after it"   "echo '<<X'
+echo 'gh pr create'
+X"
+engages "ship step after a heredoc"         "cat <<EOF > /dev/null
+body
+EOF
+gh pr create --fill"
+engages "ship step on the opener line"      "git commit -F - <<EOF && gh pr create --fill
+body
+EOF"
+
 echo "---"
 echo "PASS=$PASS FAIL=$FAIL"
 [ "$FAIL" -eq 0 ]

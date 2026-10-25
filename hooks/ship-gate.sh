@@ -34,27 +34,84 @@ CMD=$(printf '%s\n' "$CMD" | awk '{ while ($0 ~ /\\$/) { sub(/\\$/, ""); if ((ge
 
 # Strip heredoc bodies BEFORE the engage check, so "git push" appearing in
 # generated prose (PR bodies, test fixtures) never engages the gate. Same normalizer
-# shape as safety-gate.sh.
-CMD_CODE=$(printf '%s\n' "$CMD" | awk '
-  BEGIN { inhd = 0 }
-  {
-    line = $0
-    if (inhd) { t = line; gsub(/^[ \t]+/, "", t); if (t == marker) inhd = 0; next }
-    if (match(line, /<<-?[ \t]*["'\'']?[A-Za-z_][A-Za-z0-9_]*["'\'']?/)) {
-      m = substr(line, RSTART, RLENGTH)
-      sub(/<<-?[ \t]*/, "", m); gsub(/["'\'']/, "", m)
-      marker = m; inhd = 1
-      # the rest of the opener line is still code: `git commit -F - <<EOF && git push` pushes
-      line = substr(line, 1, RSTART - 1) " " substr(line, RSTART + RLENGTH)
-    }
-    print line
-  }')
+# shape as safety-gate.sh. A `<<` counts as a heredoc only in command position: the awk keeps a
+# quote stack (single, double, and a `$(` command context), so `echo '<<X'` opens nothing and
+# the lines after it stay visible. It does not strip, and stops stripping for the rest of the
+# command, when it meets anything it cannot read with certainty: a here-string, an odd
+# delimiter, arithmetic `((`, an ANSI-C `$'..'` quote, a backtick, a `${..}` holding
+# quotes, a comment holding a quote, `case` inside a substitution, or a heredoc whose opener
+# line ends inside a quote. Not stripping only ever makes the gate engage.
+_strip_heredocs() {
+  awk '
+    function push(kind) { sp++; stk[sp] = kind; dep[sp] = 0 }
+    function hasq(x) { return (index(x, "\047") || index(x, "\"") || index(x, "`")) }
+    BEGIN { sp = 1; stk[1] = "C"; dep[1] = 0; inhd = 0; doubt = 0 }
+    {
+      line = $0
+      if (inhd) { t = line; gsub(/^[ \t]+/, "", t); if (t == marker) inhd = 0; next }
+      pend = 0; n = length(line); i = 1
+      while (i <= n) {
+        c = substr(line, i, 1); k = stk[sp]
+        if (k == "S") { if (c == "\047") sp--; i++; continue }
+        if (c == "\\") { i += 2; continue }
+        if (k == "D") {
+          if (c == "\"") { sp--; i++; continue }
+          if (c == "`") { doubt = 1; i++; continue }
+          if (c == "$") {
+            nx = substr(line, i + 1, 1)
+            if (nx == "(") { if (substr(line, i + 2, 1) == "(") doubt = 1; push("C"); i += 2; continue }
+            if (nx == "{") {
+              rest = substr(line, i + 2); e = index(rest, "}")
+              if (e == 0 || index(substr(rest, 1, e), "{") || index(substr(rest, 1, e), "$") || hasq(substr(rest, 1, e))) { doubt = 1; i += 2; continue }
+              i += 2 + e; continue
+            }
+          }
+          i++; continue
+        }
+        if (c == "\047") { push("S"); i++; continue }
+        if (c == "\"") { push("D"); i++; continue }
+        if (c == "`") { doubt = 1; i++; continue }
+        if (c == "$") {
+          nx = substr(line, i + 1, 1)
+          if (nx == "\047") { doubt = 1; i += 2; continue }
+          if (nx == "(") { if (substr(line, i + 2, 1) == "(") doubt = 1; push("C"); i += 2; continue }
+          i++; continue
+        }
+        if (c == "(") { if (substr(line, i + 1, 1) == "(") doubt = 1; dep[sp]++; i++; continue }
+        if (c == ")") { if (dep[sp] > 0) dep[sp]--; else if (sp > 1) sp--; i++; continue }
+        if (c == "#" && (i == 1 || substr(line, i - 1, 1) ~ /[ \t;&|(]/)) { if (hasq(substr(line, i))) doubt = 1; break }
+        if (sp > 1 && c == "c" && substr(line, i, 5) ~ /^case[ \t]/ && (i == 1 || substr(line, i - 1, 1) !~ /[A-Za-z0-9_]/)) { doubt = 1; i += 4; continue }
+        if (c == "<" && substr(line, i + 1, 1) == "<") {
+          if (substr(line, i + 2, 1) == "<") { i += 3; continue }
+          rest = substr(line, i); len = 0
+          if (match(rest, /^<<-?[ \t]*[A-Za-z_][A-Za-z0-9_]*/)) len = RLENGTH
+          else if (match(rest, /^<<-?[ \t]*\047[A-Za-z_][A-Za-z0-9_]*\047/)) len = RLENGTH
+          else if (match(rest, /^<<-?[ \t]*"[A-Za-z_][A-Za-z0-9_]*"/)) len = RLENGTH
+          nc = substr(rest, len + 1, 1)
+          if (len == 0 || (nc != "" && nc !~ /[ \t;&|<>()]/)) { doubt = 1; i += 2; continue }
+          if (!pend) {
+            m = substr(rest, 1, len); sub(/^<<-?[ \t]*/, "", m); gsub(/["\047]/, "", m)
+            pm = m; ps = i; pl = len; pend = 1
+          }
+          i += len; continue
+        }
+        i++
+      }
+      if (pend && !doubt && stk[sp] == "C") {
+        marker = pm; inhd = 1
+        # the rest of the opener line is still code: `git commit -F - <<EOF && git push` pushes
+        line = substr(line, 1, ps - 1) " " substr(line, ps + pl)
+      } else if (pend) doubt = 1
+      print line
+    }'
+}
+CMD_CODE=$(printf '%s\n' "$CMD" | _strip_heredocs)
 
 # Engage on anything that looks like a ship action: `git ... push` (with any options between) or
 # `gh pr create` / its alias `gh pr new`, in CODE not prose. What the command actually pushes is decided by
 # lib/gate/push-refs.sh below, which fails closed on anything it cannot account for.
 GIT_RE='(^|[^[:alnum:]_-])git[[:space:]]([^;&|]*[[:space:]])?push([[:space:]]|$)'
-GH_RE='gh[[:space:]]+pr[[:space:]]+(create|new)'
+GH_RE='gh["'"'"']?([[:space:]]+[^;&|]*)?[[:space:]]+pr[[:space:]]+(create|new)'
 ENGAGE_RE="$GIT_RE|$GH_RE"
 # The gh words are also read with the quoted text of an inert command blanked out, so `printf '...gh pr
 # create...'` or a commit message that mentions it does not engage. Inert means: the segment's command word
