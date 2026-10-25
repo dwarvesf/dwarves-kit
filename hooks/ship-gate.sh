@@ -365,7 +365,7 @@ if [ -f "$ROOT/lib/registry/feature-registry.sh" ] && [ -f "$ROOT/docs/reference
   FRBASE="$MBASE"
   FRDIFF=""
   [ -n "$FRBASE" ] && FRDIFF=$(git -C "$ROOT" diff --name-only "$FRBASE" "$PHEAD" 2>/dev/null || true)
-  if [ -n "$FRDIFF" ] && ! grep -qx 'docs/FEATURES\.md' < <(printf '%s\n' "$FRDIFF") \
+  if [ -n "$FRDIFF" ] && ! grep -qx 'docs/reference/FEATURES\.md' < <(printf '%s\n' "$FRDIFF") \
      && grep -qE '^(commands/[^/]+\.md|agents/[^/]+\.md|skills/[^/]+/SKILL\.md|hooks/[^/]+\.sh|hooks/hooks\.json|settings\.json|tests/test-[^/]+\.sh|docs/specs/SPEC-[^/]+\.md)$' < <(printf '%s\n' "$FRDIFF") \
      && ! grep -qx 'lib/registry/feature-registry\.sh' < <(printf '%s\n' "$FRDIFF"); then
     if ! FRMSG=$(FEATURE_REGISTRY_ROOT="$ROOT" bash "$GATE_INSTALL/lib/registry/feature-registry.sh" check "$ROOT/docs/reference/FEATURES.md" 2>&1); then

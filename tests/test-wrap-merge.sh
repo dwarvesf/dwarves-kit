@@ -1003,7 +1003,7 @@ REAL_GIT_BIN="$(command -v git)"
 # cycle (the two sides disagree on it).
 build_remerge_reg() {
   local name="$1" bgen="${2:-}" work="$TMPD/rr-work-$1" clone="$TMPD/rr-clone-$1"
-  mkdir -p "$work/lib/registry" "$work/specs" "$work/docs"
+  mkdir -p "$work/lib/registry" "$work/specs" "$work/docs/reference"
   git -C "$work" init -q; gitc "$work"
   git -C "$work" symbolic-ref HEAD refs/heads/main
   { printf '#!/usr/bin/env bash\nroot="$(cd "$(dirname "$0")/../.." && pwd)"\n'

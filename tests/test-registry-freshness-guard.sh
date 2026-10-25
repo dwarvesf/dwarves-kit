@@ -25,7 +25,7 @@ mkkit() { # $1=dir
   local d="$1"
   git init -q -b master "$d"
   git -C "$d" config user.email t@t; git -C "$d" config user.name t
-  mkdir -p "$d/lib/registry" "$d/commands" "$d/agents" "$d/skills/demo" "$d/hooks" "$d/docs/specs" "$d/tests"
+  mkdir -p "$d/lib/registry" "$d/commands" "$d/agents" "$d/skills/demo" "$d/hooks" "$d/docs/specs" "$d/docs/reference" "$d/tests"
   cp "$KIT/$REG" "$d/$REG"
   printf -- '---\ndescription: a stub command\n---\nbody\n' > "$d/commands/demo.md"
   printf -- '---\ndescription: a stub agent\n---\nbody\n' > "$d/agents/demo-agent.md"

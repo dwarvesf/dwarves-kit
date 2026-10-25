@@ -26,7 +26,7 @@ echo "=== V-model lens, convergence, and inventory parity (SPEC-031) ==="
 # (like retro/handoff), so it is not a live operating surface.
 PHASES_8_HITS=$(cd "$KIT_DIR" && git ls-files \
       'docs/*' 'commands/*' 'WORKFLOW.md' 'README.md' 'docs/MANUAL.md' 'AGENTS.md' \
-    | grep -vE '^(docs/specs/|docs/decisions/|docs/research/|docs/retro/|docs/handoff/|docs/verification/|docs/CHANGELOG\.md)' \
+    | grep -vE '^(docs/specs/|docs/decisions/|docs/research/|docs/retro/|docs/handoff/|docs/verification/|CHANGELOG\.md)' \
     | xargs grep -In -E "8 (workflow|lifecycle )?phases" 2>/dev/null | head -1)
 TOTAL=$((TOTAL + 1))
 if [ -z "$PHASES_8_HITS" ]; then

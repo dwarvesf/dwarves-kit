@@ -89,7 +89,7 @@ echo "== test-meta: area suites picked by the path they read =="
 # only the areas that read it by glob or scan (meta_areas), plus any suite that names it; a meta
 # input no area is attributed falls back to the runner, never to nothing.
 git stash -q -u
-mkdir -p lib/wrap commands docs lib/z lib/board docs/verification
+mkdir -p lib/wrap commands docs/reference lib/z lib/board docs/verification
 printf 'echo w\n' > lib/wrap/wrap.sh; printf '#!/bin/bash\nbash lib/wrap/wrap.sh\n' > tests/test-wrap-x.sh
 printf -- '---\nname: c\n---\n' > commands/c.md; printf '# F\n' > docs/reference/FEATURES.md
 printf '#!/bin/bash\n# kit-verb: zz | a verb\necho z\n' > lib/z/verb.sh

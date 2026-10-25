@@ -17,7 +17,7 @@ echo
 echo "=== rebase: a worktree branch onto origin/<default>, only the safe conflicts resolved ==="
 rb_build() { # rb_build <name> [--no-generator] -- sets RBO (origin), RBC (main clone), RBW (worktree)
   local name="$1" work="$TMPD/rbw-src-$1"
-  mkdir -p "$work/lib/registry" "$work/specs" "$work/docs" "$work/_meta"
+  mkdir -p "$work/lib/registry" "$work/specs" "$work/docs/reference" "$work/_meta"
   git -C "$work" init -q; gitc "$work"; git -C "$work" symbolic-ref HEAD refs/heads/main
   cat > "$work/lib/registry/feature-registry.sh" <<'GEN'
 #!/usr/bin/env bash

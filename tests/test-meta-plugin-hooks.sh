@@ -52,7 +52,7 @@ echo "=== Invocation namespace guard (SPEC-029, SPEC-030) ==="
 # automatically. tests/ is NOT scanned: this file names /user: to describe the
 # guard. Enforces /user: ABSENCE only (DEC-005); bare-/cmd is not auto-checked.
 USER_NS_HITS=$(cd "$KIT_DIR" && { git ls-files '*.md' \
-      | grep -vE '^(docs/specs/|docs/retro/|docs/decisions/|docs/handoff/|docs/research/|docs/verification/|_meta/|CHANGELOG\.md|docs/CHANGELOG\.md)'; \
+      | grep -vE '^(docs/specs/|docs/retro/|docs/decisions/|docs/handoff/|docs/research/|docs/verification/|_meta/|CHANGELOG\.md)'; \
     git ls-files 'install.sh' 'hooks/*.sh'; } \
   | xargs grep -l '/user:' 2>/dev/null)
 if [ -n "$USER_NS_HITS" ]; then

@@ -44,7 +44,7 @@ two_open_pr_json() {
 # commit after it).
 _build_land_reg() {
   local name="$1" work="$TMPD/ld-work-$1" repo="$TMPD/ld-repo-$1"
-  mkdir -p "$work/lib/registry" "$work/specs" "$work/docs"
+  mkdir -p "$work/lib/registry" "$work/specs" "$work/docs/reference"
   git -C "$work" init -q; gitc "$work"
   git -C "$work" symbolic-ref HEAD refs/heads/main
   { printf '#!/usr/bin/env bash\nroot="$(cd "$(dirname "$0")/../.." && pwd)"\n'
