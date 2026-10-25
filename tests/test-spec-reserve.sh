@@ -368,6 +368,22 @@ LEDGER_LINES="$(wc -l < "$RES" | tr -d ' ')"
 RESERVE_LINES="$(count '| RESERVE |' "$RES")"
 eq "T24 the ledger has exactly one physical line per RESERVE entry (no CDPATH-split key)" "$LEDGER_LINES" "$RESERVE_LINES"
 
+# ============================================================
+echo "=== T25: reserve on a fresh repo with zero specs mints 001 (empty scan must not abort) ==="
+# ============================================================
+# `_scan_numbers` ends in `grep -oE '[0-9]+'`, which exits 1 on empty input. Under pipefail that
+# made `realized="$(_scan_numbers)"` in `_prune_reservations` fail, and `set -e` killed `reserve`
+# after the ledger line was written: rc=1, no stdout. A repo with specs never hit it.
+R="$(mktemp -d "${TMPDIR:-/tmp}/kit-spec-reserve-empty.XXXXXX")" || exit 1
+git -C "$R" init -q; RES="$R/res.log"
+N25A="$(cd "$R" && SPEC_RESERVE_FILE="$RES" bash "$SN" reserve 2>/dev/null; echo "rc=$?")"
+eq "T25 first reserve on an empty repo prints 001 and exits 0" "$N25A" "$(printf '001\nrc=0')"
+N25B="$(cd "$R" && SPEC_RESERVE_FILE="$RES" bash "$SN" reserve 2>/dev/null; echo "rc=$?")"
+eq "T25 second reserve sees the first claim and prints 002" "$N25B" "$(printf '002\nrc=0')"
+eq "T25 next on the empty repo reads the ledger (003)" "$(cd "$R" && SPEC_RESERVE_FILE="$RES" bash "$SN" next 2>/dev/null)" "003"
+LOCKED=0; [ -d "$RES.lock" ] && LOCKED=1
+eq "T25 the lock is released after the empty-repo reserve" "$LOCKED" "0"
+
 echo ""
 echo "=== Results ==="
 echo -e "Passed: ${GREEN}$PASS${NC} / $TOTAL"
