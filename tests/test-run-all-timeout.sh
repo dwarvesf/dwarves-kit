@@ -12,6 +12,8 @@
 set -uo pipefail
 DIR="$(cd "$(dirname "$0")/.." && pwd)"
 RA="$DIR/tests/run-all.sh"
+# The macOS CI job exports a floor; every case here sets its own ceilings, so a leaked one would mask them.
+unset RUN_ALL_TIMEOUT_FLOOR_SECS
 pass=0; fail=0
 ok(){ echo "  ok: $*"; pass=$((pass+1)); }
 no(){ echo "  FAIL: $*" >&2; fail=$((fail+1)); }
@@ -23,7 +25,7 @@ export DWARVES_KIT_LOG_DIR="$TMP/default-logs"
 
 mkkit() {  # $1 = dir ; a kit-shaped tree holding the real run-all.sh
   mkdir -p "$1/tests/lib"
-  cp "$RA" "$1/tests/run-all.sh"; cp "$DIR/tests/lib/job-count.sh" "$DIR/tests/lib/timeout.sh" "$1/tests/lib/"
+  cp "$RA" "$1/tests/run-all.sh"; cp "$DIR/tests/lib/job-count.sh" "$DIR/tests/lib/timeout.sh" "$DIR/tests/lib/run-lock.sh" "$1/tests/lib/"
 }
 slow() { printf '#!/usr/bin/env bash\nsleep 30\n' > "$1/tests/test-slowpoke.sh"; }
 red()  { printf '#!/usr/bin/env bash\necho "FAIL: a real assertion"\nexit 1\n' > "$1/tests/test-redherring.sh"; }
@@ -150,7 +152,7 @@ FB 5 bash -c 'exit 7'; RCX=$?
 FB 5 bash -c 'kill -9 $$'; RCK=$?
 if [ "$RCX" = 7 ] && [ "$RCK" = 137 ]; then ok "exit 7 stays 7, a SIGKILL death is 137"; else no "rc=$RCX killed=$RCK"; fi
 # a command over its limit: 124, the diagnostic names what was still running, and the whole tree is gone
-T11="$(mktemp -d "$TMP/t11.XXXXXX")"
+T11="$(mktemp -d "$TMP/t11.XXXXXX")" || exit 1
 FB 1 bash -c 'sleep 23 & sleep 24' 2>"$T11/err"; RCT=$?
 sleep 0.3
 LEFT="$(pgrep -f 'sleep 2[34]' | wc -l | tr -d ' ')"
