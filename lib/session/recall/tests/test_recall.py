@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 """Stdlib tests for session-recall. Run: python3 -m unittest discover -s tests"""
 import hashlib
+import json
 import os
 import subprocess
 import sys
+import tempfile
 import unittest
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -21,6 +23,18 @@ TAIL_DROPPED = os.path.join(ROOT, "fixtures", "tail-dropped-kinds.jsonl")  # one
 FINAL_BACKTICK = os.path.join(ROOT, "fixtures", "final-backtick.jsonl")   # trailing thinking/tool_use-only turns, ``` fences
 FINAL_TILDE = os.path.join(ROOT, "fixtures", "final-tilde.jsonl")         # ~~~~markdown holding ``` and ~~~ blocks
 FINAL_NO_TEXT = os.path.join(ROOT, "fixtures", "final-no-text.jsonl")     # assistant turns with no text at all
+RESULT_JSON = os.path.join(ROOT, "fixtures", "result-json.jsonl")         # two assistant msgs; the last: prose + one JSON object
+RESULT_BAD_JSON = os.path.join(ROOT, "fixtures", "result-bad-json.jsonl")  # last assistant msg holds a malformed {...}
+
+
+def _slurp(path):
+    with open(path, encoding="utf-8") as fh:
+        return fh.read()
+
+
+def _sha(path):
+    with open(path, "rb") as fh:
+        return hashlib.sha256(fh.read()).hexdigest()
 
 
 class TestRecall(unittest.TestCase):
@@ -684,7 +698,7 @@ class TestRecall(unittest.TestCase):
 
     def test_final_missing_file_exits_1_and_bad_combos_exit_2(self):
         self.assertEqual(self._final(os.path.join(ROOT, "no-such.jsonl")).returncode, 1)
-        for extra in (["--json"], ["--sessions"], ["--tail", "abc"], ["backoff"]):
+        for extra in (["--sessions"], ["--tail", "abc"], ["backoff"]):
             self.assertEqual(self._final(SEED, *extra).returncode, 2, extra)
         bare_fence = subprocess.run([sys.executable, BIN, "--fence", "markdown"],
                                     capture_output=True, text=True)
@@ -695,6 +709,86 @@ class TestRecall(unittest.TestCase):
         # (--tail redacts because its output is pasted into a session).
         secret = "see op://vault/item/field for the key"
         self.assertEqual(r.last_fenced_block("```markdown\n" + secret + "\n```", "markdown"), secret)
+
+
+    # --- --final --json / --out / --max-bytes: a task-output file's result ---------
+    # A background subagent's result lands in <session>/tasks/<agent-id>.output (the same
+    # JSONL). Reading it whole overflows the lead's context; these pull out just the answer.
+
+    def test_result_plain_prints_last_assistant_text_only(self):
+        res = self._final(RESULT_JSON)
+        self.assertEqual(res.returncode, 0)
+        self.assertTrue(res.stdout.startswith("Audit finished. Result:\n{"))
+        self.assertTrue(res.stdout.endswith("End of report.\n"))
+        self.assertNotIn("Early draft", res.stdout)
+
+    def test_result_json_prints_outermost_object(self):
+        res = self._final(RESULT_JSON, "--json")
+        self.assertEqual(res.returncode, 0, res.stderr)
+        obj = json.loads(res.stdout)
+        self.assertEqual(obj["verdict"], "pass")
+        self.assertEqual(obj["count"], 3)
+        self.assertEqual(obj["findings"][0]["note"], "a {brace} in a string")
+
+    def test_result_out_writes_file_and_prints_one_line_summary(self):
+        with tempfile.TemporaryDirectory() as d:
+            out = os.path.join(d, "result.json")
+            res = self._final(RESULT_JSON, "--json", "--out", out)
+            self.assertEqual(res.returncode, 0, res.stderr)
+            self.assertEqual(len(res.stdout.strip().splitlines()), 1)
+            self.assertIn("top-level keys: verdict, count, findings", res.stdout)
+            self.assertNotIn("Audit finished", res.stdout)
+            body = _slurp(out)
+            self.assertEqual(json.loads(body)["count"], 3)
+            self.assertIn(f"wrote {len(body.encode('utf-8'))} bytes to {out}", res.stdout)
+            # plain --out writes the prose, with no key list
+            out2 = os.path.join(d, "result.txt")
+            res2 = self._final(RESULT_JSON, "--out", out2)
+            self.assertNotIn("top-level keys", res2.stdout)
+            self.assertTrue(_slurp(out2).startswith("Audit finished."))
+
+    def test_result_no_assistant_message_is_clear_error_exit_1(self):
+        for flags in ([], ["--json"]):
+            res = self._final(FINAL_NO_TEXT, *flags)
+            self.assertEqual(res.returncode, 1, flags)
+            self.assertEqual(res.stdout, "")
+            self.assertIn("no assistant text", res.stderr)
+
+    def test_result_malformed_json_is_clear_error_exit_1(self):
+        res = self._final(RESULT_BAD_JSON, "--json")
+        self.assertEqual(res.returncode, 1)
+        self.assertEqual(res.stdout, "")
+        self.assertEqual(len(res.stderr.strip().splitlines()), 1)
+        self.assertIn("not valid JSON", res.stderr)
+        # prose with no object, and braces that are not JSON
+        with self.assertRaises(ValueError):
+            r.outermost_json_object("just prose, no object")
+        with self.assertRaises(ValueError):
+            r.outermost_json_object("see {not json} here")
+
+    def test_result_stdout_is_byte_capped_and_out_is_not(self):
+        res = self._final(RESULT_JSON, "--max-bytes", "20")
+        self.assertEqual(res.returncode, 0)
+        self.assertEqual(len(res.stdout.encode("utf-8")), 20)
+        self.assertIn("truncated", res.stderr)
+        # a cut never splits a multibyte character
+        self.assertEqual(r.cap_bytes("a\u00e9b", 2), "a")
+        with tempfile.TemporaryDirectory() as d:
+            out = os.path.join(d, "full.txt")
+            self._final(RESULT_JSON, "--max-bytes", "20", "--out", out)
+            self.assertTrue(_slurp(out).endswith("End of report.\n"))
+
+    def test_result_flag_misuse_exits_2_and_never_clobbers_the_transcript(self):
+        for extra in (["--max-bytes", "0"], ["--max-bytes", "x"], ["--out"], ["--out", "-x"]):
+            self.assertEqual(self._final(RESULT_JSON, *extra).returncode, 2, extra)
+        for bare in (["--out", "x.txt"], ["--max-bytes", "5"]):
+            p = subprocess.run([sys.executable, BIN, "backoff", "--file", SEED, *bare],
+                               capture_output=True, text=True)
+            self.assertEqual(p.returncode, 2, bare)
+        before = _sha(RESULT_JSON)
+        res = self._final(RESULT_JSON, "--out", RESULT_JSON)
+        self.assertEqual(res.returncode, 2)
+        self.assertEqual(_sha(RESULT_JSON), before)
 
 
     def test_determinism(self):
