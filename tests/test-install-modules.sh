@@ -311,6 +311,26 @@ HAS_STYLE10="$(jq -r 'has("outputStyle")' "$H10/.claude/settings.json" 2>/dev/nu
 assert_true "path-shaped output.style is refused (outputStyle key absent)" "$([ "$HAS_STYLE10" = "false" ]; echo $?)"
 assert_true "path-shaped output.style prints a warning" "$({ trap '' PIPE; printf '%s' "$ERR10" 2>/dev/null || :; } | grep -qi 'not a bare name'; echo $?)"
 
+# ============================================================
+# --help exits 0 and an unknown flag exits 64, both BEFORE any write
+# ============================================================
+echo "== --help / -h print usage and exit 0; unknown flag exits 64; nothing written =="
+for HELP_FLAG in --help -h; do
+  H11="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
+  OUT11="$(HOME="$H11" bash "$KIT_DIR/install.sh" "$HELP_FLAG" 2>&1)"; RC11=$?
+  assert_true "$HELP_FLAG exits 0" "$([ "$RC11" -eq 0 ]; echo $?)"
+  assert_true "$HELP_FLAG prints usage" "$({ printf '%s' "$OUT11" | grep -q '^usage: bash install.sh'; } >/dev/null 2>&1; echo $?)"
+  assert_true "$HELP_FLAG writes nothing under HOME" "$([ -z "$(ls -A "$H11")" ]; echo $?)"
+done
+for BAD_FLAGS in "--bogus" "--with board --bogus" "--uninstall-x" "stray"; do
+  H12="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
+  # shellcheck disable=SC2086
+  ERR12="$(HOME="$H12" bash "$KIT_DIR/install.sh" $BAD_FLAGS 2>&1 >/dev/null)"; RC12=$?
+  assert_true "'$BAD_FLAGS' exits 64" "$([ "$RC12" -eq 64 ]; echo $?)"
+  assert_true "'$BAD_FLAGS' prints usage to stderr" "$({ printf '%s' "$ERR12" | grep -q '^usage: bash install.sh'; } >/dev/null 2>&1; echo $?)"
+  assert_true "'$BAD_FLAGS' writes nothing under HOME" "$([ -z "$(ls -A "$H12")" ]; echo $?)"
+done
+
 echo
 echo "== $PASS passed, $FAIL failed =="
 [ "$FAIL" -eq 0 ]
