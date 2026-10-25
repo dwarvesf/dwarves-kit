@@ -101,6 +101,19 @@ chk "ci-noset merge: exits 2" "$([ "$rc" -eq 2 ]; echo $?)"
 chk_has "ci-noset merge: names the refusal" "$out" "FAILED merge #51: the ci label could not be set"
 chk_no "ci-noset merge: untested head never merges" "$(cat "$GH_STUB_CALLS")" "pr merge 51"
 
+echo "--- ci-gated merge: a failed label read refuses the merge, it is not read as no label"
+# A transient gh error on the label list must not pass for a repo without the gate: the
+# eligibility gate sees an untested head, and only the label probe could say it is gated.
+: > "$GH_STUB_CALLS"; rm -f "$GH_STUB_CALLS".*
+out="$(PATH="$TMPD/nosleep:$PATH" KIT_WRAP_CI_ON_MERGE=1 GH_STUB_LABEL_RC=1 \
+  GH_STUB_OPEN_PRS='[{"number":53,"title":"ci probe fail","headRefName":"feat/ci-gate"}]' \
+  GH_STUB_PR_53="{\"number\":53,\"title\":\"ci probe fail\",\"headRefName\":\"feat/ci-gate\",\"headRefOid\":\"$PR50_OID\",\"baseRefName\":\"main\",\"mergeable\":\"MERGEABLE\",\"mergeStateStatus\":\"CLEAN\",\"reviewDecision\":\"APPROVED\",\"statusCheckRollup\":[],\"isDraft\":false}" \
+  "$WRAP" merge --apply "$TMPD/clone-scan-main" 2>&1)"; rc=$?
+chk "ci-probefail merge: exits 2" "$([ "$rc" -eq 2 ]; echo $?)"
+chk_has "ci-probefail merge: names the unread labels" "$out" "could not read the repo labels for #53"
+chk_has "ci-probefail merge: names the refusal" "$out" "FAILED merge #53: the ci label could not be set"
+chk_no "ci-probefail merge: never merges an unproven head" "$(cat "$GH_STUB_CALLS")" "pr merge 53"
+
 echo "--- ci-gated merge: a check the label revealed failing refuses the merge"
 # The label's run comes back red on the first wait read, and the post-label re-gate is
 # what refuses: the empty-rollup eligible verdict it replaces was read on an untested head.
@@ -440,6 +453,35 @@ chk "ci-fuzzy land: exits 0" "$rc"
 chk_has "ci-fuzzy land: still probed the labels" "$LAND_CALLS" "label list"
 chk_no "ci-fuzzy land: no ci label means no pr edit" "$LAND_CALLS" "pr edit"
 chk_has "ci-fuzzy land: merged as before" "$LAND_CALLS" "pr merge 42"
+
+echo "--- ci-gated land: a failed label read refuses the land; an empty answer is no gate"
+# A gh error on the label list is not "this repo has no ci label": the land stops before
+# any merge. gh answers a no-match search with exit 0 and no bytes, which stays ungated.
+build_land ciprobefail
+LWT_PF="$(cd "$TMPD/ld-repo-ciprobefail/wt" && pwd -P)"
+: > "$GH_STUB_CALLS"; rm -f "$GH_STUB_CALLS".*
+out="$(PATH="$TMPD/nosleep:$PATH" KIT_WRAP_CI_ON_MERGE=1 GH_STUB_LABEL_RC=1 \
+  GH_STUB_OPEN_PRS='[]' GH_STUB_CREATE_NUM=42 \
+  GH_STUB_PR_42='{"number":42,"labels":[],"statusCheckRollup":[],"mergeStateStatus":"CLEAN"}' \
+  GH_STUB_LAND_REPO="$LWT_PF" GH_STUB_LAND_REMOTE="$TMPD/ld-bare-ciprobefail" \
+  GH_STUB_LAND_BRANCH=feat/land GH_STUB_LAND_DEF=main "$WRAP" land "$LWT_PF" 2>&1)"; rc=$?
+LAND_CALLS="$(cat "$GH_STUB_CALLS")"
+chk "ci-probefail land: does not exit 0" "$([ "$rc" -ne 0 ]; echo $?)"
+chk_has "ci-probefail land: names the unread labels" "$out" "could not read the repo labels for #42"
+chk_has "ci-probefail land: leaves the PR open" "$out" "SKIP land feat/land"
+chk_no "ci-probefail land: never merges an unproven head" "$LAND_CALLS" "pr merge 42"
+chk_no "ci-probefail land: no label edit on an unread repo" "$LAND_CALLS" "pr edit"
+
+build_land ciemptylbl
+LWT_EL="$(cd "$TMPD/ld-repo-ciemptylbl/wt" && pwd -P)"
+: > "$GH_STUB_CALLS"; rm -f "$GH_STUB_CALLS".*
+out="$(PATH="$TMPD/nosleep:$PATH" KIT_WRAP_CI_ON_MERGE=1 GH_STUB_LABELS='' \
+  GH_STUB_OPEN_PRS='[]' GH_STUB_CREATE_NUM=42 \
+  GH_STUB_LAND_REPO="$LWT_EL" GH_STUB_LAND_REMOTE="$TMPD/ld-bare-ciemptylbl" \
+  GH_STUB_LAND_BRANCH=feat/land GH_STUB_LAND_DEF=main "$WRAP" land "$LWT_EL" 2>&1)"; rc=$?
+LAND_CALLS="$(cat "$GH_STUB_CALLS")"
+chk "ci-emptylbl land: exits 0" "$rc"
+chk_has "ci-emptylbl land: merged as before" "$LAND_CALLS" "pr merge 42"
 
 echo "--- ci-gated land: checks that predate the label do not end the wait (T6)"
 # land has no settle read and no re-gate, so the order of its reads is the whole proof:
