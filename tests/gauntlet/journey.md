@@ -35,7 +35,7 @@ A target repo gets the operate-contract injected.
 
 A small, well-scoped fix ships without full SDD ceremony.
 
-1. A fix under the tiny-lane size (per `docs/guides/lanes.md`) can go straight
+1. A fix under the tiny-lane size (per `docs/guides/spine.md`) can go straight
    to a branch + commit + `PR.md` without a `docs/specs/SPEC-NNN` file.
 2. The commit subject is conventional (`fix|docs|feat|chore|refactor|test`,
    optional scope, no SPEC-/TASK- marker) , `commit-format` enforces this on

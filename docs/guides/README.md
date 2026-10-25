@@ -9,8 +9,7 @@ never overrides those, it translates them.
 
 | Guide | Read it when |
 |---|---|
-| [spine.md](spine.md) | you want the map: what comes after what, from "what should I do" to shipped |
-| [lanes.md](lanes.md) | you wonder why a small change got big ceremony, or vice versa |
+| [spine.md](spine.md) | you want the map, or you wonder why a small change got big ceremony, or vice versa |
 | [grill.md](grill.md) | the kit starts interviewing you before working |
 | [autonomy.md](autonomy.md) | you want it to check in more, or less |
 
