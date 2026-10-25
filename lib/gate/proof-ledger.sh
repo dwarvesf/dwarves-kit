@@ -16,7 +16,9 @@
 #                 ([gate] negative_control = full drops the control unless a hard path or a
 #                 full-lane spec is involved; default `always`).
 #   inert      -- docs / comments / cosmetic: a diff made only of *.md/*.txt, .kit.toml, or documentation
-#                 and asset files under a docs/ tree (generated .html/.svg/.png included). Pass (no ritual).
+#                 and asset files under a docs/ tree (generated .html/.svg/.png included). Also a push whose
+#                 committed paths are all board files (_meta/BACKLOG.md, BACKLOG.md, _meta/archive/BACKLOG*.md),
+#                 whatever else sits uncommitted in the checkout. Pass (no ritual).
 #
 # "Fresh" = the branch diff itself added/modified the docs/verification/*.md entry, so an
 # old proof from unrelated work does not satisfy a new change.
@@ -106,6 +108,20 @@ classify() {
   local changed subjects blob
   changed="$(_changed "$root" "$base")"
   [ -n "$changed" ] || { echo inert; return 0; }   # empty diff: nothing to gate
+
+  # board-only: begin
+  # A push whose COMMITTED paths are all board files (the backlog, its archive) is inert: a row flip
+  # or filing carries no behavior. It reads base..HEAD alone, because only commits ship, so an
+  # unrelated dirty or untracked file in a shared checkout cannot turn a board flip into a
+  # behavioral push. An empty or unreadable diff (bad base, git error) skips this rule and falls
+  # through to the path rules below. Capture the non-board paths, never `grep -q` (pipefail SIGPIPE).
+  local committed notboard
+  committed="$(git -C "$root" diff --name-only --no-renames "$base"..HEAD 2>/dev/null)" || committed=""
+  if [ -n "$committed" ]; then
+    notboard="$(printf '%s\n' "$committed" | awk '$0 !~ /^(_meta\/BACKLOG\.md|BACKLOG\.md|_meta\/archive\/BACKLOG[^\/]*\.md)$/')"
+    [ -n "$notboard" ] || { echo inert; return 0; }
+  fi
+  # board-only: end
 
   # inert FIRST: a markdown/txt-only diff is docs, never load-bearing, regardless of what the
   # commit subject says. Checking stateful keywords against the subject before this misread a
