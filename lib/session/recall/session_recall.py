@@ -546,6 +546,36 @@ def final_reply_text(entries):
     return None
 
 
+FINAL_MAX_BYTES = 64 * 1024
+
+
+def outermost_json_object(text: str) -> dict:
+    """The JSON object spanning the first `{` to the last `}` of `text`, parsed with
+    `json.loads` only (the text is untrusted transcript content, never evaluated).
+    Raises ValueError with a one-line reason when there is no object or it does not parse."""
+    start, end = text.find("{"), text.rfind("}")
+    if start < 0 or end < start:
+        raise ValueError("no {...} object")
+    try:
+        obj = json.loads(text[start:end + 1])
+    except json.JSONDecodeError as e:
+        raise ValueError(f"outermost {{...}} is not valid JSON ({e})") from None
+    if not isinstance(obj, dict):
+        raise ValueError("outermost {...} is not a JSON object")
+    return obj
+
+
+def cap_bytes(text: str, limit: int) -> str:
+    """`text` cut to at most `limit` UTF-8 bytes (never mid-codepoint). A cut says so on
+    stderr and points at --out, which writes the whole result to a file instead."""
+    raw = text.encode("utf-8")
+    if len(raw) <= limit:
+        return text
+    sys.stderr.write(f"session-recall: output truncated to {limit} of {len(raw)} bytes "
+                     f"(use --out FILE for the whole result, or raise --max-bytes)\n")
+    return raw[:limit].decode("utf-8", errors="ignore")
+
+
 def last_fenced_block(text: str, tag: str):
     """Content of the last CLOSED fenced block opened with info-string `tag`, without
     the fence lines, or None. The block closes at the next line that is exactly its
@@ -581,12 +611,14 @@ def last_fenced_block(text: str, tag: str):
 
 def main(argv=None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
-    file = project = tail = final = fence_tag = None
+    file = project = tail = final = fence_tag = out_path = None
     search_all = as_json = sessions = False
     limit = None  # None = mode picks its own default (10 tail, 50 otherwise)
+    max_bytes = FINAL_MAX_BYTES
     query_parts = []
     usage = ("usage: session-recall <query> [--file F | --project SLUG-or-repo-name | --all] "
-             "[--sessions] [--limit N] [--json] [--tail PREFIX] [--final FILE [--fence TAG]]\n")
+             "[--sessions] [--limit N] [--json] [--tail PREFIX] "
+             "[--final FILE [--fence TAG] [--json] [--out FILE] [--max-bytes N]]\n")
     it = iter(argv)
     for a in it:
         if a == "--file":
@@ -605,6 +637,17 @@ def main(argv=None) -> int:
             final = next(it, None)
         elif a == "--fence":
             fence_tag = next(it, None)
+        elif a == "--out":
+            out_path = next(it, None)
+        elif a == "--max-bytes":
+            raw = next(it, None)
+            try:
+                max_bytes = int(raw)
+                if max_bytes < 1:
+                    raise ValueError
+            except (TypeError, ValueError):
+                sys.stderr.write(usage)
+                return 2
         elif a == "--limit":
             raw = next(it, None)
             try:
@@ -637,13 +680,20 @@ def main(argv=None) -> int:
                          f"or ends in '-{project}'\n")
         return 1
 
-    if fence_tag is not None and final is None:
+    if "--out" in argv and not out_path:
+        sys.stderr.write(usage)
+        return 2
+    if final is None and (fence_tag is not None or out_path is not None
+                          or max_bytes != FINAL_MAX_BYTES):
         sys.stderr.write(usage)
         return 2
     if final is not None:
         if (not final or final.startswith("-") or fence_tag == "" or query or sessions
-                or as_json or tail is not None):
+                or tail is not None or (out_path or "x").startswith("-")):
             sys.stderr.write(usage)
+            return 2
+        if out_path is not None and os.path.realpath(out_path) == os.path.realpath(final):
+            sys.stderr.write("session-recall: --out must not be the transcript being read\n")
             return 2
         try:
             text = final_reply_text(load(final))
@@ -659,7 +709,25 @@ def main(argv=None) -> int:
                 sys.stderr.write(f"session-recall: no closed fenced block tagged {fence_tag!r} "
                                  f"in the final reply of {final}\n")
                 return 1
-        sys.stdout.write(text + "\n")
+        if as_json:
+            try:
+                obj = outermost_json_object(text)
+            except ValueError as e:
+                sys.stderr.write(f"session-recall: {e} in the final reply of {final}\n")
+                return 1
+            text = json.dumps(obj, ensure_ascii=False, indent=2)
+        if out_path is not None:
+            try:
+                with open(out_path, "w", encoding="utf-8") as fh:
+                    fh.write(text + "\n")
+            except OSError as e:
+                sys.stderr.write(f"session-recall: {e}\n")
+                return 1
+            size = len((text + "\n").encode("utf-8"))
+            keys = f", top-level keys: {_clean_tail_text(', '.join(map(str, obj)))}" if as_json else ""
+            sys.stdout.write(f"wrote {size} bytes to {out_path}{keys}\n")
+            return 0
+        sys.stdout.write(cap_bytes(text + "\n", max_bytes))
         return 0
 
     if tail is not None:
