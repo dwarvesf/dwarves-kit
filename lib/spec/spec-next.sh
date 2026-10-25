@@ -107,7 +107,9 @@ _scan_numbers() {
     done <<< "$wts"
     git -C "$ROOT" branch -a --format='%(refname:short)' 2>/dev/null | grep -oE 'SPEC-[0-9]+' || true
     git -C "$ROOT" log --all --format='%s' -200 2>/dev/null | grep -oE 'SPEC-[0-9]+' || true
-  } | grep -oE '[0-9]+' | sort -n | uniq
+  # `grep` exits 1 on no match; under pipefail that aborts a caller's `$(_scan_numbers)` on a
+  # repo with no specs, branches, or SPEC commits yet. Empty is a valid answer, so mask it.
+  } | { grep -oE '[0-9]+' || true; } | sort -n | uniq
 }
 
 # Open-PR SPEC numbers: for each open PR's head ref, list docs/specs/ via the GitHub contents

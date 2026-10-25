@@ -7,9 +7,9 @@
 # re-adds it when the label predates the head (a `labeled` event fired before the pushed
 # commits starts no run on them, which reads as the label present but an empty rollup on
 # the current head). Returns 0 when the repo gates on `ci` and the PR now carries it, 1
-# when the repo has no such label (a repo without one, or a repo whose label read failed,
-# behaves exactly as before), 2 when the repo gates but the label could not be set: that
-# merge would run untested, so the caller refuses it.
+# when the repo has no such label (behaves exactly as before), 2 when the repo gates but the
+# label could not be set, or when the repo's label read itself failed: that merge would run
+# untested or unproven, so the caller refuses it.
 # A PR read that fails on a gating repo returns 2 as well: without it the sync cannot tell
 # which checks predate the label, and the wait would end on them.
 # When it adds the label it also sets the out-param CI_PRELABEL_KEYS to the keys of the checks
@@ -36,11 +36,17 @@ CI_JQ_DEFS='
   def ckey: (.name // .context // "") + "@" + ([.detailsUrl, .targetUrl, .startedAt, .createdAt] | map(real) | .[0] // "");
 '
 
-# _ci_repo_has_label <repo-url> -- 0 when the repo carries an exact `ci` label. `--search`
-# is fuzzy, so the exact match is the test; a failed read answers 1, the same as no label.
+# _ci_repo_has_label <repo-url> -- 0 when the repo carries an exact `ci` label, 1 when it
+# does not, 2 when the read failed. `--search` is fuzzy, so the exact match is the test. gh
+# answers a no-match search with exit 0 and zero bytes, so an empty answer is 1. A non-zero
+# exit, or output that is not a JSON array, is 2: a failed read must not pass for "no gate",
+# or a transient API error would let an untested head merge.
 _ci_repo_has_label() {
-  gh label list --repo "$1" --search ci --limit 200 --json name 2>/dev/null \
-    | jq -e '[.[] | select(.name == "ci")] | length > 0' >/dev/null 2>&1
+  local labels
+  labels="$(gh label list --repo "$1" --search ci --limit 200 --json name 2>/dev/null)" || return 2
+  [ -n "$(printf '%s' "$labels" | tr -d '[:space:]')" ] || return 1
+  printf '%s' "$labels" | jq -e 'type == "array"' >/dev/null 2>&1 || return 2
+  printf '%s' "$labels" | jq -e '[.[] | select(.name == "ci")] | length > 0' >/dev/null 2>&1
 }
 
 # _ci_zero_checks <pr-detail-json> -- 0 when the PR reports no check run at all. Unreadable
@@ -52,7 +58,12 @@ _ci_zero_checks() {
 _ci_label_sync() {
   local url="$1" n="$2" detail
   CI_PRELABEL_KEYS='[]'
-  _ci_repo_has_label "$url" || return 1
+  _ci_repo_has_label "$url"
+  case "$?" in
+    0) ;;
+    1) return 1 ;;
+    *) echo "     could not read the repo labels for #${n}" >&2; return 2 ;;
+  esac
   detail="$(gh pr view "$n" --repo "$url" --json labels,statusCheckRollup 2>/dev/null)"
   printf '%s' "$detail" | jq -e 'type == "object"' >/dev/null 2>&1 || {
     echo "     could not read the labels and checks of #${n}" >&2; return 2; }
