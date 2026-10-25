@@ -64,6 +64,47 @@ Verdict: PASS
 
 `test-wrap-ci` grew from 127 to 152 assertions (25 new, the zero-check section), `test-wrap-merge-stacked` is new (63), and `test-wrap-merge` is unchanged at 410, so no existing assertion moved.
 
+## Negative control
+
+Run at `3229ccd1`, tree clean, with `lib/gate/negctl.sh --parallel`. Each control applies one exact-string mutation from `docs/verification/wrap-merge-stacked-ci/negctl-mutations.py` (it fails if the string is not found exactly once) to a throwaway copy, and the suite must go green, then red, then green after the restore. The first run of NC1 stayed green: git dropped the replayed parent commits as empty because the squash carried the same lines. The fixture was changed in `3229ccd1` so the parent's second commit edits its first commit's line, and NC1 then went red.
+
+| Control | Mutation | Suite | Red run | Red cases | Verdict |
+|---|---|---|---|---|---|
+| NC1 | `rebase --onto origin/<def> <parent>` becomes a plain `rebase origin/<def>` | `test-wrap-merge-stacked` | 47 passed, 16 FAILED of 63 | `happy:` and `held:` (the rebase conflicts on the parent's commits) | PASS |
+| NC2 | the leased push becomes `--force` | `test-wrap-merge-stacked` | 57 passed, 6 FAILED of 63 | `happy: the lease names the head`, `happy: no plain --force`, `lease:` (3) | PASS |
+| NC3 | the conflict branch no longer aborts the rebase | `test-wrap-merge-stacked` | 56 passed, 7 FAILED of 63 | `conflict:` and `conflict, held:` (checkout left mid-rebase) | PASS |
+| NC4 | the stacked recovery ignores the missing `--rebase-stacked` | `test-wrap-merge-stacked` | 62 passed, 1 FAILED of 63 | `no flag: no rebase is announced` | PASS |
+| NC5 | the dependents guard never fires | `test-wrap-merge-stacked` | 58 passed, 5 FAILED of 63 | `dependents: refused by name`, then the fork and auto-merge cases that ride the rewritten branch | PASS |
+| NC6 | the fork and auto-merge guard is `true` | `test-wrap-merge-stacked` | 60 passed, 3 FAILED of 63 | `fork PR: refused by name`, `auto-merge armed: refused by name` | PASS |
+| NC7 | the first merged parent wins, not the chain tip | `test-wrap-merge-stacked` | 62 passed, 1 FAILED of 63 | `happy: names the parent it cut at` | PASS |
+| NC8 | the zero-check label sync is never called | `test-wrap-ci` | 140 passed, 12 FAILED of 152 | `zero-check --pr:`, `re-add:`, `noset:`, `--with-ci:` | PASS |
+| NC9 | a PR armed by the zero-check step does not skip the gate's second sync | `test-wrap-ci` | 150 passed, 2 FAILED of 152 | `zero-check --with-ci: the labels were probed once`, `the label was added once` | PASS |
+
+```
+Command: bash lib/gate/negctl.sh --parallel 4 "$PWD" "bash tests/test-wrap-merge-stacked.sh" "python3 docs/verification/wrap-merge-stacked-ci/negctl-mutations.py NC1" ... "... NC7"
+Exit: 0
+Output:
+  NC1 test-wrap-merge-stacked: 47 passed, 16 FAILED of 63
+  NC2 test-wrap-merge-stacked: 57 passed, 6 FAILED of 63
+  NC3 test-wrap-merge-stacked: 56 passed, 7 FAILED of 63
+  NC4 test-wrap-merge-stacked: 62 passed, 1 FAILED of 63
+  NC5 test-wrap-merge-stacked: 58 passed, 5 FAILED of 63
+  NC6 test-wrap-merge-stacked: 60 passed, 3 FAILED of 63
+  NC7 test-wrap-merge-stacked: 62 passed, 1 FAILED of 63
+Verdict: PASS (7 of 7 controls; each also green again after the restore)
+```
+
+```
+Command: bash lib/gate/negctl.sh --parallel 2 "$PWD" "bash tests/test-wrap-ci.sh" "python3 docs/verification/wrap-merge-stacked-ci/negctl-mutations.py NC8" "... NC9"
+Exit: 0
+Output:
+  NC8 test-wrap-ci: 140 passed, 12 FAILED of 152
+  NC9 test-wrap-ci: 150 passed, 2 FAILED of 152
+Verdict: PASS (2 of 2 controls; each also green again after the restore)
+```
+
+Every control restored `lib/wrap/wrap-merge.sh` to HEAD; `git status` was clean after both runs.
+
 ## Not proven
 
 - A real GitHub squash merge and a real protected branch. The stub models `gh`; a protected PR branch refuses the push on GitHub's side and the code then reports `PUSH REFUSED` and restores the checkout, but only the lease path is exercised here.
