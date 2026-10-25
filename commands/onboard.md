@@ -43,14 +43,14 @@ in one or two sentences, then branch:
   AGENTS.md Pause-if): "Heads up: BOTH a plugin and a bash install are present, so the kit hooks are
   double-registered and will fire twice. Keep exactly one path. To keep the plugin, remove the
   `dwarves-kit/hooks/*` entries from `~/.claude/settings.json` (or run `bash install.sh --uninstall`).
-  To keep the bash install, `/plugin uninstall dwarves-kit@dwarves-marketplace`. I won't change this
+  To keep the bash install, `/plugin uninstall kit@dwarves-marketplace`. I won't change this
   for you." Then continue to B (the rest still works; the double-fire is a warning, not a blocker).
   Note for the user: a plain `bash install.sh` on a machine that has the plugin no longer adds a
   second set of hooks; it refuses and does a compat-only install, so this state comes only from an
   older install or from `--force-both`.
 - **`none`** -- The kit isn't installed on this machine yet. There is nothing to set up in a repo
   until it is. Tell the user the two install paths and STOP:
-  - Recommended: `/plugin marketplace add dwarvesf/dwarves-kit` then `/plugin install dwarves-kit@dwarves-marketplace`
+  - Recommended: `/plugin marketplace add dwarvesf/dwarves-kit` then `/plugin install kit@dwarves-marketplace`
   - Alternative: `git clone` the kit and `bash install.sh`
   - "Re-run `/kit:onboard` once one of those finishes." End the run here.
 

@@ -66,7 +66,7 @@ adopt: AGENTS.md is not a kit file, 1 lines (left alone)
 
 | You see | Do this |
 |---|---|
-| `/kit:onboard` says the kit is not installed | Install it first: `/plugin marketplace add dwarvesf/dwarves-kit`, then `/plugin install dwarves-kit@dwarves-marketplace`. Run `/kit:onboard` again. |
+| `/kit:onboard` says the kit is not installed | Install it first: `/plugin marketplace add dwarvesf/dwarves-kit`, then `/plugin install kit@dwarves-marketplace`. Run `/kit:onboard` again. |
 | `onboard` warns that a plugin and a bash install are both present | The hooks fire twice. Keep one path; the warning names how to remove the other. |
 | `AGENTS.md is not a kit file ... (left alone)` | Expected. Your file stays. The operate-contract block lands in `CLAUDE.md`. |
 | A module change had no effect | Edit `[modules]` in `.kit.toml`, then run `/kit:adopt --refresh`. On a plugin machine the plugin registers every hook, so the choice is recorded but adds no project hooks. |
