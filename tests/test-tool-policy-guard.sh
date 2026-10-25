@@ -131,8 +131,12 @@ assert "row 19: hooks.json registers exactly one PreToolUse entry, matcher *" $?
 [ "$(jq -r '.hooks.PreToolUse[] | select(.hooks[].command | contains("tool-policy-guard")) | .matcher' "$KIT_DIR/settings.json")" = "*" ]
 assert "row 20: settings.json registers exactly one PreToolUse entry, matcher *" $?
 
-bash -c "source '$KIT_DIR/lib/config/modules.sh'; kit_module_hooks advisor" | tr ' ' '\n' | grep -qxF 'tool-policy-guard.sh'
-assert "row 21: the module table maps the hook into the advisor module (order-tolerant)" $?
+# Capture first, then match with case. A `... | tr | grep -q` under pipefail fails whenever tr is still
+# writing after grep found its line and exited (uutils tr, the ubuntu-26.04 default, writes eagerly and
+# takes SIGPIPE; GNU tr buffers to EOF, which hid it).
+advisor_hooks="$(bash -c "source '$KIT_DIR/lib/config/modules.sh'; kit_module_hooks advisor")"
+case " $advisor_hooks " in *" tool-policy-guard.sh "*) row21=0 ;; *) row21=1 ;; esac
+assert "row 21: the module table maps the hook into the advisor module (order-tolerant)" "$row21" "got: $advisor_hooks"
 
 echo ""
 echo "=== Row 22: in-suite NEGATIVE CONTROL (scratch copy, never the tracked file) ==="
