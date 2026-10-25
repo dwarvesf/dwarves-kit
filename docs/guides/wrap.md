@@ -2,7 +2,7 @@
 
 Use this when you are done for now and want the work landed: PRs merged, board rows flipped, worktrees and branches tidied, and one short report of what is left for you.
 
-![wrap land: push the branch, open a PR, squash-merge it, verify the tree, pull the main checkout, remove the worktree, flip the board row.](../figures/wrap.png)
+![/kit:wrap flips the board row first; wrap land then pushes the branch, opens a PR, squash-merges it, verifies the tree, pulls the main checkout, and removes the worktree.](../figures/wrap.png)
 
 _Figure: `wrap land` takes one finished worktree to a merged, verified, cleaned-up state in a fixed order._
 
