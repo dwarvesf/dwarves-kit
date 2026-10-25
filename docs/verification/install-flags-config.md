@@ -32,3 +32,6 @@ Both files were reverted to the committed fix after the control; `git status` wa
 - `install.sh --help` placement relative to a literal `--with --help` value is not tested (any `--help` argument prints usage).
 - The remote path past the key guard (docker, `op read` on the runner) was not run; ssh is a stub.
 - Maintainer's own ref is not restored here: it belongs in the operator `~/.config/dwarves-kit/kit.toml` (outside this repo).
+
+## Rollback
+`git revert` the install-flags, probe-key and proof commits. `install.sh` returns to ignoring unknown flags; the shipped `kit.toml` returns to the old `probe_key_ref` value. No data migration: the only file removed was an empty tracked lock nothing reads.
