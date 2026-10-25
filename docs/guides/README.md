@@ -20,8 +20,7 @@ never overrides those, it translates them.
 |---|---|
 | [loops.md](loops.md) | a command reported a round cap, an honest halt, or SOLID / REVISE / RECONSIDER |
 | [debug.md](debug.md) | you said "fix this bug" and it went hunting for a root cause instead |
-| [dispatch-vs-mega.md](dispatch-vs-mega.md) | your work is several pieces and you are unsure how they run |
-| [mega-goal.md](mega-goal.md) | your ask is one destination reached through several dependent pieces |
+| [mega-goal.md](mega-goal.md) | your work is several pieces and you are unsure how they run, in order or side by side |
 
 ## The checks
 
