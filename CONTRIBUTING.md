@@ -27,7 +27,7 @@ These all map to specific principles in [`docs/PHILOSOPHY.md`](docs/PHILOSOPHY.m
 | Reject reason | Source principle |
 |---|---|
 | Compiled binaries (`.exe`, `.bin`, `.so`, `.dylib`) | `Bash over binaries` — the only exception is the documented statusline carve-out |
-| Non-bash hooks (Python, Node, compiled) | Same. Second exception triggers re-evaluation of the principle, not a one-line carve-out |
+| Non-bash hooks (Python, Node, compiled) | Same. No hook entrypoint is Python; operator verbs (`hooks/harvest_lib.py`, `hooks/harvest_sweep.py`) may be. Second exception triggers re-evaluation of the principle, not a one-line carve-out |
 | Hooks that take longer than 500ms | `Maximum 500ms per hook execution`. Profile with `time` |
 | Components with no source citation | `Synthesize, don't originate`. Every README credits row points at a real tool |
 | Components serving fewer than 2 of the 8 workflow phases | Single-purpose tools belong as standalone scripts, not kit features |
@@ -52,7 +52,7 @@ Beyond the table, see [`docs/PHILOSOPHY.md`](docs/PHILOSOPHY.md) "What we explic
 
 1. Open an issue first if the change is non-trivial. We may already have it on the parking lot in `_meta/BACKLOG.md` or have rejected it before.
 2. Branch from `master`. The kit uses `master`, not `main`. The `safety-gate` hook blocks accidental pushes to `master`; use a feature branch.
-3. Run `bash tests/run-all.sh` locally before the PR. It runs the suites your diff touches plus the six always-on lints, about 1 to 2 minutes. CI runs nothing on a push or a pull request, so a red suite reaches master unless you catch it here. If your change touches hook behavior, add an assertion to `tests/test-hooks.sh`.
+3. Run `bash tests/run-all.sh` locally before the PR. It runs the suites your diff touches plus the always-on lints, about 1 to 2 minutes. CI runs nothing on a push or a pull request, so a red suite reaches master unless you catch it here. If your change touches hook behavior, add an assertion to `tests/test-hooks.sh`.
 4. Use conventional commits: `feat(scope): ...`, `fix(scope): ...`, `docs: ...`. One logical change per commit. Keep spec/task IDs OUT of the subject line (no `TASK-3`, no trailing `(SPEC-002 ...)` tags); see "Where an ID may appear" below.
 5. Update `docs/CHANGELOG.md` under an `[Unreleased]` section if your PR is non-trivial (the root `CHANGELOG.md` is a thin pointer stub, SPEC-185). The maintainer moves it to a versioned section at release time.
 

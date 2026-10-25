@@ -2,8 +2,7 @@
 
 All notable changes to dwarves-kit are documented here. Format: [Keep a Changelog](https://keepachangelog.com/).
 
-**Current version:** 2.3.0 (2026-10-09). An `[Unreleased]` section accumulates entries above it
-until the next cut.
+An `[Unreleased]` section accumulates entries above the latest release until the next cut.
 
 **Full history:** [`docs/CHANGELOG.md`](docs/CHANGELOG.md) -- every version, its date, and its
 entries live there. This root file is a thin entry point kept short so a newcomer isn't buried

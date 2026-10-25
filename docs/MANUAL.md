@@ -1,6 +1,6 @@
 # MANUAL
 
-Operator reference for dwarves-kit: every command, hook, and agent, plus how to drive the kit from natural language and how to recover when it misbehaves. For the WHY behind any choice, see `docs/PHILOSOPHY.md`. For component fit and the SDLC state machine, see `docs/architecture.md`. For the end-to-end workflow contract (phases, risk-tier lanes, gates, flow/loop diagrams), see `WORKFLOW.md`.
+Operator reference for dwarves-kit: every command and agent, a pointer to the hook inventory (`docs/hooks.md`), plus how to drive the kit from natural language and how to recover when it misbehaves. For the WHY behind any choice, see `docs/PHILOSOPHY.md`. For component fit and the SDLC state machine, see `docs/architecture.md`. For the end-to-end workflow contract (phases, risk-tier lanes, gates, flow/loop diagrams), see `WORKFLOW.md`.
 
 Same loop, told as a story: an interview turns your ask into a blueprint, a crew builds it, a
 logbook records the run, an inspector stamps every doorway, and a debrief writes up the lesson
@@ -46,12 +46,12 @@ Index by loop stage (formerly "leg", ADR-0034; the README's "The five stages" se
 | Stage | Commands |
 |---|---|
 | (front door) | `/kit:start`, `/kit:onboard`, `/kit:adopt` |
-| Shape | `/kit:wayfind`, `/kit:grill`, `/kit:think`, `/kit:design`, `/kit:prototype`, `/kit:devs-team`, `/kit:visual-team`, `/kit:ui-design`, `/kit:assign`, `/kit:spec`, `/kit:spec-validate`, `/kit:test-plan` |
+| Shape | `/kit:wayfind`, `/kit:grill`, `/kit:think`, `/kit:design`, `/kit:prototype`, `/kit:devs-team`, `/kit:visual-team`, `/kit:ui-design`, `/kit:assign`, `/kit:spec`, `/kit:spec-validate`, `/kit:test-plan`, `/kit:feature-map` |
 | Build | `/kit:execute`, `/kit:next`, `/kit:dispatch`, `/kit:mega`, `/kit:debug` |
 | Watch | `/kit:explain`, `/kit:pitch` (render the record outward; the read plane itself is the `stats` skill + `session` CLI, not a command) |
-| Check | `/kit:review`, `/kit:review-team`, `/kit:test-plan-review-team`, `/kit:test-write`, `/kit:verify`, `/kit:quiz-gate`, `/kit:ship` |
-| Learn | `/kit:retro`, `/kit:docs`, `/kit:absorb` |
-| (meta) | `/kit:kit-health`, `/kit:draft-agent` |
+| Check | `/kit:review`, `/kit:review-team`, `/kit:test-plan-review-team`, `/kit:test-write`, `/kit:verify`, `/kit:quiz-gate`, `/kit:battery`, `/kit:ship`, `/kit:greenlight` |
+| Reflect | `/kit:wrap`, `/kit:retro`, `/kit:docs`, `/kit:absorb` |
+| (meta) | `/kit:kit-health`, `/kit:draft-agent`, `/kit:gauntlet` |
 
 ### `/kit:start`
 
@@ -76,6 +76,22 @@ Index by loop stage (formerly "leg", ADR-0034; the README's "The five stages" se
 **What it does, in order:** (A) detect the install mode and explain it in one line each -- for `both` it discloses the double-hooks hazard and points at the one-path fix but never mutates settings; for `none` it prints the two install paths and stops. (B) offer `/kit:adopt` for the current repo (preview then confirm; an already-adopted repo is reported healthy and nothing is written). (C) pick modules -- the list comes from `lib/config/modules.tsv`, the one module table `install.sh` and `lib/adopt.sh` both read, and the choice is written by driving `lib/adopt.sh --with` (this is how the plugin path, which has no `install.sh --with`, still gets per-repo module selection). (D) for the chosen modules only, surface the consumer knobs that make them non-inert -- a `.kit.toml`-keyed knob is offered as a previewed write, an env-only knob (e.g. `PROSE_RAG_INJECT`, `MONEY_GATE_REPOS`) yields printed `export` guidance. (E) on the plugin path, disclose the gaps honestly (no statusLine HUD, a frozen SHA vs `git pull`, the `--force-both` escape, older spelling `KIT_FORCE_FULL=1`, and its hazard). (F) on the bash path, INSTALL-STAMP staleness is ONE printed line + a `/kit:kit-health` pointer, never an upgrade flow. (G) end with two ideas (the lane, proof of done) and a one-line menu of opt-in commands, then `/kit:start` as the next step; the five-stage story is offered only to a newer user or on request.
 **Fence (ADR-0034 decision 4):** onboard ORCHESTRATES; it calls start + adopt + config and reimplements none of them. It never changes `install.sh`, `adopt.sh`, or `bin/config`.
 **Common gotcha:** it is not an upgrade wizard. If the kit is already installed and this repo is already adopted, onboard is a read-only health tour that writes nothing; to change modules later you hand-edit `<repo>/.kit.toml [modules]` and re-run `/kit:adopt --refresh`.
+
+### `/kit:adopt`
+
+**Phase:** front door (retrofit the operate-contract onto a repo)
+**Reads:** the target dir (default: the repo root), its existing `AGENTS.md` / `CLAUDE.md` / `.kit.toml`, and `lib/config/modules.tsv` for the module list
+**Writes:** a small `AGENTS.md` pointer, a `CLAUDE.md` loader, a `WORKFLOW.md` pointer, `docs/verification/README.md` (the proof marker that makes the ship-gate engage), a fresh `.kit.toml`, and the project's `.claude/settings.json` hook entries for the enabled modules (skipped when the plugin is installed)
+**When to invoke:** the first time in a repo, or after editing `[modules]` in `.kit.toml` (`--refresh` re-wires). `--check` is status only. `--with a,b,c` seeds those modules in a FRESH `.kit.toml`. `--single-source` keeps one agent guide instead of a CLAUDE.md/AGENTS.md pair. Several repos at once: `bin/wrap adopt <repo>...`.
+**Common gotcha:** idempotent and non-destructive. A repo's own `AGENTS.md`, `CLAUDE.md`, or `.kit.toml` is never overwritten, and `--with` on an existing `.kit.toml` is a no-op. It installs pointers, never a copy of `lib/` or the full WORKFLOW. Detail: `commands/adopt.md`.
+
+### `/kit:grill`
+
+**Phase:** intake (between type classification and the phase-0 `Done=` line)
+**Reads:** the repo's code, glossary, ADRs, and existing specs (to orient before asking); the task's key nouns and target paths for the unknown-density precheck
+**Writes:** each answer where it lives, as it resolves: the glossary (`CONTEXT.md`), `docs/QUALITY.md` for quality requirements, a sparse ADR for a hard-to-reverse trade-off, and the Q&A digest in the goal draft's or spec brief's Context. Records `grill ran` or `grill skipped` in the gate ledger.
+**When to invoke:** before work on any non-tiny task whose territory is unfamiliar. A precheck fires the interview when 2 of 3 novelty signals fire (territory, domain, declared), or on declared novelty alone; otherwise it auto-skips with `reason=home-turf`, `density-low`, or `operator-wave`.
+**Common gotcha:** one question at a time, each with a recommended answer. The tiny lane is exempt. A skip with no `reason=` token is refused by the ledger (exit 64). Altitudes: grill = what is this, `/kit:think` = should we build it, `/kit:design` = how. Detail: `commands/grill.md`.
 
 ### `/kit:think`
 
@@ -125,9 +141,25 @@ Opt-in downstream UI-design loop (downstream-facing; the kit has no UI, so it ca
 
 Opt-in lane between `/kit:spec-validate` and `/kit:execute`. Reads the active spec's acceptance criteria and writes a `## Test plan` coverage matrix (with a `proof` column naming the command/artifact per case) into the active spec, across happy-path / boundary / failure-injection / security / regression. `/kit:execute` reads that section as its coverage target and uses each case's `proof` as the per-step verify. A coverage target, not exhaustive; not a roundtable. Next comes `/kit:test-plan-review-team --light` (Coverage and Oracle lenses, one pass), or the full team when the spec's `Depth:` names a blind-spot.
 
+### `/kit:test-plan-review-team`
+
+**Phase:** spec-time critique of the test plan
+**Reads:** the active spec's `## Test plan`, its acceptance criteria, and any named failure modes
+**Writes:** a `## Test plan critique` section in the same spec (replaces an existing one), and a revised `## Test plan` when the revise loop runs
+**When to invoke:** after `/kit:test-plan`, before `/kit:execute`. `--light` is the cheap two-lens pass (coverage, oracle falsifiability) every plan gets; the full 6-lens run is for a spec whose `Depth:` line names a `blind-spot`.
+**Common gotcha:** report-only, it never blocks `/kit:execute`. The revise loop is bounded (3 rounds, a distinct reviser, findings must fall by severity). With no `## Test plan` it tells you to run `/kit:test-plan` first and stops. Detail: `commands/test-plan-review-team.md`.
+
 ### `/kit:test-write`
 
 Materializes a reviewed test plan into real test code, after `/kit:test-plan-review-team` records a SOLID `## Test plan critique`. Dispatches the `test-writer` agent per matrix row, in the repo's existing test framework and conventions. Refuses to run on a missing, stale, or non-SOLID critique. Done means every row is covered or reported skipped, and the written tests execute; making assertions pass is `fix-agent`'s job in the build, not this command's.
+
+### `/kit:feature-map`
+
+**Phase:** shape (inventory of an existing project)
+**Reads:** the project locations you name (one repo or several, each tagged), plus any named surface with no readable source (a Discord channel, a Notion automation), documented by reference
+**Writes:** one spec per module (default `docs/specs/<module>.md`) and a top-level checklist (default `docs/CHECKLIST.md`), both source-cited with `file:line`
+**When to invoke:** you need to know what a codebase does, or you need a source of truth for a port or migration. It dispatches `kit:research-features` per module in parallel, then asks you to approve the scope.
+**Common gotcha:** a named port target gets a Parity contract; a plain inventory gets a Behavior contract. Re-running refreshes: unchanged rows keep their status, drifted rows become `NEEDS REVIEW`, and a signed-off spec is never silently overwritten. It audits a target project, never this kit (that is `kit:topology-drift`). Detail: `commands/feature-map.md`.
 
 ### `/kit:assign`
 
@@ -146,7 +178,7 @@ Materializes a reviewed test plan into real test code, after `/kit:test-plan-rev
 **Reads:** `$ARGUMENTS` = the specs to fire (or detects `Status: VALIDATED` specs with a `## Touches` section); each spec's `## Touches` directory-prefix globs; the lead-owned hands-off shared-surface list (from WORKFLOW.md, via `lib/gate/dispatch-gate.sh`).
 **Writes:** nothing in the main checkout itself. Each dispatched worker writes its own `goal/<slug>` branch in an isolated worktree; the lead integrates the hands-off surfaces once via `/kit:ship`.
 **When to invoke:** you have 2+ INDEPENDENT validated specs and want to fire them, tab away, and collect finished branches. The disjointness gate (`lib/gate/dispatch-gate.sh`) decides which run in parallel vs serialize; the drift guard checks each worker stayed in its globs.
-**Common gotcha:** cross-goal ONLY (it never parallelizes one spec's tasks; that is `/kit:execute`, still sequential). It NEVER auto-merges (the human merges at `/kit:ship`) and is NOT a DAG: dependent/sequenced sub-goals are `/kit:mega` territory, a real ordering graph is GSD v2. A spec without `## Touches` is rejected by the gate, not assumed-empty. Runs under bypassPermissions for tab-away. Source: SPEC-032; ADR-0019 (boundary), ADR-0020 (primitive), SPEC-031 (convergence).
+**Common gotcha:** cross-goal ONLY (it never parallelizes one spec's tasks; that is `/kit:execute`, still sequential). It NEVER auto-merges (the human merges at `/kit:ship`) and is NOT a DAG: dependent/sequenced sub-goals are `/kit:mega` territory (its orchestrator runs waves of dependency-independent sub-goals with disjoint `## Touches` concurrently, default `WAVE_CAP=2`); a full ordering-graph scheduler with crash recovery is GSD v2. A spec without `## Touches` is rejected by the gate, not assumed-empty. Runs under bypassPermissions for tab-away. Source: SPEC-032; ADR-0019 (boundary), ADR-0020 (primitive), SPEC-031 (convergence).
 
 ### `/kit:mega`
 
@@ -262,6 +294,14 @@ Related, **builder lookup** (inside `/kit:execute`): the spec text is classified
 **When to invoke:** after a manual edit post-build, on a branch built elsewhere, or for a read-only `/goal`-loop check, when you want the test levels re-run without a rebuild
 **Common gotcha:** it reports, it does not fix. On FAIL, run `/kit:next` or `/kit:execute` to repair. The integration base ref is the merge-base with the default branch (no build base ref exists outside `/execute`).
 
+### `/kit:battery`
+
+**Phase:** verify (the full independent right arm for a finished branch)
+**Reads:** a target (default: the cwd branch; or a worktree path, or `owner/repo#N`), the spec's `## Verification`, and the diff against the compare ref
+**Writes:** no code. Three legs run in parallel in fresh contexts: acceptance verify (re-executes the commands verbatim), code review (domain lenses on escalation), and the `kit:advisor` lens. Findings merge into one verdict (SHIP / FIX THEN SHIP / DO NOT SHIP), recorded in the gate ledger under the branch slug; the lead applies fixes.
+**When to invoke:** you ask for "the battery" or "overtest this", or a LARGE or hard-path change finishes. A Size gate (`lib/gate/battery-gate.sh`) prints `SKIP` below the changed-line floor (150 by default) unless the diff touches a hard path.
+**Common gotcha:** a SKIP is final unless you explicitly asked for the battery; a small change owes a proof of done instead. State a numeric baseline of known failures, or known debt reads as new failures. Never review inline in the session that wrote the code and call it the battery. Detail: `commands/battery.md`.
+
 ### `/kit:docs`
 
 **Phase:** doc sync
@@ -278,6 +318,14 @@ Related, **builder lookup** (inside `/kit:execute`): the spec text is classified
 **When to invoke:** after a significant change ships, when you want to UNDERSTAND it (stay a participant in the next loop) instead of click-to-merge a raw diff. Advisory, never blocks (engage / defer / wave).
 **Composes:** `narrate-log` (the prose arc) + `svg-knowledge-diagram` (a richer figure); the kit does not reinvent pedagogy.
 **Common gotcha:** the explainer is grounded in the diff, NOT the agent's narrative, if the commit message or your recollection contradicts the code, the diff wins. The 5-question quiz built ON this artifact is a separate step (`deep-understand`); this command produces the material, not the quiz.
+
+### `/kit:pitch`
+
+**Phase:** understand (the outward twin of `/kit:explain`)
+**Reads:** for one `<rid>` (the branch slug): the spec, the proof-of-done, `docs/implementation-notes/<rid>.md`, and the gate ledger's grill and DEBT lines
+**Writes:** the 5-section doc (Outcome, Unknowns we accounted for, Evidence, Cost / not shipped, The ask) to stdout, or to `--out <file>` (for example `docs/verification/pitch-command/pitch-<rid>.md`); records `pitch ran` in the gate ledger
+**When to invoke:** after a gated run, when a teammate, client, or approver who was not in the room must decide whether to say yes.
+**Common gotcha:** it assembles, it does not write. Every claim traces to a file or ledger line, and a missing source is reported as missing, never invented. It never posts anywhere; sending the doc is your action. Engine: `lib/pitch.sh`. Detail: `commands/pitch.md`.
 
 ### `/kit:quiz-gate`
 
@@ -297,6 +345,14 @@ Related, **builder lookup** (inside `/kit:execute`): the spec text is classified
 **Common gotcha:** the command stops, and `hooks/ship-gate.sh` refuses `git push` and `gh pr create` (`[gate] review_verdict`, on by default), while the last verdict in the spec's `## Review` section is DO NOT SHIP. Use `/review-team` and `responding-to-review` to triage, then re-run `/kit:review`: it replaces the section and clears the block.
 **Release-hygiene warn (Step 4a):** at the version step it warns (never blocks) on a phantom cut, `VERSION` naming a version with no matching git tag, with a heads-up when `[Unreleased]` is accumulating above it. Warn-only; tag `v<version>` or confirm intentional, then continue.
 
+### `/kit:greenlight`
+
+**Phase:** ship, after the push (CI-green lane)
+**Reads:** an open PR through `gh` (the PR number in `$ARGUMENTS`, or the PR for the current branch): its state and check rollup
+**Writes:** fix commits to the PR branch, only after a real failure is fixed through the `kit:fix-agent` shape and the project's tests pass locally. It opens no PR and posts no comments.
+**When to invoke:** a PR is open and its checks are red or pending.
+**Common gotcha:** opt-in and report-only; it never hard-gates ship or merge, and the human merges. It classifies each failure real vs flaky (uncertain means real), retries flaky checks 3 times per commit, and stops at 10 iterations. Ends in exactly one state: `done`, `stop_pr_closed`, `stop_exhausted_retries`, or `stop_error`. Bot-comment triage is not built. Detail: `commands/greenlight.md`.
+
 ### `/kit:retro`
 
 **Phase:** post-release reflection
@@ -312,6 +368,14 @@ Related, **builder lookup** (inside `/kit:execute`): the spec text is classified
 **Writes:** a dated, proposal-only report under `docs/absorption/` (never a kit component; ends with a `git status` self-check)
 **When to invoke:** the monthly-ish absorption ritual, re-audit upstream sources for new/changed patterns worth adopting
 **Common gotcha:** maintainer-only and proposal-only, it never absorbs or adds a source to Credits itself (the human merge gate). Two lanes: Credits drift + a seed-rescan of the SPEC-014 set. QA/UI candidates needing binaries surface as "recommend external". Source: SPEC-004 + `docs/ABSORPTION.md`.
+
+### `/kit:gauntlet`
+
+**Phase:** meta (probe-convergence loop over an artifact)
+**Reads:** four slots you confirm before round 1: the artifact under convergence (globs the reviser may touch), the outcome contract (probe card, checker, Tier 1 suite), the probe framing, and the clean-room recipe. `onboarding` is the reference preset.
+**Writes:** revisions to the artifact between rounds, and a persisted run record each round under `docs/verification/gauntlet/` (read back with `lib/gauntlet/stats.sh`)
+**When to invoke:** before an artifact faces cold consumers unaided (contributor docs, a runbook, a spec, an API surface), and after a major change to one.
+**Common gotcha:** the artifact evolves; the probe is fixed and disposable, a fresh clean-room agent each round. A bare invocation asks which preset and never assumes `onboarding` in a repo without its fixtures. The loop is bounded and halts honestly. A host artifact needs explicit confirmation before round 1 because teardown is destructive. Detail: `commands/gauntlet.md`.
 
 ### `/kit:kit-health`
 
@@ -332,10 +396,11 @@ Related, **builder lookup** (inside `/kit:execute`): the spec text is classified
 
 ## Hooks (no invocation)
 
-The full hook inventory (every hook, its event, and its behavior) lives in ONE place:
-`docs/architecture.md`, the hooks table. This section deliberately does not duplicate it: a
-second copy drifted to 14 of 25 rows before the 2026-07-31 doc-drift run caught it, missing
-`ship-gate` among others.
+The full hook inventory (every hook, its event, the message it prints, its knobs, and its
+source file) lives in ONE place: `docs/hooks.md`. For which hook backstops what and why (hard /
+advisory / convenience), read `docs/architecture.md` "Hook fallback layer". This section
+deliberately does not duplicate the inventory: a second copy drifted to 14 of 25 rows before the
+2026-07-31 doc-drift run caught it, missing `ship-gate` among others.
 
 One advisory worth knowing by name: `context-readiness` (SessionStart) reads the active spec's
 status plus the board's queued count (`board:Nq`, SPEC-083) and suggests the next step; silent
@@ -411,7 +476,7 @@ The `harvest` hook stages learnings when a session compacts or ends. The harvest
 
 ## Path-scoped rules
 
-`rules/backend-go.md` and `rules/frontend-ts.md` are TEMPLATES. Copy to `.claude/rules/` in the project that needs them. They activate when Claude reads matching files; they do NOT fire on write or create.
+`rules/backend-go.md` and `rules/frontend-ts.md` are TEMPLATES. The bash installer (`install.sh`; not the plugin path, not a compat-only run) copies each into `.claude/rules/` of the directory you run it from and skips any file already there. On the plugin path, copy them into `.claude/rules/` by hand. They activate when Claude reads matching files; they do NOT fire on write or create.
 
 ## Operator scenarios (what you say -> what happens)
 

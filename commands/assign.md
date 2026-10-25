@@ -87,7 +87,7 @@ created: <YYYY-MM-DD>
 
   `spec-feature` continues below (pick a lane). Any other type (research / eval / review / doc /
   migration / data-tool) runs its TYPE LOOP instead of the code cycle: the goal draft names the
-  loop's phases (WORKFLOW.md `## Type loops`), the executor (the registry's `agent` column in
+  loop's phases (docs/WORKFLOW.md `## Type loops`), the executor (the registry's `agent` column in
   `docs/verification/task-types.md`), and the proof artifact it owes (same registry;
   `bash lib/gate/proof-gate.sh contract "<title>"` prints the composed contract). Lanes still apply
   to the RISK of any code the loop touches; the loop supplies the cycle.
@@ -103,13 +103,13 @@ created: <YYYY-MM-DD>
   evidence against. A draft without a `Done =` line is not assignable; defining done is phase 0
   of every loop, before any work runs (the V-model right arm, type-agnostic).
 
-- **Lane**: read the item's Lane column (`tiny` / `normal` / `full` / `bug` / `backfill`); it selects the WORKFLOW path. If the column is blank, or you want a check, auto-classify from the title:
+- **Lane**: read the item's Lane column (`tiny` / `normal` / `full` / `bug` / `backfill`); it selects the `docs/WORKFLOW.md` path. If the column is blank, or you want a check, auto-classify from the title:
 
   ```bash
   bash lib/classify/lane-classify.sh classify "<the item title / crystallized objective>"
   ```
 
-  It applies the WORKFLOW.md "Size the work first" triggers deterministically (precedence: backfill, tiny, bug, default lane `normal`). Words never pick `full`: a trigger match prints one `LANE-SUGGEST: full (<flags>)` line, and once the branch exists pass `--rid <rid>` so the suggestion is recorded in the run ledger. Use its output as the suggested lane and write it into the BACKLOG row. This SUGGESTS, it does not dictate: propose the full lane in one sentence and continue on the lighter lane until the operator assigns it. The ship-gate applies the full lane's gates to any diff that touches a hard path either way. The same classifier seeds the lane for each spec `/kit:dispatch` fans out.
+  It applies the docs/WORKFLOW.md "Size the work first" triggers deterministically (precedence: backfill, tiny, bug, default lane `normal`). Words never pick `full`: a trigger match prints one `LANE-SUGGEST: full (<flags>)` line, and once the branch exists pass `--rid <rid>` so the suggestion is recorded in the run ledger. Use its output as the suggested lane and write it into the BACKLOG row. This SUGGESTS, it does not dictate: propose the full lane in one sentence and continue on the lighter lane until the operator assigns it. The ship-gate applies the full lane's gates to any diff that touches a hard path either way. The same classifier seeds the lane for each spec `/kit:dispatch` fans out.
 
 - **Precedent lookup.** Before sizing, run
   `bash bin/precedent find "<the item title>"`: it covers both the written record (specs,
@@ -124,7 +124,7 @@ created: <YYYY-MM-DD>
   bash lib/classify/lane-classify.sh check "<the chosen lane>" "<the item title / crystallized objective>"
   ```
 
-  If it prints `LANE-DOWNGRADE`, the task text matches a heavier lane than you chose: size up, or state the explicit narrowing reason (per WORKFLOW "default to normal; the diff floor covers the hard paths"). It is advisory (exit 0, logged to `completeness.log`, reviewed at `/kit:ship`), never a block ("Detect, don't dictate"). Silence means the choice is at or above the floor. This is the guard for the classify-then-route gap: the classifier suggested, but nothing caught an under-sized choice until now.
+  If it prints `LANE-DOWNGRADE`, the task text matches a heavier lane than you chose: size up, or state the explicit narrowing reason (per docs/WORKFLOW.md "default to normal; the diff floor covers the hard paths"). It is advisory (exit 0, logged to `completeness.log`, reviewed at `/kit:ship`), never a block ("Detect, don't dictate"). Silence means the choice is at or above the floor. This is the guard for the classify-then-route gap: the classifier suggested, but nothing caught an under-sized choice until now.
 
 - **Record the routing facts.** One line, right after the lane is committed, so lane telemetry has the chosen-vs-classified pair to aggregate:
 
