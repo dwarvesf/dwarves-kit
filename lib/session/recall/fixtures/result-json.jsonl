@@ -1,0 +1,4 @@
+{"type": "user", "isSidechain": true, "timestamp": "2026-10-25T09:00:00.000Z", "message": {"role": "user", "content": "audit the repo and return JSON"}}
+{"type": "assistant", "isSidechain": true, "timestamp": "2026-10-25T09:00:01.000Z", "message": {"role": "assistant", "content": [{"type": "text", "text": "Early draft, not the answer: {\"verdict\": \"draft\"}"}]}}
+{"type": "user", "isSidechain": true, "timestamp": "2026-10-25T09:00:02.000Z", "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "toolu_x", "content": "ok"}]}}
+{"type": "assistant", "isSidechain": true, "timestamp": "2026-10-25T09:00:03.000Z", "message": {"role": "assistant", "content": [{"type": "text", "text": "Audit finished. Result:"}, {"type": "text", "text": "{\"verdict\": \"pass\", \"count\": 3, \"findings\": [{\"id\": 1, \"note\": \"a {brace} in a string\"}]}\nEnd of report."}]}}
