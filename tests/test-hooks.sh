@@ -684,6 +684,16 @@ RC=$(run_hook secrets-guard.sh "{\"tool_name\":\"Read\",\"tool_input\":{\"file_p
 assert_exit "blocks Read of a symlink pointing at a secret" 2 $RC
 rm -rf "$SLNK"
 
+# An ALLOW-listed lexical name must not exempt a symlink that resolves to a secret
+SLNK=$(mktemp -d "${TMPDIR:-/tmp}/dk-slnk.XXXXXX") || exit 1
+mkdir -p "$SLNK/.ssh" && : > "$SLNK/.ssh/id_rsa" && ln -s "$SLNK/.ssh/id_rsa" "$SLNK/.env.example"
+RC=$(run_hook secrets-guard.sh "{\"tool_name\":\"Read\",\"tool_input\":{\"file_path\":\"$SLNK/.env.example\"}}")
+assert_exit "blocks Read of a .env.example symlink pointing at a secret" 2 $RC
+: > "$SLNK/.env.sample" && ln -s "$SLNK/.env.sample" "$SLNK/.env.template"
+RC=$(run_hook secrets-guard.sh "{\"tool_name\":\"Read\",\"tool_input\":{\"file_path\":\"$SLNK/.env.template\"}}")
+assert_exit "allows a .env.template symlink to a real .env.sample" 0 $RC
+rm -rf "$SLNK"
+
 # H-2 (review): a blocked path containing a double-quote still emits valid JSON
 OUT=$(echo '{"tool_name":"Read","tool_input":{"file_path":"/proj/a\".pem"}}' | bash "$KIT_DIR/hooks/secrets-guard.sh" 2>/dev/null)
 echo "$OUT" | jq -e '.decision=="block"' >/dev/null 2>&1

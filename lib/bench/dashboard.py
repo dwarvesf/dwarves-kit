@@ -1997,15 +1997,24 @@ def turn_stage(t):
 
 def observe_config(key, cli_value=None):
     """Config resolution for [observe] keys: CLI flag > ./.kit.toml (project
-    override) > the kit repo's kit.toml. Returns None when unset everywhere."""
+    override) > the kit repo's kit.toml. Returns None when unset everywhere.
+    push_url names the host that receives FORGE_ADMIN_TOKEN, so it skips the
+    project file (it rides inside an untrusted PR) and reads the operator
+    kit.toml, then the kit root, like kit_config_get_root."""
     if cli_value:
         return cli_value
     try:
         import tomllib
     except ImportError:
         return None
-    for p in (Path.cwd() / ".kit.toml",
-              Path(__file__).resolve().parents[2] / "kit.toml"):
+    kit_root = Path(__file__).resolve().parents[2] / "kit.toml"
+    if key == "push_url":
+        xdg = os.environ.get("XDG_CONFIG_HOME") or str(Path.home() / ".config")
+        op_dir = os.environ.get("KIT_CONFIG_OPERATOR") or os.path.join(xdg, "dwarves-kit")
+        sources = (Path(op_dir) / "kit.toml", kit_root)
+    else:
+        sources = (Path.cwd() / ".kit.toml", kit_root)
+    for p in sources:
         try:
             v = tomllib.loads(p.read_text()).get("observe", {}).get(key)
             if v:

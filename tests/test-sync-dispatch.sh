@@ -56,5 +56,30 @@ out="$(bash "$KIT_ROOT/bin/board" sync --backlog-file "$d/nope/BACKLOG.md" 2>&1)
 check "missing backlog exits 2 cleanly" \
   '[[ $rc -eq 2 && "$out" == *"no backlog at"* ]]' "rc=$rc $out"
 
+# multica_url and multica_token_ref pick the host that receives the credential: the operator
+# kit.toml decides them, a project .kit.toml never does. Stubs record any credential lookup.
+for s in secret-cache-read op; do
+  printf '#!/usr/bin/env bash\necho "%s $*" >> "$LOOKUP_LOG"\necho stub-token\n' "$s" > "$d/bin/$s"
+  chmod +x "$d/bin/$s"
+done
+export LOOKUP_LOG="$d/lookups.log"
+mkdir -p "$d/repoM/_meta" "$d/opcfg"; touch "$d/repoM/_meta/BACKLOG.md"
+git -C "$d/repoM" init -q
+printf '[sync]\napps = "multica"\nmultica_url = "https://project.example"\nmultica_token_ref = "op://project/ref"\nmultica_workspace = "w"\nmultica_project = "p"\n' > "$d/repoM/.kit.toml"
+: > "$LOOKUP_LOG"
+out="$(KIT_CONFIG_OPERATOR="$d/opcfg" MULTICA_TOKEN= bash "$KIT_ROOT/bin/board" sync --backlog-file "$d/repoM/_meta/BACKLOG.md" 2>&1)"
+check "project .kit.toml cannot choose the multica url" \
+  '[[ "$out" != *"--multica-url"* && "$out" != *"project.example"*"ARGV"* ]]' "$out"
+check "project .kit.toml cannot choose the secret ref (no lookup runs)" \
+  '[ ! -s "$LOOKUP_LOG" ]' "$(cat "$LOOKUP_LOG")"
+check "the ignored project key is named on stderr" \
+  '[[ "$out" == *"ignoring sync.multica_url from the project .kit.toml"* ]]' "$out"
+printf '[sync]\nmultica_url = "https://operator.example"\nmultica_token_ref = "op://operator/ref"\n' > "$d/opcfg/kit.toml"
+out="$(KIT_CONFIG_OPERATOR="$d/opcfg" MULTICA_TOKEN= bash "$KIT_ROOT/bin/board" sync --backlog-file "$d/repoM/_meta/BACKLOG.md" 2>&1)"
+check "the operator kit.toml still supplies the multica url" \
+  '[[ "$out" == *"--multica-url https://operator.example"* ]]' "$out"
+check "the operator kit.toml still supplies the secret ref" \
+  'grep -q "op://operator/ref" "$LOOKUP_LOG"' "$(cat "$LOOKUP_LOG")"
+
 printf '=== %d/%d passed ===\n' "$PASS" "$((PASS+FAIL))"
 [ "$FAIL" -eq 0 ]

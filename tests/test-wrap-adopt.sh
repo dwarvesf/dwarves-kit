@@ -641,6 +641,16 @@ echo "=== adopt: a signal to the verb's process group hits the trap (34b) ==="
 adopt_kill pg INT 34bi;  adopt_kill_chk 34b-INT  "interrupted: INT"
 adopt_kill pg TERM 34bt; adopt_kill_chk 34b-TERM "interrupted: TERM"
 
+echo "=== adopt: a staged symlink on an allowed name fails before commit (40) ==="
+adopt_stub "$TMPD/adopt-stub40.sh" 'rm -f "$1/CLAUDE.md"; ln -s /etc/hosts "$1/CLAUDE.md"'
+C40="$(adopt_clone c40)"
+: > "$GH_STUB_CALLS"
+out="$(WRAP_ADOPT_TEST=1 WRAP_ADOPT_SH="$TMPD/adopt-stub40.sh" \
+  adopt_apply "$C40" "$TMPD/abare-c40")"; rc=$?
+chk "40: exits 1" "$([ "$rc" -eq 1 ]; echo $?)"
+chk_has "40: names the symlink" "$out" "failed: adoption staged a symlink or a type change"
+chk "40: no commit on the branch" \
+  "$([ "$(git -C "$C40" rev-list --count origin/main..chore/kit-adopt)" = 0 ]; echo $?)"
 
 echo
 if [ "$FAIL" -gt 0 ]; then echo "test-wrap-adopt: $PASS passed, $FAIL FAILED of $TOTAL" >&2; exit 1; fi

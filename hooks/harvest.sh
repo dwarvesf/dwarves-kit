@@ -158,6 +158,15 @@ else
 fi
 today=$(date +%Y-%m-%d)
 
+# path_ok <path>: a default write target under the repo root must not sit behind a symlink, or the
+# append lands in whatever file the link names. A HARVEST_* override outside the root is the
+# operator's own choice and passes. Without the guard library nothing under the root is written.
+if source "$HERE/../lib/config/safe-path.sh" 2>/dev/null; then
+  path_ok() { case "$1" in "$root"/*) kit_refuse_symlink_path "$root" "$1" 2>/dev/null ;; esac; }
+else
+  path_ok() { case "$1" in "$root"/*) return 1 ;; esac; }
+fi
+
 # lock_run <try|wait> <lock-file> <command...>: run a command under an exclusive flock. Returns 75
 # when "try" finds the lock held. flock(1) where it exists (Linux), lockf(1) on macOS; both use
 # flock(2), so they exclude the Python processes that take the same lock. With neither, the
@@ -344,6 +353,7 @@ stage_candidates() {
     for g in "$root"/learning/*/GLOSSARY.md; do [ -e "$g" ] && printf '%s\n' "$g"; done > "$gl"
   fi
   case "$ledger" in */*) ;; *) return 1 ;; esac
+  path_ok "$ledger" && path_ok "$ledger.lock" || return 1
   ledger_dir=${ledger%/*}; [ -n "$ledger_dir" ] || ledger_dir=/
   mkdir -p "$ledger_dir" 2>/dev/null || return 1
   : >> "$ledger.lock" 2>/dev/null || return 1
@@ -402,6 +412,7 @@ lab_log() {
   block=${block%x}
   draft="${HARVEST_LABLOG_DRAFT-$(hu_join "$root" _meta/.lab-log-draft.md)}"
   case "$draft" in */*) ;; *) return 0 ;; esac
+  path_ok "$draft" || return 0
   draft_dir=${draft%/*}; [ -n "$draft_dir" ] || draft_dir=/
   { mkdir -p "$draft_dir" && printf '<!-- staged %s by harvest --lab-log; review, then move into LAB_LOG.md -->\n%s\n\n' "$today" "$block" >> "$draft"; } 2>/dev/null || return 0
   echo "harvest: staged a LAB_LOG draft -> $draft (review; not auto-committed)" >&2

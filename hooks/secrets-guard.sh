@@ -82,7 +82,9 @@ is_secret() {  # $1 = raw path; returns 0 if secret
   else
     r="$p"
   fi
-  for g in "${ALLOW_GLOBS[@]}";  do [[ "$p" == $g || "$r" == $g ]] && return 1; done
+  # ALLOW applies to the resolved path only: a lexical .env.example name must
+  # not exempt a symlink whose target is a secret.
+  for g in "${ALLOW_GLOBS[@]}";  do [[ "$r" == $g ]] && return 1; done
   for g in "${SECRET_GLOBS[@]}"; do [[ "$p" == $g || "$r" == $g ]] && return 0; done
   return 1
 }

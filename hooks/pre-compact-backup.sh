@@ -8,6 +8,16 @@
 set -euo pipefail
 
 BACKUP_DIR=".claude/backups"
+# A repo can track .claude or .claude/backups as a symlink; writing through it would drop the
+# snapshot into a directory outside the project. Skip the backup instead (this hook is a convenience).
+GUARD="$(dirname "${BASH_SOURCE[0]}")/../lib/config/safe-path.sh"
+[ -f "$GUARD" ] || exit 0
+# shellcheck source=lib/config/safe-path.sh
+. "$GUARD"
+if ! kit_refuse_symlink_path "$PWD" "$PWD/$BACKUP_DIR" 2>/dev/null; then
+  echo "pre-compact-backup: $BACKUP_DIR sits behind a symlink; no backup written" >&2
+  exit 0
+fi
 mkdir -p "$BACKUP_DIR"
 
 TIMESTAMP=$(date +"%Y-%m-%d_%H-%M")

@@ -962,6 +962,15 @@ PY
   fi
 }
 
+# _sync_note_shadow <section.key> <root-value> -- says so on stderr when a project .kit.toml set a
+# root-only key to something else, so a repo that used to carry it learns why it is ignored.
+_sync_note_shadow() {
+  local proj; proj="$(kit_config_get "$1" "")"
+  [ -n "$proj" ] && [ "$proj" != "$2" ] \
+    && echo "board sync: ignoring $1 from the project .kit.toml (root-only key); set it in $(kit_config_operator)" >&2
+  return 0
+}
+
 # engine plain flags (the engine never reads TOML). User-passed flags land
 # after the config-derived ones, so argparse lets them win.
 cmd_sync() {
@@ -1041,12 +1050,15 @@ cmd_sync() {
   v="$(kit_config_get sync.hermes_board "")";    [ -n "$v" ] && args+=(--hermes-board "$v")
   v="$(kit_config_get sync.hermes_assignee "")"; [ -n "$v" ] && args+=(--hermes-assignee "$v")
   v="$(kit_config_get sync.hermes_workspace "")"; [ -n "$v" ] && args+=(--hermes-workspace "$v")
-  v="$(kit_config_get sync.multica_url "")";       [ -n "$v" ] && args+=(--multica-url "$v")
+  # multica_url and multica_token_ref pick the host and the secret that host receives: operator
+  # and kit-root files only, because a project .kit.toml rides inside an untrusted PR.
+  v="$(kit_config_get_root sync.multica_url "")"; _sync_note_shadow sync.multica_url "$v"
+  [ -n "$v" ] && args+=(--multica-url "$v")
   v="$(kit_config_get sync.multica_workspace "")"; [ -n "$v" ] && args+=(--multica-workspace "$v")
   v="$(kit_config_get sync.multica_project "")";   [ -n "$v" ] && args+=(--multica-project "$v")
   # token goes through the env, never argv (ps leaks argv); Keychain-cached
   # 1P read per the runtime-secret rule, raw `op read` as the fallback.
-  v="$(kit_config_get sync.multica_token_ref "")"
+  v="$(kit_config_get_root sync.multica_token_ref "")"; _sync_note_shadow sync.multica_token_ref "$v"
   if [ -n "$v" ] && [ -z "${MULTICA_TOKEN:-}" ]; then
     if command -v secret-cache-read >/dev/null 2>&1; then
       MULTICA_TOKEN="$(secret-cache-read --ttl 21600 MULTICA_TOKEN "$v")"

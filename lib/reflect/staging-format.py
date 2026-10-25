@@ -391,7 +391,7 @@ def cmd_append(argv):
         sys.stderr.write("staging-format.py append: stdin is not valid UTF-8; nothing written\n")
         return 65
     try:
-        append_blocks(args[0], data, header)
+        append_blocks(args[0], data, header, nofollow=True)
     except OSError as e:
         sys.stderr.write(f"staging-format.py append: {e}\n")
         return 2
