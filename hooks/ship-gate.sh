@@ -51,15 +51,61 @@ CMD_CODE=$(printf '%s\n' "$CMD" | awk '
   }')
 
 # Engage on anything that looks like a ship action: `git ... push` (with any options between) or
-# `gh pr create`, in CODE not prose. What the command actually pushes is decided by
+# `gh pr create` / its alias `gh pr new`, in CODE not prose. What the command actually pushes is decided by
 # lib/gate/push-refs.sh below, which fails closed on anything it cannot account for.
-ENGAGE_RE='(^|[^[:alnum:]_-])git[[:space:]]([^;&|]*[[:space:]])?push([[:space:]]|$)|gh[[:space:]]+pr[[:space:]]+create'
+GIT_RE='(^|[^[:alnum:]_-])git[[:space:]]([^;&|]*[[:space:]])?push([[:space:]]|$)'
+GH_RE='gh[[:space:]]+pr[[:space:]]+(create|new)'
+ENGAGE_RE="$GIT_RE|$GH_RE"
+# The gh words are also read with the quoted text of an inert command blanked out, so `printf '...gh pr
+# create...'` or a commit message that mentions it does not engage. Inert means: the segment's command word
+# is echo, printf (not `printf -v`) or `git commit`, with no substitution before or inside the span. The
+# blanking fails toward engaging, and leaves the text whole when it meets: an unbalanced quote, an ANSI-C
+# `$'..'` quote, a comment, or any unquoted pipe or redirect (the quoted text could be written out or piped
+# to something that runs it).
+_blank_inert_quotes() {
+  awk '
+    { s = (NR == 1 ? $0 : s "\n" $0) }
+    function inert(seg,   t) {
+      if (seg ~ /\$\(|`/) return 0
+      t = seg; sub(/^[ \t]+/, "", t)
+      while (match(t, /^[A-Za-z_][A-Za-z0-9_]*=[^ \t]*[ \t]+/)) t = substr(t, RLENGTH + 1)
+      if (t ~ /^printf[ \t]+-v/) return 0
+      return (t ~ /^(echo|printf)([ \t]|$)/ || t ~ /^git[ \t]+commit([ \t]|$)/)
+    }
+    END {
+      n = length(s); out = ""; seg = ""; i = 1; risky = 0
+      while (i <= n) {
+        c = substr(s, i, 1)
+        if (c == "\\") { out = out substr(s, i, 2); seg = seg substr(s, i, 2); i += 2; continue }
+        if (c == "|" || c == "<" || c == ">") { risky = 1; break }
+        if (c == ";" || c == "&" || c == "\n") { out = out c; seg = ""; i++; continue }
+        if (c == "#" && (i == 1 || substr(s, i - 1, 1) ~ /[ \t\n]/)) { out = out substr(s, i); break }
+        if (c != "\047" && c != "\"") { out = out c; seg = seg c; i++; continue }
+        if (i > 1 && substr(s, i - 1, 1) == "$") { out = out substr(s, i); break }
+        j = i + 1
+        while (j <= n) {
+          d = substr(s, j, 1)
+          if (c == "\"" && d == "\\") { j += 2; continue }
+          if (d == c) break
+          j++
+        }
+        if (j > n) { out = out substr(s, i); break }
+        body = substr(s, i + 1, j - i - 1)
+        if (inert(seg) && !(c == "\"" && (index(body, "$(") || index(body, "`")))) { out = out c "_" c; seg = seg c "_" c }
+        else { out = out substr(s, i, j - i + 1); seg = seg substr(s, i, j - i + 1) }
+        i = j + 1
+      }
+      if (!risky && i <= n && substr(s, i) ~ /[|<>]/) risky = 1
+      printf "%s", (risky ? s : out)
+    }'
+}
+CMD_GH=$(printf '%s' "$CMD_CODE" | _blank_inert_quotes)
 # A heredoc or here-string fed to a shell hides its body from CMD_CODE. If that body pushes, the
 # gate cannot see what is pushed: it is refused below (once the repo is known).
 SHELL_HD=0
 if grep -qE '(^|[^[:alnum:]_.-])(bash|sh|zsh)([[:space:]][^<|;&]*)?<<' < <(printf '%s\n' "$CMD") \
    && grep -qE "$ENGAGE_RE" < <(printf '%s' "$CMD"); then SHELL_HD=1; fi
-[ "$SHELL_HD" = 1 ] || grep -qE "$ENGAGE_RE" < <(echo "$CMD_CODE") || exit 0
+[ "$SHELL_HD" = 1 ] || grep -qE "$GIT_RE" < <(echo "$CMD_CODE") || grep -qE "$GH_RE" < <(echo "$CMD_GH") || exit 0
 
 # A command that cd's elsewhere ships THAT repo, not the session cwd (the
 # cross-repo misfire: a `cd other-repo && git push` was gated against the SESSION
