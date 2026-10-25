@@ -1,0 +1,10 @@
+[tool]
+name = "docdrift"
+status = "stable"
+summary = "Tier 1 path check of the doc-drift audit: dead in-repo path references in living docs, one TSV row each"
+entry = "refcheck.sh"
+language = "bash"
+
+[links]
+skill = "skills/doc-drift/SKILL.md"
+pattern = "docs/patterns/audit-loop.md"
