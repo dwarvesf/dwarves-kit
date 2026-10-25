@@ -2,7 +2,7 @@
 
 Use this when you have never run the kit and want one full lap on your own repo: install, adopt, a tiny change, a specced change, and landing the session. Plan on about an hour.
 
-![What /kit:adopt writes into a repo: an AGENTS.md pointer, a CLAUDE.md loader block, a WORKFLOW.md pointer, the docs/verification/README.md proof marker, and .kit.toml](../figures/adopt.png)
+![What /kit:adopt writes into a repo: an AGENTS.md pointer, a CLAUDE.md loader block, a WORKFLOW.md pointer, the docs/verification/README.md proof marker, and .kit.toml](figures/adopt.png)
 
 _Figure: adopt adds five small files to your repo and never overwrites one you already have._
 
