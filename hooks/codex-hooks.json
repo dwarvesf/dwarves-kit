@@ -12,7 +12,7 @@
           },
           {
             "type": "command",
-            "command": "hash_file() { if command -v shasum >/dev/null 2>&1; then shasum -a 256 \"$1\"; elif command -v sha256sum >/dev/null 2>&1; then sha256sum \"$1\"; else return 2; fi; }; hash_file \"${PLUGIN_ROOT}/hooks/codex-hook-adapter.sh\" | /usr/bin/grep -q '^974405ac8c8eb00ed7ed463408f571cefb263d15c0da7ea3e9db57b976d150c9 ' && hash_file \"${PLUGIN_ROOT}/hooks/ship-gate.sh\" | /usr/bin/grep -q '^02daffb81988a34671b8bf99f8a67bfd0019c69e9056830cf77b68e7fc64c958 ' || { echo 'dwarves-kit: trusted hook content changed' >&2; exit 2; }; exec \"${PLUGIN_ROOT}/hooks/codex-hook-adapter.sh\" PreToolUse ship-gate.sh",
+            "command": "hash_file() { if command -v shasum >/dev/null 2>&1; then shasum -a 256 \"$1\"; elif command -v sha256sum >/dev/null 2>&1; then sha256sum \"$1\"; else return 2; fi; }; hash_file \"${PLUGIN_ROOT}/hooks/codex-hook-adapter.sh\" | /usr/bin/grep -q '^974405ac8c8eb00ed7ed463408f571cefb263d15c0da7ea3e9db57b976d150c9 ' && hash_file \"${PLUGIN_ROOT}/hooks/ship-gate.sh\" | /usr/bin/grep -q '^5186f92f5e53596f32c4b31e670ca757a41a8728c3964f7dbf44f573db23e4e8 ' || { echo 'dwarves-kit: trusted hook content changed' >&2; exit 2; }; exec \"${PLUGIN_ROOT}/hooks/codex-hook-adapter.sh\" PreToolUse ship-gate.sh",
             "timeout": 30
           },
           {
@@ -27,7 +27,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "hash_file() { if command -v shasum >/dev/null 2>&1; then shasum -a 256 \"$1\"; elif command -v sha256sum >/dev/null 2>&1; then sha256sum \"$1\"; else return 2; fi; }; hash_file \"${PLUGIN_ROOT}/hooks/codex-hook-adapter.sh\" | /usr/bin/grep -q '^974405ac8c8eb00ed7ed463408f571cefb263d15c0da7ea3e9db57b976d150c9 ' && hash_file \"${PLUGIN_ROOT}/hooks/secrets-guard.sh\" | /usr/bin/grep -q '^1f2bbeabd2771d54816d28f544afe0c53378115eccec480a6574646f7ba32d47 ' || { echo 'dwarves-kit: trusted hook content changed' >&2; exit 2; }; exec \"${PLUGIN_ROOT}/hooks/codex-hook-adapter.sh\" PreToolUse secrets-guard.sh",
+            "command": "hash_file() { if command -v shasum >/dev/null 2>&1; then shasum -a 256 \"$1\"; elif command -v sha256sum >/dev/null 2>&1; then sha256sum \"$1\"; else return 2; fi; }; hash_file \"${PLUGIN_ROOT}/hooks/codex-hook-adapter.sh\" | /usr/bin/grep -q '^974405ac8c8eb00ed7ed463408f571cefb263d15c0da7ea3e9db57b976d150c9 ' && hash_file \"${PLUGIN_ROOT}/hooks/secrets-guard.sh\" | /usr/bin/grep -q '^6c4c11188d46bc1d741db55b0445f8dfe9fae98f134de7ddfcc4c3b5f6fbf1a2 ' || { echo 'dwarves-kit: trusted hook content changed' >&2; exit 2; }; exec \"${PLUGIN_ROOT}/hooks/codex-hook-adapter.sh\" PreToolUse secrets-guard.sh",
             "timeout": 30
           }
         ]
