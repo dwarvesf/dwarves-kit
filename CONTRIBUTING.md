@@ -29,10 +29,10 @@ These all map to specific principles in [`docs/PHILOSOPHY.md`](docs/PHILOSOPHY.m
 | Compiled binaries (`.exe`, `.bin`, `.so`, `.dylib`) | `Bash over binaries` — the only exception is the documented statusline carve-out |
 | Non-bash hooks (Python, Node, compiled) | Same. No hook entrypoint is Python; operator verbs (`hooks/harvest_lib.py`, `hooks/harvest_sweep.py`) may be. Second exception triggers re-evaluation of the principle, not a one-line carve-out |
 | Hooks that take longer than 500ms | `Maximum 500ms per hook execution`. Profile with `time` |
-| Components with no source citation | `Synthesize, don't originate`. Every README credits row points at a real tool |
+| Components with no source citation | `Synthesize, don't originate`. Every Credits row in `docs/MANUAL.md` points at a real tool |
 | Components serving fewer than 2 of the 8 workflow phases | Single-purpose tools belong as standalone scripts, not kit features |
 | Duplicates of an external tool (Context Hub, GSD, gstack, Trail of Bits) | `External tools are dependencies, not features`. Depend, don't rebuild |
-| Components that can't be explained in one sentence | If the README table can't fit it on one line, it's too complex |
+| Components that can't be explained in one sentence | If the MANUAL roster can't fit it on one line, it's too complex |
 | Speculative configuration (flags "in case we need them later") | Build it when there's a real consumer |
 | Phantom features (documented but not implemented; validated but not used) | `No phantom features` from the CLAUDE.md template |
 | Bundled unrelated changes in one PR | One feature, one PR, one source citation. Split |
@@ -96,8 +96,8 @@ already tracks its kind, in the same PR:
    "Use when ..." and lists ONLY triggering conditions, never a summary of the
    workflow (an agent will follow a summarized description instead of reading
    the body).
-3. **Register it**: add the README roster row for its kind (Skill / Command /
-   Agent table). If it has a consumer-side toggle or an unattended cadence, add
+3. **Register it**: add the MANUAL roster entry for its kind (Skill table, Command
+   section, or Agent table). If it has a consumer-side toggle or an unattended cadence, add
    a `[consumer]`-tagged key to `kit.toml` `[features]`, the harness config is
    the single control surface; skills and commands themselves always install
    (no `[modules]` gate).

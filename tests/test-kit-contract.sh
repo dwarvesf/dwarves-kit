@@ -319,7 +319,7 @@ chk "no unquoted workflow scalar carries a colon-space (breaks the whole file)" 
 
 # ---------------------------------------------------------------- C9 dispatch claims are true
 echo "== C9 lens wiring: every 'dispatched by /X' claim is real =="
-# README's agent roster and each agent's own frontmatter both name the command that dispatches
+# The MANUAL agent roster and each agent's own frontmatter both name the command that dispatches
 # them. Three README cells and one frontmatter were WRONG on 2026-07-14 (acceptance-verifier
 # claimed /execute, brief-reviewer claimed /spec, security-reviewer claimed /review; none of
 # those commands mentions the agent). A prose claim about wiring is a claim a grep can check.
@@ -342,12 +342,12 @@ for agent_md in agents/*.md; do
     [ -f "commands/$cmd.md" ] || continue                       # not a command name, skip
     dispatches "commands/$cmd.md" "$a" || badclaim="$badclaim $a:frontmatter-claims-/$cmd"
   done
-  # commands named in README's roster row for this agent (that column IS a wiring claim)
-  row="$(grep -m1 "^| $a |" README.md || true)"
+  # commands named in the MANUAL roster row for this agent (that column IS a wiring claim)
+  row="$(grep -m1 "^| \`$a\` |" docs/MANUAL.md || true)"
   [ -n "$row" ] || continue
   for cmd in $(printf '%s' "$row" | cut -d'|' -f3 | grep -oE '/(kit:)?[a-z-]+' | sed 's|^/||; s|^kit:||' | sort -u); do
     [ -f "commands/$cmd.md" ] || continue
-    dispatches "commands/$cmd.md" "$a" || badclaim="$badclaim $a:README-claims-/$cmd"
+    dispatches "commands/$cmd.md" "$a" || badclaim="$badclaim $a:MANUAL-claims-/$cmd"
   done
 done
 chk "no agent claims a dispatcher that does not dispatch it" "$badclaim"

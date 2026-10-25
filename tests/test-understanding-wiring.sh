@@ -7,7 +7,7 @@
 # kill-resilience lesson (c6fbd99) demands: a doc claim with no dispatch path behind it is a
 # BLOCKING finding, not a detail. This suite proves:
 #
-#   AC1  WORKFLOW.md + AGENTS.md declare the understanding axis; README notes /kit:explain
+#   AC1  WORKFLOW.md + AGENTS.md declare the understanding axis; MANUAL documents /kit:explain
 #   AC2  no-orphan sweep: each of the 5 artifacts has a LIVE dispatch/invocation path
 #   AC3  significance-classify.sh's `record` verb, once the one honest exception with no live
 #        caller, is now WIRED into /kit:ship Step 8 (SPEC-136, before the quiz-gate tap); this
@@ -40,6 +40,7 @@ assert() {
 WORKFLOW="$KIT_DIR/docs/WORKFLOW.md"  # bulk lives in docs/ (SPEC-185); root WORKFLOW.md is a thin stub
 AGENTS="$KIT_DIR/AGENTS.md"
 README="$KIT_DIR/README.md"
+MANUAL="$KIT_DIR/docs/MANUAL.md"
 
 # ---------------------------------------------------------------------------
 # The sweep mechanism: claim_wired <doc> <claim_regex> <caller_regex> <search_paths...>
@@ -79,7 +80,7 @@ claim_wired() {
   return 1
 }
 
-echo "=== AC1: WORKFLOW.md + AGENTS.md declare the axis; README notes /kit:explain ==="
+echo "=== AC1: WORKFLOW.md + AGENTS.md declare the axis; MANUAL documents /kit:explain ==="
 
 RC=0; grep -qE '^## The understanding axis' "$WORKFLOW" || RC=1
 assert "WORKFLOW.md has a '## The understanding axis' section" $RC
@@ -98,8 +99,8 @@ assert "section covers design-record + explain + quiz-gate + weekend-batch (BEFO
 RC=0; grep -qiE 'ADR-0031' "$AGENTS" && grep -qiE 'advisory' "$AGENTS" || RC=1
 assert "AGENTS.md notes the axis as advisory (ADR-0031)" $RC
 
-RC=0; grep -qF '/kit:explain' "$README" || RC=1
-assert "README.md lists /kit:explain" $RC
+RC=0; grep -qF '/kit:explain' "$MANUAL" || RC=1
+assert "docs/MANUAL.md documents /kit:explain" $RC
 
 echo ""
 echo "=== AC2: no-orphan sweep -- each of the 5 artifacts has a live dispatch path ==="
