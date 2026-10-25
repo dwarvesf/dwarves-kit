@@ -26,9 +26,9 @@ source lib/config/kit-config.sh
 # resolve from the operator-owned kit-root kit.toml alone. GAUNTLET_RUNNER_HOST (an
 # operator-controlled env var) still overrides.
 HOST="${GAUNTLET_RUNNER_HOST:-$(kit_config_get_root gauntlet.runner_host local)}"
-# Placeholder only: the operator sets the real ref in kit.toml [gauntlet]
-# probe_key_ref. This default never resolves to a real secret on its own.
-KEY_REF="$(kit_config_get_root gauntlet.probe_key_ref "op://<vault>/anthropic-api-key/credential")"
+# The shipped kit.toml leaves probe_key_ref empty: the operator sets their own ref in
+# ~/.config/dwarves-kit/kit.toml [gauntlet]. A remote run needs it (checked below).
+KEY_REF="$(kit_config_get_root gauntlet.probe_key_ref "")"
 
 # The prompt lives in /work/PROMPT.txt (written by run.sh); the command never
 # quotes it. Keeping data out of command strings is what ended the quoting-bug
@@ -39,6 +39,14 @@ if [ "${HOST}" = "local" ]; then
   RUN_OUT="${OUT}" PROBE_CMD="${PROBE_CMD:-${PROBE_DEFAULT}}" \
     exec bash tests/gauntlet/cleanroom/run.sh "${PERSONA}" "${ROW}"
 fi
+
+# Refuse before shipping anything: the runner host resolves the probe key from this ref.
+case "${KEY_REF}" in
+  ""|*"<"*">"*)
+    echo "gauntlet.probe_key_ref is unset (or still a placeholder), and runner_host=${HOST} needs it. Set your own 1P ref in ~/.config/dwarves-kit/kit.toml [gauntlet] probe_key_ref = \"op://<vault>/<item>/credential\"." >&2
+    exit 65
+    ;;
+esac
 
 TS="$(date +%s)"
 RDIR=".cache/kit-gauntlet/run-${TS}"

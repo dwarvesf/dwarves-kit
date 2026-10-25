@@ -284,7 +284,7 @@ push_url = ""                   # [impl] gateway base for `export --push` (FORGE
 
 [gauntlet]                      # side-flow 11 (commands/gauntlet.md); read by tests/gauntlet/cleanroom/run-remote.sh
 runner_host = "local"           # "local" runs rounds on this machine; an ssh host alias (e.g. "build-box") ships committed state there, runs the round, pulls the record back. The host resolves the probe key from ITS OWN secret store; the key never travels over ssh.
-probe_key_ref = "op://Toolkit/anthropic-api-key/credential"  # 1P ref the RUNNER host resolves at run time; point at a dedicated spend-capped item when minted
+probe_key_ref = ""             # 1P ref the RUNNER host resolves at run time, e.g. "op://<vault>/<item>/credential". Empty ships on purpose: set your own ref in ~/.config/dwarves-kit/kit.toml [gauntlet] (root-only key; a project .kit.toml is ignored). A remote run refuses to start while it is empty.
 
 # Command autonomy. Same contract as the `[wrap]` knobs below: each key gates an
 # action that is REVERSIBLE IN GIT, the shipped default acts, and a `false` turns

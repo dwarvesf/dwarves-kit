@@ -37,6 +37,33 @@ BACKUP_DIR="$CLAUDE_DIR/backups"
 KIT_MARKER="dwarves-kit"
 
 # ============================================================
+# USAGE (--help / -h before any write; an unknown flag reuses it, exit 64)
+# ============================================================
+kit_usage() {
+  cat <<'USAGE'
+usage: bash install.sh [--with <a,b,c>] [--prune] [--no-mods] [--force-both]
+       bash install.sh --uninstall
+       bash install.sh --help
+
+  --with <a,b,c>   enable opt-in modules (also --with=a,b,c); additive on re-run
+  --prune          with --with: trim the enabled set to exactly the named modules
+  --no-mods        skip registering the board pane mod in settings.json
+  --force-both     wire hooks even when the Claude Code plugin is installed
+  --uninstall      remove kit hooks, commands, skills (must be the first argument)
+  -h, --help       print this usage and exit 0
+
+Installs into $CLAUDE_DIR (default ~/.claude) and ~/.local/bin. Idempotent.
+USAGE
+}
+
+for _arg in "$@"; do
+  case "$_arg" in
+    -h|--help) kit_usage; exit 0 ;;
+  esac
+done
+unset _arg
+
+# ============================================================
 # UNINSTALL
 # ============================================================
 if [ "${1:-}" = "--uninstall" ]; then
@@ -340,6 +367,11 @@ while [ $_i -lt ${#KIT_ARGS[@]} ]; do
       ;;
     --force-both)
       KIT_FORCE_BOTH=1
+      ;;
+    *)
+      echo "[error] unknown argument: '${KIT_ARGS[$_i]}' (--uninstall is only valid as the first argument)" >&2
+      kit_usage >&2
+      exit 64
       ;;
   esac
   _i=$((_i + 1))
