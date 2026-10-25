@@ -36,9 +36,12 @@ The kit ships one complete instance: the kit's own onboarding surface
 (`tests/gauntlet/`). Use it to see a full run before building your own.
 
 1. `cd` the dwarves-kit checkout, clean tree, on master.
-2. Confirm the probe key resolves: `kit.toml [gauntlet]` names `probe_key_ref` (a 1P
-   ref for a spend-capped Anthropic key) and `runner_host`. That key is the ONLY
-   credential the room gets.
+2. Provide the probe key, a spend-capped Anthropic key. Local runs
+   (`runner_host = "local"`, the default) read it from your environment:
+   `export ANTHROPIC_API_KEY=<capped key>`. A remote run (`runner_host` set to an
+   ssh host alias) resolves it on that host from `probe_key_ref` in
+   `kit.toml [gauntlet]`; set that to your own secret reference. That key is the
+   ONLY credential the room gets.
 3. Say: **`/kit:gauntlet onboarding`**.
 4. The kit shows the inputs table filled from `tests/gauntlet/README.md` (persona A,
    the kit USER). You confirm it. That is the whole interface: confirm or override
@@ -182,76 +185,12 @@ Per round: `findings.md` (each finding carries a transcript quote), `transcript.
 (the probe's full session), `submission/`, `artifact-diff.patch` (what the reviser
 changed after that round).
 
-## Cheap probe: omp + an OpenAI-compatible endpoint
+## Cheap probe
 
-A mid-tier Anthropic probe stays the primary signal (see mistake 2 below). A
-flat-rate or cheap OpenAI-compatible model, run through `omp`
-(`@oh-my-pi/pi-coding-agent`), makes a replication round close to free, so you can
-run a second opinion on every round without spend anxiety. Proven 2026-08-31: a
-NeuralWatt `deepseek-v4-flash` round reproduced every finding from the same-day
-sonnet round, one finding strengthened (`docs/verification/gauntlet/2026-08-31-user-J1-nw/ROUNDS.md`).
-
-`PROBE_CMD` for the omp/NeuralWatt recipe:
-
-```bash
-command -v omp >/dev/null && echo omp-baked > /work/omp-install.log || {
-  export PATH="$HOME/omptool/node_modules/.bin:$PATH"
-  npm install --no-fund --no-audit --prefix "$HOME/omptool" @oh-my-pi/pi-coding-agent bun \
-    > /work/omp-install.log 2>&1 || { echo omp-install-failed; cat /work/omp-install.log; exit 0; }
-}
-mkdir -p "$HOME/.omp/agent"
-printf 'providers:\n  neuralwatt:\n    baseUrl: https://api.neuralwatt.com/v1\n    api: openai-completions\n    apiKey: %s\n    models:\n      - id: deepseek-v4-flash\n' \
-  "$ANTHROPIC_API_KEY" > "$HOME/.omp/agent/models.yml"
-printf 'tools:\n  approvalMode: yolo\n  enabled: true\nsetupVersion: 2\nmodelRoles:\n  default: neuralwatt/deepseek-v4-flash\n' \
-  > "$HOME/.omp/agent/config.yml"
-timeout 1800 omp -p --auto-approve --mode json --model neuralwatt/deepseek-v4-flash \
-  "$(cat /work/PROMPT.txt)" </dev/null > /work/transcript.jsonl 2>/work/probe-stderr.log
-rc=$?; echo probe-exit=$rc
-
-# Optional: persist the probe's OWN session logs (fuller fidelity than the
-# --mode json stdout projection above), text files only. `models.yml` carries
-# the room's one credential and must never leave the container; copy known
-# text extensions one file at a time and delete anything binary rather than
-# risk it dodging the (text-only, grep -I) scrub below.
-mkdir -p /work/omp-state
-find "$HOME/.omp" -type f \( -name '*.log' -o -name '*.jsonl' \) ! -name 'models.yml' ! -name 'config.yml' \
-  -print0 2>/dev/null | while IFS= read -r -d '' f; do
-    if file -b --mime-encoding "$f" 2>/dev/null | grep -q binary; then continue; fi
-    cp "$f" "/work/omp-state/$(basename "$f")"
-  done
-
-exit $rc
-```
-
-Swap `neuralwatt`/`deepseek-v4-flash`/`baseUrl` for any other OpenAI-compatible
-endpoint; the shape stays the same. The `command -v omp` guard uses the baked
-toolchain (`tests/gauntlet/cleanroom/Dockerfile`, SPEC-238) when present and
-writes the `omp-baked` signal; on an unbaked image it falls back to the
-per-round install unchanged, so this block still runs to completion either
-way.
-
-Three rules this recipe cost real rounds to learn:
-
-1. `run.sh` writes `PROBE_CMD` through an unquoted heredoc. Text that arrives FROM a
-   variable expansion is not re-scanned for escapes. Set `PROBE_CMD` in the launcher
-   carrying plain `$VAR` / `$(...)`, never `\$VAR` (a backslash-escaped dollar survives
-   into the room literally and never resolves). Since the block above itself contains
-   single quotes, assign it via a quoted heredoc, not a single-quoted string:
-   `read -r -d '' PROBE_CMD <<'EOF' ... EOF`. run.sh already writes the room preamble
-   (probe HOME, git identity, `cd /work`); the block starts after that.
-2. `omp` blocks forever on a non-TTY stdin. Always redirect `</dev/null`, or the round
-   hangs until the timeout.
-3. The room has exactly one credential slot, `ANTHROPIC_API_KEY`, regardless of which
-   provider it actually authenticates; put the NeuralWatt (or other endpoint) key
-   there. The config file that holds it lives under the container-only HOME and dies
-   with the room, BUT anything the probe or its tools ECHO into `/work` (transcripts,
-   stderr, install logs) is persisted, on failing rounds too. run.sh redacts every
-   literal occurrence of the key before persisting and refuses the persist if
-   redaction cannot clean it; treat that as a backstop, not a license, the record
-   still gets an eyeball before commit (rule 8).
-
-`bg-run` (ops-toolkit) is a convenient launcher for the round itself (tmux session +
-a status dir); it is an operator convenience, not a kit dependency.
+A flat-rate OpenAI-compatible model run through `omp` makes a replication round
+close to free. The recipe, the `PROBE_CMD` block and the three rules it cost real
+rounds to learn live in `tests/gauntlet/deploy/README.md` ("Cheap probe"). A
+mid-tier Anthropic probe stays the primary signal (mistake 2 below).
 
 Watching a round live: `bash tests/gauntlet/cleanroom/watch.sh`.
 

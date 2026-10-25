@@ -1,6 +1,6 @@
 # Scenarios (user guide)
 
-Everywhere you shape work with the kit, it will now surface SCENARIOS, the
+Everywhere you shape work with the kit, it surfaces SCENARIOS, the
 situations your thing must survive, before anyone writes a test. You do not
 invoke this; it rides the beats you already use. This guide is what you will
 see and what a good scenario set looks like.

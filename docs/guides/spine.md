@@ -9,7 +9,7 @@ comes next.
  /kit:start ....... "where am I?" renders the board + drafts (read-only)
       │
  /kit:assign ...... turns a board row into a scoped goal + lane pick
-      │                (the ONLY step that mutates the board)
+      │                (claims the row; validate and wrap also flip its status)
  /kit:spec ........ the contract: tasks, acceptance criteria, verification
       │
  /kit:spec-validate  adversarial review; Status: VALIDATED
@@ -22,8 +22,15 @@ comes next.
       │
  /kit:ship ........ tests, version, changelog, PR; the ship gate lives here
       │
+ /kit:wrap ........ lands the session: flips board rows, merges green PRs,
+      │                checks the deploy, tidies worktrees
  /kit:retro ....... what worked, what did not, filed for next time
 ```
+
+Some beats sit beside the spine rather than on it: `/kit:think` and `/kit:design`
+before the spec, `/kit:grill` when intake needs an interview, `/kit:test-plan`
+before execute, and `/kit:verify` to re-run the checks on demand. The verb
+lookup for wrap is `docs/wrap.md`.
 
 State lives on disk between every step (the BACKLOG row, the SPEC file, goal
 drafts), never only in a session: you can stop anywhere and a fresh session
@@ -45,7 +52,9 @@ resumes from `/kit:start`.
 ## Common questions
 
 - **"Where did my task go?"** Shipped rows drop off the board; the CHANGELOG is
-  the shipped record. `/kit:start --full` shows the trail.
+  the shipped record. `/kit:start --full` adds the open queue (no shipped rows), goal
+  drafts, the spec's task list and the last 5 commits; shipped history is the
+  CHANGELOG.
 - **"Can I just talk instead of typing commands?"** Yes, that is the intended
   interface. "fix this bug", "spec this idea", "ship it" route to the right
   spine step (MANUAL.md, "Drive it by intent").

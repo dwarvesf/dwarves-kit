@@ -9,8 +9,6 @@ hard, you hit one of them, and each has a designed way through that is never
 ```
  the stops you meet most                     the way through
  ─────────────────                          ───────────────
- spec-drift guard ......... warns only:     amend the spec (add-only) or
-   build diverged from the contract         re-scope; then continue
  verification pipeline .... a task failed   fix-agent retries (cap 2), then
    its verifier                             escalate: the task or spec is wrong
  ship gate + push-to-main . no proof of     produce the proof, or log an
@@ -19,7 +17,25 @@ hard, you hit one of them, and each has a designed way through that is never
    without a recorded root cause            guess-fixes are refused
    (anti-rationalization, while
    [gate] understanding_gate is on)
+
+ advises, never blocks
+ ─────────────────────
+ spec-drift guard ......... warns when the build   amend the spec (add-only) or
+   diverged from the contract                      re-scope; then continue
 ```
+
+## The four hard stops
+
+An autonomous run stops at these four, at every autonomy position (guide:
+`autonomy.md`). Other rules block too (`docs/hard-rules.tsv`), but these four
+are never waived:
+
+1. **safety-gate**: destructive Bash (`rm -rf`, force-push, `DROP TABLE`, ...).
+2. **push-to-main**: a direct push to the default branch.
+3. **anti-rationalization**: a premature "done" or a guess-fix, only while
+   `[gate] understanding_gate` is on.
+4. **the verification pipeline**: a task that failed its verifier; `/kit:execute`
+   runs it and the ship gate checks that it was recorded.
 
 ## Proof of done, the part everyone meets
 
@@ -41,7 +57,7 @@ confirmation, not a surprise wall at push time.
 - **Blocked at ship with no proof?** Run `/kit:verify`, or record the run table
   you already have. Two minutes if the work actually works.
 - **Docs-only or scratch change?** Log the audited override with the reason
-  (`proof-ledger.sh override '<slug>' "<why>"`). Overrides are visible and
+  (`~/.claude/dwarves-kit/bin/gate proof-ledger override <slug> "<why>"`). Overrides are visible and
   reviewed, that is the design: honest skips beat fake proofs.
 - **The negative control feels silly?** It caught real false-green tests in
   this kit's history. Stub-out -> red -> restore takes a minute and is the
