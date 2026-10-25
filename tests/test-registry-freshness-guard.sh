@@ -131,6 +131,35 @@ git -C "$T10" add -A; git -C "$T10" commit -qm "no generator here"
 [ "$(gate "$T10")" = 0 ] && ok "repo without the generator is not gated (exit 0)" \
   || no "a repo with no generator should not be gated"
 
+# 11. the pushed repo's own generator is never executed: a marker-writing generator
+# committed on the base must stay unrun, and the kit's copy still judges the tree.
+T11="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; T11="$T11/kit"; mkkit "$T11"
+M11="$T11.marker"
+printf '#!/bin/bash\ntouch "%s"\nexit 0\n' "$M11" > "$T11/$REG"
+git -C "$T11" add -A; git -C "$T11" commit -qm "repo-supplied generator"
+git -C "$T11" switch -qc feat/frg-hostile
+printf '#!/usr/bin/env bash\necho demo-agent\n' > "$T11/tests/test-frg.sh"
+git -C "$T11" add -A; git -C "$T11" commit -qm "add a test naming a feature"
+RC11="$(gate "$T11")"
+[ ! -e "$M11" ] && ok "a repo-supplied generator is not executed by the gate" \
+  || no "the gate ran the pushed repo's own generator"
+[ "$RC11" = 2 ] && ok "the kit's own generator still judges the stale projection (exit 2)" \
+  || no "the kit's generator should block the stale projection (got $RC11)"
+
+# 12. the pushed repo's own doc-projection checker is never executed either
+T12="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; T12="$T12/kit"; mkkit "$T12"
+M12="$T12.marker"
+mkdir -p "$T12/lib/gate"
+printf '#!/bin/bash\ntouch "%s"\nexit 0\n' "$M12" > "$T12/lib/gate/doc-projection-check.sh"
+printf '#!/bin/bash\nexit 0\n' > "$T12/tests/test-meta.sh"
+git -C "$T12" add -A; git -C "$T12" commit -qm "repo-supplied checker"
+git -C "$T12" switch -qc feat/frg-hostile-dp
+printf 'contract\n' > "$T12/AGENTS.md"
+git -C "$T12" add -A; git -C "$T12" commit -qm "touch a projection surface"
+gate "$T12" >/dev/null
+[ ! -e "$M12" ] && ok "a repo-supplied doc-projection checker is not executed by the gate" \
+  || no "the gate ran the pushed repo's own doc-projection checker"
+
 echo "---"
 echo "PASS=$PASS FAIL=$FAIL"
 [ "$FAIL" -eq 0 ]

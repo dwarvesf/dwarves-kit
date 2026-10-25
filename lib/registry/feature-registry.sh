@@ -36,7 +36,9 @@
 set -euo pipefail
 export LC_ALL=C
 
-KIT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+# FEATURE_REGISTRY_ROOT points the scan at another tree, so hooks/ship-gate.sh can run the
+# kit's installed copy of this script against a pushed repo without executing the repo's own.
+KIT_DIR="${FEATURE_REGISTRY_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
 
 # frontmatter field: first `key: value` line inside the first --- pair
 fm_field() { # <file> <key>

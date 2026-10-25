@@ -270,13 +270,17 @@ fi
 # rows. When THIS push touches a projection surface, run the fast grep subset
 # (lib/gate/doc-projection-check.sh, ~0.1s; the slow FEATURES regen stays in
 # the full suite). Kit repo only by the file-existence scoping (a consumer repo
-# has neither file). Escape hatch: DWARVES_KIT_SKIP_DOC_PROJECTION=1.
+# has neither file). The check runs from the kit install, never from the pushed repo: a
+# script resolved from the repo would execute as the operator on a plain git push.
+# Escape hatch: DWARVES_KIT_SKIP_DOC_PROJECTION=1.
+KIT_INSTALL="${CLAUDE_PLUGIN_ROOT:-$HOME/.claude/dwarves-kit}"
 if [ -f "$ROOT/lib/gate/doc-projection-check.sh" ] && [ -f "$ROOT/tests/test-meta.sh" ] \
+   && [ -f "$KIT_INSTALL/lib/gate/doc-projection-check.sh" ] \
    && [ "${DWARVES_KIT_SKIP_DOC_PROJECTION:-0}" != "1" ]; then
   DPBASE="$MBASE"
   if [ -n "$DPBASE" ] && grep -qE '^(agents/|commands/|AGENTS\.md$|docs/(MANUAL|architecture|WORKFLOW)\.md$)' \
        < <(git -C "$ROOT" diff --name-only "$DPBASE" "$PHEAD" 2>/dev/null); then
-    if ! DPMSG=$(bash "$ROOT/lib/gate/doc-projection-check.sh" "$ROOT" 2>&1); then
+    if ! DPMSG=$(bash "$KIT_INSTALL/lib/gate/doc-projection-check.sh" "$ROOT" 2>&1); then
       echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) | BLOCKED | doc-projection | $SLUG" >> "$(kit_hook_log_dir)/ship-gate.log" 2>/dev/null || true
       {
         echo "BLOCKED: doc-projection drift. This push touches a projection surface and the derived doc rows are out of sync:"
@@ -300,15 +304,19 @@ fi
 # The regen costs ~4s (one awk pass over specs and tests), so it runs only on the
 # shape of that incident: an input moved and docs/FEATURES.md did NOT. A push that carries the regenerated file
 # skips it; whether that regeneration was CORRECT is what tests/test-meta.sh
-# pins in CI. Escape hatch: DWARVES_KIT_SKIP_REGISTRY_FRESHNESS=1.
+# pins in CI. The generator runs from the kit install against the pushed repo's tree
+# (FEATURE_REGISTRY_ROOT), never the repo's own copy; a push that edits the generator
+# itself is left to that CI pin. Escape hatch: DWARVES_KIT_SKIP_REGISTRY_FRESHNESS=1.
 if [ -f "$ROOT/lib/registry/feature-registry.sh" ] && [ -f "$ROOT/docs/FEATURES.md" ] \
+   && [ -f "$KIT_INSTALL/lib/registry/feature-registry.sh" ] \
    && [ "${DWARVES_KIT_SKIP_REGISTRY_FRESHNESS:-0}" != "1" ]; then
   FRBASE="$MBASE"
   FRDIFF=""
   [ -n "$FRBASE" ] && FRDIFF=$(git -C "$ROOT" diff --name-only "$FRBASE" "$PHEAD" 2>/dev/null || true)
   if [ -n "$FRDIFF" ] && ! grep -qx 'docs/FEATURES\.md' < <(printf '%s\n' "$FRDIFF") \
-     && grep -qE '^(commands/[^/]+\.md|agents/[^/]+\.md|skills/[^/]+/SKILL\.md|hooks/[^/]+\.sh|hooks/hooks\.json|settings\.json|tests/test-[^/]+\.sh|docs/specs/SPEC-[^/]+\.md)$' < <(printf '%s\n' "$FRDIFF"); then
-    if ! FRMSG=$(bash "$ROOT/lib/registry/feature-registry.sh" check "$ROOT/docs/FEATURES.md" 2>&1); then
+     && grep -qE '^(commands/[^/]+\.md|agents/[^/]+\.md|skills/[^/]+/SKILL\.md|hooks/[^/]+\.sh|hooks/hooks\.json|settings\.json|tests/test-[^/]+\.sh|docs/specs/SPEC-[^/]+\.md)$' < <(printf '%s\n' "$FRDIFF") \
+     && ! grep -qx 'lib/registry/feature-registry\.sh' < <(printf '%s\n' "$FRDIFF"); then
+    if ! FRMSG=$(FEATURE_REGISTRY_ROOT="$ROOT" bash "$KIT_INSTALL/lib/registry/feature-registry.sh" check "$ROOT/docs/FEATURES.md" 2>&1); then
       echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) | BLOCKED | registry-freshness | $SLUG" >> "$(kit_hook_log_dir)/ship-gate.log" 2>/dev/null || true
       {
         echo "BLOCKED: registry freshness. This push edits an input of docs/FEATURES.md and the generated projection has drifted:"
