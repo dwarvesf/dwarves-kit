@@ -6,3 +6,6 @@
 - [Pin the operator layer in tests; resolve every surface through kit-config.sh](operator-layer-fence-and-surface.md): an operator preference otherwise turns a suite red and bin/config lies
 - [Hook stderr on exit 0 reaches no one](hook-stderr-dropped-on-exit-zero.md): an allowed-path notice must be exit-0 JSON (systemMessage + additionalContext); test stdout, not stderr
 - [A PR file guard must read both rename sides](pr-file-list-must-read-both-rename-sides.md): REST files list with previous_filename, paginated, refuse at 3000; pin the merge head
+- [ubuntu-latest is 26.04 with uutils and a multibyte awk](ubuntu-latest-is-uutils.md): capture before matching, compare bytes with index()
+- [Pin the uv Python for native wheels](pin-uv-python-for-native-wheels.md): lib/stats/.python-version keeps DuckDB on a wheel, never a source build
+- [A CI verdict reads job conclusions, never a filtered log excerpt](ci-verdict-reads-job-conclusion.md)
