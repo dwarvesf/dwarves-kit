@@ -3,8 +3,9 @@
 You have ONE destination that takes several DEPENDENT pieces of work to reach: a
 migration with phases, a rewrite that needs five steps, a program like "outside
 devs can maintain this estate". That is a mega-goal. The kit turns it into a
-roadmap on disk and then works the pieces one at a time, each through the normal
-loop, each ending in its own PR.
+roadmap on disk and then works the pieces as a serial chain, each through the
+normal loop, each ending in its own PR. Sub-goals that do not depend on each
+other and carry provably disjoint `## Touches` run together in waves of 2.
 
 ```
  your destination ("X is true when we are done")
@@ -13,7 +14,7 @@ loop, each ending in its own PR.
         ▼
  roadmap on disk: sub-goal 01 -> 02 -> 03 ... (3-8, dependent, ordered)
         │
-        ▼  one at a time
+        ▼  serial chain; disjoint, independent ones share a wave of 2
  sub-goal N runs the bounded goal loop -> its own PR -> ship gate
         │
         ▼
@@ -42,9 +43,12 @@ loop, each ending in its own PR.
 
 ## Common questions
 
-- **"Can it fan out and run things in parallel?"** Dependent-sequenced is this
-  lane; independent-parallel is `/kit:dispatch`. A real dependency GRAPH (waves,
-  fan-in) is neither, and the kit will say so rather than grow a scheduler.
+- **"Can it fan out and run things in parallel?"** A serial chain, with
+  provably disjoint sub-goals running in waves of 2. Give each sub-goal a
+  `## Touches` section (the directory prefixes it writes) so it can join a wave;
+  one without it runs alone. Fully independent, unordered work is
+  `/kit:dispatch`. A real dependency GRAPH (fan-in, topological order) is
+  neither, and the kit will say so rather than grow a scheduler.
 - **"Can I run it in Orca instead of headless sessions?"** There is an opt-in
   trial, `--backend orca` on the runner. It is off unless you ask, the default
   path is unchanged, and the roadmap box is still the only proof of done. Its
